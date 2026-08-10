@@ -144,6 +144,36 @@ CREATE TABLE transfers (
 );
 ```
 
+### 3.6 日常收支表（收入/支出记账）
+
+```sql
+CREATE TABLE daily_expenses (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    category_id   INTEGER NOT NULL REFERENCES categories(id) ON DELETE RESTRICT,
+    expense_type  TEXT NOT NULL CHECK(expense_type IN ('expense','income')),
+    amount        DECIMAL(18,2) NOT NULL,
+    currency      TEXT DEFAULT 'CNY',
+    expense_date  DATE NOT NULL,
+    note          TEXT,
+    tags          TEXT,               -- JSON array of tag strings, nullable
+    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 索引：按日期和类型查询
+CREATE INDEX idx_daily_expenses_date ON daily_expenses(expense_date);
+CREATE INDEX idx_daily_expenses_type ON daily_expenses(expense_type);
+CREATE INDEX idx_daily_expenses_cat ON daily_expenses(category_id);
+```
+
+**说明：**
+- `expense_type = 'expense'` 表示支出（日常消费）
+- `expense_type = 'income'` 表示收入（工资、奖金等）
+- 与 `categories` 表关联，用户可为收支项目复用同一分类体系
+- `tags` 为 JSON 数组字符串（如 `["餐厅","聚餐"]`），便于标签筛选
+- 支持按月/按分类汇总，用于月度收支报表
+
 ---
 
 ## 4. API 设计
@@ -246,7 +276,35 @@ CREATE TABLE transfers (
 
 | 方法 | 路径 | 说明 | 认证 |
 |------|------|------|------|
-| GET | `/api/summary` | 总资产净值 + 分类占比 + 近30天趋势 | 是 |
+| GET | `/api/summary` | 总资产净值 + 分类占比 + 近30天趋势 + 本月收支概览 | 是 |
+
+### 4.7 日常收支模块
+
+| 方法 | 路径 | 说明 | 认证 |
+|------|------|------|------|
+| GET    | `/api/daily-expenses` | 列表（支持 `expense_type`、`category_id`、`start_date`、`end_date` 过滤） | 是 |
+| POST   | `/api/daily-expenses` | 创建收支记录 | 是 |
+| PUT    | `/api/daily-expenses/:id` | 更新收支记录 | 是 |
+| DELETE | `/api/daily-expenses/:id` | 删除收支记录 | 是 |
+| GET    | `/api/daily-expenses/monthly` | 月度汇总（按年月，返回收支 totals + 分类 breakdown） | 是 |
+
+**月度汇总响应示例：**
+```json
+{
+  "code": 0,
+  "data": {
+    "year": 2026, "month": 8,
+    "total_income": 15000.00,
+    "total_expense": 8200.00,
+    "balance": 6800.00,
+    "by_category": [
+      { "category_name": "餐饮", "expense_type": "expense", "amount": 3200.00 },
+      { "category_name": "交通", "expense_type": "expense", "amount": 800.00 },
+      { "category_name": "工资", "expense_type": "income", "amount": 15000.00 }
+    ]
+  }
+}
+```
 
 **响应示例：**
 ```json
@@ -282,6 +340,7 @@ backend/
 │   ├── assets.c            # 资产 CRUD
 │   ├── transactions.c      # 交易 CRUD
 │   ├── transfers.c         # 转账处理（写 transactions 两笔 + 更新 assets）
+│   ├── daily_expenses.c    # 日常收支 CRUD + 月度汇总
 │   ├── summary.c           # 汇总统计（SQL 聚合查询）
 │   └── common/
 │       ├── db.h / db.c     # DB 连接池管理（单例）
@@ -327,6 +386,11 @@ csilk_router_get(api, "/transactions", transactions_list);
 csilk_router_post(api, "/transactions", transactions_create);
 csilk_router_put(api, "/transactions/:id", transactions_update);
 csilk_router_delete(api, "/transactions/:id", transactions_delete);
+csilk_router_get(api, "/daily-expenses", daily_expenses_list);
+csilk_router_post(api, "/daily-expenses", daily_expenses_create);
+csilk_router_put(api, "/daily-expenses/:id", daily_expenses_update);
+csilk_router_delete(api, "/daily-expenses/:id", daily_expenses_delete);
+csilk_router_get(api, "/daily-expenses/monthly", daily_expenses_monthly);
 csilk_router_get(api, "/summary", summary_get);
 
 // 静态文件服务（前端构建产物）
@@ -395,17 +459,21 @@ frontend/
 │   │   ├── categories.ts
 │   │   ├── assets.ts
 │   │   ├── transactions.ts
+│   │   ├── daily_expenses.ts
 │   │   └── summary.ts
 │   ├── views/
 │   │   ├── Login.vue
 │   │   ├── Dashboard.vue     # 总览 + 趋势图（ECharts）
 │   │   ├── Assets.vue        # 资产列表 + 新增/编辑对话框
 │   │   ├── Transactions.vue  # 交易记录表格 + 筛选
+│   │   ├── DailyExpenses.vue # 日常收支记账 + 月度报表
 │   │   ├── Categories.vue    # 分类树管理
 │   │   └── Transfer.vue      # 资产间转账
 │   ├── components/
 │   │   ├── AssetCard.vue
 │   │   ├── TransactionTable.vue
+│   │   ├── DailyExpenseForm.vue
+│   │   ├── MonthlyChart.vue
 │   │   ├── CategoryTree.vue
 │   │   └── NetWorthChart.vue
 │   ├── utils/
@@ -430,6 +498,7 @@ const routes = [
       { path: 'dashboard', component: () => import('@/views/Dashboard.vue') },
       { path: 'assets',       component: () => import('@/views/Assets.vue') },
       { path: 'transactions', component: () => import('@/views/Transactions.vue') },
+      { path: 'daily-expenses', component: () => import('@/views/DailyExpenses.vue') },
       { path: 'categories',   component: () => import('@/views/Categories.vue') },
       { path: 'transfer',     component: () => import('@/views/Transfer.vue') },
     ]
@@ -469,6 +538,36 @@ export type TransactionType =
   | 'deposit' | 'withdrawal' | 'buy' | 'sell'
   | 'transfer_in' | 'transfer_out' | 'fee'
   | 'income' | 'loss';
+
+export type ExpenseType = 'income' | 'expense';
+
+export interface DailyExpense {
+  id: number;
+  user_id: number;
+  category_id: number;
+  expense_type: ExpenseType;
+  amount: number;
+  currency: string;
+  expense_date: string;       // YYYY-MM-DD
+  note?: string;
+  tags?: string[];
+  category_name?: string;     // join 展示用
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MonthlyExpenseSummary {
+  year: number;
+  month: number;
+  total_income: number;
+  total_expense: number;
+  balance: number;
+  by_category: {
+    category_name: string;
+    expense_type: ExpenseType;
+    amount: number;
+  }[];
+}
 
 export interface Transaction {
   id: number;
@@ -614,15 +713,17 @@ export MINEFOLIO_JWT_SECRET="your-random-secret-at-least-32-chars"
 | 2 | 认证模块（注册/登录/JWT） | P0 |
 | 3 | 资产 CRUD API | P0 |
 | 4 | 交易记录 API | P0 |
-| 5 | 汇总统计 API | P1 |
-| 6 | 前端基础框架（Vite + TS + Element Plus + 路由 + 守卫） | P0 |
-| 7 | 前端登录页 + Pinia auth store | P0 |
-| 8 | 前端分类管理页（树形 CRUD） | P0 |
-| 9 | 前端资产列表 + 新增/编辑 | P0 |
-| 10 | 前端交易记录页 + 筛选 | P1 |
-| 11 | 前端 Dashboard（汇总 + 趋势图） | P1 |
-| 12 | 前端转账功能 | P2 |
-| 13 | 生产构建脚本 + nginx 部署模板 | P2 |
+| 5 | 日常收支 CRUD API + 月度汇总 API | P0 |
+| 6 | 汇总统计 API | P1 |
+| 7 | 前端基础框架（Vite + TS + Element Plus + 路由 + 守卫） | P0 |
+| 8 | 前端登录页 + Pinia auth store | P0 |
+| 9 | 前端分类管理页（树形 CRUD） | P0 |
+| 10 | 前端资产列表 + 新增/编辑 | P0 |
+| 11 | 前端交易记录页 + 筛选 | P1 |
+| 12 | 前端日常收支记账页（表单 + 月度图表） | P0 |
+| 13 | 前端 Dashboard（汇总 + 趋势图 + 月度收支概览） | P1 |
+| 14 | 前端转账功能 | P2 |
+| 15 | 生产构建脚本 + nginx 部署模板 | P2 |
 
 ---
 
