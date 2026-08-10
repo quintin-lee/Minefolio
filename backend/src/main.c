@@ -42,6 +42,24 @@ extern void report_asset_breakdown(csilk_ctx_t* c);
 extern void report_transaction_performance(csilk_ctx_t* c);
 extern void report_asset_summary(csilk_ctx_t* c);
 
+
+// JWT middleware wrapper (new API: no extra args)
+static void jwt_middleware_wrapper(csilk_ctx_t* c) {
+    const char* secret = getenv("MINEFOLIO_JWT_SECRET");
+    if (!secret) secret = "minefolio-dev-secret-change-in-production";
+    csilk_jwt_middleware(c, secret);
+}
+
+// CORS middleware wrapper (captures config)
+static void cors_middleware_wrapper(csilk_ctx_t* c) {
+    csilk_cors_config_t cors = {0};
+    cors.allow_origin = "*";
+    cors.allow_methods = "GET,POST,PUT,DELETE,OPTIONS";
+    cors.allow_headers = "Content-Type,Authorization,X-CSRF-Token";
+    cors.allow_credentials = 1;
+    csilk_cors_middleware(c, &cors);
+}
+
 int main(int argc, char** argv) {
     (void)argc; (void)argv;
 
@@ -73,12 +91,7 @@ int main(int argc, char** argv) {
     csilk_app_use(app, csilk_logger_handler);
     csilk_app_use(app, csilk_request_id_middleware);
 
-    csilk_cors_config_t cors = {0};
-    cors.allow_origins = "*";
-    cors.allow_methods = "GET,POST,PUT,DELETE,OPTIONS";
-    cors.allow_headers = "Content-Type,Authorization,X-CSRF-Token";
-    cors.allow_credentials = 1;
-    csilk_app_use(app, csilk_cors_middleware, &cors);
+    csilk_app_use(app, cors_middleware_wrapper);
 
     // Health check (public)
     csilk_app_get(app, "/healthz", csilk_health_check_handler);
@@ -91,8 +104,7 @@ int main(int argc, char** argv) {
     const char* jwt_secret = getenv("MINEFOLIO_JWT_SECRET");
     if (!jwt_secret) jwt_secret = "minefolio-dev-secret-change-in-production";
 
-    csilk_app_use_group(app, "/api", csilk_csrf_middleware);
-    csilk_app_use_group(app, "/api", csilk_jwt_middleware, jwt_secret);
+    csilk_app_use_group(app, "/api", jwt_middleware_wrapper);
 
     // Auth
     csilk_app_get(app, "/api/auth/me", auth_me);

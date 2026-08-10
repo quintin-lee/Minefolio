@@ -25,7 +25,7 @@ static void hash_password(const char* password, char* out_hash, size_t out_len) 
 }
 
 /** @brief POST /api/auth/register — 注册（仅首次用户）*/
-static void auth_register(csilk_ctx_t* c) {
+void auth_register(csilk_ctx_t* c) {
     csilk_json_t* body = csilk_bind_json(c);
     if (!body) { respond_bad_request(c, "请求体必须为 JSON"); return; }
 
@@ -83,7 +83,7 @@ static void auth_register(csilk_ctx_t* c) {
 }
 
 /** @brief POST /api/auth/login — 登录 */
-static void auth_login(csilk_ctx_t* c) {
+void auth_login(csilk_ctx_t* c) {
     csilk_json_t* body = csilk_bind_json(c);
     if (!body) { respond_bad_request(c, "请求体必须为 JSON"); return; }
 
@@ -123,7 +123,7 @@ static void auth_login(csilk_ctx_t* c) {
 }
 
 /** @brief GET /api/auth/me — 获取当前用户信息 */
-static void auth_me(csilk_ctx_t* c) {
+void auth_me(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
 

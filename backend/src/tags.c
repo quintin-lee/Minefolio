@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static void tags_list(csilk_ctx_t* c) {
+void tags_list(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
 
@@ -21,7 +21,7 @@ static void tags_list(csilk_ctx_t* c) {
     respond_ok(c, result);
 }
 
-static void tags_create(csilk_ctx_t* c) {
+void tags_create(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
 
@@ -53,7 +53,7 @@ static void tags_create(csilk_ctx_t* c) {
     respond_ok_null(c);
 }
 
-static void tags_update(csilk_ctx_t* c) {
+void tags_update(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
 
@@ -76,7 +76,7 @@ static void tags_update(csilk_ctx_t* c) {
     respond_ok_null(c);
 }
 
-static void tags_delete(csilk_ctx_t* c) {
+void tags_delete(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
 
@@ -91,7 +91,7 @@ static void tags_delete(csilk_ctx_t* c) {
     respond_ok_null(c);
 }
 
-static void tags_suggestions(csilk_ctx_t* c) {
+void tags_suggestions(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
 

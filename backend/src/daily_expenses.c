@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static void daily_expenses_list(csilk_ctx_t* c) {
+void daily_expenses_list(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
 
@@ -39,7 +39,7 @@ static void daily_expenses_list(csilk_ctx_t* c) {
     respond_ok(c, result);
 }
 
-static void daily_expenses_create(csilk_ctx_t* c) {
+void daily_expenses_create(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
 
@@ -76,7 +76,7 @@ static void daily_expenses_create(csilk_ctx_t* c) {
     }
 
     // Handle tags
-    if (tags && csilk_json_get_type(tags) == 4) { // CSILK_JSON_ARRAY
+    if (tags && csilk_json_is_array(tags)) { // CSILK_JSON_ARRAY
         size_t n = csilk_json_array_size(tags);
         for (size_t i = 0; i < n; i++) {
             csilk_json_t* tag = csilk_json_array_get(tags, i);
@@ -96,7 +96,7 @@ static void daily_expenses_create(csilk_ctx_t* c) {
     respond_ok_null(c);
 }
 
-static void daily_expenses_update(csilk_ctx_t* c) {
+void daily_expenses_update(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
 
@@ -141,7 +141,7 @@ static void daily_expenses_update(csilk_ctx_t* c) {
     respond_ok_null(c);
 }
 
-static void daily_expenses_delete(csilk_ctx_t* c) {
+void daily_expenses_delete(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
 
@@ -161,7 +161,7 @@ static void daily_expenses_delete(csilk_ctx_t* c) {
     respond_ok_null(c);
 }
 
-static void daily_expenses_monthly(csilk_ctx_t* c) {
+void daily_expenses_monthly(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
 
@@ -230,8 +230,8 @@ static void daily_expenses_monthly(csilk_ctx_t* c) {
     csilk_json_add_number(resp, "total_income", income);
     csilk_json_add_number(resp, "total_expense", expense);
     csilk_json_add_number(resp, "balance", income - expense);
-    csilk_json_add_item(resp, "by_category", by_cat ? by_cat : csilk_json_array());
-    csilk_json_add_item(resp, "by_tag", by_tag ? by_tag : csilk_json_array());
-    csilk_json_add_item(resp, "daily_breakdown", daily ? daily : csilk_json_array());
+    csilk_json_add_array(resp, "by_category", by_cat ? by_cat : csilk_json_array());
+    csilk_json_add_array(resp, "by_tag", by_tag ? by_tag : csilk_json_array());
+    csilk_json_add_array(resp, "daily_breakdown", daily ? daily : csilk_json_array());
     respond_ok(c, resp);
 }

@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static void assets_list(csilk_ctx_t* c) {
+void assets_list(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
 
@@ -35,7 +35,7 @@ static void assets_list(csilk_ctx_t* c) {
     respond_ok(c, result);
 }
 
-static void assets_create(csilk_ctx_t* c) {
+void assets_create(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
 
@@ -73,7 +73,7 @@ static void assets_create(csilk_ctx_t* c) {
     respond_ok_null(c);
 }
 
-static void assets_update(csilk_ctx_t* c) {
+void assets_update(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
 
@@ -117,7 +117,7 @@ static void assets_update(csilk_ctx_t* c) {
     respond_ok_null(c);
 }
 
-static void assets_delete(csilk_ctx_t* c) {
+void assets_delete(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
 
@@ -132,7 +132,7 @@ static void assets_delete(csilk_ctx_t* c) {
     respond_ok_null(c);
 }
 
-static void assets_detail(csilk_ctx_t* c) {
+void assets_detail(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
 

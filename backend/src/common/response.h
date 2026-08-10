@@ -5,7 +5,7 @@ static inline void respond_ok(csilk_ctx_t* c, csilk_json_t* data) {
     csilk_json_t* r = csilk_json_object();
     csilk_json_add_number(r, "code", 0);
     csilk_json_add_string(r, "message", "ok");
-    csilk_json_add_item(r, "data", data);
+    csilk_json_add_object(r, "data", data);
     csilk_json(c, CSILK_STATUS_OK, r);
 }
 

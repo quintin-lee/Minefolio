@@ -16,9 +16,11 @@ add_executable(minefolio ${SOURCES})
 
 target_include_directories(minefolio PRIVATE
     "${CSILK_SOURCE_DIR}/include"
-    "${CSILK_SOURCE_DIR}/src"
+    "${CMAKE_BINARY_DIR}/csilk/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
 )
+
+target_compile_definitions(minefolio PRIVATE _GNU_SOURCE)
 
 target_link_libraries(minefolio PRIVATE csilk)
 

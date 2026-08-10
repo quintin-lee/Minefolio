@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static void transfers_create(csilk_ctx_t* c) {
+void transfers_create(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
 

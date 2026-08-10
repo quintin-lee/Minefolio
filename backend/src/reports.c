@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static void report_expense_monthly(csilk_ctx_t* c) {
+void report_expense_monthly(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
     const char* year_str = csilk_get_query(c, "year");
@@ -62,13 +62,13 @@ static void report_expense_monthly(csilk_ctx_t* c) {
     csilk_json_add_number(resp, "total_income", income);
     csilk_json_add_number(resp, "total_expense", expense);
     csilk_json_add_number(resp, "balance", income - expense);
-    csilk_json_add_item(resp, "by_category", by_cat ? by_cat : csilk_json_array());
-    csilk_json_add_item(resp, "by_tag", by_tag ? by_tag : csilk_json_array());
-    csilk_json_add_item(resp, "daily_breakdown", daily ? daily : csilk_json_array());
+    csilk_json_add_array(resp, "by_category", by_cat ? by_cat : csilk_json_array());
+    csilk_json_add_array(resp, "by_tag", by_tag ? by_tag : csilk_json_array());
+    csilk_json_add_array(resp, "daily_breakdown", daily ? daily : csilk_json_array());
     respond_ok(c, resp);
 }
 
-static void report_expense_trend(csilk_ctx_t* c) {
+void report_expense_trend(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
     const char* months_str = csilk_get_query(c, "months");
@@ -96,14 +96,14 @@ static void report_expense_trend(csilk_ctx_t* c) {
         csilk_json_array_append(income_arr, csilk_json_number(csilk_json_get_number(row, "income")));
         csilk_json_array_append(expense_arr, csilk_json_number(csilk_json_get_number(row, "expense")));
     }
-    csilk_json_add_item(resp, "labels", labels);
-    csilk_json_add_item(resp, "income", income_arr);
-    csilk_json_add_item(resp, "expense", expense_arr);
+    csilk_json_add_array(resp, "labels", labels);
+    csilk_json_add_array(resp, "income", income_arr);
+    csilk_json_add_array(resp, "expense", expense_arr);
     csilk_json_free(result);
     respond_ok(c, resp);
 }
 
-static void report_expense_category(csilk_ctx_t* c) {
+void report_expense_category(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
     const char* year_str = csilk_get_query(c, "year");
@@ -136,12 +136,12 @@ static void report_expense_category(csilk_ctx_t* c) {
         csilk_json_add_number(item, "pct", total > 0 ? (amt / total * 100) : 0);
         csilk_json_array_append(items, item);
     }
-    csilk_json_add_item(resp, "items", items);
+    csilk_json_add_array(resp, "items", items);
     csilk_json_free(rows);
     respond_ok(c, resp);
 }
 
-static void report_expense_tag(csilk_ctx_t* c) {
+void report_expense_tag(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
     const char* year_str = csilk_get_query(c, "year");
@@ -176,12 +176,12 @@ static void report_expense_tag(csilk_ctx_t* c) {
         csilk_json_add_number(item, "pct", total > 0 ? (amt / total * 100) : 0);
         csilk_json_array_append(items, item);
     }
-    csilk_json_add_item(resp, "items", items);
+    csilk_json_add_array(resp, "items", items);
     csilk_json_free(rows);
     respond_ok(c, resp);
 }
 
-static void report_asset_trend(csilk_ctx_t* c) {
+void report_asset_trend(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
     const char* period_str = csilk_get_query(c, "period");
@@ -229,21 +229,21 @@ static void report_asset_trend(csilk_ctx_t* c) {
     csilk_json_add_string(resp, "period", period_str ? period_str : "30d");
     if (result && csilk_json_array_size(result) > 0) {
         csilk_json_t* row = csilk_json_array_get(result, 0);
-        csilk_json_add_item(resp, "labels", csilk_json_get(row, "labels"));
-        csilk_json_add_item(resp, "net_worth", csilk_json_get(row, "net_worth"));
-        csilk_json_add_item(resp, "assets", csilk_json_get(row, "assets"));
-        csilk_json_add_item(resp, "liabilities", csilk_json_get(row, "liabilities"));
+        csilk_json_add_array(resp, "labels", csilk_json_get(row, "labels"));
+        csilk_json_add_object(resp, "net_worth", csilk_json_get(row, "net_worth"));
+        csilk_json_add_array(resp, "assets", csilk_json_get(row, "assets"));
+        csilk_json_add_array(resp, "liabilities", csilk_json_get(row, "liabilities"));
     } else {
-        csilk_json_add_item(resp, "labels", csilk_json_array());
-        csilk_json_add_item(resp, "net_worth", csilk_json_array());
-        csilk_json_add_item(resp, "assets", csilk_json_array());
-        csilk_json_add_item(resp, "liabilities", csilk_json_array());
+        csilk_json_add_array(resp, "labels", csilk_json_array());
+        csilk_json_add_array(resp, "net_worth", csilk_json_array());
+        csilk_json_add_array(resp, "assets", csilk_json_array());
+        csilk_json_add_array(resp, "liabilities", csilk_json_array());
     }
     if (result) csilk_json_free(result);
     respond_ok(c, resp);
 }
 
-static void report_asset_breakdown(csilk_ctx_t* c) {
+void report_asset_breakdown(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
     csilk_db_pool_t* pool = db_get_pool();
@@ -284,7 +284,7 @@ static void report_asset_breakdown(csilk_ctx_t* c) {
         }
         csilk_json_free(assets);
     }
-    csilk_json_add_item(resp, "assets", asset_items);
+    csilk_json_add_array(resp, "assets", asset_items);
     csilk_json_t* liab_items = csilk_json_array();
     if (liabs) {
         size_t n = csilk_json_array_size(liabs);
@@ -299,14 +299,14 @@ static void report_asset_breakdown(csilk_ctx_t* c) {
         }
         csilk_json_free(liabs);
     }
-    csilk_json_add_item(resp, "liabilities", liab_items);
+    csilk_json_add_array(resp, "liabilities", liab_items);
     csilk_json_add_number(resp, "total_assets", total_assets);
     csilk_json_add_number(resp, "total_liabilities", total_liabs);
     csilk_json_add_number(resp, "net_worth", total_assets - total_liabs);
     respond_ok(c, resp);
 }
 
-static void report_transaction_performance(csilk_ctx_t* c) {
+void report_transaction_performance(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
     csilk_db_pool_t* pool = db_get_pool();
@@ -345,12 +345,12 @@ static void report_transaction_performance(csilk_ctx_t* c) {
     csilk_json_add_number(resp, "total_gain", total_gain);
     csilk_json_add_number(resp, "total_loss", total_loss);
     csilk_json_add_number(resp, "net_gain", total_gain - total_loss);
-    csilk_json_add_item(resp, "trades", trades);
+    csilk_json_add_array(resp, "trades", trades);
     csilk_json_free(result);
     respond_ok(c, resp);
 }
 
-static void report_asset_summary(csilk_ctx_t* c) {
+void report_asset_summary(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
     csilk_db_pool_t* pool = db_get_pool();
@@ -397,6 +397,6 @@ static void report_asset_summary(csilk_ctx_t* c) {
     csilk_json_add_number(resp, "change_30d", change_30d);
     double nw = current_assets - current_liabs;
     csilk_json_add_number(resp, "change_30d_pct", nw != 0 ? (change_30d / nw * 100) : 0);
-    csilk_json_add_item(resp, "by_category", by_cat);
+    csilk_json_add_array(resp, "by_category", by_cat);
     respond_ok(c, resp);
 }

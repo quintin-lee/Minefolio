@@ -10,7 +10,7 @@ static csilk_json_t* row_to_category(csilk_json_t* row) {
     csilk_json_t* obj = csilk_json_object();
     csilk_json_add_number(obj, "id", csilk_json_get_number(row, "id"));
     csilk_json_add_string(obj, "name", csilk_json_get_string(row, "name"));
-    csilk_json_add_item(obj, csilk_json_string_new("parent_id"),
+    csilk_json_add_object(obj, "parent_id",
         csilk_json_get(row, "parent_id") ? csilk_json_number(csilk_json_get_number(row, "parent_id")) : csilk_json_null());
     csilk_json_add_string(obj, "asset_type", csilk_json_get_string(row, "asset_type"));
     csilk_json_add_string(obj, "currency", csilk_json_get_string(row, "currency"));
@@ -39,11 +39,11 @@ static void add_children(csilk_db_pool_t* pool, csilk_json_t* parent) {
         add_children(pool, kid_obj);
         csilk_json_array_append(children, kid_obj);
     }
-    csilk_json_add_item(parent, csilk_json_string_new("children"), children);
+    csilk_json_add_array(parent, "children", children);
     csilk_json_free(kids);
 }
 
-static void categories_list(csilk_ctx_t* c) {
+void categories_list(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
 
@@ -69,7 +69,7 @@ static void categories_list(csilk_ctx_t* c) {
     respond_ok(c, tree);
 }
 
-static void categories_create(csilk_ctx_t* c) {
+void categories_create(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
 
@@ -114,7 +114,7 @@ static void categories_create(csilk_ctx_t* c) {
     respond_ok_null(c);
 }
 
-static void categories_update(csilk_ctx_t* c) {
+void categories_update(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
 
@@ -143,7 +143,7 @@ static void categories_update(csilk_ctx_t* c) {
     respond_ok_null(c);
 }
 
-static void categories_delete(csilk_ctx_t* c) {
+void categories_delete(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
 

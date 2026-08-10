@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static void transactions_list(csilk_ctx_t* c) {
+void transactions_list(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
 
@@ -44,7 +44,7 @@ static void transactions_list(csilk_ctx_t* c) {
     respond_ok(c, result);
 }
 
-static void transactions_create(csilk_ctx_t* c) {
+void transactions_create(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
 
@@ -102,7 +102,7 @@ static void transactions_create(csilk_ctx_t* c) {
     respond_ok_null(c);
 }
 
-static void transactions_update(csilk_ctx_t* c) {
+void transactions_update(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
 
@@ -148,7 +148,7 @@ static void transactions_update(csilk_ctx_t* c) {
     respond_ok_null(c);
 }
 
-static void transactions_delete(csilk_ctx_t* c) {
+void transactions_delete(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
 
