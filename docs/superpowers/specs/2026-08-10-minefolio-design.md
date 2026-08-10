@@ -319,7 +319,93 @@ CREATE INDEX idx_daily_expenses_cat ON daily_expenses(category_id);
 | DELETE | `/api/tags/:id` | 删除标签（不级联删除关联记录） | 是 |
 | GET    | `/api/tags/suggestions` | 标签建议（根据输入前缀模糊匹配，用于输入框自动补全） | 是 |
 
-**月度汇总响应示例：**
+### 4.9 报表模块
+
+| 方法 | 路径 | 说明 | 认证 |
+|------|------|------|------|
+| GET | `/api/reports/expense/monthly` | 月度收支报表（可选年月，返回收支明细 + 分类/标签 breakdown） | 是 |
+| GET | `/api/reports/expense/trend` | 收支趋势（近 N 月柱状图数据） | 是 |
+| GET | `/api/reports/expense/category` | 支出分类占比（饼图数据，支持年月过滤） | 是 |
+| GET | `/api/reports/expense/tag` | 标签支出分析（按标签聚合，支持年月过滤） | 是 |
+| GET | `/api/reports/asset/trend` | 净资产趋势（近 30/90/365 天，支持自定义范围） | 是 |
+| GET | `/api/reports/asset/breakdown` | 资产分布（当前各分类占比） | 是 |
+| GET | `/api/reports/transaction/performance` | 交易表现（买/卖记录 + 收益率） | 是 |
+| GET | `/api/reports/asset/summary` | 资产总览（当前值 + 变动统计） | 是 |
+
+**月度收支报表响应示例：**
+```json
+{
+  "code": 0,
+  "data": {
+    "year": 2026, "month": 8,
+    "total_income": 15000.00,
+    "total_expense": 8200.00,
+    "balance": 6800.00,
+    "by_category": [
+      { "name": "餐饮", "type": "expense", "amount": 3200.00, "pct": 39.0 },
+      { "name": "工资", "type": "income",  "amount": 15000.00, "pct": 100.0 }
+    ],
+    "by_tag": [
+      { "tag_name": "聚餐", "amount": 1200.00, "count": 5 },
+      { "tag_name": "通勤", "amount": 800.00,  "count": 22 }
+    ],
+    "daily_breakdown": [
+      { "date": "2026-08-01", "income": 15000.00, "expense": 3200.00 },
+      { "date": "2026-08-02", "income": 0,         "expense": 450.00 }
+    ]
+  }
+}
+```
+
+**收支趋势响应示例：**
+```json
+{
+  "code": 0,
+  "data": {
+    "labels": ["2026-03","2026-04","2026-05","2026-06","2026-07","2026-08"],
+    "income":  [14500, 15200, 14800, 15000, 15500, 15000],
+    "expense": [7800,  8200,  7500,  8100,  8400,  8200]
+  }
+}
+```
+
+**资产趋势响应示例：**
+```json
+{
+  "code": 0,
+  "data": {
+    "period": "30d",
+    "labels": ["07-12","07-13","07-14", ... "08-10"],
+    "net_worth": [880000, 882000, 879000, ... 900000],
+    "assets":     [1250000, 1252000, 1248000, ... 1250000],
+    "liabilities":[350000,  350000,  350000,  ... 350000]
+  }
+}
+```
+
+**交易表现响应示例：**
+```json
+{
+  "code": 0,
+  "data": {
+    "total_trades": 24,
+    "total_gain": 12500.00,
+    "total_loss": 3200.00,
+    "net_gain": 9300.00,
+    "trades": [
+      {
+        "id": 1, "asset_name": "贵州茅台", "type": "buy",
+        "date": "2026-07-15", "quantity": 100, "price": 1750.00, "amount": 175000.00
+      },
+      {
+        "id": 2, "asset_name": "贵州茅台", "type": "sell",
+        "date": "2026-08-05", "quantity": 50, "price": 1820.00, "amount": 91000.00,
+        "profit": 3500.00
+      }
+    ]
+  }
+}
+```
 ```json
 {
   "code": 0,
@@ -374,6 +460,7 @@ backend/
 │   ├── daily_expenses.c    # 日常收支 CRUD + 月度汇总
 │   ├── tags.c              # 标签 CRUD + 自动补全
 │   ├── summary.c           # 汇总统计（SQL 聚合查询）
+│   └── reports.c           # 各类报表：收支/资产/交易
 │   └── common/
 │       ├── db.h / db.c     # DB 连接池管理（单例）
 │       ├── jwt.h / jwt.c   # JWT 生成/验证工具函数
@@ -430,6 +517,16 @@ csilk_router_delete(api, "/tags/:id", tags_delete);
 csilk_router_get(api, "/tags/suggestions", tags_suggestions);
 csilk_router_get(api, "/summary", summary_get);
 
+// 报表路由
+csilk_router_get(api, "/reports/expense/monthly", report_expense_monthly);
+csilk_router_get(api, "/reports/expense/trend",   report_expense_trend);
+csilk_router_get(api, "/reports/expense/category", report_expense_category);
+csilk_router_get(api, "/reports/expense/tag",      report_expense_tag);
+csilk_router_get(api, "/reports/asset/trend",      report_asset_trend);
+csilk_router_get(api, "/reports/asset/breakdown",  report_asset_breakdown);
+csilk_router_get(api, "/reports/transaction/performance", report_transaction_performance);
+csilk_router_get(api, "/reports/asset/summary",    report_asset_summary);
+
 // 静态文件服务（前端构建产物）
 csilk_router_get(router, "/*", csilk_static, "/opt/minefolio/frontend/dist");
 
@@ -471,6 +568,16 @@ csilk_server_run(server, config.port);
 - 资产总计：`SELECT SUM(current_value) FROM assets WHERE user_id=?`（按 asset_type 过滤资产类和负债类）
 - 负债总计：从 categories 找出负债类，聚合对应 assets。
 - 趋势：按日期聚合每日 net_worth（用 transactions 累计）。
+
+**报表（reports.c）：**
+- 月度收支：聚合 daily_expenses，按 category/tag 分组，计算每日明细。
+- 收支趋势：按月份聚合 income/expense，返回近 N 月数据。
+- 支出分类占比：按 category 聚合支出，计算百分比。
+- 标签支出分析：JOIN expense_tags + tags，按标签聚合。
+- 资产趋势：每日 SELECT SUM(current_value) FROM assets，滑动窗口计算净值。
+- 资产分布：当前各分类资产值及占比（资产类 vs 负债类分开）。
+- 交易表现：聚合 buy/sell 交易，计算盈亏（sell_amount - buy_cost）。
+- 资产总览：当前值 + 30日变动统计 + 分类明细。
 
 ---
 
@@ -519,7 +626,8 @@ frontend/
 │   │   ├── transactions.ts
 │   │   ├── daily_expenses.ts
 │   │   ├── tags.ts
-│   │   └── summary.ts
+│   │   ├── summary.ts
+│   │   └── reports.ts
 │   ├── views/
 │   │   ├── Login.vue
 │   │   ├── Dashboard.vue     # 总览 + 趋势图（ECharts）
@@ -527,7 +635,8 @@ frontend/
 │   │   ├── Transactions.vue  # 交易记录表格 + 筛选
 │   │   ├── DailyExpenses.vue # 日常收支记账 + 月度报表
 │   │   ├── Categories.vue    # 分类树管理
-│   │   └── Transfer.vue      # 资产间转账
+│   │   ├── Transfer.vue      # 资产间转账
+│   │   └── Reports.vue       # 报表中心（全部报表入口 + 概览）
 │   ├── components/
 │   │   ├── AssetCard.vue
 │   │   ├── TransactionTable.vue
@@ -561,6 +670,7 @@ const routes = [
       { path: 'daily-expenses', component: () => import('@/views/DailyExpenses.vue') },
       { path: 'categories',   component: () => import('@/views/Categories.vue') },
       { path: 'transfer',     component: () => import('@/views/Transfer.vue') },
+      { path: 'reports',      component: () => import('@/views/Reports.vue') },
     ]
   }
 ]
@@ -658,6 +768,75 @@ export interface Summary {
   net_worth: number;
   breakdown: { category_name: string; value: number; pct: number }[];
   trend: { date: string; net_worth: number }[];
+}
+
+export interface ExpenseMonthly {
+  year: number; month: number;
+  total_income: number; total_expense: number; balance: number;
+  by_category: { name: string; type: ExpenseType; amount: number; pct: number }[];
+  by_tag: { tag_name: string; amount: number; count: number }[];
+  daily_breakdown: { date: string; income: number; expense: number }[];
+}
+
+export interface ExpenseTrend {
+  labels: string[];          // ["2026-03","2026-04",...]
+  income:  number[];
+  expense: number[];
+}
+
+export interface ExpenseCategoryBreakdown {
+  period: string;            // "2026-08" or "2026"
+  items: {
+    name: string;
+    expense_type: ExpenseType;
+    amount: number;
+    pct: number;
+  }[];
+}
+
+export interface ExpenseTagBreakdown {
+  period: string;
+  items: { tag_name: string; amount: number; count: number; pct: number }[];
+}
+
+export interface AssetTrend {
+  period: "30d" | "90d" | "365d" | "custom";
+  labels: string[];
+  net_worth: number[];
+  assets: number[];
+  liabilities: number[];
+}
+
+export interface AssetBreakdown {
+  assets:     { name: string; value: number; pct: number }[];
+  liabilities:{ name: string; value: number; pct: number }[];
+  total_assets: number;
+  total_liabilities: number;
+  net_worth: number;
+}
+
+export interface TransactionPerformance {
+  total_trades: number;
+  total_gain: number;
+  total_loss: number;
+  net_gain: number;
+  trades: {
+    id: number;
+    asset_name: string;
+    type: 'buy' | 'sell';
+    date: string;
+    quantity: number;
+    price: number;
+    amount: number;
+    profit?: number;
+  }[];
+}
+
+export interface AssetSummary {
+  current_value: number;
+  change_30d: number;
+  change_30d_pct: number;
+  by_category: { name: string; value: number; pct: number; change: number }[];
 }
 
 export interface ApiResponse<T> {
@@ -782,7 +961,7 @@ export MINEFOLIO_JWT_SECRET="your-random-secret-at-least-32-chars"
 | 3 | 资产 CRUD API | P0 |
 | 4 | 交易记录 API | P0 |
 | 5 | 日常收支 CRUD API + 月度汇总 API + 标签 CRUD API | P0 |
-| 6 | 汇总统计 API | P1 |
+| 6 | 汇总统计 API + 全部报表 API（8个端点） | P0 |
 | 7 | 前端基础框架（Vite + TS + Element Plus + 路由 + 守卫） | P0 |
 | 8 | 前端登录页 + Pinia auth store | P0 |
 | 9 | 前端分类管理页（树形 CRUD） | P0 |
@@ -791,8 +970,9 @@ export MINEFOLIO_JWT_SECRET="your-random-secret-at-least-32-chars"
 | 12 | 前端交易记录页 + 筛选 | P1 |
 | 13 | 前端日常收支记账页（表单含标签选择 + 月度图表） | P0 |
 | 14 | 前端 Dashboard（汇总 + 趋势图 + 月度收支概览） | P1 |
-| 15 | 前端转账功能 | P2 |
-| 16 | 生产构建脚本 + nginx 部署模板 | P2 |
+| 15 | 前端报表中心页（全部报表入口 + 月度报表 + 收支趋势 + 资产分布 + 交易表现） | P0 |
+| 16 | 前端转账功能 | P2 |
+| 17 | 生产构建脚本 + nginx 部署模板 | P2 |
 
 ---
 
