@@ -144,7 +144,29 @@ CREATE TABLE transfers (
 );
 ```
 
-### 3.6 日常收支表（收入/支出记账）
+### 3.6 标签表（多对多关联）
+
+```sql
+CREATE TABLE tags (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,
+    color       TEXT DEFAULT '',     -- HEX color code for UI display
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, name)
+);
+
+CREATE TABLE expense_tags (
+    expense_id  INTEGER NOT NULL REFERENCES daily_expenses(id) ON DELETE CASCADE,
+    tag_id      INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (expense_id, tag_id)
+);
+
+CREATE INDEX idx_tags_user ON tags(user_id);
+CREATE INDEX idx_expense_tags_tag ON expense_tags(tag_id);
+```
+
+### 3.7 日常收支表（收入/支出记账）
 
 ```sql
 CREATE TABLE daily_expenses (
@@ -156,7 +178,6 @@ CREATE TABLE daily_expenses (
     currency      TEXT DEFAULT 'CNY',
     expense_date  DATE NOT NULL,
     note          TEXT,
-    tags          TEXT,               -- JSON array of tag strings, nullable
     created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -171,8 +192,8 @@ CREATE INDEX idx_daily_expenses_cat ON daily_expenses(category_id);
 - `expense_type = 'expense'` 表示支出（日常消费）
 - `expense_type = 'income'` 表示收入（工资、奖金等）
 - 与 `categories` 表关联，用户可为收支项目复用同一分类体系
-- `tags` 为 JSON 数组字符串（如 `["餐厅","聚餐"]`），便于标签筛选
-- 支持按月/按分类汇总，用于月度收支报表
+- 标签通过 `tags` + `expense_tags` 多对多表管理，支持颜色标签和按标签筛选
+- 支持按月/按分类/按标签汇总，用于月度收支报表
 
 ---
 
@@ -282,11 +303,21 @@ CREATE INDEX idx_daily_expenses_cat ON daily_expenses(category_id);
 
 | 方法 | 路径 | 说明 | 认证 |
 |------|------|------|------|
-| GET    | `/api/daily-expenses` | 列表（支持 `expense_type`、`category_id`、`start_date`、`end_date` 过滤） | 是 |
+| GET    | `/api/daily-expenses` | 列表（支持 `expense_type`、`category_id`、`tag_ids`、`start_date`、`end_date` 过滤） | 是 |
 | POST   | `/api/daily-expenses` | 创建收支记录 | 是 |
 | PUT    | `/api/daily-expenses/:id` | 更新收支记录 | 是 |
 | DELETE | `/api/daily-expenses/:id` | 删除收支记录 | 是 |
 | GET    | `/api/daily-expenses/monthly` | 月度汇总（按年月，返回收支 totals + 分类 breakdown） | 是 |
+
+### 4.8 标签管理模块
+
+| 方法 | 路径 | 说明 | 认证 |
+|------|------|------|------|
+| GET    | `/api/tags` | 列出当前用户所有标签 | 是 |
+| POST   | `/api/tags` | 创建标签（`{ name, color? }`） | 是 |
+| PUT    | `/api/tags/:id` | 更新标签（重命名/改颜色） | 是 |
+| DELETE | `/api/tags/:id` | 删除标签（不级联删除关联记录） | 是 |
+| GET    | `/api/tags/suggestions` | 标签建议（根据输入前缀模糊匹配，用于输入框自动补全） | 是 |
 
 **月度汇总响应示例：**
 ```json
@@ -341,6 +372,7 @@ backend/
 │   ├── transactions.c      # 交易 CRUD
 │   ├── transfers.c         # 转账处理（写 transactions 两笔 + 更新 assets）
 │   ├── daily_expenses.c    # 日常收支 CRUD + 月度汇总
+│   ├── tags.c              # 标签 CRUD + 自动补全
 │   ├── summary.c           # 汇总统计（SQL 聚合查询）
 │   └── common/
 │       ├── db.h / db.c     # DB 连接池管理（单例）
@@ -391,6 +423,11 @@ csilk_router_post(api, "/daily-expenses", daily_expenses_create);
 csilk_router_put(api, "/daily-expenses/:id", daily_expenses_update);
 csilk_router_delete(api, "/daily-expenses/:id", daily_expenses_delete);
 csilk_router_get(api, "/daily-expenses/monthly", daily_expenses_monthly);
+csilk_router_get(api, "/tags", tags_list);
+csilk_router_post(api, "/tags", tags_create);
+csilk_router_put(api, "/tags/:id", tags_update);
+csilk_router_delete(api, "/tags/:id", tags_delete);
+csilk_router_get(api, "/tags/suggestions", tags_suggestions);
 csilk_router_get(api, "/summary", summary_get);
 
 // 静态文件服务（前端构建产物）
@@ -481,6 +518,7 @@ frontend/
 │   │   ├── assets.ts
 │   │   ├── transactions.ts
 │   │   ├── daily_expenses.ts
+│   │   ├── tags.ts
 │   │   └── summary.ts
 │   ├── views/
 │   │   ├── Login.vue
@@ -493,7 +531,8 @@ frontend/
 │   ├── components/
 │   │   ├── AssetCard.vue
 │   │   ├── TransactionTable.vue
-│   │   ├── DailyExpenseForm.vue
+│   │   ├── DailyExpenseForm.vue    # 收支表单（含标签选择器）
+│   │   ├── TagPicker.vue           # 标签选择/新建组件
 │   │   ├── MonthlyChart.vue
 │   │   ├── CategoryTree.vue
 │   │   └── NetWorthChart.vue
@@ -562,6 +601,14 @@ export type TransactionType =
 
 export type ExpenseType = 'income' | 'expense';
 
+export interface Tag {
+  id: number;
+  user_id: number;
+  name: string;
+  color: string;             // HEX color, e.g. "#FF6B6B"
+  created_at: string;
+}
+
 export interface DailyExpense {
   id: number;
   user_id: number;
@@ -571,7 +618,7 @@ export interface DailyExpense {
   currency: string;
   expense_date: string;       // YYYY-MM-DD
   note?: string;
-  tags?: string[];
+  tags?: Tag[];
   category_name?: string;     // join 展示用
   created_at: string;
   updated_at: string;
@@ -734,17 +781,18 @@ export MINEFOLIO_JWT_SECRET="your-random-secret-at-least-32-chars"
 | 2 | 认证模块（注册/登录/JWT） | P0 |
 | 3 | 资产 CRUD API | P0 |
 | 4 | 交易记录 API | P0 |
-| 5 | 日常收支 CRUD API + 月度汇总 API | P0 |
+| 5 | 日常收支 CRUD API + 月度汇总 API + 标签 CRUD API | P0 |
 | 6 | 汇总统计 API | P1 |
 | 7 | 前端基础框架（Vite + TS + Element Plus + 路由 + 守卫） | P0 |
 | 8 | 前端登录页 + Pinia auth store | P0 |
 | 9 | 前端分类管理页（树形 CRUD） | P0 |
-| 10 | 前端资产列表 + 新增/编辑 | P0 |
-| 11 | 前端交易记录页 + 筛选 | P1 |
-| 12 | 前端日常收支记账页（表单 + 月度图表） | P0 |
-| 13 | 前端 Dashboard（汇总 + 趋势图 + 月度收支概览） | P1 |
-| 14 | 前端转账功能 | P2 |
-| 15 | 生产构建脚本 + nginx 部署模板 | P2 |
+| 10 | 前端标签管理页（CRUD + 颜色选择） | P0 |
+| 11 | 前端资产列表 + 新增/编辑 | P0 |
+| 12 | 前端交易记录页 + 筛选 | P1 |
+| 13 | 前端日常收支记账页（表单含标签选择 + 月度图表） | P0 |
+| 14 | 前端 Dashboard（汇总 + 趋势图 + 月度收支概览） | P1 |
+| 15 | 前端转账功能 | P2 |
+| 16 | 生产构建脚本 + nginx 部署模板 | P2 |
 
 ---
 
