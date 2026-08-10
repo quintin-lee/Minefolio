@@ -439,6 +439,25 @@ csilk_server_run(server, config.port);
 
 ## 6. 前端 (Vue 3) 模块结构
 
+### 6.0 语言规范
+
+**所有前端 UI 文本统一使用简体中文**，包括但不限于：
+
+- 页面标题、导航菜单项
+- 表单标签、占位提示（placeholder）
+- 按钮文字（确认、取消、删除、保存等）
+- 表格列名、筛选条件标签
+- 错误提示、成功提示（Message/Notification）
+- 对话框标题与正文
+
+**技术实现：**
+- 使用 `naive-ui` 或 Element Plus 的 `zh-cn` locale 注册
+- 自定义业务文本统一收口到 `src/locales/zh-CN.ts`，由 Pinia store 提供
+- 不引入 i18n 插件（YAGNI），单一语言直接硬编码中文文本
+- 货币格式化使用 `Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' })`
+
+---
+
 ```
 frontend/
 ├── package.json
@@ -449,6 +468,8 @@ frontend/
 ├── src/
 │   ├── main.ts
 │   ├── App.vue
+│   ├── locales/
+│   │   └── zh-CN.ts          # 全部中文 UI 文本
 │   ├── router/
 │   │   └── index.ts          # 路由 + 登录守卫
 │   ├── stores/
@@ -735,4 +756,3 @@ export MINEFOLIO_JWT_SECRET="your-random-secret-at-least-32-chars"
 - 多数据库适配（PostgreSQL/MySQL）— 架构已预留接口，但不实现
 - 实时 WebSocket 推送
 - 导出 Excel/CSV
-- 多语言/i18n
