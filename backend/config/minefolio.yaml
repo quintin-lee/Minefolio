@@ -1,0 +1,16 @@
+server:
+  host: "0.0.0.0"
+  port: 8080
+  workers: 2
+
+database:
+  driver: sqlite
+  dsn: "${MINEFOLIO_DB_DSN:-./data/minefolio.db}"
+
+static:
+  root_dir: "./dist"
+  index_file: "index.html"
+
+logging:
+  level: info
+  json: false
