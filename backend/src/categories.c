@@ -1,0 +1,173 @@
+#include "common/response.h"
+#include "common/db.h"
+#include "common/jwt.h"
+#include "csilk/csilk.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+static csilk_json_t* row_to_category(csilk_json_t* row) {
+    csilk_json_t* obj = csilk_json_object();
+    csilk_json_add_number(obj, "id", csilk_json_get_number(row, "id"));
+    csilk_json_add_string(obj, "name", csilk_json_get_string(row, "name"));
+    csilk_json_add_item(obj, csilk_json_string_new("parent_id"),
+        csilk_json_get(row, "parent_id") ? csilk_json_number(csilk_json_get_number(row, "parent_id")) : csilk_json_null());
+    csilk_json_add_string(obj, "asset_type", csilk_json_get_string(row, "asset_type"));
+    csilk_json_add_string(obj, "currency", csilk_json_get_string(row, "currency"));
+    csilk_json_add_string(obj, "icon", csilk_json_get_string(row, "icon"));
+    csilk_json_add_number(obj, "sort_order", csilk_json_get_number(row, "sort_order"));
+    return obj;
+}
+
+static void add_children(csilk_db_pool_t* pool, csilk_json_t* parent) {
+    int64_t pid = (int64_t)csilk_json_get_number(parent, "id");
+    char sql[256];
+    snprintf(sql, sizeof(sql),
+        "SELECT id, name, parent_id, asset_type, currency, icon, sort_order "
+        "FROM categories WHERE parent_id = %lld ORDER BY sort_order", (long long)pid);
+
+    csilk_json_t* kids = csilk_db_query_json(pool, sql);
+    if (!kids) return;
+
+    size_t n = csilk_json_array_size(kids);
+    if (n == 0) { csilk_json_free(kids); return; }
+
+    csilk_json_t* children = csilk_json_array();
+    for (size_t i = 0; i < n; i++) {
+        csilk_json_t* kid = csilk_json_array_get(kids, i);
+        csilk_json_t* kid_obj = row_to_category(kid);
+        add_children(pool, kid_obj);
+        csilk_json_array_append(children, kid_obj);
+    }
+    csilk_json_add_item(parent, csilk_json_string_new("children"), children);
+    csilk_json_free(kids);
+}
+
+static void categories_list(csilk_ctx_t* c) {
+    int64_t user_id = jwt_get_user_id(c);
+    if (user_id < 0) { respond_unauthorized(c); return; }
+
+    csilk_db_pool_t* pool = db_get_pool();
+    char sql[256];
+    snprintf(sql, sizeof(sql),
+        "SELECT id, name, parent_id, asset_type, currency, icon, sort_order "
+        "FROM categories WHERE user_id = %lld AND parent_id IS NULL ORDER BY sort_order",
+        (long long)user_id);
+
+    csilk_json_t* rows = csilk_db_query_json(pool, sql);
+    if (!rows) { respond_error(c, 500, "查询失败"); return; }
+
+    csilk_json_t* tree = csilk_json_array();
+    size_t n = csilk_json_array_size(rows);
+    for (size_t i = 0; i < n; i++) {
+        csilk_json_t* row = csilk_json_array_get(rows, i);
+        csilk_json_t* node = row_to_category(row);
+        add_children(pool, node);
+        csilk_json_array_append(tree, node);
+    }
+    csilk_json_free(rows);
+    respond_ok(c, tree);
+}
+
+static void categories_create(csilk_ctx_t* c) {
+    int64_t user_id = jwt_get_user_id(c);
+    if (user_id < 0) { respond_unauthorized(c); return; }
+
+    csilk_json_t* body = csilk_bind_json(c);
+    if (!body) { respond_bad_request(c, "请求体必须为 JSON"); return; }
+
+    const char* name = csilk_json_get_string(body, "name");
+    const char* asset_type = csilk_json_get_string(body, "asset_type");
+    if (!name || !asset_type) {
+        csilk_json_free(body);
+        respond_bad_request(c, "name 和 asset_type 为必填");
+        return;
+    }
+
+    const char* currency = csilk_json_get_string(body, "currency");
+    if (!currency) currency = "CNY";
+    const char* icon = csilk_json_get_string(body, "icon");
+    if (!icon) icon = "";
+    int64_t parent_id = (int64_t)csilk_json_get_number(body, "parent_id");
+    int sort_order = (int)csilk_json_get_number(body, "sort_order");
+
+    csilk_db_pool_t* pool = db_get_pool();
+    char sql[512];
+    if (parent_id > 0) {
+        snprintf(sql, sizeof(sql),
+            "INSERT INTO categories (user_id, name, parent_id, asset_type, currency, icon, sort_order) "
+            "VALUES (%lld, '%s', %lld, '%s', '%s', '%s', %d)",
+            (long long)user_id, name, parent_id, asset_type, currency, icon, sort_order);
+    } else {
+        snprintf(sql, sizeof(sql),
+            "INSERT INTO categories (user_id, name, asset_type, currency, icon, sort_order) "
+            "VALUES (%lld, '%s', '%s', '%s', '%s', %d)",
+            (long long)user_id, name, asset_type, currency, icon, sort_order);
+    }
+
+    if (csilk_db_exec(pool, sql) != 0) {
+        csilk_json_free(body);
+        respond_error(c, 500, "创建失败");
+        return;
+    }
+    csilk_json_free(body);
+    respond_ok_null(c);
+}
+
+static void categories_update(csilk_ctx_t* c) {
+    int64_t user_id = jwt_get_user_id(c);
+    if (user_id < 0) { respond_unauthorized(c); return; }
+
+    const char* id_str = csilk_get_param(c, "id");
+    if (!id_str) { respond_bad_request(c, "缺少 id"); return; }
+
+    csilk_json_t* body = csilk_bind_json(c);
+    if (!body) { respond_bad_request(c, "请求体必须为 JSON"); return; }
+
+    const char* name = csilk_json_get_string(body, "name");
+    const char* asset_type = csilk_json_get_string(body, "asset_type");
+    const char* currency = csilk_json_get_string(body, "currency");
+    const char* icon = csilk_json_get_string(body, "icon");
+    int sort_order = (int)csilk_json_get_number(body, "sort_order");
+
+    char sql[512];
+    snprintf(sql, sizeof(sql),
+        "UPDATE categories SET name='%s', asset_type='%s', currency='%s', icon='%s', sort_order=%d "
+        "WHERE id=%s AND user_id=%lld",
+        name ? name : "", asset_type ? asset_type : "",
+        currency ? currency : "CNY", icon ? icon : "", sort_order,
+        id_str, (long long)user_id);
+
+    csilk_db_exec(db_get_pool(), sql);
+    csilk_json_free(body);
+    respond_ok_null(c);
+}
+
+static void categories_delete(csilk_ctx_t* c) {
+    int64_t user_id = jwt_get_user_id(c);
+    if (user_id < 0) { respond_unauthorized(c); return; }
+
+    const char* id_str = csilk_get_param(c, "id");
+    if (!id_str) { respond_bad_request(c, "缺少 id"); return; }
+
+    csilk_db_pool_t* pool = db_get_pool();
+
+    // Check if has children
+    char sql[256];
+    snprintf(sql, sizeof(sql),
+        "SELECT COUNT(*) as cnt FROM categories WHERE parent_id = %s AND user_id = %lld",
+        id_str, (long long)user_id);
+    csilk_json_t* cnt_result = csilk_db_query_json(pool, sql);
+    if (cnt_result && csilk_json_array_size(cnt_result) > 0) {
+        int cnt = (int)csilk_json_get_number(csilk_json_array_get(cnt_result, 0), "cnt");
+        csilk_json_free(cnt_result);
+        if (cnt > 0) { respond_forbidden(c, "分类下有子分类，无法删除"); return; }
+    } else {
+        if (cnt_result) csilk_json_free(cnt_result);
+    }
+
+    snprintf(sql, sizeof(sql), "DELETE FROM categories WHERE id=%s AND user_id=%lld",
+             id_str, (long long)user_id);
+    csilk_db_exec(pool, sql);
+    respond_ok_null(c);
+}
