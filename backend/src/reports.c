@@ -5,13 +5,22 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 void report_expense_monthly(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
     const char* year_str = csilk_get_query(c, "year");
     const char* month_str = csilk_get_query(c, "month");
-    if (!year_str || !month_str) { year_str = "2026"; month_str = "08"; }
+    char year_buf[8] = {0}, month_buf[4] = {0};
+    if (!year_str || !month_str) {
+        time_t now = time(NULL);
+        struct tm* tm_now = localtime(&now);
+        strftime(year_buf, sizeof(year_buf), "%Y", tm_now);
+        strftime(month_buf, sizeof(month_buf), "%m", tm_now);
+        year_str = year_buf;
+        month_str = month_buf;
+    }
     char date_prefix[16];
     snprintf(date_prefix, sizeof(date_prefix), "%s-%02d-", year_str, atoi(month_str));
     csilk_db_pool_t* pool = db_get_pool();
@@ -108,9 +117,12 @@ void report_expense_category(csilk_ctx_t* c) {
     if (user_id < 0) { respond_unauthorized(c); return; }
     const char* year_str = csilk_get_query(c, "year");
     const char* month_str = csilk_get_query(c, "month");
+    char year_buf[8] = {0};
+    time_t now = time(NULL);
+    strftime(year_buf, sizeof(year_buf), "%Y", localtime(&now));
     char period[16];
     if (year_str && month_str) snprintf(period, sizeof(period), "%s-%02d-", year_str, atoi(month_str));
-    else snprintf(period, sizeof(period), "%s-", "2026");
+    else snprintf(period, sizeof(period), "%s-", year_buf);
     csilk_db_pool_t* pool = db_get_pool();
     char sql[512];
     snprintf(sql, sizeof(sql),
@@ -146,9 +158,12 @@ void report_expense_tag(csilk_ctx_t* c) {
     if (user_id < 0) { respond_unauthorized(c); return; }
     const char* year_str = csilk_get_query(c, "year");
     const char* month_str = csilk_get_query(c, "month");
+    char year_buf[8] = {0};
+    time_t now = time(NULL);
+    strftime(year_buf, sizeof(year_buf), "%Y", localtime(&now));
     char period[16];
     if (year_str && month_str) snprintf(period, sizeof(period), "%s-%02d-", year_str, atoi(month_str));
-    else snprintf(period, sizeof(period), "%s-", "2026");
+    else snprintf(period, sizeof(period), "%s-", year_buf);
     csilk_db_pool_t* pool = db_get_pool();
     char sql[512];
     snprintf(sql, sizeof(sql),
