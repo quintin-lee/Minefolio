@@ -1,0 +1,1 @@
+import{J as t}from"./index-CqaqFty7.js";const p={list:s=>t.get("/assets",{params:s}),create:s=>t.post("/assets",s),update:(s,e)=>t.put(`/assets/${s}`,e),delete:s=>t.delete(`/assets/${s}`),detail:s=>t.get(`/assets/${s}`)};export{p as a};
