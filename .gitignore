@@ -1,0 +1,6 @@
+# backend build output
+backend/build/
+backend/compile_commands.json
+
+# AI cache
+.codegraph
