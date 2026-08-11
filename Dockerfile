@@ -116,13 +116,13 @@ RUN strip backend/build/minefolio
 
 
 # Download swagger-ui distribution (csilk share/swagger-ui contains only placeholders)
-RUN curl --noproxy '*' -fsSL -o /tmp/swagger-ui-dist.zip \
-        https://github.com/swagger-api/swagger-ui/releases/download/v5.32.6/swagger-ui-dist-5.32.6.zip \
+RUN curl --noproxy '*' -fsSL -o /tmp/swagger-ui-dist.tgz \
+        https://registry.npmjs.org/swagger-ui-dist/-/swagger-ui-dist-5.32.6.tgz \
     && mkdir -p /tmp/swagger-ui-extract \
-    && python3 -c "import zipfile; zipfile.ZipFile('/tmp/swagger-ui-dist.zip').extractall('/tmp/swagger-ui-extract')" \
-    && DIST_DIR=$(find /tmp/swagger-ui-extract -type d -name dist | head -1) \
+    && tar -xzf /tmp/swagger-ui-dist.tgz -C /tmp/swagger-ui-extract \
+    && DIST_DIR=$(find /tmp/swagger-ui-extract -type d -name package | head -1) \
     && cp -r "$DIST_DIR"/* /src/backend/build/_deps/csilk-src/share/swagger-ui/ \
-    && rm -rf /tmp/swagger-ui-dist.zip /tmp/swagger-ui-extract
+    && rm -rf /tmp/swagger-ui-dist.tgz /tmp/swagger-ui-extract
 
 
 
