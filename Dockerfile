@@ -226,6 +226,11 @@ COPY --from=backend-build \
     /opt/csilk/share/swagger-ui
 
 
+COPY --from=backend-build \
+    /usr/lib/x86_64-linux-gnu/libllhttp.so.9.4 \
+    /usr/lib/x86_64-linux-gnu/libllhttp.so.9.4
+
+
 
 ############################################################
 # User
