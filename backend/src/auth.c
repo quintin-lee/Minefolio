@@ -43,12 +43,13 @@ void auth_register(csilk_ctx_t* c) {
     const char* check_sql = "SELECT id FROM users WHERE username = ?";
     const char* check_params[] = { username, NULL };
     csilk_json_t* check = csilk_db_query_param_json(pool, check_sql, check_params);
-    if (check) {
+    if (check && csilk_json_array_size(check) > 0) {
         csilk_json_free(check);
         csilk_json_free(body);
         respond_conflict(c, "用户名已存在");
         return;
     }
+    if (check) csilk_json_free(check);
 
     // Hash password
     char hashed[65];

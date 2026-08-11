@@ -13,7 +13,7 @@ void report_expense_monthly(csilk_ctx_t* c) {
     const char* month_str = csilk_get_query(c, "month");
     if (!year_str || !month_str) { year_str = "2026"; month_str = "08"; }
     char date_prefix[16];
-    snprintf(date_prefix, sizeof(date_prefix), "%s-%s-", year_str, month_str);
+    snprintf(date_prefix, sizeof(date_prefix), "%s-%02d-", year_str, atoi(month_str));
     csilk_db_pool_t* pool = db_get_pool();
     char sql[1024];
 
@@ -109,7 +109,7 @@ void report_expense_category(csilk_ctx_t* c) {
     const char* year_str = csilk_get_query(c, "year");
     const char* month_str = csilk_get_query(c, "month");
     char period[16];
-    if (year_str && month_str) snprintf(period, sizeof(period), "%s-%s-", year_str, month_str);
+    if (year_str && month_str) snprintf(period, sizeof(period), "%s-%02d-", year_str, atoi(month_str));
     else snprintf(period, sizeof(period), "%s-", "2026");
     csilk_db_pool_t* pool = db_get_pool();
     char sql[512];
@@ -147,7 +147,7 @@ void report_expense_tag(csilk_ctx_t* c) {
     const char* year_str = csilk_get_query(c, "year");
     const char* month_str = csilk_get_query(c, "month");
     char period[16];
-    if (year_str && month_str) snprintf(period, sizeof(period), "%s-%s-", year_str, month_str);
+    if (year_str && month_str) snprintf(period, sizeof(period), "%s-%02d-", year_str, atoi(month_str));
     else snprintf(period, sizeof(period), "%s-", "2026");
     csilk_db_pool_t* pool = db_get_pool();
     char sql[512];

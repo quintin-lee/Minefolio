@@ -29,6 +29,12 @@ void transfers_create(csilk_ctx_t* c) {
 
     csilk_db_pool_t* pool = db_get_pool();
 
+    if (from_id == to_id) {
+        csilk_json_free(body);
+        respond_bad_request(c, "转出和转入资产不能相同");
+        return;
+    }
+
     // Verify both assets belong to user
     char check_sql[512];
     snprintf(check_sql, sizeof(check_sql),
@@ -43,12 +49,6 @@ void transfers_create(csilk_ctx_t* c) {
         return;
     }
     csilk_json_free(chk);
-
-    if (from_id == to_id) {
-        csilk_json_free(body);
-        respond_bad_request(c, "转出和转入资产不能相同");
-        return;
-    }
 
     // Start transaction
     csilk_db_exec(pool, "BEGIN");

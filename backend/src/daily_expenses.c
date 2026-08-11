@@ -173,7 +173,7 @@ void daily_expenses_monthly(csilk_ctx_t* c) {
     }
 
     char date_prefix[16];
-    snprintf(date_prefix, sizeof(date_prefix), "%s-%s-", year_str, month_str);
+    snprintf(date_prefix, sizeof(date_prefix), "%s-%02d-", year_str, atoi(month_str));
     csilk_db_pool_t* pool = db_get_pool();
 
     // Totals
