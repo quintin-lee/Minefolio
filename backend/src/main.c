@@ -67,6 +67,47 @@ static void cors_middleware_wrapper(csilk_ctx_t* c) {
     csilk_cors_middleware(c, &cors);
 }
 
+// CSRF middleware wrapper — stateless double-submit cookie.
+// Safe methods (GET/HEAD/OPTIONS) ensure a JS-readable csrf_token cookie exists;
+// state-changing methods require the X-CSRF-Token header to match that cookie.
+// Env-gated via MINEFOLIO_ENABLE_CSRF so cross-origin dev (5173 -> 8080, no
+// withCredentials) is unaffected while prod (nginx same-origin) is protected.
+static void csrf_middleware_wrapper(csilk_ctx_t* c) {
+    const char* method = csilk_get_method(c);
+    if (!method) { csilk_next(c); return; }
+
+    // Public auth bootstrap endpoints are exempt (no cookie exists yet on first use)
+    const char* path = csilk_get_path(c);
+    if (path && (strcmp(path, "/api/auth/login") == 0 ||
+                 strcmp(path, "/api/auth/register") == 0)) {
+        csilk_next(c);
+        return;
+    }
+
+    if (strcmp(method, "GET") == 0 || strcmp(method, "HEAD") == 0 ||
+        strcmp(method, "OPTIONS") == 0) {
+        // Ensure the SPA has a token it can echo back
+        if (!csilk_get_cookie(c, "csrf_token")) {
+            char buf[33];
+            if (csilk_csrf_generate_token(buf, sizeof(buf)) == 0) {
+                // secure=0, http_only=0 so JS can read via document.cookie
+                csilk_set_cookie(c, "csrf_token", buf, 86400, "/", NULL, 0, 0);
+            }
+        }
+        csilk_next(c);
+        return;
+    }
+
+    const char* token = csilk_get_header(c, "X-CSRF-Token");
+    const char* cookie = csilk_get_cookie(c, "csrf_token");
+    if (!token || !cookie || strcmp(token, cookie) != 0) {
+        csilk_json_error(c, CSILK_STATUS_FORBIDDEN, "Forbidden: Invalid CSRF token");
+        csilk_abort(c);
+        return;
+    }
+    csilk_next(c);
+}
+
 int main(int argc, char** argv) {
     (void)argc; (void)argv;
 
@@ -112,6 +153,11 @@ int main(int argc, char** argv) {
     if (!jwt_secret) jwt_secret = "minefolio-dev-secret-change-in-production";
 
     csilk_app_use_group(app, "/api", jwt_middleware_wrapper);
+
+    // CSRF (optional, enabled via MINEFOLIO_ENABLE_CSRF) — stateless double-submit
+    if (getenv("MINEFOLIO_ENABLE_CSRF")) {
+        csilk_app_use_group(app, "/api", csrf_middleware_wrapper);
+    }
 
     // Auth
     csilk_app_get(app, "/api/auth/me", auth_me);

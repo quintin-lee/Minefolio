@@ -65,11 +65,18 @@ async function handleSubmit() {
     if (form.from_asset_id === form.to_asset_id) { Msg.warning('转出和转入资产不能相同'); return }
     saving.value = true
     try {
-      await fetch(`${import.meta.env.VITE_API_URL}/transfers`, {
+      const csrf = document.cookie.split('; ').find((r) => r.startsWith('csrf_token='))?.split('=')[1]
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/transfers`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          ...(csrf ? { 'X-CSRF-Token': csrf } : {}),
+        },
         body: JSON.stringify(form),
       })
+      const data = await res.json().catch(() => ({}))
+      if (data.code !== 0) { Msg.error(data.message || '转账失败'); return }
       Msg.success('转账成功')
       form.from_asset_id = null; form.to_asset_id = null; form.amount = 0; form.note = ''
       loadAssets()

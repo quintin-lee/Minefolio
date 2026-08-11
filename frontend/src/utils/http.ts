@@ -7,11 +7,18 @@ const http = axios.create({
   timeout: 10000,
 })
 
-// Request interceptor: inject token
+// Request interceptor: inject token + CSRF header (double-submit)
 http.interceptors.request.use((config) => {
   const auth = useAuthStore()
   if (auth.token) {
     config.headers.Authorization = `Bearer ${auth.token}`
+  }
+  const method = (config.method || 'get').toUpperCase()
+  if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+    const csrf = document.cookie.split('; ').find((r) => r.startsWith('csrf_token='))?.split('=')[1]
+    if (csrf) {
+      config.headers['X-CSRF-Token'] = csrf
+    }
   }
   return config
 })
