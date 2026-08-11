@@ -62,7 +62,6 @@ RUN --mount=type=cache,target=/var/cache/apt \
     libsqlite3-dev \
     libssl-dev \
     libcurl4-openssl-dev \
-    libllhttp9 \
     zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
@@ -228,7 +227,7 @@ COPY --from=backend-build \
 
 
 COPY --from=backend-build \
-    /usr/lib/x86_64-linux-gnu/libllhttp.so.9.4 \
+    /src/backend/build/_deps/llhttp-build/libllhttp.so.9.4 \
     /usr/lib/x86_64-linux-gnu/libllhttp.so.9.4
 
 
