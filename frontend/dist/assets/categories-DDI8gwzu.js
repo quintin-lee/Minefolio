@@ -1,1 +1,0 @@
-import{J as t}from"./index-G8FNAKk-.js";const a={list:()=>t.get("/categories"),create:e=>t.post("/categories",e),update:(e,o)=>t.put(`/categories/${e}`,o),delete:e=>t.delete(`/categories/${e}`)};export{a as c};
