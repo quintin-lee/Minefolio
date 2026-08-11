@@ -2,7 +2,9 @@
 backend/build/
 backend/compile_commands.json
 
+frontend/node_modules/
 frontend/dist/
 
 # AI cache
 .codegraph
+.playwright-cli/
