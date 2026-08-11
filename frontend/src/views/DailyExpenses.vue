@@ -1,108 +1,126 @@
 <template>
   <div class="daily-expenses-page">
-    <el-row :gutter="16">
+    <div class="page-header">
+      <div class="header-title">
+        <div class="title-accent"></div>
+        <h2>日常收支</h2>
+      </div>
+      <el-button type="primary" class="action-btn" @click="openDialog()">
+        <el-icon><Plus /></el-icon> 新增记录
+      </el-button>
+    </div>
+
+    <el-row :gutter="24">
       <!-- 左侧：记账列表 -->
       <el-col :span="16">
-        <el-card>
-          <template #header>
-            <div class="header">
-              <span>日常收支</span>
-              <el-button type="primary" @click="openDialog()">
-                <el-icon><Plus /></el-icon> 新增
-              </el-button>
-            </div>
-          </template>
-
-          <el-form :inline="true" class="filters">
-            <el-form-item label="类型">
-              <el-select v-model="filters.type" placeholder="全部" clearable>
-                <el-option label="收入" value="income" />
-                <el-option label="支出" value="expense" />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="月份">
-              <el-date-picker v-model="filters.month" type="month" placeholder="选择月份" value-format="YYYY-MM" />
-            </el-form-item>
-            <el-form-item>
-              <el-button type="primary" @click="loadData">查询</el-button>
-            </el-form-item>
-          </el-form>
+        <div class="main-panel">
+          <div class="filter-panel">
+            <el-form :inline="true" class="premium-filters">
+              <el-form-item label="类型">
+                <el-select v-model="filters.type" placeholder="全部" clearable class="filter-select">
+                  <el-option label="收入" value="income" />
+                  <el-option label="支出" value="expense" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="月份">
+                <el-date-picker v-model="filters.month" type="month" placeholder="选择月份" value-format="YYYY-MM" class="filter-date" />
+              </el-form-item>
+              <el-form-item class="filter-actions">
+                <el-button type="primary" class="search-btn" @click="loadData">查询</el-button>
+              </el-form-item>
+            </el-form>
+          </div>
 
           <!-- 月度汇总 -->
-          <el-row :gutter="12" class="monthly-summary">
+          <el-row :gutter="16" class="monthly-summary">
             <el-col :span="8">
-              <el-statistic title="收入" :value="monthSummary?.total_income ?? 0" :precision="2" prefix="¥" value-style="color: #67c23a" />
+              <div class="summary-card">
+                <div class="summary-label">本月收入</div>
+                <div class="summary-value income-text">{{ formatCurrency(monthSummary?.total_income ?? 0) }}</div>
+              </div>
             </el-col>
             <el-col :span="8">
-              <el-statistic title="支出" :value="monthSummary?.total_expense ?? 0" :precision="2" prefix="¥" value-style="color: #f56c6c" />
+              <div class="summary-card">
+                <div class="summary-label">本月支出</div>
+                <div class="summary-value expense-text">{{ formatCurrency(monthSummary?.total_expense ?? 0) }}</div>
+              </div>
             </el-col>
             <el-col :span="8">
-              <el-statistic title="结余" :value="monthSummary?.balance ?? 0" :precision="2" prefix="¥" value-style="color: #409eff" />
+              <div class="summary-card highlight-card">
+                <div class="summary-label">本月结余</div>
+                <div class="summary-value">{{ formatCurrency(monthSummary?.balance ?? 0) }}</div>
+              </div>
             </el-col>
           </el-row>
 
-          <el-table :data="expenses" stripe style="margin-top: 12px">
-            <el-table-column prop="expense_date" label="日期" width="110" />
-            <el-table-column prop="category_name" label="分类" />
-            <el-table-column prop="expense_type" label="类型" width="60">
-              <template #default="{ row }">
-                <el-tag :type="row.expense_type === 'income' ? 'success' : 'danger'" size="small">
-                  {{ row.expense_type === 'income' ? '收' : '支' }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column prop="amount" label="金额" width="100">
-              <template #default="{ row }">
-                <span :class="row.expense_type === 'income' ? 'income-text' : 'expense-text'">
-                  {{ row.expense_type === 'income' ? '+' : '-' }}{{ formatCurrency(row.amount) }}
-                </span>
-              </template>
-            </el-table-column>
-            <el-table-column prop="note" label="备注" />
-            <el-table-column label="标签" width="120">
-              <template #default="{ row }">
-                <el-tag v-for="tag in (row as any).tags" :key="tag.id" :color="tag.color" size="small" style="margin-right: 4px">
-                  {{ tag.name }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="100">
-              <template #default="{ row }">
-                <el-button link type="primary" @click="openDialog(row as any)">编辑</el-button>
-                <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-card>
+          <div class="table-container">
+            <el-table :data="expenses" class="premium-table" row-class-name="premium-row" header-cell-class-name="premium-header">
+              <el-table-column prop="expense_date" label="日期" width="110" />
+              <el-table-column prop="category_name" label="分类" min-width="120" />
+              <el-table-column prop="expense_type" label="类型" width="80">
+                <template #default="{ row }">
+                  <el-tag :type="row.expense_type === 'income' ? 'success' : 'danger'" effect="light" class="type-badge" round>
+                    {{ row.expense_type === 'income' ? '收入' : '支出' }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="amount" label="金额" width="120" align="right">
+                <template #default="{ row }">
+                  <span :class="['mono-amount', row.expense_type === 'income' ? 'income-text' : 'expense-text']">
+                    {{ row.expense_type === 'income' ? '+' : '-' }}{{ formatCurrency(row.amount) }}
+                  </span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="note" label="备注" min-width="150" />
+              <el-table-column label="标签" min-width="140">
+                <template #default="{ row }">
+                  <div class="tag-list">
+                    <el-tag v-for="tag in (row as any).tags" :key="tag.id" :color="tag.color" size="small" effect="dark" class="custom-tag">
+                      {{ tag.name }}
+                    </el-tag>
+                  </div>
+                </template>
+              </el-table-column>
+              <el-table-column label="操作" width="120" align="center">
+                <template #default="{ row }">
+                  <div class="action-buttons">
+                    <el-button link type="primary" @click="openDialog(row as any)">编辑</el-button>
+                    <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
+                  </div>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </div>
       </el-col>
 
       <!-- 右侧：月度图表 -->
       <el-col :span="8">
-        <el-card>
-          <template #header>月度收支趋势</template>
+        <div class="chart-panel">
+          <h3 class="panel-title">月度收支趋势</h3>
           <MonthlyChart :data="monthSummary" />
-        </el-card>
-        <el-card style="margin-top: 16px">
-          <template #header>分类占比</template>
+        </div>
+        <div class="chart-panel" style="margin-top: 24px">
+          <h3 class="panel-title">分类占比</h3>
           <ExpenseCategoryPie :data="monthSummary?.by_category ?? []" />
-        </el-card>
+        </div>
       </el-col>
     </el-row>
 
     <!-- 新增/编辑对话框 -->
-    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑收支' : '新增收支'" width="480px">
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="90px">
+    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑收支' : '新增收支'" width="500px" class="premium-dialog" :show-close="false">
+      <el-form ref="formRef" :model="form" :rules="rules" label-width="90px" class="premium-form">
         <el-form-item label="类型" prop="expense_type">
-          <el-radio-group v-model="form.expense_type">
-            <el-radio value="income">收入</el-radio>
-            <el-radio value="expense">支出</el-radio>
+          <el-radio-group v-model="form.expense_type" class="type-radio-group">
+            <el-radio-button value="income">收入</el-radio-button>
+            <el-radio-button value="expense">支出</el-radio-button>
           </el-radio-group>
         </el-form-item>
         <el-form-item label="分类" prop="category_id">
           <el-cascader v-model="form._catPath" :options="categoryTree" :props="{ checkStrictly: true, value: 'id', label: 'name' }" placeholder="选择分类" style="width: 100%" @change="onCatChange" />
         </el-form-item>
         <el-form-item label="金额" prop="amount">
-          <el-input-number v-model="form.amount" :precision="2" :min="0" style="width: 100%" />
+          <el-input-number v-model="form.amount" :precision="2" :min="0" style="width: 100%" :controls="false" />
         </el-form-item>
         <el-form-item label="日期" prop="expense_date">
           <el-date-picker v-model="form.expense_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
@@ -111,12 +129,14 @@
           <TagPicker v-model="form.tags" />
         </el-form-item>
         <el-form-item label="备注">
-          <el-input v-model="form.note" type="textarea" :rows="2" />
+          <el-input v-model="form.note" type="textarea" :rows="3" placeholder="添加备注..." />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="handleSubmit">保存</el-button>
+        <div class="dialog-footer">
+          <el-button class="cancel-btn" @click="dialogVisible = false">取消</el-button>
+          <el-button type="primary" class="save-btn" :loading="saving" @click="handleSubmit">保存记录</el-button>
+        </div>
       </template>
     </el-dialog>
   </div>
@@ -204,10 +224,286 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.daily-expenses-page { }
-.header { display: flex; justify-content: space-between; align-items: center; }
-.filters { margin-bottom: 12px; }
-.monthly-summary { margin-bottom: 12px; }
-.income-text { color: #67c23a; font-weight: bold; }
-.expense-text { color: #f56c6c; font-weight: bold; }
+.daily-expenses-page {
+  padding: 24px;
+  background-color: #f8fafc;
+  min-height: 100%;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.header-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.title-accent {
+  width: 4px;
+  height: 24px;
+  background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
+  border-radius: 4px;
+}
+
+.header-title h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: #1e293b;
+  letter-spacing: 0.5px;
+}
+
+.action-btn {
+  border-radius: 8px;
+  font-weight: 500;
+  padding: 10px 20px;
+  box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.2);
+  transition: all 0.2s ease;
+}
+
+.action-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 8px -1px rgba(59, 130, 246, 0.3);
+}
+
+.filter-panel {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 20px 24px;
+  margin-bottom: 24px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+}
+
+.premium-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.premium-filters :deep(.el-form-item) {
+  margin-bottom: 0;
+  margin-right: 0;
+}
+
+.premium-filters :deep(.el-form-item__label) {
+  font-weight: 500;
+  color: #475569;
+}
+
+.filter-actions {
+  margin-left: auto;
+}
+
+.search-btn {
+  border-radius: 8px;
+}
+
+.monthly-summary {
+  margin-bottom: 24px;
+}
+
+.summary-card {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 20px 24px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: transform 0.2s ease;
+}
+
+.summary-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+}
+
+.highlight-card {
+  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+}
+
+.highlight-card .summary-label {
+  color: #94a3b8;
+}
+
+.highlight-card .summary-value {
+  color: #ffffff;
+}
+
+.summary-label {
+  font-size: 14px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.summary-value {
+  font-size: 24px;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  letter-spacing: -0.5px;
+}
+
+.income-text { color: #10b981; }
+.expense-text { color: #ef4444; }
+
+.table-container {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+}
+
+.premium-table {
+  --el-table-border-color: transparent;
+  --el-table-header-bg-color: #f8fafc;
+}
+
+:deep(.premium-header th) {
+  background-color: #f8fafc !important;
+  color: #64748b;
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  padding: 12px 0;
+  border-bottom: none !important;
+}
+
+:deep(.premium-row) {
+  transition: all 0.2s ease;
+}
+
+:deep(.premium-row td) {
+  border-bottom: 1px solid #f1f5f9;
+  padding: 16px 0;
+}
+
+:deep(.premium-row:hover > td) {
+  background-color: #f8fafc !important;
+}
+
+.type-badge {
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 12px;
+}
+
+.mono-amount {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.custom-tag {
+  border: none;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-weight: 500;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.action-buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.chart-panel {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+}
+
+.panel-title {
+  margin: 0 0 20px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+/* Dialog Styles */
+:deep(.premium-dialog) {
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+}
+
+:deep(.premium-dialog .el-dialog__header) {
+  margin: 0;
+  padding: 24px;
+  border-bottom: 1px solid #f1f5f9;
+  background: #ffffff;
+}
+
+:deep(.premium-dialog .el-dialog__title) {
+  font-weight: 600;
+  font-size: 18px;
+  color: #1e293b;
+}
+
+:deep(.premium-dialog .el-dialog__body) {
+  padding: 32px 24px;
+  background: #f8fafc;
+}
+
+:deep(.premium-dialog .el-dialog__footer) {
+  padding: 16px 24px;
+  border-top: 1px solid #f1f5f9;
+  background: #ffffff;
+  margin: 0;
+}
+
+.premium-form .el-form-item {
+  margin-bottom: 24px;
+}
+
+.type-radio-group :deep(.el-radio-button__inner) {
+  border-radius: 8px !important;
+  margin-right: 12px;
+  border: 1px solid #e2e8f0;
+  box-shadow: none !important;
+  padding: 10px 24px;
+  font-weight: 500;
+}
+
+.type-radio-group :deep(.el-radio-button.is-active .el-radio-button__inner) {
+  background-color: #3b82f6;
+  border-color: #3b82f6;
+  color: white;
+}
+
+.premium-form :deep(.el-input__wrapper) {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  border-radius: 8px;
+  padding: 6px 12px;
+}
+
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.cancel-btn {
+  border-radius: 8px;
+  font-weight: 500;
+}
+
+.save-btn {
+  border-radius: 8px;
+  font-weight: 500;
+  padding: 8px 24px;
+}
 </style>

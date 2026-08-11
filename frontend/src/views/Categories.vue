@@ -1,57 +1,83 @@
 <template>
   <div class="categories-page">
-    <el-row :gutter="16">
+    <div class="page-header">
+      <div class="header-title">
+        <div class="title-accent"></div>
+        <h2>分类管理</h2>
+      </div>
+      <el-button type="primary" class="action-btn" @click="openDialog(null)">
+        <el-icon><Plus /></el-icon> 新增分类
+      </el-button>
+    </div>
+
+    <el-row :gutter="24">
       <el-col :span="8">
-        <el-card>
-          <template #header>
-            <div class="header">
-              <span>分类树</span>
-              <el-button type="primary" size="small" @click="openDialog(null)">
-                <el-icon><Plus /></el-icon> 一级分类
-              </el-button>
-            </div>
-          </template>
+        <div class="panel-container tree-panel-container">
+          <div class="panel-header">
+            <h3>分类结构</h3>
+          </div>
           <el-tree :data="treeData" :props="{ label: 'name', children: 'children' }"
-            node-key="id" default-expand-all
+            node-key="id" default-expand-all class="premium-tree"
             :expand-on-click-node="false"
             @node-click="onNodeClick">
             <template #default="{ node, data }">
-              <span class="tree-node">
-                <span>{{ node.label }}</span>
-                <span class="tree-actions">
-                  <el-button link size="small" @click.stop="openDialog(data)">编辑</el-button>
+              <div class="tree-node-wrapper">
+                <div class="tree-node-content">
+                  <span class="node-icon" v-if="!data.children || data.children.length === 0">·</span>
+                  <span class="node-icon folder" v-else>📁</span>
+                  <span class="node-label">{{ node.label }}</span>
+                </div>
+                <div class="tree-actions">
+                  <el-button link size="small" type="primary" @click.stop="openDialog(data)">编辑</el-button>
                   <el-button link size="small" type="danger" @click.stop="handleDelete(data)">删除</el-button>
-                </span>
-              </span>
+                </div>
+              </div>
             </template>
           </el-tree>
-        </el-card>
+        </div>
       </el-col>
       <el-col :span="16">
-        <el-card>
-          <template #header><span>分类列表</span></template>
-          <el-table :data="flatCategories" stripe>
-            <el-table-column prop="name" label="名称" />
-            <el-table-column prop="parent_name" label="上级分类" />
-            <el-table-column prop="asset_type" label="类型" width="100">
-              <template #default="{ row }">{{ assetTypeLabel(row.asset_type) }}</template>
-            </el-table-column>
-            <el-table-column prop="currency" label="币种" width="80" />
-            <el-table-column label="操作" width="120">
+        <div class="panel-container">
+          <div class="panel-header">
+            <h3>分类列表</h3>
+          </div>
+          <el-table :data="flatCategories" class="premium-table" row-class-name="premium-row" header-cell-class-name="premium-header">
+            <el-table-column prop="name" label="名称" min-width="140" />
+            <el-table-column prop="parent_name" label="上级分类" min-width="120">
               <template #default="{ row }">
-                <el-button link type="primary" @click="openDialog(row)">编辑</el-button>
-                <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
+                <span class="text-muted">{{ row.parent_name || '-' }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="asset_type" label="类型" width="140">
+              <template #default="{ row }">
+                <div class="type-cell">
+                  <span :class="['status-dot', row.asset_type]"></span>
+                  {{ assetTypeLabel(row.asset_type) }}
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column prop="currency" label="币种" width="100">
+              <template #default="{ row }">
+                <el-tag size="small" class="currency-tag" effect="plain">{{ row.currency }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="120" align="center">
+              <template #default="{ row }">
+                <div class="action-buttons">
+                  <el-button link type="primary" @click="openDialog(row)">编辑</el-button>
+                  <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
+                </div>
               </template>
             </el-table-column>
           </el-table>
-        </el-card>
+        </div>
       </el-col>
     </el-row>
 
-    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑分类' : '新增分类'" width="480px">
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="100px">
+    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑分类' : '新增分类'" width="480px" class="premium-dialog" :show-close="false">
+      <el-form ref="formRef" :model="form" :rules="rules" label-width="90px" class="premium-form">
         <el-form-item label="分类名称" prop="name">
-          <el-input v-model="form.name" />
+          <el-input v-model="form.name" placeholder="输入分类名称" />
         </el-form-item>
         <el-form-item label="上级分类">
           <el-cascader v-model="form._parentPath" :options="parentOptions" :props="{ value: 'id', label: 'name', checkStrictly: true }" placeholder="无（一级分类）" style="width: 100%" @change="onParentChange" />
@@ -67,12 +93,14 @@
           </el-select>
         </el-form-item>
         <el-form-item label="排序">
-          <el-input-number v-model="form.sort_order" :min="0" />
+          <el-input-number v-model="form.sort_order" :min="0" style="width: 100%" :controls="false" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="handleSubmit">保存</el-button>
+        <div class="dialog-footer">
+          <el-button class="cancel-btn" @click="dialogVisible = false">取消</el-button>
+          <el-button type="primary" class="save-btn" :loading="saving" @click="handleSubmit">保存分类</el-button>
+        </div>
       </template>
     </el-dialog>
   </div>
@@ -180,9 +208,253 @@ onMounted(loadData)
 </script>
 
 <style scoped>
-.categories-page { }
-.header { display: flex; justify-content: space-between; align-items: center; }
-.tree-node { display: flex; align-items: center; justify-content: space-between; width: 100%; }
-.tree-actions { opacity: 0; transition: opacity 0.2s; }
-.el-tree-node__content:hover .tree-actions { opacity: 1; }
+.categories-page {
+  padding: 24px;
+  background-color: #f8fafc;
+  min-height: 100%;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.header-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.title-accent {
+  width: 4px;
+  height: 24px;
+  background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
+  border-radius: 4px;
+}
+
+.header-title h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: #1e293b;
+  letter-spacing: 0.5px;
+}
+
+.action-btn {
+  border-radius: 8px;
+  font-weight: 500;
+  padding: 10px 20px;
+  box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.2);
+  transition: all 0.2s ease;
+}
+
+.action-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 8px -1px rgba(59, 130, 246, 0.3);
+}
+
+.panel-container {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+}
+
+.tree-panel-container {
+  min-height: 600px;
+}
+
+.panel-header {
+  margin-bottom: 20px;
+}
+
+.panel-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #334155;
+}
+
+/* Tree Styles */
+.premium-tree {
+  background: transparent;
+  --el-tree-node-hover-bg-color: #f1f5f9;
+}
+
+:deep(.premium-tree .el-tree-node__content) {
+  height: 40px;
+  border-radius: 8px;
+  margin-bottom: 4px;
+  transition: all 0.2s;
+}
+
+.tree-node-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding-right: 8px;
+}
+
+.tree-node-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.node-icon {
+  color: #94a3b8;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+}
+
+.node-icon.folder {
+  font-size: 14px;
+}
+
+.node-label {
+  font-weight: 500;
+  color: #334155;
+}
+
+.tree-actions {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  display: flex;
+  gap: 4px;
+}
+
+:deep(.premium-tree .el-tree-node__content:hover) .tree-actions {
+  opacity: 1;
+}
+
+/* Table Styles */
+.premium-table {
+  --el-table-border-color: transparent;
+  --el-table-header-bg-color: #f8fafc;
+}
+
+:deep(.premium-header th) {
+  background-color: #f8fafc !important;
+  color: #64748b;
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  padding: 12px 0;
+  border-bottom: none !important;
+}
+
+:deep(.premium-row) {
+  transition: all 0.2s ease;
+}
+
+:deep(.premium-row td) {
+  border-bottom: 1px solid #f1f5f9;
+  padding: 16px 0;
+}
+
+:deep(.premium-row:hover > td) {
+  background-color: #f8fafc !important;
+}
+
+.text-muted {
+  color: #94a3b8;
+}
+
+.type-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #cbd5e1;
+}
+
+.status-dot.cash { background-color: #10b981; }
+.status-dot.stock { background-color: #3b82f6; }
+.status-dot.fund { background-color: #8b5cf6; }
+.status-dot.crypto { background-color: #f59e0b; }
+.status-dot.loan { background-color: #ef4444; }
+.status-dot.credit_card { background-color: #f43f5e; }
+
+.currency-tag {
+  border-radius: 6px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+/* Dialog Styles */
+:deep(.premium-dialog) {
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+}
+
+:deep(.premium-dialog .el-dialog__header) {
+  margin: 0;
+  padding: 24px;
+  border-bottom: 1px solid #f1f5f9;
+  background: #ffffff;
+}
+
+:deep(.premium-dialog .el-dialog__title) {
+  font-weight: 600;
+  font-size: 18px;
+  color: #1e293b;
+}
+
+:deep(.premium-dialog .el-dialog__body) {
+  padding: 32px 24px;
+  background: #f8fafc;
+}
+
+:deep(.premium-dialog .el-dialog__footer) {
+  padding: 16px 24px;
+  border-top: 1px solid #f1f5f9;
+  background: #ffffff;
+  margin: 0;
+}
+
+.premium-form .el-form-item {
+  margin-bottom: 24px;
+}
+
+.premium-form :deep(.el-input__wrapper) {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  border-radius: 8px;
+  padding: 6px 12px;
+}
+
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.cancel-btn {
+  border-radius: 8px;
+  font-weight: 500;
+}
+
+.save-btn {
+  border-radius: 8px;
+  font-weight: 500;
+  padding: 8px 24px;
+}
 </style>

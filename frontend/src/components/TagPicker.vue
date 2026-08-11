@@ -4,39 +4,43 @@
       <el-tag
         v-for="t in model"
         :key="t.id"
-        :color="t.color"
+        :color="t.color || '#3b82f6'"
         closable
         size="small"
-        class="tag-picker__tag"
+        effect="dark"
+        class="premium-tag"
         @close="removeTag(t.id)"
       >
         {{ t.name }}
       </el-tag>
       <span v-if="model.length === 0" class="tag-picker__empty">未添加标签</span>
     </div>
-    <el-input
-      v-model="input"
-      placeholder="输入标签名后回车添加"
-      size="small"
-      class="tag-picker__input"
-      @keyup.enter="addTag"
-      @focus="loadSuggestions()"
-    >
-      <template #append>
-        <el-button @click="addTag">添加</el-button>
-      </template>
-    </el-input>
+    
+    <div class="tag-picker__input-wrapper">
+      <el-input
+        v-model="input"
+        placeholder="输入标签名后回车添加"
+        size="small"
+        class="premium-input"
+        @keyup.enter="addTag"
+        @focus="loadSuggestions()"
+      >
+        <template #append>
+          <el-button class="add-btn" @click="addTag">添加</el-button>
+        </template>
+      </el-input>
+    </div>
+    
     <div v-if="suggestions.length" class="tag-picker__suggestions">
-      <el-link
+      <div
         v-for="s in suggestions"
         :key="s.id"
-        type="primary"
-        :underline="false"
-        class="tag-picker__suggestion"
+        class="suggestion-item"
         @click="addSuggestion(s)"
       >
+        <span class="suggestion-dot" :style="{ backgroundColor: s.color || '#cbd5e1' }"></span>
         {{ s.name }}
-      </el-link>
+      </div>
     </div>
   </div>
 </template>
@@ -93,10 +97,82 @@ onMounted(() => loadSuggestions())
 </script>
 
 <style scoped>
-.tag-picker__selected { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; min-height: 24px; }
-.tag-picker__tag { color: #fff; }
-.tag-picker__empty { color: #909399; font-size: 12px; }
-.tag-picker__input { max-width: 260px; }
-.tag-picker__suggestions { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 8px; }
-.tag-picker__suggestion { cursor: pointer; }
+.tag-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tag-picker__selected {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 24px;
+  align-items: center;
+}
+
+.premium-tag {
+  border: none;
+  border-radius: 6px;
+  padding: 0 10px;
+  font-weight: 500;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.tag-picker__empty {
+  color: #94a3b8;
+  font-size: 13px;
+  font-style: italic;
+}
+
+.tag-picker__input-wrapper {
+  max-width: 300px;
+}
+
+.premium-input :deep(.el-input-group__append) {
+  background-color: #f1f5f9;
+  border-left: 0;
+}
+
+.add-btn {
+  font-weight: 500;
+  color: #3b82f6;
+}
+
+.tag-picker__suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 8px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px dashed #e2e8f0;
+}
+
+.suggestion-item {
+  cursor: pointer;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #475569;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s;
+  border: 1px solid #e2e8f0;
+}
+
+.suggestion-item:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #0f172a;
+}
+
+.suggestion-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
 </style>

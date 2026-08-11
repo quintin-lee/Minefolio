@@ -1,26 +1,27 @@
 <template>
   <div class="login-container">
-    <el-card class="login-card">
+    <div class="login-overlay"></div>
+    <el-card class="login-card glass-panel fade-in">
       <template #header>
         <div class="card-header">
-          <h2>Minefolio</h2>
-          <p class="subtitle">个人资产管理系统</p>
+          <h2 class="app-title">Minefolio</h2>
+          <p class="subtitle">综合资产管理</p>
         </div>
       </template>
 
-      <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
+      <el-form ref="formRef" :model="form" :rules="rules" label-position="top" class="login-form">
         <el-form-item label="用户名" prop="username">
-          <el-input v-model="form.username" placeholder="请输入用户名" prefix-icon="User" />
+          <el-input v-model="form.username" placeholder="请输入用户名" prefix-icon="User" size="large" />
         </el-form-item>
 
         <el-form-item label="密码" prop="password">
           <el-input v-model="form.password" type="password" placeholder="请输入密码"
-            prefix-icon="Lock" show-password @keyup.enter="handleSubmit" />
+            prefix-icon="Lock" show-password size="large" @keyup.enter="handleSubmit" />
         </el-form-item>
 
-        <el-form-item>
-          <el-button type="primary" :loading="loading" class="submit-btn" @click="handleSubmit">
-            {{ isRegister ? '注册' : '登录' }}
+        <el-form-item class="submit-item">
+          <el-button type="primary" size="large" :loading="loading" class="submit-btn" @click="handleSubmit">
+            {{ isRegister ? '注册账号' : '登录系统' }}
           </el-button>
         </el-form-item>
       </el-form>
@@ -28,7 +29,7 @@
       <div class="switch-mode">
         <span v-if="isRegister">{{ t('login.hasAccount') }} </span>
         <span v-else>{{ t('login.noAccount') }} </span>
-        <el-button type="text" @click="toggleMode">
+        <el-button link type="primary" @click="toggleMode" class="switch-btn">
           {{ isRegister ? t('login.login') : t('login.register') }}
         </el-button>
       </div>
@@ -102,30 +103,94 @@ async function handleSubmit() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #312e81 100%);
+  position: relative;
+  overflow: hidden;
+}
+.login-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle at top right, rgba(59, 130, 246, 0.15), transparent 40%),
+              radial-gradient(circle at bottom left, rgba(99, 102, 241, 0.15), transparent 40%);
+  pointer-events: none;
 }
 .login-card {
-  width: 400px;
+  width: 420px;
+  z-index: 1;
+  padding: 10px;
+}
+.glass-panel {
+  background: rgba(255, 255, 255, 0.05) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important;
+}
+:deep(.el-card__header) {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 20px;
 }
 .card-header {
   text-align: center;
 }
-.card-header h2 {
+.app-title {
   margin: 0;
-  color: #303133;
+  font-size: 32px;
+  font-weight: 700;
+  background: linear-gradient(to right, #60a5fa, #a78bfa);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  letter-spacing: 1px;
 }
 .subtitle {
   margin: 8px 0 0;
-  color: #909399;
-  font-size: 14px;
+  color: #94a3b8;
+  font-size: 15px;
+  letter-spacing: 2px;
+}
+.login-form {
+  margin-top: 20px;
+}
+:deep(.el-form-item__label) {
+  color: #e2e8f0;
+  font-weight: 500;
+}
+:deep(.el-input__wrapper) {
+  background-color: rgba(15, 23, 42, 0.4) !important;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1) inset !important;
+}
+:deep(.el-input__wrapper.is-focus) {
+  box-shadow: 0 0 0 1px #60a5fa inset, 0 0 10px rgba(96, 165, 250, 0.2) !important;
+}
+:deep(.el-input__inner) {
+  color: #f8fafc;
+}
+.submit-item {
+  margin-top: 30px;
+  margin-bottom: 0;
 }
 .submit-btn {
   width: 100%;
+  height: 44px;
+  font-size: 16px;
+  border-radius: 8px;
+  letter-spacing: 1px;
 }
 .switch-mode {
   text-align: center;
-  margin-top: 16px;
-  color: #909399;
+  margin-top: 24px;
+  color: #94a3b8;
   font-size: 14px;
+}
+.switch-btn {
+  font-size: 14px;
+  font-weight: 600;
+  color: #60a5fa;
+}
+.switch-btn:hover {
+  color: #93c5fd;
 }
 </style>

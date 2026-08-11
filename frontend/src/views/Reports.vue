@@ -1,98 +1,171 @@
 <template>
   <div class="reports-page">
-    <el-row :gutter="16">
-      <!-- 月度收支报表 -->
-      <el-col :span="12">
-        <el-card>
-          <template #header>
-            月度收支报表
-            <el-date-picker v-model="reportMonth" type="month" value-format="YYYY-MM" size="small" style="margin-left: 12px" @change="loadMonthlyReport" />
-          </template>
-          <el-descriptions :column="2" border>
-            <el-descriptions-item label="总收入">{{ formatCurrency(monthly?.total_income ?? 0) }}</el-descriptions-item>
-            <el-descriptions-item label="总支出">{{ formatCurrency(monthly?.total_expense ?? 0) }}</el-descriptions-item>
-            <el-descriptions-item label="结余" :span="2">
-              <span :style="{ color: (monthly?.balance ?? 0) >= 0 ? '#67c23a' : '#f56c6c', fontWeight: 'bold' }">
-                {{ formatCurrency(monthly?.balance ?? 0) }}
-              </span>
-            </el-descriptions-item>
-          </el-descriptions>
-          <ExpenseCategoryPie :data="monthly?.by_category ?? []" style="margin-top: 16px" />
-        </el-card>
-      </el-col>
+    <div class="page-header">
+      <div class="header-title">
+        <div class="title-accent"></div>
+        <h2>数据报表</h2>
+      </div>
+    </div>
 
-      <!-- 收支趋势 -->
-      <el-col :span="12">
-        <el-card>
-          <template #header>收支趋势（近6月）</template>
-          <ExpenseTrendBar :data="trend" />
-        </el-card>
-      </el-col>
-    </el-row>
+    <el-tabs class="premium-tabs" type="card">
+      <el-tab-pane label="收支分析">
+        <el-row :gutter="24">
+          <!-- 月度收支报表 -->
+          <el-col :span="12">
+            <div class="report-card">
+              <div class="card-header">
+                <h3>月度收支</h3>
+                <el-date-picker v-model="reportMonth" type="month" value-format="YYYY-MM" size="small" class="date-picker-subtle" @change="loadMonthlyReport" :clearable="false" />
+              </div>
+              
+              <div class="metric-cards">
+                <div class="metric-card">
+                  <div class="metric-label">总收入</div>
+                  <div class="metric-value income-text">{{ formatCurrency(monthly?.total_income ?? 0) }}</div>
+                </div>
+                <div class="metric-card">
+                  <div class="metric-label">总支出</div>
+                  <div class="metric-value expense-text">{{ formatCurrency(monthly?.total_expense ?? 0) }}</div>
+                </div>
+                <div class="metric-card highlight">
+                  <div class="metric-label">结余</div>
+                  <div class="metric-value" :class="(monthly?.balance ?? 0) >= 0 ? 'income-text' : 'expense-text'">
+                    {{ formatCurrency(monthly?.balance ?? 0) }}
+                  </div>
+                </div>
+              </div>
+              
+              <div class="chart-container">
+                <ExpenseCategoryPie :data="monthly?.by_category ?? []" />
+              </div>
+            </div>
+          </el-col>
 
-    <el-row :gutter="16" style="margin-top: 16px">
-      <!-- 资产趋势 -->
-      <el-col :span="16">
-        <el-card>
-          <template #header>
-            净资产趋势
-            <el-radio-group v-model="trendPeriod" size="small" style="margin-left: 12px">
-              <el-radio-button value="30d">近30天</el-radio-button>
-              <el-radio-button value="90d">近90天</el-radio-button>
-              <el-radio-button value="365d">近1年</el-radio-button>
-            </el-radio-group>
-          </template>
-          <AssetTrendLine :data="assetTrend" />
-        </el-card>
-      </el-col>
+          <!-- 收支趋势 -->
+          <el-col :span="12">
+            <div class="report-card">
+              <div class="card-header">
+                <h3>收支趋势（近6月）</h3>
+              </div>
+              <div class="chart-container trend-chart">
+                <ExpenseTrendBar :data="trend" />
+              </div>
+            </div>
+          </el-col>
+        </el-row>
 
-      <!-- 资产分布 -->
-      <el-col :span="8">
-        <el-card>
-          <template #header>资产分布</template>
-          <AssetBreakdownPie :data="assetBreakdown?.assets ?? []" />
-          <el-divider />
-          <el-descriptions :column="1" size="small">
-            <el-descriptions-item label="总资产">{{ formatCurrency(assetBreakdown?.total_assets ?? 0) }}</el-descriptions-item>
-            <el-descriptions-item label="总负债">{{ formatCurrency(assetBreakdown?.total_liabilities ?? 0) }}</el-descriptions-item>
-            <el-descriptions-item label="净资产">
-              <span style="color: #67c23a; font-weight: bold">{{ formatCurrency(assetBreakdown?.net_worth ?? 0) }}</span>
-            </el-descriptions-item>
-          </el-descriptions>
-        </el-card>
-      </el-col>
-    </el-row>
+        <el-row :gutter="24" style="margin-top: 24px">
+          <el-col :span="12">
+            <div class="report-card">
+              <div class="card-header">
+                <h3>标签支出分析</h3>
+              </div>
+              <el-table :data="tagBreakdown?.items ?? []" class="premium-table-small" :header-cell-style="{ background: '#f8fafc' }">
+                <el-table-column prop="tag_name" label="标签" min-width="120">
+                  <template #default="{ row }">
+                    <el-tag size="small" effect="plain" class="tag-plain">{{ row.tag_name }}</el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="amount" label="金额" width="120" align="right">
+                  <template #default="{ row }">
+                    <span class="mono-text">{{ formatCurrency(row.amount) }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="pct" label="占比" width="100" align="right">
+                  <template #default="{ row }">
+                    <div class="pct-cell">
+                      <span>{{ row.pct.toFixed(1) }}%</span>
+                      <el-progress :percentage="row.pct" :show-text="false" :stroke-width="4" />
+                    </div>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="count" label="次数" width="80" align="center" />
+              </el-table>
+            </div>
+          </el-col>
+          <el-col :span="12">
+            <div class="report-card">
+              <div class="card-header">
+                <h3>交易表现</h3>
+              </div>
+              <div class="perf-grid">
+                <div class="perf-item">
+                  <div class="perf-label">总交易笔数</div>
+                  <div class="perf-value">{{ perf?.total_trades ?? 0 }}</div>
+                </div>
+                <div class="perf-item">
+                  <div class="perf-label">总收益</div>
+                  <div class="perf-value income-text">{{ formatCurrency(perf?.total_gain ?? 0) }}</div>
+                </div>
+                <div class="perf-item">
+                  <div class="perf-label">总亏损</div>
+                  <div class="perf-value expense-text">{{ formatCurrency(perf?.total_loss ?? 0) }}</div>
+                </div>
+                <div class="perf-item highlight">
+                  <div class="perf-label">净收益</div>
+                  <div class="perf-value" :class="(perf?.net_gain ?? 0) >= 0 ? 'income-text' : 'expense-text'">
+                    {{ formatCurrency(perf?.net_gain ?? 0) }}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </el-col>
+        </el-row>
+      </el-tab-pane>
 
-    <el-row :gutter="16" style="margin-top: 16px">
-      <el-col :span="12">
-        <el-card>
-          <template #header>标签支出分析</template>
-          <el-table :data="tagBreakdown?.items ?? []" size="small">
-            <el-table-column prop="tag_name" label="标签" />
-            <el-table-column prop="amount" label="金额" width="120">
-              <template #default="{ row }">{{ formatCurrency(row.amount) }}</template>
-            </el-table-column>
-            <el-table-column prop="pct" label="占比" width="80">
-              <template #default="{ row }">{{ row.pct.toFixed(1) }}%</template>
-            </el-table-column>
-            <el-table-column prop="count" label="次数" width="80" />
-          </el-table>
-        </el-card>
-      </el-col>
-      <el-col :span="12">
-        <el-card>
-          <template #header>交易表现</template>
-          <el-descriptions :column="2" border size="small">
-            <el-descriptions-item label="总交易笔数">{{ perf?.total_trades ?? 0 }}</el-descriptions-item>
-            <el-descriptions-item label="总收益">{{ formatCurrency(perf?.total_gain ?? 0) }}</el-descriptions-item>
-            <el-descriptions-item label="总亏损">{{ formatCurrency(perf?.total_loss ?? 0) }}</el-descriptions-item>
-            <el-descriptions-item label="净收益">
-              <span :style="{ color: (perf?.net_gain ?? 0) >= 0 ? '#67c23a' : '#f56c6c' }">{{ formatCurrency(perf?.net_gain ?? 0) }}</span>
-            </el-descriptions-item>
-          </el-descriptions>
-        </el-card>
-      </el-col>
-    </el-row>
+      <el-tab-pane label="资产分析">
+        <el-row :gutter="24">
+          <!-- 资产趋势 -->
+          <el-col :span="16">
+            <div class="report-card">
+              <div class="card-header">
+                <h3>净资产趋势</h3>
+                <div class="radio-group-subtle">
+                  <el-radio-group v-model="trendPeriod" size="small">
+                    <el-radio-button value="30d">近30天</el-radio-button>
+                    <el-radio-button value="90d">近90天</el-radio-button>
+                    <el-radio-button value="365d">近1年</el-radio-button>
+                  </el-radio-group>
+                </div>
+              </div>
+              <div class="chart-container large-chart">
+                <AssetTrendLine :data="assetTrend" />
+              </div>
+            </div>
+          </el-col>
+
+          <!-- 资产分布 -->
+          <el-col :span="8">
+            <div class="report-card">
+              <div class="card-header">
+                <h3>资产分布</h3>
+              </div>
+              
+              <div class="asset-summary-list">
+                <div class="summary-item">
+                  <span class="label">总资产</span>
+                  <span class="value">{{ formatCurrency(assetBreakdown?.total_assets ?? 0) }}</span>
+                </div>
+                <div class="summary-item">
+                  <span class="label">总负债</span>
+                  <span class="value expense-text">{{ formatCurrency(assetBreakdown?.total_liabilities ?? 0) }}</span>
+                </div>
+                <div class="summary-item total">
+                  <span class="label">净资产</span>
+                  <span class="value income-text">{{ formatCurrency(assetBreakdown?.net_worth ?? 0) }}</span>
+                </div>
+              </div>
+              
+              <el-divider border-style="dashed" />
+              
+              <div class="chart-container" style="height: 300px">
+                <AssetBreakdownPie :data="assetBreakdown?.assets ?? []" />
+              </div>
+            </div>
+          </el-col>
+        </el-row>
+      </el-tab-pane>
+    </el-tabs>
   </div>
 </template>
 
@@ -138,5 +211,242 @@ onMounted(loadAll)
 </script>
 
 <style scoped>
-.reports-page { display: flex; flex-direction: column; gap: 16px; }
+.reports-page {
+  padding: 24px;
+  background-color: #f8fafc;
+  min-height: 100%;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.header-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.title-accent {
+  width: 4px;
+  height: 24px;
+  background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
+  border-radius: 4px;
+}
+
+.header-title h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: #1e293b;
+  letter-spacing: 0.5px;
+}
+
+:deep(.premium-tabs.el-tabs--card > .el-tabs__header) {
+  border-bottom: none;
+  margin-bottom: 24px;
+}
+
+:deep(.premium-tabs.el-tabs--card > .el-tabs__header .el-tabs__nav) {
+  border: none;
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 4px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+}
+
+:deep(.premium-tabs.el-tabs--card > .el-tabs__header .el-tabs__item) {
+  border: none !important;
+  border-radius: 8px;
+  margin: 0 4px;
+  font-weight: 500;
+  color: #64748b;
+  transition: all 0.3s;
+}
+
+:deep(.premium-tabs.el-tabs--card > .el-tabs__header .el-tabs__item.is-active) {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.report-card {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.card-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.metric-cards {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.metric-card {
+  flex: 1;
+  background: #f8fafc;
+  padding: 16px;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.metric-card.highlight {
+  background: #f1f5f9;
+}
+
+.metric-label {
+  font-size: 13px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.metric-value {
+  font-size: 20px;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+.income-text { color: #10b981; }
+.expense-text { color: #ef4444; }
+
+.chart-container {
+  flex: 1;
+  min-height: 250px;
+}
+
+.trend-chart {
+  min-height: 350px;
+}
+
+.large-chart {
+  min-height: 400px;
+}
+
+.date-picker-subtle :deep(.el-input__wrapper) {
+  box-shadow: none;
+  background: #f8fafc;
+  border-radius: 8px;
+}
+
+.radio-group-subtle :deep(.el-radio-button__inner) {
+  border: none;
+  background: transparent;
+  box-shadow: none !important;
+}
+
+.radio-group-subtle :deep(.el-radio-button.is-active .el-radio-button__inner) {
+  background-color: #f1f5f9;
+  color: #0f172a;
+  border-radius: 8px;
+}
+
+.asset-summary-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.summary-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.summary-item .label {
+  color: #64748b;
+  font-size: 14px;
+}
+
+.summary-item .value {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.summary-item.total .label {
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.summary-item.total .value {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.perf-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.perf-item {
+  background: #f8fafc;
+  padding: 16px;
+  border-radius: 12px;
+}
+
+.perf-item.highlight {
+  grid-column: span 2;
+  background: #f1f5f9;
+}
+
+.perf-label {
+  font-size: 13px;
+  color: #64748b;
+  margin-bottom: 8px;
+}
+
+.perf-value {
+  font-size: 20px;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+.premium-table-small {
+  --el-table-border-color: transparent;
+}
+
+.mono-text {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-weight: 500;
+}
+
+.pct-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pct-cell span {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.tag-plain {
+  border: none;
+  background: #f1f5f9;
+}
 </style>

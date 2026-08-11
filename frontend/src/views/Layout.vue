@@ -1,8 +1,8 @@
 <template>
   <el-container class="layout-container">
-    <el-aside width="220px" class="aside">
+    <el-aside width="260px" class="aside">
       <div class="logo">
-        <span class="logo-icon">💰</span>
+        <div class="logo-icon-wrapper">💰</div>
         <span class="logo-text">Minefolio</span>
       </div>
       <el-menu :default-active="activeMenu" router class="sidebar-menu">
@@ -37,21 +37,23 @@
       </el-menu>
     </el-aside>
 
-    <el-container>
+    <el-container class="main-container">
       <el-header class="header">
         <div class="header-left">
-          <span class="page-title">{{ pageTitle }}</span>
+          <h2 class="page-title">{{ pageTitle }}</h2>
         </div>
         <div class="header-right">
-          <el-dropdown @command="handleCommand">
-            <span class="user-info">
-              <el-icon><User /></el-icon>
-              {{ auth.user?.username }}
-              <el-icon class="el-icon--right"><ArrowDown /></el-icon>
-            </span>
+          <el-dropdown @command="handleCommand" trigger="click">
+            <div class="user-profile">
+              <div class="avatar-circle">
+                {{ auth.user?.username?.charAt(0).toUpperCase() || 'U' }}
+              </div>
+              <span class="username">{{ auth.user?.username }}</span>
+              <el-icon><ArrowDown /></el-icon>
+            </div>
             <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="logout">
+              <el-dropdown-menu class="user-dropdown">
+                <el-dropdown-item command="logout" class="danger-item">
                   <el-icon><SwitchButton /></el-icon>
                   {{ t('nav.logout') }}
                 </el-dropdown-item>
@@ -63,7 +65,7 @@
 
       <el-main class="main">
         <router-view v-slot="{ Component }">
-          <transition name="fade" mode="out-in">
+          <transition name="fade-transform" mode="out-in">
             <component :is="Component" />
           </transition>
         </router-view>
@@ -117,67 +119,153 @@ function handleCommand(cmd: string) {
 <style scoped>
 .layout-container {
   min-height: 100vh;
+  background-color: var(--mf-background);
 }
 .aside {
-  background: #304156;
+  background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
   min-height: 100vh;
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.1);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
 }
 .logo {
-  height: 60px;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  gap: 12px;
+  color: #fff;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+.logo-icon-wrapper {
+  font-size: 24px;
+  background: rgba(255, 255, 255, 0.1);
+  width: 40px;
+  height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  color: #fff;
-  font-size: 20px;
-  font-weight: bold;
-  border-bottom: 1px solid #3d4d60;
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
-.logo-icon {
-  font-size: 24px;
+.logo-text {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  background: linear-gradient(to right, #fff, #94a3b8);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 .sidebar-menu {
   border-right: none;
-  background: #304156;
+  background: transparent;
+  padding: 16px 12px;
+  flex: 1;
 }
-.sidebar-menu .el-menu-item {
-  color: #bfcbd9;
+.sidebar-menu :deep(.el-menu-item) {
+  color: #94a3b8;
+  border-radius: 8px;
+  margin-bottom: 4px;
+  height: 50px;
+  line-height: 50px;
+  transition: all 0.3s ease;
 }
-.sidebar-menu .el-menu-item:hover,
-.sidebar-menu .el-menu-item.is-active {
+.sidebar-menu :deep(.el-menu-item .el-icon) {
+  font-size: 20px;
+  margin-right: 12px;
+}
+.sidebar-menu :deep(.el-menu-item:hover) {
+  color: #f8fafc;
+  background: rgba(255, 255, 255, 0.05) !important;
+}
+.sidebar-menu :deep(.el-menu-item.is-active) {
   color: #fff;
-  background: #263445 !important;
+  background: linear-gradient(90deg, rgba(37, 99, 235, 0.15) 0%, transparent 100%) !important;
+  position: relative;
+}
+.sidebar-menu :deep(.el-menu-item.is-active::before) {
+  content: '';
+  position: absolute;
+  left: -12px;
+  top: 10%;
+  height: 80%;
+  width: 4px;
+  background: #3b82f6;
+  border-radius: 0 4px 4px 0;
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+}
+
+.main-container {
+  display: flex;
+  flex-direction: column;
 }
 .header {
   background: #fff;
-  border-bottom: 1px solid #e4e7ed;
+  height: 72px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 20px;
+  padding: 0 32px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+  z-index: 5;
 }
 .page-title {
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 600;
-  color: #303133;
+  color: #0f172a;
+  margin: 0;
 }
-.user-info {
+.user-profile {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 12px;
   cursor: pointer;
-  color: #606266;
+  padding: 6px 12px;
+  border-radius: 30px;
+  transition: background 0.2s;
+}
+.user-profile:hover {
+  background: #f1f5f9;
+}
+.avatar-circle {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3b82f6 0%, #2dd4bf 100%);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 16px;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+}
+.username {
+  font-weight: 500;
+  color: #334155;
+}
+.user-dropdown .danger-item {
+  color: #ef4444;
+}
+.user-dropdown .danger-item:hover {
+  background-color: #fef2f2;
+  color: #dc2626;
 }
 .main {
-  background: #f5f7fa;
-  padding: 20px;
+  padding: 24px 32px;
+  background-color: var(--mf-background);
 }
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.2s ease;
+.fade-transform-enter-active,
+.fade-transform-leave-active {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
-.fade-enter-from,
-.fade-leave-to {
+.fade-transform-enter-from {
   opacity: 0;
+  transform: translateX(15px);
+}
+.fade-transform-leave-to {
+  opacity: 0;
+  transform: translateX(-15px);
 }
 </style>
