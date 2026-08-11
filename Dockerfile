@@ -63,6 +63,8 @@ RUN --mount=type=cache,target=/var/cache/apt \
     libssl-dev \
     libcurl4-openssl-dev \
     zlib1g-dev \
+    curl \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 
@@ -113,6 +115,16 @@ RUN cmake \
 RUN strip backend/build/minefolio
 
 
+# Download swagger-ui distribution (csilk share/swagger-ui contains only placeholders)
+RUN curl --noproxy '*' -fsSL -o /tmp/swagger-ui-dist.zip \
+        https://github.com/swagger-api/swagger-ui/releases/download/v5.32.6/swagger-ui-dist-5.32.6.zip \
+    && mkdir -p /tmp/swagger-ui-extract \
+    && python3 -c "import zipfile; zipfile.ZipFile('/tmp/swagger-ui-dist.zip').extractall('/tmp/swagger-ui-extract')" \
+    && DIST_DIR=$(find /tmp/swagger-ui-extract -type d -name dist | head -1) \
+    && cp -r "$DIST_DIR"/* /src/backend/build/_deps/csilk-src/share/swagger-ui/ \
+    && rm -rf /tmp/swagger-ui-dist.zip /tmp/swagger-ui-extract
+
+
 
 
 ############################################################
@@ -144,9 +156,20 @@ RUN npm run build
 
 
 
+############################################################
+# Stage 3: nginx
+############################################################
+
+FROM nginx:alpine AS nginx
+
+COPY nginx/minefolio.docker.conf /etc/nginx/conf.d/default.conf
+
+COPY --from=frontend-build /app/frontend/dist /opt/minefolio/frontend/dist
+
+
 
 ############################################################
-# Stage 3: Runtime
+# Stage 4: Runtime
 ############################################################
 
 FROM ubuntu:${UBUNTU_VERSION} AS runtime
@@ -218,7 +241,7 @@ COPY --from=frontend-build \
 
 COPY --from=backend-build \
     /src/backend/build/_deps/csilk-src/share/swagger-ui \
-    /opt/csilk/share/swagger-ui
+    /src/backend/build/_deps/csilk-src/share/swagger-ui
 
 
 # NOTE: llhttp is built STATICALLY via FetchContent in the Docker build
