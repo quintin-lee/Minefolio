@@ -62,6 +62,7 @@ RUN --mount=type=cache,target=/var/cache/apt \
     libsqlite3-dev \
     libssl-dev \
     libcurl4-openssl-dev \
+    libllhttp9 \
     zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
