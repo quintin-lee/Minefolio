@@ -192,20 +192,40 @@ docker compose up -d --build
 ### 手动部署
 
 ```bash
-# 构建
+# 构建后端运行时镜像
 docker build --target runtime -t minefolio:latest .
+
+# 构建 nginx 镜像（自动包含前端构建产物）
 docker build --target nginx -t minefolio-nginx:latest .
 
-# 运行
+# 运行后端
 docker run -d --name minefolio \
   -e MINEFOLIO_JWT_SECRET="your-secret" \
   -v minefolio-data:/app/data \
   minefolio:latest
 
+# 运行 nginx（依赖 minefolio 容器）
 docker run -d --name minefolio-nginx \
   --link minefolio \
   -p 80:80 \
   minefolio-nginx:latest
+```
+
+### 镜像构建说明
+
+Dockerfile 使用多阶段构建，共 4 个 stage：
+
+1. `backend-build`：编译 C 后端，下载 swagger-ui 静态文件
+2. `frontend-build`：构建 Vue 3 前端
+3. `nginx`：基于 `nginx:alpine`，复制前端产物 + nginx 配置
+4. `runtime`：最终运行时镜像，包含后端二进制 + 前端产物 + swagger-ui
+
+构建 `minefolio-nginx` 时会自动触发前置 stage 的构建链：
+
+```
+nginx stage → 依赖 frontend-build stage
+frontend-build stage → 独立构建
+backend-build stage → 自动构建（为 runtime 提供依赖）
 ```
 
 ## 开发文档
