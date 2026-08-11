@@ -82,7 +82,10 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { categoriesApi } from '@/api/categories'
+import { useCategoryStore } from '@/stores/category'
 import type { Category } from '@/types'
+
+const categoryStore = useCategoryStore()
 
 const categories = ref<Category[]>([])
 const treeData = computed(() => buildTree(categories.value))
@@ -115,14 +118,26 @@ function buildTree(list: Category[]): Category[] {
   return roots
 }
 
+function flatten(list: Category[]): Category[] {
+  const out: Category[] = []
+  const walk = (nodes: Category[]) => {
+    for (const node of nodes) {
+      out.push(node)
+      if (node.children?.length) walk(node.children)
+    }
+  }
+  walk(list)
+  return out
+}
+
 function onNodeClick(data: any) { /* select for editing */ }
 function assetTypeLabel(t: string) { return assetTypes.find(x => x.value === t)?.label || t }
 const parentOptions = computed(() => categories.value.filter(c => !c.children?.length || true))
 
 async function loadData() {
-  const res = await categoriesApi.list()
-  categories.value = res.data
-  flatCategories.value = res.data
+  const data = await categoryStore.loadCategories(true)
+  categories.value = data
+  flatCategories.value = flatten(data)
 }
 
 function openDialog(cat?: any) {

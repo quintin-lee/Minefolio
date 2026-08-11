@@ -99,6 +99,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { transactionsApi } from '@/api/transactions'
 import { assetsApi } from '@/api/assets'
+import { formatCurrency } from '@/utils/format'
 import type { Transaction, Asset } from '@/types'
 
 const transactions = ref<Transaction[]>([])
@@ -125,7 +126,6 @@ function typeTag(t: string): 'success' | 'warning' | 'danger' | 'info' | 'primar
   const map: Record<string, 'success' | 'warning' | 'danger' | 'info' | 'primary'> = { buy: 'success', sell: 'warning', deposit: 'success', withdrawal: 'danger', income: 'success', loss: 'danger' }
   return map[t] || 'info'
 }
-function formatCurrency(v: number) { return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(v) }
 
 async function loadData() {
   const params: any = {}
