@@ -98,10 +98,7 @@ RUN git config --global http.sslVerify false \
 
 WORKDIR /src
 
-
 COPY backend ./backend
-
-
 
 RUN cmake \
     -S backend \
@@ -112,8 +109,6 @@ RUN cmake \
     && cmake \
     --build backend/build \
     --parallel $(nproc)
-
-
 
 RUN strip backend/build/minefolio
 
@@ -226,11 +221,9 @@ COPY --from=backend-build \
     /opt/csilk/share/swagger-ui
 
 
-COPY --from=backend-build \
-    /src/backend/build/_deps/llhttp-build/libllhttp.so.9.4 \
-    /usr/lib/x86_64-linux-gnu/libllhttp.so.9.4
-
-
+# NOTE: llhttp is built STATICALLY via FetchContent in the Docker build
+# (csilk cmake/dependencies.cmake sets LLHTTP_BUILD_STATIC_LIBS ON when no
+# system llhttp is found), so the runtime image needs no libllhttp shared lib.
 
 ############################################################
 # User
