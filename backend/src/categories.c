@@ -8,19 +8,20 @@
 
 static csilk_json_t* row_to_category(csilk_json_t* row) {
     csilk_json_t* obj = csilk_json_object();
-    csilk_json_add_number(obj, "id", csilk_json_get_number(row, "id"));
+    csilk_json_add_number(obj, "id", db_get_num(row, "id"));
     csilk_json_add_string(obj, "name", csilk_json_get_string(row, "name"));
+    double pid = db_get_num(row, "parent_id");
     csilk_json_add_object(obj, "parent_id",
-        csilk_json_get(row, "parent_id") ? csilk_json_number(csilk_json_get_number(row, "parent_id")) : csilk_json_null());
+        pid > 0 ? csilk_json_number(pid) : csilk_json_null());
     csilk_json_add_string(obj, "asset_type", csilk_json_get_string(row, "asset_type"));
     csilk_json_add_string(obj, "currency", csilk_json_get_string(row, "currency"));
     csilk_json_add_string(obj, "icon", csilk_json_get_string(row, "icon"));
-    csilk_json_add_number(obj, "sort_order", csilk_json_get_number(row, "sort_order"));
+    csilk_json_add_number(obj, "sort_order", db_get_num(row, "sort_order"));
     return obj;
 }
 
 static void add_children(csilk_db_pool_t* pool, csilk_json_t* parent) {
-    int64_t pid = (int64_t)csilk_json_get_number(parent, "id");
+    int64_t pid = db_get_int(parent, "id");
     char sql[256];
     snprintf(sql, sizeof(sql),
         "SELECT id, name, parent_id, asset_type, currency, icon, sort_order "
@@ -159,7 +160,7 @@ void categories_delete(csilk_ctx_t* c) {
         id_str, (long long)user_id);
     csilk_json_t* cnt_result = csilk_db_query_json(pool, sql);
     if (cnt_result && csilk_json_array_size(cnt_result) > 0) {
-        int cnt = (int)csilk_json_get_number(csilk_json_array_get(cnt_result, 0), "cnt");
+        int cnt = (int)db_get_num(csilk_json_array_get(cnt_result, 0), "cnt");
         csilk_json_free(cnt_result);
         if (cnt > 0) { respond_forbidden(c, "分类下有子分类，无法删除"); return; }
     } else {

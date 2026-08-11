@@ -42,7 +42,7 @@ void transfers_create(csilk_ctx_t* c) {
         (long long)from_id, (long long)to_id, (long long)user_id);
     csilk_json_t* chk = csilk_db_query_json(pool, check_sql);
     if (!chk || csilk_json_array_size(chk) == 0 ||
-        csilk_json_get_number(csilk_json_array_get(chk, 0), "cnt") != 2) {
+        db_get_num(csilk_json_array_get(chk, 0), "cnt") != 2) {
         csilk_json_free(body);
         if (chk) csilk_json_free(chk);
         respond_not_found(c);

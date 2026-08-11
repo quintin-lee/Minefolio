@@ -25,8 +25,8 @@ void report_expense_monthly(csilk_ctx_t* c) {
     csilk_json_t* totals = csilk_db_query_json(pool, sql);
     double income = 0, expense = 0;
     if (totals && csilk_json_array_size(totals) > 0) {
-        income = csilk_json_get_number(csilk_json_array_get(totals, 0), "total_income");
-        expense = csilk_json_get_number(csilk_json_array_get(totals, 0), "total_expense");
+        income = db_get_num(csilk_json_array_get(totals, 0), "total_income");
+        expense = db_get_num(csilk_json_array_get(totals, 0), "total_expense");
     }
     if (totals) csilk_json_free(totals);
 
@@ -93,8 +93,8 @@ void report_expense_trend(csilk_ctx_t* c) {
     for (size_t i = 0; i < n; i++) {
         csilk_json_t* row = csilk_json_array_get(result, i);
         csilk_json_array_append(labels, csilk_json_string_new(csilk_json_get_string(row, "period")));
-        csilk_json_array_append(income_arr, csilk_json_number(csilk_json_get_number(row, "income")));
-        csilk_json_array_append(expense_arr, csilk_json_number(csilk_json_get_number(row, "expense")));
+        csilk_json_array_append(income_arr, csilk_json_number(db_get_num(row, "income")));
+        csilk_json_array_append(expense_arr, csilk_json_number(db_get_num(row, "expense")));
     }
     csilk_json_add_array(resp, "labels", labels);
     csilk_json_add_array(resp, "income", income_arr);
@@ -123,13 +123,13 @@ void report_expense_category(csilk_ctx_t* c) {
     if (!rows) { respond_error(c, 500, "查询失败"); return; }
     double total = 0;
     size_t n = csilk_json_array_size(rows);
-    for (size_t i = 0; i < n; i++) total += csilk_json_get_number(csilk_json_array_get(rows, i), "amount");
+    for (size_t i = 0; i < n; i++) total += db_get_num(csilk_json_array_get(rows, i), "amount");
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_string(resp, "period", period);
     csilk_json_t* items = csilk_json_array();
     for (size_t i = 0; i < n; i++) {
         csilk_json_t* row = csilk_json_array_get(rows, i);
-        double amt = csilk_json_get_number(row, "amount");
+        double amt = db_get_num(row, "amount");
         csilk_json_t* item = csilk_json_object();
         csilk_json_add_string(item, "name", csilk_json_get_string(row, "name"));
         csilk_json_add_number(item, "amount", amt);
@@ -162,17 +162,17 @@ void report_expense_tag(csilk_ctx_t* c) {
     if (!rows) { respond_error(c, 500, "查询失败"); return; }
     double total = 0;
     size_t n = csilk_json_array_size(rows);
-    for (size_t i = 0; i < n; i++) total += csilk_json_get_number(csilk_json_array_get(rows, i), "amount");
+    for (size_t i = 0; i < n; i++) total += db_get_num(csilk_json_array_get(rows, i), "amount");
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_string(resp, "period", period);
     csilk_json_t* items = csilk_json_array();
     for (size_t i = 0; i < n; i++) {
         csilk_json_t* row = csilk_json_array_get(rows, i);
-        double amt = csilk_json_get_number(row, "amount");
+        double amt = db_get_num(row, "amount");
         csilk_json_t* item = csilk_json_object();
         csilk_json_add_string(item, "tag_name", csilk_json_get_string(row, "tag_name"));
         csilk_json_add_number(item, "amount", amt);
-        csilk_json_add_number(item, "count", csilk_json_get_number(row, "count"));
+        csilk_json_add_number(item, "count", db_get_num(row, "count"));
         csilk_json_add_number(item, "pct", total > 0 ? (amt / total * 100) : 0);
         csilk_json_array_append(items, item);
     }
@@ -193,35 +193,26 @@ void report_asset_trend(csilk_ctx_t* c) {
     }
     if (days <= 0 || days > 365) days = 30;
     csilk_db_pool_t* pool = db_get_pool();
-    char sql[1024];
-    // Simple snapshot approach: current values with date labels for key milestones
+    // 5 snapshot points evenly spaced across the period; assets counted from
+    // their updated_at so each point reflects the value at that date.
+    char sql[2048];
     snprintf(sql, sizeof(sql),
-        "SELECT "
-        "json_group_array(date) as labels, "
-        "json_group_array(net_worth) as net_worth, "
+        "SELECT json_group_array(d) as labels, "
         "json_group_array(total_assets) as assets, "
-        "json_group_array(total_liabilities) as liabilities "
+        "json_group_array(total_liabilities) as liabilities, "
+        "json_group_array(total_assets - total_liabilities) as net_worth "
         "FROM ( "
-        "SELECT date('now', '-%d days + i days') as date, "
+        "WITH RECURSIVE pts(n) AS (SELECT 0 UNION ALL SELECT n+1 FROM pts WHERE n < 4) "
+        "SELECT date('now','-'||(n*(%d-1)/4)||' days') as d, "
         "(SELECT COALESCE(SUM(a.current_value),0) FROM assets a "
         "JOIN categories c ON a.category_id=c.id "
         "WHERE a.user_id=%lld AND c.asset_type NOT IN ('loan','credit_card','other_liability') "
-        "AND a.updated_at <= date('now', '-%d days + i days')) as total_assets, "
+        "AND a.updated_at < date('now','-'||(n*(%d-1)/4)||' days','+1 day')) as total_assets, "
         "(SELECT COALESCE(SUM(a.current_value),0) FROM assets a "
         "JOIN categories c ON a.category_id=c.id "
         "WHERE a.user_id=%lld AND c.asset_type IN ('loan','credit_card','other_liability') "
-        "AND a.updated_at <= date('now', '-%d days + i days')) as total_liabilities, "
-        "(SELECT COALESCE(SUM(a.current_value),0) FROM assets a "
-        "JOIN categories c ON a.category_id=c.id "
-        "WHERE a.user_id=%lld AND c.asset_type NOT IN ('loan','credit_card','other_liability') "
-        "AND a.updated_at <= date('now', '-%d days + i days')) - "
-        "(SELECT COALESCE(SUM(a.current_value),0) FROM assets a "
-        "JOIN categories c ON a.category_id=c.id "
-        "WHERE a.user_id=%lld AND c.asset_type IN ('loan','credit_card','other_liability') "
-        "AND a.updated_at <= date('now', '-%d days + i days')) as net_worth "
-        "FROM (SELECT 0 as i UNION SELECT 7 UNION SELECT 14 UNION SELECT 21 UNION SELECT 30) "
-        ") ORDER BY date",
-        days - 1, (long long)user_id, days - 1, (long long)user_id, days - 1, (long long)user_id,
+        "AND a.updated_at < date('now','-'||(n*(%d-1)/4)||' days','+1 day')) as total_liabilities "
+        "FROM pts) ORDER BY d",
         days - 1, (long long)user_id, days - 1, (long long)user_id, days - 1);
 
     csilk_json_t* result = csilk_db_query_json(pool, sql);
@@ -229,10 +220,18 @@ void report_asset_trend(csilk_ctx_t* c) {
     csilk_json_add_string(resp, "period", period_str ? period_str : "30d");
     if (result && csilk_json_array_size(result) > 0) {
         csilk_json_t* row = csilk_json_array_get(result, 0);
-        csilk_json_add_array(resp, "labels", csilk_json_get(row, "labels"));
-        csilk_json_add_object(resp, "net_worth", csilk_json_get(row, "net_worth"));
-        csilk_json_add_array(resp, "assets", csilk_json_get(row, "assets"));
-        csilk_json_add_array(resp, "liabilities", csilk_json_get(row, "liabilities"));
+        const char* labels_str = csilk_json_get_string(row, "labels");
+        const char* nw_str = csilk_json_get_string(row, "net_worth");
+        const char* assets_str = csilk_json_get_string(row, "assets");
+        const char* liabs_str = csilk_json_get_string(row, "liabilities");
+        csilk_json_t* labels = (labels_str && labels_str[0]) ? csilk_json_parse(labels_str) : NULL;
+        csilk_json_t* nw = (nw_str && nw_str[0]) ? csilk_json_parse(nw_str) : NULL;
+        csilk_json_t* assets = (assets_str && assets_str[0]) ? csilk_json_parse(assets_str) : NULL;
+        csilk_json_t* liabs = (liabs_str && liabs_str[0]) ? csilk_json_parse(liabs_str) : NULL;
+        csilk_json_add_array(resp, "labels", labels ? labels : csilk_json_array());
+        csilk_json_add_array(resp, "net_worth", nw ? nw : csilk_json_array());
+        csilk_json_add_array(resp, "assets", assets ? assets : csilk_json_array());
+        csilk_json_add_array(resp, "liabilities", liabs ? liabs : csilk_json_array());
     } else {
         csilk_json_add_array(resp, "labels", csilk_json_array());
         csilk_json_add_array(resp, "net_worth", csilk_json_array());
@@ -263,11 +262,11 @@ void report_asset_breakdown(csilk_ctx_t* c) {
     double total_assets = 0, total_liabs = 0;
     if (assets) {
         size_t n = csilk_json_array_size(assets);
-        for (size_t i = 0; i < n; i++) total_assets += csilk_json_get_number(csilk_json_array_get(assets, i), "value");
+        for (size_t i = 0; i < n; i++) total_assets += db_get_num(csilk_json_array_get(assets, i), "value");
     }
     if (liabs) {
         size_t n = csilk_json_array_size(liabs);
-        for (size_t i = 0; i < n; i++) total_liabs += csilk_json_get_number(csilk_json_array_get(liabs, i), "value");
+        for (size_t i = 0; i < n; i++) total_liabs += db_get_num(csilk_json_array_get(liabs, i), "value");
     }
     csilk_json_t* resp = csilk_json_object();
     csilk_json_t* asset_items = csilk_json_array();
@@ -275,7 +274,7 @@ void report_asset_breakdown(csilk_ctx_t* c) {
         size_t n = csilk_json_array_size(assets);
         for (size_t i = 0; i < n; i++) {
             csilk_json_t* row = csilk_json_array_get(assets, i);
-            double v = csilk_json_get_number(row, "value");
+            double v = db_get_num(row, "value");
             csilk_json_t* item = csilk_json_object();
             csilk_json_add_string(item, "name", csilk_json_get_string(row, "name"));
             csilk_json_add_number(item, "value", v);
@@ -290,7 +289,7 @@ void report_asset_breakdown(csilk_ctx_t* c) {
         size_t n = csilk_json_array_size(liabs);
         for (size_t i = 0; i < n; i++) {
             csilk_json_t* row = csilk_json_array_get(liabs, i);
-            double v = csilk_json_get_number(row, "value");
+            double v = db_get_num(row, "value");
             csilk_json_t* item = csilk_json_object();
             csilk_json_add_string(item, "name", csilk_json_get_string(row, "name"));
             csilk_json_add_number(item, "value", v);
@@ -326,17 +325,17 @@ void report_transaction_performance(csilk_ctx_t* c) {
     for (size_t i = 0; i < n; i++) {
         csilk_json_t* row = csilk_json_array_get(result, i);
         const char* type = csilk_json_get_string(row, "transaction_type");
-        double amt = csilk_json_get_number(row, "amount");
+        double amt = db_get_num(row, "amount");
         if (strcmp(type, "sell") == 0) total_gain += amt;
         else if (strcmp(type, "buy") == 0) total_loss += amt;
         total_trades++;
         csilk_json_t* trade = csilk_json_object();
-        csilk_json_add_number(trade, "id", csilk_json_get_number(row, "id"));
+        csilk_json_add_number(trade, "id", db_get_num(row, "id"));
         csilk_json_add_string(trade, "asset_name", csilk_json_get_string(row, "asset_name"));
         csilk_json_add_string(trade, "type", type);
         csilk_json_add_string(trade, "date", csilk_json_get_string(row, "transaction_date"));
-        csilk_json_add_number(trade, "quantity", csilk_json_get_number(row, "quantity"));
-        csilk_json_add_number(trade, "price", csilk_json_get_number(row, "price_per_unit"));
+        csilk_json_add_number(trade, "quantity", db_get_num(row, "quantity"));
+        csilk_json_add_number(trade, "price", db_get_num(row, "price_per_unit"));
         csilk_json_add_number(trade, "amount", amt);
         csilk_json_array_append(trades, trade);
     }
@@ -366,7 +365,7 @@ void report_asset_summary(csilk_ctx_t* c) {
         size_t n = csilk_json_array_size(rows);
         for (size_t i = 0; i < n; i++) {
             csilk_json_t* row = csilk_json_array_get(rows, i);
-            double v = csilk_json_get_number(row, "value");
+            double v = db_get_num(row, "value");
             const char* atype = csilk_json_get_string(row, "asset_type");
             int is_liab = (strcmp(atype, "loan") == 0 || strcmp(atype, "credit_card") == 0 ||
                           strcmp(atype, "other_liability") == 0);
@@ -388,7 +387,7 @@ void report_asset_summary(csilk_ctx_t* c) {
     csilk_json_t* change_result = csilk_db_query_json(pool, sql);
     double change_30d = 0;
     if (change_result && csilk_json_array_size(change_result) > 0)
-        change_30d = csilk_json_get_number(csilk_json_array_get(change_result, 0), "net_change");
+        change_30d = db_get_num(csilk_json_array_get(change_result, 0), "net_change");
     if (change_result) csilk_json_free(change_result);
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_number(resp, "current_value", current_assets - current_liabs);
@@ -420,12 +419,12 @@ void summary_get(csilk_ctx_t* c) {
     size_t n = csilk_json_array_size(rows);
     for (size_t i = 0; i < n; i++) {
         csilk_json_t* row = csilk_json_array_get(rows, i);
-        total_assets += csilk_json_get_number(row, "value");
+        total_assets += db_get_num(row, "value");
     }
     csilk_json_t* breakdown = csilk_json_array();
     for (size_t i = 0; i < n; i++) {
         csilk_json_t* row = csilk_json_array_get(rows, i);
-        double v = csilk_json_get_number(row, "value");
+        double v = db_get_num(row, "value");
         csilk_json_t* item = csilk_json_object();
         csilk_json_add_string(item, "category_name", csilk_json_get_string(row, "category_name"));
         csilk_json_add_number(item, "value", v);
@@ -442,7 +441,7 @@ void summary_get(csilk_ctx_t* c) {
         (long long)user_id);
     csilk_json_t* liab_rows = csilk_db_query_json(pool, sql);
     if (liab_rows && csilk_json_array_size(liab_rows) > 0) {
-        total_liabilities = csilk_json_get_number(csilk_json_array_get(liab_rows, 0), "total");
+        total_liabilities = db_get_num(csilk_json_array_get(liab_rows, 0), "total");
         csilk_json_free(liab_rows);
     }
 
@@ -467,7 +466,14 @@ void summary_get(csilk_ctx_t* c) {
     csilk_json_add_number(resp, "net_worth", total_assets - total_liabilities);
     csilk_json_add_array(resp, "breakdown", breakdown);
     if (trend_rows && csilk_json_array_size(trend_rows) > 0) {
-        csilk_json_add_array(resp, "trend", csilk_json_get(csilk_json_array_get(trend_rows, 0), "trend"));
+        // json_group_array column arrives as a JSON-encoded string — parse it
+        const char* trend_str = csilk_json_get_string(csilk_json_array_get(trend_rows, 0), "trend");
+        csilk_json_t* trend_arr = (trend_str && trend_str[0]) ? csilk_json_parse(trend_str) : NULL;
+        if (trend_arr) {
+            csilk_json_add_array(resp, "trend", trend_arr);
+        } else {
+            csilk_json_add_array(resp, "trend", csilk_json_array());
+        }
     } else {
         csilk_json_add_array(resp, "trend", csilk_json_array());
     }

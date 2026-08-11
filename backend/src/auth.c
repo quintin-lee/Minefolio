@@ -72,7 +72,7 @@ void auth_register(csilk_ctx_t* c) {
         return;
     }
 
-    int64_t user_id = (int64_t)csilk_json_get_number(csilk_json_array_get(user, 0), "id");
+    int64_t user_id = db_get_int(csilk_json_array_get(user, 0), "id");
     char* token = jwt_generate_token(c, user_id);
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_string(resp, "token", token ? token : "");
@@ -111,7 +111,7 @@ void auth_login(csilk_ctx_t* c) {
         return;
     }
 
-    int64_t user_id = (int64_t)csilk_json_get_number(csilk_json_array_get(result, 0), "id");
+    int64_t user_id = db_get_int(csilk_json_array_get(result, 0), "id");
     char* token = jwt_generate_token(c, user_id);
 
     csilk_json_t* resp = csilk_json_object();
@@ -142,7 +142,7 @@ void auth_me(csilk_ctx_t* c) {
 
     csilk_json_t* user = csilk_json_array_get(result, 0);
     csilk_json_t* resp = csilk_json_object();
-    csilk_json_add_number(resp, "id", csilk_json_get_number(user, "id"));
+    csilk_json_add_number(resp, "id", db_get_num(user, "id"));
     csilk_json_add_string(resp, "username", csilk_json_get_string(user, "username"));
     csilk_json_add_string(resp, "created_at", csilk_json_get_string(user, "created_at"));
     csilk_json_free(result);
