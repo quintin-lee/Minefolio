@@ -4,19 +4,21 @@ project(minefolio C)
 set(CMAKE_C_STANDARD 23)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
-# csilk as subdirectory
-set(CSILK_SOURCE_DIR "/data/home/quintin/workspace/source/c/csilk")
-list(APPEND CMAKE_MODULE_PATH "${CSILK_SOURCE_DIR}/cmake")
-include(csilk)
-add_subdirectory("${CSILK_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/csilk")
+include(FetchContent)
+
+FetchContent_Declare(
+    csilk
+    GIT_REPOSITORY git@github.com:quintin-lee/csilk.git
+    GIT_TAG        main
+)
+
+FetchContent_MakeAvailable(csilk)
 
 # Minefolio sources
 file(GLOB SOURCES "src/*.c" "src/common/*.c")
 add_executable(minefolio ${SOURCES})
 
 target_include_directories(minefolio PRIVATE
-    "${CSILK_SOURCE_DIR}/include"
-    "${CMAKE_BINARY_DIR}/csilk/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
 )
 
