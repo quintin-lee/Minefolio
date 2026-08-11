@@ -10,6 +10,7 @@ static csilk_json_t* row_to_category(csilk_json_t* row) {
     csilk_json_t* obj = csilk_json_object();
     csilk_json_add_number(obj, "id", db_get_num(row, "id"));
     csilk_json_add_string(obj, "name", csilk_json_get_string(row, "name"));
+    csilk_json_add_string(obj, "parent_name", csilk_json_get_string(row, "parent_name"));
     double pid = db_get_num(row, "parent_id");
     csilk_json_add_object(obj, "parent_id",
         pid > 0 ? csilk_json_number(pid) : csilk_json_null());
@@ -24,8 +25,10 @@ static void add_children(csilk_db_pool_t* pool, csilk_json_t* parent) {
     int64_t pid = db_get_int(parent, "id");
     char sql[256];
     snprintf(sql, sizeof(sql),
-        "SELECT id, name, parent_id, asset_type, currency, icon, sort_order "
-        "FROM categories WHERE parent_id = %lld ORDER BY sort_order", (long long)pid);
+        "SELECT c.id, c.name, c.parent_id, "
+        "(SELECT p.name FROM categories p WHERE p.id=c.parent_id) as parent_name, "
+        "c.asset_type, c.currency, c.icon, c.sort_order "
+        "FROM categories c WHERE parent_id = %lld ORDER BY c.sort_order", (long long)pid);
 
     csilk_json_t* kids = csilk_db_query_json(pool, sql);
     if (!kids) return;
@@ -51,8 +54,10 @@ void categories_list(csilk_ctx_t* c) {
     csilk_db_pool_t* pool = db_get_pool();
     char sql[256];
     snprintf(sql, sizeof(sql),
-        "SELECT id, name, parent_id, asset_type, currency, icon, sort_order "
-        "FROM categories WHERE user_id = %lld AND parent_id IS NULL ORDER BY sort_order",
+        "SELECT c.id, c.name, c.parent_id, "
+        "(SELECT p.name FROM categories p WHERE p.id=c.parent_id) as parent_name, "
+        "c.asset_type, c.currency, c.icon, c.sort_order "
+        "FROM categories c WHERE user_id = %lld AND parent_id IS NULL ORDER BY c.sort_order",
         (long long)user_id);
 
     csilk_json_t* rows = csilk_db_query_json(pool, sql);
