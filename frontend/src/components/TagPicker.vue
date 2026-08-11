@@ -59,7 +59,7 @@ const suggestions = ref<PickedTag[]>([])
 async function loadSuggestions(q?: string) {
   try {
     const res = await tagsApi.suggestions(q)
-    suggestions.value = res.data.map(t => ({ id: t.id, name: t.name, color: t.color || undefined }))
+    suggestions.value = res.map(t => ({ id: t.id, name: t.name, color: t.color || undefined }))
   } catch {
     suggestions.value = []
   }

@@ -9,8 +9,8 @@ export const transactionsApi = {
     type?: string
     start_date?: string
     end_date?: string
-  }) => http.get<Transaction[]>('/transactions', { params }),
-  create: (data: any) => http.post<void>('/transactions', data),
-  update: (id: number, data: any) => http.put<void>(`/transactions/${id}`, data),
-  delete: (id: number) => http.delete<void>(`/transactions/${id}`),
+  }) => http.get<Transaction[], Transaction[]>('/transactions', { params }),
+  create: (data: any) => http.post<void, void>('/transactions', data),
+  update: (id: number, data: any) => http.put<void, void>(`/transactions/${id}`, data),
+  delete: (id: number) => http.delete<void, void>(`/transactions/${id}`),
 }

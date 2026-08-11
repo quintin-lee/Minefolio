@@ -16,7 +16,7 @@ export const useCategoryStore = defineStore('category', () => {
     loading.value = true
     try {
       const res = await categoriesApi.list()
-      tree.value = res.data
+      tree.value = res
       loaded.value = true
       return tree.value
     } finally {

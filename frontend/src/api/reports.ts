@@ -72,27 +72,27 @@ export interface AssetSummary {
 
 export const reportsApi = {
   expenseMonthly: (year: number, month: number) =>
-    http.get<ExpenseMonthlyReport>('/reports/expense/monthly', {
+    http.get<ExpenseMonthlyReport, ExpenseMonthlyReport>('/reports/expense/monthly', {
       params: { year, month },
     }),
   expenseTrend: (months = 6) =>
-    http.get<ExpenseTrend>('/reports/expense/trend', {
+    http.get<ExpenseTrend, ExpenseTrend>('/reports/expense/trend', {
       params: { months },
     }),
   expenseCategory: (year?: number, month?: number) =>
-    http.get<ExpenseCategoryBreakdown>('/reports/expense/category', {
+    http.get<ExpenseCategoryBreakdown, ExpenseCategoryBreakdown>('/reports/expense/category', {
       params: { year, month },
     }),
   expenseTag: (year?: number, month?: number) =>
-    http.get<ExpenseTagBreakdown>('/reports/expense/tag', {
+    http.get<ExpenseTagBreakdown, ExpenseTagBreakdown>('/reports/expense/tag', {
       params: { year, month },
     }),
   assetTrend: (period = '30d') =>
-    http.get<AssetTrend>('/reports/asset/trend', {
+    http.get<AssetTrend, AssetTrend>('/reports/asset/trend', {
       params: { period },
     }),
-  assetBreakdown: () => http.get<AssetBreakdown>('/reports/asset/breakdown'),
+  assetBreakdown: () => http.get<AssetBreakdown, AssetBreakdown>('/reports/asset/breakdown'),
   transactionPerformance: () =>
-    http.get<TransactionPerformance>('/reports/transaction/performance'),
-  assetSummary: () => http.get<AssetSummary>('/reports/asset/summary'),
+    http.get<TransactionPerformance, TransactionPerformance>('/reports/transaction/performance'),
+  assetSummary: () => http.get<AssetSummary, AssetSummary>('/reports/asset/summary'),
 }

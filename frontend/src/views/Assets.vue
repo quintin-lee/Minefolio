@@ -105,12 +105,12 @@ function formatCurrency(val: number) {
 
 async function loadAssets() {
   const res = await assetsApi.list()
-  assets.value = res.data
+  assets.value = res
 }
 
 async function loadCategories() {
   const res = await categoriesApi.list()
-  categoryTree.value = res.data
+  categoryTree.value = res
 }
 
 function openDialog(asset?: any) {

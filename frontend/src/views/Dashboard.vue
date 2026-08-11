@@ -118,7 +118,7 @@ function formatCurrency(val: number) {
 
 async function loadDashboard() {
   const res = await summaryApi.get()
-  summary.value = res.data
+  summary.value = res
   loadMonthly()
   loadRecent()
 }
@@ -126,12 +126,12 @@ async function loadDashboard() {
 async function loadMonthly() {
   const d = currentMonth.value
   const res = await dailyExpensesApi.monthly(d.getFullYear(), d.getMonth() + 1)
-  monthlyExpenses.value = res.data
+  monthlyExpenses.value = res
 }
 
 async function loadRecent() {
   const res = await dailyExpensesApi.list({ start_date: '2026-01-01' })
-  recentExpenses.value = res.data.slice(0, 10)
+  recentExpenses.value = res.slice(0, 10)
 }
 
 onMounted(loadDashboard)

@@ -156,11 +156,11 @@ async function loadData() {
     params.end_date = `${y}-${m}-${String(lastDay).padStart(2, '0')}`
   }
   const res = await dailyExpensesApi.list(params)
-  expenses.value = res.data
+  expenses.value = res
   if (filters.month) {
     const [y = '', m = ''] = filters.month.split('-')
     const mr = await dailyExpensesApi.monthly(parseInt(y), parseInt(m))
-    monthSummary.value = mr.data
+    monthSummary.value = mr
   }
 }
 
@@ -197,7 +197,7 @@ async function handleDelete(expense: any) {
 
 onMounted(async () => {
   const res = await categoriesApi.list()
-  categoryTree.value = res.data
+  categoryTree.value = res
   filters.month = new Date().toISOString().slice(0, 7)
   loadData()
 })

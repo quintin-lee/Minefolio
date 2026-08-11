@@ -14,8 +14,8 @@ export interface User {
 
 export const authApi = {
   login: (username: string, password: string) =>
-    http.post<LoginResponse>('/auth/login', { username, password }),
+    http.post<LoginResponse, LoginResponse>('/auth/login', { username, password }),
   register: (username: string, password: string) =>
-    http.post<LoginResponse>('/auth/register', { username, password }),
-  me: () => http.get<User>('/auth/me'),
+    http.post<LoginResponse, LoginResponse>('/auth/register', { username, password }),
+  me: () => http.get<User, User>('/auth/me'),
 }

@@ -86,7 +86,7 @@ async function handleSubmit() {
 
 async function loadAssets() {
   const res = await assetsApi.list()
-  assets.value = res.data
+  assets.value = res
 }
 
 onMounted(loadAssets)

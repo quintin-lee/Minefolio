@@ -23,9 +23,23 @@ http.interceptors.request.use((config) => {
   return config
 })
 
-// Response interceptor: unwrap the { code, message, data } envelope
+// Response interceptor: unwrap the { code, message, data } envelope.
+// The backend returns HTTP 200 even for business errors, so code !== 0 must
+// be treated as a failure here — otherwise callers can't distinguish them.
 http.interceptors.response.use(
-  (res) => res.data.data,
+  (res) => {
+    const body = res.data
+    if (body && typeof body === 'object' && typeof body.code === 'number' && body.code !== 0) {
+      if (body.code === 1001) {
+        useAuthStore().logout()
+        window.location.href = '/login'
+      } else {
+        ElMessage.error(body.message || '请求失败')
+      }
+      return Promise.reject({ response: { data: body } })
+    }
+    return body?.data
+  },
   (err) => {
     if (err.response) {
       const code = err.response.data?.code

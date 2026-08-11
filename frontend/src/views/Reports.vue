@@ -128,8 +128,8 @@ async function loadAll() {
     ),
     reportsApi.transactionPerformance(),
   ])
-  monthly.value = m.data; trend.value = t.data; assetTrend.value = at.data
-  assetBreakdown.value = ab.data; tagBreakdown.value = tb.data; perf.value = p.data
+  monthly.value = m; trend.value = t; assetTrend.value = at
+  assetBreakdown.value = ab; tagBreakdown.value = tb; perf.value = p
 }
 
 function loadMonthlyReport() { loadAll() }

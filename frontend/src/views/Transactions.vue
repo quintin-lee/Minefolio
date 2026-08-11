@@ -134,7 +134,7 @@ async function loadData() {
   if (filters.dateRange?.[0]) params.start_date = filters.dateRange[0]
   if (filters.dateRange?.[1]) params.end_date = filters.dateRange[1]
   const res = await transactionsApi.list(params)
-  transactions.value = res.data
+  transactions.value = res
 }
 
 function resetFilters() { Object.assign(filters, { asset_id: '', type: '', dateRange: null }) ; loadData() }
@@ -169,7 +169,7 @@ async function handleDelete(txn: any) {
 
 onMounted(async () => {
   const res = await assetsApi.list()
-  assets.value = res.data
+  assets.value = res
   loadData()
 })
 </script>
