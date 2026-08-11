@@ -8,8 +8,8 @@ include(FetchContent)
 
 FetchContent_Declare(
     csilk
-    GIT_REPOSITORY git@github.com:quintin-lee/csilk.git
-    GIT_TAG        main
+    GIT_REPOSITORY https://github.com/quintin-lee/csilk.git
+    GIT_TAG        master
 )
 
 FetchContent_MakeAvailable(csilk)

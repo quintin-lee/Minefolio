@@ -91,23 +91,6 @@ RUN git config --global http.sslVerify false \
 
 
 
-############################################################
-# Clone csilk
-############################################################
-
-ARG CSILK_REF=a71bb3f34eea6b526522bb838af807055549dd82
-
-
-RUN git clone \
-    --depth=1 \
-    --no-checkout \
-    https://github.com/quintin-lee/csilk.git \
-    /opt/csilk \
-    && cd /opt/csilk \
-    && git fetch --depth=1 origin ${CSILK_REF} \
-    && git checkout FETCH_HEAD
-
-
 
 ############################################################
 # Build backend
@@ -126,7 +109,6 @@ RUN cmake \
     -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
-    -DCSILK_SOURCE_DIR=/opt/csilk \
     && cmake \
     --build backend/build \
     --parallel $(nproc)
@@ -157,21 +139,11 @@ ENV HTTP_PROXY=${HTTP_PROXY} \
 
 
 WORKDIR /app/frontend
-
-
-
 COPY frontend/package.json frontend/package-lock.json ./
-
 
 RUN npm install
 
-
-
-
-
 COPY frontend ./
-
-
 
 RUN npm run build
 
@@ -250,7 +222,7 @@ COPY --from=frontend-build \
 
 
 COPY --from=backend-build \
-    /opt/csilk/share/swagger-ui \
+    /src/backend/build/_deps/csilk-src/share/swagger-ui \
     /opt/csilk/share/swagger-ui
 
 
