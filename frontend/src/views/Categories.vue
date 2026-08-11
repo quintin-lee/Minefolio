@@ -10,13 +10,23 @@
       </el-button>
     </div>
 
+    <!-- Category Type Tabs -->
+    <div class="tab-filter-container">
+      <el-radio-group v-model="activeTab" class="category-tabs" @change="onTabChange">
+        <el-radio-button value="all">全部分类</el-radio-button>
+        <el-radio-button value="asset">资产分类</el-radio-button>
+        <el-radio-button value="expense">支出分类</el-radio-button>
+        <el-radio-button value="income">收入分类</el-radio-button>
+      </el-radio-group>
+    </div>
+
     <el-row :gutter="24">
       <el-col :span="8">
         <div class="panel-container tree-panel-container">
           <div class="panel-header">
             <h3>分类结构</h3>
           </div>
-          <el-tree :data="treeData" :props="{ label: 'name', children: 'children' }"
+          <el-tree :data="filteredTreeData" :props="{ label: 'name', children: 'children' }"
             node-key="id" default-expand-all class="premium-tree"
             :expand-on-click-node="false"
             @node-click="onNodeClick">
@@ -26,6 +36,9 @@
                   <span class="node-icon" v-if="!data.children || data.children.length === 0">·</span>
                   <span class="node-icon folder" v-else>📁</span>
                   <span class="node-label">{{ node.label }}</span>
+                  <el-tag size="small" :type="categoryTypeTagType(data.type)" effect="light" class="mini-type-tag">
+                    {{ categoryTypeLabel(data.type) }}
+                  </el-tag>
                 </div>
                 <div class="tree-actions">
                   <el-button link size="small" type="primary" @click.stop="openDialog(data)">编辑</el-button>
@@ -41,22 +54,30 @@
           <div class="panel-header">
             <h3>分类列表</h3>
           </div>
-          <el-table :data="flatCategories" class="premium-table" row-class-name="premium-row" header-cell-class-name="premium-header">
+          <el-table :data="filteredFlatCategories" class="premium-table" row-class-name="premium-row" header-cell-class-name="premium-header">
             <el-table-column prop="name" label="名称" min-width="140" />
+            <el-table-column prop="type" label="分类大类" width="110">
+              <template #default="{ row }">
+                <el-tag size="small" :type="categoryTypeTagType(row.type)" effect="light" class="type-tag">
+                  {{ categoryTypeLabel(row.type) }}
+                </el-tag>
+              </template>
+            </el-table-column>
             <el-table-column prop="parent_name" label="上级分类" min-width="120">
               <template #default="{ row }">
                 <span class="text-muted">{{ row.parent_name || '-' }}</span>
               </template>
             </el-table-column>
-            <el-table-column prop="asset_type" label="类型" width="140">
+            <el-table-column prop="asset_type" label="资产细分" width="140">
               <template #default="{ row }">
-                <div class="type-cell">
+                <div class="type-cell" v-if="row.type === 'asset'">
                   <span :class="['status-dot', row.asset_type]"></span>
                   {{ assetTypeLabel(row.asset_type) }}
                 </div>
+                <span v-else class="text-muted">-</span>
               </template>
             </el-table-column>
-            <el-table-column prop="currency" label="币种" width="100">
+            <el-table-column prop="currency" label="币种" width="90">
               <template #default="{ row }">
                 <el-tag size="small" class="currency-tag" effect="plain">{{ row.currency }}</el-tag>
               </template>
@@ -79,14 +100,25 @@
         <el-form-item label="分类名称" prop="name">
           <el-input v-model="form.name" placeholder="输入分类名称" />
         </el-form-item>
+
+        <el-form-item label="分类大类" prop="type">
+          <el-select v-model="form.type" style="width: 100%" @change="onFormTypeChange">
+            <el-option label="资产分类" value="asset" />
+            <el-option label="支出分类" value="expense" />
+            <el-option label="收入分类" value="income" />
+          </el-select>
+        </el-form-item>
+
         <el-form-item label="上级分类">
           <el-cascader v-model="form._parentPath" :options="parentOptions" :props="{ value: 'id', label: 'name', checkStrictly: true }" placeholder="无（一级分类）" style="width: 100%" @change="onParentChange" />
         </el-form-item>
-        <el-form-item label="资产类型" prop="asset_type">
+
+        <el-form-item v-if="form.type === 'asset'" label="资产类型" prop="asset_type">
           <el-select v-model="form.asset_type" style="width: 100%">
             <el-option v-for="t in assetTypes" :key="t.value" :label="t.label" :value="t.value" />
           </el-select>
         </el-form-item>
+
         <el-form-item label="币种">
           <el-select v-model="form.currency" style="width: 100%">
             <el-option label="CNY" value="CNY" /><el-option label="USD" value="USD" /><el-option label="EUR" value="EUR" />
@@ -111,13 +143,21 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { categoriesApi } from '@/api/categories'
 import { useCategoryStore } from '@/stores/category'
-import type { Category } from '@/types'
+import type { Category, CategoryType } from '@/types'
 
 const categoryStore = useCategoryStore()
 
+const activeTab = ref<'all' | 'asset' | 'expense' | 'income'>('all')
 const categories = ref<Category[]>([])
-const treeData = computed(() => buildTree(categories.value))
-const flatCategories = ref<Category[]>([])
+
+const filteredCategories = computed(() => {
+  if (activeTab.value === 'all') return categories.value
+  return categories.value.filter(c => c.type === activeTab.value)
+})
+
+const filteredTreeData = computed(() => buildTree(filteredCategories.value))
+const filteredFlatCategories = computed(() => flatten(filteredTreeData.value))
+
 const dialogVisible = ref(false)
 const editingId = ref<number | null>(null)
 const saving = ref(false)
@@ -132,8 +172,22 @@ const assetTypes = [
   { label: '其他负债', value: 'other_liability' },
 ]
 
-const form = reactive({ name: '', asset_type: 'cash', currency: 'CNY', sort_order: 0, parent_id: null as number | null, _parentPath: [] as number[], _hasChildren: false })
-const rules = { name: [{ required: true }], asset_type: [{ required: true }] }
+const form = reactive({
+  name: '',
+  type: 'asset' as CategoryType,
+  asset_type: 'cash',
+  currency: 'CNY',
+  sort_order: 0,
+  parent_id: null as number | null,
+  _parentPath: [] as number[],
+  _hasChildren: false
+})
+
+const rules = {
+  name: [{ required: true, message: '请输入分类名称' }],
+  type: [{ required: true, message: '请选择分类大类' }],
+  asset_type: [{ required: true, message: '请选择资产类型' }]
+}
 
 function buildTree(list: Category[]): Category[] {
   const map = new Map<number, Category>()
@@ -159,19 +213,64 @@ function flatten(list: Category[]): Category[] {
 }
 
 function onNodeClick(data: any) { /* select for editing */ }
+
+function categoryTypeLabel(t: CategoryType) {
+  if (t === 'asset') return '资产'
+  if (t === 'expense') return '支出'
+  if (t === 'income') return '收入'
+  return t || '资产'
+}
+
+function categoryTypeTagType(t: CategoryType) {
+  if (t === 'asset') return 'info'
+  if (t === 'expense') return 'danger'
+  if (t === 'income') return 'success'
+  return 'info'
+}
+
 function assetTypeLabel(t: string) { return assetTypes.find(x => x.value === t)?.label || t }
-const parentOptions = computed(() => categories.value.filter(c => !c.children?.length || true))
+
+const parentOptions = computed(() => {
+  return categories.value.filter(c => c.type === form.type && c.id !== editingId.value)
+})
+
+function onTabChange() {
+  // tab switch automatically updates computed lists
+}
+
+function onFormTypeChange() {
+  // Clear parent selection if type changes
+  form.parent_id = null
+  form._parentPath = []
+}
 
 async function loadData() {
-  const data = await categoryStore.loadCategories(true)
+  const data = await categoryStore.loadCategories(undefined, true)
   categories.value = data
-  flatCategories.value = flatten(data)
 }
 
 function openDialog(cat?: any) {
   editingId.value = cat?.id ?? null
-  Object.assign(form, cat ? { name: cat.name, asset_type: cat.asset_type, currency: cat.currency, sort_order: cat.sort_order, parent_id: cat.parent_id, _parentPath: cat.parent_id ? [cat.parent_id] : [], _hasChildren: !!cat.children }
-    : { name: '', asset_type: 'cash', currency: 'CNY', sort_order: 0, parent_id: null, _parentPath: [], _hasChildren: false })
+  const defaultType = activeTab.value === 'all' ? 'asset' : activeTab.value
+  Object.assign(form, cat ? {
+    name: cat.name,
+    type: cat.type || 'asset',
+    asset_type: cat.asset_type || 'cash',
+    currency: cat.currency,
+    sort_order: cat.sort_order,
+    parent_id: cat.parent_id,
+    _parentPath: cat.parent_id ? [cat.parent_id] : [],
+    _hasChildren: !!cat.children
+  } : {
+    name: '',
+    type: defaultType,
+    asset_type: 'cash',
+    currency: 'CNY',
+    sort_order: 0,
+    parent_id: null,
+    _parentPath: [],
+    _hasChildren: false
+  })
   dialogVisible.value = true
 }
 
@@ -182,11 +281,19 @@ async function handleSubmit() {
     if (!valid) return
     saving.value = true
     try {
-      const data = { name: form.name, asset_type: form.asset_type, currency: form.currency, sort_order: form.sort_order, parent_id: form.parent_id }
+      const data = {
+        name: form.name,
+        type: form.type,
+        asset_type: form.type === 'asset' ? form.asset_type : 'cash',
+        currency: form.currency,
+        sort_order: form.sort_order,
+        parent_id: form.parent_id
+      }
       if (editingId.value) await categoriesApi.update(editingId.value, data)
       else await categoriesApi.create(data)
       ElMessage.success('保存成功')
       dialogVisible.value = false
+      categoryStore.invalidate()
       loadData()
     } finally { saving.value = false }
   })
@@ -197,6 +304,7 @@ async function handleDelete(cat: any) {
   try {
     await categoriesApi.delete(cat.id)
     ElMessage.success('删除成功')
+    categoryStore.invalidate()
     loadData()
   } catch (e: any) {
     if (e?.response?.data?.code === 2001) ElMessage.warning('分类下有子分类，请先删除子分类')
@@ -253,6 +361,39 @@ onMounted(loadData)
 .action-btn:hover {
   transform: translateY(-1px);
   box-shadow: 0 6px 8px -1px rgba(59, 130, 246, 0.3);
+}
+
+.tab-filter-container {
+  margin-bottom: 20px;
+}
+
+.category-tabs :deep(.el-radio-button__inner) {
+  border-radius: 8px !important;
+  margin-right: 8px;
+  border: 1px solid #e2e8f0;
+  box-shadow: none !important;
+  padding: 8px 18px;
+  font-weight: 500;
+}
+
+.category-tabs :deep(.el-radio-button.is-active .el-radio-button__inner) {
+  background-color: #3b82f6;
+  border-color: #3b82f6;
+  color: white;
+}
+
+.type-tag {
+  border-radius: 6px;
+  font-weight: 600;
+}
+
+.mini-type-tag {
+  border-radius: 4px;
+  font-size: 10px;
+  padding: 0 4px;
+  height: 18px;
+  line-height: 16px;
+  margin-left: 4px;
 }
 
 .panel-container {

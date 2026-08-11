@@ -1,0 +1,10 @@
+127.0.0.1 localhost
+::1 localhost ip6-localhost ip6-loopback
+
+# Docker 构建期 DNS 绕过表 (原因见 Dockerfile 顶部注释)
+# 本文件通过 --mount=type=bind,source=hosts,target=/etc/hosts 挂载进每个需要联网的 RUN。
+# 镜像 IP 变更时更新此处即可。
+101.6.15.130 mirrors.tuna.tsinghua.edu.cn
+112.132.221.37 registry.npmmirror.com
+5.135.5.132 ghproxy.net
+20.205.243.166 github.com

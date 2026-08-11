@@ -48,6 +48,9 @@ int db_run_migrations(csilk_db_pool_t* pool) {
         return -1;
     }
 
+    // Try adding 'type' column for pre-existing databases (ignore failure if column already exists)
+    csilk_db_exec(pool, "ALTER TABLE categories ADD COLUMN type TEXT NOT NULL DEFAULT 'asset'");
+
     free(sql);
     return 0;
 }

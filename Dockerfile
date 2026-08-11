@@ -8,6 +8,16 @@
 ARG UBUNTU_VERSION=24.04
 ARG NODE_VERSION=20-bookworm-slim
 
+# 构建期 DNS 绕过: 宿主机 /etc/resolv.conf 含 IPv6 link-local nameserver
+# (如 fe80::1%wlp5s0) 时, Docker 内嵌 DNS (127.0.0.11) 无法向上游转发,
+# 构建容器内解析任何域名都会报 "Temporary failure resolving"。
+# 构建容器内 /etc/hosts 与 /etc/resolv.conf 均为只读, 无法直接改写。
+# 因此仓库根目录的 hosts 文件通过
+#   RUN --mount=type=bind,source=hosts,target=/etc/hosts ...
+# 挂载进每个需要联网的 RUN(apt/git/cmake-FetchContent/npm/curl),
+# 完全绕开 DNS, 确定性解析国内镜像。
+# 镜像 IP 变更时只需更新 ./hosts 文件。
+
 
 ############################################################
 # Stage 1: C backend build
@@ -48,7 +58,10 @@ RUN if [ -n "${HTTP_PROXY}" ]; then \
 ############################################################
 
 RUN --mount=type=cache,target=/var/cache/apt \
-    apt-get update \
+    --mount=type=bind,source=hosts,target=/etc/hosts \
+    sed -i 's@archive.ubuntu.com@mirrors.tuna.tsinghua.edu.cn@g; s@security.ubuntu.com@mirrors.tuna.tsinghua.edu.cn@g; s@ports.ubuntu.com@mirrors.tuna.tsinghua.edu.cn@g' /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list 2>/dev/null || true \
+    && rm -f /etc/apt/apt.conf.d/80proxy \
+    && apt-get update \
     && apt-get install -y --no-install-recommends \
     build-essential \
     gcc-14 \
@@ -82,7 +95,10 @@ ENV CC=gcc-14 \
 # Git proxy
 ############################################################
 
-RUN git config --global http.sslVerify false \
+RUN --mount=type=bind,source=hosts,target=/etc/hosts \
+    git config --global http.sslVerify false \
+    && git config --global http.version HTTP/1.1 \
+    && git config --global http.lowSpeedLimit 0 \
     && if [ -n "${HTTP_PROXY}" ]; then \
     git config --global http.proxy ${HTTP_PROXY}; \
     git config --global https.proxy ${HTTPS_PROXY}; \
@@ -102,12 +118,39 @@ WORKDIR /src
 
 COPY backend ./backend
 
-RUN cmake \
+
+# 预取 csilk 的 FetchContent 依赖(csilk 的 cmake/dependencies.cmake 会拉取
+# llhttp/yyjson/nghttp2)。代理网络不稳定, 大仓库整包克隆经常中途断连;
+# 这里按精确 tag 浅克隆(体积小), 带重试循环, 构建期完全离线构建。
+# tag 变更时同步更新此处与 csilk 上游 cmake/dependencies.cmake。
+RUN --mount=type=bind,source=hosts,target=/etc/hosts \
+    mkdir -p /src/deps && \
+    fetch() { \
+        url="$1"; tag="$2"; dir="$3"; \
+        for i in 1 2 3 4 5; do \
+            git clone --quiet --depth 1 --branch "$tag" "$url" "$dir" && return 0; \
+            echo "[fetch] attempt $i failed: $dir"; \
+            rm -rf "$dir"; sleep 3; \
+        done; \
+        return 1; \
+    } && \
+    fetch https://github.com/quintin-lee/csilk.git master /src/deps/csilk && \
+    fetch https://github.com/nodejs/llhttp.git release/v9.4.1 /src/deps/llhttp && \
+    fetch https://github.com/ibireme/yyjson.git 0.12.0 /src/deps/yyjson && \
+    fetch https://github.com/nghttp2/nghttp2.git v1.61.0 /src/deps/nghttp2
+
+RUN --mount=type=bind,source=hosts,target=/etc/hosts \
+    cmake \
     -S backend \
     -B backend/build \
     -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
+    -DFETCHCONTENT_FULLY_DISCONNECTED=ON \
+    -DFETCHCONTENT_SOURCE_DIR_CSILK=/src/deps/csilk \
+    -DFETCHCONTENT_SOURCE_DIR_LLHTTP=/src/deps/llhttp \
+    -DFETCHCONTENT_SOURCE_DIR_YYJSON=/src/deps/yyjson \
+    -DFETCHCONTENT_SOURCE_DIR_NGHTTP2=/src/deps/nghttp2 \
     && cmake \
     --build backend/build \
     --parallel $(nproc)
@@ -116,12 +159,13 @@ RUN strip backend/build/minefolio
 
 
 # Download swagger-ui distribution (csilk share/swagger-ui contains only placeholders)
-RUN curl --noproxy '*' -fsSL -o /tmp/swagger-ui-dist.tgz \
-        https://registry.npmjs.org/swagger-ui-dist/-/swagger-ui-dist-5.32.6.tgz \
+RUN --mount=type=bind,source=hosts,target=/etc/hosts \
+    curl --noproxy '*' -fsSL -o /tmp/swagger-ui-dist.tgz \
+        https://registry.npmmirror.com/swagger-ui-dist/-/swagger-ui-dist-5.32.6.tgz \
     && mkdir -p /tmp/swagger-ui-extract \
     && tar -xzf /tmp/swagger-ui-dist.tgz -C /tmp/swagger-ui-extract \
     && DIST_DIR=$(find /tmp/swagger-ui-extract -type d -name package | head -1) \
-    && cp -r "$DIST_DIR"/* /src/backend/build/_deps/csilk-src/share/swagger-ui/ \
+    && cp -r "$DIST_DIR"/* /src/deps/csilk/share/swagger-ui/ \
     && rm -rf /tmp/swagger-ui-dist.tgz /tmp/swagger-ui-extract
 
 
@@ -148,7 +192,8 @@ ENV HTTP_PROXY=${HTTP_PROXY} \
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 
-RUN npm install
+RUN --mount=type=bind,source=hosts,target=/etc/hosts \
+    npm install --registry=${NPM_REGISTRY}
 
 COPY frontend ./
 
@@ -189,8 +234,9 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Runtime packages
 ############################################################
 
-RUN rm -f /etc/apt/apt.conf.d/80proxy \
-    && apt-get clean \
+RUN --mount=type=bind,source=hosts,target=/etc/hosts \
+    sed -i 's@archive.ubuntu.com@mirrors.tuna.tsinghua.edu.cn@g; s@security.ubuntu.com@mirrors.tuna.tsinghua.edu.cn@g; s@ports.ubuntu.com@mirrors.tuna.tsinghua.edu.cn@g' /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list 2>/dev/null || true \
+    && rm -f /etc/apt/apt.conf.d/80proxy \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
     libuv1 \
@@ -240,8 +286,8 @@ COPY --from=frontend-build \
 
 
 COPY --from=backend-build \
-    /src/backend/build/_deps/csilk-src/share/swagger-ui \
-    /src/backend/build/_deps/csilk-src/share/swagger-ui
+    /src/deps/csilk/share/swagger-ui \
+    /src/deps/csilk/share/swagger-ui
 
 
 # NOTE: llhttp is built STATICALLY via FetchContent in the Docker build
@@ -285,7 +331,7 @@ HEALTHCHECK \
     --interval=30s \
     --timeout=5s \
     --start-period=10s \
-    CMD curl -f http://127.0.0.1:8080/health || exit 1
+    CMD curl -f http://127.0.0.1:8080/healthz || exit 1
 
 
 

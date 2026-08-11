@@ -143,7 +143,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { dailyExpensesApi } from '@/api/daily_expenses'
 import { categoriesApi } from '@/api/categories'
@@ -153,7 +153,31 @@ import ExpenseCategoryPie from '@/components/ExpenseCategoryPie.vue'
 import type { DailyExpense, Tag, Category } from '@/types'
 
 const expenses = ref<DailyExpense[]>([])
-const categoryTree = ref<Category[]>([])
+const allCategories = ref<Category[]>([])
+
+const categoryTree = computed(() => {
+  return allCategories.value.filter(c => c.type === form.expense_type)
+})
+
+watch(() => form.expense_type, () => {
+  // Clear category selection if selected category is not of the new type
+  if (form.category_id) {
+    const exists = categoryTree.value.some(c => c.id === form.category_id || findInTree(c, form.category_id!))
+    if (!exists) {
+      form.category_id = null
+      form._catPath = []
+    }
+  }
+})
+
+function findInTree(node: Category, targetId: number): boolean {
+  if (node.id === targetId) return true
+  if (node.children?.length) {
+    return node.children.some(c => findInTree(c, targetId))
+  }
+  return false
+}
+
 const monthSummary = ref<any>(null)
 const filters = reactive({ type: '', month: '' })
 const dialogVisible = ref(false)
@@ -216,8 +240,8 @@ async function handleDelete(expense: any) {
 }
 
 onMounted(async () => {
-  const res = await categoriesApi.list()
-  categoryTree.value = res
+  const res = await categoriesApi.list({ type: 'income,expense' })
+  allCategories.value = res
   filters.month = new Date().toISOString().slice(0, 7)
   loadData()
 })

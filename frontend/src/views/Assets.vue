@@ -136,7 +136,7 @@ async function loadAssets() {
 }
 
 async function loadCategories() {
-  const res = await categoriesApi.list()
+  const res = await categoriesApi.list({ type: 'asset' })
   categoryTree.value = res
 }
 

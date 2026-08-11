@@ -67,6 +67,18 @@ static void cors_middleware_wrapper(csilk_ctx_t* c) {
     csilk_cors_middleware(c, &cors);
 }
 
+// Explicit OPTIONS handler for CORS preflight requests.
+// csilk only runs middleware on matched routes, so we need a wildcard
+// OPTIONS route to ensure preflight requests don't get a 404.
+static void cors_preflight_handler(csilk_ctx_t* c) {
+    csilk_cors_config_t cors = {0};
+    cors.allow_origin = "*";
+    cors.allow_methods = "GET,POST,PUT,DELETE,OPTIONS";
+    cors.allow_headers = "Content-Type,Authorization,X-CSRF-Token";
+    cors.allow_credentials = 1;
+    csilk_cors_middleware(c, &cors);
+}
+
 // CSRF middleware wrapper — stateless double-submit cookie.
 // Safe methods (GET/HEAD/OPTIONS) ensure a JS-readable csrf_token cookie exists;
 // state-changing methods require the X-CSRF-Token header to match that cookie.
@@ -143,6 +155,10 @@ int main(int argc, char** argv) {
 
     // Health check (public)
     csilk_app_get(app, "/healthz", csilk_health_check_handler);
+
+    // CORS preflight: catch-all OPTIONS for /api/* so browsers can
+    // complete the preflight handshake before POST/PUT/DELETE requests.
+    csilk_app_options(app, "/api/*path", cors_preflight_handler);
 
     // Auth routes (public)
     csilk_app_post(app, "/api/auth/register", auth_register);

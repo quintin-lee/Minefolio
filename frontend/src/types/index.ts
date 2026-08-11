@@ -1,8 +1,11 @@
+export type CategoryType = 'asset' | 'income' | 'expense'
+
 export interface Category {
   id: number
   name: string
   parent_id: number | null
-  asset_type: string
+  type: CategoryType
+  asset_type?: string
   currency: string
   icon?: string
   sort_order: number
