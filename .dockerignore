@@ -1,0 +1,27 @@
+# Build artifacts
+backend/build/
+backend/data/
+**/*.db
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Dependencies (outside repo, cloned during build)
+csilk/
+
+# VCS / editor / OS
+.git/
+.gitignore
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Local env overrides
+.env
+.env.local
+frontend/.env.local
+
+# Docker
+docker-compose.override.yml
