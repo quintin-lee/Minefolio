@@ -400,3 +400,77 @@ void report_asset_summary(csilk_ctx_t* c) {
     csilk_json_add_array(resp, "by_category", by_cat);
     respond_ok(c, resp);
 }
+
+// GET /api/summary — dashboard aggregate: net worth + category breakdown + 30-day trend
+void summary_get(csilk_ctx_t* c) {
+    int64_t user_id = jwt_get_user_id(c);
+    if (user_id < 0) { respond_unauthorized(c); return; }
+    csilk_db_pool_t* pool = db_get_pool();
+    char sql[1024];
+
+    // Category breakdown (asset categories only; liabilities excluded from pie)
+    snprintf(sql, sizeof(sql),
+        "SELECT c.name as category_name, SUM(a.current_value) as value "
+        "FROM assets a JOIN categories c ON a.category_id=c.id "
+        "WHERE a.user_id=%lld AND c.asset_type NOT IN ('loan','credit_card','other_liability') "
+        "GROUP BY c.name ORDER BY value DESC", (long long)user_id);
+    csilk_json_t* rows = csilk_db_query_json(pool, sql);
+    if (!rows) { respond_error(c, 500, "查询失败"); return; }
+    double total_assets = 0, total_liabilities = 0;
+    size_t n = csilk_json_array_size(rows);
+    for (size_t i = 0; i < n; i++) {
+        csilk_json_t* row = csilk_json_array_get(rows, i);
+        total_assets += csilk_json_get_number(row, "value");
+    }
+    csilk_json_t* breakdown = csilk_json_array();
+    for (size_t i = 0; i < n; i++) {
+        csilk_json_t* row = csilk_json_array_get(rows, i);
+        double v = csilk_json_get_number(row, "value");
+        csilk_json_t* item = csilk_json_object();
+        csilk_json_add_string(item, "category_name", csilk_json_get_string(row, "category_name"));
+        csilk_json_add_number(item, "value", v);
+        csilk_json_add_number(item, "pct", total_assets > 0 ? (v / total_assets * 100) : 0);
+        csilk_json_array_append(breakdown, item);
+    }
+    csilk_json_free(rows);
+
+    // Total liabilities for net worth
+    snprintf(sql, sizeof(sql),
+        "SELECT COALESCE(SUM(a.current_value),0) as total "
+        "FROM assets a JOIN categories c ON a.category_id=c.id "
+        "WHERE a.user_id=%lld AND c.asset_type IN ('loan','credit_card','other_liability')",
+        (long long)user_id);
+    csilk_json_t* liab_rows = csilk_db_query_json(pool, sql);
+    if (liab_rows && csilk_json_array_size(liab_rows) > 0) {
+        total_liabilities = csilk_json_get_number(csilk_json_array_get(liab_rows, 0), "total");
+        csilk_json_free(liab_rows);
+    }
+
+    // 30-day net worth trend (daily snapshots, asset counted from its updated_at)
+    snprintf(sql, sizeof(sql),
+        "SELECT json_group_array(json_object('date', d, 'net_worth', nw)) as trend FROM ("
+        "WITH RECURSIVE dates(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM dates WHERE i < 29) "
+        "SELECT date('now','-'||(29-i)||' days') as d, "
+        "(SELECT COALESCE(SUM(a.current_value),0) FROM assets a JOIN categories c ON a.category_id=c.id "
+        "WHERE a.user_id=%lld AND c.asset_type NOT IN ('loan','credit_card','other_liability') "
+        "AND a.updated_at < date('now','-'||(29-i)||' days','+1 day')) - "
+        "(SELECT COALESCE(SUM(a.current_value),0) FROM assets a JOIN categories c ON a.category_id=c.id "
+        "WHERE a.user_id=%lld AND c.asset_type IN ('loan','credit_card','other_liability') "
+        "AND a.updated_at < date('now','-'||(29-i)||' days','+1 day')) as nw "
+        "FROM dates)",
+        (long long)user_id, (long long)user_id);
+    csilk_json_t* trend_rows = csilk_db_query_json(pool, sql);
+
+    csilk_json_t* resp = csilk_json_object();
+    csilk_json_add_number(resp, "total_assets", total_assets);
+    csilk_json_add_number(resp, "total_liabilities", total_liabilities);
+    csilk_json_add_number(resp, "net_worth", total_assets - total_liabilities);
+    csilk_json_add_array(resp, "breakdown", breakdown);
+    if (trend_rows && csilk_json_array_size(trend_rows) > 0) {
+        csilk_json_add_array(resp, "trend", csilk_json_get(csilk_json_array_get(trend_rows, 0), "trend"));
+    } else {
+        csilk_json_add_array(resp, "trend", csilk_json_array());
+    }
+    if (trend_rows) csilk_json_free(trend_rows);
+    respond_ok(c, resp);
+}
