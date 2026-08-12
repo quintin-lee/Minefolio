@@ -18,7 +18,8 @@ async function fetchPublicKey(): Promise<RsaJwk> {
   const res = await fetch('/api/auth/public-key')
   if (!res.ok) throw new Error('Failed to fetch public key')
   const body = await res.json()
-  return body.data.public_key
+  const pk = body.data.public_key
+  return typeof pk === 'string' ? JSON.parse(pk) : pk
 }
 
 function arrayBufferToBase64url(buf: ArrayBuffer): string {
