@@ -1,6 +1,7 @@
 #include "common/response.h"
 #include "common/db.h"
 #include "common/jwt.h"
+#include "common/balance.h"
 #include "csilk/csilk.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,13 +20,15 @@ void daily_expenses_list(csilk_ctx_t* c) {
 
     char sql[1024];
     snprintf(sql, sizeof(sql),
-        "SELECT de.id, de.user_id, de.category_id, de.expense_type, de.amount, "
+        "SELECT de.id, de.user_id, de.category_id, de.asset_id, de.expense_type, de.amount, "
         "de.currency, de.expense_date, de.note, de.created_at, de.updated_at, "
-        "c.name as category_name, "
+        "c.name as category_name, a.name as asset_name, "
         "(SELECT json_group_array(json_object('id', t.id, 'name', t.name, 'color', t.color)) "
         " FROM expense_tags et JOIN tags t ON et.tag_id=t.id "
         " WHERE et.expense_id=de.id) as tags "
-        "FROM daily_expenses de LEFT JOIN categories c ON de.category_id=c.id "
+        "FROM daily_expenses de "
+        "LEFT JOIN categories c ON de.category_id=c.id "
+        "LEFT JOIN assets a ON de.asset_id=a.id "
         "WHERE de.user_id=%lld", (long long)user_id);
 
     if (type)
@@ -71,6 +74,8 @@ void daily_expenses_list(csilk_ctx_t* c) {
         csilk_json_add_string(item, "created_at", csilk_json_get_string(row, "created_at"));
         csilk_json_add_string(item, "updated_at", csilk_json_get_string(row, "updated_at"));
         csilk_json_add_string(item, "category_name", csilk_json_get_string(row, "category_name"));
+        csilk_json_add_number(item, "asset_id", db_get_num(row, "asset_id"));
+        csilk_json_add_string(item, "asset_name", csilk_json_get_string(row, "asset_name"));
         const char* tags_str = csilk_json_get_string(row, "tags");
         csilk_json_t* tags_arr = (tags_str && tags_str[0]) ? csilk_json_parse(tags_str) : NULL;
         csilk_json_add_array(item, "tags", tags_arr ? tags_arr : csilk_json_array());
@@ -88,13 +93,14 @@ void daily_expenses_create(csilk_ctx_t* c) {
     if (!body) { respond_bad_request(c, "请求体必须为 JSON"); return; }
 
     int64_t category_id = (int64_t)csilk_json_get_number(body, "category_id");
+    int64_t asset_id = (int64_t)csilk_json_get_number(body, "asset_id");
     const char* type = csilk_json_get_string(body, "expense_type");
     double amount = csilk_json_get_number(body, "amount");
     const char* date = csilk_json_get_string(body, "expense_date");
 
-    if (category_id <= 0 || !type || amount <= 0 || !date) {
+    if (category_id <= 0 || asset_id <= 0 || !type || amount <= 0 || !date) {
         csilk_json_free(body);
-        respond_bad_request(c, "category_id、expense_type、amount、expense_date 为必填");
+        respond_bad_request(c, "asset_id、category_id、expense_type、amount、expense_date 为必填");
         return;
     }
 
@@ -106,12 +112,20 @@ void daily_expenses_create(csilk_ctx_t* c) {
     csilk_db_pool_t* pool = db_get_pool();
     char sql[512];
     snprintf(sql, sizeof(sql),
-        "INSERT INTO daily_expenses (user_id, category_id, expense_type, amount, currency, expense_date, note) "
-        "VALUES (%lld, %lld, '%s', %.2f, '%s', '%s', '%s') RETURNING id",
-        (long long)user_id, (long long)category_id, type, amount, currency, date, note ? note : "");
+        "INSERT INTO daily_expenses (user_id, category_id, asset_id, expense_type, amount, currency, expense_date, note) "
+        "VALUES (%lld, %lld, %lld, '%s', %.2f, '%s', '%s', '%s') RETURNING id",
+        (long long)user_id, (long long)category_id, (long long)asset_id,
+        type, amount, currency, date, note ? note : "");
+
+    if (csilk_db_exec(pool, "BEGIN TRANSACTION") != 0) {
+        csilk_json_free(body);
+        respond_error(c, 500, "数据库错误");
+        return;
+    }
 
     csilk_json_t* ins = csilk_db_query_json(pool, sql);
     if (!ins || csilk_json_array_size(ins) == 0) {
+        csilk_db_exec(pool, "ROLLBACK");
         if (ins) csilk_json_free(ins);
         csilk_json_free(body);
         respond_error(c, 500, "创建失败");
@@ -119,6 +133,16 @@ void daily_expenses_create(csilk_ctx_t* c) {
     }
     int64_t expense_id = db_get_int(csilk_json_array_get(ins, 0), "id");
     csilk_json_free(ins);
+
+    // 联动资产余额（income=+，expense=-；负债方向在 balance_apply_delta 内反转）
+    double business_delta = (strcmp(type, "income") == 0) ? amount : -amount;
+    if (balance_apply_delta(pool, asset_id, user_id, business_delta,
+                            "daily_expense", expense_id, note) != 0) {
+        csilk_db_exec(pool, "ROLLBACK");
+        csilk_json_free(body);
+        respond_bad_request(c, "资产无效");
+        return;
+    }
 
     // Handle tags
     if (tags && csilk_json_is_array(tags)) { // CSILK_JSON_ARRAY
@@ -137,6 +161,7 @@ void daily_expenses_create(csilk_ctx_t* c) {
         }
     }
 
+    csilk_db_exec(pool, "COMMIT");
     csilk_json_free(body);
     respond_ok_null(c);
 }
@@ -165,7 +190,26 @@ void daily_expenses_update(csilk_ctx_t* c) {
     }
     csilk_json_free(chk);
 
+    // 读取旧记录（差量联动需要）
+    char old_sql[256];
+    snprintf(old_sql, sizeof(old_sql),
+        "SELECT amount, expense_type, asset_id FROM daily_expenses "
+        "WHERE id=%s AND user_id=%lld", id_str, (long long)user_id);
+    csilk_json_t* old_row = csilk_db_query_json(pool, old_sql);
+    if (!old_row || csilk_json_array_size(old_row) == 0) {
+        csilk_json_free(body);
+        if (old_row) csilk_json_free(old_row);
+        respond_not_found(c);
+        return;
+    }
+    const csilk_json_t* old_r = csilk_json_array_get(old_row, 0);
+    double old_amount = db_get_num(old_r, "amount");
+    const char* old_type = csilk_json_get_string(old_r, "expense_type");
+    int64_t old_asset_id = db_get_int(old_r, "asset_id");
+    double old_delta = (old_type && strcmp(old_type, "income") == 0) ? old_amount : -old_amount;
+
     int64_t category_id = (int64_t)csilk_json_get_number(body, "category_id");
+    int64_t asset_id = (int64_t)csilk_json_get_number(body, "asset_id");
     const char* type = csilk_json_get_string(body, "expense_type");
     double amount = csilk_json_get_number(body, "amount");
     const char* date = csilk_json_get_string(body, "expense_date");
@@ -173,16 +217,58 @@ void daily_expenses_update(csilk_ctx_t* c) {
     const char* note = csilk_json_get_string(body, "note");
     csilk_json_t* tags = csilk_json_get(body, "tags");
 
+    if (category_id <= 0 || asset_id <= 0 || !type || amount <= 0 || !date) {
+        csilk_json_free(body);
+        csilk_json_free(old_row);
+        respond_bad_request(c, "asset_id、category_id、expense_type、amount、expense_date 为必填");
+        return;
+    }
+
     char sql[512];
     snprintf(sql, sizeof(sql),
-        "UPDATE daily_expenses SET category_id=%lld, expense_type='%s', amount=%.2f, "
+        "UPDATE daily_expenses SET category_id=%lld, asset_id=%lld, expense_type='%s', amount=%.2f, "
         "currency='%s', expense_date='%s', note='%s', updated_at=CURRENT_TIMESTAMP "
         "WHERE id=%s AND user_id=%lld",
-        (long long)category_id, type ? type : "", amount,
+        (long long)category_id, (long long)asset_id, type ? type : "", amount,
         currency ? currency : "CNY", date ? date : "", note ? note : "",
         id_str, (long long)user_id);
 
+    if (csilk_db_exec(pool, "BEGIN TRANSACTION") != 0) {
+        csilk_json_free(body);
+        csilk_json_free(old_row);
+        respond_error(c, 500, "数据库错误");
+        return;
+    }
+
     csilk_db_exec(pool, sql);
+
+    // 差量联动：新旧 delta 计算（income=+，expense=-）
+    double new_delta = (strcmp(type, "income") == 0) ? amount : -amount;
+    if (asset_id == old_asset_id) {
+        // 同资产：合并为一次差值调用（产生 1 条审计）
+        if (new_delta != old_delta) {
+            if (balance_apply_delta(pool, asset_id, user_id, new_delta - old_delta,
+                                    "daily_expense", atoll(id_str), note) != 0) {
+                csilk_db_exec(pool, "ROLLBACK");
+                csilk_json_free(body);
+                csilk_json_free(old_row);
+                respond_bad_request(c, "资产无效");
+                return;
+            }
+        }
+    } else {
+        // 异资产：A 回退旧 delta，B 应用新 delta（产生 2 条审计）
+        if (balance_apply_delta(pool, old_asset_id, user_id, -old_delta,
+                                "daily_expense", atoll(id_str), note) != 0 ||
+            balance_apply_delta(pool, asset_id, user_id, new_delta,
+                                "daily_expense", atoll(id_str), note) != 0) {
+            csilk_db_exec(pool, "ROLLBACK");
+            csilk_json_free(body);
+            csilk_json_free(old_row);
+            respond_bad_request(c, "资产无效");
+            return;
+        }
+    }
 
     // Sync tags: delete existing links, then re-insert from body
     char del_tags_sql[256];
@@ -206,7 +292,9 @@ void daily_expenses_update(csilk_ctx_t* c) {
         }
     }
 
+    csilk_db_exec(pool, "COMMIT");
     csilk_json_free(body);
+    csilk_json_free(old_row);
     respond_ok_null(c);
 }
 
@@ -218,6 +306,30 @@ void daily_expenses_delete(csilk_ctx_t* c) {
     if (!id_str) { respond_bad_request(c, "缺少 id"); return; }
 
     csilk_db_pool_t* pool = db_get_pool();
+
+    // 读取旧记录（反转联动需要）
+    char old_sql[256];
+    snprintf(old_sql, sizeof(old_sql),
+        "SELECT amount, expense_type, asset_id FROM daily_expenses "
+        "WHERE id=%s AND user_id=%lld", id_str, (long long)user_id);
+    csilk_json_t* old_row = csilk_db_query_json(pool, old_sql);
+    if (!old_row || csilk_json_array_size(old_row) == 0) {
+        if (old_row) csilk_json_free(old_row);
+        respond_not_found(c);
+        return;
+    }
+    const csilk_json_t* old_r = csilk_json_array_get(old_row, 0);
+    double old_amount = db_get_num(old_r, "amount");
+    const char* old_type = csilk_json_get_string(old_r, "expense_type");
+    int64_t asset_id = db_get_int(old_r, "asset_id");
+    double old_delta = (old_type && strcmp(old_type, "income") == 0) ? old_amount : -old_amount;
+
+    if (csilk_db_exec(pool, "BEGIN TRANSACTION") != 0) {
+        csilk_json_free(old_row);
+        respond_error(c, 500, "数据库错误");
+        return;
+    }
+
     char del_tags_sql[256];
     snprintf(del_tags_sql, sizeof(del_tags_sql),
         "DELETE FROM expense_tags WHERE expense_id=%s", id_str);
@@ -227,6 +339,18 @@ void daily_expenses_delete(csilk_ctx_t* c) {
     snprintf(del_sql, sizeof(del_sql),
         "DELETE FROM daily_expenses WHERE id=%s AND user_id=%lld", id_str, (long long)user_id);
     csilk_db_exec(pool, del_sql);
+
+    // 反转旧 delta（支出反转 +，收入反转 -）
+    if (balance_apply_delta(pool, asset_id, user_id, -old_delta,
+                            "daily_expense", atoll(id_str), NULL) != 0) {
+        csilk_db_exec(pool, "ROLLBACK");
+        csilk_json_free(old_row);
+        respond_error(c, 500, "删除失败");
+        return;
+    }
+
+    csilk_db_exec(pool, "COMMIT");
+    csilk_json_free(old_row);
     respond_ok_null(c);
 }
 
