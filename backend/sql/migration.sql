@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS categories (
     user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name       TEXT NOT NULL,
     parent_id  INTEGER REFERENCES categories(id) ON DELETE SET NULL,
-    type       TEXT NOT NULL DEFAULT 'asset' CHECK(type IN ('asset','income','expense')),
+    type       TEXT NOT NULL DEFAULT 'asset' CHECK(type IN ('asset','income','expense','transaction')),
     asset_type TEXT DEFAULT 'cash' CHECK(asset_type IN (
         'cash','stock','fund','bond','crypto',
         'real_estate','vehicle','other_asset',

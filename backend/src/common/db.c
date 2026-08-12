@@ -52,6 +52,36 @@ int db_run_migrations(csilk_db_pool_t* pool) {
     // Try adding 'type' column for pre-existing databases (ignore failure if column already exists)
     csilk_db_exec(pool, "ALTER TABLE categories ADD COLUMN type TEXT NOT NULL DEFAULT 'asset'");
 
+    // ---- 交易分类 CHECK 约束迁移 ----
+    csilk_json_t* cat_schema = csilk_db_query_json(pool, "SELECT sql FROM sqlite_master WHERE type='table' AND name='categories'");
+    if (cat_schema && csilk_json_array_size(cat_schema) > 0) {
+        const char* sql_def = csilk_json_get_string(csilk_json_array_get(cat_schema, 0), "sql");
+        if (sql_def && !strstr(sql_def, "'transaction'")) {
+            csilk_db_exec(pool, "PRAGMA foreign_keys=OFF");
+            csilk_db_exec(pool, "BEGIN TRANSACTION");
+            csilk_db_exec(pool,
+                "CREATE TABLE categories_new ("
+                "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                "  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,"
+                "  name TEXT NOT NULL,"
+                "  parent_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,"
+                "  type TEXT NOT NULL DEFAULT 'asset' CHECK(type IN ('asset','income','expense','transaction')),"
+                "  asset_type TEXT DEFAULT 'cash' CHECK(asset_type IN ('cash','stock','fund','bond','crypto','real_estate','vehicle','other_asset','loan','credit_card','other_liability')),"
+                "  currency TEXT DEFAULT 'CNY',"
+                "  icon TEXT,"
+                "  sort_order INTEGER DEFAULT 0,"
+                "  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,"
+                "  UNIQUE(user_id, name, parent_id)"
+                ")");
+            csilk_db_exec(pool, "INSERT INTO categories_new SELECT * FROM categories");
+            csilk_db_exec(pool, "DROP TABLE categories");
+            csilk_db_exec(pool, "ALTER TABLE categories_new RENAME TO categories");
+            csilk_db_exec(pool, "COMMIT");
+            csilk_db_exec(pool, "PRAGMA foreign_keys=ON");
+        }
+    }
+    if (cat_schema) csilk_json_free(cat_schema);
+
     // ---- 收支-资产联动迁移（列存在性门控，一次性） ----
     // 检测 daily_expenses 是否已有 asset_id 列
     int has_asset_id = 0;
