@@ -124,8 +124,9 @@ async function submit() {
 
 <style scoped>
 .settings-page {
-  max-width: 720px;
-  margin: 0 auto;
+  padding: 24px;
+  background-color: #f8fafc;
+  min-height: 100%;
 }
 .page-header {
   display: flex;
@@ -157,7 +158,7 @@ async function submit() {
 .panel-container {
   background: #ffffff;
   border-radius: 16px;
-  padding: 20px;
+  padding: 24px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
 }
 .panel-header {
