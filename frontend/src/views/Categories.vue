@@ -339,8 +339,13 @@ function onFormTypeChange() {
 }
 
 async function loadData() {
-  const data = await categoryStore.loadCategories()
-  categories.value = data
+  try {
+    const data = await categoryStore.loadCategories()
+    categories.value = data
+  } catch (err) {
+    console.error('[Categories] loadData failed:', err)
+    ElMessage.error('加载分类失败')
+  }
 }
 
 function openDialog(cat?: any) {

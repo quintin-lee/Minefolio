@@ -74,7 +74,14 @@
       <el-main class="main">
         <router-view v-slot="{ Component }">
           <transition name="fade-transform" mode="out-in">
-            <component :is="Component" />
+            <suspense>
+              <template #default>
+                <component :is="Component" />
+              </template>
+              <template #fallback>
+                <div class="page-loading">加载中...</div>
+              </template>
+            </suspense>
           </transition>
         </router-view>
       </el-main>
@@ -289,5 +296,13 @@ function handleCommand(cmd: string) {
 .fade-transform-leave-to {
   opacity: 0;
   transform: translateX(-15px);
+}
+.page-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: #64748b;
+  font-size: 14px;
 }
 </style>
