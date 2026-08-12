@@ -205,19 +205,25 @@ function formatCurrency(v: number) { return new Intl.NumberFormat('zh-CN', { sty
 async function loadData() {
   const params: any = {}
   if (filters.type) params.expense_type = filters.type
+  const now = new Date()
+  let y = now.getFullYear()
+  let m = now.getMonth() + 1
   if (filters.month) {
-    const [y = '', m = ''] = filters.month.split('-')
-    params.start_date = `${y}-${m}-01`
-    const lastDay = new Date(parseInt(y), parseInt(m), 0).getDate()
-    params.end_date = `${y}-${m}-${String(lastDay).padStart(2, '0')}`
+    const [pYear, pMonth] = filters.month.split('-')
+    if (pYear && pMonth) {
+      y = parseInt(pYear)
+      m = parseInt(pMonth)
+      params.start_date = `${pYear}-${pMonth}-01`
+      const lastDay = new Date(y, m, 0).getDate()
+      params.end_date = `${pYear}-${pMonth}-${String(lastDay).padStart(2, '0')}`
+    }
   }
-  const res = await dailyExpensesApi.list(params)
+  const [res, mr] = await Promise.all([
+    dailyExpensesApi.list(params),
+    dailyExpensesApi.monthly(y, m)
+  ])
   expenses.value = res
-  if (filters.month) {
-    const [y = '', m = ''] = filters.month.split('-')
-    const mr = await dailyExpensesApi.monthly(parseInt(y), parseInt(m))
-    monthSummary.value = mr
-  }
+  monthSummary.value = mr
 }
 
 function onCatChange(val: any) { const last = (val as any[])?.[(val as any[]).length - 1]; form.category_id = last != null ? Number(last) : null }

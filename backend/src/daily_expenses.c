@@ -456,8 +456,9 @@ void daily_expenses_monthly(csilk_ctx_t* c) {
         "WHERE user_id=? AND expense_date LIKE ?", params);
     double income = 0, expense = 0;
     if (totals && csilk_json_array_size(totals) > 0) {
-        income = csilk_json_get_number(csilk_json_array_get(totals, 0), "total_income");
-        expense = csilk_json_get_number(csilk_json_array_get(totals, 0), "total_expense");
+        const csilk_json_t* tot_row = csilk_json_array_get(totals, 0);
+        income = db_get_num(tot_row, "total_income");
+        expense = db_get_num(tot_row, "total_expense");
     }
     if (totals) csilk_json_free(totals);
 
