@@ -36,7 +36,7 @@ const form = defineModel<DailyExpenseFormModel>({ required: true })
 
 .premium-form :deep(.el-form-item__label) {
   font-weight: 500;
-  color: #475569;
+  color: #94a3b8;
 }
 
 .type-radio-group :deep(.el-radio-button__inner) {

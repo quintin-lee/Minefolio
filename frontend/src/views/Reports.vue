@@ -281,8 +281,8 @@ onMounted(loadAll)
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
 }
 
-.income-text { color: #10b981; }
-.expense-text { color: #ef4444; }
+.income-text { color: #34d399; text-shadow: 0 0 8px rgba(52,211,153,0.4); }
+.expense-text { color: #f87171; text-shadow: 0 0 8px rgba(248,113,113,0.3); }
 
 .chart-container {
   flex: 1;

@@ -228,6 +228,27 @@ body {
   background-color: var(--mf-warning-light) !important;
   color: var(--mf-warning) !important;
 }
+.el-tag--info {
+  background-color: rgba(0, 212, 255, 0.08) !important;
+  color: #00d4ff !important;
+}
+/* effect="light" overrides for dark theme */
+.el-tag--light.el-tag--success {
+  background-color: rgba(16, 185, 129, 0.15) !important;
+  color: #34d399 !important;
+}
+.el-tag--light.el-tag--danger {
+  background-color: rgba(239, 68, 68, 0.15) !important;
+  color: #f87171 !important;
+}
+.el-tag--light.el-tag--warning {
+  background-color: rgba(245, 158, 11, 0.15) !important;
+  color: #fbbf24 !important;
+}
+.el-tag--light.el-tag--info {
+  background-color: rgba(0, 212, 255, 0.12) !important;
+  color: #00d4ff !important;
+}
 
 /* Pagination */
 .el-pagination {
@@ -255,6 +276,144 @@ body {
   box-shadow: 0 0 8px rgba(0, 212, 255, 0.4);
 }
 .el-tabs__content { color: var(--mf-text-main); }
+
+/* Dropdown / Popover */
+.el-dropdown-menu, .el-popover, .el-popper {
+  background: rgba(15, 23, 42, 0.95) !important;
+  border: 1px solid var(--mf-border) !important;
+  backdrop-filter: blur(12px);
+  box-shadow: var(--mf-shadow-glow) !important;
+  color: var(--mf-text-main);
+}
+.el-dropdown-menu__item { color: var(--mf-text-main) !important; }
+.el-dropdown-menu__item:hover { background: rgba(0, 212, 255, 0.08) !important; }
+
+/* Select */
+.el-select-dropdown {
+  background: rgba(15, 23, 42, 0.95) !important;
+  border: 1px solid var(--mf-border) !important;
+  backdrop-filter: blur(12px);
+  box-shadow: var(--mf-shadow-glow) !important;
+}
+.el-select-dropdown__item { color: var(--mf-text-main) !important; }
+.el-select-dropdown__item.hover, .el-select-dropdown__item:hover {
+  background: rgba(0, 212, 255, 0.08) !important;
+}
+.el-select-dropdown__item.selected { color: var(--mf-primary) !important; }
+
+/* Date Picker */
+.el-date-picker, .el-picker-panel {
+  background: rgba(15, 23, 42, 0.95) !important;
+  border: 1px solid var(--mf-border) !important;
+  color: var(--mf-text-main) !important;
+  backdrop-filter: blur(12px);
+  box-shadow: var(--mf-shadow-glow) !important;
+}
+.el-date-table th { color: var(--mf-text-muted) !important; border-bottom-color: var(--mf-border) !important; }
+.el-date-table td { color: var(--mf-text-main) !important; }
+.el-date-table td.available:hover { color: var(--mf-primary) !important; }
+.el-date-table td.today span { color: var(--mf-primary) !important; box-shadow: 0 0 0 1px var(--mf-primary) !important; }
+.el-date-table td.current:not(.disabled) span { background: var(--mf-primary) !important; color: #060b18 !important; }
+.el-date-table td.in-range span { background: rgba(0, 212, 255, 0.1) !important; }
+.el-date-table td.in-range.is-start-end span { background: var(--mf-primary) !important; color: #060b18 !important; }
+.el-date-picker__header-label { color: var(--mf-text-main) !important; }
+.el-date-picker__header-label:hover { color: var(--mf-primary) !important; }
+.el-year-table td .cell, .el-month-table td .cell { color: var(--mf-text-main) !important; }
+.el-year-table td.current .cell, .el-month-table td.current .cell { background: var(--mf-primary) !important; color: #060b18 !important; }
+
+/* Cascader */
+.el-cascader-menu {
+  background: rgba(15, 23, 42, 0.95) !important;
+  border-color: var(--mf-border) !important;
+}
+.el-cascader-node { color: var(--mf-text-main) !important; }
+.el-cascader-node:hover { background: rgba(0, 212, 255, 0.08) !important; }
+.el-cascader-node.is-active { color: var(--mf-primary) !important; }
+.el-cascader-node.is-disabled { color: var(--mf-text-placeholder) !important; }
+
+/* Tooltip */
+.el-tooltip__popper {
+  background: rgba(15, 23, 42, 0.95) !important;
+  border: 1px solid var(--mf-border) !important;
+  color: var(--mf-text-main) !important;
+}
+
+/* Notification */
+.el-notification {
+  background: rgba(15, 23, 42, 0.95) !important;
+  border: 1px solid var(--mf-border) !important;
+  backdrop-filter: blur(12px);
+  color: var(--mf-text-main) !important;
+}
+.el-notification__title { color: var(--mf-text-main) !important; }
+
+/* Message */
+.el-message {
+  background: rgba(15, 23, 42, 0.95) !important;
+  border: 1px solid var(--mf-border) !important;
+  backdrop-filter: blur(12px);
+  color: var(--mf-text-main) !important;
+}
+.el-message--success .el-message__content { color: #34d399 !important; }
+.el-message--error .el-message__content { color: #f87171 !important; }
+.el-message--warning .el-message__content { color: #fbbf24 !important; }
+.el-message--info .el-message__content { color: #00d4ff !important; }
+
+/* MessageBox */
+.el-message-box {
+  background: rgba(15, 23, 42, 0.95) !important;
+  border: 1px solid var(--mf-border) !important;
+  backdrop-filter: blur(12px);
+  color: var(--mf-text-main) !important;
+}
+.el-message-box__title { color: var(--mf-text-main) !important; }
+.el-message-box__message { color: var(--mf-text-main) !important; }
+
+/* Loading overlay */
+.el-loading-spinner { color: var(--mf-primary) !important; }
+.el-loading-spinner .path { stroke: var(--mf-primary) !important; }
+
+/* Input Number */
+.el-input-number .el-input__wrapper {
+  background-color: rgba(15, 23, 42, 0.6) !important;
+}
+.el-input-number__decrease, .el-input-number__increase {
+  background: rgba(30, 41, 59, 0.6) !important;
+  color: var(--mf-text-muted) !important;
+  border-color: var(--mf-border) !important;
+}
+.el-input-number__decrease:hover, .el-input-number__increase:hover {
+  color: var(--mf-primary) !important;
+}
+
+/* Radio Button */
+.el-radio-button__inner {
+  background: rgba(30, 41, 59, 0.8) !important;
+  border-color: var(--mf-border) !important;
+  color: var(--mf-text-muted) !important;
+}
+.el-radio-button__original-radio:checked + .el-radio-button__inner {
+  background: linear-gradient(135deg, #00d4ff, #0ea5e9) !important;
+  border-color: #00d4ff !important;
+  color: #060b18 !important;
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.3) !important;
+}
+
+/* Switch */
+.el-switch__core {
+  background-color: rgba(30, 41, 59, 0.8) !important;
+  border-color: var(--mf-border) !important;
+}
+.el-switch.is-checked .el-switch__core {
+  background-color: var(--mf-primary) !important;
+  border-color: var(--mf-primary) !important;
+}
+.el-switch__core::after {
+  background-color: #94a3b8 !important;
+}
+.el-switch.is-checked .el-switch__core::after {
+  background-color: #060b18 !important;
+}
 
 /* Card System */
 .card-panel {

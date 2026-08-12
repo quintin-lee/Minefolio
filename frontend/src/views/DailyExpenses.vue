@@ -125,7 +125,7 @@
             <el-option v-for="a in allAssets" :key="a.id" :label="`${a.name}（${a.currency} ${Number(a.current_value).toFixed(2)}）`" :value="Number(a.id)">
               <span>{{ a.name }}</span>
               <el-tag v-if="a.asset_type === 'loan' || a.asset_type === 'credit_card' || a.asset_type === 'other_liability'" size="small" type="warning" effect="light" style="margin-left: 8px">负债</el-tag>
-              <span style="float: right; color: #8492a6; font-size: 13px">{{ a.currency }} {{ Number(a.current_value).toFixed(2) }}</span>
+              <span style="float: right; color: #475569; font-size: 13px">{{ a.currency }} {{ Number(a.current_value).toFixed(2) }}</span>
             </el-option>
           </el-select>
         </el-form-item>
@@ -287,13 +287,13 @@ onMounted(async () => {
   border-radius: var(--mf-radius-md);
   font-weight: 500;
   padding: 10px 20px;
-  box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.2);
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.3);
   transition: all 0.2s ease;
 }
 
 .action-btn:hover {
   transform: translateY(-1px);
-  box-shadow: 0 6px 8px -1px rgba(59, 130, 246, 0.3);
+  box-shadow: var(--mf-shadow-glow);
 }
 
 .filter-panel {
@@ -318,7 +318,7 @@ onMounted(async () => {
 
 .premium-filters :deep(.el-form-item__label) {
   font-weight: 500;
-  color: #475569;
+  color: #94a3b8;
 }
 
 .filter-select {
@@ -348,8 +348,8 @@ onMounted(async () => {
   letter-spacing: -0.5px;
 }
 
-.income-text { color: #10b981; }
-.expense-text { color: #ef4444; }
+.income-text { color: #34d399; text-shadow: 0 0 8px rgba(52,211,153,0.4); }
+.expense-text { color: #f87171; text-shadow: 0 0 8px rgba(248,113,113,0.3); }
 
 .main-panel {
   background: var(--mf-surface);
@@ -488,13 +488,14 @@ onMounted(async () => {
 }
 
 .type-radio-group :deep(.el-radio-button.is-active .el-radio-button__inner) {
-  background-color: var(--mf-primary);
-  border-color: var(--mf-primary);
-  color: white;
+  background: linear-gradient(135deg, #00d4ff, #0ea5e9) !important;
+  border-color: #00d4ff !important;
+  color: #060b18 !important;
 }
 
 .premium-form :deep(.el-input__wrapper) {
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  background-color: rgba(15, 23, 42, 0.6) !important;
+  box-shadow: 0 0 0 1px var(--mf-border) inset !important;
   border-radius: var(--mf-radius-md);
   padding: 6px 12px;
 }

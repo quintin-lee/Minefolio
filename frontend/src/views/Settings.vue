@@ -180,7 +180,8 @@ async function submit() {
 }
 
 .premium-form :deep(.el-input__wrapper) {
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  background-color: rgba(15, 23, 42, 0.6) !important;
+  box-shadow: 0 0 0 1px var(--mf-border) inset !important;
   border-radius: var(--mf-radius-md);
   padding: 6px 12px;
 }
