@@ -99,15 +99,6 @@ export const zhCN = {
     totalAssets: '总资产',
     totalLiabilities: '总负债',
   },
-  // 转账
-  transfer: {
-    title: '资产转账',
-    fromAsset: '转出资产',
-    toAsset: '转入资产',
-    transferDate: '转账日期',
-    selectFromAsset: '选择转出资产',
-    selectToAsset: '选择转入资产',
-  },
   // 分类
   categories: {
     title: '分类管理',

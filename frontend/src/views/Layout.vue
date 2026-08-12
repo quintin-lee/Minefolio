@@ -26,10 +26,6 @@
           <el-icon><Folder /></el-icon>
           <span>{{ t('nav.categories') }}</span>
         </el-menu-item>
-        <el-menu-item index="/transfer">
-          <el-icon><Switch /></el-icon>
-          <span>{{ t('nav.transfer') }}</span>
-        </el-menu-item>
         <el-menu-item index="/reports">
           <el-icon><PieChart /></el-icon>
           <span>{{ t('nav.reports') }}</span>
@@ -105,7 +101,6 @@ const pageTitle = computed(() => {
     '/transactions': '交易记录',
     '/daily-expenses': '日常收支',
     '/categories': '分类管理',
-    '/transfer': '资产转账',
     '/reports': '报表中心',
     '/audit-logs': '日志',
   }
