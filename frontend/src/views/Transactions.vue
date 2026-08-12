@@ -113,7 +113,7 @@
            </el-radio-group>
          </el-form-item>
         <el-form-item label="分类" prop="category_id">
-          <el-cascader v-model="form._catPath" :options="categoryTree" :props="{ checkStrictly: true, value: 'id', label: 'name' }" placeholder="选择分类" style="width: 100%" clearable />
+          <el-cascader v-model="form._catPath" :options="categoryTree" :props="{ checkStrictly: true, value: 'id', label: 'name' }" placeholder="选择分类" style="width: 100%" clearable @change="onCatChange" />
         </el-form-item>
         <div class="form-row">
           <el-form-item label="金额" prop="amount" style="flex: 1">
@@ -216,8 +216,14 @@ function inferSourceType(type: string): 'income' | 'expense' {
   return incomeTypes.includes(type) ? 'income' : 'expense'
 }
 
-function onCatChange(last: number | null) {
-  form.category_id = last !== null ? Number(last) : null
+function onCatChange(val: any) {
+  if (Array.isArray(val) && val.length > 0) {
+    form.category_id = Number(val[val.length - 1])
+  } else if (val) {
+    form.category_id = Number(val)
+  } else {
+    form.category_id = null
+  }
 }
 
 function resetFilters() { Object.assign(filters, { asset_id: '', type: '', dateRange: null }) ; loadData() }
@@ -275,7 +281,7 @@ async function handleDelete(txn: any) {
 }
 
 onMounted(async () => {
-  const [assetsRes, catsRes] = await Promise.all([assetsApi.list(), categoriesApi.list({ type: 'income,expense' })])
+  const [assetsRes, catsRes] = await Promise.all([assetsApi.list(), categoriesApi.list({ type: 'transaction' })])
   assets.value = assetsRes
   allCategories.value = catsRes
   loadData()
