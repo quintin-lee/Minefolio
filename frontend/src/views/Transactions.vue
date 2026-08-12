@@ -163,7 +163,7 @@ const transactionTypes = [
   { label: '亏损', value: 'loss' },
 ]
 const form = reactive({ asset_id: null as number | null, transaction_type: 'buy' as Transaction['transaction_type'], amount: 0, quantity: 0, price_per_unit: 0, transaction_date: '', note: '', category_id: null as number | null, currency: '' as string, _catPath: [] as number[] })
-const rules = { asset_id: [{ required: true }], transaction_type: [{ required: true }], amount: [{ required: true }], transaction_date: [{ required: true }] }
+const rules = { asset_id: [{ required: true, message: '请选择资产' }], transaction_type: [{ required: true, message: '请选择交易类型' }], amount: [{ required: true, message: '请输入金额' }, { type: 'number', min: Number.EPSILON, message: '金额必须大于零' }], transaction_date: [{ required: true, message: '请选择日期' }] }
 
 function typeLabel(t: string) { return transactionTypes.find(x => x.value === t)?.label || t }
 function typeTag(t: string): 'success' | 'warning' | 'danger' | 'info' | 'primary' {
@@ -184,6 +184,10 @@ async function loadData() {
 function onAssetChange(assetId: number | null) {
   const asset = assets.value.find(a => a.id === assetId)
   if (asset) form.currency = asset.currency || ''
+}
+
+function onCatChange(last: number | null) {
+  form.category_id = last !== null ? Number(last) : null
 }
 
 function resetFilters() { Object.assign(filters, { asset_id: '', type: '', dateRange: null }) ; loadData() }
