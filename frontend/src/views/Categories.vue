@@ -36,8 +36,7 @@
                 <template #default="{ node, data }">
                   <div class="tree-node-wrapper">
                     <div class="tree-node-content">
-                      <span class="node-icon" v-if="!data.children || data.children.length === 0">·</span>
-                      <span class="node-icon folder" v-else>📁</span>
+                      <span class="node-icon">{{ (data as any).icon || defaultIcon(data as Category) }}</span>
                       <span class="node-label">{{ node.label }}</span>
                       <el-tag size="small" :type="categoryTypeTagType(data.type)" effect="light" class="mini-type-tag">
                         {{ categoryTypeLabel(data.type) }}
@@ -60,7 +59,14 @@
             </div>
             <div class="panel-body-scroll">
               <el-table :data="filteredFlatCategories" class="premium-table" row-class-name="premium-row" header-cell-class-name="premium-header">
-                <el-table-column prop="name" label="名称" min-width="140" />
+                <el-table-column prop="name" label="名称" min-width="140">
+                  <template #default="{ row }">
+                    <span class="cat-name-cell">
+                      <span class="cat-icon">{{ (row as any).icon || defaultIcon(row as Category) }}</span>
+                      {{ row.name }}
+                    </span>
+                  </template>
+                </el-table-column>
                 <el-table-column prop="type" label="分类大类" width="110">
                   <template #default="{ row }">
                     <el-tag size="small" :type="categoryTypeTagType(row.type)" effect="light" class="type-tag">
@@ -106,6 +112,12 @@
       <el-form ref="formRef" :model="form" :rules="rules" label-width="90px" class="premium-form">
         <el-form-item label="分类名称" prop="name">
           <el-input v-model="form.name" placeholder="输入分类名称" />
+        </el-form-item>
+
+        <el-form-item label="图标">
+          <el-select v-model="form.icon" clearable style="width: 100%" placeholder="选择图标">
+            <el-option v-for="ic in iconOptions" :key="ic.value" :label="ic.value" :value="ic.value" />
+          </el-select>
         </el-form-item>
 
         <el-form-item label="分类大类" prop="type">
@@ -180,6 +192,35 @@ const assetTypes = [
   { label: '其他负债', value: 'other_liability' },
 ]
 
+const iconOptions = [
+  { label: '💰 钱包', value: '💰' },
+  { label: '🏦 银行', value: '🏦' },
+  { label: '💵 现金', value: '💵' },
+  { label: '📱 支付宝', value: '📱' },
+  { label: '💬 微信', value: '💬' },
+  { label: '💳 信用卡', value: '💳' },
+  { label: '📈 股票', value: '📈' },
+  { label: '📊 基金', value: '📊' },
+  { label: '🪙 加密货币', value: '🪙' },
+  { label: '💎 投资', value: '💎' },
+  { label: '🏠 房产', value: '🏠' },
+  { label: '🚗 车辆', value: '🚗' },
+  { label: '💸 贷款', value: '💸' },
+  { label: '🛒 购物', value: '🛒' },
+  { label: '🍔 餐饮', value: '🍔' },
+  { label: '🚗 交通', value: '🚗' },
+  { label: '🎮 娱乐', value: '🎮' },
+  { label: '🏥 医疗', value: '🏥' },
+  { label: '📚 教育', value: '📚' },
+  { label: '🎁 人情', value: '🎁' },
+  { label: '💼 工作', value: '💼' },
+  { label: '📋 交易', value: '📋' },
+  { label: '⚡ 公用事业', value: '⚡' },
+  { label: '🏛 资产', value: '🏛' },
+  { label: '💹 理财', value: '💹' },
+  { label: '🔑 其他', value: '🔑' },
+]
+
 const form = reactive({
   name: '',
   type: 'asset' as CategoryType,
@@ -188,7 +229,8 @@ const form = reactive({
   sort_order: 0,
   parent_id: null as number | null,
   _parentPath: [] as number[],
-  _hasChildren: false
+  _hasChildren: false,
+  icon: '' as string,
 })
 
 const rules = {
@@ -240,6 +282,48 @@ function categoryTypeTagType(t: CategoryType) {
 
 function assetTypeLabel(t: string) { return assetTypes.find(x => x.value === t)?.label || t }
 
+const ASSET_ICONS: Record<string, string> = {
+  cash: '💵', stock: '📈', fund: '📊', bond: '💎', crypto: '🪙',
+  real_estate: '🏠', vehicle: '🚗', other_asset: '📦',
+  loan: '💸', credit_card: '💳', other_liability: '⚖️',
+}
+
+const CHILD_ICONS: Record<string, string> = {
+  // expense children
+  '早晚餐/正餐': '🍜', '水果零食': '🍎', '外卖聚餐': '🥡', '咖啡奶茶': '☕',
+  '公共交通': '🚇', '打车网约车': '🚕', '加油停车': '⛽', '飞机高铁': '✈️', '高速/停车费': '🛣',
+  '服饰鞋包': '👗', '日用百货': '🧴', '数码家电': '💻', '生鲜果蔬': '🥬', '家居清洁': '🧹',
+  '房租房贷': '🏘', '水电燃气': '⚡', '网络话费': '📶', '物业费': '🏢', '维修家政': '🔧',
+  '游戏影视': '🎬', '运动健身': '🏃', '旅游度假': '🏖', '会员订阅': '📺', '文娱演出': '🎭',
+  '药品诊疗': '💊', '保健体检': '🩺', '住院手术': '🏥', '医疗保险': '🛡',
+  '礼金红包': '🧧', '孝敬父母': '👨', '请客送礼': '🎁', '捐赠公益': '❤️',
+  '学费培训': '📘', '书籍资料': '📖', '在线课程': '💡', '考证报名': '📝',
+  '宠物食品': '🦴', '宠物医疗': '🐾', '宠物用品': '🧸', '宠物美容': '✂️',
+  '保险费用': '🔒', '其他杂费': '📦',
+  // income children
+  '基本工资': '💼', '绩效奖金': '⭐', '兼职外包': '🔨', '年终奖': '🎄', '加班费': '⏰', '补贴津贴': '💵',
+  '股票/基金收益': '💹', '存款利息': '🪙', '股息分红': '📈', '租金收入': '🏠', '外汇收益': '💱',
+  '二手转让': '♻️', '政府补贴': '📢', '退款返现': '🏷', '奖学金/补助': '🎓',
+  // transaction children
+  '股票买卖': '📈', '基金申赎': '📊', '债券买卖': '🎫', '港股/美股交易': '🌏', '新股申购': '📋',
+  '现货买卖': '↕️', '合约质押': '⛓', '交易所出入金': '🔄',
+  '银证/出入金': '💸', '存现/取现': '➕', '交易手续费': '🧾', '资产转移': '🔀',
+  '贵金属': '🥇', '收藏品': '🏛', '黄金积存': '🪙',
+  // asset children
+  '现金账户': '💰', '银行存款': '🏦', '支付宝': '📱', '微信零钱': '💬', '余额宝/零钱通': '🐷', '京东金融': '🛒',
+  '股票证券': '📉', '基金理财': '📊', '加密货币': '⛓', '债券投资': '💎', '港美股账户': '🌏',
+  '房产': '🏠', '车辆': '🚗',
+  '信用卡': '💳', '花呗/白条': '📲',
+  '房贷/车贷/贷款': '💸', '消费贷/网贷': '📱',
+  '应收款项': '🪪', '预付卡/储值卡': '🎫',
+}
+
+function defaultIcon(cat: Category) {
+  if (cat.name && CHILD_ICONS[cat.name]) return CHILD_ICONS[cat.name]
+  if (cat.asset_type && ASSET_ICONS[cat.asset_type]) return ASSET_ICONS[cat.asset_type]
+  return { asset: '🏦', expense: '🛒', income: '💰', transaction: '📋' }[cat.type] ?? '🔑'
+}
+
 const parentOptions = computed(() => {
   return categories.value.filter(c => c.type === form.type && c.id !== editingId.value)
 })
@@ -270,7 +354,8 @@ function openDialog(cat?: any) {
     sort_order: cat.sort_order,
     parent_id: cat.parent_id,
     _parentPath: cat.parent_id ? [cat.parent_id] : [],
-    _hasChildren: !!cat.children
+    _hasChildren: !!cat.children,
+    icon: cat.icon || ''
   } : {
     name: '',
     type: defaultType,
@@ -279,7 +364,8 @@ function openDialog(cat?: any) {
     sort_order: 0,
     parent_id: null,
     _parentPath: [],
-    _hasChildren: false
+    _hasChildren: false,
+    icon: ''
   })
   dialogVisible.value = true
 }
@@ -297,7 +383,8 @@ async function handleSubmit() {
         asset_type: form.type === 'asset' ? form.asset_type : 'cash',
         currency: form.currency,
         sort_order: form.sort_order,
-        parent_id: form.parent_id
+        parent_id: form.parent_id,
+        icon: form.icon || null
       }
       if (editingId.value) await categoriesApi.update(editingId.value, data)
       else await categoriesApi.create(data)
@@ -488,6 +575,26 @@ onMounted(loadData)
 .node-label {
   font-weight: 500;
   color: #e2e8f0;
+}
+
+.node-icon {
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  flex-shrink: 0;
+}
+
+.cat-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cat-icon {
+  font-size: 15px;
+  flex-shrink: 0;
 }
 
 .tree-actions {
