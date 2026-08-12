@@ -141,5 +141,19 @@ check "买入从钱包扣款 -500" "-9500.0" "$BAL_WALLET"
 check "关联资金账户名称查出" "钱包" "$LINKED_NAME"
 
 echo ""
+echo "== 15. 修改密码：原密码错误 == "
+CODE=$(curl -s -X PUT -H "$AUTH" -H "Content-Type: application/json" "$BASE/auth/password" -d '{"old_password":"wrongpass","new_password":"newpass123"}' | jq -r '.code | floor')
+check "原密码错误 code=1002" "1002" "$CODE"
+
+echo "== 16. 修改密码：成功 == "
+CODE=$(curl -s -X PUT -H "$AUTH" -H "Content-Type: application/json" "$BASE/auth/password" -d '{"old_password":"pass1234","new_password":"newpass123"}' | jq -r '.code | floor')
+check "修改密码成功 code=0" "0" "$CODE"
+
+echo "== 17. 用新密码登录 == "
+LOGIN_RES=$(req POST /auth/login '{"username":"linktest","password":"newpass123"}')
+LOGIN_CODE=$(echo "$LOGIN_RES" | jq -r '.code | floor')
+check "新密码登录成功" "0" "$LOGIN_CODE"
+
+echo ""
 echo "结果: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

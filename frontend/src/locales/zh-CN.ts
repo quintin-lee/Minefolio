@@ -9,9 +9,11 @@ export const zhCN = {
     transfer: '转账',
     reports: '报表',
     auditLogs: '日志',
+    settings: '系统设置',
     login: '登录',
     logout: '退出',
     profile: '个人',
+    changePassword: '修改密码',
   },
   // 通用
   common: {
@@ -111,5 +113,21 @@ export const zhCN = {
     currency: '币种',
     icon: '图标',
     sortOrder: '排序',
+  },
+  // 设置
+  settings: {
+    title: '系统设置',
+    userInfo: '用户信息',
+    username: '用户名',
+    accountId: '账号 ID',
+    registeredAt: '注册时间',
+    changePassword: '修改密码',
+    oldPassword: '原密码',
+    newPassword: '新密码',
+    confirmPassword: '确认新密码',
+    savePassword: '保存新密码',
+    passwordMin: '密码至少6个字符',
+    passwordMismatch: '两次输入的密码不一致',
+    passwordSuccess: '密码修改成功，请使用新密码重新登录',
   },
 }

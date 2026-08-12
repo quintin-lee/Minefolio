@@ -9,6 +9,7 @@
 extern void auth_register(csilk_ctx_t* c);
 extern void auth_login(csilk_ctx_t* c);
 extern void auth_me(csilk_ctx_t* c);
+extern void auth_change_password(csilk_ctx_t* c);
 extern void categories_list(csilk_ctx_t* c);
 extern void categories_create(csilk_ctx_t* c);
 extern void categories_update(csilk_ctx_t* c);
@@ -186,6 +187,7 @@ int main(int argc, char** argv) {
 
     // Auth
     csilk_app_get(app, "/api/auth/me", auth_me);
+    csilk_app_put(app, "/api/auth/password", auth_change_password);
 
     // Categories
     csilk_app_get(app, "/api/categories", categories_list);

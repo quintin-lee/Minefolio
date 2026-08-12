@@ -34,6 +34,10 @@
           <el-icon><List /></el-icon>
           <span>{{ t('nav.auditLogs') }}</span>
         </el-menu-item>
+        <el-menu-item index="/settings">
+          <el-icon><Setting /></el-icon>
+          <span>{{ t('nav.settings') }}</span>
+        </el-menu-item>
       </el-menu>
     </el-aside>
 
@@ -53,6 +57,10 @@
             </div>
             <template #dropdown>
               <el-dropdown-menu class="user-dropdown">
+                <el-dropdown-item command="settings">
+                  <el-icon><Setting /></el-icon>
+                  {{ t('nav.changePassword') }}
+                </el-dropdown-item>
                 <el-dropdown-item command="logout" class="danger-item">
                   <el-icon><SwitchButton /></el-icon>
                   {{ t('nav.logout') }}
@@ -94,21 +102,24 @@ const auth = useAuthStore()
 
 const activeMenu = computed(() => route.path)
 
-const pageTitle = computed(() => {
-  const map: Record<string, string> = {
-    '/dashboard': '仪表盘',
-    '/assets': '资产管理',
-    '/transactions': '交易记录',
-    '/daily-expenses': '日常收支',
-    '/categories': '分类管理',
-    '/reports': '报表中心',
-    '/audit-logs': '日志',
-  }
-  return map[route.path] || 'Minefolio'
-})
+  const pageTitle = computed(() => {
+    const map: Record<string, string> = {
+      '/dashboard': '仪表盘',
+      '/assets': '资产管理',
+      '/transactions': '交易记录',
+      '/daily-expenses': '日常收支',
+      '/categories': '分类管理',
+      '/reports': '报表中心',
+      '/audit-logs': '日志',
+      '/settings': '系统设置',
+    }
+    return map[route.path] || 'Minefolio'
+  })
 
 function handleCommand(cmd: string) {
-  if (cmd === 'logout') {
+  if (cmd === 'settings') {
+    router.push('/settings')
+  } else if (cmd === 'logout') {
     auth.logout()
     ElMessage.success('已退出登录')
     router.push('/login')

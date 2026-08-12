@@ -18,4 +18,6 @@ export const authApi = {
   register: (username: string, password: string) =>
     http.post<LoginResponse, LoginResponse>('/auth/register', { username, password }),
   me: () => http.get<User, User>('/auth/me'),
+  changePassword: (data: { old_password: string; new_password: string }) =>
+    http.put<void, { old_password: string; new_password: string }>('/auth/password', data),
 }

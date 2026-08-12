@@ -257,6 +257,61 @@ void auth_login(csilk_ctx_t* c) {
     csilk_json_free(result);
 }
 
+/** @brief PUT /api/auth/password — 登录后修改密码 */
+void auth_change_password(csilk_ctx_t* c) {
+    int64_t user_id = jwt_get_user_id(c);
+    if (user_id < 0) { respond_unauthorized(c); return; }
+
+    csilk_json_t* body = csilk_bind_json(c);
+    if (!body) { respond_bad_request(c, "请求体必须为 JSON"); return; }
+
+    const char* old_password = csilk_json_get_string(body, "old_password");
+    const char* new_password = csilk_json_get_string(body, "new_password");
+    if (!old_password || !new_password || strlen(new_password) < 6) {
+        csilk_json_free(body);
+        respond_bad_request(c, "原密码和新密码不能为空，新密码需≥6字符");
+        return;
+    }
+
+    if (strcmp(old_password, new_password) == 0) {
+        csilk_json_free(body);
+        respond_bad_request(c, "新密码不能与原密码相同");
+        return;
+    }
+
+    csilk_db_pool_t* pool = db_get_pool();
+    char old_hashed[65];
+    hash_password(old_password, old_hashed, sizeof(old_hashed));
+
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    const char* check_params[] = { uid_str, old_hashed, NULL };
+    csilk_json_t* check = csilk_db_query_param_json(pool,
+        "SELECT id FROM users WHERE id = ? AND password = ?", check_params);
+    if (!check || csilk_json_array_size(check) == 0) {
+        if (check) csilk_json_free(check);
+        csilk_json_free(body);
+        respond_bad_request(c, "原密码不正确");
+        return;
+    }
+    csilk_json_free(check);
+
+    char new_hashed[65];
+    hash_password(new_password, new_hashed, sizeof(new_hashed));
+
+    const char* update_params[] = { new_hashed, uid_str, NULL };
+    csilk_json_t* update_res = csilk_db_query_param_json(pool,
+        "UPDATE users SET password = ? WHERE id = ?", update_params);
+    if (update_res) csilk_json_free(update_res);
+
+    csilk_json_free(body);
+
+    csilk_json_t* resp = csilk_json_object();
+    csilk_json_add_number(resp, "code", 0);
+    csilk_json_add_string(resp, "message", "密码修改成功");
+    respond_ok(c, resp);
+}
+
 /** @brief GET /api/auth/me — 获取当前用户信息 */
 void auth_me(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
