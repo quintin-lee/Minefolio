@@ -717,9 +717,8 @@ body {
 /* Page header accent */
 .page-header {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
   align-items: center;
-  gap: 12px;
   margin-bottom: var(--mf-spacing-lg);
 }
 
