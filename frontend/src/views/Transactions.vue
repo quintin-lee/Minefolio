@@ -5,15 +5,17 @@
         <div class="title-accent"></div>
         <h2>交易记录</h2>
       </div>
-      <el-button type="primary" class="action-btn" @click="openDialog()">
-        <el-icon><Plus /></el-icon> 新增交易
-      </el-button>
-      <el-button class="action-btn" style="background:var(--mf-surface);color:var(--mf-text-main);border-color:var(--mf-border)" @click="exportCsv">
-        <el-icon><Download /></el-icon> 导出 CSV
-      </el-button>
-      <el-button class="action-btn" style="background:var(--mf-surface);color:var(--mf-text-main);border-color:var(--mf-border)" @click="importDialogVisible = true">
-        <el-icon><Upload /></el-icon> 导入 CSV
-      </el-button>
+      <div class="header-actions">
+        <el-button type="primary" class="action-btn" @click="openDialog()">
+          <el-icon><Plus /></el-icon> 新增交易
+        </el-button>
+        <el-button class="action-btn" style="background:var(--mf-surface);color:var(--mf-text-main);border-color:var(--mf-border)" @click="exportCsv">
+          <el-icon><Download /></el-icon> 导出 CSV
+        </el-button>
+        <el-button class="action-btn" style="background:var(--mf-surface);color:var(--mf-text-main);border-color:var(--mf-border)" @click="importDialogVisible = true">
+          <el-icon><Upload /></el-icon> 导入 CSV
+        </el-button>
+      </div>
     </div>
 
     <!-- 顶部汇总统计卡片 -->
@@ -718,6 +720,12 @@ async function handleImport() {
   border-radius: var(--mf-radius-md);
   padding: 8px 16px;
   font-weight: 500;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .summary-cards {
