@@ -168,7 +168,7 @@ void transactions_create(csilk_ctx_t* c) {
     snprintf(qty_str, sizeof(qty_str), "%.4f", qty);
 
     const char* ins_params[] = {
-        uid_str, ast_str, linked_asset_id > 0 ? last_str : NULL, cat_str, src_type, type,
+        uid_str, ast_str, last_str, cat_str, src_type, type,
         amt_str, price_str, qty_str, currency, date, note ? note : "", NULL
     };
 
@@ -181,7 +181,7 @@ void transactions_create(csilk_ctx_t* c) {
     csilk_json_t* ins = csilk_db_query_param_json(pool,
         "INSERT INTO transactions (user_id, asset_id, linked_asset_id, category_id, source_type, transaction_type, "
         "amount, price_per_unit, quantity, currency, transaction_date, note) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id", ins_params);
+        "VALUES (?, ?, NULLIF(?, '0'), ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id", ins_params);
     if (!ins || csilk_json_array_size(ins) == 0) {
         csilk_db_exec(pool, "ROLLBACK");
         if (ins) csilk_json_free(ins);
@@ -291,8 +291,7 @@ void transactions_update(csilk_ctx_t* c) {
     const char* up_params[] = {
         type ? type : "", amt_str, price_str, qty_str,
         currency ? currency : "CNY", date ? date : "", note ? note : "",
-        cat_str, src_type ? src_type : "expense",
-        linked_asset_id > 0 ? last_str : NULL,
+        cat_str, src_type ? src_type : "expense", last_str,
         id_str, uid_str, NULL
     };
 
@@ -306,7 +305,7 @@ void transactions_update(csilk_ctx_t* c) {
     csilk_json_t* up_res = csilk_db_query_param_json(pool,
         "UPDATE transactions SET transaction_type=?, amount=?, price_per_unit=?, "
         "quantity=?, currency=?, transaction_date=?, note=?, "
-        "category_id=?, source_type=?, linked_asset_id=? WHERE id=? AND user_id=?", up_params);
+        "category_id=?, source_type=?, linked_asset_id=NULLIF(?, '0') WHERE id=? AND user_id=?", up_params);
     if (up_res) csilk_json_free(up_res);
 
     // 1. 目标资产差值联动
