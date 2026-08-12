@@ -162,6 +162,14 @@ onMounted(async () => {
   margin-bottom: 0;
 }
 
+.filter-select {
+  width: 170px;
+}
+
+.filter-date {
+  width: 260px;
+}
+
 .filter-actions {
   margin-left: auto;
 }
