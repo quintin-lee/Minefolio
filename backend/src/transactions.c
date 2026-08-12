@@ -96,12 +96,13 @@ void transactions_create(csilk_ctx_t* c) {
     csilk_json_t* body = csilk_bind_json(c);
     if (!body) { respond_bad_request(c, "请求体必须为 JSON"); return; }
 
-    int64_t asset_id = (int64_t)csilk_json_get_number(body, "asset_id");
-    int64_t category_id = (int64_t)csilk_json_get_number(body, "category_id");
+    int64_t asset_id = db_get_int(body, "asset_id");
+    int64_t category_id = db_get_int(body, "category_id");
     const char* type = csilk_json_get_string(body, "transaction_type");
+    if (!type || strlen(type) == 0) type = csilk_json_get_string(body, "type");
     const char* src_type = csilk_json_get_string(body, "source_type");
     if (!src_type) src_type = "expense";
-    double amount = csilk_json_get_number(body, "amount");
+    double amount = db_get_num(body, "amount");
     const char* date = csilk_json_get_string(body, "transaction_date");
 
     if (asset_id <= 0 || !type || amount <= 0 || !date) {
@@ -130,8 +131,8 @@ void transactions_create(csilk_ctx_t* c) {
     const char* currency = csilk_json_get_string(body, "currency");
     if (!currency) currency = "CNY";
     const char* note = csilk_json_get_string(body, "note");
-    double price = csilk_json_get_number(body, "price_per_unit");
-    double qty = csilk_json_get_number(body, "quantity");
+    double price = db_get_num(body, "price_per_unit");
+    double qty = db_get_num(body, "quantity");
 
     char cat_str[32], amt_str[64], price_str[64], qty_str[64];
     snprintf(cat_str, sizeof(cat_str), "%lld", (long long)category_id);
@@ -225,14 +226,15 @@ void transactions_update(csilk_ctx_t* c) {
     double old_tdelta = tx_delta(old_tx_type, old_tx_amount, old_tx_price, old_tx_qty);
 
     const char* type = csilk_json_get_string(body, "transaction_type");
-    double amount = csilk_json_get_number(body, "amount");
+    if (!type || strlen(type) == 0) type = csilk_json_get_string(body, "type");
+    double amount = db_get_num(body, "amount");
     const char* date = csilk_json_get_string(body, "transaction_date");
     const char* currency = csilk_json_get_string(body, "currency");
     const char* note = csilk_json_get_string(body, "note");
     const char* src_type = csilk_json_get_string(body, "source_type");
-    double price = csilk_json_get_number(body, "price_per_unit");
-    double qty = csilk_json_get_number(body, "quantity");
-    int64_t category_id = (int64_t)csilk_json_get_number(body, "category_id");
+    double price = db_get_num(body, "price_per_unit");
+    double qty = db_get_num(body, "quantity");
+    int64_t category_id = db_get_int(body, "category_id");
 
     char amt_str[64], price_str[64], qty_str[64], cat_str[32];
     snprintf(amt_str, sizeof(amt_str), "%.6f", amount);

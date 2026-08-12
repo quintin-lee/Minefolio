@@ -105,10 +105,10 @@ void daily_expenses_create(csilk_ctx_t* c) {
     csilk_json_t* body = csilk_bind_json(c);
     if (!body) { respond_bad_request(c, "请求体必须为 JSON"); return; }
 
-    int64_t category_id = (int64_t)csilk_json_get_number(body, "category_id");
-    int64_t asset_id = (int64_t)csilk_json_get_number(body, "asset_id");
+    int64_t category_id = db_get_int(body, "category_id");
+    int64_t asset_id = db_get_int(body, "asset_id");
     const char* type = csilk_json_get_string(body, "expense_type");
-    double amount = csilk_json_get_number(body, "amount");
+    double amount = db_get_num(body, "amount");
     const char* date = csilk_json_get_string(body, "expense_date");
 
     if (category_id <= 0 || asset_id <= 0 || !type || amount <= 0 || !date) {
