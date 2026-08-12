@@ -19,4 +19,8 @@ export const transactionsApi = {
   create: (data: any) => http.post<void, void>('/transactions', data),
   update: (id: number, data: any) => http.put<void, void>(`/transactions/${id}`, data),
   delete: (id: number) => http.delete<void, void>(`/transactions/${id}`),
+  exportCsv: () => http.get('/export/transactions', { responseType: 'blob' }) as unknown as Promise<Blob>,
+  importCsv: (text: string) => http.post<{ imported: number; errors: number; errors_detail?: string }>('/import/transactions', text, {
+    headers: { 'Content-Type': 'text/csv; charset=utf-8' },
+  }),
 }
