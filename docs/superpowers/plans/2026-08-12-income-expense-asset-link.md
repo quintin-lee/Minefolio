@@ -25,6 +25,7 @@
 | `backend/src/assets.c` | 修改 | assets_delete 检查 csilk_db_exec 返回值 |
 | `frontend/src/types/index.ts` | 修改 | DailyExpense 加 asset_id / asset_name |
 | `frontend/src/views/DailyExpenses.vue` | 修改 | 表单加资产选择器（必选）、列表加关联资产列 |
+| `frontend/src/views/Transactions.vue` | 修改 | 编辑对话框加"修改金额将同步调整资产余额"提示（spec §8.3） |
 | `backend/tests/test_link.sh` | 新建 | curl + sqlite3 集成测试脚本 |
 
 **测试策略（重要背景）**：项目当前**无任何测试基础设施**（backend 无 tests/、无 pytest/gtest；frontend 无 vitest）。本计划不引入新框架（YAGNI、符合项目现状），采用**真实服务器 + curl + sqlite3 CLI 的集成测试脚本** `backend/tests/test_link.sh`：启动带独立临时 DB 的服务器，通过 HTTP API 操作，用 sqlite3 直接查询数据库验证余额与审计日志。覆盖 spec §9.1/9.2/9.3 全部核心场景。
@@ -112,13 +113,13 @@ Expected: `.schema daily_expenses` 输出含 `asset_id` 行；`.tables` 含 `ass
 ### Task 1.2: db.c 门控迁移 + 无条件索引
 
 **Files:**
-- Modify: `backend/src/common/db.c`（db_run_migrations 函数，当前 L18-43）
+- Modify: `backend/src/common/db.c`（db_run_migrations 函数，当前 L24-56；末尾 `free(sql); return 0;` 在 L53-55）
 
 **背景（已实测）**：现有 `db_run_migrations` 读 migration.sql 整段执行后，再单独执行一条"忽略失败"的 categories ALTER。`csilk_db_query_json(pool, "PRAGMA table_info(daily_expenses)")` 可查列（返回每列 `name` 字段）。
 
 - [ ] **Step 1: 修改 db_run_migrations，在 migration.sql 执行后加入门控逻辑**
 
-将 db_run_migrations 中 `csilk_db_exec(pool, "ALTER TABLE categories ADD COLUMN type TEXT NOT NULL DEFAULT 'asset'");` 之后的部分替换为：
+**精确替换说明**：将 db_run_migrations 函数体从 `// Try adding 'type' column...` 注释开始（当前 L51）到函数末尾 `return 0;`（当前 L55）之间的内容**整体替换**为下面的完整代码块（含门控逻辑 + 无条件索引 + 末尾 `free(sql); return 0;`）。**注意**：categories 的 ALTER 语句在替换块中出现一次即可，不要重复；`free(sql); return 0;` 必须保留在函数末尾（删除会导致内存泄漏 + int 函数无返回值的编译错误）。
 
 ```c
     // Try adding 'type' column for pre-existing databases (ignore failure if column already exists)
@@ -154,6 +155,10 @@ Expected: `.schema daily_expenses` 输出含 `asset_id` 行；`.tables` 含 `ass
 
     // 无条件幂等建索引（全新库首启 / 存量库 ALTER 后 / 失败自愈均覆盖）
     csilk_db_exec(pool, "CREATE INDEX IF NOT EXISTS idx_daily_expenses_asset ON daily_expenses(asset_id)");
+
+    free(sql);
+    return 0;
+}
 ```
 
 同时确保 db.c 顶部已 include 所需头：`csilk/csilk.h`（提供 csilk_db_query_json / csilk_json_*）与 `<string.h>`。**检查现有 includes**，缺则补：
@@ -174,7 +179,7 @@ Expected: 编译成功，无 error。
 ```bash
 # 构造旧 schema 库：用 git show 的旧 migration.sql（无 asset_id）建库，插入一条脏数据
 cd backend/build
-git -C .. show HEAD:sql/migration.sql > /tmp/old_migration.sql
+git -C ../.. show HEAD:backend/sql/migration.sql > /tmp/old_migration.sql
 rm -f /tmp/mf_old.db
 sqlite3 /tmp/mf_old.db < /tmp/old_migration.sql
 sqlite3 /tmp/mf_old.db "INSERT INTO daily_expenses (user_id, category_id, expense_type, amount, currency, expense_date) VALUES (1, 1, 'expense', 100, 'CNY', '2026-08-01');"
@@ -360,7 +365,9 @@ git commit -m "feat(balance): 新增 balance_apply_delta 联动模块——归�
 
 **背景（已实测）**：daily_expenses_list 的 SELECT 手工拼 SQL，结果用手工逐列重建 JSON 行（L58-78）——遗漏字段会导致前端拿不到。需在 SELECT 加 `de.asset_id` 与 `a.name as asset_name`（JOIN assets），并在重建循环中显式添加两个字段。
 
-- [ ] **Step 1: 修改 SELECT 语句（L21-29）**
+- [ ] **Step 1: 修改 SELECT 语句（L20-29，含 `char sql[1024];` 声明行）**
+
+> ⚠️ **替换范围含声明行**：`char sql[1024];` 在 L20，`snprintf(...)` 至 L29。整体替换 L20-29，**不要**从 L21 开始（否则会留下重复的 `char sql[1024];` 声明，编译报错）。
 
 原：
 ```c
@@ -571,7 +578,9 @@ git commit -m "feat(balance): 新增 balance_apply_delta 联动模块——归�
     }
 ```
 
-- [ ] **Step 4: UPDATE 语句加 asset_id，并包裹事务 + 差量联动（L176-207 区域重写）**
+- [ ] **Step 4: UPDATE 语句加 asset_id，并包裹事务 + 差量联动（L176-207 整体重写，含 `char sql[512];` 声明行 L176）**
+
+> ⚠️ **替换范围含声明行**：`char sql[512];` 在 L176。整体替换 L176-207，**不要**从 L177 开始（否则重复声明，编译报错）。
 
 原 UPDATE SQL 与 tags 同步块整体替换为：
 ```c
@@ -848,7 +857,7 @@ static double tx_delta(const char* type, double amount, double price, double qty
     // 读取旧记录（差值联动需要；quantity/price 用于重算旧 buy/sell 的 type_delta）
     char old_sql[256];
     snprintf(old_sql, sizeof(old_sql),
-        "SELECT amount, transaction_type, quantity, price_per_unit "
+        "SELECT asset_id, amount, transaction_type, quantity, price_per_unit "
         "FROM transactions WHERE id=%s AND user_id=%lld", id_str, (long long)user_id);
     csilk_json_t* old_row = csilk_db_query_json(pool, old_sql);
     if (!old_row || csilk_json_array_size(old_row) == 0) {
@@ -1199,6 +1208,37 @@ onMounted(async () => {
               <el-table-column prop="asset_name" label="关联资产" min-width="110" />
 ```
 
+### Task 5.4: Transactions.vue 编辑对话框加余额同步提示
+
+**Files:**
+- Modify: `frontend/src/views/Transactions.vue:78-109`（编辑对话框 el-form 顶部）
+
+**背景**：spec §8.3——交易记录已有 `asset_id` 选择器（无需新增），但编辑时需提示用户"修改金额将同步调整资产余额"。该提示仅在编辑模式（`editingId` 非空）显示。
+
+- [ ] **Step 1: 在 el-form 顶部（L80 资产选择器之前）插入条件提示**
+
+在 `el-dialog` 内 `el-form` 的 `<el-form-item label="资产"` 之前插入：
+```html
+        <el-alert v-if="editingId" type="info" :closable="false" show-icon
+                  title="修改金额/类型将同步调整关联资产的余额" style="margin-bottom: 16px" />
+```
+
+> 说明：`editingId` 为现有 ref（L69 `@click="openDialog(row)"` 设置，L78 `editingId ? '编辑交易' : '新增交易'`），无需新增状态。`el-alert` 是 Element Plus 全局组件（main.ts 全量注册，已确认），无需额外 import。
+
+- [ ] **Step 2: 前端类型检查**
+
+```bash
+cd frontend && npx vue-tsc --noEmit 2>&1 | tail -5
+```
+Expected: 无 error。
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add frontend/src/views/Transactions.vue
+git commit -m "feat(frontend): 交易编辑对话框提示余额同步（spec 8.3）"
+```
+
 ### Task 5.3: 前端类型检查 + 构建
 
 - [ ] **Step 1: 类型检查**
@@ -1239,7 +1279,7 @@ git commit -m "feat(frontend): 收支表单加必选资产选择器, 列表显�
 # 用法: ./test_link.sh   (需已在 backend/build 构建过 minefolio)
 set -euo pipefail
 
-BASE="http://localhost:8099/api"   # 独立端口避免与 dev 冲突
+BASE="http://localhost:8080/api"   # 后端硬编码 8080（main.c:234），运行前确认 8080 空闲
 DB="/tmp/mf_link_test.db"
 BUILD_DIR="$(cd "$(dirname "$0")/../build" && pwd)"
 PASS=0; FAIL=0
@@ -1253,7 +1293,7 @@ trap cleanup EXIT
 # --- 启动服务器 ---
 rm -f "$DB"
 cd "$BUILD_DIR"
-MINEFOLIO_DB_DSN="$DB" MINEFOLIO_PORT="${MINEFOLIO_PORT:-8099}" ./minefolio &
+MINEFOLIO_DB_DSN="$DB" ./minefolio &
 SERVER_PID=$!
 sleep 1
 
@@ -1278,29 +1318,34 @@ curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/categories" -d '{"
 curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/categories" -d '{"name":"工资","type":"income","currency":"CNY"}' >/dev/null
 curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/categories" -d '{"name":"现金","type":"asset","currency":"CNY"}' >/dev/null
 curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/categories" -d '{"name":"信用卡","type":"asset","asset_type":"credit_card","currency":"CNY"}' >/dev/null
+# 读取真实分类 id（避免依赖插入顺序）
+EXPENSE_CAT=$(sqlite3 "$DB" "SELECT id FROM categories WHERE name='日常消费'")
+INCOME_CAT=$(sqlite3 "$DB" "SELECT id FROM categories WHERE name='工资'")
+ASSET_CAT=$(sqlite3 "$DB" "SELECT id FROM categories WHERE name='现金'")
+CC_CAT=$(sqlite3 "$DB" "SELECT id FROM categories WHERE name='信用卡'")
 
 echo "== 2. 建资产 =="
-ASSET_ID=$(req POST /assets '{"name":"钱包","category_id":1,"current_value":10000,"currency":"CNY"}' >/dev/null; echo 1)
-curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/assets" -d '{"name":"钱包","category_id":3,"current_value":10000,"currency":"CNY"}' >/dev/null
+curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/assets" -d "{\"name\":\"钱包\",\"category_id\":$ASSET_CAT,\"current_value\":10000,\"currency\":\"CNY\"}" >/dev/null
+curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/assets" -d "{\"name\":\"信用卡\",\"category_id\":$CC_CAT,\"current_value\":0,\"currency\":\"CNY\"}" >/dev/null
 # 用 sqlite3 直接取真实 id（避免依赖 API 返回）
-WALLET_ID=$(sqlite3 "$DB" "SELECT id FROM assets WHERE name='钱包'")
-CC_ID=$(sqlite3 "$DB" "SELECT id FROM assets WHERE name='信用卡'")
+WALLET_ID=$(sqlite3 "$DB" "SELECT id FROM assets WHERE name='钱包' AND category_id=$ASSET_CAT")
+CC_ID=$(sqlite3 "$DB" "SELECT id FROM assets WHERE name='信用卡' AND category_id=$CC_CAT")
 
 echo "== 3. 记收入 500 → 余额 10500 =="
-curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/daily-expenses" -d "{\"asset_id\":$WALLET_ID,\"category_id\":2,\"expense_type\":\"income\",\"amount\":500,\"currency\":\"CNY\",\"expense_date\":\"2026-08-01\"}" >/dev/null
+curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/daily-expenses" -d "{\"asset_id\":$WALLET_ID,\"category_id\":$INCOME_CAT,\"expense_type\":\"income\",\"amount\":500,\"currency\":\"CNY\",\"expense_date\":\"2026-08-01\"}" >/dev/null
 BAL=$(sqlite3 "$DB" "SELECT current_value FROM assets WHERE id=$WALLET_ID")
 check "普通资产收入+500" "10500.0" "$BAL"
 LOG=$(sqlite3 "$DB" "SELECT delta FROM asset_balance_logs WHERE source_type='daily_expense' ORDER BY id DESC LIMIT 1")
 check "审计 delta=+500" "500.0" "$LOG"
 
 echo "== 4. 记支出 300 → 余额 10200 =="
-curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/daily-expenses" -d "{\"asset_id\":$WALLET_ID,\"category_id\":1,\"expense_type\":\"expense\",\"amount\":300,\"currency\":\"CNY\",\"expense_date\":\"2026-08-02\"}" >/dev/null
+curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/daily-expenses" -d "{\"asset_id\":$WALLET_ID,\"category_id\":$EXPENSE_CAT,\"expense_type\":\"expense\",\"amount\":300,\"currency\":\"CNY\",\"expense_date\":\"2026-08-02\"}" >/dev/null
 BAL=$(sqlite3 "$DB" "SELECT current_value FROM assets WHERE id=$WALLET_ID")
 check "普通资产支出-300" "10200.0" "$BAL"
 
 echo "== 5. 更新收入 500→800 → 余额 10500 =="
 EXP_ID=$(sqlite3 "$DB" "SELECT id FROM daily_expenses WHERE expense_type='income' LIMIT 1")
-curl -s -X PUT -H "$AUTH" -H "Content-Type: application/json" "$BASE/daily-expenses/$EXP_ID" -d "{\"asset_id\":$WALLET_ID,\"category_id\":2,\"expense_type\":\"income\",\"amount\":800,\"currency\":\"CNY\",\"expense_date\":\"2026-08-01\"}" >/dev/null
+curl -s -X PUT -H "$AUTH" -H "Content-Type: application/json" "$BASE/daily-expenses/$EXP_ID" -d "{\"asset_id\":$WALLET_ID,\"category_id\":$INCOME_CAT,\"expense_type\":\"income\",\"amount\":800,\"currency\":\"CNY\",\"expense_date\":\"2026-08-01\"}" >/dev/null
 BAL=$(sqlite3 "$DB" "SELECT current_value FROM assets WHERE id=$WALLET_ID")
 check "更新同资产合并差量+300" "10500.0" "$BAL"
 
@@ -1311,58 +1356,70 @@ BAL=$(sqlite3 "$DB" "SELECT current_value FROM assets WHERE id=$WALLET_ID")
 check "删除支出反转+300" "10800.0" "$BAL"
 
 echo "== 7. 信用卡：刷卡支出 500 → 欠款 +500 =="
-curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/daily-expenses" -d "{\"asset_id\":$CC_ID,\"category_id\":1,\"expense_type\":\"expense\",\"amount\":500,\"currency\":\"CNY\",\"expense_date\":\"2026-08-03\"}" >/dev/null
+curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/daily-expenses" -d "{\"asset_id\":$CC_ID,\"category_id\":$EXPENSE_CAT,\"expense_type\":\"expense\",\"amount\":500,\"currency\":\"CNY\",\"expense_date\":\"2026-08-03\"}" >/dev/null
 BAL=$(sqlite3 "$DB" "SELECT current_value FROM assets WHERE id=$CC_ID")
 check "负债支出→余额+500" "500.0" "$BAL"
 
 echo "== 8. 信用卡还款 500 → 欠款 0 =="
-curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/daily-expenses" -d "{\"asset_id\":$CC_ID,\"category_id\":2,\"expense_type\":\"income\",\"amount\":500,\"currency\":\"CNY\",\"expense_date\":\"2026-08-04\"}" >/dev/null
+curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/daily-expenses" -d "{\"asset_id\":$CC_ID,\"category_id\":$INCOME_CAT,\"expense_type\":\"income\",\"amount\":500,\"currency\":\"CNY\",\"expense_date\":\"2026-08-04\"}" >/dev/null
 BAL=$(sqlite3 "$DB" "SELECT current_value FROM assets WHERE id=$CC_ID")
 check "负债还款→余额-500" "0.0" "$BAL"
 
 echo "== 9. 余额不足允许负数 =="
-curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/daily-expenses" -d "{\"asset_id\":$WALLET_ID,\"category_id\":1,\"expense_type\":\"expense\",\"amount\":20000,\"currency\":\"CNY\",\"expense_date\":\"2026-08-05\"}" >/dev/null
+curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/daily-expenses" -d "{\"asset_id\":$WALLET_ID,\"category_id\":$EXPENSE_CAT,\"expense_type\":\"expense\",\"amount\":20000,\"currency\":\"CNY\",\"expense_date\":\"2026-08-05\"}" >/dev/null
 BAL=$(sqlite3 "$DB" "SELECT current_value FROM assets WHERE id=$WALLET_ID")
 check "允许负数" "-9200.0" "$BAL"
 
-echo "== 10. 非法资产 → 400 且原子回滚 =="
+echo "== 10. 非法资产 → code 1002 且原子回滚 =="
 BEFORE=$(sqlite3 "$DB" "SELECT COUNT(*) FROM daily_expenses")
-RC=$(curl -s -o /dev/null -w '%{http_code}' -H "$AUTH" -H "Content-Type: application/json" "$BASE/daily-expenses" -d '{"asset_id":99999,"category_id":1,"expense_type":"expense","amount":100,"currency":"CNY","expense_date":"2026-08-06"}')
+CODE=$(curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/daily-expenses" -d '{"asset_id":99999,"category_id":1,"expense_type":"expense","amount":100,"currency":"CNY","expense_date":"2026-08-06"}' | jq -r '.code')
 AFTER=$(sqlite3 "$DB" "SELECT COUNT(*) FROM daily_expenses")
-check "非法资产 HTTP 400" "400" "$RC"
+check "非法资产 code=1002" "1002" "$CODE"
 check "非法资产主记录不落库" "$BEFORE" "$AFTER"
 BAL=$(sqlite3 "$DB" "SELECT current_value FROM assets WHERE id=$WALLET_ID")
 check "非法资产余额不变" "-9200.0" "$BAL"
 
 echo "== 11. 交易联动：存款 +1000 =="
-curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/transactions" -d "{\"asset_id\":$WALLET_ID,\"category_id\":3,\"transaction_type\":\"deposit\",\"amount\":1000,\"currency\":\"CNY\",\"transaction_date\":\"2026-08-07\"}" >/dev/null
+curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/transactions" -d "{\"asset_id\":$WALLET_ID,\"category_id\":$ASSET_CAT,\"transaction_type\":\"deposit\",\"amount\":1000,\"currency\":\"CNY\",\"transaction_date\":\"2026-08-07\"}" >/dev/null
 BAL=$(sqlite3 "$DB" "SELECT current_value FROM assets WHERE id=$WALLET_ID")
 check "存款+1000" "-8200.0" "$BAL"
 
 echo "== 12. 转账不联动 =="
-curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/transactions" -d "{\"asset_id\":$WALLET_ID,\"category_id\":3,\"transaction_type\":\"transfer_out\",\"amount\":100,\"currency\":\"CNY\",\"transaction_date\":\"2026-08-08\"}" >/dev/null
+curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/transactions" -d "{\"asset_id\":$WALLET_ID,\"category_id\":$ASSET_CAT,\"transaction_type\":\"transfer_out\",\"amount\":100,\"currency\":\"CNY\",\"transaction_date\":\"2026-08-08\"}" >/dev/null
 BAL=$(sqlite3 "$DB" "SELECT current_value FROM assets WHERE id=$WALLET_ID")
 check "转账不联动" "-8200.0" "$BAL"
+
+echo "== 13. 更新时切换关联资产 A→B（钱包→信用卡）=="
+# 将步骤 5 的收入记录（800，原资产=钱包）切到信用卡：
+# 钱包回退旧 delta（-800 → 余额 -9000），信用卡应用新 delta（+800 → 余额 800），审计 +2 条
+LOG_CNT_BEFORE=$(sqlite3 "$DB" "SELECT COUNT(*) FROM asset_balance_logs")
+curl -s -X PUT -H "$AUTH" -H "Content-Type: application/json" "$BASE/daily-expenses/$EXP_ID" -d "{\"asset_id\":$CC_ID,\"category_id\":$INCOME_CAT,\"expense_type\":\"income\",\"amount\":800,\"currency\":\"CNY\",\"expense_date\":\"2026-08-01\"}" >/dev/null
+BAL_A=$(sqlite3 "$DB" "SELECT current_value FROM assets WHERE id=$WALLET_ID")
+BAL_B=$(sqlite3 "$DB" "SELECT current_value FROM assets WHERE id=$CC_ID")
+LOG_CNT_AFTER=$(sqlite3 "$DB" "SELECT COUNT(*) FROM asset_balance_logs")
+check "A 钱包回退 -800" "-9000.0" "$BAL_A"
+check "B 信用卡应用 +800" "800.0" "$BAL_B"
+check "切换产生 2 条审计" "$((LOG_CNT_BEFORE + 2))" "$LOG_CNT_AFTER"
 
 echo ""
 echo "结果: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1
 ```
 
-> **重要**：端口用 8099（避免与 dev 8080 冲突）。但服务器端口读取方式需确认——若 `MINEFOLIO_PORT` 环境变量不被后端识别，改脚本中 BASE 为 8080 并在运行前确认无 dev 服务器占用。同时**注册/建分类/建资产的请求中 category_id 需按实际插入顺序核对**：建议运行后检查 categories 表顺序，必要时用 sqlite3 取真实 category_id（同 ASSET_ID 方式）。
+> **端口**：后端硬编码 8080（main.c:234，不读 `MINEFOLIO_PORT`），脚本直连 8080——运行前确认无 dev 服务器占用（`lsof -i :8080` 检查）。**category_id 已改为 sqlite3 读取真实 id**（EXPENSE_CAT/INCOME_CAT/ASSET_CAT/CC_CAT），不依赖插入顺序。**非法资产断言用 body 的 `code` 字段**（后端所有响应均 HTTP 200，错误码在 JSON body：respond_bad_request=1002）。
 
 - [ ] **Step 2: 脚本可执行 + 运行**
 
 ```bash
 chmod +x backend/tests/test_link.sh && backend/tests/test_link.sh
 ```
-Expected: 全部 ✅（PASS=12 FAIL=0）。
+Expected: 全部 ✅（PASS=15 FAIL=0）。
 
 - [ ] **Step 3: 若个别断言失败，按错误定位修复**
 
 常见失败点与对策：
-- 分类 id 顺序与脚本硬编码不符 → 改用 sqlite3 取真实 id
-- 端口占用 → 确认 MINEFOLIO_PORT 是否生效，否则改用空闲端口
+- 端口 8080 被占 → `lsof -i :8080` 查找占用进程，停止 dev 服务器后重跑
+- 分类/资产 id 为空 → 检查 register/login 是否成功（TOKEN 是否取出），分类创建请求是否返回错误
 - 服务器启动失败 → 检查构建是否最新（`cd backend/build && make`）
 
 - [ ] **Step 4: Commit**
