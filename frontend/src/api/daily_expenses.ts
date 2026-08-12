@@ -22,4 +22,8 @@ export const dailyExpensesApi = {
     http.get<ExpenseMonthly, ExpenseMonthly>(`/daily-expenses/monthly`, {
       params: { year, month },
     }),
+  exportCsv: () => http.get('/export/daily-expenses', { responseType: 'blob' }) as unknown as Promise<Blob>,
+  importCsv: (text: string) => http.post<{ imported: number; errors: number; errors_detail?: string }>(
+    '/import/daily-expenses', text, { headers: { 'Content-Type': 'text/csv; charset=utf-8' } }
+  ),
 }

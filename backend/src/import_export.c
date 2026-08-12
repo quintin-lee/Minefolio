@@ -322,3 +322,200 @@ void transactions_import_csv(csilk_ctx_t* c) {
         csilk_json_add_string(resp, "errors_detail", errors_detail);
     respond_ok(c, resp);
 }
+
+// ── Daily Expenses Export ─────────────────────────────────────────────────────
+
+void daily_expenses_export_csv(csilk_ctx_t* c) {
+    int64_t user_id = jwt_get_user_id(c);
+    if (user_id < 0) { respond_unauthorized(c); return; }
+
+    csilk_db_pool_t* pool = db_get_pool();
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+
+    csilk_json_t* rows = csilk_db_query_param_json(pool,
+        "SELECT de.expense_date, de.expense_type, de.amount, de.currency, de.note, "
+        "a.name as asset_name, c.name as category_name "
+        "FROM daily_expenses de "
+        "LEFT JOIN assets a ON de.asset_id=a.id "
+        "LEFT JOIN categories c ON de.category_id=c.id "
+        "WHERE de.user_id=? ORDER BY de.expense_date DESC",
+        (const char*[]){ uid_str, NULL });
+
+    char* csv = NULL;
+    size_t csv_len = 0, csv_cap = 4096;
+    csv = malloc(csv_cap);
+    if (!csv) { respond_error(c, 500, "内存不足"); return; }
+    csv_len = snprintf(csv, csv_cap, "date,asset_name,category_name,expense_type,amount,currency,note\n");
+
+    char buf[1024];
+    if (rows && csilk_json_array_size(rows) > 0) {
+        for (size_t i = 0; i < csilk_json_array_size(rows); i++) {
+            const csilk_json_t* row = csilk_json_array_get(rows, i);
+            char e_date[32], e_asset[256], e_cat[256], e_type[16], e_amount[32];
+            char e_currency[16], e_note[512];
+            csv_escape(e_date, sizeof(e_date), csilk_json_get_string(row, "expense_date"));
+            csv_escape(e_asset, sizeof(e_asset), csilk_json_get_string(row, "asset_name"));
+            csv_escape(e_cat, sizeof(e_cat), csilk_json_get_string(row, "category_name"));
+            csv_escape(e_type, sizeof(e_type), csilk_json_get_string(row, "expense_type"));
+            snprintf(e_amount, sizeof(e_amount), "%.2f", db_get_num(row, "amount"));
+            csv_escape(e_currency, sizeof(e_currency), csilk_json_get_string(row, "currency"));
+            csv_escape(e_note, sizeof(e_note), csilk_json_get_string(row, "note"));
+
+            size_t line_len = snprintf(buf, sizeof(buf),
+                "%s,%s,%s,%s,%s,%s,%s\n",
+                e_date, e_asset, e_cat, e_type, e_amount, e_currency, e_note);
+
+            if (csv_len + line_len + 1 > csv_cap) {
+                csv_cap = csv_cap * 2 + line_len;
+                char* tmp = realloc(csv, csv_cap);
+                if (!tmp) { free(csv); respond_error(c, 500, "内存不足"); return; }
+                csv = tmp;
+            }
+            memcpy(csv + csv_len, buf, line_len);
+            csv_len += line_len;
+        }
+    }
+    if (rows) csilk_json_free(rows);
+
+    time_t now = time(NULL);
+    char date_str[16];
+    strftime(date_str, sizeof(date_str), "%Y-%m-%d", localtime(&now));
+
+    char fname[128];
+    snprintf(fname, sizeof(fname), "daily_expenses_%s.csv", date_str);
+
+    csilk_set_header(c, "Content-Type", "text/csv; charset=utf-8");
+    csilk_set_header(c, "Content-Disposition", fname);
+    csilk_response_write(c, (const uint8_t*)csv, csv_len);
+    csilk_response_end(c);
+    free(csv);
+}
+
+// ── Daily Expenses Import ─────────────────────────────────────────────────────
+
+void daily_expenses_import_csv(csilk_ctx_t* c) {
+    int64_t user_id = jwt_get_user_id(c);
+    if (user_id < 0) { respond_unauthorized(c); return; }
+
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+
+    size_t body_len = 0;
+    const char* body = csilk_get_body(c, &body_len);
+    if (!body || body_len == 0) { respond_bad_request(c, "请求体为空"); return; }
+
+    const char* csv = body;
+    size_t csv_len = body_len;
+    if (csv_len >= 3 && csv[0] == '\xef' && csv[1] == '\xbb' && csv[2] == '\xbf') {
+        csv += 3; csv_len -= 3;
+    }
+
+    int imported = 0, errors = 0;
+    char errors_detail[2048] = {0};
+    csilk_db_pool_t* pool = db_get_pool();
+
+    char* data = malloc(csv_len + 1);
+    if (!data) { respond_error(c, 500, "内存不足"); return; }
+    memcpy(data, csv, csv_len);
+    data[csv_len] = '\0';
+
+    char* line_start = data;
+    int line_num = 0;
+    while (*line_start) {
+        char* line_end = strchr(line_start, '\n');
+        size_t line_len = line_end ? (line_end - line_start) : strlen(line_start);
+        while (line_len > 0 && (line_start[line_len-1] == '\r' || line_start[line_len-1] == '\n'))
+            line_len--;
+        if (line_len == 0) { line_start = line_end ? line_end + 1 : line_start + 1; continue; }
+
+        line_num++;
+        if (line_num == 1) { line_start = line_end ? line_end + 1 : line_start + 1; continue; }
+
+        char fields[7][512];
+        int fc = 0;
+        parse_csv_row(line_start, line_len, fields, &fc);
+        if (fc < 5) {
+            errors++;
+            snprintf(errors_detail + strlen(errors_detail), sizeof(errors_detail) - strlen(errors_detail),
+                "第%d行: 字段数不足(%d)\n", line_num, fc);
+            line_start = line_end ? line_end + 1 : line_start + 1;
+            continue;
+        }
+
+        const char* date_s = fields[0];
+        const char* asset_name = fields[1];
+        const char* cat_name = fields[2];
+        const char* exp_type_s = fields[3];
+        const char* amount_s = fields[4];
+        const char* currency_s = fields[5];
+        const char* note_s = fields[6];
+
+        if (!date_s[0] || !asset_name[0] || !exp_type_s[0] || !amount_s[0]) {
+            errors++;
+            snprintf(errors_detail + strlen(errors_detail), sizeof(errors_detail) - strlen(errors_detail),
+                "第%d行: 缺少必填字段\n", line_num);
+            line_start = line_end ? line_end + 1 : line_start + 1;
+            continue;
+        }
+
+        int64_t asset_id = 0;
+        const char* a_params[] = { uid_str, asset_name, NULL };
+        csilk_json_t* a_res = csilk_db_query_param_json(pool,
+            "SELECT id FROM assets WHERE user_id=? AND name=?", a_params);
+        if (a_res && csilk_json_array_size(a_res) > 0)
+            asset_id = db_get_int(csilk_json_array_get(a_res, 0), "id");
+        if (a_res) csilk_json_free(a_res);
+        if (asset_id <= 0) {
+            errors++;
+            snprintf(errors_detail + strlen(errors_detail), sizeof(errors_detail) - strlen(errors_detail),
+                "第%d行: 找不到资产 '%s'\n", line_num, asset_name);
+            line_start = line_end ? line_end + 1 : line_start + 1;
+            continue;
+        }
+
+        int64_t category_id = 0;
+        if (cat_name[0]) {
+            const char* c_params[] = { uid_str, cat_name, NULL };
+            csilk_json_t* c_res = csilk_db_query_param_json(pool,
+                "SELECT id FROM categories WHERE user_id=? AND name=?", c_params);
+            if (c_res && csilk_json_array_size(c_res) > 0)
+                category_id = db_get_int(csilk_json_array_get(c_res, 0), "id");
+            if (c_res) csilk_json_free(c_res);
+        }
+        if (category_id <= 0) {
+            errors++;
+            snprintf(errors_detail + strlen(errors_detail), sizeof(errors_detail) - strlen(errors_detail),
+                "第%d行: 找不到分类 '%s'\n", line_num, cat_name);
+            line_start = line_end ? line_end + 1 : line_start + 1;
+            continue;
+        }
+
+        const char* currency = currency_s[0] ? currency_s : "CNY";
+        const char* exp_type = strcmp(exp_type_s, "income") == 0 ? "income" : "expense";
+
+        const char* ins_params[] = {
+            uid_str, cat_name ? fields[2] : "",
+            asset_name, exp_type, amount_s,
+            currency, date_s, note_s ? note_s : "",
+            NULL
+        };
+
+        csilk_json_t* res = csilk_db_query_param_json(pool,
+            "INSERT INTO daily_expenses (user_id, category_id, asset_id, expense_type, amount, currency, expense_date, note) "
+            "VALUES (?, ?, NULLIF((SELECT id FROM assets WHERE user_id=? AND name=?),0), ?, ?, ?, ?, ?) RETURNING id",
+            ins_params);
+        if (res) csilk_json_free(res);
+        imported++;
+
+        line_start = line_end ? line_end + 1 : line_start + 1;
+    }
+    free(data);
+
+    csilk_json_t* resp = csilk_json_object();
+    csilk_json_add_number(resp, "imported", imported);
+    csilk_json_add_number(resp, "errors", errors);
+    if (errors_detail[0])
+        csilk_json_add_string(resp, "errors_detail", errors_detail);
+    respond_ok(c, resp);
+}

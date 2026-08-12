@@ -5,9 +5,17 @@
         <div class="title-accent"></div>
         <h2>日常收支</h2>
       </div>
-      <el-button type="primary" class="action-btn" @click="openDialog()">
-        <el-icon><Plus /></el-icon> 新增记录
-      </el-button>
+      <div class="header-actions">
+        <el-button type="primary" class="action-btn" @click="openDialog()">
+          <el-icon><Plus /></el-icon> 新增记录
+        </el-button>
+        <el-button class="action-btn" style="background:var(--mf-surface);color:var(--mf-text-main);border-color:var(--mf-border)" @click="exportCsv">
+          <el-icon><Download /></el-icon> 导出 CSV
+        </el-button>
+        <el-button class="action-btn" style="background:var(--mf-surface);color:var(--mf-text-main);border-color:var(--mf-border)" @click="importDialogVisible = true">
+          <el-icon><Upload /></el-icon> 导入 CSV
+        </el-button>
+      </div>
     </div>
 
     <el-row :gutter="24">
@@ -153,17 +161,45 @@
       </template>
     </el-dialog>
   </div>
+
+    <!-- 导入 CSV 对话框 -->
+    <el-dialog v-model="importDialogVisible" title="导入收支记录 (CSV)" width="520px" class="premium-dialog" :show-close="false">
+      <div class="import-dialog-content">
+        <p class="import-hint">
+          CSV 格式：日期, 资产名称, 分类名称, 类型(expense/income), 金额, 币种(可选), 备注(可选)<br>
+          <span class="muted-text">示例：2024-01-15, 现金账户, 餐饮美食, expense, 50, CNY, 午餐</span>
+        </p>
+        <el-upload action="" :auto-upload="false" :limit="1" accept=".csv" drag class="import-upload" @change="handleFileChange">
+          <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+          <div class="el-upload__text">拖拽文件到此处，或 <em>点击选择</em></div>
+          <template #tip><div class="el-upload__tip">仅支持 .csv 文件，UTF-8 编码</div></template>
+        </el-upload>
+        <div v-if="importResult" class="import-result" :class="importResult.ok ? 'success' : 'error'">
+          <el-icon><SuccessFilled /></el-icon>
+          <span>成功导入 {{ importResult.imported }} 条，失败 {{ importResult.errors }} 条</span>
+          <span v-if="importResult.errors_detail" class="import-errors">{{ importResult.errors_detail }}</span>
+        </div>
+      </div>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button class="cancel-btn" @click="importDialogVisible = false; importResult = null; importFile = null; importText = null">关闭</el-button>
+          <el-button type="primary" class="save-btn" :loading="importing" @click="handleImport" :disabled="!importText">开始导入</el-button>
+        </div>
+      </template>
+    </el-dialog>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Plus, Download, Upload, UploadFilled, SuccessFilled } from '@element-plus/icons-vue'
 import { dailyExpensesApi } from '@/api/daily_expenses'
 import { assetsApi } from '@/api/assets'
 import { useCategoryStore } from '@/stores/category'
 import TagPicker from '@/components/TagPicker.vue'
 import MonthlyChart from '@/components/MonthlyChart.vue'
 import ExpenseCategoryPie from '@/components/ExpenseCategoryPie.vue'
+import http from '@/utils/http'
 import type { DailyExpense, Tag, Category, Asset } from '@/types'
 
 const expenses = ref<DailyExpense[]>([])
@@ -292,6 +328,62 @@ onMounted(async () => {
   filters.month = new Date().toISOString().slice(0, 7)
   loadData()
 })
+
+// ── Import / Export ───────────────────────────────────────────────────────────
+const importDialogVisible = ref(false)
+const importFile = ref<File | null>(null)
+const importText = ref<string | null>(null)
+const importResult = ref<{ imported: number; errors: number; errors_detail?: string; ok: boolean } | null>(null)
+const importing = ref(false)
+
+function exportCsv() {
+  http.get('/export/daily-expenses', { responseType: 'blob' }).then((blob: unknown) => {
+    const b = blob as Blob
+    const url = URL.createObjectURL(b)
+    const a = document.createElement('a')
+    a.href = url
+    const now = new Date().toISOString().slice(0, 10)
+    a.download = `daily_expenses_${now}.csv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }).catch(() => ElMessage.error('导出失败'))
+}
+
+function handleFileChange(raw: any) {
+  const file = raw.raw ?? null
+  importFile.value = file
+  importText.value = null
+  importResult.value = null
+  if (file) {
+    const reader = new FileReader()
+    reader.onload = (e) => { importText.value = e.target?.result as string }
+    reader.readAsText(file, 'UTF-8')
+  }
+}
+
+async function handleImport() {
+  if (!importText.value) return
+  importing.value = true
+  importResult.value = null
+  try {
+    const res = await dailyExpensesApi.importCsv(importText.value) as unknown as { imported: number; errors: number; errors_detail?: string }
+    importResult.value = { imported: res.imported, errors: res.errors, errors_detail: res.errors_detail, ok: true }
+    if (res.errors === 0) {
+      ElMessage.success(`成功导入 ${res.imported} 条记录`)
+      importDialogVisible.value = false
+      importFile.value = null
+      importText.value = null
+      importResult.value = null
+      loadData()
+    }
+  } catch (err: any) {
+    importResult.value = { imported: 0, errors: 1, errors_detail: err?.message || '导入失败', ok: false }
+  } finally {
+    importing.value = false
+  }
+}
 </script>
 
 <style scoped>
@@ -550,4 +642,22 @@ onMounted(async () => {
 .save-btn {
   padding: 8px 24px;
 }
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.import-dialog-content { padding: 8px 0; }
+.import-hint { margin: 0 0 16px; font-size: 13px; color: #94a3b8; line-height: 1.6; }
+.import-upload { width: 100%; }
+.import-upload :deep(.el-upload-dragger) { padding: 28px 0; border-radius: var(--mf-radius-md); border: 1px dashed var(--mf-border); background: var(--mf-background); }
+.import-upload :deep(.el-upload-dragger:hover) { border-color: #00d4ff; }
+.import-upload :deep(.el-icon--upload) { font-size: 40px; color: #00d4ff; margin-bottom: 12px; }
+.import-result { margin-top: 16px; padding: 12px 16px; border-radius: var(--mf-radius-md); font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
+.import-result.success { background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); color: #34d399; }
+.import-result.error { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #f87171; }
+.import-result .el-icon { font-size: 16px; }
+.import-errors { font-size: 12px; color: #fca5a5; white-space: pre-wrap; word-break: break-all; }
 </style>

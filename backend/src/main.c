@@ -51,6 +51,8 @@ extern void system_status(csilk_ctx_t* c);
 extern void system_setup(csilk_ctx_t* c);
 extern void transactions_export_csv(csilk_ctx_t* c);
 extern void transactions_import_csv(csilk_ctx_t* c);
+extern void daily_expenses_export_csv(csilk_ctx_t* c);
+extern void daily_expenses_import_csv(csilk_ctx_t* c);
 
 
 // JWT middleware wrapper (new API: no extra args)
@@ -231,6 +233,8 @@ int main(int argc, char** argv) {
     csilk_app_put(app, "/api/daily-expenses/:id", daily_expenses_update);
     csilk_app_delete(app, "/api/daily-expenses/:id", daily_expenses_delete);
     csilk_app_get(app, "/api/daily-expenses/monthly", daily_expenses_monthly);
+    csilk_app_get(app, "/api/export/daily-expenses", daily_expenses_export_csv);
+    csilk_app_post(app, "/api/import/daily-expenses", daily_expenses_import_csv);
 
     // Tags
     csilk_app_get(app, "/api/tags", tags_list);
