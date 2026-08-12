@@ -54,7 +54,7 @@ ALTER TABLE daily_expenses ADD COLUMN asset_id INTEGER NOT NULL
 CREATE INDEX idx_daily_expenses_asset ON daily_expenses(asset_id);
 ```
 
-- 全新数据库：`migration.sql` 中 `CREATE TABLE daily_expenses` 直接包含 `asset_id` 列
+- 全新数据库：`migration.sql` 中 `CREATE TABLE daily_expenses` 直接包含 `asset_id` 列；`CREATE INDEX IF NOT EXISTS idx_daily_expenses_asset` 在每次启动时无条件执行（幂等，见 4）
 - 存量数据库：列存在性门控触发上述 ALTER（此时表已清空，可安全加 `NOT NULL` 无默认值列）
 - **删除资产行为**：`ON DELETE CASCADE`——删除资产时级联删除其收支记录（与现有 `transactions.asset_id` 的 CASCADE 策略一致；原设计文档"保留交易记录"的描述与现有 schema 实际不符，以 CASCADE 为准）。审计日志**不设外键**，删除资产不删除历史日志（见 3.3）。
 
@@ -90,20 +90,22 @@ CREATE INDEX IF NOT EXISTS idx_balance_logs_asset ON asset_balance_logs(asset_id
 
 ```
 1. 执行 migration.sql（IF NOT EXISTS 幂等）
-   - 全新库：daily_expenses 建表含 asset_id，asset_balance_logs 建表 + 索引
+   - 全新库：daily_expenses 建表含 asset_id，asset_balance_logs 建表  （注：migration.sql 中**不**含 idx_daily_expenses_asset 的 CREATE INDEX——存量库首次启动时 asset_id 列尚不存在，放在 migration.sql 里会中断整段执行）
    - 存量库：CREATE TABLE IF NOT EXISTS 跳过已存在表
 2. C 代码查询 PRAGMA table_info(daily_expenses)
-   - 存在 asset_id 列 → 跳过（全新库或已迁移，安全）
-   - 不存在 → 执行一次性迁移（C 代码内依次执行）：
+   - 不存在 asset_id 列 → 执行一次性迁移（C 代码内依次执行）：
      a. DELETE FROM expense_tags
      b. DELETE FROM daily_expenses
      c. DELETE FROM transactions
      d. ALTER TABLE daily_expenses ADD COLUMN asset_id ...   ← 门控闭合点（在此之前所有步骤必须成功）
-     e. CREATE INDEX IF NOT EXISTS idx_daily_expenses_asset ...（紧接 ALTER，缺失非致命）
-3. 之后的启动：列已存在 → 门控不触发 → 数据永不被清空
+   - 已存在 asset_id 列 → 跳过（全新库或已迁移，安全）
+3. 无论门控是否触发，无条件执行 `CREATE INDEX IF NOT EXISTS idx_daily_expenses_asset ON daily_expenses(asset_id)`：
+   - 全新库：建表后首启即建索引
+   - 存量库：门控 ALTER 成功后补建索引
+   - 幂等自愈：即使上次"ALTER 成功但 CREATE INDEX 失败"，下次启动也会补建
 ```
 
-**顺序要求（关键）**：`ALTER TABLE ... ADD COLUMN asset_id` 是**门控闭合点**——门控判断的唯一信号就是 `asset_id` 列是否存在，因此所有必须成功且依赖"列不存在"前提的步骤（DELETE × 3 + ALTER）构成闭区间：ALTER 之前任何一步失败，下次启动会整段重试（列尚不存在，幂等安全）；ALTER 成功后门控闭合，DELETE 绝不再执行。**CREATE INDEX 必须紧随 ALTER 之后**（不可放在 ALTER 之前——列还不存在时 `CREATE INDEX IF NOT EXISTS` 会报 `no such column: asset_id`，IF NOT EXISTS 只防索引已存在，不抑制此错）。索引缺失非致命（仅查询性能），即使 ALTER 后 CREATE INDEX 失败也不影响门控语义：列已存在即视为迁移完成，绝不清空已重建的数据。
+**顺序要求（关键）**：`ALTER TABLE ... ADD COLUMN asset_id` 是**门控闭合点**——门控判断的唯一信号就是 `asset_id` 列是否存在，因此所有必须成功且依赖"列不存在"前提的步骤（DELETE × 3 + ALTER）构成闭区间：ALTER 之前任何一步失败，下次启动会整段重试（列尚不存在，幂等安全）；ALTER 成功后门控闭合，DELETE 绝不再执行。**索引创建不进入迁移序列**：`CREATE INDEX IF NOT EXISTS` 在资产列不存在时会报 `no such column: asset_id`（IF NOT EXISTS 只防索引已存在，不抑制此错），若放 migration.sql 则存量库首启即中断；放门控内则 ALTER 成功后退路被封死。故作为门控后的无条件启动步骤（第 3 步），全新库/存量库/失败重试全部覆盖。
 
 > `asset_balance_logs` 表由 migration.sql 第 1 步创建（IF NOT EXISTS），迁移步骤 2 中无需重复建表。
 
@@ -268,7 +270,7 @@ transactions_create:
 
 transactions_update:
   BEGIN
-    SELECT 旧记录 (amount, transaction_type)   -- asset_id 不变
+    SELECT 旧记录 (amount, transaction_type, quantity, price_per_unit)   -- asset_id 不变；quantity/price 用于重算旧 buy/sell 的 type_delta
     UPDATE transactions SET 字段
     -- 无条件计算差值：新type_delta - 旧type_delta
     -- （transfer_* 类型 delta 记为 0；若新类型从非transfer 切到 transfer，
@@ -378,11 +380,11 @@ export interface DailyExpense {
 
 | 场景 | 期望 |
 |------|------|
-| 全新库首次启动 | daily_expenses 含 asset_id，asset_balance_logs 建好 |
-| 存量库首次启动 | 数据清空，asset_id 列添加成功，审计表建好 |
-| 存量库第二次启动 | 门控不触发，数据保留，不重复清空 |
+| 全新库首次启动 | daily_expenses 含 asset_id，asset_balance_logs 建好，idx_daily_expenses_asset 建好（第3步无条件执行） |
+| 存量库首次启动 | 数据清空，asset_id 列添加成功，审计表建好，索引补建 |
+| 存量库第二次启动 | 门控不触发，数据保留，不重复清空，索引仍幂等存在 |
 | 迁移中途失败（ALTER 之前某步失败） | 门控在下次启动重新尝试（幂等，因列尚不存在，DELETE/操作整体重跑） |
-| ALTER 成功后 CREATE INDEX 失败 | 门控已闭合（列已存在），迁移视作完成不再重跑；索引缺失非致命，可手工/下次运维补建 |
+| ALTER 成功后 CREATE INDEX 失败 | 门控已闭合（列已存在），迁移视作完成不再重跑；第3步幂等，下次启动自动补建索引 |
 | 迁移成功后 | 门控闭合（列已存在），后续启动不再执行任何迁移语句 |
 
 ---
