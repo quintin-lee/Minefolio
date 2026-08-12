@@ -55,6 +55,32 @@ void categories_list(csilk_ctx_t* c) {
 
     const char* type_query = csilk_get_query(c, "type");
     csilk_db_pool_t* pool = db_get_pool();
+
+    if (type_query && strcmp(type_query, "transaction") == 0) {
+        char count_sql[256];
+        snprintf(count_sql, sizeof(count_sql),
+            "SELECT COUNT(*) as cnt FROM categories WHERE user_id = %lld AND type = 'transaction'",
+            (long long)user_id);
+        csilk_json_t* cnt_res = csilk_db_query_json(pool, count_sql);
+        if (cnt_res && csilk_json_array_size(cnt_res) > 0) {
+            int cnt = (int)db_get_num(csilk_json_array_get(cnt_res, 0), "cnt");
+            if (cnt == 0) {
+                const char* defaults[] = {
+                    "股票/证券", "基金/理财", "外汇/加密", "存现/取现", "交易手续费"
+                };
+                for (int i = 0; i < 5; i++) {
+                    char ins_sql[256];
+                    snprintf(ins_sql, sizeof(ins_sql),
+                        "INSERT INTO categories (user_id, name, type, asset_type, currency, icon, sort_order) "
+                        "VALUES (%lld, '%s', 'transaction', 'cash', 'CNY', '', %d)",
+                        (long long)user_id, defaults[i], i + 1);
+                    csilk_db_exec(pool, ins_sql);
+                }
+            }
+        }
+        if (cnt_res) csilk_json_free(cnt_res);
+    }
+
     char sql[512];
 
     if (type_query && strlen(type_query) > 0) {
