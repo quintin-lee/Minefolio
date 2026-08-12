@@ -366,7 +366,6 @@ import { assetsApi } from '@/api/assets'
 import { useCategoryStore } from '@/stores/category'
 import { formatCurrency } from '@/utils/format'
 import http from '@/utils/http'
-import axios from 'axios'
 import type { Transaction, Asset, Category, TransactionMonthly } from '@/types'
 
 const loading = ref(false)
@@ -654,8 +653,9 @@ const importResult = ref<{ imported: number; errors: number; errors_detail?: str
 const importing = ref(false)
 
 function exportCsv() {
-  axios.get('/api/export/transactions', { responseType: 'blob' }).then((res) => {
-    const url = URL.createObjectURL(res.data)
+  http.get('/export/transactions', { responseType: 'blob' }).then((blob: unknown) => {
+    const b = blob as Blob
+    const url = URL.createObjectURL(b)
     const a = document.createElement('a')
     a.href = url
     const now = new Date().toISOString().slice(0, 10)
