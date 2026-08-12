@@ -51,6 +51,15 @@ void transactions_export_csv(csilk_ctx_t* c) {
     csv = malloc(csv_cap);
     if (!csv) { respond_error(c, 500, "内存不足"); return; }
     csv_len = snprintf(csv, csv_cap, "date,asset_name,category_name,transaction_type,source_type,amount,price_per_unit,quantity,currency,linked_asset_name,note\n");
+    /* Prepend UTF-8 BOM */
+    {
+        unsigned char bom[] = {0xef, 0xbb, 0xbf};
+        if (csv_len + 3 <= csv_cap) {
+            memmove(csv + 3, csv, csv_len);
+            memcpy(csv, bom, 3);
+            csv_len += 3;
+        }
+    }
 
     char buf[512];
     if (rows && csilk_json_array_size(rows) > 0) {
@@ -347,6 +356,14 @@ void daily_expenses_export_csv(csilk_ctx_t* c) {
     csv = malloc(csv_cap);
     if (!csv) { respond_error(c, 500, "内存不足"); return; }
     csv_len = snprintf(csv, csv_cap, "date,asset_name,category_name,expense_type,amount,currency,note\n");
+    {
+        unsigned char bom[] = {0xef, 0xbb, 0xbf};
+        if (csv_len + 3 <= csv_cap) {
+            memmove(csv + 3, csv, csv_len);
+            memcpy(csv, bom, 3);
+            csv_len += 3;
+        }
+    }
 
     char buf[1024];
     if (rows && csilk_json_array_size(rows) > 0) {
@@ -420,6 +437,9 @@ void daily_expenses_import_csv(csilk_ctx_t* c) {
     memcpy(data, csv, csv_len);
     data[csv_len] = '\0';
 
+    fprintf(stderr, "[DEBUG] daily_expenses import: body_len=%zu, csv_len=%zu\n", body_len, csv_len);
+    fprintf(stderr, "[DEBUG] daily_expenses import: first 80 bytes: %.80s\n", data);
+
     char* line_start = data;
     int line_num = 0;
     while (*line_start) {
@@ -435,6 +455,9 @@ void daily_expenses_import_csv(csilk_ctx_t* c) {
         char fields[7][512];
         int fc = 0;
         parse_csv_row(line_start, line_len, fields, &fc);
+        fprintf(stderr, "[DEBUG] line %d: fc=%d fields[0..4]=[%s,%s,%s,%s,%s]\n",
+            line_num, fc,
+            fields[0], fields[1], fields[2], fields[3], fields[4]);
         if (fc < 5) {
             errors++;
             snprintf(errors_detail + strlen(errors_detail), sizeof(errors_detail) - strlen(errors_detail),
@@ -494,16 +517,19 @@ void daily_expenses_import_csv(csilk_ctx_t* c) {
         const char* currency = currency_s[0] ? currency_s : "CNY";
         const char* exp_type = strcmp(exp_type_s, "income") == 0 ? "income" : "expense";
 
+        char asset_param[32], cat_param[32];
+        snprintf(asset_param, sizeof(asset_param), "%lld", (long long)asset_id);
+        snprintf(cat_param, sizeof(cat_param), "%lld", (long long)category_id);
+
         const char* ins_params[] = {
-            uid_str, cat_name ? fields[2] : "",
-            asset_name, exp_type, amount_s,
+            uid_str, cat_param, asset_param, exp_type, amount_s,
             currency, date_s, note_s ? note_s : "",
             NULL
         };
 
         csilk_json_t* res = csilk_db_query_param_json(pool,
             "INSERT INTO daily_expenses (user_id, category_id, asset_id, expense_type, amount, currency, expense_date, note) "
-            "VALUES (?, ?, NULLIF((SELECT id FROM assets WHERE user_id=? AND name=?),0), ?, ?, ?, ?, ?) RETURNING id",
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
             ins_params);
         if (res) csilk_json_free(res);
         imported++;

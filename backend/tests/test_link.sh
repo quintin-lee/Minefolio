@@ -222,6 +222,48 @@ check "categories 含测试父分类" "1" "$(echo "$CATS" | jq -r '[.data[] | se
 check "父分类 children 含测试子分类" "1" "$(echo "$CATS" | jq -r '[.data[] | select(.name == "测试父分类") | .children[]? | select(.name == "测试子分类")] | if length > 0 then 1 else 0 end')"
 check "子分类 parent_id 指向父分类" "$PARENT_ID" "$(echo "$CATS" | jq -r '[.data[] | select(.name == "测试父分类") | .children[]? | select(.name == "测试子分类") | .parent_id | floor] | .[0]')"
 
+echo "== 20. 导出日常收支 CSV =="
+EXP_CSV=$(curl -s -H "$AUTH" "$BASE/export/daily-expenses")
+check "export daily-expenses 含 BOM" "1" "$(echo -n "$EXP_CSV" | head -c 3 | xxd -p | grep -c 'efbbbf' || echo 0)"
+check "导出含日期列名" "1" "$(echo "$EXP_CSV" | grep -c 'date,asset_name,category_name')"
+check "导出含数据行" "1" "$(echo "$EXP_CSV" | wc -l | awk '{print ($1 > 1) ? 1 : 0}')"
+check "导出 Content-Type 正确" "1" "$(curl -s -o /dev/null -w '%{content_type}' -H "$AUTH" "$BASE/export/daily-expenses" | grep -c 'text/csv')"
+
+echo "== 21. 导入日常收支 CSV =="
+BEFORE_EXP=$(sqlite3 "$DB" "SELECT COUNT(*) FROM daily_expenses")
+# Use a temp file with real newlines (not \n escape)
+cat > /tmp/mf_import_test.csv << 'CSVEOF'
+date,asset_name,category_name,expense_type,amount,currency,note
+2026-08-10,钱包,日常消费,expense,100,CNY,测试导入
+2026-08-11,钱包,工资,income,200,CNY,测试收入
+CSVEOF
+IMPORT_RES=$(curl -s -H "$AUTH" -H 'Content-Type: text/csv; charset=utf-8' --data-binary @/tmp/mf_import_test.csv "$BASE/import/daily-expenses")
+rm -f /tmp/mf_import_test.csv
+IMPORTED=$(echo "$IMPORT_RES" | jq -r '.data.imported | floor')
+ERRS=$(echo "$IMPORT_RES" | jq -r '.data.errors | floor')
+check "导入成功 imported=2" "2" "$IMPORTED"
+check "导入成功 errors=0" "0" "$ERRS"
+AFTER_EXP=$(sqlite3 "$DB" "SELECT COUNT(*) FROM daily_expenses")
+check "数据库新增 2 条记录" "$((BEFORE_EXP + 2))" "$AFTER_EXP"
+
+echo "== 22. 导入失败行不中断整体 =="
+cat > /tmp/mf_import_fail.csv << 'CSVEOF'
+date,asset_name,category_name,expense_type,amount,currency,note
+2026-08-12,钱包,日常消费,expense,50,CNY,有效行
+2026-08-13,不存在的资产,日常消费,expense,50,CNY,无效行
+CSVEOF
+IMPORT_RES2=$(curl -s -H "$AUTH" -H 'Content-Type: text/csv; charset=utf-8' --data-binary @/tmp/mf_import_fail.csv "$BASE/import/daily-expenses")
+rm -f /tmp/mf_import_fail.csv
+IMPORTED2=$(echo "$IMPORT_RES2" | jq -r '.data.imported | floor')
+ERRS2=$(echo "$IMPORT_RES2" | jq -r '.data.errors | floor')
+check "部分失败 imported=1" "1" "$IMPORTED2"
+check "部分失败 errors=1" "1" "$ERRS2"
+check "部分失败含错误详情" "1" "$(echo "$IMPORT_RES2" | jq -r 'if .data.errors_detail then 1 else 0 end')"
+
+echo "== 23. 导出交易 CSV =="
+TX_EXPORT=$(curl -s -H "$AUTH" "$BASE/export/transactions")
+check "export transactions 含日期列名" "1" "$(echo "$TX_EXPORT" | grep -c 'date,asset_name,category_name')"
+
 echo ""
 echo "结果: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1
