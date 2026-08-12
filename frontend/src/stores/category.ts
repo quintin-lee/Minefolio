@@ -30,10 +30,11 @@ export const useCategoryStore = defineStore('category', () => {
   const incomeCategories = computed(() => tree.value.filter(c => c.type === 'income'))
   const expenseCategories = computed(() => tree.value.filter(c => c.type === 'expense'))
   const incomeExpenseCategories = computed(() => tree.value.filter(c => c.type === 'income' || c.type === 'expense'))
+  const transactionCategories = computed(() => tree.value.filter(c => c.type === 'transaction'))
 
   function invalidate() {
     loaded.value = false
   }
 
-  return { tree, loaded, loading, loadCategories, invalidate, assetCategories, incomeCategories, expenseCategories, incomeExpenseCategories }
+  return { tree, loaded, loading, loadCategories, invalidate, assetCategories, incomeCategories, expenseCategories, incomeExpenseCategories, transactionCategories }
 })
