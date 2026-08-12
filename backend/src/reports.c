@@ -348,9 +348,10 @@ void report_transaction_performance(csilk_ctx_t* c) {
         "SELECT t.id, a.name as asset_name, t.transaction_type, t.transaction_date, "
         "t.quantity, t.price_per_unit, t.amount "
         "FROM transactions t JOIN assets a ON t.asset_id=a.id "
-        "WHERE t.user_id=? AND t.transaction_type IN ('buy','sell') "
-        "ORDER BY t.transaction_date", params);
+        "WHERE t.user_id=? AND t.transaction_type NOT IN ('transfer_in', 'transfer_out') "
+        "ORDER BY t.transaction_date DESC", params);
     if (!result) { respond_error(c, 500, "查询失败"); return; }
+
     double total_gain = 0, total_loss = 0;
     int total_trades = 0;
     csilk_json_t* trades = csilk_json_array();
@@ -359,13 +360,17 @@ void report_transaction_performance(csilk_ctx_t* c) {
         csilk_json_t* row = csilk_json_array_get(result, i);
         const char* type = csilk_json_get_string(row, "transaction_type");
         double amt = db_get_num(row, "amount");
-        if (strcmp(type, "sell") == 0) total_gain += amt;
-        else if (strcmp(type, "buy") == 0) total_loss += amt;
+        if (type && (strcmp(type, "sell") == 0 || strcmp(type, "income") == 0 || strcmp(type, "deposit") == 0)) {
+            total_gain += amt;
+        } else {
+            total_loss += amt;
+        }
         total_trades++;
+
         csilk_json_t* trade = csilk_json_object();
         csilk_json_add_number(trade, "id", db_get_num(row, "id"));
         csilk_json_add_string(trade, "asset_name", csilk_json_get_string(row, "asset_name"));
-        csilk_json_add_string(trade, "type", type);
+        csilk_json_add_string(trade, "type", type ? type : "");
         csilk_json_add_string(trade, "date", csilk_json_get_string(row, "transaction_date"));
         csilk_json_add_number(trade, "quantity", db_get_num(row, "quantity"));
         csilk_json_add_number(trade, "price", db_get_num(row, "price_per_unit"));
