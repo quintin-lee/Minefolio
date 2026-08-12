@@ -61,6 +61,8 @@ export interface DailyExpense {
   id: number
   user_id: number
   category_id: number
+  asset_id: number
+  asset_name?: string
   expense_type: ExpenseType
   amount: number
   currency: string

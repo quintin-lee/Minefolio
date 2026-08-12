@@ -56,6 +56,7 @@
           <div class="table-container">
             <el-table :data="expenses" class="premium-table" row-class-name="premium-row" header-cell-class-name="premium-header">
               <el-table-column prop="expense_date" label="日期" width="110" />
+              <el-table-column prop="asset_name" label="关联资产" min-width="110" />
               <el-table-column prop="category_name" label="分类" min-width="120" />
               <el-table-column prop="expense_type" label="类型" width="80">
                 <template #default="{ row }">
@@ -119,6 +120,15 @@
         <el-form-item label="分类" prop="category_id">
           <el-cascader v-model="form._catPath" :options="categoryTree" :props="{ checkStrictly: true, value: 'id', label: 'name' }" placeholder="选择分类" style="width: 100%" @change="onCatChange" />
         </el-form-item>
+        <el-form-item label="关联资产" prop="asset_id">
+          <el-select v-model="form.asset_id" placeholder="选择资产" style="width: 100%" filterable>
+            <el-option v-for="a in allAssets" :key="a.id" :label="`${a.name}（${a.currency} ${a.current_value.toFixed(2)}）`" :value="a.id">
+              <span>{{ a.name }}</span>
+              <el-tag v-if="a.asset_type === 'loan' || a.asset_type === 'credit_card' || a.asset_type === 'other_liability'" size="small" type="warning" effect="light" style="margin-left: 8px">负债</el-tag>
+              <span style="float: right; color: #8492a6; font-size: 13px">{{ a.currency }} {{ a.current_value.toFixed(2) }}</span>
+            </el-option>
+          </el-select>
+        </el-form-item>
         <el-form-item label="金额" prop="amount">
           <el-input-number v-model="form.amount" :precision="2" :min="0" style="width: 100%" :controls="false" />
         </el-form-item>
@@ -147,13 +157,15 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { dailyExpensesApi } from '@/api/daily_expenses'
 import { categoriesApi } from '@/api/categories'
+import { assetsApi } from '@/api/assets'
 import TagPicker from '@/components/TagPicker.vue'
 import MonthlyChart from '@/components/MonthlyChart.vue'
 import ExpenseCategoryPie from '@/components/ExpenseCategoryPie.vue'
-import type { DailyExpense, Tag, Category } from '@/types'
+import type { DailyExpense, Tag, Category, Asset } from '@/types'
 
 const expenses = ref<DailyExpense[]>([])
 const allCategories = ref<Category[]>([])
+const allAssets = ref<Asset[]>([])
 
 const categoryTree = computed(() => {
   return allCategories.value.filter(c => c.type === form.expense_type)
@@ -185,8 +197,8 @@ const editingId = ref<number | null>(null)
 const saving = ref(false)
 const formRef = ref()
 
-const form = reactive({ expense_type: 'expense' as 'income' | 'expense', category_id: null as number | null, amount: 0, expense_date: '', note: '', tags: [] as Tag[], _catPath: [] as number[] })
-const rules = { expense_type: [{ required: true }], category_id: [{ required: true }], amount: [{ required: true }], expense_date: [{ required: true }] }
+const form = reactive({ expense_type: 'expense' as 'income' | 'expense', category_id: null as number | null, asset_id: null as number | null, amount: 0, expense_date: '', note: '', tags: [] as Tag[], _catPath: [] as number[] })
+const rules = { expense_type: [{ required: true }], category_id: [{ required: true }], asset_id: [{ required: true, message: '请选择关联资产', trigger: 'change' }], amount: [{ required: true }], expense_date: [{ required: true }] }
 
 function formatCurrency(v: number) { return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(v) }
 
@@ -212,8 +224,8 @@ function onCatChange(val: any) { form.category_id = (val as number[])?.[(val as 
 
 function openDialog(expense?: any) {
   editingId.value = expense?.id ?? null
-  Object.assign(form, expense ? { expense_type: expense.expense_type, category_id: expense.category_id, amount: expense.amount, expense_date: expense.expense_date, note: expense.note, tags: expense.tags ?? [], _catPath: [expense.category_id] }
-    : { expense_type: 'expense', category_id: null, amount: 0, expense_date: new Date().toISOString().slice(0, 10), note: '', tags: [], _catPath: [] })
+  Object.assign(form, expense ? { expense_type: expense.expense_type, category_id: expense.category_id, asset_id: expense.asset_id, amount: expense.amount, expense_date: expense.expense_date, note: expense.note, tags: expense.tags ?? [], _catPath: [expense.category_id] }
+    : { expense_type: 'expense', category_id: null, asset_id: null, amount: 0, expense_date: new Date().toISOString().slice(0, 10), note: '', tags: [], _catPath: [] })
   dialogVisible.value = true
 }
 
@@ -240,8 +252,12 @@ async function handleDelete(expense: any) {
 }
 
 onMounted(async () => {
-  const res = await categoriesApi.list({ type: 'income,expense' })
-  allCategories.value = res
+  const [catRes, assetRes] = await Promise.all([
+    categoriesApi.list({ type: 'income,expense' }),
+    assetsApi.list(),
+  ])
+  allCategories.value = catRes
+  allAssets.value = assetRes
   filters.month = new Date().toISOString().slice(0, 7)
   loadData()
 })

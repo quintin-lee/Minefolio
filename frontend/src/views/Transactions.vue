@@ -77,6 +77,7 @@
     <!-- 对话框 -->
     <el-dialog v-model="dialogVisible" :title="editingId ? '编辑交易' : '新增交易'" width="520px" class="premium-dialog" :show-close="false">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="90px" class="premium-form">
+        <el-alert v-if="editingId" type="info" :closable="false" show-icon title="修改金额/类型将同步调整关联资产的余额" style="margin-bottom: 16px" />
         <el-form-item label="资产" prop="asset_id">
           <el-select v-model="form.asset_id" placeholder="选择资产" style="width: 100%">
             <el-option v-for="a in assets" :key="a.id" :label="a.name" :value="a.id" />
