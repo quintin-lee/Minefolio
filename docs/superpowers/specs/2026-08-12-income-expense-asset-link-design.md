@@ -49,19 +49,21 @@ DELETE FROM transactions;
 ### 3.2 daily_expenses 表变更
 
 ```sql
-ALTER TABLE daily_expenses ADD COLUMN asset_id INTEGER NOT NULL REFERENCES assets(id);
+ALTER TABLE daily_expenses ADD COLUMN asset_id INTEGER NOT NULL
+    REFERENCES assets(id) ON DELETE CASCADE;
 CREATE INDEX idx_daily_expenses_asset ON daily_expenses(asset_id);
 ```
 
 - 全新数据库：`migration.sql` 中 `CREATE TABLE daily_expenses` 直接包含 `asset_id` 列
 - 存量数据库：列存在性门控触发上述 ALTER（此时表已清空，可安全加 `NOT NULL` 无默认值列）
+- **删除资产行为**：`ON DELETE CASCADE`——删除资产时级联删除其收支记录（与现有 `transactions.asset_id` 的 CASCADE 策略一致；原设计文档"保留交易记录"的描述与现有 schema 实际不符，以 CASCADE 为准）。审计日志**不设外键**，删除资产不删除历史日志（见 3.3）。
 
 ### 3.3 审计日志表（新）
 
 ```sql
 CREATE TABLE IF NOT EXISTS asset_balance_logs (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    asset_id      INTEGER NOT NULL REFERENCES assets(id),
+    asset_id      INTEGER NOT NULL,            -- 注意：不设外键，资产删除后日志保留
     user_id       INTEGER NOT NULL REFERENCES users(id),
     delta         DECIMAL(18,2) NOT NULL,     -- 本次变动（已含负债方向反转）
     balance_after DECIMAL(18,2) NOT NULL,     -- 变动后余额快照
@@ -78,6 +80,7 @@ CREATE INDEX IF NOT EXISTS idx_balance_logs_asset ON asset_balance_logs(asset_id
 - `balance_after` 存快照而非 `balance_before`：查询日志直接读该列即得"该笔操作后的余额"，无需回放。需要 before 可用 `LAG()` 窗口函数推导。
 - `delta` 是**已含方向反转**后的实际增量，`assets.current_value` 直接执行 `current_value = current_value + delta`，无需每次判断资产类型。
 - `source_type + source_id` 支持从记录反向定位审计条目。
+- **`asset_id` 不设外键约束（故意）**：审计日志是"只增不删"的历史事实。若设 `REFERENCES assets(id)` 且无 ON DELETE 子句（NO ACTION），任何有历史的资产将**永久无法删除**（删除被 FK 拒绝）；设 CASCADE 则删资产时历史日志被级联删除，违背"只增不删"。故不设 FK：删除资产时其收支记录（daily_expenses 级联）和交易记录（transactions 级联）被删，但审计日志**保留**，`asset_id` 悬空属正常，前端展示时显示"（资产已删除）"。
 
 ---
 
@@ -95,11 +98,14 @@ CREATE INDEX IF NOT EXISTS idx_balance_logs_asset ON asset_balance_logs(asset_id
      a. DELETE FROM expense_tags
      b. DELETE FROM daily_expenses
      c. DELETE FROM transactions
-     d. ALTER TABLE daily_expenses ADD COLUMN asset_id INTEGER NOT NULL REFERENCES assets(id)
-     e. CREATE INDEX idx_daily_expenses_asset ...
-     f. CREATE TABLE asset_balance_logs ... + 索引
+     d. CREATE INDEX idx_daily_expenses_asset ...（幂等，IF NOT EXISTS）
+     e. ALTER TABLE daily_expenses ADD COLUMN asset_id ...   ← 必须最后执行
 3. 之后的启动：列已存在 → 门控不触发 → 数据永不被清空
 ```
+
+**顺序要求（关键）**：`ALTER TABLE ... ADD COLUMN asset_id` **必须作为迁移序列的最后一条**。理由：门控判断的唯一信号就是 `asset_id` 列是否存在——若 ALTER 先执行而后面的步骤失败，下次启动门控会因列已存在而跳过，留下缺失的索引/数据。把 ALTER 放最后（前置步骤 DELETE/索引均为幂等操作），保证"门控闭合 = 迁移完整成功"。
+
+> `asset_balance_logs` 表由 migration.sql 第 1 步创建（IF NOT EXISTS），迁移步骤 2 中无需重复建表。
 
 **优点：**
 - DELETE 受列存在性门控，**只执行一次**，新数据安全
@@ -172,11 +178,13 @@ int balance_direction(const char* asset_type) {
 ```c
 int balance_apply_delta(...) {
     // 1. 查询资产归属与类型（WHERE user_id 越权过滤）
-    //    SELECT current_value, currency FROM assets
-    //    WHERE id=? AND user_id=?          → 无行返回 -1
+    //    asset_type 存于 categories 表，必须 JOIN 取得
+    //    SELECT a.current_value, c.asset_type
+    //    FROM assets a JOIN categories c ON a.category_id = c.id
+    //    WHERE a.id=? AND a.user_id=?            → 无行返回 -1
 
-    // 2. 归一化 delta
-    double signed_delta = delta * balance_direction(asset_type);
+    // 2. 归一化 delta（负债方向反转）
+    double signed_delta = delta * balance_direction(c.asset_type);
 
     // 3. 更新余额（原子操作，避免读改写竞态）
     //    UPDATE assets SET current_value = current_value + ?, updated_at = ...
@@ -185,7 +193,7 @@ int balance_apply_delta(...) {
     // 4. 读取变动后余额（balance_after）
     //    SELECT current_value FROM assets WHERE id=?
 
-    // 5. 写审计日志
+    // 5. 写审计日志（delta 存已反转的 signed_delta）
     //    INSERT INTO asset_balance_logs(asset_id, user_id, delta, balance_after,
     //                                   source_type, source_id, note)
     //    VALUES (?,?,?,?,?,?,?)
@@ -201,7 +209,7 @@ int balance_apply_delta(...) {
 
 ### 6.1 daily_expenses.c
 
-create / update / delete 三个 handler 全部改为事务包裹：
+create / update / delete / list 四个 handler 改造（create/update/delete 事务包裹）：
 
 ```
 daily_expenses_create:
@@ -214,9 +222,11 @@ daily_expenses_update:
   BEGIN
     SELECT 旧记录 (amount, expense_type, asset_id)
     UPDATE daily_expenses SET 全字段 (含 asset_id)
-    balance_apply_delta(新asset_id, user_id, 新delta, 'daily_expense', id, note)
-    balance_apply_delta(旧asset_id, user_id, -旧delta, 'daily_expense', id, note)
-    -- 新旧 asset_id 相同则合并为一次：(新delta - 旧delta)
+    IF 新asset_id == 旧asset_id:
+        balance_apply_delta(asset_id, user_id, 新delta - 旧delta, ...)   -- 合并一次
+    ELSE:
+        balance_apply_delta(旧asset_id, user_id, -旧delta, ...)          -- A 回退
+        balance_apply_delta(新asset_id, user_id, 新delta, ...)           -- B 应用
   COMMIT / 失败 ROLLBACK
 
 daily_expenses_delete:
@@ -229,11 +239,15 @@ daily_expenses_delete:
 
 **delta 计算**：`expense_type == 'income' ? +amount : -amount`
 
-**update 的 asset_id 变更**：若用户把记录从资产 A 改关联到资产 B，需 A 回退旧 delta、B 应用新 delta。新旧 asset_id 相同时合并为一次差值调用。
+**update 的 asset_id 变更**：新旧 asset_id 相同时合并为一次差值调用（产生 1 条审计）；不同则回退 A + 应用 B（产生 2 条审计）。
+
+**list 接口改造（必需，前端依赖）**：`daily_expenses_list` 的 SELECT 需 JOIN assets 取 `asset_name`，并在手工 JSON 行重建循环中显式添加 `asset_id` 与 `asset_name` 两个字段（现有代码逐列枚举，遗漏会导致前端拿不到字段）。
+
+**货币规则（明确决策）**：**不做汇率换算**。`balance_apply_delta` 按原值增减 `assets.current_value`，不校验、不换算记录货币与资产货币是否一致。跨币种记账导致的余额口径问题由用户自行负责（前端选项文本已显示资产货币，见 8.2）。实现时在审计 `note` 中冗余记录记录货币（如 `"CNY→USD"`）便于追溯。
 
 ### 6.2 transactions.c
 
-create / update / delete 改造同上，delta 语义按 `transaction_type` 映射：
+create / update / delete 改造，delta 语义按 `transaction_type` 映射（注意：**update 不改 asset_id**，仅金额/类型变化在原资产上回退+重放）：
 
 | transaction_type | delta | 说明 |
 |------------------|-------|------|
@@ -241,8 +255,32 @@ create / update / delete 改造同上，delta 语义按 `transaction_type` 映�
 | `withdrawal` | `-amount` | 取出 |
 | `income` | `+amount` | 收益 |
 | `fee` / `loss` | `-amount` | 手续费 / 亏损 |
-| `buy` / `sell` | `+/-amount`（amount 按 `quantity × price_per_unit` 折算，若未提供则用 amount 字段） | 持仓类交易 |
+| `buy` | `-amount`（现金流出） | 买入。amount 优先级：有 `quantity` 且 `price_per_unit` 时用 `quantity × price_per_unit`，否则用 `amount` 字段 |
+| `sell` | `+amount`（现金流入） | 卖出。amount 规则同上（优先级已定为决策，见 10） |
 | `transfer_in` / `transfer_out` | **不联动** | 走 transfers 功能（已确认） |
+
+```
+transactions_create:
+  BEGIN
+    INSERT transactions
+    若非 transfer_*: balance_apply_delta(asset_id, user_id, type_delta, 'transaction', new_id, note)
+  COMMIT / 失败 ROLLBACK
+
+transactions_update:
+  BEGIN
+    SELECT 旧记录 (amount, transaction_type)   -- asset_id 不变
+    UPDATE transactions SET 字段
+    若非 transfer_*:
+        balance_apply_delta(asset_id, user_id, 新type_delta - 旧type_delta, 'transaction', id, note)
+  COMMIT / 失败 ROLLBACK
+
+transactions_delete:
+  BEGIN
+    SELECT 旧记录
+    DELETE transactions
+    若非 transfer_*: balance_apply_delta(asset_id, user_id, -旧type_delta, 'transaction', id, note)
+  COMMIT / 失败 ROLLBACK
+```
 
 ---
 
@@ -255,6 +293,7 @@ create / update / delete 改造同上，delta 语义按 `transaction_type` 映�
 | 余额变为负数 | 允许，不拦截（已确认） |
 | 事务 begin 失败 | 返回 HTTP 500，不执行任何写入 |
 | 审计日志写入失败 | 视为整体失败，ROLLBACK（审计不可缺失） |
+| 删除资产 | 级联删除其收支记录（daily_expenses ON DELETE CASCADE）与交易记录（transactions 既有 CASCADE）；审计日志保留（不设 FK）。`assets_delete` 需检查 `csilk_db_exec` 返回值，失败时返回 HTTP 500 而非静默成功（修复现有忽略返回值的问题） |
 
 ---
 
@@ -324,9 +363,9 @@ export interface DailyExpense {
 |------|------|
 | 建资产（余额 10000）→ 记收入 500 | 余额 10500，审计 1 条 delta=+500 |
 | 记支出 300 | 余额 10200，审计 1 条 delta=-300 |
-| 更新收支（500→800） | 余额 10500（净 +300 差量），审计 2 条 |
-| 删除收支 | 余额回退 300，审计记录保留 |
-| 更新时切换关联资产 A→B | A 回退旧 delta，B 应用新 delta |
+| 更新收支（收入 500→800，同资产） | 余额 10500（净 +300 差量），**审计新增 1 条** delta=+300（同资产合并为一次调用） |
+| 删除收支 | 余额回退至 10200，审计新增 1 条 delta=-300；历史审计保留 |
+| 更新时切换关联资产 A→B | A 回退旧 delta（1 条），B 应用新 delta（1 条），共 2 条审计 |
 | 信用卡刷卡 500（支出） | 信用卡余额 +500 |
 | 信用卡还款 500（收入） | 信用卡余额 -500 |
 | 余额不足（余额 100，支出 200） | 允许，余额 -100 |
@@ -339,13 +378,15 @@ export interface DailyExpense {
 | 全新库首次启动 | daily_expenses 含 asset_id，asset_balance_logs 建好 |
 | 存量库首次启动 | 数据清空，asset_id 列添加成功，审计表建好 |
 | 存量库第二次启动 | 门控不触发，数据保留，不重复清空 |
-| 迁移中途失败 | 门控在下次启动重新尝试（幂等） |
+| 迁移中途失败（ALTER 前某步失败） | 门控在下次启动重新尝试（幂等，因 ALTER 放最后，列尚不存在） |
+| 迁移成功后 | 门控闭合（列已存在），后续启动不再执行任何迁移语句 |
 
 ---
 
 ## 10. 风险与注意事项
 
 - **数据永久删除**：迁移清空存量收支/交易记录，不可恢复。已在需求确认阶段获得用户明确同意。
-- **transactions 的 buy/sell delta 折算**：`quantity × price_per_unit` 与 `amount` 字段可能不一致，需在实现时明确优先级（建议：有 quantity+price 用乘积，否则用 amount，并在 API 文档注明）。
-- **审计日志只增不删**：删除收支记录时审计日志保留（历史事实），删除后 `source_id` 悬空属正常，用 `source_type` 区分。
+- **transactions 的 buy/sell delta 折算（已定决策）**：金额优先级固定为——有 `quantity` 且 `price_per_unit` 时用 `quantity × price_per_unit`，否则用 `amount` 字段。**符号**：buy = 现金流出（`-`），sell = 现金流入（`+`）。在 API 文档中注明。
+- **审计日志只增不删**：删除收支/交易记录时审计日志保留（历史事实），删除后 `source_id` 悬空属正常，用 `source_type` 区分；删除资产后 `asset_id` 悬空属正常（无 FK 约束），展示为"（资产已删除）"。
 - **多用户资产越权**：所有 SQL 均带 `user_id` 条件，balance_apply_delta 内二次校验。
+- **跨币种不换算**：balance_apply_delta 按原值增减，不校验记录与资产的货币一致性（见 6.1），跨币种记账口径由用户自行负责。
