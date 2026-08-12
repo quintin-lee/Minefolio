@@ -5,6 +5,12 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     {
+      path: '/setup',
+      name: 'Setup',
+      component: () => import('@/views/Setup.vue'),
+      meta: { requiresAuth: false },
+    },
+    {
       path: '/login',
       name: 'Login',
       component: () => import('@/views/Login.vue'),
@@ -29,8 +35,23 @@ const router = createRouter({
   ],
 })
 
-router.beforeEach((to, _from, next) => {
+router.beforeEach(async (to, _from, next) => {
   const auth = useAuthStore()
+
+  if (auth.isInitialized === null) {
+    await auth.checkSystemStatus()
+  }
+
+  if (auth.isInitialized === false) {
+    if (to.path !== '/setup') {
+      return next('/setup')
+    }
+  } else if (auth.isInitialized === true) {
+    if (to.path === '/setup') {
+      return next('/login')
+    }
+  }
+
   if (to.meta.requiresAuth !== false && !auth.token) {
     next('/login')
   } else {
