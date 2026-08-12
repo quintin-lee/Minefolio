@@ -49,6 +49,95 @@ static void add_children(csilk_db_pool_t* pool, csilk_json_t* parent) {
     csilk_json_free(kids);
 }
 
+typedef struct {
+    const char* name;
+    const char* asset_type;
+    int sort_order;
+} default_cat_t;
+
+static void ensure_default_categories_for_type(csilk_db_pool_t* pool, int64_t user_id, const char* type) {
+    char count_sql[256];
+    snprintf(count_sql, sizeof(count_sql),
+        "SELECT COUNT(*) as cnt FROM categories WHERE user_id = %lld AND type = '%s'",
+        (long long)user_id, type);
+    csilk_json_t* cnt_res = csilk_db_query_json(pool, count_sql);
+    if (!cnt_res) return;
+    int cnt = 0;
+    if (csilk_json_array_size(cnt_res) > 0) {
+        cnt = (int)db_get_num(csilk_json_array_get(cnt_res, 0), "cnt");
+    }
+    csilk_json_free(cnt_res);
+    if (cnt > 0) return;
+
+    if (strcmp(type, "asset") == 0) {
+        default_cat_t items[] = {
+            {"现金账户", "cash", 1},
+            {"银行存款", "cash", 2},
+            {"股票证券", "stock", 3},
+            {"基金理财", "fund", 4},
+            {"加密货币", "crypto", 5},
+            {"信用卡", "credit_card", 6}
+        };
+        for (size_t i = 0; i < sizeof(items)/sizeof(items[0]); i++) {
+            char ins_sql[256];
+            snprintf(ins_sql, sizeof(ins_sql),
+                "INSERT INTO categories (user_id, name, type, asset_type, currency, icon, sort_order) "
+                "VALUES (%lld, '%s', 'asset', '%s', 'CNY', '', %d)",
+                (long long)user_id, items[i].name, items[i].asset_type, items[i].sort_order);
+            csilk_db_exec(pool, ins_sql);
+        }
+    } else if (strcmp(type, "expense") == 0) {
+        default_cat_t items[] = {
+            {"餐饮美食", "cash", 1},
+            {"交通出行", "cash", 2},
+            {"日常购物", "cash", 3},
+            {"休闲娱乐", "cash", 4},
+            {"居住缴费", "cash", 5},
+            {"医疗健康", "cash", 6}
+        };
+        for (size_t i = 0; i < sizeof(items)/sizeof(items[0]); i++) {
+            char ins_sql[256];
+            snprintf(ins_sql, sizeof(ins_sql),
+                "INSERT INTO categories (user_id, name, type, asset_type, currency, icon, sort_order) "
+                "VALUES (%lld, '%s', 'expense', 'cash', 'CNY', '', %d)",
+                (long long)user_id, items[i].name, items[i].sort_order);
+            csilk_db_exec(pool, ins_sql);
+        }
+    } else if (strcmp(type, "income") == 0) {
+        default_cat_t items[] = {
+            {"工资收入", "cash", 1},
+            {"兼职副业", "cash", 2},
+            {"理财收益", "cash", 3},
+            {"奖金补贴", "cash", 4},
+            {"其他收入", "cash", 5}
+        };
+        for (size_t i = 0; i < sizeof(items)/sizeof(items[0]); i++) {
+            char ins_sql[256];
+            snprintf(ins_sql, sizeof(ins_sql),
+                "INSERT INTO categories (user_id, name, type, asset_type, currency, icon, sort_order) "
+                "VALUES (%lld, '%s', 'income', 'cash', 'CNY', '', %d)",
+                (long long)user_id, items[i].name, items[i].sort_order);
+            csilk_db_exec(pool, ins_sql);
+        }
+    } else if (strcmp(type, "transaction") == 0) {
+        default_cat_t items[] = {
+            {"股票/证券", "cash", 1},
+            {"基金/理财", "cash", 2},
+            {"外汇/加密", "cash", 3},
+            {"存现/取现", "cash", 4},
+            {"交易手续费", "cash", 5}
+        };
+        for (size_t i = 0; i < sizeof(items)/sizeof(items[0]); i++) {
+            char ins_sql[256];
+            snprintf(ins_sql, sizeof(ins_sql),
+                "INSERT INTO categories (user_id, name, type, asset_type, currency, icon, sort_order) "
+                "VALUES (%lld, '%s', 'transaction', 'cash', 'CNY', '', %d)",
+                (long long)user_id, items[i].name, items[i].sort_order);
+            csilk_db_exec(pool, ins_sql);
+        }
+    }
+}
+
 void categories_list(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
@@ -56,29 +145,27 @@ void categories_list(csilk_ctx_t* c) {
     const char* type_query = csilk_get_query(c, "type");
     csilk_db_pool_t* pool = db_get_pool();
 
-    if (type_query && strcmp(type_query, "transaction") == 0) {
-        char count_sql[256];
-        snprintf(count_sql, sizeof(count_sql),
-            "SELECT COUNT(*) as cnt FROM categories WHERE user_id = %lld AND type = 'transaction'",
-            (long long)user_id);
-        csilk_json_t* cnt_res = csilk_db_query_json(pool, count_sql);
-        if (cnt_res && csilk_json_array_size(cnt_res) > 0) {
-            int cnt = (int)db_get_num(csilk_json_array_get(cnt_res, 0), "cnt");
-            if (cnt == 0) {
-                const char* defaults[] = {
-                    "股票/证券", "基金/理财", "外汇/加密", "存现/取现", "交易手续费"
-                };
-                for (int i = 0; i < 5; i++) {
-                    char ins_sql[256];
-                    snprintf(ins_sql, sizeof(ins_sql),
-                        "INSERT INTO categories (user_id, name, type, asset_type, currency, icon, sort_order) "
-                        "VALUES (%lld, '%s', 'transaction', 'cash', 'CNY', '', %d)",
-                        (long long)user_id, defaults[i], i + 1);
-                    csilk_db_exec(pool, ins_sql);
+    if (type_query && strlen(type_query) > 0) {
+        if (strstr(type_query, ",")) {
+            char copy[128];
+            strncpy(copy, type_query, sizeof(copy)-1);
+            copy[sizeof(copy)-1] = '\0';
+            char* tok = strtok(copy, ",");
+            while (tok) {
+                while (*tok == ' ') tok++;
+                if (strlen(tok) > 0) {
+                    ensure_default_categories_for_type(pool, user_id, tok);
                 }
+                tok = strtok(NULL, ",");
             }
+        } else {
+            ensure_default_categories_for_type(pool, user_id, type_query);
         }
-        if (cnt_res) csilk_json_free(cnt_res);
+    } else {
+        ensure_default_categories_for_type(pool, user_id, "asset");
+        ensure_default_categories_for_type(pool, user_id, "expense");
+        ensure_default_categories_for_type(pool, user_id, "income");
+        ensure_default_categories_for_type(pool, user_id, "transaction");
     }
 
     char sql[512];
