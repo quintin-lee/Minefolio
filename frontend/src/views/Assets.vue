@@ -256,15 +256,27 @@ onMounted(() => { loadAssets(); loadCategories() })
 }
 
 .highlight-card {
-  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+  position: relative;
+  overflow: hidden;
+  border: none;
+}
+
+.highlight-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #67c23a, #95d475);
 }
 
 .highlight-card .summary-label {
-  color: #94a3b8;
+  color: #64748b;
 }
 
 .highlight-card .summary-value {
-  color: #ffffff;
+  color: #0f172a;
 }
 
 .summary-label {
