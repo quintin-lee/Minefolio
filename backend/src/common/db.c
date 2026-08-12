@@ -5,16 +5,27 @@
 #include <string.h>
 
 static csilk_db_pool_t* g_pool = NULL;
+static int g_is_postgres = 0;
 
 int db_init(csilk_db_pool_t** out_pool) {
     csilk_db_init();
 
+    const char* driver = getenv("MINEFOLIO_DB_DRIVER");
     const char* dsn = getenv("MINEFOLIO_DB_DSN");
-    if (!dsn) dsn = "./data/minefolio.db";
 
-    g_pool = csilk_db_pool_new("sqlite", dsn);
+    if (!driver) driver = "sqlite";
+    if (!dsn) {
+        if (strcmp(driver, "postgres") == 0) {
+            dsn = "host=localhost user=minefolio dbname=minefolio";
+        } else {
+            dsn = "./data/minefolio.db";
+        }
+    }
+
+    g_is_postgres = (strcmp(driver, "postgres") == 0);
+    g_pool = csilk_db_pool_new(driver, dsn);
     if (!g_pool) {
-        fprintf(stderr, "Failed to create database pool\n");
+        fprintf(stderr, "Failed to create database pool (driver=%s dsn=%s)\n", driver, dsn);
         return -1;
     }
 
@@ -22,7 +33,68 @@ int db_init(csilk_db_pool_t** out_pool) {
     return 0;
 }
 
+static int exec_safe(csilk_db_pool_t* pool, const char* sql) {
+    int rc = csilk_db_exec(pool, sql);
+    if (rc != 0) {
+        fprintf(stderr, "SQL error: %s\n", sql);
+    }
+    return rc;
+}
+
+static int col_exists(csilk_db_pool_t* pool, const char* table, const char* column) {
+    if (g_is_postgres) {
+        const char* params[] = { table, column, NULL };
+        csilk_json_t* res = csilk_db_query_param_json(pool,
+            "SELECT 1 FROM information_schema.columns WHERE table_name=? AND column_name=?",
+            params);
+        int found = res && csilk_json_array_size(res) > 0;
+        if (res) csilk_json_free(res);
+        return found;
+    } else {
+        char sql[256];
+        snprintf(sql, sizeof(sql), "PRAGMA table_info(%s)", table);
+        csilk_json_t* cols = csilk_db_query_json(pool, sql);
+        if (!cols) return 0;
+        size_t n = csilk_json_array_size(cols);
+        for (size_t i = 0; i < n; i++) {
+            const char* cname = csilk_json_get_string(csilk_json_array_get(cols, i), "name");
+            if (cname && strcmp(cname, column) == 0) {
+                csilk_json_free(cols);
+                return 1;
+            }
+        }
+        csilk_json_free(cols);
+        return 0;
+    }
+}
+
 int db_run_migrations(csilk_db_pool_t* pool) {
+    if (g_is_postgres) {
+        // PostgreSQL: run the PG-specific migration SQL
+        FILE* f = fopen("sql/migration_postgres.sql", "r");
+        if (!f) f = fopen("./sql/migration_postgres.sql", "r");
+        if (!f) {
+            fprintf(stderr, "Cannot open migration_postgres.sql\n");
+            return -1;
+        }
+        fseek(f, 0, SEEK_END);
+        long len = ftell(f);
+        rewind(f);
+        char* sql = malloc((size_t)len + 1);
+        if (!sql) { fclose(f); return -1; }
+        size_t n = fread(sql, 1, (size_t)len, f);
+        sql[n] = '\0';
+        fclose(f);
+        if (csilk_db_exec(pool, sql) != 0) {
+            fprintf(stderr, "PostgreSQL migration error\n");
+            free(sql);
+            return -1;
+        }
+        free(sql);
+        return 0;
+    }
+
+    // SQLite: run the original migration SQL
     FILE* f = fopen("sql/migration.sql", "r");
     if (!f) {
         f = fopen("./sql/migration.sql", "r");
@@ -115,37 +187,12 @@ int db_run_migrations(csilk_db_pool_t* pool) {
     if (tx_schema) csilk_json_free(tx_schema);
 
     // ---- transactions 表 linked_asset_id 列迁移 ----
-    int has_linked_asset = 0;
-    csilk_json_t* tx_cols = csilk_db_query_json(pool, "PRAGMA table_info(transactions)");
-    if (tx_cols) {
-        size_t n = csilk_json_array_size(tx_cols);
-        for (size_t i = 0; i < n; i++) {
-            const csilk_json_t* col = csilk_json_array_get(tx_cols, i);
-            const char* cname = csilk_json_get_string(col, "name");
-            if (cname && strcmp(cname, "linked_asset_id") == 0) { has_linked_asset = 1; break; }
-        }
-        csilk_json_free(tx_cols);
-    }
-    if (!has_linked_asset) {
+    if (!col_exists(pool, "transactions", "linked_asset_id")) {
         csilk_db_exec(pool, "ALTER TABLE transactions ADD COLUMN linked_asset_id INTEGER REFERENCES assets(id) ON DELETE SET NULL");
     }
 
     // ---- 收支-资产联动迁移（列存在性门控，一次性） ----
-    // 检测 daily_expenses 是否已有 asset_id 列
-    int has_asset_id = 0;
-    csilk_json_t* cols = csilk_db_query_json(pool, "PRAGMA table_info(daily_expenses)");
-    if (cols) {
-        size_t n = csilk_json_array_size(cols);
-        for (size_t i = 0; i < n; i++) {
-            const csilk_json_t* col = csilk_json_array_get(cols, i);
-            const char* cname = csilk_json_get_string(col, "name");
-            if (cname && strcmp(cname, "asset_id") == 0) { has_asset_id = 1; break; }
-        }
-        csilk_json_free(cols);
-    }
-
-    if (!has_asset_id) {
-        // 存量库一次性迁移：清空旧数据（用户已确认）+ 加列（门控闭合点）
+    if (!col_exists(pool, "daily_expenses", "asset_id")) {
         csilk_db_exec(pool, "DELETE FROM expense_tags");
         csilk_db_exec(pool, "DELETE FROM daily_expenses");
         csilk_db_exec(pool, "DELETE FROM transactions");
@@ -162,18 +209,7 @@ int db_run_migrations(csilk_db_pool_t* pool) {
     csilk_db_exec(pool, "CREATE INDEX IF NOT EXISTS idx_daily_expenses_asset ON daily_expenses(asset_id)");
 
     // ---- 收支类型区分迁移（source_type 列） ----
-    int has_source_type = 0;
-    csilk_json_t* tcols = csilk_db_query_json(pool, "PRAGMA table_info(transactions)");
-    if (tcols) {
-        size_t n = csilk_json_array_size(tcols);
-        for (size_t i = 0; i < n; i++) {
-            const csilk_json_t* col = csilk_json_array_get(tcols, i);
-            const char* cname = csilk_json_get_string(col, "name");
-            if (cname && strcmp(cname, "source_type") == 0) { has_source_type = 1; break; }
-        }
-        csilk_json_free(tcols);
-    }
-    if (!has_source_type) {
+    if (!col_exists(pool, "transactions", "source_type")) {
         if (csilk_db_exec(pool,
                 "ALTER TABLE transactions ADD COLUMN source_type TEXT NOT NULL DEFAULT 'expense'") != 0) {
             fprintf(stderr, "Migration error: cannot add source_type to transactions\n");
@@ -191,4 +227,8 @@ int db_run_migrations(csilk_db_pool_t* pool) {
 
 csilk_db_pool_t* db_get_pool(void) {
     return g_pool;
+}
+
+int db_is_postgres(void) {
+    return g_is_postgres;
 }

@@ -14,6 +14,10 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(csilk)
 
+# Find libpq for PostgreSQL support
+find_package(PkgConfig QUIET)
+pkg_check_modules(PQ libpq)
+
 # Minefolio sources
 file(GLOB SOURCES "src/*.c" "src/common/*.c")
 add_executable(minefolio ${SOURCES})
@@ -24,7 +28,11 @@ target_include_directories(minefolio PRIVATE
 
 target_compile_definitions(minefolio PRIVATE _GNU_SOURCE)
 
-target_link_libraries(minefolio PRIVATE csilk crypto)
+target_link_libraries(minefolio PRIVATE csilk crypto ${PQ_LIBRARIES})
+
+if(PQ_INCLUDE_DIRS)
+    target_include_directories(minefolio PRIVATE ${PQ_INCLUDE_DIRS})
+endif()
 
 # Copy config and sql on build
 add_custom_command(TARGET minefolio POST_BUILD

@@ -11,6 +11,9 @@ int db_run_migrations(csilk_db_pool_t* pool);
 /** @brief Get the global database pool singleton. */
 csilk_db_pool_t* db_get_pool(void);
 
+/** @brief Returns 1 if the active driver is postgres, 0 for sqlite. */
+int db_is_postgres(void);
+
 /**
  * @brief Read a numeric field from a DB query-result row.
  *
