@@ -47,12 +47,12 @@ function formatCurrency(v: number) {
 
 :deep(.premium-header th) {
   background-color: rgba(0, 212, 255, 0.06) !important;
-  color: #64748b;
+  color: #94a3b8 !important;
   font-weight: 600;
   text-transform: uppercase;
   font-size: 12px;
   letter-spacing: 0.5px;
-  padding: 10px 0;
+  padding: 12px 0;
   border-bottom: 1px solid var(--mf-border) !important;
 }
 
@@ -61,8 +61,9 @@ function formatCurrency(v: number) {
 }
 
 :deep(.premium-row td) {
-  border-bottom: 1px solid rgba(0, 212, 255, 0.06);
+  border-bottom: 1px solid var(--mf-border);
   padding: 12px 0;
+  color: var(--mf-text-main);
 }
 
 :deep(.premium-row:hover > td) {

@@ -363,6 +363,22 @@ onMounted(loadAll)
 
 .premium-table-small {
   --el-table-border-color: transparent;
+  --el-table-header-bg-color: rgba(0, 212, 255, 0.06);
+}
+
+.premium-table-small :deep(.el-table th.el-table__cell) {
+  background-color: rgba(0, 212, 255, 0.06) !important;
+  color: #94a3b8 !important;
+  border-bottom: 1px solid var(--mf-border) !important;
+}
+
+.premium-table-small :deep(.el-table td.el-table__cell) {
+  border-bottom: 1px solid var(--mf-border);
+  color: var(--mf-text-main);
+}
+
+.premium-table-small :deep(.el-table__body tr:hover > td) {
+  background-color: rgba(0, 212, 255, 0.04) !important;
 }
 
 .mono-text {

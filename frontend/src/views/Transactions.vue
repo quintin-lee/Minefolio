@@ -636,6 +636,11 @@ onMounted(() => {
 
 .table-container {
   overflow-x: auto;
+  background: var(--mf-surface);
+  border-radius: var(--mf-radius-lg);
+  padding: 16px;
+  box-shadow: var(--mf-shadow-sm);
+  border: 1px solid var(--mf-border);
 }
 
 .category-pill {

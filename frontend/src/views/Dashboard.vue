@@ -222,16 +222,18 @@ onMounted(loadDashboard)
   width: 140px;
 }
 
-.income-text { color: #10b981; font-weight: 600; }
-.expense-text { color: #ef4444; font-weight: 600; }
+.income-text { color: #34d399; text-shadow: 0 0 8px rgba(52,211,153,0.4); font-weight: 600; }
+.expense-text { color: #f87171; text-shadow: 0 0 8px rgba(248,113,113,0.3); font-weight: 600; }
 
 .premium-table {
   --el-table-border-color: var(--mf-border);
-  --el-table-header-bg-color: var(--mf-surface-muted);
+  --el-table-header-bg-color: rgba(0, 212, 255, 0.06);
 }
 
 :deep(.el-table th.el-table__cell) {
   font-weight: 600;
-  color: var(--mf-text-muted);
+  color: #94a3b8 !important;
+  background-color: rgba(0, 212, 255, 0.06) !important;
+  border-bottom: 1px solid var(--mf-border) !important;
 }
 </style>

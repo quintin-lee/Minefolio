@@ -452,18 +452,18 @@ onMounted(loadData)
 
 .premium-table {
   --el-table-border-color: transparent;
-  --el-table-header-bg-color: var(--mf-surface-muted);
+  --el-table-header-bg-color: rgba(0, 212, 255, 0.06);
 }
 
 :deep(.premium-header th) {
-  background-color: var(--mf-surface-muted) !important;
-  color: var(--mf-text-muted);
+  background-color: rgba(0, 212, 255, 0.06) !important;
+  color: #94a3b8 !important;
   font-weight: 600;
   text-transform: uppercase;
   font-size: 12px;
   letter-spacing: 0.5px;
   padding: 12px 0;
-  border-bottom: none !important;
+  border-bottom: 1px solid var(--mf-border) !important;
 }
 
 :deep(.premium-row) {
@@ -473,10 +473,11 @@ onMounted(loadData)
 :deep(.premium-row td) {
   border-bottom: 1px solid var(--mf-border);
   padding: 16px 0;
+  color: var(--mf-text-main);
 }
 
 :deep(.premium-row:hover > td) {
-  background-color: var(--mf-surface-hover) !important;
+  background-color: rgba(0, 212, 255, 0.04) !important;
 }
 
 .text-muted {

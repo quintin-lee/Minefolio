@@ -129,27 +129,37 @@ body {
   box-shadow: var(--mf-shadow-glow) !important;
 }
 
-/* Tables */
+/* Tables — global dark theme overrides */
 .el-table {
   border-radius: var(--mf-radius-lg);
   overflow: hidden;
   box-shadow: var(--mf-shadow-sm);
   background: transparent !important;
 }
-.el-table th.el-table__cell {
+.el-table th.el-table__cell,
+.el-table .premium-header.el-table__cell {
   background-color: rgba(0, 212, 255, 0.06) !important;
-  color: var(--mf-text-muted);
+  color: #94a3b8 !important;
   font-weight: 600;
   border-bottom: 1px solid var(--mf-border) !important;
+  text-transform: uppercase;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  padding: 12px 0;
+}
+.el-table td.el-table__cell {
+  border-bottom: 1px solid var(--mf-border);
+  color: var(--mf-text-main);
+  padding: 16px 0;
 }
 .el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell {
   background-color: rgba(0, 212, 255, 0.02);
 }
 .el-table__body tr:hover > td.el-table__cell {
-  background-color: var(--mf-primary-light) !important;
+  background-color: rgba(0, 212, 255, 0.04) !important;
 }
-.el-table td.el-table__cell, .el-table--border th.el-table__cell {
-  border-color: var(--mf-border) !important;
+.el-table__empty-text {
+  color: var(--mf-text-placeholder) !important;
 }
 
 /* Inputs */
