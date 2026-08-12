@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 static csilk_db_pool_t* g_pool = NULL;
 static int g_is_postgres = 0;
@@ -30,6 +32,13 @@ int db_init(csilk_db_pool_t** out_pool) {
                                          : "./data/minefolio.db");
 
     g_is_postgres = (strcmp(driver, "postgres") == 0);
+    if (!g_is_postgres) {
+        /* Auto-create the data directory if the DSN is a file path */
+        char dir[512];
+        strncpy(dir, dsn, sizeof(dir) - 1); dir[sizeof(dir) - 1] = '\0';
+        char* slash = strrchr(dir, '/');
+        if (slash) { *slash = '\0'; mkdir(dir, 0755); }
+    }
     g_pool = csilk_db_pool_new(driver, dsn);
     if (!g_pool) {
         fprintf(stderr, "Failed to create database pool (driver=%s dsn=%s)\n", driver, dsn);
