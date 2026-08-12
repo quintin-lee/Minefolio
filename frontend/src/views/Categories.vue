@@ -17,6 +17,7 @@
         <el-radio-button value="asset">资产分类</el-radio-button>
         <el-radio-button value="expense">支出分类</el-radio-button>
         <el-radio-button value="income">收入分类</el-radio-button>
+        <el-radio-button value="transaction">交易分类</el-radio-button>
       </el-radio-group>
     </div>
 
@@ -106,6 +107,7 @@
             <el-option label="资产分类" value="asset" />
             <el-option label="支出分类" value="expense" />
             <el-option label="收入分类" value="income" />
+            <el-option label="交易分类" value="transaction" />
           </el-select>
         </el-form-item>
 
@@ -147,7 +149,7 @@ import type { Category, CategoryType } from '@/types'
 
 const categoryStore = useCategoryStore()
 
-const activeTab = ref<'all' | 'asset' | 'expense' | 'income'>('all')
+const activeTab = ref<'all' | 'asset' | 'expense' | 'income' | 'transaction'>('all')
 const categories = ref<Category[]>([])
 
 const filteredCategories = computed(() => {
@@ -218,6 +220,7 @@ function categoryTypeLabel(t: CategoryType) {
   if (t === 'asset') return '资产'
   if (t === 'expense') return '支出'
   if (t === 'income') return '收入'
+  if (t === 'transaction') return '交易'
   return t || '资产'
 }
 
@@ -225,6 +228,7 @@ function categoryTypeTagType(t: CategoryType) {
   if (t === 'asset') return 'info'
   if (t === 'expense') return 'danger'
   if (t === 'income') return 'success'
+  if (t === 'transaction') return 'warning'
   return 'info'
 }
 
