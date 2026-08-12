@@ -90,6 +90,14 @@
         >
           <el-table-column prop="transaction_date" label="日期" width="120" />
           <el-table-column prop="asset_name" label="账户资产" min-width="130" />
+          <el-table-column prop="linked_asset_name" label="扣款/回流账户" min-width="130">
+            <template #default="{ row }">
+              <el-tag v-if="row.linked_asset_name" size="small" type="warning" effect="light" class="type-badge" round>
+                {{ row.linked_asset_name }}
+              </el-tag>
+              <span v-else class="muted-text">—</span>
+            </template>
+          </el-table-column>
           <el-table-column prop="transaction_type" label="交易类型" width="110">
             <template #default="{ row }">
               <el-tag :type="typeTag(row.transaction_type)" effect="light" class="type-badge" round>
@@ -177,6 +185,22 @@
             <el-form-item label="结算币种" prop="currency">
               <el-select v-model="form.currency" placeholder="默认 CNY" style="width: 100%">
                 <el-option v-for="cur in currencyOptions" :key="cur" :label="cur" :value="cur" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-row :gutter="16">
+          <el-col :span="24">
+            <el-form-item label="资金账户 (扣款/回流账户)" prop="linked_asset_id">
+              <el-select v-model="form.linked_asset_id" placeholder="选择资金账户（买入从该账户扣款，卖出回流到该账户，可选）" clearable style="width: 100%" filterable>
+                <el-option
+                  v-for="a in assets"
+                  :key="a.id"
+                  :disabled="a.id === form.asset_id"
+                  :label="`${a.name} (${formatCurrency(a.current_value)})`"
+                  :value="a.id"
+                />
               </el-select>
             </el-form-item>
           </el-col>
@@ -322,6 +346,7 @@ const filters = reactive({
 
 const form = reactive({
   asset_id: null as number | null,
+  linked_asset_id: null as number | null,
   transaction_type: 'deposit' as Transaction['transaction_type'],
   amount: 0,
   quantity: 0,
@@ -481,6 +506,7 @@ function openDialog(txn?: any) {
   const cur = txn?.currency ? String(txn.currency) : 'CNY'
   Object.assign(form, txn ? {
     asset_id: Number(txn.asset_id),
+    linked_asset_id: Number(txn.linked_asset_id) || null,
     transaction_type: txn.transaction_type,
     amount: Number(txn.amount),
     quantity: Number(txn.quantity) || 0,
@@ -492,6 +518,7 @@ function openDialog(txn?: any) {
     _catPath: [Number(txn.category_id)].filter(Boolean),
   } : {
     asset_id: null,
+    linked_asset_id: null,
     transaction_type: 'deposit',
     amount: 0,
     quantity: 0,

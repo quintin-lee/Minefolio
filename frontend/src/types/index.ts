@@ -35,6 +35,7 @@ export type TransactionType =
 export interface Transaction {
   id: number
   asset_id: number
+  linked_asset_id?: number | null
   category_id: number
   transaction_type: TransactionType
   source_type?: 'income' | 'expense'
@@ -45,6 +46,7 @@ export interface Transaction {
   transaction_date: string
   note?: string
   asset_name?: string
+  linked_asset_name?: string
   category_name?: string
 }
 
