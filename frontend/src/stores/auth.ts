@@ -16,7 +16,7 @@ interface RsaJwk {
 }
 
 async function fetchRsaJwk(): Promise<RsaJwk> {
-  const r = await fetch(`${import.meta.env.VITE_API_URL}/api/auth/public-key`)
+  const r = await fetch(`${import.meta.env.VITE_API_URL}/auth/public-key`)
   if (!r.ok) throw new Error('Failed to fetch public key')
   const body = await r.json()
   return body.data.public_key

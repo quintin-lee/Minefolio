@@ -17,7 +17,7 @@ interface RsaJwk {
 }
 
 async function fetchPublicKey(): Promise<RsaJwk> {
-  const res = await fetch(`${API_BASE}/api/auth/public-key`)
+  const res = await fetch(`${API_BASE}/auth/public-key`)
   if (!res.ok) throw new Error('Failed to fetch public key')
   const body = await res.json()
   return body.data.public_key
