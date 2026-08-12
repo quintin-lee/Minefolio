@@ -326,7 +326,6 @@
           <span class="muted-text">示例：2024-01-15, 现金账户, 餐饮美食, buy, expense, 1000, 10.50, 95.24, CNY, —, 股票买入</span>
         </p>
         <el-upload
-          ref="uploadRef"
           action=""
           :auto-upload="false"
           :limit="1"
@@ -350,7 +349,7 @@
       <template #footer>
         <div class="dialog-footer">
           <el-button class="cancel-btn" @click="importDialogVisible = false; importResult = null; importFile = null">关闭</el-button>
-          <el-button type="primary" class="save-btn" :loading="importing" @click="handleImport" :disabled="!importFile">开始导入</el-button>
+          <el-button type="primary" class="save-btn" :loading="importing" @click="handleImport" :disabled="!importText">开始导入</el-button>
         </div>
       </template>
     </el-dialog>
