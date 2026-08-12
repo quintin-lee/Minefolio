@@ -6,5 +6,6 @@ frontend/node_modules/
 frontend/dist/
 
 # AI cache
-.codegraph
+.codegraph/
 .playwright-cli/
+.omo/
