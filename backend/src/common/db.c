@@ -82,6 +82,38 @@ int db_run_migrations(csilk_db_pool_t* pool) {
     }
     if (cat_schema) csilk_json_free(cat_schema);
 
+    // ---- transactions 表 category_id 可空迁移 ----
+    csilk_json_t* tx_schema = csilk_db_query_json(pool, "SELECT sql FROM sqlite_master WHERE type='table' AND name='transactions'");
+    if (tx_schema && csilk_json_array_size(tx_schema) > 0) {
+        const char* sql_def = csilk_json_get_string(csilk_json_array_get(tx_schema, 0), "sql");
+        if (sql_def && strstr(sql_def, "category_id      INTEGER NOT NULL")) {
+            csilk_db_exec(pool, "PRAGMA foreign_keys=OFF");
+            csilk_db_exec(pool, "BEGIN TRANSACTION");
+            csilk_db_exec(pool,
+                "CREATE TABLE transactions_new ("
+                "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                "  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,"
+                "  asset_id INTEGER NOT NULL REFERENCES assets(id) ON DELETE CASCADE,"
+                "  category_id INTEGER REFERENCES categories(id) ON DELETE RESTRICT,"
+                "  source_type TEXT NOT NULL DEFAULT 'expense' CHECK(source_type IN ('income', 'expense')),"
+                "  transaction_type TEXT NOT NULL CHECK(transaction_type IN ('deposit','withdrawal','buy','sell','transfer_in','transfer_out','fee','income','loss')),"
+                "  amount DECIMAL(18,2) NOT NULL,"
+                "  price_per_unit DECIMAL(18,4),"
+                "  quantity DECIMAL(18,4),"
+                "  currency TEXT DEFAULT 'CNY',"
+                "  transaction_date TIMESTAMP NOT NULL,"
+                "  note TEXT,"
+                "  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+                ")");
+            csilk_db_exec(pool, "INSERT INTO transactions_new SELECT * FROM transactions");
+            csilk_db_exec(pool, "DROP TABLE transactions");
+            csilk_db_exec(pool, "ALTER TABLE transactions_new RENAME TO transactions");
+            csilk_db_exec(pool, "COMMIT");
+            csilk_db_exec(pool, "PRAGMA foreign_keys=ON");
+        }
+    }
+    if (tx_schema) csilk_json_free(tx_schema);
+
     // ---- 收支-资产联动迁移（列存在性门控，一次性） ----
     // 检测 daily_expenses 是否已有 asset_id 列
     int has_asset_id = 0;

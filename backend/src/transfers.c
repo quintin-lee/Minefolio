@@ -1,6 +1,7 @@
 #include "common/response.h"
 #include "common/db.h"
 #include "common/jwt.h"
+#include "common/balance.h"
 #include "csilk/csilk.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -57,34 +58,63 @@ void transfers_create(csilk_ctx_t* c) {
     csilk_json_free(chk);
 
     // Start transaction
-    csilk_db_exec(pool, "BEGIN");
+    if (csilk_db_exec(pool, "BEGIN TRANSACTION") != 0) {
+        csilk_json_free(body);
+        respond_error(c, 500, "数据库错误");
+        return;
+    }
 
-    // Transfer out
+    // 1. 插入 transfers 主表记录
+    const char* tr_params[] = { uid_str, fid_str, tid_str, amt_str, currency, date, note ? note : "", NULL };
+    csilk_json_t* tr_res = csilk_db_query_param_json(pool,
+        "INSERT INTO transfers (user_id, from_asset_id, to_asset_id, amount, currency, transfer_date, note) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id", tr_params);
+    if (!tr_res || csilk_json_array_size(tr_res) == 0) {
+        csilk_db_exec(pool, "ROLLBACK");
+        if (tr_res) csilk_json_free(tr_res);
+        csilk_json_free(body);
+        respond_error(c, 500, "转账失败");
+        return;
+    }
+    int64_t transfer_id = db_get_int(csilk_json_array_get(tr_res, 0), "id");
+    csilk_json_free(tr_res);
+
+    // 2. 插入转出交易记录 (transfer_out)
     const char* out_params[] = { uid_str, fid_str, amt_str, currency, date, note ? note : "", NULL };
     csilk_json_t* res1 = csilk_db_query_param_json(pool,
-        "INSERT INTO transactions (user_id, asset_id, transaction_type, amount, currency, transaction_date, note) "
-        "VALUES (?, ?, 'transfer_out', ?, ?, ?, ?)", out_params);
-    if (res1) csilk_json_free(res1);
+        "INSERT INTO transactions (user_id, asset_id, source_type, transaction_type, amount, currency, transaction_date, note) "
+        "VALUES (?, ?, 'expense', 'transfer_out', ?, ?, ?, ?) RETURNING id", out_params);
+    if (!res1 || csilk_json_array_size(res1) == 0) {
+        csilk_db_exec(pool, "ROLLBACK");
+        if (res1) csilk_json_free(res1);
+        csilk_json_free(body);
+        respond_error(c, 500, "记录划转交易失败");
+        return;
+    }
+    csilk_json_free(res1);
 
-    // Transfer in
+    // 3. 插入转入交易记录 (transfer_in)
     const char* in_params[] = { uid_str, tid_str, amt_str, currency, date, note ? note : "", NULL };
     csilk_json_t* res2 = csilk_db_query_param_json(pool,
-        "INSERT INTO transactions (user_id, asset_id, transaction_type, amount, currency, transaction_date, note) "
-        "VALUES (?, ?, 'transfer_in', ?, ?, ?, ?)", in_params);
-    if (res2) csilk_json_free(res2);
+        "INSERT INTO transactions (user_id, asset_id, source_type, transaction_type, amount, currency, transaction_date, note) "
+        "VALUES (?, ?, 'income', 'transfer_in', ?, ?, ?, ?) RETURNING id", in_params);
+    if (!res2 || csilk_json_array_size(res2) == 0) {
+        csilk_db_exec(pool, "ROLLBACK");
+        if (res2) csilk_json_free(res2);
+        csilk_json_free(body);
+        respond_error(c, 500, "记录划转交易失败");
+        return;
+    }
+    csilk_json_free(res2);
 
-    // Update asset values
-    const char* up1_params[] = { amt_str, fid_str, uid_str, NULL };
-    csilk_json_t* res3 = csilk_db_query_param_json(pool,
-        "UPDATE assets SET current_value=current_value-?, updated_at=CURRENT_TIMESTAMP "
-        "WHERE id=? AND user_id=?", up1_params);
-    if (res3) csilk_json_free(res3);
-
-    const char* up2_params[] = { amt_str, tid_str, uid_str, NULL };
-    csilk_json_t* res4 = csilk_db_query_param_json(pool,
-        "UPDATE assets SET current_value=current_value+?, updated_at=CURRENT_TIMESTAMP "
-        "WHERE id=? AND user_id=?", up2_params);
-    if (res4) csilk_json_free(res4);
+    // 4. 联动资产余额与审计日志
+    if (balance_apply_delta(pool, from_id, user_id, -amount, "transfer", transfer_id, note) != 0 ||
+        balance_apply_delta(pool, to_id, user_id, amount, "transfer", transfer_id, note) != 0) {
+        csilk_db_exec(pool, "ROLLBACK");
+        csilk_json_free(body);
+        respond_bad_request(c, "资产余额更新失败");
+        return;
+    }
 
     csilk_db_exec(pool, "COMMIT");
     csilk_json_free(body);

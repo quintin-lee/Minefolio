@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id          INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     asset_id         INTEGER NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
-    category_id      INTEGER NOT NULL REFERENCES categories(id) ON DELETE RESTRICT,
+    category_id      INTEGER REFERENCES categories(id) ON DELETE RESTRICT,
     source_type      TEXT NOT NULL DEFAULT 'expense' CHECK(source_type IN ('income', 'expense')),
     transaction_type TEXT NOT NULL CHECK(transaction_type IN (
         'deposit','withdrawal','buy','sell',
