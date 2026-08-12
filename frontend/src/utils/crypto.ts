@@ -8,8 +8,6 @@
  *   4. Base64url(ArrayBuffer) → string sent as password_enc
  */
 
-const API_BASE = import.meta.env.VITE_API_URL ?? ''
-
 interface RsaJwk {
   kty: 'RSA'
   n: string
@@ -17,7 +15,7 @@ interface RsaJwk {
 }
 
 async function fetchPublicKey(): Promise<RsaJwk> {
-  const res = await fetch(`${API_BASE}/auth/public-key`)
+  const res = await fetch('/api/auth/public-key')
   if (!res.ok) throw new Error('Failed to fetch public key')
   const body = await res.json()
   return body.data.public_key
