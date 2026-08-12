@@ -13,10 +13,12 @@ void transfers_create(csilk_ctx_t* c) {
     csilk_json_t* body = csilk_bind_json(c);
     if (!body) { respond_bad_request(c, "请求体必须为 JSON"); return; }
 
-    int64_t from_id = (int64_t)csilk_json_get_number(body, "from_asset_id");
-    int64_t to_id = (int64_t)csilk_json_get_number(body, "to_asset_id");
-    double amount = csilk_json_get_number(body, "amount");
+    int64_t from_id = db_get_int(body, "from_asset_id");
+    int64_t to_id = db_get_int(body, "to_asset_id");
+    double amount = db_get_num(body, "amount");
     const char* date = csilk_json_get_string(body, "transfer_date");
+    if (!date || strlen(date) == 0) date = csilk_json_get_string(body, "transaction_date");
+    if (!date || strlen(date) == 0) date = csilk_json_get_string(body, "date");
     const char* note = csilk_json_get_string(body, "note");
     const char* currency = csilk_json_get_string(body, "currency");
     if (!currency) currency = "CNY";

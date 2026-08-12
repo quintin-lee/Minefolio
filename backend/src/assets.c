@@ -45,7 +45,7 @@ void assets_create(csilk_ctx_t* c) {
     if (!body) { respond_bad_request(c, "请求体必须为 JSON"); return; }
 
     const char* name = csilk_json_get_string(body, "name");
-    int64_t category_id = (int64_t)csilk_json_get_number(body, "category_id");
+    int64_t category_id = db_get_int(body, "category_id");
     if (!name || category_id <= 0) {
         csilk_json_free(body);
         respond_bad_request(c, "name 和 category_id 为必填");
@@ -53,7 +53,7 @@ void assets_create(csilk_ctx_t* c) {
     }
 
     const char* account_no = csilk_json_get_string(body, "account_no");
-    double value = csilk_json_get_number(body, "current_value");
+    double value = db_get_num(body, "current_value");
     const char* currency = csilk_json_get_string(body, "currency");
     if (!currency) currency = "CNY";
     const char* note = csilk_json_get_string(body, "note");
@@ -109,7 +109,7 @@ void assets_update(csilk_ctx_t* c) {
 
     const char* name = csilk_json_get_string(body, "name");
     const char* account_no = csilk_json_get_string(body, "account_no");
-    double value = csilk_json_get_number(body, "current_value");
+    double value = db_get_num(body, "current_value");
     const char* currency = csilk_json_get_string(body, "currency");
     const char* note = csilk_json_get_string(body, "note");
 
