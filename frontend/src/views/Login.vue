@@ -83,7 +83,7 @@ async function handleSubmit() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #312e81 100%);
+  background: linear-gradient(135deg, #060b18 0%, #0a1628 50%, #0d1f3c 100%);
   position: relative;
   overflow: hidden;
 }
@@ -93,8 +93,8 @@ async function handleSubmit() {
   left: 0;
   width: 100%;
   height: 100%;
-  background: radial-gradient(circle at top right, rgba(59, 130, 246, 0.15), transparent 40%),
-              radial-gradient(circle at bottom left, rgba(99, 102, 241, 0.15), transparent 40%);
+  background: radial-gradient(circle at top right, rgba(0, 212, 255, 0.1), transparent 40%),
+              radial-gradient(circle at bottom left, rgba(124, 58, 237, 0.1), transparent 40%);
   pointer-events: none;
 }
 .login-card {
@@ -120,16 +120,16 @@ async function handleSubmit() {
   margin: 0;
   font-size: 32px;
   font-weight: 700;
-  background: linear-gradient(to right, #60a5fa, #a78bfa);
+  background: linear-gradient(to right, #00d4ff, #a78bfa);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  letter-spacing: 1px;
+  letter-spacing: 2px;
 }
 .subtitle {
   margin: 8px 0 0;
-  color: #94a3b8;
+  color: #64748b;
   font-size: 15px;
-  letter-spacing: 2px;
+  letter-spacing: 3px;
 }
 .login-form {
   margin-top: 20px;
@@ -143,7 +143,7 @@ async function handleSubmit() {
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1) inset !important;
 }
 :deep(.el-input__wrapper.is-focus) {
-  box-shadow: 0 0 0 1px #60a5fa inset, 0 0 10px rgba(96, 165, 250, 0.2) !important;
+  box-shadow: 0 0 0 1px #00d4ff inset, 0 0 10px rgba(0, 212, 255, 0.25) !important;
 }
 :deep(.el-input__inner) {
   color: #f8fafc;
@@ -168,9 +168,9 @@ async function handleSubmit() {
 .switch-btn {
   font-size: 14px;
   font-weight: 600;
-  color: #60a5fa;
+  color: #00d4ff;
 }
 .switch-btn:hover {
-  color: #93c5fd;
+  color: #22d3ee;
 }
 </style>

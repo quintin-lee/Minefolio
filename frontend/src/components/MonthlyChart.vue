@@ -42,67 +42,67 @@ function updateChart() {
   const d = props.data
   chart.setOption({
     animationDuration: 1000,
-    tooltip: { 
-      trigger: 'axis', 
-      axisPointer: { type: 'shadow', shadowStyle: { color: 'rgba(0,0,0,0.03)' } },
-      backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'shadow', shadowStyle: { color: 'rgba(0,212,255,0.05)' } },
+      backgroundColor: 'rgba(15, 23, 42, 0.95)',
       padding: [10, 15],
-      textStyle: { color: '#303133' },
-      borderColor: '#ebeef5',
+      textStyle: { color: '#e2e8f0' },
+      borderColor: 'rgba(0, 212, 255, 0.2)',
       borderWidth: 1,
-      shadowColor: 'rgba(0, 0, 0, 0.1)',
-      shadowBlur: 10,
+      shadowColor: 'rgba(0, 212, 255, 0.15)',
+      shadowBlur: 16,
     },
-    legend: { 
-      data: ['收入', '支出'], 
+    legend: {
+      data: ['收入', '支出'],
       top: 0,
       icon: 'roundRect',
       itemWidth: 16,
       itemHeight: 8,
-      textStyle: { color: '#606266' }
+      textStyle: { color: '#64748b' }
     },
     grid: { left: 60, right: 20, top: 40, bottom: 20, containLabel: true },
-    xAxis: { 
-      type: 'category', 
+    xAxis: {
+      type: 'category',
       data: ['本月'],
-      axisLine: { lineStyle: { color: '#ebeef5' } },
-      axisLabel: { color: '#909399' },
+      axisLine: { lineStyle: { color: 'rgba(0, 212, 255, 0.15)' } },
+      axisLabel: { color: '#64748b' },
       axisTick: { show: false }
     },
-    yAxis: { 
-      type: 'value', 
-      splitLine: { lineStyle: { type: 'dashed', color: '#ebeef5' } },
-      axisLabel: { 
-        color: '#909399',
-        formatter: (v: number) => (v >= 10000 ? `${(v / 10000).toFixed(1)}w` : v.toString()) 
-      } 
+    yAxis: {
+      type: 'value',
+      splitLine: { lineStyle: { type: 'dashed', color: 'rgba(0, 212, 255, 0.08)' } },
+      axisLabel: {
+        color: '#64748b',
+        formatter: (v: number) => (v >= 10000 ? `${(v / 10000).toFixed(1)}w` : v.toString())
+      }
     },
     series: [
-      { 
-        name: '收入', 
-        type: 'bar', 
+      {
+        name: '收入',
+        type: 'bar',
         barWidth: 40,
-        data: [d?.total_income ?? 0], 
-        itemStyle: { 
+        data: [d?.total_income ?? 0],
+        itemStyle: {
           borderRadius: [6, 6, 0, 0],
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: '#85ce61' },
-            { offset: 1, color: '#67c23a' }
+            { offset: 0, color: '#34d399' },
+            { offset: 1, color: '#059669' }
           ])
-        } 
+        }
       },
-      { 
-        name: '支出', 
-        type: 'bar', 
+      {
+        name: '支出',
+        type: 'bar',
         barWidth: 40,
-        data: [d?.total_expense ?? 0], 
-        itemStyle: { 
+        data: [d?.total_expense ?? 0],
+        itemStyle: {
           borderRadius: [6, 6, 0, 0],
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: '#f78989' },
-            { offset: 1, color: '#f56c6c' }
+            { offset: 0, color: '#f87171' },
+            { offset: 1, color: '#dc2626' }
           ])
-        } 
+        }
       },
     ],
   })

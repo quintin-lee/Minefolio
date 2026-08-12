@@ -42,53 +42,53 @@ function updateChart() {
   chart.setOption({
     animationDuration: 1000,
     animationEasing: 'cubicOut',
-    tooltip: { 
-      trigger: 'axis', 
-      backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    tooltip: {
+      trigger: 'axis',
+      backgroundColor: 'rgba(15, 23, 42, 0.95)',
       padding: [10, 15],
-      textStyle: { color: '#303133' },
-      borderColor: '#ebeef5',
+      textStyle: { color: '#e2e8f0' },
+      borderColor: 'rgba(0, 212, 255, 0.2)',
       borderWidth: 1,
-      shadowColor: 'rgba(0, 0, 0, 0.1)',
-      shadowBlur: 10,
+      shadowColor: 'rgba(0, 212, 255, 0.1)',
+      shadowBlur: 16,
       formatter: (p: any) => {
         const val = new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(p[0].value)
-        return `<div style="font-size:12px;color:#909399;margin-bottom:4px">${p[0].name}</div>
-                <div style="font-weight:bold;color:#409eff">${p[0].seriesName}: ${val}</div>`
+        return `<div style="font-size:12px;color:#64748b;margin-bottom:4px">${p[0].name}</div>
+                <div style="font-weight:bold;color:#00d4ff">${p[0].seriesName}: ${val}</div>`
       }
     },
     grid: { left: 60, right: 20, top: 20, bottom: 30, containLabel: true },
-    xAxis: { 
-      type: 'category', 
-      data: props.data.map((d) => d.date.slice(5)), 
-      axisLine: { lineStyle: { color: '#ebeef5' } },
-      axisLabel: { color: '#909399', margin: 12 },
+    xAxis: {
+      type: 'category',
+      data: props.data.map((d) => d.date.slice(5)),
+      axisLine: { lineStyle: { color: 'rgba(0, 212, 255, 0.15)' } },
+      axisLabel: { color: '#64748b', margin: 12 },
       axisTick: { show: false }
     },
-    yAxis: { 
-      type: 'value', 
-      splitLine: { lineStyle: { type: 'dashed', color: '#ebeef5' } },
-      axisLabel: { 
-        color: '#909399', 
-        formatter: (v: number) => (v >= 10000 ? `${(v / 10000).toFixed(1)}w` : v.toString()) 
-      } 
+    yAxis: {
+      type: 'value',
+      splitLine: { lineStyle: { type: 'dashed', color: 'rgba(0, 212, 255, 0.08)' } },
+      axisLabel: {
+        color: '#64748b',
+        formatter: (v: number) => (v >= 10000 ? `${(v / 10000).toFixed(1)}w` : v.toString())
+      }
     },
-    series: [{ 
-      name: '净资产', 
-      type: 'line', 
-      data: props.data.map((d) => d.net_worth), 
+    series: [{
+      name: '净资产',
+      type: 'line',
+      data: props.data.map((d) => d.net_worth),
       smooth: 0.4,
       symbol: 'circle',
       symbolSize: 6,
       showSymbol: false,
-      areaStyle: { 
+      areaStyle: {
         color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-          { offset: 0, color: 'rgba(64,158,255,0.4)' },
-          { offset: 1, color: 'rgba(64,158,255,0.05)' }
+          { offset: 0, color: 'rgba(0, 212, 255, 0.35)' },
+          { offset: 1, color: 'rgba(0, 212, 255, 0.02)' }
         ])
-      }, 
-      itemStyle: { color: '#409eff', borderWidth: 2 },
-      lineStyle: { width: 3, shadowColor: 'rgba(64,158,255,0.2)', shadowBlur: 10 }
+      },
+      itemStyle: { color: '#00d4ff', borderWidth: 2 },
+      lineStyle: { width: 2, shadowColor: 'rgba(0, 212, 255, 0.5)', shadowBlur: 12 }
     }],
   })
 }

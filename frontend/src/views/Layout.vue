@@ -133,9 +133,9 @@ function handleCommand(cmd: string) {
   background-color: var(--mf-background);
 }
 .aside {
-  background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
+  background: linear-gradient(180deg, #060b18 0%, #0f1d32 100%);
   min-height: 100vh;
-  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.1);
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.4);
   z-index: 10;
   display: flex;
   flex-direction: column;
@@ -147,26 +147,28 @@ function handleCommand(cmd: string) {
   padding: 0 24px;
   gap: 12px;
   color: #fff;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(0, 212, 255, 0.1);
 }
 .logo-icon-wrapper {
   font-size: 24px;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(0, 212, 255, 0.1);
   width: 40px;
   height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 10px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(0, 212, 255, 0.2);
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.15);
 }
 .logo-text {
   font-size: 22px;
   font-weight: 700;
-  letter-spacing: 0.5px;
-  background: linear-gradient(to right, #fff, #94a3b8);
+  letter-spacing: 1px;
+  background: linear-gradient(to right, #00d4ff, #a5f3fc);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
+  text-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
 }
 .sidebar-menu {
   border-right: none;
@@ -175,7 +177,7 @@ function handleCommand(cmd: string) {
   flex: 1;
 }
 .sidebar-menu :deep(.el-menu-item) {
-  color: #94a3b8;
+  color: #64748b;
   border-radius: 8px;
   margin-bottom: 4px;
   height: 50px;
@@ -187,12 +189,12 @@ function handleCommand(cmd: string) {
   margin-right: 12px;
 }
 .sidebar-menu :deep(.el-menu-item:hover) {
-  color: #f8fafc;
-  background: rgba(255, 255, 255, 0.05) !important;
+  color: #e2e8f0;
+  background: rgba(0, 212, 255, 0.06) !important;
 }
 .sidebar-menu :deep(.el-menu-item.is-active) {
-  color: #fff;
-  background: linear-gradient(90deg, rgba(37, 99, 235, 0.15) 0%, transparent 100%) !important;
+  color: #00d4ff;
+  background: rgba(0, 212, 255, 0.08) !important;
   position: relative;
 }
 .sidebar-menu :deep(.el-menu-item.is-active::before) {
@@ -201,10 +203,10 @@ function handleCommand(cmd: string) {
   left: -12px;
   top: 10%;
   height: 80%;
-  width: 4px;
-  background: #3b82f6;
-  border-radius: 0 4px 4px 0;
-  box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+  width: 3px;
+  background: #00d4ff;
+  border-radius: 0 2px 2px 0;
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.6);
 }
 
 .main-container {
@@ -212,19 +214,21 @@ function handleCommand(cmd: string) {
   flex-direction: column;
 }
 .header {
-  background: #fff;
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(12px);
   height: 72px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 32px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.4);
+  border-bottom: 1px solid rgba(0, 212, 255, 0.08);
   z-index: 5;
 }
 .page-title {
   font-size: 20px;
   font-weight: 600;
-  color: #0f172a;
+  color: #e2e8f0;
   margin: 0;
 }
 .user-profile {
@@ -235,33 +239,35 @@ function handleCommand(cmd: string) {
   padding: 6px 12px;
   border-radius: 30px;
   transition: background 0.2s;
+  border: 1px solid transparent;
 }
 .user-profile:hover {
-  background: #f1f5f9;
+  background: rgba(0, 212, 255, 0.06);
+  border-color: rgba(0, 212, 255, 0.15);
 }
 .avatar-circle {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #3b82f6 0%, #2dd4bf 100%);
+  background: linear-gradient(135deg, #00d4ff 0%, #7c3aed 100%);
   color: white;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 600;
   font-size: 16px;
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.4);
 }
 .username {
   font-weight: 500;
-  color: #334155;
+  color: #94a3b8;
 }
 .user-dropdown .danger-item {
-  color: #ef4444;
+  color: #f87171;
 }
 .user-dropdown .danger-item:hover {
-  background-color: #fef2f2;
-  color: #dc2626;
+  background-color: rgba(239, 68, 68, 0.1);
+  color: #f87171;
 }
 .main {
   padding: 24px 32px;

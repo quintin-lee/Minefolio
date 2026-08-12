@@ -182,16 +182,22 @@ onMounted(loadDashboard)
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
 }
 
-.stat-card.assets .stat-value      { color: #3b82f6; }
-.stat-card.liabilities .stat-value { color: #ef4444; }
-.stat-card.networth .stat-value    { color: #10b981; }
-.stat-card.monthly .stat-value     { color: #f59e0b; }
+.stat-card.assets .stat-value      { color: #00d4ff; text-shadow: 0 0 12px rgba(0,212,255,0.5); }
+.stat-card.liabilities .stat-value { color: #f87171; text-shadow: 0 0 12px rgba(248,113,113,0.4); }
+.stat-card.networth .stat-value    { color: #34d399; text-shadow: 0 0 12px rgba(52,211,153,0.5); }
+.stat-card.monthly .stat-value     { color: #fbbf24; text-shadow: 0 0 12px rgba(251,191,36,0.4); }
 
 .chart-card {
   border-radius: var(--mf-radius-lg);
   border: 1px solid var(--mf-border);
   background: var(--mf-surface);
+  backdrop-filter: blur(12px);
   box-shadow: var(--mf-shadow-sm);
+}
+
+.chart-card:hover {
+  border-color: var(--mf-border-hover);
+  box-shadow: var(--mf-shadow-glow);
 }
 
 :deep(.el-card__header) {
