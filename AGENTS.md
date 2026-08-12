@@ -5,7 +5,7 @@
 Personal finance tracker. Single-user SQLite backend (C23 + [csilk](https://github.com/quintin-lee/csilk)) + Vue 3 / TypeScript frontend.
 
 ```
-backend/src/          C handlers — one .c per domain (auth, assets, transactions, categories, …)
+backend/src/          C handlers — one .c per domain (auth, assets, transactions, …)
 backend/src/common/   db.h/.c  jwt.h/.c  balance.h/.c  response.h
 backend/sql/          migration.sql — idempotent, runs on every startup
 backend/tests/        test_link.sh — full HTTP & DB integration test suite
@@ -23,7 +23,7 @@ cd backend
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
 cmake --build build --parallel
 ./build/minefolio          # reads sql/migration.sql relative to cwd
-./tests/test_link.sh       # run full backend integration test suite (16 PASS mandatory)
+./tests/test_link.sh       # run full backend integration test suite (21 PASS mandatory)
 ```
 
 ### Frontend (local dev & build)
@@ -87,7 +87,7 @@ cp .env.example .env       # set MINEFOLIO_JWT_SECRET
 - **C Code Structure**: One handler function per `.c` file, named `<domain>_<action>`. Forward-declare in `main.c`. Header files use `#pragma once`.
 - **Frontend API**: One API file per domain in `frontend/src/api/`, export named functions. TypeScript interfaces live in `frontend/src/types/index.ts`.
 - **Auto-registered Components**: Element Plus components are auto-registered via `unplugin-vue-components`.
-- **Verification Rule**: Before declaring any task complete, run `cmake --build backend/build && npm --prefix frontend run build && cd backend && ./tests/test_link.sh` to ensure zero build errors and 16 PASS integration tests.
+- **Verification Rule**: Before declaring any task complete, run `cmake --build backend/build && npm --prefix frontend run build && cd backend && ./tests/test_link.sh` to ensure zero build errors and 21 PASS integration tests.
 
 ---
 
@@ -106,6 +106,6 @@ cp .env.example .env       # set MINEFOLIO_JWT_SECRET
 | Add API endpoint | `backend/src/main.c` (route registration) + existing `backend/src/*.c` |
 | DB & JSON Helpers | `backend/src/common/db.h` |
 | Asset & Balance Logic | `backend/src/common/balance.h` + `backend/src/common/balance.c` |
-| Frontend Page Reference | `frontend/src/views/DailyExpenses.vue` / `Transactions.vue` / `Transfer.vue` |
+| Frontend Page Reference | `frontend/src/views/DailyExpenses.vue` / `Transactions.vue` |
 | Auth Flow | `backend/src/auth.c` + `frontend/src/stores/auth.ts` + `frontend/src/utils/http.ts` |
 | Docker Deployment | `Dockerfile` |
