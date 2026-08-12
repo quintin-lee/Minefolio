@@ -51,11 +51,11 @@ DELETE FROM transactions;
 ```sql
 ALTER TABLE daily_expenses ADD COLUMN asset_id INTEGER NOT NULL
     REFERENCES assets(id) ON DELETE CASCADE;
-CREATE INDEX idx_daily_expenses_asset ON daily_expenses(asset_id);
+CREATE INDEX IF NOT EXISTS idx_daily_expenses_asset ON daily_expenses(asset_id);
 ```
 
 - 全新数据库：`migration.sql` 中 `CREATE TABLE daily_expenses` 直接包含 `asset_id` 列；`CREATE INDEX IF NOT EXISTS idx_daily_expenses_asset` 在每次启动时无条件执行（幂等，见 4）
-- 存量数据库：列存在性门控触发上述 ALTER（此时表已清空，可安全加 `NOT NULL` 无默认值列）
+- 存量数据库：列存在性门控触发上述 ALTER（此时表已清空，可安全加 `NOT NULL` 无默认值列）。**注意：门控只执行 DELETE × 3 + ALTER，索引由第 3 步无条件创建**（见 4，不可在门控或 migration.sql 中创建——存量库首启时列尚不存在）
 - **删除资产行为**：`ON DELETE CASCADE`——删除资产时级联删除其收支记录（与现有 `transactions.asset_id` 的 CASCADE 策略一致；原设计文档"保留交易记录"的描述与现有 schema 实际不符，以 CASCADE 为准）。审计日志**不设外键**，删除资产不删除历史日志（见 3.3）。
 
 ### 3.3 审计日志表（新）
@@ -385,7 +385,7 @@ export interface DailyExpense {
 | 存量库第二次启动 | 门控不触发，数据保留，不重复清空，索引仍幂等存在 |
 | 迁移中途失败（ALTER 之前某步失败） | 门控在下次启动重新尝试（幂等，因列尚不存在，DELETE/操作整体重跑） |
 | ALTER 成功后 CREATE INDEX 失败 | 门控已闭合（列已存在），迁移视作完成不再重跑；第3步幂等，下次启动自动补建索引 |
-| 迁移成功后 | 门控闭合（列已存在），后续启动不再执行任何迁移语句 |
+| 迁移成功后 | 门控闭合（列已存在），后续启动不再执行任何**门控内**的迁移语句（migration.sql 与第 3 步索引仍幂等执行） |
 
 ---
 
