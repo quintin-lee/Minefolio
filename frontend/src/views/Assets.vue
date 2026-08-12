@@ -198,7 +198,13 @@ async function handleDelete(asset: any) {
   loadAssets()
 }
 
-onMounted(() => { loadAssets(); loadSummary(); loadCategories() })
+onMounted(async () => {
+  try {
+    await Promise.all([loadAssets(), loadSummary(), loadCategories()])
+  } catch (err) {
+    console.error('[Assets] onMounted failed:', err)
+  }
+})
 </script>
 
 <style scoped>

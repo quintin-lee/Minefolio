@@ -319,14 +319,18 @@ async function handleDelete(expense: any) {
 }
 
 onMounted(async () => {
-  const [, assetRes] = await Promise.all([
-    categoryStore.loadCategories(),
-    assetsApi.list({ page_size: 500 }),
-  ])
-  allCategories.value = categoryStore.incomeExpenseCategories
-  allAssets.value = assetRes.list
-  filters.month = new Date().toISOString().slice(0, 7)
-  loadData()
+  try {
+    const [, assetRes] = await Promise.all([
+      categoryStore.loadCategories(),
+      assetsApi.list({ page_size: 500 }),
+    ])
+    allCategories.value = categoryStore.incomeExpenseCategories
+    allAssets.value = assetRes.list
+    filters.month = new Date().toISOString().slice(0, 7)
+    loadData()
+  } catch (err) {
+    console.error('[DailyExpenses] onMounted failed:', err)
+  }
 })
 
 // ── Import / Export ───────────────────────────────────────────────────────────

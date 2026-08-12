@@ -640,10 +640,13 @@ async function handleDelete(txn: any) {
   }
 }
 
-onMounted(() => {
-  loadAssets()
-  loadCategories()
-  loadData()
+onMounted(async () => {
+  try {
+    await Promise.all([loadAssets(), loadCategories()])
+    loadData()
+  } catch (err) {
+    console.error('[Transactions] onMounted failed:', err)
+  }
 })
 
 // ── Import / Export ──────────────────────────────────────────────────────────
