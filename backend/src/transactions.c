@@ -7,25 +7,29 @@
 #include <stdlib.h>
 #include <string.h>
 
-/** @brief 计算交易对资产余额的业务方向 delta（transfer_* 返回 0）。 */
 static double tx_delta(const char* type, double amount, double price, double qty) {
     if (!type) return 0;
-    if (strcmp(type, "transfer_in") == 0 || strcmp(type, "transfer_out") == 0) {
-        return 0;  // 转账走 transfers 功能，不联动
-    }
-    if (strcmp(type, "buy") == 0) {
-        double v = (qty > 0 && price > 0) ? qty * price : amount;
-        return -v;  // 现金流出
-    }
-    if (strcmp(type, "sell") == 0) {
-        double v = (qty > 0 && price > 0) ? qty * price : amount;
-        return v;   // 现金流入
-    }
-    if (strcmp(type, "deposit") == 0 || strcmp(type, "income") == 0) {
+    if (strcmp(type, "deposit") == 0 || strcmp(type, "buy") == 0 || strcmp(type, "income") == 0) {
         return amount;
     }
-    // withdrawal / fee / loss
-    return -amount;
+    if (strcmp(type, "withdrawal") == 0 || strcmp(type, "sell") == 0 ||
+        strcmp(type, "fee") == 0 || strcmp(type, "loss") == 0) {
+        return -amount;
+    }
+    return 0;
+}
+
+static double tx_linked_delta(const char* type, double amount) {
+    if (!type) return 0;
+    if (strcmp(type, "buy") == 0 || strcmp(type, "deposit") == 0 ||
+        strcmp(type, "fee") == 0 || strcmp(type, "loss") == 0) {
+        return -amount; // 扣除资金账户余额
+    }
+    if (strcmp(type, "sell") == 0 || strcmp(type, "withdrawal") == 0 ||
+        strcmp(type, "income") == 0) {
+        return +amount; // 资金账户入账/回流
+    }
+    return 0;
 }
 
 void transactions_list(csilk_ctx_t* c) {
@@ -45,11 +49,12 @@ void transactions_list(csilk_ctx_t* c) {
 
     char sql[1024];
     snprintf(sql, sizeof(sql),
-        "SELECT t.id, t.asset_id, t.category_id, t.transaction_type, t.source_type, t.amount, "
+        "SELECT t.id, t.asset_id, t.linked_asset_id, t.category_id, t.transaction_type, t.source_type, t.amount, "
         "t.price_per_unit, t.quantity, t.currency, t.transaction_date, t.note, "
-        "a.name as asset_name, c.name as category_name "
+        "a.name as asset_name, la.name as linked_asset_name, c.name as category_name "
         "FROM transactions t "
         "LEFT JOIN assets a ON t.asset_id=a.id "
+        "LEFT JOIN assets la ON t.linked_asset_id=la.id "
         "LEFT JOIN categories c ON t.category_id=c.id "
         "WHERE t.user_id=?");
 
@@ -97,6 +102,7 @@ void transactions_create(csilk_ctx_t* c) {
     if (!body) { respond_bad_request(c, "请求体必须为 JSON"); return; }
 
     int64_t asset_id = db_get_int(body, "asset_id");
+    int64_t linked_asset_id = db_get_int(body, "linked_asset_id");
     int64_t category_id = db_get_int(body, "category_id");
     const char* type = csilk_json_get_string(body, "transaction_type");
     if (!type || strlen(type) == 0) type = csilk_json_get_string(body, "type");
@@ -111,12 +117,19 @@ void transactions_create(csilk_ctx_t* c) {
         return;
     }
 
+    if (linked_asset_id > 0 && linked_asset_id == asset_id) {
+        csilk_json_free(body);
+        respond_bad_request(c, "关联资金账户不能与投资目标资产相同");
+        return;
+    }
+
     csilk_db_pool_t* pool = db_get_pool();
-    char uid_str[32], ast_str[32];
+    char uid_str[32], ast_str[32], last_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     snprintf(ast_str, sizeof(ast_str), "%lld", (long long)asset_id);
+    snprintf(last_str, sizeof(last_str), "%lld", (long long)linked_asset_id);
 
-    // Verify asset belongs to user
+    // Verify main asset belongs to user
     const char* chk_params[] = { ast_str, uid_str, NULL };
     csilk_json_t* chk = csilk_db_query_param_json(pool,
         "SELECT id FROM assets WHERE id=? AND user_id=?", chk_params);
@@ -127,6 +140,20 @@ void transactions_create(csilk_ctx_t* c) {
         return;
     }
     csilk_json_free(chk);
+
+    // Verify linked asset belongs to user if specified
+    if (linked_asset_id > 0) {
+        const char* lchk_params[] = { last_str, uid_str, NULL };
+        csilk_json_t* lchk = csilk_db_query_param_json(pool,
+            "SELECT id FROM assets WHERE id=? AND user_id=?", lchk_params);
+        if (!lchk || csilk_json_array_size(lchk) == 0) {
+            csilk_json_free(body);
+            if (lchk) csilk_json_free(lchk);
+            respond_bad_request(c, "关联资金账户无效");
+            return;
+        }
+        csilk_json_free(lchk);
+    }
 
     const char* currency = csilk_json_get_string(body, "currency");
     if (!currency) currency = "CNY";
@@ -141,7 +168,7 @@ void transactions_create(csilk_ctx_t* c) {
     snprintf(qty_str, sizeof(qty_str), "%.4f", qty);
 
     const char* ins_params[] = {
-        uid_str, ast_str, cat_str, src_type, type,
+        uid_str, ast_str, linked_asset_id > 0 ? last_str : NULL, cat_str, src_type, type,
         amt_str, price_str, qty_str, currency, date, note ? note : "", NULL
     };
 
@@ -152,9 +179,9 @@ void transactions_create(csilk_ctx_t* c) {
     }
 
     csilk_json_t* ins = csilk_db_query_param_json(pool,
-        "INSERT INTO transactions (user_id, asset_id, category_id, source_type, transaction_type, "
+        "INSERT INTO transactions (user_id, asset_id, linked_asset_id, category_id, source_type, transaction_type, "
         "amount, price_per_unit, quantity, currency, transaction_date, note) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id", ins_params);
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id", ins_params);
     if (!ins || csilk_json_array_size(ins) == 0) {
         csilk_db_exec(pool, "ROLLBACK");
         if (ins) csilk_json_free(ins);
@@ -165,7 +192,7 @@ void transactions_create(csilk_ctx_t* c) {
     int64_t tx_id = db_get_int(csilk_json_array_get(ins, 0), "id");
     csilk_json_free(ins);
 
-    // 联动资产余额（transfer_* 不联动）
+    // 1. 联动目标投资资产余额
     double tdelta = tx_delta(type, amount, price, qty);
     if (tdelta != 0) {
         if (balance_apply_delta(pool, asset_id, user_id, tdelta,
@@ -174,6 +201,20 @@ void transactions_create(csilk_ctx_t* c) {
             csilk_json_free(body);
             respond_bad_request(c, "资产无效");
             return;
+        }
+    }
+
+    // 2. 联动关联资金账户余额
+    if (linked_asset_id > 0) {
+        double ldelta = tx_linked_delta(type, amount);
+        if (ldelta != 0) {
+            if (balance_apply_delta(pool, linked_asset_id, user_id, ldelta,
+                                    "transaction_linked", tx_id, note) != 0) {
+                csilk_db_exec(pool, "ROLLBACK");
+                csilk_json_free(body);
+                respond_bad_request(c, "关联资金账户余额更新失败");
+                return;
+            }
         }
     }
 
@@ -210,7 +251,7 @@ void transactions_update(csilk_ctx_t* c) {
     // 读取旧记录
     const char* old_params[] = { id_str, uid_str, NULL };
     csilk_json_t* old_row = csilk_db_query_param_json(pool,
-        "SELECT asset_id, amount, transaction_type, quantity, price_per_unit "
+        "SELECT asset_id, linked_asset_id, amount, transaction_type, quantity, price_per_unit "
         "FROM transactions WHERE id=? AND user_id=?", old_params);
     if (!old_row || csilk_json_array_size(old_row) == 0) {
         csilk_json_free(body);
@@ -219,12 +260,16 @@ void transactions_update(csilk_ctx_t* c) {
         return;
     }
     const csilk_json_t* old_r = csilk_json_array_get(old_row, 0);
+    int64_t old_asset_id = db_get_int(old_r, "asset_id");
+    int64_t old_linked_asset_id = db_get_int(old_r, "linked_asset_id");
     double old_tx_amount = db_get_num(old_r, "amount");
     const char* old_tx_type = csilk_json_get_string(old_r, "transaction_type");
     double old_tx_price = db_get_num(old_r, "price_per_unit");
     double old_tx_qty = db_get_num(old_r, "quantity");
     double old_tdelta = tx_delta(old_tx_type, old_tx_amount, old_tx_price, old_tx_qty);
+    double old_ldelta = tx_linked_delta(old_tx_type, old_tx_amount);
 
+    int64_t linked_asset_id = db_get_int(body, "linked_asset_id");
     const char* type = csilk_json_get_string(body, "transaction_type");
     if (!type || strlen(type) == 0) type = csilk_json_get_string(body, "type");
     double amount = db_get_num(body, "amount");
@@ -236,16 +281,19 @@ void transactions_update(csilk_ctx_t* c) {
     double qty = db_get_num(body, "quantity");
     int64_t category_id = db_get_int(body, "category_id");
 
-    char amt_str[64], price_str[64], qty_str[64], cat_str[32];
+    char amt_str[64], price_str[64], qty_str[64], cat_str[32], last_str[32];
     snprintf(amt_str, sizeof(amt_str), "%.6f", amount);
     snprintf(price_str, sizeof(price_str), "%.4f", price);
     snprintf(qty_str, sizeof(qty_str), "%.4f", qty);
     snprintf(cat_str, sizeof(cat_str), "%lld", (long long)category_id);
+    snprintf(last_str, sizeof(last_str), "%lld", (long long)linked_asset_id);
 
     const char* up_params[] = {
         type ? type : "", amt_str, price_str, qty_str,
         currency ? currency : "CNY", date ? date : "", note ? note : "",
-        cat_str, src_type ? src_type : "expense", id_str, uid_str, NULL
+        cat_str, src_type ? src_type : "expense",
+        linked_asset_id > 0 ? last_str : NULL,
+        id_str, uid_str, NULL
     };
 
     if (csilk_db_exec(pool, "BEGIN TRANSACTION") != 0) {
@@ -258,20 +306,59 @@ void transactions_update(csilk_ctx_t* c) {
     csilk_json_t* up_res = csilk_db_query_param_json(pool,
         "UPDATE transactions SET transaction_type=?, amount=?, price_per_unit=?, "
         "quantity=?, currency=?, transaction_date=?, note=?, "
-        "category_id=?, source_type=? WHERE id=? AND user_id=?", up_params);
+        "category_id=?, source_type=?, linked_asset_id=? WHERE id=? AND user_id=?", up_params);
     if (up_res) csilk_json_free(up_res);
 
-    // 差值联动
+    // 1. 目标资产差值联动
     double new_tdelta = tx_delta(type ? type : "", amount, price, qty);
     double diff = new_tdelta - old_tdelta;
     if (diff != 0) {
-        if (balance_apply_delta(pool, db_get_int(old_r, "asset_id"), user_id, diff,
+        if (balance_apply_delta(pool, old_asset_id, user_id, diff,
                                 "transaction", atoll(id_str), note) != 0) {
             csilk_db_exec(pool, "ROLLBACK");
             csilk_json_free(body);
             csilk_json_free(old_row);
             respond_bad_request(c, "资产无效");
             return;
+        }
+    }
+
+    // 2. 关联资金账户差值联动
+    double new_ldelta = tx_linked_delta(type ? type : "", amount);
+    if (linked_asset_id == old_linked_asset_id) {
+        if (linked_asset_id > 0) {
+            double ldiff = new_ldelta - old_ldelta;
+            if (ldiff != 0) {
+                if (balance_apply_delta(pool, linked_asset_id, user_id, ldiff,
+                                        "transaction_linked", atoll(id_str), note) != 0) {
+                    csilk_db_exec(pool, "ROLLBACK");
+                    csilk_json_free(body);
+                    csilk_json_free(old_row);
+                    respond_bad_request(c, "关联资金账户更新失败");
+                    return;
+                }
+            }
+        }
+    } else {
+        if (old_linked_asset_id > 0 && old_ldelta != 0) {
+            if (balance_apply_delta(pool, old_linked_asset_id, user_id, -old_ldelta,
+                                    "transaction_linked", atoll(id_str), note) != 0) {
+                csilk_db_exec(pool, "ROLLBACK");
+                csilk_json_free(body);
+                csilk_json_free(old_row);
+                respond_bad_request(c, "原资金账户更新失败");
+                return;
+            }
+        }
+        if (linked_asset_id > 0 && new_ldelta != 0) {
+            if (balance_apply_delta(pool, linked_asset_id, user_id, new_ldelta,
+                                    "transaction_linked", atoll(id_str), note) != 0) {
+                csilk_db_exec(pool, "ROLLBACK");
+                csilk_json_free(body);
+                csilk_json_free(old_row);
+                respond_bad_request(c, "新资金账户更新失败");
+                return;
+            }
         }
     }
 
@@ -295,7 +382,7 @@ void transactions_delete(csilk_ctx_t* c) {
     // 读取旧记录
     const char* old_params[] = { id_str, uid_str, NULL };
     csilk_json_t* old_row = csilk_db_query_param_json(pool,
-        "SELECT asset_id, amount, transaction_type, quantity, price_per_unit "
+        "SELECT asset_id, linked_asset_id, amount, transaction_type, quantity, price_per_unit "
         "FROM transactions WHERE id=? AND user_id=?", old_params);
     if (!old_row || csilk_json_array_size(old_row) == 0) {
         if (old_row) csilk_json_free(old_row);
@@ -304,11 +391,13 @@ void transactions_delete(csilk_ctx_t* c) {
     }
     const csilk_json_t* old_r = csilk_json_array_get(old_row, 0);
     int64_t asset_id = db_get_int(old_r, "asset_id");
-    double old_tdelta = tx_delta(
-        csilk_json_get_string(old_r, "transaction_type"),
-        db_get_num(old_r, "amount"),
-        db_get_num(old_r, "price_per_unit"),
-        db_get_num(old_r, "quantity"));
+    int64_t linked_asset_id = db_get_int(old_r, "linked_asset_id");
+    const char* old_tx_type = csilk_json_get_string(old_r, "transaction_type");
+    double old_tx_amount = db_get_num(old_r, "amount");
+    double old_tx_price = db_get_num(old_r, "price_per_unit");
+    double old_tx_qty = db_get_num(old_r, "quantity");
+    double old_tdelta = tx_delta(old_tx_type, old_tx_amount, old_tx_price, old_tx_qty);
+    double old_ldelta = tx_linked_delta(old_tx_type, old_tx_amount);
 
     if (csilk_db_exec(pool, "BEGIN TRANSACTION") != 0) {
         csilk_json_free(old_row);
@@ -321,10 +410,21 @@ void transactions_delete(csilk_ctx_t* c) {
         "DELETE FROM transactions WHERE id=? AND user_id=?", del_params);
     if (del_res) csilk_json_free(del_res);
 
-    // 反转旧 delta
+    // 1. 反转目标资产旧 delta
     if (old_tdelta != 0) {
         if (balance_apply_delta(pool, asset_id, user_id, -old_tdelta,
                                 "transaction", atoll(id_str), NULL) != 0) {
+            csilk_db_exec(pool, "ROLLBACK");
+            csilk_json_free(old_row);
+            respond_error(c, 500, "删除失败");
+            return;
+        }
+    }
+
+    // 2. 反转关联资金账户旧 delta
+    if (linked_asset_id > 0 && old_ldelta != 0) {
+        if (balance_apply_delta(pool, linked_asset_id, user_id, -old_ldelta,
+                                "transaction_linked", atoll(id_str), NULL) != 0) {
             csilk_db_exec(pool, "ROLLBACK");
             csilk_json_free(old_row);
             respond_error(c, 500, "删除失败");
