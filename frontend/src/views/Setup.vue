@@ -36,6 +36,36 @@
             prefix-icon="Lock" show-password size="large" @keyup.enter="handleSubmit" />
         </el-form-item>
 
+        <el-divider content-position="left" style="color:#64748b">
+          <span style="font-size:13px;font-weight:500">数据库配置</span>
+        </el-divider>
+
+        <el-form-item label="数据库类型" prop="db_driver">
+          <el-radio-group v-model="form.db_driver" size="large" class="db-radio-group" @change="onDbChange">
+            <el-radio-button value="sqlite">SQLite (默认)</el-radio-button>
+            <el-radio-button value="postgres">PostgreSQL</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+
+        <template v-if="form.db_driver === 'postgres'">
+          <el-form-item label="主机" prop="db_host">
+            <el-input v-model="form.db_host" placeholder="localhost" size="large" />
+          </el-form-item>
+          <el-form-item label="端口" prop="db_port">
+            <el-input-number v-model="form.db_port" :min="1" :max="65535" size="large" style="width:100%" />
+          </el-form-item>
+          <el-form-item label="数据库名" prop="db_name">
+            <el-input v-model="form.db_name" placeholder="minefolio" size="large" />
+          </el-form-item>
+          <el-form-item label="用户名" prop="db_user">
+            <el-input v-model="form.db_user" placeholder="minefolio" size="large" />
+          </el-form-item>
+          <el-form-item label="密码" prop="db_password">
+            <el-input v-model="form.db_password" type="password" placeholder="数据库密码"
+              prefix-icon="Lock" show-password size="large" />
+          </el-form-item>
+        </template>
+
         <el-form-item class="submit-item">
           <el-button type="primary" size="large" :loading="loading" class="submit-btn" @click="handleSubmit">
             完成初始化并登录
@@ -61,7 +91,18 @@ const form = reactive({
   username: '',
   password: '',
   confirmPassword: '',
+  db_driver: 'sqlite',
+  db_host: 'localhost',
+  db_port: 5432,
+  db_name: 'minefolio',
+  db_user: 'minefolio',
+  db_password: '',
 })
+
+function onDbChange() {
+  // reset pg fields to defaults when switching back
+  if (form.db_driver !== 'postgres') return
+}
 
 const validateConfirm = (_rule: any, value: string, callback: any) => {
   if (value !== form.password) {
@@ -91,7 +132,14 @@ async function handleSubmit() {
     if (!valid) return
     loading.value = true
     try {
-      await auth.setup(form.username, form.password)
+      let dsn = ''
+      if (form.db_driver === 'postgres') {
+        dsn = `host=${form.db_host} port=${form.db_port} dbname=${form.db_name} user=${form.db_user} password=${form.db_password}`
+      }
+      await auth.setup(form.username, form.password, {
+        db_driver: form.db_driver,
+        db_dsn: dsn,
+      })
       ElMessage.success('初始化成功！已自动为您登录系统')
       router.push('/dashboard')
     } catch (e: any) {
@@ -203,5 +251,23 @@ async function handleSubmit() {
   font-size: 16px;
   border-radius: 8px;
   letter-spacing: 1px;
+}
+
+.db-radio-group {
+  width: 100%;
+  display: flex;
+  gap: 12px;
+}
+.db-radio-group :deep(.el-radio-button) {
+  flex: 1;
+}
+:deep(.el-divider__text) {
+  color: #64748b;
+  font-size: 13px;
+  background: transparent !important;
+}
+:deep(.el-form-item__label) {
+  color: #94a3b8;
+  font-size: 13px;
 }
 </style>

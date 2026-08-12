@@ -7,6 +7,6 @@ export interface SystemStatus {
 
 export const systemApi = {
   status: () => http.get<SystemStatus, any, void>('/system/status'),
-  setup: (data: { username: string; password_enc: string }) =>
-    http.post<{ token: string; expires_in: number }, any, { username: string; password_enc: string }>('/system/setup', data),
+  setup: (data: { username: string; password_enc: string; db_driver?: string; db_dsn?: string }) =>
+    http.post<{ token: string; expires_in: number }, any, typeof data>('/system/setup', data),
 }

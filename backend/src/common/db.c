@@ -1,4 +1,5 @@
 #include "db.h"
+#include "config.h"
 #include "csilk/csilk.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,17 +11,23 @@ static int g_is_postgres = 0;
 int db_init(csilk_db_pool_t** out_pool) {
     csilk_db_init();
 
-    const char* driver = getenv("MINEFOLIO_DB_DRIVER");
-    const char* dsn = getenv("MINEFOLIO_DB_DSN");
+    const char* driver_env = getenv("MINEFOLIO_DB_DRIVER");
+    const char* dsn_env    = getenv("MINEFOLIO_DB_DSN");
 
-    if (!driver) driver = "sqlite";
-    if (!dsn) {
-        if (strcmp(driver, "postgres") == 0) {
-            dsn = "host=localhost user=minefolio dbname=minefolio";
-        } else {
-            dsn = "./data/minefolio.db";
-        }
-    }
+    /* Read persisted config (written by /system/setup) */
+    char cfg_driver[32] = {0};
+    char cfg_dsn[512]   = {0};
+    config_get_str("config/db.json", "driver", cfg_driver, sizeof(cfg_driver));
+    config_get_str("config/db.json", "dsn",    cfg_dsn,    sizeof(cfg_dsn));
+
+    const char* driver = driver_env ? driver_env
+           : cfg_driver[0]            ? cfg_driver
+                                      : "sqlite";
+    const char* dsn    = dsn_env    ? dsn_env
+           : cfg_dsn[0]             ? cfg_dsn
+                                      : (strcmp(driver, "postgres") == 0
+                                         ? "host=localhost user=minefolio dbname=minefolio"
+                                         : "./data/minefolio.db");
 
     g_is_postgres = (strcmp(driver, "postgres") == 0);
     g_pool = csilk_db_pool_new(driver, dsn);

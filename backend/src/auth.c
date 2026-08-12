@@ -1,5 +1,6 @@
 #include "common/response.h"
 #include "common/db.h"
+#include "common/config.h"
 #include "common/jwt.h"
 #include "auth_key.h"
 #include "categories.h"
@@ -128,6 +129,14 @@ void system_setup(csilk_ctx_t* c) {
 
     // Seed default categories
     categories_seed_defaults(pool, user_id);
+
+    /* Persist DB config if provided */
+    const char* db_driver = csilk_json_get_string(body, "db_driver");
+    const char* db_dsn    = csilk_json_get_string(body, "db_dsn");
+    if (db_driver) {
+        const char* kv[] = { "driver", db_driver, "dsn", db_dsn ? db_dsn : "", NULL };
+        config_set("config/db.json", kv);
+    }
 
     csilk_db_exec(pool, "COMMIT");
     csilk_json_free(body);

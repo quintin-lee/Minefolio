@@ -76,9 +76,9 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function setup(username: string, password: string) {
+  async function setup(username: string, password: string, dbConfig?: { db_driver?: string; db_dsn?: string }) {
     const password_enc = await encryptPassword(password)
-    const res = await systemApi.setup({ username, password_enc }) as { token: string; expires_in: number }
+    const res = await systemApi.setup({ username, password_enc, ...dbConfig }) as { token: string; expires_in: number }
     token.value = res.token
     localStorage.setItem('token', res.token)
     isInitialized.value = true
