@@ -124,6 +124,13 @@ check "A 钱包回退 -800" "-9000.0" "$BAL_A"
 check "B 信用卡应用 -800（负债反转）" "-800.0" "$BAL_B"
 check "切换产生 2 条审计" "$((LOG_CNT_BEFORE + 2))" "$LOG_CNT_AFTER"
 
+echo "== 14. 交易买入联动扣除关联资金账户 =="
+curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/transactions" -d "{\"asset_id\":$CC_ID,\"linked_asset_id\":$WALLET_ID,\"category_id\":$ASSET_CAT,\"transaction_type\":\"buy\",\"amount\":500,\"currency\":\"CNY\",\"transaction_date\":\"2026-08-09\"}" >/dev/null
+BAL_WALLET=$(sqlite3 "$DB" "SELECT printf('%.1f', current_value) FROM assets WHERE id=$WALLET_ID")
+LINKED_NAME=$(sqlite3 "$DB" "SELECT la.name FROM transactions t JOIN assets la ON t.linked_asset_id=la.id WHERE t.asset_id=$CC_ID AND t.transaction_type='buy' LIMIT 1")
+check "买入从钱包扣款 -500" "-9500.0" "$BAL_WALLET"
+check "关联资金账户名称查出" "钱包" "$LINKED_NAME"
+
 echo ""
 echo "结果: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1
