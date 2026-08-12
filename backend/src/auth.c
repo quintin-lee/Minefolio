@@ -2,6 +2,7 @@
 #include "common/db.h"
 #include "common/jwt.h"
 #include "auth_key.h"
+#include "categories.h"
 #include "csilk/csilk.h"
 #include "csilk/core/hash.h"
 #include "csilk/core/codec.h"
@@ -42,39 +43,6 @@ void system_status(csilk_ctx_t* c) {
     csilk_json_add_bool(resp, "initialized", count > 0);
     csilk_json_add_number(resp, "user_count", count);
     respond_ok(c, resp);
-}
-
-/** @brief Helper to seed default category templates for new admin user */
-static void seed_default_categories(csilk_db_pool_t* pool, int64_t user_id) {
-    char uid_str[32];
-    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-
-    // Income categories
-    const char* income_cats[] = { "工资", "理财收益", "兼职/副业", "其他收入", NULL };
-    for (int i = 0; income_cats[i]; i++) {
-        const char* params[] = { uid_str, income_cats[i], "income", NULL };
-        csilk_json_t* r = csilk_db_query_param_json(pool,
-            "INSERT OR IGNORE INTO categories (user_id, name, type) VALUES (?, ?, ?)", params);
-        if (r) csilk_json_free(r);
-    }
-
-    // Expense categories
-    const char* expense_cats[] = { "餐饮", "交通", "居住", "购物", "娱乐", "医疗", "数码电子", "其他支出", NULL };
-    for (int i = 0; expense_cats[i]; i++) {
-        const char* params[] = { uid_str, expense_cats[i], "expense", NULL };
-        csilk_json_t* r = csilk_db_query_param_json(pool,
-            "INSERT OR IGNORE INTO categories (user_id, name, type) VALUES (?, ?, ?)", params);
-        if (r) csilk_json_free(r);
-    }
-
-    // Transaction categories
-    const char* tx_cats[] = { "股票/基金", "加密货币", "债券/理财", "定期存款", NULL };
-    for (int i = 0; tx_cats[i]; i++) {
-        const char* params[] = { uid_str, tx_cats[i], "transaction", NULL };
-        csilk_json_t* r = csilk_db_query_param_json(pool,
-            "INSERT OR IGNORE INTO categories (user_id, name, type) VALUES (?, ?, ?)", params);
-        if (r) csilk_json_free(r);
-    }
 }
 
 /** @brief POST /api/system/setup — 首次部署系统初始化 */
@@ -159,7 +127,7 @@ void system_setup(csilk_ctx_t* c) {
     csilk_json_free(user_res);
 
     // Seed default categories
-    seed_default_categories(pool, user_id);
+    categories_seed_defaults(pool, user_id);
 
     csilk_db_exec(pool, "COMMIT");
     csilk_json_free(body);

@@ -122,3 +122,9 @@ CREATE TABLE IF NOT EXISTS asset_balance_logs (
 CREATE INDEX IF NOT EXISTS idx_balance_logs_asset ON asset_balance_logs(asset_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_categories_user_parent ON categories(user_id, parent_id);
 CREATE INDEX IF NOT EXISTS idx_categories_user_type ON categories(user_id, type);
+
+-- 默认分类种子状态（每个用户只种一次；老账号懒加载时顺带做旧名迁移）
+CREATE TABLE IF NOT EXISTS category_seed_state (
+    user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    seeded_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
