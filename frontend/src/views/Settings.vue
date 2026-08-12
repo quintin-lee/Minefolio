@@ -7,9 +7,12 @@
       </div>
     </div>
 
-    <el-row :gutter="16" class="info-cards">
+    <el-row :gutter="24" class="info-cards">
       <el-col :span="24">
-        <div class="info-card">
+        <div class="panel-container">
+          <div class="panel-header">
+            <h3>{{ t('settings.userInfo') }}</h3>
+          </div>
           <div class="info-row">
             <span class="info-label">{{ t('settings.username') }}</span>
             <span class="info-value">{{ auth.user?.username || '-' }}</span>
@@ -26,9 +29,11 @@
       </el-col>
     </el-row>
 
-    <div class="form-card glass-panel">
-      <h3 class="form-title">{{ t('settings.changePassword') }}</h3>
-      <el-form :model="form" :rules="rules" ref="formRef" label-width="120px" @keyup.enter="submit">
+    <div class="panel-container" style="margin-top: 24px;">
+      <div class="panel-header">
+        <h3>{{ t('settings.changePassword') }}</h3>
+      </div>
+      <el-form :model="form" :rules="rules" ref="formRef" label-width="120px" class="premium-form" @keyup.enter="submit">
         <el-form-item :label="t('settings.oldPassword')" prop="old_password">
           <el-input v-model="form.old_password" type="password" show-password :placeholder="t('settings.oldPassword')" />
         </el-form-item>
@@ -123,33 +128,46 @@ async function submit() {
   margin: 0 auto;
 }
 .page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   margin-bottom: 24px;
 }
 .header-title {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
 }
 .title-accent {
   width: 4px;
-  height: 32px;
+  height: 24px;
   background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
-  border-radius: 2px;
+  border-radius: 4px;
 }
-h2 {
-  font-size: 24px;
-  font-weight: 600;
-  color: #0f172a;
+.header-title h2 {
   margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: #1e293b;
+  letter-spacing: 0.5px;
 }
 .info-cards {
   margin-bottom: 24px;
 }
-.info-card {
+.panel-container {
   background: #ffffff;
   border-radius: 16px;
-  padding: 24px 32px;
+  padding: 20px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+}
+.panel-header {
+  margin-bottom: 20px;
+}
+.panel-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #334155;
 }
 .info-row {
   display: flex;
@@ -173,17 +191,13 @@ h2 {
 .mono-text {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
 }
-.form-card {
-  background: #ffffff;
-  border-radius: 16px;
-  padding: 32px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+.premium-form .el-form-item {
+  margin-bottom: 24px;
 }
-.form-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: #0f172a;
-  margin: 0 0 24px 0;
+.premium-form :deep(.el-input__wrapper) {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  border-radius: 8px;
+  padding: 6px 12px;
 }
 .action-btn {
   width: 160px;
