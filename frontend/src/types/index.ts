@@ -37,6 +37,7 @@ export interface Transaction {
   asset_id: number
   category_id: number
   transaction_type: TransactionType
+  source_type?: 'income' | 'expense'
   amount: number
   price_per_unit?: number
   quantity?: number

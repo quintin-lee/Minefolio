@@ -83,6 +83,30 @@ int db_run_migrations(csilk_db_pool_t* pool) {
     // 无条件幂等建索引（全新库首启 / 存量库 ALTER 后 / 失败自愈均覆盖）
     csilk_db_exec(pool, "CREATE INDEX IF NOT EXISTS idx_daily_expenses_asset ON daily_expenses(asset_id)");
 
+    // ---- 收支类型区分迁移（source_type 列） ----
+    int has_source_type = 0;
+    csilk_json_t* tcols = csilk_db_query_json(pool, "PRAGMA table_info(transactions)");
+    if (tcols) {
+        size_t n = csilk_json_array_size(tcols);
+        for (size_t i = 0; i < n; i++) {
+            const csilk_json_t* col = csilk_json_array_get(tcols, i);
+            const char* cname = csilk_json_get_string(col, "name");
+            if (cname && strcmp(cname, "source_type") == 0) { has_source_type = 1; break; }
+        }
+        csilk_json_free(tcols);
+    }
+    if (!has_source_type) {
+        if (csilk_db_exec(pool,
+                "ALTER TABLE transactions ADD COLUMN source_type TEXT NOT NULL DEFAULT 'expense'") != 0) {
+            fprintf(stderr, "Migration error: cannot add source_type to transactions\n");
+            free(sql);
+            return -1;
+        }
+        // 回填：根据交易类型推断收支方向
+        csilk_db_exec(pool, "UPDATE transactions SET source_type='income' WHERE transaction_type IN ('deposit','income')");
+        csilk_db_exec(pool, "UPDATE transactions SET source_type='expense' WHERE transaction_type IN ('withdrawal','buy','fee','loss')");
+    }
+
     free(sql);
     return 0;
 }

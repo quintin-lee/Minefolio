@@ -38,13 +38,20 @@
       <el-table :data="transactions" class="premium-table" row-class-name="premium-row" header-cell-class-name="premium-header">
         <el-table-column prop="transaction_date" label="日期" width="120" />
         <el-table-column prop="asset_name" label="资产" min-width="120" />
-        <el-table-column prop="transaction_type" label="类型" width="100">
-          <template #default="{ row }">
-            <el-tag :type="typeTag(row.transaction_type)" effect="light" class="type-badge" round>
-              {{ typeLabel(row.transaction_type) }}
-            </el-tag>
-          </template>
-        </el-table-column>
+         <el-table-column prop="transaction_type" label="类型" width="100">
+           <template #default="{ row }">
+             <el-tag :type="typeTag(row.transaction_type)" effect="light" class="type-badge" round>
+               {{ typeLabel(row.transaction_type) }}
+             </el-tag>
+           </template>
+         </el-table-column>
+         <el-table-column prop="source_type" label="收支" width="80">
+           <template #default="{ row }">
+             <el-tag :type="row.source_type === 'income' ? 'success' : 'danger'" effect="light" round>
+               {{ row.source_type === 'income' ? '收入' : '支出' }}
+             </el-tag>
+           </template>
+         </el-table-column>
         <el-table-column prop="amount" label="金额" min-width="140" align="right">
           <template #default="{ row }">
             <span :class="['mono-amount', {'success': 'income-text', 'warning': 'warning-text', 'danger': 'expense-text', 'info': '', 'primary': ''}[typeTag(row.transaction_type)]]">
@@ -94,11 +101,17 @@
             <el-option v-for="cur in currencyOptions" :key="cur" :label="cur" :value="cur" />
           </el-select>
         </el-form-item>
-        <el-form-item label="交易类型" prop="transaction_type">
-          <el-select v-model="form.transaction_type" style="width: 100%">
-            <el-option v-for="t in transactionTypes" :key="t.value" :label="t.label" :value="t.value" />
-          </el-select>
-        </el-form-item>
+         <el-form-item label="交易类型" prop="transaction_type">
+           <el-select v-model="form.transaction_type" style="width: 100%" @change="onTransactionTypeChange">
+             <el-option v-for="t in transactionTypes" :key="t.value" :label="t.label" :value="t.value" />
+           </el-select>
+         </el-form-item>
+         <el-form-item label="收支类型" prop="source_type">
+           <el-radio-group v-model="form.source_type">
+             <el-radio value="expense">支出</el-radio>
+             <el-radio value="income">收入</el-radio>
+           </el-radio-group>
+         </el-form-item>
         <el-form-item label="分类" prop="category_id">
           <el-cascader v-model="form._catPath" :options="categoryTree" :props="{ checkStrictly: true, value: 'id', label: 'name' }" placeholder="选择分类" style="width: 100%" clearable />
         </el-form-item>
@@ -162,7 +175,7 @@ const transactionTypes = [
   { label: '手续费', value: 'fee' }, { label: '收益', value: 'income' },
   { label: '亏损', value: 'loss' },
 ]
-const form = reactive({ asset_id: null as number | null, transaction_type: 'buy' as Transaction['transaction_type'], amount: 0, quantity: 0, price_per_unit: 0, transaction_date: '', note: '', category_id: null as number | null, currency: '' as string, _catPath: [] as number[] })
+const form = reactive({ asset_id: null as number | null, transaction_type: 'buy' as Transaction['transaction_type'], source_type: 'expense' as 'income' | 'expense', amount: 0, quantity: 0, price_per_unit: 0, transaction_date: '', note: '', category_id: null as number | null, currency: '' as string, _catPath: [] as number[] })
 const rules = { asset_id: [{ required: true, message: '请选择资产' }], transaction_type: [{ required: true, message: '请选择交易类型' }], amount: [{ required: true, message: '请输入金额' }, { type: 'number', min: Number.EPSILON, message: '金额必须大于零' }], transaction_date: [{ required: true, message: '请选择日期' }] }
 
 function typeLabel(t: string) { return transactionTypes.find(x => x.value === t)?.label || t }
@@ -186,6 +199,23 @@ function onAssetChange(assetId: number | null) {
   if (asset) form.currency = asset.currency || ''
 }
 
+function onTransactionTypeChange(type: string) {
+  // 根据交易类型自动推断收支方向
+  const incomeTypes = ['deposit', 'income', 'sell', 'transfer_in']
+  form.source_type = incomeTypes.includes(type) ? 'income' : 'expense'
+  // 同步更新分类树（收入显示收入分类，支出显示支出分类）
+  if (form.source_type === 'income') {
+    // 保持当前分类如果已经是收入分类
+  } else {
+    // 保持当前分类如果已经是支出分类
+  }
+}
+
+function inferSourceType(type: string): 'income' | 'expense' {
+  const incomeTypes = ['deposit', 'income', 'sell', 'transfer_in']
+  return incomeTypes.includes(type) ? 'income' : 'expense'
+}
+
 function onCatChange(last: number | null) {
   form.category_id = last !== null ? Number(last) : null
 }
@@ -195,9 +225,11 @@ function resetFilters() { Object.assign(filters, { asset_id: '', type: '', dateR
 function openDialog(txn?: any) {
   editingId.value = txn?.id ?? null
   const cur = txn?.currency ? String(txn.currency) : ''
+  const srcType = txn?.source_type || inferSourceType(txn?.transaction_type || 'buy')
   Object.assign(form, txn ? {
     asset_id: Number(txn.asset_id),
     transaction_type: txn.transaction_type,
+    source_type: srcType,
     amount: Number(txn.amount),
     quantity: Number(txn.quantity) ?? 0,
     price_per_unit: Number(txn.price_per_unit) ?? 0,
@@ -207,7 +239,7 @@ function openDialog(txn?: any) {
     currency: cur || '',
     _catPath: [Number(txn.category_id)].filter(Boolean),
   } : {
-    asset_id: null, transaction_type: 'buy', amount: 0, quantity: 0, price_per_unit: 0,
+    asset_id: null, transaction_type: 'buy', source_type: 'expense', amount: 0, quantity: 0, price_per_unit: 0,
     transaction_date: new Date().toISOString().slice(0, 10), note: '',
     category_id: null, currency: '', _catPath: [],
   })

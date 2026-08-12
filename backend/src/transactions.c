@@ -41,7 +41,7 @@ void transactions_list(csilk_ctx_t* c) {
 
     char sql[1024];
     snprintf(sql, sizeof(sql),
-        "SELECT t.id, t.asset_id, t.category_id, t.transaction_type, t.amount, "
+        "SELECT t.id, t.asset_id, t.category_id, t.transaction_type, t.source_type, t.amount, "
         "t.price_per_unit, t.quantity, t.currency, t.transaction_date, t.note, "
         "a.name as asset_name, c.name as category_name "
         "FROM transactions t "
@@ -55,6 +55,9 @@ void transactions_list(csilk_ctx_t* c) {
         snprintf(sql + strlen(sql), sizeof(sql) - strlen(sql), " AND t.category_id=%s", category_id);
     if (type)
         snprintf(sql + strlen(sql), sizeof(sql) - strlen(sql), " AND t.transaction_type='%s'", type);
+    const char* source_type = csilk_get_query(c, "source_type");
+    if (source_type)
+        snprintf(sql + strlen(sql), sizeof(sql) - strlen(sql), " AND t.source_type='%s'", source_type);
     if (start_date)
         snprintf(sql + strlen(sql), sizeof(sql) - strlen(sql), " AND t.transaction_date >= '%s'", start_date);
     if (end_date)
@@ -76,6 +79,8 @@ void transactions_create(csilk_ctx_t* c) {
     int64_t asset_id = (int64_t)csilk_json_get_number(body, "asset_id");
     int64_t category_id = (int64_t)csilk_json_get_number(body, "category_id");
     const char* type = csilk_json_get_string(body, "transaction_type");
+    const char* src_type = csilk_json_get_string(body, "source_type");
+    if (!src_type) src_type = "expense";
     double amount = csilk_json_get_number(body, "amount");
     const char* date = csilk_json_get_string(body, "transaction_date");
 
@@ -109,11 +114,11 @@ void transactions_create(csilk_ctx_t* c) {
 
     char sql[512];
     snprintf(sql, sizeof(sql),
-        "INSERT INTO transactions (user_id, asset_id, category_id, transaction_type, "
+        "INSERT INTO transactions (user_id, asset_id, category_id, source_type, transaction_type, "
         "amount, price_per_unit, quantity, currency, transaction_date, note) "
-        "VALUES (%lld, %lld, %lld, '%s', %.6f, %.4f, %.4f, '%s', '%s', '%s') RETURNING id",
+        "VALUES (%lld, %lld, %lld, '%s', '%s', %.6f, %.4f, %.4f, '%s', '%s', '%s') RETURNING id",
         (long long)user_id, (long long)asset_id, (long long)category_id,
-        type, amount, price, qty, currency, date, note ? note : "");
+        src_type, type, amount, price, qty, currency, date, note ? note : "");
 
     if (csilk_db_exec(pool, "BEGIN TRANSACTION") != 0) {
         csilk_json_free(body);
@@ -197,6 +202,7 @@ void transactions_update(csilk_ctx_t* c) {
     const char* date = csilk_json_get_string(body, "transaction_date");
     const char* currency = csilk_json_get_string(body, "currency");
     const char* note = csilk_json_get_string(body, "note");
+    const char* src_type = csilk_json_get_string(body, "source_type");
     double price = csilk_json_get_number(body, "price_per_unit");
     double qty = csilk_json_get_number(body, "quantity");
     int64_t category_id = (int64_t)csilk_json_get_number(body, "category_id");
@@ -205,10 +211,11 @@ void transactions_update(csilk_ctx_t* c) {
     snprintf(sql, sizeof(sql),
         "UPDATE transactions SET transaction_type='%s', amount=%.6f, price_per_unit=%.4f, "
         "quantity=%.4f, currency='%s', transaction_date='%s', note='%s', "
-        "category_id=%lld WHERE id=%s AND user_id=%lld",
+        "category_id=%lld, source_type='%s' WHERE id=%s AND user_id=%lld",
         type ? type : "", amount, price, qty,
         currency ? currency : "CNY", date ? date : "", note ? note : "",
         category_id,
+        src_type ? src_type : "expense",
         id_str, (long long)user_id);
 
     if (csilk_db_exec(pool, "BEGIN TRANSACTION") != 0) {
