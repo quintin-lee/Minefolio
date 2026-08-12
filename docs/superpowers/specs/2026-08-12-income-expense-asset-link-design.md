@@ -98,12 +98,12 @@ CREATE INDEX IF NOT EXISTS idx_balance_logs_asset ON asset_balance_logs(asset_id
      a. DELETE FROM expense_tags
      b. DELETE FROM daily_expenses
      c. DELETE FROM transactions
-     d. CREATE INDEX idx_daily_expenses_asset ...（幂等，IF NOT EXISTS）
-     e. ALTER TABLE daily_expenses ADD COLUMN asset_id ...   ← 必须最后执行
+     d. ALTER TABLE daily_expenses ADD COLUMN asset_id ...   ← 门控闭合点（在此之前所有步骤必须成功）
+     e. CREATE INDEX IF NOT EXISTS idx_daily_expenses_asset ...（紧接 ALTER，缺失非致命）
 3. 之后的启动：列已存在 → 门控不触发 → 数据永不被清空
 ```
 
-**顺序要求（关键）**：`ALTER TABLE ... ADD COLUMN asset_id` **必须作为迁移序列的最后一条**。理由：门控判断的唯一信号就是 `asset_id` 列是否存在——若 ALTER 先执行而后面的步骤失败，下次启动门控会因列已存在而跳过，留下缺失的索引/数据。把 ALTER 放最后（前置步骤 DELETE/索引均为幂等操作），保证"门控闭合 = 迁移完整成功"。
+**顺序要求（关键）**：`ALTER TABLE ... ADD COLUMN asset_id` 是**门控闭合点**——门控判断的唯一信号就是 `asset_id` 列是否存在，因此所有必须成功且依赖"列不存在"前提的步骤（DELETE × 3 + ALTER）构成闭区间：ALTER 之前任何一步失败，下次启动会整段重试（列尚不存在，幂等安全）；ALTER 成功后门控闭合，DELETE 绝不再执行。**CREATE INDEX 必须紧随 ALTER 之后**（不可放在 ALTER 之前——列还不存在时 `CREATE INDEX IF NOT EXISTS` 会报 `no such column: asset_id`，IF NOT EXISTS 只防索引已存在，不抑制此错）。索引缺失非致命（仅查询性能），即使 ALTER 后 CREATE INDEX 失败也不影响门控语义：列已存在即视为迁移完成，绝不清空已重建的数据。
 
 > `asset_balance_logs` 表由 migration.sql 第 1 步创建（IF NOT EXISTS），迁移步骤 2 中无需重复建表。
 
@@ -270,7 +270,10 @@ transactions_update:
   BEGIN
     SELECT 旧记录 (amount, transaction_type)   -- asset_id 不变
     UPDATE transactions SET 字段
-    若非 transfer_*:
+    -- 无条件计算差值：新type_delta - 旧type_delta
+    -- （transfer_* 类型 delta 记为 0；若新类型从非transfer 切到 transfer，
+    --   差值即 -旧type_delta，天然完成旧余额回退——不能用"若非 transfer_*"守卫跳过）
+    若 新type_delta - 旧type_delta != 0:
         balance_apply_delta(asset_id, user_id, 新type_delta - 旧type_delta, 'transaction', id, note)
   COMMIT / 失败 ROLLBACK
 
@@ -364,7 +367,7 @@ export interface DailyExpense {
 | 建资产（余额 10000）→ 记收入 500 | 余额 10500，审计 1 条 delta=+500 |
 | 记支出 300 | 余额 10200，审计 1 条 delta=-300 |
 | 更新收支（收入 500→800，同资产） | 余额 10500（净 +300 差量），**审计新增 1 条** delta=+300（同资产合并为一次调用） |
-| 删除收支 | 余额回退至 10200，审计新增 1 条 delta=-300；历史审计保留 |
+| 删除支出记录（其旧 delta=-300） | 余额回退至 10800（10500+300，反转旧支出），审计新增 1 条 delta=+300；历史审计保留 |
 | 更新时切换关联资产 A→B | A 回退旧 delta（1 条），B 应用新 delta（1 条），共 2 条审计 |
 | 信用卡刷卡 500（支出） | 信用卡余额 +500 |
 | 信用卡还款 500（收入） | 信用卡余额 -500 |
@@ -378,7 +381,8 @@ export interface DailyExpense {
 | 全新库首次启动 | daily_expenses 含 asset_id，asset_balance_logs 建好 |
 | 存量库首次启动 | 数据清空，asset_id 列添加成功，审计表建好 |
 | 存量库第二次启动 | 门控不触发，数据保留，不重复清空 |
-| 迁移中途失败（ALTER 前某步失败） | 门控在下次启动重新尝试（幂等，因 ALTER 放最后，列尚不存在） |
+| 迁移中途失败（ALTER 之前某步失败） | 门控在下次启动重新尝试（幂等，因列尚不存在，DELETE/操作整体重跑） |
+| ALTER 成功后 CREATE INDEX 失败 | 门控已闭合（列已存在），迁移视作完成不再重跑；索引缺失非致命，可手工/下次运维补建 |
 | 迁移成功后 | 门控闭合（列已存在），后续启动不再执行任何迁移语句 |
 
 ---
