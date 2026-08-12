@@ -130,13 +130,13 @@ onMounted(() => loadSuggestions())
 }
 
 .premium-input :deep(.el-input-group__append) {
-  background-color: #f1f5f9;
+  background-color: rgba(0, 212, 255, 0.06);
   border-left: 0;
 }
 
 .add-btn {
   font-weight: 500;
-  color: #3b82f6;
+  color: #00d4ff;
 }
 
 .tag-picker__suggestions {
@@ -145,9 +145,9 @@ onMounted(() => loadSuggestions())
   gap: 8px;
   margin-top: 4px;
   padding: 8px;
-  background: #f8fafc;
+  background: rgba(15, 23, 42, 0.6);
   border-radius: 8px;
-  border: 1px dashed #e2e8f0;
+  border: 1px dashed rgba(0, 212, 255, 0.2);
 }
 
 .suggestion-item {
@@ -155,19 +155,19 @@ onMounted(() => loadSuggestions())
   font-size: 12px;
   padding: 4px 10px;
   border-radius: 12px;
-  background: #ffffff;
-  color: #475569;
+  background: rgba(30, 41, 59, 0.8);
+  color: #94a3b8;
   display: flex;
   align-items: center;
   gap: 6px;
   transition: all 0.2s;
-  border: 1px solid #e2e8f0;
+  border: 1px solid rgba(0, 212, 255, 0.12);
 }
 
 .suggestion-item:hover {
-  background: #f1f5f9;
-  border-color: #cbd5e1;
-  color: #0f172a;
+  background: rgba(0, 212, 255, 0.08);
+  border-color: rgba(0, 212, 255, 0.3);
+  color: #e2e8f0;
 }
 
 .suggestion-dot {

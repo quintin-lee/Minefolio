@@ -146,7 +146,7 @@ async function handleSubmit() {
   box-shadow: 0 0 0 1px #00d4ff inset, 0 0 10px rgba(0, 212, 255, 0.25) !important;
 }
 :deep(.el-input__inner) {
-  color: #f8fafc;
+  color: #e2e8f0;
 }
 .submit-item {
   margin-top: 30px;

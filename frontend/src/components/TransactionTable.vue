@@ -33,26 +33,27 @@ function formatCurrency(v: number) {
 
 <style scoped>
 .table-container {
-  background: #ffffff;
+  background: var(--mf-surface);
   border-radius: 12px;
   padding: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+  box-shadow: var(--mf-shadow-sm);
+  border: 1px solid var(--mf-border);
 }
 
 .premium-table {
   --el-table-border-color: transparent;
-  --el-table-header-bg-color: #f8fafc;
+  --el-table-header-bg-color: rgba(0, 212, 255, 0.06);
 }
 
 :deep(.premium-header th) {
-  background-color: #f8fafc !important;
+  background-color: rgba(0, 212, 255, 0.06) !important;
   color: #64748b;
   font-weight: 600;
   text-transform: uppercase;
   font-size: 12px;
   letter-spacing: 0.5px;
   padding: 10px 0;
-  border-bottom: none !important;
+  border-bottom: 1px solid var(--mf-border) !important;
 }
 
 :deep(.premium-row) {
@@ -60,12 +61,12 @@ function formatCurrency(v: number) {
 }
 
 :deep(.premium-row td) {
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid rgba(0, 212, 255, 0.06);
   padding: 12px 0;
 }
 
 :deep(.premium-row:hover > td) {
-  background-color: #f8fafc !important;
+  background-color: rgba(0, 212, 255, 0.04) !important;
 }
 
 .type-badge {
@@ -78,6 +79,6 @@ function formatCurrency(v: number) {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-weight: 600;
   font-size: 14px;
-  color: #1e293b;
+  color: #e2e8f0;
 }
 </style>

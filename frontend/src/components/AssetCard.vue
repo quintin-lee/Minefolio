@@ -26,17 +26,19 @@ const currency = props.asset.currency ?? '¥'
 <style scoped>
 .asset-card {
   position: relative;
-  background: #ffffff;
+  background: var(--mf-surface);
   border-radius: 16px;
   overflow: hidden;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--mf-border);
+  box-shadow: var(--mf-shadow-sm);
   transition: all 0.3s ease;
   cursor: pointer;
 }
 
 .asset-card:hover {
   transform: translateY(-4px);
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.08);
+  border-color: var(--mf-border-hover);
+  box-shadow: var(--mf-shadow-glow);
 }
 
 .card-accent {
@@ -44,8 +46,9 @@ const currency = props.asset.currency ?? '¥'
   top: 0;
   left: 0;
   right: 0;
-  height: 4px;
-  background: linear-gradient(90deg, #3b82f6 0%, #2563eb 100%);
+  height: 3px;
+  background: linear-gradient(90deg, #00d4ff, #38bdf8);
+  box-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
 }
 
 .card-content {
@@ -71,15 +74,16 @@ const currency = props.asset.currency ?? '¥'
 
 .currency-symbol {
   font-size: 16px;
-  color: #94a3b8;
+  color: #475569;
   font-weight: 500;
 }
 
 .value-amount {
   font-size: 24px;
   font-weight: 700;
-  color: #1e293b;
+  color: #00d4ff;
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   letter-spacing: -0.5px;
+  text-shadow: 0 0 12px rgba(0, 212, 255, 0.5);
 }
 </style>

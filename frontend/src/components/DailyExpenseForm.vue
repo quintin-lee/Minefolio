@@ -42,20 +42,28 @@ const form = defineModel<DailyExpenseFormModel>({ required: true })
 .type-radio-group :deep(.el-radio-button__inner) {
   border-radius: 8px !important;
   margin-right: 12px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid rgba(0, 212, 255, 0.15);
   box-shadow: none !important;
   padding: 8px 20px;
   font-weight: 500;
+  background: rgba(15, 23, 42, 0.4);
+  color: #94a3b8;
 }
 
 .type-radio-group :deep(.el-radio-button.is-active .el-radio-button__inner) {
-  background-color: #3b82f6;
-  border-color: #3b82f6;
-  color: white;
+  background: linear-gradient(135deg, #00d4ff, #0ea5e9) !important;
+  border-color: #00d4ff !important;
+  color: #060b18 !important;
+}
+
+.premium-form :deep(.el-form-item__label) {
+  font-weight: 500;
+  color: #94a3b8;
 }
 
 .premium-form :deep(.el-input__wrapper) {
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  background-color: rgba(15, 23, 42, 0.4) !important;
+  box-shadow: 0 0 0 1px rgba(0, 212, 255, 0.12) inset !important;
   border-radius: 8px;
   padding: 6px 12px;
 }

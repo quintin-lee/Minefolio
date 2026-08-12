@@ -186,7 +186,7 @@ onMounted(async () => {
 
 .mono-text {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
-  color: #475569;
+  color: #64748b;
 }
 
 .mono-amount {

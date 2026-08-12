@@ -60,7 +60,7 @@
               <div class="card-header">
                 <h3>标签支出分析</h3>
               </div>
-              <el-table :data="tagBreakdown?.items ?? []" class="premium-table-small" :header-cell-style="{ background: '#f8fafc' }">
+              <el-table :data="tagBreakdown?.items ?? []" class="premium-table-small" :header-cell-style="{ background: 'rgba(0, 212, 255, 0.06)' }">
                 <el-table-column prop="tag_name" label="标签" min-width="120">
                   <template #default="{ row }">
                     <el-tag size="small" effect="plain" class="tag-plain">{{ row.tag_name }}</el-tag>

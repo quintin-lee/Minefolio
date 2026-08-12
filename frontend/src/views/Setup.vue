@@ -109,7 +109,7 @@ async function handleSubmit() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #312e81 100%);
+  background: linear-gradient(135deg, #060b18 0%, #0a1628 50%, #0d1f3c 100%);
   position: relative;
   overflow: hidden;
 }
@@ -119,8 +119,8 @@ async function handleSubmit() {
   left: 0;
   width: 100%;
   height: 100%;
-  background: radial-gradient(circle at top right, rgba(59, 130, 246, 0.15), transparent 40%),
-              radial-gradient(circle at bottom left, rgba(99, 102, 241, 0.15), transparent 40%);
+  background: radial-gradient(circle at top right, rgba(0, 212, 255, 0.1), transparent 40%),
+              radial-gradient(circle at bottom left, rgba(124, 58, 237, 0.1), transparent 40%);
   pointer-events: none;
 }
 .setup-card {
@@ -148,9 +148,9 @@ async function handleSubmit() {
   gap: 6px;
   padding: 4px 12px;
   border-radius: 9999px;
-  background: rgba(59, 130, 246, 0.15);
-  border: 1px solid rgba(59, 130, 246, 0.3);
-  color: #60a5fa;
+  background: rgba(0, 212, 255, 0.1);
+  border: 1px solid rgba(0, 212, 255, 0.3);
+  color: #00d4ff;
   font-size: 12px;
   font-weight: 500;
   margin-bottom: 12px;
@@ -159,21 +159,21 @@ async function handleSubmit() {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background-color: #3b82f6;
-  box-shadow: 0 0 8px #3b82f6;
+  background-color: #00d4ff;
+  box-shadow: 0 0 8px #00d4ff;
 }
 .app-title {
   margin: 0;
   font-size: 28px;
   font-weight: 700;
-  background: linear-gradient(to right, #60a5fa, #a78bfa);
+  background: linear-gradient(to right, #00d4ff, #a78bfa);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   letter-spacing: 1px;
 }
 .subtitle {
   margin: 8px 0 0;
-  color: #94a3b8;
+  color: #64748b;
   font-size: 14px;
 }
 .setup-form {
@@ -185,13 +185,13 @@ async function handleSubmit() {
 }
 :deep(.el-input__wrapper) {
   background-color: rgba(15, 23, 42, 0.4) !important;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1) inset !important;
+  box-shadow: 0 0 0 1px rgba(0, 212, 255, 0.15) inset !important;
 }
 :deep(.el-input__wrapper.is-focus) {
-  box-shadow: 0 0 0 1px #60a5fa inset, 0 0 10px rgba(96, 165, 250, 0.2) !important;
+  box-shadow: 0 0 0 1px #00d4ff inset, 0 0 10px rgba(0, 212, 255, 0.25) !important;
 }
 :deep(.el-input__inner) {
-  color: #f8fafc;
+  color: #e2e8f0;
 }
 .submit-item {
   margin-top: 30px;

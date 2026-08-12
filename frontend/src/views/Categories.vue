@@ -422,7 +422,7 @@ onMounted(loadData)
 }
 
 .node-icon {
-  color: #94a3b8;
+  color: #64748b;
   font-size: 16px;
   display: flex;
   align-items: center;
@@ -436,7 +436,7 @@ onMounted(loadData)
 
 .node-label {
   font-weight: 500;
-  color: #334155;
+  color: #e2e8f0;
 }
 
 .tree-actions {
@@ -493,15 +493,15 @@ onMounted(loadData)
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background-color: #cbd5e1;
+  background-color: rgba(0, 212, 255, 0.06);
 }
 
-.status-dot.cash  { background-color: #10b981; }
-.status-dot.stock { background-color: #3b82f6; }
-.status-dot.fund  { background-color: #8b5cf6; }
-.status-dot.crypto { background-color: #f59e0b; }
-.status-dot.loan  { background-color: #ef4444; }
-.status-dot.credit_card { background-color: #f43f5e; }
+.status-dot.cash  { background-color: #10b981; box-shadow: 0 0 6px rgba(16,185,129,0.5); }
+.status-dot.stock { background-color: #00d4ff; box-shadow: 0 0 6px rgba(0,212,255,0.5); }
+.status-dot.fund  { background-color: #a78bfa; box-shadow: 0 0 6px rgba(167,139,250,0.5); }
+.status-dot.crypto { background-color: #fbbf24; box-shadow: 0 0 6px rgba(251,191,36,0.5); }
+.status-dot.loan  { background-color: #f87171; box-shadow: 0 0 6px rgba(248,113,113,0.5); }
+.status-dot.credit_card { background-color: #fb7185; box-shadow: 0 0 6px rgba(251,113,133,0.5); }
 
 .currency-tag {
   border-radius: 6px;

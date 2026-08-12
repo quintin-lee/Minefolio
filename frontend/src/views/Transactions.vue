@@ -605,9 +605,9 @@ onMounted(() => {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
 }
 
-.income-text { color: #10b981; }
-.expense-text { color: #ef4444; }
-.text-primary { color: #2563eb; }
+.income-text { color: #34d399; }
+.expense-text { color: #f87171; }
+.text-primary { color: #00d4ff; }
 
 .main-panel {
   background: var(--mf-surface);
@@ -639,28 +639,30 @@ onMounted(() => {
 }
 
 .category-pill {
-  background: var(--mf-surface-muted);
-  color: #475569;
+  background: rgba(0, 212, 255, 0.06);
+  color: #94a3b8;
   padding: 2px 8px;
   border-radius: 6px;
   font-size: 13px;
+  border: 1px solid rgba(0, 212, 255, 0.1);
 }
 
 .mono-amount {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-weight: 600;
   font-size: 14px;
+  color: #e2e8f0;
 }
 
 .trade-detail {
   font-size: 13px;
-  color: #475569;
+  color: #64748b;
 }
 
-.price-tag { color: #3b82f6; }
-.times { margin: 0 4px; color: #94a3b8; }
-.qty-tag { color: #059669; }
-.muted-text { color: #94a3b8; }
+.price-tag { color: #00d4ff; }
+.times { margin: 0 4px; color: #475569; }
+.qty-tag { color: #34d399; }
+.muted-text { color: #475569; }
 
 .trading-fields {
   background: var(--mf-surface-muted);

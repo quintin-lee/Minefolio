@@ -277,7 +277,7 @@ onMounted(() => { loadAssets(); loadCategories() })
 
 .asset-name {
   font-weight: 500;
-  color: #334155;
+  color: #e2e8f0;
 }
 
 .currency-tag {
@@ -289,7 +289,7 @@ onMounted(() => { loadAssets(); loadCategories() })
 .mono-amount {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-weight: 600;
-  color: #1e293b;
+  color: #e2e8f0;
   font-size: 15px;
 }
 
