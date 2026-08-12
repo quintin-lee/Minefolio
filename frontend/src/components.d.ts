@@ -47,6 +47,7 @@ declare module 'vue' {
     ElTabs: typeof import('element-plus/es')['ElTabs']
     ElTag: typeof import('element-plus/es')['ElTag']
     ElTree: typeof import('element-plus/es')['ElTree']
+    ElUpload: typeof import('element-plus/es')['ElUpload']
     ExpenseCategoryPie: typeof import('./components/ExpenseCategoryPie.vue')['default']
     ExpenseTrendBar: typeof import('./components/ExpenseTrendBar.vue')['default']
     MonthlyChart: typeof import('./components/MonthlyChart.vue')['default']
