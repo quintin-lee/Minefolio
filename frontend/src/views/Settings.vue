@@ -58,7 +58,6 @@ import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
-import { authApi } from '@/api/auth'
 import { zhCN } from '@/locales/zh-CN'
 import type { FormInstance, FormRules } from 'element-plus'
 
@@ -106,10 +105,7 @@ async function submit() {
     if (!valid) return
     try {
       loading.value = true
-      await authApi.changePassword({
-        old_password: form.old_password,
-        new_password: form.new_password,
-      })
+      await auth.changePassword(form.old_password, form.new_password)
       ElMessage.success(t('settings.passwordSuccess'))
       auth.logout()
       router.push('/login')

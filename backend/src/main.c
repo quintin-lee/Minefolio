@@ -1,6 +1,7 @@
 #include "csilk/app/app.h"
 #include "common/db.h"
 #include "common/response.h"
+#include "auth_key.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,6 +11,7 @@ extern void auth_register(csilk_ctx_t* c);
 extern void auth_login(csilk_ctx_t* c);
 extern void auth_me(csilk_ctx_t* c);
 extern void auth_change_password(csilk_ctx_t* c);
+extern void auth_public_key(csilk_ctx_t* c);
 extern void categories_list(csilk_ctx_t* c);
 extern void categories_create(csilk_ctx_t* c);
 extern void categories_update(csilk_ctx_t* c);
@@ -146,6 +148,14 @@ int main(int argc, char** argv) {
     }
     printf("Database initialized and migrations applied.\n");
 
+    // Generate RSA key pair for password encryption in transit
+    if (auth_key_init() != 0) {
+        fprintf(stderr, "Failed to initialize RSA key pair\n");
+        csilk_db_pool_free(pool);
+        return 1;
+    }
+    printf("RSA-2048 key pair generated for password encryption.\n");
+
     // Create app
     csilk_app_t* app = csilk_app_new(NULL);
     if (!app) {
@@ -173,6 +183,7 @@ int main(int argc, char** argv) {
     csilk_app_post(app, "/api/system/setup", system_setup);
     csilk_app_post(app, "/api/auth/register", auth_register);
     csilk_app_post(app, "/api/auth/login", auth_login);
+    csilk_app_get(app, "/api/auth/public-key", auth_public_key);
 
     // API group (requires JWT + CSRF)
     const char* jwt_secret = getenv("MINEFOLIO_JWT_SECRET");

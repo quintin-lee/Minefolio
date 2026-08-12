@@ -13,11 +13,14 @@ export interface User {
 }
 
 export const authApi = {
-  login: (username: string, password: string) =>
-    http.post<LoginResponse, LoginResponse>('/auth/login', { username, password }),
+  login: (username: string, password_enc: string) =>
+    http.post<LoginResponse, any, { username: string; password_enc: string }>('/auth/login', { username, password_enc }),
   register: (username: string, password: string) =>
-    http.post<LoginResponse, LoginResponse>('/auth/register', { username, password }),
-  me: () => http.get<User, User>('/auth/me'),
-  changePassword: (data: { old_password: string; new_password: string }) =>
-    http.put<void, { old_password: string; new_password: string }>('/auth/password', data),
+    http.post<LoginResponse, any, { username: string; password: string }>('/auth/register', { username, password }),
+  me: () => http.get<User, any, void>('/auth/me'),
+  changePassword: (old_password_enc: string, new_password_enc: string) =>
+    http.put<void, any, { old_password_enc: string; new_password_enc: string }>('/auth/password', {
+      old_password_enc,
+      new_password_enc,
+    }),
 }

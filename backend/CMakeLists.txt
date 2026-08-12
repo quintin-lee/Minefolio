@@ -24,7 +24,7 @@ target_include_directories(minefolio PRIVATE
 
 target_compile_definitions(minefolio PRIVATE _GNU_SOURCE)
 
-target_link_libraries(minefolio PRIVATE csilk)
+target_link_libraries(minefolio PRIVATE csilk crypto)
 
 # Copy config and sql on build
 add_custom_command(TARGET minefolio POST_BUILD

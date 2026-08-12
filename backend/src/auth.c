@@ -1,8 +1,12 @@
 #include "common/response.h"
 #include "common/db.h"
 #include "common/jwt.h"
+#include "auth_key.h"
 #include "csilk/csilk.h"
 #include "csilk/core/hash.h"
+#include "csilk/core/codec.h"
+#include "csilk/core/crypto_dispatch.h"
+#include "csilk/drivers/cipher.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -94,12 +98,36 @@ void system_setup(csilk_ctx_t* c) {
     if (!body) { respond_bad_request(c, "请求体必须为 JSON"); return; }
 
     const char* username = csilk_json_get_string(body, "username");
-    const char* password = csilk_json_get_string(body, "password");
-    if (!username || !password || strlen(username) < 2 || strlen(password) < 6) {
+    const char* password_enc = csilk_json_get_string(body, "password_enc");
+    if (!username || !password_enc || strlen(username) < 2) {
         csilk_json_free(body);
-        respond_bad_request(c, "用户名需≥2字符，密码需≥6字符");
+        respond_bad_request(c, "用户名需≥2字符");
         return;
     }
+
+    /* Decrypt the password */
+    uint8_t pt_buf[512];
+    size_t  pt_len = sizeof(pt_buf);
+    uint8_t ct_buf[CSILK_RSA_KEY_SIZE];
+    if (csilk_base64url_decode(password_enc, ct_buf, sizeof(ct_buf)) < 0) {
+        csilk_json_free(body);
+        respond_bad_request(c, "密码格式错误");
+        return;
+    }
+    if (_csilk_asymmetric_decrypt(c,
+            auth_key_get_private_pem(), strlen(auth_key_get_private_pem()),
+            ct_buf, CSILK_RSA_KEY_SIZE, pt_buf, &pt_len) != 0 || pt_len == 0) {
+        csilk_json_free(body);
+        respond_bad_request(c, "密码解密失败");
+        return;
+    }
+    if (pt_len < 6) {
+        csilk_json_free(body);
+        respond_bad_request(c, "密码需≥6字符");
+        return;
+    }
+    pt_buf[pt_len] = '\0';
+    const char* password = (const char*)pt_buf;
 
     // Start transaction
     if (csilk_db_exec(pool, "BEGIN TRANSACTION") != 0) {
@@ -223,12 +251,31 @@ void auth_login(csilk_ctx_t* c) {
     if (!body) { respond_bad_request(c, "请求体必须为 JSON"); return; }
 
     const char* username = csilk_json_get_string(body, "username");
-    const char* password = csilk_json_get_string(body, "password");
-    if (!username || !password) {
+    const char* password_enc = csilk_json_get_string(body, "password_enc");
+    if (!username || !password_enc) {
         csilk_json_free(body);
         respond_bad_request(c, "缺少用户名或密码");
         return;
     }
+
+    /* Decrypt the password */
+    uint8_t pt_buf[512];
+    size_t  pt_len = sizeof(pt_buf);
+    uint8_t ct_buf[CSILK_RSA_KEY_SIZE];
+    if (csilk_base64url_decode(password_enc, ct_buf, sizeof(ct_buf)) < 0) {
+        csilk_json_free(body);
+        respond_bad_request(c, "密码格式错误");
+        return;
+    }
+    if (_csilk_asymmetric_decrypt(c,
+            auth_key_get_private_pem(), strlen(auth_key_get_private_pem()),
+            ct_buf, CSILK_RSA_KEY_SIZE, pt_buf, &pt_len) != 0 || pt_len == 0) {
+        csilk_json_free(body);
+        respond_bad_request(c, "密码解密失败");
+        return;
+    }
+    pt_buf[pt_len] = '\0';
+    const char* password = (const char*)pt_buf;
 
     csilk_db_pool_t* pool = db_get_pool();
     char hashed[65];
@@ -265,15 +312,53 @@ void auth_change_password(csilk_ctx_t* c) {
     csilk_json_t* body = csilk_bind_json(c);
     if (!body) { respond_bad_request(c, "请求体必须为 JSON"); return; }
 
-    const char* old_password = csilk_json_get_string(body, "old_password");
-    const char* new_password = csilk_json_get_string(body, "new_password");
-    if (!old_password || !new_password || strlen(new_password) < 6) {
+    const char* old_password_enc = csilk_json_get_string(body, "old_password_enc");
+    const char* new_password_enc = csilk_json_get_string(body, "new_password_enc");
+    if (!old_password_enc || !new_password_enc) {
         csilk_json_free(body);
-        respond_bad_request(c, "原密码和新密码不能为空，新密码需≥6字符");
+        respond_bad_request(c, "原密码和新密码不能为空");
         return;
     }
 
-    if (strcmp(old_password, new_password) == 0) {
+    /* Decrypt old password */
+    uint8_t old_pt[512], new_pt[512];
+    size_t  old_pt_len = sizeof(old_pt), new_pt_len = sizeof(new_pt);
+    uint8_t ct[CSILK_RSA_KEY_SIZE];
+
+    if (csilk_base64url_decode(old_password_enc, ct, sizeof(ct)) < 0) {
+        csilk_json_free(body);
+        respond_bad_request(c, "密码格式错误");
+        return;
+    }
+    if (_csilk_asymmetric_decrypt(c,
+            auth_key_get_private_pem(), strlen(auth_key_get_private_pem()),
+            ct, CSILK_RSA_KEY_SIZE, old_pt, &old_pt_len) != 0 || old_pt_len == 0) {
+        csilk_json_free(body);
+        respond_bad_request(c, "密码解密失败");
+        return;
+    }
+    old_pt[old_pt_len] = '\0';
+
+    if (csilk_base64url_decode(new_password_enc, ct, sizeof(ct)) < 0) {
+        csilk_json_free(body);
+        respond_bad_request(c, "密码格式错误");
+        return;
+    }
+    if (_csilk_asymmetric_decrypt(c,
+            auth_key_get_private_pem(), strlen(auth_key_get_private_pem()),
+            ct, CSILK_RSA_KEY_SIZE, new_pt, &new_pt_len) != 0 || new_pt_len == 0) {
+        csilk_json_free(body);
+        respond_bad_request(c, "密码解密失败");
+        return;
+    }
+    new_pt[new_pt_len] = '\0';
+    if (new_pt_len < 6) {
+        csilk_json_free(body);
+        respond_bad_request(c, "新密码需≥6字符");
+        return;
+    }
+
+    if (strcmp((const char*)old_pt, (const char*)new_pt) == 0) {
         csilk_json_free(body);
         respond_bad_request(c, "新密码不能与原密码相同");
         return;
@@ -281,7 +366,7 @@ void auth_change_password(csilk_ctx_t* c) {
 
     csilk_db_pool_t* pool = db_get_pool();
     char old_hashed[65];
-    hash_password(old_password, old_hashed, sizeof(old_hashed));
+    hash_password((const char*)old_pt, old_hashed, sizeof(old_hashed));
 
     char uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
@@ -297,7 +382,7 @@ void auth_change_password(csilk_ctx_t* c) {
     csilk_json_free(check);
 
     char new_hashed[65];
-    hash_password(new_password, new_hashed, sizeof(new_hashed));
+    hash_password((const char*)new_pt, new_hashed, sizeof(new_hashed));
 
     const char* update_params[] = { new_hashed, uid_str, NULL };
     csilk_json_t* update_res = csilk_db_query_param_json(pool,

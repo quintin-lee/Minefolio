@@ -34,11 +34,35 @@ check() { # check DESC EXPECTED ACTUAL
   if [ "$2" = "$3" ]; then PASS=$((PASS+1)); echo "  ✅ $1"; else FAIL=$((FAIL+1)); echo "  ❌ $1 (期望 $2 实际 $3)"; fi
 }
 
+# rsa_encrypt PLAINTEXT → base64url-encoded RSA-OAEP(SHA-256) ciphertext
+rsa_encrypt() {
+  local plain="$1"
+  node -e "
+const http = require('http');
+http.get('$BASE/auth/public-key', (res) => {
+  let d = '';
+  res.on('data', c => d += c);
+  res.on('end', async () => {
+    const outer = JSON.parse(d);
+    const jwk = typeof outer.data.public_key === 'string'
+      ? JSON.parse(outer.data.public_key) : outer.data.public_key;
+    const key = await crypto.subtle.importKey('jwk', jwk,
+      {name:'RSA-OAEP', hash:'SHA-256'}, false, ['encrypt']);
+    const enc = await crypto.subtle.encrypt({name:'RSA-OAEP'}, key, Buffer.from('$plain'));
+    const arr = new Uint8Array(enc);
+    process.stdout.write(btoa(String.fromCharCode(...arr))
+      .replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''));
+  });
+});"
+}
+
+
 echo "== 1. 首次系统初始化（/api/system/setup）=="
 INIT_STATUS=$(req GET /system/status | jq -r '.data.initialized')
 check "系统初始状态 initialized=false" "false" "$INIT_STATUS"
 
-SETUP_RES=$(req POST /system/setup '{"username":"linktest","password":"pass1234"}')
+SETUP_PASS=$(rsa_encrypt "pass1234")
+SETUP_RES=$(req POST /system/setup "{\"username\":\"linktest\",\"password_enc\":\"$SETUP_PASS\"}")
 TOKEN=$(echo "$SETUP_RES" | jq -r '.data.token')
 AUTH="Authorization: Bearer $TOKEN"
 
@@ -142,15 +166,20 @@ check "关联资金账户名称查出" "钱包" "$LINKED_NAME"
 
 echo ""
 echo "== 15. 修改密码：原密码错误 == "
-CODE=$(curl -s -X PUT -H "$AUTH" -H "Content-Type: application/json" "$BASE/auth/password" -d '{"old_password":"wrongpass","new_password":"newpass123"}' | jq -r '.code | floor')
+OLD_ENC=$(rsa_encrypt "wrongpass")
+NEW_ENC=$(rsa_encrypt "newpass123")
+CODE=$(curl -s -X PUT -H "$AUTH" -H "Content-Type: application/json" "$BASE/auth/password" -d "{\"old_password_enc\":\"$OLD_ENC\",\"new_password_enc\":\"$NEW_ENC\"}" | jq -r '.code | floor')
 check "原密码错误 code=1002" "1002" "$CODE"
 
 echo "== 16. 修改密码：成功 == "
-CODE=$(curl -s -X PUT -H "$AUTH" -H "Content-Type: application/json" "$BASE/auth/password" -d '{"old_password":"pass1234","new_password":"newpass123"}' | jq -r '.code | floor')
+OLD_ENC=$(rsa_encrypt "pass1234")
+NEW_ENC=$(rsa_encrypt "newpass123")
+CODE=$(curl -s -X PUT -H "$AUTH" -H "Content-Type: application/json" "$BASE/auth/password" -d "{\"old_password_enc\":\"$OLD_ENC\",\"new_password_enc\":\"$NEW_ENC\"}" | jq -r '.code | floor')
 check "修改密码成功 code=0" "0" "$CODE"
 
 echo "== 17. 用新密码登录 == "
-LOGIN_RES=$(req POST /auth/login '{"username":"linktest","password":"newpass123"}')
+LOGIN_PASS=$(rsa_encrypt "newpass123")
+LOGIN_RES=$(req POST /auth/login "{\"username\":\"linktest\",\"password_enc\":\"$LOGIN_PASS\"}")
 LOGIN_CODE=$(echo "$LOGIN_RES" | jq -r '.code | floor')
 check "新密码登录成功" "0" "$LOGIN_CODE"
 
