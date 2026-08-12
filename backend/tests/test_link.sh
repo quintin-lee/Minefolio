@@ -34,26 +34,35 @@ check() { # check DESC EXPECTED ACTUAL
   if [ "$2" = "$3" ]; then PASS=$((PASS+1)); echo "  ✅ $1"; else FAIL=$((FAIL+1)); echo "  ❌ $1 (期望 $2 实际 $3)"; fi
 }
 
-echo "== 1. 注册 + 登录 =="
-req POST /auth/register '{"username":"linktest","password":"pass1234"}' >/dev/null
-TOKEN=$(req POST /auth/login '{"username":"linktest","password":"pass1234"}' | jq -r '.data.token')
+echo "== 1. 首次系统初始化（/api/system/setup）=="
+INIT_STATUS=$(req GET /system/status | jq -r '.data.initialized')
+check "系统初始状态 initialized=false" "false" "$INIT_STATUS"
+
+SETUP_RES=$(req POST /system/setup '{"username":"linktest","password":"pass1234"}')
+TOKEN=$(echo "$SETUP_RES" | jq -r '.data.token')
 AUTH="Authorization: Bearer $TOKEN"
+
+INIT_AFTER=$(req GET /system/status | jq -r '.data.initialized')
+check "初始化后 status initialized=true" "true" "$INIT_AFTER"
+
+REG_CODE=$(req POST /auth/register '{"username":"linktest2","password":"pass1234"}' | jq -r '.code | floor')
+check "初始化后公开注册被封禁 code=1004" "1004" "$REG_CODE"
 curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/categories" -d '{"name":"日常消费","type":"expense","currency":"CNY"}' >/dev/null
 curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/categories" -d '{"name":"工资","type":"income","currency":"CNY"}' >/dev/null
 curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/categories" -d '{"name":"现金","type":"asset","currency":"CNY"}' >/dev/null
 curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/categories" -d '{"name":"信用卡","type":"asset","asset_type":"credit_card","currency":"CNY"}' >/dev/null
 # 读取真实分类 id（避免依赖插入顺序）
-EXPENSE_CAT=$(sqlite3 "$DB" "SELECT id FROM categories WHERE name='日常消费'")
-INCOME_CAT=$(sqlite3 "$DB" "SELECT id FROM categories WHERE name='工资'")
-ASSET_CAT=$(sqlite3 "$DB" "SELECT id FROM categories WHERE name='现金'")
-CC_CAT=$(sqlite3 "$DB" "SELECT id FROM categories WHERE name='信用卡'")
+EXPENSE_CAT=$(sqlite3 "$DB" "SELECT id FROM categories WHERE name='日常消费' LIMIT 1")
+INCOME_CAT=$(sqlite3 "$DB" "SELECT id FROM categories WHERE name='工资' LIMIT 1")
+ASSET_CAT=$(sqlite3 "$DB" "SELECT id FROM categories WHERE name='现金' LIMIT 1")
+CC_CAT=$(sqlite3 "$DB" "SELECT id FROM categories WHERE name='信用卡' LIMIT 1")
 
 echo "== 2. 建资产 =="
 curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/assets" -d "{\"name\":\"钱包\",\"category_id\":$ASSET_CAT,\"current_value\":10000,\"currency\":\"CNY\"}" >/dev/null
 curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/assets" -d "{\"name\":\"信用卡\",\"category_id\":$CC_CAT,\"current_value\":0,\"currency\":\"CNY\"}" >/dev/null
 # 用 sqlite3 直接取真实 id（避免依赖 API 返回）
-WALLET_ID=$(sqlite3 "$DB" "SELECT id FROM assets WHERE name='钱包' AND category_id=$ASSET_CAT")
-CC_ID=$(sqlite3 "$DB" "SELECT id FROM assets WHERE name='信用卡' AND category_id=$CC_CAT")
+WALLET_ID=$(sqlite3 "$DB" "SELECT id FROM assets WHERE name='钱包' AND category_id=$ASSET_CAT LIMIT 1")
+CC_ID=$(sqlite3 "$DB" "SELECT id FROM assets WHERE name='信用卡' AND category_id=$CC_CAT LIMIT 1")
 
 echo "== 3. 记收入 500 → 余额 10500 =="
 curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/daily-expenses" -d "{\"asset_id\":$WALLET_ID,\"category_id\":$INCOME_CAT,\"expense_type\":\"income\",\"amount\":500,\"currency\":\"CNY\",\"expense_date\":\"2026-08-01\"}" >/dev/null

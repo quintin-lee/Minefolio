@@ -7,6 +7,17 @@
 #include <stdlib.h>
 #include <string.h>
 
+static int64_t get_last_insert_id(csilk_db_pool_t* pool) {
+    csilk_json_t* res = csilk_db_query_json(pool, "SELECT last_insert_rowid() as id");
+    if (!res || csilk_json_array_size(res) == 0) {
+        if (res) csilk_json_free(res);
+        return 0;
+    }
+    int64_t id = db_get_int(csilk_json_array_get(res, 0), "id");
+    csilk_json_free(res);
+    return id;
+}
+
 static int64_t get_or_create_tag(csilk_db_pool_t* pool, int64_t user_id, const csilk_json_t* tag_obj) {
     if (!pool || user_id <= 0 || !tag_obj) return 0;
     int64_t tag_id = db_get_int(tag_obj, "id");
@@ -190,16 +201,21 @@ void daily_expenses_create(csilk_ctx_t* c) {
 
     csilk_json_t* ins = csilk_db_query_param_json(pool,
         "INSERT INTO daily_expenses (user_id, category_id, asset_id, expense_type, amount, currency, expense_date, note) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id", ins_params);
-    if (!ins || csilk_json_array_size(ins) == 0) {
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)", ins_params);
+    if (ins) csilk_json_free(ins);
+
+    const char* get_params[] = { uid_str, ast_str, cat_str, amt_str, NULL };
+    csilk_json_t* row = csilk_db_query_param_json(pool,
+        "SELECT id FROM daily_expenses WHERE user_id=? AND asset_id=? AND category_id=? AND amount=? ORDER BY id DESC LIMIT 1", get_params);
+    if (!row || csilk_json_array_size(row) == 0) {
         csilk_db_exec(pool, "ROLLBACK");
-        if (ins) csilk_json_free(ins);
+        if (row) csilk_json_free(row);
         csilk_json_free(body);
         respond_error(c, 500, "创建失败");
         return;
     }
-    int64_t expense_id = db_get_int(csilk_json_array_get(ins, 0), "id");
-    csilk_json_free(ins);
+    int64_t expense_id = db_get_int(csilk_json_array_get(row, 0), "id");
+    csilk_json_free(row);
 
     // 联动资产余额
     double business_delta = (strcmp(type, "income") == 0) ? amount : -amount;
