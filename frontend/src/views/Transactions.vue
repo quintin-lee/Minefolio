@@ -215,17 +215,24 @@ function openDialog(txn?: any) {
 }
 
 async function handleSubmit() {
-  await formRef.value.validate(async (valid: boolean) => {
-    if (!valid) return
-    saving.value = true
-    try {
-      if (editingId.value) { await transactionsApi.update(editingId.value, form) }
-      else { await transactionsApi.create(form) }
-      ElMessage.success('保存成功')
-      dialogVisible.value = false
-      loadData()
-    } finally { saving.value = false }
-  })
+  // 前置检查：确保必要字段有值（防止 ElForm validate 回调时序问题导致空字段发出）
+  if (!form.asset_id || !form.transaction_type || !form.amount || form.amount <= 0 || !form.transaction_date) {
+    ElMessage.error('请填写完整的交易信息')
+    return
+  }
+  try {
+    await formRef.value.validate()
+  } catch {
+    return
+  }
+  saving.value = true
+  try {
+    if (editingId.value) { await transactionsApi.update(editingId.value, form) }
+    else { await transactionsApi.create(form) }
+    ElMessage.success('保存成功')
+    dialogVisible.value = false
+    loadData()
+  } finally { saving.value = false }
 }
 
 async function handleDelete(txn: any) {
