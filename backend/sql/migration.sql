@@ -88,6 +88,7 @@ CREATE TABLE IF NOT EXISTS daily_expenses (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     category_id  INTEGER NOT NULL REFERENCES categories(id) ON DELETE RESTRICT,
+    asset_id     INTEGER NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
     expense_type TEXT NOT NULL CHECK(expense_type IN ('expense', 'income')),
     amount       DECIMAL(18,2) NOT NULL,
     currency     TEXT DEFAULT 'CNY',
@@ -102,3 +103,18 @@ CREATE INDEX IF NOT EXISTS idx_daily_expenses_type ON daily_expenses(expense_typ
 CREATE INDEX IF NOT EXISTS idx_daily_expenses_cat ON daily_expenses(category_id);
 CREATE INDEX IF NOT EXISTS idx_tags_user ON tags(user_id);
 CREATE INDEX IF NOT EXISTS idx_expense_tags_tag ON expense_tags(tag_id);
+
+-- 资产余额审计日志（只增不删；asset_id 不设外键——删资产后日志保留）
+CREATE TABLE IF NOT EXISTS asset_balance_logs (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    asset_id      INTEGER NOT NULL,
+    user_id       INTEGER NOT NULL REFERENCES users(id),
+    delta         DECIMAL(18,2) NOT NULL,
+    balance_after DECIMAL(18,2) NOT NULL,
+    source_type   TEXT NOT NULL,
+    source_id     INTEGER NOT NULL,
+    note          TEXT,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_balance_logs_asset ON asset_balance_logs(asset_id, created_at);
