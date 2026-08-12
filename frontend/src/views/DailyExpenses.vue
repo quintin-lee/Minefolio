@@ -234,7 +234,14 @@ async function handleSubmit() {
     if (!valid) return
     saving.value = true
     try {
-      const data = { ...form, tags: form.tags.map(t => ({ id: t.id })) }
+      const data = {
+        ...form,
+        tags: form.tags.map(t => ({
+          id: t.id > 0 ? t.id : undefined,
+          name: t.name,
+          color: t.color,
+        })),
+      }
       if (editingId.value) await dailyExpensesApi.update(editingId.value, data)
       else await dailyExpensesApi.create(data)
       ElMessage.success('保存成功')

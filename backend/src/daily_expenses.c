@@ -7,6 +7,55 @@
 #include <stdlib.h>
 #include <string.h>
 
+static int64_t get_or_create_tag(csilk_db_pool_t* pool, int64_t user_id, const csilk_json_t* tag_obj) {
+    if (!pool || user_id <= 0 || !tag_obj) return 0;
+    int64_t tag_id = db_get_int(tag_obj, "id");
+    const char* name = csilk_json_get_string(tag_obj, "name");
+
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+
+    if (tag_id > 0) {
+        char tid_str[32];
+        snprintf(tid_str, sizeof(tid_str), "%lld", (long long)tag_id);
+        const char* params[] = { tid_str, uid_str, NULL };
+        csilk_json_t* chk = csilk_db_query_param_json(pool,
+            "SELECT id FROM tags WHERE id=? AND user_id=?", params);
+        if (chk && csilk_json_array_size(chk) > 0) {
+            csilk_json_free(chk);
+            return tag_id;
+        }
+        if (chk) csilk_json_free(chk);
+    }
+
+    if (name && name[0]) {
+        const char* q_params[] = { uid_str, name, NULL };
+        csilk_json_t* q_res = csilk_db_query_param_json(pool,
+            "SELECT id FROM tags WHERE user_id=? AND name=?", q_params);
+        if (q_res && csilk_json_array_size(q_res) > 0) {
+            int64_t existing_id = db_get_int(csilk_json_array_get(q_res, 0), "id");
+            csilk_json_free(q_res);
+            return existing_id;
+        }
+        if (q_res) csilk_json_free(q_res);
+
+        // Auto-create tag
+        const char* color = csilk_json_get_string(tag_obj, "color");
+        if (!color || !color[0]) color = "#3b82f6";
+        const char* ins_params[] = { uid_str, name, color, NULL };
+        csilk_json_t* ins_res = csilk_db_query_param_json(pool,
+            "INSERT INTO tags (user_id, name, color) VALUES (?, ?, ?) RETURNING id", ins_params);
+        if (ins_res && csilk_json_array_size(ins_res) > 0) {
+            int64_t new_id = db_get_int(csilk_json_array_get(ins_res, 0), "id");
+            csilk_json_free(ins_res);
+            return new_id;
+        }
+        if (ins_res) csilk_json_free(ins_res);
+    }
+
+    return 0;
+}
+
 void daily_expenses_list(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
@@ -166,8 +215,8 @@ void daily_expenses_create(csilk_ctx_t* c) {
     if (tags && csilk_json_is_array(tags)) {
         size_t n = csilk_json_array_size(tags);
         for (size_t i = 0; i < n; i++) {
-            csilk_json_t* tag = csilk_json_array_get(tags, i);
-            int64_t tag_id = (int64_t)csilk_json_get_number(tag, "id");
+            csilk_json_t* tag_obj = csilk_json_array_get(tags, i);
+            int64_t tag_id = get_or_create_tag(pool, user_id, tag_obj);
             if (tag_id <= 0) continue;
 
             char exp_id_str[32], tag_id_str[32];
@@ -302,13 +351,14 @@ void daily_expenses_update(csilk_ctx_t* c) {
     if (tags && csilk_json_is_array(tags)) {
         size_t n = csilk_json_array_size(tags);
         for (size_t i = 0; i < n; i++) {
-            csilk_json_t* tag = csilk_json_array_get(tags, i);
-            int64_t tag_id = (int64_t)csilk_json_get_number(tag, "id");
+            csilk_json_t* tag_obj = csilk_json_array_get(tags, i);
+            int64_t tag_id = get_or_create_tag(pool, user_id, tag_obj);
             if (tag_id <= 0) continue;
 
             char tag_id_str[32];
             snprintf(tag_id_str, sizeof(tag_id_str), "%lld", (long long)tag_id);
             const char* tag_params[] = { id_str, tag_id_str, NULL };
+
             csilk_json_t* tag_res = csilk_db_query_param_json(pool,
                 "INSERT OR IGNORE INTO expense_tags (expense_id, tag_id) VALUES (?, ?)", tag_params);
             if (tag_res) csilk_json_free(tag_res);
