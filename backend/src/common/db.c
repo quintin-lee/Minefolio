@@ -114,6 +114,22 @@ int db_run_migrations(csilk_db_pool_t* pool) {
     }
     if (tx_schema) csilk_json_free(tx_schema);
 
+    // ---- transactions 表 linked_asset_id 列迁移 ----
+    int has_linked_asset = 0;
+    csilk_json_t* tx_cols = csilk_db_query_json(pool, "PRAGMA table_info(transactions)");
+    if (tx_cols) {
+        size_t n = csilk_json_array_size(tx_cols);
+        for (size_t i = 0; i < n; i++) {
+            const csilk_json_t* col = csilk_json_array_get(tx_cols, i);
+            const char* cname = csilk_json_get_string(col, "name");
+            if (cname && strcmp(cname, "linked_asset_id") == 0) { has_linked_asset = 1; break; }
+        }
+        csilk_json_free(tx_cols);
+    }
+    if (!has_linked_asset) {
+        csilk_db_exec(pool, "ALTER TABLE transactions ADD COLUMN linked_asset_id INTEGER REFERENCES assets(id) ON DELETE SET NULL");
+    }
+
     // ---- 收支-资产联动迁移（列存在性门控，一次性） ----
     // 检测 daily_expenses 是否已有 asset_id 列
     int has_asset_id = 0;
