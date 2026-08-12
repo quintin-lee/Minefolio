@@ -50,10 +50,33 @@ static void add_children(csilk_db_pool_t* pool, csilk_json_t* parent) {
 }
 
 typedef struct {
-    const char* name;
+    const char* parent_name;
     const char* asset_type;
     int sort_order;
-} default_cat_t;
+    const char* children[6];
+} default_parent_cat_t;
+
+static int64_t insert_cat(csilk_db_pool_t* pool, int64_t user_id, const char* name, int64_t parent_id, const char* type, const char* asset_type, int sort_order) {
+    char sql[512];
+    if (parent_id > 0) {
+        snprintf(sql, sizeof(sql),
+            "INSERT INTO categories (user_id, name, parent_id, type, asset_type, currency, icon, sort_order) "
+            "VALUES (%lld, '%s', %lld, '%s', '%s', 'CNY', '', %d) RETURNING id",
+            (long long)user_id, name, (long long)parent_id, type, asset_type, sort_order);
+    } else {
+        snprintf(sql, sizeof(sql),
+            "INSERT INTO categories (user_id, name, type, asset_type, currency, icon, sort_order) "
+            "VALUES (%lld, '%s', '%s', '%s', 'CNY', '', %d) RETURNING id",
+            (long long)user_id, name, type, asset_type, sort_order);
+    }
+    csilk_json_t* res = csilk_db_query_json(pool, sql);
+    int64_t id = 0;
+    if (res && csilk_json_array_size(res) > 0) {
+        id = db_get_int(csilk_json_array_get(res, 0), "id");
+    }
+    if (res) csilk_json_free(res);
+    return id;
+}
 
 static void ensure_default_categories_for_type(csilk_db_pool_t* pool, int64_t user_id, const char* type) {
     char count_sql[256];
@@ -69,71 +92,71 @@ static void ensure_default_categories_for_type(csilk_db_pool_t* pool, int64_t us
     csilk_json_free(cnt_res);
     if (cnt > 0) return;
 
-    if (strcmp(type, "asset") == 0) {
-        default_cat_t items[] = {
-            {"现金账户", "cash", 1},
-            {"银行存款", "cash", 2},
-            {"股票证券", "stock", 3},
-            {"基金理财", "fund", 4},
-            {"加密货币", "crypto", 5},
-            {"信用卡", "credit_card", 6}
+    if (strcmp(type, "expense") == 0) {
+        default_parent_cat_t items[] = {
+            {"餐饮美食", "cash", 1, {"早晚餐/正餐", "水果零食", "外卖聚餐", NULL}},
+            {"交通出行", "cash", 2, {"公共交通", "打车网约车", "加油停车", NULL}},
+            {"日常购物", "cash", 3, {"服饰鞋包", "日用百货", "数码家电", NULL}},
+            {"居住缴费", "cash", 4, {"房租房贷", "水电燃气", "网络话费", NULL}},
+            {"休闲娱乐", "cash", 5, {"游戏影视", "运动健身", "旅游度假", NULL}},
+            {"医疗健康", "cash", 6, {"药品诊疗", "保健体检", NULL}}
         };
         for (size_t i = 0; i < sizeof(items)/sizeof(items[0]); i++) {
-            char ins_sql[256];
-            snprintf(ins_sql, sizeof(ins_sql),
-                "INSERT INTO categories (user_id, name, type, asset_type, currency, icon, sort_order) "
-                "VALUES (%lld, '%s', 'asset', '%s', 'CNY', '', %d)",
-                (long long)user_id, items[i].name, items[i].asset_type, items[i].sort_order);
-            csilk_db_exec(pool, ins_sql);
-        }
-    } else if (strcmp(type, "expense") == 0) {
-        default_cat_t items[] = {
-            {"餐饮美食", "cash", 1},
-            {"交通出行", "cash", 2},
-            {"日常购物", "cash", 3},
-            {"休闲娱乐", "cash", 4},
-            {"居住缴费", "cash", 5},
-            {"医疗健康", "cash", 6}
-        };
-        for (size_t i = 0; i < sizeof(items)/sizeof(items[0]); i++) {
-            char ins_sql[256];
-            snprintf(ins_sql, sizeof(ins_sql),
-                "INSERT INTO categories (user_id, name, type, asset_type, currency, icon, sort_order) "
-                "VALUES (%lld, '%s', 'expense', 'cash', 'CNY', '', %d)",
-                (long long)user_id, items[i].name, items[i].sort_order);
-            csilk_db_exec(pool, ins_sql);
+            int64_t pid = insert_cat(pool, user_id, items[i].parent_name, 0, "expense", items[i].asset_type, items[i].sort_order);
+            if (pid > 0) {
+                for (int j = 0; items[i].children[j] != NULL; j++) {
+                    insert_cat(pool, user_id, items[i].children[j], pid, "expense", items[i].asset_type, j + 1);
+                }
+            }
         }
     } else if (strcmp(type, "income") == 0) {
-        default_cat_t items[] = {
-            {"工资收入", "cash", 1},
-            {"兼职副业", "cash", 2},
-            {"理财收益", "cash", 3},
-            {"奖金补贴", "cash", 4},
-            {"其他收入", "cash", 5}
+        default_parent_cat_t items[] = {
+            {"职业收入", "cash", 1, {"基本工资", "绩效奖金", "兼职外包", NULL}},
+            {"投资理财", "cash", 2, {"股票/基金收益", "存款利息", "股息分红", NULL}},
+            {"其他收入", "cash", 3, {"二手转让", "礼金红包", NULL}}
         };
         for (size_t i = 0; i < sizeof(items)/sizeof(items[0]); i++) {
-            char ins_sql[256];
-            snprintf(ins_sql, sizeof(ins_sql),
-                "INSERT INTO categories (user_id, name, type, asset_type, currency, icon, sort_order) "
-                "VALUES (%lld, '%s', 'income', 'cash', 'CNY', '', %d)",
-                (long long)user_id, items[i].name, items[i].sort_order);
-            csilk_db_exec(pool, ins_sql);
+            int64_t pid = insert_cat(pool, user_id, items[i].parent_name, 0, "income", items[i].asset_type, items[i].sort_order);
+            if (pid > 0) {
+                for (int j = 0; items[i].children[j] != NULL; j++) {
+                    insert_cat(pool, user_id, items[i].children[j], pid, "income", items[i].asset_type, j + 1);
+                }
+            }
         }
     } else if (strcmp(type, "transaction") == 0) {
-        default_cat_t items[] = {
-            {"股票/证券", "cash", 1},
-            {"基金/理财", "cash", 2},
-            {"外汇/加密", "cash", 3},
-            {"存现/取现", "cash", 4},
-            {"交易手续费", "cash", 5}
+        default_parent_cat_t items[] = {
+            {"证券交易", "cash", 1, {"股票买卖", "基金申赎", "债券买卖", NULL}},
+            {"加密资产", "cash", 2, {"现货买卖", "合约质押", NULL}},
+            {"资金调拨", "cash", 3, {"银证/出入金", "存现/取现", "交易手续费", NULL}}
         };
         for (size_t i = 0; i < sizeof(items)/sizeof(items[0]); i++) {
-            char ins_sql[256];
-            snprintf(ins_sql, sizeof(ins_sql),
-                "INSERT INTO categories (user_id, name, type, asset_type, currency, icon, sort_order) "
-                "VALUES (%lld, '%s', 'transaction', 'cash', 'CNY', '', %d)",
-                (long long)user_id, items[i].name, items[i].sort_order);
-            csilk_db_exec(pool, ins_sql);
+            int64_t pid = insert_cat(pool, user_id, items[i].parent_name, 0, "transaction", items[i].asset_type, items[i].sort_order);
+            if (pid > 0) {
+                for (int j = 0; items[i].children[j] != NULL; j++) {
+                    insert_cat(pool, user_id, items[i].children[j], pid, "transaction", items[i].asset_type, j + 1);
+                }
+            }
+        }
+    } else if (strcmp(type, "asset") == 0) {
+        default_parent_cat_t items[] = {
+            {"流动资产", "cash", 1, {"现金账户", "银行存款", NULL}},
+            {"投资资产", "stock", 2, {"股票证券", "基金理财", "加密货币", NULL}},
+            {"负债账户", "credit_card", 3, {"信用卡", "房贷/车贷/贷款", NULL}}
+        };
+        for (size_t i = 0; i < sizeof(items)/sizeof(items[0]); i++) {
+            int64_t pid = insert_cat(pool, user_id, items[i].parent_name, 0, "asset", items[i].asset_type, items[i].sort_order);
+            if (pid > 0) {
+                for (int j = 0; items[i].children[j] != NULL; j++) {
+                    const char* child_asset_type = items[i].asset_type;
+                    if (strcmp(items[i].children[j], "股票证券") == 0) child_asset_type = "stock";
+                    else if (strcmp(items[i].children[j], "基金理财") == 0) child_asset_type = "fund";
+                    else if (strcmp(items[i].children[j], "加密货币") == 0) child_asset_type = "crypto";
+                    else if (strcmp(items[i].children[j], "房贷/车贷/贷款") == 0) child_asset_type = "loan";
+                    else if (strcmp(items[i].children[j], "现金账户") == 0 || strcmp(items[i].children[j], "银行存款") == 0) child_asset_type = "cash";
+                    else if (strcmp(items[i].children[j], "信用卡") == 0) child_asset_type = "credit_card";
+                    insert_cat(pool, user_id, items[i].children[j], pid, "asset", child_asset_type, j + 1);
+                }
+            }
         }
     }
 }
