@@ -128,7 +128,10 @@ void assets_delete(csilk_ctx_t* c) {
     char sql[256];
     snprintf(sql, sizeof(sql),
         "DELETE FROM assets WHERE id=%s AND user_id=%lld", id_str, (long long)user_id);
-    csilk_db_exec(pool, sql);
+    if (csilk_db_exec(pool, sql) != 0) {
+        respond_error(c, 500, "删除失败");
+        return;
+    }
     respond_ok_null(c);
 }
 
