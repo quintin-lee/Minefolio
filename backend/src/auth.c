@@ -24,8 +24,144 @@ static void hash_password(const char* password, char* out_hash, size_t out_len) 
         sprintf(out_hash + i * 2, "%02x", digest[i]);
 }
 
-/** @brief POST /api/auth/register — 注册（仅首次用户）*/
+/** @brief GET /api/system/status — 查询系统初始化状态 */
+void system_status(csilk_ctx_t* c) {
+    csilk_db_pool_t* pool = db_get_pool();
+    csilk_json_t* res = csilk_db_query_json(pool, "SELECT COUNT(*) as count FROM users");
+    int count = 0;
+    if (res && csilk_json_array_size(res) > 0) {
+        count = (int)db_get_int(csilk_json_array_get(res, 0), "count");
+    }
+    if (res) csilk_json_free(res);
+
+    csilk_json_t* resp = csilk_json_object();
+    csilk_json_add_bool(resp, "initialized", count > 0);
+    csilk_json_add_number(resp, "user_count", count);
+    respond_ok(c, resp);
+}
+
+/** @brief Helper to seed default category templates for new admin user */
+static void seed_default_categories(csilk_db_pool_t* pool, int64_t user_id) {
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+
+    // Income categories
+    const char* income_cats[] = { "工资", "理财收益", "兼职/副业", "其他收入", NULL };
+    for (int i = 0; income_cats[i]; i++) {
+        const char* params[] = { uid_str, income_cats[i], "income", NULL };
+        csilk_json_t* r = csilk_db_query_param_json(pool,
+            "INSERT OR IGNORE INTO categories (user_id, name, type) VALUES (?, ?, ?)", params);
+        if (r) csilk_json_free(r);
+    }
+
+    // Expense categories
+    const char* expense_cats[] = { "餐饮", "交通", "居住", "购物", "娱乐", "医疗", "数码电子", "其他支出", NULL };
+    for (int i = 0; expense_cats[i]; i++) {
+        const char* params[] = { uid_str, expense_cats[i], "expense", NULL };
+        csilk_json_t* r = csilk_db_query_param_json(pool,
+            "INSERT OR IGNORE INTO categories (user_id, name, type) VALUES (?, ?, ?)", params);
+        if (r) csilk_json_free(r);
+    }
+
+    // Transaction categories
+    const char* tx_cats[] = { "股票/基金", "加密货币", "债券/理财", "定期存款", NULL };
+    for (int i = 0; tx_cats[i]; i++) {
+        const char* params[] = { uid_str, tx_cats[i], "transaction", NULL };
+        csilk_json_t* r = csilk_db_query_param_json(pool,
+            "INSERT OR IGNORE INTO categories (user_id, name, type) VALUES (?, ?, ?)", params);
+        if (r) csilk_json_free(r);
+    }
+}
+
+/** @brief POST /api/system/setup — 首次部署系统初始化 */
+void system_setup(csilk_ctx_t* c) {
+    csilk_db_pool_t* pool = db_get_pool();
+
+    // Verify system is not initialized yet
+    csilk_json_t* count_res = csilk_db_query_json(pool, "SELECT COUNT(*) as count FROM users");
+    int count = 0;
+    if (count_res && csilk_json_array_size(count_res) > 0) {
+        count = (int)db_get_int(csilk_json_array_get(count_res, 0), "count");
+    }
+    if (count_res) csilk_json_free(count_res);
+
+    if (count > 0) {
+        respond_forbidden(c, "系统已完成初始化，禁止重复设置");
+        return;
+    }
+
+    csilk_json_t* body = csilk_bind_json(c);
+    if (!body) { respond_bad_request(c, "请求体必须为 JSON"); return; }
+
+    const char* username = csilk_json_get_string(body, "username");
+    const char* password = csilk_json_get_string(body, "password");
+    if (!username || !password || strlen(username) < 2 || strlen(password) < 6) {
+        csilk_json_free(body);
+        respond_bad_request(c, "用户名需≥2字符，密码需≥6字符");
+        return;
+    }
+
+    // Start transaction
+    if (csilk_db_exec(pool, "BEGIN TRANSACTION") != 0) {
+        csilk_json_free(body);
+        respond_error(c, 500, "数据库错误");
+        return;
+    }
+
+    char hashed[65];
+    hash_password(password, hashed, sizeof(hashed));
+
+    const char* insert_sql = "INSERT INTO users (username, password) VALUES (?, ?) RETURNING id";
+    const char* insert_params[] = { username, hashed, NULL };
+    csilk_json_t* ins_res = csilk_db_query_param_json(pool, insert_sql, insert_params);
+    if (!ins_res || csilk_json_array_size(ins_res) == 0) {
+        csilk_db_exec(pool, "ROLLBACK");
+        if (ins_res) csilk_json_free(ins_res);
+        csilk_json_free(body);
+        respond_error(c, 500, "初始化失败");
+        return;
+    }
+
+    int64_t user_id = db_get_int(csilk_json_array_get(ins_res, 0), "id");
+    csilk_json_free(ins_res);
+
+    // Seed default categories
+    seed_default_categories(pool, user_id);
+
+    csilk_db_exec(pool, "COMMIT");
+    csilk_json_free(body);
+
+    char* token = jwt_generate_token(c, user_id);
+    csilk_json_t* resp = csilk_json_object();
+    csilk_json_add_string(resp, "token", token ? token : "");
+    csilk_json_add_number(resp, "expires_in", 604800);
+
+    csilk_json_t* user_obj = csilk_json_object();
+    csilk_json_add_number(user_obj, "id", user_id);
+    csilk_json_add_string(user_obj, "username", username);
+    csilk_json_add_object(resp, "user", user_obj);
+
+    free(token);
+    respond_ok(c, resp);
+}
+
+/** @brief POST /api/auth/register — 注册（禁止在初始化后公开注册）*/
 void auth_register(csilk_ctx_t* c) {
+    csilk_db_pool_t* pool = db_get_pool();
+
+    // Check if system is already initialized
+    csilk_json_t* count_res = csilk_db_query_json(pool, "SELECT COUNT(*) as count FROM users");
+    if (count_res && csilk_json_array_size(count_res) > 0) {
+        int cnt = (int)db_get_int(csilk_json_array_get(count_res, 0), "count");
+        csilk_json_free(count_res);
+        if (cnt > 0) {
+            respond_forbidden(c, "系统已完成初始化，禁止公开注册");
+            return;
+        }
+    } else if (count_res) {
+        csilk_json_free(count_res);
+    }
+
     csilk_json_t* body = csilk_bind_json(c);
     if (!body) { respond_bad_request(c, "请求体必须为 JSON"); return; }
 
@@ -36,8 +172,6 @@ void auth_register(csilk_ctx_t* c) {
         respond_bad_request(c, "用户名需≥2字符，密码需≥4字符");
         return;
     }
-
-    csilk_db_pool_t* pool = db_get_pool();
 
     // Check if user already exists
     const char* check_sql = "SELECT id FROM users WHERE username = ?";

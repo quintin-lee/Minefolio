@@ -43,6 +43,8 @@ extern void report_transaction_performance(csilk_ctx_t* c);
 extern void report_asset_summary(csilk_ctx_t* c);
 extern void summary_get(csilk_ctx_t* c);
 extern void asset_logs_list(csilk_ctx_t* c);
+extern void system_status(csilk_ctx_t* c);
+extern void system_setup(csilk_ctx_t* c);
 
 
 // JWT middleware wrapper (new API: no extra args)
@@ -50,7 +52,9 @@ static void jwt_middleware_wrapper(csilk_ctx_t* c) {
     const char* path = csilk_get_path(c);
     // Public auth endpoints do not require a token
     if (path && (strcmp(path, "/api/auth/login") == 0 ||
-                 strcmp(path, "/api/auth/register") == 0)) {
+                 strcmp(path, "/api/auth/register") == 0 ||
+                 strcmp(path, "/api/system/status") == 0 ||
+                 strcmp(path, "/api/system/setup") == 0)) {
         return;
     }
     const char* secret = getenv("MINEFOLIO_JWT_SECRET");
@@ -92,7 +96,9 @@ static void csrf_middleware_wrapper(csilk_ctx_t* c) {
     // Public auth bootstrap endpoints are exempt (no cookie exists yet on first use)
     const char* path = csilk_get_path(c);
     if (path && (strcmp(path, "/api/auth/login") == 0 ||
-                 strcmp(path, "/api/auth/register") == 0)) {
+                 strcmp(path, "/api/auth/register") == 0 ||
+                 strcmp(path, "/api/system/status") == 0 ||
+                 strcmp(path, "/api/system/setup") == 0)) {
         csilk_next(c);
         return;
     }
@@ -161,7 +167,9 @@ int main(int argc, char** argv) {
     // complete the preflight handshake before POST/PUT/DELETE requests.
     csilk_app_options(app, "/api/*path", cors_preflight_handler);
 
-    // Auth routes (public)
+    // System setup & Auth
+    csilk_app_get(app, "/api/system/status", system_status);
+    csilk_app_post(app, "/api/system/setup", system_setup);
     csilk_app_post(app, "/api/auth/register", auth_register);
     csilk_app_post(app, "/api/auth/login", auth_login);
 
