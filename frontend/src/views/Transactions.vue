@@ -581,40 +581,12 @@ onMounted(() => {
 <style scoped>
 .transactions-page {
   padding: 24px;
-  background-color: #f8fafc;
+  background-color: var(--mf-background);
   min-height: 100%;
 }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
-}
-
-.header-title {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.title-accent {
-  width: 4px;
-  height: 24px;
-  background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
-  border-radius: 4px;
-}
-
-.header-title h2 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-  color: #1e293b;
-  letter-spacing: 0.5px;
-}
-
 .action-btn {
-  border-radius: 8px;
+  border-radius: var(--mf-radius-md);
   padding: 8px 16px;
   font-weight: 500;
 }
@@ -623,53 +595,26 @@ onMounted(() => {
   margin-bottom: 24px;
 }
 
-.summary-card {
-  background: #ffffff;
-  border-radius: 14px;
-  padding: 20px 24px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-  border: 1px solid #f1f5f9;
-}
-
-.highlight-card {
-  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
-  border: 1px solid #bfdbfe;
-}
-
-.summary-label {
-  font-size: 13px;
-  color: #64748b;
-  margin-bottom: 8px;
-}
-
 .summary-value {
   font-size: 22px;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--mf-text-main);
 }
 
 .font-mono {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
 }
 
-.income-text {
-  color: #10b981;
-}
-
-.expense-text {
-  color: #ef4444;
-}
-
-.text-primary {
-  color: #2563eb;
-}
+.income-text { color: #10b981; }
+.expense-text { color: #ef4444; }
+.text-primary { color: #2563eb; }
 
 .main-panel {
-  background: #ffffff;
-  border-radius: 16px;
+  background: var(--mf-surface);
+  border-radius: var(--mf-radius-lg);
   padding: 24px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-  border: 1px solid #f1f5f9;
+  box-shadow: var(--mf-shadow-sm);
+  border: 1px solid var(--mf-border);
 }
 
 .filter-panel {
@@ -694,7 +639,7 @@ onMounted(() => {
 }
 
 .category-pill {
-  background: #f1f5f9;
+  background: var(--mf-surface-muted);
   color: #475569;
   padding: 2px 8px;
   border-radius: 6px;
@@ -712,28 +657,16 @@ onMounted(() => {
   color: #475569;
 }
 
-.price-tag {
-  color: #3b82f6;
-}
-
-.times {
-  margin: 0 4px;
-  color: #94a3b8;
-}
-
-.qty-tag {
-  color: #059669;
-}
-
-.muted-text {
-  color: #94a3b8;
-}
+.price-tag { color: #3b82f6; }
+.times { margin: 0 4px; color: #94a3b8; }
+.qty-tag { color: #059669; }
+.muted-text { color: #94a3b8; }
 
 .trading-fields {
-  background: #f8fafc;
+  background: var(--mf-surface-muted);
   padding: 12px 12px 0 12px;
-  border-radius: 8px;
-  border: 1px solid #e2e8f0;
+  border-radius: var(--mf-radius-md);
+  border: 1px solid var(--mf-border);
   margin-bottom: 16px;
 }
 

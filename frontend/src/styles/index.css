@@ -218,49 +218,153 @@ body {
   border-radius: 3px 3px 0 0;
 }
 
-/* Utility Classes */
+/* Card System */
+.card-panel {
+  background: var(--mf-surface);
+  border-radius: var(--mf-radius-lg);
+  padding: 20px 24px;
+  box-shadow: var(--mf-shadow-sm);
+  border: 1px solid var(--mf-border);
+  transition: var(--mf-transition);
+}
+
+.card-panel:hover {
+  box-shadow: var(--mf-shadow-md);
+}
+
+/* Summary KPI cards — 4-up row */
+.summary-card {
+  background: var(--mf-surface);
+  border-radius: var(--mf-radius-lg);
+  padding: 20px 24px;
+  box-shadow: var(--mf-shadow-sm);
+  border: 1px solid var(--mf-border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: var(--mf-transition);
+}
+
+.summary-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--mf-shadow-md);
+}
+
+/* Emphasized summary cards — subtle top gradient bar */
+.highlight-card {
+  border: 1px solid var(--mf-primary-light);
+  background: linear-gradient(180deg, #f0f7ff 0%, var(--mf-surface) 40%);
+  position: relative;
+}
+
+.highlight-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--mf-primary), #60a5fa);
+  border-radius: var(--mf-radius-lg) var(--mf-radius-lg) 0 0;
+}
+
+/* Stat card variant with colored top bar (dashboard) */
+.stat-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--mf-radius-lg);
+  border: 1px solid var(--mf-border);
+  background: var(--mf-surface);
+  box-shadow: var(--mf-shadow-sm);
+  transition: var(--mf-transition);
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--mf-shadow-md);
+}
+
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--mf-primary), #60a5fa);
+}
+
+.stat-card.assets::before  { background: linear-gradient(90deg, #3b82f6, #93c5fd); }
+.stat-card.liabilities::before { background: linear-gradient(90deg, #ef4444, #fca5a5); }
+.stat-card.networth::before { background: linear-gradient(90deg, #10b981, #6ee7b7); }
+.stat-card.monthly::before { background: linear-gradient(90deg, #f59e0b, #fcd34d); }
+
+/* Chart / content panel */
+.content-panel {
+  background: var(--mf-surface);
+  border-radius: var(--mf-radius-lg);
+  padding: 20px 24px;
+  box-shadow: var(--mf-shadow-sm);
+  border: 1px solid var(--mf-border);
+}
+
+/* Metric sub-cards inside report panels */
+.metric-card {
+  background: var(--mf-surface-muted);
+  border-radius: var(--mf-radius-md);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.metric-card.highlight {
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+  border: 1px solid var(--mf-primary-light);
+}
+
+/* Perf grid item */
+.perf-item {
+  background: var(--mf-surface-muted);
+  border-radius: var(--mf-radius-md);
+  padding: 14px 16px;
+}
+
+.perf-item.highlight {
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+  border: 1px solid var(--mf-primary-light);
+}
+
+/* Page header accent */
 .page-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: var(--mf-spacing-lg);
 }
+
 .page-header h2 {
   margin: 0;
-  font-size: 24px;
+  font-size: 20px;
   color: var(--mf-text-main);
   font-weight: 600;
 }
 
-.stat-card {
-  position: relative;
-  overflow: hidden;
-}
-.stat-card::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 100px;
-  height: 100px;
-  background: linear-gradient(135deg, transparent 50%, rgba(26, 86, 219, 0.1) 50%);
-  border-radius: 0 0 0 100%;
-}
-
-.data-table-wrapper {
-  background: var(--mf-surface);
-  border-radius: var(--mf-radius-lg);
-  padding: var(--mf-spacing-md);
-  box-shadow: var(--mf-shadow-md);
-}
-
-.filter-bar {
+.header-title {
   display: flex;
-  gap: var(--mf-spacing-md);
-  margin-bottom: var(--mf-spacing-md);
-  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
 }
 
+.title-accent {
+  width: 3px;
+  height: 20px;
+  background: linear-gradient(180deg, var(--mf-primary), #60a5fa);
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* Fade animation */
 .fade-in {
   animation: fadeIn 0.4s ease-out;
 }

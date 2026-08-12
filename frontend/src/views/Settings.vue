@@ -125,81 +125,70 @@ async function submit() {
 <style scoped>
 .settings-page {
   padding: 24px;
-  background-color: #f8fafc;
+  background-color: var(--mf-background);
   min-height: 100%;
 }
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
-}
-.header-title {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.title-accent {
-  width: 4px;
-  height: 24px;
-  background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
-  border-radius: 4px;
-}
-.header-title h2 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-  color: #1e293b;
-  letter-spacing: 0.5px;
-}
+
 .info-cards {
   margin-bottom: 24px;
 }
+
 .panel-container {
-  background: #ffffff;
-  border-radius: 16px;
+  background: var(--mf-surface);
+  border-radius: var(--mf-radius-lg);
   padding: 24px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--mf-shadow-sm);
+  border: 1px solid var(--mf-border);
 }
+
 .panel-header {
   margin-bottom: 20px;
 }
+
 .panel-header h3 {
   margin: 0;
   font-size: 16px;
   font-weight: 600;
-  color: #334155;
+  color: var(--mf-text-main);
 }
+
 .info-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 12px 0;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid var(--mf-border);
 }
+
 .info-row:last-child {
   border-bottom: none;
 }
+
 .info-label {
-  color: #64748b;
+  color: var(--mf-text-muted);
   font-size: 14px;
 }
+
 .info-value {
-  color: #0f172a;
+  color: var(--mf-text-main);
   font-weight: 500;
   font-size: 14px;
 }
+
 .mono-text {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
 }
+
 .premium-form .el-form-item {
   margin-bottom: 24px;
 }
+
 .premium-form :deep(.el-input__wrapper) {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-  border-radius: 8px;
+  border-radius: var(--mf-radius-md);
   padding: 6px 12px;
 }
+
 .action-btn {
   width: 160px;
 }

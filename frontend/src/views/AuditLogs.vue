@@ -111,44 +111,17 @@ onMounted(async () => {
 <style scoped>
 .audit-logs-page {
   padding: 24px;
-  background-color: #f8fafc;
+  background-color: var(--mf-background);
   min-height: 100%;
 }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
-}
-
-.header-title {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.title-accent {
-  width: 4px;
-  height: 24px;
-  background: linear-gradient(180deg, #8b5cf6 0%, #6d28d9 100%);
-  border-radius: 4px;
-}
-
-.header-title h2 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-  color: #1e293b;
-  letter-spacing: 0.5px;
-}
-
 .filter-panel {
-  background: #ffffff;
-  border-radius: 16px;
+  background: var(--mf-surface);
+  border-radius: var(--mf-radius-lg);
   padding: 20px 24px;
   margin-bottom: 24px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--mf-shadow-sm);
+  border: 1px solid var(--mf-border);
 }
 
 .premium-filters {
@@ -166,33 +139,30 @@ onMounted(async () => {
   width: 170px;
 }
 
-.filter-date {
-  width: 260px;
-}
-
 .filter-actions {
   margin-left: auto;
 }
 
 .search-btn, .reset-btn {
-  border-radius: 8px;
+  border-radius: var(--mf-radius-md);
 }
 
 .table-container {
-  background: #ffffff;
-  border-radius: 16px;
+  background: var(--mf-surface);
+  border-radius: var(--mf-radius-lg);
   padding: 16px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--mf-shadow-sm);
+  border: 1px solid var(--mf-border);
 }
 
 .premium-table {
   --el-table-border-color: transparent;
-  --el-table-header-bg-color: #f8fafc;
+  --el-table-header-bg-color: var(--mf-surface-muted);
 }
 
 :deep(.premium-header th) {
-  background-color: #f8fafc !important;
-  color: #64748b;
+  background-color: var(--mf-surface-muted) !important;
+  color: var(--mf-text-muted);
   font-weight: 600;
   text-transform: uppercase;
   font-size: 12px;
@@ -206,12 +176,12 @@ onMounted(async () => {
 }
 
 :deep(.premium-row td) {
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid var(--mf-border);
   padding: 16px 0;
 }
 
 :deep(.premium-row:hover > td) {
-  background-color: #f8fafc !important;
+  background-color: var(--mf-surface-hover) !important;
 }
 
 .mono-text {
