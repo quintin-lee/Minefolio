@@ -53,6 +53,7 @@
   
   /* Override Element Plus Variables */
   --el-color-primary: var(--mf-primary);
+  --el-color-primary-rgb: 0, 212, 255;
   --el-color-primary-light-3: #22d3ee;
   --el-color-primary-light-5: #67e8f9;
   --el-color-primary-light-7: #a5f3fc;
@@ -68,7 +69,63 @@
 
   --el-border-color: var(--mf-border);
   --el-border-color-light: rgba(0, 212, 255, 0.06);
-  
+  --el-border-color-hover: var(--mf-border-hover);
+  --el-border-color-darker: var(--mf-border-hover);
+
+  /* Fill / overlay surfaces */
+  --el-fill-color: rgba(30, 41, 59, 0.6);
+  --el-fill-color-light: rgba(0, 212, 255, 0.06);
+  --el-fill-color-lighter: rgba(0, 212, 255, 0.04);
+  --el-fill-color-dark: rgba(0, 212, 255, 0.12);
+  --el-fill-color-blank: rgba(30, 41, 59, 0.6);
+  --el-bg-color-overlay: rgba(15, 23, 42, 0.95);
+  --el-mask-color: rgba(6, 11, 24, 0.8);
+
+  /* Semantic status colors */
+  --el-color-success: #10b981;
+  --el-color-success-light-3: rgba(16, 185, 129, 0.6);
+  --el-color-success-light-5: rgba(16, 185, 129, 0.4);
+  --el-color-success-light-7: rgba(16, 185, 129, 0.25);
+  --el-color-success-light-8: rgba(16, 185, 129, 0.15);
+  --el-color-success-light-9: rgba(16, 185, 129, 0.1);
+  --el-color-warning: #f59e0b;
+  --el-color-warning-light-3: rgba(245, 158, 11, 0.6);
+  --el-color-warning-light-5: rgba(245, 158, 11, 0.4);
+  --el-color-warning-light-7: rgba(245, 158, 11, 0.25);
+  --el-color-warning-light-8: rgba(245, 158, 11, 0.15);
+  --el-color-warning-light-9: rgba(245, 158, 11, 0.1);
+  --el-color-danger: #ef4444;
+  --el-color-danger-light-3: rgba(239, 68, 68, 0.6);
+  --el-color-danger-light-5: rgba(239, 68, 68, 0.4);
+  --el-color-danger-light-7: rgba(239, 68, 68, 0.25);
+  --el-color-danger-light-8: rgba(239, 68, 68, 0.15);
+  --el-color-danger-light-9: rgba(239, 68, 68, 0.1);
+  --el-color-error: #ef4444;
+  --el-color-error-light-3: rgba(239, 68, 68, 0.6);
+  --el-color-error-light-5: rgba(239, 68, 68, 0.4);
+  --el-color-error-light-7: rgba(239, 68, 68, 0.25);
+  --el-color-error-light-8: rgba(239, 68, 68, 0.15);
+  --el-color-error-light-9: rgba(239, 68, 68, 0.1);
+  --el-color-info: #64748b;
+  --el-color-info-light-3: rgba(100, 116, 139, 0.6);
+  --el-color-info-light-5: rgba(100, 116, 139, 0.4);
+  --el-color-info-light-7: rgba(100, 116, 139, 0.25);
+  --el-color-info-light-8: rgba(100, 116, 139, 0.15);
+  --el-color-info-light-9: rgba(100, 116, 139, 0.1);
+
+  /* Text / disabled states */
+  --el-text-color-placeholder: var(--mf-text-placeholder);
+  --el-text-color-disabled: rgba(148, 163, 184, 0.5);
+  --el-disabled-bg-color: rgba(30, 41, 59, 0.6);
+  --el-disabled-text-color: var(--mf-text-placeholder);
+  --el-disabled-border-color: rgba(0, 212, 255, 0.08);
+
+  /* Menu */
+  --el-menu-bg-color: transparent;
+  --el-menu-text-color: var(--mf-text-muted);
+  --el-menu-active-color: var(--mf-primary);
+  --el-menu-hover-bg-color: rgba(0, 212, 255, 0.06);
+
   --el-border-radius-base: var(--mf-radius-md);
   --el-border-radius-round: 9999px;
   
@@ -423,6 +480,89 @@ body {
 }
 .el-switch.is-checked .el-switch__core::after {
   background-color: #060b18 !important;
+}
+
+/* Tree */
+.el-tree {
+  background: transparent !important;
+  color: var(--mf-text-main);
+}
+.el-tree-node__content {
+  border-radius: 6px;
+  color: var(--mf-text-main) !important;
+}
+.el-tree-node__content:hover {
+  background: rgba(0, 212, 255, 0.06) !important;
+}
+.el-tree-node.is-current > .el-tree-node__content {
+  background: rgba(0, 212, 255, 0.1) !important;
+  color: var(--mf-primary) !important;
+}
+.el-tree-node__expand-icon {
+  color: var(--mf-text-muted);
+}
+.el-tree-node__expand-icon.is-leaf {
+  color: transparent;
+}
+.el-tree .el-checkbox__inner {
+  background-color: rgba(30, 41, 59, 0.8) !important;
+  border-color: var(--mf-border) !important;
+}
+.el-tree .el-checkbox__input.is-checked .el-checkbox__inner,
+.el-tree .el-checkbox__input.is-indeterminate .el-checkbox__inner {
+  background-color: var(--mf-primary) !important;
+  border-color: var(--mf-primary) !important;
+}
+.el-tree .el-checkbox__input.is-checked .el-checkbox__inner::after,
+.el-tree .el-checkbox__input.is-indeterminate .el-checkbox__inner::before {
+  border-color: #060b18 !important;
+}
+
+/* Alert */
+.el-alert {
+  border-radius: var(--mf-radius-md) !important;
+  border: 1px solid var(--mf-border) !important;
+}
+.el-alert.is-light {
+  background: rgba(15, 23, 42, 0.95) !important;
+  color: var(--mf-text-main) !important;
+}
+.el-alert__title {
+  color: var(--mf-text-main) !important;
+}
+.el-alert__description {
+  color: var(--mf-text-muted) !important;
+}
+.el-alert__close-btn {
+  color: var(--mf-text-muted) !important;
+}
+.el-alert--success.is-light { background: rgba(16, 185, 129, 0.12) !important; }
+.el-alert--success .el-alert__title { color: #34d399 !important; }
+.el-alert--warning.is-light { background: rgba(245, 158, 11, 0.12) !important; }
+.el-alert--warning .el-alert__title { color: #fbbf24 !important; }
+.el-alert--error.is-light { background: rgba(239, 68, 68, 0.12) !important; }
+.el-alert--error .el-alert__title { color: #f87171 !important; }
+.el-alert--info.is-light { background: rgba(0, 212, 255, 0.1) !important; }
+.el-alert--info .el-alert__title { color: #00d4ff !important; }
+
+/* Progress */
+.el-progress-bar__outer {
+  background: rgba(30, 41, 59, 0.8) !important;
+}
+.el-progress-bar__inner {
+  background: linear-gradient(90deg, #00d4ff, #0ea5e9) !important;
+}
+.el-progress__text {
+  color: var(--mf-text-main) !important;
+}
+
+/* Divider */
+.el-divider {
+  border-top: 1px solid var(--mf-border) !important;
+}
+.el-divider__text {
+  background: var(--mf-surface) !important;
+  color: var(--mf-text-muted) !important;
 }
 
 /* Card System */
