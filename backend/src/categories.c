@@ -69,7 +69,22 @@ static int64_t insert_cat(csilk_db_pool_t* pool, int64_t user_id, const char* na
             "VALUES (%lld, '%s', '%s', '%s', 'CNY', '', %d) RETURNING id",
             (long long)user_id, name, type, asset_type, sort_order);
     }
-    csilk_json_t* res = csilk_db_query_json(pool, sql);
+    char uid_str[32], pid_str[32], sort_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    snprintf(pid_str, sizeof(pid_str), "%lld", (long long)parent_id);
+    snprintf(sort_str, sizeof(sort_str), "%d", sort_order);
+    csilk_json_t* res = NULL;
+    if (parent_id > 0) {
+        const char* params[] = { uid_str, name, pid_str, type, asset_type, "CNY", "", sort_str, NULL };
+        res = csilk_db_query_param_json(pool,
+            "INSERT INTO categories (user_id, name, parent_id, type, asset_type, currency, icon, sort_order) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id", params);
+    } else {
+        const char* params[] = { uid_str, name, type, asset_type, "CNY", "", sort_str, NULL };
+        res = csilk_db_query_param_json(pool,
+            "INSERT INTO categories (user_id, name, type, asset_type, currency, icon, sort_order) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id", params);
+    }
     int64_t id = 0;
     if (res && csilk_json_array_size(res) > 0) {
         id = db_get_int(csilk_json_array_get(res, 0), "id");
@@ -79,11 +94,11 @@ static int64_t insert_cat(csilk_db_pool_t* pool, int64_t user_id, const char* na
 }
 
 static void ensure_default_categories_for_type(csilk_db_pool_t* pool, int64_t user_id, const char* type) {
-    char count_sql[256];
-    snprintf(count_sql, sizeof(count_sql),
-        "SELECT COUNT(*) as cnt FROM categories WHERE user_id = %lld AND type = '%s'",
-        (long long)user_id, type);
-    csilk_json_t* cnt_res = csilk_db_query_json(pool, count_sql);
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    const char* cnt_params[] = { uid_str, type, NULL };
+    csilk_json_t* cnt_res = csilk_db_query_param_json(pool,
+        "SELECT COUNT(*) as cnt FROM categories WHERE user_id = ? AND type = ?", cnt_params);
     if (!cnt_res) return;
     int cnt = 0;
     if (csilk_json_array_size(cnt_res) > 0) {
@@ -191,51 +206,55 @@ void categories_list(csilk_ctx_t* c) {
         ensure_default_categories_for_type(pool, user_id, "transaction");
     }
 
-    char sql[512];
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
 
+    csilk_json_t* rows = NULL;
     if (type_query && strlen(type_query) > 0) {
         if (strstr(type_query, ",")) {
-            char in_clause[256] = {0};
             char copy[128];
             strncpy(copy, type_query, sizeof(copy)-1);
             copy[sizeof(copy)-1] = '\0';
+            const char* params[16];
+            params[0] = uid_str;
+            int pidx = 1;
+            char in_placeholders[128] = {0};
             char* tok = strtok(copy, ",");
-            int first = 1;
-            while (tok) {
+            while (tok && pidx < 15) {
                 while (*tok == ' ') tok++;
                 if (strlen(tok) > 0) {
-                    if (!first) strncat(in_clause, ",", sizeof(in_clause)-strlen(in_clause)-1);
-                    strncat(in_clause, "'", sizeof(in_clause)-strlen(in_clause)-1);
-                    strncat(in_clause, tok, sizeof(in_clause)-strlen(in_clause)-1);
-                    strncat(in_clause, "'", sizeof(in_clause)-strlen(in_clause)-1);
-                    first = 0;
+                    if (pidx > 1) strncat(in_placeholders, ", ", sizeof(in_placeholders)-strlen(in_placeholders)-1);
+                    strncat(in_placeholders, "?", sizeof(in_placeholders)-strlen(in_placeholders)-1);
+                    params[pidx++] = tok;
                 }
                 tok = strtok(NULL, ",");
             }
-            snprintf(sql, sizeof(sql),
+            params[pidx] = NULL;
+            char p_sql[512];
+            snprintf(p_sql, sizeof(p_sql),
                 "SELECT c.id, c.name, c.parent_id, "
                 "(SELECT p.name FROM categories p WHERE p.id=c.parent_id) as parent_name, "
                 "c.type, c.asset_type, c.currency, c.icon, c.sort_order "
-                "FROM categories c WHERE user_id = %lld AND parent_id IS NULL AND c.type IN (%s) ORDER BY c.sort_order",
-                (long long)user_id, in_clause[0] ? in_clause : "'asset'");
+                "FROM categories c WHERE user_id = ? AND parent_id IS NULL AND c.type IN (%s) ORDER BY c.sort_order",
+                in_placeholders[0] ? in_placeholders : "?");
+            rows = csilk_db_query_param_json(pool, p_sql, params);
         } else {
-            snprintf(sql, sizeof(sql),
+            const char* params[] = { uid_str, type_query, NULL };
+            rows = csilk_db_query_param_json(pool,
                 "SELECT c.id, c.name, c.parent_id, "
                 "(SELECT p.name FROM categories p WHERE p.id=c.parent_id) as parent_name, "
                 "c.type, c.asset_type, c.currency, c.icon, c.sort_order "
-                "FROM categories c WHERE user_id = %lld AND parent_id IS NULL AND c.type = '%s' ORDER BY c.sort_order",
-                (long long)user_id, type_query);
+                "FROM categories c WHERE user_id = ? AND parent_id IS NULL AND c.type = ? ORDER BY c.sort_order", params);
         }
     } else {
-        snprintf(sql, sizeof(sql),
+        const char* params[] = { uid_str, NULL };
+        rows = csilk_db_query_param_json(pool,
             "SELECT c.id, c.name, c.parent_id, "
             "(SELECT p.name FROM categories p WHERE p.id=c.parent_id) as parent_name, "
             "c.type, c.asset_type, c.currency, c.icon, c.sort_order "
-            "FROM categories c WHERE user_id = %lld AND parent_id IS NULL ORDER BY c.sort_order",
-            (long long)user_id);
+            "FROM categories c WHERE user_id = ? AND parent_id IS NULL ORDER BY c.sort_order", params);
     }
 
-    csilk_json_t* rows = csilk_db_query_json(pool, sql);
     if (!rows) { respond_error(c, 500, "查询失败"); return; }
 
     csilk_json_t* tree = csilk_json_array();
@@ -278,24 +297,30 @@ void categories_create(csilk_ctx_t* c) {
     int sort_order = (int)csilk_json_get_number(body, "sort_order");
 
     csilk_db_pool_t* pool = db_get_pool();
-    char sql[512];
+    char uid_str[32], pid_str[32], sort_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    snprintf(pid_str, sizeof(pid_str), "%lld", (long long)parent_id);
+    snprintf(sort_str, sizeof(sort_str), "%d", sort_order);
+
+    csilk_json_t* res = NULL;
     if (parent_id > 0) {
-        snprintf(sql, sizeof(sql),
+        const char* params[] = { uid_str, name, pid_str, type, asset_type, currency, icon, sort_str, NULL };
+        res = csilk_db_query_param_json(pool,
             "INSERT INTO categories (user_id, name, parent_id, type, asset_type, currency, icon, sort_order) "
-            "VALUES (%lld, '%s', %lld, '%s', '%s', '%s', '%s', %d)",
-            (long long)user_id, name, parent_id, type, asset_type, currency, icon, sort_order);
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)", params);
     } else {
-        snprintf(sql, sizeof(sql),
+        const char* params[] = { uid_str, name, type, asset_type, currency, icon, sort_str, NULL };
+        res = csilk_db_query_param_json(pool,
             "INSERT INTO categories (user_id, name, type, asset_type, currency, icon, sort_order) "
-            "VALUES (%lld, '%s', '%s', '%s', '%s', '%s', %d)",
-            (long long)user_id, name, type, asset_type, currency, icon, sort_order);
+            "VALUES (?, ?, ?, ?, ?, ?, ?)", params);
     }
 
-    if (csilk_db_exec(pool, sql) != 0) {
+    if (!res) {
         csilk_json_free(body);
         respond_error(c, 500, "创建失败");
         return;
     }
+    csilk_json_free(res);
     csilk_json_free(body);
     respond_ok_null(c);
 }
@@ -321,15 +346,19 @@ void categories_update(csilk_ctx_t* c) {
     const char* icon = csilk_json_get_string(body, "icon");
     int sort_order = (int)csilk_json_get_number(body, "sort_order");
 
-    char sql[512];
-    snprintf(sql, sizeof(sql),
-        "UPDATE categories SET name='%s', type='%s', asset_type='%s', currency='%s', icon='%s', sort_order=%d "
-        "WHERE id=%s AND user_id=%lld",
-        name ? name : "", type, asset_type,
-        currency ? currency : "CNY", icon ? icon : "", sort_order,
-        id_str, (long long)user_id);
+    char uid_str[32], sort_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    snprintf(sort_str, sizeof(sort_str), "%d", sort_order);
 
-    csilk_db_exec(db_get_pool(), sql);
+    const char* params[] = {
+        name ? name : "", type, asset_type, currency ? currency : "CNY",
+        icon ? icon : "", sort_str, id_str, uid_str, NULL
+    };
+    csilk_json_t* res = csilk_db_query_param_json(db_get_pool(),
+        "UPDATE categories SET name=?, type=?, asset_type=?, currency=?, icon=?, sort_order=? "
+        "WHERE id=? AND user_id=?", params);
+    if (res) csilk_json_free(res);
+
     csilk_json_free(body);
     respond_ok_null(c);
 }
@@ -344,11 +373,11 @@ void categories_delete(csilk_ctx_t* c) {
     csilk_db_pool_t* pool = db_get_pool();
 
     // Check if has children
-    char sql[256];
-    snprintf(sql, sizeof(sql),
-        "SELECT COUNT(*) as cnt FROM categories WHERE parent_id = %s AND user_id = %lld",
-        id_str, (long long)user_id);
-    csilk_json_t* cnt_result = csilk_db_query_json(pool, sql);
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    const char* chk_params[] = { id_str, uid_str, NULL };
+    csilk_json_t* cnt_result = csilk_db_query_param_json(pool,
+        "SELECT COUNT(*) as cnt FROM categories WHERE parent_id = ? AND user_id = ?", chk_params);
     if (cnt_result && csilk_json_array_size(cnt_result) > 0) {
         int cnt = (int)db_get_num(csilk_json_array_get(cnt_result, 0), "cnt");
         csilk_json_free(cnt_result);
@@ -357,8 +386,9 @@ void categories_delete(csilk_ctx_t* c) {
         if (cnt_result) csilk_json_free(cnt_result);
     }
 
-    snprintf(sql, sizeof(sql), "DELETE FROM categories WHERE id=%s AND user_id=%lld",
-             id_str, (long long)user_id);
-    csilk_db_exec(pool, sql);
+    const char* del_params[] = { id_str, uid_str, NULL };
+    csilk_json_t* del_res = csilk_db_query_param_json(pool,
+        "DELETE FROM categories WHERE id=? AND user_id=?", del_params);
+    if (del_res) csilk_json_free(del_res);
     respond_ok_null(c);
 }

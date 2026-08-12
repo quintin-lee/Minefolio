@@ -13,24 +13,26 @@ void assets_list(csilk_ctx_t* c) {
     csilk_db_pool_t* pool = db_get_pool();
     const char* cat_id = csilk_get_query(c, "category_id");
 
-    char sql[512];
-    if (cat_id) {
-        snprintf(sql, sizeof(sql),
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+
+    csilk_json_t* result = NULL;
+    if (cat_id && strlen(cat_id) > 0) {
+        const char* params[] = { uid_str, cat_id, NULL };
+        result = csilk_db_query_param_json(pool,
             "SELECT a.id, a.name, a.account_no, a.current_value, a.currency, "
             "a.note, a.created_at, a.updated_at, c.name as category_name, c.asset_type "
             "FROM assets a LEFT JOIN categories c ON a.category_id=c.id "
-            "WHERE a.user_id=%lld AND a.category_id=%s ORDER BY a.name",
-            (long long)user_id, cat_id);
+            "WHERE a.user_id=? AND a.category_id=? ORDER BY a.name", params);
     } else {
-        snprintf(sql, sizeof(sql),
+        const char* params[] = { uid_str, NULL };
+        result = csilk_db_query_param_json(pool,
             "SELECT a.id, a.name, a.account_no, a.current_value, a.currency, "
             "a.note, a.created_at, a.updated_at, c.name as category_name, c.asset_type "
             "FROM assets a LEFT JOIN categories c ON a.category_id=c.id "
-            "WHERE a.user_id=%lld ORDER BY c.name, a.name",
-            (long long)user_id);
+            "WHERE a.user_id=? ORDER BY c.name, a.name", params);
     }
 
-    csilk_json_t* result = csilk_db_query_json(pool, sql);
     if (!result) { respond_error(c, 500, "查询失败"); return; }
     respond_ok(c, result);
 }
@@ -57,18 +59,24 @@ void assets_create(csilk_ctx_t* c) {
     const char* note = csilk_json_get_string(body, "note");
 
     csilk_db_pool_t* pool = db_get_pool();
-    char sql[512];
-    snprintf(sql, sizeof(sql),
-        "INSERT INTO assets (user_id, category_id, name, account_no, current_value, currency, note) "
-        "VALUES (%lld, %lld, '%s', '%s', %.2f, '%s', '%s')",
-        (long long)user_id, (long long)category_id,
-        name, account_no ? account_no : "", value, currency, note ? note : "");
+    char uid_str[32], cat_str[32], val_str[64];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    snprintf(cat_str, sizeof(cat_str), "%lld", (long long)category_id);
+    snprintf(val_str, sizeof(val_str), "%.6f", value);
 
-    if (csilk_db_exec(pool, sql) != 0) {
+    const char* params[] = {
+        uid_str, cat_str, name, account_no ? account_no : "", val_str, currency, note ? note : "", NULL
+    };
+    csilk_json_t* res = csilk_db_query_param_json(pool,
+        "INSERT INTO assets (user_id, category_id, name, account_no, current_value, currency, note) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)", params);
+
+    if (!res) {
         csilk_json_free(body);
         respond_error(c, 500, "创建失败");
         return;
     }
+    csilk_json_free(res);
     csilk_json_free(body);
     respond_ok_null(c);
 }
@@ -84,12 +92,13 @@ void assets_update(csilk_ctx_t* c) {
     if (!body) { respond_bad_request(c, "请求体必须为 JSON"); return; }
 
     csilk_db_pool_t* pool = db_get_pool();
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
 
     // Verify ownership
-    char check_sql[256];
-    snprintf(check_sql, sizeof(check_sql),
-        "SELECT id FROM assets WHERE id=%s AND user_id=%lld", id_str, (long long)user_id);
-    csilk_json_t* chk = csilk_db_query_json(pool, check_sql);
+    const char* chk_params[] = { id_str, uid_str, NULL };
+    csilk_json_t* chk = csilk_db_query_param_json(pool,
+        "SELECT id FROM assets WHERE id=? AND user_id=?", chk_params);
     if (!chk || csilk_json_array_size(chk) == 0) {
         csilk_json_free(body);
         if (chk) csilk_json_free(chk);
@@ -104,15 +113,18 @@ void assets_update(csilk_ctx_t* c) {
     const char* currency = csilk_json_get_string(body, "currency");
     const char* note = csilk_json_get_string(body, "note");
 
-    char sql[512];
-    snprintf(sql, sizeof(sql),
-        "UPDATE assets SET name='%s', account_no='%s', current_value=%.2f, currency='%s', note='%s', "
-        "updated_at=CURRENT_TIMESTAMP WHERE id=%s AND user_id=%lld",
-        name ? name : "", account_no ? account_no : "", value,
-        currency ? currency : "CNY", note ? note : "",
-        id_str, (long long)user_id);
+    char val_str[64];
+    snprintf(val_str, sizeof(val_str), "%.6f", value);
 
-    csilk_db_exec(pool, sql);
+    const char* params[] = {
+        name ? name : "", account_no ? account_no : "", val_str,
+        currency ? currency : "CNY", note ? note : "", id_str, uid_str, NULL
+    };
+    csilk_json_t* res = csilk_db_query_param_json(pool,
+        "UPDATE assets SET name=?, account_no=?, current_value=?, currency=?, note=?, "
+        "updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?", params);
+    if (res) csilk_json_free(res);
+
     csilk_json_free(body);
     respond_ok_null(c);
 }
@@ -125,13 +137,17 @@ void assets_delete(csilk_ctx_t* c) {
     if (!id_str) { respond_bad_request(c, "缺少 id"); return; }
 
     csilk_db_pool_t* pool = db_get_pool();
-    char sql[256];
-    snprintf(sql, sizeof(sql),
-        "DELETE FROM assets WHERE id=%s AND user_id=%lld", id_str, (long long)user_id);
-    if (csilk_db_exec(pool, sql) != 0) {
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    const char* params[] = { id_str, uid_str, NULL };
+
+    csilk_json_t* res = csilk_db_query_param_json(pool,
+        "DELETE FROM assets WHERE id=? AND user_id=?", params);
+    if (!res) {
         respond_error(c, 500, "删除失败");
         return;
     }
+    csilk_json_free(res);
     respond_ok_null(c);
 }
 
@@ -143,14 +159,16 @@ void assets_detail(csilk_ctx_t* c) {
     if (!id_str) { respond_bad_request(c, "缺少 id"); return; }
 
     csilk_db_pool_t* pool = db_get_pool();
-    char sql[512];
-    snprintf(sql, sizeof(sql),
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    const char* params[] = { id_str, uid_str, NULL };
+
+    csilk_json_t* result = csilk_db_query_param_json(pool,
         "SELECT a.id, a.name, a.account_no, a.current_value, a.currency, "
         "a.note, a.created_at, a.updated_at, c.name as category_name, c.asset_type "
         "FROM assets a LEFT JOIN categories c ON a.category_id=c.id "
-        "WHERE a.id=%s AND a.user_id=%lld", id_str, (long long)user_id);
+        "WHERE a.id=? AND a.user_id=?", params);
 
-    csilk_json_t* result = csilk_db_query_json(pool, sql);
     if (!result || csilk_json_array_size(result) == 0) {
         respond_not_found(c);
         if (result) csilk_json_free(result);
@@ -171,12 +189,11 @@ void assets_detail(csilk_ctx_t* c) {
     csilk_json_add_string(resp, "updated_at", csilk_json_get_string(row, "updated_at"));
 
     // 历史交易 (spec §4.4: 资产详情 + 历史交易)
-    snprintf(sql, sizeof(sql),
+    csilk_json_t* tx_rows = csilk_db_query_param_json(pool,
         "SELECT id, asset_id, transaction_type, amount, quantity, price_per_unit, "
         "currency, transaction_date, note, created_at "
-        "FROM transactions WHERE asset_id=%s AND user_id=%lld "
-        "ORDER BY transaction_date DESC", id_str, (long long)user_id);
-    csilk_json_t* tx_rows = csilk_db_query_json(pool, sql);
+        "FROM transactions WHERE asset_id=? AND user_id=? "
+        "ORDER BY transaction_date DESC", params);
     csilk_json_t* transactions = csilk_json_array();
     if (tx_rows) {
         size_t n = csilk_json_array_size(tx_rows);

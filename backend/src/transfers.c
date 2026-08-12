@@ -35,12 +35,16 @@ void transfers_create(csilk_ctx_t* c) {
         return;
     }
 
+    char fid_str[32], tid_str[32], uid_str[32], amt_str[64];
+    snprintf(fid_str, sizeof(fid_str), "%lld", (long long)from_id);
+    snprintf(tid_str, sizeof(tid_str), "%lld", (long long)to_id);
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    snprintf(amt_str, sizeof(amt_str), "%.6f", amount);
+
     // Verify both assets belong to user
-    char check_sql[512];
-    snprintf(check_sql, sizeof(check_sql),
-        "SELECT COUNT(*) as cnt FROM assets WHERE id IN (%lld, %lld) AND user_id=%lld",
-        (long long)from_id, (long long)to_id, (long long)user_id);
-    csilk_json_t* chk = csilk_db_query_json(pool, check_sql);
+    const char* chk_params[] = { fid_str, tid_str, uid_str, NULL };
+    csilk_json_t* chk = csilk_db_query_param_json(pool,
+        "SELECT COUNT(*) as cnt FROM assets WHERE id IN (?, ?) AND user_id=?", chk_params);
     if (!chk || csilk_json_array_size(chk) == 0 ||
         db_get_num(csilk_json_array_get(chk, 0), "cnt") != 2) {
         csilk_json_free(body);
@@ -54,34 +58,31 @@ void transfers_create(csilk_ctx_t* c) {
     csilk_db_exec(pool, "BEGIN");
 
     // Transfer out
-    char out_sql[512];
-    snprintf(out_sql, sizeof(out_sql),
+    const char* out_params[] = { uid_str, fid_str, amt_str, currency, date, note ? note : "", NULL };
+    csilk_json_t* res1 = csilk_db_query_param_json(pool,
         "INSERT INTO transactions (user_id, asset_id, transaction_type, amount, currency, transaction_date, note) "
-        "VALUES (%lld, %lld, 'transfer_out', %.2f, '%s', '%s', '%s')",
-        (long long)user_id, (long long)from_id, amount, currency, date, note ? note : "");
-    csilk_db_exec(pool, out_sql);
+        "VALUES (?, ?, 'transfer_out', ?, ?, ?, ?)", out_params);
+    if (res1) csilk_json_free(res1);
 
     // Transfer in
-    char in_sql[512];
-    snprintf(in_sql, sizeof(in_sql),
+    const char* in_params[] = { uid_str, tid_str, amt_str, currency, date, note ? note : "", NULL };
+    csilk_json_t* res2 = csilk_db_query_param_json(pool,
         "INSERT INTO transactions (user_id, asset_id, transaction_type, amount, currency, transaction_date, note) "
-        "VALUES (%lld, %lld, 'transfer_in', %.2f, '%s', '%s', '%s')",
-        (long long)user_id, (long long)to_id, amount, currency, date, note ? note : "");
-    csilk_db_exec(pool, in_sql);
+        "VALUES (?, ?, 'transfer_in', ?, ?, ?, ?)", in_params);
+    if (res2) csilk_json_free(res2);
 
     // Update asset values
-    char update_sql[512];
-    snprintf(update_sql, sizeof(update_sql),
-        "UPDATE assets SET current_value=current_value-%.2f, updated_at=CURRENT_TIMESTAMP "
-        "WHERE id=%lld AND user_id=%lld",
-        amount, (long long)from_id, (long long)user_id);
-    csilk_db_exec(pool, update_sql);
+    const char* up1_params[] = { amt_str, fid_str, uid_str, NULL };
+    csilk_json_t* res3 = csilk_db_query_param_json(pool,
+        "UPDATE assets SET current_value=current_value-?, updated_at=CURRENT_TIMESTAMP "
+        "WHERE id=? AND user_id=?", up1_params);
+    if (res3) csilk_json_free(res3);
 
-    snprintf(update_sql, sizeof(update_sql),
-        "UPDATE assets SET current_value=current_value+%.2f, updated_at=CURRENT_TIMESTAMP "
-        "WHERE id=%lld AND user_id=%lld",
-        amount, (long long)to_id, (long long)user_id);
-    csilk_db_exec(pool, update_sql);
+    const char* up2_params[] = { amt_str, tid_str, uid_str, NULL };
+    csilk_json_t* res4 = csilk_db_query_param_json(pool,
+        "UPDATE assets SET current_value=current_value+?, updated_at=CURRENT_TIMESTAMP "
+        "WHERE id=? AND user_id=?", up2_params);
+    if (res4) csilk_json_free(res4);
 
     csilk_db_exec(pool, "COMMIT");
     csilk_json_free(body);

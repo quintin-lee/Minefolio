@@ -11,12 +11,12 @@ void tags_list(csilk_ctx_t* c) {
     if (user_id < 0) { respond_unauthorized(c); return; }
 
     csilk_db_pool_t* pool = db_get_pool();
-    char sql[256];
-    snprintf(sql, sizeof(sql),
-        "SELECT id, name, color, created_at FROM tags WHERE user_id=%lld ORDER BY name",
-        (long long)user_id);
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    const char* params[] = { uid_str, NULL };
 
-    csilk_json_t* result = csilk_db_query_json(pool, sql);
+    csilk_json_t* result = csilk_db_query_param_json(pool,
+        "SELECT id, name, color, created_at FROM tags WHERE user_id=? ORDER BY name", params);
     if (!result) { respond_error(c, 500, "查询失败"); return; }
     respond_ok(c, result);
 }
@@ -39,16 +39,18 @@ void tags_create(csilk_ctx_t* c) {
     if (!color) color = "#666666";
 
     csilk_db_pool_t* pool = db_get_pool();
-    char sql[256];
-    snprintf(sql, sizeof(sql),
-        "INSERT INTO tags (user_id, name, color) VALUES (%lld, '%s', '%s')",
-        (long long)user_id, name, color);
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    const char* params[] = { uid_str, name, color, NULL };
 
-    if (csilk_db_exec(pool, sql) != 0) {
+    csilk_json_t* res = csilk_db_query_param_json(pool,
+        "INSERT INTO tags (user_id, name, color) VALUES (?, ?, ?)", params);
+    if (!res) {
         csilk_json_free(body);
         respond_error(c, 500, "创建失败");
         return;
     }
+    csilk_json_free(res);
     csilk_json_free(body);
     respond_ok_null(c);
 }
@@ -66,12 +68,14 @@ void tags_update(csilk_ctx_t* c) {
     const char* name = csilk_json_get_string(body, "name");
     const char* color = csilk_json_get_string(body, "color");
 
-    char sql[512];
-    snprintf(sql, sizeof(sql),
-        "UPDATE tags SET name='%s', color='%s' WHERE id=%s AND user_id=%lld",
-        name ? name : "", color ? color : "", id_str, (long long)user_id);
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    const char* params[] = { name ? name : "", color ? color : "", id_str, uid_str, NULL };
 
-    csilk_db_exec(db_get_pool(), sql);
+    csilk_json_t* res = csilk_db_query_param_json(db_get_pool(),
+        "UPDATE tags SET name=?, color=? WHERE id=? AND user_id=?", params);
+    if (res) csilk_json_free(res);
+
     csilk_json_free(body);
     respond_ok_null(c);
 }
@@ -84,10 +88,14 @@ void tags_delete(csilk_ctx_t* c) {
     if (!id_str) { respond_bad_request(c, "缺少 id"); return; }
 
     csilk_db_pool_t* pool = db_get_pool();
-    char sql[256];
-    snprintf(sql, sizeof(sql),
-        "DELETE FROM tags WHERE id=%s AND user_id=%lld", id_str, (long long)user_id);
-    csilk_db_exec(pool, sql);
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    const char* params[] = { id_str, uid_str, NULL };
+
+    csilk_json_t* res = csilk_db_query_param_json(pool,
+        "DELETE FROM tags WHERE id=? AND user_id=?", params);
+    if (res) csilk_json_free(res);
+
     respond_ok_null(c);
 }
 
@@ -97,18 +105,22 @@ void tags_suggestions(csilk_ctx_t* c) {
 
     const char* q = csilk_get_query(c, "q");
     csilk_db_pool_t* pool = db_get_pool();
-    char sql[256];
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+
+    csilk_json_t* result = NULL;
     if (q && strlen(q) > 0) {
-        snprintf(sql, sizeof(sql),
-            "SELECT id, name, color FROM tags WHERE user_id=%lld AND name LIKE '%%%s%%' LIMIT 10",
-            (long long)user_id, q);
+        char pattern[256];
+        snprintf(pattern, sizeof(pattern), "%%%s%%", q);
+        const char* params[] = { uid_str, pattern, NULL };
+        result = csilk_db_query_param_json(pool,
+            "SELECT id, name, color FROM tags WHERE user_id=? AND name LIKE ? LIMIT 10", params);
     } else {
-        snprintf(sql, sizeof(sql),
-            "SELECT id, name, color FROM tags WHERE user_id=%lld LIMIT 20",
-            (long long)user_id);
+        const char* params[] = { uid_str, NULL };
+        result = csilk_db_query_param_json(pool,
+            "SELECT id, name, color FROM tags WHERE user_id=? LIMIT 20", params);
     }
 
-    csilk_json_t* result = csilk_db_query_json(pool, sql);
     if (!result) { respond_error(c, 500, "查询失败"); return; }
     respond_ok(c, result);
 }

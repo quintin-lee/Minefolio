@@ -38,6 +38,10 @@ void transactions_list(csilk_ctx_t* c) {
     const char* type = csilk_get_query(c, "type");
     const char* start_date = csilk_get_query(c, "start_date");
     const char* end_date = csilk_get_query(c, "end_date");
+    const char* source_type = csilk_get_query(c, "source_type");
+
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
 
     char sql[1024];
     snprintf(sql, sizeof(sql),
@@ -47,24 +51,40 @@ void transactions_list(csilk_ctx_t* c) {
         "FROM transactions t "
         "LEFT JOIN assets a ON t.asset_id=a.id "
         "LEFT JOIN categories c ON t.category_id=c.id "
-        "WHERE t.user_id=%lld", (long long)user_id);
+        "WHERE t.user_id=?");
 
-    if (asset_id)
-        snprintf(sql + strlen(sql), sizeof(sql) - strlen(sql), " AND t.asset_id=%s", asset_id);
-    if (category_id)
-        snprintf(sql + strlen(sql), sizeof(sql) - strlen(sql), " AND t.category_id=%s", category_id);
-    if (type)
-        snprintf(sql + strlen(sql), sizeof(sql) - strlen(sql), " AND t.transaction_type='%s'", type);
-    const char* source_type = csilk_get_query(c, "source_type");
-    if (source_type)
-        snprintf(sql + strlen(sql), sizeof(sql) - strlen(sql), " AND t.source_type='%s'", source_type);
-    if (start_date)
-        snprintf(sql + strlen(sql), sizeof(sql) - strlen(sql), " AND t.transaction_date >= '%s'", start_date);
-    if (end_date)
-        snprintf(sql + strlen(sql), sizeof(sql) - strlen(sql), " AND t.transaction_date <= '%s'", end_date);
+    const char* params[12];
+    params[0] = uid_str;
+    int pidx = 1;
+
+    if (asset_id) {
+        snprintf(sql + strlen(sql), sizeof(sql) - strlen(sql), " AND t.asset_id=?");
+        params[pidx++] = asset_id;
+    }
+    if (category_id) {
+        snprintf(sql + strlen(sql), sizeof(sql) - strlen(sql), " AND t.category_id=?");
+        params[pidx++] = category_id;
+    }
+    if (type) {
+        snprintf(sql + strlen(sql), sizeof(sql) - strlen(sql), " AND t.transaction_type=?");
+        params[pidx++] = type;
+    }
+    if (source_type) {
+        snprintf(sql + strlen(sql), sizeof(sql) - strlen(sql), " AND t.source_type=?");
+        params[pidx++] = source_type;
+    }
+    if (start_date) {
+        snprintf(sql + strlen(sql), sizeof(sql) - strlen(sql), " AND t.transaction_date >= ?");
+        params[pidx++] = start_date;
+    }
+    if (end_date) {
+        snprintf(sql + strlen(sql), sizeof(sql) - strlen(sql), " AND t.transaction_date <= ?");
+        params[pidx++] = end_date;
+    }
     snprintf(sql + strlen(sql), sizeof(sql) - strlen(sql), " ORDER BY t.transaction_date DESC");
+    params[pidx] = NULL;
 
-    csilk_json_t* result = csilk_db_query_json(pool, sql);
+    csilk_json_t* result = csilk_db_query_param_json(pool, sql, params);
     if (!result) { respond_error(c, 500, "查询失败"); return; }
     respond_ok(c, result);
 }
@@ -91,13 +111,14 @@ void transactions_create(csilk_ctx_t* c) {
     }
 
     csilk_db_pool_t* pool = db_get_pool();
+    char uid_str[32], ast_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    snprintf(ast_str, sizeof(ast_str), "%lld", (long long)asset_id);
 
     // Verify asset belongs to user
-    char check_sql[256];
-    snprintf(check_sql, sizeof(check_sql),
-        "SELECT id FROM assets WHERE id=%lld AND user_id=%lld",
-        (long long)asset_id, (long long)user_id);
-    csilk_json_t* chk = csilk_db_query_json(pool, check_sql);
+    const char* chk_params[] = { ast_str, uid_str, NULL };
+    csilk_json_t* chk = csilk_db_query_param_json(pool,
+        "SELECT id FROM assets WHERE id=? AND user_id=?", chk_params);
     if (!chk || csilk_json_array_size(chk) == 0) {
         csilk_json_free(body);
         if (chk) csilk_json_free(chk);
@@ -112,13 +133,16 @@ void transactions_create(csilk_ctx_t* c) {
     double price = csilk_json_get_number(body, "price_per_unit");
     double qty = csilk_json_get_number(body, "quantity");
 
-    char sql[512];
-    snprintf(sql, sizeof(sql),
-        "INSERT INTO transactions (user_id, asset_id, category_id, source_type, transaction_type, "
-        "amount, price_per_unit, quantity, currency, transaction_date, note) "
-        "VALUES (%lld, %lld, %lld, '%s', '%s', %.6f, %.4f, %.4f, '%s', '%s', '%s') RETURNING id",
-        (long long)user_id, (long long)asset_id, (long long)category_id,
-        src_type, type, amount, price, qty, currency, date, note ? note : "");
+    char cat_str[32], amt_str[64], price_str[64], qty_str[64];
+    snprintf(cat_str, sizeof(cat_str), "%lld", (long long)category_id);
+    snprintf(amt_str, sizeof(amt_str), "%.6f", amount);
+    snprintf(price_str, sizeof(price_str), "%.4f", price);
+    snprintf(qty_str, sizeof(qty_str), "%.4f", qty);
+
+    const char* ins_params[] = {
+        uid_str, ast_str, cat_str, src_type, type,
+        amt_str, price_str, qty_str, currency, date, note ? note : "", NULL
+    };
 
     if (csilk_db_exec(pool, "BEGIN TRANSACTION") != 0) {
         csilk_json_free(body);
@@ -126,7 +150,10 @@ void transactions_create(csilk_ctx_t* c) {
         return;
     }
 
-    csilk_json_t* ins = csilk_db_query_json(pool, sql);
+    csilk_json_t* ins = csilk_db_query_param_json(pool,
+        "INSERT INTO transactions (user_id, asset_id, category_id, source_type, transaction_type, "
+        "amount, price_per_unit, quantity, currency, transaction_date, note) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id", ins_params);
     if (!ins || csilk_json_array_size(ins) == 0) {
         csilk_db_exec(pool, "ROLLBACK");
         if (ins) csilk_json_free(ins);
@@ -165,11 +192,12 @@ void transactions_update(csilk_ctx_t* c) {
     if (!body) { respond_bad_request(c, "请求体必须为 JSON"); return; }
 
     csilk_db_pool_t* pool = db_get_pool();
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
 
-    char check_sql[256];
-    snprintf(check_sql, sizeof(check_sql),
-        "SELECT id FROM transactions WHERE id=%s AND user_id=%lld", id_str, (long long)user_id);
-    csilk_json_t* chk = csilk_db_query_json(pool, check_sql);
+    const char* chk_params[] = { id_str, uid_str, NULL };
+    csilk_json_t* chk = csilk_db_query_param_json(pool,
+        "SELECT id FROM transactions WHERE id=? AND user_id=?", chk_params);
     if (!chk || csilk_json_array_size(chk) == 0) {
         csilk_json_free(body);
         if (chk) csilk_json_free(chk);
@@ -178,12 +206,11 @@ void transactions_update(csilk_ctx_t* c) {
     }
     csilk_json_free(chk);
 
-    // 读取旧记录（差值联动需要；quantity/price 用于重算旧 buy/sell 的 type_delta）
-    char old_sql[256];
-    snprintf(old_sql, sizeof(old_sql),
+    // 读取旧记录
+    const char* old_params[] = { id_str, uid_str, NULL };
+    csilk_json_t* old_row = csilk_db_query_param_json(pool,
         "SELECT asset_id, amount, transaction_type, quantity, price_per_unit "
-        "FROM transactions WHERE id=%s AND user_id=%lld", id_str, (long long)user_id);
-    csilk_json_t* old_row = csilk_db_query_json(pool, old_sql);
+        "FROM transactions WHERE id=? AND user_id=?", old_params);
     if (!old_row || csilk_json_array_size(old_row) == 0) {
         csilk_json_free(body);
         if (old_row) csilk_json_free(old_row);
@@ -207,16 +234,17 @@ void transactions_update(csilk_ctx_t* c) {
     double qty = csilk_json_get_number(body, "quantity");
     int64_t category_id = (int64_t)csilk_json_get_number(body, "category_id");
 
-    char sql[512];
-    snprintf(sql, sizeof(sql),
-        "UPDATE transactions SET transaction_type='%s', amount=%.6f, price_per_unit=%.4f, "
-        "quantity=%.4f, currency='%s', transaction_date='%s', note='%s', "
-        "category_id=%lld, source_type='%s' WHERE id=%s AND user_id=%lld",
-        type ? type : "", amount, price, qty,
+    char amt_str[64], price_str[64], qty_str[64], cat_str[32];
+    snprintf(amt_str, sizeof(amt_str), "%.6f", amount);
+    snprintf(price_str, sizeof(price_str), "%.4f", price);
+    snprintf(qty_str, sizeof(qty_str), "%.4f", qty);
+    snprintf(cat_str, sizeof(cat_str), "%lld", (long long)category_id);
+
+    const char* up_params[] = {
+        type ? type : "", amt_str, price_str, qty_str,
         currency ? currency : "CNY", date ? date : "", note ? note : "",
-        category_id,
-        src_type ? src_type : "expense",
-        id_str, (long long)user_id);
+        cat_str, src_type ? src_type : "expense", id_str, uid_str, NULL
+    };
 
     if (csilk_db_exec(pool, "BEGIN TRANSACTION") != 0) {
         csilk_json_free(body);
@@ -225,9 +253,13 @@ void transactions_update(csilk_ctx_t* c) {
         return;
     }
 
-    csilk_db_exec(pool, sql);
+    csilk_json_t* up_res = csilk_db_query_param_json(pool,
+        "UPDATE transactions SET transaction_type=?, amount=?, price_per_unit=?, "
+        "quantity=?, currency=?, transaction_date=?, note=?, "
+        "category_id=?, source_type=? WHERE id=? AND user_id=?", up_params);
+    if (up_res) csilk_json_free(up_res);
 
-    // 差值联动（transfer_* delta 记 0；非transfer→transfer 时差值=-旧delta 天然回退）
+    // 差值联动
     double new_tdelta = tx_delta(type ? type : "", amount, price, qty);
     double diff = new_tdelta - old_tdelta;
     if (diff != 0) {
@@ -255,13 +287,14 @@ void transactions_delete(csilk_ctx_t* c) {
     if (!id_str) { respond_bad_request(c, "缺少 id"); return; }
 
     csilk_db_pool_t* pool = db_get_pool();
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
 
-    // 读取旧记录（反转联动需要）
-    char old_sql[256];
-    snprintf(old_sql, sizeof(old_sql),
+    // 读取旧记录
+    const char* old_params[] = { id_str, uid_str, NULL };
+    csilk_json_t* old_row = csilk_db_query_param_json(pool,
         "SELECT asset_id, amount, transaction_type, quantity, price_per_unit "
-        "FROM transactions WHERE id=%s AND user_id=%lld", id_str, (long long)user_id);
-    csilk_json_t* old_row = csilk_db_query_json(pool, old_sql);
+        "FROM transactions WHERE id=? AND user_id=?", old_params);
     if (!old_row || csilk_json_array_size(old_row) == 0) {
         if (old_row) csilk_json_free(old_row);
         respond_not_found(c);
@@ -281,12 +314,12 @@ void transactions_delete(csilk_ctx_t* c) {
         return;
     }
 
-    char sql[256];
-    snprintf(sql, sizeof(sql),
-        "DELETE FROM transactions WHERE id=%s AND user_id=%lld", id_str, (long long)user_id);
-    csilk_db_exec(pool, sql);
+    const char* del_params[] = { id_str, uid_str, NULL };
+    csilk_json_t* del_res = csilk_db_query_param_json(pool,
+        "DELETE FROM transactions WHERE id=? AND user_id=?", del_params);
+    if (del_res) csilk_json_free(del_res);
 
-    // 反转旧 delta（transfer_* 不联动）
+    // 反转旧 delta
     if (old_tdelta != 0) {
         if (balance_apply_delta(pool, asset_id, user_id, -old_tdelta,
                                 "transaction", atoll(id_str), NULL) != 0) {

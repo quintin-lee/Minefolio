@@ -26,31 +26,36 @@ void asset_logs_list(csilk_ctx_t* c) {
     if (page <= 0) page = 1;
     long offset = (page - 1) * limit;
 
-    char sql[512];
+    char uid_str[32], limit_buf[32], offset_buf[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    snprintf(limit_buf, sizeof(limit_buf), "%ld", limit);
+    snprintf(offset_buf, sizeof(offset_buf), "%ld", offset);
+
+    csilk_json_t* result = NULL;
     if (asset_id_str && strlen(asset_id_str) > 0) {
-        int64_t aid = atoll(asset_id_str);
-        snprintf(sql, sizeof(sql),
+        char aid_buf[32];
+        snprintf(aid_buf, sizeof(aid_buf), "%lld", atoll(asset_id_str));
+        const char* params[] = { uid_str, aid_buf, limit_buf, offset_buf, NULL };
+        result = csilk_db_query_param_json(pool,
             "SELECT abl.id, abl.asset_id, a.name AS asset_name, abl.user_id, "
             "abl.delta, abl.balance_after, abl.source_type, abl.source_id, "
             "abl.note, abl.created_at "
             "FROM asset_balance_logs abl "
             "LEFT JOIN assets a ON abl.asset_id = a.id "
-            "WHERE abl.user_id=%lld AND abl.asset_id=%lld "
-            "ORDER BY abl.created_at DESC LIMIT %ld OFFSET %ld",
-            (long long)user_id, aid, limit, offset);
+            "WHERE abl.user_id=? AND abl.asset_id=? "
+            "ORDER BY abl.created_at DESC LIMIT ? OFFSET ?", params);
     } else {
-        snprintf(sql, sizeof(sql),
+        const char* params[] = { uid_str, limit_buf, offset_buf, NULL };
+        result = csilk_db_query_param_json(pool,
             "SELECT abl.id, abl.asset_id, a.name AS asset_name, abl.user_id, "
             "abl.delta, abl.balance_after, abl.source_type, abl.source_id, "
             "abl.note, abl.created_at "
             "FROM asset_balance_logs abl "
             "LEFT JOIN assets a ON abl.asset_id = a.id "
-            "WHERE abl.user_id=%lld "
-            "ORDER BY abl.created_at DESC LIMIT %ld OFFSET %ld",
-            (long long)user_id, limit, offset);
+            "WHERE abl.user_id=? "
+            "ORDER BY abl.created_at DESC LIMIT ? OFFSET ?", params);
     }
 
-    csilk_json_t* result = csilk_db_query_json(pool, sql);
     if (!result) { respond_error(c, 500, "查询失败"); return; }
     respond_ok(c, result);
 }

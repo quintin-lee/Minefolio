@@ -21,17 +21,19 @@ void report_expense_monthly(csilk_ctx_t* c) {
         year_str = year_buf;
         month_str = month_buf;
     }
-    char date_prefix[16];
-    snprintf(date_prefix, sizeof(date_prefix), "%s-%02d-", year_str, atoi(month_str));
-    csilk_db_pool_t* pool = db_get_pool();
-    char sql[1024];
+    char date_pattern[32];
+    snprintf(date_pattern, sizeof(date_pattern), "%s-%02d-%%", year_str, atoi(month_str));
 
-    snprintf(sql, sizeof(sql),
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    const char* params[] = { uid_str, date_pattern, NULL };
+
+    csilk_db_pool_t* pool = db_get_pool();
+
+    csilk_json_t* totals = csilk_db_query_param_json(pool,
         "SELECT COALESCE(SUM(CASE WHEN expense_type='income' THEN amount ELSE 0 END),0) as total_income, "
         "COALESCE(SUM(CASE WHEN expense_type='expense' THEN amount ELSE 0 END),0) as total_expense "
-        "FROM daily_expenses WHERE user_id=%lld AND expense_date LIKE '%s%%'",
-        (long long)user_id, date_prefix);
-    csilk_json_t* totals = csilk_db_query_json(pool, sql);
+        "FROM daily_expenses WHERE user_id=? AND expense_date LIKE ?", params);
     double income = 0, expense = 0;
     if (totals && csilk_json_array_size(totals) > 0) {
         income = db_get_num(csilk_json_array_get(totals, 0), "total_income");
@@ -39,31 +41,25 @@ void report_expense_monthly(csilk_ctx_t* c) {
     }
     if (totals) csilk_json_free(totals);
 
-    snprintf(sql, sizeof(sql),
+    csilk_json_t* by_cat = csilk_db_query_param_json(pool,
         "SELECT c.name as name, de.expense_type, SUM(de.amount) as amount "
         "FROM daily_expenses de JOIN categories c ON de.category_id=c.id "
-        "WHERE de.user_id=%lld AND de.expense_date LIKE '%s%%' "
-        "GROUP BY c.name, de.expense_type ORDER BY amount DESC",
-        (long long)user_id, date_prefix);
-    csilk_json_t* by_cat = csilk_db_query_json(pool, sql);
+        "WHERE de.user_id=? AND de.expense_date LIKE ? "
+        "GROUP BY c.name, de.expense_type ORDER BY amount DESC", params);
 
-    snprintf(sql, sizeof(sql),
+    csilk_json_t* by_tag = csilk_db_query_param_json(pool,
         "SELECT t.name as tag_name, SUM(de.amount) as amount, COUNT(*) as count "
         "FROM daily_expenses de JOIN expense_tags et ON de.id=et.expense_id "
         "JOIN tags t ON et.tag_id=t.id "
-        "WHERE de.user_id=%lld AND de.expense_date LIKE '%s%%' "
-        "GROUP BY t.name ORDER BY amount DESC",
-        (long long)user_id, date_prefix);
-    csilk_json_t* by_tag = csilk_db_query_json(pool, sql);
+        "WHERE de.user_id=? AND de.expense_date LIKE ? "
+        "GROUP BY t.name ORDER BY amount DESC", params);
 
-    snprintf(sql, sizeof(sql),
+    csilk_json_t* daily = csilk_db_query_param_json(pool,
         "SELECT expense_date, "
         "COALESCE(SUM(CASE WHEN expense_type='income' THEN amount ELSE 0 END),0) as income, "
         "COALESCE(SUM(CASE WHEN expense_type='expense' THEN amount ELSE 0 END),0) as expense "
-        "FROM daily_expenses WHERE user_id=%lld AND expense_date LIKE '%s%%' "
-        "GROUP BY expense_date ORDER BY expense_date",
-        (long long)user_id, date_prefix);
-    csilk_json_t* daily = csilk_db_query_json(pool, sql);
+        "FROM daily_expenses WHERE user_id=? AND expense_date LIKE ? "
+        "GROUP BY expense_date ORDER BY expense_date", params);
 
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_number(resp, "year", atoll(year_str));
@@ -83,16 +79,20 @@ void report_expense_trend(csilk_ctx_t* c) {
     const char* months_str = csilk_get_query(c, "months");
     int months = months_str ? atoi(months_str) : 6;
     if (months <= 0 || months > 24) months = 6;
+
+    char uid_str[32], months_buf[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    snprintf(months_buf, sizeof(months_buf), "%d", months);
+    const char* params[] = { uid_str, months_buf, NULL };
+
     csilk_db_pool_t* pool = db_get_pool();
-    char sql[512];
-    snprintf(sql, sizeof(sql),
+    csilk_json_t* result = csilk_db_query_param_json(pool,
         "SELECT SUBSTR(expense_date,1,7) as period, "
         "COALESCE(SUM(CASE WHEN expense_type='income' THEN amount ELSE 0 END),0) as income, "
         "COALESCE(SUM(CASE WHEN expense_type='expense' THEN amount ELSE 0 END),0) as expense "
-        "FROM daily_expenses WHERE user_id=%lld AND expense_date >= date('now','-%d months') "
-        "GROUP BY SUBSTR(expense_date,1,7) ORDER BY period",
-        (long long)user_id, months);
-    csilk_json_t* result = csilk_db_query_json(pool, sql);
+        "FROM daily_expenses WHERE user_id=? AND expense_date >= date('now','-'||?||' months') "
+        "GROUP BY SUBSTR(expense_date,1,7) ORDER BY period", params);
+
     if (!result) { respond_error(c, 500, "查询失败"); return; }
     csilk_json_t* resp = csilk_json_object();
     csilk_json_t* labels = csilk_json_array();
@@ -120,18 +120,24 @@ void report_expense_category(csilk_ctx_t* c) {
     char year_buf[8] = {0};
     time_t now = time(NULL);
     strftime(year_buf, sizeof(year_buf), "%Y", localtime(&now));
-    char period[16];
-    if (year_str && month_str) snprintf(period, sizeof(period), "%s-%02d-", year_str, atoi(month_str));
-    else snprintf(period, sizeof(period), "%s-", year_buf);
+    char period[16], period_pattern[32];
+    if (year_str && month_str) {
+        snprintf(period, sizeof(period), "%s-%02d-", year_str, atoi(month_str));
+    } else {
+        snprintf(period, sizeof(period), "%s-", year_buf);
+    }
+    snprintf(period_pattern, sizeof(period_pattern), "%s%%", period);
+
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    const char* params[] = { uid_str, period_pattern, NULL };
+
     csilk_db_pool_t* pool = db_get_pool();
-    char sql[512];
-    snprintf(sql, sizeof(sql),
+    csilk_json_t* rows = csilk_db_query_param_json(pool,
         "SELECT c.name as name, SUM(de.amount) as amount "
         "FROM daily_expenses de JOIN categories c ON de.category_id=c.id "
-        "WHERE de.user_id=%lld AND de.expense_type='expense' AND de.expense_date LIKE '%s%%' "
-        "GROUP BY c.name ORDER BY amount DESC",
-        (long long)user_id, period);
-    csilk_json_t* rows = csilk_db_query_json(pool, sql);
+        "WHERE de.user_id=? AND de.expense_type='expense' AND de.expense_date LIKE ? "
+        "GROUP BY c.name ORDER BY amount DESC", params);
     if (!rows) { respond_error(c, 500, "查询失败"); return; }
     double total = 0;
     size_t n = csilk_json_array_size(rows);
@@ -161,19 +167,25 @@ void report_expense_tag(csilk_ctx_t* c) {
     char year_buf[8] = {0};
     time_t now = time(NULL);
     strftime(year_buf, sizeof(year_buf), "%Y", localtime(&now));
-    char period[16];
-    if (year_str && month_str) snprintf(period, sizeof(period), "%s-%02d-", year_str, atoi(month_str));
-    else snprintf(period, sizeof(period), "%s-", year_buf);
+    char period[16], period_pattern[32];
+    if (year_str && month_str) {
+        snprintf(period, sizeof(period), "%s-%02d-", year_str, atoi(month_str));
+    } else {
+        snprintf(period, sizeof(period), "%s-", year_buf);
+    }
+    snprintf(period_pattern, sizeof(period_pattern), "%s%%", period);
+
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    const char* params[] = { uid_str, period_pattern, NULL };
+
     csilk_db_pool_t* pool = db_get_pool();
-    char sql[512];
-    snprintf(sql, sizeof(sql),
+    csilk_json_t* rows = csilk_db_query_param_json(pool,
         "SELECT t.name as tag_name, SUM(de.amount) as amount, COUNT(*) as count "
         "FROM daily_expenses de JOIN expense_tags et ON de.id=et.expense_id "
         "JOIN tags t ON et.tag_id=t.id "
-        "WHERE de.user_id=%lld AND de.expense_type='expense' AND de.expense_date LIKE '%s%%' "
-        "GROUP BY t.name ORDER BY amount DESC",
-        (long long)user_id, period);
-    csilk_json_t* rows = csilk_db_query_json(pool, sql);
+        "WHERE de.user_id=? AND de.expense_type='expense' AND de.expense_date LIKE ? "
+        "GROUP BY t.name ORDER BY amount DESC", params);
     if (!rows) { respond_error(c, 500, "查询失败"); return; }
     double total = 0;
     size_t n = csilk_json_array_size(rows);
@@ -207,30 +219,31 @@ void report_asset_trend(csilk_ctx_t* c) {
         else days = atoi(period_str);
     }
     if (days <= 0 || days > 365) days = 30;
+
+    char days_str[32], uid_str[32];
+    snprintf(days_str, sizeof(days_str), "%d", days - 1);
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    const char* params[] = { days_str, uid_str, days_str, uid_str, days_str, NULL };
+
     csilk_db_pool_t* pool = db_get_pool();
-    // 5 snapshot points evenly spaced across the period; assets counted from
-    // their updated_at so each point reflects the value at that date.
-    char sql[2048];
-    snprintf(sql, sizeof(sql),
+    csilk_json_t* result = csilk_db_query_param_json(pool,
         "SELECT json_group_array(d) as labels, "
         "json_group_array(total_assets) as assets, "
         "json_group_array(total_liabilities) as liabilities, "
         "json_group_array(total_assets - total_liabilities) as net_worth "
         "FROM ( "
         "WITH RECURSIVE pts(n) AS (SELECT 0 UNION ALL SELECT n+1 FROM pts WHERE n < 4) "
-        "SELECT date('now','-'||(n*(%d-1)/4)||' days') as d, "
+        "SELECT date('now','-'||(n*(?)/4)||' days') as d, "
         "(SELECT COALESCE(SUM(a.current_value),0) FROM assets a "
         "JOIN categories c ON a.category_id=c.id "
-        "WHERE a.user_id=%lld AND c.asset_type NOT IN ('loan','credit_card','other_liability') "
-        "AND a.updated_at < date('now','-'||(n*(%d-1)/4)||' days','+1 day')) as total_assets, "
+        "WHERE a.user_id=? AND c.asset_type NOT IN ('loan','credit_card','other_liability') "
+        "AND a.updated_at < date('now','-'||(n*(?)/4)||' days','+1 day')) as total_assets, "
         "(SELECT COALESCE(SUM(a.current_value),0) FROM assets a "
         "JOIN categories c ON a.category_id=c.id "
-        "WHERE a.user_id=%lld AND c.asset_type IN ('loan','credit_card','other_liability') "
-        "AND a.updated_at < date('now','-'||(n*(%d-1)/4)||' days','+1 day')) as total_liabilities "
-        "FROM pts) ORDER BY d",
-        days - 1, (long long)user_id, days - 1, (long long)user_id, days - 1);
+        "WHERE a.user_id=? AND c.asset_type IN ('loan','credit_card','other_liability') "
+        "AND a.updated_at < date('now','-'||(n*(?)/4)||' days','+1 day')) as total_liabilities "
+        "FROM pts) ORDER BY d", params);
 
-    csilk_json_t* result = csilk_db_query_json(pool, sql);
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_string(resp, "period", period_str ? period_str : "30d");
     if (result && csilk_json_array_size(result) > 0) {
@@ -261,19 +274,21 @@ void report_asset_breakdown(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
     csilk_db_pool_t* pool = db_get_pool();
-    char sql[512];
-    snprintf(sql, sizeof(sql),
+
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    const char* params[] = { uid_str, NULL };
+
+    csilk_json_t* assets = csilk_db_query_param_json(pool,
         "SELECT c.name as name, SUM(a.current_value) as value "
         "FROM assets a JOIN categories c ON a.category_id=c.id "
-        "WHERE a.user_id=%lld AND c.asset_type NOT IN ('loan','credit_card','other_liability') "
-        "GROUP BY c.name ORDER BY value DESC", (long long)user_id);
-    csilk_json_t* assets = csilk_db_query_json(pool, sql);
-    snprintf(sql, sizeof(sql),
+        "WHERE a.user_id=? AND c.asset_type NOT IN ('loan','credit_card','other_liability') "
+        "GROUP BY c.name ORDER BY value DESC", params);
+    csilk_json_t* liabs = csilk_db_query_param_json(pool,
         "SELECT c.name as name, SUM(a.current_value) as value "
         "FROM assets a JOIN categories c ON a.category_id=c.id "
-        "WHERE a.user_id=%lld AND c.asset_type IN ('loan','credit_card','other_liability') "
-        "GROUP BY c.name ORDER BY value DESC", (long long)user_id);
-    csilk_json_t* liabs = csilk_db_query_json(pool, sql);
+        "WHERE a.user_id=? AND c.asset_type IN ('loan','credit_card','other_liability') "
+        "GROUP BY c.name ORDER BY value DESC", params);
     double total_assets = 0, total_liabs = 0;
     if (assets) {
         size_t n = csilk_json_array_size(assets);
@@ -324,14 +339,17 @@ void report_transaction_performance(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
     csilk_db_pool_t* pool = db_get_pool();
-    char sql[512];
-    snprintf(sql, sizeof(sql),
+
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    const char* params[] = { uid_str, NULL };
+
+    csilk_json_t* result = csilk_db_query_param_json(pool,
         "SELECT t.id, a.name as asset_name, t.transaction_type, t.transaction_date, "
         "t.quantity, t.price_per_unit, t.amount "
         "FROM transactions t JOIN assets a ON t.asset_id=a.id "
-        "WHERE t.user_id=%lld AND t.transaction_type IN ('buy','sell') "
-        "ORDER BY t.transaction_date", (long long)user_id);
-    csilk_json_t* result = csilk_db_query_json(pool, sql);
+        "WHERE t.user_id=? AND t.transaction_type IN ('buy','sell') "
+        "ORDER BY t.transaction_date", params);
     if (!result) { respond_error(c, 500, "查询失败"); return; }
     double total_gain = 0, total_loss = 0;
     int total_trades = 0;
@@ -368,12 +386,15 @@ void report_asset_summary(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
     csilk_db_pool_t* pool = db_get_pool();
-    char sql[512];
-    snprintf(sql, sizeof(sql),
+
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    const char* params[] = { uid_str, NULL };
+
+    csilk_json_t* rows = csilk_db_query_param_json(pool,
         "SELECT c.name as name, c.asset_type, SUM(a.current_value) as value "
         "FROM assets a JOIN categories c ON a.category_id=c.id "
-        "WHERE a.user_id=%lld GROUP BY c.name, c.asset_type", (long long)user_id);
-    csilk_json_t* rows = csilk_db_query_json(pool, sql);
+        "WHERE a.user_id=? GROUP BY c.name, c.asset_type", params);
     double current_assets = 0, current_liabs = 0;
     csilk_json_t* by_cat = csilk_json_array();
     if (rows) {
@@ -394,12 +415,10 @@ void report_asset_summary(csilk_ctx_t* c) {
         csilk_json_free(rows);
     }
     // 30-day change estimate from transactions
-    snprintf(sql, sizeof(sql),
+    csilk_json_t* change_result = csilk_db_query_param_json(pool,
         "SELECT COALESCE(SUM(amount),0) as net_change FROM transactions "
-        "WHERE user_id=%lld AND transaction_date >= date('now','-30 days') "
-        "AND transaction_type IN ('deposit','withdrawal','buy','sell','income','loss','fee')",
-        (long long)user_id);
-    csilk_json_t* change_result = csilk_db_query_json(pool, sql);
+        "WHERE user_id=? AND transaction_date >= date('now','-30 days') "
+        "AND transaction_type IN ('deposit','withdrawal','buy','sell','income','loss','fee')", params);
     double change_30d = 0;
     if (change_result && csilk_json_array_size(change_result) > 0)
         change_30d = db_get_num(csilk_json_array_get(change_result, 0), "net_change");
@@ -420,15 +439,17 @@ void summary_get(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
     csilk_db_pool_t* pool = db_get_pool();
-    char sql[1024];
+
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    const char* params1[] = { uid_str, NULL };
 
     // Category breakdown (asset categories only; liabilities excluded from pie)
-    snprintf(sql, sizeof(sql),
+    csilk_json_t* rows = csilk_db_query_param_json(pool,
         "SELECT c.name as category_name, SUM(a.current_value) as value "
         "FROM assets a JOIN categories c ON a.category_id=c.id "
-        "WHERE a.user_id=%lld AND c.asset_type NOT IN ('loan','credit_card','other_liability') "
-        "GROUP BY c.name ORDER BY value DESC", (long long)user_id);
-    csilk_json_t* rows = csilk_db_query_json(pool, sql);
+        "WHERE a.user_id=? AND c.asset_type NOT IN ('loan','credit_card','other_liability') "
+        "GROUP BY c.name ORDER BY value DESC", params1);
     if (!rows) { respond_error(c, 500, "查询失败"); return; }
     double total_assets = 0, total_liabilities = 0;
     size_t n = csilk_json_array_size(rows);
@@ -449,31 +470,28 @@ void summary_get(csilk_ctx_t* c) {
     csilk_json_free(rows);
 
     // Total liabilities for net worth
-    snprintf(sql, sizeof(sql),
+    csilk_json_t* liab_rows = csilk_db_query_param_json(pool,
         "SELECT COALESCE(SUM(a.current_value),0) as total "
         "FROM assets a JOIN categories c ON a.category_id=c.id "
-        "WHERE a.user_id=%lld AND c.asset_type IN ('loan','credit_card','other_liability')",
-        (long long)user_id);
-    csilk_json_t* liab_rows = csilk_db_query_json(pool, sql);
+        "WHERE a.user_id=? AND c.asset_type IN ('loan','credit_card','other_liability')", params1);
     if (liab_rows && csilk_json_array_size(liab_rows) > 0) {
         total_liabilities = db_get_num(csilk_json_array_get(liab_rows, 0), "total");
         csilk_json_free(liab_rows);
     }
 
     // 30-day net worth trend (daily snapshots, asset counted from its updated_at)
-    snprintf(sql, sizeof(sql),
+    const char* params2[] = { uid_str, uid_str, NULL };
+    csilk_json_t* trend_rows = csilk_db_query_param_json(pool,
         "SELECT json_group_array(json_object('date', d, 'net_worth', nw)) as trend FROM ("
         "WITH RECURSIVE dates(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM dates WHERE i < 29) "
         "SELECT date('now','-'||(29-i)||' days') as d, "
         "(SELECT COALESCE(SUM(a.current_value),0) FROM assets a JOIN categories c ON a.category_id=c.id "
-        "WHERE a.user_id=%lld AND c.asset_type NOT IN ('loan','credit_card','other_liability') "
+        "WHERE a.user_id=? AND c.asset_type NOT IN ('loan','credit_card','other_liability') "
         "AND a.updated_at < date('now','-'||(29-i)||' days','+1 day')) - "
         "(SELECT COALESCE(SUM(a.current_value),0) FROM assets a JOIN categories c ON a.category_id=c.id "
-        "WHERE a.user_id=%lld AND c.asset_type IN ('loan','credit_card','other_liability') "
+        "WHERE a.user_id=? AND c.asset_type IN ('loan','credit_card','other_liability') "
         "AND a.updated_at < date('now','-'||(29-i)||' days','+1 day')) as nw "
-        "FROM dates)",
-        (long long)user_id, (long long)user_id);
-    csilk_json_t* trend_rows = csilk_db_query_json(pool, sql);
+        "FROM dates)", params2);
 
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_number(resp, "total_assets", total_assets);
@@ -481,7 +499,6 @@ void summary_get(csilk_ctx_t* c) {
     csilk_json_add_number(resp, "net_worth", total_assets - total_liabilities);
     csilk_json_add_array(resp, "breakdown", breakdown);
     if (trend_rows && csilk_json_array_size(trend_rows) > 0) {
-        // json_group_array column arrives as a JSON-encoded string — parse it
         const char* trend_str = csilk_json_get_string(csilk_json_array_get(trend_rows, 0), "trend");
         csilk_json_t* trend_arr = (trend_str && trend_str[0]) ? csilk_json_parse(trend_str) : NULL;
         if (trend_arr) {
