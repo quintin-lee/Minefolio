@@ -71,6 +71,9 @@ void daily_expenses_list(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
 
+    int64_t page = 1, page_size = 20;
+    parse_page_params(c, &page, &page_size);
+
     csilk_db_pool_t* pool = db_get_pool();
     const char* type = csilk_get_query(c, "expense_type");
     const char* cat_id = csilk_get_query(c, "category_id");
@@ -94,16 +97,22 @@ void daily_expenses_list(csilk_ctx_t* c) {
         "LEFT JOIN assets a ON de.asset_id=a.id "
         "WHERE de.user_id=?");
 
-    const char* params[10];
+    char count_sql[1024];
+    snprintf(count_sql, sizeof(count_sql),
+        "SELECT COUNT(*) AS cnt FROM daily_expenses de WHERE de.user_id=?");
+
+    const char* params[16];
     params[0] = uid_str;
     int pidx = 1;
 
     if (type) {
         snprintf(sql + strlen(sql), sizeof(sql) - strlen(sql), " AND de.expense_type=?");
+        snprintf(count_sql + strlen(count_sql), sizeof(count_sql) - strlen(count_sql), " AND de.expense_type=?");
         params[pidx++] = type;
     }
     if (cat_id) {
         snprintf(sql + strlen(sql), sizeof(sql) - strlen(sql), " AND de.category_id=?");
+        snprintf(count_sql + strlen(count_sql), sizeof(count_sql) - strlen(count_sql), " AND de.category_id=?");
         params[pidx++] = cat_id;
     }
     if (tag_ids && tag_ids[0]) {
@@ -116,17 +125,40 @@ void daily_expenses_list(csilk_ctx_t* c) {
         snprintf(sql + strlen(sql), sizeof(sql) - strlen(sql),
             " AND EXISTS (SELECT 1 FROM expense_tags et2 "
             " WHERE et2.expense_id=de.id AND et2.tag_id IN (%s))", tag_ids);
+        snprintf(count_sql + strlen(count_sql), sizeof(count_sql) - strlen(count_sql),
+            " AND EXISTS (SELECT 1 FROM expense_tags et2 "
+            " WHERE et2.expense_id=de.id AND et2.tag_id IN (%s))", tag_ids);
     }
     if (start) {
         snprintf(sql + strlen(sql), sizeof(sql) - strlen(sql), " AND de.expense_date >= ?");
+        snprintf(count_sql + strlen(count_sql), sizeof(count_sql) - strlen(count_sql), " AND de.expense_date >= ?");
         params[pidx++] = start;
     }
     if (end) {
         snprintf(sql + strlen(sql), sizeof(sql) - strlen(sql), " AND de.expense_date <= ?");
+        snprintf(count_sql + strlen(count_sql), sizeof(count_sql) - strlen(count_sql), " AND de.expense_date <= ?");
         params[pidx++] = end;
     }
     snprintf(sql + strlen(sql), sizeof(sql) - strlen(sql), " ORDER BY de.expense_date DESC");
+
+    int pidx_count = pidx; // count query ends before pagination params
+
+    char limit_buf[32], offset_buf[32];
+    snprintf(limit_buf, sizeof(limit_buf), "%lld", (long long)page_size);
+    snprintf(offset_buf, sizeof(offset_buf), "%lld", (long long)((page - 1) * page_size));
+    snprintf(sql + strlen(sql), sizeof(sql) - strlen(sql), " LIMIT ? OFFSET ?");
+    params[pidx++] = limit_buf;
+    params[pidx++] = offset_buf;
     params[pidx] = NULL;
+
+    params[pidx_count] = NULL;
+    csilk_json_t* cnt_res = csilk_db_query_param_json(pool, count_sql, params);
+    int64_t total = 0;
+    if (cnt_res && csilk_json_array_size(cnt_res) > 0) {
+        total = db_get_int(csilk_json_array_get(cnt_res, 0), "cnt");
+    }
+    if (cnt_res) csilk_json_free(cnt_res);
+    params[pidx_count] = limit_buf;
 
     csilk_json_t* result = csilk_db_query_param_json(pool, sql, params);
     if (!result) { respond_error(c, 500, "查询失败"); return; }
@@ -155,7 +187,7 @@ void daily_expenses_list(csilk_ctx_t* c) {
         csilk_json_array_append(list, item);
     }
     csilk_json_free(result);
-    respond_ok(c, list);
+    respond_page_ok(c, list, total, page, page_size);
 }
 
 void daily_expenses_create(csilk_ctx_t* c) {

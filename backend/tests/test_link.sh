@@ -183,6 +183,45 @@ LOGIN_RES=$(req POST /auth/login "{\"username\":\"linktest\",\"password_enc\":\"
 LOGIN_CODE=$(echo "$LOGIN_RES" | jq -r '.code | floor')
 check "新密码登录成功" "0" "$LOGIN_CODE"
 
+echo "== 18. 分页查询 =="
+TX_TOTAL=$(sqlite3 "$DB" "SELECT COUNT(*) FROM transactions")
+TX_PAGE=$(curl -s -H "$AUTH" "$BASE/transactions?page=1&page_size=1")
+check "transactions total 正确" "$TX_TOTAL" "$(echo "$TX_PAGE" | jq -r '.data.total | floor')"
+check "transactions page_size=1 返回 1 条" "1" "$(echo "$TX_PAGE" | jq -r '.data.list | length')"
+check "transactions page=1" "1" "$(echo "$TX_PAGE" | jq -r '.data.page | floor')"
+check "transactions page_size=1" "1" "$(echo "$TX_PAGE" | jq -r '.data.page_size | floor')"
+
+EXP_TOTAL=$(sqlite3 "$DB" "SELECT COUNT(*) FROM daily_expenses")
+EXP_PAGE=$(curl -s -H "$AUTH" "$BASE/daily-expenses?page=1&page_size=1")
+check "daily-expenses total 正确" "$EXP_TOTAL" "$(echo "$EXP_PAGE" | jq -r '.data.total | floor')"
+check "daily-expenses page_size=1 返回 1 条" "1" "$(echo "$EXP_PAGE" | jq -r '.data.list | length')"
+
+ASSET_TOTAL=$(sqlite3 "$DB" "SELECT COUNT(*) FROM assets")
+ASSET_PAGE=$(curl -s -H "$AUTH" "$BASE/assets?page_size=500")
+check "assets total 正确" "$ASSET_TOTAL" "$(echo "$ASSET_PAGE" | jq -r '.data.total | floor')"
+check "assets page_size=500 全量返回" "$ASSET_TOTAL" "$(echo "$ASSET_PAGE" | jq -r '.data.list | length')"
+
+LOG_TOTAL=$(sqlite3 "$DB" "SELECT COUNT(*) FROM asset_balance_logs")
+LOG_PAGE=$(curl -s -H "$AUTH" "$BASE/asset-balance-logs?page=1&page_size=3")
+check "asset-balance-logs total 正确" "$LOG_TOTAL" "$(echo "$LOG_PAGE" | jq -r '.data.total | floor')"
+check "asset-balance-logs page_size=3 返回 3 条" "3" "$(echo "$LOG_PAGE" | jq -r '.data.list | length')"
+
+MONTH_RES=$(curl -s -H "$AUTH" "$BASE/transactions/monthly?month=2026-08")
+check "transactions/monthly total_volume=1600" "1600" "$(echo "$MONTH_RES" | jq -r '.data.total_volume | floor')"
+check "transactions/monthly inflows=1000" "1000" "$(echo "$MONTH_RES" | jq -r '.data.inflows | floor')"
+check "transactions/monthly outflows=600" "600" "$(echo "$MONTH_RES" | jq -r '.data.outflows | floor')"
+check "transactions/monthly count=3" "3" "$(echo "$MONTH_RES" | jq -r '.data.count | floor')"
+
+echo "== 19. 分类树形结构 =="
+PARENT_ID=$(sqlite3 "$DB" "INSERT INTO categories (user_id, name, type, asset_type, currency, icon, sort_order) SELECT id, '测试父分类', 'expense', 'cash', 'CNY', '', 99 FROM users WHERE username='linktest'; SELECT last_insert_rowid();")
+sqlite3 "$DB" "INSERT INTO categories (user_id, name, parent_id, type, asset_type, currency, icon, sort_order) SELECT id, '测试子分类', $PARENT_ID, 'expense', 'cash', 'CNY', '', 1 FROM users WHERE username='linktest';"
+CATS=$(curl -s -H "$AUTH" "$BASE/categories")
+check "categories 返回数组" "array" "$(echo "$CATS" | jq -r '.data | type')"
+check "categories 非空" "1" "$(echo "$CATS" | jq -r 'if (.data | length) > 0 then 1 else 0 end')"
+check "categories 含测试父分类" "1" "$(echo "$CATS" | jq -r '[.data[] | select(.name == "测试父分类")] | if length > 0 then 1 else 0 end')"
+check "父分类 children 含测试子分类" "1" "$(echo "$CATS" | jq -r '[.data[] | select(.name == "测试父分类") | .children[]? | select(.name == "测试子分类")] | if length > 0 then 1 else 0 end')"
+check "子分类 parent_id 指向父分类" "$PARENT_ID" "$(echo "$CATS" | jq -r '[.data[] | select(.name == "测试父分类") | .children[]? | select(.name == "测试子分类") | .parent_id | floor] | .[0]')"
+
 echo ""
 echo "结果: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

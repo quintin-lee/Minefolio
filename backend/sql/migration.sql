@@ -120,3 +120,5 @@ CREATE TABLE IF NOT EXISTS asset_balance_logs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_balance_logs_asset ON asset_balance_logs(asset_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_categories_user_parent ON categories(user_id, parent_id);
+CREATE INDEX IF NOT EXISTS idx_categories_user_type ON categories(user_id, type);

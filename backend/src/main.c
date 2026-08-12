@@ -22,6 +22,7 @@ extern void assets_update(csilk_ctx_t* c);
 extern void assets_delete(csilk_ctx_t* c);
 extern void assets_detail(csilk_ctx_t* c);
 extern void transactions_list(csilk_ctx_t* c);
+extern void transactions_monthly(csilk_ctx_t* c);
 extern void transactions_create(csilk_ctx_t* c);
 extern void transactions_update(csilk_ctx_t* c);
 extern void transactions_delete(csilk_ctx_t* c);
@@ -215,6 +216,7 @@ int main(int argc, char** argv) {
 
     // Transactions
     csilk_app_get(app, "/api/transactions", transactions_list);
+    csilk_app_get(app, "/api/transactions/monthly", transactions_monthly);
     csilk_app_post(app, "/api/transactions", transactions_create);
     csilk_app_put(app, "/api/transactions/:id", transactions_update);
     csilk_app_delete(app, "/api/transactions/:id", transactions_delete);

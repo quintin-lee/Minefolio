@@ -23,30 +23,43 @@ static csilk_json_t* row_to_category(csilk_json_t* row) {
     return obj;
 }
 
-static void add_children(csilk_db_pool_t* pool, csilk_json_t* parent) {
-    int64_t pid = db_get_int(parent, "id");
-    char sql[256];
-    snprintf(sql, sizeof(sql),
-        "SELECT c.id, c.name, c.parent_id, "
-        "(SELECT p.name FROM categories p WHERE p.id=c.parent_id) as parent_name, "
-        "c.type, c.asset_type, c.currency, c.icon, c.sort_order "
-        "FROM categories c WHERE parent_id = %lld ORDER BY c.sort_order", (long long)pid);
+// Assemble the category tree from one flat result set (no N+1 queries).
+// children arrays are created lazily so leaf nodes carry no "children" key.
+static csilk_json_t* build_tree(csilk_json_t* rows) {
+    size_t n = csilk_json_array_size(rows);
+    if (n == 0) return csilk_json_array();
 
-    csilk_json_t* kids = csilk_db_query_json(pool, sql);
-    if (!kids) return;
-
-    size_t n = csilk_json_array_size(kids);
-    if (n == 0) { csilk_json_free(kids); return; }
-
-    csilk_json_t* children = csilk_json_array();
-    for (size_t i = 0; i < n; i++) {
-        csilk_json_t* kid = csilk_json_array_get(kids, i);
-        csilk_json_t* kid_obj = row_to_category(kid);
-        add_children(pool, kid_obj);
-        csilk_json_array_append(children, kid_obj);
+    csilk_json_t** nodes = calloc(n, sizeof(csilk_json_t*));
+    int64_t* ids = calloc(n, sizeof(int64_t));
+    csilk_json_t** kids = calloc(n, sizeof(csilk_json_t*));
+    if (!nodes || !ids || !kids) {
+        free(nodes); free(ids); free(kids);
+        return csilk_json_array();
     }
-    csilk_json_add_array(parent, "children", children);
-    csilk_json_free(kids);
+
+    for (size_t i = 0; i < n; i++) {
+        nodes[i] = row_to_category(csilk_json_array_get(rows, i));
+        ids[i] = db_get_int(nodes[i], "id");
+    }
+
+    csilk_json_t* tree = csilk_json_array();
+    for (size_t i = 0; i < n; i++) {
+        int64_t parent = db_get_int(nodes[i], "parent_id");
+        size_t j = 0;
+        while (j < n && ids[j] != parent) j++;
+        if (parent > 0 && j < n) {
+            if (!kids[j]) {
+                kids[j] = csilk_json_array();
+                csilk_json_add_array(nodes[j], "children", kids[j]);
+            }
+            csilk_json_array_append(kids[j], nodes[i]);
+        } else {
+            csilk_json_array_append(tree, nodes[i]);
+        }
+    }
+
+    free(nodes); free(ids); free(kids);
+    return tree;
 }
 
 typedef struct {
@@ -235,7 +248,7 @@ void categories_list(csilk_ctx_t* c) {
                 "SELECT c.id, c.name, c.parent_id, "
                 "(SELECT p.name FROM categories p WHERE p.id=c.parent_id) as parent_name, "
                 "c.type, c.asset_type, c.currency, c.icon, c.sort_order "
-                "FROM categories c WHERE user_id = ? AND parent_id IS NULL AND c.type IN (%s) ORDER BY c.sort_order",
+                "FROM categories c WHERE user_id = ? AND c.type IN (%s) ORDER BY c.parent_id, c.sort_order",
                 in_placeholders[0] ? in_placeholders : "?");
             rows = csilk_db_query_param_json(pool, p_sql, params);
         } else {
@@ -244,7 +257,7 @@ void categories_list(csilk_ctx_t* c) {
                 "SELECT c.id, c.name, c.parent_id, "
                 "(SELECT p.name FROM categories p WHERE p.id=c.parent_id) as parent_name, "
                 "c.type, c.asset_type, c.currency, c.icon, c.sort_order "
-                "FROM categories c WHERE user_id = ? AND parent_id IS NULL AND c.type = ? ORDER BY c.sort_order", params);
+                "FROM categories c WHERE user_id = ? AND c.type = ? ORDER BY c.parent_id, c.sort_order", params);
         }
     } else {
         const char* params[] = { uid_str, NULL };
@@ -252,19 +265,12 @@ void categories_list(csilk_ctx_t* c) {
             "SELECT c.id, c.name, c.parent_id, "
             "(SELECT p.name FROM categories p WHERE p.id=c.parent_id) as parent_name, "
             "c.type, c.asset_type, c.currency, c.icon, c.sort_order "
-            "FROM categories c WHERE user_id = ? AND parent_id IS NULL ORDER BY c.sort_order", params);
+            "FROM categories c WHERE user_id = ? ORDER BY c.parent_id, c.sort_order", params);
     }
 
     if (!rows) { respond_error(c, 500, "查询失败"); return; }
 
-    csilk_json_t* tree = csilk_json_array();
-    size_t n = csilk_json_array_size(rows);
-    for (size_t i = 0; i < n; i++) {
-        csilk_json_t* row = csilk_json_array_get(rows, i);
-        csilk_json_t* node = row_to_category(row);
-        add_children(pool, node);
-        csilk_json_array_append(tree, node);
-    }
+    csilk_json_t* tree = build_tree(rows);
     csilk_json_free(rows);
     respond_ok(c, tree);
 }

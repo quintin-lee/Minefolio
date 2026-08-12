@@ -10,31 +10,61 @@ void assets_list(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }
 
+    int64_t page = 1, page_size = 20;
+    parse_page_params(c, &page, &page_size);
+
     csilk_db_pool_t* pool = db_get_pool();
     const char* cat_id = csilk_get_query(c, "category_id");
 
     char uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
 
-    csilk_json_t* result = NULL;
-    if (cat_id && strlen(cat_id) > 0) {
-        const char* params[] = { uid_str, cat_id, NULL };
-        result = csilk_db_query_param_json(pool,
-            "SELECT a.id, a.name, a.account_no, a.current_value, a.currency, "
-            "a.note, a.created_at, a.updated_at, c.name as category_name, c.asset_type "
-            "FROM assets a LEFT JOIN categories c ON a.category_id=c.id "
-            "WHERE a.user_id=? AND a.category_id=? ORDER BY a.name", params);
-    } else {
-        const char* params[] = { uid_str, NULL };
-        result = csilk_db_query_param_json(pool,
-            "SELECT a.id, a.name, a.account_no, a.current_value, a.currency, "
-            "a.note, a.created_at, a.updated_at, c.name as category_name, c.asset_type "
-            "FROM assets a LEFT JOIN categories c ON a.category_id=c.id "
-            "WHERE a.user_id=? ORDER BY c.name, a.name", params);
-    }
+    char limit_buf[32], offset_buf[32];
+    snprintf(limit_buf, sizeof(limit_buf), "%lld", (long long)page_size);
+    snprintf(offset_buf, sizeof(offset_buf), "%lld", (long long)((page - 1) * page_size));
 
+    const char* params[8];
+    const char* cnt_params[4];
+    int pidx = 0;
+    params[pidx++] = uid_str;
+    cnt_params[0] = uid_str;
+    int cnt_pidx = 1;
+
+    char sql[512], count_sql[256];
+    if (cat_id && strlen(cat_id) > 0) {
+        snprintf(sql, sizeof(sql),
+            "SELECT a.id, a.name, a.account_no, a.current_value, a.currency, "
+            "a.note, a.created_at, a.updated_at, c.name as category_name, c.asset_type "
+            "FROM assets a LEFT JOIN categories c ON a.category_id=c.id "
+            "WHERE a.user_id=? AND a.category_id=? ORDER BY a.name LIMIT ? OFFSET ?");
+        snprintf(count_sql, sizeof(count_sql),
+            "SELECT COUNT(*) AS cnt FROM assets a WHERE a.user_id=? AND a.category_id=?");
+        params[pidx++] = cat_id;
+        cnt_params[cnt_pidx++] = cat_id;
+    } else {
+        snprintf(sql, sizeof(sql),
+            "SELECT a.id, a.name, a.account_no, a.current_value, a.currency, "
+            "a.note, a.created_at, a.updated_at, c.name as category_name, c.asset_type "
+            "FROM assets a LEFT JOIN categories c ON a.category_id=c.id "
+            "WHERE a.user_id=? ORDER BY c.name, a.name LIMIT ? OFFSET ?");
+        snprintf(count_sql, sizeof(count_sql),
+            "SELECT COUNT(*) AS cnt FROM assets a WHERE a.user_id=?");
+    }
+    params[pidx++] = limit_buf;
+    params[pidx++] = offset_buf;
+    params[pidx] = NULL;
+    cnt_params[cnt_pidx] = NULL;
+
+    csilk_json_t* cnt_res = csilk_db_query_param_json(pool, count_sql, cnt_params);
+    int64_t total = 0;
+    if (cnt_res && csilk_json_array_size(cnt_res) > 0) {
+        total = db_get_int(csilk_json_array_get(cnt_res, 0), "cnt");
+    }
+    if (cnt_res) csilk_json_free(cnt_res);
+
+    csilk_json_t* result = csilk_db_query_param_json(pool, sql, params);
     if (!result) { respond_error(c, 500, "查询失败"); return; }
-    respond_ok(c, result);
+    respond_page_ok(c, result, total, page, page_size);
 }
 
 void assets_create(csilk_ctx_t* c) {
