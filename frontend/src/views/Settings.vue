@@ -122,7 +122,8 @@ async function submit() {
 .settings-page {
   padding: 24px;
   background-color: var(--mf-background);
-  min-height: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
 .info-cards {

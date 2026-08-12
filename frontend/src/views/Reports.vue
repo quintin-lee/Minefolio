@@ -214,7 +214,8 @@ onMounted(loadAll)
 .reports-page {
   padding: 24px;
   background-color: var(--mf-background);
-  min-height: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
 :deep(.premium-tabs.el-tabs--card > .el-tabs__header) {

@@ -606,7 +606,8 @@ onMounted(() => {
 .transactions-page {
   padding: 24px;
   background-color: var(--mf-background);
-  min-height: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
 .action-btn {
@@ -660,11 +661,21 @@ onMounted(() => {
 
 .table-container {
   overflow-x: auto;
+  overflow-y: auto;
+  max-height: 560px;
   background: var(--mf-surface);
   border-radius: var(--mf-radius-lg);
   padding: 16px;
   box-shadow: var(--mf-shadow-sm);
   border: 1px solid var(--mf-border);
+}
+
+.table-container :deep(.el-table) {
+  height: 100%;
+}
+
+.table-container :deep(.el-table__body-wrapper) {
+  overflow-y: auto !important;
 }
 
 .pagination-bar {

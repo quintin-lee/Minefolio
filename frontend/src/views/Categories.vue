@@ -21,80 +21,86 @@
       </el-radio-group>
     </div>
 
-    <el-row :gutter="24">
-      <el-col :span="8">
-        <div class="panel-container tree-panel-container">
-          <div class="panel-header">
-            <h3>分类结构</h3>
+    <div class="panels-scroll-wrapper">
+      <el-row :gutter="24">
+        <el-col :span="8">
+          <div class="panel-container tree-panel-container">
+            <div class="panel-header">
+              <h3>分类结构</h3>
+            </div>
+            <div class="panel-body-scroll">
+              <el-tree :data="filteredTreeData" :props="{ label: 'name', children: 'children' }"
+                node-key="id" default-expand-all class="premium-tree"
+                :expand-on-click-node="false"
+                @node-click="onNodeClick">
+                <template #default="{ node, data }">
+                  <div class="tree-node-wrapper">
+                    <div class="tree-node-content">
+                      <span class="node-icon" v-if="!data.children || data.children.length === 0">·</span>
+                      <span class="node-icon folder" v-else>📁</span>
+                      <span class="node-label">{{ node.label }}</span>
+                      <el-tag size="small" :type="categoryTypeTagType(data.type)" effect="light" class="mini-type-tag">
+                        {{ categoryTypeLabel(data.type) }}
+                      </el-tag>
+                    </div>
+                    <div class="tree-actions">
+                      <el-button link size="small" type="primary" @click.stop="openDialog(data)">编辑</el-button>
+                      <el-button link size="small" type="danger" @click.stop="handleDelete(data)">删除</el-button>
+                    </div>
+                  </div>
+                </template>
+              </el-tree>
+            </div>
           </div>
-          <el-tree :data="filteredTreeData" :props="{ label: 'name', children: 'children' }"
-            node-key="id" default-expand-all class="premium-tree"
-            :expand-on-click-node="false"
-            @node-click="onNodeClick">
-            <template #default="{ node, data }">
-              <div class="tree-node-wrapper">
-                <div class="tree-node-content">
-                  <span class="node-icon" v-if="!data.children || data.children.length === 0">·</span>
-                  <span class="node-icon folder" v-else>📁</span>
-                  <span class="node-label">{{ node.label }}</span>
-                  <el-tag size="small" :type="categoryTypeTagType(data.type)" effect="light" class="mini-type-tag">
-                    {{ categoryTypeLabel(data.type) }}
-                  </el-tag>
-                </div>
-                <div class="tree-actions">
-                  <el-button link size="small" type="primary" @click.stop="openDialog(data)">编辑</el-button>
-                  <el-button link size="small" type="danger" @click.stop="handleDelete(data)">删除</el-button>
-                </div>
-              </div>
-            </template>
-          </el-tree>
-        </div>
-      </el-col>
-      <el-col :span="16">
-        <div class="panel-container">
-          <div class="panel-header">
-            <h3>分类列表</h3>
+        </el-col>
+        <el-col :span="16">
+          <div class="panel-container">
+            <div class="panel-header">
+              <h3>分类列表</h3>
+            </div>
+            <div class="panel-body-scroll">
+              <el-table :data="filteredFlatCategories" class="premium-table" row-class-name="premium-row" header-cell-class-name="premium-header">
+                <el-table-column prop="name" label="名称" min-width="140" />
+                <el-table-column prop="type" label="分类大类" width="110">
+                  <template #default="{ row }">
+                    <el-tag size="small" :type="categoryTypeTagType(row.type)" effect="light" class="type-tag">
+                      {{ categoryTypeLabel(row.type) }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="parent_name" label="上级分类" min-width="120">
+                  <template #default="{ row }">
+                    <span class="text-muted">{{ row.parent_name || '-' }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="asset_type" label="资产细分" width="140">
+                  <template #default="{ row }">
+                    <div class="type-cell" v-if="row.type === 'asset'">
+                      <span :class="['status-dot', row.asset_type]"></span>
+                      {{ assetTypeLabel(row.asset_type) }}
+                    </div>
+                    <span v-else class="text-muted">-</span>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="currency" label="币种" width="90">
+                  <template #default="{ row }">
+                    <el-tag size="small" class="currency-tag" effect="plain">{{ row.currency }}</el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" width="120" align="center">
+                  <template #default="{ row }">
+                    <div class="action-buttons">
+                      <el-button link type="primary" @click="openDialog(row)">编辑</el-button>
+                      <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
+                    </div>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
           </div>
-          <el-table :data="filteredFlatCategories" class="premium-table" row-class-name="premium-row" header-cell-class-name="premium-header">
-            <el-table-column prop="name" label="名称" min-width="140" />
-            <el-table-column prop="type" label="分类大类" width="110">
-              <template #default="{ row }">
-                <el-tag size="small" :type="categoryTypeTagType(row.type)" effect="light" class="type-tag">
-                  {{ categoryTypeLabel(row.type) }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column prop="parent_name" label="上级分类" min-width="120">
-              <template #default="{ row }">
-                <span class="text-muted">{{ row.parent_name || '-' }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column prop="asset_type" label="资产细分" width="140">
-              <template #default="{ row }">
-                <div class="type-cell" v-if="row.type === 'asset'">
-                  <span :class="['status-dot', row.asset_type]"></span>
-                  {{ assetTypeLabel(row.asset_type) }}
-                </div>
-                <span v-else class="text-muted">-</span>
-              </template>
-            </el-table-column>
-            <el-table-column prop="currency" label="币种" width="90">
-              <template #default="{ row }">
-                <el-tag size="small" class="currency-tag" effect="plain">{{ row.currency }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="120" align="center">
-              <template #default="{ row }">
-                <div class="action-buttons">
-                  <el-button link type="primary" @click="openDialog(row)">编辑</el-button>
-                  <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
-                </div>
-              </template>
-            </el-table-column>
-          </el-table>
-        </div>
-      </el-col>
-    </el-row>
+        </el-col>
+      </el-row>
+    </div>
 
     <el-dialog v-model="dialogVisible" :title="editingId ? '编辑分类' : '新增分类'" width="480px" class="premium-dialog" :show-close="false">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="90px" class="premium-form">
@@ -322,8 +328,42 @@ onMounted(loadData)
 <style scoped>
 .categories-page {
   padding: 24px;
+  padding-bottom: 0;
   background-color: var(--mf-background);
-  min-height: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.categories-page > .page-header {
+  flex-shrink: 0;
+}
+
+.categories-page > .tab-filter-container {
+  flex-shrink: 0;
+}
+
+.panels-scroll-wrapper {
+  flex: 1;
+  overflow-y: auto;
+  margin: 0 -12px;
+  padding: 0 12px;
+}
+
+.panel-container {
+  background: var(--mf-surface);
+  border-radius: var(--mf-radius-lg);
+  padding: 20px;
+  box-shadow: var(--mf-shadow-sm);
+  border: 1px solid var(--mf-border);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.tree-panel-container {
+  min-height: 0;
 }
 
 .action-btn {
@@ -386,6 +426,7 @@ onMounted(loadData)
 
 .panel-header {
   margin-bottom: 20px;
+  flex-shrink: 0;
 }
 
 .panel-header h3 {
@@ -395,9 +436,19 @@ onMounted(loadData)
   color: var(--mf-text-main);
 }
 
+.panel-body-scroll {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
 .premium-tree {
   background: transparent;
   --el-tree-node-hover-bg-color: var(--mf-surface-muted);
+}
+
+.panel-body-scroll :deep(.el-tree) {
+  padding-bottom: 8px;
 }
 
 :deep(.premium-tree .el-tree-node__content) {
@@ -453,6 +504,14 @@ onMounted(loadData)
 .premium-table {
   --el-table-border-color: transparent;
   --el-table-header-bg-color: rgba(0, 212, 255, 0.06);
+}
+
+.panel-body-scroll :deep(.el-table) {
+  height: 100%;
+}
+
+.panel-body-scroll :deep(.el-table__body-wrapper) {
+  overflow-y: auto !important;
 }
 
 :deep(.premium-header th) {

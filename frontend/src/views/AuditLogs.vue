@@ -127,7 +127,8 @@ onMounted(async () => {
 .audit-logs-page {
   padding: 24px;
   background-color: var(--mf-background);
-  min-height: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
 .filter-panel {
@@ -168,6 +169,16 @@ onMounted(async () => {
   padding: 16px;
   box-shadow: var(--mf-shadow-sm);
   border: 1px solid var(--mf-border);
+  overflow-y: auto;
+  max-height: 560px;
+}
+
+.table-container :deep(.el-table) {
+  height: 100%;
+}
+
+.table-container :deep(.el-table__body-wrapper) {
+  overflow-y: auto !important;
 }
 
 .premium-table {

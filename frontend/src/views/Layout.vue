@@ -271,7 +271,12 @@ function handleCommand(cmd: string) {
 }
 .main {
   padding: 24px 32px;
+  padding-bottom: 0;
   background-color: var(--mf-background);
+  height: calc(100vh - 72px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
 }
 .fade-transform-enter-active,
 .fade-transform-leave-active {

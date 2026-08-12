@@ -162,6 +162,8 @@ onMounted(loadDashboard)
   display: flex;
   flex-direction: column;
   gap: 20px;
+  height: 100%;
+  overflow: hidden;
 }
 
 .stat-content {
