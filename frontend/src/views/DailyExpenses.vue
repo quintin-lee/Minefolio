@@ -122,10 +122,10 @@
         </el-form-item>
         <el-form-item label="关联资产" prop="asset_id">
           <el-select v-model="form.asset_id" placeholder="选择资产" style="width: 100%" filterable>
-            <el-option v-for="a in allAssets" :key="a.id" :label="`${a.name}（${a.currency} ${a.current_value.toFixed(2)}）`" :value="a.id">
+            <el-option v-for="a in allAssets" :key="a.id" :label="`${a.name}（${a.currency} ${Number(a.current_value).toFixed(2)}）`" :value="Number(a.id)">
               <span>{{ a.name }}</span>
               <el-tag v-if="a.asset_type === 'loan' || a.asset_type === 'credit_card' || a.asset_type === 'other_liability'" size="small" type="warning" effect="light" style="margin-left: 8px">负债</el-tag>
-              <span style="float: right; color: #8492a6; font-size: 13px">{{ a.currency }} {{ a.current_value.toFixed(2) }}</span>
+              <span style="float: right; color: #8492a6; font-size: 13px">{{ a.currency }} {{ Number(a.current_value).toFixed(2) }}</span>
             </el-option>
           </el-select>
         </el-form-item>
@@ -167,6 +167,9 @@ const expenses = ref<DailyExpense[]>([])
 const allCategories = ref<Category[]>([])
 const allAssets = ref<Asset[]>([])
 
+const form = reactive({ expense_type: 'expense' as 'income' | 'expense', category_id: null as number | null, asset_id: null as number | null, amount: 0, expense_date: '', note: '', tags: [] as Tag[], _catPath: [] as number[] })
+const rules = { expense_type: [{ required: true }], category_id: [{ required: true }], asset_id: [{ required: true, message: '请选择关联资产', trigger: 'change' }], amount: [{ required: true }], expense_date: [{ required: true }] }
+
 const categoryTree = computed(() => {
   return allCategories.value.filter(c => c.type === form.expense_type)
 })
@@ -197,9 +200,6 @@ const editingId = ref<number | null>(null)
 const saving = ref(false)
 const formRef = ref()
 
-const form = reactive({ expense_type: 'expense' as 'income' | 'expense', category_id: null as number | null, asset_id: null as number | null, amount: 0, expense_date: '', note: '', tags: [] as Tag[], _catPath: [] as number[] })
-const rules = { expense_type: [{ required: true }], category_id: [{ required: true }], asset_id: [{ required: true, message: '请选择关联资产', trigger: 'change' }], amount: [{ required: true }], expense_date: [{ required: true }] }
-
 function formatCurrency(v: number) { return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(v) }
 
 async function loadData() {
@@ -220,11 +220,11 @@ async function loadData() {
   }
 }
 
-function onCatChange(val: any) { form.category_id = (val as number[])?.[(val as number[]).length - 1] ?? null }
+function onCatChange(val: any) { const last = (val as any[])?.[(val as any[]).length - 1]; form.category_id = last != null ? Number(last) : null }
 
 function openDialog(expense?: any) {
   editingId.value = expense?.id ?? null
-  Object.assign(form, expense ? { expense_type: expense.expense_type, category_id: expense.category_id, asset_id: expense.asset_id, amount: expense.amount, expense_date: expense.expense_date, note: expense.note, tags: expense.tags ?? [], _catPath: [expense.category_id] }
+  Object.assign(form, expense ? { expense_type: expense.expense_type, category_id: Number(expense.category_id), asset_id: Number(expense.asset_id), amount: Number(expense.amount), expense_date: expense.expense_date, note: expense.note, tags: expense.tags ?? [], _catPath: [Number(expense.category_id)] }
     : { expense_type: 'expense', category_id: null, asset_id: null, amount: 0, expense_date: new Date().toISOString().slice(0, 10), note: '', tags: [], _catPath: [] })
   dialogVisible.value = true
 }

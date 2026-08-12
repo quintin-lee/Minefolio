@@ -12,6 +12,7 @@ declare module 'vue' {
     AssetTrendLine: typeof import('./components/AssetTrendLine.vue')['default']
     CategoryTree: typeof import('./components/CategoryTree.vue')['default']
     DailyExpenseForm: typeof import('./components/DailyExpenseForm.vue')['default']
+    ElAlert: typeof import('element-plus/es')['ElAlert']
     ElAside: typeof import('element-plus/es')['ElAside']
     ElButton: typeof import('element-plus/es')['ElButton']
     ElCard: typeof import('element-plus/es')['ElCard']
