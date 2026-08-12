@@ -8,6 +8,7 @@ export const zhCN = {
     categories: '分类',
     transfer: '转账',
     reports: '报表',
+    auditLogs: '日志',
     login: '登录',
     logout: '退出',
     profile: '个人',

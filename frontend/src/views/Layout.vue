@@ -34,6 +34,10 @@
           <el-icon><PieChart /></el-icon>
           <span>{{ t('nav.reports') }}</span>
         </el-menu-item>
+        <el-menu-item index="/audit-logs">
+          <el-icon><List /></el-icon>
+          <span>{{ t('nav.auditLogs') }}</span>
+        </el-menu-item>
       </el-menu>
     </el-aside>
 
@@ -103,6 +107,7 @@ const pageTitle = computed(() => {
     '/categories': '分类管理',
     '/transfer': '资产转账',
     '/reports': '报表中心',
+    '/audit-logs': '日志',
   }
   return map[route.path] || 'Minefolio'
 })

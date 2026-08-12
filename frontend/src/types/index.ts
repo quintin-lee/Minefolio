@@ -98,3 +98,16 @@ export interface ApiResponse<T> {
   message: string
   data: T
 }
+
+export interface AssetBalanceLog {
+  id: number
+  asset_id: number
+  asset_name?: string
+  user_id: number
+  delta: number
+  balance_after: number
+  source_type: string
+  source_id: number
+  note?: string
+  created_at: string
+}

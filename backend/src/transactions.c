@@ -199,14 +199,16 @@ void transactions_update(csilk_ctx_t* c) {
     const char* note = csilk_json_get_string(body, "note");
     double price = csilk_json_get_number(body, "price_per_unit");
     double qty = csilk_json_get_number(body, "quantity");
+    int64_t category_id = (int64_t)csilk_json_get_number(body, "category_id");
 
     char sql[512];
     snprintf(sql, sizeof(sql),
         "UPDATE transactions SET transaction_type='%s', amount=%.6f, price_per_unit=%.4f, "
         "quantity=%.4f, currency='%s', transaction_date='%s', note='%s', "
-        "updated_at=CURRENT_TIMESTAMP WHERE id=%s AND user_id=%lld",
+        "category_id=%lld WHERE id=%s AND user_id=%lld",
         type ? type : "", amount, price, qty,
         currency ? currency : "CNY", date ? date : "", note ? note : "",
+        category_id,
         id_str, (long long)user_id);
 
     if (csilk_db_exec(pool, "BEGIN TRANSACTION") != 0) {

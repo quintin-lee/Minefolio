@@ -42,6 +42,7 @@ extern void report_asset_breakdown(csilk_ctx_t* c);
 extern void report_transaction_performance(csilk_ctx_t* c);
 extern void report_asset_summary(csilk_ctx_t* c);
 extern void summary_get(csilk_ctx_t* c);
+extern void asset_logs_list(csilk_ctx_t* c);
 
 
 // JWT middleware wrapper (new API: no extra args)
@@ -226,6 +227,8 @@ int main(int argc, char** argv) {
 
     // Summary (dashboard aggregate)
     csilk_app_get(app, "/api/summary", summary_get);
+
+    csilk_app_get(app, "/api/asset-balance-logs", asset_logs_list);
 
     // Static files (frontend build output)
     csilk_app_static(app, "/", "./frontend/dist");

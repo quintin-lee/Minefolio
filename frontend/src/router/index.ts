@@ -23,6 +23,7 @@ const router = createRouter({
         { path: 'categories', name: 'Categories', component: () => import('@/views/Categories.vue') },
         { path: 'transfer', name: 'Transfer', component: () => import('@/views/Transfer.vue') },
         { path: 'reports', name: 'Reports', component: () => import('@/views/Reports.vue') },
+        { path: 'audit-logs', name: 'AuditLogs', component: () => import('@/views/AuditLogs.vue') },
       ],
     },
   ],
