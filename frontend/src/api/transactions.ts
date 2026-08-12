@@ -1,6 +1,6 @@
 // frontend/src/api/transactions.ts
 import http from '@/utils/http'
-import type { Transaction } from '@/types'
+import type { PageResult, Transaction, TransactionMonthly } from '@/types'
 
 export const transactionsApi = {
   list: (params?: {
@@ -9,7 +9,13 @@ export const transactionsApi = {
     type?: string
     start_date?: string
     end_date?: string
-  }) => http.get<Transaction[], Transaction[]>('/transactions', { params }),
+    page?: number
+    page_size?: number
+  }) => http.get<PageResult<Transaction>, PageResult<Transaction>>('/transactions', { params }),
+  monthly: (month: string) =>
+    http.get<TransactionMonthly, TransactionMonthly>('/transactions/monthly', {
+      params: { month },
+    }),
   create: (data: any) => http.post<void, void>('/transactions', data),
   update: (id: number, data: any) => http.put<void, void>(`/transactions/${id}`, data),
   delete: (id: number) => http.delete<void, void>(`/transactions/${id}`),

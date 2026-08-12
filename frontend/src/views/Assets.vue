@@ -64,6 +64,9 @@
           </template>
         </el-table-column>
       </el-table>
+      <div class="pagination-bar">
+        <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[10, 20, 50, 100]" layout="total, sizes, prev, pager, next, jumper" background @current-change="loadAssets" @size-change="handleSizeChange" />
+      </div>
     </div>
 
     <!-- 新增/编辑对话框 -->
@@ -107,23 +110,28 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { assetsApi } from '@/api/assets'
-import { categoriesApi } from '@/api/categories'
-import type { Asset, Category } from '@/types'
+import { summaryApi } from '@/api/summary'
+import { useCategoryStore } from '@/stores/category'
+import type { Asset, Category, Summary } from '@/types'
 
 const assets = ref<Asset[]>([])
 const categoryTree = ref<Category[]>([])
+const categoryStore = useCategoryStore()
 const dialogVisible = ref(false)
 const editingId = ref<number | null>(null)
 const saving = ref(false)
 const formRef = ref()
+const page = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
+const summary = ref<Summary>({ total_assets: 0, total_liabilities: 0, net_worth: 0, breakdown: [], trend: [] })
 
-const totalAssets = computed(() => assets.value.filter(a => !isLiability(a)).reduce((s, a) => s + a.current_value, 0))
-const totalLiabilities = computed(() => assets.value.filter(isLiability).reduce((s, a) => s + a.current_value, 0))
-const netWorth = computed(() => totalAssets.value - totalLiabilities.value)
+const totalAssets = computed(() => summary.value.total_assets)
+const totalLiabilities = computed(() => summary.value.total_liabilities)
+const netWorth = computed(() => summary.value.net_worth)
 
-function isLiability(asset: Asset) {
-  const types = ['loan', 'credit_card', 'other_liability']
-  return types.includes(asset.asset_type || '')
+async function loadSummary() {
+  summary.value = await summaryApi.get()
 }
 
 function formatCurrency(val: number) {
@@ -131,13 +139,19 @@ function formatCurrency(val: number) {
 }
 
 async function loadAssets() {
-  const res = await assetsApi.list()
-  assets.value = res
+  const res = await assetsApi.list({ page: page.value, page_size: pageSize.value })
+  assets.value = res.list
+  total.value = res.total
+}
+
+function handleSizeChange() {
+  page.value = 1
+  loadAssets()
 }
 
 async function loadCategories() {
-  const res = await categoriesApi.list({ type: 'asset' })
-  categoryTree.value = res
+  await categoryStore.loadCategories()
+  categoryTree.value = categoryStore.assetCategories
 }
 
 function openDialog(asset?: any) {
@@ -184,7 +198,7 @@ async function handleDelete(asset: any) {
   loadAssets()
 }
 
-onMounted(() => { loadAssets(); loadCategories() })
+onMounted(() => { loadAssets(); loadSummary(); loadCategories() })
 </script>
 
 <style scoped>
@@ -232,6 +246,12 @@ onMounted(() => { loadAssets(); loadCategories() })
 .premium-table {
   --el-table-border-color: transparent;
   --el-table-header-bg-color: rgba(0, 212, 255, 0.06);
+}
+
+.pagination-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
 }
 
 :deep(.premium-header th) {

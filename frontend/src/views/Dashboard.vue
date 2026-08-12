@@ -150,8 +150,8 @@ async function loadMonthly() {
 }
 
 async function loadRecent() {
-  const res = await dailyExpensesApi.list({ start_date: '2026-01-01' })
-  recentExpenses.value = res.slice(0, 10)
+  const res = await dailyExpensesApi.list({ start_date: '2026-01-01', page_size: 10 })
+  recentExpenses.value = res.list
 }
 
 onMounted(loadDashboard)

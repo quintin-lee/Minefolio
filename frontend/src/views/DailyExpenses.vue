@@ -26,7 +26,7 @@
                 <el-date-picker v-model="filters.month" type="month" placeholder="选择月份" value-format="YYYY-MM" class="filter-date" />
               </el-form-item>
               <el-form-item class="filter-actions">
-                <el-button type="primary" class="search-btn" @click="loadData">查询</el-button>
+                <el-button type="primary" class="search-btn" @click="handleSearch">查询</el-button>
               </el-form-item>
             </el-form>
           </div>
@@ -91,6 +91,9 @@
                 </template>
               </el-table-column>
             </el-table>
+            <div class="pagination-bar">
+              <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[10, 20, 50, 100]" layout="total, sizes, prev, pager, next, jumper" background @current-change="loadData" @size-change="handleSizeChange" />
+            </div>
           </div>
         </div>
       </el-col>
@@ -156,8 +159,8 @@
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { dailyExpensesApi } from '@/api/daily_expenses'
-import { categoriesApi } from '@/api/categories'
 import { assetsApi } from '@/api/assets'
+import { useCategoryStore } from '@/stores/category'
 import TagPicker from '@/components/TagPicker.vue'
 import MonthlyChart from '@/components/MonthlyChart.vue'
 import ExpenseCategoryPie from '@/components/ExpenseCategoryPie.vue'
@@ -166,6 +169,10 @@ import type { DailyExpense, Tag, Category, Asset } from '@/types'
 const expenses = ref<DailyExpense[]>([])
 const allCategories = ref<Category[]>([])
 const allAssets = ref<Asset[]>([])
+const categoryStore = useCategoryStore()
+const page = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
 
 const form = reactive({ expense_type: 'expense' as 'income' | 'expense', category_id: null as number | null, asset_id: null as number | null, amount: 0, expense_date: '', note: '', tags: [] as Tag[], _catPath: [] as number[] })
 const rules = { expense_type: [{ required: true }], category_id: [{ required: true }], asset_id: [{ required: true, message: '请选择关联资产', trigger: 'change' }], amount: [{ required: true }], expense_date: [{ required: true }] }
@@ -203,7 +210,7 @@ const formRef = ref()
 function formatCurrency(v: number) { return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(v) }
 
 async function loadData() {
-  const params: any = {}
+  const params: any = { page: page.value, page_size: pageSize.value }
   if (filters.type) params.expense_type = filters.type
   const now = new Date()
   let y = now.getFullYear()
@@ -222,8 +229,19 @@ async function loadData() {
     dailyExpensesApi.list(params),
     dailyExpensesApi.monthly(y, m)
   ])
-  expenses.value = res
+  expenses.value = res.list
+  total.value = res.total
   monthSummary.value = mr
+}
+
+function handleSearch() {
+  page.value = 1
+  loadData()
+}
+
+function handleSizeChange() {
+  page.value = 1
+  loadData()
 }
 
 function onCatChange(val: any) { const last = (val as any[])?.[(val as any[]).length - 1]; form.category_id = last != null ? Number(last) : null }
@@ -265,12 +283,12 @@ async function handleDelete(expense: any) {
 }
 
 onMounted(async () => {
-  const [catRes, assetRes] = await Promise.all([
-    categoriesApi.list({ type: 'income,expense' }),
-    assetsApi.list(),
+  const [, assetRes] = await Promise.all([
+    categoryStore.loadCategories(),
+    assetsApi.list({ page_size: 500 }),
   ])
-  allCategories.value = catRes
-  allAssets.value = assetRes
+  allCategories.value = categoryStore.incomeExpenseCategories
+  allAssets.value = assetRes.list
   filters.month = new Date().toISOString().slice(0, 7)
   loadData()
 })
@@ -370,6 +388,12 @@ onMounted(async () => {
 .premium-table {
   --el-table-border-color: transparent;
   --el-table-header-bg-color: rgba(0, 212, 255, 0.06);
+}
+
+.pagination-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
 }
 
 :deep(.premium-header th) {

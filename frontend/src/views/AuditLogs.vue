@@ -65,6 +65,9 @@
           </template>
         </el-table-column>
       </el-table>
+      <div class="pagination-bar">
+        <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[10, 20, 50, 100]" layout="total, sizes, prev, pager, next, jumper" background @current-change="loadData" @size-change="handleSizeChange" />
+      </div>
     </div>
   </div>
 </template>
@@ -79,6 +82,9 @@ import type { AssetBalanceLog, Asset } from '@/types'
 const logs = ref<AssetBalanceLog[]>([])
 const assets = ref<Asset[]>([])
 const filters = ref({ asset_id: '' as string })
+const page = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
 
 const sourceTypeMap: Record<string, { label: string; tag: 'success' | 'warning' | 'info' | 'danger' }> = {
   daily_expense: { label: '日常收支', tag: 'danger' },
@@ -92,18 +98,27 @@ function sourceTypeTag(t: string): 'success' | 'warning' | 'info' | 'danger' { r
 function formatDateTime(s: string) { return s ? s.replace('T', ' ').slice(0, 16) : '—' }
 
 async function loadData() {
-  const params: any = {}
+  const params: any = { page: page.value, page_size: pageSize.value }
   if (filters.value.asset_id) params.asset_id = filters.value.asset_id
-  logs.value = await assetLogsApi.list(params)
+  const res = await assetLogsApi.list(params)
+  logs.value = res.list
+  total.value = res.total
+}
+
+function handleSizeChange() {
+  page.value = 1
+  loadData()
 }
 
 function resetFilters() {
   filters.value = { asset_id: '' }
+  page.value = 1
   loadData()
 }
 
 onMounted(async () => {
-  assets.value = await assetsApi.list()
+  const res = await assetsApi.list({ page_size: 500 })
+  assets.value = res.list
   loadData()
 })
 </script>
@@ -158,6 +173,12 @@ onMounted(async () => {
 .premium-table {
   --el-table-border-color: transparent;
   --el-table-header-bg-color: rgba(0, 212, 255, 0.06);
+}
+
+.pagination-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
 }
 
 :deep(.premium-header th) {

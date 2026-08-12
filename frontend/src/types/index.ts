@@ -96,6 +96,20 @@ export interface ExpenseMonthly {
   daily_breakdown: { date: string; income: number; expense: number }[]
 }
 
+export interface PageResult<T> {
+  list: T[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface TransactionMonthly {
+  total_volume: number
+  inflows: number
+  outflows: number
+  count: number
+}
+
 export interface ApiResponse<T> {
   code: number
   message: string

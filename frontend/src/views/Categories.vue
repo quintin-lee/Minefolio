@@ -249,7 +249,7 @@ function onFormTypeChange() {
 }
 
 async function loadData() {
-  const data = await categoryStore.loadCategories(undefined, true)
+  const data = await categoryStore.loadCategories()
   categories.value = data
 }
 

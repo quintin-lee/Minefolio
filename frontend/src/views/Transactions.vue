@@ -73,7 +73,7 @@
             />
           </el-form-item>
           <el-form-item class="filter-actions">
-            <el-button type="primary" class="search-btn" @click="loadData">查询</el-button>
+            <el-button type="primary" class="search-btn" @click="handleSearch">查询</el-button>
             <el-button class="reset-btn" @click="resetFilters">重置</el-button>
           </el-form-item>
         </el-form>
@@ -147,6 +147,18 @@
             </template>
           </el-table-column>
         </el-table>
+        <div class="pagination-bar">
+          <el-pagination
+            v-model:current-page="page"
+            v-model:page-size="pageSize"
+            :total="total"
+            :page-sizes="[10, 20, 50, 100]"
+            layout="total, sizes, prev, pager, next, jumper"
+            background
+            @current-change="loadData"
+            @size-change="handleSizeChange"
+          />
+        </div>
       </div>
     </div>
 
@@ -308,9 +320,9 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { transactionsApi } from '@/api/transactions'
 import { assetsApi } from '@/api/assets'
-import { categoriesApi } from '@/api/categories'
+import { useCategoryStore } from '@/stores/category'
 import { formatCurrency } from '@/utils/format'
-import type { Transaction, Asset, Category } from '@/types'
+import type { Transaction, Asset, Category, TransactionMonthly } from '@/types'
 
 const loading = ref(false)
 const saving = ref(false)
@@ -321,6 +333,15 @@ const formRef = ref()
 const transactions = ref<Transaction[]>([])
 const assets = ref<Asset[]>([])
 const allCategories = ref<Category[]>([])
+const categoryStore = useCategoryStore()
+
+// 分页状态
+const page = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
+
+// 本月统计（独立端点，与分页解耦）
+const monthlyStats = ref<TransactionMonthly>({ total_volume: 0, inflows: 0, outflows: 0, count: 0 })
 
 const CURRENCIES = ['CNY', 'USD', 'EUR', 'GBP', 'JPY', 'HKD', 'KRW', 'TWD', 'SGD', 'AUD', 'CAD'] as const
 const currencyOptions = [...CURRENCIES]
@@ -372,29 +393,10 @@ const categoryTree = computed(() => allCategories.value)
 
 const currentMonthPrefix = computed(() => new Date().toISOString().slice(0, 7))
 
-const monthlyTransactions = computed(() => {
-  return transactions.value.filter(
-    t => t.transaction_date && t.transaction_date.startsWith(currentMonthPrefix.value)
-  )
-})
-
-const monthlyTotalVolume = computed(() => {
-  return monthlyTransactions.value.reduce((sum, t) => sum + (Number(t.amount) || 0), 0)
-})
-
-const monthlyInflows = computed(() => {
-  return monthlyTransactions.value
-    .filter(t => isIncomeType(t.transaction_type))
-    .reduce((sum, t) => sum + (Number(t.amount) || 0), 0)
-})
-
-const monthlyOutflows = computed(() => {
-  return monthlyTransactions.value
-    .filter(t => !isIncomeType(t.transaction_type))
-    .reduce((sum, t) => sum + (Number(t.amount) || 0), 0)
-})
-
-const monthlyCount = computed(() => monthlyTransactions.value.length)
+const monthlyTotalVolume = computed(() => monthlyStats.value.total_volume)
+const monthlyInflows = computed(() => monthlyStats.value.inflows)
+const monthlyOutflows = computed(() => monthlyStats.value.outflows)
+const monthlyCount = computed(() => monthlyStats.value.count)
 
 function isIncomeType(t: string) {
   const incomeTypes = ['deposit', 'income', 'sell', 'transfer_in']
@@ -463,12 +465,24 @@ function resetFilters() {
   filters.category_id = ''
   filters.type = ''
   filters.dateRange = null
+  page.value = 1
+  loadData()
+}
+
+function handleSearch() {
+  page.value = 1
+  loadData()
+}
+
+function handleSizeChange() {
+  page.value = 1
   loadData()
 }
 
 async function loadAssets() {
   try {
-    assets.value = await assetsApi.list()
+    const res = await assetsApi.list({ page_size: 500 })
+    assets.value = res.list
   } catch (err) {
     ElMessage.error('加载资产列表失败')
   }
@@ -476,8 +490,8 @@ async function loadAssets() {
 
 async function loadCategories() {
   try {
-    const res = await categoriesApi.list({ type: 'transaction' })
-    allCategories.value = res
+    await categoryStore.loadCategories()
+    allCategories.value = categoryStore.transactionCategories
   } catch (err) {
     ElMessage.error('加载交易分类失败')
   }
@@ -486,18 +500,28 @@ async function loadCategories() {
 async function loadData() {
   loading.value = true
   try {
-    const params: any = {}
+    const params: any = { page: page.value, page_size: pageSize.value }
     if (filters.asset_id) params.asset_id = filters.asset_id
     if (filters.category_id) params.category_id = String(filters.category_id)
     if (filters.type) params.type = filters.type
     if (filters.dateRange?.[0]) params.start_date = filters.dateRange[0]
     if (filters.dateRange?.[1]) params.end_date = filters.dateRange[1]
     const res = await transactionsApi.list(params)
-    transactions.value = res
+    transactions.value = res.list
+    total.value = res.total
+    await loadMonthly()
   } catch (err) {
     ElMessage.error('加载交易记录失败')
   } finally {
     loading.value = false
+  }
+}
+
+async function loadMonthly() {
+  try {
+    monthlyStats.value = await transactionsApi.monthly(currentMonthPrefix.value)
+  } catch {
+    monthlyStats.value = { total_volume: 0, inflows: 0, outflows: 0, count: 0 }
   }
 }
 
@@ -641,6 +665,12 @@ onMounted(() => {
   padding: 16px;
   box-shadow: var(--mf-shadow-sm);
   border: 1px solid var(--mf-border);
+}
+
+.pagination-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
 }
 
 .category-pill {
