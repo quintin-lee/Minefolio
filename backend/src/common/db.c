@@ -237,6 +237,71 @@ int db_run_migrations(csilk_db_pool_t* pool) {
         csilk_db_exec(pool, "UPDATE transactions SET source_type='expense' WHERE transaction_type IN ('withdrawal','buy','fee','loss')");
     }
 
+    // ---- transactions direction / linked_direction 列迁移 ----
+    if (!col_exists(pool, "transactions", "direction")) {
+        if (csilk_db_exec(pool,
+                "ALTER TABLE transactions ADD COLUMN direction TEXT NOT NULL DEFAULT 'out' "
+                "CHECK(direction IN ('in','out','neutral'))") != 0) {
+            fprintf(stderr, "Migration error: cannot add direction to transactions\n");
+            free(sql);
+            return -1;
+        }
+    }
+    if (!col_exists(pool, "transactions", "linked_direction")) {
+        if (csilk_db_exec(pool,
+                "ALTER TABLE transactions ADD COLUMN linked_direction TEXT "
+                "CHECK(linked_direction IN ('in','out','neutral'))") != 0) {
+            fprintf(stderr, "Migration error: cannot add linked_direction to transactions\n");
+            free(sql);
+            return -1;
+        }
+    }
+    // 回填：direction / linked_direction 按存量类型推断
+    csilk_db_exec(pool, "UPDATE transactions SET direction='in' WHERE transaction_type IN ('deposit','sell','income','transfer_in')");
+    csilk_db_exec(pool, "UPDATE transactions SET linked_direction='in' WHERE transaction_type IN ('sell','withdrawal','income','transfer_out')");
+    csilk_db_exec(pool, "UPDATE transactions SET linked_direction='out' WHERE linked_direction IS NULL");
+
+    // ---- transactions 表 transaction_type CHECK 移除重建（须在 direction 列迁移之后） ----
+    csilk_json_t* txdir_schema = csilk_db_query_json(pool, "SELECT sql FROM sqlite_master WHERE type='table' AND name='transactions'");
+    if (txdir_schema && csilk_json_array_size(txdir_schema) > 0) {
+        const char* sql_def = csilk_json_get_string(csilk_json_array_get(txdir_schema, 0), "sql");
+        if (sql_def && strstr(sql_def, "CHECK(transaction_type IN")) {
+            csilk_db_exec(pool, "PRAGMA foreign_keys=OFF");
+            csilk_db_exec(pool, "BEGIN TRANSACTION");
+            csilk_db_exec(pool,
+                "CREATE TABLE transactions_new ("
+                "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                "  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,"
+                "  asset_id INTEGER NOT NULL REFERENCES assets(id) ON DELETE CASCADE,"
+                "  linked_asset_id INTEGER REFERENCES assets(id) ON DELETE SET NULL,"
+                "  category_id INTEGER REFERENCES categories(id) ON DELETE RESTRICT,"
+                "  source_type TEXT NOT NULL DEFAULT 'expense' CHECK(source_type IN ('income', 'expense')),"
+                "  transaction_type TEXT NOT NULL,"
+                "  direction TEXT NOT NULL DEFAULT 'out' CHECK(direction IN ('in','out','neutral')),"
+                "  linked_direction TEXT CHECK(linked_direction IN ('in','out','neutral')),"
+                "  amount DECIMAL(18,2) NOT NULL,"
+                "  price_per_unit DECIMAL(18,4),"
+                "  quantity DECIMAL(18,4),"
+                "  currency TEXT DEFAULT 'CNY',"
+                "  transaction_date TIMESTAMP NOT NULL,"
+                "  note TEXT,"
+                "  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+                ")");
+            csilk_db_exec(pool,
+                "INSERT INTO transactions_new (id, user_id, asset_id, linked_asset_id, category_id, source_type, "
+                "transaction_type, direction, linked_direction, amount, price_per_unit, quantity, currency, "
+                "transaction_date, note, created_at) "
+                "SELECT id, user_id, asset_id, linked_asset_id, category_id, source_type, "
+                "transaction_type, direction, linked_direction, amount, price_per_unit, quantity, currency, "
+                "transaction_date, note, created_at FROM transactions");
+            csilk_db_exec(pool, "DROP TABLE transactions");
+            csilk_db_exec(pool, "ALTER TABLE transactions_new RENAME TO transactions");
+            csilk_db_exec(pool, "COMMIT");
+            csilk_db_exec(pool, "PRAGMA foreign_keys=ON");
+        }
+    }
+    if (txdir_schema) csilk_json_free(txdir_schema);
+
     free(sql);
     return 0;
 }
