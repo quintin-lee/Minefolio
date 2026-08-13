@@ -136,6 +136,12 @@
               <span v-else class="muted-text">—</span>
             </template>
           </el-table-column>
+          <el-table-column v-if="showFeeCol" label="手续费" width="100" align="right">
+            <template #default="{ row }">
+              <span v-if="row.fee && row.fee > 0" class="mono-amount expense-text">{{ formatCurrency(row.fee) }}</span>
+              <span v-else class="muted-text">—</span>
+            </template>
+          </el-table-column>
           <el-table-column prop="currency" label="币种" width="90" align="center">
             <template #default="{ row }">
               <el-tag size="small" type="info" effect="plain">{{ row.currency || 'CNY' }}</el-tag>
@@ -251,8 +257,8 @@
 
         <!-- 仅买入/卖出时动态展开单价与数量 -->
         <el-row v-if="isTradingType(form.transaction_type)" :gutter="16" class="trading-fields">
-          <el-col :span="12">
-            <el-form-item label="交易单价">
+          <el-col :span="8">
+            <el-form-item :label="`交易单价 (${quantityUnit})`">
               <el-input-number
                 v-model="form.price_per_unit"
                 :precision="4"
@@ -264,7 +270,7 @@
               />
             </el-form-item>
           </el-col>
-          <el-col :span="12">
+          <el-col :span="8">
             <el-form-item label="交易数量">
               <el-input-number
                 v-model="form.quantity"
@@ -274,6 +280,32 @@
                 :controls="false"
                 placeholder="0.0000"
                 @input="calculateAmount"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="手续费">
+              <el-input-number
+                v-model="form.fee"
+                :precision="2"
+                :min="0"
+                style="width: 100%"
+                :controls="false"
+                placeholder="0.00"
+              />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row v-if="isTradingType(form.transaction_type)" :gutter="16" class="trading-fields">
+          <el-col :span="12">
+            <el-form-item label="手续费">
+              <el-input-number
+                v-model="form.fee"
+                :precision="2"
+                :min="0"
+                style="width: 100%"
+                :controls="false"
+                placeholder="0.00"
               />
             </el-form-item>
           </el-col>
@@ -429,6 +461,7 @@ const form = reactive({
   amount: 0,
   quantity: 0,
   price_per_unit: 0,
+  fee: 0,
   transaction_date: new Date().toISOString().slice(0, 10),
   note: '',
   category_id: null as number | null,
@@ -482,6 +515,14 @@ function calculateAmount() {
     }
   }
 }
+
+const quantityUnit = computed(() => {
+  const asset = assets.value.find(a => a.id === form.asset_id)
+  if (!asset) return ''
+  const map: Record<string, string> = { stock: '股', fund: '份', bond: '张', crypto: '币' }
+  return map[asset.asset_type ?? ''] || ''
+})
+const showFeeCol = computed(() => ['buy','sell','fee'].some(t => true))
 
 function onAssetChange(assetId: number | null) {
   const asset = assets.value.find(a => a.id === assetId)

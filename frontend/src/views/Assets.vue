@@ -55,6 +55,21 @@
             <span class="mono-amount">{{ formatCurrency(row.current_value) }}</span>
           </template>
         </el-table-column>
+        <el-table-column v-if="assetTypeShow('stock','fund','bond','crypto')" label="份额" min-width="100" align="right">
+          <template #default="{ row }">
+            <span class="mono-amount">{{ row.quantity != null ? row.quantity.toFixed(2) : '-' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column v-if="assetTypeShow('stock','fund','bond','crypto')" label="成本" min-width="120" align="right">
+          <template #default="{ row }">
+            <span class="mono-amount">{{ row.cost_basis != null ? formatCurrency(row.cost_basis) : '-' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column v-if="assetTypeShow('stock','fund','bond','crypto')" label="净值" min-width="100" align="right">
+          <template #default="{ row }">
+            <span class="mono-amount">{{ row.net_value != null ? row.net_value.toFixed(4) : '-' }}</span>
+          </template>
+        </el-table-column>
         <el-table-column label="操作" width="140" align="center">
           <template #default="{ row }">
             <div class="action-buttons">
@@ -83,8 +98,16 @@
           <el-input v-model="form.account_no" placeholder="可选" />
         </el-form-item>
         <el-form-item label="当前价值" prop="current_value">
-          <el-input-number v-model="form.current_value" :precision="2" :min="0" style="width: 100%" :controls="false" />
+          <el-input-number v-model="form.current_value" :precision="2" :min="0" style="width: 100%" :controls="false" :disabled="isInvestment" />
         </el-form-item>
+        <template v-if="isInvestment">
+          <el-form-item label="持有份额">
+            <el-input-number v-model="form.quantity" :precision="4" :min="0" style="width: 100%" :controls="false" />
+          </el-form-item>
+          <el-form-item label="单位净值">
+            <el-input-number v-model="form.net_value" :precision="4" :min="0" style="width: 100%" :controls="false" />
+          </el-form-item>
+        </template>
         <el-form-item label="币种">
           <el-select v-model="form.currency" style="width: 100%">
             <el-option label="CNY" value="CNY" />
@@ -156,15 +179,22 @@ async function loadCategories() {
 
 function openDialog(asset?: any) {
   editingId.value = asset?.id ?? null
+  const isInv = ['stock','fund','bond','crypto'].includes(asset?.asset_type ?? '')
   Object.assign(form, asset ? {
     name: asset.name, category_id: asset.category_id, account_no: asset.account_no,
     current_value: asset.current_value, currency: asset.currency, note: asset.note,
+    quantity: asset.quantity ?? 0, net_value: asset.net_value ?? 0,
     _catPath: [asset.category_id],
-  } : { name: '', category_id: null, account_no: '', current_value: 0, currency: 'CNY', note: '', _catPath: [] })
+    _isInvestment: isInv,
+  } : { name: '', category_id: null, account_no: '', current_value: 0, currency: 'CNY', note: '', quantity: 0, net_value: 0, _catPath: [], _isInvestment: false })
   dialogVisible.value = true
 }
 
-const form = reactive({ name: '', category_id: null as number | null, account_no: '', current_value: 0, currency: 'CNY', note: '', _catPath: [] as number[] })
+const form = reactive({ name: '', category_id: null as number | null, account_no: '', current_value: 0, currency: 'CNY', note: '', quantity: 0, net_value: 0, _catPath: [] as number[], _isInvestment: false as boolean })
+const isInvestment = computed(() => form._isInvestment)
+function assetTypeShow(...types: string[]) {
+  return (a: Asset) => types.includes(a.asset_type ?? '')
+}
 const rules = { name: [{ required: true, message: '请输入资产名称' }], category_id: [{ required: true, message: '请选择分类' }] }
 
 function onCatChange(val: any) {
@@ -177,7 +207,8 @@ async function handleSubmit() {
     if (!valid) return
     saving.value = true
     try {
-      const data = { name: form.name, category_id: form.category_id, account_no: form.account_no, current_value: form.current_value, currency: form.currency, note: form.note }
+      const data: any = { name: form.name, category_id: form.category_id, account_no: form.account_no, current_value: form.current_value, currency: form.currency, note: form.note }
+      if (form._isInvestment) { data.quantity = form.quantity; data.net_value = form.net_value }
       if (editingId.value) {
         await assetsApi.update(editingId.value, data)
         ElMessage.success('更新成功')
