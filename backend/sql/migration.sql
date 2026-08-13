@@ -45,11 +45,9 @@ CREATE TABLE IF NOT EXISTS transactions (
     linked_asset_id  INTEGER REFERENCES assets(id) ON DELETE SET NULL,
     category_id      INTEGER REFERENCES categories(id) ON DELETE RESTRICT,
     source_type      TEXT NOT NULL DEFAULT 'expense' CHECK(source_type IN ('income', 'expense')),
-    transaction_type TEXT NOT NULL CHECK(transaction_type IN (
-        'deposit','withdrawal','buy','sell',
-        'transfer_in','transfer_out','fee',
-        'income','loss'
-    )),
+    transaction_type TEXT NOT NULL,
+    direction        TEXT NOT NULL DEFAULT 'out' CHECK(direction IN ('in','out','neutral')),
+    linked_direction TEXT CHECK(linked_direction IN ('in','out','neutral')),
     amount           DECIMAL(18,2) NOT NULL,
     price_per_unit   DECIMAL(18,4),
     quantity         DECIMAL(18,4),
