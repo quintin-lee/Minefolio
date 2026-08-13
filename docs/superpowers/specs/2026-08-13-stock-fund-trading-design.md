@@ -46,20 +46,21 @@ ALTER TABLE assets ADD COLUMN net_value  DECIMAL(18,4) NOT NULL DEFAULT 0;  -- �
 
 buy/sell 时在金额联动基础上扩展持仓联动：
 
-| 交易 | 金额联动（现有，不动） | 持仓联动（新增） |
+| 交易 | 资金账户联动（现有，不动） | 投资资产联动（持仓驱动，改写） |
 |---|---|---|
-| buy | 投资资产 `+amount`，资金账户 `−amount` | `quantity += qty`；`cost_basis += amount`；`net_value = price_per_unit` |
-| sell | 投资资产 `−amount`，资金账户 `+amount` | `quantity −= qty`；`cost_basis −= qty × avg_cost`（售出前均价 = 卖出前 cost_basis/quantity）；`net_value` 不变 |
-| 净值更新 | assets_update 改 net_value | `current_value = quantity × net_value` 自动重算 |
+| buy | linked 资金账户 `−amount` | `quantity += qty`；`cost_basis += amount`；`net_value = price_per_unit`；**balance 重算**: `delta = (quantity × net_value) − 旧 current_value` → `balance_apply_delta(asset, delta)` |
+| sell | linked 资金账户 `+amount` | `quantity −= qty`；`cost_basis −= qty × avg_cost`（售出前均价 = 卖出前 cost_basis/quantity）；`net_value` 不变；**balance 重算**同上 |
+| 净值更新 | assets_update 改 net_value | `current_value = quantity × net_value` 自动重算（同样走 delta 差值） |
 
 **关键语义变化（A2）**：
-- `current_value` 不再是用户手输的独立值，对投资类资产它**派生**自 `quantity × net_value`。
-- buy 时 `net_value = price_per_unit`（成交价即净值起点）；此后净值由用户通过资产编辑维护。
-- sell 后 `current_value` 自动重算为剩余份额 × 净值。
+- `current_value` 对投资类资产**派生**自 `quantity × net_value`，不再手输独立值。
+- **投资资产不走 ±amount 累加**（双重计算冲突）：balance 联动 = 持仓重算差值 `delta = 新current_value − 旧current_value`，复用 `balance_apply_delta`（自动 UPDATE current_value + 写 asset_balance_logs）。
+- 资金账户（linked_asset_id）保持现有 ±amount 语义不动。
+- buy 时 `net_value = price_per_unit`（成交价即净值起点，近似当日净值）；此后净值由用户通过资产编辑维护。
 - **已实现盈亏** = `amount − qty × avg_cost`（每次 sell 实时累计）。
 
 **手续费（同表单）**：buy/sell 表单加「手续费」输入，保存时**同事务**生成关联 fee 交易行：
-- fee 行：`transaction_type=fee`、`asset_id=投资资产`（或资金账户）、`amount=fee`、`note=关联主交易`
+- fee 行：`transaction_type=fee`、`asset_id=资金账户`（付款来源，避免触发投资资产 balance）、`amount=fee`、`note=关联主交易`、直接 `balance_apply_delta(资金账户, −fee)`（fee 的 balance_dir=out）
 - 手续费计入成本：buy 时 `cost_basis += fee`；sell 时已实现盈亏 `−= fee`
 
 **编辑/删除回滚**：transactions_update/delete 已有旧值读取（SELECT asset_id, linked_asset_id, amount, transaction_type, quantity, price_per_unit），扩展为：旧值负向回滚持仓（quantity/cost_basis/net_value），新值正向应用，全部在同一事务内。
@@ -90,8 +91,8 @@ buy/sell 时在金额联动基础上扩展持仓联动：
 ### 4. 前端
 
 1. **Assets.vue**：
-   - 表格加「份额 / 成本 / 净值」列（仅投资类 asset_type 显示）
-   - 对话框：新增「持有份额」「单位净值」输入（仅投资类显示）；保存时后端重算 current_value
+   - 表格加「份额 / 成本 / 净值」列（仅投资类 asset_type 显示）；`current_value` 列改为显示派生市值（只读）
+   - 对话框：新增「持有份额」「单位净值」输入（仅投资类显示）；保存时后端重算 current_value（delta 差值写日志）
 2. **资产详情**（api/assets.ts detail 返回扩展）：持仓摘要（份额/成本/均价/现值/浮动盈亏）+ 历史交易
 3. **Transactions.vue 表单**：
    - buy/sell 已有单价×数量；加「手续费」输入（同表单，保存生成 fee 行）
@@ -125,5 +126,6 @@ buy/sell 时在金额联动基础上扩展持仓联动：
 ## 风险与边界
 
 - **净值维护负担**：A2 下用户需在净值变化时手动更新 net_value（或接受 current_value 停留在旧净值）。这是 A2 的固有权衡（用户已确认接受）。
+- **编辑/删除回滚复杂度**：transactions_update/delete 需要从「旧值差额回滚 + 新值正向应用」改为「持仓快照重算」——投资资产必须回到交易前的持仓状态再应用新值，否则成本/份额漂移。实现时统一走"重算差值 delta"机制（读旧持仓 → 反向重算 → 用新值正向前推），全在一个事务内。
 - **历史数据**：存量投资类资产无 quantity/cost_basis/net_value（默认 0）——报表浮动盈亏=0−0=0，不报错但无意义；用户可自行补录或重录交易。
 - **不做**：外部行情 API、lot 级 FIFO、除权除息、分红自动识别（YAGNI）。
