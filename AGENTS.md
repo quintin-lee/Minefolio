@@ -93,7 +93,7 @@ cp .env.example .env       # set MINEFOLIO_JWT_SECRET
 
 ## Security (Known Limitations)
 
-- Passwords: HMAC-SHA256(pepper + password) for personal use.
+- Passwords: bcrypt (csilk `CSILK_BCRYPT_DEFAULT_COST=12`) for personal use.
 - CSRF: Controlled by `MINEFOLIO_ENABLE_CSRF`.
 - Multi-tenancy: Single `users` table, each query filters by `user_id` extracted from JWT.
 
