@@ -151,10 +151,8 @@ void transactions_monthly(csilk_ctx_t* c) {
     csilk_json_t* res = csilk_db_query_param_json(pool,
         "SELECT "
         "  COALESCE(SUM(amount), 0) AS total_volume, "
-        "  COALESCE(SUM(CASE WHEN transaction_type IN ('deposit','income','sell') "
-        "                     THEN amount ELSE 0 END), 0) AS inflows, "
-        "  COALESCE(SUM(CASE WHEN transaction_type IN ('withdrawal','buy','fee','loss') "
-        "                     THEN amount ELSE 0 END), 0) AS outflows, "
+        "  COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE 0 END), 0) AS inflows, "
+        "  COALESCE(SUM(CASE WHEN direction='out' THEN amount ELSE 0 END), 0) AS outflows, "
         "  COUNT(*) AS count "
         "FROM transactions WHERE user_id=? AND transaction_date LIKE ?", params);
     if (!res) { respond_error(c, 500, "查询失败"); return; }

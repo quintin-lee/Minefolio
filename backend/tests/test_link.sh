@@ -211,7 +211,7 @@ check "asset-balance-logs page_size=3 返回 3 条" "3" "$(echo "$LOG_PAGE" | jq
 MONTH_RES=$(curl -s -H "$AUTH" "$BASE/transactions/monthly?month=2026-08")
 check "transactions/monthly total_volume=1600" "1600" "$(echo "$MONTH_RES" | jq -r '.data.total_volume | floor')"
 check "transactions/monthly inflows=1000" "1000" "$(echo "$MONTH_RES" | jq -r '.data.inflows | floor')"
-check "transactions/monthly outflows=500" "500" "$(echo "$MONTH_RES" | jq -r '.data.outflows | floor')"
+check "transactions/monthly outflows=600" "600" "$(echo "$MONTH_RES" | jq -r '.data.outflows | floor')"
 check "transactions/monthly count=3" "3" "$(echo "$MONTH_RES" | jq -r '.data.count | floor')"
 
 echo "== 19. 分类树形结构 =="
