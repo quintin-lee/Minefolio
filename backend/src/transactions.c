@@ -248,7 +248,6 @@ void transactions_create(csilk_ctx_t* c) {
     double price = db_get_num(body, "price_per_unit");
     double qty = db_get_num(body, "quantity");
     double fee = db_get_num(body, "fee");
-    double fee = db_get_num(body, "fee");
 
     char cat_str[32], amt_str[64], price_str[64], qty_str[64];
     snprintf(cat_str, sizeof(cat_str), "%lld", (long long)category_id);
@@ -315,8 +314,12 @@ void transactions_create(csilk_ctx_t* c) {
                     new_cost = old_cost + amount + fee;
                     new_net = price;
                     position_delta = new_qty * new_net - old_current;
-                    const char* set_params[] = { qty_str, amt_str, price_str, ast_str, NULL };
-                    csilk_db_exec(pool,
+                    char set_qty_str[64], set_cb_str[64], set_nv_str[64];
+                    snprintf(set_qty_str, sizeof(set_qty_str), "%.4f", new_qty);
+                    snprintf(set_cb_str, sizeof(set_cb_str), "%.4f", new_cost);
+                    snprintf(set_nv_str, sizeof(set_nv_str), "%.4f", new_net);
+                    const char* set_params[] = { set_qty_str, set_cb_str, set_nv_str, ast_str, NULL };
+                    csilk_db_query_param_json(pool,
                         "UPDATE assets SET quantity=?, cost_basis=?, net_value=? WHERE id=?",
                         set_params);
                 } else {
@@ -332,8 +335,12 @@ void transactions_create(csilk_ctx_t* c) {
                     new_cost = old_cost - qty * avg_cost;
                     new_net = old_net;
                     position_delta = new_qty * new_net - old_current;
-                    const char* set_params[] = { qty_str, amt_str, price_str, ast_str, NULL };
-                    csilk_db_exec(pool,
+                    char set_qty_str[64], set_cb_str[64], set_nv_str[64];
+                    snprintf(set_qty_str, sizeof(set_qty_str), "%.4f", new_qty);
+                    snprintf(set_cb_str, sizeof(set_cb_str), "%.4f", new_cost);
+                    snprintf(set_nv_str, sizeof(set_nv_str), "%.4f", new_net);
+                    const char* set_params[] = { set_qty_str, set_cb_str, set_nv_str, ast_str, NULL };
+                    csilk_db_query_param_json(pool,
                         "UPDATE assets SET quantity=?, cost_basis=?, net_value=? WHERE id=?",
                         set_params);
                 }
@@ -356,7 +363,7 @@ void transactions_create(csilk_ctx_t* c) {
                         "out", NULL,
                         fee_amt_str, "0.0000", "0.0000", currency, date, note ? note : "", NULL
                     };
-                    csilk_db_exec(pool,
+                    csilk_db_query_param_json(pool,
                         "INSERT INTO transactions (user_id, asset_id, linked_asset_id, category_id, "
                         "source_type, transaction_type, direction, linked_direction, "
                         "amount, price_per_unit, quantity, currency, transaction_date, note) "
