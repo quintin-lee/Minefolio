@@ -348,7 +348,7 @@ void report_transaction_performance(csilk_ctx_t* c) {
         "SELECT t.id, a.name as asset_name, t.transaction_type, t.direction, t.transaction_date, "
         "t.quantity, t.price_per_unit, t.amount "
         "FROM transactions t JOIN assets a ON t.asset_id=a.id "
-        "WHERE t.user_id=? AND t.transaction_type NOT IN ('transfer_in', 'transfer_out') "
+        "WHERE t.user_id=? "
         "ORDER BY t.transaction_date DESC", params);
     if (!result) { respond_error(c, 500, "查询失败"); return; }
 
