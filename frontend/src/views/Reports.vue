@@ -107,6 +107,26 @@
                     {{ formatCurrency(perf?.net_gain ?? 0) }}
                   </div>
                 </div>
+                <div class="perf-item">
+                  <div class="perf-label">已实现盈亏</div>
+                  <div class="perf-value" :class="((perf?.realized_pnl ?? 0) >= 0 ? 'income-text' : 'expense-text')">
+                    {{ formatCurrency(perf?.realized_pnl ?? 0) }}
+                  </div>
+                </div>
+                <div class="perf-item">
+                  <div class="perf-label">浮动盈亏</div>
+                  <div class="perf-value" :class="((perf?.floating_pnl ?? 0) >= 0 ? 'income-text' : 'expense-text')">
+                    {{ formatCurrency(perf?.floating_pnl ?? 0) }}
+                  </div>
+                </div>
+                <div class="perf-item">
+                  <div class="perf-label">持仓市值</div>
+                  <div class="perf-value">{{ formatCurrency(perf?.total_market_value ?? 0) }}</div>
+                </div>
+                <div class="perf-item">
+                  <div class="perf-label">持仓成本</div>
+                  <div class="perf-value">{{ formatCurrency(perf?.total_cost_basis_remaining ?? 0) }}</div>
+                </div>
               </div>
             </div>
           </el-col>
