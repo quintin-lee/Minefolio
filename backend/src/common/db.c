@@ -107,6 +107,13 @@ int db_run_migrations(csilk_db_pool_t* pool) {
             return -1;
         }
         free(sql);
+        // ---- 方向列 + 移除 transaction_type CHECK（PG 存量库） ----
+        csilk_db_exec(pool, "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS direction TEXT NOT NULL DEFAULT 'out' CHECK(direction IN ('in','out','neutral'))");
+        csilk_db_exec(pool, "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS linked_direction TEXT CHECK(linked_direction IN ('in','out','neutral'))");
+        csilk_db_exec(pool, "UPDATE transactions SET direction='in' WHERE transaction_type IN ('deposit','sell','income','transfer_in')");
+        csilk_db_exec(pool, "UPDATE transactions SET linked_direction='in' WHERE transaction_type IN ('sell','withdrawal','income','transfer_out')");
+        csilk_db_exec(pool, "UPDATE transactions SET linked_direction='out' WHERE linked_direction IS NULL");
+        csilk_db_exec(pool, "ALTER TABLE transactions DROP CONSTRAINT IF EXISTS transactions_transaction_type_check");
         return 0;
     }
 
