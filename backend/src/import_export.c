@@ -1,6 +1,7 @@
 #include "common/response.h"
 #include "common/db.h"
 #include "common/jwt.h"
+#include "common/tx_types.h"
 #include "csilk/csilk.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -288,6 +289,15 @@ void transactions_import_csv(csilk_ctx_t* c) {
             if (l_res) csilk_json_free(l_res);
         }
 
+        const tx_type_t* ttype = tx_type_lookup(tx_type_s);
+        if (!ttype) {
+            errors++;
+            if (snprintf(errors_detail + strlen(errors_detail), sizeof(errors_detail) - strlen(errors_detail),
+                    "第%d行: 未知交易类型 '%s'\n", line_num, tx_type_s) > 0) {}
+            line_start = line_end ? line_end + 1 : line_start + 1;
+            continue;
+        }
+
         double amount = strtod(amount_s, NULL);
         double price = price_s[0] ? strtod(price_s, NULL) : 0;
         double qty = qty_s[0] ? strtod(qty_s, NULL) : 0;
@@ -303,19 +313,23 @@ void transactions_import_csv(csilk_ctx_t* c) {
         char linked_param[32] = {0};
         if (linked_id > 0) snprintf(linked_param, sizeof(linked_param), "%lld", (long long)linked_id);
 
+        char asset_param[32];
+        snprintf(asset_param, sizeof(asset_param), "%lld", (long long)asset_id);
+
         const char* ins_params[] = {
-            uid_str, asset_name, linked_param, category_param,
-            src_type, tx_type_s, amount_s,
-            price_param, qty_param, currency,
+            uid_str, asset_param, linked_param, category_param,
+            src_type, tx_type_s, ttype->stat_dir, ttype->linked_dir,
+            amount_s, price_param, qty_param, currency,
             date_s, note_s ? note_s : "",
             NULL
         };
 
         csilk_json_t* res = csilk_db_query_param_json(pool,
             "INSERT INTO transactions (user_id, asset_id, linked_asset_id, category_id, "
-            "source_type, transaction_type, amount, price_per_unit, quantity, currency, "
+            "source_type, transaction_type, direction, linked_direction, "
+            "amount, price_per_unit, quantity, currency, "
             "transaction_date, note) "
-            "VALUES (?, ?, NULLIF(?, '0'), NULLIF(?, '0'), ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+            "VALUES (?, ?, NULLIF(?, '0'), NULLIF(?, '0'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
             ins_params);
         if (res) csilk_json_free(res);
         imported++;
