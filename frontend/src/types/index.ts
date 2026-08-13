@@ -27,10 +27,12 @@ export interface Asset {
   asset_type?: string
 }
 
+export type Direction = 'in' | 'out' | 'neutral'
+
 export type TransactionType =
   | 'deposit' | 'withdrawal' | 'buy' | 'sell'
   | 'transfer_in' | 'transfer_out' | 'fee'
-  | 'income' | 'loss'
+  | 'income' | 'loss' | 'interest'
 
 export interface Transaction {
   id: number
@@ -39,6 +41,8 @@ export interface Transaction {
   category_id: number
   transaction_type: TransactionType
   source_type?: 'income' | 'expense'
+  direction?: Direction
+  linked_direction?: Direction
   amount: number
   price_per_unit?: number
   quantity?: number

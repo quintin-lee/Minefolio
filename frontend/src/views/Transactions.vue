@@ -367,7 +367,7 @@ import { assetsApi } from '@/api/assets'
 import { useCategoryStore } from '@/stores/category'
 import { formatCurrency } from '@/utils/format'
 import http from '@/utils/http'
-import type { Transaction, Asset, Category, TransactionMonthly } from '@/types'
+import type { Transaction, Asset, Category, TransactionMonthly, Direction } from '@/types'
 
 const loading = ref(false)
 const saving = ref(false)
@@ -391,17 +391,29 @@ const monthlyStats = ref<TransactionMonthly>({ total_volume: 0, inflows: 0, outf
 const CURRENCIES = ['CNY', 'USD', 'EUR', 'GBP', 'JPY', 'HKD', 'KRW', 'TWD', 'SGD', 'AUD', 'CAD'] as const
 const currencyOptions = [...CURRENCIES]
 
-const transactionTypes = [
-  { label: '存入', value: 'deposit' },
-  { label: '取出', value: 'withdrawal' },
-  { label: '买入', value: 'buy' },
-  { label: '卖出', value: 'sell' },
-  { label: '转入', value: 'transfer_in' },
-  { label: '转出', value: 'transfer_out' },
-  { label: '手续费', value: 'fee' },
-  { label: '收益', value: 'income' },
-  { label: '亏损', value: 'loss' },
+interface TransactionTypeOption {
+  value: Transaction['transaction_type']
+  label: string
+  direction: Direction
+  isTrading: boolean
+  tagType: 'success' | 'warning' | 'danger' | 'info' | 'primary'
+}
+
+// 单源类型注册表：与后端 TX_TYPES 保持同序同步
+const TRANSACTION_TYPES: TransactionTypeOption[] = [
+  { value: 'deposit', label: '存入', direction: 'in', isTrading: false, tagType: 'success' },
+  { value: 'withdrawal', label: '取出', direction: 'out', isTrading: false, tagType: 'danger' },
+  { value: 'buy', label: '买入', direction: 'out', isTrading: true, tagType: 'primary' },
+  { value: 'sell', label: '卖出', direction: 'in', isTrading: true, tagType: 'warning' },
+  { value: 'transfer_in', label: '转入', direction: 'in', isTrading: false, tagType: 'success' },
+  { value: 'transfer_out', label: '转出', direction: 'out', isTrading: false, tagType: 'warning' },
+  { value: 'fee', label: '手续费', direction: 'out', isTrading: false, tagType: 'info' },
+  { value: 'income', label: '收益', direction: 'in', isTrading: false, tagType: 'success' },
+  { value: 'loss', label: '亏损', direction: 'out', isTrading: false, tagType: 'danger' },
+  { value: 'interest', label: '利息', direction: 'in', isTrading: false, tagType: 'success' },
 ]
+
+const transactionTypes = TRANSACTION_TYPES.map(({ value, label }) => ({ value, label }))
 
 const filters = reactive({
   asset_id: '',
@@ -443,32 +455,22 @@ const monthlyInflows = computed(() => monthlyStats.value.inflows)
 const monthlyOutflows = computed(() => monthlyStats.value.outflows)
 const monthlyCount = computed(() => monthlyStats.value.count)
 
+const typeOption = (t: string) => TRANSACTION_TYPES.find(x => x.value === t)
+
 function isIncomeType(t: string) {
-  const incomeTypes = ['deposit', 'income', 'sell', 'transfer_in']
-  return incomeTypes.includes(t)
+  return typeOption(t)?.direction === 'in'
 }
 
 function isTradingType(t: string) {
-  return t === 'buy' || t === 'sell'
+  return typeOption(t)?.isTrading ?? false
 }
 
 function typeLabel(t: string) {
-  return transactionTypes.find(x => x.value === t)?.label || t
+  return typeOption(t)?.label || t
 }
 
 function typeTag(t: string): 'success' | 'warning' | 'danger' | 'info' | 'primary' {
-  const map: Record<string, 'success' | 'warning' | 'danger' | 'info' | 'primary'> = {
-    deposit: 'success',
-    income: 'success',
-    buy: 'primary',
-    sell: 'warning',
-    withdrawal: 'danger',
-    loss: 'danger',
-    fee: 'info',
-    transfer_in: 'success',
-    transfer_out: 'warning',
-  }
-  return map[t] || 'info'
+  return typeOption(t)?.tagType || 'info'
 }
 
 function calculateAmount() {
