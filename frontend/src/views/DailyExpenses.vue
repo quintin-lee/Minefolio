@@ -160,7 +160,6 @@
         </div>
       </template>
     </el-dialog>
-  </div>
 
     <!-- 导入 CSV 对话框 -->
     <el-dialog v-model="importDialogVisible" title="导入收支记录 (CSV)" width="520px" class="premium-dialog" :show-close="false">
@@ -187,6 +186,7 @@
         </div>
       </template>
     </el-dialog>
+  </div>
 </template>
 
 <script setup lang="ts">
