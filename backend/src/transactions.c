@@ -192,6 +192,13 @@ void transactions_create(csilk_ctx_t* c) {
     double amount = db_get_num(body, "amount");
     const char* date = csilk_json_get_string(body, "transaction_date");
 
+    const tx_type_t* ttype = tx_type_lookup(type ? type : "");
+    if (!ttype) {
+        csilk_json_free(body);
+        respond_bad_request(c, "未知交易类型");
+        return;
+    }
+
     if (asset_id <= 0 || !type || amount <= 0 || !date) {
         csilk_json_free(body);
         respond_bad_request(c, "asset_id、transaction_type、amount、transaction_date 为必填");
@@ -250,6 +257,7 @@ void transactions_create(csilk_ctx_t* c) {
 
     const char* ins_params[] = {
         uid_str, ast_str, last_str, cat_str, src_type, type,
+        ttype->stat_dir, ttype->linked_dir,
         amt_str, price_str, qty_str, currency, date, note ? note : "", NULL
     };
 
@@ -261,8 +269,9 @@ void transactions_create(csilk_ctx_t* c) {
 
     csilk_json_t* ins = csilk_db_query_param_json(pool,
         "INSERT INTO transactions (user_id, asset_id, linked_asset_id, category_id, source_type, transaction_type, "
+        "direction, linked_direction, "
         "amount, price_per_unit, quantity, currency, transaction_date, note) "
-        "VALUES (?, ?, NULLIF(?, '0'), ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id", ins_params);
+        "VALUES (?, ?, NULLIF(?, '0'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id", ins_params);
     if (!ins || csilk_json_array_size(ins) == 0) {
         csilk_db_exec(pool, "ROLLBACK");
         if (ins) csilk_json_free(ins);
@@ -353,6 +362,15 @@ void transactions_update(csilk_ctx_t* c) {
     int64_t linked_asset_id = db_get_int(body, "linked_asset_id");
     const char* type = csilk_json_get_string(body, "transaction_type");
     if (!type || strlen(type) == 0) type = csilk_json_get_string(body, "type");
+
+    const tx_type_t* ntype = tx_type_lookup(type ? type : "");
+    if (!ntype) {
+        csilk_json_free(body);
+        csilk_json_free(old_row);
+        respond_bad_request(c, "未知交易类型");
+        return;
+    }
+
     double amount = db_get_num(body, "amount");
     const char* date = csilk_json_get_string(body, "transaction_date");
     const char* currency = csilk_json_get_string(body, "currency");
@@ -370,7 +388,8 @@ void transactions_update(csilk_ctx_t* c) {
     snprintf(last_str, sizeof(last_str), "%lld", (long long)linked_asset_id);
 
     const char* up_params[] = {
-        type ? type : "", amt_str, price_str, qty_str,
+        type ? type : "", ntype->stat_dir, ntype->linked_dir,
+        amt_str, price_str, qty_str,
         currency ? currency : "CNY", date ? date : "", note ? note : "",
         cat_str, src_type ? src_type : "expense", last_str,
         id_str, uid_str, NULL
@@ -384,7 +403,7 @@ void transactions_update(csilk_ctx_t* c) {
     }
 
     csilk_json_t* up_res = csilk_db_query_param_json(pool,
-        "UPDATE transactions SET transaction_type=?, amount=?, price_per_unit=?, "
+        "UPDATE transactions SET transaction_type=?, direction=?, linked_direction=?, amount=?, price_per_unit=?, "
         "quantity=?, currency=?, transaction_date=?, note=?, "
         "category_id=?, source_type=?, linked_asset_id=NULLIF(?, '0') WHERE id=? AND user_id=?", up_params);
     if (up_res) csilk_json_free(up_res);
