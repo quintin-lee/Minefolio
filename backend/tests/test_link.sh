@@ -266,6 +266,41 @@ echo "== 23. 导出交易 CSV =="
 TX_EXPORT=$(curl -s -H "$AUTH" "$BASE/export/transactions")
 check "export transactions 含日期列名" "1" "$(echo "$TX_EXPORT" | grep -c 'date,asset_name,category_name')"
 
+echo "== 24. 方向数据化：新类型 interest 驱动统计、余额、列表 =="
+curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/transactions" -d "{\"asset_id\":$WALLET_ID,\"category_id\":$ASSET_CAT,\"transaction_type\":\"interest\",\"amount\":200,\"currency\":\"CNY\",\"transaction_date\":\"2026-09-01\"}" >/dev/null
+# 钱包余额在测试 14 后为 -9600.0，interest(+200, balance_dir=in) → -9400.0
+BAL_AFTER=$(sqlite3 "$DB" "SELECT printf('%.1f', current_value) FROM assets WHERE id=$WALLET_ID")
+check "interest 余额联动 +200" "-9400.0" "$BAL_AFTER"
+DIR_VAL=$(sqlite3 "$DB" "SELECT direction FROM transactions WHERE transaction_type='interest' ORDER BY id DESC LIMIT 1")
+check "interest direction 已持久化" "in" "$DIR_VAL"
+MONTH9=$(curl -s -H "$AUTH" "$BASE/transactions/monthly?month=2026-09")
+check "monthly 2026-09 inflows=200" "200" "$(echo "$MONTH9" | jq -r '.data.inflows | floor')"
+check "monthly 2026-09 outflows=0" "0" "$(echo "$MONTH9" | jq -r '.data.outflows | floor')"
+check "monthly 2026-09 count=1" "1" "$(echo "$MONTH9" | jq -r '.data.count | floor')"
+
+echo "== 25. 未知交易类型 → 1002 且原子回滚 =="
+TX_BEFORE=$(sqlite3 "$DB" "SELECT COUNT(*) FROM transactions")
+CODE=$(curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/transactions" -d "{\"asset_id\":$WALLET_ID,\"category_id\":$ASSET_CAT,\"transaction_type\":\"mystery\",\"amount\":100,\"currency\":\"CNY\",\"transaction_date\":\"2026-09-02\"}" | jq -r '.code | floor')
+TX_AFTER=$(sqlite3 "$DB" "SELECT COUNT(*) FROM transactions")
+check "未知类型 code=1002" "1002" "$CODE"
+check "未知类型不落库" "$TX_BEFORE" "$TX_AFTER"
+check "未知类型余额不变" "$BAL_AFTER" "$(sqlite3 "$DB" "SELECT printf('%.1f', current_value) FROM assets WHERE id=$WALLET_ID")"
+
+echo "== 26. 导入 CSV 含新类型 interest =="
+cat > /tmp/mf_import_tx.csv << 'CSVEOF'
+date,asset_name,category_name,transaction_type,source_type,amount,price_per_unit,quantity,currency,linked_asset_name,note
+2026-09-03,钱包,现金,interest,income,50,0,0,CNY,,imp-int
+CSVEOF
+IMP_RES=$(curl -s -H "$AUTH" -H 'Content-Type: text/csv; charset=utf-8' --data-binary @/tmp/mf_import_tx.csv "$BASE/import/transactions")
+rm -f /tmp/mf_import_tx.csv
+check "导入 interest imported=1" "1" "$(echo "$IMP_RES" | jq -r '.data.imported | floor')"
+check "导入 interest errors=0" "0" "$(echo "$IMP_RES" | jq -r '.data.errors | floor')"
+check "导入行 direction='in'" "in" "$(sqlite3 "$DB" "SELECT direction FROM transactions WHERE note='imp-int' LIMIT 1")"
+
+echo "== 27. 存量数据 direction 持久化 =="
+check "存量 deposit 行 direction='in'" "in" "$(sqlite3 "$DB" "SELECT direction FROM transactions WHERE transaction_type='deposit' ORDER BY id DESC LIMIT 1")"
+check "存量 transfer_out 行 linked_direction='in'" "in" "$(sqlite3 "$DB" "SELECT linked_direction FROM transactions WHERE transaction_type='transfer_out' ORDER BY id DESC LIMIT 1")"
+
 echo ""
 echo "结果: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1
