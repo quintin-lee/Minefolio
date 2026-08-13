@@ -52,7 +52,8 @@ void transactions_list(csilk_ctx_t* c) {
 
     char sql[1024];
     snprintf(sql, sizeof(sql),
-        "SELECT t.id, t.asset_id, t.linked_asset_id, t.category_id, t.transaction_type, t.source_type, t.amount, "
+        "SELECT t.id, t.asset_id, t.linked_asset_id, t.category_id, t.transaction_type, t.source_type, "
+        "t.direction, t.linked_direction, t.amount, "
         "t.price_per_unit, t.quantity, t.currency, t.transaction_date, t.note, "
         "a.name as asset_name, la.name as linked_asset_name, c.name as category_name "
         "FROM transactions t "
