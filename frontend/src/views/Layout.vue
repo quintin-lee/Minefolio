@@ -73,16 +73,16 @@
 
       <el-main class="main">
         <router-view v-slot="{ Component }">
-          <transition name="fade-transform" mode="out-in">
-            <suspense>
-              <template #default>
+          <suspense>
+            <template #default>
+              <transition name="fade-transform" mode="out-in">
                 <component :is="Component" />
-              </template>
-              <template #fallback>
-                <div class="page-loading">加载中...</div>
-              </template>
-            </suspense>
-          </transition>
+              </transition>
+            </template>
+            <template #fallback>
+              <div class="page-loading">加载中...</div>
+            </template>
+          </suspense>
         </router-view>
       </el-main>
     </el-container>
