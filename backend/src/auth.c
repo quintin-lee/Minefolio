@@ -5,29 +5,20 @@
 #include "auth_key.h"
 #include "categories.h"
 #include "csilk/csilk.h"
-#include "csilk/core/hash.h"
+#include "csilk/core/bcrypt.h"
 #include "csilk/core/codec.h"
 #include "csilk/core/crypto_dispatch.h"
 #include "csilk/drivers/cipher.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 
-/** @brief HMAC-SHA256 password hash with pepper from env. */
-static void hash_password(const char* password, char* out_hash, size_t out_len) {
-    const char* pepper = getenv("MINEFOLIO_JWT_SECRET");
-    if (!pepper) pepper = "minefolio-dev-secret";
+/** @brief Bcrypt hash cost factor. */
+#define MINEFOLIO_BCRYPT_COST CSILK_BCRYPT_DEFAULT_COST
 
-    csilk_sha256_ctx ctx;
-    csilk_sha256_init(&ctx);
-    csilk_sha256_update(&ctx, (const uint8_t*)pepper, strlen(pepper));
-    csilk_sha256_update(&ctx, (const uint8_t*)password, strlen(password));
-    uint8_t digest[32];
-    csilk_sha256_final(&ctx, digest);
-
-    for (size_t i = 0; i < 32 && (i * 2 + 2) < out_len; i++)
-        sprintf(out_hash + i * 2, "%02x", digest[i]);
+/** @brief Store a bcrypt password hash into @p out (must be CSILK_BCRYPT_HASH_LEN bytes). */
+static void store_bcrypt_hash(const char* password, char* out) {
+    csilk_bcrypt_hash(password, strlen(password), MINEFOLIO_BCRYPT_COST, out);
 }
 
 /** @brief GET /api/system/status — 查询系统初始化状态 */
@@ -105,8 +96,8 @@ void system_setup(csilk_ctx_t* c) {
         return;
     }
 
-    char hashed[65];
-    hash_password(password, hashed, sizeof(hashed));
+    char hashed[CSILK_BCRYPT_HASH_LEN];
+    store_bcrypt_hash(password, hashed);
 
     const char* insert_sql = "INSERT INTO users (username, password) VALUES (?, ?)";
     const char* insert_params[] = { username, hashed, NULL };
@@ -115,7 +106,7 @@ void system_setup(csilk_ctx_t* c) {
 
     const char* get_params[] = { username, NULL };
     csilk_json_t* user_res = csilk_db_query_param_json(pool,
-        "SELECT id, username FROM users WHERE username = ?", get_params);
+        "SELECT id, username, password FROM users WHERE username = ?", get_params);
     if (!user_res || csilk_json_array_size(user_res) == 0) {
         csilk_db_exec(pool, "ROLLBACK");
         if (user_res) csilk_json_free(user_res);
@@ -191,8 +182,8 @@ void auth_register(csilk_ctx_t* c) {
     if (check) csilk_json_free(check);
 
     // Hash password
-    char hashed[65];
-    hash_password(password, hashed, sizeof(hashed));
+    char hashed[CSILK_BCRYPT_HASH_LEN];
+    store_bcrypt_hash(password, hashed);
 
     // Insert user
     const char* insert_sql = "INSERT INTO users (username, password) VALUES (?, ?)";
@@ -255,11 +246,9 @@ void auth_login(csilk_ctx_t* c) {
     const char* password = (const char*)pt_buf;
 
     csilk_db_pool_t* pool = db_get_pool();
-    char hashed[65];
-    hash_password(password, hashed, sizeof(hashed));
 
-    const char* sql = "SELECT id, username, created_at FROM users WHERE username = ? AND password = ?";
-    const char* params[] = { username, hashed, NULL };
+    const char* sql = "SELECT id, username, password FROM users WHERE username = ?";
+    const char* params[] = { username, NULL };
     csilk_json_t* result = csilk_db_query_param_json(pool, sql, params);
     csilk_json_free(body);
 
@@ -269,7 +258,15 @@ void auth_login(csilk_ctx_t* c) {
         return;
     }
 
-    int64_t user_id = db_get_int(csilk_json_array_get(result, 0), "id");
+    csilk_json_t* row = csilk_json_array_get(result, 0);
+    const char* stored_hash = csilk_json_get_string(row, "password");
+    if (!stored_hash || csilk_bcrypt_verify(password, pt_len, stored_hash) != 0) {
+        csilk_json_free(result);
+        respond_unauthorized(c);
+        return;
+    }
+
+    int64_t user_id = db_get_int(row, "id");
     char* token = jwt_generate_token(c, user_id);
 
     csilk_json_t* resp = csilk_json_object();
@@ -341,25 +338,29 @@ void auth_change_password(csilk_ctx_t* c) {
         return;
     }
 
-    csilk_db_pool_t* pool = db_get_pool();
-    char old_hashed[65];
-    hash_password((const char*)old_pt, old_hashed, sizeof(old_hashed));
-
     char uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-    const char* check_params[] = { uid_str, old_hashed, NULL };
-    csilk_json_t* check = csilk_db_query_param_json(pool,
-        "SELECT id FROM users WHERE id = ? AND password = ?", check_params);
+
+    csilk_db_pool_t* pool = db_get_pool();
+    const char* sql = "SELECT password FROM users WHERE id = ?";
+    const char* check_params[] = { uid_str, NULL };
+    csilk_json_t* check = csilk_db_query_param_json(pool, sql, check_params);
     if (!check || csilk_json_array_size(check) == 0) {
         if (check) csilk_json_free(check);
         csilk_json_free(body);
         respond_bad_request(c, "原密码不正确");
         return;
     }
+    const char* stored_hash = csilk_json_get_string(csilk_json_array_get(check, 0), "password");
     csilk_json_free(check);
+    if (!stored_hash || csilk_bcrypt_verify((const char*)old_pt, old_pt_len, stored_hash) != 0) {
+        csilk_json_free(body);
+        respond_bad_request(c, "原密码不正确");
+        return;
+    }
 
-    char new_hashed[65];
-    hash_password((const char*)new_pt, new_hashed, sizeof(new_hashed));
+    char new_hashed[CSILK_BCRYPT_HASH_LEN];
+    store_bcrypt_hash((const char*)new_pt, new_hashed);
 
     const char* update_params[] = { new_hashed, uid_str, NULL };
     csilk_json_t* update_res = csilk_db_query_param_json(pool,
