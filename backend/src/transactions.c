@@ -2,38 +2,23 @@
 #include "common/db.h"
 #include "common/jwt.h"
 #include "common/balance.h"
+#include "common/tx_types.h"
 #include "csilk/csilk.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 static double tx_delta(const char* type, double amount, double price, double qty) {
-    if (!type) return 0;
-    if (strcmp(type, "deposit") == 0 || strcmp(type, "buy") == 0 || strcmp(type, "income") == 0) {
-        return amount;
-    }
-    if (strcmp(type, "withdrawal") == 0 || strcmp(type, "sell") == 0 ||
-        strcmp(type, "fee") == 0 || strcmp(type, "loss") == 0) {
-        return -amount;
-    }
-    if (strcmp(type, "transfer_in") == 0) return amount;
-    if (strcmp(type, "transfer_out") == 0) return -amount;
-    return 0;
+    (void)price; (void)qty;
+    const tx_type_t* t = tx_type_lookup(type);
+    if (!t) return 0;
+    return strcmp(t->balance_dir, "in") == 0 ? amount : -amount;
 }
 
 static double tx_linked_delta(const char* type, double amount) {
-    if (!type) return 0;
-    if (strcmp(type, "buy") == 0 || strcmp(type, "deposit") == 0 ||
-        strcmp(type, "fee") == 0 || strcmp(type, "loss") == 0) {
-        return -amount;
-    }
-    if (strcmp(type, "sell") == 0 || strcmp(type, "withdrawal") == 0 ||
-        strcmp(type, "income") == 0) {
-        return +amount;
-    }
-    if (strcmp(type, "transfer_in") == 0) return -amount;
-    if (strcmp(type, "transfer_out") == 0) return +amount;
-    return 0;
+    const tx_type_t* t = tx_type_lookup(type);
+    if (!t) return 0;
+    return strcmp(t->linked_dir, "in") == 0 ? amount : -amount;
 }
 
 /** @brief Compute the effective linked-asset delta, applying transfer semantics.
