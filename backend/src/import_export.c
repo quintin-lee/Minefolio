@@ -135,7 +135,7 @@ static int parse_csv_field(const char* line, size_t len, char* out, size_t out_s
         size_t n = pos < out_size - 1 ? pos : out_size - 1;
         memcpy(out, line, n);
         out[n] = '\0';
-        if (chars_consumed) *chars_consumed = pos + 1;
+        if (chars_consumed) *chars_consumed = pos;
         return 0;
     }
     pos++;
@@ -146,8 +146,7 @@ static int parse_csv_field(const char* line, size_t len, char* out, size_t out_s
             pos += 2;
         } else if (line[pos] == '"') {
             pos++;
-            while (pos < len && line[pos] == ',') pos++;
-            if (chars_consumed) *chars_consumed = pos + 1;
+            if (chars_consumed) *chars_consumed = pos;
             out[oi] = '\0';
             return 0;
         } else {
