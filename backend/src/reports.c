@@ -346,13 +346,15 @@ void report_transaction_performance(csilk_ctx_t* c) {
 
     csilk_json_t* result = csilk_db_query_param_json(pool,
         "SELECT t.id, a.name as asset_name, t.transaction_type, t.direction, t.transaction_date, "
-        "t.quantity, t.price_per_unit, t.amount "
+        "t.quantity, t.price_per_unit, t.amount, t.fee "
         "FROM transactions t JOIN assets a ON t.asset_id=a.id "
         "WHERE t.user_id=? "
-        "ORDER BY t.transaction_date DESC", params);
+        "ORDER BY t.transaction_date ASC", params);
     if (!result) { respond_error(c, 500, "查询失败"); return; }
 
     double total_gain = 0, total_loss = 0;
+    double total_cost_basis_remaining = 0;
+    double total_realized_pnl = 0;
     int total_trades = 0;
     csilk_json_t* trades = csilk_json_array();
     size_t n = csilk_json_array_size(result);
@@ -360,7 +362,11 @@ void report_transaction_performance(csilk_ctx_t* c) {
         csilk_json_t* row = csilk_json_array_get(result, i);
         const char* type = csilk_json_get_string(row, "transaction_type");
         double amt = db_get_num(row, "amount");
+        double fee = db_get_num(row, "fee");
         const char* dir = csilk_json_get_string(row, "direction");
+        double qty = db_get_num(row, "quantity");
+        double price = db_get_num(row, "price_per_unit");
+        const char* date_s = csilk_json_get_string(row, "transaction_date");
         if (dir && strcmp(dir, "in") == 0) {
             total_gain += amt;
         } else {
@@ -368,23 +374,67 @@ void report_transaction_performance(csilk_ctx_t* c) {
         }
         total_trades++;
 
+        // 持仓盈亏上下文
+        if (strcmp(type, "buy") == 0) {
+            total_cost_basis_remaining += amt + fee;
+        } else if (strcmp(type, "sell") == 0) {
+            total_cost_basis_remaining -= qty * price;
+            total_realized_pnl += amt - qty * price - fee;
+        } else if (strcmp(type, "income") == 0) {
+            // 分红视为成本返还
+            total_cost_basis_remaining -= amt;
+            total_realized_pnl += amt;
+        }
+
+        // avg_cost_at_trade: buy 为均价，sell 为售出均价
+        double avg_cost = 0, realized = 0;
+        if (strcmp(type, "buy") == 0) {
+            avg_cost = qty > 0 ? (amt + fee) / qty : 0;
+        } else if (strcmp(type, "sell") == 0) {
+            avg_cost = qty > 0 ? price : 0;
+            realized = amt - qty * price - fee;
+        }
+
         csilk_json_t* trade = csilk_json_object();
         csilk_json_add_number(trade, "id", db_get_num(row, "id"));
         csilk_json_add_string(trade, "asset_name", csilk_json_get_string(row, "asset_name"));
         csilk_json_add_string(trade, "type", type ? type : "");
-        csilk_json_add_string(trade, "date", csilk_json_get_string(row, "transaction_date"));
-        csilk_json_add_number(trade, "quantity", db_get_num(row, "quantity"));
-        csilk_json_add_number(trade, "price", db_get_num(row, "price_per_unit"));
+        csilk_json_add_string(trade, "date", date_s ? date_s : "");
+        csilk_json_add_number(trade, "quantity", qty);
+        csilk_json_add_number(trade, "price", price);
         csilk_json_add_number(trade, "amount", amt);
+        csilk_json_add_number(trade, "avg_cost_at_trade", avg_cost);
+        csilk_json_add_number(trade, "realized", realized);
+        csilk_json_add_number(trade, "fee", fee);
         csilk_json_array_append(trades, trade);
     }
+    csilk_json_free(result);
+
+    // 当前持仓市值与成本
+    csilk_json_t* pos_rows = csilk_db_query_param_json(pool,
+        "SELECT COALESCE(SUM(quantity),0) as total_qty, "
+        "COALESCE(SUM(cost_basis),0) as total_cost, "
+        "COALESCE(SUM(current_value),0) as total_market "
+        "FROM assets a JOIN categories c ON a.category_id=c.id "
+        "WHERE a.user_id=? AND c.asset_type IN ('stock','fund','bond','crypto')", params);
+    double market_value = 0, cost_basis_remaining = 0;
+    if (pos_rows && csilk_json_array_size(pos_rows) > 0) {
+        const csilk_json_t* pr = csilk_json_array_get(pos_rows, 0);
+        market_value = db_get_num(pr, "total_market");
+        cost_basis_remaining = db_get_num(pr, "total_cost");
+        csilk_json_free(pos_rows);
+    }
+
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_number(resp, "total_trades", total_trades);
     csilk_json_add_number(resp, "total_gain", total_gain);
     csilk_json_add_number(resp, "total_loss", total_loss);
     csilk_json_add_number(resp, "net_gain", total_gain - total_loss);
+    csilk_json_add_number(resp, "total_cost_basis_remaining", cost_basis_remaining);
+    csilk_json_add_number(resp, "total_market_value", market_value);
+    csilk_json_add_number(resp, "floating_pnl", market_value - cost_basis_remaining);
+    csilk_json_add_number(resp, "realized_pnl", total_realized_pnl);
     csilk_json_add_array(resp, "trades", trades);
-    csilk_json_free(result);
     respond_ok(c, resp);
 }
 
