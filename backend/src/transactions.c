@@ -13,7 +13,7 @@ static int is_investment_type(const char* atype) {
                      strcmp(atype, "bond") == 0 || strcmp(atype, "crypto") == 0);
 }
 
-static void apply_position(csilk_db_pool_t* pool, int64_t asset_id,
+static int apply_position(csilk_db_pool_t* pool, int64_t asset_id,
                            const char* type, double amount, double fee,
                            double price, double qty,
                            double* out_position_delta) {
@@ -25,13 +25,13 @@ static void apply_position(csilk_db_pool_t* pool, int64_t asset_id,
         (const char*[]){aid_str, NULL});
     if (!pos || csilk_json_array_size(pos) == 0) {
         if (pos) csilk_json_free(pos);
-        return;
+        return 0;
     }
     const csilk_json_t* pr = csilk_json_array_get(pos, 0);
     const char* atype = csilk_json_get_string(pr, "asset_type");
     if (!is_investment_type(atype)) {
         csilk_json_free(pos);
-        return;
+        return 0;
     }
     double old_qty = db_get_num(pr, "quantity");
     double old_cost = db_get_num(pr, "cost_basis");
@@ -41,21 +41,22 @@ static void apply_position(csilk_db_pool_t* pool, int64_t asset_id,
 
     if (strcmp(type, "buy") == 0) {
         new_qty = old_qty + qty;
+        // cost_basis includes fee (total invested capital)
         new_cost = old_cost + amount + fee;
         new_net = price;
     } else if (strcmp(type, "sell") == 0) {
         if (old_qty < qty) {
             csilk_json_free(pos);
-            if (out_position_delta) *out_position_delta = -1; // 标记份额不足
-            return;
+            return -1; // 份额不足
         }
         double avg_cost = old_qty > 0 ? old_cost / old_qty : 0;
         new_qty = old_qty - qty;
+        // Reduce cost_basis proportionally on sell (fee was included in buy)
         new_cost = old_cost - qty * avg_cost;
         new_net = old_net;
     } else {
         csilk_json_free(pos);
-        return;
+        return 0;
     }
     double delta = new_qty * new_net - old_current;
     if (out_position_delta) *out_position_delta = delta;
@@ -68,6 +69,7 @@ static void apply_position(csilk_db_pool_t* pool, int64_t asset_id,
     csilk_db_query_param_json(pool,
         "UPDATE assets SET quantity=?, cost_basis=?, net_value=? WHERE id=?", p);
     csilk_json_free(pos);
+    return 0;
 }
 
 static double tx_delta(const char* type, double amount, double price, double qty) {
@@ -356,8 +358,8 @@ void transactions_create(csilk_ctx_t* c) {
     double position_delta = 0;
     int is_investment_tx = 0;
     if (strcmp(type, "buy") == 0 || strcmp(type, "sell") == 0) {
-        apply_position(pool, asset_id, type, amount, fee, price, qty, &position_delta);
-        if (position_delta < 0) {
+        int pos_rc = apply_position(pool, asset_id, type, amount, fee, price, qty, &position_delta);
+        if (pos_rc < 0) {
             csilk_db_exec(pool, "ROLLBACK");
             csilk_json_free(body);
             respond_bad_request(c, "持有份额不足");
@@ -370,24 +372,27 @@ void transactions_create(csilk_ctx_t* c) {
     if (fee > 0 && linked_asset_id > 0 && is_investment_tx) {
         char fee_amt_str[64];
         snprintf(fee_amt_str, sizeof(fee_amt_str), "%.6f", fee);
-        const char* fee_params[] = {
-            uid_str, last_str, "", cat_str, src_type, "fee",
-            "out", NULL,
-            fee_amt_str, "0.0000", "0.0000", currency, date, note ? note : "", NULL
-        };
-        csilk_db_query_param_json(pool,
+        char fee_sql[512];
+        snprintf(fee_sql, sizeof(fee_sql),
             "INSERT INTO transactions (user_id, asset_id, linked_asset_id, category_id, "
             "source_type, transaction_type, direction, linked_direction, "
             "amount, price_per_unit, quantity, currency, transaction_date, note) "
-            "VALUES (?, ?, NULLIF(?, '0'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            fee_params);
+            "VALUES (%lld, %lld, NULLIF('%lld', '0'), %lld, '%s', 'fee', "
+            "'out', NULL, '%s', '0.0000', '0.0000', '%s', '%s', '%s')",
+            (long long)user_id, (long long)asset_id, (long long)linked_asset_id,
+            (long long)category_id, src_type, fee_amt_str, currency, date,
+            note && strlen(note) > 0 ? note : "fee");
+        csilk_db_exec(pool, fee_sql);
         balance_apply_delta(pool, linked_asset_id, user_id, -fee,
                             "transaction_fee", tx_id, note);
     }
 
     // 目标资产余额联动（非投资类走原逻辑，投资类已在 apply_position 内处理）
     double tdelta = is_investment_tx ? 0 : tx_delta(type, amount, price, qty);
-    if (is_investment_tx && position_delta != 0) {
+    if (is_investment_tx) {
+        // 投资类：buy 更新 fund current_value（delta=quantity*price-old_current）
+        //       sell 也更新 fund current_value（delta=new_qty*net_value-old_current）
+        //       净值更新时 assets/update 会重算 current_value
         balance_apply_delta(pool, asset_id, user_id, position_delta,
                             "transaction", tx_id, note);
     } else if (tdelta != 0) {
@@ -525,17 +530,17 @@ void transactions_update(csilk_ctx_t* c) {
         apply_position(pool, old_asset_id, old_tx_type, old_tx_amount, old_fee,
                        old_tx_price, old_tx_qty, &old_pos_delta);
     }
-    if (new_is_invest) {
-        double new_pos_delta = 0;
-        apply_position(pool, old_asset_id, type ? type : "", amount, fee,
-                       price, qty, &new_pos_delta);
-        if (new_pos_delta < 0) {
-            csilk_db_exec(pool, "ROLLBACK");
-            csilk_json_free(body);
-            csilk_json_free(old_row);
-            respond_bad_request(c, "持有份额不足");
-            return;
-        }
+     if (new_is_invest) {
+         double new_pos_delta = 0;
+         int new_rc = apply_position(pool, old_asset_id, type ? type : "", amount, fee,
+                                     price, qty, &new_pos_delta);
+         if (new_rc < 0) {
+             csilk_db_exec(pool, "ROLLBACK");
+             csilk_json_free(body);
+             csilk_json_free(old_row);
+             respond_bad_request(c, "持有份额不足");
+             return;
+         }
         if (new_pos_delta != 0) {
             if (balance_apply_delta(pool, old_asset_id, user_id, new_pos_delta,
                                     "transaction", atoll(id_str), note) != 0) {
@@ -654,7 +659,7 @@ void transactions_delete(csilk_ctx_t* c) {
                        old_tx_price, old_tx_qty, NULL);
     }
 
-    // 1. 反转目标资产旧 delta
+    // 1. 反转目标资产旧 delta（投资类已由 apply_position 处理，非投资类走此处）
     if (old_tdelta != 0 && !(strcmp(old_tx_type, "buy") == 0 || strcmp(old_tx_type, "sell") == 0)) {
         if (balance_apply_delta(pool, asset_id, user_id, -old_tdelta,
                                 "transaction", atoll(id_str), NULL) != 0) {

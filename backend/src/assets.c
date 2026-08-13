@@ -182,14 +182,15 @@ void assets_update(csilk_ctx_t* c) {
                 if (delta != 0) {
                     balance_apply_delta(pool, asset_id_val, user_id, delta,
                                         "asset_netvalue", asset_id_val, "net_value update");
-                }
-                // UPDATE: only update net_value and derived fields
-                const char* upd_params[] = {
-                    name ? name : "", account_no ? account_no : "",
-                    currency ? currency : "CNY", note ? note : "", id_str, uid_str, NULL
-                };
-                char nv_str[64];
-                snprintf(nv_str, sizeof(nv_str), "%.4f", net_value_input);
+                 }
+                 // UPDATE: only update net_value and derived fields
+                 char nv_str[64];
+                 snprintf(nv_str, sizeof(nv_str), "%.4f", net_value_input);
+                 const char* upd_params[] = {
+                     name ? name : "", account_no ? account_no : "",
+                     currency ? currency : "CNY", note ? note : "", nv_str,
+                     id_str, uid_str, NULL
+                 };
                 csilk_json_t* ur = csilk_db_query_param_json(pool,
                     "UPDATE assets SET name=?, account_no=?, currency=?, note=?, "
                     "net_value=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?",

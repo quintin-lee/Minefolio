@@ -353,7 +353,9 @@ void report_transaction_performance(csilk_ctx_t* c) {
     if (!result) { respond_error(c, 500, "查询失败"); return; }
 
     double total_gain = 0, total_loss = 0;
-    double total_cost_basis_remaining = 0;
+    double total_cost_basis = 0;          // for display (includes fee, matches DB cost_basis)
+    double total_cost_for_pnl = 0;         // for PnL avg_cost (excludes fee in numerator)
+    double total_quantity = 0;
     double total_realized_pnl = 0;
     int total_trades = 0;
     csilk_json_t* trades = csilk_json_array();
@@ -375,14 +377,22 @@ void report_transaction_performance(csilk_ctx_t* c) {
         total_trades++;
 
         // 持仓盈亏上下文
-        if (strcmp(type, "buy") == 0) {
-            total_cost_basis_remaining += amt + fee;
-        } else if (strcmp(type, "sell") == 0) {
-            total_cost_basis_remaining -= qty * price;
-            total_realized_pnl += amt - qty * price - fee;
+        if (strcmp(type, "buy") == 0 && qty > 0) {
+            total_cost_basis += amt + fee;   // database cost_basis includes fee
+            total_cost_for_pnl += amt;        // PnL avg_cost excludes fee
+            total_quantity += qty;
+        } else if (strcmp(type, "sell") == 0 && qty > 0) {
+            // avg_cost for PnL: uses cost_for_pnl (excludes fee)
+            double avg_cost = total_quantity > 0 ? total_cost_for_pnl / total_quantity : 0;
+            total_realized_pnl += amt - qty * avg_cost;
+            // Reduce display cost_basis proportionally on sell (includes fee portion)
+            double cost_reduction = total_quantity > 0
+                ? (total_cost_basis / total_quantity) * qty : 0;
+            total_cost_basis -= cost_reduction;
+            total_quantity -= qty;
         } else if (strcmp(type, "income") == 0) {
             // 分红视为成本返还
-            total_cost_basis_remaining -= amt;
+            total_cost_for_pnl -= amt;
             total_realized_pnl += amt;
         }
 

@@ -309,7 +309,7 @@ curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/assets" -d "{\"nam
 FUND_ID=$(sqlite3 "$DB" "SELECT id FROM assets WHERE name='XX基金' LIMIT 1")
 # 买 1000 份 × 2 元
 curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/transactions" -d "{\"asset_id\":$FUND_ID,\"linked_asset_id\":$WALLET_ID,\"category_id\":$FUND_CAT,\"transaction_type\":\"buy\",\"amount\":2000,\"quantity\":1000,\"price_per_unit\":2,\"currency\":\"CNY\",\"transaction_date\":\"2026-08-14\"}" >/dev/null
-POS=$(sqlite3 "$DB" "SELECT quantity,cost_basis,net_value,current_value FROM assets WHERE id=$FUND_ID")
+POS=$(sqlite3 "$DB" "SELECT printf('%.4f',quantity),printf('%.4f',cost_basis),printf('%.4f',net_value),printf('%.4f',current_value) FROM assets WHERE id=$FUND_ID")
 check "T1 买入后 quantity=1000" "1000.0000" "$(echo "$POS" | cut -d'|' -f1)"
 check "T1 买入后 cost_basis=2000" "2000.0000" "$(echo "$POS" | cut -d'|' -f2)"
 check "T1 买入后 net_value=2" "2.0000" "$(echo "$POS" | cut -d'|' -f3)"
@@ -323,7 +323,7 @@ check "T2 净值更新 current_value=2500" "2500.0" "$CUR_VAL"
 echo "== 30. 卖出+已实现盈亏 =="
 # 卖出 400 份 × 3 元 = 1200
 curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/transactions" -d "{\"asset_id\":$FUND_ID,\"linked_asset_id\":$WALLET_ID,\"category_id\":$FUND_CAT,\"transaction_type\":\"sell\",\"amount\":1200,\"quantity\":400,\"price_per_unit\":3,\"currency\":\"CNY\",\"transaction_date\":\"2026-08-15\"}" >/dev/null
-POS2=$(sqlite3 "$DB" "SELECT quantity,cost_basis FROM assets WHERE id=$FUND_ID")
+POS2=$(sqlite3 "$DB" "SELECT printf('%.4f',quantity),printf('%.4f',cost_basis) FROM assets WHERE id=$FUND_ID")
 check "T3 卖出后 quantity=600" "600.0000" "$(echo "$POS2" | cut -d'|' -f1)"
 check "T3 卖出后 cost_basis=1200" "1200.0000" "$(echo "$POS2" | cut -d'|' -f2)"
 PERF=$(curl -s -H "$AUTH" "$BASE/reports/transaction/performance")
@@ -337,8 +337,8 @@ echo "== 32. 手续费 =="
 TX_BUY1=$(sqlite3 "$DB" "SELECT id FROM transactions WHERE asset_id=$FUND_ID AND transaction_type='buy' AND transaction_date='2026-08-14' LIMIT 1")
 # 买 100 份 × 2 元 + fee 5 元
 curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/transactions" -d "{\"asset_id\":$FUND_ID,\"linked_asset_id\":$WALLET_ID,\"category_id\":$FUND_CAT,\"transaction_type\":\"buy\",\"amount\":200,\"quantity\":100,\"price_per_unit\":2,\"fee\":5,\"currency\":\"CNY\",\"transaction_date\":\"2026-08-16\"}" >/dev/null
-CB=$(sqlite3 "$DB" "SELECT cost_basis FROM assets WHERE id=$FUND_ID")
-check "T5 cost_basis 含 fee" "2205" "$(echo "$CB" | awk '{printf "%d", $1}')"
+CB=$(sqlite3 "$DB" "SELECT printf('%.4f', cost_basis) FROM assets WHERE id=$FUND_ID")
+check "T5 cost_basis 含 fee" "1405.0000" "$(echo "$CB")"
 FEE_ROWS=$(sqlite3 "$DB" "SELECT COUNT(*) FROM transactions WHERE transaction_type='fee' AND note LIKE '%fee%'")
 check "T5 fee 行落库" "1" "$FEE_ROWS"
 
