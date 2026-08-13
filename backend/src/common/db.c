@@ -114,6 +114,15 @@ int db_run_migrations(csilk_db_pool_t* pool) {
         csilk_db_exec(pool, "UPDATE transactions SET linked_direction='in' WHERE transaction_type IN ('sell','withdrawal','income','transfer_out')");
         csilk_db_exec(pool, "UPDATE transactions SET linked_direction='out' WHERE linked_direction IS NULL");
         csilk_db_exec(pool, "ALTER TABLE transactions DROP CONSTRAINT IF EXISTS transactions_transaction_type_check");
+        // ---- assets 持仓三列迁移（PG 存量库） ----
+        if (!col_exists(pool, "assets", "quantity")) {
+            csilk_db_exec(pool, "ALTER TABLE assets ADD COLUMN IF NOT EXISTS quantity DECIMAL(18,4) NOT NULL DEFAULT 0");
+            csilk_db_exec(pool, "ALTER TABLE assets ADD COLUMN IF NOT EXISTS cost_basis DECIMAL(18,4) NOT NULL DEFAULT 0");
+            csilk_db_exec(pool, "ALTER TABLE assets ADD COLUMN IF NOT EXISTS net_value DECIMAL(18,4) NOT NULL DEFAULT 0");
+        }
+        if (!col_exists(pool, "transactions", "fee")) {
+            csilk_db_exec(pool, "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS fee DECIMAL(18,2) DEFAULT 0");
+        }
         return 0;
     }
 
@@ -308,6 +317,41 @@ int db_run_migrations(csilk_db_pool_t* pool) {
         }
     }
     if (txdir_schema) csilk_json_free(txdir_schema);
+
+    // ---- assets 持仓三列迁移（SQLite 存量库） ----
+    if (!col_exists(pool, "assets", "quantity")) {
+        if (csilk_db_exec(pool,
+                "ALTER TABLE assets ADD COLUMN quantity DECIMAL(18,4) NOT NULL DEFAULT 0") != 0) {
+            fprintf(stderr, "Migration error: cannot add quantity to assets\n");
+            free(sql);
+            return -1;
+        }
+    }
+    if (!col_exists(pool, "assets", "cost_basis")) {
+        if (csilk_db_exec(pool,
+                "ALTER TABLE assets ADD COLUMN cost_basis DECIMAL(18,4) NOT NULL DEFAULT 0") != 0) {
+            fprintf(stderr, "Migration error: cannot add cost_basis to assets\n");
+            free(sql);
+            return -1;
+        }
+    }
+    if (!col_exists(pool, "assets", "net_value")) {
+        if (csilk_db_exec(pool,
+                "ALTER TABLE assets ADD COLUMN net_value DECIMAL(18,4) NOT NULL DEFAULT 0") != 0) {
+            fprintf(stderr, "Migration error: cannot add net_value to assets\n");
+            free(sql);
+            return -1;
+        }
+    }
+    // ---- transactions fee 列迁移（SQLite 存量库） ----
+    if (!col_exists(pool, "transactions", "fee")) {
+        if (csilk_db_exec(pool,
+                "ALTER TABLE transactions ADD COLUMN fee DECIMAL(18,2) DEFAULT 0") != 0) {
+            fprintf(stderr, "Migration error: cannot add fee to transactions\n");
+            free(sql);
+            return -1;
+        }
+    }
 
     free(sql);
     return 0;
