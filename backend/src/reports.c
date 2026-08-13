@@ -345,7 +345,7 @@ void report_transaction_performance(csilk_ctx_t* c) {
     const char* params[] = { uid_str, NULL };
 
     csilk_json_t* result = csilk_db_query_param_json(pool,
-        "SELECT t.id, a.name as asset_name, t.transaction_type, t.transaction_date, "
+        "SELECT t.id, a.name as asset_name, t.transaction_type, t.direction, t.transaction_date, "
         "t.quantity, t.price_per_unit, t.amount "
         "FROM transactions t JOIN assets a ON t.asset_id=a.id "
         "WHERE t.user_id=? AND t.transaction_type NOT IN ('transfer_in', 'transfer_out') "
@@ -360,7 +360,8 @@ void report_transaction_performance(csilk_ctx_t* c) {
         csilk_json_t* row = csilk_json_array_get(result, i);
         const char* type = csilk_json_get_string(row, "transaction_type");
         double amt = db_get_num(row, "amount");
-        if (type && (strcmp(type, "sell") == 0 || strcmp(type, "income") == 0 || strcmp(type, "deposit") == 0)) {
+        const char* dir = csilk_json_get_string(row, "direction");
+        if (dir && strcmp(dir, "in") == 0) {
             total_gain += amt;
         } else {
             total_loss += amt;
@@ -421,9 +422,8 @@ void report_asset_summary(csilk_ctx_t* c) {
     }
     // 30-day change estimate from transactions
     csilk_json_t* change_result = csilk_db_query_param_json(pool,
-        "SELECT COALESCE(SUM(amount),0) as net_change FROM transactions "
-        "WHERE user_id=? AND transaction_date >= date('now','-30 days') "
-        "AND transaction_type IN ('deposit','withdrawal','buy','sell','income','loss','fee')", params);
+        "SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END),0) as net_change FROM transactions "
+        "WHERE user_id=? AND transaction_date >= date('now','-30 days')", params);
     double change_30d = 0;
     if (change_result && csilk_json_array_size(change_result) > 0)
         change_30d = db_get_num(csilk_json_array_get(change_result, 0), "net_change");
