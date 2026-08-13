@@ -156,7 +156,7 @@ void assets_update(csilk_ctx_t* c) {
     const char* currency = csilk_json_get_string(body, "currency");
     const char* note = csilk_json_get_string(body, "note");
     double net_value_input = db_get_num(body, "net_value");
-    int has_net_value = csilk_json_get_node(body, "net_value") != NULL;
+    int has_net_value = csilk_json_get(body, "net_value") != NULL;
 
     char val_str[64];
     snprintf(val_str, sizeof(val_str), "%.6f", value);
