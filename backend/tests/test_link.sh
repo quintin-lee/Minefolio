@@ -141,10 +141,12 @@ curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/transactions" -d "
 BAL=$(sqlite3 "$DB" "SELECT printf('%.1f', current_value) FROM assets WHERE id=$WALLET_ID")
 check "存款+1000" "-8200.0" "$BAL"
 
-echo "== 12. 转账不联动 =="
-curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/transactions" -d "{\"asset_id\":$WALLET_ID,\"category_id\":$ASSET_CAT,\"transaction_type\":\"transfer_out\",\"amount\":100,\"currency\":\"CNY\",\"transaction_date\":\"2026-08-08\"}" >/dev/null
+echo "== 12. 转账联动：转出 100 到信用卡 =="
+curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/transactions" -d "{\"asset_id\":$WALLET_ID,\"linked_asset_id\":$CC_ID,\"category_id\":$ASSET_CAT,\"transaction_type\":\"transfer_out\",\"amount\":100,\"currency\":\"CNY\",\"transaction_date\":\"2026-08-08\"}" >/dev/null
 BAL=$(sqlite3 "$DB" "SELECT printf('%.1f', current_value) FROM assets WHERE id=$WALLET_ID")
-check "转账不联动" "-8200.0" "$BAL"
+BAL_CC=$(sqlite3 "$DB" "SELECT printf('%.1f', current_value) FROM assets WHERE id=$CC_ID")
+check "转账转出钱包 -100" "-8300.0" "$BAL"
+check "转账转入信用卡（负债方向） -100" "-100.0" "$BAL_CC"
 
 echo "== 13. 更新时切换关联资产 A→B（钱包→信用卡）=="
 # 将步骤 5 的收入记录（800，原资产=钱包）切到信用卡；信用卡是负债（direction=-1），收入 → 欠款减少 → 期望 -800
@@ -153,15 +155,15 @@ curl -s -X PUT -H "$AUTH" -H "Content-Type: application/json" "$BASE/daily-expen
 BAL_A=$(sqlite3 "$DB" "SELECT printf('%.1f', current_value) FROM assets WHERE id=$WALLET_ID")
 BAL_B=$(sqlite3 "$DB" "SELECT printf('%.1f', current_value) FROM assets WHERE id=$CC_ID")
 LOG_CNT_AFTER=$(sqlite3 "$DB" "SELECT COUNT(*) FROM asset_balance_logs")
-check "A 钱包回退 -800" "-9000.0" "$BAL_A"
-check "B 信用卡应用 -800（负债反转）" "-800.0" "$BAL_B"
+check "A 钱包回退 -800" "-9100.0" "$BAL_A"
+check "B 信用卡应用 -800（负债反转）" "-900.0" "$BAL_B"
 check "切换产生 2 条审计" "$((LOG_CNT_BEFORE + 2))" "$LOG_CNT_AFTER"
 
 echo "== 14. 交易买入联动扣除关联资金账户 =="
 curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/transactions" -d "{\"asset_id\":$CC_ID,\"linked_asset_id\":$WALLET_ID,\"category_id\":$ASSET_CAT,\"transaction_type\":\"buy\",\"amount\":500,\"currency\":\"CNY\",\"transaction_date\":\"2026-08-09\"}" >/dev/null
 BAL_WALLET=$(sqlite3 "$DB" "SELECT printf('%.1f', current_value) FROM assets WHERE id=$WALLET_ID")
 LINKED_NAME=$(sqlite3 "$DB" "SELECT la.name FROM transactions t JOIN assets la ON t.linked_asset_id=la.id WHERE t.asset_id=$CC_ID AND t.transaction_type='buy' LIMIT 1")
-check "买入从钱包扣款 -500" "-9500.0" "$BAL_WALLET"
+check "买入从钱包扣款 -500" "-9600.0" "$BAL_WALLET"
 check "关联资金账户名称查出" "钱包" "$LINKED_NAME"
 
 echo ""
@@ -209,7 +211,7 @@ check "asset-balance-logs page_size=3 返回 3 条" "3" "$(echo "$LOG_PAGE" | jq
 MONTH_RES=$(curl -s -H "$AUTH" "$BASE/transactions/monthly?month=2026-08")
 check "transactions/monthly total_volume=1600" "1600" "$(echo "$MONTH_RES" | jq -r '.data.total_volume | floor')"
 check "transactions/monthly inflows=1000" "1000" "$(echo "$MONTH_RES" | jq -r '.data.inflows | floor')"
-check "transactions/monthly outflows=600" "600" "$(echo "$MONTH_RES" | jq -r '.data.outflows | floor')"
+check "transactions/monthly outflows=500" "500" "$(echo "$MONTH_RES" | jq -r '.data.outflows | floor')"
 check "transactions/monthly count=3" "3" "$(echo "$MONTH_RES" | jq -r '.data.count | floor')"
 
 echo "== 19. 分类树形结构 =="

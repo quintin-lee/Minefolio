@@ -16,6 +16,8 @@ static double tx_delta(const char* type, double amount, double price, double qty
         strcmp(type, "fee") == 0 || strcmp(type, "loss") == 0) {
         return -amount;
     }
+    if (strcmp(type, "transfer_in") == 0) return amount;
+    if (strcmp(type, "transfer_out") == 0) return -amount;
     return 0;
 }
 
@@ -23,13 +25,26 @@ static double tx_linked_delta(const char* type, double amount) {
     if (!type) return 0;
     if (strcmp(type, "buy") == 0 || strcmp(type, "deposit") == 0 ||
         strcmp(type, "fee") == 0 || strcmp(type, "loss") == 0) {
-        return -amount; // 扣除资金账户余额
+        return -amount;
     }
     if (strcmp(type, "sell") == 0 || strcmp(type, "withdrawal") == 0 ||
         strcmp(type, "income") == 0) {
-        return +amount; // 资金账户入账/回流
+        return +amount;
     }
+    if (strcmp(type, "transfer_in") == 0) return -amount;
+    if (strcmp(type, "transfer_out") == 0) return +amount;
     return 0;
+}
+
+/** @brief Compute the effective linked-asset delta, applying transfer semantics.
+ *  For transfers, the linked asset gets the opposite delta to the primary asset,
+ *  ensuring net-worth-neutral movement (liability direction applied by caller). */
+static double tx_effective_ldelta(const char* type, double amount, double tdelta) {
+    if (!type) return 0;
+    if (strcmp(type, "transfer_in") == 0 || strcmp(type, "transfer_out") == 0) {
+        return -tdelta;
+    }
+    return tx_linked_delta(type, amount);
 }
 
 void transactions_list(csilk_ctx_t* c) {
@@ -150,9 +165,9 @@ void transactions_monthly(csilk_ctx_t* c) {
     csilk_json_t* res = csilk_db_query_param_json(pool,
         "SELECT "
         "  COALESCE(SUM(amount), 0) AS total_volume, "
-        "  COALESCE(SUM(CASE WHEN transaction_type IN ('deposit','income','sell','transfer_in') "
+        "  COALESCE(SUM(CASE WHEN transaction_type IN ('deposit','income','sell') "
         "                     THEN amount ELSE 0 END), 0) AS inflows, "
-        "  COALESCE(SUM(CASE WHEN transaction_type IN ('withdrawal','buy','fee','loss','transfer_out') "
+        "  COALESCE(SUM(CASE WHEN transaction_type IN ('withdrawal','buy','fee','loss') "
         "                     THEN amount ELSE 0 END), 0) AS outflows, "
         "  COUNT(*) AS count "
         "FROM transactions WHERE user_id=? AND transaction_date LIKE ?", params);
@@ -287,7 +302,7 @@ void transactions_create(csilk_ctx_t* c) {
 
     // 2. 联动关联资金账户余额
     if (linked_asset_id > 0) {
-        double ldelta = tx_linked_delta(type, amount);
+        double ldelta = tx_effective_ldelta(type, amount, tdelta);
         if (ldelta != 0) {
             if (balance_apply_delta(pool, linked_asset_id, user_id, ldelta,
                                     "transaction_linked", tx_id, note) != 0) {
@@ -348,7 +363,7 @@ void transactions_update(csilk_ctx_t* c) {
     double old_tx_price = db_get_num(old_r, "price_per_unit");
     double old_tx_qty = db_get_num(old_r, "quantity");
     double old_tdelta = tx_delta(old_tx_type, old_tx_amount, old_tx_price, old_tx_qty);
-    double old_ldelta = tx_linked_delta(old_tx_type, old_tx_amount);
+    double old_ldelta = tx_effective_ldelta(old_tx_type, old_tx_amount, old_tdelta);
 
     int64_t linked_asset_id = db_get_int(body, "linked_asset_id");
     const char* type = csilk_json_get_string(body, "transaction_type");
@@ -404,7 +419,7 @@ void transactions_update(csilk_ctx_t* c) {
     }
 
     // 2. 关联资金账户差值联动
-    double new_ldelta = tx_linked_delta(type ? type : "", amount);
+    double new_ldelta = tx_effective_ldelta(type ? type : "", amount, new_tdelta);
     if (linked_asset_id == old_linked_asset_id) {
         if (linked_asset_id > 0) {
             double ldiff = new_ldelta - old_ldelta;
@@ -477,7 +492,7 @@ void transactions_delete(csilk_ctx_t* c) {
     double old_tx_price = db_get_num(old_r, "price_per_unit");
     double old_tx_qty = db_get_num(old_r, "quantity");
     double old_tdelta = tx_delta(old_tx_type, old_tx_amount, old_tx_price, old_tx_qty);
-    double old_ldelta = tx_linked_delta(old_tx_type, old_tx_amount);
+    double old_ldelta = tx_effective_ldelta(old_tx_type, old_tx_amount, old_tdelta);
 
     if (csilk_db_exec(pool, "BEGIN TRANSACTION") != 0) {
         csilk_json_free(old_row);
