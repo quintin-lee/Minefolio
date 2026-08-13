@@ -49,6 +49,10 @@ export interface TransactionPerformance {
   total_gain: number
   total_loss: number
   net_gain: number
+  total_cost_basis_remaining?: number
+  total_market_value?: number
+  floating_pnl?: number
+  realized_pnl?: number
   trades: {
     id: number
     asset_name: string
@@ -58,6 +62,9 @@ export interface TransactionPerformance {
     price: number
     amount: number
     profit?: number
+    avg_cost_at_trade?: number
+    realized?: number
+    fee?: number
   }[]
 }
 

@@ -25,6 +25,9 @@ export interface Asset {
   updated_at: string
   category_name?: string
   asset_type?: string
+  quantity?: number
+  cost_basis?: number
+  net_value?: number
 }
 
 export type Direction = 'in' | 'out' | 'neutral'
