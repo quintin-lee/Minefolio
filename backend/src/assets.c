@@ -1,6 +1,7 @@
 #include "common/response.h"
 #include "common/db.h"
 #include "common/jwt.h"
+#include "common/balance.h"
 #include "csilk/csilk.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,7 +35,8 @@ void assets_list(csilk_ctx_t* c) {
     if (cat_id && strlen(cat_id) > 0) {
         snprintf(sql, sizeof(sql),
             "SELECT a.id, a.name, a.account_no, a.current_value, a.currency, "
-            "a.note, a.created_at, a.updated_at, c.name as category_name, c.asset_type "
+            "a.note, a.created_at, a.updated_at, c.name as category_name, c.asset_type, "
+            "a.quantity, a.cost_basis, a.net_value "
             "FROM assets a LEFT JOIN categories c ON a.category_id=c.id "
             "WHERE a.user_id=? AND a.category_id=? ORDER BY a.name LIMIT ? OFFSET ?");
         snprintf(count_sql, sizeof(count_sql),
@@ -44,7 +46,8 @@ void assets_list(csilk_ctx_t* c) {
     } else {
         snprintf(sql, sizeof(sql),
             "SELECT a.id, a.name, a.account_no, a.current_value, a.currency, "
-            "a.note, a.created_at, a.updated_at, c.name as category_name, c.asset_type "
+            "a.note, a.created_at, a.updated_at, c.name as category_name, c.asset_type, "
+            "a.quantity, a.cost_basis, a.net_value "
             "FROM assets a LEFT JOIN categories c ON a.category_id=c.id "
             "WHERE a.user_id=? ORDER BY c.name, a.name LIMIT ? OFFSET ?");
         snprintf(count_sql, sizeof(count_sql),
@@ -87,6 +90,9 @@ void assets_create(csilk_ctx_t* c) {
     const char* currency = csilk_json_get_string(body, "currency");
     if (!currency) currency = "CNY";
     const char* note = csilk_json_get_string(body, "note");
+    double quantity = db_get_num(body, "quantity");
+    double cost_basis = db_get_num(body, "cost_basis");
+    double net_value = db_get_num(body, "net_value");
 
     csilk_db_pool_t* pool = db_get_pool();
     char uid_str[32], cat_str[32], val_str[64];
@@ -94,12 +100,19 @@ void assets_create(csilk_ctx_t* c) {
     snprintf(cat_str, sizeof(cat_str), "%lld", (long long)category_id);
     snprintf(val_str, sizeof(val_str), "%.6f", value);
 
+    char qty_str[64], cb_str[64], nv_str[64];
+    snprintf(qty_str, sizeof(qty_str), "%.4f", quantity);
+    snprintf(cb_str, sizeof(cb_str), "%.4f", cost_basis);
+    snprintf(nv_str, sizeof(nv_str), "%.4f", net_value);
+
     const char* params[] = {
-        uid_str, cat_str, name, account_no ? account_no : "", val_str, currency, note ? note : "", NULL
+        uid_str, cat_str, name, account_no ? account_no : "", val_str, currency, note ? note : "",
+        qty_str, cb_str, nv_str, NULL
     };
     csilk_json_t* res = csilk_db_query_param_json(pool,
-        "INSERT INTO assets (user_id, category_id, name, account_no, current_value, currency, note) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)", params);
+        "INSERT INTO assets (user_id, category_id, name, account_no, current_value, currency, note, "
+        "quantity, cost_basis, net_value) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", params);
 
     if (!res) {
         csilk_json_free(body);
@@ -142,10 +155,56 @@ void assets_update(csilk_ctx_t* c) {
     double value = db_get_num(body, "current_value");
     const char* currency = csilk_json_get_string(body, "currency");
     const char* note = csilk_json_get_string(body, "note");
+    double net_value_input = db_get_num(body, "net_value");
+    int has_net_value = csilk_json_get_node(body, "net_value") != NULL;
 
     char val_str[64];
     snprintf(val_str, sizeof(val_str), "%.6f", value);
 
+    // A2 净值重算：投资类资产且 body 含 net_value → 重算 current_value = quantity × net_value
+    int64_t asset_id_val = atoll(id_str);
+    if (has_net_value) {
+        csilk_json_t* holder = csilk_db_query_param_json(pool,
+            "SELECT a.quantity, a.cost_basis, a.current_value, c.asset_type "
+            "FROM assets a JOIN categories c ON a.category_id=c.id "
+            "WHERE a.id=? AND a.user_id=?", chk_params);
+        if (holder && csilk_json_array_size(holder) > 0) {
+            const csilk_json_t* hr = csilk_json_array_get(holder, 0);
+            const char* atype = csilk_json_get_string(hr, "asset_type");
+            int is_investment = (atype && (strcmp(atype, "stock") == 0 ||
+                                            strcmp(atype, "fund") == 0 ||
+                                            strcmp(atype, "bond") == 0 ||
+                                            strcmp(atype, "crypto") == 0));
+            if (is_investment) {
+                double old_qty = db_get_num(hr, "quantity");
+                double old_current = db_get_num(hr, "current_value");
+                double delta = old_qty * net_value_input - old_current;
+                if (delta != 0) {
+                    balance_apply_delta(pool, asset_id_val, user_id, delta,
+                                        "asset_netvalue", asset_id_val, "net_value update");
+                }
+                // UPDATE: only update net_value and derived fields
+                const char* upd_params[] = {
+                    name ? name : "", account_no ? account_no : "",
+                    currency ? currency : "CNY", note ? note : "", id_str, uid_str, NULL
+                };
+                char nv_str[64];
+                snprintf(nv_str, sizeof(nv_str), "%.4f", net_value_input);
+                csilk_json_t* ur = csilk_db_query_param_json(pool,
+                    "UPDATE assets SET name=?, account_no=?, currency=?, note=?, "
+                    "net_value=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?",
+                    upd_params);
+                if (ur) csilk_json_free(ur);
+                csilk_json_free(holder);
+                csilk_json_free(body);
+                respond_ok_null(c);
+                return;
+            }
+        }
+        if (holder) csilk_json_free(holder);
+    }
+
+    // 普通资产：直接更新
     const char* params[] = {
         name ? name : "", account_no ? account_no : "", val_str,
         currency ? currency : "CNY", note ? note : "", id_str, uid_str, NULL
@@ -195,7 +254,8 @@ void assets_detail(csilk_ctx_t* c) {
 
     csilk_json_t* result = csilk_db_query_param_json(pool,
         "SELECT a.id, a.name, a.account_no, a.current_value, a.currency, "
-        "a.note, a.created_at, a.updated_at, c.name as category_name, c.asset_type "
+        "a.note, a.created_at, a.updated_at, c.name as category_name, c.asset_type, "
+        "a.quantity, a.cost_basis, a.net_value "
         "FROM assets a LEFT JOIN categories c ON a.category_id=c.id "
         "WHERE a.id=? AND a.user_id=?", params);
 
@@ -215,6 +275,9 @@ void assets_detail(csilk_ctx_t* c) {
     csilk_json_add_string(resp, "note", csilk_json_get_string(row, "note"));
     csilk_json_add_string(resp, "category_name", csilk_json_get_string(row, "category_name"));
     csilk_json_add_string(resp, "asset_type", csilk_json_get_string(row, "asset_type"));
+    csilk_json_add_number(resp, "quantity", db_get_num(row, "quantity"));
+    csilk_json_add_number(resp, "cost_basis", db_get_num(row, "cost_basis"));
+    csilk_json_add_number(resp, "net_value", db_get_num(row, "net_value"));
     csilk_json_add_string(resp, "created_at", csilk_json_get_string(row, "created_at"));
     csilk_json_add_string(resp, "updated_at", csilk_json_get_string(row, "updated_at"));
 
