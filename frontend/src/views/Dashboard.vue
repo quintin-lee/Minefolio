@@ -228,7 +228,7 @@ onMounted(loadDashboard)
 .expense-text { color: #f87171; text-shadow: 0 0 8px rgba(248,113,113,0.3); font-weight: 600; }
 
 .premium-table {
-  --el-table-border-color: var(--mf-border);
+  --el-table-border-color: transparent;
   --el-table-header-bg-color: rgba(0, 212, 255, 0.06);
 }
 
