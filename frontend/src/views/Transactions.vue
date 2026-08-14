@@ -179,8 +179,8 @@
           <el-step title="完整信息" description="选择账户、分类和日期" />
         </el-steps>
 
-        <!-- Step 1: 交易类型 + 核心字段 -->
-        <template v-if="step === 0">
+        <!-- Step 1: 交易类型 + 核心字段（编辑模式同样展示） -->
+        <template v-if="step === 0 || editingId">
           <el-row :gutter="16">
             <el-col :span="24">
               <el-form-item label="交易类型" prop="transaction_type">
@@ -220,8 +220,11 @@
           </el-row>
         </template>
 
-        <!-- Step 2: 完整信息 -->
-        <template v-else>
+        <!-- Step 2: 完整信息（Step 1 或编辑模式均展示） -->
+        <template v-if="step === 1 || editingId">
+          <template v-if="editingId">
+            <el-divider style="margin: 8px 0 16px" />
+          </template>
           <el-alert v-if="editingId" type="info" :closable="false" show-icon title="修改金额/类型将自动联动计算并更新关联资产的账户余额" style="margin-bottom: 16px" />
 
           <el-row :gutter="16">
@@ -570,17 +573,17 @@ function openDialog(txn?: any) {
   step.value = txn?.id ? 1 : 0
   const cur = txn?.currency ? String(txn.currency) : 'CNY'
   Object.assign(form, txn ? {
-    asset_id: Number(txn.asset_id),
-    linked_asset_id: Number(txn.linked_asset_id) || null,
+    asset_id: txn.asset_id ? String(txn.asset_id) : null,
+    linked_asset_id: txn.linked_asset_id ? String(txn.linked_asset_id) : null,
     transaction_type: txn.transaction_type,
     amount: Number(txn.amount),
     quantity: Number(txn.quantity) || 0,
     price_per_unit: Number(txn.price_per_unit) || 0,
     transaction_date: txn.transaction_date,
     note: txn.note || '',
-    category_id: Number(txn.category_id) || null,
+    category_id: txn.category_id && txn.category_id !== '0' ? Number(txn.category_id) : null,
     currency: cur,
-    _catPath: [Number(txn.category_id)].filter(Boolean),
+    _catPath: txn.category_id && txn.category_id !== '0' ? [Number(txn.category_id)] : [],
   } : {
     asset_id: null,
     linked_asset_id: null,
