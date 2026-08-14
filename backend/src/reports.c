@@ -369,10 +369,15 @@ void report_transaction_performance(csilk_ctx_t* c) {
         double qty = db_get_num(row, "quantity");
         double price = db_get_num(row, "price_per_unit");
         const char* date_s = csilk_json_get_string(row, "transaction_date");
-        if (dir && strcmp(dir, "in") == 0) {
-            total_gain += amt;
-        } else {
-            total_loss += amt;
+        // 本金流向（存入/取出/转入/转出）不计入盈亏
+        int is_principal = (strcmp(type, "deposit") == 0 || strcmp(type, "withdrawal") == 0 ||
+                            strcmp(type, "transfer_in") == 0 || strcmp(type, "transfer_out") == 0);
+        if (!is_principal) {
+            if (dir && strcmp(dir, "in") == 0) {
+                total_gain += amt;
+            } else {
+                total_loss += amt;
+            }
         }
         total_trades++;
 
