@@ -472,12 +472,14 @@ async function handleImport() {
   padding: 16px;
   box-shadow: var(--mf-shadow-sm);
   border: 1px solid var(--mf-border);
-  overflow-y: auto;
-  max-height: 520px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .table-container :deep(.el-table) {
-  height: 100%;
+  flex: 1;
+  min-height: 0;
 }
 
 .table-container :deep(.el-table__body-wrapper) {
