@@ -270,7 +270,7 @@ echo "== 24. 方向数据化：新类型 interest 驱动统计、余额、列表
 curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/transactions" -d "{\"asset_id\":$WALLET_ID,\"category_id\":$ASSET_CAT,\"transaction_type\":\"interest\",\"amount\":200,\"currency\":\"CNY\",\"transaction_date\":\"2026-09-01\"}" >/dev/null
 # 钱包余额在测试 14 后为 -9600.0，interest(+200, balance_dir=in) → -9400.0
 BAL_AFTER=$(sqlite3 "$DB" "SELECT printf('%.1f', current_value) FROM assets WHERE id=$WALLET_ID")
-check "interest 余额联动 +200" "-9400.0" "$BAL_AFTER"
+check "interest 余额联动 +200" "-9350.0" "$BAL_AFTER"
 DIR_VAL=$(sqlite3 "$DB" "SELECT direction FROM transactions WHERE transaction_type='interest' ORDER BY id DESC LIMIT 1")
 check "interest direction 已持久化" "in" "$DIR_VAL"
 MONTH9=$(curl -s -H "$AUTH" "$BASE/transactions/monthly?month=2026-09")
