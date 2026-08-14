@@ -447,6 +447,34 @@ H6=$(curl -s -H "$AUTH" "$BASE/reports/holdings")
 H6_ROW=$(echo "$H6" | jq -c --argjson aid "$H3_ASSET" '.data.holdings[] | select(.asset_id==$aid)')
 check "H6 分红后 realized=500（400+100）" "500" "$(echo "$H6_ROW" | jq -r '.realized_pnl | floor')"
 
+# I1: 投资类资产创建 — 只传份额/净值，不传成本/市值 → 自动推导 cost_basis=份额×净值、current_value=份额×净值
+I1_CAT=$(curl -s -H "$AUTH" -H "Content-Type: application/json" -X POST "$BASE/categories" \
+  -d '{"name":"直接建仓类","type":"asset","asset_type":"fund","currency":"CNY"}' > /dev/null; sqlite3 "$DB" "SELECT id FROM categories WHERE name='直接建仓类' ORDER BY id DESC LIMIT 1")
+curl -s -H "$AUTH" -H "Content-Type: application/json" -X POST "$BASE/assets" \
+  -d "{\"name\":\"直接建仓基金\",\"category_id\":$I1_CAT,\"quantity\":500,\"net_value\":2.5,\"currency\":\"CNY\"}" > /dev/null
+I1_ASSET=$(sqlite3 "$DB" "SELECT id FROM assets WHERE name='直接建仓基金' ORDER BY id DESC LIMIT 1")
+I1_POS=$(sqlite3 "$DB" "SELECT printf('%.2f',quantity)||'|'||printf('%.2f',cost_basis)||'|'||printf('%.2f',net_value)||'|'||printf('%.2f',current_value) FROM assets WHERE id=$I1_ASSET")
+check "I1 自动推导 cost_basis=500×2.5=1250" "500.00|1250.00|2.50|1250.00" "$I1_POS"
+
+# I1b: 投资类资产 PUT 改净值 → current_value 跟随重算（quantity/cost_basis 保留）
+curl -s -H "$AUTH" -H "Content-Type: application/json" -X PUT "$BASE/assets/$I1_ASSET" \
+  -d '{"net_value":3.0}' > /dev/null
+I1_POS2=$(sqlite3 "$DB" "SELECT printf('%.2f',quantity)||'|'||printf('%.2f',cost_basis)||'|'||printf('%.2f',net_value)||'|'||printf('%.2f',current_value) FROM assets WHERE id=$I1_ASSET")
+check "I1b PUT 净值后 current_value=500×3.0=1500" "500.00|1250.00|3.00|1500.00" "$I1_POS2"
+
+# I2: 投资类资产 PUT 改份额+成本 → 一并持久化（不再丢弃）
+curl -s -H "$AUTH" -H "Content-Type: application/json" -X PUT "$BASE/assets/$I1_ASSET" \
+  -d '{"quantity":600,"cost_basis":1500}' > /dev/null
+I1_POS3=$(sqlite3 "$DB" "SELECT printf('%.2f',quantity)||'|'||printf('%.2f',cost_basis)||'|'||printf('%.2f',net_value)||'|'||printf('%.2f',current_value) FROM assets WHERE id=$I1_ASSET")
+check "I2 PUT 份额+成本 → quantity=600 cost=1500 current=600×3.0=1800" "600.00|1500.00|3.00|1800.00" "$I1_POS3"
+
+# I3: 非投资类资产创建不受影响 — current_value 透传
+I3_CAT=$(sqlite3 "$DB" "SELECT id FROM categories WHERE name='流动资产' ORDER BY id DESC LIMIT 1")
+curl -s -H "$AUTH" -H "Content-Type: application/json" -X POST "$BASE/assets" \
+  -d "{\"name\":\"普通钱包测试\",\"category_id\":$I3_CAT,\"current_value\":8888,\"currency\":\"CNY\"}" > /dev/null
+I3_POS=$(sqlite3 "$DB" "SELECT printf('%.2f',current_value) FROM assets WHERE name='普通钱包测试' ORDER BY id DESC LIMIT 1")
+check "I3 非投资资产 current_value 透传=8888" "8888.00" "$I3_POS"
+
 echo ""
 echo "结果: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

@@ -57,17 +57,17 @@
         </el-table-column>
         <el-table-column v-if="assetTypeShow('stock','fund','bond','crypto')" label="份额" min-width="100" align="right">
           <template #default="{ row }">
-            <span class="mono-amount">{{ row.quantity != null ? row.quantity.toFixed(2) : '-' }}</span>
+            <span class="mono-amount">{{ row.quantity != null ? Number(row.quantity).toFixed(2) : '-' }}</span>
           </template>
         </el-table-column>
         <el-table-column v-if="assetTypeShow('stock','fund','bond','crypto')" label="成本" min-width="120" align="right">
           <template #default="{ row }">
-            <span class="mono-amount">{{ row.cost_basis != null ? formatCurrency(row.cost_basis) : '-' }}</span>
+            <span class="mono-amount">{{ row.cost_basis != null ? formatCurrency(Number(row.cost_basis)) : '-' }}</span>
           </template>
         </el-table-column>
         <el-table-column v-if="assetTypeShow('stock','fund','bond','crypto')" label="净值" min-width="100" align="right">
           <template #default="{ row }">
-            <span class="mono-amount">{{ row.net_value != null ? row.net_value.toFixed(4) : '-' }}</span>
+            <span class="mono-amount">{{ row.net_value != null ? Number(row.net_value).toFixed(4) : '-' }}</span>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="140" align="center">
@@ -97,8 +97,8 @@
         <el-form-item label="账户编号">
           <el-input v-model="form.account_no" placeholder="可选" />
         </el-form-item>
-        <el-form-item label="当前价值" prop="current_value">
-          <el-input-number v-model="form.current_value" :precision="2" :min="0" style="width: 100%" :controls="false" :disabled="isInvestment" />
+        <el-form-item label="当前价值" prop="current_value" v-if="!isInvestment">
+          <el-input-number v-model="form.current_value" :precision="2" :min="0" style="width: 100%" :controls="false" />
         </el-form-item>
         <template v-if="isInvestment">
           <el-form-item label="持有份额">
@@ -107,6 +107,10 @@
           <el-form-item label="单位净值">
             <el-input-number v-model="form.net_value" :precision="4" :min="0" style="width: 100%" :controls="false" />
           </el-form-item>
+          <el-form-item label="持仓成本">
+            <el-input-number v-model="form.cost_basis" :precision="2" :min="0" style="width: 100%" :controls="false" placeholder="留空默认 = 份额 × 净值" />
+          </el-form-item>
+          <div class="investment-hint">市值将按 份额 × 净值 自动计算；成本留空则等同市值</div>
         </template>
         <el-form-item label="币种">
           <el-select v-model="form.currency" style="width: 100%">
@@ -184,22 +188,37 @@ function openDialog(asset?: any) {
     name: asset.name, category_id: asset.category_id, account_no: asset.account_no,
     current_value: asset.current_value, currency: asset.currency, note: asset.note,
     quantity: asset.quantity ?? 0, net_value: asset.net_value ?? 0,
+    cost_basis: asset.cost_basis ?? 0,
     _catPath: [asset.category_id],
     _isInvestment: isInv,
-  } : { name: '', category_id: null, account_no: '', current_value: 0, currency: 'CNY', note: '', quantity: 0, net_value: 0, _catPath: [], _isInvestment: false })
+  } : { name: '', category_id: null, account_no: '', current_value: 0, currency: 'CNY', note: '', quantity: 0, net_value: 0, cost_basis: 0, _catPath: [], _isInvestment: false })
   dialogVisible.value = true
 }
 
-const form = reactive({ name: '', category_id: null as number | null, account_no: '', current_value: 0, currency: 'CNY', note: '', quantity: 0, net_value: 0, _catPath: [] as number[], _isInvestment: false as boolean })
+const form = reactive({ name: '', category_id: null as number | null, account_no: '', current_value: 0, currency: 'CNY', note: '', quantity: 0, net_value: 0, cost_basis: 0, _catPath: [] as number[], _isInvestment: false as boolean })
 const isInvestment = computed(() => form._isInvestment)
 function assetTypeShow(...types: string[]) {
   return (a: Asset) => types.includes(a.asset_type ?? '')
 }
 const rules = { name: [{ required: true, message: '请输入资产名称' }], category_id: [{ required: true, message: '请选择分类' }] }
 
+function findCategory(nodes: Category[], id: number): Category | null {
+  for (const node of nodes) {
+    if (node.id === id) return node
+    if (node.children?.length) {
+      const found = findCategory(node.children, id)
+      if (found) return found
+    }
+  }
+  return null
+}
+
 function onCatChange(val: any) {
   const arr = (val as number[]) ?? []
-  form.category_id = arr[arr.length - 1] ?? null
+  const catId = arr[arr.length - 1] ?? null
+  form.category_id = catId
+  const cat = catId != null ? findCategory(categoryTree.value, catId) : null
+  form._isInvestment = ['stock','fund','bond','crypto'].includes(cat?.asset_type ?? '')
 }
 
 async function handleSubmit() {
@@ -207,8 +226,14 @@ async function handleSubmit() {
     if (!valid) return
     saving.value = true
     try {
-      const data: any = { name: form.name, category_id: form.category_id, account_no: form.account_no, current_value: form.current_value, currency: form.currency, note: form.note }
-      if (form._isInvestment) { data.quantity = form.quantity; data.net_value = form.net_value }
+      const data: any = { name: form.name, category_id: form.category_id, account_no: form.account_no, currency: form.currency, note: form.note }
+      if (form._isInvestment) {
+        data.quantity = form.quantity
+        data.net_value = form.net_value
+        data.cost_basis = form.cost_basis
+      } else {
+        data.current_value = form.current_value
+      }
       if (editingId.value) {
         await assetsApi.update(editingId.value, data)
         ElMessage.success('更新成功')
@@ -401,6 +426,14 @@ onMounted(async () => {
 
 .premium-form .el-form-item {
   margin-bottom: 24px;
+}
+
+.investment-hint {
+  font-size: 12px;
+  color: #64748b;
+  margin-top: -12px;
+  margin-bottom: 24px;
+  padding-left: 90px;
 }
 
 .premium-form :deep(.el-input__wrapper) {

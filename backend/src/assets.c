@@ -95,9 +95,34 @@ void assets_create(csilk_ctx_t* c) {
     double net_value = db_get_num(body, "net_value");
 
     csilk_db_pool_t* pool = db_get_pool();
-    char uid_str[32], cat_str[32], val_str[64];
+    char uid_str[32], cat_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     snprintf(cat_str, sizeof(cat_str), "%lld", (long long)category_id);
+
+    // 投资类资产（stock/fund/bond/crypto）特殊处理：缺省时自动推导市值与成本
+    // current_value = quantity × net_value；cost_basis 缺省（≤0）时 = 市值，
+    // 保证持仓页浮动盈亏初始为 0（与 reports.c 的 market = net_value*quantity 口径一致）
+    int is_investment = 0;
+    {
+        const char* cat_params[] = { cat_str, uid_str, NULL };
+        csilk_json_t* cat_row = csilk_db_query_param_json(pool,
+            "SELECT asset_type FROM categories WHERE id=? AND user_id=?", cat_params);
+        if (cat_row && csilk_json_array_size(cat_row) > 0) {
+            const char* atype = csilk_json_get_string(csilk_json_array_get(cat_row, 0), "asset_type");
+            is_investment = (atype && (strcmp(atype, "stock") == 0 ||
+                                       strcmp(atype, "fund") == 0 ||
+                                       strcmp(atype, "bond") == 0 ||
+                                       strcmp(atype, "crypto") == 0));
+        }
+        if (cat_row) csilk_json_free(cat_row);
+    }
+    if (is_investment && quantity > 0 && net_value > 0) {
+        double market = quantity * net_value;
+        if (cost_basis <= 0) cost_basis = market;
+        value = market;  // 当前市值 = 份额 × 净值（忽略请求里的 current_value）
+    }
+
+    char val_str[64];
     snprintf(val_str, sizeof(val_str), "%.6f", value);
 
     char qty_str[64], cb_str[64], nv_str[64];
@@ -157,6 +182,10 @@ void assets_update(csilk_ctx_t* c) {
     const char* note = csilk_json_get_string(body, "note");
     double net_value_input = db_get_num(body, "net_value");
     int has_net_value = csilk_json_get(body, "net_value") != NULL;
+    double quantity_input = db_get_num(body, "quantity");
+    int has_quantity = csilk_json_get(body, "quantity") != NULL;
+    double cost_basis_input = db_get_num(body, "cost_basis");
+    int has_cost_basis = csilk_json_get(body, "cost_basis") != NULL;
 
     // A2 补丁语义：请求体中缺失的字段保留数据库原值，避免部分更新清空列
     if (!name || !account_no || !currency || !note) {
@@ -176,11 +205,12 @@ void assets_update(csilk_ctx_t* c) {
     char val_str[64];
     snprintf(val_str, sizeof(val_str), "%.6f", value);
 
-    // A2 净值重算：投资类资产且 body 含 net_value → 重算 current_value = quantity × net_value
+    // A2 净值重算：投资类资产且 body 含 net_value/quantity/cost_basis →
+    // 持久化持仓字段，并重算 current_value = quantity × net_value
     int64_t asset_id_val = atoll(id_str);
-    if (has_net_value) {
+    if (has_net_value || has_quantity || has_cost_basis) {
         csilk_json_t* holder = csilk_db_query_param_json(pool,
-            "SELECT a.quantity, a.cost_basis, a.current_value, c.asset_type "
+            "SELECT a.quantity, a.cost_basis, a.net_value, a.current_value, c.asset_type "
             "FROM assets a JOIN categories c ON a.category_id=c.id "
             "WHERE a.id=? AND a.user_id=?", chk_params);
         if (holder && csilk_json_array_size(holder) > 0) {
@@ -192,21 +222,29 @@ void assets_update(csilk_ctx_t* c) {
                                             strcmp(atype, "crypto") == 0));
             if (is_investment) {
                 double old_qty = db_get_num(hr, "quantity");
+                double old_cost = db_get_num(hr, "cost_basis");
+                double old_net = db_get_num(hr, "net_value");
                 double old_current = db_get_num(hr, "current_value");
-                double delta = old_qty * net_value_input - old_current;
+                double new_qty = has_quantity ? quantity_input : old_qty;
+                double new_net = has_net_value ? net_value_input : old_net;
+                double new_cost = has_cost_basis ? cost_basis_input : old_cost;
+                double new_current = new_qty * new_net;
+                double delta = new_current - old_current;
                 if (delta != 0) {
                     balance_apply_delta(pool, asset_id_val, user_id, delta,
                                         "asset_netvalue", asset_id_val, "net_value update");
-                 }
-                 // UPDATE: only update net_value and derived fields
-                 char nv_str[64];
-                 snprintf(nv_str, sizeof(nv_str), "%.4f", net_value_input);
-                 const char* upd_params[] = {
-                     nv_str, id_str, uid_str, NULL
-                 };
+                }
+                // UPDATE: 仅更新持仓字段与派生值
+                char nv_str[64], qty_str[64], cb_str[64];
+                snprintf(nv_str, sizeof(nv_str), "%.4f", new_net);
+                snprintf(qty_str, sizeof(qty_str), "%.4f", new_qty);
+                snprintf(cb_str, sizeof(cb_str), "%.4f", new_cost);
+                const char* upd_params[] = {
+                    nv_str, qty_str, cb_str, id_str, uid_str, NULL
+                };
                 csilk_json_t* ur = csilk_db_query_param_json(pool,
-                    "UPDATE assets SET net_value=?, updated_at=CURRENT_TIMESTAMP "
-                    "WHERE id=? AND user_id=?", upd_params);
+                    "UPDATE assets SET net_value=?, quantity=?, cost_basis=?, "
+                    "updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?", upd_params);
                 if (ur) csilk_json_free(ur);
                 csilk_json_free(holder);
                 csilk_json_free(body);
