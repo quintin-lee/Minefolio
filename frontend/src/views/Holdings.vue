@@ -16,7 +16,7 @@
         </div>
       </el-col>
       <el-col :span="8">
-        <div class="summary-card">
+        <div class="summary-card" :class="floatCardClass">
           <div class="summary-label">总浮动盈亏</div>
           <div class="summary-value" :class="pnlClass(report?.summary.total_floating_pnl ?? 0)">
             {{ formatSigned(report?.summary.total_floating_pnl ?? 0) }}
@@ -167,6 +167,13 @@ function formatSigned(v: number): string {
   return v > 0 ? `+${s}` : v < 0 ? `-${s}` : s
 }
 
+const floatCardClass = computed(() => {
+  const pnl = report.value?.summary.total_floating_pnl ?? 0
+  if (pnl > 0) return 'profit-card'
+  if (pnl < 0) return 'loss-card'
+  return ''
+})
+
 const typeShare = computed(() => {
   const map = new Map<string, number>()
   for (const h of report.value?.holdings ?? []) {
@@ -240,6 +247,14 @@ onMounted(() => {
   display: flex;
   justify-content: flex-end;
   margin-top: 16px;
+}
+.profit-card {
+  background: rgba(52, 211, 153, 0.08);
+  border-color: rgba(52, 211, 153, 0.3);
+}
+.loss-card {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.3);
 }
 .asset-name {
   font-weight: 500;
