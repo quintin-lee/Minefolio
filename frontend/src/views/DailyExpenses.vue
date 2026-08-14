@@ -670,29 +670,18 @@ async function handleImport() {
 .import-result .el-icon { font-size: 16px; }
 .import-errors { font-size: 12px; color: #fca5a5; white-space: pre-wrap; word-break: break-all; }
 
-/* Constrain main content row to page height */
-:deep(.daily-expenses-page > .el-row),
-:deep(.transactions-page > .el-row) {
-  flex: 1;
-  min-height: 0;
-}
-
-:deep(.daily-expenses-page > .el-row > .el-col),
-:deep(.transactions-page > .el-row > .el-col) {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
 /* Constrain layout to viewport */
 .daily-expenses-page > .el-row {
   flex: 1;
   min-height: 0;
 }
 .daily-expenses-page > .el-row > .el-col {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 1 !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  height: 100% !important;
 }
 .main-panel {
   flex: 1;

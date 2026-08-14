@@ -920,20 +920,6 @@ async function handleImport() {
   word-break: break-all;
 }
 
-/* Constrain main content row to page height */
-:deep(.daily-expenses-page > .el-row),
-:deep(.transactions-page > .el-row) {
-  flex: 1;
-  min-height: 0;
-}
-
-:deep(.daily-expenses-page > .el-row > .el-col),
-:deep(.transactions-page > .el-row > .el-col) {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
 /* Constrain layout to viewport */
 .transactions-page > .el-row {
   flex: 1;
@@ -943,6 +929,7 @@ async function handleImport() {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  overflow: hidden;
 }
 .main-panel {
   flex: 1;
