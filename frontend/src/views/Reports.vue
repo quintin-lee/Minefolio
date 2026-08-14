@@ -9,14 +9,16 @@
 
     <el-tabs class="premium-tabs" type="card">
       <el-tab-pane label="收支分析">
-        <el-row :gutter="24">
-          <!-- 月度收支报表 -->
-          <el-col :span="12">
-            <div class="report-card">
-              <div class="card-header">
-                <h3>月度收支</h3>
-                <el-date-picker v-model="reportMonth" type="month" value-format="YYYY-MM" size="small" class="date-picker-subtle" @change="loadMonthlyReport" :clearable="false" />
-              </div>
+        <el-empty v-if="!monthly" description="暂无收支数据，完成第一笔交易后这里会出现图表" :image-size="120" />
+        <template v-else>
+          <el-row :gutter="24">
+            <!-- 月度收支报表 -->
+            <el-col :span="12">
+              <div class="report-card">
+                <div class="card-header">
+                  <h3>月度收支</h3>
+                  <el-date-picker v-model="reportMonth" type="month" value-format="YYYY-MM" size="small" class="date-picker-subtle" @change="loadMonthlyReport" :clearable="false" />
+                </div>
               
               <div class="metric-cards">
                 <div class="metric-card">
@@ -131,10 +133,13 @@
             </div>
           </el-col>
         </el-row>
+        </template>
       </el-tab-pane>
 
       <el-tab-pane label="资产分析">
-        <el-row :gutter="24">
+        <el-empty v-if="!assetBreakdown" description="暂无资产数据，先添加资产账户" :image-size="120" />
+        <template v-else>
+          <el-row :gutter="24">
           <!-- 资产趋势 -->
           <el-col :span="16">
             <div class="report-card">
@@ -184,6 +189,7 @@
             </div>
           </el-col>
         </el-row>
+        </template>
       </el-tab-pane>
     </el-tabs>
   </div>
