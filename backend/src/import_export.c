@@ -69,9 +69,9 @@ void transactions_export_csv(csilk_ctx_t* c) {
             const char* date = csilk_json_get_string(row, "transaction_date");
             const char* tx_type = csilk_json_get_string(row, "transaction_type");
             const char* src_type = csilk_json_get_string(row, "source_type");
-            double amount = csilk_json_get_number(row, "amount");
-            double price = csilk_json_get_number(row, "price_per_unit");
-            double qty = csilk_json_get_number(row, "quantity");
+            double amount = db_get_num(row, "amount");
+            double price = db_get_num(row, "price_per_unit");
+            double qty = db_get_num(row, "quantity");
             const char* currency = csilk_json_get_string(row, "currency");
             const char* asset_name = csilk_json_get_string(row, "asset_name");
             const char* linked_name = csilk_json_get_string(row, "linked_asset_name");
@@ -118,9 +118,10 @@ void transactions_export_csv(csilk_ctx_t* c) {
     char date_str[16];
     strftime(date_str, sizeof(date_str), "%Y-%m-%d", localtime(&now));
 
-    char fname[128];
-    snprintf(fname, sizeof(fname), "transactions_%s.csv", date_str);
+    char fname[160];
+    snprintf(fname, sizeof(fname), "attachment; filename=\"transactions_%s.csv\"", date_str);
 
+    csilk_status(c, CSILK_STATUS_OK);
     csilk_set_header(c, "Content-Type", "text/csv; charset=utf-8");
     csilk_set_header(c, "Content-Disposition", fname);
     csilk_response_write(c, (const uint8_t*)csv, csv_len);
@@ -412,9 +413,10 @@ void daily_expenses_export_csv(csilk_ctx_t* c) {
     char date_str[16];
     strftime(date_str, sizeof(date_str), "%Y-%m-%d", localtime(&now));
 
-    char fname[128];
-    snprintf(fname, sizeof(fname), "daily_expenses_%s.csv", date_str);
+    char fname[180];
+    snprintf(fname, sizeof(fname), "attachment; filename=\"daily_expenses_%s.csv\"", date_str);
 
+    csilk_status(c, CSILK_STATUS_OK);
     csilk_set_header(c, "Content-Type", "text/csv; charset=utf-8");
     csilk_set_header(c, "Content-Disposition", fname);
     csilk_response_write(c, (const uint8_t*)csv, csv_len);
