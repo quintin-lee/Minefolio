@@ -34,7 +34,7 @@ void assets_list(csilk_ctx_t* c) {
     char sql[512], count_sql[256];
     if (cat_id && strlen(cat_id) > 0) {
         snprintf(sql, sizeof(sql),
-            "SELECT a.id, a.name, a.account_no, a.current_value, a.currency, "
+            "SELECT a.id, a.category_id, a.name, a.account_no, a.current_value, a.currency, "
             "a.note, a.created_at, a.updated_at, c.name as category_name, c.asset_type, "
             "a.quantity, a.cost_basis, a.net_value "
             "FROM assets a LEFT JOIN categories c ON a.category_id=c.id "
@@ -45,7 +45,7 @@ void assets_list(csilk_ctx_t* c) {
         cnt_params[cnt_pidx++] = cat_id;
     } else {
         snprintf(sql, sizeof(sql),
-            "SELECT a.id, a.name, a.account_no, a.current_value, a.currency, "
+            "SELECT a.id, a.category_id, a.name, a.account_no, a.current_value, a.currency, "
             "a.note, a.created_at, a.updated_at, c.name as category_name, c.asset_type, "
             "a.quantity, a.cost_basis, a.net_value "
             "FROM assets a LEFT JOIN categories c ON a.category_id=c.id "
@@ -304,7 +304,7 @@ void assets_detail(csilk_ctx_t* c) {
     const char* params[] = { id_str, uid_str, NULL };
 
     csilk_json_t* result = csilk_db_query_param_json(pool,
-        "SELECT a.id, a.name, a.account_no, a.current_value, a.currency, "
+        "SELECT a.id, a.category_id, a.name, a.account_no, a.current_value, a.currency, "
         "a.note, a.created_at, a.updated_at, c.name as category_name, c.asset_type, "
         "a.quantity, a.cost_basis, a.net_value "
         "FROM assets a LEFT JOIN categories c ON a.category_id=c.id "
@@ -319,6 +319,7 @@ void assets_detail(csilk_ctx_t* c) {
     csilk_json_t* row = csilk_json_array_get(result, 0);
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_number(resp, "id", db_get_num(row, "id"));
+    csilk_json_add_number(resp, "category_id", db_get_num(row, "category_id"));
     csilk_json_add_string(resp, "name", csilk_json_get_string(row, "name"));
     csilk_json_add_string(resp, "account_no", csilk_json_get_string(row, "account_no"));
     csilk_json_add_number(resp, "current_value", db_get_num(row, "current_value"));
