@@ -577,3 +577,154 @@ void summary_get(csilk_ctx_t* c) {
     if (trend_rows) csilk_json_free(trend_rows);
     respond_ok(c, resp);
 }
+
+/* ----------------------------------------------------------------
+ * GET /api/reports/holdings
+ * 持仓报表：按投资类资产聚合浮动盈亏 + 已实现盈亏
+ * PnL 口径与 report_transaction_performance 完全一致（按资产分组）
+ * ---------------------------------------------------------------- */
+typedef struct {
+    int64_t asset_id;
+    double cost_for_pnl;
+    double qty;
+    double realized;
+} holding_pnl_t;
+
+static int64_t holding_find(holding_pnl_t* arr, size_t n, int64_t asset_id)
+{
+    for (size_t i = 0; i < n; i++) {
+        if (arr[i].asset_id == asset_id) {
+            return (int64_t)i;
+        }
+    }
+    return -1;
+}
+
+void report_holdings(csilk_ctx_t* c)
+{
+    int64_t user_id = jwt_get_user_id(c);
+    if (user_id < 0) {
+        respond_unauthorized(c);
+        return;
+    }
+    csilk_db_pool_t* pool = db_get_pool();
+
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    const char* params[] = { uid_str, NULL };
+
+    /* 持仓行：投资类资产（不论 quantity 是否为 0） */
+    const char* hold_sql =
+        "SELECT a.id AS asset_id, a.name, c.asset_type, a.currency, "
+        "a.quantity, a.net_value, a.cost_basis, a.current_value "
+        "FROM assets a JOIN categories c ON a.category_id = c.id "
+        "WHERE a.user_id = ? AND c.asset_type IN ('stock','fund','bond','crypto') "
+        "ORDER BY a.id ASC";
+    csilk_json_t* hold_rows = csilk_db_query_param_json(pool, hold_sql, params);
+    if (!hold_rows) {
+        respond_error(c, 500, "查询失败");
+        return;
+    }
+
+    size_t hn = csilk_json_array_size(hold_rows);
+    holding_pnl_t* accs = NULL;
+    if (hn > 0) {
+        accs = (holding_pnl_t*)calloc(hn, sizeof(holding_pnl_t));
+        if (!accs) {
+            respond_error(c, 500, "内存不足");
+            csilk_json_free(hold_rows);
+            return;
+        }
+        for (size_t i = 0; i < hn; i++) {
+            csilk_json_t* row = csilk_json_array_get(hold_rows, i);
+            accs[i].asset_id = (int64_t)db_get_num(row, "asset_id");
+        }
+    }
+
+    /* 用户全部交易，按日期升序（全局序保持各资产内时序，与 performance 一致） */
+    const char* tx_sql =
+        "SELECT asset_id, transaction_type, quantity, amount "
+        "FROM transactions WHERE user_id = ? ORDER BY transaction_date ASC";
+    csilk_json_t* tx_rows = csilk_db_query_param_json(pool, tx_sql, params);
+    if (tx_rows) {
+        size_t tn = csilk_json_array_size(tx_rows);
+        for (size_t i = 0; i < tn; i++) {
+            csilk_json_t* t = csilk_json_array_get(tx_rows, i);
+            const char* type = csilk_json_get_string(t, "transaction_type");
+            double amt = db_get_num(t, "amount");
+            double qty = db_get_num(t, "quantity");
+            int64_t aid = (int64_t)db_get_num(t, "asset_id");
+            if (!type) {
+                continue;
+            }
+            if (strcmp(type, "buy") != 0 && strcmp(type, "sell") != 0 &&
+                strcmp(type, "income") != 0) {
+                continue;               /* fee 等行跳过，与 performance 一致 */
+            }
+            int64_t idx = holding_find(accs, hn, aid);
+            if (idx < 0) {
+                continue;               /* 非投资类资产的交易，不计入持仓报表 */
+            }
+            if (strcmp(type, "buy") == 0) {
+                accs[idx].cost_for_pnl += amt;  /* 不含 fee，与 performance 口径一致 */
+                accs[idx].qty += qty;
+            } else if (strcmp(type, "sell") == 0) {
+                double avg_cost = accs[idx].qty > 0 ? accs[idx].cost_for_pnl / accs[idx].qty : 0.0;
+                accs[idx].realized += amt - qty * avg_cost;
+                accs[idx].qty -= qty;
+            } else { /* income */
+                accs[idx].cost_for_pnl -= amt;
+                accs[idx].realized += amt;
+            }
+        }
+        csilk_json_free(tx_rows);
+    }
+
+    /* 组装响应 */
+    csilk_json_t* holdings = csilk_json_array();
+    double total_market = 0.0, total_cost = 0.0, total_floating = 0.0, total_realized = 0.0;
+
+    for (size_t i = 0; i < hn; i++) {
+        csilk_json_t* row = csilk_json_array_get(hold_rows, i);
+        double quantity = db_get_num(row, "quantity");
+        double net_value = db_get_num(row, "net_value");
+        double cost_basis = db_get_num(row, "cost_basis");
+        double current_value = db_get_num(row, "current_value");
+        double floating = current_value - cost_basis;
+        double pct = (cost_basis == 0.0) ? 0.0 : (floating / cost_basis) * 100.0;
+
+        total_market += current_value;
+        total_cost += cost_basis;
+        total_floating += floating;
+        total_realized += accs[i].realized;
+
+        csilk_json_t* h = csilk_json_object();
+        csilk_json_add_number(h, "asset_id", db_get_num(row, "asset_id"));
+        csilk_json_add_string(h, "name", csilk_json_get_string(row, "name"));
+        csilk_json_add_string(h, "asset_type", csilk_json_get_string(row, "asset_type"));
+        csilk_json_add_string(h, "currency", csilk_json_get_string(row, "currency"));
+        csilk_json_add_number(h, "quantity", quantity);
+        csilk_json_add_number(h, "net_value", net_value);
+        csilk_json_add_number(h, "cost_basis", cost_basis);
+        csilk_json_add_number(h, "current_value", current_value);
+        csilk_json_add_number(h, "floating_pnl", floating);
+        csilk_json_add_number(h, "floating_pct", pct);
+        csilk_json_add_number(h, "realized_pnl", accs[i].realized);
+        csilk_json_array_append(holdings, h);
+    }
+    csilk_json_free(hold_rows);
+    free(accs);
+
+    double sum_pct = (total_cost == 0.0) ? 0.0 : (total_floating / total_cost) * 100.0;
+    csilk_json_t* summary = csilk_json_object();
+    csilk_json_add_number(summary, "total_market_value", total_market);
+    csilk_json_add_number(summary, "total_cost_basis", total_cost);
+    csilk_json_add_number(summary, "total_floating_pnl", total_floating);
+    csilk_json_add_number(summary, "total_realized_pnl", total_realized);
+    csilk_json_add_number(summary, "floating_pct", sum_pct);
+
+    csilk_json_t* resp = csilk_json_object();
+    csilk_json_add_object(resp, "summary", summary);
+    csilk_json_add_array(resp, "holdings", holdings);
+    respond_ok(c, resp);
+}

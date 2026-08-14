@@ -158,6 +158,21 @@ void assets_update(csilk_ctx_t* c) {
     double net_value_input = db_get_num(body, "net_value");
     int has_net_value = csilk_json_get(body, "net_value") != NULL;
 
+    // A2 补丁语义：请求体中缺失的字段保留数据库原值，避免部分更新清空列
+    if (!name || !account_no || !currency || !note) {
+        csilk_json_t* cur = csilk_db_query_param_json(pool,
+            "SELECT name, account_no, currency, note FROM assets WHERE id=? AND user_id=?",
+            chk_params);
+        if (cur && csilk_json_array_size(cur) > 0) {
+            const csilk_json_t* cr = csilk_json_array_get(cur, 0);
+            if (!name) name = csilk_json_get_string(cr, "name");
+            if (!account_no) account_no = csilk_json_get_string(cr, "account_no");
+            if (!currency) currency = csilk_json_get_string(cr, "currency");
+            if (!note) note = csilk_json_get_string(cr, "note");
+        }
+        if (cur) csilk_json_free(cur);
+    }
+
     char val_str[64];
     snprintf(val_str, sizeof(val_str), "%.6f", value);
 
@@ -187,14 +202,11 @@ void assets_update(csilk_ctx_t* c) {
                  char nv_str[64];
                  snprintf(nv_str, sizeof(nv_str), "%.4f", net_value_input);
                  const char* upd_params[] = {
-                     name ? name : "", account_no ? account_no : "",
-                     currency ? currency : "CNY", note ? note : "", nv_str,
-                     id_str, uid_str, NULL
+                     nv_str, id_str, uid_str, NULL
                  };
                 csilk_json_t* ur = csilk_db_query_param_json(pool,
-                    "UPDATE assets SET name=?, account_no=?, currency=?, note=?, "
-                    "net_value=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?",
-                    upd_params);
+                    "UPDATE assets SET net_value=?, updated_at=CURRENT_TIMESTAMP "
+                    "WHERE id=? AND user_id=?", upd_params);
                 if (ur) csilk_json_free(ur);
                 csilk_json_free(holder);
                 csilk_json_free(body);

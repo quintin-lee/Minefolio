@@ -44,6 +44,7 @@ extern void report_expense_tag(csilk_ctx_t* c);
 extern void report_asset_trend(csilk_ctx_t* c);
 extern void report_asset_breakdown(csilk_ctx_t* c);
 extern void report_transaction_performance(csilk_ctx_t* c);
+extern void report_holdings(csilk_ctx_t* c);
 extern void report_asset_summary(csilk_ctx_t* c);
 extern void summary_get(csilk_ctx_t* c);
 extern void asset_logs_list(csilk_ctx_t* c);
@@ -254,6 +255,7 @@ int main(int argc, char** argv) {
     csilk_app_get(app, "/api/reports/asset/trend", report_asset_trend);
     csilk_app_get(app, "/api/reports/asset/breakdown", report_asset_breakdown);
     csilk_app_get(app, "/api/reports/transaction/performance", report_transaction_performance);
+    csilk_app_get(app, "/api/reports/holdings", report_holdings);
     csilk_app_get(app, "/api/reports/asset/summary", report_asset_summary);
 
     // Summary (dashboard aggregate)

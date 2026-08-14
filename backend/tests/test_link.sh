@@ -343,5 +343,110 @@ FEE_ROWS=$(sqlite3 "$DB" "SELECT COUNT(*) FROM transactions WHERE transaction_ty
 check "T5 fee 行落库" "1" "$FEE_ROWS"
 
 echo ""
+echo "== 33. 持仓报表 =="
+
+# H1: 空态 — 新空用户持仓为空，summary 全 0
+# JWT 直接用开发默认密钥伪造（服务器由本脚本以 MINEFOLIO_DB_DSN 启动，未设置 MINEFOLIO_JWT_SECRET）
+EMPTY_UID=$(sqlite3 "$DB" "INSERT INTO users (username, password) VALUES ('holdings_empty','x'); SELECT last_insert_rowid();")
+EMPTY_TOKEN=$(node -e "
+const crypto = require('crypto');
+const secret = 'minefolio-dev-secret-change-in-production';
+const h = Buffer.from(JSON.stringify({alg:'HS256',typ:'JWT'})).toString('base64url');
+const p = Buffer.from(JSON.stringify({sub:$EMPTY_UID,iat:Math.floor(Date.now()/1000)})).toString('base64url');
+const s = crypto.createHmac('sha256', secret).update(h+'.'+p).digest('base64url');
+process.stdout.write(h+'.'+p+'.'+s);
+")
+H1=$(curl -s -H "Authorization: Bearer $EMPTY_TOKEN" "$BASE/reports/holdings")
+H1_EMPTY=$(echo "$H1" | jq -r '.data.holdings | length')
+H1_MARKET=$(echo "$H1" | jq -r '.data.summary.total_market_value | floor')
+H1_PCT=$(echo "$H1" | jq -r '.data.summary.floating_pct | floor')
+check "H1 空用户 holdings 为空数组" "0" "$H1_EMPTY"
+check "H1 空用户 summary 总市值 0" "0" "$H1_MARKET"
+check "H1 空用户 floating_pct 0（无 NaN）" "0" "$H1_PCT"
+
+# 新建基金分类与资产供 H2-H4 使用（不复用 T 段的 XX基金，保证数值独立）
+# 载荷与 ID 读取严格对齐 T 段现有测试：category POST 带 currency，asset POST 带 current_value:0 无 type 字段，ID 一律用 sqlite3 读取
+curl -s -H "$AUTH" -H "Content-Type: application/json" -X POST "$BASE/categories" \
+  -d '{"name":"基金二号类","type":"asset","asset_type":"fund","currency":"CNY"}' > /dev/null
+H2_CAT=$(sqlite3 "$DB" "SELECT id FROM categories WHERE name='基金二号类' AND type='asset' LIMIT 1")
+curl -s -H "$AUTH" -H "Content-Type: application/json" -X POST "$BASE/assets" \
+  -d "{\"name\":\"基金二号\",\"category_id\":$H2_CAT,\"current_value\":0,\"currency\":\"CNY\"}" > /dev/null
+H2_ASSET=$(sqlite3 "$DB" "SELECT id FROM assets WHERE name='基金二号' LIMIT 1")
+
+# H2: 建仓浮动盈亏 — 买 1000×2，PUT net_value=2.5 → floating=500, pct=25
+curl -s -H "$AUTH" -H "Content-Type: application/json" -X POST "$BASE/transactions" \
+  -d "{\"asset_id\":$H2_ASSET,\"linked_asset_id\":$WALLET_ID,\"category_id\":$H2_CAT,\"transaction_type\":\"buy\",\"amount\":2000,\"quantity\":1000,\"price_per_unit\":2,\"currency\":\"CNY\",\"transaction_date\":\"2026-01-01\"}" > /dev/null
+curl -s -H "$AUTH" -H "Content-Type: application/json" -X PUT "$BASE/assets/$H2_ASSET" \
+  -d '{"net_value":2.5}' > /dev/null
+H2=$(curl -s -H "$AUTH" "$BASE/reports/holdings")
+H2_ROW=$(echo "$H2" | jq -c '.data.holdings[] | select(.name=="基金二号")')
+check "H2 建仓 floating_pnl=500" "500" "$(echo "$H2_ROW" | jq -r '.floating_pnl | floor')"
+check "H2 建仓 floating_pct=25" "25" "$(echo "$H2_ROW" | jq -r '.floating_pct | floor')"
+check "H2 建仓 current_value=2500" "2500" "$(echo "$H2_ROW" | jq -r '.current_value | floor')"
+check "H2 建仓 realized_pnl=0" "0" "$(echo "$H2_ROW" | jq -r '.realized_pnl | floor')"
+
+# H2b: fee 不含入盈利口径 — 买 1000×2 fee=1，卖 100×2.5 → realized = 250-100*2.0 = 50
+curl -s -H "$AUTH" -H "Content-Type: application/json" -X POST "$BASE/assets" \
+  -d "{\"name\":\"基金三号\",\"category_id\":$H2_CAT,\"current_value\":0,\"currency\":\"CNY\"}" > /dev/null
+H2B_ASSET=$(sqlite3 "$DB" "SELECT id FROM assets WHERE name='基金三号' LIMIT 1")
+curl -s -H "$AUTH" -H "Content-Type: application/json" -X POST "$BASE/transactions" \
+  -d "{\"asset_id\":$H2B_ASSET,\"linked_asset_id\":$WALLET_ID,\"category_id\":$H2_CAT,\"transaction_type\":\"buy\",\"amount\":2000,\"quantity\":1000,\"price_per_unit\":2,\"fee\":1,\"currency\":\"CNY\",\"transaction_date\":\"2026-01-02\"}" > /dev/null
+curl -s -H "$AUTH" -H "Content-Type: application/json" -X POST "$BASE/transactions" \
+  -d "{\"asset_id\":$H2B_ASSET,\"linked_asset_id\":$WALLET_ID,\"category_id\":$H2_CAT,\"transaction_type\":\"sell\",\"amount\":250,\"quantity\":100,\"price_per_unit\":2.5,\"currency\":\"CNY\",\"transaction_date\":\"2026-01-03\"}" > /dev/null
+H2B=$(curl -s -H "$AUTH" "$BASE/reports/holdings")
+H2B_ROW=$(echo "$H2B" | jq -c '.data.holdings[] | select(.name=="基金三号")')
+check "H2b 带 fee 买入后 realized=50（avg_cost 不含 fee）" "50" "$(echo "$H2B_ROW" | jq -r '.realized_pnl | floor')"
+
+# H3: 卖出已实现盈亏 — 买 1000×2，卖 400×3 → realized=400, quantity=600
+curl -s -H "$AUTH" -H "Content-Type: application/json" -X POST "$BASE/assets" \
+  -d "{\"name\":\"基金四号\",\"category_id\":$H2_CAT,\"current_value\":0,\"currency\":\"CNY\"}" > /dev/null
+H3_ASSET=$(sqlite3 "$DB" "SELECT id FROM assets WHERE name='基金四号' LIMIT 1")
+curl -s -H "$AUTH" -H "Content-Type: application/json" -X POST "$BASE/transactions" \
+  -d "{\"asset_id\":$H3_ASSET,\"linked_asset_id\":$WALLET_ID,\"category_id\":$H2_CAT,\"transaction_type\":\"buy\",\"amount\":2000,\"quantity\":1000,\"price_per_unit\":2,\"currency\":\"CNY\",\"transaction_date\":\"2026-02-01\"}" > /dev/null
+curl -s -H "$AUTH" -H "Content-Type: application/json" -X POST "$BASE/transactions" \
+  -d "{\"asset_id\":$H3_ASSET,\"linked_asset_id\":$WALLET_ID,\"category_id\":$H2_CAT,\"transaction_type\":\"sell\",\"amount\":1200,\"quantity\":400,\"price_per_unit\":3,\"currency\":\"CNY\",\"transaction_date\":\"2026-02-02\"}" > /dev/null
+H3=$(curl -s -H "$AUTH" "$BASE/reports/holdings")
+H3_ROW=$(echo "$H3" | jq -c '.data.holdings[] | select(.name=="基金四号")')
+check "H3 卖出 realized=400" "400" "$(echo "$H3_ROW" | jq -r '.realized_pnl | floor')"
+check "H3 卖出后 quantity=600" "600" "$(echo "$H3_ROW" | jq -r '.quantity | floor')"
+
+# H4: 多资产聚合 — 各行字段求和 == summary 各总数；持仓行数
+H4=$(curl -s -H "$AUTH" "$BASE/reports/holdings")
+H4_COUNT=$(echo "$H4" | jq -r '.data.holdings | length')
+H4_SUM_MARKET=$(echo "$H4" | jq -r '[.data.holdings[].current_value] | add | floor')
+H4_SUM_COST=$(echo "$H4" | jq -r '[.data.holdings[].cost_basis] | add | floor')
+H4_SUM_FLOAT=$(echo "$H4" | jq -r '[.data.holdings[].floating_pnl] | add | floor')
+H4_SUM_REAL=$(echo "$H4" | jq -r '[.data.holdings[].realized_pnl] | add | floor')
+H4_MARKET=$(echo "$H4" | jq -r '.data.summary.total_market_value | floor')
+H4_COST=$(echo "$H4" | jq -r '.data.summary.total_cost_basis | floor')
+H4_FLOAT=$(echo "$H4" | jq -r '.data.summary.total_floating_pnl | floor')
+H4_REAL=$(echo "$H4" | jq -r '.data.summary.total_realized_pnl | floor')
+check "H4 持仓行数=4（基金二号/三号/四号/XX基金）" "4" "$H4_COUNT"
+check "H4 summary.total_market_value == Σcurrent_value" "$H4_SUM_MARKET" "$H4_MARKET"
+check "H4 summary.total_cost_basis == Σcost_basis" "$H4_SUM_COST" "$H4_COST"
+check "H4 summary.total_floating_pnl == Σfloating_pnl" "$H4_SUM_FLOAT" "$H4_FLOAT"
+check "H4 summary.total_realized_pnl == Σrealized_pnl" "$H4_SUM_REAL" "$H4_REAL"
+
+# H5: 零持仓 — 全卖光 XX基金（T 段资产）：quantity=0 行仍返回，floating_pnl=0, floating_pct=0
+# XX基金 状态: T1 买1000×2(08-14), T3 卖400×3(08-15), T5 买100×2 fee5(08-16) → qty=700, cost_for_pnl=2200, realized=-50(400-450)
+# 注意: H5 卖出日期必须晚于 T5(08-16)，否则时序颠倒导致 avg_cost 计算错误
+curl -s -H "$AUTH" -H "Content-Type: application/json" -X POST "$BASE/transactions" \
+  -d "{\"asset_id\":$FUND_ID,\"linked_asset_id\":$WALLET_ID,\"category_id\":$FUND_CAT,\"transaction_type\":\"sell\",\"amount\":1750,\"quantity\":700,\"price_per_unit\":2.5,\"currency\":\"CNY\",\"transaction_date\":\"2026-08-20\"}" > /dev/null
+H5=$(curl -s -H "$AUTH" "$BASE/reports/holdings")
+H5_ROW=$(echo "$H5" | jq -c --argjson aid "$FUND_ID" '.data.holdings[] | select(.asset_id==$aid)')
+check "H5 零持仓行仍返回 quantity=0" "0" "$(echo "$H5_ROW" | jq -r '.quantity | floor')"
+check "H5 零持仓 floating_pnl=0" "0" "$(echo "$H5_ROW" | jq -r '.floating_pnl | floor')"
+check "H5 零持仓 floating_pct=0（无 NaN）" "0" "$(echo "$H5_ROW" | jq -r '.floating_pct | floor')"
+check "H5 零持仓 realized=-50（复用 performance 口径）" "-50" "$(echo "$H5_ROW" | jq -r '.realized_pnl | floor')"
+
+# H6: 分红 — 对基金四号做 income 100 → realized 由 400 变为 500
+# income 类型 qty_independent，载荷含 linked/category/currency 以对齐其他交易载荷
+curl -s -H "$AUTH" -H "Content-Type: application/json" -X POST "$BASE/transactions" \
+  -d "{\"asset_id\":$H3_ASSET,\"linked_asset_id\":$WALLET_ID,\"category_id\":$H2_CAT,\"transaction_type\":\"income\",\"amount\":100,\"currency\":\"CNY\",\"transaction_date\":\"2026-02-03\"}" > /dev/null
+H6=$(curl -s -H "$AUTH" "$BASE/reports/holdings")
+H6_ROW=$(echo "$H6" | jq -c --argjson aid "$H3_ASSET" '.data.holdings[] | select(.asset_id==$aid)')
+check "H6 分红后 realized=500（400+100）" "500" "$(echo "$H6_ROW" | jq -r '.realized_pnl | floor')"
+
+echo ""
 echo "结果: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1
