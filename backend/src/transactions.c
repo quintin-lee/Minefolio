@@ -262,6 +262,12 @@ void transactions_create(csilk_ctx_t* c) {
         return;
     }
 
+    if (strcmp(src_type, "income") != 0 && strcmp(src_type, "expense") != 0) {
+        csilk_json_free(body);
+        respond_bad_request(c, "source_type 必须为 income 或 expense");
+        return;
+    }
+
     if (asset_id <= 0 || !type || amount <= 0 || !date) {
         csilk_json_free(body);
         respond_bad_request(c, "asset_id、transaction_type、amount、transaction_date 为必填");
@@ -488,6 +494,12 @@ void transactions_update(csilk_ctx_t* c) {
     const char* currency = csilk_json_get_string(body, "currency");
     const char* note = csilk_json_get_string(body, "note");
     const char* src_type = csilk_json_get_string(body, "source_type");
+    if (src_type && strcmp(src_type, "income") != 0 && strcmp(src_type, "expense") != 0) {
+        csilk_json_free(body);
+        csilk_json_free(old_row);
+        respond_bad_request(c, "source_type 必须为 income 或 expense");
+        return;
+    }
     double price = db_get_num(body, "price_per_unit");
     double qty = db_get_num(body, "quantity");
     int64_t category_id = db_get_int(body, "category_id");
