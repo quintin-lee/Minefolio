@@ -62,6 +62,7 @@
               <div class="card-header">
                 <h3>标签支出分析</h3>
               </div>
+              <div class="table-container">
               <el-table :data="tagBreakdown?.items ?? []" class="premium-table-small" :header-cell-style="{ background: 'rgba(0, 212, 255, 0.06)' }">
                 <el-table-column prop="tag_name" label="标签" min-width="120">
                   <template #default="{ row }">
@@ -83,6 +84,7 @@
                 </el-table-column>
                 <el-table-column prop="count" label="次数" width="80" align="center" />
               </el-table>
+              </div>
             </div>
           </el-col>
           <el-col :span="12">
@@ -391,6 +393,22 @@ onMounted(loadAll)
 .premium-table-small {
   --el-table-border-color: transparent;
   --el-table-header-bg-color: rgba(0, 212, 255, 0.06);
+}
+
+.table-container {
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.table-container :deep(.el-table) {
+  height: 100%;
+}
+
+.table-container :deep(.el-table__body-wrapper) {
+  overflow-y: auto;
 }
 
 .premium-table-small :deep(.el-table th.el-table__cell) {
