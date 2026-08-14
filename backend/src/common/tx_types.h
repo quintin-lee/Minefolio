@@ -11,3 +11,9 @@ typedef struct {
 } tx_type_t;
 
 const tx_type_t* tx_type_lookup(const char* type);
+
+/** @brief 目标资产余额增减: balance_dir=="in" → +amount, else -amount. */
+double tx_delta(const char* type, double amount, double price, double qty);
+
+/** @brief 关联资金账户余额增减，apply transfer semantics (transfer → -tdelta). */
+double tx_effective_ldelta(const char* type, double amount, double tdelta);

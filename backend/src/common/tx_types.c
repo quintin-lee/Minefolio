@@ -21,3 +21,24 @@ const tx_type_t* tx_type_lookup(const char* type) {
     }
     return NULL;
 }
+
+double tx_delta(const char* type, double amount, double price, double qty) {
+    (void)price; (void)qty;
+    const tx_type_t* t = tx_type_lookup(type);
+    if (!t) return 0;
+    return strcmp(t->balance_dir, "in") == 0 ? amount : -amount;
+}
+
+static double tx_linked_delta(const char* type, double amount) {
+    const tx_type_t* t = tx_type_lookup(type);
+    if (!t) return 0;
+    return strcmp(t->linked_dir, "in") == 0 ? amount : -amount;
+}
+
+double tx_effective_ldelta(const char* type, double amount, double tdelta) {
+    if (!type) return 0;
+    if (strcmp(type, "transfer_in") == 0 || strcmp(type, "transfer_out") == 0) {
+        return -tdelta;
+    }
+    return tx_linked_delta(type, amount);
+}
