@@ -52,7 +52,7 @@
 
     <!-- 持仓表格 -->
     <div class="table-card">
-      <el-table :data="report?.holdings ?? []" class="premium-table" row-class-name="premium-row" header-cell-class-name="premium-header" empty-text="">
+      <el-table :data="pagedHoldings" class="premium-table" row-class-name="premium-row" header-cell-class-name="premium-header" empty-text="">
         <el-table-column label="名称" min-width="140">
           <template #default="{ row }">
             <span class="asset-name">{{ ASSET_ICONS[row.asset_type] ?? '📦' }} {{ row.name }}</span>
@@ -94,6 +94,17 @@
           <el-empty description="暂无持仓数据" :image-size="80" />
         </template>
       </el-table>
+      <div class="pagination-bar">
+        <el-pagination
+          v-model:current-page="page"
+          v-model:page-size="pageSize"
+          :total="report?.holdings.length ?? 0"
+          :page-sizes="[10, 20, 50, 100]"
+          layout="total, sizes, prev, pager, next, jumper"
+          background
+          @size-change="handleSizeChange"
+        />
+      </div>
     </div>
   </div>
 </template>
@@ -106,6 +117,19 @@ import HoldingsTypePie from '@/components/HoldingsTypePie.vue'
 import HoldingsCostBar from '@/components/HoldingsCostBar.vue'
 
 const report = ref<HoldingsReport | null>(null)
+
+const page = ref(1)
+const pageSize = ref(20)
+
+const pagedHoldings = computed(() => {
+  const all = report.value?.holdings ?? []
+  const start = (page.value - 1) * pageSize.value
+  return all.slice(start, start + pageSize.value)
+})
+
+function handleSizeChange() {
+  page.value = 1
+}
 
 const ASSET_ICONS: Record<string, string> = {
   stock: '📈',
@@ -207,6 +231,15 @@ onMounted(() => {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+.table-card :deep(.el-table) {
+  flex: 1;
+  min-height: 0;
+}
+.pagination-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
 }
 .asset-name {
   font-weight: 500;
