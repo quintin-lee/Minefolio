@@ -127,7 +127,11 @@ onMounted(async () => {
 .audit-logs-page {
   padding: 24px;
   background-color: var(--mf-background);
+  height: 100%;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .filter-panel {
@@ -168,18 +172,24 @@ onMounted(async () => {
   padding: 16px;
   box-shadow: var(--mf-shadow-sm);
   border: 1px solid var(--mf-border);
-  overflow: hidden;
+  overflow: auto;
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 .table-container :deep(.el-table) {
+  height: 100%;
+
   flex: 1;
   min-height: 0;
 }
 
 .table-container :deep(.el-table__body-wrapper) {
-  overflow-y: auto !important;
+  overflow-y: auto;
+
+  overflow-y: auto;
 }
 
 .premium-table {

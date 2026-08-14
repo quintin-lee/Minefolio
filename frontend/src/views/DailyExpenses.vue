@@ -388,6 +388,9 @@ async function handleImport() {
   background-color: var(--mf-background);
   height: 100%;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .action-btn {
@@ -464,6 +467,8 @@ async function handleImport() {
   padding: 20px 24px;
   box-shadow: var(--mf-shadow-sm);
   border: 1px solid var(--mf-border);
+  display: flex;
+  flex-direction: column;
 }
 
 .table-container {
@@ -472,18 +477,24 @@ async function handleImport() {
   padding: 16px;
   box-shadow: var(--mf-shadow-sm);
   border: 1px solid var(--mf-border);
-  overflow: hidden;
+  overflow: auto;
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 .table-container :deep(.el-table) {
+  height: 100%;
+
   flex: 1;
   min-height: 0;
 }
 
 .table-container :deep(.el-table__body-wrapper) {
-  overflow-y: auto !important;
+  overflow-y: auto;
+
+  overflow-y: auto;
 }
 
 .premium-table {
@@ -658,4 +669,34 @@ async function handleImport() {
 .import-result.error { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #f87171; }
 .import-result .el-icon { font-size: 16px; }
 .import-errors { font-size: 12px; color: #fca5a5; white-space: pre-wrap; word-break: break-all; }
+
+/* Constrain main content row to page height */
+:deep(.daily-expenses-page > .el-row),
+:deep(.transactions-page > .el-row) {
+  flex: 1;
+  min-height: 0;
+}
+
+:deep(.daily-expenses-page > .el-row > .el-col),
+:deep(.transactions-page > .el-row > .el-col) {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Constrain layout to viewport */
+.daily-expenses-page > .el-row {
+  flex: 1;
+  min-height: 0;
+}
+.daily-expenses-page > .el-row > .el-col {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.main-panel {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
 </style>
