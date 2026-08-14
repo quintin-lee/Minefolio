@@ -225,6 +225,10 @@ onMounted(() => {
   flex: 1;
   min-height: 0;
 }
+.premium-table {
+  --el-table-border-color: transparent;
+  --el-table-header-bg-color: rgba(0, 212, 255, 0.06);
+}
 .pagination-bar {
   display: flex;
   justify-content: flex-end;
