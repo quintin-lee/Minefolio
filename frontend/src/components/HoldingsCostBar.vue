@@ -63,11 +63,17 @@ function handleResize() {
   chart?.resize()
 }
 
-onMounted(() => {
-  chart = echarts.init(chartRef.value!)
+function ensureChart() {
+  if (chart || !chartRef.value) return
+  const el = chartRef.value
+  if (!el.clientWidth || !el.clientHeight) return
+  chart = echarts.init(el)
   updateChart()
+}
+onMounted(() => {
+  ensureChart()
   window.addEventListener('resize', handleResize)
-  resizeObserver = new ResizeObserver(handleResize)
+  resizeObserver = new ResizeObserver(() => { ensureChart(); handleResize() })
   resizeObserver.observe(chartRef.value!)
 })
 

@@ -10,12 +10,18 @@ const chartRef = ref<HTMLElement>()
 let chart: echarts.ECharts | null = null
 let resizeObserver: ResizeObserver | null = null
 
-onMounted(() => { 
-  chart = echarts.init(chartRef.value!)
-  update() 
+function ensureChart() {
+  if (chart || !chartRef.value) return
+  const el = chartRef.value
+  if (!el.clientWidth || !el.clientHeight) return
+  chart = echarts.init(el)
+  update()
+}
+onMounted(() => {
+  ensureChart()
   window.addEventListener('resize', handleResize)
   if (chartRef.value) {
-    resizeObserver = new ResizeObserver(() => handleResize())
+    resizeObserver = new ResizeObserver(() => { ensureChart(); handleResize() })
     resizeObserver.observe(chartRef.value)
   }
 })
