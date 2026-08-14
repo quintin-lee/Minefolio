@@ -185,153 +185,110 @@
       destroy-on-close
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-width="90px" class="premium-form" label-position="top">
-        <el-alert
-          v-if="editingId"
-          type="info"
-          :closable="false"
-          show-icon
-          title="修改金额/类型将自动联动计算并更新关联资产的账户余额"
-          style="margin-bottom: 16px"
-        />
+        <!-- 步骤指示器（仅新增模式） -->
+        <el-steps :active="step" finish-status="success" align-center v-if="!editingId" style="margin-bottom: 24px">
+          <el-step title="基础信息" description="选择类型并填写核心字段" />
+          <el-step title="完整信息" description="选择账户、分类和日期" />
+        </el-steps>
 
-        <el-row :gutter="16">
-          <el-col :span="14">
-            <el-form-item label="资产账户" prop="asset_id">
-              <el-select v-model="form.asset_id" placeholder="选择资产账户" style="width: 100%" @change="onAssetChange">
-                <el-option
-                  v-for="a in assets"
-                  :key="a.id"
-                  :label="`${a.name} (${formatCurrency(a.current_value)})`"
-                  :value="a.id"
-                />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="10">
-            <el-form-item label="结算币种" prop="currency">
-              <el-select v-model="form.currency" placeholder="默认 CNY" style="width: 100%">
-                <el-option v-for="cur in currencyOptions" :key="cur" :label="cur" :value="cur" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-        </el-row>
+        <!-- Step 1: 交易类型 + 核心字段 -->
+        <template v-if="step === 0">
+          <el-row :gutter="16">
+            <el-col :span="24">
+              <el-form-item label="交易类型" prop="transaction_type">
+                <el-select v-model="form.transaction_type" style="width: 100%" @change="onTransactionTypeChange">
+                  <el-option v-for="t in transactionTypes" :key="t.value" :label="t.label" :value="t.value" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+          </el-row>
 
-        <el-row :gutter="16">
-          <el-col :span="24">
-            <el-form-item label="资金账户 (扣款/回流账户)" prop="linked_asset_id">
-              <el-select v-model="form.linked_asset_id" placeholder="选择资金账户（买入从该账户扣款，卖出回流到该账户，可选）" clearable style="width: 100%" filterable>
-                <el-option
-                  v-for="a in assets"
-                  :key="a.id"
-                  :disabled="a.id === form.asset_id"
-                  :label="`${a.name} (${formatCurrency(a.current_value)})`"
-                  :value="a.id"
-                />
-              </el-select>
-            </el-form-item>
-          </el-col>
-        </el-row>
+          <!-- 买入/卖出：单价 × 数量 + 手续费 -->
+          <el-row v-if="isTradingType(form.transaction_type)" :gutter="16" class="trading-fields">
+            <el-col :span="8">
+              <el-form-item :label="`交易单价 (${quantityUnit})`">
+                <el-input-number v-model="form.price_per_unit" :precision="4" :min="0" style="width: 100%" :controls="false" placeholder="0.0000" @input="calculateAmount" />
+              </el-form-item>
+            </el-col>
+            <el-col :span="8">
+              <el-form-item label="交易数量">
+                <el-input-number v-model="form.quantity" :precision="4" :min="0" style="width: 100%" :controls="false" placeholder="0.0000" @input="calculateAmount" />
+              </el-form-item>
+            </el-col>
+            <el-col :span="8">
+              <el-form-item label="手续费">
+                <el-input-number v-model="form.fee" :precision="2" :min="0" style="width: 100%" :controls="false" placeholder="0.00" />
+              </el-form-item>
+            </el-col>
+          </el-row>
 
-        <el-row :gutter="16">
-          <el-col :span="12">
-            <el-form-item label="交易类型" prop="transaction_type">
-              <el-select v-model="form.transaction_type" style="width: 100%" @change="onTransactionTypeChange">
-                <el-option v-for="t in transactionTypes" :key="t.value" :label="t.label" :value="t.value" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="交易分类" prop="category_id">
-              <el-cascader
-                v-model="form._catPath"
-                :options="categoryTree"
-                :props="{ checkStrictly: true, value: 'id', label: 'name' }"
-                placeholder="选择交易分类"
-                style="width: 100%"
-                clearable
-                @change="onCatChange"
-              />
-            </el-form-item>
-          </el-col>
-        </el-row>
+          <!-- 非交易类型：金额 -->
+          <el-row v-else :gutter="16">
+            <el-col :span="24">
+              <el-form-item label="交易金额" prop="amount">
+                <el-input-number v-model="form.amount" :precision="2" :min="0.01" style="width: 100%" :controls="false" placeholder="0.00" />
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </template>
 
-        <!-- 仅买入/卖出时动态展开单价与数量 -->
-        <el-row v-if="isTradingType(form.transaction_type)" :gutter="16" class="trading-fields">
-          <el-col :span="8">
-            <el-form-item :label="`交易单价 (${quantityUnit})`">
-              <el-input-number
-                v-model="form.price_per_unit"
-                :precision="4"
-                :min="0"
-                style="width: 100%"
-                :controls="false"
-                placeholder="0.0000"
-                @input="calculateAmount"
-              />
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="交易数量">
-              <el-input-number
-                v-model="form.quantity"
-                :precision="4"
-                :min="0"
-                style="width: 100%"
-                :controls="false"
-                placeholder="0.0000"
-                @input="calculateAmount"
-              />
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="手续费">
-              <el-input-number
-                v-model="form.fee"
-                :precision="2"
-                :min="0"
-                style="width: 100%"
-                :controls="false"
-                placeholder="0.00"
-              />
-            </el-form-item>
-          </el-col>
-        </el-row>
+        <!-- Step 2: 完整信息 -->
+        <template v-else>
+          <el-alert v-if="editingId" type="info" :closable="false" show-icon title="修改金额/类型将自动联动计算并更新关联资产的账户余额" style="margin-bottom: 16px" />
 
-        <el-row :gutter="16">
-          <el-col :span="12">
-            <el-form-item label="交易金额" prop="amount">
-              <el-input-number
-                v-model="form.amount"
-                :precision="2"
-                :min="0.01"
-                style="width: 100%"
-                :controls="false"
-                placeholder="0.00"
-              />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="交易日期" prop="transaction_date">
-              <el-date-picker
-                v-model="form.transaction_date"
-                type="date"
-                value-format="YYYY-MM-DD"
-                style="width: 100%"
-                placeholder="选择日期"
-              />
-            </el-form-item>
-          </el-col>
-        </el-row>
+          <el-row :gutter="16">
+            <el-col :span="14">
+              <el-form-item label="资产账户" prop="asset_id">
+                <el-select v-model="form.asset_id" placeholder="选择资产账户" style="width: 100%" @change="onAssetChange">
+                  <el-option v-for="a in assets" :key="a.id" :label="`${a.name} (${formatCurrency(a.current_value)})`" :value="a.id" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :span="10">
+              <el-form-item label="结算币种" prop="currency">
+                <el-select v-model="form.currency" placeholder="默认 CNY" style="width: 100%">
+                  <el-option v-for="cur in currencyOptions" :key="cur" :label="cur" :value="cur" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+          </el-row>
 
-        <el-form-item label="备注说明">
-          <el-input v-model="form.note" type="textarea" :rows="2" placeholder="添加交易备注说明..." />
-        </el-form-item>
+          <el-row :gutter="16">
+            <el-col :span="24">
+              <el-form-item label="资金账户 (扣款/回流账户)" prop="linked_asset_id">
+                <el-select v-model="form.linked_asset_id" placeholder="选择资金账户（可选）" clearable style="width: 100%" filterable>
+                  <el-option v-for="a in assets" :key="a.id" :disabled="a.id === form.asset_id" :label="`${a.name} (${formatCurrency(a.current_value)})`" :value="a.id" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+          </el-row>
+
+          <el-row :gutter="16">
+            <el-col :span="12">
+              <el-form-item label="交易分类" prop="category_id">
+                <el-cascader v-model="form._catPath" :options="categoryTree" :props="{ checkStrictly: true, value: 'id', label: 'name' }" placeholder="选择交易分类" style="width: 100%" clearable @change="onCatChange" />
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="交易日期" prop="transaction_date">
+                <el-date-picker v-model="form.transaction_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" placeholder="选择日期" />
+              </el-form-item>
+            </el-col>
+          </el-row>
+
+          <el-form-item label="备注说明">
+            <el-input v-model="form.note" type="textarea" :rows="2" placeholder="添加交易备注说明..." />
+          </el-form-item>
+        </template>
       </el-form>
 
       <template #footer>
         <div class="dialog-footer">
           <el-button class="cancel-btn" @click="dialogVisible = false">取消</el-button>
-          <el-button type="primary" class="save-btn" :loading="saving" @click="handleSubmit">
+          <el-button v-if="!editingId && step > 0" @click="step--">上一步</el-button>
+          <el-button v-else-if="!editingId" type="primary" @click="dialogVisible = false">取消</el-button>
+          <el-button v-if="!editingId && step === 0" type="primary" @click="nextStep">下一步</el-button>
+          <el-button type="primary" class="save-btn" :loading="saving" @click="handleSubmit" v-else>
             保存记录
           </el-button>
         </div>
@@ -392,6 +349,7 @@ const saving = ref(false)
 const dialogVisible = ref(false)
 const editingId = ref<number | null>(null)
 const formRef = ref()
+const step = ref(0)
 
 const transactions = ref<Transaction[]>([])
 const assets = ref<Asset[]>([])
@@ -534,6 +492,25 @@ function onCatChange(val: any) {
   }
 }
 
+function nextStep() {
+  if (!form.transaction_type) {
+    ElMessage.warning('请选择交易类型')
+    return
+  }
+  if (isTradingType(form.transaction_type)) {
+    if (!form.quantity || form.quantity <= 0 || !form.price_per_unit || form.price_per_unit <= 0) {
+      ElMessage.warning('请填写完整的单价和数量')
+      return
+    }
+  } else {
+    if (!form.amount || form.amount <= 0) {
+      ElMessage.warning('请填写交易金额')
+      return
+    }
+  }
+  step.value = 1
+}
+
 function resetFilters() {
   filters.asset_id = ''
   filters.category_id = ''
@@ -601,6 +578,7 @@ async function loadMonthly() {
 
 function openDialog(txn?: any) {
   editingId.value = txn?.id ?? null
+  step.value = txn?.id ? 1 : 0
   const cur = txn?.currency ? String(txn.currency) : 'CNY'
   Object.assign(form, txn ? {
     asset_id: Number(txn.asset_id),
