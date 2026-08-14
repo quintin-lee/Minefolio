@@ -102,7 +102,7 @@
         </el-form-item>
         <template v-if="isInvestment">
           <el-form-item label="持有份额">
-            <el-input-number v-model="form.quantity" :precision="4" :min="0" style="width: 100%" :controls="false" />
+            <el-input-number v-model="form.quantity" :precision="4" :min="0" style="width: 100%" :controls="false" :disabled="editingId !== null" />
           </el-form-item>
           <el-form-item label="单位净值">
             <el-input-number v-model="form.net_value" :precision="4" :min="0" style="width: 100%" :controls="false" />
@@ -110,7 +110,7 @@
           <el-form-item label="持仓成本">
             <el-input-number v-model="form.cost_basis" :precision="2" :min="0" style="width: 100%" :controls="false" placeholder="留空默认 = 份额 × 净值" />
           </el-form-item>
-          <div class="investment-hint">市值将按 份额 × 净值 自动计算；成本留空则等同市值</div>
+          <div class="investment-hint">{{ editingId ? '净值更新后将重新计算市值' : '市值将按 份额 × 净值 自动计算；成本留空则等同市值' }}</div>
         </template>
         <el-form-item label="币种">
           <el-select v-model="form.currency" style="width: 100%">
