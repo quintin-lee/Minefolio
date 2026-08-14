@@ -296,20 +296,6 @@
             </el-form-item>
           </el-col>
         </el-row>
-        <el-row v-if="isTradingType(form.transaction_type)" :gutter="16" class="trading-fields">
-          <el-col :span="12">
-            <el-form-item label="手续费">
-              <el-input-number
-                v-model="form.fee"
-                :precision="2"
-                :min="0"
-                style="width: 100%"
-                :controls="false"
-                placeholder="0.00"
-              />
-            </el-form-item>
-          </el-col>
-        </el-row>
 
         <el-row :gutter="16">
           <el-col :span="12">
@@ -457,7 +443,7 @@ const filters = reactive({
 const form = reactive({
   asset_id: null as number | null,
   linked_asset_id: null as number | null,
-  transaction_type: 'deposit' as Transaction['transaction_type'],
+  transaction_type: 'buy' as Transaction['transaction_type'],
   amount: 0,
   quantity: 0,
   price_per_unit: 0,
@@ -631,7 +617,7 @@ function openDialog(txn?: any) {
   } : {
     asset_id: null,
     linked_asset_id: null,
-    transaction_type: 'deposit',
+    transaction_type: 'buy',
     amount: 0,
     quantity: 0,
     price_per_unit: 0,
