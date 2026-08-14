@@ -613,10 +613,11 @@ void report_holdings(csilk_ctx_t* c)
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     const char* params[] = { uid_str, NULL };
 
-    /* 持仓行：投资类资产（不论 quantity 是否为 0） */
+    /* 持仓行：投资类资产（不论 quantity 是否为 0）。
+       市值 = net_value × quantity（不依赖 current_value 列，避免直接建仓/联动时漂移） */
     const char* hold_sql =
         "SELECT a.id AS asset_id, a.name, c.asset_type, a.currency, "
-        "a.quantity, a.net_value, a.cost_basis, a.current_value "
+        "a.quantity, a.net_value, a.cost_basis "
         "FROM assets a JOIN categories c ON a.category_id = c.id "
         "WHERE a.user_id = ? AND c.asset_type IN ('stock','fund','bond','crypto') "
         "ORDER BY a.id ASC";
@@ -689,11 +690,13 @@ void report_holdings(csilk_ctx_t* c)
         double quantity = db_get_num(row, "quantity");
         double net_value = db_get_num(row, "net_value");
         double cost_basis = db_get_num(row, "cost_basis");
-        double current_value = db_get_num(row, "current_value");
-        double floating = current_value - cost_basis;
+        /* 浮动盈亏 = (当前净值 − 持仓成本净值) × 数量 = net_value*quantity − cost_basis
+           不依赖 current_value 列（该列可能因直接建仓/余额联动而漂移） */
+        double market = net_value * quantity;
+        double floating = market - cost_basis;
         double pct = (cost_basis == 0.0) ? 0.0 : (floating / cost_basis) * 100.0;
 
-        total_market += current_value;
+        total_market += market;
         total_cost += cost_basis;
         total_floating += floating;
         total_realized += accs[i].realized;
@@ -706,7 +709,7 @@ void report_holdings(csilk_ctx_t* c)
         csilk_json_add_number(h, "quantity", quantity);
         csilk_json_add_number(h, "net_value", net_value);
         csilk_json_add_number(h, "cost_basis", cost_basis);
-        csilk_json_add_number(h, "current_value", current_value);
+        csilk_json_add_number(h, "current_value", market);
         csilk_json_add_number(h, "floating_pnl", floating);
         csilk_json_add_number(h, "floating_pct", pct);
         csilk_json_add_number(h, "realized_pnl", accs[i].realized);
