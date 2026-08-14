@@ -25,7 +25,7 @@
         </div>
       </el-col>
       <el-col :span="8">
-        <div class="summary-card">
+        <div class="summary-card highlight-card">
           <div class="summary-label">总已实现盈亏</div>
           <div class="summary-value" :class="pnlClass(report?.summary.total_realized_pnl ?? 0)">
             {{ formatSigned(report?.summary.total_realized_pnl ?? 0) }}
