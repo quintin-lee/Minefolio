@@ -3,7 +3,7 @@
     <div class="page-header">
       <div class="header-title">
         <div class="title-accent"></div>
-        <h2>资产管理</h2>
+        <h2>资产</h2>
       </div>
       <el-button type="primary" class="action-btn" @click="openDialog()">
         <el-icon><Plus /></el-icon> 新增资产
@@ -13,22 +13,13 @@
     <!-- 总资产概览 -->
     <el-row :gutter="24" class="asset-summary">
       <el-col :span="8">
-        <div class="summary-card">
-          <div class="summary-label">总资产</div>
-          <div class="summary-value income-text">{{ formatCurrency(totalAssets) }}</div>
-        </div>
+        <SummaryCard label="总资产" :value="formatCurrency(totalAssets)" type="income" />
       </el-col>
       <el-col :span="8">
-        <div class="summary-card">
-          <div class="summary-label">总负债</div>
-          <div class="summary-value expense-text">{{ formatCurrency(totalLiabilities) }}</div>
-        </div>
+        <SummaryCard label="总负债" :value="formatCurrency(totalLiabilities)" type="expense" />
       </el-col>
       <el-col :span="8">
-        <div class="summary-card highlight-card">
-          <div class="summary-label">净资产</div>
-          <div class="summary-value">{{ formatCurrency(netWorth) }}</div>
-        </div>
+        <SummaryCard label="净资产" :value="formatCurrency(netWorth)" type="highlight" />
       </el-col>
     </el-row>
 
@@ -140,6 +131,8 @@ import { assetsApi } from '@/api/assets'
 import { summaryApi } from '@/api/summary'
 import { useCategoryStore } from '@/stores/category'
 import type { Asset, Category, Summary } from '@/types'
+import SummaryCard from '@/components/SummaryCard.vue'
+import { formatCurrency } from '@/utils/format'
 
 const assets = ref<Asset[]>([])
 const categoryTree = ref<Category[]>([])
@@ -161,9 +154,6 @@ async function loadSummary() {
   summary.value = await summaryApi.get()
 }
 
-function formatCurrency(val: number) {
-  return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(val)
-}
 
 async function loadAssets() {
   const res = await assetsApi.list({ page: page.value, page_size: pageSize.value })

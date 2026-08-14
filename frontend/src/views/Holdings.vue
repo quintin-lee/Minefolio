@@ -1,7 +1,7 @@
 <template>
   <div class="holdings-page">
     <div class="page-header">
-      <h2>持仓管理</h2>
+      <h2>持仓</h2>
       <div class="header-actions">
         <el-button :icon="Refresh" circle @click="load" />
       </div>
@@ -10,27 +10,14 @@
     <!-- 汇总卡片 -->
     <el-row :gutter="24">
       <el-col :span="8">
-        <div class="summary-card">
-          <div class="summary-label">总市值</div>
-          <div class="summary-value">{{ formatCurrency(report?.summary.total_market_value ?? 0) }}</div>
-        </div>
+        <SummaryCard label="总市值" :value="formatCurrency(report?.summary.total_market_value ?? 0)" />
       </el-col>
       <el-col :span="8">
-        <div class="summary-card" :class="floatCardClass">
-          <div class="summary-label">总浮动盈亏</div>
-          <div class="summary-value" :class="pnlClass(report?.summary.total_floating_pnl ?? 0)">
-            {{ formatSigned(report?.summary.total_floating_pnl ?? 0) }}
-            <span class="summary-sub">({{ (report?.summary.floating_pct ?? 0).toFixed(2) }}%)</span>
-          </div>
-        </div>
+        <SummaryCard label="总浮动盈亏" :value="formatSigned(report?.summary.total_floating_pnl ?? 0)" :extraClass="floatCardClass" />
+        <div class="summary-sub">({{ (report?.summary.floating_pct ?? 0).toFixed(2) }}%)</div>
       </el-col>
       <el-col :span="8">
-        <div class="summary-card highlight-card">
-          <div class="summary-label">总已实现盈亏</div>
-          <div class="summary-value" :class="pnlClass(report?.summary.total_realized_pnl ?? 0)">
-            {{ formatSigned(report?.summary.total_realized_pnl ?? 0) }}
-          </div>
-        </div>
+        <SummaryCard label="总已实现盈亏" :value="formatSigned(report?.summary.total_realized_pnl ?? 0)" type="highlight" />
       </el-col>
     </el-row>
 
@@ -115,6 +102,8 @@ import { Refresh } from '@element-plus/icons-vue'
 import { reportsApi, type HoldingsReport } from '@/api/reports'
 import HoldingsTypePie from '@/components/HoldingsTypePie.vue'
 import HoldingsCostBar from '@/components/HoldingsCostBar.vue'
+import SummaryCard from '@/components/SummaryCard.vue'
+import { formatCurrency, formatSigned } from '@/utils/format'
 
 const report = ref<HoldingsReport | null>(null)
 
@@ -158,13 +147,6 @@ function typeTag(t: string): 'primary' | 'success' | 'warning' | 'danger' | 'inf
 }
 function pnlClass(v: number): string {
   return v > 0 ? 'income-text' : v < 0 ? 'expense-text' : ''
-}
-function formatCurrency(v: number): string {
-  return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(v)
-}
-function formatSigned(v: number): string {
-  const s = new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(Math.abs(v))
-  return v > 0 ? `+${s}` : v < 0 ? `-${s}` : s
 }
 
 const floatCardClass = computed(() => {

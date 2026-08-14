@@ -42,6 +42,8 @@ declare module 'vue' {
     ElRadioGroup: typeof import('element-plus/es')['ElRadioGroup']
     ElRow: typeof import('element-plus/es')['ElRow']
     ElSelect: typeof import('element-plus/es')['ElSelect']
+    ElStep: typeof import('element-plus/es')['ElStep']
+    ElSteps: typeof import('element-plus/es')['ElSteps']
     ElTable: typeof import('element-plus/es')['ElTable']
     ElTableColumn: typeof import('element-plus/es')['ElTableColumn']
     ElTabPane: typeof import('element-plus/es')['ElTabPane']
@@ -57,6 +59,7 @@ declare module 'vue' {
     NetWorthChart: typeof import('./components/NetWorthChart.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    SummaryCard: typeof import('./components/SummaryCard.vue')['default']
     TagPicker: typeof import('./components/TagPicker.vue')['default']
     TransactionTable: typeof import('./components/TransactionTable.vue')['default']
   }

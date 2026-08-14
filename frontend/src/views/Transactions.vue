@@ -3,7 +3,7 @@
     <div class="page-header">
       <div class="header-title">
         <div class="title-accent"></div>
-        <h2>交易记录</h2>
+        <h2>交易</h2>
       </div>
       <div class="header-actions">
         <el-button type="primary" class="action-btn" @click="openDialog()">
@@ -21,28 +21,16 @@
     <!-- 顶部汇总统计卡片 -->
     <el-row :gutter="16" class="summary-cards">
       <el-col :xs="12" :sm="6">
-        <div class="summary-card">
-          <div class="summary-label">本月交易总额</div>
-          <div class="summary-value font-mono text-primary">{{ formatCurrency(monthlyTotalVolume) }}</div>
-        </div>
+        <SummaryCard label="本月交易总额" :value="formatCurrency(monthlyTotalVolume)" extraClass="font-mono text-primary" />
       </el-col>
       <el-col :xs="12" :sm="6">
-        <div class="summary-card">
-          <div class="summary-label">买入/存入合计</div>
-          <div class="summary-value font-mono income-text">+{{ formatCurrency(monthlyInflows) }}</div>
-        </div>
+        <SummaryCard label="买入/存入合计" :value="'+' + formatCurrency(monthlyInflows)" type="income" extraClass="font-mono" />
       </el-col>
       <el-col :xs="12" :sm="6">
-        <div class="summary-card">
-          <div class="summary-label">卖出/取出合计</div>
-          <div class="summary-value font-mono expense-text">-{{ formatCurrency(monthlyOutflows) }}</div>
-        </div>
+        <SummaryCard label="卖出/取出合计" :value="'-' + formatCurrency(monthlyOutflows)" type="expense" extraClass="font-mono" />
       </el-col>
       <el-col :xs="12" :sm="6">
-        <div class="summary-card highlight-card">
-          <div class="summary-label">本月交易笔数</div>
-          <div class="summary-value font-mono">{{ monthlyCount }} 笔</div>
-        </div>
+        <SummaryCard label="本月交易笔数" :value="monthlyCount + ' 笔'" type="highlight" extraClass="font-mono" />
       </el-col>
     </el-row>
 
@@ -341,6 +329,7 @@ import { transactionsApi } from '@/api/transactions'
 import { assetsApi } from '@/api/assets'
 import { useCategoryStore } from '@/stores/category'
 import { formatCurrency } from '@/utils/format'
+import SummaryCard from '@/components/SummaryCard.vue'
 import http from '@/utils/http'
 import type { Transaction, Asset, Category, TransactionMonthly, Direction } from '@/types'
 

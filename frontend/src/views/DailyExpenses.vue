@@ -3,7 +3,7 @@
     <div class="page-header">
       <div class="header-title">
         <div class="title-accent"></div>
-        <h2>日常收支</h2>
+        <h2>收支</h2>
       </div>
       <div class="header-actions">
         <el-button type="primary" class="action-btn" @click="openDialog()">
@@ -42,22 +42,13 @@
           <!-- 月度汇总 -->
           <el-row :gutter="16" class="monthly-summary">
             <el-col :span="8">
-              <div class="summary-card">
-                <div class="summary-label">本月收入</div>
-                <div class="summary-value income-text">{{ formatCurrency(monthSummary?.total_income ?? 0) }}</div>
-              </div>
+              <SummaryCard label="本月收入" :value="formatCurrency(monthSummary?.total_income ?? 0)" type="income" />
             </el-col>
             <el-col :span="8">
-              <div class="summary-card">
-                <div class="summary-label">本月支出</div>
-                <div class="summary-value expense-text">{{ formatCurrency(monthSummary?.total_expense ?? 0) }}</div>
-              </div>
+              <SummaryCard label="本月支出" :value="formatCurrency(monthSummary?.total_expense ?? 0)" type="expense" />
             </el-col>
             <el-col :span="8">
-              <div class="summary-card highlight-card">
-                <div class="summary-label">本月结余</div>
-                <div class="summary-value">{{ formatCurrency(monthSummary?.balance ?? 0) }}</div>
-              </div>
+              <SummaryCard label="本月结余" :value="formatCurrency(monthSummary?.balance ?? 0)" type="highlight" />
             </el-col>
           </el-row>
 
@@ -200,6 +191,8 @@ import TagPicker from '@/components/TagPicker.vue'
 import MonthlyChart from '@/components/MonthlyChart.vue'
 import ExpenseCategoryPie from '@/components/ExpenseCategoryPie.vue'
 import http from '@/utils/http'
+import { formatCurrency } from '@/utils/format'
+import SummaryCard from '@/components/SummaryCard.vue'
 import type { DailyExpense, Tag, Category, Asset } from '@/types'
 
 const expenses = ref<DailyExpense[]>([])
@@ -243,7 +236,6 @@ const editingId = ref<number | null>(null)
 const saving = ref(false)
 const formRef = ref()
 
-function formatCurrency(v: number) { return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(v) }
 
 async function loadData() {
   const params: any = { page: page.value, page_size: pageSize.value }

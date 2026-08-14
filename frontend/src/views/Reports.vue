@@ -3,7 +3,7 @@
     <div class="page-header">
       <div class="header-title">
         <div class="title-accent"></div>
-        <h2>数据报表</h2>
+        <h2>报表</h2>
       </div>
     </div>
 
@@ -202,6 +202,8 @@ import ExpenseCategoryPie from '@/components/ExpenseCategoryPie.vue'
 import ExpenseTrendBar from '@/components/ExpenseTrendBar.vue'
 import AssetTrendLine from '@/components/AssetTrendLine.vue'
 import AssetBreakdownPie from '@/components/AssetBreakdownPie.vue'
+import { formatCurrency } from '@/utils/format'
+import SummaryCard from '@/components/SummaryCard.vue'
 
 const reportMonth = ref(new Date().toISOString().slice(0, 7))
 const trendPeriod = ref('30d')
@@ -211,8 +213,6 @@ const assetTrend = ref<any>(null)
 const assetBreakdown = ref<any>(null)
 const tagBreakdown = ref<any>(null)
 const perf = ref<any>(null)
-
-function formatCurrency(v: number) { return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(v) }
 
 async function loadAll() {
   const [m, t, at, ab, tb, p] = await Promise.all([

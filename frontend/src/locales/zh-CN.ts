@@ -10,7 +10,7 @@ export const zhCN = {
     transfer: '转账',
     reports: '报表',
     auditLogs: '日志',
-    settings: '系统设置',
+    settings: '设置',
     login: '登录',
     logout: '退出',
     profile: '个人',
