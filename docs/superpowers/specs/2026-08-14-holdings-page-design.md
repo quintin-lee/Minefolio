@@ -32,7 +32,7 @@
 
 ### 1. 后端：`GET /api/reports/holdings`（reports.c 新增 handler）
 
-路由注册：`main.c` 增加 `csilk_app_get(app, "/api/reports/holdings", report_holdings)`。
+路由注册：`main.c` 增加 `report_holdings` 前向声明 + `csilk_app_get(app, "/api/reports/holdings", report_holdings)`。
 
 **响应结构**：
 
@@ -63,13 +63,14 @@
 
 **实现要点**：
 - 持仓行查询：`assets JOIN categories ON a.category_id=c.id WHERE a.user_id=? AND c.asset_type IN ('stock','fund','bond','crypto')`，复用 `db_get_num` 读取数值列。
-- 已实现盈亏聚合：遍历该用户全部 `buy / sell / income` 交易（`ORDER BY transaction_date ASC`），按 `asset_id` 分组，复用 `report_transaction_performance` 的 PnL 口径：
+- 已实现盈亏聚合：遍历该用户全部 `buy / sell / income` 交易（`ORDER BY transaction_date ASC`，全局时间序在按 asset 分组后保持各资产内时序不变），按 `asset_id` 分组，复用 `report_transaction_performance` 的 PnL 口径：
   - buy：累加 `cost_for_pnl += amount`、`qty += quantity`
   - sell：`realized += amount − qty × avg_cost`（avg_cost = 卖出前 cost_for_pnl / qty），并扣减份额
-  - income（分红）：视为成本返还 `realized += amount`
+  - income（分红）：视为成本返还 —— `cost_for_pnl -= amount` **且** `realized += amount`（两个都要，前者影响后续 sell 的 avg_cost，与 performance 完全一致）
   - 手续费不参与 realized 计算（与 performance 一致，成本口径走 cost_basis）
+- **除零防护**：`floating_pct` 计算时若 `cost_basis == 0`（空库、全卖光等场景）输出 **0**，避免 0/0=NaN 破坏 JSON。
 - 零持仓资产：`quantity=0` 但有交易记录的资产**仍返回**（可能有已实现盈亏需展示），由前端标记呈现。
-- 全库空数据时：返回空 `holdings` 数组 + 全 0 summary，不报错。
+- 全库空数据时：返回空 `holdings` 数组 + 全 0 summary（floating_pct=0 兜底），不报错。
 - 响应走 `respond_ok(c, resp)`，用户校验走 `jwt_get_user_id`。
 
 ### 2. 前端：持仓页面 `Holdings.vue`
@@ -97,12 +98,12 @@
 │ │ 类型占比   │  │ (按资产)                 │ │
 │ └───────────┘  └──────────────────────────┘ │
 ├──────────────────────────────────────────────┤
-│ 持仓表格 ~/assets/logs 模式 (列见下)          │
+│ 持仓表格 (列见下)                             │
 └──────────────────────────────────────────────┘
 ```
 
 - **汇总卡片 ×3**：总市值 / 总浮动盈亏 / 总已实现盈亏。盈亏卡片按正负着色（红涨绿跌，与 Assets.vue 的 `income-text`/`expense-text` 语义一致：盈利 #10b981、亏损 #ef4444），带 ± 前缀。
-- **环形图**（ECharts pie）：按 `asset_type` 汇总市值占比，五种类型（stock/fund/bond/crypto/其他）配色固定。
+- **环形图**（ECharts pie）：按 `asset_type` 汇总市值占比，四种类型（stock/fund/bond/crypto）配色固定。
 - **柱状图**（ECharts bar）：按资产横向对比「成本 vs 市值」双系列。
 - **持仓表格**列：
 
@@ -136,9 +137,10 @@
 |---|---|---|
 | H1 空态 | 全新用户 GET /reports/holdings | code=0，holdings=[]，summary 全 0 |
 | H2 建仓后浮动盈亏 | 买 1000 份×2 元（xx基金），PUT net_value=2.5 | holdings[0].floating_pnl=500，floating_pct=25 |
+| H2b 手续费不影响 realized | 带 fee=1 买入 1000 份×2 元，再卖 100 份×2.5 | realized_pnl=250−100×2.0=50（avg_cost 不含 fee，与 performance 一致） |
 | H3 卖出后已实现 | 卖 400 份×3 元 | realized_pnl=400；quantity=600 |
 | H4 多资产聚合 | 另建股票资产买 100 股×10 元 | holdings 长度 2，summary.total_market_value 正确相加 |
-| H5 零持仓资产 | 全卖光后仍返回该资产 | quantity=0 行存在，realized_pnl 保留 |
+| H5 零持仓资产 | 全卖光后仍返回该资产 | quantity=0 行存在，realized_pnl 保留，floating_pnl=0，floating_pct=0（无 NaN） |
 | H6 分红 | income 交易（投资类分类） | realized_pnl 含分红金额 |
 
 **前端**：
