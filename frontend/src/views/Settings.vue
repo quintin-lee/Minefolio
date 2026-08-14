@@ -23,7 +23,7 @@
           </div>
           <div class="info-row">
             <span class="info-label">{{ t('settings.registeredAt') }}</span>
-            <span class="info-value">{{ auth.user?.created_at || '-' }}</span>
+            <span class="info-value">{{ formatDate(auth.user?.created_at || '') }}</span>
           </div>
         </div>
       </el-col>
@@ -50,15 +50,26 @@
         </el-form-item>
       </el-form>
     </div>
+
+    <div class="panel-container" style="margin-top: 24px;">
+      <div class="panel-header">
+        <h3>{{ t('settings.exportData') }}</h3>
+      </div>
+      <p class="export-hint">{{ t('settings.exportHint') }}</p>
+      <el-button type="primary" class="action-btn" @click="handleExport" :loading="exporting">
+        {{ t('settings.exportButton') }}
+      </el-button>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
-import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
+import { transactionsApi } from '@/api/transactions'
 import { zhCN } from '@/locales/zh-CN'
+import { formatDate } from '@/utils/format'
 import type { FormInstance, FormRules } from 'element-plus'
 
 const t = (key: string) => {
@@ -68,9 +79,9 @@ const t = (key: string) => {
   return obj || key
 }
 
-const router = useRouter()
 const auth = useAuthStore()
 const loading = ref(false)
+const exporting = ref(false)
 const formRef = ref<FormInstance>()
 
 const form = reactive({
@@ -107,14 +118,35 @@ async function submit() {
       loading.value = true
       await auth.changePassword(form.old_password, form.new_password)
       ElMessage.success(t('settings.passwordSuccess'))
-      auth.logout()
-      router.push('/login')
+      form.old_password = ''
+      form.new_password = ''
+      form.confirmPassword = ''
     } catch {
       // error handled by http interceptor
     } finally {
       loading.value = false
     }
   })
+}
+
+async function handleExport() {
+  exporting.value = true
+  try {
+    const blob = await transactionsApi.exportCsv()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `minefolio_transactions_${new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    ElMessage.success('导出成功')
+  } catch {
+    ElMessage.error('导出失败')
+  } finally {
+    exporting.value = false
+  }
 }
 </script>
 
@@ -189,5 +221,12 @@ async function submit() {
 
 .action-btn {
   width: 160px;
+}
+
+.export-hint {
+  font-size: 13px;
+  color: var(--mf-text-muted);
+  margin-bottom: 16px;
+  line-height: 1.6;
 }
 </style>

@@ -129,6 +129,9 @@ export const zhCN = {
     savePassword: '保存新密码',
     passwordMin: '密码至少6个字符',
     passwordMismatch: '两次输入的密码不一致',
-    passwordSuccess: '密码修改成功，请使用新密码重新登录',
+    passwordSuccess: '密码修改成功',
+    exportData: '数据导出',
+    exportHint: '导出所有交易记录为 CSV 文件，可在 Excel 或其他电子表格软件中打开。',
+    exportButton: '导出交易记录 CSV',
   },
 }
