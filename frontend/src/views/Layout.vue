@@ -5,40 +5,40 @@
         <div class="logo-icon-wrapper">💰</div>
         <span class="logo-text">Minefolio</span>
       </div>
-      <el-menu :default-active="activeMenu" router class="sidebar-menu">
-        <el-menu-item index="/dashboard">
+      <el-menu :default-active="activeMenu" class="sidebar-menu">
+        <el-menu-item index="/dashboard" @click="goTo('/dashboard')">
           <el-icon><DataAnalysis /></el-icon>
           <span>{{ t('nav.dashboard') }}</span>
         </el-menu-item>
-        <el-menu-item index="/assets">
+        <el-menu-item index="/assets" @click="goTo('/assets')">
           <el-icon><Wallet /></el-icon>
           <span>{{ t('nav.assets') }}</span>
         </el-menu-item>
-        <el-menu-item index="/holdings">
+        <el-menu-item index="/holdings" @click="goTo('/holdings')">
           <el-icon><TrendCharts /></el-icon>
           <span>{{ t('nav.holdings') }}</span>
         </el-menu-item>
-        <el-menu-item index="/transactions">
+        <el-menu-item index="/transactions" @click="goTo('/transactions')">
           <el-icon><List /></el-icon>
           <span>{{ t('nav.transactions') }}</span>
         </el-menu-item>
-        <el-menu-item index="/daily-expenses">
+        <el-menu-item index="/daily-expenses" @click="goTo('/daily-expenses')">
           <el-icon><Money /></el-icon>
           <span>{{ t('nav.dailyExpenses') }}</span>
         </el-menu-item>
-        <el-menu-item index="/categories">
+        <el-menu-item index="/categories" @click="goTo('/categories')">
           <el-icon><Folder /></el-icon>
           <span>{{ t('nav.categories') }}</span>
         </el-menu-item>
-        <el-menu-item index="/reports">
+        <el-menu-item index="/reports" @click="goTo('/reports')">
           <el-icon><PieChart /></el-icon>
           <span>{{ t('nav.reports') }}</span>
         </el-menu-item>
-        <el-menu-item index="/audit-logs">
+        <el-menu-item index="/audit-logs" @click="goTo('/audit-logs')">
           <el-icon><List /></el-icon>
           <span>{{ t('nav.auditLogs') }}</span>
         </el-menu-item>
-        <el-menu-item index="/settings">
+        <el-menu-item index="/settings" @click="goTo('/settings')">
           <el-icon><Setting /></el-icon>
           <span>{{ t('nav.settings') }}</span>
         </el-menu-item>
@@ -112,6 +112,10 @@ const route = useRoute()
 const auth = useAuthStore()
 
 const activeMenu = computed(() => route.path)
+
+function goTo(path: string) {
+  router.push(path)
+}
 
   const pageTitle = computed(() => {
     const map: Record<string, string> = {
