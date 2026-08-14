@@ -14,6 +14,10 @@
           <el-icon><Wallet /></el-icon>
           <span>{{ t('nav.assets') }}</span>
         </el-menu-item>
+        <el-menu-item index="/holdings">
+          <el-icon><TrendCharts /></el-icon>
+          <span>{{ t('nav.holdings') }}</span>
+        </el-menu-item>
         <el-menu-item index="/transactions">
           <el-icon><List /></el-icon>
           <span>{{ t('nav.transactions') }}</span>
@@ -113,6 +117,7 @@ const activeMenu = computed(() => route.path)
     const map: Record<string, string> = {
       '/dashboard': '仪表盘',
       '/assets': '资产管理',
+      '/holdings': '持仓管理',
       '/transactions': '交易记录',
       '/daily-expenses': '日常收支',
       '/categories': '分类管理',

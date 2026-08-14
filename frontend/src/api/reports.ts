@@ -77,6 +77,33 @@ export interface AssetSummary {
   by_category: { name: string; value: number; is_liability: boolean }[]
 }
 
+export interface HoldingsItem {
+  asset_id: number
+  name: string
+  asset_type: string
+  currency: string
+  quantity: number
+  net_value: number
+  cost_basis: number
+  current_value: number
+  floating_pnl: number
+  floating_pct: number
+  realized_pnl: number
+}
+
+export interface HoldingsSummary {
+  total_market_value: number
+  total_cost_basis: number
+  total_floating_pnl: number
+  total_realized_pnl: number
+  floating_pct: number
+}
+
+export interface HoldingsReport {
+  summary: HoldingsSummary
+  holdings: HoldingsItem[]
+}
+
 export const reportsApi = {
   expenseMonthly: (year: number, month: number) =>
     http.get<ExpenseMonthlyReport, ExpenseMonthlyReport>('/reports/expense/monthly', {
@@ -102,4 +129,5 @@ export const reportsApi = {
   transactionPerformance: () =>
     http.get<TransactionPerformance, TransactionPerformance>('/reports/transaction/performance'),
   assetSummary: () => http.get<AssetSummary, AssetSummary>('/reports/asset/summary'),
+  holdings: () => http.get<HoldingsReport, HoldingsReport>('/reports/holdings'),
 }

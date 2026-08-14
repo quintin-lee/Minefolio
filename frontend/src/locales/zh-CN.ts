@@ -3,6 +3,7 @@ export const zhCN = {
   nav: {
     dashboard: '仪表盘',
     assets: '资产',
+    holdings: '持仓',
     transactions: '交易',
     dailyExpenses: '收支',
     categories: '分类',
