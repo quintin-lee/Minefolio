@@ -8,7 +8,7 @@ Personal finance tracker. SQLite or PostgreSQL backend (C23 + [csilk](https://gi
 backend/src/          C handlers — one .c per domain (auth, assets, transactions, …)
 backend/src/common/   db.h/.c  jwt.h/.c  balance.h/.c  response.h  config.h/.c  tx_types.h/.c
 backend/sql/          migration.sql (SQLite) + migration_postgres.sql
-backend/tests/        test_link.sh — full HTTP & DB integration test suite (79+ PASS)
+backend/tests/        test_link.sh — full HTTP & DB integration test suite (103 PASS)
 frontend/src/         Vue 3 + Pinia + Element Plus + ECharts
 ```
 
@@ -38,6 +38,22 @@ cd frontend
 npm install
 npm run dev                # :5173, proxies /api → localhost:8080
 npm run build              # vue-tsc -b && vite build (must build cleanly with 0 errors)
+```
+
+### Mobile (Capacitor) build
+```bash
+cd frontend
+npm run build:mobile       # vite build --config vite.config.mobile.ts --mode mobile
+npx cap sync android       # copy dist-mobile → android/app/src/main/assets/public
+cd android && ./gradlew assembleDebug   # build APK (requires full Android env)
+```
+
+**Mobile API URL**: configure in `frontend/.env.mobile` via `VITE_API_URL`. The APK hardcodes this at build time.
+
+**sql.js WASM embedding**: The Capacitor WebView cannot reliably `fetch` wasm files from `capacitor://` assets. The wasm binary is embedded as base64 in the JS bundle via `frontend/src/db/generated/sql-wasm-base64.ts`. To regenerate:
+```bash
+base64 -w0 node_modules/sql.js/dist/sql-wasm.wasm > /tmp/wasm_b64.txt
+# then use the Python script in commit 218eb88 to produce the TS module
 ```
 
 ### Verification
@@ -95,7 +111,7 @@ When updating an investment asset's `net_value` via `PUT /api/assets/:id`:
   - **Exception**: `axios.get()` with `responseType: 'blob'` is used for file downloads (e.g., CSV export) because `http.get()` does not support blob response types. Use `http.get()` for all other calls.
 - **Page Layout**: `.page-header` uses `justify-content: space-between` — title left, button group right. Wrap action buttons in `<div class="header-actions">` with `gap: 8px`.
 - **Scroll Layout**: `.main` in `Layout.vue` is the single scroll container (`height: calc(100vh - 72px); overflow-y: auto`). Page containers use `height: 100%; overflow: hidden` so only data areas scroll internally.
-- **Error Resilience**: Every `onMounted` hook **MUST** wrap async initialization in `try/catch` to prevent a single failed API call from breaking the entire component tree. `Layout.vue` uses `<suspense>` as a fallback.
+- **Error Resilience**: Every `onMounted` hook **MUST** wrap async initialization in `try/catch` to prevent a single failed API call from breaking the entire component tree. Use `v-loading` directive for loading states. For parallel API calls, prefer `Promise.allSettled` over `Promise.all` so partial failures don't crash the entire page. `Layout.vue` uses `<suspense>` as a fallback.
 
 ---
 
@@ -139,3 +155,5 @@ When updating an investment asset's `net_value` via `PUT /api/assets/:id`:
 3. **`components.d.ts` is auto-generated**: After adding any new Element Plus component usage, run `npm run build` once to regenerate `frontend/src/components.d.ts`. Don't commit changes to it manually.
 4. **Investment sell cost_basis**: `apply_position()` reduces `cost_basis` proportionally on sell. The performance report uses a separate `total_cost_for_pnl` (excludes fee) for `avg_cost` computation — do not mix the two.
 5. **Fee row note must be non-empty**: Test queries use `note LIKE '%fee%'`. Always ensure the fee row's `note` contains a non-empty string.
+6. **Mobile wasm loading**: Capacitor WebView cannot reliably `fetch` local assets via `capacitor://` scheme. sql.js wasm MUST be embedded as base64 in the JS bundle (`src/db/generated/sql-wasm-base64.ts`). Never revert to `locateFile` + network fetch for mobile builds.
+7. **Gradle incremental builds**: After `npx cap sync android`, always run `./gradlew clean assembleDebug` to avoid stale cached assets. `assembleDebug` alone may skip re-packaging if timestamps appear fresh.
