@@ -123,21 +123,7 @@ COPY backend ./backend
 # llhttp/yyjson/nghttp2)。代理网络不稳定, 大仓库整包克隆经常中途断连;
 # 这里按精确 tag 浅克隆(体积小), 带重试循环, 构建期完全离线构建。
 # tag 变更时同步更新此处与 csilk 上游 cmake/dependencies.cmake。
-RUN --mount=type=bind,source=hosts,target=/etc/hosts \
-    mkdir -p /src/deps && \
-    fetch() { \
-        url="$1"; tag="$2"; dir="$3"; \
-        for i in 1 2 3 4 5; do \
-            git clone --quiet --depth 1 --branch "$tag" "$url" "$dir" && return 0; \
-            echo "[fetch] attempt $i failed: $dir"; \
-            rm -rf "$dir"; sleep 3; \
-        done; \
-        return 1; \
-    } && \
-    fetch https://github.com/quintin-lee/csilk.git master /src/deps/csilk && \
-    fetch https://github.com/nodejs/llhttp.git release/v9.4.1 /src/deps/llhttp && \
-    fetch https://github.com/ibireme/yyjson.git 0.12.0 /src/deps/yyjson && \
-    fetch https://github.com/nghttp2/nghttp2.git v1.61.0 /src/deps/nghttp2
+COPY deps /src/deps
 
 RUN --mount=type=bind,source=hosts,target=/etc/hosts \
     cmake \
@@ -197,6 +183,7 @@ RUN --mount=type=bind,source=hosts,target=/etc/hosts \
 
 COPY frontend ./
 
+ENV PATH="/app/frontend/node_modules/.bin:$PATH"
 RUN npm run build
 
 
