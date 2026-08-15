@@ -2,9 +2,11 @@
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Revisions（2026-08-15 fit-analysis）：** 本计划已按「与当前代码匹配度分析」修订并内联标注（🔴=必须修订，🟡=适配建议）。关键变更：(1) 移动端 API base URL 必须经 `VITE_API_URL` 指向真实后端（Capacitor 无 dev proxy）；(2) http.ts 的 1001 重定向改为路由导航而非 `window.location`；(3) 移除 `__MOBILE__` 编译常量，改用独立入口隔离；(4) dts 独立路径；(5) `ExpenseCategoryPie`（height:100%）复用需定高父容器；(6) ReportsMobile 可用 `api/reports.ts`；(7) 后端测试判据改为 `FAIL=0` + 基线持平（assert 数 ≥79）。详见各 Chunk 内 🟡/🔴 注记。
+
 **Goal:** 在现有 Vue 3 前端基础上，新增一套离线优先的移动端（Capacitor 封装），支持无网络记账、本地 sql.js 存储、联网后自动双向同步，并复用 90%+ 现有 API / store / 图表组件。
 
-**Architecture:** 新增独立的移动端入口（`main-mobile.ts` + `vite.config.mobile.ts` + `index.mobile.html`），通过 `__MOBILE__` 编译常量与桌面端隔离。本地用 sql.js（WASM SQLite，schema 与后端一致）持久化到 localStorage；写操作失败或被离线拦截时写入 `sync_queue` 软删除标记；`useSyncStore` 在 app 启动 / 页面聚焦 / 网络恢复时执行「先推本地、后拉远程、服务端胜出」的同步协议。移动端视图全部位于 `src/views-mobile/`，复用现有 `api/*`、`stores/*`、`utils/http.ts` 与 ECharts 组件。
+**Architecture:** 新增独立的移动端入口（`main-mobile.ts` + `vite.config.mobile.ts` + `index.mobile.html`）。本地用 sql.js（WASM SQLite，schema 与后端一致）持久化到 localStorage；写操作失败或被离线拦截时写入 `sync_queue` 软删除标记；`useSyncStore` 在 app 启动 / 页面聚焦 / 网络恢复时执行「先推本地、后拉远程、服务端胜出」的同步协议。移动端视图全部位于 `src/views-mobile/`，复用现有 `api/*`、`stores/*`、`utils/http.ts` 与 ECharts 组件。
 
 **Tech Stack:** Vue 3 + TypeScript + Pinia + Element Plus + Vue Router + ECharts；Capacitor 6（@capacitor/network, @capacitor/app, @capacitor/haptics）；sql.js（WASM SQLite）；Vite（双 build target）；Vitest（单测）。
 
@@ -14,7 +16,7 @@
 
 新增文件：
 - `frontend/index.mobile.html` — 移动端 HTML 入口，加载 `src/main-mobile.ts`
-- `frontend/vite.config.mobile.ts` — 移动 build：`define: { __MOBILE__: true }`、`build.outDir: dist-mobile`、`rollupOptions.input` 指向 `index.mobile.html`
+- `frontend/vite.config.mobile.ts` — 移动 build：`build.outDir: dist-mobile`、`rollupOptions.input` 指向 `index.mobile.html`（**无 `__MOBILE__`，用独立入口隔离**）
 - `frontend/capacitor.config.ts` — Capacitor 容器配置（webDir: dist-mobile）
 - `frontend/src/main-mobile.ts` — 移动端启动：挂载 app、pinia、router、ElementPlus、init sync store + 网络监听
 - `frontend/src/router/mobile.ts` — 移动端路由（/m/* 五 Tab + 登录）
@@ -46,6 +48,8 @@
 ---
 
 ## Chunk 1: 基础设施（依赖 / Vite / Capacitor / HTML 入口）
+
+> 🟡 **fit-analysis 2026-08-15**：本 chunk 与 `VITE_API_URL` 绑定。桌面 `http.ts` 以 `import.meta.env.VITE_API_URL` 为 Axios baseURL；移动端打包到 Capacitor 后没有 dev proxy，**必须在构建/运行期把 `VITE_API_URL` 指向真实后端地址**（`frontend/.env.mobile` 或 Capacitor 环境注入），否则 RSA public-key fetch 与离线 HTTP 都无法命中后端。见 Chunk 4/Task 12 的 🔴 说明。
 
 ### Task 1: 更新 package.json 增加移动端脚本与依赖
 
@@ -138,25 +142,22 @@ import Components from 'unplugin-vue-components/vite'
 import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 import { resolve } from 'path'
 
-// Mobile build target: separate entry HTML + __MOBILE__ flag + dist-mobile output.
+// Mobile build target: separate entry HTML + dist-mobile output.
 export default defineConfig({
   plugins: [
     vue(),
     AutoImport({
       resolvers: [ElementPlusResolver({ importStyle: false })],
       imports: ['vue', 'vue-router', 'pinia'],
-      dts: 'src/auto-imports.d.ts',
+      dts: 'src/auto-imports.mobile.d.ts',
     }),
     Components({
       resolvers: [ElementPlusResolver({ importStyle: false })],
-      dts: 'src/components.d.ts',
+      dts: 'src/components.mobile.d.ts',
     }),
   ],
   resolve: {
     alias: { '@': resolve(__dirname, 'src') },
-  },
-  define: {
-    __MOBILE__: true,
   },
   server: {
     port: 5174,
@@ -172,6 +173,8 @@ export default defineConfig({
 })
 ```
 
+> 🟡 **fit-analysis 2026-08-15 修订**：本片段较原计划做两处修正——(1) **移除 `__MOBILE__` define**，与计划全局「不使用 `__MOBILE__` 开关」的原则自洽（代码不需要按平台分支，靠独立入口隔离）；(2) **dts 改用独立路径** `auto-imports.mobile.d.ts` / `components.mobile.d.ts`，避免桌面 `npm run build` 与 `build:mobile` 互相覆盖 `src/auto-imports.d.ts` / `src/components.d.ts`。
+
 - [ ] **Step 2: 验证配置可被加载（不实际构建）**
 
 Run: `cd frontend && npx vite build --mode mobile --logLevel error || true`
@@ -181,7 +184,7 @@ Run: `cd frontend && npx vite build --mode mobile --logLevel error || true`
 
 ```bash
 git add frontend/vite.config.mobile.ts
-git commit -m "feat(mobile): add vite mobile build config with __MOBILE__ flag"
+git commit -m "feat(mobile): add vite mobile build config (separate entry + dist-mobile)"
 ```
 
 ---
@@ -648,11 +651,14 @@ git commit -m "feat(mobile): add sync queue pinia store with push/pull protocol"
 
 封装 `http`：在线正常返回；离线或网络异常 → 写本地 SQLite + 入队 sync_queue，返回兼容信封（让 UI 不报错）。软删：operation=delete 时本地打 `__deleted=1` 而不物理删。
 
+> 🟡 **fit-analysis 2026-08-15**：裸 `http` 的网络失败分支会先弹 `ElMessage.error('网络错误')`（桌面式 toast）。移动端离线记账改走本封装，需**抑制**该 toast 改「静默落本地 + success 提示」。做法：把 http 实例的响应拦截器错误分支的 ElMessage 调用改成可用 `offlineMode` 关闭，或在捕获网络错误时先吞掉再落本地。第 3 行 `import http from './http'` 保持不变（复用同一 axios 实例、token/CSRF 注入），仅在其离线分支做 toast 抑制处理。
+
 ```typescript
 // frontend/src/utils/offline-http.ts
 import http from './http'
 import { getDb, run, persist } from '@/db/local'
 import { useSyncStore } from '@/stores/sync'
+import { useAuthStore } from '@/stores/auth'
 import { ElMessage } from 'element-plus'
 
 const TABLE_BY_PATH: Record<string, string> = {
@@ -690,6 +696,11 @@ async function writeLocal(table: string, operation: 'create' | 'update' | 'delet
   useSyncStore().enqueue(table, recordId, operation, payload)
 }
 
+// 鉴权失败(1001)专用：桌面 http 会 window.location=/login，移动端需改为 router 导航
+function isAuthError(err: any): boolean {
+  return err?.response?.data?.code === 1001
+}
+
 export async function offlineRequest(method: 'get' | 'post' | 'put' | 'delete', url: string, data?: Record<string, unknown>): Promise<any> {
   const table = tableNameFromUrl(url)
   if (table) {
@@ -700,7 +711,12 @@ export async function offlineRequest(method: 'get' | 'post' | 'put' | 'delete', 
       const res = await http({ method, url, data } as any)
       return res
     } catch (err: any) {
-      // 网络失败：落本地 + 入队
+      if (isAuthError(err)) {
+        // 鉴权失败 → 注销并抛错，由外层路由到 /m/login（🔴 见 Task 10 说明）
+        useAuthStore().logout?.()
+        throw err
+      }
+      // 网络失败：落本地 + 入队（抑制桌面 '网络错误' toast）
       const recordId = id ?? (data?.id as number) ?? Date.now()
       await writeLocal(table, operation, recordId, data ?? {})
       ElMessage.success('已离线保存，联网后自动同步')
@@ -824,6 +840,7 @@ const router = createRouter({
 router.beforeEach(async (to, _from, next) => {
   const auth = useAuthStore()
   if (auth.isInitialized === null) await auth.checkSystemStatus()
+  if (auth.isInitialized === false) return next('/m/login') // 未初始化：移动端复用同一后端，异常引导去登录
   if (to.meta.requiresAuth !== false && !auth.token) next('/m/login')
   else next()
 })
@@ -844,6 +861,9 @@ git commit -m "feat(mobile): add mobile router with 5-tab layout"
 
 **Files:**
 - Create: `frontend/src/utils/sync-network.ts`
+
+> 🔴 **关键（fit-analysis 2026-08-15）— `utils/http.ts` 的 1001 重定向对移动端不友好**：`http.ts` 响应拦截器在 `code === 1001` 时执行 `useAuthStore().logout(); window.location.href = '/login'`。桌面 OK，但移动端：(1) 目标应为 `/m/login`；(2) `window.location.href` 会把 Capacitor WebView 页面整体导航离开 App 壳。
+> **处理**：`offlineApi`（Task 7）对移动端鉴权失败要改走「注销 + `router.push('/m/login')`」而非 `window.location`。可在 offline-http 中包一层：捕获 1001 时 `auth.logout()` 并返回 `{code:1001}`，由 MobileLayout/视图引导 `router.push('/m/login')`。**不要在移动端调用裸 `http` 的写路径**（其拦截器会触发桌面式重定向）。
 
 - [ ] **Step 1: 写 sync-network.ts**
 
@@ -1003,6 +1023,8 @@ git commit -m "feat(mobile): bottom 5-tab layout container"
 
 复用桌面登录逻辑：RSA 公钥加密密码 → `auth.login`。从 `frontend/src/stores/auth.ts` 复制 `fetchRsaJwk`/`encryptPassword` 逻辑（它们当前是模块私有函数），故在移动端内联一份相同的加密实现（保持与后端一致）。
 
+> 🔴 **关键（fit-analysis 2026-08-15）**：桌面 `stores/auth.ts` 用相对路径 `fetch('/api/auth/public-key')`，桌面靠 Vite proxy 转发。**Capacitor 独立 WebView 没有 dev proxy**，相对路径命中不到后端。因此移动端内联版 **必须**用 `import.meta.env.VITE_API_URL`（与 `utils/http.ts` 的 Axios baseURL 同一变量）拼接 `base + '/api/auth/public-key'`，WebView/浏览器回退到 `window.location.origin`。构建时通过 `.env` 为 Capacitor 配置 `VITE_API_URL` 指向真实后端地址。
+
 ```vue
 <template>
   <div class="login-mobile">
@@ -1030,9 +1052,10 @@ const auth = useAuthStore()
 const loading = ref(false)
 const form = reactive({ username: '', password: '' })
 
-// 内联 RSA-OAEP 加密（与 stores/auth.ts 一致）
 async function encryptPassword(pw: string): Promise<string> {
-  const r = await fetch('/api/auth/public-key')
+  const base = import.meta.env.VITE_API_URL || window.location.origin
+  const r = await fetch(`${base}/api/auth/public-key`)
+  if (!r.ok) throw new Error('Failed to fetch public key')
   const jwk = (await r.json()).data.public_key
   const key = await crypto.subtle.importKey('jwk', jwk, { name: 'RSA-OAEP', hash: 'SHA-256' }, false, ['encrypt'])
   const enc = await crypto.subtle.encrypt({ name: 'RSA-OAEP' }, key, new TextEncoder().encode(pw))
@@ -1471,12 +1494,16 @@ onMounted(async () => {
 
 - [ ] **Step 3: 写 ReportsMobile.vue（复用现有 ECharts 组件）**
 
+> 🟡 **fit-analysis 2026-08-15 两处适配**：
+> (1) `ExpenseCategoryPie.vue` 的图表根 div 当前为 `height:100%`（其余图表固定 px）。复用**必须**给它一个有确定高度的父容器（如下 `.chart-block` 内 `.pie-wrap{height:260px}`），否则 `clientHeight=0` 会让 ECharts `ensureChart` 直接跳过、图不渲染。
+> (2) 本 Tab 仅用 `dailyExpensesApi.monthly` 够用，但若想要更丰富报表（资产趋势/分布），`api/reports.ts` 已提供 `reportsApi.assetTrend/assetBreakdown/expenseTrend/expenseCategory` 等，无需新增后端。
+
 ```vue
 <template>
   <div class="reports-mobile">
     <div class="page-header"><h2>报表</h2></div>
     <el-date-picker v-model="month" type="month" value-format="YYYY-MM" @change="load" />
-    <div class="chart-block"><h4>分类占比</h4><ExpenseCategoryPie :data="monthly?.by_category ?? []" /></div>
+    <div class="chart-block"><h4>分类占比</h4><div class="pie-wrap"><ExpenseCategoryPie :data="monthly?.by_category ?? []" /></div></div>
     <div class="chart-block"><h4>月度收支</h4><MonthlyChart :data="monthly" /></div>
   </div>
 </template>
@@ -1501,6 +1528,7 @@ onMounted(load)
 <style scoped>
 .chart-block { background: var(--mf-surface); border: 1px solid var(--mf-border); border-radius: 12px; padding: 16px; margin: 12px 0; }
 .chart-block h4 { margin: 0 0 12px; color: var(--mf-text-muted); }
+.pie-wrap { height: 260px; } /* 🟡 ExpenseCategoryPie 图表是 height:100%，父容器必须有确定高度 */
 </style>
 ```
 
@@ -1791,8 +1819,10 @@ Expected: 7 passed（3+2+2）
 
 - [ ] **Step 4: 后端集成测试不受影响（后端零改动）**
 
+> ✅ 核对：套件输出形如 `结果: PASS=NN FAIL=0`。当前（2026-08-15）实际断言数约 **79+**（AGENTS.md 记录），非计划初稿估算的 21。判据以 `FAIL=0` 为主、PASS 数不低于改动前基线即可。
+
 Run: `cd backend && cmake --build build --parallel && ./tests/test_link.sh`
-Expected: 21 PASS
+Expected: `结果: PASS=.. FAIL=0`（FAIL 必须为 0；PASS 数与基线持平）
 
 - [ ] **Step 5: 提交（收尾）**
 
@@ -1812,5 +1842,5 @@ git commit -m "feat(mobile): complete offline-first mobile app with sync + tests
 - [x] 无网络删除 → 列表软隐藏（__deleted=1 过滤）
 - [x] 删除后断网可恢复（sync_queue 逆向）
 - [x] `build:mobile` 与 `build` 均 0 TS 错误
-- [x] 后端 21 集成测试 PASS（后端未改动）
+- [x] 后端集成测试 FAIL=0（后端未改动；断言数 ≥79，以基线持平为准）
 

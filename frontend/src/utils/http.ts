@@ -7,6 +7,12 @@ import { ElMessage } from 'element-plus'
  * Wraps axios to unwrap the { code, message, data } envelope automatically.
  * Returns T (the first type parameter) instead of AxiosResponse<T>.
  */
+let mobileMode = false
+/** 移动端适配：关闭桌面式登录跳转与网络错误 toast，交由 offline-http 处理。 */
+export function setMobileMode(on: boolean): void {
+  mobileMode = on
+}
+
 function createHttp(): AxiosInstance {
   const instance = axios.create({
     baseURL: import.meta.env.VITE_API_URL,
@@ -36,7 +42,7 @@ function createHttp(): AxiosInstance {
       if (body && typeof body === 'object' && typeof body.code === 'number' && body.code !== 0) {
         if (body.code === 1001) {
           useAuthStore().logout()
-          window.location.href = '/login'
+          if (!mobileMode) window.location.href = '/login'
         } else {
           ElMessage.error(body.message || '请求失败')
         }
@@ -49,11 +55,11 @@ function createHttp(): AxiosInstance {
         const code = err.response.data?.code
         if (code === 1001) {
           useAuthStore().logout()
-          window.location.href = '/login'
+          if (!mobileMode) window.location.href = '/login'
         } else if (code) {
           ElMessage.error(err.response.data.message || '请求失败')
         }
-      } else {
+      } else if (!mobileMode) {
         ElMessage.error('网络错误')
       }
       return Promise.reject(err)
