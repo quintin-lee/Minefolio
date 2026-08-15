@@ -31,4 +31,17 @@ async function bootstrap() {
   app.mount('#app')
 }
 
-bootstrap()
+bootstrap().catch((err) => {
+  // Defense-in-depth: never leave a silent blank screen. If local-DB/wasm init
+  // or mount fails, render a visible error so the user knows something broke.
+  console.error('[minefolio-mobile] bootstrap failed:', err)
+  const root = document.getElementById('app')
+  if (root) {
+    root.innerHTML =
+      '<div style="padding:24px;font-family:system-ui;color:#f87171;font-size:14px">' +
+      '<strong>Minefolio 启动失败</strong><br/>' +
+      '<span style="display:block;margin-top:8px;color:#94a3b8">' +
+      String((err as Error)?.message || err) +
+      '</span></div>'
+  }
+})
