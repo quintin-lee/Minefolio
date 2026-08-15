@@ -13,3 +13,4 @@ frontend/dist-mobile/
 .codegraph/
 .playwright-cli/
 .omo/
+deps/
