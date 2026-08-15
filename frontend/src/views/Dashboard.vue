@@ -1,5 +1,5 @@
 <template>
-  <div class="dashboard">
+  <div class="dashboard" v-loading="loading">
     <!-- 资产概览卡片 -->
     <el-row :gutter="20" class="summary-cards">
       <el-col :xs="12" :sm="12" :md="6">
@@ -115,6 +115,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
+import { ElMessage } from 'element-plus'
 import { summaryApi } from '@/api/summary'
 import { dailyExpensesApi } from '@/api/daily_expenses'
 import type { Summary, DailyExpense } from '@/types'
@@ -122,6 +123,7 @@ import NetWorthChart from '@/components/NetWorthChart.vue'
 import AssetBreakdownPie from '@/components/AssetBreakdownPie.vue'
 import MonthlyChart from '@/components/MonthlyChart.vue'
 
+const loading = ref(true)
 const summary = ref<Summary>({
   total_assets: 0, total_liabilities: 0, net_worth: 0,
   breakdown: [], trend: [],
@@ -137,10 +139,16 @@ function formatCurrency(val: number) {
 }
 
 async function loadDashboard() {
-  const res = await summaryApi.get()
-  summary.value = res
-  loadMonthly()
-  loadRecent()
+  loading.value = true
+  try {
+    const res = await summaryApi.get()
+    summary.value = res
+    await Promise.allSettled([loadMonthly(), loadRecent()])
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.message || '仪表盘数据加载失败')
+  } finally {
+    loading.value = false
+  }
 }
 
 async function loadMonthly() {

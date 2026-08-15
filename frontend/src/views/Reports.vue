@@ -1,5 +1,5 @@
 <template>
-  <div class="reports-page">
+  <div class="reports-page" v-loading="loading">
     <div class="page-header">
       <div class="header-title">
         <div class="title-accent"></div>
@@ -211,6 +211,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
 import { reportsApi } from '@/api/reports'
 import ExpenseCategoryPie from '@/components/ExpenseCategoryPie.vue'
 import ExpenseTrendBar from '@/components/ExpenseTrendBar.vue'
@@ -219,6 +220,7 @@ import AssetBreakdownPie from '@/components/AssetBreakdownPie.vue'
 import { formatCurrency } from '@/utils/format'
 import SummaryCard from '@/components/SummaryCard.vue'
 
+const loading = ref(true)
 const reportMonth = ref(new Date().toISOString().slice(0, 7))
 const trendPeriod = ref('30d')
 const monthly = ref<any>(null)
@@ -229,20 +231,36 @@ const tagBreakdown = ref<any>(null)
 const perf = ref<any>(null)
 
 async function loadAll() {
-  const [m, t, at, ab, tb, p] = await Promise.all([
-    reportsApi.expenseMonthly(
-      parseInt(reportMonth.value.slice(0, 4)), parseInt(reportMonth.value.slice(5, 7))
-    ),
-    reportsApi.expenseTrend(6),
-    reportsApi.assetTrend(trendPeriod.value),
-    reportsApi.assetBreakdown(),
-    reportsApi.expenseTag(
-      parseInt(reportMonth.value.slice(0, 4)), parseInt(reportMonth.value.slice(5, 7))
-    ),
-    reportsApi.transactionPerformance(),
-  ])
-  monthly.value = m; trend.value = t; assetTrend.value = at
-  assetBreakdown.value = ab; tagBreakdown.value = tb; perf.value = p
+  loading.value = true
+  try {
+    const [m, t, at, ab, tb, p] = await Promise.allSettled([
+      reportsApi.expenseMonthly(
+        parseInt(reportMonth.value.slice(0, 4)), parseInt(reportMonth.value.slice(5, 7))
+      ),
+      reportsApi.expenseTrend(6),
+      reportsApi.assetTrend(trendPeriod.value),
+      reportsApi.assetBreakdown(),
+      reportsApi.expenseTag(
+        parseInt(reportMonth.value.slice(0, 4)), parseInt(reportMonth.value.slice(5, 7))
+      ),
+      reportsApi.transactionPerformance(),
+    ])
+    if (m.status === 'fulfilled') monthly.value = m.value
+    if (t.status === 'fulfilled') trend.value = t.value
+    if (at.status === 'fulfilled') assetTrend.value = at.value
+    if (ab.status === 'fulfilled') assetBreakdown.value = ab.value
+    if (tb.status === 'fulfilled') tagBreakdown.value = tb.value
+    if (p.status === 'fulfilled') perf.value = p.value
+
+    const failures = [m, t, at, ab, tb, p].filter(r => r.status === 'rejected')
+    if (failures.length > 0) {
+      ElMessage.warning(`部分报表数据加载失败（${failures.length}/${failures.length + 6 - failures.length}）`)
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.message || '报表数据加载失败')
+  } finally {
+    loading.value = false
+  }
 }
 
 function loadMonthlyReport() { loadAll() }
