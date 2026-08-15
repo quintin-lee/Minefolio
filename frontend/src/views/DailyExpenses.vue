@@ -120,7 +120,13 @@
           </el-radio-group>
         </el-form-item>
         <el-form-item label="分类" prop="category_id">
-          <el-cascader v-model="form._catPath" :options="categoryTree" :props="{ checkStrictly: true, value: 'id', label: 'name' }" placeholder="选择分类" style="width: 100%" @change="onCatChange" />
+          <el-cascader v-model="form._catPath" :props="{ checkStrictly: true, value: 'id', label: 'name', lazy: true, lazyLoad(node, resolve) {
+                  if (node.level === 0) {
+                    resolve(allCategories.filter(c => c.parent_id === null || c.parent_id === 0) as any)
+                  } else {
+                    categoryStore.loadChildren(node.data.id as number).then((children: any) => resolve(children))
+                  }
+                } }" placeholder="选择分类" style="width: 100%" @change="onCatChange" />
         </el-form-item>
         <el-form-item label="关联资产" prop="asset_id">
           <el-select v-model="form.asset_id" placeholder="选择资产" style="width: 100%" filterable>

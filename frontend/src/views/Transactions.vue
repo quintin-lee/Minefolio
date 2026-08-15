@@ -43,16 +43,22 @@
               <el-option v-for="a in assets" :key="a.id" :label="a.name" :value="String(a.id)" />
             </el-select>
           </el-form-item>
-          <el-form-item label="交易分类">
-            <el-cascader
-              v-model="filters.category_id"
-              :options="categoryTree"
-              :props="{ checkStrictly: true, value: 'id', label: 'name', emitPath: false }"
-              placeholder="全部分类"
-              clearable
-              class="filter-select"
-            />
-          </el-form-item>
+            <el-form-item label="交易分类">
+              <el-cascader
+                v-model="filters.category_id"
+                :options="categoryTree"
+                :props="{ checkStrictly: true, value: 'id', label: 'name', emitPath: false, lazy: true, lazyLoad(node, resolve) {
+                  if (node.level === 0) {
+                    resolve(allCategories.filter(c => c.parent_id === null || c.parent_id === 0) as any)
+                  } else {
+                    categoryStore.loadChildren(node.data.id as number).then((children: any) => resolve(children))
+                  }
+                } }"
+                placeholder="全部分类"
+                clearable
+                class="filter-select"
+              />
+            </el-form-item>
           <el-form-item label="交易类型">
             <el-select v-model="filters.type" placeholder="全部类型" clearable class="filter-select">
               <el-option v-for="t in transactionTypes" :key="t.value" :label="t.label" :value="t.value" />
@@ -257,7 +263,13 @@
           <el-row :gutter="16">
             <el-col :span="12">
               <el-form-item label="交易分类" prop="category_id">
-                <el-cascader v-model="form._catPath" :options="categoryTree" :props="{ checkStrictly: true, value: 'id', label: 'name' }" placeholder="选择交易分类" style="width: 100%" clearable @change="onCatChange" />
+                <el-cascader v-model="form._catPath" :props="{ checkStrictly: true, value: 'id', label: 'name', lazy: true, lazyLoad(node, resolve) {
+                  if (node.level === 0) {
+                    resolve(allCategories.filter(c => c.parent_id === null || c.parent_id === 0) as any)
+                  } else {
+                    categoryStore.loadChildren(node.data.id as number).then((children: any) => resolve(children))
+                  }
+                } }" placeholder="选择交易分类" style="width: 100%" clearable @change="onCatChange" />
               </el-form-item>
             </el-col>
             <el-col :span="12">

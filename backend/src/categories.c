@@ -468,3 +468,34 @@ void categories_delete(csilk_ctx_t* c) {
     if (del_res) csilk_json_free(del_res);
     respond_ok_null(c);
 }
+
+void categories_children(csilk_ctx_t* c) {
+    int64_t user_id = jwt_get_user_id(c);
+    if (user_id < 0) { respond_unauthorized(c); return; }
+
+    const char* id_str = csilk_get_param(c, "id");
+    if (!id_str) { respond_bad_request(c, "缺少 id"); return; }
+
+    csilk_db_pool_t* pool = db_get_pool();
+    categories_seed_defaults(pool, user_id);
+
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    const char* params[] = { id_str, uid_str, NULL };
+    csilk_json_t* rows = csilk_db_query_param_json(pool,
+        "SELECT c.id, c.name, c.parent_id, "
+        "(SELECT p.name FROM categories p WHERE p.id=c.parent_id) as parent_name, "
+        "c.type, c.asset_type, c.currency, c.icon, c.sort_order "
+        "FROM categories c WHERE c.parent_id = ? AND c.user_id = ? ORDER BY c.sort_order", params);
+
+    if (!rows) { respond_error(c, 500, "查询失败"); return; }
+
+    size_t n = csilk_json_array_size(rows);
+    csilk_json_t* result = csilk_json_array();
+    for (size_t i = 0; i < n; i++) {
+        csilk_json_t* node = row_to_category(csilk_json_array_get(rows, i));
+        csilk_json_array_append(result, node);
+    }
+    csilk_json_free(rows);
+    respond_ok(c, result);
+}

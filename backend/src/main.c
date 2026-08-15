@@ -16,6 +16,7 @@ extern void categories_list(csilk_ctx_t* c);
 extern void categories_create(csilk_ctx_t* c);
 extern void categories_update(csilk_ctx_t* c);
 extern void categories_delete(csilk_ctx_t* c);
+extern void categories_children(csilk_ctx_t* c);
 extern void assets_list(csilk_ctx_t* c);
 extern void assets_create(csilk_ctx_t* c);
 extern void assets_update(csilk_ctx_t* c);
@@ -211,6 +212,7 @@ int main(int argc, char** argv) {
     csilk_app_post(app, "/api/categories", categories_create);
     csilk_app_put(app, "/api/categories/:id", categories_update);
     csilk_app_delete(app, "/api/categories/:id", categories_delete);
+    csilk_app_get(app, "/api/categories/:id/children", categories_children);
 
     // Assets
     csilk_app_get(app, "/api/assets", assets_list);
