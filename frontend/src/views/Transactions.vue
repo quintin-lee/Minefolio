@@ -734,7 +734,7 @@ async function handleImport() {
 }
 
 .summary-cards {
-  margin-bottom: 24px;
+  flex-shrink: 0;
 }
 
 .summary-value {
@@ -754,19 +754,23 @@ async function handleImport() {
 .main-panel {
   background: var(--mf-surface);
   border-radius: var(--mf-radius-lg);
-  padding: 24px;
+  padding: 20px 24px;
   box-shadow: var(--mf-shadow-sm);
   border: 1px solid var(--mf-border);
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .filter-panel {
-  margin-bottom: 20px;
+  margin-bottom: 16px;
+  flex-shrink: 0;
 }
 
 .premium-filters :deep(.el-form-item) {
-  margin-bottom: 12px;
+  margin-bottom: 8px;
   margin-right: 16px;
 }
 
@@ -779,12 +783,7 @@ async function handleImport() {
 }
 
 .table-container {
-  overflow: auto;
-  background: var(--mf-surface);
-  border-radius: var(--mf-radius-lg);
-  padding: 16px;
-  box-shadow: var(--mf-shadow-sm);
-  border: 1px solid var(--mf-border);
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -792,15 +791,12 @@ async function handleImport() {
 }
 
 .table-container :deep(.el-table) {
-  height: 100%;
-
   flex: 1;
   min-height: 0;
+  height: 100%;
 }
 
 .table-container :deep(.el-table__body-wrapper) {
-  overflow-y: auto;
-
   overflow-y: auto;
 }
 
@@ -918,22 +914,5 @@ async function handleImport() {
   color: #fca5a5;
   white-space: pre-wrap;
   word-break: break-all;
-}
-
-/* Constrain layout to viewport */
-.transactions-page > .el-row {
-  flex: 1;
-  min-height: 0;
-}
-.transactions-page > .el-row > .el-col {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow: hidden;
-}
-.main-panel {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
 }
 </style>

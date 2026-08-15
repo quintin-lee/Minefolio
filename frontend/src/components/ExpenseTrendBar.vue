@@ -1,6 +1,5 @@
-<!-- ExpenseTrendBar.vue -->
 <template>
-  <div ref="chartRef" style="height: 250px; width: 100%;"></div>
+  <div ref="chartRef" style="height: 100%; width: 100%;"></div>
 </template>
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue'
