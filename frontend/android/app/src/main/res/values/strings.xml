@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Minefolio</string>
+    <string name="title_activity_main">Minefolio</string>
+    <string name="package_name">com.minefolio.app</string>
+    <string name="custom_url_scheme">com.minefolio.app</string>
+</resources>

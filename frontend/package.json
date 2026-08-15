@@ -8,10 +8,11 @@
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview",
     "dev:mobile": "vite --config vite.config.mobile.ts --mode mobile",
-    "build:mobile": "vue-tsc -b && vite build --config vite.config.mobile.ts --mode mobile",
+    "build:mobile": "vue-tsc -b && vite build --config vite.config.mobile.ts --mode mobile && node -e \"require('fs').renameSync('dist-mobile/index.mobile.html', 'dist-mobile/index.html')\"",
     "test": "vitest run --config vite.config.mobile.ts"
   },
   "dependencies": {
+    "@capacitor/android": "^6.2.1",
     "@capacitor/app": "^6.0.0",
     "@capacitor/core": "^6.0.0",
     "@capacitor/haptics": "^6.0.0",
