@@ -440,7 +440,7 @@ onMounted(async () => {
   color: #64748b;
   margin-top: -12px;
   margin-bottom: 24px;
-  padding-left: 90px;
+  padding-left: calc(90px + 16px);
 }
 
 .premium-form :deep(.el-input__wrapper) {
