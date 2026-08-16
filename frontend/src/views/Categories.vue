@@ -25,12 +25,24 @@
       <el-row :gutter="24">
         <el-col :span="8">
           <div class="panel-container tree-panel-container">
-            <div class="panel-header">
+            <div class="panel-header panel-header-with-search">
               <h3>分类结构</h3>
+              <el-input
+                v-model="keyword"
+                placeholder="搜索分类名称"
+                prefix-icon="Search"
+                clearable
+                class="search-input"
+                size="small"
+              />
             </div>
             <div class="panel-body-scroll">
-              <el-tree :data="filteredTreeData" :props="{ label: 'name', children: 'children' }"
+              <div v-if="filteredTreeData.length === 0 && keyword" class="tree-empty">
+                暂无匹配分类
+              </div>
+              <el-tree v-else :key="keyword.trim() ? 'filtered' : 'all'" :data="filteredTreeData" :props="{ label: 'name', children: 'children' }"
                 node-key="id" class="premium-tree"
+                :default-expanded-keys="expandedKeys"
                 :expand-on-click-node="false"
                 @node-click="onNodeClick">
                 <template #default="{ node, data }">
@@ -171,13 +183,46 @@ const categoryStore = useCategoryStore()
 const activeTab = ref<'all' | 'asset' | 'expense' | 'income' | 'transaction'>('all')
 const categories = ref<Category[]>([])
 const selectedId = ref<number | null>(null)
+const keyword = ref('')
 
-const filteredCategories = computed(() => {
-  if (activeTab.value === 'all') return categories.value
-  return categories.value.filter(c => c.type === activeTab.value)
+// 搜索时自动展开命中分支（数据引用变化 → el-tree 重建 → default-expanded-keys 重新应用）
+const expandedKeys = computed(() => {
+  if (!keyword.value.trim()) return []
+  const ids: number[] = []
+  const walk = (nodes: Category[]) => {
+    for (const n of nodes) {
+      ids.push(n.id)
+      if (n.children?.length) walk(n.children)
+    }
+  }
+  walk(filteredTreeData.value)
+  return ids
 })
 
-const filteredTreeData = computed(() => buildTree(filteredCategories.value))
+function filterTree(nodes: Category[], kw: string): Category[] {
+  const out: Category[] = []
+  for (const node of nodes) {
+    const nameHit = node.name.toLowerCase().includes(kw)
+    const children = node.children ? filterTree(node.children, kw) : []
+    if (nameHit || children.length > 0) {
+      out.push({ ...node, children: nameHit ? (node.children ?? []) : children })
+    }
+  }
+  return out
+}
+
+const filteredCategories = computed(() => {
+  if (activeTab.value !== 'all') return categories.value.filter(c => c.type === activeTab.value)
+  return categories.value
+})
+
+const filteredTreeData = computed(() => {
+  let tree = buildTree(filteredCategories.value)
+  const kw = keyword.value.trim().toLowerCase()
+  if (kw) tree = filterTree(tree, kw)
+  return tree
+})
+
 const filteredFlatCategories = computed(() => flatten(filteredTreeData.value))
 
 const dialogVisible = ref(false)
@@ -538,6 +583,24 @@ onMounted(loadData)
   font-size: 16px;
   font-weight: 600;
   color: var(--mf-text-main);
+}
+
+.panel-header-with-search {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.search-input {
+  width: 180px;
+}
+
+.tree-empty {
+  padding: 40px 0;
+  text-align: center;
+  color: var(--mf-text-placeholder);
+  font-size: 13px;
 }
 
 .panel-body-scroll {
