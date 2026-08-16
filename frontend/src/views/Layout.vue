@@ -48,6 +48,9 @@
     <el-container class="main-container">
       <el-header class="header">
         <div class="header-left">
+          <el-icon class="hamburger" :class="{ 'is-active': mobileMenuOpen }" @click="mobileMenuOpen = !mobileMenuOpen">
+            <Grid />
+          </el-icon>
           <h2 class="page-title">{{ pageTitle }}</h2>
         </div>
         <div class="header-right">
@@ -94,7 +97,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
+import { Grid } from '@element-plus/icons-vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
@@ -112,6 +116,19 @@ const route = useRoute()
 const auth = useAuthStore()
 
 const activeMenu = computed(() => route.path)
+const mobileMenuOpen = ref(false)
+
+function handleResize() {
+  if (window.innerWidth >= 768) mobileMenuOpen.value = false
+}
+
+onMounted(() => {
+  window.addEventListener('resize', handleResize)
+  handleResize()
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleResize)
+})
 
 function goTo(path: string) {
   router.push(path)
@@ -313,5 +330,49 @@ function handleCommand(cmd: string) {
   height: 200px;
   color: #64748b;
   font-size: 14px;
+}
+
+.hamburger {
+  display: none;
+  font-size: 22px;
+  cursor: pointer;
+  color: var(--mf-text-muted);
+  padding: 4px;
+  margin-right: 12px;
+  transition: color 0.2s;
+}
+.hamburger.is-active {
+  color: var(--mf-primary);
+}
+.hamburger:hover {
+  color: var(--mf-text-main);
+}
+
+@media (max-width: 768px) {
+  .aside {
+    position: fixed;
+    left: -260px;
+    top: 0;
+    height: 100vh;
+    z-index: 100;
+    transition: left 0.3s ease;
+  }
+  .aside.is-open {
+    left: 0;
+  }
+  .hamburger {
+    display: flex;
+    align-items: center;
+  }
+  .main {
+    padding: 16px;
+    width: 100%;
+  }
+  .header {
+    padding: 0 16px;
+  }
+  .username {
+    display: none;
+  }
 }
 </style>
