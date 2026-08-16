@@ -684,7 +684,8 @@ onMounted(loadData)
   gap: 4px;
 }
 
-:deep(.premium-tree .el-tree-node__content:hover) .tree-actions {
+:deep(.premium-tree .el-tree-node__content:hover) .tree-actions,
+:deep(.premium-tree .el-tree-node__content:focus-within) .tree-actions {
   opacity: 1;
 }
 
