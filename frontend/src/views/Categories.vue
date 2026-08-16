@@ -30,7 +30,7 @@
             </div>
             <div class="panel-body-scroll">
               <el-tree :data="filteredTreeData" :props="{ label: 'name', children: 'children' }"
-                node-key="id" default-expand-all class="premium-tree"
+                node-key="id" class="premium-tree"
                 :expand-on-click-node="false"
                 @node-click="onNodeClick">
                 <template #default="{ node, data }">
