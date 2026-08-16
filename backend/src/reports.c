@@ -112,6 +112,64 @@ void report_expense_trend(csilk_ctx_t* c) {
     respond_ok(c, resp);
 }
 
+/** @brief GET /api/reports/expense/yearly — 自然年按月收支（1-12月零补齐）*/
+void report_expense_yearly(csilk_ctx_t* c) {
+    int64_t user_id = jwt_get_user_id(c);
+    if (user_id < 0) { respond_unauthorized(c); return; }
+
+    const char* year_str = csilk_get_query(c, "year");
+    char year_buf[8] = {0};
+    if (year_str && strlen(year_str) > 0) {
+        snprintf(year_buf, sizeof(year_buf), "%s", year_str);
+    } else {
+        time_t now = time(NULL);
+        strftime(year_buf, sizeof(year_buf), "%Y", localtime(&now));
+    }
+
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    const char* params[] = { uid_str, year_buf, NULL };
+
+    csilk_db_pool_t* pool = db_get_pool();
+    csilk_json_t* rows = csilk_db_query_param_json(pool,
+        "SELECT CAST(SUBSTR(expense_date,6,2) AS INTEGER) as m, "
+        "COALESCE(SUM(CASE WHEN expense_type='income' THEN amount ELSE 0 END),0) as income, "
+        "COALESCE(SUM(CASE WHEN expense_type='expense' THEN amount ELSE 0 END),0) as expense "
+        "FROM daily_expenses WHERE user_id=? AND SUBSTR(expense_date,1,4)=? "
+        "GROUP BY m ORDER BY m", params);
+    if (!rows) { respond_error(c, 500, "查询失败"); return; }
+
+    /* 零补齐 1-12 月 */
+    double income_by_month[13] = {0};
+    double expense_by_month[13] = {0};
+    size_t n = csilk_json_array_size(rows);
+    for (size_t i = 0; i < n; i++) {
+        int m = (int)db_get_num(csilk_json_array_get(rows, i), "m");
+        if (m >= 1 && m <= 12) {
+            income_by_month[m] = db_get_num(csilk_json_array_get(rows, i), "income");
+            expense_by_month[m] = db_get_num(csilk_json_array_get(rows, i), "expense");
+        }
+    }
+    csilk_json_free(rows);
+
+    csilk_json_t* resp = csilk_json_object();
+    csilk_json_t* labels = csilk_json_array();
+    csilk_json_t* income_arr = csilk_json_array();
+    csilk_json_t* expense_arr = csilk_json_array();
+    for (int m = 1; m <= 12; m++) {
+        char label[16];
+        snprintf(label, sizeof(label), "%d月", m);
+        csilk_json_array_append(labels, csilk_json_string_new(label));
+        csilk_json_array_append(income_arr, csilk_json_number(income_by_month[m]));
+        csilk_json_array_append(expense_arr, csilk_json_number(expense_by_month[m]));
+    }
+    csilk_json_add_number(resp, "year", atoll(year_buf));
+    csilk_json_add_array(resp, "labels", labels);
+    csilk_json_add_array(resp, "income", income_arr);
+    csilk_json_add_array(resp, "expense", expense_arr);
+    respond_ok(c, resp);
+}
+
 void report_expense_category(csilk_ctx_t* c) {
     int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) { respond_unauthorized(c); return; }

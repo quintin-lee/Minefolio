@@ -40,6 +40,7 @@ extern void tags_suggestions(csilk_ctx_t* c);
 extern void transfers_create(csilk_ctx_t* c);
 extern void report_expense_monthly(csilk_ctx_t* c);
 extern void report_expense_trend(csilk_ctx_t* c);
+extern void report_expense_yearly(csilk_ctx_t* c);
 extern void report_expense_category(csilk_ctx_t* c);
 extern void report_expense_tag(csilk_ctx_t* c);
 extern void report_asset_trend(csilk_ctx_t* c);
@@ -252,6 +253,7 @@ int main(int argc, char** argv) {
     // Reports
     csilk_app_get(app, "/api/reports/expense/monthly", report_expense_monthly);
     csilk_app_get(app, "/api/reports/expense/trend", report_expense_trend);
+    csilk_app_get(app, "/api/reports/expense/yearly", report_expense_yearly);
     csilk_app_get(app, "/api/reports/expense/category", report_expense_category);
     csilk_app_get(app, "/api/reports/expense/tag", report_expense_tag);
     csilk_app_get(app, "/api/reports/asset/trend", report_asset_trend);
