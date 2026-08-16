@@ -5,9 +5,11 @@
         <div class="title-accent"></div>
         <h2>资产</h2>
       </div>
-      <el-button type="primary" class="action-btn" @click="openDialog()">
-        <el-icon><Plus /></el-icon> 新增资产
-      </el-button>
+      <div class="header-actions">
+        <el-button type="primary" class="action-btn" @click="openDialog()">
+          <el-icon><Plus /></el-icon> 新增资产
+        </el-button>
+      </div>
     </div>
 
     <!-- 总资产概览 -->

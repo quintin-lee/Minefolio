@@ -1,5 +1,11 @@
 <template>
   <div class="dashboard" v-loading="loading">
+    <div class="page-header">
+      <div class="header-title">
+        <div class="title-accent"></div>
+        <h2>仪表盘</h2>
+      </div>
+    </div>
     <!-- 资产概览卡片 -->
     <el-row :gutter="20" class="summary-cards">
       <el-col :xs="12" :sm="12" :md="6">
