@@ -169,9 +169,9 @@ onMounted(loadDashboard)
 .dashboard {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--mf-spacing-md);
   height: 100%;
-  overflow: hidden;
+  overflow: auto;
 }
 
 .stat-content {
