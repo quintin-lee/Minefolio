@@ -58,7 +58,8 @@
               <h3>分类列表</h3>
             </div>
             <div class="panel-body-scroll">
-              <el-table :data="filteredFlatCategories" class="premium-table" row-class-name="premium-row" header-cell-class-name="premium-header">
+              <el-table :data="filteredFlatCategories" class="premium-table" header-cell-class-name="premium-header"
+                :row-class-name="rowClassName" @row-click="onRowClick">
                 <el-table-column prop="name" label="名称" min-width="140">
                   <template #default="{ row }">
                     <span class="cat-name-cell">
@@ -169,6 +170,7 @@ const categoryStore = useCategoryStore()
 
 const activeTab = ref<'all' | 'asset' | 'expense' | 'income' | 'transaction'>('all')
 const categories = ref<Category[]>([])
+const selectedId = ref<number | null>(null)
 
 const filteredCategories = computed(() => {
   if (activeTab.value === 'all') return categories.value
@@ -262,7 +264,17 @@ function flatten(list: Category[]): Category[] {
   return out
 }
 
-function onNodeClick(data: any) { /* select for editing */ }
+function onNodeClick(data: any) {
+  selectedId.value = data?.id ?? null
+}
+
+function rowClassName({ row }: { row: any }) {
+  return row.id === selectedId.value ? 'premium-row row-selected' : 'premium-row'
+}
+
+function onRowClick(row: any) {
+  selectedId.value = row.id
+}
 
 function categoryTypeLabel(t: CategoryType) {
   if (t === 'asset') return '资产'
@@ -649,6 +661,10 @@ onMounted(loadData)
 
 :deep(.premium-row:hover > td) {
   background-color: rgba(0, 212, 255, 0.04) !important;
+}
+
+:deep(.el-table__row.row-selected td) {
+  background-color: rgba(0, 212, 255, 0.1) !important;
 }
 
 .text-muted {
