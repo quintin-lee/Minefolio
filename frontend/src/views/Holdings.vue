@@ -1,7 +1,10 @@
 <template>
   <div class="holdings-page">
     <div class="page-header">
-      <h2>持仓</h2>
+      <div class="header-title">
+        <div class="title-accent"></div>
+        <h2>持仓</h2>
+      </div>
       <div class="header-actions">
         <el-button :icon="Refresh" circle @click="load" />
       </div>
