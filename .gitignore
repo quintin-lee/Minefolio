@@ -14,3 +14,8 @@ frontend/dist-mobile/
 .playwright-cli/
 .omo/
 deps/
+playwright-*/
+
+.npm_cache/
+.pw_tmp/
+frontend/dist_bak_*/
