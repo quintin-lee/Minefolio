@@ -1,6 +1,6 @@
 <template>
   <el-container class="layout-container">
-    <el-aside width="260px" class="aside">
+    <el-aside width="260px" class="aside" :class="{ 'is-open': mobileMenuOpen }">
       <div class="logo">
         <div class="logo-icon-wrapper">💰</div>
         <span class="logo-text">Minefolio</span>
