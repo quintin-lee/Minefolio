@@ -18,6 +18,13 @@ export interface ExpenseTrend {
   expense: number[]
 }
 
+export interface ExpenseYearlyReport {
+  year: number
+  labels: string[]
+  income: number[]
+  expense: number[]
+}
+
 export interface ExpenseCategoryBreakdown {
   period: string
   items: { name: string; amount: number; pct: number }[]
@@ -112,6 +119,10 @@ export const reportsApi = {
   expenseTrend: (months = 6) =>
     http.get<ExpenseTrend, ExpenseTrend>('/reports/expense/trend', {
       params: { months },
+    }),
+  expenseYearly: (year?: number) =>
+    http.get<ExpenseYearlyReport, ExpenseYearlyReport>('/reports/expense/yearly', {
+      params: { year },
     }),
   expenseCategory: (year?: number, month?: number) =>
     http.get<ExpenseCategoryBreakdown, ExpenseCategoryBreakdown>('/reports/expense/category', {

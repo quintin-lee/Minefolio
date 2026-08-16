@@ -36,7 +36,7 @@
         <el-card shadow="hover" class="stat-card monthly">
           <div class="stat-content">
             <div class="stat-label">本月结余</div>
-            <div class="stat-value">{{ formatCurrency(monthlyExpenses?.balance ?? 0) }}</div>
+            <div class="stat-value">{{ formatCurrency(currentMonthBalance?.balance ?? 0) }}</div>
           </div>
         </el-card>
       </el-col>
@@ -68,23 +68,23 @@
     </el-row>
 
     <el-row :gutter="20" class="charts-row">
-      <!-- 月度收支 -->
+      <!-- 年度收支 -->
       <el-col :span="12">
         <el-card shadow="hover" class="chart-card">
           <template #header>
             <div class="card-header">
-              <span class="header-title">月度收支</span>
+              <span class="header-title">年度收支</span>
               <el-date-picker
-                v-model="currentMonth"
-                type="month"
-                placeholder="选择月份"
+                v-model="currentYear"
+                type="year"
+                placeholder="选择年份"
                 size="small"
                 class="header-date-picker"
-                @change="loadMonthly"
+                @change="loadYearly"
               />
             </div>
           </template>
-          <MonthlyChart :data="monthlyExpenses" />
+          <YearlyChart :data="yearlyExpenses" />
         </el-card>
       </el-col>
       <!-- 近期收支记录 -->
@@ -124,19 +124,21 @@ import { ref, onMounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { summaryApi } from '@/api/summary'
 import { dailyExpensesApi } from '@/api/daily_expenses'
+import { reportsApi } from '@/api/reports'
 import type { Summary, DailyExpense } from '@/types'
 import NetWorthChart from '@/components/NetWorthChart.vue'
 import AssetBreakdownPie from '@/components/AssetBreakdownPie.vue'
-import MonthlyChart from '@/components/MonthlyChart.vue'
+import YearlyChart from '@/components/YearlyChart.vue'
 
 const loading = ref(true)
 const summary = ref<Summary>({
   total_assets: 0, total_liabilities: 0, net_worth: 0,
   breakdown: [], trend: [],
 })
-const monthlyExpenses = ref<any>(null)
+const yearlyExpenses = ref<any>(null)
+const currentMonthBalance = ref<any>(null)
 const recentExpenses = ref<DailyExpense[]>([])
-const currentMonth = ref(new Date())
+const currentYear = ref(new Date())
 
 function formatCurrency(val: number) {
   return new Intl.NumberFormat('zh-CN', {
@@ -149,7 +151,7 @@ async function loadDashboard() {
   try {
     const res = await summaryApi.get()
     summary.value = res
-    await Promise.allSettled([loadMonthly(), loadRecent()])
+    await Promise.allSettled([loadYearly(), loadCurrentMonth(), loadRecent()])
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.message || '仪表盘数据加载失败')
   } finally {
@@ -157,10 +159,14 @@ async function loadDashboard() {
   }
 }
 
-async function loadMonthly() {
-  const d = currentMonth.value
-  const res = await dailyExpensesApi.monthly(d.getFullYear(), d.getMonth() + 1)
-  monthlyExpenses.value = res
+async function loadYearly() {
+  const year = currentYear.value.getFullYear()
+  yearlyExpenses.value = await reportsApi.expenseYearly(year)
+}
+
+async function loadCurrentMonth() {
+  const now = new Date()
+  currentMonthBalance.value = await dailyExpensesApi.monthly(now.getFullYear(), now.getMonth() + 1)
 }
 
 async function loadRecent() {
