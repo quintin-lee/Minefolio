@@ -152,7 +152,7 @@ async function handleExport() {
 
 <style scoped>
 .settings-page {
-  padding: 24px;
+
   background-color: var(--mf-background);
   height: 100%;
   overflow: hidden;
@@ -165,7 +165,7 @@ async function handleExport() {
 .panel-container {
   background: var(--mf-surface);
   border-radius: var(--mf-radius-lg);
-  padding: 24px;
+
   box-shadow: var(--mf-shadow-sm);
   border: 1px solid var(--mf-border);
 }

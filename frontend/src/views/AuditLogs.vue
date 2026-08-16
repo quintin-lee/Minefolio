@@ -125,7 +125,7 @@ onMounted(async () => {
 
 <style scoped>
 .audit-logs-page {
-  padding: 24px;
+
   background-color: var(--mf-background);
   height: 100%;
   overflow: hidden;

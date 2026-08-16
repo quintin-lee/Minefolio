@@ -390,7 +390,6 @@ async function handleImport() {
 
 <style scoped>
 .daily-expenses-page {
-  padding: 24px;
   background-color: var(--mf-background);
   height: 100%;
   overflow: hidden;
@@ -498,8 +497,6 @@ async function handleImport() {
 }
 
 .table-container :deep(.el-table__body-wrapper) {
-  overflow-y: auto;
-
   overflow-y: auto;
 }
 

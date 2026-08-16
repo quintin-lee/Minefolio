@@ -724,7 +724,7 @@ async function handleImport() {
 
 <style scoped>
 .transactions-page {
-  padding: 24px;
+
   background-color: var(--mf-background);
   height: 100%;
   overflow: hidden;

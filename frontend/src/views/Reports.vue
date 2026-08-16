@@ -270,7 +270,7 @@ onMounted(loadAll)
 
 <style scoped>
 .reports-page {
-  padding: 24px;
+
   background-color: var(--mf-background);
   height: 100%;
   overflow: hidden;

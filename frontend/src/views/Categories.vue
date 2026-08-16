@@ -419,7 +419,7 @@ onMounted(loadData)
 
 <style scoped>
 .categories-page {
-  padding: 24px;
+
   padding-bottom: 0;
   background-color: var(--mf-background);
   height: 100%;
@@ -695,7 +695,7 @@ onMounted(loadData)
 
 :deep(.premium-dialog .el-dialog__header) {
   margin: 0;
-  padding: 24px;
+
   border-bottom: 1px solid var(--mf-border);
   background: var(--mf-surface);
 }
