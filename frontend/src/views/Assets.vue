@@ -319,8 +319,6 @@ onMounted(async () => {
 
 .table-container :deep(.el-table__body-wrapper) {
   overflow-y: auto;
-
-  overflow-y: auto;
 }
 
 .premium-table {
