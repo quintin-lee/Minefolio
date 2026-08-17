@@ -18,6 +18,13 @@
       <el-col :span="8">
         <SummaryCard label="总浮动盈亏" :value="formatSigned(report?.summary.total_floating_pnl ?? 0)" :extraClass="floatCardClass" />
         <div class="summary-sub">({{ (report?.summary.floating_pct ?? 0).toFixed(2) }}%)</div>
+        <el-progress
+          :percentage="Math.abs(report?.summary.floating_pct ?? 0)"
+          :color="floatPnlColor"
+          :show-text="false"
+          :stroke-width="4"
+          class="pnl-progress"
+        />
       </el-col>
       <el-col :span="8">
         <SummaryCard label="总已实现盈亏" :value="formatSigned(report?.summary.total_realized_pnl ?? 0)" type="highlight" />
@@ -45,25 +52,25 @@
       <el-table :data="pagedHoldings" class="premium-table" row-class-name="premium-row" header-cell-class-name="premium-header" empty-text="">
         <el-table-column label="名称" min-width="140">
           <template #default="{ row }">
-            <span class="asset-name">{{ ASSET_ICONS[row.asset_type] ?? '📦' }} {{ row.name }}</span>
+            <span class="asset-name"><Icon :icon="ASSET_ICONS[row.asset_type] ?? 'ph:briefcase'" /> {{ row.name }}</span>
           </template>
         </el-table-column>
         <el-table-column label="类型" width="100">
           <template #default="{ row }">
-            <el-tag size="small" :type="typeTag(row.asset_type)">{{ typeLabel(row.asset_type) }}</el-tag>
+            <span :class="['type-pill', typePillClass(row.asset_type)]">{{ typeLabel(row.asset_type) }}</span>
           </template>
         </el-table-column>
         <el-table-column label="份额" width="110" align="right">
-          <template #default="{ row }">{{ row.quantity.toFixed(2) }}</template>
+          <template #default="{ row }"><span class="mf-mono">{{ row.quantity.toFixed(2) }}</span></template>
         </el-table-column>
         <el-table-column label="净值" width="110" align="right">
-          <template #default="{ row }">{{ row.net_value.toFixed(4) }}</template>
+          <template #default="{ row }"><span class="mf-mono">{{ row.net_value.toFixed(4) }}</span></template>
         </el-table-column>
         <el-table-column label="成本" width="120" align="right">
-          <template #default="{ row }">{{ formatCurrency(row.cost_basis) }}</template>
+          <template #default="{ row }"><span class="mf-mono">{{ formatCurrency(row.cost_basis) }}</span></template>
         </el-table-column>
         <el-table-column label="市值" width="120" align="right">
-          <template #default="{ row }">{{ formatCurrency(row.current_value) }}</template>
+          <template #default="{ row }"><span class="mf-mono">{{ formatCurrency(row.current_value) }}</span></template>
         </el-table-column>
         <el-table-column label="浮动盈亏" width="120" align="right">
           <template #default="{ row }">
@@ -72,7 +79,10 @@
         </el-table-column>
         <el-table-column label="盈亏率" width="100" align="right">
           <template #default="{ row }">
-            <span :class="pnlClass(row.floating_pnl)">{{ row.floating_pct.toFixed(2) }}%</span>
+            <span :class="pnlClass(row.floating_pnl)">
+              {{ row.floating_pnl > 0 ? '↑' : row.floating_pnl < 0 ? '↓' : '—' }}
+              {{ row.floating_pct.toFixed(2) }}%
+            </span>
           </template>
         </el-table-column>
         <el-table-column label="已实现盈亏" width="120" align="right">
@@ -102,6 +112,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
+import { Icon } from '@iconify/vue'
 import { reportsApi, type HoldingsReport } from '@/api/reports'
 import HoldingsTypePie from '@/components/HoldingsTypePie.vue'
 import HoldingsCostBar from '@/components/HoldingsCostBar.vue'
@@ -124,10 +135,10 @@ function handleSizeChange() {
 }
 
 const ASSET_ICONS: Record<string, string> = {
-  stock: '📈',
-  fund: '📊',
-  bond: '📉',
-  crypto: '🪙',
+  stock: 'ph:trend-up',
+  fund: 'ph:trend-up',
+  bond: 'ph:trend-up',
+  crypto: 'ph:crypto',
 }
 const TYPE_LABELS: Record<string, string> = {
   stock: '股票',
@@ -148,6 +159,9 @@ function typeLabel(t: string): string {
 function typeTag(t: string): 'primary' | 'success' | 'warning' | 'danger' | 'info' {
   return TYPE_TAGS[t] ?? 'info'
 }
+function typePillClass(t: string): string {
+  return t === 'crypto' ? 'pill-crypto' : 'pill-default'
+}
 function pnlClass(v: number): string {
   return v > 0 ? 'income-text' : v < 0 ? 'expense-text' : ''
 }
@@ -157,6 +171,11 @@ const floatCardClass = computed(() => {
   if (pnl > 0) return 'profit-card'
   if (pnl < 0) return 'loss-card'
   return ''
+})
+
+const floatPnlColor = computed(() => {
+  const pnl = report.value?.summary.total_floating_pnl ?? 0
+  return pnl >= 0 ? '#10b981' : '#ef4444'
 })
 
 const typeShare = computed(() => {
@@ -247,5 +266,33 @@ onMounted(() => {
 }
 .asset-name {
   font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.type-pill {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  background: rgba(0, 212, 255, 0.08);
+  color: #00d4ff;
+  border: 1px solid rgba(0, 212, 255, 0.15);
+  font-weight: 500;
+}
+.type-pill.pill-crypto {
+  background: rgba(124, 58, 237, 0.08);
+  color: #a78bfa;
+  border-color: rgba(124, 58, 237, 0.15);
+}
+
+.pnl-progress {
+  margin-top: 6px;
+  width: 100%;
+}
+
+.mf-mono {
+  font-variant-numeric: tabular-nums;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
 }
 </style>
