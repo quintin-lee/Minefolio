@@ -157,8 +157,12 @@
           <el-table-column label="操作" width="120" align="center" fixed="right">
             <template #default="{ row }">
               <div class="action-buttons">
-                <el-button link type="primary" @click="openDialog(row)">编辑</el-button>
-                <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
+                <el-tooltip content="编辑" placement="top">
+                  <el-button link type="primary" size="small" :icon="Edit" @click="openDialog(row)" />
+                </el-tooltip>
+                <el-tooltip content="删除" placement="top">
+                  <el-button link type="danger" size="small" :icon="Delete" @click="handleDelete(row)" />
+                </el-tooltip>
               </div>
             </template>
           </el-table-column>
@@ -347,7 +351,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Download, Upload, UploadFilled, SuccessFilled } from '@element-plus/icons-vue'
+import { Plus, Download, Upload, UploadFilled, SuccessFilled, Edit, Delete } from '@element-plus/icons-vue'
 import { transactionsApi } from '@/api/transactions'
 import { assetsApi } from '@/api/assets'
 import { useCategoryStore } from '@/stores/category'
@@ -849,6 +853,19 @@ async function handleImport() {
 .premium-table {
   --el-table-border-color: transparent;
   --el-table-header-bg-color: rgba(0, 212, 255, 0.06);
+}
+.premium-table .el-table__row {
+  position: relative;
+  transition: background 0.2s ease;
+}
+.premium-table .el-table__row:hover td:first-child::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 2px;
+  background: var(--mf-primary);
+  box-shadow: 0 0 8px rgba(0, 212, 255, 0.6);
+  border-radius: 0 2px 2px 0;
 }
 
 .pagination-bar {
