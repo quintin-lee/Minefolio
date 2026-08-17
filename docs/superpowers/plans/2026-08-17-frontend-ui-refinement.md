@@ -192,11 +192,48 @@ import { Icon } from '@iconify/vue'
 }
 ```
 
-- [ ] **Step 5: 标题竖条加宽**
+- [ ] **Step 5: 侧边栏活跃项样式**
 
-将 `.title-accent` 的 `width: 3px` 改为 `width: 4px`，`box-shadow` 增强为 `0 0 10px rgba(0,212,255,0.6)`。
+在 `<style scoped>` 中追加：
+```css
+/* 活跃菜单项左侧蓝色竖条高亮 */
+.sidebar-menu .el-menu-item.is-active::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 4px; bottom: 4px;
+  width: 3px;
+  background: var(--mf-primary);
+  border-radius: 0 2px 2px 0;
+  box-shadow: 0 0 8px rgba(0, 212, 255, 0.5);
+}
+.sidebar-menu .el-menu-item {
+  position: relative;
+  border-radius: 0 8px 8px 0;
+  margin-right: 0;
+}
+```
 
-- [ ] **Step 6: 验证构建**
+- [ ] **Step 6: 导航图标替换为 Phosphor**
+
+将各 `<el-icon><DataAnalysis /></el-icon>` 等 Element Plus 图标替换为 Phosphor（通过 Iconify）：
+
+| 菜单项 | 原图标 | 替换为 |
+|--------|--------|--------|
+| Dashboard | `DataAnalysis` | `ph:chart-line` |
+| Assets | `Wallet` | `ph:wallet` |
+| Holdings | `TrendCharts` | `ph:chart-bar` |
+| Transactions | `List` | `ph:list` |
+| DailyExpenses | `Money` | `ph:currency-cny` |
+| Categories | `Folder` | `ph:folder` |
+| Reports | `PieChart` | `ph:pie-chart` |
+| AuditLogs | `List` | `ph:scroll` |
+| Settings | `Setting` | `ph:gear` |
+
+在 `<script setup>` 中将所有 `import { Xxx } from '@element-plus/icons-vue'` 中的导航图标改为 `import { Icon } from '@iconify/vue'`，模板改为 `<Icon icon="ph:xxx" />`。
+
+> 注意：`Grid`（hamburger 按钮）和 `Refresh` 等仍在用 Element Plus 图标，不替换。
+
+- [ ] **Step 7: 验证构建**
 
 ```bash
 npm --prefix frontend run build 2>&1 | tail -5
@@ -204,11 +241,11 @@ npm --prefix frontend run build 2>&1 | tail -5
 
 Expected: `✓ built in ...`
 
-- [ ] **Step 7: 提交**
+- [ ] **Step 8: 提交**
 
 ```bash
-git add frontend/src/views/Layout.vue frontend/src/styles/index.css
-git commit -m "feat(ui): replace logo emoji with Phosphor Wallet icon + gradient text"
+git add frontend/src/views/Layout.vue
+git commit -m "feat(ui): replace logo emoji with Phosphor Wallet icon + sidebar active indicator"
 ```
 
 ---
@@ -296,6 +333,36 @@ const sparklinePoints = computed(() => {
       <div class="stat-label">{{ card.label }}</div>
       <div class="stat-value">{{ card.value }}</div>
     </div>
+    <!-- sparkline: 仅净资产和总资产有趋势数据 -->
+    <SummaryCard
+      v-if="card.hasSparkline"
+      :label="card.label"
+      :value="card.value"
+      :type="card.type"
+      :sparkline="last7"
+      class="stat-card-sparkline"
+    />
+  </el-card>
+```
+
+> 说明：直接用 `<SummaryCard>` 复用组件会重复渲染，更简洁的做法是在原有卡片内嵌 sparkline。
+> 实际实现：在 Dashboard.vue 的原有 `<el-col>` 结构中，直接在 `.stat-content` 后插入 sparkline div，无需改 SummaryCard。
+
+修正后的模板（保留原有 el-col/el-card 结构，仅在 stat-content 后加 sparkline）：
+
+```html
+<el-col :xs="12" :sm="12" :md="6" v-for="(card, i) in statCards" :key="i" :class="'mf-stagger-' + (i+1)">
+  <el-card shadow="hover" class="stat-card" :class="card.cls">
+    <div class="stat-content">
+      <div class="stat-label">{{ card.label }}</div>
+      <div class="stat-value">{{ card.value }}</div>
+      <!-- sparkline：净资产卡片右侧 -->
+      <div v-if="card.showSparkline && last7.length > 1" class="sparkline-wrap">
+        <svg class="sparkline" viewBox="0 0 60 20" preserveAspectRatio="none">
+          <polyline :points="sparklinePoints" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </div>
+    </div>
   </el-card>
 </el-col>
 ```
@@ -307,12 +374,42 @@ const last7 = computed(() => {
   return t.slice(-7).map(d => d.net_worth)
 })
 
+const sparklinePoints = computed(() => {
+  const data = last7.value
+  if (data.length < 2) return ''
+  const max = Math.max(...data)
+  const min = Math.min(...data)
+  const range = max - min || 1
+  const w = 60, h = 20
+  return data.map((v, i) => `${(i / (data.length - 1)) * w},${h - ((v - min) / range) * h}`).join(' ')
+})
+
 const statCards = computed(() => [
-  { label: '总资产', value: formatCurrency(summary.value.total_assets), cls: 'assets' },
-  { label: '总负债', value: formatCurrency(summary.value.total_liabilities), cls: 'liabilities' },
-  { label: '净资产', value: formatCurrency(summary.value.net_worth), cls: 'networth' },
-  { label: '本月结余', value: formatCurrency(currentMonthBalance?.balance ?? 0), cls: 'monthly' },
+  { label: '总资产', value: formatCurrency(summary.value.total_assets), cls: 'assets', showSparkline: true },
+  { label: '总负债', value: formatCurrency(summary.value.total_liabilities), cls: 'liabilities', showSparkline: false },
+  { label: '净资产', value: formatCurrency(summary.value.net_worth), cls: 'networth', showSparkline: true },
+  { label: '本月结余', value: formatCurrency(currentMonthBalance?.balance ?? 0), cls: 'monthly', showSparkline: false },
 ])
+```
+
+在 Dashboard.vue scoped style 中追加 sparkline 容器样式：
+```css
+.stat-content {
+  position: relative;
+  padding: 4px 4px;
+}
+.sparkline-wrap {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  width: 60px;
+  height: 20px;
+  opacity: 0.6;
+}
+.sparkline {
+  width: 100%;
+  height: 100%;
+}
 ```
 
 - [ ] **Step 3: 数字字号放大**
@@ -349,8 +446,8 @@ git commit -m "feat(ui): add sparkline to SummaryCard + enlarge Dashboard stat n
 ### Task 5: Dashboard 图表区域精修
 
 **Files:**
-- Modify: `frontend/src/components/NetWorthChart.vue`（如有必要调整高度）
-- Modify: `frontend/src/components/AssetBreakdownPie.vue`（标签外移）
+- Modify: `frontend/src/views/Dashboard.vue`（高度、表格行高）
+- Modify: `frontend/src/components/AssetBreakdownPie.vue`（标签外移加连接线）
 
 - [ ] **Step 1: 净资产趋势图高度增加**
 
@@ -363,17 +460,49 @@ git commit -m "feat(ui): add sparkline to SummaryCard + enlarge Dashboard stat n
 
 ```css
 .nw-chart-wrap {
-  height: 320px;  /* 原约 280px */
+  height: 320px;  /* 原约 300px（NetWorthChart.vue line 2: style="height: 300px"） */
 }
 ```
 
-- [ ] **Step 2: 年度收支柱状图 tooltip 精度**
+- [ ] **Step 2: 资产分布饼图标签外移加连接线**
 
-检查 `YearlyChart.vue` 的 tooltip formatter，确保显示完整金额（不加单位缩写）。
+修改 `frontend/src/components/AssetBreakdownPie.vue` 中 `series[0]` 配置：
+
+将：
+```js
+label: { show: false, position: 'center' },
+labelLine: { show: false },
+emphasis: {
+  label: { show: true, fontSize: 16, fontWeight: 'bold', color: '#e2e8f0', formatter: '{b}\n{d}%' },
+},
+```
+替换为：
+```js
+label: {
+  show: true,
+  position: 'outside',
+  formatter: '{b}: {d}%',
+  color: '#94a3b8',
+  fontSize: 12,
+  lineHeight: 18,
+},
+labelLine: {
+  show: true,
+  length: 12,
+  length2: 20,
+  lineStyle: { color: 'rgba(148,163,184,0.4)' },
+},
+emphasis: {
+  label: { show: true, fontSize: 14, fontWeight: 'bold', color: '#e2e8f0' },
+  itemStyle: { shadowBlur: 16, shadowOffsetX: 0, shadowColor: 'rgba(0,212,255,0.4)' },
+},
+```
+
+同时将 `center` 从 `['35%', '50%']` 移到 `['42%', '50%']` 为右侧 legend 留出空间。
 
 - [ ] **Step 3: 最近收支表格精简**
 
-将当前 4 列表格（日期/分类/类型/金额）改为 3 列，隐藏"类型"列（通过 `display: none` 或移除 column），行高收紧：
+将 Dashboard.vue 中最近收支表格的"类型"列（`expense_type` 列，line 101-107）移除或设为 `width: 0` + `:show-overflow-tooltip="false"` 隐藏。行高收紧：
 ```css
 :deep(.el-table .el-table__row) {
   height: 40px;
@@ -395,13 +524,13 @@ Expected: `✓ built in ...`
 - [ ] **Step 5: 提交**
 
 ```bash
-git add frontend/src/views/Dashboard.vue
-git commit -m "feat(ui): refine Dashboard charts + recent expenses table density"
+git add frontend/src/views/Dashboard.vue frontend/src/components/AssetBreakdownPie.vue
+git commit -m "feat(ui): refine Dashboard charts + pie label outside with connector lines"
 ```
 
 ---
 
-## Chunk 4: Transactions 表格与筛选优化
+## Chunk 4: Transactions 表格与筛选优化 + Login 背景动画
 
 ### Task 6: Transactions 统计卡片加左侧竖条
 
@@ -460,7 +589,42 @@ const summaryCards = [
 
 - [ ] **Step 2: 导出/导入按钮改为 icon-only**
 
-将"导出 CSV"和"导入 CSV"按钮改为仅显示图标的 `<el-tooltip>` + `<el-button :icon="Download"/:icon="Upload">` 形式，去除文字。
+在 `<script setup>` 中确认已有以下导入（若没有则新增）：
+```ts
+import { Download, Upload } from '@element-plus/icons-vue'
+```
+
+将模板中的：
+```html
+<el-button class="action-btn" style="background:var(--mf-surface);color:var(--mf-text-main);border-color:var(--mf-border)" @click="exportCsv">
+  <el-icon><Download /></el-icon> 导出 CSV
+</el-button>
+<el-button class="action-btn" style="background:var(--mf-surface);color:var(--mf-text-main);border-color:var(--mf-border)" @click="importDialogVisible = true">
+  <el-icon><Upload /></el-icon> 导入 CSV
+</el-button>
+```
+改为：
+```html
+<el-tooltip content="导出 CSV" placement="bottom">
+  <el-button :icon="Download" circle class="action-icon-btn" @click="exportCsv" />
+</el-tooltip>
+<el-tooltip content="导入 CSV" placement="bottom">
+  <el-button :icon="Upload" circle class="action-icon-btn" @click="importDialogVisible = true" />
+</el-tooltip>
+```
+
+在 scoped style 中追加：
+```css
+.action-icon-btn {
+  background: var(--mf-surface) !important;
+  border-color: var(--mf-border) !important;
+  color: var(--mf-text-muted) !important;
+}
+.action-icon-btn:hover {
+  border-color: var(--mf-border-hover) !important;
+  color: var(--mf-primary) !important;
+}
+```
 
 - [ ] **Step 3: 验证构建**
 
@@ -724,7 +888,7 @@ git commit -m "feat(ui): replace Holdings emoji icons, add PnL progress bar + ty
 
 ---
 
-## Chunk 7: Reports 空状态 + App.vue 路由过渡
+## Chunk 7: Reports 空状态 + Login 背景动画 + App.vue 路由过渡
 
 ### Task 10: Reports 空状态 CSS 渐变圆
 
@@ -740,6 +904,7 @@ git commit -m "feat(ui): replace Holdings emoji icons, add PnL progress bar + ty
   <p>暂无收支数据，完成第一笔交易后这里会出现图表</p>
 </div>
 ```
+对其他两处（line 93、152）同理，替换为 `<div class="mf-empty-state"><div class="mf-empty-circle"></div><p>对应描述文字</p></div>`。
 
 - [ ] **Step 2: 追加空状态样式**
 
@@ -768,6 +933,49 @@ git commit -m "feat(ui): replace Holdings emoji icons, add PnL progress bar + ty
 }
 ```
 
+- [ ] **Step 3: 报表表格数字 tabular-nums**
+
+找到 Reports.vue 中的数值显示列（收入/支出/结余金额），为数值 span 加 `class="mf-mono"`（全局工具类已在 Task 2 定义）。
+
+- [ ] **Step 4: 验证构建**
+
+```bash
+npm --prefix frontend run build 2>&1 | tail -5
+```
+
+Expected: `✓ built in ...`
+
+- [ ] **Step 5: 提交**
+
+```bash
+git add frontend/src/views/Reports.vue
+git commit -m "feat(ui): replace el-empty with CSS gradient empty state + tabular-nums in Reports"
+```
+
+---
+
+### Task 10b: Login 页背景渐变动画
+
+**Files:**
+- Modify: `frontend/src/views/Login.vue`
+
+- [ ] **Step 1: 确认现有背景**
+
+查看 `Login.vue` 的 `<style scoped>` 中 `.login-container` 的背景样式。若已有 canvas/particle 背景则跳过，仅在静态背景处添加渐变动画。
+
+- [ ] **Step 2: 添加渐变动画**
+
+在 `<style scoped>` 中为 `.login-container` 追加：
+```css
+.login-container {
+  /* 若有已有背景属性，在此之上追加 */
+  background-size: 400% 400%;
+  animation: mf-gradient-shift 15s ease infinite;
+}
+```
+
+`mf-gradient-shift` keyframes 已在 Task 2 的全局 CSS 中定义，无需重复。
+
 - [ ] **Step 3: 验证构建**
 
 ```bash
@@ -779,8 +987,8 @@ Expected: `✓ built in ...`
 - [ ] **Step 4: 提交**
 
 ```bash
-git add frontend/src/views/Reports.vue
-git commit -m "feat(ui): replace el-empty with CSS gradient empty state in Reports"
+git add frontend/src/views/Login.vue
+git commit -m "feat(ui): add gradient shift animation to Login page background"
 ```
 
 ---
@@ -802,10 +1010,12 @@ git commit -m "feat(ui): replace el-empty with CSS gradient empty state in Repor
 ```html
 <template>
   <Transition name="mf-route" mode="out-in">
-    <router-view />
+    <router-view :key="$route.fullPath" />
   </Transition>
 </template>
 ```
+
+> `:key="$route.fullPath"` 是必需的——Vue Router 在不同路径但相同组件时（如 dashboard 和其他页面）默认复用组件实例，不加 key 则 Transition 不会触发。
 
 - [ ] **Step 2: 追加路由过渡样式**
 
