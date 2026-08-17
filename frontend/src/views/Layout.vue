@@ -2,44 +2,46 @@
   <el-container class="layout-container">
     <el-aside width="260px" class="aside" :class="{ 'is-open': mobileMenuOpen }">
       <div class="logo">
-        <div class="logo-icon-wrapper">💰</div>
+        <div class="logo-icon-wrapper">
+          <Icon icon="ph:wallet" class="logo-icon-phosphor" />
+        </div>
         <span class="logo-text">Minefolio</span>
       </div>
       <el-menu :default-active="activeMenu" class="sidebar-menu">
         <el-menu-item index="/dashboard" @click="goTo('/dashboard')">
-          <el-icon><DataAnalysis /></el-icon>
+          <Icon icon="ph:chart-line" class="nav-icon" />
           <span>{{ t('nav.dashboard') }}</span>
         </el-menu-item>
         <el-menu-item index="/assets" @click="goTo('/assets')">
-          <el-icon><Wallet /></el-icon>
+          <Icon icon="ph:wallet" class="nav-icon" />
           <span>{{ t('nav.assets') }}</span>
         </el-menu-item>
         <el-menu-item index="/holdings" @click="goTo('/holdings')">
-          <el-icon><TrendCharts /></el-icon>
+          <Icon icon="ph:chart-bar" class="nav-icon" />
           <span>{{ t('nav.holdings') }}</span>
         </el-menu-item>
         <el-menu-item index="/transactions" @click="goTo('/transactions')">
-          <el-icon><List /></el-icon>
+          <Icon icon="ph:list" class="nav-icon" />
           <span>{{ t('nav.transactions') }}</span>
         </el-menu-item>
         <el-menu-item index="/daily-expenses" @click="goTo('/daily-expenses')">
-          <el-icon><Money /></el-icon>
+          <Icon icon="ph:currency-cny" class="nav-icon" />
           <span>{{ t('nav.dailyExpenses') }}</span>
         </el-menu-item>
         <el-menu-item index="/categories" @click="goTo('/categories')">
-          <el-icon><Folder /></el-icon>
+          <Icon icon="ph:folder" class="nav-icon" />
           <span>{{ t('nav.categories') }}</span>
         </el-menu-item>
         <el-menu-item index="/reports" @click="goTo('/reports')">
-          <el-icon><PieChart /></el-icon>
+          <Icon icon="ph:pie-chart" class="nav-icon" />
           <span>{{ t('nav.reports') }}</span>
         </el-menu-item>
         <el-menu-item index="/audit-logs" @click="goTo('/audit-logs')">
-          <el-icon><List /></el-icon>
+          <Icon icon="ph:scroll" class="nav-icon" />
           <span>{{ t('nav.auditLogs') }}</span>
         </el-menu-item>
         <el-menu-item index="/settings" @click="goTo('/settings')">
-          <el-icon><Setting /></el-icon>
+          <Icon icon="ph:gear" class="nav-icon" />
           <span>{{ t('nav.settings') }}</span>
         </el-menu-item>
       </el-menu>
@@ -99,6 +101,7 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
 import { Grid } from '@element-plus/icons-vue'
+import { Icon } from '@iconify/vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
@@ -194,6 +197,11 @@ function handleCommand(cmd: string) {
   border: 1px solid rgba(0, 212, 255, 0.2);
   box-shadow: 0 0 12px rgba(0, 212, 255, 0.15);
 }
+.logo-icon-phosphor {
+  font-size: 22px;
+  color: var(--mf-primary);
+  filter: drop-shadow(0 0 6px rgba(0, 212, 255, 0.5));
+}
 .logo-text {
   font-size: 22px;
   font-weight: 700;
@@ -220,6 +228,17 @@ function handleCommand(cmd: string) {
 .sidebar-menu :deep(.el-menu-item .el-icon) {
   font-size: 20px;
   margin-right: 12px;
+}
+.sidebar-menu :deep(.nav-icon) {
+  font-size: 18px;
+  margin-right: 12px;
+  color: currentColor;
+  opacity: 0.7;
+  transition: opacity 0.2s ease;
+}
+.sidebar-menu :deep(.el-menu-item:hover .nav-icon),
+.sidebar-menu :deep(.el-menu-item.is-active .nav-icon) {
+  opacity: 1;
 }
 .sidebar-menu :deep(.el-menu-item:hover) {
   color: #e2e8f0;
