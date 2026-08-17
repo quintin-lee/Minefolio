@@ -19,7 +19,7 @@
 | 包名 | 用途 | 体积（gzip） |
 |------|------|-------------|
 | `@iconify/vue` | 图标渲染器 | ~4 KB |
-| `@iconify-icons/phosphor` | Phosphor 线性图标集 | ~30 KB |
+| `@iconify-icons/ph` | Phosphor 线性图标集（Iconify 格式） | ~30 KB |
 
 总计约 34 KB，对首屏加载影响可忽略。
 
@@ -100,13 +100,13 @@
 ### 统计卡片（4 张）
 
 - 数字字号 `26px → 36px`，`letter-spacing: -1px`
-- 每张卡片底部新增"较上月 ±X%"小字（从 summary API 计算或扩展）
-- 右上角内嵌 SVG 迷你 sparkline（近 7 天趋势），纯 CSS/SVG 实现，无新依赖
+- 右上角内嵌 SVG 迷你 sparkline（近 7 天净资产趋势）：数据直接复用现有 `/api/summary` 返回的 `trend: [{ date, net_worth }, ...]` 数组（后端已提供 30 天趋势），前端取最后 7 个点绘制
 - 颜色系统：
   - 资产：青色发光 `#00d4ff`
   - 负债：红色 `#f87171`
   - 净资产：绿色 `#34d399`
   - 本月结余：琥珀色 `#fbbf24`
+- "较上月 ±X%" 对比数据：当前 `/api/summary` 不返回上月值，**本期不做后端扩展**；该字段以占位符渲染（显示 `—`），后续单独 issue 扩展 API
 
 ### 图表区域
 
@@ -210,8 +210,8 @@
 
 ### 其他页面（Settings / AuditLogs / Setup / Login）
 
-- 不做大改，仅统一按钮/输入框样式
-- Login 页增加 CSS gradient 缓慢移动的微光背景动画
+- 不做大改，仅统一按钮/输入框样式（沿用全局 CSS 变量与 transition 时长）
+- Login 页增加 CSS gradient 缓慢移动的微光背景动画（`background-size: 400% 400%`，`animation: gradient-shift 15s ease infinite`）
 
 ---
 
@@ -220,14 +220,15 @@
 | 文件 | 变更类型 |
 |------|----------|
 | `frontend/src/styles/index.css` | 新增变量、动画 keyframes、全局样式精修 |
-| `frontend/src/views/Layout.vue` | Logo 图标、活跃项样式、路由切换动画 |
-| `frontend/src/views/Dashboard.vue` | 数字卡片、sparkline、图表配置 |
-| `frontend/src/views/Transactions.vue` | 表格样式、筛选面板、统计卡片 |
-| `frontend/src/views/Assets.vue` | emoji→图标、行样式 |
-| `frontend/src/views/Holdings.vue` | 进度条、表格数字对齐、饼图配置 |
-| `frontend/src/views/Reports.vue` | 图表配置、空状态 |
-| `frontend/src/views/Login.vue` | 背景动画 |
-| `frontend/package.json` | 新增 `@iconify/vue`、`@iconify-icons/phosphor` |
+| `frontend/src/App.vue` | 路由切换 `<Transition>` wrapper，注入 fade-in-up |
+| `frontend/src/views/Layout.vue` | Logo 图标、活跃项竖条高亮、侧边栏样式精修 |
+| `frontend/src/views/Dashboard.vue` | 数字卡片放大、sparkline（复用 summary.trend）、图表配置 |
+| `frontend/src/views/Transactions.vue` | 表格样式、筛选面板折叠、统计卡片竖条 |
+| `frontend/src/views/Assets.vue` | emoji→Phosphor 图标、行样式精修 |
+| `frontend/src/views/Holdings.vue` | 盈亏进度条、表格数字对齐、类型 pill 样式 |
+| `frontend/src/views/Reports.vue` | 图表配置增强、空状态 CSS 渐变圆 |
+| `frontend/src/views/Login.vue` | 背景渐变动画 |
+| `frontend/package.json` | 新增 `@iconify/vue`、`@iconify-icons/ph` |
 
 ---
 
@@ -240,4 +241,4 @@
 5. 数字使用 monospace 字体，tabular-nums 对齐
 6. Dashboard 统计卡片有迷你 sparkline
 7. Holdings 盈亏有进度条可视化
-8. 构建无 TypeScript 错误，测试通过
+8. 构建无 TypeScript 错误，backend 测试通过（`bash backend/tests/test_link.sh`）
