@@ -737,12 +737,12 @@ body {
 }
 
 .title-accent {
-  width: 3px;
+  width: 4px;
   height: 20px;
   background: linear-gradient(180deg, var(--mf-primary), var(--mf-accent));
   border-radius: 2px;
   flex-shrink: 0;
-  box-shadow: 0 0 8px rgba(0, 212, 255, 0.5);
+  box-shadow: 0 0 10px rgba(0, 212, 255, 0.6);
 }
 
 /* Fade animation */
