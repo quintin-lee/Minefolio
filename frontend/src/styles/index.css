@@ -768,3 +768,68 @@ body {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.6; transform: scale(0.85); }
 }
+
+/* ── UI Refinement: glow layers ── */
+:root {
+  --mf-glow-subtle: 0 0 8px rgba(0, 212, 255, 0.15);
+  --mf-glow-medium: 0 0 16px rgba(0, 212, 255, 0.25);
+}
+
+/* ── UI Refinement: animation keyframes ── */
+@keyframes mf-fade-in-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes mf-gradient-shift {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* ── UI Refinement: utility classes ── */
+.mf-animate-in {
+  animation: mf-fade-in-up 0.3s ease-out both;
+}
+
+.mf-stagger-1 { animation-delay: 0ms; }
+.mf-stagger-2 { animation-delay: 60ms; }
+.mf-stagger-3 { animation-delay: 120ms; }
+.mf-stagger-4 { animation-delay: 180ms; }
+
+/* ── UI Refinement: table row left-glow on hover ── */
+.mf-table-row-glow .el-table__row {
+  position: relative;
+  transition: background 0.2s ease;
+}
+.mf-table-row-glow .el-table__row:hover td:first-child::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 2px;
+  background: var(--mf-primary);
+  box-shadow: 0 0 8px rgba(0, 212, 255, 0.6);
+  border-radius: 0 2px 2px 0;
+}
+
+/* ── UI Refinement: button press scale ── */
+.mf-btn-press {
+  transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.mf-btn-press:active {
+  transform: scale(0.97);
+}
+
+/* ── UI Refinement: tabular-nums utility ── */
+.mf-mono {
+  font-variant-numeric: tabular-nums;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+/* ── UI Refinement: logo text gradient ── */
+.mf-logo-text {
+  background: linear-gradient(135deg, #00d4ff 0%, #a78bfa 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
