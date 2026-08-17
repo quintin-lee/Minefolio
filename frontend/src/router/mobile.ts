@@ -21,6 +21,7 @@ const router = createRouter({
         { path: 'expenses', name: 'MobileExpenses', component: () => import('@/views-mobile/DailyExpensesMobile.vue') },
         { path: 'transactions', name: 'MobileTransactions', component: () => import('@/views-mobile/TransactionsMobile.vue') },
         { path: 'assets', name: 'MobileAssets', component: () => import('@/views-mobile/AssetsMobile.vue') },
+        { path: 'holdings', name: 'MobileHoldings', component: () => import('@/views-mobile/HoldingsMobile.vue') },
         { path: 'reports', name: 'MobileReports', component: () => import('@/views-mobile/ReportsMobile.vue') },
         { path: 'settings', name: 'MobileSettings', component: () => import('@/views-mobile/SettingsMobile.vue') },
       ],

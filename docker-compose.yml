@@ -11,6 +11,7 @@ services:
     environment:
       MINEFOLIO_JWT_SECRET: "${MINEFOLIO_JWT_SECRET:-change-me-in-production}"
       MINEFOLIO_DB_DSN: "/app/data/minefolio.db"
+      MINEFOLIO_ENABLE_CSRF: "1"
     volumes:
       - minefolio-data:/app/data
     restart: unless-stopped

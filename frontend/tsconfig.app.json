@@ -17,7 +17,9 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": true,
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@iconify/vue": ["/home/quintin/Data/source/c_cpp/Minefolio/.iconify_cache/@iconify/vue"],
+      "@iconify-icons/ph": ["/home/quintin/Data/source/c_cpp/Minefolio/.iconify_cache/@iconify-icons/ph"]
     }
   },
   "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.vue"]

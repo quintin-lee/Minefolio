@@ -34,5 +34,6 @@ declare module 'vue' {
     SummaryCard: typeof import('./components/SummaryCard.vue')['default']
     TagPicker: typeof import('./components/TagPicker.vue')['default']
     TransactionTable: typeof import('./components/TransactionTable.vue')['default']
+    YearlyChart: typeof import('./components/YearlyChart.vue')['default']
   }
 }

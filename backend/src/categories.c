@@ -369,8 +369,8 @@ void categories_create(csilk_ctx_t* c) {
     if (!currency) currency = "CNY";
     const char* icon = csilk_json_get_string(body, "icon");
     if (!icon) icon = "";
-    int64_t parent_id = (int64_t)csilk_json_get_number(body, "parent_id");
-    int sort_order = (int)csilk_json_get_number(body, "sort_order");
+    int64_t parent_id = (int64_t)db_get_num(body, "parent_id");
+    int sort_order = (int)db_get_num(body, "sort_order");
 
     csilk_db_pool_t* pool = db_get_pool();
     char uid_str[32], pid_str[32], sort_str[32];
@@ -420,7 +420,7 @@ void categories_update(csilk_ctx_t* c) {
 
     const char* currency = csilk_json_get_string(body, "currency");
     const char* icon = csilk_json_get_string(body, "icon");
-    int sort_order = (int)csilk_json_get_number(body, "sort_order");
+    int sort_order = (int)db_get_num(body, "sort_order");
 
     char uid_str[32], sort_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);

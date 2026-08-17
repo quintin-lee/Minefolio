@@ -325,10 +325,10 @@ void daily_expenses_update(csilk_ctx_t* c) {
     int64_t old_asset_id = db_get_int(old_r, "asset_id");
     double old_delta = (old_type && strcmp(old_type, "income") == 0) ? old_amount : -old_amount;
 
-    int64_t category_id = (int64_t)csilk_json_get_number(body, "category_id");
-    int64_t asset_id = (int64_t)csilk_json_get_number(body, "asset_id");
+    int64_t category_id = (int64_t)db_get_num(body, "category_id");
+    int64_t asset_id = (int64_t)db_get_num(body, "asset_id");
     const char* type = csilk_json_get_string(body, "expense_type");
-    double amount = csilk_json_get_number(body, "amount");
+    double amount = db_get_num(body, "amount");
     const char* date = csilk_json_get_string(body, "expense_date");
     const char* currency = csilk_json_get_string(body, "currency");
     const char* note = csilk_json_get_string(body, "note");

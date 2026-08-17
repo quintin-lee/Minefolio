@@ -1,0 +1,6 @@
+const data = {
+	"width": 256,
+	"height": 256,
+	"body": "<path fill=\"currentColor\" d=\"M128 24a104 104 0 1 0 104 104A104.11 104.11 0 0 0 128 24Zm40 112H88a8 8 0 0 1 0-16h80a8 8 0 0 1 0 16Z\"/>"
+};
+export default data;

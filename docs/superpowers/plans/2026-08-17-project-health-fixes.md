@@ -134,6 +134,14 @@ git commit -m "fix(db): use db_get_num for safe JSON number parsing in daily_exp
 
 ---
 
+## Chunk 4: Cleanup console.log (No action needed)
+
+**Spec reference:** `docs/superpowers/specs/2026-08-17-project-analysis-design.md` - Section "问题 5：前端 console.log 残留"
+
+The 5 `console.*` calls found in Vue views are all `console.error()` inside catch blocks — legitimate error handling, not debug residue. No changes required.
+
+---
+
 ## Chunk 2: Enable CSRF by Default
 
 **Spec reference:** `docs/superpowers/specs/2026-08-17-project-analysis-design.md` - Section "SEC-001: CSRF 默认关闭"
