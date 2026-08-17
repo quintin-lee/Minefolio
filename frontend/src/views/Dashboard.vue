@@ -8,15 +8,20 @@
     </div>
     <!-- 资产概览卡片 -->
     <el-row :gutter="20" class="summary-cards">
-      <el-col :xs="12" :sm="12" :md="6">
+      <el-col :xs="12" :sm="12" :md="6" class="mf-stagger-1">
         <el-card shadow="hover" class="stat-card assets">
           <div class="stat-content">
             <div class="stat-label">总资产</div>
             <div class="stat-value">{{ formatCurrency(summary.total_assets) }}</div>
+            <div v-if="sparklinePoints && sparklineData.length > 1" class="sparkline-wrap">
+              <svg class="sparkline" viewBox="0 0 60 20" preserveAspectRatio="none">
+                <polyline :points="sparklinePoints" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </div>
           </div>
         </el-card>
       </el-col>
-      <el-col :xs="12" :sm="12" :md="6">
+      <el-col :xs="12" :sm="12" :md="6" class="mf-stagger-2">
         <el-card shadow="hover" class="stat-card liabilities">
           <div class="stat-content">
             <div class="stat-label">总负债</div>
@@ -24,15 +29,20 @@
           </div>
         </el-card>
       </el-col>
-      <el-col :xs="12" :sm="12" :md="6">
+      <el-col :xs="12" :sm="12" :md="6" class="mf-stagger-3">
         <el-card shadow="hover" class="stat-card networth">
           <div class="stat-content">
             <div class="stat-label">净资产</div>
             <div class="stat-value">{{ formatCurrency(summary.net_worth) }}</div>
+            <div v-if="sparklinePoints && sparklineData.length > 1" class="sparkline-wrap">
+              <svg class="sparkline" viewBox="0 0 60 20" preserveAspectRatio="none">
+                <polyline :points="sparklinePoints" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </div>
           </div>
         </el-card>
       </el-col>
-      <el-col :xs="12" :sm="12" :md="6">
+      <el-col :xs="12" :sm="12" :md="6" class="mf-stagger-4">
         <el-card shadow="hover" class="stat-card monthly">
           <div class="stat-content">
             <div class="stat-label">本月结余</div>
@@ -51,7 +61,9 @@
               <span class="header-title">净资产趋势</span>
             </div>
           </template>
-          <NetWorthChart :data="summary.trend" />
+          <div class="nw-chart-wrap">
+            <NetWorthChart :data="summary.trend" />
+          </div>
         </el-card>
       </el-col>
       <!-- 分类占比 -->
@@ -95,17 +107,10 @@
               <span class="header-title">最近收支</span>
             </div>
           </template>
-          <el-table :data="recentExpenses" stripe size="small" height="280" class="premium-table">
-            <el-table-column prop="expense_date" label="日期" width="100" />
-            <el-table-column prop="category_name" label="分类" />
-            <el-table-column prop="expense_type" label="类型" width="70">
-              <template #default="{ row }">
-                <el-tag :type="row.expense_type === 'income' ? 'success' : 'danger'" size="small" effect="light" round>
-                  {{ row.expense_type === 'income' ? '收入' : '支出' }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column prop="amount" label="金额" width="120" align="right">
+            <el-table :data="recentExpenses" stripe size="small" height="280" class="premium-table">
+              <el-table-column prop="expense_date" label="日期" width="100" />
+              <el-table-column prop="category_name" label="分类" />
+              <el-table-column prop="amount" label="金额" width="120" align="right">
               <template #default="{ row }">
                 <span :class="row.expense_type === 'income' ? 'income-text' : 'expense-text'">
                   {{ row.expense_type === 'income' ? '+' : '-' }}{{ formatCurrency(row.amount) }}
@@ -139,6 +144,21 @@ const yearlyExpenses = ref<any>(null)
 const currentMonthBalance = ref<any>(null)
 const recentExpenses = ref<DailyExpense[]>([])
 const currentYear = ref(new Date())
+
+const sparklineData = computed(() => {
+  const t = summary.value.trend ?? []
+  return t.slice(-7).map(d => d.net_worth)
+})
+
+const sparklinePoints = computed(() => {
+  const data = sparklineData.value
+  if (data.length < 2) return ''
+  const max = Math.max(...data)
+  const min = Math.min(...data)
+  const range = max - min || 1
+  const w = 60, h = 20
+  return data.map((v, i) => `${(i / (data.length - 1)) * w},${h - ((v - min) / range) * h}`).join(' ')
+})
 
 function formatCurrency(val: number) {
   return new Intl.NumberFormat('zh-CN', {
@@ -188,6 +208,21 @@ onMounted(loadDashboard)
 
 .stat-content {
   padding: 4px 4px;
+  position: relative;
+}
+
+.sparkline-wrap {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  width: 60px;
+  height: 20px;
+  opacity: 0.6;
+  color: currentColor;
+}
+.sparkline {
+  width: 100%;
+  height: 100%;
 }
 
 .stat-label {
@@ -198,9 +233,9 @@ onMounted(loadDashboard)
 }
 
 .stat-value {
-  font-size: 26px;
+  font-size: 36px;
   font-weight: 700;
-  letter-spacing: -0.5px;
+  letter-spacing: -1px;
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
 }
 
@@ -244,6 +279,10 @@ onMounted(loadDashboard)
   width: 140px;
 }
 
+.nw-chart-wrap {
+  height: 320px;
+}
+
 .income-text { color: #34d399; text-shadow: 0 0 8px rgba(52,211,153,0.4); font-weight: 600; }
 .expense-text { color: #f87171; text-shadow: 0 0 8px rgba(248,113,113,0.3); font-weight: 600; }
 
@@ -257,5 +296,13 @@ onMounted(loadDashboard)
   color: #94a3b8 !important;
   background-color: rgba(0, 212, 255, 0.06) !important;
   border-bottom: 1px solid var(--mf-border) !important;
+}
+
+:deep(.el-table .el-table__row) {
+  height: 40px;
+}
+:deep(.el-table .el-table__cell) {
+  padding: 8px 0;
+  font-size: 12px;
 }
 </style>

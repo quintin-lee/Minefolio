@@ -77,29 +77,31 @@ function updateChart() {
     series: [{
       type: 'pie',
       radius: ['50%', '75%'],
-      center: ['35%', '50%'],
+      center: ['42%', '50%'],
       avoidLabelOverlap: false,
       itemStyle: {
         borderRadius: 6,
         borderColor: 'rgba(6,11,24,0.8)',
         borderWidth: 2
       },
-      label: { show: false, position: 'center' },
-      emphasis: {
-        label: {
-          show: true,
-          fontSize: 16,
-          fontWeight: 'bold',
-          color: '#e2e8f0',
-          formatter: '{b}\n{d}%'
-        },
-        itemStyle: {
-          shadowBlur: 16,
-          shadowOffsetX: 0,
-          shadowColor: 'rgba(0, 212, 255, 0.4)'
-        }
+      label: {
+        show: true,
+        position: 'outside',
+        formatter: '{b}: {d}%',
+        color: '#94a3b8',
+        fontSize: 12,
+        lineHeight: 18,
       },
-      labelLine: { show: false },
+      labelLine: {
+        show: true,
+        length: 12,
+        length2: 20,
+        lineStyle: { color: 'rgba(148,163,184,0.4)' },
+      },
+      emphasis: {
+        label: { show: true, fontSize: 14, fontWeight: 'bold', color: '#e2e8f0' },
+        itemStyle: { shadowBlur: 16, shadowOffsetX: 0, shadowColor: 'rgba(0, 212, 255, 0.4)' },
+      },
       data: props.data.map((d) => ({ name: d.category_name, value: d.value, pct: d.pct })),
       color: colors,
     }],
