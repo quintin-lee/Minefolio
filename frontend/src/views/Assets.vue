@@ -31,7 +31,7 @@
         <el-table-column label="名称" min-width="150">
           <template #default="{ row }">
             <div class="asset-name-cell">
-              <span class="asset-icon">{{ {'bank': '🏦', 'cash': '💵', 'alipay': '📱', 'wechat': '💬', 'credit_card': '💳', 'stock': '📈', 'fund': '📊', 'crypto': '🪙', 'loan': '💸', 'real_estate': '🏠'}[row.asset_type as string] || '💼' }}</span>
+              <span class="asset-icon"><Icon :icon="ASSET_TYPE_ICONS[row.asset_type] ?? 'ph:briefcase'" /></span>
               <span class="asset-name">{{ row.name }}</span>
             </div>
           </template>
@@ -66,8 +66,12 @@
         <el-table-column label="操作" width="140" align="center">
           <template #default="{ row }">
             <div class="action-buttons">
-              <el-button link type="primary" @click="openDialog(row)">编辑</el-button>
-              <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
+              <el-tooltip content="编辑" placement="top">
+                <el-button link type="primary" size="small" :icon="Edit" @click="openDialog(row)" />
+              </el-tooltip>
+              <el-tooltip content="删除" placement="top">
+                <el-button link type="danger" size="small" :icon="Delete" @click="handleDelete(row)" />
+              </el-tooltip>
             </div>
           </template>
         </el-table-column>
@@ -135,12 +139,28 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Edit, Delete, Plus } from '@element-plus/icons-vue'
 import { assetsApi } from '@/api/assets'
 import { summaryApi } from '@/api/summary'
 import { useCategoryStore } from '@/stores/category'
 import type { Asset, Category, Summary } from '@/types'
 import SummaryCard from '@/components/SummaryCard.vue'
 import { formatCurrency } from '@/utils/format'
+import { Icon } from '@iconify/vue'
+
+const ASSET_TYPE_ICONS: Record<string, string> = {
+  bank: 'ph:bank',
+  cash: 'ph:cash',
+  alipay: 'ph:device-mobile',
+  wechat: 'ph:chat-circle',
+  credit_card: 'ph:credit-card',
+  stock: 'ph:trend-up',
+  fund: 'ph:trend-up',
+  bond: 'ph:trend-up',
+  crypto: 'ph:crypto',
+  loan: 'ph:arrow-down-left',
+  real_estate: 'ph:house',
+}
 
 const assets = ref<Asset[]>([])
 const categoryTree = ref<Category[]>([])
@@ -396,8 +416,26 @@ onMounted(async () => {
 
 .action-buttons {
   display: flex;
-  gap: 12px;
+  gap: 4px;
   justify-content: center;
+}
+
+.asset-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: rgba(0, 212, 255, 0.06);
+  margin-right: 8px;
+  flex-shrink: 0;
+  color: var(--mf-primary);
+  font-size: 16px;
+}
+
+.mono-amount {
+  font-variant-numeric: tabular-nums;
 }
 
 :deep(.premium-dialog) {
