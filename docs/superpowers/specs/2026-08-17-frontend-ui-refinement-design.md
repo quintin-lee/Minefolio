@@ -164,7 +164,9 @@
 - **持仓表格**：
   - 份额/净值/市值三列右对齐 monospace
   - 盈亏列用颜色+箭头（↑绿 / ↓红）
-  - 类型标签改为自定义 pill（更精致）
+  - 类型标签改为自定义 pill：`font-size: 11px; padding: 2px 8px; border-radius: 9999px; background: rgba(0,212,255,0.08); color: #00d4ff; border: 1px solid rgba(0,212,255,0.15);`
+    - stock/fund/bond：青色 pill
+    - crypto：紫色 pill（`background: rgba(124,58,237,0.08); color: #a78bfa; border-color: rgba(124,58,237,0.15)`）
 
 ---
 
