@@ -1,5 +1,7 @@
 <template>
-  <router-view />
+  <Transition name="mf-route" mode="out-in">
+    <router-view :key="$route.fullPath" />
+  </Transition>
 </template>
 
 <script setup lang="ts">
@@ -13,3 +15,18 @@ onMounted(() => {
   }
 })
 </script>
+
+<style scoped>
+.mf-route-enter-active,
+.mf-route-leave-active {
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.mf-route-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+.mf-route-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+</style>

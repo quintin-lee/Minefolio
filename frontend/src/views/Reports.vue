@@ -9,7 +9,10 @@
 
     <el-tabs class="premium-tabs" type="card">
       <el-tab-pane label="收支分析">
-        <el-empty v-if="!monthly" description="暂无收支数据，完成第一笔交易后这里会出现图表" :image-size="120" />
+        <div v-if="!monthly" class="mf-empty-state">
+          <div class="mf-empty-circle"></div>
+          <p>暂无收支数据，完成第一笔交易后这里会出现图表</p>
+        </div>
         <template v-else>
           <div class="tab-layout">
             <el-row :gutter="16" class="tab-row">
@@ -90,7 +93,10 @@
                       </el-table-column>
                       <el-table-column prop="count" label="次数" width="80" align="center" />
                       <template #empty>
-                        <el-empty description="暂无标签支出数据" :image-size="60" />
+                        <div class="mf-empty-state mf-empty-sm">
+                          <div class="mf-empty-circle"></div>
+                          <p>暂无标签支出数据</p>
+                        </div>
                       </template>
                     </el-table>
                   </div>
@@ -149,7 +155,10 @@
       </el-tab-pane>
 
       <el-tab-pane label="资产分析">
-        <el-empty v-if="!assetBreakdown" description="暂无资产数据，先添加资产账户" :image-size="120" />
+        <div v-if="!assetBreakdown" class="mf-empty-state">
+          <div class="mf-empty-circle"></div>
+          <p>暂无资产数据，先添加资产账户</p>
+        </div>
         <template v-else>
           <div class="tab-layout">
             <el-row :gutter="16" class="tab-row">
@@ -557,5 +566,32 @@ onMounted(loadAll)
 .tag-plain {
   border: none;
   background: var(--mf-surface-muted);
+}
+
+/* UI Refinement: custom empty state */
+.mf-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  gap: 16px;
+}
+.mf-empty-state.pf-empty-sm {
+  padding: 24px 12px;
+}
+.mf-empty-circle {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, rgba(0, 212, 255, 0.15), rgba(124, 58, 237, 0.08));
+  border: 1px solid rgba(0, 212, 255, 0.12);
+  box-shadow: 0 0 24px rgba(0, 212, 255, 0.08);
+}
+.mf-empty-state p {
+  color: var(--mf-text-muted);
+  font-size: 13px;
+  text-align: center;
+  margin: 0;
 }
 </style>

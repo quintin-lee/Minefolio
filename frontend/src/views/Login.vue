@@ -255,6 +255,8 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   background: linear-gradient(135deg, #060b18 0%, #0a1628 50%, #0d1f3c 100%);
+  background-size: 400% 400%;
+  animation: mf-gradient-shift 15s ease infinite;
   position: relative;
   overflow: hidden;
 }
