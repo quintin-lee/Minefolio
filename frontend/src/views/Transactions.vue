@@ -9,28 +9,36 @@
         <el-button type="primary" class="action-btn" @click="openDialog()">
           <el-icon><Plus /></el-icon> 新增交易
         </el-button>
-        <el-button class="action-btn" style="background:var(--mf-surface);color:var(--mf-text-main);border-color:var(--mf-border)" @click="exportCsv">
-          <el-icon><Download /></el-icon> 导出 CSV
-        </el-button>
-        <el-button class="action-btn" style="background:var(--mf-surface);color:var(--mf-text-main);border-color:var(--mf-border)" @click="importDialogVisible = true">
-          <el-icon><Upload /></el-icon> 导入 CSV
-        </el-button>
+        <el-tooltip content="导出 CSV" placement="bottom">
+          <el-button :icon="Download" circle class="action-icon-btn" @click="exportCsv" />
+        </el-tooltip>
+        <el-tooltip content="导入 CSV" placement="bottom">
+          <el-button :icon="Upload" circle class="action-icon-btn" @click="importDialogVisible = true" />
+        </el-tooltip>
       </div>
     </div>
 
     <!-- 顶部汇总统计卡片 -->
     <el-row :gutter="16" class="summary-cards">
       <el-col :xs="12" :sm="6">
-        <SummaryCard label="本月交易总额" :value="formatCurrency(monthlyTotalVolume)" extraClass="font-mono text-primary" />
+        <div class="summary-card-with-bar bar-cyan">
+          <SummaryCard label="本月交易总额" :value="formatCurrency(monthlyTotalVolume)" extraClass="font-mono text-primary" />
+        </div>
       </el-col>
       <el-col :xs="12" :sm="6">
-        <SummaryCard label="买入/存入合计" :value="'+' + formatCurrency(monthlyInflows)" type="income" extraClass="font-mono" />
+        <div class="summary-card-with-bar bar-green">
+          <SummaryCard label="买入/存入合计" :value="'+' + formatCurrency(monthlyInflows)" type="income" extraClass="font-mono" />
+        </div>
       </el-col>
       <el-col :xs="12" :sm="6">
-        <SummaryCard label="卖出/取出合计" :value="'-' + formatCurrency(monthlyOutflows)" type="expense" extraClass="font-mono" />
+        <div class="summary-card-with-bar bar-red">
+          <SummaryCard label="卖出/取出合计" :value="'-' + formatCurrency(monthlyOutflows)" type="expense" extraClass="font-mono" />
+        </div>
       </el-col>
       <el-col :xs="12" :sm="6">
-        <SummaryCard label="本月交易笔数" :value="monthlyCount + ' 笔'" type="highlight" extraClass="font-mono" />
+        <div class="summary-card-with-bar bar-amber">
+          <SummaryCard label="本月交易笔数" :value="monthlyCount + ' 笔'" type="highlight" extraClass="font-mono" />
+        </div>
       </el-col>
     </el-row>
 
@@ -747,6 +755,32 @@ async function handleImport() {
 
 .summary-cards {
   flex-shrink: 0;
+}
+
+.summary-card-with-bar {
+  position: relative;
+  padding-left: 3px;
+}
+.summary-card-with-bar::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  border-radius: 2px 0 0 2px;
+}
+.bar-cyan::before  { background: #00d4ff; box-shadow: 0 0 8px rgba(0,212,255,0.5); }
+.bar-green::before { background: #10b981; box-shadow: 0 0 8px rgba(16,185,129,0.5); }
+.bar-red::before   { background: #ef4444; box-shadow: 0 0 8px rgba(239,68,68,0.5); }
+.bar-amber::before { background: #f59e0b; box-shadow: 0 0 8px rgba(245,158,11,0.5); }
+
+.action-icon-btn {
+  background: var(--mf-surface) !important;
+  border-color: var(--mf-border) !important;
+  color: var(--mf-text-muted) !important;
+}
+.action-icon-btn:hover {
+  border-color: var(--mf-border-hover) !important;
+  color: var(--mf-primary) !important;
 }
 
 .summary-value {
