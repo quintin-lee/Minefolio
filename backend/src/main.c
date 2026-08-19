@@ -57,15 +57,15 @@ int main(int argc, char** argv) {
     csilk_app_get_ext(app, "/api/system/status", system_status, nullptr, nullptr,
                       "System status", "Returns initialization status and user count");
     csilk_app_post_ext(app, "/api/system/setup", system_setup,
-                       "minefolio_setup_req_t", "minefolio_token_resp_t",
+                       "setup_req_t", "token_resp_t",
                        "Initialize system",
                        "Seed the database with default categories for the first admin user");
     csilk_app_post_ext(app, "/api/auth/register", auth_register,
-                       "minefolio_register_req_t", "minefolio_token_resp_t",
+                       "register_req_t", "token_resp_t",
                        "Register admin",
                        "Create the first admin user (only allowed before system initialization)");
     csilk_app_post_ext(app, "/api/auth/login", auth_login,
-                       "minefolio_login_req_t", "minefolio_token_resp_t",
+                       "login_req_t", "token_resp_t",
                        "Login",
                        "Authenticate with username and RSA-encrypted password, returns JWT token");
     csilk_app_get_ext(app, "/api/auth/public-key", auth_public_key,
@@ -81,66 +81,66 @@ int main(int argc, char** argv) {
 
     // Auth
     csilk_app_get_ext(app, "/api/auth/me", auth_me, nullptr,
-                      "minefolio_user_resp_t", "Get current user profile",
+                      "user_resp_t", "Get current user profile",
                       "Returns the authenticated user's profile");
     csilk_app_put_ext(app, "/api/auth/password", auth_change_password,
-                      "minefolio_change_pwd_req_t", nullptr,
+                      "change_pwd_req_t", nullptr,
                       "Change password",
                       "Update the current user's password using encrypted old/new values");
 
     // Categories
     csilk_app_get_ext(app, "/api/categories", categories_list, nullptr,
-                      "minefolio_category_resp_t", "List categories",
+                      "category_resp_t", "List categories",
                       "Returns all categories owned by the current user");
     csilk_app_post_ext(app, "/api/categories", categories_create,
-                       "minefolio_category_req_t", "minefolio_category_resp_t",
+                       "category_req_t", "category_resp_t",
                        "Create category",
                        "Create a new expense/income/asset/transaction category");
     csilk_app_put_ext(app, "/api/categories/:id", categories_update,
-                      "minefolio_category_req_t", "minefolio_category_resp_t",
+                      "category_req_t", "category_resp_t",
                       "Update category",
                       "Update an existing category by ID");
     csilk_app_delete_ext(app, "/api/categories/:id", categories_delete,
                          nullptr, nullptr, "Delete category",
                          "Delete a category and its children by ID");
     csilk_app_get_ext(app, "/api/categories/:id/children", categories_children,
-                      nullptr, "minefolio_category_resp_t",
+                      nullptr, "category_resp_t",
                       "List category children",
                       "Returns immediate child categories of the given category");
 
     // Assets
     csilk_app_get_ext(app, "/api/assets", assets_list, nullptr,
-                      "minefolio_asset_resp_t", "List assets",
+                      "asset_resp_t", "List assets",
                       "Returns paginated list of user's assets with optional category filter");
     csilk_app_post_ext(app, "/api/assets", assets_create,
-                       "minefolio_asset_req_t", "minefolio_asset_resp_t",
+                       "asset_req_t", "asset_resp_t",
                        "Create asset",
                        "Create a new asset (cash, investment, liability, etc.)");
     csilk_app_put_ext(app, "/api/assets/:id", assets_update,
-                      "minefolio_asset_req_t", "minefolio_asset_resp_t",
+                      "asset_req_t", "asset_resp_t",
                       "Update asset",
                       "Update an existing asset by ID; investment assets recalculate position on net_value change");
     csilk_app_delete_ext(app, "/api/assets/:id", assets_delete,
                          nullptr, nullptr, "Delete asset",
                          "Delete an asset and its associated transactions by ID");
     csilk_app_get_ext(app, "/api/assets/:id", assets_detail,
-                      nullptr, "minefolio_asset_resp_t",
+                      nullptr, "asset_resp_t",
                       "Get asset detail",
                       "Returns full asset details including linked transaction history");
 
     // Transactions
     csilk_app_get_ext(app, "/api/transactions", transactions_list, nullptr,
-                      "minefolio_transaction_resp_t", "List transactions",
+                      "transaction_resp_t", "List transactions",
                       "Returns paginated transaction list with optional filters");
     csilk_app_get_ext(app, "/api/transactions/monthly", transactions_monthly,
                       nullptr, nullptr, "Monthly transaction summary",
                       "Returns monthly aggregated transaction totals");
     csilk_app_post_ext(app, "/api/transactions", transactions_create,
-                       "minefolio_transaction_req_t", "minefolio_transaction_resp_t",
+                       "transaction_req_t", "transaction_resp_t",
                        "Create transaction",
                        "Create a new transaction (expense, income, transfer, investment buy/sell)");
     csilk_app_put_ext(app, "/api/transactions/:id", transactions_update,
-                      "minefolio_transaction_req_t", "minefolio_transaction_resp_t",
+                      "transaction_req_t", "transaction_resp_t",
                       "Update transaction",
                       "Update an existing transaction by ID");
     csilk_app_delete_ext(app, "/api/transactions/:id", transactions_delete,
@@ -155,14 +155,14 @@ int main(int argc, char** argv) {
 
     // Daily expenses
     csilk_app_get_ext(app, "/api/daily-expenses", daily_expenses_list, nullptr,
-                      "minefolio_daily_expense_resp_t", "List daily expenses",
+                      "daily_expense_resp_t", "List daily expenses",
                       "Returns paginated list of daily expense records");
     csilk_app_post_ext(app, "/api/daily-expenses", daily_expenses_create,
-                       "minefolio_daily_expense_req_t", "minefolio_daily_expense_resp_t",
+                       "daily_expense_req_t", "daily_expense_resp_t",
                        "Create daily expense",
                        "Create a new daily expense entry with optional tags");
     csilk_app_put_ext(app, "/api/daily-expenses/:id", daily_expenses_update,
-                      "minefolio_daily_expense_req_t", "minefolio_daily_expense_resp_t",
+                      "daily_expense_req_t", "daily_expense_resp_t",
                       "Update daily expense",
                       "Update an existing daily expense record by ID");
     csilk_app_delete_ext(app, "/api/daily-expenses/:id", daily_expenses_delete,
@@ -180,27 +180,27 @@ int main(int argc, char** argv) {
 
     // Tags
     csilk_app_get_ext(app, "/api/tags", tags_list, nullptr,
-                      "minefolio_tag_resp_t", "List tags",
+                      "tag_resp_t", "List tags",
                       "Returns all tags owned by the current user");
     csilk_app_post_ext(app, "/api/tags", tags_create,
-                       "minefolio_tag_req_t", "minefolio_tag_resp_t",
+                       "tag_req_t", "tag_resp_t",
                        "Create tag",
                        "Create a new tag with optional color");
     csilk_app_put_ext(app, "/api/tags/:id", tags_update,
-                      "minefolio_tag_req_t", "minefolio_tag_resp_t",
+                      "tag_req_t", "tag_resp_t",
                       "Update tag",
                       "Update an existing tag by ID");
     csilk_app_delete_ext(app, "/api/tags/:id", tags_delete,
                          nullptr, nullptr, "Delete tag",
                          "Delete a tag by ID");
     csilk_app_get_ext(app, "/api/tags/suggestions", tags_suggestions,
-                      nullptr, "minefolio_tag_resp_t",
+                      nullptr, "tag_resp_t",
                       "Tag suggestions",
                       "Returns tag name suggestions for autocomplete (query param: q)");
 
     // Transfers
     csilk_app_post_ext(app, "/api/transfers", transfers_create,
-                       "minefolio_transfer_req_t", nullptr,
+                       "transfer_req_t", nullptr,
                        "Create transfer",
                        "Create a transfer between two assets (debit one, credit other)");
 
