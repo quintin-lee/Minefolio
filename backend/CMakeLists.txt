@@ -18,8 +18,8 @@ FetchContent_MakeAvailable(csilk)
 find_package(PkgConfig QUIET)
 pkg_check_modules(PQ libpq)
 
-# Minefolio sources
-file(GLOB SOURCES "src/*.c" "src/common/*.c")
+# Minefolio sources (recursive glob for all subdirectories)
+file(GLOB_RECURSE SOURCES "src/*.c")
 add_executable(minefolio ${SOURCES})
 
 target_include_directories(minefolio PRIVATE

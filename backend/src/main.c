@@ -3,9 +3,11 @@
 #include "common/db.h"
 #include "common/response.h"
 #include "auth_key.h"
+#include "middlewares/jwt_middleware.h"
+#include "middlewares/cors_middleware.h"
+#include "middlewares/csrf_middleware.h"
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 // Handler forward declarations
 extern void auth_register(csilk_ctx_t* c);
@@ -57,87 +59,6 @@ extern void transactions_export_csv(csilk_ctx_t* c);
 extern void transactions_import_csv(csilk_ctx_t* c);
 extern void daily_expenses_export_csv(csilk_ctx_t* c);
 extern void daily_expenses_import_csv(csilk_ctx_t* c);
-
-
-// JWT middleware wrapper (new API: no extra args)
-static void jwt_middleware_wrapper(csilk_ctx_t* c) {
-    const char* path = csilk_get_path(c);
-    // Public auth endpoints do not require a token
-    if (path && (strcmp(path, "/api/auth/login") == 0 ||
-                 strcmp(path, "/api/auth/register") == 0 ||
-                 strcmp(path, "/api/system/status") == 0 ||
-                 strcmp(path, "/api/system/setup") == 0)) {
-        return;
-    }
-    const char* secret = getenv("MINEFOLIO_JWT_SECRET");
-    if (!secret) secret = "minefolio-dev-secret-change-in-production";
-    csilk_jwt_middleware(c, secret);
-}
-
-// CORS middleware wrapper (captures config)
-static void cors_middleware_wrapper(csilk_ctx_t* c) {
-    csilk_cors_config_t cors = {0};
-    cors.allow_origin = "*";
-    cors.allow_methods = "GET,POST,PUT,DELETE,OPTIONS";
-    cors.allow_headers = "Content-Type,Authorization,X-CSRF-Token";
-    cors.allow_credentials = 1;
-    csilk_cors_middleware(c, &cors);
-}
-
-// Explicit OPTIONS handler for CORS preflight requests.
-// csilk only runs middleware on matched routes, so we need a wildcard
-// OPTIONS route to ensure preflight requests don't get a 404.
-static void cors_preflight_handler(csilk_ctx_t* c) {
-    csilk_cors_config_t cors = {0};
-    cors.allow_origin = "*";
-    cors.allow_methods = "GET,POST,PUT,DELETE,OPTIONS";
-    cors.allow_headers = "Content-Type,Authorization,X-CSRF-Token";
-    cors.allow_credentials = 1;
-    csilk_cors_middleware(c, &cors);
-}
-
-// CSRF middleware wrapper — stateless double-submit cookie.
-// Safe methods (GET/HEAD/OPTIONS) ensure a JS-readable csrf_token cookie exists;
-// state-changing methods require the X-CSRF-Token header to match that cookie.
-// Env-gated via MINEFOLIO_ENABLE_CSRF so cross-origin dev (5173 -> 8080, no
-// withCredentials) is unaffected while prod (nginx same-origin) is protected.
-static void csrf_middleware_wrapper(csilk_ctx_t* c) {
-    const char* method = csilk_get_method(c);
-    if (!method) { csilk_next(c); return; }
-
-    // Public auth bootstrap endpoints are exempt (no cookie exists yet on first use)
-    const char* path = csilk_get_path(c);
-    if (path && (strcmp(path, "/api/auth/login") == 0 ||
-                 strcmp(path, "/api/auth/register") == 0 ||
-                 strcmp(path, "/api/system/status") == 0 ||
-                 strcmp(path, "/api/system/setup") == 0)) {
-        csilk_next(c);
-        return;
-    }
-
-    if (strcmp(method, "GET") == 0 || strcmp(method, "HEAD") == 0 ||
-        strcmp(method, "OPTIONS") == 0) {
-        // Ensure the SPA has a token it can echo back
-        if (!csilk_get_cookie(c, "csrf_token")) {
-            char buf[33];
-            if (csilk_csrf_generate_token(buf, sizeof(buf)) == 0) {
-                // secure=0, http_only=0 so JS can read via document.cookie
-                csilk_set_cookie(c, "csrf_token", buf, 86400, "/", NULL, 0, 0);
-            }
-        }
-        csilk_next(c);
-        return;
-    }
-
-    const char* token = csilk_get_header(c, "X-CSRF-Token");
-    const char* cookie = csilk_get_cookie(c, "csrf_token");
-    if (!token || !cookie || strcmp(token, cookie) != 0) {
-        csilk_json_error(c, CSILK_STATUS_FORBIDDEN, "Forbidden: Invalid CSRF token");
-        csilk_abort(c);
-        return;
-    }
-    csilk_next(c);
-}
 
 int main(int argc, char** argv) {
     (void)argc; (void)argv;
