@@ -1,76 +1,29 @@
 #include "csilk/app/app.h"
-#include "swagger_types.h"
 #include "common/db.h"
-#include "common/response.h"
 #include "config/key_manager.h"
 #include "middlewares/jwt_middleware.h"
 #include "middlewares/cors_middleware.h"
 #include "middlewares/csrf_middleware.h"
+#include "controllers/auth_controller.h"
+#include "controllers/category_controller.h"
+#include "controllers/asset_controller.h"
+#include "controllers/transaction_controller.h"
+#include "controllers/daily_expense_controller.h"
+#include "controllers/tag_controller.h"
+#include "controllers/transfer_controller.h"
+#include "controllers/report_controller.h"
+#include "controllers/import_export_controller.h"
+#include "repositories/asset_repo.h"
 #include <stdio.h>
-#include <stdlib.h>
-
-// Handler forward declarations
-extern void auth_register(csilk_ctx_t* c);
-extern void auth_login(csilk_ctx_t* c);
-extern void auth_me(csilk_ctx_t* c);
-extern void auth_change_password(csilk_ctx_t* c);
-extern void auth_public_key(csilk_ctx_t* c);
-extern void categories_list(csilk_ctx_t* c);
-extern void categories_create(csilk_ctx_t* c);
-extern void categories_update(csilk_ctx_t* c);
-extern void categories_delete(csilk_ctx_t* c);
-extern void categories_children(csilk_ctx_t* c);
-extern void assets_list(csilk_ctx_t* c);
-extern void assets_create(csilk_ctx_t* c);
-extern void assets_update(csilk_ctx_t* c);
-extern void assets_delete(csilk_ctx_t* c);
-extern void assets_detail(csilk_ctx_t* c);
-extern void transactions_list(csilk_ctx_t* c);
-extern void transactions_monthly(csilk_ctx_t* c);
-extern void transactions_create(csilk_ctx_t* c);
-extern void transactions_update(csilk_ctx_t* c);
-extern void transactions_delete(csilk_ctx_t* c);
-extern void daily_expenses_list(csilk_ctx_t* c);
-extern void daily_expenses_create(csilk_ctx_t* c);
-extern void daily_expenses_update(csilk_ctx_t* c);
-extern void daily_expenses_delete(csilk_ctx_t* c);
-extern void daily_expenses_monthly(csilk_ctx_t* c);
-extern void tags_list(csilk_ctx_t* c);
-extern void tags_create(csilk_ctx_t* c);
-extern void tags_update(csilk_ctx_t* c);
-extern void tags_delete(csilk_ctx_t* c);
-extern void tags_suggestions(csilk_ctx_t* c);
-extern void transfers_create(csilk_ctx_t* c);
-extern void report_expense_monthly(csilk_ctx_t* c);
-extern void report_expense_trend(csilk_ctx_t* c);
-extern void report_expense_yearly(csilk_ctx_t* c);
-extern void report_expense_category(csilk_ctx_t* c);
-extern void report_expense_tag(csilk_ctx_t* c);
-extern void report_asset_trend(csilk_ctx_t* c);
-extern void report_asset_breakdown(csilk_ctx_t* c);
-extern void report_transaction_performance(csilk_ctx_t* c);
-extern void report_holdings(csilk_ctx_t* c);
-extern void report_asset_summary(csilk_ctx_t* c);
-extern void summary_get(csilk_ctx_t* c);
-extern void asset_logs_list(csilk_ctx_t* c);
-extern void system_status(csilk_ctx_t* c);
-extern void system_setup(csilk_ctx_t* c);
-extern void transactions_export_csv(csilk_ctx_t* c);
-extern void transactions_import_csv(csilk_ctx_t* c);
-extern void daily_expenses_export_csv(csilk_ctx_t* c);
-extern void daily_expenses_import_csv(csilk_ctx_t* c);
 
 int main(int argc, char** argv) {
     (void)argc; (void)argv;
 
-    // Initialize database
     csilk_db_pool_t* pool;
     if (db_init(&pool) != 0) {
         fprintf(stderr, "Failed to initialize database\n");
         return 1;
     }
-
-    // Run migrations
     if (db_run_migrations(pool) != 0) {
         fprintf(stderr, "Failed to run migrations\n");
         csilk_db_pool_free(pool);
@@ -78,7 +31,6 @@ int main(int argc, char** argv) {
     }
     printf("Database initialized and migrations applied.\n");
 
-    // Generate RSA key pair for password encryption in transit
     if (auth_key_init() != 0) {
         fprintf(stderr, "Failed to initialize RSA key pair\n");
         csilk_db_pool_free(pool);
@@ -86,7 +38,6 @@ int main(int argc, char** argv) {
     }
     printf("RSA-2048 key pair generated for password encryption.\n");
 
-    // Create app
     csilk_app_t* app = csilk_app_new(NULL);
     if (!app) {
         fprintf(stderr, "Failed to create app\n");
@@ -94,21 +45,15 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Server-level middleware
     csilk_app_use(app, csilk_recovery_handler);
     csilk_app_use(app, csilk_logger_handler);
     csilk_app_use(app, csilk_request_id_middleware);
-
     csilk_app_use(app, cors_middleware_wrapper);
 
-    // Health check (public)
     csilk_app_get(app, "/healthz", csilk_health_check_handler);
-
-    // CORS preflight: catch-all OPTIONS for /api/* so browsers can
-    // complete the preflight handshake before POST/PUT/DELETE requests.
     csilk_app_options(app, "/api/*path", cors_preflight_handler);
 
-    // System setup & Auth (public)
+    // System (public)
     csilk_app_get_ext(app, "/api/system/status", system_status, nullptr, nullptr,
                       "System status", "Returns initialization status and user count");
     csilk_app_post_ext(app, "/api/system/setup", system_setup,
@@ -127,16 +72,12 @@ int main(int argc, char** argv) {
                       nullptr, nullptr, "Get public key",
                       "Returns the RSA public key PEM for client-side password encryption");
 
-    // API group (requires JWT + CSRF)
+    // JWT + CSRF group
     const char* jwt_secret = getenv("MINEFOLIO_JWT_SECRET");
     if (!jwt_secret) jwt_secret = "minefolio-dev-secret-change-in-production";
-
     csilk_app_use_group(app, "/api", jwt_middleware_wrapper);
-
-    // CSRF (optional, enabled via MINEFOLIO_ENABLE_CSRF) — stateless double-submit
-    if (getenv("MINEFOLIO_ENABLE_CSRF")) {
+    if (getenv("MINEFOLIO_ENABLE_CSRF"))
         csilk_app_use_group(app, "/api", csrf_middleware_wrapper);
-    }
 
     // Auth
     csilk_app_get_ext(app, "/api/auth/me", auth_me, nullptr,
@@ -265,8 +206,8 @@ int main(int argc, char** argv) {
 
     // Reports
     csilk_app_get_ext(app, "/api/reports/expense/monthly", report_expense_monthly,
-                      nullptr, nullptr,
-                      "Monthly expense report", "Returns monthly income/expense breakdown by category and tag");
+                      nullptr, nullptr, "Monthly expense report",
+                      "Returns monthly income/expense breakdown by category and tag");
     csilk_app_get_ext(app, "/api/reports/expense/trend", report_expense_trend,
                       nullptr, nullptr, "Expense trend",
                       "Returns expense trend over N months (query param: months)");
@@ -295,7 +236,7 @@ int main(int argc, char** argv) {
                       nullptr, nullptr, "Asset summary",
                       "Returns aggregated asset summary including net worth");
 
-    // Summary (dashboard aggregate)
+    // Summary
     csilk_app_get_ext(app, "/api/summary", summary_get,
                       nullptr, nullptr, "Dashboard summary",
                       "Returns dashboard aggregate: net worth, monthly income/expense, recent transactions");
@@ -304,7 +245,6 @@ int main(int argc, char** argv) {
                       nullptr, nullptr, "Asset balance logs",
                       "Returns paginated asset balance change logs with optional asset_id filter");
 
-    // Static files (frontend build output)
     csilk_app_static(app, "/", "./frontend/dist");
 
     printf("Starting Minefolio server on :8080\n");

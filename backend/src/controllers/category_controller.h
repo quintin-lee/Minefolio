@@ -1,8 +1,9 @@
 #pragma once
-
-/**
- * @brief Seed default category templates (asset/expense/income/transaction)
- *        for a user. No-op for types that already have categories.
- *        Called once at user creation (setup/register).
- */
+#include "csilk/csilk.h"
+#include "csilk/drivers/db.h"
 void categories_seed_defaults(csilk_db_pool_t* pool, int64_t user_id);
+void categories_list(csilk_ctx_t* c);
+void categories_create(csilk_ctx_t* c);
+void categories_update(csilk_ctx_t* c);
+void categories_delete(csilk_ctx_t* c);
+void categories_children(csilk_ctx_t* c);
