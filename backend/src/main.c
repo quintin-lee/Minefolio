@@ -2,7 +2,7 @@
 #include "swagger_types.h"
 #include "common/db.h"
 #include "common/response.h"
-#include "auth_key.h"
+#include "config/key_manager.h"
 #include "middlewares/jwt_middleware.h"
 #include "middlewares/cors_middleware.h"
 #include "middlewares/csrf_middleware.h"

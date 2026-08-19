@@ -1,4 +1,4 @@
-#include "auth_key.h"
+
 #include "common/response.h"
 #include "csilk/core/codec.h"
 #include "csilk/core/crypto_dispatch.h"
