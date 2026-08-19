@@ -186,12 +186,21 @@ int main(int argc, char** argv) {
     // complete the preflight handshake before POST/PUT/DELETE requests.
     csilk_app_options(app, "/api/*path", cors_preflight_handler);
 
-    // System setup & Auth
-    csilk_app_get(app, "/api/system/status", system_status);
-    csilk_app_post(app, "/api/system/setup", system_setup);
-    csilk_app_post(app, "/api/auth/register", auth_register);
-    csilk_app_post(app, "/api/auth/login", auth_login);
-    csilk_app_get(app, "/api/auth/public-key", auth_public_key);
+    // System setup & Auth (public)
+    csilk_app_get_ext(app, "/api/system/status", system_status, nullptr, nullptr,
+                      "System status", "Returns initialization status and user count");
+    csilk_app_post_ext(app, "/api/system/setup", system_setup,
+                       nullptr, nullptr, "Initialize system",
+                       "Seed the database with default categories for the first admin user");
+    csilk_app_post_ext(app, "/api/auth/register", auth_register,
+                       nullptr, nullptr, "Register admin",
+                       "Create the first admin user (only allowed before system initialization)");
+    csilk_app_post_ext(app, "/api/auth/login", auth_login,
+                       nullptr, nullptr, "Login",
+                       "Authenticate with username and RSA-encrypted password, returns JWT token");
+    csilk_app_get_ext(app, "/api/auth/public-key", auth_public_key,
+                      nullptr, nullptr, "Get public key",
+                      "Returns the RSA public key PEM for client-side password encryption");
 
     // API group (requires JWT + CSRF)
     const char* jwt_secret = getenv("MINEFOLIO_JWT_SECRET");
@@ -205,67 +214,149 @@ int main(int argc, char** argv) {
     }
 
     // Auth
-    csilk_app_get(app, "/api/auth/me", auth_me);
-    csilk_app_put(app, "/api/auth/password", auth_change_password);
+    csilk_app_get_ext(app, "/api/auth/me", auth_me, nullptr, nullptr,
+                      "Get current user profile", "Returns the authenticated user's profile");
+    csilk_app_put_ext(app, "/api/auth/password", auth_change_password,
+                      nullptr, nullptr, "Change password",
+                      "Update the current user's password using encrypted old/new values");
 
     // Categories
-    csilk_app_get(app, "/api/categories", categories_list);
-    csilk_app_post(app, "/api/categories", categories_create);
-    csilk_app_put(app, "/api/categories/:id", categories_update);
-    csilk_app_delete(app, "/api/categories/:id", categories_delete);
-    csilk_app_get(app, "/api/categories/:id/children", categories_children);
+    csilk_app_get_ext(app, "/api/categories", categories_list, nullptr, nullptr,
+                      "List categories", "Returns all categories owned by the current user");
+    csilk_app_post_ext(app, "/api/categories", categories_create,
+                       nullptr, nullptr, "Create category",
+                       "Create a new expense/income/asset/transaction category");
+    csilk_app_put_ext(app, "/api/categories/:id", categories_update,
+                      nullptr, nullptr, "Update category",
+                      "Update an existing category by ID");
+    csilk_app_delete_ext(app, "/api/categories/:id", categories_delete,
+                         nullptr, nullptr, "Delete category",
+                         "Delete a category and its children by ID");
+    csilk_app_get_ext(app, "/api/categories/:id/children", categories_children,
+                      nullptr, nullptr, "List category children",
+                      "Returns immediate child categories of the given category");
 
     // Assets
-    csilk_app_get(app, "/api/assets", assets_list);
-    csilk_app_post(app, "/api/assets", assets_create);
-    csilk_app_put(app, "/api/assets/:id", assets_update);
-    csilk_app_delete(app, "/api/assets/:id", assets_delete);
-    csilk_app_get(app, "/api/assets/:id", assets_detail);
+    csilk_app_get_ext(app, "/api/assets", assets_list, nullptr, nullptr,
+                      "List assets", "Returns paginated list of user's assets with optional category filter");
+    csilk_app_post_ext(app, "/api/assets", assets_create,
+                       nullptr, nullptr, "Create asset",
+                       "Create a new asset (cash, investment, liability, etc.)");
+    csilk_app_put_ext(app, "/api/assets/:id", assets_update,
+                      nullptr, nullptr, "Update asset",
+                      "Update an existing asset by ID; investment assets recalculate position on net_value change");
+    csilk_app_delete_ext(app, "/api/assets/:id", assets_delete,
+                         nullptr, nullptr, "Delete asset",
+                         "Delete an asset and its associated transactions by ID");
+    csilk_app_get_ext(app, "/api/assets/:id", assets_detail,
+                      nullptr, nullptr, "Get asset detail",
+                      "Returns full asset details including linked transaction history");
 
     // Transactions
-    csilk_app_get(app, "/api/transactions", transactions_list);
-    csilk_app_get(app, "/api/transactions/monthly", transactions_monthly);
-    csilk_app_post(app, "/api/transactions", transactions_create);
-    csilk_app_put(app, "/api/transactions/:id", transactions_update);
-    csilk_app_delete(app, "/api/transactions/:id", transactions_delete);
-    csilk_app_get(app, "/api/export/transactions", transactions_export_csv);
-    csilk_app_post(app, "/api/import/transactions", transactions_import_csv);
+    csilk_app_get_ext(app, "/api/transactions", transactions_list, nullptr, nullptr,
+                      "List transactions", "Returns paginated transaction list with optional filters");
+    csilk_app_get_ext(app, "/api/transactions/monthly", transactions_monthly,
+                      nullptr, nullptr, "Monthly transaction summary",
+                      "Returns monthly aggregated transaction totals");
+    csilk_app_post_ext(app, "/api/transactions", transactions_create,
+                       nullptr, nullptr, "Create transaction",
+                       "Create a new transaction (expense, income, transfer, investment buy/sell)");
+    csilk_app_put_ext(app, "/api/transactions/:id", transactions_update,
+                      nullptr, nullptr, "Update transaction",
+                      "Update an existing transaction by ID");
+    csilk_app_delete_ext(app, "/api/transactions/:id", transactions_delete,
+                         nullptr, nullptr, "Delete transaction",
+                         "Delete a transaction by ID");
+    csilk_app_get_ext(app, "/api/export/transactions", transactions_export_csv,
+                      nullptr, nullptr, "Export transactions as CSV",
+                      "Downloads all user transactions as a CSV file");
+    csilk_app_post_ext(app, "/api/import/transactions", transactions_import_csv,
+                       nullptr, nullptr, "Import transactions from CSV",
+                       "Imports transactions from an uploaded CSV file");
 
     // Daily expenses
-    csilk_app_get(app, "/api/daily-expenses", daily_expenses_list);
-    csilk_app_post(app, "/api/daily-expenses", daily_expenses_create);
-    csilk_app_put(app, "/api/daily-expenses/:id", daily_expenses_update);
-    csilk_app_delete(app, "/api/daily-expenses/:id", daily_expenses_delete);
-    csilk_app_get(app, "/api/daily-expenses/monthly", daily_expenses_monthly);
-    csilk_app_get(app, "/api/export/daily-expenses", daily_expenses_export_csv);
-    csilk_app_post(app, "/api/import/daily-expenses", daily_expenses_import_csv);
+    csilk_app_get_ext(app, "/api/daily-expenses", daily_expenses_list, nullptr, nullptr,
+                      "List daily expenses", "Returns paginated list of daily expense records");
+    csilk_app_post_ext(app, "/api/daily-expenses", daily_expenses_create,
+                       nullptr, nullptr, "Create daily expense",
+                       "Create a new daily expense entry with optional tags");
+    csilk_app_put_ext(app, "/api/daily-expenses/:id", daily_expenses_update,
+                      nullptr, nullptr, "Update daily expense",
+                      "Update an existing daily expense record by ID");
+    csilk_app_delete_ext(app, "/api/daily-expenses/:id", daily_expenses_delete,
+                         nullptr, nullptr, "Delete daily expense",
+                         "Delete a daily expense record by ID");
+    csilk_app_get_ext(app, "/api/daily-expenses/monthly", daily_expenses_monthly,
+                      nullptr, nullptr, "Monthly daily expenses",
+                      "Returns monthly aggregated daily expense data");
+    csilk_app_get_ext(app, "/api/export/daily-expenses", daily_expenses_export_csv,
+                      nullptr, nullptr, "Export daily expenses as CSV",
+                      "Downloads all daily expenses as a CSV file");
+    csilk_app_post_ext(app, "/api/import/daily-expenses", daily_expenses_import_csv,
+                       nullptr, nullptr, "Import daily expenses from CSV",
+                       "Imports daily expenses from an uploaded CSV file");
 
     // Tags
-    csilk_app_get(app, "/api/tags", tags_list);
-    csilk_app_post(app, "/api/tags", tags_create);
-    csilk_app_put(app, "/api/tags/:id", tags_update);
-    csilk_app_delete(app, "/api/tags/:id", tags_delete);
-    csilk_app_get(app, "/api/tags/suggestions", tags_suggestions);
+    csilk_app_get_ext(app, "/api/tags", tags_list, nullptr, nullptr,
+                      "List tags", "Returns all tags owned by the current user");
+    csilk_app_post_ext(app, "/api/tags", tags_create,
+                       nullptr, nullptr, "Create tag",
+                       "Create a new tag with optional color");
+    csilk_app_put_ext(app, "/api/tags/:id", tags_update,
+                      nullptr, nullptr, "Update tag",
+                      "Update an existing tag by ID");
+    csilk_app_delete_ext(app, "/api/tags/:id", tags_delete,
+                         nullptr, nullptr, "Delete tag",
+                         "Delete a tag by ID");
+    csilk_app_get_ext(app, "/api/tags/suggestions", tags_suggestions,
+                      nullptr, nullptr, "Tag suggestions",
+                      "Returns tag name suggestions for autocomplete (query param: q)");
 
     // Transfers
-    csilk_app_post(app, "/api/transfers", transfers_create);
+    csilk_app_post_ext(app, "/api/transfers", transfers_create,
+                       nullptr, nullptr, "Create transfer",
+                       "Create a transfer between two assets (debit one, credit other)");
 
     // Reports
-    csilk_app_get(app, "/api/reports/expense/monthly", report_expense_monthly);
-    csilk_app_get(app, "/api/reports/expense/trend", report_expense_trend);
-    csilk_app_get(app, "/api/reports/expense/yearly", report_expense_yearly);
-    csilk_app_get(app, "/api/reports/expense/category", report_expense_category);
-    csilk_app_get(app, "/api/reports/expense/tag", report_expense_tag);
-    csilk_app_get(app, "/api/reports/asset/trend", report_asset_trend);
-    csilk_app_get(app, "/api/reports/asset/breakdown", report_asset_breakdown);
-    csilk_app_get(app, "/api/reports/transaction/performance", report_transaction_performance);
-    csilk_app_get(app, "/api/reports/holdings", report_holdings);
-    csilk_app_get(app, "/api/reports/asset/summary", report_asset_summary);
+    csilk_app_get_ext(app, "/api/reports/expense/monthly", report_expense_monthly,
+                      nullptr, nullptr, "Monthly expense report",
+                      "Returns monthly income/expense breakdown by category and tag");
+    csilk_app_get_ext(app, "/api/reports/expense/trend", report_expense_trend,
+                      nullptr, nullptr, "Expense trend",
+                      "Returns expense trend over N months (query param: months)");
+    csilk_app_get_ext(app, "/api/reports/expense/yearly", report_expense_yearly,
+                      nullptr, nullptr, "Yearly expense report",
+                      "Returns yearly expense summary grouped by month");
+    csilk_app_get_ext(app, "/api/reports/expense/category", report_expense_category,
+                      nullptr, nullptr, "Expense by category",
+                      "Returns expense totals grouped by category");
+    csilk_app_get_ext(app, "/api/reports/expense/tag", report_expense_tag,
+                      nullptr, nullptr, "Expense by tag",
+                      "Returns expense totals grouped by tag");
+    csilk_app_get_ext(app, "/api/reports/asset/trend", report_asset_trend,
+                      nullptr, nullptr, "Asset value trend",
+                      "Returns asset value trend over time (query param: months)");
+    csilk_app_get_ext(app, "/api/reports/asset/breakdown", report_asset_breakdown,
+                      nullptr, nullptr, "Asset breakdown",
+                      "Returns asset allocation breakdown by category");
+    csilk_app_get_ext(app, "/api/reports/transaction/performance",
+                      report_transaction_performance, nullptr, nullptr,
+                      "Transaction performance", "Returns investment transaction performance/PnL report");
+    csilk_app_get_ext(app, "/api/reports/holdings", report_holdings,
+                      nullptr, nullptr, "Portfolio holdings",
+                      "Returns current portfolio holdings for investment assets");
+    csilk_app_get_ext(app, "/api/reports/asset/summary", report_asset_summary,
+                      nullptr, nullptr, "Asset summary",
+                      "Returns aggregated asset summary including net worth");
 
     // Summary (dashboard aggregate)
-    csilk_app_get(app, "/api/summary", summary_get);
+    csilk_app_get_ext(app, "/api/summary", summary_get,
+                      nullptr, nullptr, "Dashboard summary",
+                      "Returns dashboard aggregate: net worth, monthly income/expense, recent transactions");
 
-    csilk_app_get(app, "/api/asset-balance-logs", asset_logs_list);
+    csilk_app_get_ext(app, "/api/asset-balance-logs", asset_logs_list,
+                      nullptr, nullptr, "Asset balance logs",
+                      "Returns paginated asset balance change logs with optional asset_id filter");
 
     // Static files (frontend build output)
     csilk_app_static(app, "/", "./frontend/dist");
