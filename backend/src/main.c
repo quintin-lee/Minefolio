@@ -14,6 +14,8 @@
 #include "controllers/report_controller.h"
 #include "controllers/import_export_controller.h"
 #include "repositories/asset_repo.h"
+#include "dtos/request.h"
+#include "dtos/response.h"
 #include <stdio.h>
 
 int main(int argc, char** argv) {
