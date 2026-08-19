@@ -121,3 +121,6 @@ void transfers_create(csilk_ctx_t* c) {
     csilk_json_free(body);
     respond_ok_null(c);
 }
+void register_transfer_routes(csilk_app_t* app) {
+    csilk_app_post_ext(app, "/api/transfers", transfers_create, "transfer_req_t", nullptr, "Create transfer", "Create a transfer between two assets (debit one, credit other)");
+}

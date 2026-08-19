@@ -484,3 +484,10 @@ void categories_children(csilk_ctx_t* c) {
     csilk_json_free(rows);
     respond_ok(c, result);
 }
+void register_category_routes(csilk_app_t* app) {
+    csilk_app_get_ext(app, "/api/categories", categories_list, nullptr, "category_resp_t", "List categories", "Returns all categories owned by the current user");
+    csilk_app_post_ext(app, "/api/categories", categories_create, "category_req_t", "category_resp_t", "Create category", "Create a new expense/income/asset/transaction category");
+    csilk_app_put_ext(app, "/api/categories/:id", categories_update, "category_req_t", "category_resp_t", "Update category", "Update an existing category by ID");
+    csilk_app_delete_ext(app, "/api/categories/:id", categories_delete, nullptr, nullptr, "Delete category", "Delete a category and its children by ID");
+    csilk_app_get_ext(app, "/api/categories/:id/children", categories_children, nullptr, "category_resp_t", "List category children", "Returns immediate child categories of the given category");
+}

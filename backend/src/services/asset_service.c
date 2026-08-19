@@ -365,3 +365,10 @@ void assets_detail(csilk_ctx_t* c) {
 
     respond_ok(c, resp);
 }
+void register_asset_routes(csilk_app_t* app) {
+    csilk_app_get_ext(app, "/api/assets", assets_list, nullptr, "asset_resp_t", "List assets", "Returns paginated list of user's assets with optional category filter");
+    csilk_app_post_ext(app, "/api/assets", assets_create, "asset_req_t", "asset_resp_t", "Create asset", "Create a new asset (cash, investment, liability, etc.)");
+    csilk_app_put_ext(app, "/api/assets/:id", assets_update, "asset_req_t", "asset_resp_t", "Update asset", "Update an existing asset by ID; investment assets recalculate position on net_value change");
+    csilk_app_delete_ext(app, "/api/assets/:id", assets_delete, nullptr, nullptr, "Delete asset", "Delete an asset and its associated transactions by ID");
+    csilk_app_get_ext(app, "/api/assets/:id", assets_detail, nullptr, "asset_resp_t", "Get asset detail", "Returns full asset details including linked transaction history");
+}

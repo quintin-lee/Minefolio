@@ -125,3 +125,10 @@ void tags_suggestions(csilk_ctx_t* c) {
     if (!result) { respond_error(c, 500, "查询失败"); return; }
     respond_ok(c, result);
 }
+void register_tag_routes(csilk_app_t* app) {
+    csilk_app_get_ext(app, "/api/tags", tags_list, nullptr, "tag_resp_t", "List tags", "Returns all tags owned by the current user");
+    csilk_app_post_ext(app, "/api/tags", tags_create, "tag_req_t", "tag_resp_t", "Create tag", "Create a new tag with optional color");
+    csilk_app_put_ext(app, "/api/tags/:id", tags_update, "tag_req_t", "tag_resp_t", "Update tag", "Update an existing tag by ID");
+    csilk_app_delete_ext(app, "/api/tags/:id", tags_delete, nullptr, nullptr, "Delete tag", "Delete a tag by ID");
+    csilk_app_get_ext(app, "/api/tags/suggestions", tags_suggestions, nullptr, "tag_resp_t", "Tag suggestions", "Returns tag name suggestions for autocomplete (query param: q)");
+}

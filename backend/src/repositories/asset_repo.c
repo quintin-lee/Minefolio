@@ -70,3 +70,9 @@ void asset_logs_list(csilk_ctx_t* c) {
 
     respond_page_ok(c, result, total, page, page_size);
 }
+
+void register_asset_repo_routes(csilk_app_t* app) {
+    csilk_app_get_ext(app, "/api/asset-balance-logs", asset_logs_list,
+                      nullptr, nullptr, "Asset balance logs",
+                      "Returns paginated asset balance change logs with optional asset_id filter");
+}

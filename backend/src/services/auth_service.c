@@ -393,3 +393,12 @@ void auth_me(csilk_ctx_t* c) {
 
     respond_ok(c, resp);
 }
+void register_auth_routes(csilk_app_t* app) {
+    csilk_app_get_ext(app, "/api/system/status", system_status, nullptr, nullptr, "System status", "Returns initialization status and user count");
+    csilk_app_post_ext(app, "/api/system/setup", system_setup, "setup_req_t", "token_resp_t", "Initialize system", "Seed the database with default categories for the first admin user");
+    csilk_app_post_ext(app, "/api/auth/register", auth_register, "register_req_t", "token_resp_t", "Register admin", "Create the first admin user (only allowed before system initialization)");
+    csilk_app_post_ext(app, "/api/auth/login", auth_login, "login_req_t", "token_resp_t", "Login", "Authenticate with username and RSA-encrypted password, returns JWT token");
+    csilk_app_get_ext(app, "/api/auth/public-key", auth_public_key, nullptr, nullptr, "Get public key", "Returns the RSA public key PEM for client-side password encryption");
+    csilk_app_get_ext(app, "/api/auth/me", auth_me, nullptr, "user_resp_t", "Get current user profile", "Returns the authenticated user's profile");
+    csilk_app_put_ext(app, "/api/auth/password", auth_change_password, "change_pwd_req_t", nullptr, "Change password", "Update the current user's password using encrypted old/new values");
+}
