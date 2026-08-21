@@ -355,6 +355,8 @@ void transactions_update(csilk_ctx_t* c) {
     const char* id_str = csilk_get_param(c, "id");
     if (!id_str) { respond_bad_request(c, "缺少 id"); return; }
 
+    int64_t tx_id_val = atoll(id_str);
+
     csilk_json_t* body = csilk_bind_json(c);
     if (!body) { respond_bad_request(c, "请求体必须为 JSON"); return; }
 
@@ -451,46 +453,53 @@ void transactions_update(csilk_ctx_t* c) {
         "category_id=?, source_type=?, linked_asset_id=NULLIF(?, '0') WHERE id=? AND user_id=?", up_params);
     if (up_res) csilk_json_free(up_res);
 
-    // 1. 目标资产：投资类先回滚旧持仓再正推新持仓；非投资类走 diff
+    // 1. 目标资产余额联动
+    // 投资类（buy/sell）：apply_position 更新持仓 quantity/cost_basis/net_value，
+    //                   同时通过 balance_apply_delta 更新 current_value。
+    // 非投资类：计算 diff = new_tdelta - old_tdelta，原子更新余额。
+    double new_tdelta = tx_delta(type ? type : "", amount, price, qty);
     int old_is_invest = (strcmp(old_tx_type, "buy") == 0 || strcmp(old_tx_type, "sell") == 0);
     int new_is_invest = (strcmp(type ? type : "", "buy") == 0 || strcmp(type ? type : "", "sell") == 0);
-    double new_tdelta = tx_delta(type ? type : "", amount, price, qty);
     if (old_is_invest) {
+        // 回滚旧持仓
         double old_pos_delta = 0;
         apply_position(pool, old_asset_id, old_tx_type, old_tx_amount, old_fee,
                        old_tx_price, old_tx_qty, &old_pos_delta);
-    }
-     if (new_is_invest) {
-         double new_pos_delta = 0;
-         int new_rc = apply_position(pool, old_asset_id, type ? type : "", amount, fee,
-                                     price, qty, &new_pos_delta);
-         if (new_rc < 0) {
-             csilk_db_exec(pool, "ROLLBACK");
-             csilk_json_free(body);
-             csilk_json_free(old_row);
-             respond_bad_request(c, "持有份额不足");
-             return;
-         }
-        if (new_pos_delta != 0) {
-            if (balance_apply_delta(pool, old_asset_id, user_id, new_pos_delta,
-                                    "transaction", atoll(id_str), note) != 0) {
+        if (old_pos_delta != 0) {
+            if (balance_apply_delta(pool, old_asset_id, user_id, -old_pos_delta,
+                                    "transaction", tx_id_val, note) != 0) {
                 csilk_db_exec(pool, "ROLLBACK");
-                csilk_json_free(body);
-                csilk_json_free(old_row);
-                respond_bad_request(c, "资产无效");
-                return;
+                csilk_json_free(body); csilk_json_free(old_row);
+                respond_bad_request(c, "资产无效"); return;
             }
         }
-    } else {
+    }
+    if (new_is_invest) {
+        double new_pos_delta = 0;
+        int new_rc = apply_position(pool, old_asset_id, type ? type : "", amount, fee,
+                                    price, qty, &new_pos_delta);
+        if (new_rc < 0) {
+            csilk_db_exec(pool, "ROLLBACK");
+            csilk_json_free(body); csilk_json_free(old_row);
+            respond_bad_request(c, "持有份额不足"); return;
+        }
+        if (new_pos_delta != 0) {
+            if (balance_apply_delta(pool, old_asset_id, user_id, new_pos_delta,
+                                    "transaction", tx_id_val, note) != 0) {
+                csilk_db_exec(pool, "ROLLBACK");
+                csilk_json_free(body); csilk_json_free(old_row);
+                respond_bad_request(c, "资产无效"); return;
+            }
+        }
+    } else if (!old_is_invest) {
+        // 新旧均非投资类：走 diff
         double diff = new_tdelta - old_tdelta;
         if (diff != 0) {
             if (balance_apply_delta(pool, old_asset_id, user_id, diff,
-                                    "transaction", atoll(id_str), note) != 0) {
+                                    "transaction", tx_id_val, note) != 0) {
                 csilk_db_exec(pool, "ROLLBACK");
-                csilk_json_free(body);
-                csilk_json_free(old_row);
-                respond_bad_request(c, "资产无效");
-                return;
+                csilk_json_free(body); csilk_json_free(old_row);
+                respond_bad_request(c, "资产无效"); return;
             }
         }
     }
@@ -502,7 +511,7 @@ void transactions_update(csilk_ctx_t* c) {
             double ldiff = new_ldelta - old_ldelta;
             if (ldiff != 0) {
                 if (balance_apply_delta(pool, linked_asset_id, user_id, ldiff,
-                                        "transaction_linked", atoll(id_str), note) != 0) {
+                                        "transaction_linked", tx_id_val, note) != 0) {
                     csilk_db_exec(pool, "ROLLBACK");
                     csilk_json_free(body);
                     csilk_json_free(old_row);
@@ -514,7 +523,7 @@ void transactions_update(csilk_ctx_t* c) {
     } else {
         if (old_linked_asset_id > 0 && old_ldelta != 0) {
             if (balance_apply_delta(pool, old_linked_asset_id, user_id, -old_ldelta,
-                                    "transaction_linked", atoll(id_str), note) != 0) {
+                                    "transaction_linked", tx_id_val, note) != 0) {
                 csilk_db_exec(pool, "ROLLBACK");
                 csilk_json_free(body);
                 csilk_json_free(old_row);
@@ -524,7 +533,7 @@ void transactions_update(csilk_ctx_t* c) {
         }
         if (linked_asset_id > 0 && new_ldelta != 0) {
             if (balance_apply_delta(pool, linked_asset_id, user_id, new_ldelta,
-                                    "transaction_linked", atoll(id_str), note) != 0) {
+                                    "transaction_linked", tx_id_val, note) != 0) {
                 csilk_db_exec(pool, "ROLLBACK");
                 csilk_json_free(body);
                 csilk_json_free(old_row);
@@ -546,6 +555,8 @@ void transactions_delete(csilk_ctx_t* c) {
 
     const char* id_str = csilk_get_param(c, "id");
     if (!id_str) { respond_bad_request(c, "缺少 id"); return; }
+
+    int64_t tx_id_val = atoll(id_str);
 
     csilk_db_pool_t* pool = db_get_pool();
     char uid_str[32];
@@ -592,7 +603,7 @@ void transactions_delete(csilk_ctx_t* c) {
     // 1. 反转目标资产旧 delta（投资类已由 apply_position 处理，非投资类走此处）
     if (old_tdelta != 0 && !(strcmp(old_tx_type, "buy") == 0 || strcmp(old_tx_type, "sell") == 0)) {
         if (balance_apply_delta(pool, asset_id, user_id, -old_tdelta,
-                                "transaction", atoll(id_str), NULL) != 0) {
+                                "transaction", tx_id_val, NULL) != 0) {
             csilk_db_exec(pool, "ROLLBACK");
             csilk_json_free(old_row);
             respond_error(c, 500, "删除失败");
@@ -603,7 +614,7 @@ void transactions_delete(csilk_ctx_t* c) {
     // 2. 反转关联资金账户旧 delta
     if (linked_asset_id > 0 && old_ldelta != 0) {
         if (balance_apply_delta(pool, linked_asset_id, user_id, -old_ldelta,
-                                "transaction_linked", atoll(id_str), NULL) != 0) {
+                                "transaction_linked", tx_id_val, NULL) != 0) {
             csilk_db_exec(pool, "ROLLBACK");
             csilk_json_free(old_row);
             respond_error(c, 500, "删除失败");

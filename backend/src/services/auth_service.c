@@ -12,6 +12,7 @@
 #include "csilk/core/crypto_dispatch.h"
 #include "csilk/drivers/cipher.h"
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 
 static void store_bcrypt_hash(const char* password, char* out) {
@@ -157,7 +158,7 @@ void auth_register(csilk_ctx_t* c) {
 
     const char* username = csilk_json_get_string(body, "username");
     const char* password = csilk_json_get_string(body, "password");
-    if (!username || !password || strlen(username) < 2 || strlen(password) < 4) {
+    if (!username || !password || strlen(username) < 2 || strlen(password) < 6) {
         csilk_json_free(body);
         respond_bad_request(c, "用户名需≥2字符，密码需≥4字符");
         return;
