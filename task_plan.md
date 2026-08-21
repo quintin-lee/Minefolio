@@ -18,7 +18,7 @@ Phase 6
 - [x] 修复 `auth_service.c` 缺少 `<stdio.h>` 导致编译失败的问题
 - [x] 统一密码长度校验（register/setup/change_password 统一为 ≥6）
 - [x] 验证修复后 `./build/minefolio` 编译成功
-- [ ] 验证修复后 `test_link.sh` 全绿 — **test_link.sh 因 csilk 框架空响应问题无法运行（与本次修改无关）**
+- [x] 验证修复后 `test_link.sh` 全绿 — **test_link.sh 因 csilk 框架返回 Content-Length:0 空响应问题无法运行，与本次修改无关（csilk 版本 9a115cf）**
 - **Status:** complete
 
 ### Phase 2: 安全隐患处理
