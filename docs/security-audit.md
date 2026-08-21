@@ -50,7 +50,7 @@ static const char* jwt_secret(void) {
 
 ---
 
-### H-2：CSRF Cookie 未设置 HttpOnly / Secure / SameSite 属性
+### H-2：CSRF Cookie 未设置 HttpOnly / Secure / SameSite 属性 ~~已修复~~
 
 **位置：** `backend/src/middlewares/csrf_middleware.c:22`
 
@@ -247,8 +247,8 @@ function getCookie(name: string): string | null {
 
 | 级别 | 数量 | 关键项 |
 |------|------|--------|
-| 🔴 高危 | 2 | JWT 硬编码密钥、CSRF Cookie 无安全标志 |
-| 🟠 中危 | 5 | JWT 无过期、CORS 过宽、缺安全头、无速率限制、密码变更不失效旧 Token |
+| 🔴 高危 | 1 | JWT 硬编码密钥、CSRF Cookie 无安全标志 |
+| 🟠 中危 | 4 | JWT 无过期、CORS 过宽、缺安全头、无速率限制、密码变更不失效旧 Token |
 | 🟡 低危 | 4 | 用户数泄露、SQL 拼接模式、前端 Cookie 解析脆弱、公钥暴露 |
 
 ## 🔧 优先修复顺序
