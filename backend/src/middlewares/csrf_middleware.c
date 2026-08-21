@@ -1,5 +1,7 @@
 #include "middlewares/csrf_middleware.h"
+#include "csilk/core/response.h"
 #include <string.h>
+#include <stdio.h>
 
 void csrf_middleware_wrapper(csilk_ctx_t* c) {
     const char* method = csilk_get_method(c);
@@ -19,7 +21,16 @@ void csrf_middleware_wrapper(csilk_ctx_t* c) {
         if (!csilk_get_cookie(c, "csrf_token")) {
             char buf[33];
             if (csilk_csrf_generate_token(buf, sizeof(buf)) == 0) {
-                csilk_set_cookie(c, "csrf_token", buf, 86400, "/", NULL, 0, 0);
+                /* Build Set-Cookie with Secure + HttpOnly + SameSite=Strict.
+                 * csilk_set_cookie() does not support SameSite, so we construct
+                 * the header string manually and use csilk_set_header(). */
+                char cookie[128];
+                int n = snprintf(cookie, sizeof(cookie),
+                    "csrf_token=%s; Max-Age=86400; Path=/; Secure; HttpOnly; SameSite=Strict",
+                    buf);
+                if (n > 0 && (size_t)n < sizeof(cookie)) {
+                    csilk_set_header(c, "Set-Cookie", cookie);
+                }
             }
         }
         csilk_next(c);

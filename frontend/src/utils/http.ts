@@ -13,6 +13,18 @@ export function setMobileMode(on: boolean): void {
   mobileMode = on
 }
 
+/**
+ * Robust cookie parser — handles all standard Set-Cookie attribute orders
+ * and avoids fragile split-based approaches that break when HttpOnly / SameSite
+ * attributes are added by the server.
+ */
+function getCookie(name: string): string | null {
+  const cookie = document.cookie || ''
+  const re = new RegExp('(?:^|;\\s*)' + name.replace(/[.*+?^${}()|[\\]\\.]/g, '\\$&') + '=([^;]*)')
+  const match = cookie.match(re)
+  return match && match[1] ? decodeURIComponent(match[1]) : null
+}
+
 function createHttp(): AxiosInstance {
   const instance = axios.create({
     baseURL: import.meta.env.VITE_API_URL,
@@ -27,7 +39,7 @@ function createHttp(): AxiosInstance {
     }
     const method = (config.method || 'get').toUpperCase()
     if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
-      const csrf = document.cookie.split('; ').find((r) => r.startsWith('csrf_token='))?.split('=')[1]
+      const csrf = getCookie('csrf_token')
       if (csrf) {
         config.headers['X-CSRF-Token'] = csrf
       }
