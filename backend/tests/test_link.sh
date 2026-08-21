@@ -342,6 +342,27 @@ check "T5 cost_basis 含 fee" "1405.0000" "$(echo "$CB")"
 FEE_ROWS=$(sqlite3 "$DB" "SELECT COUNT(*) FROM transactions WHERE transaction_type='fee' AND note LIKE '%fee%'")
 check "T5 fee 行落库" "1" "$FEE_ROWS"
 
+# T6: 交易更新：投资类 buy→deposit — 旧持仓必须回滚且余额联动（回归修复）
+TX_BUY_FUND=$(sqlite3 "$DB" "SELECT id FROM transactions WHERE asset_id=$FUND_ID AND transaction_type='buy' AND transaction_date='2026-08-14' LIMIT 1")
+WALLET_BAL_BEFORE=$(sqlite3 "$DB" "SELECT printf('%.1f', current_value) FROM assets WHERE id=$WALLET_ID")
+curl -s -X PUT -H "$AUTH" -H "Content-Type: application/json" "$BASE/transactions/$TX_BUY_FUND" \
+  -d "{\"transaction_type\":\"deposit\",\"amount\":2000,\"source_type\":\"income\",\"transaction_date\":\"2026-08-14\",\"currency\":\"CNY\",\"category_id\":$ASSET_CAT}"
+POS_ROLLBACK=$(sqlite3 "$DB" "SELECT printf('%.4f',quantity),printf('%.4f',cost_basis),printf('%.4f',net_value) FROM assets WHERE id=$FUND_ID")
+check "T6 回滚后 quantity=0" "0.0000" "$(echo "$POS_ROLLBACK" | cut -d'|' -f1)"
+check "T6 回滚后 cost_basis=0" "0.0000" "$(echo "$POS_ROLLBACK" | cut -d'|' -f2)"
+check "T6 回滚后 net_value=0" "0.0000" "$(echo "$POS_ROLLBACK" | cut -d'|' -f3)"
+WALLET_BAL_AFTER=$(sqlite3 "$DB" "SELECT printf('%.1f', current_value) FROM assets WHERE id=$WALLET_ID")
+check "T6 钱包余额还原(原${WALLET_BAL_BEFORE}+2000)" "$(echo "$WALLET_BAL_BEFORE" | awk '{printf "%.1f",$1+2000}')" "$WALLET_BAL_AFTER"
+
+# T7: fee 行 note 空 fallback — 原 note 为空时 fee 行 note='fee'
+FUND_CAT2=$(sqlite3 "$DB" "SELECT id FROM categories WHERE name='基金' LIMIT 1")
+WALLET_ID2=$(sqlite3 "$DB" "SELECT id FROM assets WHERE name='钱包' LIMIT 1")
+# 买入有 fee 但无 note 的交易
+curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/transactions" \
+  -d "{\"asset_id\":$FUND_ID,\"linked_asset_id\":$WALLET_ID2,\"category_id\":$FUND_CAT2,\"transaction_type\":\"buy\",\"amount\":100,\"quantity\":50,\"price_per_unit\":2,\"fee\":3,\"currency\":\"CNY\",\"transaction_date\":\"2026-08-20\"}" > /dev/null
+FEE_NOTE=$(sqlite3 "$DB" "SELECT note FROM transactions WHERE transaction_type='fee' AND asset_id=$FUND_ID AND transaction_date='2026-08-20' LIMIT 1")
+check "T7 fee 行 note 非空（原 note 为空）" "fee" "$FEE_NOTE"
+
 echo ""
 echo "== 33. 持仓报表 =="
 
