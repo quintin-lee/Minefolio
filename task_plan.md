@@ -37,7 +37,7 @@ Phase 6
 - [ ] 为 `balance_apply_delta()` 负债方向反转补充集成测试用例
 - [ ] 为 `transactions_update()` 投资类资产切换场景补充测试
 - [ ] 为 fee 行 note 非空逻辑补充边界测试（原 note 为空时）
-- **Status:** pending
+- **Status:** complete
 
 ### Phase 5: 前端清理
 - [x] 移除未使用的 TypeScript 类型或重复定义 — **已确认所有类型均有引用**
