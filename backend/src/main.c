@@ -4,6 +4,7 @@
 #include "middlewares/jwt_middleware.h"
 #include "middlewares/cors_middleware.h"
 #include "middlewares/csrf_middleware.h"
+#include "middlewares/security_headers_middleware.h"
 #include "services/auth_service.h"
 #include "services/category_service.h"
 #include "services/asset_service.h"
@@ -51,14 +52,14 @@ int main(int argc, char** argv) {
     csilk_app_use(app, csilk_recovery_handler);
     csilk_app_use(app, csilk_logger_handler);
     csilk_app_use(app, csilk_request_id_middleware);
+    /* Security headers on every response (before CORS so they appear first) */
+    csilk_app_use(app, security_headers_middleware);
     csilk_app_use(app, cors_middleware_wrapper);
 
     csilk_app_get(app, "/healthz", csilk_health_check_handler);
     csilk_app_options(app, "/api/*path", cors_preflight_handler);
 
-    // JWT + CSRF group (must be before domain routes)
-    const char* jwt_secret = getenv("MINEFOLIO_JWT_SECRET");
-    if (!jwt_secret) jwt_secret = "minefolio-dev-secret-change-in-production";
+    // JWT middleware (rejects if MINEFOLIO_JWT_SECRET is not set)
     csilk_app_use_group(app, "/api", jwt_middleware_wrapper);
     if (getenv("MINEFOLIO_ENABLE_CSRF"))
         csilk_app_use_group(app, "/api", csrf_middleware_wrapper);

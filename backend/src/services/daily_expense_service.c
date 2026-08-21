@@ -117,18 +117,51 @@ void daily_expenses_list(csilk_ctx_t* c) {
         params[pidx++] = cat_id;
     }
     if (tag_ids && tag_ids[0]) {
-        for (const char* p = tag_ids; *p; p++) {
-            if ((*p < '0' || *p > '9') && *p != ',') {
-                respond_bad_request(c, "tag_ids 参数格式错误");
-                return;
+        /* Parse comma-separated tag IDs into parameterised placeholders.
+         * Each parsed integer is snprintf'd into its own buffer so the
+         * pointer stays valid for the params array — avoids string concat
+         * into the SQL body entirely. */
+        char tag_bufs[32][32];
+        const char* tag_ptrs[32];
+        int tag_count = 0;
+        size_t pos = 0;
+        while (tag_ids[pos]) {
+            while (tag_ids[pos] == ',' || tag_ids[pos] == ' ') pos++;
+            if (!tag_ids[pos]) break;
+            size_t start = pos;
+            while (tag_ids[pos] && tag_ids[pos] != ',' && tag_ids[pos] != ' ') pos++;
+            size_t len = pos - start;
+            if (len == 0 || len >= sizeof(tag_bufs[0])) {
+                respond_bad_request(c, "tag_ids 格式错误"); return;
             }
+            int ok = 1;
+            if (len == 1 && tag_ids[start] == '0') ok = 0;
+            for (size_t k = 0; k < len && ok; k++)
+                if (tag_ids[start + k] < '1' || tag_ids[start + k] > '9') ok = 0;
+            if (!ok) { respond_bad_request(c, "tag_ids 只能包含正整数"); return; }
+            if (tag_count >= 32) { respond_bad_request(c, "tag_ids 最多支持 32 个"); return; }
+            memcpy(tag_bufs[tag_count], tag_ids + start, len);
+            tag_bufs[tag_count][len] = '\0';
+            tag_ptrs[tag_count++] = tag_bufs[tag_count];
         }
-        snprintf(sql + strlen(sql), sizeof(sql) - strlen(sql),
+        char in_clause[512];
+        int ipos = 0;
+        for (int i = 0; i < tag_count; i++) {
+            if (i > 0) in_clause[ipos++] = ',';
+            ipos += snprintf(in_clause + ipos, sizeof(in_clause) - (size_t)ipos, " ?");
+        }
+        char filter[512];
+        snprintf(filter, sizeof(filter),
             " AND EXISTS (SELECT 1 FROM expense_tags et2 "
-            " WHERE et2.expense_id=de.id AND et2.tag_id IN (%s))", tag_ids);
-        snprintf(count_sql + strlen(count_sql), sizeof(count_sql) - strlen(count_sql),
-            " AND EXISTS (SELECT 1 FROM expense_tags et2 "
-            " WHERE et2.expense_id=de.id AND et2.tag_id IN (%s))", tag_ids);
+            " WHERE et2.expense_id=de.id AND et2.tag_id IN (%s))",
+            in_clause);
+        if ((size_t)(strlen(sql) + strlen(filter) + 1) >= sizeof(sql) ||
+            (size_t)(strlen(count_sql) + strlen(filter) + 1) >= sizeof(count_sql)) {
+            respond_error(c, 500, "查询过长"); return;
+        }
+        strncat(sql,      filter, sizeof(sql)      - strlen(sql)      - 1);
+        strncat(count_sql, filter, sizeof(count_sql) - strlen(count_sql) - 1);
+        for (int i = 0; i < tag_count && pidx < 15; i++) params[pidx++] = tag_ptrs[i];
     }
     if (start) {
         snprintf(sql + strlen(sql), sizeof(sql) - strlen(sql), " AND de.expense_date >= ?");
