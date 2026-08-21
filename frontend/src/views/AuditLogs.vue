@@ -117,9 +117,13 @@ function resetFilters() {
 }
 
 onMounted(async () => {
-  const res = await assetsApi.list({ page_size: 500 })
-  assets.value = res.list
-  loadData()
+  try {
+    const res = await assetsApi.list({ page_size: 500 })
+    assets.value = res.list
+    loadData()
+  } catch (e) {
+    console.error('[AuditLogs] onMounted failed:', e)
+  }
 })
 </script>
 

@@ -16,6 +16,7 @@ interface RsaJwk {
 }
 
 async function fetchRsaJwk(): Promise<RsaJwk> {
+  // 公钥接口无需鉴权，直接 fetch 避免循环依赖 http.ts（http.ts 依赖 auth store）
   const r = await fetch('/api/auth/public-key')
   if (!r.ok) throw new Error('Failed to fetch public key')
   const body = await r.json()

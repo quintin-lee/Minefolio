@@ -302,8 +302,13 @@ void transactions_create(csilk_ctx_t* c) {
             (long long)category_id, src_type, fee_amt_str, currency, date,
             note && strlen(note) > 0 ? note : "fee");
         csilk_db_exec(pool, fee_sql);
-        balance_apply_delta(pool, linked_asset_id, user_id, -fee,
-                            "transaction_fee", tx_id, note);
+        if (balance_apply_delta(pool, linked_asset_id, user_id, -fee,
+                                "transaction_fee", tx_id, note) != 0) {
+            csilk_db_exec(pool, "ROLLBACK");
+            csilk_json_free(body);
+            respond_bad_request(c, "手续费扣减失败");
+            return;
+        }
     }
 
     // 目标资产余额联动（非投资类走原逻辑，投资类已在 apply_position 内处理）

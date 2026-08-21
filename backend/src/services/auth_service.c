@@ -11,7 +11,6 @@
 #include "csilk/core/codec.h"
 #include "csilk/core/crypto_dispatch.h"
 #include "csilk/drivers/cipher.h"
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
