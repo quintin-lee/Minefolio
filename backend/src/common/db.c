@@ -49,14 +49,6 @@ int db_init(csilk_db_pool_t** out_pool) {
     return 0;
 }
 
-static int exec_safe(csilk_db_pool_t* pool, const char* sql) {
-    int rc = csilk_db_exec(pool, sql);
-    if (rc != 0) {
-        fprintf(stderr, "SQL error: %s\n", sql);
-    }
-    return rc;
-}
-
 static int col_exists(csilk_db_pool_t* pool, const char* table, const char* column) {
     if (g_is_postgres) {
         const char* params[] = { table, column, NULL };

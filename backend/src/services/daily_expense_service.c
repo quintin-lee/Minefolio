@@ -8,17 +8,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-static int64_t get_last_insert_id(csilk_db_pool_t* pool) {
-    csilk_json_t* res = csilk_db_query_json(pool, "SELECT last_insert_rowid() as id");
-    if (!res || csilk_json_array_size(res) == 0) {
-        if (res) csilk_json_free(res);
-        return 0;
-    }
-    int64_t id = db_get_int(csilk_json_array_get(res, 0), "id");
-    csilk_json_free(res);
-    return id;
-}
-
 static int64_t get_or_create_tag(csilk_db_pool_t* pool, int64_t user_id, const csilk_json_t* tag_obj) {
     if (!pool || user_id <= 0 || !tag_obj) return 0;
     int64_t tag_id = db_get_int(tag_obj, "id");
