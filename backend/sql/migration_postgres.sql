@@ -1,10 +1,11 @@
 -- Minefolio PostgreSQL 数据库初始化脚本
 
 CREATE TABLE IF NOT EXISTS users (
-    id         BIGSERIAL PRIMARY KEY,
-    username   TEXT UNIQUE NOT NULL,
-    password   TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    id            BIGSERIAL PRIMARY KEY,
+    username      TEXT UNIQUE NOT NULL,
+    password      TEXT NOT NULL,
+    token_version BIGINT NOT NULL DEFAULT 0,
+    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS categories (
@@ -27,6 +28,7 @@ CREATE TABLE IF NOT EXISTS categories (
 
 CREATE TABLE IF NOT EXISTS assets (
     id            BIGSERIAL PRIMARY KEY,
+    token_version BIGINT NOT NULL DEFAULT 0,
     user_id       BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     category_id   BIGINT NOT NULL REFERENCES categories(id) ON DELETE RESTRICT,
     name          TEXT NOT NULL,
@@ -63,6 +65,7 @@ CREATE TABLE IF NOT EXISTS transactions (
 
 CREATE TABLE IF NOT EXISTS transfers (
     id            BIGSERIAL PRIMARY KEY,
+    token_version BIGINT NOT NULL DEFAULT 0,
     user_id       BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     from_asset_id BIGINT NOT NULL REFERENCES assets(id) ON DELETE RESTRICT,
     to_asset_id   BIGINT NOT NULL REFERENCES assets(id) ON DELETE RESTRICT,
@@ -111,6 +114,7 @@ CREATE INDEX IF NOT EXISTS idx_expense_tags_tag ON expense_tags(tag_id);
 -- 资产余额审计日志（只增不删；asset_id 不设外键——删资产后日志保留）
 CREATE TABLE IF NOT EXISTS asset_balance_logs (
     id            BIGSERIAL PRIMARY KEY,
+    token_version BIGINT NOT NULL DEFAULT 0,
     asset_id      BIGINT NOT NULL,
     user_id       BIGINT NOT NULL REFERENCES users(id),
     delta         DECIMAL(18,2) NOT NULL,

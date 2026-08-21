@@ -5,6 +5,7 @@
 #include "middlewares/cors_middleware.h"
 #include "middlewares/csrf_middleware.h"
 #include "middlewares/security_headers_middleware.h"
+#include "middlewares/rate_limit.h"
 #include "services/auth_service.h"
 #include "services/category_service.h"
 #include "services/asset_service.h"
@@ -52,8 +53,10 @@ int main(int argc, char** argv) {
     csilk_app_use(app, csilk_recovery_handler);
     csilk_app_use(app, csilk_logger_handler);
     csilk_app_use(app, csilk_request_id_middleware);
-    /* Security headers on every response (before CORS so they appear first) */
+    /* Security headers on every response */
     csilk_app_use(app, security_headers_middleware);
+    /* Rate-limit auth-write endpoints (login/register/setup) before JWT check */
+    csilk_app_use(app, rate_limit_auth_middleware);
     csilk_app_use(app, cors_middleware_wrapper);
 
     csilk_app_get(app, "/healthz", csilk_health_check_handler);

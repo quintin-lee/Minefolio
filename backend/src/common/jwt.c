@@ -9,12 +9,13 @@ static const char* jwt_secret(void) {
     return s ? s : "minefolio-dev-secret-change-in-production";
 }
 
-char* jwt_generate_token(csilk_ctx_t* c, int64_t user_id) {
+char* jwt_generate_token(csilk_ctx_t* c, int64_t user_id, int token_version) {
     csilk_json_t* payload = csilk_json_object();
     int64_t now = (int64_t)time(NULL);
     csilk_json_add_int(payload, "sub", user_id);
     csilk_json_add_int(payload, "iat", now);
     csilk_json_add_int(payload, "exp", now + 604800); /* 7 days */
+    csilk_json_add_int(payload, "v", token_version);  /* token version for revocation */
 
     char* secret = (char*)jwt_secret();
     char* token = csilk_jwt_generate(c, payload, secret);

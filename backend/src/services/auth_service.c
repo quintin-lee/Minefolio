@@ -129,7 +129,7 @@ void system_setup(csilk_ctx_t* c) {
     csilk_db_exec(pool, "COMMIT");
     csilk_json_free(body);
 
-    char* token = jwt_generate_token(c, user_id);
+    char* token = jwt_generate_token(c, user_id, 0); /* new admin, version 0 */
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_string(resp, "token", token ? token : "");
     csilk_json_add_number(resp, "expires_in", 604800);
@@ -199,7 +199,7 @@ void auth_register(csilk_ctx_t* c) {
     }
 
     int64_t user_id = db_get_int(csilk_json_array_get(user, 0), "id");
-    char* token = jwt_generate_token(c, user_id);
+    char* token = jwt_generate_token(c, user_id, 0); /* new user, version 0 */
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_string(resp, "token", token ? token : "");
     csilk_json_add_number(resp, "expires_in", 604800);
@@ -262,7 +262,18 @@ void auth_login(csilk_ctx_t* c) {
     }
 
     int64_t user_id = db_get_int(row, "id");
-    char* token = jwt_generate_token(c, user_id);
+    /* Fetch current token_version for embedding in JWT */
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    const char* ver_params[] = { uid_str, NULL };
+    csilk_json_t* ver_row = csilk_db_query_param_json(pool,
+        "SELECT token_version FROM users WHERE id=?", ver_params);
+    int token_version = 0;
+    if (ver_row && csilk_json_array_size(ver_row) > 0)
+        token_version = (int)db_get_int(csilk_json_array_get(ver_row, 0), "token_version");
+    if (ver_row) csilk_json_free(ver_row);
+
+    char* token = jwt_generate_token(c, user_id, token_version);
 
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_string(resp, "token", token ? token : "");
@@ -360,6 +371,10 @@ void auth_change_password(csilk_ctx_t* c) {
     csilk_json_t* update_res = csilk_db_query_param_json(pool,
         "UPDATE users SET password = ? WHERE id = ?", update_params);
     if (update_res) csilk_json_free(update_res);
+
+    /* Invalidate all existing sessions by incrementing token_version */
+    const char* inv_params[] = { uid_str, NULL };
+    csilk_db_query_param_json(pool, "UPDATE users SET token_version = token_version + 1 WHERE id=?", inv_params);
 
     csilk_json_free(body);
 

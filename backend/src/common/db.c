@@ -156,6 +156,11 @@ int db_run_migrations(csilk_db_pool_t* pool) {
     // Try adding 'type' column for pre-existing databases (ignore failure if column already exists)
     csilk_db_exec(pool, "ALTER TABLE categories ADD COLUMN type TEXT NOT NULL DEFAULT 'asset'");
 
+    // ---- users token_version 列迁移（仅新建表时由 migration.sql 处理，存量库补列）----
+    if (!col_exists(pool, "users", "token_version")) {
+        csilk_db_exec(pool, "ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0");
+    }
+
     // ---- 交易分类 CHECK 约束迁移 ----
     csilk_json_t* cat_schema = csilk_db_query_json(pool, "SELECT sql FROM sqlite_master WHERE type='table' AND name='categories'");
     if (cat_schema && csilk_json_array_size(cat_schema) > 0) {

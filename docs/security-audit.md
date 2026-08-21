@@ -50,7 +50,7 @@ static const char* jwt_secret(void) {
 
 ---
 
-### H-2：CSRF Cookie 未设置 HttpOnly / Secure / SameSite 属性 ~~已修复~~
+### H-2：CSRF Cookie 未设置 HttpOnly / Secure / SameSite 属性 ~~✅ 已修复~~ ~~已修复~~
 
 **位置：** `backend/src/middlewares/csrf_middleware.c:22`
 
@@ -65,12 +65,15 @@ csilk_set_cookie(c, "csrf_token", buf, 86400, "/", NULL, 0, 0);
 2. **中间人窃取**：在 HTTP（非 HTTPS）环境下，Cookie 明文传输，可被网络嗅探。
 3. **前端解析脆弱**：`http.ts` 用 `document.cookie.split('; ')` 手动解析，Cookie 格式异常时可能取不到 Token，导致 CSRF 防护形同虚设。
 
-**修复：**
+**修复（已完成，commit `d7be8e00`）：**
 ```c
-// 需同时设置 secure=1, httponly=1，SameSite 通过额外 header 或框架支持设置
-csilk_set_cookie(c, "csrf_token", buf, 86400, "/", NULL, 1, 1);
+char cookie[128];
+snprintf(cookie, sizeof(cookie),
+    "csrf_token=%s; Max-Age=86400; Path=/; Secure; HttpOnly; SameSite=Strict",
+    buf);
+csilk_set_header(c, "Set-Cookie", cookie);
 ```
-同时前端改为使用 `document.cookie` 的标准解析，或使用 `Cookie` 响应头直接读取。
+同时前端改用正则解析 `getCookie()` 函数替代脆弱的 `document.cookie.split`。
 
 ---
 

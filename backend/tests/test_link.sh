@@ -373,7 +373,7 @@ EMPTY_TOKEN=$(node -e "
 const crypto = require('crypto');
 const secret = 'minefolio-dev-secret-change-in-production';
 const h = Buffer.from(JSON.stringify({alg:'HS256',typ:'JWT'})).toString('base64url');
-const p = Buffer.from(JSON.stringify({sub:$EMPTY_UID,iat:Math.floor(Date.now()/1000),exp:Math.floor(Date.now()/1000)+604800})).toString('base64url');
+const p = Buffer.from(JSON.stringify({sub:$EMPTY_UID,iat:Math.floor(Date.now()/1000),exp:Math.floor(Date.now()/1000)+604800,v:0})).toString('base64url');
 const s = crypto.createHmac('sha256', secret).update(h+'.'+p).digest('base64url');
 process.stdout.write(h+'.'+p+'.'+s);
 ")
