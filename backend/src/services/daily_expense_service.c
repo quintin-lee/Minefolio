@@ -1,5 +1,6 @@
 #include "services/daily_expense_service.h"
 #include "common/response.h"
+#include "common/ctx.h"
 #include "common/db.h"
 #include "common/jwt.h"
 #include "common/balance.h"
@@ -58,8 +59,8 @@ static int64_t get_or_create_tag(csilk_db_pool_t* pool, int64_t user_id, const c
 }
 
 void daily_expenses_list(csilk_ctx_t* c) {
-    int64_t user_id = jwt_get_user_id(c);
-    if (user_id < 0) { respond_unauthorized(c); return; }
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) return;
 
     int64_t page = 1, page_size = 20;
     parse_page_params(c, &page, &page_size);
@@ -214,8 +215,8 @@ void daily_expenses_list(csilk_ctx_t* c) {
 }
 
 void daily_expenses_create(csilk_ctx_t* c) {
-    int64_t user_id = jwt_get_user_id(c);
-    if (user_id < 0) { respond_unauthorized(c); return; }
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) return;
 
     csilk_json_t* body = csilk_bind_json(c);
     if (!body) { respond_bad_request(c, "请求体必须为 JSON"); return; }
@@ -307,8 +308,8 @@ void daily_expenses_create(csilk_ctx_t* c) {
 }
 
 void daily_expenses_update(csilk_ctx_t* c) {
-    int64_t user_id = jwt_get_user_id(c);
-    if (user_id < 0) { respond_unauthorized(c); return; }
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) return;
 
     const char* id_str = csilk_get_param(c, "id");
     if (!id_str) { respond_bad_request(c, "缺少 id"); return; }
@@ -443,8 +444,8 @@ void daily_expenses_update(csilk_ctx_t* c) {
 }
 
 void daily_expenses_delete(csilk_ctx_t* c) {
-    int64_t user_id = jwt_get_user_id(c);
-    if (user_id < 0) { respond_unauthorized(c); return; }
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) return;
 
     const char* id_str = csilk_get_param(c, "id");
     if (!id_str) { respond_bad_request(c, "缺少 id"); return; }
@@ -500,8 +501,8 @@ void daily_expenses_delete(csilk_ctx_t* c) {
 }
 
 void daily_expenses_monthly(csilk_ctx_t* c) {
-    int64_t user_id = jwt_get_user_id(c);
-    if (user_id < 0) { respond_unauthorized(c); return; }
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) return;
 
     const char* year_str = csilk_get_query(c, "year");
     const char* month_str = csilk_get_query(c, "month");

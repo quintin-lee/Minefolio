@@ -1,4 +1,5 @@
 #include "common/response.h"
+#include "common/ctx.h"
 #include "common/db.h"
 #include "common/jwt.h"
 #include "csilk/csilk.h"
@@ -40,8 +41,8 @@ static int64_t holding_find(holding_pnl_t* arr, size_t n, int64_t asset_id)
 
 
 void report_expense_monthly(csilk_ctx_t* c) {
-    int64_t user_id = jwt_get_user_id(c);
-    if (user_id < 0) { respond_unauthorized(c); return; }
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) return;
     const char* year_str = csilk_get_query(c, "year");
     const char* month_str = csilk_get_query(c, "month");
     char year_buf[8] = {0}, month_buf[4] = {0};
@@ -106,8 +107,8 @@ void report_expense_monthly(csilk_ctx_t* c) {
 }
 
 void report_expense_trend(csilk_ctx_t* c) {
-    int64_t user_id = jwt_get_user_id(c);
-    if (user_id < 0) { respond_unauthorized(c); return; }
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) return;
     const char* months_str = csilk_get_query(c, "months");
     int months = months_str ? atoi(months_str) : 6;
     if (months <= 0 || months > 24) months = 6;
@@ -145,8 +146,8 @@ void report_expense_trend(csilk_ctx_t* c) {
 }
 
 void report_expense_yearly(csilk_ctx_t* c) {
-    int64_t user_id = jwt_get_user_id(c);
-    if (user_id < 0) { respond_unauthorized(c); return; }
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) return;
 
     const char* year_str = csilk_get_query(c, "year");
     char year_buf[8] = {0};
@@ -202,8 +203,8 @@ void report_expense_yearly(csilk_ctx_t* c) {
 }
 
 void report_expense_category(csilk_ctx_t* c) {
-    int64_t user_id = jwt_get_user_id(c);
-    if (user_id < 0) { respond_unauthorized(c); return; }
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) return;
     const char* year_str = csilk_get_query(c, "year");
     const char* month_str = csilk_get_query(c, "month");
     char year_buf[8] = {0};
@@ -249,8 +250,8 @@ void report_expense_category(csilk_ctx_t* c) {
 }
 
 void report_expense_tag(csilk_ctx_t* c) {
-    int64_t user_id = jwt_get_user_id(c);
-    if (user_id < 0) { respond_unauthorized(c); return; }
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) return;
     const char* year_str = csilk_get_query(c, "year");
     const char* month_str = csilk_get_query(c, "month");
     char year_buf[8] = {0};
@@ -298,8 +299,8 @@ void report_expense_tag(csilk_ctx_t* c) {
 }
 
 void report_asset_trend(csilk_ctx_t* c) {
-    int64_t user_id = jwt_get_user_id(c);
-    if (user_id < 0) { respond_unauthorized(c); return; }
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) return;
     const char* period_str = csilk_get_query(c, "period");
     int days = 30;
     if (period_str) {
@@ -360,8 +361,8 @@ void report_asset_trend(csilk_ctx_t* c) {
 }
 
 void report_asset_breakdown(csilk_ctx_t* c) {
-    int64_t user_id = jwt_get_user_id(c);
-    if (user_id < 0) { respond_unauthorized(c); return; }
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) return;
     csilk_db_pool_t* pool = db_get_pool();
 
     char uid_str[32];
@@ -425,8 +426,8 @@ void report_asset_breakdown(csilk_ctx_t* c) {
 }
 
 void report_transaction_performance(csilk_ctx_t* c) {
-    int64_t user_id = jwt_get_user_id(c);
-    if (user_id < 0) { respond_unauthorized(c); return; }
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) return;
     csilk_db_pool_t* pool = db_get_pool();
 
     char uid_str[32];
@@ -543,8 +544,8 @@ void report_transaction_performance(csilk_ctx_t* c) {
 }
 
 void report_asset_summary(csilk_ctx_t* c) {
-    int64_t user_id = jwt_get_user_id(c);
-    if (user_id < 0) { respond_unauthorized(c); return; }
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) return;
     csilk_db_pool_t* pool = db_get_pool();
 
     char uid_str[32];
@@ -594,8 +595,8 @@ void report_asset_summary(csilk_ctx_t* c) {
 }
 
 void summary_get(csilk_ctx_t* c) {
-    int64_t user_id = jwt_get_user_id(c);
-    if (user_id < 0) { respond_unauthorized(c); return; }
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) return;
     csilk_db_pool_t* pool = db_get_pool();
 
     char uid_str[32];

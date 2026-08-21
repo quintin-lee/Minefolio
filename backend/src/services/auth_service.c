@@ -1,6 +1,7 @@
 #include "services/auth_service.h"
 #define MINEFOLIO_BCRYPT_COST CSILK_BCRYPT_DEFAULT_COST
 #include "common/response.h"
+#include "common/ctx.h"
 #include "common/db.h"
 #include "common/config.h"
 #include "common/jwt.h"
@@ -285,8 +286,8 @@ void auth_login(csilk_ctx_t* c) {
 }
 
 void auth_change_password(csilk_ctx_t* c) {
-    int64_t user_id = jwt_get_user_id(c);
-    if (user_id < 0) { respond_unauthorized(c); return; }
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) return;
 
     csilk_json_t* body = csilk_bind_json(c);
     if (!body) { respond_bad_request(c, "请求体必须为 JSON"); return; }
@@ -385,8 +386,8 @@ void auth_change_password(csilk_ctx_t* c) {
 }
 
 void auth_me(csilk_ctx_t* c) {
-    int64_t user_id = jwt_get_user_id(c);
-    if (user_id < 0) { respond_unauthorized(c); return; }
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) return;
 
     csilk_db_pool_t* pool = db_get_pool();
     char sql[256];

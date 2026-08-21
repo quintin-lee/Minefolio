@@ -1,5 +1,6 @@
 #include "services/import_export_service.h"
 #include "common/response.h"
+#include "common/ctx.h"
 #include "common/db.h"
 #include "common/jwt.h"
 #include "common/tx_types.h"
@@ -80,8 +81,8 @@ static int parse_csv_row(const char* line, size_t len, char out[12][512], int* c
 }
 
 void transactions_export_csv(csilk_ctx_t* c) {
-    int64_t user_id = jwt_get_user_id(c);
-    if (user_id < 0) { respond_unauthorized(c); return; }
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) return;
 
     csilk_db_pool_t* pool = db_get_pool();
     char uid_str[32];
@@ -185,8 +186,8 @@ void transactions_export_csv(csilk_ctx_t* c) {
 }
 
 void transactions_import_csv(csilk_ctx_t* c) {
-    int64_t user_id = jwt_get_user_id(c);
-    if (user_id < 0) { respond_unauthorized(c); return; }
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) return;
 
     char uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
@@ -407,8 +408,8 @@ void transactions_import_csv(csilk_ctx_t* c) {
 }
 
 void daily_expenses_export_csv(csilk_ctx_t* c) {
-    int64_t user_id = jwt_get_user_id(c);
-    if (user_id < 0) { respond_unauthorized(c); return; }
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) return;
 
     csilk_db_pool_t* pool = db_get_pool();
     char uid_str[32];
@@ -483,8 +484,8 @@ void daily_expenses_export_csv(csilk_ctx_t* c) {
 }
 
 void daily_expenses_import_csv(csilk_ctx_t* c) {
-    int64_t user_id = jwt_get_user_id(c);
-    if (user_id < 0) { respond_unauthorized(c); return; }
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) return;
 
     char uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);

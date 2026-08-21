@@ -1,5 +1,6 @@
 #include "services/transfer_service.h"
 #include "common/response.h"
+#include "common/ctx.h"
 #include "common/db.h"
 #include "common/jwt.h"
 #include "common/balance.h"
@@ -9,8 +10,8 @@
 #include <string.h>
 
 void transfers_create(csilk_ctx_t* c) {
-    int64_t user_id = jwt_get_user_id(c);
-    if (user_id < 0) { respond_unauthorized(c); return; }
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) return;
 
     csilk_json_t* body = csilk_bind_json(c);
     if (!body) { respond_bad_request(c, "请求体必须为 JSON"); return; }

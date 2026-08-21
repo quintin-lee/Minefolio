@@ -1,5 +1,6 @@
 #include "services/tag_service.h"
 #include "common/response.h"
+#include "common/ctx.h"
 #include "common/db.h"
 #include "common/jwt.h"
 #include "csilk/csilk.h"
@@ -8,8 +9,8 @@
 #include <string.h>
 
 void tags_list(csilk_ctx_t* c) {
-    int64_t user_id = jwt_get_user_id(c);
-    if (user_id < 0) { respond_unauthorized(c); return; }
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) return;
 
     csilk_db_pool_t* pool = db_get_pool();
     char uid_str[32];
@@ -23,8 +24,8 @@ void tags_list(csilk_ctx_t* c) {
 }
 
 void tags_create(csilk_ctx_t* c) {
-    int64_t user_id = jwt_get_user_id(c);
-    if (user_id < 0) { respond_unauthorized(c); return; }
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) return;
 
     csilk_json_t* body = csilk_bind_json(c);
     if (!body) { respond_bad_request(c, "请求体必须为 JSON"); return; }
@@ -57,8 +58,8 @@ void tags_create(csilk_ctx_t* c) {
 }
 
 void tags_update(csilk_ctx_t* c) {
-    int64_t user_id = jwt_get_user_id(c);
-    if (user_id < 0) { respond_unauthorized(c); return; }
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) return;
 
     const char* id_str = csilk_get_param(c, "id");
     if (!id_str) { respond_bad_request(c, "缺少 id"); return; }
@@ -82,8 +83,8 @@ void tags_update(csilk_ctx_t* c) {
 }
 
 void tags_delete(csilk_ctx_t* c) {
-    int64_t user_id = jwt_get_user_id(c);
-    if (user_id < 0) { respond_unauthorized(c); return; }
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) return;
 
     const char* id_str = csilk_get_param(c, "id");
     if (!id_str) { respond_bad_request(c, "缺少 id"); return; }
@@ -101,8 +102,8 @@ void tags_delete(csilk_ctx_t* c) {
 }
 
 void tags_suggestions(csilk_ctx_t* c) {
-    int64_t user_id = jwt_get_user_id(c);
-    if (user_id < 0) { respond_unauthorized(c); return; }
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) return;
 
     const char* q = csilk_get_query(c, "q");
     csilk_db_pool_t* pool = db_get_pool();

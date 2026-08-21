@@ -1,5 +1,6 @@
 #include "services/transaction_service.h"
 #include "common/response.h"
+#include "common/ctx.h"
 #include "common/db.h"
 #include "common/jwt.h"
 #include "common/balance.h"
@@ -10,8 +11,8 @@
 #include <string.h>
 
 void transactions_list(csilk_ctx_t* c) {
-    int64_t user_id = jwt_get_user_id(c);
-    if (user_id < 0) { respond_unauthorized(c); return; }
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) return;
 
     int64_t page = 1, page_size = 20;
     parse_page_params(c, &page, &page_size);
@@ -104,8 +105,8 @@ void transactions_list(csilk_ctx_t* c) {
 }
 
 void transactions_monthly(csilk_ctx_t* c) {
-    int64_t user_id = jwt_get_user_id(c);
-    if (user_id < 0) { respond_unauthorized(c); return; }
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) return;
 
     const char* month = csilk_get_query(c, "month");
     if (!month || strlen(month) != 7 || month[4] != '-') {
@@ -152,8 +153,8 @@ void transactions_monthly(csilk_ctx_t* c) {
 }
 
 void transactions_create(csilk_ctx_t* c) {
-    int64_t user_id = jwt_get_user_id(c);
-    if (user_id < 0) { respond_unauthorized(c); return; }
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) return;
 
     csilk_json_t* body = csilk_bind_json(c);
     if (!body) { respond_bad_request(c, "请求体必须为 JSON"); return; }
@@ -349,8 +350,8 @@ void transactions_create(csilk_ctx_t* c) {
 }
 
 void transactions_update(csilk_ctx_t* c) {
-    int64_t user_id = jwt_get_user_id(c);
-    if (user_id < 0) { respond_unauthorized(c); return; }
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) return;
 
     const char* id_str = csilk_get_param(c, "id");
     if (!id_str) { respond_bad_request(c, "缺少 id"); return; }
@@ -550,8 +551,8 @@ void transactions_update(csilk_ctx_t* c) {
 }
 
 void transactions_delete(csilk_ctx_t* c) {
-    int64_t user_id = jwt_get_user_id(c);
-    if (user_id < 0) { respond_unauthorized(c); return; }
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) return;
 
     const char* id_str = csilk_get_param(c, "id");
     if (!id_str) { respond_bad_request(c, "缺少 id"); return; }
