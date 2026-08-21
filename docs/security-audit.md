@@ -102,7 +102,7 @@ csilk_json_add_int(payload, "exp", (int64_t)time(NULL) + 604800); // 7 days
 
 ---
 
-### M-2：CORS 配置过于宽松（`*` + credentials）
+### M-2：CORS 配置过于宽松 ~~✅ 已修复~~（`*` + credentials）
 
 **位置：** `backend/src/middlewares/cors_middleware.c:6-7`
 
@@ -121,7 +121,7 @@ cors.allow_origin = allowed ? allowed : "*";  // 生产环境强制设置环境�
 
 ---
 
-### M-3：无安全响应头
+### M-3：无安全响应头 ~~✅ 已修复~~
 
 **位置：** 整个后端 `main.c` / 中间件层
 
@@ -143,7 +143,7 @@ csilk_set_header(c, "Referrer-Policy", "strict-origin-when-cross-origin");
 
 ---
 
-### M-4：注册/登录/初始化接口无速率限制
+### M-4：注册/登录/初始化接口无速率限制 ~~✅ 已修复~~
 
 **位置：** `jwt_middleware.c` 豁免路径列表（`/api/auth/login`, `/api/auth/register`, `/api/system/setup`）
 
@@ -156,7 +156,7 @@ csilk_set_header(c, "Referrer-Policy", "strict-origin-when-cross-origin");
 
 ---
 
-### M-5：密码修改后旧 Token 仍有效
+### M-5：密码修改后旧 Token 仍有效 ~~✅ 已修复~~
 
 **位置：** `auth_change_password` (`auth_service.c:286`)
 
@@ -183,7 +183,7 @@ static int64_t get_last_insert_id(csilk_db_pool_t* pool) {
 
 ## 🟡 低危（Low）
 
-### L-1：`system_status` 暴露用户数量
+### L-1：`system_status` 暴露用户数量 ~~✅ 已修复~~
 
 **位置：** `backend/src/services/auth_service.c:33`
 
@@ -197,7 +197,7 @@ csilk_json_add_number(resp, "user_count", count);
 
 ---
 
-### L-2：SQL 拼接模式（`tag_ids` IN 子句）
+### L-2：SQL 拼接模式（`tag_ids` IN 子句） ~~✅ 已修复~~
 
 **位置：** `backend/src/services/daily_expense_service.c:128-131`
 
