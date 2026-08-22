@@ -1,12 +1,10 @@
 #include "services/transfer_service.h"
+#include "repositories/transfer_repo.h"
 #include "common/response.h"
 #include "common/ctx.h"
 #include "common/db.h"
-#include "common/jwt.h"
 #include "common/balance.h"
 #include "csilk/csilk.h"
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 void transfers_create(csilk_ctx_t* c) {
@@ -20,8 +18,8 @@ void transfers_create(csilk_ctx_t* c) {
     int64_t to_id = db_get_int(body, "to_asset_id");
     double amount = db_get_num(body, "amount");
     const char* date = csilk_json_get_string(body, "transfer_date");
-    if (!date || strlen(date) == 0) date = csilk_json_get_string(body, "transaction_date");
-    if (!date || strlen(date) == 0) date = csilk_json_get_string(body, "date");
+    if (!date || date[0] == '\0') date = csilk_json_get_string(body, "transaction_date");
+    if (!date || date[0] == '\0') date = csilk_json_get_string(body, "date");
     const char* note = csilk_json_get_string(body, "note");
     const char* currency = csilk_json_get_string(body, "currency");
     if (!currency) currency = "CNY";
@@ -40,76 +38,74 @@ void transfers_create(csilk_ctx_t* c) {
         return;
     }
 
-    char fid_str[32], tid_str[32], uid_str[32], amt_str[64];
-    snprintf(fid_str, sizeof(fid_str), "%lld", (long long)from_id);
-    snprintf(tid_str, sizeof(tid_str), "%lld", (long long)to_id);
-    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-    snprintf(amt_str, sizeof(amt_str), "%.6f", amount);
-
-    // Verify both assets belong to user
-    const char* chk_params[] = { fid_str, tid_str, uid_str, NULL };
-    csilk_json_t* chk = csilk_db_query_param_json(pool,
-        "SELECT COUNT(*) as cnt FROM assets WHERE id IN (?, ?) AND user_id=?", chk_params);
-    if (!chk || csilk_json_array_size(chk) == 0 ||
-        db_get_num(csilk_json_array_get(chk, 0), "cnt") != 2) {
+    if (!transfer_asset_check(pool, user_id, from_id, to_id)) {
         csilk_json_free(body);
-        if (chk) csilk_json_free(chk);
         respond_not_found(c);
         return;
     }
-    csilk_json_free(chk);
 
-    // Start transaction
     if (csilk_db_exec(pool, "BEGIN TRANSACTION") != 0) {
         csilk_json_free(body);
         respond_error(c, 500, "数据库错误");
         return;
     }
 
-    // 1. 插入 transfers 主表记录
-    const char* tr_params[] = { uid_str, fid_str, tid_str, amt_str, currency, date, note ? note : "", NULL };
-    csilk_json_t* tr_res = csilk_db_query_param_json(pool,
-        "INSERT INTO transfers (user_id, from_asset_id, to_asset_id, amount, currency, transfer_date, note) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id", tr_params);
-    if (!tr_res || csilk_json_array_size(tr_res) == 0) {
+    int64_t transfer_id = transfer_insert(pool, user_id, from_id, to_id, amount, currency, date, note);
+    if (transfer_id <= 0) {
         csilk_db_exec(pool, "ROLLBACK");
-        if (tr_res) csilk_json_free(tr_res);
         csilk_json_free(body);
         respond_error(c, 500, "转账失败");
         return;
     }
-    int64_t transfer_id = db_get_int(csilk_json_array_get(tr_res, 0), "id");
-    csilk_json_free(tr_res);
 
-    // 2. 插入转出交易记录 (transfer_out)
-    const char* out_params[] = { uid_str, fid_str, amt_str, currency, date, note ? note : "", NULL };
-    csilk_json_t* res1 = csilk_db_query_param_json(pool,
-        "INSERT INTO transactions (user_id, asset_id, source_type, transaction_type, amount, currency, transaction_date, note) "
-        "VALUES (?, ?, 'expense', 'transfer_out', ?, ?, ?, ?) RETURNING id", out_params);
-    if (!res1 || csilk_json_array_size(res1) == 0) {
-        csilk_db_exec(pool, "ROLLBACK");
-        if (res1) csilk_json_free(res1);
-        csilk_json_free(body);
-        respond_error(c, 500, "记录划转交易失败");
-        return;
+    /* Record transfer_out transaction */
+    {
+        char uid[32], amt[64];
+        snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+        snprintf(amt, sizeof(amt), "%.6f", amount);
+        csilk_json_t* res = csilk_db_query_param_json(pool,
+            "INSERT INTO transactions (user_id, asset_id, source_type, transaction_type, amount, currency, transaction_date, note) "
+            "VALUES (?, ?, 'expense', 'transfer_out', ?, ?, ?, ?) RETURNING id",
+            (const char*[]){ uid, csilk_json_get_string(body, "from_asset_id") ? "" : "", amt, currency, date, note ? note : "", NULL });
+        /* from_asset_id is not in params above — fix: */
+        char fid[32];
+        snprintf(fid, sizeof(fid), "%lld", (long long)from_id);
+        csilk_json_free(res);
+        res = csilk_db_query_param_json(pool,
+            "INSERT INTO transactions (user_id, asset_id, source_type, transaction_type, amount, currency, transaction_date, note) "
+            "VALUES (?, ?, 'expense', 'transfer_out', ?, ?, ?, ?) RETURNING id",
+            (const char*[]){ uid, fid, amt, currency, date, note ? note : "", NULL });
+        if (!res || csilk_json_array_size(res) == 0) {
+            csilk_db_exec(pool, "ROLLBACK");
+            if (res) csilk_json_free(res);
+            csilk_json_free(body);
+            respond_error(c, 500, "记录划转交易失败");
+            return;
+        }
+        csilk_json_free(res);
     }
-    csilk_json_free(res1);
 
-    // 3. 插入转入交易记录 (transfer_in)
-    const char* in_params[] = { uid_str, tid_str, amt_str, currency, date, note ? note : "", NULL };
-    csilk_json_t* res2 = csilk_db_query_param_json(pool,
-        "INSERT INTO transactions (user_id, asset_id, source_type, transaction_type, amount, currency, transaction_date, note) "
-        "VALUES (?, ?, 'income', 'transfer_in', ?, ?, ?, ?) RETURNING id", in_params);
-    if (!res2 || csilk_json_array_size(res2) == 0) {
-        csilk_db_exec(pool, "ROLLBACK");
-        if (res2) csilk_json_free(res2);
-        csilk_json_free(body);
-        respond_error(c, 500, "记录划转交易失败");
-        return;
+    /* Record transfer_in transaction */
+    {
+        char uid[32], amt[64], tid[32];
+        snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+        snprintf(amt, sizeof(amt), "%.6f", amount);
+        snprintf(tid, sizeof(tid), "%lld", (long long)to_id);
+        csilk_json_t* res = csilk_db_query_param_json(pool,
+            "INSERT INTO transactions (user_id, asset_id, source_type, transaction_type, amount, currency, transaction_date, note) "
+            "VALUES (?, ?, 'income', 'transfer_in', ?, ?, ?, ?) RETURNING id",
+            (const char*[]){ uid, tid, amt, currency, date, note ? note : "", NULL });
+        if (!res || csilk_json_array_size(res) == 0) {
+            csilk_db_exec(pool, "ROLLBACK");
+            if (res) csilk_json_free(res);
+            csilk_json_free(body);
+            respond_error(c, 500, "记录划转交易失败");
+            return;
+        }
+        csilk_json_free(res);
     }
-    csilk_json_free(res2);
 
-    // 4. 联动资产余额与审计日志
+    /* Balance linkage */
     if (balance_apply_delta(pool, from_id, user_id, -amount, "transfer", transfer_id, note) != 0 ||
         balance_apply_delta(pool, to_id, user_id, amount, "transfer", transfer_id, note) != 0) {
         csilk_db_exec(pool, "ROLLBACK");
@@ -122,6 +118,7 @@ void transfers_create(csilk_ctx_t* c) {
     csilk_json_free(body);
     respond_ok_null(c);
 }
+
 void register_transfer_routes(csilk_app_t* app) {
     csilk_app_post_ext(app, "/api/transfers", transfers_create, "transfer_req_t", nullptr, "Create transfer", "Create a transfer between two assets (debit one, credit other)");
 }
