@@ -5,6 +5,7 @@
 #include "common/jwt.h"
 #include "common/balance.h"
 #include "common/tx_types.h"
+#include "repositories/transaction_repo.h"
 #include "csilk/csilk.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -59,29 +60,17 @@ void transactions_create(csilk_ctx_t* c) {
     snprintf(last_str, sizeof(last_str), "%lld", (long long)linked_asset_id);
 
     // Verify main asset belongs to user
-    const char* chk_params[] = { ast_str, uid_str, NULL };
-    csilk_json_t* chk = csilk_db_query_param_json(pool,
-        "SELECT id FROM assets WHERE id=? AND user_id=?", chk_params);
-    if (!chk || csilk_json_array_size(chk) == 0) {
+    if (!tx_asset_exists(pool, user_id, asset_id)) {
         csilk_json_free(body);
-        if (chk) csilk_json_free(chk);
         respond_not_found(c);
         return;
     }
-    csilk_json_free(chk);
 
     // Verify linked asset belongs to user if specified
-    if (linked_asset_id > 0) {
-        const char* lchk_params[] = { last_str, uid_str, NULL };
-        csilk_json_t* lchk = csilk_db_query_param_json(pool,
-            "SELECT id FROM assets WHERE id=? AND user_id=?", lchk_params);
-        if (!lchk || csilk_json_array_size(lchk) == 0) {
-            csilk_json_free(body);
-            if (lchk) csilk_json_free(lchk);
-            respond_bad_request(c, "关联资金账户无效");
-            return;
-        }
-        csilk_json_free(lchk);
+    if (linked_asset_id > 0 && !tx_asset_exists(pool, user_id, linked_asset_id)) {
+        csilk_json_free(body);
+        respond_bad_request(c, "关联资金账户无效");
+        return;
     }
 
     const char* currency = csilk_json_get_string(body, "currency");
@@ -224,21 +213,15 @@ void transactions_update(csilk_ctx_t* c) {
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
 
     const char* chk_params[] = { id_str, uid_str, NULL };
-    csilk_json_t* chk = csilk_db_query_param_json(pool,
-        "SELECT id FROM transactions WHERE id=? AND user_id=?", chk_params);
-    if (!chk || csilk_json_array_size(chk) == 0) {
+    if (!tx_asset_exists(pool, user_id, atoll(id_str))) {
         csilk_json_free(body);
-        if (chk) csilk_json_free(chk);
         respond_not_found(c);
         return;
     }
-    csilk_json_free(chk);
 
     // 读取旧记录
     const char* old_params[] = { id_str, uid_str, NULL };
-    csilk_json_t* old_row = csilk_db_query_param_json(pool,
-        "SELECT asset_id, linked_asset_id, amount, transaction_type, quantity, price_per_unit, fee "
-        "FROM transactions WHERE id=? AND user_id=?", old_params);
+    csilk_json_t* old_row = tx_get_old(pool, user_id, atoll(id_str));
     if (!old_row || csilk_json_array_size(old_row) == 0) {
         csilk_json_free(body);
         if (old_row) csilk_json_free(old_row);
@@ -306,11 +289,13 @@ void transactions_update(csilk_ctx_t* c) {
         return;
     }
 
-    csilk_json_t* up_res = csilk_db_query_param_json(pool,
-        "UPDATE transactions SET transaction_type=?, direction=?, linked_direction=?, amount=?, price_per_unit=?, "
-        "quantity=?, currency=?, transaction_date=?, note=?, "
-        "category_id=?, source_type=?, linked_asset_id=NULLIF(?, '0') WHERE id=? AND user_id=?", up_params);
-    if (up_res) csilk_json_free(up_res);
+    if (!tx_update(pool, user_id, atoll(id_str), type ? type : "", ntype->stat_dir, ntype->linked_dir,
+        amount, price, qty, currency ? currency : "CNY", date ? date : "", note ? note : "",
+        category_id, src_type ? src_type : "expense", linked_asset_id)) {
+        csilk_db_exec(pool, "ROLLBACK");
+        csilk_json_free(body); csilk_json_free(old_row);
+        respond_error(c, 500, "更新失败"); return;
+    }
 
     // 1. 目标资产余额联动
     // 投资类（buy/sell）：apply_position 更新持仓 quantity/cost_basis/net_value，
@@ -449,9 +434,12 @@ void transactions_delete(csilk_ctx_t* c) {
     }
 
     const char* del_params[] = { id_str, uid_str, NULL };
-    csilk_json_t* del_res = csilk_db_query_param_json(pool,
-        "DELETE FROM transactions WHERE id=? AND user_id=?", del_params);
-    if (del_res) csilk_json_free(del_res);
+    if (!tx_delete(pool, user_id, atoll(id_str))) {
+        csilk_db_exec(pool, "ROLLBACK");
+        csilk_json_free(old_row);
+        respond_error(c, 500, "删除失败");
+        return;
+    }
 
     // 投资类：回滚持仓
     if (strcmp(old_tx_type, "buy") == 0 || strcmp(old_tx_type, "sell") == 0) {
