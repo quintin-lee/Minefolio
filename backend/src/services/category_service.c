@@ -1,4 +1,5 @@
 #include "services/category_service.h"
+#include "repositories/category_repo.h"
 #include "common/response.h"
 #include "common/ctx.h"
 #include "common/db.h"
@@ -394,6 +395,7 @@ void categories_update(csilk_ctx_t* c) {
     const char* id_str = csilk_get_param(c, "id");
     if (!id_str) { respond_bad_request(c, "缺少 id"); return; }
 
+    csilk_db_pool_t* pool = db_get_pool();
     csilk_json_t* body = csilk_bind_json(c);
     if (!body) { respond_bad_request(c, "请求体必须为 JSON"); return; }
 
@@ -416,10 +418,11 @@ void categories_update(csilk_ctx_t* c) {
         name ? name : "", type, asset_type, currency ? currency : "CNY",
         icon ? icon : "", sort_str, id_str, uid_str, NULL
     };
-    csilk_json_t* res = csilk_db_query_param_json(db_get_pool(),
-        "UPDATE categories SET name=?, type=?, asset_type=?, currency=?, icon=?, sort_order=? "
-        "WHERE id=? AND user_id=?", params);
-    if (res) csilk_json_free(res);
+    if (!category_update(pool, user_id, atoll(id_str), name ? name : "", type, asset_type, currency ? currency : "CNY", icon ? icon : "", sort_order)) {
+        csilk_json_free(body);
+        respond_not_found(c);
+        return;
+    }
 
     csilk_json_free(body);
     respond_ok_null(c);
@@ -437,9 +440,9 @@ void categories_delete(csilk_ctx_t* c) {
     // Check if has children
     char uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-    const char* chk_params[] = { id_str, uid_str, NULL };
-    csilk_json_t* cnt_result = csilk_db_query_param_json(pool,
-        "SELECT COUNT(*) as cnt FROM categories WHERE parent_id = ? AND user_id = ?", chk_params);
+    char pid[32];
+    snprintf(pid, sizeof(pid), "%lld", (long long)atoll(id_str));
+    csilk_json_t* cnt_result = category_children(pool, user_id, atoll(id_str));
     if (cnt_result && csilk_json_array_size(cnt_result) > 0) {
         int cnt = (int)db_get_num(csilk_json_array_get(cnt_result, 0), "cnt");
         csilk_json_free(cnt_result);
@@ -447,11 +450,10 @@ void categories_delete(csilk_ctx_t* c) {
     } else {
         if (cnt_result) csilk_json_free(cnt_result);
     }
-
-    const char* del_params[] = { id_str, uid_str, NULL };
-    csilk_json_t* del_res = csilk_db_query_param_json(pool,
-        "DELETE FROM categories WHERE id=? AND user_id=?", del_params);
-    if (del_res) csilk_json_free(del_res);
+    if (!category_delete(pool, user_id, atoll(id_str))) {
+        respond_not_found(c);
+        return;
+    }
     respond_ok_null(c);
 }
 
