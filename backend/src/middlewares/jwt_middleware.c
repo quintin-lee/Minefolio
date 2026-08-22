@@ -48,6 +48,7 @@ void jwt_middleware_wrapper(csilk_ctx_t* c) {
                  strcmp(path, "/api/system/status") == 0 ||
                  strcmp(path, "/api/system/setup") == 0 ||
                  strcmp(path, "/api/auth/public-key") == 0)) {
+        csilk_next(c);
         return;
     }
     const char* secret = getenv("MINEFOLIO_JWT_SECRET");
