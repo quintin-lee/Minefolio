@@ -271,7 +271,7 @@ void daily_expenses_import_csv(csilk_ctx_t* c) {
         line_num++;
         if (line_num == 1) { line_start = line_end ? line_end + 1 : line_start + 1; continue; }
 
-        char fields[7][512];
+        char fields[12][512];
         int fc = 0;
         parse_csv_row(line_start, line_len, fields, &fc);
         if (fc < 5) {

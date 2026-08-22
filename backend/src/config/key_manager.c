@@ -7,6 +7,10 @@
 #include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <openssl/rsa.h>
+/* Suppress deprecation warnings for OpenSSL 3.x RSA API — these are the
+ * standard way to extract RSA components from an EVP_PKEY in OpenSSL 3.x. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #include <stdlib.h>
 #include <string.h>
 
@@ -34,27 +38,25 @@ static int rsa_pubkey_to_jwk(const char* pem, size_t pem_len, char* jwk_buf, siz
     BIO_free(bio);
     if (!pkey) return -1;
 
-    /* Use EVP_PKEY_get1_RSA (OpenSSL 3.x compatible despite deprecation warning)
-     * to extract RSA-specific components n and e directly. */
-    RSA* rsa = EVP_PKEY_get1_RSA(pkey);
+    /* Extract RSA public key components */
+    const RSA* rsa = EVP_PKEY_get0_RSA(pkey);
     EVP_PKEY_free(pkey);
     if (!rsa) return -1;
 
     const BIGNUM* n = NULL;
     const BIGNUM* e = NULL;
     RSA_get0_key(rsa, &n, &e, NULL);
-    if (!n || !e) { RSA_free(rsa); return -1; }
+    if (!n || !e) return -1;
 
     int nlen = BN_num_bytes(n);
     int elen = BN_num_bytes(e);
     uint8_t* nbuf = (uint8_t*)malloc((size_t)nlen);
     uint8_t* ebuf = (uint8_t*)malloc((size_t)elen);
     if (!nbuf || !ebuf) {
-        free(nbuf); free(ebuf); RSA_free(rsa); return -1;
+        free(nbuf); free(ebuf); return -1;
     }
     BN_bn2bin(n, nbuf);
     BN_bn2bin(e, ebuf);
-    RSA_free(rsa);
 
     /* Build JWK with stripped leading zeros */
     size_t ni = 0;
@@ -72,6 +74,8 @@ static int rsa_pubkey_to_jwk(const char* pem, size_t pem_len, char* jwk_buf, siz
         "{\"kty\":\"RSA\",\"n\":\"%s\",\"e\":\"%s\"}", n_b64, e_b64);
     return (written > 0 && (size_t)written < jwk_cap) ? 0 : -1;
 }
+
+#pragma GCC diagnostic pop
 
 void auth_public_key(csilk_ctx_t* c) {
     char jwk[1024];
