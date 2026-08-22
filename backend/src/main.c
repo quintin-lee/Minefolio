@@ -7,6 +7,7 @@
 #include "middlewares/security_headers_middleware.h"
 #include "middlewares/rate_limit.h"
 #include "services/auth_service.h"
+#include "services/admin_service.h"
 #include "services/category_service.h"
 #include "services/asset_service.h"
 #include "services/transaction_service.h"
@@ -69,6 +70,7 @@ int main(int argc, char** argv) {
 
     // Domain route registration
     register_auth_routes(app);
+    register_admin_routes(app);
     register_category_routes(app);
     register_asset_routes(app);
     register_transaction_routes(app);
