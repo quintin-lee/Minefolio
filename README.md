@@ -1,12 +1,13 @@
 # Minefolio
 
-个人综合资产管理系统（前端 Vue 3 + 后端 C/csilk + SQLite）。
+个人综合资产管理系统（前端 Vue 3 + 后端 C/csilk v0.5.0 + SQLite）。
 
 ## 技术栈
 
 - **前端**：Vue 3 + TypeScript + Vite + Element Plus + Pinia + ECharts
-- **后端**：C23 + csilk + SQLite + cJSON
+- **后端**：C23 + csilk v0.5.0 + SQLite + yyjson
 - **认证**：JWT (HS256)，secret 从环境变量读取
+- **架构**：三层架构 — Controllers → Services → Repositories
 - **部署**：Docker Compose + nginx
 
 ## 快速开始
@@ -15,6 +16,7 @@
 
 - Docker 20.10+
 - Docker Compose 2.0+
+- Node.js 18+（本地开发）
 
 ### 启动
 
@@ -31,7 +33,7 @@ docker compose up -d --build
 **后端：**
 ```bash
 cd backend
-cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+cmake -B build -G "Unix Makefiles"
 cmake --build build --parallel
 ./build/minefolio
 ```
@@ -46,43 +48,87 @@ npm run dev
 ## 项目结构
 
 ```
-├── backend/              # C 后端（csilk 框架）
+├── backend/                      # C 后端（csilk v0.5.0 框架）
 │   ├── CMakeLists.txt
-│   ├── config/           # 配置文件
-│   ├── sql/              # 数据库迁移脚本
-│   └── src/              # 源码
-│       ├── main.c        # 入口，路由注册
-│       ├── auth.c        # 登录/注册/JWT
-│       ├── categories.c  # 分类 CRUD + 树形查询
-│       ├── assets.c      # 资产 CRUD
-│       ├── transactions.c # 交易 CRUD
-│       ├── daily_expenses.c # 日常收支 + 月度汇总
-│       ├── tags.c        # 标签 CRUD + 自动补全
-│       ├── transfers.c   # 资产间转账
-│       ├── summary.c     # 汇总统计
-│       ├── reports.c     # 报表（收支/资产/交易）
-│       └── common/       # 公共模块
-│           ├── db.h/db.c     # 数据库连接池
-│           ├── jwt.h/jwt.c   # JWT 工具
-│           └── response.h    # 统一响应格式
-├── frontend/             # Vue 3 前端
+│   ├── config/                   # 配置文件 (db.json 自动生成)
+│   ├── sql/                      # 数据库迁移脚本
+│   └── src/
+│       ├── main.c                # 入口，中间件 + 路由注册
+│       ├── controllers/          # HTTP 层：解析请求，调用 service
+│       │   ├── auth_controller.c/h
+│       │   ├── asset_controller.c/h
+│       │   ├── category_controller.c/h
+│       │   ├── transaction_controller.c/h
+│       │   ├── daily_expense_controller.c/h
+│       │   ├── tag_controller.c/h
+│       │   ├── transfer_controller.c/h
+│       │   ├── report_controller.c/h
+│       │   ├── import_export_controller.c/h
+│       │   └── admin_controller.c/h
+│       ├── services/             # 业务层：编排 repo + balance
+│       │   ├── auth_service.c/h
+│       │   ├── admin_service.c/h
+│       │   ├── asset_service.c/h
+│       │   ├── category_service.c/h
+│       │   ├── transaction_query.c/h
+│       │   ├── transaction_write.c/h
+│       │   ├── daily_expense_query.c/h
+│       │   ├── daily_expense_write.c/h
+│       │   ├── tag_service.c/h
+│       │   ├── transfer_service.c/h
+│       │   ├── report_*.c/h      # 报表服务（未拆分）
+│       │   ├── export_service.c/h
+│       │   └── import_service.c/h
+│       ├── repositories/         # 数据层：所有 SQL 查询
+│       │   ├── auth_repo.c/h
+│       │   ├── asset_repo.c/h
+│       │   ├── category_repo.c/h
+│       │   ├── transaction_repo.c/h
+│       │   ├── daily_expense_repo.c/h
+│       │   ├── tag_repo.c/h
+│       │   └── transfer_repo.c/h
+│       ├── common/               # 公共模块
+│       │   ├── db.h/.c           # 数据库连接池
+│       │   ├── jwt.h/.c          # JWT 工具
+│       │   ├── balance.h/.c      # 余额计算
+│       │   ├── tx_types.h/.c     # 交易类型注册表
+│       │   ├── response.h        # 统一响应格式
+│       │   ├── ctx.h             # 上下文助手 (ctx_user_id)
+│       │   ├── config.h/.c       # 配置持久化
+│       │   └── csv_utils.h/.c    # CSV 解析工具
+│       ├── config/               # 密钥管理
+│       │   ├── key_manager.h/.c  # RSA 密钥对
+│       │   └── db_config.h/.c    # 数据库配置
+│       ├── middlewares/          # 中间件
+│       │   ├── jwt_middleware.c/h
+│       │   ├── csrf_middleware.c/h
+│       │   ├── cors_middleware.c/h
+│       │   ├── rate_limit.c/h
+│       │   └── security_headers.c/h
+│       ├── dtos/                 # 请求/响应类型定义
+│       │   ├── request.h
+│       │   └── response.h
+│       └── models/               # 领域模型（未广泛使用）
+│           ├── asset.h
+│           ├── category.h
+│           └── ...
+├── frontend/                     # Vue 3 前端
 │   ├── src/
-│   │   ├── api/          # API 请求封装
-│   │   ├── stores/       # Pinia 状态管理
-│   │   ├── views/        # 页面组件
-│   │   ├── components/   # 通用组件
-│   │   └── types/        # TypeScript 类型定义
+│   │   ├── api/                  # API 请求封装
+│   │   ├── stores/               # Pinia 状态管理
+│   │   ├── views/                # 页面组件
+│   │   ├── components/           # 通用组件
+│   │   └── types/                # TypeScript 类型定义
 │   └── package.json
-├── nginx/                # nginx 配置
-│   ├── minefolio.conf           # 宿主机部署配置
-│   └── minefolio.docker.conf    # Docker 部署配置
-├── docs/                 # 设计文档
+├── nginx/                        # nginx 配置
+├── docs/                         # 设计文档
 │   ├── superpowers/
-│   │   ├── plans/2026-08-10-minefolio.md
-│   │   └── specs/2026-08-10-minefolio-design.md
-├── Dockerfile            # 多阶段构建（后端 + 前端 + nginx）
-├── docker-compose.yml    # 容器编排
-└── scripts/              # 构建/部署脚本
+│   │   ├── specs/                # 设计规格
+│   │   └── plans/                # 实现计划
+│   └── security-audit.md         # 安全审计报告
+├── Dockerfile                    # 多阶段构建
+├── docker-compose.yml            # 容器编排
+└── AGENTS.md                     # Agent 开发指南
 ```
 
 ## API 端点
@@ -93,7 +139,16 @@ npm run dev
 |------|------|------|
 | POST | `/api/auth/register` | 注册 |
 | POST | `/api/auth/login` | 登录 |
+| GET | `/api/auth/public-key` | 获取 RSA 公钥（无认证） |
 | GET | `/api/auth/me` | 当前用户信息 |
+| PUT | `/api/auth/password` | 修改密码 |
+
+### 系统
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/system/status` | 系统状态（无认证） |
+| POST | `/api/system/setup` | 初始化系统（无认证） |
 
 ### 分类
 
@@ -103,31 +158,33 @@ npm run dev
 | POST | `/api/categories` | 创建分类 |
 | PUT | `/api/categories/:id` | 更新分类 |
 | DELETE | `/api/categories/:id` | 删除分类 |
+| GET | `/api/categories/:id/children` | 子分类计数 |
 
 ### 资产
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/api/assets` | 资产列表 |
+| GET | `/api/assets` | 资产列表（分页） |
 | POST | `/api/assets` | 创建资产 |
-| PUT | `/api/assets/:id` | 更新资产 |
+| PUT | `/api/assets/:id` | 更新资产（投资类自动重算） |
 | DELETE | `/api/assets/:id` | 删除资产 |
-| GET | `/api/assets/:id` | 资产详情 |
+| GET | `/api/assets/:id` | 资产详情（含历史交易） |
 
 ### 交易
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/api/transactions` | 交易列表 |
+| GET | `/api/transactions` | 交易列表（分页） |
 | POST | `/api/transactions` | 创建交易 |
 | PUT | `/api/transactions/:id` | 更新交易 |
 | DELETE | `/api/transactions/:id` | 删除交易 |
+| GET | `/api/transactions/monthly` | 月度汇总 |
 
 ### 日常收支
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/api/daily-expenses` | 收支列表 |
+| GET | `/api/daily-expenses` | 收支列表（分页） |
 | POST | `/api/daily-expenses` | 创建收支 |
 | PUT | `/api/daily-expenses/:id` | 更新收支 |
 | DELETE | `/api/daily-expenses/:id` | 删除收支 |
@@ -167,15 +224,25 @@ npm run dev
 | GET | `/api/reports/asset/breakdown` | 资产分布 |
 | GET | `/api/reports/transaction/performance` | 交易表现 |
 | GET | `/api/reports/asset/summary` | 资产总览 |
+| GET | `/api/reports/holdings` | 持仓明细 |
+
+### 导入导出
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/export/transactions` | 导出交易 CSV |
+| POST | `/api/import/transactions` | 导入交易 CSV |
+| GET | `/api/export/daily-expenses` | 导出收支 CSV |
+| POST | `/api/import/daily-expenses` | 导入收支 CSV |
 
 ## 环境变量
 
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
-| `MINEFOLIO_JWT_SECRET` | JWT 签名密钥（生产环境必须修改） | `minefolio-dev-secret-change-in-production` |
-| `MINEFOLIO_DB_DSN` | SQLite 数据库路径 | `/app/data/minefolio.db` |
-| `MINEFOLIO_ENABLE_CSRF` | 启用 CSRF 防护（生产推荐启用） | 未设置 |
-| `HTTP_PROXY` / `HTTPS_PROXY` | 构建阶段 apt/git 代理（可选） | - |
+| `MINEFOLIO_JWT_SECRET` | JWT 签名密钥（生产环境必须设置） | 未设置（开发模式） |
+| `MINEFOLIO_DB_DRIVER` | 数据库驱动：`sqlite` 或 `postgres` | `sqlite` |
+| `MINEFOLIO_DB_DSN` | 数据库连接字符串 | `./data/minefolio.db` |
+| `MINEFOLIO_ENABLE_CSRF` | 启用 CSRF 防护 | 未设置 |
 
 ## 部署
 
@@ -195,45 +262,21 @@ docker compose up -d --build
 # 构建后端运行时镜像
 docker build --target runtime -t minefolio:latest .
 
-# 构建 nginx 镜像（自动包含前端构建产物）
-docker build --target nginx -t minefolio-nginx:latest .
-
 # 运行后端
 docker run -d --name minefolio \
   -e MINEFOLIO_JWT_SECRET="your-secret" \
   -v minefolio-data:/app/data \
   minefolio:latest
-
-# 运行 nginx（依赖 minefolio 容器）
-docker run -d --name minefolio-nginx \
-  --link minefolio \
-  -p 80:80 \
-  minefolio-nginx:latest
-```
-
-### 镜像构建说明
-
-Dockerfile 使用多阶段构建，共 4 个 stage：
-
-1. `backend-build`：编译 C 后端，下载 swagger-ui 静态文件
-2. `frontend-build`：构建 Vue 3 前端
-3. `nginx`：基于 `nginx:alpine`，复制前端产物 + nginx 配置
-4. `runtime`：最终运行时镜像，包含后端二进制 + 前端产物 + swagger-ui
-
-构建 `minefolio-nginx` 时会自动触发前置 stage 的构建链：
-
-```
-nginx stage → 依赖 frontend-build stage
-frontend-build stage → 独立构建
-backend-build stage → 自动构建（为 runtime 提供依赖）
 ```
 
 ## 开发文档
 
 详细设计文档位于 `docs/` 目录：
 
-- `docs/superpowers/specs/2026-08-10-minefolio-design.md` — 系统设计文档
-- `docs/superpowers/plans/2026-08-10-minefolio.md` — 实现计划
+- `docs/security-audit.md` — 安全审计报告（全部修复）
+- `docs/superpowers/specs/` — 设计规格
+- `docs/superpowers/plans/` — 实现计划
+- `AGENTS.md` — Agent 开发指南
 
 ## License
 
