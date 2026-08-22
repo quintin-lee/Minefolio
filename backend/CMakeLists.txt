@@ -9,7 +9,7 @@ include(FetchContent)
 FetchContent_Declare(
     csilk
     GIT_REPOSITORY https://github.com/quintin-lee/csilk.git
-    GIT_TAG        master
+    GIT_TAG        v0.5.0
 )
 
 FetchContent_MakeAvailable(csilk)
