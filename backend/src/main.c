@@ -16,7 +16,6 @@
 #include "services/transfer_service.h"
 #include "services/report_service.h"
 #include "services/import_export_service.h"
-#include "repositories/asset_repo.h"
 #include "dtos/request.h"
 #include "dtos/response.h"
 #include <stdio.h>
@@ -79,7 +78,6 @@ int main(int argc, char** argv) {
     register_transfer_routes(app);
     register_report_routes(app);
     register_import_export_routes(app);
-    register_asset_repo_routes(app);
 
     csilk_app_static(app, "/", "./frontend/dist");
 
