@@ -1,4 +1,5 @@
 #include "services/auth_service.h"
+#include "repositories/auth_repo.h"
 #define MINEFOLIO_BCRYPT_COST CSILK_BCRYPT_DEFAULT_COST
 #include "common/response.h"
 #include "common/ctx.h"

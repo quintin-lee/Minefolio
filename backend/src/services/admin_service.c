@@ -1,4 +1,5 @@
-#include "services/auth_service.h"
+#include "services/admin_service.h"
+#include "repositories/auth_repo.h"
 #define MINEFOLIO_BCRYPT_COST CSILK_BCRYPT_DEFAULT_COST
 #include "common/response.h"
 #include "common/ctx.h"
@@ -21,12 +22,7 @@ static void store_bcrypt_hash(const char* password, char* out) {
 }
 void system_status(csilk_ctx_t* c) {
     csilk_db_pool_t* pool = db_get_pool();
-    csilk_json_t* res = csilk_db_query_json(pool, "SELECT COUNT(*) as count FROM users");
-    int count = 0;
-    if (res && csilk_json_array_size(res) > 0) {
-        count = (int)db_get_int(csilk_json_array_get(res, 0), "count");
-    }
-    if (res) csilk_json_free(res);
+    int count = user_count(pool);
 
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_bool(resp, "initialized", count > 0);
