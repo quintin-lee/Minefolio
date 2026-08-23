@@ -1,6 +1,11 @@
 #include "common/response.h"
 #include "csilk/core/crypto_dispatch.h"
 #include "csilk/drivers/cipher.h"
+#include <openssl/evp.h>
+#include <openssl/pem.h>
+#include <openssl/bio.h>
+#include <openssl/bn.h>
+#include <openssl/core_names.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -20,7 +25,78 @@ int auth_key_init(void) {
 const char* auth_key_get_public_pem(void)  { return g_pub_pem; }
 const char* auth_key_get_private_pem(void) { return g_priv_pem; }
 
+static int bn_to_b64url(const BIGNUM* bn, char* out, size_t out_cap) {
+    int len = BN_num_bytes(bn);
+    unsigned char* buf = OPENSSL_malloc(len);
+    if (!buf) return -1;
+    BN_bn2bin(bn, buf);
+
+    int b64_len = EVP_ENCODE_LENGTH(len);
+    char* b64 = OPENSSL_malloc(b64_len);
+    if (!b64) { OPENSSL_free(buf); return -1; }
+
+    int enc_len = EVP_EncodeBlock((unsigned char*)b64, buf, len);
+    OPENSSL_free(buf);
+
+    size_t j = 0;
+    for (int i = 0; i < enc_len && j < out_cap - 1; i++) {
+        if (b64[i] == '+')      out[j++] = '-';
+        else if (b64[i] == '/') out[j++] = '_';
+        else if (b64[i] != '=') out[j++] = b64[i];
+    }
+    out[j] = '\0';
+    OPENSSL_free(b64);
+    return 0;
+}
+
+static csilk_json_t* pem_to_jwk(const char* pem) {
+    BIO* bio = BIO_new_mem_buf(pem, -1);
+    if (!bio) return NULL;
+
+    EVP_PKEY* pkey = PEM_read_bio_PUBKEY(bio, NULL, NULL, NULL);
+    BIO_free(bio);
+    if (!pkey) return NULL;
+
+    BIGNUM* n = NULL;
+    BIGNUM* e = NULL;
+
+    if (EVP_PKEY_get_bn_param(pkey, OSSL_PKEY_PARAM_RSA_N, &n) != 1 ||
+        EVP_PKEY_get_bn_param(pkey, OSSL_PKEY_PARAM_RSA_E, &e) != 1) {
+        BN_free(n);
+        BN_free(e);
+        EVP_PKEY_free(pkey);
+        return NULL;
+    }
+
+    char n_str[512] = {0};
+    char e_str[64] = {0};
+    if (bn_to_b64url(n, n_str, sizeof(n_str)) != 0 ||
+        bn_to_b64url(e, e_str, sizeof(e_str)) != 0) {
+        BN_free(n);
+        BN_free(e);
+        EVP_PKEY_free(pkey);
+        return NULL;
+    }
+
+    csilk_json_t* jwk = csilk_json_object();
+    csilk_json_add_string(jwk, "kty", "RSA");
+    csilk_json_add_string(jwk, "n", n_str);
+    csilk_json_add_string(jwk, "e", e_str);
+
+    BN_free(n);
+    BN_free(e);
+    EVP_PKEY_free(pkey);
+    return jwk;
+}
+
 void auth_public_key(csilk_ctx_t* c) {
-    /* Use csilk_string for direct response */
-    csilk_string(c, 200, "{\"code\":0,\"message\":\"ok\",\"data\":{\"public_key\":\"test\"}}");
+    const char* pub_pem = auth_key_get_public_pem();
+    csilk_json_t* jwk = pem_to_jwk(pub_pem);
+    if (!jwk) {
+        respond_error(c, 500, "Failed to export public key");
+        return;
+    }
+    csilk_json_t* data = csilk_json_object();
+    csilk_json_add_object(data, "public_key", jwk);
+    respond_ok(c, data);
 }
