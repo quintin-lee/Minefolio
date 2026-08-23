@@ -24,14 +24,12 @@ char* jwt_generate_token(csilk_ctx_t* c, int64_t user_id, int token_version) {
 }
 
 int64_t jwt_get_user_id(csilk_ctx_t* c) {
-    char* json_str = csilk_ctx_get_jwt_payload_json(c);
-    if (!json_str) return -1;
+    /* Read the JWT payload WITHOUT consuming it — csilk_ctx_get_jwt_payload_json()
+     * serializes, frees, and nulls the stored pointer, so calling it here would
+     * make subsequent reads (e.g. jwt_validate_token_version) return nullptr. */
+    csilk_json_t* payload = (csilk_json_t*)csilk_get(c, "jwt_payload");
+    if (!payload) return -1;
 
-    csilk_json_t* root = csilk_json_parse(json_str);
-    free(json_str);
-    if (!root) return -1;
-
-    int64_t uid = (int64_t)csilk_json_get_number(root, "sub");
-    csilk_json_free(root);
+    int64_t uid = (int64_t)csilk_json_get_number(payload, "sub");
     return uid;
 }
