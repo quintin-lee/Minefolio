@@ -258,3 +258,48 @@ curl http://127.0.0.1:8080/api/auth/public-key
 - **Minefolio 项目**: https://github.com/quintin-lee/Minefolio
 - **csilk 框架**: https://github.com/quintin-lee/csilk
 - **问题报告**: 请附上完整堆栈跟踪和复现步骤
+
+---
+
+## 十一、问题修复记录
+
+### 修复 1: JWT 中间件洋葱模型执行顺序 (2026-08-23)
+
+**问题**: 
+- `csilk_jwt_middleware_options()` 内部调用 `csilk_next(c)`
+- 导致业务处理器在 token_version 校验之前就已执行
+- 造成安全隐患：未验证 token_version 的请求可以执行业务逻辑
+
+**修复**:
+```c
+// 旧代码（错误）:
+csilk_jwt_middleware_options(c, secret, strlen(secret), &opts);
+// ↑ 这里已经调用了 csilk_next(c)，业务 handler 已执行
+int64_t user_id = jwt_get_user_id(c);  // ← 太晚了！
+jwt_validate_token_version(c, user_id);
+
+// 新代码（正确）:
+csilk_json_t* payload = csilk_jwt_verify_options(c, token, secret, strlen(secret), &opts);
+// ↑ 只验证，不调用 csilk_next
+csilk_set_ex(c, "jwt_payload", payload, ...);
+jwt_validate_token_version(c, user_id);  // ← 在业务 handler 之前
+csilk_next(c);  // ← 所有检查通过后调用
+```
+
+**结果**: ✅ 服务器不再崩溃，请求处理顺序正确
+
+### 修复 2: JWK 响应格式 (2026-08-23)
+
+**问题**: 
+- 简化版 key_manager.c 返回裸 JWK 字符串
+- 不符合 API 一致性标准（应有 `{code, message, data}` 包装）
+
+**修复**:
+```c
+// 恢复标准响应格式
+csilk_json_t* resp = csilk_json_object();
+csilk_json_add_string(resp, "public_key", jwk);
+respond_ok(c, resp);
+```
+
+**结果**: ✅ 响应格式符合 API 规范
