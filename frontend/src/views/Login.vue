@@ -81,7 +81,7 @@ async function handleSubmit() {
     try {
       await auth.login(form.username, form.password)
       ElMessage.success('登录成功')
-      router.push('/dashboard')
+      await router.push('/dashboard')
     } catch (e: any) {
       ElMessage.error(e?.response?.data?.message || '登录失败')
     } finally {

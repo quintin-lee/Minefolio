@@ -36,10 +36,21 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function fetchSettings() {
-    const r = await getSettings() as AiSettings
-    settings.value = r
-    if (!currentModel.value && r)
-      currentModel.value = r.default_model
+    try {
+      const r = (await getSettings()) as unknown
+      const s = (r && typeof r === 'object' && 'data' in r ? (r as { data: AiSettings }).data : r) as AiSettings
+      if (s) {
+        settings.value = s
+        if (!currentProvider.value && s.default_provider) {
+          currentProvider.value = s.default_provider
+        }
+        if (!currentModel.value && s.default_model) {
+          currentModel.value = s.default_model
+        }
+      }
+    } catch {
+      // ignore
+    }
   }
 
   async function createNewSession() {

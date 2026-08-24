@@ -92,21 +92,20 @@
           <div class="model-selector-wrap">
             <Icon icon="ph:cpu-bold" class="model-icon" />
             <el-select
-              v-model="chat.currentModel"
+              v-model="selectedModelKey"
               size="small"
               class="model-select"
               placeholder="选择 AI 模型"
-              @change="handleModelChange"
             >
               <el-option
-                v-for="m in chat.availableModels"
-                :key="m.provider_id + '/' + m.models[0]"
-                :value="`${m.provider_id}/${m.models[0]}`"
-                :label="`${m.provider_name} (${m.models[0]})`"
+                v-for="opt in modelOptions"
+                :key="opt.value"
+                :value="opt.value"
+                :label="opt.label"
               >
                 <div class="model-option-item">
-                  <span class="opt-name">{{ m.provider_name }}</span>
-                  <span class="opt-model">{{ m.models[0] }}</span>
+                  <span class="opt-name">{{ opt.provider_name }}</span>
+                  <span class="opt-model">{{ opt.model }}</span>
                 </div>
               </el-option>
             </el-select>
@@ -295,11 +294,66 @@ function renderMarkdown(text?: string): string {
   }
 }
 
-function parseModel(model: string) {
-  const parts = model.split('/')
-  if (parts.length === 2) return { provider: parts[0], model: parts[1] }
-  return { provider: '', model }
+interface FlatModelOption {
+  provider_id: string
+  provider_name: string
+  model: string
+  value: string
+  label: string
 }
+
+const modelOptions = computed<FlatModelOption[]>(() => {
+  const list: FlatModelOption[] = []
+  chat.availableModels.forEach((p) => {
+    const models = p.models && p.models.length > 0 ? p.models : []
+    models.forEach((m) => {
+      list.push({
+        provider_id: p.provider_id,
+        provider_name: p.provider_name || p.provider_id,
+        model: m,
+        value: `${p.provider_id}/${m}`,
+        label: `${p.provider_name || p.provider_id} (${m})`,
+      })
+    })
+  })
+  if (chat.settings?.default_provider && chat.settings?.default_model) {
+    const defKey = `${chat.settings.default_provider}/${chat.settings.default_model}`
+    if (!list.some(item => item.value === defKey)) {
+      list.unshift({
+        provider_id: chat.settings.default_provider,
+        provider_name: chat.settings.default_provider,
+        model: chat.settings.default_model,
+        value: defKey,
+        label: `${chat.settings.default_provider} (${chat.settings.default_model})`,
+      })
+    }
+  }
+  return list
+})
+
+const selectedModelKey = computed({
+  get() {
+    if (chat.currentProvider && chat.currentModel) {
+      return `${chat.currentProvider}/${chat.currentModel}`
+    }
+    if (chat.settings?.default_provider && chat.settings?.default_model) {
+      return `${chat.settings.default_provider}/${chat.settings.default_model}`
+    }
+    if (modelOptions.value.length > 0) {
+      return modelOptions.value[0]!.value
+    }
+    return ''
+  },
+  set(val: string) {
+    const parts = val.split('/')
+    if (parts.length === 2) {
+      chat.currentProvider = parts[0]!
+      chat.currentModel = parts[1]!
+    } else {
+      chat.currentModel = val
+    }
+  },
+})
 
 function scrollToBottom() {
   if (messagesRef.value) {
@@ -337,12 +391,6 @@ async function fetchSessions() {
 async function fetchModels() {
   try {
     await chat.fetchModels()
-    if (!chat.currentModel && chat.availableModels.length > 0) {
-      const first = chat.availableModels[0]
-      if (first && first.provider_id && first.models && first.models[0]) {
-        chat.currentModel = `${first.provider_id}/${first.models[0]}`
-      }
-    }
   } catch { /* optional */ }
 }
 
@@ -398,12 +446,6 @@ async function handleDeleteSession(id: number) {
   } catch { /* cancelled */ }
 }
 
-function handleModelChange() {
-  const parsed = parseModel(chat.currentModel)
-  chat.currentModel = parsed.model || ''
-  if (parsed.provider) chat.currentProvider = parsed.provider
-}
-
 function handleQuickPrompt(promptText: string) {
   inputText.value = promptText
   handleSend()
@@ -412,7 +454,6 @@ function handleQuickPrompt(promptText: string) {
 async function handleSend() {
   const text = inputText.value.trim()
   if (!text || chat.isStreaming) return
-  handleModelChange()
   inputText.value = ''
   adjustTextareaHeight()
   await chat.sendMessage(text)
@@ -422,7 +463,6 @@ async function handleSend() {
 
 async function handleRegenerate() {
   if (chat.isStreaming) return
-  handleModelChange()
   await chat.regenerateLastMessage()
   nextTick(() => scrollToBottom())
 }
@@ -432,7 +472,16 @@ watch(() => chat.messages.length, () => {
 })
 
 onMounted(async () => {
-  await Promise.allSettled([fetchSessions(), fetchModels(), fetchSettings()])
+  await Promise.allSettled([fetchSessions(), fetchSettings(), fetchModels()])
+  if (chat.settings?.default_provider) {
+    chat.currentProvider = chat.settings.default_provider
+  }
+  if (chat.settings?.default_model) {
+    chat.currentModel = chat.settings.default_model
+  } else if (!chat.currentModel && modelOptions.value.length > 0) {
+    chat.currentProvider = modelOptions.value[0]!.provider_id
+    chat.currentModel = modelOptions.value[0]!.model
+  }
   if (!chat.currentSessionId) handleNewChat()
   nextTick(() => scrollToBottom())
 })

@@ -85,17 +85,10 @@
       </el-header>
 
       <el-main class="main">
-        <router-view v-slot="{ Component }">
-          <suspense>
-            <template #default>
-              <transition name="fade-transform" mode="out-in">
-                <component :is="Component" />
-              </transition>
-            </template>
-            <template #fallback>
-              <div class="page-loading">加载中...</div>
-            </template>
-          </suspense>
+        <router-view v-slot="{ Component, route }">
+          <transition name="fade-transform" mode="out-in">
+            <component :is="Component" :key="route.path" />
+          </transition>
         </router-view>
       </el-main>
     </el-container>

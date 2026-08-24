@@ -1,7 +1,5 @@
 <template>
-  <Transition name="mf-route" mode="out-in">
-    <router-view :key="$route.fullPath" />
-  </Transition>
+  <router-view />
 </template>
 
 <script setup lang="ts">
