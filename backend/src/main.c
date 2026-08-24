@@ -16,6 +16,7 @@
 #include "controllers/transfer_controller.h"
 #include "controllers/report_controller.h"
 #include "controllers/ai_controller.h"
+#include "controllers/ai_trace_controller.h"
 #include "controllers/import_export_controller.h"
 #include "services/ai_service.h"
 #include "dtos/request.h"
@@ -88,6 +89,7 @@ int main(int argc, char** argv) {
     register_report_routes(app);
     register_import_export_routes(app);
     register_ai_routes(app);
+    register_ai_trace_routes(app);
 
     const char* dist = "./frontend/dist";
     if (access(dist, F_OK) != 0) {

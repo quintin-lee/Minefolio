@@ -153,3 +153,33 @@ CREATE TABLE IF NOT EXISTS ai_messages (
 );
 
 CREATE INDEX IF NOT EXISTS idx_ai_messages_session ON ai_messages(session_id, created_at);
+
+-- AI conversation traces (for debugging & optimization)
+CREATE TABLE IF NOT EXISTS ai_traces (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    session_id INTEGER REFERENCES ai_sessions(id),
+    provider TEXT NOT NULL DEFAULT '',
+    model TEXT NOT NULL DEFAULT '',
+    input_messages TEXT NOT NULL DEFAULT '[]',
+    output_content TEXT NOT NULL DEFAULT '',
+    system_prompt TEXT NOT NULL DEFAULT '',
+    prompt_tokens INTEGER DEFAULT 0,
+    completion_tokens INTEGER DEFAULT 0,
+    total_tokens INTEGER DEFAULT 0,
+    latency_ms INTEGER DEFAULT 0,
+    first_token_ms INTEGER DEFAULT 0,
+    tokens_per_sec REAL DEFAULT 0,
+    cost_usd REAL DEFAULT 0,
+    temperature REAL DEFAULT 0,
+    max_tokens INTEGER DEFAULT 0,
+    top_p REAL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'ok',
+    error_message TEXT NOT NULL DEFAULT '',
+    metadata TEXT NOT NULL DEFAULT '{}',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_traces_user ON ai_traces(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_ai_traces_provider ON ai_traces(user_id, provider);
+CREATE INDEX IF NOT EXISTS idx_ai_traces_model ON ai_traces(user_id, model);

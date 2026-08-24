@@ -32,6 +32,7 @@ const router = createRouter({
         { path: 'audit-logs', name: 'AuditLogs', component: () => import('@/views/AuditLogs.vue') },
         { path: 'settings', name: 'Settings', component: () => import('@/views/Settings.vue') },
         { path: 'chat', name: 'Chat', component: () => import('@/views/Chat.vue') },
+        { path: 'ai-traces', name: 'AiTraces', component: () => import('@/views/AiTraces.vue') },
       ],
     },
   ],

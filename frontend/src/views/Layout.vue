@@ -44,6 +44,10 @@
           <Icon icon="ph:chat-circle-text" class="nav-icon" />
           <span>{{ t('nav.aiChat') }}</span>
         </el-menu-item>
+        <el-menu-item index="/ai-traces" @click="goTo('/ai-traces')">
+          <Icon icon="ph:radar" class="nav-icon" />
+          <span>{{ t('nav.aiTraces') }}</span>
+        </el-menu-item>
         <el-menu-item index="/settings" @click="goTo('/settings')">
           <Icon icon="ph:gear" class="nav-icon" />
           <span>{{ t('nav.settings') }}</span>
@@ -146,6 +150,7 @@ function goTo(path: string) {
       '/audit-logs': '日志',
       '/settings': '设置',
       '/chat': 'AI助手',
+      '/ai-traces': 'AI追踪',
     };
     return map[route.path] || 'Minefolio';
   })

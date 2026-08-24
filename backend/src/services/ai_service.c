@@ -1,6 +1,7 @@
 #include "services/ai_service.h"
 #include "repositories/ai_session_repo.h"
 #include "common/ai_config.h"
+#include "common/ai_trace.h"
 #include "common/db.h"
 #include "common/response.h"
 #include "common/ctx.h"
@@ -51,11 +52,17 @@ typedef struct {
     char* accumulated;
     size_t cap;
     size_t len;
+    ai_trace_t* trace;
 } stream_context_t;
 
 static void on_chunk(const char* delta, void* data) {
     stream_context_t* sc = (stream_context_t*)data;
     if (!delta || !sc || !sc->ctx) return;
+
+    if (sc->trace) {
+        ai_trace_record_first_token(sc->trace);
+        ai_trace_append_output(sc->trace, delta);
+    }
 
     size_t dlen = strlen(delta);
     if (sc->len + dlen + 1 > sc->cap) {
@@ -196,7 +203,33 @@ void ai_chat_handler(csilk_ctx_t* c) {
         .accumulated = NULL,
         .cap = 0,
         .len = 0,
+        .trace = NULL,
     };
+
+    ai_trace_t trace;
+    ai_trace_init(&trace, user_id, sid);
+    ai_trace_set_provider(&trace, prov->id, model_buf);
+    ai_trace_set_system_prompt(&trace, g_config.system_prompt);
+    sctx.trace = &trace;
+
+    csilk_json_t* input_arr = csilk_json_array();
+    csilk_json_t* sys_msg = csilk_json_object();
+    csilk_json_add_string(sys_msg, "role", "system");
+    csilk_json_add_string(sys_msg, "content", g_config.system_prompt ?: "");
+    csilk_json_array_append(input_arr, sys_msg);
+    for (int i = 0; i < hsz; i++) {
+        csilk_json_t* m = csilk_json_array_get(history, i);
+        csilk_json_t* im = csilk_json_object();
+        csilk_json_add_string(im, "role", csilk_json_get_string(m, "role") ?: "");
+        csilk_json_add_string(im, "content", csilk_json_get_string(m, "content") ?: "");
+        csilk_json_array_append(input_arr, im);
+    }
+    csilk_json_t* usr_msg = csilk_json_object();
+    csilk_json_add_string(usr_msg, "role", "user");
+    csilk_json_add_string(usr_msg, "content", content);
+    csilk_json_array_append(input_arr, usr_msg);
+    ai_trace_serialize_messages(&trace, input_arr);
+    csilk_json_free(input_arr);
 
     /* SSE init */
     csilk_sse_init(c);
@@ -228,11 +261,17 @@ void ai_chat_handler(csilk_ctx_t* c) {
     csilk_ai_chat_response_t ai_res = {0};
     int rc = csilk_ai_chat(ai_inst, &req, &ai_res);
     if (rc != 0) {
+        ai_trace_finish(&trace, "error", "AI request failed");
+        ai_trace_save(db_get_pool(), &trace);
+        ai_trace_free(&trace);
         send_error(c, "AI request failed");
     } else {
         if (sctx.accumulated && sctx.len > 0) {
             ai_message_insert(pool, sid, "assistant", sctx.accumulated, model_buf);
         }
+        ai_trace_finish(&trace, "ok", NULL);
+        ai_trace_save(db_get_pool(), &trace);
+        ai_trace_free(&trace);
         send_done(c);
     }
     csilk_ai_chat_response_free(&ai_res);
