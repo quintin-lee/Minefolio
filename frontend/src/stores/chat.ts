@@ -19,7 +19,7 @@ export const useChatStore = defineStore('chat', () => {
 
   async function fetchSessions() {
     const r = await listSessions({ page_size: 50 }) as any
-    sessions.value = r.data?.list ?? []
+    sessions.value = r?.list ?? []
   }
 
   async function fetchModels() {
@@ -46,7 +46,7 @@ export const useChatStore = defineStore('chat', () => {
   async function selectSession(id: number) {
     currentSessionId.value = id
     const r = await getMessages(id) as any
-    messages.value = r.data?.list ?? []
+    messages.value = r?.list ?? []
   }
 
   async function deleteSessionById(id: number) {

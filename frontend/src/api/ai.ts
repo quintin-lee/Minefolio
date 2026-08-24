@@ -43,32 +43,32 @@ export interface AiSettings {
 }
 
 export async function getModels(): Promise<AiModelOption[]> {
-  const r = await http.get('/api/ai/models') as any
-  return r.data ?? []
+  const r = await http.get('/ai/models') as unknown
+  return (r as any)?.data ?? []
 }
 
 export async function listSessions(params?: { page?: number; page_size?: number }) {
-  return http.get('/api/ai/sessions', { params })
+  return http.get('/ai/sessions', { params })
 }
 
 export async function createSession(model?: string, provider?: string) {
-  return http.post('/api/ai/sessions', { model, provider })
+  return http.post('/ai/sessions', { model, provider })
 }
 
 export async function getSession(id: number) {
-  return http.get(`/api/ai/sessions/${id}`)
+  return http.get(`/ai/sessions/${id}`)
 }
 
 export async function updateSession(id: number, data: { title?: string; model?: string }) {
-  return http.put(`/api/ai/sessions/${id}`, data)
+  return http.put(`/ai/sessions/${id}`, data)
 }
 
 export async function deleteSession(id: number) {
-  return http.delete(`/api/ai/sessions/${id}`)
+  return http.delete(`/ai/sessions/${id}`)
 }
 
 export async function getMessages(sessionId: number, page = 1, page_size = 50) {
-  return http.get(`/api/ai/sessions/${sessionId}/messages`, { params: { page, page_size } })
+  return http.get(`/ai/sessions/${sessionId}/messages`, { params: { page, page_size } })
 }
 
 export async function* chatStream(params: {
@@ -113,10 +113,10 @@ export async function* chatStream(params: {
 }
 
 export async function getSettings(): Promise<AiSettings> {
-  const r = await http.get('/api/settings/ai')
-  return r.data
+  const r = await http.get('/settings/ai')
+  return (r as any)?.data as AiSettings
 }
 
 export async function updateSettings(settings: Partial<AiSettings>) {
-  return http.put('/api/settings/ai', settings)
+  return http.put('/settings/ai', settings)
 }
