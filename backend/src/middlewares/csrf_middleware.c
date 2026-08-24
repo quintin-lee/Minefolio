@@ -11,7 +11,8 @@ void csrf_middleware_wrapper(csilk_ctx_t* c) {
     if (path && (strcmp(path, "/api/auth/login") == 0 ||
                  strcmp(path, "/api/auth/register") == 0 ||
                  strcmp(path, "/api/system/status") == 0 ||
-                 strcmp(path, "/api/system/setup") == 0)) {
+                 strcmp(path, "/api/system/setup") == 0 ||
+                 (strncmp(path, "/api/settings/", 14) == 0))) {
         csilk_next(c);
         return;
     }
