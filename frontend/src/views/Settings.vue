@@ -66,13 +66,61 @@
         <h3>{{ t('settings.aiTitle') }}</h3>
       </div>
       <p class="export-hint">{{ t('settings.aiDesc') }}</p>
+      
+      <div class="provider-list">
+        <div v-for="(provider, index) in providerList" :key="index" class="provider-item">
+          <div class="provider-header">
+            <span class="provider-name">{{ provider.name || provider.id }}</span>
+            <div class="provider-actions">
+              <el-button text size="small" @click="toggleEdit(index)">
+                <el-icon><Edit /></el-icon>
+              </el-button>
+              <el-button text size="small" class="delete-btn" @click="removeProvider(index)">
+                <el-icon><Delete /></el-icon>
+              </el-button>
+            </div>
+          </div>
+          <el-form v-if="editIndex === index" :model="provider" label-width="100px" class="provider-form">
+            <el-form-item :label="t('settings.aiProviderId')">
+              <el-input v-model="provider.id" :disabled="provider.id.length > 0" placeholder="provider-id" />
+            </el-form-item>
+            <el-form-item :label="t('settings.aiProviderName')">
+              <el-input v-model="provider.name" placeholder="显示名称" />
+            </el-form-item>
+            <el-form-item :label="t('settings.aiBaseUrl')">
+              <el-input v-model="provider.base_url" placeholder="https://api.example.com" />
+            </el-form-item>
+            <el-form-item :label="t('settings.aiApiKey')">
+              <el-input v-model="provider.api_key" type="password" show-password placeholder="sk-..." />
+            </el-form-item>
+            <el-form-item :label="t('settings.aiModels')">
+              <el-input v-model="provider.modelsStr" type="textarea" :rows="2" :placeholder="t('settings.aiModelPlaceholder')" />
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" size="small" @click="saveProvider(index)">保存</el-button>
+              <el-button size="small" @click="cancelEdit">取消</el-button>
+            </el-form-item>
+          </el-form>
+          <div v-else class="provider-details">
+            <el-tag size="small" class="meta-tag">ID: {{ provider.id }}</el-tag>
+            <el-tag size="small" class="meta-tag">模型: {{ provider.modelsStr }}</el-tag>
+          </div>
+        </div>
+        <el-button type="primary" plain @click="addProvider" class="add-provider-btn">
+          <el-icon><Plus /></el-icon>
+          {{ t('settings.aiAddProvider') }}
+        </el-button>
+      </div>
+      
+      <el-divider />
+      
       <el-form :model="aiForm" label-width="120px" class="premium-form">
         <el-form-item :label="t('settings.aiDefaultProvider')">
           <el-select v-model="aiForm.default_provider" style="width: 100%">
             <el-option
-              v-for="p in aiProviders"
+              v-for="p in providerList"
               :key="p.id"
-              :label="p.name"
+              :label="p.name || p.id"
               :value="p.id"
             />
           </el-select>
@@ -80,7 +128,7 @@
         <el-form-item :label="t('settings.aiDefaultModel')">
           <el-select v-model="aiForm.default_model" style="width: 100%">
             <el-option
-              v-for="m in availableModels"
+              v-for="m in allModels"
               :key="m"
               :label="m"
               :value="m"
@@ -105,7 +153,8 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, computed } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Edit, Delete, Plus } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { transactionsApi } from '@/api/transactions'
 import { getSettings, updateSettings } from '@/api/ai'
@@ -126,14 +175,25 @@ const loading = ref(false)
 const exporting = ref(false)
 const formRef = ref<FormInstance>()
 const aiSaving = ref(false)
+const editIndex = ref(-1)
+
+// Provider list with models as string for display/editing
+interface ProviderItem {
+  id: string
+  name: string
+  base_url: string
+  api_key?: string
+  modelsStr: string
+}
+
+const providerList = ref<ProviderItem[]>([])
+
 const aiForm = reactive({
   default_provider: '',
   default_model: '',
   context_size: 20,
   system_prompt: '',
 })
-const aiProviders = ref<{ id: string; name: string }[]>([])
-const availableModels = ref<string[]>([])
 
 const form = reactive({
   old_password: '',
@@ -161,6 +221,14 @@ const rules: FormRules = {
   ],
 }
 
+const allModels = computed(() => {
+  const models = new Set<string>()
+  providerList.value.forEach(p => {
+    p.modelsStr.split(',').map(s => s.trim()).filter(Boolean).forEach(m => models.add(m))
+  })
+  return Array.from(models)
+})
+
 async function loadAiSettings() {
   try {
     const settings = await getSettings() as unknown as AiSettings
@@ -168,19 +236,77 @@ async function loadAiSettings() {
     aiForm.default_model = settings.default_model
     aiForm.context_size = settings.context_size
     aiForm.system_prompt = settings.system_prompt
-    aiProviders.value = settings.providers ?? []
-    availableModels.value = settings.providers
-      ?.flatMap(p => (p.models ?? []).map(m => `${p.id}/${m}`))
-      ?? []
+    
+    providerList.value = (settings.providers ?? []).map((p: any) => ({
+      id: p.id || '',
+      name: p.name || p.id || '',
+      base_url: p.base_url || '',
+      api_key: p.api_key || '',
+      modelsStr: Array.isArray(p.models) ? p.models.join(', ') : (p.models || ''),
+    }))
   } catch {
     // Load failed silently
+  }
+}
+
+function toggleEdit(index: number) {
+  if (editIndex.value === index) {
+    editIndex.value = -1
+  } else {
+    editIndex.value = index
+  }
+}
+
+function cancelEdit() {
+  editIndex.value = -1
+}
+
+function addProvider() {
+  providerList.value.push({
+    id: '',
+    name: '',
+    base_url: '',
+    api_key: '',
+    modelsStr: '',
+  })
+  editIndex.value = providerList.value.length - 1
+}
+
+function saveProvider(index: number) {
+  const provider = providerList.value[index]
+  if (!provider || !provider.id) {
+    ElMessage.error('供应商 ID 不能为空')
+    return
+  }
+  editIndex.value = -1
+  ElMessage.success(t('settings.aiProviderAdded'))
+}
+
+async function removeProvider(index: number) {
+  try {
+    await ElMessageBox.confirm(t('settings.aiConfirmDelete'), '提示', { type: 'warning' })
+    providerList.value.splice(index, 1)
+    ElMessage.success(t('settings.aiProviderDeleted'))
+  } catch {
+    // Cancelled
   }
 }
 
 async function saveAiSettings() {
   aiSaving.value = true
   try {
-    await updateSettings(aiForm)
+    const providers = providerList.value.map(p => ({
+      id: p.id,
+      name: p.name,
+      base_url: p.base_url,
+      api_key: p.api_key,
+      models: p.modelsStr.split(',').map(s => s.trim()).filter(Boolean),
+    }))
+    
+    await updateSettings({
+      ...aiForm,
+      providers,
+    })
     ElMessage.success(t('settings.aiSaved'))
     await loadAiSettings()
   } catch {
@@ -310,5 +436,62 @@ onMounted(() => {
   color: var(--mf-text-muted);
   margin-bottom: 16px;
   line-height: 1.6;
+}
+
+.provider-list {
+  margin-bottom: 24px;
+}
+
+.provider-item {
+  border: 1px solid var(--mf-border);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+  background: var(--mf-surface);
+}
+
+.provider-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.provider-name {
+  font-weight: 500;
+  color: var(--mf-text-main);
+  font-size: 14px;
+}
+
+.provider-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.delete-btn:hover {
+  color: var(--color-danger);
+}
+
+.provider-details {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.meta-tag {
+  font-size: 12px;
+}
+
+.provider-form {
+  margin-top: 8px;
+}
+
+.add-provider-btn {
+  width: 100%;
+  margin-top: 8px;
+}
+
+:deep(.el-divider) {
+  margin: 24px 0;
 }
 </style>
