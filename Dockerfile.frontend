@@ -1,0 +1,46 @@
+# syntax=docker/dockerfile:1.7
+
+############################################################
+# Frontend-only build and serve
+############################################################
+
+ARG NODE_VERSION=20-bookworm-slim
+FROM node:${NODE_VERSION} AS frontend-build
+
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+
+ENV HTTP_PROXY=${HTTP_PROXY} \
+    HTTPS_PROXY=${HTTPS_PROXY}
+
+WORKDIR /app/frontend
+COPY frontend/package.json frontend/package-lock.json ./
+
+RUN --mount=type=bind,source=hosts,target=/etc/hosts \
+    npm install --registry=${NPM_REGISTRY}
+
+COPY frontend ./
+COPY .iconify_cache /app/.iconify_cache
+
+ENV PATH="/app/frontend/node_modules/.bin:$PATH"
+RUN npm run build
+
+############################################################
+# Runtime: nginx serving frontend
+############################################################
+
+FROM nginx:alpine AS frontend-runtime
+
+COPY nginx/minefolio.docker.conf /etc/nginx/conf.d/default.conf
+COPY --from=frontend-build /app/frontend/dist /usr/share/nginx/html
+
+EXPOSE 80
+
+HEALTHCHECK \
+    --interval=30s \
+    --timeout=5s \
+    --start-period=5s \
+    CMD wget -q --spider http://127.0.0.1:80/ || exit 1
+
+CMD ["nginx", "-g", "daemon off;"]
