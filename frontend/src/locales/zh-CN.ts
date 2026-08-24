@@ -152,6 +152,9 @@ export const zhCN = {
     aiProviderAdded: '供应商已添加',
     aiProviderDeleted: '供应商已删除',
     aiDefaultProvider: '默认供应商',
+    aiDefaultModel: '默认模型',
+    aiContextSize: '上下文轮数',
+    aiSystemPrompt: '系统提示词',
     aiSaveFailed: '保存失败',
   },
 }

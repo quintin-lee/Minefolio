@@ -43,8 +43,12 @@ export interface AiSettings {
 }
 
 export async function getModels(): Promise<AiModelOption[]> {
-  const r = await http.get('/ai/models') as unknown
-  return (r as any)?.data ?? []
+  const r = (await http.get('/ai/models')) as unknown
+  if (Array.isArray(r)) return r as AiModelOption[]
+  if (r && typeof r === 'object' && 'data' in r && Array.isArray((r as { data: unknown }).data)) {
+    return (r as { data: AiModelOption[] }).data
+  }
+  return []
 }
 
 export async function listSessions(params?: { page?: number; page_size?: number }) {
@@ -71,12 +75,19 @@ export async function getMessages(sessionId: number, page = 1, page_size = 50) {
   return http.get(`/ai/sessions/${sessionId}/messages`, { params: { page, page_size } })
 }
 
+export interface ChatStreamChunk {
+  type: 'delta' | 'done' | 'error'
+  content?: string
+  finish_reason?: string
+  message?: string
+}
+
 export async function* chatStream(params: {
   session_id?: number
   content: string
   model?: string
   provider?: string
-}): AsyncIterable<{ type: 'delta' | 'done' | 'error'; content?: string; finish_reason?: string; usage?: any; message?: string }> {
+}): AsyncIterable<ChatStreamChunk> {
   const token = localStorage.getItem('token') || ''
   const resp = await fetch('/api/ai/chat', {
     method: 'POST',
@@ -90,22 +101,31 @@ export async function* chatStream(params: {
   const reader = resp.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
+  let currentEvent = 'delta'
   while (true) {
     const { done, value } = await reader.read()
     if (done) break
     buffer += decoder.decode(value, { stream: true })
     const lines = buffer.split('\n')
     buffer = lines.pop() ?? ''
-    let event = ''
-    let data = ''
     for (const line of lines) {
-      if (line.startsWith('event: ')) event = line.slice(7).trim()
-      else if (line.startsWith('data: ')) {
-        data = line.slice(6).trim()
-        if (event && data) {
-          try { yield JSON.parse(data) as any } catch { /* ignore */ }
-          event = ''
-          data = ''
+      const trimmed = line.trim()
+      if (trimmed.startsWith('event:')) {
+        currentEvent = trimmed.slice(6).trim()
+      } else if (trimmed.startsWith('data:')) {
+        const dataStr = trimmed.slice(5).trim()
+        if (dataStr) {
+          try {
+            const parsed = JSON.parse(dataStr) as Record<string, unknown>
+            yield {
+              type: (currentEvent || 'delta') as 'delta' | 'done' | 'error',
+              content: typeof parsed.content === 'string' ? parsed.content : undefined,
+              finish_reason: typeof parsed.finish_reason === 'string' ? parsed.finish_reason : undefined,
+              message: typeof parsed.message === 'string' ? parsed.message : undefined,
+            }
+          } catch {
+            // ignore
+          }
         }
       }
     }
@@ -113,10 +133,12 @@ export async function* chatStream(params: {
 }
 
 export async function getSettings(): Promise<AiSettings> {
-  const r = await http.get('/settings/ai')
-  return (r as any)?.data as AiSettings
+  const r = (await http.get('/settings/ai')) as unknown
+  if (r && typeof r === 'object' && 'data' in r && (r as { data: unknown }).data) {
+    return (r as { data: AiSettings }).data
+  }
+  return r as AiSettings
 }
-
 export async function updateSettings(settings: Partial<AiSettings>) {
   return http.put('/settings/ai', settings)
 }

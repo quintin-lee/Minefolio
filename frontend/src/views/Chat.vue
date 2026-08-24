@@ -130,16 +130,18 @@ const showSidebar = ref(true)
 const loadingSessions = ref(false)
 const loadingMessages = ref(false)
 
-function formatTime(dateStr: string): string {
+function formatTime(dateStr?: string): string {
+  if (!dateStr) return ''
   try {
     const d = new Date(dateStr)
+    if (isNaN(d.getTime())) return ''
     const now = new Date()
     const diff = now.getTime() - d.getTime()
     if (diff < 60000) return '刚刚'
     if (diff < 3600000) return `${Math.floor(diff / 60000)}分钟前`
     if (diff < 86400000) return `${Math.floor(diff / 3600000)}小时前`
     return d.toLocaleDateString()
-  } catch { return dateStr }
+  } catch { return '' }
 }
 
 function renderMarkdown(text: string): string {
@@ -190,7 +192,6 @@ async function selectSession(id: number) {
 }
 
 function handleNewChat() {
-  chat.createNewSession()
   chat.messages = []
   chat.currentSessionId = null
 }
