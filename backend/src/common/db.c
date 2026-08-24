@@ -45,6 +45,12 @@ int db_init(csilk_db_pool_t** out_pool) {
         return -1;
     }
 
+    if (!g_is_postgres) {
+        csilk_db_exec(g_pool, "PRAGMA journal_mode=WAL;");
+        csilk_db_exec(g_pool, "PRAGMA busy_timeout=5000;");
+        csilk_db_exec(g_pool, "PRAGMA synchronous=NORMAL;");
+    }
+
     *out_pool = g_pool;
     return 0;
 }

@@ -229,4 +229,6 @@ void register_ai_routes(csilk_app_t* app) {
     csilk_app_get_ext(app, "/api/ai/sessions/:id/messages", messages_list_handler, NULL, NULL, "List messages", "");
     csilk_app_get_ext(app, "/api/settings/ai", settings_ai_get_handler, NULL, NULL, "Get AI config", "");
     csilk_app_put_ext(app, "/api/settings/ai", settings_ai_update_handler, NULL, NULL, "Update AI config", "");
+    csilk_app_post_ext(app, "/api/settings/ai/test", ai_service_test_connection, NULL, NULL, "Test AI connection", "Tests connectivity to an AI provider");
+    csilk_app_post_ext(app, "/api/settings/ai/fetch-models", ai_service_fetch_models, NULL, NULL, "Fetch AI models", "Fetches available models from provider");
 }

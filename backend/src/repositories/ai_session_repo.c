@@ -97,6 +97,20 @@ int ai_session_delete(csilk_db_pool_t* pool, int64_t user_id, int64_t id) {
     return affected > 0;
 }
 
+int ai_message_delete_last_assistant(csilk_db_pool_t* pool, int64_t session_id) {
+    char sid[32];
+    sid_str(session_id, sid);
+    csilk_json_t* r = csilk_db_query_param_json(pool,
+        "DELETE FROM ai_messages WHERE id = ("
+        "  SELECT id FROM ai_messages WHERE session_id=? AND role='assistant' "
+        "  ORDER BY id DESC LIMIT 1"
+        ") RETURNING id",
+        (const char*[]){sid, NULL});
+    int affected = r ? (int)csilk_json_array_size(r) : 0;
+    if (r) csilk_json_free(r);
+    return affected;
+}
+
 csilk_json_t* ai_message_list(csilk_db_pool_t* pool, int64_t session_id, int64_t page, int64_t page_size, int64_t* total) {
     char sid[32], lim[32], off[32];
     sid_str(session_id, sid);

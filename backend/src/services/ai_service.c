@@ -6,6 +6,9 @@
 #include "common/ctx.h"
 #include "csilk/drivers/ai.h"
 #include "csilk/protocols/sse.h"
+#include "config/key_manager.h"
+#include <curl/curl.h>
+#include <time.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -110,6 +113,7 @@ void ai_chat_handler(csilk_ctx_t* c) {
     const char* content = csilk_json_get_string(body, "content");
     const char* model_override = csilk_json_get_string(body, "model");
     const char* provider_override = csilk_json_get_string(body, "provider");
+    int regenerate = csilk_json_get_bool(body, "regenerate");
 
     if (!content || content[0] == '\0') {
         csilk_json_free(body);
@@ -160,6 +164,9 @@ void ai_chat_handler(csilk_ctx_t* c) {
         csilk_json_t* sess = ai_session_get(pool, user_id, sid);
         if (!sess) { csilk_json_free(body); respond_not_found(c); return; }
         csilk_json_free(sess);
+        if (regenerate) {
+            ai_message_delete_last_assistant(pool, sid);
+        }
     }
 
     /* load history */
@@ -236,4 +243,202 @@ void ai_chat_handler(csilk_ctx_t* c) {
     free(msgs);
     csilk_json_free(history);
     csilk_json_free(body);
+}
+void ai_service_test_connection(csilk_ctx_t* c) {
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) return;
+
+    csilk_json_t* body = csilk_bind_json(c);
+    if (!body) { respond_bad_request(c, "请求体必须为 JSON"); return; }
+
+    const char* id = csilk_json_get_string(body, "id") ?: "openai";
+    const char* base_url = csilk_json_get_string(body, "base_url");
+    const char* k_enc = csilk_json_get_string(body, "api_key_enc");
+    const char* k = csilk_json_get_string(body, "api_key");
+    const char* model = csilk_json_get_string(body, "model");
+
+    char key_buf[512] = {0};
+    const char* raw_k = (k_enc && k_enc[0]) ? k_enc : k;
+    if (raw_k && raw_k[0]) {
+        size_t dec_len = sizeof(key_buf);
+        if (auth_key_decrypt(raw_k, key_buf, &dec_len) != 0) {
+            strncpy(key_buf, raw_k, sizeof(key_buf) - 1);
+        }
+    } else {
+        ai_provider_t* old_p = ai_config_find_provider(&g_config, id);
+        if (old_p && old_p->api_key[0]) {
+            strncpy(key_buf, old_p->api_key, sizeof(key_buf) - 1);
+        } else {
+            strcpy(key_buf, "dummy");
+        }
+    }
+
+    const char* dname = get_driver_name(id);
+    csilk_ai_t* test_ai = csilk_ai_new(dname, key_buf, (base_url && base_url[0]) ? base_url : NULL);
+    if (!test_ai) {
+        csilk_json_free(body);
+        csilk_json_t* resp = csilk_json_object();
+        csilk_json_add_bool(resp, "success", false);
+        csilk_json_add_number(resp, "latency_ms", 0);
+        csilk_json_add_string(resp, "message", "创建 AI 驱动失败");
+        respond_ok(c, resp);
+        return;
+    }
+
+    struct timespec t1, t2;
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+
+    csilk_ai_message_t msg = {.role = "user", .content = "ping"};
+    csilk_ai_chat_request_t req = {
+        .model = (model && model[0]) ? model : "model",
+        .messages = &msg,
+        .message_count = 1,
+        .stream = 0,
+        .timeout_ms = 10000,
+    };
+    csilk_ai_chat_response_t res = {0};
+    int rc = csilk_ai_chat(test_ai, &req, &res);
+    clock_gettime(CLOCK_MONOTONIC, &t2);
+
+    long latency_ms = (t2.tv_sec - t1.tv_sec) * 1000 + (t2.tv_nsec - t1.tv_nsec) / 1000000;
+    if (latency_ms < 0) latency_ms = 0;
+
+    csilk_json_t* resp = csilk_json_object();
+    if (rc == 0) {
+        csilk_json_add_bool(resp, "success", true);
+        csilk_json_add_number(resp, "latency_ms", (double)latency_ms);
+        csilk_json_add_string(resp, "message", "连接成功");
+    } else {
+        csilk_json_add_bool(resp, "success", false);
+        csilk_json_add_number(resp, "latency_ms", (double)latency_ms);
+        csilk_json_add_string(resp, "message", (res.error_message && res.error_message[0]) ? res.error_message : "连接超时或失败");
+    }
+
+    csilk_ai_chat_response_free(&res);
+    csilk_ai_free(test_ai);
+    csilk_json_free(body);
+    respond_ok(c, resp);
+}
+
+typedef struct {
+    char* data;
+    size_t size;
+} memory_buf_t;
+
+static size_t curl_write_memory_cb(void* contents, size_t size, size_t nmemb, void* userp) {
+    size_t realsize = size * nmemb;
+    memory_buf_t* mem = (memory_buf_t*)userp;
+    char* ptr = realloc(mem->data, mem->size + realsize + 1);
+    if (!ptr) return 0;
+    mem->data = ptr;
+    memcpy(&(mem->data[mem->size]), contents, realsize);
+    mem->size += realsize;
+    mem->data[mem->size] = 0;
+    return realsize;
+}
+
+void ai_service_fetch_models(csilk_ctx_t* c) {
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) return;
+
+    csilk_json_t* body = csilk_bind_json(c);
+    if (!body) { respond_bad_request(c, "请求体必须为 JSON"); return; }
+
+    const char* id = csilk_json_get_string(body, "id") ?: "openai";
+    const char* base_url = csilk_json_get_string(body, "base_url");
+    const char* k_enc = csilk_json_get_string(body, "api_key_enc");
+    const char* k = csilk_json_get_string(body, "api_key");
+
+    char key_buf[512] = {0};
+    const char* raw_k = (k_enc && k_enc[0]) ? k_enc : k;
+    if (raw_k && raw_k[0]) {
+        size_t dec_len = sizeof(key_buf);
+        if (auth_key_decrypt(raw_k, key_buf, &dec_len) != 0) {
+            strncpy(key_buf, raw_k, sizeof(key_buf) - 1);
+        }
+    } else {
+        ai_provider_t* old_p = ai_config_find_provider(&g_config, id);
+        if (old_p && old_p->api_key[0]) {
+            strncpy(key_buf, old_p->api_key, sizeof(key_buf) - 1);
+        } else {
+            strcpy(key_buf, "dummy");
+        }
+    }
+
+    char url[512];
+    if (base_url && base_url[0]) {
+        size_t blen = strlen(base_url);
+        if (base_url[blen - 1] == '/')
+            snprintf(url, sizeof(url), "%smodels", base_url);
+        else
+            snprintf(url, sizeof(url), "%s/models", base_url);
+    } else {
+        snprintf(url, sizeof(url), "https://api.openai.com/v1/models");
+    }
+
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        csilk_json_free(body);
+        respond_error(c, 500, "CURL 初始化失败");
+        return;
+    }
+
+    memory_buf_t chunk = { .data = malloc(1), .size = 0 };
+    if (chunk.data) chunk.data[0] = '\0';
+
+    struct curl_slist* headers = NULL;
+    char auth_hdr[512];
+    snprintf(auth_hdr, sizeof(auth_hdr), "Authorization: Bearer %s", key_buf);
+    headers = curl_slist_append(headers, auth_hdr);
+
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_memory_cb);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void*)&chunk);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
+
+    CURLcode res = curl_easy_perform(curl);
+    long http_code = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+
+    csilk_json_t* out = csilk_json_object();
+    csilk_json_t* model_arr = csilk_json_array();
+
+    if (res == CURLE_OK && http_code == 200 && chunk.data) {
+        csilk_json_t* parsed = csilk_json_parse(chunk.data);
+        if (parsed) {
+            const csilk_json_t* data_arr = csilk_json_get(parsed, "data");
+            if (data_arr && csilk_json_is_array(data_arr)) {
+                size_t dsz = csilk_json_array_size(data_arr);
+                for (size_t i = 0; i < dsz; i++) {
+                    const csilk_json_t* item = csilk_json_array_get(data_arr, i);
+                    const char* mid = csilk_json_get_string(item, "id");
+                    if (mid && mid[0]) {
+                        csilk_json_array_append(model_arr, csilk_json_string_new(mid));
+                    }
+                }
+            }
+            const csilk_json_t* models_arr = csilk_json_get(parsed, "models");
+            if (models_arr && csilk_json_is_array(models_arr)) {
+                size_t msz = csilk_json_array_size(models_arr);
+                for (size_t i = 0; i < msz; i++) {
+                    const csilk_json_t* item = csilk_json_array_get(models_arr, i);
+                    const char* mid = csilk_json_get_string(item, "name");
+                    if (!mid) mid = csilk_json_get_string(item, "id");
+                    if (!mid) mid = csilk_json_string_value(item);
+                    if (mid && mid[0]) {
+                        csilk_json_array_append(model_arr, csilk_json_string_new(mid));
+                    }
+                }
+            }
+            csilk_json_free(parsed);
+        }
+    }
+
+    free(chunk.data);
+    csilk_json_free(body);
+    csilk_json_add_array(out, "models", model_arr);
+    respond_ok(c, out);
 }
