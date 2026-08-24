@@ -45,7 +45,7 @@
           <span>{{ t('nav.aiChat') }}</span>
         </el-menu-item>
         <el-menu-item index="/ai-traces" @click="goTo('/ai-traces')">
-          <Icon icon="ph:radar" class="nav-icon" />
+          <Icon icon="ph:scan" class="nav-icon" />
           <span>{{ t('nav.aiTraces') }}</span>
         </el-menu-item>
         <el-menu-item index="/settings" @click="goTo('/settings')">
