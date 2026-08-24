@@ -120,9 +120,9 @@ int db_run_migrations(csilk_db_pool_t* pool) {
 
     // SQLite: run the original migration SQL
     FILE* f = fopen("sql/migration.sql", "r");
-    if (!f) {
-        f = fopen("./sql/migration.sql", "r");
-    }
+    if (!f) f = fopen("backend/sql/migration.sql", "r");
+    if (!f) f = fopen("./sql/migration.sql", "r");
+    if (!f) f = fopen("../sql/migration.sql", "r");
     if (!f) {
         fprintf(stderr, "Cannot open migration.sql\n");
         return -1;

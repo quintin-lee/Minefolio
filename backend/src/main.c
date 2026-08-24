@@ -21,6 +21,7 @@
 #include "dtos/request.h"
 #include "dtos/response.h"
 #include <stdio.h>
+#include <unistd.h>
 #include <stdlib.h>
 
 int main(int argc, char** argv) {
@@ -88,7 +89,12 @@ int main(int argc, char** argv) {
     register_import_export_routes(app);
     register_ai_routes(app);
 
-    csilk_app_static(app, "/", "./frontend/dist");
+    const char* dist = "./frontend/dist";
+    if (access(dist, F_OK) != 0) {
+        if (access("../frontend/dist", F_OK) == 0) dist = "../frontend/dist";
+        else if (access("dist", F_OK) == 0) dist = "dist";
+    }
+    csilk_app_static(app, "/", dist);
 
     printf("Starting Minefolio server on :8080\n");
     csilk_app_run(app, 8080);
