@@ -69,3 +69,5 @@ export async function encryptPassword(password: string): Promise<string> {
 
   return arrayBufferToBase64url(encrypted)
 }
+
+export const encryptText = encryptPassword

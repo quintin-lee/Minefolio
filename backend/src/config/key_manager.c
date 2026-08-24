@@ -1,6 +1,7 @@
 #include "common/response.h"
 #include "csilk/core/crypto_dispatch.h"
 #include "csilk/drivers/cipher.h"
+#include "csilk/core/codec.h"
 #include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <openssl/bio.h>
@@ -99,4 +100,21 @@ void auth_public_key(csilk_ctx_t* c) {
     csilk_json_t* data = csilk_json_object();
     csilk_json_add_object(data, "public_key", jwk);
     respond_ok(c, data);
+}
+
+int auth_key_decrypt(const char* ciphertext_b64url, char* out_buf, size_t* out_len) {
+    if (!ciphertext_b64url || !out_buf || !out_len || *out_len == 0) return -1;
+    uint8_t ct_buf[CSILK_RSA_KEY_SIZE];
+    if (csilk_base64url_decode(ciphertext_b64url, ct_buf, sizeof(ct_buf)) < 0) {
+        return -1;
+    }
+    size_t pt_len = *out_len - 1;
+    if (_csilk_asymmetric_decrypt(NULL,
+            g_priv_pem, strlen(g_priv_pem),
+            ct_buf, CSILK_RSA_KEY_SIZE, (uint8_t*)out_buf, &pt_len) != 0 || pt_len == 0) {
+        return -1;
+    }
+    out_buf[pt_len] = '\0';
+    *out_len = pt_len;
+    return 0;
 }

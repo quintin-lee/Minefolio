@@ -91,7 +91,12 @@
                 <el-input v-model="provider.base_url" placeholder="https://api.example.com" />
               </el-form-item>
               <el-form-item :label="t('settings.aiApiKey')">
-                <el-input v-model="provider.api_key" type="password" show-password placeholder="sk-..." />
+                <el-input
+                  v-model="provider.api_key"
+                  type="password"
+                  show-password
+                  :placeholder="provider.has_api_key ? '•••••••• (已加密存储，留空保持不变)' : 'sk-...'"
+                />
               </el-form-item>
               <el-form-item :label="t('settings.aiModels')">
                 <el-input v-model="provider.modelsStr" type="textarea" :rows="2" :placeholder="t('settings.aiModelPlaceholder')" />
@@ -104,6 +109,9 @@
             <div v-else class="provider-details">
               <el-tag size="small" class="meta-tag">ID: {{ provider.id }}</el-tag>
               <el-tag size="small" class="meta-tag">模型: {{ provider.modelsStr }}</el-tag>
+              <el-tag size="small" :type="provider.has_api_key ? 'success' : 'info'" class="meta-tag">
+                {{ provider.has_api_key ? 'API Key 已配置 (传输加密)' : '未设置 API Key' }}
+              </el-tag>
             </div>
           </div>
           <el-button type="primary" plain @click="addProvider" class="add-provider-btn">
@@ -160,6 +168,7 @@ import { useAuthStore } from '@/stores/auth'
 import { transactionsApi } from '@/api/transactions'
 import { getSettings, updateSettings } from '@/api/ai'
 import type { AiSettings } from '@/api/ai'
+import { encryptText } from '@/utils/crypto'
 import { zhCN } from '@/locales/zh-CN'
 import { formatDate } from '@/utils/format'
 import type { FormInstance, FormRules } from 'element-plus'
@@ -189,9 +198,9 @@ interface ProviderItem {
   name: string
   base_url: string
   api_key?: string
+  has_api_key?: boolean
   modelsStr: string
 }
-
 const providerList = ref<ProviderItem[]>([])
 
 const aiForm = reactive({
@@ -249,7 +258,8 @@ async function loadAiSettings() {
         id: p.id || '',
         name: p.name || p.id || '',
         base_url: p.base_url || '',
-        api_key: p.api_key || '',
+        api_key: '',
+        has_api_key: !!p.has_api_key,
         modelsStr: Array.isArray(p.models) ? p.models.join(', ') : '',
       }))
     }
@@ -304,13 +314,22 @@ async function removeProvider(index: number) {
 async function saveAiSettings() {
   aiSaving.value = true
   try {
-    const providers = providerList.value.map(p => ({
-      id: p.id,
-      name: p.name,
-      base_url: p.base_url,
-      api_key: p.api_key,
-      models: p.modelsStr.split(',').map(s => s.trim()).filter(Boolean),
-    }))
+    const providers = await Promise.all(
+      providerList.value.map(async (p) => {
+        let api_key_enc: string | undefined = undefined
+        if (p.api_key && p.api_key.trim()) {
+          api_key_enc = await encryptText(p.api_key.trim())
+        }
+        return {
+          id: p.id,
+          name: p.name,
+          base_url: p.base_url,
+          api_key_enc,
+          api_key: api_key_enc,
+          models: p.modelsStr.split(',').map(s => s.trim()).filter(Boolean),
+        }
+      })
+    )
     
     await updateSettings({
       ...aiForm,

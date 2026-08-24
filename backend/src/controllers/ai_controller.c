@@ -4,6 +4,7 @@
 #include "common/response.h"
 #include "common/ctx.h"
 #include "common/ai_config.h"
+#include "config/key_manager.h"
 #include "common/db.h"
 #include "csilk/csilk.h"
 #include <stdio.h>
@@ -127,6 +128,7 @@ void settings_ai_get_handler(csilk_ctx_t* c) {
         csilk_json_add_string(p, "id", cfg->providers[i].id);
         csilk_json_add_string(p, "name", cfg->providers[i].name);
         csilk_json_add_string(p, "base_url", cfg->providers[i].base_url);
+        csilk_json_add_bool(p, "has_api_key", cfg->providers[i].api_key[0] != '\0');
         csilk_json_t* ml = csilk_json_array();
         for (int j = 0; j < cfg->providers[i].model_count; j++)
             csilk_json_add_item(ml, csilk_json_string_new(cfg->providers[i].models[j]));
@@ -160,17 +162,24 @@ void settings_ai_update_handler(csilk_ctx_t* c) {
                 const char* pid = csilk_json_get_string(p, "id") ?: "";
                 strncpy(new_provs[i].id, pid, sizeof(new_provs[i].id) - 1);
                 strncpy(new_provs[i].name, csilk_json_get_string(p, "name") ?: "", sizeof(new_provs[i].name) - 1);
+                const char* k_enc = csilk_json_get_string(p, "api_key_enc");
                 const char* k = csilk_json_get_string(p, "api_key");
-                if (k && k[0]) {
-                    strncpy(new_provs[i].api_key, k, sizeof(new_provs[i].api_key) - 1);
+                const char* raw_k = (k_enc && k_enc[0]) ? k_enc : k;
+                if (raw_k && raw_k[0]) {
+                    char dec_buf[512] = {0};
+                    size_t dec_len = sizeof(dec_buf);
+                    if (auth_key_decrypt(raw_k, dec_buf, &dec_len) == 0) {
+                        strncpy(new_provs[i].api_key, dec_buf, sizeof(new_provs[i].api_key) - 1);
+                    } else {
+                        /* Fallback to raw key if not encrypted */
+                        strncpy(new_provs[i].api_key, raw_k, sizeof(new_provs[i].api_key) - 1);
+                    }
                 } else {
                     ai_provider_t* old_p = ai_config_find_provider(&cfg, pid);
                     if (old_p && old_p->api_key[0]) {
                         strncpy(new_provs[i].api_key, old_p->api_key, sizeof(new_provs[i].api_key) - 1);
                     }
                 }
-                strncpy(new_provs[i].base_url, csilk_json_get_string(p, "base_url") ?: "", sizeof(new_provs[i].base_url) - 1);
-                parse_string_array(csilk_json_get(p, "models"), &new_provs[i].models, &new_provs[i].model_count);
             }
             if (cfg.providers) {
                 for (int i = 0; i < cfg.provider_count; i++) {

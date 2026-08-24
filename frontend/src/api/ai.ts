@@ -30,10 +30,11 @@ export interface AiProviderConfig {
   id: string
   name: string
   base_url: string
-  models: string[]
   api_key?: string
+  api_key_enc?: string
+  has_api_key?: boolean
+  models: string[]
 }
-
 export interface AiSettings {
   providers: AiProviderConfig[]
   default_provider: string
