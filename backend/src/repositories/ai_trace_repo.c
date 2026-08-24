@@ -31,6 +31,7 @@ csilk_json_t* ai_trace_list(csilk_db_pool_t* pool, int64_t user_id, int64_t page
 
     char cnt_sql[512];
     snprintf(cnt_sql, sizeof(cnt_sql), "SELECT COUNT(*) as cnt FROM ai_traces %s", where);
+    params[pc] = NULL;
     csilk_json_t* cnt = csilk_db_query_param_json(pool, cnt_sql, params);
     *total = 0;
     if (cnt && csilk_json_array_size(cnt) > 0)
