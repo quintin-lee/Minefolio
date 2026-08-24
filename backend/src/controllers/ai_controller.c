@@ -1,6 +1,7 @@
 #include "controllers/ai_controller.h"
 #include "services/ai_service.h"
 #include "repositories/ai_session_repo.h"
+#include "repositories/ai_settings_repo.h"
 #include "common/response.h"
 #include "common/ctx.h"
 #include "common/ai_config.h"
@@ -207,6 +208,34 @@ void settings_ai_update_handler(csilk_ctx_t* c) {
     if (sp) strncpy(cfg.system_prompt, sp, sizeof(cfg.system_prompt) - 1);
 
     int ok = ai_config_save(cfg_path, &cfg);
+    if (ok == 0) {
+        csilk_json_t* root = csilk_json_object();
+        csilk_json_t* prov_arr = csilk_json_array();
+        for (int i = 0; i < cfg.provider_count; i++) {
+            csilk_json_t* p = csilk_json_object();
+            csilk_json_add_string(p, "id", cfg.providers[i].id);
+            csilk_json_add_string(p, "name", cfg.providers[i].name);
+            csilk_json_add_string(p, "api_key", cfg.providers[i].api_key);
+            csilk_json_add_string(p, "base_url", cfg.providers[i].base_url);
+            csilk_json_t* ml = csilk_json_array();
+            for (int j = 0; j < cfg.providers[i].model_count; j++)
+                csilk_json_array_append(ml, csilk_json_string_new(cfg.providers[i].models[j]));
+            csilk_json_add_array(p, "models", ml);
+            csilk_json_array_append(prov_arr, p);
+        }
+        csilk_json_add_array(root, "providers", prov_arr);
+        csilk_json_add_string(root, "default_provider", cfg.default_provider);
+        csilk_json_add_string(root, "default_model", cfg.default_model);
+        csilk_json_add_number(root, "context_size", (double)cfg.context_size);
+        csilk_json_add_string(root, "system_prompt", cfg.system_prompt);
+        size_t slen = 0;
+        char* json = csilk_json_serialize(root, &slen);
+        csilk_json_free(root);
+        if (json) {
+            ai_settings_save(db_get_pool(), json);
+            free(json);
+        }
+    }
     ai_config_free(&cfg);
     csilk_json_free(body);
 

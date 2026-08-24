@@ -1,5 +1,6 @@
 #include "services/ai_service.h"
 #include "repositories/ai_session_repo.h"
+#include "repositories/ai_settings_repo.h"
 #include "common/ai_config.h"
 #include "common/ai_trace.h"
 #include "common/db.h"
@@ -22,7 +23,24 @@ static const char* get_driver_name(const char* prov_id) {
 }
 
 void ai_init(csilk_db_pool_t* pool) {
-    (void)pool;
+    char* json = pool ? ai_settings_load(pool) : NULL;
+    if (json) {
+        char path[] = "/tmp/ai_config_db.json";
+        FILE* f = fopen(path, "w");
+        if (f) { fwrite(json, 1, strlen(json), f); fclose(f); }
+        free(json);
+        if (ai_config_load(path, &g_config) == 0) {
+            ai_provider_t* prov = ai_config_default_provider(&g_config);
+            if (prov) {
+                const char* key = (prov->api_key[0] != '\0') ? prov->api_key : "dummy";
+                const char* dname = get_driver_name(prov->id);
+                g_ai = csilk_ai_new(dname, key, prov->base_url[0] ? prov->base_url : NULL);
+                if (g_ai) printf("AI initialized (DB): provider=%s model=%s\n", prov->id, g_config.default_model);
+                else fprintf(stderr, "WARN: failed to create AI instance for provider '%s'\n", prov->id);
+                return;
+            }
+        }
+    }
     const char* cfg_path = getenv("MINEFOLIO_AI_CONFIG") ?: "config/ai.json";
     if (ai_config_load(cfg_path, &g_config) != 0) {
         fprintf(stderr, "WARN: could not load ai_config from %s\n", cfg_path);
@@ -36,7 +54,7 @@ void ai_init(csilk_db_pool_t* pool) {
     const char* key = (prov->api_key[0] != '\0') ? prov->api_key : "dummy";
     const char* dname = get_driver_name(prov->id);
     g_ai = csilk_ai_new(dname, key, prov->base_url[0] ? prov->base_url : NULL);
-    if (g_ai) printf("AI initialized: provider=%s model=%s\n", prov->id, g_config.default_model);
+    if (g_ai) printf("AI initialized (file): provider=%s model=%s\n", prov->id, g_config.default_model);
     else fprintf(stderr, "WARN: failed to create AI instance for provider '%s'\n", prov->id);
 }
 

@@ -183,3 +183,10 @@ CREATE TABLE IF NOT EXISTS ai_traces (
 CREATE INDEX IF NOT EXISTS idx_ai_traces_user ON ai_traces(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_ai_traces_provider ON ai_traces(user_id, provider);
 CREATE INDEX IF NOT EXISTS idx_ai_traces_model ON ai_traces(user_id, model);
+
+-- AI provider/model configuration (persists across restarts)
+CREATE TABLE IF NOT EXISTS ai_settings (
+    id INTEGER PRIMARY KEY CHECK(id = 1),
+    config_json TEXT NOT NULL DEFAULT '{}',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
