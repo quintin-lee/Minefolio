@@ -2,7 +2,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import {
-  listSessions, createSession, deleteSession, getSession,
+  listSessions, createSession, deleteSession, getSession, updateSession,
   getMessages, chatStream, getModels, getSettings,
 } from '@/api/ai'
 import type { AiMessage, AiSession, AiModelOption, AiSettings } from '@/api/ai'
@@ -84,6 +84,70 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  async function renameSession(id: number, newTitle: string) {
+    const numId = Number(id)
+    const trimmed = newTitle.trim()
+    if (!trimmed) return
+    await updateSession(numId, { title: trimmed })
+    const idx = sessions.value.findIndex(s => Number(s.id) === numId)
+    if (idx >= 0) {
+      const existing = sessions.value[idx]!
+      sessions.value[idx] = {
+        ...existing,
+        title: trimmed,
+      }
+    }
+  }
+
+  async function regenerateLastMessage() {
+    if (isStreaming.value || messages.value.length === 0) return
+    let lastUserIdx = -1
+    for (let i = messages.value.length - 1; i >= 0; i--) {
+      if (messages.value[i]?.role === 'user') {
+        lastUserIdx = i
+        break
+      }
+    }
+    if (lastUserIdx < 0) return
+    const userMsg = messages.value[lastUserIdx]!
+
+    // Remove trailing messages after user message
+    messages.value = messages.value.slice(0, lastUserIdx + 1)
+
+    const assistantId = Date.now() + 1
+    messages.value.push({
+      id: assistantId,
+      session_id: currentSessionId.value!,
+      role: 'assistant',
+      content: '',
+      created_at: new Date().toISOString(),
+    })
+
+    isStreaming.value = true
+    let assembled = ''
+
+    try {
+      for await (const chunk of chatStream({
+        session_id: currentSessionId.value ?? undefined,
+        content: userMsg.content,
+        model: currentModel.value,
+        provider: currentProvider.value,
+        regenerate: true,
+      })) {
+        if (chunk.type === 'delta' && chunk.content) {
+          assembled += chunk.content
+          const last = messages.value[messages.value.length - 1]
+          if (last) last.content = assembled
+        } else if (chunk.type === 'error') {
+          const last = messages.value[messages.value.length - 1]
+          if (last) last.content = `⚠️ ${chunk.message}`
+        }
+      }
+    } finally {
+      isStreaming.value = false
+    }
+  }
+
   async function sendMessage(content: string) {
     if (!content.trim() || isStreaming.value) return
     const sid = currentSessionId.value
@@ -156,7 +220,7 @@ export const useChatStore = defineStore('chat', () => {
     sessions, currentSessionId, messages, isStreaming,
     currentModel, currentProvider, availableModels, settings,
     fetchSessions, fetchModels, fetchSettings,
-    createNewSession, selectSession, deleteSessionById,
-    sendMessage, switchModel,
+    createNewSession, selectSession, deleteSessionById, renameSession,
+    sendMessage, regenerateLastMessage, switchModel,
   }
 })

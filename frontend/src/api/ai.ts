@@ -88,6 +88,7 @@ export async function* chatStream(params: {
   content: string
   model?: string
   provider?: string
+  regenerate?: boolean
 }): AsyncIterable<ChatStreamChunk> {
   const token = localStorage.getItem('token') || ''
   const csrf = getCookie('csrf_token')
@@ -148,4 +149,35 @@ export async function getSettings(): Promise<AiSettings> {
 }
 export async function updateSettings(settings: Partial<AiSettings>) {
   return http.put('/settings/ai', settings)
+}
+
+export interface AiTestConnectionResult {
+  success: boolean
+  latency_ms: number
+  message: string
+}
+
+export async function testAiConnection(data: {
+  id: string
+  base_url?: string
+  api_key?: string
+  api_key_enc?: string
+  model?: string
+}): Promise<AiTestConnectionResult> {
+  const r = (await http.post('/settings/ai/test', data)) as unknown
+  if (r && typeof r === 'object' && 'data' in r && (r as { data: unknown }).data) {
+    return (r as { data: AiTestConnectionResult }).data
+  }
+  return (r || { success: false, latency_ms: 0, message: '测试失败' }) as AiTestConnectionResult
+}
+
+export async function fetchAiModels(data: {
+  id: string
+  base_url?: string
+  api_key?: string
+  api_key_enc?: string
+}): Promise<string[]> {
+  const r = (await http.post('/settings/ai/fetch-models', data)) as unknown
+  const res = (r && typeof r === 'object' && 'data' in r ? (r as { data: { models: unknown } }).data : r) as { models?: unknown }
+  return Array.isArray(res?.models) ? (res.models as string[]) : []
 }

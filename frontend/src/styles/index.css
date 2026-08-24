@@ -833,3 +833,33 @@ body {
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
+
+/* ── UI Refinement: Glassmorphism Card Utility ── */
+.mf-glass-card {
+  background: var(--mf-surface) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  border: 1px solid var(--mf-border) !important;
+  box-shadow: var(--mf-shadow-md);
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+}
+.mf-glass-card:hover {
+  border-color: var(--mf-border-hover) !important;
+  box-shadow: var(--mf-shadow-glow);
+}
+
+/* ── UI Refinement: Page transition ── */
+.fade-in-up {
+  animation: mf-fade-in-up 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@keyframes mf-fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
