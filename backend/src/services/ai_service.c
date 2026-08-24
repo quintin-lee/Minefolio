@@ -71,6 +71,7 @@ typedef struct {
     size_t cap;
     size_t len;
     ai_trace_t* trace;
+    struct timespec last_send_time;
 } stream_context_t;
 
 static void on_chunk(const char* delta, void* data) {
@@ -98,11 +99,21 @@ static void on_chunk(const char* delta, void* data) {
         sc->accumulated[sc->len] = '\0';
     }
 
+    /* heartbeat: send SSE comment if idle >15s to prevent proxy timeout */
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    long elapsed_ms = (now.tv_sec - sc->last_send_time.tv_sec) * 1000 +
+                      (now.tv_nsec - sc->last_send_time.tv_nsec) / 1000000;
+    if (elapsed_ms >= 15000) {
+        csilk_sse_send(sc->ctx, NULL, NULL);
+    }
+
     csilk_json_t* msg = csilk_json_object();
     csilk_json_add_string(msg, "content", delta);
     size_t slen = 0;
     char* s = csilk_json_serialize(msg, &slen);
     csilk_sse_send(sc->ctx, "delta", s ? s : "");
+    sc->last_send_time = now;
     free(s);
     csilk_json_free(msg);
 }
@@ -251,6 +262,7 @@ void ai_chat_handler(csilk_ctx_t* c) {
 
     /* SSE init */
     csilk_sse_init(c);
+    clock_gettime(CLOCK_MONOTONIC, &sctx.last_send_time);
 
     /* persist user message */
     ai_message_insert(pool, sid, "user", content, model_buf);
