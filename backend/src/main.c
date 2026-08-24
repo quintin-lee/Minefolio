@@ -15,7 +15,9 @@
 #include "controllers/tag_controller.h"
 #include "controllers/transfer_controller.h"
 #include "controllers/report_controller.h"
+#include "controllers/ai_controller.h"
 #include "controllers/import_export_controller.h"
+#include "services/ai_service.h"
 #include "dtos/request.h"
 #include "dtos/response.h"
 #include <stdio.h>
@@ -46,6 +48,7 @@ int main(int argc, char** argv) {
         csilk_db_pool_free(pool);
         return 1;
     }
+    ai_init(pool);
     printf("RSA-2048 key pair generated for password encryption.\n");
 
     csilk_app_t* app = csilk_app_new(NULL);
@@ -83,6 +86,7 @@ int main(int argc, char** argv) {
     register_transfer_routes(app);
     register_report_routes(app);
     register_import_export_routes(app);
+    register_ai_routes(app);
 
     csilk_app_static(app, "/", "./frontend/dist");
 
@@ -90,6 +94,7 @@ int main(int argc, char** argv) {
     csilk_app_run(app, 8080);
 
     csilk_app_free(app);
+    ai_shutdown();
     csilk_db_pool_free(pool);
     return 0;
 }

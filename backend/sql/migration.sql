@@ -131,3 +131,25 @@ CREATE TABLE IF NOT EXISTS category_seed_state (
     user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     seeded_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- AI chat: sessions and messages
+CREATE TABLE IF NOT EXISTS ai_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    title TEXT NOT NULL DEFAULT '新对话',
+    model TEXT NOT NULL DEFAULT 'deepseek-chat',
+    provider TEXT NOT NULL DEFAULT 'deepseek',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS ai_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL REFERENCES ai_sessions(id) ON DELETE CASCADE,
+    role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
+    content TEXT NOT NULL,
+    model TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_messages_session ON ai_messages(session_id, created_at);
