@@ -1,5 +1,5 @@
 // frontend/src/api/ai.ts
-import http from '@/utils/http'
+import http, { getCookie } from '@/utils/http'
 
 export interface AiModelOption {
   provider_id: string
@@ -89,12 +89,18 @@ export async function* chatStream(params: {
   provider?: string
 }): AsyncIterable<ChatStreamChunk> {
   const token = localStorage.getItem('token') || ''
+  const csrf = getCookie('csrf_token')
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`,
+  }
+  if (csrf) {
+    headers['X-CSRF-Token'] = csrf
+  }
   const resp = await fetch('/api/ai/chat', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-    },
+    headers,
+    credentials: 'include',
     body: JSON.stringify(params),
   })
   if (!resp.ok || !resp.body) throw new Error(`HTTP ${resp.status}`)

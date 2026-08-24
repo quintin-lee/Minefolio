@@ -18,7 +18,7 @@ export function setMobileMode(on: boolean): void {
  * and avoids fragile split-based approaches that break when HttpOnly / SameSite
  * attributes are added by the server.
  */
-function getCookie(name: string): string | null {
+export function getCookie(name: string): string | null {
   const cookie = document.cookie || ''
   const re = new RegExp('(?:^|;\\s*)' + name.replace(/[.*+?^${}()|[\\]\\.]/g, '\\$&') + '=([^;]*)')
   const match = cookie.match(re)
@@ -29,8 +29,8 @@ function createHttp(): AxiosInstance {
   const instance = axios.create({
     baseURL: import.meta.env.VITE_API_URL,
     timeout: 10000,
+    withCredentials: true,
   })
-
   // Request interceptor: inject token + CSRF header
   instance.interceptors.request.use((config) => {
     const auth = useAuthStore()
