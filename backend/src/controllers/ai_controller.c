@@ -180,6 +180,8 @@ void settings_ai_update_handler(csilk_ctx_t* c) {
                         strncpy(new_provs[i].api_key, old_p->api_key, sizeof(new_provs[i].api_key) - 1);
                     }
                 }
+                strncpy(new_provs[i].base_url, csilk_json_get_string(p, "base_url") ?: "", sizeof(new_provs[i].base_url) - 1);
+                parse_string_array(csilk_json_get(p, "models"), &new_provs[i].models, &new_provs[i].model_count);
             }
             if (cfg.providers) {
                 for (int i = 0; i < cfg.provider_count; i++) {
