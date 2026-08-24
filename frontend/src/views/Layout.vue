@@ -33,7 +33,7 @@
           <span>{{ t('nav.categories') }}</span>
         </el-menu-item>
         <el-menu-item index="/reports" @click="goTo('/reports')">
-          <Icon icon="ph:pie-chart" class="nav-icon" />
+          <Icon icon="ph:chart-pie" class="nav-icon" />
           <span>{{ t('nav.reports') }}</span>
         </el-menu-item>
         <el-menu-item index="/audit-logs" @click="goTo('/audit-logs')">

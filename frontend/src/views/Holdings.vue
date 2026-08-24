@@ -138,7 +138,7 @@ const ASSET_ICONS: Record<string, string> = {
   stock: 'ph:trend-up',
   fund: 'ph:trend-up',
   bond: 'ph:trend-up',
-  crypto: 'ph:crypto',
+  crypto: 'ph:currency-btc',
 }
 const TYPE_LABELS: Record<string, string> = {
   stock: '股票',

@@ -157,7 +157,7 @@ const ASSET_TYPE_ICONS: Record<string, string> = {
   stock: 'ph:trend-up',
   fund: 'ph:trend-up',
   bond: 'ph:trend-up',
-  crypto: 'ph:crypto',
+  crypto: 'ph:currency-btc',
   loan: 'ph:arrow-down-left',
   real_estate: 'ph:house',
 }
