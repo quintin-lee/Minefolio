@@ -60,14 +60,56 @@
         {{ t('settings.exportButton') }}
       </el-button>
     </div>
+
+    <div class="panel-container" style="margin-top: 24px;">
+      <div class="panel-header">
+        <h3>{{ t('settings.aiTitle') }}</h3>
+      </div>
+      <p class="export-hint">{{ t('settings.aiDesc') }}</p>
+      <el-form :model="aiForm" label-width="120px" class="premium-form">
+        <el-form-item :label="t('settings.aiDefaultProvider')">
+          <el-select v-model="aiForm.default_provider" style="width: 100%">
+            <el-option
+              v-for="p in aiProviders"
+              :key="p.id"
+              :label="p.name"
+              :value="p.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('settings.aiDefaultModel')">
+          <el-select v-model="aiForm.default_model" style="width: 100%">
+            <el-option
+              v-for="m in availableModels"
+              :key="m"
+              :label="m"
+              :value="m"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('settings.aiContextSize')">
+          <el-input-number v-model="aiForm.context_size" :min="5" :max="100" :step="5" />
+        </el-form-item>
+        <el-form-item :label="t('settings.aiSystemPrompt')">
+          <el-input v-model="aiForm.system_prompt" type="textarea" :rows="4" :maxlength="500" show-word-limit />
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" @click="saveAiSettings" :loading="aiSaving">
+            {{ aiSaving ? t('settings.aiSaving') : t('settings.aiSave') }}
+          </el-button>
+        </el-form-item>
+      </el-form>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import { transactionsApi } from '@/api/transactions'
+import { getSettings, updateSettings } from '@/api/ai'
+import type { AiSettings } from '@/api/ai'
 import { zhCN } from '@/locales/zh-CN'
 import { formatDate } from '@/utils/format'
 import type { FormInstance, FormRules } from 'element-plus'
@@ -83,6 +125,15 @@ const auth = useAuthStore()
 const loading = ref(false)
 const exporting = ref(false)
 const formRef = ref<FormInstance>()
+const aiSaving = ref(false)
+const aiForm = reactive({
+  default_provider: '',
+  default_model: '',
+  context_size: 20,
+  system_prompt: '',
+})
+const aiProviders = ref<{ id: string; name: string }[]>([])
+const availableModels = ref<string[]>([])
 
 const form = reactive({
   old_password: '',
@@ -108,6 +159,35 @@ const rules: FormRules = {
     { required: true, message: t('settings.confirmPassword'), trigger: 'blur' },
     { validator: validateConfirm, trigger: 'blur' },
   ],
+}
+
+async function loadAiSettings() {
+  try {
+    const settings = await getSettings() as unknown as AiSettings
+    aiForm.default_provider = settings.default_provider
+    aiForm.default_model = settings.default_model
+    aiForm.context_size = settings.context_size
+    aiForm.system_prompt = settings.system_prompt
+    aiProviders.value = settings.providers ?? []
+    availableModels.value = settings.providers
+      ?.flatMap(p => (p.models ?? []).map(m => `${p.id}/${m}`))
+      ?? []
+  } catch {
+    // Load failed silently
+  }
+}
+
+async function saveAiSettings() {
+  aiSaving.value = true
+  try {
+    await updateSettings(aiForm)
+    ElMessage.success(t('settings.aiSaved'))
+    await loadAiSettings()
+  } catch {
+    ElMessage.error(t('settings.aiSaveFailed') || '保存失败')
+  } finally {
+    aiSaving.value = false
+  }
 }
 
 async function submit() {
@@ -148,11 +228,14 @@ async function handleExport() {
     exporting.value = false
   }
 }
+
+onMounted(() => {
+  loadAiSettings()
+})
 </script>
 
 <style scoped>
 .settings-page {
-
   background-color: var(--mf-background);
   height: 100%;
   overflow: hidden;
@@ -165,7 +248,6 @@ async function handleExport() {
 .panel-container {
   background: var(--mf-surface);
   border-radius: var(--mf-radius-lg);
-
   box-shadow: var(--mf-shadow-sm);
   border: 1px solid var(--mf-border);
 }

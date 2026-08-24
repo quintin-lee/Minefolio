@@ -31,6 +31,7 @@ const router = createRouter({
         { path: 'reports', name: 'Reports', component: () => import('@/views/Reports.vue') },
         { path: 'audit-logs', name: 'AuditLogs', component: () => import('@/views/AuditLogs.vue') },
         { path: 'settings', name: 'Settings', component: () => import('@/views/Settings.vue') },
+        { path: 'chat', name: 'Chat', component: () => import('@/views/Chat.vue') },
       ],
     },
   ],

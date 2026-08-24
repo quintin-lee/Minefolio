@@ -40,6 +40,10 @@
           <Icon icon="ph:scroll" class="nav-icon" />
           <span>{{ t('nav.auditLogs') }}</span>
         </el-menu-item>
+        <el-menu-item index="/chat" @click="goTo('/chat')">
+          <Icon icon="ph:chat-circle-text" class="nav-icon" />
+          <span>{{ t('nav.aiChat') }}</span>
+        </el-menu-item>
         <el-menu-item index="/settings" @click="goTo('/settings')">
           <Icon icon="ph:gear" class="nav-icon" />
           <span>{{ t('nav.settings') }}</span>
@@ -148,8 +152,9 @@ function goTo(path: string) {
       '/reports': '报表',
       '/audit-logs': '日志',
       '/settings': '设置',
-    }
-    return map[route.path] || 'Minefolio'
+      '/chat': 'AI助手',
+    };
+    return map[route.path] || 'Minefolio';
   })
 
 function handleCommand(cmd: string) {
