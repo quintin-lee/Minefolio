@@ -5,8 +5,7 @@
 #include <time.h>
 
 static const char* jwt_secret(void) {
-    const char* s = getenv("MINEFOLIO_JWT_SECRET");
-    return s ? s : "minefolio-dev-secret-change-in-production";
+    return getenv("MINEFOLIO_JWT_SECRET");
 }
 
 char* jwt_generate_token(csilk_ctx_t* c, int64_t user_id, int token_version) {
@@ -17,7 +16,8 @@ char* jwt_generate_token(csilk_ctx_t* c, int64_t user_id, int token_version) {
     csilk_json_add_int(payload, "exp", now + 604800); /* 7 days */
     csilk_json_add_int(payload, "v", token_version);  /* token version for revocation */
 
-    char* secret = (char*)jwt_secret();
+    const char* secret = jwt_secret();
+    if (!secret) { fprintf(stderr, "FATAL: JWT secret not set\n"); csilk_json_free(payload); return NULL; }
     char* token = csilk_jwt_generate(c, payload, secret);
     csilk_json_free(payload);
     return token;

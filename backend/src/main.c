@@ -24,6 +24,11 @@
 int main(int argc, char** argv) {
     (void)argc; (void)argv;
 
+    if (!getenv("MINEFOLIO_JWT_SECRET")) {
+        fprintf(stderr, "FATAL: MINEFOLIO_JWT_SECRET environment variable is required\n");
+        return 1;
+    }
+
     csilk_db_pool_t* pool;
     if (db_init(&pool) != 0) {
         fprintf(stderr, "Failed to initialize database\n");

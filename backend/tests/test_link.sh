@@ -14,12 +14,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Generate a random JWT secret for this test run
+TEST_JWT_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
 # --- 启动服务器 ---
 rm -f "$DB"
 cd "$BUILD_DIR"
-MINEFOLIO_DB_DSN="$DB" ./minefolio &
-SERVER_PID=$!
-sleep 1
+MINEFOLIO_DB_DSN="$DB" MINEFOLIO_JWT_SECRET="$TEST_JWT_SECRET" ./minefolio &
 
 req() { # req METHOD PATH JSON
   local method="$1" path="$2" data="${3:-}"
@@ -367,11 +367,11 @@ echo ""
 echo "== 33. 持仓报表 =="
 
 # H1: 空态 — 新空用户持仓为空，summary 全 0
-# JWT 直接用开发默认密钥伪造（服务器由本脚本以 MINEFOLIO_DB_DSN 启动，未设置 MINEFOLIO_JWT_SECRET）
+# JWT 使用测试注入的随机密钥伪造
 EMPTY_UID=$(sqlite3 "$DB" "INSERT INTO users (username, password) VALUES ('holdings_empty','x'); SELECT last_insert_rowid();")
 EMPTY_TOKEN=$(node -e "
 const crypto = require('crypto');
-const secret = 'minefolio-dev-secret-change-in-production';
+const secret = process.env.TEST_JWT_SECRET || 'minefolio-dev-secret-change-in-production';
 const h = Buffer.from(JSON.stringify({alg:'HS256',typ:'JWT'})).toString('base64url');
 const p = Buffer.from(JSON.stringify({sub:$EMPTY_UID,iat:Math.floor(Date.now()/1000),exp:Math.floor(Date.now()/1000)+604800,v:0})).toString('base64url');
 const s = crypto.createHmac('sha256', secret).update(h+'.'+p).digest('base64url');
