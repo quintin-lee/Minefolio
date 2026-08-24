@@ -6,147 +6,148 @@
         <h2>{{ t('settings.title') }}</h2>
       </div>
     </div>
-
-    <el-row :gutter="24" class="info-cards">
-      <el-col :span="24">
-        <div class="panel-container">
-          <div class="panel-header">
-            <h3>{{ t('settings.userInfo') }}</h3>
-          </div>
-          <div class="info-row">
-            <span class="info-label">{{ t('settings.username') }}</span>
-            <span class="info-value">{{ auth.user?.username || '-' }}</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">{{ t('settings.accountId') }}</span>
-            <span class="info-value mono-text">{{ auth.user?.id || '-' }}</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">{{ t('settings.registeredAt') }}</span>
-            <span class="info-value">{{ formatDate(auth.user?.created_at || '') }}</span>
-          </div>
-        </div>
-      </el-col>
-    </el-row>
-
-    <div class="panel-container" style="margin-top: 24px;">
-      <div class="panel-header">
-        <h3>{{ t('settings.changePassword') }}</h3>
-      </div>
-      <el-form :model="form" :rules="rules" ref="formRef" label-width="120px" class="premium-form" @keyup.enter="submit">
-        <el-form-item :label="t('settings.oldPassword')" prop="old_password">
-          <el-input v-model="form.old_password" type="password" show-password :placeholder="t('settings.oldPassword')" />
-        </el-form-item>
-        <el-form-item :label="t('settings.newPassword')" prop="new_password">
-          <el-input v-model="form.new_password" type="password" show-password :placeholder="t('settings.newPassword')" />
-        </el-form-item>
-        <el-form-item :label="t('settings.confirmPassword')" prop="confirmPassword">
-          <el-input v-model="form.confirmPassword" type="password" show-password :placeholder="t('settings.confirmPassword')" />
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" class="action-btn" @click="submit" :loading="loading">
-            {{ t('settings.savePassword') }}
-          </el-button>
-        </el-form-item>
-      </el-form>
-    </div>
-
-    <div class="panel-container" style="margin-top: 24px;">
-      <div class="panel-header">
-        <h3>{{ t('settings.exportData') }}</h3>
-      </div>
-      <p class="export-hint">{{ t('settings.exportHint') }}</p>
-      <el-button type="primary" class="action-btn" @click="handleExport" :loading="exporting">
-        {{ t('settings.exportButton') }}
-      </el-button>
-    </div>
-
-    <div class="panel-container" style="margin-top: 24px;">
-      <div class="panel-header">
-        <h3>{{ t('settings.aiTitle') }}</h3>
-      </div>
-      <p class="export-hint">{{ t('settings.aiDesc') }}</p>
-      
-      <div class="provider-list">
-        <div v-for="(provider, index) in providerList" :key="index" class="provider-item">
-          <div class="provider-header">
-            <span class="provider-name">{{ provider.name || provider.id }}</span>
-            <div class="provider-actions">
-              <el-button text size="small" @click="toggleEdit(index)">
-                <el-icon><Edit /></el-icon>
-              </el-button>
-              <el-button text size="small" class="delete-btn" @click="removeProvider(index)">
-                <el-icon><Delete /></el-icon>
-              </el-button>
+    <div class="settings-content">
+      <el-row :gutter="24" class="info-cards">
+        <el-col :span="24">
+          <div class="panel-container">
+            <div class="panel-header">
+              <h3>{{ t('settings.userInfo') }}</h3>
+            </div>
+            <div class="info-row">
+              <span class="info-label">{{ t('settings.username') }}</span>
+              <span class="info-value">{{ auth.user?.username || '-' }}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">{{ t('settings.accountId') }}</span>
+              <span class="info-value mono-text">{{ auth.user?.id || '-' }}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">{{ t('settings.registeredAt') }}</span>
+              <span class="info-value">{{ formatDate(auth.user?.created_at || '') }}</span>
             </div>
           </div>
-          <el-form v-if="editIndex === index" :model="provider" label-width="100px" class="provider-form">
-            <el-form-item :label="t('settings.aiProviderId')">
-              <el-input v-model="provider.id" :disabled="provider.id.length > 0" placeholder="provider-id" />
-            </el-form-item>
-            <el-form-item :label="t('settings.aiProviderName')">
-              <el-input v-model="provider.name" placeholder="显示名称" />
-            </el-form-item>
-            <el-form-item :label="t('settings.aiBaseUrl')">
-              <el-input v-model="provider.base_url" placeholder="https://api.example.com" />
-            </el-form-item>
-            <el-form-item :label="t('settings.aiApiKey')">
-              <el-input v-model="provider.api_key" type="password" show-password placeholder="sk-..." />
-            </el-form-item>
-            <el-form-item :label="t('settings.aiModels')">
-              <el-input v-model="provider.modelsStr" type="textarea" :rows="2" :placeholder="t('settings.aiModelPlaceholder')" />
-            </el-form-item>
-            <el-form-item>
-              <el-button type="primary" size="small" @click="saveProvider(index)">保存</el-button>
-              <el-button size="small" @click="cancelEdit">取消</el-button>
-            </el-form-item>
-          </el-form>
-          <div v-else class="provider-details">
-            <el-tag size="small" class="meta-tag">ID: {{ provider.id }}</el-tag>
-            <el-tag size="small" class="meta-tag">模型: {{ provider.modelsStr }}</el-tag>
-          </div>
+        </el-col>
+      </el-row>
+
+      <div class="panel-container" style="margin-top: 24px;">
+        <div class="panel-header">
+          <h3>{{ t('settings.changePassword') }}</h3>
         </div>
-        <el-button type="primary" plain @click="addProvider" class="add-provider-btn">
-          <el-icon><Plus /></el-icon>
-          {{ t('settings.aiAddProvider') }}
+        <el-form :model="form" :rules="rules" ref="formRef" label-width="120px" class="premium-form" @keyup.enter="submit">
+          <el-form-item :label="t('settings.oldPassword')" prop="old_password">
+            <el-input v-model="form.old_password" type="password" show-password :placeholder="t('settings.oldPassword')" />
+          </el-form-item>
+          <el-form-item :label="t('settings.newPassword')" prop="new_password">
+            <el-input v-model="form.new_password" type="password" show-password :placeholder="t('settings.newPassword')" />
+          </el-form-item>
+          <el-form-item :label="t('settings.confirmPassword')" prop="confirmPassword">
+            <el-input v-model="form.confirmPassword" type="password" show-password :placeholder="t('settings.confirmPassword')" />
+          </el-form-item>
+          <el-form-item>
+            <el-button type="primary" class="action-btn" @click="submit" :loading="loading">
+              {{ t('settings.savePassword') }}
+            </el-button>
+          </el-form-item>
+        </el-form>
+      </div>
+
+      <div class="panel-container" style="margin-top: 24px;">
+        <div class="panel-header">
+          <h3>{{ t('settings.exportData') }}</h3>
+        </div>
+        <p class="export-hint">{{ t('settings.exportHint') }}</p>
+        <el-button type="primary" class="action-btn" @click="handleExport" :loading="exporting">
+          {{ t('settings.exportButton') }}
         </el-button>
       </div>
-      
-      <el-divider />
-      
-      <el-form :model="aiForm" label-width="120px" class="premium-form">
-        <el-form-item :label="t('settings.aiDefaultProvider')">
-          <el-select v-model="aiForm.default_provider" style="width: 100%">
-            <el-option
-              v-for="p in providerList"
-              :key="p.id"
-              :label="p.name || p.id"
-              :value="p.id"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('settings.aiDefaultModel')">
-          <el-select v-model="aiForm.default_model" style="width: 100%">
-            <el-option
-              v-for="m in allModels"
-              :key="m"
-              :label="m"
-              :value="m"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('settings.aiContextSize')">
-          <el-input-number v-model="aiForm.context_size" :min="5" :max="100" :step="5" />
-        </el-form-item>
-        <el-form-item :label="t('settings.aiSystemPrompt')">
-          <el-input v-model="aiForm.system_prompt" type="textarea" :rows="4" :maxlength="500" show-word-limit />
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="saveAiSettings" :loading="aiSaving">
-            {{ aiSaving ? t('settings.aiSaving') : t('settings.aiSave') }}
+
+      <div class="panel-container" style="margin-top: 24px;">
+        <div class="panel-header">
+          <h3>{{ t('settings.aiTitle') }}</h3>
+        </div>
+        <p class="export-hint">{{ t('settings.aiDesc') }}</p>
+        
+        <div class="provider-list">
+          <div v-for="(provider, index) in providerList" :key="index" class="provider-item">
+            <div class="provider-header">
+              <span class="provider-name">{{ provider.name || provider.id }}</span>
+              <div class="provider-actions">
+                <el-button text size="small" @click="toggleEdit(index)">
+                  <el-icon><Edit /></el-icon>
+                </el-button>
+                <el-button text size="small" class="delete-btn" @click="removeProvider(index)">
+                  <el-icon><Delete /></el-icon>
+                </el-button>
+              </div>
+            </div>
+            <el-form v-if="editIndex === index" :model="provider" label-width="100px" class="provider-form">
+              <el-form-item :label="t('settings.aiProviderId')">
+                <el-input v-model="provider.id" :disabled="provider.id.length > 0" placeholder="provider-id" />
+              </el-form-item>
+              <el-form-item :label="t('settings.aiProviderName')">
+                <el-input v-model="provider.name" placeholder="显示名称" />
+              </el-form-item>
+              <el-form-item :label="t('settings.aiBaseUrl')">
+                <el-input v-model="provider.base_url" placeholder="https://api.example.com" />
+              </el-form-item>
+              <el-form-item :label="t('settings.aiApiKey')">
+                <el-input v-model="provider.api_key" type="password" show-password placeholder="sk-..." />
+              </el-form-item>
+              <el-form-item :label="t('settings.aiModels')">
+                <el-input v-model="provider.modelsStr" type="textarea" :rows="2" :placeholder="t('settings.aiModelPlaceholder')" />
+              </el-form-item>
+              <el-form-item>
+                <el-button type="primary" size="small" @click="saveProvider(index)">保存</el-button>
+                <el-button size="small" @click="cancelEdit">取消</el-button>
+              </el-form-item>
+            </el-form>
+            <div v-else class="provider-details">
+              <el-tag size="small" class="meta-tag">ID: {{ provider.id }}</el-tag>
+              <el-tag size="small" class="meta-tag">模型: {{ provider.modelsStr }}</el-tag>
+            </div>
+          </div>
+          <el-button type="primary" plain @click="addProvider" class="add-provider-btn">
+            <el-icon><Plus /></el-icon>
+            {{ t('settings.aiAddProvider') }}
           </el-button>
-        </el-form-item>
-      </el-form>
+        </div>
+        
+        <el-divider />
+        
+        <el-form :model="aiForm" label-width="120px" class="premium-form">
+          <el-form-item :label="t('settings.aiDefaultProvider')">
+            <el-select v-model="aiForm.default_provider" style="width: 100%">
+              <el-option
+                v-for="p in providerList"
+                :key="p.id"
+                :label="p.name || p.id"
+                :value="p.id"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item :label="t('settings.aiDefaultModel')">
+            <el-select v-model="aiForm.default_model" style="width: 100%">
+              <el-option
+                v-for="m in allModels"
+                :key="m"
+                :label="m"
+                :value="m"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item :label="t('settings.aiContextSize')">
+            <el-input-number v-model="aiForm.context_size" :min="5" :max="100" :step="5" />
+          </el-form-item>
+          <el-form-item :label="t('settings.aiSystemPrompt')">
+            <el-input v-model="aiForm.system_prompt" type="textarea" :rows="4" :maxlength="500" show-word-limit />
+          </el-form-item>
+          <el-form-item>
+            <el-button type="primary" @click="saveAiSettings" :loading="aiSaving">
+              {{ aiSaving ? t('settings.aiSaving') : t('settings.aiSave') }}
+            </el-button>
+          </el-form-item>
+        </el-form>
+      </div>
     </div>
   </div>
 </template>
@@ -177,7 +178,6 @@ const formRef = ref<FormInstance>()
 const aiSaving = ref(false)
 const editIndex = ref(-1)
 
-// Provider list with models as string for display/editing
 interface ProviderItem {
   id: string
   name: string
@@ -364,11 +364,49 @@ onMounted(() => {
 .settings-page {
   background-color: var(--mf-background);
   height: 100%;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
 }
 
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  flex-shrink: 0;
+}
+
+.header-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.title-accent {
+  width: 4px;
+  height: 24px;
+  background: linear-gradient(180deg, #6366f1, #8b5cf6);
+  border-radius: 2px;
+}
+
+.header-title h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.settings-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+}
+
 .info-cards {
-  margin-bottom: 24px;
+  margin-bottom: 0;
 }
 
 .panel-container {
