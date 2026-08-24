@@ -75,7 +75,7 @@ int ai_session_update(csilk_db_pool_t* pool, int64_t user_id, int64_t id, const 
         idx += snprintf(sql + idx, (size_t)(sizeof(sql) - (size_t)idx), ", model=?");
         params[pc++] = model;
     }
-    idx += snprintf(sql + idx, (size_t)(sizeof(sql) - (size_t)idx), " WHERE id=? AND user_id=?");
+    idx += snprintf(sql + idx, (size_t)(sizeof(sql) - (size_t)idx), " WHERE id=? AND user_id=? RETURNING id");
     params[pc++] = id_s;
     params[pc++] = uid;
     params[pc] = NULL;
@@ -91,7 +91,7 @@ int ai_session_delete(csilk_db_pool_t* pool, int64_t user_id, int64_t id) {
     uid_str(user_id, uid);
     sid_str(id, id_s);
     csilk_json_t* r = csilk_db_query_param_json(pool,
-        "DELETE FROM ai_sessions WHERE id=? AND user_id=?", (const char*[]){id_s, uid, NULL});
+        "DELETE FROM ai_sessions WHERE id=? AND user_id=? RETURNING id", (const char*[]){id_s, uid, NULL});
     int affected = r ? (int)csilk_json_array_size(r) : 0;
     csilk_json_free(r);
     return affected > 0;

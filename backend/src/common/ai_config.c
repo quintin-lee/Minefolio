@@ -12,7 +12,7 @@ static void parse_string_array(const csilk_json_t *arr, char ***out_ptrs, int *o
     if (!*out_ptrs) { *out_count = 0; return; }
     *out_count = n;
     for (size_t i = 0; i < (size_t)n; i++) {
-        const char *s = csilk_json_get_string(csilk_json_array_get(arr, i), NULL);
+        const char *s = csilk_json_string_value(csilk_json_array_get(arr, i));
         (*out_ptrs)[i] = s ? strdup(s) : strdup("");
     }
     (*out_ptrs)[n] = NULL;
@@ -53,44 +53,47 @@ int ai_config_load(const char *path, ai_config_t *out) {
         }
     }
 
-    const csilk_json_t *dp = csilk_json_get(root, "default_provider");
-    if (dp) strncpy(out->default_provider, csilk_json_get_string(dp, "default_provider"), sizeof(out->default_provider) - 1);
-    const csilk_json_t *dm = csilk_json_get(root, "default_model");
-    if (dm) strncpy(out->default_model, csilk_json_get_string(dm, "default_model"), sizeof(out->default_model) - 1);
+    const char *dp = csilk_json_get_string(root, "default_provider");
+    if (dp) strncpy(out->default_provider, dp, sizeof(out->default_provider) - 1);
+    const char *dm = csilk_json_get_string(root, "default_model");
+    if (dm) strncpy(out->default_model, dm, sizeof(out->default_model) - 1);
     const csilk_json_t *cs_val = csilk_json_get(root, "context_size");
     out->context_size = cs_val ? (int)csilk_json_number_value(cs_val) : 20;
     if (out->context_size < 5) out->context_size = 20;
-    const csilk_json_t *sp = csilk_json_get(root, "system_prompt");
-    if (sp) strncpy(out->system_prompt, csilk_json_get_string(sp, "system_prompt"), sizeof(out->system_prompt) - 1);
-
+    const char *sp = csilk_json_get_string(root, "system_prompt");
+    if (sp) strncpy(out->system_prompt, sp, sizeof(out->system_prompt) - 1);
     csilk_json_free(root);
     return 0;
 }
 
 int ai_config_save(const char *path, const ai_config_t *cfg) {
-    size_t total = 8192;
-    char *json = (char*)malloc(total);
-    if (!json) return -1;
-    int len = 0;
+    csilk_json_t *root = csilk_json_object();
+    if (!root) return -1;
 
-    len += snprintf(json + len, total - (size_t)len, "{\"providers\":[");
+    csilk_json_t *prov_arr = csilk_json_array();
     for (int i = 0; i < cfg->provider_count; i++) {
-        if (i > 0) len += snprintf(json + len, total - (size_t)len, ",");
-        len += snprintf(json + len, total - (size_t)len,
-            "{\"id\":\"%s\",\"name\":\"%s\",\"base_url\":\"%s\",\"models\":[",
-            cfg->providers[i].id, cfg->providers[i].name,
-            cfg->providers[i].base_url);
+        csilk_json_t *p = csilk_json_object();
+        csilk_json_add_string(p, "id", cfg->providers[i].id);
+        csilk_json_add_string(p, "name", cfg->providers[i].name);
+        csilk_json_add_string(p, "api_key", cfg->providers[i].api_key);
+        csilk_json_add_string(p, "base_url", cfg->providers[i].base_url);
+        csilk_json_t *ml = csilk_json_array();
         for (int j = 0; j < cfg->providers[i].model_count; j++) {
-            if (j > 0) len += snprintf(json + len, total - (size_t)len, ",");
-            len += snprintf(json + len, total - (size_t)len, "\"%s\"", cfg->providers[i].models[j]);
+            csilk_json_array_append(ml, csilk_json_string_new(cfg->providers[i].models[j]));
         }
-        len += snprintf(json + len, total - (size_t)len, "]}");
+        csilk_json_add_array(p, "models", ml);
+        csilk_json_array_append(prov_arr, p);
     }
-    len += snprintf(json + len, total - (size_t)len,
-        "],\"default_provider\":\"%s\",\"default_model\":\"%s\","
-        "\"context_size\":%d,\"system_prompt\":\"%s\"}",
-        cfg->default_provider, cfg->default_model,
-        cfg->context_size, cfg->system_prompt);
+    csilk_json_add_array(root, "providers", prov_arr);
+    csilk_json_add_string(root, "default_provider", cfg->default_provider);
+    csilk_json_add_string(root, "default_model", cfg->default_model);
+    csilk_json_add_number(root, "context_size", (double)cfg->context_size);
+    csilk_json_add_string(root, "system_prompt", cfg->system_prompt);
+
+    size_t slen = 0;
+    char *json = csilk_json_serialize(root, &slen);
+    csilk_json_free(root);
+    if (!json) return -1;
 
     char dir[512];
     strncpy(dir, path, sizeof(dir) - 1); dir[sizeof(dir) - 1] = '\0';
@@ -99,7 +102,7 @@ int ai_config_save(const char *path, const ai_config_t *cfg) {
 
     FILE *f = fopen(path, "w");
     if (!f) { free(json); return -1; }
-    fprintf(f, "%s", json);
+    fwrite(json, 1, slen, f);
     fclose(f);
     free(json);
     return 0;

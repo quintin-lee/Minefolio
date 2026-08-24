@@ -12,6 +12,10 @@
 
 static ai_config_t g_config = {0};
 static csilk_ai_t* g_ai = NULL;
+static const char* get_driver_name(const char* prov_id) {
+    if (prov_id && strcmp(prov_id, "ollama") == 0) return "ollama";
+    return "openai";
+}
 
 void ai_init(csilk_db_pool_t* pool) {
     (void)pool;
@@ -21,11 +25,13 @@ void ai_init(csilk_db_pool_t* pool) {
         return;
     }
     ai_provider_t* prov = ai_config_default_provider(&g_config);
-    if (!prov || prov->api_key[0] == '\0') {
-        fprintf(stderr, "WARN: default provider '%s' has no api_key\n", g_config.default_provider);
+    if (!prov) {
+        fprintf(stderr, "WARN: default provider '%s' not found in config\n", g_config.default_provider);
         return;
     }
-    g_ai = csilk_ai_new(prov->id, prov->api_key, prov->base_url[0] ? prov->base_url : NULL);
+    const char* key = (prov->api_key[0] != '\0') ? prov->api_key : "dummy";
+    const char* dname = get_driver_name(prov->id);
+    g_ai = csilk_ai_new(dname, key, prov->base_url[0] ? prov->base_url : NULL);
     if (g_ai) printf("AI initialized: provider=%s model=%s\n", prov->id, g_config.default_model);
     else fprintf(stderr, "WARN: failed to create AI instance for provider '%s'\n", prov->id);
 }
@@ -37,14 +43,38 @@ void ai_shutdown(void) {
 
 ai_config_t* ai_get_config(void) { return &g_config; }
 
+typedef struct {
+    csilk_ctx_t* ctx;
+    char* accumulated;
+    size_t cap;
+    size_t len;
+} stream_context_t;
+
 static void on_chunk(const char* delta, void* data) {
-    csilk_ctx_t* c = (csilk_ctx_t*)data;
-    if (!delta || !c) return;
+    stream_context_t* sc = (stream_context_t*)data;
+    if (!delta || !sc || !sc->ctx) return;
+
+    size_t dlen = strlen(delta);
+    if (sc->len + dlen + 1 > sc->cap) {
+        size_t ncap = (sc->len + dlen + 1) * 2;
+        if (ncap < 1024) ncap = 1024;
+        char* nbuf = (char*)realloc(sc->accumulated, ncap);
+        if (nbuf) {
+            sc->accumulated = nbuf;
+            sc->cap = ncap;
+        }
+    }
+    if (sc->accumulated && sc->len + dlen < sc->cap) {
+        memcpy(sc->accumulated + sc->len, delta, dlen);
+        sc->len += dlen;
+        sc->accumulated[sc->len] = '\0';
+    }
+
     csilk_json_t* msg = csilk_json_object();
     csilk_json_add_string(msg, "content", delta);
     size_t slen = 0;
     char* s = csilk_json_serialize(msg, &slen);
-    csilk_sse_send(c, "delta", s ? s : "");
+    csilk_sse_send(sc->ctx, "delta", s ? s : "");
     free(s);
     csilk_json_free(msg);
 }
@@ -154,8 +184,30 @@ void ai_chat_handler(csilk_ctx_t* c) {
     }
     msgs[idx++] = (csilk_ai_message_t){.role="user", .content=content};
 
+    stream_context_t sctx = {
+        .ctx = c,
+        .accumulated = NULL,
+        .cap = 0,
+        .len = 0,
+    };
+
     /* SSE init */
     csilk_sse_init(c);
+
+    /* persist user message */
+    ai_message_insert(pool, sid, "user", content, model_buf);
+
+    csilk_ai_t* ai_inst = g_ai;
+    int need_free_ai = 0;
+    if (prov && (strcmp(prov->id, g_config.default_provider) != 0 || !ai_inst)) {
+        const char* dname = get_driver_name(prov->id);
+        const char* key = (prov->api_key[0] != '\0') ? prov->api_key : "dummy";
+        csilk_ai_t* custom_ai = csilk_ai_new(dname, key, prov->base_url[0] ? prov->base_url : NULL);
+        if (custom_ai) {
+            ai_inst = custom_ai;
+            need_free_ai = 1;
+        }
+    }
 
     /* streaming chat */
     csilk_ai_chat_request_t req = {
@@ -164,15 +216,22 @@ void ai_chat_handler(csilk_ctx_t* c) {
         .message_count = mc,
         .stream = 1,
         .on_chunk = on_chunk,
-        .user_data = c,
+        .user_data = &sctx,
     };
-    int rc = csilk_ai_chat(g_ai, &req, NULL);
-    if (rc != 0) send_error(c, "AI request failed");
-    else send_done(c);
+    csilk_ai_chat_response_t ai_res = {0};
+    int rc = csilk_ai_chat(ai_inst, &req, &ai_res);
+    if (rc != 0) {
+        send_error(c, "AI request failed");
+    } else {
+        if (sctx.accumulated && sctx.len > 0) {
+            ai_message_insert(pool, sid, "assistant", sctx.accumulated, model_buf);
+        }
+        send_done(c);
+    }
+    csilk_ai_chat_response_free(&ai_res);
 
-    /* persist user message */
-    ai_message_insert(pool, sid, "user", content, model_buf);
-
+    if (need_free_ai && ai_inst) csilk_ai_free(ai_inst);
+    if (sctx.accumulated) free(sctx.accumulated);
     csilk_sse_close(c);
     free(msgs);
     csilk_json_free(history);
