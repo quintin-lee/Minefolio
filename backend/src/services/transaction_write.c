@@ -15,6 +15,7 @@ void transactions_create(csilk_ctx_t* c) {
     int64_t user_id = ctx_user_id(c);
     if (user_id < 0) return;
 
+
     csilk_json_t* body = csilk_bind_json(c);
     if (!body) { respond_bad_request(c, "请求体必须为 JSON"); return; }
 
@@ -26,6 +27,8 @@ void transactions_create(csilk_ctx_t* c) {
     const char* src_type = csilk_json_get_string(body, "source_type");
     if (!src_type) src_type = "expense";
     double amount = db_get_num(body, "amount");
+    CSILK_LOG_I("transactions_create type=%s asset_id=%lld linked_asset_id=%lld amount=%.2f",
+            type ? type : "(null)", (long long)asset_id, (long long)linked_asset_id, amount);
     const char* date = csilk_json_get_string(body, "transaction_date");
 
     const tx_type_t* ttype = tx_type_lookup(type ? type : "");
@@ -122,6 +125,7 @@ void transactions_create(csilk_ctx_t* c) {
     csilk_json_free(ins);
 
     // 持仓联动：仅 buy/sell 且投资类资产
+    CSILK_LOG_I("transactions_create inserted id=%lld type=%s", (long long)tx_id, type ? type : "(null)");
     double position_delta = 0;
     int is_investment_tx = 0;
     if (strcmp(type, "buy") == 0 || strcmp(type, "sell") == 0) {
@@ -192,6 +196,7 @@ void transactions_create(csilk_ctx_t* c) {
     }
 
     csilk_db_exec(pool, "COMMIT");
+    CSILK_LOG_I("transactions_create committed id=%lld", (long long)tx_id);
     csilk_json_free(body);
     respond_ok_null(c);
 }
@@ -203,7 +208,9 @@ void transactions_update(csilk_ctx_t* c) {
     const char* id_str = csilk_get_param(c, "id");
     if (!id_str) { respond_bad_request(c, "缺少 id"); return; }
 
+
     int64_t tx_id_val = atoll(id_str);
+    CSILK_LOG_I("transactions_update id=%lld", (long long)tx_id_val);
 
     csilk_json_t* body = csilk_bind_json(c);
     if (!body) { respond_bad_request(c, "请求体必须为 JSON"); return; }
@@ -389,6 +396,7 @@ void transactions_update(csilk_ctx_t* c) {
 
     csilk_db_exec(pool, "COMMIT");
     csilk_json_free(body);
+    CSILK_LOG_I("transactions_update committed id=%lld", (long long)tx_id_val);
     csilk_json_free(old_row);
     respond_ok_null(c);
 }
@@ -402,6 +410,8 @@ void transactions_delete(csilk_ctx_t* c) {
 
     int64_t tx_id_val = atoll(id_str);
 
+
+    CSILK_LOG_I("transactions_delete id=%lld", (long long)tx_id_val);
     csilk_db_pool_t* pool = db_get_pool();
     char uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
@@ -470,6 +480,7 @@ void transactions_delete(csilk_ctx_t* c) {
     }
 
     csilk_db_exec(pool, "COMMIT");
+    CSILK_LOG_I("transactions_delete committed id=%lld", (long long)tx_id_val);
     csilk_json_free(old_row);
     respond_ok_null(c);
 }

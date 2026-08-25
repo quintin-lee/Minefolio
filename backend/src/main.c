@@ -44,6 +44,7 @@ int main(int argc, char** argv) {
         return 1;
     }
     printf("Database initialized and migrations applied.\n");
+    CSILK_LOG_I("Server starting: %d worker(s) on port 8080", 2);
 
     if (auth_key_init() != 0) {
         fprintf(stderr, "Failed to initialize RSA key pair\n");

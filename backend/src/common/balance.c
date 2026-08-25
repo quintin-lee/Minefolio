@@ -33,13 +33,18 @@ int balance_apply_delta(csilk_db_pool_t* pool,
     if (!row) return -2;
     if (csilk_json_array_size(row) == 0) {
         csilk_json_free(row);
-        return -1;  // 资产不存在或不属于该用户
+        CSILK_LOG_W("balance_apply_delta: asset not found asset_id=%lld user_id=%lld",
+                    (long long)asset_id, (long long)user_id);
+        return -1;
     }
     const csilk_json_t* asset = csilk_json_array_get(row, 0);
     const char* asset_type = csilk_json_get_string(asset, "asset_type");
 
     // 2. 归一化 delta（负债方向反转）
     double signed_delta = delta * balance_direction(asset_type);
+    CSILK_LOG_D("balance_apply_delta asset_id=%lld delta=%.6f asset_type=%s signed_delta=%.6f source=%s id=%lld",
+            (long long)asset_id, delta, asset_type ? asset_type : "(null)",
+            signed_delta, source_type, (long long)source_id);
     csilk_json_free(row);
 
     // 3. 原子更新余额（避免读改写竞态）
@@ -57,6 +62,8 @@ int balance_apply_delta(csilk_db_pool_t* pool,
         "SELECT current_value FROM assets WHERE id=? AND user_id=?", params4);
     if (!after || csilk_json_array_size(after) == 0) {
         if (after) csilk_json_free(after);
+        CSILK_LOG_E("balance_apply_delta: failed to read balance_after asset_id=%lld",
+                    (long long)asset_id);
         return -2;
     }
     double balance_after = db_get_num(csilk_json_array_get(after, 0), "current_value");
@@ -110,6 +117,11 @@ int apply_position(csilk_db_pool_t* pool, int64_t asset_id,
     double old_current = db_get_num(pr, "current_value");
     double new_qty, new_cost, new_net;
 
+    CSILK_LOG_I("apply_position asset_id=%lld type=%s old_qty=%.4f old_cost=%.4f "
+                "old_net=%.4f old_current=%.4f amount=%.2f fee=%.2f price=%.4f qty=%.4f",
+                (long long)asset_id, type, old_qty, old_cost, old_net, old_current,
+                amount, fee, price, qty);
+
     if (strcmp(type, "buy") == 0) {
         new_qty = old_qty + qty;
         new_cost = old_cost + amount + fee;
@@ -117,6 +129,8 @@ int apply_position(csilk_db_pool_t* pool, int64_t asset_id,
     } else if (strcmp(type, "sell") == 0) {
         if (old_qty < qty) {
             csilk_json_free(pos);
+            CSILK_LOG_W("apply_position: insufficient quantity asset_id=%lld have=%.4f need=%.4f",
+                        (long long)asset_id, old_qty, qty);
             return -1;
         }
         double avg_cost = old_qty > 0 ? old_cost / old_qty : 0;
@@ -129,6 +143,9 @@ int apply_position(csilk_db_pool_t* pool, int64_t asset_id,
     }
     double delta = new_qty * new_net - old_current;
     if (out_position_delta) *out_position_delta = delta;
+    CSILK_LOG_I("apply_position asset_id=%lld type=%s new_qty=%.4f new_cost=%.4f "
+                "new_net=%.4f delta=%.6f",
+                (long long)asset_id, type, new_qty, new_cost, new_net, delta);
 
     char nq[64], nc[64], nv[64];
     snprintf(nq, sizeof(nq), "%.4f", new_qty);
