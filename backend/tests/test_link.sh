@@ -10,16 +10,22 @@ PASS=0; FAIL=0
 
 cleanup() {
   [ -n "${SERVER_PID:-}" ] && kill "$SERVER_PID" 2>/dev/null || true
-  rm -f "$DB"
+  rm -f "$DB" "$DB-wal" "$DB-shm"
 }
 trap cleanup EXIT
 
 # Generate a random JWT secret for this test run
 TEST_JWT_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
 # --- 启动服务器 ---
-rm -f "$DB"
+rm -f "$DB" "$DB-wal" "$DB-shm"
 cd "$BUILD_DIR"
-MINEFOLIO_DB_DSN="$DB" MINEFOLIO_JWT_SECRET="$TEST_JWT_SECRET" ./minefolio &
+MINEFOLIO_DB_DSN="$DB" MINEFOLIO_JWT_SECRET="$TEST_JWT_SECRET" ./minefolio >/dev/null 2>&1 &
+SERVER_PID=$!
+# Wait for server to be ready (port 8080 accepting connections)
+for _i in $(seq 1 30); do
+  curl -sf http://localhost:8080/healthz >/dev/null 2>&1 && break
+  sleep 0.5
+done
 
 req() { # req METHOD PATH JSON
   local method="$1" path="$2" data="${3:-}"
