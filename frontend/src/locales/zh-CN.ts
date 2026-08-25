@@ -136,7 +136,7 @@ export const zhCN = {
     exportHint: '导出所有交易记录为 CSV 文件，可在 Excel 或其他电子表格软件中打开。',
     exportButton: '导出交易记录 CSV',
     aiTitle: 'AI 助手配置',
-    aiDesc: '配置 AI 模型供应商和默认设置。API Key 仅在本地存储，不会上传到服务器。',
+    aiDesc: '配置 AI 模型供应商和默认设置。API Key 加密上传到服务器。',
     aiSave: '保存配置',
     aiSaving: '保存中...',
     aiSaved: 'AI 配置已保存',
