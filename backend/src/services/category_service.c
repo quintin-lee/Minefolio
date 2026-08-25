@@ -414,10 +414,6 @@ void categories_update(csilk_ctx_t* c) {
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     snprintf(sort_str, sizeof(sort_str), "%d", sort_order);
 
-    const char* params[] = {
-        name ? name : "", type, asset_type, currency ? currency : "CNY",
-        icon ? icon : "", sort_str, id_str, uid_str, NULL
-    };
     if (!category_update(pool, user_id, atoll(id_str), name ? name : "", type, asset_type, currency ? currency : "CNY", icon ? icon : "", sort_order)) {
         csilk_json_free(body);
         respond_not_found(c);

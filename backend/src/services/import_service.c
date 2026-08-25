@@ -47,7 +47,7 @@ void transactions_import_csv(csilk_ctx_t* c) {
     int line_num = 0;
     while (*line_start) {
         char* line_end = strchr(line_start, '\n');
-        size_t line_len = line_end ? (line_end - line_start) : strlen(line_start);
+        size_t line_len = line_end ? (size_t)(line_end - line_start) : strlen(line_start);
 
         while (line_len > 0 && (line_start[line_len-1] == '\r' || line_start[line_len-1] == '\n'))
             line_len--;
@@ -263,7 +263,7 @@ void daily_expenses_import_csv(csilk_ctx_t* c) {
     int line_num = 0;
     while (*line_start) {
         char* line_end = strchr(line_start, '\n');
-        size_t line_len = line_end ? (line_end - line_start) : strlen(line_start);
+        size_t line_len = line_end ? (size_t)(line_end - line_start) : strlen(line_start);
         while (line_len > 0 && (line_start[line_len-1] == '\r' || line_start[line_len-1] == '\n'))
             line_len--;
         if (line_len == 0) { line_start = line_end ? line_end + 1 : line_start + 1; continue; }

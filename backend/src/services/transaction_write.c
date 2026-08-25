@@ -89,11 +89,7 @@ void transactions_create(csilk_ctx_t* c) {
     snprintf(price_str, sizeof(price_str), "%.4f", price);
     snprintf(qty_str, sizeof(qty_str), "%.4f", qty);
 
-    const char* ins_params[] = {
-        uid_str, ast_str, last_str, cat_str, src_type, type,
-        ttype->stat_dir, ttype->linked_dir,
-        amt_str, price_str, qty_str, currency, date, note ? note : "", NULL
-    };
+    
 
     if (csilk_db_exec(pool, "BEGIN TRANSACTION") != 0) {
         csilk_json_free(body);
@@ -219,7 +215,7 @@ void transactions_update(csilk_ctx_t* c) {
     char uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
 
-    const char* chk_params[] = { id_str, uid_str, NULL };
+    
     if (!tx_asset_exists(pool, user_id, atoll(id_str))) {
         csilk_json_free(body);
         respond_not_found(c);
@@ -227,7 +223,6 @@ void transactions_update(csilk_ctx_t* c) {
     }
 
     // 读取旧记录
-    const char* old_params[] = { id_str, uid_str, NULL };
     csilk_json_t* old_row = tx_get_old(pool, user_id, atoll(id_str));
     if (!old_row || csilk_json_array_size(old_row) == 0) {
         csilk_json_free(body);
@@ -281,13 +276,7 @@ void transactions_update(csilk_ctx_t* c) {
     snprintf(cat_str, sizeof(cat_str), "%lld", (long long)category_id);
     snprintf(last_str, sizeof(last_str), "%lld", (long long)linked_asset_id);
 
-    const char* up_params[] = {
-        type ? type : "", ntype->stat_dir, ntype->linked_dir,
-        amt_str, price_str, qty_str,
-        currency ? currency : "CNY", date ? date : "", note ? note : "",
-        cat_str, src_type ? src_type : "expense", last_str,
-        id_str, uid_str, NULL
-    };
+    
 
     if (csilk_db_exec(pool, "BEGIN TRANSACTION") != 0) {
         csilk_json_free(body);
@@ -443,7 +432,7 @@ void transactions_delete(csilk_ctx_t* c) {
         return;
     }
 
-    const char* del_params[] = { id_str, uid_str, NULL };
+    
     if (!tx_delete(pool, user_id, atoll(id_str))) {
         csilk_db_exec(pool, "ROLLBACK");
         csilk_json_free(old_row);

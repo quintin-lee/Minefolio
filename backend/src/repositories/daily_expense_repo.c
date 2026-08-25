@@ -38,7 +38,8 @@ csilk_json_t* de_list(csilk_db_pool_t* pool, int64_t user_id, int64_t page, int6
             if (len == 0 || len >= sizeof(tag_bufs[0]) || tag_count >= 32) break;
             memcpy(tag_bufs[tag_count], tag_ids + start, len);
             tag_bufs[tag_count][len] = '\0';
-            tag_ptrs[tag_count++] = tag_bufs[tag_count];
+            int ti = tag_count++;
+            tag_ptrs[ti] = tag_bufs[ti];
         }
         char in_clause[512] = {0}; int ipos = 0;
         for (int i = 0; i < tag_count; i++) { if (i) in_clause[ipos++] = ','; ipos += snprintf(in_clause+ipos, sizeof(in_clause)-(size_t)ipos, " ?"); }

@@ -248,7 +248,7 @@ void ai_chat_handler(csilk_ctx_t* c) {
     csilk_json_t* input_arr = csilk_json_array();
     csilk_json_t* sys_msg = csilk_json_object();
     csilk_json_add_string(sys_msg, "role", "system");
-    csilk_json_add_string(sys_msg, "content", g_config.system_prompt ?: "");
+    csilk_json_add_string(sys_msg, "content", g_config.system_prompt);
     csilk_json_array_append(input_arr, sys_msg);
     for (int i = 0; i < hsz; i++) {
         csilk_json_t* m = csilk_json_array_get(history, i);

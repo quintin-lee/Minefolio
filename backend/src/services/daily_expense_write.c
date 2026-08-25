@@ -143,7 +143,6 @@ void daily_expenses_update(csilk_ctx_t* c) {
     }
     csilk_json_free(chk);
 
-    const char* old_params[] = { id_str, uid_str, NULL };
     csilk_json_t* old_row = de_get(pool, user_id, atoll(id_str));
     if (!old_row || csilk_json_array_size(old_row) == 0) {
         csilk_json_free(body);
@@ -237,7 +236,6 @@ void daily_expenses_delete(csilk_ctx_t* c) {
     char uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
 
-    const char* old_params[] = { id_str, uid_str, NULL };
     csilk_json_t* old_row = de_get(pool, user_id, atoll(id_str));
     if (!old_row || csilk_json_array_size(old_row) == 0) {
         if (old_row) csilk_json_free(old_row);
