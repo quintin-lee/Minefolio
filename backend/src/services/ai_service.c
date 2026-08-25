@@ -1,4 +1,5 @@
 #include "services/ai_service.h"
+#include "services/ai_tools.h"
 #include "repositories/ai_session_repo.h"
 #include "repositories/ai_settings_repo.h"
 #include "common/ai_config.h"
@@ -283,44 +284,136 @@ void ai_chat_handler(csilk_ctx_t* c) {
         }
     }
 
-    /* streaming chat */
-    csilk_ai_chat_request_t req = {
-        .model = model_buf,
-        .messages = msgs,
-        .message_count = mc,
-        .stream = 1,
-        .on_chunk = on_chunk,
-        .user_data = &sctx,
-    };
-    csilk_ai_chat_response_t ai_res = {0};
-    req.temperature = req_temperature;
-    req.top_p = req_top_p;
-    req.max_tokens = req_max_tokens;
-    int rc = csilk_ai_chat(ai_inst, &req, &ai_res);
-    trace.prompt_tokens = ai_res.prompt_tokens;
-    trace.completion_tokens = ai_res.completion_tokens;
-    trace.total_tokens = ai_res.total_tokens > 0
-        ? ai_res.total_tokens
-        : (ai_res.prompt_tokens + ai_res.completion_tokens);
-    if (rc != 0) {
-        ai_trace_finish(&trace, "error", "AI request failed");
-        ai_trace_save(db_get_pool(), &trace);
-        ai_trace_free(&trace);
-        send_error(c, "AI request failed");
-    } else {
-        if (sctx.accumulated && sctx.len > 0) {
-            ai_message_insert(pool, sid, "assistant", sctx.accumulated, model_buf);
+    /* ---- Tool-calling loop ----
+     * First call: non-streaming with tools → check for tool_calls.
+     * If tool_calls: execute each, append results, loop.
+     * Final call: streaming text response → SSE to client. */
+    size_t tool_count = 0;
+    const csilk_ai_tool_t* tools = ai_tools_get_definitions(&tool_count);
+
+    int round = 0;
+    int max_rounds = 10;
+    int got_text = 0;
+
+    while (!got_text && round < max_rounds) {
+        csilk_ai_chat_request_t req = {
+            .model = model_buf,
+            .messages = msgs,
+            .message_count = (size_t)mc,
+            .stream = 0,
+            .tools = (csilk_ai_tool_t*)tools,
+            .tool_count = tool_count,
+            .tool_choice = "auto",
+        };
+        csilk_ai_chat_response_t ai_res = {0};
+        int rc = csilk_ai_chat(ai_inst, &req, &ai_res);
+
+        if (rc != 0) {
+            ai_trace_finish(&trace, "error", "AI request failed");
+            ai_trace_save(db_get_pool(), &trace);
+            ai_trace_free(&trace);
+            send_error(c, "AI request failed");
+            round = max_rounds;
+            break;
         }
-        ai_trace_finish(&trace, "ok", NULL);
-        ai_trace_save(db_get_pool(), &trace);
-        ai_trace_free(&trace);
-        send_done(c);
+
+        if (ai_res.tool_call_count == 0) {
+            const char* text = ai_res.content ?: "";
+            if (text[0]) {
+                size_t tlen = strlen(text);
+                size_t pos = 0;
+                while (pos < tlen) {
+                    size_t chunk_size = 128;
+                    if (pos + chunk_size > tlen) chunk_size = tlen - pos;
+                    char chunk[130];
+                    memcpy(chunk, text + pos, chunk_size);
+                    chunk[chunk_size] = '\0';
+                    on_chunk(chunk, &sctx);
+                    pos += chunk_size;
+                }
+                ai_message_insert(pool, sid, "assistant", sctx.accumulated ?: text, model_buf);
+            }
+            csilk_ai_chat_response_free(&ai_res);
+            got_text = 1;
+            break;
+        }
+
+        for (size_t t = 0; t < ai_res.tool_call_count; t++) {
+            csilk_ai_tool_call_t* tc = &ai_res.tool_calls[t];
+
+            csilk_json_t* tc_evt = csilk_json_object();
+            csilk_json_add_string(tc_evt, "id", tc->id ?: "");
+            csilk_json_add_string(tc_evt, "name", tc->name ?: "");
+            csilk_json_add_string(tc_evt, "arguments", tc->arguments ?: "");
+            size_t slen = 0;
+            char* s = csilk_json_serialize(tc_evt, &slen);
+            csilk_sse_send(c, "tool_call", s ? s : "");
+            free(s);
+            csilk_json_free(tc_evt);
+
+            char* result = ai_tools_execute(pool, user_id, tc->name, tc->arguments);
+            if (!result) result = strdup("{\"error\":\"tool execution failed\"}");
+
+            csilk_json_t* tr_evt = csilk_json_object();
+            csilk_json_add_string(tr_evt, "tool_call_id", tc->id ?: "");
+            csilk_json_add_string(tr_evt, "name", tc->name ?: "");
+            csilk_json_add_string(tr_evt, "result", result);
+            slen = 0;
+            s = csilk_json_serialize(tr_evt, &slen);
+            csilk_sse_send(c, "tool_result", s ? s : "");
+            free(s);
+            csilk_json_free(tr_evt);
+
+            csilk_json_t* asst_msg = csilk_json_object();
+            csilk_json_add_string(asst_msg, "role", "assistant");
+            csilk_json_add_string(asst_msg, "content", "");
+            csilk_json_t* tc_arr = csilk_json_array();
+            csilk_json_t* tc_obj = csilk_json_object();
+            csilk_json_add_string(tc_obj, "id", tc->id ?: "");
+            csilk_json_add_string(tc_obj, "type", "function");
+            csilk_json_t* fn_obj = csilk_json_object();
+            csilk_json_add_string(fn_obj, "name", tc->name ?: "");
+            csilk_json_add_string(fn_obj, "arguments", tc->arguments ?: "");
+            csilk_json_add_object(tc_obj, "function", fn_obj);
+            csilk_json_array_append(tc_arr, tc_obj);
+            csilk_json_add_array(asst_msg, "tool_calls", tc_arr);
+            size_t msg_len = 0;
+            char* msg_str = csilk_json_serialize(asst_msg, &msg_len);
+            csilk_json_free(asst_msg);
+
+            csilk_json_t* tool_msg = csilk_json_object();
+            csilk_json_add_string(tool_msg, "role", "tool");
+            csilk_json_add_string(tool_msg, "tool_call_id", tc->id ?: "");
+            csilk_json_add_string(tool_msg, "content", result);
+            size_t tool_msg_len = 0;
+            char* tool_msg_str = csilk_json_serialize(tool_msg, &tool_msg_len);
+            csilk_json_free(tool_msg);
+
+            mc += 2;
+            msgs = (csilk_ai_message_t*)realloc(msgs, sizeof(csilk_ai_message_t) * (size_t)mc);
+            msgs[mc - 2] = (csilk_ai_message_t){.role = "assistant", .content = msg_str};
+            msgs[mc - 1] = (csilk_ai_message_t){.role = "tool", .content = tool_msg_str};
+
+            free(result);
+        }
+
+        csilk_ai_chat_response_free(&ai_res);
+        round++;
     }
-    csilk_ai_chat_response_free(&ai_res);
+
+    ai_trace_finish(&trace, got_text ? "ok" : "error", NULL);
+    ai_trace_save(db_get_pool(), &trace);
+    ai_trace_free(&trace);
+    send_done(c);
 
     if (need_free_ai && ai_inst) csilk_ai_free(ai_inst);
     if (sctx.accumulated) free(sctx.accumulated);
     csilk_sse_close(c);
+    /* Free dynamically allocated content strings from tool-call rounds.
+     * The first 1+hsz+1 messages point into g_config/history/body (not owned). */
+    for (int i = 1 + hsz + 1; i < mc; i++) {
+        if (msgs[i].content) free((void*)msgs[i].content);
+    }
     free(msgs);
     csilk_json_free(history);
     csilk_json_free(body);
