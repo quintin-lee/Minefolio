@@ -67,7 +67,6 @@ RUN --mount=type=cache,target=/var/cache/apt \
     gcc-14 \
     g++-14 \
     cmake \
-    ninja-build \
     git \
     pkg-config \
     libuv1-dev \
@@ -129,7 +128,7 @@ RUN --mount=type=bind,source=hosts,target=/etc/hosts \
     cmake \
     -S backend \
     -B backend/build \
-    -G Ninja \
+    -G "Unix Makefiles" \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
     -DFETCHCONTENT_FULLY_DISCONNECTED=ON \
