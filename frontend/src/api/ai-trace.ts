@@ -47,17 +47,9 @@ export async function listTraces(params?: {
 }
 
 export async function getTrace(id: number): Promise<AiTraceDetail> {
-  const r = (await http.get(`/ai/traces/${id}`)) as unknown
-  if (r && typeof r === 'object' && 'data' in r) {
-    return (r as { data: AiTraceDetail }).data
-  }
-  return r as AiTraceDetail
+  return (await http.get(`/ai/traces/${id}`)) as AiTraceDetail
 }
 
 export async function getTraceStats(): Promise<AiTraceStats> {
-  const r = (await http.get('/ai/traces/stats')) as unknown
-  if (r && typeof r === 'object' && 'data' in r) {
-    return (r as { data: AiTraceStats }).data
-  }
-  return r as AiTraceStats
+  return (await http.get('/ai/traces/stats')) as AiTraceStats
 }
