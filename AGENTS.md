@@ -1,246 +1,333 @@
-# Minefolio — Agent Instructions
+# Repository Guidelines
 
-## Project at a Glance
+## Project Overview
 
-Personal finance tracker. SQLite or PostgreSQL backend (C23 + [csilk v0.5.0](https://github.com/quintin-lee/csilk)) + Vue 3 / TypeScript frontend.
+Minefolio is a self-hosted personal finance and investment tracker. It supports multiple account types (cash, bank, credit card, loan), tracks investment positions (stocks, funds, bonds, crypto) with full cost-basis and PnL reporting, and offers AI-powered chat. The backend is C23 using the csilk HTTP framework with SQLite or PostgreSQL; the frontend is Vue 3 + TypeScript served as a SPA. A Capacitor-based mobile build uses sql.js WASM for fully offline operation.
 
-```
-backend/src/          Three-tier: controllers/ services/ repositories/ common/
-backend/sql/          migration.sql (SQLite) + migration_postgres.sql
-backend/tests/        test_link.sh — full HTTP & DB integration test suite
-frontend/src/         Vue 3 + Pinia + Element Plus + ECharts
-```
+## Architecture & Data Flow
 
-### Layered Architecture
+### Backend — Three-Tier C Architecture
 
 ```
-HTTP Layer    controllers/   — Parse request params, call service, format response
-Business Layer services/     — Orchestrate repo calls, balance ops, transactions
-Data Layer    repositories/  — All SQL queries, return csilk_json_t*
-Common        common/        — db.h/.c  jwt.h/.c  balance.h/.c  response.h  ctx.h  csv_utils.h/.c
-Config        config/        — db_config.h/.c  key_manager.h/.c
-DTOs          dtos/          — request.h  response.h (reflection macros)
-Models        models/        — asset.h  category.h  transaction.h  tag.h  etc.
+HTTP Layer    controllers/     Parse params, call service, format response
+Business Layer services/       Orchestrate repos, balance ops, transactions
+Data Layer    repositories/    Raw SQL, return csilk_json_t*
+Shared        common/          db, jwt, balance, response, ctx, csv, tx_types
+              config/          db_config, key_manager (RSA keys)
+              dtos/            request/response struct definitions (reflection macros)
+              models/          C domain structs
+              middlewares/     jwt, cors, csrf, security-headers, rate-limit
 ```
 
-**Dependency rules:**
-- `controllers` → `services`, `dtos/`
-- `services` → `repositories`, `common/`, `balance`
-- `repositories` → `common/` ONLY (zero HTTP/framework knowledge)
-- `main.c` includes only `controllers/*_controller.h`
+**Dependency direction is strict and one-way:**
+- `main.c` → includes only `controllers/*_controller.h`
+- `controllers/` → `services/`, `dtos/`
+- `services/` → `repositories/`, `common/`, balance logic
+- `repositories/` → `common/db.h` ONLY (no HTTP/framework knowledge)
 
----
+Complex domains split read/query from write: `transaction_query.c` / `transaction_write.c`, `daily_expense_query.c` / `daily_expense_write.c`.
 
-## Commands
+### Frontend — Vue 3 SPA
 
-### Backend (local dev & testing)
+```
+Entry       main.ts (desktop) / main-mobile.ts (mobile)
+Router      router/index.ts / router/mobile.ts
+State       Pinia stores (auth, category, chat, sync)
+API         src/api/*.ts — wraps http.ts (axios with JWT + CSRF)
+Views       src/views/ (desktop) / src/views-mobile/ (mobile)
+Components  Auto-registered via unplugin-vue-components (Element Plus)
+Types       src/types/index.ts
+Charts      ECharts (src/components/*.vue)
+Offline DB  src/db/ — sql.js WASM with local SQLite for mobile
+```
+
+**Desktop and mobile share the same API layer** (`src/api/`) and TypeScript types. Mobile has its own view set and a lightweight layout. The mobile build hardcodes `VITE_API_URL` at compile time.
+
+### Data Flow: Transaction Write Path
+
+```
+Vue component → api/transactions.ts → http.ts (JWT + CSRF)
+  → POST /api/transactions
+  → transaction_controller → transaction_write_service
+    → transaction_repo INSERT
+    → apply_position() updates asset quantity/cost_basis/net_value
+    → balance_apply_delta() debits linked funding account
+    → if fee > 0: raw SQL inserts fee row into transactions
+  → respond_ok() returns {code:0, data:{id,...}}
+```
+
+Balance direction is handled centrally: `balance_apply_delta()` flips the sign for liability assets (`loan`, `credit_card`, `other_liability`) so net-worth calculations stay correct. Transaction types are registered in `common/tx_types.c` — always use `tx_type_lookup()` instead of hard-coding type checks.
+
+## Key Directories
+
+| Path | Purpose |
+|------|---------|
+| `backend/src/main.c` | Entry point: DB init, migrations, middleware stack, route registration, static serve |
+| `backend/src/controllers/` | Thin HTTP handlers; one per domain; `register_*_routes(app)` |
+| `backend/src/services/` | Business logic; query and write files coexist per domain |
+| `backend/src/repositories/` | All SQL; return `csilk_json_t*`; never touch HTTP |
+| `backend/src/common/` | Cross-cutting: `db.h`, `balance.h`, `jwt.h`, `response.h`, `ctx.h`, `tx_types.h` |
+| `backend/src/config/` | `db_config.h/.c` (DSN), `key_manager.h/.c` (RSA-OAEP keys) |
+| `backend/sql/` | `migration.sql` (SQLite), `migration_postgres.sql` |
+| `backend/tests/test_link.sh` | 33-case integration test suite (HTTP + sqlite3 verification) |
+| `frontend/src/main.ts` | Desktop entry: Pinia, router, Element Plus, i18n |
+| `frontend/src/main-mobile.ts` | Mobile entry: separate router, sql.js init |
+| `frontend/src/api/` | One file per domain; never call fetch/axios directly in components |
+| `frontend/src/stores/` | Pinia stores (auth, category, chat, sync) |
+| `frontend/src/views/` | Desktop pages |
+| `frontend/src/views-mobile/` | Mobile pages |
+| `frontend/src/db/` | sql.js wrapper + schema for offline mobile SQLite |
+| `scripts/` | `build.sh` (production), `dev.sh` (local dev with both servers) |
+
+## Development Commands
+
+### Backend
+
 ```bash
 cd backend
-cmake -B build -G "Unix Makefiles"   # use Makefiles, NOT Ninja — Ninja has stale-dependency bugs
+cmake -B build -G "Unix Makefiles"   # MUST use Makefiles — Ninja has stale-dependency bugs
 cmake --build build --parallel
-./build/minefolio                    # reads sql/migration.sql relative to cwd
-./tests/test_link.sh                 # run full integration test suite
+./build/minefolio                    # reads config/db.json relative to cwd
+./tests/test_link.sh                 # full integration test suite
 ```
 
-**DB driver selection** (env vars checked before `config/db.json`):
+**DB driver selection** (env vars override `config/db.json`):
 ```bash
 MINEFOLIO_DB_DRIVER=sqlite  MINEFOLIO_DB_DSN=./data/minefolio.db   ./build/minefolio
 MINEFOLIO_DB_DRIVER=postgres MINEFOLIO_DB_DSN="host=… user=… dbname=…"  ./build/minefolio
 ```
-The Setup page writes `config/db.json` on first init; the server reads it on every startup via `config_get_str()`.
 
-### Frontend (local dev & build)
+### Frontend
+
 ```bash
 cd frontend
 npm install
 npm run dev                # :5173, proxies /api → localhost:8080
-npm run build              # vue-tsc -b && vite build (must build cleanly with 0 errors)
+npm run build              # vue-tsc -b && vite build — must compile with 0 errors
+npm test                   # vitest (mobile config, jsdom environment)
 ```
 
-### Mobile (Capacitor) build
+### Mobile
+
 ```bash
-cd frontend
 npm run build:mobile       # vite build --config vite.config.mobile.ts --mode mobile
 npx cap sync android       # copy dist-mobile → android/app/src/main/assets/public
-cd android && ./gradlew assembleDebug   # build APK (requires full Android env)
+cd android && ./gradlew clean assembleDebug
 ```
 
-**Mobile API URL**: configure in `frontend/.env.mobile` via `VITE_API_URL`. The APK hardcodes this at build time.
+### Full Verification
 
-**sql.js WASM embedding**: The Capacitor WebView cannot reliably `fetch` wasm files from `capacitor://` assets. The wasm binary is embedded as base64 in the JS bundle via `frontend/src/db/generated/sql-wasm-base64.ts`. To regenerate:
-```bash
-base64 -w0 node_modules/sql.js/dist/sql-wasm.wasm > /tmp/wasm_b64.txt
-# then use the Python script in commit 218eb88 to produce the TS module
-```
-
-### Verification
-Before declaring any task complete, run:
 ```bash
 cmake --build backend/build --parallel && npm --prefix frontend run build
 ```
 
----
+### Scripts
 
-## Architecture Rules & Code Quality Standards
+```bash
+./scripts/dev.sh   # builds backend, starts server on :8080, starts frontend on :5173, traps signals
+./scripts/build.sh # Release backend build then frontend build
+```
 
-### 1. Repository Pattern (STRICT)
-All repositories follow this interface:
+## Code Conventions & Common Patterns
+
+### C — Repository Pattern (STRICT)
+
 ```c
-// repo.h
+// repositories/<entity>_repo.h
 #pragma once
 #include "csilk/csilk.h"
 #include "common/db.h"
 
-/* List with pagination — returns csilk_json_t array, sets *total */
 csilk_json_t* entity_list(csilk_db_pool_t* pool, int64_t user_id,
-                           int64_t page, int64_t page_size, ...filter params..., int64_t* total);
-
-/* Get single entity — returns csilk_json_t (NULL if not found) */
+                           int64_t page, int64_t page_size, ...filters..., int64_t* total);
 csilk_json_t* entity_get(csilk_db_pool_t* pool, int64_t user_id, int64_t id);
-
-/* Insert — returns new ID or 0 on failure */
 int64_t entity_insert(csilk_db_pool_t* pool, int64_t user_id, ...params...);
-
-/* Update — returns 1 if found/updated, 0 otherwise */
 int entity_update(csilk_db_pool_t* pool, int64_t user_id, int64_t id, ...params...);
-
-/* Delete — returns 1 if deleted, 0 otherwise */
 int entity_delete(csilk_db_pool_t* pool, int64_t user_id, int64_t id);
 ```
 
-**Key conventions:**
-- Repo functions take `(pool, user_id, ...)` — never extract `user_id` from ctx
-- Return `csilk_json_t*` directly (no model struct conversion layer)
-- ALL SQL must use `?` placeholders with `csilk_db_query_param_json()`
-- **Never** put raw SQL in service files — all queries belong in repositories
+- Repo functions take `(pool, user_id, …)` — never extract `user_id` from ctx
+- Return `csilk_json_t*` directly; no model-struct conversion layer
+- ALL SQL uses `?` placeholders with `csilk_db_query_param_json(pool, sql, params)`
+- Raw SQL via `csilk_db_exec` is only acceptable for self-contained literals (e.g. fee-row insertion)
 
-### 2. Service Pattern
-Services orchestrate business logic:
-- Extract params from `csilk_ctx_t*` using `ctx_user_id(c)`, `csilk_get_param()`, `csilk_bind_json()`
-- Call repositories for all data access
-- Handle `balance_apply_delta()` / `apply_position()` for investment/balance ops
-- Build response `csilk_json_t*` and call `respond_ok()` / `respond_error()`
-- Keep `BEGIN/COMMIT/ROLLBACK` transaction blocks in services
+### C — Service Pattern
 
-### 3. Controller Pattern
-Controllers are thin HTTP handlers:
+- Extract params with `ctx_user_id(c)`, `csilk_get_param()`, `csilk_bind_json()`
+- Call repositories; handle `balance_apply_delta()` / `apply_position()` for balance ops
+- Build `csilk_json_t*` response; call `respond_ok()` / `respond_error()`
+- Keep `BEGIN/COMMIT/ROLLBACK` blocks inside services
+
+### C — Controller Pattern
+
 ```c
-// controller.c
 #include "controllers/<domain>_controller.h"
 #include "services/<domain>_service.h"
 
 void <action>(csilk_ctx_t* c) {
-    <domain>_service_<action>(c);  // delegate to service
+    <domain>_service_<action>(c);
 }
 
 void register_<domain>_routes(csilk_app_t* app) {
     csilk_app_get_ext(app, "/api/<domain>", <action>, ...);
-    // ... more routes
 }
 ```
+
 - Include service header, not repository header
-- Register routes via `register_*_routes(app)` in controller
-- `main.c` includes controller headers only
+- `main.c` includes only controller headers
 
-### 4. Database Helpers & Request Body Parsing (STRICT)
-- **SQL Parameterization**: ALL database queries **MUST** use `?` placeholders with `csilk_db_query_param_json(pool, sql, params)` for parameterized queries. **NEVER** interpolate user input into SQL.
-- **Exception — self-contained literals**: when constructing a SQL string from known-safe C strings (e.g., building an INSERT with only locally formatted numbers), `csilk_db_exec(pool, sql)` is acceptable. See `transaction_write.c` fee-row creation for the pattern.
-- **Number Parsing**: csilk JSON parser returns DB columns as strings, and HTTP clients may submit numbers as either strings or numeric primitives in JSON bodies.
-  - **ALWAYS** use `db_get_num(obj, "key")` and `db_get_int(obj, "key")` from `db.h`.
-  - **NEVER** call `csilk_json_get_number()` directly on DB query results or request JSON bodies, as it returns `0.0` for string nodes.
+### C — Database & Number Parsing (STRICT)
 
-### 5. Backend C Response Envelope & Transaction Safety
-- Backend always returns HTTP 200. Business errors use `{code, message, data}`:
-  | code | meaning |
-  |------|---------|
-  | 0    | OK |
-  | 1001 | Unauthorized (JWT missing/expired) |
-  | 1002 | Bad request / Validation failed |
-  | 1003 | Not found |
-  | 1004 | Conflict / Forbidden |
-- Response macros: **MUST** use `respond_ok / respond_error / respond_bad_request / respond_unauthorized` from `common/response.h`.
-- Database Transactions: When executing multi-step balance or record updates (`BEGIN TRANSACTION`), always execute `ROLLBACK` on failure before returning an error response.
+- **NEVER** interpolate user input into SQL strings
+- **ALWAYS** use `db_get_num(obj, "key")` and `db_get_int(obj, "key")` from `db.h`
+- **NEVER** call `csilk_json_get_number()` directly — it returns `0.0` for string nodes
 
-### 6. Category System & Debt Asset Direction
-- **Category Types**: Categories are strictly segregated into four types: `asset`, `income`, `expense`, and `transaction`.
-- **Category Caching**: `useCategoryStore` caches category trees; call `invalidate()` after any category mutation.
-- **Debt Asset Direction**: `balance_apply_delta()` in `balance.c` flips the sign of `delta` for `loan`, `credit_card`, and `other_liability` categories so net-worth calculations stay correct. Do not modify this logic without understanding liability accounting.
+### C — Response Envelope
 
-### 7. Investment Asset Transactions (buy/sell stock/fund/bond/crypto)
-Investment assets (`asset_type` in `stock`, `fund`, `bond`, `crypto`) have special handling:
-- **Position tracking**: `apply_position()` updates `quantity`, `cost_basis`, and `net_value` on the asset row. `cost_basis` includes the purchase amount **plus** fee.
-- **Balance linkage**: The linked funding account (e.g., wallet) is debited via `balance_apply_delta`. The fund asset's `current_value` is updated via `balance_apply_delta` using `position_delta` (computed as `new_qty * new_net - old_current`).
-- **Fee row**: When `fee > 0`, a secondary `transaction_type='fee'` row is inserted via raw SQL (`csilk_db_exec`). The fee is deducted from the linked account. **The fee row's `note` must be non-empty** — fall back to the literal string `"fee"` when the original note is empty, otherwise test queries like `note LIKE '%fee%'` will miss it.
-- **PnL calculation** (report services):
-  - `total_cost_for_pnl` tracks buy amounts **excluding** fees (used as numerator for `avg_cost`).
-  - `total_cost_basis` tracks buy amounts **including** fees (matches the database column for display).
-  - On sell, `realized_pnl += amount - qty * avg_cost` where `avg_cost = total_cost_for_pnl / total_quantity`.
-  - `floating_pnl = total_market_value - total_cost_basis_remaining` where values come from `SUM(current_value)` and `SUM(cost_basis)` on investment assets.
-  - **Only rows with `qty > 0`** affect position counters (buy/sell); `fee` rows and other types are skipped.
+All responses are HTTP 200 with JSON `{code, message, data}`:
 
-### 8. Net Value Update (Asset PUT)
-When updating an investment asset's `net_value` via `PUT /api/assets/:id`:
-- The `net_value` field **must** be included in the `UPDATE` statement. A common bug is declaring `char nv_str[64]` **after** `upd_params[]` — the compiler may reuse stack space and produce wrong values. Always declare `nv_str` **before** building the params array.
+| code | meaning |
+|------|---------|
+| 0 | OK |
+| 1001 | Unauthorized (JWT missing/expired) |
+| 1002 | Bad request / Validation failed |
+| 1003 | Not found |
+| 1004 | Conflict / Forbidden |
 
-### 9. Frontend UI & API Consistency Standard (STRICT)
-- **API Layer**: **NEVER** call raw `fetch()` or `axios` in Vue components. Every API call **MUST** be placed in `frontend/src/api/<domain>.ts` using the central `http` client (`frontend/src/utils/http.ts`), which handles JWT tokens, CSRF headers, and error unwrapping automatically.
-  - **Exception**: `axios.get()` with `responseType: 'blob'` is used for file downloads (e.g., CSV export) because `http.get()` does not support blob response types. Use `http.get()` for all other calls.
-- **Page Layout**: `.page-header` uses `justify-content: space-between` — title left, button group right. Wrap action buttons in `<div class="header-actions">` with `gap: 8px`.
-- **Scroll Layout**: `.main` in `Layout.vue` is the single scroll container (`height: calc(100vh - 72px); overflow-y: auto`). Page containers use `height: 100%; overflow: hidden` so only data areas scroll internally.
-- **Error Resilience**: Every `onMounted` hook **MUST** wrap async initialization in `try/catch` to prevent a single failed API call from breaking the entire component tree. Use `v-loading` directive for loading states. For parallel API calls, prefer `Promise.allSettled` over `Promise.all` so partial failures don't crash the entire page. `Layout.vue` uses `<suspense>` as a fallback.
+Use `respond_ok` / `respond_error` / `respond_bad_request` / `respond_unauthorized` from `common/response.h`. On multi-step balance updates with `BEGIN TRANSACTION`, always `ROLLBACK` on failure before returning an error.
 
----
+### C — Net Value PUT Gotcha
 
-## Conventions
+When updating an investment asset's `net_value` via `PUT /api/assets/:id`, declare `char nv_str[64]` **before** the `upd_params[]` array on the stack. Declaring it after can cause the compiler to reuse stack space and produce wrong values.
 
-- **C Code Structure**: Repository functions named `<entity>_<action>` (e.g., `tx_list`, `tx_insert`). Service functions keep existing names (`transactions_list`, `transactions_create`). Controller functions delegate to service. Header files use `#pragma once`.
-- **Frontend API**: One API file per domain in `frontend/src/api/`, export named functions. TypeScript interfaces live in `frontend/src/types/index.ts`.
-- **Auto-registered Components**: Element Plus components are auto-registered via `unplugin-vue-components`.
-- **Transaction Type Registry**: `backend/src/common/tx_types.c` defines all transaction types with balance direction, linked direction, and PnL semantics. Use `tx_type_lookup()` instead of hard-coding type checks.
-- **Build**: Use `cmake -B build -G "Unix Makefiles"` (NOT Ninja — Ninja has stale-dependency bugs with csilk).
+### Frontend — API Layer (STRICT)
 
----
+- **NEVER** call raw `fetch()` or `axios` in Vue components
+- Every API call lives in `frontend/src/api/<domain>.ts` using the central `http` client (`frontend/src/utils/http.ts`)
+- **Exception**: `axios.get()` with `responseType: 'blob'` for CSV downloads (`http.get()` doesn't support blobs)
 
-## Security
+### Frontend — Page Layout
 
-- Passwords: RSA-OAEP (SHA-256) encryption for transport; bcrypt (csilk `CSILK_BCRYPT_DEFAULT_COST=12`) for storage.
-- CSRF: Controlled by `MINEFOLIO_ENABLE_CSRF`.
-- Multi-tenancy: Single `users` table, each query filters by `user_id` extracted from JWT.
-- JWT: `MINEFOLIO_JWT_SECRET` env var required in production; fails hard if unset.
-- OpenAPI: All routes registered via `csilk_app_get_ext` / `csilk_app_post_ext` with metadata.
+- `.page-header` uses `justify-content: space-between`; action buttons wrapped in `<div class="header-actions">` with `gap: 8px`
+- `.main` in `Layout.vue` is the single scroll container (`height: calc(100vh - 72px); overflow-y: auto`)
+- Page containers use `height: 100%; overflow: hidden` so only data areas scroll
 
----
+### Frontend — Error Resilience
 
-## Key Files Reference
+Every `onMounted` hook **MUST** wrap async initialization in `try/catch`. Use `v-loading` for loading states. Prefer `Promise.allSettled` over `Promise.all` for parallel API calls so partial failures don't crash the page.
 
-| Task | Start Here |
-|------|-----------|
-| Add new domain (full stack) | `backend/src/repositories/`, `backend/src/services/`, `backend/src/controllers/`, `backend/src/main.c` |
-| Add repository function | `backend/src/repositories/<domain>_repo.h/.c` |
-| Modify service logic | `backend/src/services/<domain>_service.c` or `<domain>_query.c` / `<domain>_write.c` |
-| Modify controller routes | `backend/src/controllers/<domain>_controller.c` |
-| DB & JSON Helpers | `backend/src/common/db.h` |
-| Balance Logic | `backend/src/common/balance.h` + `balance.c` |
-| Transaction type registry | `backend/src/common/tx_types.h` + `tx_types.c` |
-| Config persistence | `backend/src/common/config.h` + `config.c` |
-| CSV utilities | `backend/src/common/csv_utils.h` + `csv_utils.c` |
-| Context helpers | `backend/src/common/ctx.h` |
-| Response helpers | `backend/src/common/response.h` |
-| Frontend Page Reference | `frontend/src/views/DailyExpenses.vue` / `Transactions.vue` |
-| Auth Flow | `backend/src/services/auth_service.c` + `frontend/src/stores/auth.ts` |
-| Docker Deployment | `Dockerfile` |
+### Frontend — Category Cache
 
----
+`useCategoryStore` caches category trees. Call `invalidate()` after any category mutation (create, update, delete).
 
-## Known Gotchas
+### Naming
 
-1. **Curl `-d` strips newlines**: curl 8.x removes `\n` from `curl -d @file`. For CSV imports in tests, use `curl --data-binary @file` or write CSV content via heredoc (`cat > file << 'EOF'`).
-2. **Ninja stale dependencies**: The backend build may produce stale binaries with Ninja. Always use Makefiles (`-G "Unix Makefiles"`) or run `rm -rf build && cmake -B build` to force a clean rebuild.
-3. **`components.d.ts` is auto-generated**: After adding any new Element Plus component usage, run `npm run build` once to regenerate `frontend/src/components.d.ts`. Don't commit changes to it manually.
-4. **Investment sell cost_basis**: `apply_position()` reduces `cost_basis` proportionally on sell. The performance report uses a separate `total_cost_for_pnl` (excludes fee) for `avg_cost` computation — do not mix the two.
-5. **Fee row note must be non-empty**: Test queries use `note LIKE '%fee%'`. Always ensure the fee row's `note` contains a non-empty string.
-6. **Mobile wasm loading**: Capacitor WebView cannot reliably `fetch` local assets via `capacitor://` scheme. sql.js wasm MUST be embedded as base64 in the JS bundle (`src/db/generated/sql-wasm-base64.ts`). Never revert to `locateFile` + network fetch for mobile builds.
-7. **Gradle incremental builds**: After `npx cap sync android`, always run `./gradlew clean assembleDebug` to avoid stale cached assets.
-8. **Password length validation**: All password entry points (register, setup, change_password) require ≥6 characters. Do not reduce the threshold.
-9. **Investment transaction rollback**: When updating a transaction from investment to non-investment type (or vice versa), the old position MUST be rolled back AND its balance delta reversed before applying the new transaction's balance change. Never skip the old balance reversal.
-10. **JWT secret in production**: `MINEFOLIO_JWT_SECRET` must be set in production. The server fails hard if it's missing.
+- C repo functions: `<entity>_<action>` (e.g., `tx_list`, `tx_insert`)
+- C service functions: keep existing names (e.g., `transactions_list`, `transactions_create`)
+- C headers: `#pragma once`
+- Frontend API files: one per domain, named after the REST path segment
+- TypeScript interfaces: PascalCase in `frontend/src/types/index.ts`
+
+## Important Files
+
+| File | Role |
+|------|------|
+| `backend/src/main.c` | Entry point; middleware stack; route registration |
+| `backend/CMakeLists.txt` | C23 standard; FetchContent for csilk v0.5.2; optional PostgreSQL |
+| `backend/src/common/db.h` | DB pool singleton; migration runner; `db_get_num`/`db_get_int` |
+| `backend/src/common/balance.h` | `balance_apply_delta()` (incl. liability sign flip); `apply_position()` |
+| `backend/src/common/tx_types.h` | Transaction type registry — use `tx_type_lookup()`, don't hard-code |
+| `backend/src/common/response.h` | `respond_ok`, `respond_error`, etc. |
+| `backend/src/common/ctx.h` | `ctx_user_id(c)` — extract user from JWT |
+| `backend/src/common/jwt.h` | JWT generate/verify with HS256 |
+| `backend/sql/migration.sql` | SQLite schema (13 tables) |
+| `backend/sql/migration_postgres.sql` | PostgreSQL schema (BIGSERIAL, DOUBLE PRECISION) |
+| `frontend/package.json` | Scripts, dependencies, vitest config |
+| `frontend/vite.config.ts` | Desktop: port 5173, API proxy to :8080 |
+| `frontend/vite.config.mobile.ts` | Mobile: port 5174, output to `dist-mobile/` |
+| `frontend/src/utils/http.ts` | Central axios wrapper: JWT bearer, CSRF token, response unwrap |
+| `frontend/src/stores/auth.ts` | Auth state: token, user, login/logout |
+| `frontend/src/stores/category.ts` | Category tree cache with `invalidate()` |
+| `Dockerfile` | Multi-stage: backend-build → frontend-build → nginx runtime |
+| `docker-compose.yml` | Two-service compose: minefolio + nginx proxy on :80 |
+| `scripts/dev.sh` | Local dev: build backend, start server :8080, start frontend :5173 |
+| `scripts/build.sh` | Production build: cmake Release + npm run build |
+
+## Runtime / Tooling Preferences
+
+| Layer | Runtime | Package Manager | Notes |
+|-------|---------|-----------------|-------|
+| Backend | Linux (gcc-14) | CMake 3.16+ | C23 standard; GNU extensions |
+| Frontend | Node.js 20 | npm | vue-tsc strict mode required |
+| Mobile | Android (Gradle) | npm + Gradle | Capacitor 6; full Android SDK needed |
+| Docker | Ubuntu 24.04 / nginx:alpine | apt / npm | Multi-stage; local `deps/` cache for offline csilk fetch |
+
+- **Build system**: CMake with **Makefiles** — never Ninja (known stale-dependency bugs with csilk)
+- **Frontend type-checking**: `vue-tsc -b` runs before `vite build`; both must pass with zero errors
+- **Mobile wasm**: sql.js wasm is embedded as base64 in `frontend/src/db/generated/sql-wasm-base64.ts`. Never revert to `locateFile` + network fetch for mobile builds. Regenerate with:
+  ```bash
+  base64 -w0 node_modules/sql.js/dist/sql-wasm.wasm > /tmp/wasm_b64.txt
+  ```
+- **JWT secret**: `MINEFOLIO_JWT_SECRET` env var is **required** in production; server fails hard if unset
+
+## Testing & QA
+
+### Backend Integration Tests
+
+```bash
+cd backend
+./tests/test_link.sh          # 33 test cases: auth, CRUD, balance联动, PnL, CSV import/export, pagination
+./tests/test_link_nocleanup.sh # Same but keeps the temp DB for inspection
+```
+
+Tests start a real server with a temp SQLite DB, exercise all API endpoints via curl, and verify database state directly with `sqlite3`. Run after any change to balance logic, transaction handling, or investment PnL.
+
+### Frontend Tests
+
+```bash
+cd frontend
+npm test    # vitest run --config vite.config.mobile.ts (jsdom environment)
+```
+
+Frontend unit tests are currently limited; the integration test suite (`test_link.sh`) covers the critical paths end-to-end.
+
+### Manual Smoke Test
+
+```bash
+# Start both servers
+./scripts/dev.sh
+# Open http://localhost:5173, create account, add an expense, verify balance updates
+```
+
+### Known Gotchas
+
+1. **Curl `-d` strips newlines**: Use `curl --data-binary @file` or heredoc (`cat > file << 'EOF'`) for CSV content in tests.
+2. **Ninja stale dependencies**: Always use `-G "Unix Makefiles"` or run `rm -rf build && cmake -B build`.
+3. **`components.d.ts` is auto-generated**: Run `npm run build` after adding new Element Plus component usages; do not commit manual changes.
+4. **Investment sell cost_basis**: `apply_position()` reduces `cost_basis` proportionally. The PnL report uses a separate `total_cost_for_pnl` (excludes fee) for `avg_cost` — do not mix the two.
+5. **Fee row `note` must be non-empty**: Test queries use `note LIKE '%fee%'`. Fall back to literal `"fee"` when the original note is empty.
+6. **Mobile wasm loading**: Capacitor WebView cannot reliably `fetch` from `capacitor://`. The base64 embedding in `sql-wasm-base64.ts` is mandatory.
+7. **Gradle incremental builds**: After `npx cap sync android`, always run `./gradlew clean assembleDebug`.
+8. **Password length validation**: All password entry points require ≥6 characters.
+9. **Investment transaction rollback**: When changing a transaction from investment ↔ non-investment type, the old position MUST be rolled back and its balance delta reversed before applying the new transaction. Never skip the reversal.
+10. **JWT secret in production**: `MINEFOLIO_JWT_SECRET` must be set; the server exits if absent.
+
+## Commit Convention
+
+```
+type(scope): 🎯 subject
+```
+
+| Type | Emoji |
+|------|-------|
+| feat | ✨ |
+| fix | 🐛 |
+| docs | 📝 |
+| style | 🎨 |
+| refactor | ♻️ |
+| test | ✅ |
+| build | 📦 |
+| ci | 👷 |
+| chore | 🧹 |
+
+Emoji goes after the colon, one per commit. Subject is lowercase imperative mood.
