@@ -497,5 +497,19 @@ I3_POS=$(sqlite3 "$DB" "SELECT printf('%.2f',current_value) FROM assets WHERE na
 check "I3 非投资资产 current_value 透传=8888" "8888.00" "$I3_POS"
 
 echo ""
+echo "== 34. AI Trace 读取链路（回归：详情返回对象、单引号模型往返）=="
+# 直接播种一条 trace（模型名含单引号，验证读取路径对特殊字符的完整性）
+sqlite3 "$DB" "INSERT INTO ai_traces (user_id, provider, model, input_messages, output_content, system_prompt, prompt_tokens, completion_tokens, total_tokens, latency_ms, first_token_ms, tokens_per_sec, cost_usd, temperature, max_tokens, top_p, status, error_message, metadata) VALUES ((SELECT id FROM users WHERE username='linktest'), 'openai', 'gpt-4''turbo', '[]', 'hi', '', 10, 5, 15, 1200, 300, 12.5, 0.001, 0.7, 256, 0.9, 'ok', '', '{}')"
+TRACE_STATS=$(curl -s -H "$AUTH" "$BASE/ai/traces/stats")
+check "trace stats total_traces=1" "1" "$(echo "$TRACE_STATS" | jq -r '.data.total_traces | floor')"
+check "trace stats total_tokens=15" "15" "$(echo "$TRACE_STATS" | jq -r '.data.total_tokens | floor')"
+TRACE_LIST=$(curl -s -H "$AUTH" "$BASE/ai/traces?page=1&page_size=10")
+check "trace list 返回 1 条" "1" "$(echo "$TRACE_LIST" | jq -r '.data.list | length')"
+check "trace list 模型名含单引号" "gpt-4'turbo" "$(echo "$TRACE_LIST" | jq -r '.data.list[0].model')"
+TRACE_DETAIL=$(curl -s -H "$AUTH" "$BASE/ai/traces/1")
+check "trace detail 返回对象（非数组）" "object" "$(echo "$TRACE_DETAIL" | jq -r '.data | type')"
+check "trace detail 模型名含单引号" "gpt-4'turbo" "$(echo "$TRACE_DETAIL" | jq -r '.data.model')"
+check "trace detail 含 token 字段" "15" "$(echo "$TRACE_DETAIL" | jq -r '.data.total_tokens | floor')"
+echo ""
 echo "结果: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

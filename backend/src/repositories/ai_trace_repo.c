@@ -21,11 +21,11 @@ csilk_json_t* ai_trace_list(csilk_db_pool_t* pool, int64_t user_id, int64_t page
     params[pc++] = uid;
 
     if (provider && provider[0]) {
-        strcat(where, " AND provider=?");
+        strncat(where, " AND provider=?", sizeof(where) - strlen(where) - 1);
         params[pc++] = provider;
     }
     if (model && model[0]) {
-        strcat(where, " AND model=?");
+        strncat(where, " AND model=?", sizeof(where) - strlen(where) - 1);
         params[pc++] = model;
     }
 
@@ -87,4 +87,47 @@ csilk_json_t* ai_trace_stats(csilk_db_pool_t* pool, int64_t user_id) {
         "FROM ai_traces WHERE user_id=?",
         (const char*[]){uid, NULL});
     return r;
+}
+
+int64_t ai_trace_save(csilk_db_pool_t* pool, ai_trace_t* t) {
+    char uid[32], sid[32], pt[32], ct[32], tt[32];
+    char lat[32], ftt[32], tps[64], cost[64];
+    char temp[32], mtt[32], tp[32];
+
+    snprintf(uid, sizeof(uid), "%lld", (long long)t->user_id);
+    snprintf(sid, sizeof(sid), "%lld", (long long)t->session_id);
+    snprintf(pt, sizeof(pt), "%d", t->prompt_tokens);
+    snprintf(ct, sizeof(ct), "%d", t->completion_tokens);
+    snprintf(tt, sizeof(tt), "%d", t->total_tokens);
+    snprintf(lat, sizeof(lat), "%ld", t->latency_ms);
+    snprintf(ftt, sizeof(ftt), "%ld", t->first_token_ms);
+    snprintf(tps, sizeof(tps), "%.2f", t->tokens_per_sec);
+    snprintf(cost, sizeof(cost), "%.6f", t->cost_usd);
+    snprintf(temp, sizeof(temp), "%.2f", t->temperature);
+    snprintf(mtt, sizeof(mtt), "%d", t->max_tokens);
+    snprintf(tp, sizeof(tp), "%.2f", t->top_p);
+
+    const char* sql =
+        "INSERT INTO ai_traces "
+        "(user_id, session_id, provider, model, input_messages, output_content, "
+        "system_prompt, prompt_tokens, completion_tokens, total_tokens, "
+        "latency_ms, first_token_ms, tokens_per_sec, cost_usd, "
+        "temperature, max_tokens, top_p, status, error_message, metadata) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+        "RETURNING id";
+
+    const char* params[] = {
+        uid, sid, t->provider, t->model, t->input_messages, t->output_content,
+        t->system_prompt, pt, ct, tt,
+        lat, ftt, tps, cost,
+        temp, mtt, tp, t->status, t->error_message, t->metadata,
+        NULL
+    };
+
+    csilk_json_t* r = csilk_db_query_param_json(pool, sql, params);
+    int64_t id = 0;
+    if (r && csilk_json_array_size(r) > 0)
+        id = db_get_int(csilk_json_array_get(r, 0), "id");
+    csilk_json_free(r);
+    return id;
 }

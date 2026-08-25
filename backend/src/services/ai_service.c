@@ -150,6 +150,9 @@ void ai_chat_handler(csilk_ctx_t* c) {
     const char* model_override = csilk_json_get_string(body, "model");
     const char* provider_override = csilk_json_get_string(body, "provider");
     int regenerate = csilk_json_get_bool(body, "regenerate");
+    double req_temperature = db_get_num(body, "temperature");
+    int req_max_tokens = (int)db_get_int(body, "max_tokens");
+    double req_top_p = db_get_num(body, "top_p");
 
     if (!content || content[0] == '\0') {
         csilk_json_free(body);
@@ -238,6 +241,7 @@ void ai_chat_handler(csilk_ctx_t* c) {
     ai_trace_t trace;
     ai_trace_init(&trace, user_id, sid);
     ai_trace_set_provider(&trace, prov->id, model_buf);
+    ai_trace_set_params(&trace, req_temperature, req_max_tokens, req_top_p);
     ai_trace_set_system_prompt(&trace, g_config.system_prompt);
     sctx.trace = &trace;
 
@@ -289,7 +293,15 @@ void ai_chat_handler(csilk_ctx_t* c) {
         .user_data = &sctx,
     };
     csilk_ai_chat_response_t ai_res = {0};
+    req.temperature = req_temperature;
+    req.top_p = req_top_p;
+    req.max_tokens = req_max_tokens;
     int rc = csilk_ai_chat(ai_inst, &req, &ai_res);
+    trace.prompt_tokens = ai_res.prompt_tokens;
+    trace.completion_tokens = ai_res.completion_tokens;
+    trace.total_tokens = ai_res.total_tokens > 0
+        ? ai_res.total_tokens
+        : (ai_res.prompt_tokens + ai_res.completion_tokens);
     if (rc != 0) {
         ai_trace_finish(&trace, "error", "AI request failed");
         ai_trace_save(db_get_pool(), &trace);
