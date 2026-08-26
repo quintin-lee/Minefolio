@@ -5,6 +5,16 @@
 # the check (--dry-run) and the fix (-i). Do NOT add a --style override on only
 # one of the two paths, or fixed output could still fail the check while the
 # stamp hides the drift.
+# NOTE: SOURCES entries are space-joined; individual paths must not contain spaces.
+
+foreach(v CLANG_FORMAT STAMP)
+    if(NOT DEFINED ${v} OR "${${v}}" STREQUAL "")
+        message(FATAL_ERROR "${v} is required")
+    endif()
+endforeach()
+if("${SOURCES}" STREQUAL "")
+    message(FATAL_ERROR "SOURCES is empty; nothing to format")
+endif()
 
 separate_arguments(SOURCES)
 
