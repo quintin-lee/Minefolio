@@ -219,8 +219,29 @@ on_chunk(const char* delta, void* data)
         csilk_sse_send(sc->ctx, NULL, NULL);
     }
 
+    struct timespec real_now;
+    clock_gettime(CLOCK_REALTIME, &real_now);
+    int64_t ts_ms = (int64_t)real_now.tv_sec * 1000 + (real_now.tv_nsec / 1000000);
+
+    struct tm tm_buf;
+    localtime_r(&real_now.tv_sec, &tm_buf);
+    char time_str[64];
+    int  ms = (int)(real_now.tv_nsec / 1000000);
+    snprintf(time_str,
+             sizeof(time_str),
+             "%04d-%02d-%02d %02d:%02d:%02d.%03d",
+             tm_buf.tm_year + 1900,
+             tm_buf.tm_mon + 1,
+             tm_buf.tm_mday,
+             tm_buf.tm_hour,
+             tm_buf.tm_min,
+             tm_buf.tm_sec,
+             ms);
+
     csilk_json_t* msg = csilk_json_object();
     csilk_json_add_string(msg, "content", delta);
+    csilk_json_add_number(msg, "timestamp", (double)ts_ms);
+    csilk_json_add_string(msg, "time", time_str);
     size_t slen = 0;
     char*  s = csilk_json_serialize(msg, &slen);
     csilk_sse_send(sc->ctx, "delta", s ? s : "");
