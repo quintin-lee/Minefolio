@@ -110,6 +110,56 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  // Renders streamed deltas at a steady cadence decoupled from the bursty
+  // arrival pattern of SSE-over-TCP: network chunks enqueue here, a timer
+  // drains characters adaptively (faster when backlogged) into a reactive
+  // message so the UI types smoothly instead of jumping per network batch.
+  class SmoothStreamWriter {
+    private buf = ''
+    private timer: number | null = null
+
+    constructor(private readonly target: AiMessage) {
+      this.timer = window.setInterval(() => this.tick(), 16)
+    }
+
+    push(text: string) {
+      this.buf += text
+    }
+
+    private tick() {
+      if (!this.buf) return
+      const step = Math.max(1, Math.ceil(this.buf.length / 40))
+      this.target.content += this.buf.slice(0, step)
+      this.buf = this.buf.slice(step)
+    }
+
+    async finish(): Promise<void> {
+      await new Promise<void>((resolve) => {
+        const check = () => {
+          if (!this.buf) resolve()
+          else setTimeout(check, 16)
+        }
+        check()
+      })
+      this.stop()
+    }
+
+    flushNow() {
+      if (this.buf) {
+        this.target.content += this.buf
+        this.buf = ''
+      }
+      this.stop()
+    }
+
+    private stop() {
+      if (this.timer !== null) {
+        clearInterval(this.timer)
+        this.timer = null
+      }
+    }
+  }
+
   async function regenerateLastMessage() {
     if (isStreaming.value || messages.value.length === 0) return
     let lastUserIdx = -1
@@ -139,6 +189,7 @@ export const useChatStore = defineStore('chat', () => {
     assistantMsg = messages.value[messages.value.length - 1]!
 
     isStreaming.value = true
+    const writer = new SmoothStreamWriter(assistantMsg)
 
     try {
       for await (const chunk of chatStream({
@@ -149,12 +200,15 @@ export const useChatStore = defineStore('chat', () => {
         regenerate: true,
       })) {
         if (chunk.type === 'delta' && chunk.content) {
-          assistantMsg.content += chunk.content
+          writer.push(chunk.content)
         } else if (chunk.type === 'error') {
+          writer.flushNow()
           assistantMsg.content = `⚠️ ${chunk.message}`
         }
       }
+      await writer.finish()
     } finally {
+      writer.flushNow()
       isStreaming.value = false
     }
   }
@@ -187,6 +241,7 @@ export const useChatStore = defineStore('chat', () => {
     assistantMsg = messages.value[messages.value.length - 1]!
 
     isStreaming.value = true
+    const writer = new SmoothStreamWriter(assistantMsg)
 
     try {
       for await (const chunk of chatStream({
@@ -196,11 +251,13 @@ export const useChatStore = defineStore('chat', () => {
         provider: currentProvider.value,
       })) {
         if (chunk.type === 'delta' && chunk.content) {
-          assistantMsg.content += chunk.content
+          writer.push(chunk.content)
         } else if (chunk.type === 'error') {
+          writer.flushNow()
           assistantMsg.content = `⚠️ ${chunk.message}`
         }
       }
+      await writer.finish()
 
       // Refresh session info
       if (currentSessionId.value) {
@@ -220,6 +277,7 @@ export const useChatStore = defineStore('chat', () => {
         }
       }
     } finally {
+      writer.flushNow()
       isStreaming.value = false
     }
   }
