@@ -369,7 +369,9 @@ void ai_chat_handler(csilk_ctx_t* c) {
             .model = model_buf,
             .messages = msgs,
             .message_count = (size_t)mc,
-            .stream = 0,
+            .stream = 1,
+            .on_chunk = on_chunk,
+            .user_data = &sctx,
             .tools = (csilk_ai_tool_t*)tools,
             .tool_count = tool_count,
             .tool_choice = "auto",
@@ -389,23 +391,9 @@ void ai_chat_handler(csilk_ctx_t* c) {
             break;
         }
 
-
         if (ai_res.tool_call_count == 0) {
-            const char* text = ai_res.content ?: "";
-            if (text[0]) {
-                size_t tlen = strlen(text);
-                size_t pos = 0;
-                while (pos < tlen) {
-                    size_t remain = tlen - pos;
-                    size_t chunk_size = utf8_safe_chunk_len(text + pos, 64, remain);
-                    char chunk[256];
-                    memcpy(chunk, text + pos, chunk_size);
-                    chunk[chunk_size] = '\0';
-                    on_chunk(chunk, &sctx);
-                    pos += chunk_size;
-                }
-                ai_message_insert(pool, sid, "assistant", sctx.accumulated ?: text, model_buf);
-            }
+            const char* text = ai_res.content ?: (sctx.accumulated ?: "");
+            ai_message_insert(pool, sid, "assistant", text, model_buf);
             csilk_ai_chat_response_free(&ai_res);
             got_text = 1;
             break;
