@@ -117,7 +117,15 @@ typedef struct {
     size_t len;
     ai_trace_t* trace;
     struct timespec last_send_time;
+    int sse_initialized;
 } stream_context_t;
+
+static void ensure_sse_init(stream_context_t* sc) {
+    if (!sc || sc->sse_initialized) return;
+    csilk_sse_init(sc->ctx);
+    clock_gettime(CLOCK_MONOTONIC, &sc->last_send_time);
+    sc->sse_initialized = 1;
+}
 
 static size_t utf8_safe_chunk_len(const char* s, size_t max_len, size_t total_remain) {
     if (total_remain <= max_len) return total_remain;
@@ -131,6 +139,8 @@ static size_t utf8_safe_chunk_len(const char* s, size_t max_len, size_t total_re
 static void on_chunk(const char* delta, void* data) {
     stream_context_t* sc = (stream_context_t*)data;
     if (!delta || !sc || !sc->ctx) return;
+
+    ensure_sse_init(sc);
 
     if (sc->trace) {
         ai_trace_record_first_token(sc->trace);
@@ -330,10 +340,6 @@ void ai_chat_handler(csilk_ctx_t* c) {
     ai_trace_serialize_messages(&trace, input_arr);
     csilk_json_free(input_arr);
 
-    /* SSE init */
-    csilk_sse_init(c);
-    clock_gettime(CLOCK_MONOTONIC, &sctx.last_send_time);
-
     /* persist user message (skip on regenerate — already in history) */
     if (!regenerate) {
         ai_message_insert(pool, sid, "user", content, model_buf);
@@ -386,6 +392,7 @@ void ai_chat_handler(csilk_ctx_t* c) {
             ai_trace_finish(&trace, "error", (ai_res.error_message && ai_res.error_message[0]) ? ai_res.error_message : "AI request failed");
             ai_trace_save(db_get_pool(), &trace);
             ai_trace_free(&trace);
+            ensure_sse_init(&sctx);
             send_error(c, (ai_res.error_message && ai_res.error_message[0]) ? ai_res.error_message : "AI request failed");
             round = max_rounds;
             break;
@@ -402,6 +409,7 @@ void ai_chat_handler(csilk_ctx_t* c) {
         for (size_t t = 0; t < ai_res.tool_call_count; t++) {
             csilk_ai_tool_call_t* tc = &ai_res.tool_calls[t];
 
+            ensure_sse_init(&sctx);
             csilk_json_t* tc_evt = csilk_json_object();
             csilk_json_add_string(tc_evt, "id", tc->id ?: "");
             csilk_json_add_string(tc_evt, "name", tc->name ?: "");
@@ -466,6 +474,7 @@ void ai_chat_handler(csilk_ctx_t* c) {
     ai_trace_finish(&trace, got_text ? "ok" : "error", NULL);
     ai_trace_save(db_get_pool(), &trace);
     ai_trace_free(&trace);
+    ensure_sse_init(&sctx);
     send_done(c);
 
     if (need_free_ai && ai_inst) csilk_ai_free(ai_inst);
