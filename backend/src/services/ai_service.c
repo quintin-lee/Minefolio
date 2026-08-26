@@ -543,37 +543,33 @@ ai_chat_handler(csilk_ctx_t* c)
             free(s);
             csilk_json_free(tr_evt);
 
-            csilk_json_t* asst_msg = csilk_json_object();
-            csilk_json_add_string(asst_msg, "role", "assistant");
-            csilk_json_add_string(asst_msg, "content", "");
-            csilk_json_t* tc_arr = csilk_json_array();
-            csilk_json_t* tc_obj = csilk_json_object();
-            csilk_json_add_string(tc_obj, "id", tc->id ?: "");
-            csilk_json_add_string(tc_obj, "type", "function");
-            csilk_json_t* fn_obj = csilk_json_object();
-            csilk_json_add_string(fn_obj, "name", tc->name ?: "");
-            csilk_json_add_string(fn_obj, "arguments", tc->arguments ?: "");
-            csilk_json_add_object(tc_obj, "function", fn_obj);
-            csilk_json_array_append(tc_arr, tc_obj);
-            csilk_json_add_array(asst_msg, "tool_calls", tc_arr);
-            size_t msg_len = 0;
-            char*  msg_str = csilk_json_serialize(asst_msg, &msg_len);
-            csilk_json_free(asst_msg);
-
-            csilk_json_t* tool_msg = csilk_json_object();
-            csilk_json_add_string(tool_msg, "role", "tool");
-            csilk_json_add_string(tool_msg, "tool_call_id", tc->id ?: "");
-            csilk_json_add_string(tool_msg, "content", result);
-            size_t tool_msg_len = 0;
-            char*  tool_msg_str = csilk_json_serialize(tool_msg, &tool_msg_len);
-            csilk_json_free(tool_msg);
-
-            mc += 2;
+            /* Build assistant message with tool_calls using struct fields */
+            mc++;
             msgs = (csilk_ai_message_t*)realloc(msgs, sizeof(csilk_ai_message_t) * (size_t)mc);
-            msgs[mc - 2] = (csilk_ai_message_t){.role = "assistant", .content = msg_str};
-            msgs[mc - 1] = (csilk_ai_message_t){.role = "tool", .content = tool_msg_str};
+            msgs[mc - 1] = (csilk_ai_message_t){
+                .role = "assistant",
+                .content = NULL,
+                .tool_call_count = 1,
+                .tool_calls = calloc(1, sizeof(csilk_ai_tool_call_t)),
+            };
+            if (msgs[mc - 1].tool_calls) {
+                msgs[mc - 1].tool_calls[0].id = strdup(tc->id ?: "");
+                msgs[mc - 1].tool_calls[0].name = strdup(tc->name ?: "");
+                msgs[mc - 1].tool_calls[0].arguments = strdup(tc->arguments ?: "{}");
+            }
 
-            free(result);
+            /* Build tool result message */
+            mc++;
+            msgs = (csilk_ai_message_t*)realloc(msgs, sizeof(csilk_ai_message_t) * (size_t)mc);
+            msgs[mc - 1] = (csilk_ai_message_t){
+                .role = "tool",
+                .content = result,
+                .tool_call_id = strdup(tc->id ?: ""),
+            };
+            /* result is now owned by msgs[mc-1].content; don't free it here */
+            result = NULL;
+
+
         }
 
         csilk_ai_chat_response_free(&ai_res);
@@ -597,9 +593,16 @@ ai_chat_handler(csilk_ctx_t* c)
     /* Free dynamically allocated content strings from tool-call rounds.
      * The first 1+hsz+1 messages point into g_config/history/body (not owned). */
     for (int i = 1 + hsz + 1; i < mc; i++) {
-        if (msgs[i].content) {
-            free((void*)msgs[i].content);
+        free((void*)msgs[i].content);
+        if (msgs[i].tool_calls) {
+            for (size_t j = 0; j < msgs[i].tool_call_count; j++) {
+                free(msgs[i].tool_calls[j].id);
+                free(msgs[i].tool_calls[j].name);
+                free(msgs[i].tool_calls[j].arguments);
+            }
+            free(msgs[i].tool_calls);
         }
+        free((void*)msgs[i].tool_call_id);
     }
     free(msgs);
     csilk_json_free(history);
