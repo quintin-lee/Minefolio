@@ -126,7 +126,7 @@ export const useChatStore = defineStore('chat', () => {
     messages.value = messages.value.slice(0, lastUserIdx + 1)
 
     const assistantId = Date.now() + 1
-    const assistantMsg: AiMessage = {
+    let assistantMsg: AiMessage = {
       id: assistantId,
       session_id: currentSessionId.value!,
       role: 'assistant',
@@ -134,6 +134,9 @@ export const useChatStore = defineStore('chat', () => {
       created_at: new Date().toISOString(),
     }
     messages.value.push(assistantMsg)
+    // Rebind to the reactive proxy stored in the array: mutating the raw
+    // object bypasses Vue reactivity and breaks typewriter rendering.
+    assistantMsg = messages.value[messages.value.length - 1]!
 
     isStreaming.value = true
 
@@ -171,7 +174,7 @@ export const useChatStore = defineStore('chat', () => {
     messages.value.push(userMsg)
 
     const assistantId = Date.now() + 1
-    const assistantMsg: AiMessage = {
+    let assistantMsg: AiMessage = {
       id: assistantId,
       session_id: currentSessionId.value!,
       role: 'assistant',
@@ -179,6 +182,9 @@ export const useChatStore = defineStore('chat', () => {
       created_at: new Date().toISOString(),
     }
     messages.value.push(assistantMsg)
+    // Rebind to the reactive proxy stored in the array: mutating the raw
+    // object bypasses Vue reactivity and breaks typewriter rendering.
+    assistantMsg = messages.value[messages.value.length - 1]!
 
     isStreaming.value = true
 
