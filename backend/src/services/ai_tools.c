@@ -162,6 +162,16 @@ schema_web_search(void)
     return make_schema(props, req, 1);
 }
 
+static csilk_json_t*
+schema_get_exchange_rate(void)
+{
+    csilk_json_t* props = csilk_json_object();
+    add_prop(props, "base_currency", "string", "Base currency code, e.g. 'USD', 'CNY', 'EUR', 'JPY', 'HKD', 'GBP', 'SGD', 'AUD', 'CAD' (default: 'USD')");
+    add_prop(props, "target_currency", "string", "Target currency code to convert to, e.g. 'CNY', 'USD', 'JPY', 'EUR', 'HKD' (optional)");
+    add_prop(props, "amount", "number", "Amount of base currency to convert (default: 1.0)");
+    return make_schema(props, NULL, 0);
+}
+
 /* ========================================================================= */
 /*  Tool Registry Array                                                      */
 /* ========================================================================= */
@@ -258,6 +268,14 @@ static csilk_ai_tool_t s_tools[] = {
                 .description = "联网搜索工具，获取最新的金融市场行情、宏观经济数据、政策新闻与网络知识",
                 .parameters_json = NULL,
             }, },
+    {
+     .type = "function",
+     .function =
+            {
+                .name = "get_exchange_rate",
+                .description = "实时获取外汇汇率和货币兑换计算结果（如 USD/CNY、EUR/CNY、JPY/CNY、HKD/CNY、GBP/CNY 等最新行情）",
+                .parameters_json = NULL,
+            }, },
 };
 
 static int s_tools_initialized = 0;
@@ -279,6 +297,7 @@ ensure_tools_init(void)
     s_tools[8].function.parameters_json = schema_calculate_compound_interest();
     s_tools[9].function.parameters_json = schema_calculate_loan_repayment();
     s_tools[10].function.parameters_json = schema_web_search();
+    s_tools[11].function.parameters_json = schema_get_exchange_rate();
     s_tools_initialized = 1;
 }
 
@@ -878,6 +897,115 @@ url_encode(CURL* curl, const char* str)
 }
 
 static char*
+exec_get_exchange_rate(csilk_db_pool_t* pool, int64_t user_id, csilk_json_t* args)
+{
+    (void)pool;
+    (void)user_id;
+
+    const char* base_in = arg_str(args, "base_currency", "USD");
+    const char* target_in = arg_str(args, "target_currency", NULL);
+    double amount = arg_double(args, "amount", 1.0);
+    if (amount <= 0) amount = 1.0;
+
+    char base[16] = "USD";
+    if (base_in && base_in[0]) {
+        size_t blen = strlen(base_in);
+        if (blen > 15) blen = 15;
+        for (size_t i = 0; i < blen; i++) {
+            base[i] = (char)toupper((unsigned char)base_in[i]);
+        }
+        base[blen] = '\0';
+    }
+
+    char target[16] = "";
+    if (target_in && target_in[0]) {
+        size_t tlen = strlen(target_in);
+        if (tlen > 15) tlen = 15;
+        for (size_t i = 0; i < tlen; i++) {
+            target[i] = (char)toupper((unsigned char)target_in[i]);
+        }
+        target[tlen] = '\0';
+    }
+
+    static int s_curl_inited = 0;
+    if (!s_curl_inited) {
+        curl_global_init(CURL_GLOBAL_DEFAULT);
+        s_curl_inited = 1;
+    }
+
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        return strdup("{\"error\":\"failed to initialize HTTP client\"}");
+    }
+
+    char url[256];
+    snprintf(url, sizeof(url), "https://open.er-api.com/v6/latest/%s", base);
+
+    curl_buf_t buf = { .data = malloc(8192), .size = 0, .cap = 8192 };
+    if (buf.data) buf.data[0] = '\0';
+
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_cb);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buf);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 6000L);
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "Mozilla/5.0 Minefolio/1.0");
+
+    CURLcode rc = curl_easy_perform(curl);
+    csilk_json_t* res_obj = csilk_json_object();
+
+    if (rc == CURLE_OK && buf.size > 0) {
+        csilk_json_t* fx_json = csilk_json_parse(buf.data);
+        if (fx_json) {
+            const char* res_code = csilk_json_get_string(fx_json, "result");
+            if (res_code && strcmp(res_code, "success") == 0) {
+                csilk_json_add_string(res_obj, "status", "success");
+                csilk_json_add_string(res_obj, "base_currency", base);
+                csilk_json_add_string(res_obj, "updated_time_utc", csilk_json_get_string(fx_json, "time_last_update_utc") ?: "");
+                csilk_json_add_number(res_obj, "amount", amount);
+
+                const csilk_json_t* rates = csilk_json_get(fx_json, "rates");
+                if (rates) {
+                    if (target[0] != '\0') {
+                        const csilk_json_t* tr = csilk_json_get(rates, target);
+                        if (tr && csilk_json_is_number(tr)) {
+                            double tr_val = csilk_json_number_value(tr);
+                            csilk_json_add_string(res_obj, "target_currency", target);
+                            csilk_json_add_number(res_obj, "rate", tr_val);
+                            csilk_json_add_number(res_obj, "converted_amount", round_to_2(amount * tr_val));
+                        }
+                    }
+
+                    /* Major key rates list */
+                    csilk_json_t* major = csilk_json_object();
+                    const char* major_keys[] = {"CNY", "USD", "EUR", "JPY", "HKD", "GBP", "SGD", "AUD", "CAD", "CHF", "KRW"};
+                    for (size_t k = 0; k < sizeof(major_keys)/sizeof(major_keys[0]); k++) {
+                        const csilk_json_t* kr = csilk_json_get(rates, major_keys[k]);
+                        if (kr && csilk_json_is_number(kr)) {
+                            csilk_json_add_number(major, major_keys[k], csilk_json_number_value(kr));
+                        }
+                    }
+                    csilk_json_add_object(res_obj, "major_rates", major);
+                }
+
+                csilk_json_free(fx_json);
+                free(buf.data);
+                curl_easy_cleanup(curl);
+                return json_to_str(res_obj);
+            }
+            csilk_json_free(fx_json);
+        }
+    }
+
+    free(buf.data);
+    curl_easy_cleanup(curl);
+    csilk_json_add_string(res_obj, "status", "error");
+    csilk_json_add_string(res_obj, "message", "failed to fetch real-time exchange rates from server");
+    return json_to_str(res_obj);
+}
+
+static char*
 exec_web_search(csilk_db_pool_t* pool, int64_t user_id, csilk_json_t* args)
 {
     (void)pool;
@@ -898,13 +1026,67 @@ exec_web_search(csilk_db_pool_t* pool, int64_t user_id, csilk_json_t* args)
         s_curl_inited = 1;
     }
 
+    const char* tavily_key = getenv("TAVILY_API_KEY");
+    const char* bocha_key = getenv("BOCHA_API_KEY");
+    const char* serper_key = getenv("SERPER_API_KEY");
+
+    /* If query is asking about foreign exchange / currency rates, handle automatically via live FX API */
+    int is_fx_query = 0;
+    if (strstr(query, "汇率") || strstr(query, "外汇") || strstr(query, "exchange rate") ||
+        strstr(query, "rate") || strstr(query, "CNY") || strstr(query, "USD") ||
+        strstr(query, "JPY") || strstr(query, "EUR") || strstr(query, "HKD") ||
+        strstr(query, "GBP") || strstr(query, "兑换")) {
+        is_fx_query = 1;
+    }
+
+    if (is_fx_query && (!tavily_key || !tavily_key[0]) && (!bocha_key || !bocha_key[0]) && (!serper_key || !serper_key[0])) {
+        const char* base_curr = "USD";
+        if (strstr(query, "CNY") || strstr(query, "人民币")) {
+            base_curr = "USD";
+        } else if (strstr(query, "EUR") || strstr(query, "欧元")) {
+            base_curr = "EUR";
+        } else if (strstr(query, "JPY") || strstr(query, "日元")) {
+            base_curr = "JPY";
+        } else if (strstr(query, "GBP") || strstr(query, "英镑")) {
+            base_curr = "GBP";
+        } else if (strstr(query, "HKD") || strstr(query, "港币") || strstr(query, "港元")) {
+            base_curr = "HKD";
+        }
+
+        csilk_json_t* fx_args = csilk_json_object();
+        csilk_json_add_string(fx_args, "base_currency", base_curr);
+        csilk_json_add_string(fx_args, "target_currency", "CNY");
+        char* fx_res = exec_get_exchange_rate(pool, user_id, fx_args);
+        csilk_json_free(fx_args);
+
+        if (fx_res) {
+            csilk_json_t* fx_obj = csilk_json_parse(fx_res);
+            free(fx_res);
+            if (fx_obj) {
+                csilk_json_t* s_res = csilk_json_object();
+                csilk_json_add_string(s_res, "query", query);
+                csilk_json_add_string(s_res, "provider", "realtime_forex_feed");
+                csilk_json_add_number(s_res, "results_count", 1.0);
+                csilk_json_t* arr = csilk_json_array();
+                csilk_json_t* it = csilk_json_object();
+                csilk_json_add_string(it, "title", "实时外汇汇率行情与中间价数据");
+                csilk_json_add_string(it, "url", "https://open.er-api.com");
+                size_t jlen = 0;
+                char* jtxt = csilk_json_serialize(fx_obj, &jlen);
+                csilk_json_add_string(it, "snippet", jtxt ?: "");
+                free(jtxt);
+                csilk_json_array_append(arr, it);
+                csilk_json_add_array(s_res, "results", arr);
+                csilk_json_free(fx_obj);
+                return json_to_str(s_res);
+            }
+        }
+    }
+
     CURL* curl = curl_easy_init();
     if (!curl) {
         return strdup("{\"error\":\"failed to initialize HTTP client\"}");
     }
-
-    const char* tavily_key = getenv("TAVILY_API_KEY");
-    const char* bocha_key = getenv("BOCHA_API_KEY");
 
     curl_buf_t buf = { .data = malloc(4096), .size = 0, .cap = 4096 };
     if (buf.data) buf.data[0] = '\0';
@@ -1025,9 +1207,62 @@ exec_web_search(csilk_db_pool_t* pool, int64_t user_id, csilk_json_t* args)
                 return json_to_str(res_obj);
             }
         }
+    } else if (serper_key && serper_key[0]) {
+        /* 3. Serper Google Search API */
+        csilk_json_t* req_body = csilk_json_object();
+        csilk_json_add_string(req_body, "q", query);
+        csilk_json_add_number(req_body, "num", (double)max_results);
+
+        size_t post_len = 0;
+        char* post_data = csilk_json_serialize(req_body, &post_len);
+        csilk_json_free(req_body);
+
+        char auth_hdr[256];
+        snprintf(auth_hdr, sizeof(auth_hdr), "X-API-KEY: %s", serper_key);
+
+        struct curl_slist* headers = NULL;
+        headers = curl_slist_append(headers, "Content-Type: application/json");
+        headers = curl_slist_append(headers, auth_hdr);
+
+        curl_easy_setopt(curl, CURLOPT_URL, "https://google.serper.dev/search");
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, post_data);
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_cb);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buf);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 8000L);
+
+        CURLcode rc = curl_easy_perform(curl);
+        curl_slist_free_all(headers);
+        free(post_data);
+
+        if (rc == CURLE_OK && buf.size > 0) {
+            csilk_json_t* sp_res = csilk_json_parse(buf.data);
+            if (sp_res) {
+                csilk_json_add_string(res_obj, "provider", "serper");
+                const csilk_json_t* org = csilk_json_get(sp_res, "organic");
+                if (org && csilk_json_is_array(org)) {
+                    csilk_json_t* parsed_results = csilk_json_array();
+                    size_t cnt = csilk_json_array_size(org);
+                    for (size_t i = 0; i < cnt && (int64_t)i < max_results; i++) {
+                        const csilk_json_t* it = csilk_json_array_get(org, i);
+                        csilk_json_t* out_it = csilk_json_object();
+                        csilk_json_add_string(out_it, "title", csilk_json_get_string(it, "title") ?: "");
+                        csilk_json_add_string(out_it, "url", csilk_json_get_string(it, "link") ?: "");
+                        csilk_json_add_string(out_it, "snippet", csilk_json_get_string(it, "snippet") ?: "");
+                        csilk_json_array_append(parsed_results, out_it);
+                    }
+                    csilk_json_add_number(res_obj, "results_count", (double)csilk_json_array_size(parsed_results));
+                    csilk_json_add_array(res_obj, "results", parsed_results);
+                }
+                csilk_json_free(sp_res);
+                free(buf.data);
+                curl_easy_cleanup(curl);
+                return json_to_str(res_obj);
+            }
+        }
     }
 
-    /* 3. DuckDuckGo Free Fallback Search */
+    /* 4. DuckDuckGo Free Fallback Search */
     char* enc_q = url_encode(curl, query);
     char url[512];
     snprintf(url, sizeof(url), "https://api.duckduckgo.com/?q=%s&format=json&no_html=1&skip_disambig=1", enc_q);
@@ -1040,7 +1275,7 @@ exec_web_search(csilk_db_pool_t* pool, int64_t user_id, csilk_json_t* args)
     curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_cb);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buf);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 6000L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 4000L);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Minefolio/1.0");
 
@@ -1130,6 +1365,8 @@ ai_tools_execute(csilk_db_pool_t* pool, int64_t user_id, const char* name, const
         result = exec_calculate_loan_repayment(pool, user_id, args);
     } else if (strcmp(name, "web_search") == 0) {
         result = exec_web_search(pool, user_id, args);
+    } else if (strcmp(name, "get_exchange_rate") == 0) {
+        result = exec_get_exchange_rate(pool, user_id, args);
     } else {
         result = strdup("{\"error\":\"unknown tool\"}");
     }
