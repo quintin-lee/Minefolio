@@ -110,85 +110,6 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-class SmoothStreamWriter {
-  private queue: string[] = []
-  private targetMsg: AiMessage
-  private assembled: string = ''
-  private isDone: boolean = false
-  private timer: number | null = null
-
-  constructor(targetMsg: AiMessage) {
-    this.targetMsg = targetMsg
-    this.startLoop()
-  }
-
-  push(text: string) {
-    for (const char of text) {
-      this.queue.push(char)
-    }
-  }
-
-  markDone() {
-    this.isDone = true
-  }
-
-  private startLoop() {
-    const tick = () => {
-      if (this.queue.length > 0) {
-        let charsToTake = 1
-        const qlen = this.queue.length
-        if (qlen > 300) charsToTake = 24
-        else if (qlen > 150) charsToTake = 12
-        else if (qlen > 60) charsToTake = 6
-        else if (qlen > 20) charsToTake = 3
-        else if (qlen > 6) charsToTake = 2
-
-        const slice = this.queue.splice(0, charsToTake).join('')
-        this.assembled += slice
-        this.targetMsg.content = this.assembled
-      }
-
-      if (this.isDone && this.queue.length === 0) {
-        if (this.timer !== null) {
-          clearInterval(this.timer)
-          this.timer = null
-        }
-      }
-    }
-
-    this.timer = window.setInterval(tick, 16)
-  }
-
-  async finish(): Promise<void> {
-    this.markDone()
-    return new Promise<void>((resolve) => {
-      const check = () => {
-        if (this.queue.length === 0) {
-          if (this.timer !== null) {
-            clearInterval(this.timer)
-            this.timer = null
-          }
-          resolve()
-        } else {
-          setTimeout(check, 16)
-        }
-      }
-      check()
-    })
-  }
-
-  flushNow() {
-    if (this.queue.length > 0) {
-      this.assembled += this.queue.splice(0, this.queue.length).join('')
-      this.targetMsg.content = this.assembled
-    }
-    if (this.timer !== null) {
-      clearInterval(this.timer)
-      this.timer = null
-    }
-  }
-}
-
   async function regenerateLastMessage() {
     if (isStreaming.value || messages.value.length === 0) return
     let lastUserIdx = -1
@@ -215,7 +136,6 @@ class SmoothStreamWriter {
     messages.value.push(assistantMsg)
 
     isStreaming.value = true
-    const writer = new SmoothStreamWriter(assistantMsg)
 
     try {
       for await (const chunk of chatStream({
@@ -226,17 +146,12 @@ class SmoothStreamWriter {
         regenerate: true,
       })) {
         if (chunk.type === 'delta' && chunk.content) {
-          writer.push(chunk.content)
+          assistantMsg.content += chunk.content
         } else if (chunk.type === 'error') {
-          writer.flushNow()
           assistantMsg.content = `⚠️ ${chunk.message}`
         }
       }
-      await writer.finish()
-    } catch {
-      writer.flushNow()
     } finally {
-      writer.flushNow()
       isStreaming.value = false
     }
   }
@@ -266,7 +181,6 @@ class SmoothStreamWriter {
     messages.value.push(assistantMsg)
 
     isStreaming.value = true
-    const writer = new SmoothStreamWriter(assistantMsg)
 
     try {
       for await (const chunk of chatStream({
@@ -276,13 +190,11 @@ class SmoothStreamWriter {
         provider: currentProvider.value,
       })) {
         if (chunk.type === 'delta' && chunk.content) {
-          writer.push(chunk.content)
+          assistantMsg.content += chunk.content
         } else if (chunk.type === 'error') {
-          writer.flushNow()
           assistantMsg.content = `⚠️ ${chunk.message}`
         }
       }
-      await writer.finish()
 
       // Refresh session info
       if (currentSessionId.value) {
@@ -301,10 +213,7 @@ class SmoothStreamWriter {
           }
         }
       }
-    } catch {
-      writer.flushNow()
     } finally {
-      writer.flushNow()
       isStreaming.value = false
     }
   }
