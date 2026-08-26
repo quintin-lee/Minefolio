@@ -166,7 +166,10 @@
                   <span class="thinking-text">思考中...</span>
                 </div>
                 <!-- Otherwise render markdown content -->
-                <div v-else class="message-content" v-html="renderMarkdown(msg.content)"></div>
+                <div v-else class="message-content" :class="{ 'streaming-active': chat.isStreaming && idx === chat.messages.length - 1 && msg.role === 'assistant' }">
+                  <span v-html="renderMarkdown(msg.content)"></span>
+                  <span v-if="chat.isStreaming && idx === chat.messages.length - 1 && msg.role === 'assistant'" class="typing-cursor"></span>
+                </div>
                 <!-- Assistant Action Toolbar -->
                 <div v-if="msg.role === 'assistant' && msg.content && !chat.isStreaming" class="message-actions">
                   <button class="msg-action-btn" title="复制回答" @click="copyText(msg.content)">
@@ -1040,6 +1043,22 @@ onMounted(async () => {
   color: var(--mf-text-main);
   border-bottom-left-radius: 2px;
   backdrop-filter: blur(12px);
+}
+
+.typing-cursor {
+  display: inline-block;
+  width: 7px;
+  height: 15px;
+  background-color: var(--mf-primary, #00d4ff);
+  margin-left: 4px;
+  vertical-align: -2px;
+  animation: cursor-blink 0.8s infinite;
+  border-radius: 1px;
+}
+
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
 }
 
 /* Markdown Specifics inside Assistant Messages */
