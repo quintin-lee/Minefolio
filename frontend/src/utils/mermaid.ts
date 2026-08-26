@@ -12,7 +12,7 @@ export interface DiagramTypeInfo {
 }
 
 /**
- * Standard Chinese font family stack with dark tech primary fallbacks.
+ * Standard Chinese & CJK font family stack with dark tech primary fallbacks.
  */
 const CJK_FONT_FAMILY =
   "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'WenQuanYi Micro Hei', 'Noto Sans CJK SC', 'Source Han Sans CN', sans-serif"
@@ -39,6 +39,7 @@ const MINELOFIO_THEME_VARIABLES = {
   clusterBkg: 'rgba(15, 23, 42, 0.85)',
   clusterBorder: 'rgba(0, 212, 255, 0.35)',
   defaultLinkColor: '#38bdf8',
+  titleColor: '#00d4ff',
 
   // Sequence
   actorBkg: '#0f2438',
@@ -113,7 +114,7 @@ const MINELOFIO_THEME_VARIABLES = {
 
 const THEME_CUSTOM_CSS = `
   /* High contrast Chinese & Unicode label styling across all diagrams */
-  .node text, .node span, .nodeLabel, .label, .label text, text.actor, .actor > tspan, .labelText {
+  .node text, .node span, .nodeLabel, .label, .label text, text.actor, .actor > tspan, .labelText, .node .label {
     font-family: ${CJK_FONT_FAMILY} !important;
     fill: #e2e8f0 !important;
     color: #e2e8f0 !important;
@@ -123,6 +124,12 @@ const THEME_CUSTOM_CSS = `
     color: #e2e8f0 !important;
     text-align: center;
     word-break: break-word;
+  }
+  .cluster-label text, .cluster text, .cluster-label span, .cluster span, .cluster .nodeLabel {
+    font-family: ${CJK_FONT_FAMILY} !important;
+    fill: #00d4ff !important;
+    color: #00d4ff !important;
+    font-weight: 600 !important;
   }
   .edgeLabel, .edgeLabel span, .edgeLabel p {
     font-family: ${CJK_FONT_FAMILY} !important;
@@ -291,8 +298,7 @@ export function sanitizeMermaid(raw: string): string {
  */
 export function sanitizeMermaidSvg(rawSvg: string): string {
   return DOMPurify.sanitize(rawSvg, {
-    USE_PROFILES: { svg: true, svgFilters: true, html: true },
-    ADD_TAGS: ['foreignObject', 'switch'],
+    ADD_TAGS: ['foreignobject', 'foreignObject', 'switch'],
     ADD_ATTR: [
       'dominant-baseline',
       'text-anchor',
@@ -303,6 +309,7 @@ export function sanitizeMermaidSvg(rawSvg: string): string {
       'xmlns:xlink',
       'xlink:href',
     ],
+    HTML_INTEGRATION_POINTS: { foreignobject: true, foreignObject: true },
     FORBID_TAGS: ['script', 'iframe', 'object', 'embed'],
     FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover'],
   })
