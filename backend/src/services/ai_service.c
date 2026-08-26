@@ -26,11 +26,9 @@ static const char* get_driver_name(const char* prov_id) {
 void ai_init(csilk_db_pool_t* pool) {
     char* json = pool ? ai_settings_load(pool) : NULL;
     if (json) {
-        char path[] = "/tmp/ai_config_db.json";
-        FILE* f = fopen(path, "w");
-        if (f) { fwrite(json, 1, strlen(json), f); fclose(f); }
+        int loaded = (ai_config_load_json(json, &g_config) == 0);
         free(json);
-        if (ai_config_load(path, &g_config) == 0) {
+        if (loaded) {
             ai_provider_t* prov = ai_config_default_provider(&g_config);
             if (prov) {
                 const char* key = (prov->api_key[0] != '\0') ? prov->api_key : "dummy";
@@ -40,6 +38,9 @@ void ai_init(csilk_db_pool_t* pool) {
                 else fprintf(stderr, "WARN: failed to create AI instance for provider '%s'\n", prov->id);
                 return;
             }
+            /* DB config loaded but no usable provider — keep g_config, do not fall through */
+            fprintf(stderr, "WARN: default provider '%s' not found in DB AI config\n", g_config.default_provider);
+            return;
         }
     }
     const char* cfg_path = getenv("MINEFOLIO_AI_CONFIG") ?: "config/ai.json";
@@ -214,8 +215,8 @@ void ai_chat_handler(csilk_ctx_t* c) {
     csilk_json_t* history = ai_message_recent(pool, sid, ctx_size);
     int hsz = history ? (int)csilk_json_array_size(history) : 0;
 
-    /* build messages: [system, ...history, user] */
-    int mc = 1 + hsz + 1;
+    /* build messages: [system, ...history] or [system, ...history, user] */
+    int mc = regenerate ? (1 + hsz) : (1 + hsz + 1);
     csilk_ai_message_t* msgs = (csilk_ai_message_t*)malloc(sizeof(csilk_ai_message_t) * (size_t)mc);
     if (!msgs) { csilk_json_free(history); csilk_json_free(body); respond_error(c, 500, "内存不足"); return; }
     int idx = 0;
@@ -229,7 +230,9 @@ void ai_chat_handler(csilk_ctx_t* c) {
             };
         }
     }
-    msgs[idx++] = (csilk_ai_message_t){.role="user", .content=content};
+    if (!regenerate) {
+        msgs[idx++] = (csilk_ai_message_t){.role="user", .content=content};
+    }
 
     stream_context_t sctx = {
         .ctx = c,
@@ -258,10 +261,12 @@ void ai_chat_handler(csilk_ctx_t* c) {
         csilk_json_add_string(im, "content", csilk_json_get_string(m, "content") ?: "");
         csilk_json_array_append(input_arr, im);
     }
-    csilk_json_t* usr_msg = csilk_json_object();
-    csilk_json_add_string(usr_msg, "role", "user");
-    csilk_json_add_string(usr_msg, "content", content);
-    csilk_json_array_append(input_arr, usr_msg);
+    if (!regenerate) {
+        csilk_json_t* usr_msg = csilk_json_object();
+        csilk_json_add_string(usr_msg, "role", "user");
+        csilk_json_add_string(usr_msg, "content", content);
+        csilk_json_array_append(input_arr, usr_msg);
+    }
     ai_trace_serialize_messages(&trace, input_arr);
     csilk_json_free(input_arr);
 
@@ -269,8 +274,10 @@ void ai_chat_handler(csilk_ctx_t* c) {
     csilk_sse_init(c);
     clock_gettime(CLOCK_MONOTONIC, &sctx.last_send_time);
 
-    /* persist user message */
-    ai_message_insert(pool, sid, "user", content, model_buf);
+    /* persist user message (skip on regenerate — already in history) */
+    if (!regenerate) {
+        ai_message_insert(pool, sid, "user", content, model_buf);
+    }
 
     csilk_ai_t* ai_inst = g_ai;
     int need_free_ai = 0;

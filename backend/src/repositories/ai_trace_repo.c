@@ -45,7 +45,7 @@ csilk_json_t* ai_trace_list(csilk_db_pool_t* pool, int64_t user_id, int64_t page
         "prompt_tokens, completion_tokens, total_tokens, "
         "latency_ms, first_token_ms, tokens_per_sec, cost_usd, "
         "temperature, max_tokens, top_p, status, error_message, "
-        "datetime(created_at) as created_at "
+        "created_at "
         "FROM ai_traces %s ORDER BY created_at DESC LIMIT ? OFFSET ?",
         where);
 
@@ -70,7 +70,7 @@ csilk_json_t* ai_trace_get(csilk_db_pool_t* pool, int64_t user_id, int64_t id) {
         "prompt_tokens, completion_tokens, total_tokens, "
         "latency_ms, first_token_ms, tokens_per_sec, cost_usd, "
         "temperature, max_tokens, top_p, status, error_message, metadata, "
-        "datetime(created_at) as created_at "
+        "created_at "
         "FROM ai_traces WHERE id=? AND user_id=?",
         (const char*[]){id_s, uid, NULL});
     if (!r || csilk_json_array_size(r) == 0) {

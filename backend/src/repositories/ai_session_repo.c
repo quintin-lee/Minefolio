@@ -25,7 +25,7 @@ csilk_json_t* ai_session_list(csilk_db_pool_t* pool, int64_t user_id, int64_t pa
 
     return csilk_db_query_param_json(pool,
         "SELECT id, user_id, title, model, provider, "
-        "datetime(created_at) as created_at, datetime(updated_at) as updated_at "
+        "created_at, updated_at "
         "FROM ai_sessions WHERE user_id=? ORDER BY updated_at DESC LIMIT ? OFFSET ?",
         (const char*[]){uid, lim, off, NULL});
 }
@@ -36,7 +36,7 @@ csilk_json_t* ai_session_get(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
     sid_str(id, id_s);
     csilk_json_t* r = csilk_db_query_param_json(pool,
         "SELECT id, user_id, title, model, provider, "
-        "datetime(created_at) as created_at, datetime(updated_at) as updated_at "
+        "created_at, updated_at "
         "FROM ai_sessions WHERE id=? AND user_id=?", (const char*[]){id_s, uid, NULL});
     if (!r || csilk_json_array_size(r) == 0) { csilk_json_free(r); return NULL; }
     return r;
@@ -125,7 +125,7 @@ csilk_json_t* ai_message_list(csilk_db_pool_t* pool, int64_t session_id, int64_t
     csilk_json_free(cnt);
 
     return csilk_db_query_param_json(pool,
-        "SELECT id, session_id, role, content, model, datetime(created_at) as created_at "
+        "SELECT id, session_id, role, content, model, created_at "
         "FROM ai_messages WHERE session_id=? ORDER BY created_at ASC LIMIT ? OFFSET ?",
         (const char*[]){sid, lim, off, NULL});
 }
@@ -135,7 +135,12 @@ csilk_json_t* ai_message_recent(csilk_db_pool_t* pool, int64_t session_id, int l
     sid_str(session_id, sid);
     snprintf(lim, 32, "%d", limit);
     return csilk_db_query_param_json(pool,
-        "SELECT role, content FROM ai_messages WHERE session_id=? ORDER BY created_at ASC LIMIT ?",
+        "SELECT role, content FROM ("
+        "  SELECT role, content, created_at, id "
+        "  FROM ai_messages WHERE session_id=? "
+        "  ORDER BY created_at DESC, id DESC "
+        "  LIMIT ?"
+        ") t ORDER BY created_at ASC, id ASC",
         (const char*[]){sid, lim, NULL});
 }
 

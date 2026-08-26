@@ -16,9 +16,9 @@ char* ai_settings_load(csilk_db_pool_t* pool) {
 int ai_settings_save(csilk_db_pool_t* pool, const char* config_json) {
     csilk_json_t* r = csilk_db_query_param_json(pool,
         "INSERT INTO ai_settings (id, config_json, updated_at) "
-        "VALUES (1, ?, datetime('now')) "
+        "VALUES (1, ?, CURRENT_TIMESTAMP) "
         "ON CONFLICT(id) DO UPDATE SET config_json=excluded.config_json, "
-        "updated_at=excluded.updated_at",
+        "updated_at=CURRENT_TIMESTAMP",
         (const char*[]){config_json, NULL});
     int ok = (r != NULL);
     csilk_json_free(r);

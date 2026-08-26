@@ -8,7 +8,7 @@
 static void parse_string_array(const csilk_json_t *arr, char ***out_ptrs, int *out_count) {
     if (!arr || !csilk_json_is_array(arr)) { *out_ptrs = NULL; *out_count = 0; return; }
     int n = csilk_json_array_size(arr);
-    *out_ptrs = (char**)malloc(sizeof(char*) * (size_t)n + 1);
+    *out_ptrs = (char**)malloc(sizeof(char*) * (size_t)(n + 1));
     if (!*out_ptrs) { *out_count = 0; return; }
     *out_count = n;
     for (size_t i = 0; i < (size_t)n; i++) {
@@ -24,24 +24,12 @@ static void free_string_array(char **arr) {
     free(arr);
 }
 
-int ai_config_load(const char *path, ai_config_t *out) {
-    memset(out, 0, sizeof(*out));
-    FILE *f = fopen(path, "r");
-    if (!f) return -1;
-    char buf[65536];
-    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
-    fclose(f);
-    buf[n] = '\0';
-
-    csilk_json_t *root = csilk_json_parse(buf);
-    if (!root) return -1;
-
-    /* providers */
+static int ai_config_parse_root(const csilk_json_t *root, ai_config_t *out) {
     const csilk_json_t *prov_arr = csilk_json_get(root, "providers");
     if (prov_arr && csilk_json_is_array(prov_arr)) {
         int pc = csilk_json_array_size(prov_arr);
         out->providers = (ai_provider_t*)malloc(sizeof(ai_provider_t) * (size_t)pc);
-        if (!out->providers) { csilk_json_free(root); return -1; }
+        if (!out->providers) return -1;
         out->provider_count = pc;
         for (int i = 0; i < pc; i++) {
             const csilk_json_t *p = csilk_json_array_get(prov_arr, i);
@@ -62,8 +50,28 @@ int ai_config_load(const char *path, ai_config_t *out) {
     if (out->context_size < 5) out->context_size = 20;
     const char *sp = csilk_json_get_string(root, "system_prompt");
     if (sp) strncpy(out->system_prompt, sp, sizeof(out->system_prompt) - 1);
-    csilk_json_free(root);
     return 0;
+}
+
+int ai_config_load_json(const char *json, ai_config_t *out) {
+    memset(out, 0, sizeof(*out));
+    if (!json || !json[0]) return -1;
+    csilk_json_t *root = csilk_json_parse(json);
+    if (!root) return -1;
+    int rc = ai_config_parse_root(root, out);
+    csilk_json_free(root);
+    return rc;
+}
+
+int ai_config_load(const char *path, ai_config_t *out) {
+    memset(out, 0, sizeof(*out));
+    FILE *f = fopen(path, "r");
+    if (!f) return -1;
+    char buf[65536];
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    buf[n] = '\0';
+    return ai_config_load_json(buf, out);
 }
 
 int ai_config_save(const char *path, const ai_config_t *cfg) {

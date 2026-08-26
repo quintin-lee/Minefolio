@@ -15,7 +15,7 @@
 static void parse_string_array(const csilk_json_t *arr, char ***out_ptrs, int *out_count) {
     if (!arr || !csilk_json_is_array(arr)) { *out_ptrs = NULL; *out_count = 0; return; }
     int n = csilk_json_array_size(arr);
-    *out_ptrs = (char**)malloc(sizeof(char*) * (size_t)n + 1);
+    *out_ptrs = (char**)malloc(sizeof(char*) * (size_t)(n + 1));
     if (!*out_ptrs) { *out_count = 0; return; }
     *out_count = n;
     for (size_t i = 0; i < (size_t)n; i++) {
@@ -111,6 +111,9 @@ void messages_list_handler(csilk_ctx_t* c) {
     const char* id_str = csilk_get_param(c, "id");
     if (!id_str) { respond_bad_request(c, "缺少 session_id"); return; }
     int64_t session_id = atoll(id_str);
+    csilk_json_t* sess = ai_session_get(db_get_pool(), user_id, session_id);
+    if (!sess) { respond_not_found(c); return; }
+    csilk_json_free(sess);
     int64_t page = 1, page_size = 50;
     parse_page_params(c, &page, &page_size);
     int64_t total = 0;

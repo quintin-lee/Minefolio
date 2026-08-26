@@ -19,6 +19,9 @@ typedef struct {
     char system_prompt[2048];
 } ai_config_t;
 
+/** @brief 从 JSON 字符串加载 AI 配置。返回 0 成功，-1 失败。 */
+int ai_config_load_json(const char *json, ai_config_t *out);
+
 /** @brief 从配置文件加载 AI 配置。返回 0 成功，-1 失败。 */
 int ai_config_load(const char *path, ai_config_t *out);
 
