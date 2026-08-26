@@ -543,20 +543,13 @@ ai_chat_handler(csilk_ctx_t* c)
             free(s);
             csilk_json_free(tr_evt);
 
-            /* Build assistant message with tool_calls using struct fields */
+            /* Build assistant message with tool calls response */
             mc++;
             msgs = (csilk_ai_message_t*)realloc(msgs, sizeof(csilk_ai_message_t) * (size_t)mc);
             msgs[mc - 1] = (csilk_ai_message_t){
                 .role = "assistant",
-                .content = NULL,
-                .tool_call_count = 1,
-                .tool_calls = calloc(1, sizeof(csilk_ai_tool_call_t)),
+                .content = ai_res.content ? strdup(ai_res.content) : strdup(""),
             };
-            if (msgs[mc - 1].tool_calls) {
-                msgs[mc - 1].tool_calls[0].id = strdup(tc->id ?: "");
-                msgs[mc - 1].tool_calls[0].name = strdup(tc->name ?: "");
-                msgs[mc - 1].tool_calls[0].arguments = strdup(tc->arguments ?: "{}");
-            }
 
             /* Build tool result message */
             mc++;
@@ -564,11 +557,9 @@ ai_chat_handler(csilk_ctx_t* c)
             msgs[mc - 1] = (csilk_ai_message_t){
                 .role = "tool",
                 .content = result,
-                .tool_call_id = strdup(tc->id ?: ""),
             };
             /* result is now owned by msgs[mc-1].content; don't free it here */
             result = NULL;
-
 
         }
 
@@ -594,15 +585,6 @@ ai_chat_handler(csilk_ctx_t* c)
      * The first 1+hsz+1 messages point into g_config/history/body (not owned). */
     for (int i = 1 + hsz + 1; i < mc; i++) {
         free((void*)msgs[i].content);
-        if (msgs[i].tool_calls) {
-            for (size_t j = 0; j < msgs[i].tool_call_count; j++) {
-                free(msgs[i].tool_calls[j].id);
-                free(msgs[i].tool_calls[j].name);
-                free(msgs[i].tool_calls[j].arguments);
-            }
-            free(msgs[i].tool_calls);
-        }
-        free((void*)msgs[i].tool_call_id);
     }
     free(msgs);
     csilk_json_free(history);

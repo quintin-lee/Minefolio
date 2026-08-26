@@ -1,11 +1,13 @@
 # backend build output
 backend/build/
 backend/compile_commands.json
+backend/config/*.json
 
 */data/
 data/
 
 frontend/node_modules/
+frontend/node_modules.broken/
 frontend/dist/
 frontend/dist-mobile/
 

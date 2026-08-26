@@ -1,0 +1,284 @@
+<template>
+  <div class="chat-message-content">
+    <template v-for="seg in segments" :key="seg.id">
+      <!-- Markdown Segment -->
+      <div
+        v-if="seg.type === 'markdown'"
+        class="markdown-part"
+        v-html="renderMarkdown(seg.content)"
+      ></div>
+
+      <!-- Mermaid Diagram Block -->
+      <MermaidBlock
+        v-else-if="seg.type === 'mermaid'"
+        :code="seg.content"
+        :is-streaming="isStreaming"
+      />
+
+      <!-- Streaming Mermaid Code Block (in progress before closing ```) -->
+      <div v-else-if="seg.type === 'streaming-mermaid'" class="streaming-mermaid-placeholder">
+        <div class="placeholder-header">
+          <div class="header-left">
+            <Icon icon="ph:projector-screen-chart" class="placeholder-icon" />
+            <span>Mermaid 图表生成中...</span>
+          </div>
+          <span class="streaming-pulse-dot"></span>
+        </div>
+        <pre class="streaming-code"><code>{{ seg.content }}</code></pre>
+      </div>
+    </template>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed } from 'vue'
+import { marked } from 'marked'
+import DOMPurify from 'dompurify'
+import { Icon } from '@iconify/vue'
+import MermaidBlock from '@/components/MermaidBlock.vue'
+
+const props = defineProps<{
+  content: string
+  isStreaming?: boolean
+}>()
+
+interface Segment {
+  id: string
+  type: 'markdown' | 'mermaid' | 'streaming-mermaid'
+  content: string
+}
+
+function renderMarkdown(text?: string): string {
+  if (!text) return ''
+  try {
+    const rawHtml = marked.parse(text, { async: false, breaks: true }) as string
+    return DOMPurify.sanitize(rawHtml)
+  } catch {
+    return DOMPurify.sanitize(text.replace(/</g, '&lt;').replace(/>/g, '&gt;'))
+  }
+}
+
+const segments = computed<Segment[]>(() => {
+  const text = props.content || ''
+  if (!text) return []
+
+  // Check if text has any mermaid code blocks
+  if (!text.includes('```mermaid')) {
+    return [
+      {
+        id: 'md-0',
+        type: 'markdown',
+        content: text,
+      },
+    ]
+  }
+
+  const result: Segment[] = []
+  let lastIndex = 0
+  const mermaidRegex = /```mermaid\s*\n([\s\S]*?)(?:```|$)/g
+  let match: RegExpExecArray | null
+  let segIdx = 0
+
+  while ((match = mermaidRegex.exec(text)) !== null) {
+    const matchStart = match.index
+    const fullMatch = match[0]
+    const code = match[1] ?? ''
+    const hasClosed = fullMatch.endsWith('```')
+
+    // Add markdown segment before this mermaid match
+    if (matchStart > lastIndex) {
+      const markdownBefore = text.slice(lastIndex, matchStart).trim()
+      if (markdownBefore) {
+        result.push({
+          id: `md-${segIdx++}`,
+          type: 'markdown',
+          content: markdownBefore,
+        })
+      }
+    }
+
+    if (hasClosed) {
+      // Complete Mermaid block
+      result.push({
+        id: `mmd-${segIdx++}`,
+        type: 'mermaid',
+        content: code.trim(),
+      })
+    } else {
+      // Unclosed Mermaid block at the end of text
+      if (props.isStreaming) {
+        result.push({
+          id: `mmd-stream-${segIdx++}`,
+          type: 'streaming-mermaid',
+          content: code,
+        })
+      } else {
+        // Not streaming but unclosed (e.g. truncated LLM output) - attempt to render
+        result.push({
+          id: `mmd-${segIdx++}`,
+          type: 'mermaid',
+          content: code.trim(),
+        })
+      }
+    }
+
+    lastIndex = matchStart + fullMatch.length
+  }
+
+  // Trailing markdown after the last mermaid match
+  if (lastIndex < text.length) {
+    const markdownAfter = text.slice(lastIndex).trim()
+    if (markdownAfter) {
+      result.push({
+        id: `md-${segIdx++}`,
+        type: 'markdown',
+        content: markdownAfter,
+      })
+    }
+  }
+
+  return result
+})
+</script>
+
+<style scoped>
+.chat-message-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.markdown-part {
+  width: 100%;
+  line-height: 1.65;
+  word-break: break-word;
+}
+
+.markdown-part :deep(p) {
+  margin: 0 0 8px;
+}
+.markdown-part :deep(p:last-child) {
+  margin-bottom: 0;
+}
+.markdown-part :deep(h1),
+.markdown-part :deep(h2),
+.markdown-part :deep(h3),
+.markdown-part :deep(h4) {
+  color: #fff;
+  margin: 12px 0 6px;
+  font-weight: 600;
+}
+.markdown-part :deep(ul),
+.markdown-part :deep(ol) {
+  margin: 6px 0 10px;
+  padding-left: 20px;
+}
+.markdown-part :deep(li) {
+  margin-bottom: 4px;
+}
+.markdown-part :deep(code) {
+  font-family: var(--mf-font-mono, monospace);
+  background: rgba(0, 212, 255, 0.08);
+  color: #38bdf8;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  border: 1px solid rgba(0, 212, 255, 0.15);
+}
+.markdown-part :deep(pre) {
+  background: #020617;
+  border: 1px solid var(--mf-border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  margin: 10px 0;
+}
+.markdown-part :deep(pre code) {
+  background: transparent;
+  padding: 0;
+  border: none;
+  color: #e2e8f0;
+}
+.markdown-part :deep(blockquote) {
+  margin: 10px 0;
+  padding: 8px 14px;
+  border-left: 3px solid var(--mf-primary);
+  background: rgba(0, 212, 255, 0.04);
+  border-radius: 0 6px 6px 0;
+  color: var(--mf-text-muted);
+}
+.markdown-part :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 13px;
+}
+.markdown-part :deep(th),
+.markdown-part :deep(td) {
+  border: 1px solid var(--mf-border);
+  padding: 8px 12px;
+}
+.markdown-part :deep(th) {
+  background: rgba(0, 212, 255, 0.08);
+  font-weight: 600;
+  color: var(--mf-primary);
+}
+
+/* Streaming Mermaid Placeholder */
+.streaming-mermaid-placeholder {
+  margin: 10px 0;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px dashed var(--mf-border-hover);
+  border-radius: var(--mf-radius-md);
+  overflow: hidden;
+}
+
+.placeholder-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: rgba(0, 212, 255, 0.06);
+  border-bottom: 1px solid rgba(0, 212, 255, 0.1);
+  font-size: 12px;
+  color: var(--mf-primary);
+  font-weight: 500;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.placeholder-icon {
+  font-size: 14px;
+}
+
+.streaming-pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--mf-primary);
+  box-shadow: 0 0 8px var(--mf-primary);
+  animation: pulse-dot 1.2s infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+
+.streaming-code {
+  margin: 0;
+  padding: 10px 14px;
+  background: #020617;
+  color: #38bdf8;
+  font-family: var(--mf-font-mono, monospace);
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-x: auto;
+  max-height: 160px;
+}
+</style>

@@ -165,9 +165,12 @@
                   <span class="pulse-dot"></span>
                   <span class="thinking-text">思考中...</span>
                 </div>
-                <!-- Otherwise render markdown content -->
+                <!-- Otherwise render markdown and mermaid content -->
                 <div v-else class="message-content" :class="{ 'streaming-active': chat.isStreaming && idx === chat.messages.length - 1 && msg.role === 'assistant' }">
-                  <span v-html="renderMarkdown(msg.content)"></span>
+                  <ChatMessageContent
+                    :content="msg.content"
+                    :is-streaming="chat.isStreaming && idx === chat.messages.length - 1 && msg.role === 'assistant'"
+                  />
                   <span v-if="chat.isStreaming && idx === chat.messages.length - 1 && msg.role === 'assistant'" class="typing-cursor"></span>
                 </div>
                 <!-- Assistant Action Toolbar -->
@@ -228,8 +231,7 @@ import { ref, onMounted, nextTick, watch, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import { useChatStore } from '@/stores/chat'
-import { marked } from 'marked'
-import DOMPurify from 'dompurify'
+import ChatMessageContent from '@/components/ChatMessageContent.vue'
 
 const chat = useChatStore()
 const inputText = ref('')
@@ -248,25 +250,25 @@ const quickPrompts = [
     icon: 'ph:chart-pie-slice',
     title: '月度收支诊断',
     desc: '分析收入与支出结构，评估储蓄率',
-    prompt: '请根据我当前的财务状况，帮我系统性分析月度收支结构与现金流健康度。',
+    prompt: '请根据我当前的财务状况，帮我系统性分析月度收支结构与现金流健康度，并使用 Mermaid 饼图/流程图直观展示资金分配结构。',
   },
   {
     icon: 'ph:shield-check',
     title: '应急储备金规划',
     desc: '测算 3-6 个月必要支出与存放策略',
-    prompt: '根据个人财务规划原则，家庭应急储备金应该如何测算规模、存放与管理？',
+    prompt: '根据个人财务规划原则，家庭应急储备金应该如何测算规模、存放与管理？请附上 Mermaid 结构图拆解多层财务防线。',
   },
   {
     icon: 'ph:trend-up',
     title: '标准普尔资产配置',
     desc: '梳理要花的钱、保命的钱与生钱的钱',
-    prompt: '请用专业财务顾问的口吻，详细拆解标准普尔家庭资产象限模型的配置方法。',
+    prompt: '请用专业财务顾问的口吻，详细拆解标准普尔家庭资产象限模型的配置方法，并使用 Mermaid 图表绘制出四个象限的配置比例与资金流向。',
   },
   {
     icon: 'ph:coins',
     title: '指数基金定投策略',
     desc: '学习微笑曲线、止盈止损与定投纪律',
-    prompt: '请为我系统介绍指数基金定投的核心策略，包括定投周期与止盈纪律。',
+    prompt: '请为我系统介绍指数基金定投的核心策略，包括定投周期与止盈纪律，并绘制 Mermaid 流程图展示定投决策闭环。',
   },
 ]
 
@@ -282,16 +284,6 @@ function formatTime(dateStr?: string): string {
     if (diff < 86400000) return `${Math.floor(diff / 3600000)}小时前`
     return d.toLocaleDateString()
   } catch { return '' }
-}
-
-function renderMarkdown(text?: string): string {
-  if (!text) return ''
-  try {
-    const rawHtml = marked.parse(text, { async: false, breaks: true }) as string
-    return DOMPurify.sanitize(rawHtml)
-  } catch {
-    return DOMPurify.sanitize(text.replace(/</g, '&lt;').replace(/>/g, '&gt;'))
-  }
 }
 
 interface FlatModelOption {
@@ -378,6 +370,7 @@ watch(lastMsgContent, () => {
     scrollToBottom(false)
   }
 })
+
 
 function adjustTextareaHeight() {
   if (textareaRef.value) {
@@ -1263,4 +1256,6 @@ onMounted(async () => {
     padding-left: 48px;
   }
 }
+
+
 </style>
