@@ -14,6 +14,12 @@ export interface DiagramTypeInfo {
   icon: string
 }
 
+export interface RenderOptions {
+  curve?: 'linear' | 'basis' | 'cardinal' | 'monotoneY' | 'step'
+  nodeSpacing?: number
+  rankSpacing?: number
+}
+
 /**
  * Standard Chinese & CJK font family stack with dark tech primary fallbacks.
  */
@@ -150,8 +156,8 @@ const THEME_CUSTOM_CSS = `
     letter-spacing: 0.5px !important;
   }
 
-  /* ── Flowchart Edges & Connector Lines ── */
-  .edgePath .path, .edge-thickness-normal {
+  /* ── Flowchart Edges & Connector Lines (Straight Lines with Rounded Joints) ── */
+  .edgePath .path, .edge-thickness-normal, .flowchart-link {
     stroke: #38bdf8 !important;
     stroke-width: 1.8px !important;
     stroke-linecap: round !important;
@@ -224,6 +230,7 @@ const THEME_CUSTOM_CSS = `
     stroke: #38bdf8 !important;
     stroke-width: 1.8px !important;
     stroke-linecap: round !important;
+    stroke-linejoin: round !important;
   }
   .messageText {
     fill: #e2e8f0 !important;
@@ -283,10 +290,10 @@ export async function ensureMermaid(): Promise<MermaidApi | null> {
         flowchart: {
           htmlLabels: true,
           useMaxWidth: true,
-          curve: 'basis',
-          nodeSpacing: 45,
-          rankSpacing: 55,
-          padding: 16,
+          curve: 'linear', // Straight lines with rounded joints/corners by default
+          nodeSpacing: 50,
+          rankSpacing: 60,
+          padding: 18,
           defaultRenderer: 'dagre-wrapper',
         },
         sequence: {
@@ -439,11 +446,25 @@ export function sanitizeMermaidSvg(rawSvg: string): string {
 /**
  * Executes a single render pass inside an isolated offscreen sandbox container.
  */
-async function executeRender(id: string, code: string): Promise<{ svg: string }> {
+async function executeRender(id: string, code: string, options?: RenderOptions): Promise<{ svg: string }> {
   const mermaid = await ensureMermaid()
   if (!mermaid) {
     throw new Error('Mermaid renderer is not available')
   }
+
+  // Re-configure active curve if specified
+  const curveType = options?.curve || 'linear'
+  mermaid.initialize({
+    flowchart: {
+      htmlLabels: true,
+      useMaxWidth: true,
+      curve: curveType,
+      nodeSpacing: options?.nodeSpacing || 50,
+      rankSpacing: options?.rankSpacing || 60,
+      padding: 18,
+      defaultRenderer: 'dagre-wrapper',
+    },
+  })
 
   // Create an offscreen sandbox container to completely isolate Mermaid DOM ops from document.body
   let sandbox: HTMLElement | null = null
@@ -491,8 +512,8 @@ async function executeRender(id: string, code: string): Promise<{ svg: string }>
 /**
  * Renders a Mermaid diagram string to a sanitized SVG string via a sequential queue.
  */
-export function renderMermaidSvg(id: string, code: string): Promise<{ svg: string }> {
-  const nextTask = renderQueue.catch(() => {}).then(() => executeRender(id, code))
+export function renderMermaidSvg(id: string, code: string, options?: RenderOptions): Promise<{ svg: string }> {
+  const nextTask = renderQueue.catch(() => {}).then(() => executeRender(id, code, options))
   renderQueue = nextTask
   return nextTask
 }

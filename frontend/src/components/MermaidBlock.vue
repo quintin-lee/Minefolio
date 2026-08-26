@@ -25,6 +25,17 @@
           <span class="btn-text">{{ viewMode === 'code' ? '图表' : '源码' }}</span>
         </button>
 
+        <!-- Line Style Toggle for Flowcharts (直角圆角 vs 平滑曲线) -->
+        <button
+          v-if="diagramInfo.type === 'flowchart' && viewMode === 'chart'"
+          class="tool-btn"
+          :title="curveMode === 'linear' ? '当前：折线圆角 (点击切换为平滑曲线)' : '当前：平滑曲线 (点击切换为折线圆角)'"
+          @click="toggleCurveMode"
+        >
+          <Icon :icon="curveMode === 'linear' ? 'ph:arrows-split' : 'ph:bezier-curve'" />
+          <span class="btn-text">{{ curveMode === 'linear' ? '折线' : '曲线' }}</span>
+        </button>
+
         <!-- Copy Code -->
         <button
           class="tool-btn"
@@ -227,6 +238,7 @@ const svgContent = ref('')
 const renderError = ref('')
 const viewMode = ref<'chart' | 'code'>('chart')
 const copiedCode = ref(false)
+const curveMode = ref<'linear' | 'basis'>('linear')
 let copyTimer: number | null = null
 
 // Diagram type information
@@ -253,7 +265,9 @@ async function renderDiagram(isSilent = false) {
 
   try {
     const id = generateId()
-    const result = await renderMermaidSvg(id, props.code)
+    const result = await renderMermaidSvg(id, props.code, {
+      curve: curveMode.value,
+    })
     svgContent.value = result.svg
     renderError.value = ''
   } catch (err: unknown) {
@@ -264,6 +278,11 @@ async function renderDiagram(isSilent = false) {
   } finally {
     loading.value = false
   }
+}
+
+function toggleCurveMode() {
+  curveMode.value = curveMode.value === 'linear' ? 'basis' : 'linear'
+  renderDiagram(false)
 }
 
 function handleRetry() {
