@@ -5,6 +5,9 @@ export type MermaidApi = typeof import('mermaid')['default']
 let mermaidInstance: MermaidApi | null = null
 let initPromise: Promise<MermaidApi | null> | null = null
 
+// Serial rendering queue to prevent concurrency race conditions in Mermaid D3 DOM operations
+let renderQueue: Promise<unknown> = Promise.resolve()
+
 export interface DiagramTypeInfo {
   type: string
   label: string
@@ -153,41 +156,6 @@ const THEME_CUSTOM_CSS = `
 `
 
 /**
- * Sweeps and removes any temporary elements or error SVGs injected by Mermaid into document.body.
- */
-export function cleanupMermaidDom(id?: string) {
-  if (typeof document === 'undefined') return
-
-  // 1. Remove specific temporary element IDs created by Mermaid for this render pass
-  if (id) {
-    const ids = [id, `${id}-retry`, `d${id}`, `d${id}-retry`, `i${id}`, `i${id}-retry`]
-    for (const elId of ids) {
-      const el = document.getElementById(elId)
-      if (el) el.remove()
-    }
-  }
-
-  // 2. Thorough sweep of ANY stray Mermaid container or error artifact appended to document.body
-  try {
-    const strayNodes = document.querySelectorAll(
-      'body > div[id^="dmermaid"], body > div[id^="imermaid"], body > div[id^="d-"], body > div[id^="i-"], body > svg[id^="mermaid"], body > svg[id^="dmermaid"]'
-    )
-    strayNodes.forEach((node) => node.remove())
-
-    // Remove any element with error-icon or error-text under body
-    const errorNodes = document.querySelectorAll('body > svg.error-icon, body .error-icon, body .error-text')
-    errorNodes.forEach((node) => {
-      const rootSvg = node.closest('svg') || node.closest('div')
-      if (rootSvg && rootSvg.parentElement === document.body) {
-        rootSvg.remove()
-      }
-    })
-  } catch {
-    // Ignore DOM query errors in non-browser environments
-  }
-}
-
-/**
  * Initializes and returns the singleton Mermaid API instance.
  */
 export async function ensureMermaid(): Promise<MermaidApi | null> {
@@ -200,7 +168,7 @@ export async function ensureMermaid(): Promise<MermaidApi | null> {
       const api = mod.default
       api.initialize({
         startOnLoad: false,
-        suppressErrorRendering: true, // STRICT: Prohibit Mermaid from rendering error diagrams to document.body
+        suppressErrorRendering: true, // Strictly prohibit Mermaid from writing error SVGs to DOM
         securityLevel: 'loose',
         theme: 'base',
         themeVariables: MINELOFIO_THEME_VARIABLES,
@@ -359,31 +327,42 @@ export function sanitizeMermaidSvg(rawSvg: string): string {
 }
 
 /**
- * Renders a Mermaid diagram string to a sanitized SVG string.
- * Strictly cleans up temporary DOM artifacts and guarantees no error bomb SVGs leak into document.body.
+ * Executes a single render pass inside an isolated offscreen sandbox container.
  */
-export async function renderMermaidSvg(id: string, code: string): Promise<{ svg: string }> {
+async function executeRender(id: string, code: string): Promise<{ svg: string }> {
   const mermaid = await ensureMermaid()
   if (!mermaid) {
     throw new Error('Mermaid renderer is not available')
   }
 
+  // Create an offscreen sandbox container to completely isolate Mermaid DOM ops from document.body
+  let sandbox: HTMLElement | null = null
+  if (typeof document !== 'undefined') {
+    sandbox = document.createElement('div')
+    sandbox.id = `mermaid-sandbox-${id}`
+    sandbox.style.position = 'fixed'
+    sandbox.style.left = '-99999px'
+    sandbox.style.top = '-99999px'
+    sandbox.style.visibility = 'hidden'
+    sandbox.style.opacity = '0'
+    sandbox.style.pointerEvents = 'none'
+    document.body.appendChild(sandbox)
+  }
+
   try {
-    // 1. Try rendering the original code
+    // 1. Try rendering original code
     try {
-      const { svg } = await mermaid.render(id, code)
+      const { svg } = await mermaid.render(id, code, sandbox || undefined)
       const sanitized = sanitizeMermaidSvg(svg)
       return { svg: sanitized }
     } catch (initialErr) {
-      // Clean up first attempt's DOM artifacts before retry
-      cleanupMermaidDom(id)
-
       // 2. If it failed, attempt auto-repair and retry
       const sanitizedCode = sanitizeMermaid(code)
       if (sanitizedCode && sanitizedCode !== code) {
         try {
+          if (sandbox) sandbox.innerHTML = ''
           const retryId = `${id}-retry`
-          const { svg } = await mermaid.render(retryId, sanitizedCode)
+          const { svg } = await mermaid.render(retryId, sanitizedCode, sandbox || undefined)
           const sanitized = sanitizeMermaidSvg(svg)
           return { svg: sanitized }
         } catch {
@@ -393,9 +372,19 @@ export async function renderMermaidSvg(id: string, code: string): Promise<{ svg:
       throw initialErr
     }
   } finally {
-    // Always sweep and remove any dangling elements
-    cleanupMermaidDom(id)
+    if (sandbox && sandbox.parentElement) {
+      sandbox.remove()
+    }
   }
+}
+
+/**
+ * Renders a Mermaid diagram string to a sanitized SVG string via a sequential queue.
+ */
+export function renderMermaidSvg(id: string, code: string): Promise<{ svg: string }> {
+  const nextTask = renderQueue.catch(() => {}).then(() => executeRender(id, code))
+  renderQueue = nextTask
+  return nextTask
 }
 
 /**
