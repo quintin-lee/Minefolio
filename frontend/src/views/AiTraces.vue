@@ -9,7 +9,7 @@
 
     <div class="stats-bar" v-if="stats">
       <div class="stat-card">
-        <div class="stat-value">{{ stats.total_traces }}</div>
+        <div class="stat-value">{{ stats.total_traces ?? 0 }}</div>
         <div class="stat-label">总调用次数</div>
       </div>
       <div class="stat-card">
@@ -21,7 +21,7 @@
         <div class="stat-label">平均首 Token</div>
       </div>
       <div class="stat-card">
-        <div class="stat-value">{{ stats.avg_tokens_per_sec.toFixed(1) }}</div>
+        <div class="stat-value">{{ formatTps(stats.avg_tokens_per_sec) }}</div>
         <div class="stat-label">平均 tok/s</div>
       </div>
       <div class="stat-card">
@@ -45,7 +45,7 @@
       </el-form>
     </div>
 
-    <div class="table-container">
+    <div class="table-container" v-loading="loading">
       <el-table :data="traces" class="premium-table" row-class-name="premium-row" header-cell-class-name="premium-header">
         <el-table-column prop="created_at" label="时间" width="170">
           <template #default="{ row }">
@@ -64,7 +64,7 @@
         </el-table-column>
         <el-table-column prop="total_tokens" label="Token" width="80" align="right">
           <template #default="{ row }">
-            <span class="mono-text">{{ row.total_tokens }}</span>
+            <span class="mono-text">{{ row.total_tokens ?? 0 }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="latency_ms" label="延迟" width="90" align="right">
@@ -79,7 +79,7 @@
         </el-table-column>
         <el-table-column prop="tokens_per_sec" label="tok/s" width="80" align="right">
           <template #default="{ row }">
-            <span class="mono-text">{{ row.tokens_per_sec.toFixed(1) }}</span>
+            <span class="mono-text">{{ formatTps(row.tokens_per_sec) }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="status" label="状态" width="80" align="center">
@@ -116,15 +116,28 @@ const filters = ref({ provider: '', model: '' })
 const page = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
+const loading = ref(false)
 
 const detailVisible = ref(false)
 const detailTraceId = ref(0)
 
 function formatDateTime(s: string) { return s ? s.replace('T', ' ').slice(0, 16) : '—' }
-function formatMs(ms: number) { return ms > 0 ? `${Math.round(ms)}ms` : '—' }
-function formatTokens(t: number) { return t >= 1000 ? `${(t / 1000).toFixed(1)}k` : String(t) }
+function formatMs(ms: number | string | undefined | null) {
+  const n = Number(ms)
+  return !isNaN(n) && n > 0 ? `${Math.round(n)}ms` : '—'
+}
+function formatTokens(t: number | string | undefined | null) {
+  const n = Number(t)
+  if (isNaN(n) || n === 0) return '0'
+  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
+}
+function formatTps(tps: number | string | undefined | null) {
+  const n = Number(tps)
+  return !isNaN(n) && n > 0 ? n.toFixed(1) : '—'
+}
 
 async function loadData() {
+  loading.value = true
   try {
     const params: Record<string, unknown> = { page: page.value, page_size: pageSize.value }
     if (filters.value.provider) params.provider = filters.value.provider
@@ -134,6 +147,8 @@ async function loadData() {
     total.value = res.total || 0
   } catch (e) {
     console.error('[AiTraces] loadData failed:', e)
+  } finally {
+    loading.value = false
   }
 }
 

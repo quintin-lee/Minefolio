@@ -88,7 +88,7 @@
           <el-input v-model="form.name" placeholder="如：招商银行卡、茅台股票" />
         </el-form-item>
         <el-form-item label="分类" prop="category_id">
-          <el-cascader v-model="form._catPath" :props="{ checkStrictly: true, value: 'id', label: 'name', lazy: true, lazyLoad(node, resolve) {
+          <el-cascader v-model="form._catPath" :props="{ checkStrictly: true, value: 'id', label: 'name', lazy: true, lazyLoad(node: any, resolve: any) {
               if (node.level === 0) {
                 resolve(categoryStore.allNodes.filter(c => c.type === 'asset' || (!c.type && c.asset_type) && (c.parent_id === null || c.parent_id === 0)) as any)
               } else {

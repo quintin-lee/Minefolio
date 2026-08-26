@@ -40,6 +40,8 @@ void ai_trace_set_system_prompt(ai_trace_t* t, const char* prompt);
 void ai_trace_serialize_messages(ai_trace_t* t, csilk_json_t* messages_array);
 void ai_trace_append_output(ai_trace_t* t, const char* chunk);
 void ai_trace_record_first_token(ai_trace_t* t);
+int ai_estimate_tokens_from_text(const char* text);
+void ai_trace_calculate_tokens_and_cost(ai_trace_t* t, int prompt_tokens, int completion_tokens);
 void ai_trace_finish(ai_trace_t* t, const char* status, const char* error);
 int64_t ai_trace_save(csilk_db_pool_t* pool, ai_trace_t* t);
 void ai_trace_free(ai_trace_t* t);

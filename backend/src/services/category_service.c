@@ -10,58 +10,107 @@
 #include <stdlib.h>
 #include <string.h>
 
-static csilk_json_t* row_to_category(csilk_json_t* row) {
-    csilk_json_t* obj = csilk_json_object();
-    csilk_json_add_number(obj, "id", db_get_num(row, "id"));
-    csilk_json_add_string(obj, "name", csilk_json_get_string(row, "name"));
-    csilk_json_add_string(obj, "parent_name", csilk_json_get_string(row, "parent_name"));
-    double pid = db_get_num(row, "parent_id");
-    csilk_json_add_object(obj, "parent_id",
-        pid > 0 ? csilk_json_number(pid) : csilk_json_null());
-    const char* type = csilk_json_get_string(row, "type");
-    csilk_json_add_string(obj, "type", (type && type[0]) ? type : "asset");
-    csilk_json_add_string(obj, "asset_type", csilk_json_get_string(row, "asset_type"));
-    csilk_json_add_string(obj, "currency", csilk_json_get_string(row, "currency"));
-    csilk_json_add_string(obj, "icon", csilk_json_get_string(row, "icon"));
-    csilk_json_add_number(obj, "sort_order", db_get_num(row, "sort_order"));
-    return obj;
-}
+#include "yyjson.h"
 
 static csilk_json_t* build_tree(csilk_json_t* rows) {
     size_t n = csilk_json_array_size(rows);
     if (n == 0) return csilk_json_array();
 
-    csilk_json_t** nodes = calloc(n, sizeof(csilk_json_t*));
+    yyjson_mut_doc* doc = yyjson_mut_doc_new(NULL);
+    if (!doc) return csilk_json_array();
+
+    yyjson_mut_val* tree_arr = yyjson_mut_arr(doc);
+    yyjson_mut_doc_set_root(doc, tree_arr);
+
+    yyjson_mut_val** nodes = calloc(n, sizeof(yyjson_mut_val*));
     int64_t* ids = calloc(n, sizeof(int64_t));
-    csilk_json_t** kids = calloc(n, sizeof(csilk_json_t*));
-    if (!nodes || !ids || !kids) {
-        free(nodes); free(ids); free(kids);
+    int64_t* pids = calloc(n, sizeof(int64_t));
+    yyjson_mut_val** children_arrs = calloc(n, sizeof(yyjson_mut_val*));
+
+    if (!nodes || !ids || !pids || !children_arrs) {
+        free(nodes); free(ids); free(pids); free(children_arrs);
+        yyjson_mut_doc_free(doc);
         return csilk_json_array();
     }
 
     for (size_t i = 0; i < n; i++) {
-        nodes[i] = row_to_category(csilk_json_array_get(rows, i));
-        ids[i] = db_get_int(nodes[i], "id");
+        const csilk_json_t* row = csilk_json_array_get(rows, i);
+        yyjson_mut_val* obj = yyjson_mut_obj(doc);
+
+        double id_val = db_get_num(row, "id");
+        ids[i] = (int64_t)id_val;
+        yyjson_mut_obj_add_real(doc, obj, "id", id_val);
+
+        const char* name = csilk_json_get_string(row, "name");
+        yyjson_mut_obj_add_strcpy(doc, obj, "name", name ? name : "");
+
+        const char* parent_name = csilk_json_get_string(row, "parent_name");
+        if (parent_name) {
+            yyjson_mut_obj_add_strcpy(doc, obj, "parent_name", parent_name);
+        } else {
+            yyjson_mut_obj_add_null(doc, obj, "parent_name");
+        }
+
+        double pid = db_get_num(row, "parent_id");
+        pids[i] = (int64_t)pid;
+        if (pid > 0) {
+            yyjson_mut_obj_add_real(doc, obj, "parent_id", pid);
+        } else {
+            yyjson_mut_obj_add_null(doc, obj, "parent_id");
+        }
+
+        const char* type = csilk_json_get_string(row, "type");
+        yyjson_mut_obj_add_strcpy(doc, obj, "type", (type && type[0]) ? type : "asset");
+
+        const char* asset_type = csilk_json_get_string(row, "asset_type");
+        if (asset_type) {
+            yyjson_mut_obj_add_strcpy(doc, obj, "asset_type", asset_type);
+        } else {
+            yyjson_mut_obj_add_null(doc, obj, "asset_type");
+        }
+
+        const char* currency = csilk_json_get_string(row, "currency");
+        if (currency) {
+            yyjson_mut_obj_add_strcpy(doc, obj, "currency", currency);
+        } else {
+            yyjson_mut_obj_add_null(doc, obj, "currency");
+        }
+
+        const char* icon = csilk_json_get_string(row, "icon");
+        yyjson_mut_obj_add_strcpy(doc, obj, "icon", icon ? icon : "");
+
+        yyjson_mut_obj_add_real(doc, obj, "sort_order", db_get_num(row, "sort_order"));
+
+        nodes[i] = obj;
     }
 
-    csilk_json_t* tree = csilk_json_array();
     for (size_t i = 0; i < n; i++) {
-        int64_t parent = db_get_int(nodes[i], "parent_id");
+        int64_t parent = pids[i];
         size_t j = 0;
         while (j < n && ids[j] != parent) j++;
         if (parent > 0 && j < n) {
-            if (!kids[j]) {
-                kids[j] = csilk_json_array();
-                csilk_json_add_array(nodes[j], "children", kids[j]);
+            if (!children_arrs[j]) {
+                children_arrs[j] = yyjson_mut_arr(doc);
+                yyjson_mut_obj_add_val(doc, nodes[j], "children", children_arrs[j]);
             }
-            csilk_json_array_append(kids[j], nodes[i]);
+            yyjson_mut_arr_add_val(children_arrs[j], nodes[i]);
         } else {
-            csilk_json_array_append(tree, nodes[i]);
+            yyjson_mut_arr_add_val(tree_arr, nodes[i]);
         }
     }
 
-    free(nodes); free(ids); free(kids);
-    return tree;
+    free(nodes); free(ids); free(pids); free(children_arrs);
+
+    size_t len = 0;
+    char* json_str = yyjson_mut_write(doc, 0, &len);
+    yyjson_mut_doc_free(doc);
+
+    csilk_json_t* tree = NULL;
+    if (json_str) {
+        tree = csilk_json_parse_len(json_str, len);
+        free(json_str);
+    }
+    return tree ? tree : csilk_json_array();
 }
 
 typedef struct {
@@ -477,7 +526,23 @@ void categories_children(csilk_ctx_t* c) {
     size_t n = csilk_json_array_size(rows);
     csilk_json_t* result = csilk_json_array();
     for (size_t i = 0; i < n; i++) {
-        csilk_json_t* node = row_to_category(csilk_json_array_get(rows, i));
+        const csilk_json_t* row = csilk_json_array_get(rows, i);
+        csilk_json_t* node = csilk_json_object();
+        csilk_json_add_number(node, "id", db_get_num(row, "id"));
+        csilk_json_add_string(node, "name", csilk_json_get_string(row, "name"));
+        csilk_json_add_string(node, "parent_name", csilk_json_get_string(row, "parent_name"));
+        double pid = db_get_num(row, "parent_id");
+        if (pid > 0) {
+            csilk_json_add_number(node, "parent_id", pid);
+        } else {
+            csilk_json_add_null(node, "parent_id");
+        }
+        const char* type = csilk_json_get_string(row, "type");
+        csilk_json_add_string(node, "type", (type && type[0]) ? type : "asset");
+        csilk_json_add_string(node, "asset_type", csilk_json_get_string(row, "asset_type"));
+        csilk_json_add_string(node, "currency", csilk_json_get_string(row, "currency"));
+        csilk_json_add_string(node, "icon", csilk_json_get_string(row, "icon"));
+        csilk_json_add_number(node, "sort_order", db_get_num(row, "sort_order"));
         csilk_json_array_append(result, node);
     }
     csilk_json_free(rows);

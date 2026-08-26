@@ -55,7 +55,7 @@
               <el-cascader
                 v-model="filters.category_id"
                 :options="categoryTree"
-                :props="{ checkStrictly: true, value: 'id', label: 'name', emitPath: false, lazy: true, lazyLoad(node, resolve) {
+                :props="{ checkStrictly: true, value: 'id', label: 'name', emitPath: false, lazy: true, lazyLoad(node: any, resolve: any) {
                   if (node.level === 0) {
                     resolve(allCategories.filter(c => c.parent_id === null || c.parent_id === 0) as any)
                   } else {
@@ -275,7 +275,7 @@
           <el-row :gutter="16">
             <el-col :span="12">
               <el-form-item label="交易分类" prop="category_id">
-                <el-cascader v-model="form._catPath" :props="{ checkStrictly: true, value: 'id', label: 'name', lazy: true, lazyLoad(node, resolve) {
+                <el-cascader v-model="form._catPath" :props="{ checkStrictly: true, value: 'id', label: 'name', lazy: true, lazyLoad(node: any, resolve: any) {
                   if (node.level === 0) {
                     resolve(allCategories.filter(c => c.parent_id === null || c.parent_id === 0) as any)
                   } else {

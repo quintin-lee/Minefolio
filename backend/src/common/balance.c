@@ -157,3 +157,58 @@ int apply_position(csilk_db_pool_t* pool, int64_t asset_id,
     csilk_json_free(pos);
     return 0;
 }
+
+int rollback_position(csilk_db_pool_t* pool, int64_t asset_id,
+                      const char* type, double amount, double fee,
+                      double price, double qty,
+                      double* out_position_delta) {
+    if (!pool || asset_id <= 0 || !type) return 0;
+
+    char aid_str[32];
+    snprintf(aid_str, sizeof(aid_str), "%lld", (long long)asset_id);
+    csilk_json_t* pos = csilk_db_query_param_json(pool,
+        "SELECT a.quantity, a.cost_basis, a.net_value, a.current_value, c.asset_type "
+        "FROM assets a JOIN categories c ON a.category_id=c.id WHERE a.id=?",
+        (const char*[]){aid_str, NULL});
+    if (!pos || csilk_json_array_size(pos) == 0) {
+        if (pos) csilk_json_free(pos);
+        return 0;
+    }
+    const csilk_json_t* pr = csilk_json_array_get(pos, 0);
+    const char* atype = csilk_json_get_string(pr, "asset_type");
+    if (!is_investment_type(atype)) {
+        csilk_json_free(pos);
+        return 0;
+    }
+    double old_qty = db_get_num(pr, "quantity");
+    double old_cost = db_get_num(pr, "cost_basis");
+    double old_net = db_get_num(pr, "net_value");
+    double old_current = db_get_num(pr, "current_value");
+    double new_qty, new_cost, new_net;
+
+    if (strcmp(type, "buy") == 0) {
+        new_qty = (old_qty > qty) ? (old_qty - qty) : 0;
+        new_cost = (old_cost > (amount + fee)) ? (old_cost - (amount + fee)) : 0;
+        new_net = (new_qty > 0) ? old_net : 0;
+    } else if (strcmp(type, "sell") == 0) {
+        double avg_cost = (old_qty > 0) ? (old_cost / old_qty) : price;
+        new_qty = old_qty + qty;
+        new_cost = old_cost + qty * avg_cost;
+        new_net = old_net;
+    } else {
+        csilk_json_free(pos);
+        return 0;
+    }
+    double delta = new_qty * new_net - old_current;
+    if (out_position_delta) *out_position_delta = delta;
+
+    char nq[64], nc[64], nv[64];
+    snprintf(nq, sizeof(nq), "%.4f", new_qty);
+    snprintf(nc, sizeof(nc), "%.4f", new_cost);
+    snprintf(nv, sizeof(nv), "%.4f", new_net);
+    const char* p[] = {nq, nc, nv, aid_str, NULL};
+    csilk_db_query_param_json(pool,
+        "UPDATE assets SET quantity=?, cost_basis=?, net_value=? WHERE id=?", p);
+    csilk_json_free(pos);
+    return 0;
+}

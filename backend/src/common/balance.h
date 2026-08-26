@@ -48,3 +48,11 @@ int apply_position(csilk_db_pool_t* pool, int64_t asset_id,
                    const char* type, double amount, double fee,
                    double price, double qty,
                    double* out_position_delta);
+
+/**
+ * @brief 回滚投资类资产的买卖持仓变化（用于编辑/删除投资交易）。
+ */
+int rollback_position(csilk_db_pool_t* pool, int64_t asset_id,
+                      const char* type, double amount, double fee,
+                      double price, double qty,
+                      double* out_position_delta);

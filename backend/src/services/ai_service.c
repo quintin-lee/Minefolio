@@ -23,6 +23,49 @@ static const char* get_driver_name(const char* prov_id) {
     return "openai";
 }
 
+static void utf8_truncate(char* str, size_t max_chars, size_t max_bytes) {
+    if (!str || !*str) return;
+    size_t char_count = 0;
+    size_t byte_idx = 0;
+    size_t valid_byte_len = 0;
+
+    while (str[byte_idx] != '\0') {
+        unsigned char c = (unsigned char)str[byte_idx];
+        size_t char_len = 1;
+        if ((c & 0x80) == 0) {
+            char_len = 1;
+        } else if ((c & 0xE0) == 0xC0) {
+            char_len = 2;
+        } else if ((c & 0xF0) == 0xE0) {
+            char_len = 3;
+        } else if ((c & 0xF8) == 0xF0) {
+            char_len = 4;
+        } else {
+            char_len = 1;
+        }
+
+        /* Check if full character sequence exists in buffer */
+        int complete = 1;
+        for (size_t i = 1; i < char_len; i++) {
+            if (str[byte_idx + i] == '\0' || ((unsigned char)str[byte_idx + i] & 0xC0) != 0x80) {
+                complete = 0;
+                break;
+            }
+        }
+        if (!complete) break;
+
+        if (char_count >= max_chars || (byte_idx + char_len) > max_bytes) {
+            break;
+        }
+
+        byte_idx += char_len;
+        valid_byte_len = byte_idx;
+        char_count++;
+    }
+
+    str[valid_byte_len] = '\0';
+}
+
 void ai_init(csilk_db_pool_t* pool) {
     char* json = pool ? ai_settings_load(pool) : NULL;
     if (json) {
@@ -185,16 +228,14 @@ void ai_chat_handler(csilk_ctx_t* c) {
     }
     strncpy(model_buf, model_override ?: (prov->models[0] ?: "default"), sizeof(model_buf) - 1);
 
-    /* session: create if new */
+    /* session: create if new, or auto-title default "新对话" session */
     int64_t sid = session_id;
     if (sid <= 0) {
         char title[256];
-        strncpy(title, content, sizeof(title) - 1); title[sizeof(title)-1] = '\0';
-        if (strlen(title) > 30) {
-            title[30] = '\0';
-            size_t tlen = strlen(title);
-            while (tlen > 0 && (unsigned char)title[tlen-1] > 0x7F) { title[--tlen] = '\0'; }
-        }
+        strncpy(title, content, sizeof(title) - 1);
+        title[sizeof(title) - 1] = '\0';
+        utf8_truncate(title, 20, 60);
+        if (title[0] == '\0') strcpy(title, "新对话");
         sid = ai_session_insert(pool, user_id, title, model_buf, prov->id);
         if (sid <= 0) {
             csilk_json_free(body);
@@ -204,6 +245,16 @@ void ai_chat_handler(csilk_ctx_t* c) {
     } else {
         csilk_json_t* sess = ai_session_get(pool, user_id, sid);
         if (!sess) { csilk_json_free(body); respond_not_found(c); return; }
+        const char* current_title = csilk_json_get_string(csilk_json_array_get(sess, 0), "title");
+        if (current_title && strcmp(current_title, "新对话") == 0 && !regenerate) {
+            char title[256];
+            strncpy(title, content, sizeof(title) - 1);
+            title[sizeof(title) - 1] = '\0';
+            utf8_truncate(title, 20, 60);
+            if (title[0] != '\0') {
+                ai_session_update(pool, user_id, sid, title, NULL);
+            }
+        }
         csilk_json_free(sess);
         if (regenerate) {
             ai_message_delete_last_assistant(pool, sid);
@@ -301,6 +352,8 @@ void ai_chat_handler(csilk_ctx_t* c) {
     int round = 0;
     int max_rounds = 10;
     int got_text = 0;
+    int total_prompt_tokens = 0;
+    int total_completion_tokens = 0;
 
     while (!got_text && round < max_rounds) {
         csilk_ai_chat_request_t req = {
@@ -314,12 +367,15 @@ void ai_chat_handler(csilk_ctx_t* c) {
         };
         csilk_ai_chat_response_t ai_res = {0};
         int rc = csilk_ai_chat(ai_inst, &req, &ai_res);
+        if (ai_res.prompt_tokens > 0) total_prompt_tokens += ai_res.prompt_tokens;
+        if (ai_res.completion_tokens > 0) total_completion_tokens += ai_res.completion_tokens;
 
         if (rc != 0) {
-            ai_trace_finish(&trace, "error", "AI request failed");
+            ai_trace_calculate_tokens_and_cost(&trace, total_prompt_tokens, total_completion_tokens);
+            ai_trace_finish(&trace, "error", (ai_res.error_message && ai_res.error_message[0]) ? ai_res.error_message : "AI request failed");
             ai_trace_save(db_get_pool(), &trace);
             ai_trace_free(&trace);
-            send_error(c, "AI request failed");
+            send_error(c, (ai_res.error_message && ai_res.error_message[0]) ? ai_res.error_message : "AI request failed");
             round = max_rounds;
             break;
         }
@@ -408,6 +464,7 @@ void ai_chat_handler(csilk_ctx_t* c) {
         round++;
     }
 
+    ai_trace_calculate_tokens_and_cost(&trace, total_prompt_tokens, total_completion_tokens);
     ai_trace_finish(&trace, got_text ? "ok" : "error", NULL);
     ai_trace_save(db_get_pool(), &trace);
     ai_trace_free(&trace);
@@ -469,9 +526,27 @@ void ai_service_test_connection(csilk_ctx_t* c) {
     struct timespec t1, t2;
     clock_gettime(CLOCK_MONOTONIC, &t1);
 
+    const char* test_model = model;
+    if (!test_model || !test_model[0]) {
+        ai_provider_t* p = ai_config_find_provider(&g_config, id);
+        if (p && p->model_count > 0 && p->models[0] && p->models[0][0]) {
+            test_model = p->models[0];
+        } else if (strcmp(id, "deepseek") == 0) {
+            test_model = "deepseek-chat";
+        } else if (strcmp(id, "openai") == 0) {
+            test_model = "gpt-4o-mini";
+        } else if (strcmp(id, "qwen") == 0) {
+            test_model = "qwen-plus";
+        } else if (strcmp(id, "ollama") == 0) {
+            test_model = "llama3";
+        } else {
+            test_model = "default";
+        }
+    }
+
     csilk_ai_message_t msg = {.role = "user", .content = "ping"};
     csilk_ai_chat_request_t req = {
-        .model = (model && model[0]) ? model : "model",
+        .model = test_model,
         .messages = &msg,
         .message_count = 1,
         .stream = 0,

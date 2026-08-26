@@ -63,6 +63,82 @@ void ai_trace_record_first_token(ai_trace_t* t) {
     }
 }
 
+int ai_estimate_tokens_from_text(const char* text) {
+    if (!text || !*text) return 0;
+    size_t char_count = 0;
+    size_t ascii_count = 0;
+    size_t cjk_count = 0;
+    size_t i = 0;
+
+    while (text[i] != '\0') {
+        unsigned char c = (unsigned char)text[i];
+        if ((c & 0x80) == 0) {
+            ascii_count++;
+            i += 1;
+        } else if ((c & 0xE0) == 0xC0) {
+            cjk_count++;
+            i += (text[i + 1] != '\0') ? 2 : 1;
+        } else if ((c & 0xF0) == 0xE0) {
+            cjk_count++;
+            i += (text[i + 1] != '\0' && text[i + 2] != '\0') ? 3 : 1;
+        } else if ((c & 0xF8) == 0xF0) {
+            cjk_count++;
+            i += (text[i + 1] != '\0' && text[i + 2] != '\0' && text[i + 3] != '\0') ? 4 : 1;
+        } else {
+            ascii_count++;
+            i += 1;
+        }
+        char_count++;
+    }
+
+    /* Standard heuristic: ~3.5 ASCII chars per token, ~1.2 tokens per CJK character */
+    int estimated = (int)((double)ascii_count / 3.5 + (double)cjk_count * 1.2);
+    if (estimated <= 0 && char_count > 0) estimated = 1;
+    return estimated;
+}
+
+void ai_trace_calculate_tokens_and_cost(ai_trace_t* t, int prompt_tokens, int completion_tokens) {
+    if (prompt_tokens > 0) {
+        t->prompt_tokens = prompt_tokens;
+    } else {
+        int est_in = ai_estimate_tokens_from_text(t->input_messages);
+        int est_sys = ai_estimate_tokens_from_text(t->system_prompt);
+        t->prompt_tokens = est_in + est_sys + 8; /* Add slight overhead for message framing */
+    }
+
+    if (completion_tokens > 0) {
+        t->completion_tokens = completion_tokens;
+    } else {
+        t->completion_tokens = ai_estimate_tokens_from_text(t->output_content);
+    }
+
+    t->total_tokens = t->prompt_tokens + t->completion_tokens;
+
+    /* Pricing estimation (per 1M tokens) */
+    double in_price_per_1m = 0.50;
+    double out_price_per_1m = 1.50;
+
+    if (strstr(t->model, "gpt-4o-mini") || strstr(t->model, "4o-mini")) {
+        in_price_per_1m = 0.15;
+        out_price_per_1m = 0.60;
+    } else if (strstr(t->model, "gpt-4o") || strstr(t->model, "gpt-4")) {
+        in_price_per_1m = 2.50;
+        out_price_per_1m = 10.00;
+    } else if (strstr(t->provider, "deepseek") || strstr(t->model, "deepseek")) {
+        in_price_per_1m = 0.14;
+        out_price_per_1m = 0.28;
+    } else if (strstr(t->provider, "qwen") || strstr(t->model, "qwen")) {
+        in_price_per_1m = 0.20;
+        out_price_per_1m = 0.60;
+    } else if (strstr(t->provider, "ollama")) {
+        in_price_per_1m = 0.0;
+        out_price_per_1m = 0.0;
+    }
+
+    t->cost_usd = ((double)t->prompt_tokens * in_price_per_1m / 1000000.0) +
+                  ((double)t->completion_tokens * out_price_per_1m / 1000000.0);
+}
+
 void ai_trace_finish(ai_trace_t* t, const char* status, const char* error) {
     clock_gettime(CLOCK_MONOTONIC, &t->t_end);
     strncpy(t->status, status ?: "ok", sizeof(t->status) - 1);
@@ -73,7 +149,18 @@ void ai_trace_finish(ai_trace_t* t, const char* status, const char* error) {
     t->latency_ms = (t->t_end.tv_sec - t->t_start.tv_sec) * 1000
                   + (t->t_end.tv_nsec - t->t_start.tv_nsec) / 1000000;
     if (t->latency_ms < 0) t->latency_ms = 0;
-    if (t->total_tokens > 0 && t->latency_ms > 0) {
+
+    /* Calculate tokens per second */
+    if (t->completion_tokens > 0) {
+        long gen_ms = (t->first_token_ms > 0 && t->latency_ms > t->first_token_ms)
+            ? (t->latency_ms - t->first_token_ms)
+            : t->latency_ms;
+        if (gen_ms > 0) {
+            t->tokens_per_sec = (double)t->completion_tokens / ((double)gen_ms / 1000.0);
+        } else {
+            t->tokens_per_sec = (double)t->completion_tokens;
+        }
+    } else if (t->total_tokens > 0 && t->latency_ms > 0) {
         t->tokens_per_sec = (double)t->total_tokens / ((double)t->latency_ms / 1000.0);
     }
 }

@@ -109,7 +109,7 @@ int de_update(csilk_db_pool_t* pool, int64_t user_id, int64_t id, int64_t catego
     snprintf(cat, sizeof(cat), "%lld", (long long)category_id);
     snprintf(ast, sizeof(ast), "%lld", (long long)asset_id);
     snprintf(amt, sizeof(amt), "%.6f", amount);
-    csilk_json_t* res = csilk_db_query_param_json(pool, "UPDATE daily_expenses SET category_id=?,asset_id=?,expense_type=?,amount=?,currency=?,expense_date=?,note=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?", (const char*[]){ cat, ast, expense_type?expense_type:"", amt, currency?currency:"CNY", date?date:"", note?note:"", idstr, uid, NULL });
+    csilk_json_t* res = csilk_db_query_param_json(pool, "UPDATE daily_expenses SET category_id=?,asset_id=?,expense_type=?,amount=?,currency=?,expense_date=?,note=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=? RETURNING id", (const char*[]){ cat, ast, expense_type?expense_type:"", amt, currency?currency:"CNY", date?date:"", note?note:"", idstr, uid, NULL });
     int ok = res ? csilk_json_array_size(res) > 0 : 0;
     if (res) csilk_json_free(res);
     return ok;
@@ -118,7 +118,7 @@ int de_delete(csilk_db_pool_t* pool, int64_t user_id, int64_t id) {
     char uid[32], idstr[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     snprintf(idstr, sizeof(idstr), "%lld", (long long)id);
-    csilk_json_t* res = csilk_db_query_param_json(pool, "DELETE FROM daily_expenses WHERE id=? AND user_id=?", (const char*[]){ idstr, uid, NULL });
+    csilk_json_t* res = csilk_db_query_param_json(pool, "DELETE FROM daily_expenses WHERE id=? AND user_id=? RETURNING id", (const char*[]){ idstr, uid, NULL });
     int ok = res ? csilk_json_array_size(res) > 0 : 0;
     if (res) csilk_json_free(res);
     return ok;

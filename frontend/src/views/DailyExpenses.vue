@@ -120,7 +120,7 @@
           </el-radio-group>
         </el-form-item>
         <el-form-item label="分类" prop="category_id">
-          <el-cascader v-model="form._catPath" :props="{ checkStrictly: true, value: 'id', label: 'name', lazy: true, lazyLoad(node, resolve) {
+          <el-cascader v-model="form._catPath" :props="{ checkStrictly: true, value: 'id', label: 'name', lazy: true, lazyLoad(node: any, resolve: any) {
                   if (node.level === 0) {
                     resolve(allCategories.filter(c => c.parent_id === null || c.parent_id === 0) as any)
                   } else {

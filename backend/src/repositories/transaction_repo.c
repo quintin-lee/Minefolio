@@ -63,7 +63,7 @@ int tx_update(csilk_db_pool_t* pool, int64_t user_id, int64_t id, const char* tr
     snprintf(qty, sizeof(qty), "%.4f", quantity);
     snprintf(cat, sizeof(cat), "%lld", (long long)category_id);
     snprintf(last, sizeof(last), "%lld", (long long)linked_asset_id);
-    csilk_json_t* res = csilk_db_query_param_json(pool, "UPDATE transactions SET transaction_type=?,direction=?,linked_direction=?,amount=?,price_per_unit=?,quantity=?,currency=?,transaction_date=?,note=?,category_id=?,source_type=?,linked_asset_id=NULLIF(?, '0') WHERE id=? AND user_id=?", (const char*[]){ transaction_type, direction ? "in" : "out", linked_direction ? "out" : NULL, amt, pp, qty, currency ? currency : "CNY", date ? date : "", note ? note : "", cat, source_type ? source_type : "expense", last, idstr, uid, NULL });
+    csilk_json_t* res = csilk_db_query_param_json(pool, "UPDATE transactions SET transaction_type=?,direction=?,linked_direction=?,amount=?,price_per_unit=?,quantity=?,currency=?,transaction_date=?,note=?,category_id=?,source_type=?,linked_asset_id=NULLIF(?, '0') WHERE id=? AND user_id=? RETURNING id", (const char*[]){ transaction_type, direction ? "in" : "out", linked_direction ? "out" : NULL, amt, pp, qty, currency ? currency : "CNY", date ? date : "", note ? note : "", cat, source_type ? source_type : "expense", last, idstr, uid, NULL });
     int ok = res ? csilk_json_array_size(res) > 0 : 0;
     if (res) csilk_json_free(res);
     return ok;
@@ -78,7 +78,7 @@ int tx_delete(csilk_db_pool_t* pool, int64_t user_id, int64_t id) {
     char uid[32], idstr[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     snprintf(idstr, sizeof(idstr), "%lld", (long long)id);
-    csilk_json_t* res = csilk_db_query_param_json(pool, "DELETE FROM transactions WHERE id=? AND user_id=?", (const char*[]){ idstr, uid, NULL });
+    csilk_json_t* res = csilk_db_query_param_json(pool, "DELETE FROM transactions WHERE id=? AND user_id=? RETURNING id", (const char*[]){ idstr, uid, NULL });
     int ok = res ? csilk_json_array_size(res) > 0 : 0;
     if (res) csilk_json_free(res);
     return ok;

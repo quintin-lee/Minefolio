@@ -16,7 +16,7 @@
             <div class="info-item"><span class="label">时间</span><span class="value mono">{{ formatDateTime(detail.created_at) }}</span></div>
             <div class="info-item"><span class="label">延迟</span><span class="value mono">{{ detail.latency_ms }}ms</span></div>
             <div class="info-item"><span class="label">首 Token</span><span class="value mono">{{ detail.first_token_ms }}ms</span></div>
-            <div class="info-item"><span class="label">tok/s</span><span class="value mono">{{ detail.tokens_per_sec.toFixed(1) }}</span></div>
+            <div class="info-item"><span class="label">tok/s</span><span class="value mono">{{ Number(detail.tokens_per_sec || 0).toFixed(1) }}</span></div>
             <div class="info-item"><span class="label">Prompt Token</span><span class="value mono">{{ detail.prompt_tokens }}</span></div>
             <div class="info-item"><span class="label">Completion Token</span><span class="value mono">{{ detail.completion_tokens }}</span></div>
             <div class="info-item"><span class="label">Total Token</span><span class="value mono">{{ detail.total_tokens }}</span></div>

@@ -158,7 +158,15 @@
                 <Icon :icon="msg.role === 'user' ? 'ph:user-bold' : 'ph:robot-bold'" />
               </div>
               <div class="message-bubble-wrap">
-                <div class="message-content" v-html="renderMarkdown(msg.content)"></div>
+                <!-- If assistant message is currently empty while streaming (waiting for first token), show thinking dots -->
+                <div v-if="msg.role === 'assistant' && !msg.content && chat.isStreaming" class="message-content thinking">
+                  <span class="pulse-dot"></span>
+                  <span class="pulse-dot"></span>
+                  <span class="pulse-dot"></span>
+                  <span class="thinking-text">思考中...</span>
+                </div>
+                <!-- Otherwise render markdown content -->
+                <div v-else class="message-content" v-html="renderMarkdown(msg.content)"></div>
                 <!-- Assistant Action Toolbar -->
                 <div v-if="msg.role === 'assistant' && msg.content && !chat.isStreaming" class="message-actions">
                   <button class="msg-action-btn" title="复制回答" @click="copyText(msg.content)">
@@ -174,19 +182,6 @@
                     <Icon icon="ph:arrows-counter-clockwise" />
                     <span>重新生成</span>
                   </button>
-                </div>
-              </div>
-            </div>
-
-            <!-- Thinking stream bubble -->
-            <div v-if="chat.isStreaming" class="message-row assistant">
-              <div class="message-avatar"><Icon icon="ph:robot-bold" /></div>
-              <div class="message-bubble-wrap">
-                <div class="message-content thinking">
-                  <span class="pulse-dot"></span>
-                  <span class="pulse-dot"></span>
-                  <span class="pulse-dot"></span>
-                  <span class="thinking-text">思考中...</span>
                 </div>
               </div>
             </div>
@@ -226,11 +221,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, nextTick, watch } from 'vue'
+import { ref, onMounted, nextTick, watch, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import { useChatStore } from '@/stores/chat'
 import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 
 const chat = useChatStore()
 const inputText = ref('')
@@ -288,9 +284,10 @@ function formatTime(dateStr?: string): string {
 function renderMarkdown(text?: string): string {
   if (!text) return ''
   try {
-    return marked.parse(text, { async: false, breaks: true }) as string
+    const rawHtml = marked.parse(text, { async: false, breaks: true }) as string
+    return DOMPurify.sanitize(rawHtml)
   } catch {
-    return text.replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    return DOMPurify.sanitize(text.replace(/</g, '&lt;').replace(/>/g, '&gt;'))
   }
 }
 

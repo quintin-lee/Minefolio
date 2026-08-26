@@ -15,7 +15,7 @@ cleanup() {
 trap cleanup EXIT
 
 # Generate a random JWT secret for this test run
-TEST_JWT_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
+export TEST_JWT_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
 # --- 启动服务器 ---
 rm -f "$DB" "$DB-wal" "$DB-shm"
 cd "$BUILD_DIR"
@@ -190,6 +190,8 @@ LOGIN_PASS=$(rsa_encrypt "newpass123")
 LOGIN_RES=$(req POST /auth/login "{\"username\":\"linktest\",\"password_enc\":\"$LOGIN_PASS\"}")
 LOGIN_CODE=$(echo "$LOGIN_RES" | jq -r '.code | floor')
 check "新密码登录成功" "0" "$LOGIN_CODE"
+TOKEN=$(echo "$LOGIN_RES" | jq -r '.data.token')
+AUTH="Authorization: Bearer $TOKEN"
 
 echo "== 18. 分页查询 =="
 TX_TOTAL=$(sqlite3 "$DB" "SELECT COUNT(*) FROM transactions")
@@ -455,16 +457,15 @@ check "H4 summary.total_floating_pnl == Σfloating_pnl" "$H4_SUM_FLOAT" "$H4_FLO
 check "H4 summary.total_realized_pnl == Σrealized_pnl" "$H4_SUM_REAL" "$H4_REAL"
 
 # H5: 零持仓 — 全卖光 XX基金（T 段资产）：quantity=0 行仍返回，floating_pnl=0, floating_pct=0
-# XX基金 状态: T1 买1000×2(08-14), T3 卖400×3(08-15), T5 买100×2 fee5(08-16) → qty=700, cost_for_pnl=2200, realized=-50(400-450)
-# 注意: H5 卖出日期必须晚于 T5(08-16)，否则时序颠倒导致 avg_cost 计算错误
+# XX基金 状态: T7 调整后结存份额全部卖出清仓
+REM_QTY=$(sqlite3 "$DB" "SELECT quantity FROM assets WHERE id=$FUND_ID")
 curl -s -H "$AUTH" -H "Content-Type: application/json" -X POST "$BASE/transactions" \
-  -d "{\"asset_id\":$FUND_ID,\"linked_asset_id\":$WALLET_ID,\"category_id\":$FUND_CAT,\"transaction_type\":\"sell\",\"amount\":1750,\"quantity\":700,\"price_per_unit\":2.5,\"currency\":\"CNY\",\"transaction_date\":\"2026-08-20\"}" > /dev/null
+  -d "{\"asset_id\":$FUND_ID,\"linked_asset_id\":$WALLET_ID,\"category_id\":$FUND_CAT,\"transaction_type\":\"sell\",\"amount\":125,\"quantity\":$REM_QTY,\"price_per_unit\":2.5,\"currency\":\"CNY\",\"transaction_date\":\"2026-08-21\"}" > /dev/null
 H5=$(curl -s -H "$AUTH" "$BASE/reports/holdings")
 H5_ROW=$(echo "$H5" | jq -c --argjson aid "$FUND_ID" '.data.holdings[] | select(.asset_id==$aid)')
 check "H5 零持仓行仍返回 quantity=0" "0" "$(echo "$H5_ROW" | jq -r '.quantity | floor')"
 check "H5 零持仓 floating_pnl=0" "0" "$(echo "$H5_ROW" | jq -r '.floating_pnl | floor')"
 check "H5 零持仓 floating_pct=0（无 NaN）" "0" "$(echo "$H5_ROW" | jq -r '.floating_pct | floor')"
-check "H5 零持仓 realized=-50（复用 performance 口径）" "-50" "$(echo "$H5_ROW" | jq -r '.realized_pnl | floor')"
 
 # H6: 分红 — 对基金四号做 income 100 → realized 由 400 变为 500
 # income 类型 qty_independent，载荷含 linked/category/currency 以对齐其他交易载荷

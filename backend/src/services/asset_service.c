@@ -99,48 +99,44 @@ void assets_update(csilk_ctx_t* c) {
     int has_cost_basis = csilk_json_get(body, "cost_basis") != NULL;
 
     csilk_db_pool_t* pool = db_get_pool();
-
-    // A2 patch: preserve DB values for missing fields
-    if (!name || !account_no || !currency || !note) {
-        csilk_json_t* cur = asset_get(pool, user_id, asset_id);
-        if (cur && csilk_json_array_size(cur) > 0) {
-            const csilk_json_t* cr = csilk_json_array_get(cur, 0);
-            if (!name) name = csilk_json_get_string(cr, "name");
-            if (!account_no) account_no = csilk_json_get_string(cr, "account_no");
-            if (!currency) currency = csilk_json_get_string(cr, "currency");
-            if (!note) note = csilk_json_get_string(cr, "note");
-        }
+    csilk_json_t* cur = asset_get(pool, user_id, asset_id);
+    if (!cur || csilk_json_array_size(cur) == 0) {
         if (cur) csilk_json_free(cur);
+        csilk_json_free(body);
+        respond_not_found(c);
+        return;
     }
+
+    const csilk_json_t* cr = csilk_json_array_get(cur, 0);
+    if (!name) name = csilk_json_get_string(cr, "name");
+    if (!account_no) account_no = csilk_json_get_string(cr, "account_no");
+    if (!currency) currency = csilk_json_get_string(cr, "currency");
+    if (!note) note = csilk_json_get_string(cr, "note");
+    const char* asset_type = csilk_json_get_string(cr, "asset_type");
+
+    int is_investment = (asset_type && (strcmp(asset_type, "stock") == 0 ||
+                                        strcmp(asset_type, "fund") == 0 ||
+                                        strcmp(asset_type, "bond") == 0 ||
+                                        strcmp(asset_type, "crypto") == 0));
 
     // Investment asset position update
     if (has_net_value || has_quantity || has_cost_basis) {
-        char* asset_type = asset_get_category_type(pool, user_id, asset_id);
-        int is_investment = (asset_type && (strcmp(asset_type, "stock") == 0 ||
-                                            strcmp(asset_type, "fund") == 0 ||
-                                            strcmp(asset_type, "bond") == 0 ||
-                                            strcmp(asset_type, "crypto") == 0));
         if (is_investment) {
-            csilk_json_t* holder = asset_get(pool, user_id, asset_id);
-            if (holder && csilk_json_array_size(holder) > 0) {
-                const csilk_json_t* hr = csilk_json_array_get(holder, 0);
-                double old_qty = db_get_num(hr, "quantity");
-                double old_cost = db_get_num(hr, "cost_basis");
-                double old_net = db_get_num(hr, "net_value");
-                double old_current = db_get_num(hr, "current_value");
-                double new_qty = has_quantity ? quantity_input : old_qty;
-                double new_net = has_net_value ? net_value_input : old_net;
-                double new_cost = has_cost_basis ? cost_basis_input : old_cost;
-                double new_current = new_qty * new_net;
-                double delta = new_current - old_current;
-                if (delta != 0) {
-                    balance_apply_delta(pool, asset_id, user_id, delta, "asset_netvalue", asset_id, "net_value update");
-                }
-                asset_update_position(pool, user_id, asset_id, new_net, new_qty, new_cost);
+            double old_qty = db_get_num(cr, "quantity");
+            double old_cost = db_get_num(cr, "cost_basis");
+            double old_net = db_get_num(cr, "net_value");
+            double old_current = db_get_num(cr, "current_value");
+            double new_qty = has_quantity ? quantity_input : old_qty;
+            double new_net = has_net_value ? net_value_input : old_net;
+            double new_cost = has_cost_basis ? cost_basis_input : old_cost;
+            double new_current = new_qty * new_net;
+            double delta = new_current - old_current;
+            if (delta != 0) {
+                balance_apply_delta(pool, asset_id, user_id, delta, "asset_netvalue", asset_id, "net_value update");
             }
-            if (holder) csilk_json_free(holder);
+            asset_update_position(pool, user_id, asset_id, new_net, new_qty, new_cost);
         }
-        free(asset_type);
+        csilk_json_free(cur);
         csilk_json_free(body);
         respond_ok_null(c);
         return;
@@ -148,10 +144,12 @@ void assets_update(csilk_ctx_t* c) {
 
     // Normal asset update
     if (!asset_update_basic(pool, user_id, asset_id, name, account_no, value, currency, note)) {
+        csilk_json_free(cur);
         csilk_json_free(body);
         respond_not_found(c);
         return;
     }
+    csilk_json_free(cur);
     csilk_json_free(body);
     respond_ok_null(c);
 }
@@ -233,10 +231,74 @@ void assets_detail(csilk_ctx_t* c) {
     respond_ok(c, resp);
 }
 
+void asset_logs_list(csilk_ctx_t* c) {
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) return;
+
+    int64_t page = 1, page_size = 20;
+    parse_page_params(c, &page, &page_size);
+
+    csilk_db_pool_t* pool = db_get_pool();
+    const char* asset_id_str = csilk_get_query(c, "asset_id");
+
+    char uid_str[32], limit_buf[32], offset_buf[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    snprintf(limit_buf, sizeof(limit_buf), "%lld", (long long)page_size);
+    snprintf(offset_buf, sizeof(offset_buf), "%lld", (long long)((page - 1) * page_size));
+
+    char count_sql[256];
+    const char* cnt_params[4];
+    snprintf(count_sql, sizeof(count_sql),
+        "SELECT COUNT(*) AS cnt FROM asset_balance_logs abl WHERE abl.user_id=?");
+    cnt_params[0] = uid_str;
+    int cnt_pidx = 1;
+
+    csilk_json_t* result = NULL;
+    if (asset_id_str && strlen(asset_id_str) > 0) {
+        char aid_buf[32];
+        snprintf(aid_buf, sizeof(aid_buf), "%lld", atoll(asset_id_str));
+        const char* params[] = { uid_str, aid_buf, limit_buf, offset_buf, NULL };
+        result = csilk_db_query_param_json(pool,
+            "SELECT abl.id, abl.asset_id, a.name AS asset_name, abl.user_id, "
+            "abl.delta, abl.balance_after, abl.source_type, abl.source_id, "
+            "abl.note, abl.created_at "
+            "FROM asset_balance_logs abl "
+            "LEFT JOIN assets a ON abl.asset_id = a.id "
+            "WHERE abl.user_id=? AND abl.asset_id=? "
+            "ORDER BY abl.created_at DESC LIMIT ? OFFSET ?", params);
+        snprintf(count_sql + strlen(count_sql), sizeof(count_sql) - strlen(count_sql),
+            " AND abl.asset_id=?");
+        cnt_params[cnt_pidx++] = aid_buf;
+    } else {
+        const char* params[] = { uid_str, limit_buf, offset_buf, NULL };
+        result = csilk_db_query_param_json(pool,
+            "SELECT abl.id, abl.asset_id, a.name AS asset_name, abl.user_id, "
+            "abl.delta, abl.balance_after, abl.source_type, abl.source_id, "
+            "abl.note, abl.created_at "
+            "FROM asset_balance_logs abl "
+            "LEFT JOIN assets a ON abl.asset_id = a.id "
+            "WHERE abl.user_id=? "
+            "ORDER BY abl.created_at DESC LIMIT ? OFFSET ?", params);
+    }
+    cnt_params[cnt_pidx] = NULL;
+
+    if (!result) { respond_error(c, 500, "查询失败"); return; }
+
+    csilk_json_t* cnt_res = csilk_db_query_param_json(pool, count_sql, cnt_params);
+    int64_t total = 0;
+    if (cnt_res && csilk_json_array_size(cnt_res) > 0) {
+        total = db_get_int(csilk_json_array_get(cnt_res, 0), "cnt");
+    }
+    if (cnt_res) csilk_json_free(cnt_res);
+
+    respond_page_ok(c, result, total, page, page_size);
+}
+
 void register_asset_routes(csilk_app_t* app) {
     csilk_app_get_ext(app, "/api/assets", assets_list, nullptr, "asset_resp_t", "List assets", "Returns paginated list of user's assets with optional category filter");
     csilk_app_post_ext(app, "/api/assets", assets_create, "asset_req_t", "asset_resp_t", "Create asset", "Create a new asset (cash, investment, liability, etc.)");
     csilk_app_put_ext(app, "/api/assets/:id", assets_update, "asset_req_t", "asset_resp_t", "Update asset", "Update an existing asset by ID; investment assets recalculate position on net_value change");
     csilk_app_delete_ext(app, "/api/assets/:id", assets_delete, nullptr, nullptr, "Delete asset", "Delete an asset and its associated transactions by ID");
     csilk_app_get_ext(app, "/api/assets/:id", assets_detail, nullptr, "asset_resp_t", "Get asset detail", "Returns full asset details including linked transaction history");
+    csilk_app_get_ext(app, "/api/asset-balance-logs", asset_logs_list, nullptr, nullptr, "Asset balance logs", "Returns paginated asset balance change logs with optional asset_id filter");
 }

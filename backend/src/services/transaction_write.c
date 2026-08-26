@@ -213,15 +213,6 @@ void transactions_update(csilk_ctx_t* c) {
 
     csilk_db_pool_t* pool = db_get_pool();
     char uid_str[32];
-    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-
-    
-    if (!tx_asset_exists(pool, user_id, atoll(id_str))) {
-        csilk_json_free(body);
-        respond_not_found(c);
-        return;
-    }
-
     // 读取旧记录
     csilk_json_t* old_row = tx_get_old(pool, user_id, atoll(id_str));
     if (!old_row || csilk_json_array_size(old_row) == 0) {
@@ -303,10 +294,10 @@ void transactions_update(csilk_ctx_t* c) {
     if (old_is_invest) {
         // 回滚旧持仓
         double old_pos_delta = 0;
-        apply_position(pool, old_asset_id, old_tx_type, old_tx_amount, old_fee,
-                       old_tx_price, old_tx_qty, &old_pos_delta);
+        rollback_position(pool, old_asset_id, old_tx_type, old_tx_amount, old_fee,
+                          old_tx_price, old_tx_qty, &old_pos_delta);
         if (old_pos_delta != 0) {
-            if (balance_apply_delta(pool, old_asset_id, user_id, -old_pos_delta,
+            if (balance_apply_delta(pool, old_asset_id, user_id, old_pos_delta,
                                     "transaction", tx_id_val, note) != 0) {
                 csilk_db_exec(pool, "ROLLBACK");
                 csilk_json_free(body); csilk_json_free(old_row);
@@ -442,8 +433,13 @@ void transactions_delete(csilk_ctx_t* c) {
 
     // 投资类：回滚持仓
     if (strcmp(old_tx_type, "buy") == 0 || strcmp(old_tx_type, "sell") == 0) {
-        apply_position(pool, asset_id, old_tx_type, old_tx_amount, old_fee,
-                       old_tx_price, old_tx_qty, NULL);
+        double old_pos_delta = 0;
+        rollback_position(pool, asset_id, old_tx_type, old_tx_amount, old_fee,
+                          old_tx_price, old_tx_qty, &old_pos_delta);
+        if (old_pos_delta != 0) {
+            balance_apply_delta(pool, asset_id, user_id, old_pos_delta,
+                                "transaction", tx_id_val, NULL);
+        }
     }
 
     // 1. 反转目标资产旧 delta（投资类已由 apply_position 处理，非投资类走此处）
