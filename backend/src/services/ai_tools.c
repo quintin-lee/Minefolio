@@ -9,71 +9,68 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+static void add_prop(csilk_json_t* props, const char* name, const char* type, const char* desc) {
+    csilk_json_t* p = csilk_json_object();
+    csilk_json_add_string(p, "type", type);
+    csilk_json_add_string(p, "description", desc);
+    csilk_json_add_object(props, name, p);
+}
+
+static csilk_json_t* make_schema(csilk_json_t* props, const char** required_names, int req_count) {
+    csilk_json_t* s = csilk_json_object();
+    csilk_json_add_string(s, "type", "object");
+    csilk_json_add_object(s, "properties", props);
+    csilk_json_t* req = csilk_json_array();
+    for (int i = 0; i < req_count; i++) {
+        csilk_json_array_append(req, csilk_json_string_new(required_names[i]));
+    }
+    csilk_json_add_array(s, "required", req);
+    return s;
+}
+
 static csilk_json_t* schema_get_assets(void) {
     csilk_json_t* props = csilk_json_object();
-    csilk_json_add_string(props, "page", "Page number, default 1");
-    csilk_json_add_string(props, "page_size", "Items per page, default 50");
-    csilk_json_t* s = csilk_json_object();
-    csilk_json_add_string(s, "type", "object");
-    csilk_json_add_array(s, "required", csilk_json_array());
-    csilk_json_add_object(s, "properties", props);
-    return s;
-}
-
-static csilk_json_t* schema_get_transactions(void) {
-    csilk_json_t* props = csilk_json_object();
-    csilk_json_add_string(props, "page", "Page number, default 1");
-    csilk_json_add_string(props, "page_size", "Items per page, default 50");
-    csilk_json_add_string(props, "start_date", "Filter start date (YYYY-MM-DD)");
-    csilk_json_add_string(props, "end_date", "Filter end date (YYYY-MM-DD)");
-    csilk_json_add_string(props, "type", "Transaction type filter");
-    csilk_json_t* s = csilk_json_object();
-    csilk_json_add_string(s, "type", "object");
-    csilk_json_add_array(s, "required", csilk_json_array());
-    csilk_json_add_object(s, "properties", props);
-    return s;
-}
-
-static csilk_json_t* schema_get_daily_expenses(void) {
-    csilk_json_t* props = csilk_json_object();
-    csilk_json_add_string(props, "page", "Page number, default 1");
-    csilk_json_add_string(props, "page_size", "Items per page, default 50");
-    csilk_json_add_string(props, "start_date", "Filter start date (YYYY-MM-DD)");
-    csilk_json_add_string(props, "end_date", "Filter end date (YYYY-MM-DD)");
-    csilk_json_add_string(props, "expense_type", "Expense type filter");
-    csilk_json_t* s = csilk_json_object();
-    csilk_json_add_string(s, "type", "object");
-    csilk_json_add_array(s, "required", csilk_json_array());
-    csilk_json_add_object(s, "properties", props);
-    return s;
-}
-
-static csilk_json_t* schema_get_categories(void) {
-    csilk_json_t* props = csilk_json_object();
-    csilk_json_add_string(props, "type", "Category type: asset, income, expense, transaction. Empty for all.");
-    csilk_json_t* s = csilk_json_object();
-    csilk_json_add_string(s, "type", "object");
-    csilk_json_add_array(s, "required", csilk_json_array());
-    csilk_json_add_object(s, "properties", props);
-    return s;
-}
-
-static csilk_json_t* schema_get_summary(void) {
-    csilk_json_t* s = csilk_json_object();
-    csilk_json_add_string(s, "type", "object");
-    csilk_json_add_array(s, "required", csilk_json_array());
-    csilk_json_add_object(s, "properties", csilk_json_object());
-    return s;
+    add_prop(props, "page", "integer", "Page number, default 1");
+    add_prop(props, "page_size", "integer", "Items per page, default 50");
+    return make_schema(props, NULL, 0);
 }
 
 static csilk_json_t* schema_get_asset_detail(void) {
     csilk_json_t* props = csilk_json_object();
-    csilk_json_add_string(props, "asset_id", "Asset ID to look up");
-    csilk_json_t* s = csilk_json_object();
-    csilk_json_add_string(s, "type", "object");
-    csilk_json_add_array(s, "required", csilk_json_string_new("asset_id"));
-    csilk_json_add_object(s, "properties", props);
-    return s;
+    add_prop(props, "asset_id", "integer", "Asset ID to look up");
+    const char* req[] = {"asset_id"};
+    return make_schema(props, req, 1);
+}
+
+static csilk_json_t* schema_get_transactions(void) {
+    csilk_json_t* props = csilk_json_object();
+    add_prop(props, "page", "integer", "Page number, default 1");
+    add_prop(props, "page_size", "integer", "Items per page, default 50");
+    add_prop(props, "start_date", "string", "Filter start date (YYYY-MM-DD)");
+    add_prop(props, "end_date", "string", "Filter end date (YYYY-MM-DD)");
+    add_prop(props, "type", "string", "Transaction type filter");
+    return make_schema(props, NULL, 0);
+}
+
+static csilk_json_t* schema_get_daily_expenses(void) {
+    csilk_json_t* props = csilk_json_object();
+    add_prop(props, "page", "integer", "Page number, default 1");
+    add_prop(props, "page_size", "integer", "Items per page, default 50");
+    add_prop(props, "start_date", "string", "Filter start date (YYYY-MM-DD)");
+    add_prop(props, "end_date", "string", "Filter end date (YYYY-MM-DD)");
+    add_prop(props, "expense_type", "string", "Expense type filter: income or expense");
+    return make_schema(props, NULL, 0);
+}
+
+static csilk_json_t* schema_get_categories(void) {
+    csilk_json_t* props = csilk_json_object();
+    add_prop(props, "type", "string", "Category type: asset, income, expense, transaction. Empty for all.");
+    return make_schema(props, NULL, 0);
+}
+
+static csilk_json_t* schema_get_summary(void) {
+    csilk_json_t* props = csilk_json_object();
+    return make_schema(props, NULL, 0);
 }
 
 static csilk_ai_tool_t s_tools[] = {
@@ -246,7 +243,7 @@ static char* exec_get_summary(csilk_db_pool_t* pool, int64_t user_id, csilk_json
     csilk_json_t* r1 = csilk_db_query_param_json(pool, sql_asset, (const char*[]){uid, NULL});
     double total_assets = 0;
     if (r1 && csilk_json_array_size(r1) > 0) {
-        total_assets = csilk_json_get_number(csilk_json_array_get(r1, 0), "val");
+        total_assets = db_get_num(csilk_json_array_get(r1, 0), "val");
         csilk_json_free(r1);
     }
 
@@ -258,7 +255,7 @@ static char* exec_get_summary(csilk_db_pool_t* pool, int64_t user_id, csilk_json
     csilk_json_t* r2 = csilk_db_query_param_json(pool, sql_liability, (const char*[]){uid, NULL});
     double total_liabilities = 0;
     if (r2 && csilk_json_array_size(r2) > 0) {
-        total_liabilities = csilk_json_get_number(csilk_json_array_get(r2, 0), "val");
+        total_liabilities = db_get_num(csilk_json_array_get(r2, 0), "val");
         csilk_json_free(r2);
     }
 
@@ -266,7 +263,7 @@ static char* exec_get_summary(csilk_db_pool_t* pool, int64_t user_id, csilk_json
     csilk_json_t* r3 = csilk_db_query_param_json(pool, sql_tx_count, (const char*[]){uid, NULL});
     int64_t tx_count = 0;
     if (r3 && csilk_json_array_size(r3) > 0) {
-        tx_count = (int64_t)csilk_json_get_number(csilk_json_array_get(r3, 0), "cnt");
+        tx_count = db_get_int(csilk_json_array_get(r3, 0), "cnt");
         csilk_json_free(r3);
     }
 
@@ -274,7 +271,7 @@ static char* exec_get_summary(csilk_db_pool_t* pool, int64_t user_id, csilk_json
     csilk_json_t* r4 = csilk_db_query_param_json(pool, sql_de_count, (const char*[]){uid, NULL});
     int64_t de_count = 0;
     if (r4 && csilk_json_array_size(r4) > 0) {
-        de_count = (int64_t)csilk_json_get_number(csilk_json_array_get(r4, 0), "cnt");
+        de_count = db_get_int(csilk_json_array_get(r4, 0), "cnt");
         csilk_json_free(r4);
     }
 
