@@ -373,6 +373,9 @@ int db_run_migrations(csilk_db_pool_t* pool) {
         CSILK_LOG_I("Migration: added transactions.fee");
     }
 
+    // ---- ai_traces 历史异常残留清理 ----
+    csilk_db_exec(pool, "UPDATE ai_traces SET error_message = '' WHERE status = 'ok' AND error_message != ''");
+
     free(sql);
     CSILK_LOG_I("All migrations completed");
     return 0;

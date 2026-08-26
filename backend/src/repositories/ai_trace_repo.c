@@ -44,7 +44,8 @@ csilk_json_t* ai_trace_list(csilk_db_pool_t* pool, int64_t user_id, int64_t page
         "SELECT id, user_id, session_id, provider, model, "
         "prompt_tokens, completion_tokens, total_tokens, "
         "latency_ms, first_token_ms, tokens_per_sec, cost_usd, "
-        "temperature, max_tokens, top_p, status, error_message, "
+        "temperature, max_tokens, top_p, status, "
+        "CASE WHEN status = 'ok' THEN '' ELSE COALESCE(error_message, '') END as error_message, "
         "created_at "
         "FROM ai_traces %s ORDER BY created_at DESC LIMIT ? OFFSET ?",
         where);
@@ -69,8 +70,9 @@ csilk_json_t* ai_trace_get(csilk_db_pool_t* pool, int64_t user_id, int64_t id) {
         "input_messages, output_content, system_prompt, "
         "prompt_tokens, completion_tokens, total_tokens, "
         "latency_ms, first_token_ms, tokens_per_sec, cost_usd, "
-        "temperature, max_tokens, top_p, status, error_message, metadata, "
-        "created_at "
+        "temperature, max_tokens, top_p, status, "
+        "CASE WHEN status = 'ok' THEN '' ELSE COALESCE(error_message, '') END as error_message, "
+        "metadata, created_at "
         "FROM ai_traces WHERE id=? AND user_id=?",
         (const char*[]){id_s, uid, NULL});
     if (!r || csilk_json_array_size(r) == 0) {
@@ -125,11 +127,23 @@ int64_t ai_trace_save(csilk_db_pool_t* pool, ai_trace_t* t) {
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
         "RETURNING id";
 
+    const char* err_msg = (t->status && strcmp(t->status, "ok") == 0)
+        ? ""
+        : (t->error_message && t->error_message[0] ? t->error_message : "");
+
     const char* params[] = {
-        uid, sid, t->provider, t->model, t->input_messages, t->output_content,
-        t->system_prompt, pt, ct, tt,
+        uid, sid,
+        t->provider && t->provider[0] ? t->provider : "",
+        t->model && t->model[0] ? t->model : "",
+        t->input_messages && t->input_messages[0] ? t->input_messages : "[]",
+        t->output_content && t->output_content[0] ? t->output_content : "",
+        t->system_prompt && t->system_prompt[0] ? t->system_prompt : "",
+        pt, ct, tt,
         lat, ftt, tps, cost,
-        temp, mtt, tp, t->status, t->error_message, t->metadata,
+        temp, mtt, tp,
+        t->status && t->status[0] ? t->status : "ok",
+        err_msg,
+        t->metadata && t->metadata[0] ? t->metadata : "{}",
         NULL
     };
 
