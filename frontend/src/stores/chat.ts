@@ -110,6 +110,85 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+class SmoothStreamWriter {
+  private queue: string[] = []
+  private targetMsg: AiMessage
+  private assembled: string = ''
+  private isDone: boolean = false
+  private timer: number | null = null
+
+  constructor(targetMsg: AiMessage) {
+    this.targetMsg = targetMsg
+    this.startLoop()
+  }
+
+  push(text: string) {
+    for (const char of text) {
+      this.queue.push(char)
+    }
+  }
+
+  markDone() {
+    this.isDone = true
+  }
+
+  private startLoop() {
+    const tick = () => {
+      if (this.queue.length > 0) {
+        let charsToTake = 1
+        const qlen = this.queue.length
+        if (qlen > 300) charsToTake = 24
+        else if (qlen > 150) charsToTake = 12
+        else if (qlen > 60) charsToTake = 6
+        else if (qlen > 20) charsToTake = 3
+        else if (qlen > 6) charsToTake = 2
+
+        const slice = this.queue.splice(0, charsToTake).join('')
+        this.assembled += slice
+        this.targetMsg.content = this.assembled
+      }
+
+      if (this.isDone && this.queue.length === 0) {
+        if (this.timer !== null) {
+          clearInterval(this.timer)
+          this.timer = null
+        }
+      }
+    }
+
+    this.timer = window.setInterval(tick, 16)
+  }
+
+  async finish(): Promise<void> {
+    this.markDone()
+    return new Promise<void>((resolve) => {
+      const check = () => {
+        if (this.queue.length === 0) {
+          if (this.timer !== null) {
+            clearInterval(this.timer)
+            this.timer = null
+          }
+          resolve()
+        } else {
+          setTimeout(check, 16)
+        }
+      }
+      check()
+    })
+  }
+
+  flushNow() {
+    if (this.queue.length > 0) {
+      this.assembled += this.queue.splice(0, this.queue.length).join('')
+      this.targetMsg.content = this.assembled
+    }
+    if (this.timer !== null) {
+      clearInterval(this.timer)
+      this.timer = null
+    }
+  }
+}
+
   async function regenerateLastMessage() {
     if (isStreaming.value || messages.value.length === 0) return
     let lastUserIdx = -1
@@ -126,16 +205,17 @@ export const useChatStore = defineStore('chat', () => {
     messages.value = messages.value.slice(0, lastUserIdx + 1)
 
     const assistantId = Date.now() + 1
-    messages.value.push({
+    const assistantMsg: AiMessage = {
       id: assistantId,
       session_id: currentSessionId.value!,
       role: 'assistant',
       content: '',
       created_at: new Date().toISOString(),
-    })
+    }
+    messages.value.push(assistantMsg)
 
     isStreaming.value = true
-    let assembled = ''
+    const writer = new SmoothStreamWriter(assistantMsg)
 
     try {
       for await (const chunk of chatStream({
@@ -146,15 +226,17 @@ export const useChatStore = defineStore('chat', () => {
         regenerate: true,
       })) {
         if (chunk.type === 'delta' && chunk.content) {
-          assembled += chunk.content
-          const last = messages.value[messages.value.length - 1]
-          if (last) last.content = assembled
+          writer.push(chunk.content)
         } else if (chunk.type === 'error') {
-          const last = messages.value[messages.value.length - 1]
-          if (last) last.content = `⚠️ ${chunk.message}`
+          writer.flushNow()
+          assistantMsg.content = `⚠️ ${chunk.message}`
         }
       }
+      await writer.finish()
+    } catch {
+      writer.flushNow()
     } finally {
+      writer.flushNow()
       isStreaming.value = false
     }
   }
@@ -174,16 +256,17 @@ export const useChatStore = defineStore('chat', () => {
     messages.value.push(userMsg)
 
     const assistantId = Date.now() + 1
-    messages.value.push({
+    const assistantMsg: AiMessage = {
       id: assistantId,
       session_id: currentSessionId.value!,
       role: 'assistant',
       content: '',
       created_at: new Date().toISOString(),
-    })
+    }
+    messages.value.push(assistantMsg)
 
     isStreaming.value = true
-    let assembled = ''
+    const writer = new SmoothStreamWriter(assistantMsg)
 
     try {
       for await (const chunk of chatStream({
@@ -193,14 +276,14 @@ export const useChatStore = defineStore('chat', () => {
         provider: currentProvider.value,
       })) {
         if (chunk.type === 'delta' && chunk.content) {
-          assembled += chunk.content
-          const last = messages.value[messages.value.length - 1]
-          if (last) last.content = assembled
+          writer.push(chunk.content)
         } else if (chunk.type === 'error') {
-          const last = messages.value[messages.value.length - 1]
-          if (last) last.content = `⚠️ ${chunk.message}`
+          writer.flushNow()
+          assistantMsg.content = `⚠️ ${chunk.message}`
         }
       }
+      await writer.finish()
+
       // Refresh session info
       if (currentSessionId.value) {
         const r = (await getSession(currentSessionId.value)) as unknown
@@ -218,7 +301,10 @@ export const useChatStore = defineStore('chat', () => {
           }
         }
       }
+    } catch {
+      writer.flushNow()
     } finally {
+      writer.flushNow()
       isStreaming.value = false
     }
   }

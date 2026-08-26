@@ -352,14 +352,29 @@ const selectedModelKey = computed({
   },
 })
 
-function scrollToBottom() {
+function scrollToBottom(smooth = true) {
   if (messagesRef.value) {
-    messagesRef.value.scrollTo({
-      top: messagesRef.value.scrollHeight,
-      behavior: 'smooth',
-    })
+    if (smooth) {
+      messagesRef.value.scrollTo({
+        top: messagesRef.value.scrollHeight,
+        behavior: 'smooth',
+      })
+    } else {
+      messagesRef.value.scrollTop = messagesRef.value.scrollHeight
+    }
   }
 }
+
+const lastMsgContent = computed(() => {
+  const msgs = chat.messages
+  return msgs.length > 0 ? msgs[msgs.length - 1]?.content : ''
+})
+
+watch(lastMsgContent, () => {
+  if (chat.isStreaming) {
+    scrollToBottom(false)
+  }
+})
 
 function adjustTextareaHeight() {
   if (textareaRef.value) {

@@ -119,6 +119,15 @@ typedef struct {
     struct timespec last_send_time;
 } stream_context_t;
 
+static size_t utf8_safe_chunk_len(const char* s, size_t max_len, size_t total_remain) {
+    if (total_remain <= max_len) return total_remain;
+    size_t len = max_len;
+    while (len > 0 && ((unsigned char)s[len] & 0xC0) == 0x80) {
+        len--;
+    }
+    return len > 0 ? len : 1;
+}
+
 static void on_chunk(const char* delta, void* data) {
     stream_context_t* sc = (stream_context_t*)data;
     if (!delta || !sc || !sc->ctx) return;
@@ -380,15 +389,16 @@ void ai_chat_handler(csilk_ctx_t* c) {
             break;
         }
 
+
         if (ai_res.tool_call_count == 0) {
             const char* text = ai_res.content ?: "";
             if (text[0]) {
                 size_t tlen = strlen(text);
                 size_t pos = 0;
                 while (pos < tlen) {
-                    size_t chunk_size = 128;
-                    if (pos + chunk_size > tlen) chunk_size = tlen - pos;
-                    char chunk[130];
+                    size_t remain = tlen - pos;
+                    size_t chunk_size = utf8_safe_chunk_len(text + pos, 64, remain);
+                    char chunk[256];
                     memcpy(chunk, text + pos, chunk_size);
                     chunk[chunk_size] = '\0';
                     on_chunk(chunk, &sctx);
