@@ -238,7 +238,7 @@ function generateId() {
   return `mermaid-${Date.now()}-${Math.random().toString(36).slice(2, 7)}-${seq++}`
 }
 
-async function renderDiagram() {
+async function renderDiagram(isSilent = false) {
   if (!props.code || !props.code.trim()) {
     loading.value = false
     svgContent.value = ''
@@ -247,7 +247,9 @@ async function renderDiagram() {
   }
 
   loading.value = true
-  renderError.value = ''
+  if (!isSilent) {
+    renderError.value = ''
+  }
 
   try {
     const id = generateId()
@@ -255,8 +257,10 @@ async function renderDiagram() {
     svgContent.value = result.svg
     renderError.value = ''
   } catch (err: unknown) {
-    const errorMsg = err instanceof Error ? err.message : String(err)
-    renderError.value = errorMsg
+    if (!isSilent && !props.isStreaming) {
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      renderError.value = errorMsg
+    }
   } finally {
     loading.value = false
   }
@@ -381,17 +385,26 @@ function endPan() {
   isDragging.value = false
 }
 
+let streamDebounceTimer: number | null = null
+
 watch(
-  () => props.code,
-  () => {
-    // If not actively streaming or code changed significantly, render
-    renderDiagram()
+  () => [props.code, props.isStreaming] as const,
+  ([newCode, isStreaming]) => {
+    if (isStreaming) {
+      if (streamDebounceTimer) clearTimeout(streamDebounceTimer)
+      streamDebounceTimer = window.setTimeout(() => {
+        renderDiagram(true)
+      }, 350)
+    } else {
+      if (streamDebounceTimer) clearTimeout(streamDebounceTimer)
+      renderDiagram(false)
+    }
   },
   { immediate: true }
 )
 
 onMounted(() => {
-  renderDiagram()
+  renderDiagram(Boolean(props.isStreaming))
 })
 </script>
 

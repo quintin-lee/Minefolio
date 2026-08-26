@@ -863,3 +863,29 @@ body {
     transform: translateY(0);
   }
 }
+
+/* ── Strictly prohibit & suppress Mermaid error diagrams leaking into document.body ── */
+body > div[id^="dmermaid"],
+body > div[id^="imermaid"],
+body > div[id^="d-"],
+body > div[id^="i-"],
+body > svg[id^="mermaid"],
+body > svg[id^="dmermaid"],
+body > svg.error-icon,
+svg:has(.error-icon),
+svg:has(.error-text),
+svg .error-icon,
+svg .error-text {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  height: 0 !important;
+  width: 0 !important;
+  max-height: 0 !important;
+  max-width: 0 !important;
+  pointer-events: none !important;
+  position: absolute !important;
+  left: -9999px !important;
+  top: -9999px !important;
+}
+
