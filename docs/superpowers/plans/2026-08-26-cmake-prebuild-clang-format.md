@@ -90,10 +90,14 @@ execute_process(COMMAND "${CMAKE_COMMAND}" -E touch "${STAMP}")
 ```bash
 mkdir -p /tmp/opencode/fmt-test/src
 printf 'int main(){return 0;}\n' > /tmp/opencode/fmt-test/src/a.c
-cmake -P backend/cmake/FormatSources.cmake \
-    -DCLANG_FORMAT="$(command -v clang-format)" \
+# -D must precede -P: args after -P become CMAKE_ARGV*, not cache vars.
+# .clang-format sits at the scratch root so clang-format finds it searching
+# upward from src/a.c.
+cp backend/.clang-format /tmp/opencode/fmt-test/.clang-format
+cmake -DCLANG_FORMAT="$(command -v clang-format)" \
     -DSOURCES="/tmp/opencode/fmt-test/src/a.c" \
-    -DSTAMP=/tmp/opencode/fmt-test/stamp
+    -DSTAMP=/tmp/opencode/fmt-test/stamp \
+    -P backend/cmake/FormatSources.cmake
 cat /tmp/opencode/fmt-test/src/a.c
 ls /tmp/opencode/fmt-test/stamp
 ```
@@ -115,10 +119,10 @@ and `stamp` exists.
 - [ ] **Step 3: Verify fast path standalone**
 
 ```bash
-cmake -P backend/cmake/FormatSources.cmake \
-    -DCLANG_FORMAT="$(command -v clang-format)" \
+cmake -DCLANG_FORMAT="$(command -v clang-format)" \
     -DSOURCES="/tmp/opencode/fmt-test/src/a.c" \
-    -DSTAMP=/tmp/opencode/fmt-test/stamp2
+    -DSTAMP=/tmp/opencode/fmt-test/stamp2 \
+    -P backend/cmake/FormatSources.cmake
 echo "exit=$?"
 ```
 
@@ -128,10 +132,10 @@ Expected: no `clang-formatted` STATUS line, `exit=0`, `stamp2` exists.
 
 ```bash
 printf 'int main(){return 0;}\n' > /tmp/opencode/fmt-test/src/b.c
-cmake -P backend/cmake/FormatSources.cmake \
-    -DCLANG_FORMAT=/bin/false \
+cmake -DCLANG_FORMAT=/bin/false \
     -DSOURCES="/tmp/opencode/fmt-test/src/b.c" \
-    -DSTAMP=/tmp/opencode/fmt-test/stamp3
+    -DSTAMP=/tmp/opencode/fmt-test/stamp3 \
+    -P backend/cmake/FormatSources.cmake
 echo "exit=$?"
 ```
 
