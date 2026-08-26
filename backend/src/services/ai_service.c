@@ -18,20 +18,28 @@
 
 static ai_config_t g_config = {0};
 static csilk_ai_t* g_ai = NULL;
-static const char* get_driver_name(const char* prov_id) {
-    if (prov_id && strcmp(prov_id, "ollama") == 0) return "ollama";
+static const char*
+get_driver_name(const char* prov_id)
+{
+    if (prov_id && strcmp(prov_id, "ollama") == 0) {
+        return "ollama";
+    }
     return "openai";
 }
 
-static void utf8_truncate(char* str, size_t max_chars, size_t max_bytes) {
-    if (!str || !*str) return;
+static void
+utf8_truncate(char* str, size_t max_chars, size_t max_bytes)
+{
+    if (!str || !*str) {
+        return;
+    }
     size_t char_count = 0;
     size_t byte_idx = 0;
     size_t valid_byte_len = 0;
 
     while (str[byte_idx] != '\0') {
         unsigned char c = (unsigned char)str[byte_idx];
-        size_t char_len = 1;
+        size_t        char_len = 1;
         if ((c & 0x80) == 0) {
             char_len = 1;
         } else if ((c & 0xE0) == 0xC0) {
@@ -52,7 +60,9 @@ static void utf8_truncate(char* str, size_t max_chars, size_t max_bytes) {
                 break;
             }
         }
-        if (!complete) break;
+        if (!complete) {
+            break;
+        }
 
         if (char_count >= max_chars || (byte_idx + char_len) > max_bytes) {
             break;
@@ -66,7 +76,9 @@ static void utf8_truncate(char* str, size_t max_chars, size_t max_bytes) {
     str[valid_byte_len] = '\0';
 }
 
-void ai_init(csilk_db_pool_t* pool) {
+void
+ai_init(csilk_db_pool_t* pool)
+{
     char* json = pool ? ai_settings_load(pool) : NULL;
     if (json) {
         int loaded = (ai_config_load_json(json, &g_config) == 0);
@@ -77,12 +89,20 @@ void ai_init(csilk_db_pool_t* pool) {
                 const char* key = (prov->api_key[0] != '\0') ? prov->api_key : "dummy";
                 const char* dname = get_driver_name(prov->id);
                 g_ai = csilk_ai_new(dname, key, prov->base_url[0] ? prov->base_url : NULL);
-                if (g_ai) printf("AI initialized (DB): provider=%s model=%s\n", prov->id, g_config.default_model);
-                else fprintf(stderr, "WARN: failed to create AI instance for provider '%s'\n", prov->id);
+                if (g_ai) {
+                    printf("AI initialized (DB): provider=%s model=%s\n",
+                           prov->id,
+                           g_config.default_model);
+                } else {
+                    fprintf(
+                        stderr, "WARN: failed to create AI instance for provider '%s'\n", prov->id);
+                }
                 return;
             }
             /* DB config loaded but no usable provider — keep g_config, do not fall through */
-            fprintf(stderr, "WARN: default provider '%s' not found in DB AI config\n", g_config.default_provider);
+            fprintf(stderr,
+                    "WARN: default provider '%s' not found in DB AI config\n",
+                    g_config.default_provider);
             return;
         }
     }
@@ -93,42 +113,63 @@ void ai_init(csilk_db_pool_t* pool) {
     }
     ai_provider_t* prov = ai_config_default_provider(&g_config);
     if (!prov) {
-        fprintf(stderr, "WARN: default provider '%s' not found in config\n", g_config.default_provider);
+        fprintf(
+            stderr, "WARN: default provider '%s' not found in config\n", g_config.default_provider);
         return;
     }
     const char* key = (prov->api_key[0] != '\0') ? prov->api_key : "dummy";
     const char* dname = get_driver_name(prov->id);
     g_ai = csilk_ai_new(dname, key, prov->base_url[0] ? prov->base_url : NULL);
-    if (g_ai) printf("AI initialized (file): provider=%s model=%s\n", prov->id, g_config.default_model);
-    else fprintf(stderr, "WARN: failed to create AI instance for provider '%s'\n", prov->id);
+    if (g_ai) {
+        printf("AI initialized (file): provider=%s model=%s\n", prov->id, g_config.default_model);
+    } else {
+        fprintf(stderr, "WARN: failed to create AI instance for provider '%s'\n", prov->id);
+    }
 }
 
-void ai_shutdown(void) {
-    if (g_ai) { csilk_ai_free(g_ai); g_ai = NULL; }
+void
+ai_shutdown(void)
+{
+    if (g_ai) {
+        csilk_ai_free(g_ai);
+        g_ai = NULL;
+    }
     ai_config_free(&g_config);
 }
 
-ai_config_t* ai_get_config(void) { return &g_config; }
+ai_config_t*
+ai_get_config(void)
+{
+    return &g_config;
+}
 
 typedef struct {
-    csilk_ctx_t* ctx;
-    char* accumulated;
-    size_t cap;
-    size_t len;
-    ai_trace_t* trace;
+    csilk_ctx_t*    ctx;
+    char*           accumulated;
+    size_t          cap;
+    size_t          len;
+    ai_trace_t*     trace;
     struct timespec last_send_time;
-    int sse_initialized;
+    int             sse_initialized;
 } stream_context_t;
 
-static void ensure_sse_init(stream_context_t* sc) {
-    if (!sc || sc->sse_initialized) return;
+static void
+ensure_sse_init(stream_context_t* sc)
+{
+    if (!sc || sc->sse_initialized) {
+        return;
+    }
     csilk_sse_init(sc->ctx);
     clock_gettime(CLOCK_MONOTONIC, &sc->last_send_time);
     sc->sse_initialized = 1;
 }
 
-static size_t utf8_safe_chunk_len(const char* s, size_t max_len, size_t total_remain) {
-    if (total_remain <= max_len) return total_remain;
+static size_t
+utf8_safe_chunk_len(const char* s, size_t max_len, size_t total_remain)
+{
+    if (total_remain <= max_len) {
+        return total_remain;
+    }
     size_t len = max_len;
     while (len > 0 && ((unsigned char)s[len] & 0xC0) == 0x80) {
         len--;
@@ -136,9 +177,13 @@ static size_t utf8_safe_chunk_len(const char* s, size_t max_len, size_t total_re
     return len > 0 ? len : 1;
 }
 
-static void on_chunk(const char* delta, void* data) {
+static void
+on_chunk(const char* delta, void* data)
+{
     stream_context_t* sc = (stream_context_t*)data;
-    if (!delta || !sc || !sc->ctx) return;
+    if (!delta || !sc || !sc->ctx) {
+        return;
+    }
 
     ensure_sse_init(sc);
 
@@ -150,7 +195,9 @@ static void on_chunk(const char* delta, void* data) {
     size_t dlen = strlen(delta);
     if (sc->len + dlen + 1 > sc->cap) {
         size_t ncap = (sc->len + dlen + 1) * 2;
-        if (ncap < 1024) ncap = 1024;
+        if (ncap < 1024) {
+            ncap = 1024;
+        }
         char* nbuf = (char*)realloc(sc->accumulated, ncap);
         if (nbuf) {
             sc->accumulated = nbuf;
@@ -175,48 +222,59 @@ static void on_chunk(const char* delta, void* data) {
     csilk_json_t* msg = csilk_json_object();
     csilk_json_add_string(msg, "content", delta);
     size_t slen = 0;
-    char* s = csilk_json_serialize(msg, &slen);
+    char*  s = csilk_json_serialize(msg, &slen);
     csilk_sse_send(sc->ctx, "delta", s ? s : "");
     sc->last_send_time = now;
     free(s);
     csilk_json_free(msg);
 }
 
-static void send_done(csilk_ctx_t* c) {
+static void
+send_done(csilk_ctx_t* c)
+{
     csilk_json_t* d = csilk_json_object();
     csilk_json_add_string(d, "finish_reason", "stop");
     size_t slen = 0;
-    char* s = csilk_json_serialize(d, &slen);
+    char*  s = csilk_json_serialize(d, &slen);
     csilk_sse_send(c, "done", s ? s : "");
     free(s);
     csilk_json_free(d);
 }
 
-static void send_error(csilk_ctx_t* c, const char* err) {
+static void
+send_error(csilk_ctx_t* c, const char* err)
+{
     csilk_json_t* d = csilk_json_object();
     csilk_json_add_string(d, "message", err);
     size_t slen = 0;
-    char* s = csilk_json_serialize(d, &slen);
+    char*  s = csilk_json_serialize(d, &slen);
     csilk_sse_send(c, "error", s ? s : "");
     free(s);
     csilk_json_free(d);
 }
 
-void ai_chat_handler(csilk_ctx_t* c) {
+void
+ai_chat_handler(csilk_ctx_t* c)
+{
     int64_t user_id = ctx_user_id(c);
-    if (user_id < 0) return;
+    if (user_id < 0) {
+        return;
+    }
 
     csilk_json_t* body = csilk_bind_json(c);
-    if (!body) { respond_bad_request(c, "请求体必须为 JSON"); return; }
+    if (!body) {
+        respond_bad_request(c, "请求体必须为 JSON");
+        return;
+    }
 
-    int64_t session_id = db_get_int(body, "session_id");
+    int64_t     session_id = db_get_int(body, "session_id");
     const char* content = csilk_json_get_string(body, "content");
     const char* model_override = csilk_json_get_string(body, "model");
     const char* provider_override = csilk_json_get_string(body, "provider");
-    int regenerate = csilk_json_get_bool(body, "regenerate");
-    double req_temperature = db_get_num(body, "temperature");
-    int req_max_tokens = (int)db_get_int(body, "max_tokens");
-    double req_top_p = db_get_num(body, "top_p");
+    int         regenerate = csilk_json_get_bool(body, "regenerate");
+    double      req_temperature = db_get_num(body, "temperature");
+    int         req_max_tokens = (int)db_get_int(body, "max_tokens");
+    double      req_top_p = db_get_num(body, "top_p");
 
     if (!content || content[0] == '\0') {
         csilk_json_free(body);
@@ -233,13 +291,15 @@ void ai_chat_handler(csilk_ctx_t* c) {
     csilk_db_pool_t* pool = db_get_pool();
 
     ai_provider_t* prov = NULL;
-    char provider_buf[64] = {0};
-    char model_buf[128] = {0};
+    char           provider_buf[64] = {0};
+    char           model_buf[128] = {0};
     if (provider_override && provider_override[0]) {
         strncpy(provider_buf, provider_override, sizeof(provider_buf) - 1);
         prov = ai_config_find_provider(&g_config, provider_buf);
     }
-    if (!prov) prov = ai_config_default_provider(&g_config);
+    if (!prov) {
+        prov = ai_config_default_provider(&g_config);
+    }
     if (!prov) {
         csilk_json_free(body);
         respond_error(c, 500, "未找到可用 AI 供应商");
@@ -254,7 +314,9 @@ void ai_chat_handler(csilk_ctx_t* c) {
         strncpy(title, content, sizeof(title) - 1);
         title[sizeof(title) - 1] = '\0';
         utf8_truncate(title, 20, 60);
-        if (title[0] == '\0') strcpy(title, "新对话");
+        if (title[0] == '\0') {
+            strcpy(title, "新对话");
+        }
         sid = ai_session_insert(pool, user_id, title, model_buf, prov->id);
         if (sid <= 0) {
             csilk_json_free(body);
@@ -263,7 +325,11 @@ void ai_chat_handler(csilk_ctx_t* c) {
         }
     } else {
         csilk_json_t* sess = ai_session_get(pool, user_id, sid);
-        if (!sess) { csilk_json_free(body); respond_not_found(c); return; }
+        if (!sess) {
+            csilk_json_free(body);
+            respond_not_found(c);
+            return;
+        }
         const char* current_title = csilk_json_get_string(csilk_json_array_get(sess, 0), "title");
         if (current_title && strcmp(current_title, "新对话") == 0 && !regenerate) {
             char title[256];
@@ -281,16 +347,21 @@ void ai_chat_handler(csilk_ctx_t* c) {
     }
 
     /* load history */
-    int ctx_size = g_config.context_size > 0 ? g_config.context_size : 20;
+    int           ctx_size = g_config.context_size > 0 ? g_config.context_size : 20;
     csilk_json_t* history = ai_message_recent(pool, sid, ctx_size);
-    int hsz = history ? (int)csilk_json_array_size(history) : 0;
+    int           hsz = history ? (int)csilk_json_array_size(history) : 0;
 
     /* build messages: [system, ...history] or [system, ...history, user] */
-    int mc = regenerate ? (1 + hsz) : (1 + hsz + 1);
+    int                 mc = regenerate ? (1 + hsz) : (1 + hsz + 1);
     csilk_ai_message_t* msgs = (csilk_ai_message_t*)malloc(sizeof(csilk_ai_message_t) * (size_t)mc);
-    if (!msgs) { csilk_json_free(history); csilk_json_free(body); respond_error(c, 500, "内存不足"); return; }
+    if (!msgs) {
+        csilk_json_free(history);
+        csilk_json_free(body);
+        respond_error(c, 500, "内存不足");
+        return;
+    }
     int idx = 0;
-    msgs[idx++] = (csilk_ai_message_t){.role="system", .content=g_config.system_prompt};
+    msgs[idx++] = (csilk_ai_message_t){.role = "system", .content = g_config.system_prompt};
     if (history) {
         for (int i = 0; i < hsz; i++) {
             csilk_json_t* m = csilk_json_array_get(history, i);
@@ -301,7 +372,7 @@ void ai_chat_handler(csilk_ctx_t* c) {
         }
     }
     if (!regenerate) {
-        msgs[idx++] = (csilk_ai_message_t){.role="user", .content=content};
+        msgs[idx++] = (csilk_ai_message_t){.role = "user", .content = content};
     }
 
     stream_context_t sctx = {
@@ -340,13 +411,18 @@ void ai_chat_handler(csilk_ctx_t* c) {
     ai_trace_serialize_messages(&trace, input_arr);
     csilk_json_free(input_arr);
 
+    /* SSE init: establish event-stream connection immediately so proxies never time out */
+    csilk_sse_init(c);
+    clock_gettime(CLOCK_MONOTONIC, &sctx.last_send_time);
+    sctx.sse_initialized = 1;
+
     /* persist user message (skip on regenerate — already in history) */
     if (!regenerate) {
         ai_message_insert(pool, sid, "user", content, model_buf);
     }
 
     csilk_ai_t* ai_inst = g_ai;
-    int need_free_ai = 0;
+    int         need_free_ai = 0;
     if (prov && (strcmp(prov->id, g_config.default_provider) != 0 || !ai_inst)) {
         const char* dname = get_driver_name(prov->id);
         const char* key = (prov->api_key[0] != '\0') ? prov->api_key : "dummy";
@@ -361,7 +437,7 @@ void ai_chat_handler(csilk_ctx_t* c) {
      * First call: non-streaming with tools → check for tool_calls.
      * If tool_calls: execute each, append results, loop.
      * Final call: streaming text response → SSE to client. */
-    size_t tool_count = 0;
+    size_t                 tool_count = 0;
     const csilk_ai_tool_t* tools = ai_tools_get_definitions(&tool_count);
 
     int round = 0;
@@ -383,17 +459,28 @@ void ai_chat_handler(csilk_ctx_t* c) {
             .tool_choice = "auto",
         };
         csilk_ai_chat_response_t ai_res = {0};
-        int rc = csilk_ai_chat(ai_inst, &req, &ai_res);
-        if (ai_res.prompt_tokens > 0) total_prompt_tokens += ai_res.prompt_tokens;
-        if (ai_res.completion_tokens > 0) total_completion_tokens += ai_res.completion_tokens;
+        int                      rc = csilk_ai_chat(ai_inst, &req, &ai_res);
+        if (ai_res.prompt_tokens > 0) {
+            total_prompt_tokens += ai_res.prompt_tokens;
+        }
+        if (ai_res.completion_tokens > 0) {
+            total_completion_tokens += ai_res.completion_tokens;
+        }
 
         if (rc != 0) {
-            ai_trace_calculate_tokens_and_cost(&trace, total_prompt_tokens, total_completion_tokens);
-            ai_trace_finish(&trace, "error", (ai_res.error_message && ai_res.error_message[0]) ? ai_res.error_message : "AI request failed");
+            ai_trace_calculate_tokens_and_cost(
+                &trace, total_prompt_tokens, total_completion_tokens);
+            ai_trace_finish(&trace,
+                            "error",
+                            (ai_res.error_message && ai_res.error_message[0])
+                                ? ai_res.error_message
+                                : "AI request failed");
             ai_trace_save(db_get_pool(), &trace);
             ai_trace_free(&trace);
             ensure_sse_init(&sctx);
-            send_error(c, (ai_res.error_message && ai_res.error_message[0]) ? ai_res.error_message : "AI request failed");
+            send_error(c,
+                       (ai_res.error_message && ai_res.error_message[0]) ? ai_res.error_message
+                                                                         : "AI request failed");
             round = max_rounds;
             break;
         }
@@ -415,13 +502,15 @@ void ai_chat_handler(csilk_ctx_t* c) {
             csilk_json_add_string(tc_evt, "name", tc->name ?: "");
             csilk_json_add_string(tc_evt, "arguments", tc->arguments ?: "");
             size_t slen = 0;
-            char* s = csilk_json_serialize(tc_evt, &slen);
+            char*  s = csilk_json_serialize(tc_evt, &slen);
             csilk_sse_send(c, "tool_call", s ? s : "");
             free(s);
             csilk_json_free(tc_evt);
 
             char* result = ai_tools_execute(pool, user_id, tc->name, tc->arguments);
-            if (!result) result = strdup("{\"error\":\"tool execution failed\"}");
+            if (!result) {
+                result = strdup("{\"error\":\"tool execution failed\"}");
+            }
 
             csilk_json_t* tr_evt = csilk_json_object();
             csilk_json_add_string(tr_evt, "tool_call_id", tc->id ?: "");
@@ -447,7 +536,7 @@ void ai_chat_handler(csilk_ctx_t* c) {
             csilk_json_array_append(tc_arr, tc_obj);
             csilk_json_add_array(asst_msg, "tool_calls", tc_arr);
             size_t msg_len = 0;
-            char* msg_str = csilk_json_serialize(asst_msg, &msg_len);
+            char*  msg_str = csilk_json_serialize(asst_msg, &msg_len);
             csilk_json_free(asst_msg);
 
             csilk_json_t* tool_msg = csilk_json_object();
@@ -455,7 +544,7 @@ void ai_chat_handler(csilk_ctx_t* c) {
             csilk_json_add_string(tool_msg, "tool_call_id", tc->id ?: "");
             csilk_json_add_string(tool_msg, "content", result);
             size_t tool_msg_len = 0;
-            char* tool_msg_str = csilk_json_serialize(tool_msg, &tool_msg_len);
+            char*  tool_msg_str = csilk_json_serialize(tool_msg, &tool_msg_len);
             csilk_json_free(tool_msg);
 
             mc += 2;
@@ -477,24 +566,37 @@ void ai_chat_handler(csilk_ctx_t* c) {
     ensure_sse_init(&sctx);
     send_done(c);
 
-    if (need_free_ai && ai_inst) csilk_ai_free(ai_inst);
-    if (sctx.accumulated) free(sctx.accumulated);
+    if (need_free_ai && ai_inst) {
+        csilk_ai_free(ai_inst);
+    }
+    if (sctx.accumulated) {
+        free(sctx.accumulated);
+    }
     csilk_sse_close(c);
     /* Free dynamically allocated content strings from tool-call rounds.
      * The first 1+hsz+1 messages point into g_config/history/body (not owned). */
     for (int i = 1 + hsz + 1; i < mc; i++) {
-        if (msgs[i].content) free((void*)msgs[i].content);
+        if (msgs[i].content) {
+            free((void*)msgs[i].content);
+        }
     }
     free(msgs);
     csilk_json_free(history);
     csilk_json_free(body);
 }
-void ai_service_test_connection(csilk_ctx_t* c) {
+void
+ai_service_test_connection(csilk_ctx_t* c)
+{
     int64_t user_id = ctx_user_id(c);
-    if (user_id < 0) return;
+    if (user_id < 0) {
+        return;
+    }
 
     csilk_json_t* body = csilk_bind_json(c);
-    if (!body) { respond_bad_request(c, "请求体必须为 JSON"); return; }
+    if (!body) {
+        respond_bad_request(c, "请求体必须为 JSON");
+        return;
+    }
 
     const char* id = csilk_json_get_string(body, "id") ?: "openai";
     const char* base_url = csilk_json_get_string(body, "base_url");
@@ -502,7 +604,7 @@ void ai_service_test_connection(csilk_ctx_t* c) {
     const char* k = csilk_json_get_string(body, "api_key");
     const char* model = csilk_json_get_string(body, "model");
 
-    char key_buf[512] = {0};
+    char        key_buf[512] = {0};
     const char* raw_k = (k_enc && k_enc[0]) ? k_enc : k;
     if (raw_k && raw_k[0]) {
         size_t dec_len = sizeof(key_buf);
@@ -551,7 +653,7 @@ void ai_service_test_connection(csilk_ctx_t* c) {
         }
     }
 
-    csilk_ai_message_t msg = {.role = "user", .content = "ping"};
+    csilk_ai_message_t      msg = {.role = "user", .content = "ping"};
     csilk_ai_chat_request_t req = {
         .model = test_model,
         .messages = &msg,
@@ -560,11 +662,13 @@ void ai_service_test_connection(csilk_ctx_t* c) {
         .timeout_ms = 10000,
     };
     csilk_ai_chat_response_t res = {0};
-    int rc = csilk_ai_chat(test_ai, &req, &res);
+    int                      rc = csilk_ai_chat(test_ai, &req, &res);
     clock_gettime(CLOCK_MONOTONIC, &t2);
 
     long latency_ms = (t2.tv_sec - t1.tv_sec) * 1000 + (t2.tv_nsec - t1.tv_nsec) / 1000000;
-    if (latency_ms < 0) latency_ms = 0;
+    if (latency_ms < 0) {
+        latency_ms = 0;
+    }
 
     csilk_json_t* resp = csilk_json_object();
     if (rc == 0) {
@@ -574,7 +678,10 @@ void ai_service_test_connection(csilk_ctx_t* c) {
     } else {
         csilk_json_add_bool(resp, "success", false);
         csilk_json_add_number(resp, "latency_ms", (double)latency_ms);
-        csilk_json_add_string(resp, "message", (res.error_message && res.error_message[0]) ? res.error_message : "连接超时或失败");
+        csilk_json_add_string(resp,
+                              "message",
+                              (res.error_message && res.error_message[0]) ? res.error_message
+                                                                          : "连接超时或失败");
     }
 
     csilk_ai_chat_response_free(&res);
@@ -584,15 +691,19 @@ void ai_service_test_connection(csilk_ctx_t* c) {
 }
 
 typedef struct {
-    char* data;
+    char*  data;
     size_t size;
 } memory_buf_t;
 
-static size_t curl_write_memory_cb(void* contents, size_t size, size_t nmemb, void* userp) {
-    size_t realsize = size * nmemb;
+static size_t
+curl_write_memory_cb(void* contents, size_t size, size_t nmemb, void* userp)
+{
+    size_t        realsize = size * nmemb;
     memory_buf_t* mem = (memory_buf_t*)userp;
-    char* ptr = realloc(mem->data, mem->size + realsize + 1);
-    if (!ptr) return 0;
+    char*         ptr = realloc(mem->data, mem->size + realsize + 1);
+    if (!ptr) {
+        return 0;
+    }
     mem->data = ptr;
     memcpy(&(mem->data[mem->size]), contents, realsize);
     mem->size += realsize;
@@ -600,19 +711,26 @@ static size_t curl_write_memory_cb(void* contents, size_t size, size_t nmemb, vo
     return realsize;
 }
 
-void ai_service_fetch_models(csilk_ctx_t* c) {
+void
+ai_service_fetch_models(csilk_ctx_t* c)
+{
     int64_t user_id = ctx_user_id(c);
-    if (user_id < 0) return;
+    if (user_id < 0) {
+        return;
+    }
 
     csilk_json_t* body = csilk_bind_json(c);
-    if (!body) { respond_bad_request(c, "请求体必须为 JSON"); return; }
+    if (!body) {
+        respond_bad_request(c, "请求体必须为 JSON");
+        return;
+    }
 
     const char* id = csilk_json_get_string(body, "id") ?: "openai";
     const char* base_url = csilk_json_get_string(body, "base_url");
     const char* k_enc = csilk_json_get_string(body, "api_key_enc");
     const char* k = csilk_json_get_string(body, "api_key");
 
-    char key_buf[512] = {0};
+    char        key_buf[512] = {0};
     const char* raw_k = (k_enc && k_enc[0]) ? k_enc : k;
     if (raw_k && raw_k[0]) {
         size_t dec_len = sizeof(key_buf);
@@ -631,10 +749,11 @@ void ai_service_fetch_models(csilk_ctx_t* c) {
     char url[512];
     if (base_url && base_url[0]) {
         size_t blen = strlen(base_url);
-        if (base_url[blen - 1] == '/')
+        if (base_url[blen - 1] == '/') {
             snprintf(url, sizeof(url), "%smodels", base_url);
-        else
+        } else {
             snprintf(url, sizeof(url), "%s/models", base_url);
+        }
     } else {
         snprintf(url, sizeof(url), "https://api.openai.com/v1/models");
     }
@@ -646,11 +765,13 @@ void ai_service_fetch_models(csilk_ctx_t* c) {
         return;
     }
 
-    memory_buf_t chunk = { .data = malloc(1), .size = 0 };
-    if (chunk.data) chunk.data[0] = '\0';
+    memory_buf_t chunk = {.data = malloc(1), .size = 0};
+    if (chunk.data) {
+        chunk.data[0] = '\0';
+    }
 
     struct curl_slist* headers = NULL;
-    char auth_hdr[512];
+    char               auth_hdr[512];
     snprintf(auth_hdr, sizeof(auth_hdr), "Authorization: Bearer %s", key_buf);
     headers = curl_slist_append(headers, auth_hdr);
 
@@ -661,7 +782,7 @@ void ai_service_fetch_models(csilk_ctx_t* c) {
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
 
     CURLcode res = curl_easy_perform(curl);
-    long http_code = 0;
+    long     http_code = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
     curl_slist_free_all(headers);
     curl_easy_cleanup(curl);
@@ -677,7 +798,7 @@ void ai_service_fetch_models(csilk_ctx_t* c) {
                 size_t dsz = csilk_json_array_size(data_arr);
                 for (size_t i = 0; i < dsz; i++) {
                     const csilk_json_t* item = csilk_json_array_get(data_arr, i);
-                    const char* mid = csilk_json_get_string(item, "id");
+                    const char*         mid = csilk_json_get_string(item, "id");
                     if (mid && mid[0]) {
                         csilk_json_array_append(model_arr, csilk_json_string_new(mid));
                     }
@@ -688,9 +809,13 @@ void ai_service_fetch_models(csilk_ctx_t* c) {
                 size_t msz = csilk_json_array_size(models_arr);
                 for (size_t i = 0; i < msz; i++) {
                     const csilk_json_t* item = csilk_json_array_get(models_arr, i);
-                    const char* mid = csilk_json_get_string(item, "name");
-                    if (!mid) mid = csilk_json_get_string(item, "id");
-                    if (!mid) mid = csilk_json_string_value(item);
+                    const char*         mid = csilk_json_get_string(item, "name");
+                    if (!mid) {
+                        mid = csilk_json_get_string(item, "id");
+                    }
+                    if (!mid) {
+                        mid = csilk_json_string_value(item);
+                    }
                     if (mid && mid[0]) {
                         csilk_json_array_append(model_arr, csilk_json_string_new(mid));
                     }

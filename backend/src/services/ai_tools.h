@@ -17,5 +17,5 @@ const csilk_ai_tool_t* ai_tools_get_definitions(size_t* count);
  * @param arguments JSON arguments string from the model.
  * @return Heap-allocated JSON result string (caller must free), or NULL on error.
  */
-char* ai_tools_execute(csilk_db_pool_t* pool, int64_t user_id,
-                       const char* name, const char* arguments);
+char*
+ai_tools_execute(csilk_db_pool_t* pool, int64_t user_id, const char* name, const char* arguments);

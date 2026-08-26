@@ -18,9 +18,12 @@
  * @return 0 成功；-1 资产不存在或不属于该用户；-2 数据库错误
  */
 int balance_apply_delta(csilk_db_pool_t* pool,
-                        int64_t asset_id, int64_t user_id, double delta,
-                        const char* source_type, int64_t source_id,
-                        const char* note);
+                        int64_t          asset_id,
+                        int64_t          user_id,
+                        double           delta,
+                        const char*      source_type,
+                        int64_t          source_id,
+                        const char*      note);
 
 /** @brief 判断资产类型是否为负债（方向反转）。1=普通资产，-1=负债。 */
 int balance_direction(const char* asset_type);
@@ -44,15 +47,23 @@ int is_investment_type(const char* atype);
  * @param out_position_delta 输出：持仓市值变化量（可为 NULL）
  * @return 0 成功或无变化；-1 卖出份额不足；资产非投资类时返回 0 且不修改
  */
-int apply_position(csilk_db_pool_t* pool, int64_t asset_id,
-                   const char* type, double amount, double fee,
-                   double price, double qty,
-                   double* out_position_delta);
+int apply_position(csilk_db_pool_t* pool,
+                   int64_t          asset_id,
+                   const char*      type,
+                   double           amount,
+                   double           fee,
+                   double           price,
+                   double           qty,
+                   double*          out_position_delta);
 
 /**
  * @brief 回滚投资类资产的买卖持仓变化（用于编辑/删除投资交易）。
  */
-int rollback_position(csilk_db_pool_t* pool, int64_t asset_id,
-                      const char* type, double amount, double fee,
-                      double price, double qty,
-                      double* out_position_delta);
+int rollback_position(csilk_db_pool_t* pool,
+                      int64_t          asset_id,
+                      const char*      type,
+                      double           amount,
+                      double           fee,
+                      double           price,
+                      double           qty,
+                      double*          out_position_delta);

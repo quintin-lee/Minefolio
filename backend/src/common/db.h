@@ -21,10 +21,16 @@ int db_is_postgres(void);
  * inference), so csilk_json_get_number() would yield 0 for columns holding
  * numbers. These helpers transparently parse string nodes.
  */
-static inline double db_get_num(const csilk_json_t* obj, const char* key) {
+static inline double
+db_get_num(const csilk_json_t* obj, const char* key)
+{
     const csilk_json_t* v = csilk_json_get(obj, key);
-    if (!v) return 0.0;
-    if (csilk_json_is_number(v)) return csilk_json_number_value(v);
+    if (!v) {
+        return 0.0;
+    }
+    if (csilk_json_is_number(v)) {
+        return csilk_json_number_value(v);
+    }
     if (csilk_json_is_string(v)) {
         const char* s = csilk_json_string_value(v);
         return s ? atof(s) : 0.0;
@@ -33,6 +39,8 @@ static inline double db_get_num(const csilk_json_t* obj, const char* key) {
 }
 
 /** @brief Integer variant of db_get_num(). */
-static inline int64_t db_get_int(const csilk_json_t* obj, const char* key) {
+static inline int64_t
+db_get_int(const csilk_json_t* obj, const char* key)
+{
     return (int64_t)db_get_num(obj, key);
 }

@@ -7,22 +7,35 @@
 #include "csilk/csilk.h"
 #include <string.h>
 
-void transfers_create(csilk_ctx_t* c) {
+void
+transfers_create(csilk_ctx_t* c)
+{
     int64_t user_id = ctx_user_id(c);
-    if (user_id < 0) return;
+    if (user_id < 0) {
+        return;
+    }
 
     csilk_json_t* body = csilk_bind_json(c);
-    if (!body) { respond_bad_request(c, "请求体必须为 JSON"); return; }
+    if (!body) {
+        respond_bad_request(c, "请求体必须为 JSON");
+        return;
+    }
 
-    int64_t from_id = db_get_int(body, "from_asset_id");
-    int64_t to_id = db_get_int(body, "to_asset_id");
-    double amount = db_get_num(body, "amount");
+    int64_t     from_id = db_get_int(body, "from_asset_id");
+    int64_t     to_id = db_get_int(body, "to_asset_id");
+    double      amount = db_get_num(body, "amount");
     const char* date = csilk_json_get_string(body, "transfer_date");
-    if (!date || date[0] == '\0') date = csilk_json_get_string(body, "transaction_date");
-    if (!date || date[0] == '\0') date = csilk_json_get_string(body, "date");
+    if (!date || date[0] == '\0') {
+        date = csilk_json_get_string(body, "transaction_date");
+    }
+    if (!date || date[0] == '\0') {
+        date = csilk_json_get_string(body, "date");
+    }
     const char* note = csilk_json_get_string(body, "note");
     const char* currency = csilk_json_get_string(body, "currency");
-    if (!currency) currency = "CNY";
+    if (!currency) {
+        currency = "CNY";
+    }
 
     if (from_id <= 0 || to_id <= 0 || amount <= 0 || !date) {
         csilk_json_free(body);
@@ -50,7 +63,8 @@ void transfers_create(csilk_ctx_t* c) {
         return;
     }
 
-    int64_t transfer_id = transfer_insert(pool, user_id, from_id, to_id, amount, currency, date, note);
+    int64_t transfer_id =
+        transfer_insert(pool, user_id, from_id, to_id, amount, currency, date, note);
     if (transfer_id <= 0) {
         csilk_db_exec(pool, "ROLLBACK");
         csilk_json_free(body);
@@ -63,21 +77,33 @@ void transfers_create(csilk_ctx_t* c) {
         char uid[32], amt[64];
         snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
         snprintf(amt, sizeof(amt), "%.6f", amount);
-        csilk_json_t* res = csilk_db_query_param_json(pool,
-            "INSERT INTO transactions (user_id, asset_id, source_type, transaction_type, amount, currency, transaction_date, note) "
+        csilk_json_t* res = csilk_db_query_param_json(
+            pool,
+            "INSERT INTO transactions (user_id, asset_id, source_type, transaction_type, amount, "
+            "currency, transaction_date, note) "
             "VALUES (?, ?, 'expense', 'transfer_out', ?, ?, ?, ?) RETURNING id",
-            (const char*[]){ uid, csilk_json_get_string(body, "from_asset_id") ? "" : "", amt, currency, date, note ? note : "", NULL });
+            (const char*[]){uid,
+                            csilk_json_get_string(body, "from_asset_id") ? "" : "",
+                            amt,
+                            currency,
+                            date,
+                            note ? note : "",
+                            NULL});
         /* from_asset_id is not in params above — fix: */
         char fid[32];
         snprintf(fid, sizeof(fid), "%lld", (long long)from_id);
         csilk_json_free(res);
-        res = csilk_db_query_param_json(pool,
-            "INSERT INTO transactions (user_id, asset_id, source_type, transaction_type, amount, currency, transaction_date, note) "
+        res = csilk_db_query_param_json(
+            pool,
+            "INSERT INTO transactions (user_id, asset_id, source_type, transaction_type, amount, "
+            "currency, transaction_date, note) "
             "VALUES (?, ?, 'expense', 'transfer_out', ?, ?, ?, ?) RETURNING id",
-            (const char*[]){ uid, fid, amt, currency, date, note ? note : "", NULL });
+            (const char*[]){uid, fid, amt, currency, date, note ? note : "", NULL});
         if (!res || csilk_json_array_size(res) == 0) {
             csilk_db_exec(pool, "ROLLBACK");
-            if (res) csilk_json_free(res);
+            if (res) {
+                csilk_json_free(res);
+            }
             csilk_json_free(body);
             respond_error(c, 500, "记录划转交易失败");
             return;
@@ -91,13 +117,17 @@ void transfers_create(csilk_ctx_t* c) {
         snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
         snprintf(amt, sizeof(amt), "%.6f", amount);
         snprintf(tid, sizeof(tid), "%lld", (long long)to_id);
-        csilk_json_t* res = csilk_db_query_param_json(pool,
-            "INSERT INTO transactions (user_id, asset_id, source_type, transaction_type, amount, currency, transaction_date, note) "
+        csilk_json_t* res = csilk_db_query_param_json(
+            pool,
+            "INSERT INTO transactions (user_id, asset_id, source_type, transaction_type, amount, "
+            "currency, transaction_date, note) "
             "VALUES (?, ?, 'income', 'transfer_in', ?, ?, ?, ?) RETURNING id",
-            (const char*[]){ uid, tid, amt, currency, date, note ? note : "", NULL });
+            (const char*[]){uid, tid, amt, currency, date, note ? note : "", NULL});
         if (!res || csilk_json_array_size(res) == 0) {
             csilk_db_exec(pool, "ROLLBACK");
-            if (res) csilk_json_free(res);
+            if (res) {
+                csilk_json_free(res);
+            }
             csilk_json_free(body);
             respond_error(c, 500, "记录划转交易失败");
             return;
@@ -119,6 +149,14 @@ void transfers_create(csilk_ctx_t* c) {
     respond_ok_null(c);
 }
 
-void register_transfer_routes(csilk_app_t* app) {
-    csilk_app_post_ext(app, "/api/transfers", transfers_create, "transfer_req_t", nullptr, "Create transfer", "Create a transfer between two assets (debit one, credit other)");
+void
+register_transfer_routes(csilk_app_t* app)
+{
+    csilk_app_post_ext(app,
+                       "/api/transfers",
+                       transfers_create,
+                       "transfer_req_t",
+                       nullptr,
+                       "Create transfer",
+                       "Create a transfer between two assets (debit one, credit other)");
 }

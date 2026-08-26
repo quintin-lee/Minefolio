@@ -11,8 +11,8 @@
  */
 
 #define RATE_LIMIT_WINDOW_SEC 60
-#define RATE_LIMIT_MAX_REQS   10
-#define RATE_LIMIT_RING       64
+#define RATE_LIMIT_MAX_REQS 10
+#define RATE_LIMIT_RING 64
 
 typedef struct {
     time_t ts;
@@ -24,33 +24,41 @@ static entry_t ring[RATE_LIMIT_RING];
 static int     ring_head = 0;
 static int     ring_count = 0;
 
-static void evict_old(time_t now) {
+static void
+evict_old(time_t now)
+{
     while (ring_count > 0 && (now - ring[ring_head].ts) > RATE_LIMIT_WINDOW_SEC) {
         ring_head = (ring_head + 1) % RATE_LIMIT_RING;
         ring_count--;
     }
 }
 
-void rate_limit_auth_middleware(csilk_ctx_t* c) {
+void
+rate_limit_auth_middleware(csilk_ctx_t* c)
+{
     const char* path = csilk_get_path(c);
-    if (!path) { csilk_next(c); return; }
+    if (!path) {
+        csilk_next(c);
+        return;
+    }
 
     /* Only rate-limit auth-write endpoints */
-    if (strcmp(path, "/api/auth/login") != 0 &&
-        strcmp(path, "/api/auth/register") != 0 &&
+    if (strcmp(path, "/api/auth/login") != 0 && strcmp(path, "/api/auth/register") != 0 &&
         strcmp(path, "/api/system/setup") != 0) {
         csilk_next(c);
         return;
     }
 
     const char* ip = csilk_get_client_ip(c);
-    time_t now = time(NULL);
+    time_t      now = time(NULL);
     evict_old(now);
 
     int matches = 0;
     for (int i = 0; i < ring_count; i++) {
         int idx = (ring_head + i) % RATE_LIMIT_RING;
-        if (ring[idx].ts == 0) break;
+        if (ring[idx].ts == 0) {
+            break;
+        }
         if ((now - ring[idx].ts) <= RATE_LIMIT_WINDOW_SEC &&
             strncmp(ring[idx].path, path, sizeof(ring[idx].path) - 1) == 0 &&
             strncmp(ring[idx].ip, ip, sizeof(ring[idx].ip) - 1) == 0) {

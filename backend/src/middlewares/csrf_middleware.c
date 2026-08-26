@@ -3,9 +3,14 @@
 #include <string.h>
 #include <stdio.h>
 
-void csrf_middleware_wrapper(csilk_ctx_t* c) {
+void
+csrf_middleware_wrapper(csilk_ctx_t* c)
+{
     const char* method = csilk_get_method(c);
-    if (!method) { csilk_next(c); return; }
+    if (!method) {
+        csilk_next(c);
+        return;
+    }
 
     /* On safe methods (GET/HEAD/OPTIONS), ensure client has a csrf_token cookie */
     if (strcmp(method, "GET") == 0 || strcmp(method, "HEAD") == 0 ||
@@ -22,10 +27,9 @@ void csrf_middleware_wrapper(csilk_ctx_t* c) {
 
     /* For mutating methods (POST/PUT/DELETE): check exemptions */
     const char* path = csilk_get_path(c);
-    if (path && (strcmp(path, "/api/auth/login") == 0 ||
-                 strcmp(path, "/api/auth/register") == 0 ||
-                 strcmp(path, "/api/system/status") == 0 ||
-                 strcmp(path, "/api/system/setup") == 0)) {
+    if (path &&
+        (strcmp(path, "/api/auth/login") == 0 || strcmp(path, "/api/auth/register") == 0 ||
+         strcmp(path, "/api/system/status") == 0 || strcmp(path, "/api/system/setup") == 0)) {
         if (!csilk_get_cookie(c, "csrf_token")) {
             char buf[33];
             if (csilk_csrf_generate_token(buf, sizeof(buf)) == 0) {

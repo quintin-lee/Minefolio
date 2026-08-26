@@ -25,8 +25,11 @@
 #include <unistd.h>
 #include <stdlib.h>
 
-int main(int argc, char** argv) {
-    (void)argc; (void)argv;
+int
+main(int argc, char** argv)
+{
+    (void)argc;
+    (void)argv;
 
     if (!getenv("MINEFOLIO_JWT_SECRET")) {
         fprintf(stderr, "FATAL: MINEFOLIO_JWT_SECRET environment variable is required\n");
@@ -75,8 +78,9 @@ int main(int argc, char** argv) {
 
     // JWT middleware (rejects if MINEFOLIO_JWT_SECRET is not set)
     csilk_app_use_group(app, "/api", jwt_middleware_wrapper);
-    if (getenv("MINEFOLIO_ENABLE_CSRF"))
+    if (getenv("MINEFOLIO_ENABLE_CSRF")) {
         csilk_app_use_group(app, "/api", csrf_middleware_wrapper);
+    }
 
     // Domain route registration
     register_auth_routes(app);
@@ -94,8 +98,11 @@ int main(int argc, char** argv) {
 
     const char* dist = "./frontend/dist";
     if (access(dist, F_OK) != 0) {
-        if (access("../frontend/dist", F_OK) == 0) dist = "../frontend/dist";
-        else if (access("dist", F_OK) == 0) dist = "dist";
+        if (access("../frontend/dist", F_OK) == 0) {
+            dist = "../frontend/dist";
+        } else if (access("dist", F_OK) == 0) {
+            dist = "dist";
+        }
     }
     csilk_app_static(app, "/", dist);
 
