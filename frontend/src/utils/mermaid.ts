@@ -26,36 +26,36 @@ const CJK_FONT_FAMILY =
 const MINELOFIO_THEME_VARIABLES = {
   darkMode: true,
   background: 'transparent',
-  mainBkg: '#0f172a',
+  mainBkg: '#0b172a',
   nodeBorder: '#00d4ff',
-  textColor: '#e2e8f0',
+  textColor: '#f1f5f9',
   lineColor: '#38bdf8',
   fontSize: '13px',
   fontFamily: CJK_FONT_FAMILY,
 
   // Flowchart
-  nodeTextColor: '#e2e8f0',
-  primaryColor: '#0f2438',
-  primaryTextColor: '#e2e8f0',
+  nodeTextColor: '#f1f5f9',
+  primaryColor: '#0d2238',
+  primaryTextColor: '#f1f5f9',
   primaryBorderColor: '#00d4ff',
   edgeLabelBackground: '#0b1329',
-  clusterBkg: 'rgba(15, 23, 42, 0.85)',
-  clusterBorder: 'rgba(0, 212, 255, 0.35)',
+  clusterBkg: 'rgba(12, 20, 38, 0.75)',
+  clusterBorder: 'rgba(0, 212, 255, 0.4)',
   defaultLinkColor: '#38bdf8',
   titleColor: '#00d4ff',
 
   // Sequence
-  actorBkg: '#0f2438',
+  actorBkg: '#0d2238',
   actorBorder: '#00d4ff',
-  actorTextColor: '#e2e8f0',
+  actorTextColor: '#f1f5f9',
   actorLineColor: '#38bdf8',
   signalColor: '#38bdf8',
-  signalTextColor: '#e2e8f0',
-  labelBoxBkgColor: '#0f2438',
+  signalTextColor: '#f1f5f9',
+  labelBoxBkgColor: '#0d2238',
   labelBoxBorderColor: '#00d4ff',
-  labelTextColor: '#e2e8f0',
-  loopTextColor: '#e2e8f0',
-  noteBorderColor: '#7c3aed',
+  labelTextColor: '#f1f5f9',
+  loopTextColor: '#f1f5f9',
+  noteBorderColor: '#8b5cf6',
   noteBkgColor: 'rgba(124, 58, 237, 0.2)',
   noteTextColor: '#e2e8f0',
   activationBorderColor: '#00d4ff',
@@ -74,21 +74,21 @@ const MINELOFIO_THEME_VARIABLES = {
   pie10: '#f97316',
   pie11: '#6366f1',
   pie12: '#84cc16',
-  pieTitleTextSize: '15px',
+  pieTitleTextSize: '16px',
   pieTitleTextColor: '#00d4ff',
   pieSectionTextColor: '#ffffff',
   pieLegendTextColor: '#e2e8f0',
-  pieStrokeColor: '#0f172a',
+  pieStrokeColor: '#0b172a',
   pieStrokeWidth: '2px',
 
   // State / Class
-  classText: '#e2e8f0',
-  stateBkg: '#0f2438',
-  stateLabelColor: '#e2e8f0',
-  altBackground: 'rgba(15, 23, 42, 0.8)',
+  classText: '#f1f5f9',
+  stateBkg: '#0d2238',
+  stateLabelColor: '#f1f5f9',
+  altBackground: 'rgba(15, 23, 42, 0.85)',
 
   // Mindmap
-  mindmapTextColor: '#e2e8f0',
+  mindmapTextColor: '#f1f5f9',
 
   // Git
   git0: '#00d4ff',
@@ -110,48 +110,154 @@ const MINELOFIO_THEME_VARIABLES = {
   quadrant3TextFill: '#fbbf24',
   quadrant4TextFill: '#34d399',
   quadrantPointFill: '#00d4ff',
-  quadrantPointTextFill: '#e2e8f0',
+  quadrantPointTextFill: '#f1f5f9',
   quadrantXAxisTextFill: '#94a3b8',
   quadrantYAxisTextFill: '#94a3b8',
 }
 
 const THEME_CUSTOM_CSS = `
-  /* High contrast Chinese & Unicode label styling across all diagrams */
-  .node text, .node span, .nodeLabel, .label, .label text, text.actor, .actor > tspan, .labelText, .node .label {
-    font-family: ${CJK_FONT_FAMILY} !important;
-    fill: #e2e8f0 !important;
-    color: #e2e8f0 !important;
+  /* ── High-Tech Node Cards & Shapes ── */
+  .node rect, .node circle, .node ellipse, .node polygon, .node path {
+    fill: #0c1a2e !important;
+    stroke: #00d4ff !important;
+    stroke-width: 1.5px !important;
+    rx: 8px !important;
+    ry: 8px !important;
+    filter: drop-shadow(0 2px 8px rgba(0, 212, 255, 0.12));
+    transition: stroke 0.2s ease, filter 0.2s ease;
   }
-  foreignObject, foreignObject div, foreignObject span, foreignObject p {
-    font-family: ${CJK_FONT_FAMILY} !important;
-    color: #e2e8f0 !important;
-    text-align: center;
-    word-break: break-word;
+  .node:hover rect, .node:hover circle, .node:hover ellipse, .node:hover polygon {
+    stroke: #38bdf8 !important;
+    stroke-width: 2px !important;
+    filter: drop-shadow(0 0 10px rgba(0, 212, 255, 0.35));
+  }
+
+  /* ── Subgraphs & Clusters (Group Containers) ── */
+  .cluster rect {
+    fill: rgba(10, 18, 36, 0.65) !important;
+    stroke: rgba(0, 212, 255, 0.35) !important;
+    stroke-width: 1.5px !important;
+    stroke-dasharray: 6 4 !important;
+    rx: 12px !important;
+    ry: 12px !important;
   }
   .cluster-label text, .cluster text, .cluster-label span, .cluster span, .cluster .nodeLabel {
     font-family: ${CJK_FONT_FAMILY} !important;
     fill: #00d4ff !important;
     color: #00d4ff !important;
-    font-weight: 600 !important;
+    font-weight: 700 !important;
+    font-size: 13px !important;
+    letter-spacing: 0.5px !important;
   }
-  .edgeLabel, .edgeLabel span, .edgeLabel p {
-    font-family: ${CJK_FONT_FAMILY} !important;
-    color: #38bdf8 !important;
+
+  /* ── Flowchart Edges & Connector Lines ── */
+  .edgePath .path, .edge-thickness-normal {
+    stroke: #38bdf8 !important;
+    stroke-width: 1.8px !important;
+    stroke-linecap: round !important;
+    stroke-linejoin: round !important;
+    opacity: 0.92;
+  }
+  .edgePath:hover .path {
+    stroke: #00d4ff !important;
+    stroke-width: 2.2px !important;
+    filter: drop-shadow(0 0 6px rgba(0, 212, 255, 0.6));
+  }
+  .marker, marker path, #flowchart-pointEnd, #statediagram-barbEnd, [id^="flowchart-"] {
     fill: #38bdf8 !important;
-    background-color: #0b1329 !important;
+    stroke: #38bdf8 !important;
+  }
+
+  /* ── Edge Labels & Pills ── */
+  .edgeLabel {
+    background-color: rgba(11, 19, 41, 0.95) !important;
+    border: 1px solid rgba(0, 212, 255, 0.3) !important;
+    border-radius: 4px !important;
+    padding: 2px 6px !important;
+    color: #bae6fd !important;
+    font-size: 11px !important;
+    font-weight: 500 !important;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
   }
   .edgeLabel rect {
-    fill: #0b1329 !important;
-    opacity: 0.9;
+    fill: rgba(11, 19, 41, 0.95) !important;
+    stroke: rgba(0, 212, 255, 0.3) !important;
+    rx: 4px !important;
+    ry: 4px !important;
   }
+  .edgeLabel span, .edgeLabel p {
+    font-family: ${CJK_FONT_FAMILY} !important;
+    color: #bae6fd !important;
+    fill: #bae6fd !important;
+  }
+
+  /* ── Node Labels & Text Typography ── */
+  .node text, .node span, .nodeLabel, .label, .label text, text.actor, .actor > tspan, .labelText, .node .label {
+    font-family: ${CJK_FONT_FAMILY} !important;
+    fill: #f1f5f9 !important;
+    color: #f1f5f9 !important;
+    font-size: 12.5px !important;
+    font-weight: 500 !important;
+  }
+  foreignObject, foreignObject div, foreignObject span, foreignObject p {
+    font-family: ${CJK_FONT_FAMILY} !important;
+    color: #f1f5f9 !important;
+    text-align: center;
+    word-break: break-word;
+    line-height: 1.4 !important;
+  }
+
+  /* ── Sequence Diagrams ── */
+  .actor {
+    fill: #0c1a2e !important;
+    stroke: #00d4ff !important;
+    stroke-width: 1.5px !important;
+    rx: 8px !important;
+    ry: 8px !important;
+  }
+  .actor-line {
+    stroke: rgba(56, 189, 248, 0.4) !important;
+    stroke-dasharray: 4 4 !important;
+    stroke-width: 1.5px !important;
+  }
+  .messageLine0, .messageLine1 {
+    stroke: #38bdf8 !important;
+    stroke-width: 1.8px !important;
+    stroke-linecap: round !important;
+  }
+  .messageText {
+    fill: #e2e8f0 !important;
+    font-size: 12px !important;
+  }
+  .note {
+    fill: rgba(124, 58, 237, 0.2) !important;
+    stroke: #8b5cf6 !important;
+    stroke-width: 1.2px !important;
+    rx: 6px !important;
+    ry: 6px !important;
+  }
+  .noteText {
+    fill: #ddd6fe !important;
+    font-size: 11.5px !important;
+  }
+
+  /* ── Mindmap ── */
+  .mindmap-node rect, .mindmap-node circle, .mindmap-node path {
+    rx: 8px !important;
+    ry: 8px !important;
+  }
+
+  /* ── Pie & Titles ── */
   .pieTitleText {
     font-family: ${CJK_FONT_FAMILY} !important;
     fill: #00d4ff !important;
-    font-weight: 600 !important;
+    font-weight: 700 !important;
+    font-size: 16px !important;
   }
   .legend text {
     font-family: ${CJK_FONT_FAMILY} !important;
-    fill: #e2e8f0 !important;
+    fill: #cbd5e1 !important;
+    font-size: 12px !important;
   }
 `
 
@@ -178,6 +284,10 @@ export async function ensureMermaid(): Promise<MermaidApi | null> {
           htmlLabels: true,
           useMaxWidth: true,
           curve: 'basis',
+          nodeSpacing: 45,
+          rankSpacing: 55,
+          padding: 16,
+          defaultRenderer: 'dagre-wrapper',
         },
         sequence: {
           useMaxWidth: true,
@@ -444,7 +554,7 @@ export function downloadPng(svgContent: string, filename = 'minefolio-diagram.pn
       }
 
       // Draw dark background matching Minefolio theme
-      ctx.fillStyle = '#0f172a'
+      ctx.fillStyle = '#0b172a'
       ctx.fillRect(0, 0, canvas.width, canvas.height)
       ctx.scale(scale, scale)
 

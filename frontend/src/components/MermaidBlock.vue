@@ -560,10 +560,12 @@ onMounted(() => {
   display: flex;
   justify-content: center;
   align-items: center;
-  padding: 16px;
+  padding: 24px 20px;
   overflow-x: auto;
   cursor: zoom-in;
-  background: rgba(10, 16, 30, 0.6);
+  background-color: #070e1c;
+  background-image: radial-gradient(rgba(0, 212, 255, 0.08) 1.2px, transparent 1.2px);
+  background-size: 16px 16px;
 }
 
 .svg-container {
@@ -815,6 +817,9 @@ onMounted(() => {
   overflow: hidden;
   cursor: grab;
   user-select: none;
+  background-color: #060b16;
+  background-image: radial-gradient(rgba(0, 212, 255, 0.08) 1.2px, transparent 1.2px);
+  background-size: 20px 20px;
 }
 
 .modal-canvas.is-dragging {
