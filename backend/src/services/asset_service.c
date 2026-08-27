@@ -313,7 +313,7 @@ asset_logs_list(csilk_ctx_t* c)
     csilk_db_pool_t* pool = db_get_pool();
     const char*      asset_id_str = csilk_get_query(c, "asset_id");
 
-    char uid_str[32], limit_buf[32], offset_buf[32];
+    char uid_str[32], limit_buf[32], offset_buf[32], aid_buf[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     snprintf(limit_buf, sizeof(limit_buf), "%lld", (long long)page_size);
     snprintf(offset_buf, sizeof(offset_buf), "%lld", (long long)((page - 1) * page_size));
@@ -328,7 +328,6 @@ asset_logs_list(csilk_ctx_t* c)
 
     csilk_json_t* result = NULL;
     if (asset_id_str && strlen(asset_id_str) > 0) {
-        char aid_buf[32];
         snprintf(aid_buf, sizeof(aid_buf), "%lld", atoll(asset_id_str));
         const char* params[] = {uid_str, aid_buf, limit_buf, offset_buf, NULL};
         result = csilk_db_query_param_json(

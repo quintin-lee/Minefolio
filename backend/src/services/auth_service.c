@@ -73,9 +73,12 @@ auth_register(csilk_ctx_t* c)
     store_bcrypt_hash(password, hashed);
 
     // Insert user
-    const char* insert_sql = "INSERT INTO users (username, password) VALUES (?, ?)";
-    const char* insert_params[] = {username, hashed, NULL};
-    csilk_db_query_param_json(pool, insert_sql, insert_params);
+    const char*   insert_sql = "INSERT INTO users (username, password) VALUES (?, ?)";
+    const char*   insert_params[] = {username, hashed, NULL};
+    csilk_json_t* ins_r = csilk_db_query_param_json(pool, insert_sql, insert_params);
+    if (ins_r) {
+        csilk_json_free(ins_r);
+    }
 
     // Get user id
     csilk_json_t* user =
@@ -299,9 +302,12 @@ auth_change_password(csilk_ctx_t* c)
     }
 
     /* Invalidate all existing sessions by incrementing token_version */
-    const char* inv_params[] = {uid_str, NULL};
-    csilk_db_query_param_json(
+    const char*   inv_params[] = {uid_str, NULL};
+    csilk_json_t* inv_r = csilk_db_query_param_json(
         pool, "UPDATE users SET token_version = token_version + 1 WHERE id=?", inv_params);
+    if (inv_r) {
+        csilk_json_free(inv_r);
+    }
 
     csilk_json_free(body);
 

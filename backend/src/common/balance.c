@@ -213,9 +213,12 @@ apply_position(csilk_db_pool_t* pool,
     snprintf(nq, sizeof(nq), "%.4f", new_qty);
     snprintf(nc, sizeof(nc), "%.4f", new_cost);
     snprintf(nv, sizeof(nv), "%.4f", new_net);
-    const char* p[] = {nq, nc, nv, aid_str, NULL};
-    csilk_db_query_param_json(
+    const char*   p[] = {nq, nc, nv, aid_str, NULL};
+    csilk_json_t* upd_res = csilk_db_query_param_json(
         pool, "UPDATE assets SET quantity=?, cost_basis=?, net_value=? WHERE id=?", p);
+    if (upd_res) {
+        csilk_json_free(upd_res);
+    }
     csilk_json_free(pos);
     return 0;
 }
@@ -281,9 +284,12 @@ rollback_position(csilk_db_pool_t* pool,
     snprintf(nq, sizeof(nq), "%.4f", new_qty);
     snprintf(nc, sizeof(nc), "%.4f", new_cost);
     snprintf(nv, sizeof(nv), "%.4f", new_net);
-    const char* p[] = {nq, nc, nv, aid_str, NULL};
-    csilk_db_query_param_json(
+    const char*   p[] = {nq, nc, nv, aid_str, NULL};
+    csilk_json_t* upd_res = csilk_db_query_param_json(
         pool, "UPDATE assets SET quantity=?, cost_basis=?, net_value=? WHERE id=?", p);
+    if (upd_res) {
+        csilk_json_free(upd_res);
+    }
     csilk_json_free(pos);
     return 0;
 }

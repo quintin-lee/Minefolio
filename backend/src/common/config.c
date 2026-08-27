@@ -1,4 +1,5 @@
 #include "config.h"
+#include "csilk/csilk.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -50,46 +51,25 @@ config_get_str(const char* path, const char* key, char* out, size_t out_size)
 int
 config_set(const char* path, const char** kv)
 {
-    /* Build JSON object from key-value pairs */
-    size_t total = 64;
-    char*  json = malloc(total);
+    if (!path || !kv) {
+        return -1;
+    }
+
+    csilk_json_t* obj = csilk_json_object();
+    if (!obj) {
+        return -1;
+    }
+
+    for (int i = 0; kv[i] && kv[i + 1]; i += 2) {
+        csilk_json_add_string(obj, kv[i], kv[i + 1]);
+    }
+
+    size_t len = 0;
+    char*  json = csilk_json_serialize(obj, &len);
+    csilk_json_free(obj);
     if (!json) {
         return -1;
     }
-    json[0] = '{';
-    json[1] = '\0';
-    size_t len = 1;
-
-    for (int i = 0; kv[i] && kv[i + 1]; i += 2) {
-        const char* k = kv[i];
-        const char* v = kv[i + 1];
-        /* Escape backslashes and quotes in value */
-        char   escaped[1024];
-        size_t ei = 0;
-        for (const char* p = v; *p && ei < sizeof(escaped) - 3; p++) {
-            if (*p == '\\' || *p == '"') {
-                escaped[ei++] = '\\';
-            }
-            escaped[ei++] = *p;
-        }
-        escaped[ei] = '\0';
-
-        size_t entry_len = (size_t)snprintf(NULL, 0, ",\"%s\":\"%s\"", k, escaped) + 1;
-        if (len + entry_len >= total) {
-            total = total * 2 + entry_len;
-            char* tmp = realloc(json, total);
-            if (!tmp) {
-                free(json);
-                return -1;
-            }
-            json = tmp;
-        }
-        len += (size_t)snprintf(json + len, total - len, ",\"%s\":\"%s\"", k, escaped);
-    }
-    size_t last = len > 1 ? len - 1 : 0; /* skip leading comma */
-    json[last] = '}';
-    json[last + 1] = '\n';
-    json[last + 2] = '\0';
 
     /* Ensure parent dir exists */
     char dir[512];
@@ -106,7 +86,7 @@ config_set(const char* path, const char** kv)
         free(json);
         return -1;
     }
-    fprintf(f, "%s", json);
+    fprintf(f, "%s\n", json);
     fclose(f);
     free(json);
     return 0;

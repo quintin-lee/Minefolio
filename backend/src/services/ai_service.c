@@ -397,7 +397,8 @@ ai_chat_handler(csilk_ctx_t* c)
     int           hsz = history ? (int)csilk_json_array_size(history) : 0;
 
     /* build messages: [system, ...history] or [system, ...history, user] */
-    int                 mc = regenerate ? (1 + hsz) : (1 + hsz + 1);
+    int                 initial_mc = regenerate ? (1 + hsz) : (1 + hsz + 1);
+    int                 mc = initial_mc;
     csilk_ai_message_t* msgs = (csilk_ai_message_t*)malloc(sizeof(csilk_ai_message_t) * (size_t)mc);
     if (!msgs) {
         csilk_json_free(history);
@@ -526,8 +527,33 @@ ai_chat_handler(csilk_ctx_t* c)
             send_error(c,
                        (ai_res.error_message && ai_res.error_message[0]) ? ai_res.error_message
                                                                          : "AI request failed");
-            round = max_rounds;
-            break;
+            if (need_free_ai && ai_inst) {
+                csilk_ai_free(ai_inst);
+            }
+            if (sctx.accumulated) {
+                free(sctx.accumulated);
+            }
+            csilk_sse_close(c);
+            for (int i = initial_mc; i < mc; i++) {
+                if (msgs[i].content) {
+                    free((void*)msgs[i].content);
+                }
+                if (msgs[i].tool_call_id) {
+                    free((void*)msgs[i].tool_call_id);
+                }
+                if (msgs[i].tool_calls) {
+                    for (size_t j = 0; j < msgs[i].tool_call_count; j++) {
+                        free(msgs[i].tool_calls[j].id);
+                        free(msgs[i].tool_calls[j].name);
+                        free(msgs[i].tool_calls[j].arguments);
+                    }
+                    free(msgs[i].tool_calls);
+                }
+            }
+            free(msgs);
+            csilk_json_free(history);
+            csilk_json_free(body);
+            return;
         }
 
         if (ai_res.tool_call_count == 0) {
@@ -663,8 +689,8 @@ ai_chat_handler(csilk_ctx_t* c)
     }
     csilk_sse_close(c);
     /* Free dynamically allocated content strings from tool-call rounds.
-     * The first 1+hsz+1 messages point into g_config/history/body (not owned). */
-    for (int i = 1 + hsz + 1; i < mc; i++) {
+     * The first initial_mc messages point into g_config/history/body (not owned). */
+    for (int i = initial_mc; i < mc; i++) {
         if (msgs[i].content) {
             free((void*)msgs[i].content);
         }

@@ -169,24 +169,31 @@ transactions_create(csilk_ctx_t* c)
     if (fee > 0 && linked_asset_id > 0 && is_investment_tx) {
         char fee_amt_str[64];
         snprintf(fee_amt_str, sizeof(fee_amt_str), "%.6f", fee);
-        char fee_sql[512];
-        snprintf(fee_sql,
-                 sizeof(fee_sql),
-                 "INSERT INTO transactions (user_id, asset_id, linked_asset_id, category_id, "
-                 "source_type, transaction_type, direction, linked_direction, "
-                 "amount, price_per_unit, quantity, currency, transaction_date, note) "
-                 "VALUES (%lld, %lld, NULLIF('%lld', '0'), %lld, '%s', 'fee', "
-                 "'out', NULL, '%s', '0.0000', '0.0000', '%s', '%s', '%s')",
-                 (long long)user_id,
-                 (long long)asset_id,
-                 (long long)linked_asset_id,
-                 (long long)category_id,
-                 src_type,
-                 fee_amt_str,
-                 currency,
-                 date,
-                 note && strlen(note) > 0 ? note : "fee");
-        csilk_db_exec(pool, fee_sql);
+        const char*   fee_note = (note && strlen(note) > 0) ? note : "fee";
+        const char*   fee_params[] = {uid_str,
+                                      ast_str,
+                                      last_str,
+                                      cat_str,
+                                      src_type,
+                                      "fee",
+                                      "out",
+                                      fee_amt_str,
+                                      "0.0000",
+                                      "0.0000",
+                                      currency,
+                                      date,
+                                      fee_note,
+                                      NULL};
+        csilk_json_t* fee_res = csilk_db_query_param_json(
+            pool,
+            "INSERT INTO transactions (user_id, asset_id, linked_asset_id, category_id, "
+            "source_type, transaction_type, direction, linked_direction, "
+            "amount, price_per_unit, quantity, currency, transaction_date, note) "
+            "VALUES (?, ?, NULLIF(?, '0'), ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)",
+            fee_params);
+        if (fee_res) {
+            csilk_json_free(fee_res);
+        }
         if (balance_apply_delta(
                 pool, linked_asset_id, user_id, -fee, "transaction_fee", tx_id, note) != 0) {
             csilk_db_exec(pool, "ROLLBACK");

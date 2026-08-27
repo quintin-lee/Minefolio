@@ -1,10 +1,11 @@
 #include "middlewares/rate_limit.h"
 #include "common/response.h"
 #include "csilk/core/response.h"
+#include <pthread.h>
 #include <string.h>
 #include <time.h>
 
-/* Per-endpoint sliding-window rate limiter (ring buffer, no mutex needed).
+/* Per-endpoint sliding-window rate limiter (ring buffer protected by mutex).
  *
  * Tracks (ip, path) hits and returns 429 when count >= MAX per WINDOW_SEC.
  * Capped at RING_SIZE entries to bound memory usage.
@@ -20,9 +21,10 @@ typedef struct {
     char   ip[64];
 } entry_t;
 
-static entry_t ring[RATE_LIMIT_RING];
-static int     ring_head = 0;
-static int     ring_count = 0;
+static entry_t         ring[RATE_LIMIT_RING];
+static int             ring_head = 0;
+static int             ring_count = 0;
+static pthread_mutex_t g_rate_limit_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static void
 evict_old(time_t now)
@@ -50,7 +52,10 @@ rate_limit_auth_middleware(csilk_ctx_t* c)
     }
 
     const char* ip = csilk_get_client_ip(c);
+    const char* safe_ip = (ip && ip[0]) ? ip : "127.0.0.1";
     time_t      now = time(NULL);
+
+    pthread_mutex_lock(&g_rate_limit_mutex);
     evict_old(now);
 
     int matches = 0;
@@ -61,12 +66,13 @@ rate_limit_auth_middleware(csilk_ctx_t* c)
         }
         if ((now - ring[idx].ts) <= RATE_LIMIT_WINDOW_SEC &&
             strncmp(ring[idx].path, path, sizeof(ring[idx].path) - 1) == 0 &&
-            strncmp(ring[idx].ip, ip, sizeof(ring[idx].ip) - 1) == 0) {
+            strncmp(ring[idx].ip, safe_ip, sizeof(ring[idx].ip) - 1) == 0) {
             matches++;
         }
     }
 
     if (matches >= RATE_LIMIT_MAX_REQS) {
+        pthread_mutex_unlock(&g_rate_limit_mutex);
         csilk_json_t* resp = csilk_json_object();
         csilk_json_add_number(resp, "code", 1004);
         csilk_json_add_string(resp, "message", "请求过于频繁，请稍后再试");
@@ -84,8 +90,12 @@ rate_limit_auth_middleware(csilk_ctx_t* c)
     int idx = (ring_head + ring_count) % RATE_LIMIT_RING;
     ring[idx].ts = now;
     strncpy(ring[idx].path, path, sizeof(ring[idx].path) - 1);
-    strncpy(ring[idx].ip, ip, sizeof(ring[idx].ip) - 1);
+    ring[idx].path[sizeof(ring[idx].path) - 1] = '\0';
+    strncpy(ring[idx].ip, safe_ip, sizeof(ring[idx].ip) - 1);
+    ring[idx].ip[sizeof(ring[idx].ip) - 1] = '\0';
     ring_count++;
+
+    pthread_mutex_unlock(&g_rate_limit_mutex);
 
     csilk_next(c);
 }
