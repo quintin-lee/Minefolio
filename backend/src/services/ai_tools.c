@@ -3,6 +3,8 @@
 #include "repositories/transaction_repo.h"
 #include "repositories/daily_expense_repo.h"
 #include "repositories/category_repo.h"
+#include "repositories/transfer_repo.h"
+#include "common/balance.h"
 #include "common/db.h"
 #include "common/ctx.h"
 #include <string.h>
@@ -249,6 +251,56 @@ schema_analyze_financial_health(void)
     return make_schema(props, NULL, 0);
 }
 
+static csilk_json_t*
+schema_get_expense_trend(void)
+{
+    csilk_json_t* props = csilk_json_object();
+    add_prop(props, "months", "integer", "Number of months for trend (1-24, default 6)");
+    return make_schema(props, NULL, 0);
+}
+
+static csilk_json_t*
+schema_get_asset_breakdown(void)
+{
+    csilk_json_t* props = csilk_json_object();
+    return make_schema(props, NULL, 0);
+}
+
+static csilk_json_t*
+schema_get_expense_by_category(void)
+{
+    csilk_json_t* props = csilk_json_object();
+    add_prop(props, "months", "integer", "Number of months to aggregate (1-24, default 3)");
+    add_prop(props, "limit", "integer", "Max categories to return (1-20, default 10)");
+    return make_schema(props, NULL, 0);
+}
+
+static csilk_json_t*
+schema_confirm_proposed_expense(void)
+{
+    csilk_json_t* props = csilk_json_object();
+    add_prop(props, "amount", "number", "Amount to confirm (must be positive)");
+    add_prop(props, "category_name", "string", "Category name or intent");
+    add_prop(props, "asset_name", "string", "Asset/account name");
+    add_prop(props, "date", "string", "Date YYYY-MM-DD (default today)");
+    add_prop(props, "note", "string", "Optional note");
+    const char* req[] = {"amount", "category_name", "asset_name"};
+    return make_schema(props, req, 3);
+}
+
+static csilk_json_t*
+schema_confirm_proposed_transfer(void)
+{
+    csilk_json_t* props = csilk_json_object();
+    add_prop(props, "amount", "number", "Transfer amount (must be positive)");
+    add_prop(props, "from_asset_name", "string", "Source asset name");
+    add_prop(props, "to_asset_name", "string", "Target asset name");
+    add_prop(props, "date", "string", "Transfer date YYYY-MM-DD");
+    add_prop(props, "note", "string", "Optional note");
+    const char* req[] = {"amount", "from_asset_name", "to_asset_name"};
+    return make_schema(props, req, 3);
+}
+
 /* ========================================================================= */
 /*  Tool Registry Array                                                      */
 /* ========================================================================= */
@@ -383,6 +435,47 @@ static csilk_ai_tool_t s_tools[] = {
                 .name = "analyze_financial_health",
                 .description = "全套核心财务健康体检诊断，聚合计算应急备用金流动性月数、净储蓄率、"
                                "资产负债率与生息投资资产占比",
+                .parameters_json = NULL,
+            }, },
+
+    {
+     .type = "function",
+     .function =
+            {
+                .name = "get_expense_trend",
+                .description = "Query monthly income/expense trend for the past N months",
+                .parameters_json = NULL,
+            }, },
+    {
+     .type = "function",
+     .function =
+            {
+                .name = "get_asset_breakdown",
+                .description = "Break down assets and liabilities by name with percentages",
+                .parameters_json = NULL,
+            }, },
+    {
+     .type = "function",
+     .function =
+            {
+                .name = "get_expense_by_category",
+                .description = "Summarize expenses by category for the past N months",
+                .parameters_json = NULL,
+            }, },
+    {
+     .type = "function",
+     .function =
+            {
+                .name = "confirm_proposed_expense",
+                .description = "Confirm and insert a proposed expense transaction",
+                .parameters_json = NULL,
+            }, },
+    {
+     .type = "function",
+     .function =
+            {
+                .name = "confirm_proposed_transfer",
+                .description = "Confirm and insert a proposed transfer transaction",
                 .parameters_json = NULL,
             }, },
 };
@@ -1892,6 +1985,325 @@ exec_analyze_financial_health(csilk_db_pool_t* pool, int64_t user_id, csilk_json
 }
 
 /* ========================================================================= */
+/*  New Tool Implementations                                                  */
+/* ========================================================================= */
+
+static char*
+exec_get_expense_trend(csilk_db_pool_t* pool, int64_t user_id, csilk_json_t* args)
+{
+    int months = (int)arg_int(args, "months", 6);
+    if (months < 1) {
+        months = 1;
+    }
+    if (months > 24) {
+        months = 24;
+    }
+    char uid[32], months_buf[16];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    snprintf(months_buf, sizeof(months_buf), "%d", months);
+    csilk_json_t* rows = csilk_db_query_param_json(
+        pool,
+        "SELECT SUBSTR(expense_date,1,7) as period, "
+        "COALESCE(SUM(CASE WHEN expense_type='income' THEN amount ELSE 0 END),0) as income, "
+        "COALESCE(SUM(CASE WHEN expense_type='expense' THEN amount ELSE 0 END),0) as expense "
+        "FROM daily_expenses WHERE user_id=? AND expense_date >= date('now','-'||?||' months') "
+        "GROUP BY SUBSTR(expense_date,1,7) ORDER BY period",
+        (const char*[]){uid, months_buf, NULL});
+    csilk_json_t* resp = csilk_json_object();
+    csilk_json_add_number(resp, "months", (double)months);
+    csilk_json_t* labels = csilk_json_array();
+    csilk_json_t* income_arr = csilk_json_array();
+    csilk_json_t* expense_arr = csilk_json_array();
+    if (rows) {
+        size_t n = csilk_json_array_size(rows);
+        for (size_t i = 0; i < n; i++) {
+            csilk_json_t* row = csilk_json_array_get(rows, i);
+            csilk_json_array_append(
+                labels, csilk_json_string_new(csilk_json_get_string(row, "period") ?: ""));
+            csilk_json_array_append(income_arr, csilk_json_number(db_get_num(row, "income")));
+            csilk_json_array_append(expense_arr, csilk_json_number(db_get_num(row, "expense")));
+        }
+        csilk_json_free(rows);
+    }
+    csilk_json_add_array(resp, "labels", labels);
+    csilk_json_add_array(resp, "income", income_arr);
+    csilk_json_add_array(resp, "expense", expense_arr);
+    return json_to_str(resp);
+}
+
+static char*
+exec_get_asset_breakdown(csilk_db_pool_t* pool, int64_t user_id, csilk_json_t* args)
+{
+    (void)args;
+    char uid[32];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    const char*   params[] = {uid, NULL};
+    csilk_json_t* assets = csilk_db_query_param_json(
+        pool,
+        "SELECT c.name as name, SUM(a.current_value) as value FROM assets a JOIN categories c ON "
+        "a.category_id=c.id "
+        "WHERE a.user_id=? AND c.asset_type NOT IN ('loan','credit_card','other_liability') GROUP "
+        "BY c.name ORDER BY value DESC",
+        params);
+    csilk_json_t* liabs = csilk_db_query_param_json(
+        pool,
+        "SELECT c.name as name, SUM(a.current_value) as value FROM assets a JOIN categories c ON "
+        "a.category_id=c.id "
+        "WHERE a.user_id=? AND c.asset_type IN ('loan','credit_card','other_liability') GROUP BY "
+        "c.name ORDER BY value DESC",
+        params);
+    double total_assets = 0, total_liabs = 0;
+    size_t na = assets ? csilk_json_array_size(assets) : 0;
+    size_t nl = liabs ? csilk_json_array_size(liabs) : 0;
+    for (size_t i = 0; i < na; i++) {
+        total_assets += db_get_num(csilk_json_array_get(assets, i), "value");
+    }
+    for (size_t i = 0; i < nl; i++) {
+        total_liabs += db_get_num(csilk_json_array_get(liabs, i), "value");
+    }
+    csilk_json_t* resp = csilk_json_object();
+    csilk_json_add_number(resp, "total_assets", total_assets);
+    csilk_json_add_number(resp, "total_liabilities", total_liabs);
+    csilk_json_add_number(resp, "net_worth", total_assets - total_liabs);
+    csilk_json_t* items = csilk_json_array();
+    for (size_t i = 0; i < na; i++) {
+        csilk_json_t* row = csilk_json_array_get(assets, i);
+        double        v = db_get_num(row, "value");
+        csilk_json_t* item = csilk_json_object();
+        csilk_json_add_string(item, "name", csilk_json_get_string(row, "name"));
+        csilk_json_add_number(item, "value", v);
+        csilk_json_add_number(item, "pct", total_assets > 0 ? v / total_assets * 100 : 0);
+        csilk_json_array_append(items, item);
+    }
+    csilk_json_add_array(resp, "assets", items);
+    if (assets) {
+        csilk_json_free(assets);
+    }
+    csilk_json_t* litems = csilk_json_array();
+    for (size_t i = 0; i < nl; i++) {
+        csilk_json_t* row = csilk_json_array_get(liabs, i);
+        double        v = db_get_num(row, "value");
+        csilk_json_t* item = csilk_json_object();
+        csilk_json_add_string(item, "name", csilk_json_get_string(row, "name"));
+        csilk_json_add_number(item, "value", v);
+        csilk_json_add_number(item, "pct", total_liabs > 0 ? v / total_liabs * 100 : 0);
+        csilk_json_array_append(litems, item);
+    }
+    csilk_json_add_array(resp, "liabilities", litems);
+    if (liabs) {
+        csilk_json_free(liabs);
+    }
+    return json_to_str(resp);
+}
+
+static char*
+exec_get_expense_by_category(csilk_db_pool_t* pool, int64_t user_id, csilk_json_t* args)
+{
+    int months = (int)arg_int(args, "months", 3);
+    int limit = (int)arg_int(args, "limit", 10);
+    if (months < 1) {
+        months = 1;
+    }
+    if (months > 24) {
+        months = 24;
+    }
+    if (limit < 1) {
+        limit = 1;
+    }
+    if (limit > 20) {
+        limit = 20;
+    }
+    char uid[32], months_buf[16];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    snprintf(months_buf, sizeof(months_buf), "%d", months);
+    csilk_json_t* rows =
+        csilk_db_query_param_json(pool,
+                                  "SELECT c.name as name, SUM(de.amount) as amount FROM "
+                                  "daily_expenses de JOIN categories c ON de.category_id=c.id "
+                                  "WHERE de.user_id=? AND de.expense_type='expense' AND "
+                                  "de.expense_date >= date('now','-'||?||' months') "
+                                  "GROUP BY c.name ORDER BY amount DESC LIMIT ?",
+                                  (const char*[]){uid, months_buf, months_buf, NULL});
+    csilk_json_t* resp = csilk_json_object();
+    csilk_json_add_number(resp, "months", (double)months);
+    csilk_json_add_number(resp, "limit", (double)limit);
+    double total = 0;
+    size_t n = rows ? csilk_json_array_size(rows) : 0;
+    for (size_t i = 0; i < n; i++) {
+        total += db_get_num(csilk_json_array_get(rows, i), "amount");
+    }
+    csilk_json_add_number(resp, "total", total);
+    csilk_json_t* items = csilk_json_array();
+    for (size_t i = 0; i < n; i++) {
+        csilk_json_t* row = csilk_json_array_get(rows, i);
+        double        amt = db_get_num(row, "amount");
+        csilk_json_t* item = csilk_json_object();
+        csilk_json_add_string(item, "name", csilk_json_get_string(row, "name"));
+        csilk_json_add_number(item, "amount", amt);
+        csilk_json_add_number(item, "pct", total > 0 ? amt / total * 100 : 0);
+        csilk_json_array_append(items, item);
+    }
+    csilk_json_add_array(resp, "items", items);
+    if (rows) {
+        csilk_json_free(rows);
+    }
+    return json_to_str(resp);
+}
+
+static char*
+exec_confirm_proposed_expense(csilk_db_pool_t* pool, int64_t user_id, csilk_json_t* args)
+{
+    double      amount = arg_double(args, "amount", 0);
+    const char* cat_name = arg_str(args, "category_name", "");
+    const char* asset_name = arg_str(args, "asset_name", "");
+    const char* date = arg_str(args, "date", NULL);
+    const char* note = arg_str(args, "note", "");
+    if (amount <= 0 || !cat_name[0] || !asset_name[0]) {
+        return strdup("{\"error\":\"amount, category_name, and asset_name are required\"}");
+    }
+    char date_buf[32];
+    if (!date || !date[0]) {
+        time_t    now = time(NULL);
+        struct tm tm_now;
+        localtime_r(&now, &tm_now);
+        snprintf(date_buf,
+                 sizeof(date_buf),
+                 "%04d-%02d-%02d",
+                 tm_now.tm_year + 1900,
+                 tm_now.tm_mon + 1,
+                 tm_now.tm_mday);
+        date = date_buf;
+    }
+    int64_t       category_id = 0, asset_id = 0;
+    csilk_json_t* cats = category_list(pool, user_id, NULL);
+    if (cats && csilk_json_is_array(cats)) {
+        size_t nc = csilk_json_array_size(cats);
+        for (size_t i = 0; i < nc; i++) {
+            csilk_json_t* c = csilk_json_array_get(cats, i);
+            const char*   cn = csilk_json_get_string(c, "name");
+            if (cn && str_icontains(cn, cat_name)) {
+                category_id = (int64_t)csilk_json_get_number(c, "id");
+                break;
+            }
+        }
+        csilk_json_free(cats);
+    }
+    int64_t       total_count = 0;
+    csilk_json_t* assets = asset_list(pool, user_id, 1, 500, NULL, &total_count);
+    if (assets && csilk_json_is_array(assets)) {
+        size_t na = csilk_json_array_size(assets);
+        for (size_t i = 0; i < na; i++) {
+            csilk_json_t* a = csilk_json_array_get(assets, i);
+            const char*   an = csilk_json_get_string(a, "name");
+            if (an && str_icontains(an, asset_name)) {
+                asset_id = (int64_t)csilk_json_get_number(a, "id");
+                break;
+            }
+        }
+        csilk_json_free(assets);
+    }
+    if (category_id <= 0) {
+        return strdup("{\"error\":\"category not found\"}");
+    }
+    if (asset_id <= 0) {
+        return strdup("{\"error\":\"asset not found\"}");
+    }
+    csilk_db_exec(pool, "BEGIN TRANSACTION");
+    int64_t expense_id =
+        de_insert(pool, user_id, category_id, asset_id, "expense", amount, "CNY", date, note);
+    if (expense_id <= 0) {
+        csilk_db_exec(pool, "ROLLBACK");
+        return strdup("{\"error\":\"insert failed\"}");
+    }
+    if (balance_apply_delta(pool, asset_id, user_id, -amount, "daily_expense", expense_id, note) !=
+        0) {
+        csilk_db_exec(pool, "ROLLBACK");
+        return strdup("{\"error\":\"balance update failed\"}");
+    }
+    csilk_db_exec(pool, "COMMIT");
+    csilk_json_t* resp = csilk_json_object();
+    csilk_json_add_number(resp, "expense_id", (double)expense_id);
+    csilk_json_add_number(resp, "amount", amount);
+    csilk_json_add_string(resp, "category", cat_name);
+    csilk_json_add_string(resp, "asset", asset_name);
+    csilk_json_add_string(resp, "date", date);
+    csilk_json_add_string(resp, "status", "confirmed");
+    return json_to_str(resp);
+}
+
+static char*
+exec_confirm_proposed_transfer(csilk_db_pool_t* pool, int64_t user_id, csilk_json_t* args)
+{
+    double      amount = arg_double(args, "amount", 0);
+    const char* from_name = arg_str(args, "from_asset_name", "");
+    const char* to_name = arg_str(args, "to_asset_name", "");
+    const char* date = arg_str(args, "date", NULL);
+    const char* note = arg_str(args, "note", "");
+    if (amount <= 0 || !from_name[0] || !to_name[0]) {
+        return strdup("{\"error\":\"amount, from_asset_name, and to_asset_name are required\"}");
+    }
+    char date_buf[32];
+    if (!date || !date[0]) {
+        time_t    now = time(NULL);
+        struct tm tm_now;
+        localtime_r(&now, &tm_now);
+        snprintf(date_buf,
+                 sizeof(date_buf),
+                 "%04d-%02d-%02d",
+                 tm_now.tm_year + 1900,
+                 tm_now.tm_mon + 1,
+                 tm_now.tm_mday);
+        date = date_buf;
+    }
+    int64_t       from_id = 0, to_id = 0;
+    int64_t       total_count = 0;
+    csilk_json_t* assets = asset_list(pool, user_id, 1, 500, NULL, &total_count);
+    if (assets && csilk_json_is_array(assets)) {
+        size_t na = csilk_json_array_size(assets);
+        for (size_t i = 0; i < na; i++) {
+            csilk_json_t* a = csilk_json_array_get(assets, i);
+            const char*   an = csilk_json_get_string(a, "name");
+            if (from_name[0] && an && str_icontains(an, from_name) && from_id == 0) {
+                from_id = (int64_t)csilk_json_get_number(a, "id");
+            }
+            if (to_name[0] && an && str_icontains(an, to_name) && to_id == 0) {
+                to_id = (int64_t)csilk_json_get_number(a, "id");
+            }
+        }
+        csilk_json_free(assets);
+    }
+    if (from_id <= 0) {
+        return strdup("{\"error\":\"source asset not found\"}");
+    }
+    if (to_id <= 0) {
+        return strdup("{\"error\":\"target asset not found\"}");
+    }
+    if (from_id == to_id) {
+        return strdup("{\"error\":\"source and target must differ\"}");
+    }
+    csilk_db_exec(pool, "BEGIN TRANSACTION");
+    int64_t transfer_id = transfer_insert(pool, user_id, from_id, to_id, amount, "CNY", date, note);
+    if (transfer_id <= 0) {
+        csilk_db_exec(pool, "ROLLBACK");
+        return strdup("{\"error\":\"insert failed\"}");
+    }
+    if (balance_apply_delta(pool, from_id, user_id, -amount, "transfer", transfer_id, note) != 0 ||
+        balance_apply_delta(pool, to_id, user_id, amount, "transfer", transfer_id, note) != 0) {
+        csilk_db_exec(pool, "ROLLBACK");
+        return strdup("{\"error\":\"balance update failed\"}");
+    }
+    csilk_db_exec(pool, "COMMIT");
+    csilk_json_t* resp = csilk_json_object();
+    csilk_json_add_number(resp, "transfer_id", (double)transfer_id);
+    csilk_json_add_number(resp, "amount", amount);
+    csilk_json_add_string(resp, "from_asset", from_name);
+    csilk_json_add_string(resp, "to_asset", to_name);
+    csilk_json_add_string(resp, "date", date);
+    csilk_json_add_string(resp, "status", "confirmed");
+    return json_to_str(resp);
+}
+
+/* ========================================================================= */
 /*  Idempotent Tool Cache                                                    */
 /* ========================================================================= */
 /* Pure-function tools (no DB/user state) — cache result keyed by tool name  */
@@ -2012,6 +2424,16 @@ ai_tools_execute_parsed(csilk_db_pool_t* pool,
         result = exec_propose_transfer(pool, user_id, args);
     } else if (strcmp(name, "analyze_financial_health") == 0) {
         result = exec_analyze_financial_health(pool, user_id, args);
+    } else if (strcmp(name, "get_expense_trend") == 0) {
+        result = exec_get_expense_trend(pool, user_id, args);
+    } else if (strcmp(name, "get_asset_breakdown") == 0) {
+        result = exec_get_asset_breakdown(pool, user_id, args);
+    } else if (strcmp(name, "get_expense_by_category") == 0) {
+        result = exec_get_expense_by_category(pool, user_id, args);
+    } else if (strcmp(name, "confirm_proposed_expense") == 0) {
+        result = exec_confirm_proposed_expense(pool, user_id, args);
+    } else if (strcmp(name, "confirm_proposed_transfer") == 0) {
+        result = exec_confirm_proposed_transfer(pool, user_id, args);
     } else {
         result = strdup("{\"error\":\"unknown tool\"}");
     }
