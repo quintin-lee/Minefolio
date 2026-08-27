@@ -580,41 +580,29 @@ exec_get_summary(csilk_db_pool_t* pool, int64_t user_id, csilk_json_t* args)
     char uid[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
 
-    const char* sql_asset =
-        "SELECT COALESCE(SUM(current_value), 0) as val FROM assets WHERE user_id = ?";
-    csilk_json_t* r1 = csilk_db_query_param_json(pool, sql_asset, (const char*[]){uid, NULL});
-    double        total_assets = 0;
-    if (r1 && csilk_json_array_size(r1) > 0) {
-        total_assets = db_get_num(csilk_json_array_get(r1, 0), "val");
-        csilk_json_free(r1);
-    }
+    /* Single query with correlated subqueries: preserves original semantics */
+    const char* sql =
+        "SELECT "
+        "  (SELECT COALESCE(SUM(current_value), 0) FROM assets WHERE user_id = ?) AS total_assets, "
+        "  (SELECT COALESCE(SUM(a.current_value), 0) "
+        "   FROM assets a JOIN categories c ON a.category_id = c.id "
+        "   WHERE a.user_id = ? AND c.type = 'asset' "
+        "   AND c.name IN ('loan','credit_card','other_liability')) AS total_liabilities, "
+        "  (SELECT COUNT(*) FROM transactions WHERE user_id = ?) AS tx_count, "
+        "  (SELECT COUNT(*) FROM daily_expenses WHERE user_id = ?) AS de_count";
 
-    const char*   sql_liability = "SELECT COALESCE(SUM(a.current_value), 0) as val FROM assets a "
-                                  "JOIN categories c ON a.category_id = c.id "
-                                  "WHERE a.user_id = ? AND c.type = 'asset' "
-                                  "AND c.name IN ('loan', 'credit_card', 'other_liability')";
-    csilk_json_t* r2 = csilk_db_query_param_json(pool, sql_liability, (const char*[]){uid, NULL});
-    double        total_liabilities = 0;
-    if (r2 && csilk_json_array_size(r2) > 0) {
-        total_liabilities = db_get_num(csilk_json_array_get(r2, 0), "val");
-        csilk_json_free(r2);
+    csilk_json_t* r =
+        csilk_db_query_param_json(pool, sql, (const char*[]){uid, uid, uid, uid, NULL});
+    double  total_assets = 0, total_liabilities = 0;
+    int64_t tx_count = 0, de_count = 0;
+    if (r && csilk_json_array_size(r) > 0) {
+        csilk_json_t* row = csilk_json_array_get(r, 0);
+        total_assets = db_get_num(row, "total_assets");
+        total_liabilities = db_get_num(row, "total_liabilities");
+        tx_count = db_get_int(row, "tx_count");
+        de_count = db_get_int(row, "de_count");
     }
-
-    const char*   sql_tx_count = "SELECT COUNT(*) as cnt FROM transactions WHERE user_id = ?";
-    csilk_json_t* r3 = csilk_db_query_param_json(pool, sql_tx_count, (const char*[]){uid, NULL});
-    int64_t       tx_count = 0;
-    if (r3 && csilk_json_array_size(r3) > 0) {
-        tx_count = db_get_int(csilk_json_array_get(r3, 0), "cnt");
-        csilk_json_free(r3);
-    }
-
-    const char*   sql_de_count = "SELECT COUNT(*) as cnt FROM daily_expenses WHERE user_id = ?";
-    csilk_json_t* r4 = csilk_db_query_param_json(pool, sql_de_count, (const char*[]){uid, NULL});
-    int64_t       de_count = 0;
-    if (r4 && csilk_json_array_size(r4) > 0) {
-        de_count = db_get_int(csilk_json_array_get(r4, 0), "cnt");
-        csilk_json_free(r4);
-    }
+    csilk_json_free(r);
 
     csilk_json_t* summary = csilk_json_object();
     csilk_json_add_number(summary, "total_assets", total_assets);
@@ -1921,8 +1909,10 @@ static idem_cache_entry_t s_idem_cache[IDEM_CACHE_SIZE];
 static char*
 idem_cache_get(const char* key)
 {
+    time_t now = time(NULL);
     for (int i = 0; i < IDEM_CACHE_SIZE; i++) {
-        if (s_idem_cache[i].key && strcmp(s_idem_cache[i].key, key) == 0) {
+        if (s_idem_cache[i].key && strcmp(s_idem_cache[i].key, key) == 0 &&
+            now - s_idem_cache[i].cached_at < 60) {
             return s_idem_cache[i].result;
         }
     }
@@ -1948,8 +1938,7 @@ idem_cache_set(const char* key, char* result)
         free(s_idem_cache[slot].key);
         free(s_idem_cache[slot].result);
     }
-    s_idem_cache[slot].key = strdup(key);
-    s_idem_cache[slot].result = result;
+    s_idem_cache[slot].result = strdup(result); /* own the copy */
     s_idem_cache[slot].cached_at = time(NULL);
 }
 
@@ -2005,7 +1994,18 @@ ai_tools_execute_parsed(csilk_db_pool_t* pool,
     } else if (strcmp(name, "web_search") == 0) {
         result = exec_web_search(pool, user_id, args);
     } else if (strcmp(name, "get_exchange_rate") == 0) {
+        const char* base = arg_str(args, "base_currency", "USD");
+        const char* target = arg_str(args, "target_currency", "CNY");
+        char        fx_key[128];
+        snprintf(fx_key, sizeof(fx_key), "fx:%s:%s", base, target);
+        char* cached = idem_cache_get(fx_key);
+        if (cached) {
+            return strdup(cached);
+        }
         result = exec_get_exchange_rate(pool, user_id, args);
+        if (result) {
+            idem_cache_set(fx_key, result);
+        }
     } else if (strcmp(name, "propose_daily_expense") == 0) {
         result = exec_propose_daily_expense(pool, user_id, args);
     } else if (strcmp(name, "propose_transfer") == 0) {
