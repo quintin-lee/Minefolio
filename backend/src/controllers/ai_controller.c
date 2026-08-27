@@ -214,7 +214,7 @@ settings_ai_get_handler(csilk_ctx_t* c)
         csilk_json_add_array(p, "models", ml);
         csilk_json_array_append(prov_arr, p);
     }
-    csilk_json_add_object(out, "providers", prov_arr);
+    csilk_json_add_array(out, "providers", prov_arr);
     csilk_json_add_string(out, "default_provider", cfg->default_provider);
     csilk_json_add_string(out, "default_model", cfg->default_model);
     csilk_json_add_number(out, "context_size", (double)cfg->context_size);
@@ -231,9 +231,16 @@ settings_ai_update_handler(csilk_ctx_t* c)
         return;
     }
 
-    ai_config_t cfg = {0};
-    const char* cfg_path = getenv("MINEFOLIO_AI_CONFIG") ?: "config/ai.json";
-    ai_config_load(cfg_path, &cfg);
+    csilk_db_pool_t* pool = db_get_pool();
+    ai_config_t      cfg = {0};
+    char*            db_json = pool ? ai_settings_load(pool) : NULL;
+    if (db_json) {
+        ai_config_load_json(db_json, &cfg);
+        free(db_json);
+    } else {
+        const char* cfg_path = getenv("MINEFOLIO_AI_CONFIG") ?: "config/ai.json";
+        ai_config_load(cfg_path, &cfg);
+    }
 
     const csilk_json_t* prov_arr = csilk_json_get(body, "providers");
     if (prov_arr && csilk_json_is_array(prov_arr)) {
@@ -262,6 +269,9 @@ settings_ai_update_handler(csilk_ctx_t* c)
                     }
                 } else {
                     ai_provider_t* old_p = ai_config_find_provider(&cfg, pid);
+                    if (!old_p || old_p->api_key[0] == '\0') {
+                        old_p = ai_config_find_provider(ai_get_config(), pid);
+                    }
                     if (old_p && old_p->api_key[0]) {
                         strncpy(
                             new_provs[i].api_key, old_p->api_key, sizeof(new_provs[i].api_key) - 1);
@@ -309,40 +319,43 @@ settings_ai_update_handler(csilk_ctx_t* c)
         strncpy(cfg.system_prompt, sp, sizeof(cfg.system_prompt) - 1);
     }
 
-    int ok = ai_config_save(cfg_path, &cfg);
-    if (ok == 0) {
-        csilk_json_t* root = csilk_json_object();
-        csilk_json_t* prov_arr = csilk_json_array();
-        for (int i = 0; i < cfg.provider_count; i++) {
-            csilk_json_t* p = csilk_json_object();
-            csilk_json_add_string(p, "id", cfg.providers[i].id);
-            csilk_json_add_string(p, "name", cfg.providers[i].name);
-            csilk_json_add_string(p, "api_key", cfg.providers[i].api_key);
-            csilk_json_add_string(p, "base_url", cfg.providers[i].base_url);
-            csilk_json_t* ml = csilk_json_array();
-            for (int j = 0; j < cfg.providers[i].model_count; j++) {
-                csilk_json_array_append(ml, csilk_json_string_new(cfg.providers[i].models[j]));
-            }
-            csilk_json_add_array(p, "models", ml);
-            csilk_json_array_append(prov_arr, p);
+    csilk_json_t* root = csilk_json_object();
+    csilk_json_t* prov_arr_out = csilk_json_array();
+    for (int i = 0; i < cfg.provider_count; i++) {
+        csilk_json_t* p = csilk_json_object();
+        csilk_json_add_string(p, "id", cfg.providers[i].id);
+        csilk_json_add_string(p, "name", cfg.providers[i].name);
+        csilk_json_add_string(p, "api_key", cfg.providers[i].api_key);
+        csilk_json_add_string(p, "base_url", cfg.providers[i].base_url);
+        csilk_json_t* ml = csilk_json_array();
+        for (int j = 0; j < cfg.providers[i].model_count; j++) {
+            csilk_json_array_append(ml, csilk_json_string_new(cfg.providers[i].models[j]));
         }
-        csilk_json_add_array(root, "providers", prov_arr);
-        csilk_json_add_string(root, "default_provider", cfg.default_provider);
-        csilk_json_add_string(root, "default_model", cfg.default_model);
-        csilk_json_add_number(root, "context_size", (double)cfg.context_size);
-        csilk_json_add_string(root, "system_prompt", cfg.system_prompt);
-        size_t slen = 0;
-        char*  json = csilk_json_serialize(root, &slen);
-        csilk_json_free(root);
-        if (json) {
-            ai_settings_save(db_get_pool(), json);
-            free(json);
-        }
+        csilk_json_add_array(p, "models", ml);
+        csilk_json_array_append(prov_arr_out, p);
     }
+    csilk_json_add_array(root, "providers", prov_arr_out);
+    csilk_json_add_string(root, "default_provider", cfg.default_provider);
+    csilk_json_add_string(root, "default_model", cfg.default_model);
+    csilk_json_add_number(root, "context_size", (double)cfg.context_size);
+    csilk_json_add_string(root, "system_prompt", cfg.system_prompt);
+    size_t slen = 0;
+    char*  json = csilk_json_serialize(root, &slen);
+    csilk_json_free(root);
+
+    int db_save_ok = -1;
+    if (json && pool) {
+        db_save_ok = ai_settings_save(pool, json);
+        free(json);
+    }
+
+    const char* cfg_path = getenv("MINEFOLIO_AI_CONFIG") ?: "config/ai.json";
+    int         file_save_ok = ai_config_save(cfg_path, &cfg);
+
     ai_config_free(&cfg);
     csilk_json_free(body);
 
-    if (ok != 0) {
+    if (db_save_ok != 0 && file_save_ok != 0) {
         respond_error(c, 500, "保存配置失败");
         return;
     }

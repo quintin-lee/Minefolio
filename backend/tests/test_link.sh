@@ -517,6 +517,31 @@ TRACE_DETAIL=$(curl -s -H "$AUTH" "$BASE/ai/traces/1")
 check "trace detail 返回对象（非数组）" "object" "$(echo "$TRACE_DETAIL" | jq -r '.data | type')"
 check "trace detail 模型名含单引号" "gpt-4'turbo" "$(echo "$TRACE_DETAIL" | jq -r '.data.model')"
 check "trace detail 含 token 字段" "15" "$(echo "$TRACE_DETAIL" | jq -r '.data.total_tokens | floor')"
+
+echo ""
+echo "== 35. AI 设置保存与 API Key 保持（回归：保存配置不丢失已有 API Key）=="
+AI_KEY_ENC=$(rsa_encrypt "sk-test-secret-key-12345")
+# 1. 首次保存带加密的 API Key
+PUT_RES=$(curl -s -X PUT -H "$AUTH" -H "Content-Type: application/json" "$BASE/settings/ai" \
+  -d "{\"providers\":[{\"id\":\"agnes\",\"name\":\"Agnes AI\",\"base_url\":\"https://apihub.agnes-ai.com/v1\",\"api_key_enc\":\"$AI_KEY_ENC\",\"models\":[\"agnes-2.5-flash\"]}],\"default_provider\":\"agnes\",\"default_model\":\"agnes-2.5-flash\",\"context_size\":20,\"system_prompt\":\"测试\"}")
+check "AI 设置首次保存成功" "0" "$(echo "$PUT_RES" | jq -r '.code | floor')"
+
+AI_SETTINGS_1=$(curl -s -H "$AUTH" "$BASE/settings/ai")
+check "AI 设置查询 has_api_key=true" "true" "$(echo "$AI_SETTINGS_1" | jq -r '.data.providers[0].has_api_key')"
+
+# 2. 第二次保存（模拟前端留空 API Key，仅修改其他配置）
+PUT_RES2=$(curl -s -X PUT -H "$AUTH" -H "Content-Type: application/json" "$BASE/settings/ai" \
+  -d "{\"providers\":[{\"id\":\"agnes\",\"name\":\"Agnes AI\",\"base_url\":\"https://apihub.agnes-ai.com/v1\",\"models\":[\"agnes-2.5-flash\"]}],\"default_provider\":\"agnes\",\"default_model\":\"agnes-2.5-flash\",\"context_size\":30,\"system_prompt\":\"测试更新\"}")
+check "AI 设置二次保存成功" "0" "$(echo "$PUT_RES2" | jq -r '.code | floor')"
+
+AI_SETTINGS_2=$(curl -s -H "$AUTH" "$BASE/settings/ai")
+check "AI 设置二次保存后仍保持 has_api_key=true" "true" "$(echo "$AI_SETTINGS_2" | jq -r '.data.providers[0].has_api_key')"
+check "AI 设置二次保存后 context_size 更新为 30" "30" "$(echo "$AI_SETTINGS_2" | jq -r '.data.context_size | floor')"
+
+# 3. 验证数据库中真实保存了解密后的密钥
+DB_AI_KEY=$(sqlite3 "$DB" "SELECT json_extract(config_json, '$.providers[0].api_key') FROM ai_settings WHERE id=1")
+check "数据库中持久化了正确的 API Key" "sk-test-secret-key-12345" "$DB_AI_KEY"
+
 echo ""
 echo "结果: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

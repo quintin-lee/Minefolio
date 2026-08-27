@@ -140,8 +140,8 @@
             <div v-else class="provider-details">
               <el-tag size="small" class="meta-tag">ID: {{ provider.id }}</el-tag>
               <el-tag size="small" class="meta-tag" v-if="provider.modelsStr">模型: {{ provider.modelsStr }}</el-tag>
-              <el-tag size="small" :type="provider.has_api_key ? 'success' : 'info'" class="meta-tag">
-                {{ provider.has_api_key ? 'API Key 已配置 (传输加密)' : '未设置 API Key' }}
+              <el-tag size="small" :type="(provider.has_api_key || (provider.api_key && provider.api_key.trim())) ? 'success' : 'info'" class="meta-tag">
+                {{ (provider.has_api_key || (provider.api_key && provider.api_key.trim())) ? 'API Key 已配置 (传输加密)' : '未设置 API Key' }}
               </el-tag>
               <el-button
                 size="small"
@@ -340,8 +340,11 @@ function saveProvider(index: number) {
     ElMessage.error('供应商 ID 不能为空')
     return
   }
+  if (provider.api_key && provider.api_key.trim()) {
+    provider.has_api_key = true
+  }
   editIndex.value = -1
-  ElMessage.success(t('settings.aiProviderAdded'))
+  ElMessage.success('供应商配置已暂存，请点击下方「保存配置」按钮提交生效')
 }
 
 
@@ -365,6 +368,9 @@ async function handleTestConnection(index: number) {
     })
     p.testResult = res
     if (res.success) {
+      if (p.api_key && p.api_key.trim()) {
+        p.has_api_key = true
+      }
       ElMessage.success(`连接测试成功 (耗时 ${res.latency_ms}ms)`)
     } else {
       ElMessage.error(`连接测试失败: ${res.message}`)
@@ -396,6 +402,9 @@ async function handleFetchModels(index: number) {
     })
     if (models && models.length > 0) {
       p.modelsStr = models.join(', ')
+      if (p.api_key && p.api_key.trim()) {
+        p.has_api_key = true
+      }
       ElMessage.success(`成功拉取 ${models.length} 个可用模型`)
     } else {
       ElMessage.warning('未获取到模型列表，请手动输入')
