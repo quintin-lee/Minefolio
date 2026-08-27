@@ -1904,12 +1904,65 @@ exec_analyze_financial_health(csilk_db_pool_t* pool, int64_t user_id, csilk_json
 }
 
 /* ========================================================================= */
+/*  Idempotent Tool Cache                                                    */
+/* ========================================================================= */
+/* Pure-function tools (no DB/user state) — cache result keyed by tool name  */
+/* to avoid re-execution when the model calls them repeatedly.               */
+
+typedef struct {
+    char*  key; /* "tool_name" or "tool_name:arg_value" */
+    char*  result;
+    time_t cached_at;
+} idem_cache_entry_t;
+
+#define IDEM_CACHE_SIZE 8
+static idem_cache_entry_t s_idem_cache[IDEM_CACHE_SIZE];
+
+static char*
+idem_cache_get(const char* key)
+{
+    for (int i = 0; i < IDEM_CACHE_SIZE; i++) {
+        if (s_idem_cache[i].key && strcmp(s_idem_cache[i].key, key) == 0) {
+            return s_idem_cache[i].result;
+        }
+    }
+    return NULL;
+}
+
+static void
+idem_cache_set(const char* key, char* result)
+{
+    if (!key || !result) {
+        return;
+    }
+    /* Find existing entry or evict oldest (index 0) */
+    int slot = -1;
+    for (int i = 0; i < IDEM_CACHE_SIZE; i++) {
+        if (s_idem_cache[i].key && strcmp(s_idem_cache[i].key, key) == 0) {
+            slot = i;
+            break;
+        }
+    }
+    if (slot < 0) {
+        slot = 0; /* LRU-approx: always overwrite slot 0 */
+        free(s_idem_cache[slot].key);
+        free(s_idem_cache[slot].result);
+    }
+    s_idem_cache[slot].key = strdup(key);
+    s_idem_cache[slot].result = result;
+    s_idem_cache[slot].cached_at = time(NULL);
+}
+
+/* ========================================================================= */
+/* ========================================================================= */
 /*  Internal dispatcher (caller owns args; no parse)                       */
 /* ========================================================================= */
 
-static char*
-ai_tools_execute_parsed(csilk_db_pool_t* pool, int64_t user_id, csilk_json_t* args,
-                        const char* name)
+char*
+ai_tools_execute_parsed(csilk_db_pool_t* pool,
+                        int64_t          user_id,
+                        csilk_json_t*    args,
+                        const char*      name)
 {
     char* result = NULL;
     if (strcmp(name, "get_assets") == 0) {
@@ -1925,9 +1978,26 @@ ai_tools_execute_parsed(csilk_db_pool_t* pool, int64_t user_id, csilk_json_t* ar
     } else if (strcmp(name, "get_summary") == 0) {
         result = exec_get_summary(pool, user_id, args);
     } else if (strcmp(name, "get_current_time") == 0) {
+        char* cached = idem_cache_get("get_current_time");
+        if (cached) {
+            return strdup(cached);
+        }
         result = exec_get_current_time(pool, user_id, args);
+        if (result) {
+            idem_cache_set("get_current_time", result);
+        }
     } else if (strcmp(name, "calculate_date_range") == 0) {
+        const char* range_type = arg_str(args, "range_type", "this_month");
+        char        cache_key[128];
+        snprintf(cache_key, sizeof(cache_key), "calculate_date_range:%s", range_type);
+        char* cached = idem_cache_get(cache_key);
+        if (cached) {
+            return strdup(cached);
+        }
         result = exec_calculate_date_range(pool, user_id, args);
+        if (result) {
+            idem_cache_set(cache_key, result);
+        }
     } else if (strcmp(name, "calculate_compound_interest") == 0) {
         result = exec_calculate_compound_interest(pool, user_id, args);
     } else if (strcmp(name, "calculate_loan_repayment") == 0) {
