@@ -16,8 +16,46 @@ ai_trace_init(ai_trace_t* t, int64_t user_id, int64_t session_id)
     t->system_prompt = strdup("");
     t->error_message = strdup("");
     t->metadata = strdup("{}");
+    strncpy(t->tool_spans, "[]", sizeof(t->tool_spans) - 1);
+    t->tool_spans[sizeof(t->tool_spans) - 1] = '\0';
     strncpy(t->status, "ok", sizeof(t->status) - 1);
     clock_gettime(CLOCK_MONOTONIC, &t->t_start);
+}
+
+void
+ai_trace_add_tool_span(ai_trace_t* t, const char* name, long latency_ms, size_t bytes, int ok)
+{
+    if (!t || !name) {
+        return;
+    }
+    /* Cap the array to avoid overflow of the fixed buffer. */
+    size_t cur = strlen(t->tool_spans);
+    if (cur + 256 >= sizeof(t->tool_spans)) {
+        return;
+    }
+    char entry[256];
+    int  n = snprintf(entry,
+                      sizeof(entry),
+                      "{\"name\":\"%s\",\"latency_ms\":%ld,\"bytes\":%zu,\"ok\":%d}",
+                      name,
+                      latency_ms,
+                      bytes,
+                      ok ? 1 : 0);
+    if (n < 0) {
+        return;
+    }
+    const char* sep = (cur <= 2) ? "" : ","; /* skip comma for first element */
+    /* Replace trailing ']' with ',entry]' */
+    size_t pos = cur > 0 ? cur - 1 : 0;
+    if (t->tool_spans[pos] == ']') {
+        t->tool_spans[pos] = '\0';
+    }
+    int written = snprintf(t->tool_spans + strlen(t->tool_spans),
+                           sizeof(t->tool_spans) - strlen(t->tool_spans),
+                           "%s%s]",
+                           sep,
+                           entry);
+    (void)written;
 }
 
 void

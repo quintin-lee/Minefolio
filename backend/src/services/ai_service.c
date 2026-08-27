@@ -263,10 +263,34 @@ send_done(csilk_ctx_t* c)
 }
 
 static void
+format_friendly_error(const char* raw_err, char* out_buf, size_t out_cap)
+{
+    if (!raw_err || !raw_err[0]) {
+        snprintf(out_buf, out_cap, "AI 请求失败");
+        return;
+    }
+    if (strstr(raw_err, "401") || strstr(raw_err, "Unauthorized")) {
+        snprintf(out_buf,
+                 out_cap,
+                 "API Key 无效或未配置 (HTTP 401)，请前往「设置 - AI 助手」检查并配置有效 API Key");
+    } else if (strstr(raw_err, "404") || strstr(raw_err, "Not Found")) {
+        snprintf(
+            out_buf, out_cap, "模型不存在或接口地址错误 (HTTP 404)，请检查模型名称和 Base URL");
+    } else if (strstr(raw_err, "429")) {
+        snprintf(out_buf, out_cap, "请求过于频繁或额度不足 (HTTP 429)，请检查账户额度或稍后重试");
+    } else {
+        strncpy(out_buf, raw_err, out_cap - 1);
+        out_buf[out_cap - 1] = '\0';
+    }
+}
+
+static void
 send_error(csilk_ctx_t* c, const char* err)
 {
+    char friendly_err[512];
+    format_friendly_error(err, friendly_err, sizeof(friendly_err));
     csilk_json_t* d = csilk_json_object();
-    csilk_json_add_string(d, "message", err);
+    csilk_json_add_string(d, "message", friendly_err);
     size_t slen = 0;
     char*  s = csilk_json_serialize(d, &slen);
     csilk_sse_send(c, "error", s ? s : "");
@@ -552,28 +576,48 @@ ai_chat_handler(csilk_ctx_t* c)
             csilk_json_t*         args = parsed_args[t];
 
             ensure_sse_init(&sctx);
-            char tc_buf[1024];
-            int  n = snprintf(tc_buf,
-                              sizeof(tc_buf),
-                              "{\"id\":\"%s\",\"name\":\"%s\",\"arguments\":\"%s\"}",
-                              tc->id ?: "",
-                              tc->name ?: "",
-                              tc->arguments ?: "");
-            csilk_sse_send(c, "tool_call", n > 0 ? tc_buf : "");
-
-            char* result = ai_tools_execute_parsed(pool, user_id, args, tc->name);
-            if (!result) {
-                result = strdup("{\"error\":\"tool execution failed\"}");
+            /* Properly escaped JSON via csilk_json — no snprintf truncation / injection */
+            {
+                csilk_json_t* evt = csilk_json_object();
+                csilk_json_add_string(evt, "id", tc->id ?: "");
+                csilk_json_add_string(evt, "name", tc->name ?: "");
+                csilk_json_add_string(evt, "arguments", tc->arguments ?: "");
+                size_t ev_len = 0;
+                char*  ev_str = csilk_json_serialize(evt, &ev_len);
+                csilk_sse_send(c, "tool_call", ev_str ? ev_str : "");
+                free(ev_str);
+                csilk_json_free(evt);
             }
 
-            char tr_buf[4096];
-            n = snprintf(tr_buf,
-                         sizeof(tr_buf),
-                         "{\"tool_call_id\":\"%s\",\"name\":\"%s\",\"result\":%s}",
-                         tc->id ?: "",
-                         tc->name ?: "",
-                         result);
-            csilk_sse_send(c, "tool_result", n > 0 ? tr_buf : "");
+            char*           result = NULL;
+            struct timespec ts0, ts1;
+            clock_gettime(CLOCK_MONOTONIC, &ts0);
+            result = ai_tools_execute_parsed(pool, user_id, args, tc->name);
+            clock_gettime(CLOCK_MONOTONIC, &ts1);
+            long span_ms = (ts1.tv_sec - ts0.tv_sec) * 1000 + (ts1.tv_nsec - ts0.tv_nsec) / 1000000;
+            if (!result) {
+                result = strdup("{\"error\":\"tool execution failed\"}");
+                ai_trace_add_tool_span(&trace, tc->name ?: "", span_ms, 0, 0);
+            } else {
+                ai_trace_add_tool_span(&trace, tc->name ?: "", span_ms, strlen(result), 1);
+            }
+
+            {
+                csilk_json_t* evt = csilk_json_object();
+                csilk_json_add_string(evt, "tool_call_id", tc->id ?: "");
+                csilk_json_add_string(evt, "name", tc->name ?: "");
+                csilk_json_t* parsed = csilk_json_parse(result);
+                if (parsed) {
+                    csilk_json_add_object(evt, "result", parsed);
+                } else {
+                    csilk_json_add_string(evt, "result", result);
+                }
+                size_t ev_len = 0;
+                char*  ev_str = csilk_json_serialize(evt, &ev_len);
+                csilk_sse_send(c, "tool_result", ev_str ? ev_str : "");
+                free(ev_str);
+                csilk_json_free(evt);
+            }
             /* result owned by msgs[mc-1].content below; don't free here */
 
             /* Build tool result message */
@@ -732,12 +776,13 @@ ai_service_test_connection(csilk_ctx_t* c)
         csilk_json_add_number(resp, "latency_ms", (double)latency_ms);
         csilk_json_add_string(resp, "message", "连接成功");
     } else {
+        const char* raw_err =
+            (res.error_message && res.error_message[0]) ? res.error_message : "连接超时或失败";
+        char friendly_err[512];
+        format_friendly_error(raw_err, friendly_err, sizeof(friendly_err));
         csilk_json_add_bool(resp, "success", false);
         csilk_json_add_number(resp, "latency_ms", (double)latency_ms);
-        csilk_json_add_string(resp,
-                              "message",
-                              (res.error_message && res.error_message[0]) ? res.error_message
-                                                                          : "连接超时或失败");
+        csilk_json_add_string(resp, "message", friendly_err);
     }
 
     csilk_ai_chat_response_free(&res);

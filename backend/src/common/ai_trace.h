@@ -31,6 +31,7 @@ typedef struct {
     struct timespec t_end;
     int             has_first_token;
     long            accumulated_len;
+    char            tool_spans[3072]; /* JSON array of tool-call spans */
 } ai_trace_t;
 
 void    ai_trace_init(ai_trace_t* t, int64_t user_id, int64_t session_id);
@@ -45,3 +46,12 @@ void    ai_trace_calculate_tokens_and_cost(ai_trace_t* t, int prompt_tokens, int
 void    ai_trace_finish(ai_trace_t* t, const char* status, const char* error);
 int64_t ai_trace_save(csilk_db_pool_t* pool, ai_trace_t* t);
 void    ai_trace_free(ai_trace_t* t);
+
+/**
+ * @brief Record a single tool-call span for observability.
+ * @param name     Tool name (e.g. "get_assets").
+ * @param latency_ms Wall-clock execution time in milliseconds.
+ * @param bytes    Size of the tool result JSON string.
+ * @param ok       1 on success, 0 on failure.
+ */
+void ai_trace_add_tool_span(ai_trace_t* t, const char* name, long latency_ms, size_t bytes, int ok);

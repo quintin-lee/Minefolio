@@ -139,7 +139,24 @@ ai_trace_save(csilk_db_pool_t* pool, ai_trace_t* t)
     snprintf(cost, sizeof(cost), "%.6f", t->cost_usd);
     snprintf(temp, sizeof(temp), "%.2f", t->temperature);
     snprintf(mtt, sizeof(mtt), "%d", t->max_tokens);
-    snprintf(tp, sizeof(tp), "%.2f", t->top_p);
+    /* Merge tool spans into metadata JSON so they persist in one column. */
+    char*         meta_final = NULL;
+    size_t        meta_len = 0;
+    csilk_json_t* meta_obj = csilk_json_parse(t->metadata && t->metadata[0] ? t->metadata : "{}");
+    if (!meta_obj) {
+        meta_obj = csilk_json_object();
+    }
+    if (t->tool_spans && t->tool_spans[0]) {
+        csilk_json_t* spans = csilk_json_parse(t->tool_spans);
+        if (spans) {
+            csilk_json_add_object(meta_obj, "tool_spans", spans); /* spans owned by meta_obj */
+        }
+    }
+    meta_final = csilk_json_serialize(meta_obj, &meta_len);
+    csilk_json_free(meta_obj);
+    if (!meta_final) {
+        meta_final = strdup("{}");
+    }
 
     const char* sql = "INSERT INTO ai_traces "
                       "(user_id, session_id, provider, model, input_messages, output_content, "
@@ -172,7 +189,7 @@ ai_trace_save(csilk_db_pool_t* pool, ai_trace_t* t)
                             tp,
                             t->status && t->status[0] ? t->status : "ok",
                             err_msg,
-                            t->metadata && t->metadata[0] ? t->metadata : "{}",
+                            meta_final && meta_final[0] ? meta_final : "{}",
                             NULL};
 
     CSILK_LOG_I("ai_trace_save: user_id=%lld model='%s' provider='%s' status='%s' tokens=%d",
@@ -188,5 +205,6 @@ ai_trace_save(csilk_db_pool_t* pool, ai_trace_t* t)
     }
     CSILK_LOG_I("ai_trace_save: id=%lld", (long long)id);
     csilk_json_free(r);
+    free(meta_final);
     return id;
 }
