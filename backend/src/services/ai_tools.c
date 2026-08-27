@@ -1904,21 +1904,13 @@ exec_analyze_financial_health(csilk_db_pool_t* pool, int64_t user_id, csilk_json
 }
 
 /* ========================================================================= */
-/*  Main Dispatcher: ai_tools_execute                                        */
+/*  Internal dispatcher (caller owns args; no parse)                       */
 /* ========================================================================= */
 
-char*
-ai_tools_execute(csilk_db_pool_t* pool, int64_t user_id, const char* name, const char* arguments)
+static char*
+ai_tools_execute_parsed(csilk_db_pool_t* pool, int64_t user_id, csilk_json_t* args,
+                        const char* name)
 {
-    if (!name || !arguments) {
-        return NULL;
-    }
-
-    csilk_json_t* args = csilk_json_parse(arguments);
-    if (!args) {
-        args = csilk_json_object();
-    }
-
     char* result = NULL;
     if (strcmp(name, "get_assets") == 0) {
         result = exec_get_assets(pool, user_id, args);
@@ -1953,7 +1945,24 @@ ai_tools_execute(csilk_db_pool_t* pool, int64_t user_id, const char* name, const
     } else {
         result = strdup("{\"error\":\"unknown tool\"}");
     }
+    return result;
+}
 
+/* ========================================================================= */
+/*  Public API: ai_tools_execute (parses arguments JSON)                    */
+/* ========================================================================= */
+
+char*
+ai_tools_execute(csilk_db_pool_t* pool, int64_t user_id, const char* name, const char* arguments)
+{
+    if (!name || !arguments) {
+        return NULL;
+    }
+    csilk_json_t* args = csilk_json_parse(arguments);
+    if (!args) {
+        args = csilk_json_object();
+    }
+    char* result = ai_tools_execute_parsed(pool, user_id, args, name);
     csilk_json_free(args);
     return result;
 }

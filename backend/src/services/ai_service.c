@@ -524,9 +524,18 @@ ai_chat_handler(csilk_ctx_t* c)
             .tool_call_id = NULL,
         };
 
+        /* Pre-parse all argument strings once */
+        csilk_json_t** parsed_args =
+            (csilk_json_t**)malloc(sizeof(csilk_json_t*) * ai_res.tool_call_count);
+        for (size_t t = 0; t < ai_res.tool_call_count; t++) {
+            csilk_json_t* a = csilk_json_parse(ai_res.tool_calls[t].arguments);
+            parsed_args[t] = a ? a : csilk_json_object();
+        }
+
         /* 2. Execute each tool and append corresponding role="tool" messages */
         for (size_t t = 0; t < ai_res.tool_call_count; t++) {
             csilk_ai_tool_call_t* tc = &ai_res.tool_calls[t];
+            csilk_json_t*         args = parsed_args[t];
 
             ensure_sse_init(&sctx);
             char tc_buf[1024];
@@ -535,7 +544,7 @@ ai_chat_handler(csilk_ctx_t* c)
                 tc->id ?: "", tc->name ?: "", tc->arguments ?: "");
             csilk_sse_send(c, "tool_call", n > 0 ? tc_buf : "");
 
-            char* result = ai_tools_execute(pool, user_id, tc->name, tc->arguments);
+            char* result = ai_tools_execute_parsed(pool, user_id, args, tc->name);
             if (!result) {
                 result = strdup("{\"error\":\"tool execution failed\"}");
             }
@@ -557,8 +566,13 @@ ai_chat_handler(csilk_ctx_t* c)
                 .tool_calls = NULL,
                 .tool_call_count = 0,
             };
-            /* result is now owned by msgs[mc-1].content; don't free it here */
         }
+
+        /* Free pre-parsed argument objects */
+        for (size_t t = 0; t < ai_res.tool_call_count; t++) {
+            csilk_json_free(parsed_args[t]);
+        }
+        free(parsed_args);
 
         /* Reset sctx.accumulated for the next text generation round */
         if (sctx.accumulated) {
