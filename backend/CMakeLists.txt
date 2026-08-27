@@ -34,6 +34,35 @@ if(PQ_INCLUDE_DIRS)
     target_include_directories(minefolio PRIVATE ${PQ_INCLUDE_DIRS})
 endif()
 
+# ---------------------------------------------------------------------------
+# Pre-build auto-format: keep src/**/*.{c,h} conformant to .clang-format
+# Requires clang-format >= 14 (.clang-format uses AlignTrailingComments Kind:)
+# ---------------------------------------------------------------------------
+find_program(CLANG_FORMAT_EXE
+    NAMES clang-format clang-format-18 clang-format-17 clang-format-16
+          clang-format-15 clang-format-14
+)
+
+if(CLANG_FORMAT_EXE)
+    file(GLOB_RECURSE FORMAT_SOURCES "src/*.c" "src/*.h")
+    set(FORMAT_STAMP "${CMAKE_BINARY_DIR}/clang-format.stamp")
+    add_custom_command(
+        OUTPUT "${FORMAT_STAMP}"
+        COMMAND ${CMAKE_COMMAND}
+            -DCLANG_FORMAT="${CLANG_FORMAT_EXE}"
+            "-DSOURCES=${FORMAT_SOURCES}"
+            -DSTAMP="${FORMAT_STAMP}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/FormatSources.cmake"
+        DEPENDS ${FORMAT_SOURCES} "${CMAKE_CURRENT_SOURCE_DIR}/.clang-format"
+        COMMENT "Checking source formatting"
+        VERBATIM
+    )
+    add_custom_target(format_sources ALL DEPENDS "${FORMAT_STAMP}")
+    add_dependencies(minefolio format_sources)
+else()
+    message(STATUS "clang-format not found - skipping pre-build auto-format")
+endif()
+
 # Copy config and sql on build
 add_custom_command(TARGET minefolio POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
