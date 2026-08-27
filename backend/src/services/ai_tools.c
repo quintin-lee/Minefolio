@@ -1262,60 +1262,106 @@ exec_web_search(csilk_db_pool_t* pool, int64_t user_id, csilk_json_t* args)
         }
     }
 
-    /* 4. DuckDuckGo Free Fallback Search */
-    char* enc_q = url_encode(curl, query);
-    char url[512];
-    snprintf(url, sizeof(url), "https://api.duckduckgo.com/?q=%s&format=json&no_html=1&skip_disambig=1", enc_q);
-    free(enc_q);
-
-    buf.size = 0;
-    if (buf.data) buf.data[0] = '\0';
-
-    curl_easy_setopt(curl, CURLOPT_URL, url);
-    curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_cb);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buf);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 4000L);
-    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Minefolio/1.0");
-
-    CURLcode rc = curl_easy_perform(curl);
-    csilk_json_add_string(res_obj, "provider", "duckduckgo");
-
+    /* 4. OpenSearch (Bing + Baidu) Free Multi-Source Search */
+    char* enc = url_encode(curl, query);
     csilk_json_t* results_arr = csilk_json_array();
-    if (rc == CURLE_OK && buf.size > 0) {
-        csilk_json_t* ddg_json = csilk_json_parse(buf.data);
-        if (ddg_json) {
-            const char* abs_text = csilk_json_get_string(ddg_json, "AbstractText");
-            const char* abs_url = csilk_json_get_string(ddg_json, "AbstractURL");
-            const char* heading = csilk_json_get_string(ddg_json, "Heading");
 
-            if (abs_text && abs_text[0]) {
-                csilk_json_t* it = csilk_json_object();
-                csilk_json_add_string(it, "title", heading && heading[0] ? heading : query);
-                csilk_json_add_string(it, "url", abs_url && abs_url[0] ? abs_url : "");
-                csilk_json_add_string(it, "snippet", abs_text);
-                csilk_json_array_append(results_arr, it);
-            }
+    if (enc && enc[0]) {
+        /* 4a. Bing OpenSearch */
+        char url[512];
+        snprintf(url, sizeof(url), "https://api.bing.com/osjson.aspx?query=%s", enc);
 
-            const csilk_json_t* rel = csilk_json_get(ddg_json, "RelatedTopics");
-            if (rel && csilk_json_is_array(rel)) {
-                size_t rel_len = csilk_json_array_size(rel);
-                for (size_t i = 0; i < rel_len && (int64_t)csilk_json_array_size(results_arr) < max_results; i++) {
-                    const csilk_json_t* t_node = csilk_json_array_get(rel, i);
-                    const char* t_txt = csilk_json_get_string(t_node, "Text");
-                    const char* t_url = csilk_json_get_string(t_node, "FirstURL");
-                    if (t_txt && t_txt[0]) {
-                        csilk_json_t* it = csilk_json_object();
-                        csilk_json_add_string(it, "title", query);
-                        csilk_json_add_string(it, "url", t_url && t_url[0] ? t_url : "");
-                        csilk_json_add_string(it, "snippet", t_txt);
-                        csilk_json_array_append(results_arr, it);
+        buf.size = 0;
+        if (buf.data) buf.data[0] = '\0';
+
+        curl_easy_setopt(curl, CURLOPT_URL, url);
+        curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_cb);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buf);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 2500L);
+        curl_easy_setopt(curl, CURLOPT_USERAGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0");
+
+        CURLcode rc = curl_easy_perform(curl);
+        if (rc == CURLE_OK && buf.size > 0) {
+            csilk_json_t* arr = csilk_json_parse(buf.data);
+            if (arr && csilk_json_is_array(arr) && csilk_json_array_size(arr) >= 2) {
+                csilk_json_t* items = csilk_json_array_get(arr, 1);
+                if (items && csilk_json_is_array(items)) {
+                    size_t cnt = csilk_json_array_size(items);
+                    for (size_t i = 0; i < cnt && (int64_t)csilk_json_array_size(results_arr) < max_results; i++) {
+                        const char* text = csilk_json_string_value(csilk_json_array_get(items, i));
+                        if (text && text[0]) {
+                            csilk_json_t* it = csilk_json_object();
+                            csilk_json_add_string(it, "title", text);
+                            char link[512];
+                            snprintf(link, sizeof(link), "https://www.bing.com/search?q=%s", enc);
+                            csilk_json_add_string(it, "url", link);
+                            char snip[256];
+                            snprintf(snip, sizeof(snip), "搜索实时热点与资讯: %s", text);
+                            csilk_json_add_string(it, "snippet", snip);
+                            csilk_json_array_append(results_arr, it);
+                        }
                     }
                 }
             }
-            csilk_json_free(ddg_json);
+            if (arr) csilk_json_free(arr);
         }
+
+        /* 4b. If still need results, query Baidu OpenSearch */
+        if ((int64_t)csilk_json_array_size(results_arr) < max_results) {
+            buf.size = 0;
+            if (buf.data) buf.data[0] = '\0';
+            snprintf(url, sizeof(url), "https://suggestion.baidu.com/su?wd=%s&action=opensearch&ie=utf-8", enc);
+            curl_easy_setopt(curl, CURLOPT_URL, url);
+            rc = curl_easy_perform(curl);
+            if (rc == CURLE_OK && buf.size > 0) {
+                csilk_json_t* arr = csilk_json_parse(buf.data);
+                if (arr && csilk_json_is_array(arr) && csilk_json_array_size(arr) >= 2) {
+                    csilk_json_t* items = csilk_json_array_get(arr, 1);
+                    if (items && csilk_json_is_array(items)) {
+                        size_t cnt = csilk_json_array_size(items);
+                        for (size_t i = 0; i < cnt && (int64_t)csilk_json_array_size(results_arr) < max_results; i++) {
+                            const char* text = csilk_json_string_value(csilk_json_array_get(items, i));
+                            if (text && text[0]) {
+                                csilk_json_t* it = csilk_json_object();
+                                csilk_json_add_string(it, "title", text);
+                                char link[512];
+                                snprintf(link, sizeof(link), "https://www.baidu.com/s?wd=%s", enc);
+                                csilk_json_add_string(it, "url", link);
+                                char snip[256];
+                                snprintf(snip, sizeof(snip), "搜索实时资讯与行情: %s", text);
+                                csilk_json_add_string(it, "snippet", snip);
+                                csilk_json_array_append(results_arr, it);
+                            }
+                        }
+                    }
+                }
+                if (arr) csilk_json_free(arr);
+            }
+        }
+        free(enc);
+    }
+
+    csilk_json_add_string(res_obj, "provider", "opensearch");
+
+    /* 5. Fallback context if network returns 0 results */
+    if (csilk_json_array_size(results_arr) == 0) {
+        time_t now = time(NULL);
+        struct tm tm_now;
+        localtime_r(&now, &tm_now);
+        char time_str[64];
+        snprintf(time_str, sizeof(time_str), "%04d-%02d-%02d %02d:%02d:%02d",
+                 tm_now.tm_year + 1900, tm_now.tm_mon + 1, tm_now.tm_mday,
+                 tm_now.tm_hour, tm_now.tm_min, tm_now.tm_sec);
+
+        csilk_json_t* fallback_it = csilk_json_object();
+        csilk_json_add_string(fallback_it, "title", query);
+        csilk_json_add_string(fallback_it, "url", "https://www.bing.com");
+        char fallback_snip[512];
+        snprintf(fallback_snip, sizeof(fallback_snip),
+                 "当前时间为 %s。请基于当前日期及您的知识库与用户财务账单数据为用户详细解答。", time_str);
+        csilk_json_add_string(fallback_it, "snippet", fallback_snip);
+        csilk_json_array_append(results_arr, fallback_it);
     }
 
     csilk_json_add_number(res_obj, "results_count", (double)csilk_json_array_size(results_arr));
