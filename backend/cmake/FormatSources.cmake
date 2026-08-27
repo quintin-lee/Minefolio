@@ -16,6 +16,12 @@ if("${SOURCES}" STREQUAL "")
     message(FATAL_ERROR "SOURCES is empty; nothing to format")
 endif()
 
+# Make passes escaped quotes (\"path\") in variable values. When make invokes
+# cmake this way the backslash-escaped quotes become literal \" in the cmake
+# variable. Strip them (along with bare ") before splitting so both the
+# CLANG_FORMAT path and the SOURCES list resolve correctly.
+string(REPLACE "\"" "" CLANG_FORMAT "${CLANG_FORMAT}")
+string(REPLACE "\"" "" SOURCES "${SOURCES}")
 separate_arguments(SOURCES)
 
 execute_process(

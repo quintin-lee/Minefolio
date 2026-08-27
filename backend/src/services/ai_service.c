@@ -515,13 +515,14 @@ ai_chat_handler(csilk_ctx_t* c)
         }
 
         /* 1. Append the assistant message with all tool_calls */
-        csilk_ai_tool_call_t* tc_copies = (csilk_ai_tool_call_t*)malloc(
-            sizeof(csilk_ai_tool_call_t) * ai_res.tool_call_count);
+        csilk_ai_tool_call_t* tc_copies =
+            (csilk_ai_tool_call_t*)malloc(sizeof(csilk_ai_tool_call_t) * ai_res.tool_call_count);
         for (size_t t = 0; t < ai_res.tool_call_count; t++) {
             tc_copies[t] = (csilk_ai_tool_call_t){
                 .id = ai_res.tool_calls[t].id ? strdup(ai_res.tool_calls[t].id) : strdup(""),
                 .name = ai_res.tool_calls[t].name ? strdup(ai_res.tool_calls[t].name) : strdup(""),
-                .arguments = ai_res.tool_calls[t].arguments ? strdup(ai_res.tool_calls[t].arguments) : strdup("{}"),
+                .arguments = ai_res.tool_calls[t].arguments ? strdup(ai_res.tool_calls[t].arguments)
+                                                            : strdup("{}"),
             };
         }
 
