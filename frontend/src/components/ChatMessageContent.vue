@@ -8,6 +8,12 @@
         v-html="renderMarkdown(seg.content)"
       ></div>
 
+      <!-- Action Card Block -->
+      <ActionCard
+        v-else-if="seg.type === 'action' && seg.actionData"
+        :action-data="seg.actionData"
+      />
+
       <!-- Mermaid Diagram Block -->
       <MermaidBlock
         v-else-if="seg.type === 'mermaid'"
@@ -36,6 +42,8 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { Icon } from '@iconify/vue'
 import MermaidBlock from '@/components/MermaidBlock.vue'
+import ActionCard from '@/components/ActionCard.vue'
+import type { ProposedAction } from '@/components/ActionCard.vue'
 
 const props = defineProps<{
   content: string
@@ -44,8 +52,9 @@ const props = defineProps<{
 
 interface Segment {
   id: string
-  type: 'markdown' | 'mermaid' | 'streaming-mermaid'
+  type: 'markdown' | 'mermaid' | 'streaming-mermaid' | 'action'
   content: string
+  actionData?: ProposedAction
 }
 
 function renderMarkdown(text?: string): string {
@@ -62,30 +71,52 @@ const segments = computed<Segment[]>(() => {
   const text = props.content || ''
   if (!text) return []
 
-  // Check if text has any mermaid code blocks
-  if (!text.includes('```mermaid')) {
-    return [
-      {
-        id: 'md-0',
-        type: 'markdown',
-        content: text,
-      },
-    ]
-  }
-
   const result: Segment[] = []
   let lastIndex = 0
-  const mermaidRegex = /```mermaid\s*\n([\s\S]*?)(?:```|$)/g
+  const blockRegex = /```(mermaid|action|json)?\s*\n([\s\S]*?)(?:```|$)/g
   let match: RegExpExecArray | null
   let segIdx = 0
 
-  while ((match = mermaidRegex.exec(text)) !== null) {
+  while ((match = blockRegex.exec(text)) !== null) {
     const matchStart = match.index
     const fullMatch = match[0]
-    const code = match[1] ?? ''
+    const lang = (match[1] || '').trim().toLowerCase()
+    const code = match[2] ?? ''
     const hasClosed = fullMatch.endsWith('```')
 
-    // Add markdown segment before this mermaid match
+    // If it's a json block that doesn't look like an action, skip special rendering and keep as regular markdown
+    let isAction = false
+    let actionObj: ProposedAction | null = null
+
+    if (lang === 'action') {
+      try {
+        actionObj = JSON.parse(code)
+        if (actionObj && (actionObj.action_type === 'daily_expense' || actionObj.action_type === 'transfer')) {
+          isAction = true
+        }
+      } catch {
+        // ignore
+      }
+    } else if (lang === 'json' && (code.includes('"action_type"') || code.includes('"daily_expense"') || code.includes('"transfer"'))) {
+      try {
+        const parsed = JSON.parse(code)
+        if (parsed && (parsed.action_type === 'daily_expense' || parsed.action_type === 'transfer')) {
+          actionObj = parsed
+          isAction = true
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    const isMermaid = lang === 'mermaid'
+
+    // If neither mermaid nor action, do not split out
+    if (!isMermaid && !isAction) {
+      continue
+    }
+
+    // Add markdown segment before this match
     if (matchStart > lastIndex) {
       const markdownBefore = text.slice(lastIndex, matchStart).trim()
       if (markdownBefore) {
@@ -97,35 +128,41 @@ const segments = computed<Segment[]>(() => {
       }
     }
 
-    if (hasClosed) {
-      // Complete Mermaid block
+    if (isAction && actionObj) {
       result.push({
-        id: `mmd-${segIdx++}`,
-        type: 'mermaid',
+        id: `act-${segIdx++}`,
+        type: 'action',
         content: code.trim(),
+        actionData: actionObj,
       })
-    } else {
-      // Unclosed Mermaid block at the end of text
-      if (props.isStreaming) {
-        result.push({
-          id: `mmd-stream-${segIdx++}`,
-          type: 'streaming-mermaid',
-          content: code,
-        })
-      } else {
-        // Not streaming but unclosed (e.g. truncated LLM output) - attempt to render
+    } else if (isMermaid) {
+      if (hasClosed) {
         result.push({
           id: `mmd-${segIdx++}`,
           type: 'mermaid',
           content: code.trim(),
         })
+      } else {
+        if (props.isStreaming) {
+          result.push({
+            id: `mmd-stream-${segIdx++}`,
+            type: 'streaming-mermaid',
+            content: code,
+          })
+        } else {
+          result.push({
+            id: `mmd-${segIdx++}`,
+            type: 'mermaid',
+            content: code.trim(),
+          })
+        }
       }
     }
 
     lastIndex = matchStart + fullMatch.length
   }
 
-  // Trailing markdown after the last mermaid match
+  // Trailing markdown after the last match
   if (lastIndex < text.length) {
     const markdownAfter = text.slice(lastIndex).trim()
     if (markdownAfter) {
@@ -137,7 +174,13 @@ const segments = computed<Segment[]>(() => {
     }
   }
 
-  return result
+  return result.length > 0 ? result : [
+    {
+      id: 'md-0',
+      type: 'markdown',
+      content: text,
+    },
+  ]
 })
 </script>
 

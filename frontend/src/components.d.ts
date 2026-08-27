@@ -7,6 +7,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    ActionCard: typeof import('./components/ActionCard.vue')['default']
     AssetBreakdownPie: typeof import('./components/AssetBreakdownPie.vue')['default']
     AssetCard: typeof import('./components/AssetCard.vue')['default']
     AssetTrendLine: typeof import('./components/AssetTrendLine.vue')['default']
@@ -60,6 +61,7 @@ declare module 'vue' {
     MermaidBlock: typeof import('./components/MermaidBlock.vue')['default']
     MonthlyChart: typeof import('./components/MonthlyChart.vue')['default']
     NetWorthChart: typeof import('./components/NetWorthChart.vue')['default']
+    PromptStarters: typeof import('./components/PromptStarters.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     SummaryCard: typeof import('./components/SummaryCard.vue')['default']

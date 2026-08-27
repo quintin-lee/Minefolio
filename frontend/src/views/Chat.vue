@@ -17,6 +17,26 @@
           v-if="chat.messages.length > 0"
           text
           class="action-btn"
+          @click="exportToMarkdown"
+          title="导出当前会话为 Markdown 文件"
+        >
+          <Icon icon="ph:download-simple" class="btn-icon" />
+          <span>导出</span>
+        </el-button>
+        <el-button
+          v-if="chat.messages.length > 0"
+          text
+          class="action-btn"
+          @click="copyAllChat"
+          title="复制当前会话全文"
+        >
+          <Icon icon="ph:copy" class="btn-icon" />
+          <span>复制</span>
+        </el-button>
+        <el-button
+          v-if="chat.messages.length > 0"
+          text
+          class="action-btn"
           @click="handleClearChat"
         >
           <Icon icon="ph:trash" class="btn-icon" />
@@ -119,32 +139,7 @@
         <!-- Messages stream -->
         <div class="messages" ref="messagesRef" v-loading="loadingMessages">
           <!-- Empty state: Quick prompts -->
-          <div v-if="chat.messages.length === 0" class="empty-state">
-            <div class="empty-header">
-              <div class="empty-icon-wrap">
-                <Icon icon="ph:sparkle-fill" class="empty-sparkle" />
-              </div>
-              <h3>Minefolio AI 智能财务助手</h3>
-              <p>基于大语言模型与专业理财知识库，为您提供资产规划、收支诊断与投资分析。</p>
-            </div>
-            <div class="quick-prompts-grid">
-              <div
-                v-for="(item, idx) in quickPrompts"
-                :key="idx"
-                class="prompt-card"
-                @click="handleQuickPrompt(item.prompt)"
-              >
-                <div class="prompt-card-icon">
-                  <Icon :icon="item.icon" />
-                </div>
-                <div class="prompt-card-body">
-                  <h4>{{ item.title }}</h4>
-                  <p>{{ item.desc }}</p>
-                </div>
-                <Icon icon="ph:arrow-right" class="prompt-card-arrow" />
-              </div>
-            </div>
-          </div>
+          <PromptStarters v-if="chat.messages.length === 0" @select="handleQuickPrompt" />
 
           <!-- Message list -->
           <template v-else>
@@ -232,6 +227,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import { useChatStore } from '@/stores/chat'
 import ChatMessageContent from '@/components/ChatMessageContent.vue'
+import PromptStarters from '@/components/PromptStarters.vue'
 
 const chat = useChatStore()
 const inputText = ref('')
@@ -245,32 +241,54 @@ const renameTitle = ref('')
 const vFocus = {
   mounted: (el: HTMLElement) => el.focus(),
 }
-const quickPrompts = [
-  {
-    icon: 'ph:chart-pie-slice',
-    title: '月度收支诊断',
-    desc: '分析收入与支出结构，评估储蓄率',
-    prompt: '请根据我当前的财务状况，帮我系统性分析月度收支结构与现金流健康度，并使用 Mermaid 饼图/流程图直观展示资金分配结构。',
-  },
-  {
-    icon: 'ph:shield-check',
-    title: '应急储备金规划',
-    desc: '测算 3-6 个月必要支出与存放策略',
-    prompt: '根据个人财务规划原则，家庭应急储备金应该如何测算规模、存放与管理？请附上 Mermaid 结构图拆解多层财务防线。',
-  },
-  {
-    icon: 'ph:trend-up',
-    title: '标准普尔资产配置',
-    desc: '梳理要花的钱、保命的钱与生钱的钱',
-    prompt: '请用专业财务顾问的口吻，详细拆解标准普尔家庭资产象限模型的配置方法，并使用 Mermaid 图表绘制出四个象限的配置比例与资金流向。',
-  },
-  {
-    icon: 'ph:coins',
-    title: '指数基金定投策略',
-    desc: '学习微笑曲线、止盈止损与定投纪律',
-    prompt: '请为我系统介绍指数基金定投的核心策略，包括定投周期与止盈纪律，并绘制 Mermaid 流程图展示定投决策闭环。',
-  },
-]
+
+function formatChatMarkdown(): string {
+  const session = chat.sessions.find(s => s.id === chat.currentSessionId)
+  const title = session?.title || 'Minefolio AI 财务对话记录'
+  const dateStr = new Date().toLocaleString()
+  const modelStr = chat.currentModel ? `\n- **AI 模型**: ${chat.currentModel} (${chat.currentProvider || '默认'})` : ''
+
+  let md = `# ${title}\n\n- **导出时间**: ${dateStr}${modelStr}\n- **会话 ID**: ${chat.currentSessionId || '未命名'}\n\n---\n\n`
+
+  for (const m of chat.messages) {
+    const roleName = m.role === 'user' ? '👤 **用户 (User)**' : '🤖 **AI 财务助手 (Minefolio AI)**'
+    md += `### ${roleName}\n\n${m.content}\n\n---\n\n`
+  }
+  return md
+}
+
+function exportToMarkdown() {
+  if (chat.messages.length === 0) {
+    ElMessage.info('当前没有可导出的对话内容')
+    return
+  }
+  const md = formatChatMarkdown()
+  const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  const dateKey = new Date().toISOString().slice(0, 10)
+  a.href = url
+  a.download = `Minefolio-AI-Chat-${dateKey}.md`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+  ElMessage.success('对话记录已导出为 Markdown 文件！')
+}
+
+async function copyAllChat() {
+  if (chat.messages.length === 0) {
+    ElMessage.info('当前没有可复制的内容')
+    return
+  }
+  const md = formatChatMarkdown()
+  try {
+    await navigator.clipboard.writeText(md)
+    ElMessage.success('已复制整场对话记录至剪贴板')
+  } catch {
+    ElMessage.error('复制失败，请手动选择复制')
+  }
+}
 
 function formatTime(dateStr?: string): string {
   if (!dateStr) return ''
