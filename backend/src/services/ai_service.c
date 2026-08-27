@@ -519,10 +519,24 @@ ai_chat_handler(csilk_ctx_t* c)
         msgs[mc - 1] = (csilk_ai_message_t){
             .role = "assistant",
             .content = ai_res.content ? strdup(ai_res.content) : strdup(""),
-            .tool_calls = ai_res.tool_calls,
-            .tool_call_count = ai_res.tool_call_count,
             .tool_call_id = NULL,
         };
+        /* Deep-copy tool_calls: we own these strings since ai_res will be freed next */
+        {
+            size_t n = ai_res.tool_call_count;
+            msgs[mc - 1].tool_calls =
+                (csilk_ai_tool_call_t*)malloc(sizeof(csilk_ai_tool_call_t) * n);
+            msgs[mc - 1].tool_call_count = n;
+            for (size_t j = 0; j < n; j++) {
+                msgs[mc - 1].tool_calls[j].id =
+                    ai_res.tool_calls[j].id ? strdup(ai_res.tool_calls[j].id) : strdup("");
+                msgs[mc - 1].tool_calls[j].name =
+                    ai_res.tool_calls[j].name ? strdup(ai_res.tool_calls[j].name) : strdup("");
+                msgs[mc - 1].tool_calls[j].arguments = ai_res.tool_calls[j].arguments
+                                                           ? strdup(ai_res.tool_calls[j].arguments)
+                                                           : strdup("{}");
+            }
+        }
 
         /* Pre-parse all argument strings once */
         csilk_json_t** parsed_args =
