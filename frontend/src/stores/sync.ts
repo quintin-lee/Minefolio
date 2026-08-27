@@ -13,6 +13,14 @@ const API_BY_TABLE: Record<string, any> = {
   assets: assetsApi,
 }
 
+const TABLE_COLUMNS: Record<string, Set<string>> = {
+  categories: new Set(['id', 'user_id', 'name', 'parent_id', 'type', 'asset_type', 'currency', 'icon', 'sort_order', 'created_at', 'updated_at']),
+  assets: new Set(['id', 'user_id', 'category_id', 'name', 'account_no', 'current_value', 'quantity', 'cost_basis', 'net_value', 'currency', 'note', 'created_at', 'updated_at']),
+  transactions: new Set(['id', 'user_id', 'asset_id', 'linked_asset_id', 'category_id', 'source_type', 'transaction_type', 'direction', 'linked_direction', 'amount', 'price_per_unit', 'quantity', 'fee', 'currency', 'transaction_date', 'note', 'created_at', 'updated_at']),
+  tags: new Set(['id', 'user_id', 'name', 'color', 'created_at', 'updated_at']),
+  daily_expenses: new Set(['id', 'user_id', 'category_id', 'asset_id', 'expense_type', 'amount', 'currency', 'expense_date', 'note', 'created_at', 'updated_at']),
+}
+
 // 鉴权失败(1001)处理钩子：由移动端 main/router 注入，把桌面式 window.location 重定向换成路由导航
 let onAuthFail: (() => void) | null = null
 export function setSyncOnAuthFail(fn: (() => void) | null): void {
@@ -120,7 +128,9 @@ export const useSyncStore = defineStore('sync', () => {
   }
 
   function upsertLocal(table: string, record: Record<string, unknown>): void {
-    const cols = Object.keys(record).filter((k) => k !== '__deleted')
+    const allowed = TABLE_COLUMNS[table]
+    const cols = Object.keys(record).filter((k) => k !== '__deleted' && (!allowed || allowed.has(k)) && record[k] !== undefined)
+    if (cols.length === 0) return
     const placeholders = cols.map(() => '?').join(', ')
     const updates = cols.map((c) => `${c} = ?`).join(', ')
     run(

@@ -13,6 +13,53 @@ export function setMobileMode(on: boolean): void {
   mobileMode = on
 }
 
+let lastErrorMsg = ''
+let lastErrorTime = 0
+function showDebouncedError(msg: string) {
+  const now = Date.now()
+  if (msg === lastErrorMsg && now - lastErrorTime < 1500) {
+    return
+  }
+  lastErrorMsg = msg
+  lastErrorTime = now
+  ElMessage.error(msg)
+}
+
+let isHandlingAuthError = false
+function handleAuthError() {
+  if (isHandlingAuthError) return
+  isHandlingAuthError = true
+  useAuthStore().logout()
+  if (!mobileMode) {
+    import('@/router')
+      .then(({ default: router }) => {
+        if (router && router.currentRoute?.value?.path !== '/login') {
+          router.push('/login').finally(() => {
+            setTimeout(() => {
+              isHandlingAuthError = false
+            }, 1000)
+          })
+        } else {
+          setTimeout(() => {
+            isHandlingAuthError = false
+          }, 1000)
+        }
+      })
+      .catch(() => {
+        if (window.location.pathname !== '/login') {
+          window.location.href = '/login'
+        }
+        setTimeout(() => {
+          isHandlingAuthError = false
+        }, 1000)
+      })
+  } else {
+    setTimeout(() => {
+      isHandlingAuthError = false
+    }, 1000)
+  }
+}
+
 /**
  * Robust cookie parser — handles all standard Set-Cookie attribute orders
  * and avoids fragile split-based approaches that break when HttpOnly / SameSite
@@ -53,10 +100,9 @@ function createHttp(): AxiosInstance {
       const body = res.data
       if (body && typeof body === 'object' && typeof body.code === 'number' && body.code !== 0) {
         if (body.code === 1001) {
-          useAuthStore().logout()
-          if (!mobileMode) window.location.href = '/login'
+          handleAuthError()
         } else {
-          ElMessage.error(body.message || '请求失败')
+          showDebouncedError(body.message || '请求失败')
         }
         return Promise.reject({ response: { data: body } })
       }
@@ -66,13 +112,12 @@ function createHttp(): AxiosInstance {
       if (err.response) {
         const code = err.response.data?.code
         if (code === 1001) {
-          useAuthStore().logout()
-          if (!mobileMode) window.location.href = '/login'
+          handleAuthError()
         } else if (code) {
-          ElMessage.error(err.response.data.message || '请求失败')
+          showDebouncedError(err.response.data.message || '请求失败')
         }
       } else if (!mobileMode) {
-        ElMessage.error('网络错误')
+        showDebouncedError('网络错误')
       }
       return Promise.reject(err)
     }

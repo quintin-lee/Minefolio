@@ -100,24 +100,48 @@ CSILK_REGISTER_REFLECT(tag_resp_t, TAG_RESP_MAP)
 typedef struct {
     int64_t id;
     int64_t asset_id;
+    int64_t linked_asset_id;
+    int64_t category_id;
     char    transaction_type[32];
+    char    source_type[32];
+    char    direction[16];
+    char    linked_direction[16];
     double  amount;
     double  quantity;
     double  price_per_unit;
+    double  fee;
     char    currency[16];
     char    transaction_date[32];
     char    note[256];
+    char    asset_name[128];
+    char    linked_asset_name[128];
+    char    category_name[128];
     char    created_at[64];
 } transaction_resp_t;
 #define TX_RESP_MAP(_)                                                                             \
     _(transaction_resp_t, id, CSILK_TYPE_INT64, sizeof(int64_t), 0, false, nullptr)                \
     _(transaction_resp_t, asset_id, CSILK_TYPE_INT64, sizeof(int64_t), 0, false, nullptr)          \
+    _(transaction_resp_t, linked_asset_id, CSILK_TYPE_INT64, sizeof(int64_t), 0, false, nullptr)   \
+    _(transaction_resp_t, category_id, CSILK_TYPE_INT64, sizeof(int64_t), 0, false, nullptr)       \
     _(transaction_resp_t, transaction_type, CSILK_TYPE_STRING, sizeof(char[32]), 0, true, nullptr) \
+    _(transaction_resp_t, source_type, CSILK_TYPE_STRING, sizeof(char[32]), 0, true, nullptr)      \
+    _(transaction_resp_t, direction, CSILK_TYPE_STRING, sizeof(char[16]), 0, true, nullptr)        \
+    _(transaction_resp_t, linked_direction, CSILK_TYPE_STRING, sizeof(char[16]), 0, true, nullptr) \
     _(transaction_resp_t, amount, CSILK_TYPE_DOUBLE, sizeof(double), 0, false, nullptr)            \
     _(transaction_resp_t, quantity, CSILK_TYPE_DOUBLE, sizeof(double), 0, false, nullptr)          \
     _(transaction_resp_t, price_per_unit, CSILK_TYPE_DOUBLE, sizeof(double), 0, false, nullptr)    \
+    _(transaction_resp_t, fee, CSILK_TYPE_DOUBLE, sizeof(double), 0, false, nullptr)               \
     _(transaction_resp_t, currency, CSILK_TYPE_STRING, sizeof(char[16]), 0, true, nullptr)         \
     _(transaction_resp_t, transaction_date, CSILK_TYPE_STRING, sizeof(char[32]), 0, true, nullptr) \
     _(transaction_resp_t, note, CSILK_TYPE_STRING, sizeof(char[256]), 0, true, nullptr)            \
+    _(transaction_resp_t, asset_name, CSILK_TYPE_STRING, sizeof(char[128]), 0, true, nullptr)      \
+    _(transaction_resp_t,                                                                          \
+      linked_asset_name,                                                                           \
+      CSILK_TYPE_STRING,                                                                           \
+      sizeof(char[128]),                                                                           \
+      0,                                                                                           \
+      true,                                                                                        \
+      nullptr)                                                                                     \
+    _(transaction_resp_t, category_name, CSILK_TYPE_STRING, sizeof(char[128]), 0, true, nullptr)   \
     _(transaction_resp_t, created_at, CSILK_TYPE_STRING, sizeof(char[64]), 0, true, nullptr)
 CSILK_REGISTER_REFLECT(transaction_resp_t, TX_RESP_MAP)

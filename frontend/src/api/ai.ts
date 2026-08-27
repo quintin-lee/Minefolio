@@ -1,5 +1,6 @@
 // frontend/src/api/ai.ts
 import http, { getCookie } from '@/utils/http'
+import { useAuthStore } from '@/stores/auth'
 
 export interface AiModelOption {
   provider_id: string
@@ -83,14 +84,26 @@ export interface ChatStreamChunk {
   message?: string
 }
 
-export async function* chatStream(params: {
-  session_id?: number
-  content: string
-  model?: string
-  provider?: string
-  regenerate?: boolean
-}): AsyncIterable<ChatStreamChunk> {
-  const token = localStorage.getItem('token') || ''
+export async function* chatStream(
+  params: {
+    session_id?: number
+    content: string
+    model?: string
+    provider?: string
+    regenerate?: boolean
+  },
+  signal?: AbortSignal
+): AsyncIterable<ChatStreamChunk> {
+  let token = ''
+  try {
+    const auth = useAuthStore()
+    token = auth.token || ''
+  } catch {
+    // outside reactive context
+  }
+  if (!token) {
+    token = localStorage.getItem('token') || ''
+  }
   const csrf = getCookie('csrf_token')
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -99,44 +112,51 @@ export async function* chatStream(params: {
   if (csrf) {
     headers['X-CSRF-Token'] = csrf
   }
-  const resp = await fetch('/api/ai/chat', {
+  const baseUrl = import.meta.env.VITE_API_URL || ''
+  const url = `${baseUrl}/api/ai/chat`
+  const resp = await fetch(url, {
     method: 'POST',
     headers,
     credentials: 'include',
     body: JSON.stringify(params),
+    signal,
   })
   if (!resp.ok || !resp.body) throw new Error(`HTTP ${resp.status}`)
   const reader = resp.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
   let currentEvent = 'delta'
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    const lines = buffer.split('\n')
-    buffer = lines.pop() ?? ''
-    for (const line of lines) {
-      const trimmed = line.trim()
-      if (trimmed.startsWith('event:')) {
-        currentEvent = trimmed.slice(6).trim()
-      } else if (trimmed.startsWith('data:')) {
-        const dataStr = trimmed.slice(5).trim()
-        if (dataStr) {
-          try {
-            const parsed = JSON.parse(dataStr) as Record<string, unknown>
-            yield {
-              type: (currentEvent || 'delta') as 'delta' | 'done' | 'error',
-              content: typeof parsed.content === 'string' ? parsed.content : undefined,
-              finish_reason: typeof parsed.finish_reason === 'string' ? parsed.finish_reason : undefined,
-              message: typeof parsed.message === 'string' ? parsed.message : undefined,
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (trimmed.startsWith('event:')) {
+          currentEvent = trimmed.slice(6).trim()
+        } else if (trimmed.startsWith('data:')) {
+          const dataStr = trimmed.slice(5).trim()
+          if (dataStr) {
+            try {
+              const parsed = JSON.parse(dataStr) as Record<string, unknown>
+              yield {
+                type: (currentEvent || 'delta') as 'delta' | 'done' | 'error',
+                content: typeof parsed.content === 'string' ? parsed.content : undefined,
+                finish_reason: typeof parsed.finish_reason === 'string' ? parsed.finish_reason : undefined,
+                message: typeof parsed.message === 'string' ? parsed.message : undefined,
+              }
+            } catch {
+              // ignore
             }
-          } catch {
-            // ignore
           }
         }
       }
     }
+  } finally {
+    reader.releaseLock()
   }
 }
 
