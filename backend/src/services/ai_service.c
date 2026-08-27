@@ -514,24 +514,12 @@ ai_chat_handler(csilk_ctx_t* c)
             break;
         }
 
-        /* 1. Append the assistant message with all tool_calls */
-        csilk_ai_tool_call_t* tc_copies =
-            (csilk_ai_tool_call_t*)malloc(sizeof(csilk_ai_tool_call_t) * ai_res.tool_call_count);
-        for (size_t t = 0; t < ai_res.tool_call_count; t++) {
-            tc_copies[t] = (csilk_ai_tool_call_t){
-                .id = ai_res.tool_calls[t].id ? strdup(ai_res.tool_calls[t].id) : strdup(""),
-                .name = ai_res.tool_calls[t].name ? strdup(ai_res.tool_calls[t].name) : strdup(""),
-                .arguments = ai_res.tool_calls[t].arguments ? strdup(ai_res.tool_calls[t].arguments)
-                                                            : strdup("{}"),
-            };
-        }
-
         mc++;
         msgs = (csilk_ai_message_t*)realloc(msgs, sizeof(csilk_ai_message_t) * (size_t)mc);
         msgs[mc - 1] = (csilk_ai_message_t){
             .role = "assistant",
             .content = ai_res.content ? strdup(ai_res.content) : strdup(""),
-            .tool_calls = tc_copies,
+            .tool_calls = ai_res.tool_calls,
             .tool_call_count = ai_res.tool_call_count,
             .tool_call_id = NULL,
         };
@@ -541,30 +529,23 @@ ai_chat_handler(csilk_ctx_t* c)
             csilk_ai_tool_call_t* tc = &ai_res.tool_calls[t];
 
             ensure_sse_init(&sctx);
-            csilk_json_t* tc_evt = csilk_json_object();
-            csilk_json_add_string(tc_evt, "id", tc->id ?: "");
-            csilk_json_add_string(tc_evt, "name", tc->name ?: "");
-            csilk_json_add_string(tc_evt, "arguments", tc->arguments ?: "");
-            size_t slen = 0;
-            char*  s = csilk_json_serialize(tc_evt, &slen);
-            csilk_sse_send(c, "tool_call", s ? s : "");
-            free(s);
-            csilk_json_free(tc_evt);
+            char tc_buf[1024];
+            int n = snprintf(tc_buf, sizeof(tc_buf),
+                "{\"id\":\"%s\",\"name\":\"%s\",\"arguments\":\"%s\"}",
+                tc->id ?: "", tc->name ?: "", tc->arguments ?: "");
+            csilk_sse_send(c, "tool_call", n > 0 ? tc_buf : "");
 
             char* result = ai_tools_execute(pool, user_id, tc->name, tc->arguments);
             if (!result) {
                 result = strdup("{\"error\":\"tool execution failed\"}");
             }
 
-            csilk_json_t* tr_evt = csilk_json_object();
-            csilk_json_add_string(tr_evt, "tool_call_id", tc->id ?: "");
-            csilk_json_add_string(tr_evt, "name", tc->name ?: "");
-            csilk_json_add_string(tr_evt, "result", result);
-            slen = 0;
-            s = csilk_json_serialize(tr_evt, &slen);
-            csilk_sse_send(c, "tool_result", s ? s : "");
-            free(s);
-            csilk_json_free(tr_evt);
+            char tr_buf[4096];
+            n = snprintf(tr_buf, sizeof(tr_buf),
+                "{\"tool_call_id\":\"%s\",\"name\":\"%s\",\"result\":%s}",
+                tc->id ?: "", tc->name ?: "", result);
+            csilk_sse_send(c, "tool_result", n > 0 ? tr_buf : "");
+            /* result owned by msgs[mc-1].content below; don't free here */
 
             /* Build tool result message */
             mc++;
