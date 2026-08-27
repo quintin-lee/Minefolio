@@ -539,9 +539,12 @@ ai_chat_handler(csilk_ctx_t* c)
 
             ensure_sse_init(&sctx);
             char tc_buf[1024];
-            int n = snprintf(tc_buf, sizeof(tc_buf),
-                "{\"id\":\"%s\",\"name\":\"%s\",\"arguments\":\"%s\"}",
-                tc->id ?: "", tc->name ?: "", tc->arguments ?: "");
+            int  n = snprintf(tc_buf,
+                              sizeof(tc_buf),
+                              "{\"id\":\"%s\",\"name\":\"%s\",\"arguments\":\"%s\"}",
+                              tc->id ?: "",
+                              tc->name ?: "",
+                              tc->arguments ?: "");
             csilk_sse_send(c, "tool_call", n > 0 ? tc_buf : "");
 
             char* result = ai_tools_execute_parsed(pool, user_id, args, tc->name);
@@ -550,9 +553,12 @@ ai_chat_handler(csilk_ctx_t* c)
             }
 
             char tr_buf[4096];
-            n = snprintf(tr_buf, sizeof(tr_buf),
-                "{\"tool_call_id\":\"%s\",\"name\":\"%s\",\"result\":%s}",
-                tc->id ?: "", tc->name ?: "", result);
+            n = snprintf(tr_buf,
+                         sizeof(tr_buf),
+                         "{\"tool_call_id\":\"%s\",\"name\":\"%s\",\"result\":%s}",
+                         tc->id ?: "",
+                         tc->name ?: "",
+                         result);
             csilk_sse_send(c, "tool_result", n > 0 ? tr_buf : "");
             /* result owned by msgs[mc-1].content below; don't free here */
 

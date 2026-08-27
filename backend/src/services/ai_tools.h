@@ -28,6 +28,7 @@ ai_tools_execute(csilk_db_pool_t* pool, int64_t user_id, const char* name, const
  * @param name      Tool name (e.g. "get_assets").
  * @return Heap-allocated JSON result string (caller must free), or NULL on error.
  */
-char*
-ai_tools_execute_parsed(csilk_db_pool_t* pool, int64_t user_id, csilk_json_t* args,
-                        const char* name);
+char* ai_tools_execute_parsed(csilk_db_pool_t* pool,
+                              int64_t          user_id,
+                              csilk_json_t*    args,
+                              const char*      name);
