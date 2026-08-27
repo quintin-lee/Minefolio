@@ -503,7 +503,11 @@ ensure_tools_init(void)
     s_tools[12].function.parameters_json = schema_propose_daily_expense();
     s_tools[13].function.parameters_json = schema_propose_transfer();
     s_tools[14].function.parameters_json = schema_analyze_financial_health();
-    s_tools_initialized = 1;
+    s_tools[15].function.parameters_json = schema_get_expense_trend();
+    s_tools[16].function.parameters_json = schema_get_asset_breakdown();
+    s_tools[17].function.parameters_json = schema_get_expense_by_category();
+    s_tools[18].function.parameters_json = schema_confirm_proposed_expense();
+    s_tools[19].function.parameters_json = schema_confirm_proposed_transfer();
 }
 
 const csilk_ai_tool_t*
