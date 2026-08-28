@@ -18,6 +18,9 @@ export interface Asset {
   category_id: number
   name: string
   account_no?: string
+  symbol?: string
+  quote_source?: string
+  last_sync_at?: string
   current_value: number
   currency: string
   note?: string
@@ -167,3 +170,44 @@ export interface WorkflowRunState {
   status: 'running' | 'completed' | 'error'
   steps: WorkflowStepState[]
 }
+
+export interface MarketSearchItem {
+  symbol: string
+  name: string
+  source: string
+  market_desc: string
+  current_price: number
+  currency: string
+}
+
+export interface MarketQuote {
+  symbol: string
+  name: string
+  source: string
+  current_price: number
+  change_percent: number
+  currency: string
+  quote_time: string
+}
+
+export interface PriceHistoryItem {
+  id: number
+  asset_id: number
+  price_date: string
+  price: number
+  currency: string
+  created_at: string
+}
+
+export interface MarketSettings {
+  market_proxy: string
+  market_auto_sync: boolean
+  market_sync_interval_min: number
+}
+
+export interface TestProxyResult {
+  success: boolean
+  message: string
+  latency_ms: number
+}
+
