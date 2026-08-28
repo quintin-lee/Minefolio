@@ -60,6 +60,8 @@ assets_create(csilk_ctx_t* c)
         currency = "CNY";
     }
     const char* note = csilk_json_get_string(body, "note");
+    const char* symbol = csilk_json_get_string(body, "symbol");
+    const char* quote_source = csilk_json_get_string(body, "quote_source");
     double      quantity = db_get_num(body, "quantity");
     double      cost_basis = db_get_num(body, "cost_basis");
     double      net_value = db_get_num(body, "net_value");
@@ -90,7 +92,9 @@ assets_create(csilk_ctx_t* c)
                               note,
                               quantity,
                               cost_basis,
-                              net_value);
+                              net_value,
+                              symbol,
+                              quote_source);
     csilk_json_free(body);
     if (id <= 0) {
         respond_error(c, 500, "创建失败");
@@ -168,6 +172,15 @@ assets_update(csilk_ctx_t* c)
         (asset_type && (strcmp(asset_type, "stock") == 0 || strcmp(asset_type, "fund") == 0 ||
                         strcmp(asset_type, "bond") == 0 || strcmp(asset_type, "crypto") == 0));
 
+    const char* symbol = csilk_json_get_string(body, "symbol");
+    const char* quote_source = csilk_json_get_string(body, "quote_source");
+    if (!symbol) {
+        symbol = csilk_json_get_string(cr, "symbol");
+    }
+    if (!quote_source) {
+        quote_source = csilk_json_get_string(cr, "quote_source");
+    }
+
     // Investment asset position update
     if (has_net_value || has_quantity || has_cost_basis) {
         if (is_investment) {
@@ -185,6 +198,16 @@ assets_update(csilk_ctx_t* c)
                     pool, asset_id, user_id, delta, "asset_netvalue", asset_id, "net_value update");
             }
             asset_update_position(pool, user_id, asset_id, new_net, new_qty, new_cost);
+            asset_update_basic(pool,
+                               user_id,
+                               asset_id,
+                               name,
+                               account_no,
+                               new_current,
+                               currency,
+                               note,
+                               symbol,
+                               quote_source);
         }
         csilk_json_free(cur);
         csilk_json_free(body);
@@ -193,7 +216,16 @@ assets_update(csilk_ctx_t* c)
     }
 
     // Normal asset update
-    if (!asset_update_basic(pool, user_id, asset_id, name, account_no, value, currency, note)) {
+    if (!asset_update_basic(pool,
+                            user_id,
+                            asset_id,
+                            name,
+                            account_no,
+                            value,
+                            currency,
+                            note,
+                            symbol,
+                            quote_source)) {
         csilk_json_free(cur);
         csilk_json_free(body);
         respond_not_found(c);
