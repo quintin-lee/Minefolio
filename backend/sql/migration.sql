@@ -206,3 +206,61 @@ CREATE TABLE IF NOT EXISTS ai_settings (
     config_json TEXT NOT NULL DEFAULT '{}',
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 定投计划表
+CREATE TABLE IF NOT EXISTS dca_plans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    target_asset_id INTEGER NOT NULL REFERENCES assets(id),
+    funding_asset_id INTEGER NOT NULL REFERENCES assets(id),
+    name TEXT NOT NULL,
+    frequency TEXT NOT NULL DEFAULT 'monthly', -- 'weekly', 'biweekly', 'monthly'
+    day_of_period INTEGER NOT NULL DEFAULT 1,  -- 周几(1-7) 或 每月几号(1-31)
+    amount DECIMAL(18,2) NOT NULL,
+    target_profit_rate DECIMAL(8,4) DEFAULT 0, -- 目标止盈率(如 0.15 表示 15%)
+    target_total_amount DECIMAL(18,2) DEFAULT 0,
+    target_total_periods INTEGER DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'active',     -- 'active', 'paused', 'completed'
+    note TEXT DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_dca_plans_user_status ON dca_plans(user_id, status);
+
+-- 定投执行记录与待办
+CREATE TABLE IF NOT EXISTS dca_executions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    plan_id INTEGER NOT NULL REFERENCES dca_plans(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    period_date TEXT NOT NULL,                -- YYYY-MM-DD
+    planned_amount DECIMAL(18,2) NOT NULL,
+    actual_amount DECIMAL(18,2) DEFAULT 0,
+    executed_price DECIMAL(18,4) DEFAULT 0,
+    executed_quantity DECIMAL(18,4) DEFAULT 0,
+    transaction_id INTEGER DEFAULT NULL REFERENCES transactions(id),
+    status TEXT NOT NULL DEFAULT 'pending',   -- 'pending', 'confirmed', 'skipped'
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_dca_exec_plan_period ON dca_executions(plan_id, period_date);
+CREATE INDEX IF NOT EXISTS idx_dca_exec_user_pending ON dca_executions(user_id, status);
+
+-- 周期性被动现金流计划表
+CREATE TABLE IF NOT EXISTS cashflow_schedules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    source_asset_id INTEGER NOT NULL REFERENCES assets(id),
+    target_asset_id INTEGER NOT NULL REFERENCES assets(id),
+    name TEXT NOT NULL,
+    flow_type TEXT NOT NULL DEFAULT 'dividend', -- 'dividend', 'interest', 'rent', 'maturity'
+    frequency TEXT NOT NULL DEFAULT 'monthly',  -- 'once', 'monthly', 'quarterly', 'semi_annual', 'annual'
+    start_date TEXT NOT NULL,                  -- YYYY-MM-DD
+    end_date TEXT DEFAULT '',                  -- YYYY-MM-DD (可选)
+    expected_amount DECIMAL(18,2) NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',     -- 'active', 'completed', 'cancelled'
+    note TEXT DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_cashflow_schedules_user ON cashflow_schedules(user_id, status);
+
