@@ -542,6 +542,38 @@ check "AI 设置二次保存后 context_size 更新为 30" "30" "$(echo "$AI_SET
 DB_AI_KEY=$(sqlite3 "$DB" "SELECT json_extract(config_json, '$.providers[0].api_key') FROM ai_settings WHERE id=1")
 check "数据库中持久化了正确的 API Key" "sk-test-secret-key-12345" "$DB_AI_KEY"
 
+# =========================================================================
+# Case 36: AI 财务工作流 (Workflows List & Execution Engine)
+# =========================================================================
+echo ""
+echo "--- Case 36: AI 财务工作流测试 ---"
+
+# 1. 查询工作流模板列表
+WF_LIST_RES=$(curl -s -H "$AUTH" "$BASE/ai/workflows")
+WF_CODE=$(echo "$WF_LIST_RES" | jq -r '.code | floor')
+check "GET /api/ai/workflows 返回 code=0" "0" "$WF_CODE"
+
+WF_COUNT=$(echo "$WF_LIST_RES" | jq '.data | length')
+check "返回预置工作流数量 >= 3" "3" "$WF_COUNT"
+
+WF_FIRST_ID=$(echo "$WF_LIST_RES" | jq -r '.data[0].id')
+check "第一个工作流为 wf_monthly_review" "wf_monthly_review" "$WF_FIRST_ID"
+
+# 2. 执行月末财务复盘工作流 (SSE Stream)
+WF_RUN_RES=$(curl -s -N -H "$AUTH" -H "Content-Type: application/json" \
+  -d '{"workflow_id":"wf_monthly_review"}' \
+  "$BASE/ai/workflows/run")
+
+WF_HAS_START=$(echo "$WF_RUN_RES" | grep -c "event: workflow_start" || true)
+check "工作流 SSE 包含 workflow_start 事件" "1" "$WF_HAS_START"
+
+WF_HAS_STEP=$(echo "$WF_RUN_RES" | grep -c "event: step_start" || true)
+[ "$WF_HAS_STEP" -ge 4 ] && HAS_4_STEPS="yes" || HAS_4_STEPS="no"
+check "工作流 SSE 包含全部步骤 step_start" "yes" "$HAS_4_STEPS"
+
+WF_HAS_DONE=$(echo "$WF_RUN_RES" | grep -c "event: workflow_complete" || true)
+check "工作流 SSE 包含 workflow_complete 事件" "1" "$WF_HAS_DONE"
+
 echo ""
 echo "结果: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1
