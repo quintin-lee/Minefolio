@@ -6,6 +6,7 @@ export const zhCN = {
     holdings: '持仓',
     transactions: '交易',
     dailyExpenses: '收支',
+    plans: '计划日历',
     categories: '分类',
     transfer: '转账',
     reports: '报表',

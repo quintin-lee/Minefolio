@@ -28,6 +28,10 @@
           <Icon icon="ph:currency-cny" class="nav-icon" />
           <span>{{ t('nav.dailyExpenses') }}</span>
         </el-menu-item>
+        <el-menu-item index="/plans" @click="goTo('/plans')">
+          <Icon icon="ph:calendar-check" class="nav-icon" />
+          <span>{{ t('nav.plans') }}</span>
+        </el-menu-item>
         <el-menu-item index="/categories" @click="goTo('/categories')">
           <Icon icon="ph:folder" class="nav-icon" />
           <span>{{ t('nav.categories') }}</span>

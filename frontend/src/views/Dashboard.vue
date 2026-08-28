@@ -6,6 +6,17 @@
         <h2>仪表盘</h2>
       </div>
     </div>
+    <!-- 待办定投提醒 -->
+    <div v-if="pendingDcaTasks.length > 0" class="dashboard-alert-banner">
+      <div class="alert-left">
+        <el-icon class="alert-icon"><BellFilled /></el-icon>
+        <span>您有 <strong>{{ pendingDcaTasks.length }}</strong> 项定投计划待执行</span>
+      </div>
+      <el-button type="primary" size="small" @click="$router.push('/plans')">
+        前往处理
+      </el-button>
+    </div>
+
     <!-- 资产概览卡片 -->
     <el-row :gutter="20" class="summary-cards">
       <el-col :xs="12" :sm="12" :md="6" class="mf-stagger-1">
@@ -127,9 +138,11 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
+import { BellFilled } from '@element-plus/icons-vue'
 import { summaryApi } from '@/api/summary'
 import { dailyExpensesApi } from '@/api/daily_expenses'
 import { reportsApi } from '@/api/reports'
+import { dcaApi } from '@/api/dca'
 import type { Summary, DailyExpense } from '@/types'
 import NetWorthChart from '@/components/NetWorthChart.vue'
 import AssetBreakdownPie from '@/components/AssetBreakdownPie.vue'
@@ -143,6 +156,7 @@ const summary = ref<Summary>({
 const yearlyExpenses = ref<any>(null)
 const currentMonthBalance = ref<any>(null)
 const recentExpenses = ref<DailyExpense[]>([])
+const pendingDcaTasks = ref<any[]>([])
 const currentYear = ref(new Date())
 
 const sparklineData = computed(() => {
@@ -171,11 +185,20 @@ async function loadDashboard() {
   try {
     const res = await summaryApi.get()
     summary.value = res
-    await Promise.allSettled([loadYearly(), loadCurrentMonth(), loadRecent()])
+    await Promise.allSettled([loadYearly(), loadCurrentMonth(), loadRecent(), loadPendingDca()])
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.message || '仪表盘数据加载失败')
   } finally {
     loading.value = false
+  }
+}
+
+async function loadPendingDca() {
+  try {
+    const tasks = await dcaApi.listPendingExecutions()
+    pendingDcaTasks.value = tasks || []
+  } catch (err) {
+    console.error('load pending dca error:', err)
   }
 }
 
@@ -296,6 +319,30 @@ onMounted(loadDashboard)
   color: #94a3b8 !important;
   background-color: rgba(0, 212, 255, 0.06) !important;
   border-bottom: 1px solid var(--mf-border) !important;
+}
+
+.dashboard-alert-banner {
+  background: linear-gradient(135deg, rgba(234, 179, 8, 0.15), rgba(245, 158, 11, 0.08));
+  border: 1px solid rgba(234, 179, 8, 0.4);
+  border-radius: var(--mf-radius-md);
+  padding: 10px 16px;
+  margin-bottom: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.alert-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #d97706;
+}
+
+.alert-icon {
+  font-size: 18px;
+  color: #f59e0b;
 }
 
 :deep(.el-table .el-table__row) {

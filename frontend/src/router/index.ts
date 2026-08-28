@@ -27,6 +27,7 @@ const router = createRouter({
         { path: 'holdings', name: 'Holdings', component: () => import('@/views/Holdings.vue') },
         { path: 'transactions', name: 'Transactions', component: () => import('@/views/Transactions.vue') },
         { path: 'daily-expenses', name: 'DailyExpenses', component: () => import('@/views/DailyExpenses.vue') },
+        { path: 'plans', name: 'Plans', component: () => import('@/views/Plans.vue') },
         { path: 'categories', name: 'Categories', component: () => import('@/views/Categories.vue') },
         { path: 'reports', name: 'Reports', component: () => import('@/views/Reports.vue') },
         { path: 'audit-logs', name: 'AuditLogs', component: () => import('@/views/AuditLogs.vue') },
