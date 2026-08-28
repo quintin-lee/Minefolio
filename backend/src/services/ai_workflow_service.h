@@ -10,7 +10,10 @@ typedef struct {
     const char* step_id;
     const char* title;
     const char* description;
-    char* (*execute)(csilk_db_pool_t* pool, int64_t user_id, const csilk_json_t* params, const char* context_json);
+    char* (*execute)(csilk_db_pool_t*    pool,
+                     int64_t             user_id,
+                     const csilk_json_t* params,
+                     const char*         context_json);
 } ai_workflow_step_t;
 
 typedef struct {

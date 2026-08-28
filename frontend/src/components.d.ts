@@ -68,6 +68,8 @@ declare module 'vue' {
     SummaryCard: typeof import('./components/SummaryCard.vue')['default']
     TagPicker: typeof import('./components/TagPicker.vue')['default']
     TransactionTable: typeof import('./components/TransactionTable.vue')['default']
+    WorkflowBar: typeof import('./components/WorkflowBar.vue')['default']
+    WorkflowProgressCard: typeof import('./components/WorkflowProgressCard.vue')['default']
     YearlyChart: typeof import('./components/YearlyChart.vue')['default']
   }
   export interface ComponentCustomProperties {

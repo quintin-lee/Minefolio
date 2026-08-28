@@ -1,5 +1,11 @@
 <template>
   <div class="chat-message-content">
+    <!-- Workflow Pipeline Progress Card (if present) -->
+    <WorkflowProgressCard
+      v-if="workflowData"
+      :workflow-data="workflowData"
+    />
+
     <template v-for="seg in segments" :key="seg.id">
       <!-- Markdown Segment -->
       <div
@@ -51,11 +57,14 @@ import { Icon } from '@iconify/vue'
 import MermaidBlock from '@/components/MermaidBlock.vue'
 import ActionCard from '@/components/ActionCard.vue'
 import CodeBlock from '@/components/CodeBlock.vue'
+import WorkflowProgressCard from '@/components/WorkflowProgressCard.vue'
 import type { ProposedAction } from '@/components/ActionCard.vue'
+import type { WorkflowRunState } from '@/types'
 
 const props = defineProps<{
   content: string
   isStreaming?: boolean
+  workflowData?: WorkflowRunState
 }>()
 
 interface Segment {

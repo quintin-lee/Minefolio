@@ -164,6 +164,7 @@
                 <div v-else class="message-content" :class="{ 'streaming-active': chat.isStreaming && idx === chat.messages.length - 1 && msg.role === 'assistant' }">
                   <ChatMessageContent
                     :content="msg.content"
+                    :workflow-data="msg.workflowData"
                     :is-streaming="chat.isStreaming && idx === chat.messages.length - 1 && msg.role === 'assistant'"
                   />
                   <span v-if="chat.isStreaming && idx === chat.messages.length - 1 && msg.role === 'assistant'" class="typing-cursor"></span>
@@ -191,6 +192,9 @@
 
         <!-- Input Area -->
         <div class="chat-input-area">
+          <!-- Financial AI Workflows Trigger Bar -->
+          <WorkflowBar />
+
           <div class="chat-input-box">
             <textarea
               ref="textareaRef"
@@ -228,6 +232,7 @@ import { Icon } from '@iconify/vue'
 import { useChatStore } from '@/stores/chat'
 import ChatMessageContent from '@/components/ChatMessageContent.vue'
 import PromptStarters from '@/components/PromptStarters.vue'
+import WorkflowBar from '@/components/WorkflowBar.vue'
 
 const chat = useChatStore()
 const inputText = ref('')
