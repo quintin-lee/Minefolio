@@ -211,3 +211,110 @@ export interface TestProxyResult {
   latency_ms: number
 }
 
+/* DCA Plans */
+export interface DcaPlan {
+  id: number
+  user_id: number
+  target_asset_id: number
+  funding_asset_id: number
+  name: string
+  frequency: 'weekly' | 'biweekly' | 'monthly'
+  day_of_period: number
+  amount: number
+  target_profit_rate: number
+  target_total_amount: number
+  target_total_periods: number
+  status: 'active' | 'paused' | 'completed'
+  note?: string
+  created_at: string
+  updated_at: string
+  target_asset_name?: string
+  target_symbol?: string
+  target_net_value?: number
+  target_quantity?: number
+  target_cost_basis?: number
+  target_current_value?: number
+  target_quote_source?: string
+  target_currency?: string
+  funding_asset_name?: string
+  funding_currency?: string
+  executed_periods?: number
+  total_invested_amount?: number
+  profit_rate?: number
+  profit_target_reached?: boolean
+}
+
+export interface DcaExecution {
+  id: number
+  plan_id: number
+  user_id: number
+  period_date: string
+  planned_amount: number
+  actual_amount: number
+  executed_price: number
+  executed_quantity: number
+  transaction_id?: number
+  status: 'pending' | 'confirmed' | 'skipped'
+  created_at: string
+  updated_at?: string
+  plan_name?: string
+  target_asset_id?: number
+  funding_asset_id?: number
+  target_profit_rate?: number
+  target_asset_name?: string
+  target_symbol?: string
+  target_net_value?: number
+  target_currency?: string
+  funding_asset_name?: string
+  funding_currency?: string
+}
+
+/* Cashflow Schedules & Calendar */
+export interface CashflowSchedule {
+  id: number
+  user_id: number
+  source_asset_id: number
+  target_asset_id: number
+  name: string
+  flow_type: 'dividend' | 'interest' | 'rent' | 'maturity' | string
+  frequency: 'once' | 'monthly' | 'quarterly' | 'semi_annual' | 'annual'
+  start_date: string
+  end_date?: string
+  expected_amount: number
+  status: 'active' | 'completed' | 'cancelled'
+  note?: string
+  created_at: string
+  updated_at?: string
+  source_asset_name?: string
+  source_symbol?: string
+  target_asset_name?: string
+  target_currency?: string
+}
+
+export interface CashflowCalendarEvent {
+  id?: number
+  schedule_id?: number
+  source_asset_id?: number
+  target_asset_id?: number
+  date: string
+  name: string
+  source_asset_name?: string
+  target_asset_name?: string
+  flow_type: string
+  amount: number
+  currency: string
+  is_actual: boolean
+  status: 'confirmed' | 'projected'
+}
+
+export interface MonthlyCashflowSummary {
+  year: number
+  month: number
+  year_month: string
+  actual_total: number
+  projected_total: number
+  annual_projected_total: number
+  events: CashflowCalendarEvent[]
+}
+
+
