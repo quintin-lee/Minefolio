@@ -317,4 +317,39 @@ export interface MonthlyCashflowSummary {
   events: CashflowCalendarEvent[]
 }
 
+/* Multi-Ledger Spaces */
+export interface Ledger {
+  id: number
+  owner_id: number
+  name: string
+  description?: string
+  currency: string
+  icon?: string
+  color?: string
+  is_default: boolean | number
+  invite_code?: string
+  invite_expires_at?: string
+  created_at: string
+  updated_at?: string
+  my_role: 'owner' | 'editor' | 'viewer'
+  owner_username?: string
+  member_count?: number
+  total_assets?: number
+}
+
+export interface LedgerMember {
+  id: number
+  ledger_id: number
+  user_id: number
+  username: string
+  role: 'owner' | 'editor' | 'viewer'
+  joined_at: string
+}
+
+export interface LedgerInviteResult {
+  invite_code: string
+  expires_at: string
+}
+
+
 

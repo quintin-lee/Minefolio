@@ -113,6 +113,10 @@ function createHttp(): AxiosInstance {
     if (auth.token) {
       config.headers.Authorization = `Bearer ${auth.token}`
     }
+    const activeLedgerId = localStorage.getItem('minefolio_active_ledger_id')
+    if (activeLedgerId) {
+      config.headers['X-Ledger-Id'] = activeLedgerId
+    }
     const method = (config.method || 'get').toUpperCase()
     if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
       const csrf = getCookie('csrf_token')
