@@ -226,22 +226,24 @@ async function handleDeleteLedger(ledger: Ledger) {
 .ledger-selector-wrap {
   display: inline-flex;
   align-items: center;
+  margin-right: 12px;
 }
 .current-ledger-btn {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 10px;
-  background: rgba(0, 0, 0, 0.04);
-  border: 1px solid var(--el-border-color-lighter);
+  padding: 5px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s;
   user-select: none;
 }
 .current-ledger-btn:hover {
-  background: rgba(0, 0, 0, 0.07);
-  border-color: var(--el-color-primary-light-5);
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(0, 212, 255, 0.4);
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.15);
 }
 .ledger-icon-badge {
   width: 24px;
@@ -250,11 +252,12 @@ async function handleDeleteLedger(ledger: Ledger) {
   display: flex;
   align-items: center;
   justify-content: center;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
 }
 .ledger-name {
   font-size: 14px;
   font-weight: 600;
-  color: var(--el-text-color-primary);
+  color: #e2e8f0;
   max-width: 140px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -262,12 +265,13 @@ async function handleDeleteLedger(ledger: Ledger) {
 }
 .role-tag {
   font-size: 11px;
-  padding: 0 4px;
+  padding: 0 6px;
   height: 20px;
   line-height: 18px;
+  border-radius: 4px;
 }
 .caret {
-  color: var(--el-text-color-secondary);
+  color: #94a3b8;
 }
 
 .ledger-menu {

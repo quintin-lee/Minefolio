@@ -125,6 +125,8 @@ async function handleRemoveMember(member: LedgerMember) {
     :title="`成员与权限管理 - ${ledger?.name || ''}`"
     width="640px"
     destroy-on-close
+    append-to-body
+    class="premium-dialog"
     @update:model-value="emit('update:visible', $event)"
   >
     <div class="members-container" v-loading="loading">

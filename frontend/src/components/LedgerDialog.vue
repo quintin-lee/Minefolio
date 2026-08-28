@@ -102,6 +102,8 @@ async function handleSubmit() {
     :title="ledger ? '编辑账本' : '创建新账本'"
     width="480px"
     destroy-on-close
+    append-to-body
+    class="premium-dialog"
     @update:model-value="emit('update:visible', $event)"
   >
     <el-form ref="formRef" :model="form" :rules="rules" label-width="80px">

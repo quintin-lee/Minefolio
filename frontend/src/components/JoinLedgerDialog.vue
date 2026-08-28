@@ -40,6 +40,8 @@ async function handleJoin() {
     title="加入家庭 / 协同账本"
     width="420px"
     destroy-on-close
+    append-to-body
+    class="premium-dialog"
     @update:model-value="emit('update:visible', $event)"
   >
     <div class="join-body">
