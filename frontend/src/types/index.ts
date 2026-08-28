@@ -49,6 +49,7 @@ export interface Transaction {
   amount: number
   price_per_unit?: number
   quantity?: number
+  fee?: number
   currency: string
   transaction_date: string
   note?: string

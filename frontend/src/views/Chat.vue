@@ -222,7 +222,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, nextTick, watch, computed } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick, watch, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import { useChatStore } from '@/stores/chat'
@@ -357,10 +357,9 @@ const selectedModelKey = computed({
   set(val: string) {
     const parts = val.split('/')
     if (parts.length === 2) {
-      chat.currentProvider = parts[0]!
-      chat.currentModel = parts[1]!
+      chat.setModel(parts[1]!, parts[0]!)
     } else {
-      chat.currentModel = val
+      chat.setModel(val)
     }
   },
 })
@@ -426,15 +425,13 @@ async function fetchSettings() {
 
 async function selectSession(id: number) {
   loadingMessages.value = true
-  chat.currentSessionId = id
   await chat.selectSession(id)
   loadingMessages.value = false
   nextTick(() => scrollToBottom())
 }
 
 function handleNewChat() {
-  chat.messages = []
-  chat.currentSessionId = null
+  chat.clearCurrentSession()
   inputText.value = ''
   adjustTextareaHeight()
 }
@@ -442,7 +439,7 @@ function handleNewChat() {
 async function handleClearChat() {
   try {
     await ElMessageBox.confirm('确定清空当前对话中的消息？', '提示', { type: 'warning' })
-    chat.messages = []
+    chat.clearMessages()
   } catch { /* cancelled */ }
 }
 
@@ -500,16 +497,19 @@ watch(() => chat.messages.length, () => {
 onMounted(async () => {
   await Promise.allSettled([fetchSessions(), fetchSettings(), fetchModels()])
   if (chat.settings?.default_provider) {
-    chat.currentProvider = chat.settings.default_provider
+    chat.setModel(chat.currentModel, chat.settings.default_provider)
   }
   if (chat.settings?.default_model) {
-    chat.currentModel = chat.settings.default_model
+    chat.setModel(chat.settings.default_model, chat.currentProvider)
   } else if (!chat.currentModel && modelOptions.value.length > 0) {
-    chat.currentProvider = modelOptions.value[0]!.provider_id
-    chat.currentModel = modelOptions.value[0]!.model
+    chat.setModel(modelOptions.value[0]!.model, modelOptions.value[0]!.provider_id)
   }
   if (!chat.currentSessionId) handleNewChat()
   nextTick(() => scrollToBottom())
+})
+
+onUnmounted(() => {
+  chat.abortCurrentStream()
 })
 </script>
 

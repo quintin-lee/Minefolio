@@ -160,6 +160,42 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  let activeAbortController: AbortController | null = null
+
+  function abortCurrentStream() {
+    if (activeAbortController) {
+      activeAbortController.abort()
+      activeAbortController = null
+    }
+    isStreaming.value = false
+  }
+
+  function clearMessages() {
+    abortCurrentStream()
+    messages.value = []
+  }
+
+  function clearCurrentSession() {
+    abortCurrentStream()
+    currentSessionId.value = null
+    messages.value = []
+  }
+
+  function resetState() {
+    abortCurrentStream()
+    sessions.value = []
+    currentSessionId.value = null
+    messages.value = []
+    isStreaming.value = false
+  }
+
+  function setModel(model: string, provider?: string) {
+    currentModel.value = model
+    if (provider !== undefined) {
+      currentProvider.value = provider
+    }
+  }
+
   async function regenerateLastMessage() {
     if (isStreaming.value || messages.value.length === 0) return
     let lastUserIdx = -1
@@ -188,6 +224,10 @@ export const useChatStore = defineStore('chat', () => {
     // object bypasses Vue reactivity and breaks typewriter rendering.
     assistantMsg = messages.value[messages.value.length - 1]!
 
+    abortCurrentStream()
+    activeAbortController = new AbortController()
+    const signal = activeAbortController.signal
+
     isStreaming.value = true
     const writer = new SmoothStreamWriter(assistantMsg)
 
@@ -198,7 +238,7 @@ export const useChatStore = defineStore('chat', () => {
         model: currentModel.value,
         provider: currentProvider.value,
         regenerate: true,
-      })) {
+      }, signal)) {
         if (chunk.type === 'delta' && chunk.content) {
           writer.push(chunk.content)
         } else if (chunk.type === 'error') {
@@ -207,9 +247,15 @@ export const useChatStore = defineStore('chat', () => {
         }
       }
       await writer.finish()
+    } catch (err: any) {
+      if (err?.name !== 'AbortError') {
+        writer.flushNow()
+        assistantMsg.content = `⚠️ 请求发生异常`
+      }
     } finally {
       writer.flushNow()
       isStreaming.value = false
+      activeAbortController = null
     }
   }
 
@@ -240,6 +286,10 @@ export const useChatStore = defineStore('chat', () => {
     // object bypasses Vue reactivity and breaks typewriter rendering.
     assistantMsg = messages.value[messages.value.length - 1]!
 
+    abortCurrentStream()
+    activeAbortController = new AbortController()
+    const signal = activeAbortController.signal
+
     isStreaming.value = true
     const writer = new SmoothStreamWriter(assistantMsg)
 
@@ -249,7 +299,7 @@ export const useChatStore = defineStore('chat', () => {
         content,
         model: currentModel.value,
         provider: currentProvider.value,
-      })) {
+      }, signal)) {
         if (chunk.type === 'delta' && chunk.content) {
           writer.push(chunk.content)
         } else if (chunk.type === 'error') {
@@ -276,9 +326,15 @@ export const useChatStore = defineStore('chat', () => {
           }
         }
       }
+    } catch (err: any) {
+      if (err?.name !== 'AbortError') {
+        writer.flushNow()
+        assistantMsg.content = `⚠️ 请求发生异常`
+      }
     } finally {
       writer.flushNow()
       isStreaming.value = false
+      activeAbortController = null
     }
   }
   function switchModel(model: string, provider: string) {
@@ -292,5 +348,6 @@ export const useChatStore = defineStore('chat', () => {
     fetchSessions, fetchModels, fetchSettings,
     createNewSession, selectSession, deleteSessionById, renameSession,
     sendMessage, regenerateLastMessage, switchModel,
+    abortCurrentStream, clearMessages, clearCurrentSession, resetState, setModel,
   }
 })

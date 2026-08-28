@@ -482,7 +482,15 @@ const quantityUnit = computed(() => {
   const map: Record<string, string> = { stock: '股', fund: '份', bond: '张', crypto: '币' }
   return map[asset.asset_type ?? ''] || ''
 })
-const showFeeCol = computed(() => ['buy','sell','fee'].some(t => true))
+
+const showFeeCol = computed(() => {
+  if (filters.type) {
+    return ['buy', 'sell', 'fee'].includes(filters.type)
+  }
+  return transactions.value.some(
+    (t) => (t.fee !== undefined && t.fee !== null && t.fee > 0) || ['buy', 'sell', 'fee'].includes(t.transaction_type)
+  )
+})
 
 function onAssetChange(assetId: number | null) {
   const asset = assets.value.find(a => a.id === assetId)

@@ -218,7 +218,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { Icon } from '@iconify/vue'
 import { ElMessage } from 'element-plus'
 import {
@@ -424,6 +424,17 @@ watch(
 
 onMounted(() => {
   renderDiagram(Boolean(props.isStreaming))
+})
+
+onUnmounted(() => {
+  if (copyTimer) {
+    clearTimeout(copyTimer)
+    copyTimer = null
+  }
+  if (streamDebounceTimer) {
+    clearTimeout(streamDebounceTimer)
+    streamDebounceTimer = null
+  }
 })
 </script>
 

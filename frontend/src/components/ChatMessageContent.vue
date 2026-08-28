@@ -5,7 +5,7 @@
       <div
         v-if="seg.type === 'markdown'"
         class="markdown-part"
-        v-html="renderMarkdown(seg.content)"
+        v-html="seg.renderedHtml"
       ></div>
 
       <!-- Action Card Block -->
@@ -54,6 +54,7 @@ interface Segment {
   id: string
   type: 'markdown' | 'mermaid' | 'streaming-mermaid' | 'action'
   content: string
+  renderedHtml?: string
   actionData?: ProposedAction
 }
 
@@ -124,6 +125,7 @@ const segments = computed<Segment[]>(() => {
           id: `md-${segIdx++}`,
           type: 'markdown',
           content: markdownBefore,
+          renderedHtml: renderMarkdown(markdownBefore),
         })
       }
     }
@@ -170,6 +172,7 @@ const segments = computed<Segment[]>(() => {
         id: `md-${segIdx++}`,
         type: 'markdown',
         content: markdownAfter,
+        renderedHtml: renderMarkdown(markdownAfter),
       })
     }
   }
@@ -179,6 +182,7 @@ const segments = computed<Segment[]>(() => {
       id: 'md-0',
       type: 'markdown',
       content: text,
+      renderedHtml: renderMarkdown(text),
     },
   ]
 })
