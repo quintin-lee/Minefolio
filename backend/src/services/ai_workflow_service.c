@@ -1,4 +1,5 @@
 #include "services/ai_workflow_service.h"
+#include "services/ai_service.h"
 #include "repositories/asset_repo.h"
 #include "repositories/daily_expense_repo.h"
 #include "repositories/transaction_repo.h"
@@ -1015,7 +1016,6 @@ ai_workflow_run_handler(csilk_ctx_t* c)
 
     /* Cumulative context across steps */
     csilk_json_t* ctx_obj = csilk_json_object();
-    char*         final_report = NULL;
 
     for (int i = 0; i < target_wf->step_count; i++) {
         const ai_workflow_step_t* st = &target_wf->steps[i];
@@ -1030,67 +1030,104 @@ ai_workflow_run_handler(csilk_ctx_t* c)
         csilk_sse_send(c, "step_start", str_st_start ? str_st_start : "{}");
         free(str_st_start);
 
-        /* Execute step with real database queries */
-        char* cur_ctx_str = csilk_json_serialize(ctx_obj, &slen);
-        char* step_out = st->execute(pool, user_id, params, cur_ctx_str);
-        free(cur_ctx_str);
-
         char summary_buf[256] = {0};
 
         if (i == target_wf->step_count - 1) {
-            /* Last step is the final markdown report */
-            final_report = step_out;
-            snprintf(summary_buf, sizeof(summary_buf), "诊断报告与图表生成完毕");
-        } else if (step_out) {
-            csilk_json_t* parsed_out = csilk_json_parse(step_out);
-            if (parsed_out) {
-                if (strcmp(st->step_id, "aggregate_data") == 0) {
-                    snprintf(summary_buf,
-                             sizeof(summary_buf),
-                             "本月总收入 ￥%.2f，总支出 ￥%.2f，净资产 ￥%.2f",
-                             db_get_num(parsed_out, "total_income"),
-                             db_get_num(parsed_out, "total_expense"),
-                             db_get_num(parsed_out, "net_worth"));
-                } else if (strcmp(st->step_id, "analyze_trends") == 0) {
-                    snprintf(summary_buf,
-                             sizeof(summary_buf),
-                             "支出环比变动 %+.1f%%，已提取核心分类明细",
-                             db_get_num(parsed_out, "mom_rate"));
-                } else if (strcmp(st->step_id, "health_diagnosis") == 0) {
-                    snprintf(summary_buf,
-                             sizeof(summary_buf),
-                             "健康评分 %.0f 分，储蓄率 %.1f%%，备用金维持 %.1f 个月",
-                             db_get_num(parsed_out, "health_score"),
-                             db_get_num(parsed_out, "savings_rate"),
-                             db_get_num(parsed_out, "emergency_months"));
-                } else if (strcmp(st->step_id, "scan_holdings") == 0) {
-                    snprintf(summary_buf,
-                             sizeof(summary_buf),
-                             "总资产规模 ￥%.2f，已扫描权益/固收/现金持仓",
-                             db_get_num(parsed_out, "total_portfolio_value"));
-                } else if (strcmp(st->step_id, "risk_exposure") == 0) {
-                    snprintf(summary_buf,
-                             sizeof(summary_buf),
-                             "权益占比 %.1f%%，固收占比 %.1f%%，现金占比 %.1f%%",
-                             db_get_num(parsed_out, "equity_pct"),
-                             db_get_num(parsed_out, "fixed_pct"),
-                             db_get_num(parsed_out, "cash_pct"));
-                } else if (strcmp(st->step_id, "assess_liquidity") == 0) {
-                    snprintf(summary_buf,
-                             sizeof(summary_buf),
-                             "拟支出 ￥%.2f，当前可用流动现金 ￥%.2f",
-                             db_get_num(parsed_out, "target_amount"),
-                             db_get_num(parsed_out, "liquid_cash"));
-                } else if (strcmp(st->step_id, "stress_test") == 0) {
-                    snprintf(summary_buf,
-                             sizeof(summary_buf),
-                             "支出后剩余现金 ￥%.2f，可维持 %.1f 个月刚性开销",
-                             db_get_num(parsed_out, "remaining_cash"),
-                             db_get_num(parsed_out, "runway_months"));
+            /* Final step: Stream report via AI Model or structured fallback */
+            char* cur_ctx_str = csilk_json_serialize(ctx_obj, &slen);
+            int   streamed_by_model =
+                ai_service_stream_report(c, session_id, target_wf->title, cur_ctx_str);
+
+            if (!streamed_by_model) {
+                /* Fallback: generate and stream deterministic real-data report */
+                char* step_out = st->execute(pool, user_id, params, cur_ctx_str);
+                if (step_out && step_out[0]) {
+                    size_t rlen = strlen(step_out);
+                    size_t offset = 0;
+                    size_t chunk_sz = 64;
+                    while (offset < rlen) {
+                        size_t take = (offset + chunk_sz < rlen) ? chunk_sz : (rlen - offset);
+                        char   chunk[128];
+                        memcpy(chunk, step_out + offset, take);
+                        chunk[take] = '\0';
+                        offset += take;
+
+                        csilk_json_t* ev_chunk = csilk_json_object();
+                        csilk_json_add_string(ev_chunk, "content", chunk);
+                        char* str_chunk = csilk_json_serialize(ev_chunk, &slen);
+                        csilk_json_free(ev_chunk);
+                        csilk_sse_send(c, "delta", str_chunk ? str_chunk : "{}");
+                        free(str_chunk);
+                    }
+
+                    if (pool && session_id > 0) {
+                        ai_message_insert(
+                            pool, session_id, "assistant", step_out, "workflow-agent");
+                    }
+                    free(step_out);
                 }
-                csilk_json_add_object(ctx_obj, st->step_id, parsed_out);
+                snprintf(summary_buf, sizeof(summary_buf), "财务复盘与图表渲染完毕");
+            } else {
+                snprintf(summary_buf, sizeof(summary_buf), "AI 大模型已完成深度诊断与图表生成");
             }
-            free(step_out);
+            free(cur_ctx_str);
+        } else {
+            /* Execute data aggregation step */
+            char* cur_ctx_str = csilk_json_serialize(ctx_obj, &slen);
+            char* step_out = st->execute(pool, user_id, params, cur_ctx_str);
+            free(cur_ctx_str);
+
+            if (step_out) {
+                csilk_json_t* parsed_out = csilk_json_parse(step_out);
+                if (parsed_out) {
+                    if (strcmp(st->step_id, "aggregate_data") == 0) {
+                        snprintf(summary_buf,
+                                 sizeof(summary_buf),
+                                 "本月总收入 ￥%.2f，总支出 ￥%.2f，净资产 ￥%.2f",
+                                 db_get_num(parsed_out, "total_income"),
+                                 db_get_num(parsed_out, "total_expense"),
+                                 db_get_num(parsed_out, "net_worth"));
+                    } else if (strcmp(st->step_id, "analyze_trends") == 0) {
+                        snprintf(summary_buf,
+                                 sizeof(summary_buf),
+                                 "支出环比变动 %+.1f%%，已提取核心分类明细",
+                                 db_get_num(parsed_out, "mom_rate"));
+                    } else if (strcmp(st->step_id, "health_diagnosis") == 0) {
+                        snprintf(summary_buf,
+                                 sizeof(summary_buf),
+                                 "健康评分 %.0f 分，储蓄率 %.1f%%，备用金维持 %.1f 个月",
+                                 db_get_num(parsed_out, "health_score"),
+                                 db_get_num(parsed_out, "savings_rate"),
+                                 db_get_num(parsed_out, "emergency_months"));
+                    } else if (strcmp(st->step_id, "scan_holdings") == 0) {
+                        snprintf(summary_buf,
+                                 sizeof(summary_buf),
+                                 "总资产规模 ￥%.2f，已扫描权益/固收/现金持仓",
+                                 db_get_num(parsed_out, "total_portfolio_value"));
+                    } else if (strcmp(st->step_id, "risk_exposure") == 0) {
+                        snprintf(summary_buf,
+                                 sizeof(summary_buf),
+                                 "权益占比 %.1f%%，固收占比 %.1f%%，现金占比 %.1f%%",
+                                 db_get_num(parsed_out, "equity_pct"),
+                                 db_get_num(parsed_out, "fixed_pct"),
+                                 db_get_num(parsed_out, "cash_pct"));
+                    } else if (strcmp(st->step_id, "assess_liquidity") == 0) {
+                        snprintf(summary_buf,
+                                 sizeof(summary_buf),
+                                 "拟支出 ￥%.2f，当前可用流动现金 ￥%.2f",
+                                 db_get_num(parsed_out, "target_amount"),
+                                 db_get_num(parsed_out, "liquid_cash"));
+                    } else if (strcmp(st->step_id, "stress_test") == 0) {
+                        snprintf(summary_buf,
+                                 sizeof(summary_buf),
+                                 "支出后剩余现金 ￥%.2f，可维持 %.1f 个月刚性开销",
+                                 db_get_num(parsed_out, "remaining_cash"),
+                                 db_get_num(parsed_out, "runway_months"));
+                    }
+                    csilk_json_add_object(ctx_obj, st->step_id, parsed_out);
+                }
+                free(step_out);
+            }
         }
 
         /* Send step_complete with real summary */
@@ -1108,33 +1145,6 @@ ai_workflow_run_handler(csilk_ctx_t* c)
     }
 
     csilk_json_free(ctx_obj);
-
-    /* Stream final report text in chunks */
-    if (final_report && final_report[0]) {
-        size_t rlen = strlen(final_report);
-        size_t offset = 0;
-        size_t chunk_sz = 64;
-        while (offset < rlen) {
-            size_t take = (offset + chunk_sz < rlen) ? chunk_sz : (rlen - offset);
-            char   chunk[128];
-            memcpy(chunk, final_report + offset, take);
-            chunk[take] = '\0';
-            offset += take;
-
-            csilk_json_t* ev_chunk = csilk_json_object();
-            csilk_json_add_string(ev_chunk, "content", chunk);
-            char* str_chunk = csilk_json_serialize(ev_chunk, &slen);
-            csilk_json_free(ev_chunk);
-            csilk_sse_send(c, "delta", str_chunk ? str_chunk : "{}");
-            free(str_chunk);
-        }
-
-        /* Persist generated report in session messages */
-        if (pool && session_id > 0) {
-            ai_message_insert(pool, session_id, "assistant", final_report, "workflow-agent");
-        }
-        free(final_report);
-    }
 
     /* Send workflow_complete */
     csilk_json_t* ev_done = csilk_json_object();

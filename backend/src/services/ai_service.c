@@ -957,3 +957,108 @@ ai_service_fetch_models(csilk_ctx_t* c)
     csilk_json_add_array(out, "models", model_arr);
     respond_ok(c, out);
 }
+
+int
+ai_service_stream_report(csilk_ctx_t* c,
+                         int64_t      session_id,
+                         const char*  workflow_title,
+                         const char*  structured_data_json)
+{
+    if (!g_config.default_provider[0] || !g_config.default_model[0]) {
+        return 0;
+    }
+    ai_provider_t* prov = ai_config_find_provider(&g_config, g_config.default_provider);
+    if (!prov || (!prov->api_key[0] && strcmp(prov->id, "ollama") != 0)) {
+        return 0;
+    }
+
+    csilk_ai_t* ai_inst = g_ai;
+    int         need_free_ai = 0;
+    if (strcmp(prov->id, g_config.default_provider) != 0 || !ai_inst) {
+        const char* dname = get_driver_name(prov->id);
+        const char* key = (prov->api_key[0] != '\0') ? prov->api_key : "dummy";
+        csilk_ai_t* custom_ai = csilk_ai_new(dname, key, prov->base_url[0] ? prov->base_url : NULL);
+        if (custom_ai) {
+            ai_inst = custom_ai;
+            need_free_ai = 1;
+        }
+    }
+    if (!ai_inst) {
+        return 0;
+    }
+
+    stream_context_t sctx = {
+        .ctx = c,
+        .sse_initialized = 1,
+        .accumulated = NULL,
+        .cap = 0,
+        .len = 0,
+        .trace = NULL,
+    };
+    clock_gettime(CLOCK_MONOTONIC, &sctx.last_send_time);
+
+    const char* sys_prompt = "你是一名资深全栈私人财务顾问与资产配置专家。你正在执行自动化财务工作"
+                             "流。请根据系统聚合提供的用户真实财务数据上下文（JSON），生成一份专业"
+                             "、深入、结构清晰且具有针对性的诊断分析报告。\n"
+                             "要求：\n"
+                             "1. 使用优雅规范的 Markdown 输出；\n"
+                             "2. 深度分析核心收支、结余率、资产负债与应急保障指标；\n"
+                             "3. 结合真实数据生成一个 Mermaid 图表展示支出构成或资产大类配置；\n"
+                             "4. 提供 3 条切实可行的落地优化建议；\n"
+                             "5. 如需记账或调仓，可生成 ```action { ... } ``` 操作卡片。";
+
+    char user_prompt[16384];
+    snprintf(user_prompt,
+             sizeof(user_prompt),
+             "【当前工作流】：%s\n\n"
+             "【系统已提取的用户真实财务上下文（JSON）】：\n"
+             "%s\n\n"
+             "请基于以上全部真实数据，直接输出结构化深度财务诊断报告与优化建议。",
+             workflow_title ? workflow_title : "智能财务工作流",
+             structured_data_json ? structured_data_json : "{}");
+
+    csilk_ai_message_t msgs[2] = {
+        {.role = "system", .content = sys_prompt },
+        {.role = "user",   .content = user_prompt},
+    };
+
+    csilk_ai_chat_request_t req = {
+        .model = g_config.default_model,
+        .messages = msgs,
+        .message_count = 2,
+        .stream = 1,
+        .on_chunk = on_chunk,
+        .user_data = &sctx,
+        .tools = NULL,
+        .tool_count = 0,
+    };
+
+    csilk_ai_chat_response_t ai_res = {0};
+    int                      rc = csilk_ai_chat(ai_inst, &req, &ai_res);
+
+    if (need_free_ai && ai_inst) {
+        csilk_ai_free(ai_inst);
+    }
+
+    if (rc != 0) {
+        csilk_ai_chat_response_free(&ai_res);
+        if (sctx.accumulated) {
+            free(sctx.accumulated);
+        }
+        return 0;
+    }
+
+    const char* text = ai_res.content ?: (sctx.accumulated ?: "");
+    if (text && text[0] && session_id > 0) {
+        csilk_db_pool_t* pool = db_get_pool();
+        if (pool) {
+            ai_message_insert(pool, session_id, "assistant", text, g_config.default_model);
+        }
+    }
+
+    csilk_ai_chat_response_free(&ai_res);
+    if (sctx.accumulated) {
+        free(sctx.accumulated);
+    }
+    return 1;
+}
