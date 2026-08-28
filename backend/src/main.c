@@ -20,6 +20,8 @@
 #include "controllers/ai_trace_controller.h"
 #include "controllers/import_export_controller.h"
 #include "controllers/market_controller.h"
+#include "controllers/dca_controller.h"
+#include "controllers/cashflow_controller.h"
 #include "services/market/market_scheduler.h"
 #include "services/ai_service.h"
 #include "dtos/request.h"
@@ -100,6 +102,8 @@ main(int argc, char** argv)
     register_file_routes(app);
     register_ai_trace_routes(app);
     register_market_routes(app);
+    register_dca_routes(app);
+    register_cashflow_routes(app);
 
     const char* dist = "./frontend/dist";
     if (access(dist, F_OK) != 0) {
