@@ -19,6 +19,7 @@
 #include "controllers/file_controller.h"
 #include "controllers/ai_trace_controller.h"
 #include "controllers/import_export_controller.h"
+#include "controllers/market_controller.h"
 #include "services/ai_service.h"
 #include "dtos/request.h"
 #include "dtos/response.h"
@@ -97,6 +98,7 @@ main(int argc, char** argv)
     register_ai_routes(app);
     register_file_routes(app);
     register_ai_trace_routes(app);
+    register_market_routes(app);
 
     const char* dist = "./frontend/dist";
     if (access(dist, F_OK) != 0) {
