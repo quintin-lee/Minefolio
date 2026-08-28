@@ -122,170 +122,468 @@ async function handleRemoveMember(member: LedgerMember) {
 <template>
   <el-dialog
     :model-value="visible"
-    :title="`成员与权限管理 - ${ledger?.name || ''}`"
-    width="640px"
+    width="680px"
     destroy-on-close
     append-to-body
-    class="premium-dialog"
+    class="premium-dialog ledger-members-modal"
+    :show-close="true"
     @update:model-value="emit('update:visible', $event)"
   >
-    <div class="members-container" v-loading="loading">
-      <!-- Invite Code Section -->
-      <div class="invite-banner">
-        <div class="invite-info">
-          <div class="title">
-            <Icon icon="ph:share-network" width="18" />
-            <span>邀请码快速加入</span>
-          </div>
-          <div class="desc">生成 6 位专属加入码，家庭成员输入即可快速加入并协同记账</div>
+    <template #header>
+      <div class="modal-header">
+        <div
+          class="modal-header-icon"
+          :style="{
+            backgroundColor: ledger?.color ? ledger.color + '20' : 'rgba(0, 212, 255, 0.15)',
+            borderColor: ledger?.color ? ledger.color + '50' : 'rgba(0, 212, 255, 0.3)',
+            color: ledger?.color || 'var(--mf-primary)'
+          }"
+        >
+          <Icon :icon="ledger?.icon || 'ph:users-three-bold'" width="22" />
         </div>
-        <div class="invite-actions">
-          <template v-if="inviteData">
-            <el-tag size="large" type="success" class="invite-tag">
-              {{ inviteData.invite_code }}
+        <div class="modal-header-text">
+          <div class="modal-title">
+            <span>成员与权限管理</span>
+            <el-tag
+              v-if="ledger?.name"
+              size="small"
+              effect="plain"
+              class="ledger-badge"
+              :style="{ borderColor: ledger?.color || '#00d4ff', color: ledger?.color || '#00d4ff' }"
+            >
+              {{ ledger.name }}
             </el-tag>
-            <el-button size="small" type="primary" plain @click="copyInviteCode">
-              复制
-            </el-button>
+          </div>
+          <div class="modal-subtitle">
+            协同管理家庭与空间账本成员，分配记账者或只读查账权限
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <div class="members-container" v-loading="loading">
+      <!-- 1. Invite Code Section -->
+      <div class="invite-banner">
+        <div class="invite-left">
+          <div class="invite-icon-box">
+            <Icon icon="ph:share-network-bold" width="22" />
+          </div>
+          <div class="invite-info">
+            <div class="invite-title">邀请码快速加入</div>
+            <div class="invite-desc">生成 6 位专属邀请码（7天有效），家庭成员输入即可一键加入协同</div>
+          </div>
+        </div>
+        <div class="invite-right">
+          <template v-if="inviteData">
+            <div class="code-pill">
+              <span class="invite-code-text">{{ inviteData.invite_code }}</span>
+              <el-tooltip content="点击复制邀请码" placement="top">
+                <button class="copy-btn" @click="copyInviteCode">
+                  <Icon icon="ph:copy-bold" width="16" />
+                </button>
+              </el-tooltip>
+            </div>
           </template>
           <el-button
             v-else
-            size="small"
+            size="default"
             type="primary"
+            class="glow-button"
             :loading="generatingInvite"
             @click="handleGenerateInvite"
           >
+            <template #icon>
+              <Icon icon="ph:key-bold" width="16" />
+            </template>
             生成邀请码
           </el-button>
         </div>
       </div>
 
-      <!-- Add by Username -->
-      <div class="add-member-bar">
-        <el-input
-          v-model="newUsername"
-          placeholder="输入系统已有成员的用户名"
-          style="width: 260px"
-          clearable
-        />
-        <el-select v-model="newRole" style="width: 130px">
-          <el-option label="记账者 (可写)" value="editor" />
-          <el-option label="只读 (仅查账)" value="viewer" />
-        </el-select>
-        <el-button type="primary" :loading="addingMember" @click="handleAddMember">
-          添加成员
-        </el-button>
+      <!-- 2. Add Member Bar -->
+      <div class="add-member-section">
+        <div class="section-title">
+          <Icon icon="ph:user-plus-bold" width="16" />
+          <span>添加已有成员</span>
+        </div>
+        <div class="add-member-bar">
+          <el-input
+            v-model="newUsername"
+            placeholder="输入成员用户名 (如: bob)"
+            class="user-input"
+            clearable
+            @keyup.enter="handleAddMember"
+          >
+            <template #prefix>
+              <Icon icon="ph:user" width="16" class="input-icon" />
+            </template>
+          </el-input>
+
+          <el-select v-model="newRole" class="role-select">
+            <el-option label="记账者 (可编辑/记账)" value="editor">
+              <div class="role-option">
+                <Icon icon="ph:pencil-simple-line-bold" width="16" class="role-opt-icon editor" />
+                <span>记账者 (Editor)</span>
+              </div>
+            </el-option>
+            <el-option label="只读 (仅查账)" value="viewer">
+              <div class="role-option">
+                <Icon icon="ph:eye-bold" width="16" class="role-opt-icon viewer" />
+                <span>只读 (Viewer)</span>
+              </div>
+            </el-option>
+          </el-select>
+
+          <el-button
+            type="primary"
+            class="add-btn"
+            :loading="addingMember"
+            @click="handleAddMember"
+          >
+            <template #icon>
+              <Icon icon="ph:plus-bold" width="15" />
+            </template>
+            添加成员
+          </el-button>
+        </div>
       </div>
 
-      <!-- Members Table -->
-      <el-table :data="members" border stripe style="width: 100%; margin-top: 16px">
-        <el-table-column prop="username" label="用户名" min-width="120">
-          <template #default="{ row }">
-            <div class="user-cell">
-              <Icon icon="ph:user-circle" width="20" class="user-icon" />
-              <span class="user-name">{{ row.username }}</span>
-            </div>
-          </template>
-        </el-table-column>
+      <!-- 3. Members List Table -->
+      <div class="members-table-wrap">
+        <div class="table-header-meta">
+          <div class="section-title">
+            <Icon icon="ph:users-three-bold" width="16" />
+            <span>已加入成员 ({{ members.length }})</span>
+          </div>
+        </div>
 
-        <el-table-column prop="role" label="角色与权限" width="160">
-          <template #default="{ row }">
-            <el-tag v-if="row.role === 'owner'" type="danger" effect="dark" size="small">
-              所有者 (Owner)
-            </el-tag>
-            <el-select
-              v-else
-              :model-value="row.role"
-              size="small"
-              style="width: 130px"
-              @change="(val: 'editor' | 'viewer') => handleUpdateRole(row as LedgerMember, val)"
-            >
-              <el-option label="记账者 (Editor)" value="editor" />
-              <el-option label="只读查账 (Viewer)" value="viewer" />
-            </el-select>
-          </template>
-        </el-table-column>
+        <el-table
+          :data="members"
+          class="custom-members-table"
+          :header-cell-style="{ background: 'var(--mf-surface)', color: 'var(--mf-text-secondary)', fontWeight: '600' }"
+        >
+          <el-table-column label="成员" min-width="150">
+            <template #default="{ row }">
+              <div class="member-cell">
+                <div class="avatar-circle">
+                  {{ (row.username || 'U').charAt(0).toUpperCase() }}
+                </div>
+                <div class="member-info">
+                  <span class="member-username">{{ row.username }}</span>
+                </div>
+              </div>
+            </template>
+          </el-table-column>
 
-        <el-table-column prop="joined_at" label="加入时间" width="160" />
+          <el-table-column label="权限角色" width="180">
+            <template #default="{ row }">
+              <div v-if="row.role === 'owner'" class="role-badge owner">
+                <Icon icon="ph:crown-bold" width="15" />
+                <span>所有者 (Owner)</span>
+              </div>
+              <el-select
+                v-else
+                :model-value="row.role"
+                size="small"
+                class="member-role-select"
+                @change="(val: 'editor' | 'viewer') => handleUpdateRole(row as LedgerMember, val)"
+              >
+                <el-option label="记账者 (可写)" value="editor" />
+                <el-option label="只读 (仅查账)" value="viewer" />
+              </el-select>
+            </template>
+          </el-table-column>
 
-        <el-table-column label="操作" width="80" align="center">
-          <template #default="{ row }">
-            <el-button
-              v-if="row.role !== 'owner'"
-              type="danger"
-              link
-              size="small"
-              @click="handleRemoveMember(row as LedgerMember)"
-            >
-              移出
-            </el-button>
-            <span v-else class="text-muted">-</span>
-          </template>
-        </el-table-column>
-      </el-table>
+          <el-table-column label="加入时间" width="160">
+            <template #default="{ row }">
+              <div class="time-cell">
+                <Icon icon="ph:clock" width="14" />
+                <span>{{ row.joined_at?.split(' ')[0] || row.joined_at }}</span>
+              </div>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="操作" width="80" align="center">
+            <template #default="{ row }">
+              <el-tooltip
+                v-if="row.role !== 'owner'"
+                content="移出此账本"
+                placement="top"
+              >
+                <el-button
+                  type="danger"
+                  link
+                  size="small"
+                  class="remove-btn"
+                  @click="handleRemoveMember(row as LedgerMember)"
+                >
+                  <Icon icon="ph:trash-bold" width="16" />
+                </el-button>
+              </el-tooltip>
+              <span v-else class="owner-lock-hint">
+                <Icon icon="ph:lock-key-bold" width="14" />
+              </span>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
     </div>
 
     <template #footer>
-      <el-button @click="emit('update:visible', false)">关闭</el-button>
+      <div class="dialog-footer">
+        <el-button @click="emit('update:visible', false)">
+          关闭
+        </el-button>
+      </div>
     </template>
   </el-dialog>
 </template>
 
 <style scoped>
+.modal-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 4px 0;
+}
+.modal-header-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  flex-shrink: 0;
+}
+.modal-header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.modal-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--mf-text-main);
+  letter-spacing: 0.5px;
+}
+.ledger-badge {
+  border-radius: 6px;
+  font-weight: 600;
+  background: transparent;
+}
+.modal-subtitle {
+  font-size: 12px;
+  color: var(--mf-text-secondary);
+}
+
 .members-container {
   display: flex;
   flex-direction: column;
+  gap: 20px;
 }
+
+/* 1. Invite Banner */
 .invite-banner {
-  background: var(--el-color-primary-light-9);
-  border: 1px solid var(--el-color-primary-light-7);
-  border-radius: 8px;
-  padding: 12px 16px;
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.06) 0%, rgba(124, 58, 237, 0.08) 100%);
+  border: 1px solid rgba(0, 212, 255, 0.2);
+  border-radius: var(--mf-radius-lg);
+  padding: 16px 20px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
 }
-.invite-info .title {
+.invite-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.invite-icon-box {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: rgba(0, 212, 255, 0.12);
+  border: 1px solid rgba(0, 212, 255, 0.3);
+  color: var(--mf-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.invite-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--mf-text-main);
+  margin-bottom: 3px;
+}
+.invite-desc {
+  font-size: 12px;
+  color: var(--mf-text-secondary);
+}
+.code-pill {
+  display: flex;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(0, 212, 255, 0.4);
+  border-radius: 10px;
+  padding: 4px 6px 4px 14px;
+  gap: 10px;
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.2);
+}
+.invite-code-text {
+  font-family: monospace;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: #00d4ff;
+  text-shadow: 0 0 8px rgba(0, 212, 255, 0.5);
+}
+.copy-btn {
+  background: rgba(0, 212, 255, 0.15);
+  border: 1px solid rgba(0, 212, 255, 0.3);
+  color: #00d4ff;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.copy-btn:hover {
+  background: rgba(0, 212, 255, 0.3);
+  box-shadow: 0 0 10px rgba(0, 212, 255, 0.4);
+}
+.glow-button {
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.25);
+  border-radius: 8px;
+}
+
+/* 2. Add Member Section */
+.add-member-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.section-title {
   display: flex;
   align-items: center;
   gap: 6px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--el-color-primary-dark-2);
-  margin-bottom: 4px;
-}
-.invite-info .desc {
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-}
-.invite-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.invite-tag {
-  font-family: monospace;
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 2px;
+  color: var(--mf-text-secondary);
 }
 .add-member-bar {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   align-items: center;
 }
-.user-cell {
+.user-input {
+  flex: 1;
+}
+.role-select {
+  width: 170px;
+}
+.role-option {
   display: flex;
   align-items: center;
   gap: 8px;
 }
-.user-icon {
-  color: var(--el-color-primary);
+.role-opt-icon.editor {
+  color: #10b981;
 }
-.user-name {
-  font-weight: 500;
+.role-opt-icon.viewer {
+  color: #60a5fa;
 }
-.text-muted {
-  color: var(--el-text-color-placeholder);
+.add-btn {
+  border-radius: 8px;
+  font-weight: 600;
+  padding: 8px 18px;
+}
+
+/* 3. Table */
+.members-table-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.table-header-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.custom-members-table {
+  border-radius: var(--mf-radius-md);
+  overflow: hidden;
+  border: 1px solid var(--mf-border);
+}
+.member-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.avatar-circle {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #00d4ff 0%, #7c3aed 100%);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+  box-shadow: 0 0 10px rgba(0, 212, 255, 0.3);
+  flex-shrink: 0;
+}
+.member-username {
+  font-weight: 600;
+  color: var(--mf-text-main);
+  font-size: 13.5px;
+}
+.role-badge.owner {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  color: #f59e0b;
+  font-size: 12px;
+  font-weight: 600;
+}
+.member-role-select {
+  width: 140px;
+}
+.time-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--mf-text-secondary);
+  font-size: 12px;
+}
+.remove-btn {
+  font-size: 16px;
+  transition: transform 0.2s;
+}
+.remove-btn:hover {
+  transform: scale(1.15);
+}
+.owner-lock-hint {
+  color: var(--mf-text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
 }
 </style>

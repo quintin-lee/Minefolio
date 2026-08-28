@@ -99,16 +99,38 @@ async function handleSubmit() {
 <template>
   <el-dialog
     :model-value="visible"
-    :title="ledger ? '编辑账本' : '创建新账本'"
-    width="480px"
+    width="500px"
     destroy-on-close
     append-to-body
     class="premium-dialog"
     @update:model-value="emit('update:visible', $event)"
   >
-    <el-form ref="formRef" :model="form" :rules="rules" label-width="80px">
+    <template #header>
+      <div class="modal-header">
+        <div
+          class="modal-header-icon"
+          :style="{
+            backgroundColor: form.color ? form.color + '20' : 'rgba(0, 212, 255, 0.15)',
+            borderColor: form.color ? form.color + '60' : 'rgba(0, 212, 255, 0.3)',
+            color: form.color || 'var(--mf-primary)'
+          }"
+        >
+          <Icon :icon="form.icon || 'ph:wallet-bold'" width="22" />
+        </div>
+        <div class="modal-header-text">
+          <div class="modal-title">{{ ledger ? '编辑账本' : '创建新账本' }}</div>
+          <div class="modal-subtitle">配置账本基本信息、基准币种与主题外观</div>
+        </div>
+      </div>
+    </template>
+
+    <el-form ref="formRef" :model="form" :rules="rules" label-width="70px" class="ledger-form">
       <el-form-item label="名称" prop="name">
-        <el-input v-model="form.name" placeholder="例如：家庭公共账本、副业工作室" />
+        <el-input
+          v-model="form.name"
+          placeholder="例如：家庭公共账本、副业工作室、旅游基金"
+          clearable
+        />
       </el-form-item>
 
       <el-form-item label="描述" prop="description">
@@ -116,7 +138,7 @@ async function handleSubmit() {
           v-model="form.description"
           type="textarea"
           :rows="2"
-          placeholder="说明此账本的用途与记账规则..."
+          placeholder="说明此账本的用途与核算规则..."
         />
       </el-form-item>
 
@@ -160,15 +182,62 @@ async function handleSubmit() {
     </el-form>
 
     <template #footer>
-      <el-button @click="emit('update:visible', false)">取消</el-button>
-      <el-button type="primary" :loading="submitting" @click="handleSubmit">
-        确定
-      </el-button>
+      <div class="dialog-footer">
+        <el-button @click="emit('update:visible', false)">取消</el-button>
+        <el-button
+          type="primary"
+          class="submit-btn"
+          :loading="submitting"
+          @click="handleSubmit"
+        >
+          <template #icon>
+            <Icon icon="ph:check-bold" width="15" />
+          </template>
+          保存账本
+        </el-button>
+      </div>
     </template>
   </el-dialog>
 </template>
 
 <style scoped>
+.modal-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 4px 0;
+}
+.modal-header-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  flex-shrink: 0;
+  transition: all 0.3s ease;
+}
+.modal-header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.modal-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--mf-text-main);
+}
+.modal-subtitle {
+  font-size: 12px;
+  color: var(--mf-text-secondary);
+}
+
+.ledger-form {
+  padding-top: 6px;
+}
+
 .icon-selector,
 .color-selector {
   display: flex;
@@ -176,38 +245,55 @@ async function handleSubmit() {
   gap: 10px;
 }
 .icon-item {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  border: 1px solid var(--el-border-color);
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  border: 1px solid var(--mf-border);
+  background: var(--mf-surface);
+  color: var(--mf-text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .icon-item:hover {
-  border-color: var(--el-color-primary);
-  color: var(--el-color-primary);
+  border-color: var(--mf-primary);
+  color: var(--mf-primary);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 212, 255, 0.15);
 }
 .icon-item.active {
-  border-color: var(--el-color-primary);
-  background-color: var(--el-color-primary-light-9);
-  color: var(--el-color-primary);
+  border-color: var(--mf-primary);
+  background: rgba(0, 212, 255, 0.12);
+  color: var(--mf-primary);
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.3);
 }
 .color-item {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   cursor: pointer;
   border: 2px solid transparent;
-  transition: transform 0.2s;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
 }
 .color-item:hover {
-  transform: scale(1.15);
+  transform: scale(1.2);
 }
 .color-item.active {
-  border-color: #000;
-  box-shadow: 0 0 0 2px #fff;
+  border-color: #fff;
+  box-shadow: 0 0 0 2px var(--mf-primary), 0 0 12px rgba(0, 212, 255, 0.4);
+  transform: scale(1.15);
+}
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.submit-btn {
+  border-radius: 8px;
+  font-weight: 600;
+  padding: 8px 20px;
 }
 </style>
