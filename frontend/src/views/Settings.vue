@@ -197,6 +197,35 @@
           </el-form-item>
         </el-form>
       </div>
+
+      <!-- 行情同步与网络代理设置 -->
+      <div class="panel-container" style="margin-top: 24px;">
+        <div class="panel-header">
+          <h3>行情同步与网络代理</h3>
+        </div>
+        <p class="export-hint">配置外部行情源的网络代理（如访问海外美股、加密货币源时可选配置），以及查看行情调度状态。</p>
+        <el-form label-width="120px" class="premium-form" style="margin-top: 16px;">
+          <el-form-item label="HTTP 代理">
+            <el-input v-model="marketForm.market_proxy" placeholder="如: http://127.0.0.1:7890 或 socks5://127.0.0.1:1080 (留空为直连)" />
+          </el-form-item>
+          <el-form-item label="自动定时同步">
+            <el-switch v-model="marketForm.market_auto_sync" active-text="开启 (交易时段自动刷新 + 夜间21:30基金清算)" />
+          </el-form-item>
+          <el-form-item>
+            <div style="display: flex; gap: 12px; align-items: center;">
+              <el-button type="primary" class="action-btn" :loading="savingMarket" @click="saveMarketSettings">
+                保存行情配置
+              </el-button>
+              <el-button :loading="testingMarketProxy" @click="testMarketProxy">
+                测试行情连通性
+              </el-button>
+              <el-tag v-if="marketTestResult" :type="marketTestResult.success ? 'success' : 'danger'">
+                {{ marketTestResult.message }} ({{ marketTestResult.latency_ms }}ms)
+              </el-tag>
+            </div>
+          </el-form-item>
+        </el-form>
+      </div>
     </div>
   </div>
 </template>
@@ -208,6 +237,8 @@ import { useAuthStore } from '@/stores/auth'
 import { transactionsApi } from '@/api/transactions'
 import { getSettings, updateSettings, testAiConnection, fetchAiModels } from '@/api/ai'
 import type { AiSettings, AiTestConnectionResult } from '@/api/ai'
+import { marketApi } from '@/api/market'
+import type { MarketSettings, TestProxyResult } from '@/types'
 import { encryptText } from '@/utils/crypto'
 import { Icon } from '@iconify/vue'
 import { zhCN } from '@/locales/zh-CN'
@@ -497,8 +528,64 @@ async function handleExport() {
   }
 }
 
+const marketForm = reactive<MarketSettings>({
+  market_proxy: '',
+  market_auto_sync: true,
+  market_sync_interval_min: 30
+})
+const savingMarket = ref(false)
+const testingMarketProxy = ref(false)
+const marketTestResult = ref<TestProxyResult | null>(null)
+
+async function loadMarketSettings() {
+  try {
+    const res = await marketApi.getSettings()
+    if (res) {
+      marketForm.market_proxy = res.market_proxy || ''
+      marketForm.market_auto_sync = res.market_auto_sync ?? true
+      marketForm.market_sync_interval_min = res.market_sync_interval_min || 30
+    }
+  } catch (err) {
+    console.error('[Settings] loadMarketSettings failed:', err)
+  }
+}
+
+async function saveMarketSettings() {
+  savingMarket.value = true
+  try {
+    await marketApi.updateSettings({
+      market_proxy: marketForm.market_proxy,
+      market_auto_sync: marketForm.market_auto_sync,
+      market_sync_interval_min: marketForm.market_sync_interval_min
+    })
+    ElMessage.success('行情设置保存成功')
+  } catch (err: any) {
+    ElMessage.error(err?.message || '保存失败')
+  } finally {
+    savingMarket.value = false
+  }
+}
+
+async function testMarketProxy() {
+  testingMarketProxy.value = true
+  marketTestResult.value = null
+  try {
+    const res = await marketApi.testProxy({ market_proxy: marketForm.market_proxy })
+    marketTestResult.value = res
+  } catch (err: any) {
+    marketTestResult.value = {
+      success: false,
+      message: err?.message || '测试失败',
+      latency_ms: 0
+    }
+  } finally {
+    testingMarketProxy.value = false
+  }
+}
+
 onMounted(() => {
   loadAiSettings()
+  loadMarketSettings()
 })
 </script>
 
