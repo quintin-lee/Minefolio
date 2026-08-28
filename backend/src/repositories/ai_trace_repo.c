@@ -21,27 +21,33 @@ ai_trace_list(csilk_db_pool_t* pool,
 {
     char uid[32], lim[32], off[32];
     uid_str(user_id, uid);
-    snprintf(lim, 32, "%lld", (long long)page_size);
-    snprintf(off, 32, "%lld", (long long)((page - 1) * page_size));
+    snprintf(lim, sizeof(lim), "%lld", (long long)page_size);
+    snprintf(off, sizeof(off), "%lld", (long long)((page - 1) * page_size));
 
     char        where[256] = "WHERE user_id=?";
-    const char* params[8];
-    int         pc = 0;
-    params[pc++] = uid;
+    const char* cnt_params[8] = {0};
+    const char* sql_params[8] = {0};
+    int         cnt_pc = 0;
+    int         sql_pc = 0;
+
+    cnt_params[cnt_pc++] = uid;
+    sql_params[sql_pc++] = uid;
 
     if (provider && provider[0]) {
         strncat(where, " AND provider=?", sizeof(where) - strlen(where) - 1);
-        params[pc++] = provider;
+        cnt_params[cnt_pc++] = provider;
+        sql_params[sql_pc++] = provider;
     }
     if (model && model[0]) {
         strncat(where, " AND model=?", sizeof(where) - strlen(where) - 1);
-        params[pc++] = model;
+        cnt_params[cnt_pc++] = model;
+        sql_params[sql_pc++] = model;
     }
+    cnt_params[cnt_pc] = NULL;
 
     char cnt_sql[512];
     snprintf(cnt_sql, sizeof(cnt_sql), "SELECT COUNT(*) as cnt FROM ai_traces %s", where);
-    params[pc] = NULL;
-    csilk_json_t* cnt = csilk_db_query_param_json(pool, cnt_sql, params);
+    csilk_json_t* cnt = csilk_db_query_param_json(pool, cnt_sql, cnt_params);
     *total = 0;
     if (cnt && csilk_json_array_size(cnt) > 0) {
         *total = db_get_int(csilk_json_array_get(cnt, 0), "cnt");
@@ -54,23 +60,28 @@ ai_trace_list(csilk_db_pool_t* pool,
         sizeof(sql),
         "SELECT id, user_id, session_id, provider, model, "
         "prompt_tokens, completion_tokens, total_tokens, "
-        "latency_ms, first_token_ms, tokens_per_sec, cost_usd, "
-        "temperature, max_tokens, top_p, status, "
+        "latency_ms, first_token_ms, "
+        "COALESCE(CAST(tokens_per_sec AS REAL), 0.0) as tokens_per_sec, "
+        "COALESCE(CAST(cost_usd AS REAL), 0.0) as cost_usd, "
+        "COALESCE(CAST(temperature AS REAL), 0.0) as temperature, "
+        "COALESCE(CAST(max_tokens AS INTEGER), 0) as max_tokens, "
+        "COALESCE(CAST(top_p AS REAL), 0.0) as top_p, "
+        "status, "
         "CASE WHEN status = 'ok' THEN '' ELSE COALESCE(error_message, '') END as error_message, "
         "created_at "
-        "FROM ai_traces %s ORDER BY created_at DESC LIMIT ? OFFSET ?",
+        "FROM ai_traces %s ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
         where);
 
-    params[pc++] = lim;
-    params[pc++] = off;
-    params[pc] = NULL;
+    sql_params[sql_pc++] = lim;
+    sql_params[sql_pc++] = off;
+    sql_params[sql_pc] = NULL;
 
     CSILK_LOG_I("ai_trace_list: user_id=%lld page=%lld page_size=%lld total=%lld",
                 (long long)user_id,
                 (long long)page,
                 (long long)page_size,
                 (long long)*total);
-    return csilk_db_query_param_json(pool, sql, params);
+    return csilk_db_query_param_json(pool, sql, sql_params);
 }
 
 csilk_json_t*
@@ -86,8 +97,13 @@ ai_trace_get(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
         "SELECT id, user_id, session_id, provider, model, "
         "input_messages, output_content, system_prompt, "
         "prompt_tokens, completion_tokens, total_tokens, "
-        "latency_ms, first_token_ms, tokens_per_sec, cost_usd, "
-        "temperature, max_tokens, top_p, status, "
+        "latency_ms, first_token_ms, "
+        "COALESCE(CAST(tokens_per_sec AS REAL), 0.0) as tokens_per_sec, "
+        "COALESCE(CAST(cost_usd AS REAL), 0.0) as cost_usd, "
+        "COALESCE(CAST(temperature AS REAL), 0.0) as temperature, "
+        "COALESCE(CAST(max_tokens AS INTEGER), 0) as max_tokens, "
+        "COALESCE(CAST(top_p AS REAL), 0.0) as top_p, "
+        "status, "
         "CASE WHEN status = 'ok' THEN '' ELSE COALESCE(error_message, '') END as error_message, "
         "metadata, created_at "
         "FROM ai_traces WHERE id=? AND user_id=?",
@@ -108,16 +124,16 @@ ai_trace_stats(csilk_db_pool_t* pool, int64_t user_id)
     uid_str(user_id, uid);
 
     CSILK_LOG_I("ai_trace_stats: user_id=%lld", (long long)user_id);
-    csilk_json_t* r =
-        csilk_db_query_param_json(pool,
-                                  "SELECT COUNT(*) as total_traces, "
-                                  "COALESCE(SUM(total_tokens), 0) as total_tokens, "
-                                  "COALESCE(AVG(latency_ms), 0) as avg_latency_ms, "
-                                  "COALESCE(AVG(first_token_ms), 0) as avg_first_token_ms, "
-                                  "COALESCE(AVG(tokens_per_sec), 0) as avg_tokens_per_sec, "
-                                  "COALESCE(SUM(cost_usd), 0) as total_cost_usd "
-                                  "FROM ai_traces WHERE user_id=?",
-                                  (const char*[]){uid, NULL});
+    csilk_json_t* r = csilk_db_query_param_json(
+        pool,
+        "SELECT COUNT(*) as total_traces, "
+        "COALESCE(SUM(total_tokens), 0) as total_tokens, "
+        "COALESCE(AVG(latency_ms), 0.0) as avg_latency_ms, "
+        "COALESCE(AVG(first_token_ms), 0.0) as avg_first_token_ms, "
+        "COALESCE(AVG(CAST(tokens_per_sec AS REAL)), 0.0) as avg_tokens_per_sec, "
+        "COALESCE(SUM(CAST(cost_usd AS REAL)), 0.0) as total_cost_usd "
+        "FROM ai_traces WHERE user_id=?",
+        (const char*[]){uid, NULL});
     return r;
 }
 
@@ -143,11 +159,11 @@ ai_trace_save(csilk_db_pool_t* pool, ai_trace_t* t)
     /* Merge tool spans into metadata JSON so they persist in one column. */
     char*         meta_final = NULL;
     size_t        meta_len = 0;
-    csilk_json_t* meta_obj = csilk_json_parse(t->metadata && t->metadata[0] ? t->metadata : "{}");
+    csilk_json_t* meta_obj = csilk_json_parse(t->metadata[0] ? t->metadata : "{}");
     if (!meta_obj) {
         meta_obj = csilk_json_object();
     }
-    if (t->tool_spans && t->tool_spans[0]) {
+    if (t->tool_spans[0]) {
         csilk_json_t* spans = csilk_json_parse(t->tool_spans);
         if (spans) {
             csilk_json_add_object(meta_obj, "tool_spans", spans); /* spans owned by meta_obj */
@@ -167,17 +183,16 @@ ai_trace_save(csilk_db_pool_t* pool, ai_trace_t* t)
                       "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                       "RETURNING id";
 
-    const char* err_msg = (t->status && strcmp(t->status, "ok") == 0)
-                              ? ""
-                              : (t->error_message && t->error_message[0] ? t->error_message : "");
+    const char* err_msg =
+        (strcmp(t->status, "ok") == 0) ? "" : (t->error_message[0] ? t->error_message : "");
 
     const char* params[] = {uid,
                             sid,
-                            t->provider && t->provider[0] ? t->provider : "",
-                            t->model && t->model[0] ? t->model : "",
-                            t->input_messages && t->input_messages[0] ? t->input_messages : "[]",
-                            t->output_content && t->output_content[0] ? t->output_content : "",
-                            t->system_prompt && t->system_prompt[0] ? t->system_prompt : "",
+                            t->provider[0] ? t->provider : "",
+                            t->model[0] ? t->model : "",
+                            t->input_messages[0] ? t->input_messages : "[]",
+                            t->output_content[0] ? t->output_content : "",
+                            t->system_prompt[0] ? t->system_prompt : "",
                             pt,
                             ct,
                             tt,
@@ -188,9 +203,9 @@ ai_trace_save(csilk_db_pool_t* pool, ai_trace_t* t)
                             temp,
                             mtt,
                             tp,
-                            t->status && t->status[0] ? t->status : "ok",
+                            t->status[0] ? t->status : "ok",
                             err_msg,
-                            meta_final && meta_final[0] ? meta_final : "{}",
+                            meta_final[0] ? meta_final : "{}",
                             NULL};
 
     CSILK_LOG_I("ai_trace_save: user_id=%lld model='%s' provider='%s' status='%s' tokens=%d",

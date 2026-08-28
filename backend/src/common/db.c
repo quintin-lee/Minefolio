@@ -55,6 +55,9 @@ db_init(csilk_db_pool_t** out_pool)
         csilk_db_exec(g_pool, "PRAGMA journal_mode=WAL;");
         csilk_db_exec(g_pool, "PRAGMA busy_timeout=5000;");
         csilk_db_exec(g_pool, "PRAGMA synchronous=NORMAL;");
+        csilk_db_exec(g_pool, "UPDATE ai_traces SET top_p = 0.0 WHERE typeof(top_p) = 'text';");
+        csilk_db_exec(g_pool,
+                      "UPDATE ai_traces SET temperature = 0.0 WHERE typeof(temperature) = 'text';");
     }
 
     *out_pool = g_pool;

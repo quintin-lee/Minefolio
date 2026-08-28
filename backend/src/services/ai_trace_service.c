@@ -14,23 +14,41 @@ ai_trace_service_list(csilk_ctx_t* c)
     }
     int64_t page = 1, page_size = 20;
     parse_page_params(c, &page, &page_size);
-    const char* provider = csilk_get_query(c, "provider");
-    const char* model = csilk_get_query(c, "model");
-    int64_t     total = 0;
-    CSILK_LOG_I(
-        "ai_trace_service_list: user_id=%lld page=%lld page_size=%lld provider='%s' model='%s'",
-        (long long)user_id,
-        (long long)page,
-        (long long)page_size,
-        provider ? provider : "",
-        model ? model : "");
+    const char*   provider = csilk_get_query(c, "provider");
+    const char*   model = csilk_get_query(c, "model");
+    int64_t       total = 0;
     csilk_json_t* list =
         ai_trace_list(db_get_pool(), user_id, page, page_size, provider, model, &total);
     if (!list) {
         respond_error(c, 500, "查询失败");
         return;
     }
-    respond_page_ok(c, list, total, page, page_size);
+    size_t list_len = 0;
+    char*  list_str = csilk_json_serialize(list, &list_len);
+    csilk_json_free(list);
+    if (!list_str) {
+        respond_error(c, 500, "JSON 序列化失败");
+        return;
+    }
+    size_t cap = list_len + 256;
+    char*  buf = (char*)malloc(cap);
+    if (!buf) {
+        free(list_str);
+        respond_error(c, 500, "内存分配失败");
+        return;
+    }
+    snprintf(buf,
+             cap,
+             "{\"code\":0,\"message\":\"ok\",\"data\":{\"list\":%s,\"total\":%lld,\"page\":%lld,"
+             "\"page_size\":%lld}}",
+             list_str,
+             (long long)total,
+             (long long)page,
+             (long long)page_size);
+    free(list_str);
+    csilk_string(c, CSILK_STATUS_OK, buf);
+    csilk_set_header(c, "Content-Type", "application/json");
+    free(buf);
 }
 
 void
