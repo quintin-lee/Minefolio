@@ -73,6 +73,7 @@
           <h2 class="page-title">{{ pageTitle }}</h2>
         </div>
         <div class="header-right">
+          <LedgerSelector />
           <el-dropdown @command="handleCommand" trigger="click">
             <div class="user-profile">
               <div class="avatar-circle">
@@ -116,6 +117,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import { zhCN } from '@/locales/zh-CN'
+import LedgerSelector from '@/components/LedgerSelector.vue'
 
 const t = (key: string) => {
   const keys = key.split('.')
@@ -141,12 +143,24 @@ function handleResize() {
   if (window.innerWidth >= 768) mobileMenuOpen.value = false
 }
 
+function handleLedgerChanged() {
+  // Reload current route data
+  const cur = route.fullPath
+  router.replace({ path: '/empty' }).then(() => {
+    router.replace(cur)
+  }).catch(() => {
+    window.location.reload()
+  })
+}
+
 onMounted(() => {
   window.addEventListener('resize', handleResize)
+  window.addEventListener('minefolio:ledger-changed', handleLedgerChanged)
   handleResize()
 })
 onBeforeUnmount(() => {
   window.removeEventListener('resize', handleResize)
+  window.removeEventListener('minefolio:ledger-changed', handleLedgerChanged)
 })
 
 function goTo(path: string) {

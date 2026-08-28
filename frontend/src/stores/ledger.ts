@@ -7,10 +7,8 @@ const STORAGE_KEY = 'minefolio_active_ledger_id'
 
 export const useLedgerStore = defineStore('ledger', () => {
   const ledgers = ref<Ledger[]>([])
-  const currentLedgerId = ref<number | null>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY)
-    return saved ? Number(saved) : null
-  })
+  const saved = localStorage.getItem(STORAGE_KEY)
+  const currentLedgerId = ref<number | null>(saved ? Number(saved) : null)
   const loading = ref(false)
 
   const currentLedger = computed(() => {
@@ -38,8 +36,10 @@ export const useLedgerStore = defineStore('ledger', () => {
         const found = ledgers.value.find((l) => l.id === currentLedgerId.value)
         if (!found) {
           const def = ledgers.value.find((l) => Boolean(l.is_default)) || ledgers.value[0]
-          currentLedgerId.value = def.id
-          localStorage.setItem(STORAGE_KEY, String(def.id))
+          if (def) {
+            currentLedgerId.value = def.id
+            localStorage.setItem(STORAGE_KEY, String(def.id))
+          }
         }
       }
     } finally {
