@@ -164,19 +164,6 @@ ensure_sse_init(stream_context_t* sc)
     sc->sse_initialized = 1;
 }
 
-static size_t
-utf8_safe_chunk_len(const char* s, size_t max_len, size_t total_remain)
-{
-    if (total_remain <= max_len) {
-        return total_remain;
-    }
-    size_t len = max_len;
-    while (len > 0 && ((unsigned char)s[len] & 0xC0) == 0x80) {
-        len--;
-    }
-    return len > 0 ? len : 1;
-}
-
 static void
 on_chunk(const char* delta, void* data)
 {
@@ -735,12 +722,18 @@ ai_service_test_connection(csilk_ctx_t* c)
     if (raw_k && raw_k[0]) {
         size_t dec_len = sizeof(key_buf);
         if (auth_key_decrypt(raw_k, key_buf, &dec_len) != 0) {
-            strncpy(key_buf, raw_k, sizeof(key_buf) - 1);
+            size_t _k_len = strlen(raw_k);
+            size_t _copy_len = _k_len < sizeof(key_buf) - 1 ? _k_len : sizeof(key_buf) - 1;
+            memcpy(key_buf, raw_k, _copy_len);
+            key_buf[_copy_len] = '\0';
         }
     } else {
         ai_provider_t* old_p = ai_config_find_provider(&g_config, id);
         if (old_p && old_p->api_key[0]) {
-            strncpy(key_buf, old_p->api_key, sizeof(key_buf) - 1);
+            size_t _src_len = strlen(old_p->api_key);
+            size_t _copy_len = _src_len < sizeof(key_buf) - 1 ? _src_len : sizeof(key_buf) - 1;
+            memcpy(key_buf, old_p->api_key, _copy_len);
+            key_buf[_copy_len] = '\0';
         } else {
             strcpy(key_buf, "dummy");
         }
@@ -862,12 +855,18 @@ ai_service_fetch_models(csilk_ctx_t* c)
     if (raw_k && raw_k[0]) {
         size_t dec_len = sizeof(key_buf);
         if (auth_key_decrypt(raw_k, key_buf, &dec_len) != 0) {
-            strncpy(key_buf, raw_k, sizeof(key_buf) - 1);
+            size_t _k_len = strlen(raw_k);
+            size_t _copy_len = _k_len < sizeof(key_buf) - 1 ? _k_len : sizeof(key_buf) - 1;
+            memcpy(key_buf, raw_k, _copy_len);
+            key_buf[_copy_len] = '\0';
         }
     } else {
         ai_provider_t* old_p = ai_config_find_provider(&g_config, id);
         if (old_p && old_p->api_key[0]) {
-            strncpy(key_buf, old_p->api_key, sizeof(key_buf) - 1);
+            size_t _src_len = strlen(old_p->api_key);
+            size_t _copy_len = _src_len < sizeof(key_buf) - 1 ? _src_len : sizeof(key_buf) - 1;
+            memcpy(key_buf, old_p->api_key, _copy_len);
+            key_buf[_copy_len] = '\0';
         } else {
             strcpy(key_buf, "dummy");
         }

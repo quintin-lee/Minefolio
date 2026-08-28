@@ -263,10 +263,19 @@ settings_ai_update_handler(csilk_ctx_t* c)
                     char   dec_buf[512] = {0};
                     size_t dec_len = sizeof(dec_buf);
                     if (auth_key_decrypt(raw_k, dec_buf, &dec_len) == 0) {
-                        strncpy(new_provs[i].api_key, dec_buf, sizeof(new_provs[i].api_key) - 1);
+                        size_t _copy_len = dec_len < sizeof(new_provs[i].api_key) - 1
+                                               ? dec_len
+                                               : sizeof(new_provs[i].api_key) - 1;
+                        memcpy(new_provs[i].api_key, dec_buf, _copy_len);
+                        new_provs[i].api_key[_copy_len] = '\0';
                     } else {
                         /* Fallback to raw key if not encrypted */
-                        strncpy(new_provs[i].api_key, raw_k, sizeof(new_provs[i].api_key) - 1);
+                        size_t _rk_len = strlen(raw_k);
+                        size_t _copy_len = _rk_len < sizeof(new_provs[i].api_key) - 1
+                                               ? _rk_len
+                                               : sizeof(new_provs[i].api_key) - 1;
+                        memcpy(new_provs[i].api_key, raw_k, _copy_len);
+                        new_provs[i].api_key[_copy_len] = '\0';
                     }
                 } else {
                     ai_provider_t* old_p = ai_config_find_provider(&cfg, pid);
@@ -274,8 +283,12 @@ settings_ai_update_handler(csilk_ctx_t* c)
                         old_p = ai_config_find_provider(ai_get_config(), pid);
                     }
                     if (old_p && old_p->api_key[0]) {
-                        strncpy(
-                            new_provs[i].api_key, old_p->api_key, sizeof(new_provs[i].api_key) - 1);
+                        size_t _src_len = strlen(old_p->api_key);
+                        size_t _copy_len = _src_len < sizeof(new_provs[i].api_key) - 1
+                                               ? _src_len
+                                               : sizeof(new_provs[i].api_key) - 1;
+                        memcpy(new_provs[i].api_key, old_p->api_key, _copy_len);
+                        new_provs[i].api_key[_copy_len] = '\0';
                     }
                 }
                 strncpy(new_provs[i].base_url,

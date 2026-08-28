@@ -17,10 +17,10 @@ static size_t g_upload_data_len = 0;
 static void
 upload_part_handler(csilk_multipart_part_t* part)
 {
-    if (!g_upload_filename && part->filename && part->filename[0]) {
+    if (!g_upload_filename && part->filename[0]) {
         g_upload_filename = strdup(part->filename);
     }
-    if (!g_upload_content_type && part->content_type && part->content_type[0]) {
+    if (!g_upload_content_type && part->content_type[0]) {
         g_upload_content_type = strdup(part->content_type);
     }
     if (part->data && part->data_len > 0 && !g_upload_data) {

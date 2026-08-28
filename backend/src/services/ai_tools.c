@@ -1047,7 +1047,7 @@ exec_get_current_time(csilk_db_pool_t* pool, int64_t user_id, csilk_json_t* args
     int wday = (tm_val.tm_wday >= 0 && tm_val.tm_wday < 7) ? tm_val.tm_wday : 0;
 
     int  quarter = (tm_val.tm_mon / 3) + 1;
-    char q_buf[8];
+    char q_buf[12];
     snprintf(q_buf, sizeof(q_buf), "Q%d", quarter);
 
     csilk_json_t* res = csilk_json_object();
@@ -2285,7 +2285,7 @@ exec_analyze_financial_health(csilk_db_pool_t* pool, int64_t user_id, csilk_json
     time_t    now = time(NULL);
     struct tm tm_now;
     localtime_r(&now, &tm_now);
-    char cur_month[16];
+    char cur_month[24];
     snprintf(cur_month, sizeof(cur_month), "%04d-%02d", tm_now.tm_year + 1900, tm_now.tm_mon + 1);
 
     csilk_json_t* monthly = tx_monthly(pool, user_id, cur_month);
