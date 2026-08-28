@@ -160,11 +160,26 @@ db_run_migrations(csilk_db_pool_t* pool)
                           "ALTER TABLE assets ADD COLUMN IF NOT EXISTS net_value DECIMAL(18,4) NOT "
                           "NULL DEFAULT 0");
         }
-        if (!col_exists(pool, "transactions", "fee")) {
+        if (!col_exists(pool, "assets", "symbol")) {
+            csilk_db_exec(pool,
+                          "ALTER TABLE assets ADD COLUMN IF NOT EXISTS symbol TEXT DEFAULT ''");
             csilk_db_exec(
-                pool,
-                "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS fee DECIMAL(18,2) DEFAULT 0");
+                pool, "ALTER TABLE assets ADD COLUMN IF NOT EXISTS quote_source TEXT DEFAULT ''");
+            csilk_db_exec(pool,
+                          "ALTER TABLE assets ADD COLUMN IF NOT EXISTS last_sync_at TIMESTAMP");
         }
+        csilk_db_exec(pool,
+                      "CREATE TABLE IF NOT EXISTS asset_price_history ("
+                      "id BIGSERIAL PRIMARY KEY, "
+                      "asset_id BIGINT NOT NULL REFERENCES assets(id) ON DELETE CASCADE, "
+                      "price_date DATE NOT NULL, "
+                      "price DOUBLE PRECISION NOT NULL, "
+                      "currency VARCHAR(16) DEFAULT 'CNY', "
+                      "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+                      "UNIQUE(asset_id, price_date))");
+        csilk_db_exec(pool,
+                      "CREATE INDEX IF NOT EXISTS idx_price_history_asset_date ON "
+                      "asset_price_history(asset_id, price_date DESC)");
         return 0;
     }
 
@@ -451,16 +466,25 @@ db_run_migrations(csilk_db_pool_t* pool)
         }
         CSILK_LOG_I("Migration: added assets.net_value");
     }
-    // ---- transactions fee 列迁移（SQLite 存量库） ----
-    if (!col_exists(pool, "transactions", "fee")) {
-        if (csilk_db_exec(pool,
-                          "ALTER TABLE transactions ADD COLUMN fee DECIMAL(18,2) DEFAULT 0") != 0) {
-            CSILK_LOG_E("Migration: cannot add fee to transactions");
-            free(sql);
-            return -1;
-        }
-        CSILK_LOG_I("Migration: added transactions.fee");
+    // ---- assets symbol / quote_source / last_sync_at 列迁移（SQLite 存量库） ----
+    if (!col_exists(pool, "assets", "symbol")) {
+        csilk_db_exec(pool, "ALTER TABLE assets ADD COLUMN symbol TEXT DEFAULT ''");
+        csilk_db_exec(pool, "ALTER TABLE assets ADD COLUMN quote_source TEXT DEFAULT ''");
+        csilk_db_exec(pool, "ALTER TABLE assets ADD COLUMN last_sync_at TIMESTAMP");
+        CSILK_LOG_I("Migration: added assets.symbol/quote_source/last_sync_at");
     }
+    csilk_db_exec(pool,
+                  "CREATE TABLE IF NOT EXISTS asset_price_history ("
+                  "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                  "asset_id INTEGER NOT NULL REFERENCES assets(id) ON DELETE CASCADE, "
+                  "price_date DATE NOT NULL, "
+                  "price DECIMAL(18,4) NOT NULL, "
+                  "currency TEXT DEFAULT 'CNY', "
+                  "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+                  "UNIQUE(asset_id, price_date))");
+    csilk_db_exec(pool,
+                  "CREATE INDEX IF NOT EXISTS idx_price_history_asset_date ON "
+                  "asset_price_history(asset_id, price_date DESC)");
 
     // ---- ai_traces 历史异常残留清理 ----
     csilk_db_exec(

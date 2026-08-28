@@ -33,6 +33,9 @@ CREATE TABLE IF NOT EXISTS assets (
     category_id   BIGINT NOT NULL REFERENCES categories(id) ON DELETE RESTRICT,
     name          TEXT NOT NULL,
     account_no    TEXT,
+    symbol        TEXT DEFAULT '',
+    quote_source  TEXT DEFAULT '',
+    last_sync_at  TIMESTAMP,
     current_value DECIMAL(18,2) DEFAULT 0,
     quantity      DECIMAL(18,4) NOT NULL DEFAULT 0,
     cost_basis    DECIMAL(18,4) NOT NULL DEFAULT 0,
@@ -42,6 +45,19 @@ CREATE TABLE IF NOT EXISTS assets (
     created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS asset_price_history (
+    id          BIGSERIAL PRIMARY KEY,
+    asset_id    BIGINT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+    price_date  DATE NOT NULL,
+    price       DOUBLE PRECISION NOT NULL,
+    currency    VARCHAR(16) DEFAULT 'CNY',
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(asset_id, price_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_price_history_asset_date 
+    ON asset_price_history(asset_id, price_date DESC);
 
 CREATE TABLE IF NOT EXISTS transactions (
     id               BIGSERIAL PRIMARY KEY,
