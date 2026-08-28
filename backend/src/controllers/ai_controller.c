@@ -1,5 +1,6 @@
 #include "controllers/ai_controller.h"
 #include "services/ai_service.h"
+#include "services/ai_workflow_service.h"
 #include "repositories/ai_session_repo.h"
 #include "repositories/ai_settings_repo.h"
 #include "common/response.h"
@@ -367,6 +368,19 @@ settings_ai_update_handler(csilk_ctx_t* c)
 }
 
 void
+workflows_list_handler(csilk_ctx_t* c)
+{
+    csilk_json_t* list = ai_workflow_get_definitions_json();
+    respond_ok(c, list);
+}
+
+void
+workflows_run_handler(csilk_ctx_t* c)
+{
+    ai_workflow_run_handler(c);
+}
+
+void
 register_ai_routes(csilk_app_t* app)
 {
     csilk_app_get_ext(app,
@@ -413,4 +427,18 @@ register_ai_routes(csilk_app_t* app)
                        NULL,
                        "Fetch AI models",
                        "Fetches available models from provider");
+    csilk_app_get_ext(app,
+                      "/api/ai/workflows",
+                      workflows_list_handler,
+                      NULL,
+                      NULL,
+                      "List AI workflows",
+                      "Returns preset financial workflows");
+    csilk_app_post_ext(app,
+                       "/api/ai/workflows/run",
+                       workflows_run_handler,
+                       NULL,
+                       NULL,
+                       "Run AI workflow (SSE)",
+                       "Streaming financial workflow execution");
 }
