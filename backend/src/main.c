@@ -113,8 +113,9 @@ main(int argc, char** argv)
 
     market_scheduler_start(pool);
 
-    printf("Starting Minefolio server on :8080\n");
-    csilk_app_run(app, 8080);
+    int port = getenv("PORT") ? atoi(getenv("PORT")) : 8080;
+    printf("Starting Minefolio server on :%d\n", port);
+    csilk_app_run(app, port);
 
     market_scheduler_stop();
     csilk_app_free(app);
