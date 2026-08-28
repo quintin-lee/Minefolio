@@ -20,6 +20,7 @@
 #include "controllers/ai_trace_controller.h"
 #include "controllers/import_export_controller.h"
 #include "controllers/market_controller.h"
+#include "services/market/market_scheduler.h"
 #include "services/ai_service.h"
 #include "dtos/request.h"
 #include "dtos/response.h"
@@ -110,9 +111,12 @@ main(int argc, char** argv)
     }
     csilk_app_static(app, "/", dist);
 
+    market_scheduler_start(pool);
+
     printf("Starting Minefolio server on :8080\n");
     csilk_app_run(app, 8080);
 
+    market_scheduler_stop();
     csilk_app_free(app);
     ai_shutdown();
     csilk_db_pool_free(pool);
