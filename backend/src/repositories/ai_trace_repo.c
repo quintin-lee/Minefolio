@@ -124,9 +124,9 @@ ai_trace_stats(csilk_db_pool_t* pool, int64_t user_id)
 int64_t
 ai_trace_save(csilk_db_pool_t* pool, ai_trace_t* t)
 {
-    char uid[32], sid[32], pt[32], ct[32], tt[32];
-    char lat[32], ftt[32], tps[64], cost[64];
-    char temp[32], mtt[32], tp[32];
+    char uid[32] = {0}, sid[32] = {0}, pt[32] = {0}, ct[32] = {0}, tt[32] = {0};
+    char lat[32] = {0}, ftt[32] = {0}, tps[64] = {0}, cost[64] = {0};
+    char temp[32] = {0}, mtt[32] = {0}, tp[32] = {0};
 
     snprintf(uid, sizeof(uid), "%lld", (long long)t->user_id);
     snprintf(sid, sizeof(sid), "%lld", (long long)t->session_id);
@@ -139,6 +139,7 @@ ai_trace_save(csilk_db_pool_t* pool, ai_trace_t* t)
     snprintf(cost, sizeof(cost), "%.6f", t->cost_usd);
     snprintf(temp, sizeof(temp), "%.2f", t->temperature);
     snprintf(mtt, sizeof(mtt), "%d", t->max_tokens);
+    snprintf(tp, sizeof(tp), "%.2f", t->top_p);
     /* Merge tool spans into metadata JSON so they persist in one column. */
     char*         meta_final = NULL;
     size_t        meta_len = 0;

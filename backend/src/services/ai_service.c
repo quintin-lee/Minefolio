@@ -960,6 +960,7 @@ ai_service_fetch_models(csilk_ctx_t* c)
 
 int
 ai_service_stream_report(csilk_ctx_t* c,
+                         int64_t      user_id,
                          int64_t      session_id,
                          const char*  workflow_title,
                          const char*  structured_data_json)
@@ -987,13 +988,17 @@ ai_service_stream_report(csilk_ctx_t* c,
         return 0;
     }
 
+    ai_trace_t trace;
+    ai_trace_init(&trace, user_id, session_id);
+    ai_trace_set_provider(&trace, prov->id, g_config.default_model);
+
     stream_context_t sctx = {
         .ctx = c,
         .sse_initialized = 1,
         .accumulated = NULL,
         .cap = 0,
         .len = 0,
-        .trace = NULL,
+        .trace = &trace,
     };
     clock_gettime(CLOCK_MONOTONIC, &sctx.last_send_time);
 
@@ -1016,6 +1021,20 @@ ai_service_stream_report(csilk_ctx_t* c,
              "请基于以上全部真实数据，直接输出结构化深度财务诊断报告与优化建议。",
              workflow_title ? workflow_title : "智能财务工作流",
              structured_data_json ? structured_data_json : "{}");
+
+    ai_trace_set_system_prompt(&trace, sys_prompt);
+
+    csilk_json_t* input_arr = csilk_json_array();
+    csilk_json_t* sys_msg = csilk_json_object();
+    csilk_json_add_string(sys_msg, "role", "system");
+    csilk_json_add_string(sys_msg, "content", sys_prompt);
+    csilk_json_array_append(input_arr, sys_msg);
+    csilk_json_t* usr_msg = csilk_json_object();
+    csilk_json_add_string(usr_msg, "role", "user");
+    csilk_json_add_string(usr_msg, "content", user_prompt);
+    csilk_json_array_append(input_arr, usr_msg);
+    ai_trace_serialize_messages(&trace, input_arr);
+    csilk_json_free(input_arr);
 
     csilk_ai_message_t msgs[2] = {
         {.role = "system", .content = sys_prompt },
@@ -1041,12 +1060,22 @@ ai_service_stream_report(csilk_ctx_t* c,
     }
 
     if (rc != 0) {
+        ai_trace_calculate_tokens_and_cost(&trace, ai_res.prompt_tokens, ai_res.completion_tokens);
+        ai_trace_finish(
+            &trace, "error", ai_res.error_message ? ai_res.error_message : "AI request failed");
+        ai_trace_save(db_get_pool(), &trace);
+        ai_trace_free(&trace);
         csilk_ai_chat_response_free(&ai_res);
         if (sctx.accumulated) {
             free(sctx.accumulated);
         }
         return 0;
     }
+
+    ai_trace_calculate_tokens_and_cost(&trace, ai_res.prompt_tokens, ai_res.completion_tokens);
+    ai_trace_finish(&trace, "ok", NULL);
+    ai_trace_save(db_get_pool(), &trace);
+    ai_trace_free(&trace);
 
     const char* text = ai_res.content ?: (sctx.accumulated ?: "");
     if (text && text[0] && session_id > 0) {

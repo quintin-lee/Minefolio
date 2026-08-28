@@ -1036,7 +1036,7 @@ ai_workflow_run_handler(csilk_ctx_t* c)
             /* Final step: Stream report via AI Model or structured fallback */
             char* cur_ctx_str = csilk_json_serialize(ctx_obj, &slen);
             int   streamed_by_model =
-                ai_service_stream_report(c, session_id, target_wf->title, cur_ctx_str);
+                ai_service_stream_report(c, user_id, session_id, target_wf->title, cur_ctx_str);
 
             if (!streamed_by_model) {
                 /* Fallback: generate and stream deterministic real-data report */
