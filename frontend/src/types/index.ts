@@ -136,3 +136,34 @@ export interface AssetBalanceLog {
   note?: string
   created_at: string
 }
+
+export interface WorkflowStepDef {
+  step_id: string
+  title: string
+  description: string
+}
+
+export interface WorkflowDef {
+  id: string
+  title: string
+  description: string
+  icon: string
+  step_count: number
+  steps: WorkflowStepDef[]
+}
+
+export interface WorkflowStepState {
+  step_index: number
+  step_id: string
+  title: string
+  status: 'pending' | 'running' | 'completed' | 'error'
+  summary?: string
+}
+
+export interface WorkflowRunState {
+  workflow_id: string
+  title: string
+  total_steps: number
+  status: 'running' | 'completed' | 'error'
+  steps: WorkflowStepState[]
+}

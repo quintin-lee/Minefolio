@@ -18,6 +18,8 @@ export interface AiSession {
   updated_at: string
 }
 
+import type { WorkflowDef, WorkflowRunState } from '@/types'
+
 export interface AiMessage {
   id: number
   session_id: number
@@ -25,6 +27,7 @@ export interface AiMessage {
   content: string
   model?: string
   created_at: string
+  workflowData?: WorkflowRunState
 }
 
 export interface AiProviderConfig {
@@ -199,4 +202,107 @@ export async function fetchAiModels(data: {
   const r = (await http.post('/settings/ai/fetch-models', data)) as unknown
   const res = (r && typeof r === 'object' && 'data' in r ? (r as { data: { models: unknown } }).data : r) as { models?: unknown }
   return Array.isArray(res?.models) ? (res.models as string[]) : []
+}
+
+export async function getWorkflows(): Promise<any[]> {
+  const r = (await http.get('/ai/workflows')) as unknown
+  if (Array.isArray(r)) return r
+  if (r && typeof r === 'object' && 'data' in r && Array.isArray((r as { data: unknown }).data)) {
+    return (r as { data: any[] }).data
+  }
+  return []
+}
+
+export interface WorkflowStreamChunk {
+  type: 'workflow_start' | 'step_start' | 'step_progress' | 'step_complete' | 'delta' | 'workflow_complete' | 'error'
+  workflow_id?: string
+  title?: string
+  total_steps?: number
+  step_index?: number
+  step_id?: string
+  status?: string
+  summary?: string
+  content?: string
+  session_id?: number
+  message?: string
+}
+
+export async function* runWorkflowStream(
+  params: {
+    workflow_id: string
+    session_id?: number
+    params?: Record<string, unknown>
+  },
+  signal?: AbortSignal
+): AsyncIterable<WorkflowStreamChunk> {
+  let token = ''
+  try {
+    const auth = useAuthStore()
+    token = auth.token || ''
+  } catch {
+    // outside reactive context
+  }
+  if (!token) {
+    token = localStorage.getItem('token') || ''
+  }
+  const csrf = getCookie('csrf_token')
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`,
+  }
+  if (csrf) {
+    headers['X-CSRF-Token'] = csrf
+  }
+  const url = buildApiUrl('/ai/workflows/run')
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers,
+    credentials: 'include',
+    body: JSON.stringify(params),
+    signal,
+  })
+  if (!resp.ok || !resp.body) throw new Error(`HTTP ${resp.status}`)
+  const reader = resp.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let currentEvent = 'delta'
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (trimmed.startsWith('event:')) {
+          currentEvent = trimmed.slice(6).trim()
+        } else if (trimmed.startsWith('data:')) {
+          const dataStr = trimmed.slice(5).trim()
+          if (dataStr) {
+            try {
+              const parsed = JSON.parse(dataStr) as Record<string, unknown>
+              yield {
+                type: (currentEvent || 'delta') as WorkflowStreamChunk['type'],
+                workflow_id: typeof parsed.workflow_id === 'string' ? parsed.workflow_id : undefined,
+                title: typeof parsed.title === 'string' ? parsed.title : undefined,
+                total_steps: typeof parsed.total_steps === 'number' ? parsed.total_steps : undefined,
+                step_index: typeof parsed.step_index === 'number' ? parsed.step_index : undefined,
+                step_id: typeof parsed.step_id === 'string' ? parsed.step_id : undefined,
+                status: typeof parsed.status === 'string' ? parsed.status : undefined,
+                summary: typeof parsed.summary === 'string' ? parsed.summary : undefined,
+                content: typeof parsed.content === 'string' ? parsed.content : undefined,
+                session_id: typeof parsed.session_id === 'number' ? parsed.session_id : undefined,
+                message: typeof parsed.message === 'string' ? parsed.message : undefined,
+              }
+            } catch {
+              // ignore
+            }
+          }
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock()
+  }
 }

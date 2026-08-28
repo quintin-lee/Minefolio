@@ -3,9 +3,10 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import {
   listSessions, createSession, deleteSession, getSession, updateSession,
-  getMessages, chatStream, getModels, getSettings,
+  getMessages, chatStream, getModels, getSettings, getWorkflows, runWorkflowStream,
 } from '@/api/ai'
-import type { AiMessage, AiSession, AiModelOption, AiSettings } from '@/api/ai'
+import type { AiMessage, AiSession, AiModelOption, AiSettings, WorkflowStreamChunk } from '@/api/ai'
+import type { WorkflowDef, WorkflowRunState, WorkflowStepState } from '@/types'
 
 export const useChatStore = defineStore('chat', () => {
   const sessions = ref<AiSession[]>([])
@@ -16,6 +17,8 @@ export const useChatStore = defineStore('chat', () => {
   const currentProvider = ref('')
   const availableModels = ref<AiModelOption[]>([])
   const settings = ref<AiSettings | null>(null)
+  const workflows = ref<WorkflowDef[]>([])
+  const activeWorkflow = ref<WorkflowRunState | null>(null)
 
   async function fetchSessions() {
     const r = (await listSessions({ page_size: 50 })) as unknown
@@ -337,6 +340,150 @@ export const useChatStore = defineStore('chat', () => {
       activeAbortController = null
     }
   }
+  async function fetchWorkflowsList() {
+    try {
+      const list = await getWorkflows()
+      workflows.value = list
+    } catch {
+      // ignore
+    }
+  }
+
+  async function runWorkflow(workflowId: string, params?: Record<string, unknown>) {
+    if (isStreaming.value) return
+    const targetWf = workflows.value.find(w => w.id === workflowId)
+    const wfTitle = targetWf ? targetWf.title : '智能财务工作流'
+
+    const sid = currentSessionId.value
+    if (!sid) await createNewSession()
+
+    // 1. Add user prompt message
+    const userMsg: AiMessage = {
+      id: Date.now(),
+      session_id: currentSessionId.value!,
+      role: 'user',
+      content: `🪄 启动工作流：【${wfTitle}】`,
+      created_at: new Date().toISOString(),
+    }
+    messages.value.push(userMsg)
+
+    // 2. Initialize workflow state
+    const initialSteps: WorkflowStepState[] = targetWf
+      ? targetWf.steps.map((st, idx) => ({
+          step_index: idx,
+          step_id: st.step_id,
+          title: st.title,
+          status: 'pending',
+        }))
+      : []
+
+    const wfState: WorkflowRunState = {
+      workflow_id: workflowId,
+      title: wfTitle,
+      total_steps: targetWf ? targetWf.step_count : 4,
+      status: 'running',
+      steps: initialSteps,
+    }
+    activeWorkflow.value = wfState
+
+    // 3. Add assistant message with workflowData
+    const assistantId = Date.now() + 1
+    let assistantMsg: AiMessage = {
+      id: assistantId,
+      session_id: currentSessionId.value!,
+      role: 'assistant',
+      content: '',
+      workflowData: wfState,
+      created_at: new Date().toISOString(),
+    }
+    messages.value.push(assistantMsg)
+    assistantMsg = messages.value[messages.value.length - 1]!
+
+    abortCurrentStream()
+    activeAbortController = new AbortController()
+    const signal = activeAbortController.signal
+
+    isStreaming.value = true
+    const writer = new SmoothStreamWriter(assistantMsg)
+
+    try {
+      for await (const chunk of runWorkflowStream(
+        {
+          workflow_id: workflowId,
+          session_id: currentSessionId.value ?? undefined,
+          params,
+        },
+        signal
+      )) {
+        if (chunk.type === 'workflow_start') {
+          if (chunk.title) wfState.title = chunk.title
+          if (chunk.total_steps) wfState.total_steps = chunk.total_steps
+        } else if (chunk.type === 'step_start' && typeof chunk.step_index === 'number') {
+          const idx = chunk.step_index
+          while (wfState.steps.length <= idx) {
+            wfState.steps.push({
+              step_index: wfState.steps.length,
+              step_id: chunk.step_id || `step_${wfState.steps.length}`,
+              title: chunk.title || `步骤 ${wfState.steps.length + 1}`,
+              status: 'pending',
+            })
+          }
+          const curStep = wfState.steps[idx]
+          if (curStep) {
+            curStep.status = 'running'
+            if (chunk.title) curStep.title = chunk.title
+          }
+        } else if (chunk.type === 'step_complete' && typeof chunk.step_index === 'number') {
+          const idx = chunk.step_index
+          const curStep = wfState.steps[idx]
+          if (curStep) {
+            curStep.status = 'completed'
+            if (chunk.summary) curStep.summary = chunk.summary
+          }
+        } else if (chunk.type === 'delta' && chunk.content) {
+          writer.push(chunk.content)
+        } else if (chunk.type === 'workflow_complete') {
+          wfState.status = 'completed'
+        } else if (chunk.type === 'error') {
+          wfState.status = 'error'
+          writer.flushNow()
+          assistantMsg.content = `⚠️ ${chunk.message || '工作流执行失败'}`
+        }
+      }
+      await writer.finish()
+      wfState.status = 'completed'
+
+      // Refresh session info
+      if (currentSessionId.value) {
+        const r = (await getSession(currentSessionId.value)) as unknown
+        const raw = (r && typeof r === 'object' && 'data' in r ? (r as { data: Record<string, unknown> }).data : r) as Record<string, unknown>
+        if (raw && raw.id) {
+          const numId = Number(raw.id)
+          const idx = sessions.value.findIndex(s => Number(s.id) === numId)
+          const existing = idx >= 0 ? sessions.value[idx] : undefined
+          if (existing) {
+            sessions.value[idx] = {
+              ...existing,
+              title: String(raw.title || existing.title),
+              updated_at: String(raw.updated_at || new Date().toISOString()),
+            }
+          }
+        }
+      }
+    } catch (err: any) {
+      if (err?.name !== 'AbortError') {
+        wfState.status = 'error'
+        writer.flushNow()
+        assistantMsg.content = `⚠️ 工作流执行发生异常`
+      }
+    } finally {
+      writer.flushNow()
+      isStreaming.value = false
+      activeAbortController = null
+      activeWorkflow.value = null
+    }
+  }
+
   function switchModel(model: string, provider: string) {
     currentModel.value = model
     currentProvider.value = provider
@@ -345,9 +492,10 @@ export const useChatStore = defineStore('chat', () => {
   return {
     sessions, currentSessionId, messages, isStreaming,
     currentModel, currentProvider, availableModels, settings,
-    fetchSessions, fetchModels, fetchSettings,
+    workflows, activeWorkflow,
+    fetchSessions, fetchModels, fetchSettings, fetchWorkflowsList,
     createNewSession, selectSession, deleteSessionById, renameSession,
-    sendMessage, regenerateLastMessage, switchModel,
+    sendMessage, regenerateLastMessage, runWorkflow, switchModel,
     abortCurrentStream, clearMessages, clearCurrentSession, resetState, setModel,
   }
 })
