@@ -75,10 +75,25 @@ AUTH="Authorization: Bearer $TOKEN"
 INIT_AFTER=$(req GET /system/status | jq -r '.data.initialized')
 check "初始化后 status initialized=true" "true" "$INIT_AFTER"
 
-REG_CODE=$(req POST /auth/register '{"username":"linktest2","password":"pass1234"}' | jq -r '.code | floor')
-check "开放注册新用户成功 code=0" "0" "$REG_CODE"
-DUP_CODE=$(req POST /auth/register '{"username":"linktest2","password":"pass1234"}' | jq -r '.code | floor')
+REG_PASS=$(rsa_encrypt "pass123456")
+REG_RES=$(req POST /auth/register "{\"username\":\"linktest2\",\"password_enc\":\"$REG_PASS\"}")
+REG_CODE=$(echo "$REG_RES" | jq -r '.code | floor')
+check "开放加密注册新用户成功 code=0" "0" "$REG_CODE"
+
+DUP_CODE=$(req POST /auth/register '{"username":"linktest2","password":"pass123456"}' | jq -r '.code | floor')
 check "重复用户名注册被拦截 code=1004" "1004" "$DUP_CODE"
+
+# 验证注册后的用户重新登录
+LOGIN_PASS=$(rsa_encrypt "pass123456")
+LOGIN_RES=$(req POST /auth/login "{\"username\":\"linktest2\",\"password_enc\":\"$LOGIN_PASS\"}")
+LOGIN_CODE=$(echo "$LOGIN_RES" | jq -r '.code | floor')
+LOGIN_TOKEN=$(echo "$LOGIN_RES" | jq -r '.data.token')
+check "注册用户重新登录成功 code=0" "0" "$LOGIN_CODE"
+test -n "$LOGIN_TOKEN" && test "$LOGIN_TOKEN" != "null"
+check "登录获取到有效 Token" "0" "$?"
+
+ME_USER=$(curl -s -H "Authorization: Bearer $LOGIN_TOKEN" "$BASE/auth/me" | jq -r '.data.username')
+check "新用户 Token 请求 /auth/me 返回对应用户名" "linktest2" "$ME_USER"
 curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/categories" -d '{"name":"日常消费","type":"expense","currency":"CNY"}' >/dev/null
 curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/categories" -d '{"name":"工资","type":"income","currency":"CNY"}' >/dev/null
 curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/categories" -d '{"name":"现金","type":"asset","currency":"CNY"}' >/dev/null

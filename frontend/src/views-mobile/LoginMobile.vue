@@ -42,23 +42,12 @@ import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
-import { buildApiUrl } from '@/utils/http'
 
 const router = useRouter()
 const auth = useAuthStore()
 const loading = ref(false)
 const isRegister = ref(false)
 const form = reactive({ username: '', password: '', confirmPassword: '' })
-
-// 移动端内联 RSA 加密：使用 buildApiUrl 统一获取公钥
-async function encryptPassword(pw: string): Promise<string> {
-  const r = await fetch(buildApiUrl('/auth/public-key'))
-  if (!r.ok) throw new Error('Failed to fetch public key')
-  const jwk = (await r.json()).data.public_key
-  const key = await crypto.subtle.importKey('jwk', jwk, { name: 'RSA-OAEP', hash: 'SHA-256' }, false, ['encrypt'])
-  const enc = await crypto.subtle.encrypt({ name: 'RSA-OAEP' }, key, new TextEncoder().encode(pw))
-  return btoa(String.fromCharCode(...new Uint8Array(enc))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-}
 
 async function submit() {
   if (!form.username || !form.password) return ElMessage.warning('请输入用户名和密码')
@@ -73,7 +62,7 @@ async function submit() {
       await auth.register(form.username, form.password)
       ElMessage.success('注册成功')
     } else {
-      await auth.login(form.username, await encryptPassword(form.password))
+      await auth.login(form.username, form.password)
       ElMessage.success('登录成功')
     }
     router.replace('/m/dashboard')

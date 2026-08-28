@@ -41,31 +41,33 @@ auth_register(csilk_ctx_t* c)
     char        password_buf[512] = {0};
     const char* password = NULL;
 
-    if (password_enc && strlen(password_enc) > 0) {
+    const char* enc_to_try = password_enc;
+    if (!enc_to_try && plain_password && strlen(plain_password) > 100) {
+        enc_to_try = plain_password;
+    }
+
+    if (enc_to_try && strlen(enc_to_try) > 0) {
         uint8_t pt_buf[512];
         size_t  pt_len = sizeof(pt_buf);
         uint8_t ct_buf[CSILK_RSA_KEY_SIZE];
-        if (csilk_base64url_decode(password_enc, ct_buf, sizeof(ct_buf)) < 0) {
-            csilk_json_free(body);
-            respond_bad_request(c, "密码格式错误");
-            return;
+        int     dec_bytes = csilk_base64url_decode(enc_to_try, ct_buf, sizeof(ct_buf));
+        if (dec_bytes > 0) {
+            if (_csilk_asymmetric_decrypt(c,
+                                          auth_key_get_private_pem(),
+                                          strlen(auth_key_get_private_pem()),
+                                          ct_buf,
+                                          CSILK_RSA_KEY_SIZE,
+                                          pt_buf,
+                                          &pt_len) == 0 &&
+                pt_len > 0) {
+                pt_buf[pt_len] = '\0';
+                snprintf(password_buf, sizeof(password_buf), "%s", (const char*)pt_buf);
+                password = password_buf;
+            }
         }
-        if (_csilk_asymmetric_decrypt(c,
-                                      auth_key_get_private_pem(),
-                                      strlen(auth_key_get_private_pem()),
-                                      ct_buf,
-                                      CSILK_RSA_KEY_SIZE,
-                                      pt_buf,
-                                      &pt_len) != 0 ||
-            pt_len == 0) {
-            csilk_json_free(body);
-            respond_bad_request(c, "密码解密失败");
-            return;
-        }
-        pt_buf[pt_len] = '\0';
-        snprintf(password_buf, sizeof(password_buf), "%s", (const char*)pt_buf);
-        password = password_buf;
-    } else if (plain_password && strlen(plain_password) > 0) {
+    }
+
+    if (!password && plain_password && strlen(plain_password) > 0) {
         password = plain_password;
     }
 
@@ -142,35 +144,51 @@ auth_login(csilk_ctx_t* c)
 
     const char* username = csilk_json_get_string(body, "username");
     const char* password_enc = csilk_json_get_string(body, "password_enc");
-    if (!username || !password_enc) {
+    const char* plain_password = csilk_json_get_string(body, "password");
+    if (!username || (!password_enc && !plain_password)) {
         csilk_json_free(body);
         respond_bad_request(c, "缺少用户名或密码");
         return;
     }
 
-    /* Decrypt the password */
-    uint8_t pt_buf[512];
-    size_t  pt_len = sizeof(pt_buf);
-    uint8_t ct_buf[CSILK_RSA_KEY_SIZE];
-    if (csilk_base64url_decode(password_enc, ct_buf, sizeof(ct_buf)) < 0) {
-        csilk_json_free(body);
-        respond_bad_request(c, "密码格式错误");
-        return;
+    char        password_buf[512] = {0};
+    const char* password = NULL;
+    size_t      password_len = 0;
+
+    const char* enc_to_try = password_enc;
+    if (!enc_to_try && plain_password && strlen(plain_password) > 100) {
+        enc_to_try = plain_password;
     }
-    if (_csilk_asymmetric_decrypt(c,
-                                  auth_key_get_private_pem(),
-                                  strlen(auth_key_get_private_pem()),
-                                  ct_buf,
-                                  CSILK_RSA_KEY_SIZE,
-                                  pt_buf,
-                                  &pt_len) != 0 ||
-        pt_len == 0) {
-        csilk_json_free(body);
-        respond_bad_request(c, "密码解密失败");
-        return;
+
+    if (enc_to_try && strlen(enc_to_try) > 0) {
+        uint8_t pt_buf[512];
+        size_t  pt_len = sizeof(pt_buf);
+        uint8_t ct_buf[CSILK_RSA_KEY_SIZE];
+        if (csilk_base64url_decode(enc_to_try, ct_buf, sizeof(ct_buf)) < 0) {
+            csilk_json_free(body);
+            respond_bad_request(c, "密码格式错误");
+            return;
+        }
+        if (_csilk_asymmetric_decrypt(c,
+                                      auth_key_get_private_pem(),
+                                      strlen(auth_key_get_private_pem()),
+                                      ct_buf,
+                                      CSILK_RSA_KEY_SIZE,
+                                      pt_buf,
+                                      &pt_len) != 0 ||
+            pt_len == 0) {
+            csilk_json_free(body);
+            respond_bad_request(c, "密码解密失败");
+            return;
+        }
+        pt_buf[pt_len] = '\0';
+        snprintf(password_buf, sizeof(password_buf), "%s", (const char*)pt_buf);
+        password = password_buf;
+        password_len = pt_len;
+    } else if (plain_password) {
+        password = plain_password;
+        password_len = strlen(plain_password);
     }
-    pt_buf[pt_len] = '\0';
-    const char* password = (const char*)pt_buf;
 
     csilk_db_pool_t* pool = db_get_pool();
 
@@ -187,7 +205,7 @@ auth_login(csilk_ctx_t* c)
 
     csilk_json_t* row = csilk_json_array_get(result, 0);
     const char*   stored_hash = csilk_json_get_string(row, "password");
-    if (!stored_hash || csilk_bcrypt_verify(password, pt_len, stored_hash) != 0) {
+    if (!stored_hash || csilk_bcrypt_verify(password, password_len, stored_hash) != 0) {
         csilk_json_free(result);
         respond_unauthorized(c);
         return;
