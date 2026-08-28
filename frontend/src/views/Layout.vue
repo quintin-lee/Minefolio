@@ -1,13 +1,13 @@
 <template>
   <el-container class="layout-container">
-    <el-aside width="260px" class="aside" :class="{ 'is-open': mobileMenuOpen }">
+    <el-aside :width="isCollapsed ? '64px' : '260px'" class="aside" :class="{ 'is-open': mobileMenuOpen, 'is-collapsed': isCollapsed }">
       <div class="logo">
         <div class="logo-icon-wrapper">
           <Icon icon="ph:wallet" class="logo-icon-phosphor" />
         </div>
-        <span class="logo-text">Minefolio</span>
+        <span v-show="!isCollapsed" class="logo-text">Minefolio</span>
       </div>
-      <el-menu :default-active="activeMenu" class="sidebar-menu">
+      <el-menu :default-active="activeMenu" class="sidebar-menu" :collapse="isCollapsed" :collapse-transition="false">
         <el-menu-item index="/dashboard" @click="goTo('/dashboard')">
           <Icon icon="ph:chart-line" class="nav-icon" />
           <span>{{ t('nav.dashboard') }}</span>
@@ -61,6 +61,11 @@
           <el-icon class="hamburger" :class="{ 'is-active': mobileMenuOpen }" @click="mobileMenuOpen = !mobileMenuOpen">
             <Grid />
           </el-icon>
+          <el-tooltip :content="isCollapsed ? '展开菜单' : '收起菜单'" placement="bottom" :show-after="300">
+            <div class="collapse-btn" @click="toggleCollapse">
+              <Icon icon="ph:sidebar-simple" class="collapse-icon" />
+            </div>
+          </el-tooltip>
           <h2 class="page-title">{{ pageTitle }}</h2>
         </div>
         <div class="header-right">
@@ -121,6 +126,12 @@ const auth = useAuthStore()
 
 const activeMenu = computed(() => route.path)
 const mobileMenuOpen = ref(false)
+const isCollapsed = ref(localStorage.getItem('sidebar_collapsed') === 'true')
+
+function toggleCollapse() {
+  isCollapsed.value = !isCollapsed.value
+  localStorage.setItem('sidebar_collapsed', String(isCollapsed.value))
+}
 
 function handleResize() {
   if (window.innerWidth >= 768) mobileMenuOpen.value = false
@@ -178,6 +189,12 @@ function handleCommand(cmd: string) {
   z-index: 10;
   display: flex;
   flex-direction: column;
+  transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow-x: hidden;
+}
+.aside.is-collapsed .logo {
+  padding: 0;
+  justify-content: center;
 }
 .logo {
   height: 72px;
@@ -187,6 +204,7 @@ function handleCommand(cmd: string) {
   gap: 12px;
   color: #fff;
   border-bottom: 1px solid rgba(0, 212, 255, 0.1);
+  transition: padding 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .logo-icon-wrapper {
   font-size: 24px;
@@ -264,6 +282,23 @@ function handleCommand(cmd: string) {
   box-shadow: 0 0 12px rgba(0, 212, 255, 0.6);
 }
 
+.sidebar-menu.el-menu--collapse {
+  width: 64px;
+  padding: 16px 6px;
+}
+.sidebar-menu.el-menu--collapse :deep(.el-menu-item) {
+  padding: 0 !important;
+  justify-content: center;
+  text-align: center;
+}
+.sidebar-menu.el-menu--collapse :deep(.nav-icon) {
+  margin-right: 0;
+}
+.sidebar-menu.el-menu--collapse :deep(.el-menu-item.is-active::before) {
+  left: 0;
+  width: 3px;
+}
+
 .main-container {
   display: flex;
   flex-direction: column;
@@ -279,6 +314,32 @@ function handleCommand(cmd: string) {
   box-shadow: 0 1px 8px rgba(0, 0, 0, 0.4);
   border-bottom: 1px solid rgba(0, 212, 255, 0.08);
   z-index: 5;
+}
+.header-left {
+  display: flex;
+  align-items: center;
+}
+.collapse-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: #94a3b8;
+  margin-right: 14px;
+  transition: all 0.2s ease;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.collapse-btn:hover {
+  color: #00d4ff;
+  background: rgba(0, 212, 255, 0.08);
+  border-color: rgba(0, 212, 255, 0.2);
+}
+.collapse-icon {
+  font-size: 20px;
 }
 .page-title {
   font-size: 20px;
@@ -381,6 +442,9 @@ function handleCommand(cmd: string) {
   }
   .aside.is-open {
     left: 0;
+  }
+  .collapse-btn {
+    display: none;
   }
   .hamburger {
     display: flex;
