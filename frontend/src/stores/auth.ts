@@ -87,6 +87,17 @@ export const useAuthStore = defineStore('auth', () => {
     await fetchUser()
   }
 
+  async function register(username: string, password: string) {
+    const password_enc = await encryptPassword(password)
+    const raw = (await authApi.register(username, password_enc)) as unknown
+    const res = (raw && typeof raw === 'object' && 'data' in raw ? (raw as { data: { token: string } }).data : raw) as { token: string }
+    if (res && res.token) {
+      token.value = res.token
+      localStorage.setItem('token', res.token)
+    }
+    await fetchUser()
+  }
+
   async function login(username: string, password: string) {
     const password_enc = await encryptPassword(password)
     const raw = (await authApi.login(username, password_enc)) as unknown
@@ -114,6 +125,6 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.removeItem('token')
   }
 
-  return { token, user, isInitialized, checkSystemStatus, setup, login, logout, fetchUser, changePassword }
+  return { token, user, isInitialized, checkSystemStatus, setup, login, register, logout, fetchUser, changePassword }
 })
 

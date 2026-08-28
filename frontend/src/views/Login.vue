@@ -23,20 +23,46 @@
         </template>
 
         <el-form ref="formRef" :model="form" :rules="rules" label-position="top" class="login-form">
-          <el-form-item label="用户名" prop="username">
+          <el-form-item :label="isRegister ? '用户名' : '用户名'" prop="username">
             <el-input v-model="form.username" placeholder="请输入用户名" prefix-icon="User" size="large" />
           </el-form-item>
 
           <el-form-item label="密码" prop="password">
-            <el-input v-model="form.password" type="password" placeholder="请输入密码"
-              prefix-icon="Lock" show-password size="large" @keyup.enter="handleSubmit" />
+            <el-input
+              v-model="form.password"
+              type="password"
+              :placeholder="isRegister ? '请设置密码 (至少6位)' : '请输入密码'"
+              prefix-icon="Lock"
+              show-password
+              size="large"
+              @keyup.enter="handleSubmit"
+            />
+          </el-form-item>
+
+          <el-form-item v-if="isRegister" label="确认密码" prop="confirmPassword">
+            <el-input
+              v-model="form.confirmPassword"
+              type="password"
+              placeholder="请再次输入密码"
+              prefix-icon="Lock"
+              show-password
+              size="large"
+              @keyup.enter="handleSubmit"
+            />
           </el-form-item>
 
           <el-form-item class="submit-item">
             <el-button type="primary" size="large" :loading="loading" class="submit-btn" @click="handleSubmit">
-              登录系统
+              {{ isRegister ? '创建账号并进入系统' : '登录系统' }}
             </el-button>
           </el-form-item>
+
+          <div class="switch-mode">
+            <span>{{ isRegister ? '已有账号？' : '还没有账号？' }}</span>
+            <el-button link type="primary" class="switch-btn" @click="toggleMode">
+              {{ isRegister ? '返回登录' : '立即注册' }}
+            </el-button>
+          </div>
         </el-form>
       </el-card>
     </div>
@@ -61,17 +87,49 @@ const router = useRouter()
 const auth = useAuthStore()
 const formRef = ref()
 const loading = ref(false)
+const isRegister = ref(false)
 
-const form = reactive({ username: '', password: '' })
+const form = reactive({ username: '', password: '', confirmPassword: '' })
+
+const validateConfirmPassword = (_rule: any, value: string, callback: any) => {
+  if (isRegister.value && value !== form.password) {
+    callback(new Error('两次输入的密码不一致'))
+  } else {
+    callback()
+  }
+}
+
 const rules = {
   username: [
-    { required: true, message: t('login.usernameRequired'), trigger: 'blur' },
-    { min: 2, message: t('login.usernameMin'), trigger: 'blur' },
+    { required: true, message: t('login.usernameRequired') || '请输入用户名', trigger: 'blur' },
+    { min: 2, message: t('login.usernameMin') || '用户名至少2个字符', trigger: 'blur' },
   ],
   password: [
-    { required: true, message: t('login.passwordRequired'), trigger: 'blur' },
-    { min: 4, message: t('login.passwordMin'), trigger: 'blur' },
+    { required: true, message: t('login.passwordRequired') || '请输入密码', trigger: 'blur' },
+    { min: 6, message: '密码至少6个字符', trigger: 'blur' },
   ],
+  confirmPassword: [
+    {
+      validator: (_rule: any, value: string, callback: any) => {
+        if (isRegister.value && !value) {
+          callback(new Error('请再次输入密码'))
+        } else if (isRegister.value && value !== form.password) {
+          callback(new Error('两次输入的密码不一致'))
+        } else {
+          callback()
+        }
+      },
+      trigger: 'blur'
+    }
+  ]
+}
+
+function toggleMode() {
+  isRegister.value = !isRegister.value
+  form.password = ''
+  form.confirmPassword = ''
+  formRef.value?.clearValidate()
+  statusText.value = isRegister.value ? 'REGISTRATION_MODE' : 'AUTHENTICATION'
 }
 
 async function handleSubmit() {
@@ -79,11 +137,16 @@ async function handleSubmit() {
     if (!valid) return
     loading.value = true
     try {
-      await auth.login(form.username, form.password)
-      ElMessage.success('登录成功')
+      if (isRegister.value) {
+        await auth.register(form.username, form.password)
+        ElMessage.success('注册成功，已自动登录')
+      } else {
+        await auth.login(form.username, form.password)
+        ElMessage.success('登录成功')
+      }
       await router.push('/dashboard')
     } catch (e: any) {
-      ElMessage.error(e?.response?.data?.message || '登录失败')
+      ElMessage.error(e?.response?.data?.message || (isRegister.value ? '注册失败' : '登录失败'))
     } finally {
       loading.value = false
     }

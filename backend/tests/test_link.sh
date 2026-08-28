@@ -76,7 +76,9 @@ INIT_AFTER=$(req GET /system/status | jq -r '.data.initialized')
 check "初始化后 status initialized=true" "true" "$INIT_AFTER"
 
 REG_CODE=$(req POST /auth/register '{"username":"linktest2","password":"pass1234"}' | jq -r '.code | floor')
-check "初始化后公开注册被封禁 code=1004" "1004" "$REG_CODE"
+check "开放注册新用户成功 code=0" "0" "$REG_CODE"
+DUP_CODE=$(req POST /auth/register '{"username":"linktest2","password":"pass1234"}' | jq -r '.code | floor')
+check "重复用户名注册被拦截 code=1004" "1004" "$DUP_CODE"
 curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/categories" -d '{"name":"日常消费","type":"expense","currency":"CNY"}' >/dev/null
 curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/categories" -d '{"name":"工资","type":"income","currency":"CNY"}' >/dev/null
 curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/categories" -d '{"name":"现金","type":"asset","currency":"CNY"}' >/dev/null

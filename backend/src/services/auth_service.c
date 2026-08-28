@@ -17,6 +17,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "repositories/ledger_repo.h"
+
 static void
 store_bcrypt_hash(const char* password, char* out)
 {
@@ -26,31 +28,50 @@ void
 auth_register(csilk_ctx_t* c)
 {
     csilk_db_pool_t* pool = db_get_pool();
-
-    // Check if system is already initialized
-    csilk_json_t* count_res = csilk_db_query_json(pool, "SELECT COUNT(*) as count FROM users");
-    if (count_res && csilk_json_array_size(count_res) > 0) {
-        int cnt = (int)db_get_int(csilk_json_array_get(count_res, 0), "count");
-        csilk_json_free(count_res);
-        if (cnt > 0) {
-            respond_conflict(c, "系统已完成初始化，禁止公开注册");
-            return;
-        }
-    } else if (count_res) {
-        csilk_json_free(count_res);
-    }
-
-    csilk_json_t* body = csilk_bind_json(c);
+    csilk_json_t*    body = csilk_bind_json(c);
     if (!body) {
         respond_bad_request(c, "请求体必须为 JSON");
         return;
     }
 
     const char* username = csilk_json_get_string(body, "username");
-    const char* password = csilk_json_get_string(body, "password");
+    const char* password_enc = csilk_json_get_string(body, "password_enc");
+    const char* plain_password = csilk_json_get_string(body, "password");
+
+    char        password_buf[512] = {0};
+    const char* password = NULL;
+
+    if (password_enc && strlen(password_enc) > 0) {
+        uint8_t pt_buf[512];
+        size_t  pt_len = sizeof(pt_buf);
+        uint8_t ct_buf[CSILK_RSA_KEY_SIZE];
+        if (csilk_base64url_decode(password_enc, ct_buf, sizeof(ct_buf)) < 0) {
+            csilk_json_free(body);
+            respond_bad_request(c, "密码格式错误");
+            return;
+        }
+        if (_csilk_asymmetric_decrypt(c,
+                                      auth_key_get_private_pem(),
+                                      strlen(auth_key_get_private_pem()),
+                                      ct_buf,
+                                      CSILK_RSA_KEY_SIZE,
+                                      pt_buf,
+                                      &pt_len) != 0 ||
+            pt_len == 0) {
+            csilk_json_free(body);
+            respond_bad_request(c, "密码解密失败");
+            return;
+        }
+        pt_buf[pt_len] = '\0';
+        snprintf(password_buf, sizeof(password_buf), "%s", (const char*)pt_buf);
+        password = password_buf;
+    } else if (plain_password && strlen(plain_password) > 0) {
+        password = plain_password;
+    }
+
     if (!username || !password || strlen(username) < 2 || strlen(password) < 6) {
         csilk_json_free(body);
-        respond_bad_request(c, "用户名需≥2字符，密码需≥4字符");
+        respond_bad_request(c, "用户名需≥2字符，密码需≥6字符");
         return;
     }
 
@@ -95,7 +116,13 @@ auth_register(csilk_ctx_t* c)
         return;
     }
 
-    int64_t       user_id = db_get_int(csilk_json_array_get(user, 0), "id");
+    int64_t user_id = db_get_int(csilk_json_array_get(user, 0), "id");
+    csilk_json_free(user);
+
+    // Seed default categories & default ledger
+    categories_seed_defaults(pool, user_id);
+    ledger_get_default(pool, user_id);
+
     char*         token = jwt_generate_token(c, user_id, 0); /* new user, version 0 */
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_string(resp, "token", token ? token : "");
@@ -103,7 +130,6 @@ auth_register(csilk_ctx_t* c)
     free(token);
 
     respond_ok(c, resp);
-    csilk_json_free(user);
 }
 void
 auth_login(csilk_ctx_t* c)
