@@ -18,17 +18,16 @@ import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
+import { buildApiUrl } from '@/utils/http'
 
 const router = useRouter()
 const auth = useAuthStore()
 const loading = ref(false)
 const form = reactive({ username: '', password: '' })
 
-// 🔴 移动端内联 RSA 加密：Capacitor 无 dev proxy，必须用绝对地址取公钥
+// 移动端内联 RSA 加密：使用 buildApiUrl 统一获取公钥
 async function encryptPassword(pw: string): Promise<string> {
-  const base = import.meta.env.VITE_API_URL || window.location.origin
-  // 公钥接口无需鉴权，直接 fetch 避免循环依赖 http.ts
-  const r = await fetch(`${base}/api/auth/public-key`)
+  const r = await fetch(buildApiUrl('/auth/public-key'))
   if (!r.ok) throw new Error('Failed to fetch public key')
   const jwk = (await r.json()).data.public_key
   const key = await crypto.subtle.importKey('jwk', jwk, { name: 'RSA-OAEP', hash: 'SHA-256' }, false, ['encrypt'])

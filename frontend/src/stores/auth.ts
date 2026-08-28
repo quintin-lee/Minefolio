@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { authApi } from '@/api/auth'
 import { systemApi } from '@/api/system'
+import { buildApiUrl } from '@/utils/http'
 
 interface User {
   id: number
@@ -16,8 +17,8 @@ interface RsaJwk {
 }
 
 async function fetchRsaJwk(): Promise<RsaJwk> {
-  // 公钥接口无需鉴权，直接 fetch 避免循环依赖 http.ts（http.ts 依赖 auth store）
-  const r = await fetch('/api/auth/public-key')
+  // 公钥接口无需鉴权，使用 buildApiUrl 统一各平台路径
+  const r = await fetch(buildApiUrl('/auth/public-key'))
   if (!r.ok) throw new Error('Failed to fetch public key')
   const body = await r.json()
   const pk = body.data.public_key

@@ -61,6 +61,35 @@ function handleAuthError() {
 }
 
 /**
+ * Helper to build a normalized API URL from path, handling VITE_API_URL prefix,
+ * preventing accidental duplicate `/api/api/` occurrences, and supporting both
+ * absolute URLs and relative paths across desktop, docker, and mobile Capacitor.
+ */
+export function buildApiUrl(path: string): string {
+  const base = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '')
+  const cleanPath = path.startsWith('/') ? path : `/${path}`
+
+  if (!base) {
+    return cleanPath.startsWith('/api/') || cleanPath === '/api' ? cleanPath : `/api${cleanPath}`
+  }
+
+  if (base.endsWith('/api')) {
+    const subPath = cleanPath.startsWith('/api/') ? cleanPath.slice(4) : (cleanPath === '/api' ? '' : cleanPath)
+    return `${base}${subPath}`
+  }
+
+  const fullPath = cleanPath.startsWith('/api/') || cleanPath === '/api' ? cleanPath : `/api${cleanPath}`
+  return `${base}${fullPath}`
+}
+
+function getAxiosBaseUrl(): string {
+  const base = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '')
+  if (!base) return '/api'
+  if (base.endsWith('/api')) return base
+  return `${base}/api`
+}
+
+/**
  * Robust cookie parser — handles all standard Set-Cookie attribute orders
  * and avoids fragile split-based approaches that break when HttpOnly / SameSite
  * attributes are added by the server.
@@ -74,7 +103,7 @@ export function getCookie(name: string): string | null {
 
 function createHttp(): AxiosInstance {
   const instance = axios.create({
-    baseURL: import.meta.env.VITE_API_URL,
+    baseURL: getAxiosBaseUrl(),
     timeout: 10000,
     withCredentials: true,
   })

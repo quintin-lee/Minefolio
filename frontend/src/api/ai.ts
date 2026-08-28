@@ -1,5 +1,5 @@
 // frontend/src/api/ai.ts
-import http, { getCookie } from '@/utils/http'
+import http, { getCookie, buildApiUrl } from '@/utils/http'
 import { useAuthStore } from '@/stores/auth'
 
 export interface AiModelOption {
@@ -112,8 +112,7 @@ export async function* chatStream(
   if (csrf) {
     headers['X-CSRF-Token'] = csrf
   }
-  const baseUrl = import.meta.env.VITE_API_URL || ''
-  const url = `${baseUrl}/api/ai/chat`
+  const url = buildApiUrl('/ai/chat')
   const resp = await fetch(url, {
     method: 'POST',
     headers,
