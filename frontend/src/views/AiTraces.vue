@@ -142,11 +142,25 @@ async function loadData() {
     const params: Record<string, unknown> = { page: page.value, page_size: pageSize.value }
     if (filters.value.provider) params.provider = filters.value.provider
     if (filters.value.model) params.model = filters.value.model
-    const res = (await listTraces(params)) as unknown as { list: AiTrace[]; total: number }
-    traces.value = res.list || []
-    total.value = res.total || 0
+    const raw = (await listTraces(params)) as unknown
+    const res = (raw && typeof raw === 'object' && 'data' in raw && !Array.isArray((raw as { data: unknown }).data)
+      ? (raw as { data: unknown }).data
+      : raw) as { list?: AiTrace[]; total?: number } | AiTrace[]
+
+    if (Array.isArray(res)) {
+      traces.value = res
+      total.value = res.length
+    } else if (res && typeof res === 'object') {
+      traces.value = Array.isArray(res.list) ? res.list : []
+      total.value = typeof res.total === 'number' ? res.total : traces.value.length
+    } else {
+      traces.value = []
+      total.value = 0
+    }
   } catch (e) {
     console.error('[AiTraces] loadData failed:', e)
+    traces.value = []
+    total.value = 0
   } finally {
     loading.value = false
   }
@@ -170,7 +184,11 @@ function openDetail(id: number) {
 
 onMounted(async () => {
   try {
-    stats.value = await getTraceStats()
+    const rawStats = (await getTraceStats()) as unknown
+    const s = (rawStats && typeof rawStats === 'object' && 'data' in rawStats
+      ? (rawStats as { data: unknown }).data
+      : rawStats) as AiTraceStats
+    stats.value = s || null
   } catch {
     // stats optional
   }

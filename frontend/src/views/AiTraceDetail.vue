@@ -80,7 +80,11 @@ watch(() => props.traceId, async (id) => {
   loading.value = true
   detail.value = null
   try {
-    detail.value = await getTrace(id)
+    const raw = (await getTrace(id)) as unknown
+    const res = (raw && typeof raw === 'object' && 'data' in raw
+      ? (raw as { data: AiTraceDetail }).data
+      : raw) as AiTraceDetail
+    detail.value = res || null
   } catch (e) {
     console.error('[AiTraceDetail] load failed:', e)
   } finally {
