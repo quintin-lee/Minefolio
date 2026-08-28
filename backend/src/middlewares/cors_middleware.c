@@ -14,7 +14,7 @@ cors_middleware_wrapper(csilk_ctx_t* c)
         cors.allow_origin = origin;
     }
     cors.allow_methods = "GET,POST,PUT,DELETE,OPTIONS";
-    cors.allow_headers = "Content-Type,Authorization,X-CSRF-Token";
+    cors.allow_headers = "Content-Type,Authorization,X-CSRF-Token,X-Ledger-Id";
     cors.allow_credentials = 1;
     csilk_cors_middleware(c, &cors);
 }
@@ -32,7 +32,7 @@ cors_preflight_handler(csilk_ctx_t* c)
         cors.allow_origin = origin;
     }
     cors.allow_methods = "GET,POST,PUT,DELETE,OPTIONS";
-    cors.allow_headers = "Content-Type,Authorization,X-CSRF-Token";
+    cors.allow_headers = "Content-Type,Authorization,X-CSRF-Token,X-Ledger-Id";
     cors.allow_credentials = 1;
     csilk_cors_middleware(c, &cors);
 }
