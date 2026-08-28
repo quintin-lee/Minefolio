@@ -1,47 +1,40 @@
-import { http } from '@/utils/http'
+import http from '@/utils/http'
 import type { DcaPlan, DcaExecution } from '@/types'
 
 export const dcaApi = {
-  listPlans(): Promise<DcaPlan[]> {
-    return http.get('/dca/plans')
-  },
+  listPlans: () =>
+    http.get<DcaPlan[], DcaPlan[]>('/dca/plans'),
 
-  createPlan(data: Partial<DcaPlan>): Promise<{ id: number }> {
-    return http.post('/dca/plans', data)
-  },
+  createPlan: (data: Partial<DcaPlan>) =>
+    http.post<{ id: number }, { id: number }>('/dca/plans', data),
 
-  getPlan(id: number): Promise<DcaPlan> {
-    return http.get(`/dca/plans/${id}`)
-  },
+  getPlan: (id: number) =>
+    http.get<DcaPlan, DcaPlan>(`/dca/plans/${id}`),
 
-  updatePlan(id: number, data: Partial<DcaPlan>): Promise<void> {
-    return http.put(`/dca/plans/${id}`, data)
-  },
+  updatePlan: (id: number, data: Partial<DcaPlan>) =>
+    http.put<void, void>(`/dca/plans/${id}`, data),
 
-  setPlanStatus(id: number, status: 'active' | 'paused' | 'completed'): Promise<void> {
-    return http.put(`/dca/plans/${id}/status`, { status })
-  },
+  setPlanStatus: (id: number, status: 'active' | 'paused' | 'completed') =>
+    http.put<void, void>(`/dca/plans/${id}/status`, { status }),
 
-  deletePlan(id: number): Promise<void> {
-    return http.delete(`/dca/plans/${id}`)
-  },
+  deletePlan: (id: number) =>
+    http.delete<void, void>(`/dca/plans/${id}`),
 
-  listExecutions(planId: number): Promise<DcaExecution[]> {
-    return http.get(`/dca/plans/${planId}/executions`)
-  },
+  listExecutions: (planId: number) =>
+    http.get<DcaExecution[], DcaExecution[]>(`/dca/plans/${planId}/executions`),
 
-  listPendingExecutions(): Promise<DcaExecution[]> {
-    return http.get('/dca/executions/pending')
-  },
+  listPendingExecutions: () =>
+    http.get<DcaExecution[], DcaExecution[]>('/dca/executions/pending'),
 
-  confirmExecution(
+  confirmExecution: (
     id: number,
     data?: { actual_amount?: number; executed_price?: number }
-  ): Promise<{ transaction_id: number; actual_amount: number; executed_price: number; executed_quantity: number }> {
-    return http.post(`/dca/executions/${id}/confirm`, data || {})
-  },
+  ) =>
+    http.post<
+      { transaction_id: number; actual_amount: number; executed_price: number; executed_quantity: number },
+      { transaction_id: number; actual_amount: number; executed_price: number; executed_quantity: number }
+    >(`/dca/executions/${id}/confirm`, data || {}),
 
-  skipExecution(id: number): Promise<void> {
-    return http.post(`/dca/executions/${id}/skip`)
-  }
+  skipExecution: (id: number) =>
+    http.post<void, void>(`/dca/executions/${id}/skip`)
 }

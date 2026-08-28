@@ -1,41 +1,37 @@
-import { http } from '@/utils/http'
+import http from '@/utils/http'
 import type { CashflowSchedule, MonthlyCashflowSummary } from '@/types'
 
 export const cashflowApi = {
-  listSchedules(): Promise<CashflowSchedule[]> {
-    return http.get('/cashflow/schedules')
-  },
+  listSchedules: () =>
+    http.get<CashflowSchedule[], CashflowSchedule[]>('/cashflow/schedules'),
 
-  createSchedule(data: Partial<CashflowSchedule>): Promise<{ id: number }> {
-    return http.post('/cashflow/schedules', data)
-  },
+  createSchedule: (data: Partial<CashflowSchedule>) =>
+    http.post<{ id: number }, { id: number }>('/cashflow/schedules', data),
 
-  getSchedule(id: number): Promise<CashflowSchedule> {
-    return http.get(`/cashflow/schedules/${id}`)
-  },
+  getSchedule: (id: number) =>
+    http.get<CashflowSchedule, CashflowSchedule>(`/cashflow/schedules/${id}`),
 
-  updateSchedule(id: number, data: Partial<CashflowSchedule>): Promise<void> {
-    return http.put(`/cashflow/schedules/${id}`, data)
-  },
+  updateSchedule: (id: number, data: Partial<CashflowSchedule>) =>
+    http.put<void, void>(`/cashflow/schedules/${id}`, data),
 
-  deleteSchedule(id: number): Promise<void> {
-    return http.delete(`/cashflow/schedules/${id}`)
-  },
+  deleteSchedule: (id: number) =>
+    http.delete<void, void>(`/cashflow/schedules/${id}`),
 
-  getCalendar(year?: number, month?: number): Promise<MonthlyCashflowSummary> {
-    return http.get('/cashflow/calendar', {
+  getCalendar: (year?: number, month?: number) =>
+    http.get<MonthlyCashflowSummary, MonthlyCashflowSummary>('/cashflow/calendar', {
       params: { year, month }
-    })
-  },
+    }),
 
-  confirmIncome(data: {
+  confirmIncome: (data: {
     target_asset_id: number
     source_asset_id?: number
     amount: number
     date: string
     name?: string
     note?: string
-  }): Promise<{ transaction_id: number; amount: number }> {
-    return http.post('/cashflow/confirm', data)
-  }
+  }) =>
+    http.post<{ transaction_id: number; amount: number }, { transaction_id: number; amount: number }>(
+      '/cashflow/confirm',
+      data
+    )
 }
