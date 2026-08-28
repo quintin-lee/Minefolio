@@ -228,22 +228,29 @@ async function handleDeleteLedger(ledger: Ledger) {
   align-items: center;
   margin-right: 12px;
 }
+.ledger-dropdown :deep(.el-tooltip__trigger:focus-visible) {
+  outline: none;
+}
 .current-ledger-btn {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 12px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid transparent;
+  border-radius: 20px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
   user-select: none;
+  outline: none;
 }
 .current-ledger-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(0, 212, 255, 0.4);
-  box-shadow: 0 0 12px rgba(0, 212, 255, 0.15);
+  background: rgba(0, 212, 255, 0.06);
+  border-color: rgba(0, 212, 255, 0.15);
+}
+.current-ledger-btn:focus,
+.current-ledger-btn:focus-visible {
+  outline: none;
 }
 .ledger-icon-badge {
   width: 24px;
