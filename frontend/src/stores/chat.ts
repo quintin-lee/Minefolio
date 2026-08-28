@@ -1,6 +1,6 @@
 // frontend/src/stores/chat.ts
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, reactive } from 'vue'
 import {
   listSessions, createSession, deleteSession, getSession, updateSession,
   getMessages, chatStream, getModels, getSettings, getWorkflows, runWorkflowStream,
@@ -373,38 +373,38 @@ export const useChatStore = defineStore('chat', () => {
           step_index: idx,
           step_id: st.step_id,
           title: st.title,
-          status: 'pending',
+          status: 'pending' as const,
         }))
       : []
 
-    const wfState: WorkflowRunState = {
+    const wfState: WorkflowRunState = reactive({
       workflow_id: workflowId,
       title: wfTitle,
       total_steps: targetWf ? targetWf.step_count : 4,
       status: 'running',
       steps: initialSteps,
-    }
+    })
     activeWorkflow.value = wfState
 
     // 3. Add assistant message with workflowData
     const assistantId = Date.now() + 1
-    let assistantMsg: AiMessage = {
+    const assistantMsg: AiMessage = reactive({
       id: assistantId,
       session_id: currentSessionId.value!,
       role: 'assistant',
       content: '',
       workflowData: wfState,
       created_at: new Date().toISOString(),
-    }
+    })
     messages.value.push(assistantMsg)
-    assistantMsg = messages.value[messages.value.length - 1]!
+    const activeMsg = messages.value[messages.value.length - 1]!
 
     abortCurrentStream()
     activeAbortController = new AbortController()
     const signal = activeAbortController.signal
 
     isStreaming.value = true
-    const writer = new SmoothStreamWriter(assistantMsg)
+    const writer = new SmoothStreamWriter(activeMsg)
 
     try {
       for await (const chunk of runWorkflowStream(
@@ -444,14 +444,24 @@ export const useChatStore = defineStore('chat', () => {
           writer.push(chunk.content)
         } else if (chunk.type === 'workflow_complete') {
           wfState.status = 'completed'
+          wfState.steps.forEach(st => {
+            if (st.status !== 'completed' && st.status !== 'error') {
+              st.status = 'completed'
+            }
+          })
         } else if (chunk.type === 'error') {
           wfState.status = 'error'
           writer.flushNow()
-          assistantMsg.content = `⚠️ ${chunk.message || '工作流执行失败'}`
+          activeMsg.content = `⚠️ ${chunk.message || '工作流执行失败'}`
         }
       }
       await writer.finish()
       wfState.status = 'completed'
+      wfState.steps.forEach(st => {
+        if (st.status !== 'completed' && st.status !== 'error') {
+          st.status = 'completed'
+        }
+      })
 
       // Refresh session info
       if (currentSessionId.value) {
@@ -474,13 +484,20 @@ export const useChatStore = defineStore('chat', () => {
       if (err?.name !== 'AbortError') {
         wfState.status = 'error'
         writer.flushNow()
-        assistantMsg.content = `⚠️ 工作流执行发生异常`
+        activeMsg.content = `⚠️ 工作流执行发生异常`
       }
     } finally {
       writer.flushNow()
+      if (wfState.status === 'running') {
+        wfState.status = 'completed'
+        wfState.steps.forEach(st => {
+          if (st.status !== 'completed' && st.status !== 'error') {
+            st.status = 'completed'
+          }
+        })
+      }
       isStreaming.value = false
       activeAbortController = null
-      activeWorkflow.value = null
     }
   }
 
