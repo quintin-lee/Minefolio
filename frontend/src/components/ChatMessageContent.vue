@@ -32,6 +32,13 @@
         </div>
         <pre class="streaming-code"><code>{{ seg.content }}</code></pre>
       </div>
+
+      <!-- Generic Code Block with Syntax Highlighting & Copy -->
+      <CodeBlock
+        v-else-if="seg.type === 'code'"
+        :code="seg.content"
+        :lang="seg.lang"
+      />
     </template>
   </div>
 </template>
@@ -43,6 +50,7 @@ import DOMPurify from 'dompurify'
 import { Icon } from '@iconify/vue'
 import MermaidBlock from '@/components/MermaidBlock.vue'
 import ActionCard from '@/components/ActionCard.vue'
+import CodeBlock from '@/components/CodeBlock.vue'
 import type { ProposedAction } from '@/components/ActionCard.vue'
 
 const props = defineProps<{
@@ -52,8 +60,9 @@ const props = defineProps<{
 
 interface Segment {
   id: string
-  type: 'markdown' | 'mermaid' | 'streaming-mermaid' | 'action'
+  type: 'markdown' | 'mermaid' | 'streaming-mermaid' | 'action' | 'code'
   content: string
+  lang?: string
   renderedHtml?: string
   actionData?: ProposedAction
 }
@@ -74,7 +83,7 @@ const segments = computed<Segment[]>(() => {
 
   const result: Segment[] = []
   let lastIndex = 0
-  const blockRegex = /```(mermaid|action|json)?\s*\n([\s\S]*?)(?:```|$)/g
+  const blockRegex = /```([\w\-+#.]+)?\s*\n([\s\S]*?)(?:```|$)/g
   let match: RegExpExecArray | null
   let segIdx = 0
 
@@ -85,7 +94,7 @@ const segments = computed<Segment[]>(() => {
     const code = match[2] ?? ''
     const hasClosed = fullMatch.endsWith('```')
 
-    // If it's a json block that doesn't look like an action, skip special rendering and keep as regular markdown
+    // Check if it's an action card JSON block
     let isAction = false
     let actionObj: ProposedAction | null = null
 
@@ -111,11 +120,6 @@ const segments = computed<Segment[]>(() => {
     }
 
     const isMermaid = lang === 'mermaid'
-
-    // If neither mermaid nor action, do not split out
-    if (!isMermaid && !isAction) {
-      continue
-    }
 
     // Add markdown segment before this match
     if (matchStart > lastIndex) {
@@ -159,6 +163,14 @@ const segments = computed<Segment[]>(() => {
           })
         }
       }
+    } else {
+      // Standard code block
+      result.push({
+        id: `code-${segIdx++}`,
+        type: 'code',
+        content: hasClosed ? code.trim() : code,
+        lang: lang || undefined,
+      })
     }
 
     lastIndex = matchStart + fullMatch.length
