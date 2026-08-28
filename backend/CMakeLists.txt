@@ -27,6 +27,7 @@ target_include_directories(minefolio PRIVATE
 )
 
 target_compile_definitions(minefolio PRIVATE _GNU_SOURCE)
+target_compile_options(minefolio PRIVATE -Wall -Wextra -Wno-unused-parameter)
 
 target_link_libraries(minefolio PRIVATE csilk crypto ${PQ_LIBRARIES})
 

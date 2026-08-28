@@ -40,6 +40,7 @@ make_schema(csilk_json_t* props, const char** required_names, int req_count)
         csilk_json_array_append(req, csilk_json_string_new(required_names[i]));
     }
     csilk_json_add_array(s, "required", req);
+    return s;
 }
 
 /* ========================================================================= */
@@ -718,20 +719,19 @@ maybe_truncate_result(char* json_str)
             char*  nstr = csilk_json_serialize(truncated, &nlen);
             csilk_json_free(truncated);
             csilk_json_free(obj);
-            free(json_str);
-            if (nstr && strlen(nstr) <= TOOL_MAX_RESULT_BYTES) {
+            if (nstr) {
+                free(json_str);
+                if (strlen(nstr) <= TOOL_MAX_RESULT_BYTES) {
+                    return nstr;
+                }
+                nstr[TOOL_MAX_RESULT_BYTES] = '\0';
+                size_t cut = TOOL_MAX_RESULT_BYTES;
+                while (cut > 0 && ((unsigned char)nstr[cut] & 0xC0) == 0x80) {
+                    nstr[cut] = '\0';
+                    cut--;
+                }
                 return nstr;
             }
-            free(nstr);
-            /* Fallback: hard truncate */
-            json_str[TOOL_MAX_RESULT_BYTES] = '\0';
-            /* Ensure valid UTF-8 cut */
-            size_t cut = TOOL_MAX_RESULT_BYTES;
-            while (cut > 0 && ((unsigned char)json_str[cut] & 0xC0) == 0x80) {
-                json_str[cut] = '\0';
-                cut--;
-            }
-            return json_str;
         }
         csilk_json_free(obj);
     } else if (obj) {

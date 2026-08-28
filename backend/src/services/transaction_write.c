@@ -264,7 +264,6 @@ transactions_update(csilk_ctx_t* c)
     }
 
     csilk_db_pool_t* pool = db_get_pool();
-    char             uid_str[32];
     // 读取旧记录
     csilk_json_t* old_row = tx_get_old(pool, user_id, atoll(id_str));
     if (!old_row || csilk_json_array_size(old_row) == 0) {
