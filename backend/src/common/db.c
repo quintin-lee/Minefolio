@@ -548,6 +548,117 @@ db_run_migrations(csilk_db_pool_t* pool)
                   "CREATE INDEX IF NOT EXISTS idx_cashflow_schedules_user ON "
                   "cashflow_schedules(user_id, status)");
 
+    // ---- 多账本空间主表与成员表 ----
+    csilk_db_exec(pool,
+                  "CREATE TABLE IF NOT EXISTS ledgers ("
+                  "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                  "owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, "
+                  "name TEXT NOT NULL, "
+                  "description TEXT DEFAULT '', "
+                  "currency TEXT NOT NULL DEFAULT 'CNY', "
+                  "icon TEXT DEFAULT 'ph:wallet', "
+                  "color TEXT DEFAULT '#3b82f6', "
+                  "is_default INTEGER NOT NULL DEFAULT 0, "
+                  "invite_code TEXT UNIQUE, "
+                  "invite_expires_at DATETIME, "
+                  "created_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
+                  "updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
+    csilk_db_exec(pool, "CREATE INDEX IF NOT EXISTS idx_ledgers_owner ON ledgers(owner_id)");
+    csilk_db_exec(pool, "CREATE INDEX IF NOT EXISTS idx_ledgers_invite ON ledgers(invite_code)");
+
+    csilk_db_exec(pool,
+                  "CREATE TABLE IF NOT EXISTS ledger_members ("
+                  "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                  "ledger_id INTEGER NOT NULL REFERENCES ledgers(id) ON DELETE CASCADE, "
+                  "user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, "
+                  "role TEXT NOT NULL CHECK (role IN ('owner', 'editor', 'viewer')), "
+                  "joined_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
+                  "UNIQUE (ledger_id, user_id))");
+    csilk_db_exec(pool,
+                  "CREATE INDEX IF NOT EXISTS idx_ledger_members_user ON ledger_members(user_id)");
+    csilk_db_exec(
+        pool, "CREATE INDEX IF NOT EXISTS idx_ledger_members_ledger ON ledger_members(ledger_id)");
+
+    // ---- 业务表 ledger_id 列迁移 ----
+    const char* tables_with_ledger[] = {"assets",
+                                        "transactions",
+                                        "daily_expenses",
+                                        "categories",
+                                        "dca_plans",
+                                        "cashflow_schedules",
+                                        NULL};
+    for (int t = 0; tables_with_ledger[t] != NULL; ++t) {
+        if (!col_exists(pool, tables_with_ledger[t], "ledger_id")) {
+            char alter_sql[256];
+            snprintf(alter_sql,
+                     sizeof(alter_sql),
+                     "ALTER TABLE %s ADD COLUMN ledger_id INTEGER",
+                     tables_with_ledger[t]);
+            csilk_db_exec(pool, alter_sql);
+        }
+    }
+
+    // ---- 存量用户默认账本自动初始化与数据回填 ----
+    csilk_json_t* all_users = csilk_db_query_json(pool, "SELECT id FROM users");
+    if (all_users) {
+        size_t user_cnt = csilk_json_array_size(all_users);
+        for (size_t u = 0; u < user_cnt; ++u) {
+            csilk_json_t* u_obj = csilk_json_array_get(all_users, u);
+            int64_t       uid = (int64_t)db_get_int(u_obj, "id");
+            char          uid_str[32];
+            snprintf(uid_str, sizeof(uid_str), "%lld", (long long)uid);
+
+            csilk_json_t* user_ledgers = csilk_db_query_param_json(
+                pool,
+                "SELECT id FROM ledgers WHERE owner_id = ? AND is_default = 1",
+                (const char*[]){uid_str, NULL});
+
+            int64_t lid = 0;
+            if (!user_ledgers || csilk_json_array_size(user_ledgers) == 0) {
+                /* Create default ledger for this user */
+                csilk_json_t* ins_res = csilk_db_query_param_json(
+                    pool,
+                    "INSERT INTO ledgers (owner_id, name, description, currency, is_default) "
+                    "VALUES (?, '默认账本', '个人默认账本', 'CNY', 1) RETURNING id",
+                    (const char*[]){uid_str, NULL});
+                if (ins_res && csilk_json_array_size(ins_res) > 0) {
+                    lid = (int64_t)db_get_int(csilk_json_array_get(ins_res, 0), "id");
+                }
+                if (ins_res) {
+                    csilk_json_free(ins_res);
+                }
+
+                if (lid > 0) {
+                    char lid_str[32];
+                    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)lid);
+                    csilk_db_query_param_json(pool,
+                                              "INSERT OR IGNORE INTO ledger_members (ledger_id, "
+                                              "user_id, role) VALUES (?, ?, 'owner')",
+                                              (const char*[]){lid_str, uid_str, NULL});
+
+                    /* Backfill ledger_id on existing records */
+                    for (int t = 0; tables_with_ledger[t] != NULL; ++t) {
+                        char backfill_sql[256];
+                        snprintf(backfill_sql,
+                                 sizeof(backfill_sql),
+                                 "UPDATE %s SET ledger_id = ? WHERE user_id = ? AND (ledger_id IS "
+                                 "NULL OR ledger_id = 0)",
+                                 tables_with_ledger[t]);
+                        csilk_json_t* bf_res = csilk_db_query_param_json(
+                            pool, backfill_sql, (const char*[]){lid_str, uid_str, NULL});
+                        if (bf_res) {
+                            csilk_json_free(bf_res);
+                        }
+                    }
+                }
+            }
+            if (user_ledgers) {
+                csilk_json_free(user_ledgers);
+            }
+        }
+        csilk_json_free(all_users);
+    }
+
     // ---- ai_traces 历史异常残留清理 ----
     csilk_db_exec(
         pool,
