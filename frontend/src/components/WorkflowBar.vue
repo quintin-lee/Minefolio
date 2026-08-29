@@ -53,6 +53,17 @@
           />
         </div>
 
+        <div v-else-if="selectedWf.id === 'wf_budget_guard'" class="param-row">
+          <label class="param-label">预算月份</label>
+          <el-date-picker
+            v-model="paramMonth"
+            type="month"
+            value-format="YYYY-MM"
+            placeholder="选择预算月份 (默认当月)"
+            style="width: 100%"
+          />
+        </div>
+
         <div v-else-if="selectedWf.id === 'wf_expense_decision'" class="param-row">
           <label class="param-label">拟支出金额 (￥)</label>
           <el-input-number
@@ -62,6 +73,42 @@
             style="width: 100%"
             placeholder="输入计划支出金额"
           />
+        </div>
+
+        <div v-else-if="selectedWf.id === 'wf_payday_split'" class="param-group">
+          <div class="param-row">
+            <label class="param-label">分配比例（总和 100%，留空使用 50/20/20/10）</label>
+            <div class="ratio-grid">
+              <div class="ratio-item"><span class="ratio-label">生活</span><el-input-number v-model="paramRatioLiving" :min="0" :max="100" :step="5" size="small" style="width: 100%" /></div>
+              <div class="ratio-item"><span class="ratio-label">定投</span><el-input-number v-model="paramRatioInvest" :min="0" :max="100" :step="5" size="small" style="width: 100%" /></div>
+              <div class="ratio-item"><span class="ratio-label">还贷</span><el-input-number v-model="paramRatioDebt" :min="0" :max="100" :step="5" size="small" style="width: 100%" /></div>
+              <div class="ratio-item"><span class="ratio-label">应急</span><el-input-number v-model="paramRatioEmergency" :min="0" :max="100" :step="5" size="small" style="width: 100%" /></div>
+            </div>
+            <div v-if="ratioSum !== 100 && ratioSum !== 0" class="ratio-hint">当前总和 {{ ratioSum }}%，提交时将自动归一化</div>
+          </div>
+        </div>
+
+        <div v-else-if="selectedWf.id === 'wf_anomaly_detect'" class="param-row">
+          <label class="param-label">回溯天数</label>
+          <el-input-number v-model="paramLookback" :min="7" :max="365" :step="10" style="width: 100%" />
+          <div class="param-hint">默认 60 天，扫描最近 N 天的异常交易</div>
+        </div>
+
+        <div v-else-if="selectedWf.id === 'wf_subscription_audit'" class="param-row">
+          <label class="param-label">回溯天数</label>
+          <el-input-number v-model="paramLookback" :min="30" :max="365" :step="30" style="width: 100%" />
+          <div class="param-hint">默认 180 天，识别周期性订阅</div>
+        </div>
+
+        <div v-else-if="selectedWf.id === 'wf_emergency_fund'" class="param-row">
+          <label class="param-label">目标覆盖月数</label>
+          <el-input-number v-model="paramTargetMonths" :min="1" :max="36" :step="1" style="width: 100%" />
+          <div class="param-hint">默认 6 个月，按月均刚性支出测算</div>
+        </div>
+
+        <div v-else-if="selectedWf.id === 'wf_debt_payoff'" class="param-row">
+          <label class="param-label">每月可用于还贷金额（￥，留空自动按最低还款模拟）</label>
+          <el-input-number v-model="paramMonthlyPayment" :min="100" :step="500" style="width: 100%" placeholder="例如 5000" />
         </div>
 
         <div class="steps-preview">
@@ -89,7 +136,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import { useChatStore } from '@/stores/chat'
 import type { WorkflowDef } from '@/types'
@@ -100,6 +147,13 @@ const dialogVisible = ref(false)
 const selectedWf = ref<WorkflowDef | null>(null)
 const paramMonth = ref('')
 const paramAmount = ref(5000)
+const paramRatioLiving = ref<number | undefined>(undefined)
+const paramRatioInvest = ref<number | undefined>(undefined)
+const paramRatioDebt = ref<number | undefined>(undefined)
+const paramRatioEmergency = ref<number | undefined>(undefined)
+const paramLookback = ref(60)
+const paramTargetMonths = ref(6)
+const paramMonthlyPayment = ref<number | undefined>(undefined)
 
 onMounted(async () => {
   if (chatStore.workflows.length === 0) {
@@ -107,14 +161,26 @@ onMounted(async () => {
   }
 })
 
+const ratioSum = computed(() => {
+  const a = paramRatioLiving.value ?? 0
+  const b = paramRatioInvest.value ?? 0
+  const c = paramRatioDebt.value ?? 0
+  const d = paramRatioEmergency.value ?? 0
+  const anySet = paramRatioLiving.value !== undefined || paramRatioInvest.value !== undefined || paramRatioDebt.value !== undefined || paramRatioEmergency.value !== undefined
+  return anySet ? a + b + c + d : 0
+})
+
+const DIRECT_RUN_IDS = new Set(['wf_portfolio_rebalance', 'wf_goal_tracker'])
+
 function handleCardClick(wf: WorkflowDef) {
   if (chatStore.isStreaming) return
   selectedWf.value = wf
-  if (wf.id === 'wf_portfolio_rebalance') {
-    // Portfolio rebalance doesn't require extra parameters, run directly
+  // Prefill lookback defaults per workflow
+  if (wf.id === 'wf_anomaly_detect') paramLookback.value = 60
+  else if (wf.id === 'wf_subscription_audit') paramLookback.value = 180
+  if (DIRECT_RUN_IDS.has(wf.id)) {
     chatStore.runWorkflow(wf.id)
   } else {
-    // Open parameter dialog
     dialogVisible.value = true
   }
 }
@@ -122,10 +188,29 @@ function handleCardClick(wf: WorkflowDef) {
 function confirmRun() {
   if (!selectedWf.value) return
   const params: Record<string, unknown> = {}
-  if (selectedWf.value.id === 'wf_monthly_review' && paramMonth.value) {
+  const id = selectedWf.value.id
+  if (id === 'wf_monthly_review' && paramMonth.value) {
     params.month = paramMonth.value
-  } else if (selectedWf.value.id === 'wf_expense_decision' && paramAmount.value) {
+  } else if (id === 'wf_budget_guard' && paramMonth.value) {
+    params.month = paramMonth.value
+  } else if (id === 'wf_expense_decision' && paramAmount.value) {
     params.amount = paramAmount.value
+  } else if (id === 'wf_payday_split') {
+    if (paramRatioLiving.value !== undefined) params.ratio_living = paramRatioLiving.value
+    if (paramRatioInvest.value !== undefined) params.ratio_invest = paramRatioInvest.value
+    if (paramRatioDebt.value !== undefined) params.ratio_debt = paramRatioDebt.value
+    if (paramRatioEmergency.value !== undefined) params.ratio_emergency = paramRatioEmergency.value
+  } else if (id === 'wf_anomaly_detect') {
+    if (paramLookback.value) params.lookback_days = paramLookback.value
+  } else if (id === 'wf_subscription_audit') {
+    if (paramLookback.value) params.lookback_days = paramLookback.value
+  } else if (id === 'wf_emergency_fund') {
+    if (paramTargetMonths.value) params.target_months = paramTargetMonths.value
+  } else if (id === 'wf_debt_payoff') {
+    if (paramMonthlyPayment.value) {
+      params.monthly_payment = paramMonthlyPayment.value
+      params.amount = paramMonthlyPayment.value
+    }
   }
   dialogVisible.value = false
   chatStore.runWorkflow(selectedWf.value.id, params)
@@ -302,5 +387,36 @@ function confirmRun() {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.ratio-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.ratio-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ratio-label {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.ratio-hint,
+.param-hint {
+  font-size: 11px;
+  color: #64748b;
+  margin-top: 4px;
+}
+
+.param-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 </style>

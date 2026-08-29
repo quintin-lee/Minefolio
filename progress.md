@@ -43,7 +43,16 @@
 - Steps: step_dp_collect / step_dp_simulate / step_dp_report — note解析利率 + 12期雪崩/雪球模拟 + 饼图+对比, cmake build ✅
 - Commit: pending
 
-### Phase 8: 收尾 (in_progress)
+### Phase 8: 收尾
+- **Status:** complete (2026-08-29)
+- 全量 10 工作流：cmake ✅ + npm run build ✅ (vite 5.4.21, vue-tsc strict)
+- Commits: 0f43a0f8 (debt_payoff) 完成 7/7 新工作流闭环
+
+### Phase 9: 前端工作流入口
+- **Status:** complete (2026-08-29)
+- 文件：`frontend/src/components/WorkflowBar.vue` (+128/-5)
+- 变更：参数对话框覆盖 7 新工作流（payday 4比例 / budget月份 / anomaly&subscription回溯 / emergency目标月数 / debt月供）+ DIRECT_RUN_IDS 直启 + ratioSum 归一化提示 + 新样式
+- 构建：`npm run build` ✅ (vite 5.4.21, 1m04s)
 
 ## Session: 2025-08-21
 

@@ -4,7 +4,7 @@
 逐个实现 7 个新增实用工作流，补齐“月度复盘/再平衡/大额决策”之外的核心日常财务场景。每个工作流需：后端 SSE 步骤定义 + 真实数据聚合 + Mermaid 报告 + 前端可视化复用现有 ai_workflow_service 框架。
 
 ## Current Phase
-Phase 7 — 债务加速偿还规划 (Debt Payoff) [in_progress]
+Phase 8 — 前端入口补齐 [complete] — WorkflowBar 参数对话框已覆盖 7 个新工作流
 
 ## Phases
 
@@ -73,9 +73,17 @@ Phase 7 — 债务加速偿还规划 (Debt Payoff) [in_progress]
 - **Status:** complete
 
 ### Phase 8: 收尾
-- [x] 全量 10 工作流回归构建（backend cmake ✅，仅 strncpy warning）
-- [ ] 前端 npm run build 回归 + 清理 build 产物
-- **Status:** in_progress
+- [x] 全量 10 工作流回归构建（backend cmake ✅，仅 strncpy warning；frontend npm run build ✅ vite 5.4.21）
+- [x] 7/7 新工作流已注册并构建验证
+- **Status:** complete
+
+### Phase 9: 前端工作流入口 (WorkflowBar)
+- [x] 扩展 `WorkflowBar.vue` 参数对话框：payday 4 比例输入(归一化提示)、budget 月份、anomaly/subscription 回溯天数、emergency 目标月数、debt 月供
+- [x] `handleCardClick` 按工作流预填默认值；`DIRECT_RUN_IDS` 直启 portfolio + goal_tracker
+- [x] `confirmRun` 按 id 映射 params (ratio_*/lookback_days/target_months/monthly_payment)
+- [x] 新增 `ratioSum` 计算 + `ratio-grid`/`param-hint` 样式
+- [x] 前端 `npm run build` 验证通过 (vite 5.4.21, vue-tsc strict)
+- **Status:** complete
 
 ## Key Questions
 1. 预算数据来源：当前无独立 budgets 表，Phase2 需用历史均值*1.2 作为隐式预算，还是新增表？
