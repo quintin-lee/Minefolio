@@ -13,6 +13,7 @@ static char*  g_upload_filename = NULL;
 static char*  g_upload_content_type = NULL;
 static char*  g_upload_data = NULL;
 static size_t g_upload_data_len = 0;
+static size_t g_upload_data_cap = 0;
 
 static void
 upload_part_handler(csilk_multipart_part_t* part)
@@ -23,12 +24,22 @@ upload_part_handler(csilk_multipart_part_t* part)
     if (!g_upload_content_type && part->content_type[0]) {
         g_upload_content_type = strdup(part->content_type);
     }
-    if (part->data && part->data_len > 0 && !g_upload_data) {
-        g_upload_data = malloc(part->data_len);
-        if (g_upload_data) {
-            memcpy(g_upload_data, part->data, part->data_len);
-            g_upload_data_len = part->data_len;
+    if (part->data && part->data_len > 0) {
+        size_t need = g_upload_data_len + part->data_len;
+        if (need > g_upload_data_cap) {
+            size_t cap = g_upload_data_cap ? g_upload_data_cap : 4096;
+            while (cap < need) {
+                cap *= 2;
+            }
+            char* nd = realloc(g_upload_data, cap);
+            if (!nd) {
+                return;
+            }
+            g_upload_data = nd;
+            g_upload_data_cap = cap;
         }
+        memcpy(g_upload_data + g_upload_data_len, part->data, part->data_len);
+        g_upload_data_len += part->data_len;
     }
 }
 
@@ -49,6 +60,7 @@ file_upload_handler(csilk_ctx_t* c)
     g_upload_content_type = NULL;
     g_upload_data = NULL;
     g_upload_data_len = 0;
+    g_upload_data_cap = 0;
 
     /* Parse multipart form data */
     csilk_multipart_parse(c, upload_part_handler);
@@ -56,6 +68,12 @@ file_upload_handler(csilk_ctx_t* c)
     if (!g_upload_filename || !g_upload_data) {
         free(g_upload_filename);
         free(g_upload_content_type);
+        free(g_upload_data);
+        g_upload_filename = NULL;
+        g_upload_content_type = NULL;
+        g_upload_data = NULL;
+        g_upload_data_len = 0;
+        g_upload_data_cap = 0;
         respond_bad_request(c, "No file uploaded");
         return;
     }
@@ -85,6 +103,8 @@ file_upload_handler(csilk_ctx_t* c)
     g_upload_filename = NULL;
     g_upload_content_type = NULL;
     g_upload_data = NULL;
+    g_upload_data_len = 0;
+    g_upload_data_cap = 0;
 }
 
 void

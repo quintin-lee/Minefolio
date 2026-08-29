@@ -95,6 +95,14 @@ daily_expenses_create(csilk_ctx_t* c)
         return;
     }
 
+    int is_income = strcmp(type, "income") == 0;
+    int is_expense = strcmp(type, "expense") == 0;
+    if (!is_income && !is_expense) {
+        csilk_json_free(body);
+        respond_bad_request(c, "expense_type 必须为 income 或 expense");
+        return;
+    }
+
     const char* currency = csilk_json_get_string(body, "currency");
     if (!currency) {
         currency = "CNY";
@@ -118,7 +126,7 @@ daily_expenses_create(csilk_ctx_t* c)
         return;
     }
 
-    double business_delta = (strcmp(type, "income") == 0) ? amount : -amount;
+    double business_delta = is_income ? amount : -amount;
     if (balance_apply_delta(
             pool, asset_id, user_id, business_delta, "daily_expense", expense_id, note) != 0) {
         csilk_db_exec(pool, "ROLLBACK");
@@ -135,7 +143,12 @@ daily_expenses_create(csilk_ctx_t* c)
             if (tag_id <= 0) {
                 continue;
             }
-            de_tag_insert(pool, expense_id, tag_id);
+            if (de_tag_insert(pool, expense_id, tag_id) == 0) {
+                csilk_db_exec(pool, "ROLLBACK");
+                csilk_json_free(body);
+                respond_error(c, 500, "创建失败");
+                return;
+            }
         }
     }
 
@@ -196,8 +209,8 @@ daily_expenses_update(csilk_ctx_t* c)
     int64_t             old_asset_id = db_get_int(old_r, "asset_id");
     double old_delta = (old_type && strcmp(old_type, "income") == 0) ? old_amount : -old_amount;
 
-    int64_t       category_id = (int64_t)db_get_num(body, "category_id");
-    int64_t       asset_id = (int64_t)db_get_num(body, "asset_id");
+    int64_t       category_id = db_get_int(body, "category_id");
+    int64_t       asset_id = db_get_int(body, "asset_id");
     const char*   type = csilk_json_get_string(body, "expense_type");
     double        amount = db_get_num(body, "amount");
     const char*   date = csilk_json_get_string(body, "expense_date");
@@ -209,6 +222,15 @@ daily_expenses_update(csilk_ctx_t* c)
         csilk_json_free(body);
         csilk_json_free(old_row);
         respond_bad_request(c, "asset_id、category_id、expense_type、amount、expense_date 为必填");
+        return;
+    }
+
+    int is_income = strcmp(type, "income") == 0;
+    int is_expense = strcmp(type, "expense") == 0;
+    if (!is_income && !is_expense) {
+        csilk_json_free(body);
+        csilk_json_free(old_row);
+        respond_bad_request(c, "expense_type 必须为 income 或 expense");
         return;
     }
 
@@ -236,7 +258,7 @@ daily_expenses_update(csilk_ctx_t* c)
         return;
     }
 
-    double new_delta = (strcmp(type ? type : "", "income") == 0) ? amount : -amount;
+    double new_delta = is_income ? amount : -amount;
     if (asset_id == old_asset_id) {
         if (new_delta != old_delta) {
             if (balance_apply_delta(pool,
@@ -267,7 +289,13 @@ daily_expenses_update(csilk_ctx_t* c)
         }
     }
 
-    de_tag_delete_all(pool, atoll(id_str));
+    if (de_tag_delete_all(pool, atoll(id_str)) == 0) {
+        csilk_db_exec(pool, "ROLLBACK");
+        csilk_json_free(body);
+        csilk_json_free(old_row);
+        respond_error(c, 500, "更新失败");
+        return;
+    }
     if (tags && csilk_json_is_array(tags)) {
         size_t n = csilk_json_array_size(tags);
         for (size_t i = 0; i < n; i++) {
@@ -276,7 +304,13 @@ daily_expenses_update(csilk_ctx_t* c)
             if (tag_id <= 0) {
                 continue;
             }
-            de_tag_insert(pool, atoll(id_str), tag_id);
+            if (de_tag_insert(pool, atoll(id_str), tag_id) == 0) {
+                csilk_db_exec(pool, "ROLLBACK");
+                csilk_json_free(body);
+                csilk_json_free(old_row);
+                respond_error(c, 500, "更新失败");
+                return;
+            }
         }
     }
 
@@ -324,7 +358,12 @@ daily_expenses_delete(csilk_ctx_t* c)
         return;
     }
 
-    de_tag_delete_all(pool, atoll(id_str));
+    if (de_tag_delete_all(pool, atoll(id_str)) == 0) {
+        csilk_db_exec(pool, "ROLLBACK");
+        csilk_json_free(old_row);
+        respond_error(c, 500, "删除失败");
+        return;
+    }
     if (!de_delete(pool, user_id, atoll(id_str))) {
         csilk_db_exec(pool, "ROLLBACK");
         csilk_json_free(old_row);
