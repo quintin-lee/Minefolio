@@ -74,26 +74,11 @@ transfers_create(csilk_ctx_t* c)
 
     /* Record transfer_out transaction */
     {
-        char uid[32], amt[64];
+        char uid[32], amt[64], fid[32];
         snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
         snprintf(amt, sizeof(amt), "%.6f", amount);
-        csilk_json_t* res = csilk_db_query_param_json(
-            pool,
-            "INSERT INTO transactions (user_id, asset_id, source_type, transaction_type, amount, "
-            "currency, transaction_date, note) "
-            "VALUES (?, ?, 'expense', 'transfer_out', ?, ?, ?, ?) RETURNING id",
-            (const char*[]){uid,
-                            csilk_json_get_string(body, "from_asset_id") ? "" : "",
-                            amt,
-                            currency,
-                            date,
-                            note ? note : "",
-                            NULL});
-        /* from_asset_id is not in params above — fix: */
-        char fid[32];
         snprintf(fid, sizeof(fid), "%lld", (long long)from_id);
-        csilk_json_free(res);
-        res = csilk_db_query_param_json(
+        csilk_json_t* res = csilk_db_query_param_json(
             pool,
             "INSERT INTO transactions (user_id, asset_id, source_type, transaction_type, amount, "
             "currency, transaction_date, note) "

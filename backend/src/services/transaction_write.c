@@ -97,6 +97,9 @@ transactions_create(csilk_ctx_t* c)
     double      price = db_get_num(body, "price_per_unit");
     double      qty = db_get_num(body, "quantity");
     double      fee = db_get_num(body, "fee");
+    if (fee < 0) {
+        fee = 0;
+    }
 
     char cat_str[32], amt_str[64], price_str[64], qty_str[64];
     snprintf(cat_str, sizeof(cat_str), "%lld", (long long)category_id);
@@ -206,10 +209,13 @@ transactions_create(csilk_ctx_t* c)
     // 目标资产余额联动（非投资类走原逻辑，投资类已在 apply_position 内处理）
     double tdelta = is_investment_tx ? 0 : tx_delta(type, amount, price, qty);
     if (is_investment_tx) {
-        // 投资类：buy 更新 fund current_value（delta=quantity*price-old_current）
-        //       sell 也更新 fund current_value（delta=new_qty*net_value-old_current）
-        //       净值更新时 assets/update 会重算 current_value
-        balance_apply_delta(pool, asset_id, user_id, position_delta, "transaction", tx_id, note);
+        if (balance_apply_delta(
+                pool, asset_id, user_id, position_delta, "transaction", tx_id, note) != 0) {
+            csilk_db_exec(pool, "ROLLBACK");
+            csilk_json_free(body);
+            respond_bad_request(c, "资产余额更新失败");
+            return;
+        }
     } else if (tdelta != 0) {
         if (balance_apply_delta(pool, asset_id, user_id, tdelta, "transaction", tx_id, note) != 0) {
             csilk_db_exec(pool, "ROLLBACK");
@@ -314,6 +320,9 @@ transactions_update(csilk_ctx_t* c)
     double  qty = db_get_num(body, "quantity");
     int64_t category_id = db_get_int(body, "category_id");
     double  fee = db_get_num(body, "fee");
+    if (fee < 0) {
+        fee = 0;
+    }
 
     char amt_str[64], price_str[64], qty_str[64], cat_str[32], last_str[32];
     snprintf(amt_str, sizeof(amt_str), "%.6f", amount);
@@ -351,16 +360,11 @@ transactions_update(csilk_ctx_t* c)
         return;
     }
 
-    // 1. 目标资产余额联动
-    // 投资类（buy/sell）：apply_position 更新持仓 quantity/cost_basis/net_value，
-    //                   同时通过 balance_apply_delta 更新 current_value。
-    // 非投资类：计算 diff = new_tdelta - old_tdelta，原子更新余额。
     double new_tdelta = tx_delta(type ? type : "", amount, price, qty);
     int    old_is_invest = (strcmp(old_tx_type, "buy") == 0 || strcmp(old_tx_type, "sell") == 0);
     int    new_is_invest =
         (strcmp(type ? type : "", "buy") == 0 || strcmp(type ? type : "", "sell") == 0);
     if (old_is_invest) {
-        // 回滚旧持仓
         double old_pos_delta = 0;
         rollback_position(pool,
                           old_asset_id,
@@ -370,16 +374,23 @@ transactions_update(csilk_ctx_t* c)
                           old_tx_price,
                           old_tx_qty,
                           &old_pos_delta);
-        if (old_pos_delta != 0) {
-            if (balance_apply_delta(
-                    pool, old_asset_id, user_id, old_pos_delta, "transaction", tx_id_val, note) !=
-                0) {
-                csilk_db_exec(pool, "ROLLBACK");
-                csilk_json_free(body);
-                csilk_json_free(old_row);
-                respond_bad_request(c, "资产无效");
-                return;
-            }
+        if (old_pos_delta != 0 &&
+            balance_apply_delta(
+                pool, old_asset_id, user_id, old_pos_delta, "transaction", tx_id_val, note) != 0) {
+            csilk_db_exec(pool, "ROLLBACK");
+            csilk_json_free(body);
+            csilk_json_free(old_row);
+            respond_bad_request(c, "资产无效");
+            return;
+        }
+    } else if (old_tdelta != 0) {
+        if (balance_apply_delta(
+                pool, old_asset_id, user_id, -old_tdelta, "transaction", tx_id_val, note) != 0) {
+            csilk_db_exec(pool, "ROLLBACK");
+            csilk_json_free(body);
+            csilk_json_free(old_row);
+            respond_bad_request(c, "资产无效");
+            return;
         }
     }
     if (new_is_invest) {
@@ -393,29 +404,23 @@ transactions_update(csilk_ctx_t* c)
             respond_bad_request(c, "持有份额不足");
             return;
         }
-        if (new_pos_delta != 0) {
-            if (balance_apply_delta(
-                    pool, old_asset_id, user_id, new_pos_delta, "transaction", tx_id_val, note) !=
-                0) {
-                csilk_db_exec(pool, "ROLLBACK");
-                csilk_json_free(body);
-                csilk_json_free(old_row);
-                respond_bad_request(c, "资产无效");
-                return;
-            }
+        if (new_pos_delta != 0 &&
+            balance_apply_delta(
+                pool, old_asset_id, user_id, new_pos_delta, "transaction", tx_id_val, note) != 0) {
+            csilk_db_exec(pool, "ROLLBACK");
+            csilk_json_free(body);
+            csilk_json_free(old_row);
+            respond_bad_request(c, "资产无效");
+            return;
         }
-    } else if (!old_is_invest) {
-        // 新旧均非投资类：走 diff
-        double diff = new_tdelta - old_tdelta;
-        if (diff != 0) {
-            if (balance_apply_delta(
-                    pool, old_asset_id, user_id, diff, "transaction", tx_id_val, note) != 0) {
-                csilk_db_exec(pool, "ROLLBACK");
-                csilk_json_free(body);
-                csilk_json_free(old_row);
-                respond_bad_request(c, "资产无效");
-                return;
-            }
+    } else if (new_tdelta != 0) {
+        if (balance_apply_delta(
+                pool, old_asset_id, user_id, new_tdelta, "transaction", tx_id_val, note) != 0) {
+            csilk_db_exec(pool, "ROLLBACK");
+            csilk_json_free(body);
+            csilk_json_free(old_row);
+            respond_bad_request(c, "资产无效");
+            return;
         }
     }
 
@@ -550,9 +555,13 @@ transactions_delete(csilk_ctx_t* c)
                           old_tx_price,
                           old_tx_qty,
                           &old_pos_delta);
-        if (old_pos_delta != 0) {
+        if (old_pos_delta != 0 &&
             balance_apply_delta(
-                pool, asset_id, user_id, old_pos_delta, "transaction", tx_id_val, NULL);
+                pool, asset_id, user_id, old_pos_delta, "transaction", tx_id_val, NULL) != 0) {
+            csilk_db_exec(pool, "ROLLBACK");
+            csilk_json_free(old_row);
+            respond_error(c, 500, "删除失败");
+            return;
         }
     }
 
