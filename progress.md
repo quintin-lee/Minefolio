@@ -38,7 +38,12 @@
 - Steps: step_gt_collect / step_gt_plan / step_gt_report — 懒创建 savings_goals + 月需追加 + 饼图/xychart, cmake build ✅
 - Commit: pending
 
-### Phase 7: wf_debt_payoff (in_progress)
+### Phase 7: wf_debt_payoff
+- **Status:** complete (2026-08-29)
+- Steps: step_dp_collect / step_dp_simulate / step_dp_report — note解析利率 + 12期雪崩/雪球模拟 + 饼图+对比, cmake build ✅
+- Commit: pending
+
+### Phase 8: 收尾 (in_progress)
 
 ## Session: 2025-08-21
 

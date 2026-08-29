@@ -65,15 +65,17 @@ Phase 7 — 债务加速偿还规划 (Debt Payoff) [in_progress]
 - **Status:** complete
 
 ### Phase 7: 债务加速偿还规划 (Debt Payoff) — P2
-- [ ] 拉取 loan/credit_card 余额+利率
-- [ ] 雪崩 vs 雪球模拟 12 期
-- [ ] 报告：对比表 + 利息节省
-- **Status:** in_progress
+- [x] 拉取 loan/credit_card 余额+利率（note 解析 + 默认 18%/4.9%/6%）— `step_dp_collect`
+- [x] 雪崩 vs 雪球模拟 12 期（minPay max(100,2%)+优先级定向）— `step_dp_simulate`
+- [x] 报告：债务饼图 + xychart 利息对比 + 明细表 + 推荐策略 — `step_dp_report`
+- [x] 注册 `wf_debt_payoff` 到 g_workflows（ph:hand-coins, dp_collect/dp_simulate/generate_report）
+- [x] 构建验证通过（仅预存 strncpy warning）
+- **Status:** complete
 
 ### Phase 8: 收尾
-- [ ] 全量 10 工作流回归构建 (`cmake --build && npm run build`)
-- [ ] 清理 build 产物、更新 AGENTS.md/文档
-- **Status:** pending
+- [x] 全量 10 工作流回归构建（backend cmake ✅，仅 strncpy warning）
+- [ ] 前端 npm run build 回归 + 清理 build 产物
+- **Status:** in_progress
 
 ## Key Questions
 1. 预算数据来源：当前无独立 budgets 表，Phase2 需用历史均值*1.2 作为隐式预算，还是新增表？
