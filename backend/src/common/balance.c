@@ -77,7 +77,8 @@ balance_apply_delta(csilk_db_pool_t* pool,
                                   "updated_at = CURRENT_TIMESTAMP WHERE id=? AND user_id=?",
                                   params3);
     if (!res3) {
-        CSILK_LOG_E("balance_apply_delta: failed to update balance asset_id=%lld", (long long)asset_id);
+        CSILK_LOG_E("balance_apply_delta: failed to update balance asset_id=%lld",
+                    (long long)asset_id);
         return -2;
     }
     csilk_json_free(res3);
@@ -90,7 +91,8 @@ balance_apply_delta(csilk_db_pool_t* pool,
         if (after) {
             csilk_json_free(after);
         }
-        CSILK_LOG_E("balance_apply_delta: failed to read balance_after asset_id=%lld", (long long)asset_id);
+        CSILK_LOG_E("balance_apply_delta: failed to read balance_after asset_id=%lld",
+                    (long long)asset_id);
         return -2;
     }
     double balance_after = db_get_num(csilk_json_array_get(after, 0), "current_value");
@@ -115,14 +117,14 @@ balance_apply_delta(csilk_db_pool_t* pool,
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
         params5);
     if (!res5) {
-        CSILK_LOG_E("balance_apply_delta: failed to insert audit log asset_id=%lld", (long long)asset_id);
+        CSILK_LOG_E("balance_apply_delta: failed to insert audit log asset_id=%lld",
+                    (long long)asset_id);
         return -2;
     }
     csilk_json_free(res5);
 
     return 0;
- }
-
+}
 
 int
 is_investment_type(const char* atype)

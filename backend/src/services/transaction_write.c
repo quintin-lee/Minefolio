@@ -154,7 +154,6 @@ transactions_create(csilk_ctx_t* c)
     char tx_id_str[32];
     snprintf(tx_id_str, sizeof(tx_id_str), "%lld", (long long)tx_id);
 
-
     // 持仓联动：仅 buy/sell 且投资类资产
     CSILK_LOG_I(
         "transactions_create inserted id=%lld type=%s", (long long)tx_id, type ? type : "(null)");
@@ -555,11 +554,16 @@ transactions_delete(csilk_ctx_t* c)
             size_t fee_count = csilk_json_array_size(fee_children);
             for (size_t i = 0; i < fee_count; i++) {
                 const csilk_json_t* child = csilk_json_array_get(fee_children, i);
-                int64_t child_linked_id = db_get_int(child, "linked_asset_id");
-                double  child_amount = db_get_num(child, "amount");
+                int64_t             child_linked_id = db_get_int(child, "linked_asset_id");
+                double              child_amount = db_get_num(child, "amount");
                 if (child_linked_id > 0 && child_amount != 0.0) {
-                    if (balance_apply_delta(pool, child_linked_id, user_id, child_amount,
-                                            "transaction_fee", tx_id_val, NULL) != 0) {
+                    if (balance_apply_delta(pool,
+                                            child_linked_id,
+                                            user_id,
+                                            child_amount,
+                                            "transaction_fee",
+                                            tx_id_val,
+                                            NULL) != 0) {
                         csilk_db_exec(pool, "ROLLBACK");
                         csilk_json_free(old_row);
                         csilk_json_free(fee_children);

@@ -49,4 +49,4 @@ int           tx_delete(csilk_db_pool_t* pool, int64_t user_id, int64_t id);
 csilk_json_t* tx_child_fee_rows(csilk_db_pool_t* pool, int64_t user_id, int64_t parent_tx_id);
 int           tx_delete_fee_children(csilk_db_pool_t* pool, int64_t user_id, int64_t parent_tx_id);
 
-int           tx_asset_exists(csilk_db_pool_t* pool, int64_t user_id, int64_t asset_id);
+int tx_asset_exists(csilk_db_pool_t* pool, int64_t user_id, int64_t asset_id);

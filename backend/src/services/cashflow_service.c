@@ -381,7 +381,8 @@ cashflow_service_confirm(csilk_ctx_t* c)
         return;
     }
 
-    if (balance_apply_delta(pool, target_asset_id, user_id, amount, "transaction", tx_id, tx_note) != 0) {
+    if (balance_apply_delta(
+            pool, target_asset_id, user_id, amount, "transaction", tx_id, tx_note) != 0) {
         csilk_db_exec(pool, "ROLLBACK");
         respond_error(c, 1002, "现金流余额更新失败");
         return;
