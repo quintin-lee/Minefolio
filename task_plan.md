@@ -4,7 +4,7 @@
 逐个实现 7 个新增实用工作流，补齐“月度复盘/再平衡/大额决策”之外的核心日常财务场景。每个工作流需：后端 SSE 步骤定义 + 真实数据聚合 + Mermaid 报告 + 前端可视化复用现有 ai_workflow_service 框架。
 
 ## Current Phase
-Phase 4 — 订阅/固定支出审计 (Subscription Audit) [pending]
+Phase 5 — 应急基金健康检查 (Emergency Fund Check) [in_progress]
 
 ## Phases
 
@@ -41,10 +41,15 @@ Phase 4 — 订阅/固定支出审计 (Subscription Audit) [pending]
 - **Status:** complete
 
 ### Phase 4: 订阅/固定支出审计 (Subscription Audit) — P1
-- [ ] 聚类：按 note/amount/周期识别订阅项
-- [ ] 涨价检测 + 90天未使用标记
-- [ ] 报告：订阅清单 + 年化节省额
-- **Status:** pending
+- [x] 聚类：按 (amount+category) 聚类，cnt>=3 且跨月>=2 识别订阅 — `step_sa_collect` + `step_sa_analyze`
+- [x] 涨价检测（同类目替代金额+10%） + 45天未使用标记 stale/hiked
+- [x] 报告：订阅清单表格 + Mermaid 饼图 + 年化额 + 批处理建议 — `step_sa_report`
+- [x] 注册 `wf_subscription_audit` 到 g_workflows（ph:repeat, sa_collect/sa_analyze/generate_report）
+- [x] 构建验证通过（cmake build passed, 仅 strncpy 截断 warning）
+- **Status:** complete
+
+## Current Phase
+Phase 5 — 应急基金健康检查 (Emergency Fund Check) [in_progress]
 
 ### Phase 5: 应急基金健康检查 (Emergency Fund Check) — P1
 - [ ] 复用 `get_user_avg_monthly_burn` + liquid_cash

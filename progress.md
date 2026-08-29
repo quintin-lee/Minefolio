@@ -23,7 +23,12 @@
 - Notes: 3σ with fallback (sparse→fixed threshold 2000), duplicate within 2 days, midnight 00-05 >500, freq small <50 x5/day
 - Commit: pending
 
-### Phase 4: wf_subscription_audit (next)
+### Phase 4: wf_subscription_audit
+- **Status:** complete (2026-08-29)
+- Commit: pending (wf_subscription_audit 3 steps + g_workflow registration)
+- Steps: step_sa_collect / step_sa_analyze / step_sa_report — (amount+category)聚类 cnt>=3 跨月>=2, stale>45d, hiked +10%, cmake build ✅
+
+### Phase 5: wf_emergency_fund (in_progress)
 
 ## Session: 2025-08-21
 
