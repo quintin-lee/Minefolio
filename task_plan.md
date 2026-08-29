@@ -4,7 +4,7 @@
 逐个实现 7 个新增实用工作流，补齐“月度复盘/再平衡/大额决策”之外的核心日常财务场景。每个工作流需：后端 SSE 步骤定义 + 真实数据聚合 + Mermaid 报告 + 前端可视化复用现有 ai_workflow_service 框架。
 
 ## Current Phase
-Phase 5 — 应急基金健康检查 (Emergency Fund Check) [in_progress]
+Phase 6 — 目标储蓄追踪 (Goal Tracker) [in_progress]
 
 ## Phases
 
@@ -48,14 +48,13 @@ Phase 5 — 应急基金健康检查 (Emergency Fund Check) [in_progress]
 - [x] 构建验证通过（cmake build passed, 仅 strncpy 截断 warning）
 - **Status:** complete
 
-## Current Phase
-Phase 5 — 应急基金健康检查 (Emergency Fund Check) [in_progress]
-
 ### Phase 5: 应急基金健康检查 (Emergency Fund Check) — P1
-- [ ] 复用 `get_user_avg_monthly_burn` + liquid_cash
-- [ ] 健康度评分 0-100 + 缺口计算
-- [ ] 报告：仪表盘 + 补足计划
-- **Status:** pending
+- [x] 复用 `get_user_avg_monthly_burn` + liquid_cash — `step_ef_collect`
+- [x] 健康度评分 0-100 + 缺口/覆盖月数/补足计划 — `step_ef_health`
+- [x] 报告：达成度饼图 + 补足计划表 + 分级建议 — `step_ef_report`
+- [x] 注册 `wf_emergency_fund` 到 g_workflows（ph:shield-check, ef_collect/ef_health/generate_report）
+- [x] 构建验证通过（cmake build passed, 仅 strncpy warning）
+- **Status:** complete
 
 ### Phase 6: 目标储蓄追踪 (Goal Tracker) — P2
 - [ ] 需新增 `savings_goals` 表或复用资产 tag 方案（待定）

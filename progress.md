@@ -28,7 +28,12 @@
 - Commit: pending (wf_subscription_audit 3 steps + g_workflow registration)
 - Steps: step_sa_collect / step_sa_analyze / step_sa_report — (amount+category)聚类 cnt>=3 跨月>=2, stale>45d, hiked +10%, cmake build ✅
 
-### Phase 5: wf_emergency_fund (in_progress)
+### Phase 5: wf_emergency_fund
+- **Status:** complete (2026-08-29)
+- Steps: step_ef_collect / step_ef_health / step_ef_report — health_score 0-100 + gap + topup, cmake build ✅
+- Commit: pending
+
+### Phase 6: wf_goal_tracker (in_progress)
 
 ## Session: 2025-08-21
 

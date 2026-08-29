@@ -2544,6 +2544,305 @@ step_sa_report(csilk_db_pool_t*    pool,
 }
 
 /* ========================================================================= */
+/*  Emergency Fund Health Check Workflow — 三步                              */
+/* ========================================================================= */
+
+/* ---- Step 1: 流动现金与月均刚性支出盘点 ---- */
+static char*
+step_ef_collect(csilk_db_pool_t*    pool,
+                int64_t             user_id,
+                const csilk_json_t* params,
+                const char*         ctx_json)
+{
+    (void)params;
+    (void)ctx_json;
+    if (!pool) {
+        return strdup("{\"error\":\"db not ready\"}");
+    }
+    /* liquid cash — 与现有 health_diagnosis / payday 保持同口径 */
+    double liquid_cash = 0;
+    {
+        int64_t       tot = 0;
+        csilk_json_t* arr = asset_list(pool, user_id, 1, 100, NULL, &tot);
+        if (arr && csilk_json_is_array(arr)) {
+            size_t n = csilk_json_array_size(arr);
+            for (size_t i = 0; i < n; i++) {
+                const csilk_json_t* it = csilk_json_array_get(arr, i);
+                const char*         atype = csilk_json_get_string(it, "asset_type");
+                if (!atype) {
+                    atype = "";
+                }
+                if (strcmp(atype, "cash") != 0 && strcmp(atype, "bank") != 0 &&
+                    strcmp(atype, "other_asset") != 0) {
+                    continue;
+                }
+                const char* pid = csilk_json_get_string(it, "parent_id");
+                if (pid && pid[0] && strcmp(pid, "0") != 0) {
+                    continue;
+                }
+                liquid_cash += db_get_num(it, "net_value");
+            }
+        }
+        if (arr) {
+            csilk_json_free(arr);
+        }
+    }
+    double monthly_burn = get_user_avg_monthly_burn(pool, user_id);
+    /* target_months 来自 params，默认 6 个月 */
+    int target_months = 6;
+    if (params) {
+        double tv = db_get_num(params, "target_months");
+        if (tv >= 1 && tv <= 12) {
+            target_months = (int)tv;
+        }
+    }
+    double target_amount = monthly_burn > 0 ? monthly_burn * target_months : 0;
+    double current_runway = monthly_burn > 0 ? liquid_cash / monthly_burn : 0;
+    double gap = target_amount > liquid_cash ? target_amount - liquid_cash : 0;
+
+    csilk_json_t* out = csilk_json_object();
+    csilk_json_add_number(out, "liquid_cash", liquid_cash);
+    csilk_json_add_number(out, "monthly_burn", monthly_burn);
+    csilk_json_add_number(out, "current_runway", current_runway);
+    csilk_json_add_number(out, "target_months", (double)target_months);
+    csilk_json_add_number(out, "target_amount", target_amount);
+    csilk_json_add_number(out, "gap", gap);
+    if (monthly_burn <= 0) {
+        csilk_json_add_string(out, "note", "暂无月均支出数据，备用金目标按 0 估算");
+    }
+    size_t slen = 0;
+    char*  s = csilk_json_serialize(out, &slen);
+    csilk_json_free(out);
+    char* ret = s ? strdup(s) : strdup("{}");
+    free(s);
+    return ret;
+}
+
+/* ---- Step 2: 健康度评分与缺口测算 ---- */
+static char*
+step_ef_health(csilk_db_pool_t*    pool,
+               int64_t             user_id,
+               const csilk_json_t* params,
+               const char*         ctx_json)
+{
+    (void)pool;
+    (void)user_id;
+    (void)params;
+    csilk_json_t* root = ctx_json ? csilk_json_parse(ctx_json) : NULL;
+    csilk_json_t* s0 = root ? csilk_json_get(root, "ef_collect") : NULL;
+    double        liquid = s0 ? db_get_num(s0, "liquid_cash") : 0;
+    double        burn = s0 ? db_get_num(s0, "monthly_burn") : 0;
+    double        target_amount = s0 ? db_get_num(s0, "target_amount") : 0;
+    double        gap = s0 ? db_get_num(s0, "gap") : 0;
+    double        runway = s0 ? db_get_num(s0, "current_runway") : 0;
+    double        target_months = s0 ? db_get_num(s0, "target_months") : 6;
+
+    /* 健康度 0-100：liquid/target*100 封顶 100 */
+    double health_score = 0;
+    if (target_amount > 0) {
+        health_score = liquid / target_amount * 100.0;
+        if (health_score > 100) {
+            health_score = 100;
+        }
+        if (health_score < 0) {
+            health_score = 0;
+        }
+    } else if (liquid > 0) {
+        health_score = 100;
+    }
+
+    const char* level = "healthy";
+    const char* level_label = "✅ 健康";
+    if (target_amount <= 0) {
+        level = "unknown";
+        level_label = "ℹ️ 待补充数据";
+    } else if (health_score >= 100) {
+        level = "healthy";
+        level_label = "✅ 健康";
+    } else if (health_score >= 50) {
+        level = "warning";
+        level_label = "⚠️ 偏低";
+    } else {
+        level = "danger";
+        level_label = "🔴 不足";
+    }
+
+    /* 补足计划：建议每月追加额（默认 6 个月补齐） */
+    int    plan_months = 6;
+    double monthly_topup = 0;
+    if (gap > 0) {
+        monthly_topup = gap / plan_months;
+    }
+
+    csilk_json_t* out = csilk_json_object();
+    csilk_json_add_number(out, "liquid_cash", liquid);
+    csilk_json_add_number(out, "monthly_burn", burn);
+    csilk_json_add_number(out, "target_months", target_months);
+    csilk_json_add_number(out, "target_amount", target_amount);
+    csilk_json_add_number(out, "gap", gap);
+    csilk_json_add_number(out, "current_runway", runway);
+    csilk_json_add_number(out, "health_score", health_score);
+    csilk_json_add_string(out, "level", level);
+    csilk_json_add_string(out, "level_label", level_label);
+    csilk_json_add_number(out, "plan_months", (double)plan_months);
+    csilk_json_add_number(out, "monthly_topup", monthly_topup);
+    size_t slen = 0;
+    char*  s = csilk_json_serialize(out, &slen);
+    csilk_json_free(out);
+    if (root) {
+        csilk_json_free(root);
+    }
+    char* ret = s ? strdup(s) : strdup("{}");
+    free(s);
+    return ret;
+}
+
+/* ---- Step 3: 仪表盘与补足计划报告 ---- */
+/* HINT: report step — consumes ef_collect + ef_health from ctx_json */
+static char*
+step_ef_report(csilk_db_pool_t*    pool,
+               int64_t             user_id,
+               const csilk_json_t* params,
+               const char*         ctx_json)
+{
+    (void)pool;
+    (void)user_id;
+    (void)params;
+    csilk_json_t* root = ctx_json ? csilk_json_parse(ctx_json) : NULL;
+    csilk_json_t* s0 = root ? csilk_json_get(root, "ef_collect") : NULL;
+    csilk_json_t* s1 = root ? csilk_json_get(root, "ef_health") : NULL;
+    double liquid = s1 ? db_get_num(s1, "liquid_cash") : (s0 ? db_get_num(s0, "liquid_cash") : 0);
+    double burn = s1 ? db_get_num(s1, "monthly_burn") : (s0 ? db_get_num(s0, "monthly_burn") : 0);
+    double target_amount = s1 ? db_get_num(s1, "target_amount") : 0;
+    double gap = s1 ? db_get_num(s1, "gap") : 0;
+    double runway = s1 ? db_get_num(s1, "current_runway") : 0;
+    double health_score = s1 ? db_get_num(s1, "health_score") : 0;
+    const char* level_label = s1 ? csilk_json_get_string(s1, "level_label") : "—";
+    if (!level_label) {
+        level_label = "—";
+    }
+    double target_months = s1 ? db_get_num(s1, "target_months") : 6;
+    double monthly_topup = s1 ? db_get_num(s1, "monthly_topup") : 0;
+    int    plan_months = s1 ? (int)db_get_num(s1, "plan_months") : 6;
+
+    /* Mermaid 饼图：已备 vs 缺口 */
+    char mermaid[2048] = {0};
+    if (target_amount > 0) {
+        double filled = liquid > target_amount ? target_amount : liquid;
+        double missing = gap;
+        /* avoid empty pie when both 0 */
+        if (filled == 0 && missing == 0) {
+            snprintf(
+                mermaid, sizeof(mermaid), "> ℹ️ 暂无备用金目标数据，完成一次收支记账后重试。\n\n");
+        } else {
+            snprintf(mermaid,
+                     sizeof(mermaid),
+                     "```mermaid\npie showData\n    title 应急备用金达成度（目标 %.0f 个月）\n"
+                     "    \"已备金额\" : %.2f\n"
+                     "    \"缺口金额\" : %.2f\n```\n\n",
+                     target_months,
+                     filled,
+                     missing);
+        }
+    } else {
+        snprintf(mermaid,
+                 sizeof(mermaid),
+                 "> ℹ️ 月均支出为 0，无法计算备用金目标。建议先完成收支记账。\n\n");
+    }
+
+    /* 建议文案 */
+    char advice[1024] = {0};
+    if (target_amount <= 0) {
+        snprintf(advice,
+                 sizeof(advice),
+                 "暂无月均支出基线，建议先记录 1-2 个月日常流水后再评估备用金。");
+    } else if (health_score >= 100) {
+        snprintf(
+            advice,
+            sizeof(advice),
+            "备用金已达标（覆盖 %.1f 个月），建议将多余流动资金转入定投或稳健理财，避免现金闲置。",
+            runway);
+    } else if (health_score >= 50) {
+        snprintf(advice,
+                 sizeof(advice),
+                 "备用金偏低（%.0f%%），建议未来 %d 个月每月追加 `￥%.0f` 补齐缺口 `￥%.0f`。",
+                 health_score,
+                 plan_months,
+                 monthly_topup,
+                 gap);
+    } else {
+        snprintf(advice,
+                 sizeof(advice),
+                 "备用金不足（%.0f%%，仅覆盖 %.1f 个月），建议优先暂停非刚需支出，%d "
+                 "个月内每月追加 `￥%.0f` 紧急补足。",
+                 health_score,
+                 runway,
+                 plan_months,
+                 monthly_topup);
+    }
+
+    char buf[16384];
+    snprintf(buf,
+             sizeof(buf),
+             "### 🛡️ 应急基金健康检查报告\n\n"
+             "**健康度** `%.0f 分` ｜ **状态** `%s` ｜ **当前覆盖** `%.1f 个月` ｜ **目标** `%.0f "
+             "个月`\n\n"
+             "**流动现金** `￥%.2f` ｜ **月均刚性支出** `￥%.2f` ｜ **备用金目标** `￥%.2f` ｜ "
+             "**缺口** `￥%.2f`\n\n"
+             "#### 一、达成度构成\n"
+             "%s"
+             "#### 二、补足计划\n"
+             "| 指标 | 数值 |\n"
+             "| :--- | :--- |\n"
+             "| 目标月数 | %.0f 个月 |\n"
+             "| 目标金额 | ￥%.2f |\n"
+             "| 当前流动现金 | ￥%.2f |\n"
+             "| 缺口 | ￥%.2f |\n"
+             "| 建议补足周期 | %d 个月 |\n"
+             "| 建议每月追加 | ￥%.2f |\n"
+             "\n"
+             "#### 三、处置建议\n"
+             "%s\n\n"
+             "- **健康 (≥100%%)**：已达标，超出部分可转定投；\n"
+             "- **偏低 (50-100%%)**：按月追加，优先保障 3 个月底线；\n"
+             "- **不足 (<50%%)**：暂停大额非刚需消费，优先补足至 3 个月。\n"
+             "```action\n"
+             "{\n"
+             "  \"action_type\": \"emergency_fund_check\",\n"
+             "  \"health_score\": %.0f,\n"
+             "  \"gap\": %.2f,\n"
+             "  \"monthly_topup\": %.2f,\n"
+             "  \"target_months\": %.0f\n"
+             "}\n"
+             "```\n",
+             health_score,
+             level_label,
+             runway,
+             target_months,
+             liquid,
+             burn,
+             target_amount,
+             gap,
+             mermaid,
+             target_months,
+             target_amount,
+             liquid,
+             gap,
+             plan_months,
+             monthly_topup,
+             advice,
+             health_score,
+             gap,
+             monthly_topup,
+             target_months);
+
+    if (root) {
+        csilk_json_free(root);
+    }
+    return strdup(buf);
+}
+
+/* ========================================================================= */
 /*  Workflow Registry                                                        */
 /* ========================================================================= */
 
@@ -2695,6 +2994,27 @@ static const ai_workflow_def_t g_workflows[] = {
                  "订阅审计报告与省钱方案",
                  "生成订阅清单、年化统计与取消建议草案",
                  step_sa_report},
+            }, },
+    {
+     .id = "wf_emergency_fund",
+     .title = "应急基金健康检查",
+     .description = "盘点流动现金与月均刚性支出，评分备用金健康度并输出缺口补足计划。",
+     .icon = "ph:shield-check",
+     .step_count = 3,
+     .steps =
+            {
+                {"ef_collect",
+                 "流动现金与月均支出盘点",
+                 "统计活期现金与月均刚性支出基线",
+                 step_ef_collect},
+                {"ef_health",
+                 "健康度评分与缺口测算",
+                 "计算覆盖月数、健康度与补足缺口",
+                 step_ef_health},
+                {"generate_report",
+                 "健康仪表盘与补足计划",
+                 "生成达成度饼图、补足计划表与处置建议",
+                 step_ef_report},
             }, },
 };
 
@@ -2977,6 +3297,20 @@ ai_workflow_run_handler(csilk_ctx_t* c)
                                  (int)db_get_num(parsed_out, "sub_count"),
                                  db_get_num(parsed_out, "total_monthly"),
                                  db_get_num(parsed_out, "total_annual"));
+                    } else if (strcmp(st->step_id, "ef_collect") == 0) {
+                        snprintf(summary_buf,
+                                 sizeof(summary_buf),
+                                 "流动现金￥%.0f 月均支出￥%.0f 覆盖%.1f月",
+                                 db_get_num(parsed_out, "liquid_cash"),
+                                 db_get_num(parsed_out, "monthly_burn"),
+                                 db_get_num(parsed_out, "current_runway"));
+                    } else if (strcmp(st->step_id, "ef_health") == 0) {
+                        snprintf(summary_buf,
+                                 sizeof(summary_buf),
+                                 "健康度%.0f分 %s 缺口￥%.0f",
+                                 db_get_num(parsed_out, "health_score"),
+                                 csilk_json_get_string(parsed_out, "level_label") ?: "",
+                                 db_get_num(parsed_out, "gap"));
                     }
                     csilk_json_add_object(ctx_obj, st->step_id, parsed_out);
                 }
