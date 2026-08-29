@@ -311,9 +311,13 @@ dca_service_confirm_execution(csilk_ctx_t* c)
                    executed_quantity,
                    &pos_delta);
 
-    /* Debit funding account */
-    balance_apply_delta(
-        pool, funding_asset_id, user_id, -actual_amount, "transaction", tx_id, "定投扣款");
+    if (balance_apply_delta(
+            pool, funding_asset_id, user_id, -actual_amount, "transaction", tx_id, "定投扣款") != 0) {
+        csilk_db_exec(pool, "ROLLBACK");
+        csilk_json_free(exec_arr);
+        respond_error(c, 1002, "定投扣款失败");
+        return;
+    }
 
     /* Update execution record */
     dca_execution_update_confirmed(

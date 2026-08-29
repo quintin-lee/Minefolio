@@ -151,6 +151,9 @@ transactions_create(csilk_ctx_t* c)
     }
     int64_t tx_id = db_get_int(csilk_json_array_get(ins, 0), "id");
     csilk_json_free(ins);
+    char tx_id_str[32];
+    snprintf(tx_id_str, sizeof(tx_id_str), "%lld", (long long)tx_id);
+
 
     // 持仓联动：仅 buy/sell 且投资类资产
     CSILK_LOG_I(
@@ -186,13 +189,14 @@ transactions_create(csilk_ctx_t* c)
                                       currency,
                                       date,
                                       fee_note,
+                                      tx_id_str,
                                       NULL};
         csilk_json_t* fee_res = csilk_db_query_param_json(
             pool,
             "INSERT INTO transactions (user_id, asset_id, linked_asset_id, category_id, "
             "source_type, transaction_type, direction, linked_direction, "
-            "amount, price_per_unit, quantity, currency, transaction_date, note) "
-            "VALUES (?, ?, NULLIF(?, '0'), ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)",
+            "amount, price_per_unit, quantity, currency, transaction_date, note, parent_tx_id) "
+            "VALUES (?, ?, NULLIF(?, '0'), ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)",
             fee_params);
         if (fee_res) {
             csilk_json_free(fee_res);
@@ -537,11 +541,43 @@ transactions_delete(csilk_ctx_t* c)
         return;
     }
 
-    if (!tx_delete(pool, user_id, atoll(id_str))) {
+    if (!tx_delete(pool, user_id, tx_id_val)) {
         csilk_db_exec(pool, "ROLLBACK");
         csilk_json_free(old_row);
         respond_error(c, 500, "删除失败");
         return;
+    }
+
+    // 逆转 fee 子行对 linked 账户的扣款
+    {
+        csilk_json_t* fee_children = tx_child_fee_rows(pool, user_id, tx_id_val);
+        if (fee_children && csilk_json_array_size(fee_children) > 0) {
+            size_t fee_count = csilk_json_array_size(fee_children);
+            for (size_t i = 0; i < fee_count; i++) {
+                const csilk_json_t* child = csilk_json_array_get(fee_children, i);
+                int64_t child_linked_id = db_get_int(child, "linked_asset_id");
+                double  child_amount = db_get_num(child, "amount");
+                if (child_linked_id > 0 && child_amount != 0.0) {
+                    if (balance_apply_delta(pool, child_linked_id, user_id, child_amount,
+                                            "transaction_fee", tx_id_val, NULL) != 0) {
+                        csilk_db_exec(pool, "ROLLBACK");
+                        csilk_json_free(old_row);
+                        csilk_json_free(fee_children);
+                        respond_error(c, 500, "删除失败");
+                        return;
+                    }
+                }
+            }
+            csilk_json_free(fee_children);
+            if (!tx_delete_fee_children(pool, user_id, tx_id_val)) {
+                csilk_db_exec(pool, "ROLLBACK");
+                csilk_json_free(old_row);
+                respond_error(c, 500, "删除失败");
+                return;
+            }
+        } else if (fee_children) {
+            csilk_json_free(fee_children);
+        }
     }
 
     // 投资类：回滚持仓

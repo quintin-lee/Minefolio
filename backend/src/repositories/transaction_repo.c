@@ -222,6 +222,37 @@ tx_get_old(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
         "transactions WHERE id=? AND user_id=?",
         (const char*[]){idstr, uid, NULL});
 }
+csilk_json_t*
+tx_child_fee_rows(csilk_db_pool_t* pool, int64_t user_id, int64_t parent_tx_id)
+{
+    char uid[32], pid[32];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    snprintf(pid, sizeof(pid), "%lld", (long long)parent_tx_id);
+    return csilk_db_query_param_json(
+        pool,
+        "SELECT id, linked_asset_id, amount, note "
+        "FROM transactions WHERE parent_tx_id=? AND user_id=? AND transaction_type='fee'",
+        (const char*[]){pid, uid, NULL});
+}
+
+int
+tx_delete_fee_children(csilk_db_pool_t* pool, int64_t user_id, int64_t parent_tx_id)
+{
+    char uid[32], pid[32];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    snprintf(pid, sizeof(pid), "%lld", (long long)parent_tx_id);
+    csilk_json_t* res = csilk_db_query_param_json(
+        pool,
+        "DELETE FROM transactions WHERE parent_tx_id=? AND user_id=? AND transaction_type='fee' "
+        "RETURNING id",
+        (const char*[]){pid, uid, NULL});
+    int ok = res ? csilk_json_array_size(res) > 0 : 0;
+    if (res) {
+        csilk_json_free(res);
+    }
+    return ok;
+}
+
 int
 tx_delete(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
 {
@@ -238,6 +269,7 @@ tx_delete(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
     }
     return ok;
 }
+
 int
 tx_asset_exists(csilk_db_pool_t* pool, int64_t user_id, int64_t asset_id)
 {

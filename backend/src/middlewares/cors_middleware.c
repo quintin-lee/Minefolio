@@ -7,15 +7,16 @@ cors_middleware_wrapper(csilk_ctx_t* c)
 {
     csilk_cors_config_t cors = {0};
     const char*         origin = getenv("MINEFOLIO_CORS_ORIGIN");
-    if (!origin || !origin[0]) {
+    if (origin && origin[0]) {
+        cors.allow_origin = origin;
+        cors.allow_credentials = 1;
+    } else {
         const char* req_origin = csilk_get_header(c, "Origin");
         cors.allow_origin = req_origin && req_origin[0] ? req_origin : "*";
-    } else {
-        cors.allow_origin = origin;
+        cors.allow_credentials = 0;
     }
     cors.allow_methods = "GET,POST,PUT,DELETE,OPTIONS";
     cors.allow_headers = "Content-Type,Authorization,X-CSRF-Token,X-Ledger-Id";
-    cors.allow_credentials = 1;
     csilk_cors_middleware(c, &cors);
 }
 

@@ -130,25 +130,30 @@ db_run_migrations(csilk_db_pool_t* pool)
             return -1;
         }
         free(sql);
-        // ---- 方向列 + 移除 transaction_type CHECK（PG 存量库） ----
-        csilk_db_exec(pool,
-                      "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS direction TEXT NOT NULL "
-                      "DEFAULT 'out' CHECK(direction IN ('in','out','neutral'))");
-        csilk_db_exec(pool,
-                      "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS linked_direction TEXT "
-                      "CHECK(linked_direction IN ('in','out','neutral'))");
-        csilk_db_exec(pool,
-                      "UPDATE transactions SET direction='in' WHERE transaction_type IN "
-                      "('deposit','sell','income','transfer_in')");
-        csilk_db_exec(pool,
-                      "UPDATE transactions SET linked_direction='in' WHERE transaction_type IN "
-                      "('sell','withdrawal','income','transfer_out')");
+    if (!col_exists(pool, "transactions", "direction")) {
         csilk_db_exec(
-            pool, "UPDATE transactions SET linked_direction='out' WHERE linked_direction IS NULL");
-        csilk_db_exec(pool,
-                      "ALTER TABLE transactions DROP CONSTRAINT IF EXISTS "
-                      "transactions_transaction_type_check");
-        // ---- assets 持仓三列迁移（PG 存量库） ----
+            pool,
+            "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS direction TEXT NOT NULL "
+            "DEFAULT 'out' CHECK(direction IN ('in','out','neutral'))");
+    }
+    csilk_db_exec(pool,
+                  "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS linked_direction TEXT "
+                  "CHECK(linked_direction IN ('in','out','neutral'))");
+    csilk_db_exec(pool,
+                  "UPDATE transactions SET direction='in' WHERE transaction_type IN "
+                  "('deposit','sell','income','transfer_in')");
+    csilk_db_exec(pool,
+                  "UPDATE transactions SET linked_direction='in' WHERE transaction_type IN "
+                  "('sell','withdrawal','income','transfer_out')");
+    csilk_db_exec(
+        pool, "UPDATE transactions SET linked_direction='out' WHERE linked_direction IS NULL");
+    csilk_db_exec(pool,
+                  "ALTER TABLE transactions DROP CONSTRAINT IF EXISTS "
+                  "transactions_transaction_type_check");
+    csilk_db_exec(pool,
+                  "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS parent_tx_id BIGINT REFERENCES transactions(id) ON DELETE CASCADE");
+
+
         if (!col_exists(pool, "assets", "quantity")) {
             csilk_db_exec(pool,
                           "ALTER TABLE assets ADD COLUMN IF NOT EXISTS quantity DECIMAL(18,4) NOT "
@@ -311,8 +316,16 @@ db_run_migrations(csilk_db_pool_t* pool)
         csilk_db_exec(pool,
                       "ALTER TABLE transactions ADD COLUMN linked_asset_id INTEGER REFERENCES "
                       "assets(id) ON DELETE SET NULL");
-        CSILK_LOG_I("Migration: added transactions.linked_asset_id");
     }
+
+    // ---- transactions parent_tx_id 列迁移（fee 子行归属父交易） ----
+    if (!col_exists(pool, "transactions", "parent_tx_id")) {
+        csilk_db_exec(pool,
+                      "ALTER TABLE transactions ADD COLUMN parent_tx_id INTEGER REFERENCES "
+                      "transactions(id) ON DELETE CASCADE");
+        CSILK_LOG_I("Migration: added transactions.parent_tx_id");
+    }
+
 
     // ---- 收支-资产联动迁移（列存在性门控，一次性） ----
     if (!col_exists(pool, "daily_expenses", "asset_id")) {

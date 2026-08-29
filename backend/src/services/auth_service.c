@@ -369,13 +369,14 @@ auth_me(csilk_ctx_t* c)
     }
 
     csilk_db_pool_t* pool = db_get_pool();
-    char             sql[256];
-    snprintf(sql,
-             sizeof(sql),
-             "SELECT id, username, created_at FROM users WHERE id = %lld",
-             (long long)user_id);
 
-    csilk_json_t* result = csilk_db_query_json(pool, sql);
+
+    char             uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    const char*      params[] = {uid_str, NULL};
+    csilk_json_t* result = csilk_db_query_param_json(pool,
+                                                     "SELECT id, username, created_at FROM users WHERE id=?",
+                                                     params);
     if (!result || csilk_json_array_size(result) == 0) {
         respond_not_found(c);
         if (result) {
