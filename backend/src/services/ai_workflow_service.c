@@ -28,6 +28,23 @@ get_current_month_str(char* out, size_t sz)
 }
 
 static void
+get_current_datetime_str(char* out, size_t sz)
+{
+    time_t    now = time(NULL);
+    struct tm tm_buf;
+    localtime_r(&now, &tm_buf);
+    snprintf(out,
+             sz,
+             "%04d-%02d-%02d %02d:%02d:%02d",
+             tm_buf.tm_year + 1900,
+             tm_buf.tm_mon + 1,
+             tm_buf.tm_mday,
+             tm_buf.tm_hour,
+             tm_buf.tm_min,
+             tm_buf.tm_sec);
+}
+
+static void
 get_prev_month_str(const char* cur_month, char* out, size_t sz)
 {
     int year = 0, month = 0;
@@ -39,7 +56,19 @@ get_prev_month_str(const char* cur_month, char* out, size_t sz)
         }
         snprintf(out, sz, "%04d-%02d", year, month);
     } else {
-        snprintf(out, sz, "2026-07");
+        /* Fallback: real-time previous month instead of hard-coded date */
+        char cur[32];
+        get_current_month_str(cur, sizeof(cur));
+        if (sscanf(cur, "%d-%d", &year, &month) == 2) {
+            month--;
+            if (month <= 0) {
+                month = 12;
+                year--;
+            }
+            snprintf(out, sz, "%04d-%02d", year, month);
+        } else {
+            snprintf(out, sz, "%s", cur);
+        }
     }
 }
 
@@ -344,16 +373,21 @@ step_mr_generate_report(csilk_db_pool_t*    pool,
     csilk_json_t* s1 = root ? csilk_json_get(root, "analyze_trends") : NULL;
     csilk_json_t* s2 = root ? csilk_json_get(root, "health_diagnosis") : NULL;
 
-    const char* month = s0 ? csilk_json_get_string(s0, "month") : "2026-08";
-    double      expense = s0 ? db_get_num(s0, "total_expense") : 0.0;
-    double      income = s0 ? db_get_num(s0, "total_income") : 0.0;
-    double      net_worth = s0 ? db_get_num(s0, "net_worth") : 0.0;
-    double      mom_rate = s1 ? db_get_num(s1, "mom_rate") : 0.0;
-    double      mom_diff = s1 ? db_get_num(s1, "mom_diff") : 0.0;
-    double      score = s2 ? db_get_num(s2, "health_score") : 80.0;
-    double      savings_rate = s2 ? db_get_num(s2, "savings_rate") : 0.0;
-    double      em_months = s2 ? db_get_num(s2, "emergency_months") : 0.0;
-    double      debt_ratio = s2 ? db_get_num(s2, "debt_ratio") : 0.0;
+    char cur_month_fallback[32];
+    get_current_month_str(cur_month_fallback, sizeof(cur_month_fallback));
+    const char* month = s0 ? csilk_json_get_string(s0, "month") : cur_month_fallback;
+    if (!month || !month[0]) {
+        month = cur_month_fallback;
+    }
+    double expense = s0 ? db_get_num(s0, "total_expense") : 0.0;
+    double income = s0 ? db_get_num(s0, "total_income") : 0.0;
+    double net_worth = s0 ? db_get_num(s0, "net_worth") : 0.0;
+    double mom_rate = s1 ? db_get_num(s1, "mom_rate") : 0.0;
+    double mom_diff = s1 ? db_get_num(s1, "mom_diff") : 0.0;
+    double score = s2 ? db_get_num(s2, "health_score") : 80.0;
+    double savings_rate = s2 ? db_get_num(s2, "savings_rate") : 0.0;
+    double em_months = s2 ? db_get_num(s2, "emergency_months") : 0.0;
+    double debt_ratio = s2 ? db_get_num(s2, "debt_ratio") : 0.0;
 
     /* Build real Mermaid Pie Chart from actual category list */
     char          mermaid_pie[2048] = {0};
@@ -999,6 +1033,10 @@ ai_workflow_run_handler(csilk_ctx_t* c)
         session_id = ai_session_insert(pool, user_id, target_wf->title, "workflow-agent", "system");
     }
 
+    char exec_time_str[64];
+    get_current_datetime_str(exec_time_str, sizeof(exec_time_str));
+    time_t exec_ts = time(NULL);
+
     /* Start SSE streaming */
     csilk_sse_init(c);
 
@@ -1008,6 +1046,8 @@ ai_workflow_run_handler(csilk_ctx_t* c)
     csilk_json_add_string(ev_start, "title", target_wf->title);
     csilk_json_add_number(ev_start, "total_steps", (double)target_wf->step_count);
     csilk_json_add_number(ev_start, "session_id", (double)session_id);
+    csilk_json_add_string(ev_start, "execution_time", exec_time_str);
+    csilk_json_add_number(ev_start, "execution_timestamp", (double)exec_ts);
     size_t slen = 0;
     char*  str_start = csilk_json_serialize(ev_start, &slen);
     csilk_json_free(ev_start);
@@ -1016,15 +1056,26 @@ ai_workflow_run_handler(csilk_ctx_t* c)
 
     /* Cumulative context across steps */
     csilk_json_t* ctx_obj = csilk_json_object();
+    csilk_json_add_string(ctx_obj, "execution_time", exec_time_str);
+    csilk_json_add_number(ctx_obj, "execution_timestamp", (double)exec_ts);
+    {
+        char cur_month_tmp[32];
+        get_current_month_str(cur_month_tmp, sizeof(cur_month_tmp));
+        csilk_json_add_string(ctx_obj, "current_month", cur_month_tmp);
+    }
 
     for (int i = 0; i < target_wf->step_count; i++) {
         const ai_workflow_step_t* st = &target_wf->steps[i];
 
+        char step_time_str[64];
+        get_current_datetime_str(step_time_str, sizeof(step_time_str));
         /* Send step_start */
         csilk_json_t* ev_st_start = csilk_json_object();
         csilk_json_add_number(ev_st_start, "step_index", (double)i);
         csilk_json_add_string(ev_st_start, "step_id", st->step_id);
         csilk_json_add_string(ev_st_start, "title", st->title);
+        csilk_json_add_string(ev_st_start, "step_time", step_time_str);
+        csilk_json_add_number(ev_st_start, "step_timestamp", (double)time(NULL));
         char* str_st_start = csilk_json_serialize(ev_st_start, &slen);
         csilk_json_free(ev_st_start);
         csilk_sse_send(c, "step_start", str_st_start ? str_st_start : "{}");

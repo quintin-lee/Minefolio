@@ -1011,14 +1011,32 @@ ai_service_stream_report(csilk_ctx_t* c,
                              "4. 提供 3 条切实可行的落地优化建议；\n"
                              "5. 如需记账或调仓，可生成 ```action { ... } ``` 操作卡片。";
 
+    char now_str[64];
+    {
+        time_t    now = time(NULL);
+        struct tm tm_buf;
+        localtime_r(&now, &tm_buf);
+        snprintf(now_str,
+                 sizeof(now_str),
+                 "%04d-%02d-%02d %02d:%02d:%02d",
+                 tm_buf.tm_year + 1900,
+                 tm_buf.tm_mon + 1,
+                 tm_buf.tm_mday,
+                 tm_buf.tm_hour,
+                 tm_buf.tm_min,
+                 tm_buf.tm_sec);
+    }
     char user_prompt[16384];
     snprintf(user_prompt,
              sizeof(user_prompt),
-             "【当前工作流】：%s\n\n"
+             "【当前工作流】：%s\n"
+             "【当前真实时间】：%s（服务器本地时间，实时获取）\n\n"
              "【系统已提取的用户真实财务上下文（JSON）】：\n"
              "%s\n\n"
-             "请基于以上全部真实数据，直接输出结构化深度财务诊断报告与优化建议。",
+             "请基于以上全部真实数据与当前时间，直接输出结构化深度财务诊断报告与优化建议。报告中涉"
+             "及的日期、月份均以当前时间为基准。",
              workflow_title ? workflow_title : "智能财务工作流",
+             now_str,
              structured_data_json ? structured_data_json : "{}");
 
     ai_trace_set_system_prompt(&trace, sys_prompt);
