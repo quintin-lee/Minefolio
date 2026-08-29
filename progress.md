@@ -17,7 +17,13 @@
 - Steps: step_bg_collect / step_bg_forecast / step_bg_report — cmake build ✅
 - Notes: implicit budget = HIST_AVG*1.2, fallback to projected when no history; risk thresholds 80%/100%
 
-### Phase 3: wf_anomaly_detect (next)
+### Phase 3: wf_anomaly_detect
+- **Status:** complete (2026-08-29)
+- Steps: step_ad_collect / step_ad_score / step_ad_report — 4-rule engine + Mermaid pie, cmake build ✅
+- Notes: 3σ with fallback (sparse→fixed threshold 2000), duplicate within 2 days, midnight 00-05 >500, freq small <50 x5/day
+- Commit: pending
+
+### Phase 4: wf_subscription_audit (next)
 
 ## Session: 2025-08-21
 

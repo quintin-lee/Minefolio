@@ -1582,6 +1582,485 @@ step_bg_report(csilk_db_pool_t*    pool,
 }
 
 /* ========================================================================= */
+/*  Workflow 6: Anomaly Detect (异常交易检测 - 真实数据驱动)                   */
+/* ========================================================================= */
+
+static char*
+step_ad_collect(csilk_db_pool_t*    pool,
+                int64_t             user_id,
+                const csilk_json_t* params,
+                const char*         ctx_json)
+{
+    int lookback_days = (int)db_get_num(params, "lookback_days");
+    if (lookback_days <= 0) {
+        lookback_days = 60;
+    }
+    if (lookback_days > 180) {
+        lookback_days = 180;
+    }
+    time_t    now = time(NULL);
+    struct tm tm_buf;
+    localtime_r(&now, &tm_buf);
+    tm_buf.tm_mday -= lookback_days;
+    mktime(&tm_buf);
+    char since_date[32];
+    snprintf(since_date,
+             sizeof(since_date),
+             "%04d-%02d-%02d",
+             tm_buf.tm_year + 1900,
+             tm_buf.tm_mon + 1,
+             tm_buf.tm_mday);
+
+    /* fetch recent daily_expenses */
+    csilk_json_t* recent = csilk_json_array();
+    double        total = 0.0;
+    int64_t       cnt = 0;
+    {
+        char uid_str[32];
+        snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+        const char*   p[] = {uid_str, since_date, NULL};
+        csilk_json_t* res = csilk_db_query_param_json(
+            pool,
+            "SELECT de.id, de.amount, de.expense_date, de.note, "
+            "COALESCE(c.name,'未分类') as category_name, de.category_id "
+            "FROM daily_expenses de LEFT JOIN categories c ON c.id=de.category_id "
+            "WHERE de.user_id=? AND de.expense_type='expense' AND de.expense_date >= ? "
+            "ORDER BY de.expense_date DESC, de.id DESC LIMIT 500",
+            p);
+        if (res && csilk_json_is_array(res)) {
+            size_t n = csilk_json_array_size(res);
+            for (size_t i = 0; i < n; i++) {
+                csilk_json_array_append(recent, csilk_json_copy(csilk_json_array_get(res, i)));
+                total += db_get_num(csilk_json_array_get(res, i), "amount");
+                cnt++;
+            }
+        }
+        if (res) {
+            csilk_json_free(res);
+        }
+    }
+    /* per-category stats (mean/std) over same window */
+    csilk_json_t* cat_stats = csilk_json_array();
+    {
+        char uid_str[32];
+        snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+        const char*   p[] = {uid_str, since_date, NULL};
+        csilk_json_t* res = csilk_db_query_param_json(
+            pool,
+            "SELECT category_id, COALESCE(c.name,'未分类') as category_name, "
+            "COUNT(*) as cnt, AVG(amount) as avg_amt, "
+            "AVG(amount*amount) as avg_sq "
+            "FROM daily_expenses de LEFT JOIN categories c ON c.id=de.category_id "
+            "WHERE de.user_id=? AND de.expense_type='expense' AND de.expense_date >= ? "
+            "GROUP BY category_id",
+            p);
+        if (res && csilk_json_is_array(res)) {
+            size_t n = csilk_json_array_size(res);
+            for (size_t i = 0; i < n; i++) {
+                const csilk_json_t* r = csilk_json_array_get(res, i);
+                double              avg = db_get_num(r, "avg_amt");
+                double              avg_sq = db_get_num(r, "avg_sq");
+                double              var = avg_sq - avg * avg;
+                if (var < 0) {
+                    var = 0;
+                }
+                double        std = sqrt(var);
+                csilk_json_t* o = csilk_json_object();
+                csilk_json_add_number(o, "category_id", (double)db_get_int(r, "category_id"));
+                csilk_json_add_string(
+                    o, "category_name", csilk_json_get_string(r, "category_name") ?: "未分类");
+                csilk_json_add_number(o, "cnt", db_get_num(r, "cnt"));
+                csilk_json_add_number(o, "avg", avg);
+                csilk_json_add_number(o, "std", std);
+                csilk_json_array_append(cat_stats, o);
+            }
+        }
+        if (res) {
+            csilk_json_free(res);
+        }
+    }
+    /* recent transactions for midnight/high-freq (created_at LIKE) */
+    csilk_json_t* tx_recent = csilk_json_array();
+    {
+        char uid_str[32];
+        snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+        char pat[64];
+        snprintf(pat, sizeof(pat), "%s%%", since_date);
+        /* approximate: created_at >= since_date */
+        const char*   p[] = {uid_str, since_date, NULL};
+        csilk_json_t* res = csilk_db_query_param_json(
+            pool,
+            "SELECT id, amount, transaction_type, note, created_at FROM transactions "
+            "WHERE user_id=? AND created_at >= ? ORDER BY created_at DESC LIMIT 500",
+            p);
+        if (res && csilk_json_is_array(res)) {
+            size_t n = csilk_json_array_size(res);
+            for (size_t i = 0; i < n; i++) {
+                csilk_json_array_append(tx_recent, csilk_json_copy(csilk_json_array_get(res, i)));
+            }
+        }
+        if (res) {
+            csilk_json_free(res);
+        }
+    }
+
+    csilk_json_t* out = csilk_json_object();
+    csilk_json_add_string(out, "since_date", since_date);
+    csilk_json_add_number(out, "lookback_days", (double)lookback_days);
+    csilk_json_add_number(out, "total_amount", total);
+    csilk_json_add_number(out, "count", (double)cnt);
+    csilk_json_add_array(out, "recent", recent);
+    csilk_json_add_array(out, "cat_stats", cat_stats);
+    csilk_json_add_array(out, "tx_recent", tx_recent);
+    size_t len = 0;
+    char*  s = csilk_json_serialize(out, &len);
+    csilk_json_free(out);
+    return s;
+}
+
+static char*
+step_ad_score(csilk_db_pool_t*    pool,
+              int64_t             user_id,
+              const csilk_json_t* params,
+              const char*         ctx_json)
+{
+    (void)pool;
+    (void)user_id;
+    (void)params;
+    csilk_json_t* root = ctx_json ? csilk_json_parse(ctx_json) : NULL;
+    csilk_json_t* s0 = root ? csilk_json_get(root, "ad_collect") : NULL;
+    csilk_json_t* recent = s0 ? csilk_json_get(s0, "recent") : NULL;
+    csilk_json_t* cat_stats = s0 ? csilk_json_get(s0, "cat_stats") : NULL;
+    csilk_json_t* tx_recent = s0 ? csilk_json_get(s0, "tx_recent") : NULL;
+
+    csilk_json_t* anomalies = csilk_json_array();
+    int           cnt_3sigma = 0, cnt_dup = 0, cnt_midnight = 0, cnt_freq = 0;
+
+    /* Build map category_id -> avg/std for 3sigma */
+    size_t rn = (recent && csilk_json_is_array(recent)) ? csilk_json_array_size(recent) : 0;
+    for (size_t i = 0; i < rn; i++) {
+        const csilk_json_t* row = csilk_json_array_get(recent, i);
+        int64_t             cid = db_get_int(row, "category_id");
+        double              amt = db_get_num(row, "amount");
+        const char*         cname = csilk_json_get_string(row, "category_name") ?: "未分类";
+        const char*         note = csilk_json_get_string(row, "note") ?: "";
+        const char*         date = csilk_json_get_string(row, "expense_date") ?: "";
+        double              avg = 0, std = 0, cnt = 0;
+        if (cat_stats && csilk_json_is_array(cat_stats)) {
+            size_t sn = csilk_json_array_size(cat_stats);
+            for (size_t j = 0; j < sn; j++) {
+                const csilk_json_t* st = csilk_json_array_get(cat_stats, j);
+                if (db_get_int(st, "category_id") == cid) {
+                    avg = db_get_num(st, "avg");
+                    std = db_get_num(st, "std");
+                    cnt = db_get_num(st, "cnt");
+                    break;
+                }
+            }
+        }
+        int  is_anomaly = 0;
+        char reason[256] = {0};
+        if (cnt >= 5 && std > 1e-6) {
+            double thr = avg + 3.0 * std;
+            if (amt > thr && amt > avg * 2.0) {
+                is_anomaly = 1;
+                snprintf(reason,
+                         sizeof(reason),
+                         "金额 %.0f 超过 3σ 阈值 %.0f（均值%.0f±%.0f）",
+                         amt,
+                         thr,
+                         avg,
+                         std);
+            }
+        } else if (cnt >= 5 && avg > 0) {
+            if (amt > avg * 3.0 && amt > 500) {
+                is_anomaly = 1;
+                snprintf(reason, sizeof(reason), "金额 %.0f 超过均值 3 倍（均值%.0f）", amt, avg);
+            }
+        } else if (amt > 2000) {
+            /* fallback for sparse categories */
+            is_anomaly = 1;
+            snprintf(reason, sizeof(reason), "大额支出 ￥%.0f（样本少，固定阈值触发）", amt);
+        }
+        if (is_anomaly) {
+            csilk_json_t* o = csilk_json_object();
+            csilk_json_add_string(o, "type", "3sigma");
+            csilk_json_add_string(o, "category_name", cname);
+            csilk_json_add_number(o, "amount", amt);
+            csilk_json_add_string(o, "date", date);
+            csilk_json_add_string(o, "note", note);
+            csilk_json_add_string(o, "reason", reason);
+            csilk_json_add_number(o, "score", 85);
+            csilk_json_array_append(anomalies, o);
+            cnt_3sigma++;
+        }
+    }
+    /* Duplicate detection: same amount+category within 2 days */
+    for (size_t i = 0; i < rn; i++) {
+        const csilk_json_t* a = csilk_json_array_get(recent, i);
+        double              amt_a = db_get_num(a, "amount");
+        int64_t             cid_a = db_get_int(a, "category_id");
+        const char*         date_a = csilk_json_get_string(a, "expense_date") ?: "";
+        for (size_t j = i + 1; j < rn; j++) {
+            const csilk_json_t* b = csilk_json_array_get(recent, j);
+            if (db_get_int(b, "category_id") != cid_a) {
+                continue;
+            }
+            if (fabs(db_get_num(b, "amount") - amt_a) > 0.01) {
+                continue;
+            }
+            const char* date_b = csilk_json_get_string(b, "expense_date") ?: "";
+            /* simple date diff by string compare: if dates within 2 days, check by converting */
+            int ya, ma, da, yb, mb, dbd;
+            if (sscanf(date_a, "%d-%d-%d", &ya, &ma, &da) == 3 &&
+                sscanf(date_b, "%d-%d-%d", &yb, &mb, &dbd) == 3) {
+                struct tm ta = {0}, tb = {0};
+                ta.tm_year = ya - 1900;
+                ta.tm_mon = ma - 1;
+                ta.tm_mday = da;
+                tb.tm_year = yb - 1900;
+                tb.tm_mon = mb - 1;
+                tb.tm_mday = dbd;
+                time_t t1 = mktime(&ta), t2 = mktime(&tb);
+                double diff = fabs(difftime(t1, t2)) / 86400.0;
+                if (diff <= 2.0 && diff >= 0) {
+                    /* avoid double counting same pair */
+                    int    already = 0;
+                    size_t an = csilk_json_array_size(anomalies);
+                    for (size_t k = 0; k < an; k++) {
+                        const csilk_json_t* ex = csilk_json_array_get(anomalies, k);
+                        if (strcmp(csilk_json_get_string(ex, "type") ?: "", "duplicate") == 0 &&
+                            fabs(db_get_num(ex, "amount") - amt_a) < 0.01 &&
+                            strcmp(csilk_json_get_string(ex, "date") ?: "", date_a) == 0) {
+                            already = 1;
+                            break;
+                        }
+                    }
+                    if (!already) {
+                        csilk_json_t* o = csilk_json_object();
+                        char          rs[256];
+                        snprintf(rs, sizeof(rs), "与 %s 同额同类重复扣款嫌疑", date_b);
+                        csilk_json_add_string(o, "type", "duplicate");
+                        csilk_json_add_string(o,
+                                              "category_name",
+                                              csilk_json_get_string(a, "category_name")
+                                                  ?: "未分类");
+                        csilk_json_add_number(o, "amount", amt_a);
+                        csilk_json_add_string(o, "date", date_a);
+                        csilk_json_add_string(o, "note", csilk_json_get_string(a, "note") ?: "");
+                        csilk_json_add_string(o, "reason", rs);
+                        csilk_json_add_number(o, "score", 75);
+                        csilk_json_array_append(anomalies, o);
+                        cnt_dup++;
+                    }
+                    break;
+                }
+            }
+        }
+    }
+    /* midnight large + high-freq small from transactions */
+    size_t tn =
+        (tx_recent && csilk_json_is_array(tx_recent)) ? csilk_json_array_size(tx_recent) : 0;
+    /* midnight: hour 0-5 and amount > 500 */
+    for (size_t i = 0; i < tn; i++) {
+        const csilk_json_t* r = csilk_json_array_get(tx_recent, i);
+        double              amt = db_get_num(r, "amount");
+        if (amt < 500) {
+            continue;
+        }
+        const char* ts = csilk_json_get_string(r, "created_at") ?: "";
+        int         hh = -1;
+        /* try to parse HH from created_at: YYYY-MM-DD HH:MM:SS */
+        const char* sp = strchr(ts, ' ');
+        if (sp) {
+            hh = atoi(sp + 1);
+        }
+        if (hh >= 0 && hh <= 5) {
+            csilk_json_t* o = csilk_json_object();
+            char          rs[256];
+            snprintf(rs, sizeof(rs), "凌晨 %02d 时大额交易 ￥%.0f", hh, amt);
+            csilk_json_add_string(o, "type", "midnight");
+            csilk_json_add_string(o, "category_name", "交易");
+            csilk_json_add_number(o, "amount", amt);
+            csilk_json_add_string(o, "date", ts);
+            csilk_json_add_string(o, "note", csilk_json_get_string(r, "note") ?: "");
+            csilk_json_add_string(o, "reason", rs);
+            csilk_json_add_number(o, "score", 70);
+            csilk_json_array_append(anomalies, o);
+            cnt_midnight++;
+        }
+    }
+    /* high-freq small: >5 small (<50) transactions on same date */
+    {
+        /* group by date string YYYY-MM-DD */
+        for (size_t i = 0; i < tn;) {
+            const char* d0 =
+                csilk_json_get_string(csilk_json_array_get(tx_recent, i), "created_at") ?: "";
+            char day[11] = {0};
+            strncpy(day, d0, 10);
+            int    small_cnt = 0;
+            double small_sum = 0;
+            size_t j = i;
+            for (; j < tn; j++) {
+                const char* dj =
+                    csilk_json_get_string(csilk_json_array_get(tx_recent, j), "created_at") ?: "";
+                char dj_day[11] = {0};
+                strncpy(dj_day, dj, 10);
+                if (strncmp(dj_day, day, 10) != 0) {
+                    break;
+                }
+                double a = db_get_num(csilk_json_array_get(tx_recent, j), "amount");
+                if (a > 0 && a < 50) {
+                    small_cnt++;
+                    small_sum += a;
+                }
+            }
+            if (small_cnt >= 5) {
+                csilk_json_t* o = csilk_json_object();
+                char          rs[256];
+                snprintf(
+                    rs, sizeof(rs), "%s 当日 %d 笔小额交易合计 ￥%.0f", day, small_cnt, small_sum);
+                csilk_json_add_string(o, "type", "freq_small");
+                csilk_json_add_string(o, "category_name", "高频小额");
+                csilk_json_add_number(o, "amount", small_sum);
+                csilk_json_add_string(o, "date", day);
+                csilk_json_add_string(o, "note", "");
+                csilk_json_add_string(o, "reason", rs);
+                csilk_json_add_number(o, "score", 60);
+                csilk_json_array_append(anomalies, o);
+                cnt_freq++;
+            }
+            i = j ? j : i + 1;
+            if (j == i) {
+                i++;
+            }
+        }
+    }
+
+    if (root) {
+        csilk_json_free(root);
+    }
+    csilk_json_t* out = csilk_json_object();
+    csilk_json_add_number(out, "total", (double)csilk_json_array_size(anomalies));
+    csilk_json_add_number(out, "cnt_3sigma", (double)cnt_3sigma);
+    csilk_json_add_number(out, "cnt_dup", (double)cnt_dup);
+    csilk_json_add_number(out, "cnt_midnight", (double)cnt_midnight);
+    csilk_json_add_number(out, "cnt_freq", (double)cnt_freq);
+    csilk_json_add_array(out, "anomalies", anomalies);
+    size_t len = 0;
+    char*  s = csilk_json_serialize(out, &len);
+    csilk_json_free(out);
+    return s;
+}
+
+static char*
+step_ad_report(csilk_db_pool_t*    pool,
+               int64_t             user_id,
+               const csilk_json_t* params,
+               const char*         ctx_json)
+{
+    (void)pool;
+    (void)user_id;
+    (void)params;
+    csilk_json_t* root = ctx_json ? csilk_json_parse(ctx_json) : NULL;
+    csilk_json_t* s0 = root ? csilk_json_get(root, "ad_collect") : NULL;
+    csilk_json_t* s1 = root ? csilk_json_get(root, "ad_score") : NULL;
+    const char*   since = s0 ? csilk_json_get_string(s0, "since_date") : "";
+    if (!since) {
+        since = "";
+    }
+    double        total = s1 ? db_get_num(s1, "total") : 0;
+    csilk_json_t* anomalies = s1 ? csilk_json_get(s1, "anomalies") : NULL;
+    size_t        an =
+        (anomalies && csilk_json_is_array(anomalies)) ? csilk_json_array_size(anomalies) : 0;
+    int c3 = s1 ? (int)db_get_num(s1, "cnt_3sigma") : 0;
+    int cd = s1 ? (int)db_get_num(s1, "cnt_dup") : 0;
+    int cm = s1 ? (int)db_get_num(s1, "cnt_midnight") : 0;
+    int cf = s1 ? (int)db_get_num(s1, "cnt_freq") : 0;
+
+    char mermaid[2048] = {0};
+    if (total > 0) {
+        snprintf(mermaid,
+                 sizeof(mermaid),
+                 "```mermaid\npie showData\n    title 异常类型分布\n    \"金额异常 3σ\" : %d\n    "
+                 "\"重复扣款\" : "
+                 "%d\n    \"凌晨大额\" : %d\n    \"高频小额\" : %d\n```\n\n",
+                 c3,
+                 cd,
+                 cm,
+                 cf);
+    } else {
+        snprintf(
+            mermaid, sizeof(mermaid), "> ✅ **未发现异常**：近 %s 以来交易表现正常。\n\n", since);
+    }
+
+    char rows[8192] = {0};
+    for (size_t i = 0; i < an && i < 20; i++) {
+        const csilk_json_t* it = csilk_json_array_get(anomalies, i);
+        const char*         tp = csilk_json_get_string(it, "type") ?: "-";
+        const char*         badge =
+            strcmp(tp, "3sigma") == 0
+                ? "🔴 金额异常"
+                : (strcmp(tp, "duplicate") == 0
+                       ? "🟡 重复扣款"
+                       : (strcmp(tp, "midnight") == 0 ? "🟣 凌晨大额" : "🔵 高频小额"));
+        const char* cname = csilk_json_get_string(it, "category_name") ?: "-";
+        double      amt = db_get_num(it, "amount");
+        const char* date = csilk_json_get_string(it, "date") ?: "-";
+        const char* reason = csilk_json_get_string(it, "reason") ?: "-";
+        char        line[512];
+        snprintf(line,
+                 sizeof(line),
+                 "| %s | %s | ￥%.0f | %s | %s |\n",
+                 badge,
+                 cname,
+                 amt,
+                 date,
+                 reason);
+        strncat(rows, line, sizeof(rows) - strlen(rows) - 1);
+    }
+    if (!rows[0]) {
+        snprintf(rows, sizeof(rows), "| — | — | — | — | — |\n");
+    }
+
+    const char* level =
+        total == 0 ? "🟢 **安全**" : (total >= 5 ? "🔴 **需重点核查**" : "🟡 **轻度关注**");
+
+    char buf[16384];
+    snprintf(buf,
+             sizeof(buf),
+             "### 🔍 异常交易检测报告（%s 至今）\n\n"
+             "**检测区间**：`%s` 至今｜ **检出异常** `%.0f` 项｜ **风险定级**：%s\n\n"
+             "**分类型统计**：金额异常 %d｜重复扣款 %d｜凌晨大额 %d｜高频小额 %d\n\n"
+             "#### 一、异常清单\n"
+             "| 类型 | 分类 | 金额 | 日期 | 原因 |\n"
+             "| :--- | :--- | :--- | :--- | :--- |\n"
+             "%s\n"
+             "#### 二、异常分布\n"
+             "%s"
+             "#### 三、处理建议\n"
+             "1. **金额异常**：核对发票/小票，确认是否为一次性大额消费误分类；\n"
+             "2. **重复扣款**：联系商户/银行核实是否重复扣款，及时申诉；\n"
+             "3. **凌晨大额**：确认是否为本人操作，非本人请立即冻结相关账户；\n"
+             "4. **高频小额**：多为订阅/自动扣费累积，建议进入订阅审计工作流进一步梳理。\n",
+             since,
+             since,
+             total,
+             level,
+             c3,
+             cd,
+             cm,
+             cf,
+             rows,
+             mermaid);
+
+    if (root) {
+        csilk_json_free(root);
+    }
+    return strdup(buf);
+}
+
+/* ========================================================================= */
 /*  Workflow Registry                                                        */
 /* ========================================================================= */
 
@@ -1694,6 +2173,24 @@ static const ai_workflow_def_t g_workflows[] = {
                  "预警报告与节流方案",
                  "生成预算执行表格、图表与节流建议",
                  step_bg_report},
+            }, },
+    {
+     .id = "wf_anomaly_detect",
+     .title = "异常交易检测",
+     .description =
+            "基于 3σ/重复扣款/凌晨大额/高频小额四规则扫描近 60 天流水，输出异常清单与处置建议。",                                                                       .icon = "ph:shield-warning",
+     .step_count = 3,
+     .steps =
+            {
+                {"ad_collect",
+                 "近 60 天流水与基线统计",
+                 "拉取近期流水并计算分分类均值方差基线",
+                 step_ad_collect},
+                {"ad_score", "四规则异常评分", "3σ/重复/凌晨/高频四规则打分与去重", step_ad_score},
+                {"generate_report",
+                 "异常清单与处置建议",
+                 "生成异常明细表、分布饼图与核查指引",
+                 step_ad_report},
             }, },
 };
 
@@ -1945,6 +2442,21 @@ ai_workflow_run_handler(csilk_ctx_t* c)
                                  db_get_num(parsed_out, "total_budget"),
                                  (int)db_get_num(parsed_out, "danger_cnt"),
                                  (int)db_get_num(parsed_out, "warning_cnt"));
+                    } else if (strcmp(st->step_id, "ad_collect") == 0) {
+                        snprintf(summary_buf,
+                                 sizeof(summary_buf),
+                                 "已拉取 %d 天内 %d 笔流水，基线统计完成",
+                                 (int)db_get_num(parsed_out, "lookback_days"),
+                                 (int)db_get_num(parsed_out, "count"));
+                    } else if (strcmp(st->step_id, "ad_score") == 0) {
+                        snprintf(summary_buf,
+                                 sizeof(summary_buf),
+                                 "检出 %d 项异常（3σ%d 重复%d 凌晨%d 高频%d）",
+                                 (int)db_get_num(parsed_out, "total"),
+                                 (int)db_get_num(parsed_out, "cnt_3sigma"),
+                                 (int)db_get_num(parsed_out, "cnt_dup"),
+                                 (int)db_get_num(parsed_out, "cnt_midnight"),
+                                 (int)db_get_num(parsed_out, "cnt_freq"));
                     }
                     csilk_json_add_object(ctx_obj, st->step_id, parsed_out);
                 }

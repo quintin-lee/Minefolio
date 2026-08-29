@@ -4,7 +4,7 @@
 逐个实现 7 个新增实用工作流，补齐“月度复盘/再平衡/大额决策”之外的核心日常财务场景。每个工作流需：后端 SSE 步骤定义 + 真实数据聚合 + Mermaid 报告 + 前端可视化复用现有 ai_workflow_service 框架。
 
 ## Current Phase
-Phase 3 — 异常交易检测 (Anomaly Detect) [pending — next]
+Phase 4 — 订阅/固定支出审计 (Subscription Audit) [pending]
 
 ## Phases
 
@@ -33,11 +33,12 @@ Phase 3 — 异常交易检测 (Anomaly Detect) [pending — next]
 - **Status:** complete
 
 ### Phase 3: 异常交易检测 (Anomaly Detect) ⭐ P0
-- [ ] 规则引擎：金额 3σ / 重复扣款 / 凌晨大额 / 高频小额
-- [ ] AI 二次判断占位（当前用规则分数）
-- [ ] 报告：异常清单表格 + 处理建议
-- [ ] 注册 `wf_anomaly_detect`
-- **Status:** pending
+- [x] 规则引擎：金额 3σ / 重复扣款 / 凌晨大额 / 高频小额 — `step_ad_collect` + `step_ad_score`
+- [x] AI 二次判断占位（当前用规则分数 60-85）
+- [x] 报告：异常清单表格 + Mermaid 饼图 + 处理建议 — `step_ad_report`
+- [x] 注册 `wf_anomaly_detect` 到 g_workflows（ph:shield-warning）
+- [x] 构建验证通过（cmake build passed）
+- **Status:** complete
 
 ### Phase 4: 订阅/固定支出审计 (Subscription Audit) — P1
 - [ ] 聚类：按 note/amount/周期识别订阅项
