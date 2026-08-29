@@ -4,7 +4,7 @@
 逐个实现 7 个新增实用工作流，补齐“月度复盘/再平衡/大额决策”之外的核心日常财务场景。每个工作流需：后端 SSE 步骤定义 + 真实数据聚合 + Mermaid 报告 + 前端可视化复用现有 ai_workflow_service 框架。
 
 ## Current Phase
-Phase 6 — 目标储蓄追踪 (Goal Tracker) [in_progress]
+Phase 7 — 债务加速偿还规划 (Debt Payoff) [in_progress]
 
 ## Phases
 
@@ -57,16 +57,18 @@ Phase 6 — 目标储蓄追踪 (Goal Tracker) [in_progress]
 - **Status:** complete
 
 ### Phase 6: 目标储蓄追踪 (Goal Tracker) — P2
-- [ ] 需新增 `savings_goals` 表或复用资产 tag 方案（待定）
-- [ ] 进度/剩余月数/需追加额计算
-- [ ] 报告：进度条 + 达成预测
-- **Status:** pending
+- [x] 懒创建 `savings_goals` 表 + 全量查询 `step_gt_collect`
+- [x] 进度/剩余月数/月需追加测算 `step_gt_plan`
+- [x] 报告：总进度饼图 + xychart 进度条 + 明细表 + action `step_gt_report`
+- [x] 注册 `wf_goal_tracker` 到 g_workflows（ph:target, gt_collect/gt_plan/generate_report）
+- [x] 构建验证通过（仅预存 strncpy warning）
+- **Status:** complete
 
 ### Phase 7: 债务加速偿还规划 (Debt Payoff) — P2
 - [ ] 拉取 loan/credit_card 余额+利率
 - [ ] 雪崩 vs 雪球模拟 12 期
 - [ ] 报告：对比表 + 利息节省
-- **Status:** pending
+- **Status:** in_progress
 
 ### Phase 8: 收尾
 - [ ] 全量 10 工作流回归构建 (`cmake --build && npm run build`)

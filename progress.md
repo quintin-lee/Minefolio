@@ -33,7 +33,12 @@
 - Steps: step_ef_collect / step_ef_health / step_ef_report — health_score 0-100 + gap + topup, cmake build ✅
 - Commit: pending
 
-### Phase 6: wf_goal_tracker (in_progress)
+### Phase 6: wf_goal_tracker
+- **Status:** complete (2026-08-29)
+- Steps: step_gt_collect / step_gt_plan / step_gt_report — 懒创建 savings_goals + 月需追加 + 饼图/xychart, cmake build ✅
+- Commit: pending
+
+### Phase 7: wf_debt_payoff (in_progress)
 
 ## Session: 2025-08-21
 
