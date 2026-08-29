@@ -8,11 +8,16 @@
 
 ### Phase 1: wf_payday_split
 - **Status:** complete (2026-08-29)
-- Commits: pending (wf_payday_split 3 steps + g_workflow registration)
+- Commits: 46332ffe (wf_payday_split 3 steps + g_workflow registration)
 - Steps: step_payday_detect / step_payday_allocate / step_payday_report — 校验通过，cmake build ✅
 - Notes: block comments + SQL intent markers (HINT:...) are required markers for follow-up lint, kept intentionally
 
-### Phase 2: wf_budget_guard (next)
+### Phase 2: wf_budget_guard
+- **Status:** complete (2026-08-29)
+- Steps: step_bg_collect / step_bg_forecast / step_bg_report — cmake build ✅
+- Notes: implicit budget = HIST_AVG*1.2, fallback to projected when no history; risk thresholds 80%/100%
+
+### Phase 3: wf_anomaly_detect (next)
 
 ## Session: 2025-08-21
 

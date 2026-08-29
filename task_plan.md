@@ -4,7 +4,7 @@
 逐个实现 7 个新增实用工作流，补齐“月度复盘/再平衡/大额决策”之外的核心日常财务场景。每个工作流需：后端 SSE 步骤定义 + 真实数据聚合 + Mermaid 报告 + 前端可视化复用现有 ai_workflow_service 框架。
 
 ## Current Phase
-Phase 2 — 预算超支预警 (Budget Guard) [pending — next]
+Phase 3 — 异常交易检测 (Anomaly Detect) [pending — next]
 
 ## Phases
 
@@ -25,11 +25,12 @@ Phase 2 — 预算超支预警 (Budget Guard) [pending — next]
 - **Status:** complete
 
 ### Phase 2: 预算超支预警 (Budget Guard) ⭐ P0
-- [ ] 步骤：`de_monthly_by_category` + 预算表/或基于历史均值推算预算
-- [ ] 预测：按日进度外推月底总额，计算超支风险分类
-- [ ] 报告：进度条 + Mermaid 柱状图 + 3 条节流建议
-- [ ] 注册 `wf_budget_guard`
-- **Status:** pending
+- [x] 步骤：`step_bg_collect` — de_monthly_by_category + 历史均值×1.2 隐式预算
+- [x] 预测：`step_bg_forecast` — 按日进度外推月底总额，风险分级 danger/warning/safe
+- [x] 报告：`step_bg_report` — 表格 + Mermaid xychart + 3 条节流建议
+- [x] 注册 `wf_budget_guard` 到 g_workflows
+- [x] 构建验证通过
+- **Status:** complete
 
 ### Phase 3: 异常交易检测 (Anomaly Detect) ⭐ P0
 - [ ] 规则引擎：金额 3σ / 重复扣款 / 凌晨大额 / 高频小额
