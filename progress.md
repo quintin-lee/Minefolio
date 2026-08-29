@@ -1,5 +1,19 @@
 # Progress Log
 
+## Session: 2026-08-29 — 7 New Workflows Implementation
+
+### Phase 0: 基建与规划
+- **Status:** complete (2026-08-29)
+- Actions: 调研 ai_workflow_service.c + 数据模型，确定优先级 P0>P1>P2，制定 task_plan.md/findings.md
+
+### Phase 1: wf_payday_split
+- **Status:** complete (2026-08-29)
+- Commits: pending (wf_payday_split 3 steps + g_workflow registration)
+- Steps: step_payday_detect / step_payday_allocate / step_payday_report — 校验通过，cmake build ✅
+- Notes: block comments + SQL intent markers (HINT:...) are required markers for follow-up lint, kept intentionally
+
+### Phase 2: wf_budget_guard (next)
+
 ## Session: 2025-08-21
 
 ### Phase 1: 完整代码分析
