@@ -175,9 +175,9 @@ npm run dev
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/api/transactions` | 交易列表（分页） |
-| POST | `/api/transactions` | 创建交易 |
+| POST | `/api/transactions` | 创建交易（fee 自动插入为子行） |
 | PUT | `/api/transactions/:id` | 更新交易 |
-| DELETE | `/api/transactions/:id` | 删除交易 |
+| DELETE | `/api/transactions/:id` | 删除交易（级联回滚 fee 子行及关联余额） |
 | GET | `/api/transactions/monthly` | 月度汇总 |
 
 ### 日常收支

@@ -104,22 +104,31 @@ csilk_json_add_int(payload, "exp", (int64_t)time(NULL) + 604800); // 7 days
 
 ### M-2：CORS 配置过于宽松 ~~✅ 已修复~~（`*` + credentials）
 
-**位置：** `backend/src/middlewares/cors_middleware.c:6-7`
-
-```c
-cors.allow_origin = "*";       // 允许任意来源
-cors.allow_credentials = 1;    // 允许携带 Cookie/授权头
-```
+**位置：** `backend/src/middlewares/cors_middleware.c:6-21`
 
 **风险：** 虽然 API 使用 Bearer Token 而非 Cookie 认证，但 `Access-Control-Allow-Credentials: true` + `Access-Control-Allow-Origin: *` 的组合违反 OWASP 安全建议。攻击者可以从任意恶意网站发起携带用户 JWT 的请求（如果用户同时访问了恶意站点）。
 
-**修复：** 将 `allow_origin` 限制为实际前端域名列表，或至少在生产环境改为具体域名：
+**修复（已完成）：** 当 `MINEFOLIO_CORS_ORIGIN` 环境变量设置时，使用其值作为允许的来源并启用 credentials；未设置时，回退到请求 Origin（如存在）或 `*`，但禁用 credentials：
+
 ```c
-const char* allowed = getenv("MINEFOLIO_CORS_ORIGIN");
-cors.allow_origin = allowed ? allowed : "*";  // 生产环境强制设置环境变量
+void cors_middleware_wrapper(csilk_ctx_t* c) {
+    csilk_cors_config_t cors = {0};
+    const char* origin = getenv("MINEFOLIO_CORS_ORIGIN");
+    if (origin && origin[0]) {
+        cors.allow_origin = origin;
+        cors.allow_credentials = 1;
+    } else {
+        const char* req_origin = csilk_get_header(c, "Origin");
+        cors.allow_origin = req_origin && req_origin[0] ? req_origin : "*";
+        cors.allow_credentials = 0;
+    }
+    cors.allow_methods = "GET,POST,PUT,DELETE,OPTIONS";
+    cors.allow_headers = "Content-Type,Authorization,X-CSRF-Token,X-Ledger-Id";
+    csilk_cors_middleware(c, &cors);
+}
 ```
 
----
+生产环境可通过 `MINEFOLIO_CORS_ORIGIN=https://yourdomain.com` 配置。
 
 ### M-3：无安全响应头 ~~✅ 已修复~~
 

@@ -45,16 +45,29 @@ Offline DB  src/db/ — sql.js WASM with local SQLite for mobile
 
 ### Data Flow: Transaction Write Path
 
-```
 Vue component → api/transactions.ts → http.ts (JWT + CSRF)
   → POST /api/transactions
   → transaction_controller → transaction_write_service
-    → transaction_repo INSERT
+    → transaction_repo INSERT (parent row)
     → apply_position() updates asset quantity/cost_basis/net_value
     → balance_apply_delta() debits linked funding account
-    → if fee > 0: raw SQL inserts fee row into transactions
+    → if fee > 0: raw SQL inserts fee row with parent_tx_id linking to parent
   → respond_ok() returns {code:0, data:{id,...}}
 ```
+
+### Transaction Delete — Fee Child Rollback
+
+When a transaction is deleted, the service MUST:
+1. Query all fee child rows via `tx_child_fee_rows(pool, user_id, parent_tx_id)`
+2. Reverse each fee row's balance delta via `balance_apply_delta()`
+3. Delete the fee child rows via `tx_delete_fee_children()`
+4. Then delete the parent transaction
+
+This prevents orphaned fee rows from leaving incorrect balance state.
+
+### Schema Note: parent_tx_id Column
+
+The `transactions` table has an optional `parent_tx_id` column (SQLite: INTEGER, Postgres: BIGINT) with `ON DELETE CASCADE`. Fee rows are inserted as children of their parent transaction, enabling the rollback logic above. Migration is applied at runtime via `db.c` if the column is absent.
 
 Balance direction is handled centrally: `balance_apply_delta()` flips the sign for liability assets (`loan`, `credit_card`, `other_liability`) so net-worth calculations stay correct. Transaction types are registered in `common/tx_types.c` — always use `tx_type_lookup()` instead of hard-coding type checks.
 
@@ -144,9 +157,10 @@ csilk_json_t* entity_get(csilk_db_pool_t* pool, int64_t user_id, int64_t id);
 int64_t entity_insert(csilk_db_pool_t* pool, int64_t user_id, ...params...);
 int entity_update(csilk_db_pool_t* pool, int64_t user_id, int64_t id, ...params...);
 int entity_delete(csilk_db_pool_t* pool, int64_t user_id, int64_t id);
+// Fee-child helpers (transaction domain):
+csilk_json_t* tx_child_fee_rows(csilk_db_pool_t* pool, int64_t user_id, int64_t parent_tx_id);
+int           tx_delete_fee_children(csilk_db_pool_t* pool, int64_t user_id, int64_t parent_tx_id);
 ```
-
-- Repo functions take `(pool, user_id, …)` — never extract `user_id` from ctx
 - Return `csilk_json_t*` directly; no model-struct conversion layer
 - ALL SQL uses `?` placeholders with `csilk_db_query_param_json(pool, sql, params)`
 - Raw SQL via `csilk_db_exec` is only acceptable for self-contained literals (e.g. fee-row insertion)
@@ -234,13 +248,12 @@ Every `onMounted` hook **MUST** wrap async initialization in `try/catch`. Use `v
 |------|------|
 | `backend/src/main.c` | Entry point; middleware stack; route registration |
 | `backend/CMakeLists.txt` | C23 standard; FetchContent for csilk v0.5.2; optional PostgreSQL |
-| `backend/src/common/db.h` | DB pool singleton; migration runner; `db_get_num`/`db_get_int` |
 | `backend/src/common/balance.h` | `balance_apply_delta()` (incl. liability sign flip); `apply_position()` |
 | `backend/src/common/tx_types.h` | Transaction type registry — use `tx_type_lookup()`, don't hard-code |
 | `backend/src/common/response.h` | `respond_ok`, `respond_error`, etc. |
 | `backend/src/common/ctx.h` | `ctx_user_id(c)` — extract user from JWT |
 | `backend/src/common/jwt.h` | JWT generate/verify with HS256 |
-| `backend/sql/migration.sql` | SQLite schema (13 tables) |
+| `backend/sql/migration.sql` | SQLite schema (13 tables + parent_tx_id column) |
 | `backend/sql/migration_postgres.sql` | PostgreSQL schema (BIGSERIAL, DOUBLE PRECISION) |
 | `frontend/package.json` | Scripts, dependencies, vitest config |
 | `frontend/vite.config.ts` | Desktop: port 5173, API proxy to :8080 |
