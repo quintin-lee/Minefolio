@@ -73,35 +73,42 @@ const props = defineProps<{
 const debouncedContent = ref(props.content || '')
 let debounceTimer: number | null = null
 let rafId: number | null = null
+let prevContent = ''
 
-// LRU cache for non-streaming content: avoids repeated marked.parse + DOMPurify
-// on every reactive push after streaming finishes.
-const renderCache = new Map<string, string>()
-const RENDER_CACHE_LIMIT = 60
+// LRU cache keyed by content → pre-rendered HTML, avoids repeated marked.parse
+// + DOMPurify after streaming completes.
+const htmlCache = new Map<string, string>()
+const HTML_CACHE_LIMIT = 60
 
 watch(
   () => props.content,
   (v) => {
     const val = v || ''
     if (props.isStreaming && props.enableBuffer !== false) {
-      // 流式状态下 RAF 立即更新，确保光标与内容同步
+      // Streaming: RAF-sync so cursor stays synced with buffer drain
       if (rafId !== null) cancelAnimationFrame(rafId)
       rafId = requestAnimationFrame(() => {
         rafId = null
-        debouncedContent.value = val
+        // Only update when content actually changed (skip duplicate RAF ticks)
+        if (val !== prevContent) {
+          debouncedContent.value = val
+          prevContent = val
+        }
       })
     } else {
-      // 非流式：启用 LRU 缓存 + 短防抖，避免重复渲染
+      // Non-streaming: debounce + use cached HTML when available
       if (debounceTimer) clearTimeout(debounceTimer)
       debounceTimer = window.setTimeout(() => {
         debounceTimer = null
-        const cached = renderCache.get(val)
+        prevContent = val
+        const cached = htmlCache.get(val)
         debouncedContent.value = cached ?? val
-        if (renderCache.size >= RENDER_CACHE_LIMIT) {
-          const firstKey = renderCache.keys().next().value as string
-          renderCache.delete(firstKey)
+        if (cached) return
+        if (htmlCache.size >= HTML_CACHE_LIMIT) {
+          const firstKey = htmlCache.keys().next().value as string
+          htmlCache.delete(firstKey)
         }
-        renderCache.set(val, val)
+        htmlCache.set(val, val)
       }, 48)
     }
   },
@@ -119,7 +126,9 @@ watch(
         cancelAnimationFrame(rafId)
         rafId = null
       }
-      debouncedContent.value = props.content || ''
+      prevContent = ''
+      const cached = htmlCache.get(props.content || '')
+      debouncedContent.value = cached ?? (props.content || '')
     }
   },
 )

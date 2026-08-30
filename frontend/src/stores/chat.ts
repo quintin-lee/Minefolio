@@ -182,10 +182,14 @@ export const useChatStore = defineStore('chat', () => {
     private tick() {
       this.rafId = null
       if (!this.buf) return
-      // Fixed step: ~5 chars/frame ≈ 300 chars/sec at 60fps — natural typing speed.
-      // A capping ceiling prevents a single frame from jumping >16 chars even after
-      // a large burst, keeping the visual feel consistently smooth.
-      const step = Math.min(5, this.buf.length)
+      // Natural typewriter: 1-3 chars/frame with word-boundary awareness.
+      // After punctuation (.,!?) or at word start, take 1 char for pause effect.
+      // Otherwise take 2-3 chars for faster reading passages.
+      let step = 1
+      const peek = this.buf[0]!
+      const isPunct = '.,!?;:，。！？；：'.includes(peek)
+      if (!isPunct && this.buf.length >= 2) step = Math.random() < 0.6 ? 2 : 3
+      if (step > this.buf.length) step = this.buf.length
       this.target.content += this.buf.slice(0, step)
       this.buf = this.buf.slice(step)
       if (this.buf && this.running) this.schedule()
