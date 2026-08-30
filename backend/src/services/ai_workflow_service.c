@@ -4335,10 +4335,16 @@ step_bc_report(csilk_db_pool_t*    pool,
                 strcat(cats, ",");
             }
             csilk_json_t* v = csilk_json_array_get(daily, (int)i);
-            double        amt = v ? db_get_num(v, "") : 0;
-            /* v is number node, db_get_num with empty key returns 0; use direct */
+            double        amt = 0;
             if (v) {
-                amt = csilk_json_get_number(v, NULL);
+                if (csilk_json_is_number(v)) {
+                    amt = csilk_json_number_value(v);
+                } else if (csilk_json_is_string(v)) {
+                    const char* s = csilk_json_string_value(v);
+                    amt = s ? atof(s) : 0;
+                } else {
+                    amt = db_get_num(v, "");
+                }
             }
             snprintf(tmp, sizeof(tmp), "%.0f", amt);
             strcat(vals, tmp);
