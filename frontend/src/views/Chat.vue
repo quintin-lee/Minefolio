@@ -215,7 +215,6 @@
                       :is-streaming="chat.isStreaming && idx === chat.messages.length - 1 && msg.role === 'assistant'"
                       :enable-buffer="chat.enableTypewriterBuffer"
                     />
-                    <span v-if="chat.isStreaming && idx === chat.messages.length - 1 && msg.role === 'assistant'" class="typing-cursor"></span>
                   </div>
                   <div v-if="msg.content && !chat.isStreaming" class="message-actions">
                     <button class="msg-action-btn" title="复制回答" @click="copyText(msg.content)" aria-label="复制回答">

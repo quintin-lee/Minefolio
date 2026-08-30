@@ -14,6 +14,12 @@
         v-html="seg.renderedHtml"
       ></div>
 
+      <!-- Streaming plain-text segment: append-only, no markdown re-parse per frame -->
+      <div
+        v-else-if="seg.type === 'streaming-text'"
+        class="markdown-part streaming-text"
+      >{{ seg.content }}<span v-if="showTrailingCursor" class="typing-cursor-inline"></span></div>
+
       <!-- Action Card Block -->
       <ActionCard
         v-else-if="seg.type === 'action' && seg.actionData"
@@ -140,12 +146,14 @@ onUnmounted(() => {
 
 interface Segment {
   id: string
-  type: 'markdown' | 'mermaid' | 'streaming-mermaid' | 'action' | 'code'
+  type: 'markdown' | 'streaming-text' | 'mermaid' | 'streaming-mermaid' | 'action' | 'code'
   content: string
   lang?: string
   renderedHtml?: string
   actionData?: ProposedAction
 }
+
+const showTrailingCursor = computed(() => props.isStreaming && props.enableBuffer !== false)
 
 const mdCache = new Map<string, string>()
 const MD_CACHE_LIMIT = 80
@@ -178,6 +186,8 @@ const segments = computed<Segment[]>(() => {
   const blockRegex = /```([\w\-+#.]+)?\s*\n([\s\S]*?)(?:```|$)/g
   let match: RegExpExecArray | null
   let segIdx = 0
+
+  const streaming = props.isStreaming && props.enableBuffer !== false
 
   while ((match = blockRegex.exec(text)) !== null) {
     const matchStart = match.index
@@ -215,13 +225,13 @@ const segments = computed<Segment[]>(() => {
 
     // Add markdown segment before this match
     if (matchStart > lastIndex) {
-      const markdownBefore = text.slice(lastIndex, matchStart).trim()
-      if (markdownBefore) {
+      const markdownBefore = text.slice(lastIndex, matchStart)
+      if (markdownBefore.trim()) {
         result.push({
           id: `md-${segIdx++}`,
           type: 'markdown',
-          content: markdownBefore,
-          renderedHtml: renderMarkdown(markdownBefore),
+          content: markdownBefore.trim(),
+          renderedHtml: renderMarkdown(markdownBefore.trim()),
         })
       }
     }
@@ -268,27 +278,39 @@ const segments = computed<Segment[]>(() => {
     lastIndex = matchStart + fullMatch.length
   }
 
-  // Trailing markdown after the last match
+  // Trailing text after the last match — the live tail that grows per RAF tick.
   if (lastIndex < text.length) {
-    const markdownAfter = text.slice(lastIndex).trim()
-    if (markdownAfter) {
-      result.push({
-        id: `md-${segIdx++}`,
-        type: 'markdown',
-        content: markdownAfter,
-        renderedHtml: renderMarkdown(markdownAfter),
-      })
+    const trailing = text.slice(lastIndex)
+    if (trailing.length > 0) {
+      if (streaming) {
+        // Append-only plain-text: Vue patches text nodes cheaply per character,
+        // no marked.parse / DOMPurify / v-html rebuild each frame.
+        result.push({
+          id: 'stream-tail',
+          type: 'streaming-text',
+          content: trailing,
+        })
+      } else {
+        if (trailing.trim()) {
+          result.push({
+            id: `md-${segIdx++}`,
+            type: 'markdown',
+            content: trailing.trim(),
+            renderedHtml: renderMarkdown(trailing.trim()),
+          })
+        }
+      }
     }
   }
 
-  return result.length > 0 ? result : [
-    {
-      id: 'md-0',
-      type: 'markdown',
-      content: text,
-      renderedHtml: renderMarkdown(text),
-    },
-  ]
+  return result.length > 0 ? result : streaming
+    ? [{ id: 'stream-tail', type: 'streaming-text', content: text }]
+    : [{
+        id: 'md-0',
+        type: 'markdown',
+        content: text,
+        renderedHtml: renderMarkdown(text),
+      }]
 })
 </script>
 
@@ -304,6 +326,25 @@ const segments = computed<Segment[]>(() => {
   width: 100%;
   line-height: 1.65;
   word-break: break-word;
+}
+
+.streaming-text {
+  white-space: pre-wrap;
+}
+
+.typing-cursor-inline {
+  display: inline-block;
+  width: 6px;
+  height: 1em;
+  background: var(--mf-primary, #00d4ff);
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  animation: cursor-blink 0.8s steps(1) infinite;
+}
+
+@keyframes cursor-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
 }
 
 .markdown-part :deep(p) {

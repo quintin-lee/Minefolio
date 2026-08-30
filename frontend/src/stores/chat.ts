@@ -182,13 +182,22 @@ export const useChatStore = defineStore('chat', () => {
     private tick() {
       this.rafId = null
       if (!this.buf) return
-      // Natural typewriter: 1-3 chars/frame with word-boundary awareness.
-      // After punctuation (.,!?) or at word start, take 1 char for pause effect.
-      // Otherwise take 2-3 chars for faster reading passages.
-      let step = 1
+      // Natural typewriter: 1-4 chars/frame with word-boundary awareness.
+      // After punctuation (.,!?) take 1-2 chars for a natural pause.
+      // At word boundary (space followed by non-space) take 1 char so words
+      // arrive as a unit. Otherwise drain 3-4 chars to keep pace with
+      // typical LLM token throughput.
       const peek = this.buf[0]!
       const isPunct = '.,!?;:，。！？；：'.includes(peek)
-      if (!isPunct && this.buf.length >= 2) step = Math.random() < 0.6 ? 2 : 3
+      const isWordBoundary = peek === ' ' && this.buf.length > 1 && !/\s/.test(this.buf[1] ?? '')
+      let step = 1
+      if (isPunct) {
+        step = 1
+      } else if (isWordBoundary) {
+        step = 1
+      } else {
+        step = Math.random() < 0.5 ? 3 : 4
+      }
       if (step > this.buf.length) step = this.buf.length
       this.target.content += this.buf.slice(0, step)
       this.buf = this.buf.slice(step)
