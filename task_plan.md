@@ -4,7 +4,7 @@
 在已完成的 10 工作流基础上，逐项实现新推荐的 9 个工作流（P0现金流/账单日历/健康分 → P1消费画像/冲动检查/DCA体检 → P2净值轨迹/汇率敞口/年度账单），保持后端 SSE + 真实数据 + Mermaid + 前端 WorkflowBar 框架一致。
 
 ## Current Phase
-Phase 11 — 账单日历 (Bill Calendar) [in_progress]
+Phase 12 — 财务健康分 (Health Score) [in_progress]
 
 ## Phases
 
@@ -94,12 +94,12 @@ Phase 11 — 账单日历 (Bill Calendar) [in_progress]
 - **Status:** complete
 
 ### Phase 11: 账单日历 (Bill Calendar) ⭐ P0
-- [ ] 后端：`step_bc_collect` — 扫描 loan/credit_card 账单 + 订阅复用 + 固定支出
-- [ ] 后端：`step_bc_calendar` — 生成未来30天日历，标记>30%收入压力日
-- [ ] 后端：`step_bc_report` — Mermaid gantt + 表格 + 压力提示 + action JSON
-- [ ] 注册 `wf_bill_calendar` 到 g_workflows
-- [ ] 构建验证
-- **Status:** in_progress
+- [x] 后端：`step_bc_collect` — 扫描 loan/credit_card/other_liability 账单 + 订阅复用(HAVING cnt>=3) + 压力占比
+- [x] 后端：`step_bc_calendar` — hash分布到30日 + pressure_days/max_day/threshold 标记
+- [x] 后端：`step_bc_report` — Mermaid xychart-beta + 表格 + 压力提示 + action JSON
+- [x] 注册 `wf_bill_calendar` 到 g_workflows (ph:calendar-blank, bc_collect/bc_calendar/generate_report)
+- [x] 构建验证通过（仅预存 strncpy warning）
+- **Status:** complete
 
 ### Phase 12: 财务健康分 (Health Score) ⭐ P0
 - [ ] 6维度打分：储蓄率/应急覆盖/债务收入比/预算遵守/投资分散/异常率

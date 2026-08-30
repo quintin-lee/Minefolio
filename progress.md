@@ -54,6 +54,16 @@
 - 变更：参数对话框覆盖 7 新工作流（payday 4比例 / budget月份 / anomaly&subscription回溯 / emergency目标月数 / debt月供）+ DIRECT_RUN_IDS 直启 + ratioSum 归一化提示 + 新样式
 - 构建：`npm run build` ✅ (vite 5.4.21, 1m04s)
 
+### Phase 10: wf_cashflow_forecast
+- **Status:** complete (2026-08-30)
+- Commit: a214bcb6 (wf_cashflow_forecast 3 steps + g_workflow)
+- Steps: step_cf_collect / step_cf_forecast / step_cf_report — 6月滚动现金预测 + xychart-beta, cmake build ✅
+
+### Phase 11: wf_bill_calendar
+- **Status:** complete (2026-08-30)
+- Steps: step_bc_collect / step_bc_calendar / step_bc_report — 债务+订阅账单汇聚 + 30日hash日历 + xychart压力分布 + 高压日检测, cmake build ✅
+- Commit: pending
+
 ## Session: 2025-08-21
 
 ### Phase 1: 完整代码分析

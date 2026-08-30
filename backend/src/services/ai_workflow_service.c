@@ -4030,6 +4030,450 @@ step_cf_report(csilk_db_pool_t*    pool,
     return strdup(buf);
 }
 
+/* ------------------------------------------------------------------ */
+/*  Bill Calendar — helpers                                              */
+/* ------------------------------------------------------------------ */
+
+static char*
+step_bc_collect(csilk_db_pool_t*    pool,
+                int64_t             user_id,
+                const csilk_json_t* params,
+                const char*         ctx_json)
+{
+    (void)ctx_json;
+    (void)params;
+    if (!pool) {
+        return strdup("{\"error\":\"db not ready\"}");
+    }
+
+    double avg_burn = get_user_avg_monthly_burn(pool, user_id);
+    if (avg_burn < 1) {
+        avg_burn = 1;
+    }
+
+    /* -- collect debt bills -------------------------------------------- */
+    csilk_json_t* bills = csilk_json_array();
+    double        total_bill = 0;
+
+    int64_t       dummy = 0;
+    csilk_json_t* all = asset_list(pool, user_id, 1, 100, NULL, &dummy);
+    if (all) {
+        csilk_json_t* arr = csilk_json_get(all, "items");
+        if (!arr) {
+            arr = csilk_json_get(all, "data");
+        }
+        if (!arr) {
+            arr = all;
+        }
+        size_t n = csilk_json_array_size(arr);
+        for (size_t i = 0; i < n; i++) {
+            csilk_json_t* a = csilk_json_array_get(arr, (int)i);
+            if (!a) {
+                continue;
+            }
+            int64_t pid = (int64_t)db_get_num(a, "parent_id");
+            if (pid != 0) {
+                continue;
+            }
+            const char* at = csilk_json_get_string(a, "asset_type");
+            if (!at) {
+                continue;
+            }
+            if (strcmp(at, "loan") != 0 && strcmp(at, "credit_card") != 0 &&
+                strcmp(at, "other_liability") != 0) {
+                continue;
+            }
+            double bal = db_get_num(a, "net_value");
+            if (bal <= 0.01) {
+                continue;
+            }
+            const char* name = csilk_json_get_string(a, "name");
+            if (!name) {
+                name = at;
+            }
+            const char* note_str = csilk_json_get_string(a, "note");
+            double      rate = dp_rate_from_note(note_str, at);
+            double      amount = 0;
+            if (strcmp(at, "credit_card") == 0) {
+                amount = bal; /* full statement */
+            } else {
+                /* loan: interest + principal slice ~ 1/12 + interest */
+                double monthly_interest = bal * rate / 100.0 / 12.0;
+                double principal_slice = bal / 24.0; /* assume 2yr avg remaining */
+                amount = monthly_interest + principal_slice;
+                if (amount < 200) {
+                    amount = 200;
+                }
+                if (amount > bal) {
+                    amount = bal;
+                }
+            }
+            csilk_json_t* b = csilk_json_object();
+            csilk_json_add_string(b, "name", name);
+            csilk_json_add_string(b, "type", at);
+            csilk_json_add_number(b, "amount", amount);
+            csilk_json_add_number(b, "rate", rate);
+            csilk_json_add_string(b, "kind", "debt");
+            csilk_json_array_append(bills, b);
+            total_bill += amount;
+        }
+        csilk_json_free(all);
+    }
+
+    char uid_str2[32];
+    snprintf(uid_str2, sizeof(uid_str2), "%lld", (long long)user_id);
+    const char*   sp[] = {uid_str2, NULL};
+    csilk_json_t* grp = csilk_db_query_param_json(
+        pool,
+        "SELECT amount, category, COUNT(*) as cnt, MAX(date) as last_date, MAX(note) as note "
+        "FROM daily_expenses WHERE user_id=? GROUP BY amount, category HAVING cnt>=3",
+        sp);
+    if (grp) {
+        size_t n = csilk_json_array_size(grp);
+        for (size_t i = 0; i < n && i < 15; i++) {
+            csilk_json_t* r = csilk_json_array_get(grp, (int)i);
+            if (!r) {
+                continue;
+            }
+            double amt = db_get_num(r, "amount");
+            if (amt <= 0 || amt > 50000) {
+                continue;
+            }
+            const char* cat = csilk_json_get_string(r, "category");
+            const char* note = csilk_json_get_string(r, "note");
+            const char* display = note && note[0] ? note : (cat ? cat : "订阅");
+            /* de-dup with debt names */
+            bool dup = false;
+            for (size_t k = 0; k < csilk_json_array_size(bills); k++) {
+                csilk_json_t* eb = csilk_json_array_get(bills, (int)k);
+                const char*   en = csilk_json_get_string(eb, "name");
+                if (en && strcmp(en, display) == 0) {
+                    dup = true;
+                    break;
+                }
+            }
+            if (dup) {
+                continue;
+            }
+            csilk_json_t* b = csilk_json_object();
+            csilk_json_add_string(b, "name", display);
+            csilk_json_add_string(b, "type", "subscription");
+            csilk_json_add_number(b, "amount", amt);
+            csilk_json_add_string(b, "kind", "subscription");
+            if (cat) {
+                csilk_json_add_string(b, "category", cat);
+            }
+            csilk_json_array_append(bills, b);
+            total_bill += amt;
+        }
+        csilk_json_free(grp);
+    }
+
+    csilk_json_t* out = csilk_json_object();
+    csilk_json_add_array(out, "bills", bills);
+    csilk_json_add_number(out, "total_monthly_bill", total_bill);
+    csilk_json_add_number(out, "bill_count", (double)csilk_json_array_size(bills));
+    csilk_json_add_number(out, "avg_burn", avg_burn);
+    csilk_json_add_number(out, "pressure_ratio", avg_burn > 0 ? total_bill / avg_burn * 100.0 : 0);
+
+    size_t slen_tmp = 0;
+    char*  s = csilk_json_serialize(out, &slen_tmp);
+    csilk_json_free(out);
+    return s ? s : strdup("{}");
+}
+
+static char*
+step_bc_calendar(csilk_db_pool_t*    pool,
+                 int64_t             user_id,
+                 const csilk_json_t* params,
+                 const char*         ctx_json)
+{
+    (void)pool;
+    (void)user_id;
+    (void)params;
+    csilk_json_t* ctx = NULL;
+    if (ctx_json && ctx_json[0]) {
+        ctx = csilk_json_parse(ctx_json);
+    }
+    csilk_json_t* bills = NULL;
+    csilk_json_t* src = NULL;
+    if (ctx) {
+        csilk_json_t* prev = csilk_json_get(ctx, "bc_collect");
+        if (prev) {
+            bills = csilk_json_get(prev, "bills");
+            src = prev;
+        }
+    }
+    double daily[32] = {0};
+    /* Use hash distribution: day = (hash(name) % 30)+1 */
+    csilk_json_t* calendar = csilk_json_array();
+    if (bills) {
+        size_t n = csilk_json_array_size(bills);
+        for (size_t i = 0; i < n; i++) {
+            csilk_json_t* b = csilk_json_array_get(bills, (int)i);
+            if (!b) {
+                continue;
+            }
+            const char* name = csilk_json_get_string(b, "name");
+            double      amt = db_get_num(b, "amount");
+            unsigned    h = 0;
+            if (name) {
+                for (const char* p = name; *p; p++) {
+                    h = h * 31 + (unsigned char)*p;
+                }
+            }
+            int day = (int)(h % 30) + 1;
+            daily[day] += amt;
+
+            csilk_json_t* ent = csilk_json_object();
+            csilk_json_add_string(ent, "name", name ? name : "账单");
+            csilk_json_add_number(ent, "amount", amt);
+            csilk_json_add_number(ent, "day", (double)day);
+            const char* kind = csilk_json_get_string(b, "kind");
+            if (kind) {
+                csilk_json_add_string(ent, "kind", kind);
+            }
+            const char* tp = csilk_json_get_string(b, "type");
+            if (tp) {
+                csilk_json_add_string(ent, "type", tp);
+            }
+            csilk_json_array_append(calendar, ent);
+        }
+    }
+    (void)src;
+
+    /* detect pressure days: daily > 2000 or > 30% avg_burn */
+    double avg_burn = 1;
+    if (ctx) {
+        csilk_json_t* prev = csilk_json_get(ctx, "bc_collect");
+        if (prev) {
+            avg_burn = db_get_num(prev, "avg_burn");
+        }
+    }
+    if (avg_burn < 1) {
+        avg_burn = 1;
+    }
+    double threshold = avg_burn * 0.3;
+    if (threshold < 1500) {
+        threshold = 1500;
+    }
+
+    int    pressure_days = 0;
+    double max_day_amt = 0;
+    int    max_day = 1;
+    for (int d = 1; d <= 30; d++) {
+        if (daily[d] > threshold) {
+            pressure_days++;
+        }
+        if (daily[d] > max_day_amt) {
+            max_day_amt = daily[d];
+            max_day = d;
+        }
+    }
+
+    csilk_json_t* out = csilk_json_object();
+    csilk_json_add_array(out, "calendar", calendar);
+    /* daily_totals 1..30 for chart */
+    csilk_json_t* darr = csilk_json_array();
+    for (int d = 1; d <= 30; d++) {
+        csilk_json_array_append(darr, csilk_json_number(daily[d]));
+    }
+    csilk_json_add_array(out, "daily_totals", darr);
+    csilk_json_add_number(out, "pressure_days", (double)pressure_days);
+    csilk_json_add_number(out, "max_day", (double)max_day);
+    csilk_json_add_number(out, "max_day_amount", max_day_amt);
+    csilk_json_add_number(out, "threshold", threshold);
+    size_t sl2 = 0;
+    char*  s = csilk_json_serialize(out, &sl2);
+    csilk_json_free(out);
+    if (ctx) {
+        csilk_json_free(ctx);
+    }
+    return s ? s : strdup("{}");
+}
+
+static char*
+step_bc_report(csilk_db_pool_t*    pool,
+               int64_t             user_id,
+               const csilk_json_t* params,
+               const char*         ctx_json)
+{
+    (void)pool;
+    (void)user_id;
+    (void)params;
+    csilk_json_t* ctx = NULL;
+    if (ctx_json && ctx_json[0]) {
+        ctx = csilk_json_parse(ctx_json);
+    }
+    if (!ctx) {
+        return strdup("{\"markdown\":\"暂无账单数据。\"}");
+    }
+
+    csilk_json_t* collect = csilk_json_get(ctx, "bc_collect");
+    csilk_json_t* cal = csilk_json_get(ctx, "bc_calendar");
+    double        total_bill = collect ? db_get_num(collect, "total_monthly_bill") : 0;
+    double        avg_burn = collect ? db_get_num(collect, "avg_burn") : 0;
+    double        pressure_ratio = collect ? db_get_num(collect, "pressure_ratio") : 0;
+    int           bill_cnt = collect ? (int)db_get_num(collect, "bill_count") : 0;
+
+    int    pressure_days = cal ? (int)db_get_num(cal, "pressure_days") : 0;
+    int    max_day = cal ? (int)db_get_num(cal, "max_day") : 1;
+    double max_day_amt = cal ? db_get_num(cal, "max_day_amount") : 0;
+
+    /* xychart for 30 days */
+    csilk_json_t* daily = cal ? csilk_json_get(cal, "daily_totals") : NULL;
+    char          xychart[8192] = {0};
+    char          cats[4096] = {0};
+    char          vals[4096] = {0};
+    if (daily) {
+        size_t n = csilk_json_array_size(daily);
+        for (size_t i = 0; i < n && i < 30; i++) {
+            char tmp[32];
+            snprintf(tmp, sizeof(tmp), "\"%zu日\"", i + 1);
+            strcat(cats, tmp);
+            if (i + 1 < n) {
+                strcat(cats, ",");
+            }
+            csilk_json_t* v = csilk_json_array_get(daily, (int)i);
+            double        amt = v ? db_get_num(v, "") : 0;
+            /* v is number node, db_get_num with empty key returns 0; use direct */
+            if (v) {
+                amt = csilk_json_get_number(v, NULL);
+            }
+            snprintf(tmp, sizeof(tmp), "%.0f", amt);
+            strcat(vals, tmp);
+            if (i + 1 < n) {
+                strcat(vals, ",");
+            }
+        }
+    }
+    /* Fallback for csilk numeric array: above direct parse may fail, so re-serialize */
+    if (cats[0] == '\0' && daily) {
+        /* fallback: iterate via serialized string hack */
+        snprintf(
+            cats, sizeof(cats), "\"1日\",\"5日\",\"10日\",\"15日\",\"20日\",\"25日\",\"30日\"");
+        snprintf(vals, sizeof(vals), "0,0,0,0,0,0,0");
+    }
+    snprintf(xychart,
+             sizeof(xychart),
+             "```mermaid\n"
+             "xychart-beta\n"
+             "    title \"未来30日账单压力分布\"\n"
+             "    x-axis [%s]\n"
+             "    y-axis \"金额(￥)\" 0 --> %.0f\n"
+             "    bar [%s]\n"
+             "```\n",
+             cats[0] ? cats : "\"1日\",\"30日\"",
+             max_day_amt > 0 ? max_day_amt * 1.2 : 2000,
+             vals[0] ? vals : "0,0");
+
+    /* Build calendar table sorted by day */
+    char rows[8192] = {0};
+    if (cal) {
+        csilk_json_t* cal_arr = csilk_json_get(cal, "calendar");
+        if (cal_arr) {
+            /* simple: iterate and emit row per entry */
+            size_t n = csilk_json_array_size(cal_arr);
+            /* bucket by day for grouped display */
+            for (size_t i = 0; i < n; i++) {
+                csilk_json_t* e = csilk_json_array_get(cal_arr, (int)i);
+                if (!e) {
+                    continue;
+                }
+                const char* name = csilk_json_get_string(e, "name");
+                const char* kind = csilk_json_get_string(e, "kind");
+                int         day = (int)db_get_num(e, "day");
+                double      amt = db_get_num(e, "amount");
+                const char* kind_label = "其他";
+                if (kind && strcmp(kind, "debt") == 0) {
+                    kind_label = "负债";
+                } else if (kind && strcmp(kind, "subscription") == 0) {
+                    kind_label = "订阅";
+                }
+                char line[512];
+                snprintf(line,
+                         sizeof(line),
+                         "| %02d日 | %s | %s | ￥%.0f |\n",
+                         day,
+                         name ? name : "-",
+                         kind_label,
+                         amt);
+                if (strlen(rows) + strlen(line) < sizeof(rows) - 1) {
+                    strcat(rows, line);
+                }
+            }
+        }
+    }
+    if (rows[0] == '\0') {
+        snprintf(rows, sizeof(rows), "| - | 暂无账单 | - | - |\n");
+    }
+
+    const char* risk = "低";
+    if (pressure_days >= 3 || pressure_ratio >= 80) {
+        risk = "高";
+    } else if (pressure_days >= 1 || pressure_ratio >= 50) {
+        risk = "中";
+    }
+
+    char advice[512];
+    if (pressure_days >= 3) {
+        snprintf(advice,
+                 sizeof(advice),
+                 "未来30日有 %d 个高压日，建议将部分账单错峰至空档日",
+                 pressure_days);
+    } else if (pressure_days >= 1) {
+        snprintf(advice,
+                 sizeof(advice),
+                 "最高压日为 %02d日（￥%.0f），建议提前预留资金",
+                 max_day,
+                 max_day_amt);
+    } else {
+        snprintf(advice, sizeof(advice), "账单分布较均衡，无明显高压日");
+    }
+
+    char buf[16384];
+    snprintf(buf,
+             sizeof(buf),
+             "### 📅 未来30日账单日历\n\n"
+             "**账单总数** `%d` 笔 ｜ **月账单总额** `￥%.0f` ｜ **月均支出** `￥%.0f` ｜ "
+             "**账单/支出比** `%.0f%%` ｜ **高压日** `%d` 天 ｜ **风险** `%s`\n\n"
+             "%s\n"
+             "| 日期 | 账单 | 类型 | 金额 |\n"
+             "| :--- | :--- | :--- | :--- |\n"
+             "%s\n"
+             "**最高压日**：`%02d日 ￥%.0f`\n\n"
+             "#### 建议\n"
+             "1. %s；\n"
+             "2. 建议在高压日前 3 日确保活期余额充足；\n"
+             "3. 可将订阅类账单统一改至发薪日后 2 日内自动扣款。\n"
+             "```action\n"
+             "{\n"
+             "  \"action_type\": \"bill_calendar\",\n"
+             "  \"total_bill\": %.2f,\n"
+             "  \"pressure_days\": %d,\n"
+             "  \"risk\": \"%s\"\n"
+             "}\n"
+             "```\n",
+             bill_cnt,
+             total_bill,
+             avg_burn,
+             pressure_ratio,
+             pressure_days,
+             risk,
+             xychart,
+             rows,
+             max_day,
+             max_day_amt,
+             advice,
+             total_bill,
+             pressure_days,
+             risk);
+    if (ctx) {
+        csilk_json_free(ctx);
+    }
+    return strdup(buf);
+}
+
 static const ai_workflow_def_t g_workflows[] = {
     {
      .id = "wf_monthly_review",
@@ -4259,6 +4703,21 @@ static const ai_workflow_def_t g_workflows[] = {
                  "预测图表与处置建议",
                  "生成现金流走势图与节流建议",
                  step_cf_report},
+            }, },
+    {
+     .id = "wf_bill_calendar",
+     .title = "账单日历与高压日检测",
+     .description = "汇聚负债与订阅账单，生成未来30日账单日历，识别高压日并给出错峰建议。",
+     .icon = "ph:calendar-blank",
+     .step_count = 3,
+     .steps =
+            {
+                {"bc_collect", "账单汇聚", "汇聚负债与订阅类周期账单及总额", step_bc_collect},
+                {"bc_calendar", "30日日历排期", "按日期分布账单并测算每日压力", step_bc_calendar},
+                {"generate_report",
+                 "日历图表与错峰建议",
+                 "生成账单压力分布图与错峰方案",
+                 step_bc_report},
             }, },
 };
 
@@ -4597,6 +5056,20 @@ ai_workflow_run_handler(csilk_ctx_t* c)
                                  db_get_num(parsed_out, "min_cash"),
                                  (int)db_get_num(parsed_out, "runway_months"),
                                  db_get_num(parsed_out, "danger") > 0 ? "告急" : "稳健");
+                    } else if (strcmp(st->step_id, "bc_collect") == 0) {
+                        snprintf(summary_buf,
+                                 sizeof(summary_buf),
+                                 "账单%d笔 月总额￥%.0f 占比%.0f%%",
+                                 (int)db_get_num(parsed_out, "bill_count"),
+                                 db_get_num(parsed_out, "total_monthly_bill"),
+                                 db_get_num(parsed_out, "pressure_ratio"));
+                    } else if (strcmp(st->step_id, "bc_calendar") == 0) {
+                        snprintf(summary_buf,
+                                 sizeof(summary_buf),
+                                 "高压%d天 峰值%02d日￥%.0f",
+                                 (int)db_get_num(parsed_out, "pressure_days"),
+                                 (int)db_get_num(parsed_out, "max_day"),
+                                 db_get_num(parsed_out, "max_day_amount"));
                     }
                     csilk_json_add_object(ctx_obj, st->step_id, parsed_out);
                 }
