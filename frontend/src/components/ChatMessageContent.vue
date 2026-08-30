@@ -50,7 +50,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, defineAsyncComponent } from 'vue'
+import { computed, ref, watch, defineAsyncComponent, onUnmounted } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { Icon } from '@iconify/vue'
@@ -71,21 +71,25 @@ const props = defineProps<{
 
 const debouncedContent = ref(props.content || '')
 let debounceTimer: number | null = null
+let rafId: number | null = null
+
 watch(
   () => props.content,
   (v) => {
     const val = v || ''
     if (props.isStreaming) {
+      // 流式状态下 RAF 立即更新，确保光标与内容同步
+      if (rafId !== null) cancelAnimationFrame(rafId)
+      rafId = requestAnimationFrame(() => {
+        rafId = null
+        debouncedContent.value = val
+      })
+    } else {
       if (debounceTimer) clearTimeout(debounceTimer)
       debounceTimer = window.setTimeout(() => {
+        debounceTimer = null
         debouncedContent.value = val
       }, 48)
-    } else {
-      if (debounceTimer) {
-        clearTimeout(debounceTimer)
-        debounceTimer = null
-      }
-      debouncedContent.value = val
     }
   },
   { immediate: true },
@@ -98,10 +102,19 @@ watch(
         clearTimeout(debounceTimer)
         debounceTimer = null
       }
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId)
+        rafId = null
+      }
       debouncedContent.value = props.content || ''
     }
   },
 )
+
+onUnmounted(() => {
+  if (debounceTimer) clearTimeout(debounceTimer)
+  if (rafId !== null) cancelAnimationFrame(rafId)
+})
 
 interface Segment {
   id: string
