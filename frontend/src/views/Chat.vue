@@ -213,6 +213,7 @@
                       :content="msg.content"
                       :workflow-data="msg.workflowData"
                       :is-streaming="chat.isStreaming && idx === chat.messages.length - 1 && msg.role === 'assistant'"
+                      :enable-buffer="chat.enableTypewriterBuffer"
                     />
                     <span v-if="chat.isStreaming && idx === chat.messages.length - 1 && msg.role === 'assistant'" class="typing-cursor"></span>
                   </div>

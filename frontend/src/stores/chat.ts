@@ -25,6 +25,11 @@ export const useChatStore = defineStore('chat', () => {
   const loadedMessagePage = ref(1)
   const loadingMoreMessages = ref(false)
 
+  // Enable typewriter buffer: RAF drains chars at fixed 3/frame during streaming,
+  // then LRU cache + debounce used for non-streaming final content to avoid
+  // repeated marked.parse / DOMPurify on every reactive push.
+  const enableTypewriterBuffer = ref(true)
+
   async function fetchSessions() {
     const r = (await listSessions({ page_size: 50 })) as unknown
     const rawList = r && typeof r === 'object' && 'list' in r && Array.isArray((r as { list: unknown }).list) ? (r as { list: Record<string, unknown>[] }).list : []
@@ -275,6 +280,7 @@ export const useChatStore = defineStore('chat', () => {
     abortCurrentStream()
     activeAbortController = new AbortController()
     const signal = activeAbortController.signal
+    enableTypewriterBuffer.value = true
     isStreaming.value = true
     const writer = new SmoothStreamWriter(assistantMsg)
     try {
@@ -290,7 +296,7 @@ export const useChatStore = defineStore('chat', () => {
       await writer.finish()
     } catch (err: any) {
       if (err?.name !== 'AbortError') { writer.flushNow(); assistantMsg.content = `⚠️ 请求发生异常` }
-    } finally { writer.flushNow(); isStreaming.value = false; activeAbortController = null }
+    } finally { writer.flushNow(); enableTypewriterBuffer.value = false; isStreaming.value = false; activeAbortController = null }
   }
 
   async function regenerateLastMessage() {
@@ -325,6 +331,7 @@ export const useChatStore = defineStore('chat', () => {
     activeAbortController = new AbortController()
     const signal = activeAbortController.signal
 
+    enableTypewriterBuffer.value = true
     isStreaming.value = true
     const writer = new SmoothStreamWriter(assistantMsg)
 
@@ -351,6 +358,7 @@ export const useChatStore = defineStore('chat', () => {
       }
     } finally {
       writer.flushNow()
+      enableTypewriterBuffer.value = false
       isStreaming.value = false
       activeAbortController = null
     }
@@ -387,6 +395,7 @@ export const useChatStore = defineStore('chat', () => {
     activeAbortController = new AbortController()
     const signal = activeAbortController.signal
 
+    enableTypewriterBuffer.value = true
     isStreaming.value = true
     const writer = new SmoothStreamWriter(assistantMsg)
 
@@ -430,6 +439,7 @@ export const useChatStore = defineStore('chat', () => {
       }
     } finally {
       writer.flushNow()
+      enableTypewriterBuffer.value = false
       isStreaming.value = false
       activeAbortController = null
     }
@@ -497,6 +507,7 @@ export const useChatStore = defineStore('chat', () => {
     activeAbortController = new AbortController()
     const signal = activeAbortController.signal
 
+    enableTypewriterBuffer.value = true
     isStreaming.value = true
     const writer = new SmoothStreamWriter(activeMsg)
 
@@ -590,6 +601,7 @@ export const useChatStore = defineStore('chat', () => {
           }
         })
       }
+      enableTypewriterBuffer.value = false
       isStreaming.value = false
       activeAbortController = null
     }
@@ -610,5 +622,6 @@ export const useChatStore = defineStore('chat', () => {
     abortCurrentStream, clearMessages, clearCurrentSession, resetState, setModel,
     loadMoreMessages,
     messageTotal, loadedMessagePage, loadingMoreMessages,
+    enableTypewriterBuffer,
   }
 })

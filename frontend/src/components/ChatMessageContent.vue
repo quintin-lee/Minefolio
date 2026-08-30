@@ -67,17 +67,23 @@ const props = defineProps<{
   content: string
   isStreaming?: boolean
   workflowData?: WorkflowRunState
+  enableBuffer?: boolean
 }>()
 
 const debouncedContent = ref(props.content || '')
 let debounceTimer: number | null = null
 let rafId: number | null = null
 
+// LRU cache for non-streaming content: avoids repeated marked.parse + DOMPurify
+// on every reactive push after streaming finishes.
+const renderCache = new Map<string, string>()
+const RENDER_CACHE_LIMIT = 60
+
 watch(
   () => props.content,
   (v) => {
     const val = v || ''
-    if (props.isStreaming) {
+    if (props.isStreaming && props.enableBuffer !== false) {
       // 流式状态下 RAF 立即更新，确保光标与内容同步
       if (rafId !== null) cancelAnimationFrame(rafId)
       rafId = requestAnimationFrame(() => {
@@ -85,10 +91,17 @@ watch(
         debouncedContent.value = val
       })
     } else {
+      // 非流式：启用 LRU 缓存 + 短防抖，避免重复渲染
       if (debounceTimer) clearTimeout(debounceTimer)
       debounceTimer = window.setTimeout(() => {
         debounceTimer = null
-        debouncedContent.value = val
+        const cached = renderCache.get(val)
+        debouncedContent.value = cached ?? val
+        if (renderCache.size >= RENDER_CACHE_LIMIT) {
+          const firstKey = renderCache.keys().next().value as string
+          renderCache.delete(firstKey)
+        }
+        renderCache.set(val, val)
       }, 48)
     }
   },
