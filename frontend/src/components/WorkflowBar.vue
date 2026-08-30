@@ -111,6 +111,12 @@
           <el-input-number v-model="paramMonthlyPayment" :min="100" :step="500" style="width: 100%" placeholder="例如 5000" />
         </div>
 
+        <div v-else-if="selectedWf.id === 'wf_cashflow_forecast'" class="param-row">
+          <label class="param-label">预测月数</label>
+          <el-input-number v-model="paramHorizon" :min="3" :max="12" :step="1" style="width: 100%" />
+          <div class="param-hint">默认 6 个月（3-12），滚动外推未来现金余额</div>
+        </div>
+
         <div class="steps-preview">
           <div class="preview-title">流水线步骤预览：</div>
           <div class="preview-steps-list">
@@ -154,6 +160,7 @@ const paramRatioEmergency = ref<number | undefined>(undefined)
 const paramLookback = ref(60)
 const paramTargetMonths = ref(6)
 const paramMonthlyPayment = ref<number | undefined>(undefined)
+const paramHorizon = ref(6)
 
 onMounted(async () => {
   if (chatStore.workflows.length === 0) {
@@ -170,14 +177,15 @@ const ratioSum = computed(() => {
   return anySet ? a + b + c + d : 0
 })
 
-const DIRECT_RUN_IDS = new Set(['wf_portfolio_rebalance', 'wf_goal_tracker'])
+const DIRECT_RUN_IDS = new Set(['wf_portfolio_rebalance', 'wf_goal_tracker', 'wf_bill_calendar', 'wf_health_score'])
 
 function handleCardClick(wf: WorkflowDef) {
   if (chatStore.isStreaming) return
   selectedWf.value = wf
-  // Prefill lookback defaults per workflow
+  // Prefill lookback/defaults per workflow
   if (wf.id === 'wf_anomaly_detect') paramLookback.value = 60
   else if (wf.id === 'wf_subscription_audit') paramLookback.value = 180
+  else if (wf.id === 'wf_cashflow_forecast') paramHorizon.value = 6
   if (DIRECT_RUN_IDS.has(wf.id)) {
     chatStore.runWorkflow(wf.id)
   } else {
@@ -211,6 +219,8 @@ function confirmRun() {
       params.monthly_payment = paramMonthlyPayment.value
       params.amount = paramMonthlyPayment.value
     }
+  } else if (id === 'wf_cashflow_forecast') {
+    if (paramHorizon.value) params.horizon = paramHorizon.value
   }
   dialogVisible.value = false
   chatStore.runWorkflow(selectedWf.value.id, params)
