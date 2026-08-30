@@ -4474,6 +4474,337 @@ step_bc_report(csilk_db_pool_t*    pool,
     return strdup(buf);
 }
 
+/* ----------------------------------------------------------------
+ *  Workflow: Financial Health Score (health_score)
+ *  Score 0-100 across liquidity/debt/savings/discipline
+ * ---------------------------------------------------------------- */
+
+static char*
+step_hs_collect(csilk_db_pool_t*    pool,
+                int64_t             user_id,
+                const csilk_json_t* params,
+                const char*         ctx_json)
+{
+    (void)params;
+    (void)ctx_json;
+    double liquid = 0;
+    {
+        int64_t       tot = 0;
+        csilk_json_t* arr = asset_list(pool, user_id, 1, 100, NULL, &tot);
+        if (arr) {
+            csilk_json_t* d = csilk_json_get(arr, "data");
+            size_t        n = d ? csilk_json_array_size(d) : 0;
+            for (size_t i = 0; i < n; i++) {
+                csilk_json_t* a = csilk_json_array_get(d, (int)i);
+                if (!a) {
+                    continue;
+                }
+                const char* typ = csilk_json_get_string(a, "asset_type");
+                int64_t     pid = (int64_t)db_get_num(a, "parent_id");
+                if (pid != 0) {
+                    continue;
+                }
+                if (typ && (strcmp(typ, "cash") == 0 || strcmp(typ, "bank") == 0 ||
+                            strcmp(typ, "other_asset") == 0)) {
+                    liquid += db_get_num(a, "net_value");
+                    if (db_get_num(a, "net_value") == 0) {
+                        liquid += db_get_num(a, "balance");
+                    }
+                }
+            }
+            csilk_json_free(arr);
+        }
+    }
+    double total_assets = 0, total_debt = 0;
+    {
+        int64_t       tot2 = 0;
+        csilk_json_t* arr = asset_list(pool, user_id, 1, 200, NULL, &tot2);
+        if (arr) {
+            csilk_json_t* d = csilk_json_get(arr, "data");
+            size_t        n = d ? csilk_json_array_size(d) : 0;
+            for (size_t i = 0; i < n; i++) {
+                csilk_json_t* a = csilk_json_array_get(d, (int)i);
+                if (!a) {
+                    continue;
+                }
+                double v = db_get_num(a, "net_value");
+                if (v == 0) {
+                    v = db_get_num(a, "balance");
+                }
+                if (v < 0) {
+                    v = -v;
+                }
+                const char* typ = csilk_json_get_string(a, "asset_type");
+                int is_liab = typ && (strcmp(typ, "loan") == 0 || strcmp(typ, "credit_card") == 0 ||
+                                      strcmp(typ, "other_liability") == 0);
+                if (is_liab) {
+                    total_debt += v;
+                } else {
+                    total_assets += v;
+                }
+            }
+            csilk_json_free(arr);
+        }
+    }
+    double avg_burn = get_user_avg_monthly_burn(pool, user_id);
+    double avg_income = 0;
+    {
+        char uid2[32];
+        snprintf(uid2, sizeof(uid2), "%lld", (long long)user_id);
+        const char*   params2[] = {uid2, NULL};
+        csilk_json_t* rows = csilk_db_query_param_json(
+            pool,
+            "SELECT AVG(mv) as avg_income FROM (SELECT substr(expense_date,1,7) as ym, "
+            "SUM(amount) as mv FROM daily_expenses WHERE user_id=? AND amount>0 "
+            "GROUP BY ym) t",
+            params2);
+        if (rows && csilk_json_array_size(rows) > 0) {
+            avg_income = db_get_num(csilk_json_array_get(rows, 0), "avg_income");
+        }
+        if (rows) {
+            csilk_json_free(rows);
+        }
+    }
+    double savings_rate = 0;
+    if (avg_income > 0) {
+        savings_rate = (avg_income - avg_burn) / avg_income * 100.0;
+    }
+    double emergency_months = avg_burn > 1 ? liquid / avg_burn : 0;
+    double debt_ratio = total_assets > 1 ? total_debt / (total_assets + total_debt) * 100.0 : 0;
+
+    csilk_json_t* out = csilk_json_object();
+    csilk_json_add_number(out, "liquid_cash", liquid);
+    csilk_json_add_number(out, "total_assets", total_assets);
+    csilk_json_add_number(out, "total_debt", total_debt);
+    csilk_json_add_number(out, "avg_burn", avg_burn);
+    csilk_json_add_number(out, "avg_income", avg_income);
+    csilk_json_add_number(out, "savings_rate", savings_rate);
+    csilk_json_add_number(out, "emergency_months", emergency_months);
+    csilk_json_add_number(out, "debt_ratio", debt_ratio);
+    size_t sl = 0;
+    char*  s = csilk_json_serialize(out, &sl);
+    csilk_json_free(out);
+    return s ? s : strdup("{}");
+}
+
+static char*
+step_hs_score(csilk_db_pool_t*    pool,
+              int64_t             user_id,
+              const csilk_json_t* params,
+              const char*         ctx_json)
+{
+    (void)pool;
+    (void)user_id;
+    (void)params;
+    csilk_json_t* ctx = NULL;
+    if (ctx_json && ctx_json[0]) {
+        ctx = csilk_json_parse(ctx_json);
+    }
+    csilk_json_t* col = ctx ? csilk_json_get(ctx, "hs_collect") : NULL;
+    double        emergency = col ? db_get_num(col, "emergency_months") : 0;
+    double        debt_ratio = col ? db_get_num(col, "debt_ratio") : 0;
+    double        savings_rate = col ? db_get_num(col, "savings_rate") : 0;
+    double        avg_income = col ? db_get_num(col, "avg_income") : 0;
+    double        avg_burn = col ? db_get_num(col, "avg_burn") : 0;
+
+    int s_liquidity = 0;
+    if (emergency >= 6) {
+        s_liquidity = 25;
+    } else if (emergency >= 3) {
+        s_liquidity = 18;
+    } else if (emergency >= 1) {
+        s_liquidity = 10;
+    } else if (emergency >= 0.5) {
+        s_liquidity = 5;
+    }
+
+    int s_debt = 0;
+    if (debt_ratio < 15) {
+        s_debt = 25;
+    } else if (debt_ratio < 30) {
+        s_debt = 18;
+    } else if (debt_ratio < 50) {
+        s_debt = 10;
+    } else if (debt_ratio < 70) {
+        s_debt = 5;
+    }
+
+    int s_savings = 0;
+    if (savings_rate >= 30) {
+        s_savings = 25;
+    } else if (savings_rate >= 15) {
+        s_savings = 18;
+    } else if (savings_rate >= 5) {
+        s_savings = 10;
+    } else if (savings_rate >= 0) {
+        s_savings = 5;
+    }
+
+    int s_discipline = 0;
+    if (avg_income > 0 && avg_burn < avg_income) {
+        s_discipline = 25;
+    } else if (avg_income > 0 && avg_burn < avg_income * 1.1) {
+        s_discipline = 12;
+    } else if (avg_income <= 0 && avg_burn < 1000) {
+        s_discipline = 10;
+    }
+
+    int total = s_liquidity + s_debt + s_savings + s_discipline;
+    if (total > 100) {
+        total = 100;
+    }
+    const char* grade = "D";
+    if (total >= 85) {
+        grade = "A";
+    } else if (total >= 70) {
+        grade = "B";
+    } else if (total >= 50) {
+        grade = "C";
+    }
+
+    csilk_json_t* out = csilk_json_object();
+    csilk_json_add_number(out, "score_liquidity", (double)s_liquidity);
+    csilk_json_add_number(out, "score_debt", (double)s_debt);
+    csilk_json_add_number(out, "score_savings", (double)s_savings);
+    csilk_json_add_number(out, "score_discipline", (double)s_discipline);
+    csilk_json_add_number(out, "total_score", (double)total);
+    csilk_json_add_string(out, "grade", grade);
+    size_t sl2 = 0;
+    char*  s = csilk_json_serialize(out, &sl2);
+    csilk_json_free(out);
+    if (ctx) {
+        csilk_json_free(ctx);
+    }
+    return s ? s : strdup("{}");
+}
+
+static char*
+step_hs_report(csilk_db_pool_t*    pool,
+               int64_t             user_id,
+               const csilk_json_t* params,
+               const char*         ctx_json)
+{
+    (void)pool;
+    (void)user_id;
+    (void)params;
+    csilk_json_t* ctx = NULL;
+    if (ctx_json && ctx_json[0]) {
+        ctx = csilk_json_parse(ctx_json);
+    }
+    if (!ctx) {
+        return strdup("{\"markdown\":\"暂无健康分数据。\"}");
+    }
+    csilk_json_t* col = csilk_json_get(ctx, "hs_collect");
+    csilk_json_t* sc = csilk_json_get(ctx, "hs_score");
+    double        liquid = col ? db_get_num(col, "liquid_cash") : 0;
+    double        assets = col ? db_get_num(col, "total_assets") : 0;
+    double        debt = col ? db_get_num(col, "total_debt") : 0;
+    double        burn = col ? db_get_num(col, "avg_burn") : 0;
+    double        income = col ? db_get_num(col, "avg_income") : 0;
+    double        sr = col ? db_get_num(col, "savings_rate") : 0;
+    double        emer = col ? db_get_num(col, "emergency_months") : 0;
+    double        dr = col ? db_get_num(col, "debt_ratio") : 0;
+    int           total = sc ? (int)db_get_num(sc, "total_score") : 0;
+    const char*   grade = sc ? csilk_json_get_string(sc, "grade") : "D";
+    if (!grade) {
+        grade = "D";
+    }
+    int sl = sc ? (int)db_get_num(sc, "score_liquidity") : 0;
+    int sd = sc ? (int)db_get_num(sc, "score_debt") : 0;
+    int sv = sc ? (int)db_get_num(sc, "score_savings") : 0;
+    int sdi = sc ? (int)db_get_num(sc, "score_discipline") : 0;
+
+    const char* label = "需改进";
+    if (total >= 85) {
+        label = "优秀";
+    } else if (total >= 70) {
+        label = "良好";
+    } else if (total >= 50) {
+        label = "一般";
+    }
+
+    char suggest[512];
+    if (total >= 85) {
+        snprintf(suggest, sizeof(suggest), "财务状况优秀，继续保持当前储蓄与支出节奏");
+    } else if (emer < 3) {
+        snprintf(
+            suggest, sizeof(suggest), "优先补足应急资金至 3-6 个月支出（当前 %.1f 个月）", emer);
+    } else if (dr >= 50) {
+        snprintf(suggest, sizeof(suggest), "负债率偏高（%.0f%%），建议优先降低高息负债", dr);
+    } else if (sr < 10) {
+        snprintf(suggest, sizeof(suggest), "储蓄率偏低（%.0f%%），建议检视非必要支出", sr);
+    } else {
+        snprintf(suggest, sizeof(suggest), "整体良好，可优化短板维度进一步提升");
+    }
+
+    char xychart[2048];
+    snprintf(xychart,
+             sizeof(xychart),
+             "```mermaid\n"
+             "xychart-beta\n"
+             "    title \"财务健康分项（满分25）\"\n"
+             "    x-axis [\"流动性\",\"负债\",\"储蓄\",\"纪律\"]\n"
+             "    y-axis \"分数\" 0 --> 25\n"
+             "    bar [%d,%d,%d,%d]\n"
+             "```\n",
+             sl,
+             sd,
+             sv,
+             sdi);
+
+    char buf[16384];
+    snprintf(buf,
+             sizeof(buf),
+             "### 🏥 财务健康分报告\n\n"
+             "**综合得分** `%d/100` ｜ **等级** `%s` ｜ **评价** `%s`\n\n"
+             "%s\n"
+             "| 维度 | 得分 | 满分 | 说明 |\n"
+             "| :--- | :--- | :--- | :--- |\n"
+             "| 流动性 | %d | 25 | 应急 %.1f 个月 |\n"
+             "| 负债 | %d | 25 | 负债率 %.0f%% |\n"
+             "| 储蓄 | %d | 25 | 储蓄率 %.0f%% |\n"
+             "| 纪律 | %d | 25 | 收支 %s |\n"
+             "| **合计** | **%d** | **100** | **%s** |\n\n"
+             "**资产** `￥%.0f` ｜ **负债** `￥%.0f` ｜ **流动现金** `￥%.0f` ｜ "
+             "**月均收入** `￥%.0f` ｜ **月均支出** `￥%.0f`\n\n"
+             "#### 建议\n"
+             "1. %s；\n"
+             "2. 每月复盘时关注最低分的维度；\n"
+             "3. 目标 3 个月内提升至 %d 分以上。\n"
+             "```action\n"
+             "{\n"
+             "  \"action_type\": \"health_score\",\n"
+             "  \"total_score\": %d,\n"
+             "  \"grade\": \"%s\"\n"
+             "}\n"
+             "```\n",
+             total,
+             grade,
+             label,
+             xychart,
+             sl,
+             emer,
+             sd,
+             dr,
+             sv,
+             sr,
+             sdi,
+             burn < income ? "盈余" : "赤字",
+             total,
+             label,
+             assets,
+             debt,
+             liquid,
+             income,
+             burn,
+             suggest,
+             total >= 85 ? 90 : total + 10,
+             total,
+             grade);
+    csilk_json_free(ctx);
+    return strdup(buf);
+}
+
 static const ai_workflow_def_t g_workflows[] = {
     {
      .id = "wf_monthly_review",
@@ -4718,6 +5049,21 @@ static const ai_workflow_def_t g_workflows[] = {
                  "日历图表与错峰建议",
                  "生成账单压力分布图与错峰方案",
                  step_bc_report},
+            }, },
+    {
+     .id = "wf_health_score",
+     .title = "财务健康分评估",
+     .description =
+            "从流动性/负债/储蓄/纪律四维度计算 0-100 健康分，定位短板并给出 3 个月提升路径。",    .icon = "ph:heart",
+     .step_count = 3,
+     .steps =
+            {
+                {"hs_collect", "财务数据汇聚", "汇聚资产负债与月均收支", step_hs_collect},
+                {"hs_score", "四维度评分", "流动性/负债/储蓄/纪律加权评分", step_hs_score},
+                {"generate_report",
+                 "健康分报告与提升建议",
+                 "生成健康分雷达图与短板改进方案",
+                 step_hs_report},
             }, },
 };
 
@@ -5070,6 +5416,19 @@ ai_workflow_run_handler(csilk_ctx_t* c)
                                  (int)db_get_num(parsed_out, "pressure_days"),
                                  (int)db_get_num(parsed_out, "max_day"),
                                  db_get_num(parsed_out, "max_day_amount"));
+                    } else if (strcmp(st->step_id, "hs_collect") == 0) {
+                        snprintf(summary_buf,
+                                 sizeof(summary_buf),
+                                 "资产￥%.0f 负债￥%.0f 应急%.1f月",
+                                 db_get_num(parsed_out, "total_assets"),
+                                 db_get_num(parsed_out, "total_debt"),
+                                 db_get_num(parsed_out, "emergency_months"));
+                    } else if (strcmp(st->step_id, "hs_score") == 0) {
+                        snprintf(summary_buf,
+                                 sizeof(summary_buf),
+                                 "健康分%d/100 等级%s",
+                                 (int)db_get_num(parsed_out, "total_score"),
+                                 csilk_json_get_string(parsed_out, "grade") ?: "-");
                     }
                     csilk_json_add_object(ctx_obj, st->step_id, parsed_out);
                 }

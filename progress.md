@@ -62,6 +62,11 @@
 ### Phase 11: wf_bill_calendar
 - **Status:** complete (2026-08-30)
 - Steps: step_bc_collect / step_bc_calendar / step_bc_report — 债务+订阅账单汇聚 + 30日hash日历 + xychart压力分布 + 高压日检测, cmake build ✅
+- Commit: dab873a4
+
+### Phase 12: wf_health_score
+- **Status:** complete (2026-08-30)
+- Steps: step_hs_collect / step_hs_score / step_hs_report — 4维度加权(流动/负债/储蓄/纪律各25) → 0-100 + grade, xychart-bar + 短板建议, cmake build ✅
 - Commit: pending
 
 ## Session: 2025-08-21

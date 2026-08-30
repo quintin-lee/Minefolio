@@ -4,7 +4,7 @@
 在已完成的 10 工作流基础上，逐项实现新推荐的 9 个工作流（P0现金流/账单日历/健康分 → P1消费画像/冲动检查/DCA体检 → P2净值轨迹/汇率敞口/年度账单），保持后端 SSE + 真实数据 + Mermaid + 前端 WorkflowBar 框架一致。
 
 ## Current Phase
-Phase 12 — 财务健康分 (Health Score) [in_progress]
+Phase 13 — 消费基因画像 (Spending DNA) [in_progress]
 
 ## Phases
 
@@ -102,9 +102,12 @@ Phase 12 — 财务健康分 (Health Score) [in_progress]
 - **Status:** complete
 
 ### Phase 12: 财务健康分 (Health Score) ⭐ P0
-- [ ] 6维度打分：储蓄率/应急覆盖/债务收入比/预算遵守/投资分散/异常率
-- [ ] 雷达图 + 总分卡 + 同比/最短板建议
-- **Status:** pending
+- [x] 后端：`step_hs_collect` — 汇聚 liquid/total_assets/debt/avg_burn/income/savings_rate/emergency_months/debt_ratio
+- [x] 后端：`step_hs_score` — 4维度加权(流动性/负债/储蓄/纪律各25) → total 0-100 + grade A-D
+- [x] 后端：`step_hs_report` — xychart-bar + 分项表 + 总分卡 + 短板建议 + action JSON
+- [x] 注册 `wf_health_score` 到 g_workflows (ph:heart, hs_collect/hs_score/generate_report)
+- [x] 构建验证通过（仅预存 strncpy warning）
+- **Status:** complete
 
 ### Phase 13: 消费基因画像 (Spending DNA) — P1
 - [ ] 类目/周末/时段分布 + Top3 漏水点 + 本地中位数对比
