@@ -46,6 +46,9 @@
     </div>
 
     <div class="chat-layout">
+      <!-- Mobile overlay backdrop -->
+      <div class="sidebar-overlay" v-if="showSidebar && isMobile" @click="showSidebar = false"></div>
+
       <!-- Sidebar: session list -->
       <aside class="chat-sidebar" :class="{ 'is-collapsed': !showSidebar }">
         <div class="sidebar-header">
@@ -60,46 +63,52 @@
         </div>
         <div class="session-search-wrap" v-if="chat.sessions.length > 3">
           <Icon icon="ph:magnifying-glass" class="session-search-icon" />
-          <input v-model="sessionSearch" class="session-search-input" placeholder="搜索会话..." />
+          <input v-model="sessionSearch" class="session-search-input" placeholder="搜索会话..." aria-label="搜索会话" />
           <button v-if="sessionSearch" class="session-search-clear" @click="sessionSearch = ''" title="清空">
             <Icon icon="ph:x" />
           </button>
         </div>
         <div class="session-list" v-loading="loadingSessions">
-          <div
-            v-for="s in filteredSessions"
-            :key="s.id"
-            class="session-item"
-            :class="{ active: chat.currentSessionId === s.id }"
-            @click="selectSession(s.id)"
-          >
-            <div v-if="editingSessionId === s.id" class="session-rename-box" @click.stop>
-              <input
-                v-focus
-                v-model="renameTitle"
-                class="session-rename-input"
-                @keydown.enter="saveRename(s.id)"
-                @keydown.esc="cancelRename"
-                @blur="saveRename(s.id)"
-              />
-            </div>
-            <template v-else>
-              <div class="session-item-content">
-                <div class="session-title" :title="s.title" @dblclick.stop="startRename(s)">
-                  {{ s.title }}
+          <template v-if="groupedSessions.length > 0">
+            <template v-for="group in groupedSessions" :key="group.label">
+              <div class="session-group-label">{{ group.label }}</div>
+              <div
+                v-for="s in group.items"
+                :key="s.id"
+                class="session-item"
+                :class="{ active: chat.currentSessionId === s.id }"
+                @click="selectSession(s.id)"
+                role="listitem"
+              >
+                <div v-if="editingSessionId === s.id" class="session-rename-box" @click.stop>
+                  <input
+                    v-focus
+                    v-model="renameTitle"
+                    class="session-rename-input"
+                    @keydown.enter="saveRename(s.id)"
+                    @keydown.esc="cancelRename"
+                    @blur="saveRename(s.id)"
+                  />
                 </div>
-                <div class="session-meta">{{ formatTime(s.updated_at) }}</div>
-              </div>
-              <div class="session-item-actions" @click.stop>
-                <button class="item-action-btn" title="重命名" @click.stop="startRename(s)">
-                  <Icon icon="ph:pencil-simple" />
-                </button>
-                <button class="item-action-btn delete-btn" title="删除对话" @click.stop="handleDeleteSession(s.id)">
-                  <Icon icon="ph:trash" />
-                </button>
+                <template v-else>
+                  <div class="session-item-content">
+                    <div class="session-title" :title="s.title" @dblclick.stop="startRename(s)">
+                      {{ s.title }}
+                    </div>
+                    <div class="session-meta">{{ formatTime(s.updated_at) }}</div>
+                  </div>
+                  <div class="session-item-actions" @click.stop>
+                    <button class="item-action-btn" title="重命名" @click.stop="startRename(s)">
+                      <Icon icon="ph:pencil-simple" />
+                    </button>
+                    <button class="item-action-btn delete-btn" title="删除对话" @click.stop="handleDeleteSession(s.id)">
+                      <Icon icon="ph:trash" />
+                    </button>
+                  </div>
+                </template>
               </div>
             </template>
-          </div>
+          </template>
           <div v-if="filteredSessions.length === 0 && !loadingSessions" class="empty-sessions">
             <Icon icon="ph:chats" class="empty-sessions-icon" />
             <span>{{ sessionSearch ? '无匹配会话' : '暂无历史会话' }}</span>
@@ -148,7 +157,12 @@
         </div>
 
         <!-- Messages stream -->
-        <div class="messages" ref="messagesRef" v-loading="loadingMessages" @scroll.passive="handleScroll">
+        <div class="messages" ref="messagesRef" v-loading="loadingMessages" @scroll.passive="handleScroll" role="log" aria-live="polite" aria-label="对话消息">
+          <!-- Load more trigger (invisible sentinel at top) -->
+          <div ref="loadMoreTrigger" class="load-more-sentinel"></div>
+          <div v-if="chat.loadingMoreMessages" class="load-more-spinner">
+            <span class="spinner-dot"></span><span class="spinner-dot"></span><span class="spinner-dot"></span>
+          </div>
           <!-- Empty state: Quick prompts -->
           <PromptStarters v-if="chat.messages.length === 0" @select="handleQuickPrompt" />
 
@@ -176,14 +190,14 @@
                   <template v-else>
                     <div class="message-content">{{ msg.content }}</div>
                     <div v-if="!chat.isStreaming" class="message-actions user-actions">
-                      <button class="msg-action-btn" title="复制" @click="copyText(msg.content)">
-                        <Icon icon="ph:copy" />
-                        <span>复制</span>
-                      </button>
-                      <button class="msg-action-btn" title="编辑并重发" @click="startEdit(idx, msg.content)">
-                        <Icon icon="ph:pencil-simple" />
-                        <span>编辑</span>
-                      </button>
+                    <button class="msg-action-btn" title="复制" @click="copyText(msg.content)" aria-label="复制消息">
+                      <Icon icon="ph:copy" />
+                      <span>复制</span>
+                    </button>
+                    <button class="msg-action-btn" title="编辑并重发" @click="startEdit(idx, msg.content)" aria-label="编辑并重发">
+                      <Icon icon="ph:pencil-simple" />
+                      <span>编辑</span>
+                    </button>
                     </div>
                   </template>
                 </template>
@@ -203,13 +217,17 @@
                     <span v-if="chat.isStreaming && idx === chat.messages.length - 1 && msg.role === 'assistant'" class="typing-cursor"></span>
                   </div>
                   <div v-if="msg.content && !chat.isStreaming" class="message-actions">
-                    <button class="msg-action-btn" title="复制回答" @click="copyText(msg.content)">
+                    <button class="msg-action-btn" title="复制回答" @click="copyText(msg.content)" aria-label="复制回答">
                       <Icon icon="ph:copy" />
                       <span>复制</span>
                     </button>
-                    <button v-if="idx === chat.messages.length - 1" class="msg-action-btn" title="重新生成" @click="handleRegenerate">
+                    <button v-if="idx === chat.messages.length - 1" class="msg-action-btn" title="重新生成" @click="handleRegenerate" aria-label="重新生成">
                       <Icon icon="ph:arrows-counter-clockwise" />
                       <span>重新生成</span>
+                    </button>
+                    <button v-if="msg.content.startsWith('⚠️')" class="msg-action-btn" title="重试" @click="handleRetryMessage(msg.id)" aria-label="重试">
+                      <Icon icon="ph:arrow-clockwise" />
+                      <span>重试</span>
                     </button>
                   </div>
                 </template>
@@ -285,6 +303,12 @@ const sessionSearch = ref('')
 const editingUserIdx = ref<number | null>(null)
 const editDraft = ref('')
 const DRAFT_PREFIX = 'minefolio:chat:draft:'
+const loadMoreTrigger = ref<HTMLElement | null>(null)
+let scrollObserver: IntersectionObserver | null = null
+const isMobile = ref(false)
+
+function checkMobile() { isMobile.value = window.innerWidth < 768 }
+
 const vFocus = {
   mounted: (el: HTMLElement) => el.focus(),
 }
@@ -293,6 +317,28 @@ const filteredSessions = computed(() => {
   const q = sessionSearch.value.trim().toLowerCase()
   if (!q) return chat.sessions
   return chat.sessions.filter(s => s.title.toLowerCase().includes(q))
+})
+
+// Group sessions by time period
+interface SessionGroup { label: string; items: typeof chat.sessions }
+const groupedSessions = computed<SessionGroup[]>(() => {
+  const now = Date.now()
+  const DAY = 86400000
+  const groups: Record<string, typeof chat.sessions> = {}
+  const order: string[] = []
+  for (const s of filteredSessions.value) {
+    const t = new Date(s.updated_at).getTime()
+    const diff = now - t
+    let label: string
+    if (diff < DAY) label = '今天'
+    else if (diff < 2 * DAY) label = '昨天'
+    else if (diff < 7 * DAY) label = '近 7 天'
+    else if (diff < 30 * DAY) label = '近 30 天'
+    else label = '更早'
+    if (!groups[label]) { groups[label] = []; order.push(label) }
+    groups[label]!.push(s)
+  }
+  return order.map(label => ({ label, items: groups[label]! }))
 })
 
 function draftKey(): string {
@@ -616,13 +662,38 @@ async function confirmEdit(idx: number) {
   fetchSessions()
 }
 
+async function handleRetryMessage(msgId: number) {
+  const idx = chat.messages.findIndex(m => m.id === msgId)
+  if (idx < 0) return
+  const userMsg = chat.messages.slice(0, idx).find(m => m.role === 'user')
+  if (!userMsg) { ElMessage.error('无法找到对应用户消息') }
+  else {
+    await chat.editAndResend(chat.messages.indexOf(userMsg), userMsg.content)
+    nextTick(() => scrollToBottom())
+  }
+}
+
+function setupInfiniteScroll() {
+  if (scrollObserver) { scrollObserver.disconnect() }
+  if (!loadMoreTrigger.value) return
+  scrollObserver = new IntersectionObserver((entries) => {
+    if (entries[0]?.isIntersecting && !chat.loadingMoreMessages && chat.loadedMessagePage * 50 < (chat.messageTotal ?? 0)) {
+      chat.loadMoreMessages()
+    }
+  }, { root: messagesRef.value, threshold: 0.1 })
+  scrollObserver.observe(loadMoreTrigger.value)
+}
+
 watch(() => chat.messages.length, () => {
   autoStickToBottom.value = true
   nextTick(() => scrollToBottom())
 })
 
 watch(inputText, () => { persistDraft() })
-watch(() => chat.currentSessionId, () => { loadDraft() })
+watch(() => chat.currentSessionId, () => {
+  loadDraft()
+  nextTick(() => setupInfiniteScroll())
+})
 
 function onGlobalKeydown(e: KeyboardEvent) {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
@@ -637,6 +708,8 @@ function onGlobalKeydown(e: KeyboardEvent) {
 }
 
 onMounted(async () => {
+  checkMobile()
+  window.addEventListener('resize', checkMobile)
   await Promise.allSettled([fetchSessions(), fetchSettings(), fetchModels()])
   if (chat.settings?.default_provider) {
     chat.setModel(chat.currentModel, chat.settings.default_provider)
@@ -648,13 +721,18 @@ onMounted(async () => {
   }
   if (!chat.currentSessionId) handleNewChat()
   loadDraft()
-  nextTick(() => scrollToBottom())
+  nextTick(() => {
+    scrollToBottom()
+    setupInfiniteScroll()
+    textareaRef.value?.focus()
+  })
   window.addEventListener('keydown', onGlobalKeydown)
-  nextTick(() => textareaRef.value?.focus())
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onGlobalKeydown)
+  window.removeEventListener('resize', checkMobile)
+  if (scrollObserver) { scrollObserver.disconnect(); scrollObserver = null }
   chat.abortCurrentStream()
 })
 </script>
@@ -1501,21 +1579,63 @@ onUnmounted(() => {
 .char-count.over { color: var(--mf-danger, #ef4444); }
 .stop-btn { background: var(--mf-danger, #ef4444) !important; border-color: var(--mf-danger, #ef4444) !important; }
 
+/* Session group labels */
+.session-group-label {
+  font-size: 11px;
+  color: var(--mf-text-muted);
+  padding: 6px 12px 2px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* Load more spinner */
+.load-more-sentinel { height: 1px; }
+.load-more-spinner {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 0;
+}
+.spinner-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--mf-text-muted);
+  animation: dot-bounce 1.2s infinite ease-in-out;
+}
+.spinner-dot:nth-child(2) { animation-delay: 0.2s; }
+.spinner-dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes dot-bounce {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+  40% { transform: scale(1); opacity: 1; }
+}
+
+/* Mobile overlay backdrop */
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 99;
+  backdrop-filter: blur(2px);
+}
+
 @media (max-width: 768px) {
+  .sidebar-overlay { display: block; }
   .chat-sidebar {
-    position: absolute;
-    height: 100%;
+    position: fixed;
+    left: 0; top: 0; bottom: 0;
+    z-index: 100;
+    transform: translateX(-100%);
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     box-shadow: 4px 0 20px rgba(0, 0, 0, 0.5);
   }
-  .quick-prompts-grid {
-    grid-template-columns: 1fr;
-  }
-  .message-row {
-    max-width: 95%;
-  }
-  .model-bar {
-    padding-left: 48px;
-  }
+  .chat-sidebar:not(.is-collapsed) { transform: translateX(0); }
+  .chat-main { width: 100% !important; }
+  .quick-prompts-grid { grid-template-columns: 1fr; }
+  .message-row { max-width: 95%; }
+  .model-bar { padding-left: 48px; }
 }
 
 

@@ -20,6 +20,11 @@ export const useChatStore = defineStore('chat', () => {
   const workflows = ref<WorkflowDef[]>([])
   const activeWorkflow = ref<WorkflowRunState | null>(null)
 
+  // Infinite scroll pagination state for messages
+  const messageTotal = ref(0)
+  const loadedMessagePage = ref(1)
+  const loadingMoreMessages = ref(false)
+
   async function fetchSessions() {
     const r = (await listSessions({ page_size: 50 })) as unknown
     const rawList = r && typeof r === 'object' && 'list' in r && Array.isArray((r as { list: unknown }).list) ? (r as { list: Record<string, unknown>[] }).list : []
@@ -77,8 +82,12 @@ export const useChatStore = defineStore('chat', () => {
   async function selectSession(id: number) {
     const numId = Number(id)
     currentSessionId.value = numId
-    const r = (await getMessages(numId)) as unknown
+    messageTotal.value = 0
+    loadedMessagePage.value = 1
+    const r = (await getMessages(numId, 1, 50)) as unknown
     const rawList = r && typeof r === 'object' && 'list' in r && Array.isArray((r as { list: unknown }).list) ? (r as { list: Record<string, unknown>[] }).list : []
+    const total = (r && typeof r === 'object' && 'total' in r) ? Number((r as { total: unknown }).total) : (rawList.length ?? 0)
+    messageTotal.value = total
     messages.value = rawList.map((m) => ({
       id: Number(m.id),
       session_id: Number(m.session_id),
@@ -86,6 +95,31 @@ export const useChatStore = defineStore('chat', () => {
       content: String(m.content || ''),
       created_at: String(m.created_at || ''),
     }))
+  }
+
+  async function loadMoreMessages() {
+    if (loadingMoreMessages.value || !currentSessionId.value) return
+    const nextPage = loadedMessagePage.value + 1
+    if (messageTotal.value > 0 && nextPage * 50 >= messageTotal.value) return
+    loadingMoreMessages.value = true
+    try {
+      const r = (await getMessages(currentSessionId.value, nextPage, 50)) as unknown
+      const rawList = r && typeof r === 'object' && 'list' in r && Array.isArray((r as { list: unknown }).list) ? (r as { list: Record<string, unknown>[] }).list : []
+      const total = (r && typeof r === 'object' && 'total' in r) ? Number((r as { total: unknown }).total) : (rawList.length ?? 0)
+      messageTotal.value = total
+      loadedMessagePage.value = nextPage
+      const newMsgs = rawList.map((m) => ({
+        id: Number(m.id),
+        session_id: Number(m.session_id),
+        role: (m.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
+        content: String(m.content || ''),
+        created_at: String(m.created_at || ''),
+      }))
+      // Prepend older messages (they come newest-first from backend)
+      messages.value = [...newMsgs.reverse(), ...messages.value]
+    } finally {
+      loadingMoreMessages.value = false
+    }
   }
 
   async function deleteSessionById(id: number) {
@@ -579,5 +613,7 @@ export const useChatStore = defineStore('chat', () => {
     createNewSession, selectSession, deleteSessionById, renameSession,
     sendMessage, regenerateLastMessage, editAndResend, runWorkflow, switchModel,
     abortCurrentStream, clearMessages, clearCurrentSession, resetState, setModel,
+    loadMoreMessages,
+    messageTotal, loadedMessagePage, loadingMoreMessages,
   }
 })

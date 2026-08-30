@@ -50,16 +50,18 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, defineAsyncComponent } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { Icon } from '@iconify/vue'
-import MermaidBlock from '@/components/MermaidBlock.vue'
 import ActionCard from '@/components/ActionCard.vue'
 import CodeBlock from '@/components/CodeBlock.vue'
 import WorkflowProgressCard from '@/components/WorkflowProgressCard.vue'
 import type { ProposedAction } from '@/components/ActionCard.vue'
 import type { WorkflowRunState } from '@/types'
+
+// Lazy-load MermaidBlock to avoid 642kb bundle cost when no diagrams are present
+const MermaidBlock = defineAsyncComponent(() => import('@/components/MermaidBlock.vue'))
 
 const props = defineProps<{
   content: string
