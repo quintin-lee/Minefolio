@@ -137,7 +137,7 @@
         </div>
 
         <!-- Messages stream -->
-        <div class="messages" ref="messagesRef" v-loading="loadingMessages">
+        <div class="messages" ref="messagesRef" v-loading="loadingMessages" @scroll.passive="handleScroll">
           <!-- Empty state: Quick prompts -->
           <PromptStarters v-if="chat.messages.length === 0" @select="handleQuickPrompt" />
 
@@ -146,6 +146,7 @@
             <div
               v-for="(msg, idx) in chat.messages"
               :key="msg.id"
+              v-memo="[msg.content, msg.role, chat.isStreaming && idx === chat.messages.length - 1 ? 1 : 0, msg.workflowData?.status || '']"
               class="message-row"
               :class="msg.role"
             >
@@ -189,6 +190,16 @@
             </div>
           </template>
         </div>
+
+        <button
+          v-show="showScrollBottomBtn"
+          class="scroll-bottom-btn"
+          title="回到底部"
+          @click="forceScrollToBottom"
+        >
+          <Icon icon="ph:arrow-down-bold" />
+          <span>回到底部</span>
+        </button>
 
         <!-- Input Area -->
         <div class="chat-input-area">
@@ -369,17 +380,41 @@ const selectedModelKey = computed({
   },
 })
 
+const autoStickToBottom = ref(true)
+const showScrollBottomBtn = ref(false)
+let scrollTicking = false
+
+function handleScroll() {
+  if (scrollTicking) return
+  scrollTicking = true
+  requestAnimationFrame(() => {
+    scrollTicking = false
+    const el = messagesRef.value
+    if (!el) return
+    const distance = el.scrollHeight - el.scrollTop - el.clientHeight
+    autoStickToBottom.value = distance < 100
+    showScrollBottomBtn.value = distance > 150
+  })
+}
+
 function scrollToBottom(smooth = true) {
-  if (messagesRef.value) {
-    if (smooth) {
-      messagesRef.value.scrollTo({
-        top: messagesRef.value.scrollHeight,
-        behavior: 'smooth',
-      })
-    } else {
-      messagesRef.value.scrollTop = messagesRef.value.scrollHeight
-    }
-  }
+  const el = messagesRef.value
+  if (!el) return
+  if (!autoStickToBottom.value) return
+  requestAnimationFrame(() => {
+    if (smooth) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    else el.scrollTop = el.scrollHeight
+  })
+}
+
+function forceScrollToBottom() {
+  const el = messagesRef.value
+  if (!el) return
+  autoStickToBottom.value = true
+  showScrollBottomBtn.value = false
+  requestAnimationFrame(() => {
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+  })
 }
 
 const lastMsgContent = computed(() => {
@@ -432,7 +467,9 @@ async function selectSession(id: number) {
   loadingMessages.value = true
   await chat.selectSession(id)
   loadingMessages.value = false
-  nextTick(() => scrollToBottom())
+  autoStickToBottom.value = true
+  showScrollBottomBtn.value = false
+  nextTick(() => scrollToBottom(false))
 }
 
 function handleNewChat() {
@@ -484,6 +521,8 @@ async function handleSend() {
   if (!text || chat.isStreaming) return
   inputText.value = ''
   adjustTextareaHeight()
+  autoStickToBottom.value = true
+  showScrollBottomBtn.value = false
   await chat.sendMessage(text)
   nextTick(() => scrollToBottom())
   fetchSessions()
@@ -491,11 +530,14 @@ async function handleSend() {
 
 async function handleRegenerate() {
   if (chat.isStreaming) return
+  autoStickToBottom.value = true
+  showScrollBottomBtn.value = false
   await chat.regenerateLastMessage()
   nextTick(() => scrollToBottom())
 }
 
 watch(() => chat.messages.length, () => {
+  autoStickToBottom.value = true
   nextTick(() => scrollToBottom())
 })
 
@@ -801,6 +843,7 @@ onUnmounted(() => {
   flex-direction: column;
   overflow: hidden;
   background: var(--mf-background);
+  position: relative;
 }
 
 .model-bar {
@@ -1261,6 +1304,38 @@ onUnmounted(() => {
 
 .send-icon {
   font-size: 14px;
+}
+
+.scroll-bottom-btn {
+  position: absolute;
+  bottom: 88px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: var(--mf-surface);
+  border: 1px solid var(--mf-border-hover);
+  border-radius: 20px;
+  color: var(--mf-primary);
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4), 0 0 12px rgba(0,212,255,0.15);
+  cursor: pointer;
+  z-index: 5;
+  backdrop-filter: blur(12px);
+  transition: all 0.2s;
+}
+
+.scroll-bottom-btn:hover {
+  background: var(--mf-primary-light);
+  border-color: var(--mf-primary);
+}
+
+.message-row {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 120px;
 }
 
 @media (max-width: 768px) {

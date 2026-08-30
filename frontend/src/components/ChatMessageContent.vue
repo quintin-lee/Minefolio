@@ -50,7 +50,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { Icon } from '@iconify/vue'
@@ -67,6 +67,40 @@ const props = defineProps<{
   workflowData?: WorkflowRunState
 }>()
 
+const debouncedContent = ref(props.content || '')
+let debounceTimer: number | null = null
+watch(
+  () => props.content,
+  (v) => {
+    const val = v || ''
+    if (props.isStreaming) {
+      if (debounceTimer) clearTimeout(debounceTimer)
+      debounceTimer = window.setTimeout(() => {
+        debouncedContent.value = val
+      }, 48)
+    } else {
+      if (debounceTimer) {
+        clearTimeout(debounceTimer)
+        debounceTimer = null
+      }
+      debouncedContent.value = val
+    }
+  },
+  { immediate: true },
+)
+watch(
+  () => props.isStreaming,
+  (streaming) => {
+    if (!streaming) {
+      if (debounceTimer) {
+        clearTimeout(debounceTimer)
+        debounceTimer = null
+      }
+      debouncedContent.value = props.content || ''
+    }
+  },
+)
+
 interface Segment {
   id: string
   type: 'markdown' | 'mermaid' | 'streaming-mermaid' | 'action' | 'code'
@@ -76,18 +110,30 @@ interface Segment {
   actionData?: ProposedAction
 }
 
+const mdCache = new Map<string, string>()
+const MD_CACHE_LIMIT = 80
+
 function renderMarkdown(text?: string): string {
   if (!text) return ''
+  const cached = mdCache.get(text)
+  if (cached !== undefined) return cached
+  let html: string
   try {
     const rawHtml = marked.parse(text, { async: false, breaks: true }) as string
-    return DOMPurify.sanitize(rawHtml)
+    html = DOMPurify.sanitize(rawHtml)
   } catch {
-    return DOMPurify.sanitize(text.replace(/</g, '&lt;').replace(/>/g, '&gt;'))
+    html = DOMPurify.sanitize(text.replace(/</g, '&lt;').replace(/>/g, '&gt;'))
   }
+  if (mdCache.size >= MD_CACHE_LIMIT) {
+    const firstKey = mdCache.keys().next().value as string
+    mdCache.delete(firstKey)
+  }
+  mdCache.set(text, html)
+  return html
 }
 
 const segments = computed<Segment[]>(() => {
-  const text = props.content || ''
+  const text = debouncedContent.value || ''
   if (!text) return []
 
   const result: Segment[] = []

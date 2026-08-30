@@ -29,6 +29,13 @@ const props = defineProps<{
 const copied = ref(false)
 let copyTimer: ReturnType<typeof setTimeout> | null = null
 
+const highlightCache = new Map<string, string>()
+const HIGHLIGHT_CACHE_LIMIT = 120
+
+function cacheKey(code: string, lang: string): string {
+  return `${lang}::${code.length}::${code.slice(0, 120)}`
+}
+
 const displayLang = computed(() => {
   const l = (props.lang || '').trim().toLowerCase()
   if (!l) return 'CODE'
@@ -47,18 +54,36 @@ const displayLang = computed(() => {
 const highlightedHtml = computed(() => {
   const rawCode = props.code || ''
   const l = (props.lang || '').trim().toLowerCase()
+  const key = cacheKey(rawCode, l)
+  const cached = highlightCache.get(key)
+  if (cached !== undefined) return cached
+  let html: string
   if (l && hljs.getLanguage(l)) {
     try {
-      return hljs.highlight(rawCode, { language: l }).value
+      html = hljs.highlight(rawCode, { language: l }).value
     } catch {
-      // fallback
+      html = ''
+    }
+    if (!html) {
+      try {
+        html = hljs.highlightAuto(rawCode).value
+      } catch {
+        html = rawCode.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      }
+    }
+  } else {
+    try {
+      html = hljs.highlightAuto(rawCode).value
+    } catch {
+      html = rawCode.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     }
   }
-  try {
-    return hljs.highlightAuto(rawCode).value
-  } catch {
-    return rawCode.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  if (highlightCache.size >= HIGHLIGHT_CACHE_LIMIT) {
+    const firstKey = highlightCache.keys().next().value as string
+    highlightCache.delete(firstKey)
   }
+  highlightCache.set(key, html)
+  return html
 })
 
 async function copyCode() {

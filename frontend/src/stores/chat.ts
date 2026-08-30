@@ -114,33 +114,56 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   // Renders streamed deltas at a steady cadence decoupled from the bursty
-  // arrival pattern of SSE-over-TCP: network chunks enqueue here, a timer
-  // drains characters adaptively (faster when backlogged) into a reactive
-  // message so the UI types smoothly instead of jumping per network batch.
+  // arrival pattern of SSE-over-TCP: network chunks enqueue here, a RAF
+  // loop drains characters adaptively (faster when backlogged) into a
+  // reactive message so the UI types smoothly instead of jumping per
+  // network batch. RAF pauses in hidden tabs and aligns with vsync.
   class SmoothStreamWriter {
     private buf = ''
-    private timer: number | null = null
+    private rafId: number | null = null
+    private running = true
+    private closed = false
 
     constructor(private readonly target: AiMessage) {
-      this.timer = window.setInterval(() => this.tick(), 16)
+      this.schedule()
     }
 
     push(text: string) {
+      if (this.closed) return
       this.buf += text
+      if (this.rafId === null && this.running) this.schedule()
+    }
+
+    private schedule() {
+      if (!this.running || this.closed) return
+      if (this.rafId !== null) return
+      this.rafId = requestAnimationFrame(() => this.tick())
     }
 
     private tick() {
+      this.rafId = null
       if (!this.buf) return
-      const step = Math.max(1, Math.ceil(this.buf.length / 40))
+      const len = this.buf.length
+      // Adaptive step: drains backlog in ~10-18 frames (~160-300ms)
+      // Large backlog -> faster to catch up, small backlog -> typewriter feel
+      let step: number
+      if (len > 800) step = Math.ceil(len / 8)
+      else if (len > 400) step = Math.ceil(len / 12)
+      else if (len > 120) step = Math.ceil(len / 18)
+      else step = Math.max(3, Math.ceil(len / 10))
+      if (step > len) step = len
       this.target.content += this.buf.slice(0, step)
       this.buf = this.buf.slice(step)
+      if (this.buf && this.running) this.schedule()
     }
 
     async finish(): Promise<void> {
+      // Re-schedule draining if idle but buffer still pending
+      if (this.buf && this.rafId === null && this.running) this.schedule()
       await new Promise<void>((resolve) => {
         const check = () => {
           if (!this.buf) resolve()
-          else setTimeout(check, 16)
+          else requestAnimationFrame(check)
         }
         check()
       })
@@ -156,9 +179,11 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     private stop() {
-      if (this.timer !== null) {
-        clearInterval(this.timer)
-        this.timer = null
+      this.closed = true
+      this.running = false
+      if (this.rafId !== null) {
+        cancelAnimationFrame(this.rafId)
+        this.rafId = null
       }
     }
   }

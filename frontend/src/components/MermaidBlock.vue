@@ -258,6 +258,16 @@ async function renderDiagram(isSilent = false) {
     return
   }
 
+  const key = cacheKeyForRender(props.code, curveMode.value)
+  const cached = svgCache.get(key)
+  if (cached) {
+    svgContent.value = cached
+    renderError.value = ''
+    loading.value = false
+    return
+  }
+
+  const seq = ++renderSeq
   loading.value = true
   if (!isSilent) {
     renderError.value = ''
@@ -268,15 +278,22 @@ async function renderDiagram(isSilent = false) {
     const result = await renderMermaidSvg(id, props.code, {
       curve: curveMode.value,
     })
+    if (seq !== renderSeq) return
     svgContent.value = result.svg
     renderError.value = ''
+    if (svgCache.size >= SVG_CACHE_LIMIT) {
+      const firstKey = svgCache.keys().next().value as string
+      svgCache.delete(firstKey)
+    }
+    svgCache.set(key, result.svg)
   } catch (err: unknown) {
+    if (seq !== renderSeq) return
     if (!isSilent && !props.isStreaming) {
       const errorMsg = err instanceof Error ? err.message : String(err)
       renderError.value = errorMsg
     }
   } finally {
-    loading.value = false
+    if (seq === renderSeq) loading.value = false
   }
 }
 
@@ -405,17 +422,28 @@ function endPan() {
 }
 
 let streamDebounceTimer: number | null = null
+let renderSeq = 0
+const svgCache = new Map<string, string>()
+const SVG_CACHE_LIMIT = 40
+
+function cacheKeyForRender(code: string, curve: string): string {
+  return `${curve}::${code.length}::${code.slice(0, 200)}`
+}
 
 watch(
   () => [props.code, props.isStreaming] as const,
-  ([newCode, isStreaming]) => {
+  ([, isStreaming]) => {
     if (isStreaming) {
       if (streamDebounceTimer) clearTimeout(streamDebounceTimer)
       streamDebounceTimer = window.setTimeout(() => {
         renderDiagram(true)
-      }, 350)
+      }, 500)
     } else {
       if (streamDebounceTimer) clearTimeout(streamDebounceTimer)
+      const key = cacheKeyForRender(props.code, curveMode.value)
+      if (svgCache.has(key) && svgContent.value) {
+        return
+      }
       renderDiagram(false)
     }
   },
