@@ -177,15 +177,10 @@ export const useChatStore = defineStore('chat', () => {
     private tick() {
       this.rafId = null
       if (!this.buf) return
-      const len = this.buf.length
-      // Adaptive step: drains backlog in ~10-18 frames (~160-300ms)
-      // Large backlog -> faster to catch up, small backlog -> typewriter feel
-      let step: number
-      if (len > 800) step = Math.ceil(len / 8)
-      else if (len > 400) step = Math.ceil(len / 12)
-      else if (len > 120) step = Math.ceil(len / 18)
-      else step = Math.max(3, Math.ceil(len / 10))
-      if (step > len) step = len
+      // Fixed step: ~5 chars/frame ≈ 300 chars/sec at 60fps — natural typing speed.
+      // A capping ceiling prevents a single frame from jumping >16 chars even after
+      // a large burst, keeping the visual feel consistently smooth.
+      const step = Math.min(5, this.buf.length)
       this.target.content += this.buf.slice(0, step)
       this.buf = this.buf.slice(step)
       if (this.buf && this.running) this.schedule()
