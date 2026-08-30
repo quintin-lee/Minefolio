@@ -8,23 +8,63 @@
       <span class="header-hint">一键启动自动化多步深度分析流水线</span>
     </div>
 
-    <!-- Workflow Cards Carousel/Grid -->
-    <div class="workflow-cards-container">
+    <!-- Search + Category Tabs -->
+    <div class="filter-row">
+      <div class="wf-search-wrap">
+        <Icon icon="ph:magnifying-glass" class="wf-search-icon" />
+        <input
+          v-model="wfSearch"
+          class="wf-search-input"
+          placeholder="搜索工作流..."
+          aria-label="搜索工作流"
+        />
+        <button
+          v-if="wfSearch"
+          class="wf-search-clear"
+          @click="wfSearch = ''"
+          aria-label="清空搜索"
+        >
+          <Icon icon="ph:x" />
+        </button>
+      </div>
+      <div class="category-tabs" role="tablist" aria-label="工作流分类">
+        <button
+          v-for="cat in workflowCategories"
+          :key="cat.key"
+          class="cat-tab"
+          :class="{ active: activeCategory === cat.key }"
+          role="tab"
+          :aria-selected="activeCategory === cat.key"
+          @click="activeCategory = cat.key"
+        >
+          <Icon :icon="cat.icon" class="cat-icon" />
+          <span>{{ cat.label }}</span>
+          <span class="cat-count">{{ cat.count }}</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Workflow Cards -->
+    <div class="workflow-cards-container" role="list" aria-label="工作流列表">
       <div
-        v-for="wf in chatStore.workflows"
+        v-for="wf in filteredWorkflows"
         :key="wf.id"
         class="workflow-chip-card"
         :class="{ 'is-disabled': chatStore.isStreaming }"
+        role="listitem"
         @click="handleCardClick(wf)"
       >
-        <div class="chip-icon-box">
+        <div class="chip-icon-box" aria-hidden="true">
           <Icon :icon="wf.icon || 'ph:git-merge'" />
         </div>
         <div class="chip-info">
           <div class="chip-title">{{ wf.title }}</div>
           <div class="chip-desc">{{ wf.description }}</div>
+          <div class="chip-category">
+            <span class="chip-cat-tag">{{ getCategoryLabel(wf) }}</span>
+          </div>
         </div>
-        <div class="chip-action">
+        <div class="chip-action" aria-hidden="true">
           <Icon icon="ph:play-circle-fill" class="play-icon" />
         </div>
       </div>
@@ -34,9 +74,10 @@
     <el-dialog
       v-model="dialogVisible"
       :title="`启动工作流：${selectedWf?.title}`"
-      width="420px"
+      width="480px"
       append-to-body
       class="workflow-params-dialog"
+      :close-on-click-modal="false"
     >
       <div v-if="selectedWf" class="dialog-content">
         <p class="dialog-desc">{{ selectedWf.description }}</p>
@@ -76,16 +117,28 @@
         </div>
 
         <div v-else-if="selectedWf.id === 'wf_payday_split'" class="param-group">
-          <div class="param-row">
-            <label class="param-label">分配比例（总和 100%，留空使用 50/20/20/10）</label>
-            <div class="ratio-grid">
-              <div class="ratio-item"><span class="ratio-label">生活</span><el-input-number v-model="paramRatioLiving" :min="0" :max="100" :step="5" size="small" style="width: 100%" /></div>
-              <div class="ratio-item"><span class="ratio-label">定投</span><el-input-number v-model="paramRatioInvest" :min="0" :max="100" :step="5" size="small" style="width: 100%" /></div>
-              <div class="ratio-item"><span class="ratio-label">还贷</span><el-input-number v-model="paramRatioDebt" :min="0" :max="100" :step="5" size="small" style="width: 100%" /></div>
-              <div class="ratio-item"><span class="ratio-label">应急</span><el-input-number v-model="paramRatioEmergency" :min="0" :max="100" :step="5" size="small" style="width: 100%" /></div>
-            </div>
-            <div v-if="ratioSum !== 100 && ratioSum !== 0" class="ratio-hint">当前总和 {{ ratioSum }}%，提交时将自动归一化</div>
+          <label class="param-label">分配比例（总和 100%，留空使用 50/20/20/10）</label>
+
+          <!-- Preset quick buttons -->
+          <div class="preset-presets">
+            <button
+              v-for="preset in paydayPresets"
+              :key="preset.label"
+              class="preset-btn"
+              :class="{ active: isPresetActive(preset) }"
+              @click="applyPreset(preset)"
+            >
+              {{ preset.label }}
+            </button>
           </div>
+
+          <div class="ratio-grid">
+            <div class="ratio-item"><span class="ratio-label">生活</span><el-input-number v-model="paramRatioLiving" :min="0" :max="100" :step="5" size="small" style="width: 100%" /></div>
+            <div class="ratio-item"><span class="ratio-label">定投</span><el-input-number v-model="paramRatioInvest" :min="0" :max="100" :step="5" size="small" style="width: 100%" /></div>
+            <div class="ratio-item"><span class="ratio-label">还贷</span><el-input-number v-model="paramRatioDebt" :min="0" :max="100" :step="5" size="small" style="width: 100%" /></div>
+            <div class="ratio-item"><span class="ratio-label">应急</span><el-input-number v-model="paramRatioEmergency" :min="0" :max="100" :step="5" size="small" style="width: 100%" /></div>
+          </div>
+          <div v-if="ratioSum !== 100 && ratioSum !== 0" class="ratio-hint">当前总和 {{ ratioSum }}%，提交时将自动归一化</div>
         </div>
 
         <div v-else-if="selectedWf.id === 'wf_anomaly_detect'" class="param-row">
@@ -138,15 +191,48 @@
         </div>
       </template>
     </el-dialog>
+
+    <!-- DIRECT_RUN_IDS Confirmation Dialog -->
+    <el-dialog
+      v-model="directRunDialogVisible"
+      title="确认启动工作流"
+      width="400px"
+      append-to-body
+      class="workflow-direct-confirm"
+    >
+      <div v-if="directRunWf" class="direct-confirm-content">
+        <p class="confirm-desc">工作流 <strong>{{ directRunWf.title }}</strong> 将立即执行，无需手动确认参数。</p>
+        <div class="steps-preview">
+          <div class="preview-title">步骤预览：</div>
+          <div class="preview-steps-list">
+            <div v-for="(st, idx) in directRunWf.steps" :key="st.step_id" class="preview-step-item">
+              <span class="step-dot">{{ idx + 1 }}</span>
+              <span class="step-text">{{ st.title }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="directRunDialogVisible = false">取消</el-button>
+          <el-button type="primary" :loading="chatStore.isStreaming" @click="confirmDirectRun">
+            <Icon icon="ph:play-circle-fill" style="margin-right: 4px;" />
+            确认启动
+          </el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import { useChatStore } from '@/stores/chat'
 import type { WorkflowDef } from '@/types'
 
+const router = useRouter()
 const chatStore = useChatStore()
 
 const dialogVisible = ref(false)
@@ -162,11 +248,72 @@ const paramTargetMonths = ref(6)
 const paramMonthlyPayment = ref<number | undefined>(undefined)
 const paramHorizon = ref(6)
 
-onMounted(async () => {
-  if (chatStore.workflows.length === 0) {
-    await chatStore.fetchWorkflowsList()
-  }
+// Search & category filter
+const wfSearch = ref('')
+const activeCategory = ref<'all' | 'direct' | 'dialog'>('all')
+
+// Preset ratios for wf_payday_split
+const paydayPresets = [
+  { label: '稳健型', living: 50, invest: 20, debt: 20, emergency: 10 },
+  { label: '激进型', living: 40, invest: 30, debt: 20, emergency: 10 },
+  { label: '保守型', living: 60, invest: 10, debt: 20, emergency: 10 },
+  { label: '均衡型', living: 35, invest: 25, debt: 25, emergency: 15 },
+]
+
+const DIRECT_RUN_IDS = new Set(['wf_portfolio_rebalance', 'wf_goal_tracker', 'wf_bill_calendar', 'wf_health_score'])
+const directRunDialogVisible = ref(false)
+const directRunWf = ref<WorkflowDef | null>(null)
+
+// Workflow categories - derive from workflow IDs
+const workflowCategories = computed(() => {
+  const allWfs = chatStore.workflows
+  const directRunCount = allWfs.filter(w => DIRECT_RUN_IDS.has(w.id)).length
+  const dialogWfs = allWfs.filter(w => !DIRECT_RUN_IDS.has(w.id))
+  return [
+    { key: 'all' as const, label: '全部', icon: 'ph:apps', count: allWfs.length },
+    { key: 'direct' as const, label: '快捷启动', icon: 'ph:zap', count: directRunCount },
+    { key: 'dialog' as const, label: '参数配置', icon: 'ph:gear', count: dialogWfs.length },
+  ]
 })
+
+const filteredWorkflows = computed(() => {
+  let list = chatStore.workflows
+  // Filter by category
+  if (activeCategory.value === 'direct') {
+    list = list.filter(wf => DIRECT_RUN_IDS.has(wf.id))
+  } else if (activeCategory.value === 'dialog') {
+    list = list.filter(wf => !DIRECT_RUN_IDS.has(wf.id))
+  }
+  // Filter by search
+  const q = wfSearch.value.trim().toLowerCase()
+  if (q) {
+    list = list.filter(wf =>
+      wf.title.toLowerCase().includes(q) ||
+      wf.description.toLowerCase().includes(q)
+    )
+  }
+  return list
+})
+
+function getCategoryLabel(_wf: WorkflowDef): string {
+  return DIRECT_RUN_IDS.has(_wf.id) ? '快捷启动' : '参数配置'
+}
+
+function isPresetActive(preset: typeof paydayPresets[0]): boolean {
+  return (
+    (paramRatioLiving.value ?? 50) === preset.living &&
+    (paramRatioInvest.value ?? 20) === preset.invest &&
+    (paramRatioDebt.value ?? 20) === preset.debt &&
+    (paramRatioEmergency.value ?? 10) === preset.emergency
+  )
+}
+
+function applyPreset(preset: typeof paydayPresets[0]) {
+  paramRatioLiving.value = preset.living
+  paramRatioInvest.value = preset.invest
+  paramRatioDebt.value = preset.debt
+  paramRatioEmergency.value = preset.emergency
+}
 
 const ratioSum = computed(() => {
   const a = paramRatioLiving.value ?? 0
@@ -177,8 +324,6 @@ const ratioSum = computed(() => {
   return anySet ? a + b + c + d : 0
 })
 
-const DIRECT_RUN_IDS = new Set(['wf_portfolio_rebalance', 'wf_goal_tracker', 'wf_bill_calendar', 'wf_health_score'])
-
 function handleCardClick(wf: WorkflowDef) {
   if (chatStore.isStreaming) return
   selectedWf.value = wf
@@ -186,11 +331,28 @@ function handleCardClick(wf: WorkflowDef) {
   if (wf.id === 'wf_anomaly_detect') paramLookback.value = 60
   else if (wf.id === 'wf_subscription_audit') paramLookback.value = 180
   else if (wf.id === 'wf_cashflow_forecast') paramHorizon.value = 6
+  else if (wf.id === 'wf_payday_split') {
+    // Reset to defaults if no values set
+    if (paramRatioLiving.value === undefined) {
+      paramRatioLiving.value = 50
+      paramRatioInvest.value = 20
+      paramRatioDebt.value = 20
+      paramRatioEmergency.value = 10
+    }
+  }
   if (DIRECT_RUN_IDS.has(wf.id)) {
-    chatStore.runWorkflow(wf.id)
+    // Show confirmation instead of direct run
+    directRunWf.value = wf
+    directRunDialogVisible.value = true
   } else {
     dialogVisible.value = true
   }
+}
+
+function confirmDirectRun() {
+  if (!directRunWf.value) return
+  directRunDialogVisible.value = false
+  chatStore.runWorkflow(directRunWf.value.id)
 }
 
 function confirmRun() {
@@ -225,6 +387,12 @@ function confirmRun() {
   dialogVisible.value = false
   chatStore.runWorkflow(selectedWf.value.id, params)
 }
+
+onMounted(async () => {
+  if (chatStore.workflows.length === 0) {
+    await chatStore.fetchWorkflowsList()
+  }
+})
 </script>
 
 <style scoped>
@@ -262,9 +430,96 @@ function confirmRun() {
   color: #64748b;
 }
 
+/* Filter row */
+.filter-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.wf-search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: rgba(2, 6, 23, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+}
+
+.wf-search-icon {
+  color: #64748b;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.wf-search-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--mf-text-main, #e2e8f0);
+  font-size: 12px;
+  min-width: 0;
+}
+
+.wf-search-clear {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  display: flex;
+  padding: 2px;
+}
+
+.category-tabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.cat-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: rgba(2, 6, 23, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  font-size: 11px;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cat-tab:hover {
+  border-color: rgba(0, 212, 255, 0.3);
+  color: #e2e8f0;
+}
+
+.cat-tab.active {
+  background: rgba(0, 212, 255, 0.15);
+  border-color: rgba(0, 212, 255, 0.4);
+  color: var(--mf-primary, #00d4ff);
+}
+
+.cat-icon {
+  font-size: 12px;
+}
+
+.cat-count {
+  margin-left: 2px;
+  padding: 0 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  font-size: 10px;
+  color: #64748b;
+}
+
 .workflow-cards-container {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 8px;
 }
 
@@ -326,6 +581,20 @@ function confirmRun() {
   text-overflow: ellipsis;
 }
 
+.chip-category {
+  margin-top: 2px;
+}
+
+.chip-cat-tag {
+  display: inline-block;
+  padding: 1px 6px;
+  background: rgba(0, 212, 255, 0.1);
+  border: 1px solid rgba(0, 212, 255, 0.2);
+  border-radius: 8px;
+  font-size: 10px;
+  color: var(--mf-primary, #00d4ff);
+}
+
 .chip-action {
   color: #64748b;
   font-size: 18px;
@@ -355,6 +624,36 @@ function confirmRun() {
   font-weight: 500;
   color: #cbd5e1;
   margin-bottom: 6px;
+}
+
+/* Preset buttons */
+.preset-presets {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.preset-btn {
+  padding: 4px 10px;
+  background: rgba(2, 6, 23, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  font-size: 11px;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.preset-btn:hover {
+  border-color: rgba(0, 212, 255, 0.3);
+  color: #e2e8f0;
+}
+
+.preset-btn.active {
+  background: rgba(0, 212, 255, 0.15);
+  border-color: rgba(0, 212, 255, 0.4);
+  color: var(--mf-primary, #00d4ff);
 }
 
 .steps-preview {
@@ -428,5 +727,23 @@ function confirmRun() {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Direct run confirmation */
+.direct-confirm-content {
+  padding: 8px 0;
+}
+
+.confirm-desc {
+  font-size: 13px;
+  color: #cbd5e1;
+  line-height: 1.5;
+  margin-bottom: 12px;
 }
 </style>
