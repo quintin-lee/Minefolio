@@ -58,9 +58,16 @@
             <Icon icon="ph:x" />
           </button>
         </div>
+        <div class="session-search-wrap" v-if="chat.sessions.length > 3">
+          <Icon icon="ph:magnifying-glass" class="session-search-icon" />
+          <input v-model="sessionSearch" class="session-search-input" placeholder="搜索会话..." />
+          <button v-if="sessionSearch" class="session-search-clear" @click="sessionSearch = ''" title="清空">
+            <Icon icon="ph:x" />
+          </button>
+        </div>
         <div class="session-list" v-loading="loadingSessions">
           <div
-            v-for="s in chat.sessions"
+            v-for="s in filteredSessions"
             :key="s.id"
             class="session-item"
             :class="{ active: chat.currentSessionId === s.id }"
@@ -93,9 +100,9 @@
               </div>
             </template>
           </div>
-          <div v-if="chat.sessions.length === 0 && !loadingSessions" class="empty-sessions">
+          <div v-if="filteredSessions.length === 0 && !loadingSessions" class="empty-sessions">
             <Icon icon="ph:chats" class="empty-sessions-icon" />
-            <span>暂无历史会话</span>
+            <span>{{ sessionSearch ? '无匹配会话' : '暂无历史会话' }}</span>
           </div>
         </div>
       </aside>
@@ -133,6 +140,10 @@
           <div class="chat-status" v-if="chat.isStreaming">
             <span class="status-dot"></span>
             <span>正在深度思考与生成...</span>
+            <button class="stop-gen-btn" @click="handleStop" title="停止生成 (Esc)">
+              <Icon icon="ph:stop-bold" />
+              <span>停止</span>
+            </button>
           </div>
         </div>
 
@@ -154,38 +165,54 @@
                 <Icon :icon="msg.role === 'user' ? 'ph:user-bold' : 'ph:robot-bold'" />
               </div>
               <div class="message-bubble-wrap">
-                <!-- If assistant message is currently empty while streaming (waiting for first token), show thinking dots -->
-                <div v-if="msg.role === 'assistant' && !msg.content && chat.isStreaming" class="message-content thinking">
-                  <span class="pulse-dot"></span>
-                  <span class="pulse-dot"></span>
-                  <span class="pulse-dot"></span>
-                  <span class="thinking-text">思考中...</span>
-                </div>
-                <!-- Otherwise render markdown and mermaid content -->
-                <div v-else class="message-content" :class="{ 'streaming-active': chat.isStreaming && idx === chat.messages.length - 1 && msg.role === 'assistant' }">
-                  <ChatMessageContent
-                    :content="msg.content"
-                    :workflow-data="msg.workflowData"
-                    :is-streaming="chat.isStreaming && idx === chat.messages.length - 1 && msg.role === 'assistant'"
-                  />
-                  <span v-if="chat.isStreaming && idx === chat.messages.length - 1 && msg.role === 'assistant'" class="typing-cursor"></span>
-                </div>
-                <!-- Assistant Action Toolbar -->
-                <div v-if="msg.role === 'assistant' && msg.content && !chat.isStreaming" class="message-actions">
-                  <button class="msg-action-btn" title="复制回答" @click="copyText(msg.content)">
-                    <Icon icon="ph:copy" />
-                    <span>复制</span>
-                  </button>
-                  <button
-                    v-if="idx === chat.messages.length - 1"
-                    class="msg-action-btn"
-                    title="重新生成"
-                    @click="handleRegenerate"
-                  >
-                    <Icon icon="ph:arrows-counter-clockwise" />
-                    <span>重新生成</span>
-                  </button>
-                </div>
+                <template v-if="msg.role === 'user'">
+                  <div v-if="editingUserIdx === idx" class="user-edit-box">
+                    <textarea v-model="editDraft" class="user-edit-input" rows="2" @keydown.enter.exact.prevent="confirmEdit(idx)" @keydown.esc="cancelEdit" placeholder="编辑后按 Enter 发送，Esc 取消"></textarea>
+                    <div class="user-edit-actions">
+                      <el-button size="small" @click="cancelEdit">取消</el-button>
+                      <el-button size="small" type="primary" :disabled="!editDraft.trim()" @click="confirmEdit(idx)">发送</el-button>
+                    </div>
+                  </div>
+                  <template v-else>
+                    <div class="message-content">{{ msg.content }}</div>
+                    <div v-if="!chat.isStreaming" class="message-actions user-actions">
+                      <button class="msg-action-btn" title="复制" @click="copyText(msg.content)">
+                        <Icon icon="ph:copy" />
+                        <span>复制</span>
+                      </button>
+                      <button class="msg-action-btn" title="编辑并重发" @click="startEdit(idx, msg.content)">
+                        <Icon icon="ph:pencil-simple" />
+                        <span>编辑</span>
+                      </button>
+                    </div>
+                  </template>
+                </template>
+                <template v-else>
+                  <div v-if="!msg.content && chat.isStreaming" class="message-content thinking">
+                    <span class="pulse-dot"></span>
+                    <span class="pulse-dot"></span>
+                    <span class="pulse-dot"></span>
+                    <span class="thinking-text">思考中...</span>
+                  </div>
+                  <div v-else class="message-content" :class="{ 'streaming-active': chat.isStreaming && idx === chat.messages.length - 1 && msg.role === 'assistant' }">
+                    <ChatMessageContent
+                      :content="msg.content"
+                      :workflow-data="msg.workflowData"
+                      :is-streaming="chat.isStreaming && idx === chat.messages.length - 1 && msg.role === 'assistant'"
+                    />
+                    <span v-if="chat.isStreaming && idx === chat.messages.length - 1 && msg.role === 'assistant'" class="typing-cursor"></span>
+                  </div>
+                  <div v-if="msg.content && !chat.isStreaming" class="message-actions">
+                    <button class="msg-action-btn" title="复制回答" @click="copyText(msg.content)">
+                      <Icon icon="ph:copy" />
+                      <span>复制</span>
+                    </button>
+                    <button v-if="idx === chat.messages.length - 1" class="msg-action-btn" title="重新生成" @click="handleRegenerate">
+                      <Icon icon="ph:arrows-counter-clockwise" />
+                      <span>重新生成</span>
+                    </button>
+                  </div>
+                </template>
               </div>
             </div>
           </template>
@@ -215,16 +242,16 @@
               rows="1"
               @input="adjustTextareaHeight"
               @keydown.enter.exact.prevent="handleSend"
+              @keydown.esc="handleStop"
             ></textarea>
             <div class="input-bottom-bar">
-              <span class="char-count">{{ inputText.length }} / 2000</span>
-              <el-button
-                type="primary"
-                class="send-btn"
-                :disabled="!inputText.trim() || chat.isStreaming"
-                :loading="chat.isStreaming"
-                @click="handleSend"
-              >
+              <span class="char-count" :class="{ near: inputText.length > 1800, over: inputText.length > 2000 }">{{ inputText.length }} / 2000</span>
+              <span class="input-hint" v-if="!chat.isStreaming">↵ 发送 · ⇧↵ 换行 · Esc 停止</span>
+              <el-button v-if="chat.isStreaming" type="danger" class="send-btn stop-btn" @click="handleStop">
+                <Icon icon="ph:stop-circle-bold" class="send-icon" />
+                <span>停止生成</span>
+              </el-button>
+              <el-button v-else type="primary" class="send-btn" :disabled="!inputText.trim()" @click="handleSend">
                 <Icon icon="ph:paper-plane-tilt-fill" class="send-icon" />
                 <span>发送</span>
               </el-button>
@@ -254,8 +281,33 @@ const loadingSessions = ref(false)
 const loadingMessages = ref(false)
 const editingSessionId = ref<number | null>(null)
 const renameTitle = ref('')
+const sessionSearch = ref('')
+const editingUserIdx = ref<number | null>(null)
+const editDraft = ref('')
+const DRAFT_PREFIX = 'minefolio:chat:draft:'
 const vFocus = {
   mounted: (el: HTMLElement) => el.focus(),
+}
+
+const filteredSessions = computed(() => {
+  const q = sessionSearch.value.trim().toLowerCase()
+  if (!q) return chat.sessions
+  return chat.sessions.filter(s => s.title.toLowerCase().includes(q))
+})
+
+function draftKey(): string {
+  return `${DRAFT_PREFIX}${chat.currentSessionId ?? 'new'}`
+}
+function loadDraft() {
+  try {
+    const v = localStorage.getItem(draftKey())
+    if (v !== null) inputText.value = v
+    else inputText.value = ''
+  } catch { /* ignore */ }
+  nextTick(() => adjustTextareaHeight())
+}
+function persistDraft() {
+  try { localStorage.setItem(draftKey(), inputText.value) } catch { /* ignore */ }
 }
 
 function formatChatMarkdown(): string {
@@ -536,10 +588,53 @@ async function handleRegenerate() {
   nextTick(() => scrollToBottom())
 }
 
+function handleStop() {
+  if (!chat.isStreaming) return
+  chat.abortCurrentStream()
+}
+
+function startEdit(idx: number, content: string) {
+  if (chat.isStreaming) return
+  editingUserIdx.value = idx
+  editDraft.value = content
+}
+
+function cancelEdit() {
+  editingUserIdx.value = null
+  editDraft.value = ''
+}
+
+async function confirmEdit(idx: number) {
+  const text = editDraft.value.trim()
+  if (!text || chat.isStreaming) return
+  editingUserIdx.value = null
+  editDraft.value = ''
+  autoStickToBottom.value = true
+  showScrollBottomBtn.value = false
+  await chat.editAndResend(idx, text)
+  nextTick(() => scrollToBottom())
+  fetchSessions()
+}
+
 watch(() => chat.messages.length, () => {
   autoStickToBottom.value = true
   nextTick(() => scrollToBottom())
 })
+
+watch(inputText, () => { persistDraft() })
+watch(() => chat.currentSessionId, () => { loadDraft() })
+
+function onGlobalKeydown(e: KeyboardEvent) {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault()
+    textareaRef.value?.focus()
+  } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
+    e.preventDefault()
+    handleNewChat()
+  } else if (e.key === 'Escape' && chat.isStreaming) {
+    handleStop()
+  }
+}
 
 onMounted(async () => {
   await Promise.allSettled([fetchSessions(), fetchSettings(), fetchModels()])
@@ -552,10 +647,14 @@ onMounted(async () => {
     chat.setModel(modelOptions.value[0]!.model, modelOptions.value[0]!.provider_id)
   }
   if (!chat.currentSessionId) handleNewChat()
+  loadDraft()
   nextTick(() => scrollToBottom())
+  window.addEventListener('keydown', onGlobalKeydown)
+  nextTick(() => textareaRef.value?.focus())
 })
 
 onUnmounted(() => {
+  window.removeEventListener('keydown', onGlobalKeydown)
   chat.abortCurrentStream()
 })
 </script>
@@ -1337,6 +1436,70 @@ onUnmounted(() => {
   content-visibility: auto;
   contain-intrinsic-size: 0 120px;
 }
+
+.session-search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 8px 4px;
+  padding: 6px 8px;
+  background: var(--mf-background);
+  border: 1px solid var(--mf-border);
+  border-radius: 8px;
+}
+.session-search-icon { color: var(--mf-text-muted); font-size: 12px; flex-shrink: 0; }
+.session-search-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--mf-text-main);
+  font-size: 12px;
+  min-width: 0;
+}
+.session-search-clear {
+  background: transparent;
+  border: none;
+  color: var(--mf-text-muted);
+  cursor: pointer;
+  display: flex;
+  padding: 2px;
+}
+.stop-gen-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  padding: 2px 8px;
+  font-size: 11px;
+  background: var(--mf-danger-light, rgba(239,68,68,0.12));
+  color: var(--mf-danger, #ef4444);
+  border: 1px solid rgba(239,68,68,0.25);
+  border-radius: 12px;
+  cursor: pointer;
+}
+.stop-gen-btn:hover { background: rgba(239,68,68,0.18); }
+.user-edit-box { display: flex; flex-direction: column; gap: 8px; min-width: 260px; }
+.user-edit-input {
+  width: 100%;
+  min-height: 60px;
+  padding: 8px 10px;
+  background: var(--mf-background);
+  border: 1px solid var(--mf-primary);
+  border-radius: 8px;
+  color: var(--mf-text-main);
+  font-size: 13px;
+  resize: vertical;
+  outline: none;
+  font-family: inherit;
+}
+.user-edit-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.user-actions { opacity: 0.85; }
+.message-row:hover .user-actions { opacity: 1; }
+.input-hint { font-size: 10px; color: var(--mf-text-placeholder); margin-right: auto; margin-left: 8px; }
+.char-count.near { color: #f59e0b; }
+.char-count.over { color: var(--mf-danger, #ef4444); }
+.stop-btn { background: var(--mf-danger, #ef4444) !important; border-color: var(--mf-danger, #ef4444) !important; }
 
 @media (max-width: 768px) {
   .chat-sidebar {

@@ -224,6 +224,46 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  async function editAndResend(targetIdx: number, newContent: string) {
+    const trimmed = newContent.trim()
+    if (!trimmed || isStreaming.value) return
+    if (targetIdx < 0 || targetIdx >= messages.value.length) return
+    const target = messages.value[targetIdx]
+    if (!target || target.role !== 'user') return
+    messages.value = messages.value.slice(0, targetIdx + 1)
+    messages.value[targetIdx]!.content = trimmed
+
+    const assistantId = Date.now() + 1
+    let assistantMsg: AiMessage = {
+      id: assistantId,
+      session_id: currentSessionId.value!,
+      role: 'assistant',
+      content: '',
+      created_at: new Date().toISOString(),
+    }
+    messages.value.push(assistantMsg)
+    assistantMsg = messages.value[messages.value.length - 1]!
+    abortCurrentStream()
+    activeAbortController = new AbortController()
+    const signal = activeAbortController.signal
+    isStreaming.value = true
+    const writer = new SmoothStreamWriter(assistantMsg)
+    try {
+      for await (const chunk of chatStream({
+        session_id: currentSessionId.value ?? undefined,
+        content: trimmed,
+        model: currentModel.value,
+        provider: currentProvider.value,
+      }, signal)) {
+        if (chunk.type === 'delta' && chunk.content) writer.push(chunk.content)
+        else if (chunk.type === 'error') { writer.flushNow(); assistantMsg.content = `⚠️ ${chunk.message}` }
+      }
+      await writer.finish()
+    } catch (err: any) {
+      if (err?.name !== 'AbortError') { writer.flushNow(); assistantMsg.content = `⚠️ 请求发生异常` }
+    } finally { writer.flushNow(); isStreaming.value = false; activeAbortController = null }
+  }
+
   async function regenerateLastMessage() {
     if (isStreaming.value || messages.value.length === 0) return
     let lastUserIdx = -1
@@ -537,7 +577,7 @@ export const useChatStore = defineStore('chat', () => {
     workflows, activeWorkflow,
     fetchSessions, fetchModels, fetchSettings, fetchWorkflowsList,
     createNewSession, selectSession, deleteSessionById, renameSession,
-    sendMessage, regenerateLastMessage, runWorkflow, switchModel,
+    sendMessage, regenerateLastMessage, editAndResend, runWorkflow, switchModel,
     abortCurrentStream, clearMessages, clearCurrentSession, resetState, setModel,
   }
 })
