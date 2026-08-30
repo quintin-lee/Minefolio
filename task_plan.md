@@ -1,10 +1,10 @@
-# Task Plan: 7 New Practical Workflows (Minefolio)
+# Task Plan: 16 Practical Workflows (Minefolio) — Batch 2: 9 New
 
 ## Goal
-逐个实现 7 个新增实用工作流，补齐“月度复盘/再平衡/大额决策”之外的核心日常财务场景。每个工作流需：后端 SSE 步骤定义 + 真实数据聚合 + Mermaid 报告 + 前端可视化复用现有 ai_workflow_service 框架。
+在已完成的 10 工作流基础上，逐项实现新推荐的 9 个工作流（P0现金流/账单日历/健康分 → P1消费画像/冲动检查/DCA体检 → P2净值轨迹/汇率敞口/年度账单），保持后端 SSE + 真实数据 + Mermaid + 前端 WorkflowBar 框架一致。
 
 ## Current Phase
-Phase 8 — 前端入口补齐 [complete] — WorkflowBar 参数对话框已覆盖 7 个新工作流
+Phase 11 — 账单日历 (Bill Calendar) [in_progress]
 
 ## Phases
 
@@ -84,6 +84,55 @@ Phase 8 — 前端入口补齐 [complete] — WorkflowBar 参数对话框已覆�
 - [x] 新增 `ratioSum` 计算 + `ratio-grid`/`param-hint` 样式
 - [x] 前端 `npm run build` 验证通过 (vite 5.4.21, vue-tsc strict)
 - **Status:** complete
+
+### Phase 10: 现金流预测 (Cashflow Forecast) ⭐ P0
+- [x] 后端：`step_cf_collect` — 近6月收支均值 + 流动现金 + horizon(6/3-12)
+- [x] 后端：`step_cf_forecast` — 滚动外推 future 现金轨迹，min_cash/runway/danger
+- [x] 后端：`step_cf_report` — Mermaid xychart + 表格 + 建议 + action JSON
+- [x] 注册 `wf_cashflow_forecast` 到 g_workflows (ph:trend-up)
+- [x] 构建验证通过（仅预存 strncpy warning）
+- **Status:** complete
+
+### Phase 11: 账单日历 (Bill Calendar) ⭐ P0
+- [ ] 后端：`step_bc_collect` — 扫描 loan/credit_card 账单 + 订阅复用 + 固定支出
+- [ ] 后端：`step_bc_calendar` — 生成未来30天日历，标记>30%收入压力日
+- [ ] 后端：`step_bc_report` — Mermaid gantt + 表格 + 压力提示 + action JSON
+- [ ] 注册 `wf_bill_calendar` 到 g_workflows
+- [ ] 构建验证
+- **Status:** in_progress
+
+### Phase 12: 财务健康分 (Health Score) ⭐ P0
+- [ ] 6维度打分：储蓄率/应急覆盖/债务收入比/预算遵守/投资分散/异常率
+- [ ] 雷达图 + 总分卡 + 同比/最短板建议
+- **Status:** pending
+
+### Phase 13: 消费基因画像 (Spending DNA) — P1
+- [ ] 类目/周末/时段分布 + Top3 漏水点 + 本地中位数对比
+- **Status:** pending
+
+### Phase 14: 冲动消费冷静期 (Impulse Check) — P1
+- [ ] 72h 冷静清单 + 占可支配比 + 对目标影响
+- **Status:** pending
+
+### Phase 15: DCA 定投体检 (DCA Review) — P1
+- [ ] 拉取 dca_plans + XIRR/回撤 + 对比一次性
+- **Status:** pending
+
+### Phase 16: 净值轨迹 (Net Worth Timeline) — P2
+- [ ] 月度净值曲线 + 贡献分解 + 达标预测
+- **Status:** pending
+
+### Phase 17: 汇率/跨境敞口 (FX Exposure) — P2
+- [ ] 外币/加密敞口占比 + 波动影响
+- **Status:** pending
+
+### Phase 18: 年度账单 (Annual Report) — P2
+- [ ] 全年收支/PnL/目标达成 + 年度关键词
+- **Status:** pending
+
+### Phase 19: 收尾
+- [ ] 全量 19 工作流回归构建（backend cmake + frontend npm run build）
+- **Status:** pending
 
 ## Key Questions
 1. 预算数据来源：当前无独立 budgets 表，Phase2 需用历史均值*1.2 作为隐式预算，还是新增表？
