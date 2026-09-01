@@ -9,10 +9,10 @@
         <el-button type="primary" class="action-btn" @click="openDialog()">
           <el-icon><Plus /></el-icon> 新增记录
         </el-button>
-        <el-button class="action-btn" style="background:var(--mf-surface);color:var(--mf-text-main);border-color:var(--mf-border)" @click="exportCsv">
+        <el-button class="action-btn" @click="exportCsv">
           <el-icon><Download /></el-icon> 导出 CSV
         </el-button>
-        <el-button class="action-btn" style="background:var(--mf-surface);color:var(--mf-text-main);border-color:var(--mf-border)" @click="importDialogVisible = true">
+        <el-button class="action-btn" @click="importDialogVisible = true">
           <el-icon><Upload /></el-icon> 导入 CSV
         </el-button>
       </div>
@@ -401,14 +401,12 @@ async function handleImport() {
 .action-btn {
   border-radius: var(--mf-radius-md);
   font-weight: 500;
-  padding: 10px 20px;
-  box-shadow: 0 0 12px rgba(0, 212, 255, 0.3);
-  transition: all 0.2s ease;
+  padding: 8px 16px;
+  transition: var(--mf-transition);
 }
 
 .action-btn:hover {
   transform: translateY(-1px);
-  box-shadow: var(--mf-shadow-glow);
 }
 
 .filter-panel {

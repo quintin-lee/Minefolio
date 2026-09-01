@@ -73,11 +73,37 @@
   /* Element Plus Variable Overrides (Dark) */
   --el-color-primary: var(--mf-primary);
   --el-color-primary-rgb: 59, 130, 246;
-  --el-color-primary-light-3: #60a5fa;
-  --el-color-primary-light-5: #93c5fd;
-  --el-color-primary-light-7: #bfdbfe;
-  --el-color-primary-light-8: #dbeafe;
+  --el-color-primary-light-3: #2563eb;
+  --el-color-primary-light-5: rgba(59, 130, 246, 0.35);
+  --el-color-primary-light-7: rgba(59, 130, 246, 0.2);
+  --el-color-primary-light-8: rgba(59, 130, 246, 0.12);
   --el-color-primary-light-9: var(--mf-primary-light);
+  --el-color-primary-dark-2: #1d4ed8;
+
+  --el-color-success: var(--mf-success);
+  --el-color-success-light-3: #059669;
+  --el-color-success-light-5: rgba(16, 185, 129, 0.35);
+  --el-color-success-light-8: rgba(16, 185, 129, 0.15);
+  --el-color-success-light-9: var(--mf-success-light);
+
+  --el-color-danger: var(--mf-danger);
+  --el-color-danger-light-3: #e11d48;
+  --el-color-danger-light-5: rgba(244, 63, 94, 0.35);
+  --el-color-danger-light-8: rgba(244, 63, 94, 0.15);
+  --el-color-danger-light-9: var(--mf-danger-light);
+  --el-color-error: var(--mf-danger);
+
+  --el-color-warning: var(--mf-warning);
+  --el-color-warning-light-3: #d97706;
+  --el-color-warning-light-5: rgba(245, 158, 11, 0.35);
+  --el-color-warning-light-8: rgba(245, 158, 11, 0.15);
+  --el-color-warning-light-9: var(--mf-warning-light);
+
+  --el-color-info: var(--mf-text-muted);
+  --el-color-info-light-3: #475569;
+  --el-color-info-light-5: rgba(100, 116, 139, 0.35);
+  --el-color-info-light-8: rgba(100, 116, 139, 0.15);
+  --el-color-info-light-9: var(--mf-surface-muted);
 
   --el-bg-color: var(--mf-surface);
   --el-bg-color-page: var(--mf-background);
@@ -100,14 +126,24 @@
   --el-fill-color-dark: rgba(59, 130, 246, 0.15);
   --el-fill-color-blank: rgba(30, 41, 59, 0.6);
 
-  --el-color-success: var(--mf-success);
-  --el-color-success-light-9: var(--mf-success-light);
-  --el-color-danger: var(--mf-danger);
-  --el-color-danger-light-9: var(--mf-danger-light);
-  --el-color-error: var(--mf-danger);
-  --el-color-warning: var(--mf-warning);
-  --el-color-warning-light-9: var(--mf-warning-light);
-  --el-color-info: var(--mf-text-muted);
+  /* Element Plus Tag & Button Tokens (Dark) */
+  --el-tag-bg-color: var(--mf-surface-muted);
+  --el-tag-border-color: var(--mf-border);
+  --el-tag-text-color: var(--mf-text-main);
+  --el-tag-hover-color: var(--mf-primary);
+
+  --el-button-bg-color: var(--mf-surface-muted);
+  --el-button-border-color: var(--mf-border);
+  --el-button-text-color: var(--mf-text-main);
+  --el-button-hover-bg-color: var(--mf-surface-hover);
+  --el-button-hover-border-color: var(--mf-border-hover);
+  --el-button-hover-text-color: var(--mf-primary);
+  --el-button-active-bg-color: var(--mf-surface-card);
+  --el-button-active-border-color: var(--mf-primary);
+  --el-button-outline-color: var(--mf-primary);
+  --el-button-disabled-bg-color: var(--mf-surface-muted);
+  --el-button-disabled-border-color: var(--mf-border-subtle);
+  --el-button-disabled-text-color: var(--mf-text-placeholder);
 
   --el-border-radius-base: var(--mf-radius-md);
   --el-border-radius-round: var(--mf-radius-pill);
@@ -265,42 +301,82 @@ body {
 /* Focus Rings */
 :focus-visible {
   outline: 2px solid var(--mf-primary);
-  outline-offset: 2px;
+  background: var(--mf-border-hover);
 }
 
-/* =========================================================================
-   Element Plus Component Overrides
-   ========================================================================= */
+/* Header & Titles */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--mf-spacing-lg);
+}
+
+.header-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.title-accent {
+  width: 4px;
+  height: 18px;
+  background: linear-gradient(180deg, var(--mf-primary) 0%, var(--mf-accent) 100%);
+  border-radius: 2px;
+}
+
+.page-header h2 {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--mf-text-main);
+  margin: 0;
+  letter-spacing: -0.3px;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
 
 /* Cards — Glassmorphism with Smooth Borders */
 .el-card {
   border: 1px solid var(--mf-border) !important;
   border-radius: var(--mf-radius-lg) !important;
-  background: var(--mf-surface) !important;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background-color: var(--mf-surface) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   box-shadow: var(--mf-shadow-sm) !important;
   transition: var(--mf-transition);
 }
+
 .el-card:hover {
   border-color: var(--mf-border-hover) !important;
   box-shadow: var(--mf-shadow-md) !important;
 }
 
-/* Tables — Premium Clean Hierarchy */
-.el-table {
-  border-radius: var(--mf-radius-lg);
-  overflow: hidden;
-  box-shadow: var(--mf-shadow-sm);
-  background: transparent !important;
+.el-card__header {
+  padding: 16px 20px !important;
+  border-bottom: 1px solid var(--mf-border) !important;
+  background-color: transparent !important;
 }
-.el-table th.el-table__cell,
-.el-table .premium-header.el-table__cell {
+
+.el-card__body {
+  padding: 20px !important;
+}
+
+/* Tables */
+.el-table {
+  background-color: transparent !important;
+  --el-table-border-color: var(--mf-border);
+  --el-table-header-bg-color: var(--mf-surface-muted);
+}
+.el-table th.el-table__cell {
   background-color: var(--mf-surface-muted) !important;
+  border-bottom: 1px solid var(--mf-border) !important;
   color: var(--mf-text-muted) !important;
   font-weight: 600;
-  border-bottom: 1px solid var(--mf-border) !important;
-  font-size: 12.5px;
+  font-size: 12px;
   letter-spacing: 0.3px;
   padding: 12px 0;
 }
@@ -319,35 +395,228 @@ body {
   color: var(--mf-text-placeholder) !important;
 }
 
-/* Buttons */
+/* =========================================================================
+   Buttons — Comprehensive Theme Overrides (No White Outlines)
+   ========================================================================= */
 .el-button {
   transition: var(--mf-transition);
   font-weight: 500;
   border-radius: var(--mf-radius-md);
+  border: 1px solid var(--mf-border);
+  background-color: var(--mf-surface-muted);
+  color: var(--mf-text-main);
 }
+.el-button:hover {
+  background-color: var(--mf-surface-hover) !important;
+  border-color: var(--mf-border-hover) !important;
+  color: var(--mf-primary) !important;
+}
+.el-button:focus,
+.el-button:active {
+  border-color: var(--mf-primary) !important;
+}
+
+/* Primary Button */
 .el-button--primary {
   background: linear-gradient(135deg, var(--mf-primary) 0%, var(--mf-primary-hover) 100%) !important;
-  border: none !important;
+  border-color: transparent !important;
   color: #ffffff !important;
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.25);
 }
 .el-button--primary:hover {
   background: linear-gradient(135deg, var(--mf-primary-hover) 0%, var(--mf-primary-active) 100%) !important;
+  border-color: transparent !important;
+  color: #ffffff !important;
   box-shadow: var(--mf-shadow-glow);
   transform: translateY(-1px);
 }
 .el-button--primary:active {
   transform: translateY(0);
 }
-.el-button--default {
-  background: var(--mf-surface-muted) !important;
-  border: 1px solid var(--mf-border) !important;
-  color: var(--mf-text-main);
+
+/* Plain Buttons */
+.el-button.is-plain {
+  background-color: var(--mf-surface-muted) !important;
+  border-color: var(--mf-border) !important;
 }
-.el-button--default:hover {
-  border-color: var(--mf-border-hover) !important;
+.el-button--primary.is-plain {
+  background-color: var(--mf-primary-light) !important;
+  border-color: var(--mf-primary-border) !important;
   color: var(--mf-primary) !important;
-  background: var(--mf-surface-hover) !important;
+  box-shadow: none !important;
+}
+.el-button--primary.is-plain:hover {
+  background-color: var(--mf-primary) !important;
+  border-color: var(--mf-primary) !important;
+  color: #ffffff !important;
+  box-shadow: var(--mf-shadow-glow);
+}
+.el-button--success.is-plain {
+  background-color: var(--mf-success-light) !important;
+  border-color: var(--mf-success-border) !important;
+  color: var(--mf-success) !important;
+}
+.el-button--success.is-plain:hover {
+  background-color: var(--mf-success) !important;
+  border-color: var(--mf-success) !important;
+  color: #ffffff !important;
+}
+.el-button--danger.is-plain {
+  background-color: var(--mf-danger-light) !important;
+  border-color: var(--mf-danger-border) !important;
+  color: var(--mf-danger) !important;
+}
+.el-button--danger.is-plain:hover {
+  background-color: var(--mf-danger) !important;
+  border-color: var(--mf-danger) !important;
+  color: #ffffff !important;
+}
+.el-button--warning.is-plain {
+  background-color: var(--mf-warning-light) !important;
+  border-color: var(--mf-warning-border) !important;
+  color: var(--mf-warning) !important;
+}
+.el-button--warning.is-plain:hover {
+  background-color: var(--mf-warning) !important;
+  border-color: var(--mf-warning) !important;
+  color: #ffffff !important;
+}
+.el-button--info.is-plain {
+  background-color: var(--mf-surface-muted) !important;
+  border-color: var(--mf-border) !important;
+  color: var(--mf-text-muted) !important;
+}
+
+/* Text and Link Buttons */
+.el-button.is-text,
+.el-button.is-link,
+.el-button--text {
+  background-color: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+.el-button.is-text:hover,
+.el-button.is-link:hover,
+.el-button--text:hover {
+  background-color: var(--mf-surface-hover) !important;
+  border-color: transparent !important;
+}
+
+/* =========================================================================
+   Tags & Badges — Comprehensive Theme Overrides (No White Outlines)
+   ========================================================================= */
+.el-tag {
+  border-radius: var(--mf-radius-pill) !important;
+  font-weight: 500;
+  border-width: 1px !important;
+  border-style: solid !important;
+  border-color: var(--mf-border) !important;
+  background-color: var(--mf-surface-muted) !important;
+  color: var(--mf-text-main) !important;
+}
+
+/* Primary / Default Tag */
+.el-tag--primary,
+.el-tag:not([class*="el-tag--"]) {
+  background-color: var(--mf-primary-light) !important;
+  border-color: var(--mf-primary-border) !important;
+  color: var(--mf-primary) !important;
+}
+.el-tag--success {
+  background-color: var(--mf-success-light) !important;
+  border-color: var(--mf-success-border) !important;
+  color: var(--mf-success) !important;
+}
+.el-tag--danger,
+.el-tag--error {
+  background-color: var(--mf-danger-light) !important;
+  border-color: var(--mf-danger-border) !important;
+  color: var(--mf-danger) !important;
+}
+.el-tag--warning {
+  background-color: var(--mf-warning-light) !important;
+  border-color: var(--mf-warning-border) !important;
+  color: var(--mf-warning) !important;
+}
+.el-tag--info {
+  background-color: var(--mf-surface-muted) !important;
+  border-color: var(--mf-border) !important;
+  color: var(--mf-text-muted) !important;
+}
+
+/* Plain Effect Tags */
+.el-tag.is-plain,
+.el-tag.el-tag--plain {
+  background-color: transparent !important;
+}
+.el-tag.is-plain.el-tag--primary,
+.el-tag.is-plain:not([class*="el-tag--"]),
+.el-tag.el-tag--plain.el-tag--primary,
+.el-tag.el-tag--plain:not([class*="el-tag--"]) {
+  border-color: var(--mf-primary-border) !important;
+  color: var(--mf-primary) !important;
+}
+.el-tag.is-plain.el-tag--success,
+.el-tag.el-tag--plain.el-tag--success {
+  border-color: var(--mf-success-border) !important;
+  color: var(--mf-success) !important;
+}
+.el-tag.is-plain.el-tag--danger,
+.el-tag.el-tag--plain.el-tag--danger {
+  border-color: var(--mf-danger-border) !important;
+  color: var(--mf-danger) !important;
+}
+.el-tag.is-plain.el-tag--warning,
+.el-tag.el-tag--plain.el-tag--warning {
+  border-color: var(--mf-warning-border) !important;
+  color: var(--mf-warning) !important;
+}
+.el-tag.is-plain.el-tag--info,
+.el-tag.el-tag--plain.el-tag--info {
+  border-color: var(--mf-border) !important;
+  color: var(--mf-text-muted) !important;
+}
+
+/* Dark Effect Tags */
+.el-tag.el-tag--dark.el-tag--primary {
+  background-color: var(--mf-primary) !important;
+  border-color: transparent !important;
+  color: #ffffff !important;
+}
+.el-tag.el-tag--dark.el-tag--success {
+  background-color: var(--mf-success) !important;
+  border-color: transparent !important;
+  color: #ffffff !important;
+}
+.el-tag.el-tag--dark.el-tag--danger {
+  background-color: var(--mf-danger) !important;
+  border-color: transparent !important;
+  color: #ffffff !important;
+}
+.el-tag.el-tag--dark.el-tag--warning {
+  background-color: var(--mf-warning) !important;
+  border-color: transparent !important;
+  color: #ffffff !important;
+}
+.el-tag.el-tag--dark.el-tag--info {
+  background-color: var(--mf-surface-card) !important;
+  border-color: var(--mf-border) !important;
+  color: var(--mf-text-main) !important;
+}
+
+/* Domain-specific Tag Overrides */
+.custom-tag {
+  border: none !important;
+  box-shadow: none !important;
+}
+.type-badge {
+  font-weight: 500 !important;
+}
+.symbol-tag,
+.currency-tag {
+  border-color: var(--mf-border) !important;
+  background-color: var(--mf-surface-muted) !important;
+  color: var(--mf-text-muted) !important;
 }
 
 /* Inputs & Form Controls */
