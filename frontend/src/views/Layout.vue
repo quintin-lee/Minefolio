@@ -74,6 +74,7 @@
         </div>
         <div class="header-right">
           <LedgerSelector />
+          <ThemeToggle />
           <el-dropdown @command="handleCommand" trigger="click">
             <div class="user-profile">
               <div class="avatar-circle">
@@ -118,6 +119,7 @@ import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import { zhCN } from '@/locales/zh-CN'
 import LedgerSelector from '@/components/LedgerSelector.vue'
+import ThemeToggle from '@/components/ThemeToggle.vue'
 
 const t = (key: string) => {
   const keys = key.split('.')
@@ -220,59 +222,58 @@ function handleCommand(cmd: string) {
   align-items: center;
   padding: 0 24px;
   gap: 12px;
-  color: #fff;
-  border-bottom: 1px solid rgba(0, 212, 255, 0.1);
+  color: var(--mf-text-main);
+  border-bottom: 1px solid var(--mf-border);
   transition: padding 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .logo-icon-wrapper {
   font-size: 24px;
-  background: rgba(0, 212, 255, 0.1);
+  background: var(--mf-primary-light);
   width: 40px;
   height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 10px;
-  border: 1px solid rgba(0, 212, 255, 0.2);
-  box-shadow: 0 0 12px rgba(0, 212, 255, 0.15);
+  border-radius: var(--mf-radius-md);
+  border: 1px solid var(--mf-border);
+  box-shadow: var(--mf-shadow-sm);
 }
 .logo-icon-phosphor {
   font-size: 22px;
   color: var(--mf-primary);
-  filter: drop-shadow(0 0 6px rgba(0, 212, 255, 0.5));
 }
 .logo-text {
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 700;
-  letter-spacing: 1px;
-  background: linear-gradient(to right, #00d4ff, #a5f3fc);
+  letter-spacing: 0.5px;
+  background: linear-gradient(135deg, var(--mf-primary) 0%, var(--mf-accent) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  text-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
 }
 .sidebar-menu {
   border-right: none;
   background: transparent;
-  padding: 16px 12px;
+  padding: 16px 10px;
   flex: 1;
 }
 .sidebar-menu :deep(.el-menu-item) {
-  color: #64748b;
-  border-radius: 8px;
+  color: var(--mf-text-muted);
+  border-radius: var(--mf-radius-md);
   margin-bottom: 4px;
-  height: 50px;
-  line-height: 50px;
-  transition: all 0.3s ease;
+  height: 46px;
+  line-height: 46px;
+  font-weight: 500;
+  transition: var(--mf-transition);
 }
 .sidebar-menu :deep(.el-menu-item .el-icon) {
-  font-size: 20px;
-  margin-right: 12px;
+  font-size: 19px;
+  margin-right: 10px;
 }
 .sidebar-menu :deep(.nav-icon) {
   font-size: 18px;
-  margin-right: 12px;
+  margin-right: 10px;
   color: currentColor;
-  opacity: 0.7;
+  opacity: 0.85;
   transition: opacity 0.2s ease;
 }
 .sidebar-menu :deep(.el-menu-item:hover .nav-icon),
@@ -280,24 +281,24 @@ function handleCommand(cmd: string) {
   opacity: 1;
 }
 .sidebar-menu :deep(.el-menu-item:hover) {
-  color: #e2e8f0;
-  background: rgba(0, 212, 255, 0.06) !important;
+  color: var(--mf-text-main);
+  background: var(--mf-surface-hover) !important;
 }
 .sidebar-menu :deep(.el-menu-item.is-active) {
-  color: #00d4ff;
-  background: rgba(0, 212, 255, 0.08) !important;
+  color: var(--mf-primary) !important;
+  background: var(--mf-primary-light) !important;
+  font-weight: 600;
   position: relative;
 }
 .sidebar-menu :deep(.el-menu-item.is-active::before) {
   content: '';
   position: absolute;
-  left: -12px;
-  top: 10%;
-  height: 80%;
+  left: 0;
+  top: 15%;
+  height: 70%;
   width: 3px;
-  background: #00d4ff;
+  background: var(--mf-primary);
   border-radius: 0 2px 2px 0;
-  box-shadow: 0 0 12px rgba(0, 212, 255, 0.6);
 }
 
 .sidebar-menu.el-menu--collapse {
@@ -322,20 +323,26 @@ function handleCommand(cmd: string) {
   flex-direction: column;
 }
 .header {
-  background: rgba(15, 23, 42, 0.85);
-  backdrop-filter: blur(12px);
-  height: 72px;
+  background: var(--mf-surface);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  height: 64px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 32px;
-  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.4);
-  border-bottom: 1px solid rgba(0, 212, 255, 0.08);
+  padding: 0 28px;
+  box-shadow: var(--mf-shadow-sm);
+  border-bottom: 1px solid var(--mf-border);
   z-index: 5;
 }
 .header-left {
   display: flex;
   align-items: center;
+}
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 .collapse-btn {
   display: flex;
@@ -343,71 +350,72 @@ function handleCommand(cmd: string) {
   justify-content: center;
   width: 34px;
   height: 34px;
-  border-radius: 8px;
+  border-radius: var(--mf-radius-md);
   cursor: pointer;
-  color: #94a3b8;
+  color: var(--mf-text-muted);
   margin-right: 14px;
-  transition: all 0.2s ease;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: var(--mf-transition);
+  background: var(--mf-surface-muted);
+  border: 1px solid var(--mf-border);
 }
 .collapse-btn:hover {
-  color: #00d4ff;
-  background: rgba(0, 212, 255, 0.08);
-  border-color: rgba(0, 212, 255, 0.2);
+  color: var(--mf-primary);
+  background: var(--mf-surface-hover);
+  border-color: var(--mf-border-hover);
 }
 .collapse-icon {
-  font-size: 20px;
+  font-size: 19px;
 }
 .page-title {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 600;
-  color: #e2e8f0;
+  color: var(--mf-text-main);
   margin: 0;
 }
 .user-profile {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   cursor: pointer;
-  padding: 6px 12px;
+  padding: 4px 10px;
   border-radius: 30px;
-  transition: background 0.2s;
+  transition: var(--mf-transition);
   border: 1px solid transparent;
 }
 .user-profile:hover {
-  background: rgba(0, 212, 255, 0.06);
-  border-color: rgba(0, 212, 255, 0.15);
+  background: var(--mf-surface-hover);
+  border-color: var(--mf-border);
 }
 .avatar-circle {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #00d4ff 0%, #7c3aed 100%);
+  background: linear-gradient(135deg, var(--mf-primary) 0%, var(--mf-accent) 100%);
   color: white;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 600;
-  font-size: 16px;
-  box-shadow: 0 0 12px rgba(0, 212, 255, 0.4);
+  font-size: 14px;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.35);
 }
 .username {
   font-weight: 500;
-  color: #94a3b8;
+  color: var(--mf-text-regular);
+  font-size: 14px;
 }
 .user-dropdown .danger-item {
-  color: #f87171;
+  color: var(--mf-danger);
 }
 .user-dropdown .danger-item:hover {
-  background-color: rgba(239, 68, 68, 0.1);
-  color: #f87171;
+  background-color: var(--mf-danger-light);
+  color: var(--mf-danger);
 }
 .main {
-  padding: 24px 32px;
+  padding: 24px 28px;
   padding-bottom: 0;
   background-color: var(--mf-background);
-  height: calc(100vh - 72px);
+  height: calc(100vh - 64px);
   overflow-y: auto;
   display: flex;
   flex-direction: column;
