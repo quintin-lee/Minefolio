@@ -14,3 +14,4 @@ struct quote_driver_s {
 quote_driver_t* get_eastmoney_driver(void);
 quote_driver_t* get_tencent_driver(void);
 quote_driver_t* get_crypto_driver(void);
+quote_driver_t* get_yahoo_driver(void);

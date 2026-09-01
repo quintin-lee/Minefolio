@@ -108,8 +108,11 @@ quote_engine_search(const char* keyword, market_search_item_t* out_items, int ma
 
     int total_found = 0;
 
-    quote_driver_t* drivers[] = {
-        get_eastmoney_driver(), get_tencent_driver(), get_crypto_driver(), NULL};
+    quote_driver_t* drivers[] = {get_eastmoney_driver(),
+                                 get_tencent_driver(),
+                                 get_crypto_driver(),
+                                 get_yahoo_driver(),
+                                 NULL};
 
     for (int d = 0; drivers[d] != NULL && total_found < max_items; d++) {
         quote_driver_t* drv = drivers[d];
@@ -132,8 +135,11 @@ quote_engine_fetch_quote(const char* symbol, const char* source_type, market_quo
         return -1;
     }
 
-    quote_driver_t* drivers[] = {
-        get_eastmoney_driver(), get_tencent_driver(), get_crypto_driver(), NULL};
+    quote_driver_t* drivers[] = {get_eastmoney_driver(),
+                                 get_tencent_driver(),
+                                 get_crypto_driver(),
+                                 get_yahoo_driver(),
+                                 NULL};
 
     /* 1. If explicit source_type provided, try that driver first */
     if (source_type && source_type[0]) {

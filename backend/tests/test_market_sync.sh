@@ -80,11 +80,27 @@ if ! echo "$SEARCH_RES" | grep -q "sh600519"; then
     exit 1
 fi
 
+echo "=== 2b. Test Yahoo Finance Symbol Search (USD/CNY & Gold) ==="
+SEARCH_YAHOO=$(curl -s -H "$AUTH_HEADER" "${BASE_URL}/api/market/search?keyword=USDCNY")
+echo "Search 'USDCNY': ${SEARCH_YAHOO}"
+if ! echo "$SEARCH_YAHOO" | grep -q "USDCNY=X"; then
+    echo "FATAL: Symbol search did not find USDCNY=X"
+    exit 1
+fi
+
 echo "=== 3. Test Single Market Quote Fetch ==="
 QUOTE_RES=$(curl -s -H "$AUTH_HEADER" "${BASE_URL}/api/market/quote?symbol=sh600519&source=stock_cn")
 echo "Quote 'sh600519': ${QUOTE_RES}"
 if ! echo "$QUOTE_RES" | grep -q '"current_price":'; then
     echo "FATAL: Quote did not return current_price"
+    exit 1
+fi
+
+echo "=== 3b. Test Yahoo Forex Quote Fetch (USDCNY=X) ==="
+QUOTE_USD=$(curl -s -H "$AUTH_HEADER" "${BASE_URL}/api/market/quote?symbol=USDCNY=X&source=yahoo")
+echo "Quote 'USDCNY=X': ${QUOTE_USD}"
+if ! echo "$QUOTE_USD" | grep -q '"current_price":'; then
+    echo "FATAL: Yahoo Quote did not return current_price for USDCNY=X"
     exit 1
 fi
 
