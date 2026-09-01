@@ -8,7 +8,8 @@ user_find_by_username(csilk_db_pool_t* pool, const char* username)
 {
     return csilk_db_query_param_json(
         pool,
-        "SELECT id, username, created_at FROM users WHERE username = ?",
+        "SELECT id, username, password, token_version, totp_secret, totp_enabled, "
+        "totp_backup_codes, created_at FROM users WHERE username = ?",
         (const char*[]){username, NULL});
 }
 
@@ -34,9 +35,11 @@ user_get_by_id(csilk_db_pool_t* pool, int64_t user_id)
 {
     char uid[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
-    return csilk_db_query_param_json(pool,
-                                     "SELECT id, username, created_at FROM users WHERE id = ?",
-                                     (const char*[]){uid, NULL});
+    return csilk_db_query_param_json(
+        pool,
+        "SELECT id, username, token_version, totp_secret, totp_enabled, totp_backup_codes, "
+        "created_at FROM users WHERE id = ?",
+        (const char*[]){uid, NULL});
 }
 
 int
@@ -68,6 +71,64 @@ user_update_token_version(csilk_db_pool_t* pool, int64_t user_id)
         csilk_json_free(res);
     }
     return ok;
+}
+
+int
+user_set_totp_secret(csilk_db_pool_t* pool, int64_t user_id, const char* secret)
+{
+    char uid[32];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    csilk_json_t* res = csilk_db_query_param_json(
+        pool, "UPDATE users SET totp_secret = ? WHERE id = ?", (const char*[]){secret, uid, NULL});
+    if (res) {
+        csilk_json_free(res);
+    }
+    return 0;
+}
+
+int
+user_enable_totp(csilk_db_pool_t* pool, int64_t user_id, const char* backup_codes_json)
+{
+    char uid[32];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    csilk_json_t* res = csilk_db_query_param_json(
+        pool,
+        "UPDATE users SET totp_enabled = 1, totp_backup_codes = ? WHERE id = ?",
+        (const char*[]){backup_codes_json, uid, NULL});
+    if (res) {
+        csilk_json_free(res);
+    }
+    return 0;
+}
+
+int
+user_disable_totp(csilk_db_pool_t* pool, int64_t user_id)
+{
+    char uid[32];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    csilk_json_t* res = csilk_db_query_param_json(
+        pool,
+        "UPDATE users SET totp_secret = '', totp_enabled = 0, totp_backup_codes = '' WHERE id = ?",
+        (const char*[]){uid, NULL});
+    if (res) {
+        csilk_json_free(res);
+    }
+    return 0;
+}
+
+int
+user_update_backup_codes(csilk_db_pool_t* pool, int64_t user_id, const char* backup_codes_json)
+{
+    char uid[32];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    csilk_json_t* res =
+        csilk_db_query_param_json(pool,
+                                  "UPDATE users SET totp_backup_codes = ? WHERE id = ?",
+                                  (const char*[]){backup_codes_json, uid, NULL});
+    if (res) {
+        csilk_json_free(res);
+    }
+    return 0;
 }
 
 int

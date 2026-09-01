@@ -98,16 +98,32 @@ export const useAuthStore = defineStore('auth', () => {
     await fetchUser()
   }
 
-  async function login(username: string, password: string) {
+  async function login(username: string, password: string, totpCode?: string) {
     const password_enc = await encryptPassword(password)
-    const raw = (await authApi.login(username, password_enc)) as unknown
-    const res = (raw && typeof raw === 'object' && 'data' in raw ? (raw as { data: { token: string } }).data : raw) as { token: string }
+    const raw = (await authApi.login(username, password_enc, totpCode)) as unknown
+    const res = (raw && typeof raw === 'object' && 'data' in raw ? (raw as { data: any }).data : raw) as any
+    if (res?.require_2fa) {
+      return { require_2fa: true, temp_token: res.temp_token as string }
+    }
     if (res && res.token) {
       token.value = res.token
       localStorage.setItem('token', res.token)
+      await fetchUser()
     }
-    await fetchUser()
+    return res
   }
+
+  async function verify2FaLogin(temp_token: string, code: string) {
+    const raw = (await authApi.verify2FaLogin(temp_token, code)) as unknown
+    const res = (raw && typeof raw === 'object' && 'data' in raw ? (raw as { data: any }).data : raw) as any
+    if (res && res.token) {
+      token.value = res.token
+      localStorage.setItem('token', res.token)
+      await fetchUser()
+    }
+    return res
+  }
+
   async function fetchUser() {
     const res = await authApi.me()
     user.value = res
@@ -125,6 +141,6 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.removeItem('token')
   }
 
-  return { token, user, isInitialized, checkSystemStatus, setup, login, register, logout, fetchUser, changePassword }
+  return { token, user, isInitialized, checkSystemStatus, setup, login, verify2FaLogin, register, logout, fetchUser, changePassword }
 })
 

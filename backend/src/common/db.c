@@ -168,10 +168,18 @@ db_run_migrations(csilk_db_pool_t* pool)
         if (!col_exists(pool, "assets", "symbol")) {
             csilk_db_exec(pool,
                           "ALTER TABLE assets ADD COLUMN IF NOT EXISTS symbol TEXT DEFAULT ''");
-            csilk_db_exec(
-                pool, "ALTER TABLE assets ADD COLUMN IF NOT EXISTS quote_source TEXT DEFAULT ''");
             csilk_db_exec(pool,
                           "ALTER TABLE assets ADD COLUMN IF NOT EXISTS last_sync_at TIMESTAMP");
+        }
+        if (!col_exists(pool, "users", "totp_secret")) {
+            csilk_db_exec(pool,
+                          "ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret TEXT DEFAULT ''");
+            csilk_db_exec(
+                pool,
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN DEFAULT FALSE");
+            csilk_db_exec(
+                pool,
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_backup_codes TEXT DEFAULT ''");
         }
         csilk_db_exec(pool,
                       "CREATE TABLE IF NOT EXISTS asset_price_history ("
@@ -233,6 +241,14 @@ db_run_migrations(csilk_db_pool_t* pool)
         csilk_db_exec(pool,
                       "ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0");
         CSILK_LOG_I("Migration: added users.token_version column");
+    }
+
+    // ---- users totp_* 列迁移 ----
+    if (!col_exists(pool, "users", "totp_secret")) {
+        csilk_db_exec(pool, "ALTER TABLE users ADD COLUMN totp_secret TEXT DEFAULT ''");
+        csilk_db_exec(pool, "ALTER TABLE users ADD COLUMN totp_enabled BOOLEAN DEFAULT 0");
+        csilk_db_exec(pool, "ALTER TABLE users ADD COLUMN totp_backup_codes TEXT DEFAULT ''");
+        CSILK_LOG_I("Migration: added users.totp_* columns");
     }
 
     // ---- 交易分类 CHECK 约束迁移 ----

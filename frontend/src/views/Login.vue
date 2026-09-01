@@ -22,7 +22,33 @@
           </div>
         </template>
 
-        <el-form ref="formRef" :model="form" :rules="rules" label-position="top" class="login-form">
+        <div v-if="isTwoFactorStep" class="two-factor-box">
+          <p class="two-factor-hint">该账号已启用两步验证 (TOTP)，请输入身份验证器中的 6 位动态验证码或应急备用码：</p>
+          <el-form label-position="top" class="login-form" @submit.prevent="handle2FaSubmit">
+            <el-form-item label="动态验证码 / 备用码">
+              <el-input
+                v-model="twoFactorCode"
+                placeholder="例如 123456 或 a1b2-c3d4"
+                prefix-icon="Key"
+                size="large"
+                autofocus
+                @keyup.enter="handle2FaSubmit"
+              />
+            </el-form-item>
+            <el-form-item class="submit-item">
+              <el-button type="primary" size="large" :loading="loading" class="submit-btn" @click="handle2FaSubmit">
+                验证并登录
+              </el-button>
+            </el-form-item>
+            <div class="switch-mode">
+              <el-button link type="info" class="switch-btn" @click="isTwoFactorStep = false">
+                返回账号密码登录
+              </el-button>
+            </div>
+          </el-form>
+        </div>
+
+        <el-form v-else ref="formRef" :model="form" :rules="rules" label-position="top" class="login-form">
           <el-form-item :label="isRegister ? '用户名' : '用户名'" prop="username">
             <el-input v-model="form.username" placeholder="请输入用户名" prefix-icon="User" size="large" />
           </el-form-item>
@@ -90,6 +116,9 @@ const loading = ref(false)
 const isRegister = ref(false)
 
 const form = reactive({ username: '', password: '', confirmPassword: '' })
+const isTwoFactorStep = ref(false)
+const tempToken = ref('')
+const twoFactorCode = ref('')
 
 const validateConfirmPassword = (_rule: any, value: string, callback: any) => {
   if (isRegister.value && value !== form.password) {
@@ -126,6 +155,7 @@ const rules = {
 
 function toggleMode() {
   isRegister.value = !isRegister.value
+  isTwoFactorStep.value = false
   form.password = ''
   form.confirmPassword = ''
   formRef.value?.clearValidate()
@@ -140,17 +170,43 @@ async function handleSubmit() {
       if (isRegister.value) {
         await auth.register(form.username, form.password)
         ElMessage.success('注册成功，已自动登录')
+        await router.push('/dashboard')
       } else {
-        await auth.login(form.username, form.password)
+        const res = await auth.login(form.username, form.password)
+        if (res?.require_2fa) {
+          isTwoFactorStep.value = true
+          tempToken.value = res.temp_token || ''
+          twoFactorCode.value = ''
+          statusText.value = '2FA_CHALLENGE'
+          ElMessage.info('请输入两步验证码完成登录')
+          return
+        }
         ElMessage.success('登录成功')
+        await router.push('/dashboard')
       }
-      await router.push('/dashboard')
     } catch (e: any) {
       ElMessage.error(e?.response?.data?.message || (isRegister.value ? '注册失败' : '登录失败'))
     } finally {
       loading.value = false
     }
   })
+}
+
+async function handle2FaSubmit() {
+  if (!twoFactorCode.value.trim()) {
+    ElMessage.warning('请输入两步验证动态码或备用码')
+    return
+  }
+  loading.value = true
+  try {
+    await auth.verify2FaLogin(tempToken.value, twoFactorCode.value.trim())
+    ElMessage.success('两步验证通过，登录成功')
+    await router.push('/dashboard')
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.message || '两步验证码错误')
+  } finally {
+    loading.value = false
+  }
 }
 
 /* ---------- 科技感装饰: 状态指示灯 + 粒子网络 ---------- */
@@ -542,6 +598,14 @@ onBeforeUnmount(() => {
 }
 .switch-btn:hover {
   color: #22d3ee;
+}
+
+.two-factor-hint {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #94a3b8;
+  margin-bottom: 16px;
+  text-align: center;
 }
 
 /* 减少动态效果偏好 */

@@ -1,11 +1,14 @@
 -- Minefolio PostgreSQL 数据库初始化脚本
 
 CREATE TABLE IF NOT EXISTS users (
-    id            BIGSERIAL PRIMARY KEY,
-    username      TEXT UNIQUE NOT NULL,
-    password      TEXT NOT NULL,
-    token_version BIGINT NOT NULL DEFAULT 0,
-    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    id                BIGSERIAL PRIMARY KEY,
+    username          TEXT UNIQUE NOT NULL,
+    password          TEXT NOT NULL,
+    token_version     BIGINT NOT NULL DEFAULT 0,
+    totp_secret       TEXT DEFAULT '',
+    totp_enabled      BOOLEAN DEFAULT FALSE,
+    totp_backup_codes TEXT DEFAULT '',
+    created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS categories (

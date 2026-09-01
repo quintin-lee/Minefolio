@@ -46,7 +46,7 @@ rate_limit_auth_middleware(csilk_ctx_t* c)
 
     /* Only rate-limit auth-write endpoints */
     if (strcmp(path, "/api/auth/login") != 0 && strcmp(path, "/api/auth/register") != 0 &&
-        strcmp(path, "/api/system/setup") != 0) {
+        strcmp(path, "/api/system/setup") != 0 && strcmp(path, "/api/auth/2fa/verify-login") != 0) {
         csilk_next(c);
         return;
     }

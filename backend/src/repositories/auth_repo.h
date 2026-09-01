@@ -6,5 +6,9 @@ int64_t       user_insert(csilk_db_pool_t* pool, const char* username, const cha
 csilk_json_t* user_get_by_id(csilk_db_pool_t* pool, int64_t user_id);
 int user_update_password(csilk_db_pool_t* pool, int64_t user_id, const char* password_hash);
 int user_update_token_version(csilk_db_pool_t* pool, int64_t user_id);
+int user_set_totp_secret(csilk_db_pool_t* pool, int64_t user_id, const char* secret);
+int user_enable_totp(csilk_db_pool_t* pool, int64_t user_id, const char* backup_codes_json);
+int user_disable_totp(csilk_db_pool_t* pool, int64_t user_id);
+int user_update_backup_codes(csilk_db_pool_t* pool, int64_t user_id, const char* backup_codes_json);
 int user_count(csilk_db_pool_t* pool);
 int system_is_initialized(csilk_db_pool_t* pool);
