@@ -592,6 +592,39 @@ check "工作流 SSE 包含全部步骤 step_start" "yes" "$HAS_4_STEPS"
 WF_HAS_DONE=$(echo "$WF_RUN_RES" | grep -c "event: workflow_complete" || true)
 check "工作流 SSE 包含 workflow_complete 事件" "1" "$WF_HAS_DONE"
 
+# =========================================================================
+# Case 37: 工作流真实数据驱动验证 (wf_health_score / wf_emergency_fund / wf_bill_calendar)
+# =========================================================================
+echo ""
+echo "--- Case 37: AI 工作流真实数据提取与计算验证 ---"
+
+# 1. 运行财务健康分工作流
+WF_HS_RUN=$(curl -s -N -H "$AUTH" -H "Content-Type: application/json" \
+  -d '{"workflow_id":"wf_health_score"}' \
+  "$BASE/ai/workflows/run")
+
+WF_HS_HAS_DATA=$(echo "$WF_HS_RUN" | grep -c "健康分" || true)
+test "$WF_HS_HAS_DATA" -ge 1 && HS_PASS="1" || HS_PASS="0"
+check "财务健康分工作流提取真实数据并产出健康分" "1" "$HS_PASS"
+
+# 2. 运行应急备用金工作流
+WF_EF_RUN=$(curl -s -N -H "$AUTH" -H "Content-Type: application/json" \
+  -d '{"workflow_id":"wf_emergency_fund"}' \
+  "$BASE/ai/workflows/run")
+
+WF_EF_HAS_DATA=$(echo "$WF_EF_RUN" | grep -c "流动现金" || true)
+test "$WF_EF_HAS_DATA" -ge 1 && EF_PASS="1" || EF_PASS="0"
+check "应急备用金工作流提取真实流动现金与月均支出" "1" "$EF_PASS"
+
+# 3. 运行账单日历工作流
+WF_BC_RUN=$(curl -s -N -H "$AUTH" -H "Content-Type: application/json" \
+  -d '{"workflow_id":"wf_bill_calendar"}' \
+  "$BASE/ai/workflows/run")
+
+WF_BC_HAS_DATA=$(echo "$WF_BC_RUN" | grep -c "账单" || true)
+test "$WF_BC_HAS_DATA" -ge 1 && BC_PASS="1" || BC_PASS="0"
+check "账单日历工作流提取真实排期与负债账单" "1" "$BC_PASS"
+
 echo ""
 echo "结果: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

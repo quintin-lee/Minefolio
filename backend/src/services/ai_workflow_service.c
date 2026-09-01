@@ -99,6 +99,22 @@ get_user_avg_monthly_burn(csilk_db_pool_t* pool, int64_t user_id)
     return avg_burn;
 }
 
+/**
+ * @brief Unified helper to extract real monetary value of an asset.
+ */
+static double
+get_asset_val(const csilk_json_t* a)
+{
+    if (!a) {
+        return 0.0;
+    }
+    double v = db_get_num(a, "current_value");
+    if (v == 0.0) {
+        v = db_get_num(a, "balance");
+    }
+    return v;
+}
+
 /* ========================================================================= */
 /*  Workflow 1: Monthly Financial Review (月末财务深度复盘 - 真实数据驱动)  */
 /* ========================================================================= */
@@ -774,16 +790,13 @@ step_ed_stress_test(csilk_db_pool_t*    pool,
 
     double remaining_cash = liquid - target;
     double avg_monthly_burn = get_user_avg_monthly_burn(pool, user_id);
-    if (avg_monthly_burn <= 0.0) {
-        avg_monthly_burn = 3000.0;
-    }
-
-    double runway_months = (avg_monthly_burn > 0.0) ? (remaining_cash / avg_monthly_burn) : 0.0;
+    double runway_months = (avg_monthly_burn > 0.0) ? (remaining_cash / avg_monthly_burn)
+                                                    : (remaining_cash > 0.0 ? 12.0 : 0.0);
     if (remaining_cash < 0.0) {
         runway_months = 0.0;
     }
 
-    int is_safe = (remaining_cash >= 0.0 && runway_months >= 3.0);
+    int is_safe = (remaining_cash >= 0.0 && (avg_monthly_burn <= 0.0 || runway_months >= 3.0));
 
     csilk_json_t* res = csilk_json_object();
     csilk_json_add_number(res, "remaining_cash", remaining_cash);
@@ -810,7 +823,7 @@ step_ed_report(csilk_db_pool_t*    pool,
     double target = s0 ? db_get_num(s0, "target_amount") : 5000.0;
     double liquid = s0 ? db_get_num(s0, "liquid_cash") : 0.0;
     double remaining = s1 ? db_get_num(s1, "remaining_cash") : 0.0;
-    double monthly_burn = s1 ? db_get_num(s1, "avg_monthly_burn") : 3000.0;
+    double monthly_burn = s1 ? db_get_num(s1, "avg_monthly_burn") : 0.0;
     double runway = s1 ? db_get_num(s1, "runway_months") : 0.0;
     int    is_safe = s1 ? csilk_json_get_bool(s1, "is_safe") : 0;
 
@@ -823,6 +836,22 @@ step_ed_report(csilk_db_pool_t*    pool,
     double installment_12_fee = target * 0.075;
     double installment_12_monthly = (target + installment_12_fee) / 12.0;
 
+    char burn_str[256];
+    if (monthly_burn > 0.0) {
+        snprintf(burn_str,
+                 sizeof(burn_str),
+                 "- 📊 **历史月均刚性开销**：`￥%.2f / 月`\n"
+                 "- 🛡️ **支出后可维持保障时长**：`%.1f 个月`（安全边际底线：3.0 个月）\n",
+                 monthly_burn,
+                 runway);
+    } else {
+        snprintf(burn_str,
+                 sizeof(burn_str),
+                 "- 📊 **历史月均刚性开销**：`暂无历史支出记录`\n"
+                 "- 🛡️ **支出后资金状态**：`支出后剩余现金 ￥%.2f`\n",
+                 remaining);
+    }
+
     char buf[8192];
     snprintf(buf,
              sizeof(buf),
@@ -831,8 +860,7 @@ step_ed_report(csilk_db_pool_t*    pool,
              "#### 一、流动性压力测试（基于真实账户余额）\n"
              "- 🏦 **当前可用流动现金（现金+银行存款）**：`￥%.2f`\n"
              "- 📉 **支出后剩余备用金**：`%s￥%.2f`\n"
-             "- 📊 **历史月均刚性开销**：`￥%.2f / 月`\n"
-             "- 🛡️ **支出后可维持保障时长**：`%.1f 个月`（安全边际底线：3.0 个月）\n"
+             "%s"
              "- 🚦 **智能决策等级**：%s\n\n"
              "#### 二、支付方式成本量化对比\n"
              "| 支付方案 | 资金占用形式 | 息费成本 | 月均还款压力 | 综合建议 |\n"
@@ -858,8 +886,7 @@ step_ed_report(csilk_db_pool_t*    pool,
              liquid,
              (remaining >= 0.0 ? "" : "-"),
              fabs(remaining),
-             monthly_burn,
-             runway,
+             burn_str,
              remaining < 0.0 ? "🔴 **强烈不建议（超出当前可用流动资金）**"
                              : (is_safe ? "🟢 **建议执行（现金流与备用金充裕）**"
                                         : "🟡 **谨慎考虑（将明显削弱紧急备用金）**"),
@@ -926,12 +953,12 @@ step_payday_detect(csilk_db_pool_t*    pool,
         char uid_str[32];
         snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
         const char*   p[] = {uid_str, pat, NULL};
-        csilk_json_t* res =
-            csilk_db_query_param_json(pool,
-                                      "SELECT COALESCE(SUM(amount),0) as total, COUNT(*) as cnt "
-                                      "FROM transactions WHERE user_id=? AND transaction_type IN "
-                                      "('income','deposit','transfer_in') AND created_at LIKE ?",
-                                      p);
+        csilk_json_t* res = csilk_db_query_param_json(
+            pool,
+            "SELECT COALESCE(SUM(amount),0) as total, COUNT(*) as cnt "
+            "FROM transactions WHERE user_id=? AND transaction_type IN "
+            "('income','deposit','transfer_in') AND transaction_date LIKE ?",
+            p);
         if (res && csilk_json_array_size(res) > 0) {
             const csilk_json_t* row = csilk_json_array_get(res, 0);
             tx_inflows = db_get_num(row, "total");
@@ -1261,11 +1288,13 @@ step_bg_collect(csilk_db_pool_t*    pool,
             pool,
             "SELECT category_id, COALESCE(category_name,'未分类') as category_name, "
             "AVG(m_sum) as avg_amount FROM ("
-            "  SELECT category_id, category_name, substr(expense_date,1,7) as ym, "
-            "SUM(amount) as m_sum FROM daily_expenses "
+            "  SELECT daily_expenses.category_id, categories.name as category_name, "
+            "substr(daily_expenses.expense_date,1,7) as ym, SUM(daily_expenses.amount) as m_sum "
+            "FROM daily_expenses "
             "  LEFT JOIN categories ON categories.id = daily_expenses.category_id "
-            "  WHERE user_id=? AND expense_type='expense' AND expense_date NOT LIKE ? "
-            "  GROUP BY category_id, ym"
+            "  WHERE daily_expenses.user_id=? AND daily_expenses.expense_type='expense' AND "
+            "daily_expenses.expense_date NOT LIKE ? "
+            "  GROUP BY daily_expenses.category_id, ym"
             ") GROUP BY category_id",
             p);
         if (res && csilk_json_is_array(res)) {
@@ -1679,19 +1708,16 @@ step_ad_collect(csilk_db_pool_t*    pool,
             csilk_json_free(res);
         }
     }
-    /* recent transactions for midnight/high-freq (created_at LIKE) */
+    /* recent transactions for midnight/high-freq (transaction_date >= since_date) */
     csilk_json_t* tx_recent = csilk_json_array();
     {
         char uid_str[32];
         snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-        char pat[64];
-        snprintf(pat, sizeof(pat), "%s%%", since_date);
-        /* approximate: created_at >= since_date */
         const char*   p[] = {uid_str, since_date, NULL};
         csilk_json_t* res = csilk_db_query_param_json(
             pool,
-            "SELECT id, amount, transaction_type, note, created_at FROM transactions "
-            "WHERE user_id=? AND created_at >= ? ORDER BY created_at DESC LIMIT 500",
+            "SELECT id, amount, transaction_type, note, transaction_date FROM transactions "
+            "WHERE user_id=? AND transaction_date >= ? ORDER BY transaction_date DESC LIMIT 500",
             p);
         if (res && csilk_json_is_array(res)) {
             size_t n = csilk_json_array_size(res);
@@ -2580,7 +2606,7 @@ step_ef_collect(csilk_db_pool_t*    pool,
                 if (pid && pid[0] && strcmp(pid, "0") != 0) {
                     continue;
                 }
-                liquid_cash += db_get_num(it, "net_value");
+                liquid_cash += get_asset_val(it);
             }
         }
         if (arr) {
@@ -3792,7 +3818,7 @@ step_cf_collect(csilk_db_pool_t*    pool,
             }
             if (strcmp(tp, "cash") == 0 || strcmp(tp, "bank") == 0 ||
                 strcmp(tp, "other_asset") == 0) {
-                liquid += db_get_num(a, "balance");
+                liquid += get_asset_val(a);
             }
         }
         csilk_json_free(asset_arr);
@@ -4031,7 +4057,7 @@ step_cf_report(csilk_db_pool_t*    pool,
 }
 
 /* ------------------------------------------------------------------ */
-/*  Bill Calendar — helpers                                              */
+/*  Bill Calendar — 真实数据驱动 (排期/负债/固定支出)                     */
 /* ------------------------------------------------------------------ */
 
 static char*
@@ -4046,10 +4072,189 @@ step_bc_collect(csilk_db_pool_t*    pool,
         return strdup("{\"error\":\"db not ready\"}");
     }
 
-    (void)pool;
-    (void)user_id;
-    return strdup("{\"bills\":[],\"total_monthly_bill\":0,\"bill_count\":0,\"avg_burn\":3000,"
-                  "\"pressure_ratio\":0}");
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    const char* p_uid[] = {uid_str, NULL};
+
+    csilk_json_t* bills = csilk_json_array();
+    double        total_monthly_bill = 0.0;
+    int           bill_count = 0;
+
+    /* 1. Active Cashflow schedules */
+    {
+        csilk_json_t* res = csilk_db_query_param_json(
+            pool,
+            "SELECT id, name, expected_amount, flow_type, start_date, note "
+            "FROM cashflow_schedules WHERE user_id=? AND status='active'",
+            p_uid);
+        if (res && csilk_json_is_array(res)) {
+            size_t n = csilk_json_array_size(res);
+            for (size_t i = 0; i < n; i++) {
+                const csilk_json_t* r = csilk_json_array_get(res, i);
+                double              amt = db_get_num(r, "expected_amount");
+                if (amt <= 0.0) {
+                    continue;
+                }
+                const char* sdate = csilk_json_get_string(r, "start_date") ?: "";
+                int         due_day = 1;
+                int         y, m, d;
+                if (sscanf(sdate, "%d-%d-%d", &y, &m, &d) == 3 && d >= 1 && d <= 31) {
+                    due_day = d;
+                }
+                csilk_json_t* item = csilk_json_object();
+                csilk_json_add_number(item, "id", (double)db_get_int(r, "id"));
+                csilk_json_add_string(
+                    item, "name", csilk_json_get_string(r, "name") ?: "现金流排期");
+                csilk_json_add_number(item, "amount", amt);
+                csilk_json_add_string(item, "kind", "schedule");
+                csilk_json_add_string(
+                    item, "type", csilk_json_get_string(r, "flow_type") ?: "dividend");
+                csilk_json_add_number(item, "day", (double)due_day);
+                csilk_json_add_string(item, "note", csilk_json_get_string(r, "note") ?: "");
+                csilk_json_array_append(bills, item);
+                total_monthly_bill += amt;
+                bill_count++;
+            }
+        }
+        if (res) {
+            csilk_json_free(res);
+        }
+    }
+
+    /* 2. Liabilities (credit cards, loans) with positive debt balance */
+    {
+        int64_t       tot_assets = 0;
+        csilk_json_t* alist = asset_list(pool, user_id, 1, 100, NULL, &tot_assets);
+        if (alist && csilk_json_is_array(alist)) {
+            size_t n = csilk_json_array_size(alist);
+            for (size_t i = 0; i < n; i++) {
+                const csilk_json_t* a = csilk_json_array_get(alist, i);
+                const char*         atype = csilk_json_get_string(a, "asset_type") ?: "";
+                if (strcmp(atype, "loan") != 0 && strcmp(atype, "credit_card") != 0 &&
+                    strcmp(atype, "other_liability") != 0) {
+                    continue;
+                }
+                double bal = get_asset_val(a);
+                if (bal <= 0.0) {
+                    continue;
+                }
+
+                const char* aname = csilk_json_get_string(a, "name") ?: "负债账单";
+                const char* anote = csilk_json_get_string(a, "note") ?: "";
+                int         due_day = 10;
+                const char* p_day = strstr(anote, "日");
+                if (!p_day) {
+                    p_day = strstr(anote, "号");
+                }
+                if (p_day && p_day > anote) {
+                    int parsed_d = 0;
+                    if (sscanf(p_day - 2, "%d", &parsed_d) == 1 && parsed_d >= 1 &&
+                        parsed_d <= 31) {
+                        due_day = parsed_d;
+                    } else if (sscanf(p_day - 1, "%d", &parsed_d) == 1 && parsed_d >= 1 &&
+                               parsed_d <= 31) {
+                        due_day = parsed_d;
+                    }
+                }
+
+                csilk_json_t* item = csilk_json_object();
+                csilk_json_add_number(item, "id", (double)db_get_int(a, "id"));
+                csilk_json_add_string(item, "name", aname);
+                csilk_json_add_number(item, "amount", bal);
+                csilk_json_add_string(item, "kind", "liability");
+                csilk_json_add_string(item, "type", atype);
+                csilk_json_add_number(item, "day", (double)due_day);
+                csilk_json_add_string(item, "note", anote);
+                csilk_json_array_append(bills, item);
+                total_monthly_bill += bal;
+                bill_count++;
+            }
+        }
+        if (alist) {
+            csilk_json_free(alist);
+        }
+    }
+
+    /* 3. Recurring Monthly Expenses (past 90 days) */
+    {
+        time_t    now = time(NULL);
+        struct tm tm_buf;
+        localtime_r(&now, &tm_buf);
+        tm_buf.tm_mday -= 90;
+        mktime(&tm_buf);
+        char since_d[32];
+        snprintf(since_d,
+                 sizeof(since_d),
+                 "%04d-%02d-%02d",
+                 tm_buf.tm_year + 1900,
+                 tm_buf.tm_mon + 1,
+                 tm_buf.tm_mday);
+        const char* p_since[] = {uid_str, since_d, NULL};
+
+        csilk_json_t* res = csilk_db_query_param_json(
+            pool,
+            "SELECT de.category_id, COALESCE(c.name,'固定支出') as category_name, "
+            "de.amount, COUNT(*) as cnt, MAX(de.expense_date) as last_date, "
+            "GROUP_CONCAT(de.note, ' | ') as notes "
+            "FROM daily_expenses de LEFT JOIN categories c ON c.id=de.category_id "
+            "WHERE de.user_id=? AND de.expense_type='expense' AND de.expense_date >= ? "
+            "GROUP BY de.category_id, de.amount HAVING cnt >= 2 ORDER BY cnt DESC LIMIT 10",
+            p_since);
+        if (res && csilk_json_is_array(res)) {
+            size_t n = csilk_json_array_size(res);
+            for (size_t i = 0; i < n; i++) {
+                const csilk_json_t* r = csilk_json_array_get(res, i);
+                double              amt = db_get_num(r, "amount");
+                if (amt <= 0.0) {
+                    continue;
+                }
+                const char* last_d = csilk_json_get_string(r, "last_date") ?: "";
+                int         due_day = 1;
+                int         y, m, d;
+                if (sscanf(last_d, "%d-%d-%d", &y, &m, &d) == 3 && d >= 1 && d <= 31) {
+                    due_day = d;
+                }
+                const char* cname = csilk_json_get_string(r, "category_name") ?: "固定支出";
+                const char* notes = csilk_json_get_string(r, "notes") ?: "";
+                char        bill_title[128];
+                if (notes && notes[0] && strlen(notes) < 40) {
+                    snprintf(bill_title, sizeof(bill_title), "%s (%s)", cname, notes);
+                } else {
+                    snprintf(bill_title, sizeof(bill_title), "%s (月度固定)", cname);
+                }
+
+                csilk_json_t* item = csilk_json_object();
+                csilk_json_add_number(item, "id", (double)db_get_int(r, "category_id"));
+                csilk_json_add_string(item, "name", bill_title);
+                csilk_json_add_number(item, "amount", amt);
+                csilk_json_add_string(item, "kind", "recurring");
+                csilk_json_add_string(item, "type", "expense");
+                csilk_json_add_number(item, "day", (double)due_day);
+                csilk_json_add_string(item, "note", notes);
+                csilk_json_array_append(bills, item);
+                total_monthly_bill += amt;
+                bill_count++;
+            }
+        }
+        if (res) {
+            csilk_json_free(res);
+        }
+    }
+
+    double avg_burn = get_user_avg_monthly_burn(pool, user_id);
+    double pressure_ratio = (avg_burn > 0.0) ? (total_monthly_bill / avg_burn) * 100.0 : 0.0;
+
+    csilk_json_t* out = csilk_json_object();
+    csilk_json_add_array(out, "bills", bills);
+    csilk_json_add_number(out, "total_monthly_bill", total_monthly_bill);
+    csilk_json_add_number(out, "bill_count", (double)bill_count);
+    csilk_json_add_number(out, "avg_burn", avg_burn);
+    csilk_json_add_number(out, "pressure_ratio", pressure_ratio);
+
+    size_t slen = 0;
+    char*  s = csilk_json_serialize(out, &slen);
+    csilk_json_free(out);
+    return s ? s : strdup("{}");
 }
 
 static char*
@@ -4066,18 +4271,15 @@ step_bc_calendar(csilk_db_pool_t*    pool,
         ctx = csilk_json_parse(ctx_json);
     }
     csilk_json_t* bills = NULL;
-    csilk_json_t* src = NULL;
     if (ctx) {
         csilk_json_t* prev = csilk_json_get(ctx, "bc_collect");
         if (prev) {
             bills = csilk_json_get(prev, "bills");
-            src = prev;
         }
     }
-    double daily[32] = {0};
-    /* Use hash distribution: day = (hash(name) % 30)+1 */
+    double        daily[32] = {0};
     csilk_json_t* calendar = csilk_json_array();
-    if (bills) {
+    if (bills && csilk_json_is_array(bills)) {
         size_t n = csilk_json_array_size(bills);
         for (size_t i = 0; i < n; i++) {
             csilk_json_t* b = csilk_json_array_get(bills, (int)i);
@@ -4086,13 +4288,13 @@ step_bc_calendar(csilk_db_pool_t*    pool,
             }
             const char* name = csilk_json_get_string(b, "name");
             double      amt = db_get_num(b, "amount");
-            unsigned    h = 0;
-            if (name) {
-                for (const char* p = name; *p; p++) {
-                    h = h * 31 + (unsigned char)*p;
-                }
+            int         day = (int)db_get_num(b, "day");
+            if (day < 1) {
+                day = 1;
             }
-            int day = (int)(h % 30) + 1;
+            if (day > 30) {
+                day = 30;
+            }
             daily[day] += amt;
 
             csilk_json_t* ent = csilk_json_object();
@@ -4110,22 +4312,18 @@ step_bc_calendar(csilk_db_pool_t*    pool,
             csilk_json_array_append(calendar, ent);
         }
     }
-    (void)src;
 
-    /* detect pressure days: daily > 2000 or > 30% avg_burn */
-    double avg_burn = 1;
+    /* detect pressure days */
+    double avg_burn = 0.0;
     if (ctx) {
         csilk_json_t* prev = csilk_json_get(ctx, "bc_collect");
         if (prev) {
             avg_burn = db_get_num(prev, "avg_burn");
         }
     }
-    if (avg_burn < 1) {
-        avg_burn = 1;
-    }
-    double threshold = avg_burn * 0.3;
-    if (threshold < 1500) {
-        threshold = 1500;
+    double threshold = (avg_burn > 0.0) ? (avg_burn * 0.3) : 1500.0;
+    if (threshold < 1000.0) {
+        threshold = 1000.0;
     }
 
     int    pressure_days = 0;
@@ -4191,66 +4389,52 @@ step_bc_report(csilk_db_pool_t*    pool,
     double max_day_amt = cal ? db_get_num(cal, "max_day_amount") : 0;
 
     /* xychart for 30 days */
-    csilk_json_t* daily = cal ? csilk_json_get(cal, "daily_totals") : NULL;
-    char          xychart[8192] = {0};
-    char          cats[4096] = {0};
-    char          vals[4096] = {0};
-    if (daily) {
-        size_t n = csilk_json_array_size(daily);
-        for (size_t i = 0; i < n && i < 30; i++) {
-            char tmp[32];
-            snprintf(tmp, sizeof(tmp), "\"%zu日\"", i + 1);
-            strcat(cats, tmp);
-            if (i + 1 < n) {
-                strcat(cats, ",");
-            }
-            csilk_json_t* v = csilk_json_array_get(daily, (int)i);
-            double        amt = 0;
-            if (v) {
-                if (csilk_json_is_number(v)) {
-                    amt = csilk_json_number_value(v);
-                } else if (csilk_json_is_string(v)) {
-                    const char* s = csilk_json_string_value(v);
-                    amt = s ? atof(s) : 0;
-                } else {
-                    amt = db_get_num(v, "");
+    char xychart[8192] = {0};
+    if (bill_cnt > 0 && max_day_amt > 0) {
+        csilk_json_t* daily = cal ? csilk_json_get(cal, "daily_totals") : NULL;
+        char          cats[4096] = {0};
+        char          vals[4096] = {0};
+        if (daily) {
+            size_t n = csilk_json_array_size(daily);
+            for (size_t i = 0; i < n && i < 30; i++) {
+                char tmp[32];
+                snprintf(tmp, sizeof(tmp), "\"%zu日\"", i + 1);
+                strcat(cats, tmp);
+                if (i + 1 < n && i + 1 < 30) {
+                    strcat(cats, ",");
+                }
+                csilk_json_t* v = csilk_json_array_get(daily, (int)i);
+                double        amt = db_get_num(v, "");
+                snprintf(tmp, sizeof(tmp), "%.0f", amt);
+                strcat(vals, tmp);
+                if (i + 1 < n && i + 1 < 30) {
+                    strcat(vals, ",");
                 }
             }
-            snprintf(tmp, sizeof(tmp), "%.0f", amt);
-            strcat(vals, tmp);
-            if (i + 1 < n) {
-                strcat(vals, ",");
-            }
         }
-    }
-    /* Fallback for csilk numeric array: above direct parse may fail, so re-serialize */
-    if (cats[0] == '\0' && daily) {
-        /* fallback: iterate via serialized string hack */
+        snprintf(xychart,
+                 sizeof(xychart),
+                 "```mermaid\n"
+                 "xychart-beta\n"
+                 "    title \"未来30日账单压力分布\"\n"
+                 "    x-axis [%s]\n"
+                 "    y-axis \"金额(￥)\" 0 --> %.0f\n"
+                 "    bar [%s]\n"
+                 "```\n",
+                 cats[0] ? cats : "\"1日\",\"30日\"",
+                 max_day_amt > 0 ? max_day_amt * 1.2 : 2000,
+                 vals[0] ? vals : "0,0");
+    } else {
         snprintf(
-            cats, sizeof(cats), "\"1日\",\"5日\",\"10日\",\"15日\",\"20日\",\"25日\",\"30日\"");
-        snprintf(vals, sizeof(vals), "0,0,0,0,0,0,0");
+            xychart, sizeof(xychart), "> 💡 **提示**：当前尚未录入周期性账单或待还款负债。\n\n");
     }
-    snprintf(xychart,
-             sizeof(xychart),
-             "```mermaid\n"
-             "xychart-beta\n"
-             "    title \"未来30日账单压力分布\"\n"
-             "    x-axis [%s]\n"
-             "    y-axis \"金额(￥)\" 0 --> %.0f\n"
-             "    bar [%s]\n"
-             "```\n",
-             cats[0] ? cats : "\"1日\",\"30日\"",
-             max_day_amt > 0 ? max_day_amt * 1.2 : 2000,
-             vals[0] ? vals : "0,0");
 
     /* Build calendar table sorted by day */
     char rows[8192] = {0};
     if (cal) {
         csilk_json_t* cal_arr = csilk_json_get(cal, "calendar");
-        if (cal_arr) {
-            /* simple: iterate and emit row per entry */
+        if (cal_arr && csilk_json_is_array(cal_arr)) {
             size_t n = csilk_json_array_size(cal_arr);
-            /* bucket by day for grouped display */
             for (size_t i = 0; i < n; i++) {
                 csilk_json_t* e = csilk_json_array_get(cal_arr, (int)i);
                 if (!e) {
@@ -4261,15 +4445,18 @@ step_bc_report(csilk_db_pool_t*    pool,
                 int         day = (int)db_get_num(e, "day");
                 double      amt = db_get_num(e, "amount");
                 const char* kind_label = "其他";
-                if (kind && strcmp(kind, "debt") == 0) {
-                    kind_label = "负债";
-                } else if (kind && strcmp(kind, "subscription") == 0) {
-                    kind_label = "订阅";
+                if (kind && (strcmp(kind, "debt") == 0 || strcmp(kind, "liability") == 0)) {
+                    kind_label = "负债/信用卡";
+                } else if (kind &&
+                           (strcmp(kind, "subscription") == 0 || strcmp(kind, "recurring") == 0)) {
+                    kind_label = "固定/订阅";
+                } else if (kind && strcmp(kind, "schedule") == 0) {
+                    kind_label = "现金流排期";
                 }
                 char line[512];
                 snprintf(line,
                          sizeof(line),
-                         "| %02d日 | %s | %s | ￥%.0f |\n",
+                         "| %02d日 | %s | %s | ￥%.2f |\n",
                          day,
                          name ? name : "-",
                          kind_label,
@@ -4281,7 +4468,7 @@ step_bc_report(csilk_db_pool_t*    pool,
         }
     }
     if (rows[0] == '\0') {
-        snprintf(rows, sizeof(rows), "| - | 暂无账单 | - | - |\n");
+        snprintf(rows, sizeof(rows), "| - | 暂无待还账单 | - | - |\n");
     }
 
     const char* risk = "低";
@@ -4292,7 +4479,9 @@ step_bc_report(csilk_db_pool_t*    pool,
     }
 
     char advice[512];
-    if (pressure_days >= 3) {
+    if (bill_cnt == 0) {
+        snprintf(advice, sizeof(advice), "当前无待缴账单，保持良好的无负债或按时还款状态");
+    } else if (pressure_days >= 3) {
         snprintf(advice,
                  sizeof(advice),
                  "未来30日有 %d 个高压日，建议将部分账单错峰至空档日",
@@ -4300,28 +4489,35 @@ step_bc_report(csilk_db_pool_t*    pool,
     } else if (pressure_days >= 1) {
         snprintf(advice,
                  sizeof(advice),
-                 "最高压日为 %02d日（￥%.0f），建议提前预留资金",
+                 "最高压日为 %02d日（￥%.2f），建议提前预留资金",
                  max_day,
                  max_day_amt);
     } else {
         snprintf(advice, sizeof(advice), "账单分布较均衡，无明显高压日");
     }
 
+    char peak_str[128];
+    if (bill_cnt > 0 && max_day_amt > 0) {
+        snprintf(peak_str, sizeof(peak_str), "%02d日 ￥%.2f", max_day, max_day_amt);
+    } else {
+        snprintf(peak_str, sizeof(peak_str), "暂无高压日");
+    }
+
     char buf[16384];
     snprintf(buf,
              sizeof(buf),
              "### 📅 未来30日账单日历\n\n"
-             "**账单总数** `%d` 笔 ｜ **月账单总额** `￥%.0f` ｜ **月均支出** `￥%.0f` ｜ "
+             "**账单总数** `%d` 笔 ｜ **月账单总额** `￥%.2f` ｜ **月均支出** `￥%.2f` ｜ "
              "**账单/支出比** `%.0f%%` ｜ **高压日** `%d` 天 ｜ **风险** `%s`\n\n"
              "%s\n"
              "| 日期 | 账单 | 类型 | 金额 |\n"
              "| :--- | :--- | :--- | :--- |\n"
              "%s\n"
-             "**最高压日**：`%02d日 ￥%.0f`\n\n"
+             "**最高压日**：%s\n\n"
              "#### 建议\n"
              "1. %s；\n"
-             "2. 建议在高压日前 3 日确保活期余额充足；\n"
-             "3. 可将订阅类账单统一改至发薪日后 2 日内自动扣款。\n"
+             "2. 建议在账单日前 3 日确保活期资金充裕；\n"
+             "3. 可将订阅或固定类账单统一调整至发薪日后 2 日内自动扣款。\n\n"
              "```action\n"
              "{\n"
              "  \"action_type\": \"bill_calendar\",\n"
@@ -4338,12 +4534,12 @@ step_bc_report(csilk_db_pool_t*    pool,
              risk,
              xychart,
              rows,
-             max_day,
-             max_day_amt,
+             peak_str,
              advice,
              total_bill,
              pressure_days,
              risk);
+
     if (ctx) {
         csilk_json_free(ctx);
     }
@@ -4363,76 +4559,62 @@ step_hs_collect(csilk_db_pool_t*    pool,
 {
     (void)params;
     (void)ctx_json;
-    double liquid = 0;
-    {
-        int64_t       tot = 0;
-        csilk_json_t* arr = asset_list(pool, user_id, 1, 100, NULL, &tot);
-        if (arr) {
-            csilk_json_t* d = csilk_json_get(arr, "data");
-            size_t        n = d ? csilk_json_array_size(d) : 0;
-            for (size_t i = 0; i < n; i++) {
-                csilk_json_t* a = csilk_json_array_get(d, (int)i);
-                if (!a) {
-                    continue;
-                }
-                const char* typ = csilk_json_get_string(a, "asset_type");
-                int64_t     pid = (int64_t)db_get_num(a, "parent_id");
-                if (pid != 0) {
-                    continue;
-                }
-                if (typ && (strcmp(typ, "cash") == 0 || strcmp(typ, "bank") == 0 ||
-                            strcmp(typ, "other_asset") == 0)) {
-                    liquid += db_get_num(a, "net_value");
-                    if (db_get_num(a, "net_value") == 0) {
-                        liquid += db_get_num(a, "balance");
-                    }
+    if (!pool) {
+        return strdup("{\"error\":\"db not ready\"}");
+    }
+
+    double liquid = 0.0;
+    double total_assets = 0.0, total_debt = 0.0;
+
+    int64_t       tot = 0;
+    csilk_json_t* arr = asset_list(pool, user_id, 1, 200, NULL, &tot);
+    if (arr && csilk_json_is_array(arr)) {
+        size_t n = csilk_json_array_size(arr);
+        for (size_t i = 0; i < n; i++) {
+            const csilk_json_t* a = csilk_json_array_get(arr, (int)i);
+            if (!a) {
+                continue;
+            }
+            const char* typ = csilk_json_get_string(a, "asset_type") ?: "";
+            int64_t     pid = (int64_t)db_get_num(a, "parent_id");
+            if (pid != 0) {
+                continue;
+            }
+            double v = get_asset_val(a);
+            if (v < 0) {
+                v = -v;
+            }
+
+            int is_liab = (strcmp(typ, "loan") == 0 || strcmp(typ, "credit_card") == 0 ||
+                           strcmp(typ, "other_liability") == 0);
+            if (is_liab) {
+                total_debt += v;
+            } else {
+                total_assets += v;
+                if (strcmp(typ, "cash") == 0 || strcmp(typ, "bank") == 0 ||
+                    strcmp(typ, "other_asset") == 0) {
+                    liquid += v;
                 }
             }
-            csilk_json_free(arr);
         }
     }
-    double total_assets = 0, total_debt = 0;
-    {
-        int64_t       tot2 = 0;
-        csilk_json_t* arr = asset_list(pool, user_id, 1, 200, NULL, &tot2);
-        if (arr) {
-            csilk_json_t* d = csilk_json_get(arr, "data");
-            size_t        n = d ? csilk_json_array_size(d) : 0;
-            for (size_t i = 0; i < n; i++) {
-                csilk_json_t* a = csilk_json_array_get(d, (int)i);
-                if (!a) {
-                    continue;
-                }
-                double v = db_get_num(a, "net_value");
-                if (v == 0) {
-                    v = db_get_num(a, "balance");
-                }
-                if (v < 0) {
-                    v = -v;
-                }
-                const char* typ = csilk_json_get_string(a, "asset_type");
-                int is_liab = typ && (strcmp(typ, "loan") == 0 || strcmp(typ, "credit_card") == 0 ||
-                                      strcmp(typ, "other_liability") == 0);
-                if (is_liab) {
-                    total_debt += v;
-                } else {
-                    total_assets += v;
-                }
-            }
-            csilk_json_free(arr);
-        }
+    if (arr) {
+        csilk_json_free(arr);
     }
+
     double avg_burn = get_user_avg_monthly_burn(pool, user_id);
-    double avg_income = 0;
+    double avg_income = 0.0;
     {
         char uid2[32];
         snprintf(uid2, sizeof(uid2), "%lld", (long long)user_id);
         const char*   params2[] = {uid2, NULL};
         csilk_json_t* rows = csilk_db_query_param_json(
             pool,
-            "SELECT AVG(mv) as avg_income FROM (SELECT substr(expense_date,1,7) as ym, "
-            "SUM(amount) as mv FROM daily_expenses WHERE user_id=? AND amount>0 "
-            "GROUP BY ym) t",
+            "SELECT AVG(mv) as avg_income FROM ("
+            "  SELECT substr(expense_date,1,7) as ym, SUM(amount) as mv "
+            "  FROM daily_expenses WHERE user_id=? AND expense_type='income' AND amount>0 "
+            "  GROUP BY ym"
+            ") t",
             params2);
         if (rows && csilk_json_array_size(rows) > 0) {
             avg_income = db_get_num(csilk_json_array_get(rows, 0), "avg_income");
@@ -4441,12 +4623,17 @@ step_hs_collect(csilk_db_pool_t*    pool,
             csilk_json_free(rows);
         }
     }
-    double savings_rate = 0;
-    if (avg_income > 0) {
+    double savings_rate = 0.0;
+    if (avg_income > 0.0) {
         savings_rate = (avg_income - avg_burn) / avg_income * 100.0;
+        if (savings_rate < 0.0) {
+            savings_rate = 0.0;
+        }
     }
-    double emergency_months = avg_burn > 1 ? liquid / avg_burn : 0;
-    double debt_ratio = total_assets > 1 ? total_debt / (total_assets + total_debt) * 100.0 : 0;
+    double emergency_months = (avg_burn > 0.0) ? (liquid / avg_burn) : (liquid > 0.0 ? 12.0 : 0.0);
+    double debt_ratio = (total_assets + total_debt) > 0.0
+                            ? (total_debt / (total_assets + total_debt) * 100.0)
+                            : 0.0;
 
     csilk_json_t* out = csilk_json_object();
     csilk_json_add_number(out, "liquid_cash", liquid);
