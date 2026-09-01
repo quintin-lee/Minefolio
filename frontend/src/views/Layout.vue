@@ -8,6 +8,7 @@
         <span v-show="!isCollapsed" class="logo-text">Minefolio</span>
       </div>
       <el-menu :default-active="activeMenu" class="sidebar-menu" :collapse="isCollapsed" :collapse-transition="false">
+        <div v-show="!isCollapsed" class="nav-group-label">资产全景</div>
         <el-menu-item index="/dashboard" @click="goTo('/dashboard')">
           <Icon icon="ph:chart-line" class="nav-icon" />
           <span>{{ t('nav.dashboard') }}</span>
@@ -20,6 +21,12 @@
           <Icon icon="ph:chart-bar" class="nav-icon" />
           <span>{{ t('nav.holdings') }}</span>
         </el-menu-item>
+        <el-menu-item index="/reports" @click="goTo('/reports')">
+          <Icon icon="ph:chart-pie" class="nav-icon" />
+          <span>{{ t('nav.reports') }}</span>
+        </el-menu-item>
+
+        <div v-show="!isCollapsed" class="nav-group-label">收支管理</div>
         <el-menu-item index="/transactions" @click="goTo('/transactions')">
           <Icon icon="ph:list" class="nav-icon" />
           <span>{{ t('nav.transactions') }}</span>
@@ -36,14 +43,8 @@
           <Icon icon="ph:folder" class="nav-icon" />
           <span>{{ t('nav.categories') }}</span>
         </el-menu-item>
-        <el-menu-item index="/reports" @click="goTo('/reports')">
-          <Icon icon="ph:chart-pie" class="nav-icon" />
-          <span>{{ t('nav.reports') }}</span>
-        </el-menu-item>
-        <el-menu-item index="/audit-logs" @click="goTo('/audit-logs')">
-          <Icon icon="ph:scroll" class="nav-icon" />
-          <span>{{ t('nav.auditLogs') }}</span>
-        </el-menu-item>
+
+        <div v-show="!isCollapsed" class="nav-group-label">AI 智能空间</div>
         <el-menu-item index="/chat" @click="goTo('/chat')">
           <Icon icon="ph:chat-circle-text" class="nav-icon" />
           <span>{{ t('nav.aiChat') }}</span>
@@ -51,6 +52,12 @@
         <el-menu-item index="/ai-traces" @click="goTo('/ai-traces')">
           <Icon icon="ph:scan" class="nav-icon" />
           <span>{{ t('nav.aiTraces') }}</span>
+        </el-menu-item>
+
+        <div v-show="!isCollapsed" class="nav-group-label">系统管理</div>
+        <el-menu-item index="/audit-logs" @click="goTo('/audit-logs')">
+          <Icon icon="ph:scroll" class="nav-icon" />
+          <span>{{ t('nav.auditLogs') }}</span>
         </el-menu-item>
         <el-menu-item index="/settings" @click="goTo('/settings')">
           <Icon icon="ph:gear" class="nav-icon" />
@@ -73,6 +80,12 @@
           <h2 class="page-title">{{ pageTitle }}</h2>
         </div>
         <div class="header-right">
+          <el-tooltip content="快捷记账 (按快捷键 N)" placement="bottom" :show-after="300">
+            <el-button type="primary" size="small" class="quick-add-btn" @click="quickRecordVisible = true">
+              <Icon icon="ph:plus-bold" class="btn-icon" />
+              <span>记账</span>
+            </el-button>
+          </el-tooltip>
           <LedgerSelector />
           <ThemeToggle />
           <el-dropdown @command="handleCommand" trigger="click">
@@ -107,6 +120,9 @@
         </router-view>
       </el-main>
     </el-container>
+
+    <!-- 全局快捷记账弹窗 -->
+    <QuickRecordDialog v-model="quickRecordVisible" />
   </el-container>
 </template>
 
@@ -120,6 +136,7 @@ import { useAuthStore } from '@/stores/auth'
 import { zhCN } from '@/locales/zh-CN'
 import LedgerSelector from '@/components/LedgerSelector.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
+import QuickRecordDialog from '@/components/QuickRecordDialog.vue'
 
 const t = (key: string) => {
   const keys = key.split('.')
@@ -135,6 +152,7 @@ const auth = useAuthStore()
 const activeMenu = computed(() => route.path)
 const mobileMenuOpen = ref(false)
 const isCollapsed = ref(localStorage.getItem('sidebar_collapsed') === 'true')
+const quickRecordVisible = ref(false)
 
 function toggleCollapse() {
   isCollapsed.value = !isCollapsed.value
@@ -155,13 +173,26 @@ function handleLedgerChanged() {
   })
 }
 
+function handleKeydown(e: KeyboardEvent) {
+  if (e.key === 'n' || e.key === 'N') {
+    const target = e.target as HTMLElement
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+      return
+    }
+    e.preventDefault()
+    quickRecordVisible.value = true
+  }
+}
+
 onMounted(() => {
   window.addEventListener('resize', handleResize)
+  window.addEventListener('keydown', handleKeydown)
   window.addEventListener('minefolio:ledger-changed', handleLedgerChanged)
   handleResize()
 })
 onBeforeUnmount(() => {
   window.removeEventListener('resize', handleResize)
+  window.removeEventListener('keydown', handleKeydown)
   window.removeEventListener('minefolio:ledger-changed', handleLedgerChanged)
 })
 
@@ -253,20 +284,29 @@ function handleCommand(cmd: string) {
 .sidebar-menu {
   border-right: none;
   background: transparent;
-  padding: 16px 10px;
+  padding: 12px 8px;
   flex: 1;
+}
+.nav-group-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--mf-text-placeholder);
+  padding: 14px 12px 6px;
+  user-select: none;
 }
 .sidebar-menu :deep(.el-menu-item) {
   color: var(--mf-text-muted);
   border-radius: var(--mf-radius-md);
-  margin-bottom: 4px;
-  height: 46px;
-  line-height: 46px;
+  margin-bottom: 3px;
+  height: 42px;
+  line-height: 42px;
   font-weight: 500;
   transition: var(--mf-transition);
 }
 .sidebar-menu :deep(.el-menu-item .el-icon) {
-  font-size: 19px;
+  font-size: 18px;
   margin-right: 10px;
 }
 .sidebar-menu :deep(.nav-icon) {
@@ -343,6 +383,18 @@ function handleCommand(cmd: string) {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+.quick-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 500;
+  border-radius: var(--mf-radius-md);
+  padding: 0 12px;
+  height: 34px;
+}
+.quick-add-btn .btn-icon {
+  font-size: 14px;
 }
 .collapse-btn {
   display: flex;
