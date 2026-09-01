@@ -2,6 +2,7 @@
 #include "common/ctx.h"
 #include "common/db.h"
 #include "common/jwt.h"
+#include "services/market/exchange_rate_service.h"
 #include "csilk/csilk.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -51,42 +52,75 @@ summary_get(csilk_ctx_t* c)
     // Category breakdown (asset categories only; liabilities excluded from pie)
     csilk_json_t* rows = csilk_db_query_param_json(
         pool,
-        "SELECT c.name as category_name, SUM(a.current_value) as value "
+        "SELECT c.name as category_name, a.current_value as value, a.currency as currency "
         "FROM assets a JOIN categories c ON a.category_id=c.id "
-        "WHERE a.user_id=? AND c.asset_type NOT IN ('loan','credit_card','other_liability') "
-        "GROUP BY c.name ORDER BY value DESC",
+        "WHERE a.user_id=? AND c.asset_type NOT IN ('loan','credit_card','other_liability')",
         params1);
     if (!rows) {
         respond_error(c, 500, "查询失败");
         return;
     }
-    double total_assets = 0, total_liabilities = 0;
-    size_t n = csilk_json_array_size(rows);
+
+    typedef struct {
+        char   name[128];
+        double value;
+    } cat_item_t;
+
+    cat_item_t cat_arr[128];
+    int        cat_count = 0;
+    double     total_assets = 0, total_liabilities = 0;
+    size_t     n = csilk_json_array_size(rows);
+
     for (size_t i = 0; i < n; i++) {
         csilk_json_t* row = csilk_json_array_get(rows, i);
-        total_assets += db_get_num(row, "value");
-    }
-    csilk_json_t* breakdown = csilk_json_array();
-    for (size_t i = 0; i < n; i++) {
-        csilk_json_t* row = csilk_json_array_get(rows, i);
-        double        v = db_get_num(row, "value");
-        csilk_json_t* item = csilk_json_object();
-        csilk_json_add_string(item, "category_name", csilk_json_get_string(row, "category_name"));
-        csilk_json_add_number(item, "value", v);
-        csilk_json_add_number(item, "pct", total_assets > 0 ? (v / total_assets * 100) : 0);
-        csilk_json_array_append(breakdown, item);
+        const char*   cat_name = csilk_json_get_string(row, "category_name");
+        const char*   cur = csilk_json_get_string(row, "currency");
+        double        v = db_get_num(row, "value") * exchange_rate_get_to_cny(cur);
+        total_assets += v;
+        if (cat_name) {
+            int found = -1;
+            for (int k = 0; k < cat_count; k++) {
+                if (strcmp(cat_arr[k].name, cat_name) == 0) {
+                    found = k;
+                    break;
+                }
+            }
+            if (found >= 0) {
+                cat_arr[found].value += v;
+            } else if (cat_count < 128) {
+                strncpy(cat_arr[cat_count].name, cat_name, sizeof(cat_arr[0].name) - 1);
+                cat_arr[cat_count].name[sizeof(cat_arr[0].name) - 1] = '\0';
+                cat_arr[cat_count].value = v;
+                cat_count++;
+            }
+        }
     }
     csilk_json_free(rows);
+
+    csilk_json_t* breakdown = csilk_json_array();
+    for (int i = 0; i < cat_count; i++) {
+        csilk_json_t* item = csilk_json_object();
+        csilk_json_add_string(item, "category_name", cat_arr[i].name);
+        csilk_json_add_number(item, "value", cat_arr[i].value);
+        csilk_json_add_number(
+            item, "pct", total_assets > 0 ? (cat_arr[i].value / total_assets * 100) : 0);
+        csilk_json_array_append(breakdown, item);
+    }
 
     // Total liabilities for net worth
     csilk_json_t* liab_rows = csilk_db_query_param_json(
         pool,
-        "SELECT COALESCE(SUM(a.current_value),0) as total "
+        "SELECT a.current_value as value, a.currency as currency "
         "FROM assets a JOIN categories c ON a.category_id=c.id "
         "WHERE a.user_id=? AND c.asset_type IN ('loan','credit_card','other_liability')",
         params1);
-    if (liab_rows && csilk_json_array_size(liab_rows) > 0) {
-        total_liabilities = db_get_num(csilk_json_array_get(liab_rows, 0), "total");
+    if (liab_rows) {
+        size_t ln = csilk_json_array_size(liab_rows);
+        for (size_t i = 0; i < ln; i++) {
+            csilk_json_t* lrow = csilk_json_array_get(liab_rows, i);
+            const char*   lcur = csilk_json_get_string(lrow, "currency");
+            total_liabilities += db_get_num(lrow, "value") * exchange_rate_get_to_cny(lcur);
+        }
         csilk_json_free(liab_rows);
     }
 

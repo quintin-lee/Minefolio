@@ -2,6 +2,7 @@
 #include "common/ctx.h"
 #include "common/db.h"
 #include "common/jwt.h"
+#include "services/market/exchange_rate_service.h"
 #include "csilk/csilk.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -111,60 +112,109 @@ report_asset_breakdown(csilk_ctx_t* c)
 
     csilk_json_t* assets = csilk_db_query_param_json(
         pool,
-        "SELECT c.name as name, SUM(a.current_value) as value "
+        "SELECT c.name as name, a.current_value as value, a.currency as currency "
         "FROM assets a JOIN categories c ON a.category_id=c.id "
-        "WHERE a.user_id=? AND c.asset_type NOT IN ('loan','credit_card','other_liability') "
-        "GROUP BY c.name ORDER BY value DESC",
+        "WHERE a.user_id=? AND c.asset_type NOT IN ('loan','credit_card','other_liability')",
         params);
     csilk_json_t* liabs = csilk_db_query_param_json(
         pool,
-        "SELECT c.name as name, SUM(a.current_value) as value "
+        "SELECT c.name as name, a.current_value as value, a.currency as currency "
         "FROM assets a JOIN categories c ON a.category_id=c.id "
-        "WHERE a.user_id=? AND c.asset_type IN ('loan','credit_card','other_liability') "
-        "GROUP BY c.name ORDER BY value DESC",
+        "WHERE a.user_id=? AND c.asset_type IN ('loan','credit_card','other_liability')",
         params);
-    double total_assets = 0, total_liabs = 0;
-    if (assets) {
-        size_t n = csilk_json_array_size(assets);
-        for (size_t i = 0; i < n; i++) {
-            total_assets += db_get_num(csilk_json_array_get(assets, i), "value");
-        }
-    }
-    if (liabs) {
-        size_t n = csilk_json_array_size(liabs);
-        for (size_t i = 0; i < n; i++) {
-            total_liabs += db_get_num(csilk_json_array_get(liabs, i), "value");
-        }
-    }
-    csilk_json_t* resp = csilk_json_object();
-    csilk_json_t* asset_items = csilk_json_array();
+
+    typedef struct {
+        char   name[128];
+        double value;
+    } cat_acc_t;
+
+    cat_acc_t asset_cats[128];
+    int       asset_cats_count = 0;
+    double    total_assets = 0;
+
     if (assets) {
         size_t n = csilk_json_array_size(assets);
         for (size_t i = 0; i < n; i++) {
             csilk_json_t* row = csilk_json_array_get(assets, i);
-            double        v = db_get_num(row, "value");
-            csilk_json_t* item = csilk_json_object();
-            csilk_json_add_string(item, "name", csilk_json_get_string(row, "name"));
-            csilk_json_add_number(item, "value", v);
-            csilk_json_add_number(item, "pct", total_assets > 0 ? (v / total_assets * 100) : 0);
-            csilk_json_array_append(asset_items, item);
+            const char*   name = csilk_json_get_string(row, "name");
+            const char*   cur = csilk_json_get_string(row, "currency");
+            double        v = db_get_num(row, "value") * exchange_rate_get_to_cny(cur);
+            total_assets += v;
+            if (name) {
+                int found = -1;
+                for (int k = 0; k < asset_cats_count; k++) {
+                    if (strcmp(asset_cats[k].name, name) == 0) {
+                        found = k;
+                        break;
+                    }
+                }
+                if (found >= 0) {
+                    asset_cats[found].value += v;
+                } else if (asset_cats_count < 128) {
+                    strncpy(
+                        asset_cats[asset_cats_count].name, name, sizeof(asset_cats[0].name) - 1);
+                    asset_cats[asset_cats_count].name[sizeof(asset_cats[0].name) - 1] = '\0';
+                    asset_cats[asset_cats_count].value = v;
+                    asset_cats_count++;
+                }
+            }
         }
         csilk_json_free(assets);
     }
-    csilk_json_add_array(resp, "assets", asset_items);
-    csilk_json_t* liab_items = csilk_json_array();
+
+    cat_acc_t liab_cats[128];
+    int       liab_cats_count = 0;
+    double    total_liabs = 0;
+
     if (liabs) {
         size_t n = csilk_json_array_size(liabs);
         for (size_t i = 0; i < n; i++) {
             csilk_json_t* row = csilk_json_array_get(liabs, i);
-            double        v = db_get_num(row, "value");
-            csilk_json_t* item = csilk_json_object();
-            csilk_json_add_string(item, "name", csilk_json_get_string(row, "name"));
-            csilk_json_add_number(item, "value", v);
-            csilk_json_add_number(item, "pct", total_liabs > 0 ? (v / total_liabs * 100) : 0);
-            csilk_json_array_append(liab_items, item);
+            const char*   name = csilk_json_get_string(row, "name");
+            const char*   cur = csilk_json_get_string(row, "currency");
+            double        v = db_get_num(row, "value") * exchange_rate_get_to_cny(cur);
+            total_liabs += v;
+            if (name) {
+                int found = -1;
+                for (int k = 0; k < liab_cats_count; k++) {
+                    if (strcmp(liab_cats[k].name, name) == 0) {
+                        found = k;
+                        break;
+                    }
+                }
+                if (found >= 0) {
+                    liab_cats[found].value += v;
+                } else if (liab_cats_count < 128) {
+                    strncpy(liab_cats[liab_cats_count].name, name, sizeof(liab_cats[0].name) - 1);
+                    liab_cats[liab_cats_count].name[sizeof(liab_cats[0].name) - 1] = '\0';
+                    liab_cats[liab_cats_count].value = v;
+                    liab_cats_count++;
+                }
+            }
         }
         csilk_json_free(liabs);
+    }
+
+    csilk_json_t* resp = csilk_json_object();
+    csilk_json_t* asset_items = csilk_json_array();
+    for (int i = 0; i < asset_cats_count; i++) {
+        csilk_json_t* item = csilk_json_object();
+        csilk_json_add_string(item, "name", asset_cats[i].name);
+        csilk_json_add_number(item, "value", asset_cats[i].value);
+        csilk_json_add_number(
+            item, "pct", total_assets > 0 ? (asset_cats[i].value / total_assets * 100) : 0);
+        csilk_json_array_append(asset_items, item);
+    }
+    csilk_json_add_array(resp, "assets", asset_items);
+
+    csilk_json_t* liab_items = csilk_json_array();
+    for (int i = 0; i < liab_cats_count; i++) {
+        csilk_json_t* item = csilk_json_object();
+        csilk_json_add_string(item, "name", liab_cats[i].name);
+        csilk_json_add_number(item, "value", liab_cats[i].value);
+        csilk_json_add_number(
+            item, "pct", total_liabs > 0 ? (liab_cats[i].value / total_liabs * 100) : 0);
+        csilk_json_array_append(liab_items, item);
     }
     csilk_json_add_array(resp, "liabilities", liab_items);
     csilk_json_add_number(resp, "total_assets", total_assets);

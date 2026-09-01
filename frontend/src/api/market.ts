@@ -25,4 +25,8 @@ export const marketApi = {
 
   testProxy: (data?: { market_proxy?: string }) =>
     http.post<TestProxyResult, TestProxyResult>('/market/test-proxy', data),
+
+  getExchangeRates: () =>
+    http.get<Record<string, number>, Record<string, number>>('/market/exchange-rates'),
 }
+

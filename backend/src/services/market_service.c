@@ -1,6 +1,7 @@
 #include "services/market_service.h"
 #include "services/market/quote_engine.h"
 #include "services/market/market_scheduler.h"
+#include "services/market/exchange_rate_service.h"
 #include "repositories/asset_repo.h"
 #include "repositories/price_history_repo.h"
 #include "common/balance.h"
@@ -334,4 +335,11 @@ market_service_test_proxy(csilk_ctx_t* c)
     csilk_json_add_string(obj, "message", msg);
     csilk_json_add_number(obj, "latency_ms", latency_ms);
     respond_ok(c, obj);
+}
+
+void
+market_service_get_exchange_rates(csilk_ctx_t* c)
+{
+    csilk_json_t* rates = exchange_rate_list_all();
+    respond_ok(c, rates);
 }

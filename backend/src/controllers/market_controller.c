@@ -67,4 +67,12 @@ register_market_routes(csilk_app_t* app)
                        NULL,
                        "Test market connection",
                        "Test connectivity to market data providers");
+
+    csilk_app_get_ext(app,
+                      "/api/market/exchange-rates",
+                      market_service_get_exchange_rates,
+                      NULL,
+                      NULL,
+                      "Get exchange rates",
+                      "Get real-time multi-currency exchange rates to CNY");
 }

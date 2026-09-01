@@ -69,8 +69,15 @@
         <el-table-column label="成本" width="120" align="right">
           <template #default="{ row }"><span class="mf-mono">{{ formatCurrency(row.cost_basis) }}</span></template>
         </el-table-column>
-        <el-table-column label="市值" width="120" align="right">
-          <template #default="{ row }"><span class="mf-mono">{{ formatCurrency(row.current_value) }}</span></template>
+        <el-table-column label="市值" width="130" align="right">
+          <template #default="{ row }">
+            <div style="display: flex; flex-direction: column; align-items: flex-end; justify-content: center;">
+              <span class="mf-mono">{{ formatCurrency(row.current_value) }}</span>
+              <span v-if="row.currency && row.currency !== 'CNY' && exchangeRates[row.currency]" class="cny-converted-hint">
+                ≈ ¥{{ (Number(row.current_value) * (exchangeRates[row.currency] || 1)).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
+              </span>
+            </div>
+          </template>
         </el-table-column>
         <el-table-column label="浮动盈亏" width="120" align="right">
           <template #default="{ row }">
@@ -114,12 +121,14 @@ import { computed, onMounted, ref } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 import { Icon } from '@iconify/vue'
 import { reportsApi, type HoldingsReport } from '@/api/reports'
+import { marketApi } from '@/api/market'
 import HoldingsTypePie from '@/components/HoldingsTypePie.vue'
 import HoldingsCostBar from '@/components/HoldingsCostBar.vue'
 import SummaryCard from '@/components/SummaryCard.vue'
 import { formatCurrency, formatSigned } from '@/utils/format'
 
 const report = ref<HoldingsReport | null>(null)
+const exchangeRates = ref<Record<string, number>>({})
 
 const page = ref(1)
 const pageSize = ref(20)
@@ -196,7 +205,16 @@ const barData = computed(() =>
 
 async function load() {
   try {
-    report.value = await reportsApi.holdings()
+    const [hRes, rRes] = await Promise.allSettled([
+      reportsApi.holdings(),
+      marketApi.getExchangeRates()
+    ])
+    if (hRes.status === 'fulfilled' && hRes.value) {
+      report.value = hRes.value
+    }
+    if (rRes.status === 'fulfilled' && rRes.value) {
+      exchangeRates.value = rRes.value
+    }
   } catch (e) {
     console.error('加载持仓数据失败', e)
   }
@@ -209,12 +227,17 @@ onMounted(() => {
 
 <style scoped>
 .holdings-page {
-
   height: 100%;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+.cny-converted-hint {
+  font-size: 11px;
+  color: var(--mf-text-muted, #94a3b8);
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
 }
 .summary-sub {
   font-size: 12px;

@@ -54,7 +54,12 @@
         </el-table-column>
         <el-table-column label="当前价值" min-width="150" align="right">
           <template #default="{ row }">
-            <span class="mono-amount">{{ formatCurrency(row.current_value) }}</span>
+            <div style="display: flex; flex-direction: column; align-items: flex-end; justify-content: center;">
+              <span class="mono-amount">{{ formatCurrency(row.current_value) }}</span>
+              <span v-if="row.currency && row.currency !== 'CNY' && exchangeRates[row.currency]" class="cny-converted-hint">
+                ≈ ¥{{ (Number(row.current_value) * (exchangeRates[row.currency] || 1)).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
+              </span>
+            </div>
           </template>
         </el-table-column>
         <el-table-column v-if="hasInvestmentAssets" label="份额" min-width="100" align="right">
@@ -217,6 +222,7 @@ const page = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
 const summary = ref<Summary>({ total_assets: 0, total_liabilities: 0, net_worth: 0, breakdown: [], trend: [] })
+const exchangeRates = ref<Record<string, number>>({})
 
 const totalAssets = computed(() => summary.value.total_assets)
 const totalLiabilities = computed(() => summary.value.total_liabilities)
@@ -228,6 +234,15 @@ const hasInvestmentAssets = computed(() =>
 
 function isInvestmentType(type?: string) {
   return ['stock', 'fund', 'bond', 'crypto'].includes(type ?? '')
+}
+
+async function loadRates() {
+  try {
+    const res = await marketApi.getExchangeRates()
+    if (res) exchangeRates.value = res
+  } catch (err) {
+    console.error('[Assets] loadRates failed:', err)
+  }
 }
 
 async function loadSummary() {
@@ -399,7 +414,7 @@ async function handleDelete(asset: any) {
 
 onMounted(async () => {
   try {
-    await Promise.all([loadAssets(), loadSummary(), loadCategories()])
+    await Promise.all([loadAssets(), loadSummary(), loadCategories(), loadRates()])
   } catch (err) {
     console.error('[Assets] onMounted failed:', err)
   }
@@ -490,6 +505,13 @@ onMounted(async () => {
 .mono-amount {
   font-family: monospace;
   font-weight: 500;
+}
+
+.cny-converted-hint {
+  font-size: 11px;
+  color: var(--mf-text-muted, #94a3b8);
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
 }
 
 .action-buttons {

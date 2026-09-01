@@ -260,8 +260,21 @@
           <el-form-item label="HTTP 代理">
             <el-input v-model="marketForm.market_proxy" placeholder="如: http://127.0.0.1:7890 或 socks5://127.0.0.1:1080 (留空为直连)" />
           </el-form-item>
-          <el-form-item label="自动定时同步">
-            <el-switch v-model="marketForm.market_auto_sync" active-text="开启 (交易时段自动刷新 + 夜间21:30基金清算)" />
+          <el-form-item label="自动同步模式">
+            <el-radio-group v-model="marketForm.market_sync_mode">
+              <el-radio value="trading_hours">智能开盘时段 (开盘期刷新 + 夜间基金清算，推荐)</el-radio>
+              <el-radio value="interval">全天固定间隔</el-radio>
+              <el-radio value="manual">仅手动同步</el-radio>
+            </el-radio-group>
+          </el-form-item>
+          <el-form-item v-if="marketForm.market_sync_mode !== 'manual'" label="同步周期">
+            <el-select v-model="marketForm.market_sync_interval_min" style="width: 200px;">
+              <el-option :value="15" label="每 15 分钟" />
+              <el-option :value="30" label="每 30 分钟" />
+              <el-option :value="60" label="每 1 小时" />
+              <el-option :value="120" label="每 2 小时" />
+              <el-option :value="1440" label="每天一次" />
+            </el-select>
           </el-form-item>
           <el-form-item>
             <div style="display: flex; gap: 12px; align-items: center;">
@@ -591,7 +604,8 @@ async function handleExport() {
 const marketForm = reactive<MarketSettings>({
   market_proxy: '',
   market_auto_sync: true,
-  market_sync_interval_min: 30
+  market_sync_interval_min: 30,
+  market_sync_mode: 'trading_hours'
 })
 const savingMarket = ref(false)
 const testingMarketProxy = ref(false)
@@ -604,6 +618,7 @@ async function loadMarketSettings() {
       marketForm.market_proxy = res.market_proxy || ''
       marketForm.market_auto_sync = res.market_auto_sync ?? true
       marketForm.market_sync_interval_min = res.market_sync_interval_min || 30
+      marketForm.market_sync_mode = res.market_sync_mode || 'trading_hours'
     }
   } catch (err) {
     console.error('[Settings] loadMarketSettings failed:', err)
@@ -615,8 +630,9 @@ async function saveMarketSettings() {
   try {
     await marketApi.updateSettings({
       market_proxy: marketForm.market_proxy,
-      market_auto_sync: marketForm.market_auto_sync,
-      market_sync_interval_min: marketForm.market_sync_interval_min
+      market_auto_sync: marketForm.market_sync_mode !== 'manual',
+      market_sync_interval_min: marketForm.market_sync_interval_min,
+      market_sync_mode: marketForm.market_sync_mode
     })
     ElMessage.success('行情设置保存成功')
   } catch (err: any) {

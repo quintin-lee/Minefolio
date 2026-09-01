@@ -211,6 +211,7 @@ export interface MarketSettings {
   market_proxy: string
   market_auto_sync: boolean
   market_sync_interval_min: number
+  market_sync_mode?: 'trading_hours' | 'interval' | 'manual'
 }
 
 export interface TestProxyResult {
