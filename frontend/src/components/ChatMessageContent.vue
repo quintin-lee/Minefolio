@@ -1,8 +1,15 @@
 <template>
   <div class="chat-message-content">
+    <!-- Inline Workflow Config Card (if staged) -->
+    <WorkflowConfigCard
+      v-if="workflowConfig"
+      :message-id="messageId"
+      :config="workflowConfig"
+    />
+
     <!-- Workflow Pipeline Progress Card (if present) -->
     <WorkflowProgressCard
-      v-if="workflowData"
+      v-else-if="workflowData"
       :workflow-data="workflowData"
     />
 
@@ -63,16 +70,19 @@ import { Icon } from '@iconify/vue'
 import ActionCard from '@/components/ActionCard.vue'
 import CodeBlock from '@/components/CodeBlock.vue'
 import WorkflowProgressCard from '@/components/WorkflowProgressCard.vue'
+import WorkflowConfigCard from '@/components/WorkflowConfigCard.vue'
 import type { ProposedAction } from '@/components/ActionCard.vue'
-import type { WorkflowRunState } from '@/types'
+import type { WorkflowRunState, WorkflowConfigState } from '@/types'
 
 // Lazy-load MermaidBlock to avoid 642kb bundle cost when no diagrams are present
 const MermaidBlock = defineAsyncComponent(() => import('@/components/MermaidBlock.vue'))
 
 const props = defineProps<{
+  messageId?: number
   content: string
   isStreaming?: boolean
   workflowData?: WorkflowRunState
+  workflowConfig?: WorkflowConfigState
   enableBuffer?: boolean
 }>()
 

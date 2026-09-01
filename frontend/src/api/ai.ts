@@ -18,7 +18,7 @@ export interface AiSession {
   updated_at: string
 }
 
-import type { WorkflowDef, WorkflowRunState } from '@/types'
+import type { WorkflowDef, WorkflowRunState, WorkflowConfigState } from '@/types'
 
 export interface AiMessage {
   id: number
@@ -28,6 +28,7 @@ export interface AiMessage {
   model?: string
   created_at: string
   workflowData?: WorkflowRunState
+  workflowConfig?: WorkflowConfigState
 }
 
 export interface AiProviderConfig {

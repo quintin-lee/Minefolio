@@ -20,6 +20,29 @@ export const useChatStore = defineStore('chat', () => {
   const workflows = ref<WorkflowDef[]>([])
   const activeWorkflow = ref<WorkflowRunState | null>(null)
 
+  const PINNED_STORAGE_KEY = 'minefolio_pinned_workflows'
+  const DEFAULT_PINNED_IDS = ['wf_monthly_review', 'wf_portfolio_rebalance', 'wf_payday_split', 'wf_budget_guard']
+  const pinnedWorkflowIds = ref<string[]>(
+    (() => {
+      try {
+        const raw = localStorage.getItem(PINNED_STORAGE_KEY)
+        return raw ? JSON.parse(raw) : DEFAULT_PINNED_IDS
+      } catch {
+        return DEFAULT_PINNED_IDS
+      }
+    })()
+  )
+
+  function togglePinWorkflow(id: string) {
+    const idx = pinnedWorkflowIds.value.indexOf(id)
+    if (idx >= 0) {
+      pinnedWorkflowIds.value.splice(idx, 1)
+    } else {
+      pinnedWorkflowIds.value.push(id)
+    }
+    localStorage.setItem(PINNED_STORAGE_KEY, JSON.stringify(pinnedWorkflowIds.value))
+  }
+
   // Infinite scroll pagination state for messages
   const messageTotal = ref(0)
   const loadedMessagePage = ref(1)
@@ -620,6 +643,171 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  // 暂存工作流配置卡片
+  async function stageWorkflow(workflowId: string, initialParams?: Record<string, unknown>) {
+    if (isStreaming.value) return
+    const targetWf = workflows.value.find(w => w.id === workflowId)
+    if (!targetWf) return
+    const sid = currentSessionId.value
+    if (!sid) await createNewSession()
+
+    const configMsg: AiMessage = reactive({
+      id: Date.now(),
+      session_id: currentSessionId.value!,
+      role: 'assistant',
+      content: '',
+      workflowConfig: {
+        workflow_id: targetWf.id,
+        title: targetWf.title,
+        icon: targetWf.icon || 'ph:sparkle',
+        description: targetWf.description,
+        initialParams,
+      },
+      created_at: new Date().toISOString(),
+    })
+    messages.value.push(configMsg)
+  }
+
+  function cancelStagedWorkflow(messageId: number) {
+    const idx = messages.value.findIndex(m => m.id === messageId)
+    if (idx !== -1) {
+      messages.value.splice(idx, 1)
+    }
+  }
+
+  // 从内联卡片启动流水线
+  async function startStagedWorkflow(messageId: number, params?: Record<string, unknown>) {
+    const msg = messages.value.find(m => m.id === messageId)
+    if (!msg || !msg.workflowConfig || isStreaming.value) return
+    const workflowId = msg.workflowConfig.workflow_id
+    const targetWf = workflows.value.find(w => w.id === workflowId)
+    const wfTitle = targetWf ? targetWf.title : msg.workflowConfig.title
+
+    // 1. 初始化步骤并就地替换
+    const initialSteps: WorkflowStepState[] = targetWf
+      ? targetWf.steps.map((st, idx) => ({
+          step_index: idx,
+          step_id: st.step_id,
+          title: st.title,
+          status: 'pending' as const,
+        }))
+      : []
+
+    const wfState: WorkflowRunState = reactive({
+      workflow_id: workflowId,
+      title: wfTitle,
+      total_steps: targetWf ? targetWf.step_count : 4,
+      status: 'running',
+      steps: initialSteps,
+    })
+
+    delete msg.workflowConfig
+    msg.workflowData = wfState
+    activeWorkflow.value = wfState
+
+    abortCurrentStream()
+    activeAbortController = new AbortController()
+    const signal = activeAbortController.signal
+
+    enableTypewriterBuffer.value = true
+    isStreaming.value = true
+    const writer = new SmoothStreamWriter(msg)
+
+    try {
+      for await (const chunk of runWorkflowStream(
+        {
+          workflow_id: workflowId,
+          session_id: currentSessionId.value ?? undefined,
+          params,
+        },
+        signal
+      )) {
+        if (chunk.type === 'workflow_start') {
+          if (chunk.title) wfState.title = chunk.title
+          if (chunk.total_steps) wfState.total_steps = chunk.total_steps
+        } else if (chunk.type === 'step_start' && typeof chunk.step_index === 'number') {
+          const idx = chunk.step_index
+          while (wfState.steps.length <= idx) {
+            wfState.steps.push({
+              step_index: wfState.steps.length,
+              step_id: chunk.step_id || `step_${wfState.steps.length}`,
+              title: chunk.title || `步骤 ${wfState.steps.length + 1}`,
+              status: 'pending',
+            })
+          }
+          const curStep = wfState.steps[idx]
+          if (curStep) {
+            curStep.status = 'running'
+            if (chunk.title) curStep.title = chunk.title
+          }
+        } else if (chunk.type === 'step_complete' && typeof chunk.step_index === 'number') {
+          const idx = chunk.step_index
+          const curStep = wfState.steps[idx]
+          if (curStep) {
+            curStep.status = 'completed'
+            if (chunk.summary) curStep.summary = chunk.summary
+          }
+        } else if (chunk.type === 'delta' && chunk.content) {
+          writer.push(chunk.content)
+        } else if (chunk.type === 'workflow_complete') {
+          wfState.status = 'completed'
+          wfState.steps.forEach(st => {
+            if (st.status !== 'completed' && st.status !== 'error') {
+              st.status = 'completed'
+            }
+          })
+        } else if (chunk.type === 'error') {
+          wfState.status = 'error'
+          writer.flushNow()
+          msg.content = `⚠️ ${chunk.message || '工作流执行失败'}`
+        }
+      }
+      await writer.finish()
+      wfState.status = 'completed'
+      wfState.steps.forEach(st => {
+        if (st.status !== 'completed' && st.status !== 'error') {
+          st.status = 'completed'
+        }
+      })
+
+      if (currentSessionId.value) {
+        const r = (await getSession(currentSessionId.value)) as unknown
+        const raw = (r && typeof r === 'object' && 'data' in r ? (r as { data: Record<string, unknown> }).data : r) as Record<string, unknown>
+        if (raw && raw.id) {
+          const numId = Number(raw.id)
+          const idx = sessions.value.findIndex(s => Number(s.id) === numId)
+          const existing = idx >= 0 ? sessions.value[idx] : undefined
+          if (existing) {
+            sessions.value[idx] = {
+              ...existing,
+              title: String(raw.title || existing.title),
+              updated_at: String(raw.updated_at || new Date().toISOString()),
+            }
+          }
+        }
+      }
+    } catch (err: any) {
+      if (err?.name !== 'AbortError') {
+        wfState.status = 'error'
+        writer.flushNow()
+        msg.content = `⚠️ 工作流执行发生异常`
+      }
+    } finally {
+      writer.flushNow()
+      if (wfState.status === 'running') {
+        wfState.status = 'completed'
+        wfState.steps.forEach(st => {
+          if (st.status !== 'completed' && st.status !== 'error') {
+            st.status = 'completed'
+          }
+        })
+      }
+      enableTypewriterBuffer.value = false
+      isStreaming.value = false
+      activeAbortController = null
+    }
+  }
+
   function switchModel(model: string, provider: string) {
     currentModel.value = model
     currentProvider.value = provider
@@ -628,12 +816,12 @@ export const useChatStore = defineStore('chat', () => {
   return {
     sessions, currentSessionId, messages, isStreaming,
     currentModel, currentProvider, availableModels, settings,
-    workflows, activeWorkflow,
+    workflows, activeWorkflow, pinnedWorkflowIds,
     fetchSessions, fetchModels, fetchSettings, fetchWorkflowsList,
     createNewSession, selectSession, deleteSessionById, renameSession,
     sendMessage, regenerateLastMessage, editAndResend, runWorkflow, switchModel,
     abortCurrentStream, clearMessages, clearCurrentSession, resetState, setModel,
-    loadMoreMessages,
+    loadMoreMessages, togglePinWorkflow, stageWorkflow, cancelStagedWorkflow, startStagedWorkflow,
     messageTotal, loadedMessagePage, loadingMoreMessages,
     enableTypewriterBuffer,
   }

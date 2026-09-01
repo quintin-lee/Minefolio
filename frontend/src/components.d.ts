@@ -51,6 +51,7 @@ declare module 'vue' {
     ElRadioGroup: typeof import('element-plus/es')['ElRadioGroup']
     ElRow: typeof import('element-plus/es')['ElRow']
     ElSelect: typeof import('element-plus/es')['ElSelect']
+    ElSlider: typeof import('element-plus/es')['ElSlider']
     ElStep: typeof import('element-plus/es')['ElStep']
     ElSteps: typeof import('element-plus/es')['ElSteps']
     ElSwitch: typeof import('element-plus/es')['ElSwitch']
@@ -82,7 +83,9 @@ declare module 'vue' {
     TagPicker: typeof import('./components/TagPicker.vue')['default']
     TransactionTable: typeof import('./components/TransactionTable.vue')['default']
     WorkflowBar: typeof import('./components/WorkflowBar.vue')['default']
+    WorkflowConfigCard: typeof import('./components/WorkflowConfigCard.vue')['default']
     WorkflowProgressCard: typeof import('./components/WorkflowProgressCard.vue')['default']
+    WorkflowSlashMenu: typeof import('./components/WorkflowSlashMenu.vue')['default']
     YearlyChart: typeof import('./components/YearlyChart.vue')['default']
   }
   export interface ComponentCustomProperties {

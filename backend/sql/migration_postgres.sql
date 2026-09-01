@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     linked_direction TEXT CHECK(linked_direction IN ('in','out','neutral')),
     amount           DECIMAL(18,2) NOT NULL,
     price_per_unit   DECIMAL(18,4),
+    quantity         DECIMAL(18,4),
     fee              DECIMAL(18,2) DEFAULT 0,
     parent_tx_id     BIGINT REFERENCES transactions(id) ON DELETE CASCADE,
     currency         TEXT DEFAULT 'CNY',

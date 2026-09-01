@@ -12,12 +12,13 @@
             <span v-if="workflowData.status === 'running'" class="status-tag running">
               <span class="pulse-dot"></span>
               执行中 ({{ completedCount }}/{{ workflowData.total_steps }})
-              <span v-if="etaText" class="eta-text">· 预计 {{ etaText }}</span>
+              <span v-if="formattedElapsed" class="elapsed-text">· 已耗时 {{ formattedElapsed }}</span>
+              <span v-if="etaText" class="eta-text">· 预计剩余 {{ etaText }}</span>
             </span>
             <span v-else-if="workflowData.status === 'completed'" class="status-tag completed">
               <Icon icon="ph:check-bold" />
               已完成全部 {{ workflowData.total_steps }} 个流水线步骤
-              <span v-if="elapsedTime" class="elapsed-text">· 耗时 {{ elapsedTime }}</span>
+              <span v-if="formattedElapsed" class="elapsed-text">· 总耗时 {{ formattedElapsed }}</span>
             </span>
             <span v-else class="status-tag error">
               <Icon icon="ph:warning-circle" />
@@ -31,7 +32,7 @@
           v-if="workflowData.status === 'error'"
           class="retry-btn"
           type="button"
-          :title="workflowData.status === 'error' ? '重试此工作流' : ''"
+          title="重试此工作流"
           aria-label="重试工作流"
           @click.stop="retryWorkflow"
         >
@@ -109,6 +110,68 @@
         </div>
       </div>
     </div>
+
+    <!-- Contextual Actions Bar & Follow-up Chips (when completed) -->
+    <div v-if="workflowData.status === 'completed'" class="workflow-actions-wrapper">
+      <div class="action-buttons-row">
+        <!-- Workflow specific action buttons -->
+        <button
+          v-if="workflowData.workflow_id === 'wf_portfolio_rebalance'"
+          class="action-pill-btn primary"
+          @click="navigateToTransactions"
+        >
+          <Icon icon="ph:arrows-left-right-bold" />
+          <span>跳转记账 / 调仓管理</span>
+        </button>
+
+        <button
+          v-else-if="workflowData.workflow_id === 'wf_budget_guard' || workflowData.workflow_id === 'wf_expense_decision'"
+          class="action-pill-btn primary"
+          @click="navigateToCategories"
+        >
+          <Icon icon="ph:sliders-horizontal-bold" />
+          <span>调整分类预算上限</span>
+        </button>
+
+        <button
+          v-else-if="workflowData.workflow_id === 'wf_subscription_audit'"
+          class="action-pill-btn primary"
+          @click="navigateToDailyExpenses"
+        >
+          <Icon icon="ph:receipt-bold" />
+          <span>查看日常开支明细</span>
+        </button>
+
+        <!-- Common actions -->
+        <button class="action-pill-btn" @click="copySummary">
+          <Icon icon="ph:copy" />
+          <span>复制精炼摘要</span>
+        </button>
+
+        <button class="action-pill-btn" @click="exportReport">
+          <Icon icon="ph:download-simple" />
+          <span>导出分析报告</span>
+        </button>
+      </div>
+
+      <!-- Follow-up Prompt Chips -->
+      <div v-if="followUpPrompts.length > 0" class="follow-up-prompts-row">
+        <span class="follow-up-label">
+          <Icon icon="ph:sparkle" />
+          <span>智能追问：</span>
+        </span>
+        <button
+          v-for="(prompt, idx) in followUpPrompts"
+          :key="idx"
+          class="follow-up-chip"
+          :disabled="chatStore.isStreaming"
+          @click="sendFollowUp(prompt)"
+        >
+          <span>{{ prompt }}</span>
+          <Icon icon="ph:arrow-up-right-bold" class="chip-arrow" />
+        </button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -117,7 +180,7 @@ import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import { ElMessage } from 'element-plus'
-import type { WorkflowRunState, WorkflowStepState } from '@/types'
+import type { WorkflowRunState } from '@/types'
 import { useChatStore } from '@/stores/chat'
 
 const props = defineProps<{
@@ -136,10 +199,14 @@ const completedCount = computed(() => {
   return props.workflowData.steps.filter(s => s.status === 'completed').length
 })
 
-const hasError = computed(() =>
-  props.workflowData.steps.some(s => s.status === 'error') ||
-  props.workflowData.status === 'error'
-)
+const formattedElapsed = computed(() => {
+  const s = Math.floor(elapsedTimeMs.value / 1000)
+  if (s <= 0) return ''
+  if (s < 60) return `${s}秒`
+  const m = Math.floor(s / 60)
+  const rem = s % 60
+  return `${m}分${rem}秒`
+})
 
 // ETA estimation based on step progress
 const etaText = computed(() => {
@@ -147,27 +214,19 @@ const etaText = computed(() => {
   const total = props.workflowData.total_steps
   const done = completedCount.value
   if (total === 0 || done === 0) return ''
-  // Assume ~3s per step as baseline
   const remainingSteps = total - done
   const etaSeconds = remainingSteps * 3
   if (etaSeconds < 60) return `${etaSeconds}秒`
   return `${Math.ceil(etaSeconds / 60)}分钟`
 })
 
-const elapsedTime = computed(() => {
-  if (!props.workflowData.steps.length) return ''
-  // Just show that it's done
-  return ''
-})
-
-// Parse result summary from last assistant message content
+// Parse result summary from assistant message content
 const workflowResultSummary = computed(() => {
   if (props.workflowData.status !== 'completed') return null
   const msgs = chatStore.messages
   const wfMsg = msgs.find(m => m.workflowData?.workflow_id === props.workflowData.workflow_id)
   if (!wfMsg || !wfMsg.content) return null
   const summary: { label: string; value: string }[] = []
-  // Extract key metrics from markdown content
   const lines = wfMsg.content.split('\n').filter(l => l.trim())
   for (const line of lines) {
     const match = line.match(/^[-*]\s*\*\*([^*]+)\*\*[:：]?\s*(.+)$/i)
@@ -178,6 +237,41 @@ const workflowResultSummary = computed(() => {
   return summary.length > 0 ? summary : null
 })
 
+// Contextual follow-up suggestions
+const followUpPrompts = computed(() => {
+  const id = props.workflowData.workflow_id
+  if (id === 'wf_monthly_review') {
+    return [
+      '分析本月支出占比最高的三个品类及异常交易',
+      '对比上月收支并给出下月刚性开支削减建议',
+    ]
+  } else if (id === 'wf_portfolio_rebalance') {
+    return [
+      '测算分批调仓执行对当前资金流的影响',
+      '查看各类资产的历史年化收益与波动率',
+    ]
+  } else if (id === 'wf_budget_guard' || id === 'wf_expense_decision') {
+    return [
+      '如果进行这笔支出，未来3个月现金流安全吗？',
+      '帮我测算若采用分期方式还款的总利息成本',
+    ]
+  } else if (id === 'wf_payday_split') {
+    return [
+      '按激进型（生活40/定投30/还贷20/应急10）重新测算',
+      '查看我当前的应急金账户余额是否满足刚性需求',
+    ]
+  } else if (id === 'wf_cashflow_forecast') {
+    return [
+      '若发生一笔 10000 元的突发支出，现金流会在哪个月见底？',
+      '推荐合理的流动资金收益增强理财配比',
+    ]
+  }
+  return [
+    '结合我的历史资产给出针对性的优化行动项',
+    '将上述分析结论生成一份执行备忘录',
+  ]
+})
+
 function retryWorkflow() {
   if (!props.workflowData.workflow_id) return
   chatStore.runWorkflow(props.workflowData.workflow_id)
@@ -186,6 +280,51 @@ function retryWorkflow() {
 
 function viewTraces() {
   router.push({ name: 'ai-traces', query: { workflow_id: props.workflowData.workflow_id } })
+}
+
+function navigateToTransactions() {
+  router.push({ path: '/transactions' })
+}
+
+function navigateToCategories() {
+  router.push({ path: '/categories' })
+}
+
+function navigateToDailyExpenses() {
+  router.push({ path: '/daily-expenses' })
+}
+
+function copySummary() {
+  if (workflowResultSummary.value && workflowResultSummary.value.length > 0) {
+    const text = workflowResultSummary.value.map(i => `${i.label}: ${i.value}`).join('\n')
+    navigator.clipboard.writeText(text)
+    ElMessage.success('已复制执行结果摘要到剪贴板')
+  } else {
+    const msgs = chatStore.messages
+    const wfMsg = msgs.find(m => m.workflowData?.workflow_id === props.workflowData.workflow_id)
+    if (wfMsg?.content) {
+      navigator.clipboard.writeText(wfMsg.content)
+      ElMessage.success('已复制分析报告全文')
+    }
+  }
+}
+
+function exportReport() {
+  const msgs = chatStore.messages
+  const wfMsg = msgs.find(m => m.workflowData?.workflow_id === props.workflowData.workflow_id)
+  const content = wfMsg?.content || `${props.workflowData.title} 分析报告`
+  const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${props.workflowData.title}_${new Date().toISOString().slice(0, 10)}.md`
+  a.click()
+  URL.revokeObjectURL(url)
+  ElMessage.success('报告导出成功')
+}
+
+function sendFollowUp(prompt: string) {
+  chatStore.sendMessage(prompt)
 }
 
 function startTimer() {
@@ -207,19 +346,16 @@ function stopTimer() {
 watch(() => props.workflowData.status, (newStatus) => {
   if (newStatus === 'running') {
     startTimer()
-    // Auto-expand during running
     expanded.value = true
   } else if (newStatus === 'completed') {
     stopTimer()
-    // Auto-collapse after 3s delay
     setTimeout(() => {
       if (props.workflowData.status === 'completed') {
         expanded.value = false
       }
-    }, 3000)
+    }, 2000)
   } else if (newStatus === 'error') {
     stopTimer()
-    // Keep expanded on error for visibility
     expanded.value = true
   }
 })
@@ -335,15 +471,10 @@ onUnmounted(() => {
   color: #f87171;
 }
 
-.eta-text {
+.eta-text, .elapsed-text {
   color: #94a3b8;
-  font-size: 10px;
-}
-
-.elapsed-text {
-  color: #64748b;
-  font-size: 10px;
-  margin-left: 4px;
+  font-size: 10.5px;
+  margin-left: 2px;
 }
 
 .pulse-dot {
@@ -549,7 +680,7 @@ onUnmounted(() => {
 /* Result Summary */
 .workflow-result-summary {
   border-top: 1px solid rgba(52, 211, 153, 0.2);
-  padding: 12px 16px;
+  padding: 10px 14px;
   background: rgba(52, 211, 153, 0.05);
 }
 
@@ -557,12 +688,12 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .result-icon {
   color: #34d399;
-  font-size: 16px;
+  font-size: 15px;
 }
 
 .result-title {
@@ -574,15 +705,15 @@ onUnmounted(() => {
 .result-content {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
 .result-item {
   display: flex;
   gap: 8px;
-  font-size: 12px;
-  padding: 4px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 11.5px;
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
 }
 
 .result-item:last-child {
@@ -598,5 +729,102 @@ onUnmounted(() => {
 .result-item-value {
   color: #e2e8f0;
   word-break: break-word;
+}
+
+/* Actions Wrapper */
+.workflow-actions-wrapper {
+  padding: 10px 14px;
+  background: rgba(2, 6, 23, 0.6);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.action-buttons-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.action-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  font-size: 11px;
+  color: #cbd5e1;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.action-pill-btn:hover {
+  background: rgba(0, 212, 255, 0.12);
+  border-color: rgba(0, 212, 255, 0.35);
+  color: #ffffff;
+}
+
+.action-pill-btn.primary {
+  background: rgba(0, 212, 255, 0.15);
+  border-color: rgba(0, 212, 255, 0.4);
+  color: var(--mf-primary, #00d4ff);
+  font-weight: 500;
+}
+
+.action-pill-btn.primary:hover {
+  background: rgba(0, 212, 255, 0.25);
+  border-color: var(--mf-primary, #00d4ff);
+}
+
+/* Follow-up Prompts */
+.follow-up-prompts-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.follow-up-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--mf-primary, #00d4ff);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.follow-up-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 12px;
+  font-size: 11px;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.follow-up-chip:hover:not(:disabled) {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: rgba(56, 189, 248, 0.4);
+  color: #e2e8f0;
+  transform: translateY(-1px);
+}
+
+.follow-up-chip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.chip-arrow {
+  font-size: 10px;
+  color: var(--mf-primary, #00d4ff);
 }
 </style>

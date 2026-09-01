@@ -395,6 +395,17 @@ db_run_migrations(csilk_db_pool_t* pool)
                   "UPDATE transactions SET linked_direction='out' WHERE linked_direction IS NULL");
     CSILK_LOG_I("Migration: backfilled transactions.direction / linked_direction");
 
+    // ---- transactions quantity 列迁移 ----
+    if (!col_exists(pool, "transactions", "quantity")) {
+        if (csilk_db_exec(pool, "ALTER TABLE transactions ADD COLUMN quantity DECIMAL(18,4)") !=
+            0) {
+            CSILK_LOG_E("Migration: cannot add quantity to transactions");
+            free(sql);
+            return -1;
+        }
+        CSILK_LOG_I("Migration: added transactions.quantity column");
+    }
+
     // ---- transactions 表 transaction_type CHECK 移除重建（须在 direction 列迁移之后） ----
     csilk_json_t* txdir_schema = csilk_db_query_json(
         pool, "SELECT sql FROM sqlite_master WHERE type='table' AND name='transactions'");

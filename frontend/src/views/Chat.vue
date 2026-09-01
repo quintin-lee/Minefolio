@@ -202,7 +202,7 @@
                   </template>
                 </template>
                 <template v-else>
-                  <div v-if="!msg.content && chat.isStreaming" class="message-content thinking">
+                  <div v-if="!msg.content && chat.isStreaming && !msg.workflowData && !msg.workflowConfig" class="message-content thinking">
                     <span class="pulse-dot"></span>
                     <span class="pulse-dot"></span>
                     <span class="pulse-dot"></span>
@@ -210,8 +210,10 @@
                   </div>
                   <div v-else class="message-content" :class="{ 'streaming-active': chat.isStreaming && idx === chat.messages.length - 1 && msg.role === 'assistant' }">
                     <ChatMessageContent
+                      :message-id="msg.id"
                       :content="msg.content"
                       :workflow-data="msg.workflowData"
+                      :workflow-config="msg.workflowConfig"
                       :is-streaming="chat.isStreaming && idx === chat.messages.length - 1 && msg.role === 'assistant'"
                       :enable-buffer="chat.enableTypewriterBuffer"
                     />
@@ -251,16 +253,22 @@
           <!-- Financial AI Workflows Trigger Bar -->
           <WorkflowBar />
 
-          <div class="chat-input-box">
+          <div class="chat-input-box" style="position: relative;">
+            <WorkflowSlashMenu
+              ref="slashMenuRef"
+              :visible="showSlashMenu"
+              :query="slashQuery"
+              @select="handleSelectWorkflow"
+              @close="showSlashMenu = false"
+            />
             <textarea
               ref="textareaRef"
               v-model="inputText"
               :disabled="chat.isStreaming"
-              placeholder="输入财务咨询、收支分析或投资问题... (Enter 发送，Shift+Enter 换行)"
+              placeholder="输入财务咨询、收支分析，或键入 / 快速唤起工作流... (Enter 发送，Shift+Enter 换行)"
               rows="1"
-              @input="adjustTextareaHeight"
-              @keydown.enter.exact.prevent="handleSend"
-              @keydown.esc="handleStop"
+              @input="handleInput"
+              @keydown="handleTextareaKeyDown"
             ></textarea>
             <div class="input-bottom-bar">
               <span class="char-count" :class="{ near: inputText.length > 1800, over: inputText.length > 2000 }">{{ inputText.length }} / 2000</span>
@@ -289,11 +297,16 @@ import { useChatStore } from '@/stores/chat'
 import ChatMessageContent from '@/components/ChatMessageContent.vue'
 import PromptStarters from '@/components/PromptStarters.vue'
 import WorkflowBar from '@/components/WorkflowBar.vue'
+import WorkflowSlashMenu from '@/components/WorkflowSlashMenu.vue'
+import type { WorkflowDef } from '@/types'
 
 const chat = useChatStore()
 const inputText = ref('')
 const messagesRef = ref<HTMLElement | null>(null)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
+const slashMenuRef = ref<InstanceType<typeof WorkflowSlashMenu> | null>(null)
+const showSlashMenu = ref(false)
+const slashQuery = ref('')
 const showSidebar = ref(true)
 const loadingSessions = ref(false)
 const loadingMessages = ref(false)
@@ -526,6 +539,57 @@ watch(lastMsgContent, () => {
   }
 })
 
+
+const DIRECT_RUN_IDS = new Set(['wf_portfolio_rebalance', 'wf_goal_tracker', 'wf_bill_calendar', 'wf_health_score'])
+
+function handleInput() {
+  adjustTextareaHeight()
+  const text = inputText.value
+  const cursor = textareaRef.value?.selectionStart ?? text.length
+  const textBeforeCursor = text.slice(0, cursor)
+  const slashMatch = textBeforeCursor.match(/(?:^|\s)\/([^\s/]*)$/)
+  if (slashMatch) {
+    showSlashMenu.value = true
+    slashQuery.value = slashMatch[1] ?? ''
+  } else {
+    showSlashMenu.value = false
+    slashQuery.value = ''
+  }
+}
+
+function handleTextareaKeyDown(e: KeyboardEvent) {
+  if (showSlashMenu.value && slashMenuRef.value) {
+    const handled = slashMenuRef.value.handleKeyDown(e)
+    if (handled) return
+  }
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault()
+    handleSend()
+  } else if (e.key === 'Escape') {
+    if (showSlashMenu.value) {
+      showSlashMenu.value = false
+    } else {
+      handleStop()
+    }
+  }
+}
+
+function handleSelectWorkflow(wf: WorkflowDef) {
+  showSlashMenu.value = false
+  const text = inputText.value
+  const cursor = textareaRef.value?.selectionStart ?? text.length
+  const textBeforeCursor = text.slice(0, cursor)
+  const slashIdx = textBeforeCursor.lastIndexOf('/')
+  if (slashIdx >= 0) {
+    inputText.value = (text.slice(0, slashIdx) + text.slice(cursor)).trim()
+    nextTick(() => adjustTextareaHeight())
+  }
+  if (DIRECT_RUN_IDS.has(wf.id)) {
+    chat.runWorkflow(wf.id)
+  } else {
+    chat.stageWorkflow(wf.id)
+  }
+}
 
 function adjustTextareaHeight() {
   if (textareaRef.value) {

@@ -171,6 +171,14 @@ export interface WorkflowRunState {
   steps: WorkflowStepState[]
 }
 
+export interface WorkflowConfigState {
+  workflow_id: string
+  title: string
+  icon: string
+  description: string
+  initialParams?: Record<string, unknown>
+}
+
 export interface MarketSearchItem {
   symbol: string
   name: string

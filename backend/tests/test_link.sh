@@ -99,17 +99,17 @@ curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/categories" -d '{"
 curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/categories" -d '{"name":"现金","type":"asset","currency":"CNY"}' >/dev/null
 curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/categories" -d '{"name":"信用卡","type":"asset","asset_type":"credit_card","currency":"CNY"}' >/dev/null
 # 读取真实分类 id（避免依赖插入顺序）
-EXPENSE_CAT=$(sqlite3 "$DB" "SELECT id FROM categories WHERE name='日常消费' LIMIT 1")
-INCOME_CAT=$(sqlite3 "$DB" "SELECT id FROM categories WHERE name='工资' LIMIT 1")
-ASSET_CAT=$(sqlite3 "$DB" "SELECT id FROM categories WHERE name='现金' LIMIT 1")
-CC_CAT=$(sqlite3 "$DB" "SELECT id FROM categories WHERE name='信用卡' LIMIT 1")
+EXPENSE_CAT=$(sqlite3 "$DB" "SELECT id FROM categories WHERE name='日常消费' AND user_id=1 LIMIT 1")
+INCOME_CAT=$(sqlite3 "$DB" "SELECT id FROM categories WHERE name='工资' AND user_id=1 LIMIT 1")
+ASSET_CAT=$(sqlite3 "$DB" "SELECT id FROM categories WHERE name='现金' AND user_id=1 LIMIT 1")
+CC_CAT=$(sqlite3 "$DB" "SELECT id FROM categories WHERE name='信用卡' AND user_id=1 LIMIT 1")
 
 echo "== 2. 建资产 =="
 curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/assets" -d "{\"name\":\"钱包\",\"category_id\":$ASSET_CAT,\"current_value\":10000,\"currency\":\"CNY\"}" >/dev/null
 curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/assets" -d "{\"name\":\"信用卡\",\"category_id\":$CC_CAT,\"current_value\":0,\"currency\":\"CNY\"}" >/dev/null
 # 用 sqlite3 直接取真实 id（避免依赖 API 返回）
-WALLET_ID=$(sqlite3 "$DB" "SELECT id FROM assets WHERE name='钱包' AND category_id=$ASSET_CAT LIMIT 1")
-CC_ID=$(sqlite3 "$DB" "SELECT id FROM assets WHERE name='信用卡' AND category_id=$CC_CAT LIMIT 1")
+WALLET_ID=$(sqlite3 "$DB" "SELECT id FROM assets WHERE name='钱包' AND user_id=1 LIMIT 1")
+CC_ID=$(sqlite3 "$DB" "SELECT id FROM assets WHERE name='信用卡' AND user_id=1 LIMIT 1")
 
 echo "== 3. 记收入 500 → 余额 10500 =="
 curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/daily-expenses" -d "{\"asset_id\":$WALLET_ID,\"category_id\":$INCOME_CAT,\"expense_type\":\"income\",\"amount\":500,\"currency\":\"CNY\",\"expense_date\":\"2026-08-01\"}" >/dev/null
@@ -571,7 +571,8 @@ WF_CODE=$(echo "$WF_LIST_RES" | jq -r '.code | floor')
 check "GET /api/ai/workflows 返回 code=0" "0" "$WF_CODE"
 
 WF_COUNT=$(echo "$WF_LIST_RES" | jq '.data | length')
-check "返回预置工作流数量 >= 3" "3" "$WF_COUNT"
+test "$WF_COUNT" -ge 3 && WF_GE3="true" || WF_GE3="false"
+check "返回预置工作流数量 >= 3" "true" "$WF_GE3"
 
 WF_FIRST_ID=$(echo "$WF_LIST_RES" | jq -r '.data[0].id')
 check "第一个工作流为 wf_monthly_review" "wf_monthly_review" "$WF_FIRST_ID"
