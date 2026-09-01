@@ -1,5 +1,6 @@
 #include "services/market_service.h"
 #include "services/market/quote_engine.h"
+#include "services/market/market_scheduler.h"
 #include "repositories/asset_repo.h"
 #include "repositories/price_history_repo.h"
 #include "common/balance.h"
@@ -263,10 +264,16 @@ market_service_price_history(csilk_ctx_t* c)
 void
 market_service_get_settings(csilk_ctx_t* c)
 {
+    bool auto_sync = true;
+    int  interval_min = 30;
+    char sync_mode[32] = "trading_hours";
+    market_scheduler_get_config(&auto_sync, &interval_min, sync_mode, sizeof(sync_mode));
+
     csilk_json_t* obj = csilk_json_object();
     csilk_json_add_string(obj, "market_proxy", quote_engine_get_proxy());
-    csilk_json_add_bool(obj, "market_auto_sync", true);
-    csilk_json_add_number(obj, "market_sync_interval_min", 30);
+    csilk_json_add_bool(obj, "market_auto_sync", auto_sync);
+    csilk_json_add_number(obj, "market_sync_interval_min", interval_min);
+    csilk_json_add_string(obj, "market_sync_mode", sync_mode);
     respond_ok(c, obj);
 }
 
@@ -281,6 +288,25 @@ market_service_update_settings(csilk_ctx_t* c)
 
     const char* proxy = csilk_json_get_string(body, "market_proxy");
     quote_engine_set_proxy(proxy);
+
+    bool auto_sync = true;
+    int  interval_min = 30;
+    char sync_mode[32] = "trading_hours";
+    market_scheduler_get_config(&auto_sync, &interval_min, sync_mode, sizeof(sync_mode));
+
+    if (csilk_json_get(body, "market_auto_sync")) {
+        auto_sync = csilk_json_get_bool(body, "market_auto_sync");
+    }
+    if (csilk_json_get(body, "market_sync_interval_min")) {
+        interval_min = (int)db_get_int(body, "market_sync_interval_min");
+    }
+    const char* mode = csilk_json_get_string(body, "market_sync_mode");
+    if (mode && mode[0]) {
+        strncpy(sync_mode, mode, sizeof(sync_mode) - 1);
+        sync_mode[sizeof(sync_mode) - 1] = '\0';
+    }
+
+    market_scheduler_set_config(auto_sync, interval_min, sync_mode);
 
     csilk_json_free(body);
     respond_ok_null(c);

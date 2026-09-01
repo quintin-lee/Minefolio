@@ -6,6 +6,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -14,6 +15,45 @@ static pthread_mutex_t  g_sched_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t   g_sched_cond = PTHREAD_COND_INITIALIZER;
 static bool             g_sched_running = false;
 static csilk_db_pool_t* g_pool = NULL;
+
+static bool g_config_auto_sync = true;
+static int  g_config_interval_min = 30;
+static char g_config_sync_mode[32] = "trading_hours";
+
+void
+market_scheduler_set_config(bool auto_sync, int interval_min, const char* sync_mode)
+{
+    pthread_mutex_lock(&g_sched_mutex);
+    g_config_auto_sync = auto_sync;
+    if (interval_min >= 5 && interval_min <= 1440) {
+        g_config_interval_min = interval_min;
+    }
+    if (sync_mode && sync_mode[0]) {
+        strncpy(g_config_sync_mode, sync_mode, sizeof(g_config_sync_mode) - 1);
+        g_config_sync_mode[sizeof(g_config_sync_mode) - 1] = '\0';
+    }
+    pthread_mutex_unlock(&g_sched_mutex);
+}
+
+void
+market_scheduler_get_config(bool*  out_auto_sync,
+                            int*   out_interval_min,
+                            char*  out_sync_mode,
+                            size_t mode_cap)
+{
+    pthread_mutex_lock(&g_sched_mutex);
+    if (out_auto_sync) {
+        *out_auto_sync = g_config_auto_sync;
+    }
+    if (out_interval_min) {
+        *out_interval_min = g_config_interval_min;
+    }
+    if (out_sync_mode && mode_cap > 0) {
+        strncpy(out_sync_mode, g_config_sync_mode, mode_cap - 1);
+        out_sync_mode[mode_cap - 1] = '\0';
+    }
+    pthread_mutex_unlock(&g_sched_mutex);
+}
 
 static void
 check_and_trigger_dca_plans(csilk_db_pool_t* pool, struct tm* tm_now)
@@ -62,7 +102,6 @@ check_and_trigger_dca_plans(csilk_db_pool_t* pool, struct tm* tm_now)
         }
 
         if (is_due_today) {
-            /* Create pending execution (unique constraint on plan_id, period_date prevents duplicate) */
             int64_t new_exec_id = dca_execution_create(pool, plan_id, user_id, today_str, amount);
             if (new_exec_id > 0) {
                 CSILK_LOG_I(
@@ -77,7 +116,7 @@ check_and_trigger_dca_plans(csilk_db_pool_t* pool, struct tm* tm_now)
 }
 
 static bool
-is_trading_hour(struct tm* tm_now)
+is_cn_trading_hour(struct tm* tm_now)
 {
     /* Monday (1) to Friday (5) */
     if (tm_now->tm_wday < 1 || tm_now->tm_wday > 5) {
@@ -100,9 +139,26 @@ is_trading_hour(struct tm* tm_now)
 }
 
 static bool
+is_us_trading_hour(struct tm* tm_now)
+{
+    /* US session in Beijing Time (21:30 - 04:00) */
+    if (tm_now->tm_wday >= 1 && tm_now->tm_wday <= 5) {
+        if (tm_now->tm_hour >= 21 && (tm_now->tm_hour > 21 || tm_now->tm_min >= 30)) {
+            return true;
+        }
+    }
+    if (tm_now->tm_wday >= 2 && tm_now->tm_wday <= 6) {
+        if (tm_now->tm_hour < 4) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool
 is_nightly_settlement(struct tm* tm_now)
 {
-    /* Monday to Friday 21:30 - 21:35 */
+    /* Monday to Friday 21:30 - 21:35 for mutual fund NAVs */
     if (tm_now->tm_wday >= 1 && tm_now->tm_wday <= 5) {
         if (tm_now->tm_hour == 21 && tm_now->tm_min >= 30 && tm_now->tm_min < 35) {
             return true;
@@ -137,32 +193,48 @@ scheduler_loop(void* arg)
             pthread_mutex_lock(&g_sched_mutex);
         }
 
-        /* Check trading hours: sync every 15 minutes (900 seconds) */
-        if (is_trading_hour(&tm_now) && (now - last_sync_time >= 900)) {
-            should_sync = true;
-            last_sync_time = now;
-        }
+        if (g_config_auto_sync && strcmp(g_config_sync_mode, "manual") != 0) {
+            if (strcmp(g_config_sync_mode, "interval") == 0) {
+                int interval_sec = g_config_interval_min > 0 ? (g_config_interval_min * 60) : 1800;
+                if (now - last_sync_time >= interval_sec) {
+                    should_sync = true;
+                    last_sync_time = now;
+                }
+            } else {
+                /* Default "trading_hours" smart mode */
+                int interval_sec = g_config_interval_min > 0 ? (g_config_interval_min * 60) : 900;
+                if (interval_sec < 300) {
+                    interval_sec = 300;
+                }
 
-        /* Check nightly settlement: sync once per evening */
-        if (is_nightly_settlement(&tm_now) && (now - last_nightly_time >= 3600)) {
-            should_sync = true;
-            last_nightly_time = now;
-            CSILK_LOG_I("Market scheduler triggering nightly fund settlement sync");
+                /* Active during CN or US market sessions */
+                if ((is_cn_trading_hour(&tm_now) || is_us_trading_hour(&tm_now)) &&
+                    (now - last_sync_time >= interval_sec)) {
+                    should_sync = true;
+                    last_sync_time = now;
+                }
+
+                /* Nightly mutual fund settlement */
+                if (is_nightly_settlement(&tm_now) && (now - last_nightly_time >= 3600)) {
+                    should_sync = true;
+                    last_nightly_time = now;
+                    CSILK_LOG_I("Market scheduler triggering nightly fund settlement sync");
+                }
+            }
         }
 
         if (should_sync && g_pool) {
             pthread_mutex_unlock(&g_sched_mutex);
             int synced = 0, failed = 0;
-            /* user_id = 0 syncs all users */
             market_service_do_sync_user(g_pool, 0, &synced, &failed);
             CSILK_LOG_I("Market scheduler completed sync: %d synced, %d failed", synced, failed);
             pthread_mutex_lock(&g_sched_mutex);
         }
 
-        /* Wait 60 seconds or until stopped */
+        /* Wait 30 seconds or until notified */
         struct timespec ts;
         clock_gettime(CLOCK_REALTIME, &ts);
-        ts.tv_sec += 60;
+        ts.tv_sec += 30;
         pthread_cond_timedwait(&g_sched_cond, &g_sched_mutex, &ts);
     }
     pthread_mutex_unlock(&g_sched_mutex);

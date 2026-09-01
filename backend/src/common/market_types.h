@@ -25,4 +25,5 @@ typedef struct {
     char market_proxy[256];
     bool market_auto_sync;
     int  market_sync_interval_min;
+    char market_sync_mode[32];
 } market_settings_t;
