@@ -218,7 +218,7 @@ onMounted(() => {
 }
 .summary-sub {
   font-size: 12px;
-  color: var(--text-secondary, #94a3b8);
+  color: var(--mf-text-muted);
   margin-left: 4px;
 }
 .chart-row {
@@ -226,15 +226,16 @@ onMounted(() => {
 }
 .chart-card,
 .table-card {
-  background: var(--surface, #141a2e);
-  border: 1px solid var(--border-color, #1f2a4a);
-  border-radius: 12px;
+  background: var(--mf-surface);
+  border: 1px solid var(--mf-border);
+  border-radius: var(--mf-radius-lg);
   padding: 16px;
+  backdrop-filter: blur(12px);
 }
 .chart-title {
   font-size: 14px;
   font-weight: 600;
-  color: #e2e8f0;
+  color: var(--mf-text-main);
   margin-bottom: 8px;
 }
 .table-card {
@@ -249,7 +250,7 @@ onMounted(() => {
 }
 .premium-table {
   --el-table-border-color: transparent;
-  --el-table-header-bg-color: rgba(0, 212, 255, 0.06);
+  --el-table-header-bg-color: var(--mf-surface-muted);
 }
 .pagination-bar {
   display: flex;
@@ -257,12 +258,12 @@ onMounted(() => {
   margin-top: 16px;
 }
 .profit-card {
-  background: rgba(52, 211, 153, 0.08);
-  border-color: rgba(52, 211, 153, 0.3);
+  background: var(--mf-success-light);
+  border-color: var(--mf-success-border);
 }
 .loss-card {
-  background: rgba(239, 68, 68, 0.08);
-  border-color: rgba(239, 68, 68, 0.3);
+  background: var(--mf-danger-light);
+  border-color: var(--mf-danger-border);
 }
 .asset-name {
   font-weight: 500;
@@ -274,16 +275,16 @@ onMounted(() => {
 .type-pill {
   font-size: 11px;
   padding: 2px 8px;
-  border-radius: 9999px;
-  background: rgba(0, 212, 255, 0.08);
-  color: #00d4ff;
-  border: 1px solid rgba(0, 212, 255, 0.15);
+  border-radius: var(--mf-radius-pill);
+  background: var(--mf-primary-light);
+  color: var(--mf-primary);
+  border: 1px solid var(--mf-primary-border);
   font-weight: 500;
 }
 .type-pill.pill-crypto {
-  background: rgba(124, 58, 237, 0.08);
-  color: #a78bfa;
-  border-color: rgba(124, 58, 237, 0.15);
+  background: var(--mf-accent-light);
+  color: var(--mf-accent);
+  border-color: var(--mf-accent);
 }
 
 .pnl-progress {
@@ -293,6 +294,6 @@ onMounted(() => {
 
 .mf-mono {
   font-variant-numeric: tabular-nums;
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: var(--mf-font-mono);
 }
 </style>

@@ -18,12 +18,17 @@
     </div>
 
     <!-- 资产概览卡片 -->
-    <el-row :gutter="20" class="summary-cards">
+    <el-row :gutter="16" class="summary-cards">
       <el-col :xs="12" :sm="12" :md="6" class="mf-stagger-1">
         <el-card shadow="hover" class="stat-card assets">
           <div class="stat-content">
-            <div class="stat-label">总资产</div>
-            <div class="stat-value">{{ formatCurrency(summary.total_assets) }}</div>
+            <div class="stat-header-row">
+              <span class="stat-label">总资产</span>
+              <div class="stat-icon-wrap assets">
+                <Icon icon="ph:wallet" />
+              </div>
+            </div>
+            <div class="stat-value tabular-nums">{{ formatCurrency(summary.total_assets) }}</div>
             <div v-if="sparklinePoints && sparklineData.length > 1" class="sparkline-wrap">
               <svg class="sparkline" viewBox="0 0 60 20" preserveAspectRatio="none">
                 <polyline :points="sparklinePoints" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
@@ -35,16 +40,26 @@
       <el-col :xs="12" :sm="12" :md="6" class="mf-stagger-2">
         <el-card shadow="hover" class="stat-card liabilities">
           <div class="stat-content">
-            <div class="stat-label">总负债</div>
-            <div class="stat-value">{{ formatCurrency(summary.total_liabilities) }}</div>
+            <div class="stat-header-row">
+              <span class="stat-label">总负债</span>
+              <div class="stat-icon-wrap liabilities">
+                <Icon icon="ph:credit-card" />
+              </div>
+            </div>
+            <div class="stat-value tabular-nums">{{ formatCurrency(summary.total_liabilities) }}</div>
           </div>
         </el-card>
       </el-col>
       <el-col :xs="12" :sm="12" :md="6" class="mf-stagger-3">
         <el-card shadow="hover" class="stat-card networth">
           <div class="stat-content">
-            <div class="stat-label">净资产</div>
-            <div class="stat-value">{{ formatCurrency(summary.net_worth) }}</div>
+            <div class="stat-header-row">
+              <span class="stat-label">净资产</span>
+              <div class="stat-icon-wrap networth">
+                <Icon icon="ph:chart-line-up" />
+              </div>
+            </div>
+            <div class="stat-value tabular-nums">{{ formatCurrency(summary.net_worth) }}</div>
             <div v-if="sparklinePoints && sparklineData.length > 1" class="sparkline-wrap">
               <svg class="sparkline" viewBox="0 0 60 20" preserveAspectRatio="none">
                 <polyline :points="sparklinePoints" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
@@ -56,8 +71,13 @@
       <el-col :xs="12" :sm="12" :md="6" class="mf-stagger-4">
         <el-card shadow="hover" class="stat-card monthly">
           <div class="stat-content">
-            <div class="stat-label">本月结余</div>
-            <div class="stat-value">{{ formatCurrency(currentMonthBalance?.balance ?? 0) }}</div>
+            <div class="stat-header-row">
+              <span class="stat-label">本月结余</span>
+              <div class="stat-icon-wrap monthly">
+                <Icon icon="ph:scales" />
+              </div>
+            </div>
+            <div class="stat-value tabular-nums">{{ formatCurrency(currentMonthBalance?.balance ?? 0) }}</div>
           </div>
         </el-card>
       </el-col>
@@ -139,6 +159,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { BellFilled } from '@element-plus/icons-vue'
+import { Icon } from '@iconify/vue'
 import { summaryApi } from '@/api/summary'
 import { dailyExpensesApi } from '@/api/daily_expenses'
 import { reportsApi } from '@/api/reports'
@@ -230,14 +251,48 @@ onMounted(loadDashboard)
 }
 
 .stat-content {
-  padding: 4px 4px;
+  padding: 4px 2px;
   position: relative;
+}
+
+.stat-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.stat-icon-wrap {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--mf-radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+}
+
+.stat-icon-wrap.assets {
+  background: var(--mf-primary-light);
+  color: var(--mf-primary);
+}
+.stat-icon-wrap.liabilities {
+  background: var(--mf-danger-light);
+  color: var(--mf-danger);
+}
+.stat-icon-wrap.networth {
+  background: var(--mf-success-light);
+  color: var(--mf-success);
+}
+.stat-icon-wrap.monthly {
+  background: var(--mf-warning-light);
+  color: var(--mf-warning);
 }
 
 .sparkline-wrap {
   position: absolute;
   top: 8px;
-  right: 12px;
+  right: 44px;
   width: 60px;
   height: 20px;
   opacity: 0.6;
@@ -251,27 +306,26 @@ onMounted(loadDashboard)
 .stat-label {
   font-size: 13px;
   color: var(--mf-text-muted);
-  margin-bottom: 6px;
   font-weight: 500;
 }
 
 .stat-value {
-  font-size: 36px;
+  font-size: 26px;
   font-weight: 700;
-  letter-spacing: -1px;
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  letter-spacing: -0.5px;
+  line-height: 1.2;
 }
 
-.stat-card.assets .stat-value      { color: #00d4ff; text-shadow: 0 0 12px rgba(0,212,255,0.5); }
-.stat-card.liabilities .stat-value { color: #f87171; text-shadow: 0 0 12px rgba(248,113,113,0.4); }
-.stat-card.networth .stat-value    { color: #34d399; text-shadow: 0 0 12px rgba(52,211,153,0.5); }
-.stat-card.monthly .stat-value     { color: #fbbf24; text-shadow: 0 0 12px rgba(251,191,36,0.4); }
+.stat-card.assets .stat-value      { color: var(--mf-primary); }
+.stat-card.liabilities .stat-value { color: var(--mf-danger); }
+.stat-card.networth .stat-value    { color: var(--mf-success); }
+.stat-card.monthly .stat-value     { color: var(--mf-warning); }
 
 .chart-card {
   border-radius: var(--mf-radius-lg);
   border: 1px solid var(--mf-border);
   background: var(--mf-surface);
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(14px);
   box-shadow: var(--mf-shadow-sm);
 }
 
