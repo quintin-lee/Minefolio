@@ -5,6 +5,15 @@
         <div class="title-accent"></div>
         <h2>仪表盘</h2>
       </div>
+      <div class="header-currency-selector">
+        <span class="curr-label">折算基准:</span>
+        <el-radio-group v-model="selectedCurrency" size="small" @change="onCurrencyChange">
+          <el-radio-button label="CNY">CNY ¥</el-radio-button>
+          <el-radio-button label="USD">USD $</el-radio-button>
+          <el-radio-button label="EUR">EUR €</el-radio-button>
+          <el-radio-button label="HKD">HKD HK$</el-radio-button>
+        </el-radio-group>
+      </div>
     </div>
     <!-- 待办定投提醒 -->
     <div v-if="pendingDcaTasks.length > 0" class="dashboard-alert-banner">
@@ -82,6 +91,26 @@
         </el-card>
       </el-col>
     </el-row>
+
+    <!-- 多币种实时折算概览条 -->
+    <div v-if="multiCurrency && multiCurrency.currencies && multiCurrency.currencies.length > 0" class="multi-currency-banner">
+      <div class="fx-header">
+        <div class="fx-title">
+          <Icon icon="ph:globe-simple" class="fx-icon" />
+          <span>多币种实时折算资产构成 (基准折算净资产: <strong>{{ formatCurrencyValue(multiCurrency.total_net_worth, selectedCurrency) }}</strong>)</span>
+        </div>
+      </div>
+      <div class="fx-chips">
+        <div v-for="c in multiCurrency.currencies" :key="c.currency" class="fx-chip">
+          <div class="chip-top">
+            <span class="chip-curr">{{ c.currency }}</span>
+            <span class="chip-pct">{{ c.percentage.toFixed(1) }}%</span>
+          </div>
+          <div class="chip-orig">原币: {{ formatCurrencyValue(c.original_net_worth, c.currency) }}</div>
+          <div class="chip-converted">折算: {{ formatCurrencyValue(c.converted_net_worth, selectedCurrency) }}</div>
+        </div>
+      </div>
+    </div>
 
     <el-row :gutter="20" class="charts-row">
       <!-- 净资产趋势 -->
@@ -164,12 +193,16 @@ import { summaryApi } from '@/api/summary'
 import { dailyExpensesApi } from '@/api/daily_expenses'
 import { reportsApi } from '@/api/reports'
 import { dcaApi } from '@/api/dca'
-import type { Summary, DailyExpense } from '@/types'
+import { marketApi } from '@/api/market'
+import type { Summary, DailyExpense, MultiCurrencySummary } from '@/types'
 import NetWorthChart from '@/components/NetWorthChart.vue'
 import AssetBreakdownPie from '@/components/AssetBreakdownPie.vue'
 import YearlyChart from '@/components/YearlyChart.vue'
 
 const loading = ref(true)
+const selectedCurrency = ref('CNY')
+const multiCurrency = ref<MultiCurrencySummary | null>(null)
+
 const summary = ref<Summary>({
   total_assets: 0, total_liabilities: 0, net_worth: 0,
   breakdown: [], trend: [],
@@ -196,9 +229,41 @@ const sparklinePoints = computed(() => {
 })
 
 function formatCurrency(val: number) {
-  return new Intl.NumberFormat('zh-CN', {
-    style: 'currency', currency: 'CNY',
-  }).format(val)
+  return formatCurrencyValue(val, selectedCurrency.value)
+}
+
+function formatCurrencyValue(val: number, cur = 'CNY') {
+  const curUpper = (cur || 'CNY').toUpperCase()
+  const map: Record<string, { symbol: string; digits: number }> = {
+    CNY: { symbol: '¥', digits: 2 },
+    USD: { symbol: '$', digits: 2 },
+    EUR: { symbol: '€', digits: 2 },
+    HKD: { symbol: 'HK$', digits: 2 },
+    JPY: { symbol: '¥', digits: 0 },
+    GBP: { symbol: '£', digits: 2 },
+    USDT: { symbol: '₮', digits: 2 },
+  }
+  const meta = map[curUpper] || { symbol: `${curUpper} `, digits: 2 }
+  return `${meta.symbol}${Number(val || 0).toLocaleString('zh-CN', {
+    minimumFractionDigits: meta.digits,
+    maximumFractionDigits: meta.digits,
+  })}`
+}
+
+async function onCurrencyChange() {
+  await loadMultiCurrency()
+}
+
+async function loadMultiCurrency() {
+  try {
+    const res = await marketApi.getMultiCurrencySummary(selectedCurrency.value)
+    multiCurrency.value = res
+    if (res && res.total_net_worth !== undefined) {
+      summary.value.net_worth = res.total_net_worth
+      summary.value.total_assets = res.total_assets
+      summary.value.total_liabilities = res.total_liabilities
+    }
+  } catch {}
 }
 
 async function loadDashboard() {
@@ -206,7 +271,7 @@ async function loadDashboard() {
   try {
     const res = await summaryApi.get()
     summary.value = res
-    await Promise.allSettled([loadYearly(), loadCurrentMonth(), loadRecent(), loadPendingDca()])
+    await Promise.allSettled([loadYearly(), loadCurrentMonth(), loadRecent(), loadPendingDca(), loadMultiCurrency()])
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.message || '仪表盘数据加载失败')
   } finally {
@@ -405,5 +470,79 @@ onMounted(loadDashboard)
 :deep(.el-table .el-table__cell) {
   padding: 8px 0;
   font-size: 12px;
+}
+
+.header-currency-selector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.curr-label {
+  font-size: 13px;
+  color: var(--mf-text-secondary);
+}
+
+.multi-currency-banner {
+  background: var(--mf-card-bg);
+  border: 1px solid var(--mf-border);
+  border-radius: var(--mf-radius-md);
+  padding: 12px 16px;
+  margin-bottom: 8px;
+}
+.fx-header {
+  margin-bottom: 10px;
+}
+.fx-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--mf-text-secondary);
+}
+.fx-title strong {
+  color: var(--mf-primary);
+  font-size: 14px;
+}
+.fx-icon {
+  font-size: 16px;
+  color: var(--mf-primary);
+}
+.fx-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.fx-chip {
+  background: rgba(15, 23, 42, 0.4);
+  border: 1px solid var(--mf-border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  min-width: 140px;
+}
+.chip-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.chip-curr {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--mf-text-primary);
+}
+.chip-pct {
+  font-size: 11px;
+  font-weight: 600;
+  color: #10b981;
+}
+.chip-orig {
+  font-size: 11px;
+  color: var(--mf-text-tertiary);
+}
+.chip-converted {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mf-primary);
+  margin-top: 2px;
 }
 </style>

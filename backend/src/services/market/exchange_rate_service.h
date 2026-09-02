@@ -4,6 +4,12 @@
 /* Get conversion rate from given currency to base currency (CNY) */
 double exchange_rate_get_to_cny(const char* currency);
 
+/* Convert amount between any two currencies */
+double exchange_rate_convert(double amount, const char* from_currency, const char* to_currency);
+
+/* Manually update or override a currency conversion rate to CNY */
+int exchange_rate_set(const char* currency, double rate_to_cny);
+
 /* Refresh all major exchange rates from Yahoo Finance */
 void exchange_rate_refresh_all(void);
 

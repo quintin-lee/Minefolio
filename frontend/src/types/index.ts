@@ -360,5 +360,30 @@ export interface LedgerInviteResult {
   expires_at: string
 }
 
+/* Multi-Currency Summary */
+export interface CurrencyBucket {
+  currency: string
+  asset_count: number
+  original_assets: number
+  original_liabilities: number
+  original_net_worth: number
+  rate_to_base: number
+  converted_net_worth: number
+  percentage: number
+}
 
+export interface MultiCurrencySummary {
+  base_currency: string
+  total_net_worth: number
+  total_assets: number
+  total_liabilities: number
+  currencies: CurrencyBucket[]
+}
 
+/* OAuth2 / OIDC Providers */
+export interface OAuthProvider {
+  id: string
+  name: string
+  icon?: string
+  auth_url: string
+}

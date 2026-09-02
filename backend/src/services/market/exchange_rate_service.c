@@ -67,6 +67,60 @@ exchange_rate_get_to_cny(const char* currency)
     return rate > 0 ? rate : 1.0;
 }
 
+double
+exchange_rate_convert(double amount, const char* from_currency, const char* to_currency)
+{
+    if (amount == 0.0) {
+        return 0.0;
+    }
+    if (!from_currency || !from_currency[0] || !to_currency || !to_currency[0]) {
+        return amount;
+    }
+    if (strcasecmp(from_currency, to_currency) == 0) {
+        return amount;
+    }
+
+    double from_to_cny = exchange_rate_get_to_cny(from_currency);
+    double to_to_cny = exchange_rate_get_to_cny(to_currency);
+
+    if (to_to_cny <= 0.0) {
+        to_to_cny = 1.0;
+    }
+    return (amount * from_to_cny) / to_to_cny;
+}
+
+int
+exchange_rate_set(const char* currency, double rate_to_cny)
+{
+    if (!currency || !currency[0] || rate_to_cny <= 0.0) {
+        return -1;
+    }
+
+    char   cur_upper[16];
+    size_t len = strlen(currency);
+    if (len >= sizeof(cur_upper)) {
+        len = sizeof(cur_upper) - 1;
+    }
+    for (size_t i = 0; i < len; i++) {
+        cur_upper[i] = (char)toupper((unsigned char)currency[i]);
+    }
+    cur_upper[len] = '\0';
+
+    pthread_mutex_lock(&g_rate_mutex);
+    int found = 0;
+    for (int i = 0; g_rates[i].currency[0] != '\0'; i++) {
+        if (strcmp(g_rates[i].currency, cur_upper) == 0) {
+            g_rates[i].rate_to_cny = rate_to_cny;
+            g_rates[i].last_updated = time(NULL);
+            found = 1;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&g_rate_mutex);
+
+    return found ? 0 : -1;
+}
+
 void
 exchange_rate_refresh_all(void)
 {

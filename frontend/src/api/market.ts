@@ -28,5 +28,13 @@ export const marketApi = {
 
   getExchangeRates: () =>
     http.get<Record<string, number>, Record<string, number>>('/market/exchange-rates'),
+
+  updateExchangeRate: (currency: string, rate: number) =>
+    http.post<void, void>('/market/exchange-rates', { currency, rate }),
+
+  getMultiCurrencySummary: (baseCurrency = 'CNY') =>
+    http.get<import('@/types').MultiCurrencySummary, import('@/types').MultiCurrencySummary>('/reports/multi-currency-summary', {
+      params: { base_currency: baseCurrency },
+    }),
 }
 

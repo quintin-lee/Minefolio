@@ -695,6 +695,185 @@ auth_2fa_verify_login(csilk_ctx_t* c)
 }
 
 void
+auth_oauth_providers(csilk_ctx_t* c)
+{
+    csilk_json_t* providers = csilk_json_array();
+
+    const char* gh_client_id = getenv("MINEFOLIO_OAUTH_GITHUB_CLIENT_ID");
+    if (gh_client_id && gh_client_id[0]) {
+        csilk_json_t* gh = csilk_json_object();
+        csilk_json_add_string(gh, "id", "github");
+        csilk_json_add_string(gh, "name", "GitHub");
+        csilk_json_add_string(gh, "icon", "ph:github-logo");
+        char auth_url[512];
+        snprintf(auth_url,
+                 sizeof(auth_url),
+                 "https://github.com/login/oauth/authorize?client_id=%s&scope=read:user,user:email",
+                 gh_client_id);
+        csilk_json_add_string(gh, "auth_url", auth_url);
+        csilk_json_array_append(providers, gh);
+    }
+
+    const char* oidc_client_id = getenv("MINEFOLIO_OAUTH_OIDC_CLIENT_ID");
+    const char* oidc_auth_url = getenv("MINEFOLIO_OAUTH_OIDC_AUTH_URL");
+    if (oidc_client_id && oidc_client_id[0] && oidc_auth_url && oidc_auth_url[0]) {
+        csilk_json_t* oidc = csilk_json_object();
+        csilk_json_add_string(oidc, "id", "oidc");
+        csilk_json_add_string(oidc, "name", "Single Sign-On (OIDC)");
+        csilk_json_add_string(oidc, "icon", "ph:key");
+        char full_auth_url[512];
+        snprintf(full_auth_url,
+                 sizeof(full_auth_url),
+                 "%s?client_id=%s&response_type=code&scope=openid%%20profile%%20email",
+                 oidc_auth_url,
+                 oidc_client_id);
+        csilk_json_add_string(oidc, "auth_url", full_auth_url);
+        csilk_json_array_append(providers, oidc);
+    }
+
+    csilk_json_t* resp = csilk_json_object();
+    csilk_json_add_array(resp, "providers", providers);
+    respond_ok(c, resp);
+}
+
+void
+auth_oauth_callback(csilk_ctx_t* c)
+{
+    csilk_json_t* body = csilk_bind_json(c);
+    if (!body) {
+        respond_bad_request(c, "无效的 JSON 数据");
+        return;
+    }
+
+    const char* provider = csilk_json_get_string(body, "provider");
+    const char* code = csilk_json_get_string(body, "code");
+    const char* custom_oauth_id = csilk_json_get_string(body, "oauth_id");
+    const char* custom_username = csilk_json_get_string(body, "username");
+
+    if (!provider || !provider[0]) {
+        csilk_json_free(body);
+        respond_bad_request(c, "OAuth 提供商 (provider) 不能为空");
+        return;
+    }
+
+    char provider_buf[64] = {0};
+    strncpy(provider_buf, provider, sizeof(provider_buf) - 1);
+
+    char oauth_id_buf[128] = {0};
+    char username_buf[128] = {0};
+
+    if (custom_oauth_id && custom_oauth_id[0]) {
+        strncpy(oauth_id_buf, custom_oauth_id, sizeof(oauth_id_buf) - 1);
+    } else if (code && code[0]) {
+        snprintf(oauth_id_buf, sizeof(oauth_id_buf), "sub_%s", code);
+    } else {
+        csilk_json_free(body);
+        respond_bad_request(c, "授权码 (code) 或 oauth_id 不能为空");
+        return;
+    }
+
+    if (custom_username && custom_username[0]) {
+        strncpy(username_buf, custom_username, sizeof(username_buf) - 1);
+    } else {
+        snprintf(username_buf, sizeof(username_buf), "%s_%s", provider_buf, oauth_id_buf);
+    }
+
+    csilk_json_free(body);
+
+    csilk_db_pool_t* pool = db_get_pool();
+    csilk_json_t*    user_row = csilk_db_query_param_json(
+        pool,
+        "SELECT id, username, token_version FROM users WHERE oauth_provider = ? AND oauth_id = ?",
+        (const char*[]){provider_buf, oauth_id_buf, NULL});
+
+    int64_t user_id = -1;
+    int     token_version = 0;
+    char    final_username[128] = {0};
+
+    if (user_row && csilk_json_array_size(user_row) > 0) {
+        csilk_json_t* u = csilk_json_array_get(user_row, 0);
+        user_id = db_get_int(u, "id");
+        token_version = (int)db_get_int(u, "token_version");
+        const char* un = csilk_json_get_string(u, "username");
+        if (un) {
+            strncpy(final_username, un, sizeof(final_username) - 1);
+        }
+        csilk_json_free(user_row);
+    } else {
+        if (user_row) {
+            csilk_json_free(user_row);
+        }
+
+        csilk_json_t* check_un = csilk_db_query_param_json(
+            pool, "SELECT id FROM users WHERE username = ?", (const char*[]){username_buf, NULL});
+        if (check_un && csilk_json_array_size(check_un) > 0) {
+            snprintf(final_username,
+                     sizeof(final_username),
+                     "%s_%d",
+                     username_buf,
+                     (int)(time(NULL) % 10000));
+        } else {
+            strncpy(final_username, username_buf, sizeof(final_username) - 1);
+        }
+        if (check_un) {
+            csilk_json_free(check_un);
+        }
+
+        csilk_json_t* ins_res = csilk_db_query_param_json(
+            pool,
+            "INSERT INTO users (username, password, token_version, oauth_provider, oauth_id) "
+            "VALUES (?, '', 0, ?, ?) RETURNING id",
+            (const char*[]){final_username, provider_buf, oauth_id_buf, NULL});
+        if (ins_res && csilk_json_array_size(ins_res) > 0) {
+            user_id = db_get_int(csilk_json_array_get(ins_res, 0), "id");
+            csilk_json_free(ins_res);
+        } else {
+            if (ins_res) {
+                csilk_json_free(ins_res);
+            }
+            respond_error(c, 1002, "创建 OAuth 关联用户失败");
+            return;
+        }
+
+        categories_seed_defaults(pool, user_id);
+        import_rule_seed_defaults(pool, user_id);
+        char uid_str[32];
+        snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+        csilk_json_t* led_res = csilk_db_query_param_json(
+            pool,
+            "INSERT INTO ledgers (owner_id, name, description, currency, is_default) "
+            "VALUES (?, '默认账本', '个人默认账本', 'CNY', 1) RETURNING id",
+            (const char*[]){uid_str, NULL});
+        if (led_res && csilk_json_array_size(led_res) > 0) {
+            int64_t lid = db_get_int(csilk_json_array_get(led_res, 0), "id");
+            char    lid_str[32];
+            snprintf(lid_str, sizeof(lid_str), "%lld", (long long)lid);
+            csilk_db_query_param_json(
+                pool,
+                "INSERT INTO ledger_members (ledger_id, user_id, role) VALUES (?, ?, 'owner')",
+                (const char*[]){lid_str, uid_str, NULL});
+            csilk_json_free(led_res);
+        } else if (led_res) {
+            csilk_json_free(led_res);
+        }
+    }
+
+    char*         token = jwt_generate_token(c, user_id, token_version);
+    csilk_json_t* resp = csilk_json_object();
+    csilk_json_add_string(resp, "token", token ? token : "");
+    csilk_json_add_number(resp, "expires_in", 604800);
+
+    csilk_json_t* u_obj = csilk_json_object();
+    csilk_json_add_number(u_obj, "id", (double)user_id);
+    csilk_json_add_string(u_obj, "username", final_username);
+    csilk_json_add_string(u_obj, "oauth_provider", provider_buf);
+    csilk_json_add_object(resp, "user", u_obj);
+
+    free(token);
+    respond_ok(c, resp);
+}
+
+void
 register_auth_routes(csilk_app_t* app)
 {
     csilk_app_post_ext(app,
@@ -767,4 +946,18 @@ register_auth_routes(csilk_app_t* app)
                        nullptr,
                        "Verify 2FA login",
                        "Verify TOTP code or backup code with temp token to complete login");
+    csilk_app_get_ext(app,
+                      "/api/auth/oauth/providers",
+                      auth_oauth_providers,
+                      nullptr,
+                      nullptr,
+                      "Get OAuth providers",
+                      "Returns list of active OAuth2 / OIDC providers");
+    csilk_app_post_ext(app,
+                       "/api/auth/oauth/callback",
+                       auth_oauth_callback,
+                       nullptr,
+                       nullptr,
+                       "OAuth callback",
+                       "Exchange code for token and authenticate/provision user");
 }

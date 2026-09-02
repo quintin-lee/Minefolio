@@ -45,7 +45,9 @@ jwt_middleware_wrapper(csilk_ctx_t* c)
         (strcmp(path, "/api/auth/login") == 0 || strcmp(path, "/api/auth/register") == 0 ||
          strcmp(path, "/api/system/status") == 0 || strcmp(path, "/api/system/setup") == 0 ||
          strcmp(path, "/api/auth/public-key") == 0 || strcmp(path, "/api/ai/workflows") == 0 ||
-         strcmp(path, "/api/auth/2fa/verify-login") == 0)) {
+         strcmp(path, "/api/auth/2fa/verify-login") == 0 ||
+         strcmp(path, "/api/auth/oauth/providers") == 0 ||
+         strcmp(path, "/api/auth/oauth/callback") == 0)) {
         csilk_next(c);
         return;
     }

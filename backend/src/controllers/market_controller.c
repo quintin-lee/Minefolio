@@ -75,4 +75,28 @@ register_market_routes(csilk_app_t* app)
                       NULL,
                       "Get exchange rates",
                       "Get real-time multi-currency exchange rates to CNY");
+
+    csilk_app_post_ext(app,
+                       "/api/market/exchange-rates",
+                       market_service_update_exchange_rate,
+                       NULL,
+                       NULL,
+                       "Update exchange rate",
+                       "Update currency exchange rate to CNY");
+
+    csilk_app_get_ext(app,
+                      "/api/market/fx-rates",
+                      market_service_get_exchange_rates,
+                      NULL,
+                      NULL,
+                      "Get FX rates",
+                      "Get FX rates alias");
+
+    csilk_app_post_ext(app,
+                       "/api/market/fx-rates",
+                       market_service_update_exchange_rate,
+                       NULL,
+                       NULL,
+                       "Update FX rate",
+                       "Update FX rate alias");
 }

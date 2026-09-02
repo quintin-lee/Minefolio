@@ -89,6 +89,24 @@
               {{ isRegister ? '返回登录' : '立即注册' }}
             </el-button>
           </div>
+
+          <div v-if="oauthProviders.length > 0" class="oauth-container">
+            <div class="oauth-divider">
+              <span>或通过第三方账号登录</span>
+            </div>
+            <div class="oauth-btns">
+              <button
+                v-for="p in oauthProviders"
+                :key="p.id"
+                type="button"
+                class="oauth-btn"
+                @click="handleOAuthLogin(p)"
+              >
+                <el-icon class="oauth-icon"><Key /></el-icon>
+                <span>{{ p.name }}</span>
+              </button>
+            </div>
+          </div>
         </el-form>
       </el-card>
     </div>
@@ -99,7 +117,10 @@
 import { ref, reactive, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { Key } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
+import { authApi } from '@/api/auth'
+import type { OAuthProvider } from '@/types'
 import { zhCN } from '@/locales/zh-CN'
 
 const t = (key: string) => {
@@ -114,11 +135,18 @@ const auth = useAuthStore()
 const formRef = ref()
 const loading = ref(false)
 const isRegister = ref(false)
+const oauthProviders = ref<OAuthProvider[]>([])
 
 const form = reactive({ username: '', password: '', confirmPassword: '' })
 const isTwoFactorStep = ref(false)
 const tempToken = ref('')
 const twoFactorCode = ref('')
+
+function handleOAuthLogin(p: OAuthProvider) {
+  if (p.auth_url) {
+    window.location.href = p.auth_url
+  }
+}
 
 const validateConfirmPassword = (_rule: any, value: string, callback: any) => {
   if (isRegister.value && value !== form.password) {
@@ -341,11 +369,18 @@ function onPointerMove(e: PointerEvent) {
   mouse.y = e.clientY
 }
 
-onMounted(() => {
+onMounted(async () => {
   // 状态指示灯: 初始化 → 在线
   statusTimer = window.setTimeout(() => {
     statusText.value = 'SYSTEM ONLINE'
   }, 900)
+
+  try {
+    const res = await authApi.getOAuthProviders()
+    if (res && res.providers) {
+      oauthProviders.value = res.providers
+    }
+  } catch {}
 
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   if (reducedMotion) return
@@ -598,6 +633,56 @@ onBeforeUnmount(() => {
 }
 .switch-btn:hover {
   color: #22d3ee;
+}
+
+.oauth-container {
+  margin-top: 24px;
+}
+.oauth-divider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  margin-bottom: 16px;
+}
+.oauth-divider::before,
+.oauth-divider::after {
+  content: '';
+  flex: 1;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.oauth-divider span {
+  padding: 0 10px;
+  color: #64748b;
+  font-size: 12px;
+}
+.oauth-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.oauth-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  height: 40px;
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: #e2e8f0;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.oauth-btn:hover {
+  background: rgba(51, 65, 85, 0.8);
+  border-color: #00d4ff;
+  color: #fff;
+  transform: translateY(-1px);
+}
+.oauth-icon {
+  font-size: 16px;
 }
 
 .two-factor-hint {

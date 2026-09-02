@@ -10,6 +10,7 @@ void market_service_get_settings(csilk_ctx_t* c);
 void market_service_update_settings(csilk_ctx_t* c);
 void market_service_test_proxy(csilk_ctx_t* c);
 void market_service_get_exchange_rates(csilk_ctx_t* c);
+void market_service_update_exchange_rate(csilk_ctx_t* c);
 
 /* Internal sync logic used by both HTTP controller and background scheduler */
 int market_service_do_sync_user(csilk_db_pool_t* pool,

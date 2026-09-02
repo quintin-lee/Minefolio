@@ -19,8 +19,7 @@
 </template>
 
 <script setup lang="ts">
-import { useRoute, useRouter } from 'vue-router'
-import { DataAnalysis, Plus, Wallet, TrendCharts, PieChart, Setting } from '@element-plus/icons-vue'
+import { DataAnalysis, Plus, Wallet, TrendCharts, PieChart, Setting, Calendar } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -29,7 +28,7 @@ const tabs = [
   { name: 'dashboard', label: '首页', icon: DataAnalysis, prefix: '/m/dashboard' },
   { name: 'expenses', label: '记账', icon: Plus, prefix: '/m/expenses' },
   { name: 'assets', label: '资产', icon: Wallet, prefix: '/m/assets' },
-  { name: 'holdings', label: '持仓', icon: TrendCharts, prefix: '/m/holdings' },
+  { name: 'plans', label: '计划', icon: Calendar, prefix: '/m/plans' },
   { name: 'reports', label: '报表', icon: PieChart, prefix: '/m/reports' },
   { name: 'settings', label: '我的', icon: Setting, prefix: '/m/settings' },
 ]

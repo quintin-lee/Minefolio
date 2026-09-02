@@ -11,4 +11,6 @@ void auth_2fa_setup(csilk_ctx_t* c);
 void auth_2fa_enable(csilk_ctx_t* c);
 void auth_2fa_disable(csilk_ctx_t* c);
 void auth_2fa_verify_login(csilk_ctx_t* c);
+void auth_oauth_providers(csilk_ctx_t* c);
+void auth_oauth_callback(csilk_ctx_t* c);
 void register_auth_routes(csilk_app_t* app);

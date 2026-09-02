@@ -418,3 +418,121 @@ report_asset_summary(csilk_ctx_t* c)
     csilk_json_add_array(resp, "by_category", by_cat);
     respond_ok(c, resp);
 }
+
+void
+report_multi_currency_summary(csilk_ctx_t* c)
+{
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) {
+        return;
+    }
+    const char* base_cur = csilk_get_query(c, "base_currency");
+    if (!base_cur || !base_cur[0]) {
+        base_cur = "CNY";
+    }
+
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    const char* params[] = {uid_str, NULL};
+
+    csilk_db_pool_t* pool = db_get_pool();
+    csilk_json_t*    rows = csilk_db_query_param_json(
+        pool,
+        "SELECT a.id, a.name, a.currency, a.net_value, a.quantity, a.current_value, "
+        "CASE WHEN a.quantity > 0 AND a.net_value > 0 THEN a.quantity * a.net_value ELSE "
+        "a.current_value END as val, "
+        "c.asset_type "
+        "FROM assets a "
+        "JOIN categories c ON a.category_id = c.id "
+        "WHERE a.user_id = ?",
+        params);
+
+    typedef struct {
+        char   currency[16];
+        double assets;
+        double liabilities;
+        int    count;
+    } cur_bucket_t;
+
+    cur_bucket_t buckets[32];
+    int          bucket_count = 0;
+    memset(buckets, 0, sizeof(buckets));
+
+    double grand_total_assets = 0;
+    double grand_total_liabs = 0;
+
+    if (rows) {
+        size_t n = csilk_json_array_size(rows);
+        for (size_t i = 0; i < n; i++) {
+            csilk_json_t* r = csilk_json_array_get(rows, i);
+            const char*   cur = csilk_json_get_string(r, "currency");
+            if (!cur || !cur[0]) {
+                cur = "CNY";
+            }
+            double      val = db_get_num(r, "val");
+            const char* atype = csilk_json_get_string(r, "asset_type");
+            int         is_liab =
+                (atype && (strcmp(atype, "loan") == 0 || strcmp(atype, "credit_card") == 0 ||
+                           strcmp(atype, "other_liability") == 0));
+
+            int b_idx = -1;
+            for (int b = 0; b < bucket_count; b++) {
+                if (strcasecmp(buckets[b].currency, cur) == 0) {
+                    b_idx = b;
+                    break;
+                }
+            }
+            if (b_idx < 0 && bucket_count < 32) {
+                b_idx = bucket_count++;
+                strncpy(buckets[b_idx].currency, cur, sizeof(buckets[b_idx].currency) - 1);
+            }
+
+            if (b_idx >= 0) {
+                buckets[b_idx].count++;
+                if (is_liab) {
+                    buckets[b_idx].liabilities += val;
+                } else {
+                    buckets[b_idx].assets += val;
+                }
+            }
+
+            double converted_val = exchange_rate_convert(val, cur, base_cur);
+            if (is_liab) {
+                grand_total_liabs += converted_val;
+            } else {
+                grand_total_assets += converted_val;
+            }
+        }
+        csilk_json_free(rows);
+    }
+
+    double grand_net_worth = grand_total_assets - grand_total_liabs;
+
+    csilk_json_t* cur_arr = csilk_json_array();
+    for (int b = 0; b < bucket_count; b++) {
+        double b_net = buckets[b].assets - buckets[b].liabilities;
+        double converted_net = exchange_rate_convert(b_net, buckets[b].currency, base_cur);
+        double rate_to_base = exchange_rate_convert(1.0, buckets[b].currency, base_cur);
+
+        csilk_json_t* b_obj = csilk_json_object();
+        csilk_json_add_string(b_obj, "currency", buckets[b].currency);
+        csilk_json_add_number(b_obj, "asset_count", buckets[b].count);
+        csilk_json_add_number(b_obj, "original_assets", buckets[b].assets);
+        csilk_json_add_number(b_obj, "original_liabilities", buckets[b].liabilities);
+        csilk_json_add_number(b_obj, "original_net_worth", b_net);
+        csilk_json_add_number(b_obj, "rate_to_base", rate_to_base);
+        csilk_json_add_number(b_obj, "converted_net_worth", converted_net);
+        double pct = (grand_net_worth > 0) ? (converted_net / grand_net_worth * 100.0) : 0.0;
+        csilk_json_add_number(b_obj, "percentage", pct);
+        csilk_json_array_append(cur_arr, b_obj);
+    }
+
+    csilk_json_t* resp = csilk_json_object();
+    csilk_json_add_string(resp, "base_currency", base_cur);
+    csilk_json_add_number(resp, "total_net_worth", grand_net_worth);
+    csilk_json_add_number(resp, "total_assets", grand_total_assets);
+    csilk_json_add_number(resp, "total_liabilities", grand_total_liabs);
+    csilk_json_add_array(resp, "currencies", cur_arr);
+
+    respond_ok(c, resp);
+}

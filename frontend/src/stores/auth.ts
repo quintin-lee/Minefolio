@@ -135,12 +135,22 @@ export const useAuthStore = defineStore('auth', () => {
     await authApi.changePassword(old_enc, new_enc)
   }
 
+  function setToken(newToken: string) {
+    token.value = newToken
+    if (newToken) localStorage.setItem('token', newToken)
+    else localStorage.removeItem('token')
+  }
+
+  function setUser(newUser: User | null) {
+    user.value = newUser
+  }
+
   function logout() {
     token.value = ''
     user.value = null
     localStorage.removeItem('token')
   }
 
-  return { token, user, isInitialized, checkSystemStatus, setup, login, verify2FaLogin, register, logout, fetchUser, changePassword }
+  return { token, user, isInitialized, checkSystemStatus, setup, login, verify2FaLogin, register, logout, fetchUser, changePassword, setToken, setUser }
 })
 

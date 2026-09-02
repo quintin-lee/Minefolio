@@ -343,3 +343,36 @@ market_service_get_exchange_rates(csilk_ctx_t* c)
     csilk_json_t* rates = exchange_rate_list_all();
     respond_ok(c, rates);
 }
+
+void
+market_service_update_exchange_rate(csilk_ctx_t* c)
+{
+    csilk_json_t* body = csilk_bind_json(c);
+    if (!body) {
+        respond_bad_request(c, "无效的 JSON 数据");
+        return;
+    }
+    const char* currency = csilk_json_get_string(body, "currency");
+    double      rate = db_get_num(body, "rate");
+    if (!currency || !currency[0] || rate <= 0.0) {
+        csilk_json_free(body);
+        respond_bad_request(c, "币种 (currency) 和汇率 (rate > 0) 不能为空");
+        return;
+    }
+
+    exchange_rate_set(currency, rate);
+
+    csilk_db_pool_t* pool = db_get_pool();
+    char             rate_str[64];
+    snprintf(rate_str, sizeof(rate_str), "%.6f", rate);
+    csilk_db_query_param_json(
+        pool,
+        "INSERT INTO exchange_rates (base_currency, target_currency, rate, updated_at) "
+        "VALUES (?, 'CNY', ?, CURRENT_TIMESTAMP) "
+        "ON CONFLICT(base_currency, target_currency) DO UPDATE SET rate = excluded.rate, "
+        "updated_at = CURRENT_TIMESTAMP",
+        (const char*[]){currency, rate_str, NULL});
+
+    csilk_json_free(body);
+    respond_ok_null(c);
+}

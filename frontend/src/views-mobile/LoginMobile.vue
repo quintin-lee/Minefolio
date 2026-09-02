@@ -33,21 +33,52 @@
           {{ isRegister ? '返回登录' : '立即注册' }}
         </el-button>
       </div>
+
+      <div v-if="oauthProviders.length > 0" class="oauth-mobile-section">
+        <div class="oauth-divider-mobile"><span>第三方登录</span></div>
+        <button
+          v-for="p in oauthProviders"
+          :key="p.id"
+          type="button"
+          class="oauth-btn-mobile"
+          @click="handleOAuth(p)"
+        >
+          {{ p.name }} 登录
+        </button>
+      </div>
     </el-form>
   </div>
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { reactive, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
+import { authApi } from '@/api/auth'
+import type { OAuthProvider } from '@/types'
 
 const router = useRouter()
 const auth = useAuthStore()
 const loading = ref(false)
 const isRegister = ref(false)
 const form = reactive({ username: '', password: '', confirmPassword: '' })
+const oauthProviders = ref<OAuthProvider[]>([])
+
+function handleOAuth(p: OAuthProvider) {
+  if (p.auth_url) {
+    window.location.href = p.auth_url
+  }
+}
+
+onMounted(async () => {
+  try {
+    const res = await authApi.getOAuthProviders()
+    if (res && res.providers) {
+      oauthProviders.value = res.providers
+    }
+  } catch {}
+})
 
 async function submit() {
   if (!form.username || !form.password) return ElMessage.warning('请输入用户名和密码')
@@ -82,5 +113,26 @@ async function submit() {
   margin-top: 18px;
   font-size: 14px;
   color: var(--mf-text-secondary);
+}
+.oauth-mobile-section {
+  margin-top: 24px;
+}
+.oauth-divider-mobile {
+  text-align: center;
+  font-size: 12px;
+  color: var(--mf-text-tertiary);
+  margin-bottom: 12px;
+}
+.oauth-btn-mobile {
+  width: 100%;
+  height: 40px;
+  border-radius: 8px;
+  border: 1px solid var(--mf-border);
+  background: var(--mf-card-bg);
+  color: var(--mf-text-primary);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  margin-bottom: 8px;
 }
 </style>

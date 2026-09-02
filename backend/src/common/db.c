@@ -266,6 +266,13 @@ db_run_migrations(csilk_db_pool_t* pool)
         CSILK_LOG_I("Migration: added users.totp_* columns");
     }
 
+    // ---- users oauth_* 列迁移 ----
+    if (!col_exists(pool, "users", "oauth_provider")) {
+        csilk_db_exec(pool, "ALTER TABLE users ADD COLUMN oauth_provider TEXT DEFAULT ''");
+        csilk_db_exec(pool, "ALTER TABLE users ADD COLUMN oauth_id TEXT DEFAULT ''");
+        CSILK_LOG_I("Migration: added users.oauth_* columns");
+    }
+
     // ---- 交易分类 CHECK 约束迁移 ----
     csilk_json_t* cat_schema = csilk_db_query_json(
         pool, "SELECT sql FROM sqlite_master WHERE type='table' AND name='categories'");
@@ -729,6 +736,28 @@ db_run_migrations(csilk_db_pool_t* pool)
         }
         csilk_json_free(all_users);
     }
+
+    // ---- 汇率表迁移与默认种子初始化 ----
+    csilk_db_exec(pool,
+                  "CREATE TABLE IF NOT EXISTS exchange_rates ("
+                  "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                  "base_currency TEXT NOT NULL, "
+                  "target_currency TEXT NOT NULL, "
+                  "rate DECIMAL(18,6) NOT NULL, "
+                  "updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
+                  "UNIQUE (base_currency, target_currency))");
+    csilk_db_exec(pool,
+                  "CREATE INDEX IF NOT EXISTS idx_exchange_rates_pair ON "
+                  "exchange_rates(base_currency, target_currency)");
+    csilk_db_exec(
+        pool,
+        "INSERT OR IGNORE INTO exchange_rates (base_currency, target_currency, rate) VALUES "
+        "('USD', 'CNY', 7.24), ('CNY', 'USD', 0.138122), "
+        "('EUR', 'CNY', 7.85), ('CNY', 'EUR', 0.127389), "
+        "('HKD', 'CNY', 0.925), ('CNY', 'HKD', 1.081081), "
+        "('JPY', 'CNY', 0.048), ('CNY', 'JPY', 20.833333), "
+        "('GBP', 'CNY', 9.18), ('CNY', 'GBP', 0.108932), "
+        "('USDT', 'CNY', 7.25), ('CNY', 'USDT', 0.137931)");
 
     // ---- ai_traces 历史异常残留清理 ----
     csilk_db_exec(

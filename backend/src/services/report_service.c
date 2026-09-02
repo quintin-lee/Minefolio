@@ -81,6 +81,21 @@ register_report_routes(csilk_app_t* app)
                       "Returns aggregated asset summary including net worth");
     csilk_app_get_ext(
         app,
+        "/api/reports/multi-currency-summary",
+        report_multi_currency_summary,
+        nullptr,
+        nullptr,
+        "Multi-currency summary",
+        "Returns multi-currency asset breakdown and converted net worth in base currency");
+    csilk_app_get_ext(app,
+                      "/api/reports/currency-summary",
+                      report_multi_currency_summary,
+                      nullptr,
+                      nullptr,
+                      "Currency summary alias",
+                      "Alias for multi-currency summary");
+    csilk_app_get_ext(
+        app,
         "/api/summary",
         summary_get,
         nullptr,

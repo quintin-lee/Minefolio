@@ -45,4 +45,8 @@ export const authApi = {
   disable2Fa: () => http.post<void, any, void>('/auth/2fa/disable'),
   verify2FaLogin: (temp_token: string, code: string) =>
     http.post<LoginResponse, any, { temp_token: string; code: string }>('/auth/2fa/verify-login', { temp_token, code }),
+  getOAuthProviders: () =>
+    http.get<{ providers: import('@/types').OAuthProvider[] }, { providers: import('@/types').OAuthProvider[] }>('/auth/oauth/providers'),
+  oauthCallback: (data: { provider: string; code?: string; oauth_id?: string; username?: string }) =>
+    http.post<LoginResponse, any, typeof data>('/auth/oauth/callback', data),
 }
