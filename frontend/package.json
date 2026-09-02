@@ -16,6 +16,7 @@
     "@capacitor/app": "^6.0.0",
     "@capacitor/core": "^6.0.0",
     "@capacitor/haptics": "^6.0.0",
+    "@capacitor/ios": "^6.2.1",
     "@capacitor/network": "^6.0.0",
     "@element-plus/icons-vue": "^2.3.0",
     "@iconify-icons/ph": "^1.2.5",
