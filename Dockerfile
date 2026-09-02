@@ -119,9 +119,9 @@ RUN --mount=type=bind,source=hosts,target=/etc/hosts \
     mkdir -p /src/deps \
     && cd /src/deps \
     && (test -d csilk || git clone --depth 1 https://github.com/quintin-lee/csilk.git csilk) \
-    && (test -d llhttp || git clone --depth 1 -b v9.2.1 https://github.com/nodejs/llhttp.git llhttp) \
-    && (test -d yyjson || git clone --depth 1 -b 0.10.0 https://github.com/ibireme/yyjson.git yyjson) \
-    && (test -d nghttp2 || git clone --depth 1 -b v1.62.1 https://github.com/nghttp2/nghttp2.git nghttp2)
+    && (test -d llhttp || git clone --depth 1 -b release/v9.2.1 https://github.com/nodejs/llhttp.git llhttp) \
+    && (test -d yyjson || git clone --depth 1 -b 0.12.0 https://github.com/ibireme/yyjson.git yyjson) \
+    && (test -d nghttp2 || git clone --depth 1 -b v1.61.0 https://github.com/nghttp2/nghttp2.git nghttp2)
 
 RUN --mount=type=bind,source=hosts,target=/etc/hosts \
     cmake \
