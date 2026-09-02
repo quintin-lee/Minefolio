@@ -1,6 +1,6 @@
 # Minefolio — 架构与设计说明书 (Architecture & Design Specification)
 
-> 版本: 2026-09-02  
+> 版本: 2026-09-02 v1.0  
 > 适用范围: 仓库 HEAD (`master` 分支)  
 > 受众: 研发、运维、安全审计、二次开发
 
@@ -8,7 +8,7 @@
 
 ## 0. 摘要 (TL;DR)
 
-Minefolio 是一个**自托管的个人财务与投资追踪平台**,支持多账户类型(现金、银行、信用卡、贷款)、多资产持仓(股票/基金/债券/加密货币,含完整成本基础与盈亏)、AI 对话式记账、定投(DCA)计划、被动现金流台账、多账本协作与 CSV 导入导出。**后端采用 C23 + csilk v0.5.2 HTTP 框架 + SQLite/PostgreSQL**;**前端采用 Vue 3 + TypeScript SPA**;**移动端使用 Capacitor + sql.js WASM 完全离线运行**。本文档按"总-图-分"黄金法则,从物理拓扑、模块分解、数据模型、关键数据流、部署拓扑、安全边界六个维度给出完整工程级架构说明。
+Minefolio 是一个**自托管的个人财务与投资追踪平台**,支持多账户类型(现金、银行、信用卡、贷款)、多资产持仓(股票/基金/债券/加密货币,含完整成本基础与盈亏)、AI 对话式记账、定投(DCA)计划、被动现金流台账、多账本协作与 CSV 导入导出。**后端采用 C23 + csilk v0.5.2 HTTP 框架 + 128 位定点 Financial Core + 事件溯源 Ledger Engine**;**前端采用 Vue 3 + TypeScript SPA**;**移动端使用 Capacitor + sql.js WASM 完全离线运行**。本文档按"总-图-分"黄金法则,从物理拓扑、模块分解、数据模型、关键数据流、部署拓扑、安全边界六个维度给出完整工程级架构说明。
 
 ---
 
@@ -16,7 +16,7 @@ Minefolio 是一个**自托管的个人财务与投资追踪平台**,支持多�
 
 ### 1.1 总 (Overview)
 
-Minefolio 采用**经典三层 B/S 架构 + 离线移动子端**:HTTP 层(控制器)只做协议解析与响应封装,业务编排由服务层负责,数据访问收敛在仓储层;前端 Vue 3 SPA 桌面端通过 nginx 反向代理与 C 后端通信,移动端通过 Capacitor WebView 加载同一份 dist-mobile 产物,并使用内嵌的 sql.js WASM 在本地 SQLite 中完全离线工作。AI 子系统(DeepSeek/OpenAI 兼容)通过 Server-Sent Events 流式输出,经两层缓冲区(网络→SSE→RAF type-writer)实现平滑打字效果。
+Minefolio 采用**经典三层 B/S 架构 + 离线移动子端**:HTTP 层(控制器)只做协议解析与响应封装,业务编排由服务层负责,数据访问收敛在仓储层;**Financial Core** 提供 128 位定点高精度金融数学与强类型领域模型,确保所有金额运算零 IEEE 754 误差;**Ledger Engine** 作为统一账本核心,实现事件溯源与状态重算,所有交易通过 `ledger_apply_tx` / `ledger_reverse_tx` 原子写入并自动审计;前端 Vue 3 SPA 桌面端通过 nginx 反向代理与 C 后端通信,移动端通过 Capacitor WebView 加载同一份 dist-mobile 产物,并使用内嵌的 sql.js WASM 在本地 SQLite 中完全离线工作。AI 子系统(DeepSeek/OpenAI 兼容)通过 Server-Sent Events 流式输出,经两层缓冲区(网络→SSE→RAF type-writer)实现平滑打字效果。
 
 ### 1.2 图 (Diagram)
 
@@ -45,10 +45,11 @@ graph TB
 
     subgraph backend["fa:fa-server 后端进程 (C23 + csilk)"]
         http["fa:fa-cogs HTTP Layer<br/>Controllers + Middlewares"]
+        core["fa:fa-cogs Financial Core + Ledger<br/>decimal_t / money_t / ledger_engine"]
         biz["fa:fa-cogs Business Layer<br/>Services (编排)"]
         repo["fa:fa-hdd Repository Layer<br/>csilk_json_t* SQL"]
         shared["fa:fa-wrench Common<br/>DB/JWT/Balance/TxTypes/AI"]
-        ai["fa:fa-robot AI Subsystem<br/>SSE Streaming + Workflows"]
+        ai["fa:fa-robot AI Subsystem<br/>model/policy/runtime/tools/trace/workflow"]
         market["fa:fa-chart-line Market Scheduler<br/>异步行情拉取"]
     end
 
@@ -66,9 +67,13 @@ graph TB
     mobile -->|"离线写本地 WASM<br/>联网时同步"| nginx
     nginx -->|"HTTP/1.1 转发"| http
     http --> biz
+    biz --> core
     biz --> repo
     biz --> shared
     ai --> biz
+    core --> repo
+    core --> shared
+    ai -->|"model/policy/runtime/tools/workflow"| shared
     repo --> sqlite
     repo -.-> pg
     biz -->|"SSE: POST /ai/chat"| llm
@@ -83,11 +88,13 @@ graph TB
 | **Vue 3 SPA (桌面)** | 单页应用,Vue Router + Pinia,Element Plus UI,本地无状态 | `frontend/src/main.ts`、`router/index.ts` |
 | **Capacitor Mobile** | 同一份 API 层,内嵌 sql.js WASM 做离线 SQLite,Android 端走 Gradle | `frontend/src/main-mobile.ts`、`vite.config.mobile.ts` |
 | **Nginx** | 静态托管 `frontend/dist` + `/api/*` 反代到 `:8080` | `nginx/nginx.conf` |
+| **Financial Core** | **新增 v1.0**: 128 位定点高精度金融数学引擎 + 强类型领域模型,杜绝 IEEE 754 误差与跨币种算术漏洞 | `backend/src/core/financial/{currency,decimal,money,quantity,price,rate,percentage}.c/.h` |
+| **Ledger Engine** | **新增 v1.0**: 事件溯源账本核心,原子 `ledger_apply_tx` / `ledger_reverse_tx`,支持 `ledger_rebuild_*` 重算接口 | `backend/src/core/ledger/ledger_engine.c/.h`, `ledger_types.h` |
 | **HTTP Layer** | 18 个 controller,负责参数解析、调用 service、响应格式化;**禁止业务逻辑** | `backend/src/controllers/` |
-| **Business Layer** | 服务编排:事务、余额联动、PnL 计算、AI 工具调用、DCA/现金流计划执行 | `backend/src/services/` |
+| **Business Layer** | 服务编排:事务边界、调用 Ledger Engine、余额联动(PnL/FX)、AI 工具调用、DCA/现金流计划执行 | `backend/src/services/` |
 | **Repository Layer** | 唯一允许写 SQL 的层;返回 `csilk_json_t*`;**禁止引用任何 HTTP 头文件** | `backend/src/repositories/` |
-| **Common** | 跨域通用:DB 池、JWT (HS256)、RSA-OAEP、balance 符号翻转、tx_type 注册表、CSV 工具、TOTP | `backend/src/common/` |
-| **AI Subsystem** | AI 配置 (`ai_config.c`)、对话服务 (`ai_service.c`)、工作流引擎 (`ai_workflow_service.c`)、工具桥 (`ai_tools.c`)、SSE 流式输出 | `backend/src/services/ai_*`、`ai_config.h` |
+| **Common** | 跨域通用:DB 池、JWT (HS256)、RSA-OAEP、tx_type 注册表、CSV 工具、TOTP、balance 符号翻转 | `backend/src/common/` |
+| **AI Subsystem** | **模块化拆分**: model(请求/响应)、policy(权限/确认/风险)、runtime(会话/循环/上下文)、tools(工具注册/分发)、trace(Span/导出器)、workflow(Graph/Executor/具体工作流) | `backend/src/services/ai/{model,policy,runtime,tools,trace,workflow}/*.c/.h` |
 | **Market Scheduler** | 后台线程,定时拉取行情,通过 `quote_driver` 多源适配(东方财富/腾讯/Yahoo/Crypto),汇率服务 | `backend/src/services/market/` |
 | **SQLite / PostgreSQL** | 数据持久化;通过 `csilk_db_pool_t` 连接池;同一份 SQL 语义在两套方言下运行 | `backend/sql/migration.sql`、`migration_postgres.sql` |
 
@@ -109,7 +116,11 @@ graph TB
 
 ### 2.1 总
 
-后端采用**严格单向依赖**的三层架构:`controllers → services → repositories`,横向共享 `common/*` 与 `models/*`。**禁止**反向依赖(`repositories` 不得 include `csilk` HTTP 头)。这种约束保证业务逻辑可被 CLI/Worker 复用,且单测无需启动 HTTP 栈。
+后端采用**严格单向依赖的四层架构**:HTTP Layer(Controller)只做协议解析与响应封装,Business Layer(Service)负责业务编排并调用**Financial Core / Ledger Engine**(新增 v1.0,提供 128 位定点精度与事件溯源),数据访问收敛在 Repository 层。横向共享 `common/*` 与 `models/*`。**禁止**反向依赖(`repositories` 不得 include `csilk` HTTP 头)。这种约束保证业务逻辑可被 CLI/Worker 复用,且单测无需启动 HTTP 栈。
+
+```
+main.c → controllers → services → (financial core + ledger engine) → repositories → db pool
+```
 
 ### 2.2 图
 
@@ -152,9 +163,14 @@ graph LR
         auth_s["fa:fa-key auth_service"]
         asset_s["fa:fa-wallet asset_service"]
         tx_s["fa:fa-exchange-alt tx_write/query"]
-        ai_s["fa:fa-robot ai_service + workflow"]
-        bal["fa:fa-balance-scale common/balance"]
+        ai_s["fa:fa-robot ai_runtime + workflow"]
+        market_s["fa:fa-chart-line market_scheduler"]
         other_s["fa:fa-ellipsis-h ..."]
+    end
+
+    subgraph core["fa:fa-cogs Financial Core + Ledger Engine (v1.0)"]
+        fin["fa:fa-calculator Financial Core<br/>decimal_t (128-bit)<br/>money_t / quantity_t / price_t<br/>currency_t / rate_t / percentage_t"]
+        led["fa:fa-balance-scale Ledger Engine<br/>ledger_apply_tx<br/>ledger_reverse_tx<br/>ledger_rebuild_*<br/>pure math operators"]
     end
 
     subgraph repo["fa:fa-hdd Repository 层"]
@@ -175,14 +191,16 @@ graph LR
     main --> mw
     main --> ctrl
     ctrl --> svc
+    svc --> core
+    core --> repo
     svc --> repo
-    svc --> bal
     repo --> db
     svc --> resp
     ctrl --> jwt
     ctrl --> csrf
     jwt --> db
-    bal --> db
+    fin --> db
+    led --> db
 ```
 
 ### 2.3 分
@@ -194,24 +212,66 @@ graph LR
 - 示例: `transaction_controller.c` 的 `void transactions_create(csilk_ctx_t* c) { transaction_service_create(c); }`
 
 **Service 层 (`backend/src/services/`):**
-- 业务编排: 事务边界 (`BEGIN/COMMIT/ROLLBACK`)、余额联动 (调用 `balance_apply_delta()`)、持仓更新 (`apply_position()`)
+- 业务编排: 事务边界 (`BEGIN/COMMIT/ROLLBACK`)、调用 Ledger Engine (`ledger_apply_tx` / `ledger_reverse_tx`)、AI 运行时
 - 拆分为 `_query` / `_write` (如 `transaction_query.c` + `transaction_write.c`) 以隔离读写路径
 - **MUST** 使用 `db_get_num(obj, "key")` / `db_get_int()` 解析数字字段(因为 `csilk_db_query_json` 把所有列返回为 JSON 字符串)
 - **MUST** 使用 `tx_type_lookup()` 获取交易类型定义,禁止硬编码类型
+
+**Financial Core (`backend/src/core/financial/`):** 纯 C 数学引擎,零副作用,可在无任何 DB/HTTP 依赖下独立运行、单测。
+
+| 类型 | 描述 |
+|------|------|
+| `decimal_t` | **128 位定点十进制数**,真实值 = `mantissa × 10^(-scale)`,scale ∈ [0,18],彻底消除 IEEE 754 误差 |
+| `currency_t` | ISO 4217 货币模型,预定义 `CURRENCY_CNY/USD/EUR/BTC/ETH/USDT` 等,含精度信息 |
+| `money_t` | 绑定 `currency_t` 的金额类型,算术运算强制跨币种安全校验 |
+| `price_t` / `quantity_t` | 价格与份额强类型(非裸 double,杜绝误用) |
+| `rate_t` / `percentage_t` | 汇率与收益率类型,内置单位验证 |
+
+**Ledger Engine (`backend/src/core/ledger/`):** 事件溯源账本,所有金融操作通过 `ledger_tx_t` 事件对象驱动,支持原子 apply/reverse 及全局 rebuild。
+
+| 接口 | 描述 |
+|------|------|
+| `ledger_apply_tx(pool, tx)` | 原子执行交易事件(更新持仓、资金账户、手续费子行、审计日志) |
+| `ledger_reverse_tx(pool, user_id, tx_id)` | 逆向回滚已生效交易 |
+| `ledger_apply_expense` / `ledger_reverse_expense` | 日常收支原子操作 |
+| `ledger_apply_transfer` / `ledger_reverse_transfer` | 跨资产转账原子操作 |
+| `ledger_rebuild_position(pool, user_id, asset_id, out_state)` | 按时间顺序重放持仓交易,物化最终状态(用于对账) |
+| `ledger_rebuild_account(pool, user_id, asset_id, out_state)` | 按时间顺序重放账户流水,物化最终余额 |
+| `ledger_rebuild_portfolio(pool, user_id)` | 全局重算(保证 `original state == rebuild state`) |
+| `ledger_calc_buy_position` / `ledger_calc_sell_position` | 纯数学算子,计算加仓/减仓后的份额与成本基础 |
 
 **Repository 层 (`backend/src/repositories/*_repo.c`):**
 - **唯一允许出现 SQL 字符串的层**;所有用户输入通过 `?` 占位符 + `csilk_db_query_param_json()` 绑定,禁止字符串拼接
 - 直接返回 `csilk_json_t*`(数组/对象),无 model-struct 转换层
 - `csilk_db_exec()` 仅允许用于自包含的字面量(例如 fee 子行插入),不接收外部参数
 
+**AI 子系统模块化架构 (`backend/src/services/ai/`):**
+
+```
+backend/src/services/ai/
+├── model/        # ProviderRequest, ProviderResponse, Model, Provider (4 files)
+├── policy/       # Confirmation, Permission, Risk, Policy (4 files)
+├── runtime/      # Context, Session, Loop, Runtime (4 files)
+├── tools/        # Schema, Registry, Dispatcher (3 files)
+├── trace/        # Span, Exporter, Trace (3 files)
+├── workflow/     # Graph, Node, Context, Engine, Executor (5 files)
+└── workflows/    # 具体工作流实现
+    ├── cashflow_forecast.c    (3,578 lines)
+    ├── financial_health.c     (   701 lines)
+    ├── monthly_review.c       (   452 lines)
+    └── portfolio_analysis.c   (   273 lines)
+```
+
 **依赖方向硬约束:**
 
 | 调用方 | 可调用 | 不可调用 |
 |--------|--------|----------|
-| `main.c` | controllers | services, repositories, common(除 db.h) |
-| `controllers/*` | services, dtos, common(只读 context) | repositories |
-| `services/*` | repositories, common, balance | controllers, csilk HTTP 头 |
-| `repositories/*` | `common/db.h` ONLY | 其他一切 |
+| `main.c` | controllers, common | services, repositories, core |
+| `controllers/*` | services, dtos, common(只读 context) | repositories, core |
+| `services/*` | repositories, common, core (financial + ledger) | controllers, csilk HTTP 头 |
+| `core/financial/*` | 无 (纯 C 数学) | 任何外部层 |
+| `core/ledger/*` | `common/db.h`, `core/financial/*` | controllers, HTTP 头 |
+| `repositories/*` | `common/db.h`, `core/financial/*` | 其他一切 |
 | `common/*` | csilk, 彼此 | controllers, services |
 
 **关键不变量:**
@@ -225,7 +285,7 @@ graph LR
 
 ### 3.1 总
 
-Minefolio 数据模型围绕**"资产 (Asset) — 交易 (Transaction) — 余额联动"**三核心组织,辅以分类树、标签、账本、成员、行情历史、AI 会话/消息/追踪、用户、设置共 **14 张主表 + 5 张关联表**。SQLite 与 PostgreSQL 两套 schema 语义对齐,迁移在启动时由 `db.c` 应用。**余额方向**在 `common/balance.c` 集中处理:对 `loan / credit_card / other_liability` 类资产符号翻转,使 net worth 计算永远 `assets - liabilities` 正确。
+Minefolio 数据模型围绕**"资产 (Asset) — 交易 (Transaction) — 余额联动"**三核心组织,辅以分类树、标签、账本、成员、行情历史、AI 会话/消息/追踪、用户、设置共 **14 张主表 + 5 张关联表**。SQLite 与 PostgreSQL 两套 schema 语义对齐,迁移在启动时由 `db.c` 应用。**Ledger Engine** 作为账本事件溯源引擎,所有交易通过 `ledger_tx_t` 事件对象驱动,支持原子 apply/reverse 及 `ledger_rebuild_*` 全局重算。**余额方向**在 `common/balance.c` 集中处理:对 `loan / credit_card / other_liability` 类资产符号翻转,使 net worth 计算永远 `assets - liabilities` 正确。
 
 ### 3.2 图
 
@@ -323,7 +383,7 @@ CREATE INDEX idx_ledger_members_user ON ledger_members(user_id);
 
 #### 4.1.1 总
 
-一次交易涉及**5 步原子写入**:`INSERT parent` → `apply_position()` 更新持仓 → `balance_apply_delta()` 扣减/增加资金账户 → 若手续费 > 0,插入 `parent_tx_id` 链接的子行 → 写入 `asset_balance_logs` 审计。整个流程在 Service 层用 `BEGIN TRANSACTION / COMMIT / ROLLBACK` 包裹,失败统一回滚保证不变量。
+一次交易涉及**5 步原子写入**:调用 `ledger_apply_tx()` → 引擎内部执行 `INSERT parent` → `apply_position()` 更新持仓(使用 128 位定点精度)→ `balance_apply_delta()` 扣减/增加资金账户 → 若手续费 > 0,插入 `parent_tx_id` 链接的子行 → 写入 `asset_balance_logs` 审计。整个流程在 Ledger Engine 内部用 `BEGIN TRANSACTION / COMMIT / ROLLBACK` 包裹,失败统一回滚保证不变量。`ledger_rebuild_*` 接口提供从零重放所有事件以物化最终状态的审计能力。
 
 #### 4.1.2 图
 
@@ -347,6 +407,7 @@ sequenceDiagram
     participant H as http.ts (axios+JWT+CSRF)
     participant C as transaction_controller
     participant S as transaction_write_service
+    participant L as Ledger Engine<br/>(ledger_apply_tx)
     participant R as transaction_repo
     participant B as common/balance
     participant DB as SQLite/PG
@@ -357,29 +418,31 @@ sequenceDiagram
     C->>C: ctx_user_id() 解析 JWT
     C->>S: transaction_service_create(c)
     S->>S: csilk_bind_json() 提取参数
-    S->>R: tx_insert(pool, user_id, ...)
+    S->>L: ledger_apply_tx(pool, ledger_tx_t)
+    L->>L: 128-bit calc: cost_basis += buy_amount + fee
+    L->>R: tx_insert(pool, user_id, ...)  // INSERT parent
     R->>DB: BEGIN TRANSACTION
     R->>DB: INSERT parent row
-    DB-->>R: parent_id
-    R-->>S: parent_id
-    S->>B: apply_position(asset, qty, price, fee)
-    B->>DB: UPDATE assets SET quantity/cost_basis
-    S->>B: balance_apply_delta(funding_asset, -amount)
+    DB-->>R: parent_id → fill tx->id
+    R-->>L: parent_id
+    L->>B: balance_apply_delta(funding_asset, -amount)
     B->>DB: UPDATE assets SET current_value (liab. sign-flip)
     alt fee > 0
-        S->>R: raw SQL INSERT fee child (parent_tx_id)
+        L->>R: raw SQL INSERT fee child (parent_tx_id)
         R->>DB: INSERT child row
-        S->>B: balance_apply_delta(funding, -fee)
+        L->>B: balance_apply_delta(funding, -fee)
         B->>DB: UPDATE assets
     end
-    S->>R: balance_log_insert(...)
+    L->>R: balance_log_insert(...)
     R->>DB: INSERT asset_balance_logs
-    S->>DB: COMMIT
+    L->>DB: COMMIT
     alt any step fails
-        S->>DB: ROLLBACK
+        L->>DB: ROLLBACK
+        L-->>S: return error
         S-->>C: respond_error(1002)
         C-->>H: 200 + {code:1002}
     else success
+        L-->>S: return 0
         S-->>C: respond_ok({id, ...})
         C-->>H: 200 + {code:0, data}
         H-->>V: Promise<{code:0, data}>
@@ -391,8 +454,9 @@ sequenceDiagram
 
 - **失败语义**: 任意一步失败 MUST `ROLLBACK` 后再 `respond_error`,**禁止**部分提交
 - **费用子行删除**: 删交易时 MUST 先 `tx_child_fee_rows()` 查子行 → 反向 `balance_apply_delta()` → `tx_delete_fee_children()` → 再删 parent(防止孤儿子行污染余额)
-- **投资↔非投资类型切换**: 修改交易时 MUST 先回滚旧持仓的 position+balance,再按新类型应用(`common/balance.c` 集中处理)
+- **投资↔非投资类型切换**: 修改交易时 MUST 先回滚旧持仓的 position+balance,再按新类型应用(Ledger Engine 内部处理)
 - **符号翻转**: `balance_apply_delta()` 对 `loan / credit_card / other_liability` 资产自动取反,调用方不需要知道方向
+- **对账能力**: `ledger_rebuild_*` 系列接口可在任何时刻从零重放所有事件,物化最终状态;对账结果 MUST 与当前 DB 一致 (`rebuild_state == persisted_state`)
 
 ### 4.2 AI 对话流 (Chat Streaming)
 
@@ -789,9 +853,15 @@ cd android && ./gradlew clean assembleDebug
 cmake --build backend/build --parallel && npm --prefix frontend run build
 ```
 
-**集成测试套件 (`backend/tests/test_link.sh`):**
-- 33 个 case 覆盖: auth、CRUD、余额联动、PnL、CSV 导入导出、分页
+**集成测试套件 (`backend/tests/*.sh`):**
+- 8 个集成测试脚本 (test_link / test_2fa / test_ai_trace / test_dca_cashflow / test_full / test_fx_oauth / test_ledgers / test_market_sync),覆盖 auth、CRUD、余额联动、PnL、CSV 导入导出、分页、2FA、AI 追踪、DCA 现金流、FX OAuth、多账本 RBAC、行情同步
 - 启动真实 server (临时 SQLite DB),用 curl 走全 API,sqlite3 直查 DB 状态
+- `test_full.sh` 为全量回归入口
+
+**CUnit 单元测试 (`backend/tests/unit/`, CMake CTest 集成):**
+- 10 个纯数学域模型单测:`test_currency` / `test_decimal` / `test_money` / `test_quantity` / `test_price` / `test_rate` / `test_pnl` / `test_fx` / `test_ledger_math` / `test_ledger_engine`
+- 全部在无 HTTP 环境运行,覆盖 128 位定点算术精度、跨币种安全校验、Ledger Engine 事件溯源
+- 运行: `cmake --build backend/build && ctest --output-on-failure`
 
 **Dockerfile 关键技术:**
 - 三阶段构建: backend-build (Ubuntu 24.04 + gcc-14) → frontend-build (Node 20) → nginx:alpine runtime
@@ -863,8 +933,10 @@ Minefolio 提供**两套 schema** (`migration.sql` SQLite, `migration_postgres.s
 | **后端二进制体积** | ≤ 5MB strip | 4.2MB |
 | **后端冷启动** | ≤ 50ms | 30ms |
 | **并发连接** | ≥ 10k (单节点) | epoll-based csilk |
-| **集成测试覆盖** | 33 case 全通过 | `test_link.sh` |
+| **集成测试覆盖** | 8 套件全通过 | `test_*.sh` |
+| **CUnit 单测覆盖** | 10 套件全通过 | CTest |
 | **前端单测覆盖** | 7 case (mobile spec) | vitest |
+| **定点精度** | 128-bit 定点,scale ≤ 18 | 零 IEEE 754 误差 |
 
 ---
 
@@ -880,6 +952,8 @@ Minefolio 提供**两套 schema** (`migration.sql` SQLite, `migration_postgres.s
 | 6 | 离线移动端冲突 | 数据不一致 | `sync` store 基于 `updated_at` LWW;关键操作需用户确认 |
 | 7 | Ninja stale-dep | 编译错误 | **MUST** 用 Unix Makefiles |
 | 8 | JWT secret 泄露 | 全账户失陷 | 强制 env 注入;定期轮换 `token_version` 失效所有旧 token |
+| 9 | Ledger Engine 重建性能 | 大用户资产重算耗时 | 异步后台 rebuild + progress polling |
+| 10 | 128-bit 定点溢出 | 计算结果错误 | 所有操作返回 `decimal_err_t`;上层 MUST 检查返回值 |
 
 ---
 
@@ -914,14 +988,27 @@ Minefolio 提供**两套 schema** (`migration.sql` SQLite, `migration_postgres.s
 | 路径 | 用途 |
 |------|------|
 | `backend/src/main.c` | 入口、middleware 栈、路由注册 |
+| `backend/src/core/financial/decimal.h` | 128 位定点十进制引擎 |
+| `backend/src/core/financial/money.h` | 绑定 currency 的金额强类型 |
+| `backend/src/core/financial/currency.h` | ISO 4217 货币模型 |
+| `backend/src/core/financial/{quantity,price,rate,percentage}.h` | 金融领域强类型 |
+| `backend/src/core/ledger/ledger_engine.h` | 事件溯源账本核心接口 |
+| `backend/src/core/ledger/ledger_types.h` | ledger_tx_t / position/account state |
 | `backend/src/common/balance.h` | 余额符号翻转 |
 | `backend/src/common/tx_types.c` | 交易类型注册表 |
-| `backend/src/services/ai_service.c` | AI 对话 SSE |
-| `backend/src/services/ai_workflow_service.c` | AI 工作流编排 |
+| `backend/src/services/ai/model/` | AI 请求/响应/provider/model |
+| `backend/src/services/ai/policy/` | AI 确认/权限/风险策略 |
+| `backend/src/services/ai/runtime/` | AI 会话/循环/上下文运行时 |
+| `backend/src/services/ai/tools/` | AI 工具注册/分发/Schema |
+| `backend/src/services/ai/trace/` | AI 追踪 Span/导出器 |
+| `backend/src/services/ai/workflow/` | AI 工作流 Graph/Executor/Engine |
+| `backend/src/services/ai/workflows/` | 具体工作流实现 (cashflow_forecast, financial_health, monthly_review, portfolio_analysis) |
 | `backend/src/services/market/market_scheduler.c` | 后台行情同步 |
 | `backend/sql/migration.sql` | SQLite 14 表 |
 | `backend/sql/migration_postgres.sql` | PostgreSQL 14 表 |
-| `backend/tests/test_link.sh` | 33-case 集成测试 |
+| `backend/tests/test_link.sh` | 集成测试: auth + CRUD + 余额联动 + PnL + CSV + 分页 |
+| `backend/tests/test_*.sh` | 8 个专项集成测试脚本 |
+| `backend/tests/unit/test_*.c` | 10 个 CTest 单元单测 |
 | `frontend/src/utils/http.ts` | axios + JWT + CSRF |
 | `frontend/src/stores/chat.ts` | SmoothStreamWriter |
 | `frontend/src/components/ChatMessageContent.vue` | 流式渲染分层 |
@@ -940,8 +1027,9 @@ Minefolio 提供**两套 schema** (`migration.sql` SQLite, `migration_postgres.s
 - **CI 验证命令**:
   ```bash
   cmake --build backend/build --parallel && npm --prefix frontend run build
-  ./backend/tests/test_link.sh
-  npm --prefix frontend test -- --run
+  ./backend/tests/test_full.sh              # 全量集成测试
+  ctest --test-dir backend/build --output-on-failure  # 10 个 CUnit 单测
+  npm --prefix frontend test -- --run       # 移动端 vitest
   ```
 
 ---
