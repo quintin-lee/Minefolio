@@ -19,6 +19,7 @@
 #include <string.h>
 
 #include "repositories/ledger_repo.h"
+#include "repositories/import_rule_repo.h"
 
 static void
 store_bcrypt_hash(const char* password, char* out)
@@ -122,9 +123,10 @@ auth_register(csilk_ctx_t* c)
     int64_t user_id = db_get_int(csilk_json_array_get(user, 0), "id");
     csilk_json_free(user);
 
-    // Seed default categories & default ledger
+    // Seed default categories, default ledger & import rules
     categories_seed_defaults(pool, user_id);
     ledger_get_default(pool, user_id);
+    import_rule_seed_defaults(pool, user_id);
 
     char*         token = jwt_generate_token(c, user_id, 0); /* new user, version 0 */
     csilk_json_t* resp = csilk_json_object();

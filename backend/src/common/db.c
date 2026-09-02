@@ -193,6 +193,21 @@ db_run_migrations(csilk_db_pool_t* pool)
         csilk_db_exec(pool,
                       "CREATE INDEX IF NOT EXISTS idx_price_history_asset_date ON "
                       "asset_price_history(asset_id, price_date DESC)");
+        csilk_db_exec(pool,
+                      "CREATE TABLE IF NOT EXISTS import_rules ("
+                      "id BIGSERIAL PRIMARY KEY, "
+                      "user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE, "
+                      "keyword TEXT NOT NULL, "
+                      "match_field VARCHAR(32) NOT NULL DEFAULT 'all', "
+                      "match_type VARCHAR(32) NOT NULL DEFAULT 'contains', "
+                      "category_id BIGINT REFERENCES categories(id) ON DELETE SET NULL, "
+                      "target_type VARCHAR(32) NOT NULL DEFAULT 'expense', "
+                      "priority INTEGER NOT NULL DEFAULT 100, "
+                      "is_active BOOLEAN NOT NULL DEFAULT TRUE, "
+                      "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
+        csilk_db_exec(pool,
+                      "CREATE INDEX IF NOT EXISTS idx_import_rules_user ON import_rules(user_id, "
+                      "priority ASC)");
         return 0;
     }
 
@@ -524,6 +539,23 @@ db_run_migrations(csilk_db_pool_t* pool)
     csilk_db_exec(pool,
                   "CREATE INDEX IF NOT EXISTS idx_price_history_asset_date ON "
                   "asset_price_history(asset_id, price_date DESC)");
+
+    // ---- 账单导入智能规则表迁移 ----
+    csilk_db_exec(pool,
+                  "CREATE TABLE IF NOT EXISTS import_rules ("
+                  "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                  "user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, "
+                  "keyword TEXT NOT NULL, "
+                  "match_field TEXT NOT NULL DEFAULT 'all', "
+                  "match_type TEXT NOT NULL DEFAULT 'contains', "
+                  "category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL, "
+                  "target_type TEXT NOT NULL DEFAULT 'expense', "
+                  "priority INTEGER NOT NULL DEFAULT 100, "
+                  "is_active BOOLEAN NOT NULL DEFAULT 1, "
+                  "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
+    csilk_db_exec(
+        pool,
+        "CREATE INDEX IF NOT EXISTS idx_import_rules_user ON import_rules(user_id, priority ASC)");
 
     // ---- 定投计划与现金流表迁移（SQLite / Postgres 存量库） ----
     csilk_db_exec(pool,

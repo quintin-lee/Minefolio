@@ -23,6 +23,7 @@
 #include "controllers/dca_controller.h"
 #include "controllers/cashflow_controller.h"
 #include "controllers/ledger_controller.h"
+#include "controllers/import_rule_controller.h"
 #include "services/market/market_scheduler.h"
 #include "services/ai_service.h"
 #include "dtos/request.h"
@@ -106,6 +107,7 @@ main(int argc, char** argv)
     register_dca_routes(app);
     register_cashflow_routes(app);
     register_ledger_routes(app);
+    register_import_rule_routes(app);
 
     const char* dist = "./frontend/dist";
     if (access(dist, F_OK) != 0) {

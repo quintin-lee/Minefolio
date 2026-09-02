@@ -298,4 +298,19 @@ CREATE TABLE IF NOT EXISTS ledger_members (
 CREATE INDEX IF NOT EXISTS idx_ledger_members_user ON ledger_members(user_id);
 CREATE INDEX IF NOT EXISTS idx_ledger_members_ledger ON ledger_members(ledger_id);
 
+-- 账单导入智能规则表
+CREATE TABLE IF NOT EXISTS import_rules (
+    id               BIGSERIAL PRIMARY KEY,
+    user_id          BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    keyword          TEXT NOT NULL,
+    match_field      VARCHAR(32) NOT NULL DEFAULT 'all' CHECK(match_field IN ('all','description','counterparty','note')),
+    match_type       VARCHAR(32) NOT NULL DEFAULT 'contains' CHECK(match_type IN ('contains','exact','regex')),
+    category_id      BIGINT REFERENCES categories(id) ON DELETE SET NULL,
+    target_type      VARCHAR(32) NOT NULL DEFAULT 'expense' CHECK(target_type IN ('expense','income','transaction')),
+    priority         INTEGER NOT NULL DEFAULT 100,
+    is_active        BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_import_rules_user ON import_rules(user_id, priority ASC);
+
 

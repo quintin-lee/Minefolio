@@ -9,8 +9,103 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
+#include "repositories/import_rule_repo.h"
 #include "common/csv_utils.h"
+#include <ctype.h>
+#include <time.h>
+
+static const char*
+ci_strstr(const char* haystack, const char* needle)
+{
+    if (!haystack || !needle) {
+        return NULL;
+    }
+    if (!*needle) {
+        return haystack;
+    }
+    for (; *haystack; haystack++) {
+        const char* h = haystack;
+        const char* n = needle;
+        while (*h && *n && (tolower((unsigned char)*h) == tolower((unsigned char)*n))) {
+            h++;
+            n++;
+        }
+        if (!*n) {
+            return haystack;
+        }
+    }
+    return NULL;
+}
+
+static int
+apply_smart_rules(csilk_json_t* rules_arr,
+                  const char*   desc,
+                  const char*   counterparty,
+                  const char*   note,
+                  int64_t*      io_category_id,
+                  char*         io_target_type,
+                  size_t        target_type_cap)
+{
+    if (!rules_arr || csilk_json_array_size(rules_arr) == 0) {
+        return 0;
+    }
+
+    size_t count = csilk_json_array_size(rules_arr);
+    for (size_t i = 0; i < count; i++) {
+        csilk_json_t* r = csilk_json_array_get(rules_arr, i);
+        if (!r) {
+            continue;
+        }
+        int is_active = csilk_json_get(r, "is_active") ? csilk_json_get_bool(r, "is_active") : 1;
+        if (!is_active) {
+            continue;
+        }
+
+        const char* kw = csilk_json_get_string(r, "keyword");
+        if (!kw || !kw[0]) {
+            continue;
+        }
+
+        const char* field = csilk_json_get_string(r, "match_field");
+        if (!field) {
+            field = "all";
+        }
+
+        int matched = 0;
+        if (strcmp(field, "all") == 0) {
+            if ((desc && ci_strstr(desc, kw)) || (counterparty && ci_strstr(counterparty, kw)) ||
+                (note && ci_strstr(note, kw))) {
+                matched = 1;
+            }
+        } else if (strcmp(field, "description") == 0) {
+            if (desc && ci_strstr(desc, kw)) {
+                matched = 1;
+            }
+        } else if (strcmp(field, "counterparty") == 0) {
+            if (counterparty && ci_strstr(counterparty, kw)) {
+                matched = 1;
+            }
+        } else if (strcmp(field, "note") == 0) {
+            if (note && ci_strstr(note, kw)) {
+                matched = 1;
+            }
+        }
+
+        if (matched) {
+            int64_t rule_cid = db_get_int(r, "category_id");
+            if (rule_cid > 0 && (*io_category_id <= 0)) {
+                *io_category_id = rule_cid;
+            }
+            const char* rule_tt = csilk_json_get_string(r, "target_type");
+            if (rule_tt && rule_tt[0] && io_target_type &&
+                (!io_target_type[0] || strcmp(io_target_type, "expense") == 0)) {
+                snprintf(io_target_type, target_type_cap, "%s", rule_tt);
+            }
+            return 1;
+        }
+    }
+    return 0;
+}
 
 void
 transactions_import_csv(csilk_ctx_t* c)
@@ -38,9 +133,10 @@ transactions_import_csv(csilk_ctx_t* c)
         csv_len -= 3;
     }
 
-    int              imported = 0, errors = 0;
+    int              imported = 0, errors = 0, matched_rules_count = 0;
     char             errors_detail[2048] = {0};
     csilk_db_pool_t* pool = db_get_pool();
+    csilk_json_t*    rules = import_rule_list(pool, user_id);
 
     char* data = malloc(csv_len + 1);
     if (!data) {
@@ -143,6 +239,12 @@ transactions_import_csv(csilk_ctx_t* c)
             }
             if (c_res) {
                 csilk_json_free(c_res);
+            }
+        }
+
+        if (category_id <= 0) {
+            if (apply_smart_rules(rules, note_s, note_s, note_s, &category_id, NULL, 0)) {
+                matched_rules_count++;
             }
         }
 
@@ -315,10 +417,14 @@ transactions_import_csv(csilk_ctx_t* c)
         line_start = line_end ? line_end + 1 : line_start + 1;
     }
     free(data);
+    if (rules) {
+        csilk_json_free(rules);
+    }
 
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_number(resp, "imported", imported);
     csilk_json_add_number(resp, "errors", errors);
+    csilk_json_add_number(resp, "matched_rules", matched_rules_count);
     if (errors_detail[0]) {
         csilk_json_add_string(resp, "errors_detail", errors_detail);
     }
@@ -349,9 +455,10 @@ daily_expenses_import_csv(csilk_ctx_t* c)
         csv_len -= 3;
     }
 
-    int              imported = 0, errors = 0;
+    int              imported = 0, errors = 0, matched_rules_count = 0;
     char             errors_detail[2048] = {0};
     csilk_db_pool_t* pool = db_get_pool();
+    csilk_json_t*    rules = import_rule_list(pool, user_id);
 
     char* data = malloc(csv_len + 1);
     if (!data) {
@@ -435,6 +542,7 @@ daily_expenses_import_csv(csilk_ctx_t* c)
         }
 
         int64_t category_id = 0;
+        char    matched_type[32] = {0};
         if (cat_name[0]) {
             const char*   c_params[] = {uid_str, cat_name, NULL};
             csilk_json_t* c_res = csilk_db_query_param_json(
@@ -444,6 +552,17 @@ daily_expenses_import_csv(csilk_ctx_t* c)
             }
             if (c_res) {
                 csilk_json_free(c_res);
+            }
+        }
+        if (category_id <= 0) {
+            if (apply_smart_rules(rules,
+                                  note_s,
+                                  note_s,
+                                  note_s,
+                                  &category_id,
+                                  matched_type,
+                                  sizeof(matched_type))) {
+                matched_rules_count++;
             }
         }
         if (category_id <= 0) {
@@ -511,10 +630,14 @@ daily_expenses_import_csv(csilk_ctx_t* c)
         line_start = line_end ? line_end + 1 : line_start + 1;
     }
     free(data);
+    if (rules) {
+        csilk_json_free(rules);
+    }
 
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_number(resp, "imported", imported);
     csilk_json_add_number(resp, "errors", errors);
+    csilk_json_add_number(resp, "matched_rules", matched_rules_count);
     if (errors_detail[0]) {
         csilk_json_add_string(resp, "errors_detail", errors_detail);
     }

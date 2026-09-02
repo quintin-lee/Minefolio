@@ -1,5 +1,6 @@
 #include "services/admin_service.h"
 #include "repositories/auth_repo.h"
+#include "repositories/import_rule_repo.h"
 #define MINEFOLIO_BCRYPT_COST CSILK_BCRYPT_DEFAULT_COST
 #include "common/response.h"
 #include "common/ctx.h"
@@ -130,8 +131,10 @@ system_setup(csilk_ctx_t* c)
     int64_t user_id = db_get_int(csilk_json_array_get(user_res, 0), "id");
     csilk_json_free(user_res);
 
-    // Seed default categories
+    // Seed default categories, default ledger & import rules
     categories_seed_defaults(pool, user_id);
+    ledger_get_default(pool, user_id);
+    import_rule_seed_defaults(pool, user_id);
 
     /* Persist DB config if provided */
     const char* db_driver = csilk_json_get_string(body, "db_driver");
