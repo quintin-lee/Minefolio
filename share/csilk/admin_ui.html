@@ -492,13 +492,16 @@
             }
         }
 
+        const basePath = window.location.pathname.replace(/\/$/, '') || '/admin';
+
         function connectWebSocket() {
             if (ws && ws.readyState === WebSocket.OPEN) {
                 // Already connected — disconnect instead
                 ws.close();
                 return;
             }
-            const url = `ws://${window.location.host}/admin/ws`;
+            const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const url = `${proto}//${window.location.host}${basePath}/ws`;
             ws = new WebSocket(url);
             ws.onopen = () => {
                 reconnectAttempts = 0;
@@ -548,7 +551,7 @@
         setInterval(async () => {
             if (currentTab === 'overview') {
                 try {
-                    const res = await fetch('/admin/stats');
+                    const res = await fetch(`${basePath}/stats`);
                     const data = await res.json();
                     updateMetrics(data);
                 } catch(e) {}
@@ -569,7 +572,7 @@
             container.innerHTML = '<div class="text-slate-400 text-center py-16 animate-pulse">Collecting stack samples...</div>';
 
             try {
-                const res = await fetch('/admin/flamegraph');
+                const res = await fetch(`${basePath}/flamegraph`);
                 if (!res.ok) throw new Error('Server error: ' + res.status);
                 const svgText = await res.text();
                 container.innerHTML = svgText;
