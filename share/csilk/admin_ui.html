@@ -292,8 +292,8 @@
             <div class="bg-slate-800 p-6 rounded-xl border border-slate-700">
                 <div class="flex items-center justify-between mb-4">
                     <h2 class="text-lg font-semibold text-slate-200">CPU Flame Graph</h2>
-                    <button id="btn-capture" onclick="captureFlamegraph()" class="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-lg text-sm transition-all">
-                        Capture (5s)
+                    <button id="btn-capture" onclick="captureFlamegraph()" class="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white rounded-lg text-sm transition-all flex items-center gap-1.5 shadow-lg shadow-orange-900/20">
+                        🔥 Capture Profile
                     </button>
                 </div>
                 <div id="flamegraph-status" class="text-slate-400 text-sm mb-4">Click "Capture" to start profiling</div>
@@ -772,8 +772,8 @@
             const container = document.getElementById('flamegraph-container');
 
             btn.disabled = true;
-            btn.textContent = 'Profiling...';
-            status.textContent = 'Sampling for 5 seconds (100 Hz)...';
+            btn.innerHTML = '<span class="animate-spin inline-block mr-1">⏳</span> Profiling...';
+            status.textContent = 'Sampling CPU stacks (100 Hz)...';
             container.innerHTML = '<div class="text-slate-400 text-center py-16 animate-pulse">Collecting stack samples...</div>';
 
             try {
@@ -787,7 +787,7 @@
                 status.textContent = 'Error capturing profile';
             }
             btn.disabled = false;
-            btn.textContent = 'Capture (5s)';
+            btn.innerHTML = '🔥 Capture Profile';
         }
     </script>
 </body>

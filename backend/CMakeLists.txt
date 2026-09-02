@@ -8,6 +8,7 @@ include(FetchContent)
 
 FetchContent_Declare(
     csilk
+    SOURCE_DIR     "${CMAKE_CURRENT_SOURCE_DIR}/../deps/csilk"
     GIT_REPOSITORY https://github.com/quintin-lee/csilk.git
     GIT_TAG        master
 )
