@@ -3,6 +3,7 @@ name: CI & App Build
 on:
   push:
     branches: [ main, master ]
+    tags: [ 'v*' ]
   pull_request:
     branches: [ main, master ]
   workflow_dispatch:
@@ -40,6 +41,21 @@ jobs:
           ./tests/test_ledgers.sh
           ./tests/test_fx_oauth.sh
 
+      - name: Package Linux Binary Archive
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          mkdir -p release-pkg/share
+          cp backend/build/minefolio release-pkg/
+          cp -r backend/build/_deps/csilk-src/share/* release-pkg/share/ 2>/dev/null || true
+          tar -czf minefolio-linux-x86_64.tar.gz -C release-pkg .
+
+      - name: Upload Backend Binary Artifact
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: minefolio-linux-x86_64
+          path: minefolio-linux-x86_64.tar.gz
+
   frontend:
     name: Frontend Typecheck, Build & Test
     runs-on: ubuntu-latest
@@ -68,6 +84,18 @@ jobs:
 
       - name: Mobile typecheck & build
         run: npm run build:mobile
+
+      - name: Package Frontend Dist Archive
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tar -czf frontend-dist.tar.gz -C dist .
+
+      - name: Upload Frontend Dist Artifact
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: minefolio-frontend-dist
+          path: frontend/frontend-dist.tar.gz
 
   docker-build:
     name: Build & Package Docker Image
@@ -236,3 +264,52 @@ jobs:
           name: minefolio-ios-unsigned-ipa
           path: frontend/ios/App/build/Minefolio-iOS-unsigned.ipa
           if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release & Assets
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [backend, frontend, docker-build, android-build, ios-build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Prepare Release Assets
+        run: |
+          mkdir -p final-assets
+          find release-artifacts -name "*.tar.gz" -exec cp {} final-assets/ \;
+          find release-artifacts -name "*.apk" -exec cp {} final-assets/minefolio-android-${{ github.ref_name }}.apk \;
+          find release-artifacts -name "*.ipa" -exec cp {} final-assets/minefolio-ios-${{ github.ref_name }}-unsigned.ipa \;
+          ls -la final-assets/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          files: final-assets/*
+          body: |
+            ## 🚀 Minefolio ${{ github.ref_name }} 发布说明
+
+            ### 🐳 Docker 镜像获取
+            ```bash
+            # 拉取当前版本镜像
+            docker pull ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+
+            # 或拉取最新镜像
+            docker pull ghcr.io/${{ github.repository }}:latest
+            ```
+
+            ### 📦 本次发布资产清单 (Release Assets)
+            * **`minefolio-linux-x86_64.tar.gz`**：Linux x86_64 原生高性能后端二进制程序及静态资源
+            * **`minefolio-frontend-dist.tar.gz`**：Vue 3 + TypeScript 桌面端 SPA 生产静态资源包
+            * **`minefolio-android-${{ github.ref_name }}.apk`**：Android 原生移动端应用包（内嵌 SQLite WASM 纯离线引擎）
+            * **`minefolio-ios-${{ github.ref_name }}-unsigned.ipa`**：iOS 移动端应用安装包（未签名测试包）
