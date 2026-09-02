@@ -1,5 +1,5 @@
 <template>
-  <div class="dashboard-mobile">
+  <div class="dashboard-mobile" v-loading="loading">
     <div class="page-header"><h2>首页</h2></div>
     <div class="kpi-row">
       <div class="kpi-card cyan"><span>总资产</span><b>{{ fmt(summary.total_assets) }}</b></div>
@@ -13,6 +13,7 @@
       <div><span>结余</span><b>{{ fmt(month?.balance ?? 0) }}</b></div>
     </div>
     <h3 class="section-title">最近记录</h3>
+    <div v-if="recent.length === 0 && !loading" class="empty-state">暂无交易记录</div>
     <div v-for="e in recent" :key="e.id" class="record-card">
       <span class="cat">{{ e.category_name }}</span>
       <span :class="e.expense_type === 'income' ? 'income' : 'expense'">
@@ -31,21 +32,35 @@ import type { Summary, DailyExpense, ExpenseMonthly } from '@/types'
 const summary = ref<Summary>({ total_assets: 0, total_liabilities: 0, net_worth: 0, breakdown: [], trend: [] })
 const month = ref<ExpenseMonthly | null>(null)
 const recent = ref<DailyExpense[]>([])
+const loading = ref(false)
 
 function fmt(v: number) {
   return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(v ?? 0)
 }
 
 onMounted(async () => {
-  const now = new Date()
-  const [s, m, r] = await Promise.all([
-    summaryApi.get(),
-    dailyExpensesApi.monthly(now.getFullYear(), now.getMonth() + 1),
-    dailyExpensesApi.list({ page_size: 5 }),
-  ])
-  summary.value = s
-  month.value = m
-  recent.value = r.list
+  loading.value = true
+  try {
+    const now = new Date()
+    const [sRes, mRes, rRes] = await Promise.allSettled([
+      summaryApi.get(),
+      dailyExpensesApi.monthly(now.getFullYear(), now.getMonth() + 1),
+      dailyExpensesApi.list({ page_size: 5 }),
+    ])
+    if (sRes.status === 'fulfilled' && sRes.value) {
+      summary.value = sRes.value
+    }
+    if (mRes.status === 'fulfilled' && mRes.value) {
+      month.value = mRes.value
+    }
+    if (rRes.status === 'fulfilled' && rRes.value) {
+      recent.value = rRes.value.list
+    }
+  } catch (e) {
+    console.error('[DashboardMobile] onMounted error:', e)
+  } finally {
+    loading.value = false
+  }
 })
 </script>
 
@@ -62,4 +77,5 @@ onMounted(async () => {
 .section-title { margin: 16px 0 8px; font-size: 14px; color: var(--mf-text-muted); }
 .record-card { display: flex; justify-content: space-between; padding: 12px; border-bottom: 1px solid var(--mf-border); }
 .income { color: #34d399; } .expense { color: #f87171; }
+.empty-state { text-align: center; color: var(--mf-text-muted); padding: 20px 0; font-size: 13px; }
 </style>
