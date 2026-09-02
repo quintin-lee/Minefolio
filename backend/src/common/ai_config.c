@@ -146,7 +146,7 @@ ai_config_save(const char* path, const ai_config_t* cfg)
     csilk_json_add_array(root, "providers", prov_arr);
     csilk_json_add_string(root, "default_provider", cfg->default_provider);
     csilk_json_add_string(root, "default_model", cfg->default_model);
-    csilk_json_add_number(root, "context_size", (double)cfg->context_size);
+    csilk_json_add_int(root, "context_size", cfg->context_size);
     csilk_json_add_string(root, "system_prompt", cfg->system_prompt);
 
     size_t slen = 0;
