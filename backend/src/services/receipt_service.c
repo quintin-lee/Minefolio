@@ -311,7 +311,7 @@ receipt_service_scan(csilk_ctx_t* c)
     csilk_json_t* req_obj = csilk_json_object();
     csilk_json_add_string(req_obj, "model", model);
     csilk_json_add_number(req_obj, "temperature", 0.1);
-    csilk_json_add_number(req_obj, "max_tokens", 1000);
+    csilk_json_add_int(req_obj, "max_tokens", 2048);
 
     csilk_json_t* messages = csilk_json_array();
 
