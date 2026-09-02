@@ -149,13 +149,33 @@
 
             <!-- Workflows Tab -->
             <div id="tab-workflows" class="tab-content hidden h-full flex flex-col gap-6">
-                <div class="flex justify-between items-center">
-                    <select id="wf-selector" class="bg-slate-900 border border-slate-700 rounded px-4 py-2 text-sm focus:outline-none">
-                        <option value="">Select Active Workflow...</option>
-                    </select>
+                <div class="flex flex-wrap justify-between items-center gap-4 bg-slate-800 p-4 rounded-xl border border-slate-700">
+                    <div class="flex items-center gap-3">
+                        <i data-lucide="git-branch" class="text-blue-400 w-5 h-5"></i>
+                        <span class="text-sm font-semibold text-slate-300">预置财务工作流 / AI Workflows:</span>
+                        <select id="wf-selector" onchange="onWorkflowSelect(this.value)" class="bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500">
+                            <option value="wf_monthly_review">📊 月度财务健康复盘 (wf_monthly_review)</option>
+                            <option value="wf_emergency_fund">🛡️ 应急备用金测算与规划 (wf_emergency_fund)</option>
+                            <option value="wf_bill_calendar">📅 账单日历与周期负债排期 (wf_bill_calendar)</option>
+                            <option value="wf_health_score">🩺 多维度财务健康综合评分 (wf_health_score)</option>
+                        </select>
+                    </div>
+                    <div id="wf-badge" class="px-3 py-1 bg-blue-900/40 text-blue-300 rounded-full text-xs font-mono border border-blue-800">
+                        4 Steps • DAG Pipeline
+                    </div>
+                </div>
+                <div id="wf-desc-banner" class="bg-slate-800/60 p-4 rounded-xl border border-slate-700/80 text-sm text-slate-300 flex items-start gap-3">
+                    <i data-lucide="info" class="text-blue-400 w-4 h-4 mt-0.5 flex-shrink-0"></i>
+                    <span id="wf-desc-text">采集上月日常收支与分类明细，分析收支趋势，自动生成本月预算优化与节支建议。</span>
                 </div>
                 <div class="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <div class="lg:col-span-2 bg-slate-800 rounded-xl border border-slate-700 p-4 flex flex-col">
+                    <div class="lg:col-span-2 bg-slate-800 rounded-xl border border-slate-700 p-4 flex flex-col min-h-[420px]">
+                        <div class="flex justify-between items-center mb-3">
+                            <h3 class="text-sm font-semibold text-slate-400 flex items-center gap-2">
+                                <i data-lucide="workflow" class="w-4 h-4"></i> 工作流 DAG 拓扑执行图 (Mermaid)
+                            </h3>
+                            <span class="text-xs text-slate-500">节点状态：黄-就绪 蓝-执行中 绿-已完成</span>
+                        </div>
                         <div id="mermaid-container" class="flex-1 bg-slate-900 rounded-lg overflow-auto p-4 flex justify-center items-center">
                             <div class="mermaid" id="wf-graph">
                                 graph TD
@@ -163,9 +183,14 @@
                             </div>
                         </div>
                     </div>
-                    <div class="bg-slate-800 rounded-xl border border-slate-700 p-4 flex flex-col">
-                        <h3 class="text-sm font-semibold mb-4 text-slate-400">Execution Log</h3>
-                        <div id="wf-log" class="flex-1 overflow-y-auto text-[10px] space-y-2 font-mono"></div>
+                    <div class="bg-slate-800 rounded-xl border border-slate-700 p-4 flex flex-col min-h-[420px]">
+                        <div class="flex justify-between items-center mb-3">
+                            <h3 class="text-sm font-semibold text-slate-400 flex items-center gap-2">
+                                <i data-lucide="list-checks" class="w-4 h-4"></i> 步骤说明与实时执行日志
+                            </h3>
+                            <button onclick="clearWorkflowLog()" class="text-xs text-slate-500 hover:text-slate-300">清空日志</button>
+                        </div>
+                        <div id="wf-log" class="flex-1 overflow-y-auto text-xs space-y-2.5 font-mono bg-slate-900/60 p-3 rounded-lg border border-slate-800"></div>
                     </div>
                 </div>
             </div>
@@ -313,6 +338,12 @@
 
             document.getElementById('tab-title').innerText = tabId.charAt(0).toUpperCase() + tabId.slice(1);
             currentTab = tabId;
+
+            if (tabId === 'workflows') {
+                const sel = document.getElementById('wf-selector');
+                const wfId = sel?.value || 'wf_monthly_review';
+                onWorkflowSelect(wfId);
+            }
         }
 
         function initChart() {
@@ -441,6 +472,138 @@
             if (tbody.children.length > 50) tbody.lastChild.remove();
         }
 
+        const PRESET_WORKFLOWS = {
+            'wf_monthly_review': {
+                title: '月度财务健康复盘',
+                badge: '4 Steps • DAG Pipeline',
+                desc: '采集上月日常收支与分类明细，推导净现金流与储蓄率，分析近 3 个月波动并生成 AI 预算优化与节支建议。',
+                steps: [
+                    { id: 'fetch_expenses', title: '1. 采集日常收支明细 (fetch_expenses)', desc: '按分类归集上月所有支出与收入明细流水' },
+                    { id: 'calc_cashflow', title: '2. 计算月度净现金流 (calc_cashflow)', desc: '推算净结余率、储蓄率与刚性支出占比' },
+                    { id: 'trend_analysis', title: '3. 趋势与波动对比 (trend_analysis)', desc: '对比近 3 个月支出环比与异常激增类别' },
+                    { id: 'generate_advice', title: '4. AI 生成预算优化建议 (generate_advice)', desc: 'AI 生成针对性复盘诊断与行动建议' }
+                ],
+                mermaid: `graph TD
+    classDef step fill:#1e293b,stroke:#3b82f6,stroke-width:1.5px,color:#f8fafc;
+    classDef startEnd fill:#0f172a,stroke:#3b82f6,stroke-width:2px,color:#93c5fd;
+
+    START([🚀 启动月度复盘]):::startEnd --> fetch_expenses["1. 采集日常收支明细<br/>(fetch_expenses)"]:::step
+    fetch_expenses --> calc_cashflow["2. 计算月度净现金流<br/>(calc_cashflow)"]:::step
+    calc_cashflow --> trend_analysis["3. 趋势与波动对比<br/>(trend_analysis)"]:::step
+    trend_analysis --> generate_advice["4. AI 生成预算优化建议<br/>(generate_advice)"]:::step
+    generate_advice --> END([🏁 产出月度复盘报告]):::startEnd`
+            },
+            'wf_emergency_fund': {
+                title: '应急备用金测算与规划',
+                badge: '4 Steps • Multi-Branch DAG',
+                desc: '统计过去 6 个月月均支出，盘点高流动性现金，测算 3~6 个月备用金缺口并输出分层阶梯储备配置方案。',
+                steps: [
+                    { id: 'assess_monthly_burn', title: '1. 统计月均刚性支出 (assess_monthly_burn)', desc: '根据历史数据推算月均基本生活开销' },
+                    { id: 'calc_liquid_cash', title: '2. 盘点高流动性现金 (calc_liquid_cash)', desc: '统计银行卡、活期账户可用流动资金' },
+                    { id: 'gap_analysis', title: '3. 测算备用金缺口 (gap_analysis)', desc: '计算满足 3~6 个月开销所需的资金差额' },
+                    { id: 'allocation_plan', title: '4. 输出阶梯储备方案 (allocation_plan)', desc: '规划货币基金/活期/定期阶梯配置' }
+                ],
+                mermaid: `graph TD
+    classDef step fill:#1e293b,stroke:#10b981,stroke-width:1.5px,color:#f8fafc;
+    classDef startEnd fill:#0f172a,stroke:#10b981,stroke-width:2px,color:#6ee7b7;
+
+    START([🚀 启动备用金测算]):::startEnd --> assess_monthly_burn["1. 统计月均支出<br/>(assess_monthly_burn)"]:::step
+    START --> calc_liquid_cash["2. 盘点流动现金<br/>(calc_liquid_cash)"]:::step
+    assess_monthly_burn --> gap_analysis["3. 测算 3~6 个月备用金缺口<br/>(gap_analysis)"]:::step
+    calc_liquid_cash --> gap_analysis
+    gap_analysis --> allocation_plan["4. 输出阶梯储备方案<br/>(allocation_plan)"]:::step
+    allocation_plan --> END([🏁 产出储备建议报告]):::startEnd`
+            },
+            'wf_bill_calendar': {
+                title: '账单日历与周期负债排期',
+                badge: '4 Steps • Safety Guard Pipeline',
+                desc: '扫描未来 30 天周期性负债与扣款排期，核对账户余额，预警逾期与流动性风险并生成备付转账日历。',
+                steps: [
+                    { id: 'scan_schedules', title: '1. 扫描 30 天周期负债 (scan_schedules)', desc: '获取房贷、信用卡、定投扣款排期' },
+                    { id: 'check_funding', title: '2. 核对扣款账户余额 (check_funding)', desc: '校验关联扣款账户当前可用流动余额' },
+                    { id: 'risk_alert', title: '3. 流动性与逾期预警 (risk_alert)', desc: '识别账户余额不足可能导致的逾期风险' },
+                    { id: 'calendar_summary', title: '4. 生成账单排期日历 (calendar_summary)', desc: '输出时间线与备付资金转账规划' }
+                ],
+                mermaid: `graph TD
+    classDef step fill:#1e293b,stroke:#f59e0b,stroke-width:1.5px,color:#f8fafc;
+    classDef startEnd fill:#0f172a,stroke:#f59e0b,stroke-width:2px,color:#fcd34d;
+
+    START([🚀 扫描账单计划]):::startEnd --> scan_schedules["1. 扫描周期负债排期<br/>(scan_schedules)"]:::step
+    START --> check_funding["2. 核对扣款账户余额<br/>(check_funding)"]:::step
+    scan_schedules --> risk_alert["3. 流动性与逾期预警<br/>(risk_alert)"]:::step
+    check_funding --> risk_alert
+    risk_alert --> calendar_summary["4. 生成账单日历与提醒<br/>(calendar_summary)"]:::step
+    calendar_summary --> END([🏁 产出排期日历]):::startEnd`
+            },
+            'wf_health_score': {
+                title: '多维度财务健康综合评分',
+                badge: '5 Steps • Weighted Aggregation',
+                desc: '基于流动性比率、储蓄率、负债收入比、投资比率进行加权量化评分并输出财务体检诊断报告。',
+                steps: [
+                    { id: 'liquidity_ratio', title: '1. 测算流动性比率', desc: '流动资产 / 月均支出 (标准: 3~6倍)' },
+                    { id: 'savings_rate', title: '2. 测算月度储蓄率', desc: '月结余 / 月收入 (标准: ≥30%)' },
+                    { id: 'debt_to_income', title: '3. 测算负债收入比', desc: '月负债还款 / 月收入 (标准: ≤40%)' },
+                    { id: 'investment_ratio', title: '4. 测算投资净值比', desc: '可投资产 / 总净资产' },
+                    { id: 'composite_score', title: '5. 综合加权评分', desc: '量化输出综合分 (0-100) 与风险改善建议' }
+                ],
+                mermaid: `graph TD
+    classDef step fill:#1e293b,stroke:#ec4899,stroke-width:1.5px,color:#f8fafc;
+    classDef startEnd fill:#0f172a,stroke:#ec4899,stroke-width:2px,color:#fbcfe8;
+
+    START([🚀 启动全面体检]):::startEnd --> liquidity_ratio["1. 流动性比率<br/>(liquidity_ratio)"]:::step
+    START --> savings_rate["2. 月度储蓄率<br/>(savings_rate)"]:::step
+    START --> debt_to_income["3. 负债收入比<br/>(debt_to_income)"]:::step
+    START --> investment_ratio["4. 投资净值比<br/>(investment_ratio)"]:::step
+    liquidity_ratio --> composite_score["5. 综合评分与体检诊断<br/>(composite_score)"]:::step
+    savings_rate --> composite_score
+    debt_to_income --> composite_score
+    investment_ratio --> composite_score
+    composite_score --> END([🏁 生成财务健康报告]):::startEnd`
+            }
+        };
+
+        async function onWorkflowSelect(wfId) {
+            const wf = PRESET_WORKFLOWS[wfId];
+            if (!wf) return;
+
+            const badge = document.getElementById('wf-badge');
+            if (badge) badge.innerText = wf.badge;
+            const desc = document.getElementById('wf-desc-text');
+            if (desc) desc.innerText = wf.desc;
+
+            currentTopology = wf.mermaid;
+            await renderMermaid(currentTopology);
+
+            const log = document.getElementById('wf-log');
+            if (log) {
+                log.innerHTML = '';
+                wf.steps.forEach(st => {
+                    const el = document.createElement('div');
+                    el.className = "p-2 rounded bg-slate-800/80 border border-slate-700/60";
+                    el.innerHTML = `<div class="font-semibold text-blue-400 text-xs">${st.title}</div><div class="text-[11px] text-slate-400 mt-0.5">${st.desc}</div>`;
+                    log.appendChild(el);
+                });
+            }
+        }
+
+        function clearWorkflowLog() {
+            const sel = document.getElementById('wf-selector');
+            const wfId = sel?.value || 'wf_monthly_review';
+            const log = document.getElementById('wf-log');
+            if (log) {
+                log.innerHTML = '';
+                const wf = PRESET_WORKFLOWS[wfId];
+                if (wf) {
+                    wf.steps.forEach(st => {
+                        const el = document.createElement('div');
+                        el.className = "p-2 rounded bg-slate-800/80 border border-slate-700/60";
+                        el.innerHTML = `<div class="font-semibold text-blue-400 text-xs">${st.title}</div><div class="text-[11px] text-slate-400 mt-0.5">${st.desc}</div>`;
+                        log.appendChild(el);
+                    });
+                }
+            }
+        }
+
         async function handleWorkflowEvent(data) {
             const selector = document.getElementById('wf-selector');
             if (data.event === 'workflow_start') {
@@ -452,8 +615,8 @@
 
             const log = document.getElementById('wf-log');
             const entry = document.createElement('div');
-            entry.className = "p-1 border-l-2 border-slate-700 pl-2";
-            entry.innerHTML = `<span class="text-slate-500">${new Date().toLocaleTimeString()}</span> <b class="text-blue-400">${data.event}</b> ${data.node_id || ''}`;
+            entry.className = "p-1.5 rounded border-l-2 border-blue-500 bg-slate-800/90 pl-2 text-xs";
+            entry.innerHTML = `<span class="text-slate-500">${new Date().toLocaleTimeString()}</span> <b class="text-blue-400">${data.event}</b> <span class="text-slate-300">${data.node_id || data.title || ''}</span>`;
             log.prepend(entry);
 
             if (data.event === 'workflow_topology') {
@@ -464,11 +627,10 @@
             }
             
             if (data.node_id) {
-                // Determine node state from event
                 let state = null;
-                if (data.event === 'node_queued') state = 'queued';
-                else if (data.event === 'node_start') state = 'running';
-                else if (data.event === 'node_finish') state = 'finished';
+                if (data.event === 'node_queued' || data.event === 'step_queued') state = 'queued';
+                else if (data.event === 'node_start' || data.event === 'step_start') state = 'running';
+                else if (data.event === 'node_finish' || data.event === 'step_complete') state = 'finished';
                 else if (data.event === 'workflow_paused') state = 'paused';
                 
                 if (state) updateNodeUI(data.node_id, state);
