@@ -268,6 +268,10 @@ COPY --from=frontend-build \
 
 
 COPY --from=backend-build \
+    /src/deps/csilk/share \
+    /app/share
+
+COPY --from=backend-build \
     /src/deps/csilk/share/swagger-ui \
     /src/deps/csilk/share/swagger-ui
 

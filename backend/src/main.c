@@ -1,4 +1,5 @@
 #include "csilk/app/app.h"
+#include "csilk/app/admin.h"
 #include "common/db.h"
 #include "config/key_manager.h"
 #include "middlewares/jwt_middleware.h"
@@ -110,6 +111,7 @@ main(int argc, char** argv)
     register_ledger_routes(app);
     register_import_rule_routes(app);
     register_receipt_routes(app);
+    csilk_admin_serve(app, "/csilk-admin");
 
     const char* dist = "./frontend/dist";
     if (access(dist, F_OK) != 0) {

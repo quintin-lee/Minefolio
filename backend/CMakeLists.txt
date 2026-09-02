@@ -85,3 +85,10 @@ add_custom_command(TARGET minefolio POST_BUILD
         "${CMAKE_CURRENT_SOURCE_DIR}/sql"
         "${CMAKE_BINARY_DIR}/sql"
 )
+if(DEFINED csilk_SOURCE_DIR)
+    add_custom_command(TARGET minefolio POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${csilk_SOURCE_DIR}/share"
+            "${CMAKE_BINARY_DIR}/share"
+    )
+endif()
