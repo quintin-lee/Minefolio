@@ -1,13 +1,27 @@
 #pragma once
 #include "csilk/csilk.h"
+#include "core/financial/currency.h"
+#include "core/financial/decimal.h"
+#include "core/financial/money.h"
+#include "core/financial/rate.h"
 
 /**
  * @file exchange_rate_service.h
- * @brief 实时多币种外汇汇率引擎与历史汇率快照管理服务
+ * @brief 实时多币种外汇汇率引擎与历史汇率快照管理服务（Financial Core 驱动）
  *
  * 提供主流法币及数字货币对基准币种 (CNY) 的汇率查询、任意双币种实时折算、
  * Yahoo Finance 外汇行情拉取、每日历史汇率快照落地与走势查询功能。
  */
+
+/**
+ * @brief 查询源币种到目标币种的高精度汇率对象
+ */
+rate_t exchange_rate_get_rate(currency_t from_cur, currency_t to_cur);
+
+/**
+ * @brief 使用高精度定点数引擎在任意双币种之间进行金额换算
+ */
+money_t exchange_rate_convert_m(money_t amount, currency_t to_currency);
 
 /**
  * @brief 查询指定币种对基准币种 (CNY) 的实时折算汇率。

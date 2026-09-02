@@ -68,6 +68,44 @@ exchange_rate_get_to_cny(const char* currency)
     return rate > 0 ? rate : 1.0;
 }
 
+rate_t
+exchange_rate_get_rate(currency_t from_cur, currency_t to_cur)
+{
+    if (currency_equals(from_cur, to_cur)) {
+        return rate_one(from_cur, to_cur);
+    }
+    double from_to_cny = exchange_rate_get_to_cny(currency_code(&from_cur));
+    double to_to_cny = exchange_rate_get_to_cny(currency_code(&to_cur));
+    if (to_to_cny <= 0.0) {
+        to_to_cny = 1.0;
+    }
+
+    decimal_t d_from, d_to, factor;
+    decimal_from_double(from_to_cny, 6, &d_from);
+    decimal_from_double(to_to_cny, 6, &d_to);
+    decimal_div(d_from, d_to, 6, ROUND_HALF_UP, &factor);
+
+    return rate_from_decimal(factor, from_cur, to_cur);
+}
+
+money_t
+exchange_rate_convert_m(money_t amount, currency_t to_currency)
+{
+    if (money_is_zero(amount)) {
+        return money_zero(to_currency);
+    }
+    if (currency_equals(amount.currency, to_currency)) {
+        return amount;
+    }
+
+    rate_t  r = exchange_rate_get_rate(amount.currency, to_currency);
+    money_t out;
+    if (rate_convert_money(amount, r, &out) == DECIMAL_OK) {
+        return out;
+    }
+    return money_zero(to_currency);
+}
+
 double
 exchange_rate_convert(double amount, const char* from_currency, const char* to_currency)
 {
@@ -81,13 +119,13 @@ exchange_rate_convert(double amount, const char* from_currency, const char* to_c
         return amount;
     }
 
-    double from_to_cny = exchange_rate_get_to_cny(from_currency);
-    double to_to_cny = exchange_rate_get_to_cny(to_currency);
+    currency_t fcur = currency_from_str(from_currency);
+    currency_t tcur = currency_from_str(to_currency);
 
-    if (to_to_cny <= 0.0) {
-        to_to_cny = 1.0;
-    }
-    return (amount * from_to_cny) / to_to_cny;
+    money_t in_m;
+    money_from_double(amount, fcur, &in_m);
+    money_t out_m = exchange_rate_convert_m(in_m, tcur);
+    return money_to_double(out_m);
 }
 
 int

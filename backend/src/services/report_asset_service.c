@@ -600,11 +600,13 @@ report_fx_pnl(csilk_ctx_t* c)
         (const char*[]){uid_str, base_cur, NULL});
 
     csilk_json_t* items = csilk_json_array();
-    double        total_foreign_cost_base = 0.0;
-    double        total_foreign_market_base = 0.0;
-    double        total_asset_pnl_base = 0.0;
-    double        total_fx_pnl_base = 0.0;
-    double        total_combined_pnl_base = 0.0;
+    currency_t    base_currency = currency_from_str(base_cur);
+
+    money_t total_foreign_cost_base = money_zero(base_currency);
+    money_t total_foreign_market_base = money_zero(base_currency);
+    money_t total_asset_pnl_base = money_zero(base_currency);
+    money_t total_fx_pnl_base = money_zero(base_currency);
+    money_t total_combined_pnl_base = money_zero(base_currency);
 
     if (rows) {
         size_t n = csilk_json_array_size(rows);
@@ -614,53 +616,95 @@ report_fx_pnl(csilk_ctx_t* c)
             const char*   aname = csilk_json_get_string(r, "name");
             const char*   cur = csilk_json_get_string(r, "currency");
             const char*   cname = csilk_json_get_string(r, "category_name");
-            double        qty = db_get_num(r, "quantity");
-            double        cost = db_get_num(r, "cost_basis");
-            double        nv = db_get_num(r, "net_value");
-            double        cv = db_get_num(r, "current_value");
+            currency_t    asset_cur = currency_from_str(cur);
 
-            double current_val_orig = (cv > 0) ? cv : (qty > 0 && nv > 0 ? qty * nv : 0.0);
-            if (current_val_orig == 0.0 && cost == 0.0) {
+            quantity_t q = db_get_quantity(r, "quantity");
+            money_t    cost = db_get_money(r, "cost_basis", asset_cur);
+            price_t    nv = db_get_price(r, "net_value", asset_cur);
+            money_t    cv = db_get_money(r, "current_value", asset_cur);
+
+            money_t current_val_orig;
+            if (!money_is_zero(cv)) {
+                current_val_orig = cv;
+            } else if (!quantity_is_zero(q) && !decimal_is_zero(nv.unit_price)) {
+                price_times_quantity(nv, q, &current_val_orig);
+            } else {
+                current_val_orig = money_zero(asset_cur);
+            }
+
+            if (money_is_zero(current_val_orig) && money_is_zero(cost)) {
                 continue;
             }
 
-            double current_fx_rate = exchange_rate_convert(1.0, cur, base_cur);
-            double cost_fx_rate = db_get_num(r, "initial_rate");
-            if (cost_fx_rate <= 0.0) {
-                cost_fx_rate = current_fx_rate * 0.98; /* Fallback baseline */
+            rate_t    curr_fx_r = exchange_rate_get_rate(asset_cur, base_currency);
+            rate_t    cost_fx_r;
+            decimal_t init_rate_d = db_get_decimal(r, "initial_rate");
+            if (!decimal_is_zero(init_rate_d)) {
+                cost_fx_r = rate_from_decimal(init_rate_d, asset_cur, base_currency);
+            } else {
+                decimal_t fallback_factor, d098;
+                decimal_from_string("0.98", &d098);
+                decimal_mul(curr_fx_r.factor, d098, &fallback_factor);
+                cost_fx_r = rate_from_decimal(fallback_factor, asset_cur, base_currency);
             }
 
-            double orig_pnl = current_val_orig - cost;
-            double asset_pnl_base = orig_pnl * current_fx_rate;
-            double fx_pnl_base = (cost > 0) ? cost * (current_fx_rate - cost_fx_rate)
-                                            : (current_val_orig * (current_fx_rate - cost_fx_rate));
-            double combined_pnl_base = asset_pnl_base + fx_pnl_base;
+            // Asset Price PnL: (curr_val_orig - cost) * curr_fx_r
+            money_t orig_pnl;
+            money_sub(current_val_orig, cost, &orig_pnl);
+            money_t asset_pnl_base;
+            rate_convert_money(orig_pnl, curr_fx_r, &asset_pnl_base);
 
-            double cost_in_base = cost * cost_fx_rate;
-            double val_in_base = current_val_orig * current_fx_rate;
+            // FX PnL: cost * (curr_fx_r - cost_fx_r)
+            rate_t r_diff;
+            r_diff.from_currency = asset_cur;
+            r_diff.to_currency = base_currency;
+            decimal_sub(curr_fx_r.factor, cost_fx_r.factor, &r_diff.factor);
 
-            total_foreign_cost_base += cost_in_base;
-            total_foreign_market_base += val_in_base;
-            total_asset_pnl_base += asset_pnl_base;
-            total_fx_pnl_base += fx_pnl_base;
-            total_combined_pnl_base += combined_pnl_base;
+            money_t fx_pnl_base;
+            if (!money_is_zero(cost)) {
+                rate_convert_money(cost, r_diff, &fx_pnl_base);
+            } else {
+                rate_convert_money(current_val_orig, r_diff, &fx_pnl_base);
+            }
+
+            // Combined PnL: asset_pnl_base + fx_pnl_base
+            money_t combined_pnl_base;
+            money_add(asset_pnl_base, fx_pnl_base, &combined_pnl_base);
+
+            money_t cost_in_base, val_in_base;
+            rate_convert_money(cost, cost_fx_r, &cost_in_base);
+            rate_convert_money(current_val_orig, curr_fx_r, &val_in_base);
+
+            money_add(total_foreign_cost_base, cost_in_base, &total_foreign_cost_base);
+            money_add(total_foreign_market_base, val_in_base, &total_foreign_market_base);
+            money_add(total_asset_pnl_base, asset_pnl_base, &total_asset_pnl_base);
+            money_add(total_fx_pnl_base, fx_pnl_base, &total_fx_pnl_base);
+            money_add(total_combined_pnl_base, combined_pnl_base, &total_combined_pnl_base);
 
             csilk_json_t* it = csilk_json_object();
             csilk_json_add_number(it, "asset_id", (double)aid);
             csilk_json_add_string(it, "asset_name", aname ? aname : "");
             csilk_json_add_string(it, "currency", cur ? cur : "");
             csilk_json_add_string(it, "category_name", cname ? cname : "");
-            csilk_json_add_number(it, "cost_basis_orig", cost);
-            csilk_json_add_number(it, "current_value_orig", current_val_orig);
-            csilk_json_add_number(it, "current_fx_rate", current_fx_rate);
-            csilk_json_add_number(it, "cost_fx_rate", cost_fx_rate);
-            csilk_json_add_number(it, "asset_pnl_base", asset_pnl_base);
-            csilk_json_add_number(it, "fx_pnl_base", fx_pnl_base);
-            csilk_json_add_number(it, "combined_pnl_base", combined_pnl_base);
-            double fx_pct = (cost_fx_rate > 0)
-                                ? ((current_fx_rate - cost_fx_rate) / cost_fx_rate * 100.0)
-                                : 0.0;
-            csilk_json_add_number(it, "fx_return_rate", fx_pct);
+            csilk_json_add_number(it, "cost_basis_orig", money_to_double(cost));
+            csilk_json_add_number(it, "current_value_orig", money_to_double(current_val_orig));
+            csilk_json_add_number(it, "current_fx_rate", rate_to_double(curr_fx_r));
+            csilk_json_add_number(it, "cost_fx_rate", rate_to_double(cost_fx_r));
+            csilk_json_add_number(it, "asset_pnl_base", money_to_double(asset_pnl_base));
+            csilk_json_add_number(it, "fx_pnl_base", money_to_double(fx_pnl_base));
+            csilk_json_add_number(it, "combined_pnl_base", money_to_double(combined_pnl_base));
+
+            percentage_t fx_pct;
+            if (!decimal_is_zero(cost_fx_r.factor)) {
+                decimal_t diff_pct, hundred;
+                hundred = decimal_from_int(100);
+                decimal_div(r_diff.factor, cost_fx_r.factor, 4, ROUND_HALF_UP, &diff_pct);
+                decimal_mul(diff_pct, hundred, &diff_pct);
+                fx_pct = percentage_from_decimal(diff_pct);
+            } else {
+                fx_pct = percentage_zero();
+            }
+            csilk_json_add_number(it, "fx_return_rate", percentage_to_double(fx_pct));
             csilk_json_array_append(items, it);
         }
         csilk_json_free(rows);
@@ -668,11 +712,14 @@ report_fx_pnl(csilk_ctx_t* c)
 
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_string(resp, "base_currency", base_cur);
-    csilk_json_add_number(resp, "total_foreign_cost_base", total_foreign_cost_base);
-    csilk_json_add_number(resp, "total_foreign_market_base", total_foreign_market_base);
-    csilk_json_add_number(resp, "total_asset_pnl_base", total_asset_pnl_base);
-    csilk_json_add_number(resp, "total_fx_pnl_base", total_fx_pnl_base);
-    csilk_json_add_number(resp, "total_combined_pnl_base", total_combined_pnl_base);
+    csilk_json_add_number(
+        resp, "total_foreign_cost_base", money_to_double(total_foreign_cost_base));
+    csilk_json_add_number(
+        resp, "total_foreign_market_base", money_to_double(total_foreign_market_base));
+    csilk_json_add_number(resp, "total_asset_pnl_base", money_to_double(total_asset_pnl_base));
+    csilk_json_add_number(resp, "total_fx_pnl_base", money_to_double(total_fx_pnl_base));
+    csilk_json_add_number(
+        resp, "total_combined_pnl_base", money_to_double(total_combined_pnl_base));
     csilk_json_add_array(resp, "assets", items);
 
     respond_ok(c, resp);

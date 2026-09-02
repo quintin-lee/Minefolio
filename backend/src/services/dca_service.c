@@ -305,7 +305,14 @@ dca_service_confirm_execution(csilk_ctx_t* c)
     if (executed_price <= 0.0) {
         executed_price = target_net_val > 0.0 ? target_net_val : 1.0;
     }
-    double executed_quantity = actual_amount / executed_price;
+
+    money_t    actual_m;
+    price_t    price_p;
+    quantity_t qty_q;
+    money_from_double(actual_amount, CURRENCY_CNY, &actual_m);
+    price_from_double(executed_price, 4, CURRENCY_CNY, &price_p);
+    money_div_price(actual_m, price_p, 8, ROUND_HALF_UP, &qty_q);
+    double executed_quantity = quantity_to_double(qty_q);
 
     /* Execute Transaction within BEGIN / COMMIT block */
     csilk_db_exec(pool, "BEGIN TRANSACTION");
