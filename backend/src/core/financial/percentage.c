@@ -20,7 +20,7 @@ percentage_from_string(const char* str, percentage_t* out)
     if (!out) {
         return DECIMAL_ERR_INVALID_ARG;
     }
-    decimal_t d;
+    decimal_t     d;
     decimal_err_t err = decimal_from_string(str, &d);
     if (err != DECIMAL_OK) {
         return err;
@@ -35,7 +35,7 @@ percentage_from_double(double d, int32_t scale, percentage_t* out)
     if (!out) {
         return DECIMAL_ERR_INVALID_ARG;
     }
-    decimal_t dec;
+    decimal_t     dec;
     decimal_err_t err = decimal_from_double(d, scale, &dec);
     if (err != DECIMAL_OK) {
         return err;
@@ -74,8 +74,8 @@ percentage_apply(money_t in, percentage_t p, money_t* out)
     if (!out) {
         return DECIMAL_ERR_INVALID_ARG;
     }
-    decimal_t hundred = decimal_from_int(100);
-    decimal_t ratio;
+    decimal_t     hundred = decimal_from_int(100);
+    decimal_t     ratio;
     decimal_err_t err = decimal_div(p.percent, hundred, 8, ROUND_HALF_UP, &ratio);
     if (err != DECIMAL_OK) {
         return err;
@@ -87,7 +87,7 @@ percentage_apply(money_t in, percentage_t p, money_t* out)
         return err;
     }
 
-    uint8_t prec = currency_precision(in.currency);
+    uint8_t   prec = currency_precision(in.currency);
     decimal_t rounded;
     decimal_round(total, (int32_t)prec, ROUND_HALF_UP, &rounded);
 
@@ -111,8 +111,8 @@ percentage_calc(money_t part, money_t whole, int32_t scale, round_mode_t mode, p
     }
 
     /* Compute ratio = (part / whole) */
-    decimal_t ratio;
-    int32_t calc_scale = scale + 2; /* Calculate extra 2 digits because we multiply by 100 */
+    decimal_t     ratio;
+    int32_t       calc_scale = scale + 2; /* Calculate extra 2 digits because we multiply by 100 */
     decimal_err_t err = decimal_div(part.amount, whole.amount, calc_scale, mode, &ratio);
     if (err != DECIMAL_OK) {
         return err;

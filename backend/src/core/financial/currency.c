@@ -51,9 +51,12 @@ currency_from_str(const char* code)
 }
 
 const char*
-currency_code(currency_t cur)
+currency_code(const currency_t* cur)
 {
-    return cur.code[0] != '\0' ? cur.code : "CNY";
+    if (!cur || cur->code[0] == '\0') {
+        return "CNY";
+    }
+    return cur->code;
 }
 
 bool

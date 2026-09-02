@@ -53,7 +53,8 @@ decimal_err_t price_times_quantity(price_t p, quantity_t q, money_t* out);
  * @param out 输出单价
  * @return decimal_err_t 状态码
  */
-decimal_err_t money_div_quantity(money_t m, quantity_t q, int32_t scale, round_mode_t mode, price_t* out);
+decimal_err_t
+money_div_quantity(money_t m, quantity_t q, int32_t scale, round_mode_t mode, price_t* out);
 
 /**
  * @brief 货币金额 ÷ 单价 = 成交份额数量 (Money / Price = Quantity)
@@ -64,4 +65,5 @@ decimal_err_t money_div_quantity(money_t m, quantity_t q, int32_t scale, round_m
  * @param out 输出份额数量
  * @return decimal_err_t 状态码
  */
-decimal_err_t money_div_price(money_t m, price_t p, int32_t scale, round_mode_t mode, quantity_t* out);
+decimal_err_t
+money_div_price(money_t m, price_t p, int32_t scale, round_mode_t mode, quantity_t* out);

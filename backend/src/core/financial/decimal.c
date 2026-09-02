@@ -6,27 +6,25 @@
 #include <stdlib.h>
 #include <string.h>
 
-static const __int128_t k_pow10[19] = {
-    1ULL,
-    10ULL,
-    100ULL,
-    1000ULL,
-    10000ULL,
-    100000ULL,
-    1000000ULL,
-    10000000ULL,
-    100000000ULL,
-    1000000000ULL,
-    10000000000ULL,
-    100000000000ULL,
-    1000000000000ULL,
-    10000000000000ULL,
-    100000000000000ULL,
-    1000000000000000ULL,
-    10000000000000000ULL,
-    100000000000000000ULL,
-    1000000000000000000ULL
-};
+static const __int128_t k_pow10[19] = {1ULL,
+                                       10ULL,
+                                       100ULL,
+                                       1000ULL,
+                                       10000ULL,
+                                       100000ULL,
+                                       1000000ULL,
+                                       10000000ULL,
+                                       100000000ULL,
+                                       1000000000ULL,
+                                       10000000000ULL,
+                                       100000000000ULL,
+                                       1000000000000ULL,
+                                       10000000000000ULL,
+                                       100000000000000ULL,
+                                       1000000000000000ULL,
+                                       10000000000000000ULL,
+                                       100000000000000000ULL,
+                                       1000000000000000000ULL};
 
 static __int128_t
 pow10_val(int32_t scale)
@@ -284,7 +282,7 @@ decimal_add(decimal_t a, decimal_t b, decimal_t* out)
     if (!out) {
         return DECIMAL_ERR_INVALID_ARG;
     }
-    int32_t max_scale = a.scale > b.scale ? a.scale : b.scale;
+    int32_t   max_scale = a.scale > b.scale ? a.scale : b.scale;
     decimal_t a_aligned = align_scale(a, max_scale);
     decimal_t b_aligned = align_scale(b, max_scale);
 
@@ -299,7 +297,7 @@ decimal_sub(decimal_t a, decimal_t b, decimal_t* out)
     if (!out) {
         return DECIMAL_ERR_INVALID_ARG;
     }
-    int32_t max_scale = a.scale > b.scale ? a.scale : b.scale;
+    int32_t   max_scale = a.scale > b.scale ? a.scale : b.scale;
     decimal_t a_aligned = align_scale(a, max_scale);
     decimal_t b_aligned = align_scale(b, max_scale);
 
@@ -384,7 +382,7 @@ decimal_neg(decimal_t d)
 int
 decimal_cmp(decimal_t a, decimal_t b)
 {
-    int32_t max_scale = a.scale > b.scale ? a.scale : b.scale;
+    int32_t   max_scale = a.scale > b.scale ? a.scale : b.scale;
     decimal_t a_aligned = align_scale(a, max_scale);
     decimal_t b_aligned = align_scale(b, max_scale);
 
@@ -432,10 +430,10 @@ decimal_round(decimal_t d, int32_t target_scale, round_mode_t mode, decimal_t* o
         return DECIMAL_OK;
     }
 
-    int32_t diff = d.scale - target_scale;
+    int32_t    diff = d.scale - target_scale;
     __int128_t p = pow10_val(diff);
 
-    bool is_neg = (d.mantissa < 0);
+    bool       is_neg = (d.mantissa < 0);
     __int128_t m = is_neg ? -d.mantissa : d.mantissa;
 
     __int128_t q = m / p;

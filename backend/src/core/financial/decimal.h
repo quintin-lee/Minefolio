@@ -17,12 +17,12 @@
  * @brief 定点数运算错误码定义
  */
 typedef enum {
-    DECIMAL_OK = 0,             /**< 成功 */
-    DECIMAL_ERR_OVERFLOW = -1,   /**< 算术溢出 */
-    DECIMAL_ERR_DIV_BY_ZERO = -2,/**< 除以零错误 */
-    DECIMAL_ERR_INVALID_ARG = -3,/**< 参数非法（如 scale 超出范围或空指针） */
+    DECIMAL_OK = 0,                  /**< 成功 */
+    DECIMAL_ERR_OVERFLOW = -1,       /**< 算术溢出 */
+    DECIMAL_ERR_DIV_BY_ZERO = -2,    /**< 除以零错误 */
+    DECIMAL_ERR_INVALID_ARG = -3,    /**< 参数非法（如 scale 超出范围或空指针） */
     DECIMAL_ERR_PRECISION_LOSS = -4, /**< 精度损失截断 */
-    DECIMAL_ERR_PARSE = -5       /**< 字符串解析格式错误 */
+    DECIMAL_ERR_PARSE = -5           /**< 字符串解析格式错误 */
 } decimal_err_t;
 
 /**
@@ -57,13 +57,14 @@ decimal_err_t decimal_from_string(const char* str, decimal_t* out);
 decimal_err_t decimal_from_double(double d, int32_t scale, decimal_t* out);
 double        decimal_to_double(decimal_t d);
 int           decimal_to_string(decimal_t d, char* buf, size_t buf_size);
-int           decimal_to_string_fixed(decimal_t d, int32_t target_scale, char* buf, size_t buf_size);
+int decimal_to_string_fixed(decimal_t d, int32_t target_scale, char* buf, size_t buf_size);
 
 /* 算术基础运算 */
 decimal_err_t decimal_add(decimal_t a, decimal_t b, decimal_t* out);
 decimal_err_t decimal_sub(decimal_t a, decimal_t b, decimal_t* out);
 decimal_err_t decimal_mul(decimal_t a, decimal_t b, decimal_t* out);
-decimal_err_t decimal_div(decimal_t a, decimal_t b, int32_t target_scale, round_mode_t mode, decimal_t* out);
+decimal_err_t
+decimal_div(decimal_t a, decimal_t b, int32_t target_scale, round_mode_t mode, decimal_t* out);
 
 /* 一元与比对运算 */
 decimal_t     decimal_abs(decimal_t d);

@@ -15,19 +15,21 @@
  * @brief 汇率/转换率结构体
  */
 typedef struct {
-    decimal_t  factor;        /**< 汇率折算乘数因子 (1 单位 from_currency = factor 单位 to_currency) */
+    decimal_t  factor; /**< 汇率折算乘数因子 (1 单位 from_currency = factor 单位 to_currency) */
     currency_t from_currency; /**< 源币种 */
     currency_t to_currency;   /**< 目标币种 */
 } rate_t;
 
 /* 构造与转换 */
-rate_t        rate_one(currency_t from_cur, currency_t to_cur);
-rate_t        rate_from_decimal(decimal_t factor, currency_t from_cur, currency_t to_cur);
-decimal_err_t rate_from_string(const char* str, currency_t from_cur, currency_t to_cur, rate_t* out);
-decimal_err_t rate_from_double(double d, int32_t scale, currency_t from_cur, currency_t to_cur, rate_t* out);
-double        rate_to_double(rate_t r);
-int           rate_to_string(rate_t r, char* buf, size_t buf_size);
-int           rate_to_string_fixed(rate_t r, int32_t scale, char* buf, size_t buf_size);
+rate_t rate_one(currency_t from_cur, currency_t to_cur);
+rate_t rate_from_decimal(decimal_t factor, currency_t from_cur, currency_t to_cur);
+decimal_err_t
+rate_from_string(const char* str, currency_t from_cur, currency_t to_cur, rate_t* out);
+decimal_err_t
+rate_from_double(double d, int32_t scale, currency_t from_cur, currency_t to_cur, rate_t* out);
+double rate_to_double(rate_t r);
+int    rate_to_string(rate_t r, char* buf, size_t buf_size);
+int    rate_to_string_fixed(rate_t r, int32_t scale, char* buf, size_t buf_size);
 
 /* 外汇与比率转换操作 */
 

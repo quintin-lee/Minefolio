@@ -15,7 +15,7 @@
  */
 typedef struct {
     char    code[CURRENCY_CODE_LEN]; /**< 货币代码（如 "CNY", "USD", "EUR", "BTC"），大写归一化 */
-    uint8_t precision;               /**< 货币最小单位标准精度（小数位数，如 CNY=2, JPY=0, BTC=8） */
+    uint8_t precision; /**< 货币最小单位标准精度（小数位数，如 CNY=2, JPY=0, BTC=8） */
 } currency_t;
 
 /**
@@ -27,10 +27,10 @@ currency_t currency_from_str(const char* code);
 
 /**
  * @brief 获取货币代码字符串
- * @param cur 货币对象
+ * @param cur 货币对象指针
  * @return const char* 货币大写代码字符串（非 NULL）
  */
-const char* currency_code(currency_t cur);
+const char* currency_code(const currency_t* cur);
 
 /**
  * @brief 比较两个货币是否完全一致

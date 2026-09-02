@@ -47,4 +47,5 @@ decimal_err_t percentage_apply(money_t in, percentage_t p, money_t* out);
  * @param out 输出百分比
  * @return decimal_err_t 状态码
  */
-decimal_err_t percentage_calc(money_t part, money_t whole, int32_t scale, round_mode_t mode, percentage_t* out);
+decimal_err_t
+percentage_calc(money_t part, money_t whole, int32_t scale, round_mode_t mode, percentage_t* out);

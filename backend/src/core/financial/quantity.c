@@ -20,7 +20,7 @@ quantity_from_string(const char* str, quantity_t* out)
     if (!out) {
         return DECIMAL_ERR_INVALID_ARG;
     }
-    decimal_t d;
+    decimal_t     d;
     decimal_err_t err = decimal_from_string(str, &d);
     if (err != DECIMAL_OK) {
         return err;
@@ -35,7 +35,7 @@ quantity_from_double(double d, int32_t scale, quantity_t* out)
     if (!out) {
         return DECIMAL_ERR_INVALID_ARG;
     }
-    decimal_t dec;
+    decimal_t     dec;
     decimal_err_t err = decimal_from_double(d, scale, &dec);
     if (err != DECIMAL_OK) {
         return err;
@@ -68,7 +68,7 @@ quantity_add(quantity_t a, quantity_t b, quantity_t* out)
     if (!out) {
         return DECIMAL_ERR_INVALID_ARG;
     }
-    decimal_t res;
+    decimal_t     res;
     decimal_err_t err = decimal_add(a.units, b.units, &res);
     if (err != DECIMAL_OK) {
         return err;
@@ -83,7 +83,7 @@ quantity_sub(quantity_t a, quantity_t b, quantity_t* out)
     if (!out) {
         return DECIMAL_ERR_INVALID_ARG;
     }
-    decimal_t res;
+    decimal_t     res;
     decimal_err_t err = decimal_sub(a.units, b.units, &res);
     if (err != DECIMAL_OK) {
         return err;

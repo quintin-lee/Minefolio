@@ -31,8 +31,8 @@ decimal_err_t quantity_sub(quantity_t a, quantity_t b, quantity_t* out);
 int           quantity_cmp(quantity_t a, quantity_t b);
 
 /* 状态判定 */
-bool          quantity_is_zero(quantity_t q);
-bool          quantity_is_negative(quantity_t q);
-bool          quantity_is_positive(quantity_t q);
-quantity_t    quantity_abs(quantity_t q);
-quantity_t    quantity_neg(quantity_t q);
+bool       quantity_is_zero(quantity_t q);
+bool       quantity_is_negative(quantity_t q);
+bool       quantity_is_positive(quantity_t q);
+quantity_t quantity_abs(quantity_t q);
+quantity_t quantity_neg(quantity_t q);

@@ -20,7 +20,7 @@ price_from_string(const char* str, currency_t cur, price_t* out)
     if (!out) {
         return DECIMAL_ERR_INVALID_ARG;
     }
-    decimal_t d;
+    decimal_t     d;
     decimal_err_t err = decimal_from_string(str, &d);
     if (err != DECIMAL_OK) {
         return err;
@@ -36,7 +36,7 @@ price_from_double(double d, int32_t scale, currency_t cur, price_t* out)
     if (!out) {
         return DECIMAL_ERR_INVALID_ARG;
     }
-    decimal_t dec;
+    decimal_t     dec;
     decimal_err_t err = decimal_from_double(d, scale, &dec);
     if (err != DECIMAL_OK) {
         return err;
@@ -79,14 +79,14 @@ price_times_quantity(price_t p, quantity_t q, money_t* out)
     if (!out) {
         return DECIMAL_ERR_INVALID_ARG;
     }
-    decimal_t total_amt;
+    decimal_t     total_amt;
     decimal_err_t err = decimal_mul(p.unit_price, q.units, &total_amt);
     if (err != DECIMAL_OK) {
         return err;
     }
 
     /* Round to currency standard precision */
-    uint8_t prec = currency_precision(p.currency);
+    uint8_t   prec = currency_precision(p.currency);
     decimal_t rounded;
     decimal_round(total_amt, (int32_t)prec, ROUND_HALF_UP, &rounded);
 
@@ -109,7 +109,7 @@ money_div_quantity(money_t m, quantity_t q, int32_t scale, round_mode_t mode, pr
         scale = 4;
     }
 
-    decimal_t res;
+    decimal_t     res;
     decimal_err_t err = decimal_div(m.amount, q.units, scale, mode, &res);
     if (err != DECIMAL_OK) {
         return err;
@@ -138,7 +138,7 @@ money_div_price(money_t m, price_t p, int32_t scale, round_mode_t mode, quantity
         scale = 4;
     }
 
-    decimal_t res;
+    decimal_t     res;
     decimal_err_t err = decimal_div(m.amount, p.unit_price, scale, mode, &res);
     if (err != DECIMAL_OK) {
         return err;

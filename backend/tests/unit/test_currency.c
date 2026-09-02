@@ -10,7 +10,7 @@ main(void)
 
     currency_t c1 = currency_from_str("cny");
     assert(currency_equals(c1, CURRENCY_CNY));
-    assert(strcmp(currency_code(c1), "CNY") == 0);
+    assert(strcmp(currency_code(&c1), "CNY") == 0);
     assert(currency_precision(c1) == 2);
     assert(currency_is_valid(c1));
 
