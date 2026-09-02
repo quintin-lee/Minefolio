@@ -360,63 +360,106 @@ export interface LedgerInviteResult {
   expires_at: string
 }
 
-/* Multi-Currency Summary */
+/** 单币种资产池聚合数据 */
 export interface CurrencyBucket {
+  /** 币种代码 (如 "USD", "CNY", "HKD") */
   currency: string
+  /** 该币种下的资产及负债账户数 */
   asset_count: number
+  /** 原币计价的资产总额 */
   original_assets: number
+  /** 原币计价的负债总额 */
   original_liabilities: number
+  /** 原币计价的净资产总额 (original_assets - original_liabilities) */
   original_net_worth: number
+  /** 该币种折合基准币种的汇率 */
   rate_to_base: number
+  /** 折合为基准币种后的净资产额 */
   converted_net_worth: number
+  /** 占全盘折算净资产的百分比 (0-100) */
   percentage: number
 }
 
+/** 多币种汇总与基准币种统一折算报表模型 */
 export interface MultiCurrencySummary {
+  /** 当前报表计算采用的基准币种 (默认 "CNY") */
   base_currency: string
+  /** 全盘统一折算后的净资产总额 (CNY) */
   total_net_worth: number
+  /** 全盘统一折算后的总资产规模 (CNY) */
   total_assets: number
+  /** 全盘统一折算后的总负债规模 (CNY) */
   total_liabilities: number
+  /** 各币种分桶统计明细列表 */
   currencies: CurrencyBucket[]
 }
 
-/* OAuth2 / OIDC Providers */
+/** OAuth2 / OIDC 第三方单点登录服务商信息 */
 export interface OAuthProvider {
+  /** 服务商标识 (如 "github", "oidc") */
   id: string
+  /** 显示名称 (如 "GitHub", "企业统一认证") */
   name: string
+  /** 图标名称 (Iconify 格式) */
   icon?: string
+  /** 触发授权跳转的前端入口或 API 授权地址 */
   auth_url: string
 }
 
-/* FX History and Gain/Loss Decomposition */
+/** 外汇汇率历史每日走势快照点 */
 export interface FxHistoryPoint {
+  /** 快照日期 (YYYY-MM-DD) */
   rate_date: string
+  /** 对基准币种汇率数值 */
   rate: number
+  /** 基准币种 (如 "CNY") */
   base_currency: string
+  /** 目标外币 (如 "USD") */
   target_currency: string
 }
 
+/** 外币资产「价格涨跌 vs 汇率损益」双因子拆解明细条目 */
 export interface FxPnlAssetItem {
+  /** 资产 ID */
   asset_id: number
+  /** 资产名称 (如 "苹果股票", "标普500 ETF") */
   asset_name: string
+  /** 计价币种 (如 "USD", "HKD") */
   currency: string
+  /** 所属分类名称 */
   category_name: string
+  /** 原币持仓成本 */
   cost_basis_orig: number
+  /** 原币当前市值 */
   current_value_orig: number
+  /** 当前对基准币的实时汇率 */
   current_fx_rate: number
+  /** 买入建仓时的历史加权汇率 */
   cost_fx_rate: number
+  /** 资产标的自身价格盈亏 (折合基准币 CNY): (current_value - cost_basis) * current_fx_rate */
   asset_pnl_base: number
+  /** 纯外汇汇率波动汇兑损益 (折合基准币 CNY): cost_basis * (current_fx_rate - cost_fx_rate) */
   fx_pnl_base: number
+  /** 综合总回报 (折合基准币 CNY): asset_pnl_base + fx_pnl_base */
   combined_pnl_base: number
+  /** 汇率回报率百分比: ((current_fx_rate - cost_fx_rate) / cost_fx_rate) * 100 */
   fx_return_rate: number
 }
 
+/** 外汇与汇兑损益综合分析报表模型 */
 export interface FxPnlReport {
+  /** 基准币种 (默认 "CNY") */
   base_currency: string
+  /** 境外外币资产按买入成本折算基准币总额 */
   total_foreign_cost_base: number
+  /** 境外外币资产按当前市值折算基准币总额 */
   total_foreign_market_base: number
+  /** 所有外币资产的标的价格总盈亏 (CNY) */
   total_asset_pnl_base: number
+  /** 所有外币资产的纯汇率变动总汇兑损益 (CNY) */
   total_fx_pnl_base: number
+  /** 境外资产综合总回报 (CNY) */
   total_combined_pnl_base: number
+  /** 外币资产明细列表 */
   assets: FxPnlAssetItem[]
 }

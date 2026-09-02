@@ -419,11 +419,23 @@ report_asset_summary(csilk_ctx_t* c)
     respond_ok(c, resp);
 }
 
+/**
+ * @brief 生成多币种资产构成分布及基准币种统一折算报表
+ *
+ * 核心逻辑：
+ * 1. 扫描当前用户所有的有效资产与负债，按 original currency 聚合为资产池桶 (currency buckets)；
+ * 2. 统计每个币种的原币总资产 (original_assets)、总负债 (original_liabilities) 及净额；
+ * 3. 调用外汇转换引擎 exchange_rate_convert，将各币种资产统一折合为请求指定的基准币种 (默认 CNY)；
+ * 4. 计算各币种在折算总净资产中的占比 (percentage)，构建结构化报表响应。
+ *
+ * @param c HTTP 上下文（支持 query 参数 base_currency，默认 "CNY"）
+ */
 void
 report_multi_currency_summary(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
     if (user_id < 0) {
+        respond_unauthorized(c);
         return;
     }
     const char* base_cur = csilk_get_query(c, "base_currency");
@@ -537,6 +549,27 @@ report_multi_currency_summary(csilk_ctx_t* c)
     respond_ok(c, resp);
 }
 
+/**
+ * @brief 境外外币资产投资回报之「标的价格涨跌」与「纯汇率波动损益 (FX PnL)」双因子剥离分析
+ *
+ * 金融归因数学模型：
+ * 设某外币资产 A（计价币种 C，基准币种 B）：
+ * - 原币当前市值：P_current = current_value 或 quantity * net_value
+ * - 原币持仓成本：C_basis = cost_basis
+ * - 当前实时汇率 (C -> B)：R_current
+ * - 买入历史加权汇率 (C -> B)：R_cost（从 exchange_rate_history 或买入时快照获取）
+ *
+ * 收益拆解归因：
+ * 1. 标的价格盈亏（折合基准币）：
+ *    Asset_Price_PnL_in_Base = (P_current - C_basis) * R_current
+ * 2. 纯汇率波动损益（折合基准币）：
+ *    FX_PnL_in_Base = C_basis * (R_current - R_cost)
+ * 3. 综合总回报（基准币总收益）：
+ *    Combined_PnL_in_Base = Asset_Price_PnL_in_Base + FX_PnL_in_Base
+ *                         = P_current * R_current - C_basis * R_cost
+ *
+ * @param c HTTP 上下文（支持 query 参数 base_currency，默认 "CNY"）
+ */
 void
 report_fx_pnl(csilk_ctx_t* c)
 {
