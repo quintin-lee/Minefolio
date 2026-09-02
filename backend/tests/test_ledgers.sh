@@ -146,6 +146,42 @@ BOB_ROLE_2=$(echo "$MEMBERS_2" | jq -r ".data[] | select((.user_id|tostring) == 
 test "$BOB_ROLE_2" = "viewer"
 echo "Bob role verified as: $BOB_ROLE_2"
 
+# 10b. RBAC: Bob as viewer attempts write operations -> MUST be rejected with 1004 Forbidden
+VIEWER_WRITE_EXP=$(curl -s -X POST "$BASE/daily-expenses" \
+  -H "Authorization: Bearer $TOKEN_B" \
+  -H "X-Ledger-Id: ${FAM_LID}" \
+  -H "Content-Type: application/json" \
+  -d '{"category_id":1,"asset_id":1,"expense_type":"expense","amount":100,"expense_date":"2026-09-02"}')
+VIEWER_EXP_CODE=$(echo "$VIEWER_WRITE_EXP" | jq -r '.code | floor')
+test "$VIEWER_EXP_CODE" = "1004"
+echo "✅ RBAC: Viewer write to daily-expenses blocked (code 1004)"
+
+VIEWER_WRITE_TX=$(curl -s -X POST "$BASE/transactions" \
+  -H "Authorization: Bearer $TOKEN_B" \
+  -H "X-Ledger-Id: ${FAM_LID}" \
+  -H "Content-Type: application/json" \
+  -d '{"category_id":1,"asset_id":1,"type":"expense","amount":100,"transaction_date":"2026-09-02"}')
+VIEWER_TX_CODE=$(echo "$VIEWER_WRITE_TX" | jq -r '.code | floor')
+test "$VIEWER_TX_CODE" = "1004"
+echo "✅ RBAC: Viewer write to transactions blocked (code 1004)"
+
+VIEWER_WRITE_ASSET=$(curl -s -X POST "$BASE/assets" \
+  -H "Authorization: Bearer $TOKEN_B" \
+  -H "X-Ledger-Id: ${FAM_LID}" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"非法只读创建","category_id":1,"value":500}')
+VIEWER_ASSET_CODE=$(echo "$VIEWER_WRITE_ASSET" | jq -r '.code | floor')
+test "$VIEWER_ASSET_CODE" = "1004"
+echo "✅ RBAC: Viewer write to assets blocked (code 1004)"
+
+# 10c. Alice promotes Bob back to editor -> Bob writes successfully
+PROMOTE_RES=$(curl -s -X PUT "$BASE/ledgers/${FAM_LID}/members/${USER_B_ID}" \
+  -H "Authorization: Bearer $TOKEN_A" \
+  -H "Content-Type: application/json" \
+  -d '{"role":"editor"}')
+test "$(echo "$PROMOTE_RES" | jq -r '.code | floor')" = "0"
+echo "Alice promoted Bob to editor"
+
 # 11. Alice removes Bob from family ledger
 REM_RES=$(curl -s -X DELETE "$BASE/ledgers/${FAM_LID}/members/${USER_B_ID}" \
   -H "Authorization: Bearer $TOKEN_A")

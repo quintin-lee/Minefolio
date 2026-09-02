@@ -19,6 +19,11 @@ transactions_create(csilk_ctx_t* c)
         return;
     }
 
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "editor");
+    if (ledger_id < 0) {
+        return;
+    }
+
     csilk_json_t* body = csilk_bind_json(c);
     if (!body) {
         respond_bad_request(c, "请求体必须为 JSON");
@@ -254,6 +259,11 @@ transactions_update(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
     if (user_id < 0) {
+        return;
+    }
+
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "editor");
+    if (ledger_id < 0) {
         return;
     }
 
@@ -493,6 +503,11 @@ transactions_delete(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
     if (user_id < 0) {
+        return;
+    }
+
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "editor");
+    if (ledger_id < 0) {
         return;
     }
 

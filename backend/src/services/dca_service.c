@@ -44,7 +44,16 @@ dca_service_list_plans(csilk_ctx_t* c)
 void
 dca_service_create_plan(csilk_ctx_t* c)
 {
-    int64_t          user_id = ctx_user_id(c);
+    int64_t user_id = ctx_user_id(c);
+    if (user_id <= 0) {
+        return;
+    }
+
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "editor");
+    if (ledger_id <= 0) {
+        return;
+    }
+
     csilk_db_pool_t* pool = db_get_pool();
     csilk_json_t*    body = csilk_bind_json(c);
 
@@ -126,7 +135,16 @@ dca_service_get_plan(csilk_ctx_t* c)
 void
 dca_service_update_plan(csilk_ctx_t* c)
 {
-    int64_t          user_id = ctx_user_id(c);
+    int64_t user_id = ctx_user_id(c);
+    if (user_id <= 0) {
+        return;
+    }
+
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "editor");
+    if (ledger_id <= 0) {
+        return;
+    }
+
     csilk_db_pool_t* pool = db_get_pool();
     const char*      id_str = csilk_get_param(c, "id");
     int64_t          id = id_str ? atoll(id_str) : 0;
@@ -171,7 +189,16 @@ dca_service_update_plan(csilk_ctx_t* c)
 void
 dca_service_set_plan_status(csilk_ctx_t* c)
 {
-    int64_t          user_id = ctx_user_id(c);
+    int64_t user_id = ctx_user_id(c);
+    if (user_id <= 0) {
+        return;
+    }
+
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "editor");
+    if (ledger_id <= 0) {
+        return;
+    }
+
     csilk_db_pool_t* pool = db_get_pool();
     const char*      id_str = csilk_get_param(c, "id");
     int64_t          id = id_str ? atoll(id_str) : 0;
@@ -194,7 +221,16 @@ dca_service_set_plan_status(csilk_ctx_t* c)
 void
 dca_service_delete_plan(csilk_ctx_t* c)
 {
-    int64_t          user_id = ctx_user_id(c);
+    int64_t user_id = ctx_user_id(c);
+    if (user_id <= 0) {
+        return;
+    }
+
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "editor");
+    if (ledger_id <= 0) {
+        return;
+    }
+
     csilk_db_pool_t* pool = db_get_pool();
     const char*      id_str = csilk_get_param(c, "id");
     int64_t          id = id_str ? atoll(id_str) : 0;

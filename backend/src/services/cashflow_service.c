@@ -22,7 +22,16 @@ cashflow_service_list_schedules(csilk_ctx_t* c)
 void
 cashflow_service_create_schedule(csilk_ctx_t* c)
 {
-    int64_t          user_id = ctx_user_id(c);
+    int64_t user_id = ctx_user_id(c);
+    if (user_id <= 0) {
+        return;
+    }
+
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "editor");
+    if (ledger_id <= 0) {
+        return;
+    }
+
     csilk_db_pool_t* pool = db_get_pool();
     csilk_json_t*    body = csilk_bind_json(c);
 
@@ -92,7 +101,16 @@ cashflow_service_get_schedule(csilk_ctx_t* c)
 void
 cashflow_service_update_schedule(csilk_ctx_t* c)
 {
-    int64_t          user_id = ctx_user_id(c);
+    int64_t user_id = ctx_user_id(c);
+    if (user_id <= 0) {
+        return;
+    }
+
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "editor");
+    if (ledger_id <= 0) {
+        return;
+    }
+
     csilk_db_pool_t* pool = db_get_pool();
     const char*      id_str = csilk_get_param(c, "id");
     int64_t          id = id_str ? atoll(id_str) : 0;
@@ -135,7 +153,16 @@ cashflow_service_update_schedule(csilk_ctx_t* c)
 void
 cashflow_service_delete_schedule(csilk_ctx_t* c)
 {
-    int64_t          user_id = ctx_user_id(c);
+    int64_t user_id = ctx_user_id(c);
+    if (user_id <= 0) {
+        return;
+    }
+
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "editor");
+    if (ledger_id <= 0) {
+        return;
+    }
+
     csilk_db_pool_t* pool = db_get_pool();
     const char*      id_str = csilk_get_param(c, "id");
     int64_t          id = id_str ? atoll(id_str) : 0;
