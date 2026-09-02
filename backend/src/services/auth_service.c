@@ -225,11 +225,11 @@ auth_login(csilk_ctx_t* c)
 
     int64_t     user_id = db_get_int(row, "id");
     int         token_version = (int)db_get_int(row, "token_version");
-    int         totp_enabled = (int)db_get_int(row, "totp_enabled");
+    int         totp_enabled = db_get_bool(row, "totp_enabled");
     const char* totp_secret = csilk_json_get_string(row, "totp_secret");
     const char* totp_backup_codes = csilk_json_get_string(row, "totp_backup_codes");
 
-    if (totp_enabled == 1) {
+    if (totp_enabled) {
         bool verified = false;
         if (totp_code_buf[0]) {
             if (totp_verify_code(totp_secret, totp_code_buf)) {
@@ -448,11 +448,11 @@ auth_2fa_status(csilk_ctx_t* c)
     }
 
     csilk_json_t* user = csilk_json_array_get(user_rows, 0);
-    int           totp_enabled = (int)db_get_int(user, "totp_enabled");
+    int           totp_enabled = db_get_bool(user, "totp_enabled");
     csilk_json_free(user_rows);
 
     csilk_json_t* resp = csilk_json_object();
-    csilk_json_add_bool(resp, "enabled", totp_enabled == 1);
+    csilk_json_add_bool(resp, "enabled", totp_enabled ? true : false);
     respond_ok(c, resp);
 }
 
