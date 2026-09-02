@@ -9,6 +9,9 @@
         <el-button type="primary" class="action-btn" @click="openDialog()">
           <el-icon><Plus /></el-icon> 新增记录
         </el-button>
+        <el-button class="action-btn" @click="receiptScanVisible = true">
+          <el-icon><Camera /></el-icon> 拍照/票据记账
+        </el-button>
         <el-button class="action-btn" @click="exportCsv">
           <el-icon><Download /></el-icon> 导出 CSV
         </el-button>
@@ -183,19 +186,26 @@
         </div>
       </template>
     </el-dialog>
+
+    <!-- AI 票据拍照识别记账对话框 -->
+    <ReceiptScannerModal
+      v-model="receiptScanVisible"
+      @created="loadData"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Download, Upload, UploadFilled, SuccessFilled } from '@element-plus/icons-vue'
+import { Plus, Download, Upload, UploadFilled, SuccessFilled, Camera } from '@element-plus/icons-vue'
 import { dailyExpensesApi } from '@/api/daily_expenses'
 import { assetsApi } from '@/api/assets'
 import { useCategoryStore } from '@/stores/category'
 import TagPicker from '@/components/TagPicker.vue'
 import MonthlyChart from '@/components/MonthlyChart.vue'
 import ExpenseCategoryPie from '@/components/ExpenseCategoryPie.vue'
+import ReceiptScannerModal from '@/components/ReceiptScannerModal.vue'
 import http from '@/utils/http'
 import { formatCurrency } from '@/utils/format'
 import SummaryCard from '@/components/SummaryCard.vue'
@@ -208,6 +218,7 @@ const categoryStore = useCategoryStore()
 const page = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
+const receiptScanVisible = ref(false)
 
 const form = reactive({ expense_type: 'expense' as 'income' | 'expense', category_id: null as number | null, asset_id: null as number | null, amount: 0, expense_date: '', note: '', tags: [] as Tag[], _catPath: [] as number[] })
 const rules = { expense_type: [{ required: true }], category_id: [{ required: true }], asset_id: [{ required: true, message: '请选择关联资产', trigger: 'change' }], amount: [{ required: true }], expense_date: [{ required: true }] }

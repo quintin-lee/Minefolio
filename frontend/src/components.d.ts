@@ -78,6 +78,7 @@ declare module 'vue' {
     PriceHistoryChart: typeof import('./components/PriceHistoryChart.vue')['default']
     PromptStarters: typeof import('./components/PromptStarters.vue')['default']
     QuickRecordDialog: typeof import('./components/QuickRecordDialog.vue')['default']
+    ReceiptScannerModal: typeof import('./components/ReceiptScannerModal.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     SummaryCard: typeof import('./components/SummaryCard.vue')['default']
