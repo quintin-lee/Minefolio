@@ -373,46 +373,82 @@
             });
         }
 
+        let lastMetricTime = 0;
+        let lastTotalRequests = 0;
+
+        function formatUptime(seconds) {
+            const u = Math.max(0, Math.floor(seconds));
+            const d = Math.floor(u / 86400);
+            const h = Math.floor((u % 86400) / 3600);
+            const m = Math.floor((u % 3600) / 60);
+            const s = u % 60;
+            if (d > 0) return `${d}d ${h}h ${m}m`;
+            if (h > 0) return `${h}h ${m}m ${s}s`;
+            if (m > 0) return `${m}m ${s}s`;
+            return `${s}s`;
+        }
+
         function updateMetrics(data) {
-            document.getElementById('stat-total-req').innerText = data.total_requests;
+            if (!data) return;
+
+            const totalReq = data.total_requests || 0;
+            document.getElementById('stat-total-req').innerText = totalReq;
             document.getElementById('stat-latency').innerText = `${(data.avg_latency || 0).toFixed(2)} ms`;
-            document.getElementById('stat-rps').innerText = data.rps || 0;
+            
+            // Calculate real-time RPS accurately
+            const now = Date.now();
+            let rps = data.rps !== undefined ? data.rps : 0;
+            if (data.rps === undefined && lastMetricTime > 0) {
+                const dt = (now - lastMetricTime) / 1000.0;
+                const dReq = totalReq - lastTotalRequests;
+                if (dt > 0 && dReq >= 0) {
+                    rps = Math.round((dReq / dt) * 10) / 10;
+                }
+            }
+            lastMetricTime = now;
+            lastTotalRequests = totalReq;
+            document.getElementById('stat-rps').innerText = rps;
+
+            // Uptime
+            if (data.uptime_sec !== undefined) {
+                document.getElementById('stat-uptime').innerText = formatUptime(data.uptime_sec);
+            }
             
             if (data.ai) {
-                document.getElementById('ai-stat-req').innerText = data.ai.requests;
-                document.getElementById('ai-stat-tokens').innerText = data.ai.tokens;
-                document.getElementById('ai-stat-errors').innerText = data.ai.errors;
+                document.getElementById('ai-stat-req').innerText = data.ai.requests || 0;
+                document.getElementById('ai-stat-tokens').innerText = data.ai.tokens || 0;
+                document.getElementById('ai-stat-errors').innerText = data.ai.errors || 0;
                 document.getElementById('ai-stat-latency').innerText = `${(data.ai.avg_duration || 0).toFixed(0)} ms`;
             }
 
             if (data.sys) {
-                document.getElementById('sys-stat-conn-active').innerText = data.sys.active_connections;
-                document.getElementById('sys-stat-conn-pool').innerText = data.sys.pooled_connections;
-                document.getElementById('sys-stat-arena-size').innerText = `${data.sys.arena_size_kb.toFixed(1)} KB`;
-                document.getElementById('sys-stat-arena-used').innerText = `${data.sys.arena_used_kb.toFixed(1)} KB`;
+                document.getElementById('sys-stat-conn-active').innerText = data.sys.active_connections || 0;
+                document.getElementById('sys-stat-conn-pool').innerText = data.sys.pooled_connections || 0;
+                document.getElementById('sys-stat-arena-size').innerText = `${(data.sys.arena_size_kb || 0).toFixed(1)} KB`;
+                document.getElementById('sys-stat-arena-used').innerText = `${(data.sys.arena_used_kb || 0).toFixed(1)} KB`;
                 
                 if (data.process) {
-                    document.getElementById('sys-stat-rss').innerText = `${(data.process.rss_kb / 1024.0).toFixed(1)} MB`;
-                    document.getElementById('sys-stat-cpu-user').innerText = `${data.process.cpu_user.toFixed(2)}s`;
+                    document.getElementById('sys-stat-rss').innerText = `${((data.process.rss_kb || 0) / 1024.0).toFixed(1)} MB`;
+                    document.getElementById('sys-stat-cpu-user').innerText = `${(data.process.cpu_user || 0).toFixed(2)}s`;
                 }
             }
 
             if (data.security) {
-                document.getElementById('sec-stat-rl').innerText = data.security.rate_limit_blocks;
-                document.getElementById('sec-stat-csrf').innerText = data.security.csrf_violations;
-                document.getElementById('sec-stat-auth').innerText = data.security.auth_failures;
+                document.getElementById('sec-stat-rl').innerText = data.security.rate_limit_blocks || 0;
+                document.getElementById('sec-stat-csrf').innerText = data.security.csrf_violations || 0;
+                document.getElementById('sec-stat-auth').innerText = data.security.auth_failures || 0;
             }
 
             if (data.db) {
-                document.getElementById('db-stat-queries').innerText = data.db.queries;
-                document.getElementById('db-stat-execs').innerText = data.db.execs;
-                document.getElementById('db-stat-errors').innerText = data.db.errors;
+                document.getElementById('db-stat-queries').innerText = data.db.queries || 0;
+                document.getElementById('db-stat-execs').innerText = data.db.execs || 0;
+                document.getElementById('db-stat-errors').innerText = data.db.errors || 0;
                 document.getElementById('db-stat-latency').innerText = `${(data.db.avg_duration || 0).toFixed(1)} ms`;
             }
 
             if (chart) {
                 chart.data.labels.push(new Date().toLocaleTimeString());
-                chart.data.datasets[0].data.push(data.rps);
+                chart.data.datasets[0].data.push(rps);
                 if (chart.data.labels.length > 20) {
                     chart.data.labels.shift();
                     chart.data.datasets[0].data.shift();

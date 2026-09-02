@@ -34,6 +34,12 @@
 #include <unistd.h>
 #include <stdlib.h>
 
+static void
+metrics_middleware_wrapper(csilk_ctx_t* c)
+{
+    csilk_metrics_middleware(c, NULL);
+}
+
 int
 main(int argc, char** argv)
 {
@@ -76,6 +82,7 @@ main(int argc, char** argv)
     csilk_app_use(app, csilk_recovery_handler);
     csilk_app_use(app, csilk_logger_handler);
     csilk_app_use(app, csilk_request_id_middleware);
+    csilk_app_use(app, metrics_middleware_wrapper);
     /* Security headers on every response */
     csilk_app_use(app, security_headers_middleware);
     /* Rate-limit auth-write endpoints (login/register/setup) before JWT check */
