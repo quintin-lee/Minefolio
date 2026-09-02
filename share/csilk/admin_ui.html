@@ -472,98 +472,104 @@
             if (tbody.children.length > 50) tbody.lastChild.remove();
         }
 
-        const PRESET_WORKFLOWS = {
-            'wf_monthly_review': {
-                title: '月度财务健康复盘',
-                badge: '4 Steps • DAG Pipeline',
-                desc: '采集上月日常收支与分类明细，推导净现金流与储蓄率，分析近 3 个月波动并生成 AI 预算优化与节支建议。',
-                steps: [
-                    { id: 'fetch_expenses', title: '1. 采集日常收支明细 (fetch_expenses)', desc: '按分类归集上月所有支出与收入明细流水' },
-                    { id: 'calc_cashflow', title: '2. 计算月度净现金流 (calc_cashflow)', desc: '推算净结余率、储蓄率与刚性支出占比' },
-                    { id: 'trend_analysis', title: '3. 趋势与波动对比 (trend_analysis)', desc: '对比近 3 个月支出环比与异常激增类别' },
-                    { id: 'generate_advice', title: '4. AI 生成预算优化建议 (generate_advice)', desc: 'AI 生成针对性复盘诊断与行动建议' }
-                ],
-                mermaid: `graph TD
-    classDef step fill:#1e293b,stroke:#3b82f6,stroke-width:1.5px,color:#f8fafc;
-    classDef startEnd fill:#0f172a,stroke:#3b82f6,stroke-width:2px,color:#93c5fd;
+        let registeredWorkflows = {};
 
-    START([🚀 启动月度复盘]):::startEnd --> fetch_expenses["1. 采集日常收支明细<br/>(fetch_expenses)"]:::step
-    fetch_expenses --> calc_cashflow["2. 计算月度净现金流<br/>(calc_cashflow)"]:::step
-    calc_cashflow --> trend_analysis["3. 趋势与波动对比<br/>(trend_analysis)"]:::step
-    trend_analysis --> generate_advice["4. AI 生成预算优化建议<br/>(generate_advice)"]:::step
-    generate_advice --> END([🏁 产出月度复盘报告]):::startEnd`
-            },
-            'wf_emergency_fund': {
-                title: '应急备用金测算与规划',
-                badge: '4 Steps • Multi-Branch DAG',
-                desc: '统计过去 6 个月月均支出，盘点高流动性现金，测算 3~6 个月备用金缺口并输出分层阶梯储备配置方案。',
-                steps: [
-                    { id: 'assess_monthly_burn', title: '1. 统计月均刚性支出 (assess_monthly_burn)', desc: '根据历史数据推算月均基本生活开销' },
-                    { id: 'calc_liquid_cash', title: '2. 盘点高流动性现金 (calc_liquid_cash)', desc: '统计银行卡、活期账户可用流动资金' },
-                    { id: 'gap_analysis', title: '3. 测算备用金缺口 (gap_analysis)', desc: '计算满足 3~6 个月开销所需的资金差额' },
-                    { id: 'allocation_plan', title: '4. 输出阶梯储备方案 (allocation_plan)', desc: '规划货币基金/活期/定期阶梯配置' }
-                ],
-                mermaid: `graph TD
-    classDef step fill:#1e293b,stroke:#10b981,stroke-width:1.5px,color:#f8fafc;
-    classDef startEnd fill:#0f172a,stroke:#10b981,stroke-width:2px,color:#6ee7b7;
+        function buildMermaidFromWorkflow(wf) {
+            if (wf.mermaid) return wf.mermaid;
+            
+            let md = 'graph TD\n';
+            md += '    classDef step fill:#1e293b,stroke:#3b82f6,stroke-width:1.5px,color:#f8fafc;\n';
+            md += '    classDef startEnd fill:#0f172a,stroke:#3b82f6,stroke-width:2px,color:#93c5fd;\n';
+            md += '    classDef queued fill:#854d0e,stroke:#eab308,color:#fef08a;\n';
+            md += '    classDef running fill:#1e3a8a,stroke:#3b82f6,stroke-width:2px,color:#93c5fd;\n';
+            md += '    classDef finished fill:#064e3b,stroke:#10b981,color:#a7f3d0;\n';
+            md += '    classDef failed fill:#7f1d1d,stroke:#ef4444,color:#fecaca;\n\n';
 
-    START([🚀 启动备用金测算]):::startEnd --> assess_monthly_burn["1. 统计月均支出<br/>(assess_monthly_burn)"]:::step
-    START --> calc_liquid_cash["2. 盘点流动现金<br/>(calc_liquid_cash)"]:::step
-    assess_monthly_burn --> gap_analysis["3. 测算 3~6 个月备用金缺口<br/>(gap_analysis)"]:::step
-    calc_liquid_cash --> gap_analysis
-    gap_analysis --> allocation_plan["4. 输出阶梯储备方案<br/>(allocation_plan)"]:::step
-    allocation_plan --> END([🏁 产出储备建议报告]):::startEnd`
-            },
-            'wf_bill_calendar': {
-                title: '账单日历与周期负债排期',
-                badge: '4 Steps • Safety Guard Pipeline',
-                desc: '扫描未来 30 天周期性负债与扣款排期，核对账户余额，预警逾期与流动性风险并生成备付转账日历。',
-                steps: [
-                    { id: 'scan_schedules', title: '1. 扫描 30 天周期负债 (scan_schedules)', desc: '获取房贷、信用卡、定投扣款排期' },
-                    { id: 'check_funding', title: '2. 核对扣款账户余额 (check_funding)', desc: '校验关联扣款账户当前可用流动余额' },
-                    { id: 'risk_alert', title: '3. 流动性与逾期预警 (risk_alert)', desc: '识别账户余额不足可能导致的逾期风险' },
-                    { id: 'calendar_summary', title: '4. 生成账单排期日历 (calendar_summary)', desc: '输出时间线与备付资金转账规划' }
-                ],
-                mermaid: `graph TD
-    classDef step fill:#1e293b,stroke:#f59e0b,stroke-width:1.5px,color:#f8fafc;
-    classDef startEnd fill:#0f172a,stroke:#f59e0b,stroke-width:2px,color:#fcd34d;
-
-    START([🚀 扫描账单计划]):::startEnd --> scan_schedules["1. 扫描周期负债排期<br/>(scan_schedules)"]:::step
-    START --> check_funding["2. 核对扣款账户余额<br/>(check_funding)"]:::step
-    scan_schedules --> risk_alert["3. 流动性与逾期预警<br/>(risk_alert)"]:::step
-    check_funding --> risk_alert
-    risk_alert --> calendar_summary["4. 生成账单日历与提醒<br/>(calendar_summary)"]:::step
-    calendar_summary --> END([🏁 产出排期日历]):::startEnd`
-            },
-            'wf_health_score': {
-                title: '多维度财务健康综合评分',
-                badge: '5 Steps • Weighted Aggregation',
-                desc: '基于流动性比率、储蓄率、负债收入比、投资比率进行加权量化评分并输出财务体检诊断报告。',
-                steps: [
-                    { id: 'liquidity_ratio', title: '1. 测算流动性比率', desc: '流动资产 / 月均支出 (标准: 3~6倍)' },
-                    { id: 'savings_rate', title: '2. 测算月度储蓄率', desc: '月结余 / 月收入 (标准: ≥30%)' },
-                    { id: 'debt_to_income', title: '3. 测算负债收入比', desc: '月负债还款 / 月收入 (标准: ≤40%)' },
-                    { id: 'investment_ratio', title: '4. 测算投资净值比', desc: '可投资产 / 总净资产' },
-                    { id: 'composite_score', title: '5. 综合加权评分', desc: '量化输出综合分 (0-100) 与风险改善建议' }
-                ],
-                mermaid: `graph TD
-    classDef step fill:#1e293b,stroke:#ec4899,stroke-width:1.5px,color:#f8fafc;
-    classDef startEnd fill:#0f172a,stroke:#ec4899,stroke-width:2px,color:#fbcfe8;
-
-    START([🚀 启动全面体检]):::startEnd --> liquidity_ratio["1. 流动性比率<br/>(liquidity_ratio)"]:::step
-    START --> savings_rate["2. 月度储蓄率<br/>(savings_rate)"]:::step
-    START --> debt_to_income["3. 负债收入比<br/>(debt_to_income)"]:::step
-    START --> investment_ratio["4. 投资净值比<br/>(investment_ratio)"]:::step
-    liquidity_ratio --> composite_score["5. 综合评分与体检诊断<br/>(composite_score)"]:::step
-    savings_rate --> composite_score
-    debt_to_income --> composite_score
-    investment_ratio --> composite_score
-    composite_score --> END([🏁 生成财务健康报告]):::startEnd`
+            const steps = wf.steps || [];
+            if (steps.length === 0) {
+                md += `    START([🚀 启动: ${wf.title || wf.id}]):::startEnd --> END([🏁 结束]):::startEnd\n`;
+                return md;
             }
-        };
+
+            const hasBranching = steps.some(s => Array.isArray(s.depends_on) && s.depends_on.length > 0);
+            
+            if (!hasBranching) {
+                const firstId = steps[0].step_id || steps[0].id;
+                md += `    START([🚀 启动: ${wf.title}]):::startEnd --> ${firstId}["1. ${steps[0].title}<br/>(${firstId})"]:::step\n`;
+                for (let i = 0; i < steps.length - 1; i++) {
+                    const curId = steps[i].step_id || steps[i].id;
+                    const nextId = steps[i+1].step_id || steps[i+1].id;
+                    md += `    ${curId} --> ${nextId}["${i+2}. ${steps[i+1].title}<br/>(${nextId})"]:::step\n`;
+                }
+                const lastId = steps[steps.length - 1].step_id || steps[steps.length - 1].id;
+                md += `    ${lastId} --> END([🏁 完成: ${wf.title}]):::startEnd\n`;
+            } else {
+                md += `    START([🚀 启动: ${wf.title}]):::startEnd\n`;
+                steps.forEach((st, idx) => {
+                    const sid = st.step_id || st.id;
+                    md += `    ${sid}["${idx+1}. ${st.title}<br/>(${sid})"]:::step\n`;
+                    if (!st.depends_on || st.depends_on.length === 0) {
+                        md += `    START --> ${sid}\n`;
+                    } else {
+                        st.depends_on.forEach(dep => {
+                            md += `    ${dep} --> ${sid}\n`;
+                        });
+                    }
+                });
+                const parentSet = new Set();
+                steps.forEach(st => (st.depends_on || []).forEach(d => parentSet.add(d)));
+                const leafNodes = steps.filter(st => !parentSet.has(st.step_id || st.id));
+                leafNodes.forEach(leaf => {
+                    const lid = leaf.step_id || leaf.id;
+                    md += `    ${lid} --> END([🏁 完成: ${wf.title}]):::startEnd\n`;
+                });
+            }
+            return md;
+        }
+
+        async function fetchWorkflows() {
+            try {
+                const res = await fetch('/api/ai/workflows');
+                if (!res.ok) return;
+                const json = await res.json();
+                const list = json.data || json;
+                if (Array.isArray(list) && list.length > 0) {
+                    const selector = document.getElementById('wf-selector');
+                    selector.innerHTML = '';
+                    registeredWorkflows = {};
+                    list.forEach(wf => {
+                        const opt = document.createElement('option');
+                        opt.value = wf.id;
+                        opt.innerText = `${wf.title} (${wf.id})`;
+                        selector.appendChild(opt);
+
+                        registeredWorkflows[wf.id] = {
+                            title: wf.title,
+                            desc: wf.description,
+                            badge: `${wf.step_count || wf.steps?.length || 0} Steps • DAG Pipeline`,
+                            steps: (wf.steps || []).map((s, i) => ({
+                                id: s.step_id || s.id,
+                                title: `${i+1}. ${s.title} (${s.step_id || s.id})`,
+                                desc: s.description || ''
+                            })),
+                            mermaid: buildMermaidFromWorkflow(wf)
+                        };
+                    });
+                    if (currentTab === 'workflows' && selector.value) {
+                        onWorkflowSelect(selector.value);
+                    }
+                }
+            } catch (err) {
+                console.warn('Failed to fetch dynamic workflows from API, fallback to default', err);
+            }
+        }
 
         async function onWorkflowSelect(wfId) {
-            const wf = PRESET_WORKFLOWS[wfId];
+            let wf = registeredWorkflows[wfId];
+            if (!wf) {
+                await fetchWorkflows();
+                wf = registeredWorkflows[wfId] || Object.values(registeredWorkflows)[0];
+            }
             if (!wf) return;
 
             const badge = document.getElementById('wf-badge');
@@ -588,11 +594,11 @@
 
         function clearWorkflowLog() {
             const sel = document.getElementById('wf-selector');
-            const wfId = sel?.value || 'wf_monthly_review';
+            const wfId = sel?.value;
             const log = document.getElementById('wf-log');
             if (log) {
                 log.innerHTML = '';
-                const wf = PRESET_WORKFLOWS[wfId];
+                const wf = registeredWorkflows[wfId];
                 if (wf) {
                     wf.steps.forEach(st => {
                         const el = document.createElement('div');
@@ -721,6 +727,7 @@
         }, 2000);
 
         initChart();
+        fetchWorkflows();
         switchTab('overview');
 
         async function captureFlamegraph() {
