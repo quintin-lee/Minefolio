@@ -94,6 +94,14 @@ register_report_routes(csilk_app_t* app)
                       nullptr,
                       "Currency summary alias",
                       "Alias for multi-currency summary");
+    csilk_app_get_ext(app,
+                      "/api/reports/fx-pnl",
+                      report_fx_pnl,
+                      nullptr,
+                      nullptr,
+                      "FX Gain/Loss report",
+                      "Returns foreign currency asset returns decomposed into price gain and FX "
+                      "fluctuation gain");
     csilk_app_get_ext(
         app,
         "/api/summary",

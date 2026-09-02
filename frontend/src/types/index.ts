@@ -387,3 +387,36 @@ export interface OAuthProvider {
   icon?: string
   auth_url: string
 }
+
+/* FX History and Gain/Loss Decomposition */
+export interface FxHistoryPoint {
+  rate_date: string
+  rate: number
+  base_currency: string
+  target_currency: string
+}
+
+export interface FxPnlAssetItem {
+  asset_id: number
+  asset_name: string
+  currency: string
+  category_name: string
+  cost_basis_orig: number
+  current_value_orig: number
+  current_fx_rate: number
+  cost_fx_rate: number
+  asset_pnl_base: number
+  fx_pnl_base: number
+  combined_pnl_base: number
+  fx_return_rate: number
+}
+
+export interface FxPnlReport {
+  base_currency: string
+  total_foreign_cost_base: number
+  total_foreign_market_base: number
+  total_asset_pnl_base: number
+  total_fx_pnl_base: number
+  total_combined_pnl_base: number
+  assets: FxPnlAssetItem[]
+}

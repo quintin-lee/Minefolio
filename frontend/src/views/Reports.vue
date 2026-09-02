@@ -214,6 +214,91 @@
           </div>
         </template>
       </el-tab-pane>
+
+      <!-- 外汇与汇兑损益 -->
+      <el-tab-pane label="外汇与汇兑损益">
+        <div v-if="!fxPnlData || fxPnlData.assets.length === 0" class="mf-empty-state">
+          <div class="mf-empty-circle"></div>
+          <p>暂无外币资产，添加非 CNY 币种（如 USD / HKD / EUR）的资产后查看汇兑损益</p>
+        </div>
+        <template v-else>
+          <div class="tab-layout">
+            <!-- 汇兑指标卡片 -->
+            <div class="metric-cards fx-metrics">
+              <div class="metric-card">
+                <div class="metric-label">境外资产现值 (折算 CNY)</div>
+                <div class="metric-value">{{ formatCurrency(fxPnlData.total_foreign_market_base) }}</div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-label">境外资产原成本 (折算 CNY)</div>
+                <div class="metric-value">{{ formatCurrency(fxPnlData.total_foreign_cost_base) }}</div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-label">资产自身价格盈亏</div>
+                <div class="metric-value" :class="fxPnlData.total_asset_pnl_base >= 0 ? 'income-text' : 'expense-text'">
+                  {{ fxPnlData.total_asset_pnl_base >= 0 ? '+' : '' }}{{ formatCurrency(fxPnlData.total_asset_pnl_base) }}
+                </div>
+              </div>
+              <div class="metric-card highlight">
+                <div class="metric-label">纯汇率波动损益 (FX PnL)</div>
+                <div class="metric-value" :class="fxPnlData.total_fx_pnl_base >= 0 ? 'income-text' : 'expense-text'">
+                  {{ fxPnlData.total_fx_pnl_base >= 0 ? '+' : '' }}{{ formatCurrency(fxPnlData.total_fx_pnl_base) }}
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-label">综合总盈亏 (CNY)</div>
+                <div class="metric-value" :class="fxPnlData.total_combined_pnl_base >= 0 ? 'income-text' : 'expense-text'">
+                  {{ fxPnlData.total_combined_pnl_base >= 0 ? '+' : '' }}{{ formatCurrency(fxPnlData.total_combined_pnl_base) }}
+                </div>
+              </div>
+            </div>
+
+            <!-- 外汇明细表格 -->
+            <div class="report-card fx-table-card">
+              <div class="card-header">
+                <h3>外币资产汇兑收益与价格回报拆解</h3>
+              </div>
+              <el-table :data="fxPnlData.assets" stripe size="small" class="premium-table">
+                <el-table-column prop="asset_name" label="资产名称" min-width="140" />
+                <el-table-column prop="currency" label="币种" width="80" align="center" />
+                <el-table-column prop="cost_basis_orig" label="原币成本" width="110" align="right">
+                  <template #default="{ row }">{{ Number(row.cost_basis_orig).toLocaleString() }}</template>
+                </el-table-column>
+                <el-table-column prop="current_value_orig" label="原币现值" width="110" align="right">
+                  <template #default="{ row }">{{ Number(row.current_value_orig).toLocaleString() }}</template>
+                </el-table-column>
+                <el-table-column prop="cost_fx_rate" label="买入汇率" width="100" align="right">
+                  <template #default="{ row }">{{ Number(row.cost_fx_rate).toFixed(4) }}</template>
+                </el-table-column>
+                <el-table-column prop="current_fx_rate" label="当前汇率" width="100" align="right">
+                  <template #default="{ row }">{{ Number(row.current_fx_rate).toFixed(4) }}</template>
+                </el-table-column>
+                <el-table-column prop="asset_pnl_base" label="资产标的盈亏 (¥)" width="130" align="right">
+                  <template #default="{ row }">
+                    <span :class="row.asset_pnl_base >= 0 ? 'income-text' : 'expense-text'">
+                      {{ row.asset_pnl_base >= 0 ? '+' : '' }}{{ Number(row.asset_pnl_base).toFixed(2) }}
+                    </span>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="fx_pnl_base" label="汇率波动损益 (¥)" width="130" align="right">
+                  <template #default="{ row }">
+                    <span :class="row.fx_pnl_base >= 0 ? 'income-text' : 'expense-text'">
+                      {{ row.fx_pnl_base >= 0 ? '+' : '' }}{{ Number(row.fx_pnl_base).toFixed(2) }}
+                    </span>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="combined_pnl_base" label="综合总回报 (¥)" width="130" align="right">
+                  <template #default="{ row }">
+                    <span :class="row.combined_pnl_base >= 0 ? 'income-text' : 'expense-text'">
+                      {{ row.combined_pnl_base >= 0 ? '+' : '' }}{{ Number(row.combined_pnl_base).toFixed(2) }}
+                    </span>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+          </div>
+        </template>
+      </el-tab-pane>
     </el-tabs>
   </div>
 </template>
@@ -222,12 +307,14 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { reportsApi } from '@/api/reports'
+import { marketApi } from '@/api/market'
 import ExpenseCategoryPie from '@/components/ExpenseCategoryPie.vue'
 import ExpenseTrendBar from '@/components/ExpenseTrendBar.vue'
 import AssetTrendLine from '@/components/AssetTrendLine.vue'
 import AssetBreakdownPie from '@/components/AssetBreakdownPie.vue'
 import { formatCurrency } from '@/utils/format'
 import SummaryCard from '@/components/SummaryCard.vue'
+import type { FxPnlReport, FxHistoryPoint } from '@/types'
 
 const loading = ref(true)
 const reportMonth = ref(new Date().toISOString().slice(0, 7))
@@ -238,11 +325,14 @@ const assetTrend = ref<any>(null)
 const assetBreakdown = ref<any>(null)
 const tagBreakdown = ref<any>(null)
 const perf = ref<any>(null)
+const fxPnlData = ref<FxPnlReport | null>(null)
+const fxHistory = ref<FxHistoryPoint[]>([])
+const fxCurrency = ref('USD')
 
 async function loadAll() {
   loading.value = true
   try {
-    const [m, t, at, ab, tb, p] = await Promise.allSettled([
+    const [m, t, at, ab, tb, p, fx, fxh] = await Promise.allSettled([
       reportsApi.expenseMonthly(
         parseInt(reportMonth.value.slice(0, 4)), parseInt(reportMonth.value.slice(5, 7))
       ),
@@ -253,6 +343,8 @@ async function loadAll() {
         parseInt(reportMonth.value.slice(0, 4)), parseInt(reportMonth.value.slice(5, 7))
       ),
       reportsApi.transactionPerformance(),
+      reportsApi.fxPnl('CNY'),
+      marketApi.getFxHistory(fxCurrency.value, 30),
     ])
     if (m.status === 'fulfilled') monthly.value = m.value
     if (t.status === 'fulfilled') trend.value = t.value
@@ -260,10 +352,12 @@ async function loadAll() {
     if (ab.status === 'fulfilled') assetBreakdown.value = ab.value
     if (tb.status === 'fulfilled') tagBreakdown.value = tb.value
     if (p.status === 'fulfilled') perf.value = p.value
+    if (fx.status === 'fulfilled') fxPnlData.value = fx.value
+    if (fxh.status === 'fulfilled') fxHistory.value = fxh.value
 
-    const failures = [m, t, at, ab, tb, p].filter(r => r.status === 'rejected')
+    const failures = [m, t, at, ab, tb, p, fx, fxh].filter(r => r.status === 'rejected')
     if (failures.length > 0) {
-      ElMessage.warning(`部分报表数据加载失败（${failures.length}/${failures.length + 6 - failures.length}）`)
+      ElMessage.warning(`部分报表数据加载失败（${failures.length}/${failures.length + 8 - failures.length}）`)
     }
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.message || '报表数据加载失败')
@@ -593,5 +687,13 @@ onMounted(loadAll)
   font-size: 13px;
   text-align: center;
   margin: 0;
+}
+
+.fx-metrics {
+  margin-bottom: 16px;
+}
+.fx-table-card {
+  flex: 1;
+  min-height: 0;
 }
 </style>

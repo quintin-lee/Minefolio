@@ -340,3 +340,16 @@ INSERT OR IGNORE INTO exchange_rates (base_currency, target_currency, rate) VALU
 ('CNY', 'GBP', 0.108932),
 ('USDT', 'CNY', 7.250000),
 ('CNY', 'USDT', 0.137931);
+
+-- 汇率历史走势快照表
+CREATE TABLE IF NOT EXISTS exchange_rate_history (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    rate_date        TEXT NOT NULL,
+    base_currency    TEXT NOT NULL DEFAULT 'CNY',
+    target_currency  TEXT NOT NULL,
+    rate             DECIMAL(18,6) NOT NULL,
+    created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (rate_date, base_currency, target_currency)
+);
+CREATE INDEX IF NOT EXISTS idx_fx_history_date ON exchange_rate_history(rate_date, target_currency);
+

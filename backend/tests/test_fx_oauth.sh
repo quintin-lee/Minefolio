@@ -84,7 +84,7 @@ SETUP_RES=$(curl -s -X POST "$BASE/system/setup" \
 TOKEN=$(echo "$SETUP_RES" | jq -r '.data.token')
 assert_nonzero "Admin token obtained" "$TOKEN"
 
-echo "=== 2. Test FX Rates Endpoints ==="
+echo "=== 2. Test FX Rates & History Endpoints ==="
 FX_RES=$(curl -s -H "Authorization: Bearer $TOKEN" "$BASE/market/exchange-rates")
 FX_CODE=$(echo "$FX_RES" | jq -r '.code | floor')
 assert_eq "GET /api/market/exchange-rates returns code 0" "$FX_CODE" "0"
@@ -105,11 +105,18 @@ FX_RES2=$(curl -s -H "Authorization: Bearer $TOKEN" "$BASE/market/fx-rates")
 USD_RATE2=$(echo "$FX_RES2" | jq -r '.data.USD')
 assert_eq "USD rate updated to 7.35" "$USD_RATE2" "7.35"
 
-echo "=== 3. Test Multi-Currency Summary Report ==="
+# Verify historical FX rate curve
+FX_HIST=$(curl -s -H "Authorization: Bearer $TOKEN" "$BASE/market/fx-history?currency=USD&days=30")
+HIST_CODE=$(echo "$FX_HIST" | jq -r '.code | floor')
+assert_eq "GET /api/market/fx-history returns code 0" "$HIST_CODE" "0"
+HIST_LEN=$(echo "$FX_HIST" | jq '.data | length')
+assert_nonzero "FX history contains points" "$HIST_LEN"
+
+echo "=== 3. Test Multi-Currency Summary & FX Gain/Loss Report ==="
 # Create USD asset and CNY asset
 sqlite3 "$DB_FILE" "INSERT INTO categories (user_id, name, type, asset_type, currency) VALUES (1, '美股账户', 'asset', 'stock', 'USD');"
-sqlite3 "$DB_FILE" "INSERT INTO assets (user_id, category_id, name, current_value, net_value, quantity, currency, ledger_id) VALUES (1, 1, 'Apple Stock', 0, 150, 10, 'USD', 1);"
-sqlite3 "$DB_FILE" "INSERT INTO assets (user_id, category_id, name, current_value, net_value, quantity, currency, ledger_id) VALUES (1, 1, '招商银行', 50000, 50000, 1, 'CNY', 1);"
+sqlite3 "$DB_FILE" "INSERT INTO assets (user_id, category_id, name, current_value, net_value, quantity, cost_basis, currency, ledger_id) VALUES (1, 1, 'Apple Stock', 1500, 150, 10, 1200, 'USD', 1);"
+sqlite3 "$DB_FILE" "INSERT INTO assets (user_id, category_id, name, current_value, net_value, quantity, cost_basis, currency, ledger_id) VALUES (1, 1, '招商银行', 50000, 50000, 1, 50000, 'CNY', 1);"
 
 SUMMARY_RES=$(curl -s -H "Authorization: Bearer $TOKEN" "$BASE/reports/multi-currency-summary?base_currency=CNY")
 S_CODE=$(echo "$SUMMARY_RES" | jq -r '.code | floor')
@@ -121,7 +128,31 @@ assert_eq "Report contains USD bucket" "$HAS_USD" "USD"
 HAS_CNY=$(echo "$SUMMARY_RES" | jq -r '.data.currencies[] | select(.currency == "CNY") | .currency')
 assert_eq "Report contains CNY bucket" "$HAS_CNY" "CNY"
 
-echo "=== 4. Test OAuth Providers & Callback ==="
+# FX Gain/Loss decomposition report
+FX_PNL_RES=$(curl -s -H "Authorization: Bearer $TOKEN" "$BASE/reports/fx-pnl?base_currency=CNY")
+FX_PNL_CODE=$(echo "$FX_PNL_RES" | jq -r '.code | floor')
+assert_eq "GET /api/reports/fx-pnl returns code 0" "$FX_PNL_CODE" "0"
+
+FX_PNL_ASSET=$(echo "$FX_PNL_RES" | jq -r '.data.assets[0].asset_name')
+assert_eq "FX PnL includes Apple Stock" "$FX_PNL_ASSET" "Apple Stock"
+
+COMBINED_PNL=$(echo "$FX_PNL_RES" | jq -r '.data.total_combined_pnl_base')
+assert_nonzero "Total combined PnL is computed" "$COMBINED_PNL"
+
+echo "=== 4. Test Receipt OCR Scanning ==="
+# Mock receipt image base64
+DUMMY_IMG="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+SCAN_RES=$(curl -s -X POST "$BASE/receipts/scan" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{\"image\":\"$DUMMY_IMG\"}")
+SCAN_CODE=$(echo "$SCAN_RES" | jq -r '.code | floor')
+assert_eq "POST /api/receipts/scan returns code 0" "$SCAN_CODE" "0"
+
+SCAN_AMT=$(echo "$SCAN_RES" | jq -r '.data.amount')
+assert_nonzero "Receipt scan recognized amount" "$SCAN_AMT"
+
+echo "=== 5. Test OAuth Providers & Callback ==="
 PROV_RES=$(curl -s "$BASE/auth/oauth/providers")
 P_CODE=$(echo "$PROV_RES" | jq -r '.code | floor')
 assert_eq "GET /api/auth/oauth/providers returns code 0" "$P_CODE" "0"

@@ -1,11 +1,17 @@
 <template>
   <el-drawer v-model="visible" direction="btt" size="75%" :with-header="false" class="quick-sheet">
     <div class="sheet-body">
-      <div class="type-switch">
-        <el-radio-group v-model="form.expense_type">
-          <el-radio-button value="expense">支出</el-radio-button>
-          <el-radio-button value="income">收入</el-radio-button>
-        </el-radio-group>
+      <div class="sheet-header-actions">
+        <div class="type-switch">
+          <el-radio-group v-model="form.expense_type">
+            <el-radio-button value="expense">支出</el-radio-button>
+            <el-radio-button value="income">收入</el-radio-button>
+          </el-radio-group>
+        </div>
+        <el-button size="small" type="primary" plain :loading="scanning" class="ocr-btn" @click="triggerFilePick">
+          <Icon icon="ph:camera-bold" class="ocr-icon" /> 识单
+        </el-button>
+        <input ref="fileInputRef" type="file" accept="image/*" capture="environment" style="display: none" @change="onFileSelected" />
       </div>
 
       <div class="amount-input">
@@ -47,9 +53,11 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
+import { Icon } from '@iconify/vue'
 import { useCategoryStore } from '@/stores/category'
 import { assetsApi } from '@/api/assets'
 import { offlineApi } from '@/utils/offline-http'
+import { receiptsApi } from '@/api/receipts'
 import type { DailyExpense, Category, Asset } from '@/types'
 
 const props = defineProps<{ modelValue?: boolean; record?: DailyExpense | null }>()
@@ -60,7 +68,9 @@ const visible = computed({
   set: (v: boolean) => emit('update:modelValue', v),
 })
 const amountRef = ref<HTMLInputElement | null>(null)
+const fileInputRef = ref<HTMLInputElement | null>(null)
 const saving = ref(false)
+const scanning = ref(false)
 const categories = ref<Category[]>([])
 const assets = ref<Asset[]>([])
 const categoryStore = useCategoryStore()
@@ -73,6 +83,54 @@ const form = reactive({
   expense_date: new Date().toISOString().slice(0, 10),
   note: '',
 })
+
+function triggerFilePick() {
+  fileInputRef.value?.click()
+}
+
+async function onFileSelected(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  if (!file.type.startsWith('image/')) {
+    ElMessage.warning('请选择票据图片文件')
+    return
+  }
+
+  scanning.value = true
+  const reader = new FileReader()
+  reader.onload = async () => {
+    const base64 = reader.result as string
+    try {
+      const res = await receiptsApi.scan({ image: base64 })
+      if (res) {
+        if (res.amount > 0) form.amount = res.amount
+        if (res.date) form.expense_date = res.date
+        if (res.type) form.expense_type = res.type
+        if (res.category_id) {
+          form.category_id = Number(res.category_id)
+        } else if (res.category_name) {
+          const matched = categories.value.find(c => c.name.includes(res.category_name) || res.category_name.includes(c.name))
+          if (matched) form.category_id = Number(matched.id)
+        }
+        const noteParts = [res.counterparty, res.description].filter(Boolean)
+        if (noteParts.length > 0) {
+          form.note = noteParts.join(' - ')
+        }
+        ElMessage.success(`票据识别成功！金额 ¥${res.amount || 0}`)
+      }
+    } catch (err: any) {
+      ElMessage.error(err?.message || '票据识别失败，请手动录入')
+    } finally {
+      scanning.value = false
+      if (fileInputRef.value) fileInputRef.value.value = ''
+    }
+  }
+  reader.onerror = () => {
+    scanning.value = false
+    ElMessage.error('读取图片失败')
+  }
+  reader.readAsDataURL(file)
+}
 
 onMounted(async () => {
   await categoryStore.loadCategories()
@@ -118,7 +176,10 @@ async function save() {
 
 <style scoped>
 .sheet-body { padding: 16px; }
-.type-switch { display: flex; justify-content: center; margin-bottom: 16px; }
+.sheet-header-actions { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.type-switch { display: flex; }
+.ocr-btn { display: flex; align-items: center; gap: 4px; border-radius: 16px; font-weight: 600; }
+.ocr-icon { font-size: 15px; }
 .amount-input { display: flex; align-items: center; gap: 8px; margin-bottom: 20px; }
 .currency { font-size: 24px; color: var(--mf-text-muted); }
 .amount-field { flex: 1; background: transparent; border: none; border-bottom: 2px solid var(--mf-border); color: var(--mf-text-main); font-size: 36px; font-family: 'JetBrains Mono', monospace; outline: none; text-align: right; }

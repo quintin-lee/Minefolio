@@ -376,3 +376,13 @@ market_service_update_exchange_rate(csilk_ctx_t* c)
     csilk_json_free(body);
     respond_ok_null(c);
 }
+
+void
+market_service_get_fx_history(csilk_ctx_t* c)
+{
+    const char*   currency = csilk_get_query(c, "currency");
+    const char*   days_str = csilk_get_query(c, "days");
+    int           days = (days_str && days_str[0]) ? atoi(days_str) : 30;
+    csilk_json_t* list = exchange_rate_history_list(currency ? currency : "USD", days);
+    respond_ok(c, list);
+}

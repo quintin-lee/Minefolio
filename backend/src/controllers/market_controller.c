@@ -99,4 +99,12 @@ register_market_routes(csilk_app_t* app)
                        NULL,
                        "Update FX rate",
                        "Update FX rate alias");
+
+    csilk_app_get_ext(app,
+                      "/api/market/fx-history",
+                      market_service_get_fx_history,
+                      NULL,
+                      NULL,
+                      "Get FX historical trend",
+                      "Fetch historical exchange rate snapshots");
 }

@@ -141,4 +141,8 @@ export const reportsApi = {
     http.get<TransactionPerformance, TransactionPerformance>('/reports/transaction/performance'),
   assetSummary: () => http.get<AssetSummary, AssetSummary>('/reports/asset/summary'),
   holdings: () => http.get<HoldingsReport, HoldingsReport>('/reports/holdings'),
+  fxPnl: (baseCurrency = 'CNY') =>
+    http.get<import('@/types').FxPnlReport, import('@/types').FxPnlReport>('/reports/fx-pnl', {
+      params: { base_currency: baseCurrency },
+    }),
 }

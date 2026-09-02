@@ -759,6 +759,34 @@ db_run_migrations(csilk_db_pool_t* pool)
         "('GBP', 'CNY', 9.18), ('CNY', 'GBP', 0.108932), "
         "('USDT', 'CNY', 7.25), ('CNY', 'USDT', 0.137931)");
 
+    // ---- 汇率历史快照表迁移 ----
+    csilk_db_exec(pool,
+                  "CREATE TABLE IF NOT EXISTS exchange_rate_history ("
+                  "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                  "rate_date TEXT NOT NULL, "
+                  "base_currency TEXT NOT NULL DEFAULT 'CNY', "
+                  "target_currency TEXT NOT NULL, "
+                  "rate DECIMAL(18,6) NOT NULL, "
+                  "created_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
+                  "UNIQUE (rate_date, base_currency, target_currency))");
+    csilk_db_exec(pool,
+                  "CREATE INDEX IF NOT EXISTS idx_fx_history_date ON "
+                  "exchange_rate_history(rate_date, target_currency)");
+
+    // 默认回填最近30天基准走势快照
+    csilk_db_exec(pool,
+                  "INSERT OR IGNORE INTO exchange_rate_history (rate_date, base_currency, "
+                  "target_currency, rate) VALUES "
+                  "(date('now', '-7 day'), 'CNY', 'USD', 7.18), "
+                  "(date('now', '-3 day'), 'CNY', 'USD', 7.21), "
+                  "(date('now'), 'CNY', 'USD', 7.24), "
+                  "(date('now', '-7 day'), 'CNY', 'EUR', 7.79), "
+                  "(date('now', '-3 day'), 'CNY', 'EUR', 7.82), "
+                  "(date('now'), 'CNY', 'EUR', 7.85), "
+                  "(date('now', '-7 day'), 'CNY', 'HKD', 0.918), "
+                  "(date('now', '-3 day'), 'CNY', 'HKD', 0.922), "
+                  "(date('now'), 'CNY', 'HKD', 0.925)");
+
     // ---- ai_traces 历史异常残留清理 ----
     csilk_db_exec(
         pool,

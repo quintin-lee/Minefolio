@@ -36,5 +36,10 @@ export const marketApi = {
     http.get<import('@/types').MultiCurrencySummary, import('@/types').MultiCurrencySummary>('/reports/multi-currency-summary', {
       params: { base_currency: baseCurrency },
     }),
+
+  getFxHistory: (currency = 'USD', days = 30) =>
+    http.get<import('@/types').FxHistoryPoint[], import('@/types').FxHistoryPoint[]>('/market/fx-history', {
+      params: { currency, days },
+    }),
 }
 

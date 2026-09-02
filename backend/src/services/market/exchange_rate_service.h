@@ -15,3 +15,6 @@ void exchange_rate_refresh_all(void);
 
 /* Get all rates as a JSON dictionary: {"USD": 7.15, "HKD": 0.92, ...} */
 csilk_json_t* exchange_rate_list_all(void);
+
+/* Get historical exchange rate curve */
+csilk_json_t* exchange_rate_history_list(const char* target_currency, int days);

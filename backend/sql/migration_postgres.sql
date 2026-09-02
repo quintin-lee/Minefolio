@@ -313,4 +313,27 @@ CREATE TABLE IF NOT EXISTS import_rules (
 );
 CREATE INDEX IF NOT EXISTS idx_import_rules_user ON import_rules(user_id, priority ASC);
 
+-- 汇率与多币种折算表
+CREATE TABLE IF NOT EXISTS exchange_rates (
+    id               BIGSERIAL PRIMARY KEY,
+    base_currency    VARCHAR(10) NOT NULL,
+    target_currency  VARCHAR(10) NOT NULL,
+    rate             DOUBLE PRECISION NOT NULL,
+    updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_exchange_rates UNIQUE (base_currency, target_currency)
+);
+CREATE INDEX IF NOT EXISTS idx_exchange_rates_pair ON exchange_rates(base_currency, target_currency);
+
+-- 汇率历史走势快照表
+CREATE TABLE IF NOT EXISTS exchange_rate_history (
+    id               BIGSERIAL PRIMARY KEY,
+    rate_date        VARCHAR(10) NOT NULL,
+    base_currency    VARCHAR(10) NOT NULL DEFAULT 'CNY',
+    target_currency  VARCHAR(10) NOT NULL,
+    rate             DOUBLE PRECISION NOT NULL,
+    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_fx_history UNIQUE (rate_date, base_currency, target_currency)
+);
+CREATE INDEX IF NOT EXISTS idx_fx_history_date ON exchange_rate_history(rate_date, target_currency);
+
 
