@@ -111,7 +111,7 @@ main(int argc, char** argv)
     register_ledger_routes(app);
     register_import_rule_routes(app);
     register_receipt_routes(app);
-    csilk_admin_serve(app, "/csilk-admin");
+    csilk_admin_serve_secure(app, "/csilk-admin", NULL);
 
     const char* dist = "./frontend/dist";
     if (access(dist, F_OK) != 0) {
