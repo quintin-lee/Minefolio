@@ -285,21 +285,29 @@ Every `onMounted` hook **MUST** wrap async initialization in `try/catch`. Use `v
 
 ## Testing & QA
 
-### Backend Integration Tests
+### Backend Integration Tests (7 Suites · 134+ Cases)
 
 ```bash
 cd backend
-./tests/test_link.sh          # 33 test cases: auth, CRUD, balance联动, PnL, CSV import/export, pagination
-./tests/test_link_nocleanup.sh # Same but keeps the temp DB for inspection
+# Run all suites
+./tests/test_link.sh          # 33 cases: auth, CRUD, balance联动, PnL, CSV, pagination
+./tests/test_ledgers.sh       # 16 cases: multi-ledger spaces, member RBAC (Owner/Editor/Viewer)
+./tests/test_2fa.sh           # 12 cases: TOTP 2FA secret gen, QR code, enable/disable, login verification
+./tests/test_dca_cashflow.sh  # 18 cases: DCA periodic purchase execution, cashflow calendar projection
+./tests/test_ai_trace.sh      # 17 cases: AI conversation traces, token usage, tool spans
+./tests/test_market_sync.sh   # 18 cases: Multi-source market quotes, caching, bulk sync
+./tests/test_fx_oauth.sh      # 20 cases: Exchange rates, FX gain/loss PnL, receipt OCR, OAuth2/OIDC SSO
 ```
 
-Tests start a real server with a temp SQLite DB, exercise all API endpoints via curl, and verify database state directly with `sqlite3`. Run after any change to balance logic, transaction handling, or investment PnL.
+Tests start real servers with temp SQLite DBs, exercise all API endpoints via curl/JSON, and verify database state directly with `sqlite3`. Run before committing any changes.
 
 ### Frontend Tests
 
 ```bash
 cd frontend
 npm test    # vitest run --config vite.config.mobile.ts (jsdom environment)
+npm run build         # Desktop type-check + build
+npm run build:mobile  # Mobile type-check + build
 ```
 
 Frontend unit tests are currently limited; the integration test suite (`test_link.sh`) covers the critical paths end-to-end.
