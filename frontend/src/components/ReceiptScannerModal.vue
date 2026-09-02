@@ -2,11 +2,26 @@
   <el-dialog
     v-model="visible"
     title="AI 发票 / 票据拍照记账"
-    width="680px"
+    width="700px"
     destroy-on-close
     append-to-body
     class="receipt-scanner-dialog"
   >
+    <!-- AI Model Info / Selector Bar -->
+    <div class="model-info-bar" v-if="aiProviders.length > 0">
+      <div class="model-info-left">
+        <span class="label">AI 视觉模型:</span>
+        <el-select v-model="selectedModel" size="small" style="width: 200px;" placeholder="选择模型">
+          <el-option-group v-for="prov in aiProviders" :key="prov.id" :label="prov.name || prov.id">
+            <el-option v-for="m in (prov.models || [])" :key="m" :label="m" :value="m" />
+          </el-option-group>
+        </el-select>
+      </div>
+      <router-link to="/settings" class="settings-link" @click="visible = false">
+        配置 AI 模型
+      </router-link>
+    </div>
+
     <div v-if="!imagePreview && !scanning" class="upload-zone" @paste="handlePaste" tabindex="0">
       <el-upload
         drag
@@ -23,7 +38,7 @@
         </div>
         <template #tip>
           <div class="el-upload__tip">
-            支持 JPG、PNG、WebP 等图片格式，或直接在此窗口按 Ctrl+V 粘贴截图
+            支持 JPG、PNG、WebP、发票截图等，也可直接在此窗口按 Ctrl+V 粘贴截图
           </div>
         </template>
       </el-upload>
@@ -152,12 +167,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { UploadFilled, Camera, Loading } from '@element-plus/icons-vue'
 import { receiptsApi } from '@/api/receipts'
 import { dailyExpensesApi } from '@/api/daily_expenses'
 import { assetsApi } from '@/api/assets'
+import { getSettings } from '@/api/ai'
 import { useCategoryStore } from '@/stores/category'
 import type { Category, Asset } from '@/types'
 import type { FormInstance, FormRules } from 'element-plus'
@@ -179,6 +195,9 @@ const visible = computed({
 const categoryStore = useCategoryStore()
 const assets = ref<Asset[]>([])
 const allCategories = ref<Category[]>([])
+const aiProviders = ref<any[]>([])
+const selectedModel = ref('')
+const selectedProvider = ref('')
 
 const scanning = ref(false)
 const saving = ref(false)
@@ -247,12 +266,53 @@ function resetUpload() {
   scanning.value = false
 }
 
+// Client-side image compression to avoid large payload timeouts
+function compressImageFile(file: File | Blob, maxDimension = 1600, quality = 0.85): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const img = new Image()
+      img.onload = () => {
+        let { width, height } = img
+        if (width > maxDimension || height > maxDimension) {
+          if (width > height) {
+            height = Math.round((height * maxDimension) / width)
+            width = maxDimension
+          } else {
+            width = Math.round((width * maxDimension) / height)
+            height = maxDimension
+          }
+        }
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')
+        if (!ctx) {
+          resolve(e.target?.result as string)
+          return
+        }
+        ctx.drawImage(img, 0, 0, width, height)
+        const compressedB64 = canvas.toDataURL('image/jpeg', quality)
+        resolve(compressedB64)
+      }
+      img.onerror = () => resolve(e.target?.result as string)
+      img.src = e.target?.result as string
+    }
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+}
+
 async function processImageBase64(base64: string) {
   imagePreview.value = base64
   scanning.value = true
 
   try {
-    const res = await receiptsApi.scan({ image: base64 })
+    const res = await receiptsApi.scan({
+      image: base64,
+      model: selectedModel.value || undefined,
+      provider: selectedProvider.value || undefined,
+    })
     if (res) {
       form.amount = Number(res.amount) || 0
       form.expense_date = res.date || new Date().toISOString().slice(0, 10)
@@ -281,7 +341,8 @@ async function processImageBase64(base64: string) {
       ElMessage.success('票据识别成功')
     }
   } catch (err: any) {
-    ElMessage.warning(err.message || 'AI 识别失败，请手动填写记账信息')
+    const msg = err.response?.data?.message || err.message || 'AI 识别失败，请手动填写记账信息'
+    ElMessage.warning(msg)
     if (!form.asset_id && assets.value.length > 0 && assets.value[0]) {
       form.asset_id = assets.value[0].id
     }
@@ -290,34 +351,34 @@ async function processImageBase64(base64: string) {
   }
 }
 
-function handleFileChange(uploadFile: any) {
+async function handleFileChange(uploadFile: any) {
   const file = uploadFile.raw
   if (!file) return
-  const reader = new FileReader()
-  reader.onload = (e) => {
-    const b64 = e.target?.result as string
+  try {
+    const b64 = await compressImageFile(file)
     if (b64) {
-      processImageBase64(b64)
+      await processImageBase64(b64)
     }
+  } catch {
+    ElMessage.error('读取图片文件失败')
   }
-  reader.readAsDataURL(file)
 }
 
-function handleCameraCapture(event: Event) {
+async function handleCameraCapture(event: Event) {
   const target = event.target as HTMLInputElement
   const file = target.files?.[0]
   if (!file) return
-  const reader = new FileReader()
-  reader.onload = (e) => {
-    const b64 = e.target?.result as string
+  try {
+    const b64 = await compressImageFile(file)
     if (b64) {
-      processImageBase64(b64)
+      await processImageBase64(b64)
     }
+  } catch {
+    ElMessage.error('读取相机拍摄图片失败')
   }
-  reader.readAsDataURL(file)
 }
 
-function handlePaste(event: ClipboardEvent) {
+async function handlePaste(event: ClipboardEvent) {
   const items = event.clipboardData?.items
   if (!items) return
   for (let i = 0; i < items.length; i++) {
@@ -325,14 +386,14 @@ function handlePaste(event: ClipboardEvent) {
     if (item && item.type.indexOf('image') !== -1) {
       const file = item.getAsFile()
       if (file) {
-        const reader = new FileReader()
-        reader.onload = (e) => {
-          const b64 = e.target?.result as string
+        try {
+          const b64 = await compressImageFile(file)
           if (b64) {
-            processImageBase64(b64)
+            await processImageBase64(b64)
           }
+        } catch {
+          ElMessage.error('读取剪贴板图片失败')
         }
-        reader.readAsDataURL(file)
         break
       }
     }
@@ -369,9 +430,10 @@ async function handleSave() {
 
 async function loadData() {
   try {
-    const [assetsRes, catsRes] = await Promise.allSettled([
+    const [assetsRes, catsRes, aiRes] = await Promise.allSettled([
       assetsApi.list({ page_size: 500 }),
       categoryStore.loadCategories(),
+      getSettings(),
     ])
     if (assetsRes.status === 'fulfilled') {
       assets.value = (assetsRes.value as any)?.items || []
@@ -381,6 +443,16 @@ async function loadData() {
     }
     if (catsRes.status === 'fulfilled') {
       allCategories.value = categoryStore.buildTree(categoryStore.allNodes)
+    }
+    if (aiRes.status === 'fulfilled') {
+      const settings = aiRes.value as any
+      aiProviders.value = settings.providers || []
+      if (!selectedModel.value) {
+        selectedModel.value = settings.default_model || ''
+      }
+      if (!selectedProvider.value) {
+        selectedProvider.value = settings.default_provider || ''
+      }
     }
   } catch { /* ignore */ }
 }
@@ -402,6 +474,38 @@ onMounted(() => {
 <style scoped>
 .receipt-scanner-dialog :deep(.el-dialog__body) {
   padding: 16px 24px;
+}
+
+.model-info-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--bg-primary, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-size: 13px;
+}
+
+.model-info-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.model-info-left .label {
+  color: var(--mf-text-secondary, #94a3b8);
+}
+
+.settings-link {
+  color: var(--el-color-primary, #6366f1);
+  text-decoration: none;
+  font-size: 12px;
+}
+
+.settings-link:hover {
+  text-decoration: underline;
 }
 
 .upload-zone {

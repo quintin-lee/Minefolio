@@ -291,6 +291,22 @@ receipt_service_scan(csilk_ctx_t* c)
                     : (prov->models && prov->model_count > 0 ? prov->models[0] : "gpt-4o-mini");
     }
 
+    /* Build endpoint URL */
+    char        url[1024];
+    const char* base = (prov->base_url[0] != '\0') ? prov->base_url : "https://api.openai.com/v1";
+    size_t      blen = strlen(base);
+    while (blen > 0 && (base[blen - 1] == '/' || isspace((unsigned char)base[blen - 1]))) {
+        blen--;
+    }
+
+    if (strstr(base, "/chat/completions")) {
+        snprintf(url, sizeof(url), "%.*s", (int)blen, base);
+    } else if (strncmp(base, "https://api.openai.com", 22) == 0 && !strstr(base, "/v1")) {
+        snprintf(url, sizeof(url), "%.*s/v1/chat/completions", (int)blen, base);
+    } else {
+        snprintf(url, sizeof(url), "%.*s/chat/completions", (int)blen, base);
+    }
+
     /* Build OpenAI Vision API compatible request payload */
     csilk_json_t* req_obj = csilk_json_object();
     csilk_json_add_string(req_obj, "model", model);
@@ -299,11 +315,16 @@ receipt_service_scan(csilk_ctx_t* c)
 
     csilk_json_t* messages = csilk_json_array();
 
-    /* System message */
-    csilk_json_t* sys_msg = csilk_json_object();
-    csilk_json_add_string(sys_msg, "role", "system");
-    csilk_json_add_string(sys_msg,
-                          "content",
+    /* Universal multimodal message: Put prompt in user message for maximum provider compatibility */
+    csilk_json_t* user_msg = csilk_json_object();
+    csilk_json_add_string(user_msg, "role", "user");
+
+    csilk_json_t* parts = csilk_json_array();
+
+    csilk_json_t* text_part = csilk_json_object();
+    csilk_json_add_string(text_part, "type", "text");
+    csilk_json_add_string(text_part,
+                          "text",
                           "你是一个专业的财务发票与票据识别助手。请识别用户上传的票据/发票/收据/"
                           "支付凭单截图，并严格以标准 JSON 格式输出，不要包含任何 markdown "
                           "代码块或解释文字。JSON 格式规范如下：\n"
@@ -317,25 +338,14 @@ receipt_service_scan(csilk_ctx_t* c)
                           "  \"description\": \"商品或消费内容简述\",\n"
                           "  \"currency\": \"币种，如 CNY, USD 等，默认 CNY\",\n"
                           "  \"confidence\": 0.95\n"
-                          "}");
-    csilk_json_array_append(messages, sys_msg);
-
-    /* User message with multimodal parts */
-    csilk_json_t* user_msg = csilk_json_object();
-    csilk_json_add_string(user_msg, "role", "user");
-
-    csilk_json_t* parts = csilk_json_array();
-
-    csilk_json_t* text_part = csilk_json_object();
-    csilk_json_add_string(text_part, "type", "text");
-    csilk_json_add_string(
-        text_part, "text", "请识别这张发票/票据/凭证并输出结构化 JSON 记账信息。");
+                          "}\n\n请识别这张发票/票据/凭证并输出上述 JSON。");
     csilk_json_array_append(parts, text_part);
 
     csilk_json_t* image_part = csilk_json_object();
     csilk_json_add_string(image_part, "type", "image_url");
     csilk_json_t* image_url_obj = csilk_json_object();
     csilk_json_add_string(image_url_obj, "url", image_url_buf);
+    csilk_json_add_string(image_url_obj, "detail", "auto");
     csilk_json_add_object(image_part, "image_url", image_url_obj);
     csilk_json_array_append(parts, image_part);
 
@@ -355,19 +365,6 @@ receipt_service_scan(csilk_ctx_t* c)
     if (!req_json_str) {
         respond_error(c, 500, "构建请求 JSON 失败");
         return;
-    }
-
-    /* Build endpoint URL */
-    char        url[1024];
-    const char* base = prov->base_url[0] ? prov->base_url : "https://api.openai.com/v1";
-    size_t      blen = strlen(base);
-    while (blen > 0 && base[blen - 1] == '/') {
-        blen--;
-    }
-    if (strstr(base, "/chat/completions")) {
-        snprintf(url, sizeof(url), "%.*s", (int)blen, base);
-    } else {
-        snprintf(url, sizeof(url), "%.*s/chat/completions", (int)blen, base);
     }
 
     /* Send HTTP POST via libcurl */
@@ -409,16 +406,50 @@ receipt_service_scan(csilk_ctx_t* c)
     free(req_json_str);
 
     if (curl_rc != CURLE_OK || !resp_buf.data || resp_buf.size == 0) {
+        char err_detail[256];
+        snprintf(
+            err_detail, sizeof(err_detail), "AI 接口请求失败 (%s)", curl_easy_strerror(curl_rc));
         if (resp_buf.data) {
             free(resp_buf.data);
         }
-        respond_error(c, 502, "AI 接口请求失败，网络超时或连接中断");
+        respond_error(c, 502, err_detail);
         return;
     }
 
     if (http_code >= 400) {
-        char err_msg[512];
-        snprintf(err_msg, sizeof(err_msg), "AI 接口返回错误 (HTTP %ld)", http_code);
+        char err_msg[1024];
+        char detail[512] = {0};
+
+        if (resp_buf.data && resp_buf.size > 0) {
+            csilk_json_t* err_json = csilk_json_parse(resp_buf.data);
+            if (err_json) {
+                const csilk_json_t* err_obj = csilk_json_get(err_json, "error");
+                const char*         msg = NULL;
+                if (err_obj) {
+                    if (csilk_json_is_object(err_obj)) {
+                        msg = csilk_json_get_string((csilk_json_t*)err_obj, "message");
+                    } else if (csilk_json_is_string(err_obj)) {
+                        msg = csilk_json_string_value(err_obj);
+                    }
+                }
+                if (!msg) {
+                    msg = csilk_json_get_string(err_json, "message");
+                }
+                if (!msg) {
+                    msg = csilk_json_get_string(err_json, "detail");
+                }
+                if (msg && msg[0]) {
+                    strncpy(detail, msg, sizeof(detail) - 1);
+                }
+                csilk_json_free(err_json);
+            }
+        }
+
+        if (detail[0]) {
+            snprintf(err_msg, sizeof(err_msg), "AI 接口错误 (HTTP %ld): %s", http_code, detail);
+        } else {
+            snprintf(err_msg, sizeof(err_msg), "AI 接口返回错误 (HTTP %ld)", http_code);
+        }
         free(resp_buf.data);
         respond_error(c, 502, err_msg);
         return;
