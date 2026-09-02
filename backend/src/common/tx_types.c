@@ -1,17 +1,11 @@
 /**
  * @file tx_types.c
- * @brief 交易类型元数据注册表与资金流动方向推导实现
- *
- * 实现了静态交易类型注册表定义、基于交易类型的资金增减符号推导、
- * 以及主资产与联动账户在各种交易场景下的变动量计算。
+ * @brief 交易类型元数据注册表与资金流动方向推导实现（Financial Core 驱动）
  */
 
 #include "tx_types.h"
 #include <string.h>
 
-/**
- * @brief 内部静态常量数组：系统支持的交易类型元数据表
- */
 static const tx_type_t TX_TYPES[] = {
     {"deposit",      "存入",   "in",  "out", "in",  0, 1},
     {"withdrawal",   "取出",   "out", "in",  "out", 0, 1},
@@ -25,12 +19,6 @@ static const tx_type_t TX_TYPES[] = {
     {"interest",     "利息",   "in",  "out", "in",  0, 1},
 };
 
-/**
- * @brief 根据交易类型编码查找对应的元数据定义
- *
- * @param[in] type 交易类型编码
- * @return const tx_type_t* 命中则返回描述结构体，未命中返回 NULL
- */
 const tx_type_t*
 tx_type_lookup(const char* type)
 {
@@ -45,60 +33,61 @@ tx_type_lookup(const char* type)
     return NULL;
 }
 
-/**
- * @brief 计算主目标资产在特定交易类型下的实际余额变动量
- *
- * @param[in] type 交易类型编码
- * @param[in] amount 交易金额
- * @param[in] price 单价（未使用）
- * @param[in] qty 数量（未使用）
- * @return double 变动增量
- */
-double
-tx_delta(const char* type, double amount, double price, double qty)
+money_t
+tx_delta_m(const char* type, money_t amount, price_t price, quantity_t qty)
 {
     (void)price;
     (void)qty;
     const tx_type_t* t = tx_type_lookup(type);
     if (!t) {
-        return 0;
+        return money_zero(amount.currency);
     }
-    return strcmp(t->balance_dir, "in") == 0 ? amount : -amount;
+    return strcmp(t->balance_dir, "in") == 0 ? amount : money_neg(amount);
 }
 
-/**
- * @brief 计算关联资产默认变动量
- *
- * @param[in] type 交易类型编码
- * @param[in] amount 交易金额
- * @return double 变动增量
- */
-static double
-tx_linked_delta(const char* type, double amount)
+double
+tx_delta(const char* type, double amount, double price, double qty)
+{
+    money_t    m_amt;
+    price_t    p;
+    quantity_t q;
+    money_from_double(amount, CURRENCY_CNY, &m_amt);
+    price_from_double(price, 4, CURRENCY_CNY, &p);
+    quantity_from_double(qty, 4, &q);
+
+    money_t res = tx_delta_m(type, m_amt, p, q);
+    return money_to_double(res);
+}
+
+static money_t
+tx_linked_delta_m(const char* type, money_t amount)
 {
     const tx_type_t* t = tx_type_lookup(type);
     if (!t) {
-        return 0;
+        return money_zero(amount.currency);
     }
-    return strcmp(t->linked_dir, "in") == 0 ? amount : -amount;
+    return strcmp(t->linked_dir, "in") == 0 ? amount : money_neg(amount);
 }
 
-/**
- * @brief 计算关联资金账户在特定交易下的实际余额变动量
- *
- * @param[in] type 交易类型编码
- * @param[in] amount 交易金额
- * @param[in] tdelta 主资产已计算的变动量
- * @return double 关联资产变动量
- */
+money_t
+tx_effective_ldelta_m(const char* type, money_t amount, money_t tdelta)
+{
+    if (!type) {
+        return money_zero(amount.currency);
+    }
+    if (strcmp(type, "transfer_in") == 0 || strcmp(type, "transfer_out") == 0) {
+        return money_neg(tdelta);
+    }
+    return tx_linked_delta_m(type, amount);
+}
+
 double
 tx_effective_ldelta(const char* type, double amount, double tdelta)
 {
-    if (!type) {
-        return 0;
-    }
-    if (strcmp(type, "transfer_in") == 0 || strcmp(type, "transfer_out") == 0) {
-        return -tdelta;
-    }
-    return tx_linked_delta(type, amount);
+    money_t m_amt, m_tdelta;
+    money_from_double(amount, CURRENCY_CNY, &m_amt);
+    money_from_double(tdelta, CURRENCY_CNY, &m_tdelta);
+
+    money_t res = tx_effective_ldelta_m(type, m_amt, m_tdelta);
+    return money_to_double(res);
 }

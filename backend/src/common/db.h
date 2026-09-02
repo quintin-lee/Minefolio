@@ -9,6 +9,13 @@
  */
 
 #include "csilk/drivers/db.h"
+#include "core/financial/currency.h"
+#include "core/financial/decimal.h"
+#include "core/financial/money.h"
+#include "core/financial/quantity.h"
+#include "core/financial/price.h"
+#include "core/financial/rate.h"
+#include "core/financial/percentage.h"
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
@@ -165,4 +172,90 @@ db_get_bool(const csilk_json_t* obj, const char* key)
         return atof(s) != 0.0 ? 1 : 0;
     }
     return 0;
+}
+
+/**
+ * @brief 从查询结果行的 JSON 对象中安全提取高精度 Decimal 定点数
+ *
+ * 优先读取原始字符串（保持完全精度），若为数值节点则转换为 Decimal。
+ *
+ * @param[in] obj 查询结果行 JSON 对象指针
+ * @param[in] key 字段键名
+ * @return decimal_t 解析得到的 Decimal 定点数；若不存在则返回 zero
+ */
+static inline decimal_t
+db_get_decimal(const csilk_json_t* obj, const char* key)
+{
+    const csilk_json_t* v = csilk_json_get(obj, key);
+    if (!v) {
+        return decimal_zero();
+    }
+    if (csilk_json_is_string(v)) {
+        const char* s = csilk_json_string_value(v);
+        if (!s) {
+            return decimal_zero();
+        }
+        decimal_t d;
+        if (decimal_from_string(s, &d) == DECIMAL_OK) {
+            return d;
+        }
+        return decimal_zero();
+    }
+    if (csilk_json_is_number(v)) {
+        double    num = csilk_json_number_value(v);
+        decimal_t d;
+        decimal_from_double(num, 4, &d);
+        return d;
+    }
+    return decimal_zero();
+}
+
+/**
+ * @brief 从查询结果行的 JSON 对象中安全提取指定币种的 money_t 货币金额
+ */
+static inline money_t
+db_get_money(const csilk_json_t* obj, const char* key, currency_t cur)
+{
+    decimal_t d = db_get_decimal(obj, key);
+    return money_from_decimal(d, cur);
+}
+
+/**
+ * @brief 从查询结果行的 JSON 对象中安全提取 quantity_t 标的份额数量
+ */
+static inline quantity_t
+db_get_quantity(const csilk_json_t* obj, const char* key)
+{
+    decimal_t d = db_get_decimal(obj, key);
+    return quantity_from_decimal(d);
+}
+
+/**
+ * @brief 从查询结果行的 JSON 对象中安全提取 price_t 单价
+ */
+static inline price_t
+db_get_price(const csilk_json_t* obj, const char* key, currency_t cur)
+{
+    decimal_t d = db_get_decimal(obj, key);
+    return price_from_decimal(d, cur);
+}
+
+/**
+ * @brief 从查询结果行的 JSON 对象中安全提取 rate_t 汇率
+ */
+static inline rate_t
+db_get_rate(const csilk_json_t* obj, const char* key, currency_t from_cur, currency_t to_cur)
+{
+    decimal_t d = db_get_decimal(obj, key);
+    return rate_from_decimal(d, from_cur, to_cur);
+}
+
+/**
+ * @brief 从查询结果行的 JSON 对象中安全提取 percentage_t 百分比
+ */
+static inline percentage_t
+db_get_percentage(const csilk_json_t* obj, const char* key)
+{
+    decimal_t d = db_get_decimal(obj, key);
+    return percentage_from_decimal(d);
 }
