@@ -27,7 +27,7 @@ ARG HTTP_PROXY
 ARG HTTPS_PROXY
 ARG ALL_PROXY
 
-ARG GITHUB_PROXY=https://ghproxy.net/https://github.com/
+ARG GITHUB_PROXY=""
 
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -99,9 +99,9 @@ RUN --mount=type=bind,source=hosts,target=/etc/hosts \
     git config --global http.proxy ${HTTP_PROXY}; \
     git config --global https.proxy ${HTTPS_PROXY}; \
     fi \
-    && git config --global \
-    url.${GITHUB_PROXY}.insteadOf \
-    https://github.com/
+    && if [ -n "${GITHUB_PROXY}" ]; then \
+    git config --global url.${GITHUB_PROXY}.insteadOf https://github.com/; \
+    fi
 
 
 
@@ -114,12 +114,14 @@ WORKDIR /src
 
 COPY backend ./backend
 
-
-# 预取 csilk 的 FetchContent 依赖(csilk 的 cmake/dependencies.cmake 会拉取
-# llhttp/yyjson/nghttp2)。代理网络不稳定, 大仓库整包克隆经常中途断连;
-# 这里按精确 tag 浅克隆(体积小), 带重试循环, 构建期完全离线构建。
-# tag 变更时同步更新此处与 csilk 上游 cmake/dependencies.cmake。
-COPY deps /src/deps
+# 预取 csilk 的 FetchContent 依赖(csilk 的 cmake/dependencies.cmake 会拉取 llhttp/yyjson/nghttp2)
+RUN --mount=type=bind,source=hosts,target=/etc/hosts \
+    mkdir -p /src/deps \
+    && cd /src/deps \
+    && (test -d csilk || git clone --depth 1 https://github.com/quintin-lee/csilk.git csilk) \
+    && (test -d llhttp || git clone --depth 1 -b v9.2.1 https://github.com/nodejs/llhttp.git llhttp) \
+    && (test -d yyjson || git clone --depth 1 -b 0.10.0 https://github.com/ibireme/yyjson.git yyjson) \
+    && (test -d nghttp2 || git clone --depth 1 -b v1.62.1 https://github.com/nghttp2/nghttp2.git nghttp2)
 
 RUN --mount=type=bind,source=hosts,target=/etc/hosts \
     cmake \
