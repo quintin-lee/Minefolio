@@ -134,5 +134,7 @@ add_financial_unit_test(test_rate tests/unit/test_rate.c)
 add_financial_unit_test(test_pnl tests/unit/test_pnl.c)
 add_financial_unit_test(test_fx tests/unit/test_fx.c)
 add_financial_unit_test(test_ledger_math tests/unit/test_ledger_math.c)
+add_financial_unit_test(test_ledger_engine tests/unit/test_ledger_engine.c)
+
 
 

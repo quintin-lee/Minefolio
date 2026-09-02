@@ -243,17 +243,24 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
             parent_tx_str = ptx_buf;
         }
 
+        const char* src_type =
+            (tx->type == LEDGER_TX_DEPOSIT || tx->type == LEDGER_TX_TRANSFER_IN ||
+             tx->type == LEDGER_TX_INTEREST || tx->type == LEDGER_TX_DIVIDEND)
+                ? "income"
+                : "expense";
+
         const char* ins_params[] = {uid_str,
                                     ast_str,
                                     last_str,
                                     cat_str,
-                                    "manual",
+                                    src_type,
                                     tx_type_str,
                                     dir,
                                     ldir,
                                     amt_buf,
                                     price_buf,
                                     qty_buf,
+                                    fee_buf,
                                     cur_str,
                                     tx->tx_date ? tx->tx_date : "datetime('now')",
                                     tx->note ? tx->note : "",
@@ -264,8 +271,9 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
             pool,
             "INSERT INTO transactions (user_id, asset_id, linked_asset_id, category_id, "
             "source_type, transaction_type, direction, linked_direction, "
-            "amount, price_per_unit, quantity, currency, transaction_date, note, parent_tx_id) "
-            "VALUES (?, ?, NULLIF(?, '0'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "amount, price_per_unit, quantity, fee, currency, transaction_date, note, "
+            "parent_tx_id) "
+            "VALUES (?, ?, NULLIF(?, '0'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
             "RETURNING id",
             ins_params);
 
@@ -306,10 +314,11 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
                                       ast_str,
                                       last_str,
                                       cat_str,
-                                      "manual",
+                                      "expense",
                                       "fee",
                                       "out",
                                       fee_buf,
+                                      "0.0000",
                                       "0.0000",
                                       "0.0000",
                                       cur_str,
@@ -321,8 +330,9 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
             pool,
             "INSERT INTO transactions (user_id, asset_id, linked_asset_id, category_id, "
             "source_type, transaction_type, direction, linked_direction, "
-            "amount, price_per_unit, quantity, currency, transaction_date, note, parent_tx_id) "
-            "VALUES (?, ?, NULLIF(?, '0'), ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)",
+            "amount, price_per_unit, quantity, fee, currency, transaction_date, note, "
+            "parent_tx_id) "
+            "VALUES (?, ?, NULLIF(?, '0'), ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)",
             fee_params);
         if (fee_res) {
             csilk_json_free(fee_res);
@@ -364,15 +374,9 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
     if (tx->linked_asset_id > 0) {
         money_t ldelta;
         if (tx->type == LEDGER_TX_BUY) {
-            // buy debits funding account: -(amount + fee)
-            money_t total_out;
-            money_add(tx->amount, tx->fee, &total_out);
-            ldelta = money_neg(total_out);
+            ldelta = money_neg(tx->amount);
         } else if (tx->type == LEDGER_TX_SELL) {
-            // sell credits funding account: +(amount - fee)
-            money_t net_in;
-            money_sub(tx->amount, tx->fee, &net_in);
-            ldelta = net_in;
+            ldelta = tx->amount;
         } else {
             money_t tdelta = tx_delta_m(tx_type_str, tx->amount, tx->price, tx->quantity);
             ldelta = tx_effective_ldelta_m(tx_type_str, tx->amount, tdelta);
@@ -633,9 +637,6 @@ ledger_rebuild_position(csilk_db_pool_t*         pool,
                 ledger_calc_sell_position(
                     curr_qty, curr_cost, q, p, f, &curr_qty, &curr_cost, &cost_red, &real_pnl);
                 money_add(cum_realized, real_pnl, &cum_realized);
-                if (!decimal_is_zero(p.unit_price)) {
-                    latest_price = p;
-                }
             }
         }
         csilk_json_free(tx_rows);
