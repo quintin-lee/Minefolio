@@ -110,8 +110,18 @@ set(FINANCIAL_CORE_SOURCES
 )
 
 function(add_financial_unit_test test_target test_source)
-    add_executable(${test_target} ${test_source} ${FINANCIAL_CORE_SOURCES})
+    add_executable(${test_target}
+        ${test_source}
+        ${FINANCIAL_CORE_SOURCES}
+        src/core/ledger/ledger_engine.c
+        src/common/balance.c
+        src/common/tx_types.c
+        src/common/db.c
+        src/common/config.c
+        src/repositories/transaction_repo.c
+    )
     target_include_directories(${test_target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(${test_target} PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES})
     add_test(NAME ${test_target} COMMAND ${test_target})
 endfunction()
 
@@ -123,4 +133,6 @@ add_financial_unit_test(test_price tests/unit/test_price.c)
 add_financial_unit_test(test_rate tests/unit/test_rate.c)
 add_financial_unit_test(test_pnl tests/unit/test_pnl.c)
 add_financial_unit_test(test_fx tests/unit/test_fx.c)
+add_financial_unit_test(test_ledger_math tests/unit/test_ledger_math.c)
+
 
