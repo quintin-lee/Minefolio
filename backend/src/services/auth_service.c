@@ -229,7 +229,11 @@ auth_login(csilk_ctx_t* c)
     const char* totp_secret = csilk_json_get_string(row, "totp_secret");
     const char* totp_backup_codes = csilk_json_get_string(row, "totp_backup_codes");
 
-    if (totp_enabled) {
+    int is_2fa_active = (totp_secret && totp_secret[0] != '\0') &&
+                        (totp_enabled || (totp_backup_codes && totp_backup_codes[0] != '\0' &&
+                                          strcmp(totp_backup_codes, "[]") != 0));
+
+    if (is_2fa_active) {
         bool verified = false;
         if (totp_code_buf[0]) {
             if (totp_verify_code(totp_secret, totp_code_buf)) {
@@ -435,6 +439,7 @@ auth_2fa_status(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
     if (user_id <= 0) {
+        respond_unauthorized(c);
         return;
     }
 
@@ -448,11 +453,32 @@ auth_2fa_status(csilk_ctx_t* c)
     }
 
     csilk_json_t* user = csilk_json_array_get(user_rows, 0);
+    const char*   totp_secret = csilk_json_get_string(user, "totp_secret");
+    const char*   totp_backup_codes = csilk_json_get_string(user, "totp_backup_codes");
     int           totp_enabled = db_get_bool(user, "totp_enabled");
+
+    /* 2FA is active if secret is present AND (enabled flag is true OR backup codes are set) */
+    int is_active = (totp_secret && totp_secret[0] != '\0') &&
+                    (totp_enabled || (totp_backup_codes && totp_backup_codes[0] != '\0' &&
+                                      strcmp(totp_backup_codes, "[]") != 0));
+
+    int backup_count = 0;
+    if (totp_backup_codes && totp_backup_codes[0] != '\0') {
+        csilk_json_t* codes_json = csilk_json_parse(totp_backup_codes);
+        if (codes_json && csilk_json_is_array(codes_json)) {
+            backup_count = (int)csilk_json_array_size(codes_json);
+        }
+        if (codes_json) {
+            csilk_json_free(codes_json);
+        }
+    }
+
     csilk_json_free(user_rows);
 
     csilk_json_t* resp = csilk_json_object();
-    csilk_json_add_bool(resp, "enabled", totp_enabled ? true : false);
+    csilk_json_add_bool(resp, "enabled", is_active ? true : false);
+    csilk_json_add_bool(resp, "has_backup_codes", backup_count > 0);
+    csilk_json_add_int(resp, "backup_codes_count", backup_count);
     respond_ok(c, resp);
 }
 
