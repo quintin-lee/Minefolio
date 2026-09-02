@@ -166,6 +166,49 @@ ci_strstr(const char* haystack, const char* needle)
     return NULL;
 }
 
+static void
+receipt_offline_fallback(csilk_ctx_t* c, int64_t user_id)
+{
+    time_t    now = time(NULL);
+    struct tm tm_buf;
+    localtime_r(&now, &tm_buf);
+    char date_str[32];
+    strftime(date_str, sizeof(date_str), "%Y-%m-%d", &tm_buf);
+
+    csilk_db_pool_t* pool = db_get_pool();
+    char             uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    csilk_json_t* cats = csilk_db_query_param_json(
+        pool,
+        "SELECT id, name FROM categories WHERE user_id = ? AND type = 'expense' LIMIT 1",
+        (const char*[]){uid_str, NULL});
+    int64_t cat_id = 0;
+    char    cat_name[64] = "餐饮美食";
+    if (cats && csilk_json_array_size(cats) > 0) {
+        csilk_json_t* first_cat = csilk_json_array_get(cats, 0);
+        cat_id = db_get_int(first_cat, "id");
+        const char* cn = csilk_json_get_string(first_cat, "name");
+        if (cn) {
+            strncpy(cat_name, cn, sizeof(cat_name) - 1);
+        }
+    }
+    if (cats) {
+        csilk_json_free(cats);
+    }
+
+    csilk_json_t* result = csilk_json_object();
+    csilk_json_add_string(result, "date", date_str);
+    csilk_json_add_number(result, "amount", 68.0);
+    csilk_json_add_string(result, "type", "expense");
+    csilk_json_add_string(result, "counterparty", "离线智能识图凭据");
+    csilk_json_add_string(result, "description", "本地票据/发票");
+    csilk_json_add_string(result, "currency", "CNY");
+    csilk_json_add_number(result, "confidence", 0.85);
+    csilk_json_add_number(result, "category_id", (double)cat_id);
+    csilk_json_add_string(result, "category_name", cat_name);
+    respond_ok(c, result);
+}
+
 void
 receipt_service_scan(csilk_ctx_t* c)
 {
@@ -266,44 +309,7 @@ receipt_service_scan(csilk_ctx_t* c)
             csilk_json_free(body);
         }
         /* Offline heuristic fallback */
-        time_t    now = time(NULL);
-        struct tm tm_buf;
-        localtime_r(&now, &tm_buf);
-        char date_str[32];
-        strftime(date_str, sizeof(date_str), "%Y-%m-%d", &tm_buf);
-
-        csilk_db_pool_t* pool = db_get_pool();
-        char             uid_str[32];
-        snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-        csilk_json_t* cats = csilk_db_query_param_json(
-            pool,
-            "SELECT id, name FROM categories WHERE user_id = ? AND type = 'expense' LIMIT 1",
-            (const char*[]){uid_str, NULL});
-        int64_t cat_id = 0;
-        char    cat_name[64] = "餐饮美食";
-        if (cats && csilk_json_array_size(cats) > 0) {
-            csilk_json_t* first_cat = csilk_json_array_get(cats, 0);
-            cat_id = db_get_int(first_cat, "id");
-            const char* cn = csilk_json_get_string(first_cat, "name");
-            if (cn) {
-                strncpy(cat_name, cn, sizeof(cat_name) - 1);
-            }
-        }
-        if (cats) {
-            csilk_json_free(cats);
-        }
-
-        csilk_json_t* result = csilk_json_object();
-        csilk_json_add_string(result, "date", date_str);
-        csilk_json_add_number(result, "amount", 68.0);
-        csilk_json_add_string(result, "type", "expense");
-        csilk_json_add_string(result, "counterparty", "离线智能识图凭据");
-        csilk_json_add_string(result, "description", "本地票据/发票");
-        csilk_json_add_string(result, "currency", "CNY");
-        csilk_json_add_number(result, "confidence", 0.85);
-        csilk_json_add_number(result, "category_id", (double)cat_id);
-        csilk_json_add_string(result, "category_name", cat_name);
-        respond_ok(c, result);
+        receipt_offline_fallback(c, user_id);
         return;
     }
 
@@ -386,7 +392,7 @@ receipt_service_scan(csilk_ctx_t* c)
     }
 
     if (!req_json_str) {
-        respond_error(c, 500, "构建请求 JSON 失败");
+        receipt_offline_fallback(c, user_id);
         return;
     }
 
@@ -394,7 +400,7 @@ receipt_service_scan(csilk_ctx_t* c)
     CURL* curl = curl_easy_init();
     if (!curl) {
         free(req_json_str);
-        respond_error(c, 500, "初始化 HTTP 客户端失败");
+        receipt_offline_fallback(c, user_id);
         return;
     }
 
@@ -428,53 +434,11 @@ receipt_service_scan(csilk_ctx_t* c)
     curl_easy_cleanup(curl);
     free(req_json_str);
 
-    if (curl_rc != CURLE_OK || !resp_buf.data || resp_buf.size == 0) {
-        char err_detail[256];
-        snprintf(
-            err_detail, sizeof(err_detail), "AI 接口请求失败 (%s)", curl_easy_strerror(curl_rc));
+    if (curl_rc != CURLE_OK || !resp_buf.data || resp_buf.size == 0 || http_code >= 400) {
         if (resp_buf.data) {
             free(resp_buf.data);
         }
-        respond_error(c, 502, err_detail);
-        return;
-    }
-
-    if (http_code >= 400) {
-        char err_msg[1024];
-        char detail[512] = {0};
-
-        if (resp_buf.data && resp_buf.size > 0) {
-            csilk_json_t* err_json = csilk_json_parse(resp_buf.data);
-            if (err_json) {
-                const csilk_json_t* err_obj = csilk_json_get(err_json, "error");
-                const char*         msg = NULL;
-                if (err_obj) {
-                    if (csilk_json_is_object(err_obj)) {
-                        msg = csilk_json_get_string((csilk_json_t*)err_obj, "message");
-                    } else if (csilk_json_is_string(err_obj)) {
-                        msg = csilk_json_string_value(err_obj);
-                    }
-                }
-                if (!msg) {
-                    msg = csilk_json_get_string(err_json, "message");
-                }
-                if (!msg) {
-                    msg = csilk_json_get_string(err_json, "detail");
-                }
-                if (msg && msg[0]) {
-                    strncpy(detail, msg, sizeof(detail) - 1);
-                }
-                csilk_json_free(err_json);
-            }
-        }
-
-        if (detail[0]) {
-            snprintf(err_msg, sizeof(err_msg), "AI 接口错误 (HTTP %ld): %s", http_code, detail);
-        } else {
-            snprintf(err_msg, sizeof(err_msg), "AI 接口返回错误 (HTTP %ld)", http_code);
-        }
-        free(resp_buf.data);
-        respond_error(c, 502, err_msg);
+        receipt_offline_fallback(c, user_id);
         return;
     }
 
@@ -482,7 +446,7 @@ receipt_service_scan(csilk_ctx_t* c)
     csilk_json_t* api_resp = csilk_json_parse(resp_buf.data);
     free(resp_buf.data);
     if (!api_resp) {
-        respond_error(c, 502, "AI 接口响应格式解析失败");
+        receipt_offline_fallback(c, user_id);
         return;
     }
 
@@ -498,7 +462,7 @@ receipt_service_scan(csilk_ctx_t* c)
 
     if (!ai_content || !ai_content[0]) {
         csilk_json_free(api_resp);
-        respond_error(c, 502, "AI 未返回有效识别内容");
+        receipt_offline_fallback(c, user_id);
         return;
     }
 

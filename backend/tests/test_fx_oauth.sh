@@ -1,10 +1,21 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -eo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BACKEND_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+BUILD_DIR="$BACKEND_DIR/build"
+BIN="$BUILD_DIR/minefolio"
 
 PORT=8089
 BASE="http://127.0.0.1:$PORT/api"
 PASS=0
 FAIL=0
+SERVER_PID=""
+
+if [ ! -f "$BIN" ]; then
+    echo "❌ Error: minefolio binary not found at $BIN. Build it first."
+    exit 1
+fi
 
 assert_eq() {
     local desc="$1"
@@ -35,20 +46,29 @@ rsa_encrypt() {
   local plain="$1"
   node -e "
 const http = require('http');
-http.get('$BASE/auth/public-key', (res) => {
+const req = http.get('$BASE/auth/public-key', (res) => {
   let d = '';
   res.on('data', c => d += c);
   res.on('end', async () => {
-    const outer = JSON.parse(d);
-    const jwk = typeof outer.data.public_key === 'string'
-      ? JSON.parse(outer.data.public_key) : outer.data.public_key;
-    const key = await crypto.subtle.importKey('jwk', jwk,
-      {name:'RSA-OAEP', hash:'SHA-256'}, false, ['encrypt']);
-    const enc = await crypto.subtle.encrypt({name:'RSA-OAEP'}, key, Buffer.from('$plain'));
-    const arr = new Uint8Array(enc);
-    process.stdout.write(btoa(String.fromCharCode(...arr))
-      .replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''));
+    try {
+      const outer = JSON.parse(d);
+      const jwk = typeof outer.data.public_key === 'string'
+        ? JSON.parse(outer.data.public_key) : outer.data.public_key;
+      const key = await crypto.subtle.importKey('jwk', jwk,
+        {name:'RSA-OAEP', hash:'SHA-256'}, false, ['encrypt']);
+      const enc = await crypto.subtle.encrypt({name:'RSA-OAEP'}, key, Buffer.from('$plain'));
+      const arr = new Uint8Array(enc);
+      process.stdout.write(btoa(String.fromCharCode(...arr))
+        .replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''));
+    } catch (e) {
+      console.error('RSA encryption error:', e.message);
+      process.exit(1);
+    }
   });
+});
+req.on('error', (e) => {
+  console.error('HTTP connect error:', e.message);
+  process.exit(1);
 });
 "
 }
@@ -57,24 +77,38 @@ DB_FILE=$(mktemp /tmp/minefolio_fx_oauth_XXXXXX.db)
 cleanup() {
     if [ -n "$SERVER_PID" ]; then
         kill -9 "$SERVER_PID" 2>/dev/null || true
+        wait "$SERVER_PID" 2>/dev/null || true
     fi
-    rm -f "$DB_FILE"
+    rm -f "$DB_FILE" "$DB_FILE-wal" "$DB_FILE-shm"
 }
-trap cleanup EXIT
+trap cleanup EXIT INT TERM
+
+# Kill any lingering process on PORT
+kill $(lsof -t -i:${PORT} 2>/dev/null) 2>/dev/null || true
+sleep 0.3
 
 echo "=== Starting Test Server on port $PORT ==="
+cd "$BUILD_DIR"
 MINEFOLIO_DB_DRIVER=sqlite MINEFOLIO_DB_DSN="$DB_FILE" MINEFOLIO_PORT="$PORT" \
 MINEFOLIO_JWT_SECRET="test_fx_oauth_secret_12345678" \
 MINEFOLIO_OAUTH_GITHUB_CLIENT_ID="gh_client_id_test" \
-./backend/build/minefolio > /dev/null 2>&1 &
+"$BIN" > /tmp/minefolio_fx_oauth.log 2>&1 &
 SERVER_PID=$!
 
+SERVER_UP=0
 for i in $(seq 1 30); do
     if curl -s "$BASE/system/status" > /dev/null 2>&1; then
+        SERVER_UP=1
         break
     fi
-    sleep 0.1
+    sleep 0.2
 done
+
+if [ "$SERVER_UP" -eq 0 ]; then
+    echo "❌ Server failed to start on port $PORT"
+    cat /tmp/minefolio_fx_oauth.log 2>/dev/null || true
+    exit 1
+fi
 
 echo "=== 1. System Setup ==="
 ENC_PASS=$(rsa_encrypt "password123")
