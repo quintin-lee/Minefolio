@@ -93,3 +93,34 @@ if(DEFINED csilk_SOURCE_DIR)
             "${CMAKE_BINARY_DIR}/share"
     )
 endif()
+
+# ==========================================
+# Unit Tests (Financial Core)
+# ==========================================
+enable_testing()
+
+set(FINANCIAL_CORE_SOURCES
+    src/core/financial/currency.c
+    src/core/financial/decimal.c
+    src/core/financial/money.c
+    src/core/financial/quantity.c
+    src/core/financial/price.c
+    src/core/financial/rate.c
+    src/core/financial/percentage.c
+)
+
+function(add_financial_unit_test test_target test_source)
+    add_executable(${test_target} ${test_source} ${FINANCIAL_CORE_SOURCES})
+    target_include_directories(${test_target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    add_test(NAME ${test_target} COMMAND ${test_target})
+endfunction()
+
+add_financial_unit_test(test_currency tests/unit/test_currency.c)
+add_financial_unit_test(test_decimal tests/unit/test_decimal.c)
+add_financial_unit_test(test_money tests/unit/test_money.c)
+add_financial_unit_test(test_quantity tests/unit/test_quantity.c)
+add_financial_unit_test(test_price tests/unit/test_price.c)
+add_financial_unit_test(test_rate tests/unit/test_rate.c)
+add_financial_unit_test(test_pnl tests/unit/test_pnl.c)
+add_financial_unit_test(test_fx tests/unit/test_fx.c)
+
