@@ -1,8 +1,38 @@
+/**
+ * @file transaction_repo.c
+ * @brief 核心交易流水与手续费级联管理数据访问层实现
+ *
+ * 实现了交易流水的复杂多条件分页筛选（含三表 LEFT JOIN 联查）、
+ * 月度出入金流动性统计、旧持仓参数快照检索、以及 parent_tx_id 手续费子行的独立查询与级联删除。
+ */
+
 #include "repositories/transaction_repo.h"
 #include "common/db.h"
 #include <stdio.h>
 #include <string.h>
 
+/**
+ * @brief 多条件动态拼接分页查询交易流水
+ *
+ * 执行流程：
+ * 1. 动态拼接 WHERE 子句（asset_id, category_id, transaction_type, source_type, start_date, end_date）。
+ * 2. 统计总匹配数并填充 `*total`。
+ * 3. 联查主资产名称 (a.name)、关联资金账户名称 (la.name) 及分类名称 (c.name)。
+ * 4. 按交易发生日期降序 (`ORDER BY t.transaction_date DESC`) 分页返回。
+ *
+ * @param pool 数据库连接池指针
+ * @param user_id 用户 ID
+ * @param page 页码
+ * @param page_size 每页数量
+ * @param asset_id 资产 ID 筛选
+ * @param category_id 分类 ID 筛选
+ * @param type 交易类型筛选
+ * @param source_type 来源类型筛选
+ * @param start_date 起始日期
+ * @param end_date 截止日期
+ * @param[out] total 输出参数，符合条件的总记录数
+ * @return csilk_json_t* 交易记录 JSON 数组
+ */
 csilk_json_t*
 tx_list(csilk_db_pool_t* pool,
         int64_t          user_id,
@@ -77,6 +107,8 @@ tx_list(csilk_db_pool_t* pool,
     params[pidx++] = offset;
     params[pidx] = NULL;
     cnt_params[cnt_pidx] = NULL;
+
+    /* 1. 统计符合条件的总记录数 */
     csilk_json_t* cnt_res = csilk_db_query_param_json(pool, count_sql, cnt_params);
     *total = 0;
     if (cnt_res && csilk_json_array_size(cnt_res) > 0) {
@@ -85,8 +117,22 @@ tx_list(csilk_db_pool_t* pool,
     if (cnt_res) {
         csilk_json_free(cnt_res);
     }
+
+    /* 2. 执行分页查询 */
     return csilk_db_query_param_json(pool, sql, params);
 }
+
+/**
+ * @brief 按月份统计总流水、资金流入流出与总笔数
+ *
+ * 执行 SQL：
+ * `SELECT COALESCE(SUM(amount),0) AS total_volume, COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE 0 END),0) AS inflows, COALESCE(SUM(CASE WHEN direction='out' THEN amount ELSE 0 END),0) AS outflows, COUNT(*) AS count FROM transactions WHERE user_id=? AND transaction_date LIKE ?`
+ *
+ * @param pool 数据库连接池指针
+ * @param user_id 用户 ID
+ * @param pattern 日期通配符 (如 "2026-09%")
+ * @return csilk_json_t* 汇总指标 JSON 数组
+ */
 csilk_json_t*
 tx_monthly(csilk_db_pool_t* pool, int64_t user_id, const char* pattern)
 {
@@ -100,6 +146,31 @@ tx_monthly(csilk_db_pool_t* pool, int64_t user_id, const char* pattern)
         "transaction_date LIKE ?",
         (const char*[]){uid, pattern, NULL});
 }
+
+/**
+ * @brief 插入新的交易记录
+ *
+ * 执行 SQL：
+ * `INSERT INTO transactions (user_id,asset_id,linked_asset_id,category_id,source_type,transaction_type,direction,linked_direction,amount,price_per_unit,quantity,fee,currency,transaction_date,note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`
+ *
+ * @param pool 数据库连接池指针
+ * @param user_id 用户 ID
+ * @param asset_id 主资产 ID
+ * @param linked_asset_id 关联资金资产 ID (0 则存为 NULL)
+ * @param category_id 分类 ID
+ * @param source_type 来源类型
+ * @param transaction_type 交易类型
+ * @param direction 主资产资金方向
+ * @param linked_direction 关联账户资金方向
+ * @param amount 金额
+ * @param price_per_unit 单价
+ * @param quantity 份额
+ * @param fee 手续费
+ * @param currency 货币
+ * @param date 日期
+ * @param note 备注
+ * @return int64_t 成功生成的主键 ID，失败返回 0
+ */
 int64_t
 tx_insert(csilk_db_pool_t* pool,
           int64_t          user_id,
@@ -158,6 +229,30 @@ tx_insert(csilk_db_pool_t* pool,
     }
     return id;
 }
+
+/**
+ * @brief 更新交易流水记录
+ *
+ * 执行 SQL：
+ * `UPDATE transactions SET transaction_type=?,direction=?,linked_direction=?,amount=?,price_per_unit=?,quantity=?,currency=?,transaction_date=?,note=?,category_id=?,source_type=?,linked_asset_id=NULLIF(?, '0') WHERE id=? AND user_id=? RETURNING id`
+ *
+ * @param pool 数据库连接池指针
+ * @param user_id 用户 ID
+ * @param id 交易 ID
+ * @param transaction_type 交易类型
+ * @param direction 主方向
+ * @param linked_direction 关联方向
+ * @param amount 金额
+ * @param price_per_unit 单价
+ * @param quantity 份额
+ * @param currency 货币
+ * @param date 日期
+ * @param note 备注
+ * @param category_id 分类 ID
+ * @param source_type 来源类型
+ * @param linked_asset_id 关联账户 ID
+ * @return int 成功返回 1，失败返回 0
+ */
 int
 tx_update(csilk_db_pool_t* pool,
           int64_t          user_id,
@@ -210,6 +305,17 @@ tx_update(csilk_db_pool_t* pool,
     }
     return ok;
 }
+
+/**
+ * @brief 查询交易变更前的原始关键字段快照
+ *
+ * 执行 SQL：`SELECT asset_id,linked_asset_id,amount,transaction_type,quantity,price_per_unit,fee FROM transactions WHERE id=? AND user_id=?`
+ *
+ * @param pool 数据库连接池指针
+ * @param user_id 用户 ID
+ * @param id 交易 ID
+ * @return csilk_json_t* 快照字段 JSON 数组
+ */
 csilk_json_t*
 tx_get_old(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
 {
@@ -222,6 +328,17 @@ tx_get_old(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
         "transactions WHERE id=? AND user_id=?",
         (const char*[]){idstr, uid, NULL});
 }
+
+/**
+ * @brief 查询指定父交易关联的所有手续费子行 (Fee Child Rows)
+ *
+ * 执行 SQL：`SELECT id, linked_asset_id, amount, note FROM transactions WHERE parent_tx_id=? AND user_id=? AND transaction_type='fee'`
+ *
+ * @param pool 数据库连接池指针
+ * @param user_id 用户 ID
+ * @param parent_tx_id 父交易 ID
+ * @return csilk_json_t* 手续费子记录 JSON 数组
+ */
 csilk_json_t*
 tx_child_fee_rows(csilk_db_pool_t* pool, int64_t user_id, int64_t parent_tx_id)
 {
@@ -235,6 +352,16 @@ tx_child_fee_rows(csilk_db_pool_t* pool, int64_t user_id, int64_t parent_tx_id)
         (const char*[]){pid, uid, NULL});
 }
 
+/**
+ * @brief 级联删除指定父交易下的所有手续费子行
+ *
+ * 执行 SQL：`DELETE FROM transactions WHERE parent_tx_id=? AND user_id=? AND transaction_type='fee' RETURNING id`
+ *
+ * @param pool 数据库连接池指针
+ * @param user_id 用户 ID
+ * @param parent_tx_id 父交易 ID
+ * @return int 成功删除返回 1，否则返回 0
+ */
 int
 tx_delete_fee_children(csilk_db_pool_t* pool, int64_t user_id, int64_t parent_tx_id)
 {
@@ -253,6 +380,16 @@ tx_delete_fee_children(csilk_db_pool_t* pool, int64_t user_id, int64_t parent_tx
     return ok;
 }
 
+/**
+ * @brief 删除主交易记录
+ *
+ * 执行 SQL：`DELETE FROM transactions WHERE id=? AND user_id=? RETURNING id`
+ *
+ * @param pool 数据库连接池指针
+ * @param user_id 用户 ID
+ * @param id 交易 ID
+ * @return int 成功删除返回 1，否则返回 0
+ */
 int
 tx_delete(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
 {
@@ -270,6 +407,16 @@ tx_delete(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
     return ok;
 }
 
+/**
+ * @brief 校验资产是否存在且属于该用户
+ *
+ * 执行 SQL：`SELECT id FROM assets WHERE id=? AND user_id=?`
+ *
+ * @param pool 数据库连接池指针
+ * @param user_id 用户 ID
+ * @param asset_id 资产 ID
+ * @return int 存在返回 1，不存在返回 0
+ */
 int
 tx_asset_exists(csilk_db_pool_t* pool, int64_t user_id, int64_t asset_id)
 {

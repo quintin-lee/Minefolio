@@ -1,7 +1,22 @@
+/**
+ * @file csv_utils.c
+ * @brief RFC 4180 标准 CSV 文本转义与行/字段流式解析实现
+ *
+ * 实现了特殊符号转义包裹、双引号转义解析状态机、
+ * 以及单行多列字段连续切分提取逻辑。
+ */
+
 #include "common/csv_utils.h"
 #include <stdio.h>
 #include <string.h>
 
+/**
+ * @brief 对字符串执行 CSV 转义与必要时的双引号包裹
+ *
+ * @param[out] out 输出缓冲区
+ * @param[in] out_size 缓冲区容量
+ * @param[in] val 待转义原始值
+ */
 void
 csv_escape(char* out, size_t out_size, const char* val)
 {
@@ -34,6 +49,16 @@ csv_escape(char* out, size_t out_size, const char* val)
     out[j++] = '\0';
 }
 
+/**
+ * @brief 从文本流中解析提取单个 CSV 字段
+ *
+ * @param[in] line 行字符指针
+ * @param[in] len 文本长度
+ * @param[out] out 输出字段缓冲区
+ * @param[in] out_size 输出缓冲区容量
+ * @param[out] chars_consumed 消耗字符数
+ * @return int 0 成功
+ */
 int
 parse_csv_field(const char* line, size_t len, char* out, size_t out_size, size_t* chars_consumed)
 {
@@ -79,6 +104,15 @@ parse_csv_field(const char* line, size_t len, char* out, size_t out_size, size_t
     return 0;
 }
 
+/**
+ * @brief 解析单行 CSV 文本中的所有列
+ *
+ * @param[in] line 行字符串指针
+ * @param[in] len 行长度
+ * @param[out] out 12x512 列输出数组
+ * @param[out] count 实际解析列数
+ * @return int 实际列数
+ */
 int
 parse_csv_row(const char* line, size_t len, char out[12][512], int* count)
 {

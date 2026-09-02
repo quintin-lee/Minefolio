@@ -1,3 +1,11 @@
+/**
+ * @file db.c
+ * @brief 数据库连接池生命周期、迁移执行及驱动适配实现
+ *
+ * 实现了 SQLite / PostgreSQL 连接池的创建、运行期 WAL 优化设置、
+ * 数据库多版本热迁移（Schema Migration 与数据回填）、以及全局连接池单例维护。
+ */
+
 #include "db.h"
 #include "config.h"
 #include "csilk/csilk.h"
@@ -7,9 +15,22 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
+/**
+ * @brief 内部静态变量：全局数据库连接池单例
+ */
 static csilk_db_pool_t* g_pool = NULL;
-static int              g_is_postgres = 0;
 
+/**
+ * @brief 内部静态变量：当前运行的数据库是否为 PostgreSQL (1: PG, 0: SQLite)
+ */
+static int g_is_postgres = 0;
+
+/**
+ * @brief 初始化全局数据库连接池
+ *
+ * @param[out] out_pool 接收连接池指针的地址
+ * @return int 0 成功，-1 失败
+ */
 int
 db_init(csilk_db_pool_t** out_pool)
 {
@@ -64,6 +85,20 @@ db_init(csilk_db_pool_t** out_pool)
     return 0;
 }
 
+/**
+ * @brief 检查指定数据表中是否存在特定列
+ *
+ * 在 PostgreSQL 下查询 information_schema.columns 元数据视图；
+ * 在 SQLite 下通过 PRAGMA table_info() 遍历列名。
+ *
+ * @param[in] pool 数据库连接池指针
+ * @param[in] table 目标表名
+ * @param[in] column 目标列名
+ *
+ * @return int 状态
+ * @retval 1 目标列存在
+ * @retval 0 目标列不存在或查询失败
+ */
 static int
 col_exists(csilk_db_pool_t* pool, const char* table, const char* column)
 {
@@ -98,6 +133,12 @@ col_exists(csilk_db_pool_t* pool, const char* table, const char* column)
     }
 }
 
+/**
+ * @brief 执行数据库热迁移及历史数据修复
+ *
+ * @param[in] pool 数据库连接池指针
+ * @return int 0 成功，-1 失败
+ */
 int
 db_run_migrations(csilk_db_pool_t* pool)
 {
@@ -797,12 +838,22 @@ db_run_migrations(csilk_db_pool_t* pool)
     return 0;
 }
 
+/**
+ * @brief 获取全局连接池实例指针
+ *
+ * @return csilk_db_pool_t* 连接池指针
+ */
 csilk_db_pool_t*
 db_get_pool(void)
 {
     return g_pool;
 }
 
+/**
+ * @brief 返回当前是否为 PostgreSQL 数据库模式
+ *
+ * @return int 1 为 PG，0 为 SQLite
+ */
 int
 db_is_postgres(void)
 {

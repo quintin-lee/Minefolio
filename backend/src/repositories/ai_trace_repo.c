@@ -1,15 +1,45 @@
+/**
+ * @file ai_trace_repo.c
+ * @brief AI 调用链路追踪与可观测性数据访问层实现
+ *
+ * 实现了 AI 请求耗时、Token 统计、模型指标的分页检索、详情获取、总体统计以及
+ * 将链路追踪数据与工具调用跨度 (Tool Spans) 结构化合并持久化至 `ai_traces` 表的逻辑。
+ */
+
 #include "csilk/core/server.h"
 #include "repositories/ai_trace_repo.h"
 #include "common/db.h"
 #include <stdio.h>
 #include <string.h>
 
+/**
+ * @brief 将用户 ID 格式化为固定宽度的字符串缓冲区
+ *
+ * @param uid 64 位用户 ID
+ * @param out 输出字符串缓冲区（至少 32 字节）
+ */
 static void
 uid_str(int64_t uid, char out[static 32])
 {
     snprintf(out, 32, "%lld", (long long)uid);
 }
 
+/**
+ * @brief 分页多条件查询 AI 追踪记录
+ *
+ * 1. 构建动态 WHERE 筛选条件（user_id、provider、model）。
+ * 2. 查询符合条件的记录总数并写入 `*total`。
+ * 3. 组织包含类型转换 (CAST) 与 COALESCE 兜底的安全 SQL 查询分页数据。
+ *
+ * @param pool 数据库连接池指针
+ * @param user_id 用户 ID
+ * @param page 页码
+ * @param page_size 每页数量
+ * @param provider 服务商筛选（可选）
+ * @param model 模型筛选（可选）
+ * @param[out] total 输出参数，符合条件的总条数
+ * @return csilk_json_t* 包含概览记录的 JSON 数组
+ */
 csilk_json_t*
 ai_trace_list(csilk_db_pool_t* pool,
               int64_t          user_id,
@@ -45,6 +75,7 @@ ai_trace_list(csilk_db_pool_t* pool,
     }
     cnt_params[cnt_pc] = NULL;
 
+    /* 1. 执行总数统计查询 */
     char cnt_sql[512];
     snprintf(cnt_sql, sizeof(cnt_sql), "SELECT COUNT(*) as cnt FROM ai_traces %s", where);
     csilk_json_t* cnt = csilk_db_query_param_json(pool, cnt_sql, cnt_params);
@@ -54,6 +85,7 @@ ai_trace_list(csilk_db_pool_t* pool,
     }
     csilk_json_free(cnt);
 
+    /* 2. 执行分页查询 */
     char sql[1024];
     snprintf(
         sql,
@@ -84,6 +116,16 @@ ai_trace_list(csilk_db_pool_t* pool,
     return csilk_db_query_param_json(pool, sql, sql_params);
 }
 
+/**
+ * @brief 获取指定 ID 的 AI 完整追踪详情
+ *
+ * 包含完整的输入提示词、输出正文、系统提示词与元数据信息。
+ *
+ * @param pool 数据库连接池指针
+ * @param user_id 用户 ID
+ * @param id 追踪记录 ID
+ * @return csilk_json_t* 包含详情对象的 JSON 数组；未找到返回 NULL
+ */
 csilk_json_t*
 ai_trace_get(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
 {
@@ -117,6 +159,15 @@ ai_trace_get(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
     return r;
 }
 
+/**
+ * @brief 统计用户的 AI 请求聚合指标
+ *
+ * 使用 SQL 聚合函数 COUNT, SUM, AVG 计算整体性能和资源消耗数据。
+ *
+ * @param pool 数据库连接池指针
+ * @param user_id 用户 ID
+ * @return csilk_json_t* 包含统计结果的 JSON 数组
+ */
 csilk_json_t*
 ai_trace_stats(csilk_db_pool_t* pool, int64_t user_id)
 {
@@ -137,6 +188,16 @@ ai_trace_stats(csilk_db_pool_t* pool, int64_t user_id)
     return r;
 }
 
+/**
+ * @brief 持久化保存一条 AI 请求链路追踪记录
+ *
+ * 将内存结构体 `ai_trace_t` 的各个指标字段序列化为 SQL 参数并执行插入。
+ * 若记录了工具调用跨度 (tool_spans)，则将其合并至 metadata JSON 字段中一并存储。
+ *
+ * @param pool 数据库连接池指针
+ * @param t 追踪上下文结构体指针
+ * @return int64_t 成功生成的主键 ID，失败返回 0
+ */
 int64_t
 ai_trace_save(csilk_db_pool_t* pool, ai_trace_t* t)
 {
@@ -156,7 +217,8 @@ ai_trace_save(csilk_db_pool_t* pool, ai_trace_t* t)
     snprintf(temp, sizeof(temp), "%.2f", t->temperature);
     snprintf(mtt, sizeof(mtt), "%d", t->max_tokens);
     snprintf(tp, sizeof(tp), "%.2f", t->top_p);
-    /* Merge tool spans into metadata JSON so they persist in one column. */
+
+    /* 将 tool_spans 合并到 metadata JSON 中统一保存在单列中 */
     char*         meta_final = NULL;
     size_t        meta_len = 0;
     csilk_json_t* meta_obj = csilk_json_parse(t->metadata[0] ? t->metadata : "{}");
@@ -166,7 +228,7 @@ ai_trace_save(csilk_db_pool_t* pool, ai_trace_t* t)
     if (t->tool_spans[0]) {
         csilk_json_t* spans = csilk_json_parse(t->tool_spans);
         if (spans) {
-            csilk_json_add_object(meta_obj, "tool_spans", spans); /* spans owned by meta_obj */
+            csilk_json_add_object(meta_obj, "tool_spans", spans); /* spans 归属 meta_obj 管理 */
         }
     }
     meta_final = csilk_json_serialize(meta_obj, &meta_len);

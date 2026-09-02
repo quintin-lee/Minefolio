@@ -1,3 +1,11 @@
+/**
+ * @file ai_trace.c
+ * @brief AI 会话调用全链路追踪 (Trace)、性能指标与成本审计实现
+ *
+ * 实现了流式文本聚合与 Token 统计、中英文混合 Token 启发式估算、
+ * 单调时钟耗时统计 (Latency & TTFT)、Tool 调用 Span 记录与堆资源释放。
+ */
+
 #include "common/ai_trace.h"
 #include "common/db.h"
 #include <stdio.h>
@@ -5,6 +13,13 @@
 #include <string.h>
 #include <time.h>
 
+/**
+ * @brief 初始化 AI 追踪上下文
+ *
+ * @param[out] t 追踪结构体指针
+ * @param[in] user_id 用户 ID
+ * @param[in] session_id 会话 ID
+ */
 void
 ai_trace_init(ai_trace_t* t, int64_t user_id, int64_t session_id)
 {
@@ -22,13 +37,22 @@ ai_trace_init(ai_trace_t* t, int64_t user_id, int64_t session_id)
     clock_gettime(CLOCK_MONOTONIC, &t->t_start);
 }
 
+/**
+ * @brief 记录单次工具调用跨度 (Span)
+ *
+ * @param[in,out] t 追踪上下文
+ * @param[in] name 工具名称
+ * @param[in] latency_ms 执行耗时（毫秒）
+ * @param[in] bytes 返回结果字节数
+ * @param[in] ok 执行状态（1 成功，0 失败）
+ */
 void
 ai_trace_add_tool_span(ai_trace_t* t, const char* name, long latency_ms, size_t bytes, int ok)
 {
     if (!t || !name) {
         return;
     }
-    /* Cap the array to avoid overflow of the fixed buffer. */
+    /* 限制固定缓冲区长度以防溢出 */
     size_t cur = strlen(t->tool_spans);
     if (cur + 256 >= sizeof(t->tool_spans)) {
         return;
@@ -44,8 +68,8 @@ ai_trace_add_tool_span(ai_trace_t* t, const char* name, long latency_ms, size_t 
     if (n < 0) {
         return;
     }
-    const char* sep = (cur <= 2) ? "" : ","; /* skip comma for first element */
-    /* Replace trailing ']' with ',entry]' */
+    const char* sep = (cur <= 2) ? "" : ","; /* 首个元素无需前置逗号 */
+    /* 替换末尾的 ']' 为 ',entry]' */
     size_t pos = cur > 0 ? cur - 1 : 0;
     if (t->tool_spans[pos] == ']') {
         t->tool_spans[pos] = '\0';
@@ -58,6 +82,13 @@ ai_trace_add_tool_span(ai_trace_t* t, const char* name, long latency_ms, size_t 
     (void)written;
 }
 
+/**
+ * @brief 设置服务商与模型
+ *
+ * @param[in,out] t 追踪结构体
+ * @param[in] provider 提供商
+ * @param[in] model 模型名称
+ */
 void
 ai_trace_set_provider(ai_trace_t* t, const char* provider, const char* model)
 {
@@ -65,6 +96,14 @@ ai_trace_set_provider(ai_trace_t* t, const char* provider, const char* model)
     strncpy(t->model, model ?: "", sizeof(t->model) - 1);
 }
 
+/**
+ * @brief 设置模型超参数
+ *
+ * @param[in,out] t 追踪结构体
+ * @param[in] temperature 温度
+ * @param[in] max_tokens 最大 Token
+ * @param[in] top_p 核采样
+ */
 void
 ai_trace_set_params(ai_trace_t* t, double temperature, int max_tokens, double top_p)
 {
@@ -73,6 +112,12 @@ ai_trace_set_params(ai_trace_t* t, double temperature, int max_tokens, double to
     t->top_p = top_p;
 }
 
+/**
+ * @brief 设置系统提示词
+ *
+ * @param[in,out] t 追踪结构体
+ * @param[in] prompt 提示词文本
+ */
 void
 ai_trace_set_system_prompt(ai_trace_t* t, const char* prompt)
 {
@@ -80,6 +125,12 @@ ai_trace_set_system_prompt(ai_trace_t* t, const char* prompt)
     t->system_prompt = strdup(prompt ?: "");
 }
 
+/**
+ * @brief 序列化消息列表并存储
+ *
+ * @param[in,out] t 追踪结构体
+ * @param[in] messages_array 消息 JSON 数组
+ */
 void
 ai_trace_serialize_messages(ai_trace_t* t, csilk_json_t* messages_array)
 {
@@ -89,6 +140,12 @@ ai_trace_serialize_messages(ai_trace_t* t, csilk_json_t* messages_array)
     t->input_messages = s ? s : strdup("[]");
 }
 
+/**
+ * @brief 追加流式输出内容
+ *
+ * @param[in,out] t 追踪结构体
+ * @param[in] chunk 输出片段
+ */
 void
 ai_trace_append_output(ai_trace_t* t, const char* chunk)
 {
@@ -108,6 +165,11 @@ ai_trace_append_output(ai_trace_t* t, const char* chunk)
     t->accumulated_len = (long)nlen;
 }
 
+/**
+ * @brief 记录首字响应时刻 (TTFT)
+ *
+ * @param[in,out] t 追踪结构体
+ */
 void
 ai_trace_record_first_token(ai_trace_t* t)
 {
@@ -119,6 +181,12 @@ ai_trace_record_first_token(ai_trace_t* t)
     }
 }
 
+/**
+ * @brief 启发式估算文本所占用的 Token 数量
+ *
+ * @param[in] text 待估算文本
+ * @return int 预估 Token 数
+ */
 int
 ai_estimate_tokens_from_text(const char* text)
 {
@@ -151,7 +219,7 @@ ai_estimate_tokens_from_text(const char* text)
         char_count++;
     }
 
-    /* Standard heuristic: ~3.5 ASCII chars per token, ~1.2 tokens per CJK character */
+    /* 标准启发式：~3.5 个 ASCII 字符折合 1 个 Token，每个 CJK 字符约 1.2 个 Token */
     int estimated = (int)((double)ascii_count / 3.5 + (double)cjk_count * 1.2);
     if (estimated <= 0 && char_count > 0) {
         estimated = 1;
@@ -159,6 +227,13 @@ ai_estimate_tokens_from_text(const char* text)
     return estimated;
 }
 
+/**
+ * @brief 计算 Token 与花费金额
+ *
+ * @param[in,out] t 追踪结构体
+ * @param[in] prompt_tokens 输入 Token
+ * @param[in] completion_tokens 输出 Token
+ */
 void
 ai_trace_calculate_tokens_and_cost(ai_trace_t* t, int prompt_tokens, int completion_tokens)
 {
@@ -167,7 +242,7 @@ ai_trace_calculate_tokens_and_cost(ai_trace_t* t, int prompt_tokens, int complet
     } else {
         int est_in = ai_estimate_tokens_from_text(t->input_messages);
         int est_sys = ai_estimate_tokens_from_text(t->system_prompt);
-        t->prompt_tokens = est_in + est_sys + 8; /* Add slight overhead for message framing */
+        t->prompt_tokens = est_in + est_sys + 8; /* 附加对话消息包装开销 */
     }
 
     if (completion_tokens > 0) {
@@ -178,7 +253,7 @@ ai_trace_calculate_tokens_and_cost(ai_trace_t* t, int prompt_tokens, int complet
 
     t->total_tokens = t->prompt_tokens + t->completion_tokens;
 
-    /* Pricing estimation (per 1M tokens) */
+    /* 价格估算（每 100 万 Token 美元单价） */
     double in_price_per_1m = 0.50;
     double out_price_per_1m = 1.50;
 
@@ -203,6 +278,13 @@ ai_trace_calculate_tokens_and_cost(ai_trace_t* t, int prompt_tokens, int complet
                   ((double)t->completion_tokens * out_price_per_1m / 1000000.0);
 }
 
+/**
+ * @brief 结束追踪并计算总延迟与生成速率
+ *
+ * @param[in,out] t 追踪结构体
+ * @param[in] status 状态 ("ok"/"error")
+ * @param[in] error 错误描述
+ */
 void
 ai_trace_finish(ai_trace_t* t, const char* status, const char* error)
 {
@@ -218,7 +300,7 @@ ai_trace_finish(ai_trace_t* t, const char* status, const char* error)
         t->latency_ms = 0;
     }
 
-    /* Calculate tokens per second */
+    /* 计算生成速率 tokens/s */
     if (t->completion_tokens > 0) {
         long gen_ms = (t->first_token_ms > 0 && t->latency_ms > t->first_token_ms)
                           ? (t->latency_ms - t->first_token_ms)
@@ -233,6 +315,11 @@ ai_trace_finish(ai_trace_t* t, const char* status, const char* error)
     }
 }
 
+/**
+ * @brief 释放追踪对象内部堆内存
+ *
+ * @param[in,out] t 追踪结构体
+ */
 void
 ai_trace_free(ai_trace_t* t)
 {

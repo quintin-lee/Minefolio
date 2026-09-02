@@ -1,3 +1,11 @@
+/**
+ * @file jwt_middleware.c
+ * @brief JWT 身份认证与 Token 状态校验中间件实现
+ *
+ * 实现了基于 HS256 算法的 JWT 签名解析、时间有效性验证、白名单路由绕过、
+ * 以及基于数据库 token_version 字段的 Token 吊销有效性比对。
+ */
+
 #include "middlewares/jwt_middleware.h"
 #include "common/db.h"
 #include "common/jwt.h"
@@ -6,6 +14,20 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+/**
+ * @brief 校验 JWT 载荷中的版本号与数据库中用户的最新 token_version 是否一致
+ *
+ * 用于支持用户登出、修改密码或踢出全部会话时的 Token 批量作废。
+ *
+ * @param[in,out] c HTTP 请求上下文指针（用于获取上下文中的 jwt_payload）
+ * @param[in] user_id 当前请求的用户 ID
+ *
+ * @return int 状态码
+ * @retval 0 版本号一致，Token 有效
+ * @retval -1 版本号不匹配、用户不存在或载荷解析失败，Token 已失效
+ *
+ * @note 内部函数，执行一次轻量级数据库单行查询。
+ */
 static int
 jwt_validate_token_version(csilk_ctx_t* c, int64_t user_id)
 {
@@ -33,6 +55,11 @@ jwt_validate_token_version(csilk_ctx_t* c, int64_t user_id)
     return (jwt_version == db_version) ? 0 : -1;
 }
 
+/**
+ * @brief JWT 身份鉴权中间件入口函数
+ *
+ * @param[in,out] c HTTP 上下文对象指针
+ */
 void
 jwt_middleware_wrapper(csilk_ctx_t* c)
 {

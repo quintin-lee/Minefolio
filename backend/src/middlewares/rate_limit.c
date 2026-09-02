@@ -1,3 +1,11 @@
+/**
+ * @file rate_limit.c
+ * @brief 认证相关敏感接口请求频率限制（限流）中间件实现
+ *
+ * 实现了基于内存环形队列（Ring Buffer）与滑动时间窗口算法的 IP 级别接口限流，
+ * 并使用 POSIX 互斥锁确保多线程并发请求时的计数安全。
+ */
+
 #include "middlewares/rate_limit.h"
 #include "common/response.h"
 #include "csilk/core/response.h"
@@ -5,27 +13,61 @@
 #include <string.h>
 #include <time.h>
 
-/* Per-endpoint sliding-window rate limiter (ring buffer protected by mutex).
- *
- * Tracks (ip, path) hits and returns 429 when count >= MAX per WINDOW_SEC.
- * Capped at RING_SIZE entries to bound memory usage.
+/**
+ * @def RATE_LIMIT_WINDOW_SEC
+ * @brief 滑动窗口时间跨度（秒）
  */
-
 #define RATE_LIMIT_WINDOW_SEC 60
+
+/**
+ * @def RATE_LIMIT_MAX_REQS
+ * @brief 窗口时间内单个 IP 对单个接口的最大允许请求次数
+ */
 #define RATE_LIMIT_MAX_REQS 10
+
+/**
+ * @def RATE_LIMIT_RING
+ * @brief 环形缓冲区最大容量（记录数）
+ */
 #define RATE_LIMIT_RING 64
 
+/**
+ * @struct entry_t
+ * @brief 限流请求历史记录项
+ */
 typedef struct {
-    time_t ts;
-    char   path[64];
-    char   ip[64];
+    time_t ts;       /**< 请求发生的时间戳（秒） */
+    char   path[64]; /**< 请求的目标路径 */
+    char   ip[64];   /**< 客户端 IP 地址 */
 } entry_t;
 
-static entry_t         ring[RATE_LIMIT_RING];
-static int             ring_head = 0;
-static int             ring_count = 0;
+/**
+ * @brief 内部静态环形缓冲区数组
+ */
+static entry_t ring[RATE_LIMIT_RING];
+
+/**
+ * @brief 内部静态变量：环形缓冲区队头索引
+ */
+static int ring_head = 0;
+
+/**
+ * @brief 内部静态变量：环形缓冲区当前有效记录数
+ */
+static int ring_count = 0;
+
+/**
+ * @brief 内部静态变量：保护环形缓冲区并发读写的互斥锁
+ */
 static pthread_mutex_t g_rate_limit_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+/**
+ * @brief 淘汰环形缓冲区中超出时间窗口的过期记录
+ *
+ * @param[in] now 当前系统时间戳
+ *
+ * @note 必须在持有 g_rate_limit_mutex 锁的前提下调用。
+ */
 static void
 evict_old(time_t now)
 {
@@ -35,6 +77,11 @@ evict_old(time_t now)
     }
 }
 
+/**
+ * @brief 认证敏感接口限流中间件处理函数
+ *
+ * @param[in,out] c HTTP 请求上下文
+ */
 void
 rate_limit_auth_middleware(csilk_ctx_t* c)
 {
@@ -44,7 +91,7 @@ rate_limit_auth_middleware(csilk_ctx_t* c)
         return;
     }
 
-    /* Only rate-limit auth-write endpoints */
+    /* 仅对认证与安全设置类写接口执行限流 */
     if (strcmp(path, "/api/auth/login") != 0 && strcmp(path, "/api/auth/register") != 0 &&
         strcmp(path, "/api/system/setup") != 0 && strcmp(path, "/api/auth/2fa/verify-login") != 0) {
         csilk_next(c);
@@ -82,7 +129,7 @@ rate_limit_auth_middleware(csilk_ctx_t* c)
         return;
     }
 
-    /* Record this request */
+    /* 记录当前请求到环形缓冲区 */
     if (ring_count >= RATE_LIMIT_RING) {
         ring_head = (ring_head + 1) % RATE_LIMIT_RING;
         ring_count--;

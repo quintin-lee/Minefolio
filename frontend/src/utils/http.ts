@@ -1,20 +1,34 @@
+/**
+ * @file Axios HTTP 统一网络客户端
+ * @description 封装 Axios 实例，自动解包响应数据外壳 ({ code, message, data } -> data)，自动注入 JWT Bearer Token、X-Ledger-Id 与 X-CSRF-Token，
+ * 统一处理 1001 鉴权失效重定向与错误防抖 Toast 提示，并支持桌面端与移动端多平台适配。
+ */
+
 import axios from 'axios'
 import type { AxiosInstance, AxiosResponse } from 'axios'
 import { useAuthStore } from '@/stores/auth'
 import { ElMessage } from 'element-plus'
 
-/**
- * Wraps axios to unwrap the { code, message, data } envelope automatically.
- * Returns T (the first type parameter) instead of AxiosResponse<T>.
- */
+/** 移动端运行模式标识 */
 let mobileMode = false
-/** 移动端适配：关闭桌面式登录跳转与网络错误 toast，交由 offline-http 处理。 */
+
+/**
+ * 设置移动端模式开关 (关闭桌面式全局 401 路由强行跳转与网络错误 Toast，交由离线同步机制处理)
+ * @param on 是否启用移动端模式
+ */
 export function setMobileMode(on: boolean): void {
   mobileMode = on
 }
 
+/** 上次错误提示内容 */
 let lastErrorMsg = ''
+/** 上次错误提示时间戳 */
 let lastErrorTime = 0
+
+/**
+ * 带有防抖功能的错误消息弹出提示 (1.5秒内相同错误信息不重复弹窗)
+ * @param msg 错误文本
+ */
 function showDebouncedError(msg: string) {
   const now = Date.now()
   if (msg === lastErrorMsg && now - lastErrorTime < 1500) {
@@ -25,7 +39,12 @@ function showDebouncedError(msg: string) {
   ElMessage.error(msg)
 }
 
+/** 是否正在处理 401 鉴权未授权跳转 */
 let isHandlingAuthError = false
+
+/**
+ * 处理 1001 登录鉴权失效：注销状态并安全导航回登录页
+ */
 function handleAuthError() {
   if (isHandlingAuthError) return
   isHandlingAuthError = true
@@ -61,9 +80,10 @@ function handleAuthError() {
 }
 
 /**
- * Helper to build a normalized API URL from path, handling VITE_API_URL prefix,
- * preventing accidental duplicate `/api/api/` occurrences, and supporting both
- * absolute URLs and relative paths across desktop, docker, and mobile Capacitor.
+ * 构造跨环境规范化 API 完整 URL 地址
+ * @description 智能处理 VITE_API_URL 前缀、消除意外的多余 `/api/api/` 重复，并兼容桌面端、Docker 部署与移动端 Capacitor
+ * @param path 相对接口路径 (如 '/ai/chat' 或 '/auth/login')
+ * @returns 规范拼接后的完整 API 请求 URL
  */
 export function buildApiUrl(path: string): string {
   const base = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '')
@@ -82,6 +102,10 @@ export function buildApiUrl(path: string): string {
   return `${base}${fullPath}`
 }
 
+/**
+ * 获取 Axios 实例的基础 BaseURL 地址
+ * @returns BaseURL 字符串
+ */
 function getAxiosBaseUrl(): string {
   const base = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '')
   if (!base) return '/api'
@@ -90,9 +114,10 @@ function getAxiosBaseUrl(): string {
 }
 
 /**
- * Robust cookie parser — handles all standard Set-Cookie attribute orders
- * and avoids fragile split-based approaches that break when HttpOnly / SameSite
- * attributes are added by the server.
+ * 从 document.cookie 中安全提取指定 Cookie 值
+ * @description 使用正则匹配完整 Cookie 名称与值，避免因 HttpOnly / SameSite 等顺序变化导致的分隔符解析失败
+ * @param name Cookie 键名 (如 'csrf_token')
+ * @returns 解码后的 Cookie 字符串值，若不存在返回 null
  */
 export function getCookie(name: string): string | null {
   const cookie = document.cookie || ''
@@ -101,13 +126,18 @@ export function getCookie(name: string): string | null {
   return match && match[1] ? decodeURIComponent(match[1]) : null
 }
 
+/**
+ * 创建并配置预置拦截器的 Axios 实例
+ * @returns AxiosInstance
+ */
 function createHttp(): AxiosInstance {
   const instance = axios.create({
     baseURL: getAxiosBaseUrl(),
     timeout: 10000,
     withCredentials: true,
   })
-  // Request interceptor: inject token + CSRF header
+
+  // 请求拦截器：自动注入 JWT Bearer Token、X-Ledger-Id 及 CSRF Token
   instance.interceptors.request.use((config) => {
     const auth = useAuthStore()
     if (auth.token) {
@@ -127,7 +157,7 @@ function createHttp(): AxiosInstance {
     return config
   })
 
-  // Response interceptor: unwrap { code, message, data } → data
+  // 响应拦截器：自动解包 { code, message, data } 结构，并处理业务异常与鉴权失败
   instance.interceptors.response.use(
     (res: AxiosResponse) => {
       const body = res.data
@@ -160,3 +190,4 @@ function createHttp(): AxiosInstance {
 }
 
 export default createHttp()
+

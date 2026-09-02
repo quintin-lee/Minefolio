@@ -1,3 +1,11 @@
+/**
+ * @file config.c
+ * @brief 轻量级 JSON 配置文件读写工具实现
+ *
+ * 实现了无需解析全量 DOM 树的高效键值对流式匹配读取，
+ * 以及使用 csilk JSON API 实现的多键值持久化写入。
+ */
+
 #include "config.h"
 #include "csilk/csilk.h"
 #include <stdio.h>
@@ -6,6 +14,16 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
+/**
+ * @brief 从 JSON 文件中读取指定键名对应的字符串值
+ *
+ * @param[in] path 配置文件路径
+ * @param[in] key 配置项键名
+ * @param[out] out 接收输出字符串的缓冲区
+ * @param[in] out_size 缓冲区大小
+ *
+ * @return int 0 成功，-1 失败
+ */
 int
 config_get_str(const char* path, const char* key, char* out, size_t out_size)
 {
@@ -19,24 +37,24 @@ config_get_str(const char* path, const char* key, char* out, size_t out_size)
     fclose(f);
     buf[n] = '\0';
 
-    /* Simple key-value parser — no JSON library needed */
+    /* 简单的键值匹配器 — 适用于扁平简易配置 */
     char* search = buf;
     char  key_quoted[256];
     snprintf(key_quoted, sizeof(key_quoted), "\"%s\"", key);
 
     while ((search = strstr(search, key_quoted)) != NULL) {
         search += strlen(key_quoted);
-        /* skip whitespace and colon */
+        /* 跳过空白字符与冒号 */
         while (*search == ' ' || *search == '\t' || *search == ':' || *search == ',') {
             search++;
         }
-        /* expect opening quote */
+        /* 预期开头引号 */
         if (*search != '"') {
             search++;
             continue;
         }
-        search++; /* skip opening quote */
-        /* read until closing quote (no escapes in our config) */
+        search++; /* 跳过起始双引号 */
+        /* 读取至闭合双引号 */
         size_t oi = 0;
         while (*search && *search != '"' && oi < out_size - 1) {
             out[oi++] = *search++;
@@ -48,6 +66,14 @@ config_get_str(const char* path, const char* key, char* out, size_t out_size)
     return -1;
 }
 
+/**
+ * @brief 将平铺键值对写入指定的 JSON 文件
+ *
+ * @param[in] path 目标文件路径
+ * @param[in] kv NULL 结尾的键值对数组 [k1, v1, k2, v2, ..., NULL]
+ *
+ * @return int 0 成功，-1 失败
+ */
 int
 config_set(const char* path, const char** kv)
 {
@@ -71,7 +97,7 @@ config_set(const char* path, const char** kv)
         return -1;
     }
 
-    /* Ensure parent dir exists */
+    /* 确保父级目录存在 */
     char dir[512];
     strncpy(dir, path, sizeof(dir) - 1);
     dir[sizeof(dir) - 1] = '\0';

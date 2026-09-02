@@ -1,8 +1,27 @@
+/**
+ * @file dca_repo.c
+ * @brief 自动定投计划与执行记录数据访问层具体实现
+ *
+ * 实现了定投计划配置 CRUD、多表 JOIN 联查标的持仓与扣款账户信息、
+ * 子查询统计定投执行期数与累计投入，以及定投期次生成、状态机流转与成交确认回填。
+ */
+
 #include "repositories/dca_repo.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+/**
+ * @brief 查询指定用户的所有定投计划
+ *
+ * 执行 JOIN 查询关联目标资产与资金资产，并通过内联子查询统计：
+ * - `executed_periods`: 已确认期数 (`status='confirmed'`)
+ * - `total_invested_amount`: 累计投入金额
+ *
+ * @param pool 数据库连接池指针
+ * @param user_id 用户 ID
+ * @return csilk_json_t* 定投计划列表 JSON 数组
+ */
 csilk_json_t*
 dca_plan_list(csilk_db_pool_t* pool, int64_t user_id)
 {
@@ -33,6 +52,16 @@ dca_plan_list(csilk_db_pool_t* pool, int64_t user_id)
     return csilk_db_query_param_json(pool, sql, (const char*[]){uid, NULL});
 }
 
+/**
+ * @brief 查询单条定投计划详情
+ *
+ * 执行 SQL 联查指定 `p.id` 与 `p.user_id` 的记录。
+ *
+ * @param pool 数据库连接池指针
+ * @param user_id 用户 ID
+ * @param id 计划 ID
+ * @return csilk_json_t* 包含计划详情的 JSON 数组（未找到返回 NULL）
+ */
 csilk_json_t*
 dca_plan_get(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
 {
@@ -70,6 +99,26 @@ dca_plan_get(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
     return arr;
 }
 
+/**
+ * @brief 插入新的定投计划
+ *
+ * 执行 SQL：
+ * `INSERT INTO dca_plans (...) VALUES (...) RETURNING id`
+ *
+ * @param pool 数据库连接池指针
+ * @param user_id 用户 ID
+ * @param target_asset_id 目标资产 ID
+ * @param funding_asset_id 扣款账户 ID
+ * @param name 计划名称
+ * @param frequency 周期频率
+ * @param day_of_period 扣款日
+ * @param amount 计划定投额
+ * @param target_profit_rate 目标止盈率
+ * @param target_total_amount 目标总金额
+ * @param target_total_periods 目标总期数
+ * @param note 备注
+ * @return int64_t 成功返回新生成主键 ID，失败返回 -1
+ */
 int64_t
 dca_plan_create(csilk_db_pool_t* pool,
                 int64_t          user_id,
@@ -124,6 +173,26 @@ dca_plan_create(csilk_db_pool_t* pool,
     return id;
 }
 
+/**
+ * @brief 更新定投计划配置
+ *
+ * 执行 SQL：`UPDATE dca_plans SET ... WHERE user_id = ? AND id = ? RETURNING id`
+ *
+ * @param pool 数据库连接池指针
+ * @param user_id 用户 ID
+ * @param id 计划 ID
+ * @param target_asset_id 目标资产 ID
+ * @param funding_asset_id 扣款账户 ID
+ * @param name 计划名称
+ * @param frequency 周期频率
+ * @param day_of_period 扣款日
+ * @param amount 定投金额
+ * @param target_profit_rate 目标止盈率
+ * @param target_total_amount 目标总金额
+ * @param target_total_periods 目标总期数
+ * @param note 备注
+ * @return int 成功返回 0，失败返回 -1
+ */
 int
 dca_plan_update(csilk_db_pool_t* pool,
                 int64_t          user_id,
@@ -179,6 +248,17 @@ dca_plan_update(csilk_db_pool_t* pool,
     return ok ? 0 : -1;
 }
 
+/**
+ * @brief 更新定投计划状态
+ *
+ * 执行 SQL：`UPDATE dca_plans SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ? AND id = ? RETURNING id`
+ *
+ * @param pool 数据库连接池指针
+ * @param user_id 用户 ID
+ * @param id 计划 ID
+ * @param status 目标状态
+ * @return int 成功返回 0，失败返回 -1
+ */
 int
 dca_plan_set_status(csilk_db_pool_t* pool, int64_t user_id, int64_t id, const char* status)
 {
@@ -200,6 +280,16 @@ dca_plan_set_status(csilk_db_pool_t* pool, int64_t user_id, int64_t id, const ch
     return ok ? 0 : -1;
 }
 
+/**
+ * @brief 删除定投计划
+ *
+ * 执行 SQL：`DELETE FROM dca_plans WHERE user_id = ? AND id = ? RETURNING id`
+ *
+ * @param pool 数据库连接池指针
+ * @param user_id 用户 ID
+ * @param id 计划 ID
+ * @return int 成功返回 0，失败返回 -1
+ */
 int
 dca_plan_delete(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
 {
@@ -218,6 +308,14 @@ dca_plan_delete(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
     return ok ? 0 : -1;
 }
 
+/**
+ * @brief 查询所有处于激活状态的定投计划
+ *
+ * 执行 SQL：`SELECT ... FROM dca_plans WHERE status = 'active'`
+ *
+ * @param pool 数据库连接池指针
+ * @return csilk_json_t* 活跃计划列表 JSON 数组
+ */
 csilk_json_t*
 dca_plan_list_all_active(csilk_db_pool_t* pool)
 {
@@ -229,6 +327,18 @@ dca_plan_list_all_active(csilk_db_pool_t* pool)
     return csilk_db_query_json(pool, sql);
 }
 
+/**
+ * @brief 创建待执行定投期次记录
+ *
+ * 执行 SQL：`INSERT INTO dca_executions (plan_id, user_id, period_date, planned_amount, status) VALUES (?, ?, ?, ?, 'pending') RETURNING id`
+ *
+ * @param pool 数据库连接池指针
+ * @param plan_id 定投计划 ID
+ * @param user_id 用户 ID
+ * @param period_date 执行日期
+ * @param planned_amount 计划买入金额
+ * @return int64_t 成功生成的主键 ID，失败返回 -1
+ */
 int64_t
 dca_execution_create(csilk_db_pool_t* pool,
                      int64_t          plan_id,
@@ -258,6 +368,16 @@ dca_execution_create(csilk_db_pool_t* pool,
     return id;
 }
 
+/**
+ * @brief 按计划查询历史执行记录
+ *
+ * 执行 SQL：`SELECT ... FROM dca_executions WHERE user_id = ? AND plan_id = ? ORDER BY period_date DESC, id DESC`
+ *
+ * @param pool 数据库连接池指针
+ * @param user_id 用户 ID
+ * @param plan_id 计划 ID
+ * @return csilk_json_t* 执行记录列表 JSON 数组
+ */
 csilk_json_t*
 dca_execution_list_by_plan(csilk_db_pool_t* pool, int64_t user_id, int64_t plan_id)
 {
@@ -277,6 +397,15 @@ dca_execution_list_by_plan(csilk_db_pool_t* pool, int64_t user_id, int64_t plan_
     return csilk_db_query_param_json(pool, sql, params);
 }
 
+/**
+ * @brief 查询用户所有待执行的定投期次
+ *
+ * 执行 SQL JOIN 查询关联计划与资产：`WHERE e.user_id = ? AND e.status = 'pending' ORDER BY e.period_date ASC, e.id ASC`
+ *
+ * @param pool 数据库连接池指针
+ * @param user_id 用户 ID
+ * @return csilk_json_t* 待执行记录列表 JSON 数组
+ */
 csilk_json_t*
 dca_execution_list_pending(csilk_db_pool_t* pool, int64_t user_id)
 {
@@ -301,6 +430,16 @@ dca_execution_list_pending(csilk_db_pool_t* pool, int64_t user_id)
     return csilk_db_query_param_json(pool, sql, params);
 }
 
+/**
+ * @brief 获取单个定投执行记录详情
+ *
+ * 执行 SQL JOIN 查询：`WHERE e.user_id = ? AND e.id = ?`
+ *
+ * @param pool 数据库连接池指针
+ * @param user_id 用户 ID
+ * @param id 执行记录 ID
+ * @return csilk_json_t* 包含单条执行记录详情的 JSON 数组
+ */
 csilk_json_t*
 dca_execution_get(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
 {
@@ -326,6 +465,19 @@ dca_execution_get(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
     return csilk_db_query_param_json(pool, sql, params);
 }
 
+/**
+ * @brief 确认定投期次执行完成并关联交易流水
+ *
+ * 执行 SQL：`UPDATE dca_executions SET actual_amount = ?, executed_price = ?, executed_quantity = ?, transaction_id = ?, status = 'confirmed', updated_at = CURRENT_TIMESTAMP WHERE id = ? RETURNING id`
+ *
+ * @param pool 数据库连接池指针
+ * @param id 执行记录 ID
+ * @param actual_amount 实际成交金额
+ * @param executed_price 成交价格
+ * @param executed_quantity 成交份额
+ * @param transaction_id 关联交易 ID
+ * @return int 成功返回 0，失败返回 -1
+ */
 int
 dca_execution_update_confirmed(csilk_db_pool_t* pool,
                                int64_t          id,
@@ -356,6 +508,17 @@ dca_execution_update_confirmed(csilk_db_pool_t* pool,
     return ok ? 0 : -1;
 }
 
+/**
+ * @brief 更新定投执行期次状态
+ *
+ * 执行 SQL：`UPDATE dca_executions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ? AND id = ? RETURNING id`
+ *
+ * @param pool 数据库连接池指针
+ * @param user_id 用户 ID
+ * @param id 执行记录 ID
+ * @param status 目标状态 (如 pending, skipped, failed)
+ * @return int 成功返回 0，失败返回 -1
+ */
 int
 dca_execution_update_status(csilk_db_pool_t* pool, int64_t user_id, int64_t id, const char* status)
 {

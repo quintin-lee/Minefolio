@@ -1,9 +1,23 @@
+/**
+ * @file balance.c
+ * @brief 资产余额变动审计与投资持仓核算实现
+ *
+ * 实现了资产余额的原子增减计算、负债方向反转、余额变更审计快照记录、
+ * 以及投资品种持仓份额、成本与市值的加权平均核算及历史回滚。
+ */
+
 #include "common/balance.h"
 #include "common/db.h"
 #include "csilk/csilk.h"
 #include <stdio.h>
 #include <string.h>
 
+/**
+ * @brief 获取资产类型的方向符号乘数
+ *
+ * @param[in] asset_type 资产类别名称
+ * @return int 1 为普通资产，-1 为负债类
+ */
 int
 balance_direction(const char* asset_type)
 {
@@ -17,6 +31,19 @@ balance_direction(const char* asset_type)
     return 1;
 }
 
+/**
+ * @brief 对资产余额应用增减并记录流水日志
+ *
+ * @param[in] pool 数据库连接池指针
+ * @param[in] asset_id 资产 ID
+ * @param[in] user_id 用户 ID
+ * @param[in] delta 变动量
+ * @param[in] source_type 来源分类
+ * @param[in] source_id 来源记录 ID
+ * @param[in] note 备注
+ *
+ * @return int 0 成功，-1 资产不存在或无权限，-2 数据库错误
+ */
 int
 balance_apply_delta(csilk_db_pool_t* pool,
                     int64_t          asset_id,
@@ -126,6 +153,12 @@ balance_apply_delta(csilk_db_pool_t* pool,
     return 0;
 }
 
+/**
+ * @brief 判断是否为投资类资产类别
+ *
+ * @param[in] atype 资产类型名称
+ * @return int 1 为投资类，0 为非投资类
+ */
 int
 is_investment_type(const char* atype)
 {
@@ -133,6 +166,19 @@ is_investment_type(const char* atype)
                      strcmp(atype, "bond") == 0 || strcmp(atype, "crypto") == 0);
 }
 
+/**
+ * @brief 更新投资资产持仓数量与成本
+ *
+ * @param[in] pool 连接池
+ * @param[in] asset_id 资产 ID
+ * @param[in] type 交易类型
+ * @param[in] amount 金额
+ * @param[in] fee 费用
+ * @param[in] price 单价
+ * @param[in] qty 数量
+ * @param[out] out_position_delta 输出持仓市值变化
+ * @return int 0 成功，-1 持仓不足
+ */
 int
 apply_position(csilk_db_pool_t* pool,
                int64_t          asset_id,
@@ -229,6 +275,19 @@ apply_position(csilk_db_pool_t* pool,
     return 0;
 }
 
+/**
+ * @brief 回滚投资资产持仓变动
+ *
+ * @param[in] pool 连接池
+ * @param[in] asset_id 资产 ID
+ * @param[in] type 原始交易类型
+ * @param[in] amount 原始金额
+ * @param[in] fee 原始费用
+ * @param[in] price 原始单价
+ * @param[in] qty 原始数量
+ * @param[out] out_position_delta 输出持仓市值变化
+ * @return int 0 成功
+ */
 int
 rollback_position(csilk_db_pool_t* pool,
                   int64_t          asset_id,

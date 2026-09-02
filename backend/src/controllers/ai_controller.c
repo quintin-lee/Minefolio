@@ -1,3 +1,14 @@
+/**
+ * @file ai_controller.c
+ * @brief AI 智能助手、对话会话管理、配置及财务工作流控制器实现文件
+ *
+ * 遵循三层 C 架构规范，本控制器负责 AI 交互相关 HTTP 路由映射与调度：
+ * - 对话与流式输出: 调度 services/ai_service.c 与 SSE 传输；
+ * - 会话与消息持久化: 调度 repositories/ai_session_repo.h；
+ * - 配置加解密与热重载: 调度 common/ai_config.h 与 config/key_manager.h；
+ * - 智能财务工作流: 调度 services/ai_workflow_service.c。
+ */
+
 #include "controllers/ai_controller.h"
 #include "services/ai_service.h"
 #include "services/ai_workflow_service.h"
@@ -13,6 +24,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+/**
+ * @brief 将 JSON 字符串数组解析转换为 C 字符串指针数组
+ *
+ * @param[in]  arr       JSON 数组对象指针
+ * @param[out] out_ptrs  输出字符串数组指针
+ * @param[out] out_count 输出数组元素个数
+ */
 static void
 parse_string_array(const csilk_json_t* arr, char*** out_ptrs, int* out_count)
 {
@@ -35,6 +53,17 @@ parse_string_array(const csilk_json_t* arr, char*** out_ptrs, int* out_count)
     (*out_ptrs)[n] = NULL;
 }
 
+/**
+ * @brief 获取已配置的所有 AI 供应商及其可用模型列表
+ *
+ * @details HTTP 方法: GET
+ *          REST 路径: /api/ai/models
+ *          鉴权要求: JWT 认证 (Bearer Token)
+ *          返回包格式:
+ *          - 200 OK: {"code": 0, "message": "ok", "data": [{"provider_id": "openai", "provider_name": "OpenAI", "models": ["gpt-4o", ...]}, ...]}
+ *
+ * @param[in,out] c HTTP 请求上下文指针 (csilk_ctx_t*)
+ */
 void
 ai_models_handler(csilk_ctx_t* c)
 {
@@ -59,6 +88,20 @@ ai_models_handler(csilk_ctx_t* c)
     respond_ok(c, out);
 }
 
+/**
+ * @brief 分页获取当前用户的 AI 会话列表
+ *
+ * @details HTTP 方法: GET
+ *          REST 路径: /api/ai/sessions
+ *          鉴权要求: JWT 认证 (Bearer Token)
+ *          查询参数 (Query Parameters):
+ *          - page: 页码 (int, 可选, 默认 1)
+ *          - page_size: 每页条数 (int, 可选, 默认 20)
+ *          返回包格式:
+ *          - 200 OK: {"code": 0, "message": "ok", "data": {"items": [{"id": 1, "title": "资产分析对话", "model": "gpt-4o", ...}], "total": 5}}
+ *
+ * @param[in,out] c HTTP 请求上下文指针 (csilk_ctx_t*)
+ */
 void
 sessions_list_handler(csilk_ctx_t* c)
 {
@@ -77,6 +120,20 @@ sessions_list_handler(csilk_ctx_t* c)
     respond_page_ok(c, list, total, page, page_size);
 }
 
+/**
+ * @brief 创建新的 AI 对话会话
+ *
+ * @details HTTP 方法: POST
+ *          REST 路径: /api/ai/sessions
+ *          鉴权要求: JWT 认证 (Bearer Token)
+ *          请求体 (JSON):
+ *          - model: 指定对话模型 (string, 可选)
+ *          - provider: 指定供应商标识 (string, 可选)
+ *          返回包格式:
+ *          - 200 OK: {"code": 0, "message": "ok", "data": {"id": 10}}
+ *
+ * @param[in,out] c HTTP 请求上下文指针 (csilk_ctx_t*)
+ */
 void
 sessions_create_handler(csilk_ctx_t* c)
 {
@@ -98,6 +155,20 @@ sessions_create_handler(csilk_ctx_t* c)
     respond_ok(c, r);
 }
 
+/**
+ * @brief 获取单个 AI 会话详情
+ *
+ * @details HTTP 方法: GET
+ *          REST 路径: /api/ai/sessions/:id
+ *          鉴权要求: JWT 认证 (Bearer Token)
+ *          路径参数 (Path Parameters):
+ *          - id: 会话 ID (int64)
+ *          返回包格式:
+ *          - 200 OK: {"code": 0, "message": "ok", "data": {"id": 1, "title": "...", "model": "...", "provider": "..."}}
+ *          - 404 Not Found: 会话不存在或无权访问 (code: 1003)
+ *
+ * @param[in,out] c HTTP 请求上下文指针 (csilk_ctx_t*)
+ */
 void
 sessions_get_handler(csilk_ctx_t* c)
 {
@@ -119,6 +190,23 @@ sessions_get_handler(csilk_ctx_t* c)
     respond_ok(c, r);
 }
 
+/**
+ * @brief 更新指定 AI 会话元数据（标题、模型）
+ *
+ * @details HTTP 方法: PUT
+ *          REST 路径: /api/ai/sessions/:id
+ *          鉴权要求: JWT 认证 (Bearer Token)
+ *          路径参数 (Path Parameters):
+ *          - id: 会话 ID (int64)
+ *          请求体 (JSON):
+ *          - title: 新会话标题 (string, 可选)
+ *          - model: 新选定模型 (string, 可选)
+ *          返回包格式:
+ *          - 200 OK: {"code": 0, "message": "ok", "data": null}
+ *          - 404 Not Found: 会话不存在 (code: 1003)
+ *
+ * @param[in,out] c HTTP 请求上下文指针 (csilk_ctx_t*)
+ */
 void
 sessions_update_handler(csilk_ctx_t* c)
 {
@@ -144,6 +232,20 @@ sessions_update_handler(csilk_ctx_t* c)
     respond_ok_null(c);
 }
 
+/**
+ * @brief 删除指定 AI 会话及其所有消息历史
+ *
+ * @details HTTP 方法: DELETE
+ *          REST 路径: /api/ai/sessions/:id
+ *          鉴权要求: JWT 认证 (Bearer Token)
+ *          路径参数 (Path Parameters):
+ *          - id: 会话 ID (int64)
+ *          返回包格式:
+ *          - 200 OK: {"code": 0, "message": "ok", "data": null}
+ *          - 404 Not Found: 会话不存在 (code: 1003)
+ *
+ * @param[in,out] c HTTP 请求上下文指针 (csilk_ctx_t*)
+ */
 void
 sessions_delete_handler(csilk_ctx_t* c)
 {
@@ -165,6 +267,23 @@ sessions_delete_handler(csilk_ctx_t* c)
     respond_ok_null(c);
 }
 
+/**
+ * @brief 获取指定会话下的消息历史记录（分页）
+ *
+ * @details HTTP 方法: GET
+ *          REST 路径: /api/ai/sessions/:id/messages
+ *          鉴权要求: JWT 认证 (Bearer Token)
+ *          路径参数 (Path Parameters):
+ *          - id: 会话 ID (int64)
+ *          查询参数 (Query Parameters):
+ *          - page: 页码 (int, 可选, 默认 1)
+ *          - page_size: 每页条数 (int, 可选, 默认 50)
+ *          返回包格式:
+ *          - 200 OK: {"code": 0, "message": "ok", "data": {"items": [{"id": 1, "role": "user", "content": "..."}, {"id": 2, "role": "assistant", "content": "..."}], "total": 2}}
+ *          - 404 Not Found: 会话不存在 (code: 1003)
+ *
+ * @param[in,out] c HTTP 请求上下文指针 (csilk_ctx_t*)
+ */
 void
 messages_list_handler(csilk_ctx_t* c)
 {
@@ -191,6 +310,18 @@ messages_list_handler(csilk_ctx_t* c)
     respond_page_ok(c, list, total, page, page_size);
 }
 
+/**
+ * @brief 获取 AI 供应商全局配置（API Key 脱敏）
+ *
+ * @details HTTP 方法: GET
+ *          REST 路径: /api/settings/ai
+ *          鉴权要求: JWT 认证 (Bearer Token)
+ *          请求参数: 无
+ *          返回包格式:
+ *          - 200 OK: {"code": 0, "message": "ok", "data": {"providers": [{"id": "openai", "has_api_key": true, "base_url": "https://api.openai.com/v1", "models": [...]}, ...], "default_provider": "openai", "default_model": "gpt-4o", "context_size": 20, "system_prompt": "..."}}
+ *
+ * @param[in,out] c HTTP 请求上下文指针 (csilk_ctx_t*)
+ */
 void
 settings_ai_get_handler(csilk_ctx_t* c)
 {
@@ -223,8 +354,29 @@ settings_ai_get_handler(csilk_ctx_t* c)
     respond_ok(c, out);
 }
 
+/**
+ * @brief 更新并持久化 AI 供应商配置（支持 RSA 密文解密与热重载）
+ *
+ * @details HTTP 方法: PUT
+ *          REST 路径: /api/settings/ai
+ *          鉴权要求: JWT 认证 (Bearer Token)
+ *          请求体 (JSON):
+ *          - providers: 供应商配置数组 (包含 id, name, base_url, api_key_enc/api_key, models)
+ *          - default_provider: 默认供应商 ID (string)
+ *          - default_model: 默认模型标识 (string)
+ *          - context_size: 上下文窗口轮数 (int)
+ *          - system_prompt: 全局系统提示词 (string)
+ *          返回包格式:
+ *          - 200 OK: {"code": 0, "message": "ok", "data": null}
+ *          - 400 Bad Request: 请求体解析错误 (code: 1002)
+ *
+ *          配置持久化至数据库/配置文件后，会自动调用 ai_shutdown() 与 ai_init() 进行零停机热加载。
+ *
+ * @param[in,out] c HTTP 请求上下文指针 (csilk_ctx_t*)
+ */
 void
 settings_ai_update_handler(csilk_ctx_t* c)
+
 {
     csilk_json_t* body = csilk_bind_json(c);
     if (!body) {
@@ -380,6 +532,18 @@ settings_ai_update_handler(csilk_ctx_t* c)
     respond_ok_null(c);
 }
 
+/**
+ * @brief 获取内置财务分析工作流预设定义列表
+ *
+ * @details HTTP 方法: GET
+ *          REST 路径: /api/ai/workflows
+ *          鉴权要求: JWT 认证 (Bearer Token)
+ *          请求参数: 无
+ *          返回包格式:
+ *          - 200 OK: {"code": 0, "message": "ok", "data": [{"id": "spending_analysis", "name": "收支健康诊断", "description": "...", "steps": [...]}, ...]}
+ *
+ * @param[in,out] c HTTP 请求上下文指针 (csilk_ctx_t*)
+ */
 void
 workflows_list_handler(csilk_ctx_t* c)
 {
@@ -387,12 +551,34 @@ workflows_list_handler(csilk_ctx_t* c)
     respond_ok(c, list);
 }
 
+/**
+ * @brief SSE 流式执行财务分析工作流
+ *
+ * @details HTTP 方法: POST
+ *          REST 路径: /api/ai/workflows/run
+ *          鉴权要求: JWT 认证 (Bearer Token)
+ *          请求体 (JSON):
+ *          - workflow_id: 工作流标识 (string, 如 "spending_analysis" | "portfolio_rebalance")
+ *          - parameters: 自定义分析参数对象 (object, 可选)
+ *          返回包格式:
+ *          - 200 OK: SSE 流式事件响应 (text/event-stream)
+ *            逐步推送步骤执行进度、中间数据提取结果及最终 AI 综合诊断报告。
+ *
+ * @param[in,out] c HTTP 请求上下文指针 (csilk_ctx_t*)
+ */
 void
 workflows_run_handler(csilk_ctx_t* c)
 {
     ai_workflow_run_handler(c);
 }
 
+/**
+ * @brief 注册 AI 助手模块相关的所有 HTTP 路由
+ *
+ * @details 挂载模型列表、SSE 流式对话、会话与历史消息、供应商配置管理及智能工作流等端点。
+ *
+ * @param[in,out] app Csilk 应用实例指针 (csilk_app_t*)
+ */
 void
 register_ai_routes(csilk_app_t* app)
 {

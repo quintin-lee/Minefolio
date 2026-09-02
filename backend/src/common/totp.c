@@ -1,3 +1,11 @@
+/**
+ * @file totp.c
+ * @brief 基于时间的一次性密码 (TOTP, RFC 6238) 与双因子认证 (2FA) 实现
+ *
+ * 实现了 Base32 解码、HMAC-SHA1 动态码生成、滑动窗口比对、
+ * 以及备用恢复码的随机生成和 JSON 列表原子消费逻辑。
+ */
+
 #include "common/totp.h"
 #include "csilk/csilk.h"
 #include <openssl/hmac.h>
@@ -9,8 +17,17 @@
 #include <ctype.h>
 #include <time.h>
 
+/**
+ * @brief Base32 编码标准字符集 (RFC 4648)
+ */
 static const char BASE32_ALPHABET[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
+/**
+ * @brief 将单个 Base32 字符解码为其对应的 5-bit 数值
+ *
+ * @param[in] c 输入字符
+ * @return int 0~31 对应数值，非法字符返回 -1
+ */
 static int
 base32_decode_char(char c)
 {
@@ -24,6 +41,16 @@ base32_decode_char(char c)
     return -1;
 }
 
+/**
+ * @brief 将 Base32 编码的字符串解码为原始字节流
+ *
+ * @param[in] encoded Base32 编码字符串
+ * @param[out] out_bytes 输出字节缓冲区
+ * @param[in] max_out 输出缓冲区容量
+ * @param[out] out_len 实际解码写入的字节长度
+ *
+ * @return int 0 成功，-1 失败
+ */
 static int
 base32_decode(const char* encoded, uint8_t* out_bytes, size_t max_out, size_t* out_len)
 {
@@ -64,6 +91,13 @@ base32_decode(const char* encoded, uint8_t* out_bytes, size_t max_out, size_t* o
     return 0;
 }
 
+/**
+ * @brief 生成 32 字符长度的随机 Base32 TOTP 密钥
+ *
+ * @param[out] out_secret 接收生成的 Base32 密钥字符串
+ * @param[in] cap 输出缓冲区容量（至少 33 字节）
+ * @return int 0 成功，-1 失败
+ */
 int
 totp_generate_secret(char* out_secret, size_t cap)
 {
@@ -73,7 +107,7 @@ totp_generate_secret(char* out_secret, size_t cap)
 
     uint8_t raw[20];
     if (RAND_bytes(raw, sizeof(raw)) != 1) {
-        /* Fallback to /dev/urandom */
+        /* 回退到 /dev/urandom */
         FILE* f = fopen("/dev/urandom", "rb");
         if (f) {
             size_t r = fread(raw, 1, sizeof(raw), f);
@@ -86,7 +120,7 @@ totp_generate_secret(char* out_secret, size_t cap)
         }
     }
 
-    /* Encode 20 bytes -> 32 Base32 chars */
+    /* 编码 20 字节原始熵 -> 32 个 Base32 字符 */
     size_t out_idx = 0;
     int    buffer = 0;
     int    bits_left = 0;
@@ -108,6 +142,15 @@ totp_generate_secret(char* out_secret, size_t cap)
     return 0;
 }
 
+/**
+ * @brief 计算给定时间戳的 6 位 TOTP 动态验证码
+ *
+ * @param[in] base32_secret Base32 密钥
+ * @param[in] timestamp Unix 时间戳
+ * @param[out] out_code 接收验证码的缓冲区
+ * @param[in] cap 缓冲区容量（至少 7 字节）
+ * @return int 0 成功，-1 失败
+ */
 int
 totp_generate_code(const char* base32_secret, uint64_t timestamp, char* out_code, size_t cap)
 {
@@ -146,6 +189,13 @@ totp_generate_code(const char* base32_secret, uint64_t timestamp, char* out_code
     return 0;
 }
 
+/**
+ * @brief 校验 TOTP 验证码（容差 ±30 秒）
+ *
+ * @param[in] base32_secret Base32 密钥
+ * @param[in] code 用户输入的验证码
+ * @return bool true 匹配，false 不匹配
+ */
 bool
 totp_verify_code(const char* base32_secret, const char* code)
 {
@@ -155,7 +205,7 @@ totp_verify_code(const char* base32_secret, const char* code)
 
     uint64_t now = (uint64_t)time(NULL);
 
-    /* Allow current step and ±1 tolerance window (30s) */
+    /* 允许当前步长及前后 ±1 步长（30 秒容差） */
     for (int step = -1; step <= 1; step++) {
         uint64_t t = (int64_t)now + (step * 30);
         char     expected[8];
@@ -169,6 +219,12 @@ totp_verify_code(const char* base32_secret, const char* code)
     return false;
 }
 
+/**
+ * @brief 生成 8 组字母数字混合的备用恢复码
+ *
+ * @param[out] out_codes 8x16 字符数组
+ * @return int 0 成功，-1 失败
+ */
 int
 totp_generate_backup_codes(char out_codes[8][16])
 {
@@ -196,6 +252,15 @@ totp_generate_backup_codes(char out_codes[8][16])
     return 0;
 }
 
+/**
+ * @brief 校验并核销一个备用码
+ *
+ * @param[in] backup_codes_json 原始备用码 JSON 字符串
+ * @param[in] input_code 用户输入的备用码
+ * @param[out] out_updated_json 输出扣减后的新 JSON 字符串
+ * @param[in] cap 输出缓冲区容量
+ * @return bool true 成功核销，false 匹配失败
+ */
 bool
 totp_verify_and_consume_backup_code(const char* backup_codes_json,
                                     const char* input_code,
@@ -232,7 +297,7 @@ totp_verify_and_consume_backup_code(const char* backup_codes_json,
         return false;
     }
 
-    /* Build updated array without the consumed code */
+    /* 构建剔除已使用码的新数组 */
     csilk_json_t* new_arr = csilk_json_array();
     for (size_t i = 0; i < count; i++) {
         if ((int)i != match_idx) {

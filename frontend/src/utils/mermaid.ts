@@ -1,24 +1,44 @@
+/**
+ * @file Mermaid 图表渲染与深色科技主题配置工具模块
+ * @description 集成 Mermaid.js 渲染引擎，提供赛博深色主题样式注入、中文排版字体兼容、DOMPurify XSS 安全过滤、
+ * 离线沙箱隔离渲染队列、常见语法容错自动修复及高分辨率 SVG/PNG 图片导出下载功能
+ */
+
 // frontend/src/utils/mermaid.ts
 import DOMPurify from 'dompurify'
 
+/** Mermaid 实例 API 类型 */
 export type MermaidApi = typeof import('mermaid')['default']
 let mermaidInstance: MermaidApi | null = null
 let initPromise: Promise<MermaidApi | null> | null = null
 
-// Serial rendering queue to prevent concurrency race conditions in Mermaid D3 DOM operations
+// 串行渲染任务队列，防止 Mermaid D3 DOM 操作并发竞争
 let renderQueue: Promise<unknown> = Promise.resolve()
 
+/**
+ * 图表类型元数据描述信息
+ */
 export interface DiagramTypeInfo {
+  /** 图表类型英文标识 (如 'flowchart', 'sequence', 'pie' 等) */
   type: string
+  /** 图表中文可读显示标签 */
   label: string
+  /** 图标名称 (Iconify 格式) */
   icon: string
 }
 
+/**
+ * Mermaid 渲染自定配置选项
+ */
 export interface RenderOptions {
+  /** 流程图连线弯曲形态 ('linear': 折线, 'basis': 贝塞尔平滑, 'step': 阶梯线 等) */
   curve?: 'linear' | 'basis' | 'cardinal' | 'monotoneY' | 'step'
+  /** 节点之间的水平间距 (像素) */
   nodeSpacing?: number
+  /** 层级之间的垂直间距 (像素) */
   rankSpacing?: number
 }
+
 
 /**
  * Standard Chinese & CJK font family stack with dark tech primary fallbacks.
@@ -269,7 +289,9 @@ const THEME_CUSTOM_CSS = `
 `
 
 /**
- * Initializes and returns the singleton Mermaid API instance.
+ * 异步初始化并获取 Mermaid API 单例实例
+ * @description 配置全局深色科技主题变量、CJK 中文字体栈、防止错误直接输出到 DOM 的安全配置以及解析错误静默拦截
+ * @returns Mermaid API 单例对象或 null (若加载失败)
  */
 export async function ensureMermaid(): Promise<MermaidApi | null> {
   if (mermaidInstance) return mermaidInstance
@@ -281,7 +303,7 @@ export async function ensureMermaid(): Promise<MermaidApi | null> {
       const api = mod.default
       api.initialize({
         startOnLoad: false,
-        suppressErrorRendering: true, // Strictly prohibit Mermaid from writing error SVGs to DOM
+        suppressErrorRendering: true, // 严禁 Mermaid 直接将错误 SVG 写入 DOM
         securityLevel: 'loose',
         theme: 'base',
         themeVariables: MINELOFIO_THEME_VARIABLES,
@@ -290,7 +312,7 @@ export async function ensureMermaid(): Promise<MermaidApi | null> {
         flowchart: {
           htmlLabels: true,
           useMaxWidth: true,
-          curve: 'linear', // Straight lines with rounded joints/corners by default
+          curve: 'linear', // 默认使用带圆角拐角的折线连线
           nodeSpacing: 50,
           rankSpacing: 60,
           padding: 18,
@@ -308,7 +330,7 @@ export async function ensureMermaid(): Promise<MermaidApi | null> {
         },
       })
 
-      // Suppress default parseError handler
+      // 屏蔽默认的 parseError 处理器
       if (typeof api.setParseErrorHandler === 'function') {
         api.setParseErrorHandler(() => {})
       }
@@ -326,10 +348,12 @@ export async function ensureMermaid(): Promise<MermaidApi | null> {
 }
 
 /**
- * Auto-detects diagram type from Mermaid source code.
+ * 根据 Mermaid 代码首行智能识别推断图表类型
+ * @param code Mermaid 代码文本
+ * @returns 图表类型元数据对象 (包含类型标识、中文标签与图标)
  */
 export function detectDiagramType(code: string): DiagramTypeInfo {
-  const trimmed = code.trim().replace(/^%%[^\n]*\n+/gm, '') // strip comments
+  const trimmed = code.trim().replace(/^%%[^\n]*\n+/gm, '') // 去除首部注释
   const firstLine = trimmed.split('\n')[0]?.trim().toLowerCase() || ''
 
   if (firstLine.startsWith('graph') || firstLine.startsWith('flowchart')) {
@@ -388,24 +412,26 @@ export function detectDiagramType(code: string): DiagramTypeInfo {
 }
 
 /**
- * Intelligent sanitization and repair for LLM-generated Mermaid code.
+ * 针对 LLM 大模型生成的 Mermaid 代码进行智能语法修复与净化
+ * @description 剔除包裹的代码块 Markdown 标记 (```mermaid)，自动修复中文节点标签未加双引号导致的语法解析错误 (如 A[应急金 (3-6月)] -> A["应急金 (3-6月)"])
+ * @param raw 原始 Mermaid 代码
+ * @returns 修复净化后的 Mermaid 代码字符串
  */
 export function sanitizeMermaid(raw: string): string {
   if (!raw) return ''
   let text = raw.trim()
 
-  // Remove wrapping markdown code fences if present
+  // 去除包裹的代码块标记
   if (text.startsWith('```mermaid')) {
     text = text.replace(/^```mermaid\s*\n?/, '').replace(/\n?```$/, '')
   } else if (text.startsWith('```')) {
     text = text.replace(/^```[a-z]*\s*\n?/, '').replace(/\n?```$/, '')
   }
 
-  // Remove trailing markdown code ticks
+  // 去除尾部多余的代码符号
   text = text.replace(/\s*```\s*$/, '').trim()
 
-  // Auto-repair common LLM flowchart syntax issues:
-  // Node labels with unquoted parentheses/brackets (e.g. A[应急储备金 (3-6个月)] -> A["应急储备金 (3-6个月)"])
+  // 自动修复大模型常见的流程图括号未加引号错误
   const lines = text.split('\n')
   const repairedLines = lines.map((line) => {
     return line.replace(/([\w\u4e00-\u9fa5]+)\s*\[([^"\]]+)\]/gu, (match, id, label) => {
@@ -422,7 +448,9 @@ export function sanitizeMermaid(raw: string): string {
 }
 
 /**
- * Sanitizes Mermaid SVG output preserving <foreignObject> and HTML labels for Chinese text.
+ * 净化 Mermaid 渲染出的 SVG 输出 (保留 foreignObject 与中文字符排版 HTML 标签，过滤危险脚本与事件属性)
+ * @param rawSvg Mermaid 原始生成的 SVG 字符串
+ * @returns 净化后的安全 SVG 字符串
  */
 export function sanitizeMermaidSvg(rawSvg: string): string {
   return DOMPurify.sanitize(rawSvg, {
@@ -444,7 +472,11 @@ export function sanitizeMermaidSvg(rawSvg: string): string {
 }
 
 /**
- * Executes a single render pass inside an isolated offscreen sandbox container.
+ * 在离线隐藏沙箱容器中执行单次 Mermaid 渲染并自动容错重试
+ * @param id 渲染图表 DOM ID
+ * @param code Mermaid 代码
+ * @param options 自定义渲染参数
+ * @returns 包含净化后 SVG 字符串的对象
  */
 async function executeRender(id: string, code: string, options?: RenderOptions): Promise<{ svg: string }> {
   const mermaid = await ensureMermaid()
@@ -452,7 +484,7 @@ async function executeRender(id: string, code: string, options?: RenderOptions):
     throw new Error('Mermaid renderer is not available')
   }
 
-  // Re-configure active curve if specified
+  // 若指定了连线曲率等选项则动态覆盖配置
   const curveType = options?.curve || 'linear'
   mermaid.initialize({
     flowchart: {
@@ -466,7 +498,7 @@ async function executeRender(id: string, code: string, options?: RenderOptions):
     },
   })
 
-  // Create an offscreen sandbox container to completely isolate Mermaid DOM ops from document.body
+  // 创建屏幕外的隔离沙箱容器，避免 Mermaid 直接操作当前可视 DOM 引起画面闪烁与冲突
   let sandbox: HTMLElement | null = null
   if (typeof document !== 'undefined') {
     sandbox = document.createElement('div')
@@ -481,13 +513,13 @@ async function executeRender(id: string, code: string, options?: RenderOptions):
   }
 
   try {
-    // 1. Try rendering original code
+    // 1. 尝试直接渲染原始代码
     try {
       const { svg } = await mermaid.render(id, code, sandbox || undefined)
       const sanitized = sanitizeMermaidSvg(svg)
       return { svg: sanitized }
     } catch (initialErr) {
-      // 2. If it failed, attempt auto-repair and retry
+      // 2. 若失败，尝试自动修复语法错误并重试渲染
       const sanitizedCode = sanitizeMermaid(code)
       if (sanitizedCode && sanitizedCode !== code) {
         try {
@@ -510,7 +542,11 @@ async function executeRender(id: string, code: string, options?: RenderOptions):
 }
 
 /**
- * Renders a Mermaid diagram string to a sanitized SVG string via a sequential queue.
+ * 通过串行渲染队列将 Mermaid 代码安全转换为净化后的 SVG 字符串
+ * @param id 图表唯一标识
+ * @param code Mermaid 图表代码
+ * @param options 可选的布局与线条连线形态配置
+ * @returns 包含生成 SVG 字符串的 Promise
  */
 export function renderMermaidSvg(id: string, code: string, options?: RenderOptions): Promise<{ svg: string }> {
   const nextTask = renderQueue.catch(() => {}).then(() => executeRender(id, code, options))
@@ -519,7 +555,9 @@ export function renderMermaidSvg(id: string, code: string, options?: RenderOptio
 }
 
 /**
- * Triggers browser download for SVG content.
+ * 触发浏览器将 SVG 内容下载为 .svg 矢量图文件
+ * @param svgContent SVG 文本内容
+ * @param filename 导出的文件名 (默认 'minefolio-diagram.svg')
  */
 export function downloadSvg(svgContent: string, filename = 'minefolio-diagram.svg') {
   const blob = new Blob([svgContent], { type: 'image/svg+xml;charset=utf-8' })
@@ -534,7 +572,11 @@ export function downloadSvg(svgContent: string, filename = 'minefolio-diagram.sv
 }
 
 /**
- * Exports rendered SVG to a high-DPI PNG image and triggers download.
+ * 将渲染出的 SVG 转换为高清晰度 PNG 图片并触发浏览器下载
+ * @param svgContent SVG 文本内容
+ * @param filename 导出的文件名 (默认 'minefolio-diagram.png')
+ * @param scale 放大缩放倍率 (默认 2 倍高清导出)
+ * @returns Promise<void>
  */
 export function downloadPng(svgContent: string, filename = 'minefolio-diagram.png', scale = 2): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -546,7 +588,7 @@ export function downloadPng(svgContent: string, filename = 'minefolio-diagram.pn
         throw new Error('Invalid SVG content')
       }
 
-      // Determine dimensions
+      // 计算真实尺寸
       let width = parseFloat(svgEl.getAttribute('width') || '0')
       let height = parseFloat(svgEl.getAttribute('height') || '0')
 
@@ -574,7 +616,7 @@ export function downloadPng(svgContent: string, filename = 'minefolio-diagram.pn
         throw new Error('Canvas context not available')
       }
 
-      // Draw dark background matching Minefolio theme
+      // 绘制深色背景以契合 Minefolio 科技主题
       ctx.fillStyle = '#0b172a'
       ctx.fillRect(0, 0, canvas.width, canvas.height)
       ctx.scale(scale, scale)
@@ -615,3 +657,4 @@ export function downloadPng(svgContent: string, filename = 'minefolio-diagram.pn
     }
   })
 }
+

@@ -1,3 +1,11 @@
+/**
+ * @file key_manager.c
+ * @brief RSA 密钥对生命周期管理与非对称加解密实现
+ *
+ * 实现了 RSA-2048 密钥对在进程生命周期内的生成、PEM 与 JWK 格式转换、
+ * 以及基于 RSA-OAEP / Base64URL 的传输层密码解密功能。
+ */
+
 #include "common/response.h"
 #include "csilk/core/crypto_dispatch.h"
 #include "csilk/drivers/cipher.h"
@@ -10,9 +18,21 @@
 #include <stdio.h>
 #include <string.h>
 
+/**
+ * @brief 内部静态变量：存储 PEM 格式公钥字符串
+ */
 static char g_pub_pem[8192];
+
+/**
+ * @brief 内部静态变量：存储 PEM 格式私钥字符串
+ */
 static char g_priv_pem[8192];
 
+/**
+ * @brief 生成 RSA-2048 密钥对并保存在内部静态缓冲区
+ *
+ * @return int 0 成功，-1 失败
+ */
 int
 auth_key_init(void)
 {
@@ -25,17 +45,43 @@ auth_key_init(void)
     return 0;
 }
 
+/**
+ * @brief 获取内部 PEM 格式公钥字符串
+ *
+ * @return const char* PEM 公钥字符串指针
+ */
 const char*
 auth_key_get_public_pem(void)
 {
     return g_pub_pem;
 }
+
+/**
+ * @brief 获取内部 PEM 格式私钥字符串
+ *
+ * @return const char* PEM 私钥字符串指针
+ */
 const char*
 auth_key_get_private_pem(void)
 {
     return g_priv_pem;
 }
 
+/**
+ * @brief 将 OpenSSL 大数 (BIGNUM) 转换为 Base64URL 编码字符串
+ *
+ * 用于提取 RSA 模数 (n) 和公钥指数 (e) 生成 JWK 格式参数（去除末尾 padding '='，并将 '+' 替换为 '-'、'/' 替换为 '_'）。
+ *
+ * @param[in] bn OpenSSL BIGNUM 对象指针
+ * @param[out] out 写入 Base64URL 结果的字符缓冲区
+ * @param[in] out_cap 输出缓冲区的最大容量
+ *
+ * @return int 状态码
+ * @retval 0 转换成功
+ * @retval -1 内存分配失败或转换异常
+ *
+ * @note 内部辅助函数，动态申请 OpenSSL 缓冲区并负责释放。
+ */
 static int
 bn_to_b64url(const BIGNUM* bn, char* out, size_t out_cap)
 {
@@ -71,6 +117,18 @@ bn_to_b64url(const BIGNUM* bn, char* out, size_t out_cap)
     return 0;
 }
 
+/**
+ * @brief 将 PEM 格式的公钥解析并转换为 JWK (JSON Web Key) 格式对象
+ *
+ * 读取 PEM 字符串，利用 OpenSSL EVP_PKEY 接口提取模数 (n) 和公钥指数 (e)，
+ * 构造成 JSON 对象 {"kty": "RSA", "n": "...", "e": "..."}。
+ *
+ * @param[in] pem PEM 格式公钥字符串
+ *
+ * @return csilk_json_t* 指向新创建的 JSON 对象指针；解析失败返回 NULL
+ *
+ * @note 内存所有权：返回的 JSON 对象需由调用方负责释放或挂载到响应树中统一释放。
+ */
 static csilk_json_t*
 pem_to_jwk(const char* pem)
 {
@@ -116,6 +174,11 @@ pem_to_jwk(const char* pem)
     return jwk;
 }
 
+/**
+ * @brief GET /api/auth/public-key 接口处理函数
+ *
+ * @param[in,out] c HTTP 请求上下文
+ */
 void
 auth_public_key(csilk_ctx_t* c)
 {
@@ -130,6 +193,15 @@ auth_public_key(csilk_ctx_t* c)
     respond_ok(c, data);
 }
 
+/**
+ * @brief 使用私钥解密前端加密的 Base64URL 密文
+ *
+ * @param[in] ciphertext_b64url Base64URL 编码密文
+ * @param[out] out_buf 接收解密结果的缓冲区
+ * @param[in,out] out_len 输入缓冲区容量，输出实际明文字节数
+ *
+ * @return int 0 成功，-1 失败
+ */
 int
 auth_key_decrypt(const char* ciphertext_b64url, char* out_buf, size_t* out_len)
 {

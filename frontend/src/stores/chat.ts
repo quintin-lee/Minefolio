@@ -1,3 +1,8 @@
+/**
+ * @file AI 智能财务助理与工作流对话状态管理 Store
+ * @description 管理多轮 AI 对话会话、流式打字机渲染 (SSE Smooth Typing Buffer)、历史消息分页加载、智能财务工作流调度与卡片交互
+ */
+
 // frontend/src/stores/chat.ts
 import { defineStore } from 'pinia'
 import { ref, reactive } from 'vue'
@@ -8,20 +13,36 @@ import {
 import type { AiMessage, AiSession, AiModelOption, AiSettings, WorkflowStreamChunk } from '@/api/ai'
 import type { WorkflowDef, WorkflowRunState, WorkflowStepState } from '@/types'
 
+/**
+ * AI 对话与智能工作流 Pinia Store
+ */
 export const useChatStore = defineStore('chat', () => {
+  /** 历史对话会话列表 */
   const sessions = ref<AiSession[]>([])
+  /** 当前选中的会话 ID */
   const currentSessionId = ref<number | null>(null)
+  /** 当前会话的消息列表 */
   const messages = ref<AiMessage[]>([])
+  /** 是否正在处于 AI 流式响应生成中 */
   const isStreaming = ref(false)
+  /** 当前选中的模型名称 (如 'gpt-4o', 'claude-3-5-sonnet') */
   const currentModel = ref('')
+  /** 当前选中的模型提供商 (如 'openai', 'anthropic') */
   const currentProvider = ref('')
+  /** 系统可用的模型提供商及模型列表 */
   const availableModels = ref<AiModelOption[]>([])
+  /** AI 系统全局配置 */
   const settings = ref<AiSettings | null>(null)
+  /** 系统中已注册的智能工作流定义列表 */
   const workflows = ref<WorkflowDef[]>([])
+  /** 当前正在执行的工作流运行时状态数据 */
   const activeWorkflow = ref<WorkflowRunState | null>(null)
 
+  /** LocalStorage 存储置顶固定的工作流 ID 键名 */
   const PINNED_STORAGE_KEY = 'minefolio_pinned_workflows'
+  /** 默认置顶的工作流 ID 列表 */
   const DEFAULT_PINNED_IDS = ['wf_monthly_review', 'wf_portfolio_rebalance', 'wf_payday_split', 'wf_budget_guard']
+  /** 用户置顶固定的工作流 ID 响应式列表 */
   const pinnedWorkflowIds = ref<string[]>(
     (() => {
       try {
@@ -33,6 +54,10 @@ export const useChatStore = defineStore('chat', () => {
     })()
   )
 
+  /**
+   * 切换指定工作流的置顶固定状态
+   * @param id 工作流 ID
+   */
   function togglePinWorkflow(id: string) {
     const idx = pinnedWorkflowIds.value.indexOf(id)
     if (idx >= 0) {
@@ -43,16 +68,23 @@ export const useChatStore = defineStore('chat', () => {
     localStorage.setItem(PINNED_STORAGE_KEY, JSON.stringify(pinnedWorkflowIds.value))
   }
 
-  // Infinite scroll pagination state for messages
+  /** 当前会话的历史消息总条数 */
   const messageTotal = ref(0)
+  /** 已加载的历史消息分页页码 */
   const loadedMessagePage = ref(1)
+  /** 是否正在向上滚动加载更多历史消息 */
   const loadingMoreMessages = ref(false)
 
-  // Enable typewriter buffer: RAF drains chars at fixed 3/frame during streaming,
-  // then LRU cache + debounce used for non-streaming final content to avoid
-  // repeated marked.parse / DOMPurify on every reactive push.
+  /**
+   * 打字机平滑渲染缓冲区开关：
+   * 在流式输出期间通过 requestAnimationFrame (RAF) 以固定速率输出文字，
+   * 避免网络突发数据包造成画面跳跃并大幅减少频繁 Markdown 解析的性能损耗
+   */
   const enableTypewriterBuffer = ref(true)
 
+  /**
+   * 从服务端获取会话历史列表 (默认最新 50 条)
+   */
   async function fetchSessions() {
     const r = (await listSessions({ page_size: 50 })) as unknown
     const rawList = r && typeof r === 'object' && 'list' in r && Array.isArray((r as { list: unknown }).list) ? (r as { list: Record<string, unknown>[] }).list : []
@@ -66,11 +98,18 @@ export const useChatStore = defineStore('chat', () => {
       updated_at: String(s.updated_at || ''),
     }))
   }
+
+  /**
+   * 从服务端拉取可用模型选项列表
+   */
   async function fetchModels() {
     const r = await getModels()
     availableModels.value = r
   }
 
+  /**
+   * 从服务端拉取 AI 全局设置并初始化默认模型/提供商
+   */
   async function fetchSettings() {
     try {
       const r = (await getSettings()) as unknown
@@ -89,6 +128,10 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  /**
+   * 新建并激活一个空的对话会话
+   * @returns 新建的会话对象
+   */
   async function createNewSession() {
     const r = (await createSession(currentModel.value, currentProvider.value)) as unknown
     const raw = (r && typeof r === 'object' && 'data' in r ? (r as { data: Record<string, unknown> }).data : r) as Record<string, unknown>
@@ -107,6 +150,10 @@ export const useChatStore = defineStore('chat', () => {
     return session
   }
 
+  /**
+   * 选中并切换到指定的对话会话，加载其首屏消息列表
+   * @param id 会话 ID
+   */
   async function selectSession(id: number) {
     const numId = Number(id)
     currentSessionId.value = numId
@@ -125,6 +172,9 @@ export const useChatStore = defineStore('chat', () => {
     }))
   }
 
+  /**
+   * 向上无限滚动加载更多历史消息 (下一页)
+   */
   async function loadMoreMessages() {
     if (loadingMoreMessages.value || !currentSessionId.value) return
     const nextPage = loadedMessagePage.value + 1
@@ -150,6 +200,10 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  /**
+   * 根据 ID 删除指定的对话会话
+   * @param id 会话 ID
+   */
   async function deleteSessionById(id: number) {
     const numId = Number(id)
     await deleteSession(numId)
@@ -160,6 +214,11 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  /**
+   * 重命名指定会话的标题
+   * @param id 会话 ID
+   * @param newTitle 新标题
+   */
   async function renameSession(id: number, newTitle: string) {
     const numId = Number(id)
     const trimmed = newTitle.trim()
@@ -175,41 +234,48 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  // Renders streamed deltas at a steady cadence decoupled from the bursty
-  // arrival pattern of SSE-over-TCP: network chunks enqueue here, a RAF
-  // loop drains characters adaptively (faster when backlogged) into a
-  // reactive message so the UI types smoothly instead of jumping per
-  // network batch. RAF pauses in hidden tabs and aligns with vsync.
+  /**
+   * 平滑打字机流式渲染写入器
+   * @description 将突发到达的 SSE 字符存入内部缓冲区，利用 requestAnimationFrame (RAF) 以拟真打字节奏吐出字符到响应式消息中
+   */
   class SmoothStreamWriter {
+    /** 待吐出的字符积压缓冲区 */
     private buf = ''
+    /** 动画帧请求 ID */
     private rafId: number | null = null
+    /** 写入器是否处于激活运行状态 */
     private running = true
+    /** 写入器是否已关闭 */
     private closed = false
 
+    /**
+     * @param target 目标绑定的响应式 AI 消息对象
+     */
     constructor(private readonly target: AiMessage) {
       this.schedule()
     }
 
+    /**
+     * 向缓冲区追加新接收到的增量文本
+     * @param text 增量字符串
+     */
     push(text: string) {
       if (this.closed) return
       this.buf += text
       if (this.rafId === null && this.running) this.schedule()
     }
 
+    /** 调度下一帧动画 tick */
     private schedule() {
       if (!this.running || this.closed) return
       if (this.rafId !== null) return
       this.rafId = requestAnimationFrame(() => this.tick())
     }
 
+    /** 单帧渲染更新函数：根据标点与词边界自适应吐出 1~4 个字符 */
     private tick() {
       this.rafId = null
       if (!this.buf) return
-      // Natural typewriter: 1-4 chars/frame with word-boundary awareness.
-      // After punctuation (.,!?) take 1-2 chars for a natural pause.
-      // At word boundary (space followed by non-space) take 1 char so words
-      // arrive as a unit. Otherwise drain 3-4 chars to keep pace with
-      // typical LLM token throughput.
       const peek = this.buf[0]!
       const isPunct = '.,!?;:，。！？；：'.includes(peek)
       const isWordBoundary = peek === ' ' && this.buf.length > 1 && !/\s/.test(this.buf[1] ?? '')
@@ -227,8 +293,10 @@ export const useChatStore = defineStore('chat', () => {
       if (this.buf && this.running) this.schedule()
     }
 
+    /**
+     * 等待并确保缓冲区内所有积压字符全部平滑输出完成
+     */
     async finish(): Promise<void> {
-      // Re-schedule draining if idle but buffer still pending
       if (this.buf && this.rafId === null && this.running) this.schedule()
       await new Promise<void>((resolve) => {
         const check = () => {
@@ -240,6 +308,9 @@ export const useChatStore = defineStore('chat', () => {
       this.stop()
     }
 
+    /**
+     * 立即将缓冲区中所有未输出字符一次性倾倒刷入目标消息
+     */
     flushNow() {
       if (this.buf) {
         this.target.content += this.buf
@@ -248,6 +319,7 @@ export const useChatStore = defineStore('chat', () => {
       this.stop()
     }
 
+    /** 停止动画循环并释放资源 */
     private stop() {
       this.closed = true
       this.running = false
@@ -258,8 +330,12 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  /** 当前活动的流式请求中断控制器 */
   let activeAbortController: AbortController | null = null
 
+  /**
+   * 中断并终止当前正在进行的流式 AI 生成
+   */
   function abortCurrentStream() {
     if (activeAbortController) {
       activeAbortController.abort()
@@ -268,17 +344,26 @@ export const useChatStore = defineStore('chat', () => {
     isStreaming.value = false
   }
 
+  /**
+   * 清空当前会话显示的所有消息
+   */
   function clearMessages() {
     abortCurrentStream()
     messages.value = []
   }
 
+  /**
+   * 清除当前选中的会话上下文
+   */
   function clearCurrentSession() {
     abortCurrentStream()
     currentSessionId.value = null
     messages.value = []
   }
 
+  /**
+   * 完全重置 Store 所有状态 (如退出登录时调用)
+   */
   function resetState() {
     abortCurrentStream()
     sessions.value = []
@@ -287,6 +372,11 @@ export const useChatStore = defineStore('chat', () => {
     isStreaming.value = false
   }
 
+  /**
+   * 设置当前选中的模型与提供商
+   * @param model 模型名称
+   * @param provider 提供商标识 (可选)
+   */
   function setModel(model: string, provider?: string) {
     currentModel.value = model
     if (provider !== undefined) {
@@ -294,6 +384,11 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  /**
+   * 编辑历史某一条用户提问并重新发起对话 (截断该条之后的所有后续消息)
+   * @param targetIdx 目标用户消息在数组中的索引位置
+   * @param newContent 编辑修改后的新提示词文本
+   */
   async function editAndResend(targetIdx: number, newContent: string) {
     const trimmed = newContent.trim()
     if (!trimmed || isStreaming.value) return
@@ -335,6 +430,9 @@ export const useChatStore = defineStore('chat', () => {
     } finally { writer.flushNow(); enableTypewriterBuffer.value = false; isStreaming.value = false; activeAbortController = null }
   }
 
+  /**
+   * 重新生成最近一次 AI 回答
+   */
   async function regenerateLastMessage() {
     if (isStreaming.value || messages.value.length === 0) return
     let lastUserIdx = -1
@@ -347,7 +445,7 @@ export const useChatStore = defineStore('chat', () => {
     if (lastUserIdx < 0) return
     const userMsg = messages.value[lastUserIdx]!
 
-    // Remove trailing messages after user message
+    // 移除用户提问之后的所有后续消息
     messages.value = messages.value.slice(0, lastUserIdx + 1)
 
     const assistantId = Date.now() + 1
@@ -359,8 +457,6 @@ export const useChatStore = defineStore('chat', () => {
       created_at: new Date().toISOString(),
     }
     messages.value.push(assistantMsg)
-    // Rebind to the reactive proxy stored in the array: mutating the raw
-    // object bypasses Vue reactivity and breaks typewriter rendering.
     assistantMsg = messages.value[messages.value.length - 1]!
 
     abortCurrentStream()
@@ -400,6 +496,10 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  /**
+   * 发送新的用户消息并开启流式打字机接收 AI 回答
+   * @param content 用户提问内容文本
+   */
   async function sendMessage(content: string) {
     if (!content.trim() || isStreaming.value) return
     const sid = currentSessionId.value
@@ -423,8 +523,6 @@ export const useChatStore = defineStore('chat', () => {
       created_at: new Date().toISOString(),
     }
     messages.value.push(assistantMsg)
-    // Rebind to the reactive proxy stored in the array: mutating the raw
-    // object bypasses Vue reactivity and breaks typewriter rendering.
     assistantMsg = messages.value[messages.value.length - 1]!
 
     abortCurrentStream()
@@ -451,7 +549,7 @@ export const useChatStore = defineStore('chat', () => {
       }
       await writer.finish()
 
-      // Refresh session info
+      // 刷新会话信息 (后端可能自动根据内容生成标题)
       if (currentSessionId.value) {
         const r = (await getSession(currentSessionId.value)) as unknown
         const raw = (r && typeof r === 'object' && 'data' in r ? (r as { data: Record<string, unknown> }).data : r) as Record<string, unknown>
@@ -480,6 +578,10 @@ export const useChatStore = defineStore('chat', () => {
       activeAbortController = null
     }
   }
+
+  /**
+   * 从服务端获取所有预定义的智能工作流列表
+   */
   async function fetchWorkflowsList() {
     try {
       const list = await getWorkflows()
@@ -489,6 +591,11 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  /**
+   * 直接启动并执行一个指定的智能财务工作流
+   * @param workflowId 工作流 ID
+   * @param params 附加参数
+   */
   async function runWorkflow(workflowId: string, params?: Record<string, unknown>) {
     if (isStreaming.value) return
     const targetWf = workflows.value.find(w => w.id === workflowId)
@@ -497,7 +604,7 @@ export const useChatStore = defineStore('chat', () => {
     const sid = currentSessionId.value
     if (!sid) await createNewSession()
 
-    // 1. Add user prompt message
+    // 1. 添加用户提示消息
     const userMsg: AiMessage = {
       id: Date.now(),
       session_id: currentSessionId.value!,
@@ -507,7 +614,7 @@ export const useChatStore = defineStore('chat', () => {
     }
     messages.value.push(userMsg)
 
-    // 2. Initialize workflow state
+    // 2. 初始化工作流步骤状态
     const initialSteps: WorkflowStepState[] = targetWf
       ? targetWf.steps.map((st, idx) => ({
           step_index: idx,
@@ -526,7 +633,7 @@ export const useChatStore = defineStore('chat', () => {
     })
     activeWorkflow.value = wfState
 
-    // 3. Add assistant message with workflowData
+    // 3. 添加带有 workflowData 的 AI 消息
     const assistantId = Date.now() + 1
     const assistantMsg: AiMessage = reactive({
       id: assistantId,
@@ -604,7 +711,7 @@ export const useChatStore = defineStore('chat', () => {
         }
       })
 
-      // Refresh session info
+      // 刷新会话信息
       if (currentSessionId.value) {
         const r = (await getSession(currentSessionId.value)) as unknown
         const raw = (r && typeof r === 'object' && 'data' in r ? (r as { data: Record<string, unknown> }).data : r) as Record<string, unknown>
@@ -643,7 +750,11 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  // 暂存工作流配置卡片
+  /**
+   * 在消息流中暂存/插入一个待配置的工作流交互卡片
+   * @param workflowId 工作流 ID
+   * @param initialParams 初始默认入参
+   */
   async function stageWorkflow(workflowId: string, initialParams?: Record<string, unknown>) {
     if (isStreaming.value) return
     const targetWf = workflows.value.find(w => w.id === workflowId)
@@ -668,6 +779,10 @@ export const useChatStore = defineStore('chat', () => {
     messages.value.push(configMsg)
   }
 
+  /**
+   * 取消并移除暂存的工作流卡片消息
+   * @param messageId 消息 ID
+   */
   function cancelStagedWorkflow(messageId: number) {
     const idx = messages.value.findIndex(m => m.id === messageId)
     if (idx !== -1) {
@@ -675,7 +790,11 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  // 从内联卡片启动流水线
+  /**
+   * 从消息流中的内联工作流卡片启动执行流水线
+   * @param messageId 含有 workflowConfig 的消息 ID
+   * @param params 用户在卡片中填写的表单参数
+   */
   async function startStagedWorkflow(messageId: number, params?: Record<string, unknown>) {
     const msg = messages.value.find(m => m.id === messageId)
     if (!msg || !msg.workflowConfig || isStreaming.value) return
@@ -683,7 +802,7 @@ export const useChatStore = defineStore('chat', () => {
     const targetWf = workflows.value.find(w => w.id === workflowId)
     const wfTitle = targetWf ? targetWf.title : msg.workflowConfig.title
 
-    // 1. 初始化步骤并就地替换
+    // 1. 初始化步骤并就地替换卡片消息
     const initialSteps: WorkflowStepState[] = targetWf
       ? targetWf.steps.map((st, idx) => ({
           step_index: idx,
@@ -808,21 +927,55 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  /**
+   * 快捷切换当前使用的模型与提供商
+   * @param model 模型名称
+   * @param provider 提供商标识
+   */
   function switchModel(model: string, provider: string) {
     currentModel.value = model
     currentProvider.value = provider
   }
 
   return {
-    sessions, currentSessionId, messages, isStreaming,
-    currentModel, currentProvider, availableModels, settings,
-    workflows, activeWorkflow, pinnedWorkflowIds,
-    fetchSessions, fetchModels, fetchSettings, fetchWorkflowsList,
-    createNewSession, selectSession, deleteSessionById, renameSession,
-    sendMessage, regenerateLastMessage, editAndResend, runWorkflow, switchModel,
-    abortCurrentStream, clearMessages, clearCurrentSession, resetState, setModel,
-    loadMoreMessages, togglePinWorkflow, stageWorkflow, cancelStagedWorkflow, startStagedWorkflow,
-    messageTotal, loadedMessagePage, loadingMoreMessages,
+    sessions,
+    currentSessionId,
+    messages,
+    isStreaming,
+    currentModel,
+    currentProvider,
+    availableModels,
+    settings,
+    workflows,
+    activeWorkflow,
+    pinnedWorkflowIds,
+    fetchSessions,
+    fetchModels,
+    fetchSettings,
+    fetchWorkflowsList,
+    createNewSession,
+    selectSession,
+    deleteSessionById,
+    renameSession,
+    sendMessage,
+    regenerateLastMessage,
+    editAndResend,
+    runWorkflow,
+    switchModel,
+    abortCurrentStream,
+    clearMessages,
+    clearCurrentSession,
+    resetState,
+    setModel,
+    loadMoreMessages,
+    togglePinWorkflow,
+    stageWorkflow,
+    cancelStagedWorkflow,
+    startStagedWorkflow,
+    messageTotal,
+    loadedMessagePage,
+    loadingMoreMessages,
     enableTypewriterBuffer,
   }
 })
+

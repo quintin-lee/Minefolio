@@ -1,3 +1,11 @@
+/**
+ * @file file_controller.c
+ * @brief 文件上传与多格式文档解析控制器实现文件
+ *
+ * 遵循三层 C 架构规范，本控制器负责处理基于 multipart/form-data 的文件流式上传，
+ * 缓冲分片数据后调用底层 services/file_parser.h 解析器提取文本。
+ */
+
 #include "controllers/file_controller.h"
 #include "services/file_parser.h"
 #include "common/db.h"
@@ -8,15 +16,23 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-/* State for multipart callback */
-static char*  g_upload_filename = NULL;
-static char*  g_upload_content_type = NULL;
-static char*  g_upload_data = NULL;
-static size_t g_upload_data_len = 0;
-static size_t g_upload_data_cap = 0;
+/**
+ * @brief Multipart 数据分片解析状态全局缓冲区
+ */
+static char*  g_upload_filename = NULL;     /**< 上传文件名 */
+static char*  g_upload_content_type = NULL; /**< MIME 内容类型 */
+static char*  g_upload_data = NULL;         /**< 文件二进制内容缓冲 */
+static size_t g_upload_data_len = 0;        /**< 当前已接收字节数 */
+static size_t g_upload_data_cap = 0;        /**< 缓冲区总容量 */
 
+/**
+ * @brief Multipart 上传数据分片回调函数
+ *
+ * @param[in] part Csilk Multipart 分片指针
+ */
 static void
 upload_part_handler(csilk_multipart_part_t* part)
+
 {
     if (!g_upload_filename && part->filename[0]) {
         g_upload_filename = strdup(part->filename);
@@ -43,6 +59,11 @@ upload_part_handler(csilk_multipart_part_t* part)
     }
 }
 
+/**
+ * @brief 文件上传并解析 HTTP 处理函数
+ *
+ * @param[in,out] c HTTP 请求上下文指针 (csilk_ctx_t*)
+ */
 void
 file_upload_handler(csilk_ctx_t* c)
 {
@@ -107,6 +128,11 @@ file_upload_handler(csilk_ctx_t* c)
     g_upload_data_cap = 0;
 }
 
+/**
+ * @brief 注册文件上传与解析相关的 HTTP 路由
+ *
+ * @param[in,out] app Csilk 应用实例指针 (csilk_app_t*)
+ */
 void
 register_file_routes(csilk_app_t* app)
 {

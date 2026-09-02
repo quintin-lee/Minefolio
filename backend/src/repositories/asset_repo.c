@@ -1,9 +1,34 @@
+/**
+ * @file asset_repo.c
+ * @brief 资产数据访问层具体实现
+ *
+ * 实现了资产表 (assets) 与分类表 (categories) 的联查分页、资产增删改查、
+ * 投资持仓参数维护、行情价格回填与自动市值重算等 SQL 执行逻辑。
+ */
+
 #include "repositories/asset_repo.h"
 #include "common/db.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 
+/**
+ * @brief 分页查询用户的资产列表，支持按分类筛选
+ *
+ * 执行逻辑：
+ * 1. 格式化分页参数 (limit, offset) 及 user_id。
+ * 2. 判断是否存在 `category_id`，构造对应的 COUNT 查询和数据查询 SQL。
+ * 3. 左连接 categories 表读取分类名称 (category_name) 与资产类型 (asset_type)。
+ * 4. 执行总数查询填充 `*total`，再执行分页数据查询返回结果。
+ *
+ * @param pool 数据库连接池指针
+ * @param user_id 用户 ID
+ * @param page 页码
+ * @param page_size 每页条数
+ * @param category_id 可选分类 ID
+ * @param[out] total 记录总数指针
+ * @return csilk_json_t* 资产列表 JSON 数组
+ */
 csilk_json_t*
 asset_list(csilk_db_pool_t* pool,
            int64_t          user_id,
@@ -55,6 +80,8 @@ asset_list(csilk_db_pool_t* pool,
     params[pidx++] = offset;
     params[pidx] = NULL;
     cnt_params[cnt_pidx] = NULL;
+
+    /* 1. 查询总数 */
     csilk_json_t* cnt_res = csilk_db_query_param_json(pool, count_sql, cnt_params);
     *total = 0;
     if (cnt_res && csilk_json_array_size(cnt_res) > 0) {
@@ -63,8 +90,22 @@ asset_list(csilk_db_pool_t* pool,
     if (cnt_res) {
         csilk_json_free(cnt_res);
     }
+
+    /* 2. 查询分页数据 */
     return csilk_db_query_param_json(pool, sql, params);
 }
+
+/**
+ * @brief 获取单个资产详情
+ *
+ * 执行参数化 SQL：
+ * `SELECT a.*, c.name as category_name, c.asset_type FROM assets a LEFT JOIN categories c ON a.category_id=c.id WHERE a.id=? AND a.user_id=?`
+ *
+ * @param pool 数据库连接池指针
+ * @param user_id 用户 ID
+ * @param id 资产 ID
+ * @return csilk_json_t* 资产详情 JSON 数组（长度为 1）
+ */
 csilk_json_t*
 asset_get(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
 {
@@ -81,6 +122,27 @@ asset_get(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
         "assets a LEFT JOIN categories c ON a.category_id=c.id WHERE a.id=? AND a.user_id=?",
         (const char*[]){idstr, uid, NULL});
 }
+
+/**
+ * @brief 插入新资产账户
+ *
+ * 格式化数值字段并执行带 `RETURNING id` 的参数化插入。
+ *
+ * @param pool 数据库连接池指针
+ * @param user_id 用户 ID
+ * @param category_id 分类 ID
+ * @param name 资产名称
+ * @param account_no 银行卡号/账号
+ * @param current_value 当前估值/余额
+ * @param currency 货币代码（默认为 CNY）
+ * @param note 备注
+ * @param quantity 持仓数量
+ * @param cost_basis 持仓总成本
+ * @param net_value 单位净值
+ * @param symbol 标的代码
+ * @param quote_source 行情源标识
+ * @return int64_t 成功返回新资产 ID，失败返回 0
+ */
 int64_t
 asset_insert(csilk_db_pool_t* pool,
              int64_t          user_id,
@@ -130,6 +192,24 @@ asset_insert(csilk_db_pool_t* pool,
     }
     return id;
 }
+
+/**
+ * @brief 更新资产基础属性
+ *
+ * 执行 SQL：`UPDATE assets SET name=?,account_no=?,current_value=?,currency=?,note=?,symbol=?,quote_source=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?`
+ *
+ * @param pool 数据库连接池指针
+ * @param user_id 用户 ID
+ * @param id 资产 ID
+ * @param name 资产名称
+ * @param account_no 卡号/账号
+ * @param current_value 当前价值
+ * @param currency 币种
+ * @param note 备注
+ * @param symbol 代码
+ * @param quote_source 数据源
+ * @return int 成功更新返回 1，否则返回 0
+ */
 int
 asset_update_basic(csilk_db_pool_t* pool,
                    int64_t          user_id,
@@ -167,6 +247,20 @@ asset_update_basic(csilk_db_pool_t* pool,
     }
     return ok;
 }
+
+/**
+ * @brief 行情价格更新与自动市值重算
+ *
+ * 执行带 CASE WHEN 的原子更新语句：
+ * 当 `quantity > 0` 时重算 `current_value = ROUND(quantity * new_net_value, 2)`，
+ * 否则保留原有的 `current_value`。
+ *
+ * @param pool 数据库连接池指针
+ * @param user_id 用户 ID（为 0 时不限定用户）
+ * @param asset_id 目标资产 ID
+ * @param new_net_value 最新单位净值
+ * @return int 数据库受影响行数
+ */
 int
 asset_update_market_quote(csilk_db_pool_t* pool,
                           int64_t          user_id,
@@ -197,6 +291,16 @@ asset_update_market_quote(csilk_db_pool_t* pool,
     const char* params[] = {nv_str, nv_str, aid, NULL};
     return csilk_db_exec_param(pool, sql, params);
 }
+
+/**
+ * @brief 查询所有可供行情同步的有代码资产
+ *
+ * 筛选 `symbol IS NOT NULL AND symbol != ''` 的所有投资标的。
+ *
+ * @param pool 数据库连接池指针
+ * @param user_id 用户 ID（大于 0 则按用户过滤，否则查询系统所有资产）
+ * @return csilk_json_t* 资产列表 JSON 数组
+ */
 csilk_json_t*
 asset_list_for_sync(csilk_db_pool_t* pool, int64_t user_id)
 {
@@ -220,6 +324,20 @@ asset_list_for_sync(csilk_db_pool_t* pool, int64_t user_id)
                                    "FROM assets WHERE symbol IS NOT NULL AND symbol != ''");
     }
 }
+
+/**
+ * @brief 更新投资资产的持仓信息（净值、持仓数量、成本）
+ *
+ * 执行 SQL：`UPDATE assets SET net_value=?,quantity=?,cost_basis=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?`
+ *
+ * @param pool 数据库连接池指针
+ * @param user_id 用户 ID
+ * @param id 资产 ID
+ * @param net_value 最新单位净值
+ * @param quantity 最新持仓份额
+ * @param cost_basis 最新总持仓成本
+ * @return int 成功返回 1，失败返回 0
+ */
 int
 asset_update_position(csilk_db_pool_t* pool,
                       int64_t          user_id,
@@ -245,6 +363,17 @@ asset_update_position(csilk_db_pool_t* pool,
     }
     return ok;
 }
+
+/**
+ * @brief 删除资产账户
+ *
+ * 执行 SQL：`DELETE FROM assets WHERE id=? AND user_id=?`
+ *
+ * @param pool 数据库连接池指针
+ * @param user_id 用户 ID
+ * @param id 资产 ID
+ * @return int 成功删除返回 1，否则返回 0
+ */
 int
 asset_delete(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
 {
@@ -259,6 +388,17 @@ asset_delete(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
     }
     return ok;
 }
+
+/**
+ * @brief 校验资产是否存在且归属于该用户
+ *
+ * 执行 SQL：`SELECT id FROM assets WHERE id=? AND user_id=?`
+ *
+ * @param pool 数据库连接池指针
+ * @param user_id 用户 ID
+ * @param id 资产 ID
+ * @return int 存在返回 1，不存在返回 0
+ */
 int
 asset_exists(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
 {
@@ -273,6 +413,17 @@ asset_exists(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
     }
     return ok;
 }
+
+/**
+ * @brief 查询指定分类对应的资产类型 (asset_type)
+ *
+ * 执行 SQL：`SELECT asset_type FROM categories WHERE id=? AND user_id=?`
+ *
+ * @param pool 数据库连接池指针
+ * @param user_id 用户 ID
+ * @param category_id 分类 ID
+ * @return char* 动态分配的 asset_type 字符串副本，未找到返回 NULL
+ */
 char*
 asset_get_category_type(csilk_db_pool_t* pool, int64_t user_id, int64_t category_id)
 {
@@ -295,6 +446,17 @@ asset_get_category_type(csilk_db_pool_t* pool, int64_t user_id, int64_t category
     }
     return result;
 }
+
+/**
+ * @brief 查询特定资产的历史交易记录明细
+ *
+ * 执行 SQL：`SELECT id,asset_id,transaction_type,amount,quantity,price_per_unit,currency,transaction_date,note,created_at FROM transactions WHERE asset_id=? AND user_id=? ORDER BY transaction_date DESC`
+ *
+ * @param pool 数据库连接池指针
+ * @param user_id 用户 ID
+ * @param asset_id 资产 ID
+ * @return csilk_json_t* 交易记录 JSON 数组
+ */
 csilk_json_t*
 asset_transactions(csilk_db_pool_t* pool, int64_t user_id, int64_t asset_id)
 {
