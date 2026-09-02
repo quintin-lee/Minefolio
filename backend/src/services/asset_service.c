@@ -4,6 +4,7 @@
 #include "common/ctx.h"
 #include "common/db.h"
 #include "common/balance.h"
+#include "core/ledger/ledger_engine.h"
 #include "csilk/csilk.h"
 #include <stdio.h>
 #include <string.h>
@@ -424,6 +425,105 @@ asset_logs_list(csilk_ctx_t* c)
 }
 
 void
+assets_rebuild_single(csilk_ctx_t* c)
+{
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) {
+        return;
+    }
+
+    const char* id_str = csilk_get_param(c, "id");
+    if (!id_str) {
+        respond_bad_request(c, "缺少 asset_id");
+        return;
+    }
+    int64_t          asset_id = atoll(id_str);
+    csilk_db_pool_t* pool = db_get_pool();
+
+    // Check if asset is investment or regular account
+    char uid_str[32], ast_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    snprintf(ast_str, sizeof(ast_str), "%lld", (long long)asset_id);
+
+    csilk_json_t* ast =
+        csilk_db_query_param_json(pool,
+                                  "SELECT a.id, a.currency, c.asset_type FROM assets a JOIN "
+                                  "categories c ON a.category_id=c.id "
+                                  "WHERE a.id=? AND a.user_id=?",
+                                  (const char*[]){ast_str, uid_str, NULL});
+    if (!ast || csilk_json_array_size(ast) == 0) {
+        if (ast) {
+            csilk_json_free(ast);
+        }
+        respond_not_found(c);
+        return;
+    }
+    const csilk_json_t* row = csilk_json_array_get(ast, 0);
+    const char*         atype = csilk_json_get_string(row, "asset_type");
+    bool is_inv = (atype && (strcmp(atype, "stock") == 0 || strcmp(atype, "fund") == 0 ||
+                             strcmp(atype, "bond") == 0 || strcmp(atype, "crypto") == 0));
+    csilk_json_free(ast);
+
+    csilk_json_t* data = csilk_json_object();
+    if (is_inv) {
+        ledger_position_state_t pos_state;
+        if (ledger_rebuild_position(pool, user_id, asset_id, &pos_state) != 0) {
+            csilk_json_free(data);
+            respond_error(c, 500, "持仓重建失败");
+            return;
+        }
+        char q_buf[64], c_buf[64], nv_buf[64], cv_buf[64], rp_buf[64], up_buf[64];
+        quantity_to_string_fixed(pos_state.quantity, 4, q_buf, sizeof(q_buf));
+        money_to_string(pos_state.cost_basis, c_buf, sizeof(c_buf));
+        price_to_string_fixed(pos_state.net_value, 4, nv_buf, sizeof(nv_buf));
+        money_to_string(pos_state.current_value, cv_buf, sizeof(cv_buf));
+        money_to_string(pos_state.realized_pnl, rp_buf, sizeof(rp_buf));
+        money_to_string(pos_state.unrealized_pnl, up_buf, sizeof(up_buf));
+
+        csilk_json_add_number(data, "asset_id", (double)asset_id);
+        csilk_json_add_string(data, "quantity", q_buf);
+        csilk_json_add_string(data, "cost_basis", c_buf);
+        csilk_json_add_string(data, "net_value", nv_buf);
+        csilk_json_add_string(data, "current_value", cv_buf);
+        csilk_json_add_string(data, "realized_pnl", rp_buf);
+        csilk_json_add_string(data, "unrealized_pnl", up_buf);
+    } else {
+        ledger_account_state_t acc_state;
+        if (ledger_rebuild_account(pool, user_id, asset_id, &acc_state) != 0) {
+            csilk_json_free(data);
+            respond_error(c, 500, "账户余额重建失败");
+            return;
+        }
+        char bal_buf[64];
+        money_to_string(acc_state.balance, bal_buf, sizeof(bal_buf));
+
+        csilk_json_add_number(data, "asset_id", (double)asset_id);
+        csilk_json_add_string(data, "balance", bal_buf);
+        csilk_json_add_number(data, "tx_count", (double)acc_state.tx_count);
+    }
+    respond_ok(c, data);
+}
+
+void
+assets_rebuild_all(csilk_ctx_t* c)
+{
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) {
+        return;
+    }
+
+    csilk_db_pool_t* pool = db_get_pool();
+    if (ledger_rebuild_portfolio(pool, user_id) != 0) {
+        respond_error(c, 500, "组合账本重建失败");
+        return;
+    }
+
+    csilk_json_t* data = csilk_json_object();
+    csilk_json_add_string(data, "status", "rebuilt");
+    respond_ok(c, data);
+}
+
+void
 register_asset_routes(csilk_app_t* app)
 {
     csilk_app_get_ext(app,
@@ -440,6 +540,20 @@ register_asset_routes(csilk_app_t* app)
                        "asset_resp_t",
                        "Create asset",
                        "Create a new asset (cash, investment, liability, etc.)");
+    csilk_app_post_ext(app,
+                       "/api/assets/rebuild",
+                       assets_rebuild_all,
+                       nullptr,
+                       nullptr,
+                       "Rebuild portfolio assets",
+                       "Rebuild all assets and portfolio positions from transaction facts");
+    csilk_app_post_ext(app,
+                       "/api/assets/:id/rebuild",
+                       assets_rebuild_single,
+                       nullptr,
+                       nullptr,
+                       "Rebuild single asset",
+                       "Rebuild a single asset position/balance state from transaction facts");
     csilk_app_put_ext(app,
                       "/api/assets/:id",
                       assets_update,

@@ -4,6 +4,7 @@
 #include "common/ctx.h"
 #include "common/db.h"
 #include "common/balance.h"
+#include "core/ledger/ledger_engine.h"
 #include "csilk/csilk.h"
 #include <string.h>
 
@@ -125,9 +126,12 @@ transfers_create(csilk_ctx_t* c)
         csilk_json_free(res);
     }
 
-    /* Balance linkage */
-    if (balance_apply_delta(pool, from_id, user_id, -amount, "transfer", transfer_id, note) != 0 ||
-        balance_apply_delta(pool, to_id, user_id, amount, "transfer", transfer_id, note) != 0) {
+    /* Balance linkage via Ledger Engine */
+    currency_t cur = currency_from_str(currency);
+    money_t    amt_m;
+    money_from_double(amount, cur, &amt_m);
+
+    if (ledger_apply_transfer(pool, user_id, from_id, to_id, amt_m, transfer_id, note) != 0) {
         csilk_db_exec(pool, "ROLLBACK");
         csilk_json_free(body);
         respond_bad_request(c, "资产余额更新失败");

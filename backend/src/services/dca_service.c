@@ -1,6 +1,7 @@
 #include "services/dca_service.h"
 #include "repositories/dca_repo.h"
 #include "repositories/transaction_repo.h"
+#include "core/ledger/ledger_engine.h"
 #include "common/balance.h"
 #include "common/ctx.h"
 #include "common/response.h"
@@ -320,48 +321,29 @@ dca_service_confirm_execution(csilk_ctx_t* c)
     char tx_date[32];
     snprintf(tx_date, sizeof(tx_date), "%s 09:30:00", period_date ? period_date : "2026-08-28");
 
-    int64_t tx_id = tx_insert(pool,
-                              user_id,
-                              target_asset_id,
-                              funding_asset_id,
-                              0, /* category_id */
-                              "expense",
-                              "buy",
-                              "in",
-                              "out",
-                              actual_amount,
-                              executed_price,
-                              executed_quantity,
-                              0.0, /* fee */
-                              "CNY",
-                              tx_date,
-                              "定投计划自动买入");
-    if (tx_id <= 0) {
+    ledger_tx_t ltx = {.id = 0,
+                       .user_id = user_id,
+                       .asset_id = target_asset_id,
+                       .linked_asset_id = funding_asset_id,
+                       .category_id = 0,
+                       .type = LEDGER_TX_BUY,
+                       .type_str = "buy",
+                       .amount = actual_m,
+                       .price = price_p,
+                       .quantity = qty_q,
+                       .fee = money_zero(CURRENCY_CNY),
+                       .tx_date = tx_date,
+                       .note = "定投计划自动买入",
+                       .parent_tx_id = 0};
+
+    if (ledger_apply_tx(pool, &ltx) != 0) {
         csilk_db_exec(pool, "ROLLBACK");
         csilk_json_free(exec_arr);
-        respond_error(c, 1002, "Failed to create transaction for DCA execution");
+        respond_error(c, 1002, "定投执行失败");
         return;
     }
 
-    /* Apply position to target asset */
-    double pos_delta = 0.0;
-    apply_position(pool,
-                   target_asset_id,
-                   "buy",
-                   actual_amount,
-                   0.0,
-                   executed_price,
-                   executed_quantity,
-                   &pos_delta);
-
-    if (balance_apply_delta(
-            pool, funding_asset_id, user_id, -actual_amount, "transaction", tx_id, "定投扣款") !=
-        0) {
-        csilk_db_exec(pool, "ROLLBACK");
-        csilk_json_free(exec_arr);
-        respond_error(c, 1002, "定投扣款失败");
-        return;
-    }
+    int64_t tx_id = ltx.id;
 
     /* Update execution record */
     dca_execution_update_confirmed(

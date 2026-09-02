@@ -4,6 +4,7 @@
 #include "common/ctx.h"
 #include "common/db.h"
 #include "common/balance.h"
+#include "core/ledger/ledger_engine.h"
 #include "csilk/csilk.h"
 #include <string.h>
 
@@ -131,9 +132,11 @@ daily_expenses_create(csilk_ctx_t* c)
         return;
     }
 
-    double business_delta = is_income ? amount : -amount;
-    if (balance_apply_delta(
-            pool, asset_id, user_id, business_delta, "daily_expense", expense_id, note) != 0) {
+    currency_t cur = currency_from_str(currency);
+    money_t    amt_m;
+    money_from_double(amount, cur, &amt_m);
+
+    if (ledger_apply_expense(pool, user_id, asset_id, amt_m, is_income, expense_id, note) != 0) {
         csilk_db_exec(pool, "ROLLBACK");
         csilk_json_free(body);
         respond_bad_request(c, "资产无效");
@@ -213,11 +216,17 @@ daily_expenses_update(csilk_ctx_t* c)
         respond_not_found(c);
         return;
     }
+
     const csilk_json_t* old_r = csilk_json_array_get(old_row, 0);
     double              old_amount = db_get_num(old_r, "amount");
     const char*         old_type = csilk_json_get_string(old_r, "expense_type");
+    const char*         old_currency = csilk_json_get_string(old_r, "currency");
     int64_t             old_asset_id = db_get_int(old_r, "asset_id");
-    double old_delta = (old_type && strcmp(old_type, "income") == 0) ? old_amount : -old_amount;
+    const char*         old_note = csilk_json_get_string(old_r, "note");
+    int                 old_is_income = (old_type && strcmp(old_type, "income") == 0);
+    currency_t          old_cur = currency_from_str(old_currency ? old_currency : "CNY");
+    money_t             old_amt_m;
+    money_from_double(old_amount, old_cur, &old_amt_m);
 
     int64_t       category_id = db_get_int(body, "category_id");
     int64_t       asset_id = db_get_int(body, "asset_id");
@@ -251,6 +260,17 @@ daily_expenses_update(csilk_ctx_t* c)
         return;
     }
 
+    // 1. 回滚旧收支影响
+    if (ledger_reverse_expense(
+            pool, user_id, old_asset_id, old_amt_m, old_is_income, atoll(id_str), old_note) != 0) {
+        csilk_db_exec(pool, "ROLLBACK");
+        csilk_json_free(body);
+        csilk_json_free(old_row);
+        respond_bad_request(c, "回滚旧收支失败");
+        return;
+    }
+
+    // 2. 更新收支记录
     if (!de_update(pool,
                    user_id,
                    atoll(id_str),
@@ -268,35 +288,17 @@ daily_expenses_update(csilk_ctx_t* c)
         return;
     }
 
-    double new_delta = is_income ? amount : -amount;
-    if (asset_id == old_asset_id) {
-        if (new_delta != old_delta) {
-            if (balance_apply_delta(pool,
-                                    asset_id,
-                                    user_id,
-                                    new_delta - old_delta,
-                                    "daily_expense",
-                                    atoll(id_str),
-                                    note) != 0) {
-                csilk_db_exec(pool, "ROLLBACK");
-                csilk_json_free(body);
-                csilk_json_free(old_row);
-                respond_bad_request(c, "资产无效");
-                return;
-            }
-        }
-    } else {
-        if (balance_apply_delta(
-                pool, old_asset_id, user_id, -old_delta, "daily_expense", atoll(id_str), note) !=
-                0 ||
-            balance_apply_delta(
-                pool, asset_id, user_id, new_delta, "daily_expense", atoll(id_str), note) != 0) {
-            csilk_db_exec(pool, "ROLLBACK");
-            csilk_json_free(body);
-            csilk_json_free(old_row);
-            respond_bad_request(c, "资产无效");
-            return;
-        }
+    // 3. 应用新收支状态
+    currency_t cur = currency_from_str(currency ? currency : "CNY");
+    money_t    amt_m;
+    money_from_double(amount, cur, &amt_m);
+
+    if (ledger_apply_expense(pool, user_id, asset_id, amt_m, is_income, atoll(id_str), note) != 0) {
+        csilk_db_exec(pool, "ROLLBACK");
+        csilk_json_free(body);
+        csilk_json_free(old_row);
+        respond_bad_request(c, "资产无效");
+        return;
     }
 
     if (de_tag_delete_all(pool, atoll(id_str)) == 0) {
@@ -361,11 +363,17 @@ daily_expenses_delete(csilk_ctx_t* c)
         respond_not_found(c);
         return;
     }
+
     const csilk_json_t* old_r = csilk_json_array_get(old_row, 0);
     double              old_amount = db_get_num(old_r, "amount");
     const char*         old_type = csilk_json_get_string(old_r, "expense_type");
-    int64_t             asset_id = db_get_int(old_r, "asset_id");
-    double old_delta = (old_type && strcmp(old_type, "income") == 0) ? old_amount : -old_amount;
+    const char*         old_currency = csilk_json_get_string(old_r, "currency");
+    int64_t             old_asset_id = db_get_int(old_r, "asset_id");
+    const char*         old_note = csilk_json_get_string(old_r, "note");
+    int                 old_is_income = (old_type && strcmp(old_type, "income") == 0);
+    currency_t          old_cur = currency_from_str(old_currency ? old_currency : "CNY");
+    money_t             old_amt_m;
+    money_from_double(old_amount, old_cur, &old_amt_m);
 
     if (csilk_db_exec(pool, "BEGIN TRANSACTION") != 0) {
         csilk_json_free(old_row);
@@ -379,21 +387,22 @@ daily_expenses_delete(csilk_ctx_t* c)
         respond_error(c, 500, "删除失败");
         return;
     }
-    if (!de_delete(pool, user_id, atoll(id_str))) {
+
+    // 1. 回滚收支影响
+    if (ledger_reverse_expense(
+            pool, user_id, old_asset_id, old_amt_m, old_is_income, atoll(id_str), old_note) != 0) {
         csilk_db_exec(pool, "ROLLBACK");
         csilk_json_free(old_row);
         respond_error(c, 500, "删除失败");
         return;
     }
 
-    if (old_delta != 0) {
-        if (balance_apply_delta(
-                pool, asset_id, user_id, -old_delta, "daily_expense", atoll(id_str), NULL) != 0) {
-            csilk_db_exec(pool, "ROLLBACK");
-            csilk_json_free(old_row);
-            respond_error(c, 500, "删除失败");
-            return;
-        }
+    // 2. 删除记录
+    if (!de_delete(pool, user_id, atoll(id_str))) {
+        csilk_db_exec(pool, "ROLLBACK");
+        csilk_json_free(old_row);
+        respond_error(c, 500, "删除失败");
+        return;
     }
 
     csilk_db_exec(pool, "COMMIT");

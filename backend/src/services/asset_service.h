@@ -40,6 +40,18 @@ void assets_delete(csilk_ctx_t* c);
 void assets_detail(csilk_ctx_t* c);
 
 /**
+ * @brief 根据交易事实重建单个资产状态 (POST /api/assets/:id/rebuild)
+ * @param c HTTP 上下文
+ */
+void assets_rebuild_single(csilk_ctx_t* c);
+
+/**
+ * @brief 根据全部历史交易事实全量重建用户所有资产与投资组合状态 (POST /api/assets/rebuild)
+ * @param c HTTP 上下文
+ */
+void assets_rebuild_all(csilk_ctx_t* c);
+
+/**
  * @brief 注册资产模块相关的 RESTful 路由
  * @param app Csilk 应用实例
  */

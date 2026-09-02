@@ -625,6 +625,53 @@ WF_BC_HAS_DATA=$(echo "$WF_BC_RUN" | grep -c "账单" || true)
 test "$WF_BC_HAS_DATA" -ge 1 && BC_PASS="1" || BC_PASS="0"
 check "账单日历工作流提取真实排期与负债账单" "1" "$BC_PASS"
 
+# =========================================================================
+# Case 38: Ledger Engine 事件溯源状态重建接口验证 (Single & Portfolio Rebuild)
+# =========================================================================
+echo ""
+echo "--- Case 38: Ledger Engine 状态重算与重建 API 验证 ---"
+
+# 1. 创建独立测试投资资产与买入交易
+curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/assets" -d "{\"name\":\"溯源重建测试基金\",\"category_id\":$FUND_CAT,\"current_value\":0,\"currency\":\"CNY\",\"quantity\":0,\"cost_basis\":0,\"net_value\":0}" >/dev/null
+TEST_AST_ID=$(sqlite3 "$DB" "SELECT id FROM assets WHERE name='溯源重建测试基金' LIMIT 1")
+
+# 买入 1000 份 @ 2.00 (支出 2000，手续费 10)
+curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/transactions" -d "{\"asset_id\":$TEST_AST_ID,\"linked_asset_id\":$WALLET_ID,\"category_id\":$FUND_CAT,\"transaction_type\":\"buy\",\"amount\":2000,\"price_per_unit\":2.00,\"quantity\":1000,\"fee\":10,\"currency\":\"CNY\",\"transaction_date\":\"2026-08-20\"}" >/dev/null
+# 买入 500 份 @ 3.00 (支出 1500，手续费 5)
+curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/transactions" -d "{\"asset_id\":$TEST_AST_ID,\"linked_asset_id\":$WALLET_ID,\"category_id\":$FUND_CAT,\"transaction_type\":\"buy\",\"amount\":1500,\"price_per_unit\":3.00,\"quantity\":500,\"fee\":5,\"currency\":\"CNY\",\"transaction_date\":\"2026-08-21\"}" >/dev/null
+# 卖出 300 份 @ 4.00 (收入 1200，手续费 8)
+curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/transactions" -d "{\"asset_id\":$TEST_AST_ID,\"linked_asset_id\":$WALLET_ID,\"category_id\":$FUND_CAT,\"transaction_type\":\"sell\",\"amount\":1200,\"price_per_unit\":4.00,\"quantity\":300,\"fee\":8,\"currency\":\"CNY\",\"transaction_date\":\"2026-08-22\"}" >/dev/null
+
+# 记录当前标准状态 (Quantity: 1200, Cost Basis: 2812.00)
+ORIG_QTY=$(sqlite3 "$DB" "SELECT printf('%.4f', quantity) FROM assets WHERE id=$TEST_AST_ID")
+ORIG_COST=$(sqlite3 "$DB" "SELECT printf('%.2f', cost_basis) FROM assets WHERE id=$TEST_AST_ID")
+ORIG_VAL=$(sqlite3 "$DB" "SELECT printf('%.2f', current_value) FROM assets WHERE id=$TEST_AST_ID")
+
+# 2. 人为篡改/清空该资产物化状态
+sqlite3 "$DB" "UPDATE assets SET quantity=0, cost_basis=0, net_value=0, current_value=0 WHERE id=$TEST_AST_ID"
+
+# 3. 调用单资产重建 API: POST /api/assets/:id/rebuild
+REBUILD_RES=$(curl -s -X POST -H "$AUTH" "$BASE/assets/$TEST_AST_ID/rebuild")
+REBUILD_CODE=$(echo "$REBUILD_RES" | jq -r '.code | floor')
+check "POST /assets/:id/rebuild 单资产重建 code=0" "0" "$REBUILD_CODE"
+
+# 4. 验证数据库中该资产状态是否被 Ledger Engine 从交易事实精确还原
+REST_QTY=$(sqlite3 "$DB" "SELECT printf('%.4f', quantity) FROM assets WHERE id=$TEST_AST_ID")
+REST_COST=$(sqlite3 "$DB" "SELECT printf('%.2f', cost_basis) FROM assets WHERE id=$TEST_AST_ID")
+REST_VAL=$(sqlite3 "$DB" "SELECT printf('%.2f', current_value) FROM assets WHERE id=$TEST_AST_ID")
+check "单资产重建后 quantity 精确还原" "$ORIG_QTY" "$REST_QTY"
+check "单资产重建后 cost_basis 精确还原" "$ORIG_COST" "$REST_COST"
+check "单资产重建后 current_value 精确还原" "$ORIG_VAL" "$REST_VAL"
+
+# 5. 全量组合重建 API: POST /api/assets/rebuild
+ALL_REBUILD_RES=$(curl -s -X POST -H "$AUTH" "$BASE/assets/rebuild")
+ALL_REBUILD_CODE=$(echo "$ALL_REBUILD_RES" | jq -r '.code | floor')
+check "POST /assets/rebuild 全量投资组合重建 code=0" "0" "$ALL_REBUILD_CODE"
+AST_COUNT=$(sqlite3 "$DB" "SELECT COUNT(*) FROM assets WHERE user_id=(SELECT id FROM users WHERE username='linktest')")
+test "$AST_COUNT" -gt 0 && AST_PASS="1" || AST_PASS="0"
+check "全量重建后数据库资产数量 > 0" "1" "$AST_PASS"
+
 echo ""
 echo "结果: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1
+

@@ -227,16 +227,12 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
 
     // 1. Insert parent transaction record if tx->id == 0
     if (tx->id <= 0) {
-        const char* dir = "in";
-        const char* ldir = (tx->linked_asset_id > 0) ? "out" : NULL;
-        if (tx->type == LEDGER_TX_SELL || tx->type == LEDGER_TX_WITHDRAW ||
-            tx->type == LEDGER_TX_TRANSFER_OUT || tx->type == LEDGER_TX_FEE ||
-            tx->type == LEDGER_TX_TAX) {
-            dir = "out";
-            ldir = (tx->linked_asset_id > 0) ? "in" : NULL;
-        }
+        const tx_type_t* ttype = tx_type_lookup(tx_type_str);
+        const char*      dir = (ttype && ttype->stat_dir) ? ttype->stat_dir : "in";
+        const char*      ldir =
+            (tx->linked_asset_id > 0 && ttype && ttype->linked_dir) ? ttype->linked_dir : "";
 
-        const char* parent_tx_str = NULL;
+        const char* parent_tx_str = "";
         char        ptx_buf[32];
         if (tx->parent_tx_id > 0) {
             snprintf(ptx_buf, sizeof(ptx_buf), "%lld", (long long)tx->parent_tx_id);
@@ -273,7 +269,8 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
             "source_type, transaction_type, direction, linked_direction, "
             "amount, price_per_unit, quantity, fee, currency, transaction_date, note, "
             "parent_tx_id) "
-            "VALUES (?, ?, NULLIF(?, '0'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "VALUES (?, ?, NULLIF(?, '0'), ?, ?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?, ?, ?, ?, "
+            "NULLIF(?, '')) "
             "RETURNING id",
             ins_params);
 

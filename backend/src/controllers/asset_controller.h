@@ -128,6 +128,28 @@ void assets_detail(csilk_ctx_t* c);
  */
 void asset_logs_list(csilk_ctx_t* c);
 
+/**
+ * @brief 根据交易事实重建单个资产状态
+ *
+ * @details HTTP 方法: POST
+ *          REST 路径: /api/assets/:id/rebuild
+ *          鉴权要求: JWT 认证 (Bearer Token)
+ *
+ * @param[in,out] c HTTP 请求上下文指针 (csilk_ctx_t*)
+ */
+void assets_rebuild_single(csilk_ctx_t* c);
+
+/**
+ * @brief 根据全部历史交易事实全量重建用户所有资产与投资组合状态
+ *
+ * @details HTTP 方法: POST
+ *          REST 路径: /api/assets/rebuild
+ *          鉴权要求: JWT 认证 (Bearer Token)
+ *
+ * @param[in,out] c HTTP 请求上下文指针 (csilk_ctx_t*)
+ */
+void assets_rebuild_all(csilk_ctx_t* c);
+
 #include "csilk/app/app.h"
 
 /**
