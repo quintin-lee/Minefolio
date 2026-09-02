@@ -1,5 +1,6 @@
 # Minefolio
 
+[![Release: v1.0.0](https://img.shields.io/badge/Release-v1.0.0-success.svg)](https://github.com/quintin-lee/Minefolio/releases/tag/v1.0.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![C23](https://img.shields.io/badge/C-23-00599C?logo=c)](https://en.cppreference.com/w/c/23)
 [![Vue 3](https://img.shields.io/badge/Vue-3.5-4FC08D?logo=vue.js)](https://vuejs.org/)
