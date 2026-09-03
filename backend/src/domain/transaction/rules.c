@@ -24,22 +24,6 @@ mf_tx_rule_validate(const mf_transaction_t* tx, char* err_buf, size_t err_len)
         return -1;
     }
 
-    /* 投资买卖交易必须绑定标的资产与正向单价 */
-    if (strcmp(tx->type, "buy") == 0 || strcmp(tx->type, "sell") == 0) {
-        if (tx->asset_id <= 0) {
-            if (err_buf && err_len) {
-                snprintf(err_buf, err_len, "Investment transaction requires valid asset_id");
-            }
-            return -1;
-        }
-        if (!decimal_is_positive(tx->price.unit_price)) {
-            if (err_buf && err_len) {
-                snprintf(err_buf, err_len, "Investment transaction requires positive price");
-            }
-            return -1;
-        }
-    }
-
     /* 数量与费用不可为负数 */
     if (quantity_is_negative(tx->amount)) {
         if (err_buf && err_len) {

@@ -13,6 +13,7 @@ typedef struct create_tx_cmd {
     const char* type;
     double      amount;
     double      price;
+    double      quantity;
     double      fee;
     const char* currency;
     const char* note;
@@ -32,6 +33,7 @@ typedef struct update_tx_cmd {
     const char* type;
     double      amount;
     double      price;
+    double      quantity;
     double      fee;
     const char* currency;
     const char* note;
