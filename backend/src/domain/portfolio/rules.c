@@ -10,13 +10,23 @@ typedef struct {
     double  realized;
 } pnl_acc_t;
 
-int mf_portfolio_rule_apply_trade_events(mf_holding_item_t* items, size_t item_count,
-                                        const mf_portfolio_trade_event_t* events, size_t event_count) {
-    if (!items && item_count > 0) return -1;
-    if (item_count == 0) return 0;
+int
+mf_portfolio_rule_apply_trade_events(mf_holding_item_t*                items,
+                                     size_t                            item_count,
+                                     const mf_portfolio_trade_event_t* events,
+                                     size_t                            event_count)
+{
+    if (!items && item_count > 0) {
+        return -1;
+    }
+    if (item_count == 0) {
+        return 0;
+    }
 
     pnl_acc_t* accs = (pnl_acc_t*)calloc(item_count, sizeof(pnl_acc_t));
-    if (!accs) return -1;
+    if (!accs) {
+        return -1;
+    }
 
     for (size_t i = 0; i < item_count; i++) {
         accs[i].asset_id = items[i].asset_id;
@@ -25,8 +35,11 @@ int mf_portfolio_rule_apply_trade_events(mf_holding_item_t* items, size_t item_c
     if (events && event_count > 0) {
         for (size_t i = 0; i < event_count; i++) {
             const mf_portfolio_trade_event_t* ev = &events[i];
-            if (!ev->type[0]) continue;
-            if (strcmp(ev->type, "buy") != 0 && strcmp(ev->type, "sell") != 0 && strcmp(ev->type, "income") != 0) {
+            if (!ev->type[0]) {
+                continue;
+            }
+            if (strcmp(ev->type, "buy") != 0 && strcmp(ev->type, "sell") != 0 &&
+                strcmp(ev->type, "income") != 0) {
                 continue;
             }
 
@@ -37,7 +50,9 @@ int mf_portfolio_rule_apply_trade_events(mf_holding_item_t* items, size_t item_c
                     break;
                 }
             }
-            if (found_idx < 0) continue;
+            if (found_idx < 0) {
+                continue;
+            }
 
             double amt = money_to_double(ev->amount);
             double qty = quantity_to_double(ev->quantity);
@@ -46,7 +61,9 @@ int mf_portfolio_rule_apply_trade_events(mf_holding_item_t* items, size_t item_c
                 accs[found_idx].cost_for_pnl += amt;
                 accs[found_idx].qty += qty;
             } else if (strcmp(ev->type, "sell") == 0) {
-                double avg_cost = accs[found_idx].qty > 0.0 ? (accs[found_idx].cost_for_pnl / accs[found_idx].qty) : 0.0;
+                double avg_cost = accs[found_idx].qty > 0.0
+                                      ? (accs[found_idx].cost_for_pnl / accs[found_idx].qty)
+                                      : 0.0;
                 accs[found_idx].realized += amt - qty * avg_cost;
                 accs[found_idx].qty -= qty;
             } else if (strcmp(ev->type, "income") == 0) {
@@ -58,7 +75,7 @@ int mf_portfolio_rule_apply_trade_events(mf_holding_item_t* items, size_t item_c
 
     for (size_t i = 0; i < item_count; i++) {
         mf_holding_item_t* it = &items[i];
-        money_t market = {0};
+        money_t            market = {0};
         if (price_times_quantity(it->net_value, it->quantity, &market) == DECIMAL_OK) {
             it->market_value = market;
         } else {
@@ -76,9 +93,15 @@ int mf_portfolio_rule_apply_trade_events(mf_holding_item_t* items, size_t item_c
     return 0;
 }
 
-int mf_portfolio_rule_aggregate_summary(const mf_holding_item_t* items, size_t item_count,
-                                       currency_t base_currency, mf_portfolio_summary_t* out_summary) {
-    if (!out_summary) return -1;
+int
+mf_portfolio_rule_aggregate_summary(const mf_holding_item_t* items,
+                                    size_t                   item_count,
+                                    currency_t               base_currency,
+                                    mf_portfolio_summary_t*  out_summary)
+{
+    if (!out_summary) {
+        return -1;
+    }
     memset(out_summary, 0, sizeof(*out_summary));
 
     out_summary->total_market_value = money_zero(base_currency);
@@ -87,7 +110,9 @@ int mf_portfolio_rule_aggregate_summary(const mf_holding_item_t* items, size_t i
     out_summary->total_realized_pnl = money_zero(base_currency);
     out_summary->floating_pct = 0.0;
 
-    if (!items || item_count == 0) return 0;
+    if (!items || item_count == 0) {
+        return 0;
+    }
 
     double tot_market = 0.0, tot_cost = 0.0, tot_floating = 0.0, tot_realized = 0.0;
     for (size_t i = 0; i < item_count; i++) {

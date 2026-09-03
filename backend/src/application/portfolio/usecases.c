@@ -8,9 +8,15 @@
 #include <stdlib.h>
 #include <string.h>
 
-int portfolio_usecase_get_holdings(void* db_pool, const query_portfolio_cmd_t* cmd,
-                                  csilk_json_t** out_resp, portfolio_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+portfolio_usecase_get_holdings(void*                        db_pool,
+                               const query_portfolio_cmd_t* cmd,
+                               csilk_json_t**               out_resp,
+                               portfolio_usecase_result_t*  out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
     if (!cmd || !db_pool || !out_resp) {
         out_res->code = 1002;
@@ -19,7 +25,7 @@ int portfolio_usecase_get_holdings(void* db_pool, const query_portfolio_cmd_t* c
     }
 
     mf_holding_item_t* items = NULL;
-    size_t item_count = 0;
+    size_t             item_count = 0;
     if (mf_portfolio_repo_get_holdings(db_pool, cmd->user_id, &items, &item_count) != 0) {
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "查询持仓标的失败");
@@ -27,7 +33,7 @@ int portfolio_usecase_get_holdings(void* db_pool, const query_portfolio_cmd_t* c
     }
 
     mf_portfolio_trade_event_t* events = NULL;
-    size_t event_count = 0;
+    size_t                      event_count = 0;
     if (mf_portfolio_repo_get_trade_events(db_pool, cmd->user_id, &events, &event_count) != 0) {
         mf_portfolio_repo_free_holdings(items, item_count);
         out_res->code = 500;
@@ -47,7 +53,7 @@ int portfolio_usecase_get_holdings(void* db_pool, const query_portfolio_cmd_t* c
     csilk_json_t* holdings_arr = csilk_json_array();
     for (size_t i = 0; i < item_count; i++) {
         const mf_holding_item_t* it = &items[i];
-        csilk_json_t* h = csilk_json_object();
+        csilk_json_t*            h = csilk_json_object();
         csilk_json_add_number(h, "asset_id", (double)it->asset_id);
         csilk_json_add_string(h, "name", it->name);
         csilk_json_add_string(h, "asset_type", it->asset_type);
@@ -63,10 +69,14 @@ int portfolio_usecase_get_holdings(void* db_pool, const query_portfolio_cmd_t* c
     }
 
     csilk_json_t* summary_obj = csilk_json_object();
-    csilk_json_add_number(summary_obj, "total_market_value", money_to_double(summary.total_market_value));
-    csilk_json_add_number(summary_obj, "total_cost_basis", money_to_double(summary.total_cost_basis));
-    csilk_json_add_number(summary_obj, "total_floating_pnl", money_to_double(summary.total_floating_pnl));
-    csilk_json_add_number(summary_obj, "total_realized_pnl", money_to_double(summary.total_realized_pnl));
+    csilk_json_add_number(
+        summary_obj, "total_market_value", money_to_double(summary.total_market_value));
+    csilk_json_add_number(
+        summary_obj, "total_cost_basis", money_to_double(summary.total_cost_basis));
+    csilk_json_add_number(
+        summary_obj, "total_floating_pnl", money_to_double(summary.total_floating_pnl));
+    csilk_json_add_number(
+        summary_obj, "total_realized_pnl", money_to_double(summary.total_realized_pnl));
     csilk_json_add_number(summary_obj, "floating_pct", summary.floating_pct);
 
     csilk_json_t* resp = csilk_json_object();
@@ -82,9 +92,15 @@ int portfolio_usecase_get_holdings(void* db_pool, const query_portfolio_cmd_t* c
     return 0;
 }
 
-int portfolio_usecase_get_performance(void* db_pool, const query_portfolio_cmd_t* cmd,
-                                     csilk_json_t** out_resp, portfolio_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+portfolio_usecase_get_performance(void*                        db_pool,
+                                  const query_portfolio_cmd_t* cmd,
+                                  csilk_json_t**               out_resp,
+                                  portfolio_usecase_result_t*  out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
     if (!cmd || !db_pool || !out_resp) {
         out_res->code = 1002;
@@ -99,27 +115,28 @@ int portfolio_usecase_get_performance(void* db_pool, const query_portfolio_cmd_t
         return -1;
     }
 
-    double total_gain = 0, total_loss = 0;
-    double total_cost_basis = 0;
-    double total_cost_for_pnl = 0;
-    double total_quantity = 0;
-    double total_realized_pnl = 0;
-    int    total_trades = 0;
+    double        total_gain = 0, total_loss = 0;
+    double        total_cost_basis = 0;
+    double        total_cost_for_pnl = 0;
+    double        total_quantity = 0;
+    double        total_realized_pnl = 0;
+    int           total_trades = 0;
     csilk_json_t* trades = csilk_json_array();
-    size_t n = csilk_json_array_size(result);
+    size_t        n = csilk_json_array_size(result);
 
     for (size_t i = 0; i < n; i++) {
         csilk_json_t* row = csilk_json_array_get(result, i);
-        const char* type = csilk_json_get_string(row, "transaction_type");
-        double amt = db_get_num(row, "amount");
-        double fee = db_get_num(row, "fee");
-        const char* dir = csilk_json_get_string(row, "direction");
-        double qty = db_get_num(row, "quantity");
-        double price = db_get_num(row, "price_per_unit");
-        const char* date_s = csilk_json_get_string(row, "transaction_date");
+        const char*   type = csilk_json_get_string(row, "transaction_type");
+        double        amt = db_get_num(row, "amount");
+        double        fee = db_get_num(row, "fee");
+        const char*   dir = csilk_json_get_string(row, "direction");
+        double        qty = db_get_num(row, "quantity");
+        double        price = db_get_num(row, "price_per_unit");
+        const char*   date_s = csilk_json_get_string(row, "transaction_date");
 
-        int is_principal = (type && (strcmp(type, "deposit") == 0 || strcmp(type, "withdrawal") == 0 ||
-                                     strcmp(type, "transfer_in") == 0 || strcmp(type, "transfer_out") == 0));
+        int is_principal =
+            (type && (strcmp(type, "deposit") == 0 || strcmp(type, "withdrawal") == 0 ||
+                      strcmp(type, "transfer_in") == 0 || strcmp(type, "transfer_out") == 0));
         if (!is_principal) {
             if (dir && strcmp(dir, "in") == 0) {
                 total_gain += amt;
@@ -136,7 +153,8 @@ int portfolio_usecase_get_performance(void* db_pool, const query_portfolio_cmd_t
         } else if (type && strcmp(type, "sell") == 0 && qty > 0) {
             double avg_cost = total_quantity > 0 ? total_cost_for_pnl / total_quantity : 0;
             total_realized_pnl += amt - qty * avg_cost;
-            double cost_reduction = total_quantity > 0 ? (total_cost_basis / total_quantity) * qty : 0;
+            double cost_reduction =
+                total_quantity > 0 ? (total_cost_basis / total_quantity) * qty : 0;
             total_cost_basis -= cost_reduction;
             total_quantity -= qty;
         } else if (type && strcmp(type, "income") == 0) {
@@ -168,7 +186,8 @@ int portfolio_usecase_get_performance(void* db_pool, const query_portfolio_cmd_t
     csilk_json_free(result);
 
     double market_value = 0, cost_basis_remaining = 0, dummy_qty = 0;
-    portfolio_repo_get_current_holdings_totals(db_pool, cmd->user_id, &dummy_qty, &cost_basis_remaining, &market_value);
+    portfolio_repo_get_current_holdings_totals(
+        db_pool, cmd->user_id, &dummy_qty, &cost_basis_remaining, &market_value);
 
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_number(resp, "total_trades", total_trades);
@@ -187,9 +206,15 @@ int portfolio_usecase_get_performance(void* db_pool, const query_portfolio_cmd_t
     return 0;
 }
 
-int portfolio_usecase_get_dashboard_summary(void* db_pool, const query_portfolio_cmd_t* cmd,
-                                           csilk_json_t** out_resp, portfolio_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+portfolio_usecase_get_dashboard_summary(void*                        db_pool,
+                                        const query_portfolio_cmd_t* cmd,
+                                        csilk_json_t**               out_resp,
+                                        portfolio_usecase_result_t*  out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
     if (!cmd || !db_pool || !out_resp) {
         out_res->code = 1002;
@@ -216,9 +241,9 @@ int portfolio_usecase_get_dashboard_summary(void* db_pool, const query_portfolio
 
     for (size_t i = 0; i < n; i++) {
         csilk_json_t* row = csilk_json_array_get(rows, i);
-        const char* cat_name = csilk_json_get_string(row, "category_name");
-        const char* cur = csilk_json_get_string(row, "currency");
-        double v = db_get_num(row, "value") * exchange_rate_get_to_cny(cur);
+        const char*   cat_name = csilk_json_get_string(row, "category_name");
+        const char*   cur = csilk_json_get_string(row, "currency");
+        double        v = db_get_num(row, "value") * exchange_rate_get_to_cny(cur);
         total_assets += v;
         if (cat_name) {
             int found = -1;

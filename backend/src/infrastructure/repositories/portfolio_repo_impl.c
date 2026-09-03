@@ -4,8 +4,15 @@
 #include <stdlib.h>
 #include <string.h>
 
-int mf_portfolio_repo_get_holdings(void* db_pool, int64_t user_id, mf_holding_item_t** out_items, size_t* out_count) {
-    if (!db_pool || !out_items || !out_count) return -1;
+int
+mf_portfolio_repo_get_holdings(void*               db_pool,
+                               int64_t             user_id,
+                               mf_holding_item_t** out_items,
+                               size_t*             out_count)
+{
+    if (!db_pool || !out_items || !out_count) {
+        return -1;
+    }
     *out_items = NULL;
     *out_count = 0;
 
@@ -20,8 +27,11 @@ int mf_portfolio_repo_get_holdings(void* db_pool, int64_t user_id, mf_holding_it
         "WHERE a.user_id = ? AND c.asset_type IN ('stock','fund','bond','crypto') "
         "ORDER BY a.id ASC";
 
-    csilk_json_t* hold_rows = csilk_db_query_param_json((csilk_db_pool_t*)db_pool, hold_sql, params);
-    if (!hold_rows) return -1;
+    csilk_json_t* hold_rows =
+        csilk_db_query_param_json((csilk_db_pool_t*)db_pool, hold_sql, params);
+    if (!hold_rows) {
+        return -1;
+    }
 
     size_t count = csilk_json_array_size(hold_rows);
     if (count == 0) {
@@ -39,9 +49,13 @@ int mf_portfolio_repo_get_holdings(void* db_pool, int64_t user_id, mf_holding_it
         csilk_json_t* row = csilk_json_array_get(hold_rows, i);
         items[i].asset_id = (int64_t)db_get_num(row, "asset_id");
         const char* name = csilk_json_get_string(row, "name");
-        if (name) snprintf(items[i].name, sizeof(items[i].name), "%s", name);
+        if (name) {
+            snprintf(items[i].name, sizeof(items[i].name), "%s", name);
+        }
         const char* atype = csilk_json_get_string(row, "asset_type");
-        if (atype) snprintf(items[i].asset_type, sizeof(items[i].asset_type), "%s", atype);
+        if (atype) {
+            snprintf(items[i].asset_type, sizeof(items[i].asset_type), "%s", atype);
+        }
         const char* cur = csilk_json_get_string(row, "currency");
         items[i].currency = currency_from_str(cur ? cur : "CNY");
 
@@ -56,13 +70,24 @@ int mf_portfolio_repo_get_holdings(void* db_pool, int64_t user_id, mf_holding_it
     return 0;
 }
 
-void mf_portfolio_repo_free_holdings(mf_holding_item_t* items, size_t count) {
+void
+mf_portfolio_repo_free_holdings(mf_holding_item_t* items, size_t count)
+{
     (void)count;
-    if (items) free(items);
+    if (items) {
+        free(items);
+    }
 }
 
-int mf_portfolio_repo_get_trade_events(void* db_pool, int64_t user_id, mf_portfolio_trade_event_t** out_events, size_t* out_count) {
-    if (!db_pool || !out_events || !out_count) return -1;
+int
+mf_portfolio_repo_get_trade_events(void*                        db_pool,
+                                   int64_t                      user_id,
+                                   mf_portfolio_trade_event_t** out_events,
+                                   size_t*                      out_count)
+{
+    if (!db_pool || !out_events || !out_count) {
+        return -1;
+    }
     *out_events = NULL;
     *out_count = 0;
 
@@ -75,7 +100,9 @@ int mf_portfolio_repo_get_trade_events(void* db_pool, int64_t user_id, mf_portfo
         "FROM transactions WHERE user_id = ? ORDER BY transaction_date ASC";
 
     csilk_json_t* tx_rows = csilk_db_query_param_json((csilk_db_pool_t*)db_pool, tx_sql, params);
-    if (!tx_rows) return -1;
+    if (!tx_rows) {
+        return -1;
+    }
 
     size_t count = csilk_json_array_size(tx_rows);
     if (count == 0) {
@@ -83,7 +110,8 @@ int mf_portfolio_repo_get_trade_events(void* db_pool, int64_t user_id, mf_portfo
         return 0;
     }
 
-    mf_portfolio_trade_event_t* events = (mf_portfolio_trade_event_t*)calloc(count, sizeof(mf_portfolio_trade_event_t));
+    mf_portfolio_trade_event_t* events =
+        (mf_portfolio_trade_event_t*)calloc(count, sizeof(mf_portfolio_trade_event_t));
     if (!events) {
         csilk_json_free(tx_rows);
         return -1;
@@ -93,9 +121,11 @@ int mf_portfolio_repo_get_trade_events(void* db_pool, int64_t user_id, mf_portfo
         csilk_json_t* row = csilk_json_array_get(tx_rows, i);
         events[i].asset_id = (int64_t)db_get_num(row, "asset_id");
         const char* type = csilk_json_get_string(row, "transaction_type");
-        if (type) snprintf(events[i].type, sizeof(events[i].type), "%s", type);
+        if (type) {
+            snprintf(events[i].type, sizeof(events[i].type), "%s", type);
+        }
         const char* cur_s = csilk_json_get_string(row, "currency");
-        currency_t cur = currency_from_str(cur_s ? cur_s : "CNY");
+        currency_t  cur = currency_from_str(cur_s ? cur_s : "CNY");
 
         quantity_from_double(db_get_num(row, "quantity"), 4, &events[i].quantity);
         money_from_double(db_get_num(row, "amount"), cur, &events[i].amount);
@@ -109,12 +139,18 @@ int mf_portfolio_repo_get_trade_events(void* db_pool, int64_t user_id, mf_portfo
     return 0;
 }
 
-void mf_portfolio_repo_free_trade_events(mf_portfolio_trade_event_t* events, size_t count) {
+void
+mf_portfolio_repo_free_trade_events(mf_portfolio_trade_event_t* events, size_t count)
+{
     (void)count;
-    if (events) free(events);
+    if (events) {
+        free(events);
+    }
 }
 
-csilk_json_t* portfolio_repo_get_category_assets(void* pool, int64_t user_id) {
+csilk_json_t*
+portfolio_repo_get_category_assets(void* pool, int64_t user_id)
+{
     char uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     const char* params[] = {uid_str, NULL};
@@ -127,7 +163,9 @@ csilk_json_t* portfolio_repo_get_category_assets(void* pool, int64_t user_id) {
         params);
 }
 
-double portfolio_repo_get_total_liabilities(void* pool, int64_t user_id) {
+double
+portfolio_repo_get_total_liabilities(void* pool, int64_t user_id)
+{
     char uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     const char* params[] = {uid_str, NULL};
@@ -148,7 +186,9 @@ double portfolio_repo_get_total_liabilities(void* pool, int64_t user_id) {
     return total;
 }
 
-csilk_json_t* portfolio_repo_get_recent_transactions(void* pool, int64_t user_id, int limit) {
+csilk_json_t*
+portfolio_repo_get_recent_transactions(void* pool, int64_t user_id, int limit)
+{
     char uid_str[32], lim_str[16];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     snprintf(lim_str, sizeof(lim_str), "%d", limit > 0 ? limit : 5);
@@ -166,7 +206,9 @@ csilk_json_t* portfolio_repo_get_recent_transactions(void* pool, int64_t user_id
         params);
 }
 
-csilk_json_t* portfolio_repo_get_trend_30d(void* pool, int64_t user_id) {
+csilk_json_t*
+portfolio_repo_get_trend_30d(void* pool, int64_t user_id)
+{
     char uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     const char* params[] = {uid_str, uid_str, uid_str, uid_str, NULL};
@@ -187,10 +229,12 @@ csilk_json_t* portfolio_repo_get_trend_30d(void* pool, int64_t user_id) {
         "  )"
         "  SELECT "
         "    days.d as day,"
-        "    COALESCE((SELECT SUM(current_value) FROM assets a JOIN categories c ON a.category_id=c.id "
+        "    COALESCE((SELECT SUM(current_value) FROM assets a JOIN categories c ON "
+        "a.category_id=c.id "
         "     WHERE a.user_id=? AND c.asset_type NOT IN ('loan','credit_card','other_liability') "
         "     AND date(a.created_at) <= days.d), 0) as assets,"
-        "    COALESCE((SELECT SUM(current_value) FROM assets a JOIN categories c ON a.category_id=c.id "
+        "    COALESCE((SELECT SUM(current_value) FROM assets a JOIN categories c ON "
+        "a.category_id=c.id "
         "     WHERE a.user_id=? AND c.asset_type IN ('loan','credit_card','other_liability') "
         "     AND date(a.created_at) <= days.d), 0) as liabilities "
         "  FROM days "
@@ -199,7 +243,9 @@ csilk_json_t* portfolio_repo_get_trend_30d(void* pool, int64_t user_id) {
         params);
 }
 
-csilk_json_t* portfolio_repo_get_performance_transactions(void* pool, int64_t user_id) {
+csilk_json_t*
+portfolio_repo_get_performance_transactions(void* pool, int64_t user_id)
+{
     char uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     const char* params[] = {uid_str, NULL};
@@ -214,9 +260,13 @@ csilk_json_t* portfolio_repo_get_performance_transactions(void* pool, int64_t us
         params);
 }
 
-int portfolio_repo_get_current_holdings_totals(void* pool, int64_t user_id,
-                                              double* out_qty, double* out_cost, double* out_market) {
-    if (!out_qty || !out_cost || !out_market) return -1;
+int
+portfolio_repo_get_current_holdings_totals(
+    void* pool, int64_t user_id, double* out_qty, double* out_cost, double* out_market)
+{
+    if (!out_qty || !out_cost || !out_market) {
+        return -1;
+    }
     *out_qty = 0.0;
     *out_cost = 0.0;
     *out_market = 0.0;
@@ -242,6 +292,8 @@ int portfolio_repo_get_current_holdings_totals(void* pool, int64_t user_id,
         csilk_json_free(pos_rows);
         return 0;
     }
-    if (pos_rows) csilk_json_free(pos_rows);
+    if (pos_rows) {
+        csilk_json_free(pos_rows);
+    }
     return -1;
 }

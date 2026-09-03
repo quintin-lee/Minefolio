@@ -31,5 +31,5 @@ csilk_json_t* portfolio_repo_get_performance_transactions(void* pool, int64_t us
 /**
  * @brief 查询当前投资类资产持仓总市值与总成本
  */
-int portfolio_repo_get_current_holdings_totals(void* pool, int64_t user_id,
-                                              double* out_qty, double* out_cost, double* out_market);
+int portfolio_repo_get_current_holdings_totals(
+    void* pool, int64_t user_id, double* out_qty, double* out_cost, double* out_market);
