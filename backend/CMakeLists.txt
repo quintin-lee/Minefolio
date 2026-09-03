@@ -190,6 +190,13 @@ target_compile_options(test_domain_market PRIVATE -UNDEBUG)
 target_link_libraries(test_domain_market PRIVATE m)
 add_test(NAME test_domain_market COMMAND test_domain_market)
 
+add_executable(test_domain_auth tests/unit/test_domain_auth.c src/domain/auth/rules.c)
+target_include_directories(test_domain_auth PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_domain_auth PRIVATE -UNDEBUG)
+target_link_libraries(test_domain_auth PRIVATE m)
+add_test(NAME test_domain_auth COMMAND test_domain_auth)
+
+
 
 
 
