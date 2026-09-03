@@ -471,3 +471,73 @@ asset_transactions(csilk_db_pool_t* pool, int64_t user_id, int64_t asset_id)
         "transaction_date DESC",
         (const char*[]){aid, uid, NULL});
 }
+
+csilk_json_t*
+asset_balance_logs_list(csilk_db_pool_t* pool,
+                        int64_t          user_id,
+                        int64_t          page,
+                        int64_t          page_size,
+                        const char*      asset_id_str,
+                        int64_t*         total)
+{
+    char uid_str[32], limit_buf[32], offset_buf[32], aid_buf[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    snprintf(limit_buf, sizeof(limit_buf), "%lld", (long long)page_size);
+    snprintf(offset_buf, sizeof(offset_buf), "%lld", (long long)((page - 1) * page_size));
+
+    char        count_sql[256];
+    const char* cnt_params[4];
+    snprintf(count_sql,
+             sizeof(count_sql),
+             "SELECT COUNT(*) AS cnt FROM asset_balance_logs abl WHERE abl.user_id=?");
+    cnt_params[0] = uid_str;
+    int cnt_pidx = 1;
+
+    csilk_json_t* result = NULL;
+    if (asset_id_str && strlen(asset_id_str) > 0) {
+        snprintf(aid_buf, sizeof(aid_buf), "%lld", atoll(asset_id_str));
+        const char* params[] = {uid_str, aid_buf, limit_buf, offset_buf, NULL};
+        result = csilk_db_query_param_json(
+            pool,
+            "SELECT abl.id, abl.asset_id, a.name AS asset_name, abl.user_id, "
+            "abl.delta, abl.balance_after, abl.source_type, abl.source_id, "
+            "abl.note, abl.created_at "
+            "FROM asset_balance_logs abl "
+            "LEFT JOIN assets a ON abl.asset_id = a.id "
+            "WHERE abl.user_id=? AND abl.asset_id=? "
+            "ORDER BY abl.created_at DESC LIMIT ? OFFSET ?",
+            params);
+        snprintf(count_sql + strlen(count_sql),
+                 sizeof(count_sql) - strlen(count_sql),
+                 " AND abl.asset_id=?");
+        cnt_params[cnt_pidx++] = aid_buf;
+    } else {
+        const char* params[] = {uid_str, limit_buf, offset_buf, NULL};
+        result = csilk_db_query_param_json(
+            pool,
+            "SELECT abl.id, abl.asset_id, a.name AS asset_name, abl.user_id, "
+            "abl.delta, abl.balance_after, abl.source_type, abl.source_id, "
+            "abl.note, abl.created_at "
+            "FROM asset_balance_logs abl "
+            "LEFT JOIN assets a ON abl.asset_id = a.id "
+            "WHERE abl.user_id=? "
+            "ORDER BY abl.created_at DESC LIMIT ? OFFSET ?",
+            params);
+    }
+    cnt_params[cnt_pidx] = NULL;
+
+    *total = 0;
+    if (!result) {
+        return NULL;
+    }
+
+    csilk_json_t* cnt_res = csilk_db_query_param_json(pool, count_sql, cnt_params);
+    if (cnt_res && csilk_json_array_size(cnt_res) > 0) {
+        *total = db_get_int(csilk_json_array_get(cnt_res, 0), "cnt");
+    }
+    if (cnt_res) {
+        csilk_json_free(cnt_res);
+    }
+
+    return result;
+}

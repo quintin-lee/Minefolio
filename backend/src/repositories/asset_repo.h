@@ -199,3 +199,13 @@ char* asset_get_category_type(csilk_db_pool_t* pool, int64_t user_id, int64_t ca
  * @return csilk_json_t* 包含交易明细记录的 JSON 数组
  */
 csilk_json_t* asset_transactions(csilk_db_pool_t* pool, int64_t user_id, int64_t asset_id);
+
+/**
+ * @brief 分页查询资产余额变动审计日志
+ */
+csilk_json_t* asset_balance_logs_list(csilk_db_pool_t* pool,
+                                      int64_t          user_id,
+                                      int64_t          page,
+                                      int64_t          page_size,
+                                      const char*      asset_id,
+                                      int64_t*         total);
