@@ -154,3 +154,9 @@ add_executable(test_secret_provider tests/unit/test_secret_provider.c ${LIB_SOUR
 target_include_directories(test_secret_provider PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(test_secret_provider PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES})
 add_test(NAME test_secret_provider COMMAND test_secret_provider)
+
+add_executable(test_domain_transaction tests/unit/test_domain_transaction.c ${FINANCIAL_CORE_SOURCES} src/domain/transaction/rules.c)
+target_include_directories(test_domain_transaction PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(test_domain_transaction PRIVATE m)
+add_test(NAME test_domain_transaction COMMAND test_domain_transaction)
+
