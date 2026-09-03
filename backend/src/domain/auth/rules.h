@@ -23,5 +23,7 @@ bool mf_auth_rule_can_register(int existing_user_count, bool allow_registration)
 /**
  * @brief 校验 TOTP 应急备用恢复码是否匹配有效
  */
-bool mf_auth_rule_verify_backup_code(char backup_codes[16][16], int count,
-                                    const char* input_code, int* out_matched_index);
+bool mf_auth_rule_verify_backup_code(char        backup_codes[16][16],
+                                     int         count,
+                                     const char* input_code,
+                                     int*        out_matched_index);

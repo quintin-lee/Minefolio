@@ -21,12 +21,22 @@
 
 #define MINEFOLIO_BCRYPT_COST CSILK_BCRYPT_DEFAULT_COST
 
-static void store_bcrypt_hash(const char* password, char* out) {
+static void
+store_bcrypt_hash(const char* password, char* out)
+{
     csilk_bcrypt_hash(password, strlen(password), MINEFOLIO_BCRYPT_COST, out);
 }
 
-static int decrypt_password_if_needed(csilk_ctx_t* c, const char* enc, const char* plain,
-                                     char* out_buf, size_t out_cap, const char** out_pwd, size_t* out_len) {
+static int
+decrypt_password_if_needed(csilk_ctx_t* c,
+                           const char*  enc,
+                           const char*  plain,
+                           char*        out_buf,
+                           size_t       out_cap,
+                           const char** out_pwd,
+                           size_t*      out_len)
+{
+    (void)c;
     *out_pwd = NULL;
     *out_len = 0;
 
@@ -36,26 +46,13 @@ static int decrypt_password_if_needed(csilk_ctx_t* c, const char* enc, const cha
     }
 
     if (enc_to_try && enc_to_try[0]) {
-        uint8_t pt_buf[512];
-        size_t  pt_len = sizeof(pt_buf);
-        uint8_t ct_buf[CSILK_RSA_KEY_SIZE];
-        int dec_bytes = csilk_base64url_decode(enc_to_try, ct_buf, sizeof(ct_buf));
-        if (dec_bytes > 0) {
-            if (_csilk_asymmetric_decrypt(c,
-                                          auth_key_get_private_pem(),
-                                          strlen(auth_key_get_private_pem()),
-                                          ct_buf,
-                                          CSILK_RSA_KEY_SIZE,
-                                          pt_buf,
-                                          &pt_len) == 0 && pt_len > 0) {
-                pt_buf[pt_len] = '\0';
-                snprintf(out_buf, out_cap, "%s", (const char*)pt_buf);
-                *out_pwd = out_buf;
-                *out_len = pt_len;
-                return 0;
-            }
-            return -1; /* decode ok but decrypt failed */
+        size_t cap = out_cap;
+        if (auth_key_decrypt(enc_to_try, out_buf, &cap) == 0 && cap > 0) {
+            *out_pwd = out_buf;
+            *out_len = cap;
+            return 0;
         }
+        return -1;
     }
 
     if (plain && plain[0]) {
@@ -67,9 +64,16 @@ static int decrypt_password_if_needed(csilk_ctx_t* c, const char* enc, const cha
     return 0;
 }
 
-int auth_usecase_register(void* pool, const register_user_cmd_t* cmd, csilk_ctx_t* c,
-                          csilk_json_t** out_data, auth_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+auth_usecase_register(void*                      pool,
+                      const register_user_cmd_t* cmd,
+                      csilk_ctx_t*               c,
+                      csilk_json_t**             out_data,
+                      auth_usecase_result_t*     out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
     if (!pool || !cmd || !cmd->username) {
         out_res->code = 1002;
@@ -77,11 +81,16 @@ int auth_usecase_register(void* pool, const register_user_cmd_t* cmd, csilk_ctx_
         return -1;
     }
 
-    char password_buf[512] = {0};
+    char        password_buf[512] = {0};
     const char* password = NULL;
-    size_t password_len = 0;
-    if (decrypt_password_if_needed(c, cmd->password_enc, cmd->plain_password,
-                                   password_buf, sizeof(password_buf), &password, &password_len) != 0) {
+    size_t      password_len = 0;
+    if (decrypt_password_if_needed(c,
+                                   cmd->password_enc,
+                                   cmd->plain_password,
+                                   password_buf,
+                                   sizeof(password_buf),
+                                   &password,
+                                   &password_len) != 0) {
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "密码解密失败");
         return -1;
@@ -103,7 +112,9 @@ int auth_usecase_register(void* pool, const register_user_cmd_t* cmd, csilk_ctx_
         snprintf(out_res->message, sizeof(out_res->message), "用户名已存在");
         return -1;
     }
-    if (check) csilk_json_free(check);
+    if (check) {
+        csilk_json_free(check);
+    }
 
     char hashed[CSILK_BCRYPT_HASH_LEN];
     store_bcrypt_hash(password, hashed);
@@ -121,11 +132,13 @@ int auth_usecase_register(void* pool, const register_user_cmd_t* cmd, csilk_ctx_
     ledger_get_default(db_pool, user_id);
     import_rule_seed_defaults(db_pool, user_id);
 
-    char* token = jwt_generate_token(c, user_id, 0);
+    char*         token = jwt_generate_token(c, user_id, 0);
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_string(resp, "token", token ? token : "");
     csilk_json_add_number(resp, "expires_in", 604800);
-    if (token) free(token);
+    if (token) {
+        free(token);
+    }
 
     *out_data = resp;
     out_res->code = 0;
@@ -133,9 +146,16 @@ int auth_usecase_register(void* pool, const register_user_cmd_t* cmd, csilk_ctx_
     return 0;
 }
 
-int auth_usecase_login(void* pool, const login_user_cmd_t* cmd, csilk_ctx_t* c,
-                       csilk_json_t** out_data, auth_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+auth_usecase_login(void*                   pool,
+                   const login_user_cmd_t* cmd,
+                   csilk_ctx_t*            c,
+                   csilk_json_t**          out_data,
+                   auth_usecase_result_t*  out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
     if (!pool || !cmd || !cmd->username) {
         out_res->code = 1002;
@@ -143,11 +163,16 @@ int auth_usecase_login(void* pool, const login_user_cmd_t* cmd, csilk_ctx_t* c,
         return -1;
     }
 
-    char password_buf[512] = {0};
+    char        password_buf[512] = {0};
     const char* password = NULL;
-    size_t password_len = 0;
-    if (decrypt_password_if_needed(c, cmd->password_enc, cmd->plain_password,
-                                   password_buf, sizeof(password_buf), &password, &password_len) != 0) {
+    size_t      password_len = 0;
+    if (decrypt_password_if_needed(c,
+                                   cmd->password_enc,
+                                   cmd->plain_password,
+                                   password_buf,
+                                   sizeof(password_buf),
+                                   &password,
+                                   &password_len) != 0) {
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "密码解密失败");
         return -1;
@@ -161,14 +186,16 @@ int auth_usecase_login(void* pool, const login_user_cmd_t* cmd, csilk_ctx_t* c,
 
     csilk_json_t* result = user_find_by_username((csilk_db_pool_t*)pool, cmd->username);
     if (!result || csilk_json_array_size(result) == 0) {
-        if (result) csilk_json_free(result);
+        if (result) {
+            csilk_json_free(result);
+        }
         out_res->code = 1001;
         snprintf(out_res->message, sizeof(out_res->message), "用户名或密码错误");
         return -1;
     }
 
     csilk_json_t* row = csilk_json_array_get(result, 0);
-    const char* stored_hash = csilk_json_get_string(row, "password");
+    const char*   stored_hash = csilk_json_get_string(row, "password");
     if (!stored_hash || csilk_bcrypt_verify(password, password_len, stored_hash) != 0) {
         csilk_json_free(result);
         out_res->code = 1001;
@@ -176,9 +203,9 @@ int auth_usecase_login(void* pool, const login_user_cmd_t* cmd, csilk_ctx_t* c,
         return -1;
     }
 
-    int64_t user_id = db_get_int(row, "id");
-    int token_version = (int)db_get_int(row, "token_version");
-    int totp_enabled = db_get_bool(row, "totp_enabled");
+    int64_t     user_id = db_get_int(row, "id");
+    int         token_version = (int)db_get_int(row, "token_version");
+    int         totp_enabled = db_get_bool(row, "totp_enabled");
     const char* totp_secret = csilk_json_get_string(row, "totp_secret");
     const char* totp_backup_codes = csilk_json_get_string(row, "totp_backup_codes");
 
@@ -187,11 +214,13 @@ int auth_usecase_login(void* pool, const login_user_cmd_t* cmd, csilk_ctx_t* c,
                                           strcmp(totp_backup_codes, "[]") != 0));
 
     if (is_2fa_active) {
-        char* temp_token = jwt_generate_token(c, user_id, token_version);
+        char*         temp_token = jwt_generate_token(c, user_id, token_version);
         csilk_json_t* resp = csilk_json_object();
         csilk_json_add_bool(resp, "require_2fa", true);
         csilk_json_add_string(resp, "temp_token", temp_token ? temp_token : "");
-        if (temp_token) free(temp_token);
+        if (temp_token) {
+            free(temp_token);
+        }
         csilk_json_free(result);
 
         *out_data = resp;
@@ -200,11 +229,13 @@ int auth_usecase_login(void* pool, const login_user_cmd_t* cmd, csilk_ctx_t* c,
         return 0;
     }
 
-    char* token = jwt_generate_token(c, user_id, token_version);
+    char*         token = jwt_generate_token(c, user_id, token_version);
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_string(resp, "token", token ? token : "");
     csilk_json_add_number(resp, "expires_in", 604800);
-    if (token) free(token);
+    if (token) {
+        free(token);
+    }
     csilk_json_free(result);
 
     *out_data = resp;
@@ -213,9 +244,15 @@ int auth_usecase_login(void* pool, const login_user_cmd_t* cmd, csilk_ctx_t* c,
     return 0;
 }
 
-int auth_usecase_me(void* pool, int64_t user_id, csilk_json_t** out_data,
-                    auth_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+auth_usecase_me(void*                  pool,
+                int64_t                user_id,
+                csilk_json_t**         out_data,
+                auth_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
     if (!pool || user_id <= 0 || !out_data) {
         out_res->code = 1001;
@@ -225,7 +262,9 @@ int auth_usecase_me(void* pool, int64_t user_id, csilk_json_t** out_data,
 
     csilk_json_t* result = user_get_by_id((csilk_db_pool_t*)pool, user_id);
     if (!result || csilk_json_array_size(result) == 0) {
-        if (result) csilk_json_free(result);
+        if (result) {
+            csilk_json_free(result);
+        }
         out_res->code = 1003;
         snprintf(out_res->message, sizeof(out_res->message), "用户不存在");
         return -1;
@@ -244,9 +283,15 @@ int auth_usecase_me(void* pool, int64_t user_id, csilk_json_t** out_data,
     return 0;
 }
 
-int auth_usecase_change_password(void* pool, const change_password_cmd_t* cmd, csilk_ctx_t* c,
-                                auth_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+auth_usecase_change_password(void*                        pool,
+                             const change_password_cmd_t* cmd,
+                             csilk_ctx_t*                 c,
+                             auth_usecase_result_t*       out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
     if (!pool || !cmd || cmd->user_id <= 0 || !cmd->old_password_enc || !cmd->new_password_enc) {
         out_res->code = 1002;
@@ -254,27 +299,20 @@ int auth_usecase_change_password(void* pool, const change_password_cmd_t* cmd, c
         return -1;
     }
 
-    uint8_t old_pt[512], new_pt[512];
-    size_t  old_pt_len = sizeof(old_pt), new_pt_len = sizeof(new_pt);
-    uint8_t ct[CSILK_RSA_KEY_SIZE];
+    char   old_pt[512], new_pt[512];
+    size_t old_len = sizeof(old_pt), new_len = sizeof(new_pt);
 
-    if (csilk_base64url_decode(cmd->old_password_enc, ct, sizeof(ct)) < 0 ||
-        _csilk_asymmetric_decrypt(c, auth_key_get_private_pem(), strlen(auth_key_get_private_pem()),
-                                  ct, CSILK_RSA_KEY_SIZE, old_pt, &old_pt_len) != 0 || old_pt_len == 0) {
+    if (auth_key_decrypt(cmd->old_password_enc, old_pt, &old_len) != 0 || old_len == 0) {
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "原密码解密失败");
         return -1;
     }
-    old_pt[old_pt_len] = '\0';
 
-    if (csilk_base64url_decode(cmd->new_password_enc, ct, sizeof(ct)) < 0 ||
-        _csilk_asymmetric_decrypt(c, auth_key_get_private_pem(), strlen(auth_key_get_private_pem()),
-                                  ct, CSILK_RSA_KEY_SIZE, new_pt, &new_pt_len) != 0 || new_pt_len == 0) {
+    if (auth_key_decrypt(cmd->new_password_enc, new_pt, &new_len) != 0 || new_len == 0) {
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "新密码解密失败");
         return -1;
     }
-    new_pt[new_pt_len] = '\0';
 
     char err[256];
     if (mf_auth_rule_validate_password((const char*)new_pt, err, sizeof(err)) != 0) {
@@ -291,26 +329,31 @@ int auth_usecase_change_password(void* pool, const change_password_cmd_t* cmd, c
 
     csilk_json_t* check = user_get_by_id((csilk_db_pool_t*)pool, cmd->user_id);
     if (!check || csilk_json_array_size(check) == 0) {
-        if (check) csilk_json_free(check);
+        if (check) {
+            csilk_json_free(check);
+        }
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "原密码不正确");
         return -1;
     }
 
-    const char* username = csilk_json_get_string(csilk_json_array_get(check, 0), "username");
+    const char*   username = csilk_json_get_string(csilk_json_array_get(check, 0), "username");
     csilk_json_t* full_user = user_find_by_username((csilk_db_pool_t*)pool, username);
     csilk_json_free(check);
 
     if (!full_user || csilk_json_array_size(full_user) == 0) {
-        if (full_user) csilk_json_free(full_user);
+        if (full_user) {
+            csilk_json_free(full_user);
+        }
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "原密码不正确");
         return -1;
     }
 
     const char* stored_hash = csilk_json_get_string(csilk_json_array_get(full_user, 0), "password");
-    if (!stored_hash || csilk_bcrypt_verify((const char*)old_pt, old_pt_len, stored_hash) != 0) {
+    if (!stored_hash || csilk_bcrypt_verify((const char*)old_pt, old_len, stored_hash) != 0) {
         csilk_json_free(full_user);
+
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "原密码不正确");
         return -1;
@@ -328,9 +371,15 @@ int auth_usecase_change_password(void* pool, const change_password_cmd_t* cmd, c
     return 0;
 }
 
-int auth_usecase_2fa_status(void* pool, int64_t user_id, csilk_json_t** out_data,
-                            auth_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+auth_usecase_2fa_status(void*                  pool,
+                        int64_t                user_id,
+                        csilk_json_t**         out_data,
+                        auth_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
     if (!pool || user_id <= 0 || !out_data) {
         out_res->code = 1001;
@@ -340,16 +389,18 @@ int auth_usecase_2fa_status(void* pool, int64_t user_id, csilk_json_t** out_data
 
     csilk_json_t* user_rows = user_get_by_id((csilk_db_pool_t*)pool, user_id);
     if (!user_rows || csilk_json_array_size(user_rows) == 0) {
-        if (user_rows) csilk_json_free(user_rows);
+        if (user_rows) {
+            csilk_json_free(user_rows);
+        }
         out_res->code = 1001;
         snprintf(out_res->message, sizeof(out_res->message), "未授权");
         return -1;
     }
 
     csilk_json_t* user = csilk_json_array_get(user_rows, 0);
-    const char* totp_secret = csilk_json_get_string(user, "totp_secret");
-    const char* totp_backup_codes = csilk_json_get_string(user, "totp_backup_codes");
-    int totp_enabled = db_get_bool(user, "totp_enabled");
+    const char*   totp_secret = csilk_json_get_string(user, "totp_secret");
+    const char*   totp_backup_codes = csilk_json_get_string(user, "totp_backup_codes");
+    int           totp_enabled = db_get_bool(user, "totp_enabled");
 
     int is_active = (totp_secret && totp_secret[0] != '\0') &&
                     (totp_enabled || (totp_backup_codes && totp_backup_codes[0] != '\0' &&
@@ -361,7 +412,9 @@ int auth_usecase_2fa_status(void* pool, int64_t user_id, csilk_json_t** out_data
         if (codes_json && csilk_json_is_array(codes_json)) {
             backup_count = (int)csilk_json_array_size(codes_json);
         }
-        if (codes_json) csilk_json_free(codes_json);
+        if (codes_json) {
+            csilk_json_free(codes_json);
+        }
     }
     csilk_json_free(user_rows);
 
@@ -376,9 +429,15 @@ int auth_usecase_2fa_status(void* pool, int64_t user_id, csilk_json_t** out_data
     return 0;
 }
 
-int auth_usecase_2fa_setup(void* pool, int64_t user_id, csilk_json_t** out_data,
-                           auth_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+auth_usecase_2fa_setup(void*                  pool,
+                       int64_t                user_id,
+                       csilk_json_t**         out_data,
+                       auth_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
     if (!pool || user_id <= 0 || !out_data) {
         out_res->code = 1001;
@@ -396,17 +455,23 @@ int auth_usecase_2fa_setup(void* pool, int64_t user_id, csilk_json_t** out_data,
     user_set_totp_secret((csilk_db_pool_t*)pool, user_id, secret);
 
     csilk_json_t* user_rows = user_get_by_id((csilk_db_pool_t*)pool, user_id);
-    const char* uname = "user";
+    const char*   uname = "user";
     if (user_rows && csilk_json_array_size(user_rows) > 0) {
         const char* u = csilk_json_get_string(csilk_json_array_get(user_rows, 0), "username");
-        if (u && u[0]) uname = u;
+        if (u && u[0]) {
+            uname = u;
+        }
     }
 
     char otpauth[512];
-    snprintf(otpauth, sizeof(otpauth),
+    snprintf(otpauth,
+             sizeof(otpauth),
              "otpauth://totp/Minefolio:%s?secret=%s&issuer=Minefolio&digits=6&period=30",
-             uname, secret);
-    if (user_rows) csilk_json_free(user_rows);
+             uname,
+             secret);
+    if (user_rows) {
+        csilk_json_free(user_rows);
+    }
 
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_string(resp, "secret", secret);
@@ -418,9 +483,15 @@ int auth_usecase_2fa_setup(void* pool, int64_t user_id, csilk_json_t** out_data,
     return 0;
 }
 
-int auth_usecase_2fa_enable(void* pool, const enable_2fa_cmd_t* cmd, csilk_json_t** out_data,
-                            auth_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+auth_usecase_2fa_enable(void*                   pool,
+                        const enable_2fa_cmd_t* cmd,
+                        csilk_json_t**          out_data,
+                        auth_usecase_result_t*  out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
     if (!pool || !cmd || cmd->user_id <= 0 || !cmd->code || strlen(cmd->code) != 6) {
         out_res->code = 1002;
@@ -430,14 +501,16 @@ int auth_usecase_2fa_enable(void* pool, const enable_2fa_cmd_t* cmd, csilk_json_
 
     csilk_json_t* user_rows = user_get_by_id((csilk_db_pool_t*)pool, cmd->user_id);
     if (!user_rows || csilk_json_array_size(user_rows) == 0) {
-        if (user_rows) csilk_json_free(user_rows);
+        if (user_rows) {
+            csilk_json_free(user_rows);
+        }
         out_res->code = 1001;
         snprintf(out_res->message, sizeof(out_res->message), "未授权");
         return -1;
     }
 
     csilk_json_t* user = csilk_json_array_get(user_rows, 0);
-    const char* secret = csilk_json_get_string(user, "totp_secret");
+    const char*   secret = csilk_json_get_string(user, "totp_secret");
     if (!secret || !secret[0]) {
         csilk_json_free(user_rows);
         out_res->code = 1002;
@@ -460,10 +533,12 @@ int auth_usecase_2fa_enable(void* pool, const enable_2fa_cmd_t* cmd, csilk_json_
         csilk_json_array_append(codes_arr, csilk_json_string_new(backup_codes[i]));
     }
     size_t slen = 0;
-    char* codes_json = csilk_json_serialize(codes_arr, &slen);
+    char*  codes_json = csilk_json_serialize(codes_arr, &slen);
 
     user_enable_totp((csilk_db_pool_t*)pool, cmd->user_id, codes_json ? codes_json : "[]");
-    if (codes_json) free(codes_json);
+    if (codes_json) {
+        free(codes_json);
+    }
     csilk_json_free(user_rows);
 
     csilk_json_t* resp = csilk_json_object();
@@ -475,8 +550,12 @@ int auth_usecase_2fa_enable(void* pool, const enable_2fa_cmd_t* cmd, csilk_json_
     return 0;
 }
 
-int auth_usecase_2fa_disable(void* pool, int64_t user_id, auth_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+auth_usecase_2fa_disable(void* pool, int64_t user_id, auth_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
     if (!pool || user_id <= 0) {
         out_res->code = 1001;
@@ -490,9 +569,15 @@ int auth_usecase_2fa_disable(void* pool, int64_t user_id, auth_usecase_result_t*
     return 0;
 }
 
-int auth_usecase_2fa_verify_login(void* pool, const verify_2fa_login_cmd_t* cmd,
-                                  csilk_json_t** out_data, auth_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+auth_usecase_2fa_verify_login(void*                         pool,
+                              const verify_2fa_login_cmd_t* cmd,
+                              csilk_json_t**                out_data,
+                              auth_usecase_result_t*        out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
     if (!pool || !cmd || !cmd->temp_token || !cmd->code || !cmd->code[0]) {
         out_res->code = 1002;
@@ -524,23 +609,26 @@ int auth_usecase_2fa_verify_login(void* pool, const verify_2fa_login_cmd_t* cmd,
 
     csilk_json_t* user_rows = user_get_by_id((csilk_db_pool_t*)pool, user_id);
     if (!user_rows || csilk_json_array_size(user_rows) == 0) {
-        if (user_rows) csilk_json_free(user_rows);
+        if (user_rows) {
+            csilk_json_free(user_rows);
+        }
         out_res->code = 1001;
         snprintf(out_res->message, sizeof(out_res->message), "未授权");
         return -1;
     }
 
     csilk_json_t* user_row = csilk_json_array_get(user_rows, 0);
-    const char* totp_secret = csilk_json_get_string(user_row, "totp_secret");
-    const char* backup_codes = csilk_json_get_string(user_row, "totp_backup_codes");
-    int token_version = (int)db_get_int(user_row, "token_version");
+    const char*   totp_secret = csilk_json_get_string(user_row, "totp_secret");
+    const char*   backup_codes = csilk_json_get_string(user_row, "totp_backup_codes");
+    int           token_version = (int)db_get_int(user_row, "token_version");
 
     bool ok = false;
     if (totp_verify_code(totp_secret, cmd->code)) {
         ok = true;
     } else if (backup_codes && backup_codes[0]) {
         char updated_codes[1024];
-        if (totp_verify_and_consume_backup_code(backup_codes, cmd->code, updated_codes, sizeof(updated_codes))) {
+        if (totp_verify_and_consume_backup_code(
+                backup_codes, cmd->code, updated_codes, sizeof(updated_codes))) {
             user_update_backup_codes((csilk_db_pool_t*)pool, user_id, updated_codes);
             ok = true;
         }
@@ -553,11 +641,13 @@ int auth_usecase_2fa_verify_login(void* pool, const verify_2fa_login_cmd_t* cmd,
         return -1;
     }
 
-    char* token = jwt_generate_token(NULL, user_id, token_version);
+    char*         token = jwt_generate_token(NULL, user_id, token_version);
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_string(resp, "token", token ? token : "");
     csilk_json_add_number(resp, "expires_in", 604800);
-    if (token) free(token);
+    if (token) {
+        free(token);
+    }
 
     *out_data = resp;
     out_res->code = 0;
@@ -565,8 +655,12 @@ int auth_usecase_2fa_verify_login(void* pool, const verify_2fa_login_cmd_t* cmd,
     return 0;
 }
 
-int auth_usecase_oauth_providers(csilk_json_t** out_data, auth_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+auth_usecase_oauth_providers(csilk_json_t** out_data, auth_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
     if (!out_data) {
         out_res->code = 1002;
@@ -575,14 +669,15 @@ int auth_usecase_oauth_providers(csilk_json_t** out_data, auth_usecase_result_t*
     }
 
     csilk_json_t* providers = csilk_json_array();
-    const char* gh_client_id = config_secret_get("OAUTH_GITHUB_CLIENT_ID", NULL, 0);
+    const char*   gh_client_id = config_secret_get("OAUTH_GITHUB_CLIENT_ID", NULL, 0);
     if (gh_client_id && gh_client_id[0]) {
         csilk_json_t* gh = csilk_json_object();
         csilk_json_add_string(gh, "id", "github");
         csilk_json_add_string(gh, "name", "GitHub");
         csilk_json_add_string(gh, "icon", "ph:github-logo");
         char auth_url[512];
-        snprintf(auth_url, sizeof(auth_url),
+        snprintf(auth_url,
+                 sizeof(auth_url),
                  "https://github.com/login/oauth/authorize?client_id=%s&scope=read:user,user:email",
                  gh_client_id);
         csilk_json_add_string(gh, "auth_url", auth_url);
@@ -597,9 +692,11 @@ int auth_usecase_oauth_providers(csilk_json_t** out_data, auth_usecase_result_t*
         csilk_json_add_string(oidc, "name", "Single Sign-On (OIDC)");
         csilk_json_add_string(oidc, "icon", "ph:key");
         char full_auth_url[512];
-        snprintf(full_auth_url, sizeof(full_auth_url),
+        snprintf(full_auth_url,
+                 sizeof(full_auth_url),
                  "%s?client_id=%s&response_type=code&scope=openid%%20profile%%20email",
-                 oidc_auth_url, oidc_client_id);
+                 oidc_auth_url,
+                 oidc_client_id);
         csilk_json_add_string(oidc, "auth_url", full_auth_url);
         csilk_json_array_append(providers, oidc);
     }
@@ -613,9 +710,15 @@ int auth_usecase_oauth_providers(csilk_json_t** out_data, auth_usecase_result_t*
     return 0;
 }
 
-int auth_usecase_oauth_callback(void* pool, const oauth_callback_cmd_t* cmd,
-                                csilk_json_t** out_data, auth_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+auth_usecase_oauth_callback(void*                       pool,
+                            const oauth_callback_cmd_t* cmd,
+                            csilk_json_t**              out_data,
+                            auth_usecase_result_t*      out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
     if (!pool || !cmd || !cmd->provider || !cmd->provider[0]) {
         out_res->code = 1002;
@@ -646,30 +749,39 @@ int auth_usecase_oauth_callback(void* pool, const oauth_callback_cmd_t* cmd,
     }
 
     csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
-    csilk_json_t* user_row = user_find_by_oauth(db_pool, provider_buf, oauth_id_buf);
+    csilk_json_t*    user_row = user_find_by_oauth(db_pool, provider_buf, oauth_id_buf);
 
     int64_t user_id = -1;
-    int token_version = 0;
-    char final_username[128] = {0};
+    int     token_version = 0;
+    char    final_username[128] = {0};
 
     if (user_row && csilk_json_array_size(user_row) > 0) {
         csilk_json_t* u = csilk_json_array_get(user_row, 0);
         user_id = db_get_int(u, "id");
         token_version = (int)db_get_int(u, "token_version");
         const char* un = csilk_json_get_string(u, "username");
-        if (un) strncpy(final_username, un, sizeof(final_username) - 1);
+        if (un) {
+            strncpy(final_username, un, sizeof(final_username) - 1);
+        }
         csilk_json_free(user_row);
     } else {
-        if (user_row) csilk_json_free(user_row);
+        if (user_row) {
+            csilk_json_free(user_row);
+        }
 
         csilk_json_t* check_un = user_find_by_username(db_pool, username_buf);
         if (check_un && csilk_json_array_size(check_un) > 0) {
-            snprintf(final_username, sizeof(final_username), "%s_%d",
-                     username_buf, (int)(time(NULL) % 10000));
+            snprintf(final_username,
+                     sizeof(final_username),
+                     "%s_%d",
+                     username_buf,
+                     (int)(time(NULL) % 10000));
         } else {
             strncpy(final_username, username_buf, sizeof(final_username) - 1);
         }
-        if (check_un) csilk_json_free(check_un);
+        if (check_un) {
+            csilk_json_free(check_un);
+        }
 
         user_id = user_create_oauth(db_pool, final_username, provider_buf, oauth_id_buf);
         if (user_id <= 0) {
@@ -683,7 +795,7 @@ int auth_usecase_oauth_callback(void* pool, const oauth_callback_cmd_t* cmd,
         ledger_get_default(db_pool, user_id);
     }
 
-    char* token = jwt_generate_token(NULL, user_id, token_version);
+    char*         token = jwt_generate_token(NULL, user_id, token_version);
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_string(resp, "token", token ? token : "");
     csilk_json_add_number(resp, "expires_in", 604800);
@@ -694,7 +806,9 @@ int auth_usecase_oauth_callback(void* pool, const oauth_callback_cmd_t* cmd,
     csilk_json_add_string(u_obj, "oauth_provider", provider_buf);
     csilk_json_add_object(resp, "user", u_obj);
 
-    if (token) free(token);
+    if (token) {
+        free(token);
+    }
     *out_data = resp;
     out_res->code = 0;
     snprintf(out_res->message, sizeof(out_res->message), "ok");

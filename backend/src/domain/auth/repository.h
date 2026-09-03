@@ -13,7 +13,8 @@ int mf_auth_repo_find_by_username(void* pool, const char* username, mf_user_t* o
 
 int mf_auth_repo_get_by_id(void* pool, int64_t user_id, mf_user_t* out_user);
 
-int mf_auth_repo_create(void* pool, const char* username, const char* password_hash, int64_t* out_id);
+int
+mf_auth_repo_create(void* pool, const char* username, const char* password_hash, int64_t* out_id);
 
 int mf_auth_repo_update_password(void* pool, int64_t user_id, const char* password_hash);
 

@@ -138,5 +138,7 @@ csilk_json_t* user_find_by_oauth(csilk_db_pool_t* pool, const char* provider, co
 /**
  * @brief 创建 OAuth 关联用户
  */
-int64_t user_create_oauth(csilk_db_pool_t* pool, const char* username, const char* provider, const char* oauth_id);
-
+int64_t user_create_oauth(csilk_db_pool_t* pool,
+                          const char*      username,
+                          const char*      provider,
+                          const char*      oauth_id);

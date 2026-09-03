@@ -274,7 +274,10 @@ user_find_by_oauth(csilk_db_pool_t* pool, const char* provider, const char* oaut
 }
 
 int64_t
-user_create_oauth(csilk_db_pool_t* pool, const char* username, const char* provider, const char* oauth_id)
+user_create_oauth(csilk_db_pool_t* pool,
+                  const char*      username,
+                  const char*      provider,
+                  const char*      oauth_id)
 {
     csilk_json_t* ins_res = csilk_db_query_param_json(
         pool,
@@ -290,4 +293,3 @@ user_create_oauth(csilk_db_pool_t* pool, const char* username, const char* provi
     }
     return user_id;
 }
-
