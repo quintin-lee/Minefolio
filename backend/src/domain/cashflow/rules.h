@@ -17,5 +17,9 @@ int mf_cashflow_rule_annual_factor(const char* freq, double* out_factor);
 /**
  * @brief 判断周期性排程是否在指定的年、月发生，若发生则计算落点具体天数
  */
-bool mf_cashflow_rule_matches_month(const char* freq, const char* start_date, const char* end_date,
-                                   int year, int month, int* out_day);
+bool mf_cashflow_rule_matches_month(const char* freq,
+                                    const char* start_date,
+                                    const char* end_date,
+                                    int         year,
+                                    int         month,
+                                    int*        out_day);
