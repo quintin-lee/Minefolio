@@ -626,7 +626,7 @@ auth_2fa_verify_login(csilk_ctx_t* c)
         return;
     }
 
-    const char* secret_jwt = getenv("MINEFOLIO_JWT_SECRET");
+    const char* secret_jwt = config_secret_get("JWT_SECRET", NULL, 0);
     if (!secret_jwt) {
         csilk_json_free(body);
         respond_error(c, 500, "JWT secret 未配置");
@@ -699,7 +699,7 @@ auth_oauth_providers(csilk_ctx_t* c)
 {
     csilk_json_t* providers = csilk_json_array();
 
-    const char* gh_client_id = getenv("MINEFOLIO_OAUTH_GITHUB_CLIENT_ID");
+    const char* gh_client_id = config_secret_get("OAUTH_GITHUB_CLIENT_ID", NULL, 0);
     if (gh_client_id && gh_client_id[0]) {
         csilk_json_t* gh = csilk_json_object();
         csilk_json_add_string(gh, "id", "github");
@@ -714,8 +714,8 @@ auth_oauth_providers(csilk_ctx_t* c)
         csilk_json_array_append(providers, gh);
     }
 
-    const char* oidc_client_id = getenv("MINEFOLIO_OAUTH_OIDC_CLIENT_ID");
-    const char* oidc_auth_url = getenv("MINEFOLIO_OAUTH_OIDC_AUTH_URL");
+    const char* oidc_client_id = config_secret_get("OAUTH_OIDC_CLIENT_ID", NULL, 0);
+    const char* oidc_auth_url = config_env_get("OAUTH_OIDC_AUTH_URL", NULL, 0, NULL);
     if (oidc_client_id && oidc_client_id[0] && oidc_auth_url && oidc_auth_url[0]) {
         csilk_json_t* oidc = csilk_json_object();
         csilk_json_add_string(oidc, "id", "oidc");

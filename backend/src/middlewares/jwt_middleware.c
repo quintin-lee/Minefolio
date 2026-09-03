@@ -9,6 +9,7 @@
 #include "middlewares/jwt_middleware.h"
 #include "common/db.h"
 #include "common/jwt.h"
+#include "config/secret.h"
 #include "csilk/core/crypto.h"
 #include <string.h>
 #include <stdlib.h>
@@ -79,11 +80,11 @@ jwt_middleware_wrapper(csilk_ctx_t* c)
         return;
     }
 
-    const char* secret = getenv("MINEFOLIO_JWT_SECRET");
+    const char* secret = config_secret_get("JWT_SECRET", NULL, 0);
     if (!secret || secret[0] == '\0') {
         csilk_json_error(c,
                          CSILK_STATUS_INTERNAL_SERVER_ERROR,
-                         "MINEFOLIO_JWT_SECRET environment variable is required");
+                         "JWT_SECRET is required and must be properly configured");
         csilk_abort(c);
         return;
     }

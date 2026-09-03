@@ -43,13 +43,13 @@ ai_confirmation_get_secret(void)
     if (s_has_custom_secret && s_custom_secret[0]) {
         return s_custom_secret;
     }
-    const char* env_ai = getenv("MINEFOLIO_AI_SECRET");
-    if (env_ai && env_ai[0]) {
-        return env_ai;
+    const char* sec_ai = config_secret_get("AI_SECRET", NULL, 0);
+    if (sec_ai && sec_ai[0]) {
+        return sec_ai;
     }
-    const char* env_jwt = getenv("MINEFOLIO_JWT_SECRET");
-    if (env_jwt && env_jwt[0]) {
-        return env_jwt;
+    const char* sec_jwt = config_secret_get("JWT_SECRET", NULL, 0);
+    if (sec_jwt && sec_jwt[0]) {
+        return sec_jwt;
     }
 
     static char cfg_secret[128];
@@ -58,7 +58,11 @@ ai_confirmation_get_secret(void)
         return cfg_secret;
     }
 
-    return "minefolio_ai_policy_default_entropy_secret_2026";
+    if (config_secret_is_test_mode()) {
+        return "test_env_ai_confirmation_fallback_key";
+    }
+
+    return NULL;
 }
 
 int
@@ -258,7 +262,10 @@ ai_confirmation_create_bound_token(int64_t             user_id,
              (long long)exp);
 
     const char* secret = ai_confirmation_get_secret();
-    char        mac[SHA256_DIGEST_LENGTH * 2 + 1];
+    if (!secret || secret[0] == '\0') {
+        return NULL;
+    }
+    char mac[SHA256_DIGEST_LENGTH * 2 + 1];
     compute_hmac_hex(canonical, secret, mac, sizeof(mac));
 
     /* 返回格式: v2.<canonical>.<mac> */
@@ -309,7 +316,10 @@ ai_confirmation_verify_and_consume(int64_t             user_id,
 
     /* 2. 恒定时间签名验证 (Constant-time comparison) */
     const char* secret = ai_confirmation_get_secret();
-    char        expected_mac[SHA256_DIGEST_LENGTH * 2 + 1];
+    if (!secret || secret[0] == '\0') {
+        return AI_CONFIRM_ERR_SIGNATURE;
+    }
+    char expected_mac[SHA256_DIGEST_LENGTH * 2 + 1];
     compute_hmac_hex(canonical, secret, expected_mac, sizeof(expected_mac));
 
     size_t sig_len = strlen(signature);

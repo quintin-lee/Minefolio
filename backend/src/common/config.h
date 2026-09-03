@@ -9,6 +9,7 @@
  */
 
 #include <stddef.h>
+#include "config/secret.h"
 
 /**
  * @brief 从指定的 JSON 配置文件中读取字符串配置项的值

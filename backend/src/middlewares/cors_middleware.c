@@ -6,6 +6,7 @@
  */
 
 #include "middlewares/cors_middleware.h"
+#include "config/secret.h"
 #include <string.h>
 #include <stdlib.h>
 
@@ -20,7 +21,7 @@ void
 cors_middleware_wrapper(csilk_ctx_t* c)
 {
     csilk_cors_config_t cors = {0};
-    const char*         origin = getenv("MINEFOLIO_CORS_ORIGIN");
+    const char*         origin = config_env_get("CORS_ORIGIN", NULL, 0, NULL);
     if (origin && origin[0]) {
         cors.allow_origin = origin;
         cors.allow_credentials = 1;
@@ -45,7 +46,7 @@ void
 cors_preflight_handler(csilk_ctx_t* c)
 {
     csilk_cors_config_t cors = {0};
-    const char*         origin = getenv("MINEFOLIO_CORS_ORIGIN");
+    const char*         origin = config_env_get("CORS_ORIGIN", NULL, 0, NULL);
     if (!origin || !origin[0]) {
         const char* req_origin = csilk_get_header(c, "Origin");
         cors.allow_origin = req_origin && req_origin[0] ? req_origin : "*";

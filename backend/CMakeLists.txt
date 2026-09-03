@@ -118,6 +118,7 @@ function(add_financial_unit_test test_target test_source)
         src/common/tx_types.c
         src/common/db.c
         src/common/config.c
+        src/config/secret.c
         src/repositories/transaction_repo.c
     )
     target_include_directories(${test_target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -148,3 +149,8 @@ add_executable(test_ai_policy tests/unit/test_ai_policy.c ${LIB_SOURCES})
 target_include_directories(test_ai_policy PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(test_ai_policy PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES})
 add_test(NAME test_ai_policy COMMAND test_ai_policy)
+
+add_executable(test_secret_provider tests/unit/test_secret_provider.c ${LIB_SOURCES})
+target_include_directories(test_secret_provider PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(test_secret_provider PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES})
+add_test(NAME test_secret_provider COMMAND test_secret_provider)

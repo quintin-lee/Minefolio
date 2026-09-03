@@ -36,8 +36,10 @@ db_init(csilk_db_pool_t** out_pool)
 {
     csilk_db_init();
 
-    const char* driver_env = getenv("MINEFOLIO_DB_DRIVER");
-    const char* dsn_env = getenv("MINEFOLIO_DB_DSN");
+    char        drv_buf[64] = {0};
+    char        dsn_buf[512] = {0};
+    const char* driver_env = config_secret_get("DB_DRIVER", drv_buf, sizeof(drv_buf));
+    const char* dsn_env = config_secret_get("DB_DSN", dsn_buf, sizeof(dsn_buf));
 
     /* Read persisted config (written by /system/setup) */
     char cfg_driver[32] = {0};

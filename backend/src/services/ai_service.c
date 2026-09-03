@@ -10,6 +10,7 @@
 #include "csilk/drivers/ai.h"
 #include "csilk/protocols/sse.h"
 #include "config/key_manager.h"
+#include "config/secret.h"
 #include <curl/curl.h>
 #include <time.h>
 #include <stdio.h>
@@ -106,7 +107,7 @@ ai_init(csilk_db_pool_t* pool)
             return;
         }
     }
-    const char* cfg_path = getenv("MINEFOLIO_AI_CONFIG") ?: "config/ai.json";
+    const char* cfg_path = config_env_get("AI_CONFIG", NULL, 0, "config/ai.json");
     if (ai_config_load(cfg_path, &g_config) != 0) {
         fprintf(stderr, "WARN: could not load ai_config from %s\n", cfg_path);
         return;
@@ -117,7 +118,11 @@ ai_init(csilk_db_pool_t* pool)
             stderr, "WARN: default provider '%s' not found in config\n", g_config.default_provider);
         return;
     }
-    const char* key = (prov->api_key[0] != '\0') ? prov->api_key : "dummy";
+    char        api_key_buf[512];
+    const char* sec_key = config_secret_get("AI_API_KEY", api_key_buf, sizeof(api_key_buf));
+    const char* key = (sec_key && sec_key[0])      ? sec_key
+                      : (prov->api_key[0] != '\0') ? prov->api_key
+                                                   : "";
     const char* dname = get_driver_name(prov->id);
     g_ai = csilk_ai_new(dname, key, prov->base_url[0] ? prov->base_url : NULL);
     if (g_ai) {

@@ -7,20 +7,21 @@
  */
 
 #include "jwt.h"
+#include "config/secret.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
 /**
- * @brief 读取 MINEFOLIO_JWT_SECRET 环境变量
+ * @brief 读取 JWT 密钥 (Secret Provider)
  *
  * @return const char* 密钥字符串指针，未设置返回 NULL
  */
 static const char*
 jwt_secret(void)
 {
-    return getenv("MINEFOLIO_JWT_SECRET");
+    return config_secret_get("JWT_SECRET", NULL, 0);
 }
 
 /**

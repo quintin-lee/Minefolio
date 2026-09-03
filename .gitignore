@@ -21,6 +21,6 @@ playwright-*/
 
 .npm_cache/
 .pw_tmp/
-frontend/dist_bak_*/
-config/
+/config/
+!backend/src/config/
 output/

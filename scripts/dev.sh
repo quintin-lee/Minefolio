@@ -6,8 +6,9 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
-# 设置环境变量
-export MINEFOLIO_JWT_SECRET="${MINEFOLIO_JWT_SECRET:-minefolio-dev-secret-change-in-production}"
+if [ -z "$MINEFOLIO_JWT_SECRET" ]; then
+    export MINEFOLIO_JWT_SECRET="$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9' | head -c 48)"
+fi
 export MINEFOLIO_DB_DSN="${MINEFOLIO_DB_DSN:-${PROJECT_DIR}/backend/data/minefolio.db}"
 
 # 后端构建

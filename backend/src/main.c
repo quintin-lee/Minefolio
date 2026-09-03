@@ -29,7 +29,7 @@
 #include "services/market/market_scheduler.h"
 #include "services/ai_service.h"
 #include "dtos/request.h"
-#include "dtos/response.h"
+#include "config/secret.h"
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -46,8 +46,10 @@ main(int argc, char** argv)
     (void)argc;
     (void)argv;
 
-    if (!getenv("MINEFOLIO_JWT_SECRET")) {
-        fprintf(stderr, "FATAL: MINEFOLIO_JWT_SECRET environment variable is required\n");
+    if (!config_secret_is_valid("JWT_SECRET")) {
+        fprintf(stderr,
+                "FATAL: JWT_SECRET is required and must not be empty or a forbidden default "
+                "placeholder\n");
         return 1;
     }
 
@@ -92,9 +94,9 @@ main(int argc, char** argv)
     csilk_app_get(app, "/healthz", csilk_health_check_handler);
     csilk_app_options(app, "/api/*path", cors_preflight_handler);
 
-    // JWT middleware (rejects if MINEFOLIO_JWT_SECRET is not set)
+    // JWT middleware (rejects if JWT_SECRET is not set)
     csilk_app_use_group(app, "/api", jwt_middleware_wrapper);
-    if (getenv("MINEFOLIO_ENABLE_CSRF")) {
+    if (config_env_get("ENABLE_CSRF", NULL, 0, NULL)) {
         csilk_app_use_group(app, "/api", csrf_middleware_wrapper);
     }
 
@@ -132,8 +134,9 @@ main(int argc, char** argv)
 
     market_scheduler_start(pool);
 
-    int port = getenv("PORT") ? atoi(getenv("PORT"))
-                              : (getenv("MINEFOLIO_PORT") ? atoi(getenv("MINEFOLIO_PORT")) : 8080);
+    const char* port_str =
+        config_env_get("PORT", NULL, 0, config_env_get("MINEFOLIO_PORT", NULL, 0, "8080"));
+    int port = port_str ? atoi(port_str) : 8080;
     printf("Starting Minefolio server on :%d\n", port);
     csilk_app_run(app, port);
 

@@ -18,6 +18,7 @@
 #include "common/ctx.h"
 #include "common/ai_config.h"
 #include "config/key_manager.h"
+#include "config/secret.h"
 #include "common/db.h"
 #include "csilk/csilk.h"
 #include <stdio.h>
@@ -391,7 +392,7 @@ settings_ai_update_handler(csilk_ctx_t* c)
         ai_config_load_json(db_json, &cfg);
         free(db_json);
     } else {
-        const char* cfg_path = getenv("MINEFOLIO_AI_CONFIG") ?: "config/ai.json";
+        const char* cfg_path = config_env_get("AI_CONFIG", NULL, 0, "config/ai.json");
         ai_config_load(cfg_path, &cfg);
     }
 
@@ -515,7 +516,7 @@ settings_ai_update_handler(csilk_ctx_t* c)
         free(json);
     }
 
-    const char* cfg_path = getenv("MINEFOLIO_AI_CONFIG") ?: "config/ai.json";
+    const char* cfg_path = config_env_get("AI_CONFIG", NULL, 0, "config/ai.json");
     int         file_save_ok = ai_config_save(cfg_path, &cfg);
 
     ai_config_free(&cfg);
