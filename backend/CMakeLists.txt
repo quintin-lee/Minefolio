@@ -196,6 +196,13 @@ target_compile_options(test_domain_auth PRIVATE -UNDEBUG)
 target_link_libraries(test_domain_auth PRIVATE m)
 add_test(NAME test_domain_auth COMMAND test_domain_auth)
 
+add_executable(test_domain_ai tests/unit/test_domain_ai.c src/domain/ai/rules.c)
+target_include_directories(test_domain_ai PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_domain_ai PRIVATE -UNDEBUG)
+target_link_libraries(test_domain_ai PRIVATE m)
+add_test(NAME test_domain_ai COMMAND test_domain_ai)
+
+
 
 
 
