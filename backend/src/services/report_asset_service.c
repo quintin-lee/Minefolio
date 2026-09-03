@@ -3,6 +3,7 @@
 #include "common/db.h"
 #include "common/jwt.h"
 #include "services/market/exchange_rate_service.h"
+#include "interfaces/http/controllers/portfolio_controller.h"
 #include "csilk/csilk.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -226,130 +227,7 @@ report_asset_breakdown(csilk_ctx_t* c)
 void
 report_transaction_performance(csilk_ctx_t* c)
 {
-    int64_t user_id = ctx_user_id(c);
-    if (user_id < 0) {
-        return;
-    }
-    csilk_db_pool_t* pool = db_get_pool();
-
-    char uid_str[32];
-    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-    const char* params[] = {uid_str, NULL};
-
-    csilk_json_t* result = csilk_db_query_param_json(
-        pool,
-        "SELECT t.id, a.name as asset_name, t.transaction_type, t.direction, t.transaction_date, "
-        "t.quantity, t.price_per_unit, t.amount, t.fee "
-        "FROM transactions t JOIN assets a ON t.asset_id=a.id "
-        "WHERE t.user_id=? "
-        "ORDER BY t.transaction_date ASC",
-        params);
-    if (!result) {
-        respond_error(c, 500, "查询失败");
-        return;
-    }
-
-    double        total_gain = 0, total_loss = 0;
-    double        total_cost_basis = 0;   // for display (includes fee, matches DB cost_basis)
-    double        total_cost_for_pnl = 0; // for PnL avg_cost (excludes fee in numerator)
-    double        total_quantity = 0;
-    double        total_realized_pnl = 0;
-    int           total_trades = 0;
-    csilk_json_t* trades = csilk_json_array();
-    size_t        n = csilk_json_array_size(result);
-    for (size_t i = 0; i < n; i++) {
-        csilk_json_t* row = csilk_json_array_get(result, i);
-        const char*   type = csilk_json_get_string(row, "transaction_type");
-        double        amt = db_get_num(row, "amount");
-        double        fee = db_get_num(row, "fee");
-        const char*   dir = csilk_json_get_string(row, "direction");
-        double        qty = db_get_num(row, "quantity");
-        double        price = db_get_num(row, "price_per_unit");
-        const char*   date_s = csilk_json_get_string(row, "transaction_date");
-        // 本金流向（存入/取出/转入/转出）不计入盈亏
-        int is_principal = (strcmp(type, "deposit") == 0 || strcmp(type, "withdrawal") == 0 ||
-                            strcmp(type, "transfer_in") == 0 || strcmp(type, "transfer_out") == 0);
-        if (!is_principal) {
-            if (dir && strcmp(dir, "in") == 0) {
-                total_gain += amt;
-            } else {
-                total_loss += amt;
-            }
-        }
-        total_trades++;
-
-        // 持仓盈亏上下文
-        if (strcmp(type, "buy") == 0 && qty > 0) {
-            total_cost_basis += amt + fee; // database cost_basis includes fee
-            total_cost_for_pnl += amt;     // PnL avg_cost excludes fee
-            total_quantity += qty;
-        } else if (strcmp(type, "sell") == 0 && qty > 0) {
-            // avg_cost for PnL: uses cost_for_pnl (excludes fee)
-            double avg_cost = total_quantity > 0 ? total_cost_for_pnl / total_quantity : 0;
-            total_realized_pnl += amt - qty * avg_cost;
-            // Reduce display cost_basis proportionally on sell (includes fee portion)
-            double cost_reduction =
-                total_quantity > 0 ? (total_cost_basis / total_quantity) * qty : 0;
-            total_cost_basis -= cost_reduction;
-            total_quantity -= qty;
-        } else if (strcmp(type, "income") == 0) {
-            // 分红视为成本返还
-            total_cost_for_pnl -= amt;
-            total_realized_pnl += amt;
-        }
-
-        // avg_cost_at_trade: buy 为均价，sell 为售出均价
-        double avg_cost = 0, realized = 0;
-        if (strcmp(type, "buy") == 0) {
-            avg_cost = qty > 0 ? (amt + fee) / qty : 0;
-        } else if (strcmp(type, "sell") == 0) {
-            avg_cost = qty > 0 ? price : 0;
-            realized = amt - qty * price - fee;
-        }
-
-        csilk_json_t* trade = csilk_json_object();
-        csilk_json_add_number(trade, "id", db_get_num(row, "id"));
-        csilk_json_add_string(trade, "asset_name", csilk_json_get_string(row, "asset_name"));
-        csilk_json_add_string(trade, "type", type ? type : "");
-        csilk_json_add_string(trade, "date", date_s ? date_s : "");
-        csilk_json_add_number(trade, "quantity", qty);
-        csilk_json_add_number(trade, "price", price);
-        csilk_json_add_number(trade, "amount", amt);
-        csilk_json_add_number(trade, "avg_cost_at_trade", avg_cost);
-        csilk_json_add_number(trade, "realized", realized);
-        csilk_json_add_number(trade, "fee", fee);
-        csilk_json_array_append(trades, trade);
-    }
-    csilk_json_free(result);
-
-    // 当前持仓市值与成本
-    csilk_json_t* pos_rows = csilk_db_query_param_json(
-        pool,
-        "SELECT COALESCE(SUM(quantity),0) as total_qty, "
-        "COALESCE(SUM(cost_basis),0) as total_cost, "
-        "COALESCE(SUM(current_value),0) as total_market "
-        "FROM assets a JOIN categories c ON a.category_id=c.id "
-        "WHERE a.user_id=? AND c.asset_type IN ('stock','fund','bond','crypto')",
-        params);
-    double market_value = 0, cost_basis_remaining = 0;
-    if (pos_rows && csilk_json_array_size(pos_rows) > 0) {
-        const csilk_json_t* pr = csilk_json_array_get(pos_rows, 0);
-        market_value = db_get_num(pr, "total_market");
-        cost_basis_remaining = db_get_num(pr, "total_cost");
-        csilk_json_free(pos_rows);
-    }
-
-    csilk_json_t* resp = csilk_json_object();
-    csilk_json_add_number(resp, "total_trades", total_trades);
-    csilk_json_add_number(resp, "total_gain", total_gain);
-    csilk_json_add_number(resp, "total_loss", total_loss);
-    csilk_json_add_number(resp, "net_gain", total_gain - total_loss);
-    csilk_json_add_number(resp, "total_cost_basis_remaining", cost_basis_remaining);
-    csilk_json_add_number(resp, "total_market_value", market_value);
-    csilk_json_add_number(resp, "floating_pnl", market_value - cost_basis_remaining);
-    csilk_json_add_number(resp, "realized_pnl", total_realized_pnl);
-    csilk_json_add_array(resp, "trades", trades);
-    respond_ok(c, resp);
+    api_portfolio_performance(c);
 }
 
 void
