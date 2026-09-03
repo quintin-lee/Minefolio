@@ -12,6 +12,7 @@ import {
 } from '@/api/ai'
 import type { AiMessage, AiSession, AiModelOption, AiSettings, WorkflowStreamChunk } from '@/api/ai'
 import type { WorkflowDef, WorkflowRunState, WorkflowStepState } from '@/types'
+import { SmoothStreamWriter } from '@/utils/typewriter'
 
 /**
  * AI 对话与智能工作流 Pinia Store
@@ -234,101 +235,7 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  /**
-   * 平滑打字机流式渲染写入器
-   * @description 将突发到达的 SSE 字符存入内部缓冲区，利用 requestAnimationFrame (RAF) 以拟真打字节奏吐出字符到响应式消息中
-   */
-  class SmoothStreamWriter {
-    /** 待吐出的字符积压缓冲区 */
-    private buf = ''
-    /** 动画帧请求 ID */
-    private rafId: number | null = null
-    /** 写入器是否处于激活运行状态 */
-    private running = true
-    /** 写入器是否已关闭 */
-    private closed = false
 
-    /**
-     * @param target 目标绑定的响应式 AI 消息对象
-     */
-    constructor(private readonly target: AiMessage) {
-      this.schedule()
-    }
-
-    /**
-     * 向缓冲区追加新接收到的增量文本
-     * @param text 增量字符串
-     */
-    push(text: string) {
-      if (this.closed) return
-      this.buf += text
-      if (this.rafId === null && this.running) this.schedule()
-    }
-
-    /** 调度下一帧动画 tick */
-    private schedule() {
-      if (!this.running || this.closed) return
-      if (this.rafId !== null) return
-      this.rafId = requestAnimationFrame(() => this.tick())
-    }
-
-    /** 单帧渲染更新函数：根据标点与词边界自适应吐出 1~4 个字符 */
-    private tick() {
-      this.rafId = null
-      if (!this.buf) return
-      const peek = this.buf[0]!
-      const isPunct = '.,!?;:，。！？；：'.includes(peek)
-      const isWordBoundary = peek === ' ' && this.buf.length > 1 && !/\s/.test(this.buf[1] ?? '')
-      let step = 1
-      if (isPunct) {
-        step = 1
-      } else if (isWordBoundary) {
-        step = 1
-      } else {
-        step = Math.random() < 0.5 ? 3 : 4
-      }
-      if (step > this.buf.length) step = this.buf.length
-      this.target.content += this.buf.slice(0, step)
-      this.buf = this.buf.slice(step)
-      if (this.buf && this.running) this.schedule()
-    }
-
-    /**
-     * 等待并确保缓冲区内所有积压字符全部平滑输出完成
-     */
-    async finish(): Promise<void> {
-      if (this.buf && this.rafId === null && this.running) this.schedule()
-      await new Promise<void>((resolve) => {
-        const check = () => {
-          if (!this.buf) resolve()
-          else requestAnimationFrame(check)
-        }
-        check()
-      })
-      this.stop()
-    }
-
-    /**
-     * 立即将缓冲区中所有未输出字符一次性倾倒刷入目标消息
-     */
-    flushNow() {
-      if (this.buf) {
-        this.target.content += this.buf
-        this.buf = ''
-      }
-      this.stop()
-    }
-
-    /** 停止动画循环并释放资源 */
-    private stop() {
-      this.closed = true
-      this.running = false
-      if (this.rafId !== null) {
-        cancelAnimationFrame(this.rafId)
-        this.rafId = null
-      }
-    }
-  }
 
   /** 当前活动的流式请求中断控制器 */
   let activeAbortController: AbortController | null = null

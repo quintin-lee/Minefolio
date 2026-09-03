@@ -88,7 +88,6 @@ const props = defineProps<{
 
 const debouncedContent = ref(props.content || '')
 let debounceTimer: number | null = null
-let rafId: number | null = null
 let prevContent = ''
 
 // LRU cache keyed by content → pre-rendered HTML, avoids repeated marked.parse
@@ -101,18 +100,11 @@ watch(
   (v) => {
     const val = v || ''
     if (props.isStreaming && props.enableBuffer !== false) {
-      // Streaming: RAF-sync so cursor stays synced with buffer drain
-      if (rafId !== null) cancelAnimationFrame(rafId)
-      rafId = requestAnimationFrame(() => {
-        rafId = null
-        // Only update when content actually changed (skip duplicate RAF ticks)
-        if (val !== prevContent) {
-          debouncedContent.value = val
-          prevContent = val
-        }
-      })
+      // 流式状态：SmoothStreamWriter 已经由 requestAnimationFrame 严格按帧平滑吐字。
+      // 直接同步更新响应式内容，彻底消除二次 RAF 的 cancelAnimationFrame 造成的帧饿死与批量突跳！
+      debouncedContent.value = val
     } else {
-      // Non-streaming: debounce + use cached HTML when available
+      // 非流式：启用 LRU 缓存 + 短防抖，避免重复渲染
       if (debounceTimer) clearTimeout(debounceTimer)
       debounceTimer = window.setTimeout(() => {
         debounceTimer = null
@@ -125,7 +117,7 @@ watch(
           htmlCache.delete(firstKey)
         }
         htmlCache.set(val, val)
-      }, 48)
+      }, 40)
     }
   },
   { immediate: true },
@@ -138,10 +130,6 @@ watch(
         clearTimeout(debounceTimer)
         debounceTimer = null
       }
-      if (rafId !== null) {
-        cancelAnimationFrame(rafId)
-        rafId = null
-      }
       prevContent = ''
       const cached = htmlCache.get(props.content || '')
       debouncedContent.value = cached ?? (props.content || '')
@@ -151,7 +139,6 @@ watch(
 
 onUnmounted(() => {
   if (debounceTimer) clearTimeout(debounceTimer)
-  if (rafId !== null) cancelAnimationFrame(rafId)
 })
 
 interface Segment {
@@ -293,13 +280,32 @@ const segments = computed<Segment[]>(() => {
     const trailing = text.slice(lastIndex)
     if (trailing.length > 0) {
       if (streaming) {
-        // Append-only plain-text: Vue patches text nodes cheaply per character,
-        // no marked.parse / DOMPurify / v-html rebuild each frame.
-        result.push({
-          id: 'stream-tail',
-          type: 'streaming-text',
-          content: trailing,
-        })
+        // 如果尾部积累了多个完整段落（以双换行 \n\n 隔开），将已完成段落提前作为 Markdown 渲染，
+        // 仅将正在流式输入的最后一个活跃段落保持为 streaming-text，避免整体在结束瞬间产生突兀的样式跳跃！
+        const lastDoubleNewline = trailing.lastIndexOf('\n\n')
+        if (lastDoubleNewline !== -1) {
+          const completedPart = trailing.slice(0, lastDoubleNewline).trim()
+          const activeTail = trailing.slice(lastDoubleNewline + 2)
+          if (completedPart) {
+            result.push({
+              id: `md-${segIdx++}`,
+              type: 'markdown',
+              content: completedPart,
+              renderedHtml: renderMarkdown(completedPart),
+            })
+          }
+          result.push({
+            id: 'stream-tail',
+            type: 'streaming-text',
+            content: activeTail,
+          })
+        } else {
+          result.push({
+            id: 'stream-tail',
+            type: 'streaming-text',
+            content: trailing,
+          })
+        }
       } else {
         if (trailing.trim()) {
           result.push({
