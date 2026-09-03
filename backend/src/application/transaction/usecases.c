@@ -10,8 +10,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-int tx_usecase_create(void* pool, const create_tx_cmd_t* cmd, tx_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+tx_usecase_create(void* pool, const create_tx_cmd_t* cmd, tx_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
 
     if (!cmd || cmd->user_id <= 0) {
@@ -27,15 +31,19 @@ int tx_usecase_create(void* pool, const create_tx_cmd_t* cmd, tx_usecase_result_
         return -1;
     }
 
-    if (cmd->source_type && strcmp(cmd->source_type, "income") != 0 && strcmp(cmd->source_type, "expense") != 0) {
+    if (cmd->source_type && strcmp(cmd->source_type, "income") != 0 &&
+        strcmp(cmd->source_type, "expense") != 0) {
         out_res->code = 1002;
-        snprintf(out_res->message, sizeof(out_res->message), "source_type 必须为 income 或 expense");
+        snprintf(
+            out_res->message, sizeof(out_res->message), "source_type 必须为 income 或 expense");
         return -1;
     }
 
     if (cmd->asset_id <= 0 || !cmd->type || cmd->amount <= 0 || !cmd->date) {
         out_res->code = 1002;
-        snprintf(out_res->message, sizeof(out_res->message), "asset_id、transaction_type、amount、transaction_date 为必填");
+        snprintf(out_res->message,
+                 sizeof(out_res->message),
+                 "asset_id、transaction_type、amount、transaction_date 为必填");
         return -1;
     }
 
@@ -59,7 +67,7 @@ int tx_usecase_create(void* pool, const create_tx_cmd_t* cmd, tx_usecase_result_
     }
 
     const char* currency = (cmd->currency && cmd->currency[0]) ? cmd->currency : "CNY";
-    double fee = (cmd->fee > 0) ? cmd->fee : 0.0;
+    double      fee = (cmd->fee > 0) ? cmd->fee : 0.0;
 
     currency_t cur = currency_from_str(currency);
     money_t    amt_m, fee_m;
@@ -80,13 +88,20 @@ int tx_usecase_create(void* pool, const create_tx_cmd_t* cmd, tx_usecase_result_
     domain_tx.fee = fee_m;
     snprintf(domain_tx.type, sizeof(domain_tx.type), "%s", cmd->type);
     snprintf(domain_tx.fee_currency, sizeof(domain_tx.fee_currency), "%s", currency);
-    if (cmd->note) snprintf(domain_tx.note, sizeof(domain_tx.note), "%s", cmd->note);
-    if (cmd->date) snprintf(domain_tx.tx_time, sizeof(domain_tx.tx_time), "%s", cmd->date);
+    if (cmd->note) {
+        snprintf(domain_tx.note, sizeof(domain_tx.note), "%s", cmd->note);
+    }
+    if (cmd->date) {
+        snprintf(domain_tx.tx_time, sizeof(domain_tx.tx_time), "%s", cmd->date);
+    }
 
     char rule_err[256] = {0};
     if (mf_tx_rule_validate(&domain_tx, rule_err, sizeof(rule_err)) != 0) {
         out_res->code = 1002;
-        snprintf(out_res->message, sizeof(out_res->message), "%s", rule_err[0] ? rule_err : "业务规则校验失败");
+        snprintf(out_res->message,
+                 sizeof(out_res->message),
+                 "%s",
+                 rule_err[0] ? rule_err : "业务规则校验失败");
         return -1;
     }
 
@@ -127,8 +142,12 @@ int tx_usecase_create(void* pool, const create_tx_cmd_t* cmd, tx_usecase_result_
     return 0;
 }
 
-int tx_usecase_update(void* pool, const update_tx_cmd_t* cmd, tx_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+tx_usecase_update(void* pool, const update_tx_cmd_t* cmd, tx_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
 
     if (!cmd || cmd->user_id <= 0 || cmd->tx_id <= 0) {
@@ -137,48 +156,60 @@ int tx_usecase_update(void* pool, const update_tx_cmd_t* cmd, tx_usecase_result_
         return -1;
     }
 
-    csilk_json_t* old_row = tx_get(pool, cmd->user_id, cmd->tx_id);
-    if (!old_row) {
+    csilk_json_t* old_rows = tx_get_old((csilk_db_pool_t*)pool, cmd->user_id, cmd->tx_id);
+    if (!old_rows || csilk_json_array_size(old_rows) == 0) {
+        if (old_rows) {
+            csilk_json_free(old_rows);
+        }
         out_res->code = 1003;
         snprintf(out_res->message, sizeof(out_res->message), "未找到交易记录");
         return -1;
     }
+    const csilk_json_t* old_row = csilk_json_array_get(old_rows, 0);
 
-    int64_t old_asset_id = db_get_int(old_row, "asset_id");
-    const char* type = (cmd->type && cmd->type[0]) ? cmd->type : csilk_json_get_string(old_row, "transaction_type");
+    int64_t     old_asset_id = db_get_int(old_row, "asset_id");
+    const char* type = (cmd->type && cmd->type[0])
+                           ? cmd->type
+                           : csilk_json_get_string(old_row, "transaction_type");
     if (!type || strlen(type) == 0) {
         type = csilk_json_get_string(old_row, "type");
     }
 
     const tx_type_t* ttype = tx_type_lookup(type ? type : "");
     if (!ttype) {
-        csilk_json_free(old_row);
+        csilk_json_free(old_rows);
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "未知交易类型");
         return -1;
     }
 
-    const char* currency = (cmd->currency && cmd->currency[0]) ? cmd->currency : csilk_json_get_string(old_row, "currency");
-    if (!currency) currency = "CNY";
+    const char* currency = (cmd->currency && cmd->currency[0])
+                               ? cmd->currency
+                               : csilk_json_get_string(old_row, "currency");
+    if (!currency) {
+        currency = "CNY";
+    }
 
-    double amount = (cmd->amount > 0) ? cmd->amount : db_get_num(old_row, "amount");
-    double price = (cmd->price > 0) ? cmd->price : db_get_num(old_row, "price_per_unit");
-    double qty = (cmd->amount > 0) ? cmd->amount : db_get_num(old_row, "quantity");
-    double fee = (cmd->fee >= 0) ? cmd->fee : db_get_num(old_row, "fee");
-    const char* date = (cmd->date && cmd->date[0]) ? cmd->date : csilk_json_get_string(old_row, "transaction_date");
+    double      amount = (cmd->amount > 0) ? cmd->amount : db_get_num(old_row, "amount");
+    double      price = (cmd->price > 0) ? cmd->price : db_get_num(old_row, "price_per_unit");
+    double      qty = (cmd->amount > 0) ? cmd->amount : db_get_num(old_row, "quantity");
+    double      fee = (cmd->fee >= 0) ? cmd->fee : db_get_num(old_row, "fee");
+    const char* date = (cmd->date && cmd->date[0])
+                           ? cmd->date
+                           : csilk_json_get_string(old_row, "transaction_date");
     const char* note = cmd->note ? cmd->note : csilk_json_get_string(old_row, "note");
 
-    if (csilk_db_exec(pool, "BEGIN TRANSACTION") != 0) {
-        csilk_json_free(old_row);
+    if (csilk_db_exec((csilk_db_pool_t*)pool, "BEGIN TRANSACTION") != 0) {
+        csilk_json_free(old_rows);
         out_res->code = 1004;
         snprintf(out_res->message, sizeof(out_res->message), "数据库错误");
         return -1;
     }
 
     /* 1. 回滚原有交易 */
-    if (ledger_reverse_tx(pool, cmd->user_id, cmd->tx_id) != 0) {
-        csilk_db_exec(pool, "ROLLBACK");
-        csilk_json_free(old_row);
+    if (ledger_reverse_tx((csilk_db_pool_t*)pool, cmd->user_id, cmd->tx_id) != 0) {
+        csilk_db_exec((csilk_db_pool_t*)pool, "ROLLBACK");
+        csilk_json_free(old_rows);
         out_res->code = 1004;
         snprintf(out_res->message, sizeof(out_res->message), "原交易回滚失败");
         return -1;
@@ -186,8 +217,8 @@ int tx_usecase_update(void* pool, const update_tx_cmd_t* cmd, tx_usecase_result_
 
     /* 2. 应用新交易状态 */
     currency_t cur = currency_from_str(currency);
-    money_t amt_m, fee_m;
-    price_t price_p;
+    money_t    amt_m, fee_m;
+    price_t    price_p;
     quantity_t qty_q;
     money_from_double(amount, cur, &amt_m);
     money_from_double(fee, cur, &fee_m);
@@ -211,23 +242,27 @@ int tx_usecase_update(void* pool, const update_tx_cmd_t* cmd, tx_usecase_result_
         .parent_tx_id = 0,
     };
 
-    if (ledger_apply_tx(pool, &ltx) != 0) {
-        csilk_db_exec(pool, "ROLLBACK");
-        csilk_json_free(old_row);
+    if (ledger_apply_tx((csilk_db_pool_t*)pool, &ltx) != 0) {
+        csilk_db_exec((csilk_db_pool_t*)pool, "ROLLBACK");
+        csilk_json_free(old_rows);
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "新交易处理失败或持有份额不足");
         return -1;
     }
 
-    csilk_db_exec(pool, "COMMIT");
-    csilk_json_free(old_row);
+    csilk_db_exec((csilk_db_pool_t*)pool, "COMMIT");
+    csilk_json_free(old_rows);
     out_res->code = 0;
     snprintf(out_res->message, sizeof(out_res->message), "OK");
     return 0;
 }
 
-int tx_usecase_delete(void* pool, const delete_tx_cmd_t* cmd, tx_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+tx_usecase_delete(void* pool, const delete_tx_cmd_t* cmd, tx_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
 
     if (!cmd || cmd->user_id <= 0 || cmd->tx_id <= 0) {
@@ -264,8 +299,12 @@ int tx_usecase_delete(void* pool, const delete_tx_cmd_t* cmd, tx_usecase_result_
     return 0;
 }
 
-int tx_usecase_query(void* pool, const query_tx_filter_t* filter, tx_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+tx_usecase_query(void* pool, const query_tx_filter_t* filter, tx_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
 
     if (!filter || filter->user_id <= 0) {
@@ -274,19 +313,31 @@ int tx_usecase_query(void* pool, const query_tx_filter_t* filter, tx_usecase_res
         return -1;
     }
 
-    int64_t total = 0;
-    csilk_json_t* list = tx_list(
-        pool,
-        filter->user_id,
-        filter->page,
-        filter->page_size,
-        filter->asset_id,
-        filter->type,
-        filter->category_id,
-        filter->start_date,
-        filter->end_date,
-        &total
-    );
+    char        aid_str[32] = {0};
+    char        cid_str[32] = {0};
+    const char* aid_ptr = NULL;
+    const char* cid_ptr = NULL;
+    if (filter->asset_id > 0) {
+        snprintf(aid_str, sizeof(aid_str), "%lld", (long long)filter->asset_id);
+        aid_ptr = aid_str;
+    }
+    if (filter->category_id > 0) {
+        snprintf(cid_str, sizeof(cid_str), "%lld", (long long)filter->category_id);
+        cid_ptr = cid_str;
+    }
+
+    int64_t       total = 0;
+    csilk_json_t* list = tx_list((csilk_db_pool_t*)pool,
+                                 filter->user_id,
+                                 filter->page,
+                                 filter->page_size,
+                                 aid_ptr,
+                                 cid_ptr,
+                                 filter->type,
+                                 NULL,
+                                 filter->start_date,
+                                 filter->end_date,
+                                 &total);
 
     out_res->code = 0;
     out_res->total = total;

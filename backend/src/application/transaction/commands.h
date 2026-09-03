@@ -42,8 +42,8 @@ typedef struct update_tx_cmd {
  * @brief 删除交易命令 (Delete Transaction Command)
  */
 typedef struct delete_tx_cmd {
-    int64_t     user_id;
-    int64_t     tx_id;
+    int64_t user_id;
+    int64_t tx_id;
 } delete_tx_cmd_t;
 
 /**

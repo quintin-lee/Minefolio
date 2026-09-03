@@ -39,8 +39,11 @@ int mf_tx_repo_delete(void* db_pool, int64_t user_id, int64_t id);
  * @param out_count 查询到的子单数量
  * @return 0: 成功, -1: 失败
  */
-int mf_tx_repo_find_fee_children(void* db_pool, int64_t user_id, int64_t parent_tx_id,
-                                 mf_transaction_t** out_list, size_t* out_count);
+int mf_tx_repo_find_fee_children(void*              db_pool,
+                                 int64_t            user_id,
+                                 int64_t            parent_tx_id,
+                                 mf_transaction_t** out_list,
+                                 size_t*            out_count);
 
 /**
  * @brief 级联物理删除指定主单名下的全部手续费子单
