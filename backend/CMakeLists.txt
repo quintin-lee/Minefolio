@@ -172,4 +172,11 @@ target_compile_options(test_domain_asset PRIVATE -UNDEBUG)
 target_link_libraries(test_domain_asset PRIVATE m)
 add_test(NAME test_domain_asset COMMAND test_domain_asset)
 
+add_executable(test_domain_portfolio tests/unit/test_domain_portfolio.c ${FINANCIAL_CORE_SOURCES} src/domain/portfolio/rules.c)
+target_include_directories(test_domain_portfolio PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_domain_portfolio PRIVATE -UNDEBUG)
+target_link_libraries(test_domain_portfolio PRIVATE m)
+add_test(NAME test_domain_portfolio COMMAND test_domain_portfolio)
+
+
 
