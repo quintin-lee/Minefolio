@@ -17,8 +17,8 @@ int mf_market_repo_save_exchange_rate(void* pool, const char* currency, double r
 /**
  * @brief 记录资产最新价格历史快照 (K 线)
  */
-int mf_market_repo_record_price_history(void* pool, int64_t asset_id, const char* date,
-                                       price_t price, currency_t cur);
+int mf_market_repo_record_price_history(
+    void* pool, int64_t asset_id, const char* date, price_t price, currency_t cur);
 
 /**
  * @brief 更新资产的最新市场行情净值/价格

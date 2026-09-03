@@ -7,14 +7,16 @@
 /**
  * @brief 计算行情同步带来的资产持仓总市值差量：delta = (new_price - old_price) * quantity
  */
-int mf_market_rule_calc_sync_delta(price_t old_price, price_t new_price, quantity_t qty,
-                                   currency_t cur, money_t* out_delta);
+int mf_market_rule_calc_sync_delta(
+    price_t old_price, price_t new_price, quantity_t qty, currency_t cur, money_t* out_delta);
 
 /**
  * @brief 外币金额按汇率换算为基准币种金额
  */
-int mf_market_rule_convert_currency(money_t src, double rate_to_cny,
-                                    currency_t cny_currency, money_t* out_cny);
+int mf_market_rule_convert_currency(money_t    src,
+                                    double     rate_to_cny,
+                                    currency_t cny_currency,
+                                    money_t*   out_cny);
 
 /**
  * @brief 校验市场行情报价快照数据的有效性

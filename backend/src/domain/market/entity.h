@@ -12,13 +12,13 @@
  * @note 严格禁止依赖任何外部 DB、传输协议或 JSON 框架
  */
 typedef struct mf_market_quote {
-    char       symbol[64];        /**< 标的代码 (如 "sh600519", "AAPL", "BTC") */
-    char       name[128];         /**< 标的名称/公司简称 */
-    char       source[32];        /**< 行情数据来源 (如 "stock_cn", "fund_cn", "yahoo", "binance") */
-    price_t    current_price;     /**< 最新成交价/单位净值 */
-    double     change_percent;    /**< 当日涨跌幅百分比 (如 2.35 表示 +2.35%) */
-    currency_t currency;          /**< 标的计价货币 */
-    char       quote_time[32];    /**< 报价时间戳 */
+    char       symbol[64];     /**< 标的代码 (如 "sh600519", "AAPL", "BTC") */
+    char       name[128];      /**< 标的名称/公司简称 */
+    char       source[32];     /**< 行情数据来源 (如 "stock_cn", "fund_cn", "yahoo", "binance") */
+    price_t    current_price;  /**< 最新成交价/单位净值 */
+    double     change_percent; /**< 当日涨跌幅百分比 (如 2.35 表示 +2.35%) */
+    currency_t currency;       /**< 标的计价货币 */
+    char       quote_time[32]; /**< 报价时间戳 */
 } mf_market_quote_t;
 
 /**
