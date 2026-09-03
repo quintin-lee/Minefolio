@@ -5,6 +5,7 @@
 #include "repositories/ai_settings_repo.h"
 #include "repositories/ai_trace_repo.h"
 #include "services/ai_workflow_service.h"
+#include "services/ai_service.h"
 #include "common/ai_config.h"
 #include "config/key_manager.h"
 #include "config/secret.h"
@@ -14,7 +15,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-static void parse_string_array(const csilk_json_t* arr, char*** out_ptrs, int* out_count) {
+static void
+parse_string_array(const csilk_json_t* arr, char*** out_ptrs, int* out_count)
+{
     if (!arr || !csilk_json_is_array(arr)) {
         *out_ptrs = NULL;
         *out_count = 0;
@@ -34,8 +37,12 @@ static void parse_string_array(const csilk_json_t* arr, char*** out_ptrs, int* o
     (*out_ptrs)[n] = NULL;
 }
 
-int ai_usecase_models_list(csilk_json_t** out_data, ai_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+ai_usecase_models_list(csilk_json_t** out_data, ai_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
     if (!out_data) {
         out_res->code = 1002;
@@ -69,9 +76,18 @@ int ai_usecase_models_list(csilk_json_t** out_data, ai_usecase_result_t* out_res
     return 0;
 }
 
-int ai_usecase_sessions_list(void* pool, int64_t user_id, int64_t page, int64_t page_size,
-                            csilk_json_t** out_data, int64_t* out_total, ai_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+ai_usecase_sessions_list(void*                pool,
+                         int64_t              user_id,
+                         int64_t              page,
+                         int64_t              page_size,
+                         csilk_json_t**       out_data,
+                         int64_t*             out_total,
+                         ai_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
     if (!pool || user_id <= 0 || !out_data || !out_total) {
         out_res->code = 1001;
@@ -79,7 +95,7 @@ int ai_usecase_sessions_list(void* pool, int64_t user_id, int64_t page, int64_t 
         return -1;
     }
 
-    int64_t total = 0;
+    int64_t       total = 0;
     csilk_json_t* list = ai_session_list((csilk_db_pool_t*)pool, user_id, page, page_size, &total);
     if (!list) {
         out_res->code = 500;
@@ -94,9 +110,15 @@ int ai_usecase_sessions_list(void* pool, int64_t user_id, int64_t page, int64_t 
     return 0;
 }
 
-int ai_usecase_sessions_create(void* pool, const ai_create_session_cmd_t* cmd,
-                              int64_t* out_id, ai_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+ai_usecase_sessions_create(void*                          pool,
+                           const ai_create_session_cmd_t* cmd,
+                           int64_t*                       out_id,
+                           ai_usecase_result_t*           out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
     if (!pool || !cmd || cmd->user_id <= 0 || !out_id) {
         out_res->code = 1001;
@@ -106,13 +128,15 @@ int ai_usecase_sessions_create(void* pool, const ai_create_session_cmd_t* cmd,
 
     char title_buf[128];
     char err[256];
-    if (mf_ai_rule_validate_session_title(cmd->title, title_buf, sizeof(title_buf), err, sizeof(err)) != 0) {
+    if (mf_ai_rule_validate_session_title(
+            cmd->title, title_buf, sizeof(title_buf), err, sizeof(err)) != 0) {
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "%s", err);
         return -1;
     }
 
-    int64_t id = ai_session_insert((csilk_db_pool_t*)pool, cmd->user_id, title_buf, cmd->model, cmd->provider);
+    int64_t id = ai_session_insert(
+        (csilk_db_pool_t*)pool, cmd->user_id, title_buf, cmd->model, cmd->provider);
     if (id <= 0) {
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "创建失败");
@@ -125,9 +149,13 @@ int ai_usecase_sessions_create(void* pool, const ai_create_session_cmd_t* cmd,
     return 0;
 }
 
-int ai_usecase_sessions_get(void* pool, int64_t user_id, int64_t id,
-                           csilk_json_t** out_data, ai_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+ai_usecase_sessions_get(
+    void* pool, int64_t user_id, int64_t id, csilk_json_t** out_data, ai_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
     if (!pool || user_id <= 0 || id <= 0 || !out_data) {
         out_res->code = 1001;
@@ -148,9 +176,14 @@ int ai_usecase_sessions_get(void* pool, int64_t user_id, int64_t id,
     return 0;
 }
 
-int ai_usecase_sessions_update(void* pool, const ai_update_session_cmd_t* cmd,
-                              ai_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+ai_usecase_sessions_update(void*                          pool,
+                           const ai_update_session_cmd_t* cmd,
+                           ai_usecase_result_t*           out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
     if (!pool || !cmd || cmd->user_id <= 0 || cmd->id <= 0) {
         out_res->code = 1001;
@@ -158,7 +191,8 @@ int ai_usecase_sessions_update(void* pool, const ai_update_session_cmd_t* cmd,
         return -1;
     }
 
-    int ok = ai_session_update((csilk_db_pool_t*)pool, cmd->user_id, cmd->id, cmd->title, cmd->model);
+    int ok =
+        ai_session_update((csilk_db_pool_t*)pool, cmd->user_id, cmd->id, cmd->title, cmd->model);
     if (!ok) {
         out_res->code = 1003;
         snprintf(out_res->message, sizeof(out_res->message), "会话不存在");
@@ -170,9 +204,12 @@ int ai_usecase_sessions_update(void* pool, const ai_update_session_cmd_t* cmd,
     return 0;
 }
 
-int ai_usecase_sessions_delete(void* pool, int64_t user_id, int64_t id,
-                              ai_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+ai_usecase_sessions_delete(void* pool, int64_t user_id, int64_t id, ai_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
     if (!pool || user_id <= 0 || id <= 0) {
         out_res->code = 1001;
@@ -192,10 +229,19 @@ int ai_usecase_sessions_delete(void* pool, int64_t user_id, int64_t id,
     return 0;
 }
 
-int ai_usecase_messages_list(void* pool, int64_t user_id, int64_t session_id,
-                            int64_t page, int64_t page_size,
-                            csilk_json_t** out_data, int64_t* out_total, ai_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+ai_usecase_messages_list(void*                pool,
+                         int64_t              user_id,
+                         int64_t              session_id,
+                         int64_t              page,
+                         int64_t              page_size,
+                         csilk_json_t**       out_data,
+                         int64_t*             out_total,
+                         ai_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
     if (!pool || user_id <= 0 || session_id <= 0 || !out_data || !out_total) {
         out_res->code = 1001;
@@ -211,8 +257,9 @@ int ai_usecase_messages_list(void* pool, int64_t user_id, int64_t session_id,
     }
     csilk_json_free(sess);
 
-    int64_t total = 0;
-    csilk_json_t* list = ai_message_list((csilk_db_pool_t*)pool, session_id, page, page_size, &total);
+    int64_t       total = 0;
+    csilk_json_t* list =
+        ai_message_list((csilk_db_pool_t*)pool, session_id, page, page_size, &total);
 
     *out_data = list;
     *out_total = total;
@@ -221,8 +268,12 @@ int ai_usecase_messages_list(void* pool, int64_t user_id, int64_t session_id,
     return 0;
 }
 
-int ai_usecase_settings_get(csilk_json_t** out_data, ai_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+ai_usecase_settings_get(csilk_json_t** out_data, ai_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
     if (!out_data) {
         out_res->code = 1002;
@@ -264,9 +315,12 @@ int ai_usecase_settings_get(csilk_json_t** out_data, ai_usecase_result_t* out_re
     return 0;
 }
 
-int ai_usecase_settings_update(void* pool, const csilk_json_t* body,
-                              ai_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+ai_usecase_settings_update(void* pool, const csilk_json_t* body, ai_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
     if (!body) {
         out_res->code = 1002;
@@ -287,13 +341,13 @@ int ai_usecase_settings_update(void* pool, const csilk_json_t* body,
 
     const csilk_json_t* prov_arr = csilk_json_get(body, "providers");
     if (prov_arr && csilk_json_is_array(prov_arr)) {
-        int pc = (int)csilk_json_array_size(prov_arr);
+        int            pc = (int)csilk_json_array_size(prov_arr);
         ai_provider_t* new_provs = (ai_provider_t*)malloc(sizeof(ai_provider_t) * (size_t)pc);
         if (new_provs) {
             memset(new_provs, 0, sizeof(ai_provider_t) * (size_t)pc);
             for (int i = 0; i < pc; i++) {
                 const csilk_json_t* p = csilk_json_array_get(prov_arr, i);
-                const char* pid = csilk_json_get_string(p, "id") ?: "";
+                const char*         pid = csilk_json_get_string(p, "id") ?: "";
                 strncpy(new_provs[i].id, pid, sizeof(new_provs[i].id) - 1);
                 strncpy(new_provs[i].name,
                         csilk_json_get_string(p, "name") ?: "",
@@ -355,16 +409,22 @@ int ai_usecase_settings_update(void* pool, const csilk_json_t* body,
     }
 
     const char* dp = csilk_json_get_string(body, "default_provider");
-    if (dp) strncpy(cfg.default_provider, dp, sizeof(cfg.default_provider) - 1);
+    if (dp) {
+        strncpy(cfg.default_provider, dp, sizeof(cfg.default_provider) - 1);
+    }
     const char* dm = csilk_json_get_string(body, "default_model");
-    if (dm) strncpy(cfg.default_model, dm, sizeof(cfg.default_model) - 1);
+    if (dm) {
+        strncpy(cfg.default_model, dm, sizeof(cfg.default_model) - 1);
+    }
     const csilk_json_t* csv = csilk_json_get(body, "context_size");
     if (csv) {
         double v = csilk_json_number_value(csv);
         cfg.context_size = mf_ai_rule_clamp_context_size((int)v);
     }
     const char* sp = csilk_json_get_string(body, "system_prompt");
-    if (sp) strncpy(cfg.system_prompt, sp, sizeof(cfg.system_prompt) - 1);
+    if (sp) {
+        strncpy(cfg.system_prompt, sp, sizeof(cfg.system_prompt) - 1);
+    }
 
     csilk_json_t* root = csilk_json_object();
     csilk_json_t* prov_arr_out = csilk_json_array();
@@ -397,7 +457,7 @@ int ai_usecase_settings_update(void* pool, const csilk_json_t* body,
     }
 
     const char* cfg_path = config_env_get("AI_CONFIG", NULL, 0, "config/ai.json");
-    int file_save_ok = ai_config_save(cfg_path, &cfg);
+    int         file_save_ok = ai_config_save(cfg_path, &cfg);
 
     ai_config_free(&cfg);
 
@@ -407,7 +467,7 @@ int ai_usecase_settings_update(void* pool, const csilk_json_t* body,
         return -1;
     }
 
-    extern void ai_init(csilk_db_pool_t* pool);
+    extern void ai_init(csilk_db_pool_t * pool);
     extern void ai_shutdown(void);
     ai_shutdown();
     ai_init(db_pool);
@@ -417,8 +477,12 @@ int ai_usecase_settings_update(void* pool, const csilk_json_t* body,
     return 0;
 }
 
-int ai_usecase_workflows_list(csilk_json_t** out_data, ai_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+ai_usecase_workflows_list(csilk_json_t** out_data, ai_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
     if (!out_data) {
         out_res->code = 1002;
@@ -433,10 +497,20 @@ int ai_usecase_workflows_list(csilk_json_t** out_data, ai_usecase_result_t* out_
     return 0;
 }
 
-int ai_usecase_trace_list(void* pool, int64_t user_id, int64_t page, int64_t page_size,
-                         const char* provider, const char* model,
-                         csilk_json_t** out_data, int64_t* out_total, ai_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+ai_usecase_trace_list(void*                pool,
+                      int64_t              user_id,
+                      int64_t              page,
+                      int64_t              page_size,
+                      const char*          provider,
+                      const char*          model,
+                      csilk_json_t**       out_data,
+                      int64_t*             out_total,
+                      ai_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
     if (!pool || user_id <= 0 || !out_data || !out_total) {
         out_res->code = 1001;
@@ -444,8 +518,9 @@ int ai_usecase_trace_list(void* pool, int64_t user_id, int64_t page, int64_t pag
         return -1;
     }
 
-    int64_t total = 0;
-    csilk_json_t* list = ai_trace_list((csilk_db_pool_t*)pool, user_id, page, page_size, provider, model, &total);
+    int64_t       total = 0;
+    csilk_json_t* list =
+        ai_trace_list((csilk_db_pool_t*)pool, user_id, page, page_size, provider, model, &total);
     if (!list) {
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "查询 Trace 失败");
@@ -459,9 +534,15 @@ int ai_usecase_trace_list(void* pool, int64_t user_id, int64_t page, int64_t pag
     return 0;
 }
 
-int ai_usecase_trace_stats(void* pool, int64_t user_id,
-                          csilk_json_t** out_data, ai_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+ai_usecase_trace_stats(void*                pool,
+                       int64_t              user_id,
+                       csilk_json_t**       out_data,
+                       ai_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
     if (!pool || user_id <= 0 || !out_data) {
         out_res->code = 1001;
@@ -469,22 +550,34 @@ int ai_usecase_trace_stats(void* pool, int64_t user_id,
         return -1;
     }
 
-    csilk_json_t* stats = ai_trace_stats((csilk_db_pool_t*)pool, user_id);
-    if (!stats) {
+    csilk_json_t* r = ai_trace_stats((csilk_db_pool_t*)pool, user_id);
+    if (!r) {
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "查询统计失败");
         return -1;
     }
 
-    *out_data = stats;
+    csilk_json_t* stats = csilk_json_array_get(r, 0);
+    csilk_json_t* out = csilk_json_object();
+    csilk_json_add_number(out, "total_traces", db_get_int(stats, "total_traces"));
+    csilk_json_add_number(out, "total_tokens", db_get_int(stats, "total_tokens"));
+    csilk_json_add_number(out, "avg_latency_ms", db_get_num(stats, "avg_latency_ms"));
+    csilk_json_add_number(out, "avg_first_token_ms", db_get_num(stats, "avg_first_token_ms"));
+    csilk_json_free(r);
+
+    *out_data = out;
     out_res->code = 0;
     snprintf(out_res->message, sizeof(out_res->message), "ok");
     return 0;
 }
 
-int ai_usecase_trace_get(void* pool, int64_t user_id, int64_t id,
-                        csilk_json_t** out_data, ai_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+ai_usecase_trace_get(
+    void* pool, int64_t user_id, int64_t id, csilk_json_t** out_data, ai_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
     if (!pool || user_id <= 0 || id <= 0 || !out_data) {
         out_res->code = 1001;
@@ -492,14 +585,43 @@ int ai_usecase_trace_get(void* pool, int64_t user_id, int64_t id,
         return -1;
     }
 
-    csilk_json_t* trace = ai_trace_get((csilk_db_pool_t*)pool, user_id, id);
-    if (!trace) {
+    csilk_json_t* r = ai_trace_get((csilk_db_pool_t*)pool, user_id, id);
+    if (!r || csilk_json_array_size(r) == 0) {
+        if (r) {
+            csilk_json_free(r);
+        }
         out_res->code = 1003;
         snprintf(out_res->message, sizeof(out_res->message), "Trace 不存在");
         return -1;
     }
 
-    *out_data = trace;
+    csilk_json_t* row = csilk_json_array_get(r, 0);
+    csilk_json_t* out = csilk_json_object();
+    csilk_json_add_number(out, "id", db_get_num(row, "id"));
+    csilk_json_add_number(out, "user_id", db_get_num(row, "user_id"));
+    csilk_json_add_number(out, "session_id", db_get_num(row, "session_id"));
+    csilk_json_add_string(out, "provider", csilk_json_get_string(row, "provider"));
+    csilk_json_add_string(out, "model", csilk_json_get_string(row, "model"));
+    csilk_json_add_string(out, "input_messages", csilk_json_get_string(row, "input_messages"));
+    csilk_json_add_string(out, "output_content", csilk_json_get_string(row, "output_content"));
+    csilk_json_add_string(out, "system_prompt", csilk_json_get_string(row, "system_prompt"));
+    csilk_json_add_number(out, "prompt_tokens", db_get_num(row, "prompt_tokens"));
+    csilk_json_add_number(out, "completion_tokens", db_get_num(row, "completion_tokens"));
+    csilk_json_add_number(out, "total_tokens", db_get_num(row, "total_tokens"));
+    csilk_json_add_number(out, "latency_ms", db_get_num(row, "latency_ms"));
+    csilk_json_add_number(out, "first_token_ms", db_get_num(row, "first_token_ms"));
+    csilk_json_add_number(out, "tokens_per_sec", db_get_num(row, "tokens_per_sec"));
+    csilk_json_add_number(out, "cost_usd", db_get_num(row, "cost_usd"));
+    csilk_json_add_number(out, "temperature", db_get_num(row, "temperature"));
+    csilk_json_add_number(out, "max_tokens", db_get_num(row, "max_tokens"));
+    csilk_json_add_number(out, "top_p", db_get_num(row, "top_p"));
+    csilk_json_add_string(out, "status", csilk_json_get_string(row, "status"));
+    csilk_json_add_string(out, "error_message", csilk_json_get_string(row, "error_message"));
+    csilk_json_add_string(out, "metadata", csilk_json_get_string(row, "metadata"));
+    csilk_json_add_string(out, "created_at", csilk_json_get_string(row, "created_at"));
+    csilk_json_free(r);
+
+    *out_data = out;
     out_res->code = 0;
     snprintf(out_res->message, sizeof(out_res->message), "ok");
     return 0;
