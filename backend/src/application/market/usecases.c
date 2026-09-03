@@ -14,16 +14,23 @@
 #include <string.h>
 #include <time.h>
 
-static void get_today_str(char* out, size_t cap) {
-    time_t now = time(NULL);
+static void
+get_today_str(char* out, size_t cap)
+{
+    time_t    now = time(NULL);
     struct tm tm_now;
     localtime_r(&now, &tm_now);
     strftime(out, cap, "%Y-%m-%d", &tm_now);
 }
 
-int market_usecase_search(const search_market_cmd_t* cmd, csilk_json_t** out_list,
-                          market_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+market_usecase_search(const search_market_cmd_t* cmd,
+                      csilk_json_t**             out_list,
+                      market_usecase_result_t*   out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
     if (!cmd || !cmd->keyword || !cmd->keyword[0] || !out_list) {
         out_res->code = 1002;
@@ -32,7 +39,7 @@ int market_usecase_search(const search_market_cmd_t* cmd, csilk_json_t** out_lis
     }
 
     market_search_item_t items[30];
-    int n = quote_engine_search(cmd->keyword, items, 30);
+    int                  n = quote_engine_search(cmd->keyword, items, 30);
 
     csilk_json_t* arr = csilk_json_array();
     for (int i = 0; i < n; i++) {
@@ -52,9 +59,14 @@ int market_usecase_search(const search_market_cmd_t* cmd, csilk_json_t** out_lis
     return 0;
 }
 
-int market_usecase_quote(const fetch_quote_cmd_t* cmd, csilk_json_t** out_quote,
-                         market_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+market_usecase_quote(const fetch_quote_cmd_t* cmd,
+                     csilk_json_t**           out_quote,
+                     market_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
     if (!cmd || !cmd->symbol || !cmd->symbol[0] || !out_quote) {
         out_res->code = 1002;
@@ -84,36 +96,44 @@ int market_usecase_quote(const fetch_quote_cmd_t* cmd, csilk_json_t** out_quote,
     return 0;
 }
 
-int market_usecase_do_sync_user(void* pool, int64_t user_id, int* out_synced, int* out_failed) {
+int
+market_usecase_do_sync_user(void* pool, int64_t user_id, int* out_synced, int* out_failed)
+{
     csilk_json_t* assets = asset_list_for_sync((csilk_db_pool_t*)pool, user_id);
     if (!assets) {
-        if (out_synced) *out_synced = 0;
-        if (out_failed) *out_failed = 0;
+        if (out_synced) {
+            *out_synced = 0;
+        }
+        if (out_failed) {
+            *out_failed = 0;
+        }
         return 0;
     }
 
-    int synced = 0;
-    int failed = 0;
+    int  synced = 0;
+    int  failed = 0;
     char today[32];
     get_today_str(today, sizeof(today));
 
     size_t count = csilk_json_array_size(assets);
     for (size_t i = 0; i < count; i++) {
         const csilk_json_t* item = csilk_json_array_get(assets, i);
-        int64_t aid = db_get_int(item, "id");
-        int64_t uid = db_get_int(item, "user_id");
-        const char* symbol = csilk_json_get_string(item, "symbol");
-        const char* source = csilk_json_get_string(item, "quote_source");
-        double old_nv = db_get_num(item, "net_value");
-        double qty_val = db_get_num(item, "quantity");
+        int64_t             aid = db_get_int(item, "id");
+        int64_t             uid = db_get_int(item, "user_id");
+        const char*         symbol = csilk_json_get_string(item, "symbol");
+        const char*         source = csilk_json_get_string(item, "quote_source");
+        double              old_nv = db_get_num(item, "net_value");
+        double              qty_val = db_get_num(item, "quantity");
 
-        if (!symbol || !symbol[0]) continue;
+        if (!symbol || !symbol[0]) {
+            continue;
+        }
 
         market_quote_t q;
         if (quote_engine_fetch_quote(symbol, source, &q) == 0 && q.current_price > 0) {
-            double new_nv = q.current_price;
-            currency_t cur = currency_from_str(q.currency ? q.currency : "CNY");
-            price_t p_new;
+            double     new_nv = q.current_price;
+            currency_t cur = currency_from_str(q.currency[0] ? q.currency : "CNY");
+            price_t    p_new;
             price_from_double(new_nv, 4, cur, &p_new);
 
             mf_market_repo_update_asset_quote(pool, uid, aid, p_new);
@@ -128,8 +148,13 @@ int market_usecase_do_sync_user(void* pool, int64_t user_id, int* out_synced, in
                 mf_market_rule_calc_sync_delta(p_old, p_new, qty, cur, &delta);
                 double delta_val = money_to_double(delta);
                 if (delta_val != 0.0) {
-                    balance_apply_delta((csilk_db_pool_t*)pool, aid, uid, delta_val,
-                                        "asset_market_sync", aid, "Market quote sync");
+                    balance_apply_delta((csilk_db_pool_t*)pool,
+                                        aid,
+                                        uid,
+                                        delta_val,
+                                        "asset_market_sync",
+                                        aid,
+                                        "Market quote sync");
                 }
             }
             synced++;
@@ -139,14 +164,22 @@ int market_usecase_do_sync_user(void* pool, int64_t user_id, int* out_synced, in
     }
 
     csilk_json_free(assets);
-    if (out_synced) *out_synced = synced;
-    if (out_failed) *out_failed = failed;
+    if (out_synced) {
+        *out_synced = synced;
+    }
+    if (out_failed) {
+        *out_failed = failed;
+    }
     return 0;
 }
 
-int market_usecase_sync_all(void* pool, int64_t user_id, int* out_synced, int* out_failed,
-                            market_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+market_usecase_sync_all(
+    void* pool, int64_t user_id, int* out_synced, int* out_failed, market_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
     if (!pool || user_id <= 0) {
         out_res->code = 1001;
@@ -157,16 +190,27 @@ int market_usecase_sync_all(void* pool, int64_t user_id, int* out_synced, int* o
     int synced = 0, failed = 0;
     market_usecase_do_sync_user(pool, user_id, &synced, &failed);
 
-    if (out_synced) *out_synced = synced;
-    if (out_failed) *out_failed = failed;
+    if (out_synced) {
+        *out_synced = synced;
+    }
+    if (out_failed) {
+        *out_failed = failed;
+    }
     out_res->code = 0;
     snprintf(out_res->message, sizeof(out_res->message), "ok");
     return 0;
 }
 
-int market_usecase_sync_single(void* pool, int64_t user_id, int64_t asset_id,
-                              csilk_json_t** out_res_data, market_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+market_usecase_sync_single(void*                    pool,
+                           int64_t                  user_id,
+                           int64_t                  asset_id,
+                           csilk_json_t**           out_res_data,
+                           market_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
     if (!pool || user_id <= 0 || asset_id <= 0 || !out_res_data) {
         out_res->code = 1002;
@@ -176,17 +220,19 @@ int market_usecase_sync_single(void* pool, int64_t user_id, int64_t asset_id,
 
     csilk_json_t* asset_rows = asset_get((csilk_db_pool_t*)pool, user_id, asset_id);
     if (!asset_rows || csilk_json_array_size(asset_rows) == 0) {
-        if (asset_rows) csilk_json_free(asset_rows);
+        if (asset_rows) {
+            csilk_json_free(asset_rows);
+        }
         out_res->code = 1003;
         snprintf(out_res->message, sizeof(out_res->message), "资产不存在");
         return -1;
     }
 
     const csilk_json_t* item = csilk_json_array_get(asset_rows, 0);
-    const char* symbol = csilk_json_get_string(item, "symbol");
-    const char* source = csilk_json_get_string(item, "quote_source");
-    double old_nv = db_get_num(item, "net_value");
-    double qty_val = db_get_num(item, "quantity");
+    const char*         symbol = csilk_json_get_string(item, "symbol");
+    const char*         source = csilk_json_get_string(item, "quote_source");
+    double              old_nv = db_get_num(item, "net_value");
+    double              qty_val = db_get_num(item, "quantity");
 
     if (!symbol || !symbol[0]) {
         csilk_json_free(asset_rows);
@@ -203,9 +249,9 @@ int market_usecase_sync_single(void* pool, int64_t user_id, int64_t asset_id,
         return -1;
     }
 
-    double new_nv = q.current_price;
-    currency_t cur = currency_from_str(q.currency ? q.currency : "CNY");
-    price_t p_new;
+    double     new_nv = q.current_price;
+    currency_t cur = currency_from_str(q.currency[0] ? q.currency : "CNY");
+    price_t    p_new;
     price_from_double(new_nv, 4, cur, &p_new);
 
     mf_market_repo_update_asset_quote(pool, user_id, asset_id, p_new);
@@ -223,8 +269,13 @@ int market_usecase_sync_single(void* pool, int64_t user_id, int64_t asset_id,
         mf_market_rule_calc_sync_delta(p_old, p_new, qty, cur, &delta);
         double delta_val = money_to_double(delta);
         if (delta_val != 0.0) {
-            balance_apply_delta((csilk_db_pool_t*)pool, asset_id, user_id, delta_val,
-                                "asset_market_sync", asset_id, "Market quote sync");
+            balance_apply_delta((csilk_db_pool_t*)pool,
+                                asset_id,
+                                user_id,
+                                delta_val,
+                                "asset_market_sync",
+                                asset_id,
+                                "Market quote sync");
         }
     }
 
@@ -243,9 +294,17 @@ int market_usecase_sync_single(void* pool, int64_t user_id, int64_t asset_id,
     return 0;
 }
 
-int market_usecase_price_history(void* pool, int64_t user_id, int64_t asset_id, int limit,
-                                csilk_json_t** out_rows, market_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+market_usecase_price_history(void*                    pool,
+                             int64_t                  user_id,
+                             int64_t                  asset_id,
+                             int                      limit,
+                             csilk_json_t**           out_rows,
+                             market_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
     if (!pool || user_id <= 0 || asset_id <= 0 || !out_rows) {
         out_res->code = 1002;
@@ -253,16 +312,23 @@ int market_usecase_price_history(void* pool, int64_t user_id, int64_t asset_id, 
         return -1;
     }
 
-    if (limit <= 0) limit = 90;
-    csilk_json_t* rows = price_history_list_by_asset((csilk_db_pool_t*)pool, user_id, asset_id, limit);
+    if (limit <= 0) {
+        limit = 90;
+    }
+    csilk_json_t* rows =
+        price_history_list_by_asset((csilk_db_pool_t*)pool, user_id, asset_id, limit);
     *out_rows = rows ? rows : csilk_json_array();
     out_res->code = 0;
     snprintf(out_res->message, sizeof(out_res->message), "ok");
     return 0;
 }
 
-int market_usecase_get_settings(csilk_json_t** out_settings, market_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+market_usecase_get_settings(csilk_json_t** out_settings, market_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
     if (!out_settings) {
         out_res->code = 1002;
@@ -271,7 +337,7 @@ int market_usecase_get_settings(csilk_json_t** out_settings, market_usecase_resu
     }
 
     bool auto_sync = true;
-    int interval_min = 30;
+    int  interval_min = 30;
     char sync_mode[32] = "trading_hours";
     market_scheduler_get_config(&auto_sync, &interval_min, sync_mode, sizeof(sync_mode));
 
@@ -287,9 +353,13 @@ int market_usecase_get_settings(csilk_json_t** out_settings, market_usecase_resu
     return 0;
 }
 
-int market_usecase_update_settings(const update_market_settings_cmd_t* cmd,
-                                  market_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+market_usecase_update_settings(const update_market_settings_cmd_t* cmd,
+                               market_usecase_result_t*            out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
     if (!cmd) {
         out_res->code = 1002;
@@ -302,7 +372,7 @@ int market_usecase_update_settings(const update_market_settings_cmd_t* cmd,
     }
 
     bool auto_sync = true;
-    int interval_min = 30;
+    int  interval_min = 30;
     char sync_mode[32] = "trading_hours";
     market_scheduler_get_config(&auto_sync, &interval_min, sync_mode, sizeof(sync_mode));
 
@@ -323,9 +393,14 @@ int market_usecase_update_settings(const update_market_settings_cmd_t* cmd,
     return 0;
 }
 
-int market_usecase_test_proxy(const char* proxy, csilk_json_t** out_data,
-                             market_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+market_usecase_test_proxy(const char*              proxy,
+                          csilk_json_t**           out_data,
+                          market_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
     if (!out_data) {
         out_res->code = 1002;
@@ -334,8 +409,8 @@ int market_usecase_test_proxy(const char* proxy, csilk_json_t** out_data,
     }
 
     char msg[256];
-    int latency_ms = 0;
-    int res = quote_engine_test_connection(proxy, msg, sizeof(msg), &latency_ms);
+    int  latency_ms = 0;
+    int  res = quote_engine_test_connection(proxy, msg, sizeof(msg), &latency_ms);
 
     csilk_json_t* obj = csilk_json_object();
     csilk_json_add_bool(obj, "success", res == 0);
@@ -348,8 +423,12 @@ int market_usecase_test_proxy(const char* proxy, csilk_json_t** out_data,
     return 0;
 }
 
-int market_usecase_get_exchange_rates(csilk_json_t** out_rates, market_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+market_usecase_get_exchange_rates(csilk_json_t** out_rates, market_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
     if (!out_rates) {
         out_res->code = 1002;
@@ -363,13 +442,20 @@ int market_usecase_get_exchange_rates(csilk_json_t** out_rates, market_usecase_r
     return 0;
 }
 
-int market_usecase_update_exchange_rate(void* pool, const update_exchange_rate_cmd_t* cmd,
-                                       market_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+market_usecase_update_exchange_rate(void*                             pool,
+                                    const update_exchange_rate_cmd_t* cmd,
+                                    market_usecase_result_t*          out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
     if (!pool || !cmd || !cmd->currency || !cmd->currency[0] || cmd->rate <= 0.0) {
         out_res->code = 1002;
-        snprintf(out_res->message, sizeof(out_res->message), "币种 (currency) 和汇率 (rate > 0) 不能为空");
+        snprintf(out_res->message,
+                 sizeof(out_res->message),
+                 "币种 (currency) 和汇率 (rate > 0) 不能为空");
         return -1;
     }
 
@@ -381,9 +467,15 @@ int market_usecase_update_exchange_rate(void* pool, const update_exchange_rate_c
     return 0;
 }
 
-int market_usecase_get_fx_history(const char* currency, int days,
-                                  csilk_json_t** out_history, market_usecase_result_t* out_res) {
-    if (!out_res) return -1;
+int
+market_usecase_get_fx_history(const char*              currency,
+                              int                      days,
+                              csilk_json_t**           out_history,
+                              market_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
     memset(out_res, 0, sizeof(*out_res));
     if (!out_history) {
         out_res->code = 1002;
@@ -391,7 +483,9 @@ int market_usecase_get_fx_history(const char* currency, int days,
         return -1;
     }
 
-    if (days <= 0) days = 30;
+    if (days <= 0) {
+        days = 30;
+    }
     *out_history = exchange_rate_history_list(currency ? currency : "USD", days);
     out_res->code = 0;
     snprintf(out_res->message, sizeof(out_res->message), "ok");
