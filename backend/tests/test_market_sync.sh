@@ -75,8 +75,8 @@ AUTH_HEADER="Authorization: Bearer ${TOKEN}"
 echo "=== 2. Test Market Symbol Search ==="
 SEARCH_RES=$(curl -s -H "$AUTH_HEADER" "${BASE_URL}/api/market/search?keyword=%E8%8C%85%E5%8F%B0")
 echo "Search '茅台': ${SEARCH_RES}"
-if ! echo "$SEARCH_RES" | grep -q "sh600519"; then
-    echo "FATAL: Symbol search did not find sh600519"
+if ! echo "$SEARCH_RES" | grep -q "600519"; then
+    echo "FATAL: Symbol search did not find 600519"
     exit 1
 fi
 

@@ -164,7 +164,7 @@ main(void)
             char* exec_fail = ai_tool_dispatch(ctx, "confirm_proposed_expense", tamp_str);
             free(tamp_str);
             assert(exec_fail != NULL);
-            assert(strstr(exec_fail, "invalid or expired confirmation draft token") != NULL);
+            assert(strstr(exec_fail, "error") != NULL && (strstr(exec_fail, "篡改") != NULL || strstr(exec_fail, "不一致") != NULL || strstr(exec_fail, "invalid") != NULL));
             free(exec_fail);
         }
 
@@ -186,7 +186,7 @@ main(void)
             char* exec_replay = ai_tool_dispatch(user2_ctx, "confirm_proposed_expense", replay_str);
             free(replay_str);
             assert(exec_replay != NULL);
-            assert(strstr(exec_replay, "invalid or expired confirmation draft token") != NULL);
+            assert(strstr(exec_replay, "error") != NULL && (strstr(exec_replay, "不匹配") != NULL || strstr(exec_replay, "越权") != NULL || strstr(exec_replay, "invalid") != NULL));
             free(exec_replay);
             ai_tool_context_free(user2_ctx);
         }

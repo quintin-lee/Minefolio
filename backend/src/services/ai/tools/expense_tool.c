@@ -204,7 +204,21 @@ exec_propose_daily_expense(const ai_tool_t*         tool,
         csilk_json_free(cats);
     }
 
-    char* draft_token = ai_confirmation_create_token(ctx->user_id, amount, type, date);
+    csilk_json_t* proposed_args = csilk_json_object();
+    csilk_json_add_string(proposed_args, "type", type);
+    csilk_json_add_number(proposed_args, "amount", amount);
+    csilk_json_add_string(proposed_args, "date", date);
+    csilk_json_add_number(proposed_args, "category_id", (double)matched_cat_id);
+    csilk_json_add_number(proposed_args, "asset_id", (double)matched_asset_id);
+    csilk_json_add_string(proposed_args, "note", note ? note : "");
+
+    char* draft_token = ai_confirmation_create_bound_token(ctx->user_id,
+                                                           ctx->session_id,
+                                                           "confirm_proposed_expense",
+                                                           proposed_args,
+                                                           AI_RISK_HIGH,
+                                                           300);
+    csilk_json_free(proposed_args);
 
     csilk_json_t* res = csilk_json_object();
     csilk_json_add_bool(res, "propose_success", true);
@@ -253,9 +267,12 @@ exec_confirm_proposed_expense(const ai_tool_t*         tool,
         return strdup("{\"error\":\"amount must be positive\"}");
     }
 
-    if (!draft_token || !draft_token[0] ||
-        !ai_confirmation_verify_token(ctx->user_id, amount, type, date, draft_token)) {
-        return strdup("{\"error\":\"invalid or expired confirmation draft token\"}");
+    ai_confirmation_status_t st = ai_confirmation_verify_and_consume(
+        ctx->user_id, ctx->session_id, "confirm_proposed_expense", args, draft_token);
+    if (st != AI_CONFIRM_OK) {
+        char err_buf[256];
+        snprintf(err_buf, sizeof(err_buf), "{\"error\":\"%s\"}", ai_confirmation_strerror(st));
+        return strdup(err_buf);
     }
 
     csilk_db_exec(ctx->pool, "BEGIN TRANSACTION");

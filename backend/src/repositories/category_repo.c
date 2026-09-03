@@ -30,15 +30,15 @@ category_list(csilk_db_pool_t* pool, int64_t user_id, const char* type)
             pool,
             "SELECT "
             "c.id,c.name,c.parent_id,c.type,c.asset_type,c.currency,c.icon,c.sort_order,c.created_"
-            "at,c.updated_at FROM categories c WHERE c.user_id=? AND c.type=? ORDER BY "
+            "at FROM categories c WHERE c.user_id=? AND c.type=? ORDER BY "
             "c.sort_order,c.name",
             (const char*[]){uid, type, NULL});
     }
     return csilk_db_query_param_json(
         pool,
         "SELECT "
-        "c.id,c.name,c.parent_id,c.type,c.asset_type,c.currency,c.icon,c.sort_order,c.created_at,c."
-        "updated_at FROM categories c WHERE c.user_id=? ORDER BY c.sort_order,c.name",
+        "c.id,c.name,c.parent_id,c.type,c.asset_type,c.currency,c.icon,c.sort_order,c.created_at "
+        "FROM categories c WHERE c.user_id=? ORDER BY c.sort_order,c.name",
         (const char*[]){uid, NULL});
 }
 

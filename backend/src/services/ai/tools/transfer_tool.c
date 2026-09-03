@@ -106,11 +106,22 @@ exec_propose_transfer(const ai_tool_t* tool, const ai_tool_context_t* ctx, const
         csilk_json_free(assets);
     }
 
-    char from_id_str[32], to_id_str[32];
-    snprintf(from_id_str, sizeof(from_id_str), "%lld", (long long)from_id);
-    snprintf(to_id_str, sizeof(to_id_str), "%lld", (long long)to_id);
+    csilk_json_t* proposed_args = csilk_json_object();
+    csilk_json_add_number(proposed_args, "amount", amount);
+    csilk_json_add_number(proposed_args, "from_asset_id", (double)from_id);
+    csilk_json_add_number(proposed_args, "to_asset_id", (double)to_id);
+    csilk_json_add_string(proposed_args, "date", date);
+    if (note && note[0]) {
+        csilk_json_add_string(proposed_args, "note", note);
+    }
 
-    char* draft_token = ai_confirmation_create_token(ctx->user_id, amount, from_id_str, to_id_str);
+    char* draft_token = ai_confirmation_create_bound_token(ctx->user_id,
+                                                           ctx->session_id,
+                                                           "confirm_proposed_transfer",
+                                                           proposed_args,
+                                                           AI_RISK_HIGH,
+                                                           300);
+    csilk_json_free(proposed_args);
 
     csilk_json_t* res = csilk_json_object();
     csilk_json_add_bool(res, "propose_success", true);
@@ -157,13 +168,12 @@ exec_confirm_proposed_transfer(const ai_tool_t*         tool,
         return strdup("{\"error\":\"invalid source or target asset\"}");
     }
 
-    char from_id_str[32], to_id_str[32];
-    snprintf(from_id_str, sizeof(from_id_str), "%lld", (long long)from_id);
-    snprintf(to_id_str, sizeof(to_id_str), "%lld", (long long)to_id);
-
-    if (!draft_token || !draft_token[0] ||
-        !ai_confirmation_verify_token(ctx->user_id, amount, from_id_str, to_id_str, draft_token)) {
-        return strdup("{\"error\":\"invalid or expired confirmation draft token\"}");
+    ai_confirmation_status_t st = ai_confirmation_verify_and_consume(
+        ctx->user_id, ctx->session_id, "confirm_proposed_transfer", args, draft_token);
+    if (st != AI_CONFIRM_OK) {
+        char err_buf[256];
+        snprintf(err_buf, sizeof(err_buf), "{\"error\":\"%s\"}", ai_confirmation_strerror(st));
+        return strdup(err_buf);
     }
 
     csilk_db_exec(ctx->pool, "BEGIN TRANSACTION");

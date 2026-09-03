@@ -144,5 +144,7 @@ target_include_directories(test_ai_tools PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
 target_link_libraries(test_ai_tools PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES})
 add_test(NAME test_ai_tools COMMAND test_ai_tools)
 
-
-
+add_executable(test_ai_policy tests/unit/test_ai_policy.c ${LIB_SOURCES})
+target_include_directories(test_ai_policy PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(test_ai_policy PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES})
+add_test(NAME test_ai_policy COMMAND test_ai_policy)
