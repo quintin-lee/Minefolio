@@ -178,5 +178,12 @@ target_compile_options(test_domain_portfolio PRIVATE -UNDEBUG)
 target_link_libraries(test_domain_portfolio PRIVATE m)
 add_test(NAME test_domain_portfolio COMMAND test_domain_portfolio)
 
+add_executable(test_domain_cashflow tests/unit/test_domain_cashflow.c ${FINANCIAL_CORE_SOURCES} src/domain/cashflow/rules.c)
+target_include_directories(test_domain_cashflow PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_domain_cashflow PRIVATE -UNDEBUG)
+target_link_libraries(test_domain_cashflow PRIVATE m)
+add_test(NAME test_domain_cashflow COMMAND test_domain_cashflow)
+
+
 
 
