@@ -2,49 +2,73 @@
 #include <stdio.h>
 #include <string.h>
 
-int mf_tx_rule_validate(const mf_transaction_t* tx, char* err_buf, size_t err_len) {
+int
+mf_tx_rule_validate(const mf_transaction_t* tx, char* err_buf, size_t err_len)
+{
     if (!tx) {
-        if (err_buf && err_len) snprintf(err_buf, err_len, "Transaction entity is NULL");
+        if (err_buf && err_len) {
+            snprintf(err_buf, err_len, "Transaction entity is NULL");
+        }
         return -1;
     }
     if (tx->user_id <= 0) {
-        if (err_buf && err_len) snprintf(err_buf, err_len, "Invalid user_id");
+        if (err_buf && err_len) {
+            snprintf(err_buf, err_len, "Invalid user_id");
+        }
         return -1;
     }
     if (tx->type[0] == '\0') {
-        if (err_buf && err_len) snprintf(err_buf, err_len, "Transaction type cannot be empty");
+        if (err_buf && err_len) {
+            snprintf(err_buf, err_len, "Transaction type cannot be empty");
+        }
         return -1;
     }
 
     /* 投资买卖交易必须绑定标的资产与正向单价 */
     if (strcmp(tx->type, "buy") == 0 || strcmp(tx->type, "sell") == 0) {
         if (tx->asset_id <= 0) {
-            if (err_buf && err_len) snprintf(err_buf, err_len, "Investment transaction requires valid asset_id");
+            if (err_buf && err_len) {
+                snprintf(err_buf, err_len, "Investment transaction requires valid asset_id");
+            }
             return -1;
         }
         if (!decimal_is_positive(tx->price.unit_price)) {
-            if (err_buf && err_len) snprintf(err_buf, err_len, "Investment transaction requires positive price");
+            if (err_buf && err_len) {
+                snprintf(err_buf, err_len, "Investment transaction requires positive price");
+            }
             return -1;
         }
     }
 
     /* 数量与费用不可为负数 */
     if (quantity_is_negative(tx->amount)) {
-        if (err_buf && err_len) snprintf(err_buf, err_len, "Transaction amount cannot be negative");
+        if (err_buf && err_len) {
+            snprintf(err_buf, err_len, "Transaction amount cannot be negative");
+        }
         return -1;
     }
     if (money_is_negative(tx->fee)) {
-        if (err_buf && err_len) snprintf(err_buf, err_len, "Transaction fee cannot be negative");
+        if (err_buf && err_len) {
+            snprintf(err_buf, err_len, "Transaction fee cannot be negative");
+        }
         return -1;
     }
 
     return 0;
 }
 
-int mf_tx_rule_build_fee_child(const mf_transaction_t* parent, mf_transaction_t* out_fee) {
-    if (!parent || !out_fee) return -1;
-    if (!money_is_positive(parent->fee)) return -1;
-    if (parent->id <= 0) return -1;
+int
+mf_tx_rule_build_fee_child(const mf_transaction_t* parent, mf_transaction_t* out_fee)
+{
+    if (!parent || !out_fee) {
+        return -1;
+    }
+    if (!money_is_positive(parent->fee)) {
+        return -1;
+    }
+    if (parent->id <= 0) {
+        return -1;
+    }
 
     memset(out_fee, 0, sizeof(*out_fee));
     out_fee->user_id = parent->user_id;
@@ -63,7 +87,7 @@ int mf_tx_rule_build_fee_child(const mf_transaction_t* parent, mf_transaction_t*
         if (strstr(parent->note, "fee") != NULL || strstr(parent->note, "Fee") != NULL) {
             snprintf(out_fee->note, sizeof(out_fee->note), "%s", parent->note);
         } else {
-            snprintf(out_fee->note, sizeof(out_fee->note), "%s fee", parent->note);
+            snprintf(out_fee->note, sizeof(out_fee->note), "%.250s fee", parent->note);
         }
     } else {
         snprintf(out_fee->note, sizeof(out_fee->note), "fee");
