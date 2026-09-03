@@ -112,20 +112,61 @@ Minefolio/
 │   │   └── migration_postgres.sql
 │   ├── src/
 │   │   ├── main.c                # 服务主入口、中间件装配、路由注册与静态托管
+│   │   ├── interfaces/           # 表现层：HTTP Controllers（新架构，委托到 Application）
+│   │   │   └── http/controllers/ # auth/ai/market 等新域控制器
+│   │   ├── application/          # 应用层：用例编排（新架构）
+│   │   │   ├── auth/             # register/login/2fa/oauth 用例
+│   │   │   ├── ai/               # sessions/messages/workflows 用例
+│   │   │   ├── market/           # sync/quote/exchange_rates 用例
+│   │   │   ├── transaction/      # create/update/delete/query 用例
+│   │   │   ├── asset/            # asset CRUD 用例
+│   │   │   ├── portfolio/        # 投资组合汇总用例
+│   │   │   └── cashflow/         # 现金流排程用例
+│   │   ├── domain/               # 领域层：纯业务实体、规则与仓储契约（新架构）
+│   │   │   ├── auth/             # mf_user_t, mf_totp_config_t + 规则
+│   │   │   ├── ai/               # mf_ai_session_t + 规则
+│   │   │   ├── market/           # mf_market_*_t + 规则
+│   │   │   ├── transaction/      # mf_transaction_t + 规则
+│   │   │   ├── asset/            # mf_asset_t + 规则
+│   │   │   ├── portfolio/        # mf_holding_item_t + 规则
+│   │   │   └── cashflow/         # mf_cashflow_*_t + 规则
+│   │   ├── infrastructure/       # 基础设施层：仓储 SQL 实现（新架构）
+│   │   │   └── repositories/     # auth_repo_impl, tx_repo_impl...
 │   │   ├── core/                 # 金融核心与基础引擎
-│   │   │   ├── financial/        # 定点数运算库（money, decimal, quantity, price, rate, currency, pnl）
-│   │   │   └── ledger/           # 统一账本状态计算引擎（状态推演、事实重放、资产重建）
-│   │   ├── controllers/          # 表现层：解析参数、调用服务、封装响应
-│   │   ├── services/             # 业务层：状态编排、复杂记账逻辑、多币种折算
+│   │   │   ├── financial/        # 128位定点数（money, decimal, quantity, price, rate, currency, percentage）
+│   │   │   └── ledger/           # 事件溯源账本引擎（ledger_apply_tx/reverse/rebuild）
+│   │   ├── controllers/          # 表现层：Legacy HTTP Controllers（过渡期双注册）
+│   │   ├── services/             # 业务层：Legacy Services（过渡期）
 │   │   │   ├── ai/               # 企业级解耦 AI 架构（runtime, model, workflow, tools, policy, trace）
 │   │   │   └── market/           # 行情引擎、外汇服务、调度器
-│   │   ├── repositories/         # 数据层：参数化 SQL 查询，返回 csilk_json_t*
-│   │   ├── common/               # 公共组件（db, jwt, balance, response, 2fa, ocr）
+│   │   ├── repositories/         # 数据层：Legacy Repository（过渡期）
+│   │   ├── common/               # 公共组件（db, jwt, balance, response, 2fa, ocr, tx_types）
 │   │   ├── config/               # 密钥对管理、数据库配置、统一 Secret Provider (secret.h/.c)
 │   │   └── middlewares/          # JWT 鉴权、CORS、CSRF、限流与安全头中间件
 │   └── tests/                    # 单元测试与集成测试矩阵
-│       ├── unit/                 # 13 项高覆盖 CTest 单元测试（金融定点数、账本数学、AI工具/策略、Secret Provider）
+│       ├── unit/                 # 20 项高覆盖 CTest 单元测试
+│       │   ├── test_currency.c   # 货币模型（ISO 4217、精度、比较）
+│       │   ├── test_decimal.c    # 128位定点算术（加/减/乘/除/舍入）
+│       │   ├── test_money.c      # 金额类型（跨币种安全校验）
+│       │   ├── test_quantity.c   # 持仓份额类型
+│       │   ├── test_price.c      # 价格类型
+│       │   ├── test_rate.c       # 汇率类型
+│       │   ├── test_pnl.c        # 盈亏计算
+│       │   ├── test_fx.c         # 外汇计算
+│       │   ├── test_ledger_math.c # Ledger 纯数学算子
+│       │   ├── test_ledger_engine.c # Ledger 事件溯源全链路
+│       │   ├── test_domain_transaction.c # 交易领域规则
+│       │   ├── test_domain_asset.c       # 资产领域规则
+│       │   ├── test_domain_auth.c        # 认证领域规则
+│       │   ├── test_domain_ai.c          # AI 领域规则
+│       │   ├── test_domain_portfolio.c   # 投资组合领域规则
+│       │   ├── test_domain_cashflow.c    # 现金流领域规则
+│       │   ├── test_domain_market.c      # 行情领域规则
+│       │   ├── test_ai_tools.c           # AI 工具 Schema 注册/分发
+│       │   ├── test_ai_policy.c          # AI 五级风控策略
+│       │   └── test_secret_provider.c    # 统一密钥提供者
 │       ├── test_link.sh          # 核心业务闭环测试 (38 用例，139 断言)
+│       ├── test_full.sh          # 全量回归测试入口
 │       ├── test_ledgers.sh       # 多账本与 RBAC 测试 (16 用例)
 │       ├── test_2fa.sh           # TOTP 双因素认证测试 (12 用例)
 │       ├── test_dca_cashflow.sh  # 定投与现金流日历测试 (18 用例)
@@ -251,19 +292,23 @@ Minefolio/
 
 Minefolio 拥有完整的双层测试矩阵（单元测试 + 端到端集成回归）：
 
-### 1. CTest 单元测试矩阵（13 大测试套件，高频毫秒级断言）
+### 1. CTest 单元测试矩阵（20 大测试套件，高频毫秒级断言）
 ```bash
 cd backend/build
 ctest --output-on-failure
 # 覆盖核心模块：
 # - 金融核心定点数：test_currency, test_decimal, test_money, test_quantity, test_price, test_rate, test_pnl, test_fx
 # - 统一账本数学与引擎：test_ledger_math, test_ledger_engine
+# - 领域业务规则：test_domain_transaction, test_domain_asset, test_domain_auth, test_domain_ai,
+#                 test_domain_portfolio, test_domain_cashflow, test_domain_market
 # - 智能架构与风控系统：test_ai_tools, test_ai_policy
 # - 统一机密提供者与安全门禁：test_secret_provider
 ```
 
-### 2. 端到端集成测试矩阵（7 大测试套件，覆盖 139+ 真实断言）
+### 2. 端到端集成测试矩阵（8 大测试套件，覆盖 139+ 真实断言）
 ```bash
+./backend/tests/test_full.sh              # 全量回归入口
+# 或单独运行：
 ./backend/tests/test_link.sh && \
 ./backend/tests/test_ledgers.sh && \
 ./backend/tests/test_2fa.sh && \
