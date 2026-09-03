@@ -21,8 +21,6 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),
-      '@iconify/vue': resolve(__dirname, '../.iconify_cache/@iconify/vue'),
-      '@iconify-icons/ph': resolve(__dirname, '../.iconify_cache/@iconify-icons/ph'),
     },
   },
   server: {

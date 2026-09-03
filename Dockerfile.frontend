@@ -21,7 +21,6 @@ RUN --mount=type=bind,source=hosts,target=/etc/hosts \
     npm install --registry=${NPM_REGISTRY}
 
 COPY frontend ./
-COPY .iconify_cache /app/.iconify_cache
 
 ENV PATH="/app/frontend/node_modules/.bin:$PATH"
 RUN npm run build
