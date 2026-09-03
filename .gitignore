@@ -13,6 +13,7 @@ frontend/dist-mobile/
 
 # AI cache
 .codegraph/
+.iconify_cache/
 .playwright-cli/
 .omo/
 .superpowers/

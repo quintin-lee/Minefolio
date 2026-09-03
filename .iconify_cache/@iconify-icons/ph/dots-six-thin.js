@@ -1,6 +1,0 @@
-const data = {
-	"width": 256,
-	"height": 256,
-	"body": "<path fill=\"currentColor\" d=\"M68 92a8 8 0 1 1-8-8a8 8 0 0 1 8 8Zm60-8a8 8 0 1 0 8 8a8 8 0 0 0-8-8Zm68 16a8 8 0 1 0-8-8a8 8 0 0 0 8 8ZM60 156a8 8 0 1 0 8 8a8 8 0 0 0-8-8Zm68 0a8 8 0 1 0 8 8a8 8 0 0 0-8-8Zm68 0a8 8 0 1 0 8 8a8 8 0 0 0-8-8Z\"/>"
-};
-export default data;
