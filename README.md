@@ -16,6 +16,10 @@ Minefolio 是一款极度轻量、安全、专业的**开源全资产管理与�
 
 ## 🌟 核心特性与亮点
 
+* 🧮 **高精度金融核心与定点数引擎 (Financial Core)**：基于 64 位有符号整型定点数与标准舍入算法，彻底消除浮点数计算误差，支持高精度货币 (Money)、持仓数量 (Quantity)、成交价 (Price)、汇率 (Rate)、百分比 (Percentage) 与盈亏 (PnL) 严谨核算。
+* 🏛️ **统一账本状态引擎 (Ledger Engine)**：确立「Transaction 是唯一金融事实」准则，资产持仓、现金余额、成本基础、已实现/浮动盈亏全由账本引擎统一计算与更新，并提供基于时间序列事实全量重建 (`rebuild`) 的自愈能力。
+* 🛡️ **企业级 AI 架构与五级风控引擎 (AI Framework & Risk Engine)**：AI 系统解耦为运行时 (Runtime)、模型适配 (Model)、DAG 工作流 (Workflow)、领域工具集 (Tools)、安全策略 (Policy) 与调用追踪 (Trace)；实行五级风险评估与带 Nonce 防重放的恒定时间 HMAC-SHA256 双重确认令牌机制。
+* 🔑 **统一 Secret Provider 与零硬编码安全门禁**：建立统一敏感配置检索机制，原生兼容环境变量、Docker/K8s Secret 文件挂载与外部密钥管理器 (Vault/AWS/K8s)；在生产启动期实施硬编码/弱口令主动熔断。
 * 💼 **全资产全场景覆盖**：支持现金、银行储蓄、股票、基金、债券、加密货币、房产、贷款、信用卡等资产与负债统一建档，支持负债方向自动正负号翻转。
 * 📈 **专业资管级投资模型**：加权买入成本、分红摊薄计价、卖出部分成本按比例核减、手续费联动与基于 `parent_tx_id` 的级联回滚，精确计算已实现与浮动盈亏。
 * 🌐 **多币种实时外汇引擎 (FX Engine)**：支持全币种资产管理，内置 Yahoo Finance 实时汇率同步与手动设置，支持基准折算净资产实时呈现。
@@ -108,15 +112,20 @@ Minefolio/
 │   │   └── migration_postgres.sql
 │   ├── src/
 │   │   ├── main.c                # 服务主入口、中间件装配、路由注册与静态托管
+│   │   ├── core/                 # 金融核心与基础引擎
+│   │   │   ├── financial/        # 定点数运算库（money, decimal, quantity, price, rate, currency, pnl）
+│   │   │   └── ledger/           # 统一账本状态计算引擎（状态推演、事实重放、资产重建）
 │   │   ├── controllers/          # 表现层：解析参数、调用服务、封装响应
 │   │   ├── services/             # 业务层：状态编排、复杂记账逻辑、多币种折算
+│   │   │   ├── ai/               # 企业级解耦 AI 架构（runtime, model, workflow, tools, policy, trace）
 │   │   │   └── market/           # 行情引擎、外汇服务、调度器
 │   │   ├── repositories/         # 数据层：参数化 SQL 查询，返回 csilk_json_t*
 │   │   ├── common/               # 公共组件（db, jwt, balance, response, 2fa, ocr）
-│   │   ├── config/               # 密钥对管理、数据库配置
+│   │   ├── config/               # 密钥对管理、数据库配置、统一 Secret Provider (secret.h/.c)
 │   │   └── middlewares/          # JWT 鉴权、CORS、CSRF、限流与安全头中间件
-│   └── tests/                    # 7 大自动化集成测试套件（覆盖 134+ 测试用例）
-│       ├── test_link.sh          # 核心业务闭环测试 (33 用例)
+│   └── tests/                    # 单元测试与集成测试矩阵
+│       ├── unit/                 # 13 项高覆盖 CTest 单元测试（金融定点数、账本数学、AI工具/策略、Secret Provider）
+│       ├── test_link.sh          # 核心业务闭环测试 (38 用例，139 断言)
 │       ├── test_ledgers.sh       # 多账本与 RBAC 测试 (16 用例)
 │       ├── test_2fa.sh           # TOTP 双因素认证测试 (12 用例)
 │       ├── test_dca_cashflow.sh  # 定投与现金流日历测试 (18 用例)
@@ -175,6 +184,8 @@ Minefolio/
 | :--- | :--- | :---: | :--- |
 | `GET/POST` | `/api/assets` | JWT | 资产列表（分页/过滤）与新建资产 |
 | `GET/PUT/DELETE` | `/api/assets/:id` | JWT | 资产详情、编辑资产净值、删除资产 |
+| `POST` | `/api/assets/:id/rebuild` | JWT | 账本引擎：重放单标的事实交易，全量重建持仓量、成本与市值 |
+| `POST` | `/api/assets/rebuild` | JWT | 账本引擎：全量重建用户所有投资资产的持仓与成本状态 |
 | `GET/POST` | `/api/transactions` | JWT | 交易记录（买入/卖出/存取/分红，支持 fee 联动） |
 | `PUT/DELETE` | `/api/transactions/:id` | JWT | 编辑或删除交易（带 fee 子行级联回滚） |
 | `GET/POST` | `/api/daily-expenses` | JWT | 日常记账收支列表与创建收支 |
@@ -212,6 +223,8 @@ Minefolio/
 | `POST` | `/api/receipts/scan` | JWT | 发票/收据图片 OCR 多模态智能识别与自动分类填单 |
 | `GET/POST` | `/api/import-rules` | JWT | 查看与配置商户/关键词智能记账规则 |
 | `POST` | `/api/import-rules/reset-defaults` | JWT | 一键重置恢复系统推荐的智能分类规则库 |
+| `GET` | `/api/ai/workflows` | JWT | 获取内置智能财务分析工作流模板与步骤说明 |
+| `POST` | `/api/ai/workflows/:id/run` | JWT | 启动执行指定智能工作流（SSE 流式实时推送执行事件） |
 | `POST` | `/api/ai/chat` | JWT | 与 AI 财务分析助理多轮上下文对话（支持 Tool Calling） |
 | `GET` | `/api/ai/traces` | JWT | 查询 AI 会话的全链路耗时、Token 消耗与调用 Spans |
 | `GET` | `/csilk-admin/` | 公开 | 框架级可观测性管理面板（RPS、DAG 拓扑、火焰图） |
@@ -236,10 +249,21 @@ Minefolio/
 
 ## 🧪 自动化测试体系
 
-Minefolio 拥有覆盖全生命周期的自动化集成测试脚本，位于 `backend/tests/` 目录下：
+Minefolio 拥有完整的双层测试矩阵（单元测试 + 端到端集成回归）：
 
+### 1. CTest 单元测试矩阵（13 大测试套件，高频毫秒级断言）
 ```bash
-# 运行全量 7 大套件回归验证（覆盖 134+ 测试用例）
+cd backend/build
+ctest --output-on-failure
+# 覆盖核心模块：
+# - 金融核心定点数：test_currency, test_decimal, test_money, test_quantity, test_price, test_rate, test_pnl, test_fx
+# - 统一账本数学与引擎：test_ledger_math, test_ledger_engine
+# - 智能架构与风控系统：test_ai_tools, test_ai_policy
+# - 统一机密提供者与安全门禁：test_secret_provider
+```
+
+### 2. 端到端集成测试矩阵（7 大测试套件，覆盖 139+ 真实断言）
+```bash
 ./backend/tests/test_link.sh && \
 ./backend/tests/test_ledgers.sh && \
 ./backend/tests/test_2fa.sh && \

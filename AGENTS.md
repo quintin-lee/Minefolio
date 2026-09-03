@@ -11,9 +11,12 @@ Minefolio is a self-hosted personal finance and investment tracker. It supports 
 ```
 HTTP Layer    controllers/     Parse params, call service, format response
 Business Layer services/       Orchestrate repos, balance ops, transactions
+              services/ai/     Enterprise AI: runtime, model, workflow, tools, policy, trace
+Core Layer    core/financial/  Fixed-point core: money, decimal, quantity, price, rate, pnl
+              core/ledger/     Ledger engine: transaction replay, rebuild, balance/cost basis
 Data Layer    repositories/    Raw SQL, return csilk_json_t*
 Shared        common/          db, jwt, balance, response, ctx, csv, tx_types
-              config/          db_config, key_manager (RSA keys)
+              config/          db_config, key_manager (RSA keys), secret (Secret Provider)
               dtos/            request/response struct definitions (reflection macros)
               models/          C domain structs
               middlewares/     jwt, cors, csrf, security-headers, rate-limit
@@ -78,11 +81,15 @@ Balance direction is handled centrally: `balance_apply_delta()` flips the sign f
 | `backend/src/main.c` | Entry point: DB init, migrations, middleware stack, route registration, static serve |
 | `backend/src/controllers/` | Thin HTTP handlers; one per domain; `register_*_routes(app)` |
 | `backend/src/services/` | Business logic; query and write files coexist per domain |
+| `backend/src/services/ai/` | Decoupled AI architecture: runtime, model, workflow, tools, policy, trace |
+| `backend/src/core/financial/` | Fixed-point core arithmetic: money, decimal, quantity, price, rate, pnl |
+| `backend/src/core/ledger/` | Ledger engine: single source of truth, position calculation, history replay/rebuild |
 | `backend/src/repositories/` | All SQL; return `csilk_json_t*`; never touch HTTP |
 | `backend/src/common/` | Cross-cutting: `db.h`, `balance.h`, `jwt.h`, `response.h`, `ctx.h`, `tx_types.h` |
-| `backend/src/config/` | `db_config.h/.c` (DSN), `key_manager.h/.c` (RSA-OAEP keys) |
+| `backend/src/config/` | `db_config.h/.c` (DSN), `key_manager.h/.c` (RSA-OAEP keys), `secret.h/.c` (Secret Provider) |
 | `backend/sql/` | `migration.sql` (SQLite), `migration_postgres.sql` |
-| `backend/tests/test_link.sh` | 33-case integration test suite (HTTP + sqlite3 verification) |
+| `backend/tests/unit/` | 13 CTest unit test suites (financial core, ledger, AI tools/policy, secrets) |
+| `backend/tests/test_link.sh` | 38-case integration test suite (139 assertions, HTTP + sqlite3 verification) |
 | `frontend/src/main.ts` | Desktop entry: Pinia, router, Element Plus, i18n |
 | `frontend/src/main-mobile.ts` | Mobile entry: separate router, sql.js init |
 | `frontend/src/api/` | One file per domain; never call fetch/axios directly in components |
@@ -285,12 +292,15 @@ Every `onMounted` hook **MUST** wrap async initialization in `try/catch`. Use `v
 
 ## Testing & QA
 
-### Backend Integration Tests (7 Suites · 134+ Cases)
+### Backend Unit & Integration Tests (13 CTest Suites + 7 Integration Suites)
 
 ```bash
 cd backend
-# Run all suites
-./tests/test_link.sh          # 33 cases: auth, CRUD, balance联动, PnL, CSV, pagination
+# 1. Run all 13 CTest unit test suites (sub-second fast feedback)
+cd build && ctest --output-on-failure && cd ..
+
+# 2. Run all 7 end-to-end integration test suites
+./tests/test_link.sh          # 38 cases (139 assertions): auth, CRUD, balance联动, PnL, CSV, pagination, ledger rebuild
 ./tests/test_ledgers.sh       # 16 cases: multi-ledger spaces, member RBAC (Owner/Editor/Viewer)
 ./tests/test_2fa.sh           # 12 cases: TOTP 2FA secret gen, QR code, enable/disable, login verification
 ./tests/test_dca_cashflow.sh  # 18 cases: DCA periodic purchase execution, cashflow calendar projection
