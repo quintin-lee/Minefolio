@@ -2,39 +2,59 @@
 #include <stdio.h>
 #include <string.h>
 
-int mf_asset_rule_validate(const mf_asset_t* asset, char* err_buf, size_t err_len) {
+int
+mf_asset_rule_validate(const mf_asset_t* asset, char* err_buf, size_t err_len)
+{
     if (!asset) {
-        if (err_buf && err_len) snprintf(err_buf, err_len, "Asset entity is NULL");
+        if (err_buf && err_len) {
+            snprintf(err_buf, err_len, "Asset entity is NULL");
+        }
         return -1;
     }
     if (asset->user_id <= 0) {
-        if (err_buf && err_len) snprintf(err_buf, err_len, "Invalid user_id");
+        if (err_buf && err_len) {
+            snprintf(err_buf, err_len, "Invalid user_id");
+        }
         return -1;
     }
     if (asset->name[0] == '\0') {
-        if (err_buf && err_len) snprintf(err_buf, err_len, "Asset name cannot be empty");
+        if (err_buf && err_len) {
+            snprintf(err_buf, err_len, "Asset name cannot be empty");
+        }
         return -1;
     }
     if (asset->category_id <= 0) {
-        if (err_buf && err_len) snprintf(err_buf, err_len, "Invalid category_id");
+        if (err_buf && err_len) {
+            snprintf(err_buf, err_len, "Invalid category_id");
+        }
         return -1;
     }
 
     if (quantity_is_negative(asset->quantity)) {
-        if (err_buf && err_len) snprintf(err_buf, err_len, "Asset quantity cannot be negative");
+        if (err_buf && err_len) {
+            snprintf(err_buf, err_len, "Asset quantity cannot be negative");
+        }
         return -1;
     }
     if (money_is_negative(asset->cost_basis)) {
-        if (err_buf && err_len) snprintf(err_buf, err_len, "Asset cost_basis cannot be negative");
+        if (err_buf && err_len) {
+            snprintf(err_buf, err_len, "Asset cost_basis cannot be negative");
+        }
         return -1;
     }
 
     return 0;
 }
 
-int mf_asset_rule_derive_investment_values(mf_asset_t* asset) {
-    if (!asset) return -1;
-    if (!mf_asset_is_investment(asset)) return 0;
+int
+mf_asset_rule_derive_investment_values(mf_asset_t* asset)
+{
+    if (!asset) {
+        return -1;
+    }
+    if (!mf_asset_is_investment(asset)) {
+        return 0;
+    }
 
     if (quantity_is_positive(asset->quantity) && decimal_is_positive(asset->net_value.unit_price)) {
         money_t market = {0};
@@ -48,11 +68,15 @@ int mf_asset_rule_derive_investment_values(mf_asset_t* asset) {
     return 0;
 }
 
-int mf_asset_rule_calculate_floating_pnl(const mf_asset_t* asset, money_t* out_pnl, double* out_pct) {
-    if (!asset) return -1;
+int
+mf_asset_rule_calculate_floating_pnl(const mf_asset_t* asset, money_t* out_pnl, double* out_pct)
+{
+    if (!asset) {
+        return -1;
+    }
 
     money_t pnl = money_zero(asset->currency);
-    double pct = 0.0;
+    double  pct = 0.0;
 
     if (mf_asset_is_investment(asset)) {
         money_sub(asset->current_value, asset->cost_basis, &pnl);
@@ -63,7 +87,11 @@ int mf_asset_rule_calculate_floating_pnl(const mf_asset_t* asset, money_t* out_p
         }
     }
 
-    if (out_pnl) *out_pnl = pnl;
-    if (out_pct) *out_pct = pct;
+    if (out_pnl) {
+        *out_pnl = pnl;
+    }
+    if (out_pct) {
+        *out_pct = pct;
+    }
     return 0;
 }

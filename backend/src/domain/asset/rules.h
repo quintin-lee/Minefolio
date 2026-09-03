@@ -18,4 +18,5 @@ int mf_asset_rule_derive_investment_values(mf_asset_t* asset);
 /**
  * @brief 计算持仓浮动盈亏与盈亏比例
  */
-int mf_asset_rule_calculate_floating_pnl(const mf_asset_t* asset, money_t* out_pnl, double* out_pct);
+int
+mf_asset_rule_calculate_floating_pnl(const mf_asset_t* asset, money_t* out_pnl, double* out_pct);

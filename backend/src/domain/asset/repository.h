@@ -31,8 +31,12 @@ int mf_asset_repo_update_basic(void* db_pool, const mf_asset_t* asset);
  * @brief 更新投资类资产的持仓数量、总成本与单位净值
  * @return 0: 成功, -1: 失败
  */
-int mf_asset_repo_update_position(void* db_pool, int64_t user_id, int64_t id,
-                                  price_t net_value, quantity_t quantity, money_t cost_basis);
+int mf_asset_repo_update_position(void*      db_pool,
+                                  int64_t    user_id,
+                                  int64_t    id,
+                                  price_t    net_value,
+                                  quantity_t quantity,
+                                  money_t    cost_basis);
 
 /**
  * @brief 删除单条资产

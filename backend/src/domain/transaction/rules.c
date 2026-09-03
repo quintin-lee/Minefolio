@@ -38,6 +38,22 @@ mf_tx_rule_validate(const mf_transaction_t* tx, char* err_buf, size_t err_len)
         return -1;
     }
 
+    if ((strcmp(tx->type, "buy") == 0 || strcmp(tx->type, "sell") == 0) &&
+        quantity_is_positive(tx->amount)) {
+        if (tx->asset_id <= 0) {
+            if (err_buf && err_len) {
+                snprintf(err_buf, err_len, "Investment transaction requires valid asset_id");
+            }
+            return -1;
+        }
+        if (!decimal_is_positive(tx->price.unit_price)) {
+            if (err_buf && err_len) {
+                snprintf(err_buf, err_len, "Investment transaction requires positive price");
+            }
+            return -1;
+        }
+    }
+
     return 0;
 }
 
