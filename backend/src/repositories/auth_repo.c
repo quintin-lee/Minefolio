@@ -263,3 +263,31 @@ system_is_initialized(csilk_db_pool_t* pool)
 {
     return user_count(pool) > 0;
 }
+
+csilk_json_t*
+user_find_by_oauth(csilk_db_pool_t* pool, const char* provider, const char* oauth_id)
+{
+    return csilk_db_query_param_json(
+        pool,
+        "SELECT id, username, token_version FROM users WHERE oauth_provider = ? AND oauth_id = ?",
+        (const char*[]){provider, oauth_id, NULL});
+}
+
+int64_t
+user_create_oauth(csilk_db_pool_t* pool, const char* username, const char* provider, const char* oauth_id)
+{
+    csilk_json_t* ins_res = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO users (username, password, token_version, oauth_provider, oauth_id) "
+        "VALUES (?, '', 0, ?, ?) RETURNING id",
+        (const char*[]){username, provider, oauth_id, NULL});
+    int64_t user_id = 0;
+    if (ins_res && csilk_json_array_size(ins_res) > 0) {
+        user_id = db_get_int(csilk_json_array_get(ins_res, 0), "id");
+    }
+    if (ins_res) {
+        csilk_json_free(ins_res);
+    }
+    return user_id;
+}
+

@@ -129,3 +129,14 @@ int user_count(csilk_db_pool_t* pool);
  * @return int 已初始化返回 1，未初始化（首个用户未注册）返回 0
  */
 int system_is_initialized(csilk_db_pool_t* pool);
+
+/**
+ * @brief 根据 OAuth 提供商及唯一 ID 查找关联用户
+ */
+csilk_json_t* user_find_by_oauth(csilk_db_pool_t* pool, const char* provider, const char* oauth_id);
+
+/**
+ * @brief 创建 OAuth 关联用户
+ */
+int64_t user_create_oauth(csilk_db_pool_t* pool, const char* username, const char* provider, const char* oauth_id);
+
