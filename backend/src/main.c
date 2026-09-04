@@ -23,7 +23,7 @@
 #include "interfaces/http/controllers/market_controller.h"
 #include "interfaces/http/controllers/dca_controller.h"
 #include "interfaces/http/controllers/cashflow_controller.h"
-#include "controllers/ledger_controller.h"
+#include "interfaces/http/controllers/ledger_controller.h"
 #include "interfaces/http/controllers/import_rule_controller.h"
 #include "interfaces/http/controllers/receipt_controller.h"
 #include "services/market/market_scheduler.h"

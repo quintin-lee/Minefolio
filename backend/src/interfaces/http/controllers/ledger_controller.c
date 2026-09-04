@@ -1,4 +1,4 @@
-#include "services/ledger_service.h"
+#include "interfaces/http/controllers/ledger_controller.h"
 #include "repositories/ledger_repo.h"
 #include "common/ctx.h"
 #include "common/response.h"
@@ -411,4 +411,145 @@ ledger_service_join_by_invite(csilk_ctx_t* c)
     csilk_json_add_string(res, "name", name ? name : "");
     csilk_json_free(l_arr);
     respond_ok(c, res);
+}
+
+void
+api_ledger_list(csilk_ctx_t* c)
+{
+    ledger_service_list(c);
+}
+void
+api_ledger_create(csilk_ctx_t* c)
+{
+    ledger_service_create(c);
+}
+void
+api_ledger_get(csilk_ctx_t* c)
+{
+    ledger_service_get(c);
+}
+void
+api_ledger_update(csilk_ctx_t* c)
+{
+    ledger_service_update(c);
+}
+void
+api_ledger_delete(csilk_ctx_t* c)
+{
+    ledger_service_delete(c);
+}
+void
+api_ledger_list_members(csilk_ctx_t* c)
+{
+    ledger_service_list_members(c);
+}
+void
+api_ledger_add_member(csilk_ctx_t* c)
+{
+    ledger_service_add_member(c);
+}
+void
+api_ledger_update_member(csilk_ctx_t* c)
+{
+    ledger_service_update_member(c);
+}
+void
+api_ledger_remove_member(csilk_ctx_t* c)
+{
+    ledger_service_remove_member(c);
+}
+void
+api_ledger_create_invite_code(csilk_ctx_t* c)
+{
+    ledger_service_create_invite_code(c);
+}
+void
+api_ledger_join_by_invite(csilk_ctx_t* c)
+{
+    ledger_service_join_by_invite(c);
+}
+
+void
+register_ledger_routes(csilk_app_t* app)
+
+{
+    csilk_app_get_ext(app,
+                      "/api/ledgers",
+                      ledger_service_list,
+                      NULL,
+                      NULL,
+                      "List ledgers",
+                      "Get all ledgers current user owns or belongs to");
+    csilk_app_post_ext(app,
+                       "/api/ledgers",
+                       ledger_service_create,
+                       NULL,
+                       NULL,
+                       "Create ledger",
+                       "Create a new ledger");
+    csilk_app_get_ext(app,
+                      "/api/ledgers/:id",
+                      ledger_service_get,
+                      NULL,
+                      NULL,
+                      "Get ledger",
+                      "Get ledger details");
+    csilk_app_put_ext(app,
+                      "/api/ledgers/:id",
+                      ledger_service_update,
+                      NULL,
+                      NULL,
+                      "Update ledger",
+                      "Update ledger metadata");
+    csilk_app_delete_ext(app,
+                         "/api/ledgers/:id",
+                         ledger_service_delete,
+                         NULL,
+                         NULL,
+                         "Delete ledger",
+                         "Delete ledger and associated items");
+
+    csilk_app_get_ext(app,
+                      "/api/ledgers/:id/members",
+                      ledger_service_list_members,
+                      NULL,
+                      NULL,
+                      "List members",
+                      "Get ledger members and roles");
+    csilk_app_post_ext(app,
+                       "/api/ledgers/:id/members",
+                       ledger_service_add_member,
+                       NULL,
+                       NULL,
+                       "Add member",
+                       "Add member by username");
+    csilk_app_put_ext(app,
+                      "/api/ledgers/:id/members/:user_id",
+                      ledger_service_update_member,
+                      NULL,
+                      NULL,
+                      "Update member role",
+                      "Update member role");
+    csilk_app_delete_ext(app,
+                         "/api/ledgers/:id/members/:user_id",
+                         ledger_service_remove_member,
+                         NULL,
+                         NULL,
+                         "Remove member",
+                         "Remove member or leave ledger");
+
+    csilk_app_post_ext(app,
+                       "/api/ledgers/:id/invite-code",
+                       ledger_service_create_invite_code,
+                       NULL,
+                       NULL,
+                       "Generate invite code",
+                       "Generate or refresh 6-digit invite code");
+    csilk_app_post_ext(app,
+                       "/api/ledgers/join",
+                       ledger_service_join_by_invite,
+                       NULL,
+                       NULL,
+                       "Join by invite code",
+                       "Join a ledger using invite code");
 }
