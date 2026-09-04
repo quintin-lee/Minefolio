@@ -1,4 +1,4 @@
-#include "services/receipt_service.h"
+#include "interfaces/http/controllers/receipt_controller.h"
 #include "services/ai_service.h"
 #include "repositories/import_rule_repo.h"
 #include "common/ai_config.h"
@@ -589,4 +589,27 @@ receipt_service_scan(csilk_ctx_t* c)
 
     csilk_json_free(api_resp);
     respond_ok(c, result);
+}
+
+void
+api_receipt_scan_handler(csilk_ctx_t* c)
+{
+    receipt_service_scan(c);
+}
+void
+receipt_scan_handler(csilk_ctx_t* c)
+{
+    receipt_service_scan(c);
+}
+
+void
+register_receipt_routes(csilk_app_t* app)
+{
+    csilk_app_post_ext(app,
+                       "/api/receipts/scan",
+                       api_receipt_scan_handler,
+                       NULL,
+                       NULL,
+                       "Scan receipt",
+                       "Upload receipt image for AI OCR extraction");
 }
