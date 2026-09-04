@@ -230,6 +230,13 @@ target_compile_options(test_domain_position PRIVATE -UNDEBUG)
 target_link_libraries(test_domain_position PRIVATE m)
 add_test(NAME test_domain_position COMMAND test_domain_position)
 
+add_executable(test_domain_multi_currency tests/unit/test_domain_multi_currency.c src/domain/portfolio/fx_table.c ${CORE_FINANCIAL_SRCS})
+target_include_directories(test_domain_multi_currency PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_domain_multi_currency PRIVATE -UNDEBUG)
+target_link_libraries(test_domain_multi_currency PRIVATE m)
+add_test(NAME test_domain_multi_currency COMMAND test_domain_multi_currency)
+
+
 
 
 
