@@ -1,6 +1,6 @@
 # Minefolio
 
-[![Release: v1.0.0](https://img.shields.io/badge/Release-v1.0.0-success.svg)](https://github.com/quintin-lee/Minefolio/releases/tag/v1.0.0)
+[![Release: v1.1.0](https://img.shields.io/badge/Release-v1.1.0-success.svg)](https://github.com/quintin-lee/Minefolio/releases/tag/v1.1.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![C23](https://img.shields.io/badge/C-23-00599C?logo=c)](https://en.cppreference.com/w/c/23)
 [![Vue 3](https://img.shields.io/badge/Vue-3.5-4FC08D?logo=vue.js)](https://vuejs.org/)
@@ -52,29 +52,63 @@ Minefolio 是一款极度轻量、安全、专业的**开源全资产管理与�
 
 ---
 
-## 🚀 快速启动
+## 🚀 快速启动与部署指南
 
 ### 方式 1：Docker Compose 容器化部署（推荐）
 
+Minefolio 采用生产级双容器解耦架构：
+* **`minefolio` 后端容器**：基于 C23 + csilk 的高性能原生服务，负责 API 业务逻辑、账本引擎与 SSE 流式输出（监听 :8080）。
+* **`minefolio-nginx` 前端网关容器**：基于 Nginx Alpine 托管 Vue 3 SPA 静态资源，并对 API 请求进行弹性反向代理（监听 :80 端口）。
+
+#### 1. 克隆代码仓库并配置环境
 ```bash
-# 1. 克隆代码仓库
 git clone https://github.com/quintin-lee/Minefolio.git
 cd Minefolio
 
-# 2. 配置环境变量
+# 复制环境变量模板
 cp .env.example .env
-# 编辑 .env 文件，务必修改 MINEFOLIO_JWT_SECRET 密钥
+
+# 编辑 .env 文件，务必配置强随机密钥（未配置或使用默认弱密钥将在启动时被安全门禁拦截）
+# 快速生成强密钥命令: openssl rand -hex 32
 vim .env
-
-# 3. 启动多容器服务（默认拉取 ghcr.io/quintin-lee/minefolio:latest）
-docker compose up -d
 ```
-启动后访问 `http://localhost` 即可直接使用。
 
-> 如需从源码构建（开发/定制场景）：
-> ```bash
-> docker compose up -d --build
-> ```
+#### 2. 一键启动服务
+```bash
+# 启动多容器服务（默认自动拉取 GitHub Container Registry 官方镜像）
+docker compose up -d
+
+# 查看容器运行与健康检查状态（稍候片刻两个容器均应为 healthy）
+docker compose ps
+```
+启动成功后，在浏览器访问 `http://localhost` 即可进入初始化向导创建管理员账户。
+
+#### 3. 部署技巧与进阶配置
+* **锁定特定版本部署（如 v1.1.0）**：
+  可在 `docker-compose.yml` 中修改镜像标签为 `:v1.1.0`，或执行拉取与重打标签：
+  ```bash
+  docker pull ghcr.io/quintin-lee/minefolio:v1.1.0
+  docker pull ghcr.io/quintin-lee/minefolio-frontend:v1.1.0
+  docker tag ghcr.io/quintin-lee/minefolio:v1.1.0 ghcr.io/quintin-lee/minefolio:latest
+  docker tag ghcr.io/quintin-lee/minefolio-frontend:v1.1.0 ghcr.io/quintin-lee/minefolio-frontend:latest
+  docker compose up -d
+  ```
+* **从本地源码构建镜像**（二次开发或自定义修改后）：
+  ```bash
+  # 构建后端原生镜像
+  docker build -t ghcr.io/quintin-lee/minefolio:latest .
+  # 构建前端 Nginx 镜像
+  docker build -f Dockerfile.frontend -t ghcr.io/quintin-lee/minefolio-frontend:latest .
+  # 启动更新后的容器
+  docker compose up -d
+  ```
+* **切换 PostgreSQL 生产数据库**：
+  默认使用轻量级 SQLite 数据库（持久化于 Docker 数据卷 `minefolio-data` 中）。如需使用外部 PostgreSQL，仅需在 `.env` 中指定：
+  ```env
+  MINEFOLIO_DB_DRIVER=postgres
+  MINEFOLIO_DB_DSN=host=your-pg-host port=5432 user=minefolio password=your-db-pass dbname=minefolio sslmode=disable
+  ```
+  原生 C 数据库迁移引擎会在启动时自动完成版本化迁移（`V001`~`V007`）。
 
 ### 方式 2：本地源码编译与开发
 

@@ -1,6 +1,6 @@
 # Minefolio — 架构与设计说明书 (Architecture & Design Specification)
 
-> 版本: 2026-09-03 v1.1  
+> 版本: 2026-09-04 v1.1.0  
 > 适用范围: 仓库 HEAD (`master` 分支)  
 > 受众: 研发、运维、安全审计、二次开发
 
@@ -914,13 +914,17 @@ graph TB
         fc --> dist["frontend/dist/"]
     end
 
-    subgraph docker["fa:fa-docker Docker"]
-        df["Dockerfile (multi-stage)"] --> s1["Stage 1: backend-build (Ubuntu 24.04)"]
-        s1 --> s2["Stage 2: frontend-build (Node 20)"]
-        s2 --> s3["Stage 3: nginx:alpine runtime"]
-        s3 --> img["fa:fa-cube minefolio:latest"]
-        dc["docker-compose.yml"] --> img
-        img -->|"ports 80:80"| prod["fa:fa-cloud 生产 :80"]
+    subgraph docker["fa:fa-docker Docker 双容器生产部署"]
+        df["Dockerfile (后端多阶段)"] --> s1["Stage 1: backend-build (Ubuntu 24.04)"]
+        s1 --> s4["Stage 4: runtime (Ubuntu 24.04)"]
+        s4 --> bimg["fa:fa-cube minefolio:latest (:8080)"]
+        dff["Dockerfile.frontend (前端与网关)"] --> fs1["Stage 1: frontend-build (Node 20)"]
+        fs1 --> fs2["Stage 2: nginx:alpine runtime"]
+        fs2 --> fimg["fa:fa-cube minefolio-frontend:latest (:80)"]
+        dc["docker-compose.yml"] --> bimg
+        dc --> fimg
+        fimg -->|"ports 80:80"| prod["fa:fa-cloud 生产访问 :80"]
+        fimg -.->|"proxy_pass :8080 (动态 DNS)"| bimg
     end
 
     subgraph mobile["fa:fa-mobile-alt Android 移动端"]

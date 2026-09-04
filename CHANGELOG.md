@@ -7,9 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased] - 2026-09-04
+## [Unreleased]
+
+## [1.1.0] - 2026-09-04
 
 ### Added
+- **DDD 4-Layer Architecture (`src/interfaces/`, `src/application/`, `src/domain/`, `src/infrastructure/`)**:
+  - Full domain-driven design architectural decoupling across all core modules:
+    - Pure domain entities and invariant business rules (`src/domain/`) with zero external framework dependencies.
+    - Application use cases (`src/application/`) managing transaction boundaries, orchestration, and domain repository contracts.
+    - Clean domain repository implementations (`src/infrastructure/database/`) with dual SQLite and PostgreSQL support.
+    - Thin HTTP interface controllers (`src/interfaces/http/controllers/`) handling parameter extraction and response envelopes.
+  - 11 domain rule and repository test suites registered in CTest (`test_domain_transaction`, `test_domain_asset`, `test_domain_auth`, `test_domain_ai`, `test_domain_portfolio`, `test_domain_cashflow`, `test_domain_market`, `test_domain_cost_basis`, `test_domain_pnl`, `test_domain_position`, `test_domain_multi_currency`, `test_database_repository`).
+
+- **Containerization & Production CI/CD Hardening**:
+  - Resolved backend container shared library loading failure (`libyyjson.so.0`) by enforcing static dependency linking (`BUILD_SHARED_LIBS=OFF`, `BUILD_STATIC_LIBS=ON`, `CSILK_BUILD_SHARED=OFF`) in both `CMakeLists.txt` and `Dockerfile`.
+  - Added double-layer defense-in-depth in Dockerfile to collect build-stage shared objects to `/usr/local/lib/` and register them via `ldconfig`.
+  - Aligned frontend distribution paths (`/opt/minefolio/frontend/dist` and `/usr/share/nginx/html`) across `Dockerfile.frontend` and Nginx configurations, eliminating 500 rewrite loops.
+  - Implemented dynamic upstream DNS resolution (`resolver 127.0.0.11 valid=10s ipv6=off;` + variable `$backend_upstream`) in `nginx/minefolio.docker.conf`, making Nginx boot resilient against backend container initialization timing.
+  - Made Docker image smoke tests mandatory in `.github/workflows/ci.yml` across all branches, tags, and pull requests prior to pushing images to GitHub Container Registry (GHCR).
 - **Database Migration System (`backend/src/infrastructure/database/migration/`, `backend/sql/migrations/`)**:
   - Replaced legacy 700+ line ad-hoc `col_exists()` and hardcoded `ALTER TABLE` routine in `db.c` with a formal native C migration engine.
   - Flyway-style versioned migration scripts for SQLite and PostgreSQL:
