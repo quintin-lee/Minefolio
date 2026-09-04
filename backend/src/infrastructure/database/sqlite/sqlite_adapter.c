@@ -29,7 +29,7 @@ sqlite_adapter_open(const mf_db_config_t* config, void** out_handle)
 
     const char* dsn = config->dsn && config->dsn[0] ? config->dsn : ":memory:";
     sqlite3*    db = NULL;
-    int rc = sqlite3_open_v2(
+    int         rc = sqlite3_open_v2(
         dsn, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, NULL);
     if (rc != SQLITE_OK) {
         if (db) {
@@ -150,7 +150,7 @@ sqlite_adapter_stmt_prepare(void* handle, const char* sql, void** out_stmt)
     }
     mf_sqlite_handle_t* h = (mf_sqlite_handle_t*)handle;
     sqlite3_stmt*       stmt = NULL;
-    int rc = sqlite3_prepare_v2(h->db, sql, -1, &stmt, NULL);
+    int                 rc = sqlite3_prepare_v2(h->db, sql, -1, &stmt, NULL);
     if (rc != SQLITE_OK || !stmt) {
         return -1;
     }
@@ -220,7 +220,7 @@ sqlite_adapter_stmt_bind_text(void* stmt, int index, const char* text)
         return -1;
     }
     mf_sqlite_stmt_t* s = (mf_sqlite_stmt_t*)stmt;
-    const char* val = text ? text : "";
+    const char*       val = text ? text : "";
     return sqlite3_bind_text(s->stmt, index, val, -1, SQLITE_TRANSIENT) == SQLITE_OK ? 0 : -1;
 }
 
@@ -251,7 +251,7 @@ sqlite_adapter_stmt_execute(void* stmt, int64_t* out_affected_rows)
         return -1;
     }
     mf_sqlite_stmt_t* s = (mf_sqlite_stmt_t*)stmt;
-    int rc = sqlite3_step(s->stmt);
+    int               rc = sqlite3_step(s->stmt);
     if (rc != SQLITE_DONE && rc != SQLITE_ROW) {
         return -1;
     }

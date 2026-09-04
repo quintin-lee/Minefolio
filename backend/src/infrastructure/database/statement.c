@@ -213,8 +213,7 @@ mf_result_get_bool(mf_result_t* res, const char* col_name)
     if (!txt || !txt[0]) {
         return false;
     }
-    return (strcasecmp(txt, "1") == 0 || strcasecmp(txt, "true") == 0 ||
-            strcasecmp(txt, "t") == 0);
+    return (strcasecmp(txt, "1") == 0 || strcasecmp(txt, "true") == 0 || strcasecmp(txt, "t") == 0);
 }
 
 bool

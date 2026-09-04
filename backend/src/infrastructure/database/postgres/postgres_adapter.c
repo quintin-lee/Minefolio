@@ -184,7 +184,7 @@ postgres_adapter_execute(void* handle, const char* sql)
 #if defined(HAVE_LIBPQ)
     mf_postgres_handle_t* h = (mf_postgres_handle_t*)handle;
     if (!h->is_mock && h->native_conn) {
-        PGresult* res = PQexec((PGconn*)h->native_conn, sql);
+        PGresult*      res = PQexec((PGconn*)h->native_conn, sql);
         ExecStatusType st = PQresultStatus(res);
         PQclear(res);
         return (st == PGRES_COMMAND_OK || st == PGRES_TUPLES_OK) ? 0 : -1;
@@ -309,7 +309,7 @@ postgres_adapter_stmt_bind_int64(void* stmt, int index, int64_t val)
         return -1;
     }
     mf_postgres_stmt_t* s = (mf_postgres_stmt_t*)stmt;
-    char buf[32];
+    char                buf[32];
     snprintf(buf, sizeof(buf), "%lld", (long long)val);
     if (s->bound_params[index - 1]) {
         free(s->bound_params[index - 1]);
@@ -328,7 +328,7 @@ postgres_adapter_stmt_bind_double(void* stmt, int index, double val)
         return -1;
     }
     mf_postgres_stmt_t* s = (mf_postgres_stmt_t*)stmt;
-    char buf[64];
+    char                buf[64];
     snprintf(buf, sizeof(buf), "%.6f", val);
     if (s->bound_params[index - 1]) {
         free(s->bound_params[index - 1]);
