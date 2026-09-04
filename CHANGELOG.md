@@ -7,9 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased] - 2026-09-03
+## [Unreleased] - 2026-09-04
 
 ### Added
+- **Database Migration System (`backend/src/infrastructure/database/migration/`, `backend/sql/migrations/`)**:
+  - Replaced legacy 700+ line ad-hoc `col_exists()` and hardcoded `ALTER TABLE` routine in `db.c` with a formal native C migration engine.
+  - Flyway-style versioned migration scripts for SQLite and PostgreSQL:
+    - `V001__initial_auth_and_system.sql`: Core users, system settings, tokens.
+    - `V002__categories_and_assets.sql`: Category tree, assets, price history.
+    - `V003__transactions_and_expenses.sql`: Transactions, expenses, tags, parent_tx_id cascading.
+    - `V004__ledgers_and_members.sql`: Multi-ledger spaces, member RBAC, and business table `ledger_id` links.
+    - `V005__ai_traces_and_settings.sql`: AI chat sessions, messages, traces, and model configurations.
+    - `V006__dca_and_cashflow.sql`: DCA recurring plans, execution history, and cashflow calendar schedules.
+    - `V007__market_quotes_and_fx.sql`: Exchange rate pairs, FX history snapshots, smart import rules.
+  - Tracking table `schema_migrations` storing `version`, `name`, `checksum`, `applied_at`, `execution_time_ms`, `execution_time`.
+  - Mutex lock table `schema_migration_lock` with timeout lease preventing multi-instance race conditions.
+  - SHA-256 CRLF-normalized hashing (`checksum.c`) ensuring platform-independent tamper detection.
+  - Migration engine lifecycle: discovery, version sorting, validation, transactional apply, and status reporting.
+  - Non-destructive Auto-Baseline mechanism automatically detecting legacy databases and recording V001~V007 as applied without wiping existing data.
+  - Dedicated unit test suite: `test_migration_engine` covering hashing, discovery, mutex concurrency, idempotence, tamper detection, and auto-baseline.
+
 - **Financial Core Engine (`backend/src/core/financial/`)**:
   - `money.h/.c`: 64-bit signed integer fixed-point money type with fractional units (cents) to completely eliminate floating-point rounding errors in currency operations.
   - `decimal.h/.c`: Arbitrary precision decimal calculations supporting rounding modes (Banker's, Truncate, Half Up).
@@ -82,7 +99,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `scripts/dev.sh`: Replaced static development secret fallback with on-the-fly 256-bit cryptographically secure random token generation (`openssl rand -hex 32`).
 - `backend/src/main.c`: Enforced secret validation during boot sequence via `config_secret_is_valid("JWT_SECRET")`.
 - `backend/src/common/jwt.c` and `backend/src/middlewares/jwt_middleware.c`: Replaced `getenv` calls with `config_secret_get`.
-- `backend/src/common/db.c`: Replaced `getenv` calls for `DB_DRIVER` and `DB_DSN` with `config_secret_get` using stack buffers.
+- `backend/src/common/db.c`: Replaced `getenv` calls for `DB_DRIVER` and `DB_DSN` with `config_secret_get` using stack buffers; delegated all database schema migrations to `mf_migration_engine_new()` and `mf_migration_apply()`.
 - `backend/src/services/auth_service.c`: Migrated JWT and OAuth credentials resolution to `config_secret_get`.
 - `backend/src/services/ai_service.c` and `backend/src/controllers/ai_controller.c`: Migrated configuration paths and API key overrides to `config_env_get` and `config_secret_get`.
 

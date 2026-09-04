@@ -104,6 +104,7 @@ graph TB
 | **Common** | 跨域通用: DB 池、JWT (HS256)、RSA-OAEP、tx_type 注册表、CSV 工具、TOTP、balance 符号翻转 | `backend/src/common/` |
 | **AI Subsystem** | **模块化拆分**: model(请求/响应)、policy(五级风控)、runtime(会话/循环)、tools(7步调度)、trace(Span/导出器)、workflow(Graph/Executor) | `backend/src/services/ai/{model,policy,runtime,tools,trace,workflow}/*.c/.h` |
 | **Market Scheduler** | 后台线程,定时拉取行情,通过 `quote_driver` 多源适配(东方财富/腾讯/Yahoo/Crypto),汇率服务 | `backend/src/services/market/` |
+| **Migration Engine** | **原生 C 语言版本化迁移引擎**: Flyway 规范发现与严格版本排序、SHA-256 CRLF 规范化防篡改校验和、分布式互斥锁 (`schema_migration_lock`)、自动基线 (Auto-Baseline) 平滑升级 | `backend/src/infrastructure/database/migration/`、`backend/sql/migrations/` |
 | **SQLite / PostgreSQL** | 数据持久化;通过 `csilk_db_pool_t` 连接池 | `backend/sql/migration.sql`、`migration_postgres.sql` |
 
 **新旧架构迁移状态:**
@@ -1059,7 +1060,12 @@ cd backend/build && ctest --output-on-failure
 | **SQL 完整度** | 95% 常用 | 100% |
 | **适合场景** | 单用户/家庭自托管 | 多租户/集群 |
 
-Minefolio 提供**两套 schema** (`migration.sql` SQLite, `migration_postgres.sql` PG),通过 `db_get_num` / `db_is_postgres` 抽象方言差异,生产可平滑切换。
+Minefolio 建立跨数据库方言的**正式版本化迁移系统 (Database Migration System)**，彻底替换历史上的动态字段检测与硬编码 ALTER TABLE：
+- **规范化版本脚本**：按 Flyway 规范统一组织于 `backend/sql/migrations/{sqlite,postgres}/`，文件命名格式 `V<num>__<name>.sql`（`V001`~`V007`）。
+- **版本记录与审计 (`schema_migrations`)**：记录每个已应用的迁移版本、名称、SHA-256 校验和、应用时间及执行毫秒耗时。
+- **分布式并发互斥锁 (`schema_migration_lock`)**：通过数据库行锁与租约超时防死锁机制，有效防止多实例并行迁移竞争。
+- **跨平台哈希规范化**：计算校验和时自动规范化 CRLF/LF 换行符并修剪尾随空白，杜绝跨平台或跨编辑器修改导致的校验和漂移。
+- **存量生产平滑升级 (Auto-Baseline)**：自动检测已有业务表数据库，并将基准版本自动标记为已应用，**严禁且无需清空生产环境数据库**。
 
 ### 8.4 AI Streaming 缓冲: 两层 vs 单层
 
@@ -1087,7 +1093,7 @@ Minefolio 提供**两套 schema** (`migration.sql` SQLite, `migration_postgres.s
 | **后端冷启动** | ≤ 50ms | 30ms |
 | **并发连接** | ≥ 10k (单节点) | epoll-based csilk |
 | **集成测试覆盖** | 9 套件全通过 | `test_*.sh` |
-| **CUnit 单测覆盖** | 20 套件全通过 | CTest |
+| **CUnit 单测覆盖** | 26 套件全通过 | CTest |
 | **前端单测覆盖** | 7 case (mobile spec) | vitest |
 | **定点精度** | 128-bit 定点,scale ≤ 18 | 零 IEEE 754 误差 |
 | **AI 风控评估延迟** | ≤ 5ms/tool | 纯 CPU 规则,无 IO |
@@ -1166,12 +1172,13 @@ Minefolio 提供**两套 schema** (`migration.sql` SQLite, `migration_postgres.s
 | `backend/src/services/ai/workflow/` | AI 工作流 Graph/Executor/Engine |
 | `backend/src/services/ai/workflows/` | 4 个具体工作流实现 |
 | `backend/src/common/balance.h` | 余额符号翻转 + 持仓核算 |
-| `backend/src/common/tx_types.c` | 交易类型注册表 |
-| `backend/sql/migration.sql` | SQLite 16 表 |
-| `backend/sql/migration_postgres.sql` | PostgreSQL 16 表 |
+| `backend/src/infrastructure/database/migration/` | 数据库迁移引擎 (checksum, lock, engine) |
+| `backend/sql/migrations/{sqlite,postgres}/` | 版本化迁移文件 (V001~V007) |
+| `backend/sql/migration.sql` | SQLite 16 表全量基准 |
+| `backend/sql/migration_postgres.sql` | PostgreSQL 16 表全量基准 |
 | `backend/tests/test_link.sh` | 38-case 核心集成测试 |
 | `backend/tests/test_*.sh` | 8 个专项集成测试脚本 |
-| `backend/tests/unit/test_*.c` | 20 个 CTest 单元单测 |
+| `backend/tests/unit/test_*.c` | 26 个 CTest 单元单测 |
 | `frontend/src/utils/http.ts` | axios + JWT + CSRF |
 | `frontend/src/stores/chat.ts` | SmoothStreamWriter |
 | `frontend/src/components/ChatMessageContent.vue` | 流式渲染分层 |
@@ -1191,7 +1198,7 @@ Minefolio 提供**两套 schema** (`migration.sql` SQLite, `migration_postgres.s
   ```bash
   cmake --build backend/build --parallel && npm --prefix frontend run build
   ./backend/tests/test_full.sh                    # 全量集成回归
-  ctest --test-dir backend/build --output-on-failure  # 20 个 CUnit 单测
+  ctest --test-dir backend/build --output-on-failure  # 26 个 CUnit 单测
   npm --prefix frontend test -- --run             # 移动端 vitest
   ```
 

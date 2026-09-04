@@ -14,7 +14,9 @@ Business Layer services/       Orchestrate repos, balance ops, transactions
               services/ai/     Enterprise AI: runtime, model, workflow, tools, policy, trace
 Core Layer    core/financial/  Fixed-point core: money, decimal, quantity, price, rate, pnl
               core/ledger/     Ledger engine: transaction replay, rebuild, balance/cost basis
-Data Layer    repositories/    Raw SQL, return csilk_json_t*
+Infra Layer   infrastructure/database/ Database abstraction and SQLite/Postgres adapters
+              infrastructure/database/migration/ Migration engine (discovery, checksum, lock, baseline)
+Data Layer    repositories/    Raw SQL, return csilk_json_t* (legacy/transition)
 Shared        common/          db, jwt, balance, response, ctx, csv, tx_types
               config/          db_config, key_manager (RSA keys), secret (Secret Provider)
               dtos/            request/response struct definitions (reflection macros)
@@ -68,9 +70,14 @@ When a transaction is deleted, the service MUST:
 
 This prevents orphaned fee rows from leaving incorrect balance state.
 
-### Schema Note: parent_tx_id Column
+### Database Migration System
 
-The `transactions` table has an optional `parent_tx_id` column (SQLite: INTEGER, Postgres: BIGINT) with `ON DELETE CASCADE`. Fee rows are inserted as children of their parent transaction, enabling the rollback logic above. Migration is applied at runtime via `db.c` if the column is absent.
+Database schema changes are managed strictly via the native C migration engine (`backend/src/infrastructure/database/migration/`):
+- **Versioned scripts**: `backend/sql/migrations/{sqlite,postgres}/` following Flyway naming `V<num>__<name>.sql` (`V001`~`V007`).
+- **Tracking table**: `schema_migrations` records `version`, `name`, `checksum` (SHA-256 CRLF-normalized), `applied_at`, `execution_time_ms`, `execution_time`.
+- **Concurrency lock**: `schema_migration_lock` table acts as a distributed mutex with lease timeout to prevent multi-instance migration races.
+- **Engine lifecycle**: Automatic discovery, version sorting, checksum validation (tamper detection), transactional application, and status reporting.
+- **Auto-Baseline**: When booting against a pre-existing legacy database (where `users` table already exists but `schema_migrations` is missing), the engine automatically baselines versions `V001`~`V007` as applied. **Never drop or reinitialize production databases**.
 
 Balance direction is handled centrally: `balance_apply_delta()` flips the sign for liability assets (`loan`, `credit_card`, `other_liability`) so net-worth calculations stay correct. Transaction types are registered in `common/tx_types.c` — always use `tx_type_lookup()` instead of hard-coding type checks.
 
@@ -84,11 +91,14 @@ Balance direction is handled centrally: `balance_apply_delta()` flips the sign f
 | `backend/src/services/ai/` | Decoupled AI architecture: runtime, model, workflow, tools, policy, trace |
 | `backend/src/core/financial/` | Fixed-point core arithmetic: money, decimal, quantity, price, rate, pnl |
 | `backend/src/core/ledger/` | Ledger engine: single source of truth, position calculation, history replay/rebuild |
+| `backend/src/infrastructure/database/` | Database abstraction layer and SQLite/PostgreSQL native adapters |
+| `backend/src/infrastructure/database/migration/` | Migration engine: SHA-256 CRLF checksum, mutex locks, auto-baseline |
 | `backend/src/repositories/` | All SQL; return `csilk_json_t*`; never touch HTTP |
 | `backend/src/common/` | Cross-cutting: `db.h`, `balance.h`, `jwt.h`, `response.h`, `ctx.h`, `tx_types.h` |
 | `backend/src/config/` | `db_config.h/.c` (DSN), `key_manager.h/.c` (RSA-OAEP keys), `secret.h/.c` (Secret Provider) |
-| `backend/sql/` | `migration.sql` (SQLite), `migration_postgres.sql` |
-| `backend/tests/unit/` | 13 CTest unit test suites (financial core, ledger, AI tools/policy, secrets) |
+| `backend/sql/migrations/` | Versioned migration scripts (`sqlite/` & `postgres/`, `V001`~`V007`) |
+| `backend/sql/` | `migration.sql` (SQLite full schema), `migration_postgres.sql` |
+| `backend/tests/unit/` | 26 CTest unit test suites (financial core, ledger, domain rules, DB repository, migration engine) |
 | `backend/tests/test_link.sh` | 38-case integration test suite (139 assertions, HTTP + sqlite3 verification) |
 | `frontend/src/main.ts` | Desktop entry: Pinia, router, Element Plus, i18n |
 | `frontend/src/main-mobile.ts` | Mobile entry: separate router, sql.js init |
@@ -292,11 +302,11 @@ Every `onMounted` hook **MUST** wrap async initialization in `try/catch`. Use `v
 
 ## Testing & QA
 
-### Backend Unit & Integration Tests (13 CTest Suites + 7 Integration Suites)
+### Backend Unit & Integration Tests (26 CTest Suites + 7 Integration Suites)
 
 ```bash
 cd backend
-# 1. Run all 13 CTest unit test suites (sub-second fast feedback)
+# 1. Run all 26 CTest unit test suites (sub-second fast feedback)
 cd build && ctest --output-on-failure && cd ..
 
 # 2. Run all 7 end-to-end integration test suites
