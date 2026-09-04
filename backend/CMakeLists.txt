@@ -172,7 +172,7 @@ target_compile_options(test_domain_asset PRIVATE -UNDEBUG)
 target_link_libraries(test_domain_asset PRIVATE m)
 add_test(NAME test_domain_asset COMMAND test_domain_asset)
 
-add_executable(test_domain_portfolio tests/unit/test_domain_portfolio.c ${FINANCIAL_CORE_SOURCES} src/domain/portfolio/rules.c)
+add_executable(test_domain_portfolio tests/unit/test_domain_portfolio.c ${FINANCIAL_CORE_SOURCES} src/domain/portfolio/portfolio.c src/domain/portfolio/fx_table.c src/domain/portfolio/rules.c src/domain/asset/cost_basis.c src/domain/asset/pnl.c)
 target_include_directories(test_domain_portfolio PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_options(test_domain_portfolio PRIVATE -UNDEBUG)
 target_link_libraries(test_domain_portfolio PRIVATE m)
@@ -235,6 +235,7 @@ target_include_directories(test_domain_multi_currency PRIVATE ${CMAKE_CURRENT_SO
 target_compile_options(test_domain_multi_currency PRIVATE -UNDEBUG)
 target_link_libraries(test_domain_multi_currency PRIVATE m)
 add_test(NAME test_domain_multi_currency COMMAND test_domain_multi_currency)
+
 
 
 
