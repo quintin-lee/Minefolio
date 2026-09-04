@@ -12,6 +12,11 @@ extern "C" {
 const mf_db_adapter_ops_t* mf_postgres_adapter_get_ops(void);
 
 /**
+ * @brief 从现有原生 PostgreSQL 连接句柄包装为适配器句柄
+ */
+int mf_postgres_adapter_wrap_native(void* native_conn, void** out_handle);
+
+/**
  * @brief 将带有 '?' 占位符的 SQL 翻译为 PostgreSQL 风格的 '$1, $2, ...'
  * @param sql 原始 SQL 字符串
  * @return 翻译后的新分配字符串，调用者须负责 free()

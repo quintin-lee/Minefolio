@@ -60,6 +60,22 @@ sqlite_adapter_open(const mf_db_config_t* config, void** out_handle)
     return 0;
 }
 
+int
+mf_sqlite_adapter_wrap_native(sqlite3* db, void** out_handle)
+{
+    if (!db || !out_handle) {
+        return -1;
+    }
+    mf_sqlite_handle_t* h = calloc(1, sizeof(*h));
+    if (!h) {
+        return -1;
+    }
+    h->db = db;
+    h->owns_db = false;
+    *out_handle = h;
+    return 0;
+}
+
 static void
 sqlite_adapter_close(void* handle)
 {

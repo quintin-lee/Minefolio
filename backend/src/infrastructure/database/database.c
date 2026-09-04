@@ -2,6 +2,8 @@
 #include "infrastructure/database/adapter_ops.h"
 #include "infrastructure/database/postgres/postgres_adapter.h"
 #include "infrastructure/database/sqlite/sqlite_adapter.h"
+#include <csilk/csilk.h>
+#include <csilk/drivers/db.h>
 #include <pthread.h>
 #include <sqlite3.h>
 #include <stdio.h>
@@ -70,12 +72,23 @@ mf_db_wrap_csilk(void* csilk_pool, mf_db_engine_t engine, mf_db_t** out_db)
     db->underlying_csilk_pool = csilk_pool;
     pthread_mutex_init(&db->lock, NULL);
 
+    void* raw_conn = csilk_db_pool_get_connection((csilk_db_pool_t*)csilk_pool);
+    void* native_conn = raw_conn ? *(void**)raw_conn : NULL;
+
     if (engine == MF_DB_ENGINE_POSTGRES) {
         db->ops = mf_postgres_adapter_get_ops();
-        db->ops->open(&cfg, &db->native_handle);
+        if (native_conn) {
+            mf_postgres_adapter_wrap_native(native_conn, &db->native_handle);
+        } else {
+            db->ops->open(&cfg, &db->native_handle);
+        }
     } else {
         db->ops = mf_sqlite_adapter_get_ops();
-        db->ops->open(&cfg, &db->native_handle);
+        if (native_conn) {
+            mf_sqlite_adapter_wrap_native((sqlite3*)native_conn, &db->native_handle);
+        } else {
+            db->ops->open(&cfg, &db->native_handle);
+        }
     }
 
     *out_db = db;

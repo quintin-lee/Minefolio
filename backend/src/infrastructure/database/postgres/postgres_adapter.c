@@ -11,6 +11,7 @@ typedef struct {
     char* dsn;
     bool  is_mock;
     void* native_conn;
+    bool  owns_conn;
 } mf_postgres_handle_t;
 
 typedef struct {
@@ -152,7 +153,25 @@ postgres_adapter_open(const mf_db_config_t* config, void** out_handle)
 #else
     h->is_mock = true;
 #endif
+    h->owns_conn = true;
 
+    *out_handle = h;
+    return 0;
+}
+
+int
+mf_postgres_adapter_wrap_native(void* native_conn, void** out_handle)
+{
+    if (!out_handle) {
+        return -1;
+    }
+    mf_postgres_handle_t* h = calloc(1, sizeof(*h));
+    if (!h) {
+        return -1;
+    }
+    h->native_conn = native_conn;
+    h->is_mock = (native_conn == NULL);
+    h->owns_conn = false;
     *out_handle = h;
     return 0;
 }
@@ -165,7 +184,7 @@ postgres_adapter_close(void* handle)
     }
     mf_postgres_handle_t* h = (mf_postgres_handle_t*)handle;
 #if defined(HAVE_LIBPQ)
-    if (h->native_conn) {
+    if (h->native_conn && h->owns_conn) {
         PQfinish((PGconn*)h->native_conn);
     }
 #endif
