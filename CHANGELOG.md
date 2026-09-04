@@ -9,6 +9,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Unified AI Runtime Architecture (`backend/src/services/ai/runtime/`, `backend/src/services/ai/memory/`)**:
+  - Implemented Minefolio's centralized C-native AI Runtime architecture completely decoupling Controllers and Workflows from direct LLM invocations.
+  - 8-Subsystem Runtime Architecture:
+    - `Session`: Session persistence, auto-title generation, and history retrieval (`runtime/session.h`).
+    - `Context`: Unified execution container `ai_runtime_context_t` consolidating user ID, session ID, message history, tool registry, permissions, trace metadata, limits, and runtime statistics (`runtime/context.h`).
+    - `Model`: Provider abstraction layer, structured prompt formatting, token usage and cost estimation (`model/model.h`).
+    - `Tool`: Schema-based tool definitions and dispatch pipeline with strict parameter validation (`tools/registry.h`).
+    - `Workflow`: High-level multi-step financial DAG workflows delegating LLM turns to Runtime (`workflow/executor.h`).
+    - `Policy`: Pre-execution security interception enforcing 5-tier financial risk assessments, confirmations, and frequency bounds (`policy/policy.h`).
+    - `Trace`: End-to-end tracing capturing turn latencies, token consumption, and tool execution spans (`trace/trace.h`).
+    - `Memory`: Sliding-window message context manager (`memory/memory.h`) guaranteeing system prompt retention and token budget compliance.
+  - **Autonomous Agent Execution Loop (`runtime/loop.h/.c`)**:
+    - Complete agent state machine: Context build $\to$ Memory sliding window $\to$ Pre-turn budget validation $\to$ Model stream invocation $\to$ Response parsing $\to$ Tool budget check $\to$ Policy evaluation $\to$ Tool execution $\to$ Trace recording $\to$ Context append $\to$ Loop continuation $\to$ Stream finish.
+    - Unified stream entrypoint `ai_runtime_execute_stream()` and batch execution entrypoint `ai_runtime_execute()`.
+  - **Runtime Limits & Budgets Enforcement (`runtime/limits.h/.c`)**:
+    - Strict enforcement of `max_iterations`, `timeout_ms`, `token_budget`, `tool_budget`, and `cost_budget`.
+    - Cooperative cancellation support via `cancellation_token` pointer for client disconnects or abort signals.
+  - **Structured Error Taxonomy (`runtime/error.h/.c`)**:
+    - Differentiated error codes: `AI_RUNTIME_ERR_OK`, `AI_RUNTIME_ERR_MODEL`, `AI_RUNTIME_ERR_TOOL`, `AI_RUNTIME_ERR_POLICY`, `AI_RUNTIME_ERR_TIMEOUT`, `AI_RUNTIME_ERR_CONTEXT_OVERFLOW`, `AI_RUNTIME_ERR_VALIDATION`, `AI_RUNTIME_ERR_CANCELLED`.
+    - Human-readable error names and structured status objects with detail messages.
+  - **Dedicated Unit Test Suite (`backend/tests/unit/test_ai_runtime.c`)**:
+    - Added test cases verifying context lifecycle, error formatting, limit checks (iteration limit, token budget, tool budget, timeout), memory sliding window with system message pinning, and loop cancellation handling (CTest total reaches 27 suites).
+
+### Changed
+- `backend/src/services/ai_service.c`: Refactored `ai_chat_handler` and `ai_service_stream_report` to delegate completely to `ai_runtime_execute_stream()`, eliminating over 400 lines of duplicated conversation loops, manual token counting, and tool allocation boilerplate.
+- `AGENTS.md`: Updated AI Architecture guidelines, runtime execution rules, and directory map.
+
 ## [1.1.0] - 2026-09-04
 
 ### Added

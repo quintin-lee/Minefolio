@@ -18,7 +18,7 @@ Minefolio 是一款极度轻量、安全、专业的**开源全资产管理与�
 
 * 🧮 **高精度金融核心与定点数引擎 (Financial Core)**：基于 64 位有符号整型定点数与标准舍入算法，彻底消除浮点数计算误差，支持高精度货币 (Money)、持仓数量 (Quantity)、成交价 (Price)、汇率 (Rate)、百分比 (Percentage) 与盈亏 (PnL) 严谨核算。
 * 🏛️ **统一账本状态引擎 (Ledger Engine)**：确立「Transaction 是唯一金融事实」准则，资产持仓、现金余额、成本基础、已实现/浮动盈亏全由账本引擎统一计算与更新，并提供基于时间序列事实全量重建 (`rebuild`) 的自愈能力。
-* 🛡️ **企业级 AI 架构与五级风控引擎 (AI Framework & Risk Engine)**：AI 系统解耦为运行时 (Runtime)、模型适配 (Model)、DAG 工作流 (Workflow)、领域工具集 (Tools)、安全策略 (Policy) 与调用追踪 (Trace)；实行五级风险评估与带 Nonce 防重放的恒定时间 HMAC-SHA256 双重确认令牌机制。
+* 🤖 **统一 AI Runtime 与企业级五级风控引擎 (Unified AI Runtime & Risk Engine)**：建立原生 C 统一 AI 运行时架构，将 Controller 与 Workflow 彻底与 LLM 调用解耦，纳管会话 (Session)、统一上下文容器 (Context)、模型适配 (Model)、工具执行 (Tool)、工作流编排 (Workflow)、安全策略 (Policy)、全链路追踪 (Trace) 与滑动窗口记忆 (Memory)；全面支持硬预算与约束（迭代上限、超时、Token/Tool/Cost 预算与主动取消）及结构化错误分类，实行五级风险评估与带 Nonce 防重放的双重确认令牌机制。
 * 🔑 **统一 Secret Provider 与零硬编码安全门禁**：建立统一敏感配置检索机制，原生兼容环境变量、Docker/K8s Secret 文件挂载与外部密钥管理器 (Vault/AWS/K8s)；在生产启动期实施硬编码/弱口令主动熔断。
 * 🗄️ **企业级数据库迁移系统 (Database Migration System)**：原生 C 语言实现的 Flyway 风格版本化迁移引擎，支持 SQLite / PostgreSQL 双方言（`V001`~`V007`）；具备版本严格发现排序、SHA-256 CRLF 规范化哈希防篡改、基于行锁的分布式迁移互斥锁，以及生产环境存量数据库平滑升级（Auto-Baseline），绝不要求删除已有数据库重新初始化。
 * 💼 **全资产全场景覆盖**：支持现金、银行储蓄、股票、基金、债券、加密货币、房产、贷款、信用卡等资产与负债统一建档，支持负债方向自动正负号翻转。
@@ -182,14 +182,14 @@ Minefolio/
 │   │   │   └── ledger/           # 事件溯源账本引擎（ledger_apply_tx/reverse/rebuild）
 │   │   ├── controllers/          # 表现层：Legacy HTTP Controllers（过渡期双注册）
 │   │   ├── services/             # 业务层：Legacy Services（过渡期）
-│   │   │   ├── ai/               # 企业级解耦 AI 架构（runtime, model, workflow, tools, policy, trace）
+│   │   │   ├── ai/               # 统一 AI Runtime 架构（runtime, model, workflow, tools, policy, trace, memory）
 │   │   │   └── market/           # 行情引擎、外汇服务、调度器
 │   │   ├── repositories/         # 数据层：Legacy Repository（过渡期）
 │   │   ├── common/               # 公共组件（db, jwt, balance, response, 2fa, ocr, tx_types）
 │   │   ├── config/               # 密钥对管理、数据库配置、统一 Secret Provider (secret.h/.c)
 │   │   └── middlewares/          # JWT 鉴权、CORS、CSRF、限流与安全头中间件
 │   └── tests/                    # 单元测试与集成测试矩阵
-│       ├── unit/                 # 20 项高覆盖 CTest 单元测试
+│       ├── unit/                 # 27 项高覆盖 CTest 单元测试
 │       │   ├── test_currency.c   # 货币模型（ISO 4217、精度、比较）
 │       │   ├── test_decimal.c    # 128位定点算术（加/减/乘/除/舍入）
 │       │   ├── test_money.c      # 金额类型（跨币种安全校验）
@@ -200,6 +200,10 @@ Minefolio/
 │       │   ├── test_fx.c         # 外汇计算
 │       │   ├── test_ledger_math.c # Ledger 纯数学算子
 │       │   ├── test_ledger_engine.c # Ledger 事件溯源全链路
+│       │   ├── test_ai_tools.c   # AI 工具 Schema 注册/分发
+│       │   ├── test_ai_policy.c  # AI 五级风控策略
+│       │   ├── test_ai_runtime.c # AI Runtime 统一执行循环、预算限制与错误分类
+│       │   ├── test_secret_provider.c    # 统一密钥提供者
 │       │   ├── test_domain_transaction.c # 交易领域规则
 │       │   ├── test_domain_asset.c       # 资产领域规则
 │       │   ├── test_domain_auth.c        # 认证领域规则
@@ -207,9 +211,12 @@ Minefolio/
 │       │   ├── test_domain_portfolio.c   # 投资组合领域规则
 │       │   ├── test_domain_cashflow.c    # 现金流领域规则
 │       │   ├── test_domain_market.c      # 行情领域规则
-│       │   ├── test_ai_tools.c           # AI 工具 Schema 注册/分发
-│       │   ├── test_ai_policy.c          # AI 五级风控策略
-│       │   └── test_secret_provider.c    # 统一密钥提供者
+│       │   ├── test_domain_cost_basis.c  # 成本基础领域规则
+│       │   ├── test_domain_pnl.c         # 盈亏领域规则
+│       │   ├── test_domain_position.c    # 持仓领域规则
+│       │   ├── test_domain_multi_currency.c # 多币种领域规则
+│       │   ├── test_database_repository.c # 数据库仓储接口抽象
+│       │   └── test_migration_engine.c   # 迁移引擎发现、锁与基线
 │       ├── test_link.sh          # 核心业务闭环测试 (38 用例，139 断言)
 │       ├── test_full.sh          # 全量回归测试入口
 │       ├── test_ledgers.sh       # 多账本与 RBAC 测试 (16 用例)
@@ -337,7 +344,7 @@ Minefolio/
 
 Minefolio 拥有完整的双层测试矩阵（单元测试 + 端到端集成回归）：
 
-### 1. CTest 单元测试矩阵（26 大测试套件，高频毫秒级断言）
+### 1. CTest 单元测试矩阵（27 大测试套件，高频毫秒级断言）
 ```bash
 cd backend/build
 ctest --output-on-failure
@@ -347,7 +354,7 @@ ctest --output-on-failure
 # - 领域业务规则与仓储：test_domain_transaction, test_domain_asset, test_domain_auth, test_domain_ai,
 #                       test_domain_portfolio, test_domain_cashflow, test_domain_market,
 #                       test_domain_cost_basis, test_domain_pnl, test_domain_position, test_domain_multi_currency
-# - 智能架构与风控系统：test_ai_tools, test_ai_policy
+# - 统一 AI Runtime 与风控系统：test_ai_tools, test_ai_policy, test_ai_runtime
 # - 统一机密提供者与安全门禁：test_secret_provider
 # - 数据库抽象与迁移引擎：test_database_repository, test_migration_engine
 ```

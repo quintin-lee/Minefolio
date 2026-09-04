@@ -8,7 +8,7 @@
 
 ## 0. 摘要 (TL;DR)
 
-Minefolio 是一个**自托管的个人财务与投资追踪平台**,支持多账户类型(现金、银行、信用卡、贷款)、多资产持仓(股票/基金/债券/加密货币,含完整成本基础与盈亏)、AI 对话式记账、定投(DCA)计划、被动现金流台账、多账本协作与 CSV 导入导出。**后端采用 C23 + csilk v0.5.2 HTTP 框架 + 分层架构 (Domain/Application/Infrastructure/Interfaces) + 128 位定点 Financial Core + 事件溯源 Ledger Engine**;**前端采用 Vue 3 + TypeScript SPA**;**移动端使用 Capacitor + sql.js WASM 完全离线运行**。本文档按"总-图-分"黄金法则,从物理拓扑、模块分解、数据模型、关键数据流、部署拓扑、安全边界六个维度给出完整工程级架构说明。
+Minefolio 是一个**自托管的个人财务与投资追踪平台**,支持多账户类型(现金、银行、信用卡、贷款)、多资产持仓(股票/基金/债券/加密货币,含完整成本基础与盈亏)、AI 对话式记账、定投(DCA)计划、被动现金流台账、多账本协作与 CSV 导入导出。**后端采用 C23 + csilk v0.5.2 HTTP 框架 + 分层架构 (Domain/Application/Infrastructure/Interfaces) + 128 位定点 Financial Core + 事件溯源 Ledger Engine + 统一 AI Runtime (8 大子系统解耦与 Agent Loop)**;**前端采用 Vue 3 + TypeScript SPA**;**移动端使用 Capacitor + sql.js WASM 完全离线运行**。本文档按"总-图-分"黄金法则,从物理拓扑、模块分解、数据模型、关键数据流、部署拓扑、安全边界六个维度给出完整工程级架构说明。
 
 ---
 
@@ -16,7 +16,7 @@ Minefolio 是一个**自托管的个人财务与投资追踪平台**,支持多�
 
 ### 1.1 总 (Overview)
 
-Minefolio 采用**经典三层 B/S 架构 + 四层 C 后端分层 + 离线移动子端**。HTTP 层(Interface Controllers)只做协议解析与响应封装,应用层(Usecases)负责用例编排,领域层(Domain)定义纯业务规则与实体契约,基础设施层(Infrastructure)实现仓储契约。Financial Core 提供 128 位定点高精度金融数学与强类型领域模型;Ledger Engine 作为统一账本核心,实现事件溯源与状态重算。前端 Vue 3 SPA 桌面端通过 nginx 反向代理与 C 后端通信,移动端通过 Capacitor WebView 加载同一份 dist-mobile 产物,并使用内嵌的 sql.js WASM 在本地 SQLite 中完全离线工作。AI 子系统(DeepSeek/OpenAI 兼容)通过 Server-Sent Events 流式输出,经两层缓冲区(网络→SSE→RAF type-writer)实现平滑打字效果。
+Minefolio 采用**经典三层 B/S 架构 + 四层 C 后端分层 + 离线移动子端**。HTTP 层(Interface Controllers)只做协议解析与响应封装,应用层(Usecases)负责用例编排,领域层(Domain)定义纯业务规则与实体契约,基础设施层(Infrastructure)实现仓储契约。Financial Core 提供 128 位定点高精度金融数学与强类型领域模型;Ledger Engine 作为统一账本核心,实现事件溯源与状态重算;AI Runtime 作为统一智能运行时,提供 Session、Context、Model、Tool、Workflow、Policy、Trace、Memory 8 大子系统与自主 Agent Loop 状态机。前端 Vue 3 SPA 桌面端通过 nginx 反向代理与 C 后端通信,移动端通过 Capacitor WebView 加载同一份 dist-mobile 产物,并使用内嵌的 sql.js WASM 在本地 SQLite 中完全离线工作。AI 子系统(DeepSeek/OpenAI 兼容)通过 Server-Sent Events 流式输出,经两层缓冲区(网络→SSE→RAF type-writer)实现平滑打字效果。
 
 ### 1.2 图 (Diagram)
 
@@ -53,7 +53,7 @@ graph TB
         core["fa:fa-calculator Financial Core<br/>128-bit decimal + strong types"]
         ledger["fa:fa-balance-scale Ledger Engine<br/>event sourcing + rebuild"]
         shared["fa:fa-wrench Common<br/>DB/JWT/Balance/TxTypes/AI Config"]
-        ai["fa:fa-robot AI Subsystem<br/>model/policy/runtime/tools/trace/workflow"]
+        ai["fa:fa-robot Unified AI Runtime<br/>session/context/model/tool/workflow/policy/trace/memory"]
         market["fa:fa-chart-line Market Scheduler<br/>异步行情拉取"]
     end
 
@@ -78,10 +78,10 @@ graph TB
     app --> ledger
     app --> shared
     ai --> app
-    ai -->|"model/policy/runtime/tools/workflow"| shared
+    ai -->|"model/policy/runtime/tools/workflow/memory"| shared
     market --> quotes
     market --> infra
-    app -->|"SSE: POST /ai/chat"| llm
+    ai -->|"SSE: POST /ai/chat"| llm
     infra --> sqlite
     infra -.-> pg
 ```
@@ -102,7 +102,7 @@ graph TB
 | **Financial Core** | **新增 v1.0**: 128 位定点高精度金融数学 + 强类型领域模型 | `backend/src/core/financial/` |
 | **Ledger Engine** | **新增 v1.0**: 事件溯源账本,原子 `ledger_apply_tx` / `ledger_reverse_tx`,支持 `ledger_rebuild_*` | `backend/src/core/ledger/` |
 | **Common** | 跨域通用: DB 池、JWT (HS256)、RSA-OAEP、tx_type 注册表、CSV 工具、TOTP、balance 符号翻转 | `backend/src/common/` |
-| **AI Subsystem** | **模块化拆分**: model(请求/响应)、policy(五级风控)、runtime(会话/循环)、tools(7步调度)、trace(Span/导出器)、workflow(Graph/Executor) | `backend/src/services/ai/{model,policy,runtime,tools,trace,workflow}/*.c/.h` |
+| **Unified AI Runtime** | **统一 AI 运行时架构**: 彻底解耦 Controller/Workflow 与 LLM 直接调用;session(会话持久化与标题)、context(统一容器与状态机)、model(模型提供者适配与估算)、tools(7大领域工具与Schema)、policy(五级风控与防重放)、trace(端到端Span与成本统计)、memory(滑动窗口截断与系统提示词保护)、workflow(DAG编排与执行委托) | `backend/src/services/ai/{runtime,memory,model,policy,tools,trace,workflow}/*.c/.h` |
 | **Market Scheduler** | 后台线程,定时拉取行情,通过 `quote_driver` 多源适配(东方财富/腾讯/Yahoo/Crypto),汇率服务 | `backend/src/services/market/` |
 | **Migration Engine** | **原生 C 语言版本化迁移引擎**: Flyway 规范发现与严格版本排序、SHA-256 CRLF 规范化防篡改校验和、分布式互斥锁 (`schema_migration_lock`)、自动基线 (Auto-Baseline) 平滑升级 | `backend/src/infrastructure/database/migration/`、`backend/sql/migrations/` |
 | **SQLite / PostgreSQL** | 数据持久化;通过 `csilk_db_pool_t` 连接池 | `backend/sql/migration.sql`、`migration_postgres.sql` |
@@ -529,13 +529,17 @@ sequenceDiagram
 - **对账能力**: `ledger_rebuild_*` 系列接口可在任何时刻从零重放所有事件,物化最终状态;对账结果 MUST 与当前 DB 一致 (`rebuild_state == persisted_state`)
 - **类型安全**: 所有金额运算使用 `money_t` + `price_t` + `quantity_t` 强类型,禁止裸 double 算术
 
-### 4.2 AI 对话流 (Chat Streaming)
+### 4.2 统一 AI Runtime 与流式对话 (Unified AI Runtime & Streaming)
 
 #### 4.2.1 总
 
-AI 对话是 Minefolio 最复杂的流式场景。HTTP 层立即返回 `Content-Type: text/event-stream`,后端异步从 LLM 拉取 token 并 SSE 推送;前端 `chatStream()` async generator 逐块 yield;**两层缓冲** 解决"网络成批到达"与"UI 平滑打字"的矛盾:**第一层** SmoothStreamWriter 在 store 中按 RAF (60fps) 节奏从 `buf` 抽 1-4 字符到响应式 `msg.content`;**第二层** `ChatMessageContent` 中将尾部未闭合的文本段以纯文本插值渲染(避免每帧 `marked.parse` 全量重算),仅对已闭合的 markdown/code/mermaid/action 段执行渲染。
+AI 对话与智能分析是 Minefolio 最核心的智能场景。系统基于**统一 AI Runtime 架构**（`backend/src/services/ai/runtime/`），彻底将 HTTP Controllers、Workflow 执行器与底层 LLM 调用解耦。所有对话与工作流执行统一走 Runtime 状态机，严格实行：
+1. **上下文与记忆装配**：通过 `ai_memory_build_messages()` 构建滑动窗口历史，强制钉住系统提示词（System Prompt），保证长会话中不超出模型上下文；
+2. **预算与防死循环约束**：在每轮（Turn）和每次工具执行前执行配额校验（迭代上限、超时、Token/Tool/Cost 预算及协作式取消）；
+3. **安全风控管线**：工具调用必经 Policy 引擎的五级风险评估（NORMAL/WARNING/HIGH/CRITICAL/FATAL）与带 Nonce 防重放的二次确认机制；
+4. **两层前端渲染缓冲**：HTTP 层返回 `text/event-stream`，**第一层** SmoothStreamWriter 在 store 中按 60fps RAF 节奏从缓冲区平滑抽字；**第二层** `ChatMessageContent` 对尾部未闭合文本纯文本插值渲染，仅对已闭合 markdown/mermaid 段落全量解析。
 
-#### 4.2.2 图
+#### 4.2.2 图 (Agent Loop & Streaming Sequence)
 
 ```mermaid
 %%{init: {
@@ -557,82 +561,117 @@ sequenceDiagram
     participant ST as Pinia chat store
     participant W as SmoothStreamWriter
     participant API as api/ai.ts (chatStream)
-    participant IC as ai_controller (interfaces)
-    participant AUC as ai_usecase_chat (application)
-    participant POL as AI Policy Engine
-    participant TTL as Tool Dispatcher (7-step pipeline)
+    participant IC as ai_controller / ai_service
+    participant RT as Unified AI Runtime (Agent Loop)
+    participant MEM as Memory Manager
+    participant LIM as Limits & Budgets
+    participant LLM as LLM Provider (DeepSeek/OpenAI)
+    participant POL as Policy Engine (5-Tier Risk)
+    participant TTL as Tool Registry & Dispatcher
     participant TRC as Trace Exporter
-    participant LLM as LLM Provider
 
     U->>V: 输入 + Enter
     V->>ST: sendMessage(text)
     ST->>ST: push user msg + empty assistant msg
     ST->>API: chatStream({content, ...}, AbortSignal)
     API->>IC: POST /ai/chat (fetch + ReadableStream)
-    IC->>AUC: ai_usecase_chat(pool, cmd)
-    AUC->>POL: ai_policy_evaluate(user_id, session_id, tool_name, args)
-    POL-->>AUC: {allowed:true, risk_level:NORMAL}
-    loop token by token
-        AUC->>LLM: OpenAI-compatible chat.completions (stream=true)
-        LLM-->>AUC: SSE delta chunk
-        AUC-->>IC: SSE delta (event: delta)
-        IC-->>API: event: delta\ndata: {"content":"x"}
-        API-->>ST: yield {type:'delta', content:'x'}
-        ST->>W: writer.push('x')
-        W->>W: buf += 'x' + schedule RAF
-        Note over W: 每帧从 buf 抽 1-4 字符<br/>标点/词边界 1 字符<br/>正文 3-4 字符
-        W->>ST: target.content += slice
-        ST-->>V: 响应式触发 watcher
-        V->>V: ChatMessageContent 接收 RAF tick
-        V->>V: 尾部 plain text 插值 (无 markdown 解析)
-        alt tool call detected
-            AUC->>TTL: ai_tool_dispatch(ctx, tool_name, args)
-            TTL->>TTL: Step1: Schema Validate → Step2: Permission → Step3: Risk Check<br/>Step4: Confirmation Draft → Step5: Tool Execute → Step6: Audit → Step7: Trace
-            TTL->>TRC: ai_trace_export(span_data)
-            TRC->>DB: INSERT ai_traces
+    IC->>RT: ai_runtime_execute_stream(pool, ctx, stream_cb, user_data)
+    RT->>MEM: ai_memory_build_messages(ctx->session_id, token_budget)
+    Note over MEM: 保留系统提示词 + 截断历史滑动窗口
+    loop Agent Execution Loop (max_iterations)
+        RT->>LIM: ai_runtime_limits_check_pre_turn(stats, limits)
+        alt 超时 / 迭代耗尽 / Token超限 / 已取消
+            LIM-->>RT: AI_RUNTIME_ERR_* (终止循环)
+        end
+        RT->>LLM: ai_model_chat_stream(model_cfg, messages, tools)
+        loop Token-by-Token SSE
+            LLM-->>RT: SSE Delta Chunk
+            RT-->>IC: stream_cb(SSE_EVENT_DELTA, chunk)
+            IC-->>API: event: delta\ndata: {"content":"x"}
+            API-->>ST: yield {type:'delta', content:'x'}
+            ST->>W: writer.push('x')
+            W->>ST: RAF tick -> target.content += slice
+            ST-->>V: watcher 响应式更新
+            V->>V: 尾部 plain text 插值渲染 (无 DOM 重解析)
+        end
+        alt Tool Call Detected in Response
+            RT->>LIM: ai_runtime_limits_check_tool_budget(stats, limits)
+            RT->>POL: ai_policy_evaluate(user_id, session_id, tool_name, args)
+            alt 风险拦截或需要二次确认
+                POL-->>RT: {allowed: false, confirmation_token: ...}
+                RT-->>IC: stream_cb(SSE_EVENT_DELTA, confirmation_prompt)
+            else 允许执行
+                RT->>TTL: ai_tool_dispatch_parsed(pool, tool_name, args)
+                TTL-->>RT: tool_result (JSON)
+                RT->>TRC: ai_trace_record_tool_span(trace_ctx, span_data)
+                RT->>RT: ctx_append_tool_message(tool_result)
+                Note over RT: 继续下一轮循环 (Continue Loop)
+            end
+        else Final Text Response
+            RT->>TRC: ai_trace_finish(trace_ctx)
+            RT-->>IC: stream_cb(SSE_EVENT_DONE, NULL)
         end
     end
-    LLM-->>AUC: stream end
-    AUC-->>IC: event: done
     IC-->>API: event: done
     API-->>ST: yield {type:'done'}
     ST->>W: await writer.finish() (drain buf)
-    ST->>V: enableTypewriterBuffer = false
-    V->>V: isStreaming=false → 切到 48ms debounce + LRU HTML cache
-    V->>V: marked.parse + DOMPurify.sanitize (一次性)
+    V->>V: isStreaming=false -> marked.parse + DOMPurify 一次性闭合高亮
 ```
 
-#### 4.2.3 分
+#### 4.2.3 分 (Breakdown)
 
-**AI 工具调度七步流水线 (`ai_tool_dispatch`):**
+**1. AI Runtime 8 大核心子系统**
 
-| 步骤 | 模块 | 职责 |
-|------|------|------|
-| 1 | Schema Validator | JSON 结构合法性、必填字段与类型校验 |
-| 2 | Permission Check | 用户权限校验 (owner/editor/viewer 对比工具所需权限) |
-| 3 | Risk Check | 五级风险评定 (NORMAL/WARNING/HIGH/CRITICAL/FATAL) + 金额限制 |
-| 4 | Confirmation | 高危动账操作生成二次确认草案 (Nonce + HMAC-SHA256) |
-| 5 | Tool Execute | 业务执行 + 事务原子控制 |
-| 6 | Audit | 审计日志写入 (操作前后状态快照) |
-| 7 | Trace | Span 记录 + `ai_traces` 表持久化 (latency/tokens/cost) |
+| 子系统 | 目录 | 职责说明 |
+|---|---|---|
+| **Session** | `services/ai/runtime/session.h` | 会话元数据持久化、自动标题提取（30字限长截断）、历史消息分页拉取 |
+| **Context** | `services/ai/runtime/context.h` | 统一运行容器 `ai_runtime_context_t`：集成 user_id、session_id、messages、tools、permissions、limits、stats 与 trace 上下文 |
+| **Model** | `services/ai/model/` | 多模型抽象（DeepSeek / OpenAI 兼容）、请求提示词组织、Token 估算与费率成本计量 |
+| **Tool** | `services/ai/tools/` | 统一工具注册表、JSON Schema 自动校验、类型安全入参解析，工具绝不直接调用 LLM |
+| **Workflow** | `services/ai/workflow/` | Universal DAG 图调度、拓扑排序、节点状态机迁移，调用统一 Runtime 完成报告生成 |
+| **Policy** | `services/ai/policy/` | 五级金融风控（READ_ONLY 至 CRITICAL）、带 Nonce 防重放 HMAC 确认令牌、敏感字段脱敏审计 |
+| **Trace** | `services/ai/trace/` | OpenTelemetry 兼容 Span 追踪、网络与工具执行延迟分析、Token/Cost 统计导出至 `ai_traces` |
+| **Memory** | `services/ai/memory/` | 上下文记忆管理：系统提示词永久置顶、滑动窗口历史消息截断、严格遵守模型 Token Budget |
 
-**为什么需要两层缓冲?**
+**2. 运行时预算与限制 (Limits & Budgets)**
 
-| 阶段 | 问题 | 方案 |
-|------|------|------|
-| 网络→UI | SSE-over-TCP 到达是**突发**的(单 chunk 可达 50+ 字符) | SmoothStreamWriter RAF 抽稀 |
-| UI 渲染 | 每帧 `marked.parse` 全文 + `v-html` 全量替换 → 阻塞主线程 → 多帧攒批 | 尾部 plain text + 闭合段才解析 |
+Runtime 内部严格实行主动防御与硬约束，防止由于模型幻觉或工具递归引发的死循环和费用失控：
 
-**关键指标 (60Hz 显示器):**
-- 平滑速率: 标点/词边界 60cps,正文 180-240cps(覆盖 DeepSeek/通义千问典型 token throughput)
-- RAF 隐藏标签页自动暂停(`document.hidden` 暂停回调)
-- LRU 缓存: 80 项 markdown、60 项 HTML,避免流结束后的尾段重复解析
+```c
+typedef struct {
+    int32_t max_iterations;    // 最大轮数限制（默认 10 轮）
+    int64_t timeout_ms;        // 硬超时时间（默认 120,000ms）
+    int32_t token_budget;      // Token 预算配额（默认 32,768）
+    int32_t tool_budget;       // 工具调用上限（默认 20 次）
+    double  cost_budget;       // 美元费用上限（默认 $1.00）
+    const bool* cancellation_token; // 外部协作式中断信号（客户端断开立即熔断）
+} ai_runtime_limits_t;
+```
 
-**工作流 (Workflow) 模式:**
-- 除 chat 外,`POST /ai/workflows/run` 触发多步编排(分类分析、月度回顾、组合再平衡等)
-- SSE 事件类型扩展: `workflow_start` / `step_start` / `step_progress` / `step_complete` / `delta` / `workflow_complete` / `error`
-- 前端 `<WorkflowProgressCard>` 实时显示步骤进度,UI 渲染与 chat 一致
-- 具体工作流: `cashflow_forecast` (3,578 行,30/90天预测) / `financial_health` (701行,健康评分) / `monthly_review` (452行,月度报告) / `portfolio_analysis` (273行,组合诊断)
+* `ai_runtime_limits_check_pre_turn()`：每轮模型调用前比对已用时间、迭代轮数与 Token 累计消耗。
+* `ai_runtime_limits_check_tool_budget()`：模型返回 tool_calls 后，检查工具累计调用次数与预算配额。
+
+**3. 结构化错误分类 (Error Taxonomy)**
+
+Runtime 严格区分故障来源，绝不笼统返回通用 500 异常：
+
+| 错误代码 | 枚举常量 | 触发场景 |
+|---|---|---|
+| `0` | `AI_RUNTIME_ERR_OK` | 正常执行结束 |
+| `1` | `AI_RUNTIME_ERR_MODEL` | 模型提供商网络故障、HTTP 非200、SSE 协议格式错乱 |
+| `2` | `AI_RUNTIME_ERR_TOOL` | 工具执行异常、参数不匹配、SQL 事务回滚 |
+| `3` | `AI_RUNTIME_ERR_POLICY` | 权限不足、五级风控拦截、二次确认签名失效或 Nonce 重放 |
+| `4` | `AI_RUNTIME_ERR_TIMEOUT` | 总执行时间超过 `timeout_ms` 预算上限 |
+| `5` | `AI_RUNTIME_ERR_CONTEXT_OVERFLOW` | 消息上下文 Token 超过 `token_budget` 配额 |
+| `6` | `AI_RUNTIME_ERR_VALIDATION` | 入参格式错误、必填上下文缺失、参数合法性校验失败 |
+| `7` | `AI_RUNTIME_ERR_CANCELLED` | 外部 `cancellation_token` 激活（用户取消或客户端连接关闭） |
+
+**4. 为什么前端需要两层渲染缓冲?**
+
+| 阶段 | 核心问题 | 解决手段 |
+|---|---|---|
+| **网络至 UI** | SSE-over-TCP 到达是**突发**的（单个网络数据包可包含 50+ 字符），直连 UI 会出现机械卡顿 | `SmoothStreamWriter` 按 60fps RAF 从 buffer 抽 1~4 字符渐进推进 |
+| **DOM 渲染** | 每收到字符如果都执行 `marked.parse` 与 `v-html` 渲染，将造成严重的 DOM 节点频繁重排重绘 | 尾部 plain text 纯文本插值，仅对闭合 Markdown/Code/Mermaid 段落进行高亮与富文本渲染 |
 
 ### 4.3 行情同步 (Market Scheduler)
 
