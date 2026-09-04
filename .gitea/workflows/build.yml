@@ -2,25 +2,48 @@ name: build-docker
 
 on:
   push:
-    branches:
-      - main
-      - master
-    tags:
-      - "v*"
+    branches: [main, master]
+    tags: ['v*']
   workflow_dispatch:
 
 jobs:
-  build:
-    runs-on: ubuntu-22.04
+  compute-metadata:
+    name: Compute Docker Image Metadata
+    runs-on: ubuntu-latest
+    outputs:
+      registry: ${{ steps.meta.outputs.registry }}
+      backend_img: ${{ steps.meta.outputs.backend_img }}
+      frontend_img: ${{ steps.meta.outputs.frontend_img }}
+      tag: ${{ steps.meta.outputs.tag }}
+      is_release: ${{ steps.meta.outputs.is_release }}
+    steps:
+      - name: Compute metadata
+        id: meta
+        run: |
+          REGISTRY="${{ secrets.GITEA_REGISTRY }}"
+          if [ -z "$REGISTRY" ]; then
+            REGISTRY="$(echo "${{ gitea.server_url }}" | sed -E 's#^https?://##')"
+          fi
+          REPO="${{ gitea.repository }}"
+          echo "registry=${REGISTRY}" >> "$GITHUB_OUTPUT"
+          echo "backend_img=${REGISTRY}/${REPO}" >> "$GITHUB_OUTPUT"
+          echo "frontend_img=${REGISTRY}/${REPO}-frontend" >> "$GITHUB_OUTPUT"
+          BRANCH="${{ github.ref_name }}"
+          TAG_SUFFIX="${BRANCH#v}"
+          echo "tag=${TAG_SUFFIX}" >> "$GITHUB_OUTPUT"
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "is_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build-backend:
+    name: Build Backend Docker Image
+    needs: [compute-metadata]
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-    strategy:
-      fail-fast: false
-      matrix:
-        target:
-          - runtime
-          - nginx
     steps:
       - name: Checkout
         uses: https://gitea.com/actions/checkout@v4
@@ -28,45 +51,64 @@ jobs:
       - name: Set up Docker Buildx
         uses: https://gitea.com/actions/docker-setup-buildx@v3
 
-      - name: Compute image metadata
-        id: meta
-        run: |
-          REGISTRY="${{ secrets.REGISTRY }}"
-          if [ -z "$REGISTRY" ]; then
-            # Default to the built-in Gitea package registry (host of the instance).
-            REGISTRY="$(echo "${{ gitea.server_url }}" | sed -E 's#^https?://##')"
-          fi
-          IMAGE="${REGISTRY}/${{ gitea.repository }}"
-          if [ "${{ matrix.target }}" = "nginx" ]; then
-            IMAGE="${IMAGE}-nginx"
-          fi
-          echo "registry=${REGISTRY}" >> "$GITHUB_OUTPUT"
-          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
-          TAGS="${IMAGE}:latest"
-          if [ -n "${{ gitea.ref_type }}" ] && [ "${{ gitea.ref_type }}" = "tag" ]; then
-            TAGS="${TAGS},${IMAGE}:${{ gitea.ref_name }}"
-          fi
-          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
-
       - name: Log in to registry
         uses: https://gitea.com/actions/docker-login@v3
         with:
-          registry: ${{ steps.meta.outputs.registry }}
+          registry: ${{ needs.compute-metadata.outputs.registry }}
           username: ${{ secrets.REGISTRY_USERNAME || gitea.actor }}
           password: ${{ secrets.REGISTRY_PASSWORD || gitea.token }}
 
-      - name: Build and push (${{ matrix.target }})
+      - name: Build & push backend image
         uses: https://gitea.com/actions/docker-build-push@v6
         with:
           context: .
           file: ./Dockerfile
-          target: ${{ matrix.target }}
+          target: runtime
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: |
+            ${{ needs.compute-metadata.outputs.backend_img }}:${{ needs.compute-metadata.outputs.tag }}
+            ${{ needs.compute-metadata.outputs.backend_img }}:latest
           build-args: |
             HTTP_PROXY=${{ vars.HTTP_PROXY }}
             HTTPS_PROXY=${{ vars.HTTPS_PROXY }}
             GITHUB_PROXY=${{ vars.GITHUB_PROXY }}
+            NPM_REGISTRY=${{ vars.NPM_REGISTRY }}
+          cache-from: type=inline
+          cache-to: type=inline,mode=max
+
+  build-frontend:
+    name: Build Frontend Docker Image
+    needs: [compute-metadata]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: https://gitea.com/actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: https://gitea.com/actions/docker-setup-buildx@v3
+
+      - name: Log in to registry
+        uses: https://gitea.com/actions/docker-login@v3
+        with:
+          registry: ${{ needs.compute-metadata.outputs.registry }}
+          username: ${{ secrets.REGISTRY_USERNAME || gitea.actor }}
+          password: ${{ secrets.REGISTRY_PASSWORD || gitea.token }}
+
+      - name: Build & push frontend image
+        uses: https://gitea.com/actions/docker-build-push@v6
+        with:
+          context: .
+          file: ./Dockerfile.frontend
+          push: true
+          tags: |
+            ${{ needs.compute-metadata.outputs.frontend_img }}:${{ needs.compute-metadata.outputs.tag }}
+            ${{ needs.compute-metadata.outputs.frontend_img }}:latest
+          build-args: |
+            HTTP_PROXY=${{ vars.HTTP_PROXY }}
+            HTTPS_PROXY=${{ vars.HTTPS_PROXY }}
             NPM_REGISTRY=${{ vars.NPM_REGISTRY }}
           cache-from: type=inline
           cache-to: type=inline,mode=max

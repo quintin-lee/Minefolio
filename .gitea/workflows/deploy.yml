@@ -1,0 +1,234 @@
+name: finance-pro-deploy
+
+on:
+  push:
+    branches: [master, main]
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      TARGET_DIR: /volume3/Synology/docker/minefolio
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────
+      - name: Checkout
+        uses: https://gitea.com/actions/checkout@v4
+
+      # ── 2. Compute image metadata ────────────────────────────
+      - name: Compute image metadata
+        id: meta
+        run: |
+          REGISTRY="${{ secrets.GITEA_REGISTRY }}"
+          if [ -z "$REGISTRY" ]; then
+            REGISTRY="$(echo "${{ gitea.server_url }}" | sed -E 's#^https?://##')"
+          fi
+          REPO="${{ gitea.repository }}"
+          echo "registry=${REGISTRY}" >> "$GITHUB_OUTPUT"
+          echo "backend_img=${REGISTRY}/${REPO}" >> "$GITHUB_OUTPUT"
+          echo "frontend_img=${REGISTRY}/${REPO}-frontend" >> "$GITHUB_OUTPUT"
+          BRANCH="${{ github.ref_name }}"
+          TAG_SUFFIX="${BRANCH#v}"
+          echo "tag=${TAG_SUFFIX}" >> "$GITHUB_OUTPUT"
+
+      # ── 3. Set up Docker Buildx ─────────────────────────────
+      - name: Set up Docker Buildx
+        uses: https://gitea.com/actions/docker-setup-buildx@v3
+
+      # ── 4. Login to registry ────────────────────────────────
+      - name: Log in to registry
+        uses: https://gitea.com/actions/docker-login@v3
+        with:
+          registry: ${{ steps.meta.outputs.registry }}
+          username: ${{ secrets.REGISTRY_USERNAME || gitea.actor }}
+          password: ${{ secrets.REGISTRY_PASSWORD || gitea.token }}
+
+      # ── 5. Build & push backend image ───────────────────────
+      - name: Build & push backend image
+        uses: https://gitea.com/actions/docker-build-push@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.backend_img }}:${{ steps.meta.outputs.tag }}
+            ${{ steps.meta.outputs.backend_img }}:latest
+          build-args: |
+            HTTP_PROXY=${{ vars.HTTP_PROXY }}
+            HTTPS_PROXY=${{ vars.HTTPS_PROXY }}
+            GITHUB_PROXY=${{ vars.GITHUB_PROXY }}
+            NPM_REGISTRY=${{ vars.NPM_REGISTRY }}
+          cache-from: type=inline
+          cache-to: type=inline,mode=max
+
+      # ── 6. Build & push frontend image ──────────────────────
+      - name: Build & push frontend image
+        uses: https://gitea.com/actions/docker-build-push@v6
+        with:
+          context: .
+          file: ./Dockerfile.frontend
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.frontend_img }}:${{ steps.meta.outputs.tag }}
+            ${{ steps.meta.outputs.frontend_img }}:latest
+          build-args: |
+            HTTP_PROXY=${{ vars.HTTP_PROXY }}
+            HTTPS_PROXY=${{ vars.HTTPS_PROXY }}
+            NPM_REGISTRY=${{ vars.NPM_REGISTRY }}
+          cache-from: type=inline
+          cache-to: type=inline,mode=max
+
+      # ── 7. Install SSH tools ────────────────────────────────
+      - name: Install SSH tools
+        run: |
+          set -e
+          if command -v sshpass >/dev/null 2>&1; then
+            echo "✅ sshpass already installed"
+            exit 0
+          fi
+          SUDO=""
+          if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1; then SUDO="sudo"; fi
+          if command -v apk >/dev/null 2>&1; then
+            $SUDO apk add --no-cache sshpass openssh-client
+          elif command -v apt-get >/dev/null 2>&1; then
+            $SUDO apt-get update -qq
+            $SUDO apt-get install -y -qq openssh-client sshpass
+          elif command -v yum >/dev/null 2>&1; then
+            $SUDO yum install -y -q openssh-clients sshpass 2>/dev/null || $SUDO yum install -y -q openssh sshpass
+          elif command -v dnf >/dev/null 2>&1; then
+            $SUDO dnf install -y -q openssh-clients sshpass
+          else
+            echo "⚠️ 未识别包管理器，跳过 sshpass 安装"
+          fi
+          which sshpass || (echo "❌ sshpass 未安装成功" && exit 1)
+          which ssh || (echo "❌ ssh 未安装成功" && exit 1)
+          ssh -V
+
+      # ── 8. Deploy to Synology ───────────────────────────────
+      - name: Deploy to Synology
+        env:
+          SSH_HOST: ${{ secrets.SYNOLOGY_SSH_HOST }}
+          SSH_PORT: ${{ secrets.SYNOLOGY_SSH_PORT }}
+          SSH_USER: ${{ secrets.SYNOLOGY_SSH_USER }}
+          SSH_PASS: ${{ secrets.SYNOLOGY_SSH_PASS }}
+          BACKEND_IMG: ${{ steps.meta.outputs.backend_img }}
+          FRONTEND_IMG: ${{ steps.meta.outputs.frontend_img }}
+          TARGET_DIR: /volume3/Synology/docker/minefolio
+        run: |
+          set -e
+          [ -z "$SSH_HOST" ] && echo "❌ SYNOLOGY_SSH_HOST 未配置" && exit 1
+          [ -z "$SSH_USER" ] && echo "❌ SYNOLOGY_SSH_USER 未配置" && exit 1
+          [ -z "$SSH_PASS" ] && echo "❌ SYNOLOGY_SSH_PASS 未配置" && exit 1
+
+          SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30"
+
+          echo "🚀 开始部署 Minefolio Pro..."
+          echo "📦 Backend: ${BACKEND_IMG}:latest"
+          echo "📦 Frontend: ${FRONTEND_IMG}:latest"
+
+          # ── 检查是否首次部署 ──
+          HAS_COMPOSE=$(sshpass -p "$SSH_PASS" ssh $SSH_OPTS \
+            -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
+            '[ -f "${TARGET_DIR}/docker-compose.yml" ] && echo yes || echo no')
+          HAS_CONTAINER=$(sshpass -p "$SSH_PASS" ssh $SSH_OPTS \
+            -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
+            'docker ps --format "{{.Names}}" 2>/dev/null | grep -q minefolio && echo yes || echo no')
+          echo "📋 远程状态: compose=${HAS_COMPOSE}, container=${HAS_CONTAINER}"
+
+          if [ "$HAS_COMPOSE" = "no" ] && [ "$HAS_CONTAINER" = "no" ]; then
+            # ── 首次部署：创建目录、写入 compose、拉取启动 ──
+            echo "🆕 首次部署，初始化..."
+
+            sshpass -p "$SSH_PASS" ssh $SSH_OPTS \
+              -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
+              "mkdir -p ${TARGET_DIR}"
+
+            # 生成 docker-compose.yml
+            {
+              echo "services:"
+              echo "  minefolio:"
+              echo "    image: ${BACKEND_IMG}:latest"
+              echo "    container_name: minefolio"
+              echo "    expose:"
+              echo "      - '8080'"
+              echo "    environment:"
+              echo "      MINEFOLIO_JWT_SECRET: '\${MINEFOLIO_JWT_SECRET:?MINEFOLIO_JWT_SECRET is required}'"
+              echo "      MINEFOLIO_DB_DSN: '/app/data/minefolio.db'"
+              echo "      MINEFOLIO_ENABLE_CSRF: '1'"
+              echo "    volumes:"
+              echo "      - minefolio-data:/app/data"
+              echo "    restart: unless-stopped"
+              echo ""
+              echo "  nginx:"
+              echo "    image: ${FRONTEND_IMG}:latest"
+              echo "    container_name: minefolio-nginx"
+              echo "    ports:"
+              echo "      - '80:80'"
+              echo "    depends_on:"
+              echo "      - minefolio"
+              echo "    restart: unless-stopped"
+              echo ""
+              echo "volumes:"
+              echo "  minefolio-data:"
+            } > /tmp/minefolio-compose.yml
+
+            sshpass -p "$SSH_PASS" scp \
+              -P "$SSH_PORT" \
+              -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=/dev/null \
+              /tmp/minefolio-compose.yml \
+              "$SSH_USER@$SSH_HOST:${TARGET_DIR}/docker-compose.yml"
+
+            rm -f /tmp/minefolio-compose.yml
+
+            sshpass -p "$SSH_PASS" ssh $SSH_OPTS \
+              -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
+              "set -e && cd ${TARGET_DIR} && echo '🐳 拉取最新镜像...' && sudo docker-compose pull && echo '🚀 启动服务...' && sudo docker-compose up -d && echo '✅ 首次部署完成！' && sudo docker-compose ps"
+          else
+            # ── 更新已有服务：重写 compose（确保镜像版本最新）、拉取、重启 ──
+            echo "🔄 更新已有服务..."
+
+            {
+              echo "services:"
+              echo "  minefolio:"
+              echo "    image: ${BACKEND_IMG}:latest"
+              echo "    container_name: minefolio"
+              echo "    expose:"
+              echo "      - '8080'"
+              echo "    environment:"
+              echo "      MINEFOLIO_JWT_SECRET: '\${MINEFOLIO_JWT_SECRET:?MINEFOLIO_JWT_SECRET is required}'"
+              echo "      MINEFOLIO_DB_DSN: '/app/data/minefolio.db'"
+              echo "      MINEFOLIO_ENABLE_CSRF: '1'"
+              echo "    volumes:"
+              echo "      - minefolio-data:/app/data"
+              echo "    restart: unless-stopped"
+              echo ""
+              echo "  nginx:"
+              echo "    image: ${FRONTEND_IMG}:latest"
+              echo "    container_name: minefolio-nginx"
+              echo "    ports:"
+              echo "      - '80:80'"
+              echo "    depends_on:"
+              echo "      - minefolio"
+              echo "    restart: unless-stopped"
+              echo ""
+              echo "volumes:"
+              echo "  minefolio-data:"
+            } > /tmp/minefolio-compose.yml
+
+            sshpass -p "$SSH_PASS" scp \
+              -P "$SSH_PORT" \
+              -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=/dev/null \
+              /tmp/minefolio-compose.yml \
+              "$SSH_USER@$SSH_HOST:${TARGET_DIR}/docker-compose.yml"
+
+            rm -f /tmp/minefolio-compose.yml
+
+            sshpass -p "$SSH_PASS" ssh $SSH_OPTS \
+              -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
+              "set -e && cd ${TARGET_DIR} && echo '🐳 拉取最新镜像...' && sudo docker-compose pull && echo '🔄 重启服务...' && sudo docker-compose down && sudo docker-compose up -d && echo '✅ 部署完成！' && sudo docker-compose ps"
+          fi
