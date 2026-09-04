@@ -73,9 +73,42 @@ static void test_runtime_limits_and_budgets(void) {
     printf("PASS: test_runtime_limits_and_budgets\n");
 }
 
+#include "services/ai/memory/memory.h"
+
+static void test_runtime_memory_window(void) {
+    csilk_json_t* hist = csilk_json_array();
+    for (int i = 0; i < 10; i++) {
+        csilk_json_t* m = csilk_json_object();
+        csilk_json_add_string(m, "role", (i % 2 == 0) ? "user" : "assistant");
+        char buf[32];
+        snprintf(buf, sizeof(buf), "Message #%d", i);
+        csilk_json_add_string(m, "content", buf);
+        csilk_json_array_append(hist, m);
+    }
+
+    /* 1. 窗口截断为 4 条历史：应包含 1 个 system + 4 个历史消息 + 1 个最新 prompt = 6 条 */
+    csilk_json_t* msgs = ai_memory_build_messages("System Prompt", hist, "Latest Input", 4);
+    assert(msgs != NULL);
+    assert(csilk_json_array_size(msgs) == 6);
+
+    csilk_json_t* first = csilk_json_array_get(msgs, 0);
+    assert(strcmp(csilk_json_get_string(first, "role"), "system") == 0);
+    assert(strcmp(csilk_json_get_string(first, "content"), "System Prompt") == 0);
+
+    csilk_json_t* last = csilk_json_array_get(msgs, 5);
+    assert(strcmp(csilk_json_get_string(last, "role"), "user") == 0);
+    assert(strcmp(csilk_json_get_string(last, "content"), "Latest Input") == 0);
+
+    csilk_json_free(msgs);
+    csilk_json_free(hist);
+
+    printf("PASS: test_runtime_memory_window\n");
+}
+
 int main(void) {
     test_runtime_error_taxonomy();
     test_runtime_limits_and_budgets();
+    test_runtime_memory_window();
     printf("All runtime initial tests passed!\n");
     return 0;
 }
