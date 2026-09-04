@@ -1,5 +1,6 @@
 #include "services/ai_service.h"
 #include "services/ai_tools.h"
+#include "services/ai/runtime/runtime.h"
 #include "repositories/ai_session_repo.h"
 #include "repositories/ai_settings_repo.h"
 #include "common/ai_config.h"
@@ -148,100 +149,6 @@ ai_get_config(void)
     return &g_config;
 }
 
-typedef struct {
-    csilk_ctx_t*    ctx;
-    char*           accumulated;
-    size_t          cap;
-    size_t          len;
-    ai_trace_t*     trace;
-    struct timespec last_send_time;
-    int             sse_initialized;
-} stream_context_t;
-
-static void
-ensure_sse_init(stream_context_t* sc)
-{
-    if (!sc || sc->sse_initialized) {
-        return;
-    }
-    csilk_sse_init(sc->ctx);
-    clock_gettime(CLOCK_MONOTONIC, &sc->last_send_time);
-    sc->sse_initialized = 1;
-}
-
-static void
-on_chunk(const char* delta, void* data)
-{
-    stream_context_t* sc = (stream_context_t*)data;
-    if (!delta || !sc || !sc->ctx) {
-        return;
-    }
-
-    ensure_sse_init(sc);
-
-    if (sc->trace) {
-        ai_trace_record_first_token(sc->trace);
-        ai_trace_append_output(sc->trace, delta);
-    }
-
-    size_t dlen = strlen(delta);
-    if (sc->len + dlen + 1 > sc->cap) {
-        size_t ncap = (sc->len + dlen + 1) * 2;
-        if (ncap < 1024) {
-            ncap = 1024;
-        }
-        char* nbuf = (char*)realloc(sc->accumulated, ncap);
-        if (nbuf) {
-            sc->accumulated = nbuf;
-            sc->cap = ncap;
-        }
-    }
-    if (sc->accumulated && sc->len + dlen < sc->cap) {
-        memcpy(sc->accumulated + sc->len, delta, dlen);
-        sc->len += dlen;
-        sc->accumulated[sc->len] = '\0';
-    }
-
-    /* heartbeat: send SSE comment if idle >15s to prevent proxy timeout */
-    struct timespec now;
-    clock_gettime(CLOCK_MONOTONIC, &now);
-    long elapsed_ms = (now.tv_sec - sc->last_send_time.tv_sec) * 1000 +
-                      (now.tv_nsec - sc->last_send_time.tv_nsec) / 1000000;
-    if (elapsed_ms >= 15000) {
-        csilk_sse_send(sc->ctx, NULL, NULL);
-    }
-
-    struct timespec real_now;
-    clock_gettime(CLOCK_REALTIME, &real_now);
-    int64_t ts_ms = (int64_t)real_now.tv_sec * 1000 + (real_now.tv_nsec / 1000000);
-
-    struct tm tm_buf;
-    localtime_r(&real_now.tv_sec, &tm_buf);
-    char time_str[64];
-    int  ms = (int)(real_now.tv_nsec / 1000000);
-    snprintf(time_str,
-             sizeof(time_str),
-             "%04d-%02d-%02d %02d:%02d:%02d.%03d",
-             tm_buf.tm_year + 1900,
-             tm_buf.tm_mon + 1,
-             tm_buf.tm_mday,
-             tm_buf.tm_hour,
-             tm_buf.tm_min,
-             tm_buf.tm_sec,
-             ms);
-
-    csilk_json_t* msg = csilk_json_object();
-    csilk_json_add_string(msg, "content", delta);
-    csilk_json_add_number(msg, "timestamp", (double)ts_ms);
-    csilk_json_add_string(msg, "time", time_str);
-    size_t slen = 0;
-    char*  s = csilk_json_serialize(msg, &slen);
-    csilk_sse_send(sc->ctx, "delta", s ? s : "");
-    sc->last_send_time = now;
-    free(s);
-    csilk_json_free(msg);
-}
-
 static void
 send_done(csilk_ctx_t* c)
 {
@@ -288,6 +195,150 @@ send_error(csilk_ctx_t* c, const char* err)
     csilk_sse_send(c, "error", s ? s : "");
     free(s);
     csilk_json_free(d);
+}
+
+typedef struct {
+    csilk_ctx_t*    ctx;
+    struct timespec last_send_time;
+    int             sse_initialized;
+    ai_trace_t*     trace;
+} sse_bridge_t;
+
+static void
+sse_bridge_text_chunk(const char* delta, void* udata)
+{
+    sse_bridge_t* b = (sse_bridge_t*)udata;
+    if (!delta || !b || !b->ctx) {
+        return;
+    }
+    if (!b->sse_initialized) {
+        csilk_sse_init(b->ctx);
+        clock_gettime(CLOCK_MONOTONIC, &b->last_send_time);
+        b->sse_initialized = 1;
+    }
+    if (b->trace) {
+        ai_trace_record_first_token(b->trace);
+        ai_trace_append_output(b->trace, delta);
+    }
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    long elapsed_ms = (now.tv_sec - b->last_send_time.tv_sec) * 1000 +
+                      (now.tv_nsec - b->last_send_time.tv_nsec) / 1000000;
+    if (elapsed_ms >= 15000) {
+        csilk_sse_send(b->ctx, NULL, NULL);
+    }
+
+    struct timespec real_now;
+    clock_gettime(CLOCK_REALTIME, &real_now);
+    int64_t   ts_ms = (int64_t)real_now.tv_sec * 1000 + (real_now.tv_nsec / 1000000);
+    struct tm tm_buf;
+    localtime_r(&real_now.tv_sec, &tm_buf);
+    char time_str[64];
+    int  ms = (int)(real_now.tv_nsec / 1000000);
+    snprintf(time_str,
+             sizeof(time_str),
+             "%04d-%02d-%02d %02d:%02d:%02d.%03d",
+             tm_buf.tm_year + 1900,
+             tm_buf.tm_mon + 1,
+             tm_buf.tm_mday,
+             tm_buf.tm_hour,
+             tm_buf.tm_min,
+             tm_buf.tm_sec,
+             ms);
+
+    csilk_json_t* msg = csilk_json_object();
+    csilk_json_add_string(msg, "content", delta);
+    csilk_json_add_number(msg, "timestamp", (double)ts_ms);
+    csilk_json_add_string(msg, "time", time_str);
+    size_t slen = 0;
+    char*  s = csilk_json_serialize(msg, &slen);
+    csilk_sse_send(b->ctx, "delta", s ? s : "");
+    b->last_send_time = now;
+    free(s);
+    csilk_json_free(msg);
+}
+
+static void
+sse_bridge_tool_call(const char* id, const char* name, const char* args_json, void* udata)
+{
+    sse_bridge_t* b = (sse_bridge_t*)udata;
+    if (!b || !b->ctx) {
+        return;
+    }
+    if (!b->sse_initialized) {
+        csilk_sse_init(b->ctx);
+        clock_gettime(CLOCK_MONOTONIC, &b->last_send_time);
+        b->sse_initialized = 1;
+    }
+    csilk_json_t* evt = csilk_json_object();
+    csilk_json_add_string(evt, "id", id ? id : "");
+    csilk_json_add_string(evt, "name", name ? name : "");
+    csilk_json_add_string(evt, "arguments", args_json ? args_json : "");
+    size_t ev_len = 0;
+    char*  ev_str = csilk_json_serialize(evt, &ev_len);
+    csilk_sse_send(b->ctx, "tool_call", ev_str ? ev_str : "");
+    free(ev_str);
+    csilk_json_free(evt);
+}
+
+static void
+sse_bridge_tool_result(const char* id, const char* name, const char* result_json, void* udata)
+{
+    sse_bridge_t* b = (sse_bridge_t*)udata;
+    if (!b || !b->ctx) {
+        return;
+    }
+    if (!b->sse_initialized) {
+        csilk_sse_init(b->ctx);
+        clock_gettime(CLOCK_MONOTONIC, &b->last_send_time);
+        b->sse_initialized = 1;
+    }
+    csilk_json_t* evt = csilk_json_object();
+    csilk_json_add_string(evt, "tool_call_id", id ? id : "");
+    csilk_json_add_string(evt, "name", name ? name : "");
+    csilk_json_t* parsed = csilk_json_parse(result_json ? result_json : "{}");
+    if (parsed) {
+        csilk_json_add_object(evt, "result", parsed);
+    } else {
+        csilk_json_add_string(evt, "result", result_json ? result_json : "");
+    }
+    size_t ev_len = 0;
+    char*  ev_str = csilk_json_serialize(evt, &ev_len);
+    csilk_sse_send(b->ctx, "tool_result", ev_str ? ev_str : "");
+    free(ev_str);
+    csilk_json_free(evt);
+}
+
+static void
+sse_bridge_error(const ai_runtime_status_t* status, void* udata)
+{
+    sse_bridge_t* b = (sse_bridge_t*)udata;
+    if (!b || !b->ctx) {
+        return;
+    }
+    if (!b->sse_initialized) {
+        csilk_sse_init(b->ctx);
+        b->sse_initialized = 1;
+    }
+    const char* emsg =
+        (status && status->detail[0])
+            ? status->detail
+            : ((status && status->message[0]) ? status->message : "AI request failed");
+    send_error(b->ctx, emsg);
+}
+
+static void
+sse_bridge_done(const ai_runtime_stats_t* stats, void* udata)
+{
+    sse_bridge_t* b = (sse_bridge_t*)udata;
+    if (!b || !b->ctx) {
+        return;
+    }
+    if (!b->sse_initialized) {
+        csilk_sse_init(b->ctx);
+        b->sse_initialized = 1;
+    }
+    send_done(b->ctx);
 }
 
 void
@@ -386,53 +437,41 @@ ai_chat_handler(csilk_ctx_t* c)
     /* load history */
     int           ctx_size = g_config.context_size > 0 ? g_config.context_size : 20;
     csilk_json_t* history = ai_message_recent(pool, sid, ctx_size);
-    int           hsz = history ? (int)csilk_json_array_size(history) : 0;
 
-    /* build messages: [system, ...history] or [system, ...history, user] */
-    int                 initial_mc = regenerate ? (1 + hsz) : (1 + hsz + 1);
-    int                 mc = initial_mc;
-    csilk_ai_message_t* msgs = (csilk_ai_message_t*)malloc(sizeof(csilk_ai_message_t) * (size_t)mc);
-    if (!msgs) {
-        csilk_json_free(history);
-        csilk_json_free(body);
-        respond_error(c, 500, "内存不足");
-        return;
-    }
-    int idx = 0;
-    msgs[idx++] = (csilk_ai_message_t){.role = "system", .content = g_config.system_prompt};
-    if (history) {
-        for (int i = 0; i < hsz; i++) {
-            csilk_json_t* m = csilk_json_array_get(history, i);
-            msgs[idx++] = (csilk_ai_message_t){
-                .role = csilk_json_get_string(m, "role"),
-                .content = csilk_json_get_string(m, "content"),
-            };
-        }
-    }
+    /* persist user message (skip on regenerate — already in history) */
     if (!regenerate) {
-        msgs[idx++] = (csilk_ai_message_t){.role = "user", .content = content};
+        ai_message_insert(pool, sid, "user", content, model_buf);
     }
 
-    stream_context_t sctx = {
-        .ctx = c,
-        .accumulated = NULL,
-        .cap = 0,
-        .len = 0,
-        .trace = NULL,
-    };
+    /* 构造统一 AI Runtime 上下文 */
+    ai_runtime_context_t rctx;
+    ai_runtime_context_init(&rctx);
+    rctx.user_id = user_id;
+    rctx.session_id = sid;
+    strncpy(rctx.provider_id, prov->id, sizeof(rctx.provider_id) - 1);
+    strncpy(rctx.model_name, model_buf, sizeof(rctx.model_name) - 1);
+    rctx.temperature = (req_temperature > 0.0) ? req_temperature : 0.7;
+    rctx.max_tokens = req_max_tokens;
+    rctx.top_p = req_top_p;
 
+    /* 构建受控记忆窗口 messages */
+    csilk_json_free(rctx.messages);
+    rctx.messages = ai_memory_build_messages(
+        g_config.system_prompt, history, regenerate ? NULL : content, ctx_size);
+
+    /* 初始化 Trace */
     ai_trace_t trace;
     ai_trace_init(&trace, user_id, sid);
     ai_trace_set_provider(&trace, prov->id, model_buf);
     ai_trace_set_params(&trace, req_temperature, req_max_tokens, req_top_p);
     ai_trace_set_system_prompt(&trace, g_config.system_prompt);
-    sctx.trace = &trace;
 
     csilk_json_t* input_arr = csilk_json_array();
     csilk_json_t* sys_msg = csilk_json_object();
     csilk_json_add_string(sys_msg, "role", "system");
     csilk_json_add_string(sys_msg, "content", g_config.system_prompt);
     csilk_json_array_append(input_arr, sys_msg);
+    int hsz = history ? (int)csilk_json_array_size(history) : 0;
     for (int i = 0; i < hsz; i++) {
         csilk_json_t* m = csilk_json_array_get(history, i);
         csilk_json_t* im = csilk_json_object();
@@ -449,257 +488,36 @@ ai_chat_handler(csilk_ctx_t* c)
     ai_trace_serialize_messages(&trace, input_arr);
     csilk_json_free(input_arr);
 
+    rctx.trace = &trace;
+
     /* SSE init: establish event-stream connection immediately so proxies never time out */
     csilk_sse_init(c);
-    clock_gettime(CLOCK_MONOTONIC, &sctx.last_send_time);
-    sctx.sse_initialized = 1;
 
-    /* persist user message (skip on regenerate — already in history) */
-    if (!regenerate) {
-        ai_message_insert(pool, sid, "user", content, model_buf);
-    }
+    sse_bridge_t sse_bridge = {
+        .ctx = c,
+        .last_send_time = {0},
+        .sse_initialized = 1,
+        .trace = &trace,
+    };
+    clock_gettime(CLOCK_MONOTONIC, &sse_bridge.last_send_time);
 
-    csilk_ai_t* ai_inst = g_ai;
-    int         need_free_ai = 0;
-    if (prov && (strcmp(prov->id, g_config.default_provider) != 0 || !ai_inst)) {
-        const char* dname = get_driver_name(prov->id);
-        const char* key = (prov->api_key[0] != '\0') ? prov->api_key : "dummy";
-        csilk_ai_t* custom_ai = csilk_ai_new(dname, key, prov->base_url[0] ? prov->base_url : NULL);
-        if (custom_ai) {
-            ai_inst = custom_ai;
-            need_free_ai = 1;
-        }
-    }
+    ai_runtime_callbacks_t cbs = {
+        .on_text_chunk = sse_bridge_text_chunk,
+        .on_tool_call = sse_bridge_tool_call,
+        .on_tool_result = sse_bridge_tool_result,
+        .on_error = sse_bridge_error,
+        .on_done = sse_bridge_done,
+    };
 
-    /* ---- Tool-calling loop ----
-     * First call: non-streaming with tools → check for tool_calls.
-     * If tool_calls: execute each, append results, loop.
-     * Final call: streaming text response → SSE to client. */
-    size_t                 tool_count = 0;
-    const csilk_ai_tool_t* tools = ai_tools_get_definitions(&tool_count);
+    /* 委托 AI Runtime 执行 Agent 循环 */
+    ai_runtime_execute_stream(pool, &rctx, &cbs, &sse_bridge);
 
-    int round = 0;
-    int max_rounds = 10;
-    int got_text = 0;
-    int total_prompt_tokens = 0;
-    int total_completion_tokens = 0;
-
-    while (!got_text && round < max_rounds) {
-        csilk_ai_chat_request_t req = {
-            .model = model_buf,
-            .messages = msgs,
-            .message_count = (size_t)mc,
-            .stream = 1,
-            .on_chunk = on_chunk,
-            .user_data = &sctx,
-            .tools = (csilk_ai_tool_t*)tools,
-            .tool_count = tool_count,
-            .tool_choice = "auto",
-        };
-        csilk_ai_chat_response_t ai_res = {0};
-        int                      rc = csilk_ai_chat(ai_inst, &req, &ai_res);
-        if (ai_res.prompt_tokens > 0) {
-            total_prompt_tokens += ai_res.prompt_tokens;
-        }
-        if (ai_res.completion_tokens > 0) {
-            total_completion_tokens += ai_res.completion_tokens;
-        }
-
-        if (rc != 0) {
-            ai_trace_calculate_tokens_and_cost(
-                &trace, total_prompt_tokens, total_completion_tokens);
-            ai_trace_finish(&trace,
-                            "error",
-                            (ai_res.error_message && ai_res.error_message[0])
-                                ? ai_res.error_message
-                                : "AI request failed");
-            ai_trace_save(db_get_pool(), &trace);
-            ai_trace_free(&trace);
-            ensure_sse_init(&sctx);
-            send_error(c,
-                       (ai_res.error_message && ai_res.error_message[0]) ? ai_res.error_message
-                                                                         : "AI request failed");
-            if (need_free_ai && ai_inst) {
-                csilk_ai_free(ai_inst);
-            }
-            if (sctx.accumulated) {
-                free(sctx.accumulated);
-            }
-            csilk_sse_close(c);
-            for (int i = initial_mc; i < mc; i++) {
-                if (msgs[i].content) {
-                    free((void*)msgs[i].content);
-                }
-                if (msgs[i].tool_call_id) {
-                    free((void*)msgs[i].tool_call_id);
-                }
-                if (msgs[i].tool_calls) {
-                    for (size_t j = 0; j < msgs[i].tool_call_count; j++) {
-                        free(msgs[i].tool_calls[j].id);
-                        free(msgs[i].tool_calls[j].name);
-                        free(msgs[i].tool_calls[j].arguments);
-                    }
-                    free(msgs[i].tool_calls);
-                }
-            }
-            free(msgs);
-            csilk_json_free(history);
-            csilk_json_free(body);
-            return;
-        }
-
-        if (ai_res.tool_call_count == 0) {
-            const char* text = ai_res.content ?: (sctx.accumulated ?: "");
-            ai_message_insert(pool, sid, "assistant", text, model_buf);
-            csilk_ai_chat_response_free(&ai_res);
-            got_text = 1;
-            break;
-        }
-
-        mc++;
-        msgs = (csilk_ai_message_t*)realloc(msgs, sizeof(csilk_ai_message_t) * (size_t)mc);
-        msgs[mc - 1] = (csilk_ai_message_t){
-            .role = "assistant",
-            .content = ai_res.content ? strdup(ai_res.content) : strdup(""),
-            .tool_call_id = NULL,
-        };
-        /* Deep-copy tool_calls: we own these strings since ai_res will be freed next */
-        {
-            size_t n = ai_res.tool_call_count;
-            msgs[mc - 1].tool_calls =
-                (csilk_ai_tool_call_t*)malloc(sizeof(csilk_ai_tool_call_t) * n);
-            msgs[mc - 1].tool_call_count = n;
-            for (size_t j = 0; j < n; j++) {
-                msgs[mc - 1].tool_calls[j].id =
-                    ai_res.tool_calls[j].id ? strdup(ai_res.tool_calls[j].id) : strdup("");
-                msgs[mc - 1].tool_calls[j].name =
-                    ai_res.tool_calls[j].name ? strdup(ai_res.tool_calls[j].name) : strdup("");
-                msgs[mc - 1].tool_calls[j].arguments = ai_res.tool_calls[j].arguments
-                                                           ? strdup(ai_res.tool_calls[j].arguments)
-                                                           : strdup("{}");
-            }
-        }
-
-        /* Pre-parse all argument strings once */
-        csilk_json_t** parsed_args =
-            (csilk_json_t**)malloc(sizeof(csilk_json_t*) * ai_res.tool_call_count);
-        for (size_t t = 0; t < ai_res.tool_call_count; t++) {
-            csilk_json_t* a = csilk_json_parse(ai_res.tool_calls[t].arguments);
-            parsed_args[t] = a ? a : csilk_json_object();
-        }
-
-        /* 2. Execute each tool and append corresponding role="tool" messages */
-        for (size_t t = 0; t < ai_res.tool_call_count; t++) {
-            csilk_ai_tool_call_t* tc = &ai_res.tool_calls[t];
-            csilk_json_t*         args = parsed_args[t];
-
-            ensure_sse_init(&sctx);
-            /* Properly escaped JSON via csilk_json — no snprintf truncation / injection */
-            {
-                csilk_json_t* evt = csilk_json_object();
-                csilk_json_add_string(evt, "id", tc->id ?: "");
-                csilk_json_add_string(evt, "name", tc->name ?: "");
-                csilk_json_add_string(evt, "arguments", tc->arguments ?: "");
-                size_t ev_len = 0;
-                char*  ev_str = csilk_json_serialize(evt, &ev_len);
-                csilk_sse_send(c, "tool_call", ev_str ? ev_str : "");
-                free(ev_str);
-                csilk_json_free(evt);
-            }
-
-            char*           result = NULL;
-            struct timespec ts0, ts1;
-            clock_gettime(CLOCK_MONOTONIC, &ts0);
-            result = ai_tools_execute_parsed(pool, user_id, args, tc->name);
-            clock_gettime(CLOCK_MONOTONIC, &ts1);
-            long span_ms = (ts1.tv_sec - ts0.tv_sec) * 1000 + (ts1.tv_nsec - ts0.tv_nsec) / 1000000;
-            if (!result) {
-                result = strdup("{\"error\":\"tool execution failed\"}");
-                ai_trace_add_tool_span(&trace, tc->name ?: "", span_ms, 0, 0);
-            } else {
-                ai_trace_add_tool_span(&trace, tc->name ?: "", span_ms, strlen(result), 1);
-            }
-
-            {
-                csilk_json_t* evt = csilk_json_object();
-                csilk_json_add_string(evt, "tool_call_id", tc->id ?: "");
-                csilk_json_add_string(evt, "name", tc->name ?: "");
-                csilk_json_t* parsed = csilk_json_parse(result);
-                if (parsed) {
-                    csilk_json_add_object(evt, "result", parsed);
-                } else {
-                    csilk_json_add_string(evt, "result", result);
-                }
-                size_t ev_len = 0;
-                char*  ev_str = csilk_json_serialize(evt, &ev_len);
-                csilk_sse_send(c, "tool_result", ev_str ? ev_str : "");
-                free(ev_str);
-                csilk_json_free(evt);
-            }
-            /* result owned by msgs[mc-1].content below; don't free here */
-
-            /* Build tool result message */
-            mc++;
-            msgs = (csilk_ai_message_t*)realloc(msgs, sizeof(csilk_ai_message_t) * (size_t)mc);
-            msgs[mc - 1] = (csilk_ai_message_t){
-                .role = "tool",
-                .content = result,
-                .tool_call_id = tc->id ? strdup(tc->id) : strdup(""),
-                .tool_calls = NULL,
-                .tool_call_count = 0,
-            };
-        }
-
-        /* Free pre-parsed argument objects */
-        for (size_t t = 0; t < ai_res.tool_call_count; t++) {
-            csilk_json_free(parsed_args[t]);
-        }
-        free(parsed_args);
-
-        /* Reset sctx.accumulated for the next text generation round */
-        if (sctx.accumulated) {
-            sctx.accumulated[0] = '\0';
-            sctx.len = 0;
-        }
-
-        csilk_ai_chat_response_free(&ai_res);
-        round++;
-    }
-
-    ai_trace_calculate_tokens_and_cost(&trace, total_prompt_tokens, total_completion_tokens);
-    ai_trace_finish(&trace, got_text ? "ok" : "error", NULL);
-    ai_trace_save(db_get_pool(), &trace);
-    ai_trace_free(&trace);
-    ensure_sse_init(&sctx);
-    send_done(c);
-
-    if (need_free_ai && ai_inst) {
-        csilk_ai_free(ai_inst);
-    }
-    if (sctx.accumulated) {
-        free(sctx.accumulated);
-    }
     csilk_sse_close(c);
-    /* Free dynamically allocated content strings from tool-call rounds.
-     * The first initial_mc messages point into g_config/history/body (not owned). */
-    for (int i = initial_mc; i < mc; i++) {
-        if (msgs[i].content) {
-            free((void*)msgs[i].content);
-        }
-        if (msgs[i].tool_call_id) {
-            free((void*)msgs[i].tool_call_id);
-        }
-        if (msgs[i].tool_calls) {
-            for (size_t j = 0; j < msgs[i].tool_call_count; j++) {
-                free(msgs[i].tool_calls[j].id);
-                free(msgs[i].tool_calls[j].name);
-                free(msgs[i].tool_calls[j].arguments);
-            }
-            free(msgs[i].tool_calls);
-        }
+    ai_trace_free(&trace);
+    ai_runtime_context_free(&rctx);
+    if (history) {
+        csilk_json_free(history);
     }
-    free(msgs);
-    csilk_json_free(history);
     csilk_json_free(body);
 }
 void
@@ -977,35 +795,6 @@ ai_service_stream_report(csilk_ctx_t* c,
         return 0;
     }
 
-    csilk_ai_t* ai_inst = g_ai;
-    int         need_free_ai = 0;
-    if (strcmp(prov->id, g_config.default_provider) != 0 || !ai_inst) {
-        const char* dname = get_driver_name(prov->id);
-        const char* key = (prov->api_key[0] != '\0') ? prov->api_key : "dummy";
-        csilk_ai_t* custom_ai = csilk_ai_new(dname, key, prov->base_url[0] ? prov->base_url : NULL);
-        if (custom_ai) {
-            ai_inst = custom_ai;
-            need_free_ai = 1;
-        }
-    }
-    if (!ai_inst) {
-        return 0;
-    }
-
-    ai_trace_t trace;
-    ai_trace_init(&trace, user_id, session_id);
-    ai_trace_set_provider(&trace, prov->id, g_config.default_model);
-
-    stream_context_t sctx = {
-        .ctx = c,
-        .sse_initialized = 1,
-        .accumulated = NULL,
-        .cap = 0,
-        .len = 0,
-        .trace = &trace,
-    };
-    clock_gettime(CLOCK_MONOTONIC, &sctx.last_send_time);
-
     const char* sys_prompt =
         "你是一名资深全栈私人财务顾问与资产配置专家。你正在执行自动化财务工作流。\n"
         "【真实性与防编造铁律（最高优先级）】\n"
@@ -1052,6 +841,9 @@ ai_service_stream_report(csilk_ctx_t* c,
              now_str,
              structured_data_json ? structured_data_json : "{}");
 
+    ai_trace_t trace;
+    ai_trace_init(&trace, user_id, session_id);
+    ai_trace_set_provider(&trace, prov->id, g_config.default_model);
     ai_trace_set_system_prompt(&trace, sys_prompt);
 
     csilk_json_t* input_arr = csilk_json_array();
@@ -1066,58 +858,35 @@ ai_service_stream_report(csilk_ctx_t* c,
     ai_trace_serialize_messages(&trace, input_arr);
     csilk_json_free(input_arr);
 
-    csilk_ai_message_t msgs[2] = {
-        {.role = "system", .content = sys_prompt },
-        {.role = "user",   .content = user_prompt},
+    sse_bridge_t sse_bridge = {
+        .ctx = c,
+        .last_send_time = {0},
+        .sse_initialized = 1,
+        .trace = &trace,
+    };
+    clock_gettime(CLOCK_MONOTONIC, &sse_bridge.last_send_time);
+
+    ai_runtime_callbacks_t cbs = {
+        .on_text_chunk = sse_bridge_text_chunk,
+        .on_tool_call = sse_bridge_tool_call,
+        .on_tool_result = sse_bridge_tool_result,
+        .on_error = sse_bridge_error,
+        .on_done = sse_bridge_done,
     };
 
-    csilk_ai_chat_request_t req = {
-        .model = g_config.default_model,
-        .messages = msgs,
-        .message_count = 2,
-        .stream = 1,
-        .on_chunk = on_chunk,
-        .user_data = &sctx,
-        .tools = NULL,
-        .tool_count = 0,
-    };
+    ai_runtime_context_t rctx;
+    ai_runtime_context_init(&rctx);
+    rctx.user_id = user_id;
+    rctx.session_id = session_id;
+    strncpy(rctx.provider_id, prov->id, sizeof(rctx.provider_id) - 1);
+    strncpy(rctx.model_name, g_config.default_model, sizeof(rctx.model_name) - 1);
+    csilk_json_free(rctx.messages);
+    rctx.messages = ai_memory_build_messages(sys_prompt, NULL, user_prompt, 1);
+    rctx.trace = &trace;
 
-    csilk_ai_chat_response_t ai_res = {0};
-    int                      rc = csilk_ai_chat(ai_inst, &req, &ai_res);
-
-    if (need_free_ai && ai_inst) {
-        csilk_ai_free(ai_inst);
-    }
-
-    if (rc != 0) {
-        ai_trace_calculate_tokens_and_cost(&trace, ai_res.prompt_tokens, ai_res.completion_tokens);
-        ai_trace_finish(
-            &trace, "error", ai_res.error_message ? ai_res.error_message : "AI request failed");
-        ai_trace_save(db_get_pool(), &trace);
-        ai_trace_free(&trace);
-        csilk_ai_chat_response_free(&ai_res);
-        if (sctx.accumulated) {
-            free(sctx.accumulated);
-        }
-        return 0;
-    }
-
-    ai_trace_calculate_tokens_and_cost(&trace, ai_res.prompt_tokens, ai_res.completion_tokens);
-    ai_trace_finish(&trace, "ok", NULL);
-    ai_trace_save(db_get_pool(), &trace);
+    ai_runtime_status_t status = ai_runtime_execute_stream(db_get_pool(), &rctx, &cbs, &sse_bridge);
     ai_trace_free(&trace);
+    ai_runtime_context_free(&rctx);
 
-    const char* text = ai_res.content ?: (sctx.accumulated ?: "");
-    if (text && text[0] && session_id > 0) {
-        csilk_db_pool_t* pool = db_get_pool();
-        if (pool) {
-            ai_message_insert(pool, session_id, "assistant", text, g_config.default_model);
-        }
-    }
-
-    csilk_ai_chat_response_free(&ai_res);
-    if (sctx.accumulated) {
-        free(sctx.accumulated);
-    }
-    return 1;
+    return (status.code == AI_RUNTIME_ERR_OK) ? 1 : 0;
 }
