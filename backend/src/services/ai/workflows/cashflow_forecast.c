@@ -1547,7 +1547,7 @@ step_sa_analyze(csilk_db_pool_t*    pool,
             }
             const char* d = csilk_json_get_string(row, "expense_date") ?: "";
             char        ym[8] = {0};
-            strncpy(ym, d, 7);
+            snprintf(ym, sizeof(ym), "%.7s", d);
             int found = 0;
             for (int k = 0; k < distinct_months; k++) {
                 if (strcmp(months_seen[k], ym) == 0) {
@@ -1556,7 +1556,7 @@ step_sa_analyze(csilk_db_pool_t*    pool,
                 }
             }
             if (!found && distinct_months < 12) {
-                strncpy(months_seen[distinct_months], ym, sizeof(months_seen[0]) - 1);
+                snprintf(months_seen[distinct_months], sizeof(months_seen[0]), "%s", ym);
                 distinct_months++;
             }
         }

@@ -448,8 +448,8 @@ ai_chat_handler(csilk_ctx_t* c)
     ai_runtime_context_init(&rctx);
     rctx.user_id = user_id;
     rctx.session_id = sid;
-    strncpy(rctx.provider_id, prov->id, sizeof(rctx.provider_id) - 1);
-    strncpy(rctx.model_name, model_buf, sizeof(rctx.model_name) - 1);
+    snprintf(rctx.provider_id, sizeof(rctx.provider_id), "%s", prov->id);
+    snprintf(rctx.model_name, sizeof(rctx.model_name), "%s", model_buf);
     rctx.temperature = (req_temperature > 0.0) ? req_temperature : 0.7;
     rctx.max_tokens = req_max_tokens;
     rctx.top_p = req_top_p;
@@ -878,8 +878,8 @@ ai_service_stream_report(csilk_ctx_t* c,
     ai_runtime_context_init(&rctx);
     rctx.user_id = user_id;
     rctx.session_id = session_id;
-    strncpy(rctx.provider_id, prov->id, sizeof(rctx.provider_id) - 1);
-    strncpy(rctx.model_name, g_config.default_model, sizeof(rctx.model_name) - 1);
+    snprintf(rctx.provider_id, sizeof(rctx.provider_id), "%s", prov->id);
+    snprintf(rctx.model_name, sizeof(rctx.model_name), "%s", g_config.default_model);
     csilk_json_free(rctx.messages);
     rctx.messages = ai_memory_build_messages(sys_prompt, NULL, user_prompt, 1);
     rctx.trace = &trace;

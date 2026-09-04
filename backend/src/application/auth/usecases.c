@@ -761,7 +761,7 @@ auth_usecase_oauth_callback(void*                       pool,
         token_version = (int)db_get_int(u, "token_version");
         const char* un = csilk_json_get_string(u, "username");
         if (un) {
-            strncpy(final_username, un, sizeof(final_username) - 1);
+            snprintf(final_username, sizeof(final_username), "%s", un);
         }
         csilk_json_free(user_row);
     } else {
@@ -777,7 +777,7 @@ auth_usecase_oauth_callback(void*                       pool,
                      username_buf,
                      (int)(time(NULL) % 10000));
         } else {
-            strncpy(final_username, username_buf, sizeof(final_username) - 1);
+            snprintf(final_username, sizeof(final_username), "%s", username_buf);
         }
         if (check_un) {
             csilk_json_free(check_un);

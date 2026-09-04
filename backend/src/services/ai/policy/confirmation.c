@@ -203,21 +203,22 @@ record_nonce_consumed_locked(const char* nonce, int64_t expiration)
     /* 寻找过期槽位重用 */
     for (size_t i = 0; i < s_nonce_count; i++) {
         if (s_consumed_nonces[i].expiration < now) {
-            strncpy(s_consumed_nonces[i].nonce, nonce, sizeof(s_consumed_nonces[i].nonce) - 1);
+            snprintf(s_consumed_nonces[i].nonce, sizeof(s_consumed_nonces[i].nonce), "%s", nonce);
             s_consumed_nonces[i].expiration = expiration;
             return;
         }
     }
     if (s_nonce_count < MAX_NONCES) {
-        strncpy(s_consumed_nonces[s_nonce_count].nonce,
-                nonce,
-                sizeof(s_consumed_nonces[s_nonce_count].nonce) - 1);
+        snprintf(s_consumed_nonces[s_nonce_count].nonce,
+                 sizeof(s_consumed_nonces[s_nonce_count].nonce),
+                 "%s",
+                 nonce);
         s_consumed_nonces[s_nonce_count].expiration = expiration;
         s_nonce_count++;
     } else {
         /* 环形覆盖最旧项 */
         size_t idx = (size_t)(rand() % MAX_NONCES);
-        strncpy(s_consumed_nonces[idx].nonce, nonce, sizeof(s_consumed_nonces[idx].nonce) - 1);
+        snprintf(s_consumed_nonces[idx].nonce, sizeof(s_consumed_nonces[idx].nonce), "%s", nonce);
         s_consumed_nonces[idx].expiration = expiration;
     }
 }

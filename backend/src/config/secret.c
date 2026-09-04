@@ -1,4 +1,6 @@
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
 #include "config/secret.h"
 
 #include <stdio.h>
@@ -172,6 +174,7 @@ config_secret_get(const char* key, char* out, size_t out_size)
 
     pthread_mutex_lock(&s_secret_lock);
     init_test_mode_from_env();
+    bool is_test = s_test_mode;
 
     /* 1. 检查内存测试覆盖 (Test Overrides) */
     for (size_t i = 0; i < s_override_count; i++) {
@@ -192,7 +195,6 @@ config_secret_get(const char* key, char* out, size_t out_size)
             goto validate_and_return;
         }
     }
-    bool is_test = s_test_mode;
     pthread_mutex_unlock(&s_secret_lock);
 
     /* 3. 环境变量提供者 (Environment Provider) */

@@ -69,7 +69,7 @@ exec_calculate_date_range(const ai_tool_t*         tool,
                  tm_buf.tm_year + 1900,
                  tm_buf.tm_mon + 1,
                  tm_buf.tm_mday);
-        strncpy(end_date, start_date, sizeof(end_date) - 1);
+        snprintf(end_date, sizeof(end_date), "%s", start_date);
     } else if (strcmp(range_type, "this_month") == 0) {
         snprintf(start_date,
                  sizeof(start_date),

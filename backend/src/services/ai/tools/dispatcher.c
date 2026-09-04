@@ -26,14 +26,16 @@ ai_tool_dispatch_parsed(const ai_tool_context_t* ctx,
             .timestamp = (int64_t)time(NULL),
             .success = false,
         };
-        strncpy(audit.tool, tool_name ? tool_name : "unknown", sizeof(audit.tool) - 1);
-        strncpy(audit.arguments_hash, args_hash, sizeof(audit.arguments_hash) - 1);
-        strncpy(audit.error_message,
-                "Authentication failed: invalid user context",
-                sizeof(audit.error_message) - 1);
-        strncpy(audit.result_summary,
-                "Rejected unauthenticated execution request",
-                sizeof(audit.result_summary) - 1);
+        snprintf(audit.tool, sizeof(audit.tool), "%s", tool_name ? tool_name : "unknown");
+        snprintf(audit.arguments_hash, sizeof(audit.arguments_hash), "%s", args_hash);
+        snprintf(audit.error_message,
+                 sizeof(audit.error_message),
+                 "%s",
+                 "Authentication failed: invalid user context");
+        snprintf(audit.result_summary,
+                 sizeof(audit.result_summary),
+                 "%s",
+                 "Rejected unauthenticated execution request");
         ai_audit_log(&audit);
 
         return strdup("{\"error\":\"unauthorized: unauthenticated user context\"}");
@@ -54,12 +56,13 @@ ai_tool_dispatch_parsed(const ai_tool_context_t* ctx,
             .timestamp = (int64_t)time(NULL),
             .success = false,
         };
-        strncpy(audit.tool, tool_name, sizeof(audit.tool) - 1);
-        strncpy(audit.arguments_hash, args_hash, sizeof(audit.arguments_hash) - 1);
-        strncpy(audit.error_message, "Unknown tool", sizeof(audit.error_message) - 1);
-        strncpy(audit.result_summary,
-                "Tool not registered in registry",
-                sizeof(audit.result_summary) - 1);
+        snprintf(audit.tool, sizeof(audit.tool), "%s", tool_name ? tool_name : "");
+        snprintf(audit.arguments_hash, sizeof(audit.arguments_hash), "%s", args_hash);
+        snprintf(audit.error_message, sizeof(audit.error_message), "%s", "Unknown tool");
+        snprintf(audit.result_summary,
+                 sizeof(audit.result_summary),
+                 "%s",
+                 "Tool not registered in registry");
         ai_audit_log(&audit);
 
         return strdup("{\"error\":\"unknown tool\"}");
@@ -76,14 +79,16 @@ ai_tool_dispatch_parsed(const ai_tool_context_t* ctx,
             .timestamp = (int64_t)time(NULL),
             .success = false,
         };
-        strncpy(audit.tool, tool_name, sizeof(audit.tool) - 1);
-        strncpy(audit.arguments_hash, args_hash, sizeof(audit.arguments_hash) - 1);
-        strncpy(audit.error_message,
-                err_buf[0] ? err_buf : "Schema validation failed",
-                sizeof(audit.error_message) - 1);
-        strncpy(audit.result_summary,
-                "Arguments rejected by JSON schema",
-                sizeof(audit.result_summary) - 1);
+        snprintf(audit.tool, sizeof(audit.tool), "%s", tool_name ? tool_name : "");
+        snprintf(audit.arguments_hash, sizeof(audit.arguments_hash), "%s", args_hash);
+        snprintf(audit.error_message,
+                 sizeof(audit.error_message),
+                 "%.127s",
+                 err_buf[0] ? err_buf : "Schema validation failed");
+        snprintf(audit.result_summary,
+                 sizeof(audit.result_summary),
+                 "%s",
+                 "Arguments rejected by JSON schema");
         ai_audit_log(&audit);
 
         csilk_json_t* err_obj = csilk_json_object();
@@ -105,14 +110,16 @@ ai_tool_dispatch_parsed(const ai_tool_context_t* ctx,
                 .timestamp = (int64_t)time(NULL),
                 .success = false,
             };
-            strncpy(audit.tool, tool_name, sizeof(audit.tool) - 1);
-            strncpy(audit.arguments_hash, args_hash, sizeof(audit.arguments_hash) - 1);
-            strncpy(audit.error_message,
-                    err_buf[0] ? err_buf : "Business validation failed",
-                    sizeof(audit.error_message) - 1);
-            strncpy(audit.result_summary,
-                    "Arguments rejected by tool custom validator",
-                    sizeof(audit.result_summary) - 1);
+            snprintf(audit.tool, sizeof(audit.tool), "%s", tool_name ? tool_name : "");
+            snprintf(audit.arguments_hash, sizeof(audit.arguments_hash), "%s", args_hash);
+            snprintf(audit.error_message,
+                     sizeof(audit.error_message),
+                     "%.127s",
+                     err_buf[0] ? err_buf : "Business validation failed");
+            snprintf(audit.result_summary,
+                     sizeof(audit.result_summary),
+                     "%s",
+                     "Arguments rejected by tool custom validator");
             ai_audit_log(&audit);
 
             csilk_json_t* err_obj = csilk_json_object();
@@ -138,12 +145,13 @@ ai_tool_dispatch_parsed(const ai_tool_context_t* ctx,
             .timestamp = (int64_t)time(NULL),
             .success = false,
         };
-        strncpy(audit.tool, tool_name, sizeof(audit.tool) - 1);
-        strncpy(audit.arguments_hash, args_hash, sizeof(audit.arguments_hash) - 1);
-        strncpy(audit.error_message, reason, sizeof(audit.error_message) - 1);
-        strncpy(audit.result_summary,
-                "Operation blocked by Policy Engine",
-                sizeof(audit.result_summary) - 1);
+        snprintf(audit.tool, sizeof(audit.tool), "%s", tool_name ? tool_name : "");
+        snprintf(audit.arguments_hash, sizeof(audit.arguments_hash), "%s", args_hash);
+        snprintf(audit.error_message, sizeof(audit.error_message), "%.127s", reason ? reason : "");
+        snprintf(audit.result_summary,
+                 sizeof(audit.result_summary),
+                 "%s",
+                 "Operation blocked by Policy Engine");
         ai_audit_log(&audit);
 
         csilk_json_t* err_obj = csilk_json_object();
@@ -188,15 +196,16 @@ ai_tool_dispatch_parsed(const ai_tool_context_t* ctx,
         .timestamp = (int64_t)time(NULL),
         .success = !is_err,
     };
-    strncpy(audit.tool, tool_name, sizeof(audit.tool) - 1);
-    strncpy(audit.arguments_hash, args_hash, sizeof(audit.arguments_hash) - 1);
+    snprintf(audit.tool, sizeof(audit.tool), "%s", tool_name ? tool_name : "");
+    snprintf(audit.arguments_hash, sizeof(audit.arguments_hash), "%s", args_hash);
     if (is_err) {
-        strncpy(
-            audit.error_message, "Tool returned error payload", sizeof(audit.error_message) - 1);
+        snprintf(
+            audit.error_message, sizeof(audit.error_message), "%s", "Tool returned error payload");
     }
-    strncpy(audit.result_summary,
-            is_err ? "Operation failed" : "Operation succeeded",
-            sizeof(audit.result_summary) - 1);
+    snprintf(audit.result_summary,
+             sizeof(audit.result_summary),
+             "%s",
+             is_err ? "Operation failed" : "Operation succeeded");
     ai_audit_log(&audit);
 
     return result ? result : strdup("{\"error\":\"empty tool execution result\"}");
