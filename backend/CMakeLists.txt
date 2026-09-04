@@ -236,6 +236,13 @@ target_compile_options(test_domain_multi_currency PRIVATE -UNDEBUG)
 target_link_libraries(test_domain_multi_currency PRIVATE m)
 add_test(NAME test_domain_multi_currency COMMAND test_domain_multi_currency)
 
+add_executable(test_database_repository tests/unit/test_database_repository.c ${LIB_SOURCES})
+target_include_directories(test_database_repository PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_database_repository PRIVATE -UNDEBUG)
+target_link_libraries(test_database_repository PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_test(NAME test_database_repository COMMAND test_database_repository)
+
+
 
 
 
