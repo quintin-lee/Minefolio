@@ -105,10 +105,31 @@ static void test_runtime_memory_window(void) {
     printf("PASS: test_runtime_memory_window\n");
 }
 
+#include "services/ai/runtime/context.h"
+
+static void test_runtime_context_lifecycle(void) {
+    ai_runtime_context_t ctx;
+    ai_runtime_context_init(&ctx);
+
+    ctx.user_id = 42;
+    ctx.session_id = 100;
+    strncpy(ctx.model_name, "gpt-4o-mini", sizeof(ctx.model_name) - 1);
+    strncpy(ctx.provider_id, "openai", sizeof(ctx.provider_id) - 1);
+
+    assert(ctx.user_id == 42);
+    assert(ctx.session_id == 100);
+    assert(ctx.limits.max_iterations == 10);
+    assert(ctx.messages != NULL);
+
+    ai_runtime_context_free(&ctx);
+    printf("PASS: test_runtime_context_lifecycle\n");
+}
+
 int main(void) {
     test_runtime_error_taxonomy();
     test_runtime_limits_and_budgets();
     test_runtime_memory_window();
+    test_runtime_context_lifecycle();
     printf("All runtime initial tests passed!\n");
     return 0;
 }
