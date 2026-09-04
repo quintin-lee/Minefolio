@@ -1,3 +1,9 @@
+/**
+ * @file report_controller.c
+ * @brief 统计报表、持仓分析与仪表盘数据控制器实现 (DDD 接口层)
+ */
+
+#include "interfaces/http/controllers/report_controller.h"
 #include "common/response.h"
 #include "common/db.h"
 #include "common/jwt.h"

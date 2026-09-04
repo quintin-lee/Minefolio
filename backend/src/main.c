@@ -15,7 +15,7 @@
 #include "interfaces/http/controllers/daily_expense_controller.h"
 #include "interfaces/http/controllers/tag_controller.h"
 #include "interfaces/http/controllers/transfer_controller.h"
-#include "controllers/report_controller.h"
+#include "interfaces/http/controllers/report_controller.h"
 #include "interfaces/http/controllers/ai_controller.h"
 #include "interfaces/http/controllers/file_controller.h"
 #include "interfaces/http/controllers/ai_trace_controller.h"
