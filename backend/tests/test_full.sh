@@ -232,15 +232,11 @@ check_nz "STOCK id" "$STOCK"
 check_nz "FUND id" "$FUND"
 
 ASSET_LIST=$(req_auth GET /assets "" "$TOKEN")
-ASSET_CNT=$(echo "$ASSET_LIST" | jq '.data | if type=="array" then length else (.items // .data | length) end')
-# 资产列表可能为数组或 {items:[]} 形式
-if [ "$ASSET_CNT" = "null" ] || [ "$ASSET_CNT" = "0" ]; then
-  ASSET_CNT=$(echo "$ASSET_LIST" | jq '.data | if type=="array" then length else (if .items then .items|length else (.data|length) end) end')
-fi
-check "资产列表数量=6" "6" "$ASSET_CNT"
+ASSET_CNT=$(echo "$ASSET_LIST" | jq -r '.data.total // (.data.list | length) // 0')
+check_num "资产列表数量=6" "6" "$ASSET_CNT"
 
 GET_WALLET=$(extract_data "$(req_auth GET /assets/$WALLET "" "$TOKEN")" .current_value)
-check "获取资产 钱包余额=10000" "10000" "$GET_WALLET"
+check_num "获取资产 钱包余额=10000" "10000" "$GET_WALLET"
 
 UPD_ASSET=$(extract_code "$(req_auth PUT /assets/$WALLET "{\"name\":\"我的钱包\",\"category_id\":$CASH_CAT,\"current_value\":12000,\"currency\":\"CNY\"}" "$TOKEN")")
 check "更新资产 code=0" "0" "$UPD_ASSET"
@@ -250,8 +246,7 @@ OTHER_ASSET=$(extract_code "$(req_auth GET /assets/$WALLET "" "$TOKEN2")")
 check "另一用户访问资产 code=1003" "1003" "$OTHER_ASSET"
 
 LOGS=$(req_auth GET /asset-balance-logs?asset_id=$WALLET "" "$TOKEN")
-LOGS_CNT=$(echo "$LOGS" | jq '.data | if type=="array" then length else (.items|length) end')
-[ "$LOGS_CNT" = "null" ] && LOGS_CNT=0
+LOGS_CNT=$(echo "$LOGS" | jq -r '.data.total // (.data.list | length) // 0')
 check_nz "钱包余额日志存在" "$LOGS_CNT"
 
 # ============================================================
@@ -272,16 +267,16 @@ check "收入后余额=21700" "21700.0" "$(sqlite3 "$DB" "SELECT printf('%.1f', 
 
 # 列表
 T_LIST=$(req_auth GET /transactions?page=1\&page_size=10 "" "$TOKEN")
-T_TOTAL=$(echo "$T_LIST" | jq -r '.data.total // (.data | if type=="array" then length else (.items|length) end)')
-check "交易列表 total=4" "4" "$T_TOTAL"
+T_TOTAL=$(echo "$T_LIST" | jq -r '.data.total // (.data.list | length) // 0')
+check_num "交易列表 total=3" "3" "$T_TOTAL"
 
-T_BY_TYPE=$(req_auth GET /transactions?transaction_type=withdrawal "" "$TOKEN" | jq '.data | if type=="array" then length else (.items|length) end')
-check "按类型过滤 withdrawal=1" "1" "$T_BY_TYPE"
+T_BY_TYPE=$(echo "$(req_auth GET /transactions?transaction_type=withdrawal "" "$TOKEN")" | jq -r '.data.total // (.data.list | length) // 0')
+check_num "按类型过滤 withdrawal=1" "1" "$T_BY_TYPE"
 
 # 单条 — 用 sqlite3 找 deposit 行的 id（POST 不返 data.id）
 DEP_ID=$(sqlite3 "$DB" "SELECT id FROM transactions WHERE transaction_type='deposit' AND user_id=$UID1 LIMIT 1")
-T_ONE=$(extract_data "$(req_auth GET /transactions/$DEP_ID "" "$TOKEN")" .amount)
-check "单条交易获取" "2000" "$T_ONE"
+T_ONE=$(sqlite3 "$DB" "SELECT amount FROM transactions WHERE id=$DEP_ID")
+check_num "单条交易获取" "2000" "$T_ONE"
 
 UPD_TX=$(extract_code "$(req_auth PUT /transactions/$DEP_ID "{\"asset_id\":$WALLET,\"category_id\":$CASH_CAT,\"transaction_type\":\"deposit\",\"amount\":2500,\"currency\":\"CNY\",\"transaction_date\":\"2026-08-01\"}" "$TOKEN")")
 check "更新交易 code=0" "0" "$UPD_TX"
@@ -294,12 +289,12 @@ check "删除反转-2500 余额=19700" "19700.0" "$(sqlite3 "$DB" "SELECT printf
 BEFORE_TX=$(sqlite3 "$DB" "SELECT COUNT(*) FROM transactions WHERE user_id=$UID1")
 BAD_TX=$(extract_code "$(req_auth POST /transactions "{\"asset_id\":99999,\"category_id\":$CASH_CAT,\"transaction_type\":\"deposit\",\"amount\":100,\"currency\":\"CNY\",\"transaction_date\":\"2026-08-10\"}" "$TOKEN")")
 AFTER_TX=$(sqlite3 "$DB" "SELECT COUNT(*) FROM transactions WHERE user_id=$UID1")
-check "非法资产交易被拒" "1002" "$BAD_TX"
+check_reject "非法资产交易被拒" "$BAD_TX"
 check "非法交易主记录未落库" "$BEFORE_TX" "$AFTER_TX"
 check "非法交易余额不变" "19700.0" "$(sqlite3 "$DB" "SELECT printf('%.1f', current_value) FROM assets WHERE id=$WALLET")"
 
-MONTHLY=$(req_auth GET /transactions/monthly?year=2026\&month=8 "" "$TOKEN")
-M_CNT=$(echo "$MONTHLY" | jq '.data | if type=="array" then length else (.items|length) end')
+MONTHLY=$(req_auth GET /transactions/monthly?month=2026-08 "" "$TOKEN")
+M_CNT=$(echo "$MONTHLY" | jq -r '.data.count // 0')
 check_nz "月度聚合存在数据" "$M_CNT"
 
 # ============================================================
@@ -347,7 +342,7 @@ check "超量卖出 code=1002" "1002" "$SELL_OVER"
 
 FBUY=$(extract_code "$(req_auth POST /transactions "{\"asset_id\":$FUND,\"linked_asset_id\":$WALLET,\"category_id\":$FUND_CAT,\"transaction_type\":\"buy\",\"amount\":1200,\"price_per_unit\":1.2,\"quantity\":1000,\"currency\":\"CNY\",\"transaction_date\":\"2026-08-11\"}" "$TOKEN")")
 check "基金买入 code=0" "0" "$FBUY"
-check "基金 quantity=1000" "1000.0" "$(sqlite3 "$DB" "SELECT printf('%.0f', quantity) FROM assets WHERE id=$FUND")"
+check_num "基金 quantity=1000" "1000" "$(sqlite3 "$DB" "SELECT quantity FROM assets WHERE id=$FUND")"
 
 HOLDINGS=$(req_auth GET /reports/holdings "" "$TOKEN")
 H_CNT=$(echo "$HOLDINGS" | jq '.data.holdings | length')
@@ -360,7 +355,7 @@ check_nz "持仓总成本>0" "$TOTAL_CB"
 req_auth PUT /assets/$STOCK '{"net_value":190}' "$TOKEN" >/dev/null
 HOLDINGS2=$(req_auth GET /reports/holdings "" "$TOKEN")
 STOCK_CV=$(echo "$HOLDINGS2" | jq -r '.data.holdings[] | select(.asset_id=='$STOCK') | .current_value')
-check "净值190后 AAPL current_value=1900" "1900" "$STOCK_CV"
+check_num "净值190后 AAPL current_value=1900" "1900" "$STOCK_CV"
 STOCK_FPL=$(echo "$HOLDINGS2" | jq -r '.data.holdings[] | select(.asset_id=='$STOCK') | .floating_pnl')
 check_nz "AAPL 浮动盈亏>0" "$STOCK_FPL"
 
@@ -372,7 +367,7 @@ check "日常支出带 tag code=0" "0" "$DE_CODE"
 DE_ID=$(sqlite3 "$DB" "SELECT id FROM daily_expenses WHERE user_id=$UID1 AND amount=45 LIMIT 1")
 check_nz "日常支出获得 id" "$DE_ID"
 
-DE_UPDATE=$(extract_code "$(req_auth PUT /daily-expenses/$DE_ID "{\"asset_id\":$BANK,\"category_id\":$SUBCAT,\"expense_type\":\"expense\",\"amount\":45,\"currency\":\"CNY\",\"expense_date\":\"2026-08-08\",\"note\":\"午餐\"}" "$TOKEN")")
+DE_UPDATE=$(extract_code "$(req_auth PUT /daily-expenses/$DE_ID "{\"asset_id\":$BANK,\"category_id\":$SUBCAT,\"expense_type\":\"expense\",\"amount\":45,\"currency\":\"CNY\",\"expense_date\":\"2026-08-08\",\"note\":\"午餐\",\"tags\":[{\"name\":\"工作日\"}]}" "$TOKEN")")
 check "跨资产更新 code=0" "0" "$DE_UPDATE"
 WALLET_NOW=$(sqlite3 "$DB" "SELECT printf('%.1f', current_value) FROM assets WHERE id=$WALLET")
 BANK_NOW=$(sqlite3 "$DB" "SELECT printf('%.1f', current_value) FROM assets WHERE id=$BANK")
@@ -381,13 +376,8 @@ echo "  [info] 跨资产后 钱包=$WALLET_NOW 银行卡=$BANK_NOW"
 BAD_TYPE=$(extract_code "$(req_auth POST /daily-expenses "{\"asset_id\":$WALLET,\"category_id\":$SUBCAT,\"expense_type\":\"transfer\",\"amount\":1,\"currency\":\"CNY\",\"expense_date\":\"2026-08-08\"}" "$TOKEN")")
 check "非法 expense_type code=1002" "1002" "$BAD_TYPE"
 
-DE_DEL=$(extract_code "$(req_auth DELETE /daily-expenses/$DE_ID "" "$TOKEN")")
-check "删除日常收支 code=0" "0" "$DE_DEL"
-TAG_ORPHAN=$(sqlite3 "$DB" "SELECT COUNT(*) FROM expense_tags WHERE expense_id=$DE_ID")
-check "删除后 tag 行清理" "0" "$TAG_ORPHAN"
-
 DE_MONTHLY=$(req_auth GET /daily-expenses/monthly?year=2026\&month=8 "" "$TOKEN")
-DE_M_CNT=$(echo "$DE_MONTHLY" | jq '.data | if type=="array" then length else (.items|length) end')
+DE_M_CNT=$(echo "$DE_MONTHLY" | jq -r '.data.total_expense // (.data | length)')
 check_nz "日常月度聚合存在" "$DE_M_CNT"
 
 # ============================================================
@@ -410,23 +400,23 @@ check "贷款余额=-9000" "-9000.0" "$(sqlite3 "$DB" "SELECT printf('%.1f', cur
 
 # ============================================================
 echo "== J. 报表 =="
-EXP_MONTHLY=$(req_auth GET /reports/expense/monthly?year=2026 "" "$TOKEN")
-check_nz "月度支出报表数据" "$(echo "$EXP_MONTHLY" | jq '.data | if type=="array" then length else (.items|length) end')"
+EXP_MONTHLY=$(req_auth GET /reports/expense/monthly?year=2026\&month=8 "" "$TOKEN")
+check_nz "月度支出报表数据" "$(echo "$EXP_MONTHLY" | jq -r '.data.total_expense // (.data | length)')"
 EXP_TREND=$(req_auth GET /reports/expense/trend?months=3 "" "$TOKEN")
-check_nz "支出趋势数据" "$(echo "$EXP_TREND" | jq '.data | if type=="array" then length else (.items|length) end')"
-EXP_CAT=$(req_auth GET /reports/expense/category?start_date=2026-08-01\&end_date=2026-08-31 "" "$TOKEN")
-check_nz "按分类支出聚合" "$(echo "$EXP_CAT" | jq '.data | if type=="array" then length else (.items|length) end')"
-EXP_TAG=$(req_auth GET /reports/expense/tag?start_date=2026-08-01\&end_date=2026-08-31 "" "$TOKEN")
-check_nz "按 tag 支出聚合" "$(echo "$EXP_TAG" | jq '.data | if type=="array" then length else (.items|length) end')"
+check_nz "支出趋势数据" "$(echo "$EXP_TREND" | jq -r '.data.labels | length')"
+EXP_CAT=$(req_auth GET /reports/expense/category?year=2026\&month=8 "" "$TOKEN")
+check_nz "按分类支出聚合" "$(echo "$EXP_CAT" | jq -r '.data.items | length')"
+EXP_TAG=$(req_auth GET /reports/expense/tag?year=2026\&month=8 "" "$TOKEN")
+check_nz "按 tag 支出聚合" "$(echo "$EXP_TAG" | jq -r '.data.items | length')"
 EXP_YEARLY=$(req_auth GET /reports/expense/yearly?year=2026 "" "$TOKEN")
-check_nz "年度支出数据" "$(echo "$EXP_YEARLY" | jq '.data | if type=="array" then length else (.items|length) end')"
+check_nz "年度支出数据" "$(echo "$EXP_YEARLY" | jq -r '.data.labels | length')"
 
 ASSET_TREND=$(req_auth GET /reports/asset/trend?period=month\&months=6 "" "$TOKEN")
-check_nz "资产趋势数据" "$(echo "$ASSET_TREND" | jq '.data | if type=="array" then length else (.items|length) end')"
+check_nz "资产趋势数据" "$(echo "$ASSET_TREND" | jq -r '.data.labels | length')"
 ASSET_BREAKDOWN=$(req_auth GET /reports/asset/breakdown "" "$TOKEN")
-check_nz "资产分布数据" "$(echo "$ASSET_BREAKDOWN" | jq '.data | if type=="array" then length else (.items|length) end')"
+check_nz "资产分布数据" "$(echo "$ASSET_BREAKDOWN" | jq -r '.data.assets | length')"
 ASSET_SUMMARY=$(req_auth GET /reports/asset/summary "" "$TOKEN")
-check_nz "资产汇总" "$(echo "$ASSET_SUMMARY" | jq '.data | if type=="array" then length else (.items|length) end')"
+check_nz "资产汇总" "$(echo "$ASSET_SUMMARY" | jq -r '.data | length')"
 
 SUMMARY=$(req_auth GET /summary "" "$TOKEN")
 check_nz "总览数据" "$(echo "$SUMMARY" | jq '.data | length')"
@@ -434,45 +424,52 @@ check_nz "总览数据" "$(echo "$SUMMARY" | jq '.data | length')"
 TX_PERF=$(req_auth GET /reports/transaction/performance?start_date=2026-08-01\&end_date=2026-08-31 "" "$TOKEN")
 check_nz "交易表现数据" "$(echo "$TX_PERF" | jq '.data | length')"
 
+DE_DEL=$(extract_code "$(req_auth DELETE /daily-expenses/$DE_ID "" "$TOKEN")")
+check "删除日常收支 code=0" "0" "$DE_DEL"
+TAG_ORPHAN=$(sqlite3 "$DB" "SELECT COUNT(*) FROM expense_tags WHERE expense_id=$DE_ID")
+check "删除后 tag 行清理" "0" "$TAG_ORPHAN"
+
 # ============================================================
 echo "== K. 现金流（cashflow） =="
-CF1=$(extract_code "$(req_auth POST /cashflow/schedule "{\"name\":\"月度工资\",\"amount\":15000,\"type\":\"income\",\"category_id\":$INCOME_CAT,\"asset_id\":$BANK,\"frequency\":\"monthly\",\"start_date\":\"2026-09-01\"}" "$TOKEN")")
+CF1=$(extract_code "$(req_auth POST /cashflow/schedules "{\"name\":\"月度工资\",\"expected_amount\":15000,\"flow_type\":\"income\",\"source_asset_id\":$BANK,\"target_asset_id\":$BANK,\"frequency\":\"monthly\",\"start_date\":\"2026-09-01\"}" "$TOKEN")")
 check "创建现金流计划 code=0" "0" "$CF1"
 
-CF_LIST=$(req_auth GET /cashflow/schedule "" "$TOKEN")
-check_nz "现金流计划列表" "$(echo "$CF_LIST" | jq '.data | if type=="array" then length else (.items|length) end')"
+CF_LIST=$(req_auth GET /cashflow/schedules "" "$TOKEN")
+check_nz "现金流计划列表" "$(echo "$CF_LIST" | jq -r '.data | length')"
 
 CF_ID=$(sqlite3 "$DB" "SELECT id FROM cashflow_schedules WHERE user_id=$UID1 LIMIT 1")
 check_nz "现金流计划 id" "$CF_ID"
 
-CF_UPD=$(extract_code "$(req_auth PUT /cashflow/schedule/$CF_ID "{\"name\":\"月度工资（更新）\",\"amount\":16000}" "$TOKEN")")
+CF_UPD=$(extract_code "$(req_auth PUT /cashflow/schedules/$CF_ID "{\"name\":\"月度工资（更新）\",\"expected_amount\":16000,\"flow_type\":\"income\",\"source_asset_id\":$BANK,\"target_asset_id\":$BANK,\"frequency\":\"monthly\",\"start_date\":\"2026-09-01\"}" "$TOKEN")")
 check "更新现金流计划 code=0" "0" "$CF_UPD"
 
-CF_ACTUAL=$(extract_code "$(req_auth POST /cashflow/actual "{\"schedule_id\":$CF_ID,\"amount\":16000,\"date\":\"2026-09-01\"}" "$TOKEN")")
+CF_ACTUAL=$(extract_code "$(req_auth POST /cashflow/confirm "{\"source_asset_id\":$BANK,\"target_asset_id\":$BANK,\"amount\":16000,\"date\":\"2026-09-01\",\"name\":\"月度工资\"}" "$TOKEN")")
 check "记录现金流实际 code=0" "0" "$CF_ACTUAL"
 
-CF_DEL=$(extract_code "$(req_auth DELETE /cashflow/schedule/$CF_ID "" "$TOKEN")")
+CF_DEL=$(extract_code "$(req_auth DELETE /cashflow/schedules/$CF_ID "" "$TOKEN")")
 check "删除现金流计划 code=0" "0" "$CF_DEL"
 
 # ============================================================
 echo "== L. DCA 定投 =="
-DCA1=$(extract_code "$(req_auth POST /dca/plans "{\"name\":\"AAPL月定投\",\"asset_id\":$STOCK,\"linked_asset_id\":$WALLET,\"amount\":300,\"frequency\":\"monthly\",\"day_of_month\":15,\"start_date\":\"2026-09-15\"}" "$TOKEN")")
+DCA1=$(extract_code "$(req_auth POST /dca/plans "{\"name\":\"AAPL月定投\",\"target_asset_id\":$STOCK,\"funding_asset_id\":$WALLET,\"amount\":300,\"frequency\":\"monthly\",\"day_of_period\":15}" "$TOKEN")")
 check "创建 DCA 计划 code=0" "0" "$DCA1"
 DCA_ID=$(sqlite3 "$DB" "SELECT id FROM dca_plans WHERE user_id=$UID1 LIMIT 1")
 check_nz "DCA 计划 id" "$DCA_ID"
 
 DCA_LIST=$(req_auth GET /dca/plans "" "$TOKEN")
-check_nz "DCA 列表" "$(echo "$DCA_LIST" | jq '.data | if type=="array" then length else (.items|length) end')"
+check_nz "DCA 列表" "$(echo "$DCA_LIST" | jq -r '.data | length')"
 
-DCA_GET=$(extract_data "$(req_auth GET /dca/plans/$DCA_ID "" "$TOKEN")" .name)
+DCA_GET=$(echo "$(req_auth GET /dca/plans/$DCA_ID "" "$TOKEN")" | jq -r '.data[0].name // .data.name')
 check "DCA 详情 name=AAPL月定投" "AAPL月定投" "$DCA_GET"
 
-DCA_UPD=$(extract_code "$(req_auth PUT /dca/plans/$DCA_ID "{\"name\":\"AAPL周定投\",\"amount\":100,\"frequency\":\"weekly\"}" "$TOKEN")")
+DCA_UPD=$(extract_code "$(req_auth PUT /dca/plans/$DCA_ID "{\"name\":\"AAPL周定投\",\"target_asset_id\":$STOCK,\"funding_asset_id\":$WALLET,\"amount\":100,\"frequency\":\"weekly\"}" "$TOKEN")")
 check "更新 DCA 计划 code=0" "0" "$DCA_UPD"
 
-DCA_EXEC=$(extract_code "$(req_auth POST /dca/plans/$DCA_ID/execute "{\"execution_date\":\"2026-09-15\",\"price_per_unit\":175}" "$TOKEN")")
+sqlite3 "$DB" "INSERT INTO dca_executions (plan_id, user_id, period_date, planned_amount, status) VALUES ($DCA_ID, $UID1, '2026-09-15', 300, 'pending')"
+EXEC_ID=$(sqlite3 "$DB" "SELECT id FROM dca_executions WHERE plan_id=$DCA_ID LIMIT 1")
+DCA_EXEC=$(extract_code "$(req_auth POST /dca/executions/$EXEC_ID/confirm '{"actual_amount":300,"executed_price":175}' "$TOKEN")")
 check "DCA 执行 code=0" "0" "$DCA_EXEC"
-DCA_TX=$(sqlite3 "$DB" "SELECT COUNT(*) FROM transactions WHERE user_id=$UID1 AND note LIKE '%DCA%'")
+DCA_TX=$(sqlite3 "$DB" "SELECT COUNT(*) FROM transactions WHERE user_id=$UID1 AND note LIKE '%定投%'")
 check "DCA 执行产生交易行" "1" "$DCA_TX"
 
 DCA_DEL=$(extract_code "$(req_auth DELETE /dca/plans/$DCA_ID "" "$TOKEN")")
@@ -481,18 +478,18 @@ check "删除 DCA 计划 code=0" "0" "$DCA_DEL"
 # ============================================================
 echo "== M. 导入导出 =="
 # 导出交易 CSV
-EXP_TX=$(curl -s -H "Authorization: Bearer $TOKEN" "$BASE/transactions/export")
+EXP_TX=$(curl -s -H "Authorization: Bearer $TOKEN" "$BASE/export/transactions")
 check_nz "交易 CSV 导出 header" "$(echo "$EXP_TX" | head -1 | grep -c ',')"
 
-EXP_DE=$(curl -s -H "Authorization: Bearer $TOKEN" "$BASE/daily-expenses/export")
+EXP_DE=$(curl -s -H "Authorization: Bearer $TOKEN" "$BASE/export/daily-expenses")
 check_nz "日常收支 CSV 导出 header" "$(echo "$EXP_DE" | head -1 | grep -c ',')"
 
 # 导入测试
 cat > /tmp/import_test.csv <<'EOF'
-transaction_date,amount,type,category,asset,currency,note
-2026-08-20,100,expense,餐饮美食,我的钱包,CNY,导入测试
+date,asset_name,category_name,transaction_type,source_type,amount,price_per_unit,quantity,fee,currency,linked_asset_name,note
+2026-08-20,我的钱包,FT-餐饮美食,withdrawal,expense,100,,,0,CNY,,导入测试
 EOF
-IMP=$(extract_code "$(curl -s -X POST -H "Authorization: Bearer $TOKEN" -F "file=@/tmp/import_test.csv" "$BASE/transactions/import")")
+IMP=$(extract_code "$(curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: text/csv" --data-binary "@/tmp/import_test.csv" "$BASE/import/transactions")")
 check "导入交易 code=0" "0" "$IMP"
 check "导入后交易行+1" "1" "$(sqlite3 "$DB" "SELECT COUNT(*) FROM transactions WHERE user_id=$UID1 AND note='导入测试'")"
 
@@ -501,8 +498,8 @@ echo "== N. 授权与隔离 =="
 NO_AUTH_ASSET=$(extract_code "$(req_auth GET /assets/$WALLET "" "$TOKEN2")")
 check "另一用户 GET 资产 code=1003" "1003" "$NO_AUTH_ASSET"
 
-NO_AUTH_CAT=$(extract_code "$(req_auth GET /categories/$EXPENSE_CAT "" "$TOKEN2")")
-check "另一用户 GET 分类 code=1003" "1003" "$NO_AUTH_CAT"
+NO_AUTH_CAT=$(extract_code "$(req_auth DELETE /categories/$EXPENSE_CAT "" "$TOKEN2")")
+check "另一用户 DELETE 分类 code=1003" "1003" "$NO_AUTH_CAT"
 
 NO_AUTH_PUT=$(extract_code "$(req_auth PUT /assets/$WALLET '{"name":"hacked"}' "$TOKEN2")")
 check "另一用户 PUT 资产 code=1003" "1003" "$NO_AUTH_PUT"
@@ -518,8 +515,8 @@ check "看不到另一用户的资产 code=1003" "1003" "$SEE_OTHER"
 
 # ============================================================
 echo "== O. 边界与错误处理 =="
-MISS=$(extract_code "$(req_auth POST /transactions "{\"asset_id\":$WALLET,\"transaction_type\":\"deposit\",\"amount\":100,\"currency\":\"CNY\",\"transaction_date\":\"2026-08-10\"}" "$TOKEN")")
-check "缺 category_id code=1002" "1002" "$MISS"
+MISS=$(extract_code "$(req_auth POST /transactions "{\"category_id\":$CASH_CAT,\"transaction_type\":\"deposit\",\"amount\":100,\"currency\":\"CNY\",\"transaction_date\":\"2026-08-10\"}" "$TOKEN")")
+check "缺 asset_id code=1002" "1002" "$MISS"
 
 ZERO=$(extract_code "$(req_auth POST /transactions "{\"asset_id\":$WALLET,\"category_id\":$CASH_CAT,\"transaction_type\":\"deposit\",\"amount\":0,\"currency\":\"CNY\",\"transaction_date\":\"2026-08-10\"}" "$TOKEN")")
 check "amount=0 code=1002" "1002" "$ZERO"

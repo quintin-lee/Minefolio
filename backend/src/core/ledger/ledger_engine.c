@@ -24,7 +24,8 @@ ledger_tx_type_from_str(const char* str)
     if (strcasecmp(str, "deposit") == 0 || strcasecmp(str, "income") == 0) {
         return LEDGER_TX_DEPOSIT;
     }
-    if (strcasecmp(str, "withdraw") == 0 || strcasecmp(str, "expense") == 0) {
+    if (strcasecmp(str, "withdraw") == 0 || strcasecmp(str, "withdrawal") == 0 ||
+        strcasecmp(str, "expense") == 0) {
         return LEDGER_TX_WITHDRAW;
     }
     if (strcasecmp(str, "transfer_in") == 0) {
@@ -282,6 +283,38 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
         }
         tx->id = db_get_int(csilk_json_array_get(ins_res, 0), "id");
         csilk_json_free(ins_res);
+    } else {
+        const tx_type_t* ttype = tx_type_lookup(tx_type_str);
+        const char*      dir = (ttype && ttype->stat_dir) ? ttype->stat_dir : "in";
+        const char*      ldir =
+            (tx->linked_asset_id > 0 && ttype && ttype->linked_dir) ? ttype->linked_dir : "";
+        const char* src_type =
+            (tx->type == LEDGER_TX_DEPOSIT || tx->type == LEDGER_TX_TRANSFER_IN ||
+             tx->type == LEDGER_TX_INTEREST || tx->type == LEDGER_TX_DIVIDEND)
+                ? "income"
+                : "expense";
+
+        double amt_d = money_to_double(tx->amount);
+        double price_d = price_to_double(tx->price);
+        double qty_d = quantity_to_double(tx->quantity);
+
+        if (!tx_update(pool,
+                       tx->user_id,
+                       tx->id,
+                       tx_type_str,
+                       dir,
+                       ldir,
+                       amt_d,
+                       price_d,
+                       qty_d,
+                       cur_str,
+                       tx->tx_date,
+                       tx->note ? tx->note : "",
+                       tx->category_id,
+                       src_type,
+                       tx->linked_asset_id)) {
+            return -1;
+        }
     }
 
     // 2. Position & Balance Updates

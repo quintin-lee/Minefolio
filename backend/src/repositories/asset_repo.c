@@ -230,7 +230,7 @@ asset_update_basic(csilk_db_pool_t* pool,
         pool,
         "UPDATE assets SET "
         "name=?,account_no=?,current_value=?,currency=?,note=?,symbol=?,"
-        "quote_source=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?",
+        "quote_source=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=? RETURNING id",
         (const char*[]){name ? name : "",
                         account_no ? account_no : "",
                         val,
@@ -267,29 +267,40 @@ asset_update_market_quote(csilk_db_pool_t* pool,
                           int64_t          asset_id,
                           double           new_net_value)
 {
-    char uid[32], aid[32], nv_str[64];
-    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    char val[64], aid[32], uid[32];
+    snprintf(val, sizeof(val), "%.4f", new_net_value);
     snprintf(aid, sizeof(aid), "%lld", (long long)asset_id);
-    snprintf(nv_str, sizeof(nv_str), "%.4f", new_net_value);
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
 
-    char cond[64] = "1=1";
+    csilk_json_t* res = NULL;
     if (user_id > 0) {
-        snprintf(cond, sizeof(cond), "user_id = %lld", (long long)user_id);
+        res = csilk_db_query_param_json(
+            pool,
+            "UPDATE assets SET "
+            "net_value = ?, "
+            "current_value = CASE WHEN quantity > 0 THEN ROUND(quantity * ?, 2) ELSE current_value "
+            "END, "
+            "last_sync_at = CURRENT_TIMESTAMP, "
+            "updated_at = CURRENT_TIMESTAMP "
+            "WHERE id = ? AND user_id = ? RETURNING id",
+            (const char*[]){val, val, aid, uid, NULL});
+    } else {
+        res = csilk_db_query_param_json(
+            pool,
+            "UPDATE assets SET "
+            "net_value = ?, "
+            "current_value = CASE WHEN quantity > 0 THEN ROUND(quantity * ?, 2) ELSE current_value "
+            "END, "
+            "last_sync_at = CURRENT_TIMESTAMP, "
+            "updated_at = CURRENT_TIMESTAMP "
+            "WHERE id = ? RETURNING id",
+            (const char*[]){val, val, aid, NULL});
     }
-
-    char sql[512];
-    snprintf(sql,
-             sizeof(sql),
-             "UPDATE assets SET "
-             "net_value = ?, "
-             "current_value = CASE WHEN quantity > 0 THEN ROUND(quantity * ?, 2) ELSE "
-             "current_value END, "
-             "last_sync_at = CURRENT_TIMESTAMP, "
-             "updated_at = CURRENT_TIMESTAMP "
-             "WHERE id = ? AND %s",
-             cond);
-    const char* params[] = {nv_str, nv_str, aid, NULL};
-    return csilk_db_exec_param(pool, sql, params);
+    int updated = res ? (int)csilk_json_array_size(res) : 0;
+    if (res) {
+        csilk_json_free(res);
+    }
+    return updated;
 }
 
 /**
@@ -355,7 +366,7 @@ asset_update_position(csilk_db_pool_t* pool,
     csilk_json_t* res = csilk_db_query_param_json(
         pool,
         "UPDATE assets SET net_value=?,quantity=?,cost_basis=?,updated_at=CURRENT_TIMESTAMP WHERE "
-        "id=? AND user_id=?",
+        "id=? AND user_id=? RETURNING id",
         (const char*[]){nv, qty, cb, idstr, uid, NULL});
     int ok = res ? csilk_json_array_size(res) > 0 : 0;
     if (res) {
@@ -380,8 +391,10 @@ asset_delete(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
     char uid[32], idstr[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     snprintf(idstr, sizeof(idstr), "%lld", (long long)id);
-    csilk_json_t* res = csilk_db_query_param_json(
-        pool, "DELETE FROM assets WHERE id=? AND user_id=?", (const char*[]){idstr, uid, NULL});
+    csilk_json_t* res =
+        csilk_db_query_param_json(pool,
+                                  "DELETE FROM assets WHERE id=? AND user_id=? RETURNING id",
+                                  (const char*[]){idstr, uid, NULL});
     int ok = res ? csilk_json_array_size(res) > 0 : 0;
     if (res) {
         csilk_json_free(res);

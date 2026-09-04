@@ -174,14 +174,14 @@ api_transactions_list(csilk_ctx_t* c)
         page_size = 20;
     }
 
-    const char* aid_str = csilk_get_param(c, "asset_id");
-    const char* cid_str = csilk_get_param(c, "category_id");
-    const char* type = csilk_get_param(c, "transaction_type");
+    const char* aid_str = csilk_get_query(c, "asset_id");
+    const char* cid_str = csilk_get_query(c, "category_id");
+    const char* type = csilk_get_query(c, "transaction_type");
     if (!type || strlen(type) == 0) {
-        type = csilk_get_param(c, "type");
+        type = csilk_get_query(c, "type");
     }
-    const char* start_date = csilk_get_param(c, "start_date");
-    const char* end_date = csilk_get_param(c, "end_date");
+    const char* start_date = csilk_get_query(c, "start_date");
+    const char* end_date = csilk_get_query(c, "end_date");
 
     query_tx_filter_t filter = {
         .user_id = user_id,

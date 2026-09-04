@@ -23,9 +23,12 @@ transactions_list(csilk_ctx_t* c)
     const char*      asset_id = csilk_get_query(c, "asset_id");
     const char*      category_id = csilk_get_query(c, "category_id");
     const char*      type = csilk_get_query(c, "type");
-    const char*      start_date = csilk_get_query(c, "start_date");
-    const char*      end_date = csilk_get_query(c, "end_date");
-    const char*      source_type = csilk_get_query(c, "source_type");
+    if (!type || strlen(type) == 0) {
+        type = csilk_get_query(c, "transaction_type");
+    }
+    const char* start_date = csilk_get_query(c, "start_date");
+    const char* end_date = csilk_get_query(c, "end_date");
+    const char* source_type = csilk_get_query(c, "source_type");
 
     char uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
