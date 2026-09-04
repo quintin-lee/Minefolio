@@ -13,9 +13,7 @@
 /**
  * @brief 记录或更新资产历史价格快照 (UPSERT)
  *
- * 根据 `db_is_postgres()` 动态选择 SQL 语法分支：
- * - PostgreSQL: 带 `CAST(? AS DATE)` 和 `CAST(? AS DOUBLE PRECISION)` 显式类型转换及 `EXCLUDED.price`。
- * - SQLite: 原生类型推导与 `excluded.price`。
+ * 使用统一兼容的参数化 UPSERT 语法写入或更新净值数据。
  *
  * @param pool 数据库连接池指针
  * @param asset_id 资产 ID
@@ -36,21 +34,12 @@ price_history_record(csilk_db_pool_t* pool,
     snprintf(price_str, sizeof(price_str), "%.4f", price);
     const char* cur = (currency && currency[0]) ? currency : "CNY";
 
-    if (db_is_postgres()) {
-        const char* sql = "INSERT INTO asset_price_history (asset_id, price_date, price, currency) "
-                          "VALUES (?, CAST(? AS DATE), CAST(? AS DOUBLE PRECISION), ?) "
-                          "ON CONFLICT(asset_id, price_date) DO UPDATE SET price=EXCLUDED.price, "
-                          "currency=EXCLUDED.currency";
-        const char* params[] = {aid_str, price_date, price_str, cur, NULL};
-        return csilk_db_exec_param(pool, sql, params);
-    } else {
-        const char* sql = "INSERT INTO asset_price_history (asset_id, price_date, price, currency) "
-                          "VALUES (?, ?, ?, ?) "
-                          "ON CONFLICT(asset_id, price_date) DO UPDATE SET price=excluded.price, "
-                          "currency=excluded.currency";
-        const char* params[] = {aid_str, price_date, price_str, cur, NULL};
-        return csilk_db_exec_param(pool, sql, params);
-    }
+    const char* sql = "INSERT INTO asset_price_history (asset_id, price_date, price, currency) "
+                      "VALUES (?, ?, ?, ?) "
+                      "ON CONFLICT(asset_id, price_date) DO UPDATE SET price=EXCLUDED.price, "
+                      "currency=EXCLUDED.currency";
+    const char* params[] = {aid_str, price_date, price_str, cur, NULL};
+    return csilk_db_exec_param(pool, sql, params);
 }
 
 /**
