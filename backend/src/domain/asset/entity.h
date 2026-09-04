@@ -7,6 +7,12 @@
 #include "core/financial/money.h"
 #include "core/financial/price.h"
 #include "core/financial/quantity.h"
+#include "domain/asset/instrument.h"
+#include "domain/asset/account.h"
+#include "domain/asset/cost_basis.h"
+#include "domain/asset/valuation.h"
+#include "domain/asset/pnl.h"
+#include "domain/asset/position.h"
 
 /**
  * @brief 纯业务领域资产聚合根/实体 (Domain Asset Entity)

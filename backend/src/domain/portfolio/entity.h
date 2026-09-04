@@ -6,6 +6,8 @@
 #include "core/financial/money.h"
 #include "core/financial/price.h"
 #include "core/financial/quantity.h"
+#include "domain/portfolio/fx_table.h"
+#include "domain/portfolio/portfolio.h"
 
 /**
  * @brief 单项投资标的持仓实体 (Portfolio Holding Item)
