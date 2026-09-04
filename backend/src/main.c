@@ -17,7 +17,7 @@
 #include "interfaces/http/controllers/transfer_controller.h"
 #include "controllers/report_controller.h"
 #include "interfaces/http/controllers/ai_controller.h"
-#include "controllers/file_controller.h"
+#include "interfaces/http/controllers/file_controller.h"
 #include "interfaces/http/controllers/ai_trace_controller.h"
 #include "controllers/import_export_controller.h"
 #include "interfaces/http/controllers/market_controller.h"

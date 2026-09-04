@@ -6,7 +6,7 @@
  * 缓冲分片数据后调用底层 services/file_parser.h 解析器提取文本。
  */
 
-#include "controllers/file_controller.h"
+#include "interfaces/http/controllers/file_controller.h"
 #include "services/file_parser.h"
 #include "common/db.h"
 #include "common/ctx.h"
@@ -144,4 +144,10 @@ register_file_routes(csilk_app_t* app)
         NULL,
         "Upload and parse file",
         "Accepts multipart file upload (PDF, TXT, CSV, ZIP) and returns parsed text");
+}
+
+void
+api_file_upload_handler(csilk_ctx_t* c)
+{
+    file_upload_handler(c);
 }
