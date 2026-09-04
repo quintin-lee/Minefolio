@@ -241,6 +241,12 @@ target_compile_options(test_database_repository PRIVATE -UNDEBUG)
 target_link_libraries(test_database_repository PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
 add_test(NAME test_database_repository COMMAND test_database_repository)
 
+add_executable(test_migration_engine tests/unit/test_migration_engine.c ${LIB_SOURCES})
+target_include_directories(test_migration_engine PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_migration_engine PRIVATE -UNDEBUG)
+target_link_libraries(test_migration_engine PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_test(NAME test_migration_engine COMMAND test_migration_engine)
+
 
 
 
