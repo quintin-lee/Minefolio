@@ -1,3 +1,9 @@
+/**
+ * @file import_export_controller.c
+ * @brief 财务数据导入与导出控制器实现 (DDD 接口层)
+ */
+
+#include "interfaces/http/controllers/import_export_controller.h"
 #include "services/export_service.h"
 #include "services/import_service.h"
 
