@@ -7,6 +7,11 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 include(FetchContent)
 
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libraries by default" FORCE)
+set(BUILD_STATIC_LIBS ON CACHE BOOL "Build static libraries" FORCE)
+set(CSILK_BUILD_SHARED OFF CACHE BOOL "Build shared library (in addition to static)" FORCE)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 FetchContent_Declare(
     csilk
     SOURCE_DIR     "${CMAKE_CURRENT_SOURCE_DIR}/../deps/csilk"

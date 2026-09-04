@@ -130,20 +130,18 @@ jobs:
             type=ref,event=branch
             type=ref,event=tag
 
-      - name: Build and push Docker image
+      - name: Build and load Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile.frontend
-          push: ${{ github.event_name != 'pull_request' }}
+          load: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          load: ${{ github.event_name == 'pull_request' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Smoke test Docker container (PR only)
-        if: github.event_name == 'pull_request'
+      - name: Smoke test Docker container
         run: |
           IMAGE_TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -n 1)
           docker run -d --name minefolio-frontend-smoke-test \
@@ -153,14 +151,26 @@ jobs:
           for i in $(seq 1 30); do
             if curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/ | grep -q "200"; then
               echo "✅ Frontend Docker image smoke test passed!"
-              docker stop minefolio-frontend-smoke-test
+              docker rm -f minefolio-frontend-smoke-test
               exit 0
             fi
             sleep 1
           done
           echo "❌ Frontend Docker container failed healthcheck"
           docker logs minefolio-frontend-smoke-test
+          docker rm -f minefolio-frontend-smoke-test
           exit 1
+
+      - name: Push Docker image
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.frontend
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
 
   docker-build:
     name: Build & Package Docker Image
@@ -195,20 +205,18 @@ jobs:
             type=ref,event=branch
             type=ref,event=tag
 
-      - name: Build and push Docker image
+      - name: Build and load Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile
-          push: ${{ github.event_name != 'pull_request' }}
+          load: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          load: ${{ github.event_name == 'pull_request' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Smoke test Docker container (PR only)
-        if: github.event_name == 'pull_request'
+      - name: Smoke test Docker container
         run: |
           IMAGE_TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -n 1)
           docker run -d --name minefolio-smoke-test \
@@ -219,14 +227,26 @@ jobs:
           for i in $(seq 1 30); do
             if curl -s http://127.0.0.1:8080/api/system/status | grep -q "0"; then
               echo "✅ Docker image smoke test passed!"
-              docker stop minefolio-smoke-test
+              docker rm -f minefolio-smoke-test
               exit 0
             fi
             sleep 1
           done
           echo "❌ Docker container failed healthcheck"
           docker logs minefolio-smoke-test
+          docker rm -f minefolio-smoke-test
           exit 1
+
+      - name: Push Docker image
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
 
   android-build:
     name: Build Android APK

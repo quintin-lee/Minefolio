@@ -71,6 +71,7 @@ RUN --mount=type=cache,target=/var/cache/apt \
     libsqlite3-dev \
     libssl-dev \
     libcurl4-openssl-dev \
+    libnghttp2-dev \
     zlib1g-dev \
     curl \
     ca-certificates \
@@ -129,6 +130,10 @@ RUN --mount=type=bind,source=hosts,target=/etc/hosts \
     -B backend/build \
     -G "Unix Makefiles" \
     -DCMAKE_BUILD_TYPE=Release \
+    -DBUILD_SHARED_LIBS=OFF \
+    -DBUILD_STATIC_LIBS=ON \
+    -DCSILK_BUILD_SHARED=OFF \
+    -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
     -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
     -DFETCHCONTENT_FULLY_DISCONNECTED=ON \
     -DFETCHCONTENT_SOURCE_DIR_CSILK=/src/deps/csilk \
@@ -139,7 +144,10 @@ RUN --mount=type=bind,source=hosts,target=/etc/hosts \
     --build backend/build \
     --parallel $(nproc)
 
-RUN strip backend/build/minefolio
+RUN strip backend/build/minefolio \
+    && mkdir -p /src/backend/build/lib-dist \
+    && touch /src/backend/build/lib-dist/.keep \
+    && cp -a /src/backend/build/*.so* /src/backend/build/lib-dist/ 2>/dev/null || true
 
 
 # Download swagger-ui distribution (csilk share/swagger-ui contains only placeholders)
@@ -239,6 +247,12 @@ RUN --mount=type=bind,source=hosts,target=/etc/hosts \
 ############################################################
 # Application
 ############################################################
+
+COPY --from=backend-build \
+    /src/backend/build/lib-dist/ \
+    /usr/local/lib/
+
+RUN ldconfig || true
 
 WORKDIR /app
 
