@@ -1,4 +1,9 @@
-#include "services/admin_service.h"
+/**
+ * @file admin_controller.c
+ * @brief 系统管理与初始引导控制器实现 (DDD 接口层)
+ */
+
+#include "interfaces/http/controllers/admin_controller.h"
 #include "repositories/auth_repo.h"
 #include "repositories/import_rule_repo.h"
 #define MINEFOLIO_BCRYPT_COST CSILK_BCRYPT_DEFAULT_COST
@@ -23,6 +28,7 @@ store_bcrypt_hash(const char* password, char* out)
 {
     csilk_bcrypt_hash(password, strlen(password), MINEFOLIO_BCRYPT_COST, out);
 }
+
 void
 system_status(csilk_ctx_t* c)
 {
@@ -35,6 +41,7 @@ system_status(csilk_ctx_t* c)
      * users assists brute-force and social-engineering attacks. */
     respond_ok(c, resp);
 }
+
 void
 system_setup(csilk_ctx_t* c)
 {
