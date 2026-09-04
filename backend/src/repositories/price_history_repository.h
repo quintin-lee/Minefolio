@@ -12,11 +12,8 @@
 extern "C" {
 #endif
 
-int price_history_repo_record(mf_db_t*    db,
-                              int64_t     asset_id,
-                              const char* price_date,
-                              double      price,
-                              const char* currency);
+int price_history_repo_record(
+    mf_db_t* db, int64_t asset_id, const char* price_date, double price, const char* currency);
 
 #ifdef __cplusplus
 }

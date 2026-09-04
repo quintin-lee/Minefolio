@@ -30,12 +30,9 @@ int     user_repo_find_by_id(mf_db_t* db, int64_t id, user_record_t* out_user);
 int     user_repo_find_by_username(mf_db_t* db, const char* username, user_record_t* out_user);
 int64_t user_repo_insert(mf_db_t* db, const char* username, const char* password_hash);
 int     user_repo_update_password(mf_db_t* db, int64_t id, const char* new_hash);
-int     user_repo_update_totp(mf_db_t*    db,
-                              int64_t     id,
-                              const char* secret,
-                              bool        enabled,
-                              const char* backup_codes);
-int     user_repo_count(mf_db_t* db, int64_t* out_count);
+int     user_repo_update_totp(
+    mf_db_t* db, int64_t id, const char* secret, bool enabled, const char* backup_codes);
+int user_repo_count(mf_db_t* db, int64_t* out_count);
 
 #ifdef __cplusplus
 }

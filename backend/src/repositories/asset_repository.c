@@ -14,17 +14,17 @@ asset_repo_find_by_id(mf_db_t* db, int64_t user_id, int64_t id, asset_record_t* 
 
     mf_stmt_t* stmt = NULL;
     int        rc = mf_stmt_prepare(db,
-                             "SELECT a.id, a.user_id, a.category_id, a.name, a.account_no, "
-                             "COALESCE(a.symbol, '') AS symbol, "
-                             "COALESCE(a.quote_source, '') AS quote_source, "
-                             "a.currency, a.note, c.name AS category_name, c.asset_type, "
-                             "a.current_value, a.quantity, a.cost_basis, a.net_value, "
-                             "COALESCE(CAST(a.last_sync_at AS TEXT), '') AS last_sync_at, "
-                             "a.created_at, a.updated_at "
-                             "FROM assets a "
-                             "LEFT JOIN categories c ON a.category_id = c.id "
-                             "WHERE a.user_id = ? AND a.id = ?;",
-                             &stmt);
+                                    "SELECT a.id, a.user_id, a.category_id, a.name, a.account_no, "
+                                    "COALESCE(a.symbol, '') AS symbol, "
+                                    "COALESCE(a.quote_source, '') AS quote_source, "
+                                    "a.currency, a.note, c.name AS category_name, c.asset_type, "
+                                    "a.current_value, a.quantity, a.cost_basis, a.net_value, "
+                                    "COALESCE(CAST(a.last_sync_at AS TEXT), '') AS last_sync_at, "
+                                    "a.created_at, a.updated_at "
+                                    "FROM assets a "
+                                    "LEFT JOIN categories c ON a.category_id = c.id "
+                                    "WHERE a.user_id = ? AND a.id = ?;",
+                                    &stmt);
     if (rc != 0 || !stmt) {
         return -1;
     }
@@ -49,18 +49,27 @@ asset_repo_find_by_id(mf_db_t* db, int64_t user_id, int64_t id, asset_record_t* 
     out_asset->user_id = mf_result_get_int64(res, "user_id");
     out_asset->category_id = mf_result_get_int64(res, "category_id");
     snprintf(out_asset->name, sizeof(out_asset->name), "%s", mf_result_get_text(res, "name"));
-    snprintf(out_asset->account_no, sizeof(out_asset->account_no), "%s",
+    snprintf(out_asset->account_no,
+             sizeof(out_asset->account_no),
+             "%s",
              mf_result_get_text(res, "account_no"));
-    snprintf(out_asset->symbol, sizeof(out_asset->symbol), "%s",
-             mf_result_get_text(res, "symbol"));
-    snprintf(out_asset->quote_source, sizeof(out_asset->quote_source), "%s",
+    snprintf(out_asset->symbol, sizeof(out_asset->symbol), "%s", mf_result_get_text(res, "symbol"));
+    snprintf(out_asset->quote_source,
+             sizeof(out_asset->quote_source),
+             "%s",
              mf_result_get_text(res, "quote_source"));
-    snprintf(out_asset->currency, sizeof(out_asset->currency), "%s",
+    snprintf(out_asset->currency,
+             sizeof(out_asset->currency),
+             "%s",
              mf_result_get_text(res, "currency"));
     snprintf(out_asset->note, sizeof(out_asset->note), "%s", mf_result_get_text(res, "note"));
-    snprintf(out_asset->category_name, sizeof(out_asset->category_name), "%s",
+    snprintf(out_asset->category_name,
+             sizeof(out_asset->category_name),
+             "%s",
              mf_result_get_text(res, "category_name"));
-    snprintf(out_asset->asset_type, sizeof(out_asset->asset_type), "%s",
+    snprintf(out_asset->asset_type,
+             sizeof(out_asset->asset_type),
+             "%s",
              mf_result_get_text(res, "asset_type"));
 
     out_asset->current_value = mf_result_get_double(res, "current_value");
@@ -68,11 +77,17 @@ asset_repo_find_by_id(mf_db_t* db, int64_t user_id, int64_t id, asset_record_t* 
     out_asset->cost_basis = mf_result_get_double(res, "cost_basis");
     out_asset->net_value = mf_result_get_double(res, "net_value");
 
-    snprintf(out_asset->last_sync_at, sizeof(out_asset->last_sync_at), "%s",
+    snprintf(out_asset->last_sync_at,
+             sizeof(out_asset->last_sync_at),
+             "%s",
              mf_result_get_text(res, "last_sync_at"));
-    snprintf(out_asset->created_at, sizeof(out_asset->created_at), "%s",
+    snprintf(out_asset->created_at,
+             sizeof(out_asset->created_at),
+             "%s",
              mf_result_get_text(res, "created_at"));
-    snprintf(out_asset->updated_at, sizeof(out_asset->updated_at), "%s",
+    snprintf(out_asset->updated_at,
+             sizeof(out_asset->updated_at),
+             "%s",
              mf_result_get_text(res, "updated_at"));
 
     mf_result_free(res);
@@ -100,7 +115,7 @@ asset_repo_insert(mf_db_t*    db,
     }
 
     mf_stmt_t* stmt = NULL;
-    int        rc = mf_stmt_prepare(db,
+    int rc = mf_stmt_prepare(db,
                              "INSERT INTO assets ("
                              "user_id, category_id, name, account_no, current_value, currency, "
                              "note, quantity, cost_basis, net_value, symbol, quote_source"
@@ -152,7 +167,7 @@ asset_repo_update_basic(mf_db_t*    db,
         return -1;
     }
     mf_stmt_t* stmt = NULL;
-    int        rc = mf_stmt_prepare(db,
+    int rc = mf_stmt_prepare(db,
                              "UPDATE assets SET "
                              "name = ?, account_no = ?, current_value = ?, currency = ?, note = ?, "
                              "symbol = ?, quote_source = ?, updated_at = CURRENT_TIMESTAMP "
@@ -191,7 +206,7 @@ asset_repo_update_position(mf_db_t* db,
         return -1;
     }
     mf_stmt_t* stmt = NULL;
-    int        rc = mf_stmt_prepare(db,
+    int rc = mf_stmt_prepare(db,
                              "UPDATE assets SET "
                              "quantity = ?, cost_basis = ?, net_value = ?, current_value = ?, "
                              "updated_at = CURRENT_TIMESTAMP "

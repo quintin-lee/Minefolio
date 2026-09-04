@@ -43,7 +43,7 @@ mf_migration_lock_acquire(mf_db_t* db, const char* locked_by, int timeout_second
 
     for (int attempt = 0; attempt < max_attempts; attempt++) {
         mf_stmt_t* stmt = NULL;
-        int        rc = mf_stmt_prepare(db,
+        int rc = mf_stmt_prepare(db,
                                  "UPDATE schema_migration_lock "
                                  "SET is_locked = 1, locked_at = CURRENT_TIMESTAMP, locked_by = ? "
                                  "WHERE id = 1 AND is_locked = 0;",

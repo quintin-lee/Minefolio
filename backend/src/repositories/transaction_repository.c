@@ -14,17 +14,17 @@ tx_repo_find_by_id(mf_db_t* db, int64_t user_id, int64_t id, tx_record_t* out_tx
 
     mf_stmt_t* stmt = NULL;
     int        rc = mf_stmt_prepare(db,
-                             "SELECT id, user_id, asset_id, "
-                             "COALESCE(linked_asset_id, 0) AS linked_asset_id, "
-                             "COALESCE(category_id, 0) AS category_id, "
-                             "COALESCE(parent_tx_id, 0) AS parent_tx_id, "
-                             "transaction_type, amount, fee, price, quantity, "
-                             "COALESCE(direction, 'out') AS direction, "
-                             "COALESCE(linked_direction, '') AS linked_direction, "
-                             "transaction_time, COALESCE(note, '') AS note, created_at "
-                             "FROM transactions "
-                             "WHERE user_id = ? AND id = ?;",
-                             &stmt);
+                                    "SELECT id, user_id, asset_id, "
+                                    "COALESCE(linked_asset_id, 0) AS linked_asset_id, "
+                                    "COALESCE(category_id, 0) AS category_id, "
+                                    "COALESCE(parent_tx_id, 0) AS parent_tx_id, "
+                                    "transaction_type, amount, fee, price, quantity, "
+                                    "COALESCE(direction, 'out') AS direction, "
+                                    "COALESCE(linked_direction, '') AS linked_direction, "
+                                    "transaction_time, COALESCE(note, '') AS note, created_at "
+                                    "FROM transactions "
+                                    "WHERE user_id = ? AND id = ?;",
+                                    &stmt);
     if (rc != 0 || !stmt) {
         return -1;
     }
@@ -52,20 +52,28 @@ tx_repo_find_by_id(mf_db_t* db, int64_t user_id, int64_t id, tx_record_t* out_tx
     out_tx->category_id = mf_result_get_int64(res, "category_id");
     out_tx->parent_tx_id = mf_result_get_int64(res, "parent_tx_id");
 
-    snprintf(out_tx->transaction_type, sizeof(out_tx->transaction_type), "%s",
+    snprintf(out_tx->transaction_type,
+             sizeof(out_tx->transaction_type),
+             "%s",
              mf_result_get_text(res, "transaction_type"));
     out_tx->amount = mf_result_get_double(res, "amount");
     out_tx->fee = mf_result_get_double(res, "fee");
     out_tx->price = mf_result_get_double(res, "price");
     out_tx->quantity = mf_result_get_double(res, "quantity");
-    snprintf(out_tx->direction, sizeof(out_tx->direction), "%s",
-             mf_result_get_text(res, "direction"));
-    snprintf(out_tx->linked_direction, sizeof(out_tx->linked_direction), "%s",
+    snprintf(
+        out_tx->direction, sizeof(out_tx->direction), "%s", mf_result_get_text(res, "direction"));
+    snprintf(out_tx->linked_direction,
+             sizeof(out_tx->linked_direction),
+             "%s",
              mf_result_get_text(res, "linked_direction"));
-    snprintf(out_tx->transaction_time, sizeof(out_tx->transaction_time), "%s",
+    snprintf(out_tx->transaction_time,
+             sizeof(out_tx->transaction_time),
+             "%s",
              mf_result_get_text(res, "transaction_time"));
     snprintf(out_tx->note, sizeof(out_tx->note), "%s", mf_result_get_text(res, "note"));
-    snprintf(out_tx->created_at, sizeof(out_tx->created_at), "%s",
+    snprintf(out_tx->created_at,
+             sizeof(out_tx->created_at),
+             "%s",
              mf_result_get_text(res, "created_at"));
 
     mf_result_free(res);
@@ -95,7 +103,7 @@ tx_repo_insert(mf_db_t*    db,
     }
 
     mf_stmt_t* stmt = NULL;
-    int        rc = mf_stmt_prepare(db,
+    int rc = mf_stmt_prepare(db,
                              "INSERT INTO transactions ("
                              "user_id, asset_id, linked_asset_id, category_id, transaction_type, "
                              "amount, fee, price, quantity, direction, linked_direction, "

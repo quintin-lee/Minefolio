@@ -14,13 +14,13 @@ user_repo_find_by_id(mf_db_t* db, int64_t id, user_record_t* out_user)
 
     mf_stmt_t* stmt = NULL;
     int        rc = mf_stmt_prepare(db,
-                             "SELECT id, username, password, email, "
-                             "COALESCE(totp_secret, '') AS totp_secret, "
-                             "COALESCE(totp_enabled, 0) AS totp_enabled, "
-                             "COALESCE(totp_backup_codes, '') AS totp_backup_codes, "
-                             "created_at, updated_at "
-                             "FROM users WHERE id = ?;",
-                             &stmt);
+                                    "SELECT id, username, password, email, "
+                                    "COALESCE(totp_secret, '') AS totp_secret, "
+                                    "COALESCE(totp_enabled, 0) AS totp_enabled, "
+                                    "COALESCE(totp_backup_codes, '') AS totp_backup_codes, "
+                                    "created_at, updated_at "
+                                    "FROM users WHERE id = ?;",
+                                    &stmt);
     if (rc != 0 || !stmt) {
         return -1;
     }
@@ -40,19 +40,29 @@ user_repo_find_by_id(mf_db_t* db, int64_t id, user_record_t* out_user)
     }
 
     out_user->id = mf_result_get_int64(res, "id");
-    snprintf(out_user->username, sizeof(out_user->username), "%s",
-             mf_result_get_text(res, "username"));
-    snprintf(out_user->password_hash, sizeof(out_user->password_hash), "%s",
+    snprintf(
+        out_user->username, sizeof(out_user->username), "%s", mf_result_get_text(res, "username"));
+    snprintf(out_user->password_hash,
+             sizeof(out_user->password_hash),
+             "%s",
              mf_result_get_text(res, "password"));
     snprintf(out_user->email, sizeof(out_user->email), "%s", mf_result_get_text(res, "email"));
-    snprintf(out_user->totp_secret, sizeof(out_user->totp_secret), "%s",
+    snprintf(out_user->totp_secret,
+             sizeof(out_user->totp_secret),
+             "%s",
              mf_result_get_text(res, "totp_secret"));
     out_user->totp_enabled = mf_result_get_bool(res, "totp_enabled");
-    snprintf(out_user->totp_backup_codes, sizeof(out_user->totp_backup_codes), "%s",
+    snprintf(out_user->totp_backup_codes,
+             sizeof(out_user->totp_backup_codes),
+             "%s",
              mf_result_get_text(res, "totp_backup_codes"));
-    snprintf(out_user->created_at, sizeof(out_user->created_at), "%s",
+    snprintf(out_user->created_at,
+             sizeof(out_user->created_at),
+             "%s",
              mf_result_get_text(res, "created_at"));
-    snprintf(out_user->updated_at, sizeof(out_user->updated_at), "%s",
+    snprintf(out_user->updated_at,
+             sizeof(out_user->updated_at),
+             "%s",
              mf_result_get_text(res, "updated_at"));
 
     mf_result_free(res);
@@ -70,13 +80,13 @@ user_repo_find_by_username(mf_db_t* db, const char* username, user_record_t* out
 
     mf_stmt_t* stmt = NULL;
     int        rc = mf_stmt_prepare(db,
-                             "SELECT id, username, password, email, "
-                             "COALESCE(totp_secret, '') AS totp_secret, "
-                             "COALESCE(totp_enabled, 0) AS totp_enabled, "
-                             "COALESCE(totp_backup_codes, '') AS totp_backup_codes, "
-                             "created_at, updated_at "
-                             "FROM users WHERE username = ?;",
-                             &stmt);
+                                    "SELECT id, username, password, email, "
+                                    "COALESCE(totp_secret, '') AS totp_secret, "
+                                    "COALESCE(totp_enabled, 0) AS totp_enabled, "
+                                    "COALESCE(totp_backup_codes, '') AS totp_backup_codes, "
+                                    "created_at, updated_at "
+                                    "FROM users WHERE username = ?;",
+                                    &stmt);
     if (rc != 0 || !stmt) {
         return -1;
     }
@@ -96,19 +106,29 @@ user_repo_find_by_username(mf_db_t* db, const char* username, user_record_t* out
     }
 
     out_user->id = mf_result_get_int64(res, "id");
-    snprintf(out_user->username, sizeof(out_user->username), "%s",
-             mf_result_get_text(res, "username"));
-    snprintf(out_user->password_hash, sizeof(out_user->password_hash), "%s",
+    snprintf(
+        out_user->username, sizeof(out_user->username), "%s", mf_result_get_text(res, "username"));
+    snprintf(out_user->password_hash,
+             sizeof(out_user->password_hash),
+             "%s",
              mf_result_get_text(res, "password"));
     snprintf(out_user->email, sizeof(out_user->email), "%s", mf_result_get_text(res, "email"));
-    snprintf(out_user->totp_secret, sizeof(out_user->totp_secret), "%s",
+    snprintf(out_user->totp_secret,
+             sizeof(out_user->totp_secret),
+             "%s",
              mf_result_get_text(res, "totp_secret"));
     out_user->totp_enabled = mf_result_get_bool(res, "totp_enabled");
-    snprintf(out_user->totp_backup_codes, sizeof(out_user->totp_backup_codes), "%s",
+    snprintf(out_user->totp_backup_codes,
+             sizeof(out_user->totp_backup_codes),
+             "%s",
              mf_result_get_text(res, "totp_backup_codes"));
-    snprintf(out_user->created_at, sizeof(out_user->created_at), "%s",
+    snprintf(out_user->created_at,
+             sizeof(out_user->created_at),
+             "%s",
              mf_result_get_text(res, "created_at"));
-    snprintf(out_user->updated_at, sizeof(out_user->updated_at), "%s",
+    snprintf(out_user->updated_at,
+             sizeof(out_user->updated_at),
+             "%s",
              mf_result_get_text(res, "updated_at"));
 
     mf_result_free(res);
@@ -153,7 +173,7 @@ user_repo_update_password(mf_db_t* db, int64_t id, const char* new_hash)
         return -1;
     }
     mf_stmt_t* stmt = NULL;
-    int rc = mf_stmt_prepare(db, "UPDATE users SET password = ? WHERE id = ?;", &stmt);
+    int        rc = mf_stmt_prepare(db, "UPDATE users SET password = ? WHERE id = ?;", &stmt);
     if (rc != 0 || !stmt) {
         return -1;
     }
@@ -166,11 +186,8 @@ user_repo_update_password(mf_db_t* db, int64_t id, const char* new_hash)
 }
 
 int
-user_repo_update_totp(mf_db_t*    db,
-                      int64_t     id,
-                      const char* secret,
-                      bool        enabled,
-                      const char* backup_codes)
+user_repo_update_totp(
+    mf_db_t* db, int64_t id, const char* secret, bool enabled, const char* backup_codes)
 {
     if (!db) {
         return -1;

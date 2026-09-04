@@ -4,11 +4,8 @@
 #include <stdlib.h>
 
 int
-price_history_repo_record(mf_db_t*    db,
-                          int64_t     asset_id,
-                          const char* price_date,
-                          double      price,
-                          const char* currency)
+price_history_repo_record(
+    mf_db_t* db, int64_t asset_id, const char* price_date, double price, const char* currency)
 {
     if (!db || !price_date) {
         return -1;
@@ -16,12 +13,13 @@ price_history_repo_record(mf_db_t*    db,
 
     const char* cur = (currency && currency[0]) ? currency : "CNY";
     mf_stmt_t*  stmt = NULL;
-    int         rc = mf_stmt_prepare(db,
-                             "INSERT INTO asset_price_history (asset_id, price_date, price, currency) "
-                             "VALUES (?, ?, ?, ?) "
-                             "ON CONFLICT(asset_id, price_date) DO UPDATE SET "
-                             "price = EXCLUDED.price, currency = EXCLUDED.currency;",
-                             &stmt);
+    int         rc =
+        mf_stmt_prepare(db,
+                        "INSERT INTO asset_price_history (asset_id, price_date, price, currency) "
+                        "VALUES (?, ?, ?, ?) "
+                        "ON CONFLICT(asset_id, price_date) DO UPDATE SET "
+                        "price = EXCLUDED.price, currency = EXCLUDED.currency;",
+                        &stmt);
     if (rc != 0 || !stmt) {
         return -1;
     }
