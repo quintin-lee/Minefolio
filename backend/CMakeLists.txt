@@ -109,10 +109,22 @@ set(FINANCIAL_CORE_SOURCES
     src/core/financial/percentage.c
 )
 
+set(DATABASE_INFRA_SOURCES
+    src/infrastructure/database/database.c
+    src/infrastructure/database/statement.c
+    src/infrastructure/database/transaction.c
+    src/infrastructure/database/sqlite/sqlite_adapter.c
+    src/infrastructure/database/postgres/postgres_adapter.c
+    src/infrastructure/database/migration/checksum.c
+    src/infrastructure/database/migration/lock.c
+    src/infrastructure/database/migration/migration_engine.c
+)
+
 function(add_financial_unit_test test_target test_source)
     add_executable(${test_target}
         ${test_source}
         ${FINANCIAL_CORE_SOURCES}
+        ${DATABASE_INFRA_SOURCES}
         src/core/ledger/ledger_engine.c
         src/common/balance.c
         src/common/tx_types.c
@@ -123,7 +135,7 @@ function(add_financial_unit_test test_target test_source)
     )
     target_include_directories(${test_target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_compile_options(${test_target} PRIVATE -UNDEBUG)
-    target_link_libraries(${test_target} PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES})
+    target_link_libraries(${test_target} PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
     add_test(NAME ${test_target} COMMAND ${test_target})
 endfunction()
 

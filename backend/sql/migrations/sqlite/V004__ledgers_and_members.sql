@@ -28,3 +28,14 @@ CREATE TABLE IF NOT EXISTS ledger_members (
 
 CREATE INDEX IF NOT EXISTS idx_ledger_members_user ON ledger_members(user_id);
 CREATE INDEX IF NOT EXISTS idx_ledger_members_ledger ON ledger_members(ledger_id);
+
+-- 业务表 ledger_id 关联
+ALTER TABLE assets ADD COLUMN ledger_id INTEGER;
+ALTER TABLE transactions ADD COLUMN ledger_id INTEGER;
+ALTER TABLE daily_expenses ADD COLUMN ledger_id INTEGER;
+ALTER TABLE categories ADD COLUMN ledger_id INTEGER;
+
+CREATE INDEX IF NOT EXISTS idx_assets_ledger ON assets(ledger_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_ledger ON transactions(ledger_id);
+CREATE INDEX IF NOT EXISTS idx_daily_expenses_ledger ON daily_expenses(ledger_id);
+CREATE INDEX IF NOT EXISTS idx_categories_ledger ON categories(ledger_id);

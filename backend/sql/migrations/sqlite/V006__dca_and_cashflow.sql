@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS dca_plans (
     user_id INTEGER NOT NULL REFERENCES users(id),
     target_asset_id INTEGER NOT NULL REFERENCES assets(id),
     funding_asset_id INTEGER NOT NULL REFERENCES assets(id),
+    ledger_id INTEGER,
     name TEXT NOT NULL,
     frequency TEXT NOT NULL DEFAULT 'monthly',
     day_of_period INTEGER NOT NULL DEFAULT 1,
@@ -18,6 +19,7 @@ CREATE TABLE IF NOT EXISTS dca_plans (
 );
 
 CREATE INDEX IF NOT EXISTS idx_dca_plans_user_status ON dca_plans(user_id, status);
+CREATE INDEX IF NOT EXISTS idx_dca_plans_ledger ON dca_plans(ledger_id);
 
 CREATE TABLE IF NOT EXISTS dca_executions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -42,6 +44,7 @@ CREATE TABLE IF NOT EXISTS cashflow_schedules (
     user_id INTEGER NOT NULL REFERENCES users(id),
     source_asset_id INTEGER NOT NULL REFERENCES assets(id),
     target_asset_id INTEGER NOT NULL REFERENCES assets(id),
+    ledger_id INTEGER,
     name TEXT NOT NULL,
     flow_type TEXT NOT NULL DEFAULT 'dividend',
     frequency TEXT NOT NULL DEFAULT 'monthly',
@@ -55,3 +58,4 @@ CREATE TABLE IF NOT EXISTS cashflow_schedules (
 );
 
 CREATE INDEX IF NOT EXISTS idx_cashflow_schedules_user ON cashflow_schedules(user_id, status);
+CREATE INDEX IF NOT EXISTS idx_cashflow_schedules_ledger ON cashflow_schedules(ledger_id);

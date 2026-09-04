@@ -22,6 +22,7 @@ endif()
 # CLANG_FORMAT path and the SOURCES list resolve correctly.
 string(REPLACE "\"" "" CLANG_FORMAT "${CLANG_FORMAT}")
 string(REPLACE "\"" "" SOURCES "${SOURCES}")
+string(REPLACE "\"" "" STAMP "${STAMP}")
 separate_arguments(SOURCES)
 
 execute_process(
