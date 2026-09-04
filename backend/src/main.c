@@ -22,7 +22,7 @@
 #include "controllers/import_export_controller.h"
 #include "interfaces/http/controllers/market_controller.h"
 #include "controllers/dca_controller.h"
-#include "controllers/cashflow_controller.h"
+#include "interfaces/http/controllers/cashflow_controller.h"
 #include "controllers/ledger_controller.h"
 #include "controllers/import_rule_controller.h"
 #include "controllers/receipt_controller.h"
