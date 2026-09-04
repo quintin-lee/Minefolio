@@ -125,11 +125,31 @@ static void test_runtime_context_lifecycle(void) {
     printf("PASS: test_runtime_context_lifecycle\n");
 }
 
+#include "services/ai/runtime/runtime.h"
+
+static void test_runtime_agent_loop_cancel(void) {
+    ai_runtime_context_t ctx;
+    ai_runtime_context_init(&ctx);
+    ctx.user_id = 1;
+    ctx.session_id = 1;
+
+    volatile bool cancel = true;
+    ctx.cancel_token = &cancel;
+
+    ai_runtime_result_t res = ai_runtime_execute(NULL, &ctx);
+    assert(res.status.code == AI_RUNTIME_ERR_CANCELLED);
+    assert(res.final_content == NULL);
+
+    ai_runtime_context_free(&ctx);
+    printf("PASS: test_runtime_agent_loop_cancel\n");
+}
+
 int main(void) {
     test_runtime_error_taxonomy();
     test_runtime_limits_and_budgets();
     test_runtime_memory_window();
     test_runtime_context_lifecycle();
+    test_runtime_agent_loop_cancel();
     printf("All runtime initial tests passed!\n");
     return 0;
 }
