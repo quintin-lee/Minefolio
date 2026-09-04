@@ -56,6 +56,7 @@ typedef struct query_tx_filter {
     int64_t     asset_id;
     int64_t     category_id;
     const char* type;
+    const char* source_type;
     const char* start_date;
     const char* end_date;
     int64_t     page;

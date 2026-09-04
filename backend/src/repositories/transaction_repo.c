@@ -67,24 +67,24 @@ tx_list(csilk_db_pool_t* pool,
     snprintf(count_sql,
              sizeof(count_sql),
              "SELECT COUNT(*) AS cnt FROM transactions t WHERE t.user_id=?");
-#define AF(x)                                                                                      \
+#define AF(col, val)                                                                               \
     do {                                                                                           \
-        strncat(sql, " AND t." x "=?", sizeof(sql) - strlen(sql) - 1);                             \
-        strncat(count_sql, " AND t." x "=?", sizeof(count_sql) - strlen(count_sql) - 1);           \
-        params[pidx++] = x;                                                                        \
-        cnt_params[cnt_pidx++] = x;                                                                \
+        strncat(sql, " AND t." col "=?", sizeof(sql) - strlen(sql) - 1);                           \
+        strncat(count_sql, " AND t." col "=?", sizeof(count_sql) - strlen(count_sql) - 1);         \
+        params[pidx++] = (val);                                                                    \
+        cnt_params[cnt_pidx++] = (val);                                                            \
     } while (0)
     if (asset_id) {
-        AF("asset_id");
+        AF("asset_id", asset_id);
     }
     if (category_id) {
-        AF("category_id");
+        AF("category_id", category_id);
     }
     if (type) {
-        AF("transaction_type");
+        AF("transaction_type", type);
     }
     if (source_type) {
-        AF("source_type");
+        AF("source_type", source_type);
     }
     if (start_date) {
         strncat(sql, " AND t.transaction_date >= ?", sizeof(sql) - strlen(sql) - 1);

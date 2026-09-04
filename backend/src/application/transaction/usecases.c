@@ -334,7 +334,7 @@ tx_usecase_query(void* pool, const query_tx_filter_t* filter, tx_usecase_result_
                                  aid_ptr,
                                  cid_ptr,
                                  filter->type,
-                                 NULL,
+                                 filter->source_type,
                                  filter->start_date,
                                  filter->end_date,
                                  &total);
@@ -342,6 +342,64 @@ tx_usecase_query(void* pool, const query_tx_filter_t* filter, tx_usecase_result_
     out_res->code = 0;
     out_res->total = total;
     out_res->data_payload = list;
+    snprintf(out_res->message, sizeof(out_res->message), "OK");
+    return 0;
+}
+
+int
+tx_usecase_monthly(void* pool, int64_t user_id, const char* month, tx_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
+    memset(out_res, 0, sizeof(*out_res));
+
+    if (user_id <= 0) {
+        out_res->code = 1002;
+        snprintf(out_res->message, sizeof(out_res->message), "无效的用户上下文");
+        return -1;
+    }
+
+    if (!month || strlen(month) != 7 || month[4] != '-') {
+        out_res->code = 1002;
+        snprintf(out_res->message, sizeof(out_res->message), "month 参数格式错误 (YYYY-MM)");
+        return -1;
+    }
+    for (int i = 0; i < 7; i++) {
+        if (i != 4 && (month[i] < '0' || month[i] > '9')) {
+            out_res->code = 1002;
+            snprintf(out_res->message, sizeof(out_res->message), "month 参数格式错误 (YYYY-MM)");
+            return -1;
+        }
+    }
+
+    char pattern[16];
+    snprintf(pattern, sizeof(pattern), "%.4s-%.2s%%", month, month + 5);
+
+    csilk_json_t* res = tx_monthly((csilk_db_pool_t*)pool, user_id, pattern);
+    if (!res) {
+        out_res->code = 1004;
+        snprintf(out_res->message, sizeof(out_res->message), "查询失败");
+        return -1;
+    }
+
+    csilk_json_t* resp = csilk_json_object();
+    if (csilk_json_array_size(res) > 0) {
+        const csilk_json_t* row = csilk_json_array_get(res, 0);
+        csilk_json_add_number(resp, "total_volume", db_get_num(row, "total_volume"));
+        csilk_json_add_number(resp, "inflows", db_get_num(row, "inflows"));
+        csilk_json_add_number(resp, "outflows", db_get_num(row, "outflows"));
+        csilk_json_add_number(resp, "count", db_get_num(row, "count"));
+    } else {
+        csilk_json_add_number(resp, "total_volume", 0);
+        csilk_json_add_number(resp, "inflows", 0);
+        csilk_json_add_number(resp, "outflows", 0);
+        csilk_json_add_number(resp, "count", 0);
+    }
+    csilk_json_free(res);
+
+    out_res->code = 0;
+    out_res->data_payload = resp;
     snprintf(out_res->message, sizeof(out_res->message), "OK");
     return 0;
 }

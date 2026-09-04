@@ -9,8 +9,10 @@
  */
 
 void api_transactions_list(csilk_ctx_t* c);
+void api_transactions_monthly(csilk_ctx_t* c);
 void api_transactions_create(csilk_ctx_t* c);
 void api_transactions_update(csilk_ctx_t* c);
 void api_transactions_delete(csilk_ctx_t* c);
 
+void register_transaction_routes(csilk_app_t* app);
 void register_interfaces_transaction_routes(csilk_app_t* app);

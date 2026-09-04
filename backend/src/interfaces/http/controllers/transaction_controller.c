@@ -17,6 +17,11 @@ api_transactions_create(csilk_ctx_t* c)
         return;
     }
 
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "editor");
+    if (ledger_id < 0) {
+        return;
+    }
+
     csilk_json_t* body = csilk_bind_json(c);
     if (!body) {
         respond_bad_request(c, "请求体必须为 JSON");
@@ -54,7 +59,9 @@ api_transactions_create(csilk_ctx_t* c)
     csilk_json_free(body);
 
     if (rc == 0 && res.code == 0) {
-        respond_ok_null(c);
+        csilk_json_t* d = csilk_json_object();
+        csilk_json_add_number(d, "id", (double)res.created_id);
+        respond_ok(c, d);
     } else if (res.code == 1003) {
         respond_not_found(c);
     } else if (res.code == 1002) {
@@ -69,6 +76,11 @@ api_transactions_update(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
     if (user_id < 0) {
+        return;
+    }
+
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "editor");
+    if (ledger_id < 0) {
         return;
     }
 
@@ -129,6 +141,11 @@ api_transactions_delete(csilk_ctx_t* c)
         return;
     }
 
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "editor");
+    if (ledger_id < 0) {
+        return;
+    }
+
     const char* id_str = csilk_get_param(c, "id");
     if (!id_str) {
         respond_bad_request(c, "缺少 id");
@@ -163,16 +180,8 @@ api_transactions_list(csilk_ctx_t* c)
         return;
     }
 
-    const char* p_str = csilk_get_param(c, "page");
-    const char* ps_str = csilk_get_param(c, "page_size");
-    int64_t     page = p_str ? atoll(p_str) : 1;
-    int64_t     page_size = ps_str ? atoll(ps_str) : 20;
-    if (page < 1) {
-        page = 1;
-    }
-    if (page_size < 1) {
-        page_size = 20;
-    }
+    int64_t page = 1, page_size = 20;
+    parse_page_params(c, &page, &page_size);
 
     const char* aid_str = csilk_get_query(c, "asset_id");
     const char* cid_str = csilk_get_query(c, "category_id");
@@ -180,6 +189,7 @@ api_transactions_list(csilk_ctx_t* c)
     if (!type || strlen(type) == 0) {
         type = csilk_get_query(c, "type");
     }
+    const char* source_type = csilk_get_query(c, "source_type");
     const char* start_date = csilk_get_query(c, "start_date");
     const char* end_date = csilk_get_query(c, "end_date");
 
@@ -190,6 +200,7 @@ api_transactions_list(csilk_ctx_t* c)
         .asset_id = aid_str ? atoll(aid_str) : 0,
         .category_id = cid_str ? atoll(cid_str) : 0,
         .type = type,
+        .source_type = source_type,
         .start_date = start_date,
         .end_date = end_date,
     };
@@ -206,7 +217,30 @@ api_transactions_list(csilk_ctx_t* c)
 }
 
 void
-register_interfaces_transaction_routes(csilk_app_t* app)
+api_transactions_monthly(csilk_ctx_t* c)
+{
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) {
+        return;
+    }
+
+    const char*         month = csilk_get_query(c, "month");
+    tx_usecase_result_t res = {0};
+    int                 rc = tx_usecase_monthly(db_get_pool(), user_id, month, &res);
+    if (rc != 0 || res.code != 0) {
+        if (res.code == 1002) {
+            respond_bad_request(c, res.message);
+        } else {
+            respond_error(c, 500, res.message[0] ? res.message : "查询失败");
+        }
+        return;
+    }
+
+    respond_ok(c, (csilk_json_t*)res.data_payload);
+}
+
+void
+register_transaction_routes(csilk_app_t* app)
 {
     csilk_app_get_ext(app,
                       "/api/transactions",
@@ -215,6 +249,13 @@ register_interfaces_transaction_routes(csilk_app_t* app)
                       "transaction_resp_t",
                       "List transactions",
                       "Returns paginated transaction list");
+    csilk_app_get_ext(app,
+                      "/api/transactions/monthly",
+                      api_transactions_monthly,
+                      nullptr,
+                      nullptr,
+                      "Monthly transaction summary",
+                      "Returns monthly aggregated transaction totals");
     csilk_app_post_ext(app,
                        "/api/transactions",
                        api_transactions_create,
@@ -236,4 +277,10 @@ register_interfaces_transaction_routes(csilk_app_t* app)
                          nullptr,
                          "Delete transaction",
                          "Delete a transaction");
+}
+
+void
+register_interfaces_transaction_routes(csilk_app_t* app)
+{
+    register_transaction_routes(app);
 }
