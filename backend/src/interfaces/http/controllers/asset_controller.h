@@ -16,4 +16,5 @@ void api_assets_logs_list(csilk_ctx_t* c);
 void api_assets_rebuild_single(csilk_ctx_t* c);
 void api_assets_rebuild_all(csilk_ctx_t* c);
 
+void register_asset_routes(csilk_app_t* app);
 void register_asset_http_routes(csilk_app_t* app);

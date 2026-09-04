@@ -336,3 +336,9 @@ register_asset_http_routes(csilk_app_t* app)
                       "Asset balance logs",
                       "Returns paginated asset balance change logs with optional asset_id filter");
 }
+
+void
+register_asset_routes(csilk_app_t* app)
+{
+    register_asset_http_routes(app);
+}

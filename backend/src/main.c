@@ -10,7 +10,7 @@
 #include "controllers/auth_controller.h"
 #include "controllers/admin_controller.h"
 #include "controllers/category_controller.h"
-#include "controllers/asset_controller.h"
+#include "interfaces/http/controllers/asset_controller.h"
 #include "interfaces/http/controllers/transaction_controller.h"
 #include "controllers/daily_expense_controller.h"
 #include "controllers/tag_controller.h"
