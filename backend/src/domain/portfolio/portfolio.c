@@ -2,8 +2,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-void mf_portfolio_free(mf_portfolio_t* portfolio) {
-    if (!portfolio) return;
+void
+mf_portfolio_free(mf_portfolio_t* portfolio)
+{
+    if (!portfolio) {
+        return;
+    }
     if (portfolio->items) {
         free(portfolio->items);
         portfolio->items = NULL;
@@ -11,12 +15,16 @@ void mf_portfolio_free(mf_portfolio_t* portfolio) {
     portfolio->item_count = 0;
 }
 
-int mf_portfolio_aggregate(const mf_position_t*      positions,
-                           size_t                    pos_count,
-                           currency_t                reporting_currency,
-                           const mf_fx_rate_table_t* fx_table,
-                           mf_portfolio_t*           out_portfolio) {
-    if (!out_portfolio) return -1;
+int
+mf_portfolio_aggregate(const mf_position_t*      positions,
+                       size_t                    pos_count,
+                       currency_t                reporting_currency,
+                       const mf_fx_rate_table_t* fx_table,
+                       mf_portfolio_t*           out_portfolio)
+{
+    if (!out_portfolio) {
+        return -1;
+    }
     memset(out_portfolio, 0, sizeof(*out_portfolio));
     out_portfolio->reporting_currency = reporting_currency;
     out_portfolio->total_market_value = money_zero(reporting_currency);
@@ -30,7 +38,9 @@ int mf_portfolio_aggregate(const mf_position_t*      positions,
     }
 
     out_portfolio->items = (mf_portfolio_item_t*)calloc(pos_count, sizeof(mf_portfolio_item_t));
-    if (!out_portfolio->items) return -1;
+    if (!out_portfolio->items) {
+        return -1;
+    }
     out_portfolio->item_count = pos_count;
 
     double tot_mv = 0.0;
@@ -46,25 +56,37 @@ int mf_portfolio_aggregate(const mf_position_t*      positions,
         item->native_market_value = pos->valuation.market_value;
 
         // Convert market value
-        if (mf_fx_convert_money(pos->valuation.market_value, reporting_currency, fx_table, &item->converted_market_value) != 0) {
+        if (mf_fx_convert_money(pos->valuation.market_value,
+                                reporting_currency,
+                                fx_table,
+                                &item->converted_market_value) != 0) {
             mf_portfolio_free(out_portfolio);
             return -1; // Missing FX rate -> strictly reject
         }
 
         // Convert cost basis
-        if (mf_fx_convert_money(pos->cost_basis.total_cost, reporting_currency, fx_table, &item->converted_cost_basis) != 0) {
+        if (mf_fx_convert_money(pos->cost_basis.total_cost,
+                                reporting_currency,
+                                fx_table,
+                                &item->converted_cost_basis) != 0) {
             mf_portfolio_free(out_portfolio);
             return -1;
         }
 
         // Convert unrealized pnl
-        if (mf_fx_convert_money(pos->pnl.unrealized_pnl, reporting_currency, fx_table, &item->converted_unrealized_pnl) != 0) {
+        if (mf_fx_convert_money(pos->pnl.unrealized_pnl,
+                                reporting_currency,
+                                fx_table,
+                                &item->converted_unrealized_pnl) != 0) {
             mf_portfolio_free(out_portfolio);
             return -1;
         }
 
         // Convert realized pnl
-        if (mf_fx_convert_money(pos->pnl.realized_pnl, reporting_currency, fx_table, &item->converted_realized_pnl) != 0) {
+        if (mf_fx_convert_money(pos->pnl.realized_pnl,
+                                reporting_currency,
+                                fx_table,
+                                &item->converted_realized_pnl) != 0) {
             mf_portfolio_free(out_portfolio);
             return -1;
         }
@@ -87,13 +109,13 @@ int mf_portfolio_aggregate(const mf_position_t*      positions,
     out_portfolio->total_return_pct = (tot_cost != 0.0) ? (tot_pnl / tot_cost) * 100.0 : 0.0;
 
     // Calculate weights & risk metrics (Concentration: max_holding_weight and Herfindahl index HHI)
-    double max_weight = 0.0;
+    double  max_weight = 0.0;
     int64_t max_id = 0;
-    double hhi = 0.0;
+    double  hhi = 0.0;
 
     for (size_t i = 0; i < pos_count; i++) {
         mf_portfolio_item_t* item = &out_portfolio->items[i];
-        double it_mv = money_to_double(item->converted_market_value);
+        double               it_mv = money_to_double(item->converted_market_value);
         item->weight = (tot_mv > 0.0) ? (it_mv / tot_mv) : 0.0;
 
         if (item->weight > max_weight) {

@@ -15,13 +15,13 @@
  * 严格作为 Ledger 流水事件在时点上的物化投影 (Materialized Projection)
  */
 typedef struct {
-    int64_t         asset_id;    /**< 投资标的 ID */
-    int64_t         account_id;  /**< 关联账户 ID */
-    currency_t      currency;    /**< 计价原生币种 */
-    quantity_t      quantity;    /**< 当前持仓数量 */
-    mf_cost_basis_t cost_basis;  /**< 成本基础 */
-    mf_valuation_t  valuation;   /**< 市场估值 */
-    mf_pnl_t        pnl;         /**< 损益分析 */
+    int64_t         asset_id;   /**< 投资标的 ID */
+    int64_t         account_id; /**< 关联账户 ID */
+    currency_t      currency;   /**< 计价原生币种 */
+    quantity_t      quantity;   /**< 当前持仓数量 */
+    mf_cost_basis_t cost_basis; /**< 成本基础 */
+    mf_valuation_t  valuation;  /**< 市场估值 */
+    mf_pnl_t        pnl;        /**< 损益分析 */
 } mf_position_t;
 
 /**
@@ -36,9 +36,9 @@ typedef struct {
  * @return 0 成功, -1 失败 (如包含超卖等非法交易)
  */
 int mf_position_derive_from_ledger(int64_t            asset_id,
-                                  int64_t            account_id,
-                                  currency_t         native_currency,
-                                  const ledger_tx_t* tx_events,
-                                  size_t             tx_count,
-                                  price_t            current_price,
-                                  mf_position_t*     out_position);
+                                   int64_t            account_id,
+                                   currency_t         native_currency,
+                                   const ledger_tx_t* tx_events,
+                                   size_t             tx_count,
+                                   price_t            current_price,
+                                   mf_position_t*     out_position);

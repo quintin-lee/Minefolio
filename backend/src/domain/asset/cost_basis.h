@@ -26,21 +26,15 @@ mf_cost_basis_t mf_cost_basis_init(currency_t currency);
  * @brief 应用买入建仓/加仓动作
  * @return 0 成功, -1 失败
  */
-int mf_cost_basis_apply_buy(mf_cost_basis_t* cb,
-                            quantity_t       qty,
-                            money_t          amount,
-                            money_t          fee);
+int mf_cost_basis_apply_buy(mf_cost_basis_t* cb, quantity_t qty, money_t amount, money_t fee);
 
 /**
  * @brief 应用卖出平仓/减仓动作 (按持仓份额等比例缩减成本，计算平仓净盈亏)
  * @param[in,out] accum_realized_pnl 累计已实现盈亏指针
  * @return 0 成功, -1 失败 (如超卖)
  */
-int mf_cost_basis_apply_sell(mf_cost_basis_t* cb,
-                             money_t*         accum_realized_pnl,
-                             quantity_t       qty,
-                             money_t          amount,
-                             money_t          fee);
+int mf_cost_basis_apply_sell(
+    mf_cost_basis_t* cb, money_t* accum_realized_pnl, quantity_t qty, money_t amount, money_t fee);
 
 /**
  * @brief 应用现金分红动作 (不改变持有份额，增加已实现收益，并冲减 total_cost_pnl)

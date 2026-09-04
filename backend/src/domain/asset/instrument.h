@@ -19,8 +19,12 @@ typedef struct {
     char       note[256];
 } mf_instrument_asset_t;
 
-static inline bool mf_instrument_is_investment(const char* type) {
-    if (!type || !type[0]) return false;
-    return (strcmp(type, "stock") == 0 || strcmp(type, "fund") == 0 ||
-            strcmp(type, "bond") == 0 || strcmp(type, "crypto") == 0);
+static inline bool
+mf_instrument_is_investment(const char* type)
+{
+    if (!type || !type[0]) {
+        return false;
+    }
+    return (strcmp(type, "stock") == 0 || strcmp(type, "fund") == 0 || strcmp(type, "bond") == 0 ||
+            strcmp(type, "crypto") == 0);
 }

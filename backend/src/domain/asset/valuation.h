@@ -11,19 +11,21 @@
  * @brief 当前市场估值值对象 (Valuation Value Object)
  */
 typedef struct {
-    price_t    current_price;   /**< 最新单位价格/净值 */
-    money_t    market_value;    /**< 当前市场总价值 = quantity * current_price */
-    char       as_of[32];       /**< 估值基准时点 */
-    char       price_source[32];/**< 价格来源 */
+    price_t current_price;    /**< 最新单位价格/净值 */
+    money_t market_value;     /**< 当前市场总价值 = quantity * current_price */
+    char    as_of[32];        /**< 估值基准时点 */
+    char    price_source[32]; /**< 价格来源 */
 } mf_valuation_t;
 
 /**
  * @brief 根据份额和单价计算市场估值
  */
-static inline mf_valuation_t mf_valuation_calculate(quantity_t  quantity,
-                                                    price_t     current_price,
-                                                    const char* as_of,
-                                                    const char* source) {
+static inline mf_valuation_t
+mf_valuation_calculate(quantity_t  quantity,
+                       price_t     current_price,
+                       const char* as_of,
+                       const char* source)
+{
     mf_valuation_t val;
     memset(&val, 0, sizeof(val));
     val.current_price = current_price;

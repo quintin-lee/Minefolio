@@ -30,18 +30,18 @@ typedef struct {
     size_t               item_count;
     mf_portfolio_item_t* items;
 
-    money_t total_market_value;    /**< 组合总市值 (reporting_currency) */
-    money_t total_cost_basis;      /**< 组合总成本基础 (reporting_currency) */
-    money_t total_realized_pnl;    /**< 组合累计已实现盈亏 (reporting_currency) */
-    money_t total_unrealized_pnl;  /**< 组合当前浮动盈亏 (reporting_currency) */
-    money_t total_pnl;             /**< 综合总盈亏 (reporting_currency) */
-    double  total_return_pct;      /**< 综合总回报率 (%) */
-    double  unrealized_pct;        /**< 浮动盈亏率 (%) */
+    money_t total_market_value;   /**< 组合总市值 (reporting_currency) */
+    money_t total_cost_basis;     /**< 组合总成本基础 (reporting_currency) */
+    money_t total_realized_pnl;   /**< 组合累计已实现盈亏 (reporting_currency) */
+    money_t total_unrealized_pnl; /**< 组合当前浮动盈亏 (reporting_currency) */
+    money_t total_pnl;            /**< 综合总盈亏 (reporting_currency) */
+    double  total_return_pct;     /**< 综合总回报率 (%) */
+    double  unrealized_pct;       /**< 浮动盈亏率 (%) */
 
     /* 风险度量与集中度指标 (Risk Metrics & Concentration) */
-    double  max_holding_weight;    /**< 最大单一标的持仓权重比例 (0.0 ~ 1.0) */
-    int64_t max_holding_asset_id;  /**< 第一大重仓标的 ID */
-    double  herfindahl_index;      /**< 赫芬达尔集中度指数 HHI = sum(weight_i^2) (0.0 ~ 1.0) */
+    double  max_holding_weight;   /**< 最大单一标的持仓权重比例 (0.0 ~ 1.0) */
+    int64_t max_holding_asset_id; /**< 第一大重仓标的 ID */
+    double  herfindahl_index;     /**< 赫芬达尔集中度指数 HHI = sum(weight_i^2) (0.0 ~ 1.0) */
 } mf_portfolio_t;
 
 /**

@@ -18,6 +18,4 @@ typedef struct {
 /**
  * @brief 计算损益指标
  */
-mf_pnl_t mf_pnl_calculate(money_t cost_basis,
-                          money_t market_value,
-                          money_t realized_pnl);
+mf_pnl_t mf_pnl_calculate(money_t cost_basis, money_t market_value, money_t realized_pnl);
