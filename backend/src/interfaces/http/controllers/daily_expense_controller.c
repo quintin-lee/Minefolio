@@ -1,3 +1,9 @@
+/**
+ * @file daily_expense_controller.c
+ * @brief 日常收支记账控制器实现 (DDD 接口层)
+ */
+
+#include "interfaces/http/controllers/daily_expense_controller.h"
 #include "services/daily_expense_query.h"
 #include "services/daily_expense_write.h"
 

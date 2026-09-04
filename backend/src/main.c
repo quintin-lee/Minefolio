@@ -12,7 +12,7 @@
 #include "interfaces/http/controllers/category_controller.h"
 #include "interfaces/http/controllers/asset_controller.h"
 #include "interfaces/http/controllers/transaction_controller.h"
-#include "controllers/daily_expense_controller.h"
+#include "interfaces/http/controllers/daily_expense_controller.h"
 #include "interfaces/http/controllers/tag_controller.h"
 #include "interfaces/http/controllers/transfer_controller.h"
 #include "controllers/report_controller.h"
