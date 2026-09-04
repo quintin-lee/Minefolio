@@ -4,7 +4,7 @@
 #include "repositories/auth_repo.h"
 #include "repositories/ledger_repo.h"
 #include "repositories/import_rule_repo.h"
-#include "controllers/category_controller.h"
+#include "services/category_service.h"
 #include "config/key_manager.h"
 #include "common/config.h"
 #include "common/jwt.h"

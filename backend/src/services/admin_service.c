@@ -8,7 +8,7 @@
 #include "common/config.h"
 #include "common/jwt.h"
 #include "config/key_manager.h"
-#include "controllers/category_controller.h"
+#include "services/category_service.h"
 #include "csilk/csilk.h"
 #include "csilk/core/bcrypt.h"
 #include "csilk/core/codec.h"
