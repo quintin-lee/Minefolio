@@ -110,7 +110,7 @@ tag_update(csilk_db_pool_t* pool, int64_t user_id, int64_t id, const char* name,
     snprintf(idstr, sizeof(idstr), "%lld", (long long)id);
     csilk_json_t* res = csilk_db_query_param_json(
         pool,
-        "UPDATE tags SET name=?, color=? WHERE id=? AND user_id=?",
+        "UPDATE tags SET name=?, color=? WHERE id=? AND user_id=? RETURNING id",
         (const char*[]){name ? name : "", color ? color : "", idstr, uid, NULL});
     int ok = res ? csilk_json_array_size(res) > 0 : 0;
     if (res) {
@@ -135,8 +135,10 @@ tag_delete(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
     char uid[32], idstr[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     snprintf(idstr, sizeof(idstr), "%lld", (long long)id);
-    csilk_json_t* res = csilk_db_query_param_json(
-        pool, "DELETE FROM tags WHERE id=? AND user_id=?", (const char*[]){idstr, uid, NULL});
+    csilk_json_t* res =
+        csilk_db_query_param_json(pool,
+                                  "DELETE FROM tags WHERE id=? AND user_id=? RETURNING id",
+                                  (const char*[]){idstr, uid, NULL});
     int ok = res ? csilk_json_array_size(res) > 0 : 0;
     if (res) {
         csilk_json_free(res);

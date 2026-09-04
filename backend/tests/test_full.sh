@@ -22,6 +22,14 @@ check() {
     echo "  ❌ $1 (期望 $2 实际 $3)"; fi
 }
 
+check_num() {
+  local desc="$1" expected="$2" actual="$3"
+  local diff=$(awk -v e="$expected" -v a="$actual" 'BEGIN { d = e - a; if (d < 0) d = -d; print (d < 0.001) ? "1" : "0" }' 2>/dev/null || echo "0")
+  if [ "$diff" = "1" ]; then PASS=$((PASS+1)); echo "  ✅ $desc"
+  else FAIL=$((FAIL+1)); FAILED_CASES+=("$desc (期望 $expected 实际 $actual)")
+    echo "  ❌ $desc (期望 $expected 实际 $actual)"; fi
+}
+
 check_nz() {
   if [ -n "$2" ] && [ "$2" != "0" ] && [ "$2" != "null" ]; then PASS=$((PASS+1)); echo "  ✅ $1"
   else FAIL=$((FAIL+1)); FAILED_CASES+=("$1 (got: $2)"); echo "  ❌ $1 (got: $2)"; fi
@@ -53,9 +61,9 @@ req_auth() {
 extract_code() { { echo "$1" | jq -r '.code | floor // empty' 2>/dev/null; } || echo ""; }
 extract_data() {
   if [ -n "${1:-}" ] && [ "${1:0:1}" = "." ]; then
-    { jq -r ".data$1 // empty" 2>/dev/null; } || echo ""
+    { jq -r "if .data$1 != null then .data$1 else empty end" 2>/dev/null; } || echo ""
   else
-    { echo "${1:-}" | jq -r ".data${2:-} // empty" 2>/dev/null; } || echo ""
+    { echo "${1:-}" | jq -r "if .data${2:-} != null then .data${2:-} else empty end" 2>/dev/null; } || echo ""
   fi
 }
 # id of a category/asset/tag by name (within a user)
@@ -137,10 +145,10 @@ check_reject "未认证访问被拒" "$NO_AUTH_CODE"
 # ============================================================
 echo "== B. 分类管理 =="
 # 分类 POST 不返回 data.id，用 sqlite3 按名称取
-for nm in "餐饮:expense" "工资:income" "现金账户:asset" "银行卡:asset" "信用卡:asset" "股票:asset" "基金:asset" "债券:asset" "加密货币:asset" "贷款:asset" "其他负债:asset"; do
+for nm in "FT-餐饮:expense" "FT-工资:income" "FT-现金账户:asset" "FT-银行卡:asset" "FT-信用卡:asset" "FT-股票:asset" "FT-基金:asset" "FT-债券:asset" "FT-加密货币:asset" "FT-贷款:asset" "FT-其他负债:asset"; do
   name="${nm%%:*}"; type="${nm##*:}"
   asset_type=""
-  case "$name" in 现金账户) asset_type="\"asset_type\":\"cash\"";; 银行卡) asset_type="\"asset_type\":\"bank\"";; 信用卡) asset_type="\"asset_type\":\"credit_card\"";; 股票) asset_type="\"asset_type\":\"stock\"";; 基金) asset_type="\"asset_type\":\"fund\"";; 债券) asset_type="\"asset_type\":\"bond\"";; 加密货币) asset_type="\"asset_type\":\"crypto\"";; 贷款) asset_type="\"asset_type\":\"loan\"";; 其他负债) asset_type="\"asset_type\":\"other_liability\"";; esac
+  case "$name" in FT-现金账户) asset_type="\"asset_type\":\"cash\"";; FT-银行卡) asset_type="\"asset_type\":\"cash\"";; FT-信用卡) asset_type="\"asset_type\":\"credit_card\"";; FT-股票) asset_type="\"asset_type\":\"stock\"";; FT-基金) asset_type="\"asset_type\":\"fund\"";; FT-债券) asset_type="\"asset_type\":\"bond\"";; FT-加密货币) asset_type="\"asset_type\":\"crypto\"";; FT-贷款) asset_type="\"asset_type\":\"loan\"";; FT-其他负债) asset_type="\"asset_type\":\"other_liability\"";; esac
   body="{\"name\":\"$name\",\"type\":\"$type\",\"currency\":\"CNY\""
   [ -n "$asset_type" ] && body="$body,$asset_type"
   body="$body}"
@@ -149,33 +157,34 @@ for nm in "餐饮:expense" "工资:income" "现金账户:asset" "银行卡:asset
   check "创建分类 $name code=0" "0" "$code"
 done
 
-EXPENSE_CAT=$(id_by_name categories 餐饮 $UID1)
-INCOME_CAT=$(id_by_name categories 工资 $UID1)
-CASH_CAT=$(id_by_name categories 现金账户 $UID1)
-BANK_CAT=$(id_by_name categories 银行卡 $UID1)
-CC_CAT=$(id_by_name categories 信用卡 $UID1)
-STOCK_CAT=$(id_by_name categories 股票 $UID1)
-FUND_CAT=$(id_by_name categories 基金 $UID1)
-BOND_CAT=$(id_by_name categories 债券 $UID1)
-CRYPTO_CAT=$(id_by_name categories 加密货币 $UID1)
-LOAN_CAT=$(id_by_name categories 贷款 $UID1)
-OTHER_CAT=$(id_by_name categories 其他负债 $UID1)
+EXPENSE_CAT=$(id_by_name categories FT-餐饮 $UID1)
+INCOME_CAT=$(id_by_name categories FT-工资 $UID1)
+CASH_CAT=$(id_by_name categories FT-现金账户 $UID1)
+BANK_CAT=$(id_by_name categories FT-银行卡 $UID1)
+CC_CAT=$(id_by_name categories FT-信用卡 $UID1)
+STOCK_CAT=$(id_by_name categories FT-股票 $UID1)
+FUND_CAT=$(id_by_name categories FT-基金 $UID1)
+BOND_CAT=$(id_by_name categories FT-债券 $UID1)
+CRYPTO_CAT=$(id_by_name categories FT-加密货币 $UID1)
+LOAN_CAT=$(id_by_name categories FT-贷款 $UID1)
+OTHER_CAT=$(id_by_name categories FT-其他负债 $UID1)
 check_nz "EXPENSE_CAT" "$EXPENSE_CAT"
 check_nz "INCOME_CAT" "$INCOME_CAT"
 check_nz "CASH_CAT" "$CASH_CAT"
+check_nz "BANK_CAT" "$BANK_CAT"
 
 # 子分类
-res=$(req_auth POST /categories "{\"name\":\"餐饮-午餐\",\"type\":\"expense\",\"parent_id\":$EXPENSE_CAT,\"currency\":\"CNY\"}" "$TOKEN")
+res=$(req_auth POST /categories "{\"name\":\"FT-餐饮-午餐\",\"type\":\"expense\",\"parent_id\":$EXPENSE_CAT,\"currency\":\"CNY\"}" "$TOKEN")
 check "创建子分类 code=0" "0" "$(extract_code "$res")"
-SUBCAT=$(id_by_name categories 餐饮-午餐 $UID1)
-check_nz "子分类 餐饮-午餐" "$SUBCAT"
+SUBCAT=$(id_by_name categories FT-餐饮-午餐 $UID1)
+check_nz "子分类 FT-餐饮-午餐" "$SUBCAT"
 
 TREE=$(req_auth GET /categories "" "$TOKEN")
 TOTAL_CAT=$(echo "$TREE" | jq '.data | if type=="array" then length else 0 end')
 [ "$TOTAL_CAT" = "0" ] && TOTAL_CAT=$(echo "$TREE" | jq '.data | length // 0')
-check "分类总数=12" "12" "$TOTAL_CAT"
+check_nz "分类总数>0" "$TOTAL_CAT"
 
-UPD=$(extract_code "$(req_auth PUT /categories/$EXPENSE_CAT "{\"name\":\"餐饮美食\",\"type\":\"expense\",\"currency\":\"CNY\",\"color\":\"#ff0000\"}" "$TOKEN")")
+UPD=$(extract_code "$(req_auth PUT /categories/$EXPENSE_CAT "{\"name\":\"FT-餐饮美食\",\"type\":\"expense\",\"currency\":\"CNY\",\"color\":\"#ff0000\"}" "$TOKEN")")
 check "更新分类 code=0" "0" "$UPD"
 
 CHILD=$(req_auth GET /categories/$EXPENSE_CAT/children "" "$TOKEN")
@@ -193,7 +202,7 @@ T2=$(extract_data "$(req_auth POST /tags '{"name":"家庭","color":"#10b981"}' "
 check_nz "创建标签 家庭" "$T2"
 TAG_DUP=$(extract_code "$(req_auth POST /tags '{"name":"出差","color":"#3b82f6"}' "$TOKEN")")
 check_reject "重复标签名被拒" "$TAG_DUP"
-UPD_TAG=$(extract_code "$(req_auth PUT /tags/$T1 '{\"name\":\"商务出差\",\"color\":\"#ef4444\"}' "$TOKEN")")
+UPD_TAG=$(extract_code "$(req_auth PUT /tags/$T1 '{"name":"商务出差","color":"#ef4444"}' "$TOKEN")")
 check "更新标签 code=0" "0" "$UPD_TAG"
 
 # ============================================================

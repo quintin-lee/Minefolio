@@ -157,7 +157,7 @@ category_update(csilk_db_pool_t* pool,
     csilk_json_t* res = csilk_db_query_param_json(
         pool,
         "UPDATE categories SET name=?,type=?,asset_type=?,currency=?,icon=?,sort_order=? WHERE "
-        "id=? AND user_id=?",
+        "id=? AND user_id=? RETURNING id",
         (const char*[]){name ? name : "",
                         type ? type : "",
                         asset_type ? asset_type : "",
@@ -190,8 +190,10 @@ category_delete(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
     char uid[32], idstr[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     snprintf(idstr, sizeof(idstr), "%lld", (long long)id);
-    csilk_json_t* res = csilk_db_query_param_json(
-        pool, "DELETE FROM categories WHERE id=? AND user_id=?", (const char*[]){idstr, uid, NULL});
+    csilk_json_t* res =
+        csilk_db_query_param_json(pool,
+                                  "DELETE FROM categories WHERE id=? AND user_id=? RETURNING id",
+                                  (const char*[]){idstr, uid, NULL});
     int ok = res ? csilk_json_array_size(res) > 0 : 0;
     if (res) {
         csilk_json_free(res);
