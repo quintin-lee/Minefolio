@@ -9,7 +9,7 @@ Minefolio is a self-hosted personal finance and investment tracker. It supports 
 ### Backend — Three-Tier C Architecture
 
 ```
-HTTP Layer    controllers/     Parse params, call service, format response
+HTTP Layer    interfaces/http/controllers/  Parse params, call service, format response
 Business Layer services/       Orchestrate repos, balance ops, transactions
               services/ai/     Enterprise AI: runtime, model, workflow, tools, policy, trace
 Core Layer    core/financial/  Fixed-point core: money, decimal, quantity, price, rate, pnl
@@ -25,8 +25,8 @@ Shared        common/          db, jwt, balance, response, ctx, csv, tx_types
 ```
 
 **Dependency direction is strict and one-way:**
-- `main.c` → includes only `controllers/*_controller.h`
-- `controllers/` → `services/`, `dtos/`
+- `main.c` → includes only `interfaces/http/controllers/*_controller.h`
+- `interfaces/http/controllers/` → `services/`, `dtos/`
 - `services/` → `repositories/`, `common/`, balance logic
 - `repositories/` → `common/db.h` ONLY (no HTTP/framework knowledge)
 
@@ -86,7 +86,7 @@ Balance direction is handled centrally: `balance_apply_delta()` flips the sign f
 | Path | Purpose |
 |------|---------|
 | `backend/src/main.c` | Entry point: DB init, migrations, middleware stack, route registration, static serve |
-| `backend/src/controllers/` | Thin HTTP handlers; one per domain; `register_*_routes(app)` |
+| `backend/src/interfaces/http/controllers/` | Thin HTTP handlers; one per domain; `register_*_routes(app)` |
 | `backend/src/services/` | Business logic; query and write files coexist per domain |
 | `backend/src/services/ai/` | Decoupled AI architecture: runtime, model, workflow, tools, policy, trace |
 | `backend/src/core/financial/` | Fixed-point core arithmetic: money, decimal, quantity, price, rate, pnl |
@@ -192,7 +192,7 @@ int           tx_delete_fee_children(csilk_db_pool_t* pool, int64_t user_id, int
 ### C — Controller Pattern
 
 ```c
-#include "controllers/<domain>_controller.h"
+#include "interfaces/http/controllers/<domain>_controller.h"
 #include "services/<domain>_service.h"
 
 void <action>(csilk_ctx_t* c) {
