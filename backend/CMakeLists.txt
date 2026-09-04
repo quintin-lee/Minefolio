@@ -202,6 +202,29 @@ target_compile_options(test_domain_ai PRIVATE -UNDEBUG)
 target_link_libraries(test_domain_ai PRIVATE m)
 add_test(NAME test_domain_ai COMMAND test_domain_ai)
 
+set(CORE_FINANCIAL_SRCS
+    src/core/financial/currency.c
+    src/core/financial/decimal.c
+    src/core/financial/money.c
+    src/core/financial/price.c
+    src/core/financial/quantity.c
+    src/core/financial/rate.c
+    src/core/financial/percentage.c
+)
+
+add_executable(test_domain_cost_basis tests/unit/test_domain_cost_basis.c src/domain/asset/cost_basis.c ${CORE_FINANCIAL_SRCS})
+target_include_directories(test_domain_cost_basis PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_domain_cost_basis PRIVATE -UNDEBUG)
+target_link_libraries(test_domain_cost_basis PRIVATE m)
+add_test(NAME test_domain_cost_basis COMMAND test_domain_cost_basis)
+
+add_executable(test_domain_pnl tests/unit/test_domain_pnl.c src/domain/asset/pnl.c ${CORE_FINANCIAL_SRCS})
+target_include_directories(test_domain_pnl PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_domain_pnl PRIVATE -UNDEBUG)
+target_link_libraries(test_domain_pnl PRIVATE m)
+add_test(NAME test_domain_pnl COMMAND test_domain_pnl)
+
+
 
 
 
