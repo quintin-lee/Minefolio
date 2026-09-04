@@ -157,18 +157,18 @@ Run: `git add backend/src/common/db.c && git commit -m "refactor(database): â™»ï
 - Unit tests: `test_currency` ... `test_database_repository`, `test_migration_engine`
 - Integration tests: `test_link.sh`, `test_ledgers.sh`, `test_2fa.sh`, `test_dca_cashflow.sh`, `test_ai_trace.sh`, `test_market_sync.sh`, `test_fx_oauth.sh`
 
-- [ ] **Step 1: Run all 26 CTest unit test suites**
+- [x] **Step 1: Run all 26 CTest unit test suites**
 Run: `ctest --test-dir backend/build --output-on-failure`
 Expected: 26/26 PASS.
 
-- [ ] **Step 2: Run all 7 bash integration test suites**
+- [x] **Step 2: Run all 7 bash integration test suites**
 Run all 7 test scripts.
 Expected: ALL PASS.
 
-- [ ] **Step 3: Run frontend build and tests**
+- [x] **Step 3: Run frontend build and tests**
 Run: `npm --prefix frontend test && npm --prefix frontend run build`
 Expected: PASS (0 errors).
 
-- [ ] **Step 4: Final workspace check**
+- [x] **Step 4: Final workspace check**
 Run: `git status`
 Expected: Clean working tree.
