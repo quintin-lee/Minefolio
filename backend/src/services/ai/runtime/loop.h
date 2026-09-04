@@ -19,9 +19,9 @@ typedef struct {
 } ai_runtime_callbacks_t;
 
 typedef struct {
-    char*               final_content;  /**< 最终文本输出 (需调用方 free) */
-    ai_runtime_status_t status;         /**< 执行状态 */
-    ai_runtime_stats_t  stats;          /**< 运行指标 */
+    char*               final_content; /**< 最终文本输出 (需调用方 free) */
+    ai_runtime_status_t status;        /**< 执行状态 */
+    ai_runtime_stats_t  stats;         /**< 运行指标 */
 } ai_runtime_result_t;
 
 /**
@@ -43,8 +43,7 @@ ai_runtime_status_t ai_runtime_execute_stream(csilk_db_pool_t*              pool
  * @param ctx 运行时上下文容器
  * @return ai_runtime_result_t 包含完整输出文本与执行指标的返回对象
  */
-ai_runtime_result_t ai_runtime_execute(csilk_db_pool_t*      pool,
-                                       ai_runtime_context_t* ctx);
+ai_runtime_result_t ai_runtime_execute(csilk_db_pool_t* pool, ai_runtime_context_t* ctx);
 
 /* 兼容旧签名 */
 typedef void (*ai_stream_chunk_cb)(const char* chunk, void* user_data);

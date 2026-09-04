@@ -10,9 +10,9 @@ ai_memory_build_messages(const char*         system_prompt,
     csilk_json_t* messages = csilk_json_array();
 
     /* 1. System message */
-    const char* sys = (system_prompt && system_prompt[0])
-                          ? system_prompt
-                          : "你是一个专业的个人财务与财富管理AI助手。";
+    const char*   sys = (system_prompt && system_prompt[0])
+                            ? system_prompt
+                            : "你是一个专业的个人财务与财富管理AI助手。";
     csilk_json_t* sys_msg = csilk_json_object();
     csilk_json_add_string(sys_msg, "role", "system");
     csilk_json_add_string(sys_msg, "content", sys);

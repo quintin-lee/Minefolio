@@ -29,7 +29,7 @@ on_chunk_bridge(const char* chunk, void* user_data)
         return;
     }
     loop_stream_bridge_t* b = (loop_stream_bridge_t*)user_data;
-    size_t clen = strlen(chunk);
+    size_t                clen = strlen(chunk);
     if (b->accumulated_len + clen + 1 > b->accumulated_cap) {
         size_t new_cap = (b->accumulated_cap == 0) ? 1024 : (b->accumulated_cap * 2 + clen);
         char*  new_buf = (char*)realloc(b->accumulated, new_cap);
@@ -58,20 +58,31 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
 
     /* 1. 验证上下文有效性 */
     if (!ctx) {
-        ai_runtime_status_set(&status, AI_RUNTIME_ERR_VALIDATION, "Context is NULL", "ctx cannot be NULL");
-        if (cbs && cbs->on_error) cbs->on_error(&status, user_data);
+        ai_runtime_status_set(
+            &status, AI_RUNTIME_ERR_VALIDATION, "Context is NULL", "ctx cannot be NULL");
+        if (cbs && cbs->on_error) {
+            cbs->on_error(&status, user_data);
+        }
         return status;
     }
 
     if (ctx->cancel_token && *(ctx->cancel_token)) {
-        ai_runtime_status_set(&status, AI_RUNTIME_ERR_CANCELLED, "Execution cancelled by client", "Cancellation token signaled");
-        if (cbs && cbs->on_error) cbs->on_error(&status, user_data);
+        ai_runtime_status_set(&status,
+                              AI_RUNTIME_ERR_CANCELLED,
+                              "Execution cancelled by client",
+                              "Cancellation token signaled");
+        if (cbs && cbs->on_error) {
+            cbs->on_error(&status, user_data);
+        }
         return status;
     }
 
     if (ctx->user_id <= 0) {
-        ai_runtime_status_set(&status, AI_RUNTIME_ERR_VALIDATION, "Invalid user context", "user_id must be > 0");
-        if (cbs && cbs->on_error) cbs->on_error(&status, user_data);
+        ai_runtime_status_set(
+            &status, AI_RUNTIME_ERR_VALIDATION, "Invalid user context", "user_id must be > 0");
+        if (cbs && cbs->on_error) {
+            cbs->on_error(&status, user_data);
+        }
         return status;
     }
 
@@ -86,22 +97,33 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
     }
 
     if (!prov || (!prov->api_key[0] && strcmp(prov->id, "ollama") != 0)) {
-        ai_runtime_status_set(&status, AI_RUNTIME_ERR_MODEL, "No available AI provider", "Provider not configured or missing API key");
-        if (cbs && cbs->on_error) cbs->on_error(&status, user_data);
+        ai_runtime_status_set(&status,
+                              AI_RUNTIME_ERR_MODEL,
+                              "No available AI provider",
+                              "Provider not configured or missing API key");
+        if (cbs && cbs->on_error) {
+            cbs->on_error(&status, user_data);
+        }
         return status;
     }
 
-    const char* model = ctx->model_name[0]
-                            ? ctx->model_name
-                            : ((prov->models[0] && prov->models[0][0]) ? prov->models[0] : (cfg ? cfg->default_model : "default"));
+    const char* model = ctx->model_name[0] ? ctx->model_name
+                                           : ((prov->models[0] && prov->models[0][0])
+                                                  ? prov->models[0]
+                                                  : (cfg ? cfg->default_model : "default"));
 
     /* 3. 构造 AI 驱动实例 */
     const char* dname = (strcmp(prov->id, "ollama") == 0) ? "ollama" : "openai";
     const char* key = (prov->api_key[0] != '\0') ? prov->api_key : "dummy";
     csilk_ai_t* ai_inst = csilk_ai_new(dname, key, prov->base_url[0] ? prov->base_url : NULL);
     if (!ai_inst) {
-        ai_runtime_status_set(&status, AI_RUNTIME_ERR_MODEL, "Failed to create AI driver instance", "csilk_ai_new returned NULL");
-        if (cbs && cbs->on_error) cbs->on_error(&status, user_data);
+        ai_runtime_status_set(&status,
+                              AI_RUNTIME_ERR_MODEL,
+                              "Failed to create AI driver instance",
+                              "csilk_ai_new returned NULL");
+        if (cbs && cbs->on_error) {
+            cbs->on_error(&status, user_data);
+        }
         return status;
     }
 
@@ -113,8 +135,8 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
     }
 
     /* 5. 组装初始消息结构数组 */
-    size_t json_msg_count = ctx->messages ? csilk_json_array_size(ctx->messages) : 0;
-    size_t mc = json_msg_count;
+    size_t              json_msg_count = ctx->messages ? csilk_json_array_size(ctx->messages) : 0;
+    size_t              mc = json_msg_count;
     csilk_ai_message_t* msgs = NULL;
     if (mc > 0) {
         msgs = (csilk_ai_message_t*)calloc(mc, sizeof(csilk_ai_message_t));
@@ -130,7 +152,8 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
         msgs = (csilk_ai_message_t*)calloc(mc, sizeof(csilk_ai_message_t));
         msgs[0] = (csilk_ai_message_t){
             .role = "system",
-            .content = (cfg && cfg->system_prompt[0]) ? cfg->system_prompt : "你是一个专业的个人财务与财富管理AI助手。",
+            .content = (cfg && cfg->system_prompt[0]) ? cfg->system_prompt
+                                                      : "你是一个专业的个人财务与财富管理AI助手。",
         };
     }
     size_t initial_mc = mc;
@@ -165,11 +188,13 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
     while (!got_text && ctx->stats.iterations_done < max_turns) {
         struct timespec now_ts;
         clock_gettime(CLOCK_MONOTONIC, &now_ts);
-        int64_t elapsed_ms = (now_ts.tv_sec - start_ts.tv_sec) * 1000 + (now_ts.tv_nsec - start_ts.tv_nsec) / 1000000;
+        int64_t elapsed_ms = (now_ts.tv_sec - start_ts.tv_sec) * 1000 +
+                             (now_ts.tv_nsec - start_ts.tv_nsec) / 1000000;
         ctx->stats.elapsed_ms = elapsed_ms;
 
         /* A. 轮次前预算与取消检查 */
-        if (!ai_runtime_limits_check_pre_turn(&ctx->limits, &ctx->stats, ctx->cancel_token, elapsed_ms, &status)) {
+        if (!ai_runtime_limits_check_pre_turn(
+                &ctx->limits, &ctx->stats, ctx->cancel_token, elapsed_ms, &status)) {
             break;
         }
 
@@ -197,11 +222,15 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
 
         /* 记录 Token 消耗与费用 */
         double step_cost = 0.0;
-        mf_ai_rule_calculate_token_cost(ai_res.prompt_tokens, ai_res.completion_tokens, 2.5, 10.0, &step_cost);
-        ai_runtime_limits_record_tokens(&ctx->stats, ai_res.prompt_tokens, ai_res.completion_tokens, step_cost);
+        mf_ai_rule_calculate_token_cost(
+            ai_res.prompt_tokens, ai_res.completion_tokens, 2.5, 10.0, &step_cost);
+        ai_runtime_limits_record_tokens(
+            &ctx->stats, ai_res.prompt_tokens, ai_res.completion_tokens, step_cost);
 
         if (rc != 0) {
-            const char* emsg = (ai_res.error_message && ai_res.error_message[0]) ? ai_res.error_message : "AI model invocation error";
+            const char* emsg = (ai_res.error_message && ai_res.error_message[0])
+                                   ? ai_res.error_message
+                                   : "AI model invocation error";
             ai_runtime_status_set(&status, AI_RUNTIME_ERR_MODEL, "AI model request failed", emsg);
             csilk_ai_chat_response_free(&ai_res);
             break;
@@ -209,7 +238,8 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
 
         /* C. 模型输出最终文本（无后续工具调用） */
         if (ai_res.tool_call_count == 0) {
-            const char* final_text = ai_res.content ? ai_res.content : (bridge.accumulated ? bridge.accumulated : "");
+            const char* final_text =
+                ai_res.content ? ai_res.content : (bridge.accumulated ? bridge.accumulated : "");
             if (pool && ctx->session_id > 0 && final_text && final_text[0]) {
                 ai_message_insert(pool, ctx->session_id, "assistant", final_text, model);
             }
@@ -220,7 +250,8 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
         }
 
         /* D. 处理工具调用（Function Calling） */
-        if (!ai_runtime_limits_check_tool_budget(&ctx->limits, &ctx->stats, (int)ai_res.tool_call_count, &status)) {
+        if (!ai_runtime_limits_check_tool_budget(
+                &ctx->limits, &ctx->stats, (int)ai_res.tool_call_count, &status)) {
             csilk_ai_chat_response_free(&ai_res);
             break;
         }
@@ -237,9 +268,13 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
             .tool_calls = (csilk_ai_tool_call_t*)calloc(n_calls, sizeof(csilk_ai_tool_call_t)),
         };
         for (size_t j = 0; j < n_calls; j++) {
-            msgs[mc - 1].tool_calls[j].id = ai_res.tool_calls[j].id ? strdup(ai_res.tool_calls[j].id) : strdup("");
-            msgs[mc - 1].tool_calls[j].name = ai_res.tool_calls[j].name ? strdup(ai_res.tool_calls[j].name) : strdup("");
-            msgs[mc - 1].tool_calls[j].arguments = ai_res.tool_calls[j].arguments ? strdup(ai_res.tool_calls[j].arguments) : strdup("{}");
+            msgs[mc - 1].tool_calls[j].id =
+                ai_res.tool_calls[j].id ? strdup(ai_res.tool_calls[j].id) : strdup("");
+            msgs[mc - 1].tool_calls[j].name =
+                ai_res.tool_calls[j].name ? strdup(ai_res.tool_calls[j].name) : strdup("");
+            msgs[mc - 1].tool_calls[j].arguments = ai_res.tool_calls[j].arguments
+                                                       ? strdup(ai_res.tool_calls[j].arguments)
+                                                       : strdup("{}");
         }
 
         /* 逐一校验安全策略并执行工具 */
@@ -255,9 +290,10 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
             }
 
             /* 1. 安全策略综合评估 (Policy Evaluation) */
-            ai_policy_decision_t* decision = ai_policy_evaluate(ctx->user_id, ctx->session_id, tc->name, args);
-            char* result_str = NULL;
-            int   tool_success = 0;
+            ai_policy_decision_t* decision =
+                ai_policy_evaluate(ctx->user_id, ctx->session_id, tc->name, args);
+            char*           result_str = NULL;
+            int             tool_success = 0;
             struct timespec t0, t1;
             clock_gettime(CLOCK_MONOTONIC, &t0);
 
@@ -265,7 +301,10 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
                 /* 策略拦截或需二次确认 */
                 csilk_json_t* err_obj = csilk_json_object();
                 csilk_json_add_string(err_obj, "error", "policy_denied");
-                csilk_json_add_string(err_obj, "reason", decision->reason[0] ? decision->reason : "Tool blocked by policy");
+                csilk_json_add_string(err_obj,
+                                      "reason",
+                                      decision->reason[0] ? decision->reason
+                                                          : "Tool blocked by policy");
                 if (decision->requires_confirmation && decision->draft) {
                     csilk_json_add_string(err_obj, "confirmation_required", "true");
                     csilk_json_add_string(err_obj, "draft_id", decision->draft->draft_id);
@@ -292,7 +331,11 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
 
             ai_runtime_limits_record_tool_call(&ctx->stats, 1);
             if (trace) {
-                ai_trace_add_tool_span(trace, tc->name ? tc->name : "", span_ms, result_str ? strlen(result_str) : 0, tool_success);
+                ai_trace_add_tool_span(trace,
+                                       tc->name ? tc->name : "",
+                                       span_ms,
+                                       result_str ? strlen(result_str) : 0,
+                                       tool_success);
             }
 
             if (cbs && cbs->on_tool_result) {
@@ -316,12 +359,16 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
     }
 
     if (!got_text && status.code == AI_RUNTIME_ERR_OK) {
-        ai_runtime_status_set(&status, AI_RUNTIME_ERR_TIMEOUT, "Execution finished without final text response", "Max turns reached");
+        ai_runtime_status_set(&status,
+                              AI_RUNTIME_ERR_TIMEOUT,
+                              "Execution finished without final text response",
+                              "Max turns reached");
     }
 
     /* 8. 链路追踪结算并保存 */
     if (trace) {
-        ai_trace_calculate_tokens_and_cost(trace, ctx->stats.prompt_tokens, ctx->stats.completion_tokens);
+        ai_trace_calculate_tokens_and_cost(
+            trace, ctx->stats.prompt_tokens, ctx->stats.completion_tokens);
         ai_trace_finish(trace, (status.code == AI_RUNTIME_ERR_OK) ? "ok" : "error", status.message);
         if (pool) {
             ai_trace_save(pool, trace);
@@ -377,9 +424,11 @@ typedef struct {
 static void
 exec_sync_chunk(const char* chunk, void* udata)
 {
-    if (!chunk || !udata) return;
+    if (!chunk || !udata) {
+        return;
+    }
     exec_sync_collector_t* c = (exec_sync_collector_t*)udata;
-    size_t clen = strlen(chunk);
+    size_t                 clen = strlen(chunk);
     if (c->len + clen + 1 > c->cap) {
         size_t ncap = (c->cap == 0) ? 2048 : (c->cap * 2 + clen);
         char*  nbuf = (char*)realloc(c->content, ncap);
@@ -434,16 +483,26 @@ ai_runtime_run_loop(csilk_db_pool_t* pool, const ai_loop_options_t* opts, ai_tra
     ai_runtime_context_init(&ctx);
     ctx.user_id = opts->user_id;
     ctx.session_id = opts->session_id;
-    if (opts->provider_id) strncpy(ctx.provider_id, opts->provider_id, sizeof(ctx.provider_id) - 1);
-    if (opts->model_name) strncpy(ctx.model_name, opts->model_name, sizeof(ctx.model_name) - 1);
-    if (opts->max_turns > 0) ctx.limits.max_iterations = opts->max_turns;
+    if (opts->provider_id) {
+        strncpy(ctx.provider_id, opts->provider_id, sizeof(ctx.provider_id) - 1);
+    }
+    if (opts->model_name) {
+        strncpy(ctx.model_name, opts->model_name, sizeof(ctx.model_name) - 1);
+    }
+    if (opts->max_turns > 0) {
+        ctx.limits.max_iterations = opts->max_turns;
+    }
     ctx.trace = trace;
 
-    ai_config_t* cfg = ai_get_config();
-    csilk_json_t* hist = (pool && opts->session_id > 0) ? ai_message_recent(pool, opts->session_id, 20) : NULL;
+    ai_config_t*  cfg = ai_get_config();
+    csilk_json_t* hist =
+        (pool && opts->session_id > 0) ? ai_message_recent(pool, opts->session_id, 20) : NULL;
     csilk_json_free(ctx.messages);
-    ctx.messages = ai_memory_build_messages(cfg ? cfg->system_prompt : NULL, hist, opts->user_prompt, 20);
-    if (hist) csilk_json_free(hist);
+    ctx.messages =
+        ai_memory_build_messages(cfg ? cfg->system_prompt : NULL, hist, opts->user_prompt, 20);
+    if (hist) {
+        csilk_json_free(hist);
+    }
 
     ai_runtime_result_t res = ai_runtime_execute(pool, &ctx);
     ai_runtime_context_free(&ctx);

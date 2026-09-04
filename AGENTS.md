@@ -11,7 +11,7 @@ Minefolio is a self-hosted personal finance and investment tracker. It supports 
 ```
 HTTP Layer    interfaces/http/controllers/  Parse params, call service, format response
 Business Layer services/       Orchestrate repos, balance ops, transactions
-              services/ai/     Enterprise AI: runtime, model, workflow, tools, policy, trace
+              services/ai/     Unified AI Runtime: session, context, model, tool, workflow, policy, trace, memory
 Core Layer    core/financial/  Fixed-point core: money, decimal, quantity, price, rate, pnl
               core/ledger/     Ledger engine: transaction replay, rebuild, balance/cost basis
 Infra Layer   infrastructure/database/ Database abstraction and SQLite/Postgres adapters
@@ -81,6 +81,27 @@ Database schema changes are managed strictly via the native C migration engine (
 
 Balance direction is handled centrally: `balance_apply_delta()` flips the sign for liability assets (`loan`, `credit_card`, `other_liability`) so net-worth calculations stay correct. Transaction types are registered in `common/tx_types.c` — always use `tx_type_lookup()` instead of hard-coding type checks.
 
+### AI Architecture — Unified AI Runtime
+
+```text
+AI Runtime (services/ai/runtime/)
+├── Session       Session persistence, auto-title, history retrieval (runtime/session.h)
+├── Context       Unified ai_runtime_context_t container (user, session, messages, tools, perm, trace)
+├── Model         Model provider abstraction, prompt format, token/cost estimation (model/)
+├── Tool          Tool registry & schema definition — tools NEVER manage LLMs directly (tools/)
+├── Workflow      High-level workflows delegating execution to Runtime (workflow/)
+├── Policy        Pre-execution security evaluation: permissions, risk, confirmation, frequency (policy/)
+├── Trace         End-to-end tracing, tool spans, latency & cost accounting (trace/)
+└── Memory        Sliding-window context memory & token budget truncation (memory/)
+```
+
+**Unified Runtime Execution Rules:**
+- Controllers (`ai_controller.c`) and Workflows (`workflow/executor.c`) **MUST NOT** manage LLM calls or build manual conversation loops directly.
+- All chat requests and streaming reports execute via `ai_runtime_execute_stream()` or `ai_runtime_execute()`.
+- Tools run strictly through the Policy evaluation pipeline (`ai_policy_evaluate()` -> `ai_tool_dispatch_parsed()`).
+- Runtime strictly enforces budgets: `max_iterations`, `timeout_ms`, `token_budget`, `tool_budget`, `cost_budget`, and `cancellation`.
+- Error taxonomy is strictly differentiated: `AI_RUNTIME_ERR_MODEL`, `AI_RUNTIME_ERR_TOOL`, `AI_RUNTIME_ERR_POLICY`, `AI_RUNTIME_ERR_TIMEOUT`, `AI_RUNTIME_ERR_CONTEXT_OVERFLOW`, `AI_RUNTIME_ERR_VALIDATION`, `AI_RUNTIME_ERR_CANCELLED`.
+
 ## Key Directories
 
 | Path | Purpose |
@@ -88,7 +109,7 @@ Balance direction is handled centrally: `balance_apply_delta()` flips the sign f
 | `backend/src/main.c` | Entry point: DB init, migrations, middleware stack, route registration, static serve |
 | `backend/src/interfaces/http/controllers/` | Thin HTTP handlers; one per domain; `register_*_routes(app)` |
 | `backend/src/services/` | Business logic; query and write files coexist per domain |
-| `backend/src/services/ai/` | Decoupled AI architecture: runtime, model, workflow, tools, policy, trace |
+| `backend/src/services/ai/` | Unified AI Runtime: session, context, model, tool, workflow, policy, trace, memory |
 | `backend/src/core/financial/` | Fixed-point core arithmetic: money, decimal, quantity, price, rate, pnl |
 | `backend/src/core/ledger/` | Ledger engine: single source of truth, position calculation, history replay/rebuild |
 | `backend/src/infrastructure/database/` | Database abstraction layer and SQLite/PostgreSQL native adapters |
@@ -98,7 +119,7 @@ Balance direction is handled centrally: `balance_apply_delta()` flips the sign f
 | `backend/src/config/` | `db_config.h/.c` (DSN), `key_manager.h/.c` (RSA-OAEP keys), `secret.h/.c` (Secret Provider) |
 | `backend/sql/migrations/` | Versioned migration scripts (`sqlite/` & `postgres/`, `V001`~`V007`) |
 | `backend/sql/` | `migration.sql` (SQLite full schema), `migration_postgres.sql` |
-| `backend/tests/unit/` | 26 CTest unit test suites (financial core, ledger, domain rules, DB repository, migration engine) |
+| `backend/tests/unit/` | 27 CTest unit test suites (financial core, ledger, domain rules, DB repository, migration engine, AI runtime) |
 | `backend/tests/test_link.sh` | 38-case integration test suite (139 assertions, HTTP + sqlite3 verification) |
 | `frontend/src/main.ts` | Desktop entry: Pinia, router, Element Plus, i18n |
 | `frontend/src/main-mobile.ts` | Mobile entry: separate router, sql.js init |

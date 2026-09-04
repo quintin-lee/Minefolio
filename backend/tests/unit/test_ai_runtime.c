@@ -144,12 +144,45 @@ static void test_runtime_agent_loop_cancel(void) {
     printf("PASS: test_runtime_agent_loop_cancel\n");
 }
 
+static void test_runtime_validation_rejection(void) {
+    ai_runtime_context_t ctx;
+    ai_runtime_context_init(&ctx);
+    ctx.user_id = 0; /* Invalid user_id */
+
+    ai_runtime_result_t res = ai_runtime_execute(NULL, &ctx);
+    assert(res.status.code == AI_RUNTIME_ERR_VALIDATION);
+    assert(res.final_content == NULL);
+
+    ai_runtime_context_free(&ctx);
+    printf("PASS: test_runtime_validation_rejection\n");
+}
+
+static void test_runtime_elapsed_timeout(void) {
+    ai_runtime_limits_t limits = ai_runtime_limits_default();
+    limits.timeout_ms = 5000;
+    ai_runtime_stats_t stats = {0};
+    ai_runtime_status_t status = {0};
+
+    /* 4000ms elapsed -> OK */
+    assert(ai_runtime_limits_check_pre_turn(&limits, &stats, NULL, 4000, &status) == true);
+    assert(status.code == AI_RUNTIME_ERR_OK);
+
+    /* 5001ms elapsed -> TIMEOUT */
+    assert(ai_runtime_limits_check_pre_turn(&limits, &stats, NULL, 5001, &status) == false);
+    assert(status.code == AI_RUNTIME_ERR_TIMEOUT);
+    assert(strstr(status.detail, "exceeded timeout") != NULL);
+
+    printf("PASS: test_runtime_elapsed_timeout\n");
+}
+
 int main(void) {
     test_runtime_error_taxonomy();
     test_runtime_limits_and_budgets();
     test_runtime_memory_window();
     test_runtime_context_lifecycle();
     test_runtime_agent_loop_cancel();
-    printf("All runtime initial tests passed!\n");
+    test_runtime_validation_rejection();
+    test_runtime_elapsed_timeout();
+    printf("All runtime unit and edge tests passed!\n");
     return 0;
 }

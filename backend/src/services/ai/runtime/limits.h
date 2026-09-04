@@ -8,21 +8,21 @@ extern "C" {
 #endif
 
 typedef struct {
-    int     max_iterations;   /**< 最大循环轮数（默认 10） */
-    int64_t timeout_ms;       /**< 最大执行耗时毫秒数（0 表示不限） */
-    int     token_budget;     /**< 最大累计 Token 预算 (0 表示不限) */
-    int     tool_budget;      /**< 最大累计工具执行次数 (0 表示不限) */
-    double  cost_budget;      /**< 最大累计费用预算 (0 表示不限) */
+    int     max_iterations; /**< 最大循环轮数（默认 10） */
+    int64_t timeout_ms;     /**< 最大执行耗时毫秒数（0 表示不限） */
+    int     token_budget;   /**< 最大累计 Token 预算 (0 表示不限) */
+    int     tool_budget;    /**< 最大累计工具执行次数 (0 表示不限) */
+    double  cost_budget;    /**< 最大累计费用预算 (0 表示不限) */
 } ai_runtime_limits_t;
 
 typedef struct {
-    int     iterations_done;  /**< 已完成轮数 */
-    int     prompt_tokens;    /**< 累计输入 Token */
-    int     completion_tokens;/**< 累计输出 Token */
-    int     total_tokens;     /**< 累计总 Token */
-    int     tool_calls_count; /**< 累计工具调用次数 */
-    double  total_cost;       /**< 累计估计成本 (USD) */
-    int64_t elapsed_ms;       /**< 累计已消耗时间 (ms) */
+    int     iterations_done;   /**< 已完成轮数 */
+    int     prompt_tokens;     /**< 累计输入 Token */
+    int     completion_tokens; /**< 累计输出 Token */
+    int     total_tokens;      /**< 累计总 Token */
+    int     tool_calls_count;  /**< 累计工具调用次数 */
+    double  total_cost;        /**< 累计估计成本 (USD) */
+    int64_t elapsed_ms;        /**< 累计已消耗时间 (ms) */
 } ai_runtime_stats_t;
 
 ai_runtime_limits_t ai_runtime_limits_default(void);

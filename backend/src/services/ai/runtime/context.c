@@ -38,6 +38,6 @@ ai_context_build_messages(const ai_config_t*  cfg,
                           const char*         user_prompt)
 {
     const char* sys = (cfg && cfg->system_prompt[0]) ? cfg->system_prompt : NULL;
-    int max_hist = (cfg && cfg->context_size > 0) ? cfg->context_size : 20;
+    int         max_hist = (cfg && cfg->context_size > 0) ? cfg->context_size : 20;
     return ai_memory_build_messages(sys, history_messages, user_prompt, max_hist);
 }

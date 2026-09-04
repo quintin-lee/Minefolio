@@ -34,32 +34,45 @@ ai_runtime_limits_check_pre_turn(const ai_runtime_limits_t* limits,
 
     if (limits->max_iterations > 0 && stats->iterations_done >= limits->max_iterations) {
         char detail[128];
-        snprintf(detail, sizeof(detail), "Reached max_iterations limit (%d)", limits->max_iterations);
-        ai_runtime_status_set(out_status, AI_RUNTIME_ERR_TIMEOUT, "Max iterations exceeded", detail);
+        snprintf(
+            detail, sizeof(detail), "Reached max_iterations limit (%d)", limits->max_iterations);
+        ai_runtime_status_set(
+            out_status, AI_RUNTIME_ERR_TIMEOUT, "Max iterations exceeded", detail);
         return false;
     }
 
     if (limits->timeout_ms > 0 && current_elapsed_ms >= limits->timeout_ms) {
         char detail[128];
-        snprintf(detail, sizeof(detail), "Elapsed %lld ms exceeded timeout %lld ms",
-                 (long long)current_elapsed_ms, (long long)limits->timeout_ms);
+        snprintf(detail,
+                 sizeof(detail),
+                 "Elapsed %lld ms exceeded timeout %lld ms",
+                 (long long)current_elapsed_ms,
+                 (long long)limits->timeout_ms);
         ai_runtime_status_set(out_status, AI_RUNTIME_ERR_TIMEOUT, "Execution timeout", detail);
         return false;
     }
 
     if (limits->token_budget > 0 && stats->total_tokens >= limits->token_budget) {
         char detail[128];
-        snprintf(detail, sizeof(detail), "Total tokens %d exceeded budget %d",
-                 stats->total_tokens, limits->token_budget);
-        ai_runtime_status_set(out_status, AI_RUNTIME_ERR_CONTEXT_OVERFLOW, "Token budget exceeded", detail);
+        snprintf(detail,
+                 sizeof(detail),
+                 "Total tokens %d exceeded budget %d",
+                 stats->total_tokens,
+                 limits->token_budget);
+        ai_runtime_status_set(
+            out_status, AI_RUNTIME_ERR_CONTEXT_OVERFLOW, "Token budget exceeded", detail);
         return false;
     }
 
     if (limits->cost_budget > 0.0 && stats->total_cost >= limits->cost_budget) {
         char detail[128];
-        snprintf(detail, sizeof(detail), "Total cost $%.4f exceeded budget $%.4f",
-                 stats->total_cost, limits->cost_budget);
-        ai_runtime_status_set(out_status, AI_RUNTIME_ERR_CONTEXT_OVERFLOW, "Cost budget exceeded", detail);
+        snprintf(detail,
+                 sizeof(detail),
+                 "Total cost $%.4f exceeded budget $%.4f",
+                 stats->total_cost,
+                 limits->cost_budget);
+        ai_runtime_status_set(
+            out_status, AI_RUNTIME_ERR_CONTEXT_OVERFLOW, "Cost budget exceeded", detail);
         return false;
     }
 
@@ -81,8 +94,12 @@ ai_runtime_limits_check_tool_budget(const ai_runtime_limits_t* limits,
 
     if (stats->tool_calls_count + requested_tools > limits->tool_budget) {
         char detail[128];
-        snprintf(detail, sizeof(detail), "Tool calls count %d + %d would exceed budget %d",
-                 stats->tool_calls_count, requested_tools, limits->tool_budget);
+        snprintf(detail,
+                 sizeof(detail),
+                 "Tool calls count %d + %d would exceed budget %d",
+                 stats->tool_calls_count,
+                 requested_tools,
+                 limits->tool_budget);
         ai_runtime_status_set(out_status, AI_RUNTIME_ERR_TOOL, "Tool budget exceeded", detail);
         return false;
     }
@@ -98,10 +115,16 @@ ai_runtime_limits_record_tokens(ai_runtime_stats_t* stats,
     if (!stats) {
         return;
     }
-    if (prompt_tokens > 0) stats->prompt_tokens += prompt_tokens;
-    if (completion_tokens > 0) stats->completion_tokens += completion_tokens;
+    if (prompt_tokens > 0) {
+        stats->prompt_tokens += prompt_tokens;
+    }
+    if (completion_tokens > 0) {
+        stats->completion_tokens += completion_tokens;
+    }
     stats->total_tokens = stats->prompt_tokens + stats->completion_tokens;
-    if (cost > 0.0) stats->total_cost += cost;
+    if (cost > 0.0) {
+        stats->total_cost += cost;
+    }
 }
 
 void
