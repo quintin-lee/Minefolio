@@ -24,7 +24,7 @@
 #include "interfaces/http/controllers/dca_controller.h"
 #include "interfaces/http/controllers/cashflow_controller.h"
 #include "controllers/ledger_controller.h"
-#include "controllers/import_rule_controller.h"
+#include "interfaces/http/controllers/import_rule_controller.h"
 #include "controllers/receipt_controller.h"
 #include "services/market/market_scheduler.h"
 #include "services/ai_service.h"

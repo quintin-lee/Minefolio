@@ -1,4 +1,4 @@
-#include "services/import_rule_service.h"
+#include "interfaces/http/controllers/import_rule_controller.h"
 #include "repositories/import_rule_repo.h"
 #include "common/response.h"
 #include "common/ctx.h"
@@ -206,4 +206,46 @@ import_rule_service_reset_defaults(csilk_ctx_t* c)
 
     csilk_json_t* rules = import_rule_list(pool, user_id);
     respond_ok(c, rules ? rules : csilk_json_array());
+}
+
+void
+api_import_rule_list(csilk_ctx_t* c)
+{
+    import_rule_service_list(c);
+}
+void
+api_import_rule_get(csilk_ctx_t* c)
+{
+    import_rule_service_get(c);
+}
+void
+api_import_rule_create(csilk_ctx_t* c)
+{
+    import_rule_service_create(c);
+}
+void
+api_import_rule_update(csilk_ctx_t* c)
+{
+    import_rule_service_update(c);
+}
+void
+api_import_rule_delete(csilk_ctx_t* c)
+{
+    import_rule_service_delete(c);
+}
+void
+api_import_rule_reset_defaults(csilk_ctx_t* c)
+{
+    import_rule_service_reset_defaults(c);
+}
+
+void
+register_import_rule_routes(csilk_app_t* app)
+{
+    csilk_app_get(app, "/api/import-rules", api_import_rule_list);
+    csilk_app_post(app, "/api/import-rules", api_import_rule_create);
+    csilk_app_post(app, "/api/import-rules/reset-defaults", api_import_rule_reset_defaults);
+    csilk_app_get(app, "/api/import-rules/:id", api_import_rule_get);
+    csilk_app_put(app, "/api/import-rules/:id", api_import_rule_update);
+    csilk_app_delete(app, "/api/import-rules/:id", api_import_rule_delete);
 }
