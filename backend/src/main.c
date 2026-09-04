@@ -7,7 +7,7 @@
 #include "middlewares/csrf_middleware.h"
 #include "middlewares/security_headers_middleware.h"
 #include "middlewares/rate_limit.h"
-#include "controllers/auth_controller.h"
+#include "interfaces/http/controllers/auth_controller.h"
 #include "controllers/admin_controller.h"
 #include "controllers/category_controller.h"
 #include "interfaces/http/controllers/asset_controller.h"
