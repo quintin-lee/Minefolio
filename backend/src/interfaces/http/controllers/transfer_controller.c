@@ -1,4 +1,4 @@
-#include "services/transfer_service.h"
+#include "interfaces/http/controllers/transfer_controller.h"
 #include "repositories/transfer_repo.h"
 #include "common/response.h"
 #include "common/ctx.h"
@@ -9,7 +9,7 @@
 #include <string.h>
 
 void
-transfers_create(csilk_ctx_t* c)
+api_transfers_create(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
     if (user_id < 0) {
@@ -144,11 +144,17 @@ transfers_create(csilk_ctx_t* c)
 }
 
 void
+transfers_create(csilk_ctx_t* c)
+{
+    api_transfers_create(c);
+}
+
+void
 register_transfer_routes(csilk_app_t* app)
 {
     csilk_app_post_ext(app,
                        "/api/transfers",
-                       transfers_create,
+                       api_transfers_create,
                        "transfer_req_t",
                        nullptr,
                        "Create transfer",
