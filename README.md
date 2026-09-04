@@ -66,10 +66,15 @@ cp .env.example .env
 # 编辑 .env 文件，务必修改 MINEFOLIO_JWT_SECRET 密钥
 vim .env
 
-# 3. 启动多容器服务
-docker compose up -d --build
+# 3. 启动多容器服务（默认拉取 ghcr.io/quintin-lee/minefolio:latest）
+docker compose up -d
 ```
 启动后访问 `http://localhost` 即可直接使用。
+
+> 如需从源码构建（开发/定制场景）：
+> ```bash
+> docker compose up -d --build
+> ```
 
 ### 方式 2：本地源码编译与开发
 

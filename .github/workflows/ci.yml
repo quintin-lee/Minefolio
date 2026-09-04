@@ -97,6 +97,71 @@ jobs:
           name: minefolio-frontend-dist
           path: frontend/frontend-dist.tar.gz
 
+  docker-build-frontend:
+    name: Build Frontend Docker Image
+    needs: [frontend]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry (GHCR)
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}-frontend
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
+            type=sha,format=short,prefix=sha-
+            type=ref,event=branch
+            type=ref,event=tag
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.frontend
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          load: ${{ github.event_name == 'pull_request' }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test Docker container (PR only)
+        if: github.event_name == 'pull_request'
+        run: |
+          IMAGE_TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -n 1)
+          docker run -d --name minefolio-frontend-smoke-test \
+            -p 8081:80 \
+            $IMAGE_TAG
+
+          for i in $(seq 1 30); do
+            if curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/ | grep -q "200"; then
+              echo "✅ Frontend Docker image smoke test passed!"
+              docker stop minefolio-frontend-smoke-test
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "❌ Frontend Docker container failed healthcheck"
+          docker logs minefolio-frontend-smoke-test
+          exit 1
+
   docker-build:
     name: Build & Package Docker Image
     needs: [backend, frontend]

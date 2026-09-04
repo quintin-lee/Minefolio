@@ -1,10 +1,6 @@
 services:
   minefolio:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: runtime
-    image: minefolio:latest
+    image: ghcr.io/quintin-lee/minefolio:latest
     container_name: minefolio
     expose:
       - "8080"
@@ -17,11 +13,7 @@ services:
     restart: unless-stopped
 
   nginx:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: nginx
-    image: minefolio-nginx:latest
+    image: ghcr.io/quintin-lee/minefolio-frontend:latest
     container_name: minefolio-nginx
     ports:
       - "80:80"

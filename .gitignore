@@ -25,3 +25,4 @@ playwright-*/
 /config/
 !backend/src/config/
 output/
+.env
