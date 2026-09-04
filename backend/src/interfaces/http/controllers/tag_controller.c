@@ -1,4 +1,4 @@
-#include "services/tag_service.h"
+#include "interfaces/http/controllers/tag_controller.h"
 #include "repositories/tag_repo.h"
 #include "common/response.h"
 #include "common/ctx.h"
@@ -7,7 +7,7 @@
 #include <string.h>
 
 void
-tags_list(csilk_ctx_t* c)
+api_tags_list(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
     if (user_id < 0) {
@@ -47,7 +47,7 @@ tags_list(csilk_ctx_t* c)
 }
 
 void
-tags_create(csilk_ctx_t* c)
+api_tags_create(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
     if (user_id < 0) {
@@ -82,7 +82,7 @@ tags_create(csilk_ctx_t* c)
 }
 
 void
-tags_update(csilk_ctx_t* c)
+api_tags_update(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
     if (user_id < 0) {
@@ -115,7 +115,7 @@ tags_update(csilk_ctx_t* c)
 }
 
 void
-tags_delete(csilk_ctx_t* c)
+api_tags_delete(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
     if (user_id < 0) {
@@ -138,7 +138,7 @@ tags_delete(csilk_ctx_t* c)
 }
 
 void
-tags_suggestions(csilk_ctx_t* c)
+api_tags_suggestions(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
     if (user_id < 0) {
@@ -157,29 +157,65 @@ tags_suggestions(csilk_ctx_t* c)
 }
 
 void
+tags_list(csilk_ctx_t* c)
+{
+    api_tags_list(c);
+}
+void
+tags_create(csilk_ctx_t* c)
+{
+    api_tags_create(c);
+}
+void
+tags_update(csilk_ctx_t* c)
+{
+    api_tags_update(c);
+}
+void
+tags_delete(csilk_ctx_t* c)
+{
+    api_tags_delete(c);
+}
+void
+tags_suggestions(csilk_ctx_t* c)
+{
+    api_tags_suggestions(c);
+}
+
+void
 register_tag_routes(csilk_app_t* app)
 {
     csilk_app_get_ext(app,
                       "/api/tags",
-                      tags_list,
+                      api_tags_list,
                       nullptr,
                       "tag_resp_t",
                       "List tags",
                       "Returns all tags for the current user");
-    csilk_app_post_ext(
-        app, "/api/tags", tags_create, "tag_req_t", "tag_resp_t", "Create tag", "Create a new tag");
+    csilk_app_post_ext(app,
+                       "/api/tags",
+                       api_tags_create,
+                       "tag_req_t",
+                       "tag_resp_t",
+                       "Create tag",
+                       "Create a new tag");
     csilk_app_put_ext(app,
                       "/api/tags/:id",
-                      tags_update,
+                      api_tags_update,
                       "tag_req_t",
                       "tag_resp_t",
                       "Update tag",
                       "Update an existing tag by ID");
-    csilk_app_delete_ext(
-        app, "/api/tags/:id", tags_delete, nullptr, nullptr, "Delete tag", "Delete a tag by ID");
+    csilk_app_delete_ext(app,
+                         "/api/tags/:id",
+                         api_tags_delete,
+                         nullptr,
+                         nullptr,
+                         "Delete tag",
+                         "Delete a tag by ID");
     csilk_app_get_ext(app,
                       "/api/tags/suggestions",
-                      tags_suggestions,
+                      api_tags_suggestions,
                       nullptr,
                       "tag_resp_t",
                       "Tag suggestions",

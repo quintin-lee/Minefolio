@@ -13,7 +13,7 @@
 #include "interfaces/http/controllers/asset_controller.h"
 #include "interfaces/http/controllers/transaction_controller.h"
 #include "controllers/daily_expense_controller.h"
-#include "controllers/tag_controller.h"
+#include "interfaces/http/controllers/tag_controller.h"
 #include "controllers/transfer_controller.h"
 #include "controllers/report_controller.h"
 #include "interfaces/http/controllers/ai_controller.h"
