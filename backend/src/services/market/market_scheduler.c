@@ -1,5 +1,5 @@
 #include "services/market/market_scheduler.h"
-#include "services/market_service.h"
+#include "application/market/usecases.h"
 #include "repositories/dca_repo.h"
 #include "csilk/csilk.h"
 #include <pthread.h>
@@ -226,7 +226,7 @@ scheduler_loop(void* arg)
         if (should_sync && g_pool) {
             pthread_mutex_unlock(&g_sched_mutex);
             int synced = 0, failed = 0;
-            market_service_do_sync_user(g_pool, 0, &synced, &failed);
+            market_usecase_do_sync_user(g_pool, 0, &synced, &failed);
             CSILK_LOG_I("Market scheduler completed sync: %d synced, %d failed", synced, failed);
             pthread_mutex_lock(&g_sched_mutex);
         }

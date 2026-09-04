@@ -20,7 +20,7 @@
 #include "controllers/file_controller.h"
 #include "controllers/ai_trace_controller.h"
 #include "controllers/import_export_controller.h"
-#include "controllers/market_controller.h"
+#include "interfaces/http/controllers/market_controller.h"
 #include "controllers/dca_controller.h"
 #include "controllers/cashflow_controller.h"
 #include "controllers/ledger_controller.h"
