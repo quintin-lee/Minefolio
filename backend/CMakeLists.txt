@@ -77,16 +77,15 @@ else()
 endif()
 
 # Copy config and sql on build
-add_custom_command(TARGET minefolio POST_BUILD
+add_custom_target(copy_assets ALL
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/config"
         "${CMAKE_BINARY_DIR}/config"
-)
-add_custom_command(TARGET minefolio POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_CURRENT_SOURCE_DIR}/sql"
         "${CMAKE_BINARY_DIR}/sql"
 )
+add_dependencies(minefolio copy_assets)
 if(DEFINED csilk_SOURCE_DIR)
     add_custom_command(TARGET minefolio POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory

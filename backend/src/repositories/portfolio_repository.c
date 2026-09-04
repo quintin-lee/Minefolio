@@ -18,15 +18,15 @@ portfolio_repo_fetch_positions(mf_db_t*                   db,
 
     mf_stmt_t* stmt = NULL;
     int        rc = mf_stmt_prepare(db,
-                             "SELECT a.id AS asset_id, a.name, "
-                             "COALESCE(a.symbol, '') AS symbol, "
-                             "COALESCE(a.currency, 'CNY') AS currency, "
-                             "a.quantity, a.cost_basis, a.net_value, a.current_value "
-                             "FROM assets a "
-                             "LEFT JOIN categories c ON a.category_id = c.id "
-                             "WHERE a.user_id = ? AND c.asset_type = 'investment' "
-                             "ORDER BY a.name ASC;",
-                             &stmt);
+                                    "SELECT a.id AS asset_id, a.name, "
+                                    "COALESCE(a.symbol, '') AS symbol, "
+                                    "COALESCE(a.currency, 'CNY') AS currency, "
+                                    "a.quantity, a.cost_basis, a.net_value, a.current_value "
+                                    "FROM assets a "
+                                    "LEFT JOIN categories c ON a.category_id = c.id "
+                                    "WHERE a.user_id = ? AND c.asset_type = 'investment' "
+                                    "ORDER BY a.name ASC;",
+                                    &stmt);
     if (rc != 0 || !stmt) {
         return -1;
     }
@@ -40,7 +40,7 @@ portfolio_repo_fetch_positions(mf_db_t*                   db,
         return -1;
     }
 
-    int n = res->row_count;
+    int n = mf_result_row_count(res);
     if (n <= 0) {
         mf_result_free(res);
         mf_stmt_close(stmt);
@@ -58,9 +58,11 @@ portfolio_repo_fetch_positions(mf_db_t*                   db,
     while (mf_result_next(res)) {
         list[idx].asset_id = mf_result_get_int64(res, "asset_id");
         snprintf(list[idx].name, sizeof(list[idx].name), "%s", mf_result_get_text(res, "name"));
-        snprintf(list[idx].symbol, sizeof(list[idx].symbol), "%s",
-                 mf_result_get_text(res, "symbol"));
-        snprintf(list[idx].currency, sizeof(list[idx].currency), "%s",
+        snprintf(
+            list[idx].symbol, sizeof(list[idx].symbol), "%s", mf_result_get_text(res, "symbol"));
+        snprintf(list[idx].currency,
+                 sizeof(list[idx].currency),
+                 "%s",
                  mf_result_get_text(res, "currency"));
         list[idx].quantity = mf_result_get_double(res, "quantity");
         list[idx].cost_basis = mf_result_get_double(res, "cost_basis");

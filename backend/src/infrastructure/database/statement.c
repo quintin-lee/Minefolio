@@ -144,6 +144,12 @@ mf_result_next(mf_result_t* res)
 }
 
 int
+mf_result_row_count(mf_result_t* res)
+{
+    return res ? res->row_count : 0;
+}
+
+int
 mf_result_column_count(mf_result_t* res)
 {
     return res ? res->col_count : 0;

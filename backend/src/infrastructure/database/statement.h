@@ -62,6 +62,7 @@ int mf_stmt_query(mf_stmt_t* stmt, mf_result_t** out_result);
 
 /* 结果集游标遍历接口 */
 bool        mf_result_next(mf_result_t* res);
+int         mf_result_row_count(mf_result_t* res);
 int         mf_result_column_count(mf_result_t* res);
 const char* mf_result_column_name(mf_result_t* res, int col_index);
 int64_t     mf_result_get_int64(mf_result_t* res, const char* col_name);
