@@ -121,14 +121,7 @@ import { Key } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { authApi } from '@/api/auth'
 import type { OAuthProvider } from '@/types'
-import { zhCN } from '@/locales/zh-CN'
-
-const t = (key: string) => {
-  const keys = key.split('.')
-  let obj: any = zhCN
-  for (const k of keys) obj = obj?.[k]
-  return obj || key
-}
+import { t } from '@/utils/locale'
 
 const router = useRouter()
 const auth = useAuthStore()

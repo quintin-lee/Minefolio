@@ -542,22 +542,9 @@ import { useCategoryStore } from '@/stores/category'
 import QRCode from 'qrcode'
 import { encryptText } from '@/utils/crypto'
 import { Icon } from '@iconify/vue'
-import { zhCN } from '@/locales/zh-CN'
+import { t } from '@/utils/locale'
 import { formatDate } from '@/utils/format'
 import type { FormInstance, FormRules } from 'element-plus'
-
-const t = (key: string): string => {
-  const keys = key.split('.')
-  let obj: unknown = zhCN
-  for (const k of keys) {
-    if (obj && typeof obj === 'object' && k in obj) {
-      obj = (obj as Record<string, unknown>)[k]
-    } else {
-      return key
-    }
-  }
-  return typeof obj === 'string' ? obj : key
-}
 
 const appVersion = __APP_VERSION__
 const auth = useAuthStore()

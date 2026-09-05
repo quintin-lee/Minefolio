@@ -133,17 +133,10 @@ import { Icon } from '@iconify/vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
-import { zhCN } from '@/locales/zh-CN'
+import { t } from '@/utils/locale'
 import LedgerSelector from '@/components/LedgerSelector.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 import QuickRecordDialog from '@/components/QuickRecordDialog.vue'
-
-const t = (key: string) => {
-  const keys = key.split('.')
-  let obj: any = zhCN
-  for (const k of keys) obj = obj?.[k]
-  return obj || key
-}
 
 const router = useRouter()
 const route = useRoute()
