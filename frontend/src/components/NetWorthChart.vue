@@ -58,8 +58,8 @@ function updateChart() {
       shadowBlur: 16,
       formatter: (p: any) => {
         const val = new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(p[0].value)
-        return `<div style="font-size:12px;color:#64748b;margin-bottom:4px">${p[0].name}</div>
-                <div style="font-weight:bold;color:#00d4ff">${p[0].seriesName}: ${val}</div>`
+        return `<div style="font-size:12px;color:var(--mf-text-muted);margin-bottom:4px">${p[0].name}</div>
+                <div style="font-weight:bold;color:var(--mf-primary)">${p[0].seriesName}: ${val}</div>`
       }
     },
     grid: { left: 60, right: 20, top: 20, bottom: 30, containLabel: true },
@@ -67,14 +67,14 @@ function updateChart() {
       type: 'category',
       data: props.data.map((d) => d.date.slice(5)),
       axisLine: { lineStyle: { color: 'var(--mf-primary-border)' } },
-      axisLabel: { color: '#64748b', margin: 12 },
+      axisLabel: { color: 'var(--mf-text-muted)', margin: 12 },
       axisTick: { show: false }
     },
     yAxis: {
       type: 'value',
       splitLine: { lineStyle: { type: 'dashed', color: 'var(--mf-primary-light)' } },
       axisLabel: {
-        color: '#64748b',
+        color: 'var(--mf-text-muted)',
         formatter: (v: number) => (v >= 10000 ? `${(v / 10000).toFixed(1)}w` : v.toString())
       }
     },

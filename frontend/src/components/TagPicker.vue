@@ -130,13 +130,13 @@ onMounted(() => loadSuggestions())
 }
 
 .premium-input :deep(.el-input-group__append) {
-  background-color: rgba(0, 212, 255, 0.06);
+  background-color: var(--mf-primary-light);
   border-left: 0;
 }
 
 .add-btn {
   font-weight: 500;
-  color: #00d4ff;
+  color: var(--mf-primary);
 }
 
 .tag-picker__suggestions {
@@ -145,9 +145,9 @@ onMounted(() => loadSuggestions())
   gap: 8px;
   margin-top: 4px;
   padding: 8px;
-  background: rgba(15, 23, 42, 0.6);
+  background: var(--mf-surface-muted);
   border-radius: 8px;
-  border: 1px dashed rgba(0, 212, 255, 0.2);
+  border: 1px dashed var(--mf-primary-border);
 }
 
 .suggestion-item {
@@ -155,19 +155,19 @@ onMounted(() => loadSuggestions())
   font-size: 12px;
   padding: 4px 10px;
   border-radius: 12px;
-  background: rgba(30, 41, 59, 0.8);
-  color: #94a3b8;
+  background: var(--mf-surface-hover);
+  color: var(--mf-text-muted);
   display: flex;
   align-items: center;
   gap: 6px;
   transition: all 0.2s;
-  border: 1px solid rgba(0, 212, 255, 0.12);
+  border: 1px solid var(--mf-primary-light);
 }
 
 .suggestion-item:hover {
-  background: rgba(0, 212, 255, 0.08);
-  border-color: rgba(0, 212, 255, 0.3);
-  color: #e2e8f0;
+  background: var(--mf-primary-light);
+  border-color: var(--mf-primary-border);
+  color: var(--mf-text-main);
 }
 
 .suggestion-dot {

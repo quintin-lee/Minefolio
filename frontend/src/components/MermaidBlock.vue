@@ -526,7 +526,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 4px;
   font-size: 11px;
-  color: #38bdf8;
+  color: var(--mf-text-muted);
 }
 
 .streaming-dot {
@@ -650,7 +650,7 @@ onUnmounted(() => {
 .svg-container :deep(.nodeLabel),
 .svg-container :deep(.label) {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
-  color: #e2e8f0;
+  color: var(--mf-text-main);
 }
 
 .chart-hover-hint {
@@ -692,7 +692,7 @@ onUnmounted(() => {
 .mermaid-code-view code {
   font-family: var(--mf-font-mono, monospace);
   font-size: 12px;
-  color: #38bdf8;
+  color: var(--mf-text-main);
   line-height: 1.6;
 }
 
@@ -875,7 +875,7 @@ onUnmounted(() => {
   overflow: hidden;
   cursor: grab;
   user-select: none;
-  background-color: #060b16;
+  background-color: var(--mf-background);
   background-image: radial-gradient(var(--mf-primary-light) 1.2px, transparent 1.2px);
   background-size: 20px 20px;
 }
@@ -908,7 +908,7 @@ onUnmounted(() => {
 .modal-svg-wrapper :deep(.nodeLabel),
 .modal-svg-wrapper :deep(.label) {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
-  color: #e2e8f0;
+  color: var(--mf-text-main);
 }
 
 /* Floating Controls Pill */

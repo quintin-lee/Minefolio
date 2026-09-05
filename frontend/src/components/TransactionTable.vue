@@ -42,12 +42,12 @@ function formatCurrency(v: number) {
 
 .premium-table {
   --el-table-border-color: transparent;
-  --el-table-header-bg-color: rgba(0, 212, 255, 0.06);
+  --el-table-header-bg-color: var(--mf-primary-light);
 }
 
 :deep(.premium-header th) {
-  background-color: rgba(0, 212, 255, 0.06) !important;
-  color: #94a3b8 !important;
+  background-color: var(--mf-primary-light) !important;
+  color: var(--mf-text-muted) !important;
   font-weight: 600;
   text-transform: uppercase;
   font-size: 12px;
@@ -67,7 +67,7 @@ function formatCurrency(v: number) {
 }
 
 :deep(.premium-row:hover > td) {
-  background-color: rgba(0, 212, 255, 0.04) !important;
+  background-color: var(--mf-primary-light) !important;
 }
 
 .type-badge {
