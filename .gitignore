@@ -11,6 +11,8 @@ frontend/node_modules.broken/
 frontend/dist/
 frontend/dist-mobile/
 
+*/.cache/
+
 # AI cache
 .codegraph/
 .iconify_cache/
