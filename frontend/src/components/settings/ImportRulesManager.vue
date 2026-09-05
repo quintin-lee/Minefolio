@@ -31,11 +31,15 @@
         </template>
       </el-table-column>
       <el-table-column prop="priority" label="优先级" width="70" align="center" />
-      <el-table-column prop="is_active" label="启用" width="60" align="center">
+      <el-table-column prop="is_active" label="启用" width="80" align="center">
         <template #default="{ row }">
-          <el-tag :type="row.is_active ? 'success' : 'info'" size="small" effect="dark">
-            {{ row.is_active ? '是' : '否' }}
-          </el-tag>
+          <el-switch
+            :model-value="!!row.is_active"
+            :active-value="true"
+            :inactive-value="false"
+            size="small"
+            @change="toggleRuleActive(row as ImportRule, $event as boolean)"
+          />
         </template>
       </el-table-column>
       <el-table-column label="操作" width="100" align="center">
@@ -158,6 +162,24 @@ function openRuleDialog(rule: ImportRule | null) {
     ruleForm.is_active = true
   }
   ruleDialogVisible.value = true
+}
+
+async function toggleRuleActive(row: ImportRule, val: boolean) {
+  const payload: ImportRuleCreatePayload = {
+    keyword: row.keyword,
+    match_field: row.match_field || 'all',
+    match_type: row.match_type || 'contains',
+    category_id: row.category_id || undefined,
+    target_type: row.target_type || 'expense',
+    priority: row.priority || 100,
+    is_active: val,
+  }
+  try {
+    await importRulesApi.update(row.id, payload)
+    row.is_active = val
+  } catch {
+    ElMessage.error('切换失败')
+  }
 }
 
 async function saveRule() {
