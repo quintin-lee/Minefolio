@@ -59,9 +59,9 @@ mf_portfolio_repo_get_holdings(void*               db_pool,
         const char* cur = csilk_json_get_string(row, "currency");
         items[i].currency = currency_from_str(cur ? cur : "CNY");
 
-        quantity_from_double(db_get_num(row, "quantity"), 4, &items[i].quantity);
-        price_from_double(db_get_num(row, "net_value"), 4, items[i].currency, &items[i].net_value);
-        money_from_double(db_get_num(row, "cost_basis"), items[i].currency, &items[i].cost_basis);
+        items[i].quantity = db_get_quantity(row, "quantity");
+        items[i].net_value = db_get_price(row, "net_value", items[i].currency);
+        items[i].cost_basis = db_get_money(row, "cost_basis", items[i].currency);
     }
 
     csilk_json_free(hold_rows);
@@ -127,10 +127,10 @@ mf_portfolio_repo_get_trade_events(void*                        db_pool,
         const char* cur_s = csilk_json_get_string(row, "currency");
         currency_t  cur = currency_from_str(cur_s ? cur_s : "CNY");
 
-        quantity_from_double(db_get_num(row, "quantity"), 4, &events[i].quantity);
-        money_from_double(db_get_num(row, "amount"), cur, &events[i].amount);
-        price_from_double(db_get_num(row, "price_per_unit"), 4, cur, &events[i].price);
-        money_from_double(db_get_num(row, "fee"), cur, &events[i].fee);
+        events[i].quantity = db_get_quantity(row, "quantity");
+        events[i].amount = db_get_money(row, "amount", cur);
+        events[i].price = db_get_price(row, "price_per_unit", cur);
+        events[i].fee = db_get_money(row, "fee", cur);
     }
 
     csilk_json_free(tx_rows);

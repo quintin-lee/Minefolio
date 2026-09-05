@@ -77,7 +77,7 @@ mf_tx_rule_build_fee_child(const mf_transaction_t* parent, mf_transaction_t* out
     out_fee->parent_tx_id = parent->id; /* 严格绑定父交易 ID */
     snprintf(out_fee->type, sizeof(out_fee->type), "fee");
 
-    quantity_from_double(1.0, 4, &out_fee->amount);
+    out_fee->amount = quantity_from_decimal(decimal_one());
     out_fee->price = price_from_decimal(parent->fee.amount, parent->fee.currency);
     out_fee->fee = money_zero(parent->fee.currency);
     snprintf(out_fee->fee_currency, sizeof(out_fee->fee_currency), "%s", parent->fee_currency);

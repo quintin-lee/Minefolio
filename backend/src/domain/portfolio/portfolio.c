@@ -43,11 +43,6 @@ mf_portfolio_aggregate(const mf_position_t*      positions,
     }
     out_portfolio->item_count = pos_count;
 
-    double tot_mv = 0.0;
-    double tot_cost = 0.0;
-    double tot_unrealized = 0.0;
-    double tot_realized = 0.0;
-
     for (size_t i = 0; i < pos_count; i++) {
         const mf_position_t* pos = &positions[i];
         mf_portfolio_item_t* item = &out_portfolio->items[i];
@@ -91,22 +86,44 @@ mf_portfolio_aggregate(const mf_position_t*      positions,
             return -1;
         }
 
-        tot_mv += money_to_double(item->converted_market_value);
-        tot_cost += money_to_double(item->converted_cost_basis);
-        tot_unrealized += money_to_double(item->converted_unrealized_pnl);
-        tot_realized += money_to_double(item->converted_realized_pnl);
+        money_add(out_portfolio->total_market_value,
+                  item->converted_market_value,
+                  &out_portfolio->total_market_value);
+        money_add(out_portfolio->total_cost_basis,
+                  item->converted_cost_basis,
+                  &out_portfolio->total_cost_basis);
+        money_add(out_portfolio->total_unrealized_pnl,
+                  item->converted_unrealized_pnl,
+                  &out_portfolio->total_unrealized_pnl);
+        money_add(out_portfolio->total_realized_pnl,
+                  item->converted_realized_pnl,
+                  &out_portfolio->total_realized_pnl);
     }
 
-    money_from_double(tot_mv, reporting_currency, &out_portfolio->total_market_value);
-    money_from_double(tot_cost, reporting_currency, &out_portfolio->total_cost_basis);
-    money_from_double(tot_unrealized, reporting_currency, &out_portfolio->total_unrealized_pnl);
-    money_from_double(tot_realized, reporting_currency, &out_portfolio->total_realized_pnl);
+    money_add(out_portfolio->total_realized_pnl,
+              out_portfolio->total_unrealized_pnl,
+              &out_portfolio->total_pnl);
 
-    double tot_pnl = tot_realized + tot_unrealized;
-    money_from_double(tot_pnl, reporting_currency, &out_portfolio->total_pnl);
+    percentage_t un_pct, ret_pct;
+    if (percentage_calc(out_portfolio->total_unrealized_pnl,
+                        out_portfolio->total_cost_basis,
+                        4,
+                        ROUND_HALF_UP,
+                        &un_pct) == DECIMAL_OK) {
+        out_portfolio->unrealized_pct = percentage_to_double(un_pct);
+    } else {
+        out_portfolio->unrealized_pct = 0.0;
+    }
 
-    out_portfolio->unrealized_pct = (tot_cost != 0.0) ? (tot_unrealized / tot_cost) * 100.0 : 0.0;
-    out_portfolio->total_return_pct = (tot_cost != 0.0) ? (tot_pnl / tot_cost) * 100.0 : 0.0;
+    if (percentage_calc(out_portfolio->total_pnl,
+                        out_portfolio->total_cost_basis,
+                        4,
+                        ROUND_HALF_UP,
+                        &ret_pct) == DECIMAL_OK) {
+        out_portfolio->total_return_pct = percentage_to_double(ret_pct);
+    } else {
+        out_portfolio->total_return_pct = 0.0;
+    }
 
     // Calculate weights & risk metrics (Concentration: max_holding_weight and Herfindahl index HHI)
     double  max_weight = 0.0;
@@ -115,8 +132,17 @@ mf_portfolio_aggregate(const mf_position_t*      positions,
 
     for (size_t i = 0; i < pos_count; i++) {
         mf_portfolio_item_t* item = &out_portfolio->items[i];
-        double               it_mv = money_to_double(item->converted_market_value);
-        item->weight = (tot_mv > 0.0) ? (it_mv / tot_mv) : 0.0;
+        decimal_t            weight_dec;
+        if (!money_is_zero(out_portfolio->total_market_value) &&
+            decimal_div(item->converted_market_value.amount,
+                        out_portfolio->total_market_value.amount,
+                        6,
+                        ROUND_HALF_UP,
+                        &weight_dec) == DECIMAL_OK) {
+            item->weight = decimal_to_double(weight_dec);
+        } else {
+            item->weight = 0.0;
+        }
 
         if (item->weight > max_weight) {
             max_weight = item->weight;

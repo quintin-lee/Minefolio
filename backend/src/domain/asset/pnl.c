@@ -1,4 +1,5 @@
 #include "domain/asset/pnl.h"
+#include "core/financial/percentage.h"
 #include <string.h>
 
 mf_pnl_t
@@ -24,12 +25,18 @@ mf_pnl_calculate(money_t cost_basis, money_t market_value, money_t realized_pnl)
         pnl.total_pnl = money_zero(cost_basis.currency);
     }
 
-    double cost_d = money_to_double(cost_basis);
-    double un_d = money_to_double(pnl.unrealized_pnl);
-    double tot_d = money_to_double(pnl.total_pnl);
+    percentage_t un_pct, tot_pct;
+    if (percentage_calc(pnl.unrealized_pnl, cost_basis, 4, ROUND_HALF_UP, &un_pct) == DECIMAL_OK) {
+        pnl.unrealized_pct = percentage_to_double(un_pct);
+    } else {
+        pnl.unrealized_pct = 0.0;
+    }
 
-    pnl.unrealized_pct = (cost_d != 0.0) ? (un_d / cost_d) * 100.0 : 0.0;
-    pnl.total_return_pct = (cost_d != 0.0) ? (tot_d / cost_d) * 100.0 : 0.0;
+    if (percentage_calc(pnl.total_pnl, cost_basis, 4, ROUND_HALF_UP, &tot_pct) == DECIMAL_OK) {
+        pnl.total_return_pct = percentage_to_double(tot_pct);
+    } else {
+        pnl.total_return_pct = 0.0;
+    }
 
     return pnl;
 }

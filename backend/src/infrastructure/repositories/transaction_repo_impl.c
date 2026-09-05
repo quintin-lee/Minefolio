@@ -2,6 +2,9 @@
 #include "repositories/transaction_repo.h"
 #include "common/db.h"
 #include "core/financial/currency.h"
+#include "core/financial/quantity.h"
+#include "core/financial/price.h"
+#include "core/financial/money.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -52,14 +55,14 @@ mf_tx_repo_find_by_id(void* db_pool, int64_t user_id, int64_t id, mf_transaction
     snprintf(out_tx->fee_currency, sizeof(out_tx->fee_currency), "%s", cur_code);
     currency_t cur = currency_from_str(cur_code);
 
-    double amount_val = db_get_num(row, "amount");
-    double price_val = db_get_num(row, "price_per_unit");
-    double qty_val = db_get_num(row, "quantity");
-    double fee_val = db_get_num(row, "fee");
-
-    quantity_from_double((qty_val > 0) ? qty_val : amount_val, 4, &out_tx->amount);
-    price_from_double(price_val, 4, cur, &out_tx->price);
-    money_from_double(fee_val, cur, &out_tx->fee);
+    quantity_t q = db_get_quantity(row, "quantity");
+    if (quantity_is_positive(q)) {
+        out_tx->amount = q;
+    } else {
+        out_tx->amount = db_get_quantity(row, "amount");
+    }
+    out_tx->price = db_get_price(row, "price_per_unit", cur);
+    out_tx->fee = db_get_money(row, "fee", cur);
 
     const char* note = csilk_json_get_string(row, "note");
     if (note) {
@@ -100,14 +103,10 @@ mf_tx_repo_save(void* db_pool, const mf_transaction_t* tx, int64_t* out_id)
     snprintf(linked_asset_id_str, sizeof(linked_asset_id_str), "%lld", (long long)tx->account_id);
     snprintf(parent_id_str, sizeof(parent_id_str), "%lld", (long long)tx->parent_tx_id);
 
-    double amount_val = quantity_to_double(tx->amount);
-    double price_val = price_to_double(tx->price);
-    double fee_val = money_to_double(tx->fee);
-
-    snprintf(amt_str, sizeof(amt_str), "%.8f", amount_val);
-    snprintf(price_str, sizeof(price_str), "%.8f", price_val);
-    snprintf(qty_str, sizeof(qty_str), "%.8f", amount_val);
-    snprintf(fee_str, sizeof(fee_str), "%.8f", fee_val);
+    quantity_to_string_fixed(tx->amount, 8, amt_str, sizeof(amt_str));
+    price_to_string_fixed(tx->price, 8, price_str, sizeof(price_str));
+    quantity_to_string_fixed(tx->amount, 8, qty_str, sizeof(qty_str));
+    money_to_string(tx->fee, fee_str, sizeof(fee_str));
 
     const char* currency = tx->fee_currency[0] ? tx->fee_currency : "CNY";
     const char* date = tx->tx_time[0] ? tx->tx_time : "2026-01-01";
@@ -164,14 +163,10 @@ mf_tx_repo_update(void* db_pool, const mf_transaction_t* tx)
     snprintf(asset_id_str, sizeof(asset_id_str), "%lld", (long long)tx->asset_id);
     snprintf(linked_asset_id_str, sizeof(linked_asset_id_str), "%lld", (long long)tx->account_id);
 
-    double amount_val = quantity_to_double(tx->amount);
-    double price_val = price_to_double(tx->price);
-    double fee_val = money_to_double(tx->fee);
-
-    snprintf(amt_str, sizeof(amt_str), "%.8f", amount_val);
-    snprintf(price_str, sizeof(price_str), "%.8f", price_val);
-    snprintf(qty_str, sizeof(qty_str), "%.8f", amount_val);
-    snprintf(fee_str, sizeof(fee_str), "%.8f", fee_val);
+    quantity_to_string_fixed(tx->amount, 8, amt_str, sizeof(amt_str));
+    price_to_string_fixed(tx->price, 8, price_str, sizeof(price_str));
+    quantity_to_string_fixed(tx->amount, 8, qty_str, sizeof(qty_str));
+    money_to_string(tx->fee, fee_str, sizeof(fee_str));
 
     const char* currency = tx->fee_currency[0] ? tx->fee_currency : "CNY";
     const char* date = tx->tx_time[0] ? tx->tx_time : "2026-01-01";
@@ -248,10 +243,9 @@ mf_tx_repo_find_fee_children(void*              db_pool,
         list[i].account_id = db_get_int(r, "linked_asset_id");
         snprintf(list[i].type, sizeof(list[i].type), "fee");
 
-        double amt = db_get_num(r, "amount");
-        quantity_from_double(amt, 4, &list[i].amount);
-        money_from_double(amt, cny, &list[i].fee);
-        price_from_double(amt, 4, cny, &list[i].price);
+        list[i].amount = db_get_quantity(r, "amount");
+        list[i].fee = db_get_money(r, "amount", cny);
+        list[i].price = db_get_price(r, "amount", cny);
 
         const char* note = csilk_json_get_string(r, "note");
         if (note) {

@@ -304,31 +304,47 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
                 ? "income"
                 : "expense";
 
-        double amt_d = money_to_double(tx->amount);
-        double price_d = price_to_double(tx->price);
-        double qty_d = quantity_to_double(tx->quantity);
+        char id_str[32];
+        snprintf(id_str, sizeof(id_str), "%lld", (long long)tx->id);
 
-        if (!tx_update(pool,
-                       tx->user_id,
-                       tx->id,
-                       tx_type_str,
-                       dir,
-                       ldir,
-                       amt_d,
-                       price_d,
-                       qty_d,
-                       cur_str,
-                       tx->tx_date,
-                       tx->note ? tx->note : "",
-                       tx->category_id,
-                       src_type,
-                       tx->linked_asset_id)) {
+        const char* upd_params[] = {tx_type_str,
+                                    dir,
+                                    ldir,
+                                    amt_buf,
+                                    price_buf,
+                                    qty_buf,
+                                    fee_buf,
+                                    cur_str,
+                                    tx->tx_date ? tx->tx_date : "datetime('now')",
+                                    tx->note ? tx->note : "",
+                                    cat_str,
+                                    src_type,
+                                    last_str,
+                                    id_str,
+                                    uid_str,
+                                    NULL};
+
+        csilk_json_t* upd_res = csilk_db_query_param_json(
+            pool,
+            "UPDATE transactions SET "
+            "transaction_type=?, direction=?, linked_direction=NULLIF(?, ''), "
+            "amount=?, price_per_unit=?, quantity=?, fee=?, currency=?, "
+            "transaction_date=?, note=?, category_id=?, source_type=?, "
+            "linked_asset_id=NULLIF(?, '0') "
+            "WHERE id=? AND user_id=? RETURNING id",
+            upd_params);
+
+        if (!upd_res || csilk_json_array_size(upd_res) == 0) {
+            if (upd_res) {
+                csilk_json_free(upd_res);
+            }
             if (orig_tx_id <= 0) {
                 tx->id = 0;
             }
             db_tx_scope_rollback(pool, &scope);
             return -1;
         }
+        csilk_json_free(upd_res);
     }
 
     // 2. Position & Balance Updates

@@ -62,11 +62,10 @@ mf_asset_repo_find_by_id(void* db_pool, int64_t user_id, int64_t id, mf_asset_t*
         snprintf(out_asset->quote_source, sizeof(out_asset->quote_source), "%s", qs);
     }
 
-    money_from_double(
-        db_get_num(row, "current_value"), out_asset->currency, &out_asset->current_value);
-    quantity_from_double(db_get_num(row, "quantity"), 4, &out_asset->quantity);
-    money_from_double(db_get_num(row, "cost_basis"), out_asset->currency, &out_asset->cost_basis);
-    price_from_double(db_get_num(row, "net_value"), 4, out_asset->currency, &out_asset->net_value);
+    out_asset->current_value = db_get_money(row, "current_value", out_asset->currency);
+    out_asset->quantity = db_get_quantity(row, "quantity");
+    out_asset->cost_basis = db_get_money(row, "cost_basis", out_asset->currency);
+    out_asset->net_value = db_get_price(row, "net_value", out_asset->currency);
 
     const char* cat = csilk_json_get_string(row, "created_at");
     if (cat) {

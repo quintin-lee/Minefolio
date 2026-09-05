@@ -72,7 +72,7 @@ mf_cashflow_repo_list(void*                    pool,
 
         const char* cur = csilk_json_get_string(row, "target_currency");
         currency_t  c = currency_from_str(cur ? cur : "CNY");
-        money_from_double(db_get_num(row, "expected_amount"), c, &arr[i].expected_amount);
+        arr[i].expected_amount = db_get_money(row, "expected_amount", c);
     }
 
     csilk_json_free(json);
@@ -142,7 +142,7 @@ mf_cashflow_repo_get(void* pool, int64_t user_id, int64_t id, mf_cashflow_schedu
 
     const char* cur = csilk_json_get_string(row, "target_currency");
     currency_t  c = currency_from_str(cur ? cur : "CNY");
-    money_from_double(db_get_num(row, "expected_amount"), c, &out_schedule->expected_amount);
+    out_schedule->expected_amount = db_get_money(row, "expected_amount", c);
 
     csilk_json_free(res);
     return 0;
@@ -262,7 +262,7 @@ mf_cashflow_repo_list_active(void*                    pool,
 
         const char* cur = csilk_json_get_string(row, "target_currency");
         currency_t  c = currency_from_str(cur ? cur : "CNY");
-        money_from_double(db_get_num(row, "expected_amount"), c, &arr[i].expected_amount);
+        arr[i].expected_amount = db_get_money(row, "expected_amount", c);
     }
 
     csilk_json_free(json);
@@ -318,7 +318,7 @@ mf_cashflow_repo_get_actual_events(void*                 pool,
         snprintf(evs[i].flow_type, sizeof(evs[i].flow_type), "actual");
         const char* cur = csilk_json_get_string(tx, "asset_currency");
         evs[i].currency = currency_from_str(cur ? cur : "CNY");
-        money_from_double(db_get_num(tx, "amount"), evs[i].currency, &evs[i].amount);
+        evs[i].amount = db_get_money(tx, "amount", evs[i].currency);
         evs[i].is_actual = true;
         snprintf(evs[i].status, sizeof(evs[i].status), "confirmed");
     }

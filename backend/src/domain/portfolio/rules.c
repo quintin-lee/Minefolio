@@ -1,13 +1,14 @@
 #include "domain/portfolio/rules.h"
+#include "core/financial/percentage.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 typedef struct {
-    int64_t asset_id;
-    double  cost_for_pnl;
-    double  qty;
-    double  realized;
+    int64_t    asset_id;
+    money_t    cost_for_pnl;
+    quantity_t qty;
+    money_t    realized;
 } pnl_acc_t;
 
 int
@@ -30,6 +31,9 @@ mf_portfolio_rule_apply_trade_events(mf_holding_item_t*                items,
 
     for (size_t i = 0; i < item_count; i++) {
         accs[i].asset_id = items[i].asset_id;
+        accs[i].cost_for_pnl = money_zero(items[i].currency);
+        accs[i].qty = quantity_zero();
+        accs[i].realized = money_zero(items[i].currency);
     }
 
     if (events && event_count > 0) {
@@ -54,21 +58,39 @@ mf_portfolio_rule_apply_trade_events(mf_holding_item_t*                items,
                 continue;
             }
 
-            double amt = money_to_double(ev->amount);
-            double qty = quantity_to_double(ev->quantity);
+            pnl_acc_t* acc = &accs[found_idx];
 
             if (strcmp(ev->type, "buy") == 0) {
-                accs[found_idx].cost_for_pnl += amt;
-                accs[found_idx].qty += qty;
+                money_add(acc->cost_for_pnl, ev->amount, &acc->cost_for_pnl);
+                quantity_add(acc->qty, ev->quantity, &acc->qty);
             } else if (strcmp(ev->type, "sell") == 0) {
-                double avg_cost = accs[found_idx].qty > 0.0
-                                      ? (accs[found_idx].cost_for_pnl / accs[found_idx].qty)
-                                      : 0.0;
-                accs[found_idx].realized += amt - qty * avg_cost;
-                accs[found_idx].qty -= qty;
+                if (quantity_is_positive(acc->qty)) {
+                    money_t sold_cost = money_zero(acc->cost_for_pnl.currency);
+                    if (quantity_cmp(ev->quantity, acc->qty) >= 0) {
+                        sold_cost = acc->cost_for_pnl;
+                    } else {
+                        decimal_t ratio;
+                        if (decimal_div(
+                                ev->quantity.units, acc->qty.units, 12, ROUND_HALF_UP, &ratio) ==
+                            DECIMAL_OK) {
+                            decimal_t sold_cost_units;
+                            if (decimal_mul(acc->cost_for_pnl.amount, ratio, &sold_cost_units) ==
+                                DECIMAL_OK) {
+                                decimal_round(sold_cost_units,
+                                              currency_precision(acc->cost_for_pnl.currency),
+                                              ROUND_HALF_UP,
+                                              &sold_cost.amount);
+                            }
+                        }
+                    }
+                    money_t trade_realized;
+                    money_sub(ev->amount, sold_cost, &trade_realized);
+                    money_add(acc->realized, trade_realized, &acc->realized);
+                    quantity_sub(acc->qty, ev->quantity, &acc->qty);
+                }
             } else if (strcmp(ev->type, "income") == 0) {
-                accs[found_idx].cost_for_pnl -= amt;
-                accs[found_idx].realized += amt;
+                money_sub(acc->cost_for_pnl, ev->amount, &acc->cost_for_pnl);
+                money_add(acc->realized, ev->amount, &acc->realized);
             }
         }
     }
@@ -83,10 +105,14 @@ mf_portfolio_rule_apply_trade_events(mf_holding_item_t*                items,
         }
 
         money_sub(it->market_value, it->cost_basis, &it->floating_pnl);
-        double cost_d = money_to_double(it->cost_basis);
-        double float_d = money_to_double(it->floating_pnl);
-        it->floating_pct = (cost_d != 0.0) ? (float_d / cost_d) * 100.0 : 0.0;
-        money_from_double(accs[i].realized, it->currency, &it->realized_pnl);
+        percentage_t pct;
+        if (percentage_calc(it->floating_pnl, it->cost_basis, 4, ROUND_HALF_UP, &pct) ==
+            DECIMAL_OK) {
+            it->floating_pct = percentage_to_double(pct);
+        } else {
+            it->floating_pct = 0.0;
+        }
+        it->realized_pnl = accs[i].realized;
     }
 
     free(accs);
@@ -114,19 +140,30 @@ mf_portfolio_rule_aggregate_summary(const mf_holding_item_t* items,
         return 0;
     }
 
-    double tot_market = 0.0, tot_cost = 0.0, tot_floating = 0.0, tot_realized = 0.0;
     for (size_t i = 0; i < item_count; i++) {
-        tot_market += money_to_double(items[i].market_value);
-        tot_cost += money_to_double(items[i].cost_basis);
-        tot_floating += money_to_double(items[i].floating_pnl);
-        tot_realized += money_to_double(items[i].realized_pnl);
+        money_add(out_summary->total_market_value,
+                  items[i].market_value,
+                  &out_summary->total_market_value);
+        money_add(
+            out_summary->total_cost_basis, items[i].cost_basis, &out_summary->total_cost_basis);
+        money_add(out_summary->total_floating_pnl,
+                  items[i].floating_pnl,
+                  &out_summary->total_floating_pnl);
+        money_add(out_summary->total_realized_pnl,
+                  items[i].realized_pnl,
+                  &out_summary->total_realized_pnl);
     }
 
-    money_from_double(tot_market, base_currency, &out_summary->total_market_value);
-    money_from_double(tot_cost, base_currency, &out_summary->total_cost_basis);
-    money_from_double(tot_floating, base_currency, &out_summary->total_floating_pnl);
-    money_from_double(tot_realized, base_currency, &out_summary->total_realized_pnl);
-    out_summary->floating_pct = (tot_cost != 0.0) ? (tot_floating / tot_cost) * 100.0 : 0.0;
+    percentage_t pct;
+    if (percentage_calc(out_summary->total_floating_pnl,
+                        out_summary->total_cost_basis,
+                        4,
+                        ROUND_HALF_UP,
+                        &pct) == DECIMAL_OK) {
+        out_summary->floating_pct = percentage_to_double(pct);
+    } else {
+        out_summary->floating_pct = 0.0;
+    }
 
     return 0;
 }

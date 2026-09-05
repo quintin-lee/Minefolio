@@ -76,46 +76,76 @@ mf_cost_basis_apply_sell(
         return -1;
     }
 
-    double cur_qty_d = quantity_to_double(cb->quantity);
-    double sell_qty_d = quantity_to_double(qty);
-    if (cur_qty_d <= 0.0) {
+    // Net sell proceeds = amount - fee
+    money_t proceeds;
+    if (money_sub(amount, fee, &proceeds) != DECIMAL_OK) {
         return -1;
     }
 
-    double ratio = sell_qty_d / cur_qty_d;
-    double cur_total_cost_d = money_to_double(cb->total_cost);
-    double cur_pnl_cost_d = money_to_double(cb->total_cost_pnl);
+    // Full sell check: qty == cb->quantity
+    if (quantity_cmp(qty, cb->quantity) == 0) {
+        money_t pnl_cost_deducted = cb->total_cost_pnl;
+        money_t trade_realized;
+        money_sub(proceeds, pnl_cost_deducted, &trade_realized);
 
-    double cost_deducted = cur_total_cost_d * ratio;
-    double pnl_cost_deducted = cur_pnl_cost_d * ratio;
+        if (accum_realized_pnl) {
+            money_add(*accum_realized_pnl, trade_realized, accum_realized_pnl);
+        }
 
-    // Net sell proceeds = amount - fee
-    double proceeds_d = money_to_double(amount) - money_to_double(fee);
-    double trade_realized_d = proceeds_d - pnl_cost_deducted;
-
-    // Update accumulated realized pnl
-    if (accum_realized_pnl) {
-        double old_realized = money_to_double(*accum_realized_pnl);
-        money_from_double(old_realized + trade_realized_d, cb->currency, accum_realized_pnl);
-    }
-
-    // Deduct quantity
-    quantity_t new_qty;
-    quantity_sub(cb->quantity, qty, &new_qty);
-    cb->quantity = new_qty;
-
-    if (quantity_is_zero(cb->quantity)) {
+        cb->quantity = quantity_zero();
         cb->total_cost = money_zero(cb->currency);
         cb->total_cost_pnl = money_zero(cb->currency);
         cb->average_cost = price_zero(cb->currency);
+        return 0;
+    }
+
+    // Partial sell:
+    // ratio = qty / cb->quantity
+    decimal_t ratio;
+    if (decimal_div(qty.units, cb->quantity.units, 12, ROUND_HALF_UP, &ratio) != DECIMAL_OK) {
+        return -1;
+    }
+
+    // cost_deducted = cb->total_cost * ratio
+    decimal_t red_dec;
+    if (decimal_mul(cb->total_cost.amount, ratio, &red_dec) != DECIMAL_OK) {
+        return -1;
+    }
+    uint8_t prec = currency_precision(cb->currency);
+    money_t cost_deducted;
+    cost_deducted.currency = cb->currency;
+    decimal_round(red_dec, (int32_t)prec, ROUND_HALF_UP, &cost_deducted.amount);
+
+    // pnl_cost_deducted = cb->total_cost_pnl * ratio
+    decimal_t pnl_red_dec;
+    if (decimal_mul(cb->total_cost_pnl.amount, ratio, &pnl_red_dec) != DECIMAL_OK) {
+        return -1;
+    }
+    money_t pnl_cost_deducted;
+    pnl_cost_deducted.currency = cb->currency;
+    decimal_round(pnl_red_dec, (int32_t)prec, ROUND_HALF_UP, &pnl_cost_deducted.amount);
+
+    // trade_realized = proceeds - pnl_cost_deducted
+    money_t trade_realized;
+    money_sub(proceeds, pnl_cost_deducted, &trade_realized);
+
+    if (accum_realized_pnl) {
+        money_add(*accum_realized_pnl, trade_realized, accum_realized_pnl);
+    }
+
+    // Deduct quantity
+    quantity_sub(cb->quantity, qty, &cb->quantity);
+
+    // Deduct costs
+    money_sub(cb->total_cost, cost_deducted, &cb->total_cost);
+    money_sub(cb->total_cost_pnl, pnl_cost_deducted, &cb->total_cost_pnl);
+
+    // Recompute average cost
+    price_t avg_p;
+    if (money_div_quantity(cb->total_cost, cb->quantity, 4, ROUND_HALF_UP, &avg_p) == DECIMAL_OK) {
+        cb->average_cost = avg_p;
     } else {
-        money_from_double(cur_total_cost_d - cost_deducted, cb->currency, &cb->total_cost);
-        money_from_double(cur_pnl_cost_d - pnl_cost_deducted, cb->currency, &cb->total_cost_pnl);
-        price_t avg_p;
-        if (money_div_quantity(cb->total_cost, cb->quantity, 4, ROUND_HALF_UP, &avg_p) ==
-            DECIMAL_OK) {
-            cb->average_cost = avg_p;
-        }
+        cb->average_cost = price_zero(cb->currency);
     }
 
     return 0;

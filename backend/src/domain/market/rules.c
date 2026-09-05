@@ -1,4 +1,5 @@
 #include "domain/market/rules.h"
+#include "core/financial/rate.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -15,15 +16,17 @@ mf_market_rule_calc_sync_delta(
         return 0;
     }
 
-    double old_p = price_to_double(old_price);
-    double new_p = price_to_double(new_price);
-    if (old_p <= 0.0 || new_p <= 0.0) {
+    if (!decimal_is_positive(old_price.unit_price) || !decimal_is_positive(new_price.unit_price)) {
         return 0;
     }
 
-    double q = quantity_to_double(qty);
-    double delta_val = (new_p - old_p) * q;
-    money_from_double(delta_val, cur, out_delta);
+    money_t old_val, new_val;
+    if (price_times_quantity(old_price, qty, &old_val) != DECIMAL_OK ||
+        price_times_quantity(new_price, qty, &new_val) != DECIMAL_OK) {
+        return -1;
+    }
+
+    money_sub(new_val, old_val, out_delta);
     return 0;
 }
 
@@ -36,10 +39,11 @@ mf_market_rule_convert_currency(money_t    src,
     if (!out_cny || rate_to_cny <= 0.0) {
         return -1;
     }
-    double src_val = money_to_double(src);
-    double converted = src_val * rate_to_cny;
-    money_from_double(converted, cny_currency, out_cny);
-    return 0;
+    rate_t r;
+    if (rate_from_double(rate_to_cny, 6, src.currency, cny_currency, &r) != DECIMAL_OK) {
+        return -1;
+    }
+    return (rate_convert_money(src, r, out_cny) == DECIMAL_OK) ? 0 : -1;
 }
 
 int
@@ -57,7 +61,7 @@ mf_market_rule_validate_quote(const mf_market_quote_t* q, char* err_buf, size_t 
         }
         return -1;
     }
-    if (price_to_double(q->current_price) <= 0.0) {
+    if (!decimal_is_positive(q->current_price.unit_price)) {
         if (err_buf && err_len) {
             snprintf(err_buf, err_len, "Current price must be positive");
         }

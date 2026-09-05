@@ -1,4 +1,5 @@
 #include "domain/asset/rules.h"
+#include "core/financial/percentage.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -80,10 +81,11 @@ mf_asset_rule_calculate_floating_pnl(const mf_asset_t* asset, money_t* out_pnl, 
 
     if (mf_asset_is_investment(asset)) {
         money_sub(asset->current_value, asset->cost_basis, &pnl);
-        double cost_d = money_to_double(asset->cost_basis);
-        double pnl_d = money_to_double(pnl);
-        if (cost_d > 0.0) {
-            pct = (pnl_d / cost_d) * 100.0;
+        if (money_is_positive(asset->cost_basis)) {
+            percentage_t p;
+            if (percentage_calc(pnl, asset->cost_basis, 4, ROUND_HALF_UP, &p) == DECIMAL_OK) {
+                pct = percentage_to_double(p);
+            }
         }
     }
 
