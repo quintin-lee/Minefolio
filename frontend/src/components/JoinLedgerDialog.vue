@@ -110,8 +110,8 @@ async function handleJoin() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 212, 255, 0.12);
-  border: 1px solid rgba(0, 212, 255, 0.3);
+  background: var(--mf-primary-light);
+  border: 1px solid var(--mf-primary-border);
   color: var(--mf-primary);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
   flex-shrink: 0;
@@ -140,8 +140,8 @@ async function handleJoin() {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: rgba(0, 212, 255, 0.05);
-  border: 1px solid rgba(0, 212, 255, 0.15);
+  background: var(--mf-primary-light);
+  border: 1px solid var(--mf-primary-border);
   border-radius: 8px;
   padding: 10px 14px;
   font-size: 12.5px;
@@ -157,7 +157,7 @@ async function handleJoin() {
   font-weight: 700;
   letter-spacing: 3px;
   text-transform: uppercase;
-  color: #00d4ff;
+  color: var(--mf-primary);
   text-align: center;
 }
 .ticket-icon {

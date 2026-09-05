@@ -187,9 +187,9 @@ function submit() {
 .workflow-config-card {
   margin: 10px 0;
   border-radius: var(--mf-radius-md, 8px);
-  background: rgba(15, 23, 42, 0.85);
-  border: 1px solid rgba(0, 212, 255, 0.25);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  background: var(--mf-surface-muted);
+  border: 1px solid var(--mf-primary-border);
+  box-shadow: var(--mf-shadow-sm);
   padding: 12px 16px;
   animation: fadeIn 0.2s ease-out;
 }
@@ -204,7 +204,7 @@ function submit() {
   align-items: center;
   justify-content: space-between;
   padding-bottom: 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--mf-border);
 }
 
 .header-left {
@@ -217,13 +217,13 @@ function submit() {
   width: 32px;
   height: 32px;
   border-radius: 8px;
-  background: rgba(0, 212, 255, 0.15);
-  color: var(--mf-primary, #00d4ff);
+  background: var(--mf-primary-light);
+  color: var(--mf-primary);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 18px;
-  border: 1px solid rgba(0, 212, 255, 0.3);
+  border: 1px solid var(--mf-primary-border);
 }
 
 .title-group .wf-title {

@@ -389,14 +389,14 @@ async function handleRemoveMember(member: LedgerMember) {
 
 /* 1. Invite Banner */
 .invite-banner {
-  background: linear-gradient(135deg, rgba(0, 212, 255, 0.06) 0%, rgba(124, 58, 237, 0.08) 100%);
-  border: 1px solid rgba(0, 212, 255, 0.2);
+  background: linear-gradient(135deg, var(--mf-primary-light) 0%, rgba(99, 102, 241, 0.08) 100%);
+  border: 1px solid var(--mf-primary-border);
   border-radius: var(--mf-radius-lg);
   padding: 16px 20px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--mf-shadow-sm);
 }
 .invite-left {
   display: flex;
@@ -407,8 +407,8 @@ async function handleRemoveMember(member: LedgerMember) {
   width: 40px;
   height: 40px;
   border-radius: 10px;
-  background: rgba(0, 212, 255, 0.12);
-  border: 1px solid rgba(0, 212, 255, 0.3);
+  background: var(--mf-primary-light);
+  border: 1px solid var(--mf-primary-border);
   color: var(--mf-primary);
   display: flex;
   align-items: center;
@@ -428,25 +428,25 @@ async function handleRemoveMember(member: LedgerMember) {
 .code-pill {
   display: flex;
   align-items: center;
-  background: rgba(0, 0, 0, 0.4);
-  border: 1px solid rgba(0, 212, 255, 0.4);
+  background: var(--mf-surface-muted);
+  border: 1px solid var(--mf-primary-border);
   border-radius: 10px;
   padding: 4px 6px 4px 14px;
   gap: 10px;
-  box-shadow: 0 0 12px rgba(0, 212, 255, 0.2);
+  box-shadow: var(--mf-shadow-sm);
 }
 .invite-code-text {
   font-family: monospace;
   font-size: 18px;
   font-weight: 700;
   letter-spacing: 3px;
-  color: #00d4ff;
-  text-shadow: 0 0 8px rgba(0, 212, 255, 0.5);
+  color: var(--mf-primary);
+  text-shadow: none;
 }
 .copy-btn {
-  background: rgba(0, 212, 255, 0.15);
-  border: 1px solid rgba(0, 212, 255, 0.3);
-  color: #00d4ff;
+  background: var(--mf-primary-light);
+  border: 1px solid var(--mf-primary-border);
+  color: var(--mf-primary);
   width: 32px;
   height: 32px;
   border-radius: 8px;
@@ -457,8 +457,9 @@ async function handleRemoveMember(member: LedgerMember) {
   transition: all 0.2s;
 }
 .copy-btn:hover {
-  background: rgba(0, 212, 255, 0.3);
-  box-shadow: 0 0 10px rgba(0, 212, 255, 0.4);
+  background: var(--mf-primary);
+  box-shadow: var(--mf-shadow-glow);
+  color: #ffffff;
 }
 .glow-button {
   box-shadow: 0 0 12px rgba(0, 212, 255, 0.25);

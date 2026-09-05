@@ -93,8 +93,7 @@ function update() {
         symbol: 'circle',
         symbolSize: 6,
         showSymbol: false,
-        itemStyle: { color: '#34d399', borderWidth: 2 },
-        lineStyle: { width: 2 }
+        itemStyle: { color: '#10b981', borderWidth: 2 },
       },
       {
         name: '总负债',
@@ -104,8 +103,7 @@ function update() {
         symbol: 'circle',
         symbolSize: 6,
         showSymbol: false,
-        itemStyle: { color: '#f87171', borderWidth: 2 },
-        lineStyle: { width: 2 }
+        itemStyle: { color: '#f43f5e', borderWidth: 2 },
       },
     ]
   })

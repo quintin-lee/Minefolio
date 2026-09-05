@@ -110,8 +110,8 @@ async function handleSubmit() {
         <div
           class="modal-header-icon"
           :style="{
-            backgroundColor: form.color ? form.color + '20' : 'rgba(0, 212, 255, 0.15)',
-            borderColor: form.color ? form.color + '60' : 'rgba(0, 212, 255, 0.3)',
+            backgroundColor: form.color ? form.color + '20' : 'var(--mf-primary-light)',
+            borderColor: form.color ? form.color + '60' : 'var(--mf-primary-border)',
             color: form.color || 'var(--mf-primary)'
           }"
         >

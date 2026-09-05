@@ -375,26 +375,24 @@ onUnmounted(() => {
 .workflow-card-wrapper {
   margin: 10px 0;
   border-radius: var(--mf-radius-md, 8px);
-  background: rgba(15, 23, 42, 0.75);
-  border: 1px solid rgba(0, 212, 255, 0.18);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  background: var(--mf-surface-muted);
+  border: 1px solid var(--mf-border);
+  box-shadow: var(--mf-shadow-sm);
   overflow: hidden;
   backdrop-filter: blur(8px);
   transition: border-color 0.2s ease;
 }
 
 .workflow-card-wrapper.status-running {
-  border-color: rgba(0, 212, 255, 0.4);
-  box-shadow: 0 0 16px rgba(0, 212, 255, 0.12);
+  border-color: var(--mf-primary-border);
+  box-shadow: var(--mf-shadow-glow);
 }
-
 .workflow-card-wrapper.status-error {
-  border-color: rgba(248, 113, 113, 0.4);
-  box-shadow: 0 0 16px rgba(248, 113, 113, 0.12);
+  border-color: var(--mf-danger-border);
+  box-shadow: 0 0 16px var(--mf-danger-light);
 }
-
 .workflow-card-wrapper.status-completed {
-  border-color: rgba(52, 211, 153, 0.3);
+  border-color: var(--mf-success-border);
 }
 
 .workflow-header {
@@ -402,14 +400,13 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px;
-  background: rgba(0, 212, 255, 0.05);
-  border-bottom: 1px solid rgba(0, 212, 255, 0.1);
+  background: var(--mf-surface-hover);
+  border-bottom: 1px solid var(--mf-border);
   cursor: pointer;
   user-select: none;
 }
-
 .workflow-header:hover {
-  background: rgba(0, 212, 255, 0.08);
+  background: var(--mf-primary-light);
 }
 
 .header-left {
@@ -425,10 +422,10 @@ onUnmounted(() => {
   width: 32px;
   height: 32px;
   border-radius: 8px;
-  background: linear-gradient(135deg, rgba(0, 212, 255, 0.2), rgba(99, 102, 241, 0.2));
-  color: var(--mf-primary, #00d4ff);
+  background: linear-gradient(135deg, var(--mf-primary-light), rgba(99, 102, 241, 0.12));
+  color: var(--mf-primary);
   font-size: 18px;
-  border: 1px solid rgba(0, 212, 255, 0.25);
+  border: 1px solid var(--mf-primary-border);
 }
 
 .wf-title-group {

@@ -151,8 +151,8 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: rgba(15, 23, 42, 0.7);
-  border: 1px solid rgba(0, 212, 255, 0.15);
+  background: var(--mf-surface-muted);
+  border: 1px solid var(--mf-border);
   border-radius: var(--mf-radius-md, 8px);
   padding: 4px 8px;
   height: 36px;
@@ -191,20 +191,20 @@ onMounted(async () => {
   align-items: center;
   gap: 5px;
   padding: 3px 10px;
-  background: rgba(2, 6, 23, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--mf-surface-hover);
+  border: 1px solid var(--mf-border);
   border-radius: 12px;
   font-size: 11.5px;
-  color: #cbd5e1;
+  color: var(--mf-text-muted);
   cursor: pointer;
   white-space: nowrap;
   transition: all 0.15s ease;
 }
 
 .wf-pill:hover:not(.is-disabled) {
-  background: rgba(0, 212, 255, 0.12);
-  border-color: rgba(0, 212, 255, 0.35);
-  color: #ffffff;
+  background: var(--mf-primary-light);
+  border-color: var(--mf-primary-border);
+  color: var(--mf-text-main);
   transform: translateY(-1px);
 }
 

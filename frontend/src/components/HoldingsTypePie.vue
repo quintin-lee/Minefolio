@@ -24,10 +24,10 @@ const TYPE_LABELS: Record<string, string> = {
   crypto: '加密货币',
 }
 const TYPE_COLORS: Record<string, string> = {
-  stock: '#00d4ff',
-  fund: '#34d399',
-  bond: '#fbbf24',
-  crypto: '#f87171',
+  stock: '#3b82f6',
+  fund: '#10b981',
+  bond: '#f59e0b',
+  crypto: '#f43f5e',
 }
 
 function updateChart() {

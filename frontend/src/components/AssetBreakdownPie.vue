@@ -11,7 +11,7 @@ const chartRef = ref<HTMLElement>()
 let chart: echarts.ECharts | null = null
 let resizeObserver: ResizeObserver | null = null
 
-const colors = ['#00d4ff', '#34d399', '#fbbf24', '#f87171', '#a78bfa', '#fb923c', '#38bdf8', '#94a3b8']
+const colors = ['#3b82f6', '#10b981', '#f59e0b', '#f43f5e', '#6366f1', '#fb923c', '#0ea5e9', '#94a3b8']
 
 function ensureChart() {
   if (chart || !chartRef.value) return

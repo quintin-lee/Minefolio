@@ -117,11 +117,11 @@ defineExpose({ handleKeyDown })
   left: 0;
   width: 380px;
   max-width: 90vw;
-  background: rgba(15, 23, 42, 0.95);
+  background: var(--mf-surface-elevated);
   backdrop-filter: blur(12px);
-  border: 1px solid rgba(0, 212, 255, 0.25);
+  border: 1px solid var(--mf-primary-border);
   border-radius: 8px;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 0 15px rgba(0, 212, 255, 0.1);
+  box-shadow: var(--mf-shadow-lg);
   overflow: hidden;
   z-index: 100;
   animation: slideUp 0.15s ease-out;
@@ -138,9 +138,9 @@ defineExpose({ handleKeyDown })
   gap: 6px;
   padding: 8px 12px;
   font-size: 11px;
-  color: var(--mf-primary, #00d4ff);
-  background: rgba(0, 212, 255, 0.08);
-  border-bottom: 1px solid rgba(0, 212, 255, 0.12);
+  color: var(--mf-primary);
+  background: var(--mf-primary-light);
+  border-bottom: 1px solid var(--mf-primary-border);
   font-weight: 500;
 }
 
@@ -154,26 +154,16 @@ defineExpose({ handleKeyDown })
   padding: 4px;
 }
 
-.menu-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.12s ease;
-}
-
 .menu-item:hover, .menu-item.active {
-  background: rgba(0, 212, 255, 0.15);
+  background: var(--mf-primary-light);
 }
 
 .item-icon {
   width: 26px;
   height: 26px;
   border-radius: 6px;
-  background: rgba(0, 212, 255, 0.12);
-  color: var(--mf-primary, #00d4ff);
+  background: var(--mf-primary-light);
+  color: var(--mf-primary);
   display: flex;
   align-items: center;
   justify-content: center;
