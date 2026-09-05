@@ -37,6 +37,7 @@ system_status(csilk_ctx_t* c)
 
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_bool(resp, "initialized", count > 0);
+    csilk_json_add_string(resp, "version", MINEFOLIO_VERSION);
     /* user_count intentionally omitted: leaking the number of registered
      * users assists brute-force and social-engineering attacks. */
     respond_ok(c, resp);

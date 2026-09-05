@@ -9,10 +9,9 @@ import http from '@/utils/http'
  * 系统初始化运行状态信息
  */
 export interface SystemStatus {
-  /** 系统是否已经完成首次安装初始化 */
   initialized: boolean
-  /** 系统当前注册的用户总数 */
   user_count: number
+  version: string
 }
 
 /**

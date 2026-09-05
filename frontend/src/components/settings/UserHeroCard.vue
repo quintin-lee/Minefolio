@@ -76,7 +76,7 @@
         </div>
         <div class="stat-content">
           <div class="stat-label">应用版本</div>
-          <div class="stat-val mono">{{ 'v' + appVersion }}</div>
+          <div class="stat-val mono">v{{ appVersion }}<span v-if="backendVersion"> / v{{ backendVersion }}</span></div>
         </div>
       </div>
     </div>
@@ -84,15 +84,27 @@
 </template>
 
 <script setup lang="ts">
+import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import { useAuthStore } from '@/stores/auth'
 import { useLedgerStore } from '@/stores/ledger'
+import { systemApi } from '@/api/system'
 import { formatDate } from '@/utils/format'
 
 const auth = useAuthStore()
 const ledgerStore = useLedgerStore()
 const appVersion = __APP_VERSION__
+const backendVersion = ref('')
+
+onMounted(async () => {
+  try {
+    const status = await systemApi.status()
+    backendVersion.value = status.version
+  } catch {
+    // backend status unavailable (e.g. offline)
+  }
+})
 
 async function copyUserId() {
   if (!auth.user?.id) return
