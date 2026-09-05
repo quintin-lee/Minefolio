@@ -5,6 +5,7 @@
 #include "repositories/asset_repo.h"
 #include "common/balance.h"
 #include "common/db.h"
+#include "core/ledger/ledger_engine.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -176,26 +177,32 @@ exec_confirm_proposed_transfer(const ai_tool_t*         tool,
         return strdup(err_buf);
     }
 
-    csilk_db_exec(ctx->pool, "BEGIN TRANSACTION");
+    db_tx_scope_t scope;
+    if (db_tx_scope_begin(ctx->pool, "ai_confirm_transfer", &scope) != 0) {
+        return strdup("{\"error\":\"failed to begin transaction\"}");
+    }
 
     int64_t transfer_id = transfer_insert(
         ctx->pool, ctx->user_id, from_id, to_id, amount, "CNY", date, note ? note : "");
     if (transfer_id <= 0) {
-        csilk_db_exec(ctx->pool, "ROLLBACK");
+        db_tx_scope_rollback(ctx->pool, &scope);
         return strdup("{\"error\":\"failed to insert transfer record\"}");
     }
 
-    int rc1 = balance_apply_delta(
-        ctx->pool, from_id, ctx->user_id, -amount, "transfer", transfer_id, "AI 转账出");
-    int rc2 = balance_apply_delta(
-        ctx->pool, to_id, ctx->user_id, amount, "transfer", transfer_id, "AI 转账入");
-
-    if (rc1 != 0 || rc2 != 0) {
-        csilk_db_exec(ctx->pool, "ROLLBACK");
+    money_t amt_m;
+    money_from_double(amount, CURRENCY_CNY, &amt_m);
+    if (ledger_apply_transfer(ctx->pool,
+                              ctx->user_id,
+                              from_id,
+                              to_id,
+                              amt_m,
+                              transfer_id,
+                              note && note[0] ? note : "AI 转账") != 0) {
+        db_tx_scope_rollback(ctx->pool, &scope);
         return strdup("{\"error\":\"failed to apply balance deltas for transfer\"}");
     }
 
-    csilk_db_exec(ctx->pool, "COMMIT");
+    db_tx_scope_commit(ctx->pool, &scope);
 
     csilk_json_t* res = csilk_json_object();
     csilk_json_add_bool(res, "success", true);

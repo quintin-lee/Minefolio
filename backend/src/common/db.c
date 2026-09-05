@@ -16,6 +16,11 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sqlite3.h>
+#include <stdatomic.h>
+#if __has_include(<libpq-fe.h>)
+#include <libpq-fe.h>
+#endif
 
 /**
  * @brief 内部静态变量：全局数据库连接池单例
@@ -147,4 +152,103 @@ int
 db_is_postgres(void)
 {
     return g_is_postgres;
+}
+
+static atomic_uint_fast64_t g_sp_seq = 0;
+
+int
+db_in_transaction(csilk_db_pool_t* pool)
+{
+    if (!pool) {
+        return 0;
+    }
+    void* raw_conn = csilk_db_pool_get_connection(pool);
+    if (!raw_conn) {
+        return 0;
+    }
+    void* native_conn = *(void**)raw_conn;
+    if (!native_conn) {
+        return 0;
+    }
+
+    if (g_is_postgres) {
+#if __has_include(<libpq-fe.h>)
+        PGconn*                 pg = (PGconn*)native_conn;
+        PGTransactionStatusType st = PQtransactionStatus(pg);
+        return (st == PQTRANS_INTRANS || st == PQTRANS_INERROR) ? 1 : 0;
+#else
+        return 0;
+#endif
+    } else {
+        sqlite3* db = (sqlite3*)native_conn;
+        return (sqlite3_get_autocommit(db) == 0) ? 1 : 0;
+    }
+}
+
+int
+db_tx_scope_begin(csilk_db_pool_t* pool, const char* name, db_tx_scope_t* scope)
+{
+    if (!pool || !scope || !name || !name[0]) {
+        return -1;
+    }
+    memset(scope, 0, sizeof(*scope));
+
+    int in_tx = db_in_transaction(pool);
+    if (in_tx) {
+        uint64_t seq = atomic_fetch_add(&g_sp_seq, 1);
+        snprintf(scope->name, sizeof(scope->name), "%s_%llu", name, (unsigned long long)seq);
+        scope->is_savepoint = true;
+
+        char sql[128];
+        snprintf(sql, sizeof(sql), "SAVEPOINT %s;", scope->name);
+        if (csilk_db_exec(pool, sql) != 0) {
+            return -1;
+        }
+    } else {
+        scope->is_savepoint = false;
+        snprintf(scope->name, sizeof(scope->name), "%s", name);
+        if (csilk_db_exec(pool, "BEGIN TRANSACTION;") != 0) {
+            return -1;
+        }
+    }
+    scope->active = true;
+    return 0;
+}
+
+int
+db_tx_scope_commit(csilk_db_pool_t* pool, db_tx_scope_t* scope)
+{
+    if (!pool || !scope || !scope->active) {
+        return -1;
+    }
+    int rc = 0;
+    if (scope->is_savepoint) {
+        char sql[128];
+        snprintf(sql, sizeof(sql), "RELEASE SAVEPOINT %s;", scope->name);
+        rc = csilk_db_exec(pool, sql);
+    } else {
+        rc = csilk_db_exec(pool, "COMMIT;");
+    }
+    scope->active = false;
+    return rc;
+}
+
+int
+db_tx_scope_rollback(csilk_db_pool_t* pool, db_tx_scope_t* scope)
+{
+    if (!pool || !scope || !scope->active) {
+        return -1;
+    }
+    int rc = 0;
+    if (scope->is_savepoint) {
+        char sql[128];
+        snprintf(sql, sizeof(sql), "ROLLBACK TO SAVEPOINT %s;", scope->name);
+        rc = csilk_db_exec(pool, sql);
+        snprintf(sql, sizeof(sql), "RELEASE SAVEPOINT %s;", scope->name);
+        csilk_db_exec(pool, sql);
+    } else {
+        rc = csilk_db_exec(pool, "ROLLBACK;");
+    }
+    scope->active = false;
+    return rc;
 }

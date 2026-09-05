@@ -365,7 +365,12 @@ cashflow_usecase_confirm_income(void*                         pool,
     snprintf(full_date, sizeof(full_date), "%s 10:00:00", cmd->date);
 
     csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
-    csilk_db_exec(db_pool, "BEGIN TRANSACTION");
+    db_tx_scope_t    scope;
+    if (db_tx_scope_begin(db_pool, "mf_cashflow_confirm", &scope) != 0) {
+        out_res->code = 1004;
+        snprintf(out_res->message, sizeof(out_res->message), "数据库错误");
+        return -1;
+    }
 
     int64_t tx_id = tx_insert(db_pool,
                               cmd->user_id,
@@ -384,7 +389,7 @@ cashflow_usecase_confirm_income(void*                         pool,
                               full_date,
                               tx_note);
     if (tx_id <= 0) {
-        csilk_db_exec(db_pool, "ROLLBACK");
+        db_tx_scope_rollback(db_pool, &scope);
         out_res->code = 1002;
         snprintf(out_res->message,
                  sizeof(out_res->message),
@@ -399,13 +404,13 @@ cashflow_usecase_confirm_income(void*                         pool,
                             "transaction",
                             tx_id,
                             tx_note) != 0) {
-        csilk_db_exec(db_pool, "ROLLBACK");
+        db_tx_scope_rollback(db_pool, &scope);
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "现金流余额更新失败");
         return -1;
     }
 
-    csilk_db_exec(db_pool, "COMMIT");
+    db_tx_scope_commit(db_pool, &scope);
 
     if (out_tx_id) {
         *out_tx_id = tx_id;

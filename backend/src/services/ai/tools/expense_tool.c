@@ -6,6 +6,7 @@
 #include "repositories/asset_repo.h"
 #include "common/balance.h"
 #include "common/db.h"
+#include "core/ledger/ledger_engine.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -275,7 +276,10 @@ exec_confirm_proposed_expense(const ai_tool_t*         tool,
         return strdup(err_buf);
     }
 
-    csilk_db_exec(ctx->pool, "BEGIN TRANSACTION");
+    db_tx_scope_t scope;
+    if (db_tx_scope_begin(ctx->pool, "ai_confirm_expense", &scope) != 0) {
+        return strdup("{\"error\":\"failed to begin transaction\"}");
+    }
 
     int64_t de_id = de_insert(ctx->pool,
                               ctx->user_id,
@@ -287,21 +291,23 @@ exec_confirm_proposed_expense(const ai_tool_t*         tool,
                               date,
                               note ? note : "");
     if (de_id <= 0) {
-        csilk_db_exec(ctx->pool, "ROLLBACK");
+        db_tx_scope_rollback(ctx->pool, &scope);
         return strdup("{\"error\":\"failed to insert daily expense\"}");
     }
 
     if (asset_id > 0) {
-        double delta = (strcmp(type, "income") == 0) ? amount : -amount;
-        int    rc = balance_apply_delta(
-            ctx->pool, asset_id, ctx->user_id, delta, "daily_expense", de_id, "AI 记账确认");
+        int     is_income = (strcmp(type, "income") == 0);
+        money_t amt_m;
+        money_from_double(amount, CURRENCY_CNY, &amt_m);
+        int rc = ledger_apply_expense(
+            ctx->pool, ctx->user_id, asset_id, amt_m, is_income, de_id, "AI 记账确认");
         if (rc != 0) {
-            csilk_db_exec(ctx->pool, "ROLLBACK");
+            db_tx_scope_rollback(ctx->pool, &scope);
             return strdup("{\"error\":\"failed to update linked asset balance\"}");
         }
     }
 
-    csilk_db_exec(ctx->pool, "COMMIT");
+    db_tx_scope_commit(ctx->pool, &scope);
 
     csilk_json_t* res = csilk_json_object();
     csilk_json_add_bool(res, "success", true);

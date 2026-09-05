@@ -16,6 +16,7 @@
 #include "core/financial/price.h"
 #include "core/financial/rate.h"
 #include "core/financial/percentage.h"
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
@@ -73,6 +74,57 @@ csilk_db_pool_t* db_get_pool(void);
  * @note 线程安全性：只读访问，线程安全。
  */
 int db_is_postgres(void);
+
+/* =========================================================================
+ * 事务作用域与保存点管理 (Transaction Scope & Savepoint Guard)
+ * ========================================================================= */
+
+typedef struct {
+    char name[64];
+    bool is_savepoint;
+    bool active;
+} db_tx_scope_t;
+
+/**
+ * @brief 检测当前底层连接是否处于活跃事务块中
+ * @param pool 数据库连接池指针
+ * @return 1 处于事务中，0 处于 autocommit 模式
+ */
+int db_in_transaction(csilk_db_pool_t* pool);
+
+/**
+ * @brief 开启事务或嵌套保存点作用域
+ * 若当前已在事务中，则创建名为 name 的 SAVEPOINT；
+ * 若当前不在事务中，则执行 BEGIN TRANSACTION。
+ *
+ * @param pool 数据库连接池
+ * @param name 保存点前缀名称（如 mf_ledger_apply_tx）
+ * @param scope 输出作用域控制块
+ * @return 0 成功，-1 失败
+ */
+int db_tx_scope_begin(csilk_db_pool_t* pool, const char* name, db_tx_scope_t* scope);
+
+/**
+ * @brief 提交事务或释放保存点
+ * 若为保存点，执行 RELEASE SAVEPOINT <name>；
+ * 若为顶层事务，执行 COMMIT。
+ *
+ * @param pool 数据库连接池
+ * @param scope 作用域控制块
+ * @return 0 成功，-1 失败
+ */
+int db_tx_scope_commit(csilk_db_pool_t* pool, db_tx_scope_t* scope);
+
+/**
+ * @brief 回滚事务或回滚保存点
+ * 若为保存点，执行 ROLLBACK TO SAVEPOINT <name> 并释放该保存点；
+ * 若为顶层事务，执行 ROLLBACK。
+ *
+ * @param pool 数据库连接池
+ * @param scope 作用域控制块
+ * @return 0 成功，-1 失败
+ */
+int db_tx_scope_rollback(csilk_db_pool_t* pool, db_tx_scope_t* scope);
 
 /**
  * @brief 从查询结果行的 JSON 对象中安全提取浮点数值

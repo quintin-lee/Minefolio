@@ -6,6 +6,7 @@
 #include "common/jwt.h"
 #include "common/tx_types.h"
 #include "common/balance.h"
+#include "core/ledger/ledger_engine.h"
 #include "csilk/csilk.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -313,108 +314,44 @@ transactions_import_csv(csilk_ctx_t* c)
             snprintf(linked_param, sizeof(linked_param), "%lld", (long long)linked_id);
         }
 
-        char asset_param[32];
-        snprintf(asset_param, sizeof(asset_param), "%lld", (long long)asset_id);
+        currency_t cur = currency_from_str(currency);
+        money_t    amt_m, fee_m;
+        price_t    price_p;
+        quantity_t qty_q;
+        money_from_double(amount, cur, &amt_m);
+        money_from_double(fee, cur, &fee_m);
+        price_from_double(price, 4, cur, &price_p);
+        quantity_from_double(qty, 4, &qty_q);
 
-        const char* ins_params[] = {uid_str,
-                                    asset_param,
-                                    linked_param,
-                                    category_param,
-                                    src_type,
-                                    tx_type_s,
-                                    ttype->stat_dir,
-                                    ttype->linked_dir,
-                                    amount_s,
-                                    price_param,
-                                    qty_param,
-                                    fee_param,
-                                    currency,
-                                    date_s,
-                                    note_s ? note_s : "",
-                                    NULL};
+        ledger_tx_t ltx = {
+            .id = 0,
+            .user_id = user_id,
+            .asset_id = asset_id,
+            .linked_asset_id = linked_id,
+            .category_id = category_id,
+            .type = ledger_tx_type_from_str(tx_type_s),
+            .type_str = tx_type_s,
+            .amount = amt_m,
+            .price = price_p,
+            .quantity = qty_q,
+            .fee = fee_m,
+            .tx_date = date_s,
+            .note = note_s,
+            .parent_tx_id = 0,
+        };
 
-        csilk_json_t* res = csilk_db_query_param_json(
-            pool,
-            "INSERT INTO transactions (user_id, asset_id, linked_asset_id, category_id, "
-            "source_type, transaction_type, direction, linked_direction, "
-            "amount, price_per_unit, quantity, fee, "
-            "currency, transaction_date, note) "
-            "VALUES (?, ?, NULLIF(?, '0'), NULLIF(?, '0'), ?, ?, ?, ?, ?, ?, ?, NULLIF(?, '0'), ?, "
-            "?, ?) RETURNING id",
-            ins_params);
-        int64_t tx_id = 0;
-        if (res && csilk_json_array_size(res) > 0) {
-            tx_id = db_get_int(csilk_json_array_get(res, 0), "id");
-        }
-        if (res) {
-            csilk_json_free(res);
-        }
-        if (tx_id <= 0) {
+        if (ledger_apply_tx(pool, &ltx) != 0) {
             errors++;
             if (snprintf(errors_detail + strlen(errors_detail),
                          sizeof(errors_detail) - strlen(errors_detail),
-                         "第%d行: 插入失败\n",
+                         "第%d行: 导入失败或持有份额不足\n",
                          line_num) > 0) {
             }
             line_start = line_end ? line_end + 1 : line_start + 1;
             continue;
         }
+
         imported++;
-
-        if (strcmp(tx_type_s, "fee") == 0 && linked_id > 0) {
-            double lfee = amount;
-            balance_apply_delta(
-                pool, linked_id, user_id, -lfee, "transaction_fee", tx_id, note_s ? note_s : "");
-            line_start = line_end ? line_end + 1 : line_start + 1;
-            continue;
-        }
-
-        int is_investment_tx = 0;
-        if (strcmp(tx_type_s, "buy") == 0 || strcmp(tx_type_s, "sell") == 0) {
-            double position_delta = 0;
-            int    prc =
-                apply_position(pool, asset_id, tx_type_s, amount, fee, price, qty, &position_delta);
-            if (prc < 0) {
-                errors++;
-                if (snprintf(errors_detail + strlen(errors_detail),
-                             sizeof(errors_detail) - strlen(errors_detail),
-                             "第%d行: 持有份额不足\n",
-                             line_num) > 0) {
-                }
-                line_start = line_end ? line_end + 1 : line_start + 1;
-                continue;
-            }
-            is_investment_tx = (position_delta != 0 || strcmp(tx_type_s, "buy") == 0);
-            if (is_investment_tx) {
-                balance_apply_delta(pool,
-                                    asset_id,
-                                    user_id,
-                                    position_delta,
-                                    "transaction",
-                                    tx_id,
-                                    note_s ? note_s : "");
-            }
-        }
-
-        double tdelta = is_investment_tx ? 0 : tx_delta(tx_type_s, amount, price, qty);
-        if (!is_investment_tx && tdelta != 0) {
-            balance_apply_delta(
-                pool, asset_id, user_id, tdelta, "transaction", tx_id, note_s ? note_s : "");
-        }
-
-        if (linked_id > 0) {
-            double ldelta = tx_effective_ldelta(tx_type_s, amount, is_investment_tx ? 0 : tdelta);
-            if (ldelta != 0) {
-                balance_apply_delta(pool,
-                                    linked_id,
-                                    user_id,
-                                    ldelta,
-                                    "transaction_linked",
-                                    tx_id,
-                                    note_s ? note_s : "");
-            }
-        }
-
         line_start = line_end ? line_end + 1 : line_start + 1;
     }
     free(data);
@@ -594,6 +531,17 @@ daily_expenses_import_csv(csilk_ctx_t* c)
                                     note_s ? note_s : "",
                                     NULL};
 
+        db_tx_scope_t scope;
+        if (db_tx_scope_begin(pool, "import_expense", &scope) != 0) {
+            errors++;
+            snprintf(errors_detail + strlen(errors_detail),
+                     sizeof(errors_detail) - strlen(errors_detail),
+                     "第%d行: 开启事务失败\n",
+                     line_num);
+            line_start = line_end ? line_end + 1 : line_start + 1;
+            continue;
+        }
+
         csilk_json_t* res =
             csilk_db_query_param_json(pool,
                                       "INSERT INTO daily_expenses (user_id, category_id, asset_id, "
@@ -608,6 +556,7 @@ daily_expenses_import_csv(csilk_ctx_t* c)
             csilk_json_free(res);
         }
         if (expense_id <= 0) {
+            db_tx_scope_rollback(pool, &scope);
             errors++;
             snprintf(errors_detail + strlen(errors_detail),
                      sizeof(errors_detail) - strlen(errors_detail),
@@ -616,17 +565,27 @@ daily_expenses_import_csv(csilk_ctx_t* c)
             line_start = line_end ? line_end + 1 : line_start + 1;
             continue;
         }
-        imported++;
 
-        double amount = strtod(amount_s, NULL);
-        double business_delta = strcmp(exp_type, "income") == 0 ? amount : -amount;
-        balance_apply_delta(pool,
-                            asset_id,
-                            user_id,
-                            business_delta,
-                            "daily_expense",
-                            expense_id,
-                            note_s ? note_s : "");
+        double     amount = strtod(amount_s, NULL);
+        int        is_income = (strcmp(exp_type, "income") == 0);
+        currency_t cur = currency_from_str(currency);
+        money_t    amt_m;
+        money_from_double(amount, cur, &amt_m);
+
+        if (ledger_apply_expense(
+                pool, user_id, asset_id, amt_m, is_income, expense_id, note_s ? note_s : "") != 0) {
+            db_tx_scope_rollback(pool, &scope);
+            errors++;
+            snprintf(errors_detail + strlen(errors_detail),
+                     sizeof(errors_detail) - strlen(errors_detail),
+                     "第%d行: 账本余额更新失败\n",
+                     line_num);
+            line_start = line_end ? line_end + 1 : line_start + 1;
+            continue;
+        }
+
+        db_tx_scope_commit(pool, &scope);
+        imported++;
 
         line_start = line_end ? line_end + 1 : line_start + 1;
     }

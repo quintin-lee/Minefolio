@@ -237,6 +237,146 @@ main(void)
     csilk_json_free(ast);
     printf("    ✓ Transaction reversal & state restoration verified.\n");
 
+    printf("  6. Testing Standalone ledger_apply_tx (Autocommit mode, no caller BEGIN)...\n");
+    money_t dep_amt;
+    money_from_double(5000.0, CURRENCY_CNY, &dep_amt);
+    ledger_tx_t dep_tx = {
+        .id = 0,
+        .user_id = user_id,
+        .asset_id = 101,
+        .linked_asset_id = 0,
+        .category_id = 10,
+        .type = LEDGER_TX_DEPOSIT,
+        .type_str = "deposit",
+        .amount = dep_amt,
+        .price = price_zero(CURRENCY_CNY),
+        .quantity = quantity_zero(),
+        .fee = money_zero(CURRENCY_CNY),
+        .tx_date = "2026-09-04 10:00:00",
+        .note = "Standalone Deposit",
+        .parent_tx_id = 0
+    };
+    rc = ledger_apply_tx(pool, &dep_tx);
+    assert(rc == 0);
+    assert(dep_tx.id > 0);
+    // Wallet was 82992.0, now 87992.0
+    ast = csilk_db_query_param_json(pool, "SELECT current_value FROM assets WHERE id=?", (const char*[]){"101", NULL});
+    row = csilk_json_array_get(ast, 0);
+    assert(db_get_num(row, "current_value") == 87992.0);
+    csilk_json_free(ast);
+    printf("    ✓ Standalone autocommit apply_tx verified.\n");
+
+    printf("  7. Testing Failure Atomicity & Auto-Rollback (Sell quantity exceeds holdings)...\n");
+    money_t fail_amt, fail_fee;
+    price_t fail_price;
+    quantity_t fail_qty;
+    money_from_double(500000.0, CURRENCY_CNY, &fail_amt);
+    money_from_double(50.0, CURRENCY_CNY, &fail_fee);
+    price_from_double(10.0, 2, CURRENCY_CNY, &fail_price);
+    quantity_from_double(50000.0, 0, &fail_qty);
+
+    ledger_tx_t fail_tx = {
+        .id = 0,
+        .user_id = user_id,
+        .asset_id = 201,
+        .linked_asset_id = 101,
+        .category_id = 20,
+        .type = LEDGER_TX_SELL,
+        .type_str = "sell",
+        .amount = fail_amt,
+        .price = fail_price,
+        .quantity = fail_qty,
+        .fee = fail_fee,
+        .tx_date = "2026-09-04 11:00:00",
+        .note = "Oversell Fail",
+        .parent_tx_id = 0
+    };
+    rc = ledger_apply_tx(pool, &fail_tx);
+    assert(rc < 0);
+    assert(fail_tx.id == 0);
+
+    // Verify NO transaction record was committed
+    csilk_json_t* tx_chk = csilk_db_query_param_json(pool, "SELECT id FROM transactions WHERE note='Oversell Fail'", NULL);
+    assert(tx_chk == NULL || csilk_json_array_size(tx_chk) == 0);
+    if (tx_chk) {
+        csilk_json_free(tx_chk);
+    }
+
+    // Verify Tech ETF position completely unchanged (1500 shares, 17008.0 cost)
+    ast = csilk_db_query_param_json(pool, "SELECT quantity, cost_basis FROM assets WHERE id=?", (const char*[]){"201", NULL});
+    row = csilk_json_array_get(ast, 0);
+    assert(db_get_num(row, "quantity") == 1500.0);
+    assert(db_get_num(row, "cost_basis") == 17008.0);
+    csilk_json_free(ast);
+
+    // Verify Wallet balance completely unchanged (87992.0)
+    ast = csilk_db_query_param_json(pool, "SELECT current_value FROM assets WHERE id=?", (const char*[]){"101", NULL});
+    row = csilk_json_array_get(ast, 0);
+    assert(db_get_num(row, "current_value") == 87992.0);
+    csilk_json_free(ast);
+    printf("    ✓ Failure atomicity & clean rollback verified.\n");
+
+    printf("  8. Testing Nested Savepoint Failure within Active Outer Transaction...\n");
+    csilk_db_exec(pool, "BEGIN TRANSACTION");
+    // Outer operation: apply expense of 500 CNY
+    money_t exp_amt;
+    money_from_double(500.0, CURRENCY_CNY, &exp_amt);
+    rc = ledger_apply_expense(pool, user_id, 101, exp_amt, 0, 9991, "Dinner");
+    assert(rc == 0);
+
+    // Inner operation: attempt failing oversell
+    rc = ledger_apply_tx(pool, &fail_tx);
+    assert(rc < 0);
+
+    // Outer transaction commits: the expense should persist, failed oversell rolled back!
+    csilk_db_exec(pool, "COMMIT");
+
+    // Wallet: 87992 - 500 = 87492.0
+    ast = csilk_db_query_param_json(pool, "SELECT current_value FROM assets WHERE id=?", (const char*[]){"101", NULL});
+    row = csilk_json_array_get(ast, 0);
+    assert(db_get_num(row, "current_value") == 87492.0);
+    csilk_json_free(ast);
+    printf("    ✓ Nested savepoint failure isolation verified.\n");
+
+    printf("  9. Testing Transfer Atomicity & Invalid Target Rollback...\n");
+    csilk_db_exec(pool, "INSERT INTO assets (id, user_id, category_id, name, currency, current_value, quantity, cost_basis, net_value) "
+                        "VALUES (102, 1, 10, 'Bank', 'CNY', 0, 0, 0, 0)");
+    money_t xfer_amt;
+    money_from_double(2000.0, CURRENCY_CNY, &xfer_amt);
+    rc = ledger_apply_transfer(pool, user_id, 101, 102, xfer_amt, 8881, "Transfer to Bank");
+    assert(rc == 0);
+
+    // Wallet: 87492 - 2000 = 85492.0, Bank: 2000.0
+    ast = csilk_db_query_param_json(pool, "SELECT current_value FROM assets WHERE id=?", (const char*[]){"101", NULL});
+    assert(db_get_num(csilk_json_array_get(ast, 0), "current_value") == 85492.0);
+    csilk_json_free(ast);
+
+    ast = csilk_db_query_param_json(pool, "SELECT current_value FROM assets WHERE id=?", (const char*[]){"102", NULL});
+    assert(db_get_num(csilk_json_array_get(ast, 0), "current_value") == 2000.0);
+    csilk_json_free(ast);
+
+    // Failing transfer to non-existent asset
+    rc = ledger_apply_transfer(pool, user_id, 101, 999999, xfer_amt, 8882, "Invalid Transfer");
+    assert(rc < 0);
+
+    // Verify Wallet balance is STILL 85492.0 (no deduction leaked)
+    ast = csilk_db_query_param_json(pool, "SELECT current_value FROM assets WHERE id=?", (const char*[]){"101", NULL});
+    assert(db_get_num(csilk_json_array_get(ast, 0), "current_value") == 85492.0);
+    csilk_json_free(ast);
+
+    // Reverse valid transfer
+    rc = ledger_reverse_transfer(pool, user_id, 101, 102, xfer_amt, 8881, "Reverse Transfer");
+    assert(rc == 0);
+
+    // Wallet restored to 87492.0, Bank restored to 0.0
+    ast = csilk_db_query_param_json(pool, "SELECT current_value FROM assets WHERE id=?", (const char*[]){"101", NULL});
+    assert(db_get_num(csilk_json_array_get(ast, 0), "current_value") == 87492.0);
+    csilk_json_free(ast);
+    ast = csilk_db_query_param_json(pool, "SELECT current_value FROM assets WHERE id=?", (const char*[]){"102", NULL});
+    assert(db_get_num(csilk_json_array_get(ast, 0), "current_value") == 0.0);
+    csilk_json_free(ast);
+    printf("    ✓ Transfer atomicity, failure rollback & reversal verified.\n");
+
     unlink(db_file);
     printf("🎉 ALL LEDGER ENGINE INTEGRATION TESTS PASSED SUCCESSFULLY!\n");
     return 0;

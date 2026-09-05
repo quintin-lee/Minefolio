@@ -211,6 +211,12 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
         return -1;
     }
 
+    db_tx_scope_t scope;
+    if (db_tx_scope_begin(pool, "mf_ledger_apply_tx", &scope) != 0) {
+        return -1;
+    }
+    int64_t orig_tx_id = tx->id;
+
     char uid_str[32], ast_str[32], last_str[32], cat_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)tx->user_id);
     snprintf(ast_str, sizeof(ast_str), "%lld", (long long)tx->asset_id);
@@ -279,6 +285,10 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
             if (ins_res) {
                 csilk_json_free(ins_res);
             }
+            if (orig_tx_id <= 0) {
+                tx->id = 0;
+            }
+            db_tx_scope_rollback(pool, &scope);
             return -1;
         }
         tx->id = db_get_int(csilk_json_array_get(ins_res, 0), "id");
@@ -313,6 +323,10 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
                        tx->category_id,
                        src_type,
                        tx->linked_asset_id)) {
+            if (orig_tx_id <= 0) {
+                tx->id = 0;
+            }
+            db_tx_scope_rollback(pool, &scope);
             return -1;
         }
     }
@@ -331,6 +345,10 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
                                        tx->quantity,
                                        &pos_delta);
         if (pos_rc < 0) {
+            if (orig_tx_id <= 0) {
+                tx->id = 0;
+            }
+            db_tx_scope_rollback(pool, &scope);
             return -1; // Position calculation / insufficient units error
         }
     }
@@ -376,6 +394,10 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
                                   "transaction_fee",
                                   tx->id,
                                   fee_note) != 0) {
+            if (orig_tx_id <= 0) {
+                tx->id = 0;
+            }
+            db_tx_scope_rollback(pool, &scope);
             return -1;
         }
     }
@@ -386,15 +408,25 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
             if (balance_apply_delta_m(
                     pool, tx->asset_id, tx->user_id, pos_delta, "transaction", tx->id, tx->note) !=
                 0) {
+                if (orig_tx_id <= 0) {
+                    tx->id = 0;
+                }
+                db_tx_scope_rollback(pool, &scope);
                 return -1;
             }
         }
+    } else if (tx->type == LEDGER_TX_FEE && tx->linked_asset_id > 0) {
+        // Standalone fee with linked account: debited from linked funding asset only
     } else {
         money_t tdelta = tx_delta_m(tx_type_str, tx->amount, tx->price, tx->quantity);
         if (!money_is_zero(tdelta)) {
             if (balance_apply_delta_m(
                     pool, tx->asset_id, tx->user_id, tdelta, "transaction", tx->id, tx->note) !=
                 0) {
+                if (orig_tx_id <= 0) {
+                    tx->id = 0;
+                }
+                db_tx_scope_rollback(pool, &scope);
                 return -1;
             }
         }
@@ -420,11 +452,16 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
                                       "transaction_linked",
                                       tx->id,
                                       tx->note) != 0) {
+                if (orig_tx_id <= 0) {
+                    tx->id = 0;
+                }
+                db_tx_scope_rollback(pool, &scope);
                 return -1;
             }
         }
     }
 
+    db_tx_scope_commit(pool, &scope);
     return 0;
 }
 
@@ -435,11 +472,17 @@ ledger_reverse_tx(csilk_db_pool_t* pool, int64_t user_id, int64_t tx_id)
         return -1;
     }
 
+    db_tx_scope_t scope;
+    if (db_tx_scope_begin(pool, "mf_ledger_reverse_tx", &scope) != 0) {
+        return -1;
+    }
+
     csilk_json_t* old_arr = tx_get_old(pool, user_id, tx_id);
     if (!old_arr || csilk_json_array_size(old_arr) == 0) {
         if (old_arr) {
             csilk_json_free(old_arr);
         }
+        db_tx_scope_rollback(pool, &scope);
         return -1;
     }
     csilk_json_t* old_tx = csilk_json_array_get(old_arr, 0);
@@ -465,17 +508,26 @@ ledger_reverse_tx(csilk_db_pool_t* pool, int64_t user_id, int64_t tx_id)
             money_t       f_amt = db_get_money(frow, "amount", cur);
             if (f_last > 0 && !money_is_zero(f_amt)) {
                 // Reverse fee (fee originally debited -fee, so credit +fee)
-                balance_apply_delta_m(pool,
-                                      f_last,
-                                      user_id,
-                                      f_amt,
-                                      "transaction_fee_reversal",
-                                      tx_id,
-                                      "fee rollback");
+                if (balance_apply_delta_m(pool,
+                                          f_last,
+                                          user_id,
+                                          f_amt,
+                                          "transaction_fee_reversal",
+                                          tx_id,
+                                          "fee rollback") != 0) {
+                    csilk_json_free(fee_children);
+                    csilk_json_free(old_arr);
+                    db_tx_scope_rollback(pool, &scope);
+                    return -1;
+                }
             }
         }
         csilk_json_free(fee_children);
-        tx_delete_fee_children(pool, user_id, tx_id);
+        if (tx_delete_fee_children(pool, user_id, tx_id) < 0) {
+            csilk_json_free(old_arr);
+            db_tx_scope_rollback(pool, &scope);
+            return -1;
+        }
     }
 
     // 2. Position / Asset balance rollback
@@ -484,21 +536,41 @@ ledger_reverse_tx(csilk_db_pool_t* pool, int64_t user_id, int64_t tx_id)
         money_t rollback_pos_delta = money_zero(cur);
         int     rb_rc = rollback_position_fc(
             pool, asset_id, type, amount, fee, price, qty, &rollback_pos_delta);
-        if (rb_rc == 0 && !money_is_zero(rollback_pos_delta)) {
-            balance_apply_delta_m(pool,
-                                  asset_id,
-                                  user_id,
-                                  rollback_pos_delta,
-                                  "transaction_reversal",
-                                  tx_id,
-                                  "position rollback");
+        if (rb_rc != 0) {
+            csilk_json_free(old_arr);
+            db_tx_scope_rollback(pool, &scope);
+            return -1;
         }
+        if (!money_is_zero(rollback_pos_delta)) {
+            if (balance_apply_delta_m(pool,
+                                      asset_id,
+                                      user_id,
+                                      rollback_pos_delta,
+                                      "transaction_reversal",
+                                      tx_id,
+                                      "position rollback") != 0) {
+                csilk_json_free(old_arr);
+                db_tx_scope_rollback(pool, &scope);
+                return -1;
+            }
+        }
+    } else if (type && strcmp(type, "fee") == 0 && linked_asset_id > 0) {
+        // Standalone fee was debited from linked funding asset only
     } else {
         money_t tdelta = tx_delta_m(type, amount, price, qty);
         if (!money_is_zero(tdelta)) {
             money_t rev_tdelta = money_neg(tdelta);
-            balance_apply_delta_m(
-                pool, asset_id, user_id, rev_tdelta, "transaction_reversal", tx_id, "rollback");
+            if (balance_apply_delta_m(pool,
+                                      asset_id,
+                                      user_id,
+                                      rev_tdelta,
+                                      "transaction_reversal",
+                                      tx_id,
+                                      "rollback") != 0) {
+                csilk_json_free(old_arr);
+                db_tx_scope_rollback(pool, &scope);
+                return -1;
+            }
         }
     }
 
@@ -517,17 +589,22 @@ ledger_reverse_tx(csilk_db_pool_t* pool, int64_t user_id, int64_t tx_id)
             ldelta = money_neg(orig_ldelta);
         }
         if (!money_is_zero(ldelta)) {
-            balance_apply_delta_m(pool,
-                                  linked_asset_id,
-                                  user_id,
-                                  ldelta,
-                                  "transaction_linked_reversal",
-                                  tx_id,
-                                  "rollback");
+            if (balance_apply_delta_m(pool,
+                                      linked_asset_id,
+                                      user_id,
+                                      ldelta,
+                                      "transaction_linked_reversal",
+                                      tx_id,
+                                      "rollback") != 0) {
+                csilk_json_free(old_arr);
+                db_tx_scope_rollback(pool, &scope);
+                return -1;
+            }
         }
     }
 
     csilk_json_free(old_arr);
+    db_tx_scope_commit(pool, &scope);
     return 0;
 }
 
@@ -540,8 +617,21 @@ ledger_apply_expense(csilk_db_pool_t* pool,
                      int64_t          expense_id,
                      const char*      note)
 {
+    if (!pool || user_id <= 0 || asset_id <= 0) {
+        return -1;
+    }
+    db_tx_scope_t scope;
+    if (db_tx_scope_begin(pool, "mf_ledger_apply_exp", &scope) != 0) {
+        return -1;
+    }
     money_t delta = is_income ? amount : money_neg(amount);
-    return balance_apply_delta_m(pool, asset_id, user_id, delta, "daily_expense", expense_id, note);
+    if (balance_apply_delta_m(pool, asset_id, user_id, delta, "daily_expense", expense_id, note) !=
+        0) {
+        db_tx_scope_rollback(pool, &scope);
+        return -1;
+    }
+    db_tx_scope_commit(pool, &scope);
+    return 0;
 }
 
 int
@@ -553,9 +643,21 @@ ledger_reverse_expense(csilk_db_pool_t* pool,
                        int64_t          expense_id,
                        const char*      note)
 {
+    if (!pool || user_id <= 0 || asset_id <= 0) {
+        return -1;
+    }
+    db_tx_scope_t scope;
+    if (db_tx_scope_begin(pool, "mf_ledger_reverse_exp", &scope) != 0) {
+        return -1;
+    }
     money_t delta = is_income ? money_neg(amount) : amount;
-    return balance_apply_delta_m(
-        pool, asset_id, user_id, delta, "daily_expense_reversal", expense_id, note);
+    if (balance_apply_delta_m(
+            pool, asset_id, user_id, delta, "daily_expense_reversal", expense_id, note) != 0) {
+        db_tx_scope_rollback(pool, &scope);
+        return -1;
+    }
+    db_tx_scope_commit(pool, &scope);
+    return 0;
 }
 
 int
@@ -567,15 +669,25 @@ ledger_apply_transfer(csilk_db_pool_t* pool,
                       int64_t          transfer_id,
                       const char*      note)
 {
+    if (!pool || user_id <= 0 || from_asset_id <= 0 || to_asset_id <= 0) {
+        return -1;
+    }
+    db_tx_scope_t scope;
+    if (db_tx_scope_begin(pool, "mf_ledger_apply_transfer", &scope) != 0) {
+        return -1;
+    }
     money_t neg_amount = money_neg(amount);
     if (balance_apply_delta_m(
             pool, from_asset_id, user_id, neg_amount, "transfer_out", transfer_id, note) != 0) {
+        db_tx_scope_rollback(pool, &scope);
         return -1;
     }
     if (balance_apply_delta_m(
             pool, to_asset_id, user_id, amount, "transfer_in", transfer_id, note) != 0) {
+        db_tx_scope_rollback(pool, &scope);
         return -1;
     }
+    db_tx_scope_commit(pool, &scope);
     return 0;
 }
 
@@ -588,17 +700,27 @@ ledger_reverse_transfer(csilk_db_pool_t* pool,
                         int64_t          transfer_id,
                         const char*      note)
 {
+    if (!pool || user_id <= 0 || from_asset_id <= 0 || to_asset_id <= 0) {
+        return -1;
+    }
+    db_tx_scope_t scope;
+    if (db_tx_scope_begin(pool, "mf_ledger_reverse_transfer", &scope) != 0) {
+        return -1;
+    }
     money_t neg_amount = money_neg(amount);
     if (balance_apply_delta_m(
             pool, from_asset_id, user_id, amount, "transfer_out_reversal", transfer_id, note) !=
         0) {
+        db_tx_scope_rollback(pool, &scope);
         return -1;
     }
     if (balance_apply_delta_m(
             pool, to_asset_id, user_id, neg_amount, "transfer_in_reversal", transfer_id, note) !=
         0) {
+        db_tx_scope_rollback(pool, &scope);
         return -1;
     }
+    db_tx_scope_commit(pool, &scope);
     return 0;
 }
 
@@ -615,6 +737,10 @@ ledger_rebuild_position(csilk_db_pool_t*         pool,
     if (!pool || user_id <= 0 || asset_id <= 0) {
         return -1;
     }
+    db_tx_scope_t scope;
+    if (db_tx_scope_begin(pool, "mf_ledger_rebuild_pos", &scope) != 0) {
+        return -1;
+    }
 
     char uid_str[32], ast_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
@@ -629,6 +755,7 @@ ledger_rebuild_position(csilk_db_pool_t*         pool,
         if (a_rows) {
             csilk_json_free(a_rows);
         }
+        db_tx_scope_rollback(pool, &scope);
         return -1;
     }
     const char* cur_str = csilk_json_get_string(csilk_json_array_get(a_rows, 0), "currency");
@@ -705,6 +832,7 @@ ledger_rebuild_position(csilk_db_pool_t*         pool,
         out_state->realized_pnl = cum_realized;
         out_state->unrealized_pnl = curr_unrealized;
     }
+    db_tx_scope_commit(pool, &scope);
     return 0;
 }
 
@@ -715,6 +843,10 @@ ledger_rebuild_account(csilk_db_pool_t*        pool,
                        ledger_account_state_t* out_state)
 {
     if (!pool || user_id <= 0 || asset_id <= 0) {
+        return -1;
+    }
+    db_tx_scope_t scope;
+    if (db_tx_scope_begin(pool, "mf_ledger_rebuild_acc", &scope) != 0) {
         return -1;
     }
 
@@ -734,6 +866,7 @@ ledger_rebuild_account(csilk_db_pool_t*        pool,
         if (a_rows) {
             csilk_json_free(a_rows);
         }
+        db_tx_scope_rollback(pool, &scope);
         return -1;
     }
     csilk_json_t* a_obj = csilk_json_array_get(a_rows, 0);
@@ -778,6 +911,7 @@ ledger_rebuild_account(csilk_db_pool_t*        pool,
         out_state->balance = cum_bal;
         out_state->tx_count = tx_count;
     }
+    db_tx_scope_commit(pool, &scope);
     return 0;
 }
 
@@ -785,6 +919,10 @@ int
 ledger_rebuild_portfolio(csilk_db_pool_t* pool, int64_t user_id)
 {
     if (!pool || user_id <= 0) {
+        return -1;
+    }
+    db_tx_scope_t scope;
+    if (db_tx_scope_begin(pool, "mf_ledger_rebuild_port", &scope) != 0) {
         return -1;
     }
 
@@ -798,6 +936,7 @@ ledger_rebuild_portfolio(csilk_db_pool_t* pool, int64_t user_id)
                                                      (const char*[]){uid_str, NULL});
 
     if (!assets) {
+        db_tx_scope_commit(pool, &scope);
         return 0;
     }
 
@@ -808,12 +947,15 @@ ledger_rebuild_portfolio(csilk_db_pool_t* pool, int64_t user_id)
         const char*   atype = csilk_json_get_string(r, "asset_type");
         bool is_inv = (atype && (strcmp(atype, "stock") == 0 || strcmp(atype, "fund") == 0 ||
                                  strcmp(atype, "bond") == 0 || strcmp(atype, "crypto") == 0));
-        if (is_inv) {
-            ledger_rebuild_position(pool, user_id, aid, NULL);
-        } else {
-            ledger_rebuild_account(pool, user_id, aid, NULL);
+        int  reb_rc = is_inv ? ledger_rebuild_position(pool, user_id, aid, NULL)
+                             : ledger_rebuild_account(pool, user_id, aid, NULL);
+        if (reb_rc != 0) {
+            csilk_json_free(assets);
+            db_tx_scope_rollback(pool, &scope);
+            return -1;
         }
     }
     csilk_json_free(assets);
+    db_tx_scope_commit(pool, &scope);
     return 0;
 }
