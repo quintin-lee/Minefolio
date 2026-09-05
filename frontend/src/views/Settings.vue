@@ -1111,11 +1111,13 @@ async function handleResetRules() {
 }
 
 onMounted(() => {
-  loadAiSettings()
-  loadMarketSettings()
-  loadTwoFactorStatus()
-  loadImportRules()
-  categoryStore.loadCategories()
+  Promise.allSettled([
+    loadAiSettings(),
+    loadMarketSettings(),
+    loadTwoFactorStatus(),
+    loadImportRules(),
+    categoryStore.loadCategories(),
+  ])
 })
 </script>
 
