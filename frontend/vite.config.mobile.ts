@@ -4,6 +4,9 @@ import AutoImport from 'unplugin-auto-import/vite'
 import Components from 'unplugin-vue-components/vite'
 import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 import { resolve } from 'path'
+import { readFileSync } from 'fs'
+
+const version = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8')).version
 
 // Mobile build target: separate entry HTML + dist-mobile output.
 // No `__MOBILE__` compile flag — isolation is achieved via the independent entry.
@@ -21,6 +24,9 @@ export default defineConfig({
       dts: 'src/components.mobile.d.ts',
     }),
   ],
+  define: {
+    __APP_VERSION__: JSON.stringify(version),
+  },
   resolve: {
     alias: { '@': resolve(__dirname, 'src') },
   },
