@@ -134,9 +134,8 @@ async function copyUserId() {
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(90deg, #00d4ff 0%, #7c3aed 50%, #10b981 100%);
+  background: linear-gradient(90deg, var(--mf-primary) 0%, var(--mf-accent) 50%, var(--mf-success) 100%);
 }
-
 .user-hero-main {
   display: flex;
   align-items: center;
@@ -152,8 +151,7 @@ async function copyUserId() {
   width: 64px;
   height: 64px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #00d4ff 0%, #7c3aed 100%);
-  color: #fff;
+  background: linear-gradient(135deg, var(--mf-primary) 0%, var(--mf-accent) 100%);
   font-size: 26px;
   font-weight: 700;
   display: flex;
@@ -295,9 +293,9 @@ async function copyUserId() {
 }
 
 .stat-icon-box.cyan {
-  background: rgba(0, 212, 255, 0.1);
-  color: #00d4ff;
-  border: 1px solid rgba(0, 212, 255, 0.25);
+  background: var(--mf-primary-light);
+  color: var(--mf-primary);
+  border: 1px solid var(--mf-primary-border);
 }
 
 .stat-icon-box.purple {
@@ -349,8 +347,8 @@ async function copyUserId() {
   font-size: 10px;
   padding: 1px 6px;
   border-radius: 4px;
-  background: rgba(0, 212, 255, 0.15);
-  color: #00d4ff;
+  background: var(--mf-primary-light);
+  color: var(--mf-primary);
   font-weight: 600;
 }
 
