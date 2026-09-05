@@ -8,7 +8,7 @@
     </div>
 
     <el-tabs v-model="activeTab" class="settings-tabs" :tab-position="'top'" style="--el-tabs-ink-height: 3px;">
-      <el-tab-pane name="profile">
+      <el-tab-pane name="profile" lazy>
         <template #label>
           <Icon icon="ph:user-circle" width="16" />
           <span class="tab-label">账号信息</span>
@@ -16,7 +16,7 @@
         <UserHeroCard />
       </el-tab-pane>
 
-      <el-tab-pane name="password">
+      <el-tab-pane name="password" lazy>
         <template #label>
           <Icon icon="ph:lock-key" width="16" />
           <span class="tab-label">修改密码</span>
@@ -24,7 +24,7 @@
         <PasswordSettings />
       </el-tab-pane>
 
-      <el-tab-pane name="2fa">
+      <el-tab-pane name="2fa" lazy>
         <template #label>
           <Icon icon="ph:shield-check" width="16" />
           <span class="tab-label">两步验证</span>
@@ -32,7 +32,7 @@
         <TwoFactorSettings />
       </el-tab-pane>
 
-      <el-tab-pane name="export">
+      <el-tab-pane name="export" lazy>
         <template #label>
           <Icon icon="ph:export" width="16" />
           <span class="tab-label">数据导出</span>
@@ -40,7 +40,7 @@
         <DataExport />
       </el-tab-pane>
 
-      <el-tab-pane name="import-rules">
+      <el-tab-pane name="import-rules" lazy>
         <template #label>
           <Icon icon="ph:lightning" width="16" />
           <span class="tab-label">导入规则</span>
@@ -48,7 +48,7 @@
         <ImportRulesManager />
       </el-tab-pane>
 
-      <el-tab-pane name="ai">
+      <el-tab-pane name="ai" lazy>
         <template #label>
           <Icon icon="ph:brain" width="16" />
           <span class="tab-label">AI 配置</span>
@@ -56,7 +56,7 @@
         <AiProviderManager />
       </el-tab-pane>
 
-      <el-tab-pane name="market">
+      <el-tab-pane name="market" lazy>
         <template #label>
           <Icon icon="ph:chart-line" width="16" />
           <span class="tab-label">行情同步</span>
