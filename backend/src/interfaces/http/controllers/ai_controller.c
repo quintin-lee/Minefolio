@@ -12,6 +12,11 @@
 void
 api_ai_models_handler(csilk_ctx_t* c)
 {
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) {
+        return;
+    }
+
     csilk_json_t*       out_data = NULL;
     ai_usecase_result_t res = {0};
     int                 rc = ai_usecase_models_list(&out_data, &res);
@@ -205,6 +210,11 @@ api_ai_messages_list_handler(csilk_ctx_t* c)
 void
 api_ai_settings_get_handler(csilk_ctx_t* c)
 {
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) {
+        return;
+    }
+
     csilk_json_t*       out_data = NULL;
     ai_usecase_result_t res = {0};
     int                 rc = ai_usecase_settings_get(&out_data, &res);
@@ -218,6 +228,11 @@ api_ai_settings_get_handler(csilk_ctx_t* c)
 void
 api_ai_settings_update_handler(csilk_ctx_t* c)
 {
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) {
+        return;
+    }
+
     csilk_json_t* body = csilk_bind_json(c);
     if (!body) {
         respond_bad_request(c, "请求体必须为 JSON");
@@ -250,6 +265,11 @@ api_ai_fetch_models_handler(csilk_ctx_t* c)
 void
 api_ai_workflows_list_handler(csilk_ctx_t* c)
 {
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) {
+        return;
+    }
+
     csilk_json_t*       out_data = NULL;
     ai_usecase_result_t res = {0};
     int                 rc = ai_usecase_workflows_list(&out_data, &res);

@@ -36,7 +36,7 @@ exec_get_current_month_str(char* out, size_t sz)
 int
 ai_workflow_execute_stream(csilk_ctx_t* c, const ai_workflow_graph_t* graph, ai_wf_context_t* ctx)
 {
-    if (!c || !graph || !ctx) {
+    if (!c || !graph || !ctx || ctx->user_id <= 0) {
         return -1;
     }
 
@@ -48,6 +48,12 @@ ai_workflow_execute_stream(csilk_ctx_t* c, const ai_workflow_graph_t* graph, ai_
     if (session_id <= 0 && pool) {
         session_id = ai_session_insert(pool, user_id, graph->title, "workflow-agent", "system");
         ctx->session_id = session_id;
+    } else if (session_id > 0 && pool) {
+        csilk_json_t* sess = ai_session_get(pool, user_id, session_id);
+        if (!sess) {
+            return -1;
+        }
+        csilk_json_free(sess);
     }
 
     char exec_time_str[64];

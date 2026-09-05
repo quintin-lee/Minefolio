@@ -175,6 +175,33 @@ static void test_runtime_elapsed_timeout(void) {
     printf("PASS: test_runtime_elapsed_timeout\n");
 }
 
+#include "services/ai/workflow/executor.h"
+#include "services/ai/workflow/context.h"
+#include "services/ai/workflow/graph.h"
+
+static void test_workflow_executor_auth_boundary(void) {
+    /* 1. NULL parameters rejection */
+    assert(ai_workflow_execute_stream(NULL, NULL, NULL) == -1);
+
+    /* 2. user_id <= 0 rejection */
+    ai_workflow_graph_t dummy_graph = {
+        .id = "dummy",
+        .title = "Dummy Graph",
+        .node_count = 0,
+    };
+    ai_wf_context_t* ctx_no_user = ai_wf_context_create(NULL, 0, 0, NULL);
+    assert(ctx_no_user != NULL);
+    assert(ai_workflow_execute_stream(NULL, &dummy_graph, ctx_no_user) == -1);
+    ai_wf_context_free(ctx_no_user);
+
+    ai_wf_context_t* ctx_neg_user = ai_wf_context_create(NULL, -5, 0, NULL);
+    assert(ctx_neg_user != NULL);
+    assert(ai_workflow_execute_stream(NULL, &dummy_graph, ctx_neg_user) == -1);
+    ai_wf_context_free(ctx_neg_user);
+
+    printf("PASS: test_workflow_executor_auth_boundary\n");
+}
+
 int main(void) {
     test_runtime_error_taxonomy();
     test_runtime_limits_and_budgets();
@@ -183,6 +210,7 @@ int main(void) {
     test_runtime_agent_loop_cancel();
     test_runtime_validation_rejection();
     test_runtime_elapsed_timeout();
+    test_workflow_executor_auth_boundary();
     printf("All runtime unit and edge tests passed!\n");
     return 0;
 }

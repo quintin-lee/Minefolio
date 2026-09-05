@@ -565,6 +565,15 @@ check "数据库中持久化了正确的 API Key" "sk-test-secret-key-12345" "$D
 echo ""
 echo "--- Case 36: AI 财务工作流测试 ---"
 
+# 0. 鉴权边界测试：未携带 Token 访问工作流接口应被拦截 (401)
+NOAUTH_LIST_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/ai/workflows")
+check "未授权访问 GET /api/ai/workflows 返回 401" "401" "$NOAUTH_LIST_STATUS"
+
+NOAUTH_RUN_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST -H "Content-Type: application/json" \
+  -d '{"workflow_id":"wf_monthly_review"}' \
+  "$BASE/ai/workflows/run")
+check "未授权访问 POST /api/ai/workflows/run 返回 401" "401" "$NOAUTH_RUN_STATUS"
+
 # 1. 查询工作流模板列表
 WF_LIST_RES=$(curl -s -H "$AUTH" "$BASE/ai/workflows")
 WF_CODE=$(echo "$WF_LIST_RES" | jq -r '.code | floor')
@@ -577,9 +586,24 @@ check "返回预置工作流数量 >= 3" "true" "$WF_GE3"
 WF_FIRST_ID=$(echo "$WF_LIST_RES" | jq -r '.data[0].id')
 check "第一个工作流为 wf_monthly_review" "wf_monthly_review" "$WF_FIRST_ID"
 
-# 2. 执行月末财务复盘工作流 (SSE Stream)
+# 2. 会话归属鉴权边界测试 (IDOR 防护)
+SESS_U1_RES=$(curl -s -H "$AUTH" -H "Content-Type: application/json" \
+  -d '{"title":"用户1专属复盘会话"}' \
+  "$BASE/ai/sessions")
+SESS_U1_ID=$(echo "$SESS_U1_RES" | jq -r '.data.id')
+test -n "$SESS_U1_ID" && test "$SESS_U1_ID" != "null" && SESS_U1_OK="yes" || SESS_U1_OK="no"
+check "用户 1 成功创建 AI 会话" "yes" "$SESS_U1_OK"
+
+# 用户 2 (使用 LOGIN_TOKEN) 尝试越权指定用户 1 的 session_id 执行工作流
+CROSS_RUN_RES=$(curl -s -H "Authorization: Bearer $LOGIN_TOKEN" -H "Content-Type: application/json" \
+  -d "{\"workflow_id\":\"wf_monthly_review\",\"session_id\":$SESS_U1_ID}" \
+  "$BASE/ai/workflows/run")
+CROSS_CODE=$(echo "$CROSS_RUN_RES" | jq -r 'if .code != null then (.code | floor) else empty end')
+check "用户 2 越权指定用户 1 session_id 执行工作流被拦截 code=1003" "1003" "$CROSS_CODE"
+
+# 3. 用户 1 在自身 session_id 下正常执行月末财务复盘工作流 (SSE Stream)
 WF_RUN_RES=$(curl -s -N -H "$AUTH" -H "Content-Type: application/json" \
-  -d '{"workflow_id":"wf_monthly_review"}' \
+  -d "{\"workflow_id\":\"wf_monthly_review\",\"session_id\":$SESS_U1_ID}" \
   "$BASE/ai/workflows/run")
 
 WF_HAS_START=$(echo "$WF_RUN_RES" | grep -c "event: workflow_start" || true)
