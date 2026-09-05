@@ -23,6 +23,10 @@
 #include <stdio.h>
 #include <string.h>
 
+#ifndef MINEFOLIO_VERSION
+#define MINEFOLIO_VERSION "1.1.0"
+#endif
+
 static void
 store_bcrypt_hash(const char* password, char* out)
 {
