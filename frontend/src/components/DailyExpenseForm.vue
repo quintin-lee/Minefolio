@@ -36,34 +36,29 @@ const form = defineModel<DailyExpenseFormModel>({ required: true })
 
 .premium-form :deep(.el-form-item__label) {
   font-weight: 500;
-  color: #94a3b8;
+  color: var(--mf-text-muted);
 }
 
 .type-radio-group :deep(.el-radio-button__inner) {
   border-radius: 8px !important;
   margin-right: 12px;
-  border: 1px solid rgba(0, 212, 255, 0.15);
+  border: 1px solid var(--mf-primary-border);
   box-shadow: none !important;
   padding: 8px 20px;
   font-weight: 500;
-  background: rgba(15, 23, 42, 0.4);
-  color: #94a3b8;
+  background: var(--mf-surface-muted);
+  color: var(--mf-text-muted);
 }
 
 .type-radio-group :deep(.el-radio-button.is-active .el-radio-button__inner) {
-  background: linear-gradient(135deg, #00d4ff, #0ea5e9) !important;
-  border-color: #00d4ff !important;
-  color: #060b18 !important;
-}
-
-.premium-form :deep(.el-form-item__label) {
-  font-weight: 500;
-  color: #94a3b8;
+  background: linear-gradient(135deg, var(--mf-primary) 0%, var(--mf-primary-hover) 100%) !important;
+  border-color: var(--mf-primary) !important;
+  color: #ffffff !important;
 }
 
 .premium-form :deep(.el-input__wrapper) {
-  background-color: rgba(15, 23, 42, 0.4) !important;
-  box-shadow: 0 0 0 1px rgba(0, 212, 255, 0.12) inset !important;
+  background-color: var(--mf-surface-muted) !important;
+  box-shadow: 0 0 0 1px var(--mf-primary-light) inset !important;
   border-radius: 8px;
   padding: 6px 12px;
 }

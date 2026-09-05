@@ -88,7 +88,7 @@
           <el-descriptions-item label="收益项目">{{ selectedEvent.name }}</el-descriptions-item>
           <el-descriptions-item label="预期到账日期">{{ selectedEvent.date }}</el-descriptions-item>
           <el-descriptions-item label="预计金额">
-            <strong style="color: #10b981;">¥{{ Number(selectedEvent.amount).toFixed(2) }} {{ selectedEvent.currency }}</strong>
+            <strong :style="{ color: 'var(--mf-success)' }">¥{{ Number(selectedEvent.amount).toFixed(2) }} {{ selectedEvent.currency }}</strong>
           </el-descriptions-item>
           <el-descriptions-item label="收款账户">{{ selectedEvent.target_asset_name || '资金账户' }}</el-descriptions-item>
         </el-descriptions>
@@ -298,15 +298,15 @@ defineExpose({ reload: loadCalendar })
 }
 
 .metric-card.actual .metric-value {
-  color: #10b981;
+  color: var(--mf-success);
 }
 
 .metric-card.projected .metric-value {
-  color: #3b82f6;
+  color: var(--mf-primary);
 }
 
 .metric-card.annual .metric-value {
-  color: #8b5cf6;
+  color: var(--mf-accent);
 }
 
 .calendar-toolbar {
@@ -348,11 +348,11 @@ defineExpose({ reload: loadCalendar })
 }
 
 .dot.actual {
-  background-color: #10b981;
+  background-color: var(--mf-success);
 }
 
 .dot.projected {
-  background-color: #3b82f6;
+  background-color: var(--mf-primary);
 }
 
 .calendar-grid {
@@ -412,7 +412,7 @@ defineExpose({ reload: loadCalendar })
 }
 
 .day-cell.is-today .day-number {
-  color: #3b82f6;
+  color: var(--mf-primary);
 }
 
 .day-events {
@@ -438,15 +438,15 @@ defineExpose({ reload: loadCalendar })
 }
 
 .event-pill.is-actual {
-  background-color: rgba(16, 185, 129, 0.15);
-  color: #059669;
-  border-left: 2px solid #10b981;
+  background-color: var(--mf-success-light);
+  color: var(--mf-success);
+  border-left: 2px solid var(--mf-success);
 }
 
 .event-pill.is-projected {
-  background-color: rgba(59, 130, 246, 0.15);
-  color: #2563eb;
-  border-left: 2px solid #3b82f6;
+  background-color: var(--mf-primary-light);
+  color: var(--mf-primary);
+  border-left: 2px solid var(--mf-primary);
 }
 
 .event-name {

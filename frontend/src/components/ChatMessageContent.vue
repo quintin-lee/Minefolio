@@ -373,7 +373,7 @@ const segments = computed<Segment[]>(() => {
 .markdown-part :deep(h2),
 .markdown-part :deep(h3),
 .markdown-part :deep(h4) {
-  color: #fff;
+  color: var(--mf-text-main);
   margin: 12px 0 6px;
   font-weight: 600;
 }
@@ -387,15 +387,15 @@ const segments = computed<Segment[]>(() => {
 }
 .markdown-part :deep(code) {
   font-family: var(--mf-font-mono, monospace);
-  background: rgba(0, 212, 255, 0.08);
-  color: #38bdf8;
+  background: var(--mf-primary-light);
+  color: var(--mf-text-main);
   padding: 2px 6px;
   border-radius: 4px;
   font-size: 12px;
-  border: 1px solid rgba(0, 212, 255, 0.15);
+  border: 1px solid var(--mf-primary-border);
 }
 .markdown-part :deep(pre) {
-  background: #020617;
+  background: var(--mf-surface);
   border: 1px solid var(--mf-border);
   border-radius: 8px;
   padding: 12px 14px;
@@ -406,15 +406,15 @@ const segments = computed<Segment[]>(() => {
   background: transparent;
   padding: 0;
   border: none;
-  color: #e2e8f0;
+  color: var(--mf-text-main);
 }
 .markdown-part :deep(blockquote) {
   margin: 10px 0;
   padding: 8px 14px;
   border-left: 3px solid var(--mf-primary);
-  background: rgba(0, 212, 255, 0.04);
+  background: var(--mf-primary-light);
   border-radius: 0 6px 6px 0;
-  color: var(--mf-text-muted);
+  color: var(--mf-text-regular);
 }
 .markdown-part :deep(table) {
   width: 100%;
@@ -428,15 +428,15 @@ const segments = computed<Segment[]>(() => {
   padding: 8px 12px;
 }
 .markdown-part :deep(th) {
-  background: rgba(0, 212, 255, 0.08);
+  background: var(--mf-surface-muted);
   font-weight: 600;
-  color: var(--mf-primary);
+  color: var(--mf-text-main);
 }
 
 /* Streaming Mermaid Placeholder */
 .streaming-mermaid-placeholder {
   margin: 10px 0;
-  background: rgba(15, 23, 42, 0.7);
+  background: var(--mf-surface-muted);
   border: 1px dashed var(--mf-border-hover);
   border-radius: var(--mf-radius-md);
   overflow: hidden;
@@ -447,8 +447,8 @@ const segments = computed<Segment[]>(() => {
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
-  background: rgba(0, 212, 255, 0.06);
-  border-bottom: 1px solid rgba(0, 212, 255, 0.1);
+  background: var(--mf-primary-light);
+  border-bottom: 1px solid var(--mf-primary-border);
   font-size: 12px;
   color: var(--mf-primary);
   font-weight: 500;
@@ -481,12 +481,13 @@ const segments = computed<Segment[]>(() => {
 .streaming-code {
   margin: 0;
   padding: 10px 14px;
-  background: #020617;
-  color: #38bdf8;
+  background: var(--mf-surface);
+  color: var(--mf-text-main);
   font-family: var(--mf-font-mono, monospace);
   font-size: 11px;
   line-height: 1.5;
   overflow-x: auto;
   max-height: 160px;
 }
+
 </style>

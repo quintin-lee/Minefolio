@@ -36,18 +36,19 @@ function handleResize() {
   if (chart) chart.resize()
 }
 watch(() => props.data, update, { deep: true })
-function update() { 
+function update() {
   if (!chart || !props.data?.labels?.length) return
-  chart.setOption({ 
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light'
+  chart.setOption({
     animationDuration: 1000,
     tooltip: {
       trigger: 'axis',
-      backgroundColor: document.documentElement.classList.contains('light') ? 'rgba(255,255,255,0.96)' : 'rgba(15, 23, 42, 0.95)',
+      backgroundColor: isLight ? 'rgba(255,255,255,0.96)' : 'rgba(15, 23, 42, 0.95)',
       padding: [10, 15],
-      textStyle: { color: document.documentElement.classList.contains('light') ? '#1e293b' : '#e2e8f0' },
-      borderColor: document.documentElement.classList.contains('light') ? 'rgba(0,0,0,0.08)' : 'rgba(0, 212, 255, 0.2)',
+      textStyle: { color: isLight ? '#1e293b' : '#e2e8f0' },
+      borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(0, 212, 255, 0.2)',
       borderWidth: 1,
-      shadowColor: document.documentElement.classList.contains('light') ? 'rgba(0,0,0,0.08)' : 'rgba(0, 212, 255, 0.15)',
+      shadowColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(0, 212, 255, 0.15)',
       shadowBlur: 16,
     },
     grid: { left: 50, right: 20, top: 40, bottom: 20, containLabel: true },
@@ -56,7 +57,7 @@ function update() {
       data: props.data.labels,
       axisLine: { lineStyle: { color: 'var(--mf-primary-border)' } },
       axisLabel: { color: 'var(--mf-text-muted)', margin: 12 },
-      textStyle: { color: document.documentElement.classList.contains('light') ? '#475569' : '#64748b' }
+      textStyle: { color: isLight ? '#475569' : '#64748b' }
     },
     yAxis: {
       type: 'value',

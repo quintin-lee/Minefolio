@@ -94,7 +94,7 @@ import { formatDate } from '@/utils/format'
 
 const auth = useAuthStore()
 const ledgerStore = useLedgerStore()
-const appVersion = __APP_VERSION__
+const appVersion = (__APP_VERSION__ as string).replace(/^"|"$/g, '')
 const backendVersion = ref('')
 
 onMounted(async () => {
@@ -352,5 +352,70 @@ async function copyUserId() {
   background: rgba(0, 212, 255, 0.15);
   color: #00d4ff;
   font-weight: 600;
+}
+
+[data-theme="light"] .user-hero-card::before {
+  background: linear-gradient(90deg, #3b82f6 0%, #6366f1 50%, #10b981 100%);
+}
+
+[data-theme="light"] .user-avatar-large {
+  background: linear-gradient(135deg, #3b82f6 0%, #6366f1 100%);
+  color: #fff;
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.35);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+[data-theme="light"] .role-badge {
+  background: rgba(16, 185, 129, 0.1) !important;
+  border-color: rgba(16, 185, 129, 0.35) !important;
+  color: #059669 !important;
+}
+
+[data-theme="light"] .self-host-badge {
+  background: rgba(59, 130, 246, 0.08) !important;
+  border-color: rgba(59, 130, 246, 0.25) !important;
+  color: var(--mf-primary) !important;
+}
+
+[data-theme="light"] .uid-tag {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: var(--mf-border);
+}
+
+[data-theme="light"] .uid-tag:hover {
+  background: rgba(59, 130, 246, 0.08);
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+[data-theme="light"] .stat-pill {
+  background: rgba(255, 255, 255, 0.75);
+}
+
+[data-theme="light"] .stat-pill:hover {
+  border-color: rgba(59, 130, 246, 0.3);
+  background: rgba(59, 130, 246, 0.05);
+}
+
+[data-theme="light"] .stat-icon-box.cyan {
+  background: rgba(59, 130, 246, 0.1);
+  color: #2563eb;
+  border-color: rgba(59, 130, 246, 0.25);
+}
+
+[data-theme="light"] .stat-icon-box.purple {
+  background: rgba(124, 58, 237, 0.1);
+  color: #6d28d9;
+  border-color: rgba(124, 58, 237, 0.25);
+}
+
+[data-theme="light"] .stat-icon-box.green {
+  background: rgba(16, 185, 129, 0.1);
+  color: #059669;
+  border-color: rgba(16, 185, 129, 0.25);
+}
+
+[data-theme="light"] .ledger-role-pill {
+  background: rgba(59, 130, 246, 0.12);
+  color: #2563eb;
 }
 </style>
