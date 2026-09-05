@@ -78,6 +78,16 @@
               <div class="stat-val">RSA-OAEP + HS256</div>
             </div>
           </div>
+
+          <div class="stat-pill">
+            <div class="stat-icon-box purple">
+              <Icon icon="ph:info-bold" width="18" />
+            </div>
+            <div class="stat-content">
+              <div class="stat-label">应用版本</div>
+              <div class="stat-val mono">v{{ __APP_VERSION__ }}</div>
+            </div>
+          </div>
         </div>
       </div>
 
