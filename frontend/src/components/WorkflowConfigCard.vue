@@ -288,14 +288,13 @@ function submit() {
 }
 
 .chip-btn:hover, .preset-chip:hover {
-  border-color: rgba(0, 212, 255, 0.3);
-  color: #e2e8f0;
+  border-color: var(--mf-primary-border);
+  color: var(--mf-text-main);
 }
-
 .preset-chip.active {
-  background: rgba(0, 212, 255, 0.15);
-  border-color: rgba(0, 212, 255, 0.4);
-  color: var(--mf-primary, #00d4ff);
+  background: var(--mf-primary-light);
+  border-color: var(--mf-primary-border);
+  color: var(--mf-primary);
 }
 
 .label-with-hint {

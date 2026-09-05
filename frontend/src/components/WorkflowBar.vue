@@ -165,7 +165,7 @@ onMounted(async () => {
   gap: 4px;
   font-size: 11.5px;
   font-weight: 600;
-  color: var(--mf-primary, #00d4ff);
+  color: var(--mf-primary);
   flex-shrink: 0;
 }
 
@@ -215,7 +215,7 @@ onMounted(async () => {
 
 .pill-icon {
   font-size: 12px;
-  color: var(--mf-primary, #00d4ff);
+  color: var(--mf-primary);
 }
 
 .all-drawer-btn {
@@ -226,14 +226,13 @@ onMounted(async () => {
   background: transparent;
   border: none;
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--mf-text-muted);
   cursor: pointer;
   flex-shrink: 0;
   transition: color 0.15s ease;
 }
-
 .all-drawer-btn:hover {
-  color: var(--mf-primary, #00d4ff);
+  color: var(--mf-primary);
 }
 
 /* Drawer styles */
@@ -264,22 +263,12 @@ onMounted(async () => {
 }
 
 .card-top {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-}
-
-.card-icon-box {
-  width: 28px;
-  height: 28px;
   border-radius: 6px;
-  background: rgba(0, 212, 255, 0.1);
-  color: var(--mf-primary, #00d4ff);
+  background: var(--mf-primary-light);
+  color: var(--mf-primary);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
-  flex-shrink: 0;
 }
 
 .card-meta {
@@ -330,6 +319,6 @@ onMounted(async () => {
 }
 
 .mode-tag {
-  color: var(--mf-primary, #00d4ff);
+  color: var(--mf-primary);
 }
 </style>

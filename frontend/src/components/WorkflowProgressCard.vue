@@ -457,19 +457,17 @@ onUnmounted(() => {
 }
 
 .status-tag.running {
-  color: #38bdf8;
+  color: var(--mf-info);
 }
-
 .status-tag.completed {
-  color: #34d399;
+  color: var(--mf-success);
 }
-
 .status-tag.error {
-  color: #f87171;
+  color: var(--mf-danger);
 }
 
 .eta-text, .elapsed-text {
-  color: #94a3b8;
+  color: var(--mf-text-muted);
   font-size: 10.5px;
   margin-left: 2px;
 }
@@ -478,8 +476,8 @@ onUnmounted(() => {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #38bdf8;
-  box-shadow: 0 0 6px #38bdf8;
+  background: var(--mf-info);
+  box-shadow: 0 0 6px var(--mf-info);
   animation: pulse 1.2s infinite;
 }
 
@@ -566,15 +564,19 @@ onUnmounted(() => {
 }
 
 .step-completed .step-icon-box {
-  background: rgba(52, 211, 153, 0.15);
-  border-color: rgba(52, 211, 153, 0.4);
-  color: #34d399;
+  background: var(--mf-success-light);
+  border-color: var(--mf-success-border);
+  color: var(--mf-success);
 }
-
 .step-running .step-icon-box {
-  background: rgba(56, 189, 248, 0.15);
-  border-color: rgba(56, 189, 248, 0.5);
-  color: #38bdf8;
+  background: var(--mf-info-light);
+  border-color: var(--mf-info-border);
+  color: var(--mf-info);
+}
+.step-error .step-icon-box {
+  background: var(--mf-danger-light);
+  border-color: var(--mf-danger-border);
+  color: var(--mf-danger);
 }
 
 .step-error .step-icon-box {
@@ -585,19 +587,18 @@ onUnmounted(() => {
 
 .icon-completed {
   font-size: 14px;
-  color: #34d399;
+  color: var(--mf-success);
 }
-
 .icon-error {
   font-size: 12px;
-  color: #f87171;
+  color: var(--mf-danger);
 }
 
 .step-spinner {
   width: 10px;
   height: 10px;
-  border: 2px solid rgba(56, 189, 248, 0.2);
-  border-top-color: #38bdf8;
+  border: 2px solid var(--mf-info-light);
+  border-top-color: var(--mf-info);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -609,12 +610,12 @@ onUnmounted(() => {
 .step-line {
   flex: 1;
   width: 2px;
-  background: #334155;
+  background: var(--mf-border);
   margin: 4px 0;
 }
 
 .step-completed .step-line {
-  background: rgba(52, 211, 153, 0.3);
+  background: var(--mf-success-light);
 }
 
 .step-content {
@@ -631,38 +632,35 @@ onUnmounted(() => {
 
 .step-title {
   font-weight: 500;
-  color: #cbd5e1;
+  color: var(--mf-text-regular);
 }
-
 .step-running .step-title {
-  color: #38bdf8;
+  color: var(--mf-info);
   font-weight: 600;
 }
-
 .step-error .step-title {
-  color: #f87171;
+  color: var(--mf-danger);
 }
+
 
 .step-badge-done {
   font-size: 10px;
-  color: #34d399;
-  background: rgba(52, 211, 153, 0.1);
+  color: var(--mf-success);
+  background: var(--mf-success-light);
   padding: 1px 6px;
   border-radius: 8px;
 }
-
 .step-badge-running {
   font-size: 10px;
-  color: #38bdf8;
-  background: rgba(56, 189, 248, 0.1);
+  color: var(--mf-info);
+  background: var(--mf-info-light);
   padding: 1px 6px;
   border-radius: 8px;
 }
-
 .step-badge-error {
   font-size: 10px;
-  color: #f87171;
-  background: rgba(248, 113, 113, 0.1);
+  color: var(--mf-danger);
+  background: var(--mf-danger-light);
   padding: 1px 6px;
   border-radius: 8px;
 }
@@ -759,21 +757,20 @@ onUnmounted(() => {
 }
 
 .action-pill-btn:hover {
-  background: rgba(0, 212, 255, 0.12);
-  border-color: rgba(0, 212, 255, 0.35);
+  background: var(--mf-primary-light);
+  border-color: var(--mf-primary-border);
   color: #ffffff;
 }
-
 .action-pill-btn.primary {
-  background: rgba(0, 212, 255, 0.15);
-  border-color: rgba(0, 212, 255, 0.4);
-  color: var(--mf-primary, #00d4ff);
+  background: var(--mf-primary-light);
+  border-color: var(--mf-primary-border);
+  color: var(--mf-primary);
   font-weight: 500;
 }
-
 .action-pill-btn.primary:hover {
-  background: rgba(0, 212, 255, 0.25);
-  border-color: var(--mf-primary, #00d4ff);
+  background: var(--mf-primary);
+  border-color: var(--mf-primary);
+  color: #ffffff;
 }
 
 /* Follow-up Prompts */
@@ -789,7 +786,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 3px;
   font-size: 11px;
-  color: var(--mf-primary, #00d4ff);
+  color: var(--mf-primary);
   font-weight: 500;
   flex-shrink: 0;
 }
@@ -822,6 +819,6 @@ onUnmounted(() => {
 
 .chip-arrow {
   font-size: 10px;
-  color: var(--mf-primary, #00d4ff);
+  color: var(--mf-primary);
 }
 </style>

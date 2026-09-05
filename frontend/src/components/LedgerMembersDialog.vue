@@ -533,14 +533,14 @@ async function handleRemoveMember(member: LedgerMember) {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #00d4ff 0%, #7c3aed 100%);
+  background: linear-gradient(135deg, var(--mf-primary) 0%, var(--mf-accent) 100%);
   color: white;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 700;
   font-size: 14px;
-  box-shadow: 0 0 10px rgba(0, 212, 255, 0.3);
+  box-shadow: var(--mf-shadow-sm);
   flex-shrink: 0;
 }
 .member-username {
