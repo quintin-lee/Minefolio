@@ -469,18 +469,18 @@ onUnmounted(() => {
 <style scoped>
 .mermaid-block-wrapper {
   margin: 14px 0;
-  background: var(--mf-surface-muted, rgba(15, 23, 42, 0.75));
-  border: 1px solid var(--mf-border, rgba(0, 212, 255, 0.15));
+  background: var(--mf-surface-muted);
+  border: 1px solid var(--mf-border);
   border-radius: var(--mf-radius-lg, 12px);
   overflow: hidden;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--mf-shadow-md);
   backdrop-filter: blur(12px);
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .mermaid-block-wrapper:hover {
-  border-color: var(--mf-border-hover, rgba(0, 212, 255, 0.35));
-  box-shadow: 0 6px 24px rgba(0, 212, 255, 0.1);
+  border-color: var(--mf-border-hover);
+  box-shadow: var(--mf-shadow-glow);
 }
 
 .mermaid-block-wrapper.has-error {
@@ -493,8 +493,8 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 8px 14px;
-  background: rgba(15, 23, 42, 0.9);
-  border-bottom: 1px solid var(--mf-border, rgba(0, 212, 255, 0.1));
+  background: var(--mf-surface-card);
+  border-bottom: 1px solid var(--mf-border);
 }
 
 .header-left {
@@ -509,9 +509,9 @@ onUnmounted(() => {
   gap: 5px;
   padding: 2px 8px;
   border-radius: 6px;
-  background: rgba(0, 212, 255, 0.08);
-  border: 1px solid rgba(0, 212, 255, 0.2);
-  color: var(--mf-primary, #00d4ff);
+  background: var(--mf-primary-light);
+  border: 1px solid var(--mf-primary-border);
+  color: var(--mf-primary);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.2px;
@@ -563,15 +563,15 @@ onUnmounted(() => {
 }
 
 .tool-btn:hover {
-  background: rgba(0, 212, 255, 0.12);
-  border-color: rgba(0, 212, 255, 0.3);
-  color: var(--mf-primary, #00d4ff);
+  background: var(--mf-primary-light);
+  border-color: var(--mf-primary-border);
+  color: var(--mf-primary);
 }
 
 .tool-btn.active {
-  background: rgba(0, 212, 255, 0.15);
-  border-color: var(--mf-primary, #00d4ff);
-  color: var(--mf-primary, #00d4ff);
+  background: var(--mf-primary-light);
+  border-color: var(--mf-primary);
+  color: var(--mf-primary);
 }
 
 .expand-btn {
@@ -602,7 +602,7 @@ onUnmounted(() => {
 .loading-spinner {
   width: 24px;
   height: 24px;
-  border: 2px solid rgba(0, 212, 255, 0.2);
+  border: 2px solid var(--mf-primary-border);
   border-top-color: var(--mf-primary);
   border-radius: 50%;
   animation: mf-spin 0.8s linear infinite;
@@ -621,8 +621,8 @@ onUnmounted(() => {
   padding: 24px 20px;
   overflow-x: auto;
   cursor: zoom-in;
-  background-color: #070e1c;
-  background-image: radial-gradient(rgba(0, 212, 255, 0.08) 1.2px, transparent 1.2px);
+  background-color: var(--mf-surface-card);
+  background-image: radial-gradient(var(--mf-primary-light) 1.2px, transparent 1.2px);
   background-size: 16px 16px;
 }
 
@@ -662,7 +662,7 @@ onUnmounted(() => {
   gap: 4px;
   font-size: 10px;
   color: var(--mf-text-muted);
-  background: rgba(15, 23, 42, 0.85);
+  background: var(--mf-surface-muted);
   border: 1px solid rgba(255, 255, 255, 0.08);
   padding: 2px 6px;
   border-radius: 4px;
@@ -678,7 +678,7 @@ onUnmounted(() => {
 /* Code View */
 .mermaid-code-view {
   padding: 12px 16px;
-  background: #020617;
+  background: var(--mf-surface-card);
   overflow-x: auto;
 }
 
@@ -761,7 +761,7 @@ onUnmounted(() => {
 .error-code-preview pre {
   margin: 0;
   padding: 8px 10px;
-  background: rgba(0, 0, 0, 0.4);
+  background: var(--mf-surface-muted);
   border-radius: 6px;
   font-size: 11px;
   color: #94a3b8;
@@ -798,7 +798,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 14px 24px;
-  background: rgba(15, 23, 42, 0.85);
+  background: var(--mf-surface-muted);
   border-bottom: 1px solid var(--mf-border);
   z-index: 10;
 }
@@ -876,7 +876,7 @@ onUnmounted(() => {
   cursor: grab;
   user-select: none;
   background-color: #060b16;
-  background-image: radial-gradient(rgba(0, 212, 255, 0.08) 1.2px, transparent 1.2px);
+  background-image: radial-gradient(var(--mf-primary-light) 1.2px, transparent 1.2px);
   background-size: 20px 20px;
 }
 
@@ -921,10 +921,10 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   padding: 8px 16px;
-  background: rgba(15, 23, 42, 0.9);
+  background: var(--mf-surface-card);
   border: 1px solid var(--mf-border-hover);
   border-radius: 30px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 16px rgba(0, 212, 255, 0.15);
+  box-shadow: var(--mf-shadow-lg), var(--mf-shadow-glow);
   backdrop-filter: blur(20px);
   z-index: 10;
 }

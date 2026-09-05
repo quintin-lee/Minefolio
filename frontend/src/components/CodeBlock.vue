@@ -108,9 +108,9 @@ onUnmounted(() => {
 .code-block-wrapper {
   margin: 10px 0;
   border-radius: var(--mf-radius-md, 8px);
-  background: #020617;
-  border: 1px solid rgba(0, 212, 255, 0.15);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  background: var(--mf-surface-card);
+  border: 1px solid var(--mf-border);
+  box-shadow: var(--mf-shadow-sm);
   overflow: hidden;
 }
 
@@ -119,8 +119,8 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 6px 12px;
-  background: rgba(15, 23, 42, 0.85);
-  border-bottom: 1px solid rgba(0, 212, 255, 0.1);
+  background: var(--mf-surface-hover);
+  border-bottom: 1px solid var(--mf-border-subtle);
 }
 
 .lang-badge {
@@ -128,11 +128,11 @@ onUnmounted(() => {
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.5px;
-  color: var(--mf-primary, #00d4ff);
-  background: rgba(0, 212, 255, 0.08);
+  color: var(--mf-primary);
+  background: var(--mf-primary-light);
   padding: 2px 8px;
   border-radius: 4px;
-  border: 1px solid rgba(0, 212, 255, 0.2);
+  border: 1px solid var(--mf-primary-border);
 }
 
 .copy-btn {
@@ -141,7 +141,7 @@ onUnmounted(() => {
   gap: 5px;
   background: transparent;
   border: 1px solid transparent;
-  color: #94a3b8;
+  color: var(--mf-text-muted);
   font-size: 12px;
   padding: 3px 8px;
   border-radius: 4px;
@@ -150,15 +150,15 @@ onUnmounted(() => {
 }
 
 .copy-btn:hover {
-  color: #e2e8f0;
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.1);
+  color: var(--mf-text-main);
+  background: var(--mf-primary-light);
+  border-color: var(--mf-primary-border);
 }
 
 .copy-btn.is-copied {
-  color: #34d399;
-  background: rgba(52, 211, 153, 0.1);
-  border-color: rgba(52, 211, 153, 0.25);
+  color: var(--mf-success);
+  background: var(--mf-success-light);
+  border-color: var(--mf-success-border);
 }
 
 .copy-icon {
@@ -172,7 +172,7 @@ onUnmounted(() => {
 .code-pre {
   margin: 0;
   padding: 12px 16px;
-  background: #020617;
+  background: var(--mf-surface-card);
   overflow-x: auto;
   font-family: var(--mf-font-mono, monospace);
   font-size: 12.5px;
@@ -183,6 +183,6 @@ onUnmounted(() => {
   background: transparent;
   padding: 0;
   font-family: inherit;
-  color: #e2e8f0;
+  color: var(--mf-text-main);
 }
 </style>

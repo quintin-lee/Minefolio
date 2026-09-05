@@ -47,8 +47,8 @@ const currency = props.asset.currency ?? '¥'
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(90deg, #00d4ff, #38bdf8);
-  box-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
+  background: linear-gradient(90deg, var(--mf-primary), var(--mf-accent));
+  box-shadow: 0 0 10px var(--mf-primary-light);
 }
 
 .card-content {
@@ -61,7 +61,7 @@ const currency = props.asset.currency ?? '¥'
 .asset-name {
   font-size: 14px;
   font-weight: 500;
-  color: #64748b;
+  color: var(--mf-text-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -74,16 +74,16 @@ const currency = props.asset.currency ?? '¥'
 
 .currency-symbol {
   font-size: 16px;
-  color: #475569;
+  color: var(--mf-text-regular);
   font-weight: 500;
 }
 
 .value-amount {
   font-size: 24px;
   font-weight: 700;
-  color: #00d4ff;
+  color: var(--mf-primary);
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   letter-spacing: -0.5px;
-  text-shadow: 0 0 12px rgba(0, 212, 255, 0.5);
+  text-shadow: 0 0 12px var(--mf-primary-light);
 }
 </style>

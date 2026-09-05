@@ -49,12 +49,12 @@ function updateChart() {
     animationEasing: 'cubicOut',
     tooltip: {
       trigger: 'axis',
-      backgroundColor: 'rgba(15, 23, 42, 0.95)',
+      backgroundColor: 'var(--mf-surface-card)',
       padding: [10, 15],
-      textStyle: { color: '#e2e8f0' },
-      borderColor: 'rgba(0, 212, 255, 0.2)',
+      textStyle: { color: 'var(--mf-text-main)' },
+      borderColor: 'var(--mf-primary-border)',
       borderWidth: 1,
-      shadowColor: 'rgba(0, 212, 255, 0.1)',
+      shadowColor: 'var(--mf-primary-light)',
       shadowBlur: 16,
       formatter: (p: any) => {
         const val = new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(p[0].value)
@@ -66,13 +66,13 @@ function updateChart() {
     xAxis: {
       type: 'category',
       data: props.data.map((d) => d.date.slice(5)),
-      axisLine: { lineStyle: { color: 'rgba(0, 212, 255, 0.15)' } },
+      axisLine: { lineStyle: { color: 'var(--mf-primary-border)' } },
       axisLabel: { color: '#64748b', margin: 12 },
       axisTick: { show: false }
     },
     yAxis: {
       type: 'value',
-      splitLine: { lineStyle: { type: 'dashed', color: 'rgba(0, 212, 255, 0.08)' } },
+      splitLine: { lineStyle: { type: 'dashed', color: 'var(--mf-primary-light)' } },
       axisLabel: {
         color: '#64748b',
         formatter: (v: number) => (v >= 10000 ? `${(v / 10000).toFixed(1)}w` : v.toString())
@@ -88,12 +88,12 @@ function updateChart() {
       showSymbol: false,
       areaStyle: {
         color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-          { offset: 0, color: 'rgba(0, 212, 255, 0.35)' },
-          { offset: 1, color: 'rgba(0, 212, 255, 0.02)' }
+          { offset: 0, color: 'var(--mf-primary-light)' },
+          { offset: 1, color: 'var(--mf-primary-light)' }
         ])
       },
-      itemStyle: { color: '#00d4ff', borderWidth: 2 },
-      lineStyle: { width: 2, shadowColor: 'rgba(0, 212, 255, 0.5)', shadowBlur: 12 }
+      itemStyle: { color: 'var(--mf-primary)', borderWidth: 2 },
+      lineStyle: { width: 2, shadowColor: 'var(--mf-primary-light)', shadowBlur: 12 }
     }],
   })
 }

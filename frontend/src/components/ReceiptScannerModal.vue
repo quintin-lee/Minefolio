@@ -554,7 +554,7 @@ onMounted(() => {
   height: 320px;
   border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--mf-shadow-md);
   background: #000;
 }
 
@@ -612,7 +612,7 @@ onMounted(() => {
   object-fit: contain;
   border-radius: 8px;
   border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
-  background: rgba(0, 0, 0, 0.1);
+  background: var(--mf-surface-muted);
 }
 
 .re-upload-bar {

@@ -542,9 +542,9 @@ onMounted(loadData)
 }
 
 .category-tabs :deep(.el-radio-button.is-active .el-radio-button__inner) {
-  background: linear-gradient(135deg, #00d4ff, #0ea5e9) !important;
-  border-color: #00d4ff !important;
-  color: #060b18 !important;
+  background: linear-gradient(135deg, var(--mf-primary), var(--mf-accent)) !important;
+  border-color: var(--mf-primary) !important;
+  color: var(--mf-text-main) !important;
 }
 
 .type-tag {
@@ -691,7 +691,7 @@ onMounted(loadData)
 
 .premium-table {
   --el-table-border-color: transparent;
-  --el-table-header-bg-color: rgba(0, 212, 255, 0.06);
+  --el-table-header-bg-color: var(--mf-primary-light);
 }
 
 .panel-body-scroll :deep(.el-table) {
@@ -703,7 +703,7 @@ onMounted(loadData)
 }
 
 :deep(.premium-header th) {
-  background-color: rgba(0, 212, 255, 0.06) !important;
+  background-color: var(--mf-primary-light) !important;
   color: #94a3b8 !important;
   font-weight: 600;
   text-transform: uppercase;
@@ -724,11 +724,11 @@ onMounted(loadData)
 }
 
 :deep(.premium-row:hover > td) {
-  background-color: rgba(0, 212, 255, 0.04) !important;
+  background-color: var(--mf-primary-light) !important;
 }
 
 :deep(.el-table__row.row-selected td) {
-  background-color: rgba(0, 212, 255, 0.1) !important;
+  background-color: var(--mf-primary-light) !important;
 }
 
 .text-muted {
@@ -745,12 +745,12 @@ onMounted(loadData)
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background-color: rgba(0, 212, 255, 0.06);
+  background-color: var(--mf-primary-light);
 }
 
 .status-dot.cash  { background-color: #10b981; box-shadow: 0 0 6px rgba(16,185,129,0.5); }
-.status-dot.stock { background-color: #00d4ff; box-shadow: 0 0 6px rgba(0,212,255,0.5); }
-.status-dot.fund  { background-color: #a78bfa; box-shadow: 0 0 6px rgba(167,139,250,0.5); }
+.status-dot.stock { background-color: var(--mf-primary); box-shadow: 0 0 6px var(--mf-primary-light); }
+.status-dot.fund  { background-color: var(--mf-accent); box-shadow: 0 0 6px var(--mf-accent-light); }
 .status-dot.crypto { background-color: #fbbf24; box-shadow: 0 0 6px rgba(251,191,36,0.5); }
 .status-dot.loan  { background-color: #f87171; box-shadow: 0 0 6px rgba(248,113,113,0.5); }
 .status-dot.credit_card { background-color: #fb7185; box-shadow: 0 0 6px rgba(251,113,133,0.5); }
@@ -803,7 +803,7 @@ onMounted(loadData)
 }
 
 .premium-form :deep(.el-input__wrapper) {
-  background-color: rgba(15, 23, 42, 0.6) !important;
+  background-color: var(--mf-surface-muted) !important;
   box-shadow: 0 0 0 1px var(--mf-border) inset !important;
   border-radius: var(--mf-radius-md);
   padding: 6px 12px;

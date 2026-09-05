@@ -42,35 +42,27 @@ function update() {
     animationDuration: 1000,
     tooltip: {
       trigger: 'axis',
-      backgroundColor: 'rgba(15, 23, 42, 0.95)',
+      backgroundColor: document.documentElement.classList.contains('light') ? 'rgba(255,255,255,0.96)' : 'rgba(15, 23, 42, 0.95)',
       padding: [10, 15],
-      textStyle: { color: '#e2e8f0' },
-      borderColor: 'rgba(0, 212, 255, 0.2)',
+      textStyle: { color: document.documentElement.classList.contains('light') ? '#1e293b' : '#e2e8f0' },
+      borderColor: document.documentElement.classList.contains('light') ? 'rgba(0,0,0,0.08)' : 'rgba(0, 212, 255, 0.2)',
       borderWidth: 1,
-      shadowColor: 'rgba(0, 212, 255, 0.15)',
+      shadowColor: document.documentElement.classList.contains('light') ? 'rgba(0,0,0,0.08)' : 'rgba(0, 212, 255, 0.15)',
       shadowBlur: 16,
-    },
-    legend: {
-      data: ['净资产', '总资产', '总负债'],
-      top: 0,
-      icon: 'circle',
-      itemWidth: 10,
-      itemHeight: 10,
-      textStyle: { color: '#64748b' }
     },
     grid: { left: 50, right: 20, top: 40, bottom: 20, containLabel: true },
     xAxis: {
       type: 'category',
       data: props.data.labels,
-      axisLine: { lineStyle: { color: 'rgba(0, 212, 255, 0.15)' } },
-      axisLabel: { color: '#64748b', margin: 12 },
-      axisTick: { show: false }
+      axisLine: { lineStyle: { color: 'var(--mf-primary-border)' } },
+      axisLabel: { color: 'var(--mf-text-muted)', margin: 12 },
+      textStyle: { color: document.documentElement.classList.contains('light') ? '#475569' : '#64748b' }
     },
     yAxis: {
       type: 'value',
-      splitLine: { lineStyle: { type: 'dashed', color: 'rgba(0, 212, 255, 0.08)' } },
+      splitLine: { lineStyle: { type: 'dashed', color: 'var(--mf-primary-light)' } },
       axisLabel: {
-        color: '#64748b',
+        color: 'var(--mf-text-muted)',
         formatter: (v: number) => v >= 10000 ? `${(v/10000).toFixed(1)}w` : String(v)
       }
     },
@@ -83,12 +75,12 @@ function update() {
         symbol: 'circle',
         symbolSize: 6,
         showSymbol: false,
-        itemStyle: { color: '#00d4ff', borderWidth: 2 },
-        lineStyle: { width: 2, shadowColor: 'rgba(0, 212, 255, 0.5)', shadowBlur: 12 },
+        itemStyle: { color: 'var(--mf-primary)', borderWidth: 2 },
+        lineStyle: { width: 2, shadowColor: 'var(--mf-primary-light)', shadowBlur: 12 },
         areaStyle: {
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
             { offset: 0, color: 'rgba(0, 212, 255, 0.2)' },
-            { offset: 1, color: 'rgba(0, 212, 255, 0.02)' }
+            { offset: 1, color: 'var(--mf-primary-light)' }
           ])
         }
       },

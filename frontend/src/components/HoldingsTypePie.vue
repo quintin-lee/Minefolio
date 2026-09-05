@@ -36,11 +36,11 @@ function updateChart() {
     tooltip: {
       trigger: 'item',
       formatter: (p: any) => `${p.name}: ¥${p.value} (${p.percent}%)`,
-      backgroundColor: 'rgba(15,23,42,0.95)',
-      borderColor: '#334155',
-      textStyle: { color: '#e2e8f0' },
+      backgroundColor: 'var(--mf-surface-card)',
+      borderColor: 'var(--mf-border)',
+      textStyle: { color: 'var(--mf-text-main)' },
     },
-    legend: { bottom: 0, textStyle: { color: '#94a3b8' } },
+    legend: { bottom: 0, textStyle: { color: 'var(--mf-text-muted)' } },
     series: [
       {
         type: 'pie',

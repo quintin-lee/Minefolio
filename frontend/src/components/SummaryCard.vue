@@ -65,12 +65,12 @@ const valueClass = computed(() => {
   color: var(--mf-text-main);
 }
 
-.income-text { color: #34d399; text-shadow: 0 0 8px rgba(52,211,153,0.4); }
-.expense-text { color: #f87171; text-shadow: 0 0 8px rgba(248,113,113,0.3); }
+.income-text { color: var(--mf-success); text-shadow: 0 0 8px var(--mf-success-light); }
+.expense-text { color: var(--mf-danger); text-shadow: 0 0 8px var(--mf-danger-light); }
 
 .highlight-card {
-  border-color: rgba(0, 212, 255, 0.3);
-  background: linear-gradient(135deg, rgba(0, 212, 255, 0.06) 0%, rgba(15, 23, 42, 0.8) 100%);
+  border-color: var(--mf-primary-border);
+  background: linear-gradient(135deg, var(--mf-primary-light) 0%, var(--mf-surface-card) 100%);
 }
 
 .highlight-card::before {
@@ -80,17 +80,17 @@ const valueClass = computed(() => {
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(90deg, #00d4ff, #34d399);
+  background: linear-gradient(90deg, var(--mf-primary), var(--mf-success));
   border-radius: var(--mf-radius-lg) var(--mf-radius-lg) 0 0;
 }
 
 .profit-card {
-  background: rgba(52, 211, 153, 0.08);
-  border-color: rgba(52, 211, 153, 0.3);
+  background: var(--mf-success-light);
+  border-color: var(--mf-success-border);
 }
 
 .loss-card {
-  background: rgba(239, 68, 68, 0.08);
-  border-color: rgba(239, 68, 68, 0.3);
+  background: var(--mf-danger-light);
+  border-color: var(--mf-danger-border);
 }
 </style>

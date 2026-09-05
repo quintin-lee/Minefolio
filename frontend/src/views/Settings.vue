@@ -219,7 +219,7 @@ onErrorCaptured((err, instance, info) => {
 }
 
 .premium-form :deep(.el-input__wrapper) {
-  background-color: rgba(15, 23, 42, 0.6) !important;
+  background-color: var(--mf-surface-muted) !important;
   box-shadow: 0 0 0 1px var(--mf-border) inset !important;
   border-radius: var(--mf-radius-md);
   padding: 6px 12px;

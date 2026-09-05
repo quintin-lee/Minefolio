@@ -430,19 +430,19 @@ onMounted(loadDashboard)
 
 .premium-table {
   --el-table-border-color: transparent;
-  --el-table-header-bg-color: rgba(0, 212, 255, 0.06);
+  --el-table-header-bg-color: var(--mf-primary-light);
 }
 
 :deep(.el-table th.el-table__cell) {
   font-weight: 600;
-  color: #94a3b8 !important;
-  background-color: rgba(0, 212, 255, 0.06) !important;
+  color: var(--mf-text-muted) !important;
+  background-color: var(--mf-primary-light) !important;
   border-bottom: 1px solid var(--mf-border) !important;
 }
 
 .dashboard-alert-banner {
   background: linear-gradient(135deg, rgba(234, 179, 8, 0.15), rgba(245, 158, 11, 0.08));
-  border: 1px solid rgba(234, 179, 8, 0.4);
+  border: 1px solid var(--mf-warning-border);
   border-radius: var(--mf-radius-md);
   padding: 10px 16px;
   margin-bottom: 20px;
@@ -456,12 +456,12 @@ onMounted(loadDashboard)
   align-items: center;
   gap: 8px;
   font-size: 14px;
-  color: #d97706;
+  color: var(--mf-warning);
 }
 
 .alert-icon {
   font-size: 18px;
-  color: #f59e0b;
+  color: var(--mf-warning);
 }
 
 :deep(.el-table .el-table__row) {
@@ -513,7 +513,7 @@ onMounted(loadDashboard)
   gap: 10px;
 }
 .fx-chip {
-  background: rgba(15, 23, 42, 0.4);
+  background: var(--mf-surface-muted);
   border: 1px solid var(--mf-border);
   border-radius: 8px;
   padding: 8px 12px;

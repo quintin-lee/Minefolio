@@ -49,13 +49,13 @@ function updateChart() {
     animationDuration: 1000,
     tooltip: {
       trigger: 'axis',
-      axisPointer: { type: 'shadow', shadowStyle: { color: 'rgba(0,212,255,0.05)' } },
-      backgroundColor: 'rgba(15, 23, 42, 0.95)',
+      axisPointer: { type: 'shadow', shadowStyle: { color: 'var(--mf-primary-light)' } },
+      backgroundColor: 'var(--mf-surface-card)',
       padding: [10, 15],
       textStyle: { color: '#e2e8f0' },
-      borderColor: 'rgba(0, 212, 255, 0.2)',
+      borderColor: 'var(--mf-primary-border)',
       borderWidth: 1,
-      shadowColor: 'rgba(0, 212, 255, 0.15)',
+      shadowColor: 'var(--mf-primary-light)',
       shadowBlur: 16,
     },
     legend: {
@@ -64,21 +64,21 @@ function updateChart() {
       icon: 'roundRect',
       itemWidth: 16,
       itemHeight: 8,
-      textStyle: { color: '#64748b' }
+      textStyle: { color: 'var(--mf-text-muted)' }
     },
     grid: { left: 60, right: 20, top: 40, bottom: 20, containLabel: true },
     xAxis: {
       type: 'category',
       data: ['本月'],
-      axisLine: { lineStyle: { color: 'rgba(0, 212, 255, 0.15)' } },
-      axisLabel: { color: '#64748b' },
+      axisLine: { lineStyle: { color: 'var(--mf-primary-border)' } },
+      axisLabel: { color: 'var(--mf-text-muted)' },
       axisTick: { show: false }
     },
     yAxis: {
       type: 'value',
-      splitLine: { lineStyle: { type: 'dashed', color: 'rgba(0, 212, 255, 0.08)' } },
+      splitLine: { lineStyle: { type: 'dashed', color: 'var(--mf-primary-light)' } },
       axisLabel: {
-        color: '#64748b',
+        color: 'var(--mf-text-muted)',
         formatter: (v: number) => (v >= 10000 ? `${(v / 10000).toFixed(1)}w` : v.toString())
       }
     },

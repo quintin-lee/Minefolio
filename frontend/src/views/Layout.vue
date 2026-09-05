@@ -223,11 +223,9 @@ function handleCommand(cmd: string) {
 
 <style scoped>
 .layout-container {
-  min-height: 100vh;
-  background-color: var(--mf-background);
 }
 .aside {
-  background: linear-gradient(180deg, #060b18 0%, #0f1d32 100%);
+  background: linear-gradient(180deg, var(--mf-background) 0%, color-mix(in srgb, var(--mf-background) 70%, var(--mf-primary)) 100%);
   min-height: 100vh;
   box-shadow: 4px 0 24px rgba(0, 0, 0, 0.4);
   z-index: 10;

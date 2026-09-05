@@ -511,7 +511,7 @@ async function handleImport() {
 
 .premium-table {
   --el-table-border-color: transparent;
-  --el-table-header-bg-color: rgba(0, 212, 255, 0.06);
+  --el-table-header-bg-color: var(--mf-primary-light);
 }
 
 .pagination-bar {
@@ -521,7 +521,7 @@ async function handleImport() {
 }
 
 :deep(.premium-header th) {
-  background-color: rgba(0, 212, 255, 0.06) !important;
+  background-color: var(--mf-primary-light) !important;
   color: #94a3b8 !important;
   font-weight: 600;
   text-transform: uppercase;
@@ -542,7 +542,7 @@ async function handleImport() {
 }
 
 :deep(.premium-row:hover > td) {
-  background-color: rgba(0, 212, 255, 0.04) !important;
+  background-color: var(--mf-primary-light) !important;
 }
 
 .type-badge {
@@ -568,7 +568,7 @@ async function handleImport() {
   border-radius: 6px;
   padding: 2px 8px;
   font-weight: 500;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--mf-shadow-sm);
 }
 
 .action-buttons {
@@ -637,13 +637,13 @@ async function handleImport() {
 }
 
 .type-radio-group :deep(.el-radio-button.is-active .el-radio-button__inner) {
-  background: linear-gradient(135deg, #00d4ff, #0ea5e9) !important;
-  border-color: #00d4ff !important;
-  color: #060b18 !important;
+  background: linear-gradient(135deg, var(--mf-primary), var(--mf-accent)) !important;
+  border-color: var(--mf-primary) !important;
+  color: var(--mf-text-main) !important;
 }
 
 .premium-form :deep(.el-input__wrapper) {
-  background-color: rgba(15, 23, 42, 0.6) !important;
+  background-color: var(--mf-surface-muted) !important;
   box-shadow: 0 0 0 1px var(--mf-border) inset !important;
   border-radius: var(--mf-radius-md);
   padding: 6px 12px;
@@ -674,8 +674,8 @@ async function handleImport() {
 .import-hint { margin: 0 0 16px; font-size: 13px; color: #94a3b8; line-height: 1.6; }
 .import-upload { width: 100%; }
 .import-upload :deep(.el-upload-dragger) { padding: 28px 0; border-radius: var(--mf-radius-md); border: 1px dashed var(--mf-border); background: var(--mf-background); }
-.import-upload :deep(.el-upload-dragger:hover) { border-color: #00d4ff; }
-.import-upload :deep(.el-icon--upload) { font-size: 40px; color: #00d4ff; margin-bottom: 12px; }
+.import-upload :deep(.el-upload-dragger:hover) { border-color: var(--mf-primary); }
+.import-upload :deep(.el-icon--upload) { font-size: 40px; color: var(--mf-primary); margin-bottom: 12px; }
 .import-result { margin-top: 16px; padding: 12px 16px; border-radius: var(--mf-radius-md); font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
 .import-result.success { background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); color: #34d399; }
 .import-result.error { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #f87171; }

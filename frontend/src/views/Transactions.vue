@@ -780,7 +780,7 @@ async function handleImport() {
   width: 3px;
   border-radius: 2px 0 0 2px;
 }
-.bar-cyan::before  { background: #00d4ff; box-shadow: 0 0 8px rgba(0,212,255,0.5); }
+.bar-cyan::before { background: var(--mf-primary); box-shadow: 0 0 8px var(--mf-primary-light); }
 .bar-green::before { background: #10b981; box-shadow: 0 0 8px rgba(16,185,129,0.5); }
 .bar-red::before   { background: #ef4444; box-shadow: 0 0 8px rgba(239,68,68,0.5); }
 .bar-amber::before { background: #f59e0b; box-shadow: 0 0 8px rgba(245,158,11,0.5); }
@@ -807,7 +807,7 @@ async function handleImport() {
 
 .income-text { color: #34d399; text-shadow: 0 0 8px rgba(52,211,153,0.4); }
 .expense-text { color: #f87171; text-shadow: 0 0 8px rgba(248,113,113,0.3); }
-.text-primary { color: #00d4ff; }
+.text-primary { color: var(--mf-primary); }
 
 .main-panel {
   background: var(--mf-surface);
@@ -860,7 +860,7 @@ async function handleImport() {
 
 .premium-table {
   --el-table-border-color: transparent;
-  --el-table-header-bg-color: rgba(0, 212, 255, 0.06);
+  --el-table-header-bg-color: var(--mf-primary-light);
 }
 .premium-table .el-table__row {
   position: relative;
@@ -872,7 +872,7 @@ async function handleImport() {
   left: 0; top: 0; bottom: 0;
   width: 2px;
   background: var(--mf-primary);
-  box-shadow: 0 0 8px rgba(0, 212, 255, 0.6);
+  box-shadow: 0 0 8px var(--mf-primary-light);
   border-radius: 0 2px 2px 0;
 }
 
@@ -883,12 +883,12 @@ async function handleImport() {
 }
 
 .category-pill {
-  background: rgba(0, 212, 255, 0.06);
+  background: var(--mf-primary-light);
   color: #94a3b8;
   padding: 2px 8px;
   border-radius: 6px;
   font-size: 13px;
-  border: 1px solid rgba(0, 212, 255, 0.1);
+  border: 1px solid var(--mf-primary-border);
 }
 
 .mono-amount {
@@ -903,7 +903,7 @@ async function handleImport() {
   color: #64748b;
 }
 
-.price-tag { color: #00d4ff; }
+.price-tag { color: var(--mf-primary); }
 .times { margin: 0 4px; color: #475569; }
 .qty-tag { color: #34d399; }
 .muted-text { color: #475569; }
@@ -945,12 +945,12 @@ async function handleImport() {
 }
 
 .import-upload :deep(.el-upload-dragger:hover) {
-  border-color: #00d4ff;
+  border-color: var(--mf-primary);
 }
 
 .import-upload :deep(.el-icon--upload) {
   font-size: 40px;
-  color: #00d4ff;
+  color: var(--mf-primary);
   margin-bottom: 12px;
 }
 

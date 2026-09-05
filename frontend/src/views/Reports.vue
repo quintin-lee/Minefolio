@@ -71,7 +71,7 @@
                       :data="tagBreakdown?.items ?? []"
                       height="100%"
                       class="premium-table-small"
-                      :header-cell-style="{ background: 'rgba(0, 212, 255, 0.06)' }"
+                      :header-cell-style="{ background: 'var(--mf-primary-light)' }"
                     >
                       <el-table-column prop="tag_name" label="标签" min-width="120">
                         <template #default="{ row }">
@@ -604,7 +604,7 @@ onMounted(loadAll)
 
 .premium-table-small {
   --el-table-border-color: transparent;
-  --el-table-header-bg-color: rgba(0, 212, 255, 0.06);
+  --el-table-header-bg-color: var(--mf-primary-light);
 }
 
 .table-container {
@@ -627,7 +627,7 @@ onMounted(loadAll)
 }
 
 .premium-table-small :deep(.el-table th.el-table__cell) {
-  background-color: rgba(0, 212, 255, 0.06) !important;
+  background-color: var(--mf-primary-light) !important;
   color: #94a3b8 !important;
   border-bottom: 1px solid var(--mf-border) !important;
 }
@@ -678,9 +678,9 @@ onMounted(loadAll)
   width: 64px;
   height: 64px;
   border-radius: 50%;
-  background: radial-gradient(circle at 30% 30%, rgba(0, 212, 255, 0.15), rgba(124, 58, 237, 0.08));
-  border: 1px solid rgba(0, 212, 255, 0.12);
-  box-shadow: 0 0 24px rgba(0, 212, 255, 0.08);
+  background: radial-gradient(circle at 30% 30%, var(--mf-primary-light), var(--mf-accent-light));
+  border: 1px solid var(--mf-primary-border);
+  box-shadow: var(--mf-shadow-glow);
 }
 .mf-empty-state p {
   color: var(--mf-text-muted);

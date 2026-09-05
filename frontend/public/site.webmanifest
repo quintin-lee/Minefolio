@@ -5,6 +5,7 @@
   "display": "standalone",
   "background_color": "#060B18",
   "theme_color": "#060B18",
+  "theme_color_light": "#f8fafc",
   "description": "个人综合资产管理系统",
   "icons": [
     {

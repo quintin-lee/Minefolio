@@ -401,41 +401,130 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #060b18 0%, #0a1628 50%, #0d1f3c 100%);
+  --login-bg-start: var(--mf-background);
+  --login-bg-mid: color-mix(in srgb, var(--mf-background) 70%, var(--mf-primary));
+  --login-bg-end: color-mix(in srgb, var(--mf-background) 60%, var(--mf-accent));
+  --login-overlay-start: var(--mf-primary-light);
+  --login-overlay-end: transparent;
+  --login-card-bg: var(--mf-surface-card);
+  --login-card-border: var(--mf-border);
+  --login-card-shadow: var(--mf-shadow-lg);
+  --login-text: var(--mf-text-regular);
+  --login-muted: var(--mf-text-muted);
+  --login-input-bg: var(--mf-fill-color-blank);
+  --login-input-border: var(--mf-border);
+  --login-input-text: var(--mf-text-main);
+  --login-divider: var(--mf-border-subtle);
+  --login-btn-bg: rgba(30, 41, 59, 0.6);
+  --login-btn-border: var(--mf-border);
+  --login-btn-text: var(--mf-text-regular);
+  --login-btn-hover-bg: var(--mf-surface-hover);
+  --login-btn-hover-border: var(--mf-primary);
+  --login-glow: var(--mf-primary);
+
+  background: linear-gradient(135deg, var(--login-bg-start) 0%, var(--login-bg-mid) 50%, var(--login-bg-end) 100%);
   background-size: 400% 400%;
   animation: mf-gradient-shift 15s ease infinite;
   position: relative;
   overflow: hidden;
 }
-.particle-canvas {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-}
 .login-overlay {
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+  top: 0; left: 0; width: 100%; height: 100%;
   z-index: 1;
-  background: radial-gradient(circle at top right, rgba(0, 212, 255, 0.1), transparent 40%),
-              radial-gradient(circle at bottom left, rgba(124, 58, 237, 0.1), transparent 40%);
+  background: radial-gradient(circle at top right, var(--login-overlay-start), var(--login-overlay-end) 40%),
+              radial-gradient(circle at bottom left, var(--login-overlay-start), var(--login-overlay-end) 40%);
   pointer-events: none;
 }
-
-/* HUD 四角框 */
-.hud-frame {
-  position: relative;
-  z-index: 2;
+.glass-panel {
+  background: var(--login-card-bg) !important;
+  border: 1px solid var(--login-card-border) !important;
+  box-shadow: var(--login-card-shadow) !important;
+}
+:deep(.el-card__header) {
+  border-bottom: 1px solid var(--login-card-border);
+  padding-bottom: 20px;
+}
+.app-title {
+  margin: 0;
+  font-size: 32px;
+  font-weight: 700;
+  background: linear-gradient(to right, var(--login-glow), var(--mf-accent));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  letter-spacing: 2px;
+  animation: titleGlow 3.2s ease-in-out infinite;
+}
+.subtitle,
+.status-line,
+.two-factor-hint {
+  color: var(--login-muted);
+}
+.switch-mode {
+  color: var(--login-muted);
+}
+.switch-btn {
+  color: var(--login-glow);
+}
+.switch-btn:hover {
+  color: var(--mf-primary-hover);
+}
+:deep(.el-form-item__label) {
+  color: var(--login-text);
+  font-weight: 500;
+}
+:deep(.el-input__wrapper) {
+  background-color: var(--login-input-bg) !important;
+  box-shadow: 0 0 0 1px var(--login-input-border) inset !important;
+}
+:deep(.el-input__wrapper.is-focus) {
+  box-shadow: 0 0 0 1px var(--login-glow) inset, 0 0 10px var(--mf-primary-light) !important;
+}
+:deep(.el-input__inner) {
+  color: var(--login-input-text);
+}
+.oauth-divider::before,
+.oauth-divider::after {
+  border-bottom: 1px solid var(--login-divider);
+}
+.oauth-divider span {
+  color: var(--login-muted);
+}
+.oauth-btn {
+  background: var(--login-btn-bg);
+  border: 1px solid var(--login-btn-border);
+  color: var(--login-btn-text);
+}
+.oauth-btn:hover {
+  background: var(--login-btn-hover-bg);
+  border-color: var(--login-btn-hover-border);
+  color: var(--mf-text-main);
 }
 .hud-corner {
   position: absolute;
   width: 26px;
   height: 26px;
   pointer-events: none;
-  filter: drop-shadow(0 0 6px rgba(0, 212, 255, 0.55));
+  filter: drop-shadow(0 0 6px var(--mf-primary-light));
+}
+.hud-corner-tl,
+.hud-corner-tr,
+.hud-corner-bl,
+.hud-corner-br {
+  border-top-color: var(--login-glow);
+  border-left-color: var(--login-glow);
+  border-right-color: var(--login-glow);
+  border-bottom-color: var(--login-glow);
+}
+.hud-frame::after {
+  background: linear-gradient(180deg, transparent 0%, var(--mf-primary-light) 48%, transparent 100%);
+}
+.status-dot {
+  background: var(--mf-success);
+  box-shadow: 0 0 6px var(--mf-success);
+}
+.status-cursor {
+  background: var(--login-glow);
 }
 .hud-corner-tl {
   top: -3px;
@@ -507,7 +596,7 @@ onBeforeUnmount(() => {
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important;
+  box-shadow: var(--login-card-shadow) !important;
 }
 :deep(.el-card__header) {
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
@@ -572,18 +661,18 @@ onBeforeUnmount(() => {
   margin-top: 20px;
 }
 :deep(.el-form-item__label) {
-  color: #e2e8f0;
+  color: var(--login-input-text);
   font-weight: 500;
 }
 :deep(.el-input__wrapper) {
-  background-color: rgba(15, 23, 42, 0.4) !important;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1) inset !important;
+  background-color: var(--login-input-bg) !important;
+  box-shadow: 0 0 0 1px var(--login-input-border) inset !important;
 }
 :deep(.el-input__wrapper.is-focus) {
-  box-shadow: 0 0 0 1px #00d4ff inset, 0 0 10px rgba(0, 212, 255, 0.25) !important;
+  box-shadow: 0 0 0 1px var(--login-glow) inset, 0 0 10px var(--mf-primary-light) !important;
 }
 :deep(.el-input__inner) {
-  color: #e2e8f0;
+  color: var(--login-input-text);
 }
 .submit-item {
   margin-top: 30px;
@@ -663,7 +752,7 @@ onBeforeUnmount(() => {
   background: rgba(30, 41, 59, 0.6);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
-  color: #e2e8f0;
+  color: var(--login-input-text);
   font-size: 14px;
   cursor: pointer;
   transition: all 0.2s;

@@ -43,12 +43,12 @@ function update() {
     animationDuration: 1000,
     tooltip: {
       trigger: 'item',
-      backgroundColor: 'rgba(15, 23, 42, 0.95)',
+      backgroundColor: 'var(--mf-surface-card)',
       padding: [10, 15],
-      textStyle: { color: '#e2e8f0' },
-      borderColor: 'rgba(0, 212, 255, 0.2)',
+      textStyle: { color: 'var(--mf-text-main)' },
+      borderColor: 'var(--mf-primary-border)',
       borderWidth: 1,
-      shadowColor: 'rgba(0, 212, 255, 0.15)',
+      shadowColor: 'var(--mf-primary-light)',
       shadowBlur: 16,
       formatter: (p: any) => {
         const val = new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(p.data.value)
@@ -61,7 +61,7 @@ function update() {
       orient: 'vertical',
       right: '5%',
       top: 'center',
-      textStyle: { color: '#64748b', fontSize: 12 },
+      textStyle: { color: 'var(--mf-text-muted)', fontSize: 12 },
       icon: 'circle',
       itemWidth: 8,
       itemHeight: 8,
@@ -73,20 +73,20 @@ function update() {
       center: ['35%', '50%'],
       data: props.data.map(d => ({ name: d.name, value: d.amount, pct: d.pct })),
       avoidLabelOverlap: false,
-      itemStyle: { borderRadius: 4, borderColor: 'rgba(6,11,24,0.8)', borderWidth: 2 },
+      itemStyle: { borderRadius: 4, borderColor: 'var(--mf-border)', borderWidth: 2 },
       label: { show: false, position: 'center' },
       emphasis: {
         label: {
           show: true,
           fontSize: 14,
           fontWeight: 'bold',
-          color: '#e2e8f0',
+          color: 'var(--mf-text-main)',
           formatter: '{b}\n{d}%'
         },
         itemStyle: {
           shadowBlur: 16,
           shadowOffsetX: 0,
-          shadowColor: 'rgba(0, 212, 255, 0.4)'
+          shadowColor: 'var(--mf-primary-light)'
         }
       },
       labelLine: { show: false },

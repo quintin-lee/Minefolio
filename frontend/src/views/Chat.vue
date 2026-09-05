@@ -1372,7 +1372,7 @@ onUnmounted(() => {
 .message-content :deep(h2),
 .message-content :deep(h3),
 .message-content :deep(h4) {
-  color: #fff;
+  color: var(--mf-text-main);
   margin: 12px 0 6px;
   font-weight: 600;
 }
@@ -1386,15 +1386,15 @@ onUnmounted(() => {
 }
 .message-content :deep(code) {
   font-family: var(--mf-font-mono, monospace);
-  background: rgba(0, 212, 255, 0.08);
-  color: #38bdf8;
+  background: var(--mf-primary-light);
+  color: var(--mf-primary);
   padding: 2px 6px;
   border-radius: 4px;
   font-size: 12px;
-  border: 1px solid rgba(0, 212, 255, 0.15);
+  border: 1px solid var(--mf-primary-border);
 }
 .message-content :deep(pre) {
-  background: #020617;
+  background: var(--mf-surface-card);
   border: 1px solid var(--mf-border);
   border-radius: 8px;
   padding: 12px 14px;
@@ -1405,13 +1405,13 @@ onUnmounted(() => {
   background: transparent;
   padding: 0;
   border: none;
-  color: #e2e8f0;
+  color: var(--mf-text-main);
 }
 .message-content :deep(blockquote) {
   margin: 10px 0;
   padding: 8px 14px;
   border-left: 3px solid var(--mf-primary);
-  background: rgba(0, 212, 255, 0.04);
+  background: var(--mf-primary-light);
   border-radius: 0 6px 6px 0;
   color: var(--mf-text-muted);
 }
@@ -1427,7 +1427,7 @@ onUnmounted(() => {
   padding: 8px 12px;
 }
 .message-content :deep(th) {
-  background: rgba(0, 212, 255, 0.08);
+  background: var(--mf-primary-light);
   font-weight: 600;
   color: var(--mf-primary);
 }
@@ -1498,7 +1498,7 @@ onUnmounted(() => {
 
 .chat-input-box:focus-within {
   border-color: var(--mf-primary);
-  box-shadow: 0 0 16px rgba(0, 212, 255, 0.2);
+  box-shadow: var(--mf-shadow-glow);
 }
 
 .chat-input-box textarea {
@@ -1525,7 +1525,7 @@ onUnmounted(() => {
   justify-content: space-between;
   margin-top: 8px;
   padding-top: 6px;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-top: 1px solid var(--mf-border-subtle);
 }
 
 .char-count {
@@ -1562,7 +1562,7 @@ onUnmounted(() => {
   color: var(--mf-primary);
   font-size: 12px;
   font-weight: 600;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.4), 0 0 12px rgba(0,212,255,0.15);
+  box-shadow: var(--mf-shadow-md), var(--mf-shadow-glow);
   cursor: pointer;
   z-index: 5;
   backdrop-filter: blur(12px);
@@ -1680,7 +1680,7 @@ onUnmounted(() => {
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.5);
+  background: var(--mf-surface-muted);
   z-index: 99;
   backdrop-filter: blur(2px);
 }
@@ -1693,7 +1693,7 @@ onUnmounted(() => {
     z-index: 100;
     transform: translateX(-100%);
     transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 4px 0 20px rgba(0, 0, 0, 0.5);
+    box-shadow: 4px 0 20px var(--mf-shadow-lg);
   }
   .chat-sidebar:not(.is-collapsed) { transform: translateX(0); }
   .chat-main { width: 100% !important; }
