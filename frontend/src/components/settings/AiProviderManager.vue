@@ -15,12 +15,12 @@
             </el-tag>
           </div>
           <div class="provider-actions">
-            <el-button text size="small" @click="toggleEdit(index)" title="编辑">
-              <el-icon><Edit /></el-icon>
-            </el-button>
-            <el-button text size="small" class="delete-btn" @click="removeProvider(index)" title="删除">
-              <el-icon><Delete /></el-icon>
-            </el-button>
+              <el-button text size="small" @click="toggleEdit(index)" aria-label="编辑">
+                <el-icon><Edit /></el-icon>
+              </el-button>
+              <el-button text size="small" class="delete-btn" @click="removeProvider(index)" aria-label="删除">
+                <el-icon><Delete /></el-icon>
+              </el-button>
           </div>
         </div>
         <el-form v-if="editIndex === index" :model="provider" label-width="100px" class="provider-form">
@@ -93,7 +93,7 @@
           </el-button>
         </div>
       </div>
-      <el-button type="primary" plain @click="addProvider" class="add-provider-btn">
+      <el-button type="primary" plain @click="addProvider" class="add-provider-btn" aria-label="添加 AI 提供商">
         <el-icon><Plus /></el-icon>
         {{ t('settings.aiAddProvider') }}
       </el-button>

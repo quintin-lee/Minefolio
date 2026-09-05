@@ -76,7 +76,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onErrorCaptured } from 'vue'
+import { ElMessage } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import { t } from '@/utils/locale'
 import UserHeroCard from '@/components/settings/UserHeroCard.vue'
@@ -89,6 +90,12 @@ import MarketSyncSettings from '@/components/settings/MarketSyncSettings.vue'
 import AppearanceSettings from '@/components/settings/AppearanceSettings.vue'
 
 const activeTab = ref('profile')
+
+onErrorCaptured((err, instance, info) => {
+  console.error('[Settings] Child component error:', err, info)
+  ElMessage.error('页面加载异常，请刷新重试')
+  return false
+})
 </script>
 
 <style scoped>
