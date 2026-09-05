@@ -85,7 +85,7 @@
             </div>
             <div class="stat-content">
               <div class="stat-label">应用版本</div>
-              <div class="stat-val mono">v{{ __APP_VERSION__ }}</div>
+              <div class="stat-val mono">{{ 'v' + appVersion }}</div>
             </div>
           </div>
         </div>
@@ -559,6 +559,7 @@ const t = (key: string): string => {
   return typeof obj === 'string' ? obj : key
 }
 
+const appVersion = __APP_VERSION__
 const auth = useAuthStore()
 const ledgerStore = useLedgerStore()
 const loading = ref(false)
