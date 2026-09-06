@@ -84,6 +84,10 @@ const currency = props.asset.currency ?? '¥'
   color: var(--mf-primary);
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   letter-spacing: -0.5px;
+  text-shadow: none;
+}
+
+[data-theme="dark"] .value-amount {
   text-shadow: 0 0 12px var(--mf-primary-light);
 }
 </style>

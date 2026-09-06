@@ -236,7 +236,7 @@ async function handleDeleteLedger(ledger: Ledger) {
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--mf-surface-muted);
   border: 1px solid transparent;
   border-radius: 20px;
   cursor: pointer;
@@ -245,8 +245,8 @@ async function handleDeleteLedger(ledger: Ledger) {
   outline: none;
 }
 .current-ledger-btn:hover {
-  background: rgba(0, 212, 255, 0.06);
-  border-color: rgba(0, 212, 255, 0.15);
+  background: var(--mf-primary-light);
+  border-color: var(--mf-primary-border);
 }
 .current-ledger-btn:focus,
 .current-ledger-btn:focus-visible {
@@ -264,7 +264,7 @@ async function handleDeleteLedger(ledger: Ledger) {
 .ledger-name {
   font-size: 14px;
   font-weight: 600;
-  color: #e2e8f0;
+  color: var(--mf-text-main);
   max-width: 140px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -278,7 +278,7 @@ async function handleDeleteLedger(ledger: Ledger) {
   border-radius: 4px;
 }
 .caret {
-  color: #94a3b8;
+  color: var(--mf-text-muted);
 }
 
 .ledger-menu {

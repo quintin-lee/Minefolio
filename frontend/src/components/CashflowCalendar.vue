@@ -365,7 +365,7 @@ defineExpose({ reload: loadCalendar })
 .grid-header {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  background: rgba(15, 23, 42, 0.03);
+  background: var(--mf-surface-muted);
   border-bottom: 1px solid var(--mf-border);
 }
 
