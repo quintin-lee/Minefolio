@@ -67,7 +67,7 @@ onMounted(async () => {
 <style scoped>
 .kpi-row { display: flex; gap: 12px; overflow-x: auto; }
 .kpi-card { flex: 0 0 120px; background: var(--mf-surface); border: 1px solid var(--mf-border); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
-.kpi-card.cyan b { color: #00d4ff; } .kpi-card.red b { color: #f87171; } .kpi-card.green b { color: #34d399; }
+.kpi-card.cyan b { color: var(--mf-info); } .kpi-card.red b { color: var(--mf-danger); } .kpi-card.green b { color: var(--mf-success); }
 .kpi-card span { color: var(--mf-text-muted); font-size: 12px; }
 .kpi-card b { font-size: 18px; font-family: 'JetBrains Mono', monospace; }
 .mini-row { display: flex; justify-content: space-between; margin: 12px 0; }
@@ -76,6 +76,6 @@ onMounted(async () => {
 .mini-row b { font-family: 'JetBrains Mono', monospace; }
 .section-title { margin: 16px 0 8px; font-size: 14px; color: var(--mf-text-muted); }
 .record-card { display: flex; justify-content: space-between; padding: 12px; border-bottom: 1px solid var(--mf-border); }
-.income { color: #34d399; } .expense { color: #f87171; }
+.income { color: var(--mf-success); } .expense { color: var(--mf-danger); }
 .empty-state { text-align: center; color: var(--mf-text-muted); padding: 20px 0; font-size: 13px; }
 </style>

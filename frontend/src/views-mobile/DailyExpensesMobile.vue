@@ -63,6 +63,6 @@ onMounted(() => loadData(true))
 .expense-card { background: var(--mf-surface); border: 1px solid var(--mf-border); border-radius: 12px; padding: 14px; margin-bottom: 10px; cursor: pointer; }
 .expense-card .top { display: flex; justify-content: space-between; font-size: 16px; }
 .expense-card .bottom { display: flex; justify-content: space-between; color: var(--mf-text-muted); font-size: 12px; margin-top: 6px; }
-.income { color: #34d399; } .expense { color: #f87171; }
+.income { color: var(--mf-success); } .expense { color: var(--mf-danger); }
 .fab { position: fixed; right: 20px; bottom: 80px; width: 56px; height: 56px; box-shadow: var(--mf-shadow-glow); }
 </style>

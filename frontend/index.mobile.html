@@ -6,11 +6,39 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
+    <meta name="theme-color" content="#060b18" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f8fafc" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#060b18" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>Minefolio 移动端</title>
+    <script>
+      // Apply the saved (or default auto) theme before first paint so the app
+      // never flashes dark on light-mode devices. Mobile defaults to following
+      // the OS; an explicit pick from the 我的 page is honoured when present.
+      ;(function () {
+        try {
+          var mode = localStorage.getItem('minefolio_theme')
+          if (!mode) {
+            mode = 'auto'
+            localStorage.setItem('minefolio_theme', 'auto')
+          }
+          if (mode !== 'light' && mode !== 'dark') mode = 'auto'
+          var resolved =
+            mode === 'auto'
+              ? window.matchMedia('(prefers-color-scheme: light)').matches
+                ? 'light'
+                : 'dark'
+              : mode
+          var root = document.documentElement
+          root.setAttribute('data-theme', resolved)
+          root.classList.add(resolved)
+        } catch (e) {
+          /* storage unavailable: leave the CSS :root (dark) default */
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="app"></div>

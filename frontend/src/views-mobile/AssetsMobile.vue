@@ -85,7 +85,7 @@ onMounted(async () => {
   padding: 1px 6px;
   border-radius: 4px;
   background: rgba(0, 212, 255, 0.1);
-  color: #00d4ff;
+  color: var(--mf-info);
   border: 1px solid rgba(0, 212, 255, 0.2);
 }
 .value-col {

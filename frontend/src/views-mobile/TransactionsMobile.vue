@@ -27,5 +27,5 @@ onMounted(async () => {
 .tx-card { background: var(--mf-surface); border: 1px solid var(--mf-border); border-radius: 12px; padding: 14px; margin-bottom: 10px; }
 .tx-card .top { display: flex; justify-content: space-between; font-size: 16px; }
 .tx-card .bottom { display: flex; justify-content: space-between; color: var(--mf-text-muted); font-size: 12px; margin-top: 6px; }
-.income { color: #34d399; } .expense { color: #f87171; }
+.income { color: var(--mf-success); } .expense { color: var(--mf-danger); }
 </style>

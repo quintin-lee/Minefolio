@@ -126,8 +126,8 @@ onMounted(async () => {
 .kpi-card.loss { border-color: rgba(239, 68, 68, 0.35); background: rgba(239, 68, 68, 0.06); }
 .kpi-card .label { color: var(--mf-text-muted); font-size: 11px; }
 .kpi-card .value { font-family: 'JetBrains Mono', monospace; font-size: 14px; }
-.kpi-card.profit .value { color: #34d399; }
-.kpi-card.loss .value { color: #f87171; }
+.kpi-card.profit .value { color: var(--mf-success); }
+.kpi-card.loss .value { color: var(--mf-danger); }
 
 .holding-card {
   background: var(--mf-surface);
@@ -153,7 +153,7 @@ onMounted(async () => {
   padding: 1px 6px;
   border-radius: 4px;
   background: rgba(0, 212, 255, 0.1);
-  color: #00d4ff;
+  color: var(--mf-info);
   border: 1px solid rgba(0, 212, 255, 0.2);
 }
 .type-pill {
@@ -161,13 +161,13 @@ onMounted(async () => {
   padding: 2px 8px;
   border-radius: 9999px;
   background: rgba(0, 212, 255, 0.08);
-  color: #00d4ff;
+  color: var(--mf-info);
   border: 1px solid rgba(0, 212, 255, 0.15);
   font-weight: 500;
 }
 .type-pill.pill-crypto {
   background: rgba(124, 58, 237, 0.08);
-  color: #a78bfa;
+  color: var(--mf-accent);
   border-color: rgba(124, 58, 237, 0.15);
 }
 .card-row {
@@ -189,8 +189,8 @@ onMounted(async () => {
   color: var(--mf-text-muted);
   font-family: 'JetBrains Mono', monospace;
 }
-.pnl.income { color: #34d399; }
-.pnl.expense { color: #f87171; }
+.pnl.income { color: var(--mf-success); }
+.pnl.expense { color: var(--mf-danger); }
 .empty-state {
   text-align: center;
   color: var(--mf-text-muted);

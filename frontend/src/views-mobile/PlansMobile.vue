@@ -383,7 +383,7 @@ onMounted(() => {
 .banner-hdr {
   font-size: 13px;
   font-weight: 700;
-  color: #f59e0b;
+  color: var(--mf-warning);
   margin-bottom: 8px;
 }
 .pending-card {
@@ -435,9 +435,9 @@ onMounted(() => {
   font-size: 16px;
   font-weight: 700;
 }
-.income { color: #10b981; }
-.expense { color: #ef4444; }
-.highlight { color: #3b82f6; }
+.income { color: var(--mf-success); }
+.expense { color: var(--mf-danger); }
+.highlight { color: var(--mf-primary); }
 .plan-card {
   background: var(--mf-card-bg);
   border: 1px solid var(--mf-border);
