@@ -685,7 +685,11 @@ async function handleSend() {
   adjustTextareaHeight()
   autoStickToBottom.value = true
   showScrollBottomBtn.value = false
-  await chat.sendMessage(text)
+  try {
+    await chat.sendMessage(text)
+  } catch (err) {
+    console.error('[chat] sendMessage failed', err)
+  }
   nextTick(() => scrollToBottom())
   fetchSessions()
 }
