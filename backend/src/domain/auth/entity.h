@@ -14,6 +14,7 @@ typedef struct mf_user {
     int64_t token_version;
     bool    totp_enabled;
     char    totp_secret[64];
+    char    totp_backup_codes[1024];
     char    created_at[64];
     char    updated_at[64];
 } mf_user_t;

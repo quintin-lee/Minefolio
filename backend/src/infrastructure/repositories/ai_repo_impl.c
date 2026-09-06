@@ -1,6 +1,7 @@
 #include "infrastructure/repositories/ai_repo_impl.h"
 #include "repositories/ai_session_repo.h"
 #include "repositories/ai_trace_repo.h"
+
 #include "common/db.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -78,28 +79,34 @@ mf_ai_session_repo_get(void* pool, int64_t user_id, int64_t id, mf_ai_session_t*
 
     csilk_json_t* res = ai_session_get((csilk_db_pool_t*)pool, user_id, id);
     if (!res) {
-        return -1;
+        return 1; /* Not found */
     }
 
-    out_session->id = (int64_t)db_get_int(res, "id");
+    csilk_json_t* row = csilk_json_is_array(res) ? csilk_json_array_get(res, 0) : res;
+    if (!row) {
+        csilk_json_free(res);
+        return 1;
+    }
+
+    out_session->id = (int64_t)db_get_int(row, "id");
     out_session->user_id = user_id;
-    const char* s = csilk_json_get_string(res, "title");
+    const char* s = csilk_json_get_string(row, "title");
     if (s) {
         snprintf(out_session->title, sizeof(out_session->title), "%s", s);
     }
-    s = csilk_json_get_string(res, "model");
+    s = csilk_json_get_string(row, "model");
     if (s) {
         snprintf(out_session->model, sizeof(out_session->model), "%s", s);
     }
-    s = csilk_json_get_string(res, "provider");
+    s = csilk_json_get_string(row, "provider");
     if (s) {
         snprintf(out_session->provider, sizeof(out_session->provider), "%s", s);
     }
-    s = csilk_json_get_string(res, "created_at");
+    s = csilk_json_get_string(row, "created_at");
     if (s) {
         snprintf(out_session->created_at, sizeof(out_session->created_at), "%s", s);
     }
-    s = csilk_json_get_string(res, "updated_at");
+    s = csilk_json_get_string(row, "updated_at");
     if (s) {
         snprintf(out_session->updated_at, sizeof(out_session->updated_at), "%s", s);
     }

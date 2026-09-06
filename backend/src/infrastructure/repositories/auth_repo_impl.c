@@ -18,7 +18,7 @@ mf_auth_repo_find_by_username(void* pool, const char* username, mf_user_t* out_u
         if (res) {
             csilk_json_free(res);
         }
-        return -1;
+        return 1;
     }
 
     csilk_json_t* row = csilk_json_array_get(res, 0);
@@ -26,6 +26,10 @@ mf_auth_repo_find_by_username(void* pool, const char* username, mf_user_t* out_u
     const char* s = csilk_json_get_string(row, "username");
     if (s) {
         snprintf(out_user->username, sizeof(out_user->username), "%s", s);
+    }
+    s = csilk_json_get_string(row, "password");
+    if (s) {
+        snprintf(out_user->password_hash, sizeof(out_user->password_hash), "%s", s);
     }
     s = csilk_json_get_string(row, "password_hash");
     if (s) {
@@ -59,7 +63,7 @@ mf_auth_repo_get_by_id(void* pool, int64_t user_id, mf_user_t* out_user)
         if (res) {
             csilk_json_free(res);
         }
-        return -1;
+        return 1;
     }
 
     csilk_json_t* row = csilk_json_array_get(res, 0);
@@ -68,8 +72,23 @@ mf_auth_repo_get_by_id(void* pool, int64_t user_id, mf_user_t* out_user)
     if (s) {
         snprintf(out_user->username, sizeof(out_user->username), "%s", s);
     }
+    s = csilk_json_get_string(row, "password");
+    if (!s) {
+        s = csilk_json_get_string(row, "password_hash");
+    }
+    if (s) {
+        snprintf(out_user->password_hash, sizeof(out_user->password_hash), "%s", s);
+    }
     out_user->token_version = (int64_t)db_get_int(row, "token_version");
     out_user->totp_enabled = (db_get_int(row, "totp_enabled") != 0);
+    s = csilk_json_get_string(row, "totp_secret");
+    if (s) {
+        snprintf(out_user->totp_secret, sizeof(out_user->totp_secret), "%s", s);
+    }
+    s = csilk_json_get_string(row, "totp_backup_codes");
+    if (s) {
+        snprintf(out_user->totp_backup_codes, sizeof(out_user->totp_backup_codes), "%s", s);
+    }
     s = csilk_json_get_string(row, "created_at");
     if (s) {
         snprintf(out_user->created_at, sizeof(out_user->created_at), "%s", s);
@@ -165,4 +184,52 @@ mf_auth_repo_is_initialized(void* pool)
         return 0;
     }
     return system_is_initialized((csilk_db_pool_t*)pool);
+}
+
+int
+mf_auth_repo_find_by_oauth(void*       pool,
+                           const char* provider,
+                           const char* oauth_id,
+                           mf_user_t*  out_user)
+{
+    if (!pool || !provider || !provider[0] || !oauth_id || !oauth_id[0] || !out_user) {
+        return -1;
+    }
+    memset(out_user, 0, sizeof(*out_user));
+
+    csilk_json_t* res = user_find_by_oauth((csilk_db_pool_t*)pool, provider, oauth_id);
+    if (!res || csilk_json_array_size(res) == 0) {
+        if (res) {
+            csilk_json_free(res);
+        }
+        return 1;
+    }
+
+    const csilk_json_t* row = csilk_json_array_get(res, 0);
+    out_user->id = db_get_int(row, "id");
+    const char* username = csilk_json_get_string(row, "username");
+    if (username) {
+        snprintf(out_user->username, sizeof(out_user->username), "%s", username);
+    }
+    out_user->token_version = db_get_int(row, "token_version");
+    csilk_json_free(res);
+    return 0;
+}
+
+int
+mf_auth_repo_create_oauth(
+    void* pool, const char* username, const char* provider, const char* oauth_id, int64_t* out_id)
+{
+    if (!pool || !username || !username[0] || !provider || !provider[0] || !oauth_id ||
+        !oauth_id[0] || !out_id) {
+        return -1;
+    }
+
+    int64_t id = user_create_oauth((csilk_db_pool_t*)pool, username, provider, oauth_id);
+    if (id <= 0) {
+        *out_id = -1;
+        return -1;
+    }
+    *out_id = id;
+    return 0;
 }

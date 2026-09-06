@@ -49,3 +49,10 @@ int mf_asset_repo_delete(void* db_pool, int64_t user_id, int64_t id);
  * @return 1: 存在, 0: 不存在
  */
 int mf_asset_repo_exists(void* db_pool, int64_t user_id, int64_t id);
+
+/**
+ * @brief 根据分类 ID 获取资产分类的类型字符串 (如 stock, fund, cash, credit_card 等)
+ * @return 0: 成功, 1: 不存在, -1: 错误
+ */
+int mf_asset_repo_get_category_type(
+    void* db_pool, int64_t user_id, int64_t category_id, char* out_type, size_t out_cap);

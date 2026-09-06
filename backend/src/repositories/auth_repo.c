@@ -73,11 +73,11 @@ user_get_by_id(csilk_db_pool_t* pool, int64_t user_id)
 {
     char uid[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
-    return csilk_db_query_param_json(
-        pool,
-        "SELECT id, username, token_version, totp_secret, totp_enabled, totp_backup_codes, "
-        "created_at FROM users WHERE id = ?",
-        (const char*[]){uid, NULL});
+    return csilk_db_query_param_json(pool,
+                                     "SELECT id, username, password, token_version, totp_secret, "
+                                     "totp_enabled, totp_backup_codes, "
+                                     "created_at FROM users WHERE id = ?",
+                                     (const char*[]){uid, NULL});
 }
 
 /**

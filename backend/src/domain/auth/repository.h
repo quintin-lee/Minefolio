@@ -31,3 +31,11 @@ int mf_auth_repo_update_backup_codes(void* pool, int64_t user_id, const char* ba
 int mf_auth_repo_count(void* pool);
 
 int mf_auth_repo_is_initialized(void* pool);
+
+int mf_auth_repo_find_by_oauth(void*       pool,
+                               const char* provider,
+                               const char* oauth_id,
+                               mf_user_t*  out_user);
+
+int mf_auth_repo_create_oauth(
+    void* pool, const char* username, const char* provider, const char* oauth_id, int64_t* out_id);

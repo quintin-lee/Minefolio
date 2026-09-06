@@ -171,3 +171,20 @@ mf_asset_repo_exists(void* db_pool, int64_t user_id, int64_t id)
     }
     return asset_exists((csilk_db_pool_t*)db_pool, user_id, id);
 }
+
+int
+mf_asset_repo_get_category_type(
+    void* db_pool, int64_t user_id, int64_t category_id, char* out_type, size_t out_cap)
+{
+    if (!db_pool || user_id <= 0 || category_id <= 0 || !out_type || out_cap == 0) {
+        return -1;
+    }
+    char* atype = asset_get_category_type((csilk_db_pool_t*)db_pool, user_id, category_id);
+    if (!atype) {
+        out_type[0] = '\0';
+        return 1;
+    }
+    snprintf(out_type, out_cap, "%s", atype);
+    free(atype);
+    return 0;
+}
