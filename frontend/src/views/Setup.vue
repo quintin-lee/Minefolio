@@ -181,7 +181,7 @@ async function handleSubmit() {
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important;
+  box-shadow: var(--mf-shadow-lg) !important;
 }
 :deep(.el-card__header) {
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
@@ -196,8 +196,8 @@ async function handleSubmit() {
   gap: 6px;
   padding: 4px 12px;
   border-radius: 9999px;
-  background: rgba(0, 212, 255, 0.1);
-  border: 1px solid rgba(0, 212, 255, 0.3);
+  background: var(--mf-primary-light);
+  border: 1px solid var(--mf-primary-border);
   color: #00d4ff;
   font-size: 12px;
   font-weight: 500;
@@ -208,38 +208,38 @@ async function handleSubmit() {
   height: 6px;
   border-radius: 50%;
   background-color: #00d4ff;
-  box-shadow: 0 0 8px #00d4ff;
+  box-shadow: var(--mf-shadow-glow);
 }
 .app-title {
   margin: 0;
   font-size: 28px;
   font-weight: 700;
-  background: linear-gradient(to right, #00d4ff, #a78bfa);
+  background: linear-gradient(to right, var(--mf-primary), var(--mf-accent));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   letter-spacing: 1px;
 }
 .subtitle {
   margin: 8px 0 0;
-  color: #64748b;
+  color: var(--mf-text-muted);
   font-size: 14px;
 }
 .setup-form {
   margin-top: 20px;
 }
 :deep(.el-form-item__label) {
-  color: #e2e8f0;
+  color: var(--mf-text-main);
   font-weight: 500;
 }
 :deep(.el-input__wrapper) {
-  background-color: rgba(15, 23, 42, 0.4) !important;
-  box-shadow: 0 0 0 1px rgba(0, 212, 255, 0.15) inset !important;
+  background-color: var(--mf-surface-muted) !important;
+  box-shadow: 0 0 0 1px var(--mf-primary-light) inset !important;
 }
 :deep(.el-input__wrapper.is-focus) {
-  box-shadow: 0 0 0 1px #00d4ff inset, 0 0 10px rgba(0, 212, 255, 0.25) !important;
+  box-shadow: 0 0 0 1px var(--mf-primary) inset, var(--mf-shadow-glow) !important;
 }
 :deep(.el-input__inner) {
-  color: #e2e8f0;
+  color: var(--mf-text-main);
 }
 .submit-item {
   margin-top: 30px;

@@ -73,7 +73,7 @@ onMounted(async () => {
   padding: 40px;
   max-width: 400px;
   width: 90%;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--mf-shadow-md);
 }
 .spinner {
   font-size: 40px;
