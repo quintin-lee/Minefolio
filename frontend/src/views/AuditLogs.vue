@@ -207,7 +207,7 @@ onMounted(async () => {
 
 :deep(.premium-header th) {
   background-color: var(--mf-primary-light) !important;
-  color: #94a3b8 !important;
+  color: var(--mf-text-muted) !important;
   font-weight: 600;
   text-transform: uppercase;
   font-size: 12px;
@@ -251,6 +251,6 @@ onMounted(async () => {
 }
 
 .muted-text {
-  color: #94a3b8;
+  color: var(--mf-text-muted);
 }
 </style>

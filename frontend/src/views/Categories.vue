@@ -670,7 +670,7 @@ onMounted(loadData)
 
 .node-label {
   font-weight: 500;
-  color: #e2e8f0;
+  color: var(--mf-text-main);
 }
 
 .node-icon {
@@ -720,7 +720,7 @@ onMounted(loadData)
 
 :deep(.premium-header th) {
   background-color: var(--mf-primary-light) !important;
-  color: #94a3b8 !important;
+  color: var(--mf-text-muted) !important;
   font-weight: 600;
   text-transform: uppercase;
   font-size: 12px;

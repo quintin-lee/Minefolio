@@ -267,7 +267,7 @@ async function handleSubmit() {
   background: transparent !important;
 }
 :deep(.el-form-item__label) {
-  color: #94a3b8;
+  color: var(--mf-text-regular);
   font-size: 13px;
 }
 </style>

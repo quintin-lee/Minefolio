@@ -229,24 +229,24 @@ function submit() {
 .title-group .wf-title {
   font-size: 13px;
   font-weight: 600;
-  color: #f1f5f9;
+  color: var(--mf-text-main);
 }
 
 .title-group .wf-desc {
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--mf-text-muted);
 }
 
 .close-btn {
   background: transparent;
   border: none;
-  color: #64748b;
+  color: var(--mf-text-muted);
   font-size: 14px;
   cursor: pointer;
 }
 
 .close-btn:hover {
-  color: #ef4444;
+  color: var(--mf-danger);
 }
 
 .card-body {
@@ -258,7 +258,7 @@ function submit() {
 
 .param-label {
   font-size: 12px;
-  color: #cbd5e1;
+  color: var(--mf-text-regular);
   font-weight: 500;
   margin-bottom: 4px;
   display: block;
@@ -278,11 +278,11 @@ function submit() {
 
 .chip-btn, .preset-chip {
   padding: 2px 8px;
-  background: rgba(2, 6, 23, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--mf-surface-hover);
+  border: 1px solid var(--mf-border);
   border-radius: 10px;
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--mf-text-regular);
   cursor: pointer;
   transition: all 0.15s ease;
 }
@@ -305,11 +305,11 @@ function submit() {
 
 .sum-hint {
   font-size: 11px;
-  color: #f87171;
+  color: var(--mf-danger);
 }
 
 .sum-hint.ok {
-  color: #34d399;
+  color: var(--mf-success);
 }
 
 .ratio-inputs {
@@ -327,14 +327,14 @@ function submit() {
 
 .r-label {
   font-size: 10.5px;
-  color: #94a3b8;
+  color: var(--mf-text-muted);
 }
 
 .card-footer {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-top: 1px solid var(--mf-border-subtle);
   padding-top: 10px;
 }
 </style>

@@ -77,6 +77,6 @@ defineProps<{ transactions: Transaction[] }>()
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-weight: 600;
   font-size: 14px;
-  color: #e2e8f0;
+  color: var(--mf-text-main);
 }
 </style>

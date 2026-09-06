@@ -705,7 +705,7 @@ onBeforeUnmount(() => {
 .switch-mode {
   text-align: center;
   margin-top: 24px;
-  color: #94a3b8;
+  color: var(--mf-text-muted);
   font-size: 14px;
 }
 .switch-btn {
@@ -770,7 +770,7 @@ onBeforeUnmount(() => {
 .two-factor-hint {
   font-size: 13px;
   line-height: 1.6;
-  color: #94a3b8;
+  color: var(--mf-text-muted);
   margin-bottom: 16px;
   text-align: center;
 }

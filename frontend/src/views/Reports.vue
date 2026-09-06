@@ -628,7 +628,7 @@ onMounted(loadAll)
 
 .premium-table-small :deep(.el-table th.el-table__cell) {
   background-color: var(--mf-primary-light) !important;
-  color: #94a3b8 !important;
+  color: var(--mf-text-muted) !important;
   border-bottom: 1px solid var(--mf-border) !important;
 }
 

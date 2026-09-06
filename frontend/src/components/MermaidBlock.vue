@@ -723,7 +723,7 @@ onUnmounted(() => {
 .error-title {
   font-size: 13px;
   font-weight: 600;
-  color: #fca5a5;
+  color: var(--mf-danger);
   margin-bottom: 2px;
 }
 
@@ -764,7 +764,7 @@ onUnmounted(() => {
   background: var(--mf-surface-muted);
   border-radius: 6px;
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--mf-text-muted);
   max-height: 140px;
   overflow-y: auto;
 }
@@ -934,8 +934,8 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   gap: 4px;
-  background: rgba(30, 41, 59, 0.8);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--mf-surface-hover);
+  border: 1px solid var(--mf-border);
   border-radius: 16px;
   padding: 5px 10px;
   color: var(--mf-text-main);
@@ -967,7 +967,7 @@ onUnmounted(() => {
 .pill-divider {
   width: 1px;
   height: 16px;
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--mf-border);
   margin: 0 4px;
 }
 

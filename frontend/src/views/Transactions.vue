@@ -902,7 +902,7 @@ async function handleImport() {
 
 .category-pill {
   background: var(--mf-primary-light);
-  color: #94a3b8;
+  color: var(--mf-text-regular);
   padding: 2px 8px;
   border-radius: 6px;
   font-size: 13px;
@@ -913,7 +913,7 @@ async function handleImport() {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-weight: 600;
   font-size: 14px;
-  color: #e2e8f0;
+  color: var(--mf-text-main);
 }
 
 .trade-detail {
@@ -947,7 +947,7 @@ async function handleImport() {
 .import-hint {
   margin: 0 0 16px;
   font-size: 13px;
-  color: #94a3b8;
+  color: var(--mf-text-muted);
   line-height: 1.6;
 }
 
@@ -980,28 +980,8 @@ async function handleImport() {
   display: flex;
   flex-direction: column;
   gap: 4px;
-}
-
-.import-result.success {
-  background: rgba(16, 185, 129, 0.1);
-  border: 1px solid rgba(16, 185, 129, 0.3);
-  color: #34d399;
-}
-
-.import-result.error {
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  color: #f87171;
-}
-
-.import-result .el-icon {
-  font-size: 16px;
-}
-
-.import-errors {
-  font-size: 12px;
-  color: #fca5a5;
-  white-space: pre-wrap;
-  word-break: break-all;
-}
+}.import-result.success { background: var(--mf-success-light); border: 1px solid var(--mf-success-border); color: var(--mf-success); }
+.import-result.error { background: var(--mf-danger-light); border: 1px solid var(--mf-danger-border); color: var(--mf-danger); }
+.import-result .el-icon { font-size: 16px; }
+.import-errors { font-size: 12px; color: var(--mf-danger); white-space: pre-wrap; word-break: break-all; }
 </style>

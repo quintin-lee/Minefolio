@@ -125,7 +125,7 @@ watch(() => props.traceId, async (id) => {
 
 .info-item .label {
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--mf-text-muted);
 }
 
 .info-item .value {
@@ -169,7 +169,7 @@ watch(() => props.traceId, async (id) => {
 .message-role {
   font-size: 12px;
   font-weight: 600;
-  color: #94a3b8;
+  color: var(--mf-text-muted);
   margin-bottom: 6px;
   text-transform: uppercase;
 }
@@ -198,8 +198,8 @@ watch(() => props.traceId, async (id) => {
 }
 
 .code-block.error {
-  border-left: 3px solid #ef4444;
-  color: #fca5a5;
+  border-left: 3px solid var(--mf-danger);
+  color: var(--mf-danger);
 }
 
 .code-block.output {

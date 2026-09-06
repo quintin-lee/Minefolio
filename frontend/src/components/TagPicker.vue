@@ -120,7 +120,7 @@ onMounted(() => loadSuggestions())
 }
 
 .tag-picker__empty {
-  color: #94a3b8;
+  color: var(--mf-text-muted);
   font-size: 13px;
   font-style: italic;
 }

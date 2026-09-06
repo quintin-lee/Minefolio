@@ -179,12 +179,12 @@ defineExpose({ handleKeyDown })
 .item-title {
   font-size: 12.5px;
   font-weight: 600;
-  color: #f1f5f9;
+  color: var(--mf-text-main);
 }
 
 .item-desc {
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--mf-text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -194,8 +194,8 @@ defineExpose({ handleKeyDown })
   font-size: 10px;
   padding: 1px 6px;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.06);
-  color: #94a3b8;
+  background: var(--mf-surface-hover);
+  color: var(--mf-text-muted);
   flex-shrink: 0;
 }
 
@@ -203,6 +203,6 @@ defineExpose({ handleKeyDown })
   padding: 16px;
   text-align: center;
   font-size: 12px;
-  color: #64748b;
+  color: var(--mf-text-muted);
 }
 </style>

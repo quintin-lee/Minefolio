@@ -437,7 +437,7 @@ onUnmounted(() => {
 .wf-title {
   font-size: 13.5px;
   font-weight: 600;
-  color: #f1f5f9;
+  color: var(--mf-text-main);
   letter-spacing: 0.2px;
 }
 
@@ -497,7 +497,7 @@ onUnmounted(() => {
 .trace-btn {
   background: transparent;
   border: none;
-  color: #94a3b8;
+  color: var(--mf-text-muted);
   font-size: 14px;
   cursor: pointer;
   padding: 4px;
@@ -508,19 +508,19 @@ onUnmounted(() => {
 }
 
 .retry-btn {
-  color: #f87171;
+  color: var(--mf-danger);
 }
 
 .retry-btn:hover {
-  color: #ef4444;
+  color: var(--mf-danger);
 }
 
 .trace-btn {
-  color: #818cf8;
+  color: var(--mf-accent);
 }
 
 .trace-btn:hover {
-  color: #6366f1;
+  color: var(--mf-accent);
 }
 
 .retry-btn span,
@@ -580,9 +580,9 @@ onUnmounted(() => {
 }
 
 .step-error .step-icon-box {
-  background: rgba(248, 113, 113, 0.15);
-  border-color: rgba(248, 113, 113, 0.4);
-  color: #f87171;
+  background: var(--mf-danger-light);
+  border-color: var(--mf-danger-border);
+  color: var(--mf-danger);
 }
 
 .icon-completed {
@@ -667,16 +667,16 @@ onUnmounted(() => {
 
 .step-summary {
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--mf-text-muted);
   margin-top: 4px;
   line-height: 1.4;
 }
 
 /* Result Summary */
 .workflow-result-summary {
-  border-top: 1px solid rgba(52, 211, 153, 0.2);
+  border-top: 1px solid var(--mf-success-border);
   padding: 10px 14px;
-  background: rgba(52, 211, 153, 0.05);
+  background: var(--mf-success-light);
 }
 
 .result-header {
@@ -687,14 +687,14 @@ onUnmounted(() => {
 }
 
 .result-icon {
-  color: #34d399;
+  color: var(--mf-success);
   font-size: 15px;
 }
 
 .result-title {
   font-size: 12px;
   font-weight: 600;
-  color: #34d399;
+  color: var(--mf-success);
 }
 
 .result-content {
@@ -708,7 +708,7 @@ onUnmounted(() => {
   gap: 8px;
   font-size: 11.5px;
   padding: 3px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid var(--mf-border-subtle);
 }
 
 .result-item:last-child {
@@ -716,21 +716,21 @@ onUnmounted(() => {
 }
 
 .result-item-label {
-  color: #94a3b8;
+  color: var(--mf-text-muted);
   flex-shrink: 0;
   min-width: 80px;
 }
 
 .result-item-value {
-  color: #e2e8f0;
+  color: var(--mf-text-main);
   word-break: break-word;
 }
 
 /* Actions Wrapper */
 .workflow-actions-wrapper {
   padding: 10px 14px;
-  background: rgba(2, 6, 23, 0.6);
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--mf-surface-hover);
+  border-top: 1px solid var(--mf-border);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -747,11 +747,11 @@ onUnmounted(() => {
   align-items: center;
   gap: 5px;
   padding: 4px 10px;
-  background: rgba(15, 23, 42, 0.8);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--mf-surface-card);
+  border: 1px solid var(--mf-border);
   border-radius: 12px;
   font-size: 11px;
-  color: #cbd5e1;
+  color: var(--mf-text-regular);
   cursor: pointer;
   transition: all 0.15s ease;
 }
@@ -796,19 +796,19 @@ onUnmounted(() => {
   align-items: center;
   gap: 4px;
   padding: 3px 9px;
-  background: rgba(30, 41, 59, 0.6);
-  border: 1px solid rgba(56, 189, 248, 0.2);
+  background: var(--mf-surface-card);
+  border: 1px solid var(--mf-border);
   border-radius: 12px;
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--mf-text-regular);
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .follow-up-chip:hover:not(:disabled) {
-  background: rgba(56, 189, 248, 0.15);
-  border-color: rgba(56, 189, 248, 0.4);
-  color: #e2e8f0;
+  background: var(--mf-info-light);
+  border-color: var(--mf-info-border);
+  color: var(--mf-info);
   transform: translateY(-1px);
 }
 

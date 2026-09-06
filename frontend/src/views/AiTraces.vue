@@ -230,7 +230,7 @@ onMounted(async () => {
 
 .stat-label {
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--mf-text-muted);
   margin-top: 4px;
 }
 
@@ -301,7 +301,7 @@ onMounted(async () => {
 
 :deep(.premium-header th) {
   background-color: var(--mf-primary-light) !important;
-  color: #94a3b8 !important;
+  color: var(--mf-text-muted) !important;
   font-weight: 600;
   text-transform: uppercase;
   font-size: 12px;

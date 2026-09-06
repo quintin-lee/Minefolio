@@ -442,7 +442,7 @@ async function handleImport() {
 
 .premium-filters :deep(.el-form-item__label) {
   font-weight: 500;
-  color: #94a3b8;
+  color: var(--mf-text-regular);
 }
 
 .filter-select {
@@ -522,7 +522,7 @@ async function handleImport() {
 
 :deep(.premium-header th) {
   background-color: var(--mf-primary-light) !important;
-  color: #94a3b8 !important;
+  color: var(--mf-text-muted) !important;
   font-weight: 600;
   text-transform: uppercase;
   font-size: 12px;
@@ -671,16 +671,16 @@ async function handleImport() {
 }
 
 .import-dialog-content { padding: 8px 0; }
-.import-hint { margin: 0 0 16px; font-size: 13px; color: #94a3b8; line-height: 1.6; }
+.import-hint { margin: 0 0 16px; font-size: 13px; color: var(--mf-text-muted); line-height: 1.6; }
 .import-upload { width: 100%; }
 .import-upload :deep(.el-upload-dragger) { padding: 28px 0; border-radius: var(--mf-radius-md); border: 1px dashed var(--mf-border); background: var(--mf-background); }
 .import-upload :deep(.el-upload-dragger:hover) { border-color: var(--mf-primary); }
 .import-upload :deep(.el-icon--upload) { font-size: 40px; color: var(--mf-primary); margin-bottom: 12px; }
 .import-result { margin-top: 16px; padding: 12px 16px; border-radius: var(--mf-radius-md); font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
-.import-result.success { background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); color: #34d399; }
-.import-result.error { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #f87171; }
+.import-result.success { background: var(--mf-success-light); border: 1px solid var(--mf-success-border); color: var(--mf-success); }
+.import-result.error { background: var(--mf-danger-light); border: 1px solid var(--mf-danger-border); color: var(--mf-danger); }
 .import-result .el-icon { font-size: 16px; }
-.import-errors { font-size: 12px; color: #fca5a5; white-space: pre-wrap; word-break: break-all; }
+.import-errors { font-size: 12px; color: var(--mf-danger); white-space: pre-wrap; word-break: break-all; }
 
 /* Constrain layout to viewport */
 .daily-expenses-page > .el-row {
