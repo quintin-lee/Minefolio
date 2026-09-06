@@ -290,6 +290,7 @@
   --el-fill-color-light: var(--mf-primary-light);
   --el-fill-color-lighter: rgba(37, 99, 235, 0.04);
   --el-fill-color-dark: var(--mf-primary-border);
+  --el-fill-color-darker: var(--mf-border-hover);
   --el-fill-color-blank: var(--mf-surface-blank);
 
   --el-tag-bg-color: var(--mf-surface-muted);
