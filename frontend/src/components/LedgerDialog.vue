@@ -267,7 +267,7 @@ async function handleSubmit() {
   border-color: var(--mf-primary);
   background: rgba(0, 212, 255, 0.12);
   color: var(--mf-primary);
-  box-shadow: 0 0 12px rgba(0, 212, 255, 0.3);
+  box-shadow: var(--mf-shadow-glow);
 }
 .color-item {
   width: 30px;
@@ -283,7 +283,7 @@ async function handleSubmit() {
 }
 .color-item.active {
   border-color: #fff;
-  box-shadow: 0 0 0 2px var(--mf-primary), 0 0 12px rgba(0, 212, 255, 0.4);
+  box-shadow: 0 0 0 2px var(--mf-primary), var(--mf-shadow-glow);
   transform: scale(1.15);
 }
 .dialog-footer {

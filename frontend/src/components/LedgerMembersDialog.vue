@@ -354,7 +354,7 @@ async function handleRemoveMember(member: LedgerMember) {
   align-items: center;
   justify-content: center;
   border: 1px solid;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--mf-shadow-sm);
   flex-shrink: 0;
 }
 .modal-header-text {
@@ -389,7 +389,7 @@ async function handleRemoveMember(member: LedgerMember) {
 
 /* 1. Invite Banner */
 .invite-banner {
-  background: linear-gradient(135deg, var(--mf-primary-light) 0%, rgba(99, 102, 241, 0.08) 100%);
+  background: linear-gradient(135deg, var(--mf-primary-light) 0%, var(--mf-accent-light) 100%);
   border: 1px solid var(--mf-primary-border);
   border-radius: var(--mf-radius-lg);
   padding: 16px 20px;
@@ -534,7 +534,7 @@ async function handleRemoveMember(member: LedgerMember) {
   height: 32px;
   border-radius: 50%;
   background: linear-gradient(135deg, var(--mf-primary) 0%, var(--mf-accent) 100%);
-  color: white;
+  color: var(--mf-text-main);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -554,9 +554,9 @@ async function handleRemoveMember(member: LedgerMember) {
   gap: 6px;
   padding: 4px 10px;
   border-radius: 6px;
-  background: rgba(245, 158, 11, 0.12);
-  border: 1px solid rgba(245, 158, 11, 0.35);
-  color: #f59e0b;
+  background: var(--mf-warning-light);
+  border: 1px solid var(--mf-warning-border);
+  color: var(--mf-warning);
   font-size: 12px;
   font-weight: 600;
 }
