@@ -663,7 +663,7 @@ onUnmounted(() => {
   font-size: 10px;
   color: var(--mf-text-muted);
   background: var(--mf-surface-muted);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--mf-border-subtle);
   padding: 2px 6px;
   border-radius: 4px;
   opacity: 0;
