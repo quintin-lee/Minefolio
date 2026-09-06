@@ -759,7 +759,7 @@ onUnmounted(() => {
 .action-pill-btn:hover {
   background: var(--mf-primary-light);
   border-color: var(--mf-primary-border);
-  color: #ffffff;
+  color: var(--mf-text-main);
 }
 .action-pill-btn.primary {
   background: var(--mf-primary-light);
@@ -770,7 +770,7 @@ onUnmounted(() => {
 .action-pill-btn.primary:hover {
   background: var(--mf-primary);
   border-color: var(--mf-primary);
-  color: #ffffff;
+  color: var(--mf-text-main);
 }
 
 /* Follow-up Prompts */

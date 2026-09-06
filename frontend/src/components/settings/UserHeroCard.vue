@@ -376,7 +376,7 @@ async function copyUserId() {
 }
 
 [data-theme="light"] .uid-tag {
-  background: rgba(0, 0, 0, 0.04);
+  background: var(--mf-surface-hover);
   border-color: var(--mf-border);
 }
 
