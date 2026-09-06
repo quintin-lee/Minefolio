@@ -277,9 +277,16 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
                                                        : strdup("{}");
         }
 
+        /* assistant 消息在 msgs 中的下标。后续追加 role="tool" 消息会 realloc 整个数组，
+         * 不能缓存指向数组元素的指针，必须按下标重新取；且助手消息不总在 mc-1（追加工具消息后）。 */
+        const size_t asst_idx = mc - 1;
+
         /* 逐一校验安全策略并执行工具 */
         for (size_t t = 0; t < n_calls; t++) {
-            csilk_ai_tool_call_t* tc = &msgs[mc - 1].tool_calls[t];
+            csilk_ai_tool_call_t* tc = &msgs[asst_idx].tool_calls[t];
+            /* tc 指向 msgs 数组内部；下方追加工具消息会 realloc 移动数组，先备份需要
+             * 在 realloc 之后才使用的字段，避免悬垂指针读取 (use-after-free)。 */
+            char* tc_id_copy = strdup(tc->id && tc->id[0] ? tc->id : "");
             if (cbs && cbs->on_tool_call) {
                 cbs->on_tool_call(tc->id, tc->name, tc->arguments, user_data);
             }
@@ -342,13 +349,13 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
                 cbs->on_tool_result(tc->id, tc->name, result_str ? result_str : "{}", user_data);
             }
 
-            /* 追加 role="tool" 消息 */
+            /* 追加 role="tool" 消息（使用 realloc 前备份的 tool_call_id） */
             mc++;
             msgs = (csilk_ai_message_t*)realloc(msgs, sizeof(csilk_ai_message_t) * mc);
             msgs[mc - 1] = (csilk_ai_message_t){
                 .role = "tool",
                 .content = result_str,
-                .tool_call_id = tc->id ? strdup(tc->id) : strdup(""),
+                .tool_call_id = tc_id_copy,
                 .tool_calls = NULL,
                 .tool_call_count = 0,
             };
