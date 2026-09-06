@@ -462,7 +462,7 @@ async function handleRemoveMember(member: LedgerMember) {
   color: #ffffff;
 }
 .glow-button {
-  box-shadow: 0 0 12px rgba(0, 212, 255, 0.25);
+  box-shadow: var(--mf-shadow-glow);
   border-radius: 8px;
 }
 
