@@ -479,11 +479,11 @@ onMounted(loadDashboard)
 }
 .curr-label {
   font-size: 13px;
-  color: var(--mf-text-secondary);
+  color: var(--mf-text-regular);
 }
 
 .multi-currency-banner {
-  background: var(--mf-card-bg);
+  background: var(--mf-surface-card);
   border: 1px solid var(--mf-border);
   border-radius: var(--mf-radius-md);
   padding: 12px 16px;
@@ -497,7 +497,7 @@ onMounted(loadDashboard)
   align-items: center;
   gap: 6px;
   font-size: 13px;
-  color: var(--mf-text-secondary);
+  color: var(--mf-text-regular);
 }
 .fx-title strong {
   color: var(--mf-primary);
@@ -528,7 +528,7 @@ onMounted(loadDashboard)
 .chip-curr {
   font-size: 13px;
   font-weight: 700;
-  color: var(--mf-text-primary);
+  color: var(--mf-text-main);
 }
 .chip-pct {
   font-size: 11px;
@@ -537,7 +537,7 @@ onMounted(loadDashboard)
 }
 .chip-orig {
   font-size: 11px;
-  color: var(--mf-text-tertiary);
+  color: var(--mf-text-muted);
 }
 .chip-converted {
   font-size: 12px;

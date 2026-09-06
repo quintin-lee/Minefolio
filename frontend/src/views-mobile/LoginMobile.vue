@@ -112,7 +112,7 @@ async function submit() {
   text-align: center;
   margin-top: 18px;
   font-size: 14px;
-  color: var(--mf-text-secondary);
+  color: var(--mf-text-regular);
 }
 .oauth-mobile-section {
   margin-top: 24px;
@@ -120,7 +120,7 @@ async function submit() {
 .oauth-divider-mobile {
   text-align: center;
   font-size: 12px;
-  color: var(--mf-text-tertiary);
+  color: var(--mf-text-muted);
   margin-bottom: 12px;
 }
 .oauth-btn-mobile {
@@ -128,8 +128,8 @@ async function submit() {
   height: 40px;
   border-radius: 8px;
   border: 1px solid var(--mf-border);
-  background: var(--mf-card-bg);
-  color: var(--mf-text-primary);
+  background: var(--mf-surface-card);
+  color: var(--mf-text-main);
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;

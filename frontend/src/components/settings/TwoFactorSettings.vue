@@ -277,7 +277,7 @@ function downloadBackupCodes() {
 
 .step-desc {
   font-size: 13px;
-  color: var(--mf-text-primary);
+  color: var(--mf-text-main);
   line-height: 1.5;
 }
 
@@ -298,8 +298,8 @@ function downloadBackupCodes() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: var(--mf-bg-secondary);
-  border: 1px solid var(--border-color);
+  background: var(--mf-surface-muted);
+  border: 1px solid var(--mf-border);
   padding: 8px 12px;
   border-radius: 6px;
   margin-bottom: 12px;
@@ -317,8 +317,8 @@ function downloadBackupCodes() {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 10px;
-  background: var(--mf-bg-secondary);
-  border: 1px solid var(--border-color);
+  background: var(--mf-surface-muted);
+  border: 1px solid var(--mf-border);
   padding: 16px;
   border-radius: 8px;
 }
@@ -338,7 +338,7 @@ function downloadBackupCodes() {
 
 .code-val {
   font-weight: 600;
-  color: var(--mf-text-primary);
+  color: var(--mf-text-main);
   background: rgba(0, 212, 255, 0.08);
   padding: 2px 6px;
   border-radius: 4px;

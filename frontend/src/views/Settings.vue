@@ -112,7 +112,7 @@ onErrorCaptured((err, instance, info) => {
   align-items: center;
   justify-content: space-between;
   padding: 16px 24px;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--mf-border);
   background: var(--bg-primary);
   flex-shrink: 0;
 }
@@ -158,7 +158,7 @@ onErrorCaptured((err, instance, info) => {
   gap: 6px;
   font-size: 13px;
   padding: 12px 4px;
-  color: var(--mf-text-secondary);
+  color: var(--mf-text-regular);
 }
 
 .settings-tabs :deep(.el-tabs__item.is-active) {

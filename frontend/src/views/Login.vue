@@ -411,7 +411,7 @@ onBeforeUnmount(() => {
   --login-card-shadow: var(--mf-shadow-lg);
   --login-text: var(--mf-text-regular);
   --login-muted: var(--mf-text-muted);
-  --login-input-bg: var(--mf-fill-color-blank);
+  --login-input-bg: var(--mf-surface-blank);
   --login-input-border: var(--mf-border);
   --login-input-text: var(--mf-text-main);
   --login-divider: var(--mf-border-subtle);

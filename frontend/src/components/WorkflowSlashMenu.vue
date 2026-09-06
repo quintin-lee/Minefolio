@@ -117,7 +117,7 @@ defineExpose({ handleKeyDown })
   left: 0;
   width: 380px;
   max-width: 90vw;
-  background: var(--mf-surface-elevated);
+  background: var(--mf-background-elevated);
   backdrop-filter: blur(12px);
   border: 1px solid var(--mf-primary-border);
   border-radius: 8px;

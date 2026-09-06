@@ -231,7 +231,7 @@ async function handleSubmit() {
 }
 .modal-subtitle {
   font-size: 12px;
-  color: var(--mf-text-secondary);
+  color: var(--mf-text-regular);
 }
 
 .ledger-form {
@@ -250,7 +250,7 @@ async function handleSubmit() {
   border-radius: 10px;
   border: 1px solid var(--mf-border);
   background: var(--mf-surface);
-  color: var(--mf-text-secondary);
+  color: var(--mf-text-regular);
   display: flex;
   align-items: center;
   justify-content: center;

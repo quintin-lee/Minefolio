@@ -346,12 +346,12 @@ onMounted(() => {
 .page-header h2 {
   font-size: 20px;
   font-weight: 700;
-  color: var(--mf-text-primary);
+  color: var(--mf-text-main);
   margin: 0;
 }
 .tab-switch {
   display: flex;
-  background: var(--mf-card-bg);
+  background: var(--mf-surface-card);
   border: 1px solid var(--mf-border);
   border-radius: 10px;
   padding: 4px;
@@ -365,7 +365,7 @@ onMounted(() => {
   border-radius: 8px;
   font-size: 13px;
   font-weight: 600;
-  color: var(--mf-text-secondary);
+  color: var(--mf-text-regular);
   cursor: pointer;
   transition: all 0.2s;
 }
@@ -390,7 +390,7 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: var(--mf-card-bg);
+  background: var(--mf-surface-card);
   padding: 10px;
   border-radius: 8px;
   margin-top: 6px;
@@ -398,11 +398,11 @@ onMounted(() => {
 .p-title {
   font-size: 13px;
   font-weight: 600;
-  color: var(--mf-text-primary);
+  color: var(--mf-text-main);
 }
 .p-sub {
   font-size: 12px;
-  color: var(--mf-text-secondary);
+  color: var(--mf-text-regular);
 }
 .card-list {
   display: flex;
@@ -418,7 +418,7 @@ onMounted(() => {
 .s-title {
   font-size: 14px;
   font-weight: 700;
-  color: var(--mf-text-primary);
+  color: var(--mf-text-main);
   margin-bottom: 10px;
 }
 .s-grid {
@@ -429,7 +429,7 @@ onMounted(() => {
 .s-lbl {
   display: block;
   font-size: 11px;
-  color: var(--mf-text-secondary);
+  color: var(--mf-text-regular);
 }
 .s-val {
   font-size: 16px;
@@ -439,7 +439,7 @@ onMounted(() => {
 .expense { color: var(--mf-danger); }
 .highlight { color: var(--mf-primary); }
 .plan-card {
-  background: var(--mf-card-bg);
+  background: var(--mf-surface-card);
   border: 1px solid var(--mf-border);
   border-radius: 12px;
   padding: 14px;
@@ -458,21 +458,21 @@ onMounted(() => {
 .plan-name {
   font-size: 15px;
   font-weight: 600;
-  color: var(--mf-text-primary);
+  color: var(--mf-text-main);
 }
 .plan-amount {
   font-size: 16px;
   font-weight: 700;
-  color: var(--mf-text-primary);
+  color: var(--mf-text-main);
 }
 .freq {
   font-size: 12px;
   font-weight: normal;
-  color: var(--mf-text-secondary);
+  color: var(--mf-text-regular);
 }
 .card-meta {
   font-size: 12px;
-  color: var(--mf-text-secondary);
+  color: var(--mf-text-regular);
   border-top: 1px dashed var(--mf-border);
   padding-top: 8px;
   display: flex;
@@ -483,8 +483,8 @@ onMounted(() => {
   display: flex;
   align-items: center;
 }
-.lbl { color: var(--mf-text-tertiary); }
-.val { color: var(--mf-text-secondary); margin-left: 4px; }
+.lbl { color: var(--mf-text-muted); }
+.val { color: var(--mf-text-regular); margin-left: 4px; }
 .ml { margin-left: 12px; }
 .card-actions {
   display: flex;

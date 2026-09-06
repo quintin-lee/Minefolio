@@ -42,6 +42,11 @@
   --mf-warning-border: rgba(245, 158, 11, 0.3);
   --mf-info: #0284c7;
   --mf-info-light: rgba(2, 132, 199, 0.14);
+  --mf-info-border: rgba(2, 132, 199, 0.3);
+
+  /* Spacing Scale (theme-independent) */
+  --mf-spacing-md: 16px;
+  --mf-spacing-lg: 24px;
 
   /* Borders & Dividers */
   --mf-border: rgba(59, 130, 246, 0.15);
@@ -198,6 +203,7 @@
   --mf-warning-border: rgba(217, 119, 6, 0.25);
   --mf-info: #0284c7;
   --mf-info-light: rgba(2, 132, 199, 0.1);
+  --mf-info-border: rgba(2, 132, 199, 0.25);
 
   /* Borders & Dividers */
   --mf-border: #e2e8f0;

@@ -260,7 +260,7 @@ async function handleRemoveMember(member: LedgerMember) {
         <el-table
           :data="members"
           class="custom-members-table"
-          :header-cell-style="{ background: 'var(--mf-surface)', color: 'var(--mf-text-secondary)', fontWeight: '600' }"
+          :header-cell-style="{ background: 'var(--mf-surface)', color: 'var(--mf-text-regular)', fontWeight: '600' }"
         >
           <el-table-column label="成员" min-width="150">
             <template #default="{ row }">
@@ -378,7 +378,7 @@ async function handleRemoveMember(member: LedgerMember) {
 }
 .modal-subtitle {
   font-size: 12px;
-  color: var(--mf-text-secondary);
+  color: var(--mf-text-regular);
 }
 
 .members-container {
@@ -423,7 +423,7 @@ async function handleRemoveMember(member: LedgerMember) {
 }
 .invite-desc {
   font-size: 12px;
-  color: var(--mf-text-secondary);
+  color: var(--mf-text-regular);
 }
 .code-pill {
   display: flex;
@@ -478,7 +478,7 @@ async function handleRemoveMember(member: LedgerMember) {
   gap: 6px;
   font-size: 13px;
   font-weight: 600;
-  color: var(--mf-text-secondary);
+  color: var(--mf-text-regular);
 }
 .add-member-bar {
   display: flex;
@@ -567,7 +567,7 @@ async function handleRemoveMember(member: LedgerMember) {
   display: flex;
   align-items: center;
   gap: 6px;
-  color: var(--mf-text-secondary);
+  color: var(--mf-text-regular);
   font-size: 12px;
 }
 .remove-btn {

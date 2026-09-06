@@ -128,7 +128,7 @@ async function handleJoin() {
 }
 .modal-subtitle {
   font-size: 12px;
-  color: var(--mf-text-secondary);
+  color: var(--mf-text-regular);
 }
 .join-body {
   display: flex;
@@ -145,7 +145,7 @@ async function handleJoin() {
   border-radius: 8px;
   padding: 10px 14px;
   font-size: 12.5px;
-  color: var(--mf-text-secondary);
+  color: var(--mf-text-regular);
 }
 .code-input :deep(.el-input__wrapper) {
   padding: 6px 14px;

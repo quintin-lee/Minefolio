@@ -220,7 +220,7 @@ async function copyUserId() {
   align-items: center;
   gap: 10px;
   font-size: 13px;
-  color: var(--mf-text-secondary);
+  color: var(--mf-text-regular);
   flex-wrap: wrap;
 }
 
@@ -319,7 +319,7 @@ async function copyUserId() {
 
 .stat-label {
   font-size: 11px;
-  color: var(--mf-text-secondary);
+  color: var(--mf-text-regular);
 }
 
 .stat-val {
