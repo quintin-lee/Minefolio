@@ -230,6 +230,7 @@ RUN --mount=type=bind,source=hosts,target=/etc/hosts \
     && rm -f /etc/apt/apt.conf.d/80proxy \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
+    tzdata \
     libuv1 \
     libyaml-0-2 \
     libsqlite3-0 \

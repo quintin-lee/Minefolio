@@ -8,7 +8,9 @@ services:
       MINEFOLIO_JWT_SECRET: "${MINEFOLIO_JWT_SECRET:?MINEFOLIO_JWT_SECRET is required}"
       MINEFOLIO_DB_DSN: "/app/data/minefolio.db"
       MINEFOLIO_ENABLE_CSRF: "1"
+      TZ: "Asia/Shanghai"
     volumes:
+      - /usr/share/zoneinfo/Asia/Shanghai:/etc/localtime:ro
       - minefolio-data:/app/data
     restart: unless-stopped
 
