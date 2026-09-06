@@ -2,7 +2,7 @@
   <div class="oauth-callback-container">
     <div class="callback-card">
       <div class="spinner">⏳</div>
-      <h2>第三方账号登录中...</h2>
+      <h2>{{ t('oauth.processing') }}</h2>
       <p class="status-msg">{{ statusMsg }}</p>
     </div>
   </div>
@@ -14,11 +14,12 @@ import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { authApi } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
+import { t } from '@/utils/locale'
 
 const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
-const statusMsg = ref('正在验证授权凭据并同步用户信息...')
+const statusMsg = ref(t('oauth.verifying'))
 
 onMounted(async () => {
   const code = (route.query.code as string) || ''
@@ -26,7 +27,7 @@ onMounted(async () => {
   const state = (route.query.state as string) || ''
 
   if (!code && !route.query.oauth_id) {
-    statusMsg.value = '未检测到有效的授权码，3秒后返回登录页...'
+    statusMsg.value = t('oauth.missingCode')
     setTimeout(() => router.replace('/login'), 3000)
     return
   }
@@ -44,14 +45,17 @@ onMounted(async () => {
       if (res.user) {
         auth.setUser(res.user)
       }
-      ElMessage.success('第三方登录成功！')
+      ElMessage.success(t('oauth.loginSuccess'))
       router.replace('/dashboard')
     } else {
-      throw new Error('未获取到有效的登录令牌')
+      throw new Error(t('oauth.noToken'))
     }
   } catch (err: any) {
-    statusMsg.value = `登录失败: ${err.message || '凭据无效或已过期'}，3秒后返回登录页...`
-    ElMessage.error(err.message || 'OAuth 登录失败')
+    const raw = err.message || ''
+    statusMsg.value = raw
+      ? t('oauth.loginFailedWith', { msg: raw })
+      : t('oauth.loginFailedWith', { msg: t('oauth.invalidCredential') })
+    ElMessage.error(raw || t('oauth.failed'))
     setTimeout(() => router.replace('/login'), 3000)
   }
 })

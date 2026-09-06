@@ -13,7 +13,7 @@
         <template #header>
           <div class="card-header">
             <h2 class="app-title">Minefolio</h2>
-            <p class="subtitle">综合资产管理</p>
+            <p class="subtitle">{{ t('login.subtitle') }}</p>
             <div class="status-line">
               <span class="status-dot"></span>
               <span class="status-text">{{ statusText }}</span>
@@ -23,12 +23,12 @@
         </template>
 
         <div v-if="isTwoFactorStep" class="two-factor-box">
-          <p class="two-factor-hint">该账号已启用两步验证 (TOTP)，请输入身份验证器中的 6 位动态验证码或应急备用码：</p>
+          <p class="two-factor-hint">{{ t('login.twoFactorHint') }}</p>
           <el-form label-position="top" class="login-form" @submit.prevent="handle2FaSubmit">
-            <el-form-item label="动态验证码 / 备用码">
+            <el-form-item :label="t('login.twoFactorCodeLabel')">
               <el-input
                 v-model="twoFactorCode"
-                placeholder="例如 123456 或 a1b2-c3d4"
+                :placeholder="t('login.twoFactorCodePlaceholder')"
                 prefix-icon="Key"
                 size="large"
                 autofocus
@@ -37,27 +37,27 @@
             </el-form-item>
             <el-form-item class="submit-item">
               <el-button type="primary" size="large" :loading="loading" class="submit-btn" @click="handle2FaSubmit">
-                验证并登录
+                {{ t('login.verifyAndLogin') }}
               </el-button>
             </el-form-item>
             <div class="switch-mode">
               <el-button link type="info" class="switch-btn" @click="isTwoFactorStep = false">
-                返回账号密码登录
+                {{ t('login.backToPasswordLogin') }}
               </el-button>
             </div>
           </el-form>
         </div>
 
         <el-form v-else ref="formRef" :model="form" :rules="rules" label-position="top" class="login-form">
-          <el-form-item :label="isRegister ? '用户名' : '用户名'" prop="username">
-            <el-input v-model="form.username" placeholder="请输入用户名" prefix-icon="User" size="large" />
+          <el-form-item :label="t('login.username')" prop="username">
+            <el-input v-model="form.username" :placeholder="t('login.usernamePlaceholder')" prefix-icon="User" size="large" />
           </el-form-item>
 
-          <el-form-item label="密码" prop="password">
+          <el-form-item :label="t('login.password')" prop="password">
             <el-input
               v-model="form.password"
               type="password"
-              :placeholder="isRegister ? '请设置密码 (至少6位)' : '请输入密码'"
+              :placeholder="isRegister ? t('login.registerPasswordPlaceholder') : t('login.passwordLoginPlaceholder')"
               prefix-icon="Lock"
               show-password
               size="large"
@@ -65,11 +65,11 @@
             />
           </el-form-item>
 
-          <el-form-item v-if="isRegister" label="确认密码" prop="confirmPassword">
+          <el-form-item v-if="isRegister" :label="t('login.confirmPasswordLabel')" prop="confirmPassword">
             <el-input
               v-model="form.confirmPassword"
               type="password"
-              placeholder="请再次输入密码"
+              :placeholder="t('login.confirmPasswordPlaceholder')"
               prefix-icon="Lock"
               show-password
               size="large"
@@ -79,20 +79,20 @@
 
           <el-form-item class="submit-item">
             <el-button type="primary" size="large" :loading="loading" class="submit-btn" @click="handleSubmit">
-              {{ isRegister ? '创建账号并进入系统' : '登录系统' }}
+              {{ isRegister ? t('login.submitRegister') : t('login.submitLogin') }}
             </el-button>
           </el-form-item>
 
           <div class="switch-mode">
-            <span>{{ isRegister ? '已有账号？' : '还没有账号？' }}</span>
+            <span>{{ isRegister ? t('login.hasAccount') : t('login.noAccount') }}</span>
             <el-button link type="primary" class="switch-btn" @click="toggleMode">
-              {{ isRegister ? '返回登录' : '立即注册' }}
+              {{ isRegister ? t('login.backToLogin') : t('login.registerNow') }}
             </el-button>
           </div>
 
           <div v-if="oauthProviders.length > 0" class="oauth-container">
             <div class="oauth-divider">
-              <span>或通过第三方账号登录</span>
+              <span>{{ t('login.oauthDividerText') }}</span>
             </div>
             <div class="oauth-btns">
               <button
@@ -143,7 +143,7 @@ function handleOAuthLogin(p: OAuthProvider) {
 
 const validateConfirmPassword = (_rule: any, value: string, callback: any) => {
   if (isRegister.value && value !== form.password) {
-    callback(new Error('两次输入的密码不一致'))
+    callback(new Error(t('login.confirmPasswordMismatch')))
   } else {
     callback()
   }
@@ -151,20 +151,20 @@ const validateConfirmPassword = (_rule: any, value: string, callback: any) => {
 
 const rules = {
   username: [
-    { required: true, message: t('login.usernameRequired') || '请输入用户名', trigger: 'blur' },
-    { min: 2, message: t('login.usernameMin') || '用户名至少2个字符', trigger: 'blur' },
+    { required: true, message: () => t('login.usernameRequired'), trigger: 'blur' },
+    { min: 2, message: () => t('login.usernameMin'), trigger: 'blur' },
   ],
   password: [
-    { required: true, message: t('login.passwordRequired') || '请输入密码', trigger: 'blur' },
-    { min: 6, message: '密码至少6个字符', trigger: 'blur' },
+    { required: true, message: () => t('login.passwordRequired'), trigger: 'blur' },
+    { min: 6, message: () => t('login.passwordMin6'), trigger: 'blur' },
   ],
   confirmPassword: [
     {
       validator: (_rule: any, value: string, callback: any) => {
         if (isRegister.value && !value) {
-          callback(new Error('请再次输入密码'))
+          callback(new Error(t('login.confirmPasswordRequired')))
         } else if (isRegister.value && value !== form.password) {
-          callback(new Error('两次输入的密码不一致'))
+          callback(new Error(t('login.confirmPasswordMismatch')))
         } else {
           callback()
         }
@@ -190,7 +190,7 @@ async function handleSubmit() {
     try {
       if (isRegister.value) {
         await auth.register(form.username, form.password)
-        ElMessage.success('注册成功，已自动登录')
+        ElMessage.success(t('login.registerSuccess'))
         await router.push('/dashboard')
       } else {
         const res = await auth.login(form.username, form.password)
@@ -199,14 +199,14 @@ async function handleSubmit() {
           tempToken.value = res.temp_token || ''
           twoFactorCode.value = ''
           statusText.value = '2FA_CHALLENGE'
-          ElMessage.info('请输入两步验证码完成登录')
+          ElMessage.info(t('login.twoFactorPrompt'))
           return
         }
-        ElMessage.success('登录成功')
+        ElMessage.success(t('login.loginSuccess'))
         await router.push('/dashboard')
       }
     } catch (e: any) {
-      ElMessage.error(e?.response?.data?.message || (isRegister.value ? '注册失败' : '登录失败'))
+      ElMessage.error(e?.response?.data?.message || (isRegister.value ? t('login.registerFailed') : t('login.loginFailed')))
     } finally {
       loading.value = false
     }
@@ -215,16 +215,16 @@ async function handleSubmit() {
 
 async function handle2FaSubmit() {
   if (!twoFactorCode.value.trim()) {
-    ElMessage.warning('请输入两步验证动态码或备用码')
+    ElMessage.warning(t('login.twoFactorCodeRequired'))
     return
   }
   loading.value = true
   try {
     await auth.verify2FaLogin(tempToken.value, twoFactorCode.value.trim())
-    ElMessage.success('两步验证通过，登录成功')
+    ElMessage.success(t('login.twoFactorSuccess'))
     await router.push('/dashboard')
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.message || '两步验证码错误')
+    ElMessage.error(e?.response?.data?.message || t('login.twoFactorFailed'))
   } finally {
     loading.value = false
   }
