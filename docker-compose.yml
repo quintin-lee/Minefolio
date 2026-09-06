@@ -18,7 +18,8 @@ services:
     ports:
       - "80:80"
     depends_on:
-      - minefolio
+      minefolio:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
