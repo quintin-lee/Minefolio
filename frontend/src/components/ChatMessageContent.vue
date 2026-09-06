@@ -362,9 +362,6 @@ const segments = computed<Segment[]>(() => {
 [data-theme="light"] .chat-message-content .el-input-number {
   color: var(--mf-text-main);
 }
-  width: 100%;
-}
-
 .markdown-part {
   width: 100%;
   line-height: 1.65;
