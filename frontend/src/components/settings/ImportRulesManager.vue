@@ -1,37 +1,37 @@
 <template>
   <div class="panel-container" style="margin-top: 24px;">
     <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center;">
-      <h3>账单导入智能规则</h3>
+      <h3>{{ t('settings.importRulesTitle') }}</h3>
       <div class="header-actions">
-        <el-button size="small" @click="handleResetRules" :loading="rulesLoading">恢复默认规则</el-button>
-        <el-button type="primary" size="small" @click="openRuleDialog(null)">新建规则</el-button>
+        <el-button size="small" @click="handleResetRules" :loading="rulesLoading">{{ t('settings.resetDefaultRules') }}</el-button>
+        <el-button type="primary" size="small" @click="openRuleDialog(null)">{{ t('settings.newRule') }}</el-button>
       </div>
     </div>
     <p class="export-hint">
-      导入 CSV 账单时，系统将按优先级自动匹配关键词，智能归类到对应分类，减少手工调整。
+      {{ t('settings.importRulesHint') }}
     </p>
 
     <el-table :data="importRules" v-loading="rulesLoading" size="small" style="margin-top: 12px;">
-      <el-table-column prop="keyword" label="匹配关键词" min-width="120" />
-      <el-table-column prop="match_field" label="匹配范围" width="100">
+      <el-table-column prop="keyword" :label="t('settings.ruleKeywordCol')" min-width="120" />
+      <el-table-column prop="match_field" :label="t('settings.ruleMatchField')" width="100">
         <template #default="{ row }">
-          {{ ({ all: '全部', description: '描述', counterparty: '交易方', note: '备注' } as Record<string, string>)[row.match_field] || row.match_field }}
+          {{ matchFieldLabel(row.match_field) }}
         </template>
       </el-table-column>
-      <el-table-column prop="category_name" label="归入分类" min-width="100">
+      <el-table-column prop="category_name" :label="t('settings.ruleCategory')" min-width="100">
         <template #default="{ row }">
           <span>{{ row.category_name || '-' }}</span>
         </template>
       </el-table-column>
-      <el-table-column prop="target_type" label="类型" width="80">
+      <el-table-column prop="target_type" :label="t('settings.ruleType')" width="80">
         <template #default="{ row }">
           <el-tag :type="row.target_type === 'income' ? 'success' : 'warning'" size="small" effect="plain">
-            {{ row.target_type === 'income' ? '收入' : '支出' }}
+            {{ row.target_type === 'income' ? t('dailyExpenses.income') : t('dailyExpenses.expense') }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="priority" label="优先级" width="70" align="center" />
-      <el-table-column prop="is_active" label="启用" width="80" align="center">
+      <el-table-column prop="priority" :label="t('settings.rulePriority')" width="70" align="center" />
+      <el-table-column prop="is_active" :label="t('settings.ruleEnabled')" width="80" align="center">
         <template #default="{ row }">
           <el-switch
             :model-value="!!row.is_active"
@@ -42,54 +42,54 @@
           />
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="100" align="center">
+      <el-table-column :label="t('common.action')" width="100" align="center">
         <template #default="{ row }">
-          <el-button link type="primary" size="small" @click="openRuleDialog(row as ImportRule)">编辑</el-button>
-          <el-button link type="danger" size="small" @click="handleDeleteRule(row.id)">删除</el-button>
+          <el-button link type="primary" size="small" @click="openRuleDialog(row as ImportRule)">{{ t('common.edit') }}</el-button>
+          <el-button link type="danger" size="small" @click="handleDeleteRule(row.id)">{{ t('common.delete') }}</el-button>
         </template>
       </el-table-column>
     </el-table>
 
     <el-dialog
       v-model="ruleDialogVisible"
-      :title="editingRule?.id ? '编辑导入规则' : '新建导入规则'"
+      :title="editingRule?.id ? t('settings.ruleEditDialog') : t('settings.ruleNewDialog')"
       width="480px"
       append-to-body
     >
       <el-form :model="ruleForm" label-width="90px" size="default">
-        <el-form-item label="关键词" required>
-          <el-input v-model="ruleForm.keyword" placeholder="例如 美团、滴滴、工资" />
+        <el-form-item :label="t('settings.ruleKeywordField')" required>
+          <el-input v-model="ruleForm.keyword" :placeholder="t('settings.ruleKeywordPlaceholder')" />
         </el-form-item>
-        <el-form-item label="匹配范围">
+        <el-form-item :label="t('settings.ruleMatchField')">
           <el-select v-model="ruleForm.match_field" style="width: 100%;">
-            <el-option label="全部字段" value="all" />
-            <el-option label="描述" value="description" />
-            <el-option label="交易方" value="counterparty" />
-            <el-option label="备注" value="note" />
+            <el-option :label="t('settings.matchFieldAll')" value="all" />
+            <el-option :label="t('settings.matchFieldDesc')" value="description" />
+            <el-option :label="t('settings.matchFieldCounterparty')" value="counterparty" />
+            <el-option :label="t('settings.matchFieldNote')" value="note" />
           </el-select>
         </el-form-item>
-        <el-form-item label="目标分类">
-          <el-select v-model="ruleForm.category_id" style="width: 100%;" clearable filterable placeholder="选择分类">
+        <el-form-item :label="t('settings.ruleCategory')">
+          <el-select v-model="ruleForm.category_id" style="width: 100%;" clearable filterable :placeholder="t('categories.selectCategory')">
             <el-option v-for="cat in flatCategories" :key="cat.id" :label="cat.label" :value="cat.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="交易类型">
+        <el-form-item :label="t('transactions.transactionType')">
           <el-select v-model="ruleForm.target_type" style="width: 100%;">
-            <el-option label="支出" value="expense" />
-            <el-option label="收入" value="income" />
+            <el-option :label="t('dailyExpenses.expense')" value="expense" />
+            <el-option :label="t('dailyExpenses.income')" value="income" />
           </el-select>
         </el-form-item>
-        <el-form-item label="优先级">
+        <el-form-item :label="t('settings.rulePriority')">
           <el-input-number v-model="ruleForm.priority" :min="1" :max="999" />
-          <span style="margin-left: 8px; color: var(--mf-text-muted); font-size: 12px;">数值越小越优先</span>
+          <span style="margin-left: 8px; color: var(--mf-text-muted); font-size: 12px;">{{ t('settings.priorityHint') }}</span>
         </el-form-item>
-        <el-form-item label="启用">
+        <el-form-item :label="t('settings.ruleEnabled')">
           <el-switch v-model="ruleForm.is_active" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="ruleDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="ruleSaving" @click="saveRule">保存</el-button>
+        <el-button @click="ruleDialogVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="ruleSaving" @click="saveRule">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -101,6 +101,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { importRulesApi } from '@/api/importRules'
 import type { ImportRule, ImportRuleCreatePayload } from '@/api/importRules'
 import { useCategoryStore } from '@/stores/category'
+import { t } from '@/utils/locale'
 
 const categoryStore = useCategoryStore()
 const importRules = ref<ImportRule[]>([])
@@ -118,6 +119,16 @@ const ruleForm = reactive({
   priority: 100,
   is_active: true,
 })
+
+function matchFieldLabel(field: string): string {
+  const map: Record<string, string> = {
+    all: t('settings.matchAllShort'),
+    description: t('settings.matchFieldDesc'),
+    counterparty: t('settings.matchFieldCounterparty'),
+    note: t('settings.matchFieldNote'),
+  }
+  return map[field] || field
+}
 
 const flatCategories = computed(() => {
   const result: { id: number; label: string }[] = []
@@ -178,13 +189,13 @@ async function toggleRuleActive(row: ImportRule, val: boolean) {
     await importRulesApi.update(row.id, payload)
     row.is_active = val
   } catch {
-    ElMessage.error('切换失败')
+    ElMessage.error(t('settings.ruleToggleFailed'))
   }
 }
 
 async function saveRule() {
   if (!ruleForm.keyword.trim()) {
-    ElMessage.warning('请输入匹配关键词')
+    ElMessage.warning(t('settings.ruleKeywordRequired'))
     return
   }
   ruleSaving.value = true
@@ -200,33 +211,33 @@ async function saveRule() {
     }
     if (editingRule.value?.id) {
       await importRulesApi.update(editingRule.value.id, payload)
-      ElMessage.success('规则已更新')
+      ElMessage.success(t('settings.ruleUpdated'))
     } else {
       await importRulesApi.create(payload)
-      ElMessage.success('规则已创建')
+      ElMessage.success(t('settings.ruleCreated'))
     }
     ruleDialogVisible.value = false
     await loadImportRules()
-  } catch { ElMessage.error('保存失败') } finally {
+  } catch { ElMessage.error(t('settings.saveFailed')) } finally {
     ruleSaving.value = false
   }
 }
 
 async function handleDeleteRule(id: number) {
   try {
-    await ElMessageBox.confirm('确定要删除该规则吗？', '确认', { type: 'warning' })
+    await ElMessageBox.confirm(t('settings.ruleDeleteConfirm'), t('common.confirm'), { type: 'warning' })
     await importRulesApi.delete(id)
-    ElMessage.success('已删除')
+    ElMessage.success(t('settings.ruleDeleted'))
     await loadImportRules()
   } catch { /* cancelled */ }
 }
 
 async function handleResetRules() {
   try {
-    await ElMessageBox.confirm('这将删除所有自定义规则并恢复出厂默认规则，确定继续吗？', '重置确认', { type: 'warning' })
+    await ElMessageBox.confirm(t('settings.resetConfirm'), t('settings.resetConfirmTitle'), { type: 'warning' })
     rulesLoading.value = true
     await importRulesApi.resetDefaults()
-    ElMessage.success('已恢复默认规则')
+    ElMessage.success(t('settings.rulesRestored'))
     await loadImportRules()
   } catch { /* cancelled */ } finally {
     rulesLoading.value = false

@@ -2,9 +2,9 @@
   <div class="panel-container">
     <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center;">
       <div style="display: flex; align-items: center; gap: 10px;">
-        <h3>两步验证 (TOTP 2FA)</h3>
+        <h3>{{ t('settings.twoFactorTitle') }}</h3>
         <el-tag :type="twoFactorEnabled ? 'success' : 'info'" size="small" effect="dark">
-          {{ twoFactorEnabled ? '已开启安全保护' : '未开启' }}
+          {{ twoFactorEnabled ? t('settings.twoFactorStatusOn') : t('settings.twoFactorStatusOff') }}
         </el-tag>
       </div>
       <div class="header-actions">
@@ -16,7 +16,7 @@
           @click="openTwoFactorSetup"
           :loading="twoFactorLoading"
         >
-          开启两步验证
+          {{ t('settings.enableTwoFactor') }}
         </el-button>
         <el-button
           v-else
@@ -26,17 +26,17 @@
           @click="handleDisableTwoFactor"
           :loading="twoFactorLoading"
         >
-          关闭两步验证
+          {{ t('settings.disableTwoFactor') }}
         </el-button>
       </div>
     </div>
     <p class="export-hint">
-      两步验证通过基于时间的一次性密码 (TOTP) 保护您的自建金融账本安全。开启后，登录系统时需输入 Google Authenticator、1Password、微软验证器等应用生成的 6 位动态验证码。
+      {{ t('settings.twoFactorDesc') }}
     </p>
 
     <el-dialog
       v-model="twoFactorSetupVisible"
-      title="设置两步验证 (TOTP)"
+      :title="t('settings.setupTwoFactorTitle')"
       width="460px"
       append-to-body
       :close-on-click-modal="false"
@@ -44,7 +44,7 @@
       <div class="two-factor-setup-content">
         <div class="setup-step">
           <span class="step-num">1</span>
-          <span class="step-desc">使用验证器 App（如 Google Authenticator / 1Password）扫描二维码：</span>
+          <span class="step-desc">{{ t('settings.stepScanHint') }}</span>
         </div>
 
         <div class="qr-canvas-wrapper">
@@ -53,22 +53,22 @@
 
         <div class="setup-step">
           <span class="step-num">2</span>
-          <span class="step-desc">或手动在验证器中输入密钥：</span>
+          <span class="step-desc">{{ t('settings.stepManualHint') }}</span>
         </div>
 
         <div class="secret-copy-box">
           <span class="secret-text">{{ twoFactorSecret }}</span>
-          <el-button link type="primary" size="small" @click="copySecret">复制</el-button>
+          <el-button link type="primary" size="small" @click="copySecret">{{ t('settings.copy') }}</el-button>
         </div>
 
         <div class="setup-step" style="margin-top: 16px;">
           <span class="step-num">3</span>
-          <span class="step-desc">输入验证器 App 显示的 6 位动态验证码以激活：</span>
+          <span class="step-desc">{{ t('settings.stepVerifyHint') }}</span>
         </div>
 
         <el-input
           v-model="twoFactorVerifyCode"
-          placeholder="请输入 6 位动态验证码"
+          :placeholder="t('settings.twoFactorCodePlaceholder')"
           maxlength="6"
           size="large"
           style="margin-top: 10px; font-family: monospace; font-size: 16px; text-align: center;"
@@ -78,9 +78,9 @@
 
       <template #footer>
         <div class="dialog-footer">
-          <el-button @click="twoFactorSetupVisible = false">取消</el-button>
+          <el-button @click="twoFactorSetupVisible = false">{{ t('common.cancel') }}</el-button>
           <el-button type="primary" :loading="twoFactorLoading" @click="confirmEnableTwoFactor">
-            确认并激活
+            {{ t('settings.confirmActivate') }}
           </el-button>
         </div>
       </template>
@@ -88,17 +88,17 @@
 
     <el-dialog
       v-model="backupCodesVisible"
-      title="两步验证应急备用码"
+      :title="t('settings.backupCodesTitle')"
       width="480px"
       append-to-body
       :close-on-click-modal="false"
     >
       <div class="backup-codes-content">
         <el-alert
-          title="请立即保存这些备用码！"
+          :title="t('settings.backupCodesAlertTitle')"
           type="warning"
           :closable="false"
-          description="当您遗失手机或无法获取动态验证码时，可以使用应急备用码登录。每个备用码仅限单次使用。"
+          :description="t('settings.backupCodesAlertDesc')"
           show-icon
           style="margin-bottom: 16px;"
         />
@@ -113,10 +113,10 @@
 
       <template #footer>
         <div class="dialog-footer" style="display: flex; justify-content: space-between;">
-          <el-button type="info" plain @click="downloadBackupCodes">下载备用码 (.txt)</el-button>
+          <el-button type="info" plain @click="downloadBackupCodes">{{ t('settings.downloadBackupCodes') }}</el-button>
           <div style="display: flex; gap: 8px;">
-            <el-button type="primary" plain @click="copyBackupCodes">复制全部</el-button>
-            <el-button type="primary" @click="backupCodesVisible = false">我已妥善保存</el-button>
+            <el-button type="primary" plain @click="copyBackupCodes">{{ t('settings.copyAll') }}</el-button>
+            <el-button type="primary" @click="backupCodesVisible = false">{{ t('settings.backupCodesSaved') }}</el-button>
           </div>
         </div>
       </template>
@@ -179,7 +179,7 @@ async function openTwoFactorSetup() {
       }
     }, 100)
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.message || '获取两步验证密钥失败')
+    ElMessage.error(e?.response?.data?.message || t('settings.secretFetchFailed'))
   } finally {
     twoFactorLoading.value = false
   }
@@ -188,12 +188,12 @@ async function openTwoFactorSetup() {
 async function copySecret() {
   if (!twoFactorSecret.value) return
   await navigator.clipboard.writeText(twoFactorSecret.value)
-  ElMessage.success('密钥已复制到剪贴板')
+  ElMessage.success(t('settings.secretCopied'))
 }
 
 async function confirmEnableTwoFactor() {
   if (!twoFactorVerifyCode.value.trim() || twoFactorVerifyCode.value.trim().length !== 6) {
-    ElMessage.warning('请输入 6 位动态验证码')
+    ElMessage.warning(t('settings.twoFactorCodePlaceholder'))
     return
   }
   twoFactorLoading.value = true
@@ -204,9 +204,9 @@ async function confirmEnableTwoFactor() {
     twoFactorSetupVisible.value = false
     backupCodes.value = res.backup_codes || []
     backupCodesVisible.value = true
-    ElMessage.success('两步验证已成功开启！请妥善保存应急备用码')
+    ElMessage.success(t('settings.twoFactorEnabledMsg'))
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.message || '动态验证码错误，激活失败')
+    ElMessage.error(e?.response?.data?.message || t('settings.activationFailed'))
   } finally {
     twoFactorLoading.value = false
   }
@@ -214,18 +214,18 @@ async function confirmEnableTwoFactor() {
 
 async function handleDisableTwoFactor() {
   try {
-    await ElMessageBox.confirm('确定要关闭两步验证吗？关闭后账户将降低为仅密码保护级别。', '关闭两步验证', {
-      confirmButtonText: '确认关闭',
-      cancelButtonText: '取消',
+    await ElMessageBox.confirm(t('settings.disableConfirmMsg'), t('settings.disableConfirmTitle'), {
+      confirmButtonText: t('settings.confirmDisable'),
+      cancelButtonText: t('common.cancel'),
       type: 'warning'
     })
     twoFactorLoading.value = true
     await authApi.disable2Fa()
     twoFactorEnabled.value = false
-    ElMessage.success('两步验证已成功关闭')
+    ElMessage.success(t('settings.twoFactorDisabled'))
   } catch (e: any) {
     if (e !== 'cancel') {
-      ElMessage.error(e?.response?.data?.message || '关闭两步验证失败')
+      ElMessage.error(e?.response?.data?.message || t('settings.disableFailed'))
     }
   } finally {
     twoFactorLoading.value = false
@@ -234,14 +234,14 @@ async function handleDisableTwoFactor() {
 
 async function copyBackupCodes() {
   if (!backupCodes.value.length) return
-  const text = `Minefolio 2FA 应急备用码 (每个仅限使用一次):\n\n` + backupCodes.value.map((c, i) => `${i + 1}. ${c}`).join('\n')
+  const text = `${t('settings.backupFileHeader')}\n\n` + backupCodes.value.map((c, i) => `${i + 1}. ${c}`).join('\n')
   await navigator.clipboard.writeText(text)
-  ElMessage.success('备用码已复制到剪贴板')
+  ElMessage.success(t('settings.backupCodesCopied'))
 }
 
 function downloadBackupCodes() {
   if (!backupCodes.value.length) return
-  const text = `Minefolio 2FA 应急备用码 (每个仅限使用一次):\n\n` + backupCodes.value.map((c, i) => `${i + 1}. ${c}`).join('\n')
+  const text = `${t('settings.backupFileHeader')}\n\n` + backupCodes.value.map((c, i) => `${i + 1}. ${c}`).join('\n')
   const blob = new Blob([text], { type: 'text/plain;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')

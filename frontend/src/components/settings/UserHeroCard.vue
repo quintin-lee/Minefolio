@@ -5,30 +5,30 @@
         <div class="user-avatar-large">
           {{ (auth.user?.username || 'U').charAt(0).toUpperCase() }}
         </div>
-        <div class="online-indicator" title="当前在线" />
+        <div class="online-indicator" :title="t('settings.online')" />
       </div>
       <div class="user-info-text">
         <div class="user-name-row">
           <span class="user-display-name">{{ auth.user?.username || '-' }}</span>
           <el-tag size="small" effect="dark" class="role-badge">
             <Icon icon="ph:shield-check-fill" width="14" />
-            <span>已认证</span>
+            <span>{{ t('settings.verified') }}</span>
           </el-tag>
           <el-tag size="small" type="info" effect="plain" class="self-host-badge">
             <Icon icon="ph:hard-drives" width="14" />
-            <span>自建私有化</span>
+            <span>{{ t('settings.selfHosted') }}</span>
           </el-tag>
         </div>
         <div class="user-meta-sub">
-          <span class="uid-tag" @click="copyUserId" title="点击复制账号 ID">
+          <span class="uid-tag" @click="copyUserId" :title="t('settings.copyAccountId')">
             <Icon icon="ph:identification-badge" width="14" />
-            <span>UID: {{ auth.user?.id || '-' }}</span>
+            <span>{{ t('settings.uidLabel', { id: auth.user?.id ?? '-' }) }}</span>
             <Icon icon="ph:copy" width="12" class="copy-icon" />
           </span>
           <span class="divider-dot">•</span>
           <span class="meta-item">
             <Icon icon="ph:calendar-blank" width="14" />
-            <span>注册于 {{ formatDate(auth.user?.created_at || '') }}</span>
+            <span>{{ t('settings.registeredSince', { date: formatDate(auth.user?.created_at || '') }) }}</span>
           </span>
         </div>
       </div>
@@ -40,11 +40,11 @@
           <Icon icon="ph:book-bookmark-bold" width="18" />
         </div>
         <div class="stat-content">
-          <div class="stat-label">当前活跃账本</div>
+          <div class="stat-label">{{ t('settings.activeLedger') }}</div>
           <div class="stat-val">
-            <span class="ledger-name-text">{{ ledgerStore.currentLedger?.name || '默认账本' }}</span>
+            <span class="ledger-name-text">{{ ledgerStore.currentLedger?.name || t('settings.defaultLedger') }}</span>
             <span v-if="ledgerStore.currentLedger?.my_role" class="ledger-role-pill">
-              {{ ledgerStore.currentLedger.my_role === 'owner' ? '所有者' : (ledgerStore.currentLedger.my_role === 'editor' ? '记账者' : '只读') }}
+              {{ ledgerRoleLabel(ledgerStore.currentLedger.my_role) }}
             </span>
           </div>
         </div>
@@ -55,8 +55,8 @@
           <Icon icon="ph:users-three-bold" width="18" />
         </div>
         <div class="stat-content">
-          <div class="stat-label">参与空间账本</div>
-          <div class="stat-val mono">{{ ledgerStore.ledgers.length || 1 }} 个</div>
+          <div class="stat-label">{{ t('settings.participatingLedgers') }}</div>
+          <div class="stat-val mono">{{ t('settings.ledgerCount', { n: ledgerStore.ledgers.length || 1 }) }}</div>
         </div>
       </div>
 
@@ -65,7 +65,7 @@
           <Icon icon="ph:lock-key-bold" width="18" />
         </div>
         <div class="stat-content">
-          <div class="stat-label">传输与数据安全</div>
+          <div class="stat-label">{{ t('settings.securityTitle') }}</div>
           <div class="stat-val">RSA-OAEP + HS256</div>
         </div>
       </div>
@@ -75,7 +75,7 @@
           <Icon icon="ph:info-bold" width="18" />
         </div>
         <div class="stat-content">
-          <div class="stat-label">应用版本</div>
+          <div class="stat-label">{{ t('settings.appVersion') }}</div>
           <div class="stat-val mono">v{{ appVersion }}<span v-if="backendVersion"> / v{{ backendVersion }}</span></div>
         </div>
       </div>
@@ -91,6 +91,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useLedgerStore } from '@/stores/ledger'
 import { systemApi } from '@/api/system'
 import { formatDate } from '@/utils/format'
+import { t } from '@/utils/locale'
 
 const auth = useAuthStore()
 const ledgerStore = useLedgerStore()
@@ -106,10 +107,16 @@ onMounted(async () => {
   }
 })
 
+function ledgerRoleLabel(role: string): string {
+  if (role === 'owner') return t('settings.roleOwner')
+  if (role === 'editor') return t('settings.roleEditor')
+  return t('settings.roleViewer')
+}
+
 async function copyUserId() {
   if (!auth.user?.id) return
   await navigator.clipboard.writeText(String(auth.user.id))
-  ElMessage.success('账号 ID 已复制到剪贴板')
+  ElMessage.success(t('settings.accountIdCopied'))
 }
 </script>
 

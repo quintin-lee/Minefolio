@@ -11,7 +11,7 @@
       <el-tab-pane name="profile" lazy>
         <template #label>
           <Icon icon="ph:user-circle" width="16" />
-          <span class="tab-label">账号信息</span>
+          <span class="tab-label">{{ t('settings.tabAccount') }}</span>
         </template>
         <UserHeroCard />
       </el-tab-pane>
@@ -19,7 +19,7 @@
       <el-tab-pane name="password" lazy>
         <template #label>
           <Icon icon="ph:lock-key" width="16" />
-          <span class="tab-label">修改密码</span>
+          <span class="tab-label">{{ t('settings.changePassword') }}</span>
         </template>
         <PasswordSettings />
       </el-tab-pane>
@@ -27,7 +27,7 @@
       <el-tab-pane name="2fa" lazy>
         <template #label>
           <Icon icon="ph:shield-check" width="16" />
-          <span class="tab-label">两步验证</span>
+          <span class="tab-label">{{ t('settings.tabTwoFactor') }}</span>
         </template>
         <TwoFactorSettings />
       </el-tab-pane>
@@ -35,7 +35,7 @@
       <el-tab-pane name="export" lazy>
         <template #label>
           <Icon icon="ph:export" width="16" />
-          <span class="tab-label">数据导出</span>
+          <span class="tab-label">{{ t('settings.exportData') }}</span>
         </template>
         <DataExport />
       </el-tab-pane>
@@ -43,7 +43,7 @@
       <el-tab-pane name="import-rules" lazy>
         <template #label>
           <Icon icon="ph:lightning" width="16" />
-          <span class="tab-label">导入规则</span>
+          <span class="tab-label">{{ t('settings.tabImportRules') }}</span>
         </template>
         <ImportRulesManager />
       </el-tab-pane>
@@ -51,7 +51,7 @@
       <el-tab-pane name="ai" lazy>
         <template #label>
           <Icon icon="ph:brain" width="16" />
-          <span class="tab-label">AI 配置</span>
+          <span class="tab-label">{{ t('settings.tabAi') }}</span>
         </template>
         <AiProviderManager />
       </el-tab-pane>
@@ -59,7 +59,7 @@
       <el-tab-pane name="market" lazy>
         <template #label>
           <Icon icon="ph:chart-line" width="16" />
-          <span class="tab-label">行情同步</span>
+          <span class="tab-label">{{ t('settings.tabMarket') }}</span>
         </template>
         <MarketSyncSettings />
       </el-tab-pane>
@@ -67,7 +67,7 @@
       <el-tab-pane name="appearance" lazy>
         <template #label>
           <Icon icon="ph:palette" width="16" />
-          <span class="tab-label">外观主题</span>
+          <span class="tab-label">{{ t('settings.theme') }}</span>
         </template>
         <AppearanceSettings />
       </el-tab-pane>
@@ -93,7 +93,7 @@ const activeTab = ref('profile')
 
 onErrorCaptured((err, instance, info) => {
   console.error('[Settings] Child component error:', err, info)
-  ElMessage.error('页面加载异常，请刷新重试')
+  ElMessage.error(t('settings.pageLoadError'))
   return false
 })
 </script>

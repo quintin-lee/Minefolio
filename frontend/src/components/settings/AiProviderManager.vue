@@ -15,30 +15,30 @@
             </el-tag>
           </div>
           <div class="provider-actions">
-              <el-button text size="small" @click="toggleEdit(index)" aria-label="编辑">
+              <el-button text size="small" @click="toggleEdit(index)" :aria-label="t('common.edit')">
                 <el-icon><Edit /></el-icon>
               </el-button>
-              <el-button text size="small" class="delete-btn" @click="removeProvider(index)" aria-label="删除">
+              <el-button text size="small" class="delete-btn" @click="removeProvider(index)" :aria-label="t('common.delete')">
                 <el-icon><Delete /></el-icon>
               </el-button>
           </div>
         </div>
         <el-form v-if="editIndex === index" :model="provider" label-width="100px" class="provider-form">
           <el-form-item :label="t('settings.aiProviderId')">
-            <el-input v-model="provider.id" :disabled="provider.id.length > 0 && provider.has_api_key" placeholder="例如: qwen, openai, deepseek" />
+            <el-input v-model="provider.id" :disabled="provider.id.length > 0 && provider.has_api_key" :placeholder="t('settings.aiProviderIdPlaceholder')" />
           </el-form-item>
           <el-form-item :label="t('settings.aiProviderName')">
-            <el-input v-model="provider.name" placeholder="显示名称 (如: 通义千问 27B)" />
+            <el-input v-model="provider.name" :placeholder="t('settings.aiProviderNamePlaceholder')" />
           </el-form-item>
           <el-form-item :label="t('settings.aiBaseUrl')">
-            <el-input v-model="provider.base_url" placeholder="https://api.openai.com/v1 或 http://host:port/v1" />
+            <el-input v-model="provider.base_url" :placeholder="t('settings.aiBaseUrlPlaceholder')" />
           </el-form-item>
           <el-form-item :label="t('settings.aiApiKey')">
             <el-input
               v-model="provider.api_key"
               type="password"
               show-password
-              :placeholder="provider.has_api_key ? '•••••••• (已加密存储，留空保持不变)' : 'sk-...'"
+              :placeholder="provider.has_api_key ? t('settings.aiApiKeyMaskedPlaceholder') : t('settings.aiApiKeyEmptyPlaceholder')"
             />
           </el-form-item>
           <el-form-item :label="t('settings.aiModels')">
@@ -51,7 +51,7 @@
                   @click="handleFetchModels(index)"
                 >
                   <Icon icon="ph:cloud-arrow-down-bold" style="margin-right: 4px" />
-                  自动拉取模型
+                  {{ t('settings.aiFetchModels') }}
                 </el-button>
               </div>
             </div>
@@ -65,21 +65,21 @@
                   @click="handleTestConnection(index)"
                 >
                   <Icon icon="ph:plug-bold" style="margin-right: 4px" />
-                  测试连接
+                  {{ t('settings.aiTestConnection') }}
                 </el-button>
               </div>
               <div class="right-actions">
-                <el-button type="primary" size="small" @click="saveProvider(index)">确定</el-button>
-                <el-button size="small" @click="cancelEdit">取消</el-button>
+                <el-button type="primary" size="small" @click="saveProvider(index)">{{ t('settings.aiOk') }}</el-button>
+                <el-button size="small" @click="cancelEdit">{{ t('common.cancel') }}</el-button>
               </div>
             </div>
           </el-form-item>
         </el-form>
         <div v-else class="provider-details">
           <el-tag size="small" class="meta-tag">ID: {{ provider.id }}</el-tag>
-          <el-tag size="small" class="meta-tag" v-if="provider.modelsStr">模型: {{ provider.modelsStr }}</el-tag>
+          <el-tag size="small" class="meta-tag" v-if="provider.modelsStr">{{ t('settings.aiModelTag', { models: provider.modelsStr }) }}</el-tag>
           <el-tag size="small" :type="(provider.has_api_key || (provider.api_key && provider.api_key.trim())) ? 'success' : 'info'" class="meta-tag">
-            {{ (provider.has_api_key || (provider.api_key && provider.api_key.trim())) ? 'API Key 已配置 (传输加密)' : '未设置 API Key' }}
+            {{ (provider.has_api_key || (provider.api_key && provider.api_key.trim())) ? t('settings.aiApiKeyConfigured') : t('settings.aiApiKeyNotSet') }}
           </el-tag>
           <el-button
             size="small"
@@ -89,11 +89,11 @@
             @click.stop="handleTestConnection(index)"
           >
             <Icon icon="ph:plug" style="margin-right: 2px" />
-            测试连接
+            {{ t('settings.aiTestConnection') }}
           </el-button>
         </div>
       </div>
-      <el-button type="primary" plain @click="addProvider" class="add-provider-btn" aria-label="添加 AI 提供商">
+      <el-button type="primary" plain @click="addProvider" class="add-provider-btn" :aria-label="t('settings.aiAddProvider')">
         <el-icon><Plus /></el-icon>
         {{ t('settings.aiAddProvider') }}
       </el-button>
@@ -224,20 +224,20 @@ function addProvider() {
 function saveProvider(index: number) {
   const provider = providerList.value[index]
   if (!provider || !provider.id) {
-    ElMessage.error('供应商 ID 不能为空')
+    ElMessage.error(t('settings.aiProviderIdRequired'))
     return
   }
   if (provider.api_key && provider.api_key.trim()) {
     provider.has_api_key = true
   }
   editIndex.value = -1
-  ElMessage.success('供应商配置已暂存，请点击下方「保存配置」按钮提交生效')
+  ElMessage.success(t('settings.aiStagedHint'))
 }
 
 async function handleTestConnection(index: number) {
   const p = providerList.value[index]
   if (!p || !p.id) {
-    ElMessage.warning('请先填写供应商 ID')
+    ElMessage.warning(t('settings.aiProviderIdFillFirst'))
     return
   }
   testingIndex.value = index
@@ -257,13 +257,13 @@ async function handleTestConnection(index: number) {
       if (p.api_key && p.api_key.trim()) {
         p.has_api_key = true
       }
-      ElMessage.success(`连接测试成功 (耗时 ${res.latency_ms}ms)`)
+      ElMessage.success(t('settings.aiTestSuccess', { ms: res.latency_ms }))
     } else {
-      ElMessage.error(`连接测试失败: ${res.message}`)
+      ElMessage.error(t('settings.aiTestFailedDetail', { message: res.message }))
     }
   } catch {
-    p.testResult = { success: false, latency_ms: 0, message: '请求失败' }
-    ElMessage.error('连接测试异常')
+    p.testResult = { success: false, latency_ms: 0, message: t('settings.aiRequestFailed') }
+    ElMessage.error(t('settings.aiTestError'))
   } finally {
     testingIndex.value = null
   }
@@ -272,7 +272,7 @@ async function handleTestConnection(index: number) {
 async function handleFetchModels(index: number) {
   const p = providerList.value[index]
   if (!p || !p.id) {
-    ElMessage.warning('请先填写供应商 ID')
+    ElMessage.warning(t('settings.aiProviderIdFillFirst'))
     return
   }
   fetchingModelsIndex.value = index
@@ -291,12 +291,12 @@ async function handleFetchModels(index: number) {
       if (p.api_key && p.api_key.trim()) {
         p.has_api_key = true
       }
-      ElMessage.success(`成功拉取 ${models.length} 个可用模型`)
+      ElMessage.success(t('settings.aiFetchSuccess', { n: models.length }))
     } else {
-      ElMessage.warning('未获取到模型列表，请手动输入')
+      ElMessage.warning(t('settings.aiFetchEmpty'))
     }
   } catch {
-    ElMessage.error('获取模型列表失败')
+    ElMessage.error(t('settings.aiFetchFailed'))
   } finally {
     fetchingModelsIndex.value = null
   }
@@ -304,7 +304,7 @@ async function handleFetchModels(index: number) {
 
 async function removeProvider(index: number) {
   try {
-    await ElMessageBox.confirm(t('settings.aiConfirmDelete'), '提示', { type: 'warning' })
+    await ElMessageBox.confirm(t('settings.aiConfirmDelete'), t('common.hint'), { type: 'warning' })
     providerList.value.splice(index, 1)
     ElMessage.success(t('settings.aiProviderDeleted'))
   } catch {
@@ -339,7 +339,7 @@ async function saveAiSettings() {
     ElMessage.success(t('settings.aiSaved'))
     await loadAiSettings()
   } catch {
-    ElMessage.error(t('settings.aiSaveFailed') || '保存失败')
+    ElMessage.error(t('settings.saveFailed'))
   } finally {
     aiSaving.value = false
   }

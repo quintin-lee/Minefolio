@@ -35,9 +35,9 @@ async function handleExport() {
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
-    ElMessage.success('导出成功')
+    ElMessage.success(t('settings.exportSuccess'))
   } catch {
-    ElMessage.error('导出失败')
+    ElMessage.error(t('settings.exportFailed'))
   } finally {
     exporting.value = false
   }

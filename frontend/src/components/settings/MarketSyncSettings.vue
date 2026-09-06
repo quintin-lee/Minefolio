@@ -1,36 +1,36 @@
 <template>
   <div class="panel-container">
     <div class="panel-header">
-      <h3>行情同步与网络代理</h3>
+      <h3>{{ t('settings.marketSyncTitle') }}</h3>
     </div>
-    <p class="export-hint">配置外部行情源的网络代理（如访问海外美股、加密货币源时可选配置），以及查看行情调度状态。</p>
+    <p class="export-hint">{{ t('settings.marketSyncHint') }}</p>
     <el-form label-width="120px" class="premium-form" style="margin-top: 16px;">
-      <el-form-item label="HTTP 代理">
-        <el-input v-model="marketForm.market_proxy" placeholder="如: http://127.0.0.1:7890 或 socks5://127.0.0.1:1080 (留空为直连)" />
+      <el-form-item :label="t('settings.httpProxyLabel')">
+        <el-input v-model="marketForm.market_proxy" :placeholder="t('settings.httpProxyPlaceholder')" />
       </el-form-item>
-      <el-form-item label="自动同步模式">
+      <el-form-item :label="t('settings.autoSyncMode')">
         <el-radio-group v-model="marketForm.market_sync_mode">
-          <el-radio value="trading_hours">智能开盘时段 (开盘期刷新 + 夜间基金清算，推荐)</el-radio>
-          <el-radio value="interval">全天固定间隔</el-radio>
-          <el-radio value="manual">仅手动同步</el-radio>
+          <el-radio value="trading_hours">{{ t('settings.syncTradingHours') }}</el-radio>
+          <el-radio value="interval">{{ t('settings.syncFixedInterval') }}</el-radio>
+          <el-radio value="manual">{{ t('settings.syncManualOnly') }}</el-radio>
         </el-radio-group>
       </el-form-item>
-      <el-form-item v-if="marketForm.market_sync_mode !== 'manual'" label="同步周期">
+      <el-form-item v-if="marketForm.market_sync_mode !== 'manual'" :label="t('settings.syncCycle')">
         <el-select v-model="marketForm.market_sync_interval_min" style="width: 200px;">
-          <el-option :value="15" label="每 15 分钟" />
-          <el-option :value="30" label="每 30 分钟" />
-          <el-option :value="60" label="每 1 小时" />
-          <el-option :value="120" label="每 2 小时" />
-          <el-option :value="1440" label="每天一次" />
+          <el-option :value="15" :label="t('settings.interval15')" />
+          <el-option :value="30" :label="t('settings.interval30')" />
+          <el-option :value="60" :label="t('settings.interval60')" />
+          <el-option :value="120" :label="t('settings.interval120')" />
+          <el-option :value="1440" :label="t('settings.interval1440')" />
         </el-select>
       </el-form-item>
       <el-form-item>
         <div style="display: flex; gap: 12px; align-items: center;">
           <el-button type="primary" class="action-btn" :loading="savingMarket" @click="saveMarketSettings">
-            保存行情配置
+            {{ t('settings.saveMarketConfig') }}
           </el-button>
           <el-button :loading="testingMarketProxy" @click="testMarketProxy">
-            测试行情连通性
+            {{ t('settings.testMarketConnectivity') }}
           </el-button>
           <el-tag v-if="marketTestResult" :type="marketTestResult.success ? 'success' : 'danger'">
             {{ marketTestResult.message }} ({{ marketTestResult.latency_ms }}ms)
@@ -81,9 +81,9 @@ async function saveMarketSettings() {
       market_sync_interval_min: marketForm.market_sync_interval_min,
       market_sync_mode: marketForm.market_sync_mode
     })
-    ElMessage.success('行情设置保存成功')
+    ElMessage.success(t('settings.marketSaved'))
   } catch (err: any) {
-    ElMessage.error(err?.message || '保存失败')
+    ElMessage.error(err?.message || t('settings.saveFailed'))
   } finally {
     savingMarket.value = false
   }
@@ -98,7 +98,7 @@ async function testMarketProxy() {
   } catch (err: any) {
     marketTestResult.value = {
       success: false,
-      message: err?.message || '测试失败',
+      message: err?.message || t('settings.marketTestFailed'),
       latency_ms: 0
     }
   } finally {
