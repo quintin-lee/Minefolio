@@ -6,6 +6,7 @@
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import * as echarts from 'echarts'
 import type { ExpenseYearlyReport } from '@/api/reports'
+import { resolveChartPalette, shade, useChartThemeSync } from '@/utils/echarts-theme'
 
 const props = defineProps<{ data: ExpenseYearlyReport | null }>()
 const chartRef = ref<HTMLElement>()
@@ -42,10 +43,12 @@ function handleResize() {
 }
 
 watch(() => props.data, updateChart, { deep: true })
+useChartThemeSync(updateChart)
 
 function updateChart() {
   if (!chart) return
   const d = props.data
+  const P = resolveChartPalette()
   const labels = d?.labels ?? []
   const income = d?.income ?? []
   const expense = d?.expense ?? []
@@ -53,13 +56,13 @@ function updateChart() {
     animationDuration: 1000,
     tooltip: {
       trigger: 'axis',
-      axisPointer: { type: 'shadow', shadowStyle: { color: 'var(--mf-primary-light)' } },
-      backgroundColor: 'var(--mf-surface-card)',
+      axisPointer: { type: 'shadow', shadowStyle: { color: P.primaryLight } },
+      backgroundColor: P.surfaceCard,
       padding: [10, 15],
-      textStyle: { color: '#e2e8f0' },
-      borderColor: 'var(--mf-primary-border)',
+      textStyle: { color: P.textMain },
+      borderColor: P.primaryBorder,
       borderWidth: 1,
-      shadowColor: 'var(--mf-primary-light)',
+      shadowColor: P.primaryLight,
       shadowBlur: 16,
     },
     legend: {
@@ -68,21 +71,21 @@ function updateChart() {
       icon: 'roundRect',
       itemWidth: 16,
       itemHeight: 8,
-      textStyle: { color: 'var(--mf-text-muted)' }
+      textStyle: { color: P.textMuted }
     },
     grid: { left: 60, right: 20, top: 40, bottom: 20, containLabel: true },
     xAxis: {
       type: 'category',
       data: labels,
-      axisLine: { lineStyle: { color: 'var(--mf-primary-border)' } },
-      axisLabel: { color: 'var(--mf-text-muted)' },
+      axisLine: { lineStyle: { color: P.primaryBorder } },
+      axisLabel: { color: P.textMuted },
       axisTick: { show: false }
     },
     yAxis: {
       type: 'value',
-      splitLine: { lineStyle: { type: 'dashed', color: 'var(--mf-primary-light)' } },
+      splitLine: { lineStyle: { type: 'dashed', color: P.primaryLight } },
       axisLabel: {
-        color: 'var(--mf-text-muted)',
+        color: P.textMuted,
         formatter: (v: number) => (v >= 10000 ? `${(v / 10000).toFixed(1)}w` : v.toString())
       }
     },
@@ -95,8 +98,8 @@ function updateChart() {
         itemStyle: {
           borderRadius: [4, 4, 0, 0],
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: '#34d399' },
-            { offset: 1, color: '#059669' }
+            { offset: 0, color: P.success },
+            { offset: 1, color: shade(P.success, 0.72) }
           ])
         }
       },
@@ -108,8 +111,8 @@ function updateChart() {
         itemStyle: {
           borderRadius: [4, 4, 0, 0],
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: '#f87171' },
-            { offset: 1, color: '#dc2626' }
+            { offset: 0, color: P.danger },
+            { offset: 1, color: shade(P.danger, 0.72) }
           ])
         }
       },

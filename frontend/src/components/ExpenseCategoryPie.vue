@@ -4,6 +4,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import * as echarts from 'echarts'
+import { resolveChartPalette, useChartThemeSync } from '@/utils/echarts-theme'
 const props = defineProps<{ data: { name: string; amount: number; pct: number }[] }>()
 const chartRef = ref<HTMLElement>()
 let chart: echarts.ECharts | null = null
@@ -37,31 +38,33 @@ function handleResize() {
   if (chart) chart.resize()
 }
 watch(() => props.data, update, { deep: true })
+useChartThemeSync(update)
 function update() { 
   if (!chart || !props.data.length) return
+  const P = resolveChartPalette()
   chart.setOption({ 
     animationDuration: 1000,
     tooltip: {
       trigger: 'item',
-      backgroundColor: 'var(--mf-surface-card)',
+      backgroundColor: P.surfaceCard,
       padding: [10, 15],
-      textStyle: { color: 'var(--mf-text-main)' },
-      borderColor: 'var(--mf-primary-border)',
+      textStyle: { color: P.textMain },
+      borderColor: P.primaryBorder,
       borderWidth: 1,
-      shadowColor: 'var(--mf-primary-light)',
+      shadowColor: P.primaryLight,
       shadowBlur: 16,
       formatter: (p: any) => {
         const val = new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(p.data.value)
         return `<div style="font-weight:bold;color:${p.color};margin-bottom:4px">${p.data.name}</div>
-                <div style="color:#64748b">金额: ${val}</div>
-                <div style="color:#64748b">占比: ${p.data.pct.toFixed(2)}%</div>`
+                <div style="color:${P.textMuted}">金额: ${val}</div>
+                <div style="color:${P.textMuted}">占比: ${p.data.pct.toFixed(2)}%</div>`
       }
     },
     legend: {
       orient: 'vertical',
       right: '5%',
       top: 'center',
-      textStyle: { color: 'var(--mf-text-muted)', fontSize: 12 },
+      textStyle: { color: P.textMuted, fontSize: 12 },
       icon: 'circle',
       itemWidth: 8,
       itemHeight: 8,
@@ -73,20 +76,20 @@ function update() {
       center: ['35%', '50%'],
       data: props.data.map(d => ({ name: d.name, value: d.amount, pct: d.pct })),
       avoidLabelOverlap: false,
-      itemStyle: { borderRadius: 4, borderColor: 'var(--mf-border)', borderWidth: 2 },
+      itemStyle: { borderRadius: 4, borderColor: P.border, borderWidth: 2 },
       label: { show: false, position: 'center' },
       emphasis: {
         label: {
           show: true,
           fontSize: 14,
           fontWeight: 'bold',
-          color: 'var(--mf-text-main)',
+          color: P.textMain,
           formatter: '{b}\n{d}%'
         },
         itemStyle: {
           shadowBlur: 16,
           shadowOffsetX: 0,
-          shadowColor: 'var(--mf-primary-light)'
+          shadowColor: P.primaryLight
         }
       },
       labelLine: { show: false },

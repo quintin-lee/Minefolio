@@ -22,6 +22,7 @@ import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import * as echarts from 'echarts'
 import { marketApi } from '@/api/market'
 import type { PriceHistoryItem } from '@/types'
+import { resolveChartPalette, useChartThemeSync, withAlpha } from '@/utils/echarts-theme'
 
 const props = defineProps<{
   assetId: number
@@ -61,9 +62,13 @@ function renderChart() {
   const minPrice = prices.length > 0 ? Math.min(...prices) * 0.98 : 0
   const maxPrice = prices.length > 0 ? Math.max(...prices) * 1.02 : 100
 
+  const P = resolveChartPalette()
   const option: echarts.EChartsOption = {
     tooltip: {
       trigger: 'axis',
+      backgroundColor: P.surfaceCard,
+      borderColor: P.border,
+      textStyle: { color: P.textMain },
       formatter: (params: any) => {
         const p = params[0]
         return `${p.name}<br/><strong>净值/价格: ${Number(p.value).toFixed(4)} ${props.currency || 'CNY'}</strong>`
@@ -80,14 +85,15 @@ function renderChart() {
       type: 'category',
       boundaryGap: false,
       data: dates,
-      axisLine: { lineStyle: { color: '#9ca3af' } }
+      axisLine: { lineStyle: { color: P.border } }
     },
     yAxis: {
       type: 'value',
       min: parseFloat(minPrice.toFixed(4)),
       max: parseFloat(maxPrice.toFixed(4)),
-      splitLine: { lineStyle: { color: '#f3f4f6' } },
+      splitLine: { lineStyle: { color: P.borderSubtle } },
       axisLabel: {
+        color: P.textMuted,
         formatter: (val: number) => val.toFixed(2)
       }
     },
@@ -100,12 +106,12 @@ function renderChart() {
         symbolSize: 6,
         data: prices,
         itemStyle: {
-          color: '#3b82f6'
+          color: P.primary
         },
         areaStyle: {
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: 'rgba(59, 130, 246, 0.35)' },
-            { offset: 1, color: 'rgba(59, 130, 246, 0.02)' }
+            { offset: 0, color: withAlpha(P.primary, 0.35) },
+            { offset: 1, color: withAlpha(P.primary, 0.02) }
           ])
         }
       }
@@ -132,6 +138,10 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', handleResize)
   chart?.dispose()
   chart = null
+})
+
+useChartThemeSync(() => {
+  if (chart) renderChart()
 })
 </script>
 

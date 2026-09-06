@@ -4,6 +4,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import * as echarts from 'echarts'
+import { resolveChartPalette, useChartThemeSync, withAlpha } from '@/utils/echarts-theme'
 const props = defineProps<{ data: { labels: string[]; net_worth: number[]; assets: number[]; liabilities: number[] } }>()
 const chartRef = ref<HTMLElement>()
 let chart: echarts.ECharts | null = null
@@ -36,34 +37,34 @@ function handleResize() {
   if (chart) chart.resize()
 }
 watch(() => props.data, update, { deep: true })
+useChartThemeSync(update)
 function update() {
   if (!chart || !props.data?.labels?.length) return
-  const isLight = document.documentElement.getAttribute('data-theme') === 'light'
+  const P = resolveChartPalette()
   chart.setOption({
     animationDuration: 1000,
     tooltip: {
       trigger: 'axis',
-      backgroundColor: isLight ? 'rgba(255,255,255,0.96)' : 'rgba(15, 23, 42, 0.95)',
+      backgroundColor: P.surfaceCard,
       padding: [10, 15],
-      textStyle: { color: isLight ? '#1e293b' : '#e2e8f0' },
-      borderColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(0, 212, 255, 0.2)',
+      textStyle: { color: P.textMain },
+      borderColor: P.border,
       borderWidth: 1,
-      shadowColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(0, 212, 255, 0.15)',
+      shadowColor: P.primaryLight,
       shadowBlur: 16,
     },
     grid: { left: 50, right: 20, top: 40, bottom: 20, containLabel: true },
     xAxis: {
       type: 'category',
       data: props.data.labels,
-      axisLine: { lineStyle: { color: 'var(--mf-primary-border)' } },
-      axisLabel: { color: 'var(--mf-text-muted)', margin: 12 },
-      textStyle: { color: isLight ? '#475569' : '#64748b' }
+      axisLine: { lineStyle: { color: P.primaryBorder } },
+      axisLabel: { color: P.textMuted, margin: 12 }
     },
     yAxis: {
       type: 'value',
-      splitLine: { lineStyle: { type: 'dashed', color: 'var(--mf-primary-light)' } },
+      splitLine: { lineStyle: { type: 'dashed', color: P.primaryLight } },
       axisLabel: {
-        color: 'var(--mf-text-muted)',
+        color: P.textMuted,
         formatter: (v: number) => v >= 10000 ? `${(v/10000).toFixed(1)}w` : String(v)
       }
     },
@@ -76,12 +77,12 @@ function update() {
         symbol: 'circle',
         symbolSize: 6,
         showSymbol: false,
-        itemStyle: { color: 'var(--mf-primary)', borderWidth: 2 },
-        lineStyle: { width: 2, shadowColor: 'var(--mf-primary-light)', shadowBlur: 12 },
+        itemStyle: { color: P.primary, borderWidth: 2 },
+        lineStyle: { width: 2, shadowColor: P.primaryLight, shadowBlur: 12 },
         areaStyle: {
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: 'rgba(0, 212, 255, 0.2)' },
-            { offset: 1, color: 'var(--mf-primary-light)' }
+            { offset: 0, color: withAlpha(P.primary, 0.25) },
+            { offset: 1, color: P.primaryLight }
           ])
         }
       },
@@ -93,7 +94,7 @@ function update() {
         symbol: 'circle',
         symbolSize: 6,
         showSymbol: false,
-        itemStyle: { color: '#10b981', borderWidth: 2 },
+        itemStyle: { color: P.success, borderWidth: 2 },
       },
       {
         name: '总负债',
@@ -103,7 +104,7 @@ function update() {
         symbol: 'circle',
         symbolSize: 6,
         showSymbol: false,
-        itemStyle: { color: '#f43f5e', borderWidth: 2 },
+        itemStyle: { color: P.danger, borderWidth: 2 },
       },
     ]
   })

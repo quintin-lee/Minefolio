@@ -5,6 +5,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch } from 'vue'
 import * as echarts from 'echarts'
+import { resolveChartPalette, useChartThemeSync } from '@/utils/echarts-theme'
 
 export interface HoldingsPieDatum {
   name: string
@@ -32,15 +33,16 @@ const TYPE_COLORS: Record<string, string> = {
 
 function updateChart() {
   if (!chart) return
+  const P = resolveChartPalette()
   chart.setOption({
     tooltip: {
       trigger: 'item',
       formatter: (p: any) => `${p.name}: ¥${p.value} (${p.percent}%)`,
-      backgroundColor: 'var(--mf-surface-card)',
-      borderColor: 'var(--mf-border)',
-      textStyle: { color: 'var(--mf-text-main)' },
+      backgroundColor: P.surfaceCard,
+      borderColor: P.border,
+      textStyle: { color: P.textMain },
     },
-    legend: { bottom: 0, textStyle: { color: 'var(--mf-text-muted)' } },
+    legend: { bottom: 0, textStyle: { color: P.textMuted } },
     series: [
       {
         type: 'pie',
@@ -84,6 +86,7 @@ onUnmounted(() => {
 })
 
 watch(() => props.data, updateChart, { deep: true })
+useChartThemeSync(updateChart)
 </script>
 
 <style scoped>

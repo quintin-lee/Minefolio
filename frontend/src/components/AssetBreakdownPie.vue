@@ -5,6 +5,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import * as echarts from 'echarts'
+import { resolveChartPalette, useChartThemeSync, withAlpha } from '@/utils/echarts-theme'
 
 const props = defineProps<{ data: { category_name: string; value: number; pct: number }[] }>()
 const chartRef = ref<HTMLElement>()
@@ -43,32 +44,34 @@ function handleResize() {
 }
 
 watch(() => props.data, updateChart, { deep: true })
+useChartThemeSync(updateChart)
 
 function updateChart() {
   if (!chart || !props.data.length) return
+  const P = resolveChartPalette()
   chart.setOption({
     animationDuration: 1000,
     tooltip: {
       trigger: 'item',
-      backgroundColor: 'var(--mf-surface-card)',
+      backgroundColor: P.surfaceCard,
       padding: [10, 15],
-      textStyle: { color: 'var(--mf-text-main)' },
-      borderColor: 'var(--mf-primary-border)',
+      textStyle: { color: P.textMain },
+      borderColor: P.primaryBorder,
       borderWidth: 1,
-      shadowColor: 'var(--mf-primary-light)',
+      shadowColor: P.primaryLight,
       shadowBlur: 16,
       formatter: (p: any) => {
         const val = new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(p.data.value)
         return `<div style="font-weight:bold;color:${p.color};margin-bottom:4px">${p.data.name}</div>
-                <div style="color:#64748b">金额: ${val}</div>
-                <div style="color:#64748b">占比: ${p.data.pct.toFixed(2)}%</div>`
+                <div style="color:${P.textMuted}">金额: ${val}</div>
+                <div style="color:${P.textMuted}">占比: ${p.data.pct.toFixed(2)}%</div>`
       }
     },
     legend: {
       orient: 'vertical',
       right: '5%',
       top: 'center',
-      textStyle: { color: '#64748b', fontSize: 13 },
+      textStyle: { color: P.textMuted, fontSize: 13 },
       icon: 'circle',
       itemWidth: 10,
       itemHeight: 10,
@@ -81,14 +84,14 @@ function updateChart() {
       avoidLabelOverlap: false,
       itemStyle: {
         borderRadius: 6,
-        borderColor: 'var(--mf-border)',
+        borderColor: P.border,
         borderWidth: 2
       },
       label: {
         show: true,
         position: 'outside',
         formatter: '{b}: {d}%',
-        color: '#94a3b8',
+        color: P.textMuted,
         fontSize: 12,
         lineHeight: 18,
       },
@@ -96,11 +99,11 @@ function updateChart() {
         show: true,
         length: 12,
         length2: 20,
-        lineStyle: { color: 'rgba(148,163,184,0.4)' },
+        lineStyle: { color: withAlpha(P.textMuted, 0.4) },
       },
       emphasis: {
-        label: { show: true, fontSize: 14, fontWeight: 'bold', color: 'var(--mf-text-main)' },
-        itemStyle: { shadowBlur: 16, shadowOffsetX: 0, shadowColor: 'var(--mf-primary-light)' },
+        label: { show: true, fontSize: 14, fontWeight: 'bold', color: P.textMain },
+        itemStyle: { shadowBlur: 16, shadowOffsetX: 0, shadowColor: P.primaryLight },
       },
       data: props.data.map((d) => ({ name: d.category_name, value: d.value, pct: d.pct })),
       color: colors,
