@@ -16,7 +16,7 @@
         :key="idx"
         class="starter-card"
         :class="item.tag"
-        @click="$emit('select', item.prompt)"
+        @click="$emit('select', item.prompt as string)"
       >
         <div class="card-top">
           <div class="card-icon" :style="{ backgroundColor: item.bg, color: item.color }">

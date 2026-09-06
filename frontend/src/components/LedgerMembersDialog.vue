@@ -149,7 +149,7 @@ async function handleRemoveMember(member: LedgerMember) {
               size="small"
               effect="plain"
               class="ledger-badge"
-              :style="{ borderColor: ledger?.color || '#00d4ff', color: ledger?.color || '#00d4ff' }"
+              :style="{ borderColor: ledger?.color || 'var(--mf-primary)', color: ledger?.color || 'var(--mf-primary)' }"
             >
               {{ ledger.name }}
             </el-tag>
