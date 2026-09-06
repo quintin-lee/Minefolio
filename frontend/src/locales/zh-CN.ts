@@ -17,6 +17,8 @@ export const zhCN = {
     logout: '退出',
     profile: '个人',
     changePassword: '修改密码',
+    quickAdd: '记账',
+    quickAddHint: '快捷记账 (按快捷键 N)',
   },
   navGroups: {
     assetsOverview: '资产全景',
@@ -45,6 +47,9 @@ export const zhCN = {
     name: '名称',
     currency: '币种',
     action: '操作',
+    expandMenu: '展开菜单',
+    collapseMenu: '收起菜单',
+    logoutSuccess: '已退出登录',
   },
   login: {
     title: 'Minefolio 登录',

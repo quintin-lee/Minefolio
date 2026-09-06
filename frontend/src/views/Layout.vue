@@ -8,7 +8,7 @@
         <span v-show="!isCollapsed" class="logo-text">Minefolio</span>
       </div>
       <el-menu :default-active="activeMenu" class="sidebar-menu" :collapse="isCollapsed" :collapse-transition="false">
-        <div v-show="!isCollapsed" class="nav-group-label">资产全景</div>
+        <div v-show="!isCollapsed" class="nav-group-label">{{ t('navGroups.assetsOverview') }}</div>
         <el-menu-item index="/dashboard" @click="goTo('/dashboard')">
           <Icon icon="ph:chart-line" class="nav-icon" />
           <span>{{ t('nav.dashboard') }}</span>
@@ -26,7 +26,7 @@
           <span>{{ t('nav.reports') }}</span>
         </el-menu-item>
 
-        <div v-show="!isCollapsed" class="nav-group-label">收支管理</div>
+        <div v-show="!isCollapsed" class="nav-group-label">{{ t('navGroups.incomeExpense') }}</div>
         <el-menu-item index="/transactions" @click="goTo('/transactions')">
           <Icon icon="ph:list" class="nav-icon" />
           <span>{{ t('nav.transactions') }}</span>
@@ -44,7 +44,7 @@
           <span>{{ t('nav.categories') }}</span>
         </el-menu-item>
 
-        <div v-show="!isCollapsed" class="nav-group-label">AI 智能空间</div>
+        <div v-show="!isCollapsed" class="nav-group-label">{{ t('navGroups.aiSpace') }}</div>
         <el-menu-item index="/chat" @click="goTo('/chat')">
           <Icon icon="ph:chat-circle-text" class="nav-icon" />
           <span>{{ t('nav.aiChat') }}</span>
@@ -54,7 +54,7 @@
           <span>{{ t('nav.aiTraces') }}</span>
         </el-menu-item>
 
-        <div v-show="!isCollapsed" class="nav-group-label">系统管理</div>
+        <div v-show="!isCollapsed" class="nav-group-label">{{ t('navGroups.system') }}</div>
         <el-menu-item index="/audit-logs" @click="goTo('/audit-logs')">
           <Icon icon="ph:scroll" class="nav-icon" />
           <span>{{ t('nav.auditLogs') }}</span>
@@ -72,7 +72,7 @@
           <el-icon class="hamburger" :class="{ 'is-active': mobileMenuOpen }" @click="mobileMenuOpen = !mobileMenuOpen">
             <Grid />
           </el-icon>
-          <el-tooltip :content="isCollapsed ? '展开菜单' : '收起菜单'" placement="bottom" :show-after="300">
+          <el-tooltip :content="isCollapsed ? t('common.expandMenu') : t('common.collapseMenu')" placement="bottom" :show-after="300">
             <div class="collapse-btn" @click="toggleCollapse">
               <Icon icon="ph:sidebar-simple" class="collapse-icon" />
             </div>
@@ -80,10 +80,10 @@
           <h2 class="page-title">{{ pageTitle }}</h2>
         </div>
         <div class="header-right">
-          <el-tooltip content="快捷记账 (按快捷键 N)" placement="bottom" :show-after="300">
+          <el-tooltip :content="t('nav.quickAddHint')" placement="bottom" :show-after="300">
             <el-button type="primary" size="small" class="quick-add-btn" @click="quickRecordVisible = true">
               <Icon icon="ph:plus-bold" class="btn-icon" />
-              <span>记账</span>
+              <span>{{ t('nav.quickAdd') }}</span>
             </el-button>
           </el-tooltip>
           <LedgerSelector />
@@ -195,19 +195,19 @@ function goTo(path: string) {
 
   const pageTitle = computed(() => {
     const map: Record<string, string> = {
-      '/dashboard': '仪表盘',
-      '/assets': '资产',
-      '/holdings': '持仓',
-      '/transactions': '交易',
-      '/daily-expenses': '收支',
-      '/categories': '分类',
-      '/reports': '报表',
-      '/audit-logs': '日志',
-      '/settings': '设置',
-      '/chat': 'AI助手',
-      '/ai-traces': 'AI追踪',
-    };
-    return map[route.path] || 'Minefolio';
+      '/dashboard': t('nav.dashboard'),
+      '/assets': t('nav.assets'),
+      '/holdings': t('nav.holdings'),
+      '/transactions': t('nav.transactions'),
+      '/daily-expenses': t('nav.dailyExpenses'),
+      '/categories': t('nav.categories'),
+      '/reports': t('nav.reports'),
+      '/audit-logs': t('nav.auditLogs'),
+      '/settings': t('nav.settings'),
+      '/chat': t('nav.aiChat'),
+      '/ai-traces': t('nav.aiTraces'),
+    }
+    return map[route.path] || 'Minefolio'
   })
 
 function handleCommand(cmd: string) {
@@ -215,7 +215,7 @@ function handleCommand(cmd: string) {
     router.push('/settings')
   } else if (cmd === 'logout') {
     auth.logout()
-    ElMessage.success('已退出登录')
+    ElMessage.success(t('common.logoutSuccess'))
     router.push('/login')
   }
 }

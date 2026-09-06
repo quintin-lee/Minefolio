@@ -17,6 +17,8 @@ export const enUS = {
     logout: 'Logout',
     profile: 'Profile',
     changePassword: 'Change Password',
+    quickAdd: 'Record',
+    quickAddHint: 'Quick record (press N)',
   },
   navGroups: {
     assetsOverview: 'Assets',
@@ -45,6 +47,9 @@ export const enUS = {
     name: 'Name',
     currency: 'Currency',
     action: 'Action',
+    expandMenu: 'Expand Menu',
+    collapseMenu: 'Collapse Menu',
+    logoutSuccess: 'Logged out',
   },
   login: {
     title: 'Minefolio Login',
