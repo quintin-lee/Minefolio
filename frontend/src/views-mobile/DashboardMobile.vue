@@ -2,22 +2,22 @@
   <div class="dashboard-mobile" v-loading="loading">
     <div class="page-header"><h2>首页</h2></div>
     <div class="kpi-row">
-      <div class="kpi-card cyan"><span>总资产</span><b>{{ fmt(summary.total_assets) }}</b></div>
-      <div class="kpi-card red"><span>总负债</span><b>{{ fmt(summary.total_liabilities) }}</b></div>
-      <div class="kpi-card green"><span>净资产</span><b>{{ fmt(summary.net_worth) }}</b></div>
+      <div class="kpi-card cyan"><span>总资产</span><b>{{ formatCurrency(summary.total_assets) }}</b></div>
+      <div class="kpi-card red"><span>总负债</span><b>{{ formatCurrency(summary.total_liabilities) }}</b></div>
+      <div class="kpi-card green"><span>净资产</span><b>{{ formatCurrency(summary.net_worth) }}</b></div>
     </div>
     <h3 class="section-title">本月收支</h3>
     <div class="mini-row">
-      <div><span>收入</span><b class="income">{{ fmt(month?.total_income ?? 0) }}</b></div>
-      <div><span>支出</span><b class="expense">{{ fmt(month?.total_expense ?? 0) }}</b></div>
-      <div><span>结余</span><b>{{ fmt(month?.balance ?? 0) }}</b></div>
+      <div><span>收入</span><b class="income">{{ formatCurrency(month?.total_income ?? 0) }}</b></div>
+      <div><span>支出</span><b class="expense">{{ formatCurrency(month?.total_expense ?? 0) }}</b></div>
+      <div><span>结余</span><b>{{ formatCurrency(month?.balance ?? 0) }}</b></div>
     </div>
     <h3 class="section-title">最近记录</h3>
     <div v-if="recent.length === 0 && !loading" class="empty-state">暂无交易记录</div>
     <div v-for="e in recent" :key="e.id" class="record-card">
       <span class="cat">{{ e.category_name }}</span>
       <span :class="e.expense_type === 'income' ? 'income' : 'expense'">
-        {{ e.expense_type === 'income' ? '+' : '-' }}{{ fmt(e.amount) }}
+        {{ e.expense_type === 'income' ? '+' : '-' }}{{ formatCurrency(e.amount) }}
       </span>
     </div>
   </div>
@@ -27,16 +27,13 @@
 import { ref, onMounted } from 'vue'
 import { summaryApi } from '@/api/summary'
 import { dailyExpensesApi } from '@/api/daily_expenses'
+import { formatCurrency } from '@/utils/format'
 import type { Summary, DailyExpense, ExpenseMonthly } from '@/types'
 
 const summary = ref<Summary>({ total_assets: 0, total_liabilities: 0, net_worth: 0, breakdown: [], trend: [] })
 const month = ref<ExpenseMonthly | null>(null)
 const recent = ref<DailyExpense[]>([])
 const loading = ref(false)
-
-function fmt(v: number) {
-  return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(v ?? 0)
-}
 
 onMounted(async () => {
   loading.value = true

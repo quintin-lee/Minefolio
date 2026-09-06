@@ -5,7 +5,7 @@
 
 // frontend/src/api/transactions.ts
 import http from '@/utils/http'
-import type { PageResult, Transaction, TransactionMonthly } from '@/types'
+import type { PageResult, Transaction, TransactionInput, TransactionMonthly } from '@/types'
 
 /**
  * 资产交易流水 API 服务对象
@@ -60,7 +60,7 @@ export const transactionsApi = {
    * @param data.note 备注说明 (可选)
    * @returns 空响应
    */
-  create: (data: any) => http.post<void, void>('/transactions', data),
+  create: (data: TransactionInput) => http.post<void, void>('/transactions', data),
 
   /**
    * 修改交易流水记录 (自动计算并回滚旧影响后再应用新影响)
@@ -69,7 +69,7 @@ export const transactionsApi = {
    * @param data 更新的数据载荷
    * @returns 空响应
    */
-  update: (id: number, data: any) => http.put<void, void>(`/transactions/${id}`, data),
+  update: (id: number, data: TransactionInput) => http.put<void, void>(`/transactions/${id}`, data),
 
   /**
    * 删除交易流水 (自动级联回滚关联的手续费子交易及资产余额/持仓变动)

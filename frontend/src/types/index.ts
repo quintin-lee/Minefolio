@@ -61,6 +61,34 @@ export interface Transaction {
   category_name?: string
 }
 
+/** 创建/更新交易流水时的请求载荷 (POST/PUT /api/transactions) */
+export interface TransactionInput {
+  /** 主资产账户 ID */
+  asset_id: number
+  /** 关联出资/目标资产 ID (转账、买入出资等) */
+  linked_asset_id?: number | null
+  /** 交易分类 ID */
+  category_id?: number | null
+  /** 交易类型 */
+  transaction_type: TransactionType
+  /** 交易总金额 */
+  amount: number
+  /** 成交单价 (投资类型交易) */
+  price_per_unit?: number
+  /** 成交数量/份额 (投资类型交易) */
+  quantity?: number
+  /** 手续费金额 (大于 0 时服务端自动写入子交易) */
+  fee?: number
+  /** 币种 (如 'CNY', 'USD')，缺省由服务端按资产币种处理 */
+  currency?: string
+  /** 交易发生时间 (YYYY-MM-DD) */
+  transaction_date: string
+  /** 备注说明 */
+  note?: string
+  /** 收支方向 (创建时可选，缺省 'expense') */
+  source_type?: 'income' | 'expense'
+}
+
 export type ExpenseType = 'income' | 'expense'
 
 export interface Tag {

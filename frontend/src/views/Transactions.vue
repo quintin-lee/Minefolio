@@ -358,7 +358,7 @@ import { useCategoryStore } from '@/stores/category'
 import { formatCurrency } from '@/utils/format'
 import SummaryCard from '@/components/SummaryCard.vue'
 import http from '@/utils/http'
-import type { Transaction, Asset, Category, TransactionMonthly, Direction } from '@/types'
+import type { Transaction, Asset, Category, TransactionMonthly, Direction, TransactionInput } from '@/types'
 
 const loading = ref(false)
 const saving = ref(false)
@@ -632,6 +632,23 @@ function openDialog(txn?: any) {
   dialogVisible.value = true
 }
 
+function buildTransactionPayload(): TransactionInput {
+  const payload: TransactionInput = {
+    asset_id: Number(form.asset_id),
+    transaction_type: form.transaction_type,
+    amount: Number(form.amount),
+    transaction_date: form.transaction_date,
+  }
+  if (form.currency) payload.currency = form.currency
+  if (form.category_id) payload.category_id = Number(form.category_id)
+  if (form.linked_asset_id) payload.linked_asset_id = Number(form.linked_asset_id)
+  if (form.quantity) payload.quantity = Number(form.quantity)
+  if (form.price_per_unit) payload.price_per_unit = Number(form.price_per_unit)
+  if (form.fee) payload.fee = Number(form.fee)
+  if (form.note) payload.note = form.note
+  return payload
+}
+
 async function handleSubmit() {
   if (!formRef.value) return
   if (!form.asset_id || !form.transaction_type || !form.amount || form.amount <= 0 || !form.transaction_date) {
@@ -645,10 +662,11 @@ async function handleSubmit() {
   }
   saving.value = true
   try {
+    const payload = buildTransactionPayload()
     if (editingId.value) {
-      await transactionsApi.update(editingId.value, form)
+      await transactionsApi.update(editingId.value, payload)
     } else {
-      await transactionsApi.create(form)
+      await transactionsApi.create(payload)
     }
     ElMessage.success('保存成功')
     dialogVisible.value = false

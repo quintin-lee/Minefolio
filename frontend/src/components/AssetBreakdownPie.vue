@@ -6,6 +6,7 @@
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import * as echarts from 'echarts'
 import { resolveChartPalette, useChartThemeSync, withAlpha } from '@/utils/echarts-theme'
+import { formatCurrency } from '@/utils/format'
 
 const props = defineProps<{ data: { category_name: string; value: number; pct: number }[] }>()
 const chartRef = ref<HTMLElement>()
@@ -61,7 +62,7 @@ function updateChart() {
       shadowColor: P.primaryLight,
       shadowBlur: 16,
       formatter: (p: any) => {
-        const val = new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(p.data.value)
+        const val = formatCurrency(p.data.value)
         return `<div style="font-weight:bold;color:${p.color};margin-bottom:4px">${p.data.name}</div>
                 <div style="color:${P.textMuted}">金额: ${val}</div>
                 <div style="color:${P.textMuted}">占比: ${p.data.pct.toFixed(2)}%</div>`

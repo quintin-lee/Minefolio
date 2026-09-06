@@ -6,6 +6,7 @@
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import * as echarts from 'echarts'
 import { resolveChartPalette, useChartThemeSync } from '@/utils/echarts-theme'
+import { formatCurrency } from '@/utils/format'
 
 const props = defineProps<{ data: { date: string; net_worth: number }[] }>()
 const chartRef = ref<HTMLElement>()
@@ -60,7 +61,7 @@ function updateChart() {
       shadowColor: P.primaryLight,
       shadowBlur: 16,
       formatter: (p: any) => {
-        const val = new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(p[0].value)
+        const val = formatCurrency(p[0].value)
         return `<div style="font-size:12px;color:${P.textMuted};margin-bottom:4px">${p[0].name}</div>
                 <div style="font-weight:bold;color:${P.primary}">${p[0].seriesName}: ${val}</div>`
       }

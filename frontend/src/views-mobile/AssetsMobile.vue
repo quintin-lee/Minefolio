@@ -8,7 +8,7 @@
         <span v-if="a.currency && a.currency !== 'CNY'" class="currency-tag">{{ a.currency }}</span>
       </div>
       <div class="value-col">
-        <span class="value">{{ fmt(a.current_value, a.currency) }}</span>
+        <span class="value">{{ formatCurrency(a.current_value, a.currency) }}</span>
         <span v-if="a.currency && a.currency !== 'CNY' && exchangeRates[a.currency]" class="cny-hint">
           ≈ ¥{{ (Number(a.current_value) * (exchangeRates[a.currency] || 1)).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
         </span>
@@ -21,20 +21,12 @@
 import { ref, onMounted } from 'vue'
 import { assetsApi } from '@/api/assets'
 import { marketApi } from '@/api/market'
+import { formatCurrency } from '@/utils/format'
 import type { Asset } from '@/types'
 
 const list = ref<Asset[]>([])
 const loading = ref(false)
 const exchangeRates = ref<Record<string, number>>({})
-
-function fmt(v: number, cur?: string) {
-  const currencyCode = cur && cur !== 'CNY' ? cur : 'CNY'
-  try {
-    return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: currencyCode }).format(v ?? 0)
-  } catch {
-    return `${currencyCode} ${(v ?? 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-  }
-}
 
 onMounted(async () => {
   loading.value = true

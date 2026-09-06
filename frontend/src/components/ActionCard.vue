@@ -375,8 +375,8 @@ async function handleConfirm() {
       }
 
       await transactionsApi.create({
-        asset_id: form.from_asset_id,
-        linked_asset_id: form.to_asset_id,
+        asset_id: form.from_asset_id!,
+        linked_asset_id: form.to_asset_id!,
         category_id: 1, // Default transfer category
         transaction_type: 'transfer_out',
         amount: form.amount,

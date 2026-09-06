@@ -5,11 +5,11 @@
       <el-button size="small" @click="loadMore" :loading="loading">加载更多</el-button>
     </div>
     <div class="summary-row">
-      <span>收入 {{ fmt(month?.total_income ?? 0) }}</span>
-      <span>支出 {{ fmt(month?.total_expense ?? 0) }}</span>
+      <span>收入 {{ formatCurrency(month?.total_income ?? 0) }}</span>
+      <span>支出 {{ formatCurrency(month?.total_expense ?? 0) }}</span>
     </div>
     <div v-for="e in list" :key="e.id" class="expense-card" @click="edit(e)">
-      <div class="top"><span class="cat">{{ e.category_name }}</span><span :class="e.expense_type === 'income' ? 'income' : 'expense'">{{ e.expense_type === 'income' ? '+' : '-' }}{{ fmt(e.amount) }}</span></div>
+      <div class="top"><span class="cat">{{ e.category_name }}</span><span :class="e.expense_type === 'income' ? 'income' : 'expense'">{{ e.expense_type === 'income' ? '+' : '-' }}{{ formatCurrency(e.amount) }}</span></div>
       <div class="bottom"><span>{{ e.expense_date }}</span><span>{{ e.asset_name }}</span></div>
     </div>
 
@@ -22,6 +22,7 @@
 import { ref, onMounted } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
 import { dailyExpensesApi } from '@/api/daily_expenses'
+import { formatCurrency } from '@/utils/format'
 import type { DailyExpense, ExpenseMonthly } from '@/types'
 import ExpenseQuickSheet from './ExpenseQuickSheet.vue'
 
@@ -31,10 +32,6 @@ const page = ref(1)
 const loading = ref(false)
 const sheetOpen = ref(false)
 const editing = ref<DailyExpense | null>(null)
-
-function fmt(v: number) {
-  return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(v ?? 0)
-}
 
 async function loadData(reset = false) {
   if (reset) page.value = 1

@@ -5,33 +5,71 @@
 
 // frontend/src/utils/format.ts
 
-/** 人民币数字格式化器 (保留两位小数，千分位逗号) */
-const cnyFormatter = new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' })
+/** 默认币种 (与历史行为保持一致，用于未显式传币种的调用方) */
+const DEFAULT_CURRENCY = 'CNY'
+
+/** 货币格式化器缓存 (键: 大写 ISO 币种代码) */
+const formatterCache = new Map<string, Intl.NumberFormat>()
 
 /**
- * 格式化数值为人民币货币字符串
- * @param val 金额数值 (如 120.5)
- * @returns 格式化后的货币文本 (如 "¥120.50")
- * @example
- * formatCurrency(120.5) // "¥120.50"
+ * 获取缓存化的货币格式化器
+ * @param currency ISO 4217 币种代码 (如 'CNY', 'USD')
+ * @returns 货币格式化器 (币种非法时抛出 RangeError，由调用方兜底)
  */
-export function formatCurrency(val: number): string {
-  return cnyFormatter.format(val ?? 0)
+function currencyFormatter(currency: string): Intl.NumberFormat {
+  const code = (currency || DEFAULT_CURRENCY).toUpperCase()
+  let formatter = formatterCache.get(code)
+  if (!formatter) {
+    formatter = new Intl.NumberFormat('zh-CN', { style: 'currency', currency: code })
+    formatterCache.set(code, formatter)
+  }
+  return formatter
 }
 
 /**
- * 格式化带正负符号的人民币货币字符串 (正数加 +，负数加 -)
+ * 非 ISO 4217 币种或非法代码的兜底文本 (如 "BTC 123.45")
+ * @param val 金额数值
+ * @param currency 币种代码
+ * @returns 保留两位小数的"代码 + 数值"文本
+ */
+function formatPlainCurrency(val: number, currency: string): string {
+  const code = (currency || DEFAULT_CURRENCY).toUpperCase()
+  return `${code} ${val.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+/**
+ * 格式化数值为指定币种货币字符串
+ * @param val 金额数值 (如 120.5)
+ * @param currency ISO 4217 币种代码 (如 'CNY', 'USD')，默认 'CNY'
+ * @returns 格式化后的货币文本 (如 "¥120.50"、"$120.50"；非法币种代码回退为 "BTC 120.50" 形式)
+ * @example
+ * formatCurrency(120.5)     // "¥120.50"
+ * formatCurrency(120.5, 'USD') // "$120.50"
+ */
+export function formatCurrency(val: number, currency = DEFAULT_CURRENCY): string {
+  const value = val ?? 0
+  const code = (currency || DEFAULT_CURRENCY).toUpperCase()
+  try {
+    return currencyFormatter(code).format(value)
+  } catch {
+    return formatPlainCurrency(value, code)
+  }
+}
+
+/**
+ * 格式化带正负符号的指定币种货币字符串 (正数加 +，负数加 -)
  * @param val 盈亏金额数值 (如 50 或 -50)
- * @returns 带正负前缀的货币文本 (如 "+¥50.00" 或 "-¥50.00")
+ * @param currency ISO 4217 币种代码 (如 'CNY', 'USD')，默认 'CNY'
+ * @returns 带正负前缀的货币文本 (如 "+¥50.00" 或 "-$50.00")
  * @example
  * formatSigned(50)  // "+¥50.00"
  * formatSigned(-50) // "-¥50.00"
  */
-export function formatSigned(val: number): string {
-  const abs = Math.abs(val ?? 0)
-  const s = cnyFormatter.format(abs)
-  if (val > 0) return `+${s}`
-  if (val < 0) return `-${s}`
+export function formatSigned(val: number, currency = DEFAULT_CURRENCY): string {
+  const value = val ?? 0
+  const s = formatCurrency(Math.abs(value), currency)
+  if (value > 0) return `+${s}`
+  if (value < 0) return `-${s}`
   return s
 }
 

@@ -6,15 +6,15 @@
     <div class="summary-row">
       <div class="kpi-card">
         <span class="label">总市值</span>
-        <b class="value">{{ fmt(summary.total_market_value) }}</b>
+        <b class="value">{{ formatCurrency(summary.total_market_value) }}</b>
       </div>
       <div class="kpi-card" :class="pnlCardClass(summary.total_floating_pnl)">
         <span class="label">浮动盈亏</span>
-        <b class="value">{{ fmtSigned(summary.total_floating_pnl) }}</b>
+        <b class="value">{{ formatSigned(summary.total_floating_pnl) }}</b>
       </div>
       <div class="kpi-card">
         <span class="label">已实现盈亏</span>
-        <b class="value">{{ fmtSigned(summary.total_realized_pnl) }}</b>
+        <b class="value">{{ formatSigned(summary.total_realized_pnl) }}</b>
       </div>
     </div>
 
@@ -32,16 +32,16 @@
       </div>
       <div class="card-row">
         <span class="meta">份额 {{ h.quantity.toFixed(2) }}</span>
-        <span class="meta">成本 {{ fmt(h.cost_basis) }}</span>
+        <span class="meta">成本 {{ formatCurrency(h.cost_basis) }}</span>
       </div>
       <div class="card-row">
         <div class="value-group">
-          <span class="value">{{ fmt(h.current_value, h.currency) }}</span>
+          <span class="value">{{ formatCurrency(h.current_value, h.currency) }}</span>
           <span v-if="h.currency && h.currency !== 'CNY' && exchangeRates[h.currency]" class="cny-hint">
             ≈ ¥{{ (Number(h.current_value) * (exchangeRates[h.currency] || 1)).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
           </span>
         </div>
-        <span :class="['pnl', pnlClass(h.floating_pnl)]">{{ fmtSigned(h.floating_pnl) }}  {{ (h.floating_pct >= 0 ? '↑' : '↓') }}{{ Math.abs(h.floating_pct).toFixed(2) }}%</span>
+        <span :class="['pnl', pnlClass(h.floating_pnl)]">{{ formatSigned(h.floating_pnl) }}  {{ (h.floating_pct >= 0 ? '↑' : '↓') }}{{ Math.abs(h.floating_pct).toFixed(2) }}%</span>
       </div>
     </div>
   </div>
@@ -51,6 +51,7 @@
 import { ref, onMounted } from 'vue'
 import { reportsApi, type HoldingsReport } from '@/api/reports'
 import { marketApi } from '@/api/market'
+import { formatCurrency, formatSigned } from '@/utils/format'
 
 const report = ref<HoldingsReport | null>(null)
 const loading = ref(false)
@@ -58,18 +59,6 @@ const exchangeRates = ref<Record<string, number>>({})
 const summary = ref({ total_market_value: 0, total_cost_basis: 0, total_floating_pnl: 0, total_realized_pnl: 0, floating_pct: 0 })
 const holdings = ref<{ asset_id: number; name: string; asset_type: string; currency: string; quantity: number; net_value: number; cost_basis: number; current_value: number; floating_pnl: number; floating_pct: number; realized_pnl: number }[]>([])
 
-function fmt(v: number, cur?: string) {
-  const currencyCode = cur && cur !== 'CNY' ? cur : 'CNY'
-  try {
-    return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: currencyCode }).format(v ?? 0)
-  } catch {
-    return `${currencyCode} ${(v ?? 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-  }
-}
-function fmtSigned(v: number) {
-  const s = fmt(Math.abs(v))
-  return v > 0 ? `+${s}` : v < 0 ? `-${s}` : s
-}
 function pnlClass(v: number) {
   return v > 0 ? 'income' : v < 0 ? 'expense' : ''
 }

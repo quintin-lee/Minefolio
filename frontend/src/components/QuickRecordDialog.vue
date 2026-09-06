@@ -99,6 +99,7 @@ import { assetsApi } from '@/api/assets'
 import { dailyExpensesApi } from '@/api/daily_expenses'
 import { transactionsApi } from '@/api/transactions'
 import { useCategoryStore } from '@/stores/category'
+import { formatCurrency } from '@/utils/format'
 import type { Asset } from '@/types'
 
 const props = defineProps<{
@@ -146,8 +147,7 @@ const categoryOptions = computed(() => {
 })
 
 function formatAssetBalance(a: Asset) {
-  const val = a.current_value ?? 0
-  return `¥${val.toFixed(2)}`
+  return formatCurrency(a.current_value ?? 0, a.currency)
 }
 
 async function loadAssets() {

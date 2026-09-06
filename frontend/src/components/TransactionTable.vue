@@ -13,7 +13,7 @@
       </el-table-column>
       <el-table-column prop="amount" label="金额" width="120" align="right">
         <template #default="{ row }">
-          <span class="mono-amount">{{ formatCurrency(row.amount) }}</span>
+          <span class="mono-amount">{{ formatCurrency(row.amount, row.currency) }}</span>
         </template>
       </el-table-column>
       <el-table-column prop="note" label="备注" min-width="150" />
@@ -23,12 +23,9 @@
 
 <script setup lang="ts">
 import type { Transaction } from '@/types'
+import { formatCurrency } from '@/utils/format'
 
 defineProps<{ transactions: Transaction[] }>()
-
-function formatCurrency(v: number) {
-  return new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(v)
-}
 </script>
 
 <style scoped>

@@ -7,7 +7,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { authApi } from '@/api/auth'
 import { systemApi } from '@/api/system'
-import { buildApiUrl } from '@/utils/http'
+import { encryptPassword } from '@/utils/crypto'
 
 /**
  * 用户信息接口
@@ -21,82 +21,7 @@ interface User {
   created_at: string
 }
 
-/**
- * RSA 公钥 JSON Web Key (JWK) 格式
- */
-interface RsaJwk {
-  /** 密钥算法类型 (固定为 'RSA') */
-  kty: string
-  /** 模数 Modulus (Base64url 编码) */
-  n: string
-  /** 公开指数 Exponent (Base64url 编码) */
-  e: string
-}
-
-/**
- * 异步从服务端获取用于密码加密的 RSA 公钥 JWK
- * @returns RSA-OAEP 公钥 JWK 对象
- */
-async function fetchRsaJwk(): Promise<RsaJwk> {
-  // 公钥接口无需鉴权，使用 buildApiUrl 统一各平台路径
-  const r = await fetch(buildApiUrl('/auth/public-key'))
-  if (!r.ok) throw new Error('Failed to fetch public key')
-  const body = await r.json()
-  const pk = body.data.public_key
-  return typeof pk === 'string' ? JSON.parse(pk) : pk
-}
-
-/**
- * 将 Base64url 字符串解码为 Uint8Array 字节数组
- * @param b64 Base64url 编码字符串
- * @returns 解码后的字节数组
- */
-function jwkB64urlToUint8Array(b64: string): Uint8Array {
-  const padded = b64.replace(/-/g, '+').replace(/_/g, '/')
-  return new Uint8Array(
-    atob(padded).split('').map((c) => c.charCodeAt(0))
-  )
-}
-
-/**
- * 将 Uint8Array 字节数组转换为 Base64url 字符串
- * @param buf 字节数组
- * @returns Base64url 编码字符串
- */
-function uint8ArrayToB64url(buf: Uint8Array): string {
-  return btoa(String.fromCharCode(...buf))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '')
-}
-
-/**
- * 使用服务端 RSA-OAEP-256 公钥加密用户明文密码
- * @param password 明文密码
- * @returns 加密后的 Base64url 格式密文字符串
- */
-async function encryptPassword(password: string): Promise<string> {
-  const jwk = await fetchRsaJwk()
-  const modulus = jwkB64urlToUint8Array(jwk.n)
-  const exponent = jwkB64urlToUint8Array(jwk.e)
-  const key = await crypto.subtle.importKey(
-    'jwk',
-    {
-      kty: jwk.kty,
-      n: uint8ArrayToB64url(modulus),
-      e: uint8ArrayToB64url(exponent),
-    },
-    { name: 'RSA-OAEP', hash: 'SHA-256' },
-    false,
-    ['encrypt']
-  )
-  const encBuf = await crypto.subtle.encrypt(
-    { name: 'RSA-OAEP' },
-    key,
-    new TextEncoder().encode(password)
-  )
-  return uint8ArrayToB64url(new Uint8Array(encBuf))
-}
+// RSA-OAEP 密码加密统一由 utils/crypto.ts 提供 (公钥拉取 + 加密实现已去重)
 
 /**
  * 用户认证与权限 Pinia Store
