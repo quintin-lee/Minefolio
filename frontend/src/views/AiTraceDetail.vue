@@ -148,7 +148,7 @@ watch(() => props.traceId, async (id) => {
 .message-item {
   border-radius: 8px;
   padding: 12px;
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--mf-surface-muted);
 }
 
 .message-item.system {
@@ -186,7 +186,7 @@ watch(() => props.traceId, async (id) => {
 .code-block {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-size: 13px;
-  background: rgba(0, 0, 0, 0.3);
+  background: var(--mf-surface);
   border-radius: 8px;
   padding: 12px;
   white-space: pre-wrap;
