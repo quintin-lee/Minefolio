@@ -24,8 +24,7 @@ mf_tx_repo_find_by_id(void* db_pool, int64_t user_id, int64_t id, mf_transaction
     csilk_json_t* res = csilk_db_query_param_json(
         (csilk_db_pool_t*)db_pool,
         "SELECT id, user_id, asset_id, linked_asset_id, parent_tx_id, transaction_type, "
-        "amount, price_per_unit, quantity, fee, currency, note, transaction_date, created_at, "
-        "updated_at "
+        "amount, price_per_unit, quantity, fee, currency, note, transaction_date, created_at "
         "FROM transactions WHERE id=? AND user_id=?",
         (const char*[]){id_str, uid_str, NULL});
 
