@@ -249,8 +249,8 @@ onMounted(async () => {
 }
 
 .library-card {
-  background: rgba(2, 6, 23, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--mf-surface-card);
+  border: 1px solid var(--mf-border-subtle);
   border-radius: 8px;
   padding: 10px 12px;
   cursor: pointer;
@@ -258,8 +258,8 @@ onMounted(async () => {
 }
 
 .library-card:hover:not(.is-disabled) {
-  border-color: rgba(0, 212, 255, 0.35);
-  background: rgba(0, 212, 255, 0.05);
+  border-color: var(--mf-primary-border);
+  background: var(--mf-primary-light);
 }
 
 .card-top {
@@ -279,12 +279,12 @@ onMounted(async () => {
 .card-title {
   font-size: 12.5px;
   font-weight: 600;
-  color: #f1f5f9;
+  color: var(--mf-text-main);
 }
 
 .card-desc {
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--mf-text-muted);
   margin-top: 2px;
   line-height: 1.4;
 }
@@ -292,7 +292,7 @@ onMounted(async () => {
 .pin-action-btn {
   background: transparent;
   border: none;
-  color: #64748b;
+  color: var(--mf-text-muted);
   font-size: 15px;
   cursor: pointer;
   padding: 2px;
@@ -309,13 +309,13 @@ onMounted(async () => {
   align-items: center;
   margin-top: 8px;
   padding-top: 6px;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-top: 1px solid var(--mf-border-subtle);
   font-size: 10.5px;
-  color: #64748b;
+  color: var(--mf-text-muted);
 }
 
 .steps-tag {
-  color: #94a3b8;
+  color: var(--mf-text-muted);
 }
 
 .mode-tag {
