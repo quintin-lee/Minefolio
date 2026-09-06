@@ -221,7 +221,7 @@ const formRef = ref()
 const page = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
-const summary = ref<Summary>({ total_assets: 0, total_liabilities: 0, net_worth: 0, breakdown: [], trend: [] })
+const summary = ref<Summary>({ total_assets: 0, total_liabilities: 0, net_worth: 0, category_breakdown: [], trend: [] })
 const exchangeRates = ref<Record<string, number>>({})
 
 const totalAssets = computed(() => summary.value.total_assets)

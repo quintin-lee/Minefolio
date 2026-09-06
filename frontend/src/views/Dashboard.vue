@@ -134,7 +134,7 @@
               <span class="header-title">资产分布</span>
             </div>
           </template>
-          <AssetBreakdownPie :data="summary.breakdown" />
+          <AssetBreakdownPie :data="assetBreakdownData" />
         </el-card>
       </el-col>
     </el-row>
@@ -205,7 +205,18 @@ const multiCurrency = ref<MultiCurrencySummary | null>(null)
 
 const summary = ref<Summary>({
   total_assets: 0, total_liabilities: 0, net_worth: 0,
-  breakdown: [], trend: [],
+  category_breakdown: [], trend: [],
+})
+
+/** 资产分类占比 (把服务端 category/value 映射为饼图需要的 category_name/value/pct) */
+const assetBreakdownData = computed(() => {
+  const rows = summary.value.category_breakdown ?? []
+  const total = rows.reduce((sum, r) => sum + (Number(r.value) || 0), 0)
+  return rows.map((r) => ({
+    category_name: r.category || '未分类',
+    value: Number(r.value) || 0,
+    pct: total > 0 ? ((Number(r.value) || 0) / total) * 100 : 0,
+  }))
 })
 const yearlyExpenses = ref<any>(null)
 const currentMonthBalance = ref<any>(null)

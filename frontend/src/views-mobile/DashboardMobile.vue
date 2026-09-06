@@ -30,7 +30,7 @@ import { dailyExpensesApi } from '@/api/daily_expenses'
 import { formatCurrency } from '@/utils/format'
 import type { Summary, DailyExpense, ExpenseMonthly } from '@/types'
 
-const summary = ref<Summary>({ total_assets: 0, total_liabilities: 0, net_worth: 0, breakdown: [], trend: [] })
+const summary = ref<Summary>({ total_assets: 0, total_liabilities: 0, net_worth: 0, category_breakdown: [], trend: [] })
 const month = ref<ExpenseMonthly | null>(null)
 const recent = ref<DailyExpense[]>([])
 const loading = ref(false)

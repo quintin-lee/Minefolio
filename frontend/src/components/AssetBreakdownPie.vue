@@ -48,7 +48,7 @@ watch(() => props.data, updateChart, { deep: true })
 useChartThemeSync(updateChart)
 
 function updateChart() {
-  if (!chart || !props.data.length) return
+  if (!chart || !props.data || props.data.length === 0) return
   const P = resolveChartPalette()
   chart.setOption({
     animationDuration: 1000,

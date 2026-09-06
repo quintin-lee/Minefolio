@@ -120,7 +120,8 @@ export interface Summary {
   total_assets: number
   total_liabilities: number
   net_worth: number
-  breakdown: { category_name: string; value: number; pct: number }[]
+  /** 按资产分类的市值汇总 (服务端 /api/summary 返回 { category, value } 列表) */
+  category_breakdown: { category: string; value: number }[]
   trend: { date: string; net_worth: number }[]
 }
 
