@@ -54,6 +54,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Aligned frontend distribution paths (`/opt/minefolio/frontend/dist` and `/usr/share/nginx/html`) across `Dockerfile.frontend` and Nginx configurations, eliminating 500 rewrite loops.
   - Implemented dynamic upstream DNS resolution (`resolver 127.0.0.11 valid=10s ipv6=off;` + variable `$backend_upstream`) in `nginx/minefolio.docker.conf`, making Nginx boot resilient against backend container initialization timing.
   - Made Docker image smoke tests mandatory in `.github/workflows/ci.yml` across all branches, tags, and pull requests prior to pushing images to GitHub Container Registry (GHCR).
+- Fixed container timezone mismatch by installing `tzdata` in the Dockerfile runtime image and configuring `TZ=Asia/Shanghai` with `/etc/localtime` mount in `docker-compose.yml`, ensuring backend `localtime`/`strftime` outputs match the intended production timezone.
+
 - **Database Migration System (`backend/src/infrastructure/database/migration/`, `backend/sql/migrations/`)**:
   - Replaced legacy 700+ line ad-hoc `col_exists()` and hardcoded `ALTER TABLE` routine in `db.c` with a formal native C migration engine.
   - Flyway-style versioned migration scripts for SQLite and PostgreSQL:

@@ -961,8 +961,11 @@ graph TB
         fs1 --> fs2["Stage 2: nginx:alpine runtime"]
         fs2 --> fimg["fa:fa-cube minefolio-frontend:latest (:80)"]
         dc["docker-compose.yml"] --> bimg
+        dc --> tz
         dc --> fimg
         fimg -->|"ports 80:80"| prod["fa:fa-cloud 生产访问 :80"]
+        tz["fa:fa-clock 时区
+        Asia/Shanghai"] --> bimg
         fimg -.->|"proxy_pass :8080 (动态 DNS)"| bimg
     end
 
@@ -985,6 +988,7 @@ graph TB
 | `MINEFOLIO_DB_DSN` | 否 | `config/db.json` | 数据库连接串(SQLite 路径 / PG DSN) |
 | `MINEFOLIO_PORT` | 否 | `PORT` → `8080` | 监听端口 |
 | `HTTP_PROXY` / `HTTPS_PROXY` | 否 | 无 | 容器构建时通过 apt/npm 代理 |
+| `TZ` | 否 | `Asia/Shanghai` | 容器时区；runtime 镜像安装 `tzdata`，并通过 `/etc/localtime` 挂载保证后端 `localtime`/`strftime` 输出一致 |
 
 **后端构建命令:**
 
@@ -1062,6 +1066,7 @@ cd backend/build && ctest --output-on-failure
 - 三阶段构建: backend-build (Ubuntu 24.04 + gcc-14) → frontend-build (Node 20) → nginx:alpine runtime
 - `deps/` 目录缓存 csilk FetchContent,离线可重现构建
 - `hosts` 文件 bind mount 绕开 Docker 内嵌 DNS 故障
+- runtime 镜像安装 `tzdata`，容器默认时区 `Asia/Shanghai`，保证后端 `localtime`/`strftime` 输出一致
 
 ---
 

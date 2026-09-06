@@ -81,6 +81,8 @@ docker compose up -d
 # 查看容器运行与健康检查状态（稍候片刻两个容器均应为 healthy）
 docker compose ps
 ```
+> 说明：容器默认时区为 `Asia/Shanghai`。若需调整，可在 `docker-compose.yml` 中修改 `TZ` 环境变量或变更 `/etc/localtime` 挂载。
+
 启动成功后，在浏览器访问 `http://localhost` 即可进入初始化向导创建管理员账户。
 
 #### 3. 部署技巧与进阶配置
