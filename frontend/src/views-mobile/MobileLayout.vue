@@ -3,6 +3,7 @@
     <main class="mobile-content">
       <router-view />
     </main>
+    <LocaleToggle class="locale-chip" />
     <nav class="tab-bar">
       <button
         v-for="tab in tabs"
@@ -20,6 +21,7 @@
 
 <script setup lang="ts">
 import { DataAnalysis, Plus, Wallet, TrendCharts, PieChart, Setting, Calendar } from '@element-plus/icons-vue'
+import LocaleToggle from '@/components/LocaleToggle.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -50,6 +52,12 @@ function go(tab: (typeof tabs)[number]) {
   overflow-y: auto;
   padding: 16px;
   padding-bottom: 80px;
+}
+.locale-chip {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  z-index: 20;
 }
 .tab-bar {
   position: fixed;
