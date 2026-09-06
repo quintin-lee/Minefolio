@@ -30,23 +30,35 @@
       <el-form-item label="当前主题">
         <el-text type="primary">{{ theme.resolvedTheme === 'dark' ? '深色' : '浅色' }}</el-text>
       </el-form-item>
+
+      <el-form-item :label="$t('settings.language')">
+        <el-radio-group v-model="lang" size="large">
+          <el-radio value="zh-CN">简体中文</el-radio>
+          <el-radio value="en-US">English</el-radio>
+        </el-radio-group>
+      </el-form-item>
     </el-form>
   </div>
 </template>
 
 <script setup lang="ts">
 import { watch } from 'vue'
+import { ref } from 'vue'
 import { Icon } from '@iconify/vue'
 import { useThemeStore } from '@/stores/theme'
+import { useI18n } from '@/composables/useI18n'
 
 const theme = useThemeStore()
+const { setLocale } = useI18n()
+const lang = ref(localStorage.getItem('minefolio_lang') || 'zh-CN')
 
-watch(
-  () => theme.mode,
-  (newMode) => {
-    theme.setMode(newMode)
-  }
-)
+watch(() => theme.mode, (newMode) => {
+  theme.setMode(newMode)
+})
+
+watch(() => lang.value, (value) => {
+  if (value === 'zh-CN' || value === 'en-US') setLocale(value)
+})
 </script>
 
 <style scoped>
@@ -56,7 +68,7 @@ watch(
   gap: 8px;
 }
 
-:deep(.el-radio__label) {
+::deep(.el-radio__label) {
   display: flex !important;
   align-items: center !important;
   padding-left: 8px !important;

@@ -1,5 +1,4 @@
 export const zhCN = {
-  // 导航
   nav: {
     dashboard: '仪表盘',
     assets: '资产',
@@ -19,7 +18,12 @@ export const zhCN = {
     profile: '个人',
     changePassword: '修改密码',
   },
-  // 通用
+  navGroups: {
+    assetsOverview: '资产全景',
+    incomeExpense: '收支管理',
+    aiSpace: 'AI 智能空间',
+    system: '系统管理',
+  },
   common: {
     confirm: '确认',
     cancel: '取消',
@@ -42,7 +46,6 @@ export const zhCN = {
     currency: '币种',
     action: '操作',
   },
-  // 登录
   login: {
     title: 'Minefolio 登录',
     username: '用户名',
@@ -56,7 +59,6 @@ export const zhCN = {
     usernameMin: '用户名至少2个字符',
     passwordMin: '密码至少4个字符',
   },
-  // 资产
   assets: {
     title: '资产管理',
     addAsset: '新增资产',
@@ -66,7 +68,6 @@ export const zhCN = {
     currentValue: '当前价值',
     selectCategory: '选择分类',
   },
-  // 交易
   transactions: {
     title: '交易记录',
     addTransaction: '新增交易',
@@ -77,7 +78,6 @@ export const zhCN = {
     pricePerUnit: '单价',
     transactionDate: '交易日期',
   },
-  // 收支
   dailyExpenses: {
     title: '日常收支',
     addExpense: '新增收支',
@@ -92,7 +92,6 @@ export const zhCN = {
     totalExpense: '总支出',
     balance: '结余',
   },
-  // 报表
   reports: {
     title: '报表中心',
     expenseTrend: '收支趋势',
@@ -105,7 +104,6 @@ export const zhCN = {
     totalAssets: '总资产',
     totalLiabilities: '总负债',
   },
-  // 分类
   categories: {
     title: '分类管理',
     addCategory: '新增分类',
@@ -118,7 +116,6 @@ export const zhCN = {
     icon: '图标',
     sortOrder: '排序',
   },
-  // 设置
   settings: {
     title: '系统设置',
     userInfo: '用户信息',
@@ -158,5 +155,13 @@ export const zhCN = {
     aiContextSize: '上下文轮数',
     aiSystemPrompt: '系统提示词',
     aiSaveFailed: '保存失败',
+    language: '语言',
+    languageHint: '选择界面显示语言。',
+    theme: '外观主题',
+    themeHint: '选择深色、浅色或跟随系统主题。',
+    currentTheme: '当前主题',
+    dark: '深色',
+    light: '浅色',
+    auto: '跟随系统',
   },
 }
