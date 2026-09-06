@@ -215,7 +215,7 @@ async function handleSubmit() {
   align-items: center;
   justify-content: center;
   border: 1px solid;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--mf-shadow-sm);
   flex-shrink: 0;
   transition: all 0.3s ease;
 }
@@ -276,7 +276,7 @@ async function handleSubmit() {
   cursor: pointer;
   border: 2px solid transparent;
   transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--mf-shadow-sm);
 }
 .color-item:hover {
   transform: scale(1.2);

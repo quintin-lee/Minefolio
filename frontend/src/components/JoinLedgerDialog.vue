@@ -113,7 +113,7 @@ async function handleJoin() {
   background: var(--mf-primary-light);
   border: 1px solid var(--mf-primary-border);
   color: var(--mf-primary);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--mf-shadow-sm);
   flex-shrink: 0;
 }
 .modal-header-text {
