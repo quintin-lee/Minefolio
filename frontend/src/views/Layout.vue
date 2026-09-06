@@ -227,7 +227,7 @@ function handleCommand(cmd: string) {
 .aside {
   background: linear-gradient(180deg, var(--mf-background) 0%, color-mix(in srgb, var(--mf-background) 70%, var(--mf-primary)) 100%);
   min-height: 100vh;
-  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--mf-shadow-md);
   z-index: 10;
   display: flex;
   flex-direction: column;
