@@ -37,6 +37,7 @@ jobs:
           ./tests/test_2fa.sh
           ./tests/test_dca_cashflow.sh
           ./tests/test_ai_trace.sh
+          ./tests/test_ai_tool_call.sh
           ./tests/test_market_sync.sh
           ./tests/test_ledgers.sh
           ./tests/test_fx_oauth.sh

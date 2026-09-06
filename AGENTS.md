@@ -323,24 +323,25 @@ Every `onMounted` hook **MUST** wrap async initialization in `try/catch`. Use `v
 
 ## Testing & QA
 
-### Backend Unit & Integration Tests (26 CTest Suites + 7 Integration Suites)
+### Backend Unit & Integration Tests (28 CTest Suites + 8 Integration Suites)
 
 ```bash
 cd backend
-# 1. Run all 26 CTest unit test suites (sub-second fast feedback)
+# 1. Run all 28 CTest unit test suites (sub-second fast feedback)
 cd build && ctest --output-on-failure && cd ..
 
-# 2. Run all 7 end-to-end integration test suites
+# 2. Run all 8 end-to-end integration test suites
 ./tests/test_link.sh          # 38 cases (139 assertions): auth, CRUD, balance联动, PnL, CSV, pagination, ledger rebuild
 ./tests/test_ledgers.sh       # 16 cases: multi-ledger spaces, member RBAC (Owner/Editor/Viewer)
 ./tests/test_2fa.sh           # 12 cases: TOTP 2FA secret gen, QR code, enable/disable, login verification
 ./tests/test_dca_cashflow.sh  # 18 cases: DCA periodic purchase execution, cashflow calendar projection
 ./tests/test_ai_trace.sh      # 17 cases: AI conversation traces, token usage, tool spans
+./tests/test_ai_tool_call.sh  # 15 cases: AI tool-call loop (single + 2 parallel tools) vs mock OpenAI server; regression for tool-message use-after-free
 ./tests/test_market_sync.sh   # 18 cases: Multi-source market quotes, caching, bulk sync
 ./tests/test_fx_oauth.sh      # 20 cases: Exchange rates, FX gain/loss PnL, receipt OCR, OAuth2/OIDC SSO
 ```
 
-Tests start real servers with temp SQLite DBs, exercise all API endpoints via curl/JSON, and verify database state directly with `sqlite3`. Run before committing any changes.
+Tests start real servers with temp SQLite DBs, exercise all API endpoints via curl/JSON, and verify database state directly with `sqlite3`. `test_ai_tool_call.sh` also starts `mock_ai_tool_server.js` (node) as its AI provider. Run before committing any changes.
 
 ### Frontend Tests
 

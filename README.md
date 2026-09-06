@@ -223,6 +223,7 @@ Minefolio/
 │       ├── test_2fa.sh           # TOTP 双因素认证测试 (12 用例)
 │       ├── test_dca_cashflow.sh  # 定投与现金流日历测试 (18 用例)
 │       ├── test_ai_trace.sh      # AI 会话与全链路追踪测试 (17 用例)
+│       ├── test_ai_tool_call.sh  # AI 工具调用循环回归测试 (15 用例, mock OpenAI 流式工具)
 │       ├── test_market_sync.sh   # 实时行情多源同步测试 (18 用例)
 │       └── test_fx_oauth.sh      # 汇率、汇兑损益、OCR、OAuth 单点登录测试 (20 用例)
 ├── frontend/                     # Vue 3 现代化前端
@@ -368,6 +369,7 @@ ctest --output-on-failure
 ./backend/tests/test_2fa.sh && \
 ./backend/tests/test_dca_cashflow.sh && \
 ./backend/tests/test_ai_trace.sh && \
+./backend/tests/test_ai_tool_call.sh && \
 ./backend/tests/test_market_sync.sh && \
 ./backend/tests/test_fx_oauth.sh
 ```
