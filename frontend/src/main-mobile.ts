@@ -8,9 +8,20 @@ import './styles/index.css'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import App from './App.vue'
 import router from './router/mobile'
+import i18n from '@/composables/useI18n'
 import { initLocalDb } from '@/db/local'
 import { useSyncStore } from '@/stores/sync'
 import { registerNetworkListeners } from '@/utils/sync-network'
+
+function detectLocale(): 'zh-CN' | 'en-US' {
+  try {
+    const saved = localStorage.getItem('minefolio_lang')
+    if (saved === 'zh-CN' || saved === 'en-US') return saved
+  } catch {
+    // ignore
+  }
+  return 'zh-CN'
+}
 
 async function bootstrap() {
   await initLocalDb()
@@ -23,6 +34,8 @@ async function bootstrap() {
   app.use(createPinia())
   app.use(router)
   app.use(ElementPlus, { locale: zhCn })
+  app.use(i18n)
+  i18n.global.locale.value = detectLocale()
 
   const sync = useSyncStore()
   sync.init()
