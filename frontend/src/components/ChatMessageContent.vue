@@ -335,6 +335,33 @@ const segments = computed<Segment[]>(() => {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+[data-theme="light"] .chat-message-content .workflow-config-card,
+[data-theme="light"] .chat-message-content .workflow-card-wrapper {
+  color: var(--mf-text-main);
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+}
+[data-theme="light"] .chat-message-content .wf-title,
+[data-theme="light"] .chat-message-content .wf-subtitle,
+[data-theme="light"] .chat-message-content .result-title,
+[data-theme="light"] .chat-message-content .result-item,
+[data-theme="light"] .chat-message-content .step-content,
+[data-theme="light"] .chat-message-content .step-title,
+[data-theme="light"] .chat-message-content .step-desc,
+[data-theme="light"] .chat-message-content .param-label {
+  color: var(--mf-text-main);
+}
+[data-theme="light"] .chat-message-content .status-tag.running,
+[data-theme="light"] .chat-message-content .status-tag.completed,
+[data-theme="light"] .chat-message-content .status-tag.error {
+  color: var(--mf-text-main);
+}
+[data-theme="light"] .chat-message-content .el-slider__runway,
+[data-theme="light"] .chat-message-content .el-input-number {
+  color: var(--mf-text-main);
+}
   width: 100%;
 }
 

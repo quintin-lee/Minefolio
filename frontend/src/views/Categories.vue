@@ -614,6 +614,22 @@ onMounted(loadData)
   --el-tree-node-hover-bg-color: var(--mf-surface-muted);
 }
 
+[data-theme="light"] .premium-tree {
+  color: var(--mf-text-main);
+}
+[data-theme="light"] .premium-tree .el-tree-node__content:hover {
+  background: var(--mf-surface-muted);
+}
+[data-theme="light"] .premium-tree .tree-node-content,
+[data-theme="light"] .premium-tree .tree-actions {
+  color: var(--mf-text-main);
+}
+[data-theme="light"] .premium-tree .el-input__wrapper,
+[data-theme="light"] .premium-tree .el-input__inner {
+  color: var(--mf-text-main);
+  background: var(--mf-surface-card);
+}
+
 .panel-body-scroll :deep(.el-tree) {
   padding-bottom: 8px;
 }

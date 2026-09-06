@@ -1341,6 +1341,10 @@ onUnmounted(() => {
   box-shadow: 0 2px 10px rgba(59, 130, 246, 0.25);
 }
 
+[data-theme="light"] .message-row.user .message-content {
+  color: #ffffff;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.18);
+}
 .message-row.assistant .message-content {
   background: var(--mf-surface);
   border: 1px solid var(--mf-border);
@@ -1349,6 +1353,9 @@ onUnmounted(() => {
   backdrop-filter: blur(12px);
 }
 
+[data-theme="light"] .message-row.assistant .message-content {
+  color: var(--mf-text-main);
+}
 .typing-cursor {
   display: inline-block;
   width: 7px;
@@ -1359,12 +1366,10 @@ onUnmounted(() => {
   animation: cursor-blink 0.8s infinite;
   border-radius: 1px;
 }
-
 @keyframes cursor-blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
 }
-
 /* Markdown Specifics inside Assistant Messages */
 .message-content :deep(p) {
   margin: 0 0 8px;
@@ -1396,6 +1401,11 @@ onUnmounted(() => {
   border-radius: 4px;
   font-size: 12px;
   border: 1px solid var(--mf-primary-border);
+}
+
+[data-theme="light"] .message-content :deep(code) {
+  background: #eef2ff;
+  color: #1d4ed8;
 }
 .message-content :deep(pre) {
   background: var(--mf-surface-card);
@@ -1436,6 +1446,14 @@ onUnmounted(() => {
   color: var(--mf-primary);
 }
 
+[data-theme="light"] .message-content :deep(th) {
+  background: #eef2ff;
+  color: #1e40af;
+}
+[data-theme="light"] .message-content :deep(td) {
+  color: var(--mf-text-main);
+  border-color: #e2e8f0;
+}
 .message-content.thinking {
   display: flex;
   align-items: center;
