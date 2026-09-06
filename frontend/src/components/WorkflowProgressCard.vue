@@ -557,9 +557,9 @@ onUnmounted(() => {
   justify-content: center;
   font-size: 11px;
   font-weight: 600;
-  background: #1e293b;
-  color: #64748b;
-  border: 1px solid #334155;
+  background: var(--mf-surface-muted);
+  color: var(--mf-text-muted);
+  border: 1px solid var(--mf-border);
   z-index: 1;
 }
 

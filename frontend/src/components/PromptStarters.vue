@@ -122,12 +122,12 @@ const starters = [
   align-items: center;
   justify-content: center;
   margin: 0 auto 14px;
-  box-shadow: 0 6px 18px rgba(99, 102, 241, 0.25);
+  box-shadow: var(--mf-shadow-glow);
 }
 
 .sparkle-icon {
   font-size: 24px;
-  color: #fff;
+  color: var(--mf-primary);
 }
 
 .starters-title {
@@ -161,13 +161,13 @@ const starters = [
   border: 1px solid var(--el-border-color-lighter);
   cursor: pointer;
   transition: all 0.22s ease-in-out;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
+  box-shadow: var(--mf-shadow-sm);
 }
 
 .starter-card:hover {
   transform: translateY(-3px);
   border-color: var(--el-color-primary-light-5);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.07);
+  box-shadow: var(--mf-shadow-md);
 }
 
 .card-top {
