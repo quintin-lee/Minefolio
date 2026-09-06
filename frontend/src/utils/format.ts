@@ -5,10 +5,20 @@
 
 // frontend/src/utils/format.ts
 
+import i18n from '@/composables/useI18n'
+
 /** 默认币种 (与历史行为保持一致，用于未显式传币种的调用方) */
 const DEFAULT_CURRENCY = 'CNY'
 
-/** 货币格式化器缓存 (键: 大写 ISO 币种代码) */
+/**
+ * 分组/货币显示跟随界面语言；读取 vue-i18n 全局 locale 使其在渲染中保持响应式
+ * (仅支持 zh-CN / en-US，其余回退 zh-CN 以保持既有显示)。
+ */
+function numberLocale(): string {
+  return i18n.global.locale.value === 'en-US' ? 'en-US' : 'zh-CN'
+}
+
+/** 货币格式化器缓存 (键: `币种代码|显示语言`) */
 const formatterCache = new Map<string, Intl.NumberFormat>()
 
 /**
@@ -18,10 +28,12 @@ const formatterCache = new Map<string, Intl.NumberFormat>()
  */
 function currencyFormatter(currency: string): Intl.NumberFormat {
   const code = (currency || DEFAULT_CURRENCY).toUpperCase()
-  let formatter = formatterCache.get(code)
+  const locale = numberLocale()
+  const cacheKey = `${code}|${locale}`
+  let formatter = formatterCache.get(cacheKey)
   if (!formatter) {
-    formatter = new Intl.NumberFormat('zh-CN', { style: 'currency', currency: code })
-    formatterCache.set(code, formatter)
+    formatter = new Intl.NumberFormat(locale, { style: 'currency', currency: code })
+    formatterCache.set(cacheKey, formatter)
   }
   return formatter
 }
@@ -34,7 +46,7 @@ function currencyFormatter(currency: string): Intl.NumberFormat {
  */
 function formatPlainCurrency(val: number, currency: string): string {
   const code = (currency || DEFAULT_CURRENCY).toUpperCase()
-  return `${code} ${val.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  return `${code} ${val.toLocaleString(numberLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 /**
