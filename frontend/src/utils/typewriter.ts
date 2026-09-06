@@ -41,8 +41,14 @@ export class SmoothStreamWriter {
     private readonly target: TypewriterTarget,
     options?: TypewriterOptions,
   ) {
-    this.raf = options?.raf || (typeof requestAnimationFrame === 'function' ? requestAnimationFrame : (cb) => setTimeout(cb, 16) as unknown as number)
-    this.caf = options?.caf || (typeof cancelAnimationFrame === 'function' ? cancelAnimationFrame : (id) => clearTimeout(id as unknown as NodeJS.Timeout))
+    const rafImpl = typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function'
+      ? window.requestAnimationFrame.bind(window)
+      : (cb: () => void) => setTimeout(cb, 16) as unknown as number
+    const cafImpl = typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function'
+      ? window.cancelAnimationFrame.bind(window)
+      : (id: number) => clearTimeout(id as unknown as NodeJS.Timeout)
+    this.raf = options?.raf || rafImpl
+    this.caf = options?.caf || cafImpl
     this.schedule()
   }
 
