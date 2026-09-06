@@ -259,7 +259,7 @@ async function handleDeleteLedger(ledger: Ledger) {
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--mf-shadow-sm);
 }
 .ledger-name {
   font-size: 14px;

@@ -116,7 +116,7 @@ onMounted(() => loadSuggestions())
   border-radius: 6px;
   padding: 0 10px;
   font-weight: 500;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--mf-shadow-sm);
 }
 
 .tag-picker__empty {

@@ -286,7 +286,7 @@ function downloadBackupCodes() {
   padding: 12px;
   border-radius: 8px;
   margin: 8px 0 16px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--mf-shadow-sm);
 }
 
 .qr-canvas {

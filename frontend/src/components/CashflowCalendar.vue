@@ -397,7 +397,7 @@ defineExpose({ reload: loadCalendar })
 }
 
 .day-cell.is-empty {
-  background-color: rgba(0, 0, 0, 0.015);
+  background-color: var(--mf-surface-blank);
 }
 
 .day-cell.is-today {

@@ -411,7 +411,7 @@ function handleCancel() {
   border-radius: 12px;
   border: 1px solid var(--el-border-color-lighter);
   background: var(--el-bg-color-overlay);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--mf-shadow-sm);
   overflow: hidden;
   transition: all 0.25s ease;
 }
