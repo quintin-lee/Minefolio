@@ -21,11 +21,13 @@ vi.mock('@/api/system', () => ({
 
 import { authApi } from '@/api/auth'
 import { systemApi } from '@/api/system'
+import { clearCryptoKeyCache } from '@/utils/crypto'
 
 describe('auth store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     localStorage.clear()
+    clearCryptoKeyCache()
     vi.clearAllMocks()
 
     // Mock fetch for public key

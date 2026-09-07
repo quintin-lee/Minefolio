@@ -54,36 +54,72 @@ function arrayBufferToBase64url(buf: ArrayBuffer): string {
     .replace(/=+$/, '')
 }
 
+let cachedCryptoKey: CryptoKey | null = null
+let keyPromise: Promise<CryptoKey> | null = null
+
+/**
+ * 清除 RSA 公钥缓存（在密钥轮换或重新初始化时调用）
+ */
+export function clearCryptoKeyCache(): void {
+  cachedCryptoKey = null
+  keyPromise = null
+}
+
+/**
+ * 获取并缓存 RSA-OAEP-256 CryptoKey 对象
+ */
+async function getCryptoKey(): Promise<CryptoKey> {
+  if (cachedCryptoKey) {
+    return cachedCryptoKey
+  }
+  if (keyPromise) {
+    return keyPromise
+  }
+
+  keyPromise = (async () => {
+    try {
+      const jwk = await fetchPublicKey()
+
+      const modulus = new Uint8Array(
+        atob(jwk.n.replace(/-/g, '+').replace(/_/g, '/'))
+          .split('')
+          .map((c) => c.charCodeAt(0))
+      )
+      const exponent = new Uint8Array(
+        atob(jwk.e.replace(/-/g, '+').replace(/_/g, '/'))
+          .split('')
+          .map((c) => c.charCodeAt(0))
+      )
+
+      const key = await crypto.subtle.importKey(
+        'jwk',
+        {
+          kty: jwk.kty,
+          n: btoa(String.fromCharCode(...modulus)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''),
+          e: btoa(String.fromCharCode(...exponent)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''),
+        },
+        { name: 'RSA-OAEP', hash: 'SHA-256' },
+        false,
+        ['encrypt']
+      )
+
+      cachedCryptoKey = key
+      return key
+    } finally {
+      keyPromise = null
+    }
+  })()
+
+  return keyPromise
+}
+
 /**
  * 使用服务端 RSA-OAEP-256 公钥加密用户密码或敏感文本
  * @param password 明文字符串 (如登录/注册密码)
  * @returns 加密后的 Base64url 密文字符串 (作为 password_enc 字段提交给服务端)
  */
 export async function encryptPassword(password: string): Promise<string> {
-  const jwk = await fetchPublicKey()
-
-  const modulus = new Uint8Array(
-    atob(jwk.n.replace(/-/g, '+').replace(/_/g, '/'))
-      .split('')
-      .map((c) => c.charCodeAt(0))
-  )
-  const exponent = new Uint8Array(
-    atob(jwk.e.replace(/-/g, '+').replace(/_/g, '/'))
-      .split('')
-      .map((c) => c.charCodeAt(0))
-  )
-
-  const cryptoKey = await crypto.subtle.importKey(
-    'jwk',
-    {
-      kty: jwk.kty,
-      n: btoa(String.fromCharCode(...modulus)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''),
-      e: btoa(String.fromCharCode(...exponent)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''),
-    },
-    { name: 'RSA-OAEP', hash: 'SHA-256' },
-    false,
-    ['encrypt']
-  )
+  const cryptoKey = await getCryptoKey()
 
   const encrypted = await crypto.subtle.encrypt(
     { name: 'RSA-OAEP' },

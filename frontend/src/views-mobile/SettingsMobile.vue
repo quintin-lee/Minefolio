@@ -42,7 +42,7 @@ import { Monitor, Moon, Select, Sunny } from '@element-plus/icons-vue'
 import { useThemeStore, type ThemeMode } from '@/stores/theme'
 import { useSyncStore } from '@/stores/sync'
 import { useAuthStore } from '@/stores/auth'
-import http from '@/utils/http'
+import { dailyExpensesApi } from '@/api/daily_expenses'
 
 const router = useRouter()
 const sync = useSyncStore()
@@ -63,13 +63,17 @@ const syncing = computed(() => sync.syncing)
 function syncNow() { sync.syncNow() }
 function goCategories() { router.push('/m/settings') }
 async function exportCsv() {
-  const blob = (await http.get('/export/daily-expenses', { responseType: 'blob' })) as unknown as Blob
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = 'daily_expenses.csv'
-  a.click()
-  URL.revokeObjectURL(url)
+  try {
+    const blob = await dailyExpensesApi.exportCsv()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'daily_expenses.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch {
+    // ignore
+  }
 }
 function logout() { auth.logout(); router.replace('/m/login') }
 </script>

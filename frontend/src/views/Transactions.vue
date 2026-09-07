@@ -357,7 +357,6 @@ import { assetsApi } from '@/api/assets'
 import { useCategoryStore } from '@/stores/category'
 import { formatCurrency } from '@/utils/format'
 import SummaryCard from '@/components/SummaryCard.vue'
-import http from '@/utils/http'
 import type { Transaction, Asset, Category, TransactionMonthly, Direction, TransactionInput } from '@/types'
 
 const loading = ref(false)
@@ -706,9 +705,8 @@ const importResult = ref<{ imported: number; errors: number; errors_detail?: str
 const importing = ref(false)
 
 function exportCsv() {
-  http.get('/export/transactions', { responseType: 'blob' }).then((blob: unknown) => {
-    const b = blob as Blob
-    const url = URL.createObjectURL(b)
+  transactionsApi.exportCsv().then((blob) => {
+    const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
     const now = new Date().toISOString().slice(0, 10)

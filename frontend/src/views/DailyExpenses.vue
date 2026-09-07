@@ -206,7 +206,6 @@ import TagPicker from '@/components/TagPicker.vue'
 import MonthlyChart from '@/components/MonthlyChart.vue'
 import ExpenseCategoryPie from '@/components/ExpenseCategoryPie.vue'
 import ReceiptScannerModal from '@/components/ReceiptScannerModal.vue'
-import http from '@/utils/http'
 import { formatCurrency } from '@/utils/format'
 import SummaryCard from '@/components/SummaryCard.vue'
 import type { DailyExpense, Tag, Category, Asset } from '@/types'
@@ -350,9 +349,8 @@ const importResult = ref<{ imported: number; errors: number; errors_detail?: str
 const importing = ref(false)
 
 function exportCsv() {
-  http.get('/export/daily-expenses', { responseType: 'blob' }).then((blob: unknown) => {
-    const b = blob as Blob
-    const url = URL.createObjectURL(b)
+  dailyExpensesApi.exportCsv().then((blob) => {
+    const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
     const now = new Date().toISOString().slice(0, 10)

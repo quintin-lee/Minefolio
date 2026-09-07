@@ -7,7 +7,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { authApi } from '@/api/auth'
 import { systemApi } from '@/api/system'
-import { encryptPassword } from '@/utils/crypto'
+import { encryptPassword, clearCryptoKeyCache } from '@/utils/crypto'
 
 /**
  * 用户信息接口
@@ -163,6 +163,7 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = ''
     user.value = null
     localStorage.removeItem('token')
+    clearCryptoKeyCache()
   }
 
   return {
