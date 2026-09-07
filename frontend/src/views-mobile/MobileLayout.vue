@@ -42,6 +42,9 @@ function handleLedgerChanged() {
 
 onMounted(() => {
   window.addEventListener('minefolio:ledger-changed', handleLedgerChanged)
+  // 进入主界面后立即做一次双向同步，确保本地离线库尽快与远端对齐
+  // (而非等到网络/前后台事件或用户手动点击才同步)
+  void syncStore.syncNow()
 })
 
 onBeforeUnmount(() => {
