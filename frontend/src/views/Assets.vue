@@ -107,7 +107,9 @@
         <el-form-item label="分类" prop="category_id">
           <el-cascader v-model="form._catPath" :props="{ checkStrictly: true, value: 'id', label: 'name', lazy: true, lazyLoad(node: any, resolve: any) {
               if (node.level === 0) {
-                resolve(categoryStore.allNodes.filter(c => c.type === 'asset' || (!c.type && c.asset_type) && (c.parent_id === null || c.parent_id === 0)) as any)
+                // 顶层只展示根级资产分类：必须同时满足“是资产分类”与“无父级”，
+                // 否则已懒加载过的子级会被 `||` 短路提升到根层重复展示
+                resolve(categoryStore.allNodes.filter(c => ((c.type === 'asset' || (!c.type && c.asset_type)) && (c.parent_id === null || c.parent_id === 0))) as any)
               } else {
                 categoryStore.loadChildren(node.data.id as number).then((children: any) => resolve(children))
               }
