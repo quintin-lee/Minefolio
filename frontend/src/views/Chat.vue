@@ -752,7 +752,15 @@ function setupInfiniteScroll() {
   scrollObserver.observe(loadMoreTrigger.value)
 }
 
-watch(() => chat.messages.length, () => {
+// 仅当“末尾新增消息”（最后一条消息 id 变化）时才自动吸底并滚动到底部。
+// 向上滚动加载的历史消息是前置插入的，末尾 id 不变，此时绝不能把用户拽回底部。
+const lastMessageId = computed(() => {
+  const msgs = chat.messages
+  return msgs.length > 0 ? (msgs[msgs.length - 1]?.id ?? null) : null
+})
+
+watch(lastMessageId, (id, prevId) => {
+  if (id === null || id === prevId) return
   autoStickToBottom.value = true
   nextTick(() => scrollToBottom())
 })
