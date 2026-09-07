@@ -115,7 +115,7 @@
       <el-main class="main">
         <router-view v-slot="{ Component, route }">
           <transition name="fade-transform" mode="out-in">
-            <component :is="Component" :key="route.path" />
+            <component :is="Component" :key="`${route.fullPath}-${routerViewKey}`" />
           </transition>
         </router-view>
       </el-main>
@@ -133,6 +133,7 @@ import { Icon } from '@iconify/vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
+import { useCategoryStore } from '@/stores/category'
 import { t } from '@/utils/locale'
 import LedgerSelector from '@/components/LedgerSelector.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
@@ -141,11 +142,13 @@ import QuickRecordDialog from '@/components/QuickRecordDialog.vue'
 const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
+const categoryStore = useCategoryStore()
 
 const activeMenu = computed(() => route.path)
 const mobileMenuOpen = ref(false)
 const isCollapsed = ref(localStorage.getItem('sidebar_collapsed') === 'true')
 const quickRecordVisible = ref(false)
+const routerViewKey = ref(0)
 
 function toggleCollapse() {
   isCollapsed.value = !isCollapsed.value
@@ -157,13 +160,8 @@ function handleResize() {
 }
 
 function handleLedgerChanged() {
-  // Reload current route data
-  const cur = route.fullPath
-  router.replace({ path: '/empty' }).then(() => {
-    router.replace(cur)
-  }).catch(() => {
-    window.location.reload()
-  })
+  categoryStore.invalidate()
+  routerViewKey.value++
 }
 
 function handleKeydown(e: KeyboardEvent) {

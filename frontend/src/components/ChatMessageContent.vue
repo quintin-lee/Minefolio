@@ -88,35 +88,19 @@ const props = defineProps<{
 
 const debouncedContent = ref(props.content || '')
 let debounceTimer: number | null = null
-let prevContent = ''
-
-// LRU cache keyed by content → pre-rendered HTML, avoids repeated marked.parse
-// + DOMPurify after streaming completes.
-const htmlCache = new Map<string, string>()
-const HTML_CACHE_LIMIT = 60
-
 watch(
   () => props.content,
   (v) => {
     const val = v || ''
     if (props.isStreaming && props.enableBuffer !== false) {
       // 流式状态：SmoothStreamWriter 已经由 requestAnimationFrame 严格按帧平滑吐字。
-      // 直接同步更新响应式内容，彻底消除二次 RAF 的 cancelAnimationFrame 造成的帧饿死与批量突跳！
       debouncedContent.value = val
     } else {
-      // 非流式：启用 LRU 缓存 + 短防抖，避免重复渲染
+      // 非流式：启用短防抖，避免高频更新下的重复重排
       if (debounceTimer) clearTimeout(debounceTimer)
       debounceTimer = window.setTimeout(() => {
         debounceTimer = null
-        prevContent = val
-        const cached = htmlCache.get(val)
-        debouncedContent.value = cached ?? val
-        if (cached) return
-        if (htmlCache.size >= HTML_CACHE_LIMIT) {
-          const firstKey = htmlCache.keys().next().value as string
-          htmlCache.delete(firstKey)
-        }
-        htmlCache.set(val, val)
+        debouncedContent.value = val
       }, 40)
     }
   },
@@ -130,9 +114,7 @@ watch(
         clearTimeout(debounceTimer)
         debounceTimer = null
       }
-      prevContent = ''
-      const cached = htmlCache.get(props.content || '')
-      debouncedContent.value = cached ?? (props.content || '')
+      debouncedContent.value = props.content || ''
     }
   },
 )

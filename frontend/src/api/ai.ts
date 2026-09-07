@@ -195,6 +195,35 @@ export interface ChatStreamChunk {
 }
 
 /**
+ * 构造用于 SSE 流式请求的公共请求头 (包含 Token、CSRF 与当前激活账本上下文)
+ */
+function getStreamHeaders(): Record<string, string> {
+  let token = ''
+  try {
+    const auth = useAuthStore()
+    token = auth.token || ''
+  } catch {
+    // outside reactive context
+  }
+  if (!token && typeof localStorage !== 'undefined') {
+    token = localStorage.getItem('token') || ''
+  }
+  const csrf = getCookie('csrf_token')
+  const activeLedgerId = typeof localStorage !== 'undefined' ? localStorage.getItem('minefolio_active_ledger_id') : null
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`,
+  }
+  if (csrf) {
+    headers['X-CSRF-Token'] = csrf
+  }
+  if (activeLedgerId) {
+    headers['X-Ledger-Id'] = activeLedgerId
+  }
+  return headers
+}
+
+/**
  * 发起流式 AI 对话请求 (Server-Sent Events)
  * @route POST /api/ai/chat
  * @param params 对话请求参数
@@ -216,24 +245,7 @@ export async function* chatStream(
   },
   signal?: AbortSignal
 ): AsyncIterable<ChatStreamChunk> {
-  let token = ''
-  try {
-    const auth = useAuthStore()
-    token = auth.token || ''
-  } catch {
-    // outside reactive context
-  }
-  if (!token) {
-    token = localStorage.getItem('token') || ''
-  }
-  const csrf = getCookie('csrf_token')
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${token}`,
-  }
-  if (csrf) {
-    headers['X-CSRF-Token'] = csrf
-  }
+  const headers = getStreamHeaders()
   const url = buildApiUrl('/ai/chat')
   const resp = await fetch(url, {
     method: 'POST',
@@ -418,24 +430,7 @@ export async function* runWorkflowStream(
   },
   signal?: AbortSignal
 ): AsyncIterable<WorkflowStreamChunk> {
-  let token = ''
-  try {
-    const auth = useAuthStore()
-    token = auth.token || ''
-  } catch {
-    // outside reactive context
-  }
-  if (!token) {
-    token = localStorage.getItem('token') || ''
-  }
-  const csrf = getCookie('csrf_token')
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${token}`,
-  }
-  if (csrf) {
-    headers['X-CSRF-Token'] = csrf
-  }
+  const headers = getStreamHeaders()
   const url = buildApiUrl('/ai/workflows/run')
   const resp = await fetch(url, {
     method: 'POST',

@@ -436,7 +436,7 @@ async function loadData() {
       getSettings(),
     ])
     if (assetsRes.status === 'fulfilled') {
-      assets.value = (assetsRes.value as any)?.items || []
+      assets.value = assetsRes.value.list || []
       if (!form.asset_id && assets.value.length > 0 && assets.value[0]) {
         form.asset_id = assets.value[0].id
       }
