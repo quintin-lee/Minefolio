@@ -269,7 +269,8 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   /**
-   * 完全重置 Store 所有状态 (如退出登录时调用)
+   * 完全重置 Store 所有状态 (退出登录时调用，防止上一账号的会话/消息残留
+   * 泄露给同一设备上的下一位登录用户)
    */
   function resetState() {
     abortCurrentStream()
@@ -277,6 +278,16 @@ export const useChatStore = defineStore('chat', () => {
     currentSessionId.value = null
     messages.value = []
     isStreaming.value = false
+    activeWorkflow.value = null
+    currentModel.value = ''
+    currentProvider.value = ''
+    availableModels.value = []
+    settings.value = null
+    workflows.value = []
+    messageTotal.value = 0
+    loadedMessagePage.value = 1
+    loadingMoreMessages.value = false
+    enableTypewriterBuffer.value = true
   }
 
   /**

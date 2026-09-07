@@ -94,15 +94,28 @@ describe('auth store', () => {
     expect(localStorage.getItem('token')).toBe('verified-jwt-token')
   })
 
-  it('clears state on logout', () => {
+  it('clears state on logout', async () => {
     const store = useAuthStore()
     store.token = 'existing-token'
     store.user = { id: 1, username: 'admin', created_at: '2026-01-01' }
     localStorage.setItem('token', 'existing-token')
+    localStorage.setItem('minefolio:chat:draft:new', 'secret draft text')
 
-    store.logout()
+    // 模拟上一账号残留的聊天会话与消息
+    const { useChatStore } = await import('@/stores/chat')
+    const chat = useChatStore()
+    chat.currentSessionId = 123
+    chat.sessions.push({ id: 123, title: '旧会话' } as any)
+    chat.messages.push({ id: 1, session_id: 123, role: 'user', content: '机密内容', created_at: '2026-01-01' } as any)
+
+    await store.logout()
     expect(store.token).toBe('')
     expect(store.user).toBeNull()
     expect(localStorage.getItem('token')).toBeNull()
+    // 聊天草稿与内存态一并清空，避免泄露给下一个登录账号
+    expect(localStorage.getItem('minefolio:chat:draft:new')).toBeNull()
+    expect(chat.currentSessionId).toBeNull()
+    expect(chat.sessions.length).toBe(0)
+    expect(chat.messages.length).toBe(0)
   })
 })

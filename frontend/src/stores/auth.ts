@@ -158,16 +158,32 @@ export const useAuthStore = defineStore('auth', () => {
 
   /**
    * 退出登录 (清除本地 Token、用户信息并重置状态)
+   *
+   * Token/用户态的清理是同步的；聊天等按账号缓存的内存状态随后通过动态 import 清理，
+   * 避免把 AI 聊天模块静态打入首屏包，同时防止上一账号的会话/消息/草稿泄露给下一位用户。
    */
-  function logout() {
+  async function logout() {
     token.value = ''
     user.value = null
     if (typeof localStorage !== 'undefined') {
       localStorage.removeItem('token')
       localStorage.removeItem('minefolio_active_ledger_id')
       localStorage.removeItem('minefolio_pinned_workflows')
+      // 清理按用户保存的聊天草稿 (minefolio:chat:draft:*) 
+      const draftKeys: string[] = []
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i)
+        if (key && key.startsWith('minefolio:chat:draft:')) draftKeys.push(key)
+      }
+      draftKeys.forEach((key) => localStorage.removeItem(key))
     }
     clearCryptoKeyCache()
+    try {
+      const { useChatStore } = await import('./chat')
+      useChatStore().resetState()
+    } catch {
+      // 清理失败不影响登出主流程
+    }
   }
 
   return {
