@@ -151,16 +151,26 @@ export const useChatStore = defineStore('chat', () => {
     return session
   }
 
+  /** 会话切换请求序号：用于丢弃切走后返回的过期/乱序 selectSession 与 loadMoreMessages 结果 */
+  let sessionSwitchSeq = 0
+
   /**
    * 选中并切换到指定的对话会话，加载其首屏消息列表
+   *
+   * 采用请求序号竞态保护：若用户在请求在途时又切换了会话，过期返回会被直接丢弃，
+   * 避免旧会话消息覆盖/混入当前会话。
    * @param id 会话 ID
    */
   async function selectSession(id: number) {
     const numId = Number(id)
+    const seq = ++sessionSwitchSeq
     currentSessionId.value = numId
     messageTotal.value = 0
     loadedMessagePage.value = 1
+    loadingMoreMessages.value = false
     const r = (await getMessages(numId, 1, 50)) as unknown
+    // 请求在途期间用户又切换了会话 → 丢弃这份过期结果
+    if (seq !== sessionSwitchSeq || currentSessionId.value !== numId) return
     const rawList = r && typeof r === 'object' && 'list' in r && Array.isArray((r as { list: unknown }).list) ? (r as { list: Record<string, unknown>[] }).list : []
     const total = (r && typeof r === 'object' && 'total' in r) ? Number((r as { total: unknown }).total) : (rawList.length ?? 0)
     messageTotal.value = total
@@ -180,9 +190,13 @@ export const useChatStore = defineStore('chat', () => {
     if (loadingMoreMessages.value || !currentSessionId.value) return
     const nextPage = loadedMessagePage.value + 1
     if (messageTotal.value > 0 && loadedMessagePage.value * 50 >= messageTotal.value) return
+    const seq = sessionSwitchSeq
+    const sid = currentSessionId.value
     loadingMoreMessages.value = true
     try {
-      const r = (await getMessages(currentSessionId.value, nextPage, 50)) as unknown
+      const r = (await getMessages(sid, nextPage, 50)) as unknown
+      // 请求在途期间切走了会话（或又加载了其他会话）→ 丢弃过期分页结果
+      if (seq !== sessionSwitchSeq || currentSessionId.value !== sid) return
       const rawList = r && typeof r === 'object' && 'list' in r && Array.isArray((r as { list: unknown }).list) ? (r as { list: Record<string, unknown>[] }).list : []
       const total = (r && typeof r === 'object' && 'total' in r) ? Number((r as { total: unknown }).total) : (rawList.length ?? 0)
       messageTotal.value = total
