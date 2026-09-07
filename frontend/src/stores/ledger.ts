@@ -79,6 +79,16 @@ export const useLedgerStore = defineStore('ledger', () => {
     window.dispatchEvent(new CustomEvent('minefolio:ledger-changed', { detail: { id } }))
   }
 
+  /**
+   * 清空账本状态 (退出登录时调用，防止上一账号的账本列表与选中项残留
+   * 到同一设备上的下一位登录用户；登录后 LedgerSelector 会重新拉取)
+   */
+  function reset() {
+    ledgers.value = []
+    currentLedgerId.value = null
+    loading.value = false
+  }
+
   return {
     ledgers,
     currentLedgerId,
@@ -89,6 +99,7 @@ export const useLedgerStore = defineStore('ledger', () => {
     isEditor,
     fetchLedgers,
     setCurrentLedger,
+    reset,
   }
 })
 

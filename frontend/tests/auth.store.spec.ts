@@ -101,21 +101,33 @@ describe('auth store', () => {
     localStorage.setItem('token', 'existing-token')
     localStorage.setItem('minefolio:chat:draft:new', 'secret draft text')
 
-    // 模拟上一账号残留的聊天会话与消息
+    // 模拟上一账号残留的聊天会话、账本列表与分类缓存
     const { useChatStore } = await import('@/stores/chat')
+    const { useLedgerStore } = await import('@/stores/ledger')
+    const { useCategoryStore } = await import('@/stores/category')
     const chat = useChatStore()
     chat.currentSessionId = 123
     chat.sessions.push({ id: 123, title: '旧会话' } as any)
     chat.messages.push({ id: 1, session_id: 123, role: 'user', content: '机密内容', created_at: '2026-01-01' } as any)
+    const ledger = useLedgerStore()
+    ledger.ledgers.push({ id: 1, name: '旧账本', currency: 'CNY', is_default: true, my_role: 'owner' } as any)
+    ledger.currentLedgerId = 1
+    const category = useCategoryStore()
+    category.allNodes.push({ id: 1, name: '旧分类', type: 'asset', currency: 'CNY', sort_order: 0 } as any)
+    category.loaded = true
 
     await store.logout()
     expect(store.token).toBe('')
     expect(store.user).toBeNull()
     expect(localStorage.getItem('token')).toBeNull()
-    // 聊天草稿与内存态一并清空，避免泄露给下一个登录账号
+    // 聊天草稿与各 store 内存态一并清空，避免泄露给下一个登录账号
     expect(localStorage.getItem('minefolio:chat:draft:new')).toBeNull()
     expect(chat.currentSessionId).toBeNull()
     expect(chat.sessions.length).toBe(0)
     expect(chat.messages.length).toBe(0)
+    expect(ledger.ledgers.length).toBe(0)
+    expect(ledger.currentLedgerId).toBeNull()
+    expect(category.allNodes.length).toBe(0)
+    expect(category.loaded).toBe(false)
   })
 })

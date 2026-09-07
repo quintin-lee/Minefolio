@@ -101,6 +101,17 @@ export const useCategoryStore = defineStore('category', () => {
     expanded.value.clear()
   }
 
+  /**
+   * 清空全部分类缓存 (退出登录时调用，连同已加载节点一并清空，
+   * 防止上一账号的分类树泄露给同一设备上的下一位登录用户)
+   */
+  function reset() {
+    allNodes.value = []
+    loaded.value = false
+    loading.value = false
+    expanded.value.clear()
+  }
+
   return {
     allNodes,
     loaded,
@@ -109,6 +120,7 @@ export const useCategoryStore = defineStore('category', () => {
     loadChildren,
     buildTree,
     invalidate,
+    reset,
     assetCategories,
     incomeCategories,
     expenseCategories,
