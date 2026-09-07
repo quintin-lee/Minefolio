@@ -58,6 +58,7 @@ import { useCategoryStore } from '@/stores/category'
 import { assetsApi } from '@/api/assets'
 import { offlineApi } from '@/utils/offline-http'
 import { receiptsApi } from '@/api/receipts'
+import { query, rowsFrom } from '@/db/local'
 import type { DailyExpense, Category, Asset } from '@/types'
 
 const props = defineProps<{ modelValue?: boolean; record?: DailyExpense | null }>()
@@ -133,10 +134,31 @@ async function onFileSelected(e: Event) {
 }
 
 onMounted(async () => {
-  await categoryStore.loadCategories()
-  categories.value = categoryStore.incomeExpenseCategories
-  const res = await assetsApi.list({ page_size: 500 })
-  assets.value = res.list
+  try {
+    await categoryStore.loadCategories()
+    categories.value = categoryStore.incomeExpenseCategories
+  } catch {
+    try {
+      const res = query('SELECT * FROM categories WHERE __deleted = 0')
+      const rows = rowsFrom(res) as unknown as Category[]
+      categories.value = rows.filter((c) => c.type === 'income' || c.type === 'expense')
+    } catch (e) {
+      console.error('[ExpenseQuickSheet] load local categories failed:', e)
+    }
+  }
+
+  try {
+    const res = await assetsApi.list({ page_size: 500 })
+    assets.value = res.list
+  } catch {
+    try {
+      const res = query('SELECT * FROM assets WHERE __deleted = 0')
+      assets.value = rowsFrom(res) as unknown as Asset[]
+    } catch (e) {
+      console.error('[ExpenseQuickSheet] load local assets failed:', e)
+    }
+  }
+
   if (props.record) {
     form.expense_type = props.record.expense_type
     form.category_id = Number(props.record.category_id)

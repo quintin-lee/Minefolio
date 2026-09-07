@@ -18,11 +18,17 @@ const month = ref(new Date().toISOString().slice(0, 7))
 const monthly = ref<ExpenseMonthly | null>(null)
 
 async function load() {
-  const y = Number(month.value.slice(0, 4))
-  const m = Number(month.value.slice(5, 7))
-  monthly.value = await dailyExpensesApi.monthly(y, m)
+  try {
+    const y = Number(month.value.slice(0, 4))
+    const m = Number(month.value.slice(5, 7))
+    monthly.value = await dailyExpensesApi.monthly(y, m)
+  } catch (e) {
+    console.error('[ReportsMobile] load failed:', e)
+  }
 }
-onMounted(load)
+onMounted(() => {
+  load()
+})
 </script>
 
 <style scoped>

@@ -12,14 +12,24 @@
 import { ref, onMounted } from 'vue'
 import { transactionsApi } from '@/api/transactions'
 import { formatCurrency } from '@/utils/format'
+import { query, rowsFrom } from '@/db/local'
 import type { Transaction } from '@/types'
 
 const list = ref<Transaction[]>([])
 function isIncome(t: Transaction) { return ['deposit', 'transfer_in', 'income', 'interest', 'sell'].includes(t.transaction_type) }
 
 onMounted(async () => {
-  const res = await transactionsApi.list({ page_size: 50 })
-  list.value = res.list
+  try {
+    const res = await transactionsApi.list({ page_size: 50 })
+    list.value = res.list
+  } catch {
+    try {
+      const res = query('SELECT * FROM transactions WHERE __deleted = 0 ORDER BY transaction_date DESC LIMIT 50')
+      list.value = rowsFrom(res) as unknown as Transaction[]
+    } catch (e) {
+      console.error('[TransactionsMobile] load failed:', e)
+    }
+  }
 })
 </script>
 

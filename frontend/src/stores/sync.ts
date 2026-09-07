@@ -136,9 +136,26 @@ export const useSyncStore = defineStore('sync', () => {
       if (!api) continue
       const payload = JSON.parse(item.payload)
       try {
-        if (item.operation === 'create') await api.create(payload)
-        else if (item.operation === 'update') await api.update(item.record_id, payload)
-        else if (item.operation === 'delete') await api.delete(item.record_id)
+        if (item.operation === 'create') {
+          const res: any = await api.create(payload)
+          const newId = res?.id ?? (typeof res === 'number' ? res : null)
+          if (newId && newId !== item.record_id) {
+            run(`UPDATE ${item.table_name} SET id = ? WHERE id = ?`, [newId, item.record_id])
+            run(
+              'UPDATE sync_queue SET record_id = ? WHERE table_name = ? AND record_id = ? AND id > ?',
+              [newId, item.table_name, item.record_id, item.id]
+            )
+            if (item.table_name === 'assets') {
+              run('UPDATE daily_expenses SET asset_id = ? WHERE asset_id = ?', [newId, item.record_id])
+              run('UPDATE transactions SET asset_id = ? WHERE asset_id = ?', [newId, item.record_id])
+            }
+            persist()
+          }
+        } else if (item.operation === 'update') {
+          await api.update(item.record_id, payload)
+        } else if (item.operation === 'delete') {
+          await api.delete(item.record_id)
+        }
         markSynced(item.id)
       } catch (e: any) {
         // 鉴权失败：注销 + 触发移动端路由（不要标冲突污染队列）
