@@ -45,4 +45,6 @@ export const useI18n = () => {
   }
 }
 
+export const useAppLocale = useI18n
+
 export default i18n

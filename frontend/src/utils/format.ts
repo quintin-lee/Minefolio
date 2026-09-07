@@ -86,15 +86,19 @@ export function formatSigned(val: number, currency = DEFAULT_CURRENCY): string {
 }
 
 /**
- * 将 ISO 日期字符串 (YYYY-MM-DD) 格式化为中文年月日格式
+ * 将 ISO 日期字符串 (YYYY-MM-DD) 格式化为当前语言环境日期文本
  * @param val ISO 日期字符串 (如 "2026-08-15")
- * @returns 中文格式日期文本 (如 "2026年8月15日")
+ * @returns 本地化格式日期文本 (中文: "2026年8月15日", 英文: "2026-08-15")
  * @example
- * formatDate("2026-08-05") // "2026年8月5日"
+ * formatDate("2026-08-05") // "2026年8月5日" 或 "2026-08-05"
  */
 export function formatDate(val: string): string {
   if (!val) return ''
   const [y, m, d] = val.slice(0, 10).split('-')
+  if (!y || !m || !d) return val
+  if (numberLocale() === 'en-US') {
+    return `${y}-${m}-${d}`
+  }
   return `${y}年${Number(m)}月${Number(d)}日`
 }
 

@@ -20,22 +20,25 @@
 </template>
 
 <script setup lang="ts">
-import { DataAnalysis, Plus, Wallet, TrendCharts, PieChart, Setting, Calendar } from '@element-plus/icons-vue'
+import { computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { DataAnalysis, Plus, Wallet, PieChart, Setting, Calendar } from '@element-plus/icons-vue'
 import LocaleToggle from '@/components/LocaleToggle.vue'
+import { t } from '@/utils/locale'
 
 const route = useRoute()
 const router = useRouter()
 
-const tabs = [
-  { name: 'dashboard', label: '首页', icon: DataAnalysis, prefix: '/m/dashboard' },
-  { name: 'expenses', label: '记账', icon: Plus, prefix: '/m/expenses' },
-  { name: 'assets', label: '资产', icon: Wallet, prefix: '/m/assets' },
-  { name: 'plans', label: '计划', icon: Calendar, prefix: '/m/plans' },
-  { name: 'reports', label: '报表', icon: PieChart, prefix: '/m/reports' },
-  { name: 'settings', label: '我的', icon: Setting, prefix: '/m/settings' },
-]
+const tabs = computed(() => [
+  { name: 'dashboard', label: t('nav.dashboard'), icon: DataAnalysis, prefix: '/m/dashboard' },
+  { name: 'expenses', label: t('nav.dailyExpenses'), icon: Plus, prefix: '/m/expenses' },
+  { name: 'assets', label: t('nav.assets'), icon: Wallet, prefix: '/m/assets' },
+  { name: 'plans', label: t('nav.plans'), icon: Calendar, prefix: '/m/plans' },
+  { name: 'reports', label: t('nav.reports'), icon: PieChart, prefix: '/m/reports' },
+  { name: 'settings', label: t('nav.settings'), icon: Setting, prefix: '/m/settings' },
+])
 
-function go(tab: (typeof tabs)[number]) {
+function go(tab: { prefix: string }) {
   router.push(tab.prefix)
 }
 </script>

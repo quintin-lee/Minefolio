@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { formatCurrency, formatSigned } from '@/utils/format'
+import { formatCurrency, formatSigned, formatDate } from '@/utils/format'
+import i18n from '@/composables/useI18n'
 
 describe('format currency helpers', () => {
   it('formats CNY by default', () => {
@@ -25,5 +25,17 @@ describe('format currency helpers', () => {
     expect(formatSigned(-50)).toBe('-¥50.00')
     expect(formatSigned(0)).toBe('¥0.00')
     expect(formatSigned(50, 'USD')).toBe(`+${formatCurrency(50, 'USD')}`)
+  })
+
+  it('formats dates respecting active locale', () => {
+    i18n.global.locale.value = 'zh-CN'
+    expect(formatDate('2026-08-15')).toBe('2026年8月15日')
+    expect(formatDate('')).toBe('')
+
+    i18n.global.locale.value = 'en-US'
+    expect(formatDate('2026-08-15')).toBe('2026-08-15')
+
+    // Reset back to zh-CN
+    i18n.global.locale.value = 'zh-CN'
   })
 })
