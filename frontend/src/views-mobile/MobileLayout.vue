@@ -1,7 +1,7 @@
 <template>
   <div class="mobile-layout">
     <main class="mobile-content">
-      <router-view />
+      <router-view :key="routerViewKey" />
     </main>
     <LocaleToggle class="locale-chip" />
     <nav class="tab-bar">
@@ -20,14 +20,33 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { DataAnalysis, Plus, Wallet, PieChart, Setting, Calendar } from '@element-plus/icons-vue'
 import LocaleToggle from '@/components/LocaleToggle.vue'
+import { useCategoryStore } from '@/stores/category'
+import { useSyncStore } from '@/stores/sync'
 import { t } from '@/utils/locale'
 
 const route = useRoute()
 const router = useRouter()
+const categoryStore = useCategoryStore()
+const syncStore = useSyncStore()
+const routerViewKey = ref(0)
+
+function handleLedgerChanged() {
+  categoryStore.invalidate()
+  syncStore.syncNow()
+  routerViewKey.value++
+}
+
+onMounted(() => {
+  window.addEventListener('minefolio:ledger-changed', handleLedgerChanged)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('minefolio:ledger-changed', handleLedgerChanged)
+})
 
 const tabs = computed(() => [
   { name: 'dashboard', label: t('nav.dashboard'), icon: DataAnalysis, prefix: '/m/dashboard' },

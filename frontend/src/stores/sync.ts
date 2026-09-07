@@ -148,6 +148,7 @@ export const useSyncStore = defineStore('sync', () => {
             if (item.table_name === 'assets') {
               run('UPDATE daily_expenses SET asset_id = ? WHERE asset_id = ?', [newId, item.record_id])
               run('UPDATE transactions SET asset_id = ? WHERE asset_id = ?', [newId, item.record_id])
+              run('UPDATE transactions SET linked_asset_id = ? WHERE linked_asset_id = ?', [newId, item.record_id])
             }
             persist()
           }
@@ -177,17 +178,29 @@ export const useSyncStore = defineStore('sync', () => {
     for (const table of tables) {
       const api = API_BY_TABLE[table]
       if (!api?.list) continue
-      const res: any = await api.list({ page_size: 500 })
-      const remoteRows = (res.list ?? []) as any[]
-      if (remoteRows.length === 0) continue
-      for (const remote of remoteRows) {
-        const local = query(`SELECT * FROM ${table} WHERE id = ?`, [remote.id])
-        const localRow = rowsFrom(local)[0]
-        const localUpdated = localRow?.updated_at ? new Date(localRow.updated_at as string).getTime() : 0
-        const remoteUpdated = remote.updated_at ? new Date(remote.updated_at).getTime() : 0
-        if (!localRow || remoteUpdated >= localUpdated) {
-          upsertLocal(table, remote)
+      try {
+        let page = 1
+        const pageSize = 500
+        while (true) {
+          const res: any = await api.list({ page, page_size: pageSize })
+          const remoteRows = (res?.list ?? (Array.isArray(res) ? res : [])) as any[]
+          if (remoteRows.length === 0) break
+          for (const remote of remoteRows) {
+            const local = query(`SELECT * FROM ${table} WHERE id = ?`, [remote.id])
+            const localRow = rowsFrom(local)[0]
+            const localUpdated = localRow?.updated_at ? new Date(localRow.updated_at as string).getTime() : 0
+            const remoteUpdated = remote.updated_at ? new Date(remote.updated_at).getTime() : 0
+            if (!localRow || remoteUpdated >= localUpdated) {
+              upsertLocal(table, remote)
+            }
+          }
+          if (remoteRows.length < pageSize || (res?.total !== undefined && page * pageSize >= res.total)) {
+            break
+          }
+          page++
         }
+      } catch (err) {
+        console.error(`[sync] Failed to pull remote data for table ${table}:`, err)
       }
     }
     persist()

@@ -8,8 +8,6 @@ const STORAGE_KEY = 'minefolio_local_db'
 let db: Database | null = null
 let sqlJs: SqlJsStatic | null = null
 
-const isNode = typeof process !== 'undefined' && !!process.versions?.node
-
 // base64 -> Uint8Array，把 wasm 内嵌进构建产物，运行时无任何网络请求
 function base64ToBytes(b64: string): Uint8Array {
   const bin = atob(b64)
@@ -18,22 +16,33 @@ function base64ToBytes(b64: string): Uint8Array {
   return bytes
 }
 
-function locateFile(file: string): string {
-  if (!isNode) return file
-  // 测试(jsdom)环境从本地 node_modules 取 wasm；eval('require') 避免浏览器打包解析 node:module
-  const { createRequire } = eval('require("node:module")') as typeof import('node:module')
-  const requireFromCwd = createRequire(typeof __filename !== 'undefined' ? __filename : process.cwd() + '/index.js')
-  return requireFromCwd.resolve(`sql.js/dist/${file}`)
+function bytesToBase64(bytes: Uint8Array): string {
+  let bin = ''
+  const len = bytes.byteLength
+  for (let i = 0; i < len; i += 8192) {
+    bin += String.fromCharCode(...bytes.subarray(i, Math.min(i + 8192, len)))
+  }
+  return btoa(bin)
+}
+
+function parseSavedBytes(saved: string): Uint8Array {
+  if (saved.startsWith('b64:')) {
+    return base64ToBytes(saved.slice(4))
+  }
+  if (saved.startsWith('[')) {
+    return new Uint8Array(JSON.parse(saved))
+  }
+  try {
+    return base64ToBytes(saved)
+  } catch {
+    return new Uint8Array(JSON.parse(saved))
+  }
 }
 
 async function ensureSqlJs(): Promise<SqlJsStatic> {
   if (sqlJs) return sqlJs
-  if (isNode) {
-    sqlJs = await initSqlJs({ locateFile })
-  } else {
-    // 浏览器/Capacitor：直接用内嵌的 wasm 二进制，避免 WebView 里 fetch/XHR 拉取失败
-    sqlJs = await initSqlJs({ wasmBinary: base64ToBytes(SQL_WASM_BASE64) })
-  }
+  // 直接用内嵌的 wasm 二进制，在浏览器、Capacitor 或测试(Node/jsdom)环境均无须文件系统路径或网络请求
+  sqlJs = await initSqlJs({ wasmBinary: base64ToBytes(SQL_WASM_BASE64) })
   return sqlJs
 }
 
@@ -46,8 +55,14 @@ export async function initLocalDb(): Promise<Database> {
   const SQL = await ensureSqlJs()
   const saved = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null
   if (saved) {
-    const bytes = new Uint8Array(JSON.parse(saved))
-    db = new SQL.Database(bytes)
+    try {
+      const bytes = parseSavedBytes(saved)
+      db = new SQL.Database(bytes)
+    } catch (err) {
+      console.error('[localDb] Failed to restore database from localStorage, initializing fresh:', err)
+      db = new SQL.Database()
+      db.run(LOCAL_SCHEMA)
+    }
   } else {
     db = new SQL.Database()
     db.run(LOCAL_SCHEMA)
@@ -71,8 +86,13 @@ export function run(sql: string, params: SqlValue[] = []): void {
 export function persist(): void {
   if (!db) return
   if (typeof localStorage === 'undefined') return
-  const data = db.export()
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(data)))
+  try {
+    const data = db.export()
+    const encoded = 'b64:' + bytesToBase64(data)
+    localStorage.setItem(STORAGE_KEY, encoded)
+  } catch (err) {
+    console.error('[localDb] Failed to persist SQLite state to localStorage:', err)
+  }
 }
 
 export function resetLocalDb(): void {
