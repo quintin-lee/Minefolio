@@ -42,6 +42,18 @@ function showDebouncedError(msg: string) {
 /** 是否正在处理 401 鉴权未授权跳转 */
 let isHandlingAuthError = false
 
+/** 自定义 401 鉴权失效处理钩子 (由 main 或 main-mobile 注入特定平台的 router 导航) */
+type AuthErrorHandler = () => void
+let customAuthErrorHandler: AuthErrorHandler | null = null
+
+/**
+ * 注入自定义 401 鉴权失效处理钩子
+ * @param handler 回调函数
+ */
+export function setAuthErrorHandler(handler: AuthErrorHandler | null): void {
+  customAuthErrorHandler = handler
+}
+
 /**
  * 处理 1001 登录鉴权失效：注销状态并安全导航回登录页
  */
@@ -49,34 +61,26 @@ function handleAuthError() {
   if (isHandlingAuthError) return
   isHandlingAuthError = true
   useAuthStore().logout()
-  if (!mobileMode) {
-    import('@/router')
-      .then(({ default: router }) => {
-        if (router && router.currentRoute?.value?.path !== '/login') {
-          router.push('/login').finally(() => {
-            setTimeout(() => {
-              isHandlingAuthError = false
-            }, 1000)
-          })
-        } else {
-          setTimeout(() => {
-            isHandlingAuthError = false
-          }, 1000)
-        }
-      })
-      .catch(() => {
-        if (window.location.pathname !== '/login') {
-          window.location.href = '/login'
-        }
-        setTimeout(() => {
-          isHandlingAuthError = false
-        }, 1000)
-      })
-  } else {
-    setTimeout(() => {
-      isHandlingAuthError = false
-    }, 1000)
+
+  if (customAuthErrorHandler) {
+    try {
+      customAuthErrorHandler()
+    } finally {
+      setTimeout(() => {
+        isHandlingAuthError = false
+      }, 1000)
+    }
+    return
   }
+
+  if (!mobileMode) {
+    if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+      window.location.href = '/login'
+    }
+  }
+  setTimeout(() => {
+    isHandlingAuthError = false
+  }, 1000)
 }
 
 /**

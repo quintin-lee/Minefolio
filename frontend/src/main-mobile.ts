@@ -10,8 +10,18 @@ import App from './App.vue'
 import router from './router/mobile'
 import i18n from '@/composables/useI18n'
 import { initLocalDb } from '@/db/local'
-import { useSyncStore } from '@/stores/sync'
+import { useSyncStore, setSyncOnAuthFail } from '@/stores/sync'
 import { registerNetworkListeners } from '@/utils/sync-network'
+import { setMobileMode, setAuthErrorHandler } from '@/utils/http'
+
+setMobileMode(true)
+const handleMobileAuthFail = () => {
+  if (router.currentRoute.value?.path !== '/m/login') {
+    router.push('/m/login')
+  }
+}
+setAuthErrorHandler(handleMobileAuthFail)
+setSyncOnAuthFail(handleMobileAuthFail)
 
 function detectLocale(): 'zh-CN' | 'en-US' {
   try {

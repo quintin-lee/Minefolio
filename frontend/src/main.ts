@@ -8,6 +8,13 @@ import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import App from './App.vue'
 import router from './router'
 import i18n from '@/composables/useI18n'
+import { setAuthErrorHandler } from '@/utils/http'
+
+setAuthErrorHandler(() => {
+  if (router.currentRoute.value?.path !== '/login') {
+    router.push('/login')
+  }
+})
 
 const app = createApp(App)
 
