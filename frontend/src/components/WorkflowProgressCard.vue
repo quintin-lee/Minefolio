@@ -182,6 +182,7 @@ import { Icon } from '@iconify/vue'
 import { ElMessage } from 'element-plus'
 import type { WorkflowRunState } from '@/types'
 import { useChatStore } from '@/stores/chat'
+import { localToday } from '@/utils/format'
 
 const props = defineProps<{
   workflowData: WorkflowRunState
@@ -317,7 +318,7 @@ function exportReport() {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `${props.workflowData.title}_${new Date().toISOString().slice(0, 10)}.md`
+  a.download = `${props.workflowData.title}_${localToday()}.md`
   a.click()
   URL.revokeObjectURL(url)
   ElMessage.success('报告导出成功')

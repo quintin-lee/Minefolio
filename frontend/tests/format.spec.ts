@@ -1,4 +1,5 @@
-import { formatCurrency, formatSigned, formatDate } from '@/utils/format'
+import { vi } from 'vitest'
+import { formatCurrency, formatSigned, formatDate, localToday, localThisMonth } from '@/utils/format'
 import i18n from '@/composables/useI18n'
 
 describe('format currency helpers', () => {
@@ -37,5 +38,33 @@ describe('format currency helpers', () => {
 
     // Reset back to zh-CN
     i18n.global.locale.value = 'zh-CN'
+  })
+})
+
+describe('local date helpers', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('returns today in YYYY-MM-DD built from local date parts', () => {
+    const d = new Date()
+    const expected = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    expect(localToday()).toBe(expected)
+    expect(localToday()).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  })
+
+  it('returns the current month in YYYY-MM built from local date parts', () => {
+    const d = new Date()
+    const expected = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    expect(localThisMonth()).toBe(expected)
+    expect(localThisMonth()).toMatch(/^\d{4}-\d{2}$/)
+  })
+
+  it('stays on the local date near midnight instead of drifting to the UTC date', () => {
+    // 本地 09-07 00:30（UTC+ 时区下 toISOString() 会给出 09-06，旧实现即在此出错）
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 8, 7, 0, 30))
+    expect(localToday()).toBe('2026-09-07')
+    expect(localThisMonth()).toBe('2026-09')
   })
 })

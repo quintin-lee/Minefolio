@@ -12,9 +12,10 @@ import { ref, onMounted } from 'vue'
 import { dailyExpensesApi } from '@/api/daily_expenses'
 import ExpenseCategoryPie from '@/components/ExpenseCategoryPie.vue'
 import MonthlyChart from '@/components/MonthlyChart.vue'
+import { localThisMonth } from '@/utils/format'
 import type { ExpenseMonthly } from '@/types'
 
-const month = ref(new Date().toISOString().slice(0, 7))
+const month = ref(localThisMonth())
 const monthly = ref<ExpenseMonthly | null>(null)
 
 async function load() {

@@ -122,6 +122,7 @@ import { ref, reactive, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { cashflowApi } from '@/api/cashflow'
+import { localToday } from '@/utils/format'
 import type { Asset, CashflowSchedule } from '@/types'
 
 const props = defineProps<{
@@ -175,7 +176,7 @@ function open(sch?: CashflowSchedule) {
     form.expected_amount = sch.expected_amount
     form.note = sch.note || ''
   } else {
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localToday()
     form.name = ''
     form.flow_type = 'dividend'
     form.source_asset_id = undefined

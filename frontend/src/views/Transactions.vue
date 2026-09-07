@@ -355,7 +355,7 @@ import { Plus, Download, Upload, UploadFilled, SuccessFilled, Edit, Delete } fro
 import { transactionsApi } from '@/api/transactions'
 import { assetsApi } from '@/api/assets'
 import { useCategoryStore } from '@/stores/category'
-import { formatCurrency } from '@/utils/format'
+import { formatCurrency, localToday, localThisMonth } from '@/utils/format'
 import SummaryCard from '@/components/SummaryCard.vue'
 import type { Transaction, Asset, Category, TransactionMonthly, Direction, TransactionInput } from '@/types'
 
@@ -421,7 +421,7 @@ const form = reactive({
   quantity: 0,
   price_per_unit: 0,
   fee: 0,
-  transaction_date: new Date().toISOString().slice(0, 10),
+  transaction_date: localToday(),
   note: '',
   category_id: null as number | null,
   currency: 'CNY' as string,
@@ -440,7 +440,7 @@ const rules = {
 
 const categoryTree = computed(() => allCategories.value)
 
-const currentMonthPrefix = computed(() => new Date().toISOString().slice(0, 7))
+const currentMonthPrefix = computed(() => localThisMonth())
 
 const monthlyTotalVolume = computed(() => monthlyStats.value.total_volume)
 const monthlyInflows = computed(() => monthlyStats.value.inflows)
@@ -622,7 +622,7 @@ function openDialog(txn?: any) {
     amount: 0,
     quantity: 0,
     price_per_unit: 0,
-    transaction_date: new Date().toISOString().slice(0, 10),
+    transaction_date: localToday(),
     note: '',
     category_id: null,
     currency: 'CNY',
@@ -709,7 +709,7 @@ function exportCsv() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    const now = new Date().toISOString().slice(0, 10)
+    const now = localToday()
     a.download = `transactions_${now}.csv`
     document.body.appendChild(a)
     a.click()

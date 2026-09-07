@@ -86,6 +86,27 @@ export function formatSigned(val: number, currency = DEFAULT_CURRENCY): string {
 }
 
 /**
+ * 取本地时区的“今天”日期字符串 (YYYY-MM-DD)。
+ *
+ * 注意不要用 `new Date().toISOString().slice(0, 10)` —— toISOString 返回 UTC 日期，
+ * 在 UTC+ 时区（如东八区）本地凌晨 0:00–8:00 之间会错到前一天。
+ * @example localToday() // "2026-09-07"（本地时区）
+ */
+export function localToday(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/**
+ * 取本地时区的“本月”前缀 (YYYY-MM)。
+ * @example localThisMonth() // "2026-09"（本地时区）
+ */
+export function localThisMonth(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+/**
  * 将 ISO 日期字符串 (YYYY-MM-DD) 格式化为当前语言环境日期文本
  * @param val ISO 日期字符串 (如 "2026-08-15")
  * @returns 本地化格式日期文本 (中文: "2026年8月15日", 英文: "2026-08-15")

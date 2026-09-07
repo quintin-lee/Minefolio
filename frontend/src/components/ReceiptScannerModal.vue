@@ -175,6 +175,7 @@ import { dailyExpensesApi } from '@/api/daily_expenses'
 import { assetsApi } from '@/api/assets'
 import { getSettings } from '@/api/ai'
 import { useCategoryStore } from '@/stores/category'
+import { localToday } from '@/utils/format'
 import type { Category, Asset } from '@/types'
 import type { FormInstance, FormRules } from 'element-plus'
 
@@ -209,7 +210,7 @@ const formRef = ref<FormInstance>()
 const form = reactive({
   expense_type: 'expense' as 'expense' | 'income',
   amount: 0,
-  expense_date: new Date().toISOString().slice(0, 10),
+  expense_date: localToday(),
   category_id: null as number | null,
   asset_id: null as number | null,
   counterparty: '',
@@ -315,7 +316,7 @@ async function processImageBase64(base64: string) {
     })
     if (res) {
       form.amount = Number(res.amount) || 0
-      form.expense_date = res.date || new Date().toISOString().slice(0, 10)
+      form.expense_date = res.date || localToday()
       form.expense_type = res.type === 'income' ? 'income' : 'expense'
       form.counterparty = res.counterparty || ''
       form.note = [res.counterparty, res.description].filter(Boolean).join(' - ')

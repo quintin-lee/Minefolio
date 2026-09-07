@@ -312,12 +312,12 @@ import ExpenseCategoryPie from '@/components/ExpenseCategoryPie.vue'
 import ExpenseTrendBar from '@/components/ExpenseTrendBar.vue'
 import AssetTrendLine from '@/components/AssetTrendLine.vue'
 import AssetBreakdownPie from '@/components/AssetBreakdownPie.vue'
-import { formatCurrency } from '@/utils/format'
+import { formatCurrency, localThisMonth } from '@/utils/format'
 import SummaryCard from '@/components/SummaryCard.vue'
 import type { FxPnlReport, FxHistoryPoint } from '@/types'
 
 const loading = ref(true)
-const reportMonth = ref(new Date().toISOString().slice(0, 7))
+const reportMonth = ref(localThisMonth())
 const trendPeriod = ref('30d')
 const monthly = ref<any>(null)
 const trend = ref<any>(null)

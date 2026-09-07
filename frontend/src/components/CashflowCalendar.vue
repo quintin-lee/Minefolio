@@ -119,6 +119,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, ArrowRight, Plus } from '@element-plus/icons-vue'
 import { cashflowApi } from '@/api/cashflow'
+import { localToday } from '@/utils/format'
 import type { MonthlyCashflowSummary, CashflowCalendarEvent } from '@/types'
 
 const emit = defineEmits<{
@@ -194,7 +195,7 @@ const calendarDays = computed<CalendarDay[]>(() => {
   let startOffset = firstDay.getDay() - 1
   if (startOffset < 0) startOffset = 6
 
-  const todayStr = new Date().toISOString().slice(0, 10)
+  const todayStr = localToday()
   const days: CalendarDay[] = []
 
   /* Fill leading empty days */

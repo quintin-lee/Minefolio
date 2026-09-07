@@ -59,6 +59,7 @@ import { assetsApi } from '@/api/assets'
 import { offlineApi } from '@/utils/offline-http'
 import { receiptsApi } from '@/api/receipts'
 import { query, rowsFrom } from '@/db/local'
+import { localToday } from '@/utils/format'
 import type { DailyExpense, Category, Asset } from '@/types'
 
 const props = defineProps<{ modelValue?: boolean; record?: DailyExpense | null }>()
@@ -81,7 +82,7 @@ const form = reactive({
   category_id: null as number | null,
   asset_id: null as number | null,
   amount: '' as string | number,
-  expense_date: new Date().toISOString().slice(0, 10),
+  expense_date: localToday(),
   note: '',
 })
 

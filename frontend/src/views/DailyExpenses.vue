@@ -206,7 +206,7 @@ import TagPicker from '@/components/TagPicker.vue'
 import MonthlyChart from '@/components/MonthlyChart.vue'
 import ExpenseCategoryPie from '@/components/ExpenseCategoryPie.vue'
 import ReceiptScannerModal from '@/components/ReceiptScannerModal.vue'
-import { formatCurrency } from '@/utils/format'
+import { formatCurrency, localToday, localThisMonth } from '@/utils/format'
 import SummaryCard from '@/components/SummaryCard.vue'
 import type { DailyExpense, Tag, Category, Asset } from '@/types'
 
@@ -304,7 +304,7 @@ function onCatChange(val: any) { const last = (val as any[])?.[(val as any[]).le
 function openDialog(expense?: any) {
   editingId.value = expense?.id ?? null
   Object.assign(form, expense ? { expense_type: expense.expense_type, category_id: Number(expense.category_id), asset_id: Number(expense.asset_id), amount: Number(expense.amount), expense_date: expense.expense_date, note: expense.note, tags: expense.tags ?? [], _catPath: [Number(expense.category_id)] }
-    : { expense_type: 'expense', category_id: null, asset_id: null, amount: 0, expense_date: new Date().toISOString().slice(0, 10), note: '', tags: [], _catPath: [] })
+    : { expense_type: 'expense', category_id: null, asset_id: null, amount: 0, expense_date: localToday(), note: '', tags: [], _catPath: [] })
   dialogVisible.value = true
 }
 
@@ -349,7 +349,7 @@ onMounted(async () => {
     if (assetRes.status === 'fulfilled') {
       allAssets.value = assetRes.value.list
     }
-    filters.month = new Date().toISOString().slice(0, 7)
+    filters.month = localThisMonth()
     await loadData()
   } catch (err) {
     console.error('[DailyExpenses] onMounted failed:', err)
@@ -368,7 +368,7 @@ function exportCsv() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    const now = new Date().toISOString().slice(0, 10)
+    const now = localToday()
     a.download = `daily_expenses_${now}.csv`
     document.body.appendChild(a)
     a.click()

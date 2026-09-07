@@ -298,6 +298,7 @@ import ChatMessageContent from '@/components/ChatMessageContent.vue'
 import PromptStarters from '@/components/PromptStarters.vue'
 import WorkflowBar from '@/components/WorkflowBar.vue'
 import WorkflowSlashMenu from '@/components/WorkflowSlashMenu.vue'
+import { localToday } from '@/utils/format'
 import type { WorkflowDef } from '@/types'
 
 const chat = useChatStore()
@@ -393,7 +394,7 @@ function exportToMarkdown() {
   const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
-  const dateKey = new Date().toISOString().slice(0, 10)
+  const dateKey = localToday()
   a.href = url
   a.download = `Minefolio-AI-Chat-${dateKey}.md`
   document.body.appendChild(a)

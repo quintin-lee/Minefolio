@@ -219,6 +219,7 @@ import { dailyExpensesApi } from '@/api/daily_expenses'
 import { transactionsApi } from '@/api/transactions'
 import { assetsApi } from '@/api/assets'
 import { useCategoryStore } from '@/stores/category'
+import { localToday } from '@/utils/format'
 import type { Asset, Category } from '@/types'
 
 export interface ProposedAction {
@@ -264,7 +265,7 @@ const form = reactive({
   asset_id: Number(props.actionData.data.asset_id) || undefined,
   from_asset_id: Number(props.actionData.data.from_asset_id) || undefined,
   to_asset_id: Number(props.actionData.data.to_asset_id) || undefined,
-  date: props.actionData.data.date || new Date().toISOString().slice(0, 10),
+  date: props.actionData.data.date || localToday(),
   fee: Number(props.actionData.data.fee) || 0,
   note: props.actionData.data.note || '',
 })

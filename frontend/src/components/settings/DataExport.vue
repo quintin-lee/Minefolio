@@ -19,6 +19,7 @@
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { transactionsApi } from '@/api/transactions'
+import { localToday } from '@/utils/format'
 import { t } from '@/utils/locale'
 
 const exporting = ref(false)
@@ -30,7 +31,7 @@ async function handleExport() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `minefolio_transactions_${new Date().toISOString().slice(0, 10)}.csv`
+    a.download = `minefolio_transactions_${localToday()}.csv`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
