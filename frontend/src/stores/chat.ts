@@ -179,7 +179,7 @@ export const useChatStore = defineStore('chat', () => {
   async function loadMoreMessages() {
     if (loadingMoreMessages.value || !currentSessionId.value) return
     const nextPage = loadedMessagePage.value + 1
-    if (messageTotal.value > 0 && nextPage * 50 >= messageTotal.value) return
+    if (messageTotal.value > 0 && loadedMessagePage.value * 50 >= messageTotal.value) return
     loadingMoreMessages.value = true
     try {
       const r = (await getMessages(currentSessionId.value, nextPage, 50)) as unknown

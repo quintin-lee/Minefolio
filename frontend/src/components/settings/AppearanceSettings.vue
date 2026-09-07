@@ -68,7 +68,7 @@ watch(() => lang.value, (value) => {
   gap: 8px;
 }
 
-::deep(.el-radio__label) {
+:deep(.el-radio__label) {
   display: flex !important;
   align-items: center !important;
   padding-left: 8px !important;

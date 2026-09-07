@@ -27,6 +27,12 @@ const router = createRouter({
         { path: 'settings', name: 'MobileSettings', component: () => import('@/views-mobile/SettingsMobile.vue') },
       ],
     },
+    {
+      path: '/:pathMatch(.*)*',
+      name: 'MobileNotFound',
+      component: () => import('@/views/NotFound.vue'),
+      meta: { requiresAuth: false },
+    },
   ],
 })
 

@@ -42,6 +42,12 @@ const router = createRouter({
         { path: 'ai-traces', name: 'AiTraces', component: () => import('@/views/AiTraces.vue') },
       ],
     },
+    {
+      path: '/:pathMatch(.*)*',
+      name: 'NotFound',
+      component: () => import('@/views/NotFound.vue'),
+      meta: { requiresAuth: false },
+    },
   ],
 })
 

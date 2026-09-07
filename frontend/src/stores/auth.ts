@@ -162,7 +162,11 @@ export const useAuthStore = defineStore('auth', () => {
   function logout() {
     token.value = ''
     user.value = null
-    localStorage.removeItem('token')
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('token')
+      localStorage.removeItem('minefolio_active_ledger_id')
+      localStorage.removeItem('minefolio_pinned_workflows')
+    }
     clearCryptoKeyCache()
   }
 

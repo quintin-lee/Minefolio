@@ -4,7 +4,7 @@
  */
 
 // frontend/src/api/ai.ts
-import http, { getCookie, buildApiUrl } from '@/utils/http'
+import http, { getCookie, buildApiUrl, handleAuthError } from '@/utils/http'
 import { useAuthStore } from '@/stores/auth'
 import type { WorkflowDef, WorkflowRunState, WorkflowConfigState } from '@/types'
 
@@ -254,6 +254,10 @@ export async function* chatStream(
     body: JSON.stringify(params),
     signal,
   })
+  if (resp.status === 401) {
+    handleAuthError()
+    throw new Error('HTTP 401: Unauthorized')
+  }
   if (!resp.ok || !resp.body) throw new Error(`HTTP ${resp.status}`)
   const reader = resp.body.getReader()
   const decoder = new TextDecoder()
@@ -439,6 +443,10 @@ export async function* runWorkflowStream(
     body: JSON.stringify(params),
     signal,
   })
+  if (resp.status === 401) {
+    handleAuthError()
+    throw new Error('HTTP 401: Unauthorized')
+  }
   if (!resp.ok || !resp.body) throw new Error(`HTTP ${resp.status}`)
   const reader = resp.body.getReader()
   const decoder = new TextDecoder()

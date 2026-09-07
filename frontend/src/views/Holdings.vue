@@ -19,7 +19,7 @@
         <SummaryCard label="总浮动盈亏" :value="formatSigned(report?.summary.total_floating_pnl ?? 0)" :extraClass="floatCardClass" />
         <div class="summary-sub">({{ (report?.summary.floating_pct ?? 0).toFixed(2) }}%)</div>
         <el-progress
-          :percentage="Math.abs(report?.summary.floating_pct ?? 0)"
+          :percentage="Math.min(100, Math.abs(report?.summary.floating_pct ?? 0))"
           :color="floatPnlColor"
           :show-text="false"
           :stroke-width="4"

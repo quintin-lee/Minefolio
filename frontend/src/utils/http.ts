@@ -57,7 +57,7 @@ export function setAuthErrorHandler(handler: AuthErrorHandler | null): void {
 /**
  * 处理 1001 登录鉴权失效：注销状态并安全导航回登录页
  */
-function handleAuthError() {
+export function handleAuthError() {
   if (isHandlingAuthError) return
   isHandlingAuthError = true
   useAuthStore().logout()
