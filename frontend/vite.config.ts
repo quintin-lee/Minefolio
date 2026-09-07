@@ -13,7 +13,7 @@ export default defineConfig({
     vue(),
     AutoImport({
       resolvers: [ElementPlusResolver({ importStyle: false })],
-      imports: ['vue', 'vue-router', 'pinia'],
+      imports: ['vue', 'vue-router', 'pinia', 'vue-i18n'],
       dts: 'src/auto-imports.d.ts',
     }),
     Components({
