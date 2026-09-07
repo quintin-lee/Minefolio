@@ -39,4 +39,26 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('echarts') || id.includes('zrender')) {
+              return 'vendor-echarts'
+            }
+            if (id.includes('element-plus') || id.includes('@element-plus/icons-vue')) {
+              return 'vendor-element'
+            }
+            if (id.includes('mermaid') || id.includes('cytoscape') || id.includes('cose-bilkent') || id.includes('dagre')) {
+              return 'vendor-mermaid'
+            }
+            if (id.includes('highlight.js') || id.includes('katex') || id.includes('marked') || id.includes('dompurify')) {
+              return 'vendor-markdown'
+            }
+          }
+        },
+      },
+    },
+  },
 })

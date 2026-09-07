@@ -4,13 +4,13 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue'
-import * as echarts from 'echarts'
+import echarts, { type ECharts } from '@/utils/echarts'
 import { resolveChartPalette, useChartThemeSync, withAlpha } from '@/utils/echarts-theme'
 import { formatCurrency } from '@/utils/format'
 
 const props = defineProps<{ data: { category_name: string; value: number; pct: number }[] }>()
 const chartRef = ref<HTMLElement>()
-let chart: echarts.ECharts | null = null
+let chart: ECharts | null = null
 let resizeObserver: ResizeObserver | null = null
 
 const colors = ['#3b82f6', '#10b981', '#f59e0b', '#f43f5e', '#6366f1', '#fb923c', '#0ea5e9', '#94a3b8']

@@ -4,13 +4,13 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue'
-import * as echarts from 'echarts'
+import echarts, { type ECharts } from '@/utils/echarts'
 import { resolveChartPalette, useChartThemeSync } from '@/utils/echarts-theme'
 import { formatCurrency } from '@/utils/format'
 
 const props = defineProps<{ data: { date: string; net_worth: number }[] }>()
 const chartRef = ref<HTMLElement>()
-let chart: echarts.ECharts | null = null
+let chart: ECharts | null = null
 let resizeObserver: ResizeObserver | null = null
 
 function ensureChart() {

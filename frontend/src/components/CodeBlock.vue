@@ -18,8 +18,40 @@
 <script setup lang="ts">
 import { computed, ref, onUnmounted } from 'vue'
 import { Icon } from '@iconify/vue'
-import hljs from 'highlight.js'
+import hljs from 'highlight.js/lib/core'
 import 'highlight.js/styles/atom-one-dark.css'
+import javascript from 'highlight.js/lib/languages/javascript'
+import typescript from 'highlight.js/lib/languages/typescript'
+import python from 'highlight.js/lib/languages/python'
+import bash from 'highlight.js/lib/languages/bash'
+import yaml from 'highlight.js/lib/languages/yaml'
+import json from 'highlight.js/lib/languages/json'
+import markdown from 'highlight.js/lib/languages/markdown'
+import sql from 'highlight.js/lib/languages/sql'
+import c from 'highlight.js/lib/languages/c'
+import cpp from 'highlight.js/lib/languages/cpp'
+import css from 'highlight.js/lib/languages/css'
+import xml from 'highlight.js/lib/languages/xml'
+
+hljs.registerLanguage('javascript', javascript)
+hljs.registerLanguage('js', javascript)
+hljs.registerLanguage('typescript', typescript)
+hljs.registerLanguage('ts', typescript)
+hljs.registerLanguage('python', python)
+hljs.registerLanguage('py', python)
+hljs.registerLanguage('bash', bash)
+hljs.registerLanguage('sh', bash)
+hljs.registerLanguage('yaml', yaml)
+hljs.registerLanguage('yml', yaml)
+hljs.registerLanguage('json', json)
+hljs.registerLanguage('markdown', markdown)
+hljs.registerLanguage('md', markdown)
+hljs.registerLanguage('sql', sql)
+hljs.registerLanguage('c', c)
+hljs.registerLanguage('cpp', cpp)
+hljs.registerLanguage('css', css)
+hljs.registerLanguage('xml', xml)
+hljs.registerLanguage('html', xml)
 
 const props = defineProps<{
   code: string

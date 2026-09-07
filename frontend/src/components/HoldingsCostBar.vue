@@ -4,7 +4,7 @@
 
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch } from 'vue'
-import * as echarts from 'echarts'
+import echarts, { type ECharts } from '@/utils/echarts'
 import { resolveChartPalette, useChartThemeSync } from '@/utils/echarts-theme'
 
 export interface HoldingsBarDatum {
@@ -16,7 +16,7 @@ export interface HoldingsBarDatum {
 const props = defineProps<{ data: HoldingsBarDatum[] }>()
 
 const chartRef = ref<HTMLDivElement | null>(null)
-let chart: echarts.ECharts | null = null
+let chart: ECharts | null = null
 let resizeObserver: ResizeObserver | null = null
 
 function updateChart() {

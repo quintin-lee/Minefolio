@@ -39,6 +39,21 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       input: resolve(__dirname, 'index.mobile.html'),
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('echarts') || id.includes('zrender')) {
+              return 'vendor-echarts'
+            }
+            if (id.includes('element-plus') || id.includes('@element-plus/icons-vue')) {
+              return 'vendor-element'
+            }
+            if (id.includes('sql.js')) {
+              return 'vendor-sql'
+            }
+          }
+        },
+      },
     },
   },
   test: {

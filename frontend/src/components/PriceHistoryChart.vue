@@ -19,7 +19,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
-import * as echarts from 'echarts'
+import echarts, { type ECharts, type EChartsOption } from '@/utils/echarts'
 import { marketApi } from '@/api/market'
 import type { PriceHistoryItem } from '@/types'
 import { resolveChartPalette, useChartThemeSync, withAlpha } from '@/utils/echarts-theme'
@@ -31,7 +31,7 @@ const props = defineProps<{
 }>()
 
 const chartRef = ref<HTMLElement | null>(null)
-let chart: echarts.ECharts | null = null
+let chart: ECharts | null = null
 const loading = ref(false)
 const daysLimit = ref(90)
 const historyData = ref<PriceHistoryItem[]>([])
@@ -63,7 +63,7 @@ function renderChart() {
   const maxPrice = prices.length > 0 ? Math.max(...prices) * 1.02 : 100
 
   const P = resolveChartPalette()
-  const option: echarts.EChartsOption = {
+  const option: EChartsOption = {
     tooltip: {
       trigger: 'axis',
       backgroundColor: P.surfaceCard,

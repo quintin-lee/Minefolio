@@ -68,14 +68,14 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { Icon } from '@iconify/vue'
 import ActionCard from '@/components/ActionCard.vue'
-import CodeBlock from '@/components/CodeBlock.vue'
 import WorkflowProgressCard from '@/components/WorkflowProgressCard.vue'
 import WorkflowConfigCard from '@/components/WorkflowConfigCard.vue'
 import type { ProposedAction } from '@/components/ActionCard.vue'
 import type { WorkflowRunState, WorkflowConfigState } from '@/types'
 
-// Lazy-load MermaidBlock to avoid 642kb bundle cost when no diagrams are present
+// Lazy-load MermaidBlock and CodeBlock to avoid bundling heavy renderers into main chat chunk
 const MermaidBlock = defineAsyncComponent(() => import('@/components/MermaidBlock.vue'))
+const CodeBlock = defineAsyncComponent(() => import('@/components/CodeBlock.vue'))
 
 const props = defineProps<{
   messageId?: number
