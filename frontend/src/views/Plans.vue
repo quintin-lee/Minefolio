@@ -67,7 +67,7 @@
 
         <!-- 定投计划列表表格 -->
         <div class="table-container">
-          <el-table :data="dcaPlans" class="premium-table" row-class-name="premium-row" header-cell-class-name="premium-header">
+          <el-table v-loading="loading" :data="dcaPlans" class="premium-table" row-class-name="premium-row" header-cell-class-name="premium-header">
             <el-table-column label="计划名称" min-width="160">
               <template #default="{ row }">
                 <div class="plan-name-cell">
@@ -304,7 +304,10 @@ const totalDcaPnlPct = computed(() =>
   totalDcaInvested.value > 0 ? (totalDcaPnl.value / totalDcaInvested.value) * 100 : 0
 )
 
+const loading = ref(false)
+
 async function loadData() {
+  loading.value = true
   try {
     const [assetsRes, plansRes, pendingRes, schedulesRes] = await Promise.allSettled([
       assetsApi.list({ page: 1, page_size: 500 }),
@@ -319,6 +322,8 @@ async function loadData() {
     if (schedulesRes.status === 'fulfilled') schedules.value = schedulesRes.value || []
   } catch (err) {
     console.error('[Plans] loadData failed:', err)
+  } finally {
+    loading.value = false
   }
 }
 

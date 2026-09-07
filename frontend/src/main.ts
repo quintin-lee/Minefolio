@@ -18,6 +18,10 @@ setAuthErrorHandler(() => {
 
 const app = createApp(App)
 
+app.config.errorHandler = (err, instance, info) => {
+  console.error('[GlobalErrorHandler]', err, info)
+}
+
 for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
   app.component(key, component)
 }

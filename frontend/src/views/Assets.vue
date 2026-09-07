@@ -30,7 +30,7 @@
 
     <!-- 资产列表 -->
     <div class="table-container">
-      <el-table :data="assets" class="premium-table" row-class-name="premium-row" header-cell-class-name="premium-header">
+      <el-table v-loading="loading" :data="assets" class="premium-table" row-class-name="premium-row" header-cell-class-name="premium-header">
         <el-table-column label="名称" min-width="160">
           <template #default="{ row }">
             <div class="asset-name-cell">
@@ -214,6 +214,7 @@ const dialogVisible = ref(false)
 const historyDialogVisible = ref(false)
 const selectedHistoryAsset = ref<Asset | null>(null)
 const editingId = ref<number | null>(null)
+const loading = ref(false)
 const saving = ref(false)
 const syncingAll = ref(false)
 const syncingId = ref<number | null>(null)
@@ -246,13 +247,24 @@ async function loadRates() {
 }
 
 async function loadSummary() {
-  summary.value = await summaryApi.get()
+  try {
+    summary.value = await summaryApi.get()
+  } catch (err) {
+    console.error('[Assets] loadSummary failed:', err)
+  }
 }
 
 async function loadAssets() {
-  const res = await assetsApi.list({ page: page.value, page_size: pageSize.value })
-  assets.value = res.list
-  total.value = res.total
+  loading.value = true
+  try {
+    const res = await assetsApi.list({ page: page.value, page_size: pageSize.value })
+    assets.value = res.list
+    total.value = res.total
+  } catch (err) {
+    console.error('[Assets] loadAssets failed:', err)
+  } finally {
+    loading.value = false
+  }
 }
 
 function handleSizeChange() {
@@ -261,8 +273,12 @@ function handleSizeChange() {
 }
 
 async function loadCategories() {
-  await categoryStore.loadCategories()
-  categoryTree.value = categoryStore.assetCategories
+  try {
+    await categoryStore.loadCategories()
+    categoryTree.value = categoryStore.assetCategories
+  } catch (err) {
+    console.error('[Assets] loadCategories failed:', err)
+  }
 }
 
 function openHistoryChart(asset: any) {
@@ -414,7 +430,7 @@ async function handleDelete(asset: any) {
 
 onMounted(async () => {
   try {
-    await Promise.all([loadAssets(), loadSummary(), loadCategories(), loadRates()])
+    await Promise.allSettled([loadAssets(), loadSummary(), loadCategories(), loadRates()])
   } catch (err) {
     console.error('[Assets] onMounted failed:', err)
   }

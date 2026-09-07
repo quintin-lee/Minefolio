@@ -56,7 +56,7 @@
           </el-row>
 
           <div class="table-container">
-            <el-table :data="expenses" class="premium-table" row-class-name="premium-row" header-cell-class-name="premium-header">
+            <el-table v-loading="loading" :data="expenses" class="premium-table" row-class-name="premium-row" header-cell-class-name="premium-header">
               <el-table-column prop="expense_date" label="日期" width="110" />
               <el-table-column prop="asset_name" label="关联资产" min-width="110" />
               <el-table-column prop="category_name" label="分类" min-width="120" />
@@ -249,33 +249,44 @@ const monthSummary = ref<any>(null)
 const filters = reactive({ type: '', month: '' })
 const dialogVisible = ref(false)
 const editingId = ref<number | null>(null)
+const loading = ref(false)
 const saving = ref(false)
 const formRef = ref()
 
-
 async function loadData() {
-  const params: any = { page: page.value, page_size: pageSize.value }
-  if (filters.type) params.expense_type = filters.type
-  const now = new Date()
-  let y = now.getFullYear()
-  let m = now.getMonth() + 1
-  if (filters.month) {
-    const [pYear, pMonth] = filters.month.split('-')
-    if (pYear && pMonth) {
-      y = parseInt(pYear)
-      m = parseInt(pMonth)
-      params.start_date = `${pYear}-${pMonth}-01`
-      const lastDay = new Date(y, m, 0).getDate()
-      params.end_date = `${pYear}-${pMonth}-${String(lastDay).padStart(2, '0')}`
+  loading.value = true
+  try {
+    const params: any = { page: page.value, page_size: pageSize.value }
+    if (filters.type) params.expense_type = filters.type
+    const now = new Date()
+    let y = now.getFullYear()
+    let m = now.getMonth() + 1
+    if (filters.month) {
+      const [pYear, pMonth] = filters.month.split('-')
+      if (pYear && pMonth) {
+        y = parseInt(pYear)
+        m = parseInt(pMonth)
+        params.start_date = `${pYear}-${pMonth}-01`
+        const lastDay = new Date(y, m, 0).getDate()
+        params.end_date = `${pYear}-${pMonth}-${String(lastDay).padStart(2, '0')}`
+      }
     }
+    const [res, mr] = await Promise.allSettled([
+      dailyExpensesApi.list(params),
+      dailyExpensesApi.monthly(y, m)
+    ])
+    if (res.status === 'fulfilled') {
+      expenses.value = res.value.list
+      total.value = res.value.total
+    }
+    if (mr.status === 'fulfilled') {
+      monthSummary.value = mr.value
+    }
+  } catch (err) {
+    console.error('[DailyExpenses] loadData failed:', err)
+  } finally {
+    loading.value = false
   }
-  const [res, mr] = await Promise.all([
-    dailyExpensesApi.list(params),
-    dailyExpensesApi.monthly(y, m)
-  ])
-  expenses.value = res.list
-  total.value = res.total
-  monthSummary.value = mr
 }
 
 function handleSearch() {
@@ -328,14 +339,18 @@ async function handleDelete(expense: any) {
 
 onMounted(async () => {
   try {
-    const [, assetRes] = await Promise.all([
+    const [catRes, assetRes] = await Promise.allSettled([
       categoryStore.loadCategories(),
       assetsApi.list({ page_size: 500 }),
     ])
-    allCategories.value = categoryStore.incomeExpenseCategories
-    allAssets.value = assetRes.list
+    if (catRes.status === 'fulfilled') {
+      allCategories.value = categoryStore.incomeExpenseCategories
+    }
+    if (assetRes.status === 'fulfilled') {
+      allAssets.value = assetRes.value.list
+    }
     filters.month = new Date().toISOString().slice(0, 7)
-    loadData()
+    await loadData()
   } catch (err) {
     console.error('[DailyExpenses] onMounted failed:', err)
   }

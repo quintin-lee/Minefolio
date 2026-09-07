@@ -37,6 +37,10 @@ async function bootstrap() {
   await initLocalDb()
   const app = createApp(App)
 
+  app.config.errorHandler = (err, instance, info) => {
+    console.error('[MobileGlobalErrorHandler]', err, info)
+  }
+
   for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
     app.component(key, component)
   }

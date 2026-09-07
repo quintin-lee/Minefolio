@@ -36,14 +36,23 @@ const editing = ref<DailyExpense | null>(null)
 async function loadData(reset = false) {
   if (reset) page.value = 1
   loading.value = true
-  const now = new Date()
-  const [res, m] = await Promise.all([
-    dailyExpensesApi.list({ page: page.value, page_size: 20 }),
-    dailyExpensesApi.monthly(now.getFullYear(), now.getMonth() + 1),
-  ])
-  list.value = reset ? res.list : [...list.value, ...res.list]
-  month.value = m
-  loading.value = false
+  try {
+    const now = new Date()
+    const [res, m] = await Promise.allSettled([
+      dailyExpensesApi.list({ page: page.value, page_size: 20 }),
+      dailyExpensesApi.monthly(now.getFullYear(), now.getMonth() + 1),
+    ])
+    if (res.status === 'fulfilled') {
+      list.value = reset ? res.value.list : [...list.value, ...res.value.list]
+    }
+    if (m.status === 'fulfilled') {
+      month.value = m.value
+    }
+  } catch (err) {
+    console.error('[DailyExpensesMobile] loadData failed:', err)
+  } finally {
+    loading.value = false
+  }
 }
 
 function loadMore() { page.value++; loadData() }

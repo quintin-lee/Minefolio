@@ -24,7 +24,7 @@
 
     <!-- 表格 -->
     <div class="table-container">
-      <el-table :data="logs" class="premium-table" row-class-name="premium-row" header-cell-class-name="premium-header">
+      <el-table v-loading="loading" :data="logs" class="premium-table" row-class-name="premium-row" header-cell-class-name="premium-header">
         <el-table-column prop="created_at" label="时间" width="170">
           <template #default="{ row }">
             <span class="mono-text">{{ formatDateTime(row.created_at) }}</span>
@@ -82,6 +82,7 @@ import type { AssetBalanceLog, Asset } from '@/types'
 const logs = ref<AssetBalanceLog[]>([])
 const assets = ref<Asset[]>([])
 const filters = ref({ asset_id: '' as string })
+const loading = ref(false)
 const page = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
@@ -98,11 +99,18 @@ function sourceTypeTag(t: string): 'success' | 'warning' | 'info' | 'danger' { r
 function formatDateTime(s: string) { return s ? s.replace('T', ' ').slice(0, 16) : '—' }
 
 async function loadData() {
-  const params: any = { page: page.value, page_size: pageSize.value }
-  if (filters.value.asset_id) params.asset_id = filters.value.asset_id
-  const res = await assetLogsApi.list(params)
-  logs.value = res.list
-  total.value = res.total
+  loading.value = true
+  try {
+    const params: any = { page: page.value, page_size: pageSize.value }
+    if (filters.value.asset_id) params.asset_id = filters.value.asset_id
+    const res = await assetLogsApi.list(params)
+    logs.value = res.list
+    total.value = res.total
+  } catch (e) {
+    console.error('[AuditLogs] loadData failed:', e)
+  } finally {
+    loading.value = false
+  }
 }
 
 function handleSizeChange() {
@@ -118,9 +126,13 @@ function resetFilters() {
 
 onMounted(async () => {
   try {
-    const res = await assetsApi.list({ page_size: 500 })
-    assets.value = res.list
-    loadData()
+    const [assetRes] = await Promise.allSettled([
+      assetsApi.list({ page_size: 500 }),
+      loadData(),
+    ])
+    if (assetRes.status === 'fulfilled') {
+      assets.value = assetRes.value.list
+    }
   } catch (e) {
     console.error('[AuditLogs] onMounted failed:', e)
   }
