@@ -5,7 +5,7 @@
 
 // frontend/src/utils/offline-http.ts
 import http from './http'
-import { run, persist } from '@/db/local'
+import { query, run, rowsFrom, persist } from '@/db/local'
 import type { SqlValue } from '@/types/mobile'
 import { useSyncStore } from '@/stores/sync'
 import { useAuthStore } from '@/stores/auth'
@@ -41,6 +41,21 @@ function extractId(url: string): number | null {
 }
 
 /**
+ * 生成一个不与本地现有行冲突的记录 ID (基于时间戳，遇冲突自增)。
+ * 离线创建的本地行、同步队列 record_id、外键引用必须使用同一 ID，
+ * 否则同步完成后的 ID 重映射会失配并产生重复记录。
+ * @param table 目标表名
+ * @returns 可用的本地记录 ID
+ */
+function nextLocalId(table: string): number {
+  let candidate = Date.now()
+  while (rowsFrom(query(`SELECT id FROM ${table} WHERE id = ? LIMIT 1`, [candidate])).length > 0) {
+    candidate += 1
+  }
+  return candidate
+}
+
+/**
  * 执行离线本地写操作并加入待同步队列
  * @param table 目标表名
  * @param operation 操作类型 ('create' | 'update' | 'delete')
@@ -50,16 +65,24 @@ function extractId(url: string): number | null {
 async function writeLocal(table: string, operation: 'create' | 'update' | 'delete', recordId: number, payload: Record<string, unknown>): Promise<void> {
   if (operation === 'delete') {
     run(`UPDATE ${table} SET __deleted = 1 WHERE id = ?`, [recordId])
-  } else {
-    const cols = Object.keys(payload).filter((k) => k !== '__deleted')
-    const placeholders = cols.map(() => '?').join(', ')
-    const updates = cols.map((c) => `${c} = ?`).join(', ')
-    run(
-      `INSERT INTO ${table} (${cols.join(', ')}, __deleted) VALUES (${placeholders}, 0)
-       ON CONFLICT(id) DO UPDATE SET ${updates}, __deleted = 0`,
-      [...cols.map((c) => payload[c] as SqlValue), ...cols.map((c) => payload[c] as SqlValue)]
-    )
+    persist()
+    useSyncStore().enqueue(table, recordId, operation, payload)
+    return
   }
+  const cols = Object.keys(payload).filter((k) => k !== '__deleted' && k !== 'id')
+  if (cols.length === 0) {
+    // 无有效字段可写（例如仅带 id 的载荷），只入队不做本地写入
+    persist()
+    useSyncStore().enqueue(table, recordId, operation, payload)
+    return
+  }
+  const placeholders = cols.map(() => '?').join(', ')
+  const updates = cols.map((c) => `${c} = ?`).join(', ')
+  run(
+    `INSERT INTO ${table} (${cols.join(', ')}, id, __deleted) VALUES (${placeholders}, ?, 0)
+     ON CONFLICT(id) DO UPDATE SET ${updates}, __deleted = 0`,
+    [...cols.map((c) => payload[c] as SqlValue), recordId, ...cols.map((c) => payload[c] as SqlValue)]
+  )
   persist()
   useSyncStore().enqueue(table, recordId, operation, payload)
 }
@@ -102,7 +125,7 @@ export async function offlineRequest(method: 'get' | 'post' | 'put' | 'delete', 
       }
       // 只对写操作做离线落库；失败的读请求直接透传错误（由 pullSync 负责离线读）
       if (method === 'get') throw err
-      const recordId = id ?? (data?.id as number) ?? Date.now()
+      const recordId = id ?? (data?.id as number) ?? nextLocalId(table)
       await writeLocal(table, operation, recordId, data ?? {})
       ElMessage.success('已离线保存，联网后自动同步')
       return { offline: true, id: recordId }

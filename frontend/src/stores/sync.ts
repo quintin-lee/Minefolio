@@ -127,6 +127,48 @@ export const useSyncStore = defineStore('sync', () => {
   }
 
   /**
+   * 将离线创建的资产获得服务端真实 ID 后，把本地与其关联的行以及待推送队列中
+   * 依赖记录的 payload (daily_expenses.asset_id / transactions.asset_id|linked_asset_id)
+   * 一并重映射，避免依赖记录携带过期的本地占位 ID 推送到服务端。
+   * @param oldId 本地占位 ID
+   * @param newId 服务端分配的真实 ID
+   * @param afterQueueId 只处理排在当前 create 之后的队列项
+   */
+  function remapAssetRefs(oldId: number, newId: number, afterQueueId: number): void {
+    // 本地关联行
+    run('UPDATE daily_expenses SET asset_id = ? WHERE asset_id = ?', [newId, oldId])
+    run('UPDATE transactions SET asset_id = ? WHERE asset_id = ?', [newId, oldId])
+    run('UPDATE transactions SET linked_asset_id = ? WHERE linked_asset_id = ?', [newId, oldId])
+    // 待推送队列中依赖记录的 payload（含 create/update/delete）
+    const queued = rowsFrom(query(
+      "SELECT id, table_name, payload FROM sync_queue WHERE synced = 0 AND id > ? AND table_name IN ('daily_expenses', 'transactions')",
+      [afterQueueId]
+    ))
+    for (const q of queued) {
+      let payload: Record<string, unknown>
+      try {
+        payload = JSON.parse(String(q.payload))
+      } catch {
+        continue
+      }
+      const isTx = q.table_name === 'transactions'
+      let changed = false
+      if (payload.asset_id === oldId) {
+        payload.asset_id = newId
+        changed = true
+      }
+      if (isTx && payload.linked_asset_id === oldId) {
+        payload.linked_asset_id = newId
+        changed = true
+      }
+      if (changed) {
+        run('UPDATE sync_queue SET payload = ? WHERE id = ?', [JSON.stringify(payload), Number(q.id)])
+      }
+    }
+    persist()
+  }
+
+  /**
    * 将本地离线队列中的数据依次推送到服务端 API (Push)
    */
   async function pushLocal(): Promise<void> {
@@ -134,28 +176,42 @@ export const useSyncStore = defineStore('sync', () => {
     for (const item of queue.value) {
       const api = API_BY_TABLE[item.table_name]
       if (!api) continue
-      const payload = JSON.parse(item.payload)
+      // 实时读取队列行：record_id 可能已被本轮更早的 create 重映射（资产建占位 ID
+      // → 服务端 ID），payload 也可能被 remapAssetRefs 改写，必须用最新版本推送。
+      const fresh = rowsFrom(query(
+        'SELECT record_id, operation, payload FROM sync_queue WHERE id = ?',
+        [item.id]
+      ))[0]
+      if (!fresh) continue
+      const recordId = Number(fresh.record_id)
+      const operation = fresh.operation as SyncQueueItem['operation']
+      let payload: Record<string, unknown>
       try {
-        if (item.operation === 'create') {
+        payload = JSON.parse(String(fresh.payload))
+      } catch {
+        continue
+      }
+      try {
+        if (operation === 'create') {
           const res: any = await api.create(payload)
           const newId = res?.id ?? (typeof res === 'number' ? res : null)
-          if (newId && newId !== item.record_id) {
-            run(`UPDATE ${item.table_name} SET id = ? WHERE id = ?`, [newId, item.record_id])
+          if (newId && newId !== recordId) {
+            run(`UPDATE ${item.table_name} SET id = ? WHERE id = ?`, [newId, recordId])
             run(
               'UPDATE sync_queue SET record_id = ? WHERE table_name = ? AND record_id = ? AND id > ?',
-              [newId, item.table_name, item.record_id, item.id]
+              [newId, item.table_name, recordId, item.id]
             )
             if (item.table_name === 'assets') {
-              run('UPDATE daily_expenses SET asset_id = ? WHERE asset_id = ?', [newId, item.record_id])
-              run('UPDATE transactions SET asset_id = ? WHERE asset_id = ?', [newId, item.record_id])
-              run('UPDATE transactions SET linked_asset_id = ? WHERE linked_asset_id = ?', [newId, item.record_id])
+              // 资产获得真实 ID 后，同步重映射本地依赖行与后续待推送 payload
+              remapAssetRefs(recordId, newId, item.id)
+            } else {
+              persist()
             }
-            persist()
           }
-        } else if (item.operation === 'update') {
-          await api.update(item.record_id, payload)
-        } else if (item.operation === 'delete') {
-          await api.delete(item.record_id)
+        } else if (operation === 'update') {
+          await api.update(recordId, payload)
+        } else if (operation === 'delete') {
+          await api.delete(recordId)
         }
         markSynced(item.id)
       } catch (e: any) {
