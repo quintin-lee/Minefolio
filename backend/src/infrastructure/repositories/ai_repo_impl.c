@@ -11,7 +11,7 @@
 #include "repositories/daily_expense_repo.h"
 #include "repositories/category_repo.h"
 #include "repositories/transaction_repo.h"
-#include "repositories/transfer_repo.h"
+#include "common/db.h"
 
 csilk_json_t*
 mf_ai_repo_asset_list(
@@ -91,7 +91,26 @@ mf_ai_repo_transfer_insert(void*       pool,
                            const char* currency,
                            const char* note)
 {
-    return transfer_insert(pool, user_id, from_asset_id, to_asset_id, amount, currency, NULL, note);
+    char uid[32], fid[32], tid[32], amt[64];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    snprintf(fid, sizeof(fid), "%lld", (long long)from_asset_id);
+    snprintf(tid, sizeof(tid), "%lld", (long long)to_asset_id);
+    snprintf(amt, sizeof(amt), "%.6f", amount);
+    csilk_json_t* res = csilk_db_query_param_json(
+        (csilk_db_pool_t*)pool,
+        "INSERT INTO transfers (user_id, from_asset_id, to_asset_id, amount, currency, "
+        "transfer_date, note) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id",
+        (const char*[]){
+            uid, fid, tid, amt, currency ? currency : "CNY", "", note ? note : "", NULL});
+    int64_t id = 0;
+    if (res && csilk_json_array_size(res) > 0) {
+        id = db_get_int(csilk_json_array_get(res, 0), "id");
+    }
+    if (res) {
+        csilk_json_free(res);
+    }
+    return id;
 }
 
 csilk_json_t*
