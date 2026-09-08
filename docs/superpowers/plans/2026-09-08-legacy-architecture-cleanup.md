@@ -27,159 +27,113 @@
 | **2** | dca | 🟡 中 | 1 天 | ✅ 完成 |
 | **3** | report | 🟡 中 | 0.5 天 | ✅ 完成 (跨域隔离) |
 | **4** | file | 🟢 低 | 0.5 天 | ✅ 完成 |
-| **4** | import/export | 🟢 低 | 0.5 天 | ⏳ 待定 (跨域依赖) |
-| **5** | 清理 | 🟢 低 | 0.5 天 | ⏳ 待定 |
+| **4** | import/export | 🟢 低 | 0.5 天 | ✅ 完成 |
+| **5** | 清理 | 🟢 低 | 0.5 天 | ⏳ 进行中 |
 
-**总进度**: 8/9 域完成 (89%)
+**总进度**: 9/9 域完成 (100%) ✅
 
 ## ✅ 已完成的域
 
-### 1. tag 域
+### 1-9. 所有域 DDD 迁移已完成
 
-**新增文件 (10 个, ~530 行)**
-- `domain/tag/entity.h` — `mf_tag_t` 聚合根实体
-- `domain/tag/repository.h` — 仓储契约接口
-- `domain/tag/rules.h/.c` — 名称/颜色校验
-- `application/tag/commands.h` — CRUD 命令对象
-- `application/tag/dtos.h` — 用例结果 DTO
-- `application/tag/usecases.h/.c` — 用例编排
-- `infrastructure/repositories/tag_repo_impl.h/.c` — SQL 实现
+详见之前的迁移记录。每个域都完成了：
+- Domain 层：实体、仓储契约、业务规则
+- Application 层：用例编排
+- Infrastructure 层：仓储 SQL 实现
+- Interface 层：控制器调用 usecase
 
-**调用链**
-```
-旧: tag_controller → repositories/tag_repo → SQL
-新: tag_controller → application/tag/usecases → domain/rules + infrastructure/repo_impl → SQL
-```
+## ⏳ Phase 5: 清理旧代码 (进行中)
 
-### 2. category 域
+### 依赖分析结果
 
-**新增文件 (10 个, ~600 行)**
-- `domain/category/entity.h` — `mf_category_t` 聚合根实体
-- `domain/category/repository.h` — 仓储契约接口 (8 个方法)
-- `domain/category/rules.h/.c` — 名称/类型/删除业务规则
-- `application/category/commands.h` — CRUD 命令对象
-- `application/category/dtos.h` — 用例结果 DTO
-- `application/category/usecases.h/.c` — 用例编排
-- `infrastructure/repositories/category_repo_impl.h/.c` — SQL 实现
+经过详细分析，发现以下文件仍被其他组件引用：
 
-**关键修复**
-- `categories` 表无 `updated_at` 列，需从 SQL 中移除该字段
+#### 仍被引用的 Legacy Repository 文件
 
-### 3. ledger 域
+| 文件 | 引用方 | 原因 |
+|------|--------|------|
+| `repositories/daily_expense_repo.c/h` | AI tools (cashflow, expense, portfolio, transaction), workflows (cashflow_forecast, monthly_review), infrastructure impl | AI 工具直接调用 SQL 函数 |
+| `repositories/category_repo.c/h` | AI tools (cashflow, expense) | AI 工具直接调用 SQL 函数 |
+| `repositories/transfer_repo.c/h` | AI tools (transfer) | AI 工具直接调用 SQL 函数 |
+| `repositories/dca_repo.c/h` | market_scheduler | 定时任务直接调用 SQL 函数 |
+| `repositories/ledger_repo.c/h` | common/ctx.h, application/auth | JWT 上下文和认证使用 |
+| `repositories/asset_repo.c/h` | AI tools (asset, cashflow, expense, portfolio, transfer), workflows, infrastructure impl, application/usecases | 广泛使用 |
+| `repositories/auth_repo.c/h` | infrastructure/auth_repo_impl, admin_controller | 认证基础设施 |
+| `repositories/cashflow_repo.c/h` | application/cashflow/usecases, infrastructure impl | 现金流用例 |
+| `repositories/tag_repo.c/h` | application/tag/usecases | Tag 用例 (可迁移到 infra impl) |
+| `repositories/transaction_repo.c/h` | unit tests, common/balance | 单元测试和余额计算 |
 
-**新增文件 (10 个, ~1100 行)**
-- `domain/ledger/entity.h` — `mf_ledger_t`, `mf_ledger_member_t`, `mf_ledger_list_item_t`
-- `domain/ledger/repository.h` — 仓储契约 (13 个方法，纯 struct 接口)
-- `domain/ledger/rules.h/.c` — 名称校验、角色校验、RBAC 规则
-- `application/ledger/commands.h` — 6 个命令对象
-- `application/ledger/dtos.h` — 结果 DTO
-- `application/ledger/usecases.h/.c` — 11 个用例
-- `infrastructure/repositories/ledger_repo_impl.h/.c` — SQL 实现
+#### 仍被引用的 Legacy Service 文件
 
-**设计决策**
-- Domain 层零 csilk 依赖：返回 `mf_ledger_*` 结构体
-- Use case 层负责 JSON 转换
+| 文件 | 引用方 | 原因 |
+|------|--------|------|
+| `services/report_*_service.c/h` | report usecases | 报表域跨域依赖 |
+| `services/import_service.c/h` | import/export usecases | 导入逻辑复杂 |
+| `services/export_service.c/h` | import/export usecases | 导出逻辑复杂 |
 
-### 4. daily_expense 域
+### 当前状态
 
-**新增文件 (10 个, ~700 行)**
-- `domain/daily_expense/entity.h` — `mf_daily_expense_t`, `mf_daily_expense_snapshot_t`
-- `domain/daily_expense/repository.h` — 仓储契约 (12 个方法)
-- `domain/daily_expense/rules.h/.c` — 类型/金额/必填字段校验
-- `application/daily_expense/commands.h` — 创建/更新命令
-- `application/daily_expense/dtos.h` — 结果 DTO
-- `application/daily_expense/usecases.h/.c` — 5 个用例 (含余额调整+标签管理)
-- `infrastructure/repositories/daily_expense_repo_impl.h/.c` — SQL 实现
+由于 AI tools 和基础设施层仍大量依赖 legacy repository 文件，**无法安全删除任何 legacy 文件**。
 
-**删除文件 (4 个)**
-- `services/daily_expense_query.c/.h`
-- `services/daily_expense_write.c/.h`
+### 未来清理计划
 
-### 5. transfer 域
+#### Phase 6: AI Tools 迁移 (优先级: 高)
 
-**新增文件 (8 个, ~350 行)**
-- `domain/transfer/entity.h` — `mf_transfer_t` 聚合根
-- `domain/transfer/repository.h` — 仓储契约 (4 个方法)
-- `domain/transfer/rules.h/.c` — 必填字段/不同资产校验
-- `application/transfer/commands.h` — 创建转账命令
-- `application/transfer/dtos.h` — 结果 DTO
-- `application/transfer/usecases.h/.c` — 转账用例 (含余额+交易记录)
-- `infrastructure/repositories/transfer_repo_impl.h/.c` — SQL 实现
+AI 工具直接调用 legacy repository 函数，需要单独迁移：
 
-### 6. dca 域
+| AI Tool | 依赖的 Legacy Repo | 迁移难度 |
+|---------|-------------------|----------|
+| `cashflow_tool.c` | daily_expense_repo, category_repo, asset_repo | 🟡 中 |
+| `expense_tool.c` | daily_expense_repo, category_repo, asset_repo | 🟡 中 |
+| `portfolio_tool.c` | daily_expense_repo, asset_repo | 🟢 低 |
+| `transaction_tool.c` | daily_expense_repo | 🟢 低 |
+| `transfer_tool.c` | transfer_repo, asset_repo | 🟢 低 |
+| `asset_tool.c` | asset_repo | 🟢 低 |
+| `cashflow_forecast.c` | daily_expense_repo, asset_repo | 🟢 低 |
+| `monthly_review.c` | daily_expense_repo, asset_repo | 🟢 低 |
+| `financial_health.c` | asset_repo | 🟢 低 |
+| `portfolio_analysis.c` | asset_repo | 🟢 低 |
 
-**新增文件 (10 个, ~800 行)**
-- `domain/dca/entity.h` — `mf_dca_plan_t`, `mf_dca_execution_t`
-- `domain/dca/repository.h` — 仓储契约 (14 个方法)
-- `domain/dca/rules.h/.c` — 必填校验、状态校验、收益率计算、止盈检查
-- `application/dca/commands.h` — 创建/更新/确认命令
-- `application/dca/dtos.h` — 结果 DTO
-- `application/dca/usecases.h/.c` — 10 个用例 (含交易创建+余额调整)
-- `infrastructure/repositories/dca_repo_impl.h/.c` — SQL 实现
+**迁移策略**：
+1. 为 AI tools 创建专用的仓储接口 (`domain/ai/repository.h`)
+2. 创建基础设施实现 (`infrastructure/repositories/ai_repo_impl.c`)
+3. AI tools 改为调用新的仓储接口
 
-### 7. report 域 (跨域隔离)
+#### Phase 7: Infrastructure Impl 清理 (优先级: 中)
 
-**新增文件 (3 个, ~180 行)**
-- `domain/report/entity.h` — 报表实体定义
-- `domain/report/repository.h` — 仓储契约 (SQL 查询封装)
-- `domain/report/rules.h/.c` — 报表校验规则
-- `application/report/usecases.h/.c` — 用例层 (隔离跨域依赖)
+将 infrastructure 实现中的 legacy header 引用替换为新的仓储接口：
 
-**设计决策**
-- 报表域跨域依赖复杂 (portfolio, market)，无法完全拆分
-- 用例层作为隔离层，委托给现有 service 函数
-- 保留 `services/report_*_service.c` 作为基础设施实现
-- 未来可重构为独立的查询服务
+| 文件 | 当前引用 | 替换为 |
+|------|----------|--------|
+| `asset_repo_impl.c` | `repositories/asset_repo.h` | 直接实现，无需引用 |
+| `cashflow_repo_impl.c` | `repositories/cashflow_repo.h` | 直接实现，无需引用 |
+| `auth_repo_impl.c` | `repositories/auth_repo.h` | 直接实现，无需引用 |
+| `tag_repo_impl.c` | `repositories/tag_repo.h` | 直接实现，无需引用 |
 
-### 8. file 域
+#### Phase 8: Unit Test 清理 (优先级: 低)
 
-**新增文件 (8 个, ~400 行)**
-- `domain/file/entity.h` — `mf_file_parse_result_t`, `mf_import_result_t`
-- `domain/file/repository.h` — 仓储契约 (4 个方法)
-- `domain/file/rules.h/.c` — 文件类型/大小/CSV 字段校验
-- `application/file/usecases.h/.c` — 3 个用例 (解析/导入交易/导入收支)
-- `infrastructure/repositories/file_repo_impl.h/.c` — SQL 实现
+将单元测试中的 legacy repo 引用替换为新的仓储接口：
 
-## ⏳ 待完成的域
+| 测试文件 | 当前引用 | 替换为 |
+|----------|----------|--------|
+| `test_domain_transaction.c` | `repositories/transaction_repo.c` | 直接测试 domain rules |
 
-### 4. import/export 域
+#### Phase 9: 删除 Legacy Files (优先级: 低)
 
-**复杂度**: 中
-**跨域依赖**:
-- `import_service.c` — 依赖 daily_expense, transaction, category, tag
-- `export_service.c` — 依赖 transaction, daily_expense, asset
+在完成 Phase 6-8 后，可以安全删除以下文件：
 
-**建议策略**:
-1. 创建 `domain/import/` 定义导入结果实体
-2. 创建 `application/import/usecases.h/.c` 封装导入逻辑
-3. 保留 `services/import_service.c` 作为基础设施实现
-4. 未来可重构为独立的导入引擎
-
-## 🧹 Phase 5: 清理旧代码
-
-### 待删除的 legacy 文件
-
-| 文件 | 原因 | 风险 |
-|------|------|------|
-| `repositories/tag_repo.c/h` | 已迁移到 infrastructure/repositories/tag_repo_impl.c/h | 🟢 低 |
-| `repositories/category_repo.c/h` | 已迁移到 infrastructure/repositories/category_repo_impl.c/h | 🟢 低 |
-| `repositories/ledger_repo.c/h` | 已迁移到 infrastructure/repositories/ledger_repo_impl.c/h | 🟢 低 |
-| `repositories/transfer_repo.c/h` | 已迁移到 infrastructure/repositories/transfer_repo_impl.c/h | 🟢 低 |
-| `repositories/dca_repo.c/h` | 已迁移到 infrastructure/repositories/dca_repo_impl.c/h | 🟢 低 |
-| `repositories/daily_expense_repo.c/h` | 已迁移到 infrastructure/repositories/daily_expense_repo_impl.c/h | 🟢 低 |
-| `services/tag_service.c/h` | 功能已迁移到 usecase 层 | 🟢 低 |
-| `services/category_service.c/h` | 功能已迁移到 usecase 层 | 🟢 低 |
-| `services/ledger_service.c/h` | 功能已迁移到 usecase 层 | 🟢 低 |
-| `services/transfer_service.h` | 功能已迁移到 usecase 层 | 🟢 低 |
-| `services/daily_expense_query.c/h` | 已删除 | ✅ |
-| `services/daily_expense_write.c/h` | 已删除 | ✅ |
-
-### 依赖关系检查
-
-在删除前，需确认：
-1. `main.c` 只 include 控制器头文件，不直接引用旧 repo/service
-2. 其他域的服务不引用被删除的文件
-3. 测试文件不直接引用被删除的文件
+| 文件 | 删除条件 |
+|------|----------|
+| `repositories/tag_repo.c/h` | Phase 7 完成 |
+| `repositories/category_repo.c/h` | Phase 6 完成 |
+| `repositories/ledger_repo.c/h` | Phase 8 完成 |
+| `repositories/transfer_repo.c/h` | Phase 6 完成 |
+| `repositories/dca_repo.c/h` | Phase 7 完成 |
+| `repositories/daily_expense_repo.c/h` | Phase 6 完成 |
+| `repositories/asset_repo.c/h` | Phase 6+7 完成 |
+| `repositories/auth_repo.c/h` | Phase 7 完成 |
+| `repositories/cashflow_repo.c/h` | Phase 7 完成 |
+| `repositories/transaction_repo.c/h` | Phase 8 完成 |
 
 ## 📝 文档更新
 
@@ -192,7 +146,8 @@
 
 | 风险 | 影响 | 缓解措施 |
 |------|------|----------|
-| 跨域依赖复杂 | 报表域无法完全拆分 | 用例层隔离，保留 service 作为基础设施 |
+| AI tools 依赖 legacy repos | 无法完全删除旧代码 | Phase 6 单独迁移 |
+| 跨域依赖复杂 | 报表/导入导出域无法完全拆分 | 用例层隔离，保留 service 作为基础设施 |
 | 前端测试缺失 | UI 回归风险 | 集成测试覆盖核心 API |
 | 性能回归 | 报表查询变慢 | 性能基准测试，保留原 SQL |
 | 事务一致性 | 多域操作原子性 | 用例层管理事务边界 |
@@ -200,7 +155,10 @@
 ## 🎯 成功标准
 
 - [x] 所有域完成 DDD 四层架构迁移
-- [ ] 所有旧代码删除
+- [ ] Phase 6: AI Tools 迁移到新架构
+- [ ] Phase 7: Infrastructure Impl 清理
+- [ ] Phase 8: Unit Test 清理
+- [ ] Phase 9: 删除所有 legacy files
 - [ ] 文档更新
 - [ ] 零回归测试
 - [ ] 性能无退化
