@@ -1,11 +1,24 @@
+/**
+ * @file ledger_controller.c
+ * @brief 账本 HTTP 控制器 (Interfaces Layer)
+ *
+ * 改造为调用 application/ledger/usecases，删除直接的 repository 调用。
+ */
+
 #include "interfaces/http/controllers/ledger_controller.h"
-#include "repositories/ledger_repo.h"
-#include "common/ctx.h"
+#include "application/ledger/usecases.h"
+#include "application/ledger/commands.h"
+#include "domain/ledger/entity.h"
+#include "infrastructure/repositories/ledger_repo_impl.h"
 #include "common/response.h"
+#include "common/ctx.h"
+#include "common/db.h"
+#include "csilk/csilk.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
+
+/* ===== Route handlers ===== */
 
 void
 ledger_service_list(csilk_ctx_t* c)
@@ -15,8 +28,7 @@ ledger_service_list(csilk_ctx_t* c)
         return;
     }
 
-    csilk_db_pool_t* pool = db_get_pool();
-    csilk_json_t*    list = ledger_list_by_user(pool, user_id);
+    csilk_json_t* list = ledger_usecase_list(db_get_pool(), user_id);
     respond_ok(c, list ? list : csilk_json_array());
 }
 
@@ -28,33 +40,34 @@ ledger_service_create(csilk_ctx_t* c)
         return;
     }
 
-    csilk_db_pool_t* pool = db_get_pool();
-    csilk_json_t*    body = csilk_bind_json(c);
+    csilk_json_t* body = csilk_bind_json(c);
     if (!body) {
         respond_bad_request(c, "Invalid JSON body");
         return;
     }
 
-    const char* name = csilk_json_get_string(body, "name");
-    const char* desc = csilk_json_get_string(body, "description");
-    const char* currency = csilk_json_get_string(body, "currency");
-    const char* icon = csilk_json_get_string(body, "icon");
-    const char* color = csilk_json_get_string(body, "color");
+    create_ledger_cmd_t cmd = {
+        .user_id = user_id,
+        .name = csilk_json_get_string(body, "name"),
+        .description = csilk_json_get_string(body, "description"),
+        .currency = csilk_json_get_string(body, "currency"),
+        .icon = csilk_json_get_string(body, "icon"),
+        .color = csilk_json_get_string(body, "color"),
+    };
 
-    if (!name || !name[0]) {
-        respond_bad_request(c, "Ledger name is required");
-        return;
+    ledger_usecase_result_t res = {0};
+    int64_t                 new_id = ledger_usecase_create(db_get_pool(), &cmd, &res);
+    csilk_json_free(body);
+
+    if (new_id > 0 && res.code == 0) {
+        csilk_json_t* r = csilk_json_object();
+        csilk_json_add_number(r, "id", (double)new_id);
+        respond_ok(c, r);
+    } else {
+        respond_error(c,
+                      res.code ? res.code : 1002,
+                      res.message[0] ? res.message : "Failed to create ledger");
     }
-
-    int64_t new_id = ledger_create(pool, user_id, name, desc, currency, icon, color, false);
-    if (new_id <= 0) {
-        respond_error(c, 1002, "Failed to create ledger");
-        return;
-    }
-
-    csilk_json_t* res = csilk_json_object();
-    csilk_json_add_number(res, "id", (double)new_id);
-    respond_ok(c, res);
 }
 
 void
@@ -65,25 +78,17 @@ ledger_service_get(csilk_ctx_t* c)
         return;
     }
 
-    const char*      id_str = csilk_get_param(c, "id");
-    int64_t          lid = id_str ? atoll(id_str) : 0;
-    csilk_db_pool_t* pool = db_get_pool();
+    const char* id_str = csilk_get_param(c, "id");
+    int64_t     lid = id_str ? atoll(id_str) : 0;
 
-    char role[32] = {0};
-    if (!ledger_get_user_role(pool, lid, user_id, role, sizeof(role))) {
-        respond_error(c, 1004, "Forbidden: not a member of this ledger");
-        return;
-    }
+    ledger_usecase_result_t res = {0};
+    csilk_json_t*           detail = ledger_usecase_get(db_get_pool(), user_id, lid, &res);
 
-    csilk_json_t* l_arr = ledger_get(pool, lid);
-    if (!l_arr || csilk_json_array_size(l_arr) == 0) {
-        if (l_arr) {
-            csilk_json_free(l_arr);
-        }
-        respond_not_found(c);
-        return;
+    if (detail) {
+        respond_ok(c, detail);
+    } else {
+        respond_error(c, res.code ? res.code : 1003, res.message[0] ? res.message : "Not found");
     }
-    respond_ok(c, l_arr);
 }
 
 void
@@ -94,16 +99,8 @@ ledger_service_update(csilk_ctx_t* c)
         return;
     }
 
-    const char*      id_str = csilk_get_param(c, "id");
-    int64_t          lid = id_str ? atoll(id_str) : 0;
-    csilk_db_pool_t* pool = db_get_pool();
-
-    char role[32] = {0};
-    if (!ledger_get_user_role(pool, lid, user_id, role, sizeof(role)) ||
-        strcmp(role, "owner") != 0) {
-        respond_error(c, 1004, "Forbidden: owner permission required");
-        return;
-    }
+    const char* id_str = csilk_get_param(c, "id");
+    int64_t     lid = id_str ? atoll(id_str) : 0;
 
     csilk_json_t* body = csilk_bind_json(c);
     if (!body) {
@@ -111,18 +108,27 @@ ledger_service_update(csilk_ctx_t* c)
         return;
     }
 
-    const char* name = csilk_json_get_string(body, "name");
-    const char* desc = csilk_json_get_string(body, "description");
-    const char* currency = csilk_json_get_string(body, "currency");
-    const char* icon = csilk_json_get_string(body, "icon");
-    const char* color = csilk_json_get_string(body, "color");
+    update_ledger_cmd_t cmd = {
+        .ledger_id = lid,
+        .user_id = user_id,
+        .name = csilk_json_get_string(body, "name"),
+        .description = csilk_json_get_string(body, "description"),
+        .currency = csilk_json_get_string(body, "currency"),
+        .icon = csilk_json_get_string(body, "icon"),
+        .color = csilk_json_get_string(body, "color"),
+    };
 
-    int ret = ledger_update(pool, lid, name, desc, currency, icon, color);
-    if (ret != 0) {
-        respond_error(c, 1002, "Failed to update ledger");
-        return;
+    ledger_usecase_result_t res = {0};
+    int                     rc = ledger_usecase_update(db_get_pool(), &cmd, &res);
+    csilk_json_free(body);
+
+    if (rc == 0 && res.code == 0) {
+        respond_ok(c, NULL);
+    } else {
+        respond_error(c,
+                      res.code ? res.code : 1002,
+                      res.message[0] ? res.message : "Failed to update ledger");
     }
-    respond_ok(c, NULL);
 }
 
 void
@@ -133,23 +139,19 @@ ledger_service_delete(csilk_ctx_t* c)
         return;
     }
 
-    const char*      id_str = csilk_get_param(c, "id");
-    int64_t          lid = id_str ? atoll(id_str) : 0;
-    csilk_db_pool_t* pool = db_get_pool();
+    const char* id_str = csilk_get_param(c, "id");
+    int64_t     lid = id_str ? atoll(id_str) : 0;
 
-    char role[32] = {0};
-    if (!ledger_get_user_role(pool, lid, user_id, role, sizeof(role)) ||
-        strcmp(role, "owner") != 0) {
-        respond_error(c, 1004, "Forbidden: owner permission required");
-        return;
-    }
+    ledger_usecase_result_t res = {0};
+    int                     rc = ledger_usecase_delete(db_get_pool(), user_id, lid, &res);
 
-    int ret = ledger_delete(pool, lid);
-    if (ret != 0) {
-        respond_error(c, 1002, "Failed to delete ledger");
-        return;
+    if (rc == 0 && res.code == 0) {
+        respond_ok(c, NULL);
+    } else {
+        respond_error(c,
+                      res.code ? res.code : 1002,
+                      res.message[0] ? res.message : "Failed to delete ledger");
     }
-    respond_ok(c, NULL);
 }
 
 void
@@ -160,18 +162,17 @@ ledger_service_list_members(csilk_ctx_t* c)
         return;
     }
 
-    const char*      id_str = csilk_get_param(c, "id");
-    int64_t          lid = id_str ? atoll(id_str) : 0;
-    csilk_db_pool_t* pool = db_get_pool();
+    const char* id_str = csilk_get_param(c, "id");
+    int64_t     lid = id_str ? atoll(id_str) : 0;
 
-    char role[32] = {0};
-    if (!ledger_get_user_role(pool, lid, user_id, role, sizeof(role))) {
-        respond_error(c, 1004, "Forbidden: not a member of this ledger");
-        return;
+    ledger_usecase_result_t res = {0};
+    csilk_json_t* members = ledger_usecase_list_members(db_get_pool(), user_id, lid, &res);
+
+    if (members) {
+        respond_ok(c, members);
+    } else {
+        respond_error(c, res.code ? res.code : 1004, res.message[0] ? res.message : "Forbidden");
     }
-
-    csilk_json_t* members = ledger_member_list(pool, lid);
-    respond_ok(c, members ? members : csilk_json_array());
 }
 
 void
@@ -182,16 +183,8 @@ ledger_service_add_member(csilk_ctx_t* c)
         return;
     }
 
-    const char*      id_str = csilk_get_param(c, "id");
-    int64_t          lid = id_str ? atoll(id_str) : 0;
-    csilk_db_pool_t* pool = db_get_pool();
-
-    char role[32] = {0};
-    if (!ledger_get_user_role(pool, lid, user_id, role, sizeof(role)) ||
-        strcmp(role, "owner") != 0) {
-        respond_error(c, 1004, "Forbidden: owner permission required");
-        return;
-    }
+    const char* id_str = csilk_get_param(c, "id");
+    int64_t     lid = id_str ? atoll(id_str) : 0;
 
     csilk_json_t* body = csilk_bind_json(c);
     if (!body) {
@@ -199,37 +192,23 @@ ledger_service_add_member(csilk_ctx_t* c)
         return;
     }
 
-    const char* username = csilk_json_get_string(body, "username");
-    const char* target_role = csilk_json_get_string(body, "role");
-    if (!username || !username[0]) {
-        respond_bad_request(c, "Username is required");
-        return;
-    }
-    if (!target_role ||
-        (strcmp(target_role, "editor") != 0 && strcmp(target_role, "viewer") != 0)) {
-        target_role = "editor";
-    }
+    add_member_cmd_t cmd = {
+        .ledger_id = lid,
+        .user_id = user_id,
+        .username = csilk_json_get_string(body, "username"),
+        .role = csilk_json_get_string(body, "role"),
+    };
 
-    /* Find user by username */
-    csilk_json_t* u_res = csilk_db_query_param_json(
-        pool, "SELECT id FROM users WHERE username = ?", (const char*[]){username, NULL});
-    if (!u_res || csilk_json_array_size(u_res) == 0) {
-        if (u_res) {
-            csilk_json_free(u_res);
-        }
-        respond_bad_request(c, "User not found");
-        return;
-    }
+    ledger_usecase_result_t res = {0};
+    int                     rc = ledger_usecase_add_member(db_get_pool(), &cmd, &res);
+    csilk_json_free(body);
 
-    int64_t target_uid = (int64_t)db_get_int(csilk_json_array_get(u_res, 0), "id");
-    csilk_json_free(u_res);
-
-    int ret = ledger_member_add(pool, lid, target_uid, target_role);
-    if (ret != 0) {
-        respond_error(c, 1002, "Failed to add member (user may already be in this ledger)");
-        return;
+    if (rc == 0 && res.code == 0) {
+        respond_ok(c, NULL);
+    } else {
+        respond_error(
+            c, res.code ? res.code : 1002, res.message[0] ? res.message : "Failed to add member");
     }
-    respond_ok(c, NULL);
 }
 
 void
@@ -240,32 +219,34 @@ ledger_service_update_member(csilk_ctx_t* c)
         return;
     }
 
-    const char*      id_str = csilk_get_param(c, "id");
-    const char*      uid_str = csilk_get_param(c, "user_id");
-    int64_t          lid = id_str ? atoll(id_str) : 0;
-    int64_t          target_uid = uid_str ? atoll(uid_str) : 0;
-    csilk_db_pool_t* pool = db_get_pool();
-
-    char role[32] = {0};
-    if (!ledger_get_user_role(pool, lid, user_id, role, sizeof(role)) ||
-        strcmp(role, "owner") != 0) {
-        respond_error(c, 1004, "Forbidden: owner permission required");
-        return;
-    }
+    const char* id_str = csilk_get_param(c, "id");
+    const char* uid_str = csilk_get_param(c, "user_id");
+    int64_t     lid = id_str ? atoll(id_str) : 0;
+    int64_t     target_uid = uid_str ? atoll(uid_str) : 0;
 
     csilk_json_t* body = csilk_bind_json(c);
     const char*   new_role = body ? csilk_json_get_string(body, "role") : "editor";
-    if (!new_role || (strcmp(new_role, "editor") != 0 && strcmp(new_role, "viewer") != 0)) {
-        respond_bad_request(c, "Invalid role (must be editor or viewer)");
-        return;
+
+    update_member_cmd_t cmd = {
+        .ledger_id = lid,
+        .user_id = user_id,
+        .target_user_id = target_uid,
+        .new_role = new_role,
+    };
+
+    ledger_usecase_result_t res = {0};
+    int                     rc = ledger_usecase_update_member(db_get_pool(), &cmd, &res);
+    if (body) {
+        csilk_json_free(body);
     }
 
-    int ret = ledger_member_update_role(pool, lid, target_uid, new_role);
-    if (ret != 0) {
-        respond_error(c, 1002, "Failed to update member role");
-        return;
+    if (rc == 0 && res.code == 0) {
+        respond_ok(c, NULL);
+    } else {
+        respond_error(c,
+                      res.code ? res.code : 1002,
+                      res.message[0] ? res.message : "Failed to update member role");
     }
-    respond_ok(c, NULL);
 }
 
 void
@@ -276,36 +257,27 @@ ledger_service_remove_member(csilk_ctx_t* c)
         return;
     }
 
-    const char*      id_str = csilk_get_param(c, "id");
-    const char*      uid_str = csilk_get_param(c, "user_id");
-    int64_t          lid = id_str ? atoll(id_str) : 0;
-    int64_t          target_uid = uid_str ? atoll(uid_str) : 0;
-    csilk_db_pool_t* pool = db_get_pool();
+    const char* id_str = csilk_get_param(c, "id");
+    const char* uid_str = csilk_get_param(c, "user_id");
+    int64_t     lid = id_str ? atoll(id_str) : 0;
+    int64_t     target_uid = uid_str ? atoll(uid_str) : 0;
 
-    char role[32] = {0};
-    if (!ledger_get_user_role(pool, lid, user_id, role, sizeof(role))) {
-        respond_error(c, 1004, "Forbidden: not a member of this ledger");
-        return;
-    }
+    remove_member_cmd_t cmd = {
+        .ledger_id = lid,
+        .target_user_id = target_uid,
+        .caller_user_id = user_id,
+    };
 
-    /* Only owner can remove others; members can only remove themselves (leave) */
-    if (strcmp(role, "owner") != 0 && user_id != target_uid) {
-        respond_error(c, 1004, "Forbidden: cannot remove other members");
-        return;
-    }
+    ledger_usecase_result_t res = {0};
+    int                     rc = ledger_usecase_remove_member(db_get_pool(), &cmd, &res);
 
-    /* Owner cannot leave directly */
-    if (strcmp(role, "owner") == 0 && user_id == target_uid) {
-        respond_bad_request(c, "Owner cannot leave ledger (delete ledger instead)");
-        return;
+    if (rc == 0 && res.code == 0) {
+        respond_ok(c, NULL);
+    } else {
+        respond_error(c,
+                      res.code ? res.code : 1002,
+                      res.message[0] ? res.message : "Failed to remove member");
     }
-
-    int ret = ledger_member_remove(pool, lid, target_uid);
-    if (ret != 0) {
-        respond_error(c, 1002, "Failed to remove member");
-        return;
-    }
-    respond_ok(c, NULL);
 }
 
 void
@@ -316,42 +288,22 @@ ledger_service_create_invite_code(csilk_ctx_t* c)
         return;
     }
 
-    const char*      id_str = csilk_get_param(c, "id");
-    int64_t          lid = id_str ? atoll(id_str) : 0;
-    csilk_db_pool_t* pool = db_get_pool();
+    const char* id_str = csilk_get_param(c, "id");
+    int64_t     lid = id_str ? atoll(id_str) : 0;
 
-    char role[32] = {0};
-    if (!ledger_get_user_role(pool, lid, user_id, role, sizeof(role)) ||
-        strcmp(role, "owner") != 0) {
-        respond_error(c, 1004, "Forbidden: owner permission required");
-        return;
+    ledger_invite_result_t res = {0};
+    int rc = ledger_usecase_create_invite_code(db_get_pool(), user_id, lid, &res);
+
+    if (rc == 0 && res.code == 0) {
+        csilk_json_t* r = csilk_json_object();
+        csilk_json_add_string(r, "invite_code", res.invite_code);
+        csilk_json_add_string(r, "expires_at", res.expires_at);
+        respond_ok(c, r);
+    } else {
+        respond_error(c,
+                      res.code ? res.code : 1002,
+                      res.message[0] ? res.message : "Failed to generate invite code");
     }
-
-    /* Generate 6-digit random uppercase code */
-    srand((unsigned int)(time(NULL) ^ user_id ^ lid));
-    char       code[8];
-    const char charset[] = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-    for (int i = 0; i < 6; ++i) {
-        code[i] = charset[rand() % (sizeof(charset) - 1)];
-    }
-    code[6] = '\0';
-
-    time_t    exp_t = time(NULL) + 7 * 86400; /* 7 days */
-    struct tm exp_tm;
-    gmtime_r(&exp_t, &exp_tm);
-    char exp_str[32];
-    strftime(exp_str, sizeof(exp_str), "%Y-%m-%d %H:%M:%S", &exp_tm);
-
-    int ret = ledger_update_invite_code(pool, lid, code, exp_str);
-    if (ret != 0) {
-        respond_error(c, 1002, "Failed to generate invite code");
-        return;
-    }
-
-    csilk_json_t* res = csilk_json_object();
-    csilk_json_add_string(res, "invite_code", code);
-    csilk_json_add_string(res, "expires_at", exp_str);
-    respond_ok(c, res);
 }
 
 void
@@ -362,56 +314,32 @@ ledger_service_join_by_invite(csilk_ctx_t* c)
         return;
     }
 
-    csilk_db_pool_t* pool = db_get_pool();
-    csilk_json_t*    body = csilk_bind_json(c);
+    csilk_json_t* body = csilk_bind_json(c);
     if (!body) {
         respond_bad_request(c, "Invalid JSON body");
         return;
     }
+    join_ledger_cmd_t cmd = {
+        .user_id = user_id,
+        .invite_code = csilk_json_get_string(body, "invite_code"),
+    };
 
-    const char* invite_code = csilk_json_get_string(body, "invite_code");
-    if (!invite_code || !invite_code[0]) {
-        respond_bad_request(c, "Invite code is required");
-        return;
+    ledger_usecase_result_t res = {0};
+    int64_t                 joined_id = 0;
+    int rc = ledger_usecase_join_by_invite(db_get_pool(), &cmd, &res, &joined_id);
+    csilk_json_free(body);
+
+    if (rc == 0 && res.code == 0) {
+        csilk_json_t* r = csilk_json_object();
+        csilk_json_add_number(r, "id", (double)joined_id);
+        respond_ok(c, r);
+    } else {
+        respond_error(
+            c, res.code ? res.code : 1002, res.message[0] ? res.message : "Failed to join ledger");
     }
-
-    csilk_json_t* l_arr = ledger_find_by_invite_code(pool, invite_code);
-    if (!l_arr || csilk_json_array_size(l_arr) == 0) {
-        if (l_arr) {
-            csilk_json_free(l_arr);
-        }
-        respond_error(c, 1003, "Invalid or expired invite code");
-        return;
-    }
-
-    csilk_json_t* l_obj = csilk_json_array_get(l_arr, 0);
-    int64_t       lid = (int64_t)db_get_int(l_obj, "id");
-    const char*   name = csilk_json_get_string(l_obj, "name");
-
-    char role[32] = {0};
-    if (ledger_get_user_role(pool, lid, user_id, role, sizeof(role))) {
-        /* Already member */
-        csilk_json_t* res = csilk_json_object();
-        csilk_json_add_number(res, "id", (double)lid);
-        csilk_json_add_string(res, "name", name ? name : "");
-        csilk_json_free(l_arr);
-        respond_ok(c, res);
-        return;
-    }
-
-    int ret = ledger_member_add(pool, lid, user_id, "editor");
-    if (ret != 0) {
-        csilk_json_free(l_arr);
-        respond_error(c, 1002, "Failed to join ledger");
-        return;
-    }
-
-    csilk_json_t* res = csilk_json_object();
-    csilk_json_add_number(res, "id", (double)lid);
-    csilk_json_add_string(res, "name", name ? name : "");
-    csilk_json_free(l_arr);
-    respond_ok(c, res);
 }
+
+/* ===== Backward-compatibility aliases ===== */
 
 void
 api_ledger_list(csilk_ctx_t* c)
@@ -471,7 +399,6 @@ api_ledger_join_by_invite(csilk_ctx_t* c)
 
 void
 register_ledger_routes(csilk_app_t* app)
-
 {
     csilk_app_get_ext(app,
                       "/api/ledgers",
