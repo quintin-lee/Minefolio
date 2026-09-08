@@ -2,7 +2,6 @@
 #include "services/ai/tools/schema.h"
 #include "services/ai/policy/confirmation.h"
 #include "infrastructure/repositories/ai_repo_impl.h"
-#include "repositories/transfer_repo.h"
 #include "common/balance.h"
 #include "common/db.h"
 #include "core/ledger/ledger_engine.h"

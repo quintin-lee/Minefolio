@@ -1,6 +1,6 @@
 #include "services/market/market_scheduler.h"
 #include "application/market/usecases.h"
-#include "repositories/dca_repo.h"
+#include "infrastructure/repositories/dca_repo_impl.h"
 #include "csilk/csilk.h"
 #include <pthread.h>
 #include <stdbool.h>
@@ -61,7 +61,7 @@ check_and_trigger_dca_plans(csilk_db_pool_t* pool, struct tm* tm_now)
     if (!pool) {
         return;
     }
-    csilk_json_t* plans = dca_plan_list_all_active(pool);
+    csilk_json_t* plans = mf_dca_repo_plan_list_all_active(pool);
     if (!plans) {
         return;
     }
@@ -102,7 +102,8 @@ check_and_trigger_dca_plans(csilk_db_pool_t* pool, struct tm* tm_now)
         }
 
         if (is_due_today) {
-            int64_t new_exec_id = dca_execution_create(pool, plan_id, user_id, today_str, amount);
+            int64_t new_exec_id =
+                mf_dca_repo_execution_create(pool, plan_id, user_id, today_str, amount);
             if (new_exec_id > 0) {
                 CSILK_LOG_I(
                     "DCA scheduler generated pending execution %lld for plan %lld (date: %s)",
