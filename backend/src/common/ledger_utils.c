@@ -110,10 +110,12 @@ tx_delete_fee_children(csilk_db_pool_t* pool, int64_t user_id, int64_t parent_tx
     snprintf(ptx_str, sizeof(ptx_str), "%lld", (long long)parent_tx_id);
     csilk_json_t* res = csilk_db_query_param_json(
         pool,
-        "DELETE FROM transactions WHERE parent_tx_id=? AND user_id=? AND transaction_type='fee'",
+        "DELETE FROM transactions WHERE parent_tx_id=? AND user_id=? AND transaction_type='fee'"
+        " RETURNING id",
         (const char*[]){ptx_str, uid_str, NULL});
+    int ok = res ? csilk_json_array_size(res) > 0 : 0;
     if (res) {
         csilk_json_free(res);
     }
-    return 0;
+    return ok;
 }

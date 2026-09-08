@@ -6,12 +6,12 @@
  */
 
 #include "infrastructure/repositories/ai_repo_impl.h"
+#include "infrastructure/repositories/market_repo_impl.h"
 #include "repositories/asset_repo.h"
 #include "repositories/daily_expense_repo.h"
 #include "repositories/category_repo.h"
 #include "repositories/transaction_repo.h"
 #include "repositories/transfer_repo.h"
-#include "repositories/price_history_repo.h"
 
 csilk_json_t*
 mf_ai_repo_asset_list(
@@ -29,7 +29,7 @@ mf_ai_repo_asset_get(void* pool, int64_t user_id, int64_t id)
 csilk_json_t*
 mf_ai_repo_price_history_list(void* pool, int64_t user_id, int64_t asset_id, int64_t limit)
 {
-    return price_history_list_by_asset(pool, user_id, asset_id, limit);
+    return mf_market_repo_price_history_list(pool, user_id, asset_id, limit);
 }
 csilk_json_t*
 mf_ai_repo_daily_expense_list(void*       pool,

@@ -6,7 +6,7 @@
 #include "services/market/market_scheduler.h"
 #include "services/market/exchange_rate_service.h"
 #include "repositories/asset_repo.h"
-#include "repositories/price_history_repo.h"
+#include "infrastructure/repositories/market_repo_impl.h"
 #include "common/balance.h"
 #include "common/db.h"
 #include <stdio.h>
@@ -315,8 +315,7 @@ market_usecase_price_history(void*                    pool,
     if (limit <= 0) {
         limit = 90;
     }
-    csilk_json_t* rows =
-        price_history_list_by_asset((csilk_db_pool_t*)pool, user_id, asset_id, limit);
+    csilk_json_t* rows = mf_market_repo_price_history_list(pool, user_id, asset_id, limit);
     *out_rows = rows ? rows : csilk_json_array();
     out_res->code = 0;
     snprintf(out_res->message, sizeof(out_res->message), "ok");

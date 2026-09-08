@@ -7,6 +7,7 @@
  */
 
 #include "repositories/ledger_repo.h"
+#include "common/ledger_utils.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -89,43 +90,6 @@ ledger_get(csilk_db_pool_t* pool, int64_t ledger_id)
         return NULL;
     }
     return arr;
-}
-
-/**
- * @brief 获取用户的默认账本 ID（兜底自动创建）
- *
- * @param pool 数据库连接池指针
- * @param user_id 用户 ID
- * @return int64_t 默认账本 ID
- */
-int64_t
-ledger_get_default(csilk_db_pool_t* pool, int64_t user_id)
-{
-    if (user_id <= 0) {
-        return 0;
-    }
-
-    char uid[32];
-    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
-
-    const char* sql = "SELECT l.id FROM ledgers l "
-                      "WHERE l.owner_id = ? AND l.is_default = 1 "
-                      "LIMIT 1";
-
-    csilk_json_t* res = csilk_db_query_param_json(pool, sql, (const char*[]){uid, NULL});
-    int64_t       id = 0;
-    if (res && csilk_json_array_size(res) > 0) {
-        id = (int64_t)db_get_int(csilk_json_array_get(res, 0), "id");
-    }
-    if (res) {
-        csilk_json_free(res);
-    }
-
-    if (id <= 0) {
-        id = ledger_create(
-            pool, user_id, "默认账本", "个人默认账本", "CNY", "ph:wallet", "#3b82f6", true);
-    }
-    return id;
 }
 
 /**
@@ -305,42 +269,6 @@ ledger_member_list(csilk_db_pool_t* pool, int64_t ledger_id)
         "ORDER BY CASE m.role WHEN 'owner' THEN 1 WHEN 'editor' THEN 2 ELSE 3 END, m.id ASC";
 
     return csilk_db_query_param_json(pool, sql, (const char*[]){lid, NULL});
-}
-
-/**
- * @brief 获取指定用户在账本中的权限角色
- *
- * @param pool 数据库连接池指针
- * @param ledger_id 账本 ID
- * @param user_id 用户 ID
- * @param[out] out_role 接收角色的字符串缓冲区
- * @param out_len 缓冲区长度
- * @return const char* 角色字符串，若不存在返回 NULL
- */
-const char*
-ledger_get_user_role(
-    csilk_db_pool_t* pool, int64_t ledger_id, int64_t user_id, char* out_role, size_t out_len)
-{
-    char lid[32], uid[32];
-    snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
-    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
-
-    const char*   sql = "SELECT role FROM ledger_members WHERE ledger_id = ? AND user_id = ?";
-    csilk_json_t* res = csilk_db_query_param_json(pool, sql, (const char*[]){lid, uid, NULL});
-    if (!res || csilk_json_array_size(res) == 0) {
-        if (res) {
-            csilk_json_free(res);
-        }
-        return NULL;
-    }
-
-    const char* r = csilk_json_get_string(csilk_json_array_get(res, 0), "role");
-    if (r && out_role && out_len > 0) {
-        strncpy(out_role, r, out_len - 1);
-        out_role[out_len - 1] = '\0';
-    }
-    csilk_json_free(res);
-    return out_role;
 }
 
 /**

@@ -136,6 +136,7 @@ function(add_financial_unit_test test_target test_source)
         src/common/tx_types.c
         src/common/db.c
         src/common/config.c
+        src/common/ledger_utils.c
         src/config/secret.c
         src/repositories/transaction_repo.c
     )
