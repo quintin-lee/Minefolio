@@ -1,5 +1,5 @@
 #include "services/ai/workflows/portfolio_analysis.h"
-#include "repositories/asset_repo.h"
+#include "infrastructure/repositories/ai_repo_impl.h"
 #include "common/db.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,7 +15,7 @@ step_pr_scan(csilk_db_pool_t*    pool,
     (void)params;
     (void)ctx_json;
     int64_t       total = 0;
-    csilk_json_t* list = asset_list(pool, user_id, 1, 100, NULL, &total);
+    csilk_json_t* list = mf_ai_repo_asset_list(pool, user_id, 1, 100, NULL, &total);
     double        stock_val = 0.0, fund_val = 0.0, crypto_val = 0.0, bond_val = 0.0, cash_val = 0.0;
     csilk_json_t* top_holdings = csilk_json_array();
 

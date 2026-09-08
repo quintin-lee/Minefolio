@@ -1,7 +1,5 @@
 #include "services/ai/workflows/monthly_review.h"
-#include "repositories/asset_repo.h"
-#include "repositories/daily_expense_repo.h"
-#include "repositories/transaction_repo.h"
+#include "infrastructure/repositories/ai_repo_impl.h"
 #include "common/db.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -77,7 +75,7 @@ step_mr_aggregate(csilk_db_pool_t*    pool,
     char date_pattern[64];
     snprintf(date_pattern, sizeof(date_pattern), "%s%%", month);
 
-    csilk_json_t* exp_stat = de_monthly_totals(pool, user_id, date_pattern);
+    csilk_json_t* exp_stat = mf_ai_repo_daily_expense_monthly_totals(pool, user_id, date_pattern);
     double        total_expense = 0.0;
     double        total_daily_income = 0.0;
     if (exp_stat && csilk_json_array_size(exp_stat) > 0) {
@@ -89,7 +87,7 @@ step_mr_aggregate(csilk_db_pool_t*    pool,
         csilk_json_free(exp_stat);
     }
 
-    csilk_json_t* tx_stat = tx_monthly(pool, user_id, date_pattern);
+    csilk_json_t* tx_stat = mf_ai_repo_transaction_monthly(pool, user_id, date_pattern);
     double        total_inflows = 0.0;
     double        total_outflows = 0.0;
     int64_t       tx_count = 0;
@@ -106,7 +104,7 @@ step_mr_aggregate(csilk_db_pool_t*    pool,
     double total_income = total_inflows > 0.0 ? total_inflows : total_daily_income;
 
     int64_t       total_assets_count = 0;
-    csilk_json_t* assets = asset_list(pool, user_id, 1, 100, NULL, &total_assets_count);
+    csilk_json_t* assets = mf_ai_repo_asset_list(pool, user_id, 1, 100, NULL, &total_assets_count);
     double        total_assets = 0.0;
     double        total_liabilities = 0.0;
     double        liquid_cash = 0.0;
@@ -175,8 +173,8 @@ step_mr_trends(csilk_db_pool_t*    pool,
     snprintf(cur_pat, sizeof(cur_pat), "%s%%", month);
     snprintf(prev_pat, sizeof(prev_pat), "%s%%", prev_month);
 
-    csilk_json_t* cur_stat = de_monthly_totals(pool, user_id, cur_pat);
-    csilk_json_t* prev_stat = de_monthly_totals(pool, user_id, prev_pat);
+    csilk_json_t* cur_stat = mf_ai_repo_daily_expense_monthly_totals(pool, user_id, cur_pat);
+    csilk_json_t* prev_stat = mf_ai_repo_daily_expense_monthly_totals(pool, user_id, prev_pat);
 
     double cur_exp = 0.0, prev_exp = 0.0;
     if (cur_stat && csilk_json_array_size(cur_stat) > 0) {
@@ -195,7 +193,7 @@ step_mr_trends(csilk_db_pool_t*    pool,
     double mom_diff = cur_exp - prev_exp;
     double mom_rate = (prev_exp > 0.0) ? ((mom_diff / prev_exp) * 100.0) : 0.0;
 
-    csilk_json_t* cat_stats = de_monthly_by_category(pool, user_id, cur_pat);
+    csilk_json_t* cat_stats = mf_ai_repo_daily_expense_monthly_by_category(pool, user_id, cur_pat);
     csilk_json_t* top_cats = csilk_json_array();
     if (cat_stats && csilk_json_is_array(cat_stats)) {
         size_t n = csilk_json_array_size(cat_stats);

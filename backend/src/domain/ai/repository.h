@@ -74,3 +74,20 @@ int64_t mf_ai_repo_transfer_insert(void*       pool,
                                    double      amount,
                                    const char* currency,
                                    const char* note);
+
+/**
+ * @brief 获取日常收支按分类月度汇总
+ */
+csilk_json_t*
+mf_ai_repo_daily_expense_monthly_by_category(void* pool, int64_t user_id, const char* pattern);
+
+/**
+ * @brief 获取日常收支月度总额
+ */
+csilk_json_t*
+mf_ai_repo_daily_expense_monthly_totals(void* pool, int64_t user_id, const char* pattern);
+
+/**
+ * @brief 获取交易月度汇总
+ */
+csilk_json_t* mf_ai_repo_transaction_monthly(void* pool, int64_t user_id, const char* pattern);

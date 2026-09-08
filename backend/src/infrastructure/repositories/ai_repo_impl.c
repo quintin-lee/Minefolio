@@ -93,3 +93,21 @@ mf_ai_repo_transfer_insert(void*       pool,
 {
     return transfer_insert(pool, user_id, from_asset_id, to_asset_id, amount, currency, NULL, note);
 }
+
+csilk_json_t*
+mf_ai_repo_daily_expense_monthly_by_category(void* pool, int64_t user_id, const char* pattern)
+{
+    return de_monthly_by_category(pool, user_id, pattern);
+}
+
+csilk_json_t*
+mf_ai_repo_daily_expense_monthly_totals(void* pool, int64_t user_id, const char* pattern)
+{
+    return de_monthly_totals(pool, user_id, pattern);
+}
+
+csilk_json_t*
+mf_ai_repo_transaction_monthly(void* pool, int64_t user_id, const char* pattern)
+{
+    return tx_monthly(pool, user_id, pattern);
+}

@@ -1,5 +1,5 @@
 #include "services/ai/workflows/financial_health.h"
-#include "repositories/asset_repo.h"
+#include "infrastructure/repositories/ai_repo_impl.h"
 #include "common/db.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -62,7 +62,7 @@ step_hs_collect(csilk_db_pool_t*    pool,
     double total_assets = 0.0, total_debt = 0.0;
 
     int64_t       tot = 0;
-    csilk_json_t* arr = asset_list(pool, user_id, 1, 200, NULL, &tot);
+    csilk_json_t* arr = mf_ai_repo_asset_list(pool, user_id, 1, 200, NULL, &tot);
     if (arr && csilk_json_is_array(arr)) {
         size_t n = csilk_json_array_size(arr);
         for (size_t i = 0; i < n; i++) {
@@ -404,7 +404,7 @@ step_ef_collect(csilk_db_pool_t*    pool,
     double liquid_cash = 0;
     {
         int64_t       tot = 0;
-        csilk_json_t* arr = asset_list(pool, user_id, 1, 100, NULL, &tot);
+        csilk_json_t* arr = mf_ai_repo_asset_list(pool, user_id, 1, 100, NULL, &tot);
         if (arr && csilk_json_is_array(arr)) {
             size_t n = csilk_json_array_size(arr);
             for (size_t i = 0; i < n; i++) {

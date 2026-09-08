@@ -1,7 +1,5 @@
 #include "services/ai/workflows/cashflow_forecast.h"
-#include "repositories/asset_repo.h"
-#include "repositories/daily_expense_repo.h"
-#include "repositories/transaction_repo.h"
+#include "infrastructure/repositories/ai_repo_impl.h"
 #include "common/db.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -83,7 +81,7 @@ step_ed_assess(csilk_db_pool_t*    pool,
     }
 
     int64_t       total = 0;
-    csilk_json_t* list = asset_list(pool, user_id, 1, 100, NULL, &total);
+    csilk_json_t* list = mf_ai_repo_asset_list(pool, user_id, 1, 100, NULL, &total);
     double        liquid_cash = 0.0;
     double        total_liabilities = 0.0;
     if (list) {
@@ -338,7 +336,7 @@ step_payday_detect(csilk_db_pool_t*    pool,
 
     double        liquid_cash = 0.0;
     int64_t       tot = 0;
-    csilk_json_t* list = asset_list(pool, user_id, 1, 100, NULL, &tot);
+    csilk_json_t* list = mf_ai_repo_asset_list(pool, user_id, 1, 100, NULL, &tot);
     if (list) {
         size_t n = csilk_json_array_size(list);
         for (size_t i = 0; i < n; i++) {
@@ -418,7 +416,7 @@ step_payday_allocate(csilk_db_pool_t*    pool,
     char          invest_asset[128] = "", debt_asset[128] = "", emer_asset[128] = "";
     int64_t       invest_id = 0, debt_id = 0, emer_id = 0;
     int64_t       tot = 0;
-    csilk_json_t* list = asset_list(pool, user_id, 1, 100, NULL, &tot);
+    csilk_json_t* list = mf_ai_repo_asset_list(pool, user_id, 1, 100, NULL, &tot);
     if (list) {
         size_t n = csilk_json_array_size(list);
         for (size_t i = 0; i < n; i++) {
@@ -632,7 +630,7 @@ step_bg_collect(csilk_db_pool_t*    pool,
     char pat[64];
     snprintf(pat, sizeof(pat), "%s%%", month);
 
-    csilk_json_t* cur_cats = de_monthly_by_category(pool, user_id, pat);
+    csilk_json_t* cur_cats = mf_ai_repo_daily_expense_monthly_by_category(pool, user_id, pat);
     csilk_json_t* cur_expense_cats = csilk_json_array();
     double        cur_total = 0.0;
     if (cur_cats && csilk_json_is_array(cur_cats)) {
@@ -2333,7 +2331,7 @@ step_dp_collect(csilk_db_pool_t*    pool,
     (void)params;
     (void)ctx_json;
     int64_t       tot = 0;
-    csilk_json_t* list = asset_list(pool, user_id, 1, 200, NULL, &tot);
+    csilk_json_t* list = mf_ai_repo_asset_list(pool, user_id, 1, 200, NULL, &tot);
     csilk_json_t* debts = csilk_json_array();
     double        total_debt = 0;
     double        max_rate = 0;
@@ -2805,7 +2803,7 @@ step_cf_collect(csilk_db_pool_t*    pool,
     }
 
     int64_t       tot = 0;
-    csilk_json_t* asset_arr = asset_list(pool, user_id, 1, 100, NULL, &tot);
+    csilk_json_t* asset_arr = mf_ai_repo_asset_list(pool, user_id, 1, 100, NULL, &tot);
     double        liquid = 0;
     if (asset_arr) {
         for (size_t i = 0; i < csilk_json_array_size(asset_arr); i++) {
@@ -3141,7 +3139,7 @@ step_bc_collect(csilk_db_pool_t*    pool,
     }
 
     int64_t       tot_assets = 0;
-    csilk_json_t* alist = asset_list(pool, user_id, 1, 100, NULL, &tot_assets);
+    csilk_json_t* alist = mf_ai_repo_asset_list(pool, user_id, 1, 100, NULL, &tot_assets);
     if (alist && csilk_json_is_array(alist)) {
         size_t n = csilk_json_array_size(alist);
         for (size_t i = 0; i < n; i++) {
