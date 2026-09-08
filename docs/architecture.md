@@ -109,17 +109,34 @@ graph TB
 
 **新旧架构迁移状态:**
 
-| 域 | Domain | Application | Infrastructure | Interfaces (新) | Legacy Ctrl | Legacy Service |
-|----|:------:|:-----------:|:--------------:|:---------------:|:-----------:|:--------------:|
-| auth | ✅ | ✅ | ✅ | ✅ | ⚠️ 双注册 | ⚠️ 双实现 |
-| ai | ✅ | ✅ | ✅ | ✅ | ⚠️ 双注册 | ⚠️ 双实现 |
-| market | ✅ | ✅ | ✅ | ✅ | ⚠️ 双注册 | ✅ 仍主用 |
-| asset | ✅ | ✅ | ✅ | ✅ | ⚠️ 双注册 | ⚠️ 双实现 |
-| transaction | ✅ | ✅ | ✅ | ✅ | ⚠️ 双注册 | ✅ 仍主用 |
-| portfolio | ✅ | ✅ | ✅ | — | ⚠️ 双注册 | ✅ 仍主用 |
-| cashflow | ✅ | ✅ | ✅ | — | ⚠️ 双注册 | ✅ 仍主用 |
+| 域 | Domain | Application | Infrastructure | Interfaces | 状态 |
+|----|:------:|:-----------:|:--------------:|:----------:|:----:|
+| tag | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 |
+| category | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 |
+| ledger | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 |
+| daily_expense | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 |
+| transfer | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 |
+| dca | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 |
+| report | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 (跨域隔离) |
+| file | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 |
+| import/export | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 |
+| auth | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 |
+| ai | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 |
+| market | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 |
+| asset | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 |
+| transaction | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 |
+| portfolio | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 |
+| cashflow | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 |
 
-> **说明**: 标记 "双注册" 表示新旧两套 controller 同时注册路由,新接口调用 Application 层,Usecase;旧接口直接调 Legacy Service。迁移完成后将废弃 `controllers/` 与 `services/` 对应文件。
+**AI 子系统迁移状态:**
+
+| 组件 | 状态 | 说明 |
+|------|:----:|------|
+| AI Tools (6个) | ✅ | 通过 `ai_repo_impl` 包装层访问数据 |
+| AI Workflows (4个) | ✅ | 通过 `ai_repo_impl` 包装层访问数据 |
+| AI Runtime | ✅ | 独立子系统，无需迁移 |
+
+> **说明**: 所有业务域已完成 DDD 四层架构迁移。Legacy `repositories/` 和 `services/` 文件保留供 AI 子系统通过包装层访问，未来可进一步清理。
 
 **通信协议清单:**
 

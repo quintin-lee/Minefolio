@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **DDD Four-Layer Architecture Migration (Complete)**:
+  - Migrated all 16 business domains to Domain-Driven Design (DDD) four-layer architecture:
+    - **Domain Layer** (`backend/src/domain/`): Pure business entities, repository contracts, and rules with zero external dependencies.
+    - **Application Layer** (`backend/src/application/`): Use case orchestration with command objects and result DTOs.
+    - **Infrastructure Layer** (`backend/src/infrastructure/repositories/`): SQL implementations of repository contracts.
+    - **Interface Layer** (`backend/src/interfaces/http/controllers/`): Thin HTTP handlers delegating to use cases.
+  - Migrated domains: tag, category, ledger, daily_expense, transfer, dca, report, file, import/export, auth, ai, market, asset, transaction, portfolio, cashflow.
+  - Created ~135 new DDD files with ~10,000+ lines of code.
+  - All 143 integration tests pass with zero regressions.
+
+- **AI Subsystem Repository Abstraction**:
+  - Created `domain/ai/repository.h` with unified data access interface for AI tools and workflows.
+  - Implemented `infrastructure/repositories/ai_repo_impl.c` wrapping legacy repository functions.
+  - Migrated all 6 AI tools (asset, cashflow, expense, portfolio, transaction, transfer) to use new repository interface.
+  - Migrated all 4 AI workflows (cashflow_forecast, financial_health, monthly_review, portfolio_analysis) to use new repository interface.
+
 ### Fixed
 - **Offline sync ID mapping** (`frontend/src/utils/offline-http.ts`, `frontend/src/stores/sync.ts`):
   - Fixed offline-created records using two different IDs (queue `record_id` vs SQLite auto-increment rowid), causing duplicate/wrong records after sync. Local rows now insert with explicit `id` matching the queue's `record_id`.

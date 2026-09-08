@@ -6,31 +6,35 @@ Minefolio is a self-hosted personal finance and investment tracker. It supports 
 
 ## Architecture & Data Flow
 
-### Backend — Three-Tier C Architecture
+### Backend — DDD Four-Layer C Architecture
 
 ```
-HTTP Layer    interfaces/http/controllers/  Parse params, call service, format response
-Business Layer services/       Orchestrate repos, balance ops, transactions
-              services/ai/     Unified AI Runtime: session, context, model, tool, workflow, policy, trace, memory
-Core Layer    core/financial/  Fixed-point core: money, decimal, quantity, price, rate, pnl
-              core/ledger/     Ledger engine: transaction replay, rebuild, balance/cost basis
-Infra Layer   infrastructure/database/ Database abstraction and SQLite/Postgres adapters
-              infrastructure/database/migration/ Migration engine (discovery, checksum, lock, baseline)
-Data Layer    repositories/    Raw SQL, return csilk_json_t* (legacy/transition)
-Shared        common/          db, jwt, balance, response, ctx, csv, tx_types
-              config/          db_config, key_manager (RSA keys), secret (Secret Provider)
-              dtos/            request/response struct definitions (reflection macros)
-              models/          C domain structs
-              middlewares/     jwt, cors, csrf, security-headers, rate-limit
+Interfaces Layer   interfaces/http/controllers/  Parse params, call usecase, format response
+Application Layer  application/*/{usecases,commands,dtos}.h/.c  Use case orchestration
+Domain Layer       domain/*/{entity,repository,rules}.h/.c  Pure business rules, zero dependencies
+Infrastructure     infrastructure/repositories/*_repo_impl.c  SQL implementations
+                   infrastructure/database/  Database abstraction and SQLite/Postgres adapters
+                   infrastructure/database/migration/  Migration engine
+Core Layer         core/financial/  Fixed-point core: money, decimal, quantity, price, rate, pnl
+                   core/ledger/     Ledger engine: transaction replay, rebuild, balance/cost basis
+Shared             common/  db, jwt, balance, response, ctx, csv, tx_types
+                   config/  db_config, key_manager (RSA keys), secret (Secret Provider)
+                   dtos/  request/response struct definitions
+                   middlewares/  jwt, cors, csrf, security-headers, rate-limit
+Legacy (保留)      services/ai/  Unified AI Runtime (via ai_repo_impl wrapper)
+                   repositories/  Legacy SQL repos (used by AI subsystem via wrapper)
 ```
 
 **Dependency direction is strict and one-way:**
 - `main.c` → includes only `interfaces/http/controllers/*_controller.h`
-- `interfaces/http/controllers/` → `services/`, `dtos/`
-- `services/` → `repositories/`, `common/`, balance logic
-- `repositories/` → `common/db.h` ONLY (no HTTP/framework knowledge)
+- `interfaces/http/controllers/` → `application/*`, `dtos/`
+- `application/*` → `domain/*`, `infrastructure/*`, `core/*`, `common/`
+- `domain/*` → zero external dependencies (pure C, only `core/financial`)
+- `infrastructure/repositories/*` → `common/db.h`, `domain/*` (contracts)
+- `repositories/` (legacy) → `common/db.h` ONLY (used by AI subsystem via `ai_repo_impl` wrapper)
 
-Complex domains split read/query from write: `transaction_query.c` / `transaction_write.c`, `daily_expense_query.c` / `daily_expense_write.c`.
+**All 16 business domains have been migrated to DDD architecture:**
+tag, category, ledger, daily_expense, transfer, dca, report, file, import/export, auth, ai, market, asset, transaction, portfolio, cashflow.
 
 ### Frontend — Vue 3 SPA
 
@@ -108,19 +112,21 @@ AI Runtime (services/ai/runtime/)
 |------|---------|
 | `backend/src/main.c` | Entry point: DB init, migrations, middleware stack, route registration, static serve |
 | `backend/src/interfaces/http/controllers/` | Thin HTTP handlers; one per domain; `register_*_routes(app)` |
-| `backend/src/services/` | Business logic; query and write files coexist per domain |
+| `backend/src/domain/` | Domain layer: entities, repository contracts, business rules (9+ domains) |
+| `backend/src/application/` | Application layer: use case orchestration (9+ domains) |
+| `backend/src/infrastructure/repositories/` | Infrastructure layer: SQL implementations of repository contracts |
 | `backend/src/services/ai/` | Unified AI Runtime: session, context, model, tool, workflow, policy, trace, memory |
 | `backend/src/core/financial/` | Fixed-point core arithmetic: money, decimal, quantity, price, rate, pnl |
 | `backend/src/core/ledger/` | Ledger engine: single source of truth, position calculation, history replay/rebuild |
 | `backend/src/infrastructure/database/` | Database abstraction layer and SQLite/PostgreSQL native adapters |
 | `backend/src/infrastructure/database/migration/` | Migration engine: SHA-256 CRLF checksum, mutex locks, auto-baseline |
-| `backend/src/repositories/` | All SQL; return `csilk_json_t*`; never touch HTTP |
+| `backend/src/repositories/` | Legacy SQL repos (used by AI subsystem via `ai_repo_impl` wrapper) |
 | `backend/src/common/` | Cross-cutting: `db.h`, `balance.h`, `jwt.h`, `response.h`, `ctx.h`, `tx_types.h` |
 | `backend/src/config/` | `db_config.h/.c` (DSN), `key_manager.h/.c` (RSA-OAEP keys), `secret.h/.c` (Secret Provider) |
 | `backend/sql/migrations/` | Versioned migration scripts (`sqlite/` & `postgres/`, `V001`~`V007`) |
 | `backend/sql/` | `migration.sql` (SQLite full schema), `migration_postgres.sql` |
 | `backend/tests/unit/` | 28 CTest unit test suites (financial core, ledger, domain rules, DB repository, migration engine, AI runtime) |
-| `backend/tests/test_link.sh` | 38-case integration test suite (139 assertions, HTTP + sqlite3 verification) |
+| `backend/tests/test_link.sh` | 143-case integration test suite (HTTP + sqlite3 verification) |
 | `frontend/src/main.ts` | Desktop entry: Pinia, router, Element Plus, i18n |
 | `frontend/src/main-mobile.ts` | Mobile entry: separate router, sql.js init |
 | `frontend/src/api/` | One file per domain; never call fetch/axios directly in components |
