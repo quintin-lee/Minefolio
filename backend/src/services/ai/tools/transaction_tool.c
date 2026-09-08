@@ -1,7 +1,6 @@
 #include "services/ai/tools/transaction_tool.h"
 #include "services/ai/tools/schema.h"
-#include "repositories/transaction_repo.h"
-#include "repositories/daily_expense_repo.h"
+#include "infrastructure/repositories/ai_repo_impl.h"
 #include "common/db.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,8 +29,8 @@ exec_get_transactions(const ai_tool_t* tool, const ai_tool_context_t* ctx, const
     }
 
     int64_t       total = 0;
-    csilk_json_t* list = tx_list(
-        ctx->pool, ctx->user_id, page, page_size, NULL, NULL, type, NULL, NULL, NULL, &total);
+    csilk_json_t* list =
+        mf_ai_repo_transaction_list(ctx->pool, ctx->user_id, page, page_size, type, &total);
 
     csilk_json_t* res = csilk_json_object();
     csilk_json_add_number(res, "total", (double)total);

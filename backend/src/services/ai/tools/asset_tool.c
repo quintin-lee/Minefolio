@@ -1,7 +1,6 @@
 #include "services/ai/tools/asset_tool.h"
 #include "services/ai/tools/schema.h"
-#include "repositories/asset_repo.h"
-#include "repositories/price_history_repo.h"
+#include "infrastructure/repositories/ai_repo_impl.h"
 #include "common/db.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,7 +29,8 @@ exec_get_assets(const ai_tool_t* tool, const ai_tool_context_t* ctx, const csilk
     }
 
     int64_t       total = 0;
-    csilk_json_t* list = asset_list(ctx->pool, ctx->user_id, page, page_size, type, &total);
+    csilk_json_t* list =
+        mf_ai_repo_asset_list(ctx->pool, ctx->user_id, page, page_size, type, &total);
 
     csilk_json_t* res = csilk_json_object();
     csilk_json_add_number(res, "total", (double)total);
@@ -64,7 +64,7 @@ exec_get_asset_detail(const ai_tool_t* tool, const ai_tool_context_t* ctx, const
         return strdup("{\"error\":\"missing or invalid asset_id\"}");
     }
 
-    csilk_json_t* cur = asset_get(ctx->pool, ctx->user_id, id);
+    csilk_json_t* cur = mf_ai_repo_asset_get(ctx->pool, ctx->user_id, id);
     if (!cur || csilk_json_array_size(cur) == 0) {
         if (cur) {
             csilk_json_free(cur);
@@ -74,7 +74,7 @@ exec_get_asset_detail(const ai_tool_t* tool, const ai_tool_context_t* ctx, const
     csilk_json_t* detail = csilk_json_copy((csilk_json_t*)csilk_json_array_get(cur, 0));
     csilk_json_free(cur);
 
-    csilk_json_t* ph = price_history_list_by_asset(ctx->pool, ctx->user_id, id, 10);
+    csilk_json_t* ph = mf_ai_repo_price_history_list(ctx->pool, ctx->user_id, id, 10);
 
     csilk_json_t* res = csilk_json_object();
     csilk_json_add_object(res, "asset", detail);
@@ -100,7 +100,7 @@ exec_get_asset_breakdown(const ai_tool_t*         tool,
     }
 
     int64_t       total = 0;
-    csilk_json_t* list = asset_list(ctx->pool, ctx->user_id, 1, 200, NULL, &total);
+    csilk_json_t* list = mf_ai_repo_asset_list(ctx->pool, ctx->user_id, 1, 200, NULL, &total);
 
     double        total_assets = 0.0;
     double        total_liabilities = 0.0;

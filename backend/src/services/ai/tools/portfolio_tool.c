@@ -1,7 +1,6 @@
 #include "services/ai/tools/portfolio_tool.h"
 #include "services/ai/tools/schema.h"
-#include "repositories/asset_repo.h"
-#include "repositories/daily_expense_repo.h"
+#include "infrastructure/repositories/ai_repo_impl.h"
 #include "common/db.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,7 +19,7 @@ exec_analyze_financial_health(const ai_tool_t*         tool,
     }
 
     int64_t       total = 0;
-    csilk_json_t* list = asset_list(ctx->pool, ctx->user_id, 1, 200, NULL, &total);
+    csilk_json_t* list = mf_ai_repo_asset_list(ctx->pool, ctx->user_id, 1, 200, NULL, &total);
 
     double liquid_cash = 0.0;
     double invested_assets = 0.0;

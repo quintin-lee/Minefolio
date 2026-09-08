@@ -1,5 +1,8 @@
+/**
+ * @file ai_repo_impl.h
+ * @brief AI 域仓储实现头文件 (Infrastructure Layer)
+ */
+
 #pragma once
 
 #include "domain/ai/repository.h"
-
-/* 基础设施层：基于 SQL/SQLite 实现 AI 仓储契约 */

@@ -1,8 +1,6 @@
 #include "services/ai/tools/cashflow_tool.h"
 #include "services/ai/tools/schema.h"
-#include "repositories/asset_repo.h"
-#include "repositories/daily_expense_repo.h"
-#include "repositories/category_repo.h"
+#include "infrastructure/repositories/ai_repo_impl.h"
 #include "common/db.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,7 +17,8 @@ exec_get_summary(const ai_tool_t* tool, const ai_tool_context_t* ctx, const csil
     }
 
     int64_t       total_assets_cnt = 0;
-    csilk_json_t* list = asset_list(ctx->pool, ctx->user_id, 1, 200, NULL, &total_assets_cnt);
+    csilk_json_t* list =
+        mf_ai_repo_asset_list(ctx->pool, ctx->user_id, 1, 200, NULL, &total_assets_cnt);
 
     double total_assets = 0.0;
     double total_liabilities = 0.0;
@@ -105,7 +104,7 @@ exec_get_categories(const ai_tool_t* tool, const ai_tool_context_t* ctx, const c
     }
 
     const char*   type = args ? csilk_json_get_string(args, "type") : NULL;
-    csilk_json_t* list = category_list(ctx->pool, ctx->user_id, type);
+    csilk_json_t* list = mf_ai_repo_category_list(ctx->pool, ctx->user_id, type);
 
     csilk_json_t* res = csilk_json_object();
     if (list) {

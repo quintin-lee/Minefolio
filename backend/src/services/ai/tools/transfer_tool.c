@@ -1,8 +1,8 @@
 #include "services/ai/tools/transfer_tool.h"
 #include "services/ai/tools/schema.h"
 #include "services/ai/policy/confirmation.h"
+#include "infrastructure/repositories/ai_repo_impl.h"
 #include "repositories/transfer_repo.h"
-#include "repositories/asset_repo.h"
 #include "common/balance.h"
 #include "common/db.h"
 #include "core/ledger/ledger_engine.h"
@@ -76,7 +76,8 @@ exec_propose_transfer(const ai_tool_t* tool, const ai_tool_context_t* ctx, const
     int64_t       from_id = 0, to_id = 0;
     char          matched_from_name[128] = "", matched_to_name[128] = "";
     int64_t       total_assets = 0;
-    csilk_json_t* assets = asset_list(ctx->pool, ctx->user_id, 1, 100, NULL, &total_assets);
+    csilk_json_t* assets =
+        mf_ai_repo_asset_list(ctx->pool, ctx->user_id, 1, 100, NULL, &total_assets);
     if (assets && csilk_json_is_array(assets)) {
         size_t asz = csilk_json_array_size(assets);
         for (size_t i = 0; i < asz; i++) {
@@ -182,8 +183,8 @@ exec_confirm_proposed_transfer(const ai_tool_t*         tool,
         return strdup("{\"error\":\"failed to begin transaction\"}");
     }
 
-    int64_t transfer_id = transfer_insert(
-        ctx->pool, ctx->user_id, from_id, to_id, amount, "CNY", date, note ? note : "");
+    int64_t transfer_id = mf_ai_repo_transfer_insert(
+        ctx->pool, ctx->user_id, from_id, to_id, amount, "CNY", note ? note : "");
     if (transfer_id <= 0) {
         db_tx_scope_rollback(ctx->pool, &scope);
         return strdup("{\"error\":\"failed to insert transfer record\"}");

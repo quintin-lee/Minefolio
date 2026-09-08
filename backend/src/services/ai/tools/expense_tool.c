@@ -1,9 +1,8 @@
 #include "services/ai/tools/expense_tool.h"
 #include "services/ai/tools/schema.h"
 #include "services/ai/policy/confirmation.h"
+#include "infrastructure/repositories/ai_repo_impl.h"
 #include "repositories/daily_expense_repo.h"
-#include "repositories/category_repo.h"
-#include "repositories/asset_repo.h"
 #include "common/balance.h"
 #include "common/db.h"
 #include "core/ledger/ledger_engine.h"
@@ -69,8 +68,8 @@ exec_get_daily_expenses(const ai_tool_t*         tool,
     }
 
     int64_t       total = 0;
-    csilk_json_t* list = de_list(
-        ctx->pool, ctx->user_id, page, page_size, type, NULL, NULL, start_date, end_date, &total);
+    csilk_json_t* list = mf_ai_repo_daily_expense_list(
+        ctx->pool, ctx->user_id, page, page_size, start_date, end_date, 0, &total);
 
     csilk_json_t* res = csilk_json_object();
     csilk_json_add_number(res, "total", (double)total);
@@ -167,7 +166,8 @@ exec_propose_daily_expense(const ai_tool_t*         tool,
     int64_t       matched_asset_id = 0;
     char          matched_asset_name[128] = "";
     int64_t       total_assets = 0;
-    csilk_json_t* assets = asset_list(ctx->pool, ctx->user_id, 1, 100, NULL, &total_assets);
+    csilk_json_t* assets =
+        mf_ai_repo_asset_list(ctx->pool, ctx->user_id, 1, 100, NULL, &total_assets);
     if (assets && csilk_json_is_array(assets)) {
         size_t asz = csilk_json_array_size(assets);
         for (size_t i = 0; i < asz; i++) {
@@ -187,7 +187,7 @@ exec_propose_daily_expense(const ai_tool_t*         tool,
 
     int64_t       matched_cat_id = 0;
     char          matched_cat_name[128] = "";
-    csilk_json_t* cats = category_list(ctx->pool, ctx->user_id, type);
+    csilk_json_t* cats = mf_ai_repo_category_list(ctx->pool, ctx->user_id, type);
     if (cats && csilk_json_is_array(cats)) {
         size_t csz = csilk_json_array_size(cats);
         for (size_t i = 0; i < csz; i++) {
