@@ -1,10 +1,17 @@
+/**
+ * @file dca_controller.c
+ * @brief 定投计划 HTTP 控制器 (Interfaces Layer)
+ */
+
 #include "interfaces/http/controllers/dca_controller.h"
-#include "repositories/dca_repo.h"
-#include "repositories/transaction_repo.h"
-#include "core/ledger/ledger_engine.h"
-#include "common/balance.h"
-#include "common/ctx.h"
+#include "application/dca/usecases.h"
+#include "application/dca/commands.h"
+#include "domain/dca/entity.h"
+#include "infrastructure/repositories/dca_repo_impl.h"
 #include "common/response.h"
+#include "common/ctx.h"
+#include "common/db.h"
+#include "csilk/csilk.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,33 +19,12 @@
 void
 dca_service_list_plans(csilk_ctx_t* c)
 {
-    int64_t          user_id = ctx_user_id(c);
-    csilk_db_pool_t* pool = db_get_pool();
-
-    csilk_json_t* list = dca_plan_list(pool, user_id);
-    if (!list) {
-        respond_ok(c, csilk_json_array());
+    int64_t user_id = ctx_user_id(c);
+    if (user_id <= 0) {
         return;
     }
 
-    size_t count = csilk_json_array_size(list);
-    for (size_t i = 0; i < count; ++i) {
-        csilk_json_t* item = csilk_json_array_get(list, i);
-        double        target_curr_val = db_get_num(item, "target_current_value");
-        double        total_invested = db_get_num(item, "total_invested_amount");
-        double        target_profit_rate = db_get_num(item, "target_profit_rate");
-
-        double profit_rate = 0.0;
-        if (total_invested > 0.0) {
-            profit_rate = (target_curr_val - total_invested) / total_invested;
-        }
-        bool profit_target_reached =
-            (target_profit_rate > 0.0 && profit_rate >= target_profit_rate);
-
-        csilk_json_add_number(item, "profit_rate", profit_rate);
-        csilk_json_add_bool(item, "profit_target_reached", profit_target_reached);
-    }
-
+    csilk_json_t* list = dca_usecase_list_plans(db_get_pool(), user_id);
     respond_ok(c, list);
 }
 
@@ -55,82 +41,60 @@ dca_service_create_plan(csilk_ctx_t* c)
         return;
     }
 
-    csilk_db_pool_t* pool = db_get_pool();
-    csilk_json_t*    body = csilk_bind_json(c);
-
+    csilk_json_t* body = csilk_bind_json(c);
     if (!body) {
         respond_bad_request(c, "Invalid JSON body");
         return;
     }
 
-    int64_t     target_asset_id = (int64_t)db_get_int(body, "target_asset_id");
-    int64_t     funding_asset_id = (int64_t)db_get_int(body, "funding_asset_id");
-    const char* name = csilk_json_get_string(body, "name");
-    const char* frequency = csilk_json_get_string(body, "frequency");
-    int         day_of_period = (int)db_get_int(body, "day_of_period");
-    double      amount = db_get_num(body, "amount");
-    double      target_profit_rate = db_get_num(body, "target_profit_rate");
-    double      target_total_amount = db_get_num(body, "target_total_amount");
-    int         target_total_periods = (int)db_get_int(body, "target_total_periods");
-    const char* note = csilk_json_get_string(body, "note");
+    create_dca_plan_cmd_t cmd = {
+        .user_id = user_id,
+        .target_asset_id = (int64_t)db_get_int(body, "target_asset_id"),
+        .funding_asset_id = (int64_t)db_get_int(body, "funding_asset_id"),
+        .name = csilk_json_get_string(body, "name"),
+        .frequency = csilk_json_get_string(body, "frequency"),
+        .day_of_period = (int)db_get_int(body, "day_of_period"),
+        .amount = db_get_num(body, "amount"),
+        .target_profit_rate = db_get_num(body, "target_profit_rate"),
+        .target_total_amount = db_get_num(body, "target_total_amount"),
+        .target_total_periods = (int)db_get_int(body, "target_total_periods"),
+        .note = csilk_json_get_string(body, "note"),
+    };
 
-    if (target_asset_id <= 0 || funding_asset_id <= 0 || !name || !name[0] || amount <= 0.0) {
-        respond_bad_request(
-            c, "Missing required plan fields (target_asset_id, funding_asset_id, name, amount)");
-        return;
+    dca_usecase_result_t res = {0};
+    int64_t              new_id = dca_usecase_create_plan(db_get_pool(), &cmd, &res);
+    csilk_json_free(body);
+
+    if (new_id > 0 && res.code == 0) {
+        csilk_json_t* r = csilk_json_object();
+        csilk_json_add_number(r, "id", (double)new_id);
+        respond_ok(c, r);
+    } else {
+        respond_error(c,
+                      res.code ? res.code : 1002,
+                      res.message[0] ? res.message : "Failed to create DCA plan");
     }
-
-    int64_t new_id = dca_plan_create(pool,
-                                     user_id,
-                                     target_asset_id,
-                                     funding_asset_id,
-                                     name,
-                                     frequency,
-                                     day_of_period,
-                                     amount,
-                                     target_profit_rate,
-                                     target_total_amount,
-                                     target_total_periods,
-                                     note);
-    if (new_id <= 0) {
-        respond_error(c, 1002, "Failed to create DCA plan");
-        return;
-    }
-
-    csilk_json_t* res = csilk_json_object();
-    csilk_json_add_number(res, "id", (double)new_id);
-    respond_ok(c, res);
 }
 
 void
 dca_service_get_plan(csilk_ctx_t* c)
 {
-    int64_t          user_id = ctx_user_id(c);
-    csilk_db_pool_t* pool = db_get_pool();
-    const char*      id_str = csilk_get_param(c, "id");
-    int64_t          id = id_str ? atoll(id_str) : 0;
-
-    csilk_json_t* res = dca_plan_get(pool, user_id, id);
-    if (!res || csilk_json_array_size(res) == 0) {
-        if (res) {
-            csilk_json_free(res);
-        }
-        respond_not_found(c);
+    int64_t user_id = ctx_user_id(c);
+    if (user_id <= 0) {
         return;
     }
 
-    csilk_json_t* item = csilk_json_array_get(res, 0);
-    double        target_curr_val = db_get_num(item, "target_current_value");
-    double        total_invested = db_get_num(item, "total_invested_amount");
-    double        target_profit_rate = db_get_num(item, "target_profit_rate");
-    double        profit_rate =
-        (total_invested > 0.0) ? (target_curr_val - total_invested) / total_invested : 0.0;
-    bool profit_target_reached = (target_profit_rate > 0.0 && profit_rate >= target_profit_rate);
+    const char* id_str = csilk_get_param(c, "id");
+    int64_t     id = id_str ? atoll(id_str) : 0;
 
-    csilk_json_add_number(item, "profit_rate", profit_rate);
-    csilk_json_add_bool(item, "profit_target_reached", profit_target_reached);
+    dca_usecase_result_t res = {0};
+    csilk_json_t*        detail = dca_usecase_get_plan(db_get_pool(), user_id, id, &res);
 
-    respond_ok(c, res);
+    if (detail) {
+        respond_ok(c, detail);
+    } else {
+        respond_error(c, res.code ? res.code : 1003, res.message[0] ? res.message : "Not found");
+    }
 }
 
 void
@@ -146,45 +110,41 @@ dca_service_update_plan(csilk_ctx_t* c)
         return;
     }
 
-    csilk_db_pool_t* pool = db_get_pool();
-    const char*      id_str = csilk_get_param(c, "id");
-    int64_t          id = id_str ? atoll(id_str) : 0;
-    csilk_json_t*    body = csilk_bind_json(c);
+    const char* id_str = csilk_get_param(c, "id");
+    int64_t     id = id_str ? atoll(id_str) : 0;
 
+    csilk_json_t* body = csilk_bind_json(c);
     if (!body) {
         respond_bad_request(c, "Invalid JSON body");
         return;
     }
 
-    int64_t     target_asset_id = (int64_t)db_get_int(body, "target_asset_id");
-    int64_t     funding_asset_id = (int64_t)db_get_int(body, "funding_asset_id");
-    const char* name = csilk_json_get_string(body, "name");
-    const char* frequency = csilk_json_get_string(body, "frequency");
-    int         day_of_period = (int)db_get_int(body, "day_of_period");
-    double      amount = db_get_num(body, "amount");
-    double      target_profit_rate = db_get_num(body, "target_profit_rate");
-    double      target_total_amount = db_get_num(body, "target_total_amount");
-    int         target_total_periods = (int)db_get_int(body, "target_total_periods");
-    const char* note = csilk_json_get_string(body, "note");
+    update_dca_plan_cmd_t cmd = {
+        .user_id = user_id,
+        .id = id,
+        .target_asset_id = (int64_t)db_get_int(body, "target_asset_id"),
+        .funding_asset_id = (int64_t)db_get_int(body, "funding_asset_id"),
+        .name = csilk_json_get_string(body, "name"),
+        .frequency = csilk_json_get_string(body, "frequency"),
+        .day_of_period = (int)db_get_int(body, "day_of_period"),
+        .amount = db_get_num(body, "amount"),
+        .target_profit_rate = db_get_num(body, "target_profit_rate"),
+        .target_total_amount = db_get_num(body, "target_total_amount"),
+        .target_total_periods = (int)db_get_int(body, "target_total_periods"),
+        .note = csilk_json_get_string(body, "note"),
+    };
 
-    int ret = dca_plan_update(pool,
-                              user_id,
-                              id,
-                              target_asset_id,
-                              funding_asset_id,
-                              name,
-                              frequency,
-                              day_of_period,
-                              amount,
-                              target_profit_rate,
-                              target_total_amount,
-                              target_total_periods,
-                              note);
-    if (ret != 0) {
-        respond_error(c, 1002, "Failed to update DCA plan");
-        return;
+    dca_usecase_result_t res = {0};
+    int                  rc = dca_usecase_update_plan(db_get_pool(), &cmd, &res);
+    csilk_json_free(body);
+
+    if (rc == 0 && res.code == 0) {
+        respond_ok(c, NULL);
+    } else {
+        respond_error(c,
+                      res.code ? res.code : 1002,
+                      res.message[0] ? res.message : "Failed to update DCA plan");
     }
-    respond_ok(c, NULL);
 }
 
 void
@@ -200,23 +160,32 @@ dca_service_set_plan_status(csilk_ctx_t* c)
         return;
     }
 
-    csilk_db_pool_t* pool = db_get_pool();
-    const char*      id_str = csilk_get_param(c, "id");
-    int64_t          id = id_str ? atoll(id_str) : 0;
-    csilk_json_t*    body = csilk_bind_json(c);
+    const char* id_str = csilk_get_param(c, "id");
+    int64_t     id = id_str ? atoll(id_str) : 0;
 
-    const char* status = body ? csilk_json_get_string(body, "status") : NULL;
+    csilk_json_t* body = csilk_bind_json(c);
+    const char*   status = body ? csilk_json_get_string(body, "status") : NULL;
     if (!status || !status[0]) {
+        if (body) {
+            csilk_json_free(body);
+        }
         respond_bad_request(c, "Missing status");
         return;
     }
 
-    int ret = dca_plan_set_status(pool, user_id, id, status);
-    if (ret != 0) {
-        respond_error(c, 1002, "Failed to set DCA plan status");
-        return;
+    dca_usecase_result_t res = {0};
+    int                  rc = dca_usecase_set_plan_status(db_get_pool(), user_id, id, status, &res);
+    if (body) {
+        csilk_json_free(body);
     }
-    respond_ok(c, NULL);
+
+    if (rc == 0 && res.code == 0) {
+        respond_ok(c, NULL);
+    } else {
+        respond_error(c,
+                      res.code ? res.code : 1002,
+                      res.message[0] ? res.message : "Failed to set DCA plan status");
+    }
 }
 
 void
@@ -232,150 +201,110 @@ dca_service_delete_plan(csilk_ctx_t* c)
         return;
     }
 
-    csilk_db_pool_t* pool = db_get_pool();
-    const char*      id_str = csilk_get_param(c, "id");
-    int64_t          id = id_str ? atoll(id_str) : 0;
+    const char* id_str = csilk_get_param(c, "id");
+    int64_t     id = id_str ? atoll(id_str) : 0;
 
-    int ret = dca_plan_delete(pool, user_id, id);
-    if (ret != 0) {
-        respond_error(c, 1002, "Failed to delete DCA plan");
-        return;
+    dca_usecase_result_t res = {0};
+    int                  rc = dca_usecase_delete_plan(db_get_pool(), user_id, id, &res);
+
+    if (rc == 0 && res.code == 0) {
+        respond_ok(c, NULL);
+    } else {
+        respond_error(c,
+                      res.code ? res.code : 1002,
+                      res.message[0] ? res.message : "Failed to delete DCA plan");
     }
-    respond_ok(c, NULL);
 }
 
 void
 dca_service_list_executions(csilk_ctx_t* c)
 {
-    int64_t          user_id = ctx_user_id(c);
-    csilk_db_pool_t* pool = db_get_pool();
-    const char*      id_str = csilk_get_param(c, "id");
-    int64_t          plan_id = id_str ? atoll(id_str) : 0;
+    int64_t user_id = ctx_user_id(c);
+    if (user_id <= 0) {
+        return;
+    }
 
-    csilk_json_t* list = dca_execution_list_by_plan(pool, user_id, plan_id);
-    respond_ok(c, list ? list : csilk_json_array());
+    const char* id_str = csilk_get_param(c, "id");
+    int64_t     plan_id = id_str ? atoll(id_str) : 0;
+
+    csilk_json_t* list = dca_usecase_list_executions(db_get_pool(), user_id, plan_id);
+    respond_ok(c, list);
 }
 
 void
 dca_service_list_pending_executions(csilk_ctx_t* c)
 {
-    int64_t          user_id = ctx_user_id(c);
-    csilk_db_pool_t* pool = db_get_pool();
+    int64_t user_id = ctx_user_id(c);
+    if (user_id <= 0) {
+        return;
+    }
 
-    csilk_json_t* list = dca_execution_list_pending(pool, user_id);
-    respond_ok(c, list ? list : csilk_json_array());
+    csilk_json_t* list = dca_usecase_list_pending(db_get_pool(), user_id);
+    respond_ok(c, list);
 }
 
 void
 dca_service_confirm_execution(csilk_ctx_t* c)
 {
-    int64_t          user_id = ctx_user_id(c);
-    csilk_db_pool_t* pool = db_get_pool();
-    const char*      id_str = csilk_get_param(c, "id");
-    int64_t          exec_id = id_str ? atoll(id_str) : 0;
-    csilk_json_t*    body = csilk_bind_json(c);
-
-    csilk_json_t* exec_arr = dca_execution_get(pool, user_id, exec_id);
-    if (!exec_arr || csilk_json_array_size(exec_arr) == 0) {
-        if (exec_arr) {
-            csilk_json_free(exec_arr);
-        }
-        respond_not_found(c);
+    int64_t user_id = ctx_user_id(c);
+    if (user_id <= 0) {
         return;
     }
 
-    csilk_json_t* exec = csilk_json_array_get(exec_arr, 0);
-    const char*   status = csilk_json_get_string(exec, "status");
-    if (status && strcmp(status, "pending") != 0) {
-        csilk_json_free(exec_arr);
-        respond_bad_request(c, "Task is not in pending status");
-        return;
+    const char* id_str = csilk_get_param(c, "id");
+    int64_t     exec_id = id_str ? atoll(id_str) : 0;
+
+    csilk_json_t* body = csilk_bind_json(c);
+
+    confirm_dca_execution_cmd_t cmd = {
+        .user_id = user_id,
+        .exec_id = exec_id,
+        .actual_amount = body ? db_get_num(body, "actual_amount") : 0.0,
+        .executed_price = body ? db_get_num(body, "executed_price") : 0.0,
+    };
+
+    dca_confirm_result_t res = {0};
+    int                  rc = dca_usecase_confirm_execution(db_get_pool(), &cmd, &res);
+    if (body) {
+        csilk_json_free(body);
     }
 
-    int64_t     target_asset_id = (int64_t)db_get_int(exec, "target_asset_id");
-    int64_t     funding_asset_id = (int64_t)db_get_int(exec, "funding_asset_id");
-    double      planned_amount = db_get_num(exec, "planned_amount");
-    double      target_net_val = db_get_num(exec, "target_net_value");
-    const char* period_date = csilk_json_get_string(exec, "period_date");
-
-    double actual_amount = body ? db_get_num(body, "actual_amount") : 0.0;
-    if (actual_amount <= 0.0) {
-        actual_amount = planned_amount;
+    if (rc == 0 && res.code == 0) {
+        csilk_json_t* r = csilk_json_object();
+        csilk_json_add_number(r, "transaction_id", (double)res.transaction_id);
+        csilk_json_add_number(r, "actual_amount", res.actual_amount);
+        csilk_json_add_number(r, "executed_price", res.executed_price);
+        csilk_json_add_number(r, "executed_quantity", res.executed_quantity);
+        respond_ok(c, r);
+    } else {
+        respond_error(c, res.code ? res.code : 1002, res.message[0] ? res.message : "定投执行失败");
     }
-    double executed_price = body ? db_get_num(body, "executed_price") : 0.0;
-    if (executed_price <= 0.0) {
-        executed_price = target_net_val > 0.0 ? target_net_val : 1.0;
-    }
-
-    money_t    actual_m;
-    price_t    price_p;
-    quantity_t qty_q;
-    money_from_double(actual_amount, CURRENCY_CNY, &actual_m);
-    price_from_double(executed_price, 4, CURRENCY_CNY, &price_p);
-    money_div_price(actual_m, price_p, 8, ROUND_HALF_UP, &qty_q);
-    double executed_quantity = quantity_to_double(qty_q);
-
-    /* Execute Transaction within BEGIN / COMMIT block */
-    csilk_db_exec(pool, "BEGIN TRANSACTION");
-
-    char tx_date[32];
-    snprintf(tx_date, sizeof(tx_date), "%s 09:30:00", period_date ? period_date : "2026-08-28");
-
-    ledger_tx_t ltx = {.id = 0,
-                       .user_id = user_id,
-                       .asset_id = target_asset_id,
-                       .linked_asset_id = funding_asset_id,
-                       .category_id = 0,
-                       .type = LEDGER_TX_BUY,
-                       .type_str = "buy",
-                       .amount = actual_m,
-                       .price = price_p,
-                       .quantity = qty_q,
-                       .fee = money_zero(CURRENCY_CNY),
-                       .tx_date = tx_date,
-                       .note = "定投计划自动买入",
-                       .parent_tx_id = 0};
-
-    if (ledger_apply_tx(pool, &ltx) != 0) {
-        csilk_db_exec(pool, "ROLLBACK");
-        csilk_json_free(exec_arr);
-        respond_error(c, 1002, "定投执行失败");
-        return;
-    }
-
-    int64_t tx_id = ltx.id;
-
-    /* Update execution record */
-    dca_execution_update_confirmed(
-        pool, exec_id, actual_amount, executed_price, executed_quantity, tx_id);
-
-    csilk_db_exec(pool, "COMMIT");
-    csilk_json_free(exec_arr);
-
-    csilk_json_t* res = csilk_json_object();
-    csilk_json_add_number(res, "transaction_id", (double)tx_id);
-    csilk_json_add_number(res, "actual_amount", actual_amount);
-    csilk_json_add_number(res, "executed_price", executed_price);
-    csilk_json_add_number(res, "executed_quantity", executed_quantity);
-    respond_ok(c, res);
 }
 
 void
 dca_service_skip_execution(csilk_ctx_t* c)
 {
-    int64_t          user_id = ctx_user_id(c);
-    csilk_db_pool_t* pool = db_get_pool();
-    const char*      id_str = csilk_get_param(c, "id");
-    int64_t          exec_id = id_str ? atoll(id_str) : 0;
-
-    int ret = dca_execution_update_status(pool, user_id, exec_id, "skipped");
-    if (ret != 0) {
-        respond_error(c, 1002, "Failed to skip execution");
+    int64_t user_id = ctx_user_id(c);
+    if (user_id <= 0) {
         return;
     }
-    respond_ok(c, NULL);
+
+    const char* id_str = csilk_get_param(c, "id");
+    int64_t     exec_id = id_str ? atoll(id_str) : 0;
+
+    dca_usecase_result_t res = {0};
+    int                  rc = dca_usecase_skip_execution(db_get_pool(), user_id, exec_id, &res);
+
+    if (rc == 0 && res.code == 0) {
+        respond_ok(c, NULL);
+    } else {
+        respond_error(c,
+                      res.code ? res.code : 1002,
+                      res.message[0] ? res.message : "Failed to skip execution");
+    }
 }
 
+/* Backward-compatibility aliases */
 void
 api_dca_list_plans(csilk_ctx_t* c)
 {
@@ -429,7 +358,6 @@ api_dca_skip_execution(csilk_ctx_t* c)
 
 void
 register_dca_routes(csilk_app_t* app)
-
 {
     csilk_app_get_ext(app,
                       "/api/dca/plans",
