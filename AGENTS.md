@@ -119,7 +119,7 @@ AI Runtime (services/ai/runtime/)
 | `backend/src/config/` | `db_config.h/.c` (DSN), `key_manager.h/.c` (RSA-OAEP keys), `secret.h/.c` (Secret Provider) |
 | `backend/sql/migrations/` | Versioned migration scripts (`sqlite/` & `postgres/`, `V001`~`V007`) |
 | `backend/sql/` | `migration.sql` (SQLite full schema), `migration_postgres.sql` |
-| `backend/tests/unit/` | 27 CTest unit test suites (financial core, ledger, domain rules, DB repository, migration engine, AI runtime) |
+| `backend/tests/unit/` | 28 CTest unit test suites (financial core, ledger, domain rules, DB repository, migration engine, AI runtime) |
 | `backend/tests/test_link.sh` | 38-case integration test suite (139 assertions, HTTP + sqlite3 verification) |
 | `frontend/src/main.ts` | Desktop entry: Pinia, router, Element Plus, i18n |
 | `frontend/src/main-mobile.ts` | Mobile entry: separate router, sql.js init |
@@ -272,6 +272,40 @@ Every `onMounted` hook **MUST** wrap async initialization in `try/catch`. Use `v
 
 `useCategoryStore` caches category trees. Call `invalidate()` after any category mutation (create, update, delete).
 
+### Frontend — Local Date Helpers (STRICT)
+
+**NEVER** use `new Date().toISOString().slice(0, 10)` or `.slice(0, 7)` for "today" / "this month" defaults. In UTC+ timezones (e.g. China), UTC dates drift by one day between 00:00–08:00 local time.
+
+**ALWAYS** use the local-date helpers from `frontend/src/utils/format.ts`:
+```ts
+import { localToday, localThisMonth } from '@/utils/format'
+const today = localToday()      // 'YYYY-MM-DD' in local timezone
+const month = localThisMonth()  // 'YYYY-MM' in local timezone
+```
+
+### Frontend — Chat Session Race Guard
+
+When switching chat sessions or loading more history, stale async results from a previous session must not contaminate the current one. The chat store uses a `sessionSwitchSeq` counter: `selectSession()` and `loadMoreMessages()` capture the current sequence number on entry and discard their result if the sequence advanced (i.e. the user switched sessions while the request was in flight).
+
+**Rule:** Never bypass the sequence guard when adding new async operations to the chat store.
+
+### Frontend — Logout Store Isolation
+
+On logout, the auth store resets all account-scoped Pinia stores (chat, ledger, category) via dynamic imports to avoid import cycles. Chat drafts are also purged from `localStorage`. If you add a new store that holds per-account data, you **must** add a `reset()` method and call it from `auth.logout()`.
+
+### Frontend — Mobile Offline Reads
+
+Mobile views should fall back to the local sql.js DB when online API calls fail. Use the pattern from `DailyExpensesMobile.vue`:
+```ts
+try {
+  const res = await api.list(params)
+  data.value = res.list
+} catch {
+  loadLocalList()  // fallback to local sql.js
+}
+```
+Do NOT mask a successful server response with stale local data — only use local fallback when the online request actually fails.
+
 ### Naming
 
 - C repo functions: `<entity>_<action>` (e.g., `tx_list`, `tx_insert`)
@@ -298,7 +332,10 @@ Every `onMounted` hook **MUST** wrap async initialization in `try/catch`. Use `v
 | `frontend/vite.config.mobile.ts` | Mobile: port 5174, output to `dist-mobile/` |
 | `frontend/src/utils/http.ts` | Central axios wrapper: JWT bearer, CSRF token, response unwrap |
 | `frontend/src/stores/auth.ts` | Auth state: token, user, login/logout |
-| `frontend/src/stores/category.ts` | Category tree cache with `invalidate()` |
+| `frontend/src/stores/category.ts` | Category tree cache with `invalidate()` and `reset()` |
+| `frontend/src/stores/chat.ts` | Chat sessions, messages, streaming state; `resetState()` on logout |
+| `frontend/src/stores/ledger.ts` | Ledger list; `reset()` on logout |
+| `frontend/src/utils/format.ts` | `localToday()`, `localThisMonth()` — local timezone date helpers (never use `toISOString().slice()`)
 | `Dockerfile` | Multi-stage: backend-build → frontend-build → nginx runtime |
 | `docker-compose.yml` | Two-service compose: minefolio + nginx proxy on :80 |
 | `scripts/dev.sh` | Local dev: build backend, start server :8080, start frontend :5173 |
@@ -323,7 +360,7 @@ Every `onMounted` hook **MUST** wrap async initialization in `try/catch`. Use `v
 
 ## Testing & QA
 
-### Backend Unit & Integration Tests (28 CTest Suites + 8 Integration Suites)
+### Backend Unit & Integration Tests (28 CTest Suites + 10 Integration Suites)
 
 ```bash
 cd backend
@@ -352,7 +389,7 @@ npm run build         # Desktop type-check + build
 npm run build:mobile  # Mobile type-check + build
 ```
 
-Frontend unit tests are currently limited; the integration test suite (`test_link.sh`) covers the critical paths end-to-end.
+Frontend unit tests cover format helpers, crypto, auth store, offline-http sync, and chat store race guards; the integration test suite (`test_link.sh`) covers the critical paths end-to-end.
 
 ### Manual Smoke Test
 
@@ -374,6 +411,10 @@ Frontend unit tests are currently limited; the integration test suite (`test_lin
 8. **Password length validation**: All password entry points require ≥6 characters.
 9. **Investment transaction rollback**: When changing a transaction from investment ↔ non-investment type, the old position MUST be rolled back and its balance delta reversed before applying the new transaction. Never skip the reversal.
 10. **JWT secret in production**: `MINEFOLIO_JWT_SECRET` must be set; the server exits if absent.
+11. **Offline sync ID mapping**: When creating records offline, the local row ID must exactly match the queue's `record_id`. Never let SQLite auto-assign a different ID; include the `id` column in the INSERT statement. After syncing an offline-created asset, remap dependent local rows (transactions, daily_expenses) and queued payload FKs from the placeholder ID to the server-assigned ID.
+12. **Chat auto-scroll on history prepend**: Do NOT watch `chat.messages.length` to trigger auto-scroll — prepending older pages changes the length and forces the view to the bottom. Instead, watch only the **last message ID** to detect genuinely new appended content.
+13. **UTC date drift in forms**: `new Date().toISOString().slice(0, 10)` returns UTC, not local. In UTC+ timezones between 00:00–08:00, this yields yesterday's date. Use `localToday()` from `@/utils/format` instead.
+14. **Transaction dialog fee field**: Always reset `form.fee` to 0 in the new-transaction branch of `openDialog()`, and map `Number(txn.fee) || 0` in the edit branch. Clear `fee` in `onTransactionTypeChange()` when switching away from buy/sell to prevent stale fees from being sent on non-investment transactions.
 
 ## Commit Convention
 

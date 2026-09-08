@@ -9,6 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Offline sync ID mapping** (`frontend/src/utils/offline-http.ts`, `frontend/src/stores/sync.ts`):
+  - Fixed offline-created records using two different IDs (queue `record_id` vs SQLite auto-increment rowid), causing duplicate/wrong records after sync. Local rows now insert with explicit `id` matching the queue's `record_id`.
+  - New `remapAssetRefs()` rewrites dependent local rows (transactions, daily_expenses) and queued payloads when an offline-created asset gets its real server ID.
+  - Offline edits now update in place instead of inserting duplicate rows.
+  - Added 4 regression tests in `offline-http.spec.ts` and `sync.store.spec.ts`.
+- **Chat load-more scroll** (`frontend/src/views/Chat.vue`):
+  - Replaced `watch(() => chat.messages.length)` (which fired on history prepend and forced scroll to bottom) with a watcher on the last message ID. Only auto-sticks when genuinely new content is appended.
+- **UTC date defaults across 17 call sites** (`frontend/src/utils/format.ts`, 12 view/component files):
+  - Added `localToday()` and `localThisMonth()` helpers returning local-timezone dates.
+  - Replaced all `new Date().toISOString().slice(0, 10|7)` calls that produced UTC dates (wrong in UTC+ timezones between 00:00–08:00).
+  - Added 3 unit tests in `format.spec.ts` including a fake-timer test at local midnight.
+- **Chat state leak on logout** (`frontend/src/stores/auth.ts`, `frontend/src/stores/chat.ts`):
+  - `logout()` now calls `chat.resetState()` (sessions, messages, streaming state, model selections) and clears chat drafts from localStorage.
+- **Ledger/category state leak on logout** (`frontend/src/stores/ledger.ts`, `frontend/src/stores/category.ts`):
+  - Added `reset()` methods to both stores; `logout()` now resets all three account-scoped stores.
+- **Chat session-switch race** (`frontend/src/stores/chat.ts`):
+  - Added `sessionSwitchSeq` counter to prevent stale `selectSession` / `loadMoreMessages` results from contaminating the current session.
+  - Added 2 regression tests in `chat.store.spec.ts`.
+- **Asset cascader operator precedence** (`frontend/src/views/Assets.vue`):
+  - Fixed `&&` binding tighter than `||` causing lazy-loaded child asset categories to appear at root level.
+- **Stale fee in transaction dialog** (`frontend/src/views/Transactions.vue`):
+  - `openDialog()` edit branch now maps the row's real fee; reset branch sets `fee: 0`.
+  - `onTransactionTypeChange()` clears fee when switching away from buy/sell.
+- **Mobile initial sync** (`frontend/src/views-mobile/MobileLayout.vue`):
+  - `onMounted` now triggers `syncNow()` once the protected mobile layout mounts.
+- **Mobile daily expenses offline reads** (`frontend/src/views-mobile/DailyExpensesMobile.vue`):
+  - `loadData()` now falls back to local sql.js when online list or month-summary requests fail.
+
 ### Added
 - **Unified AI Runtime Architecture (`backend/src/services/ai/runtime/`, `backend/src/services/ai/memory/`)**:
   - Implemented Minefolio's centralized C-native AI Runtime architecture completely decoupling Controllers and Workflows from direct LLM invocations.

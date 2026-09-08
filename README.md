@@ -191,7 +191,7 @@ Minefolio/
 │   │   ├── config/               # 密钥对管理、数据库配置、统一 Secret Provider (secret.h/.c)
 │   │   └── middlewares/          # JWT 鉴权、CORS、CSRF、限流与安全头中间件
 │   └── tests/                    # 单元测试与集成测试矩阵
-│       ├── unit/                 # 27 项高覆盖 CTest 单元测试
+│       ├── unit/                 # 28 项高覆盖 CTest 单元测试
 │       │   ├── test_currency.c   # 货币模型（ISO 4217、精度、比较）
 │       │   ├── test_decimal.c    # 128位定点算术（加/减/乘/除/舍入）
 │       │   ├── test_money.c      # 金额类型（跨币种安全校验）
@@ -347,7 +347,7 @@ Minefolio/
 
 Minefolio 拥有完整的双层测试矩阵（单元测试 + 端到端集成回归）：
 
-### 1. CTest 单元测试矩阵（27 大测试套件，高频毫秒级断言）
+### 1. CTest 单元测试矩阵（28 大测试套件，高频毫秒级断言）
 ```bash
 cd backend/build
 ctest --output-on-failure
@@ -362,7 +362,7 @@ ctest --output-on-failure
 # - 数据库抽象与迁移引擎：test_database_repository, test_migration_engine
 ```
 
-### 2. 端到端集成测试矩阵（8 大测试套件，覆盖 139+ 真实断言）
+### 2. 端到端集成测试矩阵（10 大测试套件，覆盖 139+ 真实断言）
 ```bash
 ./backend/tests/test_full.sh              # 全量回归入口
 # 或单独运行：
