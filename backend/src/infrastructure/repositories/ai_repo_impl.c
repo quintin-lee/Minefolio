@@ -2,8 +2,8 @@
 
 #include "infrastructure/repositories/ai_repo_impl.h"
 #include "infrastructure/repositories/market_repo_impl.h"
-#include "repositories/asset_repo.h"
-#include "repositories/transaction_repo.h"
+#include "infrastructure/repositories/asset_repo_impl.h"
+#include "infrastructure/repositories/transaction_repo_impl.h"
 #include "common/db.h"
 #include <string.h>
 

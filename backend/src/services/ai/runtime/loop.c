@@ -8,7 +8,7 @@
 #include "services/ai_tools.h"
 #include "services/ai_service.h"
 #include "domain/ai/rules.h"
-#include "repositories/ai_session_repo.h"
+#include "infrastructure/repositories/ai_session_repo_impl.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -241,7 +241,7 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
             const char* final_text =
                 ai_res.content ? ai_res.content : (bridge.accumulated ? bridge.accumulated : "");
             if (pool && ctx->session_id > 0 && final_text && final_text[0]) {
-                ai_message_insert(pool, ctx->session_id, "assistant", final_text, model);
+                mf_ai_message_insert(pool, ctx->session_id, "assistant", final_text, model);
             }
             ai_runtime_status_set(&status, AI_RUNTIME_ERR_OK, "OK", NULL);
             csilk_ai_chat_response_free(&ai_res);
@@ -378,7 +378,7 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
             trace, ctx->stats.prompt_tokens, ctx->stats.completion_tokens);
         ai_trace_finish(trace, (status.code == AI_RUNTIME_ERR_OK) ? "ok" : "error", status.message);
         if (pool) {
-            ai_trace_save(pool, trace);
+            mf_ai_trace_save(pool, trace);
         }
         if (created_local_trace) {
             ai_trace_free(trace);
@@ -503,7 +503,7 @@ ai_runtime_run_loop(csilk_db_pool_t* pool, const ai_loop_options_t* opts, ai_tra
 
     ai_config_t*  cfg = ai_get_config();
     csilk_json_t* hist =
-        (pool && opts->session_id > 0) ? ai_message_recent(pool, opts->session_id, 20) : NULL;
+        (pool && opts->session_id > 0) ? mf_ai_message_recent(pool, opts->session_id, 20) : NULL;
     csilk_json_free(ctx.messages);
     ctx.messages =
         ai_memory_build_messages(cfg ? cfg->system_prompt : NULL, hist, opts->user_prompt, 20);

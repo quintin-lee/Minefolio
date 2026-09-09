@@ -1,6 +1,6 @@
 #include "services/ai/workflow/executor.h"
 #include "services/ai_service.h"
-#include "repositories/ai_session_repo.h"
+#include "infrastructure/repositories/ai_session_repo_impl.h"
 #include "common/db.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -46,10 +46,10 @@ ai_workflow_execute_stream(csilk_ctx_t* c, const ai_workflow_graph_t* graph, ai_
     const csilk_json_t* params = ctx->params;
 
     if (session_id <= 0 && pool) {
-        session_id = ai_session_insert(pool, user_id, graph->title, "workflow-agent", "system");
+        session_id = mf_ai_session_insert(pool, user_id, graph->title, "workflow-agent", "system");
         ctx->session_id = session_id;
     } else if (session_id > 0 && pool) {
-        csilk_json_t* sess = ai_session_get(pool, user_id, session_id);
+        csilk_json_t* sess = mf_ai_session_get(pool, user_id, session_id);
         if (!sess) {
             return -1;
         }
@@ -133,7 +133,7 @@ ai_workflow_execute_stream(csilk_ctx_t* c, const ai_workflow_graph_t* graph, ai_
                     }
 
                     if (pool && session_id > 0) {
-                        ai_message_insert(
+                        mf_ai_message_insert(
                             pool, session_id, "assistant", step_out, "workflow-agent");
                     }
                     free(step_out);

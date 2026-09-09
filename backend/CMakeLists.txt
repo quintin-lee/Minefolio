@@ -138,7 +138,7 @@ function(add_financial_unit_test test_target test_source)
         src/common/config.c
         src/common/ledger_utils.c
         src/config/secret.c
-        src/repositories/transaction_repo.c
+        src/infrastructure/repositories/transaction_repo_impl.c
     )
     target_include_directories(${test_target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_compile_options(${test_target} PRIVATE -UNDEBUG)

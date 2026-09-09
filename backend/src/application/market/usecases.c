@@ -5,7 +5,7 @@
 #include "services/market/quote_engine.h"
 #include "services/market/market_scheduler.h"
 #include "services/market/exchange_rate_service.h"
-#include "repositories/asset_repo.h"
+#include "infrastructure/repositories/asset_repo_impl.h"
 #include "infrastructure/repositories/market_repo_impl.h"
 #include "common/balance.h"
 #include "common/db.h"

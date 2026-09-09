@@ -1,7 +1,7 @@
 #include "services/ai_service.h"
 #include "services/ai_tools.h"
 #include "services/ai/runtime/runtime.h"
-#include "repositories/ai_session_repo.h"
+#include "infrastructure/repositories/ai_session_repo_impl.h"
 #include "infrastructure/repositories/ai_settings_repo_impl.h"
 #include "common/ai_config.h"
 #include "common/ai_trace.h"
@@ -405,14 +405,14 @@ ai_chat_handler(csilk_ctx_t* c)
         if (title[0] == '\0') {
             strcpy(title, "新对话");
         }
-        sid = ai_session_insert(pool, user_id, title, model_buf, prov->id);
+        sid = mf_ai_session_insert(pool, user_id, title, model_buf, prov->id);
         if (sid <= 0) {
             csilk_json_free(body);
             respond_error(c, 500, "创建会话失败");
             return;
         }
     } else {
-        csilk_json_t* sess = ai_session_get(pool, user_id, sid);
+        csilk_json_t* sess = mf_ai_session_get(pool, user_id, sid);
         if (!sess) {
             csilk_json_free(body);
             respond_not_found(c);
@@ -425,22 +425,22 @@ ai_chat_handler(csilk_ctx_t* c)
             title[sizeof(title) - 1] = '\0';
             utf8_truncate(title, 20, 60);
             if (title[0] != '\0') {
-                ai_session_update(pool, user_id, sid, title, NULL);
+                mf_ai_session_update(pool, user_id, sid, title, NULL);
             }
         }
         csilk_json_free(sess);
         if (regenerate) {
-            ai_message_delete_last_assistant(pool, sid);
+            mf_ai_message_delete_last_assistant(pool, sid);
         }
     }
 
     /* load history */
     int           ctx_size = g_config.context_size > 0 ? g_config.context_size : 20;
-    csilk_json_t* history = ai_message_recent(pool, sid, ctx_size);
+    csilk_json_t* history = mf_ai_message_recent(pool, sid, ctx_size);
 
     /* persist user message (skip on regenerate — already in history) */
     if (!regenerate) {
-        ai_message_insert(pool, sid, "user", content, model_buf);
+        mf_ai_message_insert(pool, sid, "user", content, model_buf);
     }
 
     /* 构造统一 AI Runtime 上下文 */

@@ -3,7 +3,7 @@
 #include "services/ai/tools/validation.h"
 #include "services/ai/tools/context.h"
 #include "services/ai/policy/confirmation.h"
-#include "repositories/asset_repo.h"
+#include "infrastructure/repositories/asset_repo_impl.h"
 #include "common/db.h"
 #include "common/config.h"
 #include "csilk/csilk.h"

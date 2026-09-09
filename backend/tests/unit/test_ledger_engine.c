@@ -1,7 +1,7 @@
 #include "core/ledger/ledger_engine.h"
 #include "common/db.h"
 #include "common/config.h"
-#include "repositories/transaction_repo.h"
+#include "infrastructure/repositories/transaction_repo_impl.h"
 #include "csilk/csilk.h"
 #include <assert.h>
 #include <stdio.h>

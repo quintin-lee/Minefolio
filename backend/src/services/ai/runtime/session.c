@@ -1,5 +1,5 @@
 #include "services/ai/runtime/session.h"
-#include "repositories/ai_session_repo.h"
+#include "infrastructure/repositories/ai_session_repo_impl.h"
 #include "common/db.h"
 #include <stdlib.h>
 #include <string.h>
@@ -21,7 +21,7 @@ ai_session_load_or_create(csilk_db_pool_t* pool,
     sctx->user_id = user_id;
 
     if (session_id > 0) {
-        csilk_json_t* sess = ai_session_get(pool, user_id, session_id);
+        csilk_json_t* sess = mf_ai_session_get(pool, user_id, session_id);
         if (sess && csilk_json_array_size(sess) > 0) {
             const csilk_json_t* row = csilk_json_array_get(sess, 0);
             sctx->session_id = session_id;
@@ -37,7 +37,7 @@ ai_session_load_or_create(csilk_db_pool_t* pool,
             if (m) {
                 strncpy(sctx->model, m, sizeof(sctx->model) - 1);
             }
-            sctx->messages = ai_message_recent(pool, session_id, 50);
+            sctx->messages = mf_ai_message_recent(pool, session_id, 50);
             csilk_json_free(sess);
             return sctx;
         }
@@ -46,7 +46,7 @@ ai_session_load_or_create(csilk_db_pool_t* pool,
         }
     }
 
-    int64_t new_id = ai_session_insert(
+    int64_t new_id = mf_ai_session_insert(
         pool, user_id, "新对话", model ? model : "gpt-4o", provider ? provider : "openai");
     sctx->session_id = new_id;
     strncpy(sctx->title, "新对话", sizeof(sctx->title) - 1);
@@ -70,7 +70,7 @@ ai_session_append_message(csilk_db_pool_t* pool,
     if (!pool || session_id <= 0 || !role) {
         return -1;
     }
-    int64_t msg_id = ai_message_insert(pool, session_id, role, content ? content : "", model);
+    int64_t msg_id = mf_ai_message_insert(pool, session_id, role, content ? content : "", model);
     return msg_id > 0 ? 0 : -1;
 }
 

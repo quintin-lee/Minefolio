@@ -1,7 +1,7 @@
 #include "application/asset/usecases.h"
 #include "domain/asset/entity.h"
 #include "domain/asset/rules.h"
-#include "repositories/asset_repo.h"
+#include "infrastructure/repositories/asset_repo_impl.h"
 #include "common/balance.h"
 #include "common/db.h"
 #include "core/ledger/ledger_engine.h"

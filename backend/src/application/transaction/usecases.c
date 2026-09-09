@@ -3,7 +3,7 @@
 #include "domain/transaction/repository.h"
 #include "core/ledger/ledger_engine.h"
 #include "core/financial/currency.h"
-#include "repositories/transaction_repo.h"
+#include "infrastructure/repositories/transaction_repo_impl.h"
 #include "common/tx_types.h"
 #include "common/db.h"
 #include <stdio.h>

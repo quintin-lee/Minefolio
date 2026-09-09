@@ -157,7 +157,7 @@ void ai_trace_finish(ai_trace_t* t, const char* status, const char* error);
  *
  * @return int64_t 成功返回插入的记录主键 ID，失败返回 -1
  */
-int64_t ai_trace_save(csilk_db_pool_t* pool, ai_trace_t* t);
+int64_t mf_ai_trace_save(csilk_db_pool_t* pool, ai_trace_t* t);
 
 /**
  * @brief 释放追踪上下文占用的所有堆内存

@@ -3,7 +3,7 @@
 #include "domain/auth/rules.h"
 #include "domain/auth/repository.h"
 #include "infrastructure/repositories/auth_repo_impl.h"
-#include "repositories/ledger_repo.h"
+#include "common/ledger_utils.h"
 #include "infrastructure/repositories/import_rule_repo_impl.h"
 #include "services/category_service.h"
 #include "config/key_manager.h"

@@ -1,9 +1,9 @@
 #include "application/ai/usecases.h"
 #include "domain/ai/entity.h"
 #include "domain/ai/rules.h"
-#include "repositories/ai_session_repo.h"
+#include "infrastructure/repositories/ai_session_repo_impl.h"
 #include "infrastructure/repositories/ai_settings_repo_impl.h"
-#include "repositories/ai_trace_repo.h"
+#include "infrastructure/repositories/ai_trace_repo_impl.h"
 #include "services/ai_workflow_service.h"
 #include "services/ai_service.h"
 #include "common/ai_config.h"
@@ -96,7 +96,8 @@ ai_usecase_sessions_list(void*                pool,
     }
 
     int64_t       total = 0;
-    csilk_json_t* list = ai_session_list((csilk_db_pool_t*)pool, user_id, page, page_size, &total);
+    csilk_json_t* list =
+        mf_ai_session_list((csilk_db_pool_t*)pool, user_id, page, page_size, &total);
     if (!list) {
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "查询失败");
@@ -135,7 +136,7 @@ ai_usecase_sessions_create(void*                          pool,
         return -1;
     }
 
-    int64_t id = ai_session_insert(
+    int64_t id = mf_ai_session_insert(
         (csilk_db_pool_t*)pool, cmd->user_id, title_buf, cmd->model, cmd->provider);
     if (id <= 0) {
         out_res->code = 500;
@@ -163,7 +164,7 @@ ai_usecase_sessions_get(
         return -1;
     }
 
-    csilk_json_t* r = ai_session_get((csilk_db_pool_t*)pool, user_id, id);
+    csilk_json_t* r = mf_ai_session_get((csilk_db_pool_t*)pool, user_id, id);
     if (!r) {
         out_res->code = 1003;
         snprintf(out_res->message, sizeof(out_res->message), "会话不存在");
@@ -192,7 +193,7 @@ ai_usecase_sessions_update(void*                          pool,
     }
 
     int ok =
-        ai_session_update((csilk_db_pool_t*)pool, cmd->user_id, cmd->id, cmd->title, cmd->model);
+        mf_ai_session_update((csilk_db_pool_t*)pool, cmd->user_id, cmd->id, cmd->title, cmd->model);
     if (!ok) {
         out_res->code = 1003;
         snprintf(out_res->message, sizeof(out_res->message), "会话不存在");
@@ -217,7 +218,7 @@ ai_usecase_sessions_delete(void* pool, int64_t user_id, int64_t id, ai_usecase_r
         return -1;
     }
 
-    int ok = ai_session_delete((csilk_db_pool_t*)pool, user_id, id);
+    int ok = mf_ai_session_delete((csilk_db_pool_t*)pool, user_id, id);
     if (!ok) {
         out_res->code = 1003;
         snprintf(out_res->message, sizeof(out_res->message), "会话不存在");
@@ -249,7 +250,7 @@ ai_usecase_messages_list(void*                pool,
         return -1;
     }
 
-    csilk_json_t* sess = ai_session_get((csilk_db_pool_t*)pool, user_id, session_id);
+    csilk_json_t* sess = mf_ai_session_get((csilk_db_pool_t*)pool, user_id, session_id);
     if (!sess) {
         out_res->code = 1003;
         snprintf(out_res->message, sizeof(out_res->message), "会话不存在");
@@ -259,7 +260,7 @@ ai_usecase_messages_list(void*                pool,
 
     int64_t       total = 0;
     csilk_json_t* list =
-        ai_message_list((csilk_db_pool_t*)pool, session_id, page, page_size, &total);
+        mf_ai_message_list((csilk_db_pool_t*)pool, session_id, page, page_size, &total);
 
     *out_data = list;
     *out_total = total;
@@ -520,7 +521,7 @@ ai_usecase_trace_list(void*                pool,
 
     int64_t       total = 0;
     csilk_json_t* list =
-        ai_trace_list((csilk_db_pool_t*)pool, user_id, page, page_size, provider, model, &total);
+        mf_ai_trace_list((csilk_db_pool_t*)pool, user_id, page, page_size, provider, model, &total);
     if (!list) {
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "查询 Trace 失败");
@@ -550,7 +551,7 @@ ai_usecase_trace_stats(void*                pool,
         return -1;
     }
 
-    csilk_json_t* r = ai_trace_stats((csilk_db_pool_t*)pool, user_id);
+    csilk_json_t* r = mf_ai_trace_stats((csilk_db_pool_t*)pool, user_id);
     if (!r) {
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "查询统计失败");
@@ -585,7 +586,7 @@ ai_usecase_trace_get(
         return -1;
     }
 
-    csilk_json_t* r = ai_trace_get((csilk_db_pool_t*)pool, user_id, id);
+    csilk_json_t* r = mf_ai_trace_get((csilk_db_pool_t*)pool, user_id, id);
     if (!r || csilk_json_array_size(r) == 0) {
         if (r) {
             csilk_json_free(r);

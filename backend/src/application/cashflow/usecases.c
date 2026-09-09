@@ -1,7 +1,7 @@
 #include "application/cashflow/usecases.h"
 #include "domain/cashflow/repository.h"
 #include "domain/cashflow/rules.h"
-#include "repositories/transaction_repo.h"
+#include "infrastructure/repositories/transaction_repo_impl.h"
 #include "common/balance.h"
 #include "common/db.h"
 #include <stdio.h>
