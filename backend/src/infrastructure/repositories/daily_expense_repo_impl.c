@@ -191,10 +191,11 @@ mf_daily_expense_repo_get_snapshot(void*                        db_pool,
     char uid[32], idstr[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     snprintf(idstr, sizeof(idstr), "%lld", (long long)id);
-    csilk_json_t* row = csilk_db_query_param_json(
-        (csilk_db_pool_t*)db_pool,
-        "SELECT amount,expense_type,asset_id FROM daily_expenses WHERE id=? AND user_id=?",
-        (const char*[]){idstr, uid, NULL});
+    csilk_json_t* row =
+        csilk_db_query_param_json((csilk_db_pool_t*)db_pool,
+                                  "SELECT amount,expense_type,asset_id,currency,note FROM "
+                                  "daily_expenses WHERE id=? AND user_id=?",
+                                  (const char*[]){idstr, uid, NULL});
     if (!row || csilk_json_array_size(row) == 0) {
         if (row) {
             csilk_json_free(row);
@@ -205,7 +206,11 @@ mf_daily_expense_repo_get_snapshot(void*                        db_pool,
     out->amount = db_get_num(r, "amount");
     const char* et = csilk_json_get_string(r, "expense_type");
     strncpy(out->expense_type, et ? et : "", sizeof(out->expense_type) - 1);
+    const char* cur = csilk_json_get_string(r, "currency");
+    strncpy(out->currency, cur && cur[0] ? cur : "CNY", sizeof(out->currency) - 1);
     out->asset_id = (int64_t)db_get_int(r, "asset_id");
+    const char* nt = csilk_json_get_string(r, "note");
+    strncpy(out->note, nt ? nt : "", sizeof(out->note) - 1);
     csilk_json_free(row);
     return 0;
 }
@@ -246,7 +251,7 @@ mf_daily_expense_repo_update(void*       db_pool,
     if (res) {
         csilk_json_free(res);
     }
-    return ok;
+    return ok ? 0 : -1;
 }
 
 int
@@ -263,7 +268,7 @@ mf_daily_expense_repo_delete(void* db_pool, int64_t user_id, int64_t id)
     if (res) {
         csilk_json_free(res);
     }
-    return ok;
+    return ok ? 0 : -1;
 }
 
 int
@@ -293,7 +298,7 @@ mf_daily_expense_repo_tag_insert(void* db_pool, int64_t expense_id, int64_t tag_
         (csilk_db_pool_t*)db_pool,
         "INSERT OR IGNORE INTO expense_tags (expense_id,tag_id) VALUES (?,?)",
         (const char*[]){eid, tid, NULL});
-    int ok = res ? 1 : 0;
+    int ok = res ? 0 : -1;
     if (res) {
         csilk_json_free(res);
     }
@@ -308,7 +313,7 @@ mf_daily_expense_repo_tag_delete_all(void* db_pool, int64_t expense_id)
     csilk_json_t* res = csilk_db_query_param_json((csilk_db_pool_t*)db_pool,
                                                   "DELETE FROM expense_tags WHERE expense_id=?",
                                                   (const char*[]){eid, NULL});
-    int           ok = res ? 1 : 0;
+    int           ok = res ? 0 : -1;
     if (res) {
         csilk_json_free(res);
     }

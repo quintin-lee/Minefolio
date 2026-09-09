@@ -253,12 +253,19 @@ mf_dca_repo_execution_get(void* db_pool, int64_t user_id, int64_t id)
     char uid[32], eid[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     snprintf(eid, sizeof(eid), "%lld", (long long)id);
-    const char*   sql = "SELECT e.id, e.plan_id, e.user_id, e.period_date, e.planned_amount, "
-                        "       e.actual_amount, e.executed_price, e.executed_quantity, "
-                        "       e.transaction_id, e.status, "
-                        "       CAST(e.created_at AS TEXT) AS created_at "
-                        "FROM dca_executions e "
-                        "WHERE e.user_id = ? AND e.id = ?";
+    const char* sql =
+        "SELECT e.id, e.plan_id, e.user_id, e.period_date, e.planned_amount, "
+        "       e.actual_amount, e.executed_price, e.executed_quantity, "
+        "       e.transaction_id, e.status, CAST(e.created_at AS TEXT) AS created_at, "
+        "       p.target_asset_id, p.funding_asset_id, p.name AS plan_name, "
+        "       ta.name AS target_asset_name, ta.symbol AS target_symbol, "
+        "       ta.net_value AS target_net_value, "
+        "       fa.name AS funding_asset_name "
+        "FROM dca_executions e "
+        "JOIN dca_plans p ON p.id = e.plan_id "
+        "JOIN assets ta ON ta.id = p.target_asset_id "
+        "JOIN assets fa ON fa.id = p.funding_asset_id "
+        "WHERE e.user_id = ? AND e.id = ?";
     csilk_json_t* arr =
         csilk_db_query_param_json((csilk_db_pool_t*)db_pool, sql, (const char*[]){uid, eid, NULL});
     if (!arr || csilk_json_array_size(arr) == 0) {

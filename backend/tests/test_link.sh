@@ -105,11 +105,17 @@ ASSET_CAT=$(sqlite3 "$DB" "SELECT id FROM categories WHERE name='现金' AND use
 CC_CAT=$(sqlite3 "$DB" "SELECT id FROM categories WHERE name='信用卡' AND user_id=1 LIMIT 1")
 
 echo "== 2. 建资产 =="
-curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/assets" -d "{\"name\":\"钱包\",\"category_id\":$ASSET_CAT,\"current_value\":10000,\"currency\":\"CNY\"}" >/dev/null
-curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/assets" -d "{\"name\":\"信用卡\",\"category_id\":$CC_CAT,\"current_value\":0,\"currency\":\"CNY\"}" >/dev/null
+WALLET_RES=$(curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/assets" -d "{\"name\":\"钱包\",\"category_id\":$ASSET_CAT,\"current_value\":10000,\"currency\":\"CNY\"}")
+check "创建钱包资产 code=0" "0" "$(echo "$WALLET_RES" | jq -r '.code | floor')"
+CC_RES=$(curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/assets" -d "{\"name\":\"信用卡\",\"category_id\":$CC_CAT,\"current_value\":0,\"currency\":\"CNY\"}")
+check "创建信用卡资产 code=0" "0" "$(echo "$CC_RES" | jq -r '.code | floor')"
 # 用 sqlite3 直接取真实 id（避免依赖 API 返回）
 WALLET_ID=$(sqlite3 "$DB" "SELECT id FROM assets WHERE name='钱包' AND user_id=1 LIMIT 1")
 CC_ID=$(sqlite3 "$DB" "SELECT id FROM assets WHERE name='信用卡' AND user_id=1 LIMIT 1")
+test -n "$WALLET_ID" && test "$WALLET_ID" != "null"
+check "钱包资产已落库" "0" "$?"
+test -n "$CC_ID" && test "$CC_ID" != "null"
+check "信用卡资产已落库" "0" "$?"
 
 echo "== 3. 记收入 500 → 余额 10500 =="
 curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/daily-expenses" -d "{\"asset_id\":$WALLET_ID,\"category_id\":$INCOME_CAT,\"expense_type\":\"income\",\"amount\":500,\"currency\":\"CNY\",\"expense_date\":\"2026-08-01\"}" >/dev/null

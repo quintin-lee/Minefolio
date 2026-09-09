@@ -36,7 +36,10 @@ ledger_get_default(csilk_db_pool_t* pool, int64_t user_id)
         const char* cr_sql =
             "INSERT INTO ledgers (owner_id, name, description, currency, icon, color, is_default) "
             "VALUES (?, '默认账本', '个人默认账本', 'CNY', 'ph:wallet', '#3b82f6', 1)";
-        csilk_db_query_param_json(pool, cr_sql, (const char*[]){uid, NULL});
+        csilk_json_t* cr_res = csilk_db_query_param_json(pool, cr_sql, (const char*[]){uid, NULL});
+        if (cr_res) {
+            csilk_json_free(cr_res);
+        }
         /* Re-query to get the ID */
         res = csilk_db_query_param_json(pool, sql, (const char*[]){uid, NULL});
         if (res && csilk_json_array_size(res) > 0) {
@@ -44,6 +47,19 @@ ledger_get_default(csilk_db_pool_t* pool, int64_t user_id)
         }
         if (res) {
             csilk_json_free(res);
+        }
+        if (id > 0) {
+            /* Mirror legacy ledger_create: owner membership row, else RBAC 1004 on writes */
+            char lid[32];
+            snprintf(lid, sizeof(lid), "%lld", (long long)id);
+            csilk_json_t* m_res =
+                csilk_db_query_param_json(pool,
+                                          "INSERT INTO ledger_members (ledger_id, user_id, role) "
+                                          "VALUES (?, ?, 'owner')",
+                                          (const char*[]){lid, uid, NULL});
+            if (m_res) {
+                csilk_json_free(m_res);
+            }
         }
     }
     return id;

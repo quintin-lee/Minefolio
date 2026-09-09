@@ -125,7 +125,7 @@ echo "Bob now has $B_COUNT ledgers"
 # 8. Alice lists members of the family ledger
 MEMBERS=$(curl -s -X GET "$BASE/ledgers/${FAM_LID}/members" \
   -H "Authorization: Bearer $TOKEN_A")
-BOB_MEM=$(echo "$MEMBERS" | jq -r ".data[] | select((.user_id|tostring) == \"$USER_B_ID\")")
+BOB_MEM=$(echo "$MEMBERS" | jq -r ".data[] | select((.user_id|floor|tostring) == \"$USER_B_ID\")")
 BOB_ROLE=$(echo "$BOB_MEM" | jq -r '.role')
 test "$BOB_ROLE" = "editor"
 echo "Bob is member with role: $BOB_ROLE"
@@ -142,7 +142,7 @@ echo "Alice updated Bob to viewer role"
 # 10. Verify Bob is now viewer
 MEMBERS_2=$(curl -s -X GET "$BASE/ledgers/${FAM_LID}/members" \
   -H "Authorization: Bearer $TOKEN_B")
-BOB_ROLE_2=$(echo "$MEMBERS_2" | jq -r ".data[] | select((.user_id|tostring) == \"$USER_B_ID\") | .role")
+BOB_ROLE_2=$(echo "$MEMBERS_2" | jq -r ".data[] | select((.user_id|floor|tostring) == \"$USER_B_ID\") | .role")
 test "$BOB_ROLE_2" = "viewer"
 echo "Bob role verified as: $BOB_ROLE_2"
 
@@ -192,7 +192,7 @@ echo "Alice removed Bob from family ledger"
 # 12. Verify Bob is no longer a member
 MEMBERS_3=$(curl -s -X GET "$BASE/ledgers/${FAM_LID}/members" \
   -H "Authorization: Bearer $TOKEN_A")
-BOB_IN_LIST=$(echo "$MEMBERS_3" | jq -r ".data[] | select((.user_id|tostring) == \"$USER_B_ID\") | .user_id")
+BOB_IN_LIST=$(echo "$MEMBERS_3" | jq -r ".data[] | select((.user_id|floor|tostring) == \"$USER_B_ID\") | .user_id")
 test -z "$BOB_IN_LIST"
 echo "Verified Bob is no longer in member list"
 
