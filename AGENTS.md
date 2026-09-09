@@ -12,17 +12,15 @@ Minefolio is a self-hosted personal finance and investment tracker. It supports 
 Interfaces Layer   interfaces/http/controllers/  Parse params, call usecase, format response
 Application Layer  application/*/{usecases,commands,dtos}.h/.c  Use case orchestration
 Domain Layer       domain/*/{entity,repository,rules}.h/.c  Pure business rules, zero dependencies
-Infrastructure     infrastructure/repositories/*_repo_impl.c  SQL implementations
+Infrastructure     infrastructure/repositories/*_repo_impl.c  SQL implementations (18 files)
                    infrastructure/database/  Database abstraction and SQLite/Postgres adapters
                    infrastructure/database/migration/  Migration engine
 Core Layer         core/financial/  Fixed-point core: money, decimal, quantity, price, rate, pnl
                    core/ledger/     Ledger engine: transaction replay, rebuild, balance/cost basis
-Shared             common/  db, jwt, balance, response, ctx, csv, tx_types
+Shared             common/  db, jwt, balance, response, ctx, csv, tx_types, ledger_utils
                    config/  db_config, key_manager (RSA keys), secret (Secret Provider)
                    dtos/  request/response struct definitions
                    middlewares/  jwt, cors, csrf, security-headers, rate-limit
-Legacy (保留)      services/ai/  Unified AI Runtime (via ai_repo_impl wrapper)
-                   repositories/  Legacy SQL repos (used by AI subsystem via wrapper)
 ```
 
 **Dependency direction is strict and one-way:**
@@ -31,10 +29,11 @@ Legacy (保留)      services/ai/  Unified AI Runtime (via ai_repo_impl wrapper)
 - `application/*` → `domain/*`, `infrastructure/*`, `core/*`, `common/`
 - `domain/*` → zero external dependencies (pure C, only `core/financial`)
 - `infrastructure/repositories/*` → `common/db.h`, `domain/*` (contracts)
-- `repositories/` (legacy) → `common/db.h` ONLY (used by AI subsystem via `ai_repo_impl` wrapper)
 
 **All 16 business domains have been migrated to DDD architecture:**
 tag, category, ledger, daily_expense, transfer, dca, report, file, import/export, auth, ai, market, asset, transaction, portfolio, cashflow.
+
+**Legacy repos have been completely removed.** All SQL now lives in `infrastructure/repositories/*_repo_impl.c`.
 
 ### Frontend — Vue 3 SPA
 
@@ -114,14 +113,13 @@ AI Runtime (services/ai/runtime/)
 | `backend/src/interfaces/http/controllers/` | Thin HTTP handlers; one per domain; `register_*_routes(app)` |
 | `backend/src/domain/` | Domain layer: entities, repository contracts, business rules (9+ domains) |
 | `backend/src/application/` | Application layer: use case orchestration (9+ domains) |
-| `backend/src/infrastructure/repositories/` | Infrastructure layer: SQL implementations of repository contracts |
+| `backend/src/infrastructure/repositories/` | Infrastructure layer: SQL implementations of repository contracts (18 files, zero legacy) |
 | `backend/src/services/ai/` | Unified AI Runtime: session, context, model, tool, workflow, policy, trace, memory |
 | `backend/src/core/financial/` | Fixed-point core arithmetic: money, decimal, quantity, price, rate, pnl |
 | `backend/src/core/ledger/` | Ledger engine: single source of truth, position calculation, history replay/rebuild |
 | `backend/src/infrastructure/database/` | Database abstraction layer and SQLite/PostgreSQL native adapters |
 | `backend/src/infrastructure/database/migration/` | Migration engine: SHA-256 CRLF checksum, mutex locks, auto-baseline |
-| `backend/src/repositories/` | Legacy SQL repos (used by AI subsystem via `ai_repo_impl` wrapper) |
-| `backend/src/common/` | Cross-cutting: `db.h`, `balance.h`, `jwt.h`, `response.h`, `ctx.h`, `tx_types.h` |
+| `backend/src/common/` | Cross-cutting: `db.h`, `balance.h`, `jwt.h`, `response.h`, `ctx.h`, `tx_types.h`, `ledger_utils.h` |
 | `backend/src/config/` | `db_config.h/.c` (DSN), `key_manager.h/.c` (RSA-OAEP keys), `secret.h/.c` (Secret Provider) |
 | `backend/sql/migrations/` | Versioned migration scripts (`sqlite/` & `postgres/`, `V001`~`V007`) |
 | `backend/sql/` | `migration.sql` (SQLite full schema), `migration_postgres.sql` |
@@ -190,7 +188,7 @@ cmake --build backend/build --parallel && npm --prefix frontend run build
 ### C — Repository Pattern (STRICT)
 
 ```c
-// repositories/<entity>_repo.h
+// infrastructure/repositories/<entity>_repo_impl.h
 #pragma once
 #include "csilk/csilk.h"
 #include "common/db.h"
@@ -208,6 +206,7 @@ int           tx_delete_fee_children(csilk_db_pool_t* pool, int64_t user_id, int
 - Return `csilk_json_t*` directly; no model-struct conversion layer
 - ALL SQL uses `?` placeholders with `csilk_db_query_param_json(pool, sql, params)`
 - Raw SQL via `csilk_db_exec` is only acceptable for self-contained literals (e.g. fee-row insertion)
+- **No legacy `repositories/` directory** — all SQL lives in `infrastructure/repositories/`
 
 ### C — Service Pattern
 
