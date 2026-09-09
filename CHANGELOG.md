@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Legacy Repository Complete Deletion**:
+  - Deleted ALL 17 legacy `repositories/*.c/h` files, eliminating the dual-track architecture.
+  - All SQL now lives exclusively in `infrastructure/repositories/*_repo_impl.c` (18 files).
+  - Created new infrastructure implementations: `ai_trace_repo_impl.h/.c`, `ai_session_repo_impl.h/.c`, `ai_settings_repo_impl.h/.c`, `import_rule_repo_impl.h/.c`.
+  - Extracted shared ledger utilities to `common/ledger_utils.h/.c` (tx_get_old, tx_child_fee_rows, tx_delete_fee_children, ledger_get_default, ledger_get_user_role).
+  - Updated ~30 source files to use new repository headers.
+  - 28/28 unit tests pass, 100% build success.
+
 - **DDD Four-Layer Architecture Migration (Complete)**:
   - Migrated all 16 business domains to Domain-Driven Design (DDD) four-layer architecture:
     - **Domain Layer** (`backend/src/domain/`): Pure business entities, repository contracts, and rules with zero external dependencies.
