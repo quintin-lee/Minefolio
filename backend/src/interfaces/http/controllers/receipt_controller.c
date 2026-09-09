@@ -1,6 +1,6 @@
 #include "interfaces/http/controllers/receipt_controller.h"
 #include "services/ai_service.h"
-#include "repositories/import_rule_repo.h"
+#include "infrastructure/repositories/import_rule_repo_impl.h"
 #include "common/ai_config.h"
 #include "common/db.h"
 #include "common/response.h"
@@ -520,7 +520,7 @@ receipt_service_scan(csilk_ctx_t* c)
 
         /* If exact category match failed, try matching with smart import rules */
         if (matched_cat_id <= 0) {
-            csilk_json_t* rules = import_rule_list(pool, user_id);
+            csilk_json_t* rules = mf_import_rule_list(pool, user_id);
             if (rules) {
                 size_t rule_count = csilk_json_array_size(rules);
                 for (size_t i = 0; i < rule_count; i++) {

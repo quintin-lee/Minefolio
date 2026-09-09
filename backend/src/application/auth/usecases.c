@@ -4,7 +4,7 @@
 #include "domain/auth/repository.h"
 #include "infrastructure/repositories/auth_repo_impl.h"
 #include "repositories/ledger_repo.h"
-#include "repositories/import_rule_repo.h"
+#include "infrastructure/repositories/import_rule_repo_impl.h"
 #include "services/category_service.h"
 #include "config/key_manager.h"
 #include "common/config.h"
@@ -127,7 +127,7 @@ auth_usecase_register(void*                      pool,
     csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
     categories_seed_defaults(db_pool, user_id);
     ledger_get_default(db_pool, user_id);
-    import_rule_seed_defaults(db_pool, user_id);
+    mf_import_rule_seed_defaults(db_pool, user_id);
 
     char*         token = jwt_generate_token(c, user_id, 0);
     csilk_json_t* resp = csilk_json_object();
@@ -714,7 +714,7 @@ auth_usecase_oauth_callback(void*                       pool,
 
         csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
         categories_seed_defaults(db_pool, user_id);
-        import_rule_seed_defaults(db_pool, user_id);
+        mf_import_rule_seed_defaults(db_pool, user_id);
         ledger_get_default(db_pool, user_id);
     }
 

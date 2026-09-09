@@ -1,27 +1,13 @@
-/**
- * @file import_rule_repo.c
- * @brief 账单导入自动分类规则数据访问层具体实现
- *
- * 实现了导入匹配规则的增删改查、优先级排序查询及常用商户规则的批量预置播种。
- */
-
-#include "repositories/import_rule_repo.h"
+#include "infrastructure/repositories/import_rule_repo_impl.h"
 #include "common/db.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-/**
- * @brief 查询用户的所有导入匹配规则列表
- *
- * 执行 SQL 左连接 categories 获取分类名，按 `priority ASC, id ASC` 排序。
- *
- * @param pool 数据库连接池指针
- * @param user_id 用户 ID
- * @return csilk_json_t* 规则列表 JSON 数组
- */
+/* --- SQL statements inlined from repositories/import_rule_repo.c --- */
+
 csilk_json_t*
-import_rule_list(csilk_db_pool_t* pool, int64_t user_id)
+mf_import_rule_list(csilk_db_pool_t* pool, int64_t user_id)
 {
     char uid[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
@@ -37,18 +23,8 @@ import_rule_list(csilk_db_pool_t* pool, int64_t user_id)
         (const char*[]){uid, NULL});
 }
 
-/**
- * @brief 获取单个规则详情
- *
- * 执行 SQL：`SELECT ... FROM import_rules r LEFT JOIN categories c ON r.category_id = c.id WHERE r.user_id = ? AND r.id = ?`
- *
- * @param pool 数据库连接池指针
- * @param user_id 用户 ID
- * @param id 规则 ID
- * @return csilk_json_t* 包含单条规则对象的 JSON 数组
- */
 csilk_json_t*
-import_rule_get(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
+mf_import_rule_get(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
 {
     char uid[32], rid[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
@@ -64,42 +40,23 @@ import_rule_get(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
         (const char*[]){uid, rid, NULL});
 }
 
-/**
- * @brief 插入新匹配规则
- *
- * 执行 SQL：
- * `INSERT INTO import_rules (user_id, keyword, match_field, match_type, category_id, target_type, priority, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`
- *
- * @param pool 数据库连接池指针
- * @param user_id 用户 ID
- * @param keyword 关键词
- * @param match_field 匹配字段
- * @param match_type 匹配方式
- * @param category_id 关联分类 ID
- * @param target_type 收支类型
- * @param priority 优先级
- * @param is_active 是否启用
- * @return int64_t 成功返回新生成 ID，失败返回 0
- */
 int64_t
-import_rule_insert(csilk_db_pool_t* pool,
-                   int64_t          user_id,
-                   const char*      keyword,
-                   const char*      match_field,
-                   const char*      match_type,
-                   int64_t          category_id,
-                   const char*      target_type,
-                   int              priority,
-                   int              is_active)
+mf_import_rule_insert(csilk_db_pool_t* pool,
+                      int64_t          user_id,
+                      const char*      keyword,
+                      const char*      match_field,
+                      const char*      match_type,
+                      int64_t          category_id,
+                      const char*      target_type,
+                      int              priority,
+                      int              is_active)
 {
     char uid[32], cid[32], prio[32], act[16];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     snprintf(cid, sizeof(cid), "%lld", (long long)category_id);
     snprintf(prio, sizeof(prio), "%d", priority);
     snprintf(act, sizeof(act), "%d", is_active ? 1 : 0);
-
-    const char* cid_param = (category_id > 0) ? cid : NULL;
-
+    const char*   cid_param = (category_id > 0) ? cid : NULL;
     csilk_json_t* res =
         csilk_db_query_param_json(pool,
                                   "INSERT INTO import_rules (user_id, keyword, match_field, "
@@ -114,7 +71,6 @@ import_rule_insert(csilk_db_pool_t* pool,
                                                   prio,
                                                   act,
                                                   NULL});
-
     int64_t new_id = 0;
     if (res && csilk_json_array_size(res) > 0) {
         new_id = db_get_int(csilk_json_array_get(res, 0), "id");
@@ -125,35 +81,17 @@ import_rule_insert(csilk_db_pool_t* pool,
     return new_id;
 }
 
-/**
- * @brief 更新导入匹配规则
- *
- * 执行 SQL：
- * `UPDATE import_rules SET keyword = ?, match_field = ?, match_type = ?, category_id = ?, target_type = ?, priority = ?, is_active = ? WHERE user_id = ? AND id = ?`
- *
- * @param pool 数据库连接池指针
- * @param user_id 用户 ID
- * @param id 规则 ID
- * @param keyword 关键词
- * @param match_field 匹配字段
- * @param match_type 匹配方式
- * @param category_id 目标分类 ID
- * @param target_type 收支类型
- * @param priority 优先级
- * @param is_active 启用状态
- * @return int 成功返回 1，失败返回 0
- */
 int
-import_rule_update(csilk_db_pool_t* pool,
-                   int64_t          user_id,
-                   int64_t          id,
-                   const char*      keyword,
-                   const char*      match_field,
-                   const char*      match_type,
-                   int64_t          category_id,
-                   const char*      target_type,
-                   int              priority,
-                   int              is_active)
+mf_import_rule_update(csilk_db_pool_t* pool,
+                      int64_t          user_id,
+                      int64_t          id,
+                      const char*      keyword,
+                      const char*      match_field,
+                      const char*      match_type,
+                      int64_t          category_id,
+                      const char*      target_type,
+                      int              priority,
+                      int              is_active)
 {
     char uid[32], rid[32], cid[32], prio[32], act[16];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
@@ -161,9 +99,7 @@ import_rule_update(csilk_db_pool_t* pool,
     snprintf(cid, sizeof(cid), "%lld", (long long)category_id);
     snprintf(prio, sizeof(prio), "%d", priority);
     snprintf(act, sizeof(act), "%d", is_active ? 1 : 0);
-
-    const char* cid_param = (category_id > 0) ? cid : NULL;
-
+    const char*   cid_param = (category_id > 0) ? cid : NULL;
     csilk_json_t* res = csilk_db_query_param_json(
         pool,
         "UPDATE import_rules SET keyword = ?, match_field = ?, match_type = ?, "
@@ -179,7 +115,6 @@ import_rule_update(csilk_db_pool_t* pool,
                         uid,
                         rid,
                         NULL});
-
     int ok = res ? csilk_json_array_size(res) > 0 : 0;
     if (res) {
         csilk_json_free(res);
@@ -187,28 +122,16 @@ import_rule_update(csilk_db_pool_t* pool,
     return ok;
 }
 
-/**
- * @brief 删除指定的导入规则
- *
- * 执行 SQL：`DELETE FROM import_rules WHERE user_id = ? AND id = ?`
- *
- * @param pool 数据库连接池指针
- * @param user_id 用户 ID
- * @param id 规则 ID
- * @return int 成功返回 1，失败返回 0
- */
 int
-import_rule_delete(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
+mf_import_rule_delete(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
 {
     char uid[32], rid[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     snprintf(rid, sizeof(rid), "%lld", (long long)id);
-
     csilk_json_t* res =
         csilk_db_query_param_json(pool,
                                   "DELETE FROM import_rules WHERE user_id = ? AND id = ?",
                                   (const char*[]){uid, rid, NULL});
-
     int ok = res ? csilk_json_array_size(res) > 0 : 0;
     if (res) {
         csilk_json_free(res);
@@ -216,14 +139,6 @@ import_rule_delete(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
     return ok;
 }
 
-/**
- * @brief 根据分类名称辅助查询分类 ID
- *
- * @param pool 数据库连接池指针
- * @param user_id 用户 ID
- * @param name 分类名称
- * @return int64_t 找到返回分类 ID，未找到返回 0
- */
 static int64_t
 find_category_id_by_name(csilk_db_pool_t* pool, int64_t user_id, const char* name)
 {
@@ -243,16 +158,8 @@ find_category_id_by_name(csilk_db_pool_t* pool, int64_t user_id, const char* nam
     return cid;
 }
 
-/**
- * @brief 批量播种默认推荐规则
- *
- * 遍历预设的常用高频商户/关键词规则列表，动态查询对应分类 ID 并批量插入。
- *
- * @param pool 数据库连接池指针
- * @param user_id 用户 ID
- */
 void
-import_rule_seed_defaults(csilk_db_pool_t* pool, int64_t user_id)
+mf_import_rule_seed_defaults(csilk_db_pool_t* pool, int64_t user_id)
 {
     struct DefaultRule {
         const char* keyword;
@@ -330,14 +237,14 @@ import_rule_seed_defaults(csilk_db_pool_t* pool, int64_t user_id)
     size_t count = sizeof(defaults) / sizeof(defaults[0]);
     for (size_t i = 0; i < count; i++) {
         int64_t cid = find_category_id_by_name(pool, user_id, defaults[i].category_name);
-        import_rule_insert(pool,
-                           user_id,
-                           defaults[i].keyword,
-                           "all",
-                           "contains",
-                           cid,
-                           defaults[i].target_type,
-                           defaults[i].priority,
-                           1);
+        mf_import_rule_insert(pool,
+                              user_id,
+                              defaults[i].keyword,
+                              "all",
+                              "contains",
+                              cid,
+                              defaults[i].target_type,
+                              defaults[i].priority,
+                              1);
     }
 }

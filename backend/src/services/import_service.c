@@ -11,7 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "repositories/import_rule_repo.h"
+#include "infrastructure/repositories/import_rule_repo_impl.h"
 #include "common/csv_utils.h"
 #include <ctype.h>
 #include <time.h>
@@ -138,7 +138,7 @@ transactions_import_csv(csilk_ctx_t* c)
     int              imported = 0, errors = 0, matched_rules_count = 0;
     char             errors_detail[2048] = {0};
     csilk_db_pool_t* pool = db_get_pool();
-    csilk_json_t*    rules = import_rule_list(pool, user_id);
+    csilk_json_t*    rules = mf_import_rule_list(pool, user_id);
 
     char* data = malloc(csv_len + 1);
     if (!data) {
@@ -396,7 +396,7 @@ daily_expenses_import_csv(csilk_ctx_t* c)
     int              imported = 0, errors = 0, matched_rules_count = 0;
     char             errors_detail[2048] = {0};
     csilk_db_pool_t* pool = db_get_pool();
-    csilk_json_t*    rules = import_rule_list(pool, user_id);
+    csilk_json_t*    rules = mf_import_rule_list(pool, user_id);
 
     char* data = malloc(csv_len + 1);
     if (!data) {

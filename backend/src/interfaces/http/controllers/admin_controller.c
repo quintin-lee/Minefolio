@@ -4,8 +4,8 @@
  */
 
 #include "interfaces/http/controllers/admin_controller.h"
-#include "repositories/auth_repo.h"
-#include "repositories/import_rule_repo.h"
+#include "infrastructure/repositories/auth_repo_impl.h"
+#include "infrastructure/repositories/import_rule_repo_impl.h"
 #define MINEFOLIO_BCRYPT_COST CSILK_BCRYPT_DEFAULT_COST
 #include "common/response.h"
 #include "common/ctx.h"
@@ -37,7 +37,7 @@ void
 system_status(csilk_ctx_t* c)
 {
     csilk_db_pool_t* pool = db_get_pool();
-    int              count = user_count(pool);
+    int              count = mf_auth_repo_count(pool);
 
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_bool(resp, "initialized", count > 0);
@@ -146,7 +146,7 @@ system_setup(csilk_ctx_t* c)
     // Seed default categories, default ledger & import rules
     categories_seed_defaults(pool, user_id);
     ledger_get_default(pool, user_id);
-    import_rule_seed_defaults(pool, user_id);
+    mf_import_rule_seed_defaults(pool, user_id);
 
     /* Persist DB config if provided */
     const char* db_driver = csilk_json_get_string(body, "db_driver");

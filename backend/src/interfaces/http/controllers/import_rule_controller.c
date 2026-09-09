@@ -1,5 +1,5 @@
 #include "interfaces/http/controllers/import_rule_controller.h"
-#include "repositories/import_rule_repo.h"
+#include "infrastructure/repositories/import_rule_repo_impl.h"
 #include "common/response.h"
 #include "common/ctx.h"
 #include "common/db.h"
@@ -16,7 +16,7 @@ import_rule_service_list(csilk_ctx_t* c)
     }
 
     csilk_db_pool_t* pool = db_get_pool();
-    csilk_json_t*    rules = import_rule_list(pool, user_id);
+    csilk_json_t*    rules = mf_import_rule_list(pool, user_id);
     respond_ok(c, rules ? rules : csilk_json_array());
 }
 
@@ -36,7 +36,7 @@ import_rule_service_get(csilk_ctx_t* c)
 
     int64_t          id = atoll(id_str);
     csilk_db_pool_t* pool = db_get_pool();
-    csilk_json_t*    res = import_rule_get(pool, user_id, id);
+    csilk_json_t*    res = mf_import_rule_get(pool, user_id, id);
 
     if (!res || csilk_json_array_size(res) == 0) {
         if (res) {
@@ -85,15 +85,15 @@ import_rule_service_create(csilk_ctx_t* c)
     }
 
     csilk_db_pool_t* pool = db_get_pool();
-    int64_t          new_id = import_rule_insert(pool,
-                                                 user_id,
-                                                 keyword,
-                                                 match_field ? match_field : "all",
-                                                 match_type ? match_type : "contains",
-                                                 category_id,
-                                                 target_type ? target_type : "expense",
-                                                 priority,
-                                                 is_active);
+    int64_t          new_id = mf_import_rule_insert(pool,
+                                                    user_id,
+                                                    keyword,
+                                                    match_field ? match_field : "all",
+                                                    match_type ? match_type : "contains",
+                                                    category_id,
+                                                    target_type ? target_type : "expense",
+                                                    priority,
+                                                    is_active);
 
     csilk_json_free(body);
 
@@ -147,16 +147,16 @@ import_rule_service_update(csilk_ctx_t* c)
     }
 
     csilk_db_pool_t* pool = db_get_pool();
-    int              ok = import_rule_update(pool,
-                                             user_id,
-                                             id,
-                                             keyword,
-                                             match_field ? match_field : "all",
-                                             match_type ? match_type : "contains",
-                                             category_id,
-                                             target_type ? target_type : "expense",
-                                             priority,
-                                             is_active);
+    int              ok = mf_import_rule_update(pool,
+                                                user_id,
+                                                id,
+                                                keyword,
+                                                match_field ? match_field : "all",
+                                                match_type ? match_type : "contains",
+                                                category_id,
+                                                target_type ? target_type : "expense",
+                                                priority,
+                                                is_active);
 
     csilk_json_free(body);
 
@@ -184,7 +184,7 @@ import_rule_service_delete(csilk_ctx_t* c)
 
     int64_t          id = atoll(id_str);
     csilk_db_pool_t* pool = db_get_pool();
-    import_rule_delete(pool, user_id, id);
+    mf_import_rule_delete(pool, user_id, id);
     respond_ok_null(c);
 }
 
@@ -202,9 +202,9 @@ import_rule_service_reset_defaults(csilk_ctx_t* c)
     csilk_db_query_param_json(
         pool, "DELETE FROM import_rules WHERE user_id = ?", (const char*[]){uid, NULL});
 
-    import_rule_seed_defaults(pool, user_id);
+    mf_import_rule_seed_defaults(pool, user_id);
 
-    csilk_json_t* rules = import_rule_list(pool, user_id);
+    csilk_json_t* rules = mf_import_rule_list(pool, user_id);
     respond_ok(c, rules ? rules : csilk_json_array());
 }
 

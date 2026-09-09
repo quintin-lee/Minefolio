@@ -3,7 +3,6 @@
 #include "infrastructure/repositories/ai_repo_impl.h"
 #include "infrastructure/repositories/market_repo_impl.h"
 #include "repositories/asset_repo.h"
-#include "repositories/category_repo.h"
 #include "repositories/transaction_repo.h"
 #include "common/db.h"
 #include <string.h>
@@ -145,7 +144,22 @@ mf_ai_repo_daily_expense_insert(void*       pool,
 csilk_json_t*
 mf_ai_repo_category_list(void* pool, int64_t user_id, const char* type)
 {
-    return category_list(pool, user_id, type);
+    csilk_db_pool_t* p = (csilk_db_pool_t*)pool;
+    char             uid[32];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    if (type && type[0]) {
+        return csilk_db_query_param_json(
+            p,
+            "SELECT c.id,c.name,c.parent_id,c.type,c.asset_type,c.currency,c.icon,c.sort_"
+            "order,c.created_at FROM categories c WHERE c.user_id=? AND c.type=? ORDER BY "
+            "c.sort_order,c.name",
+            (const char*[]){uid, type, NULL});
+    }
+    return csilk_db_query_param_json(
+        p,
+        "SELECT c.id,c.name,c.parent_id,c.type,c.asset_type,c.currency,c.icon,c.sort_"
+        "order,c.created_at FROM categories c WHERE c.user_id=? ORDER BY c.sort_order,c.name",
+        (const char*[]){uid, NULL});
 }
 
 csilk_json_t*

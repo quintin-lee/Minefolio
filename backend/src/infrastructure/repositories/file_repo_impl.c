@@ -7,7 +7,7 @@
 
 #include "infrastructure/repositories/file_repo_impl.h"
 #include "services/file_parser.h"
-#include "repositories/import_rule_repo.h"
+#include "infrastructure/repositories/import_rule_repo_impl.h"
 #include "common/db.h"
 #include <string.h>
 
@@ -37,7 +37,7 @@ csilk_json_t*
 mf_file_repo_get_import_rules(void* db_pool, int64_t user_id)
 {
     csilk_db_pool_t* pool = (csilk_db_pool_t*)db_pool;
-    return import_rule_list(pool, user_id);
+    return mf_import_rule_list(pool, user_id);
 }
 
 int64_t

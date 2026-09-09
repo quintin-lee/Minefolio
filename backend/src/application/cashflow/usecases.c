@@ -1,7 +1,6 @@
 #include "application/cashflow/usecases.h"
 #include "domain/cashflow/repository.h"
 #include "domain/cashflow/rules.h"
-#include "repositories/cashflow_repo.h"
 #include "repositories/transaction_repo.h"
 #include "common/balance.h"
 #include "common/db.h"
@@ -26,7 +25,21 @@ cashflow_usecase_list_schedules(void*                      pool,
         return -1;
     }
 
-    csilk_json_t* list = cashflow_schedule_list((csilk_db_pool_t*)pool, user_id);
+    char uid[32];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    csilk_json_t* list = csilk_db_query_param_json(
+        (csilk_db_pool_t*)pool,
+        "SELECT s.id, s.user_id, s.source_asset_id, s.target_asset_id, s.name, "
+        "       s.flow_type, s.frequency, s.start_date, s.end_date, s.expected_amount, "
+        "       s.status, s.note, CAST(s.created_at AS TEXT) AS created_at, "
+        "       CAST(s.updated_at AS TEXT) AS updated_at, "
+        "       sa.name AS source_asset_name, sa.symbol AS source_symbol, "
+        "       ta.name AS target_asset_name, ta.currency AS target_currency "
+        "FROM cashflow_schedules s "
+        "JOIN assets sa ON sa.id = s.source_asset_id "
+        "JOIN assets ta ON ta.id = s.target_asset_id "
+        "WHERE s.user_id = ? ORDER BY s.id DESC",
+        (const char*[]){uid, NULL});
     *out_list = list ? list : csilk_json_array();
     out_res->code = 0;
     snprintf(out_res->message, sizeof(out_res->message), "ok");
@@ -50,7 +63,22 @@ cashflow_usecase_get_schedule(void*                      pool,
         return -1;
     }
 
-    csilk_json_t* res = cashflow_schedule_get((csilk_db_pool_t*)pool, user_id, id);
+    char uid2[32], sid[32];
+    snprintf(uid2, sizeof(uid2), "%lld", (long long)user_id);
+    snprintf(sid, sizeof(sid), "%lld", (long long)id);
+    csilk_json_t* res = csilk_db_query_param_json(
+        (csilk_db_pool_t*)pool,
+        "SELECT s.id, s.user_id, s.source_asset_id, s.target_asset_id, s.name, "
+        "       s.flow_type, s.frequency, s.start_date, s.end_date, s.expected_amount, "
+        "       s.status, s.note, CAST(s.created_at AS TEXT) AS created_at, "
+        "       CAST(s.updated_at AS TEXT) AS updated_at, "
+        "       sa.name AS source_asset_name, sa.symbol AS source_symbol, "
+        "       ta.name AS target_asset_name, ta.currency AS target_currency "
+        "FROM cashflow_schedules s "
+        "JOIN assets sa ON sa.id = s.source_asset_id "
+        "JOIN assets ta ON ta.id = s.target_asset_id "
+        "WHERE s.user_id = ? AND s.id = ?",
+        (const char*[]){uid2, sid, NULL});
     if (!res || csilk_json_array_size(res) == 0) {
         if (res) {
             csilk_json_free(res);

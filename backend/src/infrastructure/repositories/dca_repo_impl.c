@@ -154,8 +154,8 @@ mf_dca_repo_plan_set_status(void* db_pool, int64_t user_id, int64_t id, const ch
     char uid[32], pid[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     snprintf(pid, sizeof(pid), "%lld", (long long)id);
-    const char* sql = "UPDATE dca_plans SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE "
-                      "user_id = ? AND id = ? RETURNING id";
+    const char*   sql = "UPDATE dca_plans SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE "
+                        "user_id = ? AND id = ? RETURNING id";
     const char*   params[] = {status ? status : "active", uid, pid, NULL};
     csilk_json_t* res = csilk_db_query_param_json((csilk_db_pool_t*)db_pool, sql, params);
     int           ok = res && csilk_json_array_size(res) > 0;
@@ -304,7 +304,7 @@ mf_dca_repo_execution_update_status(void* db_pool, int64_t user_id, int64_t id, 
     snprintf(eid, sizeof(eid), "%lld", (long long)id);
     const char* sql = "UPDATE dca_executions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE "
                       "user_id = ? AND id = ? RETURNING id";
-    const char*   params[] = {status ? status : "pending", uid, eid, NULL};
+    const char* params[] = {status ? status : "pending", uid, eid, NULL};
     csilk_json_t* res = csilk_db_query_param_json((csilk_db_pool_t*)db_pool, sql, params);
     int           ok = res && csilk_json_array_size(res) > 0;
     if (res) {
