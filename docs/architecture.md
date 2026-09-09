@@ -1,6 +1,6 @@
 # Minefolio — 架构与设计说明书 (Architecture & Design Specification)
 
-> 版本: 2026-09-09 v2.0.0  
+> 版本: 2026-09-09 v1.2.0  
 > 适用范围: 仓库 HEAD (`master` 分支)  
 > 受众: 研发、运维、安全审计、二次开发
 
@@ -226,7 +226,7 @@ graph TB
         cf_repo["fa:fa-database cashflow_repo_impl"]
     end
 
-    subgraph core["fa:fa-cogs Financial Core + Ledger Engine (v1.0)"]
+    subgraph core["fa:fa-cogs Financial Core + Ledger Engine (v1.2)"]
         fin["fa:fa-calculator Financial Core<br/>decimal_t (128-bit)<br/>money_t / quantity_t / price_t<br/>currency_t / rate_t / percentage_t"]
         led["fa:fa-balance-scale Ledger Engine<br/>ledger_apply_tx<br/>ledger_reverse_tx<br/>ledger_rebuild_*<br/>pure math operators"]
     end
@@ -1081,7 +1081,7 @@ cd backend/build && ctest --output-on-failure
 | 迁移成本 | 低 (当前) | 中 (需逐步迁移,双注册过渡期) |
 | 长期维护 | 业务规则随 Service 膨胀 | **规则明确,接口契约清晰** |
 
-**结论**: 选 DDD 四层是 Minefolio v1.0 的核心架构决策;过渡期新旧双注册保证向后兼容。
+**结论**: 选 DDD 四层是 Minefolio v1.2 的核心架构决策。所有 16 个业务域已完成迁移,Legacy 双轨代码已完全清除。
 
 ### 8.2 后端语言: C23 vs Go vs Rust
 

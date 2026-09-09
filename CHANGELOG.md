@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_No changes yet._
+
+---
+
+## [1.2.0] - 2026-09-09
+
 ### Verified
 - **Full CI Green (2026-09-09)**:
   - All 6 CI jobs pass: Backend Build & Test, Frontend Typecheck+Build, iOS Build, Android Build, Frontend Docker Image, Docker Image Package.
@@ -97,8 +103,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - `backend/src/services/ai_service.c`: Refactored `ai_chat_handler` and `ai_service_stream_report` to delegate completely to `ai_runtime_execute_stream()`, eliminating over 400 lines of duplicated conversation loops, manual token counting, and tool allocation boilerplate.
 - `AGENTS.md`: Updated AI Architecture guidelines, runtime execution rules, and directory map.
-
-## [2.0.0] - 2026-09-09
 
 ### Summary
 Complete elimination of legacy dual-track architecture. All 16 business domains now use DDD four-layer architecture exclusively. Zero legacy repository files remain.
