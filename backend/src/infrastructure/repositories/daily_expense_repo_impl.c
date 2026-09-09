@@ -1,12 +1,6 @@
-/**
- * @file daily_expense_repo_impl.c
- * @brief 日常收支仓储 SQL 实现 (Infrastructure Daily Expense Repository)
- *
- * 包装 repositories/daily_expense_repo.c 中的现有 SQL 函数。
- */
+/** @file daily_expense_repo_impl.c @brief Daily expense repository with inlined SQL */
 
 #include "infrastructure/repositories/daily_expense_repo_impl.h"
-#include "repositories/daily_expense_repo.h"
 #include "common/db.h"
 #include <stdio.h>
 #include <string.h>
@@ -25,45 +19,128 @@ mf_daily_expense_repo_list(void*          db_pool,
                            int64_t*       out_total)
 {
     csilk_db_pool_t* pool = (csilk_db_pool_t*)db_pool;
-    *out_json = de_list(pool,
-                        user_id,
-                        page,
-                        page_size,
-                        expense_type,
-                        category_id,
-                        tag_ids,
-                        start_date,
-                        end_date,
-                        out_total);
+    char             uid[32], limit_s[32], offset_s[32];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    snprintf(limit_s, sizeof(limit_s), "%lld", (long long)page_size);
+    snprintf(offset_s, sizeof(offset_s), "%lld", (long long)((page - 1) * page_size));
+
+    char        sql[2048], count_sql[1024];
+    const char* params[16];
+    const char* cnt_params[16];
+    int         pidx = 0, cnt_pidx = 0;
+    params[pidx++] = uid;
+    cnt_params[cnt_pidx++] = uid;
+
+    snprintf(
+        sql,
+        sizeof(sql),
+        "SELECT de.id,de.user_id,de.category_id,de.asset_id,de.expense_type,de.amount,"
+        "de.currency,de.expense_date,de.note,de.created_at,de.updated_at,"
+        "c.name as category_name,a.name as asset_name,"
+        "(SELECT json_group_array(json_object('id',t.id,'name',t.name,'color',t.color)) "
+        "FROM expense_tags et JOIN tags t ON et.tag_id=t.id WHERE et.expense_id=de.id) as tags "
+        "FROM daily_expenses de LEFT JOIN categories c ON de.category_id=c.id "
+        "LEFT JOIN assets a ON de.asset_id=a.id WHERE de.user_id=?");
+    snprintf(count_sql,
+             sizeof(count_sql),
+             "SELECT COUNT(*) AS cnt FROM daily_expenses de WHERE de.user_id=?");
+
+    if (expense_type && expense_type[0]) {
+        strncat(sql, " AND de.expense_type=?", sizeof(sql) - strlen(sql) - 1);
+        strncat(count_sql, " AND de.expense_type=?", sizeof(count_sql) - strlen(count_sql) - 1);
+        params[pidx++] = expense_type;
+        cnt_params[cnt_pidx++] = expense_type;
+    }
+    if (category_id && category_id[0]) {
+        strncat(sql, " AND de.category_id=?", sizeof(sql) - strlen(sql) - 1);
+        strncat(count_sql, " AND de.category_id=?", sizeof(count_sql) - strlen(count_sql) - 1);
+        params[pidx++] = category_id;
+        cnt_params[cnt_pidx++] = category_id;
+    }
+    if (tag_ids && tag_ids[0]) {
+        strncat(sql,
+                " AND EXISTS (SELECT 1 FROM expense_tags et2 WHERE et2.expense_id=de.id AND "
+                "et2.tag_id IN (SELECT tag_id FROM expense_tags WHERE expense_id=de.id))",
+                sizeof(sql) - strlen(sql) - 1);
+    }
+    if (start_date && start_date[0]) {
+        strncat(sql, " AND de.expense_date >= ?", sizeof(sql) - strlen(sql) - 1);
+        strncat(count_sql, " AND de.expense_date >= ?", sizeof(count_sql) - strlen(count_sql) - 1);
+        params[pidx++] = start_date;
+        cnt_params[cnt_pidx++] = start_date;
+    }
+    if (end_date && end_date[0]) {
+        strncat(sql, " AND de.expense_date <= ?", sizeof(sql) - strlen(sql) - 1);
+        strncat(count_sql, " AND de.expense_date <= ?", sizeof(count_sql) - strlen(count_sql) - 1);
+        params[pidx++] = end_date;
+        cnt_params[cnt_pidx++] = end_date;
+    }
+    strncat(sql, " ORDER BY de.expense_date DESC LIMIT ? OFFSET ?", sizeof(sql) - strlen(sql) - 1);
+    params[pidx++] = limit_s;
+    params[pidx++] = offset_s;
+    params[pidx] = NULL;
+    cnt_params[cnt_pidx] = NULL;
+
+    csilk_json_t* cnt_res = csilk_db_query_param_json(pool, count_sql, cnt_params);
+    *out_total = 0;
+    if (cnt_res && csilk_json_array_size(cnt_res) > 0) {
+        *out_total = db_get_int(csilk_json_array_get(cnt_res, 0), "cnt");
+    }
+    if (cnt_res) {
+        csilk_json_free(cnt_res);
+    }
+
+    *out_json = csilk_db_query_param_json(pool, sql, params);
     return *out_json ? 0 : -1;
 }
 
 csilk_json_t*
 mf_daily_expense_repo_monthly_totals(void* db_pool, int64_t user_id, const char* pattern)
 {
-    csilk_db_pool_t* pool = (csilk_db_pool_t*)db_pool;
-    return de_monthly_totals(pool, user_id, pattern);
+    (void)user_id;
+    return csilk_db_query_param_json(
+        (csilk_db_pool_t*)db_pool,
+        "SELECT COALESCE(SUM(CASE WHEN expense_type='income' THEN amount ELSE 0 END),0) as "
+        "total_income,COALESCE(SUM(CASE WHEN expense_type='expense' THEN amount ELSE 0 END),0) as "
+        "total_expense FROM daily_expenses WHERE expense_date LIKE ?",
+        (const char*[]){pattern, NULL});
 }
 
 csilk_json_t*
 mf_daily_expense_repo_monthly_by_category(void* db_pool, int64_t user_id, const char* pattern)
 {
-    csilk_db_pool_t* pool = (csilk_db_pool_t*)db_pool;
-    return de_monthly_by_category(pool, user_id, pattern);
+    (void)user_id;
+    return csilk_db_query_param_json(
+        (csilk_db_pool_t*)db_pool,
+        "SELECT c.name as category_name,de.expense_type,SUM(de.amount) as amount FROM "
+        "daily_expenses de JOIN categories c ON de.category_id=c.id WHERE de.expense_date LIKE ? "
+        "GROUP BY c.name,de.expense_type ORDER BY amount DESC",
+        (const char*[]){pattern, NULL});
 }
 
 csilk_json_t*
 mf_daily_expense_repo_monthly_by_tag(void* db_pool, int64_t user_id, const char* pattern)
 {
-    csilk_db_pool_t* pool = (csilk_db_pool_t*)db_pool;
-    return de_monthly_by_tag(pool, user_id, pattern);
+    (void)user_id;
+    return csilk_db_query_param_json(
+        (csilk_db_pool_t*)db_pool,
+        "SELECT t.name as tag_name,SUM(de.amount) as amount,COUNT(*) as count FROM daily_expenses "
+        "de JOIN expense_tags et ON de.id=et.expense_id JOIN tags t ON et.tag_id=t.id WHERE "
+        "de.expense_date LIKE ? GROUP BY t.name ORDER BY amount DESC",
+        (const char*[]){pattern, NULL});
 }
 
 csilk_json_t*
 mf_daily_expense_repo_monthly_daily(void* db_pool, int64_t user_id, const char* pattern)
 {
-    csilk_db_pool_t* pool = (csilk_db_pool_t*)db_pool;
-    return de_monthly_daily(pool, user_id, pattern);
+    (void)user_id;
+    return csilk_db_query_param_json(
+        (csilk_db_pool_t*)db_pool,
+        "SELECT expense_date,COALESCE(SUM(CASE WHEN expense_type='income' THEN amount ELSE 0 "
+        "END),0) as income,COALESCE(SUM(CASE WHEN expense_type='expense' THEN amount ELSE 0 "
+        "END),0) as expense FROM daily_expenses WHERE expense_date LIKE ? GROUP BY expense_date "
+        "ORDER BY expense_date",
+        (const char*[]){pattern, NULL});
 }
 
 int64_t
@@ -77,9 +154,32 @@ mf_daily_expense_repo_insert(void*       db_pool,
                              const char* date,
                              const char* note)
 {
-    csilk_db_pool_t* pool = (csilk_db_pool_t*)db_pool;
-    return de_insert(
-        pool, user_id, category_id, asset_id, expense_type, amount, currency, date, note);
+    char uid[32], cat[32], ast[32], amt[64];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    snprintf(cat, sizeof(cat), "%lld", (long long)category_id);
+    snprintf(ast, sizeof(ast), "%lld", (long long)asset_id);
+    snprintf(amt, sizeof(amt), "%.6f", amount);
+    csilk_json_t* res = csilk_db_query_param_json(
+        (csilk_db_pool_t*)db_pool,
+        "INSERT INTO daily_expenses (user_id,category_id,asset_id,expense_type,amount,currency,"
+        "expense_date,note) VALUES (?,?,?,?,?,?,?,?) RETURNING id",
+        (const char*[]){uid,
+                        cat,
+                        ast,
+                        expense_type,
+                        amt,
+                        currency ? currency : "CNY",
+                        date,
+                        note ? note : "",
+                        NULL});
+    int64_t id = 0;
+    if (res && csilk_json_array_size(res) > 0) {
+        id = db_get_int(csilk_json_array_get(res, 0), "id");
+    }
+    if (res) {
+        csilk_json_free(res);
+    }
+    return id;
 }
 
 int
@@ -88,25 +188,24 @@ mf_daily_expense_repo_get_snapshot(void*                        db_pool,
                                    int64_t                      id,
                                    mf_daily_expense_snapshot_t* out)
 {
-    csilk_db_pool_t* pool = (csilk_db_pool_t*)db_pool;
-    csilk_json_t*    row = de_get(pool, user_id, id);
+    char uid[32], idstr[32];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    snprintf(idstr, sizeof(idstr), "%lld", (long long)id);
+    csilk_json_t* row = csilk_db_query_param_json(
+        (csilk_db_pool_t*)db_pool,
+        "SELECT amount,expense_type,asset_id FROM daily_expenses WHERE id=? AND user_id=?",
+        (const char*[]){idstr, uid, NULL});
     if (!row || csilk_json_array_size(row) == 0) {
         if (row) {
             csilk_json_free(row);
         }
         return -1;
     }
-
     const csilk_json_t* r = csilk_json_array_get(row, 0);
     out->amount = db_get_num(r, "amount");
-    strncpy(out->expense_type,
-            csilk_json_get_string(r, "expense_type") ?: "",
-            sizeof(out->expense_type) - 1);
-    strncpy(
-        out->currency, csilk_json_get_string(r, "currency") ?: "CNY", sizeof(out->currency) - 1);
+    const char* et = csilk_json_get_string(r, "expense_type");
+    strncpy(out->expense_type, et ? et : "", sizeof(out->expense_type) - 1);
     out->asset_id = (int64_t)db_get_int(r, "asset_id");
-    strncpy(out->note, csilk_json_get_string(r, "note") ?: "", sizeof(out->note) - 1);
-
     csilk_json_free(row);
     return 0;
 }
@@ -123,30 +222,58 @@ mf_daily_expense_repo_update(void*       db_pool,
                              const char* date,
                              const char* note)
 {
-    csilk_db_pool_t* pool = (csilk_db_pool_t*)db_pool;
-    return de_update(
-               pool, user_id, id, category_id, asset_id, expense_type, amount, currency, date, note)
-               ? 0
-               : -1;
+    char uid[32], idstr[32], cat[32], ast[32], amt[64];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    snprintf(idstr, sizeof(idstr), "%lld", (long long)id);
+    snprintf(cat, sizeof(cat), "%lld", (long long)category_id);
+    snprintf(ast, sizeof(ast), "%lld", (long long)asset_id);
+    snprintf(amt, sizeof(amt), "%.6f", amount);
+    csilk_json_t* res = csilk_db_query_param_json(
+        (csilk_db_pool_t*)db_pool,
+        "UPDATE daily_expenses SET category_id=?,asset_id=?,expense_type=?,amount=?,currency=?,"
+        "expense_date=?,note=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=? RETURNING id",
+        (const char*[]){cat,
+                        ast,
+                        expense_type ? expense_type : "",
+                        amt,
+                        currency ? currency : "CNY",
+                        date ? date : "",
+                        note ? note : "",
+                        idstr,
+                        uid,
+                        NULL});
+    int ok = res ? csilk_json_array_size(res) > 0 : 0;
+    if (res) {
+        csilk_json_free(res);
+    }
+    return ok;
 }
 
 int
 mf_daily_expense_repo_delete(void* db_pool, int64_t user_id, int64_t id)
 {
-    csilk_db_pool_t* pool = (csilk_db_pool_t*)db_pool;
-    return de_delete(pool, user_id, id) ? 0 : -1;
+    char uid[32], idstr[32];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    snprintf(idstr, sizeof(idstr), "%lld", (long long)id);
+    csilk_json_t* res = csilk_db_query_param_json(
+        (csilk_db_pool_t*)db_pool,
+        "DELETE FROM daily_expenses WHERE id=? AND user_id=? RETURNING id",
+        (const char*[]){idstr, uid, NULL});
+    int ok = res ? csilk_json_array_size(res) > 0 : 0;
+    if (res) {
+        csilk_json_free(res);
+    }
+    return ok;
 }
 
 int
 mf_daily_expense_repo_exists(void* db_pool, int64_t user_id, int64_t id)
 {
-    csilk_db_pool_t* pool = (csilk_db_pool_t*)db_pool;
-    char             uid_str[32], id_str[32];
+    char uid_str[32], id_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     snprintf(id_str, sizeof(id_str), "%lld", (long long)id);
-
     csilk_json_t* res =
-        csilk_db_query_param_json(pool,
+        csilk_db_query_param_json((csilk_db_pool_t*)db_pool,
                                   "SELECT id FROM daily_expenses WHERE id=? AND user_id=?",
                                   (const char*[]){id_str, uid_str, NULL});
     int ok = (res && csilk_json_array_size(res) > 0) ? 0 : 1;
@@ -159,32 +286,49 @@ mf_daily_expense_repo_exists(void* db_pool, int64_t user_id, int64_t id)
 int
 mf_daily_expense_repo_tag_insert(void* db_pool, int64_t expense_id, int64_t tag_id)
 {
-    csilk_db_pool_t* pool = (csilk_db_pool_t*)db_pool;
-    return de_tag_insert(pool, expense_id, tag_id) ? 0 : -1;
+    char eid[32], tid[32];
+    snprintf(eid, sizeof(eid), "%lld", (long long)expense_id);
+    snprintf(tid, sizeof(tid), "%lld", (long long)tag_id);
+    csilk_json_t* res = csilk_db_query_param_json(
+        (csilk_db_pool_t*)db_pool,
+        "INSERT OR IGNORE INTO expense_tags (expense_id,tag_id) VALUES (?,?)",
+        (const char*[]){eid, tid, NULL});
+    int ok = res ? 1 : 0;
+    if (res) {
+        csilk_json_free(res);
+    }
+    return ok;
 }
 
 int
 mf_daily_expense_repo_tag_delete_all(void* db_pool, int64_t expense_id)
 {
-    csilk_db_pool_t* pool = (csilk_db_pool_t*)db_pool;
-    return de_tag_delete_all(pool, expense_id) ? 0 : -1;
+    char eid[32];
+    snprintf(eid, sizeof(eid), "%lld", (long long)expense_id);
+    csilk_json_t* res = csilk_db_query_param_json((csilk_db_pool_t*)db_pool,
+                                                  "DELETE FROM expense_tags WHERE expense_id=?",
+                                                  (const char*[]){eid, NULL});
+    int           ok = res ? 1 : 0;
+    if (res) {
+        csilk_json_free(res);
+    }
+    return ok;
 }
 
 int64_t
 mf_daily_expense_repo_get_or_create_tag(
     void* db_pool, int64_t user_id, int64_t tag_id, const char* tag_name, const char* tag_color)
 {
-    csilk_db_pool_t* pool = (csilk_db_pool_t*)db_pool;
-    char             uid_str[32];
+    char uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
 
-    /* Try by ID first */
     if (tag_id > 0) {
         char tid_str[32];
         snprintf(tid_str, sizeof(tid_str), "%lld", (long long)tag_id);
-        const char*   params[] = {tid_str, uid_str, NULL};
         csilk_json_t* chk =
-            csilk_db_query_param_json(pool, "SELECT id FROM tags WHERE id=? AND user_id=?", params);
+            csilk_db_query_param_json((csilk_db_pool_t*)db_pool,
+                                      "SELECT id FROM tags WHERE id=? AND user_id=?",
+                                      (const char*[]){tid_str, uid_str, NULL});
         if (chk && csilk_json_array_size(chk) > 0) {
             int64_t id = db_get_int(csilk_json_array_get(chk, 0), "id");
             csilk_json_free(chk);
@@ -195,11 +339,11 @@ mf_daily_expense_repo_get_or_create_tag(
         }
     }
 
-    /* Try by name */
     if (tag_name && tag_name[0]) {
-        const char*   q_params[] = {uid_str, tag_name, NULL};
-        csilk_json_t* q_res = csilk_db_query_param_json(
-            pool, "SELECT id FROM tags WHERE user_id=? AND name=?", q_params);
+        csilk_json_t* q_res =
+            csilk_db_query_param_json((csilk_db_pool_t*)db_pool,
+                                      "SELECT id FROM tags WHERE user_id=? AND name=?",
+                                      (const char*[]){uid_str, tag_name, NULL});
         if (q_res && csilk_json_array_size(q_res) > 0) {
             int64_t existing_id = db_get_int(csilk_json_array_get(q_res, 0), "id");
             csilk_json_free(q_res);
@@ -210,11 +354,10 @@ mf_daily_expense_repo_get_or_create_tag(
         }
 
         const char*   color = tag_color && tag_color[0] ? tag_color : "#3b82f6";
-        const char*   ins_params[] = {uid_str, tag_name, color, NULL};
         csilk_json_t* ins_res = csilk_db_query_param_json(
-            pool,
+            (csilk_db_pool_t*)db_pool,
             "INSERT INTO tags (user_id, name, color) VALUES (?, ?, ?) RETURNING id",
-            ins_params);
+            (const char*[]){uid_str, tag_name, color, NULL});
         if (ins_res && csilk_json_array_size(ins_res) > 0) {
             int64_t new_id = db_get_int(csilk_json_array_get(ins_res, 0), "id");
             csilk_json_free(ins_res);
@@ -224,6 +367,5 @@ mf_daily_expense_repo_get_or_create_tag(
             csilk_json_free(ins_res);
         }
     }
-
     return 0;
 }

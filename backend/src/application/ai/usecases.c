@@ -2,7 +2,7 @@
 #include "domain/ai/entity.h"
 #include "domain/ai/rules.h"
 #include "repositories/ai_session_repo.h"
-#include "repositories/ai_settings_repo.h"
+#include "infrastructure/repositories/ai_settings_repo_impl.h"
 #include "repositories/ai_trace_repo.h"
 #include "services/ai_workflow_service.h"
 #include "services/ai_service.h"
@@ -330,7 +330,7 @@ ai_usecase_settings_update(void* pool, const csilk_json_t* body, ai_usecase_resu
 
     csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
     ai_config_t      cfg = {0};
-    char*            db_json = db_pool ? ai_settings_load(db_pool) : NULL;
+    char*            db_json = db_pool ? mf_ai_settings_repo_load(db_pool) : NULL;
     if (db_json) {
         ai_config_load_json(db_json, &cfg);
         free(db_json);
@@ -452,7 +452,7 @@ ai_usecase_settings_update(void* pool, const csilk_json_t* body, ai_usecase_resu
 
     int db_save_ok = -1;
     if (json && db_pool) {
-        db_save_ok = ai_settings_save(db_pool, json);
+        db_save_ok = mf_ai_settings_repo_save(db_pool, json);
         free(json);
     }
 

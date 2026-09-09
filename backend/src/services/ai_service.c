@@ -2,7 +2,7 @@
 #include "services/ai_tools.h"
 #include "services/ai/runtime/runtime.h"
 #include "repositories/ai_session_repo.h"
-#include "repositories/ai_settings_repo.h"
+#include "infrastructure/repositories/ai_settings_repo_impl.h"
 #include "common/ai_config.h"
 #include "common/ai_trace.h"
 #include "common/db.h"
@@ -81,7 +81,7 @@ utf8_truncate(char* str, size_t max_chars, size_t max_bytes)
 void
 ai_init(csilk_db_pool_t* pool)
 {
-    char* json = pool ? ai_settings_load(pool) : NULL;
+    char* json = pool ? mf_ai_settings_repo_load(pool) : NULL;
     if (json) {
         int loaded = (ai_config_load_json(json, &g_config) == 0);
         free(json);

@@ -2,7 +2,6 @@
 #include "services/ai/tools/schema.h"
 #include "services/ai/policy/confirmation.h"
 #include "infrastructure/repositories/ai_repo_impl.h"
-#include "repositories/daily_expense_repo.h"
 #include "common/balance.h"
 #include "common/db.h"
 #include "core/ledger/ledger_engine.h"
@@ -109,7 +108,8 @@ exec_get_expense_by_category(const ai_tool_t*         tool,
             month_pat, sizeof(month_pat), "%04d-%02d%%", tm_buf.tm_year + 1900, tm_buf.tm_mon + 1);
     }
 
-    csilk_json_t* list = de_monthly_by_category(ctx->pool, ctx->user_id, month_pat);
+    csilk_json_t* list =
+        mf_ai_repo_daily_expense_monthly_by_category(ctx->pool, ctx->user_id, month_pat);
 
     csilk_json_t* res = csilk_json_object();
     csilk_json_add_string(res, "month_pattern", month_pat);
@@ -281,15 +281,15 @@ exec_confirm_proposed_expense(const ai_tool_t*         tool,
         return strdup("{\"error\":\"failed to begin transaction\"}");
     }
 
-    int64_t de_id = de_insert(ctx->pool,
-                              ctx->user_id,
-                              category_id,
-                              asset_id,
-                              type,
-                              amount,
-                              "CNY",
-                              date,
-                              note ? note : "");
+    int64_t de_id = mf_ai_repo_daily_expense_insert(ctx->pool,
+                                                    ctx->user_id,
+                                                    date,
+                                                    type,
+                                                    amount,
+                                                    "CNY",
+                                                    category_id,
+                                                    asset_id,
+                                                    note ? note : "");
     if (de_id <= 0) {
         db_tx_scope_rollback(ctx->pool, &scope);
         return strdup("{\"error\":\"failed to insert daily expense\"}");
