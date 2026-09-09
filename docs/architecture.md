@@ -1,6 +1,6 @@
 # Minefolio — 架构与设计说明书 (Architecture & Design Specification)
 
-> 版本: 2026-09-04 v1.1.0  
+> 版本: 2026-09-09 v2.0.0  
 > 适用范围: 仓库 HEAD (`master` 分支)  
 > 受众: 研发、运维、安全审计、二次开发
 
@@ -93,12 +93,10 @@ graph TB
 | **Vue 3 SPA (桌面)** | 单页应用,Vue Router + Pinia,Element Plus UI,本地无状态 | `frontend/src/main.ts`、`router/index.ts` |
 | **Capacitor Mobile** | 同一份 API 层,内嵌 sql.js WASM 做离线 SQLite,Android 端走 Gradle | `frontend/src/main-mobile.ts`、`vite.config.mobile.ts` |
 | **Nginx** | 静态托管 `frontend/dist` + `/api/*` 反代到 `:8080` | `nginx/nginx.conf` |
-| **Interfaces Layer** | **新架构**: 纯委托型 HTTP Controllers,仅做参数提取 + 调用 usecase + 响应封装 | `backend/src/interfaces/http/controllers/` |
-| **Legacy Controllers** | **过渡期保留**: 原 `controllers/*_controller.c`,仍注册路由运行中 | `backend/src/controllers/` |
-| **Application Layer** | **新架构**: 每个域一个 Use Case 模块,编排领域规则 + Financial Core + Ledger Engine | `backend/src/application/*/{commands,dtos,usecases}.h/.c` |
-| **Domain Layer** | **新架构**: 纯业务实体、仓储契约接口、业务规则;零外部依赖 | `backend/src/domain/*/{entity,repository,rules}.{h,c}` |
-| **Infrastructure Layer** | **新架构**: 实现 Domain Repository 契约,执行 SQL,返回领域实体 | `backend/src/infrastructure/repositories/*_repo_impl.c` |
-| **Business Services (legacy)** | 业务编排层(仍在运行,待迁移至 Application Layer) | `backend/src/services/*` |
+| **Interfaces Layer** | 纯委托型 HTTP Controllers,仅做参数提取 + 调用 usecase + 响应封装 | `backend/src/interfaces/http/controllers/` (20 个) |
+| **Application Layer** | 每个域一个 Use Case 模块,编排领域规则 + Financial Core + Ledger Engine | `backend/src/application/*/{commands,dtos,usecases}.h/.c` |
+| **Domain Layer** | 纯业务实体、仓储契约接口、业务规则;零外部依赖 | `backend/src/domain/*/{entity,repository,rules}.{h,c}` |
+| **Infrastructure Layer** | 实现 Domain Repository 契约,执行 SQL,返回领域实体 | `backend/src/infrastructure/repositories/*_repo_impl.c` (18 个) |
 | **Financial Core** | **新增 v1.0**: 128 位定点高精度金融数学 + 强类型领域模型 | `backend/src/core/financial/` |
 | **Ledger Engine** | **新增 v1.0**: 事件溯源账本,原子 `ledger_apply_tx` / `ledger_reverse_tx`,支持 `ledger_rebuild_*` | `backend/src/core/ledger/` |
 | **Common** | 跨域通用: DB 池、JWT (HS256)、RSA-OAEP、tx_type 注册表、CSV 工具、TOTP、balance 符号翻转 | `backend/src/common/` |
@@ -136,7 +134,7 @@ graph TB
 | AI Workflows (4个) | ✅ | 通过 `ai_repo_impl` 包装层访问数据 |
 | AI Runtime | ✅ | 独立子系统，无需迁移 |
 
-> **说明**: 所有业务域已完成 DDD 四层架构迁移。Legacy `repositories/` 和 `services/` 文件保留供 AI 子系统通过包装层访问，未来可进一步清理。
+> **说明**: 所有业务域已完成 DDD 四层架构迁移。Legacy `repositories/` 目录已完全删除（17 个文件），所有 SQL 统一在 `infrastructure/repositories/*_repo_impl.c`。
 
 **通信协议清单:**
 
@@ -190,28 +188,15 @@ graph TB
         routes["fa:fa-route 路由注册<br/>(新旧双套)"]
     end
 
-    subgraph ctrl_new["fa:fa-plug Interfaces 层 (新)"]
+    subgraph ctrl_new["fa:fa-plug Interfaces 层"]
         auth_ctrl["fa:fa-key auth_controller<br/>api_auth_*"]
         ai_ctrl["fa:fa-robot ai_controller<br/>ai_usecase_*"]
         market_ctrl["fa:fa-chart-line market_controller<br/>market_usecase_*"]
         tx_ctrl["fa:fa-exchange-alt tx_controller"]
+        other_ctrl["... 20 个控制器"]
     end
 
-    subgraph ctrl_old["fa:fa-folder-open Legacy Controllers 层"]
-        legacy_auth["auth_controller.c"]
-        legacy_asset["asset_controller.c"]
-        legacy_tx["transaction_controller.c"]
-        legacy_other["... 18 个控制器"]
-    end
-
-    subgraph svc_old["fa:fa-cogs Legacy Services 层"]
-        legacy_svc_auth["auth_service.c"]
-        legacy_svc_tx["transaction_service.c + tx_write/query"]
-        legacy_svc_asset["asset_service.c"]
-        legacy_svc_other["... 28 个服务文件"]
-    end
-
-    subgraph app["fa:fa-cogs Application Layer (新)"]
+    subgraph app["fa:fa-cogs Application Layer"]
         auth_uc["fa:fa-key auth_usecases<br/>register/login/2fa/oauth"]
         ai_uc["fa:fa-robot ai_usecases<br/>sessions/messages/workflows"]
         mkt_uc["fa:fa-chart-line market_usecases<br/>sync/quote/exchange_rates"]
@@ -221,7 +206,7 @@ graph TB
         cashflow_uc["fa:fa-money-bill-wave cashflow_usecases"]
     end
 
-    subgraph domain["fa:fa-shield-alt Domain Layer (新)"]
+    subgraph domain["fa:fa-shield-alt Domain Layer"]
         auth_dom["fa:fa-key auth rules<br/>username/password/backup code"]
         ai_dom["fa:fa-robot ai rules<br/>session_title/context_window/cost"]
         mkt_dom["fa:fa-chart-line market rules<br/>quote_source/validation"]
@@ -231,7 +216,7 @@ graph TB
         cf_dom["fa:fa-money-bill-wave cashflow rules"]
     end
 
-    subgraph infra["fa:fa-hdd Infrastructure Layer (新)"]
+    subgraph infra["fa:fa-hdd Infrastructure Layer"]
         auth_repo["fa:fa-database auth_repo_impl<br/>users/2fa/oauth tables"]
         ai_repo["fa:fa-database ai_repo_impl<br/>sessions/messages/traces"]
         mkt_repo["fa:fa-database market_repo_impl<br/>price_history/quotes"]
@@ -272,9 +257,7 @@ graph TB
     ai_init --> market_start
     market_start --> routes
     routes --> ctrl_new
-    routes --> ctrl_old
     ctrl_new --> app
-    ctrl_old --> svc_old
     app --> domain
     app --> core
     app --> common
@@ -357,8 +340,7 @@ Model (请求/响应) → Policy (五级风控) → Runtime (会话/循环)
 | `application/*` | domain/*, core/*, common, infrastructure/* | interfaces, controllers |
 | `domain/*` | 无 (纯 C, 只引用 core/financial) | application, infrastructure, HTTP, DB |
 | `infrastructure/repositories/*` | `common/db.h`, `domain/*` (契约), `core/financial/*` | controllers, HTTP 头 |
-| `services/*` (legacy) | repositories, common, core, ledger | interfaces |
-| `repositories/*` (legacy) | `common/db.h` ONLY | 其他一切 |
+| `services/*` (AI/reporting) | infrastructure/repositories/*, common, core | interfaces |
 | `core/financial/*` | 无 (纯 C 数学) | 任何外部层 |
 | `core/ledger/*` | `common/db.h`, `core/financial/*` | controllers, HTTP 头 |
 | `common/*` | csilk, 彼此 | controllers, services |
@@ -1189,41 +1171,37 @@ Minefolio 建立跨数据库方言的**正式版本化迁移系统 (Database Mig
 
 | 域 | 端点前缀 | 模块 | 架构层 |
 |----|----------|------|--------|
-| 鉴权 | `/api/auth/*` | `interfaces/http/controllers/auth_controller.c` → `application/auth/` | 新 |
-| 初始化 | `/api/setup`, `/api/system/status` | `interfaces/http/controllers/auth_controller.c` | 新 |
-| 分类 | `/api/categories` | `controllers/category_controller.c` (legacy) | 过渡 |
-| 资产 | `/api/assets`, `/api/assets/:id/logs` | `interfaces/http/controllers/asset_controller.c` → `application/asset/` | 新 |
-| 交易 | `/api/transactions`, `/api/transactions/batch` | `interfaces/http/controllers/transaction_controller.c` → `application/transaction/` | 新 |
-| 日常收支 | `/api/daily-expenses` | `controllers/daily_expense_controller.c` (legacy) | 过渡 |
-| 标签 | `/api/tags`, `/api/daily-expenses/:id/tags` | `controllers/tag_controller.c` (legacy) | 过渡 |
-| 转账 | `/api/transfers` | `controllers/transfer_controller.c` (legacy) | 过渡 |
-| 报表 | `/api/reports/*` (asset/expense/holdings/cashflow) | `controllers/report_controller.c` (legacy) | 过渡 |
-| 导入导出 | `/api/import/*`, `/api/export/*` | `controllers/import_export_controller.c` (legacy) | 过渡 |
-| AI | `/ai/chat` (SSE), `/ai/sessions/*`, `/ai/workflows/*` | `interfaces/http/controllers/ai_controller.c` → `application/ai/` | 新 |
-| 文件 | `/api/files/*` | `controllers/file_controller.c` (legacy) | 过渡 |
-| AI 追踪 | `/api/ai/traces` | `interfaces/http/controllers/ai_trace_controller.c` → `application/ai/` | 新 |
-| 行情 | `/api/market/*` (quote, history, sync) | `interfaces/http/controllers/market_controller.c` → `application/market/` | 新 |
-| DCA | `/api/dca/plans`, `/api/dca/executions` | `controllers/dca_controller.c` (legacy) | 过渡 |
-| 现金流 | `/api/cashflow/schedules` | `controllers/cashflow_controller.c` (legacy) | 过渡 |
-| 账本 | `/api/ledgers`, `/api/ledgers/:id/members` | `controllers/ledger_controller.c` (legacy) | 过渡 |
-| 管理员 | `/api/admin/*` | `controllers/admin_controller.c` (legacy) | 过渡 |
+| 鉴权 | `/api/auth/*` | `interfaces/http/controllers/auth_controller.c` → `application/auth/` | |
+| 初始化 | `/api/setup`, `/api/system/status` | `interfaces/http/controllers/auth_controller.c` | |
+| 分类 | `/api/categories` | `interfaces/http/controllers/category_controller.c` → `application/` | |
+| 资产 | `/api/assets`, `/api/assets/:id/logs` | `interfaces/http/controllers/asset_controller.c` → `application/asset/` | |
+| 交易 | `/api/transactions`, `/api/transactions/batch` | `interfaces/http/controllers/transaction_controller.c` → `application/transaction/` | |
+| 日常收支 | `/api/daily-expenses` | `interfaces/http/controllers/daily_expense_controller.c` → `application/` | |
+| 标签 | `/api/tags`, `/api/daily-expenses/:id/tags` | `interfaces/http/controllers/tag_controller.c` → `application/` | |
+| 转账 | `/api/transfers` | `interfaces/http/controllers/transfer_controller.c` → `application/` | |
+| 报表 | `/api/reports/*` (asset/expense/holdings/cashflow) | `interfaces/http/controllers/report_controller.c` → `application/report/` | |
+| 导入导出 | `/api/import/*`, `/api/export/*` | `interfaces/http/controllers/import_export_controller.c` → `application/` | |
+| AI | `/ai/chat` (SSE), `/ai/sessions/*`, `/ai/workflows/*` | `interfaces/http/controllers/ai_controller.c` → `application/ai/` | |
+| 文件 | `/api/files/*` | `interfaces/http/controllers/file_controller.c` → `application/` | |
+| AI 追踪 | `/api/ai/traces` | `interfaces/http/controllers/ai_trace_controller.c` → `application/ai/` | |
+| 行情 | `/api/market/*` (quote, history, sync) | `interfaces/http/controllers/market_controller.c` → `application/market/` | |
+| DCA | `/api/dca/plans`, `/api/dca/executions` | `interfaces/http/controllers/dca_controller.c` → `application/` | |
+| 现金流 | `/api/cashflow/schedules` | `interfaces/http/controllers/cashflow_controller.c` → `application/cashflow/` | |
+| 账本 | `/api/ledgers`, `/api/ledgers/:id/members` | `interfaces/http/controllers/ledger_controller.c` → `application/` | |
+| 管理员 | `/api/admin/*` | `interfaces/http/controllers/admin_controller.c` → `application/` | |
 | 健康检查 | `/healthz` | — | — |
 
 ### 11.2 关键文件索引
 
 | 路径 | 用途 |
 |------|------|
-| `backend/src/main.c` | 入口、middleware 栈、路由注册(新旧双套)、服务初始化 |
-| `backend/src/interfaces/http/controllers/auth_controller.c` | 新架构: auth HTTP 控制器(委托到 application) |
-| `backend/src/interfaces/http/controllers/ai_controller.c` | 新架构: ai HTTP 控制器 |
-| `backend/src/interfaces/http/controllers/market_controller.c` | 新架构: market HTTP 控制器 |
-| `backend/src/application/auth/usecases.c` | auth 用例: register/login/2fa/oauth |
-| `backend/src/application/ai/usecases.c` | ai 用例: sessions/messages/workflows |
-| `backend/src/application/market/usecases.c` | market 用例: sync/quote/exchange_rates |
-| `backend/src/domain/*/entity.h` | 8 个域的纯业务实体定义 |
-| `backend/src/domain/*/repository.h` | 8 个域的仓储契约接口 |
+| `backend/src/main.c` | 入口、middleware 栈、路由注册、服务初始化 |
+| `backend/src/interfaces/http/controllers/*_controller.c` | 20 个 HTTP 控制器 (全部委托到 application 层) |
+| `backend/src/application/*/usecases.c` | 16 个域的用例编排模块 |
+| `backend/src/domain/*/entity.h` | 16 个域的纯业务实体定义 |
+| `backend/src/domain/*/repository.h` | 16 个域的仓储契约接口 |
 | `backend/src/domain/*/rules.h` | 8 个域的业务规则函数 |
-| `backend/src/infrastructure/repositories/*_repo_impl.c` | 7 个域的 SQL 仓储实现 |
+| `backend/src/infrastructure/repositories/*_repo_impl.c` | 18 个文件,16 个域的 SQL 仓储实现 (零 legacy repo 残留) |
 | `backend/src/core/financial/decimal.h` | 128 位定点十进制引擎 |
 | `backend/src/core/financial/money.h` | 绑定 currency 的金额强类型 |
 | `backend/src/core/financial/currency.h` | ISO 4217 货币模型 |
@@ -1243,7 +1221,7 @@ Minefolio 建立跨数据库方言的**正式版本化迁移系统 (Database Mig
 | `backend/sql/migration_postgres.sql` | PostgreSQL 16 表全量基准 |
 | `backend/tests/test_link.sh` | 38-case 核心集成测试 |
 | `backend/tests/test_*.sh` | 8 个专项集成测试脚本 |
-| `backend/tests/unit/test_*.c` | 26 个 CTest 单元单测 |
+| `backend/tests/unit/test_*.c` | 28 个 CTest 单元单测 |
 | `frontend/src/utils/http.ts` | axios + JWT + CSRF |
 | `frontend/src/stores/chat.ts` | SmoothStreamWriter |
 | `frontend/src/components/ChatMessageContent.vue` | 流式渲染分层 |
@@ -1263,7 +1241,7 @@ Minefolio 建立跨数据库方言的**正式版本化迁移系统 (Database Mig
   ```bash
   cmake --build backend/build --parallel && npm --prefix frontend run build
   ./backend/tests/test_full.sh                    # 全量集成回归
-  ctest --test-dir backend/build --output-on-failure  # 26 个 CUnit 单测
+  ctest --test-dir backend/build --output-on-failure  # 28 个 CTest 单测
   npm --prefix frontend test -- --run             # 移动端 vitest
   ```
 

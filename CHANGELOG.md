@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Verified
+- **Full CI Green (2026-09-09)**:
+  - All 6 CI jobs pass: Backend Build & Test, Frontend Typecheck+Build, iOS Build, Android Build, Frontend Docker Image, Docker Image Package.
+  - Integration tests: `test_link.sh` 147/147, `test_2fa.sh` 17/17, `test_ai_trace.sh` 17/17, `test_ai_tool_call.sh` 15/15, `test_ledgers.sh` ALL, `test_fx_oauth.sh` 20/20.
+  - Unit tests: 28/28 CTest suites pass.
+  - Zero legacy repository files remaining. `backend/src/repositories/` directory deleted.
+
 ### Added
 - **Legacy Repository Complete Deletion**:
   - Deleted ALL 17 legacy `repositories/*.c/h` files, eliminating the dual-track architecture.
@@ -90,6 +97,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - `backend/src/services/ai_service.c`: Refactored `ai_chat_handler` and `ai_service_stream_report` to delegate completely to `ai_runtime_execute_stream()`, eliminating over 400 lines of duplicated conversation loops, manual token counting, and tool allocation boilerplate.
 - `AGENTS.md`: Updated AI Architecture guidelines, runtime execution rules, and directory map.
+
+## [2.0.0] - 2026-09-09
+
+### Summary
+Complete elimination of legacy dual-track architecture. All 16 business domains now use DDD four-layer architecture exclusively. Zero legacy repository files remain.
+
+### Changed
+- Deleted `backend/src/repositories/` directory (17 legacy repo files removed).
+- All SQL consolidated in `backend/src/infrastructure/repositories/*_repo_impl.c` (18 files).
+- All 20 HTTP controllers in `interfaces/http/controllers/` (legacy controllers directory removed).
+- Updated `docs/architecture.md` to reflect zero legacy components.
+
+---
 
 ## [1.1.0] - 2026-09-04
 
