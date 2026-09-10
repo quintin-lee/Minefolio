@@ -172,25 +172,28 @@ mf_ai_repo_transaction_list(
 csilk_json_t*
 mf_ai_repo_daily_expense_monthly_by_category(void* pool, int64_t user_id, const char* pattern)
 {
-    (void)user_id;
+    char uid[32];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     return csilk_db_query_param_json(
         (csilk_db_pool_t*)pool,
         "SELECT c.name as category_name,de.expense_type,SUM(de.amount) as amount FROM "
-        "daily_expenses de JOIN categories c ON de.category_id=c.id WHERE de.expense_date LIKE ? "
+        "daily_expenses de JOIN categories c ON de.category_id=c.id AND c.user_id=? "
+        "WHERE de.user_id=? AND de.expense_date LIKE ? "
         "GROUP BY c.name,de.expense_type ORDER BY amount DESC",
-        (const char*[]){pattern, NULL});
+        (const char*[]){uid, uid, pattern, NULL});
 }
 
 csilk_json_t*
 mf_ai_repo_daily_expense_monthly_totals(void* pool, int64_t user_id, const char* pattern)
 {
-    (void)user_id;
+    char uid[32];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     return csilk_db_query_param_json(
         (csilk_db_pool_t*)pool,
         "SELECT COALESCE(SUM(CASE WHEN expense_type='income' THEN amount ELSE 0 END),0) as "
         "total_income,COALESCE(SUM(CASE WHEN expense_type='expense' THEN amount ELSE 0 END),0) as "
-        "total_expense FROM daily_expenses WHERE expense_date LIKE ?",
-        (const char*[]){pattern, NULL});
+        "total_expense FROM daily_expenses WHERE user_id=? AND expense_date LIKE ?",
+        (const char*[]){uid, pattern, NULL});
 }
 
 csilk_json_t*

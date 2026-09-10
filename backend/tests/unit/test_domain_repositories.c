@@ -349,13 +349,84 @@ test_market_repository(csilk_db_pool_t* pool, int64_t user_id)
 }
 
 static void
-test_ai_repository(csilk_db_pool_t* pool, int64_t user_id)
+test_ai_repository(csilk_db_pool_t* pool, int64_t user_id, int64_t asset_id)
 {
     printf("--- 7. Testing AI Domain Repository ---\n");
-    /* AI domain repository tests use ai_repo_impl wrapper functions */
-    (void)pool;
-    (void)user_id;
-    printf("  ✅ AI Domain Repository passed\n");
+
+    /* 第二个用户，用于验证 AI 月度报表的跨用户隔离 */
+    int64_t bob_id = 0;
+    assert(mf_auth_repo_create(pool, "bob", "hash_bob_123", &bob_id) == 0 && bob_id > 0);
+
+    /* 为两个用户各建一个分类 */
+    char uid_a[32], uid_b[32], cat_amt[64], bob_amt[64];
+    snprintf(uid_a, sizeof(uid_a), "%lld", (long long)user_id);
+    snprintf(uid_b, sizeof(uid_b), "%lld", (long long)bob_id);
+    snprintf(cat_amt, sizeof(cat_amt), "111.50");
+    snprintf(bob_amt, sizeof(bob_amt), "222.25");
+
+    csilk_json_t* cat_a = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO categories (user_id, name, type) VALUES (?, 'AliceCat', 'expense') "
+        "RETURNING id",
+        (const char*[]){uid_a, NULL});
+    csilk_json_t* cat_b = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO categories (user_id, name, type) VALUES (?, 'BobCat', 'expense') "
+        "RETURNING id",
+        (const char*[]){uid_b, NULL});
+    assert(cat_a && csilk_json_array_size(cat_a) > 0);
+    assert(cat_b && csilk_json_array_size(cat_b) > 0);
+    char cat_a_str[32], cat_b_str[32];
+    snprintf(cat_a_str, sizeof(cat_a_str), "%lld", (long long)db_get_int(csilk_json_array_get(cat_a, 0), "id"));
+    snprintf(cat_b_str, sizeof(cat_b_str), "%lld", (long long)db_get_int(csilk_json_array_get(cat_b, 0), "id"));
+    csilk_json_free(cat_a);
+    csilk_json_free(cat_b);
+
+    /* 两个用户各插一条 2026-09 收支，金额不同 */
+    char ast_str[32];
+    snprintf(ast_str, sizeof(ast_str), "%lld", (long long)asset_id);
+    const char* ins_exp =
+        "INSERT INTO daily_expenses (user_id, category_id, asset_id, expense_type, amount, "
+        "expense_date) VALUES (?, ?, ?, 'expense', ?, '2026-09-01') RETURNING id";
+    csilk_json_t* exp_a =
+        csilk_db_query_param_json(pool, ins_exp, (const char*[]){uid_a, cat_a_str, ast_str, cat_amt, NULL});
+    csilk_json_t* exp_b =
+        csilk_db_query_param_json(pool, ins_exp, (const char*[]){uid_b, cat_b_str, ast_str, bob_amt, NULL});
+    assert(exp_a && csilk_json_array_size(exp_a) > 0);
+    assert(exp_b && csilk_json_array_size(exp_b) > 0);
+    csilk_json_free(exp_a);
+    csilk_json_free(exp_b);
+
+    /* 断言 1：monthly_totals 只返回该用户自己的金额 */
+    csilk_json_t* tot_a =
+        mf_ai_repo_daily_expense_monthly_totals(pool, user_id, "2026-09%");
+    csilk_json_t* tot_b = mf_ai_repo_daily_expense_monthly_totals(pool, bob_id, "2026-09%");
+    assert(tot_a && csilk_json_array_size(tot_a) == 1);
+    assert(tot_b && csilk_json_array_size(tot_b) == 1);
+    double a_expense = db_get_num(csilk_json_array_get(tot_a, 0), "total_expense");
+    double b_expense = db_get_num(csilk_json_array_get(tot_b, 0), "total_expense");
+    assert(a_expense > 111.4 && a_expense < 111.6);
+    assert(b_expense > 222.1 && b_expense < 222.4);
+    csilk_json_free(tot_a);
+    csilk_json_free(tot_b);
+
+    /* 断言 2：monthly_by_category 只返回该用户自己的分类聚合 */
+    csilk_json_t* cats_a =
+        mf_ai_repo_daily_expense_monthly_by_category(pool, user_id, "2026-09%");
+    csilk_json_t* cats_b =
+        mf_ai_repo_daily_expense_monthly_by_category(pool, bob_id, "2026-09%");
+    assert(cats_a && csilk_json_array_size(cats_a) == 1);
+    assert(cats_b && csilk_json_array_size(cats_b) == 1);
+    csilk_json_t* row_a = csilk_json_array_get(cats_a, 0);
+    csilk_json_t* row_b = csilk_json_array_get(cats_b, 0);
+    const char* an = csilk_json_get_string(row_a, "category_name");
+    const char* bn = csilk_json_get_string(row_b, "category_name");
+    assert(an && strcmp(an, "AliceCat") == 0);
+    assert(bn && strcmp(bn, "BobCat") == 0);
+    csilk_json_free(cats_a);
+    csilk_json_free(cats_b);
+
+    printf("  ✅ AI Domain Repository passed (monthly isolation verified)\n");
 }
 
 int
@@ -376,7 +447,7 @@ main(void)
     test_portfolio_repository(pool, user_id, asset_id);
     test_cashflow_repository(pool, user_id);
     test_market_repository(pool, user_id);
-    test_ai_repository(pool, user_id);
+    test_ai_repository(pool, user_id, asset_id);
 
     teardown_test_db(pool);
     printf("\nAll domain repository tests passed!\n");
