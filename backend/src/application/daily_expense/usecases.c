@@ -81,6 +81,7 @@ process_tags(void* pool, int64_t user_id, int64_t expense_id, const csilk_json_t
 int
 daily_expense_usecase_list(void*          pool,
                            int64_t        user_id,
+                           int64_t        ledger_id,
                            int64_t        page,
                            int64_t        page_size,
                            const char*    expense_type,
@@ -93,6 +94,7 @@ daily_expense_usecase_list(void*          pool,
 {
     return mf_daily_expense_repo_list(pool,
                                       user_id,
+                                      ledger_id,
                                       page,
                                       page_size,
                                       expense_type,
@@ -107,6 +109,7 @@ daily_expense_usecase_list(void*          pool,
 int
 daily_expense_usecase_monthly(void*                           pool,
                               int64_t                         user_id,
+                              int64_t                         ledger_id,
                               int64_t                         year,
                               int64_t                         month,
                               daily_expense_monthly_result_t* out_res,
@@ -117,7 +120,8 @@ daily_expense_usecase_monthly(void*                           pool,
     char date_pattern[32];
     snprintf(date_pattern, sizeof(date_pattern), "%lld-%02d-%%", (long long)year, (int)month);
 
-    csilk_json_t* totals = mf_daily_expense_repo_monthly_totals(pool, user_id, date_pattern);
+    csilk_json_t* totals =
+        mf_daily_expense_repo_monthly_totals(pool, user_id, ledger_id, date_pattern);
     if (totals && csilk_json_array_size(totals) > 0) {
         const csilk_json_t* tr = csilk_json_array_get(totals, 0);
         out_res->total_income = db_get_num(tr, "total_income");
@@ -128,9 +132,10 @@ daily_expense_usecase_monthly(void*                           pool,
         csilk_json_free(totals);
     }
 
-    *out_by_category = mf_daily_expense_repo_monthly_by_category(pool, user_id, date_pattern);
-    *out_by_tag = mf_daily_expense_repo_monthly_by_tag(pool, user_id, date_pattern);
-    *out_daily = mf_daily_expense_repo_monthly_daily(pool, user_id, date_pattern);
+    *out_by_category =
+        mf_daily_expense_repo_monthly_by_category(pool, user_id, ledger_id, date_pattern);
+    *out_by_tag = mf_daily_expense_repo_monthly_by_tag(pool, user_id, ledger_id, date_pattern);
+    *out_daily = mf_daily_expense_repo_monthly_daily(pool, user_id, ledger_id, date_pattern);
 
     out_res->code = 0;
     return 0;
@@ -166,6 +171,7 @@ daily_expense_usecase_create(void*                             pool,
 
     int64_t expense_id = mf_daily_expense_repo_insert(pool,
                                                       cmd->user_id,
+                                                      cmd->ledger_id,
                                                       cmd->category_id,
                                                       cmd->asset_id,
                                                       cmd->expense_type,
@@ -230,7 +236,7 @@ daily_expense_usecase_update(void*                             pool,
     }
 
     /* Check existence */
-    if (mf_daily_expense_repo_exists(pool, cmd->user_id, cmd->id) != 0) {
+    if (mf_daily_expense_repo_exists(pool, cmd->user_id, cmd->ledger_id, cmd->id) != 0) {
         out_res->code = 1003;
         snprintf(out_res->message, sizeof(out_res->message), "记录不存在");
         return -1;
@@ -238,7 +244,8 @@ daily_expense_usecase_update(void*                             pool,
 
     /* Get old snapshot for balance rollback */
     mf_daily_expense_snapshot_t old = {0};
-    if (mf_daily_expense_repo_get_snapshot(pool, cmd->user_id, cmd->id, &old) != 0) {
+    if (mf_daily_expense_repo_get_snapshot(pool, cmd->user_id, cmd->ledger_id, cmd->id, &old) !=
+        0) {
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "查询失败");
         return -1;
@@ -269,6 +276,7 @@ daily_expense_usecase_update(void*                             pool,
     const char* cur = cmd->currency && cmd->currency[0] ? cmd->currency : "CNY";
     if (mf_daily_expense_repo_update(pool,
                                      cmd->user_id,
+                                     cmd->ledger_id,
                                      cmd->id,
                                      cmd->category_id,
                                      cmd->asset_id,
@@ -315,12 +323,13 @@ daily_expense_usecase_update(void*                             pool,
 int
 daily_expense_usecase_delete(void*                           pool,
                              int64_t                         user_id,
+                             int64_t                         ledger_id,
                              int64_t                         id,
                              daily_expense_usecase_result_t* out_res)
 {
     /* Get snapshot for balance rollback */
     mf_daily_expense_snapshot_t old = {0};
-    if (mf_daily_expense_repo_get_snapshot(pool, user_id, id, &old) != 0) {
+    if (mf_daily_expense_repo_get_snapshot(pool, user_id, ledger_id, id, &old) != 0) {
         out_res->code = 1003;
         snprintf(out_res->message, sizeof(out_res->message), "记录不存在");
         return -1;
@@ -351,7 +360,7 @@ daily_expense_usecase_delete(void*                           pool,
     }
 
     /* 3. Delete record */
-    if (mf_daily_expense_repo_delete(pool, user_id, id) != 0) {
+    if (mf_daily_expense_repo_delete(pool, user_id, ledger_id, id) != 0) {
         csilk_db_exec(pool, "ROLLBACK");
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "删除失败");

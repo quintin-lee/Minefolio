@@ -8,6 +8,7 @@
 int
 mf_daily_expense_repo_list(void*          db_pool,
                            int64_t        user_id,
+                           int64_t        ledger_id,
                            int64_t        page,
                            int64_t        page_size,
                            const char*    expense_type,
@@ -19,8 +20,9 @@ mf_daily_expense_repo_list(void*          db_pool,
                            int64_t*       out_total)
 {
     csilk_db_pool_t* pool = (csilk_db_pool_t*)db_pool;
-    char             uid[32], limit_s[32], offset_s[32];
+    char             uid[32], lid[32], limit_s[32], offset_s[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
     snprintf(limit_s, sizeof(limit_s), "%lld", (long long)page_size);
     snprintf(offset_s, sizeof(offset_s), "%lld", (long long)((page - 1) * page_size));
 
@@ -29,7 +31,9 @@ mf_daily_expense_repo_list(void*          db_pool,
     const char* cnt_params[16];
     int         pidx = 0, cnt_pidx = 0;
     params[pidx++] = uid;
+    params[pidx++] = lid;
     cnt_params[cnt_pidx++] = uid;
+    cnt_params[cnt_pidx++] = lid;
 
     snprintf(
         sql,
@@ -40,10 +44,13 @@ mf_daily_expense_repo_list(void*          db_pool,
         "(SELECT json_group_array(json_object('id',t.id,'name',t.name,'color',t.color)) "
         "FROM expense_tags et JOIN tags t ON et.tag_id=t.id WHERE et.expense_id=de.id) as tags "
         "FROM daily_expenses de LEFT JOIN categories c ON de.category_id=c.id "
-        "LEFT JOIN assets a ON de.asset_id=a.id WHERE de.user_id=?");
+        "AND c.user_id=de.user_id AND c.ledger_id=de.ledger_id "
+        "LEFT JOIN assets a ON de.asset_id=a.id AND a.user_id=de.user_id AND "
+        "a.ledger_id=de.ledger_id "
+        "WHERE de.user_id=? AND de.ledger_id=?");
     snprintf(count_sql,
              sizeof(count_sql),
-             "SELECT COUNT(*) AS cnt FROM daily_expenses de WHERE de.user_id=?");
+             "SELECT COUNT(*) AS cnt FROM daily_expenses de WHERE de.user_id=? AND de.ledger_id=?");
 
     if (expense_type && expense_type[0]) {
         strncat(sql, " AND de.expense_type=?", sizeof(sql) - strlen(sql) - 1);
@@ -95,57 +102,82 @@ mf_daily_expense_repo_list(void*          db_pool,
 }
 
 csilk_json_t*
-mf_daily_expense_repo_monthly_totals(void* db_pool, int64_t user_id, const char* pattern)
+mf_daily_expense_repo_monthly_totals(void*       db_pool,
+                                     int64_t     user_id,
+                                     int64_t     ledger_id,
+                                     const char* pattern)
 {
-    (void)user_id;
+    char uid[32], lid[32];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
     return csilk_db_query_param_json(
         (csilk_db_pool_t*)db_pool,
         "SELECT COALESCE(SUM(CASE WHEN expense_type='income' THEN amount ELSE 0 END),0) as "
         "total_income,COALESCE(SUM(CASE WHEN expense_type='expense' THEN amount ELSE 0 END),0) as "
-        "total_expense FROM daily_expenses WHERE expense_date LIKE ?",
-        (const char*[]){pattern, NULL});
+        "total_expense FROM daily_expenses WHERE user_id=? AND ledger_id=? AND expense_date LIKE ?",
+        (const char*[]){uid, lid, pattern, NULL});
 }
 
 csilk_json_t*
-mf_daily_expense_repo_monthly_by_category(void* db_pool, int64_t user_id, const char* pattern)
+mf_daily_expense_repo_monthly_by_category(void*       db_pool,
+                                          int64_t     user_id,
+                                          int64_t     ledger_id,
+                                          const char* pattern)
 {
-    (void)user_id;
+    char uid[32], lid[32];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
     return csilk_db_query_param_json(
         (csilk_db_pool_t*)db_pool,
         "SELECT c.name as category_name,de.expense_type,SUM(de.amount) as amount FROM "
-        "daily_expenses de JOIN categories c ON de.category_id=c.id WHERE de.expense_date LIKE ? "
-        "GROUP BY c.name,de.expense_type ORDER BY amount DESC",
-        (const char*[]){pattern, NULL});
+        "daily_expenses de JOIN categories c ON de.category_id=c.id "
+        "AND c.user_id=? AND c.ledger_id=? WHERE de.user_id=? AND de.ledger_id=? "
+        "AND de.expense_date LIKE ? GROUP BY c.name,de.expense_type ORDER BY amount DESC",
+        (const char*[]){uid, lid, uid, lid, pattern, NULL});
 }
 
 csilk_json_t*
-mf_daily_expense_repo_monthly_by_tag(void* db_pool, int64_t user_id, const char* pattern)
+mf_daily_expense_repo_monthly_by_tag(void*       db_pool,
+                                     int64_t     user_id,
+                                     int64_t     ledger_id,
+                                     const char* pattern)
 {
-    (void)user_id;
+    char uid[32], lid[32];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
     return csilk_db_query_param_json(
         (csilk_db_pool_t*)db_pool,
         "SELECT t.name as tag_name,SUM(de.amount) as amount,COUNT(*) as count FROM daily_expenses "
-        "de JOIN expense_tags et ON de.id=et.expense_id JOIN tags t ON et.tag_id=t.id WHERE "
-        "de.expense_date LIKE ? GROUP BY t.name ORDER BY amount DESC",
-        (const char*[]){pattern, NULL});
+        "de JOIN expense_tags et ON de.id=et.expense_id "
+        "JOIN tags t ON et.tag_id=t.id AND t.user_id=? "
+        "WHERE de.user_id=? AND de.ledger_id=? AND de.expense_date LIKE ? "
+        "GROUP BY t.name ORDER BY amount DESC",
+        (const char*[]){uid, uid, lid, pattern, NULL});
 }
 
 csilk_json_t*
-mf_daily_expense_repo_monthly_daily(void* db_pool, int64_t user_id, const char* pattern)
+mf_daily_expense_repo_monthly_daily(void*       db_pool,
+                                    int64_t     user_id,
+                                    int64_t     ledger_id,
+                                    const char* pattern)
 {
-    (void)user_id;
+    char uid[32], lid[32];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
     return csilk_db_query_param_json(
         (csilk_db_pool_t*)db_pool,
         "SELECT expense_date,COALESCE(SUM(CASE WHEN expense_type='income' THEN amount ELSE 0 "
         "END),0) as income,COALESCE(SUM(CASE WHEN expense_type='expense' THEN amount ELSE 0 "
-        "END),0) as expense FROM daily_expenses WHERE expense_date LIKE ? GROUP BY expense_date "
+        "END),0) as expense FROM daily_expenses "
+        "WHERE user_id=? AND ledger_id=? AND expense_date LIKE ? GROUP BY expense_date "
         "ORDER BY expense_date",
-        (const char*[]){pattern, NULL});
+        (const char*[]){uid, lid, pattern, NULL});
 }
 
 int64_t
 mf_daily_expense_repo_insert(void*       db_pool,
                              int64_t     user_id,
+                             int64_t     ledger_id,
                              int64_t     category_id,
                              int64_t     asset_id,
                              const char* expense_type,
@@ -154,16 +186,19 @@ mf_daily_expense_repo_insert(void*       db_pool,
                              const char* date,
                              const char* note)
 {
-    char uid[32], cat[32], ast[32], amt[64];
+    char uid[32], lid[32], cat[32], ast[32], amt[64];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
     snprintf(cat, sizeof(cat), "%lld", (long long)category_id);
     snprintf(ast, sizeof(ast), "%lld", (long long)asset_id);
     snprintf(amt, sizeof(amt), "%.6f", amount);
     csilk_json_t* res = csilk_db_query_param_json(
         (csilk_db_pool_t*)db_pool,
-        "INSERT INTO daily_expenses (user_id,category_id,asset_id,expense_type,amount,currency,"
-        "expense_date,note) VALUES (?,?,?,?,?,?,?,?) RETURNING id",
+        "INSERT INTO daily_expenses "
+        "(user_id,ledger_id,category_id,asset_id,expense_type,amount,currency,"
+        "expense_date,note) VALUES (?,?,?,?,?,?,?,?,?) RETURNING id",
         (const char*[]){uid,
+                        lid,
                         cat,
                         ast,
                         expense_type,
@@ -183,19 +218,18 @@ mf_daily_expense_repo_insert(void*       db_pool,
 }
 
 int
-mf_daily_expense_repo_get_snapshot(void*                        db_pool,
-                                   int64_t                      user_id,
-                                   int64_t                      id,
-                                   mf_daily_expense_snapshot_t* out)
+mf_daily_expense_repo_get_snapshot(
+    void* db_pool, int64_t user_id, int64_t ledger_id, int64_t id, mf_daily_expense_snapshot_t* out)
 {
-    char uid[32], idstr[32];
+    char uid[32], lid[32], idstr[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
     snprintf(idstr, sizeof(idstr), "%lld", (long long)id);
     csilk_json_t* row =
         csilk_db_query_param_json((csilk_db_pool_t*)db_pool,
                                   "SELECT amount,expense_type,asset_id,currency,note FROM "
-                                  "daily_expenses WHERE id=? AND user_id=?",
-                                  (const char*[]){idstr, uid, NULL});
+                                  "daily_expenses WHERE id=? AND user_id=? AND ledger_id=?",
+                                  (const char*[]){idstr, uid, lid, NULL});
     if (!row || csilk_json_array_size(row) == 0) {
         if (row) {
             csilk_json_free(row);
@@ -218,6 +252,7 @@ mf_daily_expense_repo_get_snapshot(void*                        db_pool,
 int
 mf_daily_expense_repo_update(void*       db_pool,
                              int64_t     user_id,
+                             int64_t     ledger_id,
                              int64_t     id,
                              int64_t     category_id,
                              int64_t     asset_id,
@@ -227,8 +262,9 @@ mf_daily_expense_repo_update(void*       db_pool,
                              const char* date,
                              const char* note)
 {
-    char uid[32], idstr[32], cat[32], ast[32], amt[64];
+    char uid[32], lid[32], idstr[32], cat[32], ast[32], amt[64];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
     snprintf(idstr, sizeof(idstr), "%lld", (long long)id);
     snprintf(cat, sizeof(cat), "%lld", (long long)category_id);
     snprintf(ast, sizeof(ast), "%lld", (long long)asset_id);
@@ -236,7 +272,8 @@ mf_daily_expense_repo_update(void*       db_pool,
     csilk_json_t* res = csilk_db_query_param_json(
         (csilk_db_pool_t*)db_pool,
         "UPDATE daily_expenses SET category_id=?,asset_id=?,expense_type=?,amount=?,currency=?,"
-        "expense_date=?,note=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=? RETURNING id",
+        "expense_date=?,note=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=? AND "
+        "ledger_id=? RETURNING id",
         (const char*[]){cat,
                         ast,
                         expense_type ? expense_type : "",
@@ -246,6 +283,7 @@ mf_daily_expense_repo_update(void*       db_pool,
                         note ? note : "",
                         idstr,
                         uid,
+                        lid,
                         NULL});
     int ok = res ? csilk_json_array_size(res) > 0 : 0;
     if (res) {
@@ -255,15 +293,16 @@ mf_daily_expense_repo_update(void*       db_pool,
 }
 
 int
-mf_daily_expense_repo_delete(void* db_pool, int64_t user_id, int64_t id)
+mf_daily_expense_repo_delete(void* db_pool, int64_t user_id, int64_t ledger_id, int64_t id)
 {
-    char uid[32], idstr[32];
+    char uid[32], lid[32], idstr[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
     snprintf(idstr, sizeof(idstr), "%lld", (long long)id);
     csilk_json_t* res = csilk_db_query_param_json(
         (csilk_db_pool_t*)db_pool,
-        "DELETE FROM daily_expenses WHERE id=? AND user_id=? RETURNING id",
-        (const char*[]){idstr, uid, NULL});
+        "DELETE FROM daily_expenses WHERE id=? AND user_id=? AND ledger_id=? RETURNING id",
+        (const char*[]){idstr, uid, lid, NULL});
     int ok = res ? csilk_json_array_size(res) > 0 : 0;
     if (res) {
         csilk_json_free(res);
@@ -272,15 +311,16 @@ mf_daily_expense_repo_delete(void* db_pool, int64_t user_id, int64_t id)
 }
 
 int
-mf_daily_expense_repo_exists(void* db_pool, int64_t user_id, int64_t id)
+mf_daily_expense_repo_exists(void* db_pool, int64_t user_id, int64_t ledger_id, int64_t id)
 {
-    char uid_str[32], id_str[32];
+    char uid_str[32], lid_str[32], id_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
     snprintf(id_str, sizeof(id_str), "%lld", (long long)id);
-    csilk_json_t* res =
-        csilk_db_query_param_json((csilk_db_pool_t*)db_pool,
-                                  "SELECT id FROM daily_expenses WHERE id=? AND user_id=?",
-                                  (const char*[]){id_str, uid_str, NULL});
+    csilk_json_t* res = csilk_db_query_param_json(
+        (csilk_db_pool_t*)db_pool,
+        "SELECT id FROM daily_expenses WHERE id=? AND user_id=? AND ledger_id=?",
+        (const char*[]){id_str, uid_str, lid_str, NULL});
     int ok = (res && csilk_json_array_size(res) > 0) ? 0 : 1;
     if (res) {
         csilk_json_free(res);

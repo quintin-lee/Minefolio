@@ -23,6 +23,11 @@ daily_expenses_list(csilk_ctx_t* c)
         return;
     }
 
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "viewer");
+    if (ledger_id < 0) {
+        return;
+    }
+
     int64_t page = 1, page_size = 20;
     parse_page_params(c, &page, &page_size);
 
@@ -36,6 +41,7 @@ daily_expenses_list(csilk_ctx_t* c)
     csilk_json_t* result = NULL;
     int           rc = daily_expense_usecase_list(db_get_pool(),
                                                   user_id,
+                                                  ledger_id,
                                                   page,
                                                   page_size,
                                                   type,
@@ -62,6 +68,10 @@ daily_expenses_monthly(csilk_ctx_t* c)
 
     const char* year_str = csilk_get_query(c, "year");
     const char* month_str = csilk_get_query(c, "month");
+    int64_t     ledger_id = ctx_ledger_id(c, user_id, "viewer");
+    if (ledger_id < 0) {
+        return;
+    }
     if (!year_str || !month_str) {
         respond_bad_request(c, "year 和 month 参数为必填");
         return;
@@ -72,8 +82,15 @@ daily_expenses_monthly(csilk_ctx_t* c)
     csilk_json_t*                  by_tag = NULL;
     csilk_json_t*                  daily = NULL;
 
-    int rc = daily_expense_usecase_monthly(
-        db_get_pool(), user_id, atoll(year_str), atoll(month_str), &res, &by_cat, &by_tag, &daily);
+    int rc = daily_expense_usecase_monthly(db_get_pool(),
+                                           user_id,
+                                           ledger_id,
+                                           atoll(year_str),
+                                           atoll(month_str),
+                                           &res,
+                                           &by_cat,
+                                           &by_tag,
+                                           &daily);
     if (rc != 0) {
         respond_error(c, 500, "查询失败");
         return;
@@ -112,6 +129,7 @@ daily_expenses_create(csilk_ctx_t* c)
 
     create_daily_expense_cmd_t cmd = {
         .user_id = user_id,
+        .ledger_id = ledger_id,
         .category_id = db_get_int(body, "category_id"),
         .asset_id = db_get_int(body, "asset_id"),
         .expense_type = csilk_json_get_string(body, "expense_type"),
@@ -161,6 +179,7 @@ daily_expenses_update(csilk_ctx_t* c)
 
     update_daily_expense_cmd_t cmd = {
         .user_id = user_id,
+        .ledger_id = ledger_id,
         .id = atoll(id_str),
         .category_id = db_get_int(body, "category_id"),
         .asset_id = db_get_int(body, "asset_id"),
@@ -206,7 +225,7 @@ daily_expenses_delete(csilk_ctx_t* c)
     }
 
     daily_expense_usecase_result_t res = {0};
-    int rc = daily_expense_usecase_delete(db_get_pool(), user_id, atoll(id_str), &res);
+    int rc = daily_expense_usecase_delete(db_get_pool(), user_id, ledger_id, atoll(id_str), &res);
 
     if (rc == 0 && res.code == 0) {
         respond_ok_null(c);

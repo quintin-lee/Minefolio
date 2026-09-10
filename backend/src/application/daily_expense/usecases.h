@@ -15,6 +15,7 @@
  */
 int daily_expense_usecase_list(void*          pool,
                                int64_t        user_id,
+                               int64_t        ledger_id,
                                int64_t        page,
                                int64_t        page_size,
                                const char*    expense_type,
@@ -30,6 +31,7 @@ int daily_expense_usecase_list(void*          pool,
  */
 int daily_expense_usecase_monthly(void*                           pool,
                                   int64_t                         user_id,
+                                  int64_t                         ledger_id,
                                   int64_t                         year,
                                   int64_t                         month,
                                   daily_expense_monthly_result_t* out_res,
@@ -58,5 +60,6 @@ int daily_expense_usecase_update(void*                             pool,
  */
 int daily_expense_usecase_delete(void*                           pool,
                                  int64_t                         user_id,
+                                 int64_t                         ledger_id,
                                  int64_t                         id,
                                  daily_expense_usecase_result_t* out_res);

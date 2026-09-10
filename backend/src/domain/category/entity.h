@@ -15,6 +15,7 @@
 typedef struct {
     int64_t id;             /**< 分类主键 ID */
     int64_t user_id;        /**< 所属用户 ID */
+    int64_t ledger_id;      /**< 所属账本 ID；0 表示尚未回填的历史记录 */
     char    name[128];      /**< 分类显示名称 */
     int64_t parent_id;      /**< 父分类 ID（0 表示顶级） */
     char    type[32];       /**< 分类主类别 ("expense","income","asset","transaction") */

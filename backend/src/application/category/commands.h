@@ -10,6 +10,7 @@
 /** 创建分类命令 */
 typedef struct {
     int64_t     user_id;
+    int64_t     ledger_id;
     const char* name;
     int64_t     parent_id;
     const char* type;
@@ -22,6 +23,7 @@ typedef struct {
 /** 更新分类命令 */
 typedef struct {
     int64_t     user_id;
+    int64_t     ledger_id;
     int64_t     category_id;
     const char* name;
     const char* type;
@@ -34,5 +36,6 @@ typedef struct {
 /** 删除分类命令 */
 typedef struct {
     int64_t user_id;
+    int64_t ledger_id;
     int64_t category_id;
 } delete_category_cmd_t;

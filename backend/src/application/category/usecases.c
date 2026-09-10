@@ -23,6 +23,7 @@ typedef struct {
 static void
 seed_type(void*          pool,
           int64_t        user_id,
+          int64_t        ledger_id,
           const char*    type,
           seed_parent_t* items,
           size_t         count,
@@ -31,6 +32,7 @@ seed_type(void*          pool,
     for (size_t i = 0; i < count; i++) {
         int64_t pid = mf_category_repo_find_or_create(pool,
                                                       user_id,
+                                                      ledger_id,
                                                       items[i].parent_name,
                                                       0,
                                                       type,
@@ -51,6 +53,7 @@ seed_type(void*          pool,
                 }
                 mf_category_repo_find_or_create(pool,
                                                 user_id,
+                                                ledger_id,
                                                 items[i].children[j],
                                                 pid,
                                                 type,
@@ -63,9 +66,9 @@ seed_type(void*          pool,
 }
 
 void
-category_usecase_seed_defaults(void* pool, int64_t user_id)
+category_usecase_seed_defaults(void* pool, int64_t user_id, int64_t ledger_id)
 {
-    if (mf_category_repo_is_seeded(pool, user_id)) {
+    if (mf_category_repo_is_seeded(pool, user_id, ledger_id)) {
         return;
     }
 
@@ -111,6 +114,7 @@ category_usecase_seed_defaults(void* pool, int64_t user_id)
     };
     seed_type(pool,
               user_id,
+              ledger_id,
               "expense",
               expense_items,
               sizeof(expense_items) / sizeof(expense_items[0]),
@@ -133,6 +137,7 @@ category_usecase_seed_defaults(void* pool, int64_t user_id)
     };
     seed_type(pool,
               user_id,
+              ledger_id,
               "income",
               income_items,
               sizeof(income_items) / sizeof(income_items[0]),
@@ -157,7 +162,13 @@ category_usecase_seed_defaults(void* pool, int64_t user_id)
          "🏛", {"贵金属", "收藏品", "黄金积存", NULL},
          {"🥇", "🏛", "🪙", NULL}            },
     };
-    seed_type(pool, user_id, "transaction", tx_items, sizeof(tx_items) / sizeof(tx_items[0]), NULL);
+    seed_type(pool,
+              user_id,
+              ledger_id,
+              "transaction",
+              tx_items,
+              sizeof(tx_items) / sizeof(tx_items[0]),
+              NULL);
 
     /* Seed asset categories with per-child overrides */
     seed_parent_t asset_items[] = {
@@ -186,20 +197,22 @@ category_usecase_seed_defaults(void* pool, int64_t user_id)
     };
     seed_type(pool,
               user_id,
+              ledger_id,
               "asset",
               asset_items,
               sizeof(asset_items) / sizeof(asset_items[0]),
               asset_overrides);
 
-    mf_category_repo_mark_seeded(pool, user_id);
+    mf_category_repo_mark_seeded(pool, user_id, ledger_id);
 }
 
 int
-category_usecase_list(void* pool, int64_t user_id, const char* type, csilk_json_t** out_list)
+category_usecase_list(
+    void* pool, int64_t user_id, int64_t ledger_id, const char* type, csilk_json_t** out_list)
 {
     mf_category_t* cats = NULL;
     size_t         count = 0;
-    if (mf_category_repo_list(pool, user_id, type, &cats, &count) != 0) {
+    if (mf_category_repo_list(pool, user_id, ledger_id, type, &cats, &count) != 0) {
         return -1;
     }
     csilk_json_t* arr = csilk_json_array();
@@ -229,11 +242,12 @@ category_usecase_list(void* pool, int64_t user_id, const char* type, csilk_json_
 }
 
 int
-category_usecase_children(void* pool, int64_t user_id, int64_t parent_id, csilk_json_t** out_list)
+category_usecase_children(
+    void* pool, int64_t user_id, int64_t ledger_id, int64_t parent_id, csilk_json_t** out_list)
 {
     mf_category_t* cats = NULL;
     size_t         count = 0;
-    if (mf_category_repo_children(pool, user_id, parent_id, &cats, &count) != 0) {
+    if (mf_category_repo_children(pool, user_id, ledger_id, parent_id, &cats, &count) != 0) {
         return -1;
     }
     csilk_json_t* arr = csilk_json_array();
@@ -294,7 +308,7 @@ category_usecase_create(void*                        pool,
     strncpy(cat.icon, cmd->icon && cmd->icon[0] ? cmd->icon : "", sizeof(cat.icon) - 1);
     cat.sort_order = cmd->sort_order;
 
-    return mf_category_repo_create(pool, cmd->user_id, &cat, out_id);
+    return mf_category_repo_create(pool, cmd->user_id, cmd->ledger_id, &cat, out_id);
 }
 
 int
@@ -318,7 +332,7 @@ category_usecase_update(void*                        pool,
     strncpy(cat.icon, cmd->icon && cmd->icon[0] ? cmd->icon : "", sizeof(cat.icon) - 1);
     cat.sort_order = cmd->sort_order;
 
-    int rc = mf_category_repo_update(pool, cmd->user_id, cmd->category_id, &cat);
+    int rc = mf_category_repo_update(pool, cmd->user_id, cmd->ledger_id, cmd->category_id, &cat);
     if (rc == 1) {
         out_res->code = 1003;
         snprintf(out_res->message, sizeof(out_res->message), "分类不存在");
@@ -332,7 +346,8 @@ category_usecase_delete(void*                        pool,
                         category_usecase_result_t*   out_res)
 {
     int64_t child_count = 0;
-    if (mf_category_repo_count_children(pool, cmd->user_id, cmd->category_id, &child_count) != 0) {
+    if (mf_category_repo_count_children(
+            pool, cmd->user_id, cmd->ledger_id, cmd->category_id, &child_count) != 0) {
         return -1;
     }
     if (!mf_category_rule_can_delete(child_count)) {
@@ -340,7 +355,7 @@ category_usecase_delete(void*                        pool,
         snprintf(out_res->message, sizeof(out_res->message), "分类下有子分类，无法删除");
         return -1;
     }
-    int rc = mf_category_repo_delete(pool, cmd->user_id, cmd->category_id);
+    int rc = mf_category_repo_delete(pool, cmd->user_id, cmd->ledger_id, cmd->category_id);
     if (rc == 1) {
         out_res->code = 1003;
         snprintf(out_res->message, sizeof(out_res->message), "分类不存在");

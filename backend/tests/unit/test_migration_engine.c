@@ -231,7 +231,16 @@ test_auto_baseline_existing_database(void)
     /* Simulate legacy production database: users table exists, schema_migrations does NOT */
     assert(mf_db_execute(db,
         "CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT UNIQUE, password TEXT);"
-        "INSERT INTO users (id, username, password) VALUES (1, 'prod_admin', 'hashed_pw');") == 0);
+        "INSERT INTO users (id, username, password) VALUES (1, 'prod_admin', 'hashed_pw');"
+        "CREATE TABLE ledgers (id INTEGER PRIMARY KEY, owner_id INTEGER, is_default INTEGER);"
+        "INSERT INTO ledgers (id, owner_id, is_default) VALUES (10, 1, 1);"
+        "CREATE TABLE categories (id INTEGER PRIMARY KEY, user_id INTEGER, ledger_id INTEGER, name TEXT);"
+        "INSERT INTO categories (id, user_id, ledger_id, name) VALUES (20, 1, NULL, 'legacy');"
+        "CREATE TABLE assets (id INTEGER PRIMARY KEY, user_id INTEGER, ledger_id INTEGER);"
+        "CREATE TABLE transactions (id INTEGER PRIMARY KEY, user_id INTEGER, ledger_id INTEGER);"
+        "CREATE TABLE daily_expenses (id INTEGER PRIMARY KEY, user_id INTEGER, ledger_id INTEGER);"
+        "CREATE TABLE category_seed_state (user_id INTEGER PRIMARY KEY);"
+        "INSERT INTO category_seed_state (user_id) VALUES (1);") == 0);
 
     mf_migration_engine_t* engine = NULL;
     assert(mf_migration_engine_new(db, "sql/migrations", &engine) == 0 && engine != NULL);
@@ -239,6 +248,16 @@ test_auto_baseline_existing_database(void)
     /* Apply on existing database triggers auto-baseline */
     int applied = 0;
     assert(mf_migration_apply(engine, &applied) == 0);
+
+    /* The legacy user and record remain visible after the upgrade. */
+    mf_stmt_t* legacy_stmt = NULL;
+    assert(mf_stmt_prepare(db, "SELECT ledger_id FROM categories WHERE id = 20;", &legacy_stmt) == 0);
+    mf_result_t* legacy_res = NULL;
+    assert(mf_stmt_query(legacy_stmt, &legacy_res) == 0);
+    assert(mf_result_next(legacy_res) == true);
+    assert(mf_result_get_int64(legacy_res, "ledger_id") == 10);
+    mf_result_free(legacy_res);
+    mf_stmt_close(legacy_stmt);
 
     /* Legacy data is completely preserved */
     mf_stmt_t* stmt = NULL;

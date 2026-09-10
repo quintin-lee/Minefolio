@@ -12,6 +12,7 @@
  */
 typedef struct {
     int64_t     user_id;
+    int64_t     ledger_id;
     int64_t     category_id;
     int64_t     asset_id;
     const char* expense_type;
@@ -27,6 +28,7 @@ typedef struct {
  */
 typedef struct {
     int64_t     user_id;
+    int64_t     ledger_id;
     int64_t     id;
     int64_t     category_id;
     int64_t     asset_id;
