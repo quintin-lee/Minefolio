@@ -69,6 +69,7 @@
           <el-icon class="hamburger" :class="{ 'is-active': mobileMenuOpen }" @click="mobileMenuOpen = !mobileMenuOpen">
             <Grid />
           </el-icon>
+          <AppLogo :size="22" :with-text="false" class="header-mobile-logo" />
           <el-tooltip :content="isCollapsed ? t('common.expandMenu') : t('common.collapseMenu')" placement="bottom" :show-after="300">
             <div class="collapse-btn" @click="toggleCollapse">
               <Icon icon="ph:sidebar-simple" class="collapse-icon" />
@@ -501,8 +502,15 @@ function handleCommand(cmd: string) {
 .hamburger:hover {
   color: var(--mf-text-main);
 }
+.header-mobile-logo {
+  display: none;
+}
 
 @media (max-width: 768px) {
+  .header-mobile-logo {
+    display: inline-flex;
+    margin-right: 8px;
+  }
   .aside {
     position: fixed;
     left: -260px;

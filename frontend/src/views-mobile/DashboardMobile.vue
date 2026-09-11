@@ -1,6 +1,11 @@
 <template>
   <div class="dashboard-mobile" v-loading="loading">
-    <div class="page-header"><h2>首页</h2></div>
+    <div class="page-header">
+      <div class="brand-title">
+        <AppLogo :size="24" :with-text="false" />
+        <h2>首页</h2>
+      </div>
+    </div>
     <div class="kpi-row">
       <div class="kpi-card cyan"><span>总资产</span><b>{{ formatCurrency(summary.total_assets) }}</b></div>
       <div class="kpi-card red"><span>总负债</span><b>{{ formatCurrency(summary.total_liabilities) }}</b></div>
@@ -28,6 +33,7 @@ import { ref, onMounted } from 'vue'
 import { summaryApi } from '@/api/summary'
 import { dailyExpensesApi } from '@/api/daily_expenses'
 import { formatCurrency } from '@/utils/format'
+import AppLogo from '@/components/AppLogo.vue'
 import type { Summary, DailyExpense, ExpenseMonthly } from '@/types'
 
 const summary = ref<Summary>({ total_assets: 0, total_liabilities: 0, net_worth: 0, category_breakdown: [], trend: [] })
@@ -62,6 +68,9 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.page-header { margin-bottom: 16px; }
+.brand-title { display: flex; align-items: center; gap: 10px; }
+.brand-title h2 { margin: 0; font-size: 20px; font-weight: 700; color: var(--mf-text-main); }
 .kpi-row { display: flex; gap: 12px; overflow-x: auto; }
 .kpi-card { flex: 0 0 120px; background: var(--mf-surface); border: 1px solid var(--mf-border); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
 .kpi-card.cyan b { color: var(--mf-info); } .kpi-card.red b { color: var(--mf-danger); } .kpi-card.green b { color: var(--mf-success); }

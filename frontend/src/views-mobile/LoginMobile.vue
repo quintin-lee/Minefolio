@@ -1,6 +1,8 @@
 <template>
   <div class="login-mobile">
-    <h1 class="brand">Minefolio</h1>
+    <div class="brand-header">
+      <AppLogo :size="44" :with-text="true" />
+    </div>
     <el-form :model="form" label-position="top">
       <el-form-item label="用户名">
         <el-input v-model="form.username" placeholder="请输入用户名" />
@@ -56,6 +58,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import { authApi } from '@/api/auth'
+import AppLogo from '@/components/AppLogo.vue'
 import type { OAuthProvider } from '@/types'
 
 const router = useRouter()
@@ -107,7 +110,12 @@ async function submit() {
 
 <style scoped>
 .login-mobile { padding: 48px 24px; display: flex; flex-direction: column; gap: 24px; }
-.brand { text-align: center; font-size: 28px; color: var(--mf-primary); }
+.brand-header {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 8px;
+}
 .switch-mode-mobile {
   text-align: center;
   margin-top: 18px;
