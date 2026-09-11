@@ -15,11 +15,11 @@
   --mf-accent-light: rgba(99, 102, 241, 0.12);
 
   /* Surface & Background (Deep Slate Glassmorphism) */
-  --mf-background: #090d16;
+  --mf-background: #080c14;
   --mf-background-elevated: #0f172a;
   --mf-background-grid: rgba(59, 130, 246, 0.025);
   --mf-surface: rgba(17, 24, 39, 0.85);
-  --mf-surface-card: rgba(15, 23, 42, 0.78);
+  --mf-surface-card: rgba(15, 23, 42, 0.72);
   --mf-surface-hover: rgba(30, 41, 59, 0.85);
   --mf-surface-muted: rgba(30, 41, 59, 0.55);
   --mf-surface-blank: rgba(17, 24, 39, 0.65);
@@ -331,9 +331,10 @@ body {
   font-family: var(--mf-font-family);
   background-color: var(--mf-background);
   background-image:
+    radial-gradient(circle at 50% -20%, rgba(59, 130, 246, 0.08) 0%, transparent 60%),
     linear-gradient(var(--mf-background-grid) 1px, transparent 1px),
     linear-gradient(90deg, var(--mf-background-grid) 1px, transparent 1px);
-  background-size: 32px 32px;
+  background-size: 100% 100%, 32px 32px, 32px 32px;
   color: var(--mf-text-main);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -343,9 +344,12 @@ body {
 .tabular-nums,
 .stat-value,
 .amount-cell,
+.amount-text,
+.pnl-text,
+.balance-text,
 .mf-mono {
   font-variant-numeric: tabular-nums;
-  font-feature-settings: "tnum";
+  font-feature-settings: "tnum" 1;
   font-family: var(--mf-font-mono);
 }
 
@@ -435,28 +439,31 @@ body {
 /* Tables */
 .el-table {
   background-color: transparent !important;
-  --el-table-border-color: var(--mf-border);
+  --el-table-border-color: var(--mf-border-subtle);
   --el-table-header-bg-color: var(--mf-surface-muted);
+  border-radius: var(--mf-radius-md);
+  overflow: hidden;
 }
 .el-table th.el-table__cell {
   background-color: var(--mf-surface-muted) !important;
-  border-bottom: 1px solid var(--mf-border) !important;
+  border-bottom: 1px solid var(--mf-border-subtle) !important;
   color: var(--mf-text-muted) !important;
   font-weight: 600;
   font-size: 12px;
-  letter-spacing: 0.3px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   padding: 12px 0;
 }
 .el-table td.el-table__cell {
-  border-bottom: 1px solid var(--mf-border);
+  border-bottom: 1px solid var(--mf-border-subtle) !important;
   color: var(--mf-text-main);
-  padding: 14px 0;
+  padding: 13px 0;
 }
 .el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell {
-  background-color: rgba(59, 130, 246, 0.02);
+  background-color: rgba(59, 130, 246, 0.015);
 }
 .el-table__body tr:hover > td.el-table__cell {
-  background-color: var(--mf-primary-light) !important;
+  background-color: rgba(59, 130, 246, 0.06) !important;
 }
 .el-table__empty-text {
   color: var(--mf-text-placeholder) !important;
