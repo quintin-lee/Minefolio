@@ -23,7 +23,6 @@ declare module 'vue' {
     DataExport: typeof import('./components/settings/DataExport.vue')['default']
     DcaPlanDialog: typeof import('./components/DcaPlanDialog.vue')['default']
     ElButton: typeof import('element-plus/es')['ElButton']
-    ElCard: typeof import('element-plus/es')['ElCard']
     ElConfigProvider: typeof import('element-plus/es')['ElConfigProvider']
     ElDatePicker: typeof import('element-plus/es')['ElDatePicker']
     ElDialog: typeof import('element-plus/es')['ElDialog']
