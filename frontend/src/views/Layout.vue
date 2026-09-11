@@ -319,6 +319,18 @@ function handleCommand(cmd: string) {
   font-weight: 600;
   position: relative;
 }
+.sidebar-menu :deep(.el-menu-item.is-active)::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 18px;
+  background: var(--mf-primary);
+  border-radius: 3px 0 0 3px;
+  box-shadow: 0 0 8px var(--mf-primary);
+}
 .sidebar-menu :deep(.el-menu-item.is-active::before) {
   content: '';
   position: absolute;
@@ -376,11 +388,22 @@ function handleCommand(cmd: string) {
 .quick-add-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  font-weight: 500;
+  gap: 6px;
+  font-weight: 600;
   border-radius: var(--mf-radius-md);
-  padding: 0 12px;
+  padding: 0 14px;
   height: 34px;
+  background: linear-gradient(135deg, var(--mf-primary) 0%, var(--mf-primary-hover) 100%) !important;
+  border: none !important;
+  box-shadow: 0 2px 10px rgba(59, 130, 246, 0.35) !important;
+  transition: var(--mf-transition) !important;
+}
+.quick-add-btn:hover {
+  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.5) !important;
+  transform: translateY(-1px);
+}
+.quick-add-btn:active {
+  transform: translateY(0) scale(0.98);
 }
 .quick-add-btn .btn-icon {
   font-size: 14px;
@@ -463,15 +486,16 @@ function handleCommand(cmd: string) {
 }
 .fade-transform-enter-active,
 .fade-transform-leave-active {
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: opacity 0.18s cubic-bezier(0.4, 0, 0.2, 1),
+              transform 0.18s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .fade-transform-enter-from {
   opacity: 0;
-  transform: translateX(15px);
+  transform: translateY(4px);
 }
 .fade-transform-leave-to {
   opacity: 0;
-  transform: translateX(-15px);
+  transform: translateY(-4px);
 }
 .page-loading {
   display: flex;
