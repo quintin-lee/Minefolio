@@ -13,6 +13,56 @@ _No changes yet._
 
 ---
 
+## [1.3.0] - 2026-09-11
+
+### Added
+- **DCA Plans Pagination & Aggregate Metrics (`backend/src/domain/dca/`, `application/dca/`, `infrastructure/repositories/dca_repo_impl.c`)**:
+  - Full end-to-end backend pagination (`page`, `page_size`, `status`) across all DDD architecture layers.
+  - New aggregate financial indicators: `active_plan_count`, `total_invested_amount`, `total_current_value`, `total_pnl`, `total_pnl_pct`.
+  - Frontend `Plans.vue` integrated with status tab filtering (`all`, `active`, `paused`, `completed`), pagination controls, and reactive summary cards.
+- **Bento Grid Studio & Comprehensive UI Modernization (`frontend/src/views/`)**:
+  - **Dashboard**: Modern Bento Grid layout featuring a Hero Net-Worth card with an integrated multi-currency strip, Bloomberg-style asset breakdown donut with centered total metrics, modern area gradient net worth trend charts, and rounded gradient yearly income/expense bars.
+  - **Ledger & Transactions**: Upgraded with stream tables, interactive hero amount inputs with type toggles, active row indicator accents, category pills, and streamlined filter bars.
+  - **Holdings**: Bloomberg-style symbol display cells, visual weight allocation progress bars, and PnL status badges.
+  - **SummaryCard Component**: Enhanced with glowing accent bars, trend capsules, and hover lift micro-interactions.
+  - **Navigation & Layout**: Added active menu indicator bars, glowing quick-add CTA buttons, and smooth page fade transitions.
+- **AI Chat Studio Modernization (`frontend/src/views/Chat.vue`)**:
+  - Centered conversation stream layout with refined AI/User avatars and streaming micro-interactions.
+  - Floating island input capsule with integrated financial workflows and action buttons.
+  - Streamlined header bar and polished collapsible session sidebar.
+  - Enhanced financial markdown tables, callout blocks, action card typography, and code block copy interactions.
+  - Bento prompt starter cards with subtle hover lift for empty conversation states.
+- **Brand Identity & AppLogo Redesign (`frontend/src/components/AppLogo.vue`, `frontend/public/`, `frontend/android/`)**:
+  - Brand identity upgrade featuring a 3D faceted 'M' monogram with an upward momentum surge trendline.
+  - Reusable `AppLogo.vue` component with gradient facets and glow effects.
+  - Regenerated web favicon (`favicon.svg`, `favicon.ico`, multi-res PNGs, and PWA icons).
+  - Unified Phosphor Duotone navigation iconography across desktop and mobile layouts.
+  - Regenerated Android launcher icons, adaptive icons, and splash screens.
+- **Database Migration V009 (Savings Goals)**:
+  - Added schema migration `V009__savings_goals.sql` for SQLite and PostgreSQL.
+
+### Changed
+- **Full-Height Flex Table Layout Alignment**:
+  - Aligned **Assets Table** (`Assets.vue`) and **DCA Plans Table** (`Plans.vue`) with **Transactions Table** (`Transactions.vue`).
+  - Implemented vertical flex layout (`height: 100%; overflow: hidden; display: flex; flex-direction: column;`), extending tables to fill available page height down to the bottom with internal scrolling, and pinning pagination bars at the bottom right.
+- **Version Bump**:
+  - Bumped version to `1.3.0` across backend (`CMakeLists.txt`, `admin_controller.c`), frontend (`package.json`, `package-lock.json`), Android (`build.gradle`), and documentation (`README.md`, `AGENTS.md`, `docs/architecture.md`).
+
+### Fixed
+- **Multi-Tenant & Multi-Ledger Data Isolation**:
+  - Strictly enforced `user_id` and `ledger_id` isolation in AI monthly expense reports and financial reports (`reports.c`, `ai_repo_impl.c`).
+- **Receipt OCR Multipart Thread Safety**:
+  - Made receipt multipart parser state thread-local (`receipt_ocr_service.c`), eliminating cross-thread heap corruption during concurrent receipt uploads.
+- **Theme & Display Consistency**:
+  - Fixed contrast and background color issues under light theme across Dashboard, Summary Cards, and Modals.
+  - Resolved button tooltip display anomalies under dark and light themes.
+  - Fixed login card displacement caused by unpositioned background particle canvas.
+- **Test Suite Determinism**:
+  - Added offline market mock driver for deterministic market test suite execution.
+  - Fixed ledger_id propagation in category tree unit tests.
+
+---
+
 ## [1.2.0] - 2026-09-09
 
 ### Verified

@@ -1,6 +1,6 @@
 # Minefolio — 架构与设计说明书 (Architecture & Design Specification)
 
-> 版本: 2026-09-09 v1.2.0  
+> 版本: 2026-09-11 v1.3.0  
 > 适用范围: 仓库 HEAD (`master` 分支)  
 > 受众: 研发、运维、安全审计、二次开发
 
@@ -44,9 +44,7 @@ graph TB
     end
 
     subgraph backend["fa:fa-server 后端进程 (C23 + csilk)"]
-        interfaces["fa:fa-plug Interfaces<br/>HTTP Controllers<br/>(新: interfaces/http/)"]
-        legacy_ctrl["fa:fa-folder-open Legacy<br/>controllers/ 仍在运行"]
-        svc["fa:fa-cogs Services<br/>业务编排层<br/>(legacy, 逐步迁移中)"]
+        interfaces["fa:fa-plug Interfaces<br/>HTTP Controllers<br/>interfaces/http/controllers/"]
         app["fa:fa-cogs Application<br/>Usecases<br/>application/*/"]
         domain["fa:fa-shield-alt Domain<br/>Entities + Rules<br/>domain/*/"]
         infra["fa:fa-hdd Infrastructure<br/>Repo Impl<br/>infrastructure/repositories/"]
@@ -70,7 +68,6 @@ graph TB
     browser -->|"/api/* JWT+CSRF"| nginx
     mobile -->|"离线写本地 WASM<br/>联网时同步"| nginx
     nginx -->|"HTTP/1.1 转发"| interfaces
-    nginx --> legacy_ctrl
     interfaces --> app
     app --> domain
     domain --> infra
@@ -1108,7 +1105,7 @@ cd backend/build && ctest --output-on-failure
 | **适合场景** | 单用户/家庭自托管 | 多租户/集群 |
 
 Minefolio 建立跨数据库方言的**正式版本化迁移系统 (Database Migration System)**，彻底替换历史上的动态字段检测与硬编码 ALTER TABLE：
-- **规范化版本脚本**：按 Flyway 规范统一组织于 `backend/sql/migrations/{sqlite,postgres}/`，文件命名格式 `V<num>__<name>.sql`（`V001`~`V007`）。
+- **规范化版本脚本**：按 Flyway 规范统一组织于 `backend/sql/migrations/{sqlite,postgres}/`，文件命名格式 `V<num>__<name>.sql`（`V001`~`V009`）。
 - **版本记录与审计 (`schema_migrations`)**：记录每个已应用的迁移版本、名称、SHA-256 校验和、应用时间及执行毫秒耗时。
 - **分布式并发互斥锁 (`schema_migration_lock`)**：通过数据库行锁与租约超时防死锁机制，有效防止多实例并行迁移竞争。
 - **跨平台哈希规范化**：计算校验和时自动规范化 CRLF/LF 换行符并修剪尾随空白，杜绝跨平台或跨编辑器修改导致的校验和漂移。
@@ -1216,7 +1213,7 @@ Minefolio 建立跨数据库方言的**正式版本化迁移系统 (Database Mig
 | `backend/src/services/ai/workflows/` | 4 个具体工作流实现 |
 | `backend/src/common/balance.h` | 余额符号翻转 + 持仓核算 |
 | `backend/src/infrastructure/database/migration/` | 数据库迁移引擎 (checksum, lock, engine) |
-| `backend/sql/migrations/{sqlite,postgres}/` | 版本化迁移文件 (V001~V007) |
+| `backend/sql/migrations/{sqlite,postgres}/` | 版本化迁移文件 (V001~V009) |
 | `backend/sql/migration.sql` | SQLite 16 表全量基准 |
 | `backend/sql/migration_postgres.sql` | PostgreSQL 16 表全量基准 |
 | `backend/tests/test_link.sh` | 38-case 核心集成测试 |

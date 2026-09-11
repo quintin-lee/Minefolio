@@ -1,6 +1,6 @@
 # Minefolio
 
-[![Release: v1.1.0](https://img.shields.io/badge/Release-v1.1.0-success.svg)](https://github.com/quintin-lee/Minefolio/releases/tag/v1.1.0)
+[![Release: v1.3.0](https://img.shields.io/badge/Release-v1.3.0-success.svg)](https://github.com/quintin-lee/Minefolio/releases/tag/v1.3.0)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![C23](https://img.shields.io/badge/C-23-00599C?logo=c)](https://en.cppreference.com/w/c/23)
 [![Vue 3](https://img.shields.io/badge/Vue-3.5-4FC08D?logo=vue.js)](https://vuejs.org/)
@@ -20,7 +20,7 @@ Minefolio 是一款极度轻量、安全、专业的**开源全资产管理与�
 * 🏛️ **统一账本状态引擎 (Ledger Engine)**：确立「Transaction 是唯一金融事实」准则，资产持仓、现金余额、成本基础、已实现/浮动盈亏全由账本引擎统一计算与更新，并提供基于时间序列事实全量重建 (`rebuild`) 的自愈能力。
 * 🤖 **统一 AI Runtime 与企业级五级风控引擎 (Unified AI Runtime & Risk Engine)**：建立原生 C 统一 AI 运行时架构，将 Controller 与 Workflow 彻底与 LLM 调用解耦，纳管会话 (Session)、统一上下文容器 (Context)、模型适配 (Model)、工具执行 (Tool)、工作流编排 (Workflow)、安全策略 (Policy)、全链路追踪 (Trace) 与滑动窗口记忆 (Memory)；全面支持硬预算与约束（迭代上限、超时、Token/Tool/Cost 预算与主动取消）及结构化错误分类，实行五级风险评估与带 Nonce 防重放的双重确认令牌机制。
 * 🔑 **统一 Secret Provider 与零硬编码安全门禁**：建立统一敏感配置检索机制，原生兼容环境变量、Docker/K8s Secret 文件挂载与外部密钥管理器 (Vault/AWS/K8s)；在生产启动期实施硬编码/弱口令主动熔断。
-* 🗄️ **企业级数据库迁移系统 (Database Migration System)**：原生 C 语言实现的 Flyway 风格版本化迁移引擎，支持 SQLite / PostgreSQL 双方言（`V001`~`V007`）；具备版本严格发现排序、SHA-256 CRLF 规范化哈希防篡改、基于行锁的分布式迁移互斥锁，以及生产环境存量数据库平滑升级（Auto-Baseline），绝不要求删除已有数据库重新初始化。
+* 🗄️ **企业级数据库迁移系统 (Database Migration System)**：原生 C 语言实现的 Flyway 风格版本化迁移引擎，支持 SQLite / PostgreSQL 双方言（`V001`~`V009`）；具备版本严格发现排序、SHA-256 CRLF 规范化哈希防篡改、基于行锁的分布式迁移互斥锁，以及生产环境存量数据库平滑升级（Auto-Baseline），绝不要求删除已有数据库重新初始化。
 * 💼 **全资产全场景覆盖**：支持现金、银行储蓄、股票、基金、债券、加密货币、房产、贷款、信用卡等资产与负债统一建档，支持负债方向自动正负号翻转。
 * 📈 **专业资管级投资模型**：加权买入成本、分红摊薄计价、卖出部分成本按比例核减、手续费联动与基于 `parent_tx_id` 的级联回滚，精确计算已实现与浮动盈亏。
 * 🌐 **多币种实时外汇引擎 (FX Engine)**：支持全币种资产管理，内置 Yahoo Finance 实时汇率同步与手动设置，支持基准折算净资产实时呈现。
@@ -86,13 +86,13 @@ docker compose ps
 启动成功后，在浏览器访问 `http://localhost` 即可进入初始化向导创建管理员账户。
 
 #### 3. 部署技巧与进阶配置
-* **锁定特定版本部署（如 v1.1.0）**：
-  可在 `docker-compose.yml` 中修改镜像标签为 `:v1.1.0`，或执行拉取与重打标签：
+* **锁定特定版本部署（如 v1.3.0）**：
+  可在 `docker-compose.yml` 中修改镜像标签为 `:v1.3.0`，或执行拉取与重打标签：
   ```bash
-  docker pull ghcr.io/quintin-lee/minefolio:v1.1.0
-  docker pull ghcr.io/quintin-lee/minefolio-frontend:v1.1.0
-  docker tag ghcr.io/quintin-lee/minefolio:v1.1.0 ghcr.io/quintin-lee/minefolio:latest
-  docker tag ghcr.io/quintin-lee/minefolio-frontend:v1.1.0 ghcr.io/quintin-lee/minefolio-frontend:latest
+  docker pull ghcr.io/quintin-lee/minefolio:v1.3.0
+  docker pull ghcr.io/quintin-lee/minefolio-frontend:v1.3.0
+  docker tag ghcr.io/quintin-lee/minefolio:v1.3.0 ghcr.io/quintin-lee/minefolio:latest
+  docker tag ghcr.io/quintin-lee/minefolio-frontend:v1.3.0 ghcr.io/quintin-lee/minefolio-frontend:latest
   docker compose up -d
   ```
 * **从本地源码构建镜像**（二次开发或自定义修改后）：
@@ -110,7 +110,7 @@ docker compose ps
   MINEFOLIO_DB_DRIVER=postgres
   MINEFOLIO_DB_DSN=host=your-pg-host port=5432 user=minefolio password=your-db-pass dbname=minefolio sslmode=disable
   ```
-  原生 C 数据库迁移引擎会在启动时自动完成版本化迁移（`V001`~`V007`）。
+  原生 C 数据库迁移引擎会在启动时自动完成版本化迁移（`V001`~`V009`）。
 
 ### 方式 2：本地源码编译与开发
 
@@ -150,7 +150,7 @@ Minefolio/
 ├── backend/                      # C23 后端服务
 │   ├── CMakeLists.txt            # 构建配置（C23、csilk、yyjson）
 │   ├── sql/                      # 数据库迁移与初始化脚本
-│   │   ├── migrations/           # 版本化迁移脚本（V001~V007）
+│   │   ├── migrations/           # 版本化迁移脚本（V001~V009）
 │   │   │   ├── sqlite/           # SQLite 方言版本脚本
 │   │   │   └── postgres/         # PostgreSQL 方言版本脚本
 │   │   ├── migration.sql         # 16 张核心数据表全量基准（测试与初始化）

@@ -76,7 +76,7 @@ This prevents orphaned fee rows from leaving incorrect balance state.
 ### Database Migration System
 
 Database schema changes are managed strictly via the native C migration engine (`backend/src/infrastructure/database/migration/`):
-- **Versioned scripts**: `backend/sql/migrations/{sqlite,postgres}/` following Flyway naming `V<num>__<name>.sql` (`V001`~`V007`).
+- **Versioned scripts**: `backend/sql/migrations/{sqlite,postgres}/` following Flyway naming `V<num>__<name>.sql` (`V001`~`V009`).
 - **Tracking table**: `schema_migrations` records `version`, `name`, `checksum` (SHA-256 CRLF-normalized), `applied_at`, `execution_time_ms`, `execution_time`.
 - **Concurrency lock**: `schema_migration_lock` table acts as a distributed mutex with lease timeout to prevent multi-instance migration races.
 - **Engine lifecycle**: Automatic discovery, version sorting, checksum validation (tamper detection), transactional application, and status reporting.
@@ -121,7 +121,7 @@ AI Runtime (services/ai/runtime/)
 | `backend/src/infrastructure/database/migration/` | Migration engine: SHA-256 CRLF checksum, mutex locks, auto-baseline |
 | `backend/src/common/` | Cross-cutting: `db.h`, `balance.h`, `jwt.h`, `response.h`, `ctx.h`, `tx_types.h`, `ledger_utils.h` |
 | `backend/src/config/` | `db_config.h/.c` (DSN), `key_manager.h/.c` (RSA-OAEP keys), `secret.h/.c` (Secret Provider) |
-| `backend/sql/migrations/` | Versioned migration scripts (`sqlite/` & `postgres/`, `V001`~`V007`) |
+| `backend/sql/migrations/` | Versioned migration scripts (`sqlite/` & `postgres/`, `V001`~`V009`) |
 | `backend/sql/` | `migration.sql` (SQLite full schema), `migration_postgres.sql` |
 | `backend/tests/unit/` | 28 CTest unit test suites (financial core, ledger, domain rules, DB repository, migration engine, AI runtime) |
 | `backend/tests/test_link.sh` | 143-case integration test suite (HTTP + sqlite3 verification) |
