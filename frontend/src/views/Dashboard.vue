@@ -6,7 +6,7 @@
         <h2>仪表盘</h2>
       </div>
       <div class="header-currency-selector">
-        <span class="curr-label">折算基准:</span>
+        <span class="curr-label">基准折算:</span>
         <el-radio-group v-model="selectedCurrency" size="small" @change="onCurrencyChange">
           <el-radio-button label="CNY">CNY ¥</el-radio-button>
           <el-radio-button label="USD">USD $</el-radio-button>
@@ -15,110 +15,136 @@
         </el-radio-group>
       </div>
     </div>
-    <!-- 待办定投提醒 -->
-    <div v-if="pendingDcaTasks.length > 0" class="dashboard-alert-banner">
-      <div class="alert-left">
-        <el-icon class="alert-icon"><BellFilled /></el-icon>
+
+    <!-- 待办定投灵动胶囊 -->
+    <div v-if="pendingDcaTasks.length > 0" class="floating-alert-capsule">
+      <div class="capsule-left">
+        <span class="pulse-dot-amber"></span>
         <span>您有 <strong>{{ pendingDcaTasks.length }}</strong> 项定投计划待执行</span>
       </div>
-      <el-button type="primary" size="small" @click="$router.push('/plans')">
-        前往处理
+      <el-button type="primary" link size="small" class="capsule-btn" @click="$router.push('/plans')">
+        立即处理 <el-icon><ArrowRight /></el-icon>
       </el-button>
     </div>
 
-    <!-- 资产概览卡片 -->
-    <el-row :gutter="16" class="summary-cards">
-      <el-col :xs="12" :sm="12" :md="6" class="mf-stagger-1">
-        <el-card shadow="hover" class="stat-card assets">
-          <div class="stat-content">
-            <div class="stat-header-row">
-              <span class="stat-label">总资产</span>
-              <div class="stat-icon-wrap assets">
+    <!-- 顶部 Bento Grid 资产概览 -->
+    <el-row :gutter="16" class="bento-top-row">
+      <!-- 左侧 Hero 主卡：净资产核心 (约 58% 宽) -->
+      <el-col :xs="24" :sm="24" :md="14" class="bento-col mf-stagger-1">
+        <div class="bento-hero-card hero-networth-card">
+          <div class="hero-top">
+            <div class="hero-label-wrap">
+              <span class="hero-badge">NET WORTH</span>
+              <span class="hero-label">核心净资产</span>
+            </div>
+            <div v-if="netWorthChange" :class="['trend-capsule', netWorthChange.isPositive ? 'trend-up' : 'trend-down']">
+              <Icon :icon="netWorthChange.isPositive ? 'ph:trend-up' : 'ph:trend-down'" class="capsule-icon" />
+              <span>{{ netWorthChange.isPositive ? '+' : '' }}{{ netWorthChange.pct }}%</span>
+            </div>
+          </div>
+
+          <div class="hero-amount-row">
+            <div class="hero-val-wrap">
+              <span class="currency-symbol">{{ splitCurrency(summary.net_worth).symbol }}</span>
+              <span class="hero-main-val tabular-nums">{{ splitCurrency(summary.net_worth).value }}</span>
+            </div>
+            <!-- 平滑发光 Sparkline 迷你走势 -->
+            <div v-if="sparklinePoints && sparklineData.length > 1" class="hero-sparkline-wrap">
+              <svg class="hero-sparkline" viewBox="0 0 100 28" preserveAspectRatio="none">
+                <defs>
+                  <linearGradient id="heroSparklineGrad" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0%" stop-color="#3b82f6" />
+                    <stop offset="100%" stop-color="#6366f1" />
+                  </linearGradient>
+                </defs>
+                <polyline :points="sparklinePoints" fill="none" stroke="url(#heroSparklineGrad)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+              <div class="sparkline-pulse-dot"></div>
+            </div>
+          </div>
+
+          <!-- 一体化多币种微型分段条 -->
+          <div v-if="multiCurrency && multiCurrency.currencies && multiCurrency.currencies.length > 0" class="mini-fx-section">
+            <div class="mini-fx-bar">
+              <div
+                v-for="(c, idx) in multiCurrency.currencies"
+                :key="c.currency"
+                class="mini-fx-segment"
+                :style="{ width: `${c.percentage}%`, backgroundColor: fxColors[idx % fxColors.length] }"
+                :title="`${c.currency}: ${c.percentage.toFixed(1)}%`"
+              ></div>
+            </div>
+            <div class="mini-fx-chips">
+              <div
+                v-for="(c, idx) in multiCurrency.currencies"
+                :key="c.currency"
+                class="mini-fx-chip"
+                :class="{ active: selectedCurrency === c.currency }"
+                @click="selectCurrency(c.currency)"
+              >
+                <span class="fx-dot" :style="{ backgroundColor: fxColors[idx % fxColors.length] }"></span>
+                <span class="fx-name">{{ c.currency }}</span>
+                <span class="fx-pct tabular-nums">{{ c.percentage.toFixed(0) }}%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </el-col>
+
+      <!-- 右侧次级 Bento 指标组 (约 42% 宽) -->
+      <el-col :xs="24" :sm="24" :md="10" class="bento-col mf-stagger-2">
+        <div class="bento-secondary-group">
+          <!-- 总资产 -->
+          <div class="bento-sub-card assets-card">
+            <div class="sub-header">
+              <span class="sub-title">总资产规模</span>
+              <div class="sub-icon-wrap assets">
                 <Icon icon="ph:wallet" />
               </div>
             </div>
-            <div class="stat-value tabular-nums">{{ formatCurrency(summary.total_assets) }}</div>
-            <div v-if="sparklinePoints && sparklineData.length > 1" class="sparkline-wrap">
-              <svg class="sparkline" viewBox="0 0 60 20" preserveAspectRatio="none">
-                <polyline :points="sparklinePoints" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-            </div>
+            <div class="sub-val tabular-nums text-primary">{{ formatCurrency(summary.total_assets) }}</div>
           </div>
-        </el-card>
-      </el-col>
-      <el-col :xs="12" :sm="12" :md="6" class="mf-stagger-2">
-        <el-card shadow="hover" class="stat-card liabilities">
-          <div class="stat-content">
-            <div class="stat-header-row">
-              <span class="stat-label">总负债</span>
-              <div class="stat-icon-wrap liabilities">
+
+          <!-- 总负债 -->
+          <div class="bento-sub-card liabilities-card">
+            <div class="sub-header">
+              <div class="sub-title-row">
+                <span class="sub-title">负债总额</span>
+                <span class="debt-ratio-badge tabular-nums">负债率 {{ debtRatio }}</span>
+              </div>
+              <div class="sub-icon-wrap liabilities">
                 <Icon icon="ph:credit-card" />
               </div>
             </div>
-            <div class="stat-value tabular-nums">{{ formatCurrency(summary.total_liabilities) }}</div>
+            <div class="sub-val tabular-nums text-danger">{{ formatCurrency(summary.total_liabilities) }}</div>
           </div>
-        </el-card>
-      </el-col>
-      <el-col :xs="12" :sm="12" :md="6" class="mf-stagger-3">
-        <el-card shadow="hover" class="stat-card networth">
-          <div class="stat-content">
-            <div class="stat-header-row">
-              <span class="stat-label">净资产</span>
-              <div class="stat-icon-wrap networth">
-                <Icon icon="ph:chart-line-up" />
-              </div>
-            </div>
-            <div class="stat-value tabular-nums">{{ formatCurrency(summary.net_worth) }}</div>
-            <div v-if="sparklinePoints && sparklineData.length > 1" class="sparkline-wrap">
-              <svg class="sparkline" viewBox="0 0 60 20" preserveAspectRatio="none">
-                <polyline :points="sparklinePoints" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-            </div>
-          </div>
-        </el-card>
-      </el-col>
-      <el-col :xs="12" :sm="12" :md="6" class="mf-stagger-4">
-        <el-card shadow="hover" class="stat-card monthly">
-          <div class="stat-content">
-            <div class="stat-header-row">
-              <span class="stat-label">本月结余</span>
-              <div class="stat-icon-wrap monthly">
+
+          <!-- 本月结余 -->
+          <div class="bento-sub-card monthly-card">
+            <div class="sub-header">
+              <span class="sub-title">本月净现金流</span>
+              <div class="sub-icon-wrap monthly">
                 <Icon icon="ph:scales" />
               </div>
             </div>
-            <div class="stat-value tabular-nums">{{ formatCurrency(currentMonthBalance?.balance ?? 0) }}</div>
+            <div
+              class="sub-val tabular-nums"
+              :class="(currentMonthBalance?.balance ?? 0) >= 0 ? 'text-success' : 'text-danger'"
+            >
+              {{ formatCurrency(currentMonthBalance?.balance ?? 0) }}
+            </div>
           </div>
-        </el-card>
+        </div>
       </el-col>
     </el-row>
 
-    <!-- 多币种实时折算概览条 -->
-    <div v-if="multiCurrency && multiCurrency.currencies && multiCurrency.currencies.length > 0" class="multi-currency-banner">
-      <div class="fx-header">
-        <div class="fx-title">
-          <Icon icon="ph:globe-simple" class="fx-icon" />
-          <span>多币种实时折算资产构成 (基准折算净资产: <strong>{{ formatCurrencyValue(multiCurrency.total_net_worth, selectedCurrency) }}</strong>)</span>
-        </div>
-      </div>
-      <div class="fx-chips">
-        <div v-for="c in multiCurrency.currencies" :key="c.currency" class="fx-chip">
-          <div class="chip-top">
-            <span class="chip-curr">{{ c.currency }}</span>
-            <span class="chip-pct">{{ c.percentage.toFixed(1) }}%</span>
-          </div>
-          <div class="chip-orig">原币: {{ formatCurrencyValue(c.original_net_worth, c.currency) }}</div>
-          <div class="chip-converted">折算: {{ formatCurrencyValue(c.converted_net_worth, selectedCurrency) }}</div>
-        </div>
-      </div>
-    </div>
-
-    <el-row :gutter="20" class="charts-row">
-      <!-- 净资产趋势 -->
-      <el-col :span="16">
+    <!-- 中部图表：净资产走势 (15列) + 资产配置分布 (9列) -->
+    <el-row :gutter="16" class="charts-row">
+      <el-col :xs="24" :md="15">
         <el-card shadow="hover" class="chart-card">
           <template #header>
             <div class="card-header">
-              <span class="header-title">净资产趋势</span>
+              <span class="header-title">净资产走势</span>
             </div>
           </template>
           <div class="nw-chart-wrap">
@@ -126,12 +152,11 @@
           </div>
         </el-card>
       </el-col>
-      <!-- 分类占比 -->
-      <el-col :span="8">
+      <el-col :xs="24" :md="9">
         <el-card shadow="hover" class="chart-card">
           <template #header>
             <div class="card-header">
-              <span class="header-title">资产分布</span>
+              <span class="header-title">资产配置分布</span>
             </div>
           </template>
           <AssetBreakdownPie :data="assetBreakdownData" />
@@ -139,13 +164,13 @@
       </el-col>
     </el-row>
 
-    <el-row :gutter="20" class="charts-row">
-      <!-- 年度收支 -->
-      <el-col :span="12">
+    <!-- 下部图表：年度收支 (12列) + 最近收支流水 (12列) -->
+    <el-row :gutter="16" class="charts-row">
+      <el-col :xs="24" :md="12">
         <el-card shadow="hover" class="chart-card">
           <template #header>
             <div class="card-header">
-              <span class="header-title">年度收支</span>
+              <span class="header-title">年度收支概况</span>
               <el-date-picker
                 v-model="currentYear"
                 type="year"
@@ -159,20 +184,32 @@
           <YearlyChart :data="yearlyExpenses" />
         </el-card>
       </el-col>
-      <!-- 近期收支记录 -->
-      <el-col :span="12">
+
+      <el-col :xs="24" :md="12">
         <el-card shadow="hover" class="chart-card">
           <template #header>
             <div class="card-header">
-              <span class="header-title">最近收支</span>
+              <span class="header-title">最近收支流水</span>
+              <el-button link type="primary" size="small" @click="$router.push('/daily-expenses')">
+                查看全部
+              </el-button>
             </div>
           </template>
-            <el-table :data="recentExpenses" stripe size="small" height="280" class="premium-table">
-              <el-table-column prop="expense_date" label="日期" width="100" />
-              <el-table-column prop="category_name" label="分类" />
-              <el-table-column prop="amount" label="金额" width="120" align="right">
+          <el-table :data="recentExpenses" size="small" height="285" class="stream-table">
+            <el-table-column prop="expense_date" label="日期" width="100" />
+            <el-table-column prop="category_name" label="分类" width="110">
               <template #default="{ row }">
-                <span :class="row.expense_type === 'income' ? 'income-text' : 'expense-text'">
+                <span class="stream-category-pill">{{ row.category_name || '未分类' }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="note" label="备注" min-width="120" show-overflow-tooltip>
+              <template #default="{ row }">
+                <span class="stream-note">{{ row.note || '—' }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="amount" label="金额" width="130" align="right">
+              <template #default="{ row }">
+                <span :class="['mono-amount', row.expense_type === 'income' ? 'income-text' : 'expense-text']">
                   {{ row.expense_type === 'income' ? '+' : '-' }}{{ formatCurrency(row.amount) }}
                 </span>
               </template>
@@ -187,7 +224,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import { BellFilled } from '@element-plus/icons-vue'
+import { ArrowRight } from '@element-plus/icons-vue'
 import { Icon } from '@iconify/vue'
 import { summaryApi } from '@/api/summary'
 import { dailyExpensesApi } from '@/api/daily_expenses'
@@ -202,13 +239,13 @@ import YearlyChart from '@/components/YearlyChart.vue'
 const loading = ref(true)
 const selectedCurrency = ref('CNY')
 const multiCurrency = ref<MultiCurrencySummary | null>(null)
+const fxColors = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#06b6d4']
 
 const summary = ref<Summary>({
   total_assets: 0, total_liabilities: 0, net_worth: 0,
   category_breakdown: [], trend: [],
 })
 
-/** 资产分类占比 (把服务端 category/value 映射为饼图需要的 category_name/value/pct) */
 const assetBreakdownData = computed(() => {
   const rows = summary.value.category_breakdown ?? []
   const total = rows.reduce((sum, r) => sum + (Number(r.value) || 0), 0)
@@ -224,6 +261,27 @@ const recentExpenses = ref<DailyExpense[]>([])
 const pendingDcaTasks = ref<any[]>([])
 const currentYear = ref(new Date())
 
+const debtRatio = computed(() => {
+  const assets = Number(summary.value.total_assets) || 0
+  const liabilities = Number(summary.value.total_liabilities) || 0
+  if (assets <= 0) return '0.0%'
+  return `${((liabilities / assets) * 100).toFixed(1)}%`
+})
+
+const netWorthChange = computed(() => {
+  const trend = summary.value.trend || []
+  if (trend.length < 2) return null
+  const current = summary.value.net_worth
+  const prev = trend[trend.length - 2]?.net_worth ?? trend[0]?.net_worth
+  const diff = current - prev
+  const pct = prev !== 0 ? (diff / Math.abs(prev)) * 100 : 0
+  return {
+    diff,
+    pct: pct.toFixed(2),
+    isPositive: diff >= 0
+  }
+})
+
 const sparklineData = computed(() => {
   const t = summary.value.trend ?? []
   return t.slice(-7).map(d => d.net_worth)
@@ -235,12 +293,31 @@ const sparklinePoints = computed(() => {
   const max = Math.max(...data)
   const min = Math.min(...data)
   const range = max - min || 1
-  const w = 60, h = 20
-  return data.map((v, i) => `${(i / (data.length - 1)) * w},${h - ((v - min) / range) * h}`).join(' ')
+  const w = 100, h = 26
+  return data.map((v, i) => `${(i / (data.length - 1)) * w},${h - ((v - min) / range) * (h - 6) - 3}`).join(' ')
 })
 
 function formatCurrency(val: number) {
   return formatCurrencyValue(val, selectedCurrency.value)
+}
+
+function splitCurrency(val: number) {
+  const curUpper = (selectedCurrency.value || 'CNY').toUpperCase()
+  const map: Record<string, { symbol: string; digits: number }> = {
+    CNY: { symbol: '¥', digits: 2 },
+    USD: { symbol: '$', digits: 2 },
+    EUR: { symbol: '€', digits: 2 },
+    HKD: { symbol: 'HK$', digits: 2 },
+    JPY: { symbol: '¥', digits: 0 },
+    GBP: { symbol: '£', digits: 2 },
+    USDT: { symbol: '₮', digits: 2 },
+  }
+  const meta = map[curUpper] || { symbol: `${curUpper} `, digits: 2 }
+  const numStr = Number(val || 0).toLocaleString('zh-CN', {
+    minimumFractionDigits: meta.digits,
+    maximumFractionDigits: meta.digits,
+  })
+  return { symbol: meta.symbol, value: numStr }
 }
 
 function formatCurrencyValue(val: number, cur = 'CNY') {
@@ -259,6 +336,13 @@ function formatCurrencyValue(val: number, cur = 'CNY') {
     minimumFractionDigits: meta.digits,
     maximumFractionDigits: meta.digits,
   })}`
+}
+
+function selectCurrency(curr: string) {
+  if (selectedCurrency.value !== curr) {
+    selectedCurrency.value = curr
+    onCurrencyChange()
+  }
 }
 
 async function onCurrencyChange() {
@@ -326,112 +410,314 @@ onMounted(loadDashboard)
   overflow: auto;
 }
 
-.stat-content {
-  padding: 4px 2px;
-  position: relative;
+/* 顶部 Bento 布局 */
+.bento-top-row {
+  margin-bottom: 4px;
 }
 
-.stat-header-row {
+.bento-col {
+  margin-bottom: 12px;
+}
+
+/* Hero 净资产大卡 */
+.hero-networth-card {
+  padding: 24px;
   display: flex;
-  align-items: center;
+  flex-direction: column;
   justify-content: space-between;
-  margin-bottom: 8px;
+  min-height: 232px;
 }
 
-.stat-icon-wrap {
-  width: 28px;
-  height: 28px;
-  border-radius: var(--mf-radius-sm);
+.hero-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.hero-label-wrap {
   display: flex;
   align-items: center;
-  justify-content: center;
-  font-size: 15px;
+  gap: 8px;
 }
 
-.stat-icon-wrap.assets {
-  background: var(--mf-primary-light);
+.hero-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 2px 8px;
+  border-radius: var(--mf-radius-pill);
+  background: rgba(59, 130, 246, 0.2);
   color: var(--mf-primary);
+  border: 1px solid rgba(59, 130, 246, 0.3);
 }
-.stat-icon-wrap.liabilities {
-  background: var(--mf-danger-light);
-  color: var(--mf-danger);
+
+.hero-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--mf-text-regular);
 }
-.stat-icon-wrap.networth {
+
+.trend-capsule {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: var(--mf-font-mono);
+  padding: 3px 10px;
+  border-radius: var(--mf-radius-pill);
+}
+
+.trend-up {
   background: var(--mf-success-light);
   color: var(--mf-success);
-}
-.stat-icon-wrap.monthly {
-  background: var(--mf-warning-light);
-  color: var(--mf-warning);
+  border: 1px solid var(--mf-success-border);
 }
 
-.sparkline-wrap {
-  position: absolute;
-  top: 8px;
-  right: 44px;
-  width: 60px;
-  height: 20px;
-  opacity: 0.6;
-  color: currentColor;
+.trend-down {
+  background: var(--mf-danger-light);
+  color: var(--mf-danger);
+  border: 1px solid var(--mf-danger-border);
 }
-.sparkline {
+
+.hero-amount-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin: 16px 0;
+}
+
+.hero-val-wrap {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.currency-symbol {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--mf-primary);
+  opacity: 0.75;
+}
+
+.hero-main-val {
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: -0.8px;
+  line-height: 1.1;
+  color: var(--mf-text-main);
+}
+
+.hero-sparkline-wrap {
+  position: relative;
+  width: 120px;
+  height: 32px;
+  margin-bottom: 4px;
+}
+
+.hero-sparkline {
   width: 100%;
   height: 100%;
 }
 
-.stat-label {
-  font-size: 13px;
-  color: var(--mf-text-muted);
-  font-weight: 500;
+.sparkline-pulse-dot {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #6366f1;
+  box-shadow: 0 0 8px #6366f1;
+  animation: pulse-glow 2s infinite ease-in-out;
 }
 
-.stat-value {
-  font-size: 26px;
-  font-weight: 700;
-  letter-spacing: -0.5px;
-  line-height: 1.2;
+/* 一体化微型多币种配比条 */
+.mini-fx-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 14px;
+  border-top: 1px solid var(--mf-border-subtle);
 }
 
-.stat-card {
-  position: relative;
+.mini-fx-bar {
+  display: flex;
+  height: 4px;
+  border-radius: 2px;
   overflow: hidden;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.mini-fx-segment {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.mini-fx-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.mini-fx-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: var(--mf-transition);
+}
+
+.mini-fx-chip:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.mini-fx-chip.active {
+  background: rgba(59, 130, 246, 0.15);
+}
+
+.fx-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.fx-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--mf-text-regular);
+}
+
+.fx-pct {
+  font-size: 11px;
+  color: var(--mf-text-muted);
+}
+
+/* 右侧次级 Bento 指标组 */
+.bento-secondary-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 100%;
+}
+
+.bento-sub-card {
+  flex: 1;
+  padding: 14px 18px;
   border-radius: var(--mf-radius-lg);
   border: 1px solid var(--mf-border-subtle);
   background: var(--mf-surface-card);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1),
-              box-shadow 0.22s cubic-bezier(0.4, 0, 0.2, 1),
-              border-color 0.22s ease;
+  transition: var(--mf-transition);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
 }
 
-.stat-card:hover {
+.bento-sub-card:hover {
   transform: translateY(-2px);
   border-color: var(--mf-border-hover);
   box-shadow: var(--mf-shadow-glow);
 }
 
-.stat-card.networth {
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, var(--mf-surface-card) 100%);
-  border-color: var(--mf-primary-border);
+.sub-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
 }
 
-.stat-card.networth::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, var(--mf-primary), var(--mf-accent));
-  border-radius: var(--mf-radius-lg) var(--mf-radius-lg) 0 0;
+.sub-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.stat-card.assets .stat-value      { color: var(--mf-primary); text-shadow: 0 0 12px var(--mf-primary-light); }
-.stat-card.liabilities .stat-value { color: var(--mf-danger); text-shadow: 0 0 12px var(--mf-danger-light); }
-.stat-card.networth .stat-value    { color: var(--mf-success); text-shadow: 0 0 12px var(--mf-success-light); }
-.stat-card.monthly .stat-value     { color: var(--mf-warning); text-shadow: 0 0 12px var(--mf-warning-light); }
+.sub-title {
+  font-size: 12px;
+  color: var(--mf-text-muted);
+  font-weight: 500;
+}
 
+.debt-ratio-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(244, 63, 94, 0.12);
+  color: var(--mf-danger);
+  border: 1px solid var(--mf-danger-border);
+}
+
+.sub-icon-wrap {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--mf-radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+
+.sub-icon-wrap.assets {
+  background: var(--mf-primary-light);
+  color: var(--mf-primary);
+}
+
+.sub-icon-wrap.liabilities {
+  background: var(--mf-danger-light);
+  color: var(--mf-danger);
+}
+
+.sub-icon-wrap.monthly {
+  background: var(--mf-warning-light);
+  color: var(--mf-warning);
+}
+
+.sub-val {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  line-height: 1.2;
+}
+
+/* 灵动微胶囊待办 */
+.floating-alert-capsule {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(245, 158, 11, 0.05));
+  border: 1px solid var(--mf-warning-border);
+  border-radius: var(--mf-radius-pill);
+  padding: 6px 16px;
+  margin-bottom: 4px;
+}
+
+.capsule-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--mf-text-regular);
+}
+
+.pulse-dot-amber {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--mf-warning);
+  box-shadow: 0 0 8px var(--mf-warning);
+  animation: pulse-glow 2s infinite ease-in-out;
+}
+
+.capsule-btn {
+  font-weight: 600;
+}
+
+/* 图表与通用卡片 */
 .chart-card {
   border-radius: var(--mf-radius-lg);
   border: 1px solid var(--mf-border-subtle);
@@ -448,8 +734,8 @@ onMounted(loadDashboard)
 }
 
 :deep(.el-card__header) {
-  padding: 14px 20px;
-  border-bottom: 1px solid var(--mf-border);
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--mf-border-subtle);
   background: var(--mf-surface);
 }
 
@@ -460,137 +746,43 @@ onMounted(loadDashboard)
 }
 
 .header-title {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--mf-text-main);
 }
 
 .header-date-picker {
-  width: 140px;
+  width: 120px;
 }
 
 .nw-chart-wrap {
-  height: 320px;
+  height: 310px;
 }
 
-.income-text { color: #34d399; text-shadow: 0 0 8px rgba(52,211,153,0.4); font-weight: 600; }
-.expense-text { color: #f87171; text-shadow: 0 0 8px rgba(248,113,113,0.3); font-weight: 600; }
-
-.premium-table {
-  --el-table-border-color: transparent;
-  --el-table-header-bg-color: var(--mf-primary-light);
-}
-
-:deep(.el-table th.el-table__cell) {
+.income-text {
+  color: #34d399;
+  text-shadow: 0 0 8px rgba(52, 211, 153, 0.35);
   font-weight: 600;
-  color: var(--mf-text-muted) !important;
-  background-color: var(--mf-primary-light) !important;
-  border-bottom: 1px solid var(--mf-border) !important;
 }
 
-.dashboard-alert-banner {
-  background: linear-gradient(135deg, rgba(234, 179, 8, 0.15), rgba(245, 158, 11, 0.08));
-  border: 1px solid var(--mf-warning-border);
-  border-radius: var(--mf-radius-md);
-  padding: 10px 16px;
-  margin-bottom: 20px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+.expense-text {
+  color: #f87171;
+  text-shadow: 0 0 8px rgba(248, 113, 113, 0.3);
+  font-weight: 600;
 }
 
-.alert-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  color: var(--mf-warning);
+.stream-category-pill {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(59, 130, 246, 0.12);
+  color: var(--mf-primary);
+  border: 1px solid rgba(59, 130, 246, 0.2);
 }
 
-.alert-icon {
-  font-size: 18px;
-  color: var(--mf-warning);
-}
-
-:deep(.el-table .el-table__row) {
-  height: 40px;
-}
-:deep(.el-table .el-table__cell) {
-  padding: 8px 0;
+.stream-note {
   font-size: 12px;
-}
-
-.header-currency-selector {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.curr-label {
-  font-size: 13px;
-  color: var(--mf-text-regular);
-}
-
-.multi-currency-banner {
-  background: var(--mf-surface-card);
-  border: 1px solid var(--mf-border);
-  border-radius: var(--mf-radius-md);
-  padding: 12px 16px;
-  margin-bottom: 8px;
-}
-.fx-header {
-  margin-bottom: 10px;
-}
-.fx-title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--mf-text-regular);
-}
-.fx-title strong {
-  color: var(--mf-primary);
-  font-size: 14px;
-}
-.fx-icon {
-  font-size: 16px;
-  color: var(--mf-primary);
-}
-.fx-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-.fx-chip {
-  background: var(--mf-surface-muted);
-  border: 1px solid var(--mf-border);
-  border-radius: 8px;
-  padding: 8px 12px;
-  min-width: 140px;
-}
-.chip-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 4px;
-}
-.chip-curr {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--mf-text-main);
-}
-.chip-pct {
-  font-size: 11px;
-  font-weight: 600;
-  color: #10b981;
-}
-.chip-orig {
-  font-size: 11px;
   color: var(--mf-text-muted);
-}
-.chip-converted {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--mf-primary);
-  margin-top: 2px;
 }
 </style>
