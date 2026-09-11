@@ -5,7 +5,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import echarts, { type ECharts } from '@/utils/echarts'
-import { resolveChartPalette, useChartThemeSync, withAlpha } from '@/utils/echarts-theme'
+import { resolveChartPalette, useChartThemeSync, modernTooltipConfig, withAlpha } from '@/utils/echarts-theme'
 import { formatCurrency } from '@/utils/format'
 
 const props = defineProps<{ data: { category_name: string; value: number; pct: number }[] }>()
@@ -53,39 +53,33 @@ function updateChart() {
   chart.setOption({
     animationDuration: 1000,
     tooltip: {
+      ...modernTooltipConfig(P),
       trigger: 'item',
-      backgroundColor: P.surfaceCard,
-      padding: [10, 15],
-      textStyle: { color: P.textMain },
-      borderColor: P.primaryBorder,
-      borderWidth: 1,
-      shadowColor: P.primaryLight,
-      shadowBlur: 16,
       formatter: (p: any) => {
         const val = formatCurrency(p.data.value)
-        return `<div style="font-weight:bold;color:${p.color};margin-bottom:4px">${p.data.name}</div>
-                <div style="color:${P.textMuted}">金额: ${val}</div>
-                <div style="color:${P.textMuted}">占比: ${p.data.pct.toFixed(2)}%</div>`
+        return `<div style="font-weight:700;color:${p.color};margin-bottom:4px;font-family:var(--mf-font-mono)">${p.data.name}</div>
+                <div style="color:${P.textRegular};font-family:var(--mf-font-mono)">金额: ${val}</div>
+                <div style="color:${P.textMuted};font-family:var(--mf-font-mono)">占比: ${p.data.pct.toFixed(2)}%</div>`
       }
     },
     legend: {
       orient: 'vertical',
-      right: '5%',
+      right: '4%',
       top: 'center',
-      textStyle: { color: P.textMuted, fontSize: 13 },
+      textStyle: { color: P.textMuted, fontSize: 12, fontFamily: 'var(--mf-font-mono)' },
       icon: 'circle',
-      itemWidth: 10,
-      itemHeight: 10,
-      itemGap: 16
+      itemWidth: 8,
+      itemHeight: 8,
+      itemGap: 14
     },
     series: [{
       type: 'pie',
-      radius: ['50%', '75%'],
-      center: ['42%', '50%'],
-      avoidLabelOverlap: false,
+      radius: ['56%', '78%'],
+      center: ['38%', '50%'],
+      avoidLabelOverlap: true,
       itemStyle: {
-        borderRadius: 6,
-        borderColor: P.border,
+        borderRadius: 4,
+        borderColor: P.surfaceCard,
         borderWidth: 2
       },
       label: {

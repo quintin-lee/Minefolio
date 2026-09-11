@@ -392,17 +392,54 @@ onMounted(loadDashboard)
   line-height: 1.2;
 }
 
-.stat-card.assets .stat-value      { color: var(--mf-primary); }
-.stat-card.liabilities .stat-value { color: var(--mf-danger); }
-.stat-card.networth .stat-value    { color: var(--mf-success); }
-.stat-card.monthly .stat-value     { color: var(--mf-warning); }
+.stat-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--mf-radius-lg);
+  border: 1px solid var(--mf-border-subtle);
+  background: var(--mf-surface-card);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+              border-color 0.22s ease;
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--mf-border-hover);
+  box-shadow: var(--mf-shadow-glow);
+}
+
+.stat-card.networth {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, var(--mf-surface-card) 100%);
+  border-color: var(--mf-primary-border);
+}
+
+.stat-card.networth::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--mf-primary), var(--mf-accent));
+  border-radius: var(--mf-radius-lg) var(--mf-radius-lg) 0 0;
+}
+
+.stat-card.assets .stat-value      { color: var(--mf-primary); text-shadow: 0 0 12px var(--mf-primary-light); }
+.stat-card.liabilities .stat-value { color: var(--mf-danger); text-shadow: 0 0 12px var(--mf-danger-light); }
+.stat-card.networth .stat-value    { color: var(--mf-success); text-shadow: 0 0 12px var(--mf-success-light); }
+.stat-card.monthly .stat-value     { color: var(--mf-warning); text-shadow: 0 0 12px var(--mf-warning-light); }
 
 .chart-card {
   border-radius: var(--mf-radius-lg);
-  border: 1px solid var(--mf-border);
-  background: var(--mf-surface);
-  backdrop-filter: blur(14px);
+  border: 1px solid var(--mf-border-subtle);
+  background: var(--mf-surface-card);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   box-shadow: var(--mf-shadow-sm);
+  transition: var(--mf-transition);
 }
 
 .chart-card:hover {
