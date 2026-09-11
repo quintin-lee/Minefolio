@@ -1857,17 +1857,8 @@ step_gt_collect(csilk_db_pool_t*    pool,
     if (!pool) {
         return strdup("{\"error\":\"db not ready\"}");
     }
-    csilk_db_exec(pool,
-                  "CREATE TABLE IF NOT EXISTS savings_goals ("
-                  "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                  "user_id INTEGER NOT NULL, "
-                  "name TEXT NOT NULL, "
-                  "target_amount REAL NOT NULL, "
-                  "current_amount REAL NOT NULL DEFAULT 0, "
-                  "deadline TEXT, "
-                  "note TEXT, "
-                  "created_at TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S','now','localtime'))"
-                  ")");
+    /* savings_goals 表由迁移 V009 统一管理（sql/migrations/{sqlite,postgres}/V009__savings_goals.sql），
+     * 应用启动时 main.c 已执行迁移，此处无需内联建表。 */
 
     char uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
