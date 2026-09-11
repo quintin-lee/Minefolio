@@ -145,18 +145,20 @@ onMounted(async () => {
 <style scoped>
 .workflow-bar-compact {
   margin-bottom: 8px;
+  pointer-events: auto;
 }
 
 .pill-bar-track {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: var(--mf-surface-muted);
+  background: var(--mf-surface);
   border: 1px solid var(--mf-border);
-  border-radius: var(--mf-radius-md, 8px);
-  padding: 4px 8px;
+  border-radius: 14px;
+  padding: 4px 10px;
   height: 36px;
-  backdrop-filter: blur(8px);
+  backdrop-filter: blur(12px);
+  box-shadow: var(--mf-shadow-sm);
 }
 
 .pill-tag {
@@ -191,20 +193,20 @@ onMounted(async () => {
   align-items: center;
   gap: 5px;
   padding: 3px 10px;
-  background: var(--mf-surface-hover);
+  background: var(--mf-surface-muted);
   border: 1px solid var(--mf-border);
-  border-radius: 12px;
+  border-radius: 20px;
   font-size: 11.5px;
-  color: var(--mf-text-muted);
+  color: var(--mf-text-regular, var(--mf-text-main));
   cursor: pointer;
   white-space: nowrap;
-  transition: all 0.15s ease;
+  transition: all 0.18s ease;
 }
 
 .wf-pill:hover:not(.is-disabled) {
   background: var(--mf-primary-light);
-  border-color: var(--mf-primary-border);
-  color: var(--mf-text-main);
+  border-color: var(--mf-primary);
+  color: var(--mf-primary);
   transform: translateY(-1px);
 }
 
