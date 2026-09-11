@@ -104,16 +104,57 @@ CREATE_PLAN_RES=$(curl -s -X POST "${BASE}/dca/plans" -H "$AUTH_HEADER" -H "Cont
 PLAN_ID=$(echo "$CREATE_PLAN_RES" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{console.log(JSON.parse(d).data.id);});")
 echo "✓ DCA Plan created: ID=$PLAN_ID"
 
-echo "Listing DCA plans..."
+echo "Listing DCA plans (with pagination)..."
 LIST_PLAN_RES=$(curl -s -X GET "${BASE}/dca/plans" -H "$AUTH_HEADER")
 echo "$LIST_PLAN_RES" | node -e "
 let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{
   const j = JSON.parse(d);
-  if (j.code !== 0 || !Array.isArray(j.data) || j.data.length !== 1) {
+  const list = Array.isArray(j.data) ? j.data : j.data?.list;
+  if (j.code !== 0 || !Array.isArray(list) || list.length !== 1) {
     console.error('Plan list validation failed:', d);
     process.exit(1);
   }
-  console.log('✓ Plan listed properly with profit_rate:', j.data[0].profit_rate);
+  if (j.data && (j.data.total !== 1 || j.data.page !== 1 || !j.data.summary)) {
+    console.error('Plan pagination/summary validation failed:', d);
+    process.exit(1);
+  }
+  console.log('✓ Plan listed properly with profit_rate:', list[0].profit_rate);
+});"
+
+echo "Testing DCA plan pagination params (page=1&page_size=1)..."
+PAGE1_RES=$(curl -s -X GET "${BASE}/dca/plans?page=1&page_size=1" -H "$AUTH_HEADER")
+echo "$PAGE1_RES" | node -e "
+let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{
+  const j = JSON.parse(d);
+  if (j.code !== 0 || !j.data || j.data.total !== 1 || j.data.page !== 1 || j.data.page_size !== 1 || j.data.list.length !== 1) {
+    console.error('Page 1 validation failed:', d);
+    process.exit(1);
+  }
+  console.log('✓ DCA plan page 1 verified: total=1, page=1, page_size=1, list_len=1');
+});"
+
+echo "Testing DCA plan pagination params (page=2&page_size=1)..."
+PAGE2_RES=$(curl -s -X GET "${BASE}/dca/plans?page=2&page_size=1" -H "$AUTH_HEADER")
+echo "$PAGE2_RES" | node -e "
+let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{
+  const j = JSON.parse(d);
+  if (j.code !== 0 || !j.data || j.data.total !== 1 || j.data.page !== 2 || j.data.page_size !== 1 || j.data.list.length !== 0) {
+    console.error('Page 2 validation failed:', d);
+    process.exit(1);
+  }
+  console.log('✓ DCA plan page 2 verified: total=1, page=2, page_size=1, list_len=0');
+});"
+
+echo "Testing DCA plan summary endpoint..."
+SUM_RES=$(curl -s -X GET "${BASE}/dca/plans/summary" -H "$AUTH_HEADER")
+echo "$SUM_RES" | node -e "
+let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{
+  const j = JSON.parse(d);
+  if (j.code !== 0 || !j.data || typeof j.data.total_plans !== 'number' || typeof j.data.active_count !== 'number') {
+    console.error('Plan summary endpoint validation failed:', d);
+    process.exit(1);
+  }
+  console.log('✓ DCA plan summary endpoint verified: total_plans=' + j.data.total_plans + ', active_count=' + j.data.active_count);
 });"
 
 # 4. Generate Pending Execution and Confirm

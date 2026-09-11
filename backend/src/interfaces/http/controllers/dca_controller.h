@@ -4,6 +4,7 @@
 #include "csilk/app/app.h"
 
 void api_dca_list_plans(csilk_ctx_t* c);
+void api_dca_plan_summary(csilk_ctx_t* c);
 void api_dca_create_plan(csilk_ctx_t* c);
 void api_dca_get_plan(csilk_ctx_t* c);
 void api_dca_update_plan(csilk_ctx_t* c);
@@ -16,6 +17,7 @@ void api_dca_skip_execution(csilk_ctx_t* c);
 
 // Backward-compatibility aliases
 void dca_service_list_plans(csilk_ctx_t* c);
+void dca_service_plan_summary(csilk_ctx_t* c);
 void dca_service_create_plan(csilk_ctx_t* c);
 void dca_service_get_plan(csilk_ctx_t* c);
 void dca_service_update_plan(csilk_ctx_t* c);

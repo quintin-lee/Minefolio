@@ -24,8 +24,38 @@ dca_service_list_plans(csilk_ctx_t* c)
         return;
     }
 
-    csilk_json_t* list = dca_usecase_list_plans(db_get_pool(), user_id);
-    respond_ok(c, list);
+    int64_t page = 1, page_size = 20;
+    parse_page_params(c, &page, &page_size);
+    const char* status = csilk_get_query(c, "status");
+
+    int64_t       total = 0;
+    csilk_json_t* list =
+        dca_usecase_list_plans(db_get_pool(), user_id, page, page_size, status, &total);
+
+    csilk_json_t* summary = dca_usecase_plan_summary(db_get_pool(), user_id);
+
+    csilk_json_t* data = csilk_json_object();
+    csilk_json_add_array(data, "list", list ? list : csilk_json_array());
+    csilk_json_add_number(data, "total", (double)total);
+    csilk_json_add_number(data, "page", (double)page);
+    csilk_json_add_number(data, "page_size", (double)page_size);
+    if (summary) {
+        csilk_json_add_object(data, "summary", summary);
+    }
+
+    respond_ok(c, data);
+}
+
+void
+dca_service_plan_summary(csilk_ctx_t* c)
+{
+    int64_t user_id = ctx_user_id(c);
+    if (user_id <= 0) {
+        return;
+    }
+
+    csilk_json_t* summary = dca_usecase_plan_summary(db_get_pool(), user_id);
+    respond_ok(c, summary ? summary : csilk_json_object());
 }
 
 void
@@ -311,6 +341,11 @@ api_dca_list_plans(csilk_ctx_t* c)
     dca_service_list_plans(c);
 }
 void
+api_dca_plan_summary(csilk_ctx_t* c)
+{
+    dca_service_plan_summary(c);
+}
+void
 api_dca_create_plan(csilk_ctx_t* c)
 {
     dca_service_create_plan(c);
@@ -365,7 +400,14 @@ register_dca_routes(csilk_app_t* app)
                       NULL,
                       NULL,
                       "List DCA plans",
-                      "Get user's DCA plans");
+                      "Get user's DCA plans with pagination");
+    csilk_app_get_ext(app,
+                      "/api/dca/plans/summary",
+                      dca_service_plan_summary,
+                      NULL,
+                      NULL,
+                      "Get DCA plans summary",
+                      "Get overall DCA statistics and metrics");
     csilk_app_post_ext(app,
                        "/api/dca/plans",
                        dca_service_create_plan,

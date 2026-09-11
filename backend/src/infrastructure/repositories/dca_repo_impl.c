@@ -7,11 +7,67 @@
 #include <string.h>
 
 csilk_json_t*
-mf_dca_repo_plan_list(void* db_pool, int64_t user_id)
+mf_dca_repo_plan_list(void*       db_pool,
+                      int64_t     user_id,
+                      int64_t     page,
+                      int64_t     page_size,
+                      const char* status,
+                      int64_t*    out_total)
 {
-    char uid[32];
+    if (out_total) {
+        *out_total = 0;
+    }
+    if (page < 1) {
+        page = 1;
+    }
+    if (page_size < 1) {
+        page_size = 20;
+    }
+
+    char uid[32], limit_str[32], offset_str[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
-    const char* sql =
+    snprintf(limit_str, sizeof(limit_str), "%lld", (long long)page_size);
+    snprintf(offset_str, sizeof(offset_str), "%lld", (long long)((page - 1) * page_size));
+
+    char        count_sql[512];
+    const char* cnt_params[4];
+    int         cnt_pidx = 0;
+    cnt_params[cnt_pidx++] = uid;
+
+    if (status && status[0]) {
+        snprintf(count_sql,
+                 sizeof(count_sql),
+                 "SELECT COUNT(*) AS cnt FROM dca_plans WHERE user_id = ? AND status = ?");
+        cnt_params[cnt_pidx++] = status;
+    } else {
+        snprintf(count_sql,
+                 sizeof(count_sql),
+                 "SELECT COUNT(*) AS cnt FROM dca_plans WHERE user_id = ?");
+    }
+    cnt_params[cnt_pidx] = NULL;
+
+    csilk_json_t* cnt_res =
+        csilk_db_query_param_json((csilk_db_pool_t*)db_pool, count_sql, cnt_params);
+    int64_t total = 0;
+    if (cnt_res && csilk_json_array_size(cnt_res) > 0) {
+        total = db_get_int(csilk_json_array_get(cnt_res, 0), "cnt");
+    }
+    if (cnt_res) {
+        csilk_json_free(cnt_res);
+    }
+    if (out_total) {
+        *out_total = total;
+    }
+    if (total == 0) {
+        return csilk_json_array();
+    }
+
+    char        sql[2048];
+    const char* params[8];
+    int         pidx = 0;
+    params[pidx++] = uid;
+
+    const char* base_select =
         "SELECT p.id, p.user_id, p.target_asset_id, p.funding_asset_id, p.name, "
         "       p.frequency, p.day_of_period, p.amount, p.target_profit_rate, "
         "       p.target_total_amount, p.target_total_periods, p.status, p.note, "
@@ -28,10 +84,77 @@ mf_dca_repo_plan_list(void* db_pool, int64_t user_id)
         "p.id AND e.status = 'confirmed') AS total_invested_amount "
         "FROM dca_plans p "
         "JOIN assets ta ON ta.id = p.target_asset_id "
-        "JOIN assets fa ON fa.id = p.funding_asset_id "
-        "WHERE p.user_id = ? "
-        "ORDER BY p.id DESC";
-    return csilk_db_query_param_json((csilk_db_pool_t*)db_pool, sql, (const char*[]){uid, NULL});
+        "JOIN assets fa ON fa.id = p.funding_asset_id ";
+
+    if (status && status[0]) {
+        snprintf(sql,
+                 sizeof(sql),
+                 "%s WHERE p.user_id = ? AND p.status = ? ORDER BY p.id DESC LIMIT ? OFFSET ?",
+                 base_select);
+        params[pidx++] = status;
+    } else {
+        snprintf(sql,
+                 sizeof(sql),
+                 "%s WHERE p.user_id = ? ORDER BY p.id DESC LIMIT ? OFFSET ?",
+                 base_select);
+    }
+    params[pidx++] = limit_str;
+    params[pidx++] = offset_str;
+    params[pidx] = NULL;
+
+    csilk_json_t* list = csilk_db_query_param_json((csilk_db_pool_t*)db_pool, sql, params);
+    return list ? list : csilk_json_array();
+}
+
+csilk_json_t*
+mf_dca_repo_plan_summary(void* db_pool, int64_t user_id)
+{
+    char uid[32];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    const char*   sql = "SELECT "
+                        "  COUNT(*) AS total_plans, "
+                        "  COUNT(CASE WHEN p.status = 'active' THEN 1 END) AS active_count, "
+                        "  COALESCE(SUM(exec_sub.invested), 0) AS total_invested, "
+                        "  COALESCE(SUM(ta.current_value), 0) AS total_current_value "
+                        "FROM dca_plans p "
+                        "JOIN assets ta ON ta.id = p.target_asset_id "
+                        "LEFT JOIN ( "
+                        "  SELECT plan_id, SUM(actual_amount) AS invested "
+                        "  FROM dca_executions "
+                        "  WHERE status = 'confirmed' "
+                        "  GROUP BY plan_id "
+                        ") exec_sub ON exec_sub.plan_id = p.id "
+                        "WHERE p.user_id = ?";
+    csilk_json_t* arr =
+        csilk_db_query_param_json((csilk_db_pool_t*)db_pool, sql, (const char*[]){uid, NULL});
+    if (!arr || csilk_json_array_size(arr) == 0) {
+        if (arr) {
+            csilk_json_free(arr);
+        }
+        csilk_json_t* def = csilk_json_object();
+        csilk_json_add_number(def, "total_plans", 0);
+        csilk_json_add_number(def, "active_count", 0);
+        csilk_json_add_number(def, "total_invested", 0.0);
+        csilk_json_add_number(def, "total_current_value", 0.0);
+        csilk_json_add_number(def, "total_pnl", 0.0);
+        csilk_json_add_number(def, "total_pnl_pct", 0.0);
+        return def;
+    }
+    csilk_json_t* row = csilk_json_array_get(arr, 0);
+    double        total_invested = db_get_num(row, "total_invested");
+    double        total_current_value = db_get_num(row, "total_current_value");
+    double        total_pnl = total_current_value - total_invested;
+    double        total_pnl_pct = total_invested > 0 ? (total_pnl / total_invested) * 100.0 : 0.0;
+
+    csilk_json_t* sum = csilk_json_object();
+    csilk_json_add_number(sum, "total_plans", (double)db_get_int(row, "total_plans"));
+    csilk_json_add_number(sum, "active_count", (double)db_get_int(row, "active_count"));
+    csilk_json_add_number(sum, "total_invested", total_invested);
+    csilk_json_add_number(sum, "total_current_value", total_current_value);
+    csilk_json_add_number(sum, "total_pnl", total_pnl);
+    csilk_json_add_number(sum, "total_pnl_pct", total_pnl_pct);
+    csilk_json_free(arr);
+    return sum;
 }
 
 csilk_json_t*
@@ -89,14 +212,14 @@ mf_dca_repo_plan_create(void* db_pool, int64_t user_id, const mf_dca_plan_t* pla
     const char*   params[] = {uid,
                               tid,
                               fid,
-                              plan->name ? plan->name : "",
-                              plan->frequency ? plan->frequency : "monthly",
+                              plan->name[0] ? plan->name : "",
+                              plan->frequency[0] ? plan->frequency : "monthly",
                               dop,
                               amt,
                               pr,
                               tta,
                               ttp,
-                              plan->note ? plan->note : "",
+                              plan->note[0] ? plan->note : "",
                               NULL};
     csilk_json_t* res = csilk_db_query_param_json((csilk_db_pool_t*)db_pool, sql, params);
     int64_t       new_id = 0;
@@ -129,14 +252,14 @@ mf_dca_repo_plan_update(void* db_pool, int64_t user_id, int64_t id, const mf_dca
                         "WHERE user_id=? AND id=? RETURNING id";
     const char*   params[] = {tid,
                               fid,
-                              plan->name ? plan->name : "",
-                              plan->frequency ? plan->frequency : "monthly",
+                              plan->name[0] ? plan->name : "",
+                              plan->frequency[0] ? plan->frequency : "monthly",
                               dop,
                               amt,
                               pr,
                               tta,
                               ttp,
-                              plan->note ? plan->note : "",
+                              plan->note[0] ? plan->note : "",
                               uid,
                               pid,
                               NULL};

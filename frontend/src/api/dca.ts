@@ -4,19 +4,28 @@
  */
 
 import http from '@/utils/http'
-import type { DcaPlan, DcaExecution } from '@/types'
+import type { DcaPlan, DcaExecution, DcaPlanListParams, DcaPlanPageResult, DcaPlanSummary } from '@/types'
 
 /**
  * 定投管理 API 服务对象
  */
 export const dcaApi = {
   /**
-   * 获取所有定投计划列表
+   * 分页获取定投计划列表
    * @route GET /api/dca/plans
-   * @returns 定投计划对象数组
+   * @param params 分页与状态过滤参数
+   * @returns 分页定投计划及汇总数据
    */
-  listPlans: () =>
-    http.get<DcaPlan[], DcaPlan[]>('/dca/plans'),
+  listPlans: (params?: DcaPlanListParams) =>
+    http.get<DcaPlanPageResult, DcaPlanPageResult>('/dca/plans', { params }),
+
+  /**
+   * 获取定投计划全局统计指标
+   * @route GET /api/dca/plans/summary
+   * @returns 定投统计汇总对象
+   */
+  getPlanSummary: () =>
+    http.get<DcaPlanSummary, DcaPlanSummary>('/dca/plans/summary'),
 
   /**
    * 创建新的定投计划

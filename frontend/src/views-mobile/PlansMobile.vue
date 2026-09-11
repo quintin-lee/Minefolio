@@ -203,13 +203,16 @@ async function loadData() {
   loading.value = true
   try {
     const [plansRes, pendRes, cfRes, astRes] = await Promise.allSettled([
-      dcaApi.listPlans(),
+      dcaApi.listPlans({ page: 1, page_size: 100 }),
       dcaApi.listPendingExecutions(),
       cashflowApi.getCalendar(),
       assetsApi.list(),
     ])
 
-    if (plansRes.status === 'fulfilled') dcaPlans.value = plansRes.value || []
+    if (plansRes.status === 'fulfilled') {
+      const pVal = plansRes.value
+      dcaPlans.value = Array.isArray(pVal) ? pVal : (pVal as any)?.list || []
+    }
     if (pendRes.status === 'fulfilled') pendingExecutions.value = pendRes.value || []
     if (cfRes.status === 'fulfilled') {
       cashflowSummary.value = cfRes.value

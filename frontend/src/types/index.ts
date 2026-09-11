@@ -282,6 +282,25 @@ export interface DcaPlan {
   profit_target_reached?: boolean
 }
 
+export interface DcaPlanSummary {
+  total_plans: number
+  active_count: number
+  total_invested: number
+  total_current_value: number
+  total_pnl: number
+  total_pnl_pct: number
+}
+
+export interface DcaPlanListParams {
+  page?: number
+  page_size?: number
+  status?: string
+}
+
+export interface DcaPlanPageResult extends PageResult<DcaPlan> {
+  summary?: DcaPlanSummary
+}
+
 export interface DcaExecution {
   id: number
   plan_id: number

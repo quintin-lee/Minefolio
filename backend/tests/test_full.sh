@@ -457,7 +457,7 @@ DCA_ID=$(sqlite3 "$DB" "SELECT id FROM dca_plans WHERE user_id=$UID1 LIMIT 1")
 check_nz "DCA 计划 id" "$DCA_ID"
 
 DCA_LIST=$(req_auth GET /dca/plans "" "$TOKEN")
-check_nz "DCA 列表" "$(echo "$DCA_LIST" | jq -r '.data | length')"
+check_nz "DCA 列表" "$(echo "$DCA_LIST" | jq -r '.data.list // .data | length')"
 
 DCA_GET=$(echo "$(req_auth GET /dca/plans/$DCA_ID "" "$TOKEN")" | jq -r '.data[0].name // .data.name')
 check "DCA 详情 name=AAPL月定投" "AAPL月定投" "$DCA_GET"

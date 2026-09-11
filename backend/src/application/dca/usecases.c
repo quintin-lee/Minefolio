@@ -35,9 +35,14 @@ add_profit_fields(csilk_json_t* item)
 /* ===== Use case implementations ===== */
 
 csilk_json_t*
-dca_usecase_list_plans(void* pool, int64_t user_id)
+dca_usecase_list_plans(void*       pool,
+                       int64_t     user_id,
+                       int64_t     page,
+                       int64_t     page_size,
+                       const char* status,
+                       int64_t*    out_total)
 {
-    csilk_json_t* list = mf_dca_repo_plan_list(pool, user_id);
+    csilk_json_t* list = mf_dca_repo_plan_list(pool, user_id, page, page_size, status, out_total);
     if (!list) {
         return csilk_json_array();
     }
@@ -47,6 +52,12 @@ dca_usecase_list_plans(void* pool, int64_t user_id)
         add_profit_fields(csilk_json_array_get(list, i));
     }
     return list;
+}
+
+csilk_json_t*
+dca_usecase_plan_summary(void* pool, int64_t user_id)
+{
+    return mf_dca_repo_plan_summary(pool, user_id);
 }
 
 csilk_json_t*

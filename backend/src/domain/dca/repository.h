@@ -10,9 +10,19 @@
 #include <stdint.h>
 
 /**
- * @brief 查询用户的所有定投计划列表
+ * @brief 分页查询用户的定投计划列表
  */
-csilk_json_t* mf_dca_repo_plan_list(void* pool, int64_t user_id);
+csilk_json_t* mf_dca_repo_plan_list(void*       pool,
+                                    int64_t     user_id,
+                                    int64_t     page,
+                                    int64_t     page_size,
+                                    const char* status,
+                                    int64_t*    out_total);
+
+/**
+ * @brief 查询用户定投计划全局统计指标 (总投入、总市值、活跃数等)
+ */
+csilk_json_t* mf_dca_repo_plan_summary(void* pool, int64_t user_id);
 
 /**
  * @brief 获取单个定投计划详情

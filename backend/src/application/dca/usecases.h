@@ -11,9 +11,19 @@
 #include <stdint.h>
 
 /**
- * @brief 列出用户所有定投计划（含收益率计算）
+ * @brief 分页查询用户定投计划（含收益率计算）
  */
-csilk_json_t* dca_usecase_list_plans(void* pool, int64_t user_id);
+csilk_json_t* dca_usecase_list_plans(void*       pool,
+                                     int64_t     user_id,
+                                     int64_t     page,
+                                     int64_t     page_size,
+                                     const char* status,
+                                     int64_t*    out_total);
+
+/**
+ * @brief 查询用户定投计划全局统计指标
+ */
+csilk_json_t* dca_usecase_plan_summary(void* pool, int64_t user_id);
 
 /**
  * @brief 获取单个定投计划详情

@@ -66,7 +66,17 @@
         </el-row>
 
         <!-- 定投计划列表表格 -->
+        <!-- 定投计划列表表格 -->
         <div class="table-container">
+          <div class="table-toolbar">
+            <el-radio-group v-model="dcaStatus" size="default" @change="handleDcaStatusChange">
+              <el-radio-button label="">全部计划</el-radio-button>
+              <el-radio-button label="active">运行中</el-radio-button>
+              <el-radio-button label="paused">已暂停</el-radio-button>
+              <el-radio-button label="completed">已完成</el-radio-button>
+            </el-radio-group>
+          </div>
+
           <el-table v-loading="loading" :data="dcaPlans" class="premium-table" row-class-name="premium-row" header-cell-class-name="premium-header">
             <el-table-column label="计划名称" min-width="160">
               <template #default="{ row }">
@@ -151,6 +161,19 @@
               </template>
             </el-table-column>
           </el-table>
+
+          <div class="pagination-bar">
+            <el-pagination
+              v-model:current-page="dcaPage"
+              v-model:page-size="dcaPageSize"
+              :total="dcaTotal"
+              :page-sizes="[10, 20, 50, 100]"
+              layout="total, sizes, prev, pager, next, jumper"
+              background
+              @current-change="loadPlans"
+              @size-change="handleDcaSizeChange"
+            />
+          </div>
         </div>
       </el-tab-pane>
 
@@ -245,11 +268,17 @@ import CashflowCalendar from '@/components/CashflowCalendar.vue'
 import { dcaApi } from '@/api/dca'
 import { cashflowApi } from '@/api/cashflow'
 import { assetsApi } from '@/api/assets'
-import type { Asset, DcaPlan, DcaExecution, CashflowSchedule } from '@/types'
+import type { Asset, DcaPlan, DcaExecution, CashflowSchedule, DcaPlanSummary } from '@/types'
 
 const activeTab = ref<'dca' | 'calendar'>('dca')
 const allAssets = ref<Asset[]>([])
 const dcaPlans = ref<DcaPlan[]>([])
+const dcaPage = ref(1)
+const dcaPageSize = ref(20)
+const dcaTotal = ref(0)
+const dcaStatus = ref('')
+const dcaSummary = ref<DcaPlanSummary | null>(null)
+
 const pendingExecutions = ref<DcaExecution[]>([])
 const schedules = ref<CashflowSchedule[]>([])
 const confirmingId = ref<number | null>(null)
@@ -285,39 +314,90 @@ function formatFlowFreq(freq: string) {
 }
 
 const activePlanCount = computed(() =>
-  dcaPlans.value.filter(p => p.status === 'active').length
+  dcaSummary.value ? dcaSummary.value.active_count : dcaPlans.value.filter(p => p.status === 'active').length
 )
 
 const totalDcaInvested = computed(() =>
-  dcaPlans.value.reduce((sum, p) => sum + (p.total_invested_amount || 0), 0)
+  dcaSummary.value ? dcaSummary.value.total_invested : dcaPlans.value.reduce((sum, p) => sum + (p.total_invested_amount || 0), 0)
 )
 
 const totalDcaCurrentValue = computed(() =>
-  dcaPlans.value.reduce((sum, p) => sum + (p.target_current_value || 0), 0)
+  dcaSummary.value ? dcaSummary.value.total_current_value : dcaPlans.value.reduce((sum, p) => sum + (p.target_current_value || 0), 0)
 )
 
 const totalDcaPnl = computed(() =>
-  totalDcaCurrentValue.value - totalDcaInvested.value
+  dcaSummary.value ? dcaSummary.value.total_pnl : totalDcaCurrentValue.value - totalDcaInvested.value
 )
 
 const totalDcaPnlPct = computed(() =>
-  totalDcaInvested.value > 0 ? (totalDcaPnl.value / totalDcaInvested.value) * 100 : 0
+  dcaSummary.value ? dcaSummary.value.total_pnl_pct : (totalDcaInvested.value > 0 ? (totalDcaPnl.value / totalDcaInvested.value) * 100 : 0)
 )
 
 const loading = ref(false)
+
+async function loadPlans() {
+  loading.value = true
+  try {
+    const res = await dcaApi.listPlans({
+      page: dcaPage.value,
+      page_size: dcaPageSize.value,
+      status: dcaStatus.value || undefined,
+    })
+    if (Array.isArray(res)) {
+      dcaPlans.value = res
+      dcaTotal.value = res.length
+    } else {
+      dcaPlans.value = res?.list || []
+      dcaTotal.value = res?.total || 0
+      if (res?.summary) {
+        dcaSummary.value = res.summary
+      }
+    }
+  } catch (err) {
+    console.error('[Plans] loadPlans failed:', err)
+  } finally {
+    loading.value = false
+  }
+}
+
+function handleDcaSizeChange() {
+  dcaPage.value = 1
+  loadPlans()
+}
+
+function handleDcaStatusChange() {
+  dcaPage.value = 1
+  loadPlans()
+}
 
 async function loadData() {
   loading.value = true
   try {
     const [assetsRes, plansRes, pendingRes, schedulesRes] = await Promise.allSettled([
       assetsApi.list({ page: 1, page_size: 500 }),
-      dcaApi.listPlans(),
+      dcaApi.listPlans({
+        page: dcaPage.value,
+        page_size: dcaPageSize.value,
+        status: dcaStatus.value || undefined,
+      }),
       dcaApi.listPendingExecutions(),
       cashflowApi.listSchedules()
     ])
 
     if (assetsRes.status === 'fulfilled') allAssets.value = assetsRes.value.list || []
-    if (plansRes.status === 'fulfilled') dcaPlans.value = plansRes.value || []
+    if (plansRes.status === 'fulfilled') {
+      const res = plansRes.value
+      if (Array.isArray(res)) {
+        dcaPlans.value = res
+        dcaTotal.value = res.length
+      } else {
+        dcaPlans.value = res?.list || []
+        dcaTotal.value = res?.total || 0
+        if (res?.summary) {
+          dcaSummary.value = res.summary
+        }
+      }
+    }
     if (pendingRes.status === 'fulfilled') pendingExecutions.value = pendingRes.value || []
     if (schedulesRes.status === 'fulfilled') schedules.value = schedulesRes.value || []
   } catch (err) {
@@ -586,5 +666,18 @@ onMounted(() => {
 .drawer-header-actions {
   display: flex;
   justify-content: flex-end;
+}
+
+.table-toolbar {
+  margin-bottom: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.pagination-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
 }
 </style>
