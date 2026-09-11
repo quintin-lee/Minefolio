@@ -347,6 +347,7 @@ body {
 .amount-text,
 .pnl-text,
 .balance-text,
+.mono-amount,
 .mf-mono {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
@@ -810,6 +811,31 @@ body {
   color: var(--mf-text-muted) !important;
 }
 
+/* Semantic Utility Colors */
+.text-primary {
+  color: var(--mf-primary) !important;
+}
+
+.text-danger {
+  color: var(--mf-danger) !important;
+}
+
+.text-success {
+  color: var(--mf-success) !important;
+}
+
+.text-warning {
+  color: var(--mf-warning) !important;
+}
+
+.text-info {
+  color: var(--mf-info) !important;
+}
+
+.text-muted {
+  color: var(--mf-text-muted) !important;
+}
+
 /* Pill Badges */
 .badge-pill {
   display: inline-flex;
@@ -1002,6 +1028,13 @@ body {
   transition: var(--mf-transition);
 }
 
+[data-theme="light"] .bento-hero-card,
+html.light .bento-hero-card {
+  border: 1px solid var(--mf-border);
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.05) 0%, #ffffff 100%);
+  box-shadow: var(--mf-shadow-md);
+}
+
 .bento-hero-card::before {
   content: '';
   position: absolute;
@@ -1012,16 +1045,27 @@ body {
   background: linear-gradient(90deg, #3b82f6, #6366f1, #10b981);
 }
 
+[data-theme="light"] .bento-hero-card::before,
+html.light .bento-hero-card::before {
+  background: linear-gradient(90deg, #2563eb, #6366f1, #10b981);
+}
+
 .bento-hero-card:hover {
   transform: translateY(-2px);
   box-shadow: var(--mf-shadow-glow-strong), var(--mf-shadow-lg);
   border-color: rgba(99, 102, 241, 0.5);
 }
 
+[data-theme="light"] .bento-hero-card:hover,
+html.light .bento-hero-card:hover {
+  border-color: var(--mf-border-hover);
+  box-shadow: var(--mf-shadow-lg), 0 0 20px rgba(37, 99, 235, 0.12);
+}
+
 /* 流式卡片表格行 (Stream Table) */
 .stream-table {
   --el-table-border-color: transparent !important;
-  --el-table-header-bg-color: rgba(15, 23, 42, 0.6) !important;
+  --el-table-header-bg-color: var(--mf-surface-muted) !important;
   --el-table-tr-bg-color: transparent !important;
   background: transparent !important;
 }
@@ -1032,17 +1076,17 @@ body {
 }
 
 .stream-table .el-table__row:hover > td.el-table__cell {
-  background-color: rgba(30, 41, 59, 0.65) !important;
+  background-color: var(--mf-surface-hover) !important;
 }
 
 .stream-table .el-table__row td.el-table__cell {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+  border-bottom: 1px solid var(--mf-border-subtle) !important;
   padding: 12px 0;
 }
 
 /* 记账大字号金额输入 */
 .hero-amount-input .el-input__wrapper {
-  background-color: rgba(15, 23, 42, 0.8) !important;
+  background-color: var(--mf-surface-card) !important;
   border: 1px solid var(--mf-border-hover) !important;
   box-shadow: var(--mf-shadow-glow) !important;
   padding: 8px 16px !important;

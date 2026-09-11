@@ -412,6 +412,40 @@ onMounted(loadDashboard)
   overflow: auto;
 }
 
+/* 顶部货币切换 */
+.header-currency-selector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.curr-label {
+  font-size: 13px;
+  color: var(--mf-text-muted);
+  font-weight: 500;
+}
+
+.header-currency-selector :deep(.el-radio-button__inner) {
+  background: var(--mf-surface-muted);
+  border-color: var(--mf-border);
+  color: var(--mf-text-muted);
+  font-size: 12px;
+  transition: var(--mf-transition);
+}
+
+.header-currency-selector :deep(.el-radio-button:hover .el-radio-button__inner) {
+  color: var(--mf-primary);
+  background: var(--mf-surface-hover);
+}
+
+.header-currency-selector :deep(.el-radio-button.is-active .el-radio-button__inner),
+.header-currency-selector :deep(.el-radio-button__original-radio:checked + .el-radio-button__inner) {
+  background: var(--mf-primary) !important;
+  border-color: var(--mf-primary) !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.3);
+}
+
 /* 顶部 Bento 布局 */
 .bento-top-row {
   margin-bottom: 4px;
@@ -448,9 +482,9 @@ onMounted(loadDashboard)
   letter-spacing: 0.08em;
   padding: 2px 8px;
   border-radius: var(--mf-radius-pill);
-  background: rgba(59, 130, 246, 0.2);
+  background: var(--mf-primary-light);
   color: var(--mf-primary);
-  border: 1px solid rgba(59, 130, 246, 0.3);
+  border: 1px solid var(--mf-primary-border);
 }
 
 .hero-label {
@@ -499,7 +533,7 @@ onMounted(loadDashboard)
   font-size: 22px;
   font-weight: 600;
   color: var(--mf-primary);
-  opacity: 0.75;
+  opacity: 0.85;
 }
 
 .hero-main-val {
@@ -549,7 +583,7 @@ onMounted(loadDashboard)
   height: 4px;
   border-radius: 2px;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--mf-border);
 }
 
 .mini-fx-segment {
@@ -574,11 +608,11 @@ onMounted(loadDashboard)
 }
 
 .mini-fx-chip:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--mf-surface-hover);
 }
 
 .mini-fx-chip.active {
-  background: rgba(59, 130, 246, 0.15);
+  background: var(--mf-primary-light);
 }
 
 .fx-dot {
@@ -610,10 +644,11 @@ onMounted(loadDashboard)
   flex: 1;
   padding: 14px 18px;
   border-radius: var(--mf-radius-lg);
-  border: 1px solid var(--mf-border-subtle);
+  border: 1px solid var(--mf-border);
   background: var(--mf-surface-card);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
+  box-shadow: var(--mf-shadow-sm);
   transition: var(--mf-transition);
   display: flex;
   flex-direction: column;
@@ -623,7 +658,7 @@ onMounted(loadDashboard)
 .bento-sub-card:hover {
   transform: translateY(-2px);
   border-color: var(--mf-border-hover);
-  box-shadow: var(--mf-shadow-glow);
+  box-shadow: var(--mf-shadow-md);
 }
 
 .sub-header {
@@ -649,7 +684,7 @@ onMounted(loadDashboard)
   font-size: 10px;
   padding: 1px 6px;
   border-radius: 4px;
-  background: rgba(244, 63, 94, 0.12);
+  background: var(--mf-danger-light);
   color: var(--mf-danger);
   border: 1px solid var(--mf-danger-border);
 }
@@ -696,6 +731,11 @@ onMounted(loadDashboard)
   border-radius: var(--mf-radius-pill);
   padding: 6px 16px;
   margin-bottom: 4px;
+  box-shadow: var(--mf-shadow-sm);
+}
+
+.floating-alert-capsule strong {
+  color: var(--mf-warning);
 }
 
 .capsule-left {
@@ -722,7 +762,7 @@ onMounted(loadDashboard)
 /* 图表与通用卡片 */
 .chart-card {
   border-radius: var(--mf-radius-lg);
-  border: 1px solid var(--mf-border-subtle);
+  border: 1px solid var(--mf-border);
   background: var(--mf-surface-card);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
@@ -762,15 +802,21 @@ onMounted(loadDashboard)
 }
 
 .income-text {
-  color: #34d399;
-  text-shadow: 0 0 8px rgba(52, 211, 153, 0.35);
+  color: var(--mf-success) !important;
   font-weight: 600;
 }
 
 .expense-text {
-  color: #f87171;
-  text-shadow: 0 0 8px rgba(248, 113, 113, 0.3);
+  color: var(--mf-danger) !important;
   font-weight: 600;
+}
+
+[data-theme="dark"] .income-text {
+  text-shadow: 0 0 8px rgba(52, 211, 153, 0.35);
+}
+
+[data-theme="dark"] .expense-text {
+  text-shadow: 0 0 8px rgba(248, 113, 113, 0.3);
 }
 
 .stream-category-pill {
@@ -778,9 +824,9 @@ onMounted(loadDashboard)
   font-weight: 500;
   padding: 2px 8px;
   border-radius: 4px;
-  background: rgba(59, 130, 246, 0.12);
+  background: var(--mf-primary-light);
   color: var(--mf-primary);
-  border: 1px solid rgba(59, 130, 246, 0.2);
+  border: 1px solid var(--mf-primary-border);
 }
 
 .stream-note {

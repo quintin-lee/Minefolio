@@ -193,12 +193,14 @@ export function makeAreaGradient(colorRgbOrHex: string, topAlpha = 0.28, bottomA
 export function modernTooltipConfig(palette: MfChartPalette) {
   return {
     trigger: 'axis' as const,
-    backgroundColor: palette.isLight ? 'rgba(255, 255, 255, 0.95)' : 'rgba(15, 23, 42, 0.92)',
-    borderColor: palette.borderSubtle,
+    backgroundColor: palette.isLight ? 'rgba(255, 255, 255, 0.96)' : 'rgba(15, 23, 42, 0.92)',
+    borderColor: palette.isLight ? palette.border : palette.borderSubtle,
     borderWidth: 1,
     textStyle: { color: palette.textMain, fontSize: 13 },
     padding: [10, 14],
-    extraCssText: 'box-shadow: 0 8px 32px rgba(0, 0, 0, 0.36); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-radius: 8px;',
+    extraCssText: palette.isLight
+      ? 'box-shadow: 0 8px 24px -4px rgba(15, 23, 42, 0.12); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-radius: 8px;'
+      : 'box-shadow: 0 8px 32px rgba(0, 0, 0, 0.36); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-radius: 8px;',
   }
 }
 

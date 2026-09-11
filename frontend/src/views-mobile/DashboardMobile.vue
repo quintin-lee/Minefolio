@@ -72,7 +72,7 @@ onMounted(async () => {
 .brand-title { display: flex; align-items: center; gap: 10px; }
 .brand-title h2 { margin: 0; font-size: 20px; font-weight: 700; color: var(--mf-text-main); }
 .kpi-row { display: flex; gap: 12px; overflow-x: auto; }
-.kpi-card { flex: 0 0 120px; background: var(--mf-surface); border: 1px solid var(--mf-border); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+.kpi-card { flex: 0 0 120px; background: var(--mf-surface); border: 1px solid var(--mf-border); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 8px; box-shadow: var(--mf-shadow-sm); }
 .kpi-card.cyan b { color: var(--mf-info); } .kpi-card.red b { color: var(--mf-danger); } .kpi-card.green b { color: var(--mf-success); }
 .kpi-card span { color: var(--mf-text-muted); font-size: 12px; }
 .kpi-card b { font-size: 18px; font-family: 'JetBrains Mono', monospace; }

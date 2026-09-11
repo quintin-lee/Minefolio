@@ -107,7 +107,7 @@ function updateChart() {
     },
     yAxis: {
       type: 'value',
-      splitLine: { lineStyle: { type: 'dashed', color: 'rgba(255, 255, 255, 0.04)' } },
+      splitLine: { lineStyle: { type: 'dashed', color: P.isLight ? 'rgba(0, 0, 0, 0.06)' : 'rgba(255, 255, 255, 0.04)' } },
       axisLabel: {
         color: P.textMuted,
         fontFamily: 'var(--mf-font-mono)',
@@ -151,16 +151,22 @@ function updateChart() {
   margin-bottom: 6px;
 }
 :deep(.pill-radio-group .el-radio-button__inner) {
-  background: rgba(15, 23, 42, 0.6);
-  border-color: var(--mf-border-subtle);
+  background: var(--mf-surface-muted);
+  border-color: var(--mf-border);
   color: var(--mf-text-muted);
   font-size: 11px;
   padding: 5px 10px;
+  transition: var(--mf-transition);
 }
+:deep(.pill-radio-group .el-radio-button:hover .el-radio-button__inner) {
+  color: var(--mf-primary);
+  background: var(--mf-surface-hover);
+}
+:deep(.pill-radio-group .el-radio-button.is-active .el-radio-button__inner),
 :deep(.pill-radio-group .el-radio-button__original-radio:checked + .el-radio-button__inner) {
-  background: var(--mf-primary);
-  border-color: var(--mf-primary);
-  color: #ffffff;
-  box-shadow: 0 0 10px rgba(59, 130, 246, 0.4);
+  background: var(--mf-primary) !important;
+  border-color: var(--mf-primary) !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.35);
 }
 </style>

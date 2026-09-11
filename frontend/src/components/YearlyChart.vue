@@ -77,7 +77,7 @@ function updateChart() {
     },
     yAxis: {
       type: 'value',
-      splitLine: { lineStyle: { type: 'dashed', color: 'rgba(255, 255, 255, 0.04)' } },
+      splitLine: { lineStyle: { type: 'dashed', color: P.isLight ? 'rgba(0, 0, 0, 0.06)' : 'rgba(255, 255, 255, 0.04)' } },
       axisLabel: {
         color: P.textMuted,
         fontFamily: 'var(--mf-font-mono)',
