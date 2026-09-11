@@ -1,5 +1,6 @@
 #include "services/market/quote_engine.h"
 #include "services/market/quote_driver.h"
+#include "services/market/driver_mock.h"
 #include "csilk/csilk.h"
 #include <curl/curl.h>
 #include <stdio.h>
@@ -106,6 +107,10 @@ quote_engine_search(const char* keyword, market_search_item_t* out_items, int ma
         return 0;
     }
 
+    if (market_mock_enabled()) {
+        return market_mock_search(keyword, out_items, max_items);
+    }
+
     int total_found = 0;
 
     quote_driver_t* drivers[] = {get_eastmoney_driver(),
@@ -133,6 +138,10 @@ quote_engine_fetch_quote(const char* symbol, const char* source_type, market_quo
 {
     if (!symbol || !symbol[0] || !out_quote) {
         return -1;
+    }
+
+    if (market_mock_enabled()) {
+        return market_mock_fetch_single(symbol, out_quote);
     }
 
     quote_driver_t* drivers[] = {get_eastmoney_driver(),
@@ -166,6 +175,10 @@ quote_engine_fetch_quote(const char* symbol, const char* source_type, market_quo
 int
 quote_engine_test_connection(const char* proxy, char* out_msg, size_t msg_cap, int* out_latency_ms)
 {
+    if (market_mock_enabled()) {
+        return market_mock_test_connection(out_msg, msg_cap, out_latency_ms);
+    }
+
     struct timespec start, end;
     clock_gettime(CLOCK_MONOTONIC, &start);
 

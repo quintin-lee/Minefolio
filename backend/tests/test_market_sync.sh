@@ -22,6 +22,14 @@ export MINEFOLIO_JWT_SECRET="test_secret_for_market_integration_suite"
 export MINEFOLIO_DB_DRIVER="sqlite"
 export MINEFOLIO_DB_DSN="${DB_PATH}"
 export PORT="${PORT}"
+# 默认启用离线 mock 行情（MINEFOLIO_MARKET_MOCK=1），使整套行情链路（搜索/报价/同步/历史/连通性）
+# 可完全离线、确定性地运行，CI 不依赖 Yahoo/东财等外部行情源（避免限流/网络抖动导致误红）。
+# 需要验证真实行情源集成时，设置 MINEFOLIO_TEST_LIVE_MARKET=1 切换为实时抓取。
+if [ "${MINEFOLIO_TEST_LIVE_MARKET:-0}" = "1" ]; then
+    echo "(live market mode: MINEFOLIO_TEST_LIVE_MARKET=1)"
+else
+    export MINEFOLIO_MARKET_MOCK=1
+fi
 
 cd "$(dirname "$0")/.."
 ./build/minefolio > "${TMP_DIR}/server.log" 2>&1 &
