@@ -13,12 +13,16 @@
 #include <ctype.h>
 #include <time.h>
 
-/* State for multipart callback */
-static char*  g_receipt_filename = NULL;
-static char*  g_receipt_content_type = NULL;
-static char*  g_receipt_data = NULL;
-static size_t g_receipt_data_len = 0;
-static size_t g_receipt_data_cap = 0;
+/* Per-thread scratch state for the multipart callback. csilk serves each
+ * request on a pool of worker threads that share one address space, so this
+ * state must be thread-local: two concurrent receipt uploads must not clobber
+ * each other's buffer (the callback realloc/frees g_receipt_data on the
+ * handling thread and it is read immediately after on that same thread). */
+_Thread_local static char*  g_receipt_filename = NULL;
+_Thread_local static char*  g_receipt_content_type = NULL;
+_Thread_local static char*  g_receipt_data = NULL;
+_Thread_local static size_t g_receipt_data_len = 0;
+_Thread_local static size_t g_receipt_data_cap = 0;
 
 static void
 receipt_part_handler(csilk_multipart_part_t* part)
