@@ -1,66 +1,63 @@
 <template>
   <el-container class="layout-container">
     <el-aside :width="isCollapsed ? '64px' : '260px'" class="aside" :class="{ 'is-open': mobileMenuOpen, 'is-collapsed': isCollapsed }">
-      <div class="logo">
-        <div class="logo-icon-wrapper">
-          <Icon icon="ph:wallet" class="logo-icon-phosphor" />
-        </div>
-        <span v-show="!isCollapsed" class="logo-text">Minefolio</span>
+      <div class="logo" @click="goTo('/dashboard')">
+        <AppLogo :size="32" :with-text="!isCollapsed" />
       </div>
       <el-menu :default-active="activeMenu" class="sidebar-menu" :collapse="isCollapsed" :collapse-transition="false">
         <div v-show="!isCollapsed" class="nav-group-label">{{ t('navGroups.assetsOverview') }}</div>
         <el-menu-item index="/dashboard" @click="goTo('/dashboard')">
-          <Icon icon="ph:chart-line" class="nav-icon" />
+          <Icon icon="ph:squares-four-duotone" class="nav-icon" />
           <span>{{ t('nav.dashboard') }}</span>
         </el-menu-item>
         <el-menu-item index="/assets" @click="goTo('/assets')">
-          <Icon icon="ph:wallet" class="nav-icon" />
+          <Icon icon="ph:vault-duotone" class="nav-icon" />
           <span>{{ t('nav.assets') }}</span>
         </el-menu-item>
         <el-menu-item index="/holdings" @click="goTo('/holdings')">
-          <Icon icon="ph:chart-bar" class="nav-icon" />
+          <Icon icon="ph:trend-up-duotone" class="nav-icon" />
           <span>{{ t('nav.holdings') }}</span>
         </el-menu-item>
         <el-menu-item index="/reports" @click="goTo('/reports')">
-          <Icon icon="ph:chart-pie" class="nav-icon" />
+          <Icon icon="ph:presentation-chart-duotone" class="nav-icon" />
           <span>{{ t('nav.reports') }}</span>
         </el-menu-item>
 
         <div v-show="!isCollapsed" class="nav-group-label">{{ t('navGroups.incomeExpense') }}</div>
         <el-menu-item index="/transactions" @click="goTo('/transactions')">
-          <Icon icon="ph:list" class="nav-icon" />
+          <Icon icon="ph:arrows-left-right-duotone" class="nav-icon" />
           <span>{{ t('nav.transactions') }}</span>
         </el-menu-item>
         <el-menu-item index="/daily-expenses" @click="goTo('/daily-expenses')">
-          <Icon icon="ph:currency-cny" class="nav-icon" />
+          <Icon icon="ph:receipt-duotone" class="nav-icon" />
           <span>{{ t('nav.dailyExpenses') }}</span>
         </el-menu-item>
         <el-menu-item index="/plans" @click="goTo('/plans')">
-          <Icon icon="ph:calendar-check" class="nav-icon" />
+          <Icon icon="ph:target-duotone" class="nav-icon" />
           <span>{{ t('nav.plans') }}</span>
         </el-menu-item>
         <el-menu-item index="/categories" @click="goTo('/categories')">
-          <Icon icon="ph:folder" class="nav-icon" />
+          <Icon icon="ph:tree-structure-duotone" class="nav-icon" />
           <span>{{ t('nav.categories') }}</span>
         </el-menu-item>
 
         <div v-show="!isCollapsed" class="nav-group-label">{{ t('navGroups.aiSpace') }}</div>
         <el-menu-item index="/chat" @click="goTo('/chat')">
-          <Icon icon="ph:chat-circle-text" class="nav-icon" />
+          <Icon icon="ph:sparkle-duotone" class="nav-icon" />
           <span>{{ t('nav.aiChat') }}</span>
         </el-menu-item>
         <el-menu-item index="/ai-traces" @click="goTo('/ai-traces')">
-          <Icon icon="ph:scan" class="nav-icon" />
+          <Icon icon="ph:activity-duotone" class="nav-icon" />
           <span>{{ t('nav.aiTraces') }}</span>
         </el-menu-item>
 
         <div v-show="!isCollapsed" class="nav-group-label">{{ t('navGroups.system') }}</div>
         <el-menu-item index="/audit-logs" @click="goTo('/audit-logs')">
-          <Icon icon="ph:scroll" class="nav-icon" />
+          <Icon icon="ph:shield-check-duotone" class="nav-icon" />
           <span>{{ t('nav.auditLogs') }}</span>
         </el-menu-item>
         <el-menu-item index="/settings" @click="goTo('/settings')">
-          <Icon icon="ph:gear" class="nav-icon" />
+          <Icon icon="ph:sliders-horizontal-duotone" class="nav-icon" />
           <span>{{ t('nav.settings') }}</span>
         </el-menu-item>
       </el-menu>
@@ -138,6 +135,7 @@ import { t } from '@/utils/locale'
 import LedgerSelector from '@/components/LedgerSelector.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 import QuickRecordDialog from '@/components/QuickRecordDialog.vue'
+import AppLogo from '@/components/AppLogo.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -240,35 +238,11 @@ function handleCommand(cmd: string) {
   height: 72px;
   display: flex;
   align-items: center;
-  padding: 0 24px;
-  gap: 12px;
+  padding: 0 20px;
+  cursor: pointer;
   color: var(--mf-text-main);
   border-bottom: 1px solid var(--mf-border);
   transition: padding 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.logo-icon-wrapper {
-  font-size: 24px;
-  background: var(--mf-primary-light);
-  width: 40px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--mf-radius-md);
-  border: 1px solid var(--mf-border);
-  box-shadow: var(--mf-shadow-sm);
-}
-.logo-icon-phosphor {
-  font-size: 22px;
-  color: var(--mf-primary);
-}
-.logo-text {
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  background: linear-gradient(135deg, var(--mf-primary) 0%, var(--mf-accent) 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
 }
 .sidebar-menu {
   border-right: none;
@@ -299,15 +273,21 @@ function handleCommand(cmd: string) {
   margin-right: 10px;
 }
 .sidebar-menu :deep(.nav-icon) {
-  font-size: 18px;
-  margin-right: 10px;
+  font-size: 19px;
+  margin-right: 12px;
   color: currentColor;
   opacity: 0.85;
-  transition: opacity 0.2s ease;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.2s ease, opacity 0.2s ease, color 0.2s ease;
 }
-.sidebar-menu :deep(.el-menu-item:hover .nav-icon),
+.sidebar-menu :deep(.el-menu-item:hover .nav-icon) {
+  opacity: 1;
+  transform: scale(1.12);
+  color: var(--mf-primary);
+}
 .sidebar-menu :deep(.el-menu-item.is-active .nav-icon) {
   opacity: 1;
+  color: var(--mf-primary);
+  filter: drop-shadow(0 0 6px var(--mf-primary-light));
 }
 .sidebar-menu :deep(.el-menu-item:hover) {
   color: var(--mf-text-main);
