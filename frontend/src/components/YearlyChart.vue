@@ -1,12 +1,12 @@
 <template>
-  <div ref="chartRef" style="height: 280px; width: 100%;"></div>
+  <div ref="chartRef" style="height: 285px; width: 100%;"></div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import echarts, { type ECharts } from '@/utils/echarts'
 import type { ExpenseYearlyReport } from '@/api/reports'
-import { resolveChartPalette, shade, useChartThemeSync } from '@/utils/echarts-theme'
+import { resolveChartPalette, useChartThemeSync, modernTooltipConfig } from '@/utils/echarts-theme'
 
 const props = defineProps<{ data: ExpenseYearlyReport | null }>()
 const chartRef = ref<HTMLElement>()
@@ -53,39 +53,35 @@ function updateChart() {
   const income = d?.income ?? []
   const expense = d?.expense ?? []
   chart.setOption({
-    animationDuration: 1000,
+    animationDuration: 800,
     tooltip: {
+      ...modernTooltipConfig(P),
       trigger: 'axis',
       axisPointer: { type: 'shadow', shadowStyle: { color: P.primaryLight } },
-      backgroundColor: P.surfaceCard,
-      padding: [10, 15],
-      textStyle: { color: P.textMain },
-      borderColor: P.primaryBorder,
-      borderWidth: 1,
-      shadowColor: P.primaryLight,
-      shadowBlur: 16,
     },
     legend: {
       data: ['收入', '支出'],
       top: 0,
       icon: 'roundRect',
-      itemWidth: 16,
-      itemHeight: 8,
-      textStyle: { color: P.textMuted }
+      itemWidth: 14,
+      itemHeight: 6,
+      textStyle: { color: P.textMuted, fontSize: 11, fontFamily: 'var(--mf-font-mono)' }
     },
-    grid: { left: 60, right: 20, top: 40, bottom: 20, containLabel: true },
+    grid: { left: 55, right: 15, top: 35, bottom: 20, containLabel: true },
     xAxis: {
       type: 'category',
       data: labels,
-      axisLine: { lineStyle: { color: P.primaryBorder } },
-      axisLabel: { color: P.textMuted },
+      axisLine: { lineStyle: { color: P.borderSubtle } },
+      axisLabel: { color: P.textMuted, fontSize: 11, fontFamily: 'var(--mf-font-mono)' },
       axisTick: { show: false }
     },
     yAxis: {
       type: 'value',
-      splitLine: { lineStyle: { type: 'dashed', color: P.primaryLight } },
+      splitLine: { lineStyle: { type: 'dashed', color: 'rgba(255, 255, 255, 0.04)' } },
       axisLabel: {
         color: P.textMuted,
+        fontFamily: 'var(--mf-font-mono)',
+        fontSize: 11,
         formatter: (v: number) => (v >= 10000 ? `${(v / 10000).toFixed(1)}w` : v.toString())
       }
     },
@@ -93,27 +89,39 @@ function updateChart() {
       {
         name: '收入',
         type: 'bar',
-        barMaxWidth: 22,
+        barMaxWidth: 18,
         data: income,
         itemStyle: {
           borderRadius: [4, 4, 0, 0],
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: P.success },
-            { offset: 1, color: shade(P.success, 0.72) }
+            { offset: 0, color: '#10b981' },
+            { offset: 1, color: '#059669' }
           ])
+        },
+        emphasis: {
+          itemStyle: {
+            shadowBlur: 10,
+            shadowColor: 'rgba(16, 185, 129, 0.4)'
+          }
         }
       },
       {
         name: '支出',
         type: 'bar',
-        barMaxWidth: 22,
+        barMaxWidth: 18,
         data: expense,
         itemStyle: {
           borderRadius: [4, 4, 0, 0],
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: P.danger },
-            { offset: 1, color: shade(P.danger, 0.72) }
+            { offset: 0, color: '#f43f5e' },
+            { offset: 1, color: '#e11d48' }
           ])
+        },
+        emphasis: {
+          itemStyle: {
+            shadowBlur: 10,
+            shadowColor: 'rgba(244, 63, 94, 0.4)'
+          }
         }
       },
     ],
