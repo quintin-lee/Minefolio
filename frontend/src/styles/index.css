@@ -736,11 +736,11 @@ body {
 .el-dialog__title { color: var(--mf-text-main); font-weight: 600; }
 .el-dialog__body { color: var(--mf-text-main); }
 
-/* Dropdowns & Selects */
+/* Dropdowns, Selects & Cascaders */
 .el-dropdown-menu,
 .el-popover,
-.el-popper,
-.el-select-dropdown {
+.el-select-dropdown,
+.el-cascader__dropdown {
   background: var(--el-bg-color-overlay) !important;
   border: 1px solid var(--mf-border) !important;
   backdrop-filter: blur(16px);
@@ -749,16 +749,97 @@ body {
   border-radius: var(--mf-radius-md);
 }
 .el-dropdown-menu__item,
-.el-select-dropdown__item {
+.el-select-dropdown__item,
+.el-cascader-node {
   color: var(--mf-text-main) !important;
   border-radius: var(--mf-radius-sm);
   margin: 2px 4px;
 }
 .el-dropdown-menu__item:hover,
 .el-select-dropdown__item.hover,
-.el-select-dropdown__item:hover {
+.el-select-dropdown__item:hover,
+.el-cascader-node:hover,
+.el-cascader-node.in-active-path {
   background: var(--mf-primary-light) !important;
   color: var(--mf-primary) !important;
+}
+
+/* Tooltip Floating Hints (ElTooltip & Table Overflow Tooltips) */
+.el-popper.is-dark,
+.el-popper.el-tooltip {
+  background: #0f172a !important;
+  color: #f8fafc !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  box-shadow: 0 4px 14px -1px rgba(0, 0, 0, 0.45) !important;
+  border-radius: var(--mf-radius-sm) !important;
+  padding: 5px 10px !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  line-height: 1.4 !important;
+  letter-spacing: 0.01em;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.el-popper.is-dark .el-popper__arrow::before,
+.el-popper.el-tooltip .el-popper__arrow::before {
+  background: #0f172a !important;
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+[data-theme="light"] .el-popper.is-dark,
+[data-theme="light"] .el-popper.el-tooltip,
+html.light .el-popper.is-dark,
+html.light .el-popper.el-tooltip {
+  background: #0f172a !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(15, 23, 42, 0.95) !important;
+  box-shadow: 0 4px 14px -2px rgba(15, 23, 42, 0.28) !important;
+}
+
+[data-theme="light"] .el-popper.is-dark .el-popper__arrow::before,
+[data-theme="light"] .el-popper.el-tooltip .el-popper__arrow::before,
+html.light .el-popper.is-dark .el-popper__arrow::before,
+html.light .el-popper.el-tooltip .el-popper__arrow::before {
+  background: #0f172a !important;
+  border-color: rgba(15, 23, 42, 0.95);
+}
+
+[data-theme="dark"] .el-popper.is-dark,
+[data-theme="dark"] .el-popper.el-tooltip,
+html.dark .el-popper.is-dark,
+html.dark .el-popper.el-tooltip {
+  background: #1e293b !important;
+  color: #f8fafc !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  box-shadow: 0 6px 20px -2px rgba(0, 0, 0, 0.5) !important;
+}
+
+[data-theme="dark"] .el-popper.is-dark .el-popper__arrow::before,
+[data-theme="dark"] .el-popper.el-tooltip .el-popper__arrow::before,
+html.dark .el-popper.is-dark .el-popper__arrow::before,
+html.dark .el-popper.el-tooltip .el-popper__arrow::before {
+  background: #1e293b !important;
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.el-popper.is-light:not(.el-popover) {
+  background: var(--el-bg-color-overlay) !important;
+  color: var(--mf-text-main) !important;
+  border: 1px solid var(--mf-border) !important;
+  box-shadow: var(--mf-shadow-md) !important;
+  border-radius: var(--mf-radius-sm) !important;
+  padding: 5px 10px !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  line-height: 1.4 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.el-popper.is-light:not(.el-popover) .el-popper__arrow::before {
+  background: var(--el-bg-color-overlay) !important;
+  border-color: var(--mf-border);
 }
 
 /* Date Picker */
@@ -834,6 +915,20 @@ body {
 
 .text-muted {
   color: var(--mf-text-muted) !important;
+}
+
+/* Table Action Buttons Container */
+.action-buttons {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+.action-buttons .el-button {
+  margin-left: 0 !important;
+}
+.action-buttons .el-button:focus-visible {
+  outline: none !important;
 }
 
 /* Pill Badges */
