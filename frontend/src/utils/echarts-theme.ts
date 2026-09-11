@@ -169,3 +169,36 @@ export function useChartThemeSync(rerender: () => void): void {
     () => rerender(),
   )
 }
+
+/**
+ * Generate a vertical linear gradient area fill suitable for ECharts line charts.
+ */
+export function makeAreaGradient(colorRgbOrHex: string, topAlpha = 0.28, bottomAlpha = 0.0) {
+  return {
+    type: 'linear' as const,
+    x: 0,
+    y: 0,
+    x2: 0,
+    y2: 1,
+    colorStops: [
+      { offset: 0, color: withAlpha(colorRgbOrHex, topAlpha) },
+      { offset: 1, color: withAlpha(colorRgbOrHex, bottomAlpha) },
+    ],
+  }
+}
+
+/**
+ * Return a modern dark/light glassmorphic Tooltip configuration for ECharts.
+ */
+export function modernTooltipConfig(palette: MfChartPalette) {
+  return {
+    trigger: 'axis' as const,
+    backgroundColor: palette.isLight ? 'rgba(255, 255, 255, 0.95)' : 'rgba(15, 23, 42, 0.92)',
+    borderColor: palette.borderSubtle,
+    borderWidth: 1,
+    textStyle: { color: palette.textMain, fontSize: 13 },
+    padding: [10, 14],
+    extraCssText: 'box-shadow: 0 8px 32px rgba(0, 0, 0, 0.36); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-radius: 8px;',
+  }
+}
+
