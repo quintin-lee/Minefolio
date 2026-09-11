@@ -93,13 +93,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { assetsApi } from '@/api/assets'
 import { dailyExpensesApi } from '@/api/daily_expenses'
 import { transactionsApi } from '@/api/transactions'
 import { useCategoryStore } from '@/stores/category'
-import { formatCurrency } from '@/utils/format'
+import { formatCurrency, localToday } from '@/utils/format'
 import type { Asset } from '@/types'
 
 const props = defineProps<{
@@ -127,8 +127,16 @@ const form = reactive({
   asset_id: undefined as number | undefined,
   target_asset_id: undefined as number | undefined,
   category_id: undefined as number | undefined,
-  date: new Date().toISOString().substring(0, 10),
+  date: localToday(),
   note: ''
+})
+
+// 该对话框常驻在 Layout 中（非 v-if），仅在打开时把日期刷新为本地“今天”，
+// 避免跨天后仍显示挂载时的过期日期。
+watch(visible, (val) => {
+  if (val) {
+    form.date = localToday()
+  }
 })
 
 const rules: FormRules = {
