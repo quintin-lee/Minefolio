@@ -420,7 +420,7 @@ onBeforeUnmount(() => {
   --login-input-border: var(--mf-border);
   --login-input-text: var(--mf-text-main);
   --login-divider: var(--mf-border-subtle);
-  --login-btn-bg: rgba(30, 41, 59, 0.6);
+  --login-btn-bg: var(--mf-surface-muted);
   --login-btn-border: var(--mf-border);
   --login-btn-text: var(--mf-text-regular);
   --login-btn-hover-bg: var(--mf-surface-hover);
@@ -479,29 +479,29 @@ onBeforeUnmount(() => {
 .hud-corner-tl {
   top: -3px;
   left: -3px;
-  border-top: 2px solid rgba(0, 212, 255, 0.9);
-  border-left: 2px solid rgba(0, 212, 255, 0.9);
+  border-top: 2px solid var(--login-glow);
+  border-left: 2px solid var(--login-glow);
   border-top-left-radius: 10px;
 }
 .hud-corner-tr {
   top: -3px;
   right: -3px;
-  border-top: 2px solid rgba(0, 212, 255, 0.9);
-  border-right: 2px solid rgba(0, 212, 255, 0.9);
+  border-top: 2px solid var(--login-glow);
+  border-right: 2px solid var(--login-glow);
   border-top-right-radius: 10px;
 }
 .hud-corner-bl {
   bottom: -3px;
   left: -3px;
-  border-bottom: 2px solid rgba(0, 212, 255, 0.9);
-  border-left: 2px solid rgba(0, 212, 255, 0.9);
+  border-bottom: 2px solid var(--login-glow);
+  border-left: 2px solid var(--login-glow);
   border-bottom-left-radius: 10px;
 }
 .hud-corner-br {
   bottom: -3px;
   right: -3px;
-  border-bottom: 2px solid rgba(0, 212, 255, 0.9);
-  border-right: 2px solid rgba(0, 212, 255, 0.9);
+  border-bottom: 2px solid var(--login-glow);
+  border-right: 2px solid var(--login-glow);
   border-bottom-right-radius: 10px;
 }
 

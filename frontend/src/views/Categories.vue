@@ -764,12 +764,19 @@ onMounted(loadData)
   background-color: var(--mf-primary-light);
 }
 
-.status-dot.cash  { background-color: #10b981; box-shadow: 0 0 6px rgba(16,185,129,0.5); }
-.status-dot.stock { background-color: var(--mf-primary); box-shadow: 0 0 6px var(--mf-primary-light); }
-.status-dot.fund  { background-color: var(--mf-accent); box-shadow: 0 0 6px var(--mf-accent-light); }
-.status-dot.crypto { background-color: #fbbf24; box-shadow: 0 0 6px rgba(251,191,36,0.5); }
-.status-dot.loan  { background-color: #f87171; box-shadow: 0 0 6px rgba(248,113,113,0.5); }
-.status-dot.credit_card { background-color: #fb7185; box-shadow: 0 0 6px rgba(251,113,133,0.5); }
+.status-dot.cash  { background-color: var(--mf-success); }
+.status-dot.stock { background-color: var(--mf-primary); }
+.status-dot.fund  { background-color: var(--mf-accent); }
+.status-dot.crypto { background-color: var(--mf-warning); }
+.status-dot.loan  { background-color: var(--mf-danger); }
+.status-dot.credit_card { background-color: #fb7185; }
+
+[data-theme="dark"] .status-dot.cash  { box-shadow: 0 0 6px rgba(16,185,129,0.5); }
+[data-theme="dark"] .status-dot.stock { box-shadow: 0 0 6px var(--mf-primary-light); }
+[data-theme="dark"] .status-dot.fund  { box-shadow: 0 0 6px var(--mf-accent-light); }
+[data-theme="dark"] .status-dot.crypto { box-shadow: 0 0 6px rgba(251,191,36,0.5); }
+[data-theme="dark"] .status-dot.loan  { box-shadow: 0 0 6px rgba(248,113,113,0.5); }
+[data-theme="dark"] .status-dot.credit_card { box-shadow: 0 0 6px rgba(251,113,133,0.5); }
 
 .currency-tag {
   border-radius: 6px;

@@ -380,7 +380,7 @@ loadAiSettings()
 }
 
 .delete-btn:hover {
-  color: var(--color-danger);
+  color: var(--mf-danger);
 }
 
 .provider-details {

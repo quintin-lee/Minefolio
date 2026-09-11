@@ -75,7 +75,7 @@ const badgeArrow = computed(() => {
   border-radius: var(--mf-radius-lg);
   padding: 20px 24px;
   box-shadow: var(--mf-shadow-sm);
-  border: 1px solid var(--mf-border-subtle);
+  border: 1px solid var(--mf-border);
   transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1),
               box-shadow 0.22s cubic-bezier(0.4, 0, 0.2, 1),
               border-color 0.22s ease;
@@ -162,7 +162,7 @@ const badgeArrow = computed(() => {
 .badge-neutral {
   background: var(--mf-surface-muted);
   color: var(--mf-text-muted);
-  border: 1px solid var(--mf-border-subtle);
+  border: 1px solid var(--mf-border);
 }
 
 .summary-value {
@@ -182,16 +182,25 @@ const badgeArrow = computed(() => {
 
 .income-text {
   color: var(--mf-success);
-  text-shadow: 0 0 12px var(--mf-success-light);
 }
 
 .expense-text {
   color: var(--mf-danger);
-  text-shadow: 0 0 12px var(--mf-danger-light);
 }
 
 .highlight-text {
   color: var(--mf-primary);
+}
+
+[data-theme="dark"] .income-text {
+  text-shadow: 0 0 12px var(--mf-success-light);
+}
+
+[data-theme="dark"] .expense-text {
+  text-shadow: 0 0 12px var(--mf-danger-light);
+}
+
+[data-theme="dark"] .highlight-text {
   text-shadow: 0 0 12px var(--mf-primary-light);
 }
 

@@ -650,7 +650,11 @@ onUnmounted(() => {
 .svg-container :deep(.nodeLabel),
 .svg-container :deep(.label) {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
-  color: var(--mf-text-main);
+}
+
+[data-theme="light"] .mermaid-chart-view,
+html.light .mermaid-chart-view {
+  background-color: #0b1329;
 }
 
 .chart-hover-hint {

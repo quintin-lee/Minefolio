@@ -181,14 +181,14 @@ async function handleSubmit() {
   padding: 10px;
 }
 .glass-panel {
-  background: rgba(255, 255, 255, 0.05) !important;
+  background: var(--mf-surface-card) !important;
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border: 1px solid var(--mf-border) !important;
   box-shadow: var(--mf-shadow-lg) !important;
 }
 :deep(.el-card__header) {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid var(--mf-border);
   padding-bottom: 20px;
 }
 .card-header {
@@ -202,7 +202,7 @@ async function handleSubmit() {
   border-radius: 9999px;
   background: var(--mf-primary-light);
   border: 1px solid var(--mf-primary-border);
-  color: #00d4ff;
+  color: var(--mf-primary);
   font-size: 12px;
   font-weight: 500;
   margin-bottom: 12px;
@@ -211,7 +211,7 @@ async function handleSubmit() {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background-color: #00d4ff;
+  background-color: var(--mf-primary);
   box-shadow: var(--mf-shadow-glow);
 }
 .setup-brand-header {

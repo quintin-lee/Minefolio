@@ -282,7 +282,7 @@ onMounted(() => {
 .chart-card,
 .table-card {
   background: var(--mf-surface-card);
-  border: 1px solid var(--mf-border-subtle);
+  border: 1px solid var(--mf-border);
   border-radius: var(--mf-radius-lg);
   padding: 16px;
   backdrop-filter: blur(16px);

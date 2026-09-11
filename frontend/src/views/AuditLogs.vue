@@ -244,7 +244,7 @@ onMounted(async () => {
 
 .mono-text {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
-  color: #64748b;
+  color: var(--mf-text-muted);
 }
 
 .mono-amount {
@@ -253,8 +253,8 @@ onMounted(async () => {
   font-size: 15px;
 }
 
-.income-text { color: #10b981; }
-.expense-text { color: #ef4444; }
+.income-text { color: var(--mf-success) !important; font-weight: 600; }
+.expense-text { color: var(--mf-danger) !important; font-weight: 600; }
 
 .type-badge {
   font-weight: 600;

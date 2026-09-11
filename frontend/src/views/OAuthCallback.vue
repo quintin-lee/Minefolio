@@ -71,8 +71,8 @@ onMounted(async () => {
 }
 .callback-card {
   text-align: center;
-  background: rgba(30, 41, 59, 0.8);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--mf-surface-card);
+  border: 1px solid var(--mf-border);
   border-radius: 16px;
   padding: 40px;
   max-width: 400px;
@@ -89,12 +89,12 @@ onMounted(async () => {
   to { transform: rotate(360deg); }
 }
 h2 {
-  color: #f8fafc;
+  color: var(--mf-text-main);
   font-size: 20px;
   margin-bottom: 12px;
 }
 .status-msg {
-  color: #94a3b8;
+  color: var(--mf-text-muted);
   font-size: 14px;
 }
 </style>

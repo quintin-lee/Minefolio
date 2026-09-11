@@ -140,8 +140,8 @@ onUnmounted(() => {
 .code-block-wrapper {
   margin: 10px 0;
   border-radius: var(--mf-radius-md, 8px);
-  background: var(--mf-surface-card);
-  border: 1px solid var(--mf-border);
+  background: #0f172a;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: var(--mf-shadow-sm);
   overflow: hidden;
 }
@@ -151,8 +151,8 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 6px 12px;
-  background: var(--mf-surface-hover);
-  border-bottom: 1px solid var(--mf-border-subtle);
+  background: #1e293b;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .lang-badge {
@@ -160,11 +160,11 @@ onUnmounted(() => {
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.5px;
-  color: var(--mf-primary);
-  background: var(--mf-primary-light);
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
   padding: 2px 8px;
   border-radius: 4px;
-  border: 1px solid var(--mf-primary-border);
+  border: 1px solid rgba(56, 189, 248, 0.25);
 }
 
 .copy-btn {
@@ -173,7 +173,7 @@ onUnmounted(() => {
   gap: 5px;
   background: transparent;
   border: 1px solid transparent;
-  color: var(--mf-text-muted);
+  color: #94a3b8;
   font-size: 12px;
   padding: 3px 8px;
   border-radius: 4px;
@@ -182,9 +182,9 @@ onUnmounted(() => {
 }
 
 .copy-btn:hover {
-  color: var(--mf-text-main);
-  background: var(--mf-primary-light);
-  border-color: var(--mf-primary-border);
+  color: #f8fafc;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
 }
 
 .copy-btn.is-copied {
@@ -204,7 +204,7 @@ onUnmounted(() => {
 .code-pre {
   margin: 0;
   padding: 12px 16px;
-  background: var(--mf-surface-card);
+  background: #0f172a;
   overflow-x: auto;
   font-family: var(--mf-font-mono, monospace);
   font-size: 12.5px;
@@ -215,6 +215,6 @@ onUnmounted(() => {
   background: transparent;
   padding: 0;
   font-family: inherit;
-  color: var(--mf-text-main);
+  color: #f8fafc;
 }
 </style>

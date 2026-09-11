@@ -191,7 +191,7 @@
         </el-table-column>
         <el-table-column label="预计金额" width="110" align="right">
           <template #default="{ row }">
-            <strong style="color: #10b981;">¥{{ formatNumber(row.expected_amount) }}</strong>
+            <strong style="color: var(--mf-success);">¥{{ formatNumber(row.expected_amount) }}</strong>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="110" align="center">
@@ -562,15 +562,15 @@ onMounted(() => {
 }
 
 .profit-badge.hit {
-  background: rgba(16, 185, 129, 0.15);
-  color: #059669;
+  background: var(--mf-success-light);
+  color: var(--mf-success);
   font-weight: 700;
-  border: 1px solid #10b981;
+  border: 1px solid var(--mf-success-border);
 }
 
 .profit-badge.tracking {
-  background: rgba(59, 130, 246, 0.1);
-  color: #2563eb;
+  background: var(--mf-primary-light);
+  color: var(--mf-primary);
 }
 
 .profit-badge.normal {

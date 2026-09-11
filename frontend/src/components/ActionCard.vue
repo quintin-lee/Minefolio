@@ -470,18 +470,18 @@ function handleCancel() {
 }
 
 .status-tag.executing {
-  background: rgba(245, 158, 11, 0.12);
-  color: #f59e0b;
-  border: 1px solid rgba(245, 158, 11, 0.25);
+  background: var(--mf-warning-light);
+  color: var(--mf-warning);
+  border: 1px solid var(--mf-warning-border);
 }
 
 .status-tag.executed {
   display: flex;
   align-items: center;
   gap: 4px;
-  background: rgba(16, 185, 129, 0.12);
-  color: #10b981;
-  border: 1px solid rgba(16, 185, 129, 0.25);
+  background: var(--mf-success-light);
+  color: var(--mf-success);
+  border: 1px solid var(--mf-success-border);
 }
 
 .status-tag.cancelled {

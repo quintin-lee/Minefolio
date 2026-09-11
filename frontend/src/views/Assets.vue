@@ -552,6 +552,8 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   background: var(--mf-surface);
+  border: 1px solid var(--mf-border);
+  box-shadow: var(--mf-shadow-sm);
   border-radius: var(--mf-radius-lg);
   padding: 16px;
 }

@@ -824,8 +824,20 @@ async function handleImport() {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
 }
 
-.income-text { color: #34d399; text-shadow: 0 0 8px rgba(52,211,153,0.4); }
-.expense-text { color: #f87171; text-shadow: 0 0 8px rgba(248,113,113,0.3); }
+.income-text {
+  color: var(--mf-success) !important;
+  font-weight: 600;
+}
+.expense-text {
+  color: var(--mf-danger) !important;
+  font-weight: 600;
+}
+[data-theme="dark"] .income-text {
+  text-shadow: 0 0 8px rgba(52, 211, 153, 0.35);
+}
+[data-theme="dark"] .expense-text {
+  text-shadow: 0 0 8px rgba(248, 113, 113, 0.3);
+}
 .text-primary { color: var(--mf-primary); }
 
 .main-panel {
@@ -902,12 +914,12 @@ async function handleImport() {
 }
 
 .category-pill {
-  background: rgba(59, 130, 246, 0.12);
+  background: var(--mf-primary-light);
   color: var(--mf-text-regular);
   padding: 3px 10px;
   border-radius: var(--mf-radius-pill);
   font-size: 12px;
-  border: 1px solid rgba(59, 130, 246, 0.25);
+  border: 1px solid var(--mf-primary-border);
   display: inline-flex;
   align-items: center;
 }
@@ -921,13 +933,13 @@ async function handleImport() {
 
 .trade-detail {
   font-size: 13px;
-  color: #64748b;
+  color: var(--mf-text-muted);
 }
 
 .price-tag { color: var(--mf-primary); }
-.times { margin: 0 4px; color: #475569; }
-.qty-tag { color: #34d399; }
-.muted-text { color: #475569; }
+.times { margin: 0 4px; color: var(--mf-text-placeholder); }
+.qty-tag { color: var(--mf-success); }
+.muted-text { color: var(--mf-text-muted); }
 
 .trading-fields {
   background: var(--mf-surface-muted);

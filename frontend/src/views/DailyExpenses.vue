@@ -136,7 +136,7 @@
             <el-option v-for="a in allAssets" :key="a.id" :label="`${a.name}（${a.currency} ${Number(a.current_value).toFixed(2)}）`" :value="Number(a.id)">
               <span>{{ a.name }}</span>
               <el-tag v-if="a.asset_type === 'loan' || a.asset_type === 'credit_card' || a.asset_type === 'other_liability'" size="small" type="warning" effect="light" style="margin-left: 8px">负债</el-tag>
-              <span style="float: right; color: #475569; font-size: 13px">{{ a.currency }} {{ Number(a.current_value).toFixed(2) }}</span>
+              <span style="float: right; color: var(--mf-text-muted); font-size: 13px">{{ a.currency }} {{ Number(a.current_value).toFixed(2) }}</span>
             </el-option>
           </el-select>
         </el-form-item>
@@ -485,8 +485,20 @@ async function handleImport() {
   letter-spacing: -0.5px;
 }
 
-.income-text { color: #34d399; text-shadow: 0 0 8px rgba(52,211,153,0.4); }
-.expense-text { color: #f87171; text-shadow: 0 0 8px rgba(248,113,113,0.3); }
+.income-text {
+  color: var(--mf-success) !important;
+  font-weight: 600;
+}
+.expense-text {
+  color: var(--mf-danger) !important;
+  font-weight: 600;
+}
+[data-theme="dark"] .income-text {
+  text-shadow: 0 0 8px rgba(52, 211, 153, 0.35);
+}
+[data-theme="dark"] .expense-text {
+  text-shadow: 0 0 8px rgba(248, 113, 113, 0.3);
+}
 
 .main-panel {
   background: var(--mf-surface);
