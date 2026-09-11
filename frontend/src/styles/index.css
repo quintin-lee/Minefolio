@@ -964,6 +964,99 @@ body {
 .mf-stagger-3 { animation-delay: 80ms; }
 .mf-stagger-4 { animation-delay: 120ms; }
 
+/* =========================================================================
+   Bento Grid & High-Craft Micro-Interactions
+   ========================================================================= */
+
+@keyframes pulse-glow {
+  0%, 100% {
+    opacity: 0.7;
+    transform: scale(1);
+    box-shadow: 0 0 6px rgba(59, 130, 246, 0.6);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.25);
+    box-shadow: 0 0 14px rgba(99, 102, 241, 0.9);
+  }
+}
+
+.pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--mf-primary);
+  display: inline-block;
+  animation: pulse-glow 2s infinite ease-in-out;
+}
+
+.bento-hero-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--mf-radius-xl);
+  border: 1px solid var(--mf-border-hover);
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.12) 0%, rgba(15, 23, 42, 0.85) 100%);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  box-shadow: var(--mf-shadow-glow), var(--mf-shadow-md);
+  transition: var(--mf-transition);
+}
+
+.bento-hero-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, #3b82f6, #6366f1, #10b981);
+}
+
+.bento-hero-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--mf-shadow-glow-strong), var(--mf-shadow-lg);
+  border-color: rgba(99, 102, 241, 0.5);
+}
+
+/* 流式卡片表格行 (Stream Table) */
+.stream-table {
+  --el-table-border-color: transparent !important;
+  --el-table-header-bg-color: rgba(15, 23, 42, 0.6) !important;
+  --el-table-tr-bg-color: transparent !important;
+  background: transparent !important;
+}
+
+.stream-table .el-table__row {
+  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+}
+
+.stream-table .el-table__row:hover > td.el-table__cell {
+  background-color: rgba(30, 41, 59, 0.65) !important;
+}
+
+.stream-table .el-table__row td.el-table__cell {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+  padding: 12px 0;
+}
+
+/* 记账大字号金额输入 */
+.hero-amount-input .el-input__wrapper {
+  background-color: rgba(15, 23, 42, 0.8) !important;
+  border: 1px solid var(--mf-border-hover) !important;
+  box-shadow: var(--mf-shadow-glow) !important;
+  padding: 8px 16px !important;
+  border-radius: var(--mf-radius-lg) !important;
+}
+
+.hero-amount-input input {
+  font-size: 28px !important;
+  font-weight: 700 !important;
+  font-family: var(--mf-font-mono) !important;
+  color: var(--mf-text-main) !important;
+  text-align: center;
+}
+
 /* Suppress Mermaid error SVGs leaking into document.body */
 body > div[id^="dmermaid"],
 body > div[id^="imermaid"],
