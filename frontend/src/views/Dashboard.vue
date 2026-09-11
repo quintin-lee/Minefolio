@@ -271,8 +271,10 @@ const debtRatio = computed(() => {
 const netWorthChange = computed(() => {
   const trend = summary.value.trend || []
   if (trend.length < 2) return null
-  const current = summary.value.net_worth
-  const prev = trend[trend.length - 2]?.net_worth ?? trend[0]?.net_worth
+  const current = Number(summary.value.net_worth) || 0
+  const prevItem = trend[trend.length - 2] ?? trend[0]
+  if (!prevItem) return null
+  const prev = Number(prevItem.net_worth) || 0
   const diff = current - prev
   const pct = prev !== 0 ? (diff / Math.abs(prev)) * 100 : 0
   return {
