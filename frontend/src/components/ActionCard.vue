@@ -408,101 +408,107 @@ function handleCancel() {
 
 <style scoped>
 .action-card {
-  margin: 12px 0;
-  border-radius: 12px;
-  border: 1px solid var(--el-border-color-lighter);
-  background: var(--el-bg-color-overlay);
-  box-shadow: var(--mf-shadow-sm);
+  margin: 14px 0;
+  border-radius: 14px;
+  border: 1px solid var(--mf-border);
+  background: var(--mf-surface);
+  backdrop-filter: blur(16px);
+  box-shadow: var(--mf-shadow-md);
   overflow: hidden;
   transition: all 0.25s ease;
 }
 
 .action-card.pending {
-  border-color: var(--el-color-primary-light-5);
+  border-color: var(--mf-border-hover);
+  box-shadow: var(--mf-shadow-md), 0 0 16px rgba(0, 212, 255, 0.06);
 }
 
 .action-card.executed {
-  border-color: var(--el-color-success-light-5);
-  background: var(--el-color-success-light-9);
+  border-color: rgba(16, 185, 129, 0.4);
+  background: rgba(16, 185, 129, 0.04);
 }
 
 .action-card.cancelled {
   opacity: 0.7;
-  border-color: var(--el-border-color-lighter);
+  border-color: var(--mf-border);
 }
 
 .card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 14px;
-  background: var(--el-fill-color-light);
-  border-bottom: 1px solid var(--el-border-color-extra-light);
+  padding: 10px 16px;
+  background: var(--mf-surface-muted);
+  border-bottom: 1px solid var(--mf-border);
 }
 
 .header-badge {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   font-weight: 600;
-  font-size: 13px;
-  color: var(--el-text-color-primary);
+  font-size: 13.5px;
+  color: var(--mf-text-main);
 }
 
 .badge-icon {
-  font-size: 16px;
-  color: var(--el-color-primary);
+  font-size: 17px;
+  color: var(--mf-primary);
 }
 
 .status-tag {
   font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 10px;
-  font-weight: 500;
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-weight: 600;
 }
 
 .status-tag.pending {
-  background: var(--el-color-primary-light-8);
-  color: var(--el-color-primary);
+  background: var(--mf-primary-light);
+  color: var(--mf-primary);
+  border: 1px solid var(--mf-primary-border);
 }
 
 .status-tag.executing {
-  background: var(--el-color-warning-light-8);
-  color: var(--el-color-warning);
+  background: rgba(245, 158, 11, 0.12);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.25);
 }
 
 .status-tag.executed {
   display: flex;
   align-items: center;
   gap: 4px;
-  background: var(--el-color-success-light-8);
-  color: var(--el-color-success);
+  background: rgba(16, 185, 129, 0.12);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.25);
 }
 
 .status-tag.cancelled {
-  background: var(--el-fill-color-darker);
-  color: var(--el-text-color-secondary);
+  background: var(--mf-surface-muted);
+  color: var(--mf-text-muted);
+  border: 1px solid var(--mf-border);
 }
 
 .card-body {
-  padding: 12px 14px;
+  padding: 14px 16px;
 }
 
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
+  gap: 12px;
 }
 
 .form-item {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
 }
 
 .form-item label {
-  font-size: 11px;
-  color: var(--el-text-color-secondary);
+  font-size: 11.5px;
+  color: var(--mf-text-muted);
   font-weight: 500;
 }
 
@@ -518,16 +524,24 @@ function handleCancel() {
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  background: var(--el-fill-color-lighter);
-  border-top: 1px solid var(--el-border-color-extra-light);
+  gap: 10px;
+  padding: 12px 16px;
+  background: var(--mf-surface-muted);
+  border-top: 1px solid var(--mf-border);
 }
 
 .confirm-btn {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
+  background: linear-gradient(135deg, var(--mf-primary), #6366f1) !important;
+  border: none !important;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.25);
+}
+
+.confirm-btn:hover {
+  opacity: 0.92;
 }
 
 .btn-icon {
@@ -537,18 +551,18 @@ function handleCancel() {
 .card-success-banner {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  background: var(--el-color-success-light-9);
-  color: var(--el-color-success-dark-2);
-  font-size: 12px;
+  gap: 8px;
+  padding: 10px 16px;
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+  font-size: 12.5px;
   font-weight: 500;
-  border-top: 1px solid var(--el-color-success-light-7);
+  border-top: 1px solid rgba(16, 185, 129, 0.2);
 }
 
 .success-icon {
-  font-size: 16px;
-  color: var(--el-color-success);
+  font-size: 18px;
+  color: #10b981;
 }
 
 @media (max-width: 640px) {

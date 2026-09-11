@@ -356,11 +356,12 @@ const segments = computed<Segment[]>(() => {
 
 .typing-cursor-inline {
   display: inline-block;
-  width: 6px;
-  height: 1em;
+  width: 5px;
+  height: 1.1em;
   background: var(--mf-primary, #00d4ff);
-  margin-left: 2px;
-  vertical-align: text-bottom;
+  margin-left: 3px;
+  vertical-align: -2px;
+  border-radius: 2px;
   animation: cursor-blink 0.8s steps(1) infinite;
 }
 
@@ -380,8 +381,9 @@ const segments = computed<Segment[]>(() => {
 .markdown-part :deep(h3),
 .markdown-part :deep(h4) {
   color: var(--mf-text-main);
-  margin: 12px 0 6px;
+  margin: 14px 0 8px;
   font-weight: 600;
+  letter-spacing: -0.2px;
 }
 .markdown-part :deep(ul),
 .markdown-part :deep(ol) {
@@ -394,19 +396,19 @@ const segments = computed<Segment[]>(() => {
 .markdown-part :deep(code) {
   font-family: var(--mf-font-mono, monospace);
   background: var(--mf-primary-light);
-  color: var(--mf-text-main);
+  color: var(--mf-primary);
   padding: 2px 6px;
   border-radius: 4px;
   font-size: 12px;
   border: 1px solid var(--mf-primary-border);
 }
 .markdown-part :deep(pre) {
-  background: var(--mf-surface);
+  background: var(--mf-surface-card);
   border: 1px solid var(--mf-border);
-  border-radius: 8px;
-  padding: 12px 14px;
+  border-radius: 10px;
+  padding: 12px 16px;
   overflow-x: auto;
-  margin: 10px 0;
+  margin: 12px 0;
 }
 .markdown-part :deep(pre code) {
   background: transparent;
@@ -415,28 +417,51 @@ const segments = computed<Segment[]>(() => {
   color: var(--mf-text-main);
 }
 .markdown-part :deep(blockquote) {
-  margin: 10px 0;
-  padding: 8px 14px;
+  margin: 12px 0;
+  padding: 10px 16px;
   border-left: 3px solid var(--mf-primary);
   background: var(--mf-primary-light);
-  border-radius: 0 6px 6px 0;
+  border-radius: 0 8px 8px 0;
   color: var(--mf-text-regular);
+  font-size: 13.5px;
+  line-height: 1.6;
 }
 .markdown-part :deep(table) {
   width: 100%;
-  border-collapse: collapse;
-  margin: 12px 0;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin: 14px 0;
   font-size: 13px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--mf-border);
+  box-shadow: var(--mf-shadow-sm);
 }
 .markdown-part :deep(th),
 .markdown-part :deep(td) {
-  border: 1px solid var(--mf-border);
-  padding: 8px 12px;
+  border-right: 1px solid var(--mf-border);
+  border-bottom: 1px solid var(--mf-border);
+  padding: 9px 14px;
+  text-align: left;
+}
+.markdown-part :deep(th:last-child),
+.markdown-part :deep(td:last-child) {
+  border-right: none;
+}
+.markdown-part :deep(tr:last-child td) {
+  border-bottom: none;
 }
 .markdown-part :deep(th) {
   background: var(--mf-surface-muted);
   font-weight: 600;
   color: var(--mf-text-main);
+  letter-spacing: 0.02em;
+}
+.markdown-part :deep(tbody tr:nth-child(even)) {
+  background: rgba(125, 125, 125, 0.03);
+}
+.markdown-part :deep(tbody tr:hover) {
+  background: var(--mf-surface-hover);
 }
 
 /* Streaming Mermaid Placeholder */
