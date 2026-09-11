@@ -1,6 +1,6 @@
 # Application Logo Image Assets & Mobile App Icons Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Regenerate all web favicon/PWA binary image assets and Android Capacitor mobile app icons (launcher icons, adaptive icons, round icons, splash screens) using the newly designed 3D faceted "M" branding, and integrate the brand logo into mobile views.
 
@@ -48,21 +48,21 @@
 - Modify: `frontend/index.html`
 - Modify: `frontend/index.mobile.html`
 
-- [ ] **Step 1: Write `frontend/scripts/generate-icons.sh` for web assets**
+- [x] **Step 1: Write `frontend/scripts/generate-icons.sh` for web assets**
   Implement script section that:
   - Renders 16x16 and 32x32 PNGs from `frontend/public/favicon.svg` using `rsvg-convert`
   - Generates 48x48 temporary PNG and bundles 16x16, 32x32, 48x48 into `frontend/public/favicon.ico` using `magick`
   - Renders 180x180 `apple-touch-icon.png`, 192x192 `android-chrome-192x192.png`, and 512x512 `android-chrome-512x512.png`
 
-- [ ] **Step 2: Execute script and verify web image files**
+- [x] **Step 2: Execute script and verify web image files**
   Run: `chmod +x frontend/scripts/generate-icons.sh && ./frontend/scripts/generate-icons.sh web`
   Verify: `file frontend/public/favicon*.png frontend/public/favicon.ico frontend/public/apple-touch-icon.png frontend/public/android-chrome-*.png`
 
-- [ ] **Step 3: Update `site.webmanifest` and HTML files**
+- [x] **Step 3: Update `site.webmanifest` and HTML files**
   - Add `android-chrome-192x192.png` and `android-chrome-512x512.png` entries in `site.webmanifest`
   - Include `<link rel="shortcut icon" href="/favicon.ico" />` in `index.html` and `index.mobile.html`
 
-- [ ] **Step 4: Commit web icon assets**
+- [x] **Step 4: Commit web icon assets**
   Commit with message: `feat(branding): 🎨 regenerate web favicon PNGs, multi-res favicon.ico and PWA icons`
 
 ---
@@ -77,7 +77,7 @@
 - Generate: `frontend/android/app/src/main/res/mipmap-*/ic_launcher_foreground.png` (5 densities)
 - Generate: `frontend/android/app/src/main/res/drawable*/splash.png` (11 resolutions)
 
-- [ ] **Step 1: Extend `generate-icons.sh` for Android mipmap and drawable assets**
+- [x] **Step 1: Extend `generate-icons.sh` for Android mipmap and drawable assets**
   - Standard launcher icons (`ic_launcher.png`):
     - mdpi: 48x48, hdpi: 72x72, xhdpi: 96x96, xxhdpi: 144x144, xxxhdpi: 192x192
   - Circular launcher icons (`ic_launcher_round.png`):
@@ -88,15 +88,15 @@
   - Splash screens (`splash.png`):
     - Center the 3D M brand logo on `#060B18` canvas matching each splash density dimension
 
-- [ ] **Step 2: Update `ic_launcher_background.xml`**
+- [x] **Step 2: Update `ic_launcher_background.xml`**
   Ensure background vectors harmonize with `#060B18` dark theme.
 
-- [ ] **Step 3: Execute Android icon generation**
+- [x] **Step 3: Execute Android icon generation**
   Run: `./frontend/scripts/generate-icons.sh android`
   Verify all files exist and match expected dimensions:
   `file frontend/android/app/src/main/res/mipmap-*/*.png`
 
-- [ ] **Step 4: Commit Android icon assets**
+- [x] **Step 4: Commit Android icon assets**
   Commit with message: `feat(mobile): 📱 regenerate Android launcher, adaptive icons, and splash screens`
 
 ---
@@ -108,7 +108,7 @@
 - Modify: `frontend/src/views-mobile/DashboardMobile.vue`
 - Test: Vitest unit tests & Vite desktop/mobile builds
 
-- [ ] **Step 1: Integrate `<AppLogo>` in `LoginMobile.vue`**
+- [x] **Step 1: Integrate `<AppLogo>` in `LoginMobile.vue`**
   Replace `<h1 class="brand">Minefolio</h1>` with:
   ```vue
   <div class="brand-header">
@@ -116,13 +116,13 @@
   </div>
   ```
 
-- [ ] **Step 2: Add brand mark in `DashboardMobile.vue`**
+- [x] **Step 2: Add brand mark in `DashboardMobile.vue`**
   Add subtle `<AppLogo :size="24" :with-text="true" />` in mobile dashboard header.
 
-- [ ] **Step 3: Run comprehensive verification**
+- [x] **Step 3: Run comprehensive verification**
   - Run frontend test suite: `npm --prefix frontend test`
   - Run desktop build: `npm --prefix frontend run build`
   - Run mobile build: `npm --prefix frontend run build:mobile`
 
-- [ ] **Step 4: Commit UI integration**
+- [x] **Step 4: Commit UI integration**
   Commit with message: `feat(mobile): 🎨 integrate AppLogo into mobile login and dashboard header`
