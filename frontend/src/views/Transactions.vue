@@ -94,7 +94,7 @@
         <el-table
           v-loading="loading"
           :data="transactions"
-          class="premium-table"
+          class="premium-table stream-table"
           row-class-name="premium-row"
           header-cell-class-name="premium-header"
         >
@@ -902,12 +902,14 @@ async function handleImport() {
 }
 
 .category-pill {
-  background: var(--mf-primary-light);
+  background: rgba(59, 130, 246, 0.12);
   color: var(--mf-text-regular);
-  padding: 2px 8px;
-  border-radius: 6px;
-  font-size: 13px;
-  border: 1px solid var(--mf-primary-border);
+  padding: 3px 10px;
+  border-radius: var(--mf-radius-pill);
+  font-size: 12px;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  display: inline-flex;
+  align-items: center;
 }
 
 .mono-amount {

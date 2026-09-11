@@ -56,7 +56,7 @@
           </el-row>
 
           <div class="table-container">
-            <el-table v-loading="loading" :data="expenses" class="premium-table" row-class-name="premium-row" header-cell-class-name="premium-header">
+            <el-table v-loading="loading" :data="expenses" class="premium-table stream-table" row-class-name="premium-row" header-cell-class-name="premium-header">
               <el-table-column prop="expense_date" label="日期" width="110" />
               <el-table-column prop="asset_name" label="关联资产" min-width="110" />
               <el-table-column prop="category_name" label="分类" min-width="120" />
@@ -141,7 +141,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="金额" prop="amount">
-          <el-input-number v-model="form.amount" :precision="2" :min="0" style="width: 100%" :controls="false" />
+          <el-input-number v-model="form.amount" :precision="2" :min="0" style="width: 100%" :controls="false" class="hero-amount-input" />
         </el-form-item>
         <el-form-item label="日期" prop="expense_date">
           <el-date-picker v-model="form.expense_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
