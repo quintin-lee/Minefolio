@@ -105,49 +105,50 @@ const starters = [
   align-items: center;
   max-width: 860px;
   margin: 0 auto;
-  padding: 32px 16px;
+  padding: 36px 16px 48px;
 }
 
 .starters-header {
   text-align: center;
-  margin-bottom: 28px;
+  margin-bottom: 32px;
 }
 
 .sparkle-icon-wrap {
-  width: 48px;
-  height: 48px;
-  border-radius: 14px;
-  background: linear-gradient(135deg, var(--el-color-primary), var(--el-color-primary-dark-2));
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, var(--mf-primary), #6366f1);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 0 auto 14px;
-  box-shadow: var(--mf-shadow-glow);
+  margin: 0 auto 16px;
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.25), var(--mf-shadow-glow);
 }
 
 .sparkle-icon {
-  font-size: 24px;
-  color: var(--mf-primary);
+  font-size: 26px;
+  color: #ffffff;
 }
 
 .starters-title {
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 700;
-  color: var(--el-text-color-primary);
+  color: var(--mf-text-main);
+  letter-spacing: -0.3px;
   margin-bottom: 8px;
 }
 
 .starters-subtitle {
-  font-size: 13px;
-  color: var(--el-text-color-secondary);
-  max-width: 540px;
+  font-size: 13.5px;
+  color: var(--mf-text-muted);
+  max-width: 560px;
   line-height: 1.6;
 }
 
 .starters-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(256px, 1fr));
+  gap: 16px;
   width: 100%;
 }
 
@@ -155,74 +156,100 @@ const starters = [
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 16px;
-  border-radius: 14px;
-  background: var(--el-bg-color-overlay);
-  border: 1px solid var(--el-border-color-lighter);
+  padding: 18px;
+  border-radius: 16px;
+  background: var(--mf-surface);
+  border: 1px solid var(--mf-border);
+  backdrop-filter: blur(16px);
   cursor: pointer;
-  transition: all 0.22s ease-in-out;
+  transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.22s, box-shadow 0.22s;
   box-shadow: var(--mf-shadow-sm);
+  position: relative;
+  overflow: hidden;
+}
+
+.starter-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: transparent;
+  transition: background 0.25s ease;
 }
 
 .starter-card:hover {
   transform: translateY(-3px);
-  border-color: var(--el-color-primary-light-5);
-  box-shadow: var(--mf-shadow-md);
+  border-color: var(--mf-primary);
+  box-shadow: var(--mf-shadow-md), 0 0 20px rgba(0, 212, 255, 0.08);
+}
+
+.starter-card:hover::before {
+  background: linear-gradient(90deg, transparent, var(--mf-primary), transparent);
 }
 
 .card-top {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
 .card-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
+  font-size: 20px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
 }
 
 .card-tag {
   font-size: 11px;
-  font-weight: 500;
-  padding: 2px 8px;
-  border-radius: 6px;
-  background: var(--el-fill-color-light);
-  color: var(--el-text-color-secondary);
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 20px;
+  background: var(--mf-surface-muted);
+  color: var(--mf-text-muted);
+  border: 1px solid var(--mf-border);
 }
 
 .card-title {
-  font-size: 14px;
+  font-size: 14.5px;
   font-weight: 600;
-  color: var(--el-text-color-primary);
+  color: var(--mf-text-main);
   margin-bottom: 6px;
+  letter-spacing: -0.2px;
 }
 
 .card-desc {
   font-size: 12px;
-  color: var(--el-text-color-secondary);
-  line-height: 1.5;
-  margin-bottom: 14px;
+  color: var(--mf-text-muted);
+  line-height: 1.55;
+  margin-bottom: 16px;
 }
 
 .card-footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding-top: 10px;
-  border-top: 1px solid var(--el-border-color-extra-light);
+  padding-top: 12px;
+  border-top: 1px solid var(--mf-border);
   font-size: 12px;
-  color: var(--el-color-primary);
-  font-weight: 500;
+  color: var(--mf-primary);
+  font-weight: 600;
+}
+
+.action-hint {
+  font-size: 11.5px;
+  opacity: 0.85;
 }
 
 .arrow-icon {
-  font-size: 13px;
+  font-size: 14px;
   transition: transform 0.2s ease;
 }
 
