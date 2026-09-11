@@ -13,21 +13,32 @@
     <!-- 汇总卡片 -->
     <el-row :gutter="24">
       <el-col :span="8">
-        <SummaryCard label="总市值" :value="formatCurrency(report?.summary.total_market_value ?? 0)" />
+        <SummaryCard label="总市值" :value="formatCurrency(report?.summary.total_market_value ?? 0)" type="highlight" />
       </el-col>
       <el-col :span="8">
-        <SummaryCard label="总浮动盈亏" :value="formatSigned(report?.summary.total_floating_pnl ?? 0)" :extraClass="floatCardClass" />
-        <div class="summary-sub">({{ (report?.summary.floating_pct ?? 0).toFixed(2) }}%)</div>
+        <SummaryCard
+          label="总浮动盈亏"
+          :value="formatSigned(report?.summary.total_floating_pnl ?? 0)"
+          :type="(report?.summary.total_floating_pnl ?? 0) > 0 ? 'income' : (report?.summary.total_floating_pnl ?? 0) < 0 ? 'expense' : 'neutral'"
+          :badge="`${(report?.summary.floating_pct ?? 0) >= 0 ? '+' : ''}${(report?.summary.floating_pct ?? 0).toFixed(2)}%`"
+          :badgeType="(report?.summary.total_floating_pnl ?? 0) >= 0 ? 'success' : 'danger'"
+          :extraClass="floatCardClass"
+        />
         <el-progress
           :percentage="Math.min(100, Math.abs(report?.summary.floating_pct ?? 0))"
           :color="floatPnlColor"
           :show-text="false"
-          :stroke-width="4"
+          :stroke-width="3"
           class="pnl-progress"
         />
       </el-col>
       <el-col :span="8">
-        <SummaryCard label="总已实现盈亏" :value="formatSigned(report?.summary.total_realized_pnl ?? 0)" type="highlight" />
+        <SummaryCard
+          label="总已实现盈亏"
+          :value="formatSigned(report?.summary.total_realized_pnl ?? 0)"
+          :type="(report?.summary.total_realized_pnl ?? 0) > 0 ? 'income' : (report?.summary.total_realized_pnl ?? 0) < 0 ? 'expense' : 'neutral'"
+          :badgeType="(report?.summary.total_realized_pnl ?? 0) >= 0 ? 'success' : 'danger'"
+        />
       </el-col>
     </el-row>
 
@@ -50,14 +61,35 @@
     <!-- 持仓表格 -->
     <div class="table-card">
       <el-table :data="pagedHoldings" class="premium-table" row-class-name="premium-row" header-cell-class-name="premium-header" empty-text="">
-        <el-table-column label="名称" min-width="140">
+        <el-table-column label="标的名称" min-width="160">
           <template #default="{ row }">
-            <span class="asset-name"><Icon :icon="ASSET_ICONS[row.asset_type] ?? 'ph:briefcase'" /> {{ row.name }}</span>
+            <div class="symbol-cell">
+              <span class="asset-name">
+                <Icon :icon="ASSET_ICONS[row.asset_type] ?? 'ph:briefcase'" class="asset-type-icon" />
+                <span class="asset-name-text">{{ row.name }}</span>
+              </span>
+              <span class="symbol-code">{{ row.symbol || '—' }}</span>
+            </div>
           </template>
         </el-table-column>
-        <el-table-column label="类型" width="100">
+        <el-table-column label="类型" width="90">
           <template #default="{ row }">
             <span :class="['type-pill', typePillClass(row.asset_type)]">{{ typeLabel(row.asset_type) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="占比" width="95">
+          <template #default="{ row }">
+            <div class="weight-cell">
+              <span class="weight-pct">
+                {{ ((Number(row.current_value) / (report?.summary.total_market_value || 1)) * 100).toFixed(1) }}%
+              </span>
+              <div class="weight-bar-track">
+                <div
+                  class="weight-bar-fill"
+                  :style="{ width: `${Math.min(100, Math.max(0, (Number(row.current_value) / (report?.summary.total_market_value || 1)) * 100))}%` }"
+                />
+              </div>
+            </div>
           </template>
         </el-table-column>
         <el-table-column label="份额" width="110" align="right">
@@ -249,12 +281,21 @@ onMounted(() => {
 }
 .chart-card,
 .table-card {
-  background: var(--mf-surface);
-  border: 1px solid var(--mf-border);
+  background: var(--mf-surface-card);
+  border: 1px solid var(--mf-border-subtle);
   border-radius: var(--mf-radius-lg);
   padding: 16px;
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: var(--mf-shadow-sm);
+  transition: var(--mf-transition);
 }
+
+.chart-card:hover {
+  border-color: var(--mf-border-hover);
+  box-shadow: var(--mf-shadow-glow);
+}
+
 .chart-title {
   font-size: 14px;
   font-weight: 600;
@@ -288,11 +329,51 @@ onMounted(() => {
   background: var(--mf-danger-light);
   border-color: var(--mf-danger-border);
 }
+.symbol-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
 .asset-name {
-  font-weight: 500;
+  font-weight: 600;
   display: flex;
   align-items: center;
   gap: 6px;
+  color: var(--mf-text-main);
+}
+.asset-type-icon {
+  font-size: 16px;
+  color: var(--mf-primary);
+  flex-shrink: 0;
+}
+.symbol-code {
+  font-size: 11px;
+  color: var(--mf-text-muted);
+  font-family: var(--mf-font-mono);
+  padding-left: 22px;
+}
+.weight-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.weight-pct {
+  font-size: 11px;
+  color: var(--mf-text-muted);
+  font-family: var(--mf-font-mono);
+}
+.weight-bar-track {
+  width: 100%;
+  height: 4px;
+  background: var(--mf-surface-muted);
+  border-radius: var(--mf-radius-pill);
+  overflow: hidden;
+}
+.weight-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--mf-primary), var(--mf-accent));
+  border-radius: var(--mf-radius-pill);
+  transition: width 0.3s ease;
 }
 
 .type-pill {
