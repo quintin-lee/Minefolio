@@ -12,7 +12,10 @@
       <el-card class="login-card glass-panel fade-in">
         <template #header>
           <div class="card-header">
-            <h2 class="app-title">Minefolio</h2>
+            <div class="login-brand-header">
+              <AppLogo :size="44" />
+              <h2 class="app-title">Minefolio</h2>
+            </div>
             <p class="subtitle">{{ t('login.subtitle') }}</p>
             <div class="status-line">
               <span class="status-dot"></span>
@@ -122,6 +125,7 @@ import { useAuthStore } from '@/stores/auth'
 import { authApi } from '@/api/auth'
 import type { OAuthProvider } from '@/types'
 import { t } from '@/utils/locale'
+import AppLogo from '@/components/AppLogo.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -554,6 +558,13 @@ onBeforeUnmount(() => {
 
 .card-header {
   text-align: center;
+}
+
+.login-brand-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
 }
 
 .app-title {

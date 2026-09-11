@@ -8,7 +8,10 @@
             <span class="pulse-dot"></span>
             首次部署
           </div>
-          <h2 class="app-title">Minefolio 初始化</h2>
+          <div class="setup-brand-header">
+            <AppLogo :size="40" />
+            <h2 class="app-title">Minefolio 初始化</h2>
+          </div>
           <p class="subtitle">欢迎使用个人资产管理系统，请设置管理员账号</p>
         </div>
       </template>
@@ -81,6 +84,7 @@ import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
+import AppLogo from '@/components/AppLogo.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -209,6 +213,12 @@ async function handleSubmit() {
   border-radius: 50%;
   background-color: #00d4ff;
   box-shadow: var(--mf-shadow-glow);
+}
+.setup-brand-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
 }
 .app-title {
   margin: 0;
