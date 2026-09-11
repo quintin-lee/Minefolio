@@ -460,6 +460,7 @@ onMounted(async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .header-title {
@@ -546,11 +547,16 @@ onMounted(async () => {
   margin-left: 95px;
 }
 
+.asset-summary {
+  flex-shrink: 0;
+}
+
 .table-container {
-  flex: 1;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-height: 0;
   background: var(--mf-surface);
   border: 1px solid var(--mf-border);
   box-shadow: var(--mf-shadow-sm);
@@ -558,9 +564,20 @@ onMounted(async () => {
   padding: 16px;
 }
 
+.table-container :deep(.el-table) {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+
+.table-container :deep(.el-table__body-wrapper) {
+  overflow-y: auto;
+}
+
 .pagination-bar {
   display: flex;
   justify-content: flex-end;
-  margin-top: 12px;
+  margin-top: 16px;
+  flex-shrink: 0;
 }
 </style>

@@ -17,7 +17,7 @@
 
     <!-- 顶部主标签页切换 -->
     <el-tabs v-model="activeTab" class="custom-tabs">
-      <el-tab-pane label="定投计划 (DCA Plans)" name="dca">
+      <el-tab-pane label="定投计划 (DCA Plans)" name="dca" class="dca-tab-pane">
         <!-- 待办待执行提醒横幅 -->
         <div v-if="pendingExecutions.length > 0" class="pending-banner">
           <div class="banner-title">
@@ -178,7 +178,7 @@
       </el-tab-pane>
 
       <!-- 现金流日历 Tab -->
-      <el-tab-pane label="现金流日历 (Cashflow Calendar)" name="calendar">
+      <el-tab-pane label="现金流日历 (Cashflow Calendar)" name="calendar" class="calendar-tab-pane">
         <CashflowCalendar
           ref="calendarRef"
           @open-schedule="scheduleDrawerVisible = true"
@@ -481,17 +481,17 @@ onMounted(() => {
 .plans-page {
   background-color: var(--mf-background);
   height: 100%;
-  overflow-y: auto;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding-bottom: 24px;
 }
 
 .page-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .header-title {
@@ -513,12 +513,45 @@ onMounted(() => {
   padding: 10px 16px;
 }
 
+.custom-tabs {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.custom-tabs :deep(.el-tabs__header) {
+  flex-shrink: 0;
+  margin-bottom: 16px;
+}
+
 .custom-tabs :deep(.el-tabs__nav-wrap::after) {
   height: 1px;
   background-color: var(--mf-border);
 }
 
+.custom-tabs :deep(.el-tabs__content) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.custom-tabs :deep(.dca-tab-pane) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.custom-tabs :deep(.calendar-tab-pane) {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .pending-banner {
+  flex-shrink: 0;
   background: linear-gradient(135deg, rgba(234, 179, 8, 0.12), rgba(245, 158, 11, 0.05));
   border: 1px solid rgba(234, 179, 8, 0.35);
   border-radius: var(--mf-radius-md);
@@ -582,13 +615,30 @@ onMounted(() => {
 
 .summary-cards {
   margin-bottom: 16px;
+  flex-shrink: 0;
 }
 
 .table-container {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
   background: var(--mf-surface);
   border-radius: var(--mf-radius-lg);
   padding: 16px;
   border: 1px solid var(--mf-border);
+  box-shadow: var(--mf-shadow-sm);
+}
+
+.table-container :deep(.el-table) {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+
+.table-container :deep(.el-table__body-wrapper) {
+  overflow-y: auto;
 }
 
 .plan-name-cell {
@@ -673,11 +723,13 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .pagination-bar {
   display: flex;
   justify-content: flex-end;
   margin-top: 16px;
+  flex-shrink: 0;
 }
 </style>
