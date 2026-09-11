@@ -246,8 +246,12 @@ check "transactions/monthly outflows=600" "600" "$(echo "$MONTH_RES" | jq -r '.d
 check "transactions/monthly count=3" "3" "$(echo "$MONTH_RES" | jq -r '.data.count | floor')"
 
 echo "== 19. 分类树形结构 =="
-PARENT_ID=$(sqlite3 "$DB" "INSERT INTO categories (user_id, name, type, asset_type, currency, icon, sort_order) SELECT id, '测试父分类', 'expense', 'cash', 'CNY', '', 99 FROM users WHERE username='linktest'; SELECT last_insert_rowid();")
-sqlite3 "$DB" "INSERT INTO categories (user_id, name, parent_id, type, asset_type, currency, icon, sort_order) SELECT id, '测试子分类', $PARENT_ID, 'expense', 'cash', 'CNY', '', 1 FROM users WHERE username='linktest';"
+# Categories are ledger-scoped (see ctx_ledger_id / ledger_get_default): the two
+# rows below must carry linktest's default ledger_id, otherwise the ledger-filtered
+# GET /api/categories will not return them.
+TEST_LEDGER_ID=$(sqlite3 "$DB" "SELECT id FROM ledgers WHERE owner_id=(SELECT id FROM users WHERE username='linktest') AND is_default=1 LIMIT 1")
+PARENT_ID=$(sqlite3 "$DB" "INSERT INTO categories (user_id, ledger_id, name, type, asset_type, currency, icon, sort_order) SELECT id, $TEST_LEDGER_ID, '测试父分类', 'expense', 'cash', 'CNY', '', 99 FROM users WHERE username='linktest'; SELECT last_insert_rowid();")
+sqlite3 "$DB" "INSERT INTO categories (user_id, ledger_id, name, parent_id, type, asset_type, currency, icon, sort_order) SELECT id, $TEST_LEDGER_ID, '测试子分类', $PARENT_ID, 'expense', 'cash', 'CNY', '', 1 FROM users WHERE username='linktest';"
 CATS=$(curl -s -H "$AUTH" "$BASE/categories")
 check "categories 返回数组" "array" "$(echo "$CATS" | jq -r '.data | type')"
 check "categories 非空" "1" "$(echo "$CATS" | jq -r 'if (.data | length) > 0 then 1 else 0 end')"
