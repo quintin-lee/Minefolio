@@ -235,6 +235,13 @@ export async function testServerConnection(targetUrl?: string): Promise<ServerCo
     if (err.name === 'AbortError') {
       return { ok: false, message: '连接超时 (超过 6 秒)，请检查服务端是否运行', latency }
     }
+    if (err.message === 'Failed to fetch') {
+      return {
+        ok: false,
+        message: '无法建立连接：请确认手机与服务端在同一 Wi-Fi，且服务端允许跨域访问',
+        latency,
+      }
+    }
     return { ok: false, message: err.message || '网络连接失败，请确认服务端地址与网络', latency }
   }
 }
