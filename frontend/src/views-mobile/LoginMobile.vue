@@ -3,6 +3,22 @@
     <div class="brand-header">
       <AppLogo :size="44" :with-text="true" />
     </div>
+
+    <!-- 服务端地址快捷设置入口 -->
+    <div class="server-bar" role="button" tabindex="0" @click="showServerDialog = true">
+      <el-icon class="server-bar-icon"><Connection /></el-icon>
+      <div class="server-bar-info">
+        <span class="server-bar-label">服务端：</span>
+        <span class="server-bar-url">{{ displayUrl }}</span>
+      </div>
+      <el-tag size="small" :type="isCustom ? 'warning' : 'info'" class="server-bar-tag">
+        {{ isCustom ? '自定义' : '默认' }}
+      </el-tag>
+      <el-icon class="server-bar-arrow"><ArrowRight /></el-icon>
+    </div>
+
+    <ServerConfigDialog v-model="showServerDialog" @saved="handleServerSaved" />
+
     <el-form :model="form" label-position="top">
       <el-form-item label="用户名">
         <el-input v-model="form.username" placeholder="请输入用户名" />
@@ -56,15 +72,21 @@
 import { reactive, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { Connection, ArrowRight } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { authApi } from '@/api/auth'
 import AppLogo from '@/components/AppLogo.vue'
+import ServerConfigDialog from '@/components/mobile/ServerConfigDialog.vue'
+import { useServerUrl } from '@/composables/useServerUrl'
 import type { OAuthProvider } from '@/types'
 
 const router = useRouter()
 const auth = useAuthStore()
+const { displayUrl, isCustom } = useServerUrl()
+
 const loading = ref(false)
 const isRegister = ref(false)
+const showServerDialog = ref(false)
 const form = reactive({ username: '', password: '', confirmPassword: '' })
 const oauthProviders = ref<OAuthProvider[]>([])
 
@@ -74,13 +96,26 @@ function handleOAuth(p: OAuthProvider) {
   }
 }
 
-onMounted(async () => {
+async function loadOAuthProviders() {
   try {
     const res = await authApi.getOAuthProviders()
     if (res && res.providers) {
       oauthProviders.value = res.providers
+    } else {
+      oauthProviders.value = []
     }
-  } catch {}
+  } catch {
+    oauthProviders.value = []
+  }
+}
+
+async function handleServerSaved() {
+  await auth.checkSystemStatus()
+  await loadOAuthProviders()
+}
+
+onMounted(async () => {
+  await loadOAuthProviders()
 })
 
 async function submit() {
@@ -101,7 +136,12 @@ async function submit() {
     }
     router.replace('/m/dashboard')
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.message || (isRegister.value ? '注册失败' : '登录失败'))
+    const isNetworkErr = !e?.response
+    if (isNetworkErr) {
+      ElMessage.error('无法连接到服务端，请点击上方“服务端”检查地址与网络')
+    } else {
+      ElMessage.error(e?.response?.data?.message || (isRegister.value ? '注册失败' : '登录失败'))
+    }
   } finally {
     loading.value = false
   }
@@ -109,13 +149,62 @@ async function submit() {
 </script>
 
 <style scoped>
-.login-mobile { padding: 48px 24px; display: flex; flex-direction: column; gap: 24px; }
+.login-mobile { padding: 40px 24px; display: flex; flex-direction: column; gap: 20px; }
 .brand-header {
   display: flex;
   justify-content: center;
   align-items: center;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
+
+.server-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--mf-surface-card);
+  border: 1px solid var(--mf-border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: var(--mf-transition);
+}
+.server-bar:hover,
+.server-bar:active {
+  border-color: var(--mf-primary);
+  background: var(--mf-surface-hover);
+}
+.server-bar-icon {
+  font-size: 16px;
+  color: var(--mf-primary);
+  flex-shrink: 0;
+}
+.server-bar-info {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  font-size: 13px;
+}
+.server-bar-label {
+  color: var(--mf-text-muted);
+  flex-shrink: 0;
+}
+.server-bar-url {
+  color: var(--mf-text-main);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.server-bar-tag {
+  flex-shrink: 0;
+}
+.server-bar-arrow {
+  font-size: 14px;
+  color: var(--mf-text-muted);
+  flex-shrink: 0;
+}
+
 .switch-mode-mobile {
   text-align: center;
   margin-top: 18px;

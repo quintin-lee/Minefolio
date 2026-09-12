@@ -83,39 +83,24 @@ export function handleAuthError() {
   }, 1000)
 }
 
-/**
- * 构造跨环境规范化 API 完整 URL 地址
- * @description 智能处理 VITE_API_URL 前缀、消除意外的多余 `/api/api/` 重复，并兼容桌面端、Docker 部署与移动端 Capacitor
- * @param path 相对接口路径 (如 '/ai/chat' 或 '/auth/login')
- * @returns 规范拼接后的完整 API 请求 URL
- */
-export function buildApiUrl(path: string): string {
-  const base = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '')
-  const cleanPath = path.startsWith('/') ? path : `/${path}`
+export {
+  STORAGE_KEY_SERVER_URL,
+  onServerUrlChange,
+  normalizeServerUrl,
+  isValidServerUrl,
+  getServerUrl,
+  isCustomServerUrl,
+  setServerUrl,
+  resetServerUrl,
+  buildApiUrl,
+  getAxiosBaseUrl,
+  testServerConnection,
+  type ServerConnectionTestResult,
+  type ServerUrlChangeHook,
+} from './server-url'
+import { getAxiosBaseUrl, onServerUrlChange } from './server-url'
 
-  if (!base) {
-    return cleanPath.startsWith('/api/') || cleanPath === '/api' ? cleanPath : `/api${cleanPath}`
-  }
 
-  if (base.endsWith('/api')) {
-    const subPath = cleanPath.startsWith('/api/') ? cleanPath.slice(4) : (cleanPath === '/api' ? '' : cleanPath)
-    return `${base}${subPath}`
-  }
-
-  const fullPath = cleanPath.startsWith('/api/') || cleanPath === '/api' ? cleanPath : `/api${cleanPath}`
-  return `${base}${fullPath}`
-}
-
-/**
- * 获取 Axios 实例的基础 BaseURL 地址
- * @returns BaseURL 字符串
- */
-function getAxiosBaseUrl(): string {
-  const base = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '')
-  if (!base) return '/api'
-  if (base.endsWith('/api')) return base
-  return `${base}/api`
-}
 
 /**
  * 从 document.cookie 中安全提取指定 Cookie 值
@@ -141,8 +126,9 @@ function createHttp(): AxiosInstance {
     withCredentials: true,
   })
 
-  // 请求拦截器：自动注入 JWT Bearer Token、X-Ledger-Id 及 CSRF Token
+  // 请求拦截器：自动注入最新 baseURL、JWT Bearer Token、X-Ledger-Id 及 CSRF Token
   instance.interceptors.request.use((config) => {
+    config.baseURL = getAxiosBaseUrl()
     const auth = useAuthStore()
     if (auth.token) {
       config.headers.Authorization = `Bearer ${auth.token}`
@@ -193,5 +179,12 @@ function createHttp(): AxiosInstance {
   return instance
 }
 
-export default createHttp()
+const httpInstance: AxiosInstance = createHttp()
+
+// 当服务端地址发生变更时自动更新 Axios 实例的默认 baseURL
+onServerUrlChange(() => {
+  httpInstance.defaults.baseURL = getAxiosBaseUrl()
+})
+
+export default httpInstance
 

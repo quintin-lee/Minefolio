@@ -59,6 +59,7 @@ declare module 'vue' {
     ReceiptScannerModal: typeof import('./components/ReceiptScannerModal.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    ServerConfigDialog: typeof import('./components/mobile/ServerConfigDialog.vue')['default']
     SummaryCard: typeof import('./components/SummaryCard.vue')['default']
     SymbolSelect: typeof import('./components/SymbolSelect.vue')['default']
     TagPicker: typeof import('./components/TagPicker.vue')['default']

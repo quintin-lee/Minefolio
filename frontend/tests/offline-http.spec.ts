@@ -4,7 +4,13 @@ import { initLocalDb, query, run, rowsFrom, resetLocalDb } from '@/db/local'
 import { useSyncStore } from '@/stores/sync'
 import { offlineApi } from '@/utils/offline-http'
 
-vi.mock('@/utils/http', () => ({ default: vi.fn() }))
+vi.mock('@/utils/http', async (importOriginal) => {
+  const actual = (await importOriginal()) as any
+  return {
+    ...actual,
+    default: vi.fn(),
+  }
+})
 import http from '@/utils/http'
 
 beforeEach(async () => {

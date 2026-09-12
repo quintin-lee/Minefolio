@@ -10,7 +10,12 @@
  * 4. arrayBufferToBase64url(ArrayBuffer) → 生成 Base64url 格式的 password_enc 字符串
  */
 
-import { buildApiUrl } from '@/utils/http'
+import { buildApiUrl, onServerUrlChange } from '@/utils/server-url'
+
+// 当服务端地址发生变更时自动重置 RSA 公钥缓存
+onServerUrlChange(() => {
+  clearCryptoKeyCache()
+})
 
 /**
  * RSA 公钥 JSON Web Key (JWK) 格式接口
