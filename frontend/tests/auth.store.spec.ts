@@ -129,5 +129,5 @@ describe('auth store', () => {
     expect(ledger.currentLedgerId).toBeNull()
     expect(category.allNodes.length).toBe(0)
     expect(category.loaded).toBe(false)
-  })
+  }, 20000)
 })

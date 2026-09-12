@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [1.3.1] - 2026-09-12
 
 ### Added
 - **Mobile Server Address Configuration & Connectivity Testing (`frontend/src/`)**:
@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Mobile Login Screen Integration (`src/views-mobile/LoginMobile.vue`)**: Added server status pill bar on the login view allowing pre-login server configuration and guidance on network connection errors.
   - **Mobile Settings Page Integration (`src/views-mobile/SettingsMobile.vue`)**: Added dedicated server address settings card with live ping test and safeguard confirmation dialog when offline records are pending sync.
   - **Unit Test Suites**: Added unit tests in `http.utils.spec.ts`, `use-server-url.spec.ts`, and `login-mobile.spec.ts`.
+
+### Changed
+- **Version Bump**: Bumped version to `1.3.1` across backend (`CMakeLists.txt`, `admin_controller.c`), frontend (`package.json`, `package-lock.json`), Android (`build.gradle`), and documentation (`README.md`, `docs/architecture.md`, `CHANGELOG.md`).
 
 ---
 

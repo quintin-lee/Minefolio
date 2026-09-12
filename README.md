@@ -1,6 +1,6 @@
 # Minefolio
 
-[![Release: v1.3.0](https://img.shields.io/badge/Release-v1.3.0-success.svg)](https://github.com/quintin-lee/Minefolio/releases/tag/v1.3.0)
+[![Release: v1.3.1](https://img.shields.io/badge/Release-v1.3.1-success.svg)](https://github.com/quintin-lee/Minefolio/releases/tag/v1.3.1)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![C23](https://img.shields.io/badge/C-23-00599C?logo=c)](https://en.cppreference.com/w/c/23)
 [![Vue 3](https://img.shields.io/badge/Vue-3.5-4FC08D?logo=vue.js)](https://vuejs.org/)
@@ -86,13 +86,13 @@ docker compose ps
 启动成功后，在浏览器访问 `http://localhost` 即可进入初始化向导创建管理员账户。
 
 #### 3. 部署技巧与进阶配置
-* **锁定特定版本部署（如 v1.3.0）**：
-  可在 `docker-compose.yml` 中修改镜像标签为 `:v1.3.0`，或执行拉取与重打标签：
+* **锁定特定版本部署（如 v1.3.1）**：
+  可在 `docker-compose.yml` 中修改镜像标签为 `:v1.3.1`，或执行拉取与重打标签：
   ```bash
-  docker pull ghcr.io/quintin-lee/minefolio:v1.3.0
-  docker pull ghcr.io/quintin-lee/minefolio-frontend:v1.3.0
-  docker tag ghcr.io/quintin-lee/minefolio:v1.3.0 ghcr.io/quintin-lee/minefolio:latest
-  docker tag ghcr.io/quintin-lee/minefolio-frontend:v1.3.0 ghcr.io/quintin-lee/minefolio-frontend:latest
+  docker pull ghcr.io/quintin-lee/minefolio:v1.3.1
+  docker pull ghcr.io/quintin-lee/minefolio-frontend:v1.3.1
+  docker tag ghcr.io/quintin-lee/minefolio:v1.3.1 ghcr.io/quintin-lee/minefolio:latest
+  docker tag ghcr.io/quintin-lee/minefolio-frontend:v1.3.1 ghcr.io/quintin-lee/minefolio-frontend:latest
   docker compose up -d
   ```
 * **从本地源码构建镜像**（二次开发或自定义修改后）：
