@@ -49,7 +49,7 @@
 
 ## Chunk 1: 基础设施（依赖 / Vite / Capacitor / HTML 入口）
 
-> 🟡 **fit-analysis 2026-08-15**：本 chunk 与 `VITE_API_URL` 绑定。桌面 `http.ts` 以 `import.meta.env.VITE_API_URL` 为 Axios baseURL；移动端打包到 Capacitor 后没有 dev proxy，**必须在构建/运行期把 `VITE_API_URL` 指向真实后端地址**（`frontend/.env.mobile` 或 Capacitor 环境注入），否则 RSA public-key fetch 与离线 HTTP 都无法命中后端。见 Chunk 4/Task 12 的 🔴 说明。
+> 🟡 **fit-analysis 2026-08-15 (已更新 2026-09)**：本 chunk 与 `VITE_API_URL` 绑定。桌面 `http.ts` 以 `import.meta.env.VITE_API_URL` 为 Axios baseURL；移动端打包到 Capacitor 后没有 dev proxy，构建期使用 `VITE_API_URL` 作为默认地址，同时现已支持运行时通过 `src/utils/server-url.ts` 与 `localStorage` (`minefolio_server_url`) 动态配置并自检后端地址，无需重新编译 APK。见 Chunk 4/Task 12 的 🔴 说明。
 
 ### Task 1: 更新 package.json 增加移动端脚本与依赖
 
@@ -1023,7 +1023,7 @@ git commit -m "feat(mobile): bottom 5-tab layout container"
 
 复用桌面登录逻辑：RSA 公钥加密密码 → `auth.login`。从 `frontend/src/stores/auth.ts` 复制 `fetchRsaJwk`/`encryptPassword` 逻辑（它们当前是模块私有函数），故在移动端内联一份相同的加密实现（保持与后端一致）。
 
-> 🔴 **关键（fit-analysis 2026-08-15）**：桌面 `stores/auth.ts` 用相对路径 `fetch('/api/auth/public-key')`，桌面靠 Vite proxy 转发。**Capacitor 独立 WebView 没有 dev proxy**，相对路径命中不到后端。因此移动端内联版 **必须**用 `import.meta.env.VITE_API_URL`（与 `utils/http.ts` 的 Axios baseURL 同一变量）拼接 `base + '/api/auth/public-key'`，WebView/浏览器回退到 `window.location.origin`。构建时通过 `.env` 为 Capacitor 配置 `VITE_API_URL` 指向真实后端地址。
+> 🔴 **关键（fit-analysis 2026-08-15，已更新 2026-09）**：桌面 `stores/auth.ts` 用相对路径 `fetch('/api/auth/public-key')`，桌面靠 Vite proxy 转发。**Capacitor 独立 WebView 没有 dev proxy**，相对路径命中不到后端。因此移动端 **必须**使用经过 `src/utils/server-url.ts` 动态解析的 base URL（优先读取自定义配置 `minefolio_server_url`，回退到 `import.meta.env.VITE_API_URL` 或 `window.location.origin`）拼接 `base + '/api/auth/public-key'`，支持在登录页与设置页动态输入自建服务器地址并即时验证连通性。
 
 ```vue
 <template>

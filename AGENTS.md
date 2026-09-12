@@ -49,7 +49,7 @@ Charts      ECharts (src/components/*.vue)
 Offline DB  src/db/ — sql.js WASM with local SQLite for mobile
 ```
 
-**Desktop and mobile share the same API layer** (`src/api/`) and TypeScript types. Mobile has its own view set and a lightweight layout. The mobile build hardcodes `VITE_API_URL` at compile time.
+**Desktop and mobile share the same API layer** (`src/api/`) and TypeScript types. Mobile has its own view set and a lightweight layout. The mobile build uses `VITE_API_URL` as a default compile-time fallback, but supports dynamic runtime server address configuration via `src/utils/server-url.ts` and `localStorage` (`minefolio_server_url`).
 
 ### Data Flow: Transaction Write Path
 
@@ -310,6 +310,15 @@ try {
 }
 ```
 Do NOT mask a successful server response with stale local data — only use local fallback when the online request actually fails.
+
+### Frontend — Mobile Server Address Configuration
+
+Mobile users can customize the backend server address (e.g. LAN IP `http://192.168.1.100:8080` or domain reverse proxy) at runtime:
+- **Persistence**: Managed via `src/utils/server-url.ts` under `localStorage` key `minefolio_server_url`. Fallback is `VITE_API_URL` or relative `/api`.
+- **Normalization & Probing**: Automatically infers `http://` / `https://` protocol and trims trailing slashes. Includes `testServerConnection()` to probe `/api/system/status` with latency measurement and error diagnostics.
+- **Dynamic Axios Synchronization**: `http.ts` listens to `onServerUrlChange` and dynamically rebinds Axios default `baseURL` and interceptor `config.baseURL`.
+- **RSA Public Key Cache Invalidation**: `crypto.ts` invalidates `cachedCryptoKey` upon server URL changes to re-negotiate keys with the new instance.
+- **UI Access**: Configurable on `LoginMobile.vue` (via `ServerConfigDialog.vue` status bar) before logging in, and on `SettingsMobile.vue` (via dedicated server address card with unsynced offline data safeguards).
 
 ### Naming
 

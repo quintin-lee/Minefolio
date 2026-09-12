@@ -9,7 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No changes yet._
+### Added
+- **Mobile Server Address Configuration & Connectivity Testing (`frontend/src/`)**:
+  - **Dynamic Server Address Resolution (`src/utils/server-url.ts`)**: Added comprehensive server URL utility managing format normalization (auto protocol prefix inference `http://` / `https://` and trailing slash trimming), validation (`isValidServerUrl`), and `localStorage` persistence (`minefolio_server_url`) with seamless fallback to `VITE_API_URL` or relative paths.
+  - **Live Connectivity & Latency Probing (`testServerConnection`)**: Integrated diagnostic tool querying `/api/system/status` with a 6-second timeout, measuring round-trip latency in milliseconds, detecting Minefolio server version, and providing detailed error diagnostics.
+  - **Dynamic Axios Re-binding (`src/utils/http.ts`)**: Wired Axios instance default `baseURL` and request interceptors to automatically react to server address mutations in real time without requiring application restart.
+  - **RSA Public Key Cache Invalidation (`src/utils/crypto.ts`)**: Listens to server address change events and invalidates cached RSA-OAEP public keys, guaranteeing that authentication credentials are encrypted using the target server's active key.
+  - **Reactive Composable (`src/composables/useServerUrl.ts`)**: Created reactive composable synchronizing server URL state (`serverUrl`, `isCustom`, `displayUrl`) across views and components.
+  - **Mobile Server Config Dialog (`src/components/mobile/ServerConfigDialog.vue`)**: Implemented mobile-tailored modal providing server address editing, real-time connectivity testing with status badges, and one-click reset to default.
+  - **Mobile Login Screen Integration (`src/views-mobile/LoginMobile.vue`)**: Added server status pill bar on the login view allowing pre-login server configuration and guidance on network connection errors.
+  - **Mobile Settings Page Integration (`src/views-mobile/SettingsMobile.vue`)**: Added dedicated server address settings card with live ping test and safeguard confirmation dialog when offline records are pending sync.
+  - **Unit Test Suites**: Added unit tests in `http.utils.spec.ts`, `use-server-url.spec.ts`, and `login-mobile.spec.ts`.
 
 ---
 

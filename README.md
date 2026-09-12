@@ -31,7 +31,7 @@ Minefolio 是一款极度轻量、安全、专业的**开源全资产管理与�
 * ⚡ **多源行情定时同步引擎**：对接 A股/公募基金/Yahoo Finance/Binance 行情接口，支持防抖定时调度、交易时段自动刷新与 HTTP 代理连通性检测。
 * 🤖 **AI 财务助理与全链路追踪 (AI Traces)**：多轮财务上下文对话、财务函数 Tool Calling 自动化执行，全量追踪会话耗时、Token 消耗、模型供应商与工具调用 Spans。
 * 🔐 **银行级安全与单点登录 (SSO)**：全链路 RSA-OAEP 前端口令加密传输、JWT 版本号即时吊销、TOTP 2FA 动态双因素认证、支持 GitHub 与通用 OIDC 单点登录。
-* 📱 **双端同构与移动端离线 SQLite (WASM)**：基于 Capacitor 与内置 base64 嵌入式 `sql.js` WASM SQLite 引擎，手机端无网环境下依然畅享完整记账体验。
+* 📱 **双端同构与移动端全功能适配**：基于 Capacitor 与内置 base64 嵌入式 `sql.js` WASM SQLite 引擎；支持动态配置自建服务端地址（局域网 IP / 公网域名均可，内置实时网络延迟探测与连通性自检），手机端无网环境下依然畅享完整记账体验与离线数据双向同步。
 * 🔬 **框架级可观测性管理后台**：内置 `/csilk-admin` 性能仪表盘，支持实时 RPS 与 HTTP 状态监控、工作流 Universal DAG 动态拓扑图可视化，以及 100Hz CPU 堆栈火焰图 Profiler。
 
 ---
@@ -233,8 +233,11 @@ Minefolio/
 │   │   ├── api/                  # 强类型 API 接口封装（桌面端与移动端共享）
 │   │   ├── stores/               # Pinia 状态管理（auth, category, chat, sync）
 │   │   ├── views/                # 桌面端页面组件（Dashboard, Assets, Reports, Plans...）
-│   │   ├── views-mobile/         # 移动端优化轻量视图（卡片流、OCR扫码抽屉、PlansMobile）
+│   │   ├── views-mobile/         # 移动端优化轻量视图（LoginMobile, SettingsMobile, PlansMobile...）
 │   │   ├── components/           # ECharts 图表、DAG 可视化、扫描弹窗
+│   │   │   └── mobile/           # 移动端专属组件（ServerConfigDialog 服务端配置弹窗）
+│   │   ├── composables/          # 组合式函数（useServerUrl, useTheme, useI18n）
+│   │   ├── utils/                # 通用工具库（http, server-url, crypto, format, offline-http）
 │   │   ├── db/                   # sql.js WASM 离线 SQLite 驱动
 │   │   ├── router/               # 桌面与移动端独立双路由
 │   │   └── types/                # 全局 TypeScript 接口模型定义

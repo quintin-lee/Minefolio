@@ -142,7 +142,7 @@ graph TB
 | `/ai/chat`、`/ai/workflows/run` | HTTP/1.1 + SSE (`text/event-stream`) | Bearer JWT | 流式 `event: delta\|done\|error` |
 | 静态资源 | HTTP/1.1 | 无 | 由 csilk 内置 `csilk_app_static()` 托管,生产由 Nginx 接管 |
 | 桌面→后端 | 直接连接 `:8080` (开发) / 经 Nginx (生产) | 同上 | Vite 代理 `/api` → `:8080` |
-| 移动端→后端 | 经 Nginx | 同上 | `VITE_API_URL` 编译期硬编码 |
+| 移动端→后端 | 直接连接或经 Nginx | 同上 | 支持动态配置 (`localStorage`) 与 `VITE_API_URL` 编译期回退 |
 | 移动端离线 | 无网络 | N/A | sql.js WASM + 本地 SQLite |
 
 ---
@@ -799,10 +799,14 @@ graph TB
 - 移动端 `views-mobile/` 独立页面集,共享 `Layout.vue` 风格但布局简化为单列
 - 图表统一 ECharts(`AssetTrendLine.vue` 等)
 
-**离线 (Mobile Only):**
+**移动端网络与离线通信 (Mobile Networking & Offline):**
+- **服务端地址动态配置**: 支持用户在登录页 (`LoginMobile.vue`) 与设置页 (`SettingsMobile.vue`) 自由配置自建后端服务地址（局域网 IP 如 `http://192.168.1.100:8080` 或域名反向代理）；由 `src/utils/server-url.ts` 规范化协议并在 `localStorage` (`minefolio_server_url`) 持久化，自动回退至 `VITE_API_URL` 或内置相对路径
+- **一键连通性探测**: 内置 `testServerConnection()` 针对 `/api/system/status` 执行心跳自检，并测量实时网络往返延迟（ms）与验证服务端版本
+- **动态网络绑定与密钥重置**: 全局 Axios 实例自动监听地址更新并即时热切换默认 `baseURL` 与请求拦截器；同时通知 `crypto.ts` 自动清空并重新获取目标服务端的 RSA-OAEP 公钥
 - sql.js WASM 嵌入为 base64 字符串(`src/db/generated/sql-wasm-base64.ts`),Capacitor WebView 不可依赖网络 fetch
 - 本地 SQLite schema 镜像服务端 16 张表,用于离线 CRUD
 - `stores/sync.ts` 维护待同步队列,联网后批量 POST
+
 
 **关键不变量:**
 - 所有 `onMounted` 异步初始化 MUST 包 `try/catch`
