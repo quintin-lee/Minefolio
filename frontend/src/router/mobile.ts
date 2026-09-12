@@ -6,6 +6,10 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     {
+      path: '/',
+      redirect: '/m/dashboard',
+    },
+    {
       path: '/m/login',
       name: 'MobileLogin',
       component: () => import('@/views-mobile/LoginMobile.vue'),
@@ -40,8 +44,8 @@ router.beforeEach(async (to, _from, next) => {
   const auth = useAuthStore()
   if (auth.isInitialized === null) await auth.checkSystemStatus()
   if (auth.isInitialized === false) return next('/m/login')
-  if (to.meta.requiresAuth !== false && !auth.token) next('/m/login')
-  else next()
+  if (to.meta.requiresAuth !== false && !auth.token) return next('/m/login')
+  next()
 })
 
 export default router
