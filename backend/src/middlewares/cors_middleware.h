@@ -20,7 +20,8 @@
  *
  * @note 环境变量支持：
  *   - MINEFOLIO_CORS_ORIGIN: 若设置非空，则固定允许此源并开启凭据（Allow-Credentials: true）；
- *     若未设置，则默认反射请求中的 Origin 头或回退为 "*"，并禁用凭据。
+ *     若未设置，则默认反射请求中的 Origin 头或回退为 "*"，同样开启凭据以支持
+ *     移动端 App（https://localhost 等跨域 origin）携带 Cookie 的 axios 请求。
  * @note 允许的 HTTP 方法：GET, POST, PUT, DELETE, OPTIONS。
  * @note 允许的 HTTP 头部：Content-Type, Authorization, X-CSRF-Token, X-Ledger-Id。
  * @note 线程安全性：线程安全，仅读取环境变量及请求上下文。

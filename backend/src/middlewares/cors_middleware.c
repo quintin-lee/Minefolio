@@ -28,7 +28,7 @@ cors_middleware_wrapper(csilk_ctx_t* c)
     } else {
         const char* req_origin = csilk_get_header(c, "Origin");
         cors.allow_origin = req_origin && req_origin[0] ? req_origin : "*";
-        cors.allow_credentials = 0;
+        cors.allow_credentials = 1;
     }
     cors.allow_methods = "GET,POST,PUT,DELETE,OPTIONS";
     cors.allow_headers = "Content-Type,Authorization,X-CSRF-Token,X-Ledger-Id";
