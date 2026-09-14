@@ -41,9 +41,14 @@ ai_runtime_status_t ai_runtime_execute_stream(csilk_db_pool_t*              pool
  * @brief 执行统一 AI Runtime 同步阻塞 Agent 循环
  * @param pool 数据库连接池（可为 NULL）
  * @param ctx 运行时上下文容器
+ * @param out_trace [out] 可选输出参数。当 ctx->trace 为 NULL 时，Runtime 自动创建的
+ *                  trace 所有权转交给调用方（通过 *out_trace 返回，调用方负责
+ *                  ai_trace_free）；若 ctx->trace 已设置则 *out_trace = ctx->trace
+ *                  （所有权不转移，调用方不释放）。传 NULL 表示丢弃自动创建的 trace。
  * @return ai_runtime_result_t 包含完整输出文本与执行指标的返回对象
  */
-ai_runtime_result_t ai_runtime_execute(csilk_db_pool_t* pool, ai_runtime_context_t* ctx);
+ai_runtime_result_t
+ai_runtime_execute(csilk_db_pool_t* pool, ai_runtime_context_t* ctx, ai_trace_t** out_trace);
 
 /* 兼容旧签名 */
 typedef void (*ai_stream_chunk_cb)(const char* chunk, void* user_data);

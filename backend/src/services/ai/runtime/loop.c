@@ -158,16 +158,16 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
     }
     size_t initial_mc = mc;
 
-    /* 6. 链路追踪初始化 */
-    ai_trace_t  local_trace;
+    /* 6. 链路追踪初始化：调用方未预设 trace 时自动创建堆对象，结束后释放 */
     ai_trace_t* trace = ctx->trace;
-    int         created_local_trace = 0;
+    int         auto_created_trace = 0;
     if (!trace) {
-        ai_trace_init(&local_trace, ctx->user_id, ctx->session_id);
-        ai_trace_set_provider(&local_trace, prov->id, model);
-        ai_trace_set_params(&local_trace, ctx->temperature, ctx->max_tokens, ctx->top_p);
-        trace = &local_trace;
-        created_local_trace = 1;
+        trace = ai_trace_create(ctx->user_id, ctx->session_id);
+        if (trace) {
+            auto_created_trace = 1;
+            ai_trace_set_provider(trace, prov->id, model);
+            ai_trace_set_params(trace, ctx->temperature, ctx->max_tokens, ctx->top_p);
+        }
     }
 
     loop_stream_bridge_t bridge = {
@@ -381,8 +381,8 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
         if (pool) {
             mf_ai_trace_save(pool, trace);
         }
-        if (created_local_trace) {
-            ai_trace_free(trace);
+        if (auto_created_trace == 1) {
+            ai_trace_destroy(trace);
         }
     }
 
@@ -453,7 +453,7 @@ exec_sync_chunk(const char* chunk, void* udata)
 }
 
 ai_runtime_result_t
-ai_runtime_execute(csilk_db_pool_t* pool, ai_runtime_context_t* ctx)
+ai_runtime_execute(csilk_db_pool_t* pool, ai_runtime_context_t* ctx, ai_trace_t** out_trace)
 {
     ai_runtime_result_t   res = {0};
     exec_sync_collector_t coll = {0};
@@ -466,6 +466,16 @@ ai_runtime_execute(csilk_db_pool_t* pool, ai_runtime_context_t* ctx)
         .on_done = NULL,
     };
 
+    /* out_trace 非空且 ctx 未预设 trace 时，预先挂堆 trace 让 stream 视为调用方传入而不释放；
+     * 执行结束后经 *out_trace 转交所有权 */
+    ai_trace_t* pre_created = NULL;
+    if (out_trace && ctx && !ctx->trace) {
+        pre_created = ai_trace_create(ctx->user_id, ctx->session_id);
+        if (pre_created) {
+            ctx->trace = pre_created;
+        }
+    }
+
     res.status = ai_runtime_execute_stream(pool, ctx, &cbs, &coll);
     res.stats = ctx ? ctx->stats : (ai_runtime_stats_t){0};
     if (res.status.code == AI_RUNTIME_ERR_OK) {
@@ -475,6 +485,15 @@ ai_runtime_execute(csilk_db_pool_t* pool, ai_runtime_context_t* ctx)
             free(coll.content);
         }
         res.final_content = NULL;
+    }
+
+    if (out_trace) {
+        if (pre_created) {
+            *out_trace = pre_created;
+            ctx->trace = NULL;
+        } else if (ctx) {
+            *out_trace = ctx->trace;
+        }
     }
 
     return res;
@@ -512,7 +531,7 @@ ai_runtime_run_loop(csilk_db_pool_t* pool, const ai_loop_options_t* opts, ai_tra
         csilk_json_free(hist);
     }
 
-    ai_runtime_result_t res = ai_runtime_execute(pool, &ctx);
+    ai_runtime_result_t res = ai_runtime_execute(pool, &ctx, NULL);
     ai_runtime_context_free(&ctx);
 
     return res.final_content;

@@ -136,7 +136,7 @@ static void test_runtime_agent_loop_cancel(void) {
     volatile bool cancel = true;
     ctx.cancel_token = &cancel;
 
-    ai_runtime_result_t res = ai_runtime_execute(NULL, &ctx);
+    ai_runtime_result_t res = ai_runtime_execute(NULL, &ctx, NULL);
     assert(res.status.code == AI_RUNTIME_ERR_CANCELLED);
     assert(res.final_content == NULL);
 
@@ -149,7 +149,7 @@ static void test_runtime_validation_rejection(void) {
     ai_runtime_context_init(&ctx);
     ctx.user_id = 0; /* Invalid user_id */
 
-    ai_runtime_result_t res = ai_runtime_execute(NULL, &ctx);
+    ai_runtime_result_t res = ai_runtime_execute(NULL, &ctx, NULL);
     assert(res.status.code == AI_RUNTIME_ERR_VALIDATION);
     assert(res.final_content == NULL);
 
