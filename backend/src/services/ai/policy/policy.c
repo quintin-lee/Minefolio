@@ -1,12 +1,13 @@
 #include "services/ai/policy/policy.h"
 #include "common/db.h"
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <pthread.h>
 
-#define MAX_RATE_LIMIT_USERS 128
+#define MAX_RATE_LIMIT_USERS 256
 
 typedef struct {
     int64_t user_id;
@@ -21,7 +22,9 @@ static ai_policy_rules_t s_rules = {
     .enforce_confirmation = true,
 };
 
+/* LRU 环形缓冲区：s_rate_limit_head 指向下一个可写槽位（满时即淘汰最旧条目） */
 static user_rate_limit_t s_rate_limits[MAX_RATE_LIMIT_USERS];
+static size_t            s_rate_limit_head = 0;
 static size_t            s_rate_limit_count = 0;
 static pthread_mutex_t   s_policy_lock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -50,7 +53,22 @@ ai_policy_reset_frequency_limits(void)
 {
     pthread_mutex_lock(&s_policy_lock);
     s_rate_limit_count = 0;
+    s_rate_limit_head = 0;
     pthread_mutex_unlock(&s_policy_lock);
+}
+
+/* 在 s_rate_limits 内查找 user_id；命中返回下标，否则返回 SIZE_MAX。 */
+static size_t
+rate_limit_find(int64_t user_id)
+{
+    size_t scan =
+        (s_rate_limit_count < MAX_RATE_LIMIT_USERS) ? s_rate_limit_count : MAX_RATE_LIMIT_USERS;
+    for (size_t i = 0; i < scan; i++) {
+        if (s_rate_limits[i].user_id == user_id) {
+            return i;
+        }
+    }
+    return SIZE_MAX;
 }
 
 static bool
@@ -61,23 +79,22 @@ check_and_increment_frequency_locked(int64_t user_id, int max_per_minute)
     }
     int64_t current_minute = (int64_t)time(NULL) / 60;
 
-    for (size_t i = 0; i < s_rate_limit_count; i++) {
-        if (s_rate_limits[i].user_id == user_id) {
-            if (s_rate_limits[i].minute_window == current_minute) {
-                if (s_rate_limits[i].count >= max_per_minute) {
-                    return false; /* 触发限流 */
-                }
-                s_rate_limits[i].count++;
-                return true;
-            } else {
-                /* 新的一分钟，重置计数 */
-                s_rate_limits[i].minute_window = current_minute;
-                s_rate_limits[i].count = 1;
-                return true;
+    size_t idx = rate_limit_find(user_id);
+    if (idx != SIZE_MAX) {
+        if (s_rate_limits[idx].minute_window == current_minute) {
+            if (s_rate_limits[idx].count >= max_per_minute) {
+                return false; /* 触发限流 */
             }
+            s_rate_limits[idx].count++;
+        } else {
+            /* 新的一分钟，重置计数 */
+            s_rate_limits[idx].minute_window = current_minute;
+            s_rate_limits[idx].count = 1;
         }
+        return true;
     }
 
+    /* 未命中：表未填满则追加，已填满则覆写 head 槽位淘汰最旧条目 */
     if (s_rate_limit_count < MAX_RATE_LIMIT_USERS) {
         s_rate_limits[s_rate_limit_count].user_id = user_id;
         s_rate_limits[s_rate_limit_count].minute_window = current_minute;
@@ -86,6 +103,10 @@ check_and_increment_frequency_locked(int64_t user_id, int max_per_minute)
         return true;
     }
 
+    s_rate_limits[s_rate_limit_head].user_id = user_id;
+    s_rate_limits[s_rate_limit_head].minute_window = current_minute;
+    s_rate_limits[s_rate_limit_head].count = 1;
+    s_rate_limit_head = (s_rate_limit_head + 1) % MAX_RATE_LIMIT_USERS;
     return true;
 }
 
