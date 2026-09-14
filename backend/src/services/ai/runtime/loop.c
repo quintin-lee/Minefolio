@@ -321,7 +321,8 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
                 csilk_json_free(err_obj);
             } else {
                 /* 2. 工具执行 (Tool Execution) */
-                result_str = ai_tools_execute_parsed(pool, ctx->user_id, args, tc->name);
+                result_str =
+                    ai_tools_execute_parsed(pool, ctx->user_id, ctx->session_id, args, tc->name);
                 tool_success = (result_str != NULL);
                 if (!result_str) {
                     result_str = strdup("{\"error\":\"tool execution failed\"}");
