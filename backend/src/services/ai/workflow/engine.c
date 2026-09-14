@@ -3,19 +3,20 @@
 #include "services/ai/workflows/portfolio_analysis.h"
 #include "services/ai/workflows/financial_health.h"
 #include "services/ai/workflows/cashflow_forecast.h"
+#include <pthread.h>
 #include <string.h>
 
 #define MAX_WORKFLOWS 32
 static ai_workflow_graph_t g_workflows[MAX_WORKFLOWS];
 static size_t              g_workflow_count = 0;
-static bool                g_initialized = false;
+
+/* 工作流表为只读注册：启动后只读，find/get_all 无需持锁 */
+static pthread_once_t  s_engine_once = PTHREAD_ONCE_INIT;
+static pthread_mutex_t s_engine_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static void
 ensure_init_builtin_workflows(void)
 {
-    if (g_initialized) {
-        return;
-    }
     g_workflow_count = 0;
 
     ai_workflow_register(ai_workflow_monthly_review_get_graph());
@@ -31,15 +32,12 @@ ensure_init_builtin_workflows(void)
     ai_workflow_register(ai_workflow_cashflow_forecast_get_graph());
     ai_workflow_register(ai_workflow_bill_calendar_get_graph());
     ai_workflow_register(ai_workflow_health_score_get_graph());
-
-    g_initialized = true;
 }
 
 void
 ai_workflow_engine_init(void)
 {
-    g_initialized = false;
-    ensure_init_builtin_workflows();
+    pthread_once(&s_engine_once, ensure_init_builtin_workflows);
 }
 
 int
@@ -48,13 +46,16 @@ ai_workflow_register(const ai_workflow_graph_t* graph)
     if (!graph || !graph->id || g_workflow_count >= MAX_WORKFLOWS) {
         return -1;
     }
+    pthread_mutex_lock(&s_engine_mutex);
     for (size_t i = 0; i < g_workflow_count; i++) {
         if (strcmp(g_workflows[i].id, graph->id) == 0) {
             g_workflows[i] = *graph;
+            pthread_mutex_unlock(&s_engine_mutex);
             return 0;
         }
     }
     g_workflows[g_workflow_count++] = *graph;
+    pthread_mutex_unlock(&s_engine_mutex);
     return 0;
 }
 
@@ -64,7 +65,7 @@ ai_workflow_find(const char* workflow_id)
     if (!workflow_id) {
         return NULL;
     }
-    ensure_init_builtin_workflows();
+    ai_workflow_engine_init();
     for (size_t i = 0; i < g_workflow_count; i++) {
         if (strcmp(g_workflows[i].id, workflow_id) == 0) {
             return &g_workflows[i];
@@ -76,7 +77,7 @@ ai_workflow_find(const char* workflow_id)
 csilk_json_t*
 ai_workflow_get_all_definitions_json(void)
 {
-    ensure_init_builtin_workflows();
+    ai_workflow_engine_init();
     csilk_json_t* arr = csilk_json_array();
     for (size_t i = 0; i < g_workflow_count; i++) {
         const ai_workflow_graph_t* wf = &g_workflows[i];

@@ -6,6 +6,7 @@
 #include "services/ai/tools/cashflow_tool.h"
 #include "services/ai/tools/portfolio_tool.h"
 #include "services/ai/tools/report_tool.h"
+#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -17,12 +18,13 @@ static bool            s_initialized = false;
 static csilk_ai_tool_t s_csilk_tools[MAX_TOOLS];
 static size_t          s_csilk_tool_count = 0;
 
-void
-ai_tool_registry_init(void)
+/* 工具表为只读注册：启动后只读，find/list 无需持锁 */
+static pthread_once_t  s_registry_once = PTHREAD_ONCE_INIT;
+static pthread_mutex_t s_registry_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+static void
+registry_init_impl(void)
 {
-    if (s_initialized) {
-        return;
-    }
     s_tool_count = 0;
     s_csilk_tool_count = 0;
 
@@ -37,19 +39,28 @@ ai_tool_registry_init(void)
     s_initialized = true;
 }
 
+void
+ai_tool_registry_init(void)
+{
+    pthread_once(&s_registry_once, registry_init_impl);
+}
+
 int
 ai_tool_register(const ai_tool_t* tool)
 {
     if (!tool || !tool->name || !tool->name[0] || s_tool_count >= MAX_TOOLS) {
         return -1;
     }
+    pthread_mutex_lock(&s_registry_mutex);
     for (size_t i = 0; i < s_tool_count; i++) {
         if (strcmp(s_registered_tools[i].name, tool->name) == 0) {
             s_registered_tools[i] = *tool;
+            pthread_mutex_unlock(&s_registry_mutex);
             return 0;
         }
     }
     s_registered_tools[s_tool_count++] = *tool;
+    pthread_mutex_unlock(&s_registry_mutex);
     return 0;
 }
 
@@ -59,15 +70,18 @@ ai_tool_unregister(const char* name)
     if (!name || !name[0]) {
         return -1;
     }
+    pthread_mutex_lock(&s_registry_mutex);
     for (size_t i = 0; i < s_tool_count; i++) {
         if (strcmp(s_registered_tools[i].name, name) == 0) {
             for (size_t j = i; j + 1 < s_tool_count; j++) {
                 s_registered_tools[j] = s_registered_tools[j + 1];
             }
             s_tool_count--;
+            pthread_mutex_unlock(&s_registry_mutex);
             return 0;
         }
     }
+    pthread_mutex_unlock(&s_registry_mutex);
     return -1;
 }
 
