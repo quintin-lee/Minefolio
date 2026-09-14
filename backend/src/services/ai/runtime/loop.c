@@ -373,6 +373,13 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
                               "Max turns reached");
     }
 
+    /* 7.5 被中断/超时轮次的部分 assistant 文本持久化，避免流式输出丢失 */
+    if (!got_text && pool && ctx->session_id > 0 && bridge.accumulated && bridge.accumulated[0] &&
+        status.code != AI_RUNTIME_ERR_MODEL) {
+        mf_ai_message_insert(pool, ctx->session_id, "assistant", bridge.accumulated, model);
+        got_text = 1;
+    }
+
     /* 8. 链路追踪结算并保存 */
     if (trace) {
         ai_trace_calculate_tokens_and_cost(
