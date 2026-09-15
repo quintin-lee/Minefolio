@@ -14,10 +14,15 @@
 #define SUMMARY_TRIGGER_RATIO 0.8
 
 typedef struct {
-    int64_t          user_id;
-    int64_t          session_id;
-    char             provider_id[64];
-    char             model_name[128];
+    int64_t user_id;
+    int64_t session_id;
+    /* Provider 配置快照：在 trigger 线程（g_config 有效时）深拷贝，detached worker 只读本地副本，
+     * 与 g_config 生命周期解耦，消除 UAF。 */
+    char             dname[16];
+    char             api_key[512];
+    char             base_url[512];
+    char             model[128];
+    int              has_key;
     csilk_db_pool_t* pool;
     size_t           inflight_idx;
 } summary_task_t;
@@ -150,32 +155,13 @@ summary_worker(summary_task_t* task)
             transcript);
     }
 
-    ai_config_t*   cfg = ai_get_config();
-    ai_provider_t* prov = NULL;
-    if (cfg) {
-        prov = ai_config_find_provider(cfg, task->provider_id[0] ? task->provider_id : NULL);
-        if (!prov) {
-            prov = ai_config_default_provider(cfg);
-        }
-    }
-    if (!prov || (!prov->api_key[0] && strcmp(prov->id, "ollama") != 0)) {
-        free(user_prompt);
-        free(transcript);
-        free(prev);
-        if (hist) {
-            csilk_json_free(hist);
-        }
-        free(task);
-        return;
-    }
+    /* Provider 配置已在 trigger 线程快照到 task，worker 只读本地副本，
+     * 与 g_config 生命周期完全解耦。 */
+    const char* dname = task->dname;
+    const char* key = task->api_key;
+    const char* model = task->model;
 
-    const char* dname = (strcmp(prov->id, "ollama") == 0) ? "ollama" : "openai";
-    const char* key = (prov->api_key[0] != '\0') ? prov->api_key : "dummy";
-    const char* model = task->model_name[0]                       ? task->model_name
-                        : (prov->models[0] && prov->models[0][0]) ? prov->models[0]
-                                                                  : "gpt-4o-mini";
-
-    csilk_ai_t* inst = csilk_ai_new(dname, key, prov->base_url[0] ? prov->base_url : NULL);
+    csilk_ai_t* inst = csilk_ai_new(dname, key, task->base_url[0] ? task->base_url : NULL);
     if (!inst) {
         free(user_prompt);
         free(transcript);
@@ -256,10 +242,45 @@ ai_summary_maybe_trigger(csilk_db_pool_t* pool, ai_runtime_context_t* ctx)
     }
     task->user_id = ctx->user_id;
     task->session_id = ctx->session_id;
-    snprintf(task->provider_id, sizeof(task->provider_id), "%s", ctx->provider_id);
-    snprintf(task->model_name, sizeof(task->model_name), "%s", ctx->model_name);
     task->pool = pool;
     task->inflight_idx = idx;
+
+    /* 快照 provider 配置到 task：g_config 此刻由调用者（主线程）保证有效，
+     * worker 只读本地副本，彻底消除 detached 线程对 g_config 的生命周期耦合。 */
+    {
+        ai_config_t*   cfg = ai_get_config();
+        ai_provider_t* prov = NULL;
+        if (cfg) {
+            prov = ai_config_find_provider(cfg, ctx->provider_id[0] ? ctx->provider_id : NULL);
+            if (!prov) {
+                prov = ai_config_default_provider(cfg);
+            }
+        }
+        if (prov && (prov->api_key[0] || strcmp(prov->id, "ollama") == 0)) {
+            task->has_key = 1;
+            snprintf(task->dname,
+                     sizeof(task->dname),
+                     "%s",
+                     strcmp(prov->id, "ollama") == 0 ? "ollama" : "openai");
+            snprintf(
+                task->api_key, sizeof(task->api_key), "%s", prov->api_key[0] ? prov->api_key : "");
+            snprintf(task->base_url,
+                     sizeof(task->base_url),
+                     "%s",
+                     prov->base_url[0] ? prov->base_url : "");
+            snprintf(task->model,
+                     sizeof(task->model),
+                     "%s",
+                     ctx->model_name[0]                        ? ctx->model_name
+                     : (prov->models[0] && prov->models[0][0]) ? prov->models[0]
+                                                               : "gpt-4o-mini");
+        }
+    }
+    if (!task->has_key) {
+        free(task);
+        inflight_release(idx);
+        return;
+    }
 
     pthread_t tid;
     if (pthread_create(&tid, NULL, summary_worker_entry, task) != 0) {
