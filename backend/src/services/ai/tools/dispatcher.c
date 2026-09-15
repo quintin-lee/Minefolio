@@ -1,5 +1,6 @@
 #include "services/ai/tools/dispatcher.h"
 #include "services/ai/tools/validation.h"
+#include "services/ai/tools/mcp/mcp_bridge.h"
 #include "services/ai/policy/policy.h"
 #include "services/ai/policy/audit.h"
 #include <stdio.h>
@@ -43,6 +44,12 @@ ai_tool_dispatch_parsed(const ai_tool_context_t* ctx,
 
     if (!tool_name || !tool_name[0]) {
         return strdup("{\"error\":\"missing tool name\"}");
+    }
+
+    /* 1.5 MCP 前缀路由 (MCP Tool Resolver) — 远端工具直接经 mcp_bridge 分发，
+       不进入内置 ai_tool_find / schema / 业务校验；R-MCP 策略与审计在 bridge 内完成 */
+    if (strncmp(tool_name, "mcp:", 4) == 0) {
+        return mcp_bridge_dispatch(ctx, tool_name, args);
     }
 
     /* 2. 工具寻址 (Tool Resolver) */

@@ -40,6 +40,20 @@ char* ai_tools_execute_parsed(csilk_db_pool_t* pool,
                               const char*      name);
 
 /**
+ * @brief Same as ai_tools_execute_parsed but threads a cooperative cancel
+ *        flag through to the tool context (e.g. MCP dispatch can abort a
+ *        pending remote call when the user cancels the conversation).
+ * @param cancel_token Opaque flag the runtime sets when cancelled; may be NULL.
+ * @return Heap-allocated JSON result string (caller must free), or NULL on error.
+ */
+char* ai_tools_execute_parsed_cancel(csilk_db_pool_t*     pool,
+                                     int64_t              user_id,
+                                     int64_t              session_id,
+                                     csilk_json_t*        args,
+                                     const char*          name,
+                                     const volatile bool* cancel_token);
+
+/**
  * @brief Parse an uploaded file and return extracted text content.
  * @param pool       Database pool (may be NULL).
  * @param data       Raw file data.

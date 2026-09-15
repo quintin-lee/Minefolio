@@ -14,14 +14,15 @@ extern "C" {
  * 封装工具执行所需的环境变量，避免工具直接依赖 HTTP 请求。
  */
 typedef struct {
-    csilk_db_pool_t* pool;         /**< 数据库连接池指针 */
-    int64_t          user_id;      /**< 当前操作用户 ID */
-    int64_t          session_id;   /**< 当前 AI 对话会话 ID */
-    char             trace_id[64]; /**< 当前请求链路追踪 ID */
-    uint32_t         permissions;  /**< 用户权限位图 */
-    char             locale[16];   /**< 用户语言区域 (如 "zh-CN") */
-    char             timezone[32]; /**< 用户时区 (如 "Asia/Shanghai") */
-    csilk_json_t*    metadata;     /**< 扩展元数据键值对 */
+    csilk_db_pool_t*     pool;         /**< 数据库连接池指针 */
+    int64_t              user_id;      /**< 当前操作用户 ID */
+    int64_t              session_id;   /**< 当前 AI 对话会话 ID */
+    char                 trace_id[64]; /**< 当前请求链路追踪 ID */
+    uint32_t             permissions;  /**< 用户权限位图 */
+    char                 locale[16];   /**< 用户语言区域 (如 "zh-CN") */
+    char                 timezone[32]; /**< 用户时区 (如 "Asia/Shanghai") */
+    csilk_json_t*        metadata;     /**< 扩展元数据键值对 */
+    const volatile bool* cancel_token; /**< 协作式取消标志（NULL 表示未接入取消） */
 } ai_tool_context_t;
 
 /**

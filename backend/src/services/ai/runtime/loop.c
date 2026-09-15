@@ -6,10 +6,12 @@
 #include "services/ai/policy/policy.h"
 #include "services/ai/tools/dispatcher.h"
 #include "services/ai/tools/registry.h"
+#include "services/ai/tools/mcp/mcp_bridge.h"
 #include "services/ai_tools.h"
 #include "services/ai_service.h"
 #include "domain/ai/rules.h"
 #include "infrastructure/repositories/ai_session_repo_impl.h"
+#include "common/db.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -128,11 +130,14 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
         return status;
     }
 
-    /* 4. 解析可用工具集 */
+    /* 4. 解析可用工具集 — 若 ctx 未预置工具，则合并内置工具 + 该用户已启用的 MCP 远端工具
+       （mcp_bridge 深拷贝为堆数组，须在清理分支经 mcp_bridge_free_merged 统一释放） */
     size_t                 tool_count = ctx->tool_count;
     const csilk_ai_tool_t* tools = ctx->tools;
+    int                    mcp_merged = 0;
     if (!tools && tool_count == 0) {
-        tools = ai_tools_get_definitions(&tool_count);
+        tools = mcp_bridge_merge_tools(db_get_pool(), ctx->user_id, &tool_count);
+        mcp_merged = (tools != NULL);
     }
 
     /* 5. 组装初始消息结构数组 */
@@ -324,9 +329,10 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
                 result_str = csilk_json_serialize(err_obj, &elen);
                 csilk_json_free(err_obj);
             } else {
-                /* 2. 工具执行 (Tool Execution) */
-                result_str =
-                    ai_tools_execute_parsed(pool, ctx->user_id, ctx->session_id, args, tc->name);
+                /* 2. 工具执行 (Tool Execution)
+                   线程化协作式取消标志：MCP 远端调用可在用户取消时中止。 */
+                result_str = ai_tools_execute_parsed_cancel(
+                    pool, ctx->user_id, ctx->session_id, args, tc->name, ctx->cancel_token);
                 tool_success = (result_str != NULL);
                 if (!result_str) {
                     result_str = strdup("{\"error\":\"tool execution failed\"}");
@@ -410,6 +416,9 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
 
     /* 10. 资源清理 */
     csilk_ai_free(ai_inst);
+    if (mcp_merged) {
+        mcp_bridge_free_merged(tools, tool_count);
+    }
     if (bridge.accumulated) {
         free(bridge.accumulated);
     }

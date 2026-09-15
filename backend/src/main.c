@@ -26,6 +26,7 @@
 #include "interfaces/http/controllers/ledger_controller.h"
 #include "interfaces/http/controllers/import_rule_controller.h"
 #include "interfaces/http/controllers/receipt_controller.h"
+#include "interfaces/http/controllers/ai_mcp_controller.h"
 #include "services/market/market_scheduler.h"
 #include "services/ai_service.h"
 #include "dtos/request.h"
@@ -120,6 +121,7 @@ main(int argc, char** argv)
     register_ledger_routes(app);
     register_import_rule_routes(app);
     register_receipt_routes(app);
+    register_ai_mcp_routes(app);
     csilk_admin_serve_secure(app, "/csilk-admin", NULL);
 
     const char* dist = "./frontend/dist";
