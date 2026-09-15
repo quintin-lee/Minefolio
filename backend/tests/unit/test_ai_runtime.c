@@ -99,10 +99,50 @@ static void test_runtime_memory_window(void) {
     assert(strcmp(csilk_json_get_string(last, "role"), "user") == 0);
     assert(strcmp(csilk_json_get_string(last, "content"), "Latest Input") == 0);
 
+    /* 2. 注入历史摘要：system + 摘要system + 4 条历史 + 1 个 user = 7 条 */
+    csilk_json_t* msgs2 = ai_memory_build_messages("System Prompt", hist, "Latest Input", 4, "这是历史摘要");
+    assert(msgs2 != NULL);
+    assert(csilk_json_array_size(msgs2) == 7);
+    csilk_json_t* summary_msg = csilk_json_array_get(msgs2, 1);
+    assert(strcmp(csilk_json_get_string(summary_msg, "role"), "system") == 0);
+    assert(strstr(csilk_json_get_string(summary_msg, "content"), "这是历史摘要") != NULL);
+    csilk_json_free(msgs2);
+
     csilk_json_free(msgs);
     csilk_json_free(hist);
 
     printf("PASS: test_runtime_memory_window\n");
+}
+
+#include "services/ai/memory/summary.h"
+
+static void test_summary_trigger_guards(void) {
+    /* pool 为 NULL：跳过，不 spawn 线程 */
+    ai_runtime_context_t ctx;
+    ai_runtime_context_init(&ctx);
+    ctx.session_id = 1;
+    ctx.user_id = 1;
+    ctx.stats.total_tokens = 100000;
+    ai_summary_maybe_trigger(NULL, &ctx);
+    ai_runtime_context_free(&ctx);
+
+    /* session_id 为 0：跳过 */
+    ai_runtime_context_init(&ctx);
+    ctx.user_id = 1;
+    ctx.stats.total_tokens = 100000;
+    ai_summary_maybe_trigger((csilk_db_pool_t*)0x1, &ctx); /* 非 NULL pool，但 session 无效 */
+    ai_runtime_context_free(&ctx);
+
+    /* 未达 80% 阈值：跳过 */
+    ai_runtime_context_init(&ctx);
+    ctx.user_id = 1;
+    ctx.session_id = 1;
+    ctx.stats.total_tokens = 100;
+    ctx.limits.token_budget = 1000;
+    ai_summary_maybe_trigger((csilk_db_pool_t*)0x1, &ctx);
+    ai_runtime_context_free(&ctx);
+
+    printf("PASS: test_summary_trigger_guards\n");
 }
 
 #include "services/ai/runtime/context.h"
@@ -206,6 +246,7 @@ int main(void) {
     test_runtime_error_taxonomy();
     test_runtime_limits_and_budgets();
     test_runtime_memory_window();
+    test_summary_trigger_guards();
     test_runtime_context_lifecycle();
     test_runtime_agent_loop_cancel();
     test_runtime_validation_rejection();
