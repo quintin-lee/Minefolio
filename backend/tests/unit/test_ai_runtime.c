@@ -87,7 +87,7 @@ static void test_runtime_memory_window(void) {
     }
 
     /* 1. 窗口截断为 4 条历史：应包含 1 个 system + 4 个历史消息 + 1 个最新 prompt = 6 条 */
-    csilk_json_t* msgs = ai_memory_build_messages("System Prompt", hist, "Latest Input", 4);
+    csilk_json_t* msgs = ai_memory_build_messages("System Prompt", hist, "Latest Input", 4, NULL);
     assert(msgs != NULL);
     assert(csilk_json_array_size(msgs) == 6);
 

@@ -5,7 +5,8 @@ csilk_json_t*
 ai_memory_build_messages(const char*         system_prompt,
                          const csilk_json_t* history_messages,
                          const char*         user_prompt,
-                         int                 max_history)
+                         int                 max_history,
+                         const char*         summary_text)
 {
     csilk_json_t* messages = csilk_json_array();
 
@@ -18,7 +19,20 @@ ai_memory_build_messages(const char*         system_prompt,
     csilk_json_add_string(sys_msg, "content", sys);
     csilk_json_array_append(messages, sys_msg);
 
-    /* 2. Sliding window of history messages */
+    /* 2. 历史摘要 system 消息（滑动窗口之前注入） */
+    if (summary_text && summary_text[0]) {
+        char          combined[4096];
+        csilk_json_t* sum_msg = csilk_json_object();
+        snprintf(combined,
+                 sizeof(combined),
+                 "[历史对话摘要]\n%s\n[摘要结束]\n请结合以上摘要与后续对话上下文回答。",
+                 summary_text);
+        csilk_json_add_string(sum_msg, "role", "system");
+        csilk_json_add_string(sum_msg, "content", combined);
+        csilk_json_array_append(messages, sum_msg);
+    }
+
+    /* 3. Sliding window of history messages */
     int win_size = max_history > 0 ? max_history : 20;
     if (history_messages && csilk_json_is_array(history_messages)) {
         size_t total = csilk_json_array_size(history_messages);
@@ -36,7 +50,7 @@ ai_memory_build_messages(const char*         system_prompt,
         }
     }
 
-    /* 3. Latest User Prompt */
+    /* 4. Latest User Prompt */
     if (user_prompt && user_prompt[0]) {
         csilk_json_t* u_msg = csilk_json_object();
         csilk_json_add_string(u_msg, "role", "user");

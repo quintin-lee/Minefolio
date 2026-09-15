@@ -456,8 +456,10 @@ ai_chat_handler(csilk_ctx_t* c)
 
     /* 构建受控记忆窗口 messages */
     csilk_json_free(rctx.messages);
+    char* summary = mf_ai_summary_get(pool, sid);
     rctx.messages = ai_memory_build_messages(
-        g_config.system_prompt, history, regenerate ? NULL : content, ctx_size);
+        g_config.system_prompt, history, regenerate ? NULL : content, ctx_size, summary);
+    free(summary);
 
     /* 初始化 Trace */
     ai_trace_t trace;
@@ -881,7 +883,7 @@ ai_service_stream_report(csilk_ctx_t* c,
     snprintf(rctx.provider_id, sizeof(rctx.provider_id), "%s", prov->id);
     snprintf(rctx.model_name, sizeof(rctx.model_name), "%s", g_config.default_model);
     csilk_json_free(rctx.messages);
-    rctx.messages = ai_memory_build_messages(sys_prompt, NULL, user_prompt, 1);
+    rctx.messages = ai_memory_build_messages(sys_prompt, NULL, user_prompt, 1, NULL);
     rctx.trace = &trace;
 
     ai_runtime_status_t status = ai_runtime_execute_stream(db_get_pool(), &rctx, &cbs, &sse_bridge);

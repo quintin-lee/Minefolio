@@ -36,3 +36,11 @@ int64_t mf_ai_message_insert(csilk_db_pool_t* pool,
                              const char*      model);
 
 int mf_ai_message_delete_last_assistant(csilk_db_pool_t* pool, int64_t session_id);
+
+char* mf_ai_summary_get(csilk_db_pool_t* pool, int64_t session_id);
+
+int mf_ai_summary_upsert(csilk_db_pool_t* pool,
+                         int64_t          session_id,
+                         int64_t          user_id,
+                         const char*      summary_text,
+                         int              token_count);

@@ -1,6 +1,7 @@
 #include "infrastructure/repositories/ai_session_repo_impl.h"
 #include "common/db.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static void
@@ -218,4 +219,49 @@ mf_ai_message_insert(csilk_db_pool_t* pool,
     }
     csilk_json_free(r);
     return id;
+}
+
+char*
+mf_ai_summary_get(csilk_db_pool_t* pool, int64_t session_id)
+{
+    char sid[32];
+    sid_str(session_id, sid);
+    csilk_json_t* r = csilk_db_query_param_json(
+        pool,
+        "SELECT summary_text FROM ai_session_summaries WHERE session_id=?",
+        (const char*[]){sid, NULL});
+    char* result = NULL;
+    if (r && csilk_json_array_size(r) > 0) {
+        const char* text = csilk_json_get_string(csilk_json_array_get(r, 0), "summary_text");
+        if (text && text[0]) {
+            result = strdup(text);
+        }
+    }
+    csilk_json_free(r);
+    return result;
+}
+
+int
+mf_ai_summary_upsert(csilk_db_pool_t* pool,
+                     int64_t          session_id,
+                     int64_t          user_id,
+                     const char*      summary_text,
+                     int              token_count)
+{
+    char sid[32], uid[32], tc[32];
+    sid_str(session_id, sid);
+    uid_str(user_id, uid);
+    snprintf(tc, 32, "%d", token_count);
+    csilk_json_t* r = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO ai_session_summaries (session_id, user_id, summary_text, token_count) "
+        "VALUES (?, ?, ?, ?) "
+        "ON CONFLICT (session_id) DO UPDATE SET "
+        "summary_text = EXCLUDED.summary_text, "
+        "token_count = EXCLUDED.token_count, "
+        "updated_at = CURRENT_TIMESTAMP RETURNING id",
+        (const char*[]){sid, uid, summary_text ?: "", tc, NULL});
+    int affected = r ? (int)csilk_json_array_size(r) : 0;
+    csilk_json_free(r);
+    return affected > 0;
 }

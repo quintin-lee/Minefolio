@@ -2,6 +2,7 @@
 #include "services/ai/runtime/context.h"
 #include "services/ai/runtime/session.h"
 #include "services/ai/memory/memory.h"
+#include "services/ai/memory/summary.h"
 #include "services/ai/policy/policy.h"
 #include "services/ai/tools/dispatcher.h"
 #include "services/ai/tools/registry.h"
@@ -226,6 +227,9 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
             ai_res.prompt_tokens, ai_res.completion_tokens, 2.5, 10.0, &step_cost);
         ai_runtime_limits_record_tokens(
             &ctx->stats, ai_res.prompt_tokens, ai_res.completion_tokens, step_cost);
+
+        /* 触发异步摘要：token 用量达预算 80% 时后台生成会话摘要 */
+        ai_summary_maybe_trigger(pool, ctx);
 
         if (rc != 0) {
             const char* emsg = (ai_res.error_message && ai_res.error_message[0])
@@ -531,9 +535,12 @@ ai_runtime_run_loop(csilk_db_pool_t* pool, const ai_loop_options_t* opts, ai_tra
     ai_config_t*  cfg = ai_get_config();
     csilk_json_t* hist =
         (pool && opts->session_id > 0) ? mf_ai_message_recent(pool, opts->session_id, 20) : NULL;
+    char* summary =
+        (pool && opts->session_id > 0) ? mf_ai_summary_get(pool, opts->session_id) : NULL;
     csilk_json_free(ctx.messages);
-    ctx.messages =
-        ai_memory_build_messages(cfg ? cfg->system_prompt : NULL, hist, opts->user_prompt, 20);
+    ctx.messages = ai_memory_build_messages(
+        cfg ? cfg->system_prompt : NULL, hist, opts->user_prompt, 20, summary);
+    free(summary);
     if (hist) {
         csilk_json_free(hist);
     }
