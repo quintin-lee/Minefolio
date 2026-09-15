@@ -1,5 +1,6 @@
 # backend build output
 backend/build/
+backend/Testing/
 backend/compile_commands.json
 backend/config/*.json
 
