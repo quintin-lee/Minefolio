@@ -14,6 +14,8 @@
 #include "services/ai/tools/mcp/mcp_bridge.h"
 
 #include "services/ai/tools/mcp/mcp_client.h"
+#include "services/ai/tools/mcp/mcp_config.h"
+#include "services/ai/tools/mcp/mcp_stdio_pool.h"
 #include "services/ai/tools/registry.h"
 #include "services/ai/policy/policy.h"
 #include "services/ai/policy/risk.h"
@@ -24,13 +26,105 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <time.h>
+#include <pthread.h>
 
 /* 单个远端工具 description 最大长度（与 entity description[512] 对齐，截断 511） */
 #define MF_MCP_TOOL_DESC_MAX 512
 
 /* 远端 input_schema 最大长度（与 entity input_schema[4096] 对齐） */
 #define MF_MCP_TOOL_SCHEMA_MAX 4096
+
+/* ================================================================== */
+/* MCP 专属限频 LRU（设计 §5 rate_limited / §9 MINEFOLIO_MCP_RATE_PER_MIN）
+ * 独立于 ai_policy 的全局 60/分 LRU，按 user_id 维度 + 独立上限。
+ * 仿 policy.c 环形缓冲模式：满表覆写 head 槽位淘汰最旧。
+ * ================================================================== */
+#define MF_MCP_RATE_LIMIT_USERS 256
+
+typedef struct {
+    int64_t user_id;
+    int64_t minute_window;
+    int     count;
+} mcp_user_rate_t;
+
+static mcp_user_rate_t s_mcp_rate_limits[MF_MCP_RATE_LIMIT_USERS];
+static size_t          s_mcp_rate_head = 0;
+static size_t          s_mcp_rate_count = 0;
+static pthread_mutex_t s_mcp_rate_lock = PTHREAD_MUTEX_INITIALIZER;
+
+/* 返回 true 表示限频通过；false 表示触发限流（调用方应拒绝）。
+   limit_per_min <= 0 表示未启用 MCP 专属限频，直接放行。 */
+static bool
+mcp_rate_limit_check(int64_t user_id, int limit_per_min)
+{
+    if (user_id <= 0 || limit_per_min <= 0) {
+        return true;
+    }
+    int64_t current_minute = (int64_t)time(NULL) / 60;
+
+    pthread_mutex_lock(&s_mcp_rate_lock);
+    size_t scan =
+        (s_mcp_rate_count < MF_MCP_RATE_LIMIT_USERS) ? s_mcp_rate_count : MF_MCP_RATE_LIMIT_USERS;
+    for (size_t i = 0; i < scan; i++) {
+        if (s_mcp_rate_limits[i].user_id == user_id) {
+            if (s_mcp_rate_limits[i].minute_window == current_minute) {
+                if (s_mcp_rate_limits[i].count >= limit_per_min) {
+                    pthread_mutex_unlock(&s_mcp_rate_lock);
+                    return false; /* 触发限流 */
+                }
+                s_mcp_rate_limits[i].count++;
+            } else {
+                s_mcp_rate_limits[i].minute_window = current_minute;
+                s_mcp_rate_limits[i].count = 1;
+            }
+            pthread_mutex_unlock(&s_mcp_rate_lock);
+            return true;
+        }
+    }
+
+    /* 未命中：表未满追加，满则覆写 head 槽位淘汰最旧 */
+    if (s_mcp_rate_count < MF_MCP_RATE_LIMIT_USERS) {
+        s_mcp_rate_limits[s_mcp_rate_count].user_id = user_id;
+        s_mcp_rate_limits[s_mcp_rate_count].minute_window = current_minute;
+        s_mcp_rate_limits[s_mcp_rate_count].count = 1;
+        s_mcp_rate_count++;
+    } else {
+        s_mcp_rate_limits[s_mcp_rate_head].user_id = user_id;
+        s_mcp_rate_limits[s_mcp_rate_head].minute_window = current_minute;
+        s_mcp_rate_limits[s_mcp_rate_head].count = 1;
+        s_mcp_rate_head = (s_mcp_rate_head + 1) % MF_MCP_RATE_LIMIT_USERS;
+    }
+    pthread_mutex_unlock(&s_mcp_rate_lock);
+    return true;
+}
+
+/* ================================================================== */
+/* 工具缓存 TTL（设计 §9 MINEFOLIO_MCP_CACHE_TTL）
+ * fetched_at 为空或解析失败时保守保留（不跳过）。
+ * ================================================================== */
+static bool
+mcp_tool_is_stale(const mf_mcp_server_tool_t* tool, int cache_ttl_sec)
+{
+    if (cache_ttl_sec <= 0) {
+        return false; /* 未启用 TTL，不过期 */
+    }
+    if (!tool->fetched_at[0]) {
+        return false; /* 无时间戳，保守保留 */
+    }
+    struct tm tm_buf;
+    memset(&tm_buf, 0, sizeof(tm_buf));
+    strptime(tool->fetched_at, "%Y-%m-%d %H:%M:%S", &tm_buf); /* end==NULL 表解析失败 */
+    if (tm_buf.tm_year == 0) {
+        return false;                                         /* 解析失败/空，保守保留 */
+    }
+    time_t fetched = mktime(&tm_buf);
+    if (fetched == (time_t)-1) {
+        return false;
+    }
+    return (time(NULL) - fetched) > (time_t)cache_ttl_sec;
+}
 
 /* ================================================================== */
 /* 解析 "mcp:<serverId>:<toolName>" → (server_id, tool_name)           */
@@ -203,7 +297,8 @@ mcp_bridge_merge_tools(csilk_db_pool_t* pool, int64_t user_id, size_t* out_count
     const csilk_ai_tool_t* builtin = ai_tool_get_csilk_definitions(&builtin_count);
     size_t                 off = builtin_count; /* 已填充条目数；oom 回滚边界 */
 
-    /* 2) 加载当前用户已启用 MCP 服务器的工具缓存（JOIN mcp_server enabled=1） */
+    /* 2) 加载当前用户已启用 MCP 服务器的工具缓存（JOIN mcp_server enabled=1），
+       并按缓存 TTL 过滤过期工具（设计 §9 MINEFOLIO_MCP_CACHE_TTL）。 */
     mf_mcp_server_tool_t* cached = NULL;
     size_t                cached_count = 0;
     if (pool && user_id > 0) {
@@ -211,6 +306,24 @@ mcp_bridge_merge_tools(csilk_db_pool_t* pool, int64_t user_id, size_t* out_count
         if (rc != 0) {
             cached = NULL;
             cached_count = 0;
+        }
+    }
+
+    /* 2b) TTL 过滤：构建非过期条目子集（紧凑复制进 kept），原 cached 释放 */
+    int ttl = mf_mcp_config_cache_ttl_sec();
+    if (cached && cached_count > 0 && ttl > 0) {
+        mf_mcp_server_tool_t* kept =
+            (mf_mcp_server_tool_t*)calloc(cached_count, sizeof(mf_mcp_server_tool_t));
+        size_t kept_count = 0;
+        if (kept) {
+            for (size_t i = 0; i < cached_count; i++) {
+                if (!mcp_tool_is_stale(&cached[i], ttl)) {
+                    kept[kept_count++] = cached[i];
+                }
+            }
+            free(cached); /* 释放原列表，kept 接管非过期条目 */
+            cached = kept;
+            cached_count = kept_count;
         }
     }
 
@@ -428,6 +541,15 @@ mcp_bridge_dispatch(const ai_tool_context_t* ctx, const char* tool_name, const c
         return strdup("{\"error\":\"mcp_permission_denied: write permission required\"}");
     }
 
+    /* MCP 专属限频（设计 §5 rate_limited / §9 MINEFOLIO_MCP_RATE_PER_MIN）。
+       独立于 ai_policy 全局 60/分 LRU；超限返回结构化 mcp_rate_limited。 */
+    if (!mcp_rate_limit_check(ctx->user_id, mf_mcp_config_rate_per_min())) {
+        if (cached) {
+            mf_mcp_server_tool_repo_free_list(cached, cached_count);
+        }
+        return mcp_err_response("mcp_rate_limited", "MCP per-user rate limit exceeded");
+    }
+
     /* 统一策略引擎评估（限流 + 确认） */
     ai_policy_decision_t* decision =
         ai_policy_evaluate(ctx->user_id, ctx->session_id, tool_name, args);
@@ -458,21 +580,30 @@ mcp_bridge_dispatch(const ai_tool_context_t* ctx, const char* tool_name, const c
         return mcp_err_response("mcp_cancelled", "MCP tool call cancelled");
     }
 
-    /* 6. 建立客户端并握手（stdio 子进程在首帧 spawn） */
-    mf_mcp_client_t* c = mf_mcp_client_new(&server);
-    if (!c) {
-        return strdup("{\"error\":\"mcp_client_alloc_failed\"}");
+    /* 6. 获取客户端并握手（stdio 复用池内已 initialize 会话，池禁用/满退化 short-lived） */
+    char             err[256] = {0};
+    mf_mcp_client_t* c;
+    int              pooled = 0;
+    if (server.transport == MCP_TRANSPORT_STDIO) {
+        c = mf_mcp_stdio_pool_acquire(ctx->user_id, server_id, &server, err, sizeof(err));
+        if (!c) {
+            const char* code = mcp_classify_error(err, server.transport);
+            return mcp_err_response(code, err[0] ? err : "mcp stdio pool acquire failed");
+        }
+        pooled = 1; /* 池条目：后续 release 而非 free */
+    } else {
+        c = mf_mcp_client_new(&server);
+        if (!c) {
+            return mcp_err_response("mcp_client_alloc_failed", "mcp_client_alloc_failed");
+        }
+        if (mf_mcp_client_initialize(c, err, sizeof(err)) != 0) {
+            const char* code = mcp_classify_error(err, server.transport);
+            mf_mcp_client_free(c);
+            return mcp_err_response(code, err[0] ? err : "mcp initialize failed");
+        }
     }
 
-    char err[256] = {0};
-    if (mf_mcp_client_initialize(c, err, sizeof(err)) != 0) {
-        const char* code = mcp_classify_error(err, server.transport);
-        const char* msg = err[0] ? err : "mcp initialize failed";
-        mf_mcp_client_free(c);
-        return mcp_err_response(code, msg);
-    }
-
-    /* 6. 序列化工具参数（args 为 NULL 时用局部空对象，serialize 不接管所有权须手动 free） */
+    /* 序列化工具参数（args 为 NULL 时用局部空对象，serialize 不接管所有权须手动 free） */
     char* args_str = NULL;
     if (args) {
         size_t args_len = 0;
@@ -493,7 +624,12 @@ mcp_bridge_dispatch(const ai_tool_context_t* ctx, const char* tool_name, const c
     char* result = mf_mcp_client_call_tool(c, bare_tool, args_str, err, sizeof(err));
     free(args_str);
     int call_failed = (result == NULL) || (err[0] != '\0');
-    mf_mcp_client_free(c); /* stdio SIGTERM→SIGKILL 双段清理 */
+    /* stdio 池条目归还（保持子进程供复用）；HTTP short-lived 直接 free（双段清理） */
+    if (pooled) {
+        mf_mcp_stdio_pool_release(c);
+    } else {
+        mf_mcp_client_free(c);
+    }
 
     /* 7. 审计归档 */
     bool              is_err = (result && strstr(result, "\"error\":") != NULL);
