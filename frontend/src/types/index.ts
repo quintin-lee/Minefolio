@@ -511,3 +511,123 @@ export interface FxPnlReport {
   /** 外币资产明细列表 */
   assets: FxPnlAssetItem[]
 }
+
+/**
+ * MCP 服务器传输层类型
+ * - http: 走 libcurl 短连接 + JSON-RPC 2.0 streamable-HTTP transport
+ * - stdio: 后端 fork 子进程 + 换行分隔 JSON-RPC 帧
+ */
+export type McpTransport = 'http' | 'stdio'
+
+/**
+ * MCP 服务器风险等级 (MCP 工具默认 medium, 策略 R-MCP 按此评估)
+ */
+export type McpRiskLevel = 'low' | 'medium' | 'high'
+
+/**
+ * 用户配置的外部 MCP 服务器
+ * @see 后端 `backend/src/domain/mcp/entity.h` mf_mcp_server_t
+ */
+export interface McpServer {
+  /** 服务器唯一标识 ID */
+  id: number
+  /** 所属用户 ID */
+  user_id: number
+  /** 用户侧展示名 (^[a-z0-9_-]{1,64}$, 同用户内唯一) */
+  name: string
+  /** 传输层类型 */
+  transport: McpTransport
+  /** 完整 URL (http transport 必填, 末尾不带 /) */
+  url?: string
+  /** 可执行文件路径 (stdio transport 必填, 不走 shell) */
+  command?: string
+  /** JSON 数组字符串, 如 '["--verbose"]' (stdio) */
+  args?: string
+  /** JSON 对象字符串, 继承宿主 env 并 override (stdio) */
+  env?: string
+  /** JSON 对象字符串, 可含 Authorization / X-Api-Key (http) */
+  headers?: string
+  /** 非空时实际凭证存 secret 表, 此处是 ref 名 */
+  secret_ref?: string
+  /** 是否启用 (0/1), 停用后工具不进入 LLM 工具集 */
+  enabled: number
+  /** 单次 tools/call 超时 (毫秒, 默认 30000) */
+  timeout_ms: number
+  /** 最近一次 tools/list 成功时间 (ISO 8601) */
+  discovered_at?: string
+  /** 创建时间 (ISO 8601) */
+  created_at?: string
+  /** 更新时间 (ISO 8601) */
+  updated_at?: string
+  /** 该服务器已缓存的工具数量 (list 接口附带统计) */
+  tool_count?: number
+}
+
+/**
+ * MCP 创建/更新入参 (部分字段可选)
+ */
+export interface McpServerInput {
+  /** 服务器展示名 (^[a-z0-9_-]{1,64}$) */
+  name: string
+  /** 传输层类型 */
+  transport: McpTransport
+  /** 完整 URL (transport=http 时必填) */
+  url?: string
+  /** 可执行文件路径 (transport=stdio 时必填) */
+  command?: string
+  /** 启动参数 JSON 数组字符串 */
+  args?: string
+  /** 环境变量 JSON 对象字符串 */
+  env?: string
+  /** 请求头 JSON 对象字符串 */
+  headers?: string
+  /** 凭证引用名 */
+  secret_ref?: string
+  /** 是否启用 */
+  enabled?: number
+  /** 超时毫秒数 */
+  timeout_ms?: number
+}
+
+/**
+ * MCP 服务器工具缓存条目
+ * @see 后端 `backend/src/domain/mcp/entity.h` mf_mcp_server_tool_t
+ */
+export interface McpServerTool {
+  /** 工具缓存唯一标识 ID */
+  id: number
+  /** 归属服务器 ID */
+  server_id: number
+  /** 远端原始工具名 */
+  tool_name: string
+  /** 前缀化全名 (mcp:<serverId>:<toolName>), LLM 看到的名字 */
+  qualified_name: string
+  /** 远端 inputSchema.description */
+  description?: string
+  /** 远端 inputSchema 原文 (JSON 字符串) */
+  input_schema: string
+  /** 是否写操作 (从 description/注解推断, 默认 false) */
+  is_mutation: number
+  /** 风险等级 (low/medium/high, 默认 medium) */
+  risk_level: McpRiskLevel
+  /** 拉取时间 (ISO 8601) */
+  fetched_at?: string
+}
+
+/**
+ * MCP 探活 (initialize + tools/list) 结果
+ */
+export interface McpTestResult {
+  /** 探活是否成功 */
+  success: boolean
+  /** 结果状态 ("ok" 或错误描述) */
+  status: string
+  /** 拉取到的工具列表 (成功时) */
+  tools?: McpServerTool[]
+  /** 工具总数 */
+  tool_count?: number
+  /** 响应延迟耗时 (毫秒) */
+  latency_ms?: number
+  /** 错误提示信息 */
+  message?: string
+}

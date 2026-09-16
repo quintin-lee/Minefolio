@@ -54,6 +54,8 @@
           <span class="tab-label">{{ t('settings.tabAi') }}</span>
         </template>
         <AiProviderManager />
+        <div style="height: 24px" />
+        <AiMcpManager />
       </el-tab-pane>
 
       <el-tab-pane name="market" lazy>
@@ -86,6 +88,7 @@ import TwoFactorSettings from '@/components/settings/TwoFactorSettings.vue'
 import DataExport from '@/components/settings/DataExport.vue'
 import ImportRulesManager from '@/components/settings/ImportRulesManager.vue'
 import AiProviderManager from '@/components/settings/AiProviderManager.vue'
+import AiMcpManager from '@/components/settings/AiMcpManager.vue'
 import MarketSyncSettings from '@/components/settings/MarketSyncSettings.vue'
 import AppearanceSettings from '@/components/settings/AppearanceSettings.vue'
 

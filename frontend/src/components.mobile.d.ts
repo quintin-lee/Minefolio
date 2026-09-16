@@ -8,6 +8,7 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     ActionCard: typeof import('./components/ActionCard.vue')['default']
+    AiMcpManager: typeof import('./components/settings/AiMcpManager.vue')['default']
     AiProviderManager: typeof import('./components/settings/AiProviderManager.vue')['default']
     AppearanceSettings: typeof import('./components/settings/AppearanceSettings.vue')['default']
     AppLogo: typeof import('./components/AppLogo.vue')['default']
