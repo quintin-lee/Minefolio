@@ -233,6 +233,12 @@ target_compile_options(test_domain_ai PRIVATE -UNDEBUG)
 target_link_libraries(test_domain_ai PRIVATE m)
 add_test(NAME test_domain_ai COMMAND test_domain_ai)
 
+add_executable(test_domain_mcp tests/unit/test_domain_mcp.c src/domain/mcp/rules.c)
+target_include_directories(test_domain_mcp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_domain_mcp PRIVATE -UNDEBUG)
+target_link_libraries(test_domain_mcp PRIVATE m)
+add_test(NAME test_domain_mcp COMMAND test_domain_mcp)
+
 set(CORE_FINANCIAL_SRCS
     src/core/financial/currency.c
     src/core/financial/decimal.c
