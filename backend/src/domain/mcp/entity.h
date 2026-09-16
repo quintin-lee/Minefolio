@@ -36,6 +36,8 @@ typedef struct {
     char               updated_at[32];
 } mf_mcp_server_t;
 
+#define MF_MCP_TOOL_SCHEMA_MAX 16384
+
 /** MCP 工具 schema 缓存实体 */
 typedef struct {
     int64_t id;
@@ -44,7 +46,7 @@ typedef struct {
     char    tool_name[128];
     char    qualified_name[192];
     char    description[512];
-    char    input_schema[4096];
+    char    input_schema[MF_MCP_TOOL_SCHEMA_MAX];
     bool    is_mutation;
     char    risk_level[16];
     char    fetched_at[32];

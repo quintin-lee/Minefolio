@@ -362,10 +362,13 @@ mf_mcp_server_tool_repo_upsert(void*                       db_pool,
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     snprintf(sid_str, sizeof(sid_str), "%lld", (long long)server_id);
 
+    csilk_db_exec(pool, "BEGIN TRANSACTION");
+
     /* 先删旧缓存 */
     if (csilk_db_exec_param(pool,
                             "DELETE FROM mcp_server_tool WHERE user_id=? AND server_id=?",
                             (const char*[]){uid_str, sid_str, NULL}) != 0) {
+        csilk_db_exec(pool, "ROLLBACK");
         return -1;
     }
 
@@ -375,7 +378,7 @@ mf_mcp_server_tool_repo_upsert(void*                       db_pool,
         const char*                 risk_level = t->risk_level[0] ? t->risk_level : "medium";
         /* 空值传 ""（NULL 会终止参数数组；input_schema NOT NULL 故兜底 "{}"） */
         char desc_buf[512] = "";
-        char schema_buf[4096] = "{}";
+        char schema_buf[MF_MCP_TOOL_SCHEMA_MAX] = "{}";
         if (t->description[0]) {
             snprintf(desc_buf, sizeof(desc_buf), "%s", t->description);
         }
@@ -397,9 +400,11 @@ mf_mcp_server_tool_repo_upsert(void*                       db_pool,
                                                 is_mutation,
                                                 risk_level,
                                                 NULL}) != 0) {
+            csilk_db_exec(pool, "ROLLBACK");
             return -1;
         }
     }
+    csilk_db_exec(pool, "COMMIT");
     return 0;
 }
 

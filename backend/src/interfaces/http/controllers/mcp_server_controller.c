@@ -133,6 +133,9 @@ mcp_handle_tools_call(csilk_ctx_t* c, const csilk_json_t* body, int64_t user_id)
     char* result_str = ai_tools_execute_parsed(db_get_pool(), user_id, 0, args_json, name);
 
     csilk_json_t* result = csilk_json_object();
+    bool          is_err = (!result_str || strstr(result_str, "\"error\":") != NULL);
+    csilk_json_add_bool(result, "isError", is_err);
+
     csilk_json_t* content = csilk_json_array();
     csilk_json_t* text_obj = csilk_json_object();
     csilk_json_add_string(text_obj, "type", "text");
@@ -176,6 +179,10 @@ mcp_endpoint_handler(csilk_ctx_t* c)
 
     if (strcmp(method, "initialize") == 0) {
         mcp_handle_initialize(c, body);
+    } else if (strncmp(method, "notifications/", 14) == 0 ||
+               (mcp_req_id(body) == NULL && strcmp(method, "ping") != 0)) {
+        /* JSON-RPC 2.0 通知帧：服务端不返回错误，正常应答 200 空对象 */
+        csilk_json(c, CSILK_STATUS_OK, csilk_json_object());
     } else if (strcmp(method, "tools/list") == 0) {
         mcp_handle_tools_list(c, body);
     } else if (strcmp(method, "tools/call") == 0) {

@@ -30,19 +30,51 @@
             </el-tag>
           </div>
           <div class="server-actions">
-            <el-button text size="small" @click="toggleTools(srv)" :aria-label="t('settings.mcpTools')">
+            <el-button
+              text
+              size="small"
+              :loading="testingId === srv.id"
+              @click="testServer(srv)"
+              :aria-label="t('settings.mcpTest')"
+              :title="t('settings.mcpTest')"
+            >
+              <el-icon><Connection /></el-icon>
+            </el-button>
+            <el-button
+              text
+              size="small"
+              :loading="refreshingId === srv.id"
+              @click="refreshServerTools(srv)"
+              :aria-label="t('settings.mcpRefresh')"
+              :title="t('settings.mcpRefresh')"
+            >
+              <el-icon><Refresh /></el-icon>
+            </el-button>
+            <el-button text size="small" @click="toggleTools(srv)" :aria-label="t('settings.mcpTools')" :title="t('settings.mcpTools')">
               <el-icon><Tools /></el-icon>
             </el-button>
-            <el-button text size="small" @click="openEdit(srv)" :aria-label="t('common.edit')">
+            <el-button text size="small" @click="openEdit(srv)" :aria-label="t('common.edit')" :title="t('common.edit')">
               <el-icon><Edit /></el-icon>
             </el-button>
-            <el-button text size="small" class="delete-btn" @click="removeServer(srv)" :aria-label="t('common.delete')">
+            <el-button text size="small" class="delete-btn" @click="removeServer(srv)" :aria-label="t('common.delete')" :title="t('common.delete')">
               <el-icon><Delete /></el-icon>
             </el-button>
           </div>
         </div>
 
         <div v-if="expandedServerId === srv.id" class="server-tools">
+          <div class="tools-header-bar">
+            <span class="tools-bar-title">{{ t('settings.mcpTools') }}</span>
+            <el-button
+              size="small"
+              plain
+              :loading="refreshingId === srv.id"
+              @click="refreshServerTools(srv)"
+            >
+              <el-icon><Refresh /></el-icon>
+              {{ t('settings.mcpRefresh') }}
+            </el-button>
+          </div>
           <el-tabs v-if="srvTools[srv.id]" v-model="activeToolTab[srv.id]">
             <el-tab-pane :label="t('settings.mcpTools')" name="tools">
               <div class="tools-list">
@@ -56,11 +88,35 @@
                   </div>
                   <div class="tool-desc" v-if="tool.description">{{ tool.description }}</div>
                 </div>
-                <div v-if="!srvTools[srv.id]?.length" class="tools-empty">{{ t('settings.mcpToolsEmpty') }}</div>
+                <div v-if="!srvTools[srv.id]?.length" class="tools-empty">
+                  <p>{{ t('settings.mcpToolsEmpty') }}</p>
+                  <el-button
+                    size="small"
+                    type="primary"
+                    plain
+                    :loading="refreshingId === srv.id"
+                    @click="refreshServerTools(srv)"
+                  >
+                    <el-icon><Refresh /></el-icon>
+                    {{ t('settings.mcpRefresh') }}
+                  </el-button>
+                </div>
               </div>
             </el-tab-pane>
           </el-tabs>
-          <el-empty v-else :description="t('settings.mcpToolsEmpty')" />
+          <div v-else class="tools-empty">
+            <p>{{ t('settings.mcpToolsEmpty') }}</p>
+            <el-button
+              size="small"
+              type="primary"
+              plain
+              :loading="refreshingId === srv.id"
+              @click="refreshServerTools(srv)"
+            >
+              <el-icon><Refresh /></el-icon>
+              {{ t('settings.mcpRefresh') }}
+            </el-button>
+          </div>
         </div>
 
         <div v-if="editingServerId === srv.id" class="server-form-wrap">
@@ -183,13 +239,15 @@
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Edit, Delete, Plus, Tools } from '@element-plus/icons-vue'
+import { Edit, Delete, Plus, Tools, Connection, Refresh } from '@element-plus/icons-vue'
 import {
   listMcpServers,
   createMcpServer,
   updateMcpServer,
   deleteMcpServer,
   getMcpServerTools,
+  testMcpServer,
+  refreshMcpServer,
 } from '@/api/ai-mcp'
 import type { McpServer, McpServerTool, McpServerInput } from '@/types'
 import { t } from '@/utils/locale'
@@ -201,6 +259,8 @@ interface EditableServer extends McpServerInput {
 const servers = ref<McpServer[]>([])
 const loading = ref(false)
 const saving = ref(false)
+const testingId = ref<number | null>(null)
+const refreshingId = ref<number | null>(null)
 const editingServerId = ref<number | null>(null)
 const expandedServerId = ref<number | null>(null)
 const srvTools = ref<Record<number, McpServerTool[]>>({})
@@ -344,14 +404,26 @@ async function saveServer() {
   saving.value = true
   try {
     if (editingServerId.value === -1) {
-      await createMcpServer(buildInput())
+      const created = await createMcpServer(buildInput())
       ElMessage.success(t('settings.mcpServerAdded'))
+      editingServerId.value = null
+      await loadServers()
+      if (created && created.id > 0) {
+        refreshMcpServer(created.id)
+          .then((res) => {
+            if (res.tool_count > 0) {
+              ElMessage.success(t('settings.mcpRefreshSuccess', { n: res.tool_count }))
+              loadServers()
+            }
+          })
+          .catch(() => {})
+      }
     } else if (editingServerId.value != null) {
       await updateMcpServer(editingServerId.value, buildInput())
       ElMessage.success(t('settings.mcpServerSaved'))
+      editingServerId.value = null
+      await loadServers()
     }
-    editingServerId.value = null
-    await loadServers()
   } catch (err: unknown) {
     const msg =
       (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
@@ -360,6 +432,50 @@ async function saveServer() {
     ElMessage.error(msg)
   } finally {
     saving.value = false
+  }
+}
+
+async function testServer(srv: McpServer) {
+  testingId.value = srv.id
+  try {
+    const res = await testMcpServer(srv.id)
+    if (res.status === 'ok') {
+      ElMessage.success(t('settings.mcpTestSuccess', { n: res.tool_count ?? 0 }))
+      await loadServers()
+      if (expandedServerId.value === srv.id) {
+        const tools = await getMcpServerTools(srv.id)
+        srvTools.value[srv.id] = tools || []
+      }
+    } else {
+      ElMessage.error(res.message || t('settings.mcpTestFailed'))
+    }
+  } catch (err: unknown) {
+    const msg =
+      (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+      (err as { message?: string })?.message ||
+      t('settings.mcpTestFailed')
+    ElMessage.error(msg)
+  } finally {
+    testingId.value = null
+  }
+}
+
+async function refreshServerTools(srv: McpServer) {
+  refreshingId.value = srv.id
+  try {
+    const res = await refreshMcpServer(srv.id)
+    ElMessage.success(t('settings.mcpRefreshSuccess', { n: res.tool_count ?? 0 }))
+    await loadServers()
+    const tools = await getMcpServerTools(srv.id)
+    srvTools.value[srv.id] = tools || []
+  } catch (err: unknown) {
+    const msg =
+      (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+      (err as { message?: string })?.message ||
+      t('settings.mcpRefreshFailed')
+    ElMessage.error(msg)
+  } finally {
+    refreshingId.value = null
   }
 }
 
@@ -388,6 +504,21 @@ loadServers()
 <style scoped>
 .mcp-panel {
   margin-bottom: 8px;
+}
+
+.tools-header-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px dashed var(--mf-border);
+}
+
+.tools-bar-title {
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--mf-text-main);
 }
 
 .server-list {

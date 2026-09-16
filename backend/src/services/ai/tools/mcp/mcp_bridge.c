@@ -33,8 +33,8 @@
 /* 单个远端工具 description 最大长度（与 entity description[512] 对齐，截断 511） */
 #define MF_MCP_TOOL_DESC_MAX 512
 
-/* 远端 input_schema 最大长度（与 entity input_schema[4096] 对齐） */
-#define MF_MCP_TOOL_SCHEMA_MAX 4096
+/* 远端 input_schema 最大长度（与 entity input_schema[16384] 对齐） */
+#define MF_MCP_TOOL_SCHEMA_MAX 16384
 
 /* ================================================================== */
 /* MCP 专属限频 LRU（设计 §5 rate_limited / §9 MINEFOLIO_MCP_RATE_PER_MIN）
@@ -646,6 +646,9 @@ mcp_bridge_dispatch(const ai_tool_context_t* ctx, const char* tool_name, const c
 
     /* 调用失败或空结果：产出结构化错误码供 LLM 区分失败类型（设计 §5） */
     if (call_failed) {
+        if (result) {
+            free(result);
+        }
         const char* code = mcp_classify_error(err, server.transport);
         const char* msg = err[0] ? err : "empty MCP tool result";
         return mcp_err_response(code, msg);

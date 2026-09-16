@@ -21,22 +21,53 @@
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <strings.h>
 #include <time.h>
 #include <unistd.h>
+#include <poll.h>
 
 extern char** environ;
 
-/* 远端工具单次 schema 最大长度（与 entity input_schema[4096] 对齐） */
-#define MF_MCP_TOOL_SCHEMA_MAX 4096
+/* 远端工具单次 schema 最大长度（与 entity input_schema[16384] 对齐） */
+#define MF_MCP_TOOL_SCHEMA_MAX 16384
 
 /* -------------------------------------------------------------------------- */
-/* libcurl 内存写缓冲                                                          */
+/* libcurl 内存写缓冲与响应头回调                                              */
 /* -------------------------------------------------------------------------- */
 
 typedef struct {
     char*  data;
     size_t size;
 } memory_buf_t;
+
+static size_t
+curl_header_cb(char* buffer, size_t size, size_t nitems, void* userdata)
+{
+    mf_mcp_client_t* c = (mf_mcp_client_t*)userdata;
+    size_t           total = size * nitems;
+    if (!c || total < 16) {
+        return total;
+    }
+    const char* prefix = "mcp-session-id:";
+    size_t      plen = strlen(prefix);
+    if (strncasecmp(buffer, prefix, plen) == 0) {
+        const char* val = buffer + plen;
+        while (*val == ' ' || *val == '\t') {
+            val++;
+        }
+        char   sid[256] = {0};
+        size_t idx = 0;
+        while (*val && *val != '\r' && *val != '\n' && idx < sizeof(sid) - 1) {
+            sid[idx++] = *val++;
+        }
+        sid[idx] = '\0';
+        if (sid[0]) {
+            free(c->session_id);
+            c->session_id = strdup(sid);
+        }
+    }
+    return total;
+}
 
 static size_t
 curl_write_cb(char* ptr, size_t size, size_t nmemb, void* userdata)
@@ -127,13 +158,13 @@ append_header_json(const char* headers_json, struct curl_slist** headers)
 
 /* 发送 JSON-RPC 请求到 MCP HTTP 端点，返回响应体（堆分配） */
 static char*
-http_call(const mf_mcp_client_t* c,
-          const char*            request_json,
-          long                   timeout_ms,
-          struct curl_slist**    out_headers,
-          char*                  out_err,
-          size_t                 err_sz,
-          int*                   out_http_code)
+http_call(mf_mcp_client_t*    c,
+          const char*         request_json,
+          long                timeout_ms,
+          struct curl_slist** out_headers,
+          char*               out_err,
+          size_t              err_sz,
+          int*                out_http_code)
 {
     const mf_mcp_server_t* s = c->server;
     CURL*                  curl = curl_easy_init();
@@ -171,6 +202,8 @@ http_call(const mf_mcp_client_t* c,
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_cb);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &chunk);
+    curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, curl_header_cb);
+    curl_easy_setopt(curl, CURLOPT_HEADERDATA, (void*)c);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, timeout_ms);
 
     CURLcode res = curl_easy_perform(curl);
@@ -530,18 +563,53 @@ stdio_call(mf_mcp_client_t* c, const char* request_json, char* out_err, size_t e
                 continue;
             }
             free(frame);
-            snprintf(out_err, err_sz, "stdio write failed: %s", strerror(errno));
+            if (errno == EPIPE) {
+                snprintf(
+                    out_err, err_sz, "stdio write failed: broken pipe (child process terminated)");
+            } else {
+                snprintf(out_err, err_sz, "stdio write failed: %s", strerror(errno));
+            }
             return NULL;
         }
         off += (size_t)w;
     }
     free(frame);
 
-    /* 读响应帧（到换行为止，上限 1MB） */
-    char   resp[1 << 20];
+    /* 读响应帧（到换行为止，堆分配 1MB 缓冲避免栈溢出，poll 超时控制） */
+    int    timeout_ms = c->server->timeout_ms > 0 ? c->server->timeout_ms : 30000;
+    size_t cap = 1 << 20;
+    char*  resp = (char*)malloc(cap);
+    if (!resp) {
+        snprintf(out_err, err_sz, "oom allocating stdio response buffer");
+        return NULL;
+    }
     char*  cur = resp;
     size_t n = 0;
-    while (n < sizeof(resp) - 1) {
+    while (n < cap - 1) {
+        struct pollfd pfd = {
+            .fd = c->read_fd,
+            .events = POLLIN,
+            .revents = 0,
+        };
+        int prc = poll(&pfd, 1, timeout_ms);
+        if (prc < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            snprintf(out_err, err_sz, "stdio poll failed: %s", strerror(errno));
+            free(resp);
+            return NULL;
+        }
+        if (prc == 0) {
+            snprintf(out_err, err_sz, "stdio read timed out after %d ms", timeout_ms);
+            free(resp);
+            return NULL;
+        }
+        if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) {
+            if (!(pfd.revents & POLLIN)) {
+                break;
+            }
+        }
         ssize_t r = read(c->read_fd, cur, 1);
         if (r == 0) {
             break; /* EOF */
@@ -551,6 +619,7 @@ stdio_call(mf_mcp_client_t* c, const char* request_json, char* out_err, size_t e
                 continue;
             }
             snprintf(out_err, err_sz, "stdio read failed: %s", strerror(errno));
+            free(resp);
             return NULL;
         }
         cur++;
@@ -562,13 +631,14 @@ stdio_call(mf_mcp_client_t* c, const char* request_json, char* out_err, size_t e
     *cur = '\0';
     if (n == 0) {
         snprintf(out_err, err_sz, "stdio child produced no response");
+        free(resp);
         return NULL;
     }
     /* 截断尾部换行 */
     while (n > 0 && (resp[n - 1] == '\n' || resp[n - 1] == '\r')) {
         resp[--n] = '\0';
     }
-    return strdup(resp);
+    return resp;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -810,31 +880,29 @@ mf_mcp_client_list_tools(mf_mcp_client_t*       c,
             size_t slen = 0;
             char*  sstr = csilk_json_serialize(input_j, &slen);
             size_t cap = sizeof(e->input_schema) - 1;
-            if (slen >= cap) {
-                slen = cap;
-            }
             if (sstr) {
-                memcpy(e->input_schema, sstr, slen);
-                e->input_schema[slen] = '\0';
-                free(sstr);
-            }
-        }
+                if (slen <= cap) {
+                    memcpy(e->input_schema, sstr, slen);
+                    e->input_schema[slen] = '\0';
+                } else {
+                    /* 超大 Schema：安全降级为空 Schema 对象，防止产生非法截断破坏 JSON */
+                    snprintf(e->input_schema, sizeof(e->input_schema), "{}");
+                }
 
-        /* is_mutation：inputSchema 内出现 "write"/"mutation"/"delete"/"update" 等启发式判定 */
-        if (input_j) {
-            size_t slen = 0;
-            char*  sstr = csilk_json_serialize(input_j, &slen);
-            if (sstr) {
+                /* is_mutation：inputSchema 内或工具名出现 mutation/delete/update 等启发式判定 */
                 char   lower[1024];
                 size_t len = slen < sizeof(lower) - 1 ? slen : sizeof(lower) - 1;
                 for (size_t k = 0; k < len; k++) {
                     lower[k] = (char)tolower((unsigned char)sstr[k]);
                 }
                 lower[len] = '\0';
-                e->is_mutation = (strstr(lower, "write") || strstr(lower, "delete") ||
-                                  strstr(lower, "update") || strstr(lower, "mutation"))
-                                     ? 1
-                                     : 0;
+                e->is_mutation =
+                    (strstr(lower, "write") || strstr(lower, "delete") || strstr(lower, "update") ||
+                     strstr(lower, "mutation") || strstr(e->tool_name, "delete") ||
+                     strstr(e->tool_name, "update") || strstr(e->tool_name, "create") ||
+                     strstr(e->tool_name, "insert"))
+                        ? 1
+                        : 0;
                 free(sstr);
             }
         }
@@ -909,11 +977,27 @@ mf_mcp_client_call_tool(
         size_t        elen = 0;
         char*         estr =
             err_node ? csilk_json_serialize(err_node, &elen) : strdup("{\"error\":\"remote\"}");
+        const char* emsg = NULL;
+        if (err_node && csilk_json_is_object(err_node)) {
+            emsg = csilk_json_get_string(err_node, "message");
+        }
+        snprintf(out_err, err_sz, "%s", (emsg && emsg[0]) ? emsg : (estr ? estr : "remote error"));
         csilk_json_free(rj);
         if (estr) {
             return estr;
         }
         return strdup("{\"error\":\"remote\"}");
+    }
+
+    /* 检查 CallToolResult.isError (MCP 规范) */
+    const csilk_json_t* is_err_node = csilk_json_get(result, "isError");
+    bool                is_tool_err = false;
+    if (is_err_node) {
+        if (csilk_json_is_bool(is_err_node)) {
+            is_tool_err = csilk_json_bool_value(is_err_node);
+        } else if (csilk_json_is_number(is_err_node)) {
+            is_tool_err = (csilk_json_number_value(is_err_node) != 0);
+        }
     }
 
     /* result.content[0].text */
@@ -924,12 +1008,18 @@ mf_mcp_client_call_tool(
         if (text && csilk_json_is_string(text)) {
             const char* s = csilk_json_string_value(text);
             char*       out = s ? strdup(s) : strdup("{}");
+            if (is_tool_err && !out_err[0]) {
+                snprintf(out_err, err_sz, "tool reported error: %.200s", out ? out : "");
+            }
             csilk_json_free(rj);
             return out;
         }
     }
     /* 否则直接序列化整个 result */
     char* out = csilk_json_serialize(result, NULL);
+    if (is_tool_err && !out_err[0]) {
+        snprintf(out_err, err_sz, "tool reported error");
+    }
     csilk_json_free(rj);
     return out ? out : strdup("{\"error\":\"empty tools/call result\"}");
 }

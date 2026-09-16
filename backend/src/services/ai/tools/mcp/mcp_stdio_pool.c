@@ -23,11 +23,11 @@ static size_t          s_pool_count = 0;
 static pthread_mutex_t s_pool_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static size_t
-find_slot(int64_t user_id, int64_t server_id)
+find_idle_slot(int64_t user_id, int64_t server_id)
 {
     size_t scan = s_pool_count;
     for (size_t i = 0; i < scan; i++) {
-        if (s_pool[i].user_id == user_id && s_pool[i].server_id == server_id) {
+        if (s_pool[i].user_id == user_id && s_pool[i].server_id == server_id && !s_pool[i].in_use) {
             return i;
         }
     }
@@ -51,9 +51,9 @@ mf_mcp_stdio_pool_acquire(
 
     pthread_mutex_lock(&s_pool_lock);
 
-    size_t slot = find_slot(user_id, server_id);
+    size_t slot = find_idle_slot(user_id, server_id);
     if (slot != SIZE_MAX) {
-        /* 命中：标记在用，更新 LRU 时间戳 */
+        /* 命中闲置条目：标记在用，更新 LRU 时间戳 */
         s_pool[slot].in_use = true;
         s_pool[slot].last_used = time(NULL);
         mf_mcp_client_t* got = s_pool[slot].client;
@@ -61,7 +61,7 @@ mf_mcp_stdio_pool_acquire(
         return got; /* 调用方用完后 release；命中不重新 initialize（会话保持） */
     }
 
-    /* 未命中：需要新分配 */
+    /* 未命中闲置条目：需要新分配 */
     int max = mf_mcp_config_stdio_max_procs();
     if (max <= 0 || max > MF_MCP_STDIO_POOL_CAP) {
         max = MF_MCP_STDIO_POOL_CAP;
@@ -81,17 +81,9 @@ mf_mcp_stdio_pool_acquire(
         }
         if (victim != SIZE_MAX) {
             mf_mcp_client_free(s_pool[victim].client); /* SIGTERM→SIGKILL 双段 */
-            s_pool[victim] = s_pool[--s_pool_count];   /* 末位覆盖回收 */
-            slot = find_slot(user_id, server_id);      /* 可能又被替换，重新找 */
-            if (slot != SIZE_MAX) {
-                s_pool[slot].in_use = true;
-                s_pool[slot].last_used = time(NULL);
-                mf_mcp_client_t* got = s_pool[slot].client;
-                pthread_mutex_unlock(&s_pool_lock);
-                return got;
-            }
+            s_pool[victim] = s_pool[--s_pool_count];   /* 末位覆盖回收空出一个槽位 */
         } else {
-            /* 全被占用且池满：仍走 short-lived（不强制抢占在用会话） */
+            /* 全被占用且池满：走 short-lived（不抢占在用会话，并发请求安全隔离） */
             pthread_mutex_unlock(&s_pool_lock);
             mf_mcp_client_t* c = mf_mcp_client_new(server);
             if (c && mf_mcp_client_initialize(c, err, err_sz) != 0) {

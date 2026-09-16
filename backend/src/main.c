@@ -35,6 +35,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <signal.h>
 
 static void
 metrics_middleware_wrapper(csilk_ctx_t* c)
@@ -47,6 +48,8 @@ main(int argc, char** argv)
 {
     (void)argc;
     (void)argv;
+
+    signal(SIGPIPE, SIG_IGN);
 
     if (!config_secret_is_valid("JWT_SECRET")) {
         fprintf(stderr,
@@ -95,6 +98,7 @@ main(int argc, char** argv)
 
     csilk_app_get(app, "/healthz", csilk_health_check_handler);
     csilk_app_options(app, "/api/*path", cors_preflight_handler);
+    csilk_app_options(app, "/mcp", cors_preflight_handler);
 
     // JWT middleware (rejects if JWT_SECRET is not set)
     csilk_app_use_group(app, "/api", jwt_middleware_wrapper);
