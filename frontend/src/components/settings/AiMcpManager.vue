@@ -93,7 +93,7 @@
               <el-input-number v-model="editingForm.timeout_ms" :min="1000" :max="120000" :step="1000" />
             </el-form-item>
             <el-form-item :label="t('settings.mcpEnabled')">
-              <el-switch v-model="editingForm.enabledBool" active-value="1" inactive-value="0" />
+              <el-switch v-model="editingForm.enabledBool" :active-value="1" :inactive-value="0" />
             </el-form-item>
             <el-form-item>
               <div class="form-actions-bar">
@@ -110,7 +110,61 @@
         </div>
       </div>
 
+      <!-- 新增 MCP 服务表单卡片 -->
+      <div v-if="editingServerId === -1" class="server-item server-form-wrap">
+        <div class="server-header">
+          <div class="server-title-wrap">
+            <span class="server-name">{{ editingForm.name || t('settings.mcpAddServer') }}</span>
+            <el-tag size="small" effect="plain">{{ editingForm.transport === 'http' ? t('settings.mcpTransportHttp') : t('settings.mcpTransportStdio') }}</el-tag>
+          </div>
+        </div>
+        <el-form :model="editingForm" label-width="110px" class="server-form">
+          <el-form-item :label="t('settings.mcpName')" required>
+            <el-input v-model="editingForm.name" :placeholder="t('settings.mcpNamePlaceholder')" />
+          </el-form-item>
+          <el-form-item :label="t('settings.mcpTransport')">
+            <el-radio-group v-model="editingForm.transport">
+              <el-radio value="http">{{ t('settings.mcpTransportHttp') }}</el-radio>
+              <el-radio value="stdio">{{ t('settings.mcpTransportStdio') }}</el-radio>
+            </el-radio-group>
+          </el-form-item>
+          <el-form-item v-if="editingForm.transport === 'http'" :label="t('settings.mcpUrl')" required>
+            <el-input v-model="editingForm.url" :placeholder="t('settings.mcpUrlPlaceholder')" />
+          </el-form-item>
+          <el-form-item v-if="editingForm.transport === 'http'" :label="t('settings.mcpHeaders')">
+            <el-input v-model="editingForm.headers" type="textarea" :rows="2" :placeholder="t('settings.mcpHeadersPlaceholder')" />
+          </el-form-item>
+          <el-form-item v-if="editingForm.transport === 'stdio'" :label="t('settings.mcpCommand')" required>
+            <el-input v-model="editingForm.command" :placeholder="t('settings.mcpCommandPlaceholder')" />
+          </el-form-item>
+          <el-form-item v-if="editingForm.transport === 'stdio'" :label="t('settings.mcpArgs')">
+            <el-input v-model="editingForm.args" type="textarea" :rows="2" :placeholder="t('settings.mcpArgsPlaceholder')" />
+          </el-form-item>
+          <el-form-item :label="t('settings.mcpSecretRef')">
+            <el-input v-model="editingForm.secret_ref" :placeholder="t('settings.mcpSecretRefPlaceholder')" />
+          </el-form-item>
+          <el-form-item :label="t('settings.mcpTimeout')">
+            <el-input-number v-model="editingForm.timeout_ms" :min="1000" :max="120000" :step="1000" />
+          </el-form-item>
+          <el-form-item :label="t('settings.mcpEnabled')">
+            <el-switch v-model="editingForm.enabledBool" :active-value="1" :inactive-value="0" />
+          </el-form-item>
+          <el-form-item>
+            <div class="form-actions-bar">
+              <el-button size="small" @click="cancelEdit">{{ t('common.cancel') }}</el-button>
+              <el-button
+                size="small"
+                type="primary"
+                :loading="saving"
+                @click="saveServer"
+              >{{ t('settings.mcpSave') }}</el-button>
+            </div>
+          </el-form-item>
+        </el-form>
+      </div>
+
       <el-button
+        v-if="editingServerId !== -1"
         type="primary"
         plain
         @click="addServer"
@@ -121,7 +175,7 @@
         {{ t('settings.mcpAddServer') }}
       </el-button>
 
-      <el-empty v-if="!loading && !servers.length" :description="t('settings.mcpEmpty')" />
+      <el-empty v-if="!loading && !servers.length && editingServerId !== -1" :description="t('settings.mcpEmpty')" />
     </div>
   </div>
 </template>
@@ -211,6 +265,10 @@ function toggleTools(srv: McpServer) {
 }
 
 function openEdit(srv: McpServer) {
+  if (editingServerId.value === srv.id) {
+    editingServerId.value = null
+    return
+  }
   editingServerId.value = srv.id
   Object.assign(editingForm, {
     name: srv.name,
@@ -242,48 +300,64 @@ function addServer() {
     enabledBool: 1,
     timeout_ms: 30000,
   })
+  expandedServerId.value = null
   editingServerId.value = -1
 }
 
 function buildInput(): McpServerInput {
   const input: McpServerInput = {
-    name: editingForm.name,
+    name: editingForm.name.trim(),
     transport: editingForm.transport,
-    enabled: editingForm.enabledBool,
-    timeout_ms: editingForm.timeout_ms,
+    enabled: Number(editingForm.enabledBool) ? 1 : 0,
+    timeout_ms: editingForm.timeout_ms || 30000,
   }
   if (editingForm.transport === 'http') {
-    if (editingForm.url) input.url = editingForm.url
-    if (editingForm.headers) input.headers = editingForm.headers
-    if (editingForm.secret_ref) input.secret_ref = editingForm.secret_ref
+    if (editingForm.url) input.url = editingForm.url.trim()
+    if (editingForm.headers) input.headers = editingForm.headers.trim()
+    if (editingForm.secret_ref) input.secret_ref = editingForm.secret_ref.trim()
   } else {
-    if (editingForm.command) input.command = editingForm.command
-    if (editingForm.args) input.args = editingForm.args
-    if (editingForm.secret_ref) input.secret_ref = editingForm.secret_ref
+    if (editingForm.command) input.command = editingForm.command.trim()
+    if (editingForm.args) input.args = editingForm.args.trim()
+    if (editingForm.secret_ref) input.secret_ref = editingForm.secret_ref.trim()
   }
   return input
 }
 
 async function saveServer() {
-  if (!editingForm.name) {
+  const trimmedName = editingForm.name.trim()
+  if (!trimmedName) {
     ElMessage.error(t('settings.mcpNameRequired'))
+    return
+  }
+  if (!/^[a-z0-9_-]{1,64}$/.test(trimmedName)) {
+    ElMessage.error(t('settings.mcpNamePlaceholder'))
+    return
+  }
+  if (editingForm.transport === 'http' && !editingForm.url?.trim()) {
+    ElMessage.error(t('settings.mcpUrlPlaceholder'))
+    return
+  }
+  if (editingForm.transport === 'stdio' && !editingForm.command?.trim()) {
+    ElMessage.error(t('settings.mcpCommandPlaceholder'))
     return
   }
   saving.value = true
   try {
-    if (editingServerId.value == null) {
-      await loadServers()
-    } else if (editingServerId.value === -1) {
+    if (editingServerId.value === -1) {
       await createMcpServer(buildInput())
       ElMessage.success(t('settings.mcpServerAdded'))
-    } else {
+    } else if (editingServerId.value != null) {
       await updateMcpServer(editingServerId.value, buildInput())
       ElMessage.success(t('settings.mcpServerSaved'))
     }
     editingServerId.value = null
     await loadServers()
-  } catch {
-    ElMessage.error(t('settings.mcpSaveFailed'))
+  } catch (err: unknown) {
+    const msg =
+      (err as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+      (err as { message?: string })?.message ||
+      t('settings.mcpSaveFailed')
+    ElMessage.error(msg)
   } finally {
     saving.value = false
   }
