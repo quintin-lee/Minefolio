@@ -12,7 +12,7 @@
 - **目标**：让 Minefolio AI 的 LLM 工具调用循环可以**同时看到并使用**两类工具：
   1. 内置 7 类财务工具（asset/transaction/expense/transfer/cashflow/portfolio/report，约 30 个）
   2. 用户配置的外部 MCP 服务器上暴露的任意工具（如 GitHub、Notion、Slack、自建脚本）
-- **非目标（本轮不做）**：Minefolio 作为 MCP *服务器*（路径 B），保持单向集成，控制复杂度。
+- **双向集成（已实现）**：路径 A = Minefolio 作为 MCP **客户端**消费外部 MCP 服务器工具（§3）；路径 B = Minefolio 作为 MCP **服务器**对外暴露内置工具（§16，`POST /mcp`）。
 - **协议范围**：MCP 2025-06-18 规范，仅支持 `streamable-HTTP` 与 `stdio` 两种 transport。旧版 `SSE`（2024-11）不实现——已被官方标记 deprecated，streamable-HTTP 是完整超集。
 - **预算与策略**：MCP 工具**计入**现有 `tool_budget` / `cost_budget` / `timeout_ms` / `max_iterations`，不另开预算池。
 - **向后兼容**：内置 registry 静态数组 + `pthread_once` 不变；MCP 工具在**用户会话开始时**动态生成 `csilk_ai_tool_t` 并追加到 `ctx->tools[]`，dispatcher 按 `mcp:<serverId>:` 前缀路由到远端通道。零改动内置工具的执行链路。
@@ -697,3 +697,25 @@ POST /mcp/
 3. §10 stdio 连接池回收与 `atexit` 兜底的实现细节（是否需 `SIGTERM` 后 `SIGKILL` 双段）。
 4. §4.1 schema 净化的 `$ref` 白名单是否过严。
 5. §8 测试策略：`test_mcp_client.c` 的 mock stdio 子进程在 CI（Linux/macOS）的可移植性。
+
+---
+
+## 16. 路径 B：Minefolio 作为 MCP 服务器（已实现）
+
+将 Minefolio 内置工具暴露为标准 MCP 服务器端点，供外部 MCP 客户端（Claude Desktop / Cursor / 自建 Agent）消费。
+
+**实现**：`interfaces/http/controllers/mcp_server_controller.c` 注册 `POST /mcp`，streamable-HTTP JSON-RPC 2.0。支持 method：
+
+| method | 行为 |
+|---|---|
+| `initialize` | 返回 `protocolVersion:"2025-06-18"` + `serverInfo:{name:"minefolio"}` + `capabilities:{tools:{}}` |
+| `tools/list` | 经 `ai_tool_get_csilk_definitions` 枚举内置工具，组装 `{tools:[{name,description,inputSchema}]}` |
+| `tools/call` | 取 `params.name` + `params.arguments`，经 `ai_tools_execute_parsed` 调内置工具，结果包 `{content:[{type:"text"}]}` |
+| `ping` | 空 result |
+| 未知 | JSON-RPC `-32601 method not found` |
+
+**鉴权**：`/mcp` 保持 JWT 保护（不在中间件 allow-list），中间件验签后设 `jwt_payload`，handler 经 `ctx_user_id` 取用户；未认证由中间件返 401。
+
+**响应契约**：JSON-RPC 原文直出（不套 Minefolio 的 `{code,message,data}` 信封）。
+
+**测试**：`tests/test_mcp_server.sh`（外部客户端视角 curl POST /mcp，PASS:7）。

@@ -27,6 +27,7 @@
 #include "interfaces/http/controllers/import_rule_controller.h"
 #include "interfaces/http/controllers/receipt_controller.h"
 #include "interfaces/http/controllers/ai_mcp_controller.h"
+#include "interfaces/http/controllers/mcp_server_controller.h"
 #include "services/market/market_scheduler.h"
 #include "services/ai_service.h"
 #include "dtos/request.h"
@@ -97,6 +98,9 @@ main(int argc, char** argv)
 
     // JWT middleware (rejects if JWT_SECRET is not set)
     csilk_app_use_group(app, "/api", jwt_middleware_wrapper);
+    // /mcp is a separate group (no /api prefix) — run JWT middleware on it too so
+    // ctx_user_id() works inside the MCP server handler.
+    csilk_app_use_group(app, "/mcp", jwt_middleware_wrapper);
     if (config_env_get("ENABLE_CSRF", NULL, 0, NULL)) {
         csilk_app_use_group(app, "/api", csrf_middleware_wrapper);
     }
@@ -122,6 +126,7 @@ main(int argc, char** argv)
     register_import_rule_routes(app);
     register_receipt_routes(app);
     register_ai_mcp_routes(app);
+    register_mcp_server_routes(app);
     csilk_admin_serve_secure(app, "/csilk-admin", NULL);
 
     const char* dist = "./frontend/dist";
