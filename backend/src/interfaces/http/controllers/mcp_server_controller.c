@@ -70,7 +70,7 @@ mcp_handle_initialize(csilk_ctx_t* c, const csilk_json_t* body)
 {
     (void)body;
     csilk_json_t* result = csilk_json_object();
-    csilk_json_add_string(result, "protocolVersion", "2025-06-18");
+    csilk_json_add_string(result, "protocolVersion", "2024-11-05");
 
     csilk_json_t* server_info = csilk_json_object();
     csilk_json_add_string(server_info, "name", "minefolio");

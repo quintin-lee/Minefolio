@@ -70,7 +70,24 @@ build_request(const char* method, const csilk_json_t* params)
     csilk_json_add_int(frame, "id", 1);
     csilk_json_add_string(frame, "method", method ? method : "");
     csilk_json_t* params_copy = params ? csilk_json_copy(params) : csilk_json_object();
-    csilk_json_add_item(frame, params_copy); /* add_item 接管所有权 */
+    csilk_json_add_object(frame, "params", params_copy); /* add_object 接管所有权 */
+    char* out = csilk_json_serialize(frame, NULL);
+    csilk_json_free(frame);
+    return out;
+}
+
+/* 构造 JSON-RPC 2.0 通知帧（无 id） */
+static char*
+build_notification(const char* method, const csilk_json_t* params)
+{
+    csilk_json_t* frame = csilk_json_object();
+    if (!frame) {
+        return NULL;
+    }
+    csilk_json_add_string(frame, "jsonrpc", "2.0");
+    csilk_json_add_string(frame, "method", method ? method : "");
+    csilk_json_t* params_copy = params ? csilk_json_copy(params) : csilk_json_object();
+    csilk_json_add_object(frame, "params", params_copy);
     char* out = csilk_json_serialize(frame, NULL);
     csilk_json_free(frame);
     return out;
@@ -470,10 +487,10 @@ stdio_call(mf_mcp_client_t* c, const char* request_json, char* out_err, size_t e
         if (pid == 0) {
             close(in_pipe[1]);
             close(out_pipe[0]);
-            if (dup2(in_pipe[0], STDIN_FILENO) != 0) {
+            if (dup2(in_pipe[0], STDIN_FILENO) < 0) {
                 _exit(127);
             }
-            if (dup2(out_pipe[1], STDOUT_FILENO) != 0) {
+            if (dup2(out_pipe[1], STDOUT_FILENO) < 0) {
                 _exit(127);
             }
             close(in_pipe[0]);
@@ -486,6 +503,9 @@ stdio_call(mf_mcp_client_t* c, const char* request_json, char* out_err, size_t e
         c->write_fd = in_pipe[1]; /* 父写子 stdin */
         close(in_pipe[0]);
         close(out_pipe[1]);
+        for (size_t i = 0; i < argc; i++) {
+            free(argv[i]);
+        }
         free(argv);
         if (envp) {
             free_envp(envp, envc);
@@ -580,12 +600,19 @@ mf_mcp_client_free(mf_mcp_client_t* c)
     if (!c) {
         return;
     }
-    /* stdio 子进程清理：SIGTERM → 等 2s → SIGKILL（设计 §10） */
+    /* stdio 子进程清理：SIGTERM → 轮询等待至多 500ms → SIGKILL */
     if (c->child_pid > 0) {
         kill(c->child_pid, SIGTERM);
-        usleep(2000000); /* 2s */
         int st = 0;
-        if (waitpid(c->child_pid, &st, WNOHANG) == 0) {
+        int exited = 0;
+        for (int w = 0; w < 50; w++) {
+            if (waitpid(c->child_pid, &st, WNOHANG) > 0) {
+                exited = 1;
+                break;
+            }
+            usleep(10000); /* 10ms */
+        }
+        if (!exited) {
             kill(c->child_pid, SIGKILL);
             waitpid(c->child_pid, &st, 0);
         }
@@ -616,7 +643,7 @@ mf_mcp_client_initialize(mf_mcp_client_t* c, char* out_err, size_t err_sz)
     csilk_json_t* client_info = csilk_json_object();
     csilk_json_add_string(client_info, "name", "minefolio");
     csilk_json_add_string(client_info, "version", "1.0");
-    csilk_json_add_item(params, client_info);
+    csilk_json_add_object(params, "clientInfo", client_info);
     csilk_json_add_string(params, "protocolVersion", "2024-11-05");
 
     char* req = build_request("initialize", params);
@@ -665,6 +692,41 @@ mf_mcp_client_initialize(mf_mcp_client_t* c, char* out_err, size_t err_sz)
         }
     }
     free(req);
+
+    if (ok == 0) {
+        /* MCP 握手完成：发送 notifications/initialized */
+        char* notif = build_notification("notifications/initialized", NULL);
+        if (notif) {
+            if (c->server->transport == MCP_TRANSPORT_HTTP) {
+                char  nerr[256] = {0};
+                int   ncode = 0;
+                char* nresp =
+                    http_call(c, notif, c->server->timeout_ms, NULL, nerr, sizeof(nerr), &ncode);
+                if (nresp) {
+                    free(nresp);
+                }
+            } else if (c->write_fd >= 0) {
+                char* nframe = malloc(strlen(notif) + 2);
+                if (nframe) {
+                    sprintf(nframe, "%s\n", notif);
+                    size_t noff = 0;
+                    while (noff < strlen(nframe)) {
+                        ssize_t nw = write(c->write_fd, nframe + noff, strlen(nframe) - noff);
+                        if (nw < 0) {
+                            if (errno == EINTR) {
+                                continue;
+                            }
+                            break;
+                        }
+                        noff += (size_t)nw;
+                    }
+                    free(nframe);
+                }
+            }
+            free(notif);
+        }
+    }
+
     return ok;
 }
 
@@ -678,7 +740,7 @@ mf_mcp_client_list_tools(mf_mcp_client_t*       c,
     if (!c) {
         return -1;
     }
-    char* req = build_request("tools/list", csilk_json_object());
+    char* req = build_request("tools/list", NULL);
     if (!req) {
         return -1;
     }
@@ -809,7 +871,7 @@ mf_mcp_client_call_tool(
     if (args_json && args_json[0]) {
         csilk_json_t* args = csilk_json_parse(args_json);
         if (args) {
-            csilk_json_add_item(params, args); /* 移入 ownership */
+            csilk_json_add_object(params, "arguments", args); /* 移入 ownership */
         } else {
             csilk_json_add_string(params, "arguments", args_json);
         }
@@ -860,10 +922,10 @@ mf_mcp_client_call_tool(
         const csilk_json_t* first = csilk_json_array_get(content, 0);
         const csilk_json_t* text = first ? csilk_json_get(first, "text") : NULL;
         if (text && csilk_json_is_string(text)) {
-            /* 尝试把 text 再 parse 成 JSON；失败则原样返回 */
-            char* out = csilk_json_serialize(text, NULL);
+            const char* s = csilk_json_string_value(text);
+            char*       out = s ? strdup(s) : strdup("{}");
             csilk_json_free(rj);
-            return out ? out : strdup(csilk_json_string_value(text));
+            return out;
         }
     }
     /* 否则直接序列化整个 result */

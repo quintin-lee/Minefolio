@@ -103,7 +103,7 @@ JWT="$TOKEN"
 INIT=$(curl -s -X POST "http://127.0.0.1:$PORT/mcp" \
     -H "Authorization: Bearer $JWT" -H 'Content-Type: application/json' \
     -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' || true)
-grep_check "mcp: initialize returns protocolVersion" '"protocolVersion":"2025-06-18"' "$INIT"
+grep_check "mcp: initialize returns protocolVersion" '"protocolVersion":"2024-11-05"' "$INIT"
 grep_check "mcp: initialize returns serverInfo" '"name":"minefolio"' "$INIT"
 
 LIST=$(curl -s -X POST "http://127.0.0.1:$PORT/mcp" \

@@ -13,10 +13,12 @@ typedef struct {
     int64_t          server_id;
     mf_mcp_client_t* client;
     time_t           last_used;
-    bool             in_use;       /* 已被某 dispatch 持有，evict 跳过 */
+    bool             in_use; /* 已被某 dispatch 持有，evict 跳过 */
 } pool_entry_t;
 
-static pool_entry_t    s_pool[64]; /* 固定容量，上限由 MINEFOLIO_MCP_STDIO_MAX_PROCS 控制逻辑 */
+#define MF_MCP_STDIO_POOL_CAP 64
+static pool_entry_t
+    s_pool[MF_MCP_STDIO_POOL_CAP]; /* 固定容量，上限由 MINEFOLIO_MCP_STDIO_MAX_PROCS 控制逻辑 */
 static size_t          s_pool_count = 0;
 static pthread_mutex_t s_pool_lock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -61,7 +63,10 @@ mf_mcp_stdio_pool_acquire(
 
     /* 未命中：需要新分配 */
     int max = mf_mcp_config_stdio_max_procs();
-    if (s_pool_count >= (size_t)max || s_pool_count >= sizeof(s_pool)) {
+    if (max <= 0 || max > MF_MCP_STDIO_POOL_CAP) {
+        max = MF_MCP_STDIO_POOL_CAP;
+    }
+    if (s_pool_count >= (size_t)max || s_pool_count >= MF_MCP_STDIO_POOL_CAP) {
         /* 池满：LRU 淘汰最久未用（仅淘汰不在用的条目） */
         size_t victim = SIZE_MAX;
         time_t oldest = 0;
@@ -112,7 +117,7 @@ mf_mcp_stdio_pool_acquire(
         return NULL;
     }
 
-    if (s_pool_count < sizeof(s_pool)) {
+    if (s_pool_count < MF_MCP_STDIO_POOL_CAP) {
         s_pool[s_pool_count].user_id = user_id;
         s_pool[s_pool_count].server_id = server_id;
         s_pool[s_pool_count].client = c;
