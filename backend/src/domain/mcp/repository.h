@@ -19,6 +19,16 @@
 #include "domain/mcp/entity.h"
 
 /**
+ * @brief 工具缓存数量统计项（server_id -> COUNT(*)，一条 GROUP BY 查询产出）
+ *
+ * 供应用层 list 用例一次性取回所有服务器的工具数，替代逐 server 全量 load。
+ */
+typedef struct {
+    int64_t server_id;
+    size_t  count;
+} mf_mcp_tool_count_t;
+
+/**
  * @brief 查询指定用户的所有 MCP 服务器
  */
 int mf_mcp_server_repo_list(void*             db_pool,
@@ -94,3 +104,17 @@ int mf_mcp_server_tool_repo_load_for_user(void*                  db_pool,
  * @brief 释放工具实体数组内存
  */
 void mf_mcp_server_tool_repo_free_list(mf_mcp_server_tool_t* list, size_t count);
+
+/**
+ * @brief 一条 GROUP BY 查询取回该用户所有服务器的工具缓存数量
+ * @return 0 成功, -1 数据库错误；无缓存行时 out_pairs 为 NULL / out_count 为 0
+ */
+int mf_mcp_server_tool_repo_counts_for_user(void*                 db_pool,
+                                            int64_t               user_id,
+                                            mf_mcp_tool_count_t** out_pairs,
+                                            size_t*               out_count);
+
+/**
+ * @brief 释放 counts_for_user 返回的堆数组内存
+ */
+void mf_mcp_tool_counts_free(mf_mcp_tool_count_t* pairs, size_t count);

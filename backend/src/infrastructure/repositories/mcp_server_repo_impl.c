@@ -452,3 +452,55 @@ mf_mcp_server_tool_repo_free_list(mf_mcp_server_tool_t* list, size_t count)
     (void)count;
     free(list);
 }
+
+int
+mf_mcp_server_tool_repo_counts_for_user(void*                 db_pool,
+                                        int64_t               user_id,
+                                        mf_mcp_tool_count_t** out_pairs,
+                                        size_t*               out_count)
+{
+    csilk_db_pool_t* pool = (csilk_db_pool_t*)db_pool;
+    char             uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+
+    /* 一条 GROUP BY 查询取回所有 (server_id -> COUNT) 对，替代逐 server 全量 load。 */
+    csilk_json_t* rows = csilk_db_query_param_json(
+        pool,
+        "SELECT server_id, COUNT(*) AS cnt FROM mcp_server_tool WHERE user_id=? GROUP BY server_id",
+        (const char*[]){uid_str, NULL});
+
+    if (!rows) {
+        if (out_pairs) {
+            *out_pairs = NULL;
+        }
+        if (out_count) {
+            *out_count = 0;
+        }
+        return -1;
+    }
+
+    size_t               n = csilk_json_array_size(rows);
+    mf_mcp_tool_count_t* pairs =
+        n > 0 ? (mf_mcp_tool_count_t*)calloc(n, sizeof(mf_mcp_tool_count_t)) : NULL;
+    for (size_t i = 0; i < n && pairs; i++) {
+        csilk_json_t* r = csilk_json_array_get(rows, i);
+        pairs[i].server_id = db_get_int(r, "server_id");
+        pairs[i].count = (size_t)db_get_num(r, "cnt");
+    }
+    csilk_json_free(rows);
+
+    if (out_pairs) {
+        *out_pairs = pairs;
+    }
+    if (out_count) {
+        *out_count = n;
+    }
+    return 0;
+}
+
+void
+mf_mcp_tool_counts_free(mf_mcp_tool_count_t* pairs, size_t count)
+{
+    (void)count;
+    free(pairs);
+}

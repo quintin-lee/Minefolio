@@ -62,16 +62,11 @@ validate_cmd_common(const char*              name,
     return 0;
 }
 
-/* 把 mcp_server_t 转为 JSON 对象（含工具缓存数量） */
+/* 把 mcp_server_t 转为 JSON 对象。tool_count 由调用方经一次 GROUP BY 查询预取，
+   本函数不再逐 server 全量 load 工具缓存（旧实现 N 个 server = N 次全量 load）。 */
 static csilk_json_t*
-server_to_json(const mf_mcp_server_t* s, void* pool, int64_t user_id)
+server_to_json(const mf_mcp_server_t* s, size_t tool_count)
 {
-    /* 统计该 server 的工具缓存数量 */
-    mf_mcp_server_tool_t* tools = NULL;
-    size_t                tool_count = 0;
-    int rc = mf_mcp_server_tool_repo_load(pool, user_id, s->id, &tools, &tool_count);
-    (void)rc;
-
     csilk_json_t* obj = csilk_json_object();
     csilk_json_add_number(obj, "id", (double)s->id);
     csilk_json_add_number(obj, "user_id", (double)s->user_id);
@@ -91,10 +86,19 @@ server_to_json(const mf_mcp_server_t* s, void* pool, int64_t user_id)
     csilk_json_add_string(obj, "updated_at", s->updated_at);
     csilk_json_add_number(obj, "tool_count", (double)tool_count);
 
-    if (tools) {
-        mf_mcp_server_tool_repo_free_list(tools, tool_count);
-    }
     return obj;
+}
+
+/* 在 counts 映射中查找某 server 的工具数；缺失视为 0。 */
+static size_t
+count_for_server(const mf_mcp_tool_count_t* pairs, size_t pair_count, int64_t server_id)
+{
+    for (size_t i = 0; i < pair_count; i++) {
+        if (pairs[i].server_id == server_id) {
+            return pairs[i].count;
+        }
+    }
+    return 0;
 }
 
 int
@@ -106,10 +110,17 @@ mf_mcp_usecase_list(void* pool, int64_t user_id, csilk_json_t** out_list)
         return -1;
     }
 
+    /* 一次 GROUP BY 取回所有服务器的工具数，替代旧的逐 server 全量 load。 */
+    mf_mcp_tool_count_t* pairs = NULL;
+    size_t               pair_count = 0;
+    mf_mcp_server_tool_repo_counts_for_user(pool, user_id, &pairs, &pair_count);
+
     csilk_json_t* arr = csilk_json_array();
     for (size_t i = 0; i < count; i++) {
-        csilk_json_add_item(arr, server_to_json(&servers[i], pool, user_id));
+        size_t tc = count_for_server(pairs, pair_count, servers[i].id);
+        csilk_json_add_item(arr, server_to_json(&servers[i], tc));
     }
+    mf_mcp_tool_counts_free(pairs, pair_count);
     mf_mcp_server_repo_free_list(servers, count);
     *out_list = arr;
     return 0;
@@ -127,7 +138,13 @@ mf_mcp_usecase_get(void* pool, int64_t user_id, int64_t server_id, csilk_json_t*
     if (rc != 0) {
         return -1;
     }
-    *out_obj = server_to_json(&s, pool, user_id);
+    /* 单条 get 也走同一 GROUP BY 映射（仅该用户全部缓存），取该 server 计数。 */
+    mf_mcp_tool_count_t* pairs = NULL;
+    size_t               pair_count = 0;
+    mf_mcp_server_tool_repo_counts_for_user(pool, user_id, &pairs, &pair_count);
+    size_t tc = count_for_server(pairs, pair_count, s.id);
+    *out_obj = server_to_json(&s, tc);
+    mf_mcp_tool_counts_free(pairs, pair_count);
     return 0;
 }
 

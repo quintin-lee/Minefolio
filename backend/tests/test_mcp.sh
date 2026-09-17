@@ -219,6 +219,15 @@ HTTP_TOOLS=$(auth_get "$BASE/ai/mcp/servers/$HTTP_MCP_ID/tools")
 HTTP_TOOLS_HAS=$(printf '%s' "$HTTP_TOOLS" | grep -c '"tool_name":"mcp_echo"' || echo 0)
 check "http tools cache has mcp_echo" "1" "$HTTP_TOOLS_HAS"
 
+# --- Task 6: list endpoint carries tool_count (via GROUP BY, not N full loads)
+# After refresh, both mock servers have 1 cached tool each; the list endpoint
+# must return the "tool_count" field with value 1 for the http server.
+LIST_RES=$(auth_get "$BASE/ai/mcp/servers")
+LIST_HAS_TC=$(printf '%s' "$LIST_RES" | grep -c '"tool_count":' || echo 0)
+check "list endpoint returns tool_count field" "1" "$([ "$LIST_HAS_TC" -ge 1 ] && echo 1 || echo 0)"
+LIST_TC=$(printf '%s' "$LIST_RES" | sed -n 's/.*"tool_count":\([0-9]*\).*/\1/p')
+check "list endpoint tool_count is a number" "1" "$([ -n "$LIST_TC" ] && echo 1 || echo 0)"
+
 # --- Scenario 2: chat hit remote MCP tool (HTTP transport, no fork) -----------
 echo "=== Scenario 2: chat routes mcp:<id>:mcp_echo via bridge (http) ==="
 # Use the HTTP server id (created above) so the chat hits the libcurl transport,
