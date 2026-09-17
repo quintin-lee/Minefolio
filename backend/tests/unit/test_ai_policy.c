@@ -285,13 +285,13 @@ main(void)
 
         /* 前 5 次应该放行 */
         for (int i = 0; i < 5; i++) {
-            ai_policy_decision_t* dec = ai_policy_evaluate(test_user, 1, "get_assets", args);
+            ai_policy_decision_t* dec = ai_policy_evaluate(test_user, 1, "get_assets", args, AI_RISK_NO_OVERRIDE);
             assert(dec != NULL && dec->allowed == true);
             ai_policy_decision_free(dec);
         }
 
         /* 第 6 次超过阈值，必须被拦截 */
-        ai_policy_decision_t* dec_blocked = ai_policy_evaluate(test_user, 1, "get_assets", args);
+        ai_policy_decision_t* dec_blocked = ai_policy_evaluate(test_user, 1, "get_assets", args, AI_RISK_NO_OVERRIDE);
         assert(dec_blocked != NULL);
         assert(dec_blocked->allowed == false);
         assert(strstr(dec_blocked->reason, "Frequency limit exceeded") != NULL);
@@ -320,7 +320,7 @@ main(void)
         /* 11a: 超过单笔限额 100,000 */
         csilk_json_t* huge_args = csilk_json_object();
         csilk_json_add_number(huge_args, "amount", 150000.0);
-        ai_policy_decision_t* dec_huge = ai_policy_evaluate(user, 1, "confirm_proposed_transfer", huge_args);
+        ai_policy_decision_t* dec_huge = ai_policy_evaluate(user, 1, "confirm_proposed_transfer", huge_args, AI_RISK_NO_OVERRIDE);
         assert(dec_huge != NULL);
         assert(dec_huge->allowed == false);
         assert(strstr(dec_huge->reason, "Amount limit exceeded") != NULL);
@@ -331,7 +331,7 @@ main(void)
         /* 11b: 金额 50,000，未超过最高上限，但超过 20,000 临界值，风险提升为 CRITICAL */
         csilk_json_t* large_args = csilk_json_object();
         csilk_json_add_number(large_args, "amount", 50000.0);
-        ai_policy_decision_t* dec_large = ai_policy_evaluate(user, 1, "confirm_proposed_transfer", large_args);
+        ai_policy_decision_t* dec_large = ai_policy_evaluate(user, 1, "confirm_proposed_transfer", large_args, AI_RISK_NO_OVERRIDE);
         assert(dec_large != NULL);
         assert(dec_large->allowed == true);
         assert(dec_large->risk_level == AI_RISK_CRITICAL);

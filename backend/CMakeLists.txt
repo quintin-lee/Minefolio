@@ -178,6 +178,12 @@ target_compile_options(test_mcp_pool PRIVATE -UNDEBUG)
 target_link_libraries(test_mcp_pool PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
 add_test(NAME test_mcp_pool COMMAND test_mcp_pool)
 
+add_executable(test_policy_mcp_risk tests/unit/test_policy_mcp_risk.c ${LIB_SOURCES})
+target_include_directories(test_policy_mcp_risk PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_policy_mcp_risk PRIVATE -UNDEBUG)
+target_link_libraries(test_policy_mcp_risk PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES})
+add_test(NAME test_policy_mcp_risk COMMAND test_policy_mcp_risk)
+
 add_executable(test_ai_runtime tests/unit/test_ai_runtime.c ${LIB_SOURCES})
 target_include_directories(test_ai_runtime PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_options(test_ai_runtime PRIVATE -UNDEBUG)

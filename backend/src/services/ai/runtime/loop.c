@@ -306,8 +306,8 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
             }
 
             /* 1. 安全策略综合评估 (Policy Evaluation) */
-            ai_policy_decision_t* decision =
-                ai_policy_evaluate(ctx->user_id, ctx->session_id, tc->name, args);
+            ai_policy_decision_t* decision = ai_policy_evaluate(
+                ctx->user_id, ctx->session_id, tc->name, args, AI_RISK_NO_OVERRIDE);
             char*           result_str = NULL;
             int             tool_success = 0;
             struct timespec t0, t1;

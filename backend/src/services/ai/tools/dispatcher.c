@@ -141,7 +141,7 @@ ai_tool_dispatch_parsed(const ai_tool_context_t* ctx,
 
     /* 5. 统一安全策略与风控评估 (Policy & Risk Evaluation) */
     ai_policy_decision_t* decision =
-        ai_policy_evaluate(ctx->user_id, ctx->session_id, tool_name, args);
+        ai_policy_evaluate(ctx->user_id, ctx->session_id, tool_name, args, AI_RISK_NO_OVERRIDE);
     if (!decision || !decision->allowed) {
         const char*       reason = decision ? decision->reason : "Policy rejection";
         ai_audit_record_t audit = {

@@ -60,7 +60,8 @@ void ai_policy_reset_frequency_limits(void);
 ai_policy_decision_t* ai_policy_evaluate(int64_t             user_id,
                                          int64_t             session_id,
                                          const char*         tool_name,
-                                         const csilk_json_t* args);
+                                         const csilk_json_t* args,
+                                         ai_risk_level_t     risk_override);
 
 /**
  * @brief 释放策略决策对象

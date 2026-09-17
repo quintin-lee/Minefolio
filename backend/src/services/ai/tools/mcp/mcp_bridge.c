@@ -552,7 +552,7 @@ mcp_bridge_dispatch(const ai_tool_context_t* ctx, const char* tool_name, const c
 
     /* 统一策略引擎评估（限流 + 确认） */
     ai_policy_decision_t* decision =
-        ai_policy_evaluate(ctx->user_id, ctx->session_id, tool_name, args);
+        ai_policy_evaluate(ctx->user_id, ctx->session_id, tool_name, args, risk);
     if (!decision || !decision->allowed) {
         const char* reason = decision ? decision->reason : "Policy rejection";
         if (cached) {

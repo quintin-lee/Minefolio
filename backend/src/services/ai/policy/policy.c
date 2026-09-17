@@ -114,7 +114,8 @@ ai_policy_decision_t*
 ai_policy_evaluate(int64_t             user_id,
                    int64_t             session_id,
                    const char*         tool_name,
-                   const csilk_json_t* args)
+                   const csilk_json_t* args,
+                   ai_risk_level_t     risk_override)
 {
     (void)session_id;
     ai_policy_decision_t* dec = (ai_policy_decision_t*)calloc(1, sizeof(ai_policy_decision_t));
@@ -124,7 +125,11 @@ ai_policy_evaluate(int64_t             user_id,
 
     dec->perm_level = ai_permission_get_level(tool_name);
     dec->risk_level = ai_risk_assess(tool_name, args);
-
+    /* 调用方（如 MCP bridge）若持有权威的缓存风险，可传入覆盖值；
+       否则（AI_RISK_NO_OVERRIDE）沿用 name-pattern 默认风险。 */
+    if (risk_override != AI_RISK_NO_OVERRIDE) {
+        dec->risk_level = risk_override;
+    }
     /* 1. 认证检验 (Authentication) */
     if (user_id <= 0) {
         dec->allowed = false;

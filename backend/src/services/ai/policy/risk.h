@@ -16,7 +16,11 @@ typedef enum {
     AI_RISK_LOW = 1,       /**< 低风险辅助（如服务器时间、报表格式化、复利试算等） */
     AI_RISK_MEDIUM = 2,    /**< 中风险操作（如创建交易草案、小额日常记账草稿） */
     AI_RISK_HIGH = 3,      /**< 高风险操作（如执行日常记账入库、常规跨账户转账、删除分类） */
-    AI_RISK_CRITICAL = 4   /**< 极高风险操作（如大额资金划转、清仓卖出、重置账本数据） */
+    AI_RISK_CRITICAL = 4,  /**< 极高风险操作（如大额资金划转、清仓卖出、重置账本数据） */
+    /* 哨兵值（非真实等级）：调用方传给 ai_policy_evaluate 表示“不覆盖，
+       沿用 ai_risk_assess 的 name-pattern 默认风险”。用 -1 避免与真实
+       等级（0-4）混淆；该值永不作为 ai_risk_level_from_string 的输入。 */
+    AI_RISK_NO_OVERRIDE = -1
 } ai_risk_level_t;
 
 /**
