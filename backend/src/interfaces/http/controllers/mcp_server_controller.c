@@ -5,6 +5,7 @@
 #include "common/db.h"
 #include "services/ai_tools.h"
 #include "services/ai/tools/registry.h"
+#include "services/ai/tools/validation.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -129,6 +130,23 @@ mcp_handle_tools_call(csilk_ctx_t* c, const csilk_json_t* body, int64_t user_id)
     /* arguments 为 params.arguments（csilk_json_t*，缺省 {}） */
     const csilk_json_t* args = csilk_json_get(params, "arguments");
     csilk_json_t* args_json = args ? csilk_json_copy((csilk_json_t*)args) : csilk_json_object();
+
+    /* 在执行前做 schema 校验（与内置 dispatcher 的 step 3 一致）：
+       未知工具 → -32602 unknown tool；必填/类型不符 → -32602 + 校验器消息。 */
+    const ai_tool_t* tool = ai_tool_find(name);
+    if (!tool) {
+        csilk_json_free(args_json);
+        csilk_json_free(params);
+        mcp_send_response(c, mcp_req_id(body), NULL, -32602, "unknown tool");
+        return;
+    }
+    char verr[256] = {0};
+    if (ai_tool_validate_args(tool->parameters_schema, args_json, verr, sizeof(verr)) != 0) {
+        csilk_json_free(args_json);
+        csilk_json_free(params);
+        mcp_send_response(c, mcp_req_id(body), NULL, -32602, verr[0] ? verr : "invalid arguments");
+        return;
+    }
 
     char* result_str = ai_tools_execute_parsed(db_get_pool(), user_id, 0, args_json, name);
 

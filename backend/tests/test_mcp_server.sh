@@ -118,6 +118,13 @@ CALL=$(curl -s -X POST "http://127.0.0.1:$PORT/mcp" \
 grep_check "mcp: tools/call returns content array" '"content":\[' "$CALL"
 grep_check "mcp: tools/call content has type=text" '"type":"text"' "$CALL"
 
+# calculate_date_range requires "range_type"; an empty {} must be rejected with -32602
+# (not executed). This case FAILS until Task 3 adds schema validation to tools/call.
+BADCALL=$(curl -s -X POST "http://127.0.0.1:$PORT/mcp" \
+    -H "Authorization: Bearer $JWT" -H 'Content-Type: application/json' \
+    -d '{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"calculate_date_range","arguments":{}}}' || true)
+grep_check "mcp: tools/call rejects missing required field with -32602" '"code":-32602' "$BADCALL"
+
 UNK=$(curl -s -X POST "http://127.0.0.1:$PORT/mcp" \
     -H "Authorization: Bearer $JWT" -H 'Content-Type: application/json' \
     -d '{"jsonrpc":"2.0","id":4,"method":"bogus/method","params":{}}' || true)
