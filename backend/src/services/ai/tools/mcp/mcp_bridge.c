@@ -632,7 +632,7 @@ mcp_bridge_dispatch(const ai_tool_context_t* ctx, const char* tool_name, const c
     }
 
     /* 7. 审计归档 */
-    bool              is_err = (result && strstr(result, "\"error\":") != NULL);
+    bool              is_err = (result != NULL) && (strstr(result, "\"error\":") != NULL);
     ai_audit_record_t audit = {
         .stage = AI_AUDIT_STAGE_EXECUTION,
         .actor_id = ctx->user_id,
@@ -642,6 +642,9 @@ mcp_bridge_dispatch(const ai_tool_context_t* ctx, const char* tool_name, const c
         .success = !is_err && !call_failed,
     };
     snprintf(audit.tool, sizeof(audit.tool), "%s", tool_name);
+    snprintf(audit.result_summary,
+             sizeof(audit.result_summary),
+             (is_err || call_failed) ? "MCP tool call failed" : "MCP tool call succeeded");
     ai_audit_log(&audit);
 
     /* 调用失败或空结果：产出结构化错误码供 LLM 区分失败类型（设计 §5） */
