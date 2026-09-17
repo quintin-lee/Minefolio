@@ -28,4 +28,36 @@ describe('i18n dictionaries', () => {
   it('en-US key tree matches zh-CN exactly (incl. interpolation params)', () => {
     assertKeysEqual(zhCN as unknown as Node, enUS as unknown as Node)
   })
+
+  it('compiles all messages without compilation syntax errors', async () => {
+    const { createI18n } = await import('vue-i18n')
+    const i18n = createI18n({
+      legacy: false,
+      locale: 'zh-CN',
+      messages: {
+        'zh-CN': zhCN,
+        'en-US': enUS,
+      },
+    })
+
+    function checkNode(node: Node, path = '') {
+      for (const k of Object.keys(node)) {
+        const p = path ? `${path}.${k}` : k
+        const v = node[k]
+        if (typeof v === 'string') {
+          // Extract params if any
+          const paramMatches = [...v.matchAll(/\{(\w+)\}/g)].map(m => m[1])
+          const params: Record<string, string> = {}
+          paramMatches.forEach(name => { params[name] = '1' })
+          expect(() => i18n.global.t(p, params), `Failed to compile key: ${p}`).not.toThrow()
+        } else {
+          checkNode(v as Node, p)
+        }
+      }
+    }
+
+    checkNode(zhCN as unknown as Node)
+    i18n.global.locale.value = 'en-US'
+    checkNode(enUS as unknown as Node)
+  })
 })

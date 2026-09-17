@@ -14,6 +14,11 @@ export function getCurrentLocale(): string {
 }
 
 export const t = ((key: string, params?: Record<string, unknown>): string => {
-  const value = params ? i18n.global.t(key, params) : i18n.global.t(key)
-  return typeof value === 'string' ? value : key
+  try {
+    const value = params ? i18n.global.t(key, params) : i18n.global.t(key)
+    return typeof value === 'string' ? value : key
+  } catch {
+    return key
+  }
 }) satisfies ((key: string, params?: Record<string, unknown>) => string)
+
