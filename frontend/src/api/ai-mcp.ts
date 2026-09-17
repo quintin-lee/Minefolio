@@ -12,6 +12,7 @@ import type {
   McpServerTool,
   McpTestResult,
   McpServerInput,
+  McpScriptItem,
 } from '@/types'
 
 /**
@@ -124,3 +125,50 @@ export async function refreshMcpServer(id: number): Promise<{ tool_count: number
   }
   return (r as { tool_count: number }) || { tool_count: 0 }
 }
+
+/**
+ * 上传自定义 MCP 脚本 (stdio transport 辅助)
+ * @route POST /api/ai/mcp/scripts
+ * @param file 脚本文件 (.py, .js, .mjs, .sh)
+ * @returns 脚本路径与建议执行命令
+ */
+export async function uploadMcpScript(file: File): Promise<McpScriptItem> {
+  const formData = new FormData()
+  formData.append('file', file)
+  const r = (await http.post('/ai/mcp/scripts', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  })) as unknown
+  if (r && typeof r === 'object' && 'command' in r) {
+    return r as McpScriptItem
+  }
+  const d = (r && typeof r === 'object' && 'data' in r ? (r as { data: unknown }).data : r) as
+    | McpScriptItem
+    | undefined
+  return d || { filename: file.name, path: '', command: '', size: file.size }
+}
+
+/**
+ * 获取当前用户已上传的 MCP 脚本列表
+ * @route GET /api/ai/mcp/scripts
+ * @returns 脚本项列表
+ */
+export async function listMcpScripts(): Promise<McpScriptItem[]> {
+  const r = (await http.get('/ai/mcp/scripts')) as unknown
+  if (Array.isArray(r)) return r as McpScriptItem[]
+  if (r && typeof r === 'object' && 'data' in r && Array.isArray((r as { data: unknown }).data)) {
+    return (r as { data: McpScriptItem[] }).data
+  }
+  return []
+}
+
+/**
+ * 删除已上传的 MCP 脚本
+ * @route DELETE /api/ai/mcp/scripts/:filename
+ * @param filename 脚本文件名
+ */
+export async function deleteMcpScript(filename: string): Promise<void> {
+  await http.delete(`/ai/mcp/scripts/${encodeURIComponent(filename)}`)
+}
+

@@ -631,3 +631,15 @@ export interface McpTestResult {
   /** 错误提示信息 */
   message?: string
 }
+
+/**
+ * MCP 用户自定义脚本项 (stdio transport 辅助)
+ */
+export interface McpScriptItem {
+  filename: string
+  path: string
+  command: string
+  size: number
+  updated_at?: number
+}
+

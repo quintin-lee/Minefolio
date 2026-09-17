@@ -5,7 +5,14 @@
 #include "common/response.h"
 #include "common/ctx.h"
 #include "common/db.h"
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+#include <stdbool.h>
+#include <unistd.h>
+#include <dirent.h>
+#include <sys/stat.h>
 
 /* Helper: 从请求体 JSON 读取可选字符串字段（缺失返回 NULL） */
 static const char*
@@ -280,6 +287,287 @@ api_ai_mcp_servers_refresh(csilk_ctx_t* c)
     mcp_server_refresh_response(c, user_id, atoll(id_str));
 }
 
+/* -------------------------------------------------------------------------- */
+/* Stdio 脚本上传与管理接口                                                    */
+/* -------------------------------------------------------------------------- */
+
+_Thread_local static char*  g_script_filename = NULL;
+_Thread_local static char*  g_script_data = NULL;
+_Thread_local static size_t g_script_data_len = 0;
+_Thread_local static size_t g_script_data_cap = 0;
+
+static void
+script_part_handler(csilk_multipart_part_t* part)
+{
+    if (!g_script_filename && part->filename[0]) {
+        g_script_filename = strdup(part->filename);
+    }
+    if (part->data && part->data_len > 0) {
+        size_t need = g_script_data_len + part->data_len;
+        if (need > 5 * 1024 * 1024) {
+            return;
+        }
+        if (need > g_script_data_cap) {
+            size_t cap = g_script_data_cap ? g_script_data_cap : 16384;
+            while (cap < need) {
+                cap *= 2;
+            }
+            char* nd = realloc(g_script_data, cap);
+            if (!nd) {
+                return;
+            }
+            g_script_data = nd;
+            g_script_data_cap = cap;
+        }
+        memcpy(g_script_data + g_script_data_len, part->data, part->data_len);
+        g_script_data_len += part->data_len;
+    }
+}
+
+static const char*
+script_clean_filename(const char* raw)
+{
+    if (!raw) {
+        return NULL;
+    }
+    const char* p = strrchr(raw, '/');
+    if (p) {
+        raw = p + 1;
+    }
+    p = strrchr(raw, '\\');
+    if (p) {
+        raw = p + 1;
+    }
+    return raw;
+}
+
+static bool
+script_detect_interpreter(const char* filename, const char** out_interp)
+{
+    if (!filename || !filename[0]) {
+        return false;
+    }
+    size_t len = strlen(filename);
+    if (len > 128 || strstr(filename, "..") != NULL) {
+        return false;
+    }
+
+    for (size_t i = 0; i < len; i++) {
+        char c = filename[i];
+        if (!isalnum((unsigned char)c) && c != '_' && c != '-' && c != '.') {
+            return false;
+        }
+    }
+
+    if (len >= 3 && strcmp(filename + len - 3, ".py") == 0) {
+        if (out_interp) {
+            *out_interp = "python3";
+        }
+        return true;
+    }
+    if (len >= 3 && strcmp(filename + len - 3, ".js") == 0) {
+        if (out_interp) {
+            *out_interp = "node";
+        }
+        return true;
+    }
+    if (len >= 4 && strcmp(filename + len - 4, ".mjs") == 0) {
+        if (out_interp) {
+            *out_interp = "node";
+        }
+        return true;
+    }
+    if (len >= 3 && strcmp(filename + len - 3, ".sh") == 0) {
+        if (out_interp) {
+            *out_interp = "bash";
+        }
+        return true;
+    }
+    return false;
+}
+
+void
+api_ai_mcp_scripts_upload(csilk_ctx_t* c)
+{
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) {
+        return;
+    }
+
+    free(g_script_filename);
+    free(g_script_data);
+    g_script_filename = NULL;
+    g_script_data = NULL;
+    g_script_data_len = 0;
+    g_script_data_cap = 0;
+
+    csilk_multipart_parse(c, script_part_handler);
+
+    if (!g_script_filename || !g_script_data || g_script_data_len == 0) {
+        free(g_script_filename);
+        free(g_script_data);
+        g_script_filename = NULL;
+        g_script_data = NULL;
+        g_script_data_len = 0;
+        g_script_data_cap = 0;
+        respond_bad_request(c, "未接收到有效脚本文件内容");
+        return;
+    }
+
+    const char* raw_name = script_clean_filename(g_script_filename);
+    const char* interp = NULL;
+    if (!raw_name || !script_detect_interpreter(raw_name, &interp)) {
+        free(g_script_filename);
+        free(g_script_data);
+        g_script_filename = NULL;
+        g_script_data = NULL;
+        g_script_data_len = 0;
+        g_script_data_cap = 0;
+        respond_bad_request(c, "非法脚本类型，仅支持 .py, .js, .mjs, .sh");
+        return;
+    }
+
+    /* 确保存储目录存在 */
+    mkdir("./data", 0755);
+    mkdir("./data/mcp_scripts", 0755);
+    char user_dir[512];
+    snprintf(user_dir, sizeof(user_dir), "./data/mcp_scripts/%lld", (long long)user_id);
+    mkdir(user_dir, 0755);
+
+    char abs_dir[1024];
+    if (!realpath(user_dir, abs_dir)) {
+        snprintf(abs_dir, sizeof(abs_dir), "%s", user_dir);
+    }
+
+    char full_path[1280];
+    snprintf(full_path, sizeof(full_path), "%s/%s", abs_dir, raw_name);
+
+    FILE* fp = fopen(full_path, "wb");
+    if (!fp) {
+        free(g_script_filename);
+        free(g_script_data);
+        g_script_filename = NULL;
+        g_script_data = NULL;
+        g_script_data_len = 0;
+        g_script_data_cap = 0;
+        respond_error(c, 500, "保存脚本文件失败");
+        return;
+    }
+    fwrite(g_script_data, 1, g_script_data_len, fp);
+    fclose(fp);
+    chmod(full_path, 0755);
+
+    char cmd[1400];
+    snprintf(cmd, sizeof(cmd), "%s %s", interp, full_path);
+
+    csilk_json_t* resp = csilk_json_object();
+    csilk_json_add_string(resp, "filename", raw_name);
+    csilk_json_add_string(resp, "path", full_path);
+    csilk_json_add_string(resp, "command", cmd);
+    csilk_json_add_number(resp, "size", (double)g_script_data_len);
+
+    free(g_script_filename);
+    free(g_script_data);
+    g_script_filename = NULL;
+    g_script_data = NULL;
+    g_script_data_len = 0;
+    g_script_data_cap = 0;
+
+    respond_ok(c, resp);
+}
+
+void
+api_ai_mcp_scripts_list(csilk_ctx_t* c)
+{
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) {
+        return;
+    }
+
+    char user_dir[512];
+    snprintf(user_dir, sizeof(user_dir), "./data/mcp_scripts/%lld", (long long)user_id);
+
+    csilk_json_t* arr = csilk_json_array();
+    DIR*          dir = opendir(user_dir);
+    if (!dir) {
+        respond_ok(c, arr);
+        return;
+    }
+
+    char abs_dir[1024];
+    if (!realpath(user_dir, abs_dir)) {
+        snprintf(abs_dir, sizeof(abs_dir), "%s", user_dir);
+    }
+
+    struct dirent* ent;
+    while ((ent = readdir(dir)) != NULL) {
+        if (ent->d_name[0] == '.') {
+            continue;
+        }
+        const char* interp = NULL;
+        if (!script_detect_interpreter(ent->d_name, &interp)) {
+            continue;
+        }
+
+        char full_path[1280];
+        snprintf(full_path, sizeof(full_path), "%s/%s", abs_dir, ent->d_name);
+
+        struct stat st;
+        if (stat(full_path, &st) != 0) {
+            continue;
+        }
+
+        char cmd[1400];
+        snprintf(cmd, sizeof(cmd), "%s %s", interp, full_path);
+
+        csilk_json_t* item = csilk_json_object();
+        csilk_json_add_string(item, "filename", ent->d_name);
+        csilk_json_add_string(item, "path", full_path);
+        csilk_json_add_string(item, "command", cmd);
+        csilk_json_add_number(item, "size", (double)st.st_size);
+        csilk_json_add_number(item, "updated_at", (double)st.st_mtime);
+        csilk_json_array_append(arr, item);
+    }
+    closedir(dir);
+
+    respond_ok(c, arr);
+}
+
+void
+api_ai_mcp_scripts_delete(csilk_ctx_t* c)
+{
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) {
+        return;
+    }
+
+    const char* filename = csilk_get_param(c, "filename");
+    if (!filename || !filename[0]) {
+        respond_bad_request(c, "缺少文件名");
+        return;
+    }
+
+    const char* raw_name = script_clean_filename(filename);
+    const char* interp = NULL;
+    if (!raw_name || !script_detect_interpreter(raw_name, &interp)) {
+        respond_bad_request(c, "非法文件名");
+        return;
+    }
+
+    char user_dir[512];
+    snprintf(user_dir, sizeof(user_dir), "./data/mcp_scripts/%lld", (long long)user_id);
+    char full_path[1024];
+    snprintf(full_path, sizeof(full_path), "%s/%s", user_dir, raw_name);
+
+    if (unlink(full_path) == 0) {
+        csilk_json_t* resp = csilk_json_object();
+        csilk_json_add_bool(resp, "deleted", true);
+        respond_ok(c, resp);
+    } else {
+        respond_not_found(c);
+    }
+}
+
 void
 register_ai_mcp_routes(csilk_app_t* app)
 {
@@ -346,4 +634,28 @@ register_ai_mcp_routes(csilk_app_t* app)
                        nullptr,
                        "Refresh MCP tools",
                        "Force re-fetch tools/list; M2 implementation");
+
+    csilk_app_post_ext(app,
+                       "/api/ai/mcp/scripts",
+                       api_ai_mcp_scripts_upload,
+                       nullptr,
+                       "mcp_script_upload_resp_t",
+                       "Upload MCP script",
+                       "Upload a custom python/node/bash script for stdio MCP execution");
+
+    csilk_app_get_ext(app,
+                      "/api/ai/mcp/scripts",
+                      api_ai_mcp_scripts_list,
+                      nullptr,
+                      "mcp_script_list_resp_t",
+                      "List uploaded MCP scripts",
+                      "List all custom scripts uploaded by current user");
+
+    csilk_app_delete_ext(app,
+                         "/api/ai/mcp/scripts/:filename",
+                         api_ai_mcp_scripts_delete,
+                         nullptr,
+                         nullptr,
+                         "Delete MCP script",
+                         "Delete an uploaded custom MCP script");
 }
