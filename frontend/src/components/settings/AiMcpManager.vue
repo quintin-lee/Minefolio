@@ -971,8 +971,12 @@ loadUploadedScripts()
   margin-top: 12px;
 }
 
+/* 表单展开后可能超出视口，给固定高度 + 局部滚动条，避免被页级滚动挤出 */
 .server-form {
   margin-top: 8px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .form-actions-bar {
