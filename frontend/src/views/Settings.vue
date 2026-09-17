@@ -179,6 +179,7 @@ onErrorCaptured((err, instance, info) => {
 
 .settings-tabs :deep(.el-tab-pane) {
   height: calc(100% - 48px);
+  overflow-y: auto;
 }
 
 .tab-label {
