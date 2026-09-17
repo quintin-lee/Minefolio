@@ -172,6 +172,12 @@ target_compile_options(test_ai_policy PRIVATE -UNDEBUG)
 target_link_libraries(test_ai_policy PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES})
 add_test(NAME test_ai_policy COMMAND test_ai_policy)
 
+add_executable(test_mcp_pool tests/unit/test_mcp_pool.c ${LIB_SOURCES})
+target_include_directories(test_mcp_pool PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_mcp_pool PRIVATE -UNDEBUG)
+target_link_libraries(test_mcp_pool PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_test(NAME test_mcp_pool COMMAND test_mcp_pool)
+
 add_executable(test_ai_runtime tests/unit/test_ai_runtime.c ${LIB_SOURCES})
 target_include_directories(test_ai_runtime PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_options(test_ai_runtime PRIVATE -UNDEBUG)
