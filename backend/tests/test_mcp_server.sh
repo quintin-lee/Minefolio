@@ -144,5 +144,24 @@ else
     FAIL=$((FAIL+1))
 fi
 
+# /mcp 每用户限频（Task 4）：burst 超过 per-user cap 必须被 JSON-RPC -32005 拒绝。
+# cap = 120/分，这里 fire 140 pings，必有一段触发限流（-32005 / "rate limited"）。
+LIMITED=0
+for i in $(seq 1 140); do
+    R=$(curl -s -X POST "http://127.0.0.1:$PORT/mcp" \
+        -H "Authorization: Bearer $JWT" -H 'Content-Type: application/json' \
+        -d '{"jsonrpc":"2.0","id":1,"method":"ping","params":{}}' || true)
+    case "$R" in
+        *"-32005"*|*"rate limited"*|*"429"*) LIMITED=1 ;;
+    esac
+done
+if [ "$LIMITED" -eq 1 ]; then
+    echo "PASS: mcp: /mcp rate-limits a per-user burst"
+    PASS=$((PASS+1))
+else
+    echo "FAIL: mcp: /mcp rate-limits a per-user burst (no -32005 / 429 seen)"
+    FAIL=$((FAIL+1))
+fi
+
 echo "PASS: $PASS  FAIL: $FAIL"
 [ "$FAIL" -eq 0 ] || exit 1
