@@ -34,6 +34,7 @@ mf_ai_repo_daily_expense_list(void*       pool,
                               const char* date_from,
                               const char* date_to,
                               int64_t     category_id,
+                              const char* expense_type,
                               int64_t*    total)
 {
     char uid[32], limit_str[32], offset_str[32];
@@ -75,6 +76,13 @@ mf_ai_repo_daily_expense_list(void*       pool,
         strncat(count_sql, " AND de.expense_date >= ?", sizeof(count_sql) - strlen(count_sql) - 1);
         params[pidx++] = date_from;
         cnt_params[cnt_pidx++] = date_from;
+    }
+    if (expense_type &&
+        (strcmp(expense_type, "expense") == 0 || strcmp(expense_type, "income") == 0)) {
+        strncat(sql, " AND de.expense_type=?", sizeof(sql) - strlen(sql) - 1);
+        strncat(count_sql, " AND de.expense_type=?", sizeof(count_sql) - strlen(count_sql) - 1);
+        params[pidx++] = expense_type;
+        cnt_params[cnt_pidx++] = expense_type;
     }
     if (date_to && date_to[0]) {
         strncat(sql, " AND de.expense_date <= ?", sizeof(sql) - strlen(sql) - 1);

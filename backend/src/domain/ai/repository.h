@@ -38,6 +38,7 @@ csilk_json_t* mf_ai_repo_daily_expense_list(void*       pool,
                                             const char* date_from,
                                             const char* date_to,
                                             int64_t     category_id,
+                                            const char* expense_type,
                                             int64_t*    total);
 
 /**
