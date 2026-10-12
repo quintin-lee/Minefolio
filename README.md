@@ -104,6 +104,7 @@ docker compose ps
   # 启动更新后的容器
   docker compose up -d
   ```
+  > 注意：`docker-compose.yml` 未声明 `build:`，`docker compose up -d --build` 不会构建任何镜像——改完代码必须先执行上面两条 `docker build`，再 `up -d`。
 * **切换 PostgreSQL 生产数据库**：
   默认使用轻量级 SQLite 数据库（持久化于 Docker 数据卷 `minefolio-data` 中）。如需使用外部 PostgreSQL，仅需在 `.env` 中指定：
   ```env
