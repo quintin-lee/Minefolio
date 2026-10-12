@@ -6,7 +6,7 @@
 // frontend/src/stores/sync.ts
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { getDb, run, query, rowsFrom, persist } from '@/db/local'
+import { getDb, run, query, rowsFrom, persist, resetLocalDb } from '@/db/local'
 import { dailyExpensesApi } from '@/api/daily_expenses'
 import { transactionsApi } from '@/api/transactions'
 import { assetsApi } from '@/api/assets'
@@ -309,6 +309,18 @@ export const useSyncStore = defineStore('sync', () => {
     loadQueue()
   }
 
+  /**
+   * 重置同步 Store (登出时调用)：清空内存队列与同步位，避免上一账号的离线
+   * 写操作被下一账号 syncNow() 顶着新 token 推出去；同时丢弃本地库，
+   * 下次登录 init() 会重建，天然按账号隔离。
+   */
+  function reset(): void {
+    queue.value = []
+    lastSyncAt.value = null
+    syncing.value = false
+    resetLocalDb()
+  }
+
   return {
     queue,
     syncing,
@@ -321,6 +333,7 @@ export const useSyncStore = defineStore('sync', () => {
     pullRemote,
     syncNow,
     init,
+    reset,
   }
 })
 

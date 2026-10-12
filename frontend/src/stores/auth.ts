@@ -179,15 +179,17 @@ export const useAuthStore = defineStore('auth', () => {
     }
     clearCryptoKeyCache()
     try {
-      // 动态 import 各 store：避免把聊天/账本/分类模块静态打入首屏包
-      const [{ useChatStore }, { useLedgerStore }, { useCategoryStore }] = await Promise.all([
+      // 动态 import 各 store：避免把聊天/账本/分类/同步模块静态打入首屏包
+      const [{ useChatStore }, { useLedgerStore }, { useCategoryStore }, { useSyncStore }] = await Promise.all([
         import('./chat'),
         import('./ledger'),
         import('./category'),
+        import('./sync'),
       ])
       useChatStore().resetState()
       useLedgerStore().reset()
       useCategoryStore().reset()
+      useSyncStore().reset()
     } catch {
       // 清理失败不影响登出主流程
     }

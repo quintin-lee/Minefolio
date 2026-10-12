@@ -81,4 +81,20 @@ describe('sync store', () => {
     expect(dailyExpensesApi.update).toHaveBeenCalledWith(301, expect.objectContaining({ amount: 20 }))
     expect(store.pendingCount).toBe(0)
   })
+
+  it('reset clears queued ops and local db so next account starts clean', async () => {
+    const store = useSyncStore()
+    store.init()
+    store.enqueue('daily_expenses', 55, 'create', { amount: 5 })
+    expect(store.pendingCount).toBe(1)
+    store.reset()
+    expect(store.pendingCount).toBe(0)
+    expect(store.queue).toEqual([])
+    expect(store.lastSyncAt).toBeNull()
+    // 本地库已关闭丢弃：直接查抛未初始化
+    expect(() => query('SELECT * FROM sync_queue')).toThrow()
+    // 下次登录 init() 重建空库
+    await initLocalDb()
+    expect(rowsFrom(query('SELECT * FROM sync_queue')).length).toBe(0)
+  })
 })
