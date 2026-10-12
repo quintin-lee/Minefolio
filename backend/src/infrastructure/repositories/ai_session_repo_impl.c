@@ -70,15 +70,15 @@ mf_ai_session_insert(csilk_db_pool_t* pool,
 {
     char uid[32], m[128], p[64];
     uid_str(user_id, uid);
-    strncpy(m, model ?: "deepseek-chat", sizeof(m) - 1);
+    strncpy(m, model ? model : "deepseek-chat", sizeof(m) - 1);
     m[sizeof(m) - 1] = '\0';
-    strncpy(p, provider ?: "deepseek", sizeof(p) - 1);
+    strncpy(p, provider ? provider : "deepseek", sizeof(p) - 1);
     p[sizeof(p) - 1] = '\0';
     csilk_json_t* r =
         csilk_db_query_param_json(pool,
                                   "INSERT INTO ai_sessions (user_id, title, model, provider) "
                                   "VALUES (?, ?, ?, ?) RETURNING id",
-                                  (const char*[]){uid, title ?: "新对话", m, p, NULL});
+                                  (const char*[]){uid, title ? title : "新对话", m, p, NULL});
     int64_t id = 0;
     if (r && csilk_json_array_size(r) > 0) {
         id = db_get_int(csilk_json_array_get(r, 0), "id");
@@ -207,7 +207,7 @@ mf_ai_message_insert(csilk_db_pool_t* pool,
 {
     char sid[32], m[128];
     sid_str(session_id, sid);
-    strncpy(m, model ?: "", sizeof(m) - 1);
+    strncpy(m, model ? model : "", sizeof(m) - 1);
     m[sizeof(m) - 1] = '\0';
     csilk_json_t* r = csilk_db_query_param_json(pool,
                                                 "INSERT INTO ai_messages (session_id, role, "
@@ -260,7 +260,7 @@ mf_ai_summary_upsert(csilk_db_pool_t* pool,
         "summary_text = EXCLUDED.summary_text, "
         "token_count = EXCLUDED.token_count, "
         "updated_at = CURRENT_TIMESTAMP RETURNING id",
-        (const char*[]){sid, uid, summary_text ?: "", tc, NULL});
+        (const char*[]){sid, uid, summary_text ? summary_text : "", tc, NULL});
     int affected = r ? (int)csilk_json_array_size(r) : 0;
     csilk_json_free(r);
     return affected > 0;

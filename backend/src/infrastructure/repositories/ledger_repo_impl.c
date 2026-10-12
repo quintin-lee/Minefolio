@@ -55,34 +55,47 @@ mf_ledger_repo_list_by_user(void*                   db_pool,
 
         item->id = (int64_t)db_get_int(r, "id");
         item->owner_id = (int64_t)db_get_int(r, "owner_id");
-        strncpy(item->name, csilk_json_get_string(r, "name") ?: "", sizeof(item->name) - 1);
+        strncpy(item->name,
+                csilk_json_get_string(r, "name") ? csilk_json_get_string(r, "name") : "",
+                sizeof(item->name) - 1);
         strncpy(item->description,
-                csilk_json_get_string(r, "description") ?: "",
+                csilk_json_get_string(r, "description") ? csilk_json_get_string(r, "description")
+                                                        : "",
                 sizeof(item->description) - 1);
         strncpy(item->currency,
-                csilk_json_get_string(r, "currency") ?: "CNY",
+                csilk_json_get_string(r, "currency") ? csilk_json_get_string(r, "currency") : "CNY",
                 sizeof(item->currency) - 1);
-        strncpy(
-            item->icon, csilk_json_get_string(r, "icon") ?: "ph:wallet", sizeof(item->icon) - 1);
-        strncpy(
-            item->color, csilk_json_get_string(r, "color") ?: "#3b82f6", sizeof(item->color) - 1);
+        strncpy(item->icon,
+                csilk_json_get_string(r, "icon") ? csilk_json_get_string(r, "icon") : "ph:wallet",
+                sizeof(item->icon) - 1);
+        strncpy(item->color,
+                csilk_json_get_string(r, "color") ? csilk_json_get_string(r, "color") : "#3b82f6",
+                sizeof(item->color) - 1);
         item->is_default = (db_get_num(r, "is_default") != 0);
         strncpy(item->invite_code,
-                csilk_json_get_string(r, "invite_code") ?: "",
+                csilk_json_get_string(r, "invite_code") ? csilk_json_get_string(r, "invite_code")
+                                                        : "",
                 sizeof(item->invite_code) - 1);
         strncpy(item->invite_expires_at,
-                csilk_json_get_string(r, "invite_expires_at") ?: "",
+                csilk_json_get_string(r, "invite_expires_at")
+                    ? csilk_json_get_string(r, "invite_expires_at")
+                    : "",
                 sizeof(item->invite_expires_at) - 1);
         strncpy(item->created_at,
-                csilk_json_get_string(r, "created_at") ?: "",
+                csilk_json_get_string(r, "created_at") ? csilk_json_get_string(r, "created_at")
+                                                       : "",
                 sizeof(item->created_at) - 1);
         strncpy(item->updated_at,
-                csilk_json_get_string(r, "updated_at") ?: "",
+                csilk_json_get_string(r, "updated_at") ? csilk_json_get_string(r, "updated_at")
+                                                       : "",
                 sizeof(item->updated_at) - 1);
-        strncpy(
-            item->my_role, csilk_json_get_string(r, "my_role") ?: "", sizeof(item->my_role) - 1);
+        strncpy(item->my_role,
+                csilk_json_get_string(r, "my_role") ? csilk_json_get_string(r, "my_role") : "",
+                sizeof(item->my_role) - 1);
         strncpy(item->owner_username,
-                csilk_json_get_string(r, "owner_username") ?: "",
+                csilk_json_get_string(r, "owner_username")
+                    ? csilk_json_get_string(r, "owner_username")
+                    : "",
                 sizeof(item->owner_username) - 1);
         item->member_count = (int64_t)db_get_int(r, "member_count");
         item->total_assets = db_get_num(r, "total_assets");
@@ -121,25 +134,36 @@ mf_ledger_repo_get(void* db_pool, int64_t ledger_id, mf_ledger_t* out)
     memset(out, 0, sizeof(*out));
     out->id = (int64_t)db_get_int(r, "id");
     out->owner_id = (int64_t)db_get_int(r, "owner_id");
-    strncpy(out->name, csilk_json_get_string(r, "name") ?: "", sizeof(out->name) - 1);
+    strncpy(out->name,
+            csilk_json_get_string(r, "name") ? csilk_json_get_string(r, "name") : "",
+            sizeof(out->name) - 1);
     strncpy(out->description,
-            csilk_json_get_string(r, "description") ?: "",
+            csilk_json_get_string(r, "description") ? csilk_json_get_string(r, "description") : "",
             sizeof(out->description) - 1);
-    strncpy(
-        out->currency, csilk_json_get_string(r, "currency") ?: "CNY", sizeof(out->currency) - 1);
-    strncpy(out->icon, csilk_json_get_string(r, "icon") ?: "ph:wallet", sizeof(out->icon) - 1);
-    strncpy(out->color, csilk_json_get_string(r, "color") ?: "#3b82f6", sizeof(out->color) - 1);
+    strncpy(out->currency,
+            csilk_json_get_string(r, "currency") ? csilk_json_get_string(r, "currency") : "CNY",
+            sizeof(out->currency) - 1);
+    strncpy(out->icon,
+            csilk_json_get_string(r, "icon") ? csilk_json_get_string(r, "icon") : "ph:wallet",
+            sizeof(out->icon) - 1);
+    strncpy(out->color,
+            csilk_json_get_string(r, "color") ? csilk_json_get_string(r, "color") : "#3b82f6",
+            sizeof(out->color) - 1);
     out->is_default = (db_get_num(r, "is_default") != 0);
     strncpy(out->invite_code,
-            csilk_json_get_string(r, "invite_code") ?: "",
+            csilk_json_get_string(r, "invite_code") ? csilk_json_get_string(r, "invite_code") : "",
             sizeof(out->invite_code) - 1);
     strncpy(out->invite_expires_at,
-            csilk_json_get_string(r, "invite_expires_at") ?: "",
+            csilk_json_get_string(r, "invite_expires_at")
+                ? csilk_json_get_string(r, "invite_expires_at")
+                : "",
             sizeof(out->invite_expires_at) - 1);
-    strncpy(
-        out->created_at, csilk_json_get_string(r, "created_at") ?: "", sizeof(out->created_at) - 1);
-    strncpy(
-        out->updated_at, csilk_json_get_string(r, "updated_at") ?: "", sizeof(out->updated_at) - 1);
+    strncpy(out->created_at,
+            csilk_json_get_string(r, "created_at") ? csilk_json_get_string(r, "created_at") : "",
+            sizeof(out->created_at) - 1);
+    strncpy(out->updated_at,
+            csilk_json_get_string(r, "updated_at") ? csilk_json_get_string(r, "updated_at") : "",
+            sizeof(out->updated_at) - 1);
 
     csilk_json_free(arr);
     return 0;
@@ -327,10 +351,15 @@ mf_ledger_repo_member_list(void*                db_pool,
         m->id = (int64_t)db_get_int(r, "id");
         m->ledger_id = (int64_t)db_get_int(r, "ledger_id");
         m->user_id = (int64_t)db_get_int(r, "user_id");
-        strncpy(m->username, csilk_json_get_string(r, "username") ?: "", sizeof(m->username) - 1);
-        strncpy(m->role, csilk_json_get_string(r, "role") ?: "", sizeof(m->role) - 1);
-        strncpy(
-            m->joined_at, csilk_json_get_string(r, "joined_at") ?: "", sizeof(m->joined_at) - 1);
+        strncpy(m->username,
+                csilk_json_get_string(r, "username") ? csilk_json_get_string(r, "username") : "",
+                sizeof(m->username) - 1);
+        strncpy(m->role,
+                csilk_json_get_string(r, "role") ? csilk_json_get_string(r, "role") : "",
+                sizeof(m->role) - 1);
+        strncpy(m->joined_at,
+                csilk_json_get_string(r, "joined_at") ? csilk_json_get_string(r, "joined_at") : "",
+                sizeof(m->joined_at) - 1);
     }
 
     csilk_json_free(rows);
@@ -481,14 +510,21 @@ mf_ledger_repo_find_by_invite_code(void* db_pool, const char* invite_code, mf_le
     memset(out, 0, sizeof(*out));
     out->id = (int64_t)db_get_int(r, "id");
     out->owner_id = (int64_t)db_get_int(r, "owner_id");
-    strncpy(out->name, csilk_json_get_string(r, "name") ?: "", sizeof(out->name) - 1);
+    strncpy(out->name,
+            csilk_json_get_string(r, "name") ? csilk_json_get_string(r, "name") : "",
+            sizeof(out->name) - 1);
     strncpy(out->description,
-            csilk_json_get_string(r, "description") ?: "",
+            csilk_json_get_string(r, "description") ? csilk_json_get_string(r, "description") : "",
             sizeof(out->description) - 1);
-    strncpy(
-        out->currency, csilk_json_get_string(r, "currency") ?: "CNY", sizeof(out->currency) - 1);
-    strncpy(out->icon, csilk_json_get_string(r, "icon") ?: "ph:wallet", sizeof(out->icon) - 1);
-    strncpy(out->color, csilk_json_get_string(r, "color") ?: "#3b82f6", sizeof(out->color) - 1);
+    strncpy(out->currency,
+            csilk_json_get_string(r, "currency") ? csilk_json_get_string(r, "currency") : "CNY",
+            sizeof(out->currency) - 1);
+    strncpy(out->icon,
+            csilk_json_get_string(r, "icon") ? csilk_json_get_string(r, "icon") : "ph:wallet",
+            sizeof(out->icon) - 1);
+    strncpy(out->color,
+            csilk_json_get_string(r, "color") ? csilk_json_get_string(r, "color") : "#3b82f6",
+            sizeof(out->color) - 1);
     out->is_default = (db_get_num(r, "is_default") != 0);
 
     csilk_json_free(arr);

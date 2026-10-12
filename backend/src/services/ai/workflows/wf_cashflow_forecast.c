@@ -44,7 +44,9 @@ step_cf_collect(csilk_db_pool_t*    pool,
     if (asset_arr) {
         for (size_t i = 0; i < csilk_json_array_size(asset_arr); i++) {
             const csilk_json_t* a = csilk_json_array_get(asset_arr, i);
-            const char*         tp = csilk_json_get_string(a, "asset_type") ?: "";
+            const char*         tp = csilk_json_get_string(a, "asset_type")
+                                         ? csilk_json_get_string(a, "asset_type")
+                                         : "";
             int64_t             pid = (int64_t)db_get_num(a, "parent_id");
             if (pid != 0) {
                 continue;

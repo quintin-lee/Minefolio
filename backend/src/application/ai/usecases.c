@@ -348,10 +348,11 @@ ai_usecase_settings_update(void* pool, const csilk_json_t* body, ai_usecase_resu
             memset(new_provs, 0, sizeof(ai_provider_t) * (size_t)pc);
             for (int i = 0; i < pc; i++) {
                 const csilk_json_t* p = csilk_json_array_get(prov_arr, i);
-                const char*         pid = csilk_json_get_string(p, "id") ?: "";
+                const char*         pid =
+                    csilk_json_get_string(p, "id") ? csilk_json_get_string(p, "id") : "";
                 strncpy(new_provs[i].id, pid, sizeof(new_provs[i].id) - 1);
                 strncpy(new_provs[i].name,
-                        csilk_json_get_string(p, "name") ?: "",
+                        csilk_json_get_string(p, "name") ? csilk_json_get_string(p, "name") : "",
                         sizeof(new_provs[i].name) - 1);
                 const char* k_enc = csilk_json_get_string(p, "api_key_enc");
                 const char* k = csilk_json_get_string(p, "api_key");
@@ -388,7 +389,8 @@ ai_usecase_settings_update(void* pool, const csilk_json_t* body, ai_usecase_resu
                     }
                 }
                 strncpy(new_provs[i].base_url,
-                        csilk_json_get_string(p, "base_url") ?: "",
+                        csilk_json_get_string(p, "base_url") ? csilk_json_get_string(p, "base_url")
+                                                             : "",
                         sizeof(new_provs[i].base_url) - 1);
                 parse_string_array(
                     csilk_json_get(p, "models"), &new_provs[i].models, &new_provs[i].model_count);

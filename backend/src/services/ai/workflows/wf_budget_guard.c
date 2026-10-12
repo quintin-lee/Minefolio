@@ -129,7 +129,9 @@ step_bg_forecast(csilk_db_pool_t*    pool,
     for (size_t i = 0; i < n; i++) {
         const csilk_json_t* row = csilk_json_array_get(cur_cats, i);
         int64_t             cid = db_get_int(row, "category_id");
-        const char*         cname = csilk_json_get_string(row, "category_name") ?: "未分类";
+        const char*         cname = csilk_json_get_string(row, "category_name")
+                                        ? csilk_json_get_string(row, "category_name")
+                                        : "未分类";
         double              cur_amt = db_get_num(row, "amount");
         double              avg = 0.0;
         if (hist_avg && csilk_json_is_array(hist_avg)) {
@@ -246,7 +248,9 @@ step_bg_report(csilk_db_pool_t*    pool,
                  month);
         for (size_t i = 0; i < fc_n && i < 6; i++) {
             const csilk_json_t* it = csilk_json_array_get(forecast, i);
-            const char*         nm = csilk_json_get_string(it, "category_name") ?: "未分类";
+            const char*         nm = csilk_json_get_string(it, "category_name")
+                                         ? csilk_json_get_string(it, "category_name")
+                                         : "未分类";
             char                seg[64];
             snprintf(seg, sizeof(seg), "%s\"%s\"", i ? "," : "", nm);
             strncat(mermaid, seg, sizeof(mermaid) - strlen(mermaid) - 1);
@@ -297,11 +301,14 @@ step_bg_report(csilk_db_pool_t*    pool,
     char table_rows[4096] = {0};
     for (size_t i = 0; i < fc_n && i < 10; i++) {
         const csilk_json_t* it = csilk_json_array_get(forecast, i);
-        const char*         nm = csilk_json_get_string(it, "category_name") ?: "未分类";
+        const char*         nm = csilk_json_get_string(it, "category_name")
+                                     ? csilk_json_get_string(it, "category_name")
+                                     : "未分类";
         double              cur = db_get_num(it, "cur_amount");
         double              budget = db_get_num(it, "budget");
         double              proj = db_get_num(it, "projected");
-        const char*         risk = csilk_json_get_string(it, "risk") ?: "safe";
+        const char*         risk =
+            csilk_json_get_string(it, "risk") ? csilk_json_get_string(it, "risk") : "safe";
         const char* badge = strcmp(risk, "danger") == 0
                                 ? "🔴 超支预警"
                                 : (strcmp(risk, "warning") == 0 ? "🟡 接近预算" : "🟢 安全");

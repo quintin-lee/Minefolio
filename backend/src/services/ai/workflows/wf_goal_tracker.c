@@ -66,9 +66,10 @@ step_gt_collect(csilk_db_pool_t*    pool,
             if (prog > 100) {
                 prog = 100;
             }
-            const char* deadline = csilk_json_get_string(r, "deadline") ?: "";
-            int         is_overdue = 0, is_completed = prog >= 100 ? 1 : 0;
-            int         days_left = -1;
+            const char* deadline =
+                csilk_json_get_string(r, "deadline") ? csilk_json_get_string(r, "deadline") : "";
+            int is_overdue = 0, is_completed = prog >= 100 ? 1 : 0;
+            int days_left = -1;
             if (deadline[0] && !is_completed) {
                 int y, mo, d;
                 if (sscanf(deadline, "%d-%d-%d", &y, &mo, &d) == 3) {
@@ -100,7 +101,10 @@ step_gt_collect(csilk_db_pool_t*    pool,
 
             csilk_json_t* o = csilk_json_object();
             csilk_json_add_number(o, "id", (double)db_get_int(r, "id"));
-            csilk_json_add_string(o, "name", csilk_json_get_string(r, "name") ?: "未命名目标");
+            csilk_json_add_string(
+                o,
+                "name",
+                csilk_json_get_string(r, "name") ? csilk_json_get_string(r, "name") : "未命名目标");
             csilk_json_add_number(o, "target_amount", tgt);
             csilk_json_add_number(o, "current_amount", cur);
             csilk_json_add_number(o, "progress", prog);
@@ -109,7 +113,10 @@ step_gt_collect(csilk_db_pool_t*    pool,
             csilk_json_add_number(o, "days_left", (double)days_left);
             csilk_json_add_bool(o, "is_overdue", is_overdue);
             csilk_json_add_bool(o, "is_completed", is_completed);
-            csilk_json_add_string(o, "note", csilk_json_get_string(r, "note") ?: "");
+            csilk_json_add_string(
+                o,
+                "note",
+                csilk_json_get_string(r, "note") ? csilk_json_get_string(r, "note") : "");
             csilk_json_array_append(goals, o);
         }
     }
@@ -165,8 +172,9 @@ step_gt_plan(csilk_db_pool_t*    pool,
         double              cur = db_get_num(g, "current_amount");
         double              remaining = tgt > cur ? tgt - cur : 0;
         int                 is_completed = csilk_json_get_bool(g, "is_completed");
-        const char*         deadline = csilk_json_get_string(g, "deadline") ?: "";
-        int                 days_left = (int)db_get_num(g, "days_left");
+        const char*         deadline =
+            csilk_json_get_string(g, "deadline") ? csilk_json_get_string(g, "deadline") : "";
+        int days_left = (int)db_get_num(g, "days_left");
 
         double months_left = 12;
         if (deadline[0] && days_left >= 0) {
@@ -191,7 +199,10 @@ step_gt_plan(csilk_db_pool_t*    pool,
 
         csilk_json_t* o = csilk_json_object();
         csilk_json_add_number(o, "id", db_get_num(g, "id"));
-        csilk_json_add_string(o, "name", csilk_json_get_string(g, "name") ?: "未命名");
+        csilk_json_add_string(o,
+                              "name",
+                              csilk_json_get_string(g, "name") ? csilk_json_get_string(g, "name")
+                                                               : "未命名");
         csilk_json_add_number(o, "remaining", remaining);
         csilk_json_add_number(o, "months_left", months_left);
         csilk_json_add_number(o, "monthly_needed", monthly_needed);
@@ -264,8 +275,9 @@ step_gt_report(csilk_db_pool_t*    pool,
                 sizeof(mermaid) - strlen(mermaid) - 1);
         for (size_t i = 0; i < n && i < 6; i++) {
             const csilk_json_t* g = csilk_json_array_get(goals, i);
-            const char*         nm = csilk_json_get_string(g, "name") ?: "目标";
-            char                safe[64] = {0};
+            const char*         nm =
+                csilk_json_get_string(g, "name") ? csilk_json_get_string(g, "name") : "目标";
+            char safe[64] = {0};
             strncpy(safe, nm, sizeof(safe) - 1);
             for (char* p = safe; *p; p++) {
                 if (*p == '"' || *p == '\'') {
@@ -297,11 +309,12 @@ step_gt_report(csilk_db_pool_t*    pool,
     char rows[8192] = {0};
     for (size_t i = 0; i < n && i < 20; i++) {
         const csilk_json_t* g = csilk_json_array_get(goals, i);
-        const char*         nm = csilk_json_get_string(g, "name") ?: "-";
-        double              tgt = db_get_num(g, "target_amount");
-        double              cur = db_get_num(g, "current_amount");
-        double              prog = db_get_num(g, "progress");
-        const char*         dl = csilk_json_get_string(g, "deadline") ?: "—";
+        const char* nm = csilk_json_get_string(g, "name") ? csilk_json_get_string(g, "name") : "-";
+        double      tgt = db_get_num(g, "target_amount");
+        double      cur = db_get_num(g, "current_amount");
+        double      prog = db_get_num(g, "progress");
+        const char* dl =
+            csilk_json_get_string(g, "deadline") ? csilk_json_get_string(g, "deadline") : "—";
         if (!dl[0]) {
             dl = "—";
         }

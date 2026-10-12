@@ -21,6 +21,14 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(csilk)
 
+# Opt-in sanitizer build for dev (default flags untouched):
+#   cmake -S backend -B backend/build-asan -DMINEFOLIO_SANITIZE=ON
+option(MINEFOLIO_SANITIZE "Build with AddressSanitizer + UBSan" OFF)
+if(MINEFOLIO_SANITIZE)
+    add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=address,undefined)
+endif()
+
 # Find libpq for PostgreSQL support
 find_package(PkgConfig QUIET)
 pkg_check_modules(PQ libpq)
@@ -35,7 +43,9 @@ target_include_directories(minefolio PRIVATE
 
 target_compile_definitions(minefolio PRIVATE _GNU_SOURCE)
 target_compile_definitions(minefolio PRIVATE MINEFOLIO_VERSION="${PROJECT_VERSION}")
-target_compile_options(minefolio PRIVATE -Wall -Wextra -Wno-unused-parameter)
+target_compile_options(minefolio PRIVATE -Wall -Wextra -Wpedantic -Wno-unused-parameter)
+# decimal.c 的 __int128 定点数实现为故意设计，按文件豁免 -Wpedantic（头文件内另有 pragma 意图声明）
+set_source_files_properties(src/core/financial/decimal.c PROPERTIES COMPILE_OPTIONS -Wno-pedantic)
 
 find_package(CURL REQUIRED)
 

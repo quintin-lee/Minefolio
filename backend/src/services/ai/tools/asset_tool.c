@@ -110,9 +110,12 @@ exec_get_asset_breakdown(const ai_tool_t*         tool,
         size_t n = csilk_json_array_size(list);
         for (size_t i = 0; i < n; i++) {
             csilk_json_t* a = csilk_json_array_get(list, i);
-            const char*   type = csilk_json_get_string(a, "asset_type") ?: "";
-            const char*   name = csilk_json_get_string(a, "name") ?: "";
-            double        val = db_get_num(a, "current_value");
+            const char*   type = csilk_json_get_string(a, "asset_type")
+                                     ? csilk_json_get_string(a, "asset_type")
+                                     : "";
+            const char*   name =
+                csilk_json_get_string(a, "name") ? csilk_json_get_string(a, "name") : "";
+            double val = db_get_num(a, "current_value");
             if (val == 0.0) {
                 val = db_get_num(a, "balance");
             }

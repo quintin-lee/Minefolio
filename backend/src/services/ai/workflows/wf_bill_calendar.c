@@ -44,7 +44,9 @@ step_bc_collect(csilk_db_pool_t*    pool,
             if (amt <= 0.0) {
                 continue;
             }
-            const char* sdate = csilk_json_get_string(r, "start_date") ?: "";
+            const char* sdate = csilk_json_get_string(r, "start_date")
+                                    ? csilk_json_get_string(r, "start_date")
+                                    : "";
             int         due_day = 1;
             int         y, m, d;
             if (sscanf(sdate, "%d-%d-%d", &y, &m, &d) == 3 && d >= 1 && d <= 31) {
@@ -52,13 +54,22 @@ step_bc_collect(csilk_db_pool_t*    pool,
             }
             csilk_json_t* item = csilk_json_object();
             csilk_json_add_number(item, "id", (double)db_get_int(r, "id"));
-            csilk_json_add_string(item, "name", csilk_json_get_string(r, "name") ?: "现金流排期");
+            csilk_json_add_string(
+                item,
+                "name",
+                csilk_json_get_string(r, "name") ? csilk_json_get_string(r, "name") : "现金流排期");
             csilk_json_add_number(item, "amount", amt);
             csilk_json_add_string(item, "kind", "schedule");
-            csilk_json_add_string(
-                item, "type", csilk_json_get_string(r, "flow_type") ?: "dividend");
+            csilk_json_add_string(item,
+                                  "type",
+                                  csilk_json_get_string(r, "flow_type")
+                                      ? csilk_json_get_string(r, "flow_type")
+                                      : "dividend");
             csilk_json_add_number(item, "day", (double)due_day);
-            csilk_json_add_string(item, "note", csilk_json_get_string(r, "note") ?: "");
+            csilk_json_add_string(
+                item,
+                "note",
+                csilk_json_get_string(r, "note") ? csilk_json_get_string(r, "note") : "");
             csilk_json_array_append(bills, item);
             total_monthly_bill += amt;
             bill_count++;
@@ -74,7 +85,9 @@ step_bc_collect(csilk_db_pool_t*    pool,
         size_t n = csilk_json_array_size(alist);
         for (size_t i = 0; i < n; i++) {
             const csilk_json_t* a = csilk_json_array_get(alist, i);
-            const char*         atype = csilk_json_get_string(a, "asset_type") ?: "";
+            const char*         atype = csilk_json_get_string(a, "asset_type")
+                                            ? csilk_json_get_string(a, "asset_type")
+                                            : "";
             if (strcmp(atype, "loan") != 0 && strcmp(atype, "credit_card") != 0 &&
                 strcmp(atype, "other_liability") != 0) {
                 continue;
@@ -84,8 +97,10 @@ step_bc_collect(csilk_db_pool_t*    pool,
                 continue;
             }
 
-            const char* aname = csilk_json_get_string(a, "name") ?: "负债账单";
-            const char* anote = csilk_json_get_string(a, "note") ?: "";
+            const char* aname =
+                csilk_json_get_string(a, "name") ? csilk_json_get_string(a, "name") : "负债账单";
+            const char* anote =
+                csilk_json_get_string(a, "note") ? csilk_json_get_string(a, "note") : "";
             int         due_day = 10;
             const char* p_day = strstr(anote, "日");
             if (!p_day) {
@@ -149,15 +164,19 @@ step_bc_collect(csilk_db_pool_t*    pool,
             if (amt <= 0.0) {
                 continue;
             }
-            const char* last_d = csilk_json_get_string(r, "last_date") ?: "";
-            int         due_day = 1;
-            int         y, m, d;
+            const char* last_d =
+                csilk_json_get_string(r, "last_date") ? csilk_json_get_string(r, "last_date") : "";
+            int due_day = 1;
+            int y, m, d;
             if (sscanf(last_d, "%d-%d-%d", &y, &m, &d) == 3 && d >= 1 && d <= 31) {
                 due_day = d;
             }
-            const char* cname = csilk_json_get_string(r, "category_name") ?: "固定支出";
-            const char* notes = csilk_json_get_string(r, "notes") ?: "";
-            char        bill_title[128];
+            const char* cname = csilk_json_get_string(r, "category_name")
+                                    ? csilk_json_get_string(r, "category_name")
+                                    : "固定支出";
+            const char* notes =
+                csilk_json_get_string(r, "notes") ? csilk_json_get_string(r, "notes") : "";
+            char bill_title[128];
             if (notes && notes[0] && strlen(notes) < 40) {
                 snprintf(bill_title, sizeof(bill_title), "%s (%s)", cname, notes);
             } else {

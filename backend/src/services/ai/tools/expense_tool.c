@@ -172,8 +172,9 @@ exec_propose_daily_expense(const ai_tool_t*         tool,
         size_t asz = csilk_json_array_size(assets);
         for (size_t i = 0; i < asz; i++) {
             csilk_json_t* it = csilk_json_array_get(assets, i);
-            const char*   name = csilk_json_get_string(it, "name") ?: "";
-            int64_t       id = (int64_t)db_get_num(it, "id");
+            const char*   name =
+                csilk_json_get_string(it, "name") ? csilk_json_get_string(it, "name") : "";
+            int64_t id = (int64_t)db_get_num(it, "id");
             if (i == 0 || (asset_name && asset_name[0] && str_icontains(name, asset_name))) {
                 matched_asset_id = id;
                 strncpy(matched_asset_name, name, sizeof(matched_asset_name) - 1);
@@ -192,8 +193,9 @@ exec_propose_daily_expense(const ai_tool_t*         tool,
         size_t csz = csilk_json_array_size(cats);
         for (size_t i = 0; i < csz; i++) {
             csilk_json_t* it = csilk_json_array_get(cats, i);
-            const char*   name = csilk_json_get_string(it, "name") ?: "";
-            int64_t       id = (int64_t)db_get_num(it, "id");
+            const char*   name =
+                csilk_json_get_string(it, "name") ? csilk_json_get_string(it, "name") : "";
+            int64_t id = (int64_t)db_get_num(it, "id");
             if (i == 0 || (cat_name && cat_name[0] && str_icontains(name, cat_name))) {
                 matched_cat_id = id;
                 strncpy(matched_cat_name, name, sizeof(matched_cat_name) - 1);

@@ -23,9 +23,12 @@ step_pr_scan(csilk_db_pool_t*    pool,
         size_t n = csilk_json_array_size(list);
         for (size_t i = 0; i < n; i++) {
             csilk_json_t* a = csilk_json_array_get(list, i);
-            const char*   type = csilk_json_get_string(a, "asset_type") ?: "";
-            const char*   name = csilk_json_get_string(a, "name") ?: "未命名资产";
-            double        val = db_get_num(a, "current_value");
+            const char*   type = csilk_json_get_string(a, "asset_type")
+                                     ? csilk_json_get_string(a, "asset_type")
+                                     : "";
+            const char*   name =
+                csilk_json_get_string(a, "name") ? csilk_json_get_string(a, "name") : "未命名资产";
+            double val = db_get_num(a, "current_value");
             if (val == 0.0) {
                 val = db_get_num(a, "balance");
             }

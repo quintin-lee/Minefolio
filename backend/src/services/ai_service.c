@@ -393,7 +393,11 @@ ai_chat_handler(csilk_ctx_t* c)
         respond_error(c, 500, "未找到可用 AI 供应商");
         return;
     }
-    strncpy(model_buf, model_override ?: (prov->models[0] ?: "default"), sizeof(model_buf) - 1);
+    const char* model_sel = model_override ? model_override : prov->models[0];
+    if (!model_sel) {
+        model_sel = "default";
+    }
+    strncpy(model_buf, model_sel, sizeof(model_buf) - 1);
 
     /* session: create if new, or auto-title default "新对话" session */
     int64_t sid = session_id;
@@ -477,8 +481,12 @@ ai_chat_handler(csilk_ctx_t* c)
     for (int i = 0; i < hsz; i++) {
         csilk_json_t* m = csilk_json_array_get(history, i);
         csilk_json_t* im = csilk_json_object();
-        csilk_json_add_string(im, "role", csilk_json_get_string(m, "role") ?: "");
-        csilk_json_add_string(im, "content", csilk_json_get_string(m, "content") ?: "");
+        csilk_json_add_string(
+            im, "role", csilk_json_get_string(m, "role") ? csilk_json_get_string(m, "role") : "");
+        csilk_json_add_string(
+            im,
+            "content",
+            csilk_json_get_string(m, "content") ? csilk_json_get_string(m, "content") : "");
         csilk_json_array_append(input_arr, im);
     }
     if (!regenerate) {
@@ -536,7 +544,8 @@ ai_service_test_connection(csilk_ctx_t* c)
         return;
     }
 
-    const char* id = csilk_json_get_string(body, "id") ?: "openai";
+    const char* id =
+        csilk_json_get_string(body, "id") ? csilk_json_get_string(body, "id") : "openai";
     const char* base_url = csilk_json_get_string(body, "base_url");
     const char* k_enc = csilk_json_get_string(body, "api_key_enc");
     const char* k = csilk_json_get_string(body, "api_key");
@@ -670,7 +679,8 @@ ai_service_fetch_models(csilk_ctx_t* c)
         return;
     }
 
-    const char* id = csilk_json_get_string(body, "id") ?: "openai";
+    const char* id =
+        csilk_json_get_string(body, "id") ? csilk_json_get_string(body, "id") : "openai";
     const char* base_url = csilk_json_get_string(body, "base_url");
     const char* k_enc = csilk_json_get_string(body, "api_key_enc");
     const char* k = csilk_json_get_string(body, "api_key");

@@ -136,12 +136,17 @@ step_sa_analyze(csilk_db_pool_t*    pool,
     for (size_t i = 0; i < gn; i++) {
         const csilk_json_t* g = csilk_json_array_get(grouped, i);
         int64_t             cid = db_get_int(g, "category_id");
-        const char*         cname = csilk_json_get_string(g, "category_name") ?: "未分类";
+        const char*         cname = csilk_json_get_string(g, "category_name")
+                                        ? csilk_json_get_string(g, "category_name")
+                                        : "未分类";
         double              amt = db_get_num(g, "amount");
         int                 cnt = (int)db_get_num(g, "cnt");
-        const char*         first_date = csilk_json_get_string(g, "first_date") ?: "";
-        const char*         last_date = csilk_json_get_string(g, "last_date") ?: "";
-        const char*         notes = csilk_json_get_string(g, "notes") ?: "";
+        const char*         first_date =
+            csilk_json_get_string(g, "first_date") ? csilk_json_get_string(g, "first_date") : "";
+        const char* last_date =
+            csilk_json_get_string(g, "last_date") ? csilk_json_get_string(g, "last_date") : "";
+        const char* notes =
+            csilk_json_get_string(g, "notes") ? csilk_json_get_string(g, "notes") : "";
 
         if (cnt < 3 && !(cnt == 2 && amt >= 50)) {
             continue;
@@ -158,7 +163,9 @@ step_sa_analyze(csilk_db_pool_t*    pool,
             if (fabs(db_get_num(row, "amount") - amt) > 0.01) {
                 continue;
             }
-            const char* d = csilk_json_get_string(row, "expense_date") ?: "";
+            const char* d = csilk_json_get_string(row, "expense_date")
+                                ? csilk_json_get_string(row, "expense_date")
+                                : "";
             char        ym[8] = {0};
             snprintf(ym, sizeof(ym), "%.7s", d);
             int found = 0;
@@ -310,7 +317,13 @@ step_sa_report(csilk_db_pool_t*    pool,
                  "```mermaid\npie showData\n    title 订阅/固定支出月度构成\n");
         for (size_t i = 0; i < sn && i < 8; i++) {
             const csilk_json_t* it = csilk_json_array_get(subs, i);
-            const char*         nm = csilk_json_get_string(it, "name") ?: csilk_json_get_string(it, "category_name") ?: "未命名";
+            const char*         nm = csilk_json_get_string(it, "name");
+            if (!nm) {
+                nm = csilk_json_get_string(it, "category_name");
+            }
+            if (!nm) {
+                nm = "未命名";
+            }
             double amt = db_get_num(it, "amount");
             char   line[256];
             char   safe_nm[128] = {0};
@@ -334,18 +347,22 @@ step_sa_report(csilk_db_pool_t*    pool,
     char rows[8192] = {0};
     for (size_t i = 0; i < sn && i < 15; i++) {
         const csilk_json_t* it = csilk_json_array_get(subs, i);
-        const char*         nm = csilk_json_get_string(it, "name") ?: "-";
-        const char*         cname = csilk_json_get_string(it, "category_name") ?: "-";
-        double              amt = db_get_num(it, "amount");
-        double              annual = db_get_num(it, "annual");
-        int                 cnt = (int)db_get_num(it, "cnt");
-        int                 dmonths = (int)db_get_num(it, "distinct_months");
-        const char*         last = csilk_json_get_string(it, "last_date") ?: "-";
-        int                 stale = csilk_json_get_bool(it, "is_stale");
-        int                 hiked = csilk_json_get_bool(it, "is_hiked");
-        const char*         badge = stale ? "⚫ 疑似闲置" : (hiked ? "🔴 已涨价" : "🟢 正常扣费");
-        char                line[512];
-        char                safe_nm[96] = {0};
+        const char*         nm =
+            csilk_json_get_string(it, "name") ? csilk_json_get_string(it, "name") : "-";
+        const char* cname = csilk_json_get_string(it, "category_name")
+                                ? csilk_json_get_string(it, "category_name")
+                                : "-";
+        double      amt = db_get_num(it, "amount");
+        double      annual = db_get_num(it, "annual");
+        int         cnt = (int)db_get_num(it, "cnt");
+        int         dmonths = (int)db_get_num(it, "distinct_months");
+        const char* last =
+            csilk_json_get_string(it, "last_date") ? csilk_json_get_string(it, "last_date") : "-";
+        int         stale = csilk_json_get_bool(it, "is_stale");
+        int         hiked = csilk_json_get_bool(it, "is_hiked");
+        const char* badge = stale ? "⚫ 疑似闲置" : (hiked ? "🔴 已涨价" : "🟢 正常扣费");
+        char        line[512];
+        char        safe_nm[96] = {0};
         strncpy(safe_nm, nm, sizeof(safe_nm) - 1);
         for (char* p = safe_nm; *p; p++) {
             if (*p == '|') {

@@ -113,7 +113,9 @@ step_mr_aggregate(csilk_db_pool_t*    pool,
         size_t sz = csilk_json_array_size(assets);
         for (size_t i = 0; i < sz; i++) {
             csilk_json_t* a = csilk_json_array_get(assets, i);
-            const char*   type = csilk_json_get_string(a, "asset_type") ?: "";
+            const char*   type = csilk_json_get_string(a, "asset_type")
+                                     ? csilk_json_get_string(a, "asset_type")
+                                     : "";
             double        bal = db_get_num(a, "current_value");
             if (bal == 0.0) {
                 bal = db_get_num(a, "balance");
@@ -345,7 +347,9 @@ step_mr_generate_report(csilk_db_pool_t*    pool,
                  month);
         for (size_t i = 0; i < cat_count && i < 8; i++) {
             const csilk_json_t* c_row = csilk_json_array_get(cats, i);
-            const char*         c_name = csilk_json_get_string(c_row, "category_name") ?: "未分类";
+            const char*         c_name = csilk_json_get_string(c_row, "category_name")
+                                             ? csilk_json_get_string(c_row, "category_name")
+                                             : "未分类";
             double              c_amt = db_get_num(c_row, "amount");
             if (c_amt > 0.0) {
                 char line[128];

@@ -31,7 +31,9 @@ step_ed_assess(csilk_db_pool_t*    pool,
         size_t n = csilk_json_array_size(list);
         for (size_t i = 0; i < n; i++) {
             csilk_json_t* a = csilk_json_array_get(list, i);
-            const char*   type = csilk_json_get_string(a, "asset_type") ?: "";
+            const char*   type = csilk_json_get_string(a, "asset_type")
+                                     ? csilk_json_get_string(a, "asset_type")
+                                     : "";
             double        bal = db_get_num(a, "balance");
             if (bal == 0.0) {
                 bal = db_get_num(a, "current_value");

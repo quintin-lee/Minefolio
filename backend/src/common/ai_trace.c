@@ -92,8 +92,8 @@ ai_trace_add_tool_span(ai_trace_t* t, const char* name, long latency_ms, size_t 
 void
 ai_trace_set_provider(ai_trace_t* t, const char* provider, const char* model)
 {
-    strncpy(t->provider, provider ?: "", sizeof(t->provider) - 1);
-    strncpy(t->model, model ?: "", sizeof(t->model) - 1);
+    strncpy(t->provider, provider ? provider : "", sizeof(t->provider) - 1);
+    strncpy(t->model, model ? model : "", sizeof(t->model) - 1);
 }
 
 /**
@@ -122,7 +122,7 @@ void
 ai_trace_set_system_prompt(ai_trace_t* t, const char* prompt)
 {
     free(t->system_prompt);
-    t->system_prompt = strdup(prompt ?: "");
+    t->system_prompt = strdup(prompt ? prompt : "");
 }
 
 /**
@@ -289,7 +289,7 @@ void
 ai_trace_finish(ai_trace_t* t, const char* status, const char* error)
 {
     clock_gettime(CLOCK_MONOTONIC, &t->t_end);
-    strncpy(t->status, status ?: "ok", sizeof(t->status) - 1);
+    strncpy(t->status, status ? status : "ok", sizeof(t->status) - 1);
     if (error && error[0]) {
         free(t->error_message);
         t->error_message = strdup(error);

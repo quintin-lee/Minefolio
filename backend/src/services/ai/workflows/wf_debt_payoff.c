@@ -73,7 +73,9 @@ step_dp_collect(csilk_db_pool_t*    pool,
         size_t n = csilk_json_array_size(list);
         for (size_t i = 0; i < n; i++) {
             csilk_json_t* a = csilk_json_array_get(list, i);
-            const char*   t = csilk_json_get_string(a, "asset_type") ?: "";
+            const char*   t = csilk_json_get_string(a, "asset_type")
+                                  ? csilk_json_get_string(a, "asset_type")
+                                  : "";
             if (strcmp(t, "loan") != 0 && strcmp(t, "credit_card") != 0 &&
                 strcmp(t, "other_liability") != 0) {
                 continue;
@@ -85,10 +87,12 @@ step_dp_collect(csilk_db_pool_t*    pool,
             if (bal <= 0.0) {
                 continue;
             }
-            const char*   note = csilk_json_get_string(a, "note") ?: "";
-            double        rate = dp_rate_from_note(note, t);
-            int64_t       aid = db_get_int(a, "id");
-            const char*   nm = csilk_json_get_string(a, "name") ?: "未命名负债";
+            const char* note =
+                csilk_json_get_string(a, "note") ? csilk_json_get_string(a, "note") : "";
+            double      rate = dp_rate_from_note(note, t);
+            int64_t     aid = db_get_int(a, "id");
+            const char* nm =
+                csilk_json_get_string(a, "name") ? csilk_json_get_string(a, "name") : "未命名负债";
             csilk_json_t* o = csilk_json_object();
             csilk_json_add_number(o, "id", (double)aid);
             csilk_json_add_string(o, "name", nm);
@@ -263,8 +267,11 @@ step_dp_simulate(csilk_db_pool_t*    pool,
             items[i].balance = db_get_num(d, "balance");
             items[i].annual_rate = db_get_num(d, "annual_rate");
             items[i].monthly_rate = items[i].annual_rate / 12.0 / 100.0;
-            const char* nm = csilk_json_get_string(d, "name") ?: "";
-            const char* tp = csilk_json_get_string(d, "asset_type") ?: "";
+            const char* nm =
+                csilk_json_get_string(d, "name") ? csilk_json_get_string(d, "name") : "";
+            const char* tp = csilk_json_get_string(d, "asset_type")
+                                 ? csilk_json_get_string(d, "asset_type")
+                                 : "";
             strncpy(items[i].name, nm, sizeof(items[i].name) - 1);
             strncpy(items[i].type, tp, sizeof(items[i].type) - 1);
         }
@@ -352,9 +359,10 @@ step_dp_report(csilk_db_pool_t*    pool,
                  total_debt);
         for (size_t i = 0; i < n && i < 8; i++) {
             const csilk_json_t* d = csilk_json_array_get(debts, i);
-            const char*         nm = csilk_json_get_string(d, "name") ?: "负债";
-            double              bal = db_get_num(d, "balance");
-            char                safe[64] = {0};
+            const char*         nm =
+                csilk_json_get_string(d, "name") ? csilk_json_get_string(d, "name") : "负债";
+            double bal = db_get_num(d, "balance");
+            char   safe[64] = {0};
             strncpy(safe, nm, sizeof(safe) - 1);
             for (char* p = safe; *p; p++) {
                 if (*p == '"' || *p == '\'' || *p == '|') {
@@ -382,14 +390,15 @@ step_dp_report(csilk_db_pool_t*    pool,
     char rows[8192] = {0};
     for (size_t i = 0; i < n && i < 15; i++) {
         const csilk_json_t* d = csilk_json_array_get(debts, i);
-        const char*         nm = csilk_json_get_string(d, "name") ?: "-";
-        const char*         tp = csilk_json_get_string(d, "asset_type") ?: "-";
-        double              bal = db_get_num(d, "balance");
-        double              rate = db_get_num(d, "annual_rate");
-        const char*         type_label = (strcmp(tp, "credit_card") == 0)
-                                             ? "信用卡"
-                                             : (strcmp(tp, "loan") == 0 ? "贷款" : "其他负债");
-        char                safe[64] = {0};
+        const char* nm = csilk_json_get_string(d, "name") ? csilk_json_get_string(d, "name") : "-";
+        const char* tp =
+            csilk_json_get_string(d, "asset_type") ? csilk_json_get_string(d, "asset_type") : "-";
+        double      bal = db_get_num(d, "balance");
+        double      rate = db_get_num(d, "annual_rate");
+        const char* type_label = (strcmp(tp, "credit_card") == 0)
+                                     ? "信用卡"
+                                     : (strcmp(tp, "loan") == 0 ? "贷款" : "其他负债");
+        char        safe[64] = {0};
         strncpy(safe, nm, sizeof(safe) - 1);
         for (char* p = safe; *p; p++) {
             if (*p == '|') {

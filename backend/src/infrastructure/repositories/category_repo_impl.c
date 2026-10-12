@@ -41,23 +41,34 @@ mf_category_repo_list(void*           db_pool,
         list[i].id = db_get_int(r, "id");
         list[i].user_id = user_id;
         list[i].ledger_id = ledger_id;
-        snprintf(list[i].name, sizeof(list[i].name), "%s", csilk_json_get_string(r, "name") ?: "");
+        snprintf(list[i].name,
+                 sizeof(list[i].name),
+                 "%s",
+                 csilk_json_get_string(r, "name") ? csilk_json_get_string(r, "name") : "");
         list[i].parent_id = db_get_int(r, "parent_id");
-        snprintf(list[i].type, sizeof(list[i].type), "%s", csilk_json_get_string(r, "type") ?: "");
+        snprintf(list[i].type,
+                 sizeof(list[i].type),
+                 "%s",
+                 csilk_json_get_string(r, "type") ? csilk_json_get_string(r, "type") : "");
         snprintf(list[i].asset_type,
                  sizeof(list[i].asset_type),
                  "%s",
-                 csilk_json_get_string(r, "asset_type") ?: "");
+                 csilk_json_get_string(r, "asset_type") ? csilk_json_get_string(r, "asset_type")
+                                                        : "");
         snprintf(list[i].currency,
                  sizeof(list[i].currency),
                  "%s",
-                 csilk_json_get_string(r, "currency") ?: "");
-        snprintf(list[i].icon, sizeof(list[i].icon), "%s", csilk_json_get_string(r, "icon") ?: "");
+                 csilk_json_get_string(r, "currency") ? csilk_json_get_string(r, "currency") : "");
+        snprintf(list[i].icon,
+                 sizeof(list[i].icon),
+                 "%s",
+                 csilk_json_get_string(r, "icon") ? csilk_json_get_string(r, "icon") : "");
         list[i].sort_order = (int)db_get_num(r, "sort_order");
         snprintf(list[i].created_at,
                  sizeof(list[i].created_at),
                  "%s",
-                 csilk_json_get_string(r, "created_at") ?: "");
+                 csilk_json_get_string(r, "created_at") ? csilk_json_get_string(r, "created_at")
+                                                        : "");
     }
     csilk_json_free(rows);
     *out_list = list;
@@ -97,23 +108,34 @@ mf_category_repo_children(void*           db_pool,
         list[i].id = db_get_int(r, "id");
         list[i].user_id = user_id;
         list[i].ledger_id = ledger_id;
-        snprintf(list[i].name, sizeof(list[i].name), "%s", csilk_json_get_string(r, "name") ?: "");
+        snprintf(list[i].name,
+                 sizeof(list[i].name),
+                 "%s",
+                 csilk_json_get_string(r, "name") ? csilk_json_get_string(r, "name") : "");
         list[i].parent_id = db_get_int(r, "parent_id");
-        snprintf(list[i].type, sizeof(list[i].type), "%s", csilk_json_get_string(r, "type") ?: "");
+        snprintf(list[i].type,
+                 sizeof(list[i].type),
+                 "%s",
+                 csilk_json_get_string(r, "type") ? csilk_json_get_string(r, "type") : "");
         snprintf(list[i].asset_type,
                  sizeof(list[i].asset_type),
                  "%s",
-                 csilk_json_get_string(r, "asset_type") ?: "");
+                 csilk_json_get_string(r, "asset_type") ? csilk_json_get_string(r, "asset_type")
+                                                        : "");
         snprintf(list[i].currency,
                  sizeof(list[i].currency),
                  "%s",
-                 csilk_json_get_string(r, "currency") ?: "");
-        snprintf(list[i].icon, sizeof(list[i].icon), "%s", csilk_json_get_string(r, "icon") ?: "");
+                 csilk_json_get_string(r, "currency") ? csilk_json_get_string(r, "currency") : "");
+        snprintf(list[i].icon,
+                 sizeof(list[i].icon),
+                 "%s",
+                 csilk_json_get_string(r, "icon") ? csilk_json_get_string(r, "icon") : "");
         list[i].sort_order = (int)db_get_num(r, "sort_order");
         snprintf(list[i].created_at,
                  sizeof(list[i].created_at),
                  "%s",
-                 csilk_json_get_string(r, "created_at") ?: "");
+                 csilk_json_get_string(r, "created_at") ? csilk_json_get_string(r, "created_at")
+                                                        : "");
     }
     csilk_json_free(rows);
     *out_list = list;

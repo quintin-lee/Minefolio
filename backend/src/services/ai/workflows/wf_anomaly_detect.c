@@ -87,8 +87,11 @@ step_ad_collect(csilk_db_pool_t*    pool,
             double        std = sqrt(var);
             csilk_json_t* o = csilk_json_object();
             csilk_json_add_number(o, "category_id", (double)db_get_int(r, "category_id"));
-            csilk_json_add_string(
-                o, "category_name", csilk_json_get_string(r, "category_name") ?: "未分类");
+            csilk_json_add_string(o,
+                                  "category_name",
+                                  csilk_json_get_string(r, "category_name")
+                                      ? csilk_json_get_string(r, "category_name")
+                                      : "未分类");
             csilk_json_add_number(o, "cnt", db_get_num(r, "cnt"));
             csilk_json_add_number(o, "avg", avg);
             csilk_json_add_number(o, "std", std);
@@ -152,10 +155,15 @@ step_ad_score(csilk_db_pool_t*    pool,
         const csilk_json_t* row = csilk_json_array_get(recent, i);
         int64_t             cid = db_get_int(row, "category_id");
         double              amt = db_get_num(row, "amount");
-        const char*         cname = csilk_json_get_string(row, "category_name") ?: "未分类";
-        const char*         note = csilk_json_get_string(row, "note") ?: "";
-        const char*         date = csilk_json_get_string(row, "expense_date") ?: "";
-        double              avg = 0, std = 0, cnt = 0;
+        const char*         cname = csilk_json_get_string(row, "category_name")
+                                        ? csilk_json_get_string(row, "category_name")
+                                        : "未分类";
+        const char*         note =
+            csilk_json_get_string(row, "note") ? csilk_json_get_string(row, "note") : "";
+        const char* date = csilk_json_get_string(row, "expense_date")
+                               ? csilk_json_get_string(row, "expense_date")
+                               : "";
+        double      avg = 0, std = 0, cnt = 0;
         if (cat_stats && csilk_json_is_array(cat_stats)) {
             size_t sn = csilk_json_array_size(cat_stats);
             for (size_t j = 0; j < sn; j++) {
@@ -201,21 +209,31 @@ step_ad_score(csilk_db_pool_t*    pool,
             const csilk_json_t* a = csilk_json_array_get(recent, i);
             double              amta = db_get_num(a, "amount");
             int64_t             ida = db_get_int(a, "id");
-            const char*         da = csilk_json_get_string(a, "expense_date") ?: "";
+            const char*         da = csilk_json_get_string(a, "expense_date")
+                                         ? csilk_json_get_string(a, "expense_date")
+                                         : "";
             for (size_t j = i + 1; j < rn; j++) {
                 const csilk_json_t* b = csilk_json_array_get(recent, j);
                 double              amtb = db_get_num(b, "amount");
                 int64_t             idb = db_get_int(b, "id");
-                const char*         db_str = csilk_json_get_string(b, "expense_date") ?: "";
+                const char*         db_str = csilk_json_get_string(b, "expense_date")
+                                                 ? csilk_json_get_string(b, "expense_date")
+                                                 : "";
                 if (ida != idb && fabs(amta - amtb) < 0.01 && strcmp(da, db_str) == 0 &&
                     amta >= 10.0) {
                     csilk_json_t* an = csilk_json_object();
                     csilk_json_add_string(an, "type", "duplicate");
-                    csilk_json_add_string(
-                        an, "category_name", csilk_json_get_string(a, "category_name") ?: "未分类");
+                    csilk_json_add_string(an,
+                                          "category_name",
+                                          csilk_json_get_string(a, "category_name")
+                                              ? csilk_json_get_string(a, "category_name")
+                                              : "未分类");
                     csilk_json_add_number(an, "amount", amta);
                     csilk_json_add_string(an, "date", da);
-                    csilk_json_add_string(an, "note", csilk_json_get_string(a, "note") ?: "");
+                    csilk_json_add_string(
+                        an,
+                        "note",
+                        csilk_json_get_string(a, "note") ? csilk_json_get_string(a, "note") : "");
                     csilk_json_add_string(
                         an, "reason", "同一天出现相同金额扣款，疑似重复记账/扣款");
                     csilk_json_array_append(anomalies, an);
@@ -230,7 +248,9 @@ step_ad_score(csilk_db_pool_t*    pool,
         size_t txn = csilk_json_array_size(tx_recent);
         for (size_t i = 0; i < txn; i++) {
             const csilk_json_t* t = csilk_json_array_get(tx_recent, i);
-            const char*         td = csilk_json_get_string(t, "transaction_date") ?: "";
+            const char*         td = csilk_json_get_string(t, "transaction_date")
+                                         ? csilk_json_get_string(t, "transaction_date")
+                                         : "";
             double              amt = db_get_num(t, "amount");
             int                 hh = -1;
             if (strlen(td) >= 13 && (td[10] == ' ' || td[10] == 'T')) {
@@ -242,7 +262,10 @@ step_ad_score(csilk_db_pool_t*    pool,
                 csilk_json_add_string(an, "category_name", "交易/转账");
                 csilk_json_add_number(an, "amount", amt);
                 csilk_json_add_string(an, "date", td);
-                csilk_json_add_string(an, "note", csilk_json_get_string(t, "note") ?: "");
+                csilk_json_add_string(
+                    an,
+                    "note",
+                    csilk_json_get_string(t, "note") ? csilk_json_get_string(t, "note") : "");
                 csilk_json_add_string(an, "reason", "凌晨 0:00-5:00 期间发生大额交易");
                 csilk_json_array_append(anomalies, an);
                 cnt_midnight++;
@@ -310,18 +333,23 @@ step_ad_report(csilk_db_pool_t*    pool,
     char rows[8192] = {0};
     for (size_t i = 0; i < an && i < 20; i++) {
         const csilk_json_t* it = csilk_json_array_get(anomalies, i);
-        const char*         tp = csilk_json_get_string(it, "type") ?: "-";
-        const char*         badge =
+        const char*         tp =
+            csilk_json_get_string(it, "type") ? csilk_json_get_string(it, "type") : "-";
+        const char* badge =
             strcmp(tp, "3sigma") == 0
                 ? "🔴 金额异常"
                 : (strcmp(tp, "duplicate") == 0
                        ? "🟡 重复扣款"
                        : (strcmp(tp, "midnight") == 0 ? "🟣 凌晨大额" : "🔵 高频小额"));
-        const char* cname = csilk_json_get_string(it, "category_name") ?: "-";
+        const char* cname = csilk_json_get_string(it, "category_name")
+                                ? csilk_json_get_string(it, "category_name")
+                                : "-";
         double      amt = db_get_num(it, "amount");
-        const char* date = csilk_json_get_string(it, "date") ?: "-";
-        const char* reason = csilk_json_get_string(it, "reason") ?: "-";
-        char        line[512];
+        const char* date =
+            csilk_json_get_string(it, "date") ? csilk_json_get_string(it, "date") : "-";
+        const char* reason =
+            csilk_json_get_string(it, "reason") ? csilk_json_get_string(it, "reason") : "-";
+        char line[512];
         snprintf(line,
                  sizeof(line),
                  "| %s | %s | ￥%.0f | %s | %s |\n",

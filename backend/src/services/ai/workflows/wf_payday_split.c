@@ -69,7 +69,9 @@ step_payday_detect(csilk_db_pool_t*    pool,
         size_t n = csilk_json_array_size(list);
         for (size_t i = 0; i < n; i++) {
             csilk_json_t* a = csilk_json_array_get(list, i);
-            const char*   t = csilk_json_get_string(a, "asset_type") ?: "";
+            const char*   t = csilk_json_get_string(a, "asset_type")
+                                  ? csilk_json_get_string(a, "asset_type")
+                                  : "";
             if (strcmp(t, "cash") == 0 || strcmp(t, "bank") == 0) {
                 liquid_cash += cf_get_asset_val(a);
             }
@@ -149,9 +151,12 @@ step_payday_allocate(csilk_db_pool_t*    pool,
         size_t n = csilk_json_array_size(list);
         for (size_t i = 0; i < n; i++) {
             csilk_json_t* a = csilk_json_array_get(list, i);
-            const char*   t = csilk_json_get_string(a, "asset_type") ?: "";
-            const char*   nm = csilk_json_get_string(a, "name") ?: "";
-            int64_t       aid = db_get_int(a, "id");
+            const char*   t = csilk_json_get_string(a, "asset_type")
+                                  ? csilk_json_get_string(a, "asset_type")
+                                  : "";
+            const char*   nm =
+                csilk_json_get_string(a, "name") ? csilk_json_get_string(a, "name") : "";
+            int64_t aid = db_get_int(a, "id");
             if ((strcmp(t, "fund") == 0 || strcmp(t, "stock") == 0) && invest_id == 0) {
                 invest_id = aid;
                 strncpy(invest_asset, nm, sizeof(invest_asset) - 1);

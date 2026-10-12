@@ -70,7 +70,9 @@ step_hs_collect(csilk_db_pool_t*    pool,
             if (!a) {
                 continue;
             }
-            const char* typ = csilk_json_get_string(a, "asset_type") ?: "";
+            const char* typ = csilk_json_get_string(a, "asset_type")
+                                  ? csilk_json_get_string(a, "asset_type")
+                                  : "";
             int64_t     pid = (int64_t)db_get_num(a, "parent_id");
             if (pid != 0) {
                 continue;

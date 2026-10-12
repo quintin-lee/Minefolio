@@ -80,16 +80,17 @@ ai_config_parse_root(const csilk_json_t* root, ai_config_t* out)
         for (int i = 0; i < pc; i++) {
             const csilk_json_t* p = csilk_json_array_get(prov_arr, i);
             strncpy(out->providers[i].id,
-                    csilk_json_get_string(p, "id") ?: "",
+                    csilk_json_get_string(p, "id") ? csilk_json_get_string(p, "id") : "",
                     sizeof(out->providers[i].id) - 1);
             strncpy(out->providers[i].name,
-                    csilk_json_get_string(p, "name") ?: "",
+                    csilk_json_get_string(p, "name") ? csilk_json_get_string(p, "name") : "",
                     sizeof(out->providers[i].name) - 1);
             strncpy(out->providers[i].api_key,
-                    csilk_json_get_string(p, "api_key") ?: "",
+                    csilk_json_get_string(p, "api_key") ? csilk_json_get_string(p, "api_key") : "",
                     sizeof(out->providers[i].api_key) - 1);
             strncpy(out->providers[i].base_url,
-                    csilk_json_get_string(p, "base_url") ?: "",
+                    csilk_json_get_string(p, "base_url") ? csilk_json_get_string(p, "base_url")
+                                                         : "",
                     sizeof(out->providers[i].base_url) - 1);
             parse_string_array(csilk_json_get(p, "models"),
                                &out->providers[i].models,

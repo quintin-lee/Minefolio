@@ -43,10 +43,14 @@ typedef enum {
  * 真实数值 = mantissa * 10^(-scale)
  * 例如 19.99 表示为 mantissa=1999, scale=2
  */
+/* __int128 为定点数核心设计（GCC 扩展），struct 定义处对包含者压制 -Wpedantic */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
 typedef struct {
     __int128_t mantissa; /**< 128 位带符号整数尾数 */
     int32_t    scale;    /**< 小数位数 (0 <= scale <= 18) */
 } decimal_t;
+#pragma GCC diagnostic pop
 
 /* 构造与常量 */
 decimal_t     decimal_zero(void);

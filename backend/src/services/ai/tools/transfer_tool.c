@@ -81,8 +81,9 @@ exec_propose_transfer(const ai_tool_t* tool, const ai_tool_context_t* ctx, const
         size_t asz = csilk_json_array_size(assets);
         for (size_t i = 0; i < asz; i++) {
             csilk_json_t* it = csilk_json_array_get(assets, i);
-            const char*   name = csilk_json_get_string(it, "name") ?: "";
-            int64_t       id = (int64_t)db_get_num(it, "id");
+            const char*   name =
+                csilk_json_get_string(it, "name") ? csilk_json_get_string(it, "name") : "";
+            int64_t id = (int64_t)db_get_num(it, "id");
             if (from_name && from_name[0] && str_icontains(name, from_name) && from_id == 0) {
                 from_id = id;
                 strncpy(matched_from_name, name, sizeof(matched_from_name) - 1);
@@ -95,13 +96,17 @@ exec_propose_transfer(const ai_tool_t* tool, const ai_tool_context_t* ctx, const
         if (from_id == 0 && asz > 0) {
             from_id = (int64_t)db_get_num(csilk_json_array_get(assets, 0), "id");
             strncpy(matched_from_name,
-                    csilk_json_get_string(csilk_json_array_get(assets, 0), "name") ?: "",
+                    csilk_json_get_string(csilk_json_array_get(assets, 0), "name")
+                        ? csilk_json_get_string(csilk_json_array_get(assets, 0), "name")
+                        : "",
                     sizeof(matched_from_name) - 1);
         }
         if (to_id == 0 && asz > 1) {
             to_id = (int64_t)db_get_num(csilk_json_array_get(assets, 1), "id");
             strncpy(matched_to_name,
-                    csilk_json_get_string(csilk_json_array_get(assets, 1), "name") ?: "",
+                    csilk_json_get_string(csilk_json_array_get(assets, 1), "name")
+                        ? csilk_json_get_string(csilk_json_array_get(assets, 1), "name")
+                        : "",
                     sizeof(matched_to_name) - 1);
         }
         csilk_json_free(assets);
