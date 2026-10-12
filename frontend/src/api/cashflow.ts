@@ -16,7 +16,7 @@ export const cashflowApi = {
    * @returns 现金流排期计划列表
    */
   listSchedules: () =>
-    http.get<CashflowSchedule[], CashflowSchedule[]>('/cashflow/schedules'),
+    http.get<CashflowSchedule[]>('/cashflow/schedules'),
 
   /**
    * 创建新的现金流排期计划
@@ -34,7 +34,7 @@ export const cashflowApi = {
    * @returns 创建成功后的新排期 ID
    */
   createSchedule: (data: Partial<CashflowSchedule>) =>
-    http.post<{ id: number }, { id: number }>('/cashflow/schedules', data),
+    http.post<{ id: number }>('/cashflow/schedules', data),
 
   /**
    * 获取指定 ID 的现金流排期详情
@@ -43,7 +43,7 @@ export const cashflowApi = {
    * @returns 现金流排期计划实体
    */
   getSchedule: (id: number) =>
-    http.get<CashflowSchedule, CashflowSchedule>(`/cashflow/schedules/${id}`),
+    http.get<CashflowSchedule>(`/cashflow/schedules/${id}`),
 
   /**
    * 更新现金流排期计划
@@ -53,7 +53,7 @@ export const cashflowApi = {
    * @returns 空响应
    */
   updateSchedule: (id: number, data: Partial<CashflowSchedule>) =>
-    http.put<void, void>(`/cashflow/schedules/${id}`, data),
+    http.put<void>(`/cashflow/schedules/${id}`, data),
 
   /**
    * 删除现金流排期计划
@@ -62,7 +62,7 @@ export const cashflowApi = {
    * @returns 空响应
    */
   deleteSchedule: (id: number) =>
-    http.delete<void, void>(`/cashflow/schedules/${id}`),
+    http.delete<void>(`/cashflow/schedules/${id}`),
 
   /**
    * 获取指定年月的现金流日历预测及汇总 (包含每日收支预测明细与结余推演)
@@ -72,7 +72,7 @@ export const cashflowApi = {
    * @returns 月度现金流汇总与日历详情
    */
   getCalendar: (year?: number, month?: number) =>
-    http.get<MonthlyCashflowSummary, MonthlyCashflowSummary>('/cashflow/calendar', {
+    http.get<MonthlyCashflowSummary>('/cashflow/calendar', {
       params: { year, month }
     }),
 
@@ -96,7 +96,7 @@ export const cashflowApi = {
     name?: string
     note?: string
   }) =>
-    http.post<{ transaction_id: number; amount: number }, { transaction_id: number; amount: number }>(
+    http.post<{ transaction_id: number; amount: number }>(
       '/cashflow/confirm',
       data
     )

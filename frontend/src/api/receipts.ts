@@ -53,6 +53,6 @@ export const receiptsApi = {
    * @returns 结构化解析识别结果
    */
   scan: (data: ReceiptScanPayload) =>
-    http.post<ReceiptScanResult, any, ReceiptScanPayload>('/receipts/scan', data),
+    http.post<ReceiptScanResult>('/receipts/scan', data),
 }
 

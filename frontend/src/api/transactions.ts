@@ -32,7 +32,7 @@ export const transactionsApi = {
     end_date?: string
     page?: number
     page_size?: number
-  }) => http.get<PageResult<Transaction>, PageResult<Transaction>>('/transactions', { params }),
+  }) => http.get<PageResult<Transaction>>('/transactions', { params }),
 
   /**
    * 获取指定月份的交易统计概览
@@ -41,7 +41,7 @@ export const transactionsApi = {
    * @returns 月度交易聚合统计数据
    */
   monthly: (month: string) =>
-    http.get<TransactionMonthly, TransactionMonthly>('/transactions/monthly', {
+    http.get<TransactionMonthly>('/transactions/monthly', {
       params: { month },
     }),
 
@@ -60,7 +60,7 @@ export const transactionsApi = {
    * @param data.note 备注说明 (可选)
    * @returns 空响应
    */
-  create: (data: TransactionInput) => http.post<void, void>('/transactions', data),
+  create: (data: TransactionInput) => http.post<void>('/transactions', data),
 
   /**
    * 修改交易流水记录 (自动计算并回滚旧影响后再应用新影响)
@@ -69,7 +69,7 @@ export const transactionsApi = {
    * @param data 更新的数据载荷
    * @returns 空响应
    */
-  update: (id: number, data: TransactionInput) => http.put<void, void>(`/transactions/${id}`, data),
+  update: (id: number, data: TransactionInput) => http.put<void>(`/transactions/${id}`, data),
 
   /**
    * 删除交易流水 (自动级联回滚关联的手续费子交易及资产余额/持仓变动)
@@ -77,14 +77,14 @@ export const transactionsApi = {
    * @param id 交易 ID
    * @returns 空响应
    */
-  delete: (id: number) => http.delete<void, void>(`/transactions/${id}`),
+  delete: (id: number) => http.delete<void>(`/transactions/${id}`),
 
   /**
    * 导出交易流水全量数据为 CSV 文件流
    * @route GET /api/export/transactions
    * @returns CSV 二进制 Blob
    */
-  exportCsv: () => http.get('/export/transactions', { responseType: 'blob' }) as unknown as Promise<Blob>,
+  exportCsv: () => http.get<Blob>('/export/transactions', { responseType: 'blob' }),
 
   /**
    * 批量导入 CSV 文本格式的交易记录

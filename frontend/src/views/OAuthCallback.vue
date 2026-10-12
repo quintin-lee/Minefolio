@@ -43,7 +43,7 @@ onMounted(async () => {
     if (res && res.token) {
       auth.setToken(res.token)
       if (res.user) {
-        auth.setUser(res.user)
+        auth.setUser({ created_at: '', ...res.user })
       }
       ElMessage.success(t('oauth.loginSuccess'))
       router.replace('/dashboard')

@@ -23,7 +23,7 @@ export const systemApi = {
    * @route GET /api/system/status
    * @returns 系统初始化状态对象
    */
-  status: () => http.get<SystemStatus, any, void>('/system/status'),
+  status: () => http.get<SystemStatus>('/system/status'),
 
   /**
    * 执行系统首次引导初始化 (创建超级管理员账号及可选数据库设置)
@@ -36,6 +36,6 @@ export const systemApi = {
    * @returns 初始登录 Token 及过期时间
    */
   setup: (data: { username: string; password_enc: string; db_driver?: string; db_dsn?: string }) =>
-    http.post<{ token: string; expires_in: number }, any, typeof data>('/system/setup', data),
+    http.post<{ token: string; expires_in: number }>('/system/setup', data),
 }
 

@@ -16,6 +16,6 @@ export const summaryApi = {
    * @route GET /api/summary
    * @returns 财务总览摘要对象 (含总资产、总负债、净资产、当月收支等)
    */
-  get: () => http.get<Summary, Summary>('/summary'),
+  get: () => http.get<Summary>('/summary'),
 }
 

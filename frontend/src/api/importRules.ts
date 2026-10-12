@@ -63,7 +63,7 @@ export const importRulesApi = {
    * @route GET /api/import-rules
    * @returns 导入规则对象数组
    */
-  list: () => http.get<ImportRule[], any, void>('/import-rules'),
+  list: () => http.get<ImportRule[]>('/import-rules'),
 
   /**
    * 获取指定 ID 的导入规则详情
@@ -71,7 +71,7 @@ export const importRulesApi = {
    * @param id 规则 ID
    * @returns 导入规则实体
    */
-  get: (id: number) => http.get<ImportRule, any, void>(`/import-rules/${id}`),
+  get: (id: number) => http.get<ImportRule>(`/import-rules/${id}`),
 
   /**
    * 创建新的导入分类规则
@@ -80,7 +80,7 @@ export const importRulesApi = {
    * @returns 创建成功后的规则 ID
    */
   create: (data: ImportRuleCreatePayload) =>
-    http.post<{ id: number }, any, ImportRuleCreatePayload>('/import-rules', data),
+    http.post<{ id: number }>('/import-rules', data),
 
   /**
    * 更新指定导入分类规则
@@ -90,7 +90,7 @@ export const importRulesApi = {
    * @returns 操作结果
    */
   update: (id: number, data: ImportRuleCreatePayload) =>
-    http.put<void, any, ImportRuleCreatePayload>(`/import-rules/${id}`, data),
+    http.put<void>(`/import-rules/${id}`, data),
 
   /**
    * 删除指定的导入分类规则
@@ -98,13 +98,13 @@ export const importRulesApi = {
    * @param id 规则 ID
    * @returns 操作结果
    */
-  delete: (id: number) => http.delete<void, any, void>(`/import-rules/${id}`),
+  delete: (id: number) => http.delete<void>(`/import-rules/${id}`),
 
   /**
    * 重置恢复系统内置的默认分类规则集 (如常见餐饮、交通、购物关键字)
    * @route POST /api/import-rules/reset-defaults
    * @returns 重置后的规则列表
    */
-  resetDefaults: () => http.post<ImportRule[], any, void>('/import-rules/reset-defaults'),
+  resetDefaults: () => http.post<ImportRule[]>('/import-rules/reset-defaults'),
 }
 

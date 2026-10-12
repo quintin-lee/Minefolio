@@ -116,7 +116,7 @@ export async function offlineRequest(method: 'get' | 'post' | 'put' | 'delete', 
     const operation: 'create' | 'update' | 'delete' =
       method === 'post' ? 'create' : method === 'put' ? 'update' : 'delete'
     try {
-      const res = await http({ method, url, data } as any)
+      const res = await http.request<unknown>({ method, url, data })
       return res
     } catch (err: any) {
       if (isAuthError(err)) {
@@ -132,7 +132,7 @@ export async function offlineRequest(method: 'get' | 'post' | 'put' | 'delete', 
     }
   }
   // 非业务表请求（如 summary、reports）→ 直接透传
-  return http({ method, url, data } as any)
+  return http.request<unknown>({ method, url, data })
 }
 
 /**

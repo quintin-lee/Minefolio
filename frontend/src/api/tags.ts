@@ -16,7 +16,7 @@ export const tagsApi = {
    * @route GET /api/tags
    * @returns 标签实体对象数组
    */
-  list: () => http.get<Tag[], Tag[]>('/tags'),
+  list: () => http.get<Tag[]>('/tags'),
 
   /**
    * 创建新的自定义标签
@@ -27,7 +27,7 @@ export const tagsApi = {
    * @returns 空响应
    */
   create: (data: { name: string; color?: string }) =>
-    http.post<void, void>('/tags', data),
+    http.post<void>('/tags', data),
 
   /**
    * 修改指定标签的名称或颜色
@@ -37,7 +37,7 @@ export const tagsApi = {
    * @returns 空响应
    */
   update: (id: number, data: { name?: string; color?: string }) =>
-    http.put<void, void>(`/tags/${id}`, data),
+    http.put<void>(`/tags/${id}`, data),
 
   /**
    * 删除指定标签
@@ -45,7 +45,7 @@ export const tagsApi = {
    * @param id 标签 ID
    * @returns 空响应
    */
-  delete: (id: number) => http.delete<void, void>(`/tags/${id}`),
+  delete: (id: number) => http.delete<void>(`/tags/${id}`),
 
   /**
    * 根据关键字联想匹配标签建议列表 (用于记账时快速补全)
@@ -54,6 +54,6 @@ export const tagsApi = {
    * @returns 匹配的标签建议列表
    */
   suggestions: (q?: string) =>
-    http.get<Tag[], Tag[]>('/tags/suggestions', { params: { q } }),
+    http.get<Tag[]>('/tags/suggestions', { params: { q } }),
 }
 

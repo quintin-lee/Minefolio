@@ -226,7 +226,7 @@ export const reportsApi = {
    * @returns 月度收支综合报表
    */
   expenseMonthly: (year: number, month: number) =>
-    http.get<ExpenseMonthlyReport, ExpenseMonthlyReport>('/reports/expense/monthly', {
+    http.get<ExpenseMonthlyReport>('/reports/expense/monthly', {
       params: { year, month },
     }),
 
@@ -237,7 +237,7 @@ export const reportsApi = {
    * @returns 收支趋势数据
    */
   expenseTrend: (months = 6) =>
-    http.get<ExpenseTrend, ExpenseTrend>('/reports/expense/trend', {
+    http.get<ExpenseTrend>('/reports/expense/trend', {
       params: { months },
     }),
 
@@ -248,7 +248,7 @@ export const reportsApi = {
    * @returns 年度收支对比数据
    */
   expenseYearly: (year?: number) =>
-    http.get<ExpenseYearlyReport, ExpenseYearlyReport>('/reports/expense/yearly', {
+    http.get<ExpenseYearlyReport>('/reports/expense/yearly', {
       params: { year },
     }),
 
@@ -260,7 +260,7 @@ export const reportsApi = {
    * @returns 分类占比数据
    */
   expenseCategory: (year?: number, month?: number) =>
-    http.get<ExpenseCategoryBreakdown, ExpenseCategoryBreakdown>('/reports/expense/category', {
+    http.get<ExpenseCategoryBreakdown>('/reports/expense/category', {
       params: { year, month },
     }),
 
@@ -272,7 +272,7 @@ export const reportsApi = {
    * @returns 标签占比数据
    */
   expenseTag: (year?: number, month?: number) =>
-    http.get<ExpenseTagBreakdown, ExpenseTagBreakdown>('/reports/expense/tag', {
+    http.get<ExpenseTagBreakdown>('/reports/expense/tag', {
       params: { year, month },
     }),
 
@@ -283,7 +283,7 @@ export const reportsApi = {
    * @returns 资产净值走势数据
    */
   assetTrend: (period = '30d') =>
-    http.get<AssetTrend, AssetTrend>('/reports/asset/trend', {
+    http.get<AssetTrend>('/reports/asset/trend', {
       params: { period },
     }),
 
@@ -292,7 +292,7 @@ export const reportsApi = {
    * @route GET /api/reports/asset/breakdown
    * @returns 资产与负债分解数据
    */
-  assetBreakdown: () => http.get<AssetBreakdown, AssetBreakdown>('/reports/asset/breakdown'),
+  assetBreakdown: () => http.get<AssetBreakdown>('/reports/asset/breakdown'),
 
   /**
    * 获取投资交易表现与盈亏统计
@@ -300,21 +300,21 @@ export const reportsApi = {
    * @returns 交易表现统计数据
    */
   transactionPerformance: () =>
-    http.get<TransactionPerformance, TransactionPerformance>('/reports/transaction/performance'),
+    http.get<TransactionPerformance>('/reports/transaction/performance'),
 
   /**
    * 获取资产总览看板指标 (当前总值、负债、30天变动)
    * @route GET /api/reports/asset/summary
    * @returns 资产总览数据
    */
-  assetSummary: () => http.get<AssetSummary, AssetSummary>('/reports/asset/summary'),
+  assetSummary: () => http.get<AssetSummary>('/reports/asset/summary'),
 
   /**
    * 获取投资持仓、浮动盈亏与已实现盈亏全量报告
    * @route GET /api/reports/holdings
    * @returns 持仓分析报告
    */
-  holdings: () => http.get<HoldingsReport, HoldingsReport>('/reports/holdings'),
+  holdings: () => http.get<HoldingsReport>('/reports/holdings'),
 
   /**
    * 获取多币种外汇汇率波动损益 (FX Gain/Loss) 报告
@@ -323,7 +323,7 @@ export const reportsApi = {
    * @returns 汇率损益分析报告
    */
   fxPnl: (baseCurrency = 'CNY') =>
-    http.get<import('@/types').FxPnlReport, import('@/types').FxPnlReport>('/reports/fx-pnl', {
+    http.get<import('@/types').FxPnlReport>('/reports/fx-pnl', {
       params: { base_currency: baseCurrency },
     }),
 }

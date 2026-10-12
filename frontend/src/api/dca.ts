@@ -17,7 +17,7 @@ export const dcaApi = {
    * @returns 分页定投计划及汇总数据
    */
   listPlans: (params?: DcaPlanListParams) =>
-    http.get<DcaPlanPageResult, DcaPlanPageResult>('/dca/plans', { params }),
+    http.get<DcaPlanPageResult>('/dca/plans', { params }),
 
   /**
    * 获取定投计划全局统计指标
@@ -25,7 +25,7 @@ export const dcaApi = {
    * @returns 定投统计汇总对象
    */
   getPlanSummary: () =>
-    http.get<DcaPlanSummary, DcaPlanSummary>('/dca/plans/summary'),
+    http.get<DcaPlanSummary>('/dca/plans/summary'),
 
   /**
    * 创建新的定投计划
@@ -42,7 +42,7 @@ export const dcaApi = {
    * @returns 创建成功后的新计划 ID
    */
   createPlan: (data: Partial<DcaPlan>) =>
-    http.post<{ id: number }, { id: number }>('/dca/plans', data),
+    http.post<{ id: number }>('/dca/plans', data),
 
   /**
    * 获取指定 ID 的定投计划详情
@@ -51,7 +51,7 @@ export const dcaApi = {
    * @returns 定投计划实体
    */
   getPlan: (id: number) =>
-    http.get<DcaPlan, DcaPlan>(`/dca/plans/${id}`),
+    http.get<DcaPlan>(`/dca/plans/${id}`),
 
   /**
    * 更新定投计划配置
@@ -61,7 +61,7 @@ export const dcaApi = {
    * @returns 空响应
    */
   updatePlan: (id: number, data: Partial<DcaPlan>) =>
-    http.put<void, void>(`/dca/plans/${id}`, data),
+    http.put<void>(`/dca/plans/${id}`, data),
 
   /**
    * 设置定投计划的运行状态 (启用/暂停/已完成)
@@ -71,7 +71,7 @@ export const dcaApi = {
    * @returns 空响应
    */
   setPlanStatus: (id: number, status: 'active' | 'paused' | 'completed') =>
-    http.put<void, void>(`/dca/plans/${id}/status`, { status }),
+    http.put<void>(`/dca/plans/${id}/status`, { status }),
 
   /**
    * 删除定投计划
@@ -80,7 +80,7 @@ export const dcaApi = {
    * @returns 空响应
    */
   deletePlan: (id: number) =>
-    http.delete<void, void>(`/dca/plans/${id}`),
+    http.delete<void>(`/dca/plans/${id}`),
 
   /**
    * 获取指定定投计划的历史执行记录列表
@@ -89,7 +89,7 @@ export const dcaApi = {
    * @returns 该计划的定投执行记录数组
    */
   listExecutions: (planId: number) =>
-    http.get<DcaExecution[], DcaExecution[]>(`/dca/plans/${planId}/executions`),
+    http.get<DcaExecution[]>(`/dca/plans/${planId}/executions`),
 
   /**
    * 获取所有当前待确认/待执行的定投任务列表
@@ -97,7 +97,7 @@ export const dcaApi = {
    * @returns 待执行的定投记录数组
    */
   listPendingExecutions: () =>
-    http.get<DcaExecution[], DcaExecution[]>('/dca/executions/pending'),
+    http.get<DcaExecution[]>('/dca/executions/pending'),
 
   /**
    * 确认执行一笔定投买入 (可填入实际买入价格与实际扣款金额，自动生成交易记录与持仓份额变动)
@@ -112,10 +112,7 @@ export const dcaApi = {
     id: number,
     data?: { actual_amount?: number; executed_price?: number }
   ) =>
-    http.post<
-      { transaction_id: number; actual_amount: number; executed_price: number; executed_quantity: number },
-      { transaction_id: number; actual_amount: number; executed_price: number; executed_quantity: number }
-    >(`/dca/executions/${id}/confirm`, data || {}),
+    http.post<{ transaction_id: number; actual_amount: number; executed_price: number; executed_quantity: number }>(`/dca/executions/${id}/confirm`, data || {}),
 
   /**
    * 跳过本期定投计划执行
@@ -124,6 +121,6 @@ export const dcaApi = {
    * @returns 空响应
    */
   skipExecution: (id: number) =>
-    http.post<void, void>(`/dca/executions/${id}/skip`)
+    http.post<void>(`/dca/executions/${id}/skip`)
 }
 

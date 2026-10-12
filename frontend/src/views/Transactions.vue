@@ -738,7 +738,7 @@ async function handleImport() {
   importing.value = true
   importResult.value = null
   try {
-    const res = await transactionsApi.importCsv(importText.value) as unknown as { imported: number; errors: number; errors_detail?: string }
+    const res = await transactionsApi.importCsv(importText.value)
     importResult.value = {
       imported: res.imported,
       errors: res.errors,

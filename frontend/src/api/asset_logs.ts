@@ -21,7 +21,7 @@ export const assetLogsApi = {
    * @returns 分页余额日志列表数据
    */
   list: (params?: { asset_id?: string; page?: number; page_size?: number }) =>
-    http.get<PageResult<AssetBalanceLog>, PageResult<AssetBalanceLog>>('/asset-balance-logs', {
+    http.get<PageResult<AssetBalanceLog>>('/asset-balance-logs', {
       params,
     }),
 }

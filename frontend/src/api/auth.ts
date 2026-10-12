@@ -18,6 +18,12 @@ export interface LoginResponse {
   require_2fa?: boolean
   /** 两步验证临时令牌 (当 require_2fa 为 true 时提供) */
   temp_token?: string
+  /** OAuth 回调返回的精简用户信息 (仅 id/username/provider，无 created_at) */
+  user?: {
+    id: number
+    username: string
+    oauth_provider?: string
+  }
 }
 
 /**
@@ -63,7 +69,7 @@ export const authApi = {
    * @returns 登录结果响应 (包含 JWT 或 2FA 临时 Token)
    */
   login: (username: string, password_enc: string, totp_code?: string) =>
-    http.post<LoginResponse, any, { username: string; password_enc: string; totp_code?: string }>('/auth/login', {
+    http.post<LoginResponse>('/auth/login', {
       username,
       password_enc,
       totp_code,
@@ -77,14 +83,14 @@ export const authApi = {
    * @returns 注册并登录后的结果响应 (包含 JWT Token)
    */
   register: (username: string, password_enc: string) =>
-    http.post<LoginResponse, any, { username: string; password_enc: string }>('/auth/register', { username, password_enc }),
+    http.post<LoginResponse>('/auth/register', { username, password_enc }),
 
   /**
    * 获取当前登录用户的详细信息
    * @route GET /api/auth/me
    * @returns 用户信息实体对象
    */
-  me: () => http.get<User, any, void>('/auth/me'),
+  me: () => http.get<User>('/auth/me'),
 
   /**
    * 修改当前用户登录密码
@@ -94,7 +100,7 @@ export const authApi = {
    * @returns 操作结果
    */
   changePassword: (old_password_enc: string, new_password_enc: string) =>
-    http.put<void, any, { old_password_enc: string; new_password_enc: string }>('/auth/password', {
+    http.put<void>('/auth/password', {
       old_password_enc,
       new_password_enc,
     }),
@@ -104,14 +110,14 @@ export const authApi = {
    * @route GET /api/auth/2fa/status
    * @returns 2FA 状态对象 ({ enabled: boolean })
    */
-  get2FaStatus: () => http.get<{ enabled: boolean }, any, void>('/auth/2fa/status'),
+  get2FaStatus: () => http.get<{ enabled: boolean }>('/auth/2fa/status'),
 
   /**
    * 初始化两步验证 (生成 TOTP 密钥与二维码 URL)
    * @route POST /api/auth/2fa/setup
    * @returns 2FA 初始化配置数据 (含 secret 与 otpauth_url)
    */
-  setup2Fa: () => http.post<TwoFactorSetupResponse, any, void>('/auth/2fa/setup'),
+  setup2Fa: () => http.post<TwoFactorSetupResponse>('/auth/2fa/setup'),
 
   /**
    * 验证动态码并正式启用 2FA
@@ -120,14 +126,14 @@ export const authApi = {
    * @returns 启用结果 (返回备用应急码列表)
    */
   enable2Fa: (code: string) =>
-    http.post<TwoFactorEnableResponse, any, { code: string }>('/auth/2fa/enable', { code }),
+    http.post<TwoFactorEnableResponse>('/auth/2fa/enable', { code }),
 
   /**
    * 关闭两步验证
    * @route POST /api/auth/2fa/disable
    * @returns 操作结果
    */
-  disable2Fa: () => http.post<void, any, void>('/auth/2fa/disable'),
+  disable2Fa: () => http.post<void>('/auth/2fa/disable'),
 
   /**
    * 两步验证第二阶段登录认证 (使用临时 Token + 6 位 TOTP 动态码换取正式 JWT)
@@ -137,7 +143,7 @@ export const authApi = {
    * @returns 最终登录结果 (包含正式 JWT Token)
    */
   verify2FaLogin: (temp_token: string, code: string) =>
-    http.post<LoginResponse, any, { temp_token: string; code: string }>('/auth/2fa/verify-login', { temp_token, code }),
+    http.post<LoginResponse>('/auth/2fa/verify-login', { temp_token, code }),
 
   /**
    * 获取系统启用的 OAuth 2.0 / OIDC 第三方登录提供商列表
@@ -145,7 +151,7 @@ export const authApi = {
    * @returns OAuth 提供商配置列表
    */
   getOAuthProviders: () =>
-    http.get<{ providers: import('@/types').OAuthProvider[] }, { providers: import('@/types').OAuthProvider[] }>('/auth/oauth/providers'),
+    http.get<{ providers: import('@/types').OAuthProvider[] }>('/auth/oauth/providers'),
 
   /**
    * OAuth 登录回调认证处理
@@ -154,6 +160,6 @@ export const authApi = {
    * @returns 登录结果响应 (包含 JWT Token)
    */
   oauthCallback: (data: { provider: string; code?: string; oauth_id?: string; username?: string }) =>
-    http.post<LoginResponse, any, typeof data>('/auth/oauth/callback', data),
+    http.post<LoginResponse>('/auth/oauth/callback', data),
 }
 

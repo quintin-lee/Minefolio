@@ -21,7 +21,7 @@ export const assetsApi = {
    * @returns 分页资产列表数据
    */
   list: (params?: { category_id?: string; page?: number; page_size?: number }) =>
-    http.get<PageResult<Asset>, PageResult<Asset>>('/assets', { params }),
+    http.get<PageResult<Asset>>('/assets', { params }),
 
   /**
    * 创建新的资产或账户 (如银行卡、现金、证券账户、信用卡等)
@@ -38,7 +38,7 @@ export const assetsApi = {
    * @param data.note 备注信息 (可选)
    * @returns 空响应
    */
-  create: (data: any) => http.post<void, void>('/assets', data),
+  create: (data: any) => http.post<void>('/assets', data),
 
   /**
    * 更新指定资产或账户信息
@@ -47,7 +47,7 @@ export const assetsApi = {
    * @param data 更新的数据载荷 (属性与创建类似)
    * @returns 空响应
    */
-  update: (id: number, data: any) => http.put<void, void>(`/assets/${id}`, data),
+  update: (id: number, data: any) => http.put<void>(`/assets/${id}`, data),
 
   /**
    * 删除指定资产或账户
@@ -55,7 +55,7 @@ export const assetsApi = {
    * @param id 资产 ID
    * @returns 空响应
    */
-  delete: (id: number) => http.delete<void, void>(`/assets/${id}`),
+  delete: (id: number) => http.delete<void>(`/assets/${id}`),
 
   /**
    * 获取指定资产的详细信息
@@ -63,6 +63,6 @@ export const assetsApi = {
    * @param id 资产 ID
    * @returns 资产详情对象
    */
-  detail: (id: number) => http.get<Asset, Asset>(`/assets/${id}`),
+  detail: (id: number) => http.get<Asset>(`/assets/${id}`),
 }
 

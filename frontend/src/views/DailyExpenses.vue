@@ -394,7 +394,7 @@ async function handleImport() {
   importing.value = true
   importResult.value = null
   try {
-    const res = await dailyExpensesApi.importCsv(importText.value) as unknown as { imported: number; errors: number; errors_detail?: string }
+    const res = await dailyExpensesApi.importCsv(importText.value)
     importResult.value = { imported: res.imported, errors: res.errors, errors_detail: res.errors_detail, ok: true }
     if (res.errors === 0) {
       ElMessage.success(`成功导入 ${res.imported} 条记录`)

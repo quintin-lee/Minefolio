@@ -16,7 +16,7 @@ export const ledgerApi = {
    * @returns 账本对象数组
    */
   list: () =>
-    http.get<Ledger[], Ledger[]>('/ledgers'),
+    http.get<Ledger[]>('/ledgers'),
 
   /**
    * 创建新的账本空间 (如家庭账本、公司差旅、装修专项账本等)
@@ -29,7 +29,7 @@ export const ledgerApi = {
    * @returns 创建成功后的新账本 ID
    */
   create: (data: Partial<Ledger>) =>
-    http.post<{ id: number }, { id: number }>('/ledgers', data),
+    http.post<{ id: number }>('/ledgers', data),
 
   /**
    * 获取指定账本空间的详细信息
@@ -38,7 +38,7 @@ export const ledgerApi = {
    * @returns 账本详情数组
    */
   get: (id: number) =>
-    http.get<Ledger[], Ledger[]>(`/ledgers/${id}`),
+    http.get<Ledger[]>(`/ledgers/${id}`),
 
   /**
    * 更新账本基本信息 (名称、描述、图标等)
@@ -48,7 +48,7 @@ export const ledgerApi = {
    * @returns 空响应
    */
   update: (id: number, data: Partial<Ledger>) =>
-    http.put<void, void>(`/ledgers/${id}`, data),
+    http.put<void>(`/ledgers/${id}`, data),
 
   /**
    * 解散或删除指定账本空间 (仅 Owner 拥有此权限)
@@ -57,7 +57,7 @@ export const ledgerApi = {
    * @returns 空响应
    */
   delete: (id: number) =>
-    http.delete<void, void>(`/ledgers/${id}`),
+    http.delete<void>(`/ledgers/${id}`),
 
   /**
    * 获取账本成员列表与各自角色
@@ -66,7 +66,7 @@ export const ledgerApi = {
    * @returns 账本成员对象数组
    */
   listMembers: (id: number) =>
-    http.get<LedgerMember[], LedgerMember[]>(`/ledgers/${id}/members`),
+    http.get<LedgerMember[]>(`/ledgers/${id}/members`),
 
   /**
    * 向账本添加/邀请协作成员
@@ -77,7 +77,7 @@ export const ledgerApi = {
    * @returns 空响应
    */
   addMember: (id: number, username: string, role: 'editor' | 'viewer' = 'editor') =>
-    http.post<void, void>(`/ledgers/${id}/members`, { username, role }),
+    http.post<void>(`/ledgers/${id}/members`, { username, role }),
 
   /**
    * 修改协作成员的权限角色
@@ -88,7 +88,7 @@ export const ledgerApi = {
    * @returns 空响应
    */
   updateMember: (id: number, userId: number, role: 'editor' | 'viewer') =>
-    http.put<void, void>(`/ledgers/${id}/members/${userId}`, { role }),
+    http.put<void>(`/ledgers/${id}/members/${userId}`, { role }),
 
   /**
    * 移除账本协作成员
@@ -98,7 +98,7 @@ export const ledgerApi = {
    * @returns 空响应
    */
   removeMember: (id: number, userId: number) =>
-    http.delete<void, void>(`/ledgers/${id}/members/${userId}`),
+    http.delete<void>(`/ledgers/${id}/members/${userId}`),
 
   /**
    * 生成账本邀请码 (用于快速分享给好友或家庭成员)
@@ -107,7 +107,7 @@ export const ledgerApi = {
    * @returns 邀请码生成结果 (含 invite_code 与过期时间)
    */
   createInviteCode: (id: number) =>
-    http.post<LedgerInviteResult, LedgerInviteResult>(`/ledgers/${id}/invite-code`),
+    http.post<LedgerInviteResult>(`/ledgers/${id}/invite-code`),
 
   /**
    * 通过他人分享的邀请码加入指定账本
@@ -116,7 +116,7 @@ export const ledgerApi = {
    * @returns 加入的账本 ID 与名称
    */
   joinByInvite: (inviteCode: string) =>
-    http.post<{ id: number; name: string }, { id: number; name: string }>('/ledgers/join', {
+    http.post<{ id: number; name: string }>('/ledgers/join', {
       invite_code: inviteCode
     })
 }

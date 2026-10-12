@@ -18,7 +18,7 @@ export const categoriesApi = {
    * @param params.type 分类用途类型 ('asset' 资产 | 'expense' 支出 | 'income' 收入 | 'transaction' 交易)
    * @returns 分类实体对象数组
    */
-  list: (params?: { type?: string }) => http.get<Category[], Category[]>('/categories', { params }),
+  list: (params?: { type?: string }) => http.get<Category[]>('/categories', { params }),
 
   /**
    * 按父分类 ID 懒加载获取直接子分类列表
@@ -26,7 +26,7 @@ export const categoriesApi = {
    * @param id 父分类 ID
    * @returns 子分类实体对象数组
    */
-  children: (id: number) => http.get<Category[], Category[]>(`/categories/${id}/children`),
+  children: (id: number) => http.get<Category[]>(`/categories/${id}/children`),
 
   /**
    * 创建新的分类节点
@@ -39,7 +39,7 @@ export const categoriesApi = {
    * @param data.sort_order 排序序号 (可选)
    * @returns 空响应
    */
-  create: (data: any) => http.post<void, void>('/categories', data),
+  create: (data: any) => http.post<void>('/categories', data),
 
   /**
    * 更新指定分类信息
@@ -48,7 +48,7 @@ export const categoriesApi = {
    * @param data 更新的数据载荷
    * @returns 空响应
    */
-  update: (id: number, data: any) => http.put<void, void>(`/categories/${id}`, data),
+  update: (id: number, data: any) => http.put<void>(`/categories/${id}`, data),
 
   /**
    * 删除指定分类节点 (注意：若有子节点或已被资产/交易关联则可能受限)
@@ -56,6 +56,6 @@ export const categoriesApi = {
    * @param id 分类 ID
    * @returns 空响应
    */
-  delete: (id: number) => http.delete<void, void>(`/categories/${id}`),
+  delete: (id: number) => http.delete<void>(`/categories/${id}`),
 }
 

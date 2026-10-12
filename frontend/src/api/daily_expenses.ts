@@ -33,7 +33,7 @@ export const dailyExpensesApi = {
     page?: number
     page_size?: number
   }) =>
-    http.get<PageResult<DailyExpense>, PageResult<DailyExpense>>('/daily-expenses', {
+    http.get<PageResult<DailyExpense>>('/daily-expenses', {
       params,
     }),
 
@@ -51,7 +51,7 @@ export const dailyExpensesApi = {
    * @param data.tags 关联标签列表 (可选)
    * @returns 空响应
    */
-  create: (data: any) => http.post<void, void>('/daily-expenses', data),
+  create: (data: any) => http.post<void>('/daily-expenses', data),
 
   /**
    * 修改日常收支记录
@@ -60,7 +60,7 @@ export const dailyExpensesApi = {
    * @param data 更新的数据载荷
    * @returns 空响应
    */
-  update: (id: number, data: any) => http.put<void, void>(`/daily-expenses/${id}`, data),
+  update: (id: number, data: any) => http.put<void>(`/daily-expenses/${id}`, data),
 
   /**
    * 删除指定的日常收支记录 (同步回滚关联资产账户余额)
@@ -68,7 +68,7 @@ export const dailyExpensesApi = {
    * @param id 记录 ID
    * @returns 空响应
    */
-  delete: (id: number) => http.delete<void, void>(`/daily-expenses/${id}`),
+  delete: (id: number) => http.delete<void>(`/daily-expenses/${id}`),
 
   /**
    * 获取指定年月的收支月度聚合统计 (包含总收支、日均支出、分类与标签占比)
@@ -78,7 +78,7 @@ export const dailyExpensesApi = {
    * @returns 月度收支分析聚合对象
    */
   monthly: (year: number, month: number) =>
-    http.get<ExpenseMonthly, ExpenseMonthly>(`/daily-expenses/monthly`, {
+    http.get<ExpenseMonthly>(`/daily-expenses/monthly`, {
       params: { year, month },
     }),
 
@@ -87,7 +87,7 @@ export const dailyExpensesApi = {
    * @route GET /api/export/daily-expenses
    * @returns CSV 文件的二进制 Blob 对象
    */
-  exportCsv: () => http.get('/export/daily-expenses', { responseType: 'blob' }) as unknown as Promise<Blob>,
+  exportCsv: () => http.get<Blob>('/export/daily-expenses', { responseType: 'blob' }),
 
   /**
    * 批量导入 CSV 文本格式的日常收支数据

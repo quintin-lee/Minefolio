@@ -5,7 +5,25 @@
  */
 
 import axios from 'axios'
-import type { AxiosInstance, AxiosResponse } from 'axios'
+import type { AxiosInstance, AxiosResponse, AxiosRequestConfig } from 'axios'
+
+/** 后端统一响应信封 */
+export interface ApiEnvelope<T = unknown> {
+  code: number
+  message: string
+  data: T
+}
+
+/**
+ * 解包后端响应信封 ({ code, message, data } -> data)。
+ * 全站唯一的网络边界类型断点：调用方以 http.get<T>/post<T>/put<T>/delete<T> 声明解包后载荷类型，
+ * 此处 unknown -> T 断言承载该约定。取值语义与原内联表达式 (body?.data ?? body) 完全一致，
+ * 含 data 缺失/为 null 时回退返回信封整体的边界行为。
+ */
+function unwrapEnvelope<T>(body: unknown): T {
+  const data = (body as { data?: unknown } | null | undefined)?.data
+  return (data ?? body) as T
+}
 import { useAuthStore } from '@/stores/auth'
 import { ElMessage } from 'element-plus'
 
@@ -147,10 +165,10 @@ function createHttp(): AxiosInstance {
     return config
   })
 
-  // 响应拦截器：自动解包 { code, message, data } 结构，并处理业务异常与鉴权失败
+  // 响应拦截器：统一处理业务异常与鉴权失败；信封解包由 http.get/post/put/delete 包装函数完成
   instance.interceptors.response.use(
     (res: AxiosResponse) => {
-      const body = res.data
+      const body = res.data as ApiEnvelope | undefined
       if (body && typeof body === 'object' && typeof body.code === 'number' && body.code !== 0) {
         if (body.code === 1001) {
           handleAuthError()
@@ -159,7 +177,7 @@ function createHttp(): AxiosInstance {
         }
         return Promise.reject({ response: { data: body } })
       }
-      return (body?.data ?? body) as any
+      return res
     },
     (err) => {
       if (err.response) {
@@ -186,5 +204,22 @@ onServerUrlChange(() => {
   httpInstance.defaults.baseURL = getAxiosBaseUrl()
 })
 
-export default httpInstance
+/**
+ * 类型化请求包装：返回解包后的 data（Promise<T>），调用方以单一泛型声明载荷类型。
+ * 解包约定见 unwrapEnvelope；拦截器仅负责错误映射，不再改写响应体。
+ */
+const http = {
+  get: <T>(url: string, config?: AxiosRequestConfig) =>
+    httpInstance.get<T>(url, config).then((res) => unwrapEnvelope<T>(res.data)),
+  post: <T>(url: string, data?: unknown, config?: AxiosRequestConfig) =>
+    httpInstance.post<T>(url, data, config).then((res) => unwrapEnvelope<T>(res.data)),
+  put: <T>(url: string, data?: unknown, config?: AxiosRequestConfig) =>
+    httpInstance.put<T>(url, data, config).then((res) => unwrapEnvelope<T>(res.data)),
+  delete: <T>(url: string, config?: AxiosRequestConfig) =>
+    httpInstance.delete<T>(url, config).then((res) => unwrapEnvelope<T>(res.data)),
+  request: <T>(config: AxiosRequestConfig) =>
+    httpInstance.request<T>(config).then((res) => unwrapEnvelope<T>(res.data)),
+}
+
+export default http
 
