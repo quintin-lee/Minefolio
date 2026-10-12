@@ -162,6 +162,9 @@ export const useChatStore = defineStore('chat', () => {
    * @param id 会话 ID
    */
   async function selectSession(id: number) {
+    // 切会话前先中断旧流：否则在途流继续写已脱离列表的旧消息对象（浪费 token），
+    // 其 finally 还会在任意时刻把 isStreaming 置 false 并清空 controller，干扰新会话
+    abortCurrentStream()
     const numId = Number(id)
     const seq = ++sessionSwitchSeq
     currentSessionId.value = numId
