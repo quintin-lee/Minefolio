@@ -241,6 +241,7 @@
         <button
           v-show="showScrollBottomBtn"
           class="scroll-bottom-btn"
+          ref="scrollBtnRef"
           title="回到底部"
           @click="forceScrollToBottom"
         >
@@ -249,7 +250,7 @@
         </button>
 
         <!-- Input Area -->
-        <div class="chat-input-area">
+        <div class="chat-input-area" ref="inputAreaRef">
           <!-- Financial AI Workflows Trigger Bar -->
           <WorkflowBar />
 
@@ -320,8 +321,10 @@ const DRAFT_PREFIX = 'minefolio:chat:draft:'
 const loadMoreTrigger = ref<HTMLElement | null>(null)
 let scrollObserver: IntersectionObserver | null = null
 const isMobile = ref(false)
+const inputAreaRef = ref<HTMLElement | null>(null)
+const scrollBtnRef = ref<HTMLButtonElement | null>(null)
 
-function checkMobile() { isMobile.value = window.innerWidth < 768 }
+function checkMobile() { isMobile.value = window.innerWidth < 768; updateMessagesBottomPadding() }
 
 const vFocus = {
   mounted: (el: HTMLElement) => el.focus(),
@@ -527,6 +530,31 @@ function forceScrollToBottom() {
   requestAnimationFrame(() => {
     el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
   })
+}
+
+let inputAreaObserver: ResizeObserver | null = null
+
+// 输入岛（工作流快捷栏 + 输入框）以 absolute 悬浮在消息流上方，
+// 高度随 textarea 自增高动态变化。用 ResizeObserver 实测其高度，
+// 同步写入 .messages 的底部留白与"回到底部"按钮位置，避免盖住最后一条对话。
+function updateMessagesBottomPadding() {
+  const area = inputAreaRef.value
+  const msgs = messagesRef.value
+  if (!area || !msgs) return
+  const offset = parseFloat(getComputedStyle(area).bottom) || 0
+  const islandTop = area.offsetHeight + offset + 12
+  msgs.style.paddingBottom = `${islandTop}px`
+  if (scrollBtnRef.value) scrollBtnRef.value.style.bottom = `${area.offsetHeight + offset + 8}px`
+}
+
+function setupInputAreaObserver() {
+  inputAreaObserver?.disconnect()
+  inputAreaObserver = null
+  const area = inputAreaRef.value
+  if (!area || typeof ResizeObserver === 'undefined') return
+  inputAreaObserver = new ResizeObserver(updateMessagesBottomPadding)
+  inputAreaObserver.observe(area)
+  updateMessagesBottomPadding()
 }
 
 const lastMsgContent = computed(() => {
@@ -801,6 +829,7 @@ onMounted(async () => {
   nextTick(() => {
     scrollToBottom()
     setupInfiniteScroll()
+    setupInputAreaObserver()
     textareaRef.value?.focus()
   })
   window.addEventListener('keydown', onGlobalKeydown)
@@ -810,6 +839,7 @@ onUnmounted(() => {
   window.removeEventListener('keydown', onGlobalKeydown)
   window.removeEventListener('resize', checkMobile)
   if (scrollObserver) { scrollObserver.disconnect(); scrollObserver = null }
+  if (inputAreaObserver) { inputAreaObserver.disconnect(); inputAreaObserver = null }
   chat.abortCurrentStream()
 })
 </script>

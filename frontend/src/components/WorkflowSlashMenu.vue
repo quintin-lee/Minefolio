@@ -149,7 +149,7 @@ defineExpose({ handleKeyDown })
 }
 
 .menu-list {
-  max-height: 240px;
+  max-height: min(240px, 32vh);
   overflow-y: auto;
   padding: 4px;
 }
