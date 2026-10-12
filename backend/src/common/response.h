@@ -10,6 +10,7 @@
  */
 
 #include "csilk/csilk.h"
+#include <errno.h>
 #include <stdlib.h>
 
 /**
@@ -120,6 +121,30 @@ respond_forbidden(csilk_ctx_t* c, const char* msg)
 }
 
 /**
+ * @brief 严格解析单个整型 Query 参数
+ *
+ * @param[in] s    原始参数字符串，可为 NULL
+ * @param[in] dflt 非法输入时的回退默认值
+ *
+ * @return 解析成功返回数值；NULL、空串、含非数字尾巴、上下溢出时返回 dflt。
+ *         （atoll 对非法输入静默返回 0、对溢出是未定义行为，此处一并修复。）
+ */
+static inline int64_t
+parse_query_int_strict(const char* s, int64_t dflt)
+{
+    if (!s || *s == '\0') {
+        return dflt;
+    }
+    errno = 0;
+    char*     end = NULL;
+    long long v = strtoll(s, &end, 10);
+    if (errno != 0 || end == s || *end != '\0') {
+        return dflt;
+    }
+    return (int64_t)v;
+}
+
+/**
  * @brief 从 HTTP Query 参数中解析分页参数 (page, page_size)
  *
  * 默认值规则：
@@ -133,23 +158,16 @@ respond_forbidden(csilk_ctx_t* c, const char* msg)
 static inline void
 parse_page_params(csilk_ctx_t* c, int64_t* page, int64_t* page_size)
 {
-    const char* page_str = csilk_get_query(c, "page");
-    const char* size_str = csilk_get_query(c, "page_size");
-    int64_t     p = 1, s = 20;
-    if (page_str) {
-        p = atoll(page_str);
-        if (p < 1) {
-            p = 1;
-        }
+    int64_t p = parse_query_int_strict(csilk_get_query(c, "page"), 1);
+    int64_t s = parse_query_int_strict(csilk_get_query(c, "page_size"), 20);
+    if (p < 1) {
+        p = 1;
     }
-    if (size_str) {
-        s = atoll(size_str);
-        if (s < 1) {
-            s = 20;
-        }
-        if (s > 500) {
-            s = 500;
-        }
+    if (s < 1) {
+        s = 20;
+    }
+    if (s > 500) {
+        s = 500;
     }
     *page = p;
     *page_size = s;
@@ -183,8 +201,8 @@ respond_page_ok(csilk_ctx_t* c, csilk_json_t* list, int64_t total, int64_t page,
 {
     csilk_json_t* data = csilk_json_object();
     csilk_json_add_array(data, "list", list);
-    csilk_json_add_number(data, "total", (double)total);
-    csilk_json_add_number(data, "page", (double)page);
-    csilk_json_add_number(data, "page_size", (double)page_size);
+    csilk_json_add_int(data, "total", total);
+    csilk_json_add_int(data, "page", page);
+    csilk_json_add_int(data, "page_size", page_size);
     respond_ok(c, data);
 }
