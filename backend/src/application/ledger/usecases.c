@@ -406,8 +406,8 @@ ledger_usecase_create_invite_code(void*                   pool,
         return -1;
     }
 
-    strncpy(out_res->invite_code, code, sizeof(out_res->invite_code) - 1);
-    strncpy(out_res->expires_at, exp_str, sizeof(out_res->expires_at) - 1);
+    snprintf(out_res->invite_code, sizeof(out_res->invite_code), "%s", code);
+    snprintf(out_res->expires_at, sizeof(out_res->expires_at), "%s", exp_str);
     return 0;
 }
 int

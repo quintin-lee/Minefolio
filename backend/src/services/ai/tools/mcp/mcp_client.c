@@ -285,6 +285,9 @@ resolve_exec_on_path(const char* prog, char* out, size_t out_sz)
         char full[1024];
         snprintf(full, sizeof(full), "%s/%s", tok, prog);
         if (access(full, X_OK) == 0) {
+            if (strlen(full) >= out_sz) {
+                continue;
+            }
             snprintf(out, out_sz, "%s", full);
             return 0;
         }

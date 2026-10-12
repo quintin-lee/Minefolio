@@ -163,7 +163,6 @@ exec_confirm_proposed_transfer(const ai_tool_t*         tool,
     double      amount = db_get_num(args, "amount");
     int64_t     from_id = (int64_t)db_get_num(args, "from_asset_id");
     int64_t     to_id = (int64_t)db_get_num(args, "to_asset_id");
-    const char* date = args ? csilk_json_get_string(args, "date") : "";
     const char* note = args ? csilk_json_get_string(args, "note") : "";
     const char* draft_token = args ? csilk_json_get_string(args, "draft_token") : "";
 

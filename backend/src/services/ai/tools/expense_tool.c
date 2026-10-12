@@ -52,7 +52,6 @@ exec_get_daily_expenses(const ai_tool_t*         tool,
 
     const char* start_date = args ? csilk_json_get_string(args, "start_date") : NULL;
     const char* end_date = args ? csilk_json_get_string(args, "end_date") : NULL;
-    const char* type = args ? csilk_json_get_string(args, "expense_type") : NULL;
     int64_t     page = 1;
     int64_t     page_size = 20;
     if (args) {
