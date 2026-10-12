@@ -22,13 +22,15 @@ cors_middleware_wrapper(csilk_ctx_t* c)
 {
     csilk_cors_config_t cors = {0};
     const char*         origin = config_env_get("CORS_ORIGIN", NULL, 0, NULL);
+    /* CORS_ORIGIN 已设 → 白名单模式，回显配置的 origin 并允许凭证。
+       未设 → 回 "*" 且禁止凭证（规范禁止 * 与 credentials:true 共存）。
+       绝不在未设时回显请求 Origin——那等于给任意站点开放带凭证跨域。 */
     if (origin && origin[0]) {
         cors.allow_origin = origin;
         cors.allow_credentials = 1;
     } else {
-        const char* req_origin = csilk_get_header(c, "Origin");
-        cors.allow_origin = req_origin && req_origin[0] ? req_origin : "*";
-        cors.allow_credentials = 1;
+        cors.allow_origin = "*";
+        cors.allow_credentials = 0;
     }
     cors.allow_methods = "GET,POST,PUT,DELETE,OPTIONS";
     cors.allow_headers = "Content-Type,Authorization,X-CSRF-Token,X-Ledger-Id";
@@ -47,14 +49,15 @@ cors_preflight_handler(csilk_ctx_t* c)
 {
     csilk_cors_config_t cors = {0};
     const char*         origin = config_env_get("CORS_ORIGIN", NULL, 0, NULL);
-    if (!origin || !origin[0]) {
-        const char* req_origin = csilk_get_header(c, "Origin");
-        cors.allow_origin = req_origin && req_origin[0] ? req_origin : "*";
-    } else {
+    /* 与 cors_middleware_wrapper 同一语义：未设 CORS_ORIGIN 时不回显请求 Origin。 */
+    if (origin && origin[0]) {
         cors.allow_origin = origin;
+        cors.allow_credentials = 1;
+    } else {
+        cors.allow_origin = "*";
+        cors.allow_credentials = 0;
     }
     cors.allow_methods = "GET,POST,PUT,DELETE,OPTIONS";
     cors.allow_headers = "Content-Type,Authorization,X-CSRF-Token,X-Ledger-Id";
-    cors.allow_credentials = 1;
     csilk_cors_middleware(c, &cors);
 }

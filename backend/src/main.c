@@ -94,6 +94,14 @@ main(int argc, char** argv)
     csilk_app_use(app, security_headers_middleware);
     /* Rate-limit auth-write endpoints (login/register/setup) before JWT check */
     csilk_app_use(app, rate_limit_auth_middleware);
+    /* CORS_ORIGIN 未设时回 "*" 且禁止凭证（规范禁止 * 与 credentials 共存）；
+       生产若需带凭证跨域，必须显式配置 CORS_ORIGIN 白名单。 */
+    if (!config_env_get("CORS_ORIGIN", NULL, 0, NULL)) {
+        CSILK_LOG_W(
+            "CORS_ORIGIN not set: serving Access-Control-Allow-Origin: * without credentials. "
+            "Set CORS_ORIGIN to an allow-list origin (e.g. https://app.example.com) to "
+            "permit credentialed cross-origin requests.");
+    }
     csilk_app_use(app, cors_middleware_wrapper);
 
     csilk_app_get(app, "/healthz", csilk_health_check_handler);
