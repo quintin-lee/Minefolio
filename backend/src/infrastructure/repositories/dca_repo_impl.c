@@ -323,6 +323,20 @@ mf_dca_repo_execution_create(
     snprintf(pid, sizeof(pid), "%lld", (long long)plan_id);
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     snprintf(pamt, sizeof(pamt), "%.4f", planned_amount);
+    /* 幂等：dca_executions(plan_id, period_date) 有 UNIQUE 索引，重复触发(含进程重启后)
+       直接命中已有记录则复用其 id，避免调度器对已生成记录反复 INSERT 失败。 */
+    csilk_json_t* existing = csilk_db_query_param_json(
+        (csilk_db_pool_t*)db_pool,
+        "SELECT id FROM dca_executions WHERE plan_id = ? AND period_date = ? LIMIT 1",
+        (const char*[]){pid, period_date ? period_date : "", NULL});
+    if (existing && csilk_json_array_size(existing) > 0) {
+        int64_t prev_id = db_get_int(csilk_json_array_get(existing, 0), "id");
+        csilk_json_free(existing);
+        return prev_id;
+    }
+    if (existing) {
+        csilk_json_free(existing);
+    }
     const char* sql =
         "INSERT INTO dca_executions (plan_id, user_id, period_date, planned_amount, status) "
         "VALUES (?, ?, ?, ?, 'pending') RETURNING id";
