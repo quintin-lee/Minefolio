@@ -28,6 +28,10 @@ ARG HTTPS_PROXY
 ARG ALL_PROXY
 
 ARG GITHUB_PROXY=""
+# 可选: 构建时启用 PostgreSQL 支持 (libpq)。
+# 默认关闭保持镜像精简; 部署 Postgres 时:
+#   docker build --build-arg ENABLE_POSTGRES=1 -t ghcr.io/quintin-lee/minefolio:latest .
+ARG ENABLE_POSTGRES=0
 
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -75,6 +79,9 @@ RUN --mount=type=cache,target=/var/cache/apt \
     zlib1g-dev \
     curl \
     ca-certificates \
+    && if [ "$ENABLE_POSTGRES" = "1" ]; then \
+    apt-get install -y --no-install-recommends libpq-dev; \
+    fi \
     && rm -rf /var/lib/apt/lists/*
 
 
@@ -209,6 +216,8 @@ COPY --from=frontend-build /app/frontend/dist /opt/minefolio/frontend/dist
 ############################################################
 
 FROM ubuntu:${UBUNTU_VERSION} AS runtime
+# 运行时阶段不继承构建阶段的 ARG 作用域, 需要重新声明
+ARG ENABLE_POSTGRES=0
 
 
 
@@ -241,6 +250,9 @@ RUN --mount=type=bind,source=hosts,target=/etc/hosts \
     ca-certificates \
     tini \
     curl \
+    && if [ "$ENABLE_POSTGRES" = "1" ]; then \
+    apt-get install -y --no-install-recommends libpq5; \
+    fi \
     && rm -rf /var/lib/apt/lists/*
 
 

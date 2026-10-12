@@ -1,3 +1,19 @@
+# ============================================================================
+# Minefolio 生产编排
+#
+# 默认: SQLite (内置于 minefolio-data 卷), 无需额外服务。
+#
+# 可选: 同时部署 PostgreSQL —— 在 .env 中设置
+#       COMPOSE_PROFILES=postgres
+#       MINEFOLIO_DB_DRIVER=postgres
+#       MINEFOLIO_DB_PASSWORD=<强随机密码>
+#   然后: docker compose up -d
+#   或命令行: docker compose --profile postgres up -d
+#
+#   注意: 启用 Postgres 需要后端镜像在构建期安装 libpq, 即本地构建:
+#         docker build --build-arg ENABLE_POSTGRES=1 -t <image>:pg .
+#   并在下方 minefolio 的 image 指向该本地镜像。
+# ============================================================================
 services:
   minefolio:
     image: ghcr.io/quintin-lee/minefolio:latest
@@ -6,12 +22,39 @@ services:
       - "8080"
     environment:
       MINEFOLIO_JWT_SECRET: "${MINEFOLIO_JWT_SECRET:?MINEFOLIO_JWT_SECRET is required}"
-      MINEFOLIO_DB_DSN: "/app/data/minefolio.db"
+      MINEFOLIO_DB_DRIVER: ${MINEFOLIO_DB_DRIVER:-sqlite}
+      MINEFOLIO_DB_DSN: ${MINEFOLIO_DB_DSN:-/app/data/minefolio.db}
       MINEFOLIO_ENABLE_CSRF: "1"
       TZ: "Asia/Shanghai"
+    # 启动前检查: 驱动为 postgres 时等待 DB 就绪并推导 DSN; sqlite 时直接放行。
+    # 保持镜像默认 ENTRYPOINT (tini), 用 command 覆盖注入等待逻辑。
+    command: ["/usr/local/bin/db-wait.sh"]
     volumes:
       - /usr/share/zoneinfo/Asia/Shanghai:/etc/localtime:ro
       - minefolio-data:/app/data
+      - ./docker/db-wait.sh:/usr/local/bin/db-wait.sh:ro
+    restart: unless-stopped
+
+  # 可选 PostgreSQL 服务 —— 仅当 postgres profile 激活时创建。
+  db-postgres:
+    image: postgres:16
+    container_name: minefolio-postgres
+    profiles:
+      - postgres
+    environment:
+      POSTGRES_USER: ${MINEFOLIO_DB_USER:-minefolio}
+      POSTGRES_PASSWORD: ${MINEFOLIO_DB_PASSWORD:-minefolio}
+      POSTGRES_DB: ${MINEFOLIO_DB_NAME:-minefolio}
+      POSTGRES_INITDB_ARGS: "-E UTF8 --locale=C.UTF-8"
+      TZ: "Asia/Shanghai"
+    volumes:
+      - minefolio-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${MINEFOLIO_DB_USER:-minefolio} -d ${MINEFOLIO_DB_NAME:-minefolio}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
     restart: unless-stopped
 
   nginx:
@@ -26,3 +69,4 @@ services:
 
 volumes:
   minefolio-data:
+  minefolio-pgdata:

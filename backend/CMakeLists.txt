@@ -32,6 +32,9 @@ endif()
 # Find libpq for PostgreSQL support
 find_package(PkgConfig QUIET)
 pkg_check_modules(PQ libpq)
+if(PQ_FOUND)
+    add_compile_definitions(HAVE_LIBPQ)
+endif()
 
 # Minefolio sources (recursive glob for all subdirectories)
 file(GLOB_RECURSE SOURCES "src/*.c")

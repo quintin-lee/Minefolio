@@ -105,13 +105,30 @@ docker compose ps
   docker compose up -d
   ```
   > 注意：`docker-compose.yml` 未声明 `build:`，`docker compose up -d --build` 不会构建任何镜像——改完代码必须先执行上面两条 `docker build`，再 `up -d`。
-* **切换 PostgreSQL 生产数据库**：
-  默认使用轻量级 SQLite 数据库（持久化于 Docker 数据卷 `minefolio-data` 中）。如需使用外部 PostgreSQL，仅需在 `.env` 中指定：
+* **随部署一起启动内置 PostgreSQL 容器（可选）**：
+  默认部署使用 SQLite（持久化于 `minefolio-data` 卷），无需额外服务。
+  如需让 `docker compose` 同时拉起一个 `db-postgres` 容器，在 `.env` 中启用 postgres profile：
+  ```env
+  COMPOSE_PROFILES=postgres
+  MINEFOLIO_DB_DRIVER=postgres
+  MINEFOLIO_DB_PASSWORD=replace-with-db-password
+  ```
+  然后 `docker compose up -d`（`.env` 里的 `COMPOSE_PROFILES` 会被自动读取；也可在命令行加 `--profile postgres`）。
+  未启用时（`COMPOSE_PROFILES` 留空）不会创建 `db-postgres` 容器，只部署 SQLite。
+
+  > 前置：后端镜像必须在构建期安装 libpq，否则无法连接 PostgreSQL：
+  > ```bash
+  > docker build --build-arg ENABLE_POSTGRES=1 -t ghcr.io/quintin-lee/minefolio:pg .
+  > ```
+  > 并在 `docker-compose.yml` 的 `minefolio.image` 指向该镜像。
+  > 内置 `db-postgres` 容器使用 `minefolio-pgdata` 卷持久化；`docker/db-wait.sh` 会在后端启动前等待数据库端口就绪。
+* **使用外部 PostgreSQL 生产数据库**：
+  不部署内置容器时（保持 `COMPOSE_PROFILES` 留空），在 `.env` 中指定外部连接串即可：
   ```env
   MINEFOLIO_DB_DRIVER=postgres
   MINEFOLIO_DB_DSN=host=your-pg-host port=5432 user=minefolio password=your-db-pass dbname=minefolio sslmode=disable
   ```
-  原生 C 数据库迁移引擎会在启动时自动完成版本化迁移（`V001`~`V009`）。
+  同样要求镜像带 libpq 构建（见上）。原生 C 数据库迁移引擎会在启动时自动完成版本化迁移（`V001`~`V009`）。
 
 ### 方式 2：本地源码编译与开发
 
