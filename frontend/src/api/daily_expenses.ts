@@ -5,7 +5,7 @@
 
 // frontend/src/api/daily_expenses.ts
 import http from '@/utils/http'
-import type { DailyExpense, ExpenseMonthly, PageResult } from '@/types'
+import type { DailyExpense, DailyExpenseInput, ExpenseMonthly, PageResult } from '@/types'
 
 /**
  * 日常收支记账 API 服务对象
@@ -51,7 +51,7 @@ export const dailyExpensesApi = {
    * @param data.tags 关联标签列表 (可选)
    * @returns 空响应
    */
-  create: (data: any) => http.post<void>('/daily-expenses', data),
+  create: (data: DailyExpenseInput) => http.post<void>('/daily-expenses', data),
 
   /**
    * 修改日常收支记录
@@ -60,7 +60,7 @@ export const dailyExpensesApi = {
    * @param data 更新的数据载荷
    * @returns 空响应
    */
-  update: (id: number, data: any) => http.put<void>(`/daily-expenses/${id}`, data),
+  update: (id: number, data: DailyExpenseInput) => http.put<void>(`/daily-expenses/${id}`, data),
 
   /**
    * 删除指定的日常收支记录 (同步回滚关联资产账户余额)

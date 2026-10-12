@@ -357,7 +357,7 @@ async function handleConfirm() {
         amount: form.amount,
         category_id: form.category_id,
         asset_id: form.asset_id,
-        date: form.date,
+        expense_date: form.date,
         currency: 'CNY',
         note: form.note || '',
       })

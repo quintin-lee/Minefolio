@@ -91,6 +91,50 @@ export interface TransactionInput {
 
 export type ExpenseType = 'income' | 'expense'
 
+/** 创建/更新分类时的请求载荷 (POST/PUT /api/categories) */
+export interface CategoryInput {
+  /** 分类名称 */
+  name: string
+  /** 分类用途类型 */
+  type: CategoryType
+  /** 币种代码 (如 'CNY') */
+  currency: string
+  /** 资产细分类型 (仅 type='asset' 时有效) */
+  asset_type?: string
+  /** 父分类 ID (可选，未指定则为根分类) */
+  parent_id?: number | null
+  /** 图标名称 (可选，null 表示清除图标) */
+  icon?: string | null
+  /** 排序序号 (可选) */
+  sort_order?: number
+}
+
+/** 创建/更新资产时的请求载荷 (POST/PUT /api/assets) */
+export interface AssetInput {
+  /** 资产名称 */
+  name: string
+  /** 所属分类 ID */
+  category_id: number
+  /** 币种代码 (如 'CNY') */
+  currency: string
+  /** 账户编号 (可选) */
+  account_no?: string
+  /** 证券代码 (投资类资产，可选) */
+  symbol?: string
+  /** 行情源 (投资类资产，可选) */
+  quote_source?: string
+  /** 当前估值 (非投资类资产，可选) */
+  current_value?: number
+  /** 持有数量/份额 (投资类资产，可选) */
+  quantity?: number
+  /** 成本价 (投资类资产，可选) */
+  cost_basis?: number
+  /** 最新净值 (基金类资产，可选) */
+  net_value?: number
+  /** 备注说明 (可选) */
+  note?: string
+}
+
 export interface Tag {
   id: number
   user_id: number
@@ -114,6 +158,26 @@ export interface DailyExpense {
   category_name?: string
   created_at: string
   updated_at: string
+}
+
+/** 创建/更新日常收支记录时的请求载荷 (POST/PUT /api/daily-expenses) */
+export interface DailyExpenseInput {
+  /** 分类 ID (null 表示未指定) */
+  category_id: number | null
+  /** 扣款/入账资产账户 ID (null 表示未指定) */
+  asset_id: number | null
+  /** 收支类型 */
+  expense_type: ExpenseType
+  /** 金额 */
+  amount: number
+  /** 发生日期 (YYYY-MM-DD) */
+  expense_date: string
+  /** 币种代码 (缺省 CNY) */
+  currency?: string
+  /** 备注说明 (可选) */
+  note?: string
+  /** 关联标签列表 (可选) */
+  tags?: Array<{ id?: number; name: string; color: string }>
 }
 
 export interface Summary {

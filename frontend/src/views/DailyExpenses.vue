@@ -314,7 +314,12 @@ async function handleSubmit() {
     saving.value = true
     try {
       const data = {
-        ...form,
+        expense_type: form.expense_type,
+        category_id: form.category_id,
+        asset_id: form.asset_id,
+        amount: form.amount,
+        expense_date: form.expense_date,
+        note: form.note,
         tags: form.tags.map(t => ({
           id: t.id > 0 ? t.id : undefined,
           name: t.name,

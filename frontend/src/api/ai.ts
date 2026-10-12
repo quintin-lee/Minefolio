@@ -379,11 +379,11 @@ export async function fetchAiModels(data: {
  * @route GET /api/ai/workflows
  * @returns 工作流定义对象数组
  */
-export async function getWorkflows(): Promise<any[]> {
+export async function getWorkflows(): Promise<WorkflowDef[]> {
   const r = (await http.get('/ai/workflows')) as unknown
-  if (Array.isArray(r)) return r
+  if (Array.isArray(r)) return r as WorkflowDef[]
   if (r && typeof r === 'object' && 'data' in r && Array.isArray((r as { data: unknown }).data)) {
-    return (r as { data: any[] }).data
+    return (r as { data: WorkflowDef[] }).data
   }
   return []
 }

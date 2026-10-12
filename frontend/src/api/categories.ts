@@ -5,7 +5,7 @@
 
 // frontend/src/api/categories.ts
 import http from '@/utils/http'
-import type { Category } from '@/types'
+import type { Category, CategoryInput } from '@/types'
 
 /**
  * 分类管理 API 服务对象
@@ -39,7 +39,7 @@ export const categoriesApi = {
    * @param data.sort_order 排序序号 (可选)
    * @returns 空响应
    */
-  create: (data: any) => http.post<void>('/categories', data),
+   create: (data: CategoryInput) => http.post<void>('/categories', data),
 
   /**
    * 更新指定分类信息
@@ -48,7 +48,7 @@ export const categoriesApi = {
    * @param data 更新的数据载荷
    * @returns 空响应
    */
-  update: (id: number, data: any) => http.put<void>(`/categories/${id}`, data),
+   update: (id: number, data: CategoryInput) => http.put<void>(`/categories/${id}`, data),
 
   /**
    * 删除指定分类节点 (注意：若有子节点或已被资产/交易关联则可能受限)
