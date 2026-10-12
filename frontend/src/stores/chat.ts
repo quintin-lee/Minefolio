@@ -636,7 +636,9 @@ export const useChatStore = defineStore('chat', () => {
         }
       }
       await writer.finish()
-      wfState.status = 'completed'
+      if (wfState.status !== 'error') {
+        wfState.status = 'completed'
+      }
       wfState.steps.forEach(st => {
         if (st.status !== 'completed' && st.status !== 'error') {
           st.status = 'completed'
@@ -814,7 +816,9 @@ export const useChatStore = defineStore('chat', () => {
         }
       }
       await writer.finish()
-      wfState.status = 'completed'
+      if (wfState.status !== 'error') {
+        wfState.status = 'completed'
+      }
       wfState.steps.forEach(st => {
         if (st.status !== 'completed' && st.status !== 'error') {
           st.status = 'completed'
