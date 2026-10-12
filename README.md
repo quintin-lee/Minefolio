@@ -116,11 +116,7 @@ docker compose ps
   然后 `docker compose up -d`（`.env` 里的 `COMPOSE_PROFILES` 会被自动读取；也可在命令行加 `--profile postgres`）。
   未启用时（`COMPOSE_PROFILES` 留空）不会创建 `db-postgres` 容器，只部署 SQLite。
 
-  > 前置：后端镜像必须在构建期安装 libpq，否则无法连接 PostgreSQL：
-  > ```bash
-  > docker build --build-arg ENABLE_POSTGRES=1 -t ghcr.io/quintin-lee/minefolio:pg .
-  > ```
-  > 并在 `docker-compose.yml` 的 `minefolio.image` 指向该镜像。
+  > 说明：`Dockerfile` 已默认安装 libpq 并在构建期编入 csilk 的 PostgreSQL 驱动，`ghcr` 官方镜像开箱即用，无需额外 `--build-arg`。若部署的是不含 libpq 的旧版镜像，请重新执行上面的 `docker build` 构建后再启动。
   > 内置 `db-postgres` 容器使用 `minefolio-pgdata` 卷持久化；`docker/db-wait.sh` 会在后端启动前等待数据库端口就绪。
 * **使用外部 PostgreSQL 生产数据库**：
   不部署内置容器时（保持 `COMPOSE_PROFILES` 留空），在 `.env` 中指定外部连接串即可：
@@ -128,7 +124,7 @@ docker compose ps
   MINEFOLIO_DB_DRIVER=postgres
   MINEFOLIO_DB_DSN=host=your-pg-host port=5432 user=minefolio password=your-db-pass dbname=minefolio sslmode=disable
   ```
-  同样要求镜像带 libpq 构建（见上）。原生 C 数据库迁移引擎会在启动时自动完成版本化迁移（`V001`~`V009`）。
+  同样需要镜像带 libpq（`Dockerfile` 默认已包含）。原生 C 数据库迁移引擎会在启动时自动完成版本化迁移（`V001`~`V009`）。
 
 ### 方式 2：本地源码编译与开发
 

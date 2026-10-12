@@ -10,9 +10,10 @@
 #   然后: docker compose up -d
 #   或命令行: docker compose --profile postgres up -d
 #
-#   注意: 启用 Postgres 需要后端镜像在构建期安装 libpq, 即本地构建:
-#         docker build --build-arg ENABLE_POSTGRES=1 -t <image>:pg .
-#   并在下方 minefolio 的 image 指向该本地镜像。
+#   说明: 自 2026-10 起 Dockerfile 默认安装 libpq, 无需额外 build-arg;
+#   启用 Postgres 仅需将 .env 中 MINEFOLIO_DB_DRIVER 改为 postgres 并配置密码。
+#   若使用旧版镜像 (无 libpq), 可本地重新构建:
+#         docker build -t <image>:latest .
 # ============================================================================
 services:
   minefolio:
