@@ -164,7 +164,13 @@ db_get_num(const csilk_json_t* obj, const char* key)
         if (strcasecmp(s, "false") == 0 || strcasecmp(s, "f") == 0) {
             return 0.0;
         }
-        return atof(s);
+        /* strtod 全串消费校验：atof 会静默接受 "12abc"→12.0 等脏数据 */
+        char*  end = NULL;
+        double d = strtod(s, &end);
+        if (end == s || *end != '\0') {
+            return 0.0;
+        }
+        return d;
     }
     return 0.0;
 }
@@ -221,7 +227,12 @@ db_get_bool(const csilk_json_t* obj, const char* key)
         if (strcasecmp(s, "false") == 0 || strcasecmp(s, "f") == 0 || strcasecmp(s, "0") == 0) {
             return 0;
         }
-        return atof(s) != 0.0 ? 1 : 0;
+        char*  end = NULL;
+        double d = strtod(s, &end);
+        if (end == s || *end != '\0') {
+            return 0;
+        }
+        return d != 0.0 ? 1 : 0;
     }
     return 0;
 }
