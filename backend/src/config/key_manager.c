@@ -209,7 +209,8 @@ auth_key_decrypt(const char* ciphertext_b64url, char* out_buf, size_t* out_len)
         return -1;
     }
     uint8_t ct_buf[CSILK_RSA_KEY_SIZE];
-    if (csilk_base64url_decode(ciphertext_b64url, ct_buf, sizeof(ct_buf)) < 0) {
+    int     ct_len = csilk_base64url_decode(ciphertext_b64url, ct_buf, sizeof(ct_buf));
+    if (ct_len < 0) {
         return -1;
     }
     size_t pt_len = *out_len - 1;
@@ -217,7 +218,7 @@ auth_key_decrypt(const char* ciphertext_b64url, char* out_buf, size_t* out_len)
                                   g_priv_pem,
                                   strlen(g_priv_pem),
                                   ct_buf,
-                                  CSILK_RSA_KEY_SIZE,
+                                  (size_t)ct_len,
                                   (uint8_t*)out_buf,
                                   &pt_len) != 0 ||
         pt_len == 0) {

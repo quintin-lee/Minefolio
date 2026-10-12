@@ -14,6 +14,31 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <time.h>
+#include <pthread.h>
+
+/* Per-process short-lived cache of token_version lookups. Each authenticated
+ * request otherwise runs a single-row DB query; under load this is the hottest
+ * read on the users table. A 5 s TTL bounds staleness after a password change
+ * or full-session invalidation while cutting most of the queries.
+ *
+ * Ring eviction: when the table is full, new entries overwrite the slot
+ * selected by monotonic-time hash. An evicted user will miss and re-query the
+ * DB on their next request, so the worst case is one extra query, never a
+ * wrong answer. */
+#define TOKEN_VERSION_CACHE_TTL_SEC 5
+#define TOKEN_VERSION_CACHE_MAX_USERS 128
+
+struct tv_cache_entry {
+    int64_t user_id;
+    int     db_version;
+    int     found; /* 0 = user row absent (treat as invalid), 1 = present */
+    int64_t expire_mono_ms;
+};
+
+static struct tv_cache_entry g_tv_cache[TOKEN_VERSION_CACHE_MAX_USERS];
+static size_t                g_tv_cache_count = 0;
+static pthread_mutex_t       g_tv_cache_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /**
  * @brief 校验 JWT 载荷中的版本号与数据库中用户的最新 token_version 是否一致
@@ -27,7 +52,7 @@
  * @retval 0 版本号一致，Token 有效
  * @retval -1 版本号不匹配、用户不存在或载荷解析失败，Token 已失效
  *
- * @note 内部函数，执行一次轻量级数据库单行查询。
+ * @note 内部函数，优先命中 5 s 进程内缓存，未命中时回退到数据库单行查询。
  */
 static int
 jwt_validate_token_version(csilk_ctx_t* c, int64_t user_id)
@@ -38,22 +63,61 @@ jwt_validate_token_version(csilk_ctx_t* c, int64_t user_id)
     }
     int jwt_version = (int)csilk_json_get_number(root, "v");
 
+    /* Check in-process cache first (bounded 5 s staleness). */
+    int64_t now_ms;
+    {
+        struct timespec now;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        now_ms = (int64_t)now.tv_sec * 1000 + now.tv_nsec / 1000000;
+    }
+    pthread_mutex_lock(&g_tv_cache_mutex);
+    for (size_t i = 0; i < g_tv_cache_count; i++) {
+        struct tv_cache_entry* e = &g_tv_cache[i];
+        if (e->user_id == user_id && e->expire_mono_ms > now_ms) {
+            int cached_db = e->db_version;
+            int cached_ok = e->found;
+            pthread_mutex_unlock(&g_tv_cache_mutex);
+            return (cached_ok && jwt_version == cached_db) ? 0 : -1;
+        }
+    }
+    pthread_mutex_unlock(&g_tv_cache_mutex);
+
     char uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     csilk_db_pool_t* pool = db_get_pool();
     const char*      params[] = {uid_str, NULL};
     csilk_json_t*    row =
         csilk_db_query_param_json(pool, "SELECT token_version FROM users WHERE id=?", params);
+    int db_version, found;
     if (!row || csilk_json_array_size(row) == 0) {
         if (row) {
             csilk_json_free(row);
         }
-        return -1;
+        found = 0;
+        db_version = 0;
+    } else {
+        found = 1;
+        db_version = (int)db_get_int(csilk_json_array_get(row, 0), "token_version");
+        csilk_json_free(row);
     }
-    int db_version = (int)db_get_int(csilk_json_array_get(row, 0), "token_version");
-    csilk_json_free(row);
 
-    return (jwt_version == db_version) ? 0 : -1;
+    /* Store into cache (ring eviction when full). */
+    pthread_mutex_lock(&g_tv_cache_mutex);
+    size_t slot;
+    if (g_tv_cache_count < TOKEN_VERSION_CACHE_MAX_USERS) {
+        slot = g_tv_cache_count;
+        g_tv_cache_count++;
+    } else {
+        slot = now_ms % TOKEN_VERSION_CACHE_MAX_USERS;
+    }
+    struct tv_cache_entry* e = &g_tv_cache[slot];
+    e->user_id = user_id;
+    e->db_version = db_version;
+    e->found = found;
+    e->expire_mono_ms = now_ms + TOKEN_VERSION_CACHE_TTL_SEC * 1000;
+    pthread_mutex_unlock(&g_tv_cache_mutex);
+
+    return (found && jwt_version == db_version) ? 0 : -1;
 }
 
 /**

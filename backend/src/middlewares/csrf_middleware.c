@@ -32,7 +32,7 @@ csrf_middleware_wrapper(csilk_ctx_t* c)
         if (!csilk_get_cookie(c, "csrf_token")) {
             char buf[33];
             if (csilk_csrf_generate_token(buf, sizeof(buf)) == 0) {
-                csilk_set_cookie(c, "csrf_token", buf, 86400, "/", NULL, 0, 0);
+                csilk_set_cookie_ex(c, "csrf_token", buf, 86400, "/", NULL, 0, 0, "Lax");
             }
         }
         csilk_next(c);
@@ -47,7 +47,7 @@ csrf_middleware_wrapper(csilk_ctx_t* c)
         if (!csilk_get_cookie(c, "csrf_token")) {
             char buf[33];
             if (csilk_csrf_generate_token(buf, sizeof(buf)) == 0) {
-                csilk_set_cookie(c, "csrf_token", buf, 86400, "/", NULL, 0, 0);
+                csilk_set_cookie_ex(c, "csrf_token", buf, 86400, "/", NULL, 0, 0, "Lax");
             }
         }
         csilk_next(c);
@@ -76,7 +76,7 @@ csrf_middleware_wrapper(csilk_ctx_t* c)
         /* 为后续请求下发 CSRF cookie */
         char buf[33];
         if (csilk_csrf_generate_token(buf, sizeof(buf)) == 0) {
-            csilk_set_cookie(c, "csrf_token", buf, 86400, "/", NULL, 0, 0);
+            csilk_set_cookie_ex(c, "csrf_token", buf, 86400, "/", NULL, 0, 0, "Lax");
         }
     }
     csilk_next(c);

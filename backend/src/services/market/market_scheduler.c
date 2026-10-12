@@ -232,9 +232,10 @@ scheduler_loop(void* arg)
             pthread_mutex_lock(&g_sched_mutex);
         }
 
-        /* Wait 30 seconds or until notified */
+        /* Wait 30 seconds or until notified (MONOTONIC absolute deadline,
+         * immune to NTP wall-clock rollback that would make REALTIME spin). */
         struct timespec ts;
-        clock_gettime(CLOCK_REALTIME, &ts);
+        clock_gettime(CLOCK_MONOTONIC, &ts);
         ts.tv_sec += 30;
         pthread_cond_timedwait(&g_sched_cond, &g_sched_mutex, &ts);
     }
@@ -253,6 +254,17 @@ market_scheduler_start(csilk_db_pool_t* pool)
 
     g_pool = pool;
     g_sched_running = true;
+
+    /* Re-bind the condvar to CLOCK_MONOTONIC before the worker thread starts,
+     * so timedwait deadlines are immune to NTP wall-clock rollback. Done on the
+     * caller thread (no concurrent signal/stop in flight) to avoid a destroy
+     * racing a stop signal. */
+    pthread_condattr_t cattr;
+    pthread_condattr_init(&cattr);
+    pthread_condattr_setclock(&cattr, CLOCK_MONOTONIC);
+    pthread_cond_destroy(&g_sched_cond);
+    pthread_cond_init(&g_sched_cond, &cattr);
+    pthread_condattr_destroy(&cattr);
 
     if (pthread_create(&g_sched_thread, NULL, scheduler_loop, NULL) != 0) {
         CSILK_LOG_E("Failed to create market scheduler thread");
