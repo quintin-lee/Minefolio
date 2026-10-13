@@ -28,7 +28,7 @@ step_cf_collect(csilk_db_pool_t*    pool,
                                   "SELECT AVG(monthly_sum) as avg_income FROM ("
                                   "  SELECT SUM(amount) as monthly_sum FROM daily_expenses "
                                   "  WHERE user_id = ? AND expense_type = 'income' "
-                                  "  GROUP BY substr(expense_date,1,7))",
+                                  "  GROUP BY substr(CAST(expense_date AS TEXT),1,7))",
                                   p);
     double avg_income = 0;
     if (inc_res && csilk_json_array_size(inc_res) > 0) {

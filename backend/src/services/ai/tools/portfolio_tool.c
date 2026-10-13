@@ -63,7 +63,7 @@ exec_analyze_financial_health(const ai_tool_t*         tool,
                                   "SELECT AVG(monthly_sum) as avg_burn FROM ("
                                   "  SELECT SUM(amount) as monthly_sum FROM daily_expenses "
                                   "  WHERE user_id = ? AND expense_type = 'expense' "
-                                  "  GROUP BY substr(expense_date, 1, 7)"
+                                  "  GROUP BY substr(CAST(expense_date AS TEXT), 1, 7)"
                                   ")",
                                   p);
     double avg_monthly_burn = 0.0;

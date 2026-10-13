@@ -57,7 +57,7 @@ report_expense_monthly(csilk_ctx_t* c)
         "SELECT COALESCE(SUM(CASE WHEN expense_type='income' THEN amount ELSE 0 END),0) as "
         "total_income, "
         "COALESCE(SUM(CASE WHEN expense_type='expense' THEN amount ELSE 0 END),0) as total_expense "
-        "FROM daily_expenses WHERE user_id=? AND ledger_id=? AND expense_date LIKE ?",
+        "FROM daily_expenses WHERE user_id=? AND ledger_id=? AND CAST(expense_date AS TEXT) LIKE ?",
         params);
     double income = 0, expense = 0;
     if (totals && csilk_json_array_size(totals) > 0) {
@@ -73,7 +73,7 @@ report_expense_monthly(csilk_ctx_t* c)
         "SELECT c.name as name, de.expense_type, SUM(de.amount) as amount "
         "FROM daily_expenses de JOIN categories c ON de.category_id=c.id "
         "AND c.user_id=de.user_id AND c.ledger_id=de.ledger_id "
-        "WHERE de.user_id=? AND de.ledger_id=? AND de.expense_date LIKE ? "
+        "WHERE de.user_id=? AND de.ledger_id=? AND CAST(de.expense_date AS TEXT) LIKE ? "
         "GROUP BY c.name, de.expense_type ORDER BY amount DESC",
         params);
 
@@ -82,7 +82,7 @@ report_expense_monthly(csilk_ctx_t* c)
         "SELECT t.name as tag_name, SUM(de.amount) as amount, COUNT(*) as count "
         "FROM daily_expenses de JOIN expense_tags et ON de.id=et.expense_id "
         "JOIN tags t ON et.tag_id=t.id AND t.user_id=de.user_id "
-        "WHERE de.user_id=? AND de.ledger_id=? AND de.expense_date LIKE ? "
+        "WHERE de.user_id=? AND de.ledger_id=? AND CAST(de.expense_date AS TEXT) LIKE ? "
         "GROUP BY t.name ORDER BY amount DESC",
         params);
 
@@ -124,21 +124,29 @@ report_expense_trend(csilk_ctx_t* c)
         months = 6;
     }
 
-    char uid_str[32], lid_str[32], months_buf[32];
+    char uid_str[32], lid_str[32], cutoff_buf[16];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
-    snprintf(months_buf, sizeof(months_buf), "%d", months);
-    const char* params[] = {uid_str, lid_str, months_buf, NULL};
+    /* Portable replacement for date('now','-N months'): compute the cutoff in C so
+     * both SQLite (TEXT compare) and PG (DATE compare) accept it as a plain param. */
+    {
+        time_t    now = time(NULL);
+        struct tm tmv;
+        localtime_r(&now, &tmv);
+        tmv.tm_mon -= months;
+        mktime(&tmv);
+        strftime(cutoff_buf, sizeof(cutoff_buf), "%Y-%m-%d", &tmv);
+    }
+    const char* params[] = {uid_str, lid_str, cutoff_buf, NULL};
 
     csilk_db_pool_t* pool = db_get_pool();
     csilk_json_t*    result = csilk_db_query_param_json(
         pool,
-        "SELECT SUBSTR(expense_date,1,7) as period, "
+        "SELECT SUBSTR(CAST(expense_date AS TEXT),1,7) as period, "
         "COALESCE(SUM(CASE WHEN expense_type='income' THEN amount ELSE 0 END),0) as income, "
         "COALESCE(SUM(CASE WHEN expense_type='expense' THEN amount ELSE 0 END),0) as expense "
-        "FROM daily_expenses WHERE user_id=? AND ledger_id=? AND expense_date >= "
-        "date('now','-'||?||' months') "
-        "GROUP BY SUBSTR(expense_date,1,7) ORDER BY period",
+        "FROM daily_expenses WHERE user_id=? AND ledger_id=? AND expense_date >= ? "
+        "GROUP BY SUBSTR(CAST(expense_date AS TEXT),1,7) ORDER BY period",
         params);
 
     if (!result) {
@@ -193,10 +201,11 @@ report_expense_yearly(csilk_ctx_t* c)
     csilk_db_pool_t* pool = db_get_pool();
     csilk_json_t*    rows = csilk_db_query_param_json(
         pool,
-        "SELECT CAST(SUBSTR(expense_date,6,2) AS INTEGER) as m, "
+        "SELECT CAST(SUBSTR(CAST(expense_date AS TEXT),6,2) AS INTEGER) as m, "
         "COALESCE(SUM(CASE WHEN expense_type='income' THEN amount ELSE 0 END),0) as income, "
         "COALESCE(SUM(CASE WHEN expense_type='expense' THEN amount ELSE 0 END),0) as expense "
-        "FROM daily_expenses WHERE user_id=? AND ledger_id=? AND SUBSTR(expense_date,1,4)=? "
+        "FROM daily_expenses WHERE user_id=? AND ledger_id=? AND SUBSTR(CAST(expense_date AS "
+        "TEXT),1,4)=? "
         "GROUP BY m ORDER BY m",
         params);
     if (!rows) {
@@ -265,15 +274,15 @@ report_expense_category(csilk_ctx_t* c)
     const char* params[] = {uid_str, lid_str, period_pattern, NULL};
 
     csilk_db_pool_t* pool = db_get_pool();
-    csilk_json_t*    rows =
-        csilk_db_query_param_json(pool,
-                                  "SELECT c.name as name, SUM(de.amount) as amount "
-                                  "FROM daily_expenses de JOIN categories c ON de.category_id=c.id "
-                                  "AND c.user_id=de.user_id AND c.ledger_id=de.ledger_id "
-                                  "WHERE de.user_id=? AND de.ledger_id=? AND "
-                                  "de.expense_type='expense' AND de.expense_date LIKE ? "
-                                  "GROUP BY c.name ORDER BY amount DESC",
-                                  params);
+    csilk_json_t*    rows = csilk_db_query_param_json(
+        pool,
+        "SELECT c.name as name, SUM(de.amount) as amount "
+        "FROM daily_expenses de JOIN categories c ON de.category_id=c.id "
+        "AND c.user_id=de.user_id AND c.ledger_id=de.ledger_id "
+        "WHERE de.user_id=? AND de.ledger_id=? AND "
+        "de.expense_type='expense' AND CAST(de.expense_date AS TEXT) LIKE ? "
+        "GROUP BY c.name ORDER BY amount DESC",
+        params);
     if (!rows) {
         respond_error(c, 500, "查询失败");
         return;

@@ -33,6 +33,23 @@ static exchange_rate_item_t g_rates[] = {
 
 static pthread_mutex_t g_rate_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+/* date('now') is SQLite-only; CURRENT_DATE is the PG equivalent. The upsert
+ * syntax itself (ON CONFLICT ... DO UPDATE) works on both. */
+static const char*
+exchange_rate_upsert_sql(void)
+{
+    return db_is_postgres() ? "INSERT INTO exchange_rate_history (rate_date, "
+                              "base_currency, target_currency, rate) "
+                              "VALUES (CURRENT_DATE, 'CNY', ?, ?) "
+                              "ON CONFLICT(rate_date, base_currency, target_currency) DO "
+                              "UPDATE SET rate = excluded.rate"
+                            : "INSERT INTO exchange_rate_history (rate_date, "
+                              "base_currency, target_currency, rate) "
+                              "VALUES (date('now'), 'CNY', ?, ?) "
+                              "ON CONFLICT(rate_date, base_currency, target_currency) DO "
+                              "UPDATE SET rate = excluded.rate";
+}
+
 double
 exchange_rate_get_to_cny(const char* currency)
 {
@@ -162,13 +179,8 @@ exchange_rate_set(const char* currency, double rate_to_cny)
         if (pool) {
             char rate_str[32];
             snprintf(rate_str, sizeof(rate_str), "%.6f", rate_to_cny);
-            csilk_db_query_param_json(pool,
-                                      "INSERT INTO exchange_rate_history (rate_date, "
-                                      "base_currency, target_currency, rate) "
-                                      "VALUES (date('now'), 'CNY', ?, ?) "
-                                      "ON CONFLICT(rate_date, base_currency, target_currency) DO "
-                                      "UPDATE SET rate = excluded.rate",
-                                      (const char*[]){cur_upper, rate_str, NULL});
+            csilk_db_query_param_json(
+                pool, exchange_rate_upsert_sql(), (const char*[]){cur_upper, rate_str, NULL});
         }
     }
 

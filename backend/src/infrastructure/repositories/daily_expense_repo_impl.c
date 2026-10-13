@@ -41,13 +41,16 @@ mf_daily_expense_repo_list(void*          db_pool,
         "SELECT de.id,de.user_id,de.category_id,de.asset_id,de.expense_type,de.amount,"
         "de.currency,de.expense_date,de.note,de.created_at,de.updated_at,"
         "c.name as category_name,a.name as asset_name,"
-        "(SELECT json_group_array(json_object('id',t.id,'name',t.name,'color',t.color)) "
+        "(SELECT %s "
         "FROM expense_tags et JOIN tags t ON et.tag_id=t.id WHERE et.expense_id=de.id) as tags "
         "FROM daily_expenses de LEFT JOIN categories c ON de.category_id=c.id "
         "AND c.user_id=de.user_id AND c.ledger_id=de.ledger_id "
         "LEFT JOIN assets a ON de.asset_id=a.id AND a.user_id=de.user_id AND "
         "a.ledger_id=de.ledger_id "
-        "WHERE de.user_id=? AND de.ledger_id=?");
+        "WHERE de.user_id=? AND de.ledger_id=?",
+        db_is_postgres()
+            ? "COALESCE(json_agg(json_build_object('id',t.id,'name',t.name,'color',t.color)),'[]')"
+            : "json_group_array(json_object('id',t.id,'name',t.name,'color',t.color))");
     snprintf(count_sql,
              sizeof(count_sql),
              "SELECT COUNT(*) AS cnt FROM daily_expenses de WHERE de.user_id=? AND de.ledger_id=?");
@@ -114,7 +117,8 @@ mf_daily_expense_repo_monthly_totals(void*       db_pool,
         (csilk_db_pool_t*)db_pool,
         "SELECT COALESCE(SUM(CASE WHEN expense_type='income' THEN amount ELSE 0 END),0) as "
         "total_income,COALESCE(SUM(CASE WHEN expense_type='expense' THEN amount ELSE 0 END),0) as "
-        "total_expense FROM daily_expenses WHERE user_id=? AND ledger_id=? AND expense_date LIKE ?",
+        "total_expense FROM daily_expenses WHERE user_id=? AND ledger_id=? AND CAST(expense_date "
+        "AS TEXT) LIKE ?",
         (const char*[]){uid, lid, pattern, NULL});
 }
 
@@ -132,7 +136,8 @@ mf_daily_expense_repo_monthly_by_category(void*       db_pool,
         "SELECT c.name as category_name,de.expense_type,SUM(de.amount) as amount FROM "
         "daily_expenses de JOIN categories c ON de.category_id=c.id "
         "AND c.user_id=? AND c.ledger_id=? WHERE de.user_id=? AND de.ledger_id=? "
-        "AND de.expense_date LIKE ? GROUP BY c.name,de.expense_type ORDER BY amount DESC",
+        "AND CAST(de.expense_date AS TEXT) LIKE ? GROUP BY c.name,de.expense_type ORDER BY amount "
+        "DESC",
         (const char*[]){uid, lid, uid, lid, pattern, NULL});
 }
 
@@ -150,7 +155,7 @@ mf_daily_expense_repo_monthly_by_tag(void*       db_pool,
         "SELECT t.name as tag_name,SUM(de.amount) as amount,COUNT(*) as count FROM daily_expenses "
         "de JOIN expense_tags et ON de.id=et.expense_id "
         "JOIN tags t ON et.tag_id=t.id AND t.user_id=? "
-        "WHERE de.user_id=? AND de.ledger_id=? AND de.expense_date LIKE ? "
+        "WHERE de.user_id=? AND de.ledger_id=? AND CAST(de.expense_date AS TEXT) LIKE ? "
         "GROUP BY t.name ORDER BY amount DESC",
         (const char*[]){uid, uid, lid, pattern, NULL});
 }
@@ -169,7 +174,8 @@ mf_daily_expense_repo_monthly_daily(void*       db_pool,
         "SELECT expense_date,COALESCE(SUM(CASE WHEN expense_type='income' THEN amount ELSE 0 "
         "END),0) as income,COALESCE(SUM(CASE WHEN expense_type='expense' THEN amount ELSE 0 "
         "END),0) as expense FROM daily_expenses "
-        "WHERE user_id=? AND ledger_id=? AND expense_date LIKE ? GROUP BY expense_date "
+        "WHERE user_id=? AND ledger_id=? AND CAST(expense_date AS TEXT) LIKE ? GROUP BY "
+        "expense_date "
         "ORDER BY expense_date",
         (const char*[]){uid, lid, pattern, NULL});
 }
@@ -336,7 +342,9 @@ mf_daily_expense_repo_tag_insert(void* db_pool, int64_t expense_id, int64_t tag_
     snprintf(tid, sizeof(tid), "%lld", (long long)tag_id);
     csilk_json_t* res = csilk_db_query_param_json(
         (csilk_db_pool_t*)db_pool,
-        "INSERT OR IGNORE INTO expense_tags (expense_id,tag_id) VALUES (?,?)",
+        db_is_postgres() ? "INSERT INTO expense_tags (expense_id,tag_id) VALUES (?,?) "
+                           "ON CONFLICT DO NOTHING"
+                         : "INSERT OR IGNORE INTO expense_tags (expense_id,tag_id) VALUES (?,?)",
         (const char*[]){eid, tid, NULL});
     int ok = res ? 0 : -1;
     if (res) {

@@ -54,11 +54,12 @@ step_bg_collect(csilk_db_pool_t*    pool,
         "SELECT category_id, COALESCE(category_name,'未分类') as category_name, "
         "AVG(m_sum) as avg_amount FROM ("
         "  SELECT daily_expenses.category_id, categories.name as category_name, "
-        "substr(daily_expenses.expense_date,1,7) as ym, SUM(daily_expenses.amount) as m_sum "
+        "substr(CAST(daily_expenses.expense_date AS TEXT),1,7) as ym, SUM(daily_expenses.amount) "
+        "as m_sum "
         "FROM daily_expenses "
         "  LEFT JOIN categories ON categories.id = daily_expenses.category_id "
         "  WHERE daily_expenses.user_id=? AND daily_expenses.expense_type='expense' AND "
-        "daily_expenses.expense_date NOT LIKE ? "
+        "CAST(daily_expenses.expense_date AS TEXT) NOT LIKE ? "
         "  GROUP BY daily_expenses.category_id, ym"
         ") GROUP BY category_id",
         p);

@@ -55,10 +55,13 @@ mf_ai_repo_daily_expense_list(void*       pool,
         "SELECT de.id,de.user_id,de.category_id,de.asset_id,de.expense_type,de.amount,"
         "de.currency,de.expense_date,de.note,de.created_at,de.updated_at,"
         "c.name as category_name,a.name as asset_name,"
-        "(SELECT json_group_array(json_object('id',t.id,'name',t.name,'color',t.color)) "
+        "(SELECT %s "
         "FROM expense_tags et JOIN tags t ON et.tag_id=t.id WHERE et.expense_id=de.id) as tags "
         "FROM daily_expenses de LEFT JOIN categories c ON de.category_id=c.id "
-        "LEFT JOIN assets a ON de.asset_id=a.id WHERE de.user_id=?");
+        "LEFT JOIN assets a ON de.asset_id=a.id WHERE de.user_id=?",
+        db_is_postgres()
+            ? "COALESCE(json_agg(json_build_object('id',t.id,'name',t.name,'color',t.color)),'[]')"
+            : "json_group_array(json_object('id',t.id,'name',t.name,'color',t.color))");
     snprintf(count_sql,
              sizeof(count_sql),
              "SELECT COUNT(*) AS cnt FROM daily_expenses de WHERE de.user_id=?");
@@ -186,7 +189,7 @@ mf_ai_repo_daily_expense_monthly_by_category(void* pool, int64_t user_id, const 
         (csilk_db_pool_t*)pool,
         "SELECT c.name as category_name,de.expense_type,SUM(de.amount) as amount FROM "
         "daily_expenses de JOIN categories c ON de.category_id=c.id AND c.user_id=? "
-        "WHERE de.user_id=? AND de.expense_date LIKE ? "
+        "WHERE de.user_id=? AND CAST(de.expense_date AS TEXT) LIKE ? "
         "GROUP BY c.name,de.expense_type ORDER BY amount DESC",
         (const char*[]){uid, uid, pattern, NULL});
 }
@@ -200,7 +203,7 @@ mf_ai_repo_daily_expense_monthly_totals(void* pool, int64_t user_id, const char*
         (csilk_db_pool_t*)pool,
         "SELECT COALESCE(SUM(CASE WHEN expense_type='income' THEN amount ELSE 0 END),0) as "
         "total_income,COALESCE(SUM(CASE WHEN expense_type='expense' THEN amount ELSE 0 END),0) as "
-        "total_expense FROM daily_expenses WHERE user_id=? AND expense_date LIKE ?",
+        "total_expense FROM daily_expenses WHERE user_id=? AND CAST(expense_date AS TEXT) LIKE ?",
         (const char*[]){uid, pattern, NULL});
 }
 

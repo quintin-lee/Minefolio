@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <time.h>
 
 ledger_tx_type_t
 ledger_tx_type_from_str(const char* str)
@@ -223,6 +224,16 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
     snprintf(last_str, sizeof(last_str), "%lld", (long long)tx->linked_asset_id);
     snprintf(cat_str, sizeof(cat_str), "%lld", (long long)tx->category_id);
 
+    /* Portable "now" fallback for transaction_date (SQLite has no PG NOW(), and a
+     * quoted 'datetime('now')' param would be stored as a literal string). */
+    char now_fallback[32];
+    {
+        time_t    now = time(NULL);
+        struct tm tmv;
+        localtime_r(&now, &tmv);
+        strftime(now_fallback, sizeof(now_fallback), "%Y-%m-%d %H:%M:%S", &tmv);
+    }
+
     char amt_buf[64], price_buf[64], qty_buf[64], fee_buf[64];
     money_to_string(tx->amount, amt_buf, sizeof(amt_buf));
     price_to_string(tx->price, price_buf, sizeof(price_buf));
@@ -265,7 +276,7 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
                                     qty_buf,
                                     fee_buf,
                                     cur_str,
-                                    tx->tx_date ? tx->tx_date : "datetime('now')",
+                                    tx->tx_date ? tx->tx_date : now_fallback,
                                     tx->note ? tx->note : "",
                                     parent_tx_str,
                                     NULL};
@@ -276,8 +287,9 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
             "source_type, transaction_type, direction, linked_direction, "
             "amount, price_per_unit, quantity, fee, currency, transaction_date, note, "
             "parent_tx_id) "
-            "VALUES (?, ?, NULLIF(?, '0'), ?, ?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?, ?, ?, ?, "
-            "NULLIF(?, '')) "
+            "VALUES (?, ?, CAST(NULLIF(?, '0') AS BIGINT), ?, ?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?, "
+            "?, ?, ?, "
+            "CAST(NULLIF(?, '') AS BIGINT)) "
             "RETURNING id",
             ins_params);
 
@@ -315,7 +327,7 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
                                     qty_buf,
                                     fee_buf,
                                     cur_str,
-                                    tx->tx_date ? tx->tx_date : "datetime('now')",
+                                    tx->tx_date ? tx->tx_date : now_fallback,
                                     tx->note ? tx->note : "",
                                     cat_str,
                                     src_type,
@@ -330,7 +342,7 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
             "transaction_type=?, direction=?, linked_direction=NULLIF(?, ''), "
             "amount=?, price_per_unit=?, quantity=?, fee=?, currency=?, "
             "transaction_date=?, note=?, category_id=?, source_type=?, "
-            "linked_asset_id=NULLIF(?, '0') "
+            "linked_asset_id=CAST(NULLIF(?, '0') AS BIGINT) "
             "WHERE id=? AND user_id=? RETURNING id",
             upd_params);
 
@@ -386,7 +398,7 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
                                       "0.0000",
                                       "0.0000",
                                       cur_str,
-                                      tx->tx_date ? tx->tx_date : "datetime('now')",
+                                      tx->tx_date ? tx->tx_date : now_fallback,
                                       fee_note,
                                       tx_id_str,
                                       NULL};
@@ -396,7 +408,8 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
             "source_type, transaction_type, direction, linked_direction, "
             "amount, price_per_unit, quantity, fee, currency, transaction_date, note, "
             "parent_tx_id) "
-            "VALUES (?, ?, NULLIF(?, '0'), ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (?, ?, CAST(NULLIF(?, '0') AS BIGINT), ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, "
+            "?)",
             fee_params);
         if (fee_res) {
             csilk_json_free(fee_res);

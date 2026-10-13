@@ -26,7 +26,7 @@ cf_get_user_avg_monthly_burn(csilk_db_pool_t* pool, int64_t user_id)
                                   "SELECT AVG(monthly_sum) as avg_burn FROM ("
                                   "  SELECT SUM(amount) as monthly_sum FROM daily_expenses "
                                   "  WHERE user_id = ? AND expense_type = 'expense' "
-                                  "  GROUP BY substr(expense_date, 1, 7)"
+                                  "  GROUP BY substr(CAST(expense_date AS TEXT), 1, 7)"
                                   ")",
                                   params);
     double avg_burn = 0.0;

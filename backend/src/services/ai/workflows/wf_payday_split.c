@@ -38,7 +38,7 @@ step_payday_detect(csilk_db_pool_t*    pool,
     csilk_json_t* res = csilk_db_query_param_json(
         pool,
         "SELECT COALESCE(SUM(amount),0) as total FROM daily_expenses WHERE user_id=? AND "
-        "expense_type='income' AND expense_date LIKE ?",
+        "expense_type='income' AND CAST(expense_date AS TEXT) LIKE ?",
         p);
     if (res && csilk_json_array_size(res) > 0) {
         income_de = db_get_num(csilk_json_array_get(res, 0), "total");
@@ -47,12 +47,12 @@ step_payday_detect(csilk_db_pool_t*    pool,
         csilk_json_free(res);
     }
 
-    csilk_json_t* res_tx =
-        csilk_db_query_param_json(pool,
-                                  "SELECT COALESCE(SUM(amount),0) as total, COUNT(*) as cnt "
-                                  "FROM transactions WHERE user_id=? AND transaction_type IN "
-                                  "('income','deposit','transfer_in') AND transaction_date LIKE ?",
-                                  p);
+    csilk_json_t* res_tx = csilk_db_query_param_json(
+        pool,
+        "SELECT COALESCE(SUM(amount),0) as total, COUNT(*) as cnt "
+        "FROM transactions WHERE user_id=? AND transaction_type IN "
+        "('income','deposit','transfer_in') AND CAST(transaction_date AS TEXT) LIKE ?",
+        p);
     if (res_tx && csilk_json_array_size(res_tx) > 0) {
         const csilk_json_t* row = csilk_json_array_get(res_tx, 0);
         tx_inflows = db_get_num(row, "total");

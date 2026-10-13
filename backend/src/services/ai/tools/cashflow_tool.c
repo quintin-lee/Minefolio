@@ -55,7 +55,7 @@ exec_get_summary(const ai_tool_t* tool, const ai_tool_context_t* ctx, const csil
     csilk_json_t* exp_res = csilk_db_query_param_json(
         ctx->pool,
         "SELECT COALESCE(SUM(amount), 0) as total FROM daily_expenses WHERE user_id=? AND "
-        "expense_type='expense' AND expense_date LIKE ?",
+        "expense_type='expense' AND CAST(expense_date AS TEXT) LIKE ?",
         p_exp);
     double cur_expense = 0.0;
     if (exp_res && csilk_json_array_size(exp_res) > 0) {
@@ -68,7 +68,7 @@ exec_get_summary(const ai_tool_t* tool, const ai_tool_context_t* ctx, const csil
     csilk_json_t* inc_res = csilk_db_query_param_json(
         ctx->pool,
         "SELECT COALESCE(SUM(amount), 0) as total FROM daily_expenses WHERE user_id=? AND "
-        "expense_type='income' AND expense_date LIKE ?",
+        "expense_type='income' AND CAST(expense_date AS TEXT) LIKE ?",
         p_exp);
     double cur_income = 0.0;
     if (inc_res && csilk_json_array_size(inc_res) > 0) {

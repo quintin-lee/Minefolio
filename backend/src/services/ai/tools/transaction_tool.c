@@ -72,11 +72,11 @@ exec_get_expense_trend(const ai_tool_t*         tool,
 
     csilk_json_t* trend = csilk_db_query_param_json(
         ctx->pool,
-        "SELECT substr(expense_date, 1, 7) as month, "
+        "SELECT substr(CAST(expense_date AS TEXT), 1, 7) as month, "
         "       SUM(CASE WHEN expense_type='income' THEN amount ELSE 0 END) as income, "
         "       SUM(CASE WHEN expense_type='expense' THEN amount ELSE 0 END) as expense "
         "FROM daily_expenses WHERE user_id=? "
-        "GROUP BY substr(expense_date, 1, 7) "
+        "GROUP BY substr(CAST(expense_date AS TEXT), 1, 7) "
         "ORDER BY month DESC LIMIT 24",
         p);
 

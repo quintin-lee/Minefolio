@@ -52,22 +52,42 @@ report_asset_trend(csilk_ctx_t* c)
     csilk_db_pool_t* pool = db_get_pool();
     csilk_json_t*    result = csilk_db_query_param_json(
         pool,
-        "SELECT json_group_array(d) as labels, "
-        "json_group_array(total_assets) as assets, "
-        "json_group_array(total_liabilities) as liabilities, "
-        "json_group_array(total_assets - total_liabilities) as net_worth "
-        "FROM ( "
-        "WITH RECURSIVE pts(n) AS (SELECT 0 UNION ALL SELECT n+1 FROM pts WHERE n < 4) "
-        "SELECT date('now','-'||(n*(?)/4)||' days') as d, "
-        "(SELECT COALESCE(SUM(a.current_value),0) FROM assets a "
-        "JOIN categories c ON a.category_id=c.id "
-        "WHERE a.user_id=? AND c.asset_type NOT IN ('loan','credit_card','other_liability') "
-        "AND a.updated_at < date('now','-'||(n*(?)/4)||' days','+1 day')) as total_assets, "
-        "(SELECT COALESCE(SUM(a.current_value),0) FROM assets a "
-        "JOIN categories c ON a.category_id=c.id "
-        "WHERE a.user_id=? AND c.asset_type IN ('loan','credit_card','other_liability') "
-        "AND a.updated_at < date('now','-'||(n*(?)/4)||' days','+1 day')) as total_liabilities "
-        "FROM pts) ORDER BY d",
+        db_is_postgres()
+            ? "SELECT json_agg(d ORDER BY d) as labels, "
+              "json_agg(total_assets ORDER BY d) as assets, "
+              "json_agg(total_liabilities ORDER BY d) as liabilities, "
+              "json_agg(total_assets - total_liabilities ORDER BY d) as net_worth "
+              "FROM ( "
+              "WITH RECURSIVE pts(n) AS (SELECT 0 UNION ALL SELECT n+1 FROM pts WHERE n < 4) "
+              "SELECT (CURRENT_DATE - ((n*(?::int)/4) || ' days')::interval)::date as d, "
+              "(SELECT COALESCE(SUM(a.current_value),0) FROM assets a "
+              "JOIN categories c ON a.category_id=c.id "
+              "WHERE a.user_id=? AND c.asset_type NOT IN ('loan','credit_card','other_liability') "
+              "AND a.updated_at < (CURRENT_DATE - ((n*(?::int)/4) || ' days')::interval)::date + "
+              "1) as total_assets, "
+              "(SELECT COALESCE(SUM(a.current_value),0) FROM assets a "
+              "JOIN categories c ON a.category_id=c.id "
+              "WHERE a.user_id=? AND c.asset_type IN ('loan','credit_card','other_liability') "
+              "AND a.updated_at < (CURRENT_DATE - ((n*(?::int)/4) || ' days')::interval)::date + "
+              "1) as total_liabilities "
+              "FROM pts) ORDER BY d"
+            : "SELECT json_group_array(d) as labels, "
+              "json_group_array(total_assets) as assets, "
+              "json_group_array(total_liabilities) as liabilities, "
+              "json_group_array(total_assets - total_liabilities) as net_worth "
+              "FROM ( "
+              "WITH RECURSIVE pts(n) AS (SELECT 0 UNION ALL SELECT n+1 FROM pts WHERE n < 4) "
+              "SELECT date('now','-'||(n*(?)/4)||' days') as d, "
+              "(SELECT COALESCE(SUM(a.current_value),0) FROM assets a "
+              "JOIN categories c ON a.category_id=c.id "
+              "WHERE a.user_id=? AND c.asset_type NOT IN ('loan','credit_card','other_liability') "
+              "AND a.updated_at < date('now','-'||(n*(?)/4)||' days','+1 day')) as total_assets, "
+              "(SELECT COALESCE(SUM(a.current_value),0) FROM assets a "
+              "JOIN categories c ON a.category_id=c.id "
+              "WHERE a.user_id=? AND c.asset_type IN ('loan','credit_card','other_liability') "
+              "AND a.updated_at < date('now','-'||(n*(?)/4)||' days','+1 day')) as "
+              "total_liabilities "
+              "FROM pts) ORDER BY d",
         params);
 
     csilk_json_t* resp = csilk_json_object();
@@ -273,12 +293,15 @@ report_asset_summary(csilk_ctx_t* c)
         csilk_json_free(rows);
     }
     // 30-day change estimate from transactions
-    csilk_json_t* change_result =
-        csilk_db_query_param_json(pool,
-                                  "SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE "
-                                  "-amount END),0) as net_change FROM transactions "
-                                  "WHERE user_id=? AND transaction_date >= date('now','-30 days')",
-                                  params);
+    csilk_json_t* change_result = csilk_db_query_param_json(
+        pool,
+        db_is_postgres() ? "SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE "
+                           "-amount END),0) as net_change FROM transactions "
+                           "WHERE user_id=? AND transaction_date >= CURRENT_DATE - 30"
+                         : "SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE "
+                           "-amount END),0) as net_change FROM transactions "
+                           "WHERE user_id=? AND transaction_date >= date('now','-30 days')",
+        params);
     double change_30d = 0;
     if (change_result && csilk_json_array_size(change_result) > 0) {
         change_30d = db_get_num(csilk_json_array_get(change_result, 0), "net_change");

@@ -405,7 +405,7 @@ tx_monthly(csilk_db_pool_t* pool, int64_t user_id, const char* pattern)
         "SELECT COALESCE(SUM(amount),0) AS total_volume,COALESCE(SUM(CASE WHEN direction='in' THEN "
         "amount ELSE 0 END),0) AS inflows,COALESCE(SUM(CASE WHEN direction='out' THEN amount ELSE "
         "0 END),0) AS outflows,COUNT(*) AS count FROM transactions WHERE user_id=? AND "
-        "transaction_date LIKE ?",
+        "CAST(transaction_date AS TEXT) LIKE ?",
         (const char*[]){uid, pattern, NULL});
 }
 

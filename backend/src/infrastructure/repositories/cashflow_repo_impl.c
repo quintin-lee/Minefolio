@@ -66,7 +66,7 @@ static const char* SQL_ACTUAL_TXS =
     "JOIN assets a ON a.id = t.asset_id "
     "WHERE t.user_id = ? "
     "  AND t.transaction_type IN ('income', 'deposit') "
-    "  AND t.transaction_date LIKE ? "
+    "  AND CAST(t.transaction_date AS TEXT) LIKE ? "
     "ORDER BY t.transaction_date ASC, t.id ASC";
 
 /* --- Helper: parse a schedule row into mf_cashflow_schedule_t --- */
