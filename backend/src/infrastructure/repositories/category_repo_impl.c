@@ -343,7 +343,10 @@ mf_category_repo_mark_seeded(void* db_pool, int64_t user_id, int64_t ledger_id)
     snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
     csilk_json_t* res = csilk_db_query_param_json(
         (csilk_db_pool_t*)db_pool,
-        "INSERT OR IGNORE INTO category_seed_state (user_id, ledger_id) VALUES (?, ?)",
+        db_is_postgres()
+            ? "INSERT INTO category_seed_state (user_id, ledger_id) VALUES (?, ?) "
+              "ON CONFLICT (user_id, ledger_id) DO NOTHING"
+            : "INSERT OR IGNORE INTO category_seed_state (user_id, ledger_id) VALUES (?, ?)",
         (const char*[]){uid, lid, NULL});
     if (res) {
         csilk_json_free(res);
