@@ -7,6 +7,7 @@
 #include "domain/daily_expense/rules.h"
 #include "domain/daily_expense/repository.h"
 #include "infrastructure/repositories/daily_expense_repo_impl.h"
+#include "infrastructure/repositories/asset_repo_impl.h"
 #include "common/balance.h"
 #include "core/financial/money.h"
 #include "core/financial/currency.h"
@@ -17,6 +18,25 @@
 #include <string.h>
 
 /* ===== Internal helpers ===== */
+
+/* Asset existence pre-check inside an open transaction: rolls back and reports
+ * 1002 on missing asset. Unifies SQLite/PostgreSQL behavior — PG enforces the
+ * daily_expenses.asset_id FK at write time (500), while SQLite lets the write
+ * through and fails later in apply_balance (1002). */
+static int
+check_asset_exists(void*                           pool,
+                   int64_t                         user_id,
+                   int64_t                         asset_id,
+                   daily_expense_usecase_result_t* out_res)
+{
+    if (asset_exists((csilk_db_pool_t*)pool, user_id, asset_id)) {
+        return 0;
+    }
+    csilk_db_exec(pool, "ROLLBACK");
+    out_res->code = 1002;
+    snprintf(out_res->message, sizeof(out_res->message), "资产无效");
+    return -1;
+}
 
 static int
 apply_balance(void*       pool,
@@ -169,6 +189,10 @@ daily_expense_usecase_create(void*                             pool,
         return -1;
     }
 
+    if (check_asset_exists(pool, cmd->user_id, cmd->asset_id, out_res) != 0) {
+        return -1;
+    }
+
     int64_t expense_id = mf_daily_expense_repo_insert(pool,
                                                       cmd->user_id,
                                                       cmd->ledger_id,
@@ -254,6 +278,10 @@ daily_expense_usecase_update(void*                             pool,
     if (csilk_db_exec(pool, "BEGIN TRANSACTION") != 0) {
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "数据库错误");
+        return -1;
+    }
+
+    if (check_asset_exists(pool, cmd->user_id, cmd->asset_id, out_res) != 0) {
         return -1;
     }
 
