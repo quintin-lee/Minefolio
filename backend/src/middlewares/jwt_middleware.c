@@ -63,21 +63,29 @@ jwt_validate_token_version(csilk_ctx_t* c, int64_t user_id)
     }
     int jwt_version = (int)csilk_json_get_number(root, "v");
 
-    /* Check in-process cache first (bounded 5 s staleness). */
     int64_t now_ms;
     {
         struct timespec now;
         clock_gettime(CLOCK_MONOTONIC, &now);
         now_ms = (int64_t)now.tv_sec * 1000 + now.tv_nsec / 1000000;
     }
+
+    /*
+     * Fast path: only a cache entry whose stored version matches the token is
+     * trusted. A mismatch must NOT short-circuit to a rejection — the entry can
+     * predate a password change / logout that bumped users.token_version, so a
+     * token carrying a newer version is re-checked against the DB below. Without
+     * this, every freshly issued token is refused for up to
+     * TOKEN_VERSION_CACHE_TTL_SEC after a version bump (e.g. re-login right
+     * after a password change would be rejected with "Token invalidated").
+     */
     pthread_mutex_lock(&g_tv_cache_mutex);
     for (size_t i = 0; i < g_tv_cache_count; i++) {
         struct tv_cache_entry* e = &g_tv_cache[i];
-        if (e->user_id == user_id && e->expire_mono_ms > now_ms) {
-            int cached_db = e->db_version;
-            int cached_ok = e->found;
+        if (e->user_id == user_id && e->expire_mono_ms > now_ms && e->found &&
+            jwt_version == e->db_version) {
             pthread_mutex_unlock(&g_tv_cache_mutex);
-            return (cached_ok && jwt_version == cached_db) ? 0 : -1;
+            return 0;
         }
     }
     pthread_mutex_unlock(&g_tv_cache_mutex);
@@ -101,14 +109,22 @@ jwt_validate_token_version(csilk_ctx_t* c, int64_t user_id)
         csilk_json_free(row);
     }
 
-    /* Store into cache (ring eviction when full). */
+    /* Store into cache, refreshing an existing entry for this user in place so a
+     * re-queried version does not get shadowed by a stale duplicate. */
     pthread_mutex_lock(&g_tv_cache_mutex);
-    size_t slot;
-    if (g_tv_cache_count < TOKEN_VERSION_CACHE_MAX_USERS) {
-        slot = g_tv_cache_count;
-        g_tv_cache_count++;
-    } else {
-        slot = now_ms % TOKEN_VERSION_CACHE_MAX_USERS;
+    size_t slot = g_tv_cache_count;
+    for (size_t i = 0; i < g_tv_cache_count; i++) {
+        if (g_tv_cache[i].user_id == user_id) {
+            slot = i;
+            break;
+        }
+    }
+    if (slot == g_tv_cache_count) {
+        if (g_tv_cache_count < TOKEN_VERSION_CACHE_MAX_USERS) {
+            g_tv_cache_count++;
+        } else {
+            slot = now_ms % TOKEN_VERSION_CACHE_MAX_USERS;
+        }
     }
     struct tv_cache_entry* e = &g_tv_cache[slot];
     e->user_id = user_id;
