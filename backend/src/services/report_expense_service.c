@@ -91,7 +91,7 @@ report_expense_monthly(csilk_ctx_t* c)
         "SELECT expense_date, "
         "COALESCE(SUM(CASE WHEN expense_type='income' THEN amount ELSE 0 END),0) as income, "
         "COALESCE(SUM(CASE WHEN expense_type='expense' THEN amount ELSE 0 END),0) as expense "
-        "FROM daily_expenses WHERE user_id=? AND ledger_id=? AND expense_date LIKE ? "
+        "FROM daily_expenses WHERE user_id=? AND ledger_id=? AND CAST(expense_date AS TEXT) LIKE ? "
         "GROUP BY expense_date ORDER BY expense_date",
         params);
 
@@ -344,7 +344,8 @@ report_expense_tag(csilk_ctx_t* c)
         "SELECT t.name as tag_name, SUM(de.amount) as amount, COUNT(*) as count "
         "FROM daily_expenses de JOIN expense_tags et ON de.id=et.expense_id "
         "JOIN tags t ON et.tag_id=t.id AND t.user_id=de.user_id "
-        "WHERE de.user_id=? AND de.ledger_id=? AND de.expense_type='expense' AND de.expense_date "
+        "WHERE de.user_id=? AND de.ledger_id=? AND de.expense_type='expense' AND "
+        "CAST(de.expense_date AS TEXT) "
         "LIKE ? "
         "GROUP BY t.name ORDER BY amount DESC",
         params);

@@ -70,7 +70,7 @@ report_asset_trend(csilk_ctx_t* c)
               "WHERE a.user_id=? AND c.asset_type IN ('loan','credit_card','other_liability') "
               "AND a.updated_at < (CURRENT_DATE - ((n*(?::int)/4) || ' days')::interval)::date + "
               "1) as total_liabilities "
-              "FROM pts) ORDER BY d"
+              "FROM pts)"
             : "SELECT json_group_array(d) as labels, "
               "json_group_array(total_assets) as assets, "
               "json_group_array(total_liabilities) as liabilities, "
