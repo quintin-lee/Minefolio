@@ -56,21 +56,28 @@ mf_import_rule_insert(csilk_db_pool_t* pool,
     snprintf(cid, sizeof(cid), "%lld", (long long)category_id);
     snprintf(prio, sizeof(prio), "%d", priority);
     snprintf(act, sizeof(act), "%d", is_active ? 1 : 0);
-    const char*   cid_param = (category_id > 0) ? cid : NULL;
-    csilk_json_t* res =
-        csilk_db_query_param_json(pool,
-                                  "INSERT INTO import_rules (user_id, keyword, match_field, "
-                                  "match_type, category_id, target_type, priority, is_active) "
-                                  "VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
-                                  (const char*[]){uid,
-                                                  keyword,
-                                                  match_field ? match_field : "all",
-                                                  match_type ? match_type : "contains",
-                                                  cid_param,
-                                                  target_type ? target_type : "expense",
-                                                  prio,
-                                                  act,
-                                                  NULL});
+    const char*   mf = match_field ? match_field : "all";
+    const char*   mt = match_type ? match_type : "contains";
+    const char*   tt = target_type ? target_type : "expense";
+    csilk_json_t* res;
+    if (category_id > 0) {
+        const char* params[] = {uid, keyword, mf, mt, cid, tt, prio, act, NULL};
+        res =
+            csilk_db_query_param_json(pool,
+                                      "INSERT INTO import_rules (user_id, keyword, match_field, "
+                                      "match_type, category_id, target_type, priority, is_active) "
+                                      "VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+                                      params);
+    } else {
+        /* params 为 NULL 终止数组, NULL 会被截断为参数结束而非 SQL NULL, 缺分类时内联 NULL 字面量 */
+        const char* params[] = {uid, keyword, mf, mt, tt, prio, act, NULL};
+        res =
+            csilk_db_query_param_json(pool,
+                                      "INSERT INTO import_rules (user_id, keyword, match_field, "
+                                      "match_type, category_id, target_type, priority, is_active) "
+                                      "VALUES (?, ?, ?, ?, NULL, ?, ?, ?) RETURNING id",
+                                      params);
+    }
     int64_t new_id = 0;
     if (res && csilk_json_array_size(res) > 0) {
         new_id = db_get_int(csilk_json_array_get(res, 0), "id");
@@ -99,22 +106,28 @@ mf_import_rule_update(csilk_db_pool_t* pool,
     snprintf(cid, sizeof(cid), "%lld", (long long)category_id);
     snprintf(prio, sizeof(prio), "%d", priority);
     snprintf(act, sizeof(act), "%d", is_active ? 1 : 0);
-    const char*   cid_param = (category_id > 0) ? cid : NULL;
-    csilk_json_t* res = csilk_db_query_param_json(
-        pool,
-        "UPDATE import_rules SET keyword = ?, match_field = ?, match_type = ?, "
-        "category_id = ?, target_type = ?, priority = ?, is_active = ? "
-        "WHERE user_id = ? AND id = ?",
-        (const char*[]){keyword,
-                        match_field ? match_field : "all",
-                        match_type ? match_type : "contains",
-                        cid_param,
-                        target_type ? target_type : "expense",
-                        prio,
-                        act,
-                        uid,
-                        rid,
-                        NULL});
+    const char*   mf = match_field ? match_field : "all";
+    const char*   mt = match_type ? match_type : "contains";
+    const char*   tt = target_type ? target_type : "expense";
+    csilk_json_t* res;
+    if (category_id > 0) {
+        const char* params[] = {keyword, mf, mt, cid, tt, prio, act, uid, rid, NULL};
+        res = csilk_db_query_param_json(
+            pool,
+            "UPDATE import_rules SET keyword = ?, match_field = ?, match_type = ?, "
+            "category_id = ?, target_type = ?, priority = ?, is_active = ? "
+            "WHERE user_id = ? AND id = ?",
+            params);
+    } else {
+        /* 同 insert: NULL 会被截断为参数结束, 缺分类时内联 NULL 字面量 */
+        const char* params[] = {keyword, mf, mt, tt, prio, act, uid, rid, NULL};
+        res = csilk_db_query_param_json(
+            pool,
+            "UPDATE import_rules SET keyword = ?, match_field = ?, match_type = ?, "
+            "category_id = NULL, target_type = ?, priority = ?, is_active = ? "
+            "WHERE user_id = ? AND id = ?",
+            params);
+    }
     int ok = res ? csilk_json_array_size(res) > 0 : 0;
     if (res) {
         csilk_json_free(res);
@@ -224,14 +237,14 @@ mf_import_rule_seed_defaults(csilk_db_pool_t* pool, int64_t user_id)
         {"挂号",     "医疗保健", "expense", 10},
         {"诊所",     "医疗保健", "expense", 10},
 
-        /* 收入类型 */
-        {"工资",     "工资薪酬", "income",  10},
-        {"代发工资", "工资薪酬", "income",  10},
-        {"奖金",     "工资薪酬", "income",  10},
-        {"年终奖",   "工资薪酬", "income",  10},
+        /* 收入类型 (分类名须与 category seed 一致: 职业收入/投资理财/其他收入) */
+        {"工资",     "职业收入", "income",  10},
+        {"代发工资", "职业收入", "income",  10},
+        {"奖金",     "职业收入", "income",  10},
+        {"年终奖",   "职业收入", "income",  10},
         {"报销",     "其他收入", "income",  10},
-        {"分红",     "理财收益", "income",  10},
-        {"结息",     "理财收益", "income",  10},
+        {"分红",     "投资理财", "income",  10},
+        {"结息",     "投资理财", "income",  10},
     };
 
     size_t count = sizeof(defaults) / sizeof(defaults[0]);
