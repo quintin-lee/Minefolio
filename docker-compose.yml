@@ -25,6 +25,11 @@ services:
       MINEFOLIO_JWT_SECRET: "${MINEFOLIO_JWT_SECRET:?MINEFOLIO_JWT_SECRET is required}"
       MINEFOLIO_DB_DRIVER: ${MINEFOLIO_DB_DRIVER:-sqlite}
       MINEFOLIO_DB_DSN: ${MINEFOLIO_DB_DSN:-/app/data/minefolio.db}
+      # 供 db-wait.sh 在 DRIVER=postgres 且未显式指定 DSN 时推导连接串;
+      # sqlite 模式留空即可, 用 :- 而不用 :? 以免破坏默认 SQLite 启动。
+      MINEFOLIO_DB_PASSWORD: ${MINEFOLIO_DB_PASSWORD:-}
+      MINEFOLIO_DB_USER: ${MINEFOLIO_DB_USER:-minefolio}
+      MINEFOLIO_DB_NAME: ${MINEFOLIO_DB_NAME:-minefolio}
       MINEFOLIO_ENABLE_CSRF: "1"
       TZ: "Asia/Shanghai"
     # 启动前检查: 驱动为 postgres 时等待 DB 就绪并推导 DSN; sqlite 时直接放行。
