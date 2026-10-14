@@ -10,74 +10,43 @@
 #include <string.h>
 #include <stdio.h>
 
+static const char* s_csrf_exclude_paths[] = {
+    "/api/auth/login", "/api/auth/register", "/api/system/status", "/api/system/setup", NULL};
+
+static bool
+csrf_skip_if_bearer_or_seed(csilk_ctx_t* c)
+{
+    const char* cookie = csilk_get_cookie(c, "csrf_token");
+    if (!cookie || !cookie[0]) {
+        /* 如果没有 csrf cookie，自动为后续请求下发 cookie */
+        char buf[33];
+        if (csilk_csrf_generate_token(buf, sizeof(buf)) == 0) {
+            csilk_set_cookie_ex(c, "csrf_token", buf, 86400, "/", NULL, 0, 0, "Lax");
+        }
+        /* 若携带了 Bearer 鉴权头，则放行（避免 API/移动端客户端因缺少 cookie 被拦截） */
+        const char* auth_hdr = csilk_get_header(c, "Authorization");
+        if (auth_hdr && strncmp(auth_hdr, "Bearer ", 7) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /**
  * @brief CSRF 防护中间件包装实现函数
  *
- * 针对安全请求注入 Cookie，针对修改类请求校验 X-CSRF-Token 与 Cookie 的值。
+ * 委托底层 csilk_csrf_middleware_ext 执行双重 Cookie 校验，配置白名单与 Bearer 自动放行。
  *
  * @param[in,out] c HTTP 上下文对象指针
  */
 void
 csrf_middleware_wrapper(csilk_ctx_t* c)
 {
-    const char* method = csilk_get_method(c);
-    if (!method) {
-        csilk_next(c);
-        return;
-    }
-
-    /* 对安全方法 (GET/HEAD/OPTIONS)，确保客户端持有 csrf_token cookie */
-    if (strcmp(method, "GET") == 0 || strcmp(method, "HEAD") == 0 ||
-        strcmp(method, "OPTIONS") == 0) {
-        if (!csilk_get_cookie(c, "csrf_token")) {
-            char buf[33];
-            if (csilk_csrf_generate_token(buf, sizeof(buf)) == 0) {
-                csilk_set_cookie_ex(c, "csrf_token", buf, 86400, "/", NULL, 0, 0, "Lax");
-            }
-        }
-        csilk_next(c);
-        return;
-    }
-
-    /* 对写方法 (POST/PUT/DELETE)：检查白名单免检路径 */
-    const char* path = csilk_get_path(c);
-    if (path &&
-        (strcmp(path, "/api/auth/login") == 0 || strcmp(path, "/api/auth/register") == 0 ||
-         strcmp(path, "/api/system/status") == 0 || strcmp(path, "/api/system/setup") == 0)) {
-        if (!csilk_get_cookie(c, "csrf_token")) {
-            char buf[33];
-            if (csilk_csrf_generate_token(buf, sizeof(buf)) == 0) {
-                csilk_set_cookie_ex(c, "csrf_token", buf, 86400, "/", NULL, 0, 0, "Lax");
-            }
-        }
-        csilk_next(c);
-        return;
-    }
-
-    /* 校验 CSRF Token */
-    const char* token = csilk_get_header(c, "X-CSRF-Token");
-    const char* cookie = csilk_get_cookie(c, "csrf_token");
-
-    if (cookie && cookie[0]) {
-        /* 当 cookie 存在时，X-CSRF-Token 请求头必须与 cookie 值严格匹配 */
-        if (!token || strcmp(token, cookie) != 0) {
-            csilk_json_error(c, CSILK_STATUS_FORBIDDEN, "Forbidden: Invalid CSRF token");
-            csilk_abort(c);
-            return;
-        }
-    } else {
-        /* 若尚无 CSRF cookie，仅在请求携带 Bearer 鉴权头时放行 */
-        const char* auth_hdr = csilk_get_header(c, "Authorization");
-        if (!auth_hdr || strncmp(auth_hdr, "Bearer ", 7) != 0) {
-            csilk_json_error(c, CSILK_STATUS_FORBIDDEN, "Forbidden: CSRF cookie missing");
-            csilk_abort(c);
-            return;
-        }
-        /* 为后续请求下发 CSRF cookie */
-        char buf[33];
-        if (csilk_csrf_generate_token(buf, sizeof(buf)) == 0) {
-            csilk_set_cookie_ex(c, "csrf_token", buf, 86400, "/", NULL, 0, 0, "Lax");
-        }
-    }
-    csilk_next(c);
+    static const csilk_csrf_config_t cfg = {
+        .cookie_name = "csrf_token",
+        .header_name = "X-CSRF-Token",
+        .exclude_paths = s_csrf_exclude_paths,
+        .skip_fn = csrf_skip_if_bearer_or_seed,
+    };
+    csilk_csrf_middleware_ext(c, &cfg);
 }

@@ -136,6 +136,16 @@ jwt_validate_token_version(csilk_ctx_t* c, int64_t user_id)
     return (found && jwt_version == db_version) ? 0 : -1;
 }
 
+static const char* s_jwt_exclude_paths[] = {"/api/auth/login",
+                                            "/api/auth/register",
+                                            "/api/system/status",
+                                            "/api/system/setup",
+                                            "/api/auth/public-key",
+                                            "/api/auth/2fa/verify-login",
+                                            "/api/auth/oauth/providers",
+                                            "/api/auth/oauth/callback",
+                                            NULL};
+
 /**
  * @brief JWT 身份鉴权中间件入口函数
  *
@@ -149,15 +159,13 @@ jwt_middleware_wrapper(csilk_ctx_t* c)
     }
 
     const char* path = csilk_get_path(c);
-    if (path &&
-        (strcmp(path, "/api/auth/login") == 0 || strcmp(path, "/api/auth/register") == 0 ||
-         strcmp(path, "/api/system/status") == 0 || strcmp(path, "/api/system/setup") == 0 ||
-         strcmp(path, "/api/auth/public-key") == 0 ||
-         strcmp(path, "/api/auth/2fa/verify-login") == 0 ||
-         strcmp(path, "/api/auth/oauth/providers") == 0 ||
-         strcmp(path, "/api/auth/oauth/callback") == 0)) {
-        csilk_next(c);
-        return;
+    if (path) {
+        for (int i = 0; s_jwt_exclude_paths[i]; i++) {
+            if (strcmp(path, s_jwt_exclude_paths[i]) == 0) {
+                csilk_next(c);
+                return;
+            }
+        }
     }
 
     const char* secret = config_secret_get("JWT_SECRET", NULL, 0);

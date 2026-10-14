@@ -1,13 +1,11 @@
-#include "infrastructure/database/database.h"
-#include "infrastructure/database/migration/checksum.h"
-#include "infrastructure/database/migration/lock.h"
-#include "infrastructure/database/migration/migration_engine.h"
-#include "infrastructure/database/statement.h"
-#include "infrastructure/database/transaction.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "csilk/csilk.h"
+#include "csilk/drivers/db.h"
+#include "csilk/drivers/db/migration.h"
 
 static void
 test_checksum_normalization(void)
@@ -20,8 +18,8 @@ test_checksum_normalization(void)
     char hash1[65] = {0};
     char hash2[65] = {0};
 
-    assert(mf_migration_checksum_content(content_lf, strlen(content_lf), hash1) == 0);
-    assert(mf_migration_checksum_content(content_crlf, strlen(content_crlf), hash2) == 0);
+    assert(csilk_migration_checksum_content(content_lf, strlen(content_lf), hash1) == 0);
+    assert(csilk_migration_checksum_content(content_crlf, strlen(content_crlf), hash2) == 0);
 
     assert(strlen(hash1) == 64);
     assert(strlen(hash2) == 64);
@@ -30,7 +28,7 @@ test_checksum_normalization(void)
     /* Different content produces different hash */
     const char* content_diff = "CREATE TABLE bar (\n    id INTEGER PRIMARY KEY\n);\n";
     char hash3[65] = {0};
-    assert(mf_migration_checksum_content(content_diff, strlen(content_diff), hash3) == 0);
+    assert(csilk_migration_checksum_content(content_diff, strlen(content_diff), hash3) == 0);
     assert(strcmp(hash1, hash3) != 0);
 
     printf("Checksum normalization passed.\n");
@@ -41,20 +39,15 @@ test_discovery_and_ordering(void)
 {
     printf("--- Running Migration Discovery & Ordering Test ---\n");
 
-    mf_db_config_t cfg = {
-        .engine = MF_DB_ENGINE_SQLITE,
-        .dsn = ":memory:",
-        .busy_timeout_ms = 5000,
-    };
-    mf_db_t* db = NULL;
-    assert(mf_db_open(&cfg, &db) == 0 && db != NULL);
+    csilk_db_pool_t* pool = csilk_db_pool_new("sqlite", ":memory:");
+    assert(pool != NULL);
 
-    mf_migration_engine_t* engine = NULL;
-    assert(mf_migration_engine_new(db, "sql/migrations", &engine) == 0 && engine != NULL);
+    csilk_migration_engine_t* engine = NULL;
+    assert(csilk_migration_engine_new(pool, "sql/migrations", &engine) == 0 && engine != NULL);
 
-    mf_migration_item_t* items = NULL;
-    int                  count = 0;
-    assert(mf_migration_discover(engine, &items, &count) == 0);
+    csilk_migration_item_t* items = NULL;
+    int                     count = 0;
+    assert(csilk_migration_discover(engine, &items, &count) == 0);
     assert(count >= 7);
 
     assert(items[0].version == 1);
@@ -71,8 +64,8 @@ test_discovery_and_ordering(void)
     }
 
     free(items);
-    mf_migration_engine_free(engine);
-    mf_db_close(db);
+    csilk_migration_engine_free(engine);
+    csilk_db_pool_free(pool);
 
     printf("Migration discovery & ordering passed.\n");
 }
@@ -82,30 +75,25 @@ test_concurrent_lock(void)
 {
     printf("--- Running Migration Mutex Lock Concurrency Test ---\n");
 
-    mf_db_config_t cfg = {
-        .engine = MF_DB_ENGINE_SQLITE,
-        .dsn = ":memory:",
-        .busy_timeout_ms = 5000,
-    };
-    mf_db_t* db = NULL;
-    assert(mf_db_open(&cfg, &db) == 0 && db != NULL);
+    csilk_db_pool_t* pool = csilk_db_pool_new("sqlite", ":memory:");
+    assert(pool != NULL);
 
-    assert(mf_migration_lock_init(db) == 0);
+    assert(csilk_migration_lock_init(pool) == 0);
 
     /* Worker 1 acquires lock */
-    assert(mf_migration_lock_acquire(db, "worker_1", 0) == 0);
+    assert(csilk_migration_lock_acquire(pool, "worker_1", 0) == 0);
 
     /* Worker 2 fails to acquire lock */
-    assert(mf_migration_lock_acquire(db, "worker_2", 0) != 0);
+    assert(csilk_migration_lock_acquire(pool, "worker_2", 0) != 0);
 
     /* Worker 1 releases lock */
-    assert(mf_migration_lock_release(db, "worker_1") == 0);
+    assert(csilk_migration_lock_release(pool, "worker_1") == 0);
 
     /* Worker 2 now acquires lock successfully */
-    assert(mf_migration_lock_acquire(db, "worker_2", 0) == 0);
-    assert(mf_migration_lock_release(db, "worker_2") == 0);
+    assert(csilk_migration_lock_acquire(pool, "worker_2", 0) == 0);
+    assert(csilk_migration_lock_release(pool, "worker_2") == 0);
 
-    mf_db_close(db);
+    csilk_db_pool_free(pool);
     printf("Migration mutex lock concurrency passed.\n");
 }
 
@@ -114,21 +102,16 @@ test_fresh_apply_and_status(void)
 {
     printf("--- Running Fresh Apply, Status & Idempotence Test ---\n");
 
-    mf_db_config_t cfg = {
-        .engine = MF_DB_ENGINE_SQLITE,
-        .dsn = ":memory:",
-        .busy_timeout_ms = 5000,
-    };
-    mf_db_t* db = NULL;
-    assert(mf_db_open(&cfg, &db) == 0 && db != NULL);
+    csilk_db_pool_t* pool = csilk_db_pool_new("sqlite", ":memory:");
+    assert(pool != NULL);
 
-    mf_migration_engine_t* engine = NULL;
-    assert(mf_migration_engine_new(db, "sql/migrations", &engine) == 0 && engine != NULL);
+    csilk_migration_engine_t* engine = NULL;
+    assert(csilk_migration_engine_new(pool, "sql/migrations", &engine) == 0 && engine != NULL);
 
     /* Status before apply */
-    mf_migration_item_t* items = NULL;
-    int                  count = 0;
-    assert(mf_migration_status(engine, &items, &count) == 0);
+    csilk_migration_item_t* items = NULL;
+    int                     count = 0;
+    assert(csilk_migration_status(engine, &items, &count) == 0);
     assert(count >= 7);
     for (int i = 0; i < count; i++) {
         assert(!items[i].is_applied);
@@ -138,11 +121,11 @@ test_fresh_apply_and_status(void)
 
     /* Apply all migrations */
     int applied = 0;
-    assert(mf_migration_apply(engine, &applied) == 0);
+    assert(csilk_migration_apply(engine, &applied) == 0);
     assert(applied == count);
 
     /* Status after apply */
-    assert(mf_migration_status(engine, &items, &count) == 0);
+    assert(csilk_migration_status(engine, &items, &count) == 0);
     for (int i = 0; i < count; i++) {
         assert(items[i].is_applied);
         assert(items[i].execution_time_ms >= 0);
@@ -154,26 +137,23 @@ test_fresh_apply_and_status(void)
         "users", "categories", "assets", "transactions", "ledgers", "schema_migrations", NULL
     };
     for (int i = 0; check_tables[i] != NULL; i++) {
-        mf_stmt_t* stmt = NULL;
-        assert(mf_stmt_prepare(db, "SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?;", &stmt) == 0);
-        assert(mf_stmt_bind_text(stmt, 1, check_tables[i]) == 0);
-        mf_result_t* res = NULL;
-        assert(mf_stmt_query(stmt, &res) == 0);
-        assert(mf_result_next(res) == true);
-        mf_result_free(res);
-        mf_stmt_close(stmt);
+        const char* params[] = {check_tables[i], NULL};
+        csilk_json_t* res = csilk_db_query_param_json(
+            pool, "SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?;", params);
+        assert(res != NULL && csilk_json_array_size(res) == 1);
+        csilk_json_free(res);
     }
 
     /* Idempotent second apply */
     int second_applied = 0;
-    assert(mf_migration_apply(engine, &second_applied) == 0);
+    assert(csilk_migration_apply(engine, &second_applied) == 0);
     assert(second_applied == 0);
 
     /* Validation passes */
-    assert(mf_migration_validate(engine) == 0);
+    assert(csilk_migration_validate(engine) == 0);
 
-    mf_migration_engine_free(engine);
-    mf_db_close(db);
+    csilk_migration_engine_free(engine);
+    csilk_db_pool_free(pool);
     printf("Fresh apply, status & idempotence passed.\n");
 }
 
@@ -182,36 +162,33 @@ test_tampering_detection(void)
 {
     printf("--- Running Tampering Detection Test ---\n");
 
-    mf_db_config_t cfg = {
-        .engine = MF_DB_ENGINE_SQLITE,
-        .dsn = ":memory:",
-        .busy_timeout_ms = 5000,
-    };
-    mf_db_t* db = NULL;
-    assert(mf_db_open(&cfg, &db) == 0 && db != NULL);
+    csilk_db_pool_t* pool = csilk_db_pool_new("sqlite", ":memory:");
+    assert(pool != NULL);
 
-    mf_migration_engine_t* engine = NULL;
-    assert(mf_migration_engine_new(db, "sql/migrations", &engine) == 0 && engine != NULL);
+    csilk_migration_engine_t* engine = NULL;
+    assert(csilk_migration_engine_new(pool, "sql/migrations", &engine) == 0 && engine != NULL);
 
     int applied = 0;
-    assert(mf_migration_apply(engine, &applied) == 0);
+    assert(csilk_migration_apply(engine, &applied) == 0);
     assert(applied >= 7);
-    assert(mf_migration_validate(engine) == 0);
+    assert(csilk_migration_validate(engine) == 0);
 
     /* Tamper with checksum of V001 in schema_migrations */
-    assert(mf_db_execute(db,
-        "UPDATE schema_migrations SET checksum = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' "
-        "WHERE version = 1;") == 0);
+    assert(csilk_db_exec(
+               pool,
+               "UPDATE schema_migrations SET checksum = "
+               "'0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' "
+               "WHERE version = 1;") == 0);
 
     /* Validate must detect tampering */
-    assert(mf_migration_validate(engine) != 0);
+    assert(csilk_migration_validate(engine) != 0);
 
     /* Apply must refuse to execute when tampering is detected */
     int new_applied = 0;
-    assert(mf_migration_apply(engine, &new_applied) != 0);
+    assert(csilk_migration_apply(engine, &new_applied) != 0);
 
-    mf_migration_engine_free(engine);
-    mf_db_close(db);
+    csilk_migration_engine_free(engine);
+    csilk_db_pool_free(pool);
     printf("Tampering detection passed.\n");
 }
 
@@ -220,59 +197,53 @@ test_auto_baseline_existing_database(void)
 {
     printf("--- Running Auto-Baseline on Pre-existing Database Test ---\n");
 
-    mf_db_config_t cfg = {
-        .engine = MF_DB_ENGINE_SQLITE,
-        .dsn = ":memory:",
-        .busy_timeout_ms = 5000,
-    };
-    mf_db_t* db = NULL;
-    assert(mf_db_open(&cfg, &db) == 0 && db != NULL);
+    csilk_db_pool_t* pool = csilk_db_pool_new("sqlite", ":memory:");
+    assert(pool != NULL);
 
     /* Simulate legacy production database: users table exists, schema_migrations does NOT */
-    assert(mf_db_execute(db,
-        "CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT UNIQUE, password TEXT);"
-        "INSERT INTO users (id, username, password) VALUES (1, 'prod_admin', 'hashed_pw');"
-        "CREATE TABLE ledgers (id INTEGER PRIMARY KEY, owner_id INTEGER, is_default INTEGER);"
-        "INSERT INTO ledgers (id, owner_id, is_default) VALUES (10, 1, 1);"
-        "CREATE TABLE categories (id INTEGER PRIMARY KEY, user_id INTEGER, ledger_id INTEGER, name TEXT);"
-        "INSERT INTO categories (id, user_id, ledger_id, name) VALUES (20, 1, NULL, 'legacy');"
-        "CREATE TABLE assets (id INTEGER PRIMARY KEY, user_id INTEGER, ledger_id INTEGER);"
-        "CREATE TABLE transactions (id INTEGER PRIMARY KEY, user_id INTEGER, ledger_id INTEGER);"
-        "CREATE TABLE daily_expenses (id INTEGER PRIMARY KEY, user_id INTEGER, ledger_id INTEGER);"
-        "CREATE TABLE category_seed_state (user_id INTEGER PRIMARY KEY);"
-        "INSERT INTO category_seed_state (user_id) VALUES (1);") == 0);
+    assert(csilk_db_exec(
+               pool,
+               "CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT UNIQUE, password TEXT);"
+               "INSERT INTO users (id, username, password) VALUES (1, 'prod_admin', 'hashed_pw');"
+               "CREATE TABLE ledgers (id INTEGER PRIMARY KEY, owner_id INTEGER, is_default INTEGER);"
+               "INSERT INTO ledgers (id, owner_id, is_default) VALUES (10, 1, 1);"
+               "CREATE TABLE categories (id INTEGER PRIMARY KEY, user_id INTEGER, ledger_id INTEGER, "
+               "name TEXT);"
+               "INSERT INTO categories (id, user_id, ledger_id, name) VALUES (20, 1, NULL, 'legacy');"
+               "CREATE TABLE assets (id INTEGER PRIMARY KEY, user_id INTEGER, ledger_id INTEGER);"
+               "CREATE TABLE transactions (id INTEGER PRIMARY KEY, user_id INTEGER, ledger_id INTEGER);"
+               "CREATE TABLE daily_expenses (id INTEGER PRIMARY KEY, user_id INTEGER, ledger_id INTEGER);"
+               "CREATE TABLE category_seed_state (user_id INTEGER PRIMARY KEY);"
+               "INSERT INTO category_seed_state (user_id) VALUES (1);") == 0);
 
-    mf_migration_engine_t* engine = NULL;
-    assert(mf_migration_engine_new(db, "sql/migrations", &engine) == 0 && engine != NULL);
+    csilk_migration_engine_t* engine = NULL;
+    assert(csilk_migration_engine_new(pool, "sql/migrations", &engine) == 0 && engine != NULL);
+    assert(csilk_migration_engine_set_baseline(engine, 7, "users") == 0);
 
     /* Apply on existing database triggers auto-baseline */
     int applied = 0;
-    assert(mf_migration_apply(engine, &applied) == 0);
+    assert(csilk_migration_apply(engine, &applied) == 0);
 
     /* The legacy user and record remain visible after the upgrade. */
-    mf_stmt_t* legacy_stmt = NULL;
-    assert(mf_stmt_prepare(db, "SELECT ledger_id FROM categories WHERE id = 20;", &legacy_stmt) == 0);
-    mf_result_t* legacy_res = NULL;
-    assert(mf_stmt_query(legacy_stmt, &legacy_res) == 0);
-    assert(mf_result_next(legacy_res) == true);
-    assert(mf_result_get_int64(legacy_res, "ledger_id") == 10);
-    mf_result_free(legacy_res);
-    mf_stmt_close(legacy_stmt);
+    csilk_json_t* cat_res =
+        csilk_db_query_json(pool, "SELECT ledger_id FROM categories WHERE id = 20;");
+    assert(cat_res != NULL && csilk_json_array_size(cat_res) == 1);
+    const csilk_json_t* cat_row = csilk_json_array_get(cat_res, 0);
+    assert(csilk_json_as_int64(csilk_json_get(cat_row, "ledger_id"), 0) == 10);
+    csilk_json_free(cat_res);
 
     /* Legacy data is completely preserved */
-    mf_stmt_t* stmt = NULL;
-    assert(mf_stmt_prepare(db, "SELECT username FROM users WHERE id = 1;", &stmt) == 0);
-    mf_result_t* res = NULL;
-    assert(mf_stmt_query(stmt, &res) == 0);
-    assert(mf_result_next(res) == true);
-    assert(strcmp(mf_result_get_text(res, "username"), "prod_admin") == 0);
-    mf_result_free(res);
-    mf_stmt_close(stmt);
+    csilk_json_t* user_res =
+        csilk_db_query_json(pool, "SELECT username FROM users WHERE id = 1;");
+    assert(user_res != NULL && csilk_json_array_size(user_res) == 1);
+    const csilk_json_t* user_row = csilk_json_array_get(user_res, 0);
+    assert(strcmp(csilk_json_string_value(csilk_json_get(user_row, "username")), "prod_admin") == 0);
+    csilk_json_free(user_res);
 
     /* Baseline records are in schema_migrations with execution_time_ms = 0 */
-    mf_migration_item_t* items = NULL;
-    int                  count = 0;
-    assert(mf_migration_status(engine, &items, &count) == 0);
+    csilk_migration_item_t* items = NULL;
+    int                     count = 0;
+    assert(csilk_migration_status(engine, &items, &count) == 0);
     assert(count >= 7);
     for (int i = 0; i < count; i++) {
         if (items[i].version <= 7) {
@@ -283,38 +254,55 @@ test_auto_baseline_existing_database(void)
     free(items);
 
     /* Validation passes */
-    assert(mf_migration_validate(engine) == 0);
+    assert(csilk_migration_validate(engine) == 0);
 
-    mf_migration_engine_free(engine);
-    mf_db_close(db);
+    csilk_migration_engine_free(engine);
+    csilk_db_pool_free(pool);
     printf("Auto-baseline on pre-existing database passed.\n");
 }
+
+static int
+mock_pg_connect(csilk_db_pool_t* pool, const char* dsn)
+{
+    (void)pool;
+    (void)dsn;
+    return 0;
+}
+
+static int
+mock_pg_disconnect(csilk_db_pool_t* pool)
+{
+    (void)pool;
+    return 0;
+}
+
+static csilk_db_driver_t s_mock_pg_driver = {
+    .name = "postgres",
+    .connect = mock_pg_connect,
+    .disconnect = mock_pg_disconnect,
+};
 
 static void
 test_postgres_migration_dialect(void)
 {
     printf("--- Running PostgreSQL Migration Dialect Contract Test ---\n");
 
-    mf_db_config_t cfg = {
-        .engine = MF_DB_ENGINE_POSTGRES,
-        .dsn = "host=localhost dbname=minefolio",
-    };
-    mf_db_t* db = NULL;
-    assert(mf_db_open(&cfg, &db) == 0 && db != NULL);
-    assert(mf_db_get_engine(db) == MF_DB_ENGINE_POSTGRES);
+    csilk_db_register_driver("postgres", &s_mock_pg_driver);
+    csilk_db_pool_t* pool = csilk_db_pool_new("postgres", "host=localhost dbname=minefolio");
+    assert(pool != NULL);
 
-    mf_migration_engine_t* engine = NULL;
-    assert(mf_migration_engine_new(db, "sql/migrations", &engine) == 0 && engine != NULL);
+    csilk_migration_engine_t* engine = NULL;
+    assert(csilk_migration_engine_new(pool, "sql/migrations", &engine) == 0 && engine != NULL);
 
-    mf_migration_item_t* items = NULL;
-    int                  count = 0;
-    assert(mf_migration_discover(engine, &items, &count) == 0);
+    csilk_migration_item_t* items = NULL;
+    int                     count = 0;
+    assert(csilk_migration_discover(engine, &items, &count) == 0);
     assert(count >= 7);
     assert(strstr(items[0].filepath, "postgres") != NULL);
 
     free(items);
-    mf_migration_engine_free(engine);
-    mf_db_close(db);
+    csilk_migration_engine_free(engine);
+    csilk_db_pool_free(pool);
     printf("PostgreSQL migration dialect contract passed.\n");
 }
 
@@ -324,6 +312,8 @@ main(void)
     printf("==================================================\n");
     printf("Starting Database Migration Engine Unit Tests\n");
     printf("==================================================\n");
+
+    csilk_db_init();
 
     test_checksum_normalization();
     test_discovery_and_ordering();

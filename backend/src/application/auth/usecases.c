@@ -9,7 +9,7 @@
 #include "config/key_manager.h"
 #include "common/config.h"
 #include "common/jwt.h"
-#include "common/totp.h"
+#include "csilk/core/totp.h"
 #include "common/db.h"
 #include "csilk/csilk.h"
 #include "csilk/core/bcrypt.h"
@@ -402,7 +402,7 @@ auth_usecase_2fa_setup(void*                  pool,
     }
 
     char secret[64];
-    if (totp_generate_secret(secret, sizeof(secret)) != 0) {
+    if (csilk_totp_generate_secret(secret, sizeof(secret)) != 0) {
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "生成 2FA 密钥失败");
         return -1;
@@ -417,11 +417,7 @@ auth_usecase_2fa_setup(void*                  pool,
     }
 
     char otpauth[512];
-    snprintf(otpauth,
-             sizeof(otpauth),
-             "otpauth://totp/Minefolio:%s?secret=%s&issuer=Minefolio&digits=6&period=30",
-             uname,
-             secret);
+    csilk_totp_build_uri("Minefolio", uname, secret, otpauth, sizeof(otpauth));
 
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_string(resp, "secret", secret);
@@ -462,14 +458,14 @@ auth_usecase_2fa_enable(void*                   pool,
         return -1;
     }
 
-    if (!totp_verify_code(user.totp_secret, cmd->code)) {
+    if (!csilk_totp_verify_code(user.totp_secret, cmd->code)) {
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "动态验证码错误");
         return -1;
     }
 
     char backup_codes[8][16];
-    totp_generate_backup_codes(backup_codes);
+    csilk_totp_generate_backup_codes(backup_codes);
 
     csilk_json_t* codes_arr = csilk_json_array();
     for (int i = 0; i < 8; i++) {
@@ -557,11 +553,11 @@ auth_usecase_2fa_verify_login(void*                         pool,
     }
 
     bool ok = false;
-    if (totp_verify_code(user.totp_secret, cmd->code)) {
+    if (csilk_totp_verify_code(user.totp_secret, cmd->code)) {
         ok = true;
     } else if (user.totp_backup_codes[0] != '\0') {
         char updated_codes[1024];
-        if (totp_verify_and_consume_backup_code(
+        if (csilk_totp_verify_and_consume_backup_code(
                 user.totp_backup_codes, cmd->code, updated_codes, sizeof(updated_codes))) {
             mf_auth_repo_update_backup_codes(pool, user_id, updated_codes);
             ok = true;

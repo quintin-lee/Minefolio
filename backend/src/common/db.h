@@ -79,11 +79,7 @@ int db_is_postgres(void);
  * 事务作用域与保存点管理 (Transaction Scope & Savepoint Guard)
  * ========================================================================= */
 
-typedef struct {
-    char name[64];
-    bool is_savepoint;
-    bool active;
-} db_tx_scope_t;
+typedef csilk_db_tx_scope_t db_tx_scope_t;
 
 /**
  * @brief 检测当前底层连接是否处于活跃事务块中
@@ -129,9 +125,7 @@ int db_tx_scope_rollback(csilk_db_pool_t* pool, db_tx_scope_t* scope);
 /**
  * @brief 从查询结果行的 JSON 对象中安全提取浮点数值
  *
- * 底层 csilk_db_query_json() 将数据库所有列默认映射为 JSON 字符串节点（无类型自动推导），
- * 若直接调用 csilk_json_get_number() 会对字符串节点返回 0.0。
- * 本函数支持透明解析 number、boolean 以及文本型数值（如 "123.45"、"true"、"false"）。
+ * 封装底层 csilk_json_as_double，支持透明解析 number、boolean 以及文本型数值。
  *
  * @param[in] obj 查询结果行 JSON 对象指针
  * @param[in] key 列名/字段键名
@@ -143,40 +137,13 @@ int db_tx_scope_rollback(csilk_db_pool_t* pool, db_tx_scope_t* scope);
 static inline double
 db_get_num(const csilk_json_t* obj, const char* key)
 {
-    const csilk_json_t* v = csilk_json_get(obj, key);
-    if (!v) {
-        return 0.0;
-    }
-    if (csilk_json_is_number(v)) {
-        return csilk_json_number_value(v);
-    }
-    if (csilk_json_is_bool(v)) {
-        return csilk_json_bool_value(v) ? 1.0 : 0.0;
-    }
-    if (csilk_json_is_string(v)) {
-        const char* s = csilk_json_string_value(v);
-        if (!s) {
-            return 0.0;
-        }
-        if (strcasecmp(s, "true") == 0 || strcasecmp(s, "t") == 0) {
-            return 1.0;
-        }
-        if (strcasecmp(s, "false") == 0 || strcasecmp(s, "f") == 0) {
-            return 0.0;
-        }
-        /* strtod 全串消费校验：atof 会静默接受 "12abc"→12.0 等脏数据 */
-        char*  end = NULL;
-        double d = strtod(s, &end);
-        if (end == s || *end != '\0') {
-            return 0.0;
-        }
-        return d;
-    }
-    return 0.0;
+    return csilk_json_as_double(csilk_json_get(obj, key), 0.0);
 }
 
 /**
  * @brief 从查询结果行的 JSON 对象中安全提取 64 位整型数值
+ *
+ * 封装底层 csilk_json_as_int64，支持透明解析 integer、number、boolean 以及文本型数值。
  *
  * @param[in] obj 查询结果行 JSON 对象指针
  * @param[in] key 列名/字段键名
@@ -188,13 +155,13 @@ db_get_num(const csilk_json_t* obj, const char* key)
 static inline int64_t
 db_get_int(const csilk_json_t* obj, const char* key)
 {
-    return (int64_t)db_get_num(obj, key);
+    return csilk_json_as_int64(csilk_json_get(obj, key), 0);
 }
 
 /**
  * @brief 从查询结果行的 JSON 对象中安全提取布尔值
  *
- * 支持识别 JSON 布尔节点、数值非 0、以及文本字符串 "true"/"t"/"1"（返回 1）与 "false"/"f"/"0"（返回 0）。
+ * 封装底层 csilk_json_as_bool，支持识别 JSON 布尔节点、数值非 0、以及文本字符串。
  *
  * @param[in] obj 查询结果行 JSON 对象指针
  * @param[in] key 列名/字段键名
@@ -206,35 +173,7 @@ db_get_int(const csilk_json_t* obj, const char* key)
 static inline int
 db_get_bool(const csilk_json_t* obj, const char* key)
 {
-    const csilk_json_t* v = csilk_json_get(obj, key);
-    if (!v) {
-        return 0;
-    }
-    if (csilk_json_is_bool(v)) {
-        return csilk_json_bool_value(v) ? 1 : 0;
-    }
-    if (csilk_json_is_number(v)) {
-        return csilk_json_number_value(v) != 0.0 ? 1 : 0;
-    }
-    if (csilk_json_is_string(v)) {
-        const char* s = csilk_json_string_value(v);
-        if (!s) {
-            return 0;
-        }
-        if (strcasecmp(s, "true") == 0 || strcasecmp(s, "t") == 0 || strcasecmp(s, "1") == 0) {
-            return 1;
-        }
-        if (strcasecmp(s, "false") == 0 || strcasecmp(s, "f") == 0 || strcasecmp(s, "0") == 0) {
-            return 0;
-        }
-        char*  end = NULL;
-        double d = strtod(s, &end);
-        if (end == s || *end != '\0') {
-            return 0;
-        }
-        return d != 0.0 ? 1 : 0;
-    }
-    return 0;
+    return csilk_json_as_bool(csilk_json_get(obj, key), false) ? 1 : 0;
 }
 
 /**

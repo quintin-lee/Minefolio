@@ -9,8 +9,7 @@
 #include "db.h"
 #include "config.h"
 #include "csilk/csilk.h"
-#include "infrastructure/database/database.h"
-#include "infrastructure/database/migration/migration_engine.h"
+#include "csilk/drivers/db/migration.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -94,6 +93,23 @@ db_init(csilk_db_pool_t** out_pool)
     return 0;
 }
 
+static const char*
+resolve_migrations_base_dir(void)
+{
+    static const char* candidates[] = {"sql/migrations",
+                                       "backend/sql/migrations",
+                                       "../sql/migrations",
+                                       "../../sql/migrations",
+                                       "../../backend/sql/migrations",
+                                       NULL};
+    for (int i = 0; candidates[i] != NULL; i++) {
+        if (access(candidates[i], R_OK | X_OK) == 0) {
+            return candidates[i];
+        }
+    }
+    return "sql/migrations";
+}
+
 /**
  * @brief 执行数据库迁移（通过正式版本化迁移引擎）
  *
@@ -105,30 +121,25 @@ db_run_migrations(csilk_db_pool_t* pool)
 {
     CSILK_LOG_I("Running database migrations (is_postgres=%d)", g_is_postgres);
 
-    mf_db_engine_t engine_type = g_is_postgres ? MF_DB_ENGINE_POSTGRES : MF_DB_ENGINE_SQLITE;
-    mf_db_t*       db = NULL;
-    if (mf_db_wrap_csilk(pool, engine_type, &db) != 0 || !db) {
-        CSILK_LOG_E("Failed to wrap database pool for migration");
+    const char*               base_dir = resolve_migrations_base_dir();
+    csilk_migration_engine_t* engine = NULL;
+    if (csilk_migration_engine_new(pool, base_dir, &engine) != 0 || !engine) {
+        CSILK_LOG_E("Failed to create migration engine at %s", base_dir);
         return -1;
     }
 
-    mf_migration_engine_t* engine = NULL;
-    if (mf_migration_engine_new(db, "sql/migrations", &engine) != 0 || !engine) {
-        CSILK_LOG_E("Failed to create migration engine");
-        mf_db_close(db);
-        return -1;
-    }
+    /* Auto-baseline versions <= 7 if existing legacy production database (users table exists) */
+    csilk_migration_engine_set_baseline(engine, 7, "users");
 
     int applied_count = 0;
-    int rc = mf_migration_apply(engine, &applied_count);
+    int rc = csilk_migration_apply(engine, &applied_count);
     if (rc != 0) {
         CSILK_LOG_E("Database migration failed");
     } else {
         CSILK_LOG_I("Database migrations finished successfully (%d newly applied)", applied_count);
     }
 
-    mf_migration_engine_free(engine);
-    mf_db_close(db);
+    csilk_migration_engine_free(engine);
     return rc;
 }
 
@@ -154,101 +165,26 @@ db_is_postgres(void)
     return g_is_postgres;
 }
 
-static atomic_uint_fast64_t g_sp_seq = 0;
-
 int
 db_in_transaction(csilk_db_pool_t* pool)
 {
-    if (!pool) {
-        return 0;
-    }
-    void* raw_conn = csilk_db_pool_get_connection(pool);
-    if (!raw_conn) {
-        return 0;
-    }
-    void* native_conn = *(void**)raw_conn;
-    if (!native_conn) {
-        return 0;
-    }
-
-    if (g_is_postgres) {
-#if __has_include(<libpq-fe.h>)
-        PGconn*                 pg = (PGconn*)native_conn;
-        PGTransactionStatusType st = PQtransactionStatus(pg);
-        return (st == PQTRANS_INTRANS || st == PQTRANS_INERROR) ? 1 : 0;
-#else
-        return 0;
-#endif
-    } else {
-        sqlite3* db = (sqlite3*)native_conn;
-        return (sqlite3_get_autocommit(db) == 0) ? 1 : 0;
-    }
+    return csilk_db_in_transaction(pool);
 }
 
 int
 db_tx_scope_begin(csilk_db_pool_t* pool, const char* name, db_tx_scope_t* scope)
 {
-    if (!pool || !scope || !name || !name[0]) {
-        return -1;
-    }
-    memset(scope, 0, sizeof(*scope));
-
-    int in_tx = db_in_transaction(pool);
-    if (in_tx) {
-        uint64_t seq = atomic_fetch_add(&g_sp_seq, 1);
-        snprintf(scope->name, sizeof(scope->name), "%s_%llu", name, (unsigned long long)seq);
-        scope->is_savepoint = true;
-
-        char sql[128];
-        snprintf(sql, sizeof(sql), "SAVEPOINT %s;", scope->name);
-        if (csilk_db_exec(pool, sql) != 0) {
-            return -1;
-        }
-    } else {
-        scope->is_savepoint = false;
-        snprintf(scope->name, sizeof(scope->name), "%s", name);
-        if (csilk_db_exec(pool, "BEGIN TRANSACTION;") != 0) {
-            return -1;
-        }
-    }
-    scope->active = true;
-    return 0;
+    return csilk_db_tx_scope_begin(pool, name, scope);
 }
 
 int
 db_tx_scope_commit(csilk_db_pool_t* pool, db_tx_scope_t* scope)
 {
-    if (!pool || !scope || !scope->active) {
-        return -1;
-    }
-    int rc = 0;
-    if (scope->is_savepoint) {
-        char sql[128];
-        snprintf(sql, sizeof(sql), "RELEASE SAVEPOINT %s;", scope->name);
-        rc = csilk_db_exec(pool, sql);
-    } else {
-        rc = csilk_db_exec(pool, "COMMIT;");
-    }
-    scope->active = false;
-    return rc;
+    return csilk_db_tx_scope_commit(pool, scope);
 }
 
 int
 db_tx_scope_rollback(csilk_db_pool_t* pool, db_tx_scope_t* scope)
 {
-    if (!pool || !scope || !scope->active) {
-        return -1;
-    }
-    int rc = 0;
-    if (scope->is_savepoint) {
-        char sql[128];
-        snprintf(sql, sizeof(sql), "ROLLBACK TO SAVEPOINT %s;", scope->name);
-        rc = csilk_db_exec(pool, sql);
-        snprintf(sql, sizeof(sql), "RELEASE SAVEPOINT %s;", scope->name);
-        csilk_db_exec(pool, sql);
-    } else {
-        rc = csilk_db_exec(pool, "ROLLBACK;");
-    }
-    scope->active = false;
-    return rc;
+    return csilk_db_tx_scope_rollback(pool, scope);
 }

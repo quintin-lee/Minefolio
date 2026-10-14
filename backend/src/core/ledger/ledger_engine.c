@@ -287,7 +287,8 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
             "source_type, transaction_type, direction, linked_direction, "
             "amount, price_per_unit, quantity, fee, currency, transaction_date, note, "
             "parent_tx_id) "
-            "VALUES (?, ?, CAST(NULLIF(?, '0') AS BIGINT), ?, ?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?, "
+            "VALUES (?, ?, CAST(NULLIF(?, '0') AS BIGINT), CAST(NULLIF(?, '0') AS BIGINT), ?, ?, "
+            "?, NULLIF(?, ''), ?, ?, ?, ?, "
             "?, ?, ?, "
             "CAST(NULLIF(?, '') AS BIGINT)) "
             "RETURNING id",

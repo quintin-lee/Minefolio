@@ -134,9 +134,6 @@ set(DATABASE_INFRA_SOURCES
     src/infrastructure/database/transaction.c
     src/infrastructure/database/sqlite/sqlite_adapter.c
     src/infrastructure/database/postgres/postgres_adapter.c
-    src/infrastructure/database/migration/checksum.c
-    src/infrastructure/database/migration/lock.c
-    src/infrastructure/database/migration/migration_engine.c
 )
 
 function(add_financial_unit_test test_target test_source)

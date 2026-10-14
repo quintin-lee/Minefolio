@@ -11,7 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include "common/csv_utils.h"
+#include "csilk/util/csv.h"
 
 void
 transactions_export_csv(csilk_ctx_t* c)
@@ -82,18 +82,20 @@ transactions_export_csv(csilk_ctx_t* c)
             char escaped_currency[32], escaped_asset[256], escaped_linked[256];
             char escaped_cat[256], escaped_note[512];
 
-            csv_escape(escaped_date, sizeof(escaped_date), date ? date : "");
-            csv_escape(escaped_type, sizeof(escaped_type), tx_type ? tx_type : "");
-            csv_escape(escaped_src, sizeof(escaped_src), src_type ? src_type : "");
+            csilk_csv_escape(escaped_date, sizeof(escaped_date), date ? date : "");
+            csilk_csv_escape(escaped_type, sizeof(escaped_type), tx_type ? tx_type : "");
+            csilk_csv_escape(escaped_src, sizeof(escaped_src), src_type ? src_type : "");
             snprintf(escaped_amount, sizeof(escaped_amount), "%.2f", amount);
             snprintf(escaped_price, sizeof(escaped_price), price > 0 ? "%.4f" : "", price);
             snprintf(escaped_qty, sizeof(escaped_qty), qty > 0 ? "%.4f" : "", qty);
             snprintf(escaped_fee, sizeof(escaped_fee), fee > 0 ? "%.2f" : "", fee);
-            csv_escape(escaped_currency, sizeof(escaped_currency), currency ? currency : "CNY");
-            csv_escape(escaped_asset, sizeof(escaped_asset), asset_name ? asset_name : "");
-            csv_escape(escaped_linked, sizeof(escaped_linked), linked_name ? linked_name : "");
-            csv_escape(escaped_cat, sizeof(escaped_cat), cat_name ? cat_name : "");
-            csv_escape(escaped_note, sizeof(escaped_note), note ? note : "");
+            csilk_csv_escape(
+                escaped_currency, sizeof(escaped_currency), currency ? currency : "CNY");
+            csilk_csv_escape(escaped_asset, sizeof(escaped_asset), asset_name ? asset_name : "");
+            csilk_csv_escape(
+                escaped_linked, sizeof(escaped_linked), linked_name ? linked_name : "");
+            csilk_csv_escape(escaped_cat, sizeof(escaped_cat), cat_name ? cat_name : "");
+            csilk_csv_escape(escaped_note, sizeof(escaped_note), note ? note : "");
 
             size_t line_len = snprintf(buf,
                                        sizeof(buf),
@@ -189,13 +191,14 @@ daily_expenses_export_csv(csilk_ctx_t* c)
             const csilk_json_t* row = csilk_json_array_get(rows, i);
             char                e_date[32], e_asset[256], e_cat[256], e_type[16], e_amount[32];
             char                e_currency[16], e_note[512];
-            csv_escape(e_date, sizeof(e_date), csilk_json_get_string(row, "expense_date"));
-            csv_escape(e_asset, sizeof(e_asset), csilk_json_get_string(row, "asset_name"));
-            csv_escape(e_cat, sizeof(e_cat), csilk_json_get_string(row, "category_name"));
-            csv_escape(e_type, sizeof(e_type), csilk_json_get_string(row, "expense_type"));
+            csilk_csv_escape(e_date, sizeof(e_date), csilk_json_get_string(row, "expense_date"));
+            csilk_csv_escape(e_asset, sizeof(e_asset), csilk_json_get_string(row, "asset_name"));
+            csilk_csv_escape(e_cat, sizeof(e_cat), csilk_json_get_string(row, "category_name"));
+            csilk_csv_escape(e_type, sizeof(e_type), csilk_json_get_string(row, "expense_type"));
             snprintf(e_amount, sizeof(e_amount), "%.2f", db_get_num(row, "amount"));
-            csv_escape(e_currency, sizeof(e_currency), csilk_json_get_string(row, "currency"));
-            csv_escape(e_note, sizeof(e_note), csilk_json_get_string(row, "note"));
+            csilk_csv_escape(
+                e_currency, sizeof(e_currency), csilk_json_get_string(row, "currency"));
+            csilk_csv_escape(e_note, sizeof(e_note), csilk_json_get_string(row, "note"));
 
             size_t line_len = snprintf(buf,
                                        sizeof(buf),

@@ -12,7 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "infrastructure/repositories/import_rule_repo_impl.h"
-#include "common/csv_utils.h"
+#include "csilk/util/csv.h"
 #include <ctype.h>
 #include <time.h>
 
@@ -171,7 +171,7 @@ transactions_import_csv(csilk_ctx_t* c)
 
         char fields[12][512];
         int  fc = 0;
-        parse_csv_row(line_start, line_len, fields, &fc);
+        csilk_csv_parse_row(line_start, line_len, fields, &fc);
         if (fc < 6) {
             errors++;
             if (snprintf(errors_detail + strlen(errors_detail),
@@ -428,7 +428,7 @@ daily_expenses_import_csv(csilk_ctx_t* c)
 
         char fields[12][512];
         int  fc = 0;
-        parse_csv_row(line_start, line_len, fields, &fc);
+        csilk_csv_parse_row(line_start, line_len, fields, &fc);
         if (fc < 5) {
             errors++;
             snprintf(errors_detail + strlen(errors_detail),
