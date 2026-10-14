@@ -20,7 +20,7 @@ Minefolio 是一款极度轻量、安全、专业的**开源全资产管理与�
 * 🏛️ **统一账本状态引擎 (Ledger Engine)**：确立「Transaction 是唯一金融事实」准则，资产持仓、现金余额、成本基础、已实现/浮动盈亏全由账本引擎统一计算与更新，并提供基于时间序列事实全量重建 (`rebuild`) 的自愈能力。
 * 🤖 **统一 AI Runtime 与企业级五级风控引擎 (Unified AI Runtime & Risk Engine)**：建立原生 C 统一 AI 运行时架构，将 Controller 与 Workflow 彻底与 LLM 调用解耦，纳管会话 (Session)、统一上下文容器 (Context)、模型适配 (Model)、工具执行 (Tool)、工作流编排 (Workflow)、安全策略 (Policy)、全链路追踪 (Trace) 与滑动窗口记忆 (Memory)；全面支持硬预算与约束（迭代上限、超时、Token/Tool/Cost 预算与主动取消）及结构化错误分类，实行五级风险评估与带 Nonce 防重放的双重确认令牌机制。
 * 🔑 **统一 Secret Provider 与零硬编码安全门禁**：建立统一敏感配置检索机制，原生兼容环境变量、Docker/K8s Secret 文件挂载与外部密钥管理器 (Vault/AWS/K8s)；在生产启动期实施硬编码/弱口令主动熔断。
-* 🗄️ **企业级数据库迁移系统 (Database Migration System)**：原生 C 语言实现的 Flyway 风格版本化迁移引擎，支持 SQLite / PostgreSQL 双方言（`V001`~`V009`）；具备版本严格发现排序、SHA-256 CRLF 规范化哈希防篡改、基于行锁的分布式迁移互斥锁，以及生产环境存量数据库平滑升级（Auto-Baseline），绝不要求删除已有数据库重新初始化。
+* 🗄️ **企业级数据库迁移系统 (Database Migration System)**：下沉至 csilk 框架的原生 C 版本化迁移引擎（`<csilk/drivers/db/migration.h>`），支持 SQLite / PostgreSQL 双方言（`V001`~`V009`）；具备版本严格发现排序、SHA-256 CRLF 规范化哈希防篡改、基于行锁的分布式迁移互斥锁，并在 PostgreSQL 驱动层支持原生 Prepared Statement（`?` 自动转 `$N` 与参数绑定），实现生产环境存量数据库平滑升级（Auto-Baseline），绝不要求删除已有数据库重新初始化。
 * 💼 **全资产全场景覆盖**：支持现金、银行储蓄、股票、基金、债券、加密货币、房产、贷款、信用卡等资产与负债统一建档，支持负债方向自动正负号翻转。
 * 📈 **专业资管级投资模型**：加权买入成本、分红摊薄计价、卖出部分成本按比例核减、手续费联动与基于 `parent_tx_id` 的级联回滚，精确计算已实现与浮动盈亏。
 * 🌐 **多币种实时外汇引擎 (FX Engine)**：支持全币种资产管理，内置 Yahoo Finance 实时汇率同步与手动设置，支持基准折算净资产实时呈现。
@@ -190,22 +190,19 @@ Minefolio/
 │   │   │   ├── portfolio/        # mf_holding_item_t + 规则
 │   │   │   └── cashflow/         # mf_cashflow_*_t + 规则
 │   │   ├── infrastructure/       # 基础设施层
-│   │   │   ├── database/         # 数据库抽象、连接与原生 SQLite/Postgres 适配器
-│   │   │   │   └── migration/    # 迁移引擎（discovery, checksum, lock, apply, baseline）
-│   │   │   └── repositories/     # auth_repo_impl, tx_repo_impl...
+│   │   │   ├── database/         # 数据库抽象、连接与原生 SQLite/Postgres 适配器（迁移引擎由 csilk 提供）
+│   │   │   └── repositories/     # auth_repo_impl, tx_repo_impl... (18 个仓储实现，零 legacy 残留)
 │   │   ├── core/                 # 金融核心与基础引擎
 │   │   │   ├── financial/        # 128位定点数（money, decimal, quantity, price, rate, currency, percentage）
 │   │   │   └── ledger/           # 事件溯源账本引擎（ledger_apply_tx/reverse/rebuild）
-│   │   ├── controllers/          # 表现层：Legacy HTTP Controllers（过渡期双注册）
-│   │   ├── services/             # 业务层：Legacy Services（过渡期）
+│   │   ├── services/             # 业务服务层
 │   │   │   ├── ai/               # 统一 AI Runtime 架构（runtime, model, workflow, tools, policy, trace, memory）
 │   │   │   └── market/           # 行情引擎、外汇服务、调度器
-│   │   ├── repositories/         # 数据层：Legacy Repository（过渡期）
-│   │   ├── common/               # 公共组件（db, jwt, balance, response, 2fa, ocr, tx_types）
+│   │   ├── common/               # 公共组件（db, jwt, balance, response, ocr, tx_types；CSV 与 TOTP 2FA 已下沉至 csilk）
 │   │   ├── config/               # 密钥对管理、数据库配置、统一 Secret Provider (secret.h/.c)
 │   │   └── middlewares/          # JWT 鉴权、CORS、CSRF、限流与安全头中间件
 │   └── tests/                    # 单元测试与集成测试矩阵
-│       ├── unit/                 # 28 项高覆盖 CTest 单元测试
+│       ├── unit/                 # 32 项高覆盖 CTest 单元测试
 │       │   ├── test_currency.c   # 货币模型（ISO 4217、精度、比较）
 │       │   ├── test_decimal.c    # 128位定点算术（加/减/乘/除/舍入）
 │       │   ├── test_money.c      # 金额类型（跨币种安全校验）
@@ -218,21 +215,26 @@ Minefolio/
 │       │   ├── test_ledger_engine.c # Ledger 事件溯源全链路
 │       │   ├── test_ai_tools.c   # AI 工具 Schema 注册/分发
 │       │   ├── test_ai_policy.c  # AI 五级风控策略
+│       │   ├── test_mcp_pool.c   # MCP STDIO 进程池管理
+│       │   ├── test_policy_mcp_risk.c # MCP 工具风险评估策略
 │       │   ├── test_ai_runtime.c # AI Runtime 统一执行循环、预算限制与错误分类
+│       │   ├── test_ai_summary.c # AI 财务摘要生成与流式解析
 │       │   ├── test_secret_provider.c    # 统一密钥提供者
 │       │   ├── test_domain_transaction.c # 交易领域规则
 │       │   ├── test_domain_asset.c       # 资产领域规则
-│       │   ├── test_domain_auth.c        # 认证领域规则
-│       │   ├── test_domain_ai.c          # AI 领域规则
 │       │   ├── test_domain_portfolio.c   # 投资组合领域规则
 │       │   ├── test_domain_cashflow.c    # 现金流领域规则
 │       │   ├── test_domain_market.c      # 行情领域规则
+│       │   ├── test_domain_auth.c        # 认证领域规则
+│       │   ├── test_domain_ai.c          # AI 领域规则
+│       │   ├── test_domain_mcp.c         # MCP 协议领域规则
 │       │   ├── test_domain_cost_basis.c  # 成本基础领域规则
 │       │   ├── test_domain_pnl.c         # 盈亏领域规则
 │       │   ├── test_domain_position.c    # 持仓领域规则
 │       │   ├── test_domain_multi_currency.c # 多币种领域规则
 │       │   ├── test_database_repository.c # 数据库仓储接口抽象
-│       │   └── test_migration_engine.c   # 迁移引擎发现、锁与基线
+│       │   ├── test_migration_engine.c   # csilk 迁移引擎发现、锁与基线
+│       │   └── test_domain_repositories.c # 领域仓储契约集成
 │       ├── test_link.sh          # 核心业务闭环测试 (38 用例，139 断言)
 │       ├── test_full.sh          # 全量回归测试入口
 │       ├── test_ledgers.sh       # 多账本与 RBAC 测试 (16 用例)
@@ -364,17 +366,18 @@ Minefolio/
 
 Minefolio 拥有完整的双层测试矩阵（单元测试 + 端到端集成回归）：
 
-### 1. CTest 单元测试矩阵（28 大测试套件，高频毫秒级断言）
+### 1. CTest 单元测试矩阵（32 大测试套件，高频毫秒级断言）
 ```bash
 cd backend/build
 ctest --output-on-failure
 # 覆盖核心模块：
 # - 金融核心定点数：test_currency, test_decimal, test_money, test_quantity, test_price, test_rate, test_pnl, test_fx
 # - 统一账本数学与引擎：test_ledger_math, test_ledger_engine
-# - 领域业务规则与仓储：test_domain_transaction, test_domain_asset, test_domain_auth, test_domain_ai,
+# - 领域业务规则与仓储：test_domain_transaction, test_domain_asset, test_domain_auth, test_domain_ai, test_domain_mcp,
 #                       test_domain_portfolio, test_domain_cashflow, test_domain_market,
-#                       test_domain_cost_basis, test_domain_pnl, test_domain_position, test_domain_multi_currency
-# - 统一 AI Runtime 与风控系统：test_ai_tools, test_ai_policy, test_ai_runtime
+#                       test_domain_cost_basis, test_domain_pnl, test_domain_position, test_domain_multi_currency,
+#                       test_domain_repositories
+# - 统一 AI Runtime 与风控系统：test_ai_tools, test_ai_policy, test_mcp_pool, test_policy_mcp_risk, test_ai_runtime, test_ai_summary
 # - 统一机密提供者与安全门禁：test_secret_provider
 # - 数据库抽象与迁移引擎：test_database_repository, test_migration_engine
 ```

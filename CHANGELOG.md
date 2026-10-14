@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+- **PostgreSQL Prepared Statement Engine (`csilk/src/drivers/db/postgres.c`)**:
+  - Implemented full native prepared statement lifecycle in PostgreSQL driver: `?` parameter rewriting to `$1`, `$2`, ..., `PQprepare`, `PQexecPrepared`, parameter type binding, binary/text JSON conversion, and `DEALLOCATE` resource cleanup.
+  - Resolved multi-instance concurrency lock failures (`UPDATE schema_migration_lock ... WHERE ... ?`) on PostgreSQL during database startup migrations, enabling flawless PostgreSQL deployments.
+- **csilk Framework Feature Downstreaming & Integration (Phases 1-4)**:
+  - **JSON Type Extraction (`<csilk/core/json.h>`)**: Adopted `csilk_json_as_int64`, `csilk_json_as_double`, and `csilk_json_as_bool` to safely handle column data types without string-to-number parse gotchas.
+  - **Transaction Scope & Savepoint (`<csilk/drivers/db/db.h>`)**: Switched `db_tx_scope_*` to native `csilk_db_tx_scope_*` with full nested savepoint and rollback support.
+  - **Database Migration Engine (`<csilk/drivers/db/migration.h>`)**: Downstreamed Flyway-style migration engine (`csilk_migration_*`) supporting discovery, strict version ordering, SHA-256 CRLF normalization, distributed locks, and auto-baseline.
+  - **CSV Processing (`<csilk/util/csv.h>`)**: Replaced custom CSV utility with RFC 4180 streaming parser and generator (`csilk_csv_*`).
+  - **TOTP 2FA Engine (`<csilk/crypto/totp.h>`)**: Replaced internal TOTP implementation with csilk RFC 6238 standard TOTP engine (`csilk_totp_*`).
+  - **Middleware Whitelist & Revocation**: Enhanced CSRF and JWT middlewares using csilk native route whitelisting (`csilk_csrf_whitelist_path`) and token revocation callbacks.
+
+### Removed
+- **Redundant Glue Code**:
+  - Removed internal migration engine `backend/src/infrastructure/database/migration/` (611+ lines).
+  - Removed `backend/src/common/csv_utils.c/.h` and `backend/src/common/totp.c/.h` (~600 lines), reducing codebase footprint by ~2000 lines.
+
+### Changed
+- **Test Suite Expansion**:
+  - Expanded CTest unit test suite matrix from 28 to 32 suites, adding tests for MCP process pool, MCP risk policy, AI summary, domain MCP, and domain repositories.
+
+---
+
 ## [1.3.1] - 2026-09-12
 
 ### Added

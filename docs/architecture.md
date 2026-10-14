@@ -96,11 +96,11 @@ graph TB
 | **Infrastructure Layer** | 实现 Domain Repository 契约,执行 SQL,返回领域实体 | `backend/src/infrastructure/repositories/*_repo_impl.c` (18 个) |
 | **Financial Core** | **新增 v1.0**: 128 位定点高精度金融数学 + 强类型领域模型 | `backend/src/core/financial/` |
 | **Ledger Engine** | **新增 v1.0**: 事件溯源账本,原子 `ledger_apply_tx` / `ledger_reverse_tx`,支持 `ledger_rebuild_*` | `backend/src/core/ledger/` |
-| **Common** | 跨域通用: DB 池、JWT (HS256)、RSA-OAEP、tx_type 注册表、CSV 工具、TOTP、balance 符号翻转 | `backend/src/common/` |
+| **Common** | 跨域通用: DB 池、JWT (HS256)、RSA-OAEP、tx_type 注册表、balance 符号翻转（CSV 流式解析与 TOTP 2FA 下沉至 csilk 官方库） | `backend/src/common/` |
 | **Unified AI Runtime** | **统一 AI 运行时架构**: 彻底解耦 Controller/Workflow 与 LLM 直接调用;session(会话持久化与标题)、context(统一容器与状态机)、model(模型提供者适配与估算)、tools(7大领域工具与Schema)、policy(五级风控与防重放)、trace(端到端Span与成本统计)、memory(滑动窗口截断与系统提示词保护)、workflow(DAG编排与执行委托) | `backend/src/services/ai/{runtime,memory,model,policy,tools,trace,workflow}/*.c/.h` |
 | **Market Scheduler** | 后台线程,定时拉取行情,通过 `quote_driver` 多源适配(东方财富/腾讯/Yahoo/Crypto),汇率服务 | `backend/src/services/market/` |
-| **Migration Engine** | **原生 C 语言版本化迁移引擎**: Flyway 规范发现与严格版本排序、SHA-256 CRLF 规范化防篡改校验和、分布式互斥锁 (`schema_migration_lock`)、自动基线 (Auto-Baseline) 平滑升级 | `backend/src/infrastructure/database/migration/`、`backend/sql/migrations/` |
-| **SQLite / PostgreSQL** | 数据持久化;通过 `csilk_db_pool_t` 连接池 | `backend/sql/migration.sql`、`migration_postgres.sql` |
+| **Migration Engine** | **原生 C 语言版本化迁移引擎**: 下沉至 csilk 框架驱动层（`<csilk/drivers/db/migration.h>`），提供 Flyway 规范发现与严格版本排序、SHA-256 CRLF 规范化防篡改校验和、分布式互斥锁 (`schema_migration_lock`)、PostgreSQL 原生 Prepared Statement 支持，以及自动基线 (Auto-Baseline) 平滑升级 | `backend/sql/migrations/` (版本化脚本), `<csilk/drivers/db/migration.h>` |
+| **SQLite / PostgreSQL** | 数据持久化;通过 `csilk_db_pool_t` 连接池，支持 PostgreSQL 原生 Prepared Statement (`?` -> `$N`) | `backend/sql/migration.sql`、`migration_postgres.sql` |
 
 **新旧架构迁移状态:**
 
@@ -1032,7 +1032,7 @@ cmake --build backend/build --parallel && npm --prefix frontend run build
 | `test_market_sync.sh` | 多源行情拉取、缓存、批量同步 | 18 cases |
 | `test_fx_oauth.sh` | 汇率、FX 汇兑损益、OCR 票据识别、OAuth2/OIDC SSO | 20 cases |
 
-**CUnit 单元测试 (`backend/tests/unit/`, CMake CTest 集成, 20 套件):**
+**CUnit 单元测试 (`backend/tests/unit/`, CMake CTest 集成, 32 套件):**
 
 | 套件 | 覆盖模块 |
 |------|----------|
@@ -1046,16 +1046,28 @@ cmake --build backend/build --parallel && npm --prefix frontend run build
 | `test_fx` | 外汇计算 |
 | `test_ledger_math` | Ledger 纯数学算子 (buy/sell position) |
 | `test_ledger_engine` | Ledger 事件溯源全链路 |
+| `test_ai_tools` | AI 工具 Schema 注册/分发 |
+| `test_ai_policy` | AI 五级风控策略 |
+| `test_mcp_pool` | MCP STDIO 子进程长连接池管理 |
+| `test_policy_mcp_risk` | MCP 工具风险评估策略 |
+| `test_ai_runtime` | AI Runtime 统一执行循环、预算限制与错误分类 |
+| `test_ai_summary` | AI 财务摘要生成与流式解析 |
+| `test_secret_provider` | 统一密钥提供者 (环境变量/文件/外部) |
 | `test_domain_transaction` | 交易领域规则 (类型校验、方向校验) |
 | `test_domain_asset` | 资产领域规则 (投资类型判定、负债类型判定) |
-| `test_domain_auth` | 认证领域规则 (用户名/密码/备份码校验) |
-| `test_domain_ai` | AI 领域规则 (会话标题校验、上下文窗口限制) |
 | `test_domain_portfolio` | 投资组合领域规则 |
 | `test_domain_cashflow` | 现金流领域规则 |
 | `test_domain_market` | 行情领域规则 |
-| `test_ai_tools` | AI 工具 Schema 注册/分发 |
-| `test_ai_policy` | AI 五级风控策略 |
-| `test_secret_provider` | 统一密钥提供者 (环境变量/文件/外部) |
+| `test_domain_auth` | 认证领域规则 (用户名/密码/备份码校验) |
+| `test_domain_ai` | AI 领域规则 (会话标题校验、上下文窗口限制) |
+| `test_domain_mcp` | MCP 协议领域规则 |
+| `test_domain_cost_basis` | 成本基础与加权核算领域规则 |
+| `test_domain_pnl` | 盈亏核算领域规则 |
+| `test_domain_position` | 持仓管理领域规则 |
+| `test_domain_multi_currency` | 多币种领域规则 |
+| `test_database_repository` | 数据库仓储接口抽象 |
+| `test_migration_engine` | csilk 迁移引擎发现、版本排序、锁与基线 |
+| `test_domain_repositories` | 领域仓储契约集成 |
 
 运行:
 ```bash
@@ -1108,10 +1120,11 @@ cd backend/build && ctest --output-on-failure
 | **SQL 完整度** | 95% 常用 | 100% |
 | **适合场景** | 单用户/家庭自托管 | 多租户/集群 |
 
-Minefolio 建立跨数据库方言的**正式版本化迁移系统 (Database Migration System)**，彻底替换历史上的动态字段检测与硬编码 ALTER TABLE：
+Minefolio 采用下沉至 csilk 框架的原生**正式版本化迁移系统 (Database Migration System)**（`<csilk/drivers/db/migration.h>`），彻底替换历史上的动态字段检测与硬编码 ALTER TABLE：
 - **规范化版本脚本**：按 Flyway 规范统一组织于 `backend/sql/migrations/{sqlite,postgres}/`，文件命名格式 `V<num>__<name>.sql`（`V001`~`V009`）。
 - **版本记录与审计 (`schema_migrations`)**：记录每个已应用的迁移版本、名称、SHA-256 校验和、应用时间及执行毫秒耗时。
 - **分布式并发互斥锁 (`schema_migration_lock`)**：通过数据库行锁与租约超时防死锁机制，有效防止多实例并行迁移竞争。
+- **PostgreSQL 原生 Prepared Statement 支持**：csilk PostgreSQL 驱动原生实现 `?` 转 `$1, $2, ...` 重写、`PQprepare`/`PQexecPrepared` 编译与执行、类型绑定与 `DEALLOCATE` 释放，确保并发锁及迁移语句在 SQLite / PostgreSQL 下均稳定执行。
 - **跨平台哈希规范化**：计算校验和时自动规范化 CRLF/LF 换行符并修剪尾随空白，杜绝跨平台或跨编辑器修改导致的校验和漂移。
 - **存量生产平滑升级 (Auto-Baseline)**：自动检测已有业务表数据库，并将基准版本自动标记为已应用，**严禁且无需清空生产环境数据库**。
 
@@ -1140,8 +1153,8 @@ Minefolio 建立跨数据库方言的**正式版本化迁移系统 (Database Mig
 | **后端二进制体积** | ≤ 5MB strip | 4.2MB |
 | **后端冷启动** | ≤ 50ms | 30ms |
 | **并发连接** | ≥ 10k (单节点) | epoll-based csilk |
-| **集成测试覆盖** | 9 套件全通过 | `test_*.sh` |
-| **CUnit 单测覆盖** | 26 套件全通过 | CTest |
+| **集成测试覆盖** | 10 套件全通过 | `test_*.sh` |
+| **CUnit 单测覆盖** | 32 套件全通过 | CTest |
 | **前端单测覆盖** | 7 case (mobile spec) | vitest |
 | **定点精度** | 128-bit 定点,scale ≤ 18 | 零 IEEE 754 误差 |
 | **AI 风控评估延迟** | ≤ 5ms/tool | 纯 CPU 规则,无 IO |
@@ -1216,13 +1229,13 @@ Minefolio 建立跨数据库方言的**正式版本化迁移系统 (Database Mig
 | `backend/src/services/ai/workflow/` | AI 工作流 Graph/Executor/Engine |
 | `backend/src/services/ai/workflows/` | 4 个具体工作流实现 |
 | `backend/src/common/balance.h` | 余额符号翻转 + 持仓核算 |
-| `backend/src/infrastructure/database/migration/` | 数据库迁移引擎 (checksum, lock, engine) |
+| `csilk (csilk/drivers/db/migration.h)` | 数据库迁移引擎 (下沉至 csilk，提供 checksum、分布式锁、auto-baseline) |
 | `backend/sql/migrations/{sqlite,postgres}/` | 版本化迁移文件 (V001~V009) |
 | `backend/sql/migration.sql` | SQLite 16 表全量基准 |
 | `backend/sql/migration_postgres.sql` | PostgreSQL 16 表全量基准 |
 | `backend/tests/test_link.sh` | 38-case 核心集成测试 |
-| `backend/tests/test_*.sh` | 8 个专项集成测试脚本 |
-| `backend/tests/unit/test_*.c` | 28 个 CTest 单元单测 |
+| `backend/tests/test_*.sh` | 8 个专项集成测试脚本 (另有 test_full.sh 全量回归) |
+| `backend/tests/unit/test_*.c` | 32 个 CTest 单元单测 |
 | `frontend/src/utils/http.ts` | axios + JWT + CSRF |
 | `frontend/src/stores/chat.ts` | SmoothStreamWriter |
 | `frontend/src/components/ChatMessageContent.vue` | 流式渲染分层 |
@@ -1242,7 +1255,7 @@ Minefolio 建立跨数据库方言的**正式版本化迁移系统 (Database Mig
   ```bash
   cmake --build backend/build --parallel && npm --prefix frontend run build
   ./backend/tests/test_full.sh                    # 全量集成回归
-  ctest --test-dir backend/build --output-on-failure  # 28 个 CTest 单测
+  ctest --test-dir backend/build --output-on-failure  # 32 个 CTest 单测
   npm --prefix frontend test -- --run             # 移动端 vitest
   ```
 

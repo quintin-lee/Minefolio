@@ -14,10 +14,10 @@ Application Layer  application/*/{usecases,commands,dtos}.h/.c  Use case orchest
 Domain Layer       domain/*/{entity,repository,rules}.h/.c  Pure business rules, zero dependencies
 Infrastructure     infrastructure/repositories/*_repo_impl.c  SQL implementations (18 files)
                    infrastructure/database/  Database abstraction and SQLite/Postgres adapters
-                   infrastructure/database/migration/  Migration engine
+                   (Migration engine, CSV parsing, and TOTP 2FA downstreamed to csilk framework)
 Core Layer         core/financial/  Fixed-point core: money, decimal, quantity, price, rate, pnl
                    core/ledger/     Ledger engine: transaction replay, rebuild, balance/cost basis
-Shared             common/  db, jwt, balance, response, ctx, csv, tx_types, ledger_utils
+Shared             common/  db, jwt, balance, response, ctx, tx_types, ledger_utils
                    config/  db_config, key_manager (RSA keys), secret (Secret Provider)
                    dtos/  request/response struct definitions
                    middlewares/  jwt, cors, csrf, security-headers, rate-limit
@@ -75,10 +75,10 @@ This prevents orphaned fee rows from leaving incorrect balance state.
 
 ### Database Migration System
 
-Database schema changes are managed strictly via the native C migration engine (`backend/src/infrastructure/database/migration/`):
+Database schema changes are managed strictly via csilk's native C migration engine (`<csilk/drivers/db/migration.h>`):
 - **Versioned scripts**: `backend/sql/migrations/{sqlite,postgres}/` following Flyway naming `V<num>__<name>.sql` (`V001`~`V009`).
 - **Tracking table**: `schema_migrations` records `version`, `name`, `checksum` (SHA-256 CRLF-normalized), `applied_at`, `execution_time_ms`, `execution_time`.
-- **Concurrency lock**: `schema_migration_lock` table acts as a distributed mutex with lease timeout to prevent multi-instance migration races.
+- **Concurrency lock**: `schema_migration_lock` table acts as a distributed mutex with lease timeout to prevent multi-instance migration races. Under PostgreSQL, csilk provides full native prepared statement support (`?` rewritten to `$N`, `PQprepare`/`PQexecPrepared`), ensuring lock acquisition and statement execution run reliably.
 - **Engine lifecycle**: Automatic discovery, version sorting, checksum validation (tamper detection), transactional application, and status reporting.
 - **Auto-Baseline**: When booting against a pre-existing legacy database (where `users` table already exists but `schema_migrations` is missing), the engine automatically baselines versions `V001`~`V007` as applied. **Never drop or reinitialize production databases**.
 
@@ -117,13 +117,12 @@ AI Runtime (services/ai/runtime/)
 | `backend/src/services/ai/` | Unified AI Runtime: session, context, model, tool, workflow, policy, trace, memory |
 | `backend/src/core/financial/` | Fixed-point core arithmetic: money, decimal, quantity, price, rate, pnl |
 | `backend/src/core/ledger/` | Ledger engine: single source of truth, position calculation, history replay/rebuild |
-| `backend/src/infrastructure/database/` | Database abstraction layer and SQLite/PostgreSQL native adapters |
-| `backend/src/infrastructure/database/migration/` | Migration engine: SHA-256 CRLF checksum, mutex locks, auto-baseline |
-| `backend/src/common/` | Cross-cutting: `db.h`, `balance.h`, `jwt.h`, `response.h`, `ctx.h`, `tx_types.h`, `ledger_utils.h` |
+| `backend/src/infrastructure/database/` | Database abstraction layer and SQLite/PostgreSQL native adapters (migration engine downstreamed to csilk) |
+| `backend/src/common/` | Cross-cutting: `db.h`, `balance.h`, `jwt.h`, `response.h`, `ctx.h`, `tx_types.h`, `ledger_utils.h` (CSV & TOTP 2FA downstreamed to csilk) |
 | `backend/src/config/` | `db_config.h/.c` (DSN), `key_manager.h/.c` (RSA-OAEP keys), `secret.h/.c` (Secret Provider) |
 | `backend/sql/migrations/` | Versioned migration scripts (`sqlite/` & `postgres/`, `V001`~`V009`) |
 | `backend/sql/` | `migration.sql` (SQLite full schema), `migration_postgres.sql` |
-| `backend/tests/unit/` | 28 CTest unit test suites (financial core, ledger, domain rules, DB repository, migration engine, AI runtime) |
+| `backend/tests/unit/` | 32 CTest unit test suites (financial core, ledger, domain rules, DB repository, migration engine, AI runtime, MCP pool & risk) |
 | `backend/tests/test_link.sh` | 143-case integration test suite (HTTP + sqlite3 verification) |
 | `frontend/src/main.ts` | Desktop entry: Pinia, router, Element Plus, i18n |
 | `frontend/src/main-mobile.ts` | Mobile entry: separate router, sql.js init |
@@ -374,11 +373,11 @@ Mobile users can customize the backend server address (e.g. LAN IP `http://192.1
 
 ## Testing & QA
 
-### Backend Unit & Integration Tests (28 CTest Suites + 10 Integration Suites)
+### Backend Unit & Integration Tests (32 CTest Suites + 10 Integration Suites)
 
 ```bash
 cd backend
-# 1. Run all 28 CTest unit test suites (sub-second fast feedback)
+# 1. Run all 32 CTest unit test suites (sub-second fast feedback)
 cd build && ctest --output-on-failure && cd ..
 
 # 2. Run all 8 end-to-end integration test suites
