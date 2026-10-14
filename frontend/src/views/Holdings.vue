@@ -81,17 +81,18 @@
           <template #default="{ row }">
             <div class="weight-cell">
               <span class="weight-pct">
-                {{ ((Number(row.current_value) / (report?.summary.total_market_value || 1)) * 100).toFixed(1) }}%
+                {{ (((toCnyValue(Number(row.current_value), row.currency)) / (report?.summary.total_market_value || 1)) * 100).toFixed(1) }}%
               </span>
               <div class="weight-bar-track">
                 <div
                   class="weight-bar-fill"
-                  :style="{ width: `${Math.min(100, Math.max(0, (Number(row.current_value) / (report?.summary.total_market_value || 1)) * 100))}%` }"
+                  :style="{ width: `${Math.min(100, Math.max(0, (toCnyValue(Number(row.current_value), row.currency) / (report?.summary.total_market_value || 1)) * 100))}%` }"
                 />
               </div>
             </div>
           </template>
         </el-table-column>
+
         <el-table-column label="份额" width="110" align="right">
           <template #default="{ row }"><span class="mf-mono">{{ row.quantity.toFixed(2) }}</span></template>
         </el-table-column>
@@ -219,10 +220,16 @@ const floatPnlColor = computed(() => {
   return pnl >= 0 ? '#10b981' : '#ef4444'
 })
 
+function toCnyValue(val: number, cur?: string): number {
+  if (!cur || cur === 'CNY') return val
+  return val * (exchangeRates.value[cur] || 1)
+}
+
 const typeShare = computed(() => {
   const map = new Map<string, number>()
   for (const h of report.value?.holdings ?? []) {
-    map.set(h.asset_type, (map.get(h.asset_type) ?? 0) + h.current_value)
+    const cnyVal = toCnyValue(h.current_value, h.currency)
+    map.set(h.asset_type, (map.get(h.asset_type) ?? 0) + cnyVal)
   }
   return [...map.entries()].map(([name, value]) => ({ name, value }))
 })
@@ -230,10 +237,11 @@ const typeShare = computed(() => {
 const barData = computed(() =>
   (report.value?.holdings ?? []).map((h) => ({
     name: h.name,
-    cost_basis: h.cost_basis,
-    current_value: h.current_value,
+    cost_basis: toCnyValue(h.cost_basis, h.currency),
+    current_value: toCnyValue(h.current_value, h.currency),
   })),
 )
+
 
 async function load() {
   try {

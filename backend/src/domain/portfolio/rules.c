@@ -86,7 +86,15 @@ mf_portfolio_rule_apply_trade_events(mf_holding_item_t*                items,
                     money_t trade_realized;
                     money_sub(ev->amount, sold_cost, &trade_realized);
                     money_add(acc->realized, trade_realized, &acc->realized);
-                    quantity_sub(acc->qty, ev->quantity, &acc->qty);
+
+                    /* 扣减份额与成本池（清仓时直接置零，彻底消除浮点微小残差） */
+                    if (quantity_cmp(ev->quantity, acc->qty) >= 0) {
+                        acc->qty = quantity_zero();
+                        acc->cost_for_pnl = money_zero(acc->cost_for_pnl.currency);
+                    } else {
+                        quantity_sub(acc->qty, ev->quantity, &acc->qty);
+                        money_sub(acc->cost_for_pnl, sold_cost, &acc->cost_for_pnl);
+                    }
                 }
             } else if (strcmp(ev->type, "income") == 0) {
                 money_sub(acc->cost_for_pnl, ev->amount, &acc->cost_for_pnl);
@@ -104,13 +112,19 @@ mf_portfolio_rule_apply_trade_events(mf_holding_item_t*                items,
             it->market_value = money_zero(it->currency);
         }
 
-        money_sub(it->market_value, it->cost_basis, &it->floating_pnl);
-        percentage_t pct;
-        if (percentage_calc(it->floating_pnl, it->cost_basis, 4, ROUND_HALF_UP, &pct) ==
-            DECIMAL_OK) {
-            it->floating_pct = percentage_to_double(pct);
-        } else {
+        if (quantity_is_zero(it->quantity)) {
+            it->market_value = money_zero(it->currency);
+            it->floating_pnl = money_zero(it->currency);
             it->floating_pct = 0.0;
+        } else {
+            money_sub(it->market_value, it->cost_basis, &it->floating_pnl);
+            percentage_t pct;
+            if (percentage_calc(it->floating_pnl, it->cost_basis, 4, ROUND_HALF_UP, &pct) ==
+                DECIMAL_OK) {
+                it->floating_pct = percentage_to_double(pct);
+            } else {
+                it->floating_pct = 0.0;
+            }
         }
         it->realized_pnl = accs[i].realized;
     }
@@ -120,10 +134,11 @@ mf_portfolio_rule_apply_trade_events(mf_holding_item_t*                items,
 }
 
 int
-mf_portfolio_rule_aggregate_summary(const mf_holding_item_t* items,
-                                    size_t                   item_count,
-                                    currency_t               base_currency,
-                                    mf_portfolio_summary_t*  out_summary)
+mf_portfolio_rule_aggregate_summary(const mf_holding_item_t*  items,
+                                    size_t                    item_count,
+                                    currency_t                base_currency,
+                                    const mf_fx_rate_table_t* fx_table,
+                                    mf_portfolio_summary_t*   out_summary)
 {
     if (!out_summary) {
         return -1;
@@ -141,17 +156,32 @@ mf_portfolio_rule_aggregate_summary(const mf_holding_item_t* items,
     }
 
     for (size_t i = 0; i < item_count; i++) {
-        money_add(out_summary->total_market_value,
-                  items[i].market_value,
-                  &out_summary->total_market_value);
-        money_add(
-            out_summary->total_cost_basis, items[i].cost_basis, &out_summary->total_cost_basis);
-        money_add(out_summary->total_floating_pnl,
-                  items[i].floating_pnl,
-                  &out_summary->total_floating_pnl);
-        money_add(out_summary->total_realized_pnl,
-                  items[i].realized_pnl,
-                  &out_summary->total_realized_pnl);
+        money_t conv_market = items[i].market_value;
+        money_t conv_cost = items[i].cost_basis;
+        money_t conv_floating = items[i].floating_pnl;
+        money_t conv_realized = items[i].realized_pnl;
+
+        if (!currency_equals(items[i].currency, base_currency)) {
+            if (!fx_table) {
+                // 币种不一致且无汇率表时严禁盲目相加
+                return -1;
+            }
+            if (mf_fx_convert_money(items[i].market_value, base_currency, fx_table, &conv_market) !=
+                    0 ||
+                mf_fx_convert_money(items[i].cost_basis, base_currency, fx_table, &conv_cost) !=
+                    0 ||
+                mf_fx_convert_money(
+                    items[i].floating_pnl, base_currency, fx_table, &conv_floating) != 0 ||
+                mf_fx_convert_money(
+                    items[i].realized_pnl, base_currency, fx_table, &conv_realized) != 0) {
+                return -1;
+            }
+        }
+
+        money_add(out_summary->total_market_value, conv_market, &out_summary->total_market_value);
+        money_add(out_summary->total_cost_basis, conv_cost, &out_summary->total_cost_basis);
+        money_add(out_summary->total_floating_pnl, conv_floating, &out_summary->total_floating_pnl);
+        money_add(out_summary->total_realized_pnl, conv_realized, &out_summary->total_realized_pnl);
     }
 
     percentage_t pct;

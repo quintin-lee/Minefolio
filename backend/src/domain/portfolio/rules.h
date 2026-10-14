@@ -12,9 +12,10 @@ int mf_portfolio_rule_apply_trade_events(mf_holding_item_t*                items
                                          size_t                            event_count);
 
 /**
- * @brief 纯领域计算：汇总所有持仓项，产出投资组合全局 Summary
+ * @brief 纯领域计算：汇总所有持仓项，产出投资组合全局 Summary（支持显式多币种折算）
  */
-int mf_portfolio_rule_aggregate_summary(const mf_holding_item_t* items,
-                                        size_t                   item_count,
-                                        currency_t               base_currency,
-                                        mf_portfolio_summary_t*  out_summary);
+int mf_portfolio_rule_aggregate_summary(const mf_holding_item_t*  items,
+                                        size_t                    item_count,
+                                        currency_t                base_currency,
+                                        const mf_fx_rate_table_t* fx_table,
+                                        mf_portfolio_summary_t*   out_summary);

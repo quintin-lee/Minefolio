@@ -14,9 +14,10 @@ api_portfolio_holdings(csilk_ctx_t* c)
         return;
     }
 
+    const char*           req_cur = csilk_get_param(c, "currency");
     query_portfolio_cmd_t cmd = {
         .user_id = user_id,
-        .base_currency = "CNY",
+        .base_currency = (req_cur && req_cur[0]) ? req_cur : "CNY",
     };
 
     csilk_json_t*              resp = NULL;

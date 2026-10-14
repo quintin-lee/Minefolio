@@ -32,8 +32,9 @@
       </div>
       <div class="card-row">
         <span class="meta">份额 {{ h.quantity.toFixed(2) }}</span>
-        <span class="meta">成本 {{ formatCurrency(h.cost_basis) }}</span>
+        <span class="meta">成本 {{ formatCurrency(h.cost_basis, h.currency) }}</span>
       </div>
+
       <div class="card-row">
         <div class="value-group">
           <span class="value">{{ formatCurrency(h.current_value, h.currency) }}</span>

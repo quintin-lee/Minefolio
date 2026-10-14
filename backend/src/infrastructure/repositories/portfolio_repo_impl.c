@@ -96,8 +96,8 @@ mf_portfolio_repo_get_trade_events(void*                        db_pool,
     const char* params[] = {uid_str, NULL};
 
     const char* tx_sql =
-        "SELECT asset_id, transaction_type, quantity, amount, price_per_unit, fee, currency "
-        "FROM transactions WHERE user_id = ? ORDER BY transaction_date ASC";
+        "SELECT id, asset_id, transaction_type, quantity, amount, price_per_unit, fee, currency "
+        "FROM transactions WHERE user_id = ? ORDER BY transaction_date ASC, id ASC";
 
     csilk_json_t* tx_rows = csilk_db_query_param_json((csilk_db_pool_t*)db_pool, tx_sql, params);
     if (!tx_rows) {
@@ -283,7 +283,8 @@ portfolio_repo_get_performance_transactions(void* pool, int64_t user_id)
         "t.quantity, t.price_per_unit, t.amount, t.fee "
         "FROM transactions t JOIN assets a ON t.asset_id=a.id "
         "WHERE t.user_id=? "
-        "ORDER BY t.transaction_date ASC",
+        "ORDER BY t.transaction_date ASC, t.id ASC",
+
         params);
 }
 

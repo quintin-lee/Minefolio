@@ -3,7 +3,8 @@
 # 用法: ./test_link.sh   (需已在 backend/build 构建过 minefolio)
 set -euo pipefail
 
-BASE="http://localhost:8080/api"   # 后端硬编码 8080（main.c:234），运行前确认 8080 空闲
+TEST_PORT="${TEST_PORT:-18080}"
+BASE="http://localhost:${TEST_PORT}/api"
 DB="/tmp/mf_link_test.db"
 BUILD_DIR="$(cd "$(dirname "$0")/../build" && pwd)"
 PASS=0; FAIL=0
@@ -19,13 +20,14 @@ export TEST_JWT_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).
 # --- 启动服务器 ---
 rm -f "$DB" "$DB-wal" "$DB-shm"
 cd "$BUILD_DIR"
-MINEFOLIO_DB_DSN="$DB" MINEFOLIO_JWT_SECRET="$TEST_JWT_SECRET" ./minefolio >/dev/null 2>&1 &
+PORT="$TEST_PORT" MINEFOLIO_PORT="$TEST_PORT" MINEFOLIO_DB_DSN="$DB" MINEFOLIO_JWT_SECRET="$TEST_JWT_SECRET" ./minefolio >/dev/null 2>&1 &
 SERVER_PID=$!
-# Wait for server to be ready (port 8080 accepting connections)
+# Wait for server to be ready
 for _i in $(seq 1 30); do
-  curl -sf http://localhost:8080/healthz >/dev/null 2>&1 && break
+  curl -sf "http://localhost:${TEST_PORT}/healthz" >/dev/null 2>&1 && break
   sleep 0.5
 done
+
 
 req() { # req METHOD PATH JSON
   local method="$1" path="$2" data="${3:-}"

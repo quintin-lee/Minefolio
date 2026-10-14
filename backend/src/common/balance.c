@@ -212,7 +212,11 @@ apply_position_fc(csilk_db_pool_t* pool,
         money_t cost_sold;
         price_times_quantity(avg_cost, qty, &cost_sold);
         money_sub(old_cost, cost_sold, &new_cost);
+        if (quantity_is_zero(new_qty)) {
+            new_cost = money_zero(cur);
+        }
         new_net = old_net;
+
     } else {
         csilk_json_free(pos);
         return 0;

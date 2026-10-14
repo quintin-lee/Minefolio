@@ -44,10 +44,19 @@ portfolio_usecase_get_holdings(void*                        db_pool,
     /* 纯领域规则：重放交易计算持仓盈亏 */
     mf_portfolio_rule_apply_trade_events(items, item_count, events, event_count);
 
-    /* 纯领域规则：聚合组合整体汇总 */
+    /* 纯领域规则：聚合组合整体汇总（构建汇率表支持跨币种无损折算） */
     currency_t base_cur = currency_from_str(cmd->base_currency ? cmd->base_currency : "CNY");
+    mf_fx_rate_table_t fx_table;
+    mf_fx_rate_table_init(&fx_table);
+    for (size_t i = 0; i < item_count; i++) {
+        if (!currency_equals(items[i].currency, base_cur)) {
+            rate_t r = exchange_rate_get_rate(items[i].currency, base_cur);
+            mf_fx_rate_table_add(&fx_table, items[i].currency, base_cur, r);
+        }
+    }
     mf_portfolio_summary_t summary = {0};
-    mf_portfolio_rule_aggregate_summary(items, item_count, base_cur, &summary);
+    mf_portfolio_rule_aggregate_summary(items, item_count, base_cur, &fx_table, &summary);
+    mf_fx_rate_table_free(&fx_table);
 
     /* 组装响应 DTO */
     csilk_json_t* holdings_arr = csilk_json_array();

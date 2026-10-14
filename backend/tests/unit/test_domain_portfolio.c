@@ -69,6 +69,91 @@ static void test_portfolio_trade_events_and_pnl(void) {
     printf("PASS: test_portfolio_trade_events_and_pnl\n");
 }
 
+/* 1b. 关键回归测试：连续分批卖出时成本池必须递减，禁止已实现盈亏爆炸性失真 */
+static void test_portfolio_trade_events_partial_sells_cost_pool_decrement(void) {
+    currency_t cny = currency_from_str("CNY");
+
+    mf_holding_item_t item = {0};
+    item.asset_id = 101;
+    snprintf(item.name, sizeof(item.name), "测试分批卖出标的");
+    item.currency = cny;
+    quantity_from_double(0.0, 4, &item.quantity);
+    price_from_double(12.0, 4, cny, &item.net_value);
+    money_from_double(0.0, cny, &item.cost_basis);
+
+    mf_portfolio_trade_event_t events[3] = {0};
+
+    /* 1. Buy 100 @ 10 = 1000 */
+    events[0].asset_id = 101;
+    snprintf(events[0].type, sizeof(events[0].type), "buy");
+    quantity_from_double(100.0, 4, &events[0].quantity);
+    price_from_double(10.0, 4, cny, &events[0].price);
+    money_from_double(1000.0, cny, &events[0].amount);
+
+    /* 2. Sell 50 @ 12 = 600 (realized = 600 - 500 = +100) */
+    events[1].asset_id = 101;
+    snprintf(events[1].type, sizeof(events[1].type), "sell");
+    quantity_from_double(50.0, 4, &events[1].quantity);
+    price_from_double(12.0, 4, cny, &events[1].price);
+    money_from_double(600.0, cny, &events[1].amount);
+
+    /* 3. Sell 50 @ 12 = 600 (realized = 600 - 500 = +100) */
+    events[2].asset_id = 101;
+    snprintf(events[2].type, sizeof(events[2].type), "sell");
+    quantity_from_double(50.0, 4, &events[2].quantity);
+    price_from_double(12.0, 4, cny, &events[2].price);
+    money_from_double(600.0, cny, &events[2].amount);
+
+    int rc = mf_portfolio_rule_apply_trade_events(&item, 1, events, 3);
+    assert(rc == 0);
+
+    /* 两次卖出各盈利 100，累计已实现盈亏必须为 +200，绝不能因为成本池未递减而变成 -300 */
+    assert(fabs(money_to_double(item.realized_pnl) - 200.0) < 1e-4);
+
+    printf("PASS: test_portfolio_trade_events_partial_sells_cost_pool_decrement\n");
+}
+
+/* 1c. 关键回归测试：交易佣金/手续费必须正确计入已实现盈亏 */
+static void test_portfolio_trade_events_with_fees(void) {
+    currency_t cny = currency_from_str("CNY");
+
+    mf_holding_item_t item = {0};
+    item.asset_id = 102;
+    snprintf(item.name, sizeof(item.name), "测试手续费标的");
+    item.currency = cny;
+    quantity_from_double(0.0, 4, &item.quantity);
+    price_from_double(12.0, 4, cny, &item.net_value);
+    money_from_double(0.0, cny, &item.cost_basis);
+
+    mf_portfolio_trade_event_t events[2] = {0};
+
+    /* Buy 100 @ 10 = 1000, fee = 10 (total cost = 1010) */
+    events[0].asset_id = 102;
+    snprintf(events[0].type, sizeof(events[0].type), "buy");
+    quantity_from_double(100.0, 4, &events[0].quantity);
+    price_from_double(10.0, 4, cny, &events[0].price);
+    money_from_double(1000.0, cny, &events[0].amount);
+    money_from_double(10.0, cny, &events[0].fee);
+
+    /* Sell 100 @ 12 = 1200, fee = 10 (net proceeds = 1190) */
+    events[1].asset_id = 102;
+    snprintf(events[1].type, sizeof(events[1].type), "sell");
+    quantity_from_double(100.0, 4, &events[1].quantity);
+    price_from_double(12.0, 4, cny, &events[1].price);
+    money_from_double(1200.0, cny, &events[1].amount);
+    money_from_double(10.0, cny, &events[1].fee);
+
+    int rc = mf_portfolio_rule_apply_trade_events(&item, 1, events, 2);
+    assert(rc == 0);
+
+    /* 买卖交易产生的 fee 会独立记入费用行；标的主体盈亏反映纯交易价差 = 1200 - 1000 = +200 */
+    assert(fabs(money_to_double(item.realized_pnl) - 200.0) < 1e-4);
+
+    printf("PASS: test_portfolio_trade_events_with_fees\n");
+}
+
+
+
 /* 2. 历史兼容测试：同币种 Summary 汇总 */
 static void test_portfolio_summary_aggregation(void) {
     currency_t cny = currency_from_str("CNY");
@@ -87,7 +172,7 @@ static void test_portfolio_summary_aggregation(void) {
     money_from_double(100.0, cny, &items[1].realized_pnl);
 
     mf_portfolio_summary_t sum = {0};
-    int rc = mf_portfolio_rule_aggregate_summary(items, 2, cny, &sum);
+    int rc = mf_portfolio_rule_aggregate_summary(items, 2, cny, NULL, &sum);
     assert(rc == 0);
 
     assert(money_to_double(sum.total_market_value) == 4000.0);
@@ -98,6 +183,53 @@ static void test_portfolio_summary_aggregation(void) {
 
     printf("PASS: test_portfolio_summary_aggregation\n");
 }
+
+/* 2b. 关键回归测试：多币种持仓聚合汇总（通过显式汇率表折算为基准币种，杜绝 money_add 置零） */
+static void test_portfolio_summary_multi_currency_aggregation(void) {
+    currency_t cny = currency_from_str("CNY");
+    currency_t usd = currency_from_str("USD");
+
+    mf_fx_rate_table_t fx_table;
+    mf_fx_rate_table_init(&fx_table);
+    // 1 USD = 7.0 CNY
+    assert(mf_fx_rate_table_add(&fx_table, usd, cny, r_make(7.0, usd, cny)) == 0);
+
+    mf_holding_item_t items[2] = {0};
+    // Item 0: CNY 标的
+    items[0].asset_id = 1;
+    items[0].currency = cny;
+    money_from_double(1000.0, cny, &items[0].market_value);
+    money_from_double(800.0, cny, &items[0].cost_basis);
+    money_from_double(200.0, cny, &items[0].floating_pnl);
+    money_from_double(100.0, cny, &items[0].realized_pnl);
+
+    // Item 1: USD 标的
+    items[1].asset_id = 2;
+    items[1].currency = usd;
+    money_from_double(100.0, usd, &items[1].market_value);
+    money_from_double(80.0, usd, &items[1].cost_basis);
+    money_from_double(20.0, usd, &items[1].floating_pnl);
+    money_from_double(10.0, usd, &items[1].realized_pnl);
+
+    mf_portfolio_summary_t sum = {0};
+    int rc = mf_portfolio_rule_aggregate_summary(items, 2, cny, &fx_table, &sum);
+    assert(rc == 0);
+
+    // 市值 = 1000 + 100 * 7 = 1700 CNY
+    assert(fabs(money_to_double(sum.total_market_value) - 1700.0) < 1e-2);
+    // 成本 = 800 + 80 * 7 = 1360 CNY
+    assert(fabs(money_to_double(sum.total_cost_basis) - 1360.0) < 1e-2);
+    // 浮动盈亏 = 200 + 20 * 7 = 340 CNY
+    assert(fabs(money_to_double(sum.total_floating_pnl) - 340.0) < 1e-2);
+    // 已实现盈亏 = 100 + 10 * 7 = 170 CNY
+    assert(fabs(money_to_double(sum.total_realized_pnl) - 170.0) < 1e-2);
+    // 浮动盈亏率 = 340 / 1360 = 25%
+    assert(fabs(sum.floating_pct - 25.0) < 1e-2);
+
+    mf_fx_rate_table_free(&fx_table);
+    printf("PASS: test_portfolio_summary_multi_currency_aggregation\n");
+}
+
 
 /* 3. 跨币种显式汇率折算与集中度风险度量 */
 void test_portfolio_multi_currency_aggregation_and_risk() {
@@ -189,9 +321,13 @@ void test_portfolio_missing_fx_rate_fails() {
 
 int main() {
     test_portfolio_trade_events_and_pnl();
+    test_portfolio_trade_events_partial_sells_cost_pool_decrement();
+    test_portfolio_trade_events_with_fees();
     test_portfolio_summary_aggregation();
+    test_portfolio_summary_multi_currency_aggregation();
     test_portfolio_multi_currency_aggregation_and_risk();
     test_portfolio_missing_fx_rate_fails();
     printf("All domain portfolio tests passed successfully!\n");
     return 0;
 }
+
