@@ -529,16 +529,16 @@ git -C ../csilk commit -m "feat(ai): 🎯 add end-to-end AI latency, token throu
 - Delete: `backend/src/common/csv_utils.c/.h` (替换为 `#include "csilk/util/csv.h"`)
 - Delete: `backend/src/infrastructure/database/migration/` (替换为 `#include "csilk/drivers/db/migration.h"`)
 
-- [ ] **Step 1: 更新 Minefolio 中 `deps/csilk` 代码镜像至最新 master**
-- [ ] **Step 2: 逐步替换业务代码中的 include 与调用**
-- [ ] **Step 3: 编译 Minefolio**
+- [x] **Step 1: 更新 Minefolio 中 `deps/csilk` 代码镜像至最新 master**
+- [x] **Step 2: 逐步替换业务代码中的 include 与调用**
+- [x] **Step 3: 编译 Minefolio**
 
 ```bash
 cmake --build backend/build --parallel
 ```
 预期：编译 0 警告、0 错误。
 
-- [ ] **Step 4: 提交 Minefolio 重构改动**
+- [x] **Step 4: 提交 Minefolio 重构改动**
 
 ```bash
 git add backend/
@@ -549,14 +549,14 @@ git commit -m "refactor(core): ♻️ adapt downstreamed csilk features and remo
 
 ### Task 13: Minefolio 全量测试套件回归验证
 
-- [ ] **Step 1: 运行全部 28 个 CTest 单元测试套件**
+- [x] **Step 1: 运行全部 28 个 CTest 单元测试套件**
 
 ```bash
 ctest --test-dir backend/build --output-on-failure
 ```
-预期：28/28 测试通过。
+预期：28/28 测试通过（实际 32/32 测试通过）。
 
-- [ ] **Step 2: 运行全部 8 个端到端集成测试套件**
+- [x] **Step 2: 运行全部 8 个端到端集成测试套件**
 
 ```bash
 ./backend/tests/test_link.sh
@@ -570,10 +570,11 @@ ctest --test-dir backend/build --output-on-failure
 ```
 预期：所有断言全部 PASS，零回归。
 
-- [ ] **Step 3: 运行前端构建与测试**
+- [x] **Step 3: 运行前端构建与测试**
 
 ```bash
 npm --prefix frontend test
 npm --prefix frontend run build
 ```
 预期：前端编译 0 错误。
+
