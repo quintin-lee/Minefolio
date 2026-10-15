@@ -1151,7 +1151,11 @@ onUnmounted(() => {
   transform: scale(1.04);
 }
 
-/* Main Area */
+/* Main Area - container for dynamic width queries.
+   container-type enables .messages / .chat-input-area to size
+   against the actual content area (which changes when the global
+   sidebar 260px<->64px or the session sidebar 280px<->0 collapses),
+   not just the viewport. */
 .chat-main {
   flex: 1;
   display: flex;
@@ -1159,6 +1163,8 @@ onUnmounted(() => {
   overflow: hidden;
   background: var(--mf-background);
   position: relative;
+  container-type: inline-size;
+  container-name: chat-main;
 }
 
 .chat-main::before {
@@ -1255,7 +1261,10 @@ onUnmounted(() => {
   50% { opacity: 0.4; transform: scale(0.85); }
 }
 
-/* Messages - Centered Reading Column */
+/* Messages - Centered Reading Column (fluid: follows .chat-main width).
+   Base 860px kept as fallback for browsers without container units;
+   modern browsers use min(1060px, 100cqi) so the column widens when
+   sidebars collapse and fills narrow pages without overflow. */
 .messages {
   flex: 1;
   overflow-y: auto;
@@ -1264,10 +1273,17 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 24px;
   max-width: 860px;
+  max-width: min(1060px, 100cqi);
   margin: 0 auto;
   width: 100%;
   box-sizing: border-box;
   position: relative;
+}
+
+@container chat-main (min-width: 1400px) {
+  .messages {
+    max-width: min(1120px, 96cqi);
+  }
 }
 
 /* Message Rows */
@@ -1458,7 +1474,7 @@ onUnmounted(() => {
   transform: translateY(-1px);
 }
 
-/* Input Area - Floating Island Capsule */
+/* Input Area - Floating Island Capsule (fluid: same column as .messages) */
 .chat-input-area {
   position: absolute;
   bottom: 18px;
@@ -1466,10 +1482,17 @@ onUnmounted(() => {
   transform: translateX(-50%);
   width: 100%;
   max-width: 860px;
+  max-width: min(1060px, 100cqi);
   padding: 0 20px;
   pointer-events: none;
   z-index: 10;
   box-sizing: border-box;
+}
+
+@container chat-main (min-width: 1400px) {
+  .chat-input-area {
+    max-width: min(1120px, 96cqi);
+  }
 }
 
 .chat-input-area > * {
@@ -1715,10 +1738,12 @@ onUnmounted(() => {
     bottom: 10px;
     padding: 0 10px;
     max-width: 100%;
+    max-width: 100cqi;
   }
   .messages {
     padding: 16px 12px 140px;
     max-width: 100%;
+    max-width: 100cqi;
   }
   .message-row.user { max-width: 90%; }
   .message-row.assistant { max-width: 100%; }
