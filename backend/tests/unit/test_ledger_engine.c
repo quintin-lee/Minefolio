@@ -397,6 +397,49 @@ main(void)
     csilk_json_free(ast);
     printf("    ✓ Rebuild preservation of initial balance and position verified.\n");
 
+    printf("  11. Testing Non-Investment Transaction Fee Deduction & Rollback...\n");
+    {
+        csilk_db_exec(pool, "INSERT INTO assets (id, user_id, category_id, name, currency, current_value, quantity, cost_basis, net_value) "
+                            "VALUES (105, 1, 10, 'Savings Bank', 'CNY', 0.0, 0, 0, 0)");
+
+        money_t fee_amt, fee_val;
+        money_from_double(1000.0, CURRENCY_CNY, &fee_amt);
+        money_from_double(5.0, CURRENCY_CNY, &fee_val);
+
+        ledger_tx_t fee_tx = {
+            .id = 0,
+            .user_id = user_id,
+            .asset_id = 105,
+            .linked_asset_id = 0,
+            .category_id = 10,
+            .type = LEDGER_TX_DEPOSIT,
+            .type_str = "deposit",
+            .amount = fee_amt,
+            .fee = fee_val,
+            .tx_date = "2026-10-15 12:00:00",
+            .note = "Deposit with 5 CNY fee",
+        };
+        rc = ledger_apply_tx(pool, &fee_tx);
+        assert(rc == 0 && fee_tx.id > 0);
+
+        // Balance should be: 1000.0 - 5.0 = 995.0
+        ast = csilk_db_query_param_json(pool, "SELECT current_value FROM assets WHERE id=?", (const char*[]){"105", NULL});
+        assert(ast && csilk_json_array_size(ast) > 0);
+        double cur_val = db_get_num(csilk_json_array_get(ast, 0), "current_value");
+        csilk_json_free(ast);
+        assert(cur_val == 995.0);
+
+        // Reversing the transaction should restore balance to 0.0
+        rc = ledger_reverse_tx(pool, user_id, fee_tx.id);
+        assert(rc == 0);
+        ast = csilk_db_query_param_json(pool, "SELECT current_value FROM assets WHERE id=?", (const char*[]){"105", NULL});
+        assert(ast && csilk_json_array_size(ast) > 0);
+        cur_val = db_get_num(csilk_json_array_get(ast, 0), "current_value");
+        csilk_json_free(ast);
+        assert(cur_val == 0.0);
+        printf("    ✓ Non-investment tx fee deduction and rollback verified.\n");
+    }
+
     unlink(db_file);
     printf("🎉 ALL LEDGER ENGINE INTEGRATION TESTS PASSED SUCCESSFULLY!\n");
     return 0;

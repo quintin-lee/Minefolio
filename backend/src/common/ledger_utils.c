@@ -113,7 +113,7 @@ tx_child_fee_rows(csilk_db_pool_t* pool, int64_t user_id, int64_t parent_tx_id)
     snprintf(ptx_str, sizeof(ptx_str), "%lld", (long long)parent_tx_id);
     return csilk_db_query_param_json(
         pool,
-        "SELECT id, linked_asset_id, amount, fee, currency, note FROM transactions "
+        "SELECT id, asset_id, linked_asset_id, amount, fee, currency, note FROM transactions "
         "WHERE parent_tx_id=? AND user_id=? AND transaction_type='fee'",
         (const char*[]){ptx_str, uid_str, NULL});
 }

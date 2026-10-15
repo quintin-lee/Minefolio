@@ -218,11 +218,12 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
     }
     int64_t orig_tx_id = tx->id;
 
-    char uid_str[32], ast_str[32], last_str[32], cat_str[32];
+    char uid_str[32], ast_str[32], last_str[32], cat_str[32], lid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)tx->user_id);
     snprintf(ast_str, sizeof(ast_str), "%lld", (long long)tx->asset_id);
     snprintf(last_str, sizeof(last_str), "%lld", (long long)tx->linked_asset_id);
     snprintf(cat_str, sizeof(cat_str), "%lld", (long long)tx->category_id);
+    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)tx->ledger_id);
 
     /* Portable "now" fallback for transaction_date (SQLite has no PG NOW(), and a
      * quoted 'datetime('now')' param would be stored as a literal string). */
@@ -262,9 +263,6 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
              tx->type == LEDGER_TX_INTEREST || tx->type == LEDGER_TX_DIVIDEND)
                 ? "income"
                 : "expense";
-
-        char lid_str[32];
-        snprintf(lid_str, sizeof(lid_str), "%lld", (long long)tx->ledger_id);
 
         const char* ins_params[] = {uid_str,
                                     ast_str,
@@ -392,14 +390,17 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
         }
     }
 
-    // 3. Fee record generation if fee > 0 on investment buy/sell
-    if (!money_is_zero(tx->fee) && tx->linked_asset_id > 0 && is_investment_tx) {
-        char tx_id_str[32];
+    // 3. Fee record generation if fee > 0 on any non-fee transaction
+    if (!money_is_zero(tx->fee) && tx->type != LEDGER_TX_FEE) {
+        int64_t fee_target_asset = (tx->linked_asset_id > 0) ? tx->linked_asset_id : tx->asset_id;
+        char    tx_id_str[32], fee_target_str[32];
         snprintf(tx_id_str, sizeof(tx_id_str), "%lld", (long long)tx->id);
+        snprintf(fee_target_str, sizeof(fee_target_str), "%lld", (long long)fee_target_asset);
+
         const char*   fee_note = (tx->note && tx->note[0]) ? tx->note : "fee";
         const char*   fee_params[] = {uid_str,
                                       ast_str,
-                                      last_str,
+                                      fee_target_str,
                                       cat_str,
                                       "expense",
                                       "fee",
@@ -412,15 +413,17 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
                                       tx->tx_date ? tx->tx_date : now_fallback,
                                       fee_note,
                                       tx_id_str,
+                                      lid_str,
                                       NULL};
         csilk_json_t* fee_res = csilk_db_query_param_json(
             pool,
             "INSERT INTO transactions (user_id, asset_id, linked_asset_id, category_id, "
             "source_type, transaction_type, direction, linked_direction, "
             "amount, price_per_unit, quantity, fee, currency, transaction_date, note, "
-            "parent_tx_id) "
-            "VALUES (?, ?, CAST(NULLIF(?, '0') AS BIGINT), ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, "
-            "?)",
+            "parent_tx_id, ledger_id) "
+            "VALUES (?, ?, CAST(NULLIF(?, '0') AS BIGINT), CAST(NULLIF(?, '0') AS BIGINT), ?, ?, "
+            "?, NULL, ?, ?, ?, ?, ?, ?, ?, "
+            "?, CAST(NULLIF(?, '0') AS BIGINT))",
             fee_params);
         if (fee_res) {
             csilk_json_free(fee_res);
@@ -428,7 +431,7 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
 
         money_t neg_fee = money_neg(tx->fee);
         if (balance_apply_delta_m(pool,
-                                  tx->linked_asset_id,
+                                  fee_target_asset,
                                   tx->user_id,
                                   neg_fee,
                                   "transaction_fee",
@@ -545,11 +548,12 @@ ledger_reverse_tx(csilk_db_pool_t* pool, int64_t user_id, int64_t tx_id)
         for (size_t i = 0; i < fee_cnt; i++) {
             csilk_json_t* frow = csilk_json_array_get(fee_children, i);
             int64_t       f_last = (int64_t)db_get_int(frow, "linked_asset_id");
+            int64_t       f_target = (f_last > 0) ? f_last : (int64_t)db_get_int(frow, "asset_id");
             money_t       f_amt = db_get_money(frow, "amount", cur);
-            if (f_last > 0 && !money_is_zero(f_amt)) {
+            if (f_target > 0 && !money_is_zero(f_amt)) {
                 // Reverse fee (fee originally debited -fee, so credit +fee)
                 if (balance_apply_delta_m(pool,
-                                          f_last,
+                                          f_target,
                                           user_id,
                                           f_amt,
                                           "transaction_fee_reversal",
