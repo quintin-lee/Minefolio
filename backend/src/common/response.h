@@ -2,70 +2,65 @@
 
 /**
  * @file response.h
- * @brief HTTP 统一 JSON 响应封装与分页参数解析工具
+ * @brief HTTP JSON response and pagination helpers (delegating to csilk core).
  *
- * 统一后端所有 API 的 JSON 响应格式 {code, message, data}，
- * 并提供常用业务状态码（成功、未授权、参数错误、未找到、冲突等）的响应构造函数，
- * 以及 URL 分页参数解析工具。
+ * Provides standardized JSON response formatting {code, message, data} and
+ * pagination query parameter extraction. Delegates to csilk's downstreamed
+ * response envelope subsystem while preserving Minefolio's legacy conventions
+ * (HTTP 200 with business code envelope, and "list" pagination array key).
  */
 
 #include "csilk/csilk.h"
+#include "csilk/core/response.h"
 #include <errno.h>
+#include <stdint.h>
 #include <stdlib.h>
 
 /**
- * @brief 构造并返回标准成功 JSON 响应 (code: 0)
+ * @brief Construct and return standard success JSON response (code: 0).
  *
- * 响应体格式：{"code": 0, "message": "ok", "data": <data>}
+ * Response format: {"code": 0, "message": "ok", "data": <data>}.
+ * Takes ownership of data node.
  *
- * @param[in,out] c csilk HTTP 上下文指针，不可为 NULL
- * @param[in] data 业务数据 JSON 对象指针，可为 NULL 或任意 JSON 节点
- *
- * @note 内存所有权：data 节点将被挂载到响应根对象 r 中，由 csilk_json() 最终托管并释放。
+ * @param[in,out] c    HTTP request context.
+ * @param[in]     data Business JSON payload node (transfers ownership).
  */
 static inline void
 respond_ok(csilk_ctx_t* c, csilk_json_t* data)
 {
-    csilk_json_t* r = csilk_json_object();
-    csilk_json_add_number(r, "code", 0);
-    csilk_json_add_string(r, "message", "ok");
-    csilk_json_add_object(r, "data", data);
-    csilk_json(c, CSILK_STATUS_OK, r);
+    csilk_respond_ok(c, data);
 }
 
 /**
- * @brief 构造并返回不含业务数据的成功响应 (code: 0, data: null)
+ * @brief Construct and return success response without data (code: 0, data: null).
  *
- * @param[in,out] c csilk HTTP 上下文指针，不可为 NULL
+ * @param[in,out] c HTTP request context.
  */
 static inline void
 respond_ok_null(csilk_ctx_t* c)
 {
-    respond_ok(c, csilk_json_null());
+    csilk_respond_ok_null(c);
 }
 
 /**
- * @brief 构造并返回自定义业务错误码的 JSON 响应
+ * @brief Construct and return JSON response with custom business code.
  *
- * 响应体格式：{"code": <code>, "message": <msg>}
+ * Minefolio legacy convention: returns HTTP 200 with {"code": <code>, "message": <msg>}.
  *
- * @param[in,out] c csilk HTTP 上下文指针，不可为 NULL
- * @param[in] code 自定义业务状态码（如 1001, 1002, 1003, 1004 等）
- * @param[in] msg 错误描述文本
+ * @param[in,out] c    HTTP request context.
+ * @param[in]     code Custom business status code (e.g., 1001, 1002, 1003, 1004).
+ * @param[in]     msg  Error description message.
  */
 static inline void
 respond_error(csilk_ctx_t* c, int code, const char* msg)
 {
-    csilk_json_t* r = csilk_json_object();
-    csilk_json_add_number(r, "code", code);
-    csilk_json_add_string(r, "message", msg);
-    csilk_json(c, CSILK_STATUS_OK, r);
+    csilk_respond_fail(c, CSILK_STATUS_OK, code, msg);
 }
 
 /**
- * @brief 构造并返回未授权错误响应 (code: 1001, "未授权")
+ * @brief Construct and return unauthorized error response (code: 1001, "未授权").
  *
- * @param[in,out] c csilk HTTP 上下文指针，不可为 NULL
+ * @param[in,out] c HTTP request context.
  */
 static inline void
 respond_unauthorized(csilk_ctx_t* c)
@@ -74,10 +69,10 @@ respond_unauthorized(csilk_ctx_t* c)
 }
 
 /**
- * @brief 构造并返回请求参数错误响应 (code: 1002)
+ * @brief Construct and return bad request parameter error response (code: 1002).
  *
- * @param[in,out] c csilk HTTP 上下文指针，不可为 NULL
- * @param[in] msg 错误提示说明；若为 NULL 则默认为 "参数错误"
+ * @param[in,out] c   HTTP request context.
+ * @param[in]     msg Error description (defaults to "参数错误" if NULL).
  */
 static inline void
 respond_bad_request(csilk_ctx_t* c, const char* msg)
@@ -86,9 +81,9 @@ respond_bad_request(csilk_ctx_t* c, const char* msg)
 }
 
 /**
- * @brief 构造并返回资源不存在错误响应 (code: 1003, "资源不存在")
+ * @brief Construct and return not found error response (code: 1003, "资源不存在").
  *
- * @param[in,out] c csilk HTTP 上下文指针，不可为 NULL
+ * @param[in,out] c HTTP request context.
  */
 static inline void
 respond_not_found(csilk_ctx_t* c)
@@ -97,10 +92,10 @@ respond_not_found(csilk_ctx_t* c)
 }
 
 /**
- * @brief 构造并返回资源冲突/已存在错误响应 (code: 1004)
+ * @brief Construct and return conflict error response (code: 1004).
  *
- * @param[in,out] c csilk HTTP 上下文指针，不可为 NULL
- * @param[in] msg 错误提示说明；若为 NULL 则默认为 "资源已存在"
+ * @param[in,out] c   HTTP request context.
+ * @param[in]     msg Error description (defaults to "资源已存在" if NULL).
  */
 static inline void
 respond_conflict(csilk_ctx_t* c, const char* msg)
@@ -109,10 +104,10 @@ respond_conflict(csilk_ctx_t* c, const char* msg)
 }
 
 /**
- * @brief 构造并返回权限受限/操作被禁止响应 (code: 2001)
+ * @brief Construct and return forbidden error response (code: 2001).
  *
- * @param[in,out] c csilk HTTP 上下文指针，不可为 NULL
- * @param[in] msg 错误提示说明；若为 NULL 则默认为 "操作被禁止"
+ * @param[in,out] c   HTTP request context.
+ * @param[in]     msg Error description (defaults to "操作被禁止" if NULL).
  */
 static inline void
 respond_forbidden(csilk_ctx_t* c, const char* msg)
@@ -121,13 +116,11 @@ respond_forbidden(csilk_ctx_t* c, const char* msg)
 }
 
 /**
- * @brief 严格解析单个整型 Query 参数
+ * @brief Strictly parse integer query parameter with strtoll and bounds check.
  *
- * @param[in] s    原始参数字符串，可为 NULL
- * @param[in] dflt 非法输入时的回退默认值
- *
- * @return 解析成功返回数值；NULL、空串、含非数字尾巴、上下溢出时返回 dflt。
- *         （atoll 对非法输入静默返回 0、对溢出是未定义行为，此处一并修复。）
+ * @param[in] s    Query string to parse.
+ * @param[in] dflt Fallback default value on failure or overflow.
+ * @return Parsed integer or dflt.
  */
 static inline int64_t
 parse_query_int_strict(const char* s, int64_t dflt)
@@ -145,38 +138,26 @@ parse_query_int_strict(const char* s, int64_t dflt)
 }
 
 /**
- * @brief 从 HTTP Query 参数中解析分页参数 (page, page_size)
+ * @brief Parse pagination parameters (page, page_size) from HTTP query string.
  *
- * 默认值规则：
- *   - page 默认为 1，且最小值限制为 1。
- *   - page_size 默认为 20，最小值限制为 1，最大值上限截断为 500。
+ * Default rules:
+ *   - page defaults to 1, clamped to >= 1.
+ *   - page_size defaults to 20, clamped to [1, 500].
  *
- * @param[in,out] c csilk HTTP 上下文指针，不可为 NULL
- * @param[out] page 输出解析后的当前页码
- * @param[out] page_size 输出解析后的每页数量
+ * @param[in,out] c         HTTP request context.
+ * @param[out]    page      Parsed page number output pointer.
+ * @param[out]    page_size Parsed page size output pointer.
  */
 static inline void
 parse_page_params(csilk_ctx_t* c, int64_t* page, int64_t* page_size)
 {
-    int64_t p = parse_query_int_strict(csilk_get_query(c, "page"), 1);
-    int64_t s = parse_query_int_strict(csilk_get_query(c, "page_size"), 20);
-    if (p < 1) {
-        p = 1;
-    }
-    if (s < 1) {
-        s = 20;
-    }
-    if (s > 500) {
-        s = 500;
-    }
-    *page = p;
-    *page_size = s;
+    csilk_parse_pagination(c, page, page_size, 20, 500);
 }
 
 /**
- * @brief 构造并返回分页列表成功响应
+ * @brief Construct and return paginated list success response.
  *
- * 封装数据结构：
+ * Preserves the "list" array key expected by Minefolio's Vue 3 frontend:
  *   {
  *     "code": 0,
  *     "message": "ok",
@@ -188,21 +169,14 @@ parse_page_params(csilk_ctx_t* c, int64_t* page, int64_t* page_size)
  *     }
  *   }
  *
- * @param[in,out] c csilk HTTP 上下文指针，不可为 NULL
- * @param[in] list 数据列表 JSON 数组指针
- * @param[in] total 记录总条数
- * @param[in] page 当前页码
- * @param[in] page_size 每页数量
- *
- * @note 内存所有权：list 数组由生成的 data 对象接管，最终由 csilk 自动释放。
+ * @param[in,out] c         HTTP request context.
+ * @param[in]     list      List items JSON array (transfers ownership).
+ * @param[in]     total     Total record count.
+ * @param[in]     page      Current page number.
+ * @param[in]     page_size Page size.
  */
 static inline void
 respond_page_ok(csilk_ctx_t* c, csilk_json_t* list, int64_t total, int64_t page, int64_t page_size)
 {
-    csilk_json_t* data = csilk_json_object();
-    csilk_json_add_array(data, "list", list);
-    csilk_json_add_int(data, "total", total);
-    csilk_json_add_int(data, "page", page);
-    csilk_json_add_int(data, "page_size", page_size);
-    respond_ok(c, data);
+    csilk_respond_page_ex(c, "list", list, total, page, page_size);
 }
