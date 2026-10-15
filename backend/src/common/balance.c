@@ -1,5 +1,6 @@
 #include "common/balance.h"
 #include "common/db.h"
+#include "services/market/exchange_rate_service.h"
 #include "csilk/csilk.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -65,10 +66,16 @@ balance_apply_delta_m(csilk_db_pool_t* pool,
     const char*         asset_cur_str = csilk_json_get_string(asset, "currency");
     currency_t          asset_cur = currency_from_str(asset_cur_str);
 
-    // 2. 归一化 delta（负债方向反转）
-    money_t signed_delta = delta;
+    /* Multi-currency normalization: convert delta to the asset's native currency if different */
+    money_t target_delta = delta;
+    if (!currency_equals(delta.currency, asset_cur)) {
+        target_delta = exchange_rate_convert_m(delta, asset_cur);
+    }
+
+    // 2. Normalize delta (liability balance direction flip)
+    money_t signed_delta = target_delta;
     if (balance_direction(asset_type) < 0) {
-        signed_delta = money_neg(delta);
+        signed_delta = money_neg(target_delta);
     }
     csilk_json_free(row);
 
@@ -143,8 +150,21 @@ balance_apply_delta(csilk_db_pool_t* pool,
                     int64_t          source_id,
                     const char*      note)
 {
+    char asset_id_str[32];
+    snprintf(asset_id_str, sizeof(asset_id_str), "%lld", (long long)asset_id);
+    csilk_json_t* r = csilk_db_query_param_json(
+        pool, "SELECT currency FROM assets WHERE id=?", (const char*[]){asset_id_str, NULL});
+    currency_t cur = CURRENCY_CNY;
+    if (r && csilk_json_array_size(r) > 0) {
+        const char* cstr = csilk_json_get_string(csilk_json_array_get(r, 0), "currency");
+        cur = currency_from_str(cstr);
+        csilk_json_free(r);
+    } else if (r) {
+        csilk_json_free(r);
+    }
+
     money_t delta_m;
-    money_from_double(delta, CURRENCY_CNY, &delta_m);
+    money_from_double(delta, cur, &delta_m);
     return balance_apply_delta_m(pool, asset_id, user_id, delta_m, source_type, source_id, note);
 }
 
@@ -180,6 +200,20 @@ apply_position_fc(csilk_db_pool_t* pool,
 
     const char* cur_str = csilk_json_get_string(pr, "currency");
     currency_t  cur = currency_from_str(cur_str);
+
+    /* Normalize amount, fee, and price to the asset's native currency */
+    if (!currency_equals(amount.currency, cur)) {
+        amount = exchange_rate_convert_m(amount, cur);
+    }
+    if (!currency_equals(fee.currency, cur)) {
+        fee = exchange_rate_convert_m(fee, cur);
+    }
+    if (!currency_equals(price.currency, cur)) {
+        double p_dbl = price_to_double(price);
+        double conv_p =
+            exchange_rate_convert(p_dbl, currency_code(&price.currency), currency_code(&cur));
+        price_from_double(conv_p, 4, cur, &price);
+    }
 
     quantity_t old_qty = db_get_quantity(pr, "quantity");
     money_t    old_cost = db_get_money(pr, "cost_basis", cur);
@@ -257,13 +291,26 @@ apply_position(csilk_db_pool_t* pool,
                double           qty,
                double*          out_position_delta)
 {
+    char aid_str[32];
+    snprintf(aid_str, sizeof(aid_str), "%lld", (long long)asset_id);
+    csilk_json_t* pos_cur = csilk_db_query_param_json(
+        pool, "SELECT currency FROM assets WHERE id=?", (const char*[]){aid_str, NULL});
+    currency_t cur = CURRENCY_CNY;
+    if (pos_cur && csilk_json_array_size(pos_cur) > 0) {
+        const char* cstr = csilk_json_get_string(csilk_json_array_get(pos_cur, 0), "currency");
+        cur = currency_from_str(cstr);
+        csilk_json_free(pos_cur);
+    } else if (pos_cur) {
+        csilk_json_free(pos_cur);
+    }
+
     money_t    amount_m, fee_m, delta_m;
     price_t    price_p;
     quantity_t qty_q;
 
-    money_from_double(amount, CURRENCY_CNY, &amount_m);
-    money_from_double(fee, CURRENCY_CNY, &fee_m);
-    price_from_double(price, 4, CURRENCY_CNY, &price_p);
+    money_from_double(amount, cur, &amount_m);
+    money_from_double(fee, cur, &fee_m);
+    price_from_double(price, 4, cur, &price_p);
     quantity_from_double(qty, 4, &qty_q);
 
     int rc = apply_position_fc(pool, asset_id, type, amount_m, fee_m, price_p, qty_q, &delta_m);
@@ -309,6 +356,20 @@ rollback_position_fc(csilk_db_pool_t* pool,
 
     const char* cur_str = csilk_json_get_string(pr, "currency");
     currency_t  cur = currency_from_str(cur_str);
+
+    /* Normalize amount, fee, and price to the asset's native currency */
+    if (!currency_equals(amount.currency, cur)) {
+        amount = exchange_rate_convert_m(amount, cur);
+    }
+    if (!currency_equals(fee.currency, cur)) {
+        fee = exchange_rate_convert_m(fee, cur);
+    }
+    if (!currency_equals(price.currency, cur)) {
+        double p_dbl = price_to_double(price);
+        double conv_p =
+            exchange_rate_convert(p_dbl, currency_code(&price.currency), currency_code(&cur));
+        price_from_double(conv_p, 4, cur, &price);
+    }
 
     quantity_t old_qty = db_get_quantity(pr, "quantity");
     money_t    old_cost = db_get_money(pr, "cost_basis", cur);
@@ -386,13 +447,26 @@ rollback_position(csilk_db_pool_t* pool,
                   double           qty,
                   double*          out_position_delta)
 {
+    char aid_str[32];
+    snprintf(aid_str, sizeof(aid_str), "%lld", (long long)asset_id);
+    csilk_json_t* pos_cur = csilk_db_query_param_json(
+        pool, "SELECT currency FROM assets WHERE id=?", (const char*[]){aid_str, NULL});
+    currency_t cur = CURRENCY_CNY;
+    if (pos_cur && csilk_json_array_size(pos_cur) > 0) {
+        const char* cstr = csilk_json_get_string(csilk_json_array_get(pos_cur, 0), "currency");
+        cur = currency_from_str(cstr);
+        csilk_json_free(pos_cur);
+    } else if (pos_cur) {
+        csilk_json_free(pos_cur);
+    }
+
     money_t    amount_m, fee_m, delta_m;
     price_t    price_p;
     quantity_t qty_q;
 
-    money_from_double(amount, CURRENCY_CNY, &amount_m);
-    money_from_double(fee, CURRENCY_CNY, &fee_m);
-    price_from_double(price, 4, CURRENCY_CNY, &price_p);
+    money_from_double(amount, cur, &amount_m);
+    money_from_double(fee, cur, &fee_m);
+    price_from_double(price, 4, cur, &price_p);
     quantity_from_double(qty, 4, &qty_q);
 
     int rc = rollback_position_fc(pool, asset_id, type, amount_m, fee_m, price_p, qty_q, &delta_m);

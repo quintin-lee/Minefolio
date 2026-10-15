@@ -78,9 +78,14 @@ transfer_usecase_create(void*                        pool,
     const char* note = cmd->note ? cmd->note : "";
 
     /* 2. Record transfer_out transaction */
-    if (mf_transfer_repo_insert_out_transaction(
-            pool, cmd->user_id, cmd->from_asset_id, cmd->amount, cur, cmd->transfer_date, note) !=
-        0) {
+    if (mf_transfer_repo_insert_out_transaction(pool,
+                                                cmd->user_id,
+                                                cmd->from_asset_id,
+                                                cmd->to_asset_id,
+                                                cmd->amount,
+                                                cur,
+                                                cmd->transfer_date,
+                                                note) != 0) {
         csilk_db_exec(pool, "ROLLBACK");
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "记录划转交易失败");
@@ -88,9 +93,14 @@ transfer_usecase_create(void*                        pool,
     }
 
     /* 3. Record transfer_in transaction */
-    if (mf_transfer_repo_insert_in_transaction(
-            pool, cmd->user_id, cmd->to_asset_id, cmd->amount, cur, cmd->transfer_date, note) !=
-        0) {
+    if (mf_transfer_repo_insert_in_transaction(pool,
+                                               cmd->user_id,
+                                               cmd->to_asset_id,
+                                               cmd->from_asset_id,
+                                               cmd->amount,
+                                               cur,
+                                               cmd->transfer_date,
+                                               note) != 0) {
         csilk_db_exec(pool, "ROLLBACK");
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "记录划转交易失败");

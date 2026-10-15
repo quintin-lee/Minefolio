@@ -400,6 +400,21 @@ cashflow_usecase_confirm_income(void*                         pool,
         return -1;
     }
 
+    char target_id_str[32];
+    snprintf(target_id_str, sizeof(target_id_str), "%lld", (long long)cmd->target_asset_id);
+    csilk_json_t* cur_res = csilk_db_query_param_json(
+        db_pool, "SELECT currency FROM assets WHERE id=?", (const char*[]){target_id_str, NULL});
+    char target_cur[16] = "CNY";
+    if (cur_res && csilk_json_array_size(cur_res) > 0) {
+        const char* cstr = csilk_json_get_string(csilk_json_array_get(cur_res, 0), "currency");
+        if (cstr && cstr[0]) {
+            strncpy(target_cur, cstr, sizeof(target_cur) - 1);
+        }
+        csilk_json_free(cur_res);
+    } else if (cur_res) {
+        csilk_json_free(cur_res);
+    }
+
     int64_t tx_id = tx_insert(db_pool,
                               cmd->user_id,
                               cmd->target_asset_id,
@@ -413,7 +428,7 @@ cashflow_usecase_confirm_income(void*                         pool,
                               0.0,
                               0.0,
                               0.0,
-                              "CNY",
+                              target_cur,
                               full_date,
                               tx_note);
     if (tx_id <= 0) {

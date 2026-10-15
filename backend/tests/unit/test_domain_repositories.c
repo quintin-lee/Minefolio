@@ -7,9 +7,14 @@
 #include "domain/asset/repository.h"
 #include "domain/transaction/repository.h"
 #include "domain/portfolio/repository.h"
+#include "infrastructure/repositories/portfolio_repo_impl.h"
+#include "application/portfolio/usecases.h"
+#include "services/market/exchange_rate_service.h"
 #include "domain/cashflow/repository.h"
+#include "domain/transfer/repository.h"
 #include "domain/market/repository.h"
 #include "domain/ai/repository.h"
+#include "common/balance.h"
 
 #include "core/financial/currency.h"
 #include "core/financial/money.h"
@@ -279,6 +284,112 @@ test_portfolio_repository(csilk_db_pool_t* pool, int64_t user_id, int64_t asset_
     assert(events != NULL || event_count == 0);
     mf_portfolio_repo_free_trade_events(events, event_count);
 
+    /* 4a. Test multi-currency holdings totals conversion */
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+
+    /* Insert a test stock category */
+    csilk_json_t* ins_cat_res = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO categories (user_id, name, type, asset_type, currency, ledger_id) "
+        "VALUES (?, 'Stock Category', 'asset', 'stock', 'CNY', 0) RETURNING id",
+        (const char*[]){uid_str, NULL});
+    assert(ins_cat_res && csilk_json_array_size(ins_cat_res) > 0);
+    int64_t cat_id = db_get_int(csilk_json_array_get(ins_cat_res, 0), "id");
+    csilk_json_free(ins_cat_res);
+    char cat_str[32];
+    snprintf(cat_str, sizeof(cat_str), "%lld", (long long)cat_id);
+
+    /* Link asset_id from test_asset_repository to this category */
+    char ast_str[32];
+    snprintf(ast_str, sizeof(ast_str), "%lld", (long long)asset_id);
+    csilk_json_free(csilk_db_query_param_json(
+        pool, "UPDATE assets SET category_id=? WHERE id=?",
+        (const char*[]){cat_str, ast_str, NULL}));
+
+    /* Insert a USD stock asset: cost_basis=1000.0, current_value=1200.0 (USD) */
+    csilk_json_t* ins_usd_res = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO assets (user_id, category_id, name, quantity, "
+        "cost_basis, net_value, current_value, currency, ledger_id) "
+        "VALUES (?, ?, 'US Tech ETF', 10.0, 1000.0, 120.0, 1200.0, 'USD', 0) "
+        "RETURNING id",
+        (const char*[]){uid_str, cat_str, NULL});
+    assert(ins_usd_res && csilk_json_array_size(ins_usd_res) > 0);
+    int64_t usd_asset_id = db_get_int(csilk_json_array_get(ins_usd_res, 0), "id");
+    csilk_json_free(ins_usd_res);
+
+    double total_qty = 0.0, total_cost = 0.0, total_market = 0.0;
+    rc = portfolio_repo_get_current_holdings_totals(pool, user_id, 0, &total_qty, &total_cost, &total_market);
+    assert(rc == 0);
+    /* Asset 1 (CNY): cost=10000.0, current_value=0.0 */
+    /* Asset 2 (USD): cost=1000.0 * 7.20 = 7200.0, market=1200.0 * 7.20 = 8640.0 */
+    /* total_cost must be 10000.0 + 7200.0 = 17200.0 (NOT 11000.0!) */
+    assert(fabs(total_cost - 17200.0) < 1e-2);
+
+    /* 4b. Test portfolio_usecase_get_performance gain/loss & fee accounting */
+    /* Insert a new tradeable asset */
+    char perf_ast_str[32];
+    csilk_json_t* ins_perf_ast = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO assets (user_id, category_id, name, quantity, "
+        "cost_basis, net_value, current_value, currency, ledger_id) "
+        "VALUES (?, ?, 'Trading Test Asset', 0.0, 0.0, 15.0, 0.0, 'CNY', 0) "
+        "RETURNING id",
+        (const char*[]){uid_str, cat_str, NULL});
+    assert(ins_perf_ast && csilk_json_array_size(ins_perf_ast) > 0);
+    int64_t perf_ast_id = db_get_int(csilk_json_array_get(ins_perf_ast, 0), "id");
+    csilk_json_free(ins_perf_ast);
+    snprintf(perf_ast_str, sizeof(perf_ast_str), "%lld", (long long)perf_ast_id);
+
+    /* Insert Buy trade: qty=100, price=10.0, amt=1000.0, fee=10.0 */
+    csilk_json_free(csilk_db_query_param_json(
+        pool,
+        "INSERT INTO transactions (user_id, asset_id, transaction_type, direction, "
+        "quantity, price_per_unit, amount, fee, currency, transaction_date, ledger_id) "
+        "VALUES (?, ?, 'buy', 'in', 100.0, 10.0, 1000.0, 10.0, 'CNY', '2026-09-01', 0)",
+        (const char*[]){uid_str, perf_ast_str, NULL}));
+
+    /* Insert Sell trade: qty=100, price=15.0, amt=1500.0, fee=10.0 */
+    csilk_json_free(csilk_db_query_param_json(
+        pool,
+        "INSERT INTO transactions (user_id, asset_id, transaction_type, direction, "
+        "quantity, price_per_unit, amount, fee, currency, transaction_date, ledger_id) "
+        "VALUES (?, ?, 'sell', 'out', 100.0, 15.0, 1500.0, 10.0, 'CNY', '2026-09-02', 0)",
+        (const char*[]){uid_str, perf_ast_str, NULL}));
+
+    query_portfolio_cmd_t cmd = {
+        .user_id = user_id,
+        .ledger_id = 0,
+        .base_currency = "CNY",
+    };
+    csilk_json_t* perf_resp = NULL;
+    portfolio_usecase_result_t perf_res = {0};
+    rc = portfolio_usecase_get_performance(pool, &cmd, &perf_resp, &perf_res);
+    assert(rc == 0 && perf_res.code == 0);
+    assert(perf_resp != NULL);
+
+    double total_trades = db_get_num(perf_resp, "total_trades");
+    double total_gain = db_get_num(perf_resp, "total_gain");
+    double total_loss = db_get_num(perf_resp, "total_loss");
+    double net_gain = db_get_num(perf_resp, "net_gain");
+    double realized_pnl = db_get_num(perf_resp, "realized_pnl");
+
+    /* Expected: 
+     * total_trades: 2 (1 buy, 1 sell)
+     * Buy cost = 1000 + 10 = 1010.
+     * Sell net proceeds = 1500 - 10 = 1490.
+     * Realized PnL = 1490 - 1010 = 480.0.
+     * Profitable trade -> total_gain = 480.0, total_loss = 0.0, net_gain = 480.0.
+     */
+    assert(total_trades == 2.0);
+    assert(fabs(realized_pnl - 480.0) < 1e-2);
+    assert(fabs(total_gain - 480.0) < 1e-2);
+    assert(fabs(total_loss - 0.0) < 1e-2);
+    assert(fabs(net_gain - 480.0) < 1e-2);
+
+    csilk_json_free(perf_resp);
+
     printf("  ✅ Portfolio Domain Repository passed\n");
 }
 
@@ -429,6 +540,127 @@ test_ai_repository(csilk_db_pool_t* pool, int64_t user_id, int64_t asset_id)
     printf("  ✅ AI Domain Repository passed (monthly isolation verified)\n");
 }
 
+static void
+test_multi_currency_balance_and_transfers(csilk_db_pool_t* pool, int64_t user_id)
+{
+    printf("--- 8. Testing Multi-Currency Balance & Transfers ---\n");
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+
+    /* 1. DEF-03: Multi-currency balance_apply_delta_m */
+    csilk_json_t* ins_cat = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO categories (user_id, name, type, asset_type, currency, ledger_id) "
+        "VALUES (?, 'USD Cash Category', 'asset', 'cash', 'USD', 0) RETURNING id",
+        (const char*[]){uid_str, NULL});
+    assert(ins_cat && csilk_json_array_size(ins_cat) > 0);
+    int64_t cat_id = db_get_int(csilk_json_array_get(ins_cat, 0), "id");
+    csilk_json_free(ins_cat);
+    char cat_str[32];
+    snprintf(cat_str, sizeof(cat_str), "%lld", (long long)cat_id);
+
+    /* Insert USD Account: initial current_value = 100.0 USD */
+    csilk_json_t* ins_acc = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO assets (user_id, category_id, name, current_value, currency, ledger_id) "
+        "VALUES (?, ?, 'USD Checking', 100.0, 'USD', 0) RETURNING id",
+        (const char*[]){uid_str, cat_str, NULL});
+    assert(ins_acc && csilk_json_array_size(ins_acc) > 0);
+    int64_t usd_acc_id = db_get_int(csilk_json_array_get(ins_acc, 0), "id");
+    csilk_json_free(ins_acc);
+
+    /* Apply a delta of 720.0 CNY to this USD account */
+    money_t cny_delta;
+    money_from_double(720.0, currency_from_str("CNY"), &cny_delta);
+    int rc = balance_apply_delta_m(pool, usd_acc_id, user_id, cny_delta, "test_deposit", 1, "Deposit 720 CNY");
+    assert(rc == 0);
+
+    /* 720 CNY should convert to 100 USD (at 1 USD = 7.20 CNY), so balance must become 200.0 USD, NOT 820.0! */
+    char usd_acc_str[32];
+    snprintf(usd_acc_str, sizeof(usd_acc_str), "%lld", (long long)usd_acc_id);
+    csilk_json_t* check_res = csilk_db_query_param_json(
+        pool, "SELECT current_value FROM assets WHERE id=?", (const char*[]){usd_acc_str, NULL});
+    assert(check_res && csilk_json_array_size(check_res) > 0);
+    double usd_val = db_get_num(csilk_json_array_get(check_res, 0), "current_value");
+    csilk_json_free(check_res);
+    assert(fabs(usd_val - 200.0) < 1e-2);
+
+    /* 2. DEF-04: apply_position on foreign currency asset */
+    /* Insert a USD stock category and asset with 0 initial quantity, cost, net_value */
+    csilk_json_t* ins_stk_cat = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO categories (user_id, name, type, asset_type, currency, ledger_id) "
+        "VALUES (?, 'USD Stock Category', 'asset', 'stock', 'USD', 0) RETURNING id",
+        (const char*[]){uid_str, NULL});
+    assert(ins_stk_cat && csilk_json_array_size(ins_stk_cat) > 0);
+    int64_t stk_cat_id = db_get_int(csilk_json_array_get(ins_stk_cat, 0), "id");
+    csilk_json_free(ins_stk_cat);
+    char stk_cat_str[32];
+    snprintf(stk_cat_str, sizeof(stk_cat_str), "%lld", (long long)stk_cat_id);
+
+    csilk_json_t* ins_stk = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO assets (user_id, category_id, name, quantity, cost_basis, net_value, current_value, currency, ledger_id) "
+        "VALUES (?, ?, 'Foreign USD Stock', 0.0, 0.0, 0.0, 0.0, 'USD', 0) RETURNING id",
+        (const char*[]){uid_str, stk_cat_str, NULL});
+    assert(ins_stk && csilk_json_array_size(ins_stk) > 0);
+    int64_t stk_id = db_get_int(csilk_json_array_get(ins_stk, 0), "id");
+    csilk_json_free(ins_stk);
+
+    /* Buy 10 units @ 50 USD = 500 USD, fee = 5 USD */
+    double delta_pos = 0;
+    rc = apply_position(pool, stk_id, "buy", 500.0, 5.0, 50.0, 10.0, &delta_pos);
+    assert(rc == 0);
+
+    char stk_str[32];
+    snprintf(stk_str, sizeof(stk_str), "%lld", (long long)stk_id);
+    csilk_json_t* stk_check = csilk_db_query_param_json(
+        pool, "SELECT quantity, cost_basis, net_value FROM assets WHERE id=?", (const char*[]){stk_str, NULL});
+    assert(stk_check && csilk_json_array_size(stk_check) > 0);
+    double stk_qty = db_get_num(csilk_json_array_get(stk_check, 0), "quantity");
+    double stk_cost = db_get_num(csilk_json_array_get(stk_check, 0), "cost_basis");
+    double stk_nv = db_get_num(csilk_json_array_get(stk_check, 0), "net_value");
+    csilk_json_free(stk_check);
+
+    assert(fabs(stk_qty - 10.0) < 1e-4);
+    assert(fabs(stk_cost - 505.0) < 1e-2); /* Must be 505.0 USD, NOT 0.0! */
+    assert(fabs(stk_nv - 50.0) < 1e-2);
+
+    /* 3. DEF-05: Transfer transaction direction & linked_asset_id */
+    int64_t from_asset_id = usd_acc_id;
+    int64_t to_asset_id = stk_id;
+    rc = mf_transfer_repo_insert_out_transaction(pool, user_id, from_asset_id, to_asset_id, 50.0, "USD", "2026-09-10", "Transfer out");
+    assert(rc == 0);
+    rc = mf_transfer_repo_insert_in_transaction(pool, user_id, to_asset_id, from_asset_id, 50.0, "USD", "2026-09-10", "Transfer in");
+    assert(rc == 0);
+
+    /* Verify out transaction has direction='out' and linked_asset_id=to_asset_id */
+    csilk_json_t* tx_out_res = csilk_db_query_param_json(
+        pool,
+        "SELECT direction, linked_asset_id FROM transactions WHERE user_id=? AND transaction_type='transfer_out'",
+        (const char*[]){uid_str, NULL});
+    assert(tx_out_res && csilk_json_array_size(tx_out_res) > 0);
+    const char* out_dir = csilk_json_get_string(csilk_json_array_get(tx_out_res, 0), "direction");
+    int64_t out_laid = db_get_int(csilk_json_array_get(tx_out_res, 0), "linked_asset_id");
+    assert(out_dir && strcmp(out_dir, "out") == 0);
+    assert(out_laid == to_asset_id);
+    csilk_json_free(tx_out_res);
+
+    /* Verify in transaction has direction='in' and linked_asset_id=from_asset_id */
+    csilk_json_t* tx_in_res = csilk_db_query_param_json(
+        pool,
+        "SELECT direction, linked_asset_id FROM transactions WHERE user_id=? AND transaction_type='transfer_in'",
+        (const char*[]){uid_str, NULL});
+    assert(tx_in_res && csilk_json_array_size(tx_in_res) > 0);
+    const char* in_dir = csilk_json_get_string(csilk_json_array_get(tx_in_res, 0), "direction");
+    int64_t in_laid = db_get_int(csilk_json_array_get(tx_in_res, 0), "linked_asset_id");
+    assert(in_dir && strcmp(in_dir, "in") == 0);
+    assert(in_laid == from_asset_id);
+    csilk_json_free(tx_in_res);
+
+    printf("  ✅ Multi-Currency Balance & Transfers passed\n");
+}
+
 int
 main(void)
 {
@@ -448,6 +680,7 @@ main(void)
     test_cashflow_repository(pool, user_id);
     test_market_repository(pool, user_id);
     test_ai_repository(pool, user_id, asset_id);
+    test_multi_currency_balance_and_transfers(pool, user_id);
 
     teardown_test_db(pool);
     printf("\nAll domain repository tests passed!\n");

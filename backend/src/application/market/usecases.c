@@ -139,7 +139,7 @@ market_usecase_do_sync_user(void* pool, int64_t user_id, int* out_synced, int* o
             mf_market_repo_update_asset_quote(pool, uid, aid, p_new);
             mf_market_repo_record_price_history(pool, aid, today, p_new, cur);
 
-            if (qty_val > 0 && old_nv > 0) {
+            if (qty_val > 0) {
                 price_t p_old;
                 price_from_double(old_nv, 4, cur, &p_old);
                 quantity_t qty;
@@ -260,7 +260,7 @@ market_usecase_sync_single(void*                    pool,
     get_today_str(today, sizeof(today));
     mf_market_repo_record_price_history(pool, asset_id, today, p_new, cur);
 
-    if (qty_val > 0 && old_nv > 0) {
+    if (qty_val > 0) {
         price_t p_old;
         price_from_double(old_nv, 4, cur, &p_old);
         quantity_t qty;

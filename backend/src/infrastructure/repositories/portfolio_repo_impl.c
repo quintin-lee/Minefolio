@@ -548,9 +548,7 @@ portfolio_repo_get_current_holdings_totals(void*   pool,
     if (ledger_id > 0) {
         snprintf(sql,
                  sizeof(sql),
-                 "SELECT COALESCE(SUM(quantity),0) as total_qty, "
-                 "COALESCE(SUM(cost_basis),0) as total_cost, "
-                 "COALESCE(SUM(current_value),0) as total_market "
+                 "SELECT a.quantity, a.cost_basis, a.current_value, a.currency "
                  "FROM assets a JOIN categories c ON a.category_id=c.id "
                  "WHERE a.user_id=? AND a.ledger_id=? AND c.asset_type IN "
                  "('stock','fund','bond','crypto')");
@@ -558,9 +556,7 @@ portfolio_repo_get_current_holdings_totals(void*   pool,
     } else {
         snprintf(sql,
                  sizeof(sql),
-                 "SELECT COALESCE(SUM(quantity),0) as total_qty, "
-                 "COALESCE(SUM(cost_basis),0) as total_cost, "
-                 "COALESCE(SUM(current_value),0) as total_market "
+                 "SELECT a.quantity, a.cost_basis, a.current_value, a.currency "
                  "FROM assets a JOIN categories c ON a.category_id=c.id "
                  "WHERE a.user_id=? AND c.asset_type IN ('stock','fund','bond','crypto')");
     }
@@ -568,16 +564,30 @@ portfolio_repo_get_current_holdings_totals(void*   pool,
 
     csilk_json_t* pos_rows = csilk_db_query_param_json((csilk_db_pool_t*)pool, sql, params);
 
-    if (pos_rows && csilk_json_array_size(pos_rows) > 0) {
-        const csilk_json_t* pr = csilk_json_array_get(pos_rows, 0);
-        *out_market = db_get_num(pr, "total_market");
-        *out_cost = db_get_num(pr, "total_cost");
-        *out_qty = db_get_num(pr, "total_qty");
+    if (pos_rows) {
+        size_t count = csilk_json_array_size(pos_rows);
+        double total_qty = 0.0;
+        double total_cost = 0.0;
+        double total_market = 0.0;
+
+        for (size_t i = 0; i < count; i++) {
+            const csilk_json_t* row = csilk_json_array_get(pos_rows, i);
+            double              q = db_get_num(row, "quantity");
+            double              c = db_get_num(row, "cost_basis");
+            double              m = db_get_num(row, "current_value");
+            const char*         cur = csilk_json_get_string(row, "currency");
+            double              fx = exchange_rate_get_to_cny(cur);
+
+            total_qty += q;
+            total_cost += (c * fx);
+            total_market += (m * fx);
+        }
+
+        *out_market = total_market;
+        *out_cost = total_cost;
+        *out_qty = total_qty;
         csilk_json_free(pos_rows);
         return 0;
-    }
-    if (pos_rows) {
-        csilk_json_free(pos_rows);
     }
     return -1;
 }

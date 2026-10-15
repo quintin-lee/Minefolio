@@ -16,7 +16,7 @@ mf_market_rule_calc_sync_delta(
         return 0;
     }
 
-    if (!decimal_is_positive(old_price.unit_price) || !decimal_is_positive(new_price.unit_price)) {
+    if (decimal_is_negative(old_price.unit_price) || !decimal_is_positive(new_price.unit_price)) {
         return 0;
     }
 

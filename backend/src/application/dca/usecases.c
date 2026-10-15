@@ -221,12 +221,27 @@ dca_usecase_confirm_execution(void*                              pool,
                                 ? cmd->executed_price
                                 : (target_net_val > 0.0 ? target_net_val : 1.0);
 
+    char target_id_str[32];
+    snprintf(target_id_str, sizeof(target_id_str), "%lld", (long long)target_asset_id);
+    csilk_json_t* cur_res = csilk_db_query_param_json(
+        pool, "SELECT currency FROM assets WHERE id=?", (const char*[]){target_id_str, NULL});
+    currency_t target_cur = CURRENCY_CNY;
+    if (cur_res && csilk_json_array_size(cur_res) > 0) {
+        const char* cstr = csilk_json_get_string(csilk_json_array_get(cur_res, 0), "currency");
+        if (cstr && cstr[0]) {
+            target_cur = currency_from_str(cstr);
+        }
+        csilk_json_free(cur_res);
+    } else if (cur_res) {
+        csilk_json_free(cur_res);
+    }
+
     /* Calculate quantity */
     money_t    actual_m;
     price_t    price_p;
     quantity_t qty_q;
-    money_from_double(actual_amount, CURRENCY_CNY, &actual_m);
-    price_from_double(executed_price, 4, CURRENCY_CNY, &price_p);
+    money_from_double(actual_amount, target_cur, &actual_m);
+    price_from_double(executed_price, 4, target_cur, &price_p);
     money_div_price(actual_m, price_p, 8, ROUND_HALF_UP, &qty_q);
     double executed_quantity = quantity_to_double(qty_q);
 
@@ -246,7 +261,7 @@ dca_usecase_confirm_execution(void*                              pool,
                        .amount = actual_m,
                        .price = price_p,
                        .quantity = qty_q,
-                       .fee = money_zero(CURRENCY_CNY),
+                       .fee = money_zero(target_cur),
                        .tx_date = tx_date,
                        .note = "定投计划自动买入",
                        .parent_tx_id = 0};

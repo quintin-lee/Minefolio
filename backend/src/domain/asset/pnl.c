@@ -26,13 +26,15 @@ mf_pnl_calculate(money_t cost_basis, money_t market_value, money_t realized_pnl)
     }
 
     percentage_t un_pct, tot_pct;
-    if (percentage_calc(pnl.unrealized_pnl, cost_basis, 4, ROUND_HALF_UP, &un_pct) == DECIMAL_OK) {
+    if (money_is_positive(cost_basis) &&
+        percentage_calc(pnl.unrealized_pnl, cost_basis, 4, ROUND_HALF_UP, &un_pct) == DECIMAL_OK) {
         pnl.unrealized_pct = percentage_to_double(un_pct);
     } else {
         pnl.unrealized_pct = 0.0;
     }
 
-    if (percentage_calc(pnl.total_pnl, cost_basis, 4, ROUND_HALF_UP, &tot_pct) == DECIMAL_OK) {
+    if (money_is_positive(cost_basis) &&
+        percentage_calc(pnl.total_pnl, cost_basis, 4, ROUND_HALF_UP, &tot_pct) == DECIMAL_OK) {
         pnl.total_return_pct = percentage_to_double(tot_pct);
     } else {
         pnl.total_return_pct = 0.0;

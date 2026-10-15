@@ -136,19 +136,13 @@ set(DATABASE_INFRA_SOURCES
     src/infrastructure/database/postgres/postgres_adapter.c
 )
 
+set(LIB_SOURCES ${SOURCES})
+list(FILTER LIB_SOURCES EXCLUDE REGEX "src/main.c$")
+
 function(add_financial_unit_test test_target test_source)
     add_executable(${test_target}
         ${test_source}
-        ${FINANCIAL_CORE_SOURCES}
-        ${DATABASE_INFRA_SOURCES}
-        src/core/ledger/ledger_engine.c
-        src/common/balance.c
-        src/common/tx_types.c
-        src/common/db.c
-        src/common/config.c
-        src/common/ledger_utils.c
-        src/config/secret.c
-        src/infrastructure/repositories/transaction_repo_impl.c
+        ${LIB_SOURCES}
     )
     target_include_directories(${test_target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_compile_options(${test_target} PRIVATE -UNDEBUG)
@@ -166,9 +160,6 @@ add_financial_unit_test(test_pnl tests/unit/test_pnl.c)
 add_financial_unit_test(test_fx tests/unit/test_fx.c)
 add_financial_unit_test(test_ledger_math tests/unit/test_ledger_math.c)
 add_financial_unit_test(test_ledger_engine tests/unit/test_ledger_engine.c)
-
-set(LIB_SOURCES ${SOURCES})
-list(FILTER LIB_SOURCES EXCLUDE REGEX "src/main.c$")
 
 add_executable(test_ai_tools tests/unit/test_ai_tools.c ${LIB_SOURCES})
 target_include_directories(test_ai_tools PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BASE="http://127.0.0.1:8080/api"
+PORT="${MINEFOLIO_PORT:-18086}"
+BASE="http://127.0.0.1:${PORT}/api"
 DB="/tmp/mf_trace_test.db"
 BUILD_DIR="$(cd "$(dirname "$0")/../build" && pwd)"
 PASS=0; FAIL=0
@@ -15,11 +16,11 @@ trap cleanup EXIT
 export TEST_JWT_SECRET="test-jwt-secret-for-trace-verification-1234567890"
 rm -f "$DB" "$DB-wal" "$DB-shm"
 cd "$BUILD_DIR"
-MINEFOLIO_PORT=8080 MINEFOLIO_DB_DSN="$DB" MINEFOLIO_JWT_SECRET="$TEST_JWT_SECRET" ./minefolio >/tmp/minefolio_trace_test.log 2>&1 &
+MINEFOLIO_PORT="${PORT}" MINEFOLIO_DB_DSN="$DB" MINEFOLIO_JWT_SECRET="$TEST_JWT_SECRET" ./minefolio >/tmp/minefolio_trace_test.log 2>&1 &
 SERVER_PID=$!
 
 for _i in $(seq 1 30); do
-  curl -sf http://127.0.0.1:8080/healthz >/dev/null 2>&1 && break
+  curl -sf "http://127.0.0.1:${PORT}/healthz" >/dev/null 2>&1 && break
   sleep 0.2
 done
 

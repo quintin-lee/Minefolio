@@ -24,8 +24,24 @@ void test_pnl_unrealized_and_total() {
     printf("PASS: test_pnl_unrealized_and_total\n");
 }
 
+void test_pnl_closed_position_zero_cost() {
+    /* DEF-08: Position completely closed: cost_basis=0, market=0, realized=500 */
+    money_t cost = m_make(0, CURRENCY_CNY);
+    money_t market = m_make(0, CURRENCY_CNY);
+    money_t realized = m_make(500, CURRENCY_CNY);
+
+    mf_pnl_t pnl = mf_pnl_calculate(cost, market, realized);
+    assert(money_to_double(pnl.unrealized_pnl) == 0.0);
+    assert(money_to_double(pnl.realized_pnl) == 500.0);
+    assert(money_to_double(pnl.total_pnl) == 500.0);
+    assert(pnl.unrealized_pct == 0.0);
+    assert(pnl.total_return_pct == 0.0);
+    printf("PASS: test_pnl_closed_position_zero_cost\n");
+}
+
 int main() {
     test_pnl_unrealized_and_total();
+    test_pnl_closed_position_zero_cost();
     printf("All domain pnl tests passed!\n");
     return 0;
 }

@@ -131,7 +131,6 @@ portfolio_usecase_get_performance(void*                        db_pool,
         int64_t asset_id;
         char    currency[16];
         double  total_qty;
-        double  cost_for_pnl;
         double  cost_basis;
     } asset_perf_tracker_t;
 
@@ -150,7 +149,6 @@ portfolio_usecase_get_performance(void*                        db_pool,
         const char*   type = csilk_json_get_string(row, "transaction_type");
         double        amt = db_get_num(row, "amount");
         double        fee = db_get_num(row, "fee");
-        const char*   dir = csilk_json_get_string(row, "direction");
         double        qty = db_get_num(row, "quantity");
         double        price = db_get_num(row, "price_per_unit");
         const char*   date_s = csilk_json_get_string(row, "transaction_date");
@@ -176,55 +174,65 @@ portfolio_usecase_get_performance(void*                        db_pool,
         }
         asset_perf_tracker_t* trk = (trk_idx >= 0) ? &trackers[trk_idx] : NULL;
 
-        int is_principal =
-            (type && (strcmp(type, "deposit") == 0 || strcmp(type, "withdrawal") == 0 ||
-                      strcmp(type, "transfer_in") == 0 || strcmp(type, "transfer_out") == 0));
-        if (!is_principal) {
-            if (dir && strcmp(dir, "in") == 0) {
-                total_gain += (amt * fx_rate);
-            } else {
-                total_loss += (amt * fx_rate);
-            }
-        }
-        total_trades++;
-
         double avg_cost = 0, realized = 0;
         if (type && strcmp(type, "buy") == 0 && qty > 0) {
+            total_trades++;
+            double buy_amt = (amt > 0) ? amt : (price * qty);
             if (trk) {
-                trk->cost_basis += (amt + fee);
-                trk->cost_for_pnl += amt;
+                trk->cost_basis += (buy_amt + fee);
                 trk->total_qty += qty;
-                avg_cost = (amt + fee) / qty;
+                avg_cost = (buy_amt + fee) / qty;
             } else {
-                avg_cost = price;
+                avg_cost = (buy_amt + fee) / qty;
             }
             realized = 0;
         } else if (type && strcmp(type, "sell") == 0 && qty > 0) {
+            total_trades++;
             double unit_cost =
-                (trk && trk->total_qty > 0) ? (trk->cost_for_pnl / trk->total_qty) : price;
+                (trk && trk->total_qty > 0) ? (trk->cost_basis / trk->total_qty) : price;
             avg_cost = unit_cost;
-            realized = (price - unit_cost) * qty - fee;
-            total_realized_pnl += (realized * fx_rate);
+
+            double cost_reduction = 0;
+            if (trk && trk->total_qty > 0) {
+                cost_reduction = (qty >= trk->total_qty) ? trk->cost_basis : (unit_cost * qty);
+            }
+            double sell_proceeds = ((amt > 0) ? amt : (price * qty)) - fee;
+            realized = sell_proceeds - cost_reduction;
+
+            double conv_realized = realized * fx_rate;
+            total_realized_pnl += conv_realized;
+            if (conv_realized >= 0) {
+                total_gain += conv_realized;
+            } else {
+                total_loss += (-conv_realized);
+            }
 
             if (trk) {
-                double cost_reduction =
-                    (trk->total_qty > 0) ? (trk->cost_basis / trk->total_qty) * qty : 0;
                 trk->cost_basis -= cost_reduction;
-                trk->cost_for_pnl -= (unit_cost * qty);
                 trk->total_qty -= qty;
-                if (trk->total_qty <= 0) {
+                if (trk->total_qty <= 0 || trk->cost_basis <= 0) {
                     trk->total_qty = 0;
-                    trk->cost_for_pnl = 0;
                     trk->cost_basis = 0;
                 }
             }
         } else if (type && (strcmp(type, "income") == 0 || strcmp(type, "dividend") == 0)) {
-            if (trk) {
-                trk->cost_for_pnl -= amt;
-            }
-            total_realized_pnl += (amt * fx_rate);
-            avg_cost = 0;
+            total_trades++;
             realized = amt;
+            double conv_realized = realized * fx_rate;
+            total_realized_pnl += conv_realized;
+            if (conv_realized >= 0) {
+                total_gain += conv_realized;
+            } else {
+                total_loss += (-conv_realized);
+            }
+            avg_cost = 0;
+        } else if (type && strcmp(type, "fee") == 0) {
+            total_trades++;
+            realized = -(amt > 0 ? amt : fee);
+            double conv_realized = realized * fx_rate;
+            total_realized_pnl += conv_realized;
+            total_loss += (-conv_realized);
+            avg_cost = 0;
         }
 
         csilk_json_t* trade = csilk_json_object();

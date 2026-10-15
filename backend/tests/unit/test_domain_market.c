@@ -32,6 +32,13 @@ static void test_market_sync_delta(void) {
     assert(rc == 0);
     assert(money_to_double(delta) == 0.0);
 
+    /* 4. DEF-06: Initial sync where old price is 0.0 -> delta = 100 * 2.5 = +250.0 */
+    price_from_double(0.0, 4, cny, &p_old);
+    quantity_from_double(100.0, 4, &q);
+    rc = mf_market_rule_calc_sync_delta(p_old, p_new, q, cny, &delta);
+    assert(rc == 0);
+    assert(money_to_double(delta) == 250.0);
+
     printf("PASS: test_market_sync_delta\n");
 }
 
