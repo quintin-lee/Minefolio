@@ -44,6 +44,14 @@
   --mf-info-light: rgba(2, 132, 199, 0.14);
   --mf-info-border: rgba(2, 132, 199, 0.3);
 
+  /* Investment Return Colors (Red for Positive Returns, Green for Negative Returns) */
+  --mf-gain: #f43f5e;
+  --mf-gain-light: rgba(244, 63, 94, 0.14);
+  --mf-gain-border: rgba(244, 63, 94, 0.3);
+  --mf-loss: #10b981;
+  --mf-loss-light: rgba(16, 185, 129, 0.14);
+  --mf-loss-border: rgba(16, 185, 129, 0.3);
+
   /* Spacing Scale (theme-independent) */
   --mf-spacing-md: 16px;
   --mf-spacing-lg: 24px;
@@ -204,6 +212,14 @@
   --mf-info: #0284c7;
   --mf-info-light: rgba(2, 132, 199, 0.1);
   --mf-info-border: rgba(2, 132, 199, 0.25);
+
+  /* Investment Return Colors (Red for Positive Returns, Green for Negative Returns) */
+  --mf-gain: #e11d48;
+  --mf-gain-light: rgba(225, 29, 72, 0.1);
+  --mf-gain-border: rgba(225, 29, 72, 0.25);
+  --mf-loss: #059669;
+  --mf-loss-light: rgba(5, 150, 105, 0.1);
+  --mf-loss-border: rgba(5, 150, 105, 0.25);
 
   /* Borders & Dividers */
   --mf-border: #e2e8f0;
@@ -991,40 +1007,68 @@ html.dark .el-popper.el-tooltip .el-popper__arrow::before {
 /* =========================================================================
    Financial Indicators & Utility Badges
    ========================================================================= */
-.income-text,
-.positive-text {
+.income-text {
   color: var(--mf-success) !important;
   font-weight: 600;
 }
 
-.expense-text,
-.negative-text {
+.expense-text {
   color: var(--mf-danger) !important;
   font-weight: 600;
 }
 
+.positive-text,
+.gain-text {
+  color: var(--mf-gain) !important;
+  font-weight: 600;
+}
+
+.negative-text,
+.loss-text {
+  color: var(--mf-loss) !important;
+  font-weight: 600;
+}
+
 [data-theme="light"] .income-text,
-[data-theme="light"] .positive-text,
-html.light .income-text,
-html.light .positive-text {
+html.light .income-text {
   text-shadow: none !important;
 }
 
 [data-theme="light"] .expense-text,
-[data-theme="light"] .negative-text,
-html.light .expense-text,
-html.light .negative-text {
+html.light .expense-text {
   text-shadow: none !important;
 }
 
-[data-theme="dark"] .income-text,
-[data-theme="dark"] .positive-text {
+[data-theme="light"] .positive-text,
+[data-theme="light"] .gain-text,
+html.light .positive-text,
+html.light .gain-text {
+  text-shadow: none !important;
+}
+
+[data-theme="light"] .negative-text,
+[data-theme="light"] .loss-text,
+html.light .negative-text,
+html.light .loss-text {
+  text-shadow: none !important;
+}
+
+[data-theme="dark"] .income-text {
   text-shadow: 0 0 8px rgba(52, 211, 153, 0.35);
 }
 
-[data-theme="dark"] .expense-text,
-[data-theme="dark"] .negative-text {
+[data-theme="dark"] .expense-text {
   text-shadow: 0 0 8px rgba(248, 113, 113, 0.3);
+}
+
+[data-theme="dark"] .positive-text,
+[data-theme="dark"] .gain-text {
+  text-shadow: 0 0 8px rgba(244, 63, 94, 0.3);
+}
+
+[data-theme="dark"] .negative-text,
+[data-theme="dark"] .loss-text {
+  text-shadow: 0 0 8px rgba(52, 211, 153, 0.35);
 }
 
 .neutral-text {
@@ -1082,16 +1126,18 @@ html.light .negative-text {
   line-height: 1;
 }
 
-.badge-pill.positive {
-  background-color: var(--mf-success-light);
-  color: var(--mf-success);
-  border: 1px solid var(--mf-success-border);
+.badge-pill.positive,
+.badge-pill.gain {
+  background-color: var(--mf-gain-light);
+  color: var(--mf-gain);
+  border: 1px solid var(--mf-gain-border);
 }
 
-.badge-pill.negative {
-  background-color: var(--mf-danger-light);
-  color: var(--mf-danger);
-  border: 1px solid var(--mf-danger-border);
+.badge-pill.negative,
+.badge-pill.loss {
+  background-color: var(--mf-loss-light);
+  color: var(--mf-loss);
+  border: 1px solid var(--mf-loss-border);
 }
 
 .badge-pill.warning {

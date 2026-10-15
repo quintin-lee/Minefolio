@@ -20,9 +20,9 @@ import { computed } from 'vue'
 const props = defineProps<{
   label: string
   value: string | number
-  type?: 'neutral' | 'income' | 'expense' | 'highlight'
+  type?: 'neutral' | 'income' | 'expense' | 'highlight' | 'gain' | 'loss'
   badge?: string
-  badgeType?: 'success' | 'danger' | 'warning' | 'primary' | 'neutral'
+  badgeType?: 'success' | 'danger' | 'warning' | 'primary' | 'neutral' | 'gain' | 'loss'
   subtext?: string
   extraClass?: string
 }>()
@@ -32,6 +32,8 @@ const typeClass = computed(() => {
     income: 'is-income',
     expense: 'is-expense',
     highlight: 'highlight-card',
+    gain: 'is-gain',
+    loss: 'is-loss',
   }
   return map[props.type ?? 'neutral'] ?? ''
 })
@@ -40,6 +42,8 @@ const glowClass = computed(() => {
   if (props.type === 'income') return 'glow-income'
   if (props.type === 'expense') return 'glow-expense'
   if (props.type === 'highlight') return 'glow-highlight'
+  if (props.type === 'gain') return 'glow-gain'
+  if (props.type === 'loss') return 'glow-loss'
   return 'glow-neutral'
 })
 
@@ -48,12 +52,14 @@ const valueClass = computed(() => {
     income: 'income-text',
     expense: 'expense-text',
     highlight: 'highlight-text',
+    gain: 'gain-text',
+    loss: 'loss-text',
   }
   return map[props.type ?? 'neutral'] ?? ''
 })
 
 const badgeClass = computed(() => {
-  const t = props.badgeType ?? (props.badge?.startsWith('+') ? 'success' : props.badge?.startsWith('-') ? 'danger' : 'neutral')
+  const t = props.badgeType ?? (props.badge?.startsWith('+') ? 'gain' : props.badge?.startsWith('-') ? 'loss' : 'neutral')
   return `badge-${t}`
 })
 
@@ -108,6 +114,8 @@ const badgeArrow = computed(() => {
 .glow-income { background: var(--mf-success); }
 .glow-expense { background: var(--mf-danger); }
 .glow-highlight { background: var(--mf-accent); }
+.glow-gain { background: var(--mf-gain); }
+.glow-loss { background: var(--mf-loss); }
 
 .card-header {
   display: flex;
@@ -145,6 +153,18 @@ const badgeArrow = computed(() => {
   background: var(--mf-danger-light);
   color: var(--mf-danger);
   border: 1px solid var(--mf-danger-border);
+}
+
+.badge-gain {
+  background: var(--mf-gain-light);
+  color: var(--mf-gain);
+  border: 1px solid var(--mf-gain-border);
+}
+
+.badge-loss {
+  background: var(--mf-loss-light);
+  color: var(--mf-loss);
+  border: 1px solid var(--mf-loss-border);
 }
 
 .badge-warning {

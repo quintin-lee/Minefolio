@@ -35,6 +35,8 @@ export interface MfChartPalette {
   success: string
   danger: string
   warning: string
+  gain: string
+  loss: string
 }
 
 /** Last-resort fallbacks (dark palette) used when a token is missing. */
@@ -57,6 +59,8 @@ const DEFAULTS: Omit<MfChartPalette, 'isLight'> = {
   success: '#10b981',
   danger: '#f43f5e',
   warning: '#f59e0b',
+  gain: '#f43f5e',
+  loss: '#10b981',
 }
 
 /**
@@ -90,6 +94,8 @@ export function resolveChartPalette(): MfChartPalette {
     success: get('success', DEFAULTS.success),
     danger: get('danger', DEFAULTS.danger),
     warning: get('warning', DEFAULTS.warning),
+    gain: get('gain', DEFAULTS.gain),
+    loss: get('loss', DEFAULTS.loss),
   }
 }
 

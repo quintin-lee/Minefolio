@@ -692,10 +692,10 @@ onMounted(() => {
 }
 
 .profit-badge.hit {
-  background: var(--mf-success-light);
-  color: var(--mf-success);
+  background: var(--mf-gain-light);
+  color: var(--mf-gain);
   font-weight: 700;
-  border: 1px solid var(--mf-success-border);
+  border: 1px solid var(--mf-gain-border);
 }
 
 .profit-badge.tracking {

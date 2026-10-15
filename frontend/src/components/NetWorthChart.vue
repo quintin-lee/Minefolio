@@ -89,7 +89,7 @@ function updateChart() {
         const diff = item.value - firstVal
         const diffPct = firstVal !== 0 ? ((diff / Math.abs(firstVal)) * 100).toFixed(2) : '0.00'
         const sign = diff >= 0 ? '+' : ''
-        const diffColor = diff >= 0 ? P.success : P.danger
+        const diffColor = diff >= 0 ? P.gain : P.loss
         return `<div style="font-size:12px;color:${P.textMuted};margin-bottom:4px;font-family:var(--mf-font-mono)">${item.name}</div>
                 <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px">
                   <span style="font-weight:700;font-family:var(--mf-font-mono);font-size:15px;color:${P.textMain}">${val}</span>

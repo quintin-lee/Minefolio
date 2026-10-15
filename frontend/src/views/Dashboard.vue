@@ -505,15 +505,15 @@ onMounted(loadDashboard)
 }
 
 .trend-up {
-  background: var(--mf-success-light);
-  color: var(--mf-success);
-  border: 1px solid var(--mf-success-border);
+  background: var(--mf-gain-light);
+  color: var(--mf-gain);
+  border: 1px solid var(--mf-gain-border);
 }
 
 .trend-down {
-  background: var(--mf-danger-light);
-  color: var(--mf-danger);
-  border: 1px solid var(--mf-danger-border);
+  background: var(--mf-loss-light);
+  color: var(--mf-loss);
+  border: 1px solid var(--mf-loss-border);
 }
 
 .hero-amount-row {

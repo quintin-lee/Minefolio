@@ -114,27 +114,27 @@
                     </div>
                     <div class="perf-item">
                       <div class="perf-label">总收益</div>
-                      <div class="perf-value income-text">{{ formatCurrency(perf?.total_gain ?? 0) }}</div>
+                      <div class="perf-value gain-text">{{ formatCurrency(perf?.total_gain ?? 0) }}</div>
                     </div>
                     <div class="perf-item">
                       <div class="perf-label">总亏损</div>
-                      <div class="perf-value expense-text">{{ formatCurrency(perf?.total_loss ?? 0) }}</div>
+                      <div class="perf-value loss-text">{{ formatCurrency(perf?.total_loss ?? 0) }}</div>
                     </div>
                     <div class="perf-item highlight">
                       <div class="perf-label">净收益</div>
-                      <div class="perf-value" :class="(perf?.net_gain ?? 0) >= 0 ? 'income-text' : 'expense-text'">
+                      <div class="perf-value" :class="(perf?.net_gain ?? 0) >= 0 ? 'gain-text' : 'loss-text'">
                         {{ formatCurrency(perf?.net_gain ?? 0) }}
                       </div>
                     </div>
                     <div class="perf-item">
                       <div class="perf-label">已实现盈亏</div>
-                      <div class="perf-value" :class="((perf?.realized_pnl ?? 0) >= 0 ? 'income-text' : 'expense-text')">
+                      <div class="perf-value" :class="((perf?.realized_pnl ?? 0) >= 0 ? 'gain-text' : 'loss-text')">
                         {{ formatCurrency(perf?.realized_pnl ?? 0) }}
                       </div>
                     </div>
                     <div class="perf-item">
                       <div class="perf-label">浮动盈亏</div>
-                      <div class="perf-value" :class="((perf?.floating_pnl ?? 0) >= 0 ? 'income-text' : 'expense-text')">
+                      <div class="perf-value" :class="((perf?.floating_pnl ?? 0) >= 0 ? 'gain-text' : 'loss-text')">
                         {{ formatCurrency(perf?.floating_pnl ?? 0) }}
                       </div>
                     </div>
@@ -235,19 +235,19 @@
               </div>
               <div class="metric-card">
                 <div class="metric-label">资产自身价格盈亏</div>
-                <div class="metric-value" :class="fxPnlData.total_asset_pnl_base >= 0 ? 'income-text' : 'expense-text'">
+                <div class="metric-value" :class="fxPnlData.total_asset_pnl_base >= 0 ? 'gain-text' : 'loss-text'">
                   {{ fxPnlData.total_asset_pnl_base >= 0 ? '+' : '' }}{{ formatCurrency(fxPnlData.total_asset_pnl_base) }}
                 </div>
               </div>
               <div class="metric-card highlight">
                 <div class="metric-label">纯汇率波动损益 (FX PnL)</div>
-                <div class="metric-value" :class="fxPnlData.total_fx_pnl_base >= 0 ? 'income-text' : 'expense-text'">
+                <div class="metric-value" :class="fxPnlData.total_fx_pnl_base >= 0 ? 'gain-text' : 'loss-text'">
                   {{ fxPnlData.total_fx_pnl_base >= 0 ? '+' : '' }}{{ formatCurrency(fxPnlData.total_fx_pnl_base) }}
                 </div>
               </div>
               <div class="metric-card">
                 <div class="metric-label">综合总盈亏 (CNY)</div>
-                <div class="metric-value" :class="fxPnlData.total_combined_pnl_base >= 0 ? 'income-text' : 'expense-text'">
+                <div class="metric-value" :class="fxPnlData.total_combined_pnl_base >= 0 ? 'gain-text' : 'loss-text'">
                   {{ fxPnlData.total_combined_pnl_base >= 0 ? '+' : '' }}{{ formatCurrency(fxPnlData.total_combined_pnl_base) }}
                 </div>
               </div>
@@ -275,21 +275,21 @@
                 </el-table-column>
                 <el-table-column prop="asset_pnl_base" label="资产标的盈亏 (¥)" width="130" align="right">
                   <template #default="{ row }">
-                    <span :class="row.asset_pnl_base >= 0 ? 'income-text' : 'expense-text'">
+                    <span :class="row.asset_pnl_base >= 0 ? 'gain-text' : 'loss-text'">
                       {{ row.asset_pnl_base >= 0 ? '+' : '' }}{{ Number(row.asset_pnl_base).toFixed(2) }}
                     </span>
                   </template>
                 </el-table-column>
                 <el-table-column prop="fx_pnl_base" label="汇率波动损益 (¥)" width="130" align="right">
                   <template #default="{ row }">
-                    <span :class="row.fx_pnl_base >= 0 ? 'income-text' : 'expense-text'">
+                    <span :class="row.fx_pnl_base >= 0 ? 'gain-text' : 'loss-text'">
                       {{ row.fx_pnl_base >= 0 ? '+' : '' }}{{ Number(row.fx_pnl_base).toFixed(2) }}
                     </span>
                   </template>
                 </el-table-column>
                 <el-table-column prop="combined_pnl_base" label="综合总回报 (¥)" width="130" align="right">
                   <template #default="{ row }">
-                    <span :class="row.combined_pnl_base >= 0 ? 'income-text' : 'expense-text'">
+                    <span :class="row.combined_pnl_base >= 0 ? 'gain-text' : 'loss-text'">
                       {{ row.combined_pnl_base >= 0 ? '+' : '' }}{{ Number(row.combined_pnl_base).toFixed(2) }}
                     </span>
                   </template>

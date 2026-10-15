@@ -61,7 +61,7 @@ const summary = ref({ total_market_value: 0, total_cost_basis: 0, total_floating
 const holdings = ref<{ asset_id: number; name: string; asset_type: string; currency: string; quantity: number; net_value: number; cost_basis: number; current_value: number; floating_pnl: number; floating_pct: number; realized_pnl: number }[]>([])
 
 function pnlClass(v: number) {
-  return v > 0 ? 'income' : v < 0 ? 'expense' : ''
+  return v > 0 ? 'gain' : v < 0 ? 'loss' : ''
 }
 function pnlCardClass(v: number) {
   if (v > 0) return 'profit'
@@ -112,12 +112,12 @@ onMounted(async () => {
   flex-direction: column;
   gap: 4px;
 }
-.kpi-card.profit { border-color: rgba(52, 211, 153, 0.35); background: rgba(52, 211, 153, 0.06); }
-.kpi-card.loss { border-color: rgba(239, 68, 68, 0.35); background: rgba(239, 68, 68, 0.06); }
+.kpi-card.profit { border-color: rgba(244, 63, 94, 0.35); background: rgba(244, 63, 94, 0.06); }
+.kpi-card.loss { border-color: rgba(16, 185, 129, 0.35); background: rgba(16, 185, 129, 0.06); }
 .kpi-card .label { color: var(--mf-text-muted); font-size: 11px; }
 .kpi-card .value { font-family: 'JetBrains Mono', monospace; font-size: 14px; }
-.kpi-card.profit .value { color: var(--mf-success); }
-.kpi-card.loss .value { color: var(--mf-danger); }
+.kpi-card.profit .value { color: var(--mf-gain); }
+.kpi-card.loss .value { color: var(--mf-loss); }
 
 .holding-card {
   background: var(--mf-surface);
@@ -179,8 +179,8 @@ onMounted(async () => {
   color: var(--mf-text-muted);
   font-family: 'JetBrains Mono', monospace;
 }
-.pnl.income { color: var(--mf-success); }
-.pnl.expense { color: var(--mf-danger); }
+.pnl.gain { color: var(--mf-gain); }
+.pnl.loss { color: var(--mf-loss); }
 .empty-state {
   text-align: center;
   color: var(--mf-text-muted);

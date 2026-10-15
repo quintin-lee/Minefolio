@@ -19,9 +19,9 @@
         <SummaryCard
           label="总浮动盈亏"
           :value="formatSigned(report?.summary.total_floating_pnl ?? 0)"
-          :type="(report?.summary.total_floating_pnl ?? 0) > 0 ? 'income' : (report?.summary.total_floating_pnl ?? 0) < 0 ? 'expense' : 'neutral'"
+          :type="(report?.summary.total_floating_pnl ?? 0) > 0 ? 'gain' : (report?.summary.total_floating_pnl ?? 0) < 0 ? 'loss' : 'neutral'"
           :badge="`${(report?.summary.floating_pct ?? 0) >= 0 ? '+' : ''}${(report?.summary.floating_pct ?? 0).toFixed(2)}%`"
-          :badgeType="(report?.summary.total_floating_pnl ?? 0) >= 0 ? 'success' : 'danger'"
+          :badgeType="(report?.summary.total_floating_pnl ?? 0) >= 0 ? 'gain' : 'loss'"
           :extraClass="floatCardClass"
         />
         <el-progress
@@ -36,8 +36,8 @@
         <SummaryCard
           label="总已实现盈亏"
           :value="formatSigned(report?.summary.total_realized_pnl ?? 0)"
-          :type="(report?.summary.total_realized_pnl ?? 0) > 0 ? 'income' : (report?.summary.total_realized_pnl ?? 0) < 0 ? 'expense' : 'neutral'"
-          :badgeType="(report?.summary.total_realized_pnl ?? 0) >= 0 ? 'success' : 'danger'"
+          :type="(report?.summary.total_realized_pnl ?? 0) > 0 ? 'gain' : (report?.summary.total_realized_pnl ?? 0) < 0 ? 'loss' : 'neutral'"
+          :badgeType="(report?.summary.total_realized_pnl ?? 0) >= 0 ? 'gain' : 'loss'"
         />
       </el-col>
     </el-row>
@@ -205,7 +205,7 @@ function typePillClass(t: string): string {
   return t === 'crypto' ? 'pill-crypto' : 'pill-default'
 }
 function pnlClass(v: number): string {
-  return v > 0 ? 'income-text' : v < 0 ? 'expense-text' : ''
+  return v > 0 ? 'gain-text' : v < 0 ? 'loss-text' : ''
 }
 
 const floatCardClass = computed(() => {
@@ -217,7 +217,7 @@ const floatCardClass = computed(() => {
 
 const floatPnlColor = computed(() => {
   const pnl = report.value?.summary.total_floating_pnl ?? 0
-  return pnl >= 0 ? '#10b981' : '#ef4444'
+  return pnl >= 0 ? '#ef4444' : '#10b981'
 })
 
 function toCnyValue(val: number, cur?: string): number {
@@ -330,12 +330,12 @@ onMounted(() => {
   margin-top: 16px;
 }
 .profit-card {
-  background: var(--mf-success-light);
-  border-color: var(--mf-success-border);
+  background: var(--mf-gain-light);
+  border-color: var(--mf-gain-border);
 }
 .loss-card {
-  background: var(--mf-danger-light);
-  border-color: var(--mf-danger-border);
+  background: var(--mf-loss-light);
+  border-color: var(--mf-loss-border);
 }
 .symbol-cell {
   display: flex;
