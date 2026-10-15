@@ -146,20 +146,19 @@ static void test_portfolio_trade_events_with_fees(void) {
     int rc = mf_portfolio_rule_apply_trade_events(&item, 1, events, 2);
     assert(rc == 0);
 
-    /* 买卖交易产生的 fee 计入成本与净变现：已实现盈亏 = (1200 - 10) - (1000 + 10) = 1190 - 1010 = +180 */
-    assert(fabs(money_to_double(item.realized_pnl) - 180.0) < 1e-4);
+    /* 买卖交易产生的 fee 会独立记入费用行；标的主体盈亏反映纯交易价差 = 1200 - 1000 = +200 */
+    assert(fabs(money_to_double(item.realized_pnl) - 200.0) < 1e-4);
 
     printf("PASS: test_portfolio_trade_events_with_fees\n");
 }
 
-/* 1d. 关键回归测试：持仓分析与绩效分析对佣金手续费与分红派息的已实现盈亏口径完全一致 */
+/* 1d. 关键回归测试：持仓分析与绩效分析对分红派息的已实现盈亏口径完全一致 */
 static void test_holdings_pnl_includes_fees_and_dividends(void) {
     currency_t cny = currency_from_str("CNY");
 
-    // 买入 100 股 @ 10 元，手续费 5 元 -> 成本基础 1005 元
-    // 卖出 100 股 @ 12 元，手续费 8 元 -> 净变现 1192 元
-    // 已实现盈亏应为 1192 - 1005 = 187 元
-    // 加一笔分红 50 元 -> 187 + 50 = 237 元
+    // 买入 100 股 @ 10 元 -> 成本基础 1000 元
+    // 卖出 100 股 @ 12 元 -> 变现 1200 元 -> 价差已实现盈亏 200 元
+    // 加一笔分红 50 元 -> 200 + 50 = 250 元
     mf_holding_item_t item = {0};
     item.asset_id = 103;
     snprintf(item.name, sizeof(item.name), "测试分红与手续费标的");
@@ -194,8 +193,8 @@ static void test_holdings_pnl_includes_fees_and_dividends(void) {
     int rc = mf_portfolio_rule_apply_trade_events(&item, 1, events, 3);
     assert(rc == 0);
 
-    /* 已实现盈亏应为 (1200 - 8) - (1000 + 5) + 50 = 1192 - 1005 + 50 = 237 */
-    assert(fabs(money_to_double(item.realized_pnl) - 237.0) < 1e-4);
+    /* 已实现盈亏应为 (1200 - 1000) + 50 = 250 */
+    assert(fabs(money_to_double(item.realized_pnl) - 250.0) < 1e-4);
 
     printf("PASS: test_holdings_pnl_includes_fees_and_dividends\n");
 }

@@ -62,9 +62,7 @@ mf_portfolio_rule_apply_trade_events(mf_holding_item_t*                items,
             pnl_acc_t* acc = &accs[found_idx];
 
             if (strcmp(ev->type, "buy") == 0) {
-                money_t buy_cost = ev->amount;
-                money_add(buy_cost, ev->fee, &buy_cost);
-                money_add(acc->cost_for_pnl, buy_cost, &acc->cost_for_pnl);
+                money_add(acc->cost_for_pnl, ev->amount, &acc->cost_for_pnl);
                 quantity_add(acc->qty, ev->quantity, &acc->qty);
             } else if (strcmp(ev->type, "sell") == 0) {
                 if (quantity_is_positive(acc->qty)) {
@@ -86,10 +84,8 @@ mf_portfolio_rule_apply_trade_events(mf_holding_item_t*                items,
                             }
                         }
                     }
-                    money_t proceeds = ev->amount;
-                    money_sub(proceeds, ev->fee, &proceeds);
                     money_t trade_realized;
-                    money_sub(proceeds, sold_cost, &trade_realized);
+                    money_sub(ev->amount, sold_cost, &trade_realized);
                     money_add(acc->realized, trade_realized, &acc->realized);
 
                     /* 扣减份额与成本池（清仓时直接置零，彻底消除浮点微小残差） */
@@ -103,12 +99,7 @@ mf_portfolio_rule_apply_trade_events(mf_holding_item_t*                items,
                 }
             } else if (strcmp(ev->type, "income") == 0 || strcmp(ev->type, "dividend") == 0 ||
                        strcmp(ev->type, "interest") == 0) {
-                money_t net_inc = ev->amount;
-                money_sub(net_inc, ev->fee, &net_inc);
-                money_add(acc->realized, net_inc, &acc->realized);
-            } else if (strcmp(ev->type, "fee") == 0) {
-                money_t fee_amt = money_is_positive(ev->fee) ? ev->fee : ev->amount;
-                money_sub(acc->realized, fee_amt, &acc->realized);
+                money_add(acc->realized, ev->amount, &acc->realized);
             }
         }
     }

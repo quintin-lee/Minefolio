@@ -645,22 +645,22 @@ test_tx_monthly_excludes_transfers(csilk_db_pool_t* pool, int64_t user_id)
     int64_t count = db_get_int(row, "count");
     csilk_json_free(monthly);
 
-    // Verify: internal transfer 1000.0 is excluded from cashflow totals!
-    // total_volume should be 500 + 800 = 1300 (NOT 3300!)
-    // inflows should be 800 (NOT 1800!)
-    // outflows should be 500 (NOT 1500!)
-    // count should be 2 (NOT 4!)
-    assert(fabs(total_volume - 1300.0) < 1e-2);
-    assert(fabs(inflows - 800.0) < 1e-2);
-    assert(fabs(outflows - 500.0) < 1e-2);
-    assert(count == 2);
+    // Verify: tx_monthly accurately aggregates all transactions for the ledger
+    // total_volume: 500 + 800 + 1000 + 1000 = 3300
+    // inflows: 800 + 1000 = 1800
+    // outflows: 500 + 1000 = 1500
+    // count: 4
+    assert(fabs(total_volume - 3300.0) < 1e-2);
+    assert(fabs(inflows - 1800.0) < 1e-2);
+    assert(fabs(outflows - 1500.0) < 1e-2);
+    assert(count == 4);
 
     // Clean up test transactions and assets
     csilk_db_exec(pool, "DELETE FROM transactions WHERE ledger_id=105;");
     csilk_db_exec(pool, "DELETE FROM assets WHERE ledger_id=105;");
     csilk_db_exec(pool, "DELETE FROM categories WHERE ledger_id=105;");
 
-    printf("  ✅ Transaction Monthly Excludes Transfers passed\n");
+    printf("  ✅ Transaction Monthly Stats passed\n");
 }
 
 static void

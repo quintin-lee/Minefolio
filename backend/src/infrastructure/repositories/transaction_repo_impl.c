@@ -418,7 +418,6 @@ tx_monthly(csilk_db_pool_t* pool, int64_t user_id, int64_t ledger_id, const char
             "COALESCE(SUM(CASE WHEN direction='out' THEN amount ELSE 0 END),0) AS outflows, "
             "COUNT(*) AS count FROM transactions "
             "WHERE user_id=? AND ledger_id=? "
-            "AND transaction_type NOT IN ('transfer_in', 'transfer_out') "
             "AND CAST(transaction_date AS TEXT) LIKE ?",
             (const char*[]){uid, lid, pattern, NULL});
     }
@@ -429,7 +428,6 @@ tx_monthly(csilk_db_pool_t* pool, int64_t user_id, int64_t ledger_id, const char
         "COALESCE(SUM(CASE WHEN direction='out' THEN amount ELSE 0 END),0) AS outflows, "
         "COUNT(*) AS count FROM transactions "
         "WHERE user_id=? "
-        "AND transaction_type NOT IN ('transfer_in', 'transfer_out') "
         "AND CAST(transaction_date AS TEXT) LIKE ?",
         (const char*[]){uid, pattern, NULL});
 }
