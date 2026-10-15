@@ -239,7 +239,7 @@
         </div>
 
         <button
-          v-show="showScrollBottomBtn"
+          v-show="chat.messages.length > 0 && showScrollBottomBtn"
           class="scroll-bottom-btn"
           ref="scrollBtnRef"
           title="回到底部"

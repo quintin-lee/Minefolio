@@ -103,14 +103,16 @@ const starters = [
   display: flex;
   flex-direction: column;
   align-items: center;
-  max-width: 860px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   margin: 0 auto;
-  padding: 36px 16px 48px;
+  padding: 24px 0 32px;
 }
 
 .starters-header {
   text-align: center;
-  margin-bottom: 32px;
+  margin-bottom: 24px;
 }
 
 .sparkle-icon-wrap {
