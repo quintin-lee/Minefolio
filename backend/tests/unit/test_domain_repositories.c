@@ -18,6 +18,8 @@
 #include "application/transaction/commands.h"
 #include "application/transaction/usecases.h"
 #include "application/transfer/usecases.h"
+#include "application/daily_expense/commands.h"
+#include "application/daily_expense/usecases.h"
 #include "common/balance.h"
 
 #include "core/financial/currency.h"
@@ -1057,6 +1059,71 @@ test_multi_currency_balance_and_transfers(csilk_db_pool_t* pool, int64_t user_id
     printf("  ✅ Multi-Currency Balance & Transfers passed\n");
 }
 
+static void
+test_daily_expense_multi_currency_totals(csilk_db_pool_t* pool, int64_t user_id, int64_t asset_id)
+{
+    printf("Testing Daily Expense Multi-Currency Monthly Totals...\n");
+
+    /* Create a category for daily expenses */
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    csilk_json_t* ins_cat = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO categories (user_id, name, type, ledger_id) VALUES (?, 'Dining Out', 'expense', 0) RETURNING id",
+        (const char*[]){uid_str, NULL});
+    assert(ins_cat && csilk_json_array_size(ins_cat) > 0);
+    int64_t cat_id = db_get_int(csilk_json_array_get(ins_cat, 0), "id");
+    csilk_json_free(ins_cat);
+
+    /* 录入一笔 100 CNY 支出和一笔 10 USD 支出 (USD->CNY 汇率 7.20) */
+    create_daily_expense_cmd_t cmd1 = {
+        .user_id = user_id,
+        .ledger_id = 0,
+        .category_id = cat_id,
+        .asset_id = asset_id,
+        .expense_type = "expense",
+        .amount = 100.0,
+        .currency = "CNY",
+        .expense_date = "2026-10-15",
+        .note = "CNY dinner"
+    };
+    create_daily_expense_cmd_t cmd2 = {
+        .user_id = user_id,
+        .ledger_id = 0,
+        .category_id = cat_id,
+        .asset_id = asset_id,
+        .expense_type = "expense",
+        .amount = 10.0,
+        .currency = "USD",
+        .expense_date = "2026-10-16",
+        .note = "USD coffee"
+    };
+    daily_expense_usecase_result_t out_res1 = {0};
+    daily_expense_usecase_result_t out_res2 = {0};
+    int rc1 = daily_expense_usecase_create(pool, &cmd1, NULL, &out_res1);
+    assert(rc1 == 0 && out_res1.code == 0);
+    int rc2 = daily_expense_usecase_create(pool, &cmd2, NULL, &out_res2);
+    assert(rc2 == 0 && out_res2.code == 0);
+
+    /* 查询 2026-10 月度收支统计 */
+    daily_expense_monthly_result_t m_res = {0};
+    csilk_json_t* by_cat = NULL;
+    csilk_json_t* by_tag = NULL;
+    csilk_json_t* daily = NULL;
+    int rc = daily_expense_usecase_monthly(pool, user_id, 0, 2026, 10, &m_res, &by_cat, &by_tag, &daily);
+    assert(rc == 0);
+
+    /* 预期合计支出折算为 100 + 10 * 7.20 = 172.0 CNY，而不是 110.0 */
+    printf("  total_expense = %.2f (expected 172.00)\n", m_res.total_expense);
+    assert(fabs(m_res.total_expense - 172.0) < 0.1);
+
+    if (by_cat) csilk_json_free(by_cat);
+    if (by_tag) csilk_json_free(by_tag);
+    if (daily) csilk_json_free(daily);
+
+    printf("  ✅ Daily Expense Multi-Currency Monthly Totals passed\n");
+}
+
 int
 main(void)
 {
@@ -1081,6 +1148,7 @@ main(void)
     test_market_repository(pool, user_id);
     test_ai_repository(pool, user_id, asset_id);
     test_multi_currency_balance_and_transfers(pool, user_id);
+    test_daily_expense_multi_currency_totals(pool, user_id, asset_id);
 
     teardown_test_db(pool);
     printf("\nAll domain repository tests passed!\n");

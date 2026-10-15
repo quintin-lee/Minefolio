@@ -12,6 +12,7 @@
 #include "core/financial/money.h"
 #include "core/financial/currency.h"
 #include "core/ledger/ledger_engine.h"
+#include "services/market/exchange_rate_service.h"
 #include "common/db.h"
 #include "common/response.h"
 #include <stdio.h>
@@ -140,22 +141,210 @@ daily_expense_usecase_monthly(void*                           pool,
     char date_pattern[32];
     snprintf(date_pattern, sizeof(date_pattern), "%lld-%02d-%%", (long long)year, (int)month);
 
+    /* 1. Monthly totals with currency conversion to base currency (CNY) */
     csilk_json_t* totals =
         mf_daily_expense_repo_monthly_totals(pool, user_id, ledger_id, date_pattern);
-    if (totals && csilk_json_array_size(totals) > 0) {
-        const csilk_json_t* tr = csilk_json_array_get(totals, 0);
-        out_res->total_income = db_get_num(tr, "total_income");
-        out_res->total_expense = db_get_num(tr, "total_expense");
-        out_res->balance = out_res->total_income - out_res->total_expense;
-    }
+    double total_income = 0.0;
+    double total_expense = 0.0;
     if (totals) {
+        size_t n = csilk_json_array_size(totals);
+        for (size_t i = 0; i < n; i++) {
+            const csilk_json_t* tr = csilk_json_array_get(totals, i);
+            const char*         type = csilk_json_get_string(tr, "expense_type");
+            const char*         cur = csilk_json_get_string(tr, "currency");
+            double              amt = db_get_num(tr, "amount") * exchange_rate_get_to_cny(cur);
+            if (type && strcmp(type, "income") == 0) {
+                total_income += amt;
+            } else if (type && strcmp(type, "expense") == 0) {
+                total_expense += amt;
+            }
+        }
         csilk_json_free(totals);
     }
+    out_res->total_income = total_income;
+    out_res->total_expense = total_expense;
+    out_res->balance = total_income - total_expense;
 
-    *out_by_category =
+    /* 2. By category breakdown with currency conversion */
+    csilk_json_t* cat_rows =
         mf_daily_expense_repo_monthly_by_category(pool, user_id, ledger_id, date_pattern);
-    *out_by_tag = mf_daily_expense_repo_monthly_by_tag(pool, user_id, ledger_id, date_pattern);
-    *out_daily = mf_daily_expense_repo_monthly_daily(pool, user_id, ledger_id, date_pattern);
+    csilk_json_t* cat_arr = csilk_json_array();
+    if (cat_rows) {
+        size_t n = csilk_json_array_size(cat_rows);
+        typedef struct {
+            char   name[128];
+            char   expense_type[32];
+            double amount;
+        } cat_item_t;
+        cat_item_t cats[128];
+        int        cat_count = 0;
+        for (size_t i = 0; i < n; i++) {
+            const csilk_json_t* r = csilk_json_array_get(cat_rows, i);
+            const char*         cname = csilk_json_get_string(r, "category_name");
+            const char*         type = csilk_json_get_string(r, "expense_type");
+            const char*         cur = csilk_json_get_string(r, "currency");
+            double              amt = db_get_num(r, "amount") * exchange_rate_get_to_cny(cur);
+            if (!cname || !type) {
+                continue;
+            }
+            int found = -1;
+            for (int k = 0; k < cat_count; k++) {
+                if (strcmp(cats[k].name, cname) == 0 && strcmp(cats[k].expense_type, type) == 0) {
+                    found = k;
+                    break;
+                }
+            }
+            if (found >= 0) {
+                cats[found].amount += amt;
+            } else if (cat_count < 128) {
+                strncpy(cats[cat_count].name, cname, sizeof(cats[0].name) - 1);
+                cats[cat_count].name[sizeof(cats[0].name) - 1] = '\0';
+                strncpy(cats[cat_count].expense_type, type, sizeof(cats[0].expense_type) - 1);
+                cats[cat_count].expense_type[sizeof(cats[0].expense_type) - 1] = '\0';
+                cats[cat_count].amount = amt;
+                cat_count++;
+            }
+        }
+        csilk_json_free(cat_rows);
+
+        /* Sort categories descending by amount */
+        for (int i = 0; i < cat_count - 1; i++) {
+            for (int j = i + 1; j < cat_count; j++) {
+                if (cats[j].amount > cats[i].amount) {
+                    cat_item_t tmp = cats[i];
+                    cats[i] = cats[j];
+                    cats[j] = tmp;
+                }
+            }
+        }
+        for (int k = 0; k < cat_count; k++) {
+            csilk_json_t* item = csilk_json_object();
+            csilk_json_add_string(item, "category_name", cats[k].name);
+            csilk_json_add_string(item, "name", cats[k].name);
+            csilk_json_add_string(item, "expense_type", cats[k].expense_type);
+            csilk_json_add_number(item, "amount", cats[k].amount);
+            csilk_json_array_append(cat_arr, item);
+        }
+    }
+    *out_by_category = cat_arr;
+
+    /* 3. By tag breakdown with currency conversion */
+    csilk_json_t* tag_rows =
+        mf_daily_expense_repo_monthly_by_tag(pool, user_id, ledger_id, date_pattern);
+    csilk_json_t* tag_arr = csilk_json_array();
+    if (tag_rows) {
+        size_t n = csilk_json_array_size(tag_rows);
+        typedef struct {
+            char    name[128];
+            double  amount;
+            int64_t count;
+        } tag_item_t;
+        tag_item_t tags[128];
+        int        tag_count = 0;
+        for (size_t i = 0; i < n; i++) {
+            const csilk_json_t* r = csilk_json_array_get(tag_rows, i);
+            const char*         tname = csilk_json_get_string(r, "tag_name");
+            const char*         cur = csilk_json_get_string(r, "currency");
+            double              amt = db_get_num(r, "amount") * exchange_rate_get_to_cny(cur);
+            int64_t             cnt = db_get_int(r, "count");
+            if (!tname) {
+                continue;
+            }
+            int found = -1;
+            for (int k = 0; k < tag_count; k++) {
+                if (strcmp(tags[k].name, tname) == 0) {
+                    found = k;
+                    break;
+                }
+            }
+            if (found >= 0) {
+                tags[found].amount += amt;
+                tags[found].count += cnt;
+            } else if (tag_count < 128) {
+                strncpy(tags[tag_count].name, tname, sizeof(tags[0].name) - 1);
+                tags[tag_count].name[sizeof(tags[0].name) - 1] = '\0';
+                tags[tag_count].amount = amt;
+                tags[tag_count].count = cnt;
+                tag_count++;
+            }
+        }
+        csilk_json_free(tag_rows);
+
+        /* Sort tags descending by amount */
+        for (int i = 0; i < tag_count - 1; i++) {
+            for (int j = i + 1; j < tag_count; j++) {
+                if (tags[j].amount > tags[i].amount) {
+                    tag_item_t tmp = tags[i];
+                    tags[i] = tags[j];
+                    tags[j] = tmp;
+                }
+            }
+        }
+        for (int k = 0; k < tag_count; k++) {
+            csilk_json_t* item = csilk_json_object();
+            csilk_json_add_string(item, "tag_name", tags[k].name);
+            csilk_json_add_number(item, "amount", tags[k].amount);
+            csilk_json_add_number(item, "count", (double)tags[k].count);
+            csilk_json_array_append(tag_arr, item);
+        }
+    }
+    *out_by_tag = tag_arr;
+
+    /* 4. Daily breakdown with currency conversion */
+    csilk_json_t* daily_rows =
+        mf_daily_expense_repo_monthly_daily(pool, user_id, ledger_id, date_pattern);
+    csilk_json_t* daily_arr = csilk_json_array();
+    if (daily_rows) {
+        size_t n = csilk_json_array_size(daily_rows);
+        typedef struct {
+            char   date[32];
+            double income;
+            double expense;
+        } daily_item_t;
+        daily_item_t daily_items[64];
+        int          daily_count = 0;
+        for (size_t i = 0; i < n; i++) {
+            const csilk_json_t* r = csilk_json_array_get(daily_rows, i);
+            const char*         dt = csilk_json_get_string(r, "expense_date");
+            const char*         type = csilk_json_get_string(r, "expense_type");
+            const char*         cur = csilk_json_get_string(r, "currency");
+            double              amt = db_get_num(r, "amount") * exchange_rate_get_to_cny(cur);
+            if (!dt) {
+                continue;
+            }
+            int d_idx = -1;
+            for (int d = 0; d < daily_count; d++) {
+                if (strcmp(daily_items[d].date, dt) == 0) {
+                    d_idx = d;
+                    break;
+                }
+            }
+            if (d_idx < 0 && daily_count < 64) {
+                d_idx = daily_count++;
+                strncpy(daily_items[d_idx].date, dt, sizeof(daily_items[0].date) - 1);
+                daily_items[d_idx].date[sizeof(daily_items[0].date) - 1] = '\0';
+                daily_items[d_idx].income = 0;
+                daily_items[d_idx].expense = 0;
+            }
+            if (d_idx >= 0) {
+                if (type && strcmp(type, "income") == 0) {
+                    daily_items[d_idx].income += amt;
+                } else {
+                    daily_items[d_idx].expense += amt;
+                }
+            }
+        }
+        csilk_json_free(daily_rows);
+
+        for (int d = 0; d < daily_count; d++) {
+            csilk_json_t* item = csilk_json_object();
+            csilk_json_add_string(item, "expense_date", daily_items[d].date);
+            csilk_json_add_number(item, "income", daily_items[d].income);
+            csilk_json_add_number(item, "expense", daily_items[d].expense);
+            csilk_json_array_append(daily_arr, item);
+        }
+    }
+    *out_daily = daily_arr;
 
     out_res->code = 0;
     return 0;

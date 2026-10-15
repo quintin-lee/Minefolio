@@ -115,10 +115,9 @@ mf_daily_expense_repo_monthly_totals(void*       db_pool,
     snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
     return csilk_db_query_param_json(
         (csilk_db_pool_t*)db_pool,
-        "SELECT COALESCE(SUM(CASE WHEN expense_type='income' THEN amount ELSE 0 END),0) as "
-        "total_income,COALESCE(SUM(CASE WHEN expense_type='expense' THEN amount ELSE 0 END),0) as "
-        "total_expense FROM daily_expenses WHERE user_id=? AND ledger_id=? AND CAST(expense_date "
-        "AS TEXT) LIKE ?",
+        "SELECT expense_type, currency, SUM(amount) as amount "
+        "FROM daily_expenses WHERE user_id=? AND ledger_id=? AND CAST(expense_date AS TEXT) LIKE ? "
+        "GROUP BY expense_type, currency",
         (const char*[]){uid, lid, pattern, NULL});
 }
 
@@ -133,12 +132,13 @@ mf_daily_expense_repo_monthly_by_category(void*       db_pool,
     snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
     return csilk_db_query_param_json(
         (csilk_db_pool_t*)db_pool,
-        "SELECT c.name as category_name,de.expense_type,SUM(de.amount) as amount FROM "
+        "SELECT c.name as category_name, de.expense_type, de.currency, SUM(de.amount) as amount "
+        "FROM "
         "daily_expenses de JOIN categories c ON de.category_id=c.id "
-        "AND c.user_id=? AND c.ledger_id=? WHERE de.user_id=? AND de.ledger_id=? "
-        "AND CAST(de.expense_date AS TEXT) LIKE ? GROUP BY c.name,de.expense_type ORDER BY amount "
-        "DESC",
-        (const char*[]){uid, lid, uid, lid, pattern, NULL});
+        "AND c.user_id=de.user_id AND c.ledger_id=de.ledger_id WHERE de.user_id=? AND "
+        "de.ledger_id=? "
+        "AND CAST(de.expense_date AS TEXT) LIKE ? GROUP BY c.name, de.expense_type, de.currency",
+        (const char*[]){uid, lid, pattern, NULL});
 }
 
 csilk_json_t*
@@ -152,12 +152,13 @@ mf_daily_expense_repo_monthly_by_tag(void*       db_pool,
     snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
     return csilk_db_query_param_json(
         (csilk_db_pool_t*)db_pool,
-        "SELECT t.name as tag_name,SUM(de.amount) as amount,COUNT(*) as count FROM daily_expenses "
+        "SELECT t.name as tag_name, de.currency, SUM(de.amount) as amount, COUNT(*) as count FROM "
+        "daily_expenses "
         "de JOIN expense_tags et ON de.id=et.expense_id "
-        "JOIN tags t ON et.tag_id=t.id AND t.user_id=? "
+        "JOIN tags t ON et.tag_id=t.id AND t.user_id=de.user_id "
         "WHERE de.user_id=? AND de.ledger_id=? AND CAST(de.expense_date AS TEXT) LIKE ? "
-        "GROUP BY t.name ORDER BY amount DESC",
-        (const char*[]){uid, uid, lid, pattern, NULL});
+        "GROUP BY t.name, de.currency",
+        (const char*[]){uid, lid, pattern, NULL});
 }
 
 csilk_json_t*
@@ -171,11 +172,9 @@ mf_daily_expense_repo_monthly_daily(void*       db_pool,
     snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
     return csilk_db_query_param_json(
         (csilk_db_pool_t*)db_pool,
-        "SELECT expense_date,COALESCE(SUM(CASE WHEN expense_type='income' THEN amount ELSE 0 "
-        "END),0) as income,COALESCE(SUM(CASE WHEN expense_type='expense' THEN amount ELSE 0 "
-        "END),0) as expense FROM daily_expenses "
-        "WHERE user_id=? AND ledger_id=? AND CAST(expense_date AS TEXT) LIKE ? GROUP BY "
-        "expense_date "
+        "SELECT expense_date, expense_type, currency, SUM(amount) as amount FROM daily_expenses "
+        "WHERE user_id=? AND ledger_id=? AND CAST(expense_date AS TEXT) LIKE ? "
+        "GROUP BY expense_date, expense_type, currency "
         "ORDER BY expense_date",
         (const char*[]){uid, lid, pattern, NULL});
 }

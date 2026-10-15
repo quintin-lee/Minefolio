@@ -411,15 +411,16 @@ tx_monthly(csilk_db_pool_t* pool, int64_t user_id, int64_t ledger_id, const char
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     if (ledger_id > 0) {
         snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
-        return csilk_db_query_param_json(pool,
-                                         "SELECT COALESCE(SUM(amount),0) AS total_volume, "
-                                         "COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE 0 END),0) AS inflows, "
-                                         "COALESCE(SUM(CASE WHEN direction='out' THEN amount ELSE 0 END),0) AS outflows, "
-                                         "COUNT(*) AS count FROM transactions "
-                                         "WHERE user_id=? AND ledger_id=? "
-                                         "AND transaction_type NOT IN ('transfer_in', 'transfer_out') "
-                                         "AND CAST(transaction_date AS TEXT) LIKE ?",
-                                         (const char*[]){uid, lid, pattern, NULL});
+        return csilk_db_query_param_json(
+            pool,
+            "SELECT COALESCE(SUM(amount),0) AS total_volume, "
+            "COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE 0 END),0) AS inflows, "
+            "COALESCE(SUM(CASE WHEN direction='out' THEN amount ELSE 0 END),0) AS outflows, "
+            "COUNT(*) AS count FROM transactions "
+            "WHERE user_id=? AND ledger_id=? "
+            "AND transaction_type NOT IN ('transfer_in', 'transfer_out') "
+            "AND CAST(transaction_date AS TEXT) LIKE ?",
+            (const char*[]){uid, lid, pattern, NULL});
     }
     return csilk_db_query_param_json(
         pool,
