@@ -52,7 +52,7 @@ set_source_files_properties(src/core/financial/decimal.c PROPERTIES COMPILE_OPTI
 
 find_package(CURL REQUIRED)
 
-target_link_libraries(minefolio PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES})
+target_link_libraries(minefolio PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
 
 if(PQ_INCLUDE_DIRS)
     target_include_directories(minefolio PRIVATE ${PQ_INCLUDE_DIRS})
@@ -164,13 +164,13 @@ add_financial_unit_test(test_ledger_engine tests/unit/test_ledger_engine.c)
 add_executable(test_ai_tools tests/unit/test_ai_tools.c ${LIB_SOURCES})
 target_include_directories(test_ai_tools PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_options(test_ai_tools PRIVATE -UNDEBUG)
-target_link_libraries(test_ai_tools PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES})
+target_link_libraries(test_ai_tools PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
 add_test(NAME test_ai_tools COMMAND test_ai_tools)
 
 add_executable(test_ai_policy tests/unit/test_ai_policy.c ${LIB_SOURCES})
 target_include_directories(test_ai_policy PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_options(test_ai_policy PRIVATE -UNDEBUG)
-target_link_libraries(test_ai_policy PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES})
+target_link_libraries(test_ai_policy PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
 add_test(NAME test_ai_policy COMMAND test_ai_policy)
 
 add_executable(test_mcp_pool tests/unit/test_mcp_pool.c ${LIB_SOURCES})
@@ -182,7 +182,7 @@ add_test(NAME test_mcp_pool COMMAND test_mcp_pool)
 add_executable(test_policy_mcp_risk tests/unit/test_policy_mcp_risk.c ${LIB_SOURCES})
 target_include_directories(test_policy_mcp_risk PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_options(test_policy_mcp_risk PRIVATE -UNDEBUG)
-target_link_libraries(test_policy_mcp_risk PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES})
+target_link_libraries(test_policy_mcp_risk PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
 add_test(NAME test_policy_mcp_risk COMMAND test_policy_mcp_risk)
 
 add_executable(test_ai_runtime tests/unit/test_ai_runtime.c ${LIB_SOURCES})
@@ -201,7 +201,7 @@ add_test(NAME test_ai_summary COMMAND test_ai_summary)
 add_executable(test_secret_provider tests/unit/test_secret_provider.c ${LIB_SOURCES})
 target_include_directories(test_secret_provider PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_options(test_secret_provider PRIVATE -UNDEBUG)
-target_link_libraries(test_secret_provider PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES})
+target_link_libraries(test_secret_provider PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
 add_test(NAME test_secret_provider COMMAND test_secret_provider)
 
 add_executable(test_domain_transaction tests/unit/test_domain_transaction.c ${FINANCIAL_CORE_SOURCES} src/domain/transaction/rules.c)

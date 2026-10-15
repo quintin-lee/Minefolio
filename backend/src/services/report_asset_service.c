@@ -5,6 +5,7 @@
 #include "services/market/exchange_rate_service.h"
 #include "interfaces/http/controllers/portfolio_controller.h"
 #include "csilk/csilk.h"
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

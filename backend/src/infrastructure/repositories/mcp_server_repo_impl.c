@@ -167,12 +167,13 @@ mf_mcp_server_repo_create(void* db_pool, int64_t user_id, const mf_mcp_server_t*
     char        timeout_str[16];
     snprintf(timeout_str, sizeof(timeout_str), "%d", s->timeout_ms > 0 ? s->timeout_ms : 30000);
 
-    /* 空值字段传 ""（不能用 NULL——NULL 在参数数组中会终止列表，见 asset_repo 约定） */
+    /* 空值字段传 ""（不能用 NULL——NULL 在参数数组中会终止列表，见 asset_repo 约定）。
+       注意 args/env/headers 在 PG 下为 jsonb，空值须为 "{}"（"" 非合法 jsonb，仅 SQLite 宽松放行） */
     char url[512] = "";
     char command[512] = "";
-    char args_json[1024] = "";
-    char env_json[2048] = "";
-    char headers_json[2048] = "";
+    char args_json[1024] = "{}";
+    char env_json[2048] = "{}";
+    char headers_json[2048] = "{}";
     char secret_ref[128] = "";
     if (s->url[0]) {
         snprintf(url, sizeof(url), "%s", s->url);
@@ -235,9 +236,10 @@ mf_mcp_server_repo_update(void* db_pool, int64_t user_id, int64_t id, const mf_m
     char        timeout_str[16];
     snprintf(timeout_str, sizeof(timeout_str), "%d", s->timeout_ms > 0 ? s->timeout_ms : 30000);
 
-    /* 空值字段传 ""（NULL 会终止参数数组，见 asset_repo 约定） */
-    char url[512] = "", command[512] = "", args_json[1024] = "", env_json[2048] = "";
-    char headers_json[2048] = "", secret_ref[128] = "";
+    /* 空值字段传 ""（NULL 会终止参数数组，见 asset_repo 约定）。
+       args/env/headers 在 PG 下为 jsonb，空值须为 "{}"（"" 非合法 jsonb，仅 SQLite 宽松放行） */
+    char url[512] = "", command[512] = "", args_json[1024] = "{}", env_json[2048] = "{}";
+    char headers_json[2048] = "{}", secret_ref[128] = "";
     if (s->url[0]) {
         snprintf(url, sizeof(url), "%s", s->url);
     }
