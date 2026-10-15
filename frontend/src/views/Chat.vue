@@ -57,8 +57,8 @@
             <span>历史会话</span>
             <span class="session-count" v-if="chat.sessions.length > 0">({{ chat.sessions.length }})</span>
           </div>
-          <button class="icon-close-btn" @click="showSidebar = false" title="收起侧边栏">
-            <Icon icon="ph:x" />
+          <button class="icon-close-btn" @click="showSidebar = false" title="收起会话列表" aria-label="收起会话列表">
+            <Icon icon="ph:sidebar-simple" />
           </button>
         </div>
         <div class="session-search-wrap" v-if="chat.sessions.length > 3">
@@ -116,15 +116,21 @@
         </div>
       </aside>
 
-      <!-- Toggle sidebar button -->
-      <div class="toggle-sidebar" @click="showSidebar = !showSidebar" title="展开/收起会话列表">
-        <Icon :icon="showSidebar ? 'ph:caret-left-bold' : 'ph:caret-right-bold'" />
+      <!-- Toggle sidebar button (only when sidebar is collapsed) -->
+      <div
+        v-if="!showSidebar"
+        class="toggle-sidebar"
+        @click="showSidebar = true"
+        title="展开会话列表"
+        aria-label="展开会话列表"
+      >
+        <Icon icon="ph:sidebar-simple" />
       </div>
 
       <!-- Main chat area -->
       <main class="chat-main">
         <!-- Model selector bar -->
-        <div class="model-bar">
+        <div class="model-bar" :class="{ 'with-toggle': !showSidebar }">
           <div class="model-selector-wrap">
             <Icon icon="ph:cpu-bold" class="model-icon" />
             <el-select
@@ -983,6 +989,8 @@ onUnmounted(() => {
   border-radius: 6px;
   display: flex;
   align-items: center;
+  justify-content: center;
+  font-size: 16px;
   transition: color 0.15s, background 0.15s;
 }
 
@@ -1141,6 +1149,7 @@ onUnmounted(() => {
   justify-content: center;
   cursor: pointer;
   color: var(--mf-text-muted);
+  font-size: 16px;
   transition: color 0.15s, border-color 0.15s, transform 0.15s;
   backdrop-filter: blur(8px);
 }
@@ -1181,7 +1190,7 @@ onUnmounted(() => {
 }
 
 .model-bar {
-  padding: 8px 20px 8px 48px;
+  padding: 8px 20px 8px 16px;
   border-bottom: 1px solid var(--mf-border);
   background: var(--mf-surface);
   backdrop-filter: blur(12px);
@@ -1189,6 +1198,11 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   min-height: 44px;
+  transition: padding-left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.model-bar.with-toggle {
+  padding-left: 48px;
 }
 
 .model-selector-wrap {
