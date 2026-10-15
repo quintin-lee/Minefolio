@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PORT=8080
+PORT="${PORT:-18081}"
 BASE="http://127.0.0.1:${PORT}/api"
 TMP_DIR=$(mktemp -d)
 DB_PATH="${TMP_DIR}/test_plans.db"
@@ -17,17 +17,15 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Kill any lingering process on 8080
-kill $(lsof -t -i:${PORT} 2>/dev/null) 2>/dev/null || true
-sleep 0.5
-
 echo "=== Starting Minefolio Test Server on port ${PORT} ==="
 export MINEFOLIO_JWT_SECRET="test_secret_for_plans_and_cashflow_suite"
 export MINEFOLIO_DB_DRIVER="sqlite"
 export MINEFOLIO_DB_DSN="${DB_PATH}"
+export MINEFOLIO_PORT="${PORT}"
+export PORT="${PORT}"
 
-cd "$(dirname "$0")/../build"
-./minefolio > "${TMP_DIR}/server.log" 2>&1 &
+cd "$(dirname "$0")/.."
+./build/minefolio > "${TMP_DIR}/server.log" 2>&1 &
 SERVER_PID=$!
 
 # Wait for server to start
@@ -219,15 +217,17 @@ fi
 echo "✓ Bank account credited correctly (+200)."
 
 # Verify Calendar now shows actual confirmed event
-CAL_AFTER_RES=$(curl -s -X GET "${BASE}/cashflow/calendar?year=2026&month=8" -H "$AUTH_HEADER")
-echo "$CAL_AFTER_RES" | node -e "
+echo "Adding dividend transaction (amount 50) and verifying calendar matching..."
+sqlite3 "$DB_PATH" "INSERT INTO transactions (user_id, asset_id, category_id, transaction_type, direction, amount, currency, transaction_date, note) VALUES (1, $BANK_ASSET_ID, 1, 'dividend', 'in', 50.0, 'CNY', '2026-08-20 12:00:00', 'ETF Dividend');"
+CAL_DIV_RES=$(curl -s -X GET "${BASE}/cashflow/calendar?year=2026&month=8" -H "$AUTH_HEADER")
+echo "$CAL_DIV_RES" | node -e "
 let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{
   const j = JSON.parse(d);
-  if (j.data.actual_total !== 200) {
-    console.error('Calendar actual total verification failed:', d);
+  if (j.data.actual_total !== 250) {
+    console.error('Calendar dividend actual total verification failed:', d);
     process.exit(1);
   }
-  console.log('✓ Calendar reflects actual confirmed income total:', j.data.actual_total);
+  console.log('✓ Calendar reflects dividend transaction in actual confirmed total:', j.data.actual_total);
 });"
 
 echo "================================================="

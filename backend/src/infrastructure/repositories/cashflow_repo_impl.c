@@ -65,7 +65,7 @@ static const char* SQL_ACTUAL_TXS =
     "FROM transactions t "
     "JOIN assets a ON a.id = t.asset_id "
     "WHERE t.user_id = ? "
-    "  AND t.transaction_type IN ('income', 'deposit') "
+    "  AND t.transaction_type IN ('income', 'deposit', 'dividend', 'interest') "
     "  AND CAST(t.transaction_date AS TEXT) LIKE ? "
     "ORDER BY t.transaction_date ASC, t.id ASC";
 
