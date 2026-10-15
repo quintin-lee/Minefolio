@@ -40,6 +40,7 @@ api_transactions_create(csilk_ctx_t* c)
 
     create_tx_cmd_t cmd = {
         .user_id = user_id,
+        .ledger_id = ledger_id,
         .asset_id = db_get_int(body, "asset_id"),
         .linked_asset_id = db_get_int(body, "linked_asset_id"),
         .category_id = db_get_int(body, "category_id"),
@@ -104,6 +105,7 @@ api_transactions_update(csilk_ctx_t* c)
 
     update_tx_cmd_t cmd = {
         .user_id = user_id,
+        .ledger_id = ledger_id,
         .tx_id = tx_id_val,
         .asset_id = db_get_int(body, "asset_id"),
         .linked_asset_id = db_get_int(body, "linked_asset_id"),
@@ -180,6 +182,11 @@ api_transactions_list(csilk_ctx_t* c)
         return;
     }
 
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "viewer");
+    if (ledger_id < 0) {
+        return;
+    }
+
     int64_t page = 1, page_size = 20;
     parse_page_params(c, &page, &page_size);
 
@@ -195,6 +202,7 @@ api_transactions_list(csilk_ctx_t* c)
 
     query_tx_filter_t filter = {
         .user_id = user_id,
+        .ledger_id = ledger_id,
         .page = page,
         .page_size = page_size,
         .asset_id = aid_str ? atoll(aid_str) : 0,
@@ -224,9 +232,14 @@ api_transactions_monthly(csilk_ctx_t* c)
         return;
     }
 
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "viewer");
+    if (ledger_id < 0) {
+        return;
+    }
+
     const char*         month = csilk_get_query(c, "month");
     tx_usecase_result_t res = {0};
-    int                 rc = tx_usecase_monthly(db_get_pool(), user_id, month, &res);
+    int                 rc = tx_usecase_monthly(db_get_pool(), user_id, ledger_id, month, &res);
     if (rc != 0 || res.code != 0) {
         if (res.code == 1002) {
             respond_bad_request(c, res.message);

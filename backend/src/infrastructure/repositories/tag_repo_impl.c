@@ -11,11 +11,10 @@ mf_tag_repo_list(void* db_pool, int64_t user_id, mf_tag_t** out_list, size_t* ou
     char             uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
 
-    csilk_json_t* rows =
-        csilk_db_query_param_json(pool,
-                                  "SELECT id, user_id, name, color, created_at "
-                                  "FROM tags WHERE user_id=? ORDER BY name",
-                                  (const char*[]){uid_str, NULL});
+    csilk_json_t* rows = csilk_db_query_param_json(pool,
+                                                   "SELECT id, user_id, name, color, created_at "
+                                                   "FROM tags WHERE user_id=? ORDER BY name",
+                                                   (const char*[]){uid_str, NULL});
 
     if (!rows) {
         *out_list = NULL;
@@ -55,11 +54,10 @@ mf_tag_repo_find_by_id(void* db_pool, int64_t user_id, int64_t id, mf_tag_t* out
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     snprintf(id_str, sizeof(id_str), "%lld", (long long)id);
 
-    csilk_json_t* rows =
-        csilk_db_query_param_json(pool,
-                                  "SELECT id, user_id, name, color, created_at "
-                                  "FROM tags WHERE id=? AND user_id=?",
-                                  (const char*[]){id_str, uid_str, NULL});
+    csilk_json_t* rows = csilk_db_query_param_json(pool,
+                                                   "SELECT id, user_id, name, color, created_at "
+                                                   "FROM tags WHERE id=? AND user_id=?",
+                                                   (const char*[]){id_str, uid_str, NULL});
 
     if (!rows || csilk_json_array_size(rows) == 0) {
         if (rows) {

@@ -316,6 +316,7 @@ tx_asset_exists(csilk_db_pool_t* pool, int64_t user_id, int64_t asset_id)
 csilk_json_t*
 tx_list(csilk_db_pool_t* pool,
         int64_t          user_id,
+        int64_t          ledger_id,
         int64_t          page,
         int64_t          page_size,
         const char*      asset_id,
@@ -326,7 +327,7 @@ tx_list(csilk_db_pool_t* pool,
         const char*      end_date,
         int64_t*         total)
 {
-    char uid[32], limit[32], offset[32];
+    char uid[32], limit[32], offset[32], lid[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     snprintf(limit, sizeof(limit), "%lld", (long long)page_size);
     snprintf(offset, sizeof(offset), "%lld", (long long)((page - 1) * page_size));
@@ -354,6 +355,10 @@ tx_list(csilk_db_pool_t* pool,
         params[pidx++] = (val);                                                                    \
         cnt_params[cnt_pidx++] = (val);                                                            \
     } while (0)
+    if (ledger_id > 0) {
+        snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
+        AF("ledger_id", lid);
+    }
     if (asset_id) {
         AF("asset_id", asset_id);
     }
@@ -400,10 +405,22 @@ tx_list(csilk_db_pool_t* pool,
 }
 
 csilk_json_t*
-tx_monthly(csilk_db_pool_t* pool, int64_t user_id, const char* pattern)
+tx_monthly(csilk_db_pool_t* pool, int64_t user_id, int64_t ledger_id, const char* pattern)
 {
-    char uid[32];
+    char uid[32], lid[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    if (ledger_id > 0) {
+        snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
+        return csilk_db_query_param_json(pool,
+                                         "SELECT COALESCE(SUM(amount),0) AS "
+                                         "total_volume,COALESCE(SUM(CASE WHEN direction='in' THEN "
+                                         "amount ELSE 0 END),0) AS inflows,COALESCE(SUM(CASE WHEN "
+                                         "direction='out' THEN amount ELSE "
+                                         "0 END),0) AS outflows,COUNT(*) AS count FROM "
+                                         "transactions WHERE user_id=? AND ledger_id=? AND "
+                                         "CAST(transaction_date AS TEXT) LIKE ?",
+                                         (const char*[]){uid, lid, pattern, NULL});
+    }
     return csilk_db_query_param_json(
         pool,
         "SELECT COALESCE(SUM(amount),0) AS total_volume,COALESCE(SUM(CASE WHEN direction='in' THEN "

@@ -14,16 +14,18 @@
 /* Legacy function signatures for backward compatibility */
 csilk_json_t* tx_list(csilk_db_pool_t* pool,
                       int64_t          user_id,
+                      int64_t          ledger_id,
                       int64_t          page,
                       int64_t          page_size,
                       const char*      asset_id,
                       const char*      category_id,
                       const char*      type,
-                      const char*      from_date,
-                      const char*      to_date,
-                      const char*      keyword,
+                      const char*      source_type,
+                      const char*      start_date,
+                      const char*      end_date,
                       int64_t*         total);
-csilk_json_t* tx_monthly(csilk_db_pool_t* pool, int64_t user_id, const char* pattern);
+csilk_json_t*
+tx_monthly(csilk_db_pool_t* pool, int64_t user_id, int64_t ledger_id, const char* pattern);
 int64_t       tx_insert(csilk_db_pool_t* pool,
                         int64_t          user_id,
                         int64_t          asset_id,

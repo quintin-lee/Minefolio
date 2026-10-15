@@ -263,6 +263,9 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
                 ? "income"
                 : "expense";
 
+        char lid_str[32];
+        snprintf(lid_str, sizeof(lid_str), "%lld", (long long)tx->ledger_id);
+
         const char* ins_params[] = {uid_str,
                                     ast_str,
                                     last_str,
@@ -279,6 +282,9 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
                                     tx->tx_date ? tx->tx_date : now_fallback,
                                     tx->note ? tx->note : "",
                                     parent_tx_str,
+                                    lid_str,
+                                    ast_str,
+                                    uid_str,
                                     NULL};
 
         csilk_json_t* ins_res = csilk_db_query_param_json(
@@ -286,11 +292,13 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
             "INSERT INTO transactions (user_id, asset_id, linked_asset_id, category_id, "
             "source_type, transaction_type, direction, linked_direction, "
             "amount, price_per_unit, quantity, fee, currency, transaction_date, note, "
-            "parent_tx_id) "
+            "parent_tx_id, ledger_id) "
             "VALUES (?, ?, CAST(NULLIF(?, '0') AS BIGINT), CAST(NULLIF(?, '0') AS BIGINT), ?, ?, "
             "?, NULLIF(?, ''), ?, ?, ?, ?, "
             "?, ?, ?, "
-            "CAST(NULLIF(?, '') AS BIGINT)) "
+            "CAST(NULLIF(?, '') AS BIGINT), "
+            "COALESCE(CAST(NULLIF(?, '0') AS BIGINT), (SELECT ledger_id FROM assets WHERE id = ?), "
+            "(SELECT id FROM ledgers WHERE owner_id = ? AND is_default = 1))) "
             "RETURNING id",
             ins_params);
 

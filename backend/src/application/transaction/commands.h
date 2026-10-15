@@ -7,6 +7,7 @@
  */
 typedef struct create_tx_cmd {
     int64_t     user_id;
+    int64_t     ledger_id;
     int64_t     asset_id;
     int64_t     linked_asset_id;
     int64_t     category_id;
@@ -26,6 +27,7 @@ typedef struct create_tx_cmd {
  */
 typedef struct update_tx_cmd {
     int64_t     user_id;
+    int64_t     ledger_id;
     int64_t     tx_id;
     int64_t     asset_id;
     int64_t     linked_asset_id;
@@ -53,6 +55,7 @@ typedef struct delete_tx_cmd {
  */
 typedef struct query_tx_filter {
     int64_t     user_id;
+    int64_t     ledger_id;
     int64_t     asset_id;
     int64_t     category_id;
     const char* type;

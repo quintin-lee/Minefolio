@@ -51,6 +51,7 @@ typedef struct {
     const char*      note;            /**< 备注信息 */
     const char*      idempotency_key; /**< 幂等唯一键 (可选) */
     int64_t          parent_tx_id;    /**< 父级交易 ID (如手续费子记录) */
+    int64_t          ledger_id;       /**< 归属账本 ID */
 } ledger_tx_t;
 
 /**

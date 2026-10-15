@@ -14,6 +14,8 @@
 #include "domain/transfer/repository.h"
 #include "domain/market/repository.h"
 #include "domain/ai/repository.h"
+#include "application/transaction/commands.h"
+#include "application/transaction/usecases.h"
 #include "common/balance.h"
 
 #include "core/financial/currency.h"
@@ -263,6 +265,89 @@ test_transaction_repository(csilk_db_pool_t* pool, int64_t user_id, int64_t asse
     assert(mf_tx_repo_find_by_id(pool, user_id, tx_id, &found) == 1);
 
     printf("  ✅ Transaction Domain Repository passed\n");
+}
+
+static void
+test_transaction_ledger_scoping(csilk_db_pool_t* pool, int64_t user_id, int64_t asset_id)
+{
+    (void)asset_id;
+    printf("--- 3b. Testing Transaction Multi-Ledger Scoping ---\n");
+
+    int64_t ledger_a = 101;
+    int64_t ledger_b = 102;
+
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+
+    // Create cash category
+    csilk_json_t* ins_cat = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO categories (user_id, name, type, asset_type, currency, ledger_id) "
+        "VALUES (?, 'Scope Test Cash Category', 'asset', 'cash', 'CNY', 101) RETURNING id",
+        (const char*[]){uid_str, NULL});
+    assert(ins_cat && csilk_json_array_size(ins_cat) > 0);
+    int64_t cat_id = db_get_int(csilk_json_array_get(ins_cat, 0), "id");
+    csilk_json_free(ins_cat);
+
+    char cat_str[32];
+    snprintf(cat_str, sizeof(cat_str), "%lld", (long long)cat_id);
+
+    // Create cash asset under ledger_a
+    csilk_json_t* ins_acc = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO assets (user_id, category_id, name, current_value, currency, ledger_id) "
+        "VALUES (?, ?, 'Scope Test Cash', 1000.0, 'CNY', 101) RETURNING id",
+        (const char*[]){uid_str, cat_str, NULL});
+    assert(ins_acc && csilk_json_array_size(ins_acc) > 0);
+    int64_t scope_asset_id = db_get_int(csilk_json_array_get(ins_acc, 0), "id");
+    csilk_json_free(ins_acc);
+
+    // 插入账本 A 的交易
+    create_tx_cmd_t cmd_a = {
+        .user_id = user_id,
+        .ledger_id = ledger_a,
+        .asset_id = scope_asset_id,
+        .type = "deposit",
+        .amount = 500.0,
+        .currency = "CNY",
+        .date = "2026-10-15 12:00:00",
+    };
+    tx_usecase_result_t res_a = {0};
+    int rc = tx_usecase_create(pool, &cmd_a, &res_a);
+    assert(rc == 0 && res_a.code == 0);
+
+    // 查询账本 B 的交易列表，预期查不到账本 A 的交易
+    query_tx_filter_t filter_b = {
+        .user_id = user_id,
+        .ledger_id = ledger_b,
+        .page = 1,
+        .page_size = 20,
+    };
+    tx_usecase_result_t q_res = {0};
+    rc = tx_usecase_query(pool, &filter_b, &q_res);
+    assert(rc == 0);
+    assert(q_res.total == 0);
+
+    if (q_res.data_payload) {
+        csilk_json_free((csilk_json_t*)q_res.data_payload);
+    }
+
+    // 查询账本 A 的交易列表，预期查到 1 条账本 A 的交易
+    query_tx_filter_t filter_a = {
+        .user_id = user_id,
+        .ledger_id = ledger_a,
+        .page = 1,
+        .page_size = 20,
+    };
+    memset(&q_res, 0, sizeof(q_res));
+    rc = tx_usecase_query(pool, &filter_a, &q_res);
+    assert(rc == 0);
+    assert(q_res.total == 1);
+    if (q_res.data_payload) {
+        csilk_json_free((csilk_json_t*)q_res.data_payload);
+    }
+
+    printf("  ✅ Transaction Multi-Ledger Scoping passed\n");
 }
 
 static void
@@ -676,6 +761,7 @@ main(void)
     test_auth_repository(pool, &user_id);
     test_asset_repository(pool, user_id, &asset_id);
     test_transaction_repository(pool, user_id, asset_id);
+    test_transaction_ledger_scoping(pool, user_id, asset_id);
     test_portfolio_repository(pool, user_id, asset_id);
     test_cashflow_repository(pool, user_id);
     test_market_repository(pool, user_id);

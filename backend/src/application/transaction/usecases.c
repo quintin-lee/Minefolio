@@ -114,6 +114,7 @@ tx_usecase_create(void* pool, const create_tx_cmd_t* cmd, tx_usecase_result_t* o
     ledger_tx_t ltx = {
         .id = 0,
         .user_id = cmd->user_id,
+        .ledger_id = cmd->ledger_id,
         .asset_id = cmd->asset_id,
         .linked_asset_id = cmd->linked_asset_id,
         .category_id = cmd->category_id,
@@ -329,6 +330,7 @@ tx_usecase_query(void* pool, const query_tx_filter_t* filter, tx_usecase_result_
     int64_t       total = 0;
     csilk_json_t* list = tx_list((csilk_db_pool_t*)pool,
                                  filter->user_id,
+                                 filter->ledger_id,
                                  filter->page,
                                  filter->page_size,
                                  aid_ptr,
@@ -347,7 +349,8 @@ tx_usecase_query(void* pool, const query_tx_filter_t* filter, tx_usecase_result_
 }
 
 int
-tx_usecase_monthly(void* pool, int64_t user_id, const char* month, tx_usecase_result_t* out_res)
+tx_usecase_monthly(
+    void* pool, int64_t user_id, int64_t ledger_id, const char* month, tx_usecase_result_t* out_res)
 {
     if (!out_res) {
         return -1;
@@ -376,7 +379,7 @@ tx_usecase_monthly(void* pool, int64_t user_id, const char* month, tx_usecase_re
     char pattern[16];
     snprintf(pattern, sizeof(pattern), "%.4s-%.2s%%", month, month + 5);
 
-    csilk_json_t* res = tx_monthly((csilk_db_pool_t*)pool, user_id, pattern);
+    csilk_json_t* res = tx_monthly((csilk_db_pool_t*)pool, user_id, ledger_id, pattern);
     if (!res) {
         out_res->code = 1004;
         snprintf(out_res->message, sizeof(out_res->message), "查询失败");

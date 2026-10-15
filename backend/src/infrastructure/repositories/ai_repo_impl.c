@@ -177,7 +177,7 @@ csilk_json_t*
 mf_ai_repo_transaction_list(
     void* pool, int64_t user_id, int64_t page, int64_t page_size, const char* type, int64_t* total)
 {
-    return tx_list(pool, user_id, page, page_size, NULL, NULL, type, NULL, NULL, NULL, total);
+    return tx_list(pool, user_id, 0, page, page_size, NULL, NULL, type, NULL, NULL, NULL, total);
 }
 
 csilk_json_t*
@@ -210,7 +210,7 @@ mf_ai_repo_daily_expense_monthly_totals(void* pool, int64_t user_id, const char*
 csilk_json_t*
 mf_ai_repo_transaction_monthly(void* pool, int64_t user_id, const char* pattern)
 {
-    return tx_monthly(pool, user_id, pattern);
+    return tx_monthly(pool, user_id, 0, pattern);
 }
 
 int64_t
