@@ -708,6 +708,22 @@ test "$AST_COUNT" -gt 0 && AST_PASS="1" || AST_PASS="0"
 check "全量重建后数据库资产数量 > 0" "1" "$AST_PASS"
 
 echo ""
+echo "--- Case 39: 资产与净资产历史趋势重溯 (Balance Log Rollback) 验证 ---"
+# 1. 验证 GET /api/reports/asset/trend 返回成功，包含 labels, assets, liabilities, net_worth
+TREND_RES=$(curl -s -H "$AUTH" "$BASE/reports/asset/trend?period=30d")
+TREND_CODE=$(echo "$TREND_RES" | jq -r '.code | floor')
+check "GET /reports/asset/trend code=0" "0" "$TREND_CODE"
+TREND_LABELS_LEN=$(echo "$TREND_RES" | jq -r '.data.labels | length')
+check "GET /reports/asset/trend 返回 5 个采样时间点" "5" "$TREND_LABELS_LEN"
+
+# 2. 验证 GET /api/summary 返回的 30 天 trend 数组长度为 30
+DASH_RES=$(curl -s -H "$AUTH" "$BASE/summary")
+DASH_CODE=$(echo "$DASH_RES" | jq -r '.code | floor')
+check "GET /summary code=0" "0" "$DASH_CODE"
+DASH_TREND_LEN=$(echo "$DASH_RES" | jq -r '.data.trend | length')
+check "GET /summary 包含 30 天连续趋势" "30" "$DASH_TREND_LEN"
+
+echo ""
 echo "结果: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1
 

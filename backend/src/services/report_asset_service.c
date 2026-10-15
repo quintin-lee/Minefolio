@@ -22,6 +22,20 @@ typedef struct {
 
 } holding_pnl_t;
 
+typedef struct {
+    int64_t id;
+    double  current_value;
+    char    currency[16];
+    char    created_date[16];
+    int     is_liability;
+} asset_trend_item_t;
+
+typedef struct {
+    int64_t asset_id;
+    double  delta;
+    char    log_date[16];
+} asset_trend_log_t;
+
 void
 report_asset_trend(csilk_ctx_t* c)
 {
@@ -29,12 +43,16 @@ report_asset_trend(csilk_ctx_t* c)
     if (user_id < 0) {
         return;
     }
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "viewer");
+    if (ledger_id < 0) {
+        return;
+    }
     const char* period_str = csilk_get_query(c, "period");
     int         days = 30;
     if (period_str) {
         if (strcmp(period_str, "90d") == 0) {
             days = 90;
-        } else if (strcmp(period_str, "365d") == 0) {
+        } else if (strcmp(period_str, "365d") == 0 || strcmp(period_str, "1y") == 0) {
             days = 365;
         } else {
             days = atoi(period_str);
@@ -44,77 +62,155 @@ report_asset_trend(csilk_ctx_t* c)
         days = 30;
     }
 
-    char days_str[32], uid_str[32];
-    snprintf(days_str, sizeof(days_str), "%d", days - 1);
+    char uid_str[32], lid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-    const char* params[] = {days_str, uid_str, days_str, uid_str, days_str, NULL};
+    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
 
-    csilk_db_pool_t* pool = db_get_pool();
-    csilk_json_t*    result = csilk_db_query_param_json(
-        pool,
+    // 1. Generate 5 sample points (labels) across the period
+    time_t    now = time(NULL);
+    struct tm cur_tm = *localtime(&now);
+    char      dates[5][16];
+    for (int k = 0; k < 5; k++) {
+        struct tm tm = cur_tm;
+        int       mday_offset = (4 - k) * (days - 1) / 4;
+        tm.tm_mday -= mday_offset;
+        mktime(&tm);
+        strftime(dates[k], sizeof(dates[k]), "%Y-%m-%d", &tm);
+    }
+
+    // 2. Query all assets for the user / ledger
+    const char* asset_sql =
         db_is_postgres()
-            ? "SELECT json_agg(d ORDER BY d) as labels, "
-              "json_agg(total_assets ORDER BY d) as assets, "
-              "json_agg(total_liabilities ORDER BY d) as liabilities, "
-              "json_agg(total_assets - total_liabilities ORDER BY d) as net_worth "
-              "FROM ( "
-              "WITH RECURSIVE pts(n) AS (SELECT 0 UNION ALL SELECT n+1 FROM pts WHERE n < 4) "
-              "SELECT (CURRENT_DATE - ((n*(?::int)/4) || ' days')::interval)::date as d, "
-              "(SELECT COALESCE(SUM(a.current_value),0) FROM assets a "
-              "JOIN categories c ON a.category_id=c.id "
-              "WHERE a.user_id=? AND c.asset_type NOT IN ('loan','credit_card','other_liability') "
-              "AND a.updated_at < (CURRENT_DATE - ((n*(?::int)/4) || ' days')::interval)::date + "
-              "1) as total_assets, "
-              "(SELECT COALESCE(SUM(a.current_value),0) FROM assets a "
-              "JOIN categories c ON a.category_id=c.id "
-              "WHERE a.user_id=? AND c.asset_type IN ('loan','credit_card','other_liability') "
-              "AND a.updated_at < (CURRENT_DATE - ((n*(?::int)/4) || ' days')::interval)::date + "
-              "1) as total_liabilities "
-              "FROM pts)"
-            : "SELECT json_group_array(d) as labels, "
-              "json_group_array(total_assets) as assets, "
-              "json_group_array(total_liabilities) as liabilities, "
-              "json_group_array(total_assets - total_liabilities) as net_worth "
-              "FROM ( "
-              "WITH RECURSIVE pts(n) AS (SELECT 0 UNION ALL SELECT n+1 FROM pts WHERE n < 4) "
-              "SELECT date('now','-'||(n*(?)/4)||' days') as d, "
-              "(SELECT COALESCE(SUM(a.current_value),0) FROM assets a "
-              "JOIN categories c ON a.category_id=c.id "
-              "WHERE a.user_id=? AND c.asset_type NOT IN ('loan','credit_card','other_liability') "
-              "AND a.updated_at < date('now','-'||(n*(?)/4)||' days','+1 day')) as total_assets, "
-              "(SELECT COALESCE(SUM(a.current_value),0) FROM assets a "
-              "JOIN categories c ON a.category_id=c.id "
-              "WHERE a.user_id=? AND c.asset_type IN ('loan','credit_card','other_liability') "
-              "AND a.updated_at < date('now','-'||(n*(?)/4)||' days','+1 day')) as "
-              "total_liabilities "
-              "FROM pts) ORDER BY d",
-        params);
+            ? (ledger_id > 0 ? "SELECT a.id, a.current_value, a.currency, c.asset_type, "
+                               "to_char(a.created_at, 'YYYY-MM-DD') as created_date "
+                               "FROM assets a JOIN categories c ON a.category_id=c.id "
+                               "WHERE a.user_id=? AND a.ledger_id=?"
+                             : "SELECT a.id, a.current_value, a.currency, c.asset_type, "
+                               "to_char(a.created_at, 'YYYY-MM-DD') as created_date "
+                               "FROM assets a JOIN categories c ON a.category_id=c.id "
+                               "WHERE a.user_id=?")
+            : (ledger_id > 0 ? "SELECT a.id, a.current_value, a.currency, c.asset_type, "
+                               "date(a.created_at) as created_date "
+                               "FROM assets a JOIN categories c ON a.category_id=c.id "
+                               "WHERE a.user_id=? AND a.ledger_id=?"
+                             : "SELECT a.id, a.current_value, a.currency, c.asset_type, "
+                               "date(a.created_at) as created_date "
+                               "FROM assets a JOIN categories c ON a.category_id=c.id "
+                               "WHERE a.user_id=?");
+    const char*      asset_params[3] = {uid_str, (ledger_id > 0 ? lid_str : NULL), NULL};
+    csilk_db_pool_t* pool = db_get_pool();
+    csilk_json_t*    asset_rows = csilk_db_query_param_json(pool, asset_sql, asset_params);
 
+    size_t              num_assets = asset_rows ? csilk_json_array_size(asset_rows) : 0;
+    asset_trend_item_t* assets =
+        num_assets > 0 ? (asset_trend_item_t*)calloc(num_assets, sizeof(asset_trend_item_t)) : NULL;
+    for (size_t i = 0; i < num_assets; i++) {
+        csilk_json_t* r = csilk_json_array_get(asset_rows, i);
+        assets[i].id = db_get_int(r, "id");
+        assets[i].current_value = db_get_num(r, "current_value");
+        const char* cur = csilk_json_get_string(r, "currency");
+        snprintf(assets[i].currency, sizeof(assets[i].currency), "%s", cur ? cur : "CNY");
+        const char* cd = csilk_json_get_string(r, "created_date");
+        snprintf(
+            assets[i].created_date, sizeof(assets[i].created_date), "%s", cd ? cd : "1970-01-01");
+        const char* atype = csilk_json_get_string(r, "asset_type");
+        assets[i].is_liability =
+            (atype && (strcmp(atype, "loan") == 0 || strcmp(atype, "credit_card") == 0 ||
+                       strcmp(atype, "other_liability") == 0));
+    }
+    if (asset_rows) {
+        csilk_json_free(asset_rows);
+    }
+
+    // 3. Query all balance delta logs on or after dates[0]
+    const char* log_sql =
+        db_is_postgres()
+            ? (ledger_id > 0
+                   ? "SELECT abl.asset_id, abl.delta, to_char(abl.created_at, 'YYYY-MM-DD') as "
+                     "log_date "
+                     "FROM asset_balance_logs abl JOIN assets a ON abl.asset_id=a.id "
+                     "WHERE abl.user_id=? AND a.ledger_id=? AND abl.created_at::date >= ?::date"
+                   : "SELECT abl.asset_id, abl.delta, to_char(abl.created_at, 'YYYY-MM-DD') as "
+                     "log_date "
+                     "FROM asset_balance_logs abl "
+                     "WHERE abl.user_id=? AND abl.created_at::date >= ?::date")
+            : (ledger_id > 0 ? "SELECT abl.asset_id, abl.delta, date(abl.created_at) as log_date "
+                               "FROM asset_balance_logs abl JOIN assets a ON abl.asset_id=a.id "
+                               "WHERE abl.user_id=? AND a.ledger_id=? AND date(abl.created_at) >= ?"
+                             : "SELECT abl.asset_id, abl.delta, date(abl.created_at) as log_date "
+                               "FROM asset_balance_logs abl "
+                               "WHERE abl.user_id=? AND date(abl.created_at) >= ?");
+    const char* log_params[4] = {
+        uid_str, (ledger_id > 0 ? lid_str : dates[0]), (ledger_id > 0 ? dates[0] : NULL), NULL};
+    csilk_json_t* log_rows = csilk_db_query_param_json(pool, log_sql, log_params);
+
+    size_t             num_logs = log_rows ? csilk_json_array_size(log_rows) : 0;
+    asset_trend_log_t* logs =
+        num_logs > 0 ? (asset_trend_log_t*)calloc(num_logs, sizeof(asset_trend_log_t)) : NULL;
+    for (size_t i = 0; i < num_logs; i++) {
+        csilk_json_t* r = csilk_json_array_get(log_rows, i);
+        logs[i].asset_id = db_get_int(r, "asset_id");
+        logs[i].delta = db_get_num(r, "delta");
+        const char* ld = csilk_json_get_string(r, "log_date");
+        snprintf(logs[i].log_date, sizeof(logs[i].log_date), "%s", ld ? ld : "");
+    }
+    if (log_rows) {
+        csilk_json_free(log_rows);
+    }
+
+    // 4. Reconstruct historical balances for each sample point
+    double pt_assets[5] = {0};
+    double pt_liabs[5] = {0};
+
+    for (int k = 0; k < 5; k++) {
+        const char* target_date = dates[k];
+        for (size_t a = 0; a < num_assets; a++) {
+            if (strcmp(assets[a].created_date, target_date) > 0) {
+                continue;
+            }
+            double val = assets[a].current_value;
+            for (size_t l = 0; l < num_logs; l++) {
+                if (logs[l].asset_id == assets[a].id && strcmp(logs[l].log_date, target_date) > 0) {
+                    val -= logs[l].delta;
+                }
+            }
+            double conv_val = val * exchange_rate_get_to_cny(assets[a].currency);
+            if (assets[a].is_liability) {
+                pt_liabs[k] += conv_val;
+            } else {
+                pt_assets[k] += conv_val;
+            }
+        }
+    }
+
+    if (assets) {
+        free(assets);
+    }
+    if (logs) {
+        free(logs);
+    }
+
+    // 5. Build response object
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_string(resp, "period", period_str ? period_str : "30d");
-    if (result && csilk_json_array_size(result) > 0) {
-        csilk_json_t* row = csilk_json_array_get(result, 0);
-        const char*   labels_str = csilk_json_get_string(row, "labels");
-        const char*   nw_str = csilk_json_get_string(row, "net_worth");
-        const char*   assets_str = csilk_json_get_string(row, "assets");
-        const char*   liabs_str = csilk_json_get_string(row, "liabilities");
-        csilk_json_t* labels = (labels_str && labels_str[0]) ? csilk_json_parse(labels_str) : NULL;
-        csilk_json_t* nw = (nw_str && nw_str[0]) ? csilk_json_parse(nw_str) : NULL;
-        csilk_json_t* assets = (assets_str && assets_str[0]) ? csilk_json_parse(assets_str) : NULL;
-        csilk_json_t* liabs = (liabs_str && liabs_str[0]) ? csilk_json_parse(liabs_str) : NULL;
-        csilk_json_add_array(resp, "labels", labels ? labels : csilk_json_array());
-        csilk_json_add_array(resp, "net_worth", nw ? nw : csilk_json_array());
-        csilk_json_add_array(resp, "assets", assets ? assets : csilk_json_array());
-        csilk_json_add_array(resp, "liabilities", liabs ? liabs : csilk_json_array());
-    } else {
-        csilk_json_add_array(resp, "labels", csilk_json_array());
-        csilk_json_add_array(resp, "net_worth", csilk_json_array());
-        csilk_json_add_array(resp, "assets", csilk_json_array());
-        csilk_json_add_array(resp, "liabilities", csilk_json_array());
+
+    csilk_json_t* labels_arr = csilk_json_array();
+    csilk_json_t* nw_arr = csilk_json_array();
+    csilk_json_t* assets_arr = csilk_json_array();
+    csilk_json_t* liabs_arr = csilk_json_array();
+
+    for (int k = 0; k < 5; k++) {
+        csilk_json_array_append(labels_arr, csilk_json_string_new(dates[k]));
+        csilk_json_array_append(nw_arr, csilk_json_number(pt_assets[k] - pt_liabs[k]));
+        csilk_json_array_append(assets_arr, csilk_json_number(pt_assets[k]));
+        csilk_json_array_append(liabs_arr, csilk_json_number(pt_liabs[k]));
     }
-    if (result) {
-        csilk_json_free(result);
-    }
+
+    csilk_json_add_array(resp, "labels", labels_arr);
+    csilk_json_add_array(resp, "net_worth", nw_arr);
+    csilk_json_add_array(resp, "assets", assets_arr);
+    csilk_json_add_array(resp, "liabilities", liabs_arr);
+
     respond_ok(c, resp);
 }
 

@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 int
 mf_portfolio_repo_get_holdings(void*               db_pool,
@@ -311,6 +312,20 @@ portfolio_repo_get_recent_transactions(void* pool, int64_t user_id, int64_t ledg
     return csilk_db_query_param_json((csilk_db_pool_t*)pool, sql, params);
 }
 
+typedef struct {
+    int64_t id;
+    double  current_value;
+    char    currency[16];
+    char    created_date[16];
+    int     is_liability;
+} trend_asset_t;
+
+typedef struct {
+    int64_t asset_id;
+    double  delta;
+    char    log_date[16];
+} trend_log_t;
+
 csilk_json_t*
 portfolio_repo_get_trend_30d(void* pool, int64_t user_id, int64_t ledger_id)
 {
@@ -318,113 +333,152 @@ portfolio_repo_get_trend_30d(void* pool, int64_t user_id, int64_t ledger_id)
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
 
-    const char* params[10];
-    int         pidx = 0;
-    for (int k = 0; k < 4; k++) {
-        params[pidx++] = uid_str;
-        if (ledger_id > 0) {
-            params[pidx++] = lid_str;
+    // 1. Generate the last 30 daily date strings (from now - 29 days to today)
+    time_t    now = time(NULL);
+    struct tm cur_tm = *localtime(&now);
+    char      dates[30][16];
+    for (int i = 0; i < 30; i++) {
+        struct tm tm = cur_tm;
+        tm.tm_mday -= (29 - i);
+        mktime(&tm);
+        strftime(dates[i], sizeof(dates[i]), "%Y-%m-%d", &tm);
+    }
+
+    // 2. Query all assets for the user / ledger
+    const char* asset_sql =
+        db_is_postgres()
+            ? (ledger_id > 0 ? "SELECT a.id, a.current_value, a.currency, c.asset_type, "
+                               "to_char(a.created_at, 'YYYY-MM-DD') as created_date "
+                               "FROM assets a JOIN categories c ON a.category_id=c.id "
+                               "WHERE a.user_id=? AND a.ledger_id=?"
+                             : "SELECT a.id, a.current_value, a.currency, c.asset_type, "
+                               "to_char(a.created_at, 'YYYY-MM-DD') as created_date "
+                               "FROM assets a JOIN categories c ON a.category_id=c.id "
+                               "WHERE a.user_id=?")
+            : (ledger_id > 0 ? "SELECT a.id, a.current_value, a.currency, c.asset_type, "
+                               "date(a.created_at) as created_date "
+                               "FROM assets a JOIN categories c ON a.category_id=c.id "
+                               "WHERE a.user_id=? AND a.ledger_id=?"
+                             : "SELECT a.id, a.current_value, a.currency, c.asset_type, "
+                               "date(a.created_at) as created_date "
+                               "FROM assets a JOIN categories c ON a.category_id=c.id "
+                               "WHERE a.user_id=?");
+    const char*   asset_params[3] = {uid_str, (ledger_id > 0 ? lid_str : NULL), NULL};
+    csilk_json_t* asset_rows =
+        csilk_db_query_param_json((csilk_db_pool_t*)pool, asset_sql, asset_params);
+
+    size_t         num_assets = asset_rows ? csilk_json_array_size(asset_rows) : 0;
+    trend_asset_t* assets =
+        num_assets > 0 ? (trend_asset_t*)calloc(num_assets, sizeof(trend_asset_t)) : NULL;
+    for (size_t i = 0; i < num_assets; i++) {
+        csilk_json_t* r = csilk_json_array_get(asset_rows, i);
+        assets[i].id = db_get_int(r, "id");
+        assets[i].current_value = db_get_num(r, "current_value");
+        const char* cur = csilk_json_get_string(r, "currency");
+        snprintf(assets[i].currency, sizeof(assets[i].currency), "%s", cur ? cur : "CNY");
+        const char* cd = csilk_json_get_string(r, "created_date");
+        snprintf(
+            assets[i].created_date, sizeof(assets[i].created_date), "%s", cd ? cd : "1970-01-01");
+        const char* atype = csilk_json_get_string(r, "asset_type");
+        assets[i].is_liability =
+            (atype && (strcmp(atype, "loan") == 0 || strcmp(atype, "credit_card") == 0 ||
+                       strcmp(atype, "other_liability") == 0));
+    }
+    if (asset_rows) {
+        csilk_json_free(asset_rows);
+    }
+
+    // 3. Query all balance delta logs occurred on or after dates[0]
+    const char* log_sql =
+        db_is_postgres()
+            ? (ledger_id > 0
+                   ? "SELECT abl.asset_id, abl.delta, to_char(abl.created_at, 'YYYY-MM-DD') as "
+                     "log_date "
+                     "FROM asset_balance_logs abl JOIN assets a ON abl.asset_id=a.id "
+                     "WHERE abl.user_id=? AND a.ledger_id=? AND abl.created_at::date >= ?::date"
+                   : "SELECT abl.asset_id, abl.delta, to_char(abl.created_at, 'YYYY-MM-DD') as "
+                     "log_date "
+                     "FROM asset_balance_logs abl "
+                     "WHERE abl.user_id=? AND abl.created_at::date >= ?::date")
+            : (ledger_id > 0 ? "SELECT abl.asset_id, abl.delta, date(abl.created_at) as log_date "
+                               "FROM asset_balance_logs abl JOIN assets a ON abl.asset_id=a.id "
+                               "WHERE abl.user_id=? AND a.ledger_id=? AND date(abl.created_at) >= ?"
+                             : "SELECT abl.asset_id, abl.delta, date(abl.created_at) as log_date "
+                               "FROM asset_balance_logs abl "
+                               "WHERE abl.user_id=? AND date(abl.created_at) >= ?");
+    const char* log_params[4] = {
+        uid_str, (ledger_id > 0 ? lid_str : dates[0]), (ledger_id > 0 ? dates[0] : NULL), NULL};
+    csilk_json_t* log_rows = csilk_db_query_param_json((csilk_db_pool_t*)pool, log_sql, log_params);
+
+    size_t       num_logs = log_rows ? csilk_json_array_size(log_rows) : 0;
+    trend_log_t* logs = num_logs > 0 ? (trend_log_t*)calloc(num_logs, sizeof(trend_log_t)) : NULL;
+    for (size_t i = 0; i < num_logs; i++) {
+        csilk_json_t* r = csilk_json_array_get(log_rows, i);
+        logs[i].asset_id = db_get_int(r, "asset_id");
+        logs[i].delta = db_get_num(r, "delta");
+        const char* ld = csilk_json_get_string(r, "log_date");
+        snprintf(logs[i].log_date, sizeof(logs[i].log_date), "%s", ld ? ld : "");
+    }
+    if (log_rows) {
+        csilk_json_free(log_rows);
+    }
+
+    // 4. Reconstruct historical balances for each day by rolling back deltas
+    double day_assets[30] = {0};
+    double day_liabs[30] = {0};
+
+    for (int d = 0; d < 30; d++) {
+        const char* target_date = dates[d];
+        for (size_t a = 0; a < num_assets; a++) {
+            if (strcmp(assets[a].created_date, target_date) > 0) {
+                // Asset did not exist yet on target_date
+                continue;
+            }
+            double val = assets[a].current_value;
+            for (size_t l = 0; l < num_logs; l++) {
+                if (logs[l].asset_id == assets[a].id && strcmp(logs[l].log_date, target_date) > 0) {
+                    val -= logs[l].delta;
+                }
+            }
+            double conv_val = val * exchange_rate_get_to_cny(assets[a].currency);
+            if (assets[a].is_liability) {
+                day_liabs[d] += conv_val;
+            } else {
+                day_assets[d] += conv_val;
+            }
         }
     }
-    params[pidx] = NULL;
 
-    char pg_assets_pred[128], pg_liabs_pred[128];
-    char sqlite_assets_pred[128], sqlite_liabs_pred[128];
-    if (ledger_id > 0) {
-        snprintf(pg_assets_pred,
-                 sizeof(pg_assets_pred),
-                 "a.user_id=? AND a.ledger_id=? AND c.asset_type NOT IN "
-                 "('loan','credit_card','other_liability')");
-        snprintf(pg_liabs_pred,
-                 sizeof(pg_liabs_pred),
-                 "a.user_id=? AND a.ledger_id=? AND c.asset_type IN "
-                 "('loan','credit_card','other_liability')");
-        snprintf(sqlite_assets_pred,
-                 sizeof(sqlite_assets_pred),
-                 "a.user_id=? AND a.ledger_id=? AND c.asset_type NOT IN "
-                 "('loan','credit_card','other_liability')");
-        snprintf(sqlite_liabs_pred,
-                 sizeof(sqlite_liabs_pred),
-                 "a.user_id=? AND a.ledger_id=? AND c.asset_type IN "
-                 "('loan','credit_card','other_liability')");
-    } else {
-        snprintf(pg_assets_pred,
-                 sizeof(pg_assets_pred),
-                 "a.user_id=? AND c.asset_type NOT IN ('loan','credit_card','other_liability')");
-        snprintf(pg_liabs_pred,
-                 sizeof(pg_liabs_pred),
-                 "a.user_id=? AND c.asset_type IN ('loan','credit_card','other_liability')");
-        snprintf(sqlite_assets_pred,
-                 sizeof(sqlite_assets_pred),
-                 "a.user_id=? AND c.asset_type NOT IN ('loan','credit_card','other_liability')");
-        snprintf(sqlite_liabs_pred,
-                 sizeof(sqlite_liabs_pred),
-                 "a.user_id=? AND c.asset_type IN ('loan','credit_card','other_liability')");
+    if (assets) {
+        free(assets);
+    }
+    if (logs) {
+        free(logs);
     }
 
-    char sql[2048];
-    if (db_is_postgres()) {
-        snprintf(sql,
-                 sizeof(sql),
-                 "SELECT COALESCE(json_agg(json_build_object("
-                 "'date', day, "
-                 "'total_assets', assets, "
-                 "'total_liabilities', liabilities, "
-                 "'net_worth', assets - liabilities) ORDER BY day), '[]') as trend "
-                 "FROM ("
-                 "  WITH RECURSIVE days(d) AS ("
-                 "    SELECT (CURRENT_DATE - 29)::date"
-                 "    UNION ALL"
-                 "    SELECT (d + 1)::date FROM days WHERE d < CURRENT_DATE"
-                 "  )"
-                 "  SELECT "
-                 "    days.d as day,"
-                 "    COALESCE((SELECT SUM(current_value) FROM assets a JOIN categories c ON "
-                 "a.category_id=c.id "
-                 "     WHERE %s "
-                 "     AND a.created_at::date <= days.d), 0) as assets,"
-                 "    COALESCE((SELECT SUM(current_value) FROM assets a JOIN categories c ON "
-                 "a.category_id=c.id "
-                 "     WHERE %s "
-                 "     AND a.created_at::date <= days.d), 0) as liabilities "
-                 "  FROM days "
-                 "  ORDER BY days.d ASC"
-                 ")",
-                 pg_assets_pred,
-                 pg_liabs_pred);
-    } else {
-        snprintf(sql,
-                 sizeof(sql),
-                 "SELECT json_group_array(json_object("
-                 "'date', day, "
-                 "'total_assets', assets, "
-                 "'total_liabilities', liabilities, "
-                 "'net_worth', assets - liabilities"
-                 ")) as trend "
-                 "FROM ("
-                 "  WITH RECURSIVE days(d) AS ("
-                 "    SELECT date('now', '-29 days')"
-                 "    UNION ALL"
-                 "    SELECT date(d, '+1 day') FROM days WHERE d < date('now')"
-                 "  )"
-                 "  SELECT "
-                 "    days.d as day,"
-                 "    COALESCE((SELECT SUM(current_value) FROM assets a JOIN categories c ON "
-                 "a.category_id=c.id "
-                 "     WHERE %s "
-                 "     AND date(a.created_at) <= days.d), 0) as assets,"
-                 "    COALESCE((SELECT SUM(current_value) FROM assets a JOIN categories c ON "
-                 "a.category_id=c.id "
-                 "     WHERE %s "
-                 "     AND date(a.created_at) <= days.d), 0) as liabilities "
-                 "  FROM days "
-                 "  ORDER BY days.d ASC"
-                 ")",
-                 sqlite_assets_pred,
-                 sqlite_liabs_pred);
+    // 5. Serialize into [{date, total_assets, total_liabilities, net_worth}, ...]
+    csilk_json_t* trend_arr = csilk_json_array();
+    for (int d = 0; d < 30; d++) {
+        csilk_json_t* item = csilk_json_object();
+        csilk_json_add_string(item, "date", dates[d]);
+        csilk_json_add_number(item, "total_assets", day_assets[d]);
+        csilk_json_add_number(item, "total_liabilities", day_liabs[d]);
+        csilk_json_add_number(item, "net_worth", day_assets[d] - day_liabs[d]);
+        csilk_json_array_append(trend_arr, item);
     }
 
-    return csilk_db_query_param_json((csilk_db_pool_t*)pool, sql, params);
+    char* trend_str = csilk_json_serialize(trend_arr, NULL);
+    csilk_json_free(trend_arr);
+
+    csilk_json_t* row = csilk_json_object();
+    csilk_json_add_string(row, "trend", trend_str ? trend_str : "[]");
+    if (trend_str) {
+        free(trend_str);
+    }
+
+    csilk_json_t* result = csilk_json_array();
+    csilk_json_array_append(result, row);
+    return result;
 }
 
 csilk_json_t*
