@@ -351,6 +351,90 @@ test_transaction_ledger_scoping(csilk_db_pool_t* pool, int64_t user_id, int64_t 
 }
 
 static void
+test_transaction_update_change_asset(csilk_db_pool_t* pool, int64_t user_id)
+{
+    printf("--- 3c. Testing Transaction Update Change Asset & Preserve Fields ---\n");
+
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+
+    // Create category
+    csilk_json_t* ins_cat = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO categories (user_id, name, type, asset_type, currency, ledger_id) "
+        "VALUES (?, 'Update Test Cash Cat', 'asset', 'cash', 'CNY', 101) RETURNING id",
+        (const char*[]){uid_str, NULL});
+    assert(ins_cat && csilk_json_array_size(ins_cat) > 0);
+    int64_t cat_id = db_get_int(csilk_json_array_get(ins_cat, 0), "id");
+    csilk_json_free(ins_cat);
+
+    char cat_str[32];
+    snprintf(cat_str, sizeof(cat_str), "%lld", (long long)cat_id);
+
+    // Create asset 1
+    csilk_json_t* ins_a1 = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO assets (user_id, category_id, name, current_value, currency, ledger_id) "
+        "VALUES (?, ?, 'Update Test Asset 1', 1000.0, 'CNY', 101) RETURNING id",
+        (const char*[]){uid_str, cat_str, NULL});
+    assert(ins_a1 && csilk_json_array_size(ins_a1) > 0);
+    int64_t asset_1 = db_get_int(csilk_json_array_get(ins_a1, 0), "id");
+    csilk_json_free(ins_a1);
+
+    // Create asset 2
+    csilk_json_t* ins_a2 = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO assets (user_id, category_id, name, current_value, currency, ledger_id) "
+        "VALUES (?, ?, 'Update Test Asset 2', 1000.0, 'CNY', 101) RETURNING id",
+        (const char*[]){uid_str, cat_str, NULL});
+    assert(ins_a2 && csilk_json_array_size(ins_a2) > 0);
+    int64_t asset_2 = db_get_int(csilk_json_array_get(ins_a2, 0), "id");
+    csilk_json_free(ins_a2);
+
+    // 1. Create deposit transaction on asset_1
+    create_tx_cmd_t cmd = {
+        .user_id = user_id,
+        .ledger_id = 101,
+        .asset_id = asset_1,
+        .category_id = cat_id,
+        .type = "deposit",
+        .amount = 1000.0,
+        .currency = "CNY",
+        .date = "2026-10-15 12:00:00",
+        .note = "Original Note",
+    };
+    tx_usecase_result_t res = {0};
+    int rc = tx_usecase_create(pool, &cmd, &res);
+    assert(rc == 0 && res.created_id > 0);
+    int64_t created_tx_id = res.created_id;
+
+    // 2. Update transaction: change asset_id to asset_2, do NOT pass category_id (should be preserved)
+    update_tx_cmd_t u_cmd = {
+        .user_id = user_id,
+        .ledger_id = 101,
+        .tx_id = created_tx_id,
+        .asset_id = asset_2,
+        .category_id = 0,
+        .type = "deposit",
+        .amount = 1000.0,
+        .currency = "CNY",
+        .date = "2026-10-15 12:00:00",
+        .note = "Updated Note",
+    };
+    tx_usecase_result_t u_res = {0};
+    rc = tx_usecase_update(pool, &u_cmd, &u_res);
+    assert(rc == 0 && u_res.code == 0);
+
+    // 3. Verify transaction record has asset_id == asset_2
+    mf_transaction_t tx_check = {0};
+    rc = mf_tx_repo_find_by_id(pool, user_id, created_tx_id, &tx_check);
+    assert(rc == 0);
+    assert(tx_check.asset_id == asset_2);
+
+    printf("  ✅ Transaction Update Change Asset & Preserve Fields passed\n");
+}
+
+static void
 test_portfolio_repository(csilk_db_pool_t* pool, int64_t user_id, int64_t asset_id)
 {
     printf("--- 4. Testing Portfolio Domain Repository ---\n");
@@ -762,6 +846,7 @@ main(void)
     test_asset_repository(pool, user_id, &asset_id);
     test_transaction_repository(pool, user_id, asset_id);
     test_transaction_ledger_scoping(pool, user_id, asset_id);
+    test_transaction_update_change_asset(pool, user_id);
     test_portfolio_repository(pool, user_id, asset_id);
     test_cashflow_repository(pool, user_id);
     test_market_repository(pool, user_id);

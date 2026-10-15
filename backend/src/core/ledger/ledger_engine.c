@@ -328,7 +328,8 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
         char id_str[32];
         snprintf(id_str, sizeof(id_str), "%lld", (long long)tx->id);
 
-        const char* upd_params[] = {tx_type_str,
+        const char* upd_params[] = {ast_str,
+                                    tx_type_str,
                                     dir,
                                     ldir,
                                     amt_buf,
@@ -348,9 +349,10 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
         csilk_json_t* upd_res = csilk_db_query_param_json(
             pool,
             "UPDATE transactions SET "
-            "transaction_type=?, direction=?, linked_direction=NULLIF(?, ''), "
+            "asset_id=?, transaction_type=?, direction=?, linked_direction=NULLIF(?, ''), "
             "amount=?, price_per_unit=?, quantity=?, fee=?, currency=?, "
-            "transaction_date=?, note=?, category_id=?, source_type=?, "
+            "transaction_date=?, note=?, category_id=CAST(NULLIF(?, '0') AS BIGINT), "
+            "source_type=?, "
             "linked_asset_id=CAST(NULLIF(?, '0') AS BIGINT) "
             "WHERE id=? AND user_id=? RETURNING id",
             upd_params);

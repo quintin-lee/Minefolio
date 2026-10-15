@@ -200,6 +200,30 @@ tx_usecase_update(void* pool, const update_tx_cmd_t* cmd, tx_usecase_result_t* o
                            : csilk_json_get_string(old_row, "transaction_date");
     const char* note = cmd->note ? cmd->note : csilk_json_get_string(old_row, "note");
 
+    int64_t target_asset_id = (cmd->asset_id > 0) ? cmd->asset_id : old_asset_id;
+    int64_t target_linked_id = (cmd->linked_asset_id > 0)
+                                   ? cmd->linked_asset_id
+                                   : (int64_t)db_get_int(old_row, "linked_asset_id");
+    int64_t target_cat_id =
+        (cmd->category_id > 0) ? cmd->category_id : (int64_t)db_get_int(old_row, "category_id");
+    int64_t target_ledger_id =
+        (cmd->ledger_id > 0) ? cmd->ledger_id : (int64_t)db_get_int(old_row, "ledger_id");
+
+    /* 校验目标资产存在性 */
+    if (!tx_asset_exists(pool, cmd->user_id, target_asset_id)) {
+        csilk_json_free(old_rows);
+        out_res->code = 1003;
+        snprintf(out_res->message, sizeof(out_res->message), "目标资产不存在");
+        return -1;
+    }
+
+    if (target_linked_id > 0 && !tx_asset_exists(pool, cmd->user_id, target_linked_id)) {
+        csilk_json_free(old_rows);
+        out_res->code = 1002;
+        snprintf(out_res->message, sizeof(out_res->message), "关联资金账户无效");
+        return -1;
+    }
+
     if (csilk_db_exec((csilk_db_pool_t*)pool, "BEGIN TRANSACTION") != 0) {
         csilk_json_free(old_rows);
         out_res->code = 1004;
@@ -229,9 +253,10 @@ tx_usecase_update(void* pool, const update_tx_cmd_t* cmd, tx_usecase_result_t* o
     ledger_tx_t ltx = {
         .id = cmd->tx_id,
         .user_id = cmd->user_id,
-        .asset_id = old_asset_id,
-        .linked_asset_id = cmd->linked_asset_id,
-        .category_id = cmd->category_id,
+        .ledger_id = target_ledger_id,
+        .asset_id = target_asset_id,
+        .linked_asset_id = target_linked_id,
+        .category_id = target_cat_id,
         .type = ledger_tx_type_from_str(type),
         .type_str = type,
         .amount = amt_m,
