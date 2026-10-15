@@ -1,5 +1,6 @@
 #include "infrastructure/repositories/portfolio_repo_impl.h"
 #include "common/db.h"
+#include "services/market/exchange_rate_service.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -172,14 +173,18 @@ portfolio_repo_get_total_liabilities(void* pool, int64_t user_id)
 
     csilk_json_t* liab_rows = csilk_db_query_param_json(
         (csilk_db_pool_t*)pool,
-        "SELECT COALESCE(SUM(a.current_value), 0) as total_liabilities "
+        "SELECT a.current_value, a.currency "
         "FROM assets a JOIN categories c ON a.category_id=c.id "
         "WHERE a.user_id=? AND c.asset_type IN ('loan','credit_card','other_liability')",
         params);
     double total = 0.0;
     if (liab_rows) {
-        if (csilk_json_array_size(liab_rows) > 0) {
-            total = db_get_num(csilk_json_array_get(liab_rows, 0), "total_liabilities");
+        size_t n = csilk_json_array_size(liab_rows);
+        for (size_t i = 0; i < n; i++) {
+            csilk_json_t* row = csilk_json_array_get(liab_rows, i);
+            const char*   cur = csilk_json_get_string(row, "currency");
+            double        v = db_get_num(row, "current_value") * exchange_rate_get_to_cny(cur);
+            total += v;
         }
         csilk_json_free(liab_rows);
     }
