@@ -125,23 +125,30 @@ report_asset_breakdown(csilk_ctx_t* c)
     if (user_id < 0) {
         return;
     }
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "viewer");
+    if (ledger_id < 0) {
+        return;
+    }
     csilk_db_pool_t* pool = db_get_pool();
 
-    char uid_str[32];
+    char uid_str[32], lid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-    const char* params[] = {uid_str, NULL};
+    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
+    const char* params[] = {uid_str, lid_str, NULL};
 
     csilk_json_t* assets = csilk_db_query_param_json(
         pool,
         "SELECT c.name as name, a.current_value as value, a.currency as currency "
         "FROM assets a JOIN categories c ON a.category_id=c.id "
-        "WHERE a.user_id=? AND c.asset_type NOT IN ('loan','credit_card','other_liability')",
+        "WHERE a.user_id=? AND a.ledger_id=? AND c.asset_type NOT IN "
+        "('loan','credit_card','other_liability')",
         params);
     csilk_json_t* liabs = csilk_db_query_param_json(
         pool,
         "SELECT c.name as name, a.current_value as value, a.currency as currency "
         "FROM assets a JOIN categories c ON a.category_id=c.id "
-        "WHERE a.user_id=? AND c.asset_type IN ('loan','credit_card','other_liability')",
+        "WHERE a.user_id=? AND a.ledger_id=? AND c.asset_type IN "
+        "('loan','credit_card','other_liability')",
         params);
 
     typedef struct {
@@ -257,17 +264,22 @@ report_asset_summary(csilk_ctx_t* c)
     if (user_id < 0) {
         return;
     }
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "viewer");
+    if (ledger_id < 0) {
+        return;
+    }
     csilk_db_pool_t* pool = db_get_pool();
 
-    char uid_str[32];
+    char uid_str[32], lid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-    const char* params[] = {uid_str, NULL};
+    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
+    const char* params[] = {uid_str, lid_str, NULL};
 
     csilk_json_t* rows = csilk_db_query_param_json(
         pool,
         "SELECT a.current_value, a.currency, c.name as name, c.asset_type "
         "FROM assets a JOIN categories c ON a.category_id=c.id "
-        "WHERE a.user_id=?",
+        "WHERE a.user_id=? AND a.ledger_id=?",
         params);
     double        current_assets = 0, current_liabs = 0;
     csilk_json_t* by_cat = csilk_json_array();
@@ -340,13 +352,13 @@ report_asset_summary(csilk_ctx_t* c)
                            "FROM asset_balance_logs abl "
                            "JOIN assets a ON abl.asset_id = a.id "
                            "JOIN categories c ON a.category_id = c.id "
-                           "WHERE abl.user_id = ? "
+                           "WHERE abl.user_id = ? AND a.ledger_id = ? "
                            "AND abl.created_at::date >= CURRENT_DATE - 30"
                          : "SELECT abl.delta, a.currency, c.asset_type "
                            "FROM asset_balance_logs abl "
                            "JOIN assets a ON abl.asset_id = a.id "
                            "JOIN categories c ON a.category_id = c.id "
-                           "WHERE abl.user_id = ? "
+                           "WHERE abl.user_id = ? AND a.ledger_id = ? "
                            "AND date(abl.created_at) >= date('now', '-30 days')",
         params);
     double change_30d = 0;
@@ -408,14 +420,19 @@ report_multi_currency_summary(csilk_ctx_t* c)
         respond_unauthorized(c);
         return;
     }
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "viewer");
+    if (ledger_id < 0) {
+        return;
+    }
     const char* base_cur = csilk_get_query(c, "base_currency");
     if (!base_cur || !base_cur[0]) {
         base_cur = "CNY";
     }
 
-    char uid_str[32];
+    char uid_str[32], lid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-    const char* params[] = {uid_str, NULL};
+    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
+    const char* params[] = {uid_str, lid_str, NULL};
 
     csilk_db_pool_t* pool = db_get_pool();
     csilk_json_t*    rows = csilk_db_query_param_json(
@@ -426,7 +443,7 @@ report_multi_currency_summary(csilk_ctx_t* c)
         "c.asset_type "
         "FROM assets a "
         "JOIN categories c ON a.category_id = c.id "
-        "WHERE a.user_id = ?",
+        "WHERE a.user_id = ? AND a.ledger_id = ?",
         params);
 
     typedef struct {
@@ -548,6 +565,10 @@ report_fx_pnl(csilk_ctx_t* c)
         respond_unauthorized(c);
         return;
     }
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "viewer");
+    if (ledger_id < 0) {
+        return;
+    }
 
     const char* base_cur = csilk_get_query(c, "base_currency");
     if (!base_cur || !base_cur[0]) {
@@ -555,8 +576,9 @@ report_fx_pnl(csilk_ctx_t* c)
     }
 
     csilk_db_pool_t* pool = db_get_pool();
-    char             uid_str[32];
+    char             uid_str[32], lid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
 
     const char* sql =
         db_is_postgres()
@@ -575,7 +597,8 @@ report_fx_pnl(csilk_ctx_t* c)
               "       ) as initial_rate "
               "FROM assets a "
               "JOIN categories c ON a.category_id = c.id "
-              "WHERE a.user_id = ? AND a.currency IS NOT NULL AND a.currency != ? AND a.currency "
+              "WHERE a.user_id = ? AND a.ledger_id = ? AND a.currency IS NOT NULL AND a.currency "
+              "!= ? AND a.currency "
               "!= ''"
             : "SELECT a.id, a.name, a.currency, a.quantity, a.cost_basis, a.net_value, "
               "a.current_value, "
@@ -592,11 +615,12 @@ report_fx_pnl(csilk_ctx_t* c)
               "       ) as initial_rate "
               "FROM assets a "
               "JOIN categories c ON a.category_id = c.id "
-              "WHERE a.user_id = ? AND a.currency IS NOT NULL AND a.currency != ? AND a.currency "
+              "WHERE a.user_id = ? AND a.ledger_id = ? AND a.currency IS NOT NULL AND a.currency "
+              "!= ? AND a.currency "
               "!= ''";
 
     csilk_json_t* rows =
-        csilk_db_query_param_json(pool, sql, (const char*[]){uid_str, base_cur, NULL});
+        csilk_db_query_param_json(pool, sql, (const char*[]){uid_str, lid_str, base_cur, NULL});
 
     csilk_json_t* items = csilk_json_array();
     currency_t    base_currency = currency_from_str(base_cur);

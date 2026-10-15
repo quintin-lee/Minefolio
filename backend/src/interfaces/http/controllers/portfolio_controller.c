@@ -8,15 +8,19 @@
 void
 api_portfolio_holdings(csilk_ctx_t* c)
 {
-    int64_t user_id = jwt_get_user_id(c);
+    int64_t user_id = ctx_user_id(c);
     if (user_id < 0) {
-        respond_unauthorized(c);
+        return;
+    }
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "viewer");
+    if (ledger_id < 0) {
         return;
     }
 
     const char*           req_cur = csilk_get_param(c, "currency");
     query_portfolio_cmd_t cmd = {
         .user_id = user_id,
+        .ledger_id = ledger_id,
         .base_currency = (req_cur && req_cur[0]) ? req_cur : "CNY",
     };
 
@@ -38,9 +42,14 @@ api_portfolio_performance(csilk_ctx_t* c)
     if (user_id < 0) {
         return;
     }
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "viewer");
+    if (ledger_id < 0) {
+        return;
+    }
 
     query_portfolio_cmd_t cmd = {
         .user_id = user_id,
+        .ledger_id = ledger_id,
         .base_currency = "CNY",
     };
 
@@ -62,9 +71,14 @@ api_portfolio_dashboard_summary(csilk_ctx_t* c)
     if (user_id < 0) {
         return;
     }
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "viewer");
+    if (ledger_id < 0) {
+        return;
+    }
 
     query_portfolio_cmd_t cmd = {
         .user_id = user_id,
+        .ledger_id = ledger_id,
         .base_currency = "CNY",
     };
 

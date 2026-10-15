@@ -15,6 +15,7 @@
  */
 int mf_portfolio_repo_get_holdings(void*               db_pool,
                                    int64_t             user_id,
+                                   int64_t             ledger_id,
                                    mf_holding_item_t** out_items,
                                    size_t*             out_count);
 
@@ -29,6 +30,7 @@ void mf_portfolio_repo_free_holdings(mf_holding_item_t* items, size_t count);
  */
 int mf_portfolio_repo_get_trade_events(void*                        db_pool,
                                        int64_t                      user_id,
+                                       int64_t                      ledger_id,
                                        mf_portfolio_trade_event_t** out_events,
                                        size_t*                      out_count);
 

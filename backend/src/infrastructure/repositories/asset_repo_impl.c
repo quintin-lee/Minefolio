@@ -113,7 +113,9 @@ asset_insert(csilk_db_pool_t* pool,
         pool,
         "INSERT INTO assets "
         "(user_id,category_id,name,account_no,current_value,currency,note,quantity,cost_basis,net_"
-        "value,symbol,quote_source) VALUES (?,?,?, ?,?, ?,?,?,?,?, ?,?) RETURNING id",
+        "value,symbol,quote_source,ledger_id) VALUES (?,?,?, ?,?, ?,?,?,?,?, ?,?, "
+        "COALESCE((SELECT ledger_id FROM categories WHERE id=?), (SELECT id FROM ledgers WHERE "
+        "owner_id=? AND is_default=1))) RETURNING id",
         (const char*[]){uid,
                         cat,
                         name,
@@ -126,6 +128,8 @@ asset_insert(csilk_db_pool_t* pool,
                         nv,
                         symbol ? symbol : "",
                         quote_source ? quote_source : "",
+                        cat,
+                        uid,
                         NULL});
     int64_t id = 0;
     if (res && csilk_json_array_size(res) > 0) {

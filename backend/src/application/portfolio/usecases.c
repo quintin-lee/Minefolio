@@ -26,7 +26,8 @@ portfolio_usecase_get_holdings(void*                        db_pool,
 
     mf_holding_item_t* items = NULL;
     size_t             item_count = 0;
-    if (mf_portfolio_repo_get_holdings(db_pool, cmd->user_id, &items, &item_count) != 0) {
+    if (mf_portfolio_repo_get_holdings(
+            db_pool, cmd->user_id, cmd->ledger_id, &items, &item_count) != 0) {
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "查询持仓标的失败");
         return -1;
@@ -34,7 +35,8 @@ portfolio_usecase_get_holdings(void*                        db_pool,
 
     mf_portfolio_trade_event_t* events = NULL;
     size_t                      event_count = 0;
-    if (mf_portfolio_repo_get_trade_events(db_pool, cmd->user_id, &events, &event_count) != 0) {
+    if (mf_portfolio_repo_get_trade_events(
+            db_pool, cmd->user_id, cmd->ledger_id, &events, &event_count) != 0) {
         mf_portfolio_repo_free_holdings(items, item_count);
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "查询交易事实流水失败");
@@ -117,7 +119,8 @@ portfolio_usecase_get_performance(void*                        db_pool,
         return -1;
     }
 
-    csilk_json_t* result = portfolio_repo_get_performance_transactions(db_pool, cmd->user_id);
+    csilk_json_t* result =
+        portfolio_repo_get_performance_transactions(db_pool, cmd->user_id, cmd->ledger_id);
     if (!result) {
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "查询失败");
@@ -241,7 +244,7 @@ portfolio_usecase_get_performance(void*                        db_pool,
 
     double market_value = 0, cost_basis_remaining = 0, dummy_qty = 0;
     portfolio_repo_get_current_holdings_totals(
-        db_pool, cmd->user_id, &dummy_qty, &cost_basis_remaining, &market_value);
+        db_pool, cmd->user_id, cmd->ledger_id, &dummy_qty, &cost_basis_remaining, &market_value);
 
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_number(resp, "total_trades", total_trades);
@@ -276,7 +279,7 @@ portfolio_usecase_get_dashboard_summary(void*                        db_pool,
         return -1;
     }
 
-    csilk_json_t* rows = portfolio_repo_get_category_assets(db_pool, cmd->user_id);
+    csilk_json_t* rows = portfolio_repo_get_category_assets(db_pool, cmd->user_id, cmd->ledger_id);
     if (!rows) {
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "查询失败");
@@ -327,10 +330,12 @@ portfolio_usecase_get_dashboard_summary(void*                        db_pool,
         csilk_json_array_append(breakdown, item);
     }
 
-    double total_liabilities = portfolio_repo_get_total_liabilities(db_pool, cmd->user_id);
+    double total_liabilities =
+        portfolio_repo_get_total_liabilities(db_pool, cmd->user_id, cmd->ledger_id);
     double net_worth = total_assets - total_liabilities;
 
-    csilk_json_t* recent_tx = portfolio_repo_get_recent_transactions(db_pool, cmd->user_id, 5);
+    csilk_json_t* recent_tx =
+        portfolio_repo_get_recent_transactions(db_pool, cmd->user_id, cmd->ledger_id, 5);
 
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_number(resp, "total_assets", total_assets);
@@ -339,7 +344,7 @@ portfolio_usecase_get_dashboard_summary(void*                        db_pool,
     csilk_json_add_array(resp, "category_breakdown", breakdown);
     csilk_json_add_array(resp, "recent_transactions", recent_tx ? recent_tx : csilk_json_array());
 
-    csilk_json_t* trend_rows = portfolio_repo_get_trend_30d(db_pool, cmd->user_id);
+    csilk_json_t* trend_rows = portfolio_repo_get_trend_30d(db_pool, cmd->user_id, cmd->ledger_id);
     if (trend_rows && csilk_json_array_size(trend_rows) > 0) {
         const char* trend_str = csilk_json_get_string(csilk_json_array_get(trend_rows, 0), "trend");
         csilk_json_t* trend_arr = (trend_str && trend_str[0]) ? csilk_json_parse(trend_str) : NULL;

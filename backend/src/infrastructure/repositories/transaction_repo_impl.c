@@ -115,8 +115,10 @@ mf_tx_repo_save(void* db_pool, const mf_transaction_t* tx, int64_t* out_id)
         (csilk_db_pool_t*)db_pool,
         "INSERT INTO transactions (user_id, asset_id, linked_asset_id, parent_tx_id, "
         "transaction_type, "
-        "amount, price_per_unit, quantity, fee, currency, note, transaction_date) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+        "amount, price_per_unit, quantity, fee, currency, note, transaction_date, ledger_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+        "COALESCE((SELECT ledger_id FROM assets WHERE id = ?), (SELECT id FROM ledgers WHERE "
+        "owner_id = ? AND is_default = 1))) RETURNING id",
         (const char*[]){uid_str,
                         asset_id_str,
                         linked_asset_id_str,
@@ -129,6 +131,8 @@ mf_tx_repo_save(void* db_pool, const mf_transaction_t* tx, int64_t* out_id)
                         currency,
                         note,
                         date,
+                        asset_id_str,
+                        uid_str,
                         NULL});
 
     if (!res || csilk_json_array_size(res) == 0) {
@@ -440,8 +444,11 @@ tx_insert(csilk_db_pool_t* pool,
         pool,
         "INSERT INTO transactions "
         "(user_id,asset_id,linked_asset_id,category_id,source_type,transaction_type,direction,"
-        "linked_direction,amount,price_per_unit,quantity,fee,currency,transaction_date,note) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id",
+        "linked_direction,amount,price_per_unit,quantity,fee,currency,transaction_date,note,ledger_"
+        "id) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, "
+        "COALESCE((SELECT ledger_id FROM assets WHERE id = ?), (SELECT id FROM ledgers WHERE "
+        "owner_id = ? AND is_default = 1))) RETURNING id",
         (const char*[]){uid,
                         ast,
                         linked_asset_id > 0 ? last : "NULL",
@@ -457,6 +464,8 @@ tx_insert(csilk_db_pool_t* pool,
                         currency ? currency : "CNY",
                         date,
                         note ? note : "",
+                        ast,
+                        uid,
                         NULL});
     int64_t id = 0;
     if (res && csilk_json_array_size(res) > 0) {

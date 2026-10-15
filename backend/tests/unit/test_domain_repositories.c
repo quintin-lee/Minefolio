@@ -267,14 +267,14 @@ test_portfolio_repository(csilk_db_pool_t* pool, int64_t user_id, int64_t asset_
 
     mf_holding_item_t* items = NULL;
     size_t count = 0;
-    int rc = mf_portfolio_repo_get_holdings(pool, user_id, &items, &count);
+    int rc = mf_portfolio_repo_get_holdings(pool, user_id, 0, &items, &count);
     assert(rc == 0);
     assert(items != NULL || count == 0);
     mf_portfolio_repo_free_holdings(items, count);
 
     mf_portfolio_trade_event_t* events = NULL;
     size_t event_count = 0;
-    rc = mf_portfolio_repo_get_trade_events(pool, user_id, &events, &event_count);
+    rc = mf_portfolio_repo_get_trade_events(pool, user_id, 0, &events, &event_count);
     assert(rc == 0);
     assert(events != NULL || event_count == 0);
     mf_portfolio_repo_free_trade_events(events, event_count);

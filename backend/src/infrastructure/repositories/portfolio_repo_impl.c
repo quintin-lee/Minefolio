@@ -8,6 +8,7 @@
 int
 mf_portfolio_repo_get_holdings(void*               db_pool,
                                int64_t             user_id,
+                               int64_t             ledger_id,
                                mf_holding_item_t** out_items,
                                size_t*             out_count)
 {
@@ -17,16 +18,35 @@ mf_portfolio_repo_get_holdings(void*               db_pool,
     *out_items = NULL;
     *out_count = 0;
 
-    char uid_str[32];
+    char uid_str[32], lid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-    const char* params[] = {uid_str, NULL};
+    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
 
-    const char* hold_sql =
-        "SELECT a.id AS asset_id, a.name, c.asset_type, a.currency, "
-        "a.quantity, a.net_value, a.cost_basis "
-        "FROM assets a JOIN categories c ON a.category_id = c.id "
-        "WHERE a.user_id = ? AND c.asset_type IN ('stock','fund','bond','crypto') "
-        "ORDER BY a.id ASC";
+    const char* params[4];
+    int         pidx = 0;
+    params[pidx++] = uid_str;
+
+    char hold_sql[512];
+    if (ledger_id > 0) {
+        snprintf(hold_sql,
+                 sizeof(hold_sql),
+                 "SELECT a.id AS asset_id, a.name, c.asset_type, a.currency, "
+                 "a.quantity, a.net_value, a.cost_basis "
+                 "FROM assets a JOIN categories c ON a.category_id = c.id "
+                 "WHERE a.user_id = ? AND a.ledger_id = ? AND c.asset_type IN "
+                 "('stock','fund','bond','crypto') "
+                 "ORDER BY a.id ASC");
+        params[pidx++] = lid_str;
+    } else {
+        snprintf(hold_sql,
+                 sizeof(hold_sql),
+                 "SELECT a.id AS asset_id, a.name, c.asset_type, a.currency, "
+                 "a.quantity, a.net_value, a.cost_basis "
+                 "FROM assets a JOIN categories c ON a.category_id = c.id "
+                 "WHERE a.user_id = ? AND c.asset_type IN ('stock','fund','bond','crypto') "
+                 "ORDER BY a.id ASC");
+    }
+    params[pidx] = NULL;
 
     csilk_json_t* hold_rows =
         csilk_db_query_param_json((csilk_db_pool_t*)db_pool, hold_sql, params);
@@ -83,6 +103,7 @@ mf_portfolio_repo_free_holdings(mf_holding_item_t* items, size_t count)
 int
 mf_portfolio_repo_get_trade_events(void*                        db_pool,
                                    int64_t                      user_id,
+                                   int64_t                      ledger_id,
                                    mf_portfolio_trade_event_t** out_events,
                                    size_t*                      out_count)
 {
@@ -92,13 +113,35 @@ mf_portfolio_repo_get_trade_events(void*                        db_pool,
     *out_events = NULL;
     *out_count = 0;
 
-    char uid_str[32];
+    char uid_str[32], lid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-    const char* params[] = {uid_str, NULL};
+    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
 
-    const char* tx_sql =
-        "SELECT id, asset_id, transaction_type, quantity, amount, price_per_unit, fee, currency "
-        "FROM transactions WHERE user_id = ? ORDER BY transaction_date ASC, id ASC";
+    const char* params[4];
+    int         pidx = 0;
+    params[pidx++] = uid_str;
+
+    char tx_sql[512];
+    if (ledger_id > 0) {
+        snprintf(tx_sql,
+                 sizeof(tx_sql),
+                 "SELECT t.id, t.asset_id, t.transaction_type, t.quantity, t.amount, "
+                 "t.price_per_unit, t.fee, "
+                 "t.currency "
+                 "FROM transactions t JOIN assets a ON t.asset_id = a.id "
+                 "WHERE t.user_id = ? AND (t.ledger_id = ? OR a.ledger_id = ?) ORDER BY "
+                 "t.transaction_date "
+                 "ASC, t.id ASC");
+        params[pidx++] = lid_str;
+        params[pidx++] = lid_str;
+    } else {
+        snprintf(tx_sql,
+                 sizeof(tx_sql),
+                 "SELECT id, asset_id, transaction_type, quantity, amount, price_per_unit, fee, "
+                 "currency "
+                 "FROM transactions WHERE user_id = ? ORDER BY transaction_date ASC, id ASC");
+    }
+    params[pidx] = NULL;
 
     csilk_json_t* tx_rows = csilk_db_query_param_json((csilk_db_pool_t*)db_pool, tx_sql, params);
     if (!tx_rows) {
@@ -150,34 +193,69 @@ mf_portfolio_repo_free_trade_events(mf_portfolio_trade_event_t* events, size_t c
 }
 
 csilk_json_t*
-portfolio_repo_get_category_assets(void* pool, int64_t user_id)
+portfolio_repo_get_category_assets(void* pool, int64_t user_id, int64_t ledger_id)
 {
-    char uid_str[32];
+    char uid_str[32], lid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-    const char* params[] = {uid_str, NULL};
+    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
 
-    return csilk_db_query_param_json(
-        (csilk_db_pool_t*)pool,
-        "SELECT c.name as category_name, a.current_value as value, a.currency as currency "
-        "FROM assets a JOIN categories c ON a.category_id=c.id "
-        "WHERE a.user_id=? AND c.asset_type NOT IN ('loan','credit_card','other_liability')",
-        params);
+    const char* params[4];
+    int         pidx = 0;
+    params[pidx++] = uid_str;
+
+    char sql[512];
+    if (ledger_id > 0) {
+        snprintf(sql,
+                 sizeof(sql),
+                 "SELECT c.name as category_name, a.current_value as value, a.currency as currency "
+                 "FROM assets a JOIN categories c ON a.category_id=c.id "
+                 "WHERE a.user_id=? AND a.ledger_id=? AND c.asset_type NOT IN "
+                 "('loan','credit_card','other_liability')");
+        params[pidx++] = lid_str;
+    } else {
+        snprintf(sql,
+                 sizeof(sql),
+                 "SELECT c.name as category_name, a.current_value as value, a.currency as currency "
+                 "FROM assets a JOIN categories c ON a.category_id=c.id "
+                 "WHERE a.user_id=? AND c.asset_type NOT IN "
+                 "('loan','credit_card','other_liability')");
+    }
+    params[pidx] = NULL;
+
+    return csilk_db_query_param_json((csilk_db_pool_t*)pool, sql, params);
 }
 
 double
-portfolio_repo_get_total_liabilities(void* pool, int64_t user_id)
+portfolio_repo_get_total_liabilities(void* pool, int64_t user_id, int64_t ledger_id)
 {
-    char uid_str[32];
+    char uid_str[32], lid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-    const char* params[] = {uid_str, NULL};
+    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
 
-    csilk_json_t* liab_rows = csilk_db_query_param_json(
-        (csilk_db_pool_t*)pool,
-        "SELECT a.current_value, a.currency "
-        "FROM assets a JOIN categories c ON a.category_id=c.id "
-        "WHERE a.user_id=? AND c.asset_type IN ('loan','credit_card','other_liability')",
-        params);
-    double total = 0.0;
+    const char* params[4];
+    int         pidx = 0;
+    params[pidx++] = uid_str;
+
+    char sql[512];
+    if (ledger_id > 0) {
+        snprintf(sql,
+                 sizeof(sql),
+                 "SELECT a.current_value, a.currency "
+                 "FROM assets a JOIN categories c ON a.category_id=c.id "
+                 "WHERE a.user_id=? AND a.ledger_id=? AND c.asset_type IN "
+                 "('loan','credit_card','other_liability')");
+        params[pidx++] = lid_str;
+    } else {
+        snprintf(sql,
+                 sizeof(sql),
+                 "SELECT a.current_value, a.currency "
+                 "FROM assets a JOIN categories c ON a.category_id=c.id "
+                 "WHERE a.user_id=? AND c.asset_type IN ('loan','credit_card','other_liability')");
+    }
+    params[pidx] = NULL;
+
+    csilk_json_t* liab_rows = csilk_db_query_param_json((csilk_db_pool_t*)pool, sql, params);
+    double        total = 0.0;
     if (liab_rows) {
         size_t n = csilk_json_array_size(liab_rows);
         for (size_t i = 0; i < n; i++) {
@@ -192,110 +270,210 @@ portfolio_repo_get_total_liabilities(void* pool, int64_t user_id)
 }
 
 csilk_json_t*
-portfolio_repo_get_recent_transactions(void* pool, int64_t user_id, int limit)
+portfolio_repo_get_recent_transactions(void* pool, int64_t user_id, int64_t ledger_id, int limit)
 {
-    char uid_str[32], lim_str[16];
+    char uid_str[32], lid_str[32], lim_str[16];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
     snprintf(lim_str, sizeof(lim_str), "%d", limit > 0 ? limit : 5);
-    const char* params[] = {uid_str, lim_str, NULL};
 
-    return csilk_db_query_param_json(
-        (csilk_db_pool_t*)pool,
-        "SELECT t.id, t.transaction_date, t.transaction_type, t.amount, t.currency, "
-        "a.name as asset_name, c.name as category_name "
-        "FROM transactions t "
-        "LEFT JOIN assets a ON t.asset_id=a.id "
-        "LEFT JOIN categories c ON t.category_id=c.id "
-        "WHERE t.user_id=? "
-        "ORDER BY t.transaction_date DESC, t.id DESC LIMIT ?",
-        params);
+    const char* params[4];
+    int         pidx = 0;
+    params[pidx++] = uid_str;
+
+    char sql[512];
+    if (ledger_id > 0) {
+        snprintf(sql,
+                 sizeof(sql),
+                 "SELECT t.id, t.transaction_date, t.transaction_type, t.amount, t.currency, "
+                 "a.name as asset_name, c.name as category_name "
+                 "FROM transactions t "
+                 "LEFT JOIN assets a ON t.asset_id=a.id "
+                 "LEFT JOIN categories c ON t.category_id=c.id "
+                 "WHERE t.user_id=? AND (t.ledger_id=? OR a.ledger_id=?) "
+                 "ORDER BY t.transaction_date DESC, t.id DESC LIMIT ?");
+        params[pidx++] = lid_str;
+        params[pidx++] = lid_str;
+    } else {
+        snprintf(sql,
+                 sizeof(sql),
+                 "SELECT t.id, t.transaction_date, t.transaction_type, t.amount, t.currency, "
+                 "a.name as asset_name, c.name as category_name "
+                 "FROM transactions t "
+                 "LEFT JOIN assets a ON t.asset_id=a.id "
+                 "LEFT JOIN categories c ON t.category_id=c.id "
+                 "WHERE t.user_id=? "
+                 "ORDER BY t.transaction_date DESC, t.id DESC LIMIT ?");
+    }
+    params[pidx++] = lim_str;
+    params[pidx] = NULL;
+
+    return csilk_db_query_param_json((csilk_db_pool_t*)pool, sql, params);
 }
 
 csilk_json_t*
-portfolio_repo_get_trend_30d(void* pool, int64_t user_id)
+portfolio_repo_get_trend_30d(void* pool, int64_t user_id, int64_t ledger_id)
 {
-    char uid_str[32];
+    char uid_str[32], lid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-    const char* params[] = {uid_str, uid_str, uid_str, uid_str, NULL};
+    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
 
-    return csilk_db_query_param_json(
-        (csilk_db_pool_t*)pool,
-        db_is_postgres()
-            ? "SELECT COALESCE(json_agg(json_build_object("
-              "'date', day, "
-              "'total_assets', assets, "
-              "'total_liabilities', liabilities, "
-              "'net_worth', assets - liabilities) ORDER BY day), '[]') as trend "
-              "FROM ("
-              "  WITH RECURSIVE days(d) AS ("
-              "    SELECT (CURRENT_DATE - 29)::date"
-              "    UNION ALL"
-              "    SELECT (d + 1)::date FROM days WHERE d < CURRENT_DATE"
-              "  )"
-              "  SELECT "
-              "    days.d as day,"
-              "    COALESCE((SELECT SUM(current_value) FROM assets a JOIN categories c ON "
-              "a.category_id=c.id "
-              "     WHERE a.user_id=? AND c.asset_type NOT IN "
-              "('loan','credit_card','other_liability') "
-              "     AND a.created_at::date <= days.d), 0) as assets,"
-              "    COALESCE((SELECT SUM(current_value) FROM assets a JOIN categories c ON "
-              "a.category_id=c.id "
-              "     WHERE a.user_id=? AND c.asset_type IN ('loan','credit_card','other_liability') "
-              "     AND a.created_at::date <= days.d), 0) as liabilities "
-              "  FROM days "
-              "  ORDER BY days.d ASC"
-              ")"
-            : "SELECT json_group_array(json_object("
-              "'date', day, "
-              "'total_assets', assets, "
-              "'total_liabilities', liabilities, "
-              "'net_worth', assets - liabilities"
-              ")) as trend "
-              "FROM ("
-              "  WITH RECURSIVE days(d) AS ("
-              "    SELECT date('now', '-29 days')"
-              "    UNION ALL"
-              "    SELECT date(d, '+1 day') FROM days WHERE d < date('now')"
-              "  )"
-              "  SELECT "
-              "    days.d as day,"
-              "    COALESCE((SELECT SUM(current_value) FROM assets a JOIN categories c ON "
-              "a.category_id=c.id "
-              "     WHERE a.user_id=? AND c.asset_type NOT IN "
-              "('loan','credit_card','other_liability') "
-              "     AND date(a.created_at) <= days.d), 0) as assets,"
-              "    COALESCE((SELECT SUM(current_value) FROM assets a JOIN categories c ON "
-              "a.category_id=c.id "
-              "     WHERE a.user_id=? AND c.asset_type IN ('loan','credit_card','other_liability') "
-              "     AND date(a.created_at) <= days.d), 0) as liabilities "
-              "  FROM days "
-              "  ORDER BY days.d ASC"
-              ")",
-        params);
+    const char* params[10];
+    int         pidx = 0;
+    for (int k = 0; k < 4; k++) {
+        params[pidx++] = uid_str;
+        if (ledger_id > 0) {
+            params[pidx++] = lid_str;
+        }
+    }
+    params[pidx] = NULL;
+
+    char pg_assets_pred[128], pg_liabs_pred[128];
+    char sqlite_assets_pred[128], sqlite_liabs_pred[128];
+    if (ledger_id > 0) {
+        snprintf(pg_assets_pred,
+                 sizeof(pg_assets_pred),
+                 "a.user_id=? AND a.ledger_id=? AND c.asset_type NOT IN "
+                 "('loan','credit_card','other_liability')");
+        snprintf(pg_liabs_pred,
+                 sizeof(pg_liabs_pred),
+                 "a.user_id=? AND a.ledger_id=? AND c.asset_type IN "
+                 "('loan','credit_card','other_liability')");
+        snprintf(sqlite_assets_pred,
+                 sizeof(sqlite_assets_pred),
+                 "a.user_id=? AND a.ledger_id=? AND c.asset_type NOT IN "
+                 "('loan','credit_card','other_liability')");
+        snprintf(sqlite_liabs_pred,
+                 sizeof(sqlite_liabs_pred),
+                 "a.user_id=? AND a.ledger_id=? AND c.asset_type IN "
+                 "('loan','credit_card','other_liability')");
+    } else {
+        snprintf(pg_assets_pred,
+                 sizeof(pg_assets_pred),
+                 "a.user_id=? AND c.asset_type NOT IN ('loan','credit_card','other_liability')");
+        snprintf(pg_liabs_pred,
+                 sizeof(pg_liabs_pred),
+                 "a.user_id=? AND c.asset_type IN ('loan','credit_card','other_liability')");
+        snprintf(sqlite_assets_pred,
+                 sizeof(sqlite_assets_pred),
+                 "a.user_id=? AND c.asset_type NOT IN ('loan','credit_card','other_liability')");
+        snprintf(sqlite_liabs_pred,
+                 sizeof(sqlite_liabs_pred),
+                 "a.user_id=? AND c.asset_type IN ('loan','credit_card','other_liability')");
+    }
+
+    char sql[2048];
+    if (db_is_postgres()) {
+        snprintf(sql,
+                 sizeof(sql),
+                 "SELECT COALESCE(json_agg(json_build_object("
+                 "'date', day, "
+                 "'total_assets', assets, "
+                 "'total_liabilities', liabilities, "
+                 "'net_worth', assets - liabilities) ORDER BY day), '[]') as trend "
+                 "FROM ("
+                 "  WITH RECURSIVE days(d) AS ("
+                 "    SELECT (CURRENT_DATE - 29)::date"
+                 "    UNION ALL"
+                 "    SELECT (d + 1)::date FROM days WHERE d < CURRENT_DATE"
+                 "  )"
+                 "  SELECT "
+                 "    days.d as day,"
+                 "    COALESCE((SELECT SUM(current_value) FROM assets a JOIN categories c ON "
+                 "a.category_id=c.id "
+                 "     WHERE %s "
+                 "     AND a.created_at::date <= days.d), 0) as assets,"
+                 "    COALESCE((SELECT SUM(current_value) FROM assets a JOIN categories c ON "
+                 "a.category_id=c.id "
+                 "     WHERE %s "
+                 "     AND a.created_at::date <= days.d), 0) as liabilities "
+                 "  FROM days "
+                 "  ORDER BY days.d ASC"
+                 ")",
+                 pg_assets_pred,
+                 pg_liabs_pred);
+    } else {
+        snprintf(sql,
+                 sizeof(sql),
+                 "SELECT json_group_array(json_object("
+                 "'date', day, "
+                 "'total_assets', assets, "
+                 "'total_liabilities', liabilities, "
+                 "'net_worth', assets - liabilities"
+                 ")) as trend "
+                 "FROM ("
+                 "  WITH RECURSIVE days(d) AS ("
+                 "    SELECT date('now', '-29 days')"
+                 "    UNION ALL"
+                 "    SELECT date(d, '+1 day') FROM days WHERE d < date('now')"
+                 "  )"
+                 "  SELECT "
+                 "    days.d as day,"
+                 "    COALESCE((SELECT SUM(current_value) FROM assets a JOIN categories c ON "
+                 "a.category_id=c.id "
+                 "     WHERE %s "
+                 "     AND date(a.created_at) <= days.d), 0) as assets,"
+                 "    COALESCE((SELECT SUM(current_value) FROM assets a JOIN categories c ON "
+                 "a.category_id=c.id "
+                 "     WHERE %s "
+                 "     AND date(a.created_at) <= days.d), 0) as liabilities "
+                 "  FROM days "
+                 "  ORDER BY days.d ASC"
+                 ")",
+                 sqlite_assets_pred,
+                 sqlite_liabs_pred);
+    }
+
+    return csilk_db_query_param_json((csilk_db_pool_t*)pool, sql, params);
 }
 
 csilk_json_t*
-portfolio_repo_get_performance_transactions(void* pool, int64_t user_id)
+portfolio_repo_get_performance_transactions(void* pool, int64_t user_id, int64_t ledger_id)
 {
-    char uid_str[32];
+    char uid_str[32], lid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-    const char* params[] = {uid_str, NULL};
+    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
 
-    return csilk_db_query_param_json(
-        (csilk_db_pool_t*)pool,
-        "SELECT t.id, t.asset_id, a.name as asset_name, t.transaction_type, t.direction, "
-        "t.transaction_date, "
-        "t.quantity, t.price_per_unit, t.amount, t.fee, t.currency, t.parent_tx_id "
-        "FROM transactions t JOIN assets a ON t.asset_id=a.id "
-        "WHERE t.user_id=? AND (t.parent_tx_id IS NULL OR t.parent_tx_id = 0) "
-        "ORDER BY t.transaction_date ASC, t.id ASC",
-        params);
+    const char* params[4];
+    int         pidx = 0;
+    params[pidx++] = uid_str;
+
+    char sql[512];
+    if (ledger_id > 0) {
+        snprintf(
+            sql,
+            sizeof(sql),
+            "SELECT t.id, t.asset_id, a.name as asset_name, t.transaction_type, t.direction, "
+            "t.transaction_date, "
+            "t.quantity, t.price_per_unit, t.amount, t.fee, t.currency, t.parent_tx_id "
+            "FROM transactions t JOIN assets a ON t.asset_id=a.id "
+            "WHERE t.user_id=? AND (t.ledger_id=? OR a.ledger_id=?) AND (t.parent_tx_id IS NULL OR "
+            "t.parent_tx_id = 0) "
+            "ORDER BY t.transaction_date ASC, t.id ASC");
+        params[pidx++] = lid_str;
+        params[pidx++] = lid_str;
+    } else {
+        snprintf(sql,
+                 sizeof(sql),
+                 "SELECT t.id, t.asset_id, a.name as asset_name, t.transaction_type, t.direction, "
+                 "t.transaction_date, "
+                 "t.quantity, t.price_per_unit, t.amount, t.fee, t.currency, t.parent_tx_id "
+                 "FROM transactions t JOIN assets a ON t.asset_id=a.id "
+                 "WHERE t.user_id=? AND (t.parent_tx_id IS NULL OR t.parent_tx_id = 0) "
+                 "ORDER BY t.transaction_date ASC, t.id ASC");
+    }
+    params[pidx] = NULL;
+
+    return csilk_db_query_param_json((csilk_db_pool_t*)pool, sql, params);
 }
 
 int
-portfolio_repo_get_current_holdings_totals(
-    void* pool, int64_t user_id, double* out_qty, double* out_cost, double* out_market)
+portfolio_repo_get_current_holdings_totals(void*   pool,
+                                           int64_t user_id,
+                                           int64_t ledger_id,
+                                           double* out_qty,
+                                           double* out_cost,
+                                           double* out_market)
 {
     if (!out_qty || !out_cost || !out_market) {
         return -1;
@@ -304,18 +482,37 @@ portfolio_repo_get_current_holdings_totals(
     *out_cost = 0.0;
     *out_market = 0.0;
 
-    char uid_str[32];
+    char uid_str[32], lid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-    const char* params[] = {uid_str, NULL};
+    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
 
-    csilk_json_t* pos_rows = csilk_db_query_param_json(
-        (csilk_db_pool_t*)pool,
-        "SELECT COALESCE(SUM(quantity),0) as total_qty, "
-        "COALESCE(SUM(cost_basis),0) as total_cost, "
-        "COALESCE(SUM(current_value),0) as total_market "
-        "FROM assets a JOIN categories c ON a.category_id=c.id "
-        "WHERE a.user_id=? AND c.asset_type IN ('stock','fund','bond','crypto')",
-        params);
+    const char* params[4];
+    int         pidx = 0;
+    params[pidx++] = uid_str;
+
+    char sql[512];
+    if (ledger_id > 0) {
+        snprintf(sql,
+                 sizeof(sql),
+                 "SELECT COALESCE(SUM(quantity),0) as total_qty, "
+                 "COALESCE(SUM(cost_basis),0) as total_cost, "
+                 "COALESCE(SUM(current_value),0) as total_market "
+                 "FROM assets a JOIN categories c ON a.category_id=c.id "
+                 "WHERE a.user_id=? AND a.ledger_id=? AND c.asset_type IN "
+                 "('stock','fund','bond','crypto')");
+        params[pidx++] = lid_str;
+    } else {
+        snprintf(sql,
+                 sizeof(sql),
+                 "SELECT COALESCE(SUM(quantity),0) as total_qty, "
+                 "COALESCE(SUM(cost_basis),0) as total_cost, "
+                 "COALESCE(SUM(current_value),0) as total_market "
+                 "FROM assets a JOIN categories c ON a.category_id=c.id "
+                 "WHERE a.user_id=? AND c.asset_type IN ('stock','fund','bond','crypto')");
+    }
+    params[pidx] = NULL;
+
+    csilk_json_t* pos_rows = csilk_db_query_param_json((csilk_db_pool_t*)pool, sql, params);
 
     if (pos_rows && csilk_json_array_size(pos_rows) > 0) {
         const csilk_json_t* pr = csilk_json_array_get(pos_rows, 0);

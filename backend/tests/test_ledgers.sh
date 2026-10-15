@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PORT=8080
+PORT=${MINEFOLIO_PORT:-18088}
 BASE="http://127.0.0.1:${PORT}/api"
 TMP_DIR=$(mktemp -d)
 DB_PATH="${TMP_DIR}/test_ledgers.db"
@@ -17,11 +17,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Kill any lingering process on PORT
-kill $(lsof -t -i:${PORT} 2>/dev/null) 2>/dev/null || true
-sleep 0.5
-
 echo "=== Starting Minefolio Test Server on port ${PORT} ==="
+export MINEFOLIO_PORT="${PORT}"
 export MINEFOLIO_JWT_SECRET="test_secret_for_ledgers_suite"
 export MINEFOLIO_DB_DRIVER="sqlite"
 export MINEFOLIO_DB_DSN="${DB_PATH}"
@@ -181,6 +178,36 @@ PROMOTE_RES=$(curl -s -X PUT "$BASE/ledgers/${FAM_LID}/members/${USER_B_ID}" \
   -d '{"role":"editor"}')
 test "$(echo "$PROMOTE_RES" | jq -r '.code | floor')" = "0"
 echo "Alice promoted Bob to editor"
+
+# 10d. Test Ledger Data Isolation across Portfolio & Asset Reports
+# Seed asset in Alice's default ledger
+sqlite3 "$DB_PATH" "INSERT INTO assets (user_id, category_id, name, current_value, net_value, quantity, cost_basis, currency, ledger_id) VALUES ($USER_A_ID, 1, 'Alice Personal Stock', 10000, 100, 100, 8000, 'CNY', $DEF_LID_A);"
+# Seed asset in Family ledger
+sqlite3 "$DB_PATH" "INSERT INTO assets (user_id, category_id, name, current_value, net_value, quantity, cost_basis, currency, ledger_id) VALUES ($USER_A_ID, 1, 'Family Shared Fund', 5000, 50, 100, 4000, 'CNY', $FAM_LID);"
+
+# Query Alice's default ledger summary
+DEF_SUMMARY=$(curl -s -H "Authorization: Bearer $TOKEN_A" -H "X-Ledger-Id: $DEF_LID_A" "$BASE/reports/asset/summary")
+DEF_ASSETS=$(echo "$DEF_SUMMARY" | jq -r '.data.total_assets | floor')
+test "$DEF_ASSETS" = "10000"
+echo "✅ Default ledger total assets isolated: $DEF_ASSETS"
+
+# Query Family ledger summary
+FAM_SUMMARY=$(curl -s -H "Authorization: Bearer $TOKEN_A" -H "X-Ledger-Id: $FAM_LID" "$BASE/reports/asset/summary")
+FAM_ASSETS=$(echo "$FAM_SUMMARY" | jq -r '.data.total_assets | floor')
+test "$FAM_ASSETS" = "5000"
+echo "✅ Family ledger total assets isolated: $FAM_ASSETS"
+
+# Query Bob's view of Family ledger dashboard (Bob is member of Family ledger)
+BOB_DASH=$(curl -s -H "Authorization: Bearer $TOKEN_B" -H "X-Ledger-Id: $FAM_LID" "$BASE/summary")
+BOB_DASH_CODE=$(echo "$BOB_DASH" | jq -r '.code | floor')
+test "$BOB_DASH_CODE" = "0"
+echo "✅ Bob accesses Family ledger dashboard OK"
+
+# Query Bob's view of holdings for Family ledger
+BOB_HOLD=$(curl -s -H "Authorization: Bearer $TOKEN_B" -H "X-Ledger-Id: $FAM_LID" "$BASE/reports/holdings")
+BOB_HOLD_CODE=$(echo "$BOB_HOLD" | jq -r '.code | floor')
+test "$BOB_HOLD_CODE" = "0"
+echo "✅ Bob accesses Family ledger holdings OK"
 
 # 11. Alice removes Bob from family ledger
 REM_RES=$(curl -s -X DELETE "$BASE/ledgers/${FAM_LID}/members/${USER_B_ID}" \
