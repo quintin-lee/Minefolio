@@ -111,8 +111,8 @@ const badgeArrow = computed(() => {
 }
 
 .glow-neutral { background: var(--mf-primary); }
-.glow-income { background: var(--mf-success); }
-.glow-expense { background: var(--mf-danger); }
+.glow-income { background: var(--mf-gain); }
+.glow-expense { background: var(--mf-loss); }
 .glow-highlight { background: var(--mf-accent); }
 .glow-gain { background: var(--mf-gain); }
 .glow-loss { background: var(--mf-loss); }
@@ -201,11 +201,11 @@ const badgeArrow = computed(() => {
 }
 
 .income-text {
-  color: var(--mf-success);
+  color: var(--mf-gain);
 }
 
 .expense-text {
-  color: var(--mf-danger);
+  color: var(--mf-loss);
 }
 
 .highlight-text {
@@ -213,11 +213,11 @@ const badgeArrow = computed(() => {
 }
 
 [data-theme="dark"] .income-text {
-  text-shadow: 0 0 12px var(--mf-success-light);
+  text-shadow: 0 0 12px var(--mf-gain-light);
 }
 
 [data-theme="dark"] .expense-text {
-  text-shadow: 0 0 12px var(--mf-danger-light);
+  text-shadow: 0 0 12px var(--mf-loss-light);
 }
 
 [data-theme="dark"] .highlight-text {
@@ -241,12 +241,12 @@ const badgeArrow = computed(() => {
 }
 
 .profit-card {
-  background: var(--mf-success-light) !important;
-  border-color: var(--mf-success-border) !important;
+  background: var(--mf-gain-light) !important;
+  border-color: var(--mf-gain-border) !important;
 }
 
 .loss-card {
-  background: var(--mf-danger-light) !important;
-  border-color: var(--mf-danger-border) !important;
+  background: var(--mf-loss-light) !important;
+  border-color: var(--mf-loss-border) !important;
 }
 </style>

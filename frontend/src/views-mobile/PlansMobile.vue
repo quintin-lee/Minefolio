@@ -438,8 +438,8 @@ onMounted(() => {
   font-size: 16px;
   font-weight: 700;
 }
-.income { color: var(--mf-success); }
-.expense { color: var(--mf-danger); }
+.income { color: var(--mf-gain); }
+.expense { color: var(--mf-loss); }
 .highlight { color: var(--mf-primary); }
 .plan-card {
   background: var(--mf-surface-card);

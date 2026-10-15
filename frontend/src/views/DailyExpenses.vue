@@ -62,7 +62,7 @@
               <el-table-column prop="category_name" label="分类" min-width="120" />
               <el-table-column prop="expense_type" label="类型" width="80">
                 <template #default="{ row }">
-                  <el-tag :type="row.expense_type === 'income' ? 'success' : 'danger'" effect="light" class="type-badge" round>
+                  <el-tag :type="row.expense_type === 'income' ? 'danger' : 'success'" effect="light" class="type-badge" round>
                     {{ row.expense_type === 'income' ? '收入' : '支出' }}
                   </el-tag>
                 </template>
@@ -491,18 +491,18 @@ async function handleImport() {
 }
 
 .income-text {
-  color: var(--mf-success) !important;
+  color: var(--mf-gain) !important;
   font-weight: 600;
 }
 .expense-text {
-  color: var(--mf-danger) !important;
+  color: var(--mf-loss) !important;
   font-weight: 600;
 }
 [data-theme="dark"] .income-text {
-  text-shadow: 0 0 8px rgba(52, 211, 153, 0.35);
+  text-shadow: 0 0 8px rgba(244, 63, 94, 0.3);
 }
 [data-theme="dark"] .expense-text {
-  text-shadow: 0 0 8px rgba(248, 113, 113, 0.3);
+  text-shadow: 0 0 8px rgba(52, 211, 153, 0.35);
 }
 
 .main-panel {

@@ -82,6 +82,6 @@ onMounted(async () => {
 .mini-row b { font-family: 'JetBrains Mono', monospace; }
 .section-title { margin: 16px 0 8px; font-size: 14px; color: var(--mf-text-muted); }
 .record-card { display: flex; justify-content: space-between; padding: 12px; border-bottom: 1px solid var(--mf-border); }
-.income { color: var(--mf-success); } .expense { color: var(--mf-danger); }
+.income { color: var(--mf-gain); } .expense { color: var(--mf-loss); }
 .empty-state { text-align: center; color: var(--mf-text-muted); padding: 20px 0; font-size: 13px; }
 </style>

@@ -331,8 +331,8 @@ function categoryTypeLabel(t: CategoryType) {
 
 function categoryTypeTagType(t: CategoryType) {
   if (t === 'asset') return 'info'
-  if (t === 'expense') return 'danger'
-  if (t === 'income') return 'success'
+  if (t === 'expense') return 'success'
+  if (t === 'income') return 'danger'
   if (t === 'transaction') return 'warning'
   return 'info'
 }

@@ -26,12 +26,12 @@
         </div>
       </el-col>
       <el-col :xs="12" :sm="6">
-        <div class="summary-card-with-bar bar-green">
+        <div class="summary-card-with-bar bar-red">
           <SummaryCard label="买入/存入合计" :value="'+' + formatCurrency(monthlyInflows)" type="income" extraClass="font-mono" />
         </div>
       </el-col>
       <el-col :xs="12" :sm="6">
-        <div class="summary-card-with-bar bar-red">
+        <div class="summary-card-with-bar bar-green">
           <SummaryCard label="卖出/取出合计" :value="'-' + formatCurrency(monthlyOutflows)" type="expense" extraClass="font-mono" />
         </div>
       </el-col>
@@ -392,16 +392,16 @@ interface TransactionTypeOption {
 
 // 单源类型注册表：与后端 TX_TYPES 保持同序同步
 const TRANSACTION_TYPES: TransactionTypeOption[] = [
-  { value: 'deposit', label: '存入', direction: 'in', isTrading: false, tagType: 'success' },
-  { value: 'withdrawal', label: '取出', direction: 'out', isTrading: false, tagType: 'danger' },
+  { value: 'deposit', label: '存入', direction: 'in', isTrading: false, tagType: 'danger' },
+  { value: 'withdrawal', label: '取出', direction: 'out', isTrading: false, tagType: 'success' },
   { value: 'buy', label: '买入', direction: 'out', isTrading: true, tagType: 'primary' },
   { value: 'sell', label: '卖出', direction: 'in', isTrading: true, tagType: 'warning' },
-  { value: 'transfer_in', label: '转入', direction: 'in', isTrading: false, tagType: 'success' },
-  { value: 'transfer_out', label: '转出', direction: 'out', isTrading: false, tagType: 'warning' },
+  { value: 'transfer_in', label: '转入', direction: 'in', isTrading: false, tagType: 'danger' },
+  { value: 'transfer_out', label: '转出', direction: 'out', isTrading: false, tagType: 'success' },
   { value: 'fee', label: '手续费', direction: 'out', isTrading: false, tagType: 'info' },
-  { value: 'income', label: '收益', direction: 'in', isTrading: false, tagType: 'success' },
-  { value: 'loss', label: '亏损', direction: 'out', isTrading: false, tagType: 'danger' },
-  { value: 'interest', label: '利息', direction: 'in', isTrading: false, tagType: 'success' },
+  { value: 'income', label: '收益', direction: 'in', isTrading: false, tagType: 'danger' },
+  { value: 'loss', label: '亏损', direction: 'out', isTrading: false, tagType: 'success' },
+  { value: 'interest', label: '利息', direction: 'in', isTrading: false, tagType: 'danger' },
 ]
 
 const transactionTypes = TRANSACTION_TYPES.map(({ value, label }) => ({ value, label }))
@@ -825,18 +825,18 @@ async function handleImport() {
 }
 
 .income-text {
-  color: var(--mf-success) !important;
+  color: var(--mf-gain) !important;
   font-weight: 600;
 }
 .expense-text {
-  color: var(--mf-danger) !important;
+  color: var(--mf-loss) !important;
   font-weight: 600;
 }
 [data-theme="dark"] .income-text {
-  text-shadow: 0 0 8px rgba(52, 211, 153, 0.35);
+  text-shadow: 0 0 8px rgba(244, 63, 94, 0.3);
 }
 [data-theme="dark"] .expense-text {
-  text-shadow: 0 0 8px rgba(248, 113, 113, 0.3);
+  text-shadow: 0 0 8px rgba(52, 211, 153, 0.35);
 }
 .text-primary { color: var(--mf-primary); }
 

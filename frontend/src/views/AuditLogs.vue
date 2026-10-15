@@ -253,8 +253,8 @@ onMounted(async () => {
   font-size: 15px;
 }
 
-.income-text { color: var(--mf-success) !important; font-weight: 600; }
-.expense-text { color: var(--mf-danger) !important; font-weight: 600; }
+.income-text { color: var(--mf-gain) !important; font-weight: 600; }
+.expense-text { color: var(--mf-loss) !important; font-weight: 600; }
 
 .type-badge {
   font-weight: 600;
