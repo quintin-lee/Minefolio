@@ -124,10 +124,18 @@ portfolio_usecase_get_performance(void*                        db_pool,
         return -1;
     }
 
+    typedef struct {
+        int64_t asset_id;
+        char    currency[16];
+        double  total_qty;
+        double  cost_for_pnl;
+        double  cost_basis;
+    } asset_perf_tracker_t;
+
+    asset_perf_tracker_t trackers[256];
+    int                  tracker_count = 0;
+
     double        total_gain = 0, total_loss = 0;
-    double        total_cost_basis = 0;
-    double        total_cost_for_pnl = 0;
-    double        total_quantity = 0;
     double        total_realized_pnl = 0;
     int           total_trades = 0;
     csilk_json_t* trades = csilk_json_array();
@@ -135,6 +143,7 @@ portfolio_usecase_get_performance(void*                        db_pool,
 
     for (size_t i = 0; i < n; i++) {
         csilk_json_t* row = csilk_json_array_get(result, i);
+        int64_t       aid = db_get_int(row, "asset_id");
         const char*   type = csilk_json_get_string(row, "transaction_type");
         double        amt = db_get_num(row, "amount");
         double        fee = db_get_num(row, "fee");
@@ -142,41 +151,77 @@ portfolio_usecase_get_performance(void*                        db_pool,
         double        qty = db_get_num(row, "quantity");
         double        price = db_get_num(row, "price_per_unit");
         const char*   date_s = csilk_json_get_string(row, "transaction_date");
+        const char*   cur = csilk_json_get_string(row, "currency");
+        if (!cur || !cur[0]) {
+            cur = "CNY";
+        }
+        double fx_rate = exchange_rate_get_to_cny(cur);
+
+        /* Lookup or allocate tracker for this specific asset */
+        int trk_idx = -1;
+        for (int k = 0; k < tracker_count; k++) {
+            if (trackers[k].asset_id == aid) {
+                trk_idx = k;
+                break;
+            }
+        }
+        if (trk_idx < 0 && tracker_count < 256) {
+            trk_idx = tracker_count++;
+            memset(&trackers[trk_idx], 0, sizeof(asset_perf_tracker_t));
+            trackers[trk_idx].asset_id = aid;
+            strncpy(trackers[trk_idx].currency, cur, sizeof(trackers[trk_idx].currency) - 1);
+        }
+        asset_perf_tracker_t* trk = (trk_idx >= 0) ? &trackers[trk_idx] : NULL;
 
         int is_principal =
             (type && (strcmp(type, "deposit") == 0 || strcmp(type, "withdrawal") == 0 ||
                       strcmp(type, "transfer_in") == 0 || strcmp(type, "transfer_out") == 0));
         if (!is_principal) {
             if (dir && strcmp(dir, "in") == 0) {
-                total_gain += amt;
+                total_gain += (amt * fx_rate);
             } else {
-                total_loss += amt;
+                total_loss += (amt * fx_rate);
             }
         }
         total_trades++;
 
-        if (type && strcmp(type, "buy") == 0 && qty > 0) {
-            total_cost_basis += amt + fee;
-            total_cost_for_pnl += amt;
-            total_quantity += qty;
-        } else if (type && strcmp(type, "sell") == 0 && qty > 0) {
-            double avg_cost = total_quantity > 0 ? total_cost_for_pnl / total_quantity : 0;
-            total_realized_pnl += amt - qty * avg_cost;
-            double cost_reduction =
-                total_quantity > 0 ? (total_cost_basis / total_quantity) * qty : 0;
-            total_cost_basis -= cost_reduction;
-            total_quantity -= qty;
-        } else if (type && strcmp(type, "income") == 0) {
-            total_cost_for_pnl -= amt;
-            total_realized_pnl += amt;
-        }
-
         double avg_cost = 0, realized = 0;
-        if (type && strcmp(type, "buy") == 0) {
-            avg_cost = qty > 0 ? (amt + fee) / qty : 0;
-        } else if (type && strcmp(type, "sell") == 0) {
-            avg_cost = qty > 0 ? price : 0;
-            realized = amt - qty * price - fee;
+        if (type && strcmp(type, "buy") == 0 && qty > 0) {
+            if (trk) {
+                trk->cost_basis += (amt + fee);
+                trk->cost_for_pnl += amt;
+                trk->total_qty += qty;
+                avg_cost = (amt + fee) / qty;
+            } else {
+                avg_cost = price;
+            }
+            realized = 0;
+        } else if (type && strcmp(type, "sell") == 0 && qty > 0) {
+            double unit_cost =
+                (trk && trk->total_qty > 0) ? (trk->cost_for_pnl / trk->total_qty) : price;
+            avg_cost = unit_cost;
+            realized = (price - unit_cost) * qty - fee;
+            total_realized_pnl += (realized * fx_rate);
+
+            if (trk) {
+                double cost_reduction =
+                    (trk->total_qty > 0) ? (trk->cost_basis / trk->total_qty) * qty : 0;
+                trk->cost_basis -= cost_reduction;
+                trk->cost_for_pnl -= (unit_cost * qty);
+                trk->total_qty -= qty;
+                if (trk->total_qty <= 0) {
+                    trk->total_qty = 0;
+                    trk->cost_for_pnl = 0;
+                    trk->cost_basis = 0;
+                }
+            }
+        } else if (type && (strcmp(type, "income") == 0 || strcmp(type, "dividend") == 0)) {
+            if (trk) {
+                trk->cost_for_pnl -= amt;
+            }
+            total_realized_pnl += (amt * fx_rate);
+            avg_cost = 0;
+            realized = amt;
         }
 
         csilk_json_t* trade = csilk_json_object();

@@ -279,12 +279,12 @@ portfolio_repo_get_performance_transactions(void* pool, int64_t user_id)
 
     return csilk_db_query_param_json(
         (csilk_db_pool_t*)pool,
-        "SELECT t.id, a.name as asset_name, t.transaction_type, t.direction, t.transaction_date, "
-        "t.quantity, t.price_per_unit, t.amount, t.fee "
+        "SELECT t.id, t.asset_id, a.name as asset_name, t.transaction_type, t.direction, "
+        "t.transaction_date, "
+        "t.quantity, t.price_per_unit, t.amount, t.fee, t.currency, t.parent_tx_id "
         "FROM transactions t JOIN assets a ON t.asset_id=a.id "
-        "WHERE t.user_id=? "
+        "WHERE t.user_id=? AND (t.parent_tx_id IS NULL OR t.parent_tx_id = 0) "
         "ORDER BY t.transaction_date ASC, t.id ASC",
-
         params);
 }
 
