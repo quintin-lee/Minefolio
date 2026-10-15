@@ -14,7 +14,7 @@ Application Layer  application/*/{usecases,commands,dtos}.h/.c  Use case orchest
 Domain Layer       domain/*/{entity,repository,rules}.h/.c  Pure business rules, zero dependencies
 Infrastructure     infrastructure/repositories/*_repo_impl.c  SQL implementations (18 files)
                    infrastructure/database/  Database abstraction and SQLite/Postgres adapters
-                   (Migration engine, CSV parsing, and TOTP 2FA downstreamed to csilk framework)
+                   (Migration engine, CSV parsing, TOTP 2FA, and REST response envelopes downstreamed to csilk framework)
 Core Layer         core/financial/  Fixed-point core: money, decimal, quantity, price, rate, pnl
                    core/ledger/     Ledger engine: transaction replay, rebuild, balance/cost basis
 Shared             common/  db, jwt, balance, response, ctx, tx_types, ledger_utils
@@ -118,7 +118,7 @@ AI Runtime (services/ai/runtime/)
 | `backend/src/core/financial/` | Fixed-point core arithmetic: money, decimal, quantity, price, rate, pnl |
 | `backend/src/core/ledger/` | Ledger engine: single source of truth, position calculation, history replay/rebuild |
 | `backend/src/infrastructure/database/` | Database abstraction layer and SQLite/PostgreSQL native adapters (migration engine downstreamed to csilk) |
-| `backend/src/common/` | Cross-cutting: `db.h`, `balance.h`, `jwt.h`, `response.h`, `ctx.h`, `tx_types.h`, `ledger_utils.h` (CSV & TOTP 2FA downstreamed to csilk) |
+| `backend/src/common/` | Cross-cutting: `db.h`, `balance.h`, `jwt.h`, `response.h`, `ctx.h`, `tx_types.h`, `ledger_utils.h` (CSV, TOTP 2FA & REST response envelopes downstreamed to csilk) |
 | `backend/src/config/` | `db_config.h/.c` (DSN), `key_manager.h/.c` (RSA-OAEP keys), `secret.h/.c` (Secret Provider) |
 | `backend/sql/migrations/` | Versioned migration scripts (`sqlite/` & `postgres/`, `V001`~`V009`) |
 | `backend/sql/` | `migration.sql` (SQLite full schema), `migration_postgres.sql` |
@@ -250,7 +250,7 @@ All responses are HTTP 200 with JSON `{code, message, data}`:
 | 1003 | Not found |
 | 1004 | Conflict / Forbidden |
 
-Use `respond_ok` / `respond_error` / `respond_bad_request` / `respond_unauthorized` from `common/response.h`. On multi-step balance updates with `BEGIN TRANSACTION`, always `ROLLBACK` on failure before returning an error.
+Use `respond_ok` / `respond_error` / `respond_bad_request` / `respond_unauthorized` / `respond_page_ok` from `common/response.h`. These functions are thin wrappers that delegate directly to csilk's core response envelope functions (`csilk_respond_ok`, `csilk_respond_fail`, `csilk_respond_page_ex`, `csilk_parse_pagination`), maintaining the legacy HTTP 200 contract and `"list"` pagination key for the Vue 3 frontend. On multi-step balance updates with `BEGIN TRANSACTION`, always `ROLLBACK` on failure before returning an error.
 
 ### C — Net Value PUT Gotcha
 
