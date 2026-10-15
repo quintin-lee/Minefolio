@@ -13,7 +13,7 @@ mf_tag_repo_list(void* db_pool, int64_t user_id, mf_tag_t** out_list, size_t* ou
 
     csilk_json_t* rows =
         csilk_db_query_param_json(pool,
-                                  "SELECT id, user_id, name, color, created_at, updated_at "
+                                  "SELECT id, user_id, name, color, created_at "
                                   "FROM tags WHERE user_id=? ORDER BY name",
                                   (const char*[]){uid_str, NULL});
 
@@ -39,10 +39,7 @@ mf_tag_repo_list(void* db_pool, int64_t user_id, mf_tag_t** out_list, size_t* ou
                 csilk_json_get_string(r, "created_at") ? csilk_json_get_string(r, "created_at")
                                                        : "",
                 sizeof(list[i].created_at) - 1);
-        strncpy(list[i].updated_at,
-                csilk_json_get_string(r, "updated_at") ? csilk_json_get_string(r, "updated_at")
-                                                       : "",
-                sizeof(list[i].updated_at) - 1);
+        list[i].updated_at[0] = '\0';
     }
     csilk_json_free(rows);
     *out_list = list;
@@ -60,7 +57,7 @@ mf_tag_repo_find_by_id(void* db_pool, int64_t user_id, int64_t id, mf_tag_t* out
 
     csilk_json_t* rows =
         csilk_db_query_param_json(pool,
-                                  "SELECT id, user_id, name, color, created_at, updated_at "
+                                  "SELECT id, user_id, name, color, created_at "
                                   "FROM tags WHERE id=? AND user_id=?",
                                   (const char*[]){id_str, uid_str, NULL});
 
@@ -83,9 +80,7 @@ mf_tag_repo_find_by_id(void* db_pool, int64_t user_id, int64_t id, mf_tag_t* out
     strncpy(out->created_at,
             csilk_json_get_string(r, "created_at") ? csilk_json_get_string(r, "created_at") : "",
             sizeof(out->created_at) - 1);
-    strncpy(out->updated_at,
-            csilk_json_get_string(r, "updated_at") ? csilk_json_get_string(r, "updated_at") : "",
-            sizeof(out->updated_at) - 1);
+    out->updated_at[0] = '\0';
     csilk_json_free(rows);
     return 0;
 }
