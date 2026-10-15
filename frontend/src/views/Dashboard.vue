@@ -116,7 +116,7 @@
                 <Icon icon="ph:credit-card" />
               </div>
             </div>
-            <div class="sub-val tabular-nums text-danger">{{ formatCurrency(summary.total_liabilities) }}</div>
+            <div class="sub-val tabular-nums expense-text">{{ formatCurrency(summary.total_liabilities) }}</div>
           </div>
 
           <!-- 本月结余 -->
@@ -129,7 +129,7 @@
             </div>
             <div
               class="sub-val tabular-nums"
-              :class="(currentMonthBalance?.balance ?? 0) >= 0 ? 'text-success' : 'text-danger'"
+              :class="(currentMonthBalance?.balance ?? 0) >= 0 ? 'income-text' : 'expense-text'"
             >
               {{ formatCurrency(currentMonthBalance?.balance ?? 0) }}
             </div>

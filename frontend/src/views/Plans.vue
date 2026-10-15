@@ -214,7 +214,7 @@
         </el-table-column>
         <el-table-column label="预计金额" width="110" align="right">
           <template #default="{ row }">
-            <strong style="color: var(--mf-success);">¥{{ formatNumber(row.expected_amount) }}</strong>
+            <strong style="color: var(--mf-gain);">¥{{ formatNumber(row.expected_amount) }}</strong>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="110" align="center">
