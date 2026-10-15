@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 /* --- SQL statements inlined from repositories/asset_repo.c --- */
 
@@ -133,6 +134,23 @@ asset_insert(csilk_db_pool_t* pool,
     if (res) {
         csilk_json_free(res);
     }
+
+    /* Record initial balance baseline into asset_balance_logs */
+    if (id > 0 && fabs(current_value) > 0.000001) {
+        char aid[32];
+        snprintf(aid, sizeof(aid), "%lld", (long long)id);
+        const char*   log_params[] = {aid, uid, val, val, "init", "0", "Initial balance", NULL};
+        csilk_json_t* log_res =
+            csilk_db_query_param_json(pool,
+                                      "INSERT INTO asset_balance_logs (asset_id, user_id, delta, "
+                                      "balance_after, source_type, source_id, note) "
+                                      "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                                      log_params);
+        if (log_res) {
+            csilk_json_free(log_res);
+        }
+    }
+
     return id;
 }
 
@@ -152,6 +170,20 @@ asset_update_basic(csilk_db_pool_t* pool,
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     snprintf(idstr, sizeof(idstr), "%lld", (long long)id);
     snprintf(val, sizeof(val), "%.6f", current_value);
+
+    /* Fetch previous balance before update to detect manual balance adjustments */
+    double        prev_val = 0.0;
+    csilk_json_t* prev_row =
+        csilk_db_query_param_json(pool,
+                                  "SELECT current_value FROM assets WHERE id=? AND user_id=?",
+                                  (const char*[]){idstr, uid, NULL});
+    if (prev_row && csilk_json_array_size(prev_row) > 0) {
+        prev_val = db_get_num(csilk_json_array_get(prev_row, 0), "current_value");
+    }
+    if (prev_row) {
+        csilk_json_free(prev_row);
+    }
+
     csilk_json_t* res = csilk_db_query_param_json(
         pool,
         "UPDATE assets SET "
@@ -171,6 +203,24 @@ asset_update_basic(csilk_db_pool_t* pool,
     if (res) {
         csilk_json_free(res);
     }
+
+    /* Record manual balance delta adjustment if value changed */
+    if (ok && fabs(current_value - prev_val) > 0.000001) {
+        char delta_str[64];
+        snprintf(delta_str, sizeof(delta_str), "%.6f", current_value - prev_val);
+        const char* adj_params[] = {
+            idstr, uid, delta_str, val, "adjustment", "0", "Manual adjustment", NULL};
+        csilk_json_t* adj_res =
+            csilk_db_query_param_json(pool,
+                                      "INSERT INTO asset_balance_logs (asset_id, user_id, delta, "
+                                      "balance_after, source_type, source_id, note) "
+                                      "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                                      adj_params);
+        if (adj_res) {
+            csilk_json_free(adj_res);
+        }
+    }
+
     return ok;
 }
 

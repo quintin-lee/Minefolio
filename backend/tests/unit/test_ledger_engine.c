@@ -377,6 +377,26 @@ main(void)
     csilk_json_free(ast);
     printf("    ✓ Transfer atomicity, failure rollback & reversal verified.\n");
 
+    printf("  10. Testing Account & Position Rebuild Initial Balance Preservation...\n");
+    // Wallet 101 had 100,000 initial balance, and net deltas of -12508.0 -> should remain 87492.0
+    rc = ledger_rebuild_account(pool, user_id, 101, NULL);
+    assert(rc == 0);
+    ast = csilk_db_query_param_json(pool, "SELECT current_value FROM assets WHERE id=?", (const char*[]){"101", NULL});
+    assert(db_get_num(csilk_json_array_get(ast, 0), "current_value") == 87492.0);
+    csilk_json_free(ast);
+
+    // Initial holdings asset with no transactions
+    csilk_db_exec(pool, "INSERT INTO assets (id, user_id, category_id, name, currency, current_value, quantity, cost_basis, net_value) "
+                        "VALUES (301, 1, 20, 'Index Fund', 'CNY', 5000.0, 100.0, 5000.0, 50.0)");
+    rc = ledger_rebuild_position(pool, user_id, 301, NULL);
+    assert(rc == 0);
+    ast = csilk_db_query_param_json(pool, "SELECT quantity, cost_basis, current_value FROM assets WHERE id=?", (const char*[]){"301", NULL});
+    assert(db_get_num(csilk_json_array_get(ast, 0), "quantity") == 100.0);
+    assert(db_get_num(csilk_json_array_get(ast, 0), "cost_basis") == 5000.0);
+    assert(db_get_num(csilk_json_array_get(ast, 0), "current_value") == 5000.0);
+    csilk_json_free(ast);
+    printf("    ✓ Rebuild preservation of initial balance and position verified.\n");
+
     unlink(db_file);
     printf("🎉 ALL LEDGER ENGINE INTEGRATION TESTS PASSED SUCCESSFULLY!\n");
     return 0;

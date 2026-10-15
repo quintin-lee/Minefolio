@@ -776,10 +776,11 @@ ledger_rebuild_position(csilk_db_pool_t*         pool,
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     snprintf(ast_str, sizeof(ast_str), "%lld", (long long)asset_id);
 
-    // 1. Fetch asset metadata & currency
+    // 1. Fetch asset metadata, quantity, cost_basis, net_value & currency
     csilk_json_t* a_rows =
         csilk_db_query_param_json(pool,
-                                  "SELECT currency FROM assets WHERE id=? AND user_id=?",
+                                  "SELECT currency, quantity, cost_basis, net_value, current_value "
+                                  "FROM assets WHERE id=? AND user_id=?",
                                   (const char*[]){ast_str, uid_str, NULL});
     if (!a_rows || csilk_json_array_size(a_rows) == 0) {
         if (a_rows) {
@@ -788,8 +789,12 @@ ledger_rebuild_position(csilk_db_pool_t*         pool,
         db_tx_scope_rollback(pool, &scope);
         return -1;
     }
-    const char* cur_str = csilk_json_get_string(csilk_json_array_get(a_rows, 0), "currency");
-    currency_t  cur = currency_from_str(cur_str);
+    const csilk_json_t* a_obj = csilk_json_array_get(a_rows, 0);
+    const char*         cur_str = csilk_json_get_string(a_obj, "currency");
+    currency_t          cur = currency_from_str(cur_str);
+    quantity_t          orig_qty = db_get_quantity(a_obj, "quantity");
+    money_t             orig_cost = db_get_money(a_obj, "cost_basis", cur);
+    price_t             orig_net = db_get_price(a_obj, "net_value", cur);
     csilk_json_free(a_rows);
 
     // 2. Query all investment transactions in chronological order
@@ -805,7 +810,7 @@ ledger_rebuild_position(csilk_db_pool_t*         pool,
     price_t    latest_price = price_zero(cur);
     money_t    cum_realized = money_zero(cur);
 
-    if (tx_rows) {
+    if (tx_rows && csilk_json_array_size(tx_rows) > 0) {
         size_t n = csilk_json_array_size(tx_rows);
         for (size_t i = 0; i < n; i++) {
             csilk_json_t* r = csilk_json_array_get(tx_rows, i);
@@ -827,6 +832,14 @@ ledger_rebuild_position(csilk_db_pool_t*         pool,
             }
         }
         csilk_json_free(tx_rows);
+    } else {
+        if (tx_rows) {
+            csilk_json_free(tx_rows);
+        }
+        // No transactions found: preserve baseline initial quantity and cost basis
+        curr_qty = orig_qty;
+        curr_cost = orig_cost;
+        latest_price = orig_net;
     }
 
     money_t curr_mkt_val;
@@ -884,10 +897,10 @@ ledger_rebuild_account(csilk_db_pool_t*        pool,
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     snprintf(ast_str, sizeof(ast_str), "%lld", (long long)asset_id);
 
-    // 1. Fetch asset currency & category liability flag
+    // 1. Fetch asset currency, baseline current_value & category liability flag
     csilk_json_t* a_rows =
         csilk_db_query_param_json(pool,
-                                  "SELECT a.currency, c.asset_type FROM assets a "
+                                  "SELECT a.currency, a.current_value, c.asset_type FROM assets a "
                                   "JOIN categories c ON a.category_id=c.id "
                                   "WHERE a.id=? AND a.user_id=?",
                                   (const char*[]){ast_str, uid_str, NULL});
@@ -902,26 +915,46 @@ ledger_rebuild_account(csilk_db_pool_t*        pool,
     csilk_json_t* a_obj = csilk_json_array_get(a_rows, 0);
     const char*   cur_str = csilk_json_get_string(a_obj, "currency");
     currency_t    cur = currency_from_str(cur_str);
+    money_t       orig_current_val = db_get_money(a_obj, "current_value", cur);
     csilk_json_free(a_rows);
 
     // 2. Replay all balance audit logs in chronological order
     csilk_json_t* log_rows = csilk_db_query_param_json(
         pool,
-        "SELECT delta FROM asset_balance_logs WHERE asset_id=? ORDER BY created_at ASC, id ASC",
+        "SELECT delta, balance_after, source_type FROM asset_balance_logs WHERE asset_id=? ORDER "
+        "BY created_at ASC, id ASC",
         (const char*[]){ast_str, NULL});
 
     money_t cum_bal = money_zero(cur);
     int64_t tx_count = 0;
 
-    if (log_rows) {
+    if (log_rows && csilk_json_array_size(log_rows) > 0) {
         size_t n = csilk_json_array_size(log_rows);
         tx_count = (int64_t)n;
+
+        // Check if the earliest log is an explicit 'init' baseline
+        csilk_json_t* first_row = csilk_json_array_get(log_rows, 0);
+        const char*   first_source = csilk_json_get_string(first_row, "source_type");
+        if (!first_source || strcmp(first_source, "init") != 0) {
+            // Legacy database or pre-existing asset without explicit init log:
+            // Calculate base balance before first recorded transaction: base = balance_after - delta
+            money_t first_after = db_get_money(first_row, "balance_after", cur);
+            money_t first_delta = db_get_money(first_row, "delta", cur);
+            money_sub(first_after, first_delta, &cum_bal);
+        }
+
         for (size_t i = 0; i < n; i++) {
             csilk_json_t* r = csilk_json_array_get(log_rows, i);
             money_t       d = db_get_money(r, "delta", cur);
             money_add(cum_bal, d, &cum_bal);
         }
         csilk_json_free(log_rows);
+    } else {
+        if (log_rows) {
+            csilk_json_free(log_rows);
+        }
+        // No logs found: preserve original current_value
+        cum_bal = orig_current_val;
     }
 
     // 3. Update assets current_value
