@@ -6,6 +6,7 @@
 #include "domain/auth/repository.h"
 #include "domain/asset/repository.h"
 #include "domain/transaction/repository.h"
+#include "infrastructure/repositories/transaction_repo_impl.h"
 #include "domain/portfolio/repository.h"
 #include "infrastructure/repositories/portfolio_repo_impl.h"
 #include "application/portfolio/usecases.h"
@@ -570,6 +571,97 @@ test_transfer_delete_clean_rollback(csilk_db_pool_t* pool, int64_t user_id)
 }
 
 static void
+test_tx_monthly_excludes_transfers(csilk_db_pool_t* pool, int64_t user_id)
+{
+    printf("--- 3e. Testing Transaction Monthly Excludes Transfers ---\n");
+
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+
+    // Create cash category
+    csilk_json_t* ins_cat = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO categories (user_id, name, type, asset_type, currency, ledger_id) "
+        "VALUES (?, 'Monthly Exclude Cat', 'asset', 'cash', 'CNY', 105) RETURNING id",
+        (const char*[]){uid_str, NULL});
+    assert(ins_cat && csilk_json_array_size(ins_cat) > 0);
+    int64_t cat_id = db_get_int(csilk_json_array_get(ins_cat, 0), "id");
+    csilk_json_free(ins_cat);
+    char cat_str[32];
+    snprintf(cat_str, sizeof(cat_str), "%lld", (long long)cat_id);
+
+    // Create asset
+    csilk_json_t* ins_a = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO assets (user_id, category_id, name, current_value, currency, ledger_id) "
+        "VALUES (?, ?, 'Monthly Asset 1', 5000.0, 'CNY', 105) RETURNING id",
+        (const char*[]){uid_str, cat_str, NULL});
+    assert(ins_a && csilk_json_array_size(ins_a) > 0);
+    int64_t asset_1 = db_get_int(csilk_json_array_get(ins_a, 0), "id");
+    csilk_json_free(ins_a);
+    char a1_str[32];
+    snprintf(a1_str, sizeof(a1_str), "%lld", (long long)asset_1);
+
+    // Insert buy transaction (outflow = 500.0)
+    csilk_json_free(csilk_db_query_param_json(
+        pool,
+        "INSERT INTO transactions (user_id, asset_id, source_type, transaction_type, direction, "
+        "amount, price_per_unit, quantity, fee, currency, transaction_date, ledger_id) "
+        "VALUES (?, ?, 'expense', 'buy', 'out', 500.0, 10.0, 50.0, 0, 'CNY', '2026-10-10 10:00:00', 105)",
+        (const char*[]){uid_str, a1_str, NULL}));
+
+    // Insert deposit transaction (inflow = 800.0)
+    csilk_json_free(csilk_db_query_param_json(
+        pool,
+        "INSERT INTO transactions (user_id, asset_id, source_type, transaction_type, direction, "
+        "amount, price_per_unit, quantity, fee, currency, transaction_date, ledger_id) "
+        "VALUES (?, ?, 'income', 'deposit', 'in', 800.0, 0, 0, 0, 'CNY', '2026-10-11 10:00:00', 105)",
+        (const char*[]){uid_str, a1_str, NULL}));
+
+    // Insert internal transfer_out (1000.0) and transfer_in (1000.0)
+    csilk_json_free(csilk_db_query_param_json(
+        pool,
+        "INSERT INTO transactions (user_id, asset_id, source_type, transaction_type, direction, "
+        "amount, price_per_unit, quantity, fee, currency, transaction_date, ledger_id) "
+        "VALUES (?, ?, 'expense', 'transfer_out', 'out', 1000.0, 0, 0, 0, 'CNY', '2026-10-12 10:00:00', 105)",
+        (const char*[]){uid_str, a1_str, NULL}));
+
+    csilk_json_free(csilk_db_query_param_json(
+        pool,
+        "INSERT INTO transactions (user_id, asset_id, source_type, transaction_type, direction, "
+        "amount, price_per_unit, quantity, fee, currency, transaction_date, ledger_id) "
+        "VALUES (?, ?, 'income', 'transfer_in', 'in', 1000.0, 0, 0, 0, 'CNY', '2026-10-12 10:00:00', 105)",
+        (const char*[]){uid_str, a1_str, NULL}));
+
+    // Query tx_monthly
+    csilk_json_t* monthly = tx_monthly(pool, user_id, 105, "2026-10%");
+    assert(monthly && csilk_json_array_size(monthly) > 0);
+    csilk_json_t* row = csilk_json_array_get(monthly, 0);
+    double total_volume = db_get_num(row, "total_volume");
+    double inflows = db_get_num(row, "inflows");
+    double outflows = db_get_num(row, "outflows");
+    int64_t count = db_get_int(row, "count");
+    csilk_json_free(monthly);
+
+    // Verify: internal transfer 1000.0 is excluded from cashflow totals!
+    // total_volume should be 500 + 800 = 1300 (NOT 3300!)
+    // inflows should be 800 (NOT 1800!)
+    // outflows should be 500 (NOT 1500!)
+    // count should be 2 (NOT 4!)
+    assert(fabs(total_volume - 1300.0) < 1e-2);
+    assert(fabs(inflows - 800.0) < 1e-2);
+    assert(fabs(outflows - 500.0) < 1e-2);
+    assert(count == 2);
+
+    // Clean up test transactions and assets
+    csilk_db_exec(pool, "DELETE FROM transactions WHERE ledger_id=105;");
+    csilk_db_exec(pool, "DELETE FROM assets WHERE ledger_id=105;");
+    csilk_db_exec(pool, "DELETE FROM categories WHERE ledger_id=105;");
+
+    printf("  ✅ Transaction Monthly Excludes Transfers passed\n");
+}
+
+static void
 test_portfolio_repository(csilk_db_pool_t* pool, int64_t user_id, int64_t asset_id)
 {
     printf("--- 4. Testing Portfolio Domain Repository ---\n");
@@ -983,6 +1075,7 @@ main(void)
     test_transaction_ledger_scoping(pool, user_id, asset_id);
     test_transaction_update_change_asset(pool, user_id);
     test_transfer_delete_clean_rollback(pool, user_id);
+    test_tx_monthly_excludes_transfers(pool, user_id);
     test_portfolio_repository(pool, user_id, asset_id);
     test_cashflow_repository(pool, user_id);
     test_market_repository(pool, user_id);

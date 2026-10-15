@@ -27,12 +27,12 @@
       </el-col>
       <el-col :xs="12" :sm="6">
         <div class="summary-card-with-bar bar-red">
-          <SummaryCard label="买入/存入合计" :value="'+' + formatCurrency(monthlyInflows)" type="income" extraClass="font-mono" />
+          <SummaryCard label="卖出/存入/收益" :value="'+' + formatCurrency(monthlyInflows)" type="income" extraClass="font-mono" />
         </div>
       </el-col>
       <el-col :xs="12" :sm="6">
         <div class="summary-card-with-bar bar-green">
-          <SummaryCard label="卖出/取出合计" :value="'-' + formatCurrency(monthlyOutflows)" type="expense" extraClass="font-mono" />
+          <SummaryCard label="买入/取出/支出" :value="'-' + formatCurrency(monthlyOutflows)" type="expense" extraClass="font-mono" />
         </div>
       </el-col>
       <el-col :xs="12" :sm="6">
