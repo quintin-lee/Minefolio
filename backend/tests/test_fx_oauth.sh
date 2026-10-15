@@ -173,6 +173,17 @@ assert_eq "FX PnL includes Apple Stock" "$FX_PNL_ASSET" "Apple Stock"
 COMBINED_PNL=$(echo "$FX_PNL_RES" | jq -r '.data.total_combined_pnl_base')
 assert_nonzero "Total combined PnL is computed" "$COMBINED_PNL"
 
+# Test historical FX attribution: asset acquired with historical rate
+sqlite3 "$DB_FILE" "INSERT INTO exchange_rate_history (rate_date, base_currency, target_currency, rate) VALUES ('2026-01-01', 'CNY', 'USD', 7.00);"
+sqlite3 "$DB_FILE" "INSERT INTO assets (user_id, category_id, name, current_value, net_value, quantity, cost_basis, currency, ledger_id, created_at) VALUES (1, 1, 'Microsoft Stock', 1200, 120, 10, 1000, 'USD', 1, '2026-01-02 10:00:00');"
+
+HIST_PNL_RES=$(curl -s -H "Authorization: Bearer $TOKEN" "$BASE/reports/fx-pnl?base_currency=CNY")
+MSFT_FX_PNL=$(echo "$HIST_PNL_RES" | jq -r '.data.assets[] | select(.asset_name == "Microsoft Stock") | .fx_pnl_base')
+# cost 1000 USD * (7.35 current - 7.00 cost) = 350.0 CNY FX gain
+assert_eq "Historical FX PnL matches rate delta (350.0)" "$MSFT_FX_PNL" "350.0"
+
+
+
 echo "=== 4. Test Receipt OCR Scanning ==="
 # Mock receipt image base64
 DUMMY_IMG="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="

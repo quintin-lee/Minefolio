@@ -558,16 +558,45 @@ report_fx_pnl(csilk_ctx_t* c)
     char             uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
 
-    csilk_json_t* rows = csilk_db_query_param_json(
-        pool,
-        "SELECT a.id, a.name, a.currency, a.quantity, a.cost_basis, a.net_value, a.current_value, "
-        "       c.name as category_name, c.asset_type, "
-        "       (SELECT rate FROM exchange_rate_history h WHERE h.target_currency = a.currency "
-        "ORDER BY h.rate_date ASC LIMIT 1) as initial_rate "
-        "FROM assets a "
-        "JOIN categories c ON a.category_id = c.id "
-        "WHERE a.user_id = ? AND a.currency IS NOT NULL AND a.currency != ? AND a.currency != ''",
-        (const char*[]){uid_str, base_cur, NULL});
+    const char* sql =
+        db_is_postgres()
+            ? "SELECT a.id, a.name, a.currency, a.quantity, a.cost_basis, a.net_value, "
+              "a.current_value, "
+              "       c.name as category_name, c.asset_type, "
+              "       COALESCE("
+              "           (SELECT rate FROM exchange_rate_history h WHERE h.target_currency = "
+              "a.currency "
+              "            AND h.rate_date <= COALESCE((SELECT MIN(t.transaction_date) FROM "
+              "transactions t WHERE t.asset_id = a.id), to_char(a.created_at, 'YYYY-MM-DD')) "
+              "            ORDER BY h.rate_date DESC LIMIT 1), "
+              "           (SELECT rate FROM exchange_rate_history h WHERE h.target_currency = "
+              "a.currency "
+              "            ORDER BY h.rate_date ASC LIMIT 1) "
+              "       ) as initial_rate "
+              "FROM assets a "
+              "JOIN categories c ON a.category_id = c.id "
+              "WHERE a.user_id = ? AND a.currency IS NOT NULL AND a.currency != ? AND a.currency "
+              "!= ''"
+            : "SELECT a.id, a.name, a.currency, a.quantity, a.cost_basis, a.net_value, "
+              "a.current_value, "
+              "       c.name as category_name, c.asset_type, "
+              "       COALESCE("
+              "           (SELECT rate FROM exchange_rate_history h WHERE h.target_currency = "
+              "a.currency "
+              "            AND h.rate_date <= COALESCE((SELECT MIN(t.transaction_date) FROM "
+              "transactions t WHERE t.asset_id = a.id), date(a.created_at)) "
+              "            ORDER BY h.rate_date DESC LIMIT 1), "
+              "           (SELECT rate FROM exchange_rate_history h WHERE h.target_currency = "
+              "a.currency "
+              "            ORDER BY h.rate_date ASC LIMIT 1) "
+              "       ) as initial_rate "
+              "FROM assets a "
+              "JOIN categories c ON a.category_id = c.id "
+              "WHERE a.user_id = ? AND a.currency IS NOT NULL AND a.currency != ? AND a.currency "
+              "!= ''";
+
+    csilk_json_t* rows =
+        csilk_db_query_param_json(pool, sql, (const char*[]){uid_str, base_cur, NULL});
 
     csilk_json_t* items = csilk_json_array();
     currency_t    base_currency = currency_from_str(base_cur);
@@ -612,10 +641,8 @@ report_fx_pnl(csilk_ctx_t* c)
             if (!decimal_is_zero(init_rate_d)) {
                 cost_fx_r = rate_from_decimal(init_rate_d, asset_cur, base_currency);
             } else {
-                decimal_t fallback_factor, d098;
-                decimal_from_string("0.98", &d098);
-                decimal_mul(curr_fx_r.factor, d098, &fallback_factor);
-                cost_fx_r = rate_from_decimal(fallback_factor, asset_cur, base_currency);
+                // If historical exchange rate is unavailable, default cost rate to current rate (0 FX fluctuation gain)
+                cost_fx_r = curr_fx_r;
             }
 
             // Asset Price PnL: (curr_val_orig - cost) * curr_fx_r
