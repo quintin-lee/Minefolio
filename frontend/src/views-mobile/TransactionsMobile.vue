@@ -2,7 +2,7 @@
   <div class="tx-mobile">
     <div class="page-header"><h2>交易</h2></div>
     <div v-for="t in list" :key="t.id" class="tx-card">
-      <div class="top"><span>{{ t.category_name || t.transaction_type }}</span><span :class="isIncome(t) ? 'income' : 'expense'">{{ isIncome(t) ? '+' : '-' }}{{ formatCurrency(t.amount) }}</span></div>
+      <div class="top"><span>{{ t.category_name || t.transaction_type }}</span><span :class="isIncome(t) ? 'income' : 'expense'">{{ isIncome(t) ? '+' : '-' }}{{ formatCurrency(t.amount, t.currency) }}</span></div>
       <div class="bottom"><span>{{ t.transaction_date }}</span><span>{{ t.asset_name }}</span></div>
     </div>
   </div>

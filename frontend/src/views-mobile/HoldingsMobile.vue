@@ -42,7 +42,7 @@
             ≈ ¥{{ (Number(h.current_value) * (exchangeRates[h.currency] || 1)).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
           </span>
         </div>
-        <span :class="['pnl', pnlClass(h.floating_pnl)]">{{ formatSigned(h.floating_pnl) }}  {{ (h.floating_pct >= 0 ? '↑' : '↓') }}{{ Math.abs(h.floating_pct).toFixed(2) }}%</span>
+        <span :class="['pnl', pnlClass(h.floating_pnl)]">{{ formatSigned(h.floating_pnl, h.currency) }}  {{ (h.floating_pct >= 0 ? '↑' : '↓') }}{{ Math.abs(h.floating_pct).toFixed(2) }}%</span>
       </div>
     </div>
   </div>

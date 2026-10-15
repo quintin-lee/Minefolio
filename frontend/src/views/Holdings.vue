@@ -100,12 +100,12 @@
           <template #default="{ row }"><span class="mf-mono">{{ row.net_value.toFixed(4) }}</span></template>
         </el-table-column>
         <el-table-column label="成本" width="120" align="right">
-          <template #default="{ row }"><span class="mf-mono">{{ formatCurrency(row.cost_basis) }}</span></template>
+          <template #default="{ row }"><span class="mf-mono">{{ formatCurrency(row.cost_basis, row.currency) }}</span></template>
         </el-table-column>
         <el-table-column label="市值" width="130" align="right">
           <template #default="{ row }">
             <div style="display: flex; flex-direction: column; align-items: flex-end; justify-content: center;">
-              <span class="mf-mono">{{ formatCurrency(row.current_value) }}</span>
+              <span class="mf-mono">{{ formatCurrency(row.current_value, row.currency) }}</span>
               <span v-if="row.currency && row.currency !== 'CNY' && exchangeRates[row.currency]" class="cny-converted-hint">
                 ≈ ¥{{ (Number(row.current_value) * (exchangeRates[row.currency] || 1)).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
               </span>
@@ -114,7 +114,7 @@
         </el-table-column>
         <el-table-column label="浮动盈亏" width="120" align="right">
           <template #default="{ row }">
-            <span :class="pnlClass(row.floating_pnl)">{{ formatSigned(row.floating_pnl) }}</span>
+            <span :class="pnlClass(row.floating_pnl)">{{ formatSigned(row.floating_pnl, row.currency) }}</span>
           </template>
         </el-table-column>
         <el-table-column label="盈亏率" width="100" align="right">
@@ -127,7 +127,7 @@
         </el-table-column>
         <el-table-column label="已实现盈亏" width="120" align="right">
           <template #default="{ row }">
-            <span :class="pnlClass(row.realized_pnl)">{{ formatSigned(row.realized_pnl) }}</span>
+            <span :class="pnlClass(row.realized_pnl)">{{ formatSigned(row.realized_pnl, row.currency) }}</span>
           </template>
         </el-table-column>
         <template #empty>

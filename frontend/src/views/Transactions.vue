@@ -124,14 +124,14 @@
           <el-table-column prop="amount" label="交易金额" width="150" align="right">
             <template #default="{ row }">
               <span :class="['mono-amount', isIncomeType(row.transaction_type) ? 'income-text' : 'expense-text']">
-                {{ isIncomeType(row.transaction_type) ? '+' : '-' }}{{ formatCurrency(row.amount) }}
+                {{ isIncomeType(row.transaction_type) ? '+' : '-' }}{{ formatCurrency(row.amount, row.currency) }}
               </span>
             </template>
           </el-table-column>
           <el-table-column label="单价 × 数量" min-width="150" align="center">
             <template #default="{ row }">
               <div v-if="row.quantity > 0 || row.price_per_unit > 0" class="trade-detail font-mono">
-                <span class="price-tag">{{ formatCurrency(row.price_per_unit || 0) }}</span>
+                <span class="price-tag">{{ formatCurrency(row.price_per_unit || 0, row.currency) }}</span>
                 <span class="times">×</span>
                 <span class="qty-tag">{{ row.quantity || 0 }}</span>
               </div>
@@ -140,7 +140,7 @@
           </el-table-column>
           <el-table-column v-if="showFeeCol" label="手续费" width="100" align="right">
             <template #default="{ row }">
-              <span v-if="row.fee && row.fee > 0" class="mono-amount expense-text">{{ formatCurrency(row.fee) }}</span>
+              <span v-if="row.fee && row.fee > 0" class="mono-amount expense-text">{{ formatCurrency(row.fee, row.currency) }}</span>
               <span v-else class="muted-text">—</span>
             </template>
           </el-table-column>

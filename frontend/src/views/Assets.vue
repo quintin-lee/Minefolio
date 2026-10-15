@@ -55,7 +55,7 @@
         <el-table-column label="当前价值" min-width="150" align="right">
           <template #default="{ row }">
             <div style="display: flex; flex-direction: column; align-items: flex-end; justify-content: center;">
-              <span class="mono-amount">{{ formatCurrency(row.current_value) }}</span>
+              <span class="mono-amount">{{ formatCurrency(row.current_value, row.currency) }}</span>
               <span v-if="row.currency && row.currency !== 'CNY' && exchangeRates[row.currency]" class="cny-converted-hint">
                 ≈ ¥{{ (Number(row.current_value) * (exchangeRates[row.currency] || 1)).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
               </span>
@@ -69,7 +69,7 @@
         </el-table-column>
         <el-table-column v-if="hasInvestmentAssets" label="成本" min-width="110" align="right">
           <template #default="{ row }">
-            <span class="mono-amount">{{ row.cost_basis != null ? formatCurrency(Number(row.cost_basis)) : '-' }}</span>
+            <span class="mono-amount">{{ row.cost_basis != null ? formatCurrency(Number(row.cost_basis), row.currency) : '-' }}</span>
           </template>
         </el-table-column>
         <el-table-column v-if="hasInvestmentAssets" label="净值" min-width="100" align="right">
