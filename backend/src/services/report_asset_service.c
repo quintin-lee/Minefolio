@@ -265,57 +265,126 @@ report_asset_summary(csilk_ctx_t* c)
 
     csilk_json_t* rows = csilk_db_query_param_json(
         pool,
-        "SELECT c.name as name, c.asset_type, SUM(a.current_value) as value "
+        "SELECT a.current_value, a.currency, c.name as name, c.asset_type "
         "FROM assets a JOIN categories c ON a.category_id=c.id "
-        "WHERE a.user_id=? GROUP BY c.name, c.asset_type",
+        "WHERE a.user_id=?",
         params);
     double        current_assets = 0, current_liabs = 0;
     csilk_json_t* by_cat = csilk_json_array();
+
+    typedef struct {
+        char   name[128];
+        char   asset_type[32];
+        double value;
+        int    is_liab;
+    } cat_summary_item_t;
+
+    cat_summary_item_t cat_items[128];
+    int                cat_item_count = 0;
+
     if (rows) {
         size_t n = csilk_json_array_size(rows);
         for (size_t i = 0; i < n; i++) {
             csilk_json_t* row = csilk_json_array_get(rows, i);
-            double        v = db_get_num(row, "value");
+            const char*   cur = csilk_json_get_string(row, "currency");
+            double        v = db_get_num(row, "current_value") * exchange_rate_get_to_cny(cur);
+            const char*   name = csilk_json_get_string(row, "name");
             const char*   atype = csilk_json_get_string(row, "asset_type");
-            int is_liab = (strcmp(atype, "loan") == 0 || strcmp(atype, "credit_card") == 0 ||
-                           strcmp(atype, "other_liability") == 0);
+            int           is_liab =
+                (atype && (strcmp(atype, "loan") == 0 || strcmp(atype, "credit_card") == 0 ||
+                           strcmp(atype, "other_liability") == 0));
             if (is_liab) {
                 current_liabs += v;
             } else {
                 current_assets += v;
             }
-            csilk_json_t* item = csilk_json_object();
-            csilk_json_add_string(item, "name", csilk_json_get_string(row, "name"));
-            csilk_json_add_number(item, "value", v);
-            csilk_json_add_bool(item, "is_liability", is_liab);
-            csilk_json_array_append(by_cat, item);
+
+            int found = -1;
+            for (int k = 0; k < cat_item_count; k++) {
+                if (name && strcmp(cat_items[k].name, name) == 0 &&
+                    cat_items[k].is_liab == is_liab) {
+                    found = k;
+                    break;
+                }
+            }
+            if (found >= 0) {
+                cat_items[found].value += v;
+            } else if (cat_item_count < 128) {
+                strncpy(cat_items[cat_item_count].name,
+                        name ? name : "",
+                        sizeof(cat_items[0].name) - 1);
+                cat_items[cat_item_count].name[sizeof(cat_items[0].name) - 1] = '\0';
+                strncpy(cat_items[cat_item_count].asset_type,
+                        atype ? atype : "",
+                        sizeof(cat_items[0].asset_type) - 1);
+                cat_items[cat_item_count].value = v;
+                cat_items[cat_item_count].is_liab = is_liab;
+                cat_item_count++;
+            }
         }
         csilk_json_free(rows);
     }
-    // 30-day change estimate from transactions
-    csilk_json_t* change_result = csilk_db_query_param_json(
+
+    for (int k = 0; k < cat_item_count; k++) {
+        csilk_json_t* item = csilk_json_object();
+        csilk_json_add_string(item, "name", cat_items[k].name);
+        csilk_json_add_number(item, "value", cat_items[k].value);
+        csilk_json_add_bool(item, "is_liability", cat_items[k].is_liab);
+        csilk_json_array_append(by_cat, item);
+    }
+
+    // 30-day net wealth change calculated from multi-currency balance audit logs
+    csilk_json_t* logs = csilk_db_query_param_json(
         pool,
-        db_is_postgres() ? "SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE "
-                           "-amount END),0) as net_change FROM transactions "
-                           "WHERE user_id=? AND transaction_date >= CURRENT_DATE - 30"
-                         : "SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE "
-                           "-amount END),0) as net_change FROM transactions "
-                           "WHERE user_id=? AND transaction_date >= date('now','-30 days')",
+        db_is_postgres() ? "SELECT abl.delta, a.currency, c.asset_type "
+                           "FROM asset_balance_logs abl "
+                           "JOIN assets a ON abl.asset_id = a.id "
+                           "JOIN categories c ON a.category_id = c.id "
+                           "WHERE abl.user_id = ? "
+                           "AND abl.created_at::date >= CURRENT_DATE - 30"
+                         : "SELECT abl.delta, a.currency, c.asset_type "
+                           "FROM asset_balance_logs abl "
+                           "JOIN assets a ON abl.asset_id = a.id "
+                           "JOIN categories c ON a.category_id = c.id "
+                           "WHERE abl.user_id = ? "
+                           "AND date(abl.created_at) >= date('now', '-30 days')",
         params);
     double change_30d = 0;
-    if (change_result && csilk_json_array_size(change_result) > 0) {
-        change_30d = db_get_num(csilk_json_array_get(change_result, 0), "net_change");
+    if (logs) {
+        size_t n = csilk_json_array_size(logs);
+        for (size_t i = 0; i < n; i++) {
+            csilk_json_t* r = csilk_json_array_get(logs, i);
+            double        delta = db_get_num(r, "delta");
+            const char*   cur = csilk_json_get_string(r, "currency");
+            const char*   atype = csilk_json_get_string(r, "asset_type");
+            double        conv_delta = delta * exchange_rate_get_to_cny(cur);
+            int           is_liab =
+                (atype && (strcmp(atype, "loan") == 0 || strcmp(atype, "credit_card") == 0 ||
+                           strcmp(atype, "other_liability") == 0));
+            if (is_liab) {
+                change_30d -= conv_delta;
+            } else {
+                change_30d += conv_delta;
+            }
+        }
+        csilk_json_free(logs);
     }
-    if (change_result) {
-        csilk_json_free(change_result);
+
+    double nw = current_assets - current_liabs;
+    double prev_nw = nw - change_30d;
+    double change_30d_pct = 0.0;
+    if (prev_nw > 0) {
+        change_30d_pct = (change_30d / prev_nw) * 100.0;
+    } else if (nw != 0) {
+        change_30d_pct = (change_30d / fabs(nw)) * 100.0;
     }
+
     csilk_json_t* resp = csilk_json_object();
-    csilk_json_add_number(resp, "current_value", current_assets - current_liabs);
+    csilk_json_add_number(resp, "current_value", nw);
     csilk_json_add_number(resp, "total_assets", current_assets);
     csilk_json_add_number(resp, "total_liabilities", current_liabs);
     csilk_json_add_number(resp, "change_30d", change_30d);
-    double nw = current_assets - current_liabs;
-    csilk_json_add_number(resp, "change_30d_pct", nw != 0 ? (change_30d / nw * 100) : 0);
+    csilk_json_add_number(resp, "change_30d_pct", change_30d_pct);
     csilk_json_add_array(resp, "by_category", by_cat);
     respond_ok(c, resp);
 }
