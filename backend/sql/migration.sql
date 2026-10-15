@@ -87,12 +87,13 @@ CREATE TABLE IF NOT EXISTS transactions (
 CREATE TABLE IF NOT EXISTS transfers (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    from_asset_id INTEGER NOT NULL REFERENCES assets(id) ON DELETE RESTRICT,
-    to_asset_id   INTEGER NOT NULL REFERENCES assets(id) ON DELETE RESTRICT,
+    from_asset_id INTEGER NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+    to_asset_id   INTEGER NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
     amount        DECIMAL(18,2) NOT NULL,
     currency      TEXT DEFAULT 'CNY',
     transfer_date TIMESTAMP NOT NULL,
     note          TEXT,
+    ledger_id     INTEGER REFERENCES ledgers(id) ON DELETE SET NULL,
     created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

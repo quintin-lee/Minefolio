@@ -18,4 +18,5 @@ typedef struct {
     const char* currency;
     const char* transfer_date;
     const char* note;
+    int64_t     ledger_id;
 } create_transfer_cmd_t;

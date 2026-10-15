@@ -22,26 +22,29 @@ int64_t mf_transfer_repo_insert(void* pool, int64_t user_id, const mf_transfer_t
 
 /**
  * @brief 插入转账关联交易记录（transfer_out）
- * @return 0: 成功, -1: 失败
+ * @return 新交易记录 ID，失败返回 <= 0
  */
-int mf_transfer_repo_insert_out_transaction(void*       pool,
-                                            int64_t     user_id,
-                                            int64_t     asset_id,
-                                            int64_t     linked_asset_id,
-                                            double      amount,
-                                            const char* currency,
-                                            const char* date,
-                                            const char* note);
+int64_t mf_transfer_repo_insert_out_transaction(void*       pool,
+                                                int64_t     user_id,
+                                                int64_t     asset_id,
+                                                int64_t     linked_asset_id,
+                                                double      amount,
+                                                const char* currency,
+                                                const char* date,
+                                                const char* note,
+                                                int64_t     ledger_id);
 
 /**
  * @brief 插入转账关联交易记录（transfer_in）
- * @return 0: 成功, -1: 失败
+ * @return 新交易记录 ID，失败返回 <= 0
  */
-int mf_transfer_repo_insert_in_transaction(void*       pool,
-                                           int64_t     user_id,
-                                           int64_t     asset_id,
-                                           int64_t     linked_asset_id,
-                                           double      amount,
-                                           const char* currency,
-                                           const char* date,
-                                           const char* note);
+int64_t mf_transfer_repo_insert_in_transaction(void*       pool,
+                                               int64_t     user_id,
+                                               int64_t     asset_id,
+                                               int64_t     linked_asset_id,
+                                               double      amount,
+                                               const char* currency,
+                                               const char* date,
+                                               const char* note,
+                                               int64_t     parent_tx_id,
+                                               int64_t     ledger_id);

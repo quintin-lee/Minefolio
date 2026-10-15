@@ -16,6 +16,7 @@
 #include "domain/ai/repository.h"
 #include "application/transaction/commands.h"
 #include "application/transaction/usecases.h"
+#include "application/transfer/usecases.h"
 #include "common/balance.h"
 
 #include "core/financial/currency.h"
@@ -435,6 +436,140 @@ test_transaction_update_change_asset(csilk_db_pool_t* pool, int64_t user_id)
 }
 
 static void
+test_transfer_delete_clean_rollback(csilk_db_pool_t* pool, int64_t user_id)
+{
+    printf("--- 3d. Testing Transfer Delete Clean Rollback & Pairing ---\n");
+
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+
+    // Create cash category
+    csilk_json_t* ins_cat = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO categories (user_id, name, type, asset_type, currency, ledger_id) "
+        "VALUES (?, 'Transfer Test Cash Cat', 'asset', 'cash', 'CNY', 101) RETURNING id",
+        (const char*[]){uid_str, NULL});
+    assert(ins_cat && csilk_json_array_size(ins_cat) > 0);
+    int64_t cat_id = db_get_int(csilk_json_array_get(ins_cat, 0), "id");
+    csilk_json_free(ins_cat);
+
+    char cat_str[32];
+    snprintf(cat_str, sizeof(cat_str), "%lld", (long long)cat_id);
+
+    // Create from_asset
+    csilk_json_t* ins_f = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO assets (user_id, category_id, name, current_value, currency, ledger_id) "
+        "VALUES (?, ?, 'Transfer From Asset', 1000.0, 'CNY', 101) RETURNING id",
+        (const char*[]){uid_str, cat_str, NULL});
+    assert(ins_f && csilk_json_array_size(ins_f) > 0);
+    int64_t from_asset = db_get_int(csilk_json_array_get(ins_f, 0), "id");
+    csilk_json_free(ins_f);
+
+    // Create to_asset
+    csilk_json_t* ins_t = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO assets (user_id, category_id, name, current_value, currency, ledger_id) "
+        "VALUES (?, ?, 'Transfer To Asset', 1000.0, 'CNY', 101) RETURNING id",
+        (const char*[]){uid_str, cat_str, NULL});
+    assert(ins_t && csilk_json_array_size(ins_t) > 0);
+    int64_t to_asset = db_get_int(csilk_json_array_get(ins_t, 0), "id");
+    csilk_json_free(ins_t);
+
+    create_transfer_cmd_t cmd = {
+        .user_id = user_id,
+        .from_asset_id = from_asset,
+        .to_asset_id = to_asset,
+        .amount = 300.0,
+        .currency = "CNY",
+        .transfer_date = "2026-10-15 12:00:00",
+        .note = "Test Transfer",
+    };
+    transfer_usecase_result_t res = {0};
+    int rc = transfer_usecase_create(pool, &cmd, &res);
+    assert(rc == 0);
+
+    // Query transfer_out tx id
+    char fid_str[32];
+    snprintf(fid_str, sizeof(fid_str), "%lld", (long long)from_asset);
+    csilk_json_t* txs = csilk_db_query_param_json(pool, "SELECT id FROM transactions WHERE transaction_type='transfer_out' AND asset_id=? ORDER BY id DESC LIMIT 1", (const char*[]){fid_str, NULL});
+    assert(txs && csilk_json_array_size(txs) > 0);
+    int64_t tx_out_id = db_get_int(csilk_json_array_get(txs, 0), "id");
+    csilk_json_free(txs);
+
+    // Delete transfer_out tx
+    delete_tx_cmd_t d_cmd = {.user_id = user_id, .tx_id = tx_out_id};
+    tx_usecase_result_t d_res = {0};
+    rc = tx_usecase_delete(pool, &d_cmd, &d_res);
+    assert(rc == 0);
+
+    // Verify paired transfer_in tx is cleaned up
+    char tid_str[32];
+    snprintf(tid_str, sizeof(tid_str), "%lld", (long long)to_asset);
+    csilk_json_t* in_txs = csilk_db_query_param_json(pool, "SELECT id FROM transactions WHERE transaction_type='transfer_in' AND asset_id=?", (const char*[]){tid_str, NULL});
+    assert(!in_txs || csilk_json_array_size(in_txs) == 0);
+    if (in_txs) csilk_json_free(in_txs);
+
+    // Verify balances restored to 1000.0 each
+    csilk_json_t* f_check = csilk_db_query_param_json(pool, "SELECT current_value FROM assets WHERE id=?", (const char*[]){fid_str, NULL});
+    assert(f_check && csilk_json_array_size(f_check) > 0);
+    double f_val = db_get_num(csilk_json_array_get(f_check, 0), "current_value");
+    csilk_json_free(f_check);
+    assert(f_val == 1000.0);
+
+    csilk_json_t* t_check = csilk_db_query_param_json(pool, "SELECT current_value FROM assets WHERE id=?", (const char*[]){tid_str, NULL});
+    assert(t_check && csilk_json_array_size(t_check) > 0);
+    double t_val = db_get_num(csilk_json_array_get(t_check, 0), "current_value");
+    csilk_json_free(t_check);
+    assert(t_val == 1000.0);
+
+    // Test Case B: Deleting transfer_in directly
+    rc = transfer_usecase_create(pool, &cmd, &res);
+    assert(rc == 0);
+
+    // Query transfer_in tx id
+    csilk_json_t* in_tx_rows = csilk_db_query_param_json(pool, "SELECT id FROM transactions WHERE transaction_type='transfer_in' AND asset_id=? ORDER BY id DESC LIMIT 1", (const char*[]){tid_str, NULL});
+    assert(in_tx_rows && csilk_json_array_size(in_tx_rows) > 0);
+    int64_t tx_in_id = db_get_int(csilk_json_array_get(in_tx_rows, 0), "id");
+    csilk_json_free(in_tx_rows);
+
+    // Delete transfer_in tx
+    delete_tx_cmd_t d_in_cmd = {.user_id = user_id, .tx_id = tx_in_id};
+    tx_usecase_result_t d_in_res = {0};
+    rc = tx_usecase_delete(pool, &d_in_cmd, &d_in_res);
+    assert(rc == 0);
+
+    // Verify paired transfer_out is cleaned up
+    csilk_json_t* out_txs = csilk_db_query_param_json(pool, "SELECT id FROM transactions WHERE transaction_type='transfer_out' AND asset_id=?", (const char*[]){fid_str, NULL});
+    assert(!out_txs || csilk_json_array_size(out_txs) == 0);
+    if (out_txs) csilk_json_free(out_txs);
+
+    // Verify balances restored to 1000.0 each
+    f_check = csilk_db_query_param_json(pool, "SELECT current_value FROM assets WHERE id=?", (const char*[]){fid_str, NULL});
+    assert(f_check && csilk_json_array_size(f_check) > 0);
+    f_val = db_get_num(csilk_json_array_get(f_check, 0), "current_value");
+    csilk_json_free(f_check);
+    assert(f_val == 1000.0);
+
+    t_check = csilk_db_query_param_json(pool, "SELECT current_value FROM assets WHERE id=?", (const char*[]){tid_str, NULL});
+    assert(t_check && csilk_json_array_size(t_check) > 0);
+    t_val = db_get_num(csilk_json_array_get(t_check, 0), "current_value");
+    csilk_json_free(t_check);
+    assert(t_val == 1000.0);
+
+    // Test Case C: Asset deletion cascades transfers cleanly
+    rc = transfer_usecase_create(pool, &cmd, &res);
+    assert(rc == 0);
+    int d_rc = mf_asset_repo_delete(pool, user_id, from_asset);
+    assert(d_rc == 0);
+    csilk_json_t* tr_check = csilk_db_query_param_json(pool, "SELECT id FROM transfers WHERE from_asset_id=?", (const char*[]){fid_str, NULL});
+    assert(!tr_check || csilk_json_array_size(tr_check) == 0);
+    if (tr_check) csilk_json_free(tr_check);
+
+    printf("  ✅ Transfer Delete Clean Rollback & Pairing passed\n");
+}
+
+static void
 test_portfolio_repository(csilk_db_pool_t* pool, int64_t user_id, int64_t asset_id)
 {
     printf("--- 4. Testing Portfolio Domain Repository ---\n");
@@ -798,15 +933,15 @@ test_multi_currency_balance_and_transfers(csilk_db_pool_t* pool, int64_t user_id
     /* 3. DEF-05: Transfer transaction direction & linked_asset_id */
     int64_t from_asset_id = usd_acc_id;
     int64_t to_asset_id = stk_id;
-    rc = mf_transfer_repo_insert_out_transaction(pool, user_id, from_asset_id, to_asset_id, 50.0, "USD", "2026-09-10", "Transfer out");
-    assert(rc == 0);
-    rc = mf_transfer_repo_insert_in_transaction(pool, user_id, to_asset_id, from_asset_id, 50.0, "USD", "2026-09-10", "Transfer in");
-    assert(rc == 0);
+    int64_t out_id = mf_transfer_repo_insert_out_transaction(pool, user_id, from_asset_id, to_asset_id, 50.0, "USD", "2026-09-10", "Transfer out", 0);
+    assert(out_id > 0);
+    int64_t in_id = mf_transfer_repo_insert_in_transaction(pool, user_id, to_asset_id, from_asset_id, 50.0, "USD", "2026-09-10", "Transfer in", out_id, 0);
+    assert(in_id > 0);
 
     /* Verify out transaction has direction='out' and linked_asset_id=to_asset_id */
     csilk_json_t* tx_out_res = csilk_db_query_param_json(
         pool,
-        "SELECT direction, linked_asset_id FROM transactions WHERE user_id=? AND transaction_type='transfer_out'",
+        "SELECT direction, linked_asset_id FROM transactions WHERE user_id=? AND transaction_type='transfer_out' ORDER BY id DESC LIMIT 1",
         (const char*[]){uid_str, NULL});
     assert(tx_out_res && csilk_json_array_size(tx_out_res) > 0);
     const char* out_dir = csilk_json_get_string(csilk_json_array_get(tx_out_res, 0), "direction");
@@ -818,7 +953,7 @@ test_multi_currency_balance_and_transfers(csilk_db_pool_t* pool, int64_t user_id
     /* Verify in transaction has direction='in' and linked_asset_id=from_asset_id */
     csilk_json_t* tx_in_res = csilk_db_query_param_json(
         pool,
-        "SELECT direction, linked_asset_id FROM transactions WHERE user_id=? AND transaction_type='transfer_in'",
+        "SELECT direction, linked_asset_id FROM transactions WHERE user_id=? AND transaction_type='transfer_in' ORDER BY id DESC LIMIT 1",
         (const char*[]){uid_str, NULL});
     assert(tx_in_res && csilk_json_array_size(tx_in_res) > 0);
     const char* in_dir = csilk_json_get_string(csilk_json_array_get(tx_in_res, 0), "direction");
@@ -847,6 +982,7 @@ main(void)
     test_transaction_repository(pool, user_id, asset_id);
     test_transaction_ledger_scoping(pool, user_id, asset_id);
     test_transaction_update_change_asset(pool, user_id);
+    test_transfer_delete_clean_rollback(pool, user_id);
     test_portfolio_repository(pool, user_id, asset_id);
     test_cashflow_repository(pool, user_id);
     test_market_repository(pool, user_id);

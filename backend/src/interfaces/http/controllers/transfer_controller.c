@@ -40,6 +40,7 @@ api_transfers_create(csilk_ctx_t* c)
         .amount = db_get_num(body, "amount"),
         .currency = csilk_json_get_string(body, "currency"),
         .note = csilk_json_get_string(body, "note"),
+        .ledger_id = ledger_id,
     };
 
     /* Try multiple date field names */

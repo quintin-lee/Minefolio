@@ -326,6 +326,12 @@ asset_delete(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
     char uid[32], idstr[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     snprintf(idstr, sizeof(idstr), "%lld", (long long)id);
+
+    csilk_json_free(csilk_db_query_param_json(
+        pool,
+        "DELETE FROM transfers WHERE (from_asset_id=? OR to_asset_id=?) AND user_id=?",
+        (const char*[]){idstr, idstr, uid, NULL}));
+
     csilk_json_t* res =
         csilk_db_query_param_json(pool,
                                   "DELETE FROM assets WHERE id=? AND user_id=? RETURNING id",
@@ -592,7 +598,7 @@ mf_asset_repo_delete(void* db_pool, int64_t user_id, int64_t id)
     if (!db_pool || id <= 0) {
         return -1;
     }
-    return asset_delete((csilk_db_pool_t*)db_pool, user_id, id);
+    return asset_delete((csilk_db_pool_t*)db_pool, user_id, id) ? 0 : -1;
 }
 
 int

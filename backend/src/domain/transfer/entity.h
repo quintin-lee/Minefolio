@@ -19,5 +19,6 @@ typedef struct {
     char    currency[8];       /**< 货币代码 */
     char    transfer_date[16]; /**< 转账日期 (YYYY-MM-DD) */
     char    note[256];         /**< 备注 */
+    int64_t ledger_id;         /**< 账本 ID */
     char    created_at[32];    /**< 创建时间 */
 } mf_transfer_t;
