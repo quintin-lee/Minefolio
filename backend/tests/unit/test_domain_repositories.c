@@ -1124,6 +1124,35 @@ test_daily_expense_multi_currency_totals(csilk_db_pool_t* pool, int64_t user_id,
     printf("  ✅ Daily Expense Multi-Currency Monthly Totals passed\n");
 }
 
+static void
+test_report_expense_percentage_closure(void)
+{
+    // 模拟三笔等额开销：100.0, 100.0, 100.0 (各占 33.3333...%)
+    // 契约：最大项自动平衡 0.01%，保证各项和为 100.00%
+    double amounts[3] = {100.0, 100.0, 100.0};
+    double total = 300.0;
+    double pcts[3] = {0};
+    double sum = 0.0;
+    int    max_idx = 0;
+    double max_amt = -1.0;
+
+    for (int i = 0; i < 3; i++) {
+        pcts[i] = round((amounts[i] / total * 100.0) * 100.0) / 100.0;
+        sum += pcts[i];
+        if (amounts[i] > max_amt) {
+            max_amt = amounts[i];
+            max_idx = i;
+        }
+    }
+    double delta = round((100.0 - sum) * 100.0) / 100.0;
+    if (fabs(delta) <= 0.05) {
+        pcts[max_idx] += delta;
+    }
+    double final_sum = pcts[0] + pcts[1] + pcts[2];
+    assert(fabs(final_sum - 100.0) < 1e-4);
+    printf("  ✅ Report Expense Percentage Closure passed\n");
+}
+
 int
 main(void)
 {
@@ -1149,6 +1178,7 @@ main(void)
     test_ai_repository(pool, user_id, asset_id);
     test_multi_currency_balance_and_transfers(pool, user_id);
     test_daily_expense_multi_currency_totals(pool, user_id, asset_id);
+    test_report_expense_percentage_closure();
 
     teardown_test_db(pool);
     printf("\nAll domain repository tests passed!\n");

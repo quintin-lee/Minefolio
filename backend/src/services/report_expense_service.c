@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <math.h>
 
 typedef struct {
     int64_t asset_id;
@@ -530,6 +531,32 @@ report_expense_category(csilk_ctx_t* c)
         }
     }
 
+    // Calculate rounded percentages (2 decimals) and balance largest remainder
+    double pcts[128] = {0};
+    double pct_sum = 0.0;
+    int    max_idx = 0;
+    double max_amt = -1.0;
+
+    for (int k = 0; k < cat_count; k++) {
+        if (total > 0.0) {
+            pcts[k] = round((cats[k].amount / total * 100.0) * 100.0) / 100.0;
+        } else {
+            pcts[k] = 0.0;
+        }
+        pct_sum += pcts[k];
+        if (cats[k].amount > max_amt) {
+            max_amt = cats[k].amount;
+            max_idx = k;
+        }
+    }
+
+    if (total > 0.0 && cat_count > 0) {
+        double delta = round((100.0 - pct_sum) * 100.0) / 100.0;
+        if (fabs(delta) <= 0.05) {
+            pcts[max_idx] += delta;
+        }
+    }
+
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_string(resp, "period", period);
     csilk_json_t* items = csilk_json_array();
@@ -537,7 +564,7 @@ report_expense_category(csilk_ctx_t* c)
         csilk_json_t* item = csilk_json_object();
         csilk_json_add_string(item, "name", cats[k].name);
         csilk_json_add_number(item, "amount", cats[k].amount);
-        csilk_json_add_number(item, "pct", total > 0 ? (cats[k].amount / total * 100) : 0);
+        csilk_json_add_number(item, "pct", pcts[k]);
         csilk_json_array_append(items, item);
     }
     csilk_json_add_array(resp, "items", items);
@@ -640,6 +667,32 @@ report_expense_tag(csilk_ctx_t* c)
         }
     }
 
+    // Calculate rounded percentages (2 decimals) and balance largest remainder
+    double pcts[128] = {0};
+    double pct_sum = 0.0;
+    int    max_idx = 0;
+    double max_amt = -1.0;
+
+    for (int k = 0; k < tag_count; k++) {
+        if (total > 0.0) {
+            pcts[k] = round((tags[k].amount / total * 100.0) * 100.0) / 100.0;
+        } else {
+            pcts[k] = 0.0;
+        }
+        pct_sum += pcts[k];
+        if (tags[k].amount > max_amt) {
+            max_amt = tags[k].amount;
+            max_idx = k;
+        }
+    }
+
+    if (total > 0.0 && tag_count > 0) {
+        double delta = round((100.0 - pct_sum) * 100.0) / 100.0;
+        if (fabs(delta) <= 0.05) {
+            pcts[max_idx] += delta;
+        }
+    }
+
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_string(resp, "period", period);
     csilk_json_t* items = csilk_json_array();
@@ -648,7 +701,7 @@ report_expense_tag(csilk_ctx_t* c)
         csilk_json_add_string(item, "tag_name", tags[k].name);
         csilk_json_add_number(item, "amount", tags[k].amount);
         csilk_json_add_number(item, "count", (double)tags[k].count);
-        csilk_json_add_number(item, "pct", total > 0 ? (tags[k].amount / total * 100) : 0);
+        csilk_json_add_number(item, "pct", pcts[k]);
         csilk_json_array_append(items, item);
     }
     csilk_json_add_array(resp, "items", items);
