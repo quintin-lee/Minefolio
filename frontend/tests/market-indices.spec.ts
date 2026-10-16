@@ -8,6 +8,7 @@ import IndexCard from '@/components/market/IndexCard.vue'
 import MarketClocksRibbon from '@/components/market/MarketClocksRibbon.vue'
 import IndicesFilterBar from '@/components/market/IndicesFilterBar.vue'
 import IndexDetailDrawer from '@/components/market/IndexDetailDrawer.vue'
+import GlobalIndicesBoard from '@/components/market/GlobalIndicesBoard.vue'
 import { useMarketStore } from '@/stores/market'
 import type { GlobalIndexItem } from '@/types'
 
@@ -103,5 +104,17 @@ describe('Market Components', () => {
     })
     expect(wrapper.text()).toContain('上证指数')
     expect(wrapper.text()).toContain('3,262.10')
+  })
+
+  it('mounts GlobalIndicesBoard and initializes polling lifecycle', () => {
+    const store = useMarketStore()
+    const fetchSpy = vi.spyOn(store, 'fetchIndices').mockResolvedValue()
+
+    const wrapper = mount(GlobalIndicesBoard)
+    expect(wrapper.findComponent(MarketClocksRibbon).exists()).toBe(true)
+    expect(wrapper.findComponent(IndexDetailDrawer).exists()).toBe(true)
+    expect(fetchSpy).toHaveBeenCalled()
+
+    wrapper.unmount()
   })
 })
