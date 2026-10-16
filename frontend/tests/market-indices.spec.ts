@@ -7,6 +7,8 @@ import ElementPlus from 'element-plus'
 import IndexCard from '@/components/market/IndexCard.vue'
 import MarketClocksRibbon from '@/components/market/MarketClocksRibbon.vue'
 import IndicesFilterBar from '@/components/market/IndicesFilterBar.vue'
+import IndexDetailDrawer from '@/components/market/IndexDetailDrawer.vue'
+import { useMarketStore } from '@/stores/market'
 import type { GlobalIndexItem } from '@/types'
 
 vi.mock('@/api/market', () => ({
@@ -67,5 +69,39 @@ describe('Market Components', () => {
       expect(wrapper.emitted('update:filter')).toBeTruthy()
       expect(wrapper.emitted('update:filter')![0]).toEqual(['nasdaq'])
     }
+  })
+
+  it('renders IndexDetailDrawer when open with index stats', async () => {
+    const store = useMarketStore()
+    const item: GlobalIndexItem = {
+      symbol: 'sh000001',
+      name: '上证指数',
+      category: 'cn',
+      region_flag: '🇨🇳',
+      current_price: 3285.4,
+      change_amount: 25.32,
+      change_percent: 0.78,
+      open_price: 3262.1,
+      high_price: 3292.1,
+      low_price: 3258.8,
+      prev_close: 3260.08,
+      currency: 'CNY',
+      quote_time: '2026-10-16 11:30:00',
+      sparkline: [3260.1, 3285.4],
+    }
+    store.openIndexDrawer(item)
+
+    const wrapper = mount(IndexDetailDrawer, {
+      global: {
+        stubs: {
+          'el-drawer': {
+            props: ['modelValue', 'title'],
+            template: '<div class="el-drawer" v-if="modelValue"><div class="drawer-title">{{ title }}</div><slot /></div>',
+          },
+        },
+      },
+    })
+    expect(wrapper.text()).toContain('上证指数')
+    expect(wrapper.text()).toContain('3,262.10')
   })
 })

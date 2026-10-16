@@ -61,6 +61,7 @@ declare module 'vue' {
     HoldingsTypePie: typeof import('./components/HoldingsTypePie.vue')['default']
     ImportRulesManager: typeof import('./components/settings/ImportRulesManager.vue')['default']
     IndexCard: typeof import('./components/market/IndexCard.vue')['default']
+    IndexDetailDrawer: typeof import('./components/market/IndexDetailDrawer.vue')['default']
     IndicesFilterBar: typeof import('./components/market/IndicesFilterBar.vue')['default']
     JoinLedgerDialog: typeof import('./components/JoinLedgerDialog.vue')['default']
     LedgerDialog: typeof import('./components/LedgerDialog.vue')['default']
