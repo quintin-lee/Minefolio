@@ -28,7 +28,7 @@ gbk_to_utf8(const char* in, char* out, size_t out_cap)
     iconv_close(cd);
 }
 
-/* Helper to normalize Tencent symbol: 600519 -> sh600519, 000001 -> sz000001 */
+/* Helper to normalize Tencent symbol: 600519 -> sh600519, 600519.SH -> sh600519, 00700.HK -> hk00700 */
 static void
 normalize_tencent_symbol(const char* in, char* out, size_t out_cap)
 {
@@ -43,7 +43,31 @@ normalize_tencent_symbol(const char* in, char* out, size_t out_cap)
         return;
     }
 
-    /* Check if 6 digits starting with 6/9 -> sh, 0/3 -> sz, 4/8 -> bj */
+    /* Check for dotted market suffixes: .SH, .SS, .SZ, .BJ, .HK, .US */
+    const char* dot = strchr(in, '.');
+    if (dot) {
+        int         code_len = (int)(dot - in);
+        const char* suffix = dot + 1;
+        if (strcasecmp(suffix, "SH") == 0 || strcasecmp(suffix, "SS") == 0) {
+            snprintf(out, out_cap, "sh%.*s", code_len, in);
+            return;
+        } else if (strcasecmp(suffix, "SZ") == 0) {
+            snprintf(out, out_cap, "sz%.*s", code_len, in);
+            return;
+        } else if (strcasecmp(suffix, "BJ") == 0) {
+            snprintf(out, out_cap, "bj%.*s", code_len, in);
+            return;
+        } else if (strcasecmp(suffix, "HK") == 0) {
+            int code_num = atoi(in);
+            snprintf(out, out_cap, "hk%05d", code_num);
+            return;
+        } else if (strcasecmp(suffix, "US") == 0) {
+            snprintf(out, out_cap, "us%.*s", code_len, in);
+            return;
+        }
+    }
+
+    /* Check if 6 digits starting with 6/9/5 -> sh, 0/3/1/2 -> sz, 4/8 -> bj */
     if (strlen(in) == 6 && isdigit((unsigned char)in[0])) {
         if (in[0] == '6' || in[0] == '9' || in[0] == '5') {
             snprintf(out, out_cap, "sh%s", in);

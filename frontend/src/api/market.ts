@@ -35,7 +35,7 @@ export const marketApi = {
    * @returns 同步统计结果 (成功数量与失败数量)
    */
   syncAll: () =>
-    http.post<{ synced_count: number; failed_count: number }>('/market/sync'),
+    http.post<{ synced_count: number; failed_count: number }>('/market/sync', undefined, { timeout: 30000 }),
 
   /**
    * 单独同步更新指定资产的最新行情市价与净值
@@ -89,6 +89,14 @@ export const marketApi = {
    */
   getExchangeRates: () =>
     http.get<Record<string, number>>('/market/exchange-rates'),
+
+  /**
+   * 触发后台立即刷新多币种最新实时法币汇率
+   * @route POST /api/market/exchange-rates/sync
+   * @returns 最新汇率字典
+   */
+  syncExchangeRates: () =>
+    http.post<Record<string, number>>('/market/exchange-rates/sync'),
 
   /**
    * 手动更新或覆盖指定币种的兑换汇率

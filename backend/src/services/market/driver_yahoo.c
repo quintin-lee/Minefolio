@@ -142,7 +142,7 @@ yahoo_fetch_single(const char* symbol, market_quote_t* out_quote)
              symbol);
 
     size_t len = 0;
-    char*  body = quote_engine_http_get(url, NULL, 6, &len);
+    char*  body = quote_engine_http_get(url, NULL, 3, &len);
     if (!body || len == 0) {
         return -1;
     }

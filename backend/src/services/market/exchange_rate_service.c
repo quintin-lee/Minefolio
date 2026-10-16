@@ -215,7 +215,7 @@ exchange_rate_store(
 
 /* Frankfurter fallback: ECB euro reference rates (EUR base, updated daily).
  * XXX->CNY is derived as EURCNY/EURXXX. Only used for currencies whose
- * Yahoo fetch failed. Verified live: USDCNY derived 6.6917 vs Yahoo 6.6884. */
+ * fast batch or Yahoo fetch failed. */
 static void
 exchange_rate_fallback_frankfurter(char             failed[][16],
                                    int              n_failed,
@@ -224,15 +224,16 @@ exchange_rate_fallback_frankfurter(char             failed[][16],
 {
     size_t len = 0;
     char*  body = quote_engine_http_get(
-        "https://api.frankfurter.app/latest?from=EUR&to=USD,CNY,HKD,JPY,GBP,SGD,AUD,CAD",
+        "https://api.frankfurter.dev/v1/latest?from=EUR&to=USD,CNY,HKD,JPY,GBP,SGD,AUD,CAD",
         NULL,
-        8,
+        4,
         &len);
     if (!body || len == 0) {
         for (int i = 0; i < n_failed; i++) {
-            CSILK_LOG_W("Exchange rate %s: yahoo unreachable and frankfurter fallback failed, "
-                        "keeping stale value",
-                        failed[i]);
+            CSILK_LOG_W(
+                "Exchange rate %s: yahoo/batch unreachable and frankfurter fallback failed, "
+                "keeping stale value",
+                failed[i]);
         }
         return;
     }
@@ -259,12 +260,100 @@ exchange_rate_fallback_frankfurter(char             failed[][16],
         if (x_per_eur > 0) {
             exchange_rate_store(failed[i], cny_per_eur / x_per_eur, now, pool, "frankfurter");
         } else {
-            CSILK_LOG_W("Exchange rate %s: yahoo unreachable, no frankfurter cross rate, "
-                        "keeping stale value",
+            CSILK_LOG_W("Exchange rate %s: no frankfurter cross rate, keeping stale value",
                         failed[i]);
         }
     }
     csilk_json_free(root);
+}
+
+static void
+exchange_rate_refresh_fast_batch(time_t           now,
+                                 csilk_db_pool_t* pool,
+                                 char             failed[][16],
+                                 int*             out_n_failed)
+{
+    size_t len = 0;
+    char*  body = quote_engine_http_get(
+        "http://qt.gtimg.cn/"
+        "q=whUSDCNY,whEURCNY,whHKDCNY,whGBPCNY,whSGDCNY,whAUDCNY,whCADCNY,whCNYJPY",
+        NULL,
+        4,
+        &len);
+    if (!body || len == 0) {
+        if (body) {
+            free(body);
+        }
+        int n = 0;
+        for (int i = 0; g_rates[i].currency[0] != '\0'; i++) {
+            if (g_rates[i].yahoo_symbol[0] && n < 16) {
+                snprintf(failed[n++], sizeof(failed[0]), "%.15s", g_rates[i].currency);
+            }
+        }
+        *out_n_failed = n;
+        return;
+    }
+
+    char* saveptr = NULL;
+    char* line = strtok_r(body, "\n\r", &saveptr);
+    while (line) {
+        if (strncmp(line, "v_wh", 4) == 0) {
+            char* q1 = strchr(line, '"');
+            char* q2 = q1 ? strrchr(q1 + 1, '"') : NULL;
+            if (q1 && q2 && q2 > q1) {
+                *q2 = '\0';
+                char* content = q1 + 1;
+                char* parts[8] = {0};
+                int   part_cnt = 0;
+                char* tok_save = NULL;
+                char* tok = strtok_r(content, "~", &tok_save);
+                while (tok && part_cnt < 8) {
+                    parts[part_cnt++] = tok;
+                    tok = strtok_r(NULL, "~", &tok_save);
+                }
+                if (part_cnt >= 4) {
+                    double rate = atof(parts[3]);
+                    if (rate > 0.0) {
+                        if (strstr(line, "whUSDCNY")) {
+                            exchange_rate_store("USD", rate, now, pool, "tencent");
+                            exchange_rate_store("USDT", rate, now, pool, "tencent");
+                        } else if (strstr(line, "whEURCNY")) {
+                            exchange_rate_store("EUR", rate, now, pool, "tencent");
+                        } else if (strstr(line, "whHKDCNY")) {
+                            exchange_rate_store("HKD", rate, now, pool, "tencent");
+                        } else if (strstr(line, "whGBPCNY")) {
+                            exchange_rate_store("GBP", rate, now, pool, "tencent");
+                        } else if (strstr(line, "whSGDCNY")) {
+                            exchange_rate_store("SGD", rate, now, pool, "tencent");
+                        } else if (strstr(line, "whAUDCNY")) {
+                            exchange_rate_store("AUD", rate, now, pool, "tencent");
+                        } else if (strstr(line, "whCADCNY")) {
+                            exchange_rate_store("CAD", rate, now, pool, "tencent");
+                        } else if (strstr(line, "whCNYJPY")) {
+                            exchange_rate_store("JPY", 1.0 / rate, now, pool, "tencent");
+                        }
+                    }
+                }
+            }
+        }
+        line = strtok_r(NULL, "\n\r", &saveptr);
+    }
+    free(body);
+
+    int n = 0;
+    pthread_mutex_lock(&g_rate_mutex);
+    for (int i = 0; g_rates[i].currency[0] != '\0'; i++) {
+        if (!g_rates[i].yahoo_symbol[0]) {
+            continue;
+        }
+        if (g_rates[i].last_updated < now - 5) {
+            if (n < 16) {
+                snprintf(failed[n++], sizeof(failed[0]), "%.15s", g_rates[i].currency);
+            }
+        }
+    }
+    pthread_mutex_unlock(&g_rate_mutex);
+    *out_n_failed = n;
 }
 
 void
@@ -281,23 +370,46 @@ exchange_rate_refresh_all(void)
     char             failed[16][16];
     int              n_failed = 0;
 
-    for (int i = 0; g_rates[i].currency[0] != '\0'; i++) {
-        if (!g_rates[i].yahoo_symbol[0]) {
-            continue;
-        }
+    /* 1. Fast batch fetch (<100ms) for all major FX pairs */
+    exchange_rate_refresh_fast_batch(now, pool, failed, &n_failed);
 
-        market_quote_t q;
-        if (quote_engine_fetch_quote(g_rates[i].yahoo_symbol, "yahoo", &q) == 0 &&
-            q.current_price > 0) {
-            exchange_rate_store(g_rates[i].currency, q.current_price, now, pool, "yahoo");
-        } else if (n_failed < (int)(sizeof(failed) / sizeof(failed[0]))) {
-            snprintf(failed[n_failed], sizeof(failed[0]), "%.15s", g_rates[i].currency);
-            n_failed++;
-        }
-    }
-
+    /* 2. Fallback to Frankfurter ECB reference rates for any missing currency */
     if (n_failed > 0) {
+        char still_failed[16][16];
+        int  n_still_failed = 0;
         exchange_rate_fallback_frankfurter(failed, n_failed, now, pool);
+
+        pthread_mutex_lock(&g_rate_mutex);
+        for (int i = 0; i < n_failed; i++) {
+            for (int j = 0; g_rates[j].currency[0] != '\0'; j++) {
+                if (strcmp(g_rates[j].currency, failed[i]) == 0) {
+                    if (g_rates[j].last_updated < now - 5 && n_still_failed < 16) {
+                        snprintf(still_failed[n_still_failed++],
+                                 sizeof(still_failed[0]),
+                                 "%.15s",
+                                 failed[i]);
+                    }
+                    break;
+                }
+            }
+        }
+        pthread_mutex_unlock(&g_rate_mutex);
+
+        /* 3. Fallback to Yahoo Finance for any remaining currencies */
+        for (int i = 0; i < n_still_failed; i++) {
+            for (int j = 0; g_rates[j].currency[0] != '\0'; j++) {
+                if (strcmp(g_rates[j].currency, still_failed[i]) == 0 &&
+                    g_rates[j].yahoo_symbol[0]) {
+                    market_quote_t q;
+                    if (quote_engine_fetch_quote(g_rates[j].yahoo_symbol, "yahoo", &q) == 0 &&
+                        q.current_price > 0) {
+                        exchange_rate_store(
+                            g_rates[j].currency, q.current_price, now, pool, "yahoo");
+                    }
+                    break;
+                }
+            }
+        }
     }
 }
 

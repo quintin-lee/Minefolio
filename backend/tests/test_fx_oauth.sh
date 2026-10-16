@@ -92,6 +92,7 @@ cd "$BUILD_DIR"
 MINEFOLIO_DB_DRIVER=sqlite MINEFOLIO_DB_DSN="$DB_FILE" MINEFOLIO_PORT="$PORT" \
 MINEFOLIO_JWT_SECRET="test_fx_oauth_secret_12345678" \
 MINEFOLIO_OAUTH_GITHUB_CLIENT_ID="gh_client_id_test" \
+MINEFOLIO_MARKET_MOCK="${MINEFOLIO_MARKET_MOCK:-1}" \
 "$BIN" > /tmp/minefolio_fx_oauth.log 2>&1 &
 SERVER_PID=$!
 
@@ -145,6 +146,17 @@ HIST_CODE=$(echo "$FX_HIST" | jq -r '.code | floor')
 assert_eq "GET /api/market/fx-history returns code 0" "$HIST_CODE" "0"
 HIST_LEN=$(echo "$FX_HIST" | jq '.data | length')
 assert_nonzero "FX history contains points" "$HIST_LEN"
+
+# Test Exchange Rates Sync Endpoints
+SYNC_FX_RES=$(curl -s -X POST -H "Authorization: Bearer $TOKEN" "$BASE/market/exchange-rates/sync")
+SYNC_FX_CODE=$(echo "$SYNC_FX_RES" | jq -r '.code | floor')
+assert_eq "POST /api/market/exchange-rates/sync returns code 0" "$SYNC_FX_CODE" "0"
+SYNC_USD=$(echo "$SYNC_FX_RES" | jq -r '.data.USD')
+assert_nonzero "Synced rates contains USD" "$SYNC_USD"
+
+SYNC_ALIAS_RES=$(curl -s -X POST -H "Authorization: Bearer $TOKEN" "$BASE/market/fx-rates/sync")
+SYNC_ALIAS_CODE=$(echo "$SYNC_ALIAS_RES" | jq -r '.code | floor')
+assert_eq "POST /api/market/fx-rates/sync alias returns code 0" "$SYNC_ALIAS_CODE" "0"
 
 echo "=== 3. Test Multi-Currency Summary & FX Gain/Loss Report ==="
 # Create USD asset and CNY asset

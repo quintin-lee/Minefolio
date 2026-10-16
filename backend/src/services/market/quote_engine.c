@@ -71,7 +71,7 @@ quote_engine_http_get(const char* url, const char* proxy, int timeout_sec, size_
     struct curl_buf buf = {NULL, 0, 0};
     curl_easy_setopt(curl, CURLOPT_URL, url);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_sec > 0 ? (long)timeout_sec : 5L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_sec > 0 ? (long)timeout_sec : 3L);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_cb);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buf);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
@@ -134,6 +134,36 @@ quote_engine_search(const char* keyword, market_search_item_t* out_items, int ma
     return total_found;
 }
 
+static bool
+driver_matches_source(const quote_driver_t* drv, const char* source_type)
+{
+    if (!drv || !source_type || !source_type[0]) {
+        return false;
+    }
+    if (strcmp(drv->source_type, source_type) == 0 || strcmp(drv->name, source_type) == 0) {
+        return true;
+    }
+    if (strcmp(drv->source_type, "crypto") == 0 &&
+        (strcasecmp(source_type, "binance") == 0 || strcasecmp(source_type, "okx") == 0)) {
+        return true;
+    }
+    if (strcmp(drv->source_type, "stock_cn") == 0 &&
+        (strcasecmp(source_type, "stock_hk") == 0 || strcasecmp(source_type, "stock_us") == 0 ||
+         strcasecmp(source_type, "tencent") == 0)) {
+        return true;
+    }
+    if (strcmp(drv->source_type, "fund_cn") == 0 &&
+        (strcasecmp(source_type, "fund") == 0 || strcasecmp(source_type, "eastmoney") == 0)) {
+        return true;
+    }
+    if (strcmp(drv->source_type, "yahoo") == 0 &&
+        (strcasecmp(source_type, "forex") == 0 || strcasecmp(source_type, "commodity") == 0 ||
+         strcasecmp(source_type, "index") == 0)) {
+        return true;
+    }
+    return false;
+}
+
 int
 quote_engine_fetch_quote(const char* symbol, const char* source_type, market_quote_t* out_quote)
 {
@@ -154,8 +184,7 @@ quote_engine_fetch_quote(const char* symbol, const char* source_type, market_quo
     /* 1. If explicit source_type provided, try that driver first */
     if (source_type && source_type[0]) {
         for (int d = 0; drivers[d] != NULL; d++) {
-            if (strcmp(drivers[d]->source_type, source_type) == 0 ||
-                strcmp(drivers[d]->name, source_type) == 0) {
+            if (driver_matches_source(drivers[d], source_type)) {
                 if (drivers[d]->fetch_single && drivers[d]->fetch_single(symbol, out_quote) == 0) {
                     return 0;
                 }

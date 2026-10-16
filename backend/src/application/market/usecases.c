@@ -187,6 +187,10 @@ market_usecase_sync_all(
         return -1;
     }
 
+    /* 1. Refresh global exchange rates for forex boards and multi-currency reporting */
+    exchange_rate_refresh_all();
+
+    /* 2. Sync user assets */
     int synced = 0, failed = 0;
     market_usecase_do_sync_user(pool, user_id, &synced, &failed);
 
@@ -434,6 +438,27 @@ market_usecase_get_exchange_rates(csilk_json_t** out_rates, market_usecase_resul
         snprintf(out_res->message, sizeof(out_res->message), "参数错误");
         return -1;
     }
+
+    *out_rates = exchange_rate_list_all();
+    out_res->code = 0;
+    snprintf(out_res->message, sizeof(out_res->message), "ok");
+    return 0;
+}
+
+int
+market_usecase_sync_exchange_rates(csilk_json_t** out_rates, market_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
+    memset(out_res, 0, sizeof(*out_res));
+    if (!out_rates) {
+        out_res->code = 1002;
+        snprintf(out_res->message, sizeof(out_res->message), "参数错误");
+        return -1;
+    }
+
+    exchange_rate_refresh_all();
 
     *out_rates = exchange_rate_list_all();
     out_res->code = 0;

@@ -181,6 +181,19 @@ api_market_get_exchange_rates(csilk_ctx_t* c)
 }
 
 void
+api_market_sync_exchange_rates(csilk_ctx_t* c)
+{
+    csilk_json_t*           rates = NULL;
+    market_usecase_result_t res = {0};
+    int                     rc = market_usecase_sync_exchange_rates(&rates, &res);
+    if (rc == 0 && res.code == 0) {
+        respond_ok(c, rates);
+    } else {
+        respond_error(c, res.code ? res.code : 500, res.message);
+    }
+}
+
+void
 api_market_update_exchange_rate(csilk_ctx_t* c)
 {
     csilk_json_t* body = csilk_bind_json(c);
@@ -300,6 +313,13 @@ register_market_routes(csilk_app_t* app)
                       "Get exchange rates",
                       "Get real-time multi-currency exchange rates to CNY");
     csilk_app_post_ext(app,
+                       "/api/market/exchange-rates/sync",
+                       api_market_sync_exchange_rates,
+                       NULL,
+                       NULL,
+                       "Sync exchange rates",
+                       "Trigger immediate real-time synchronization of exchange rates");
+    csilk_app_post_ext(app,
                        "/api/market/exchange-rates",
                        api_market_update_exchange_rate,
                        NULL,
@@ -313,6 +333,13 @@ register_market_routes(csilk_app_t* app)
                       NULL,
                       "Get FX rates",
                       "Get FX rates alias");
+    csilk_app_post_ext(app,
+                       "/api/market/fx-rates/sync",
+                       api_market_sync_exchange_rates,
+                       NULL,
+                       NULL,
+                       "Sync FX rates",
+                       "Trigger immediate real-time synchronization of FX rates alias");
     csilk_app_post_ext(app,
                        "/api/market/fx-rates",
                        api_market_update_exchange_rate,

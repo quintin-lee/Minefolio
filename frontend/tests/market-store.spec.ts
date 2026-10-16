@@ -10,6 +10,7 @@ vi.mock('@/api/market', () => ({
     getFxHistory: vi.fn(),
     getMultiCurrencySummary: vi.fn(),
     syncAll: vi.fn(),
+    syncExchangeRates: vi.fn(),
     updateExchangeRate: vi.fn(),
     getIndices: vi.fn(),
   },
@@ -147,5 +148,46 @@ describe('market store', () => {
     await p1
 
     expect(store.indices[0].symbol).toBe('^GSPC')
+  })
+
+  it('syncAllQuotes runs both fx and quotes sync and refreshes rates', async () => {
+    const store = useMarketStore()
+    vi.mocked(marketApi.syncExchangeRates).mockResolvedValueOnce({ USD: 7.25, EUR: 7.88 })
+    vi.mocked(marketApi.syncAll).mockResolvedValueOnce({ synced_count: 5, failed_count: 0 })
+    vi.mocked(marketApi.getExchangeRates).mockResolvedValueOnce({ USD: 7.25, EUR: 7.88 })
+    vi.mocked(marketApi.getMultiCurrencySummary).mockResolvedValueOnce({} as any)
+    vi.mocked(marketApi.getFxHistory).mockResolvedValueOnce([])
+
+    const success = await store.syncAllQuotes()
+    expect(success).toBe(true)
+    expect(marketApi.syncExchangeRates).toHaveBeenCalled()
+    expect(marketApi.syncAll).toHaveBeenCalled()
+    expect(store.lastSyncAt).toBeTruthy()
+    expect(store.isSyncing).toBe(false)
+  })
+
+  it('syncAllQuotes is resilient when syncAll fails but syncExchangeRates succeeds', async () => {
+    const store = useMarketStore()
+    vi.mocked(marketApi.syncExchangeRates).mockResolvedValueOnce({ USD: 7.25, EUR: 7.88 })
+    vi.mocked(marketApi.syncAll).mockRejectedValueOnce(new Error('timeout'))
+    vi.mocked(marketApi.getExchangeRates).mockResolvedValueOnce({ USD: 7.25, EUR: 7.88 })
+    vi.mocked(marketApi.getMultiCurrencySummary).mockResolvedValueOnce({} as any)
+    vi.mocked(marketApi.getFxHistory).mockResolvedValueOnce([])
+
+    const success = await store.syncAllQuotes()
+    expect(success).toBe(true)
+    expect(store.rates.USD).toBe(7.25)
+    expect(store.lastSyncAt).toBeTruthy()
+    expect(store.isSyncing).toBe(false)
+  })
+
+  it('syncAllQuotes returns false when both sync calls fail', async () => {
+    const store = useMarketStore()
+    vi.mocked(marketApi.syncExchangeRates).mockRejectedValueOnce(new Error('fx error'))
+    vi.mocked(marketApi.syncAll).mockRejectedValueOnce(new Error('quote error'))
+
+    const success = await store.syncAllQuotes()
+    expect(success).toBe(false)
+    expect(store.isSyncing).toBe(false)
   })
 })

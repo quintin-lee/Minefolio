@@ -98,12 +98,39 @@ export const useMarketStore = defineStore('market', () => {
     }
   }
 
+  async function syncExchangeRates() {
+    try {
+      const data = await marketApi.syncExchangeRates()
+      if (data && typeof data === 'object') {
+        rates.value = { ...data, CNY: 1.0 }
+        localStorage.setItem(RATES_CACHE_KEY, JSON.stringify(rates.value))
+        lastSyncAt.value = new Date().toLocaleTimeString()
+        await Promise.allSettled([fetchHoldingsSummary(), fetchHistory()])
+        return true
+      }
+    } catch (err) {
+      console.warn('Failed to sync exchange rates:', err)
+    }
+    return false
+  }
+
   async function syncAllQuotes() {
     isSyncing.value = true
     try {
-      await marketApi.syncAll()
+      const [fxRes, quoteRes] = await Promise.allSettled([
+        marketApi.syncExchangeRates(),
+        marketApi.syncAll(),
+      ])
+
       await Promise.allSettled([fetchRates(), fetchHoldingsSummary(), fetchHistory()])
       lastSyncAt.value = new Date().toLocaleTimeString()
+
+      const fxOk = fxRes.status === 'fulfilled'
+      const quoteOk = quoteRes.status === 'fulfilled'
+      if (!fxOk && !quoteOk) {
+        console.error('Market sync failed: both FX and quotes sync failed', { fxRes, quoteRes })
+        return false
+      }
       return true
     } catch (err) {
       console.error('Market sync failed:', err)
@@ -229,6 +256,7 @@ export const useMarketStore = defineStore('market', () => {
     fetchRates,
     fetchHistory,
     fetchHoldingsSummary,
+    syncExchangeRates,
     syncAllQuotes,
     updateRate,
     setAutoRefreshInterval,
