@@ -1,5 +1,6 @@
 #include "services/market/market_scheduler.h"
 #include "application/market/usecases.h"
+#include "services/market/exchange_rate_service.h"
 #include "infrastructure/repositories/dca_repo_impl.h"
 #include "csilk/csilk.h"
 #include <pthread.h>
@@ -229,6 +230,9 @@ scheduler_loop(void* arg)
             int synced = 0, failed = 0;
             market_usecase_do_sync_user(g_pool, 0, &synced, &failed);
             CSILK_LOG_I("Market scheduler completed sync: %d synced, %d failed", synced, failed);
+            /* FX rates are global (memory table): refresh once per tick, not per user.
+             * Kept out of the /sync hot path to protect its latency budget. */
+            exchange_rate_refresh_all();
             pthread_mutex_lock(&g_sched_mutex);
         }
 

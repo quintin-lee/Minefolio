@@ -1,5 +1,6 @@
 #include "services/market/exchange_rate_service.h"
 #include "services/market/quote_engine.h"
+#include "services/market/driver_mock.h"
 #include "common/db.h"
 #include "csilk/csilk.h"
 #include <pthread.h>
@@ -187,11 +188,98 @@ exchange_rate_set(const char* currency, double rate_to_cny)
     return found ? 0 : -1;
 }
 
+/* Single place that writes the in-memory table + history row.
+ * Uses exchange_rate_upsert_sql() so both SQLite and PostgreSQL work. */
+static void
+exchange_rate_store(
+    const char* currency, double rate_to_cny, time_t now, csilk_db_pool_t* pool, const char* src)
+{
+    pthread_mutex_lock(&g_rate_mutex);
+    for (int i = 0; g_rates[i].currency[0] != '\0'; i++) {
+        if (strcmp(g_rates[i].currency, currency) == 0) {
+            g_rates[i].rate_to_cny = rate_to_cny;
+            g_rates[i].last_updated = now;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&g_rate_mutex);
+    CSILK_LOG_I("Refreshed exchange rate %s -> CNY: %.4f (%s)", currency, rate_to_cny, src);
+
+    if (pool) {
+        char rate_str[32];
+        snprintf(rate_str, sizeof(rate_str), "%.6f", rate_to_cny);
+        csilk_db_query_param_json(
+            pool, exchange_rate_upsert_sql(), (const char*[]){currency, rate_str, NULL});
+    }
+}
+
+/* Frankfurter fallback: ECB euro reference rates (EUR base, updated daily).
+ * XXX->CNY is derived as EURCNY/EURXXX. Only used for currencies whose
+ * Yahoo fetch failed. Verified live: USDCNY derived 6.6917 vs Yahoo 6.6884. */
+static void
+exchange_rate_fallback_frankfurter(char             failed[][16],
+                                   int              n_failed,
+                                   time_t           now,
+                                   csilk_db_pool_t* pool)
+{
+    size_t len = 0;
+    char*  body = quote_engine_http_get(
+        "https://api.frankfurter.app/latest?from=EUR&to=USD,CNY,HKD,JPY,GBP,SGD,AUD,CAD",
+        NULL,
+        8,
+        &len);
+    if (!body || len == 0) {
+        for (int i = 0; i < n_failed; i++) {
+            CSILK_LOG_W("Exchange rate %s: yahoo unreachable and frankfurter fallback failed, "
+                        "keeping stale value",
+                        failed[i]);
+        }
+        return;
+    }
+
+    csilk_json_t* root = csilk_json_parse(body);
+    free(body);
+    csilk_json_t* rates = root ? csilk_json_get(root, "rates") : NULL;
+    double        cny_per_eur = rates ? db_get_num(rates, "CNY") : 0.0;
+    if (!rates || cny_per_eur <= 0) {
+        for (int i = 0; i < n_failed; i++) {
+            CSILK_LOG_W("Exchange rate %s: frankfurter response invalid, keeping stale value",
+                        failed[i]);
+        }
+        if (root) {
+            csilk_json_free(root);
+        }
+        return;
+    }
+
+    for (int i = 0; i < n_failed; i++) {
+        /* USDT is pegged to USD; frankfurter codes match ours otherwise. */
+        const char* eur_sym = (strcmp(failed[i], "USDT") == 0) ? "USD" : failed[i];
+        double      x_per_eur = db_get_num(rates, eur_sym);
+        if (x_per_eur > 0) {
+            exchange_rate_store(failed[i], cny_per_eur / x_per_eur, now, pool, "frankfurter");
+        } else {
+            CSILK_LOG_W("Exchange rate %s: yahoo unreachable, no frankfurter cross rate, "
+                        "keeping stale value",
+                        failed[i]);
+        }
+    }
+    csilk_json_free(root);
+}
+
 void
 exchange_rate_refresh_all(void)
 {
+    /* Offline mock mode returns placeholder prices (e.g. 100.0) for FX
+     * symbols; never let it overwrite the rate table. */
+    if (market_mock_enabled()) {
+        return;
+    }
+
     time_t           now = time(NULL);
     csilk_db_pool_t* pool = db_get_pool();
+    char             failed[16][16];
+    int              n_failed = 0;
 
     for (int i = 0; g_rates[i].currency[0] != '\0'; i++) {
         if (!g_rates[i].yahoo_symbol[0]) {
@@ -201,25 +289,15 @@ exchange_rate_refresh_all(void)
         market_quote_t q;
         if (quote_engine_fetch_quote(g_rates[i].yahoo_symbol, "yahoo", &q) == 0 &&
             q.current_price > 0) {
-            pthread_mutex_lock(&g_rate_mutex);
-            g_rates[i].rate_to_cny = q.current_price;
-            g_rates[i].last_updated = now;
-            pthread_mutex_unlock(&g_rate_mutex);
-            CSILK_LOG_I(
-                "Refreshed exchange rate %s -> CNY: %.4f", g_rates[i].currency, q.current_price);
-
-            if (pool) {
-                char rate_str[32];
-                snprintf(rate_str, sizeof(rate_str), "%.6f", q.current_price);
-                csilk_db_query_param_json(pool,
-                                          "INSERT INTO exchange_rate_history (rate_date, "
-                                          "base_currency, target_currency, rate) "
-                                          "VALUES (date('now'), 'CNY', ?, ?) "
-                                          "ON CONFLICT(rate_date, base_currency, target_currency) "
-                                          "DO UPDATE SET rate = excluded.rate",
-                                          (const char*[]){g_rates[i].currency, rate_str, NULL});
-            }
+            exchange_rate_store(g_rates[i].currency, q.current_price, now, pool, "yahoo");
+        } else if (n_failed < (int)(sizeof(failed) / sizeof(failed[0]))) {
+            snprintf(failed[n_failed], sizeof(failed[0]), "%.15s", g_rates[i].currency);
+            n_failed++;
         }
+    }
+
+    if (n_failed > 0) {
+        exchange_rate_fallback_frankfurter(failed, n_failed, now, pool);
     }
 }
 
