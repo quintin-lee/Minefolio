@@ -67,9 +67,9 @@
       <FxHoldingsSummary />
     </div>
 
-    <!-- Tab 2: Global Indices Placeholder -->
+    <!-- Tab 2: Global Indices Board -->
     <div v-else-if="activeTab === 'indices'" class="tab-content">
-      <GlobalIndicesPlaceholder />
+      <GlobalIndicesBoard />
     </div>
 
     <!-- Manual Edit Dialog -->
@@ -88,7 +88,7 @@ import FxConverter from '@/components/market/FxConverter.vue'
 import FxTrendChart from '@/components/market/FxTrendChart.vue'
 import FxHoldingsSummary from '@/components/market/FxHoldingsSummary.vue'
 import FxRateEditDialog from '@/components/market/FxRateEditDialog.vue'
-import GlobalIndicesPlaceholder from '@/components/market/GlobalIndicesPlaceholder.vue'
+import GlobalIndicesBoard from '@/components/market/GlobalIndicesBoard.vue'
 
 const { t } = useI18n()
 const route = useRoute()

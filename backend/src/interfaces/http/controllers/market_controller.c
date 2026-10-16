@@ -219,6 +219,21 @@ api_market_get_fx_history(csilk_ctx_t* c)
 }
 
 void
+api_market_get_indices(csilk_ctx_t* c)
+{
+    const char*             category = csilk_get_query(c, "category");
+    csilk_json_t*           data = NULL;
+    market_usecase_result_t res = {0};
+
+    int rc = market_usecase_get_indices(category, &data, &res);
+    if (rc == 0 && res.code == 0) {
+        respond_ok(c, data);
+    } else {
+        respond_error(c, res.code ? res.code : 500, res.message);
+    }
+}
+
+void
 register_market_routes(csilk_app_t* app)
 {
     csilk_app_get_ext(app,
@@ -312,4 +327,11 @@ register_market_routes(csilk_app_t* app)
                       NULL,
                       "Get FX historical trend",
                       "Fetch historical exchange rate snapshots");
+    csilk_app_get_ext(app,
+                      "/api/market/indices",
+                      api_market_get_indices,
+                      NULL,
+                      NULL,
+                      "Get global indices",
+                      "Get real-time global market indices and trading clocks");
 }

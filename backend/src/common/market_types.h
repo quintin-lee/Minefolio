@@ -48,3 +48,38 @@ typedef struct {
     int  market_sync_interval_min; /**< 自动同步轮询间隔时间（分钟） */
     char market_sync_mode[32];     /**< 同步模式策略（如 "realtime", "daily_close"） */
 } market_settings_t;
+
+/**
+ * @struct global_index_item_t
+ * @brief 全球宏观大盘指数模型
+ */
+typedef struct {
+    char   symbol[64];
+    char   name[128];
+    char   category[32];    /* "cn", "us", "hk", "global", "crypto" */
+    char   region_flag[16]; /* "🇨🇳", "🇺🇸", "🇭🇰", "🇯🇵", "🇬🇧", "🪙" */
+    double current_price;
+    double change_amount;
+    double change_percent;
+    double open_price;
+    double high_price;
+    double low_price;
+    double prev_close;
+    char   currency[16];
+    char   quote_time[32];
+    double sparkline[12];
+    int    sparkline_count;
+} global_index_item_t;
+
+/**
+ * @struct market_clock_item_t
+ * @brief 全球交易所交易钟模型
+ */
+typedef struct {
+    char market[32];   /* "SSE_SZSE", "HKEX", "TSE", "LSE", "NYSE" */
+    char name[64];     /* "A股 (沪深)", "港股", ... */
+    char timezone[64]; /* "Asia/Shanghai", ... */
+    char status[16];   /* "open", "closed", "pre", "after" */
+    char open_time[16];
+    char close_time[16];
+} market_clock_item_t;

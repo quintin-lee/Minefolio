@@ -2,7 +2,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { marketApi } from '@/api/market'
-import type { FxHistoryPoint, MultiCurrencySummary } from '@/types'
+import type { FxHistoryPoint, MultiCurrencySummary, GlobalIndexItem, MarketClockItem } from '@/types'
 
 const BASE_CURRENCY_STORAGE_KEY = 'minefolio_base_currency'
 const RATES_CACHE_KEY = 'minefolio_cached_rates'
@@ -119,6 +119,85 @@ export const useMarketStore = defineStore('market', () => {
     localStorage.setItem(RATES_CACHE_KEY, JSON.stringify(rates.value))
   }
 
+  const indices = ref<GlobalIndexItem[]>([])
+  const marketClocks = ref<MarketClockItem[]>([])
+  const indicesUpdatedAt = ref<string | null>(null)
+  const isLoadingIndices = ref(false)
+  const autoRefreshInterval = ref<number>(30)
+  const activeCategory = ref<string>('all')
+  const prevPrices = ref<Record<string, number>>({})
+  const priceDirections = ref<Record<string, 'up' | 'down' | 'same'>>({})
+  const selectedDrawerIndex = ref<GlobalIndexItem | null>(null)
+  const isDrawerOpen = ref(false)
+
+  let indicesReqSeq = 0
+
+  function setAutoRefreshInterval(sec: number) {
+    autoRefreshInterval.value = sec
+  }
+
+  function setActiveCategory(cat: string) {
+    activeCategory.value = cat
+    fetchIndices(cat)
+  }
+
+  function openIndexDrawer(item: GlobalIndexItem) {
+    selectedDrawerIndex.value = item
+    isDrawerOpen.value = true
+  }
+
+  function closeIndexDrawer() {
+    isDrawerOpen.value = false
+    selectedDrawerIndex.value = null
+  }
+
+  async function fetchIndices(category = activeCategory.value, silent = false) {
+    const currentSeq = ++indicesReqSeq
+    if (!silent) {
+      isLoadingIndices.value = true
+    }
+    try {
+      const data = await marketApi.getIndices(category === 'all' ? undefined : category)
+      if (currentSeq === indicesReqSeq && data) {
+        if (Array.isArray(data.indices)) {
+          const nextDirections: Record<string, 'up' | 'down' | 'same'> = {}
+          const nextPrices: Record<string, number> = {}
+
+          for (const item of data.indices) {
+            const oldPrice = prevPrices.value[item.symbol]
+            if (oldPrice !== undefined && oldPrice !== null) {
+              if (item.current_price > oldPrice) {
+                nextDirections[item.symbol] = 'up'
+              } else if (item.current_price < oldPrice) {
+                nextDirections[item.symbol] = 'down'
+              } else {
+                nextDirections[item.symbol] = 'same'
+              }
+            } else {
+              nextDirections[item.symbol] = 'same'
+            }
+            nextPrices[item.symbol] = item.current_price
+          }
+
+          priceDirections.value = nextDirections
+          prevPrices.value = nextPrices
+          indices.value = data.indices
+        }
+
+        if (Array.isArray(data.market_clocks)) {
+          marketClocks.value = data.market_clocks
+        }
+        indicesUpdatedAt.value = data.updated_at || new Date().toLocaleTimeString()
+      }
+    } catch (err) {
+      console.warn('Failed to fetch indices:', err)
+    } finally {
+      if (currentSeq === indicesReqSeq) {
+        isLoadingIndices.value = false
+      }
+    }
+  }
+
   async function init() {
     await Promise.allSettled([fetchRates(), fetchHoldingsSummary(), fetchHistory()])
   }
@@ -134,6 +213,16 @@ export const useMarketStore = defineStore('market', () => {
     isLoadingHistory,
     holdingsSummary,
     isLoadingHoldings,
+    indices,
+    marketClocks,
+    indicesUpdatedAt,
+    isLoadingIndices,
+    autoRefreshInterval,
+    activeCategory,
+    prevPrices,
+    priceDirections,
+    selectedDrawerIndex,
+    isDrawerOpen,
     setBaseCurrency,
     setSelectedCurrency,
     setHistoryDays,
@@ -142,6 +231,11 @@ export const useMarketStore = defineStore('market', () => {
     fetchHoldingsSummary,
     syncAllQuotes,
     updateRate,
+    setAutoRefreshInterval,
+    setActiveCategory,
+    openIndexDrawer,
+    closeIndexDrawer,
+    fetchIndices,
     init,
   }
 })

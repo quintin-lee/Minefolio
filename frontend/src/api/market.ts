@@ -122,6 +122,14 @@ export const marketApi = {
     http.get<import('@/types').FxHistoryPoint[]>('/market/fx-history', {
       params: { currency, days },
     }),
+
+  /**
+   * 获取全球主要大盘指数与交易钟状态
+   * @route GET /api/market/indices
+   * @param category 市场分类筛选 ('all' | 'cn' | 'us' | 'hk' | 'global' | 'crypto')
+   */
+  getIndices: (category?: string) =>
+    http.get<import('@/types').GlobalIndicesData>('/market/indices', { params: { category } }),
 }
 
 

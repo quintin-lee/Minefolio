@@ -707,3 +707,38 @@ export interface McpScriptItem {
   updated_at?: number
 }
 
+/** 全球交易所时区交易钟模型 */
+export interface MarketClockItem {
+  market: string
+  name: string
+  timezone: string
+  status: 'open' | 'closed' | 'pre' | 'after'
+  open_time: string
+  close_time: string
+}
+
+/** 全球宏观大盘指数模型 */
+export interface GlobalIndexItem {
+  symbol: string
+  name: string
+  category: 'cn' | 'us' | 'hk' | 'global' | 'crypto'
+  region_flag: string
+  current_price: number
+  change_amount: number
+  change_percent: number
+  open_price: number
+  high_price: number
+  low_price: number
+  prev_close: number
+  currency: string
+  quote_time: string
+  sparkline: number[]
+}
+
+/** 全球大盘实时聚合响应数据模型 */
+export interface GlobalIndicesData {
+  updated_at: string
+  market_clocks: MarketClockItem[]
+  indices: GlobalIndexItem[]
+}
+

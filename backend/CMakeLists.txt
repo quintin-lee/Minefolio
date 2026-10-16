@@ -304,6 +304,12 @@ target_compile_options(test_domain_repositories PRIVATE -UNDEBUG)
 target_link_libraries(test_domain_repositories PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
 add_test(NAME test_domain_repositories COMMAND test_domain_repositories)
 
+add_executable(test_market_indices tests/unit/test_market_indices.c ${LIB_SOURCES})
+target_include_directories(test_market_indices PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_market_indices PRIVATE -UNDEBUG)
+target_link_libraries(test_market_indices PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_test(NAME test_market_indices COMMAND test_market_indices)
+
 
 
 

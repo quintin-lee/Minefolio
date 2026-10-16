@@ -51,4 +51,8 @@ int market_usecase_get_fx_history(const char*              currency,
                                   csilk_json_t**           out_history,
                                   market_usecase_result_t* out_res);
 
+int market_usecase_get_indices(const char*              category,
+                               csilk_json_t**           out_data,
+                               market_usecase_result_t* out_res);
+
 int market_usecase_do_sync_user(void* pool, int64_t user_id, int* out_synced, int* out_failed);

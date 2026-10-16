@@ -490,3 +490,84 @@ market_usecase_get_fx_history(const char*              currency,
     snprintf(out_res->message, sizeof(out_res->message), "ok");
     return 0;
 }
+
+int
+market_usecase_get_indices(const char*              category,
+                           csilk_json_t**           out_data,
+                           market_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
+    memset(out_res, 0, sizeof(*out_res));
+    if (!out_data) {
+        out_res->code = 1002;
+        snprintf(out_res->message, sizeof(out_res->message), "输出参数无效");
+        return -1;
+    }
+
+    global_index_item_t indices[32];
+    int                 count = 0;
+    market_clock_item_t clocks[8];
+    int                 clock_count = 0;
+
+    if (quote_engine_get_indices(category, indices, 32, &count, clocks, 8, &clock_count) != 0) {
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "获取大盘指数失败");
+        return -1;
+    }
+
+    csilk_json_t* root = csilk_json_object();
+    char          updated_at_str[32];
+    time_t        t_now = time(NULL);
+    struct tm     tm_now;
+    localtime_r(&t_now, &tm_now);
+    strftime(updated_at_str, sizeof(updated_at_str), "%Y-%m-%d %H:%M:%S", &tm_now);
+    csilk_json_add_string(root, "updated_at", updated_at_str);
+
+    /* 序列化 market_clocks */
+    csilk_json_t* clocks_arr = csilk_json_array();
+    for (int i = 0; i < clock_count; i++) {
+        csilk_json_t* c_obj = csilk_json_object();
+        csilk_json_add_string(c_obj, "market", clocks[i].market);
+        csilk_json_add_string(c_obj, "name", clocks[i].name);
+        csilk_json_add_string(c_obj, "timezone", clocks[i].timezone);
+        csilk_json_add_string(c_obj, "status", clocks[i].status);
+        csilk_json_add_string(c_obj, "open_time", clocks[i].open_time);
+        csilk_json_add_string(c_obj, "close_time", clocks[i].close_time);
+        csilk_json_array_append(clocks_arr, c_obj);
+    }
+    csilk_json_add_array(root, "market_clocks", clocks_arr);
+
+    /* 序列化 indices */
+    csilk_json_t* indices_arr = csilk_json_array();
+    for (int i = 0; i < count; i++) {
+        csilk_json_t* item = csilk_json_object();
+        csilk_json_add_string(item, "symbol", indices[i].symbol);
+        csilk_json_add_string(item, "name", indices[i].name);
+        csilk_json_add_string(item, "category", indices[i].category);
+        csilk_json_add_string(item, "region_flag", indices[i].region_flag);
+        csilk_json_add_number(item, "current_price", indices[i].current_price);
+        csilk_json_add_number(item, "change_amount", indices[i].change_amount);
+        csilk_json_add_number(item, "change_percent", indices[i].change_percent);
+        csilk_json_add_number(item, "open_price", indices[i].open_price);
+        csilk_json_add_number(item, "high_price", indices[i].high_price);
+        csilk_json_add_number(item, "low_price", indices[i].low_price);
+        csilk_json_add_number(item, "prev_close", indices[i].prev_close);
+        csilk_json_add_string(item, "currency", indices[i].currency);
+        csilk_json_add_string(item, "quote_time", indices[i].quote_time);
+
+        csilk_json_t* spark_arr = csilk_json_array();
+        for (int s = 0; s < indices[i].sparkline_count; s++) {
+            csilk_json_array_append(spark_arr, csilk_json_number(indices[i].sparkline[s]));
+        }
+        csilk_json_add_array(item, "sparkline", spark_arr);
+        csilk_json_array_append(indices_arr, item);
+    }
+    csilk_json_add_array(root, "indices", indices_arr);
+
+    *out_data = root;
+    out_res->code = 0;
+    snprintf(out_res->message, sizeof(out_res->message), "ok");
+    return 0;
+}
