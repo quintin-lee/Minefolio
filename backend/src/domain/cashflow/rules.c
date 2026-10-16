@@ -69,6 +69,29 @@ mf_cashflow_rule_annual_factor(const char* freq, double* out_factor)
     return 0;
 }
 
+int
+mf_calendar_days_in_month(int year, int month)
+{
+    if (month == 2) {
+        bool is_leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+        return is_leap ? 29 : 28;
+    }
+    if (month == 4 || month == 6 || month == 9 || month == 11) {
+        return 30;
+    }
+    return 31;
+}
+
+int
+mf_calendar_clamp_day(int year, int month, int target_day)
+{
+    int max_days = mf_calendar_days_in_month(year, month);
+    if (target_day < 1) {
+        target_day = 1;
+    }
+    return target_day > max_days ? max_days : target_day;
+}
+
 bool
 mf_cashflow_rule_matches_month(const char* freq,
                                const char* start_date,
@@ -90,7 +113,7 @@ mf_cashflow_rule_matches_month(const char* freq,
     }
 
     bool matches = false;
-    int  target_day = s_day > 28 ? 28 : (s_day < 1 ? 1 : s_day);
+    int  target_day = mf_calendar_clamp_day(year, month, s_day);
 
     if (strcmp(freq, "once") == 0) {
         if (s_year == year && s_month == month) {

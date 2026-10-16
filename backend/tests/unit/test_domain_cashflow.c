@@ -75,10 +75,36 @@ static void test_cashflow_monthly_matching(void) {
     printf("PASS: test_cashflow_monthly_matching\n");
 }
 
+static void test_cashflow_month_end_clamping(void) {
+    int out_day = 0;
+    // 2026年3月 (31天)：31号排期应匹配 31 号
+    bool m1 = mf_cashflow_rule_matches_month("monthly", "2026-01-31", "", 2026, 3, &out_day);
+    assert(m1 == true);
+    assert(out_day == 31);
+
+    // 2026年4月 (30天)：31号排期应平滑对齐到 30 号
+    bool m2 = mf_cashflow_rule_matches_month("monthly", "2026-01-31", "", 2026, 4, &out_day);
+    assert(m2 == true);
+    assert(out_day == 30);
+
+    // 2026年2月 (平年28天)：31号排期应平滑对齐到 28 号
+    bool m3 = mf_cashflow_rule_matches_month("monthly", "2026-01-31", "", 2026, 2, &out_day);
+    assert(m3 == true);
+    assert(out_day == 28);
+
+    // 2028年2月 (闰年29天)：31号排期应平滑对齐到 29 号
+    bool m4 = mf_cashflow_rule_matches_month("monthly", "2026-01-31", "", 2028, 2, &out_day);
+    assert(m4 == true);
+    assert(out_day == 29);
+
+    printf("PASS: test_cashflow_month_end_clamping\n");
+}
+
 int main(void) {
     test_cashflow_validation();
     test_cashflow_annual_factor();
     test_cashflow_monthly_matching();
+    test_cashflow_month_end_clamping();
     printf("All domain cashflow tests passed successfully!\n");
     return 0;
 }

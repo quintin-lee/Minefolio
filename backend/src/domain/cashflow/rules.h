@@ -23,3 +23,13 @@ bool mf_cashflow_rule_matches_month(const char* freq,
                                     int         year,
                                     int         month,
                                     int*        out_day);
+
+/**
+ * @brief 获取指定年月的最大自然日天数（支持闰年二月计算）
+ */
+int mf_calendar_days_in_month(int year, int month);
+
+/**
+ * @brief 将目标日期自适应对齐至指定年月的有效自然日区间 [1, days_in_month]
+ */
+int mf_calendar_clamp_day(int year, int month, int target_day);
