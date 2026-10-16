@@ -148,9 +148,12 @@ static void
 test_asset_repository(csilk_db_pool_t* pool, int64_t user_id, int64_t* out_asset_id)
 {
     printf("--- 2. Testing Asset Domain Repository ---\n");
+    csilk_db_exec(pool, "INSERT OR IGNORE INTO categories (id, user_id, name, type, asset_type) "
+                        "VALUES (1, 1, 'Default Stock', 'expense', 'stock')");
     mf_asset_t asset;
     memset(&asset, 0, sizeof(asset));
     asset.user_id = user_id;
+    asset.category_id = 1;
     snprintf(asset.name, sizeof(asset.name), "Test Asset");
     snprintf(asset.asset_type, sizeof(asset.asset_type), "stock");
     asset.quantity = test_qty(100.0);
@@ -799,6 +802,7 @@ test_cashflow_repository(csilk_db_pool_t* pool, int64_t user_id)
     mf_asset_t source_asset;
     memset(&source_asset, 0, sizeof(source_asset));
     source_asset.user_id = user_id;
+    source_asset.category_id = 1;
     snprintf(source_asset.name, sizeof(source_asset.name), "Source Asset");
     snprintf(source_asset.asset_type, sizeof(source_asset.asset_type), "stock");
     source_asset.quantity = test_qty(100.0);
@@ -812,6 +816,7 @@ test_cashflow_repository(csilk_db_pool_t* pool, int64_t user_id)
     mf_asset_t target_asset;
     memset(&target_asset, 0, sizeof(target_asset));
     target_asset.user_id = user_id;
+    target_asset.category_id = 1;
     snprintf(target_asset.name, sizeof(target_asset.name), "Target Asset");
     snprintf(target_asset.asset_type, sizeof(target_asset.asset_type), "bank");
     target_asset.quantity = test_qty(0.0);

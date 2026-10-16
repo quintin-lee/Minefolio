@@ -57,7 +57,7 @@ main(void)
 
     // 1. Seed User & Categories & Assets
     int64_t user_id = 1;
-    csilk_db_exec(pool, "INSERT INTO users (id, username, password_hash) VALUES (1, 'tester', 'hash123')");
+    csilk_db_exec(pool, "INSERT INTO users (id, username, password) VALUES (1, 'tester', 'hash123')");
     csilk_db_exec(pool, "INSERT INTO categories (id, user_id, name, type, asset_type) VALUES (10, 1, 'Cash', 'expense', 'cash')");
     csilk_db_exec(pool, "INSERT INTO categories (id, user_id, name, type, asset_type) VALUES (20, 1, 'Stock', 'expense', 'stock')");
 
