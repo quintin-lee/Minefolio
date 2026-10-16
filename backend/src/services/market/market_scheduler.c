@@ -1,6 +1,7 @@
 #include "services/market/market_scheduler.h"
 #include "application/market/usecases.h"
 #include "services/market/exchange_rate_service.h"
+#include "services/market/quote_engine.h"
 #include "infrastructure/repositories/dca_repo_impl.h"
 #include "csilk/csilk.h"
 #include <pthread.h>
@@ -169,6 +170,20 @@ is_nightly_settlement(struct tm* tm_now)
     return false;
 }
 
+static bool
+is_any_equity_market_open(time_t now)
+{
+    market_clock_item_t clocks[8];
+    int                 clock_count = 0;
+    quote_engine_calc_market_clocks(now, clocks, 8, &clock_count);
+    for (int i = 0; i < clock_count; i++) {
+        if (strcmp(clocks[i].status, "open") == 0 || strcmp(clocks[i].status, "pre") == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static void*
 scheduler_loop(void* arg)
 {
@@ -178,6 +193,8 @@ scheduler_loop(void* arg)
     time_t last_sync_time = 0;
     time_t last_nightly_time = 0;
     int    last_dca_check_day = -1;
+    time_t last_indices_sync = 0;
+    time_t last_fx_sync = 0;
 
     pthread_mutex_lock(&g_sched_mutex);
     while (g_sched_running) {
@@ -193,6 +210,30 @@ scheduler_loop(void* arg)
             pthread_mutex_unlock(&g_sched_mutex);
             check_and_trigger_dca_plans(g_pool, &tm_now);
             pthread_mutex_lock(&g_sched_mutex);
+        }
+
+        /* 1. Global Market Indices sync (direct to DB: 60s when any equity market open, 15m when closed) */
+        if (g_pool && g_config_auto_sync && strcmp(g_config_sync_mode, "manual") != 0) {
+            bool any_open = is_any_equity_market_open(now);
+            int  indices_interval = any_open ? 60 : 900;
+            if (now - last_indices_sync >= indices_interval) {
+                last_indices_sync = now;
+                pthread_mutex_unlock(&g_sched_mutex);
+                quote_engine_sync_indices_to_db(g_pool);
+                pthread_mutex_lock(&g_sched_mutex);
+            }
+        }
+
+        /* 2. Forex Exchange Rates sync (Mon-Fri every 30m, skip weekends) */
+        if (g_config_auto_sync && strcmp(g_config_sync_mode, "manual") != 0) {
+            bool is_weekday = (tm_now.tm_wday >= 1 && tm_now.tm_wday <= 5);
+            int  fx_interval = 1800; /* 30 minutes */
+            if ((last_fx_sync == 0 || is_weekday) && (now - last_fx_sync >= fx_interval)) {
+                last_fx_sync = now;
+                pthread_mutex_unlock(&g_sched_mutex);
+                exchange_rate_refresh_all();
+                pthread_mutex_lock(&g_sched_mutex);
+            }
         }
 
         if (g_config_auto_sync && strcmp(g_config_sync_mode, "manual") != 0) {
@@ -230,9 +271,6 @@ scheduler_loop(void* arg)
             int synced = 0, failed = 0;
             market_usecase_do_sync_user(g_pool, 0, &synced, &failed);
             CSILK_LOG_I("Market scheduler completed sync: %d synced, %d failed", synced, failed);
-            /* FX rates are global (memory table): refresh once per tick, not per user.
-             * Kept out of the /sync hot path to protect its latency budget. */
-            exchange_rate_refresh_all();
             pthread_mutex_lock(&g_sched_mutex);
         }
 
