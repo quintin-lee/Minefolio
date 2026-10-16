@@ -35,3 +35,6 @@ int quote_engine_get_indices(const char*          category,
                              market_clock_item_t* out_clocks,
                              int                  max_clocks,
                              int*                 out_clock_count);
+
+/* Synchronize global market indices directly to database, skipping closed markets */
+int quote_engine_sync_indices_to_db(void* pool);
