@@ -11,6 +11,7 @@ vi.mock('@/api/market', () => ({
     getMultiCurrencySummary: vi.fn(),
     syncAll: vi.fn(),
     updateExchangeRate: vi.fn(),
+    getIndices: vi.fn(),
   },
 }))
 
@@ -26,6 +27,19 @@ describe('market store', () => {
     expect(store.baseCurrency).toBe('CNY')
     expect(store.selectedCurrency).toBe('USD')
     expect(store.historyDays).toBe(30)
+  })
+
+  it('calls marketApi.getIndices with category param', async () => {
+    const mockData = {
+      updated_at: '2026-10-16 12:00:00',
+      market_clocks: [{ market: 'SSE_SZSE', name: 'A股', timezone: 'Asia/Shanghai', status: 'open', open_time: '09:30', close_time: '15:00' }],
+      indices: [{ symbol: 'sh000001', name: '上证指数', category: 'cn', region_flag: '🇨🇳', current_price: 3285.4, change_amount: 25.3, change_percent: 0.78, open_price: 3260, high_price: 3290, low_price: 3250, prev_close: 3260.1, currency: 'CNY', quote_time: '2026-10-16 11:30', sparkline: [3260, 3285] }]
+    }
+    vi.mocked(marketApi.getIndices).mockResolvedValueOnce(mockData as any)
+
+    const res = await marketApi.getIndices('cn')
+    expect(res.indices[0].name).toBe('上证指数')
+    expect(res.market_clocks[0].status).toBe('open')
   })
 
   it('updates baseCurrency and persists to localStorage', () => {
