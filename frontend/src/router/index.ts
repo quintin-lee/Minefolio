@@ -36,6 +36,7 @@ const router = createRouter({
         { path: 'plans', name: 'Plans', component: () => import('@/views/Plans.vue') },
         { path: 'categories', name: 'Categories', component: () => import('@/views/Categories.vue') },
         { path: 'reports', name: 'Reports', component: () => import('@/views/Reports.vue') },
+        { path: 'market', name: 'Market', component: () => import('@/views/Market.vue') },
         { path: 'audit-logs', name: 'AuditLogs', component: () => import('@/views/AuditLogs.vue') },
         { path: 'settings', name: 'Settings', component: () => import('@/views/Settings.vue') },
         { path: 'chat', name: 'Chat', component: () => import('@/views/Chat.vue') },

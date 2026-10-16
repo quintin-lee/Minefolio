@@ -22,6 +22,10 @@
           <Icon icon="ph:presentation-chart-duotone" class="nav-icon" />
           <span>{{ t('nav.reports') }}</span>
         </el-menu-item>
+        <el-menu-item index="/market" @click="goTo('/market')">
+          <Icon icon="ph:chart-line-up-duotone" class="nav-icon" />
+          <span>{{ t('nav.market') }}</span>
+        </el-menu-item>
 
         <div v-show="!isCollapsed" class="nav-group-label">{{ t('navGroups.incomeExpense') }}</div>
         <el-menu-item index="/transactions" @click="goTo('/transactions')">
