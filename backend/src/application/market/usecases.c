@@ -427,7 +427,9 @@ market_usecase_test_proxy(const char*              proxy,
 }
 
 int
-market_usecase_get_exchange_rates(csilk_json_t** out_rates, market_usecase_result_t* out_res)
+market_usecase_get_exchange_rates(void*                    pool,
+                                  csilk_json_t**           out_rates,
+                                  market_usecase_result_t* out_res)
 {
     if (!out_res) {
         return -1;
@@ -439,7 +441,12 @@ market_usecase_get_exchange_rates(csilk_json_t** out_rates, market_usecase_resul
         return -1;
     }
 
-    *out_rates = exchange_rate_list_all();
+    csilk_json_t* db_rates = pool ? mf_market_repo_get_all_exchange_rates(pool) : NULL;
+    if (db_rates) {
+        *out_rates = db_rates;
+    } else {
+        *out_rates = exchange_rate_list_all();
+    }
     out_res->code = 0;
     snprintf(out_res->message, sizeof(out_res->message), "ok");
     return 0;
@@ -517,7 +524,8 @@ market_usecase_get_fx_history(const char*              currency,
 }
 
 int
-market_usecase_get_indices(const char*              category,
+market_usecase_get_indices(void*                    pool,
+                           const char*              category,
                            csilk_json_t**           out_data,
                            market_usecase_result_t* out_res)
 {
@@ -531,20 +539,15 @@ market_usecase_get_indices(const char*              category,
         return -1;
     }
 
-    global_index_item_t indices[32];
-    int                 count = 0;
+    csilk_json_t* db_rows = pool ? mf_market_repo_get_indices(pool, category) : NULL;
+
     market_clock_item_t clocks[8];
     int                 clock_count = 0;
-
-    if (quote_engine_get_indices(category, indices, 32, &count, clocks, 8, &clock_count) != 0) {
-        out_res->code = 500;
-        snprintf(out_res->message, sizeof(out_res->message), "获取大盘指数失败");
-        return -1;
-    }
+    time_t              t_now = time(NULL);
+    quote_engine_calc_market_clocks(t_now, clocks, 8, &clock_count);
 
     csilk_json_t* root = csilk_json_object();
     char          updated_at_str[32];
-    time_t        t_now = time(NULL);
     struct tm     tm_now;
     localtime_r(&t_now, &tm_now);
     strftime(updated_at_str, sizeof(updated_at_str), "%Y-%m-%d %H:%M:%S", &tm_now);
@@ -564,32 +567,43 @@ market_usecase_get_indices(const char*              category,
     }
     csilk_json_add_array(root, "market_clocks", clocks_arr);
 
-    /* 序列化 indices */
-    csilk_json_t* indices_arr = csilk_json_array();
-    for (int i = 0; i < count; i++) {
-        csilk_json_t* item = csilk_json_object();
-        csilk_json_add_string(item, "symbol", indices[i].symbol);
-        csilk_json_add_string(item, "name", indices[i].name);
-        csilk_json_add_string(item, "category", indices[i].category);
-        csilk_json_add_string(item, "region_flag", indices[i].region_flag);
-        csilk_json_add_number(item, "current_price", indices[i].current_price);
-        csilk_json_add_number(item, "change_amount", indices[i].change_amount);
-        csilk_json_add_number(item, "change_percent", indices[i].change_percent);
-        csilk_json_add_number(item, "open_price", indices[i].open_price);
-        csilk_json_add_number(item, "high_price", indices[i].high_price);
-        csilk_json_add_number(item, "low_price", indices[i].low_price);
-        csilk_json_add_number(item, "prev_close", indices[i].prev_close);
-        csilk_json_add_string(item, "currency", indices[i].currency);
-        csilk_json_add_string(item, "quote_time", indices[i].quote_time);
-
-        csilk_json_t* spark_arr = csilk_json_array();
-        for (int s = 0; s < indices[i].sparkline_count; s++) {
-            csilk_json_array_append(spark_arr, csilk_json_number(indices[i].sparkline[s]));
+    if (db_rows && csilk_json_is_array(db_rows) && csilk_json_array_size(db_rows) > 0) {
+        /* 100% 只读数据库，0 外部网络 IO！ */
+        csilk_json_add_array(root, "indices", db_rows);
+    } else {
+        if (db_rows) {
+            csilk_json_free(db_rows);
         }
-        csilk_json_add_array(item, "sparkline", spark_arr);
-        csilk_json_array_append(indices_arr, item);
+        /* 兜底（未初始化数据库连接池时回退至内存结构） */
+        global_index_item_t indices[32];
+        int                 count = 0;
+        quote_engine_get_indices(category, indices, 32, &count, NULL, 0, NULL);
+        csilk_json_t* indices_arr = csilk_json_array();
+        for (int i = 0; i < count; i++) {
+            csilk_json_t* item = csilk_json_object();
+            csilk_json_add_string(item, "symbol", indices[i].symbol);
+            csilk_json_add_string(item, "name", indices[i].name);
+            csilk_json_add_string(item, "category", indices[i].category);
+            csilk_json_add_string(item, "region_flag", indices[i].region_flag);
+            csilk_json_add_number(item, "current_price", indices[i].current_price);
+            csilk_json_add_number(item, "change_amount", indices[i].change_amount);
+            csilk_json_add_number(item, "change_percent", indices[i].change_percent);
+            csilk_json_add_number(item, "open_price", indices[i].open_price);
+            csilk_json_add_number(item, "high_price", indices[i].high_price);
+            csilk_json_add_number(item, "low_price", indices[i].low_price);
+            csilk_json_add_number(item, "prev_close", indices[i].prev_close);
+            csilk_json_add_string(item, "currency", indices[i].currency);
+            csilk_json_add_string(item, "quote_time", indices[i].quote_time);
+
+            csilk_json_t* spark_arr = csilk_json_array();
+            for (int s = 0; s < indices[i].sparkline_count; s++) {
+                csilk_json_array_append(spark_arr, csilk_json_number(indices[i].sparkline[s]));
+            }
+            csilk_json_add_array(item, "sparkline", spark_arr);
+            csilk_json_array_append(indices_arr, item);
+        }
+        csilk_json_add_array(root, "indices", indices_arr);
     }
-    csilk_json_add_array(root, "indices", indices_arr);
 
     *out_data = root;
     out_res->code = 0;

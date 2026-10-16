@@ -21,6 +21,7 @@ frontend/dist-mobile/
 .iconify_cache/
 .playwright-cli/
 .omo/
+.qoder
 .superpowers/
 deps/
 playwright-*/
@@ -30,4 +31,5 @@ playwright-*/
 /config/
 !backend/src/config/
 output/
+seed/
 .env

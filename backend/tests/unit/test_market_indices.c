@@ -67,8 +67,9 @@ static void test_market_usecase_indices(void) {
     csilk_json_t* data = NULL;
     market_usecase_result_t res = {0};
 
-    int rc = market_usecase_get_indices("cn", &data, &res);
+    int rc = market_usecase_get_indices(NULL, "cn", &data, &res);
     assert(rc == 0);
+
     assert(res.code == 0);
     assert(data != NULL);
 

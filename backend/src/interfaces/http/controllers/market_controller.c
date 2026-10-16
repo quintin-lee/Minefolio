@@ -176,7 +176,7 @@ api_market_get_exchange_rates(csilk_ctx_t* c)
 {
     csilk_json_t*           rates = NULL;
     market_usecase_result_t res = {0};
-    market_usecase_get_exchange_rates(&rates, &res);
+    market_usecase_get_exchange_rates(db_get_pool(), &rates, &res);
     respond_ok(c, rates);
 }
 
@@ -238,7 +238,7 @@ api_market_get_indices(csilk_ctx_t* c)
     csilk_json_t*           data = NULL;
     market_usecase_result_t res = {0};
 
-    int rc = market_usecase_get_indices(category, &data, &res);
+    int rc = market_usecase_get_indices(db_get_pool(), category, &data, &res);
     if (rc == 0 && res.code == 0) {
         respond_ok(c, data);
     } else {

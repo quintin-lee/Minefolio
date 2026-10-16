@@ -40,7 +40,9 @@ int market_usecase_test_proxy(const char*              proxy,
                               csilk_json_t**           out_data,
                               market_usecase_result_t* out_res);
 
-int market_usecase_get_exchange_rates(csilk_json_t** out_rates, market_usecase_result_t* out_res);
+int market_usecase_get_exchange_rates(void*                    pool,
+                                      csilk_json_t**           out_rates,
+                                      market_usecase_result_t* out_res);
 
 int market_usecase_update_exchange_rate(void*                             pool,
                                         const update_exchange_rate_cmd_t* cmd,
@@ -51,7 +53,8 @@ int market_usecase_get_fx_history(const char*              currency,
                                   csilk_json_t**           out_history,
                                   market_usecase_result_t* out_res);
 
-int market_usecase_get_indices(const char*              category,
+int market_usecase_get_indices(void*                    pool,
+                               const char*              category,
                                csilk_json_t**           out_data,
                                market_usecase_result_t* out_res);
 
