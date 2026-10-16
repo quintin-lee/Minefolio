@@ -41,12 +41,12 @@ void test_cost_basis_sell_proportional() {
     // Buy 200 shares @ 10 CNY (cost 2000)
     assert(mf_cost_basis_apply_buy(&cb, q_make(200), m_make(2000, CURRENCY_CNY), money_zero(CURRENCY_CNY)) == 0);
 
-    // Sell 50 shares @ 15 CNY (amount 750, fee 10) -> proceeds 740, cost deducted 500, realized = 740 - 500 = 240
+    // Sell 50 shares @ 15 CNY (amount 750, fee 10) -> cost deducted 500, realized pure spread = 750 - 500 = 250
     assert(mf_cost_basis_apply_sell(&cb, &realized, q_make(50), m_make(750, CURRENCY_CNY), m_make(10, CURRENCY_CNY)) == 0);
 
     assert(quantity_to_double(cb.quantity) == 150.0);
     assert(money_to_double(cb.total_cost) == 1500.0);
-    assert(money_to_double(realized) == 240.0);
+    assert(money_to_double(realized) == 250.0);
 
     // Oversell defense: sell 200 shares when only 150 available -> must return error -1
     assert(mf_cost_basis_apply_sell(&cb, &realized, q_make(200), m_make(3000, CURRENCY_CNY), money_zero(CURRENCY_CNY)) == -1);

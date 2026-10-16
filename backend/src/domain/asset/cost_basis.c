@@ -76,17 +76,11 @@ mf_cost_basis_apply_sell(
         return -1;
     }
 
-    // Net sell proceeds = amount - fee
-    money_t proceeds;
-    if (money_sub(amount, fee, &proceeds) != DECIMAL_OK) {
-        return -1;
-    }
-
     // Full sell check: qty == cb->quantity
     if (quantity_cmp(qty, cb->quantity) == 0) {
         money_t pnl_cost_deducted = cb->total_cost_pnl;
         money_t trade_realized;
-        money_sub(proceeds, pnl_cost_deducted, &trade_realized);
+        money_sub(amount, pnl_cost_deducted, &trade_realized);
 
         if (accum_realized_pnl) {
             money_add(*accum_realized_pnl, trade_realized, accum_realized_pnl);
@@ -125,9 +119,9 @@ mf_cost_basis_apply_sell(
     pnl_cost_deducted.currency = cb->currency;
     decimal_round(pnl_red_dec, (int32_t)prec, ROUND_HALF_UP, &pnl_cost_deducted.amount);
 
-    // trade_realized = proceeds - pnl_cost_deducted
+    // trade_realized = amount - pnl_cost_deducted (pure trade spread; fee tracked separately)
     money_t trade_realized;
-    money_sub(proceeds, pnl_cost_deducted, &trade_realized);
+    money_sub(amount, pnl_cost_deducted, &trade_realized);
 
     if (accum_realized_pnl) {
         money_add(*accum_realized_pnl, trade_realized, accum_realized_pnl);
