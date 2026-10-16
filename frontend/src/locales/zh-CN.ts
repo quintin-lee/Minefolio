@@ -521,8 +521,12 @@ export const zhCN = {
       refresh15s: '15 秒',
       refresh30s: '30 秒',
       refresh60s: '60 秒',
+      refresh1m: '1 分钟',
+      refresh3m: '3 分钟',
+      refresh5m: '5 分钟',
       refreshOff: '关闭',
       refreshNow: '刷新',
+      allClosedSleeping: '全部闭市 (自动休眠)',
       searchPlaceholder: '搜索指数名称或代码...',
       categories: {
         all: '全部市场',

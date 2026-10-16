@@ -1,6 +1,6 @@
 // frontend/src/stores/market.ts
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { marketApi } from '@/api/market'
 import type { FxHistoryPoint, MultiCurrencySummary, GlobalIndexItem, MarketClockItem } from '@/types'
 
@@ -150,12 +150,21 @@ export const useMarketStore = defineStore('market', () => {
   const marketClocks = ref<MarketClockItem[]>([])
   const indicesUpdatedAt = ref<string | null>(null)
   const isLoadingIndices = ref(false)
-  const autoRefreshInterval = ref<number>(30)
+  const autoRefreshInterval = ref<number>(60)
   const activeCategory = ref<string>('all')
   const prevPrices = ref<Record<string, number>>({})
   const priceDirections = ref<Record<string, 'up' | 'down' | 'same'>>({})
   const selectedDrawerIndex = ref<GlobalIndexItem | null>(null)
   const isDrawerOpen = ref(false)
+
+  const isAnyMarketActive = computed(() => {
+    if (!marketClocks.value || marketClocks.value.length === 0) {
+      return true
+    }
+    return marketClocks.value.some(
+      (c) => c.status === 'open' || c.status === 'pre'
+    )
+  })
 
   let indicesReqSeq = 0
 
@@ -245,6 +254,7 @@ export const useMarketStore = defineStore('market', () => {
     indicesUpdatedAt,
     isLoadingIndices,
     autoRefreshInterval,
+    isAnyMarketActive,
     activeCategory,
     prevPrices,
     priceDirections,

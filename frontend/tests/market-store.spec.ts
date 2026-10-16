@@ -190,4 +190,25 @@ describe('market store', () => {
     expect(success).toBe(false)
     expect(store.isSyncing).toBe(false)
   })
+
+  it('initializes autoRefreshInterval to 60s and computes isAnyMarketActive properly', () => {
+    const store = useMarketStore()
+    expect(store.autoRefreshInterval).toBe(60)
+    // Initially without clocks, defaults to true
+    expect(store.isAnyMarketActive).toBe(true)
+
+    // Clocks with an open market
+    store.marketClocks = [
+      { market: 'SSE_SZSE', name: 'A股', timezone: 'Asia/Shanghai', status: 'closed', open_time: '09:30', close_time: '15:00' },
+      { market: 'HKEX', name: '港股', timezone: 'Asia/Hong_Kong', status: 'open', open_time: '09:30', close_time: '16:00' },
+    ]
+    expect(store.isAnyMarketActive).toBe(true)
+
+    // All clocks closed
+    store.marketClocks = [
+      { market: 'SSE_SZSE', name: 'A股', timezone: 'Asia/Shanghai', status: 'closed', open_time: '09:30', close_time: '15:00' },
+      { market: 'HKEX', name: '港股', timezone: 'Asia/Hong_Kong', status: 'closed', open_time: '09:30', close_time: '16:00' },
+    ]
+    expect(store.isAnyMarketActive).toBe(false)
+  })
 })

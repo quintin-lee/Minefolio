@@ -521,8 +521,12 @@ export const enUS = {
       refresh15s: '15s',
       refresh30s: '30s',
       refresh60s: '60s',
+      refresh1m: '1 min',
+      refresh3m: '3 min',
+      refresh5m: '5 min',
       refreshOff: 'Off',
       refreshNow: 'Refresh',
+      allClosedSleeping: 'All Closed (Auto-sleep)',
       searchPlaceholder: 'Search index name or symbol...',
       categories: {
         all: 'All Markets',

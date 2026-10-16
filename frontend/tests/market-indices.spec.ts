@@ -61,6 +61,17 @@ describe('Market Components', () => {
     expect(wrapper.find('.clocks-ribbon').exists()).toBe(true)
   })
 
+  it('renders sleep tag in MarketClocksRibbon when all markets are closed', () => {
+    const store = useMarketStore()
+    store.marketClocks = [
+      { market: 'SSE_SZSE', name: 'A股', timezone: 'Asia/Shanghai', status: 'closed', open_time: '09:30', close_time: '15:00' },
+      { market: 'HKEX', name: '港股', timezone: 'Asia/Hong_Kong', status: 'closed', open_time: '09:30', close_time: '16:00' },
+    ]
+    const wrapper = mount(MarketClocksRibbon)
+    expect(wrapper.find('.sleep-tag').exists()).toBe(true)
+    expect(wrapper.text()).toContain('全部闭市')
+  })
+
   it('renders IndicesFilterBar and emits filter event on search', async () => {
     const wrapper = mount(IndicesFilterBar)
     expect(wrapper.find('.indices-filter-bar').exists()).toBe(true)

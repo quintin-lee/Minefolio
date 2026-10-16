@@ -28,7 +28,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useMarketStore } from '@/stores/market'
 import MarketClocksRibbon from '@/components/market/MarketClocksRibbon.vue'
 import IndicesFilterBar from '@/components/market/IndicesFilterBar.vue'
@@ -47,12 +47,24 @@ const filteredIndices = computed(() => {
   )
 })
 
+const effectiveIntervalSec = computed(() => {
+  if (marketStore.autoRefreshInterval <= 0) {
+    return 0
+  }
+  // Adaptive sleep: if all equity markets are closed, poll at 15m (900s) sleep cadence
+  if (!marketStore.isAnyMarketActive) {
+    return 900
+  }
+  return marketStore.autoRefreshInterval
+})
+
 function startTimer() {
   stopTimer()
-  if (marketStore.autoRefreshInterval > 0) {
+  const intervalSec = effectiveIntervalSec.value
+  if (intervalSec > 0) {
     timerId = setInterval(() => {
       marketStore.fetchIndices(undefined, true)
-    }, marketStore.autoRefreshInterval * 1000)
+    }, intervalSec * 1000)
   }
 }
 
@@ -62,6 +74,10 @@ function stopTimer() {
     timerId = null
   }
 }
+
+watch(effectiveIntervalSec, () => {
+  startTimer()
+})
 
 function handleVisibilityChange() {
   if (document.hidden) {

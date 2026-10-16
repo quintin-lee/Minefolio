@@ -18,6 +18,17 @@
     </div>
 
     <div class="ribbon-controls">
+      <el-tag
+        v-if="!marketStore.isAnyMarketActive"
+        type="info"
+        size="small"
+        effect="plain"
+        class="sleep-tag"
+      >
+        <span class="sleep-dot" />
+        {{ t('market.indicesData.allClosedSleeping') }}
+      </el-tag>
+
       <span class="refresh-label">{{ t('market.indicesData.autoRefresh') }}:</span>
       <el-select
         :model-value="marketStore.autoRefreshInterval"
@@ -25,9 +36,9 @@
         class="interval-select"
         @update:model-value="marketStore.setAutoRefreshInterval($event)"
       >
-        <el-option :label="t('market.indicesData.refresh15s')" :value="15" />
-        <el-option :label="t('market.indicesData.refresh30s')" :value="30" />
-        <el-option :label="t('market.indicesData.refresh60s')" :value="60" />
+        <el-option :label="t('market.indicesData.refresh1m')" :value="60" />
+        <el-option :label="t('market.indicesData.refresh3m')" :value="180" />
+        <el-option :label="t('market.indicesData.refresh5m')" :value="300" />
         <el-option :label="t('market.indicesData.refreshOff')" :value="0" />
       </el-select>
 
@@ -129,7 +140,19 @@ function getStatusLabel(status: string) {
   color: var(--el-text-color-secondary);
 }
 .interval-select {
-  width: 90px;
+  width: 95px;
+}
+.sleep-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+}
+.sleep-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--el-color-info);
 }
 @keyframes pulse-dot {
   0% { transform: scale(0.95); opacity: 0.8; }
