@@ -131,9 +131,10 @@ transactions_export_csv(csilk_ctx_t* c)
         csilk_json_free(rows);
     }
 
-    time_t now = time(NULL);
-    char   date_str[16];
-    strftime(date_str, sizeof(date_str), "%Y-%m-%d", localtime(&now));
+    time_t    now = time(NULL);
+    char      date_str[16];
+    struct tm tm_local;
+    strftime(date_str, sizeof(date_str), "%Y-%m-%d", localtime_r(&now, &tm_local));
 
     char fname[160];
     snprintf(fname, sizeof(fname), "attachment; filename=\"transactions_%s.csv\"", date_str);
@@ -229,9 +230,10 @@ daily_expenses_export_csv(csilk_ctx_t* c)
         csilk_json_free(rows);
     }
 
-    time_t now = time(NULL);
-    char   date_str[16];
-    strftime(date_str, sizeof(date_str), "%Y-%m-%d", localtime(&now));
+    time_t    now = time(NULL);
+    char      date_str[16];
+    struct tm tm_local;
+    strftime(date_str, sizeof(date_str), "%Y-%m-%d", localtime_r(&now, &tm_local));
 
     char fname[180];
     snprintf(fname, sizeof(fname), "attachment; filename=\"daily_expenses_%s.csv\"", date_str);

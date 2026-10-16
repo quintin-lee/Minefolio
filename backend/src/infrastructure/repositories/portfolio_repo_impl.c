@@ -335,8 +335,9 @@ portfolio_repo_get_trend_30d(void* pool, int64_t user_id, int64_t ledger_id)
 
     // 1. Generate the last 30 daily date strings (from now - 29 days to today)
     time_t    now = time(NULL);
-    struct tm cur_tm = *localtime(&now);
-    char      dates[30][16];
+    struct tm cur_tm;
+    localtime_r(&now, &cur_tm);
+    char dates[30][16];
     for (int i = 0; i < 30; i++) {
         struct tm tm = cur_tm;
         tm.tm_mday -= (29 - i);

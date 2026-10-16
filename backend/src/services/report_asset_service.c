@@ -69,8 +69,9 @@ report_asset_trend(csilk_ctx_t* c)
 
     // 1. Generate 5 sample points (labels) across the period
     time_t    now = time(NULL);
-    struct tm cur_tm = *localtime(&now);
-    char      dates[5][16];
+    struct tm cur_tm;
+    localtime_r(&now, &cur_tm);
+    char dates[5][16];
     for (int k = 0; k < 5; k++) {
         struct tm tm = cur_tm;
         int       mday_offset = (4 - k) * (days - 1) / 4;

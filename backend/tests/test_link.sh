@@ -20,7 +20,7 @@ export TEST_JWT_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).
 # --- 启动服务器 ---
 rm -f "$DB" "$DB-wal" "$DB-shm"
 cd "$BUILD_DIR"
-PORT="$TEST_PORT" MINEFOLIO_PORT="$TEST_PORT" MINEFOLIO_DB_DSN="$DB" MINEFOLIO_JWT_SECRET="$TEST_JWT_SECRET" ./minefolio >/dev/null 2>&1 &
+MINEFOLIO_DB_DRIVER=sqlite PORT="$TEST_PORT" MINEFOLIO_PORT="$TEST_PORT" MINEFOLIO_DB_DSN="$DB" MINEFOLIO_JWT_SECRET="$TEST_JWT_SECRET" ./minefolio >/dev/null 2>&1 &
 SERVER_PID=$!
 # Wait for server to be ready
 for _i in $(seq 1 30); do

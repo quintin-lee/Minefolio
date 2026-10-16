@@ -172,6 +172,7 @@ balance_apply_delta(csilk_db_pool_t* pool,
 int
 apply_position_fc(csilk_db_pool_t* pool,
                   int64_t          asset_id,
+                  int64_t          user_id,
                   const char*      type,
                   money_t          amount,
                   money_t          fee,
@@ -179,13 +180,14 @@ apply_position_fc(csilk_db_pool_t* pool,
                   quantity_t       qty,
                   money_t*         out_position_delta)
 {
-    char aid_str[32];
+    char aid_str[32], uid_str[32];
     snprintf(aid_str, sizeof(aid_str), "%lld", (long long)asset_id);
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     csilk_json_t* pos = csilk_db_query_param_json(
         pool,
         "SELECT a.quantity, a.cost_basis, a.net_value, a.current_value, a.currency, c.asset_type "
-        "FROM assets a JOIN categories c ON a.category_id=c.id WHERE a.id=?",
-        (const char*[]){aid_str, NULL});
+        "FROM assets a JOIN categories c ON a.category_id=c.id WHERE a.id=? AND a.user_id=?",
+        (const char*[]){aid_str, uid_str, NULL});
     if (!pos || csilk_json_array_size(pos) == 0) {
         if (pos) {
             csilk_json_free(pos);
@@ -262,9 +264,11 @@ apply_position_fc(csilk_db_pool_t* pool,
     money_to_string(new_cost, nc, sizeof(nc));
     price_to_string_fixed(new_net, 4, nv, sizeof(nv));
 
-    const char*   p[] = {nq, nc, nv, aid_str, NULL};
+    const char*   p[] = {nq, nc, nv, aid_str, uid_str, NULL};
     csilk_json_t* upd_res = csilk_db_query_param_json(
-        pool, "UPDATE assets SET quantity=?, cost_basis=?, net_value=? WHERE id=?", p);
+        pool,
+        "UPDATE assets SET quantity=?, cost_basis=?, net_value=? WHERE id=? AND user_id=?",
+        p);
     if (upd_res) {
         csilk_json_free(upd_res);
     }
@@ -275,6 +279,7 @@ apply_position_fc(csilk_db_pool_t* pool,
 int
 apply_position(csilk_db_pool_t* pool,
                int64_t          asset_id,
+               int64_t          user_id,
                const char*      type,
                double           amount,
                double           fee,
@@ -282,10 +287,13 @@ apply_position(csilk_db_pool_t* pool,
                double           qty,
                double*          out_position_delta)
 {
-    char aid_str[32];
+    char aid_str[32], uid_str[32];
     snprintf(aid_str, sizeof(aid_str), "%lld", (long long)asset_id);
-    csilk_json_t* pos_cur = csilk_db_query_param_json(
-        pool, "SELECT currency FROM assets WHERE id=?", (const char*[]){aid_str, NULL});
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    csilk_json_t* pos_cur =
+        csilk_db_query_param_json(pool,
+                                  "SELECT currency FROM assets WHERE id=? AND user_id=?",
+                                  (const char*[]){aid_str, uid_str, NULL});
     currency_t cur = CURRENCY_CNY;
     if (pos_cur && csilk_json_array_size(pos_cur) > 0) {
         const char* cstr = csilk_json_get_string(csilk_json_array_get(pos_cur, 0), "currency");
@@ -304,7 +312,8 @@ apply_position(csilk_db_pool_t* pool,
     price_from_double(price, 4, cur, &price_p);
     quantity_from_double(qty, 4, &qty_q);
 
-    int rc = apply_position_fc(pool, asset_id, type, amount_m, fee_m, price_p, qty_q, &delta_m);
+    int rc =
+        apply_position_fc(pool, asset_id, user_id, type, amount_m, fee_m, price_p, qty_q, &delta_m);
     if (rc == 0 && out_position_delta) {
         *out_position_delta = money_to_double(delta_m);
     }
@@ -314,6 +323,7 @@ apply_position(csilk_db_pool_t* pool,
 int
 rollback_position_fc(csilk_db_pool_t* pool,
                      int64_t          asset_id,
+                     int64_t          user_id,
                      const char*      type,
                      money_t          amount,
                      money_t          fee,
@@ -325,13 +335,14 @@ rollback_position_fc(csilk_db_pool_t* pool,
         return 0;
     }
 
-    char aid_str[32];
+    char aid_str[32], uid_str[32];
     snprintf(aid_str, sizeof(aid_str), "%lld", (long long)asset_id);
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     csilk_json_t* pos = csilk_db_query_param_json(
         pool,
         "SELECT a.quantity, a.cost_basis, a.net_value, a.current_value, a.currency, c.asset_type "
-        "FROM assets a JOIN categories c ON a.category_id=c.id WHERE a.id=?",
-        (const char*[]){aid_str, NULL});
+        "FROM assets a JOIN categories c ON a.category_id=c.id WHERE a.id=? AND a.user_id=?",
+        (const char*[]){aid_str, uid_str, NULL});
     if (!pos || csilk_json_array_size(pos) == 0) {
         if (pos) {
             csilk_json_free(pos);
@@ -422,9 +433,11 @@ rollback_position_fc(csilk_db_pool_t* pool,
     money_to_string(new_cost, nc, sizeof(nc));
     price_to_string_fixed(new_net, 4, nv, sizeof(nv));
 
-    const char*   p[] = {nq, nc, nv, aid_str, NULL};
+    const char*   p[] = {nq, nc, nv, aid_str, uid_str, NULL};
     csilk_json_t* upd_res = csilk_db_query_param_json(
-        pool, "UPDATE assets SET quantity=?, cost_basis=?, net_value=? WHERE id=?", p);
+        pool,
+        "UPDATE assets SET quantity=?, cost_basis=?, net_value=? WHERE id=? AND user_id=?",
+        p);
     if (upd_res) {
         csilk_json_free(upd_res);
     }
@@ -435,6 +448,7 @@ rollback_position_fc(csilk_db_pool_t* pool,
 int
 rollback_position(csilk_db_pool_t* pool,
                   int64_t          asset_id,
+                  int64_t          user_id,
                   const char*      type,
                   double           amount,
                   double           fee,
@@ -442,10 +456,13 @@ rollback_position(csilk_db_pool_t* pool,
                   double           qty,
                   double*          out_position_delta)
 {
-    char aid_str[32];
+    char aid_str[32], uid_str[32];
     snprintf(aid_str, sizeof(aid_str), "%lld", (long long)asset_id);
-    csilk_json_t* pos_cur = csilk_db_query_param_json(
-        pool, "SELECT currency FROM assets WHERE id=?", (const char*[]){aid_str, NULL});
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    csilk_json_t* pos_cur =
+        csilk_db_query_param_json(pool,
+                                  "SELECT currency FROM assets WHERE id=? AND user_id=?",
+                                  (const char*[]){aid_str, uid_str, NULL});
     currency_t cur = CURRENCY_CNY;
     if (pos_cur && csilk_json_array_size(pos_cur) > 0) {
         const char* cstr = csilk_json_get_string(csilk_json_array_get(pos_cur, 0), "currency");
@@ -464,7 +481,8 @@ rollback_position(csilk_db_pool_t* pool,
     price_from_double(price, 4, cur, &price_p);
     quantity_from_double(qty, 4, &qty_q);
 
-    int rc = rollback_position_fc(pool, asset_id, type, amount_m, fee_m, price_p, qty_q, &delta_m);
+    int rc = rollback_position_fc(
+        pool, asset_id, user_id, type, amount_m, fee_m, price_p, qty_q, &delta_m);
     if (rc == 0 && out_position_delta) {
         *out_position_delta = money_to_double(delta_m);
     }

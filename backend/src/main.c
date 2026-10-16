@@ -36,6 +36,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <signal.h>
+#include <curl/curl.h>
 
 static void
 metrics_middleware_wrapper(csilk_ctx_t* c)
@@ -50,6 +51,14 @@ main(int argc, char** argv)
     (void)argv;
 
     signal(SIGPIPE, SIG_IGN);
+
+    /* libcurl 全局初始化必须在任何线程创建前显式完成：
+       csilk worker/market_scheduler/AI summary/MCP 均调用 curl_easy_*，
+       若依赖首次 lazy init 会形成数据竞争。 */
+    if (curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK) {
+        fprintf(stderr, "FATAL: curl_global_init failed\n");
+        return 1;
+    }
 
     if (!config_secret_is_valid("JWT_SECRET")) {
         fprintf(stderr,
@@ -165,5 +174,6 @@ main(int argc, char** argv)
     csilk_app_free(app);
     ai_shutdown();
     csilk_db_pool_free(pool);
+    curl_global_cleanup();
     return 0;
 }

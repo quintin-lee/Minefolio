@@ -281,7 +281,8 @@ resolve_exec_on_path(const char* prog, char* out, size_t out_sz)
     }
     char path_copy[1024];
     snprintf(path_copy, sizeof(path_copy), "%s", path);
-    for (char* tok = strtok(path_copy, ":"); tok; tok = strtok(NULL, ":")) {
+    char* saveptr = NULL;
+    for (char* tok = strtok_r(path_copy, ":", &saveptr); tok; tok = strtok_r(NULL, ":", &saveptr)) {
         char full[1024];
         snprintf(full, sizeof(full), "%s/%s", tok, prog);
         if (access(full, X_OK) == 0) {
@@ -307,7 +308,8 @@ build_argv(const mf_mcp_server_t* s, size_t* out_argc)
     char  cmd_copy[512];
     snprintf(cmd_copy, sizeof(cmd_copy), "%s", s->command);
 
-    char* tok = strtok(cmd_copy, " \t");
+    char* saveptr = NULL;
+    char* tok = strtok_r(cmd_copy, " \t", &saveptr);
     while (tok && argc < 40) {
         stack_argv[argc++] = strdup(tok);
         if (!stack_argv[argc - 1]) {
@@ -316,7 +318,7 @@ build_argv(const mf_mcp_server_t* s, size_t* out_argc)
             }
             return NULL;
         }
-        tok = strtok(NULL, " \t");
+        tok = strtok_r(NULL, " \t", &saveptr);
     }
     if (argc == 0) {
         return NULL;

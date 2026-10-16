@@ -16,13 +16,17 @@
 #include <stdlib.h>
 
 /**
- * @brief Multipart 数据分片解析状态全局缓冲区
+ * @brief Multipart 数据分片解析状态缓冲区
+ *
+ * 必须为线程局部存储：csilk 多 worker 并发处理上传请求时，若为进程级 static，
+ * 两个并发上传会交替写同一缓冲区，导致跨用户文件内容串号与 realloc/free 竞态堆破坏。
+ * 与 receipt_controller.c、ai_mcp_controller.c 的同类缓冲区保持 _Thread_local 一致。
  */
-static char*  g_upload_filename = NULL;
-static char*  g_upload_content_type = NULL;
-static char*  g_upload_data = NULL;
-static size_t g_upload_data_len = 0;
-static size_t g_upload_data_cap = 0;
+_Thread_local static char*  g_upload_filename = NULL;
+_Thread_local static char*  g_upload_content_type = NULL;
+_Thread_local static char*  g_upload_data = NULL;
+_Thread_local static size_t g_upload_data_len = 0;
+_Thread_local static size_t g_upload_data_cap = 0;
 
 static void
 upload_part_handler(csilk_multipart_part_t* part)

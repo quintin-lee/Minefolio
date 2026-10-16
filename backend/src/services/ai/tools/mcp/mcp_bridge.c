@@ -744,9 +744,10 @@ mcp_bridge_refresh_server(
     }
 
     /* 更新服务器 discovered_at（失败不致命，工具缓存已成功） */
-    time_t ts = time(NULL);
-    char   ts_str[32] = {0};
-    strftime(ts_str, sizeof(ts_str), "%Y-%m-%d %H:%M:%S", localtime(&ts));
+    time_t    ts = time(NULL);
+    char      ts_str[32] = {0};
+    struct tm tm_local;
+    strftime(ts_str, sizeof(ts_str), "%Y-%m-%d %H:%M:%S", localtime_r(&ts, &tm_local));
 
     char s_id[24] = {0};
     snprintf(s_id, sizeof(s_id), "%lld", (long long)server_id);

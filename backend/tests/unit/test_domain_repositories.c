@@ -1017,7 +1017,7 @@ test_multi_currency_balance_and_transfers(csilk_db_pool_t* pool, int64_t user_id
 
     /* Buy 10 units @ 50 USD = 500 USD, fee = 5 USD */
     double delta_pos = 0;
-    rc = apply_position(pool, stk_id, "buy", 500.0, 5.0, 50.0, 10.0, &delta_pos);
+    rc = apply_position(pool, stk_id, user_id, "buy", 500.0, 5.0, 50.0, 10.0, &delta_pos);
     assert(rc == 0);
 
     char stk_str[32];

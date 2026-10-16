@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <openssl/rand.h>
 
 /* ===== Internal helpers ===== */
 
@@ -384,12 +385,17 @@ ledger_usecase_create_invite_code(void*                   pool,
         return -1;
     }
 
-    /* Generate 6-digit random uppercase code */
-    srand((unsigned int)(time(NULL) ^ user_id ^ ledger_id));
+    /* Generate 6-char uppercase invite code from CSPRNG (access token — must be unguessable) */
+    unsigned char rnd[6];
+    if (RAND_bytes(rnd, (int)sizeof(rnd)) != 1) {
+        out_res->code = 1002;
+        snprintf(out_res->message, sizeof(out_res->message), "生成邀请码失败");
+        return -1;
+    }
     char       code[8];
-    const char charset[] = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    const char charset[] = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; /* 32 chars → index 0..31 */
     for (int i = 0; i < 6; ++i) {
-        code[i] = charset[rand() % (sizeof(charset) - 1)];
+        code[i] = charset[rnd[i] & 0x1f];                      /* 2^5 == 32: unbiased mapping */
     }
     code[6] = '\0';
 

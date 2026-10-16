@@ -375,6 +375,7 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
     if (is_investment_tx) {
         int pos_rc = apply_position_fc(pool,
                                        tx->asset_id,
+                                       tx->user_id,
                                        tx_type_str,
                                        tx->amount,
                                        tx->fee,
@@ -579,7 +580,7 @@ ledger_reverse_tx(csilk_db_pool_t* pool, int64_t user_id, int64_t tx_id)
     if (is_inv) {
         money_t rollback_pos_delta = money_zero(cur);
         int     rb_rc = rollback_position_fc(
-            pool, asset_id, type, amount, fee, price, qty, &rollback_pos_delta);
+            pool, asset_id, user_id, type, amount, fee, price, qty, &rollback_pos_delta);
         if (rb_rc != 0) {
             csilk_json_free(old_arr);
             db_tx_scope_rollback(pool, &scope);

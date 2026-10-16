@@ -134,9 +134,10 @@ api_categories_list(csilk_ctx_t* c)
     if (type_query && strstr(type_query, ",")) {
         csilk_json_t* merged = csilk_json_array();
         char          copy[128];
+        char*         saveptr = NULL;
         strncpy(copy, type_query, sizeof(copy) - 1);
         copy[sizeof(copy) - 1] = '\0';
-        char* tok = strtok(copy, ",");
+        char* tok = strtok_r(copy, ",", &saveptr);
         while (tok) {
             while (*tok == ' ') {
                 tok++;
@@ -152,7 +153,7 @@ api_categories_list(csilk_ctx_t* c)
                     csilk_json_free(part);
                 }
             }
-            tok = strtok(NULL, ",");
+            tok = strtok_r(NULL, ",", &saveptr);
         }
         csilk_json_t* tree = build_tree(merged);
         csilk_json_free(merged);

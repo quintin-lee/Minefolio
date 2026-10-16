@@ -33,7 +33,8 @@ report_expense_monthly(csilk_ctx_t* c)
     char        year_buf[8] = {0}, month_buf[4] = {0};
     if (!year_str || !month_str) {
         time_t     now = time(NULL);
-        struct tm* tm_now = localtime(&now);
+        struct tm  tm_now_storage;
+        struct tm* tm_now = localtime_r(&now, &tm_now_storage);
         strftime(year_buf, sizeof(year_buf), "%Y", tm_now);
         strftime(month_buf, sizeof(month_buf), "%m", tm_now);
         year_str = year_buf;
@@ -374,8 +375,9 @@ report_expense_yearly(csilk_ctx_t* c)
     if (year_str && strlen(year_str) > 0) {
         snprintf(year_buf, sizeof(year_buf), "%s", year_str);
     } else {
-        time_t now = time(NULL);
-        strftime(year_buf, sizeof(year_buf), "%Y", localtime(&now));
+        time_t    now = time(NULL);
+        struct tm tm_local;
+        strftime(year_buf, sizeof(year_buf), "%Y", localtime_r(&now, &tm_local));
     }
 
     int64_t ledger_id = ctx_ledger_id(c, user_id, "viewer");
@@ -454,7 +456,8 @@ report_expense_category(csilk_ctx_t* c)
     const char* month_str = csilk_get_query(c, "month");
     char        year_buf[8] = {0};
     time_t      now = time(NULL);
-    strftime(year_buf, sizeof(year_buf), "%Y", localtime(&now));
+    struct tm   tm_local;
+    strftime(year_buf, sizeof(year_buf), "%Y", localtime_r(&now, &tm_local));
     char period[16], period_pattern[32];
     if (year_str && month_str) {
         snprintf(period, sizeof(period), "%s-%02d-", year_str, atoi(month_str));
@@ -586,7 +589,8 @@ report_expense_tag(csilk_ctx_t* c)
     const char* month_str = csilk_get_query(c, "month");
     char        year_buf[8] = {0};
     time_t      now = time(NULL);
-    strftime(year_buf, sizeof(year_buf), "%Y", localtime(&now));
+    struct tm   tm_local;
+    strftime(year_buf, sizeof(year_buf), "%Y", localtime_r(&now, &tm_local));
     char period[16], period_pattern[32];
     if (year_str && month_str) {
         snprintf(period, sizeof(period), "%s-%02d-", year_str, atoi(month_str));

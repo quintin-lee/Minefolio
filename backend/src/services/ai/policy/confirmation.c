@@ -6,6 +6,7 @@
 #include <time.h>
 #include <openssl/hmac.h>
 #include <openssl/sha.h>
+#include <openssl/rand.h>
 #include <pthread.h>
 
 #define DEFAULT_TTL_SEC 300
@@ -21,6 +22,7 @@ typedef struct {
 
 static consumed_nonce_entry_t s_consumed_nonces[MAX_NONCES];
 static size_t                 s_nonce_count = 0;
+static size_t                 s_nonce_ring = 0;
 static pthread_mutex_t        s_nonce_lock = PTHREAD_MUTEX_INITIALIZER;
 
 void
@@ -216,8 +218,9 @@ record_nonce_consumed_locked(const char* nonce, int64_t expiration)
         s_consumed_nonces[s_nonce_count].expiration = expiration;
         s_nonce_count++;
     } else {
-        /* 环形覆盖最旧项 */
-        size_t idx = (size_t)(rand() % MAX_NONCES);
+        /* 环形覆盖：按游标轮转（本函数在 s_nonce_lock 下调用），确定性且不依赖全局 PRNG */
+        size_t idx = s_nonce_ring;
+        s_nonce_ring = (s_nonce_ring + 1) % MAX_NONCES;
         snprintf(s_consumed_nonces[idx].nonce, sizeof(s_consumed_nonces[idx].nonce), "%s", nonce);
         s_consumed_nonces[idx].expiration = expiration;
     }
@@ -244,9 +247,19 @@ ai_confirmation_create_bound_token(int64_t             user_id,
     char args_hash[65];
     ai_confirmation_hash_args(args, args_hash, sizeof(args_hash));
 
-    /* 生成随机高熵 Nonce */
-    char nonce[32];
-    snprintf(nonce, sizeof(nonce), "nc%08lx%08x", (unsigned long)now, (unsigned int)rand());
+    /* 生成随机高熵 Nonce（参与 HMAC canonical 与重放唯一性，须用 CSPRNG） */
+    char          nonce[32];
+    unsigned char rnd[4] = {0};
+    if (RAND_bytes(rnd, (int)sizeof(rnd)) != 1) {
+        /* 罕见失败：退化到时间 + 地址熵 */
+        rnd[0] = (unsigned char)(now & 0xff);
+        rnd[1] = (unsigned char)((now >> 8) & 0xff);
+        rnd[2] = (unsigned char)(((uintptr_t)nonce) & 0xff);
+        rnd[3] = (unsigned char)(((uintptr_t)&rnd) & 0xff);
+    }
+    unsigned int rnd_val = ((unsigned int)rnd[0] << 24) | ((unsigned int)rnd[1] << 16) |
+                           ((unsigned int)rnd[2] << 8) | (unsigned int)rnd[3];
+    snprintf(nonce, sizeof(nonce), "nc%08lx%08x", (unsigned long)now, rnd_val);
 
     /* 规范载荷字符串 */
     char canonical[512];
