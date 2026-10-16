@@ -205,3 +205,75 @@ quote_engine_test_connection(const char* proxy, char* out_msg, size_t msg_cap, i
     }
     return -1;
 }
+
+int
+quote_engine_calc_market_clocks(time_t now, market_clock_item_t* out_clocks, int max_clocks, int* out_count)
+{
+    if (!out_clocks || max_clocks < 5 || !out_count) {
+        return -1;
+    }
+
+    struct {
+        const char* market;
+        const char* name;
+        const char* tz;
+        int         tz_offset_hours;
+        int         open_h1, open_m1, close_h1, close_m1;
+        int         open_h2, open_m2, close_h2, close_m2;
+        int         pre_h, pre_m;
+    } configs[] = {
+        {"SSE_SZSE", "A股 (沪深)", "Asia/Shanghai", 8, 9, 30, 11, 30, 13, 0, 15, 0, 9, 15},
+        {"HKEX", "港股", "Asia/Hong_Kong", 8, 9, 30, 12, 0, 13, 0, 16, 0, 9, 0},
+        {"TSE", "东京", "Asia/Tokyo", 9, 9, 0, 11, 30, 12, 30, 15, 0, 8, 30},
+        {"LSE", "伦敦", "Europe/London", 1, 8, 0, 16, 30, 0, 0, 0, 0, 7, 0},
+        {"NYSE", "美股", "America/New_York", -4, 9, 30, 16, 0, 0, 0, 0, 0, 4, 0},
+    };
+
+    *out_count = 5;
+    for (int i = 0; i < 5; i++) {
+        market_clock_item_t* c = &out_clocks[i];
+        memset(c, 0, sizeof(*c));
+        strncpy(c->market, configs[i].market, sizeof(c->market) - 1);
+        strncpy(c->name, configs[i].name, sizeof(c->name) - 1);
+        strncpy(c->timezone, configs[i].tz, sizeof(c->timezone) - 1);
+        snprintf(c->open_time, sizeof(c->open_time), "%02d:%02d", configs[i].open_h1, configs[i].open_m1);
+        snprintf(c->close_time,
+                 sizeof(c->close_time),
+                 "%02d:%02d",
+                 configs[i].close_h2 > 0 ? configs[i].close_h2 : configs[i].close_h1,
+                 configs[i].close_h2 > 0 ? configs[i].close_m2 : configs[i].close_m1);
+
+        time_t    local_t = now + configs[i].tz_offset_hours * 3600;
+        struct tm tm_loc;
+        gmtime_r(&local_t, &tm_loc);
+
+        int weekday = tm_loc.tm_wday; /* 0=周日, 6=周六 */
+        int minutes = tm_loc.tm_hour * 60 + tm_loc.tm_min;
+
+        if (weekday == 0 || weekday == 6) {
+            strncpy(c->status, "closed", sizeof(c->status) - 1);
+            continue;
+        }
+
+        int  m_open1 = configs[i].open_h1 * 60 + configs[i].open_m1;
+        int  m_close1 = configs[i].close_h1 * 60 + configs[i].close_m1;
+        int  m_open2 = configs[i].open_h2 * 60 + configs[i].open_m2;
+        int  m_close2 = configs[i].close_h2 * 60 + configs[i].close_m2;
+        int  m_pre = configs[i].pre_h * 60 + configs[i].pre_m;
+
+        bool is_open = (minutes >= m_open1 && minutes <= m_close1);
+        if (!is_open && configs[i].open_h2 > 0) {
+            is_open = (minutes >= m_open2 && minutes <= m_close2);
+        }
+
+        if (is_open) {
+            strncpy(c->status, "open", sizeof(c->status) - 1);
+        } else if (minutes >= m_pre && minutes < m_open1) {
+            strncpy(c->status, "pre", sizeof(c->status) - 1);
+        } else {
+            strncpy(c->status, "closed", sizeof(c->status) - 1);
+        }
+    }
+
+    return 0;
+}

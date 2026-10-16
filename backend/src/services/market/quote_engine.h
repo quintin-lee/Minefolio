@@ -1,6 +1,7 @@
 #pragma once
 #include "common/market_types.h"
 #include <stddef.h>
+#include <time.h>
 
 /* HTTP helper using libcurl */
 char* quote_engine_http_get(const char* url, const char* proxy, int timeout_sec, size_t* out_len);
@@ -19,3 +20,6 @@ quote_engine_fetch_quote(const char* symbol, const char* source_type, market_quo
 /* Test connectivity for all drivers */
 int
 quote_engine_test_connection(const char* proxy, char* out_msg, size_t msg_cap, int* out_latency_ms);
+
+/* Calculate global market clocks status */
+int quote_engine_calc_market_clocks(time_t now, market_clock_item_t* out_clocks, int max_clocks, int* out_count);
