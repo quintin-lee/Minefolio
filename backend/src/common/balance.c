@@ -1,5 +1,6 @@
 #include "common/balance.h"
 #include "common/db.h"
+#include "core/ledger/ledger_engine.h"
 #include "services/market/exchange_rate_service.h"
 #include "csilk/csilk.h"
 #include <stdio.h>
@@ -231,26 +232,16 @@ apply_position_fc(csilk_db_pool_t* pool,
         money_add(tmp, fee, &new_cost);
         new_net = price;
     } else if (strcmp(type, "sell") == 0) {
-        if (quantity_cmp(old_qty, qty) < 0) {
+        money_t cost_red, trade_pnl;
+        if (ledger_calc_sell_position(
+                old_qty, old_cost, qty, price, fee, &new_qty, &new_cost, &cost_red, &trade_pnl) !=
+            0) {
             csilk_json_free(pos);
-            CSILK_LOG_W("apply_position: insufficient quantity asset_id=%lld", (long long)asset_id);
+            CSILK_LOG_W("apply_position: sell calculation failed asset_id=%lld",
+                        (long long)asset_id);
             return -1;
         }
-        price_t avg_cost;
-        if (!quantity_is_zero(old_qty)) {
-            money_div_quantity(old_cost, old_qty, 6, ROUND_HALF_UP, &avg_cost);
-        } else {
-            avg_cost = price_zero(cur);
-        }
-        quantity_sub(old_qty, qty, &new_qty);
-        money_t cost_sold;
-        price_times_quantity(avg_cost, qty, &cost_sold);
-        money_sub(old_cost, cost_sold, &new_cost);
-        if (quantity_is_zero(new_qty)) {
-            new_cost = money_zero(cur);
-        }
         new_net = old_net;
-
     } else {
         csilk_json_free(pos);
         return 0;
@@ -396,15 +387,19 @@ rollback_position_fc(csilk_db_pool_t* pool,
         }
         new_net = !quantity_is_zero(new_qty) ? old_net : price_zero(cur);
     } else if (strcmp(type, "sell") == 0) {
-        price_t avg_cost;
-        if (!quantity_is_zero(old_qty)) {
-            money_div_quantity(old_cost, old_qty, 6, ROUND_HALF_UP, &avg_cost);
-        } else {
-            avg_cost = price;
-        }
         quantity_add(old_qty, qty, &new_qty);
         money_t restored_cost;
-        price_times_quantity(avg_cost, qty, &restored_cost);
+        if (!quantity_is_zero(old_qty)) {
+            decimal_t ratio;
+            decimal_div(qty.units, old_qty.units, 12, ROUND_HALF_UP, &ratio);
+            decimal_t rest_dec;
+            decimal_mul(old_cost.amount, ratio, &rest_dec);
+            uint8_t prec = currency_precision(cur);
+            decimal_round(rest_dec, (int32_t)prec, ROUND_HALF_UP, &restored_cost.amount);
+            restored_cost.currency = cur;
+        } else {
+            price_times_quantity(price, qty, &restored_cost);
+        }
         money_add(old_cost, restored_cost, &new_cost);
         new_net = old_net;
     } else {

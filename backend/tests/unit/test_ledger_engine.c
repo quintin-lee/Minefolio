@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <math.h>
 
 static void
 init_test_db(const char* db_path)
@@ -438,6 +439,52 @@ main(void)
         csilk_json_free(ast);
         assert(cur_val == 0.0);
         printf("    ✓ Non-investment tx fee deduction and rollback verified.\n");
+    }
+
+    printf("  12. Testing Position Calculation & Full Liquidation Zeroing Consistency...\n");
+    {
+        currency_t cny = CURRENCY_CNY;
+        quantity_t q0 = quantity_zero();
+        money_t c0 = money_zero(cny);
+
+        // 1. Buy 100 shares @ 10.50 with 5.00 fee -> total cost 1055.00
+        quantity_t buy1_qty;
+        price_t buy1_p;
+        money_t buy1_fee;
+        quantity_from_double(100.0, 4, &buy1_qty);
+        price_from_double(10.50, 4, cny, &buy1_p);
+        money_from_double(5.00, cny, &buy1_fee);
+
+        quantity_t q1;
+        money_t c1;
+        int rc = ledger_calc_buy_position(q0, c0, buy1_qty, buy1_p, buy1_fee, &q1, &c1);
+        assert(rc == 0);
+        assert(fabs(quantity_to_double(q1) - 100.0) < 1e-4);
+        assert(fabs(money_to_double(c1) - 1055.0) < 1e-4);
+
+        // 2. Partial sell 33.3333 shares @ 12.00
+        quantity_t sell1_qty;
+        price_t sell1_p;
+        money_t sell1_fee;
+        quantity_from_double(33.3333, 4, &sell1_qty);
+        price_from_double(12.00, 4, cny, &sell1_p);
+        money_from_double(2.00, cny, &sell1_fee);
+
+        quantity_t q2;
+        money_t c2, red1, pnl1;
+        rc = ledger_calc_sell_position(q1, c1, sell1_qty, sell1_p, sell1_fee, &q2, &c2, &red1, &pnl1);
+        assert(rc == 0);
+        assert(quantity_cmp(q2, quantity_zero()) > 0);
+        assert(money_cmp(c2, money_zero(cny)) > 0);
+
+        // 3. Full sell of remaining shares -> MUST be strictly zero
+        quantity_t q3;
+        money_t c3, red2, pnl2;
+        rc = ledger_calc_sell_position(q2, c2, q2, sell1_p, sell1_fee, &q3, &c3, &red2, &pnl2);
+        assert(rc == 0);
+        assert(quantity_is_zero(q3));
+        assert(money_is_zero(c3));
+        printf("    ✓ Position calculation and full liquidation zeroing passed.\n");
     }
 
     unlink(db_file);
