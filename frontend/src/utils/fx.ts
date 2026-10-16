@@ -72,8 +72,14 @@ export function calculatePeriodStats(points: FxHistoryPoint[]): PeriodStats {
     return { min: 0, max: 0, avg: 0, changeRate: 0 }
   }
 
-  let min = points[0].rate
-  let max = points[0].rate
+  const first = points[0]
+  const last = points[points.length - 1]
+  if (!first || !last) {
+    return { min: 0, max: 0, avg: 0, changeRate: 0 }
+  }
+
+  let min = first.rate
+  let max = first.rate
   let sum = 0
 
   for (const pt of points) {
@@ -83,8 +89,8 @@ export function calculatePeriodStats(points: FxHistoryPoint[]): PeriodStats {
   }
 
   const avg = sum / points.length
-  const firstRate = points[0].rate
-  const lastRate = points[points.length - 1].rate
+  const firstRate = first.rate
+  const lastRate = last.rate
   const changeRate = firstRate > 0 ? ((lastRate - firstRate) / firstRate) * 100 : 0
 
   return { min, max, avg, changeRate }

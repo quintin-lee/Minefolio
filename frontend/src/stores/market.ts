@@ -7,18 +7,20 @@ import type { FxHistoryPoint, MultiCurrencySummary } from '@/types'
 const BASE_CURRENCY_STORAGE_KEY = 'minefolio_base_currency'
 const RATES_CACHE_KEY = 'minefolio_cached_rates'
 
+function getInitialRates(): Record<string, number> {
+  try {
+    const cached = localStorage.getItem(RATES_CACHE_KEY)
+    return cached ? JSON.parse(cached) : { CNY: 1.0, USD: 7.2345, EUR: 7.852, HKD: 0.9248, JPY: 0.04781, GBP: 9.382 }
+  } catch {
+    return { CNY: 1.0, USD: 7.2345, EUR: 7.852, HKD: 0.9248, JPY: 0.04781, GBP: 9.382 }
+  }
+}
+
 export const useMarketStore = defineStore('market', () => {
   const baseCurrency = ref<string>(
     localStorage.getItem(BASE_CURRENCY_STORAGE_KEY) || 'CNY'
   )
-  const rates = ref<Record<string, number>>(() => {
-    try {
-      const cached = localStorage.getItem(RATES_CACHE_KEY)
-      return cached ? JSON.parse(cached) : { CNY: 1.0, USD: 7.2345, EUR: 7.852, HKD: 0.9248, JPY: 0.04781, GBP: 9.382 }
-    } catch {
-      return { CNY: 1.0, USD: 7.2345, EUR: 7.852, HKD: 0.9248, JPY: 0.04781, GBP: 9.382 }
-    }
-  })
+  const rates = ref<Record<string, number>>(getInitialRates())
 
   const lastSyncAt = ref<string | null>(null)
   const isSyncing = ref(false)
