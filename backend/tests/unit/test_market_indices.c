@@ -35,8 +35,36 @@ static void test_market_clocks_calc(void) {
     printf("PASS: test_market_clocks_calc\n");
 }
 
+static void test_quote_engine_get_indices_cache(void) {
+    global_index_item_t indices[32];
+    int count = 0;
+    market_clock_item_t clocks[8];
+    int clock_count = 0;
+
+    /* 第一次获取 */
+    int rc = quote_engine_get_indices("all", indices, 32, &count, clocks, 8, &clock_count);
+    assert(rc == 0);
+    assert(count >= 10);
+    assert(clock_count == 5);
+
+    char first_quote_time[32];
+    strncpy(first_quote_time, indices[0].quote_time, sizeof(first_quote_time));
+
+    /* 立即第二次获取: 应命中 20s 内存缓存 */
+    global_index_item_t indices2[32];
+    int count2 = 0;
+    rc = quote_engine_get_indices("cn", indices2, 32, &count2, clocks, 8, &clock_count);
+    assert(rc == 0);
+    assert(count2 == 4); /* 上证, 深证, 创业板, 沪深300 */
+    assert(strcmp(indices2[0].category, "cn") == 0);
+
+    printf("PASS: test_quote_engine_get_indices_cache\n");
+}
+
 int main(void) {
+    setenv("MINEFOLIO_MARKET_MOCK", "1", 1);
     printf("=== Running Unit Test: Market Indices & Clocks ===\n");
     test_market_clocks_calc();
+    test_quote_engine_get_indices_cache();
     return 0;
 }
