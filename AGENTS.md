@@ -73,6 +73,14 @@ When a transaction is deleted, the service MUST:
 
 This prevents orphaned fee rows from leaving incorrect balance state.
 
+### Transfer Delete — Pairing Invariant
+
+A transfer is stored as two rows: a `transfer_out` parent and a `transfer_in` child. Pairing on delete follows a strict precedence (see `application/transaction/usecases.c`):
+
+1. **`parent_tx_id` is the authoritative key.** The create path always writes `transfer_in.parent_tx_id = transfer_out.id` (`application/transfer/usecases.c`). Deletion locates the counterpart via `parent_tx_id` first.
+2. **The `(asset_id, linked_asset_id, amount)` attribute match is a legacy fallback only** — used solely for rows written before `parent_tx_id` existed (value `<= 0`). Do not treat the `%.6f` amount comparison as a bug to remove; deleting the fallback orphans legacy `transfer_in` rows and skips their balance reversal.
+3. **The `transfers` auxiliary table has no FK back to the transaction rows** (only `from_asset_id`/`to_asset_id`/`amount`), so its cleanup must match by asset pair + amount with `ORDER BY id DESC LIMIT 1`. This is a schema limitation, not a logic shortcut. Fixing it properly requires a migration adding a `transaction_id` linkage.
+
 ### Database Migration System
 
 Database schema changes are managed strictly via csilk's native C migration engine (`<csilk/drivers/db/migration.h>`):
@@ -83,6 +91,8 @@ Database schema changes are managed strictly via csilk's native C migration engi
 - **Auto-Baseline**: When booting against a pre-existing legacy database (where `users` table already exists but `schema_migrations` is missing), the engine automatically baselines versions `V001`~`V007` as applied. **Never drop or reinitialize production databases**.
 
 Balance direction is handled centrally: `balance_apply_delta()` flips the sign for liability assets (`loan`, `credit_card`, `other_liability`) so net-worth calculations stay correct. Transaction types are registered in `common/tx_types.c` — always use `tx_type_lookup()` instead of hard-coding type checks.
+
+All asset mutations are **ownership-filtered** (`WHERE id=? AND user_id=?`) as defense-in-depth: `balance_apply_delta()`, `apply_position_fc()`, `rollback_position_fc()`, and the ledger rebuild path each qualify `asset_id` by `user_id`, so a caller can never read or write another user's asset. A non-matching asset is treated as "not found" (position update no-ops). Always pass the transaction's `user_id` into these functions; the invariant `asset.user_id == tx.user_id` is already enforced at create time by `tx_asset_exists()`.
 
 ### AI Architecture — Unified AI Runtime
 
@@ -431,20 +441,83 @@ Frontend unit tests cover format helpers, crypto, auth store, offline-http sync,
 
 ## Commit Convention
 
+Follows [Conventional Commits](https://www.conventionalcommits.org/) with a gitmoji prefix. The header is the only required line — this repo commits almost exclusively as subject-only.
+
 ```
 type(scope): 🎯 subject
 ```
 
-| Type | Emoji |
-|------|-------|
-| feat | ✨ |
-| fix | 🐛 |
-| docs | 📝 |
-| style | 🎨 |
-| refactor | ♻️ |
-| test | ✅ |
-| build | 📦 |
-| ci | 👷 |
-| chore | 🧹 |
+**Anatomy**
 
-Emoji goes after the colon, one per commit. Subject is lowercase imperative mood.
+| Part | Rule |
+|------|------|
+| `type` | Required, lowercase, from the table below |
+| `(scope)` | Optional, lowercase, from the scope vocabulary below |
+| emoji | Required, one per commit, **after** the colon (`): ✨ …`), matching the type |
+| `subject` | Required, lowercase imperative mood, no trailing period, ≤ ~72 chars, describes the change not the ticket |
+
+**Types**
+
+| Type | Emoji | When |
+|------|-------|------|
+| feat | ✨ | New user-facing functionality |
+| fix | 🐛 | Bug fix / defect correction |
+| docs | 📝 | Documentation only (code, design, plans) |
+| style | 🎨 | Formatting/whitespace; no behavior change |
+| refactor | ♻️ | Restructuring; no behavior/API change |
+| perf | ⚡️ | Performance improvement |
+| test | ✅ | Add or update tests |
+| build | 📦 | Build system / dependency changes |
+| ci | 👷 | CI configuration & scripts |
+| chore | 🧹 | Maintenance; none of the above |
+| revert | ⏪️ | Reverts a prior commit (see below) |
+
+> Emoji MUST match the type per this table. Older commits (e.g. the `global-indices` series) used `🎯` as a catch-all for every type — do not propagate that; new commits use the mapped emoji. `test` is canonically `✅`; `🧪` appearing historically is deprecated.
+
+**Scopes** (lowercase; use the area the diff actually touches)
+
+| Scope | Covers |
+|-------|--------|
+| `core` | Financial/ledger core + shared `common/` (balance, tx_types, position calc) |
+| `domain` / `application` / `infrastructure` | DDD-layer changes when a diff spans one layer across domains |
+| `market` | Quotes, indices, exchange rates, scheduler, sync |
+| `transaction` | Transactions, transfers, fees, PnL write paths |
+| `asset` | Assets, positions, categories |
+| `ai` | AI Runtime, tools, MCP, policy, chat |
+| `auth` | Authentication, JWT, 2FA, RBAC, ledgers/membership |
+| `db` | Schema, migrations, repository/SQL plumbing |
+| `frontend` | Vue SPA/desktop components & stores |
+| `mobile` | Mobile views, offline sql.js, Capacitor |
+| `i18n` | Translation dictionaries |
+
+Omit the scope for repo-wide changes (e.g. `chore: sync auto-generated mobile components declarations`). Prefer the narrowest true scope; do not invent scopes ad hoc.
+
+**Body & footer**
+
+The subject-only form is the norm; add a body only when the *why* isn't obvious from the diff. When present:
+
+- Separate header from body with one blank line; wrap body at ~72 cols.
+- Explain motivation and contrast with alternatives — the *why*, not the *what* (the diff already shows the what).
+- Footer for references: `Closes #123`, `Refs …`.
+
+**Breaking changes**
+
+Append `!` before the colon (`feat(api)!: 🐛 …`) **and** add a `BREAKING CHANGE: <description>` footer. Reserve for wire-format, migration, or public-API changes the frontend must adapt to in lockstep.
+
+**Revert**
+
+`revert: ⏪️ <reverted subject>`, then a body line `This reverts commit <hash>.`.
+
+**Merge commits** (`Merge branch '…'`) are exempt from the convention.
+
+**Examples (from real history)**
+
+```
+refactor(core): ♻️ enforce user_id scope in position calculation and clean legacy models
+fix(transaction): 🐛 sanitize nullable foreign keys in tx_insert to sql null
+feat(market): ✨ implement market-clock aware quote_engine_sync_indices_to_db
+docs(market): 📝 add design spec for market minute sync and db-centric cqrs
+chore: sync auto-generated mobile components declarations
+```
+
+Anti-patterns: capitalized/gerund subjects (`✨ Added feature`), ticket-only or vague subjects (`🐛 fix bug`), emoji before the colon, multiple emoji in one commit, and non-mapped type/emoji pairs.

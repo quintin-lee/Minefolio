@@ -64,6 +64,11 @@ int balance_apply_delta(csilk_db_pool_t* pool,
 
 /**
  * @brief 对投资类资产应用买卖持仓变化（更新 quantity、cost_basis、net_value，精确无浮点误差）
+ *
+ * @note asset_id 由 user_id 限定（SQL 采用 WHERE id=? AND user_id=?），与
+ *       balance_apply_delta_m 及账本重建路径的资产归属过滤保持一致，属纵深防御：
+ *       若资产不属于该 user_id，则按“资产不存在”处理（持仓更新静默跳过，返回 0），
+ *       杜绝跨用户串改 quantity/cost_basis/net_value。
  */
 int apply_position_fc(csilk_db_pool_t* pool,
                       int64_t          asset_id,
@@ -90,6 +95,9 @@ int apply_position(csilk_db_pool_t* pool,
 
 /**
  * @brief 回滚投资类资产的买卖持仓变化（用于修改或删除投资交易，高精度定点执行）
+ *
+ * @note 与 apply_position_fc 一致：asset_id 由 user_id 限定（WHERE id=? AND user_id=?），
+ *       非归属资产按“不存在”处理（静默跳过，返回 0），防止跨用户回滚串改。
  */
 int rollback_position_fc(csilk_db_pool_t* pool,
                          int64_t          asset_id,

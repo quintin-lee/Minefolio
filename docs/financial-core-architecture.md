@@ -83,11 +83,12 @@ typedef struct {
    * `apply_position_fc` & `rollback_position_fc`：买入加权成本均摊、卖出成本核减、单位净值更新全量基于 `quantity_t`, `money_t`, `price_t` 定点数执行。
 3. **交易类型推导层 (`common/tx_types.h` / `common/tx_types.c`)**：
    * `tx_delta_m` & `tx_effective_ldelta_m`：完全由 Financial Core 驱动。
-4. **模型层 (`models/`)**：
-   * `daily_expense_t` (`money_t amount`, `currency_t currency`)
-   * `asset_t` (`money_t current_value`, `money_t cost_basis`, `quantity_t quantity`, `price_t net_value`)
-   * `transaction_t` (`money_t amount`, `price_t price_per_unit`, `quantity_t quantity`, `currency_t currency`)
-   * `transfer_t` (`money_t amount`, `currency_t currency`)
+4. **实体模型（`domain/*/entity.h`）**：
+   * 早期 `backend/src/models/` 下的表映射结构体属 defined-but-unused 的遗留副本，现已移除；强类型实体与定点字段改由 DDD 领域层承载（`domain/*/{entity,repository}.h`），仓储直接返回 `csilk_json_t*`，无独立 model 转换层。字段口径示例：
+   * `daily_expense` (`money_t amount`, `currency_t currency`)
+   * `asset` (`money_t current_value`, `money_t cost_basis`, `quantity_t quantity`, `price_t net_value`)
+   * `transaction` (`money_t amount`, `price_t price_per_unit`, `quantity_t quantity`, `currency_t currency`)
+   * `transfer` (`money_t amount`, `currency_t currency`)
 5. **外汇与服务层 (`services/market/exchange_rate_service.c`, `services/report_asset_service.c`, `services/dca_service.c`)**：
    * 多币种分桶汇总与外汇双因子归因损益（标的价格盈亏 vs 纯汇率损益）采用 `rate_t`, `money_t`, `percentage_t` 无误差核算。
 

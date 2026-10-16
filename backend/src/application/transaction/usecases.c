@@ -339,6 +339,15 @@ tx_usecase_delete(void* pool, const delete_tx_cmd_t* cmd, tx_usecase_result_t* o
     int is_transfer_out = (type && strcmp(type, "transfer_out") == 0);
     int is_transfer_in = (type && strcmp(type, "transfer_in") == 0);
 
+    /* 转账配对不变式（有意保留，勿当作 %.6f 浮点相等 bug 清理）：
+       - 权威配对键是 parent_tx_id：创建路径恒定将 transfer_in.parent_tx_id 写为
+         transfer_out.id（见 application/transfer/usecases.c 记录 in 交易处）。
+         删除时优先据此定位主/子单（下方 parent_tx_id=? / main_out_id=parent_tx_id）。
+       - 仅在「历史遗留行」（引入 parent_tx_id 之前落库、值 <= 0）时，才退化到
+         (transaction_type + asset_id + linked_asset_id + amount) 属性匹配兜底。
+       - transfers 辅助表无回指 transactions 的外键（仅存 from/to/amount），故其清理
+         只能按资产对 + amount + ORDER BY id DESC LIMIT 1 取最近一条，属 schema 约束所致。
+       去掉上述兜底会孤立遗留 transfer_in、漏回滚余额，故此处维持现状。 */
     if (is_transfer_out) {
         /* 1. transfer_out 作为转账主单，执行状态回滚 (同时还原转出和转入资产余额) */
         if (ledger_reverse_tx(pool, cmd->user_id, cmd->tx_id) != 0) {

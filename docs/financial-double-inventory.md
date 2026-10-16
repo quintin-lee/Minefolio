@@ -51,6 +51,8 @@
 
 ### 2.2 实体模型层 (`backend/src/models/`)
 
+> **状态说明（历史清单）**：本节记录的是 double→定点数迁移当时的盘点。所列 `backend/src/models/` 头文件属 defined-but-unused 的遗留副本，已在 DDD 分层重构后移除；强类型实体现由领域层 `domain/*/entity.h` 承载，仓储直接返回 `csilk_json_t*`，无独立 model 转换层。下表仅作迁移审计留档保留。
+
 | 文件 | 结构体 | 字段名 | 原类型 | 目标类型 | 语义说明 |
 | :--- | :--- | :--- | :---: | :---: | :--- |
 | `daily_expense.h` | `daily_expense_t` | `amount` | `double` | `money_t` | 日常收支金额 |
