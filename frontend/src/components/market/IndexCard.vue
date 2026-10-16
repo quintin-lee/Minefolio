@@ -20,8 +20,8 @@
         {{ formatNumber(item.current_price) }}
       </div>
       <div class="price-change-pill" :class="isPositive ? 'pill-up' : 'pill-down'">
-        <span>{{ isPositive ? '+' : '' }}{{ item.change_amount.toFixed(2) }}</span>
-        <span>({{ isPositive ? '+' : '' }}{{ item.change_percent.toFixed(2) }}%)</span>
+        <span>{{ isPositive ? '+' : '' }}{{ formatChange(item.change_amount) }}</span>
+        <span>({{ isPositive ? '+' : '' }}{{ formatChange(item.change_percent) }}%)</span>
       </div>
     </div>
 
@@ -69,11 +69,20 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
-const isPositive = computed(() => props.item.change_percent >= 0)
+const isPositive = computed(() => Number(props.item.change_percent) >= 0)
 
-function formatNumber(val: number) {
-  if (val === undefined || val === null) return '0.00'
-  return val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+function formatNumber(val: number | string | undefined | null) {
+  if (val === undefined || val === null || val === '') return '0.00'
+  const n = Number(val)
+  if (isNaN(n)) return '0.00'
+  return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function formatChange(val: number | string | undefined | null) {
+  if (val === undefined || val === null || val === '') return '0.00'
+  const n = Number(val)
+  if (isNaN(n)) return '0.00'
+  return n.toFixed(2)
 }
 
 function handleClick() {
@@ -81,7 +90,18 @@ function handleClick() {
 }
 
 const linePoints = computed(() => {
-  const pts = props.item.sparkline
+  const rawPts = props.item.sparkline
+  let pts: number[] = []
+  if (Array.isArray(rawPts)) {
+    pts = rawPts.map((v) => Number(v) || 0)
+  } else if (typeof rawPts === 'string') {
+    try {
+      const parsed = JSON.parse(rawPts)
+      pts = Array.isArray(parsed) ? parsed.map((v) => Number(v) || 0) : []
+    } catch {
+      pts = []
+    }
+  }
   if (!pts || pts.length < 2) return '0,20 200,20'
   const min = Math.min(...pts)
   const max = Math.max(...pts)

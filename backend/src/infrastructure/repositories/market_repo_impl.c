@@ -102,31 +102,21 @@ mf_market_repo_get_indices(void* pool, const char* category)
         snprintf(cat_str, sizeof(cat_str), "%s", category);
     }
 
-    csilk_json_t* rows = NULL;
+    csilk_json_t* raw_rows = NULL;
     if (cat_str[0] != '\0') {
         const char* sql = "SELECT symbol, name, category, region_flag, "
-                          "COALESCE(CAST(current_price AS REAL), 0.0) as current_price, "
-                          "COALESCE(CAST(change_amount AS REAL), 0.0) as change_amount, "
-                          "COALESCE(CAST(change_percent AS REAL), 0.0) as change_percent, "
-                          "COALESCE(CAST(prev_close AS REAL), 0.0) as prev_close, "
-                          "COALESCE(CAST(open_price AS REAL), 0.0) as open_price, "
-                          "COALESCE(CAST(high_price AS REAL), 0.0) as high_price, "
-                          "COALESCE(CAST(low_price AS REAL), 0.0) as low_price, "
+                          "current_price, change_amount, change_percent, "
+                          "prev_close, open_price, high_price, low_price, "
                           "currency, quote_time, sparkline, "
                           "CAST(updated_at AS TEXT) as updated_at "
                           "FROM market_indices WHERE category = ? "
                           "ORDER BY symbol ASC";
-        rows =
+        raw_rows =
             csilk_db_query_param_json((csilk_db_pool_t*)pool, sql, (const char*[]){cat_str, NULL});
     } else {
         const char* sql = "SELECT symbol, name, category, region_flag, "
-                          "COALESCE(CAST(current_price AS REAL), 0.0) as current_price, "
-                          "COALESCE(CAST(change_amount AS REAL), 0.0) as change_amount, "
-                          "COALESCE(CAST(change_percent AS REAL), 0.0) as change_percent, "
-                          "COALESCE(CAST(prev_close AS REAL), 0.0) as prev_close, "
-                          "COALESCE(CAST(open_price AS REAL), 0.0) as open_price, "
-                          "COALESCE(CAST(high_price AS REAL), 0.0) as high_price, "
-                          "COALESCE(CAST(low_price AS REAL), 0.0) as low_price, "
+                          "current_price, change_amount, change_percent, "
+                          "prev_close, open_price, high_price, low_price, "
                           "currency, quote_time, sparkline, "
                           "CAST(updated_at AS TEXT) as updated_at "
                           "FROM market_indices "
@@ -137,24 +127,60 @@ mf_market_repo_get_indices(void* pool, const char* category)
                           "WHEN 'global' THEN 4 "
                           "WHEN 'crypto' THEN 5 "
                           "ELSE 6 END, symbol ASC";
-        rows = csilk_db_query_param_json((csilk_db_pool_t*)pool, sql, (const char*[]){NULL});
+        raw_rows = csilk_db_query_param_json((csilk_db_pool_t*)pool, sql, (const char*[]){NULL});
     }
 
-    if (rows && csilk_json_is_array(rows)) {
-        size_t n = csilk_json_array_size(rows);
+    if (!raw_rows) {
+        return NULL;
+    }
+
+    csilk_json_t* out_arr = csilk_json_array();
+    if (csilk_json_is_array(raw_rows)) {
+        size_t n = csilk_json_array_size(raw_rows);
         for (size_t i = 0; i < n; i++) {
-            csilk_json_t* row = csilk_json_array_get(rows, i);
+            csilk_json_t* row = csilk_json_array_get(raw_rows, i);
+            csilk_json_t* item = csilk_json_object();
+
+            const char* symbol = csilk_json_get_string(row, "symbol");
+            const char* name = csilk_json_get_string(row, "name");
+            const char* cat = csilk_json_get_string(row, "category");
+            const char* flag = csilk_json_get_string(row, "region_flag");
+            const char* cur = csilk_json_get_string(row, "currency");
+            const char* qtime = csilk_json_get_string(row, "quote_time");
+            const char* utime = csilk_json_get_string(row, "updated_at");
+
+            csilk_json_add_string(item, "symbol", symbol ? symbol : "");
+            csilk_json_add_string(item, "name", name ? name : "");
+            csilk_json_add_string(item, "category", cat ? cat : "");
+            csilk_json_add_string(item, "region_flag", flag ? flag : "");
+
+            csilk_json_add_number(item, "current_price", db_get_num(row, "current_price"));
+            csilk_json_add_number(item, "change_amount", db_get_num(row, "change_amount"));
+            csilk_json_add_number(item, "change_percent", db_get_num(row, "change_percent"));
+            csilk_json_add_number(item, "prev_close", db_get_num(row, "prev_close"));
+            csilk_json_add_number(item, "open_price", db_get_num(row, "open_price"));
+            csilk_json_add_number(item, "high_price", db_get_num(row, "high_price"));
+            csilk_json_add_number(item, "low_price", db_get_num(row, "low_price"));
+
+            csilk_json_add_string(item, "currency", cur ? cur : "CNY");
+            csilk_json_add_string(item, "quote_time", qtime ? qtime : "");
+            csilk_json_add_string(item, "updated_at", utime ? utime : "");
+
             const char*   sp_str = csilk_json_get_string(row, "sparkline");
+            csilk_json_t* sp_arr = NULL;
             if (sp_str && sp_str[0]) {
-                csilk_json_t* sp_arr = csilk_json_parse(sp_str);
-                if (sp_arr) {
-                    csilk_json_add_array(row, "sparkline", sp_arr);
-                }
+                sp_arr = csilk_json_parse(sp_str);
             }
+            if (!sp_arr) {
+                sp_arr = csilk_json_array();
+            }
+            csilk_json_add_array(item, "sparkline", sp_arr);
+
+            csilk_json_array_append(out_arr, item);
         }
     }
-
-    return rows;
+    csilk_json_free(raw_rows);
+    return out_arr;
 }
 
 int

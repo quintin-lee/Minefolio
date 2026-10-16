@@ -12,8 +12,8 @@
         <div class="overview-main">
           <div class="current-price">{{ formatNumber(item.current_price) }}</div>
           <div class="price-delta">
-            <span>{{ isPositive ? '+' : '' }}{{ item.change_amount.toFixed(2) }}</span>
-            <span>({{ isPositive ? '+' : '' }}{{ item.change_percent.toFixed(2) }}%)</span>
+            <span>{{ isPositive ? '+' : '' }}{{ formatChange(item.change_amount) }}</span>
+            <span>({{ isPositive ? '+' : '' }}{{ formatChange(item.change_percent) }}%)</span>
           </div>
         </div>
         <div class="quote-time-tag">
@@ -62,14 +62,23 @@ const chartRef = ref<HTMLDivElement | null>(null)
 let chartInstance: echarts.ECharts | null = null
 
 const item = computed(() => marketStore.selectedDrawerIndex)
-const isPositive = computed(() => (item.value?.change_percent ?? 0) >= 0)
+const isPositive = computed(() => (Number(item.value?.change_percent) || 0) >= 0)
 const drawerTitle = computed(() =>
   item.value ? `${item.value.region_flag} ${item.value.name} (${item.value.symbol})` : ''
 )
 
-function formatNumber(val: number | undefined) {
-  if (val === undefined || val === null) return '0.00'
-  return val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+function formatNumber(val: number | string | undefined | null) {
+  if (val === undefined || val === null || val === '') return '0.00'
+  const n = Number(val)
+  if (isNaN(n)) return '0.00'
+  return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function formatChange(val: number | string | undefined | null) {
+  if (val === undefined || val === null || val === '') return '0.00'
+  const n = Number(val)
+  if (isNaN(n)) return '0.00'
+  return n.toFixed(2)
 }
 
 function renderChart() {

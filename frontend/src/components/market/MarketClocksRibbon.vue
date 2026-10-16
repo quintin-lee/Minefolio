@@ -22,7 +22,7 @@
         v-if="!marketStore.isAnyMarketActive"
         type="info"
         size="small"
-        effect="plain"
+        effect="light"
         class="sleep-tag"
       >
         <span class="sleep-dot" />
@@ -76,7 +76,7 @@ function getStatusLabel(status: string) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: var(--el-bg-color-overlay);
+  background: var(--el-fill-color-blank);
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
   padding: 8px 14px;
@@ -99,14 +99,14 @@ function getStatusLabel(status: string) {
   color: var(--el-text-color-regular);
 }
 .clock-pill {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 2px 8px;
+  gap: 6px;
+  padding: 3px 10px;
   border-radius: 12px;
   font-size: 12px;
   background: var(--el-fill-color-light);
-  border: 1px solid var(--el-border-color-extra-light);
+  border: 1px solid transparent;
 }
 .status-dot {
   width: 6px;

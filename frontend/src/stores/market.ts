@@ -199,7 +199,42 @@ export const useMarketStore = defineStore('market', () => {
           const nextDirections: Record<string, 'up' | 'down' | 'same'> = {}
           const nextPrices: Record<string, number> = {}
 
-          for (const item of data.indices) {
+          const normalizedIndices: GlobalIndexItem[] = data.indices.map((rawItem: any) => {
+            const rawSpark = rawItem.sparkline
+            let sparkline: number[] = []
+            if (Array.isArray(rawSpark)) {
+              sparkline = rawSpark.map((v) => Number(v) || 0)
+            } else if (typeof rawSpark === 'string') {
+              try {
+                const parsed = JSON.parse(rawSpark)
+                sparkline = Array.isArray(parsed) ? parsed.map((v) => Number(v) || 0) : []
+              } catch {
+                sparkline = []
+              }
+            }
+
+            const current_price = Number(rawItem.current_price) || 0
+            const change_amount = Number(rawItem.change_amount) || 0
+            const change_percent = Number(rawItem.change_percent) || 0
+            const open_price = Number(rawItem.open_price) || 0
+            const high_price = Number(rawItem.high_price) || 0
+            const low_price = Number(rawItem.low_price) || 0
+            const prev_close = Number(rawItem.prev_close) || 0
+
+            return {
+              ...rawItem,
+              current_price,
+              change_amount,
+              change_percent,
+              open_price,
+              high_price,
+              low_price,
+              prev_close,
+              sparkline,
+            }
+          })
+
+          for (const item of normalizedIndices) {
             const oldPrice = prevPrices.value[item.symbol]
             if (oldPrice !== undefined && oldPrice !== null) {
               if (item.current_price > oldPrice) {
@@ -217,7 +252,7 @@ export const useMarketStore = defineStore('market', () => {
 
           priceDirections.value = nextDirections
           prevPrices.value = nextPrices
-          indices.value = data.indices
+          indices.value = normalizedIndices
         }
 
         if (Array.isArray(data.market_clocks)) {
