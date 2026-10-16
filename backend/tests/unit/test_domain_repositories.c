@@ -283,6 +283,11 @@ test_transaction_ledger_scoping(csilk_db_pool_t* pool, int64_t user_id, int64_t 
     int64_t ledger_a = 101;
     int64_t ledger_b = 102;
 
+    csilk_db_exec(pool, "INSERT OR IGNORE INTO ledgers (id, owner_id, name, currency, is_default) "
+                        "VALUES (101, 1, 'Ledger 101', 'CNY', 0)");
+    csilk_db_exec(pool, "INSERT OR IGNORE INTO ledgers (id, owner_id, name, currency, is_default) "
+                        "VALUES (102, 1, 'Ledger 102', 'CNY', 0)");
+
     char uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
 
