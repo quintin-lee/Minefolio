@@ -166,4 +166,12 @@ if ! echo "$TEST_PROXY_RES" | grep -q '"success":true'; then
     exit 1
 fi
 
+echo "=== 9. Test Global Market Indices & Clocks API ==="
+INDICES_RES=$(curl -s -H "$AUTH_HEADER" "${BASE_URL}/api/market/indices?category=all")
+echo "Indices: ${INDICES_RES}"
+if ! echo "$INDICES_RES" | grep -q '"market_clocks":' || ! echo "$INDICES_RES" | grep -q '"indices":'; then
+    echo "FATAL: Indices API missing market_clocks or indices"
+    exit 1
+fi
+
 echo "=== ALL MARKET INTEGRATION TESTS PASSED SUCCESSFULLY! ==="

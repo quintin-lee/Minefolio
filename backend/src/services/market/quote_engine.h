@@ -22,9 +22,16 @@ int
 quote_engine_test_connection(const char* proxy, char* out_msg, size_t msg_cap, int* out_latency_ms);
 
 /* Calculate global market clocks status */
-int quote_engine_calc_market_clocks(time_t now, market_clock_item_t* out_clocks, int max_clocks, int* out_count);
+int quote_engine_calc_market_clocks(time_t               now,
+                                    market_clock_item_t* out_clocks,
+                                    int                  max_clocks,
+                                    int*                 out_count);
 
 /* Fetch and aggregate global market indices with in-memory caching */
-int quote_engine_get_indices(const char* category,
-                             global_index_item_t* out_indices, int max_indices, int* out_count,
-                             market_clock_item_t* out_clocks, int max_clocks, int* out_clock_count);
+int quote_engine_get_indices(const char*          category,
+                             global_index_item_t* out_indices,
+                             int                  max_indices,
+                             int*                 out_count,
+                             market_clock_item_t* out_clocks,
+                             int                  max_clocks,
+                             int*                 out_clock_count);

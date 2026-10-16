@@ -208,7 +208,10 @@ quote_engine_test_connection(const char* proxy, char* out_msg, size_t msg_cap, i
 }
 
 int
-quote_engine_calc_market_clocks(time_t now, market_clock_item_t* out_clocks, int max_clocks, int* out_count)
+quote_engine_calc_market_clocks(time_t               now,
+                                market_clock_item_t* out_clocks,
+                                int                  max_clocks,
+                                int*                 out_count)
 {
     if (!out_clocks || max_clocks < 5 || !out_count) {
         return -1;
@@ -223,11 +226,11 @@ quote_engine_calc_market_clocks(time_t now, market_clock_item_t* out_clocks, int
         int         open_h2, open_m2, close_h2, close_m2;
         int         pre_h, pre_m;
     } configs[] = {
-        {"SSE_SZSE", "A股 (沪深)", "Asia/Shanghai", 8, 9, 30, 11, 30, 13, 0, 15, 0, 9, 15},
-        {"HKEX", "港股", "Asia/Hong_Kong", 8, 9, 30, 12, 0, 13, 0, 16, 0, 9, 0},
-        {"TSE", "东京", "Asia/Tokyo", 9, 9, 0, 11, 30, 12, 30, 15, 0, 8, 30},
-        {"LSE", "伦敦", "Europe/London", 1, 8, 0, 16, 30, 0, 0, 0, 0, 7, 0},
-        {"NYSE", "美股", "America/New_York", -4, 9, 30, 16, 0, 0, 0, 0, 0, 4, 0},
+        {"SSE_SZSE", "A股 (沪深)", "Asia/Shanghai",    8,  9, 30, 11, 30, 13, 0,  15, 0, 9, 15},
+        {"HKEX",     "港股",       "Asia/Hong_Kong",   8,  9, 30, 12, 0,  13, 0,  16, 0, 9, 0 },
+        {"TSE",      "东京",       "Asia/Tokyo",       9,  9, 0,  11, 30, 12, 30, 15, 0, 8, 30},
+        {"LSE",      "伦敦",       "Europe/London",    1,  8, 0,  16, 30, 0,  0,  0,  0, 7, 0 },
+        {"NYSE",     "美股",       "America/New_York", -4, 9, 30, 16, 0,  0,  0,  0,  0, 4, 0 },
     };
 
     *out_count = 5;
@@ -237,7 +240,11 @@ quote_engine_calc_market_clocks(time_t now, market_clock_item_t* out_clocks, int
         strncpy(c->market, configs[i].market, sizeof(c->market) - 1);
         strncpy(c->name, configs[i].name, sizeof(c->name) - 1);
         strncpy(c->timezone, configs[i].tz, sizeof(c->timezone) - 1);
-        snprintf(c->open_time, sizeof(c->open_time), "%02d:%02d", configs[i].open_h1, configs[i].open_m1);
+        snprintf(c->open_time,
+                 sizeof(c->open_time),
+                 "%02d:%02d",
+                 configs[i].open_h1,
+                 configs[i].open_m1);
         snprintf(c->close_time,
                  sizeof(c->close_time),
                  "%02d:%02d",
@@ -256,11 +263,11 @@ quote_engine_calc_market_clocks(time_t now, market_clock_item_t* out_clocks, int
             continue;
         }
 
-        int  m_open1 = configs[i].open_h1 * 60 + configs[i].open_m1;
-        int  m_close1 = configs[i].close_h1 * 60 + configs[i].close_m1;
-        int  m_open2 = configs[i].open_h2 * 60 + configs[i].open_m2;
-        int  m_close2 = configs[i].close_h2 * 60 + configs[i].close_m2;
-        int  m_pre = configs[i].pre_h * 60 + configs[i].pre_m;
+        int m_open1 = configs[i].open_h1 * 60 + configs[i].open_m1;
+        int m_close1 = configs[i].close_h1 * 60 + configs[i].close_m1;
+        int m_open2 = configs[i].open_h2 * 60 + configs[i].open_m2;
+        int m_close2 = configs[i].close_h2 * 60 + configs[i].close_m2;
+        int m_pre = configs[i].pre_h * 60 + configs[i].pre_m;
 
         bool is_open = (minutes >= m_open1 && minutes <= m_close1);
         if (!is_open && configs[i].open_h2 > 0) {
@@ -327,21 +334,21 @@ refresh_indices_cache_locked(void)
         double      def_price;
         double      def_change;
     } presets[] = {
-        {"sh000001", "上证指数", "cn", "🇨🇳", "CNY", "stock_cn", 3285.40, 0.78},
-        {"sz399001", "深证成指", "cn", "🇨🇳", "CNY", "stock_cn", 10550.20, 0.52},
-        {"sz399006", "创业板指", "cn", "🇨🇳", "CNY", "stock_cn", 2188.60, 1.15},
-        {"sh000300", "沪深300",  "cn", "🇨🇳", "CNY", "stock_cn", 3920.10, 0.65},
-        {"hkHSI",    "恒生指数", "hk", "🇭🇰", "HKD", "stock_hk", 20630.00, -0.25},
-        {"hkHSTECH", "恒生科技", "hk", "🇭🇰", "HKD", "stock_hk", 4520.50, 0.42},
-        {"^GSPC",    "标普 500", "us", "🇺🇸", "USD", "index", 5864.67, 0.42},
-        {"^IXIC",    "纳斯达克", "us", "🇺🇸", "USD", "index", 18373.61, -0.18},
-        {"^DJI",     "道琼斯",   "us", "🇺🇸", "USD", "index", 43065.22, 0.35},
-        {"^N225",    "日经 225", "global", "🇯🇵", "JPY", "index", 39180.30, 0.88},
-        {"^GDAXI",   "德国 DAX", "global", "🇩🇪", "EUR", "index", 19580.40, 0.21},
-        {"^FTSE",    "英国富时", "global", "🇬🇧", "GBP", "index", 8240.10, -0.05},
-        {"BTC-USD",  "比特币",   "crypto", "🪙", "USD", "crypto", 67800.00, 2.45},
-        {"ETH-USD",  "以太坊",   "crypto", "🪙", "USD", "crypto", 2640.00, 1.82},
-        {"GC=F",     "黄金现货", "crypto", "🪙", "USD", "commodity", 2680.50, 0.38},
+        {"sh000001", "上证指数", "cn",     "🇨🇳", "CNY", "stock_cn",  3285.40,  0.78 },
+        {"sz399001", "深证成指", "cn",     "🇨🇳", "CNY", "stock_cn",  10550.20, 0.52 },
+        {"sz399006", "创业板指", "cn",     "🇨🇳", "CNY", "stock_cn",  2188.60,  1.15 },
+        {"sh000300", "沪深300",  "cn",     "🇨🇳", "CNY", "stock_cn",  3920.10,  0.65 },
+        {"hkHSI",    "恒生指数", "hk",     "🇭🇰", "HKD", "stock_hk",  20630.00, -0.25},
+        {"hkHSTECH", "恒生科技", "hk",     "🇭🇰", "HKD", "stock_hk",  4520.50,  0.42 },
+        {"^GSPC",    "标普 500", "us",     "🇺🇸", "USD", "index",     5864.67,  0.42 },
+        {"^IXIC",    "纳斯达克", "us",     "🇺🇸", "USD", "index",     18373.61, -0.18},
+        {"^DJI",     "道琼斯",   "us",     "🇺🇸", "USD", "index",     43065.22, 0.35 },
+        {"^N225",    "日经 225", "global", "🇯🇵", "JPY", "index",     39180.30, 0.88 },
+        {"^GDAXI",   "德国 DAX", "global", "🇩🇪", "EUR", "index",     19580.40, 0.21 },
+        {"^FTSE",    "英国富时", "global", "🇬🇧", "GBP", "index",     8240.10,  -0.05},
+        {"BTC-USD",  "比特币",   "crypto", "🪙", "USD", "crypto",    67800.00, 2.45 },
+        {"ETH-USD",  "以太坊",   "crypto", "🪙", "USD", "crypto",    2640.00,  1.82 },
+        {"GC=F",     "黄金现货", "crypto", "🪙", "USD", "commodity", 2680.50,  0.38 },
     };
 
     int n = sizeof(presets) / sizeof(presets[0]);
@@ -357,10 +364,11 @@ refresh_indices_cache_locked(void)
         strncpy(item->currency, presets[i].currency, sizeof(item->currency) - 1);
 
         market_quote_t q;
-        if (quote_engine_fetch_quote(presets[i].symbol, presets[i].source, &q) == 0 && q.current_price > 0) {
+        if (quote_engine_fetch_quote(presets[i].symbol, presets[i].source, &q) == 0 &&
+            q.current_price > 0) {
             item->current_price = q.current_price;
             item->change_percent = q.change_percent;
-            strncpy(item->quote_time, q.quote_time, sizeof(item->quote_time) - 1);
+            snprintf(item->quote_time, sizeof(item->quote_time), "%s", q.quote_time);
         } else {
             item->current_price = presets[i].def_price;
             item->change_percent = presets[i].def_change;
@@ -403,7 +411,8 @@ quote_engine_get_indices(const char*          category,
 
     pthread_mutex_lock(&g_indices_cache.lock);
     time_t now = time(NULL);
-    if (g_indices_cache.count == 0 || (now - g_indices_cache.last_updated) > INDICES_CACHE_TTL_SEC) {
+    if (g_indices_cache.count == 0 ||
+        (now - g_indices_cache.last_updated) > INDICES_CACHE_TTL_SEC) {
         refresh_indices_cache_locked();
     }
 

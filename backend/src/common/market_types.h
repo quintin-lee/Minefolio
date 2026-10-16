@@ -56,8 +56,8 @@ typedef struct {
 typedef struct {
     char   symbol[64];
     char   name[128];
-    char   category[32];     /* "cn", "us", "hk", "global", "crypto" */
-    char   region_flag[16];  /* "🇨🇳", "🇺🇸", "🇭🇰", "🇯🇵", "🇬🇧", "🪙" */
+    char   category[32];    /* "cn", "us", "hk", "global", "crypto" */
+    char   region_flag[16]; /* "🇨🇳", "🇺🇸", "🇭🇰", "🇯🇵", "🇬🇧", "🪙" */
     double current_price;
     double change_amount;
     double change_percent;
@@ -76,10 +76,10 @@ typedef struct {
  * @brief 全球交易所交易钟模型
  */
 typedef struct {
-    char market[32];       /* "SSE_SZSE", "HKEX", "TSE", "LSE", "NYSE" */
-    char name[64];         /* "A股 (沪深)", "港股", ... */
-    char timezone[64];     /* "Asia/Shanghai", ... */
-    char status[16];       /* "open", "closed", "pre", "after" */
+    char market[32];   /* "SSE_SZSE", "HKEX", "TSE", "LSE", "NYSE" */
+    char name[64];     /* "A股 (沪深)", "港股", ... */
+    char timezone[64]; /* "Asia/Shanghai", ... */
+    char status[16];   /* "open", "closed", "pre", "after" */
     char open_time[16];
     char close_time[16];
 } market_clock_item_t;

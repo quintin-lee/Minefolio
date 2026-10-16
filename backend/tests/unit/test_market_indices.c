@@ -61,10 +61,34 @@ static void test_quote_engine_get_indices_cache(void) {
     printf("PASS: test_quote_engine_get_indices_cache\n");
 }
 
+#include "application/market/usecases.h"
+
+static void test_market_usecase_indices(void) {
+    csilk_json_t* data = NULL;
+    market_usecase_result_t res = {0};
+
+    int rc = market_usecase_get_indices("cn", &data, &res);
+    assert(rc == 0);
+    assert(res.code == 0);
+    assert(data != NULL);
+
+    const csilk_json_t* clocks = csilk_json_get_array(data, "market_clocks");
+    assert(clocks != NULL && csilk_json_is_array(clocks));
+    assert(csilk_json_array_size(clocks) == 5);
+
+    const csilk_json_t* indices = csilk_json_get_array(data, "indices");
+    assert(indices != NULL && csilk_json_is_array(indices));
+    assert(csilk_json_array_size(indices) == 4);
+
+    csilk_json_free(data);
+    printf("PASS: test_market_usecase_indices\n");
+}
+
 int main(void) {
     setenv("MINEFOLIO_MARKET_MOCK", "1", 1);
     printf("=== Running Unit Test: Market Indices & Clocks ===\n");
     test_market_clocks_calc();
     test_quote_engine_get_indices_cache();
+    test_market_usecase_indices();
     return 0;
 }
