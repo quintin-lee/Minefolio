@@ -269,9 +269,11 @@ apply_position_fc(csilk_db_pool_t* pool,
         pool,
         "UPDATE assets SET quantity=?, cost_basis=?, net_value=? WHERE id=? AND user_id=?",
         p);
-    if (upd_res) {
-        csilk_json_free(upd_res);
+    if (!upd_res) {
+        csilk_json_free(pos);
+        return -2;
     }
+    csilk_json_free(upd_res);
     csilk_json_free(pos);
     return 0;
 }
@@ -438,9 +440,11 @@ rollback_position_fc(csilk_db_pool_t* pool,
         pool,
         "UPDATE assets SET quantity=?, cost_basis=?, net_value=? WHERE id=? AND user_id=?",
         p);
-    if (upd_res) {
-        csilk_json_free(upd_res);
+    if (!upd_res) {
+        csilk_json_free(pos);
+        return -2;
     }
+    csilk_json_free(upd_res);
     csilk_json_free(pos);
     return 0;
 }
