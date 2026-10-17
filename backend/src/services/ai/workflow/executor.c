@@ -2,6 +2,7 @@
 #include "services/ai_service.h"
 #include "infrastructure/repositories/ai_session_repo_impl.h"
 #include "common/db.h"
+#include "services/ai/runtime/fast_json.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -124,12 +125,16 @@ ai_workflow_execute_stream(csilk_ctx_t* c, const ai_workflow_graph_t* graph, ai_
                         chunk[take] = '\0';
                         offset += take;
 
-                        csilk_json_t* ev_chunk = csilk_json_object();
-                        csilk_json_add_string(ev_chunk, "content", chunk);
-                        char* str_chunk = csilk_json_serialize(ev_chunk, &slen);
-                        csilk_json_free(ev_chunk);
-                        csilk_sse_send(c, "delta", str_chunk ? str_chunk : "{}");
-                        free(str_chunk);
+                        char sse_payload[512];
+                        int  w = snprintf(sse_payload, sizeof(sse_payload), "{\"content\":\"");
+                        if (w > 0 && (size_t)w < sizeof(sse_payload)) {
+                            int el = ai_json_escape_fast(chunk, take, sse_payload + w, sizeof(sse_payload) - w - 8);
+                            if (el >= 0) {
+                                w += el;
+                                snprintf(sse_payload + w, sizeof(sse_payload) - w, "\"}");
+                                csilk_sse_send(c, "delta", sse_payload);
+                            }
+                        }
                     }
 
                     if (pool && session_id > 0) {
