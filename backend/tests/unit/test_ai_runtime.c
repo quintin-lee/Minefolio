@@ -242,6 +242,59 @@ static void test_workflow_executor_auth_boundary(void) {
     printf("PASS: test_workflow_executor_auth_boundary\n");
 }
 
+#include "services/ai/runtime/fast_json.h"
+
+static void
+test_ai_json_escape_fast_comprehensive(void)
+{
+    printf("--- Running test_ai_json_escape_fast_comprehensive ---\n");
+
+    /* 1. 常规无特殊字符文本 */
+    {
+        char out[128];
+        int n = ai_json_escape_fast("hello world", 11, out, sizeof(out));
+        assert(n == 11);
+        assert(strcmp(out, "hello world") == 0);
+    }
+
+    /* 2. 引号与反斜杠 */
+    {
+        char out[128];
+        const char* raw = "quote \" and slash \\ test";
+        int n = ai_json_escape_fast(raw, strlen(raw), out, sizeof(out));
+        assert(n > 0);
+        assert(strcmp(out, "quote \\\" and slash \\\\ test") == 0);
+    }
+
+    /* 3. 控制字符 \n, \r, \t, 以及 \x01 */
+    {
+        char out[128];
+        const char* raw = "line1\nline2\t\"tab\"\x01";
+        int n = ai_json_escape_fast(raw, strlen(raw), out, sizeof(out));
+        assert(n > 0);
+        assert(strcmp(out, "line1\\nline2\\t\\\"tab\\\"\\u0001") == 0);
+    }
+
+    /* 4. UTF-8 中文与 Emoji 原样保留 */
+    {
+        char out[128];
+        const char* raw = "投资组合 📈 $1000 🪙";
+        int n = ai_json_escape_fast(raw, strlen(raw), out, sizeof(out));
+        assert(n == (int)strlen(raw));
+        assert(strcmp(out, raw) == 0);
+    }
+
+    /* 5. 缓冲区溢出保护 */
+    {
+        char out[8];
+        const char* raw = "abcdefghijk";
+        int n = ai_json_escape_fast(raw, strlen(raw), out, sizeof(out));
+        assert(n == -1);
+    }
+
+    printf("PASS: test_ai_json_escape_fast_comprehensive\n");
+}
+
 int main(void) {
     test_runtime_error_taxonomy();
     test_runtime_limits_and_budgets();
@@ -252,6 +305,8 @@ int main(void) {
     test_runtime_validation_rejection();
     test_runtime_elapsed_timeout();
     test_workflow_executor_auth_boundary();
+    test_ai_json_escape_fast_comprehensive();
     printf("All runtime unit and edge tests passed!\n");
     return 0;
 }
+
