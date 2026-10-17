@@ -35,19 +35,23 @@ int64_t
 mf_transfer_repo_insert(void* db_pool, int64_t user_id, const mf_transfer_t* transfer)
 {
     csilk_db_pool_t* pool = (csilk_db_pool_t*)db_pool;
-    char             uid[32], fid[32], tid[32], amt[64], lid[32];
+    char             uid[32], fid[32], tid[32], amt[64], lid[32], from_tx[32], to_tx[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     snprintf(fid, sizeof(fid), "%lld", (long long)transfer->from_asset_id);
     snprintf(tid, sizeof(tid), "%lld", (long long)transfer->to_asset_id);
     snprintf(amt, sizeof(amt), "%.6f", transfer->amount);
     snprintf(lid, sizeof(lid), "%lld", (long long)transfer->ledger_id);
+    snprintf(from_tx, sizeof(from_tx), "%lld", (long long)transfer->from_tx_id);
+    snprintf(to_tx, sizeof(to_tx), "%lld", (long long)transfer->to_tx_id);
 
     csilk_json_t* res = csilk_db_query_param_json(
         pool,
         "INSERT INTO transfers (user_id, from_asset_id, to_asset_id, amount, currency, "
-        "transfer_date, note, ledger_id) "
+        "transfer_date, note, ledger_id, from_tx_id, to_tx_id) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, "
-        "COALESCE(CAST(NULLIF(?, '0') AS BIGINT), (SELECT ledger_id FROM assets WHERE id=?))) "
+        "COALESCE(CAST(NULLIF(?, '0') AS BIGINT), (SELECT ledger_id FROM assets WHERE id=?)), "
+        "CAST(NULLIF(?, '0') AS BIGINT), "
+        "CAST(NULLIF(?, '0') AS BIGINT)) "
         "RETURNING id",
         (const char*[]){uid,
                         fid,
@@ -58,6 +62,8 @@ mf_transfer_repo_insert(void* db_pool, int64_t user_id, const mf_transfer_t* tra
                         transfer->note[0] ? transfer->note : "",
                         lid,
                         fid,
+                        from_tx,
+                        to_tx,
                         NULL});
     int64_t id = 0;
     if (res && csilk_json_array_size(res) > 0) {

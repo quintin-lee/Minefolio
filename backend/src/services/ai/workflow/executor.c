@@ -128,7 +128,8 @@ ai_workflow_execute_stream(csilk_ctx_t* c, const ai_workflow_graph_t* graph, ai_
                         char sse_payload[512];
                         int  w = snprintf(sse_payload, sizeof(sse_payload), "{\"content\":\"");
                         if (w > 0 && (size_t)w < sizeof(sse_payload)) {
-                            int el = ai_json_escape_fast(chunk, take, sse_payload + w, sizeof(sse_payload) - w - 8);
+                            int el = ai_json_escape_fast(
+                                chunk, take, sse_payload + w, sizeof(sse_payload) - w - 8);
                             if (el >= 0) {
                                 w += el;
                                 snprintf(sse_payload + w, sizeof(sse_payload) - w, "\"}");
