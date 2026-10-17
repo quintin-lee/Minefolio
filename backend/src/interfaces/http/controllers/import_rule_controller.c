@@ -29,12 +29,11 @@ import_rule_service_get(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    if (!id_str) {
-        respond_bad_request(c, "缺少规则 ID");
+    int64_t     id = parse_query_int_strict(id_str, -1);
+    if (id <= 0) {
+        respond_bad_request(c, "缺少或无效的规则 ID");
         return;
     }
-
-    int64_t          id = atoll(id_str);
     csilk_db_pool_t* pool = db_get_pool();
     csilk_json_t*    res = mf_import_rule_get(pool, user_id, id);
 
@@ -116,12 +115,11 @@ import_rule_service_update(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    if (!id_str) {
-        respond_bad_request(c, "缺少规则 ID");
+    int64_t     id = parse_query_int_strict(id_str, -1);
+    if (id <= 0) {
+        respond_bad_request(c, "缺少或无效的规则 ID");
         return;
     }
-
-    int64_t       id = atoll(id_str);
     csilk_json_t* body = csilk_bind_json(c);
     if (!body) {
         respond_bad_request(c, "请求体必须为 JSON");
@@ -177,12 +175,11 @@ import_rule_service_delete(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    if (!id_str) {
-        respond_bad_request(c, "缺少规则 ID");
+    int64_t     id = parse_query_int_strict(id_str, -1);
+    if (id <= 0) {
+        respond_bad_request(c, "缺少或无效的规则 ID");
         return;
     }
-
-    int64_t          id = atoll(id_str);
     csilk_db_pool_t* pool = db_get_pool();
     mf_import_rule_delete(pool, user_id, id);
     respond_ok_null(c);

@@ -86,11 +86,11 @@ api_transactions_update(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    if (!id_str) {
-        respond_bad_request(c, "缺少 id");
+    int64_t     tx_id_val = parse_query_int_strict(id_str, -1);
+    if (tx_id_val <= 0) {
+        respond_bad_request(c, "缺少或无效的 id");
         return;
     }
-    int64_t tx_id_val = atoll(id_str);
 
     csilk_json_t* body = csilk_bind_json(c);
     if (!body) {
@@ -149,11 +149,11 @@ api_transactions_delete(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    if (!id_str) {
-        respond_bad_request(c, "缺少 id");
+    int64_t     tx_id_val = parse_query_int_strict(id_str, -1);
+    if (tx_id_val <= 0) {
+        respond_bad_request(c, "缺少或无效的 id");
         return;
     }
-    int64_t tx_id_val = atoll(id_str);
 
     delete_tx_cmd_t cmd = {
         .user_id = user_id,
@@ -192,6 +192,22 @@ api_transactions_list(csilk_ctx_t* c)
 
     const char* aid_str = csilk_get_query(c, "asset_id");
     const char* cid_str = csilk_get_query(c, "category_id");
+    int64_t     aid_val = 0;
+    if (aid_str && aid_str[0]) {
+        aid_val = parse_query_int_strict(aid_str, -1);
+        if (aid_val < 0) {
+            respond_bad_request(c, "无效的 asset_id");
+            return;
+        }
+    }
+    int64_t cid_val = 0;
+    if (cid_str && cid_str[0]) {
+        cid_val = parse_query_int_strict(cid_str, -1);
+        if (cid_val < 0) {
+            respond_bad_request(c, "无效的 category_id");
+            return;
+        }
+    }
     const char* type = csilk_get_query(c, "transaction_type");
     if (!type || strlen(type) == 0) {
         type = csilk_get_query(c, "type");
@@ -205,8 +221,8 @@ api_transactions_list(csilk_ctx_t* c)
         .ledger_id = ledger_id,
         .page = page,
         .page_size = page_size,
-        .asset_id = aid_str ? atoll(aid_str) : 0,
-        .category_id = cid_str ? atoll(cid_str) : 0,
+        .asset_id = aid_val,
+        .category_id = cid_val,
         .type = type,
         .source_type = source_type,
         .start_date = start_date,

@@ -65,11 +65,11 @@ api_ai_trace_get_handler(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    if (!id_str) {
-        respond_bad_request(c, "缺少 id");
+    int64_t     id = parse_query_int_strict(id_str, -1);
+    if (id <= 0) {
+        respond_bad_request(c, "缺少或无效的 id");
         return;
     }
-    int64_t id = atoll(id_str);
 
     csilk_json_t*       out_data = NULL;
     ai_usecase_result_t res = {0};

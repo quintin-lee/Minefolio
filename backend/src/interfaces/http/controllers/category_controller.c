@@ -230,8 +230,9 @@ api_categories_update(csilk_ctx_t* c)
         return;
     }
     const char* id_str = csilk_get_param(c, "id");
-    if (!id_str) {
-        respond_bad_request(c, "缺少 id");
+    int64_t     cid = parse_query_int_strict(id_str, -1);
+    if (cid <= 0) {
+        respond_bad_request(c, "缺少或无效的 id");
         return;
     }
     csilk_json_t* body = csilk_bind_json(c);
@@ -242,7 +243,7 @@ api_categories_update(csilk_ctx_t* c)
     update_category_cmd_t cmd = {
         .user_id = user_id,
         .ledger_id = ledger_id,
-        .category_id = atoll(id_str),
+        .category_id = cid,
         .name = csilk_json_get_string(body, "name"),
         .type = csilk_json_get_string(body, "type"),
         .asset_type = csilk_json_get_string(body, "asset_type"),
@@ -274,14 +275,15 @@ api_categories_delete(csilk_ctx_t* c)
         return;
     }
     const char* id_str = csilk_get_param(c, "id");
-    if (!id_str) {
-        respond_bad_request(c, "缺少 id");
+    int64_t     cid = parse_query_int_strict(id_str, -1);
+    if (cid <= 0) {
+        respond_bad_request(c, "缺少或无效的 id");
         return;
     }
     delete_category_cmd_t cmd = {
         .user_id = user_id,
         .ledger_id = ledger_id,
-        .category_id = atoll(id_str),
+        .category_id = cid,
     };
     category_usecase_result_t res = {0};
     int                       rc = category_usecase_delete(db_get_pool(), &cmd, &res);
@@ -308,14 +310,15 @@ api_categories_children(csilk_ctx_t* c)
         return;
     }
     const char* id_str = csilk_get_param(c, "id");
-    if (!id_str) {
-        respond_bad_request(c, "缺少 id");
+    int64_t     cid = parse_query_int_strict(id_str, -1);
+    if (cid <= 0) {
+        respond_bad_request(c, "缺少或无效的 id");
         return;
     }
 
     category_usecase_seed_defaults(db_get_pool(), user_id, ledger_id);
     csilk_json_t* list = NULL;
-    if (category_usecase_children(db_get_pool(), user_id, ledger_id, atoll(id_str), &list) != 0) {
+    if (category_usecase_children(db_get_pool(), user_id, ledger_id, cid, &list) != 0) {
         respond_error(c, 500, "查询子分类失败");
         return;
     }

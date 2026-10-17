@@ -79,7 +79,11 @@ ledger_service_get(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    int64_t     lid = id_str ? atoll(id_str) : 0;
+    int64_t     lid = parse_query_int_strict(id_str, -1);
+    if (lid <= 0) {
+        respond_bad_request(c, "缺少或无效的账本 id");
+        return;
+    }
 
     ledger_usecase_result_t res = {0};
     csilk_json_t*           detail = ledger_usecase_get(db_get_pool(), user_id, lid, &res);
@@ -100,7 +104,11 @@ ledger_service_update(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    int64_t     lid = id_str ? atoll(id_str) : 0;
+    int64_t     lid = parse_query_int_strict(id_str, -1);
+    if (lid <= 0) {
+        respond_bad_request(c, "缺少或无效的账本 id");
+        return;
+    }
 
     csilk_json_t* body = csilk_bind_json(c);
     if (!body) {
@@ -140,7 +148,11 @@ ledger_service_delete(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    int64_t     lid = id_str ? atoll(id_str) : 0;
+    int64_t     lid = parse_query_int_strict(id_str, -1);
+    if (lid <= 0) {
+        respond_bad_request(c, "缺少或无效的账本 id");
+        return;
+    }
 
     ledger_usecase_result_t res = {0};
     int                     rc = ledger_usecase_delete(db_get_pool(), user_id, lid, &res);
@@ -163,7 +175,11 @@ ledger_service_list_members(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    int64_t     lid = id_str ? atoll(id_str) : 0;
+    int64_t     lid = parse_query_int_strict(id_str, -1);
+    if (lid <= 0) {
+        respond_bad_request(c, "缺少或无效的账本 id");
+        return;
+    }
 
     ledger_usecase_result_t res = {0};
     csilk_json_t* members = ledger_usecase_list_members(db_get_pool(), user_id, lid, &res);
@@ -184,7 +200,11 @@ ledger_service_add_member(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    int64_t     lid = id_str ? atoll(id_str) : 0;
+    int64_t     lid = parse_query_int_strict(id_str, -1);
+    if (lid <= 0) {
+        respond_bad_request(c, "缺少或无效的账本 id");
+        return;
+    }
 
     csilk_json_t* body = csilk_bind_json(c);
     if (!body) {
@@ -221,8 +241,12 @@ ledger_service_update_member(csilk_ctx_t* c)
 
     const char* id_str = csilk_get_param(c, "id");
     const char* uid_str = csilk_get_param(c, "user_id");
-    int64_t     lid = id_str ? atoll(id_str) : 0;
-    int64_t     target_uid = uid_str ? atoll(uid_str) : 0;
+    int64_t     lid = parse_query_int_strict(id_str, -1);
+    int64_t     target_uid = parse_query_int_strict(uid_str, -1);
+    if (lid <= 0 || target_uid <= 0) {
+        respond_bad_request(c, "缺少或无效的参数");
+        return;
+    }
 
     csilk_json_t* body = csilk_bind_json(c);
     const char*   new_role = body ? csilk_json_get_string(body, "role") : "editor";
@@ -259,8 +283,12 @@ ledger_service_remove_member(csilk_ctx_t* c)
 
     const char* id_str = csilk_get_param(c, "id");
     const char* uid_str = csilk_get_param(c, "user_id");
-    int64_t     lid = id_str ? atoll(id_str) : 0;
-    int64_t     target_uid = uid_str ? atoll(uid_str) : 0;
+    int64_t     lid = parse_query_int_strict(id_str, -1);
+    int64_t     target_uid = parse_query_int_strict(uid_str, -1);
+    if (lid <= 0 || target_uid <= 0) {
+        respond_bad_request(c, "缺少或无效的参数");
+        return;
+    }
 
     remove_member_cmd_t cmd = {
         .ledger_id = lid,
@@ -289,7 +317,11 @@ ledger_service_create_invite_code(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    int64_t     lid = id_str ? atoll(id_str) : 0;
+    int64_t     lid = parse_query_int_strict(id_str, -1);
+    if (lid <= 0) {
+        respond_bad_request(c, "缺少或无效的账本 id");
+        return;
+    }
 
     ledger_invite_result_t res = {0};
     int rc = ledger_usecase_create_invite_code(db_get_pool(), user_id, lid, &res);

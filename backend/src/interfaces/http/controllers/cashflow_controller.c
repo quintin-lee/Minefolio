@@ -76,7 +76,11 @@ api_cashflow_get_schedule(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    int64_t     id = id_str ? atoll(id_str) : 0;
+    int64_t     id = parse_query_int_strict(id_str, -1);
+    if (id <= 0) {
+        respond_bad_request(c, "缺少或无效的 id");
+        return;
+    }
 
     csilk_json_t*             item = NULL;
     cashflow_usecase_result_t res = {0};
@@ -105,7 +109,11 @@ api_cashflow_update_schedule(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    int64_t     id = id_str ? atoll(id_str) : 0;
+    int64_t     id = parse_query_int_strict(id_str, -1);
+    if (id <= 0) {
+        respond_bad_request(c, "缺少或无效的 id");
+        return;
+    }
 
     csilk_json_t* body = csilk_bind_json(c);
     if (!body) {
@@ -152,7 +160,11 @@ api_cashflow_delete_schedule(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    int64_t     id = id_str ? atoll(id_str) : 0;
+    int64_t     id = parse_query_int_strict(id_str, -1);
+    if (id <= 0) {
+        respond_bad_request(c, "缺少或无效的 id");
+        return;
+    }
 
     cashflow_usecase_result_t res = {0};
     int rc = cashflow_usecase_delete_schedule(db_get_pool(), user_id, id, &res);
@@ -177,8 +189,8 @@ api_cashflow_get_calendar(csilk_ctx_t* c)
 
     query_calendar_cmd_t cmd = {
         .user_id = user_id,
-        .year = year_str ? atoi(year_str) : 0,
-        .month = month_str ? atoi(month_str) : 0,
+        .year = (int)parse_query_int_strict(year_str, 0),
+        .month = (int)parse_query_int_strict(month_str, 0),
     };
 
     csilk_json_t*             resp = NULL;

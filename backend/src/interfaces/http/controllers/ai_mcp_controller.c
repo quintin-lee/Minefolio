@@ -84,8 +84,9 @@ api_ai_mcp_servers_update(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    if (!id_str) {
-        respond_bad_request(c, "缺少 id");
+    int64_t     server_id = parse_query_int_strict(id_str, -1);
+    if (server_id <= 0) {
+        respond_bad_request(c, "缺少或无效的 id");
         return;
     }
 
@@ -102,7 +103,7 @@ api_ai_mcp_servers_update(csilk_ctx_t* c)
 
     mf_mcp_update_cmd_t cmd = {
         .user_id = user_id,
-        .server_id = atoll(id_str),
+        .server_id = server_id,
         .name = body_get_str(body, "name"),
         .transport = body_get_str(body, "transport"),
         .url = body_get_str(body, "url"),
@@ -139,14 +140,15 @@ api_ai_mcp_servers_delete(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    if (!id_str) {
-        respond_bad_request(c, "缺少 id");
+    int64_t     server_id = parse_query_int_strict(id_str, -1);
+    if (server_id <= 0) {
+        respond_bad_request(c, "缺少或无效的 id");
         return;
     }
 
     mf_mcp_delete_cmd_t cmd = {
         .user_id = user_id,
-        .server_id = atoll(id_str),
+        .server_id = server_id,
     };
 
     mf_mcp_usecase_result_t res = {0};
@@ -189,13 +191,14 @@ api_ai_mcp_servers_get(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    if (!id_str) {
-        respond_bad_request(c, "缺少 id");
+    int64_t     id = parse_query_int_strict(id_str, -1);
+    if (id <= 0) {
+        respond_bad_request(c, "缺少或无效的 id");
         return;
     }
 
     csilk_json_t* obj = NULL;
-    int           rc = mf_mcp_usecase_get(db_get_pool(), user_id, atoll(id_str), &obj);
+    int           rc = mf_mcp_usecase_get(db_get_pool(), user_id, id, &obj);
     if (rc == 1) {
         respond_not_found(c);
         return;
@@ -217,13 +220,14 @@ api_ai_mcp_servers_tools(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    if (!id_str) {
-        respond_bad_request(c, "缺少 id");
+    int64_t     id = parse_query_int_strict(id_str, -1);
+    if (id <= 0) {
+        respond_bad_request(c, "缺少或无效的 id");
         return;
     }
 
     csilk_json_t* list = NULL;
-    if (mf_mcp_usecase_tools(db_get_pool(), user_id, atoll(id_str), &list) != 0) {
+    if (mf_mcp_usecase_tools(db_get_pool(), user_id, id, &list) != 0) {
         respond_error(c, 500, "查询 MCP 工具失败");
         return;
     }
@@ -265,11 +269,12 @@ api_ai_mcp_servers_test(csilk_ctx_t* c)
         return;
     }
     const char* id_str = csilk_get_param(c, "id");
-    if (!id_str) {
-        respond_bad_request(c, "缺少 id");
+    int64_t     id = parse_query_int_strict(id_str, -1);
+    if (id <= 0) {
+        respond_bad_request(c, "缺少或无效的 id");
         return;
     }
-    mcp_server_refresh_response(c, user_id, atoll(id_str));
+    mcp_server_refresh_response(c, user_id, id);
 }
 
 void
@@ -280,11 +285,12 @@ api_ai_mcp_servers_refresh(csilk_ctx_t* c)
         return;
     }
     const char* id_str = csilk_get_param(c, "id");
-    if (!id_str) {
-        respond_bad_request(c, "缺少 id");
+    int64_t     id = parse_query_int_strict(id_str, -1);
+    if (id <= 0) {
+        respond_bad_request(c, "缺少或无效的 id");
         return;
     }
-    mcp_server_refresh_response(c, user_id, atoll(id_str));
+    mcp_server_refresh_response(c, user_id, id);
 }
 
 /* -------------------------------------------------------------------------- */

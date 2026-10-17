@@ -246,8 +246,8 @@ report_expense_monthly(csilk_ctx_t* c)
     }
 
     csilk_json_t* resp = csilk_json_object();
-    csilk_json_add_number(resp, "year", atoll(year_str));
-    csilk_json_add_number(resp, "month", atoll(month_str));
+    csilk_json_add_number(resp, "year", (double)parse_query_int_strict(year_str, 0));
+    csilk_json_add_number(resp, "month", (double)parse_query_int_strict(month_str, 0));
     csilk_json_add_number(resp, "total_income", income);
     csilk_json_add_number(resp, "total_expense", expense);
     csilk_json_add_number(resp, "balance", income - expense);
@@ -434,7 +434,7 @@ report_expense_yearly(csilk_ctx_t* c)
         csilk_json_array_append(income_arr, csilk_json_number(income_by_month[m]));
         csilk_json_array_append(expense_arr, csilk_json_number(expense_by_month[m]));
     }
-    csilk_json_add_number(resp, "year", atoll(year_buf));
+    csilk_json_add_number(resp, "year", (double)parse_query_int_strict(year_buf, 0));
     csilk_json_add_array(resp, "labels", labels);
     csilk_json_add_array(resp, "income", income_arr);
     csilk_json_add_array(resp, "expense", expense_arr);

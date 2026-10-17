@@ -95,11 +95,11 @@ api_ai_sessions_get_handler(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    if (!id_str) {
-        respond_bad_request(c, "缺少 id");
+    int64_t     id = parse_query_int_strict(id_str, -1);
+    if (id <= 0) {
+        respond_bad_request(c, "缺少或无效的 id");
         return;
     }
-    int64_t id = atoll(id_str);
 
     csilk_json_t*       out_data = NULL;
     ai_usecase_result_t res = {0};
@@ -122,11 +122,11 @@ api_ai_sessions_update_handler(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    if (!id_str) {
-        respond_bad_request(c, "缺少 id");
+    int64_t     id = parse_query_int_strict(id_str, -1);
+    if (id <= 0) {
+        respond_bad_request(c, "缺少或无效的 id");
         return;
     }
-    int64_t id = atoll(id_str);
 
     csilk_json_t*           body = csilk_bind_json(c);
     ai_update_session_cmd_t cmd = {
@@ -158,11 +158,11 @@ api_ai_sessions_delete_handler(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    if (!id_str) {
-        respond_bad_request(c, "缺少 id");
+    int64_t     id = parse_query_int_strict(id_str, -1);
+    if (id <= 0) {
+        respond_bad_request(c, "缺少或无效的 id");
         return;
     }
-    int64_t id = atoll(id_str);
 
     ai_usecase_result_t res = {0};
     int                 rc = ai_usecase_sessions_delete(db_get_pool(), user_id, id, &res);
@@ -184,11 +184,11 @@ api_ai_messages_list_handler(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    if (!id_str) {
-        respond_bad_request(c, "缺少 session_id");
+    int64_t     session_id = parse_query_int_strict(id_str, -1);
+    if (session_id <= 0) {
+        respond_bad_request(c, "缺少或无效的 session_id");
         return;
     }
-    int64_t session_id = atoll(id_str);
 
     int64_t page = 1, page_size = 50;
     parse_page_params(c, &page, &page_size);

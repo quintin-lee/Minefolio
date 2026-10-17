@@ -18,8 +18,13 @@ api_tags_list(csilk_ctx_t* c)
     /* Single tag by ID */
     const char* id_str = csilk_get_param(c, "id");
     if (id_str) {
+        int64_t tag_id = parse_query_int_strict(id_str, -1);
+        if (tag_id <= 0) {
+            respond_bad_request(c, "无效的标签 id");
+            return;
+        }
         mf_tag_t tag = {0};
-        int      rc = mf_tag_repo_find_by_id(db_get_pool(), user_id, atoll(id_str), &tag);
+        int      rc = mf_tag_repo_find_by_id(db_get_pool(), user_id, tag_id, &tag);
         if (rc == 1) {
             respond_not_found(c);
             return;
@@ -89,8 +94,9 @@ api_tags_update(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    if (!id_str) {
-        respond_bad_request(c, "缺少 id");
+    int64_t     tag_id = parse_query_int_strict(id_str, -1);
+    if (tag_id <= 0) {
+        respond_bad_request(c, "缺少或无效的 id");
         return;
     }
 
@@ -102,7 +108,7 @@ api_tags_update(csilk_ctx_t* c)
 
     update_tag_cmd_t cmd = {
         .user_id = user_id,
-        .tag_id = atoll(id_str),
+        .tag_id = tag_id,
         .name = csilk_json_get_string(body, "name"),
         .color = csilk_json_get_string(body, "color"),
     };
@@ -129,14 +135,15 @@ api_tags_delete(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    if (!id_str) {
-        respond_bad_request(c, "缺少 id");
+    int64_t     tag_id = parse_query_int_strict(id_str, -1);
+    if (tag_id <= 0) {
+        respond_bad_request(c, "缺少或无效的 id");
         return;
     }
 
     delete_tag_cmd_t cmd = {
         .user_id = user_id,
-        .tag_id = atoll(id_str),
+        .tag_id = tag_id,
     };
 
     tag_usecase_result_t res = {0};

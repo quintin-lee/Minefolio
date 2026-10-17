@@ -89,9 +89,17 @@ ctx_ledger_id(csilk_ctx_t* c, int64_t user_id, const char* required_role)
     const char* lid_query = csilk_get_query(c, "ledger_id");
     int64_t     lid = 0;
     if (lid_header && lid_header[0]) {
-        lid = atoll(lid_header);
+        lid = parse_query_int_strict(lid_header, -1);
+        if (lid <= 0) {
+            respond_bad_request(c, "Invalid X-Ledger-Id");
+            return -1;
+        }
     } else if (lid_query && lid_query[0]) {
-        lid = atoll(lid_query);
+        lid = parse_query_int_strict(lid_query, -1);
+        if (lid <= 0) {
+            respond_bad_request(c, "Invalid ledger_id");
+            return -1;
+        }
     }
 
     csilk_db_pool_t* pool = db_get_pool();

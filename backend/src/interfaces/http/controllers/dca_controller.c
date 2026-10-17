@@ -115,7 +115,11 @@ dca_service_get_plan(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    int64_t     id = id_str ? atoll(id_str) : 0;
+    int64_t     id = parse_query_int_strict(id_str, -1);
+    if (id <= 0) {
+        respond_bad_request(c, "缺少或无效的 id");
+        return;
+    }
 
     dca_usecase_result_t res = {0};
     csilk_json_t*        detail = dca_usecase_get_plan(db_get_pool(), user_id, id, &res);
@@ -141,7 +145,11 @@ dca_service_update_plan(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    int64_t     id = id_str ? atoll(id_str) : 0;
+    int64_t     id = parse_query_int_strict(id_str, -1);
+    if (id <= 0) {
+        respond_bad_request(c, "缺少或无效的 id");
+        return;
+    }
 
     csilk_json_t* body = csilk_bind_json(c);
     if (!body) {
@@ -191,7 +199,11 @@ dca_service_set_plan_status(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    int64_t     id = id_str ? atoll(id_str) : 0;
+    int64_t     id = parse_query_int_strict(id_str, -1);
+    if (id <= 0) {
+        respond_bad_request(c, "缺少或无效的 id");
+        return;
+    }
 
     csilk_json_t* body = csilk_bind_json(c);
     const char*   status = body ? csilk_json_get_string(body, "status") : NULL;
@@ -232,7 +244,11 @@ dca_service_delete_plan(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    int64_t     id = id_str ? atoll(id_str) : 0;
+    int64_t     id = parse_query_int_strict(id_str, -1);
+    if (id <= 0) {
+        respond_bad_request(c, "缺少或无效的 id");
+        return;
+    }
 
     dca_usecase_result_t res = {0};
     int                  rc = dca_usecase_delete_plan(db_get_pool(), user_id, id, &res);
@@ -255,7 +271,11 @@ dca_service_list_executions(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    int64_t     plan_id = id_str ? atoll(id_str) : 0;
+    int64_t     plan_id = parse_query_int_strict(id_str, -1);
+    if (plan_id <= 0) {
+        respond_bad_request(c, "缺少或无效的 id");
+        return;
+    }
 
     csilk_json_t* list = dca_usecase_list_executions(db_get_pool(), user_id, plan_id);
     respond_ok(c, list);
@@ -282,7 +302,11 @@ dca_service_confirm_execution(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    int64_t     exec_id = id_str ? atoll(id_str) : 0;
+    int64_t     exec_id = parse_query_int_strict(id_str, -1);
+    if (exec_id <= 0) {
+        respond_bad_request(c, "缺少或无效的 id");
+        return;
+    }
 
     csilk_json_t* body = csilk_bind_json(c);
 
@@ -320,7 +344,11 @@ dca_service_skip_execution(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    int64_t     exec_id = id_str ? atoll(id_str) : 0;
+    int64_t     exec_id = parse_query_int_strict(id_str, -1);
+    if (exec_id <= 0) {
+        respond_bad_request(c, "缺少或无效的 id");
+        return;
+    }
 
     dca_usecase_result_t res = {0};
     int                  rc = dca_usecase_skip_execution(db_get_pool(), user_id, exec_id, &res);

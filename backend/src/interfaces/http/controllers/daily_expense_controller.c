@@ -72,8 +72,10 @@ daily_expenses_monthly(csilk_ctx_t* c)
     if (ledger_id < 0) {
         return;
     }
-    if (!year_str || !month_str) {
-        respond_bad_request(c, "year 和 month 参数为必填");
+    int64_t year = parse_query_int_strict(year_str, -1);
+    int64_t month = parse_query_int_strict(month_str, -1);
+    if (year <= 0 || month <= 0 || month > 12) {
+        respond_bad_request(c, "year 和 month 参数无效");
         return;
     }
 
@@ -82,23 +84,16 @@ daily_expenses_monthly(csilk_ctx_t* c)
     csilk_json_t*                  by_tag = NULL;
     csilk_json_t*                  daily = NULL;
 
-    int rc = daily_expense_usecase_monthly(db_get_pool(),
-                                           user_id,
-                                           ledger_id,
-                                           atoll(year_str),
-                                           atoll(month_str),
-                                           &res,
-                                           &by_cat,
-                                           &by_tag,
-                                           &daily);
+    int rc = daily_expense_usecase_monthly(
+        db_get_pool(), user_id, ledger_id, year, month, &res, &by_cat, &by_tag, &daily);
     if (rc != 0) {
         respond_error(c, 500, "查询失败");
         return;
     }
 
     csilk_json_t* resp = csilk_json_object();
-    csilk_json_add_number(resp, "year", atoll(year_str));
-    csilk_json_add_number(resp, "month", atoll(month_str));
+    csilk_json_add_number(resp, "year", (double)year);
+    csilk_json_add_number(resp, "month", (double)month);
     csilk_json_add_number(resp, "total_income", res.total_income);
     csilk_json_add_number(resp, "total_expense", res.total_expense);
     csilk_json_add_number(resp, "balance", res.balance);
@@ -166,8 +161,9 @@ daily_expenses_update(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    if (!id_str) {
-        respond_bad_request(c, "缺少 id");
+    int64_t     id = parse_query_int_strict(id_str, -1);
+    if (id <= 0) {
+        respond_bad_request(c, "缺少或无效的 id");
         return;
     }
 
@@ -180,7 +176,7 @@ daily_expenses_update(csilk_ctx_t* c)
     update_daily_expense_cmd_t cmd = {
         .user_id = user_id,
         .ledger_id = ledger_id,
-        .id = atoll(id_str),
+        .id = id,
         .category_id = db_get_int(body, "category_id"),
         .asset_id = db_get_int(body, "asset_id"),
         .expense_type = csilk_json_get_string(body, "expense_type"),
@@ -219,13 +215,14 @@ daily_expenses_delete(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    if (!id_str) {
-        respond_bad_request(c, "缺少 id");
+    int64_t     id = parse_query_int_strict(id_str, -1);
+    if (id <= 0) {
+        respond_bad_request(c, "缺少或无效的 id");
         return;
     }
 
     daily_expense_usecase_result_t res = {0};
-    int rc = daily_expense_usecase_delete(db_get_pool(), user_id, ledger_id, atoll(id_str), &res);
+    int rc = daily_expense_usecase_delete(db_get_pool(), user_id, ledger_id, id, &res);
 
     if (rc == 0 && res.code == 0) {
         respond_ok_null(c);

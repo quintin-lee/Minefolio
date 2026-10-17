@@ -98,8 +98,9 @@ api_assets_update(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    if (!id_str) {
-        respond_bad_request(c, "缺少 id");
+    int64_t     aid = parse_query_int_strict(id_str, -1);
+    if (aid <= 0) {
+        respond_bad_request(c, "缺少或无效的 id");
         return;
     }
 
@@ -111,7 +112,7 @@ api_assets_update(csilk_ctx_t* c)
 
     update_asset_cmd_t cmd = {
         .user_id = user_id,
-        .id = atoll(id_str),
+        .id = aid,
         .name = csilk_json_get_string(body, "name"),
         .account_no = csilk_json_get_string(body, "account_no"),
         .current_value = db_get_num(body, "current_value"),
@@ -156,14 +157,15 @@ api_assets_delete(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    if (!id_str) {
-        respond_bad_request(c, "缺少 id");
+    int64_t     aid = parse_query_int_strict(id_str, -1);
+    if (aid <= 0) {
+        respond_bad_request(c, "缺少或无效的 id");
         return;
     }
 
     delete_asset_cmd_t cmd = {
         .user_id = user_id,
-        .id = atoll(id_str),
+        .id = aid,
     };
 
     asset_usecase_result_t res = {0};
@@ -187,13 +189,14 @@ api_assets_detail(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    if (!id_str) {
-        respond_bad_request(c, "缺少 id");
+    int64_t     aid = parse_query_int_strict(id_str, -1);
+    if (aid <= 0) {
+        respond_bad_request(c, "缺少或无效的 id");
         return;
     }
 
     csilk_json_t* resp = NULL;
-    int           rc = asset_usecase_get(db_get_pool(), user_id, atoll(id_str), &resp);
+    int           rc = asset_usecase_get(db_get_pool(), user_id, aid, &resp);
     if (rc == 1003 || !resp) {
         respond_not_found(c);
         return;
@@ -237,14 +240,15 @@ api_assets_rebuild_single(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    if (!id_str) {
-        respond_bad_request(c, "缺少 id");
+    int64_t     aid = parse_query_int_strict(id_str, -1);
+    if (aid <= 0) {
+        respond_bad_request(c, "缺少或无效的 id");
         return;
     }
 
     csilk_json_t*          data = NULL;
     asset_usecase_result_t res = {0};
-    int rc = asset_usecase_rebuild_single(db_get_pool(), user_id, atoll(id_str), &data, &res);
+    int rc = asset_usecase_rebuild_single(db_get_pool(), user_id, aid, &data, &res);
 
     if (rc == 0 && res.code == 0 && data) {
         respond_ok(c, data);

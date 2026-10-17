@@ -77,12 +77,12 @@ api_market_sync_single(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "asset_id");
-    if (!id_str) {
-        respond_bad_request(c, "缺少 asset_id");
+    int64_t     aid = parse_query_int_strict(id_str, -1);
+    if (aid <= 0) {
+        respond_bad_request(c, "缺少或无效的 asset_id");
         return;
     }
 
-    int64_t                 aid = atoll(id_str);
     csilk_json_t*           data = NULL;
     market_usecase_result_t res = {0};
     int rc = market_usecase_sync_single(db_get_pool(), user_id, aid, &data, &res);
@@ -106,15 +106,18 @@ api_market_price_history(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "asset_id");
-    if (!id_str) {
-        respond_bad_request(c, "缺少 asset_id");
+    int64_t     aid = parse_query_int_strict(id_str, -1);
+    if (aid <= 0) {
+        respond_bad_request(c, "缺少或无效的 asset_id");
         return;
     }
 
     const char* lim_str = csilk_get_query(c, "limit");
-    int         limit = lim_str ? atoi(lim_str) : 90;
+    int         limit = (int)parse_query_int_strict(lim_str, 90);
+    if (limit <= 0) {
+        limit = 90;
+    }
 
-    int64_t                 aid = atoll(id_str);
     csilk_json_t*           rows = NULL;
     market_usecase_result_t res = {0};
     market_usecase_price_history(db_get_pool(), user_id, aid, limit, &rows, &res);
