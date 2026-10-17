@@ -310,6 +310,12 @@ target_compile_options(test_market_indices PRIVATE -UNDEBUG)
 target_link_libraries(test_market_indices PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
 add_test(NAME test_market_indices COMMAND test_market_indices)
 
+add_executable(test_fx_semantics tests/unit/test_fx_semantics.c ${LIB_SOURCES})
+target_include_directories(test_fx_semantics PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_fx_semantics PRIVATE -UNDEBUG)
+target_link_libraries(test_fx_semantics PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_test(NAME test_fx_semantics COMMAND test_fx_semantics)
+
 
 
 
