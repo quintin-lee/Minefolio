@@ -146,8 +146,8 @@ static void test_portfolio_trade_events_with_fees(void) {
     int rc = mf_portfolio_rule_apply_trade_events(&item, 1, events, 2);
     assert(rc == 0);
 
-    /* 买卖交易产生的 fee 会独立记入费用行；标的主体盈亏反映纯交易价差 = 1200 - 1000 = +200 */
-    assert(fabs(money_to_double(item.realized_pnl) - 200.0) < 1e-4);
+    /* 手续费计入盈亏口径：净收入 1190 - 成本 1010 = +180 */
+    assert(fabs(money_to_double(item.realized_pnl) - 180.0) < 1e-4);
 
     printf("PASS: test_portfolio_trade_events_with_fees\n");
 }
@@ -156,9 +156,9 @@ static void test_portfolio_trade_events_with_fees(void) {
 static void test_holdings_pnl_includes_fees_and_dividends(void) {
     currency_t cny = currency_from_str("CNY");
 
-    // 买入 100 股 @ 10 元 -> 成本基础 1000 元
-    // 卖出 100 股 @ 12 元 -> 变现 1200 元 -> 价差已实现盈亏 200 元
-    // 加一笔分红 50 元 -> 200 + 50 = 250 元
+    // 买入 100 股 @ 10 元 fee 5 -> 成本基础 1005 元
+    // 卖出 100 股 @ 12 元 fee 8 -> 净变现 1192 元 -> 价差已实现盈亏 187 元
+    // 加一笔分红 50 元 -> 187 + 50 = 237 元
     mf_holding_item_t item = {0};
     item.asset_id = 103;
     snprintf(item.name, sizeof(item.name), "测试分红与手续费标的");
@@ -193,8 +193,8 @@ static void test_holdings_pnl_includes_fees_and_dividends(void) {
     int rc = mf_portfolio_rule_apply_trade_events(&item, 1, events, 3);
     assert(rc == 0);
 
-    /* 已实现盈亏应为 (1200 - 1000) + 50 = 250 */
-    assert(fabs(money_to_double(item.realized_pnl) - 250.0) < 1e-4);
+    /* 已实现盈亏应为 (1200 - 8) - (1000 + 5) + 50 = 237 */
+    assert(fabs(money_to_double(item.realized_pnl) - 237.0) < 1e-4);
 
     printf("PASS: test_holdings_pnl_includes_fees_and_dividends\n");
 }
@@ -366,11 +366,59 @@ void test_portfolio_missing_fx_rate_fails() {
     printf("PASS: test_portfolio_missing_fx_rate_fails\n");
 }
 
+/* 1e. R1 回归：买入 fee 入成本、卖出 fee 扣净收入，与写路径/performance 口径一致 */
+static void test_portfolio_r1_fee_vector(void) {
+    currency_t cny = currency_from_str("CNY");
+
+    mf_holding_item_t item = {0};
+    item.asset_id = 104;
+    snprintf(item.name, sizeof(item.name), "测试R1费用向量");
+    item.currency = cny;
+    quantity_from_double(0.0, 4, &item.quantity);
+    price_from_double(4.0, 4, cny, &item.net_value);
+    money_from_double(0.0, cny, &item.cost_basis);
+
+    mf_portfolio_trade_event_t events[3] = {0};
+
+    /* Buy 1000 @ 2 = 2000, fee 10 */
+    events[0].asset_id = 104;
+    snprintf(events[0].type, sizeof(events[0].type), "buy");
+    quantity_from_double(1000.0, 4, &events[0].quantity);
+    price_from_double(2.0, 4, cny, &events[0].price);
+    money_from_double(2000.0, cny, &events[0].amount);
+    money_from_double(10.0, cny, &events[0].fee);
+
+    /* Buy 500 @ 3 = 1500, fee 5 */
+    events[1].asset_id = 104;
+    snprintf(events[1].type, sizeof(events[1].type), "buy");
+    quantity_from_double(500.0, 4, &events[1].quantity);
+    price_from_double(3.0, 4, cny, &events[1].price);
+    money_from_double(1500.0, cny, &events[1].amount);
+    money_from_double(5.0, cny, &events[1].fee);
+
+    /* Sell 300 @ 4 = 1200, fee 8 */
+    events[2].asset_id = 104;
+    snprintf(events[2].type, sizeof(events[2].type), "sell");
+    quantity_from_double(300.0, 4, &events[2].quantity);
+    price_from_double(4.0, 4, cny, &events[2].price);
+    money_from_double(1200.0, cny, &events[2].amount);
+    money_from_double(8.0, cny, &events[2].fee);
+
+    int rc = mf_portfolio_rule_apply_trade_events(&item, 1, events, 3);
+    assert(rc == 0);
+
+    /* 成本池 3515，卖出 300/1500 = 0.2 → 扣减 703，净收入 1192 → realized = 489 */
+    assert(fabs(money_to_double(item.realized_pnl) - 489.0) < 1e-4);
+
+    printf("PASS: test_portfolio_r1_fee_vector\n");
+}
+
 int main() {
     test_portfolio_trade_events_and_pnl();
     test_portfolio_trade_events_partial_sells_cost_pool_decrement();
     test_portfolio_trade_events_with_fees();
     test_holdings_pnl_includes_fees_and_dividends();
+    test_portfolio_r1_fee_vector();
     test_portfolio_summary_aggregation();
     test_portfolio_summary_multi_currency_aggregation();
     test_portfolio_multi_currency_aggregation_and_risk();

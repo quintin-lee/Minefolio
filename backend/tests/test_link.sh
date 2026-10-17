@@ -443,7 +443,7 @@ check "H2 建仓 floating_pct=25" "25" "$(echo "$H2_ROW" | jq -r '.floating_pct 
 check "H2 建仓 current_value=2500" "2500" "$(echo "$H2_ROW" | jq -r '.current_value | floor')"
 check "H2 建仓 realized_pnl=0" "0" "$(echo "$H2_ROW" | jq -r '.realized_pnl | floor')"
 
-# H2b: fee 不含入盈利口径 — 买 1000×2 fee=1，卖 100×2.5 → realized = 250-100*2.0 = 50
+# H2b: fee 计入成本口径 — 买 1000×2 fee=1（成本池 2001），卖 100×2.5 → realized = 250 - 2001*0.1 = 49.9 → 49
 curl -s -H "$AUTH" -H "Content-Type: application/json" -X POST "$BASE/assets" \
   -d "{\"name\":\"基金三号\",\"category_id\":$H2_CAT,\"current_value\":0,\"currency\":\"CNY\"}" > /dev/null
 H2B_ASSET=$(sqlite3 "$DB" "SELECT id FROM assets WHERE name='基金三号' LIMIT 1")
@@ -453,7 +453,7 @@ curl -s -H "$AUTH" -H "Content-Type: application/json" -X POST "$BASE/transactio
   -d "{\"asset_id\":$H2B_ASSET,\"linked_asset_id\":$WALLET_ID,\"category_id\":$H2_CAT,\"transaction_type\":\"sell\",\"amount\":250,\"quantity\":100,\"price_per_unit\":2.5,\"currency\":\"CNY\",\"transaction_date\":\"2026-01-03\"}" > /dev/null
 H2B=$(curl -s -H "$AUTH" "$BASE/reports/holdings")
 H2B_ROW=$(echo "$H2B" | jq -c '.data.holdings[] | select(.name=="基金三号")')
-check "H2b 带 fee 买入后 realized=50（avg_cost 不含 fee）" "50" "$(echo "$H2B_ROW" | jq -r '.realized_pnl | floor')"
+check "H2b 带 fee 买入后 realized=49（成本含 fee）" "49" "$(echo "$H2B_ROW" | jq -r '.realized_pnl | floor')"
 
 # H3: 卖出已实现盈亏 — 买 1000×2，卖 400×3 → realized=400, quantity=600
 curl -s -H "$AUTH" -H "Content-Type: application/json" -X POST "$BASE/assets" \

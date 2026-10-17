@@ -39,9 +39,9 @@ int main(void) {
     int rc = mf_portfolio_rule_apply_trade_events(&item, 1, events, 3);
     assert(rc == 0);
 
-    // Realized capital gain = (1200 - 400 * 2.0) + 100 = 500.0
+    // Realized capital gain = (1200 - 8) - 2010 * 0.4 + 100 = 488.0
     double realized = money_to_double(item.realized_pnl);
-    assert(fabs(realized - 500.0) < 1e-4);
+    assert(fabs(realized - 488.0) < 1e-4);
 
     // Cost basis remaining for 600 shares = 1200.0
     double cost = money_to_double(item.cost_basis);

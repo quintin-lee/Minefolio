@@ -62,7 +62,10 @@ mf_portfolio_rule_apply_trade_events(mf_holding_item_t*                items,
             pnl_acc_t* acc = &accs[found_idx];
 
             if (strcmp(ev->type, "buy") == 0) {
-                money_add(acc->cost_for_pnl, ev->amount, &acc->cost_for_pnl);
+                /* 买入成本 = 成交额 + 手续费，与写路径 ledger/performance 口径一致 */
+                money_t buy_cost = ev->amount;
+                money_add(buy_cost, ev->fee, &buy_cost);
+                money_add(acc->cost_for_pnl, buy_cost, &acc->cost_for_pnl);
                 quantity_add(acc->qty, ev->quantity, &acc->qty);
             } else if (strcmp(ev->type, "sell") == 0) {
                 if (quantity_is_positive(acc->qty)) {
@@ -84,8 +87,11 @@ mf_portfolio_rule_apply_trade_events(mf_holding_item_t*                items,
                             }
                         }
                     }
+                    /* 卖出净收入 = 成交额 - 手续费，再扣减成本 → 与写路径一致 */
+                    money_t net_proceeds;
+                    money_sub(ev->amount, ev->fee, &net_proceeds);
                     money_t trade_realized;
-                    money_sub(ev->amount, sold_cost, &trade_realized);
+                    money_sub(net_proceeds, sold_cost, &trade_realized);
                     money_add(acc->realized, trade_realized, &acc->realized);
 
                     /* 扣减份额与成本池（清仓时直接置零，彻底消除浮点微小残差） */
@@ -100,6 +106,9 @@ mf_portfolio_rule_apply_trade_events(mf_holding_item_t*                items,
             } else if (strcmp(ev->type, "income") == 0 || strcmp(ev->type, "dividend") == 0 ||
                        strcmp(ev->type, "interest") == 0) {
                 money_add(acc->realized, ev->amount, &acc->realized);
+            } else if (strcmp(ev->type, "fee") == 0) {
+                /* 独立费用交易（无父交易）计为已实现亏损，与绩效口径一致 */
+                money_sub(acc->realized, ev->fee, &acc->realized);
             }
         }
     }
