@@ -12,6 +12,8 @@
 #include "csilk/protocols/sse.h"
 #include "config/key_manager.h"
 #include "config/secret.h"
+#include "csilk/core/server.h"
+#include "services/ai/runtime/fast_json.h"
 #include <curl/curl.h>
 #include <time.h>
 #include <stdio.h>
@@ -202,6 +204,7 @@ typedef struct {
     struct timespec last_send_time;
     int             sse_initialized;
     ai_trace_t*     trace;
+    csilk_arena_t*  arena;
 } sse_bridge_t;
 
 static void
@@ -246,16 +249,41 @@ sse_bridge_text_chunk(const char* delta, void* udata)
              tm_buf.tm_sec,
              ms);
 
-    csilk_json_t* msg = csilk_json_object();
-    csilk_json_add_string(msg, "content", delta);
-    csilk_json_add_number(msg, "timestamp", (double)ts_ms);
-    csilk_json_add_string(msg, "time", time_str);
-    size_t slen = 0;
-    char*  s = csilk_json_serialize(msg, &slen);
-    csilk_sse_send(b->ctx, "delta", s ? s : "");
+    char   stack_buf[4096];
+    char*  target_buf = stack_buf;
+    size_t dlen = strlen(delta);
+    size_t max_needed = dlen * 6 + 128;
+
+    if (max_needed > sizeof(stack_buf)) {
+        if (b->arena) {
+            target_buf = (char*)csilk_arena_alloc(b->arena, max_needed);
+        } else {
+            target_buf = (char*)malloc(max_needed);
+        }
+        if (!target_buf) {
+            return;
+        }
+    }
+
+    int written = snprintf(target_buf, max_needed, "{\"content\":\"");
+    if (written > 0 && (size_t)written < max_needed) {
+        int esc_len =
+            ai_json_escape_fast(delta, dlen, target_buf + written, max_needed - written - 64);
+        if (esc_len >= 0) {
+            written += esc_len;
+            snprintf(target_buf + written,
+                     max_needed - written,
+                     "\",\"timestamp\":%lld,\"time\":\"%s\"}",
+                     (long long)ts_ms,
+                     time_str);
+            csilk_sse_send(b->ctx, "delta", target_buf);
+        }
+    }
+
+    if (target_buf != stack_buf && !b->arena) {
+        free(target_buf);
+    }
     b->last_send_time = now;
-    free(s);
-    csilk_json_free(msg);
 }
 
 static void
@@ -503,11 +531,13 @@ ai_chat_handler(csilk_ctx_t* c)
     /* SSE init: establish event-stream connection immediately so proxies never time out */
     csilk_sse_init(c);
 
-    sse_bridge_t sse_bridge = {
+    csilk_arena_t* arena = csilk_arena_new(16384);
+    sse_bridge_t   sse_bridge = {
         .ctx = c,
         .last_send_time = {0},
         .sse_initialized = 1,
         .trace = &trace,
+        .arena = arena,
     };
     clock_gettime(CLOCK_MONOTONIC, &sse_bridge.last_send_time);
 
@@ -523,6 +553,9 @@ ai_chat_handler(csilk_ctx_t* c)
     ai_runtime_execute_stream(pool, &rctx, &cbs, &sse_bridge);
 
     csilk_sse_close(c);
+    if (arena) {
+        csilk_arena_free(arena);
+    }
     ai_trace_free(&trace);
     ai_runtime_context_free(&rctx);
     if (history) {
@@ -870,11 +903,13 @@ ai_service_stream_report(csilk_ctx_t* c,
     ai_trace_serialize_messages(&trace, input_arr);
     csilk_json_free(input_arr);
 
-    sse_bridge_t sse_bridge = {
+    csilk_arena_t* arena = csilk_arena_new(16384);
+    sse_bridge_t   sse_bridge = {
         .ctx = c,
         .last_send_time = {0},
         .sse_initialized = 1,
         .trace = &trace,
+        .arena = arena,
     };
     clock_gettime(CLOCK_MONOTONIC, &sse_bridge.last_send_time);
 
@@ -897,6 +932,9 @@ ai_service_stream_report(csilk_ctx_t* c,
     rctx.trace = &trace;
 
     ai_runtime_status_t status = ai_runtime_execute_stream(db_get_pool(), &rctx, &cbs, &sse_bridge);
+    if (arena) {
+        csilk_arena_free(arena);
+    }
     ai_trace_free(&trace);
     ai_runtime_context_free(&rctx);
 
