@@ -26,7 +26,7 @@
 **Files:**
 - Modify: `deps/csilk/src/drivers/db/db.c:615-635`
 
-- [ ] **Step 1: 在 `deps/csilk/src/drivers/db/db.c` 中增加同名查找替换逻辑**
+- [x] **Step 1: 在 `deps/csilk/src/drivers/db/db.c` 中增加同名查找替换逻辑**
 
 修改 `csilk_db_register_driver()`：
 ```c
@@ -60,14 +60,14 @@ csilk_db_register_driver(const char* name, csilk_db_driver_t* driver)
 }
 ```
 
-- [ ] **Step 2: 编译 csilk 静态库确保编译通过**
+- [x] **Step 2: 编译 csilk 静态库确保编译通过**
 
 ```bash
 cmake --build backend/build --target csilk_db
 ```
 Expected: PASS。
 
-- [ ] **Step 3: 提交 `deps/csilk` 变更**
+- [x] **Step 3: 提交 `deps/csilk` 变更**
 
 ```bash
 git -C deps/csilk add src/drivers/db/db.c
@@ -81,7 +81,7 @@ git -C deps/csilk commit -m "fix(db): 🐛 support in-place driver overwrite in 
 **Files:**
 - Modify: `backend/tests/unit/test_migration_engine.c:285-308`
 
-- [ ] **Step 1: 修改 `test_postgres_migration_dialect`**
+- [x] **Step 1: 修改 `test_postgres_migration_dialect`**
 
 备份原生驱动并在退出时恢复，同时将期望的脚本数校准至 13：
 ```c
@@ -116,14 +116,14 @@ test_postgres_migration_dialect(void)
 }
 ```
 
-- [ ] **Step 2: 编译并单独运行 `test_migration_engine`**
+- [x] **Step 2: 编译并单独运行 `test_migration_engine`**
 
 ```bash
 cmake --build backend/build --target test_migration_engine && ./backend/build/test_migration_engine
 ```
 Expected: PASS，控制台输出 `All Database Migration Engine Tests Passed (100%)!`。
 
-- [ ] **Step 3: 提交代码**
+- [x] **Step 3: 提交代码**
 
 ```bash
 git add backend/tests/unit/test_migration_engine.c
@@ -137,14 +137,14 @@ git commit -m "test(migration): 🧪 isolate postgres dialect test with mock res
 **Files:**
 - Test: 全量 CTest 测试套件
 
-- [ ] **Step 1: 运行全量 CTest**
+- [x] **Step 1: 运行全量 CTest**
 
 ```bash
 cd backend/build && ctest --output-on-failure
 ```
 Expected: **100% tests passed, 0 tests failed out of 33**。
 
-- [ ] **Step 2: 提交计划文档**
+- [x] **Step 2: 提交计划文档**
 
 ```bash
 git add docs/superpowers/plans/2026-10-17-postgres-migration-test-mock.md
