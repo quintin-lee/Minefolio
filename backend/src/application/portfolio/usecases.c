@@ -265,8 +265,7 @@ portfolio_usecase_get_performance(void*                        db_pool,
             } else {
                 total_loss += (-conv_r);
             }
-        } else if (type && (strcmp(type, "income") == 0 || strcmp(type, "dividend") == 0 ||
-                            strcmp(type, "interest") == 0)) {
+        } else if (type && (strcmp(type, "income") == 0 || strcmp(type, "dividend") == 0)) {
             total_trades++;
             realized_m = amt;
             money_t conv_realized = exchange_rate_convert_m(realized_m, base_cur);

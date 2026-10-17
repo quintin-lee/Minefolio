@@ -98,9 +98,11 @@ exchange_rate_get_to_cny(const char* currency)
     if (exchange_rate_get_to_cny_safe(currency, &rate) == 0) {
         return rate > 0.0 ? rate : 1.0;
     }
-    if (currency && currency[0] && strcasecmp(currency, "CNY") != 0 && strcasecmp(currency, "RMB") != 0) {
+    if (currency && currency[0] && strcasecmp(currency, "CNY") != 0 &&
+        strcasecmp(currency, "RMB") != 0) {
         fprintf(stderr,
-                "[WARN] Unknown currency '%s' requested in exchange_rate_get_to_cny; falling back to 1.0\n",
+                "[WARN] Unknown currency '%s' requested in exchange_rate_get_to_cny; falling back "
+                "to 1.0\n",
                 currency);
     }
     return 1.0;
