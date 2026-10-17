@@ -316,6 +316,12 @@ target_compile_options(test_fx_semantics PRIVATE -UNDEBUG)
 target_link_libraries(test_fx_semantics PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
 add_test(NAME test_fx_semantics COMMAND test_fx_semantics)
 
+add_executable(test_portfolio_pnl_alignment tests/unit/test_portfolio_pnl_alignment.c ${LIB_SOURCES})
+target_include_directories(test_portfolio_pnl_alignment PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_portfolio_pnl_alignment PRIVATE -UNDEBUG)
+target_link_libraries(test_portfolio_pnl_alignment PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_test(NAME test_portfolio_pnl_alignment COMMAND test_portfolio_pnl_alignment)
+
 
 
 
