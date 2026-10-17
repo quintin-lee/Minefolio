@@ -40,7 +40,7 @@
 - Modify: `backend/sql/migration_postgres.sql:86-97`
 - Modify: `backend/tests/unit/test_migration_engine.c:302`
 
-- [ ] **Step 1: 创建 SQLite V014 迁移脚本**
+- [x] **Step 1: 创建 SQLite V014 迁移脚本**
 
 创建 `backend/sql/migrations/sqlite/V014__transfer_explicit_transactions.sql`：
 ```sql
@@ -91,7 +91,7 @@ CREATE INDEX IF NOT EXISTS idx_transfers_from_tx ON transfers(from_tx_id);
 CREATE INDEX IF NOT EXISTS idx_transfers_to_tx ON transfers(to_tx_id);
 ```
 
-- [ ] **Step 2: 创建 PostgreSQL V014 迁移脚本**
+- [x] **Step 2: 创建 PostgreSQL V014 迁移脚本**
 
 创建 `backend/sql/migrations/postgres/V014__transfer_explicit_transactions.sql`：
 ```sql
@@ -128,7 +128,7 @@ CREATE INDEX IF NOT EXISTS idx_transfers_from_tx ON transfers(from_tx_id);
 CREATE INDEX IF NOT EXISTS idx_transfers_to_tx ON transfers(to_tx_id);
 ```
 
-- [ ] **Step 3: 更新 SQLite 与 PostgreSQL 基线初始化模式**
+- [x] **Step 3: 更新 SQLite 与 PostgreSQL 基线初始化模式**
 
 更新 `backend/sql/migration.sql`：
 ```sql
@@ -171,18 +171,18 @@ CREATE INDEX IF NOT EXISTS idx_transfers_from_tx ON transfers(from_tx_id);
 CREATE INDEX IF NOT EXISTS idx_transfers_to_tx ON transfers(to_tx_id);
 ```
 
-- [ ] **Step 4: 校准 `test_migration_engine.c` 断言**
+- [x] **Step 4: 校准 `test_migration_engine.c` 断言**
 
 将 `backend/tests/unit/test_migration_engine.c` 行 302 的 `assert(count >= 13);` 校准为 `assert(count >= 14);`。
 
-- [ ] **Step 5: 编译并运行迁移单元测试**
+- [x] **Step 5: 编译并运行迁移单元测试**
 
 ```bash
 cmake --build backend/build --target test_migration_engine && ./backend/build/test_migration_engine
 ```
 Expected: PASS，14 个迁移脚本正确被发现并应用。
 
-- [ ] **Step 6: 提交 Task 1 代码**
+- [x] **Step 6: 提交 Task 1 代码**
 
 ```bash
 git add backend/sql/migrations/sqlite/V014__transfer_explicit_transactions.sql \
@@ -201,7 +201,7 @@ git commit -m "feat(migration): 🎸 add V014 migration for transfers explicit t
 - Modify: `backend/src/domain/transfer/entity.h:13-24`
 - Modify: `backend/src/infrastructure/repositories/transfer_repo_impl.c:34-70`
 
-- [ ] **Step 1: 扩展 `mf_transfer_t` 结构体**
+- [x] **Step 1: 扩展 `mf_transfer_t` 结构体**
 
 在 `backend/src/domain/transfer/entity.h` 中追加 `from_tx_id` 与 `to_tx_id`：
 ```c
@@ -221,7 +221,7 @@ typedef struct {
 } mf_transfer_t;
 ```
 
-- [ ] **Step 2: 修改 `mf_transfer_repo_insert` SQL 绑定**
+- [x] **Step 2: 修改 `mf_transfer_repo_insert` SQL 绑定**
 
 在 `backend/src/infrastructure/repositories/transfer_repo_impl.c` 中：
 ```c
@@ -270,14 +270,14 @@ mf_transfer_repo_insert(void* db_pool, int64_t user_id, const mf_transfer_t* tra
 }
 ```
 
-- [ ] **Step 3: 编译检查仓储层编译通过**
+- [x] **Step 3: 编译检查仓储层编译通过**
 
 ```bash
 cmake --build backend/build --parallel
 ```
 Expected: 编译 0 error。
 
-- [ ] **Step 4: 提交 Task 2 代码**
+- [x] **Step 4: 提交 Task 2 代码**
 
 ```bash
 git add backend/src/domain/transfer/entity.h \
@@ -293,7 +293,7 @@ git commit -m "feat(transfer): 🎸 persist from_tx_id and to_tx_id in transfer 
 - Modify: `backend/src/application/transfer/usecases.c:55-115`
 - Modify: `backend/src/application/transaction/usecases.c:383-391,432-440`
 
-- [ ] **Step 1: 重排 `transfer_usecase_create` 事务内创建时序**
+- [x] **Step 1: 重排 `transfer_usecase_create` 事务内创建时序**
 
 在 `backend/src/application/transfer/usecases.c` 中：
 ```c
@@ -373,7 +373,7 @@ git commit -m "feat(transfer): 🎸 persist from_tx_id and to_tx_id in transfer 
     }
 ```
 
-- [ ] **Step 2: 在 `tx_usecase_delete` 中精确清理 `transfers`**
+- [x] **Step 2: 在 `tx_usecase_delete` 中精确清理 `transfers`**
 
 在 `backend/src/application/transaction/usecases.c` 中：
 修改 `is_transfer_out` 清理块：
@@ -420,14 +420,14 @@ git commit -m "feat(transfer): 🎸 persist from_tx_id and to_tx_id in transfer 
             }
 ```
 
-- [ ] **Step 3: 编译后端并确保通过**
+- [x] **Step 3: 编译后端并确保通过**
 
 ```bash
 cmake --build backend/build --parallel
 ```
 Expected: PASS，0 warnings / 0 errors。
 
-- [ ] **Step 4: 提交 Task 3 代码**
+- [x] **Step 4: 提交 Task 3 代码**
 
 ```bash
 git add backend/src/application/transfer/usecases.c \
@@ -442,7 +442,7 @@ git commit -m "refactor(transfer): ♻️ reschedule transfer write order and en
 **Files:**
 - Modify: `backend/tests/unit/test_domain_repositories.c`
 
-- [ ] **Step 1: 在 `test_domain_repositories.c` 中添加防误删专项用例**
+- [x] **Step 1: 在 `test_domain_repositories.c` 中添加防误删专项用例**
 
 在 `test_domain_repositories.c` 的 `test_tx_monthly_excludes_transfers` 前添加新测试函数 `test_transfer_identical_duplicate_deletion`：
 ```c
@@ -543,35 +543,35 @@ test_transfer_identical_duplicate_deletion(csilk_db_pool_t* pool, int64_t user_i
 
 在 `main()` 中调用 `test_transfer_identical_duplicate_deletion(pool, user_id);`。
 
-- [ ] **Step 2: 编译并单独运行 `test_domain_repositories`**
+- [x] **Step 2: 编译并单独运行 `test_domain_repositories`**
 
 ```bash
 cmake --build backend/build --target test_domain_repositories && ./backend/build/test_domain_repositories
 ```
 Expected: PASS，`✅ Identical Duplicate Transfer Precise Deletion passed`。
 
-- [ ] **Step 3: 运行全量 33 个 CTest 单元测试套件**
+- [x] **Step 3: 运行全量 33 个 CTest 单元测试套件**
 
 ```bash
 cd backend/build && ctest --output-on-failure && cd ../..
 ```
 Expected: **100% tests passed, 0 tests failed out of 33**。
 
-- [ ] **Step 4: 运行端到端集成测试**
+- [x] **Step 4: 运行端到端集成测试**
 
 ```bash
 cd backend && ./tests/test_link.sh && cd ..
 ```
 Expected: 全部 143 处断言 100% 通过。
 
-- [ ] **Step 5: 运行前端单元测试与构建检查**
+- [x] **Step 5: 运行前端单元测试与构建检查**
 
 ```bash
 npm --prefix frontend test && npm --prefix frontend run build
 ```
 Expected: 105 tests passed, `vue-tsc` 0 errors, build success.
 
-- [ ] **Step 6: 提交 Task 4 代码与实施计划**
+- [x] **Step 6: 提交 Task 4 代码与实施计划**
 
 ```bash
 git add backend/tests/unit/test_domain_repositories.c \
