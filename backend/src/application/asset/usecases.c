@@ -155,26 +155,56 @@ asset_usecase_update(void* pool, const update_asset_cmd_t* cmd, asset_usecase_re
             double new_current = new_qty * new_net;
             double delta = new_current - old_current;
 
-            if (delta != 0) {
-                balance_apply_delta(db_pool,
-                                    cmd->id,
-                                    cmd->user_id,
-                                    delta,
-                                    "asset_netvalue",
-                                    cmd->id,
-                                    "net_value update");
+            db_tx_scope_t scope;
+            if (db_tx_scope_begin(db_pool, "mf_asset_update_investment", &scope) != 0) {
+                csilk_json_free(cur);
+                out_res->code = 1004;
+                snprintf(out_res->message, sizeof(out_res->message), "数据库错误");
+                return -1;
             }
-            asset_update_position(db_pool, cmd->user_id, cmd->id, new_net, new_qty, new_cost);
-            asset_update_basic(db_pool,
-                               cmd->user_id,
-                               cmd->id,
-                               name,
-                               account_no,
-                               new_current,
-                               currency,
-                               note,
-                               symbol,
-                               quote_source);
+
+            if (delta != 0) {
+                int b_rc = balance_apply_delta(db_pool,
+                                               cmd->id,
+                                               cmd->user_id,
+                                               delta,
+                                               "asset_netvalue",
+                                               cmd->id,
+                                               "net_value update");
+                if (b_rc != 0) {
+                    db_tx_scope_rollback(db_pool, &scope);
+                    csilk_json_free(cur);
+                    out_res->code = (b_rc == -1) ? 1002 : 1004;
+                    snprintf(out_res->message, sizeof(out_res->message), "更新资产余额失败");
+                    return -1;
+                }
+            }
+            if (!asset_update_position(
+                    db_pool, cmd->user_id, cmd->id, new_net, new_qty, new_cost) ||
+                !asset_update_basic(db_pool,
+                                    cmd->user_id,
+                                    cmd->id,
+                                    name,
+                                    account_no,
+                                    new_current,
+                                    currency,
+                                    note,
+                                    symbol,
+                                    quote_source)) {
+                db_tx_scope_rollback(db_pool, &scope);
+                csilk_json_free(cur);
+                out_res->code = 1004;
+                snprintf(out_res->message, sizeof(out_res->message), "更新资产持仓或基本信息失败");
+                return -1;
+            }
+
+            if (db_tx_scope_commit(db_pool, &scope) != 0) {
+                db_tx_scope_rollback(db_pool, &scope);
+                csilk_json_free(cur);
+                out_res->code = 1004;
+                snprintf(out_res->message, sizeof(out_res->message), "提交事务失败");
+                return -1;
+            }
         }
         csilk_json_free(cur);
         out_res->code = 0;

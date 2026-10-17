@@ -136,10 +136,20 @@ market_usecase_do_sync_user(void* pool, int64_t user_id, int* out_synced, int* o
             price_t    p_new;
             price_from_double(new_nv, 4, cur, &p_new);
 
-            mf_market_repo_update_asset_quote(pool, uid, aid, p_new);
-            mf_market_repo_record_price_history(pool, aid, today, p_new, cur);
+            csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
+            db_tx_scope_t    scope;
+            if (db_tx_scope_begin(db_pool, "mf_market_sync_asset", &scope) != 0) {
+                failed++;
+                continue;
+            }
 
-            if (qty_val > 0) {
+            int write_ok = 1;
+            if (mf_market_repo_update_asset_quote(pool, uid, aid, p_new) != 0 ||
+                mf_market_repo_record_price_history(pool, aid, today, p_new, cur) != 0) {
+                write_ok = 0;
+            }
+
+            if (write_ok && qty_val > 0) {
                 price_t p_old;
                 price_from_double(old_nv, 4, cur, &p_old);
                 quantity_t qty;
@@ -148,14 +158,22 @@ market_usecase_do_sync_user(void* pool, int64_t user_id, int* out_synced, int* o
                 mf_market_rule_calc_sync_delta(p_old, p_new, qty, cur, &delta);
                 double delta_val = money_to_double(delta);
                 if (delta_val != 0.0) {
-                    balance_apply_delta((csilk_db_pool_t*)pool,
-                                        aid,
-                                        uid,
-                                        delta_val,
-                                        "asset_market_sync",
-                                        aid,
-                                        "Market quote sync");
+                    if (balance_apply_delta(db_pool,
+                                            aid,
+                                            uid,
+                                            delta_val,
+                                            "asset_market_sync",
+                                            aid,
+                                            "Market quote sync") != 0) {
+                        write_ok = 0;
+                    }
                 }
+            }
+
+            if (!write_ok || db_tx_scope_commit(db_pool, &scope) != 0) {
+                db_tx_scope_rollback(db_pool, &scope);
+                failed++;
+                continue;
             }
             synced++;
         } else {
@@ -258,11 +276,32 @@ market_usecase_sync_single(void*                    pool,
     price_t    p_new;
     price_from_double(new_nv, 4, cur, &p_new);
 
-    mf_market_repo_update_asset_quote(pool, user_id, asset_id, p_new);
+    csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
+    db_tx_scope_t    scope;
+    if (db_tx_scope_begin(db_pool, "mf_market_sync_single", &scope) != 0) {
+        csilk_json_free(asset_rows);
+        out_res->code = 1004;
+        snprintf(out_res->message, sizeof(out_res->message), "数据库错误");
+        return -1;
+    }
+
+    if (mf_market_repo_update_asset_quote(pool, user_id, asset_id, p_new) != 0) {
+        db_tx_scope_rollback(db_pool, &scope);
+        csilk_json_free(asset_rows);
+        out_res->code = 1004;
+        snprintf(out_res->message, sizeof(out_res->message), "更新资产行情失败");
+        return -1;
+    }
 
     char today[32];
     get_today_str(today, sizeof(today));
-    mf_market_repo_record_price_history(pool, asset_id, today, p_new, cur);
+    if (mf_market_repo_record_price_history(pool, asset_id, today, p_new, cur) != 0) {
+        db_tx_scope_rollback(db_pool, &scope);
+        csilk_json_free(asset_rows);
+        out_res->code = 1004;
+        snprintf(out_res->message, sizeof(out_res->message), "记录价格历史失败");
+        return -1;
+    }
 
     if (qty_val > 0) {
         price_t p_old;
@@ -273,14 +312,29 @@ market_usecase_sync_single(void*                    pool,
         mf_market_rule_calc_sync_delta(p_old, p_new, qty, cur, &delta);
         double delta_val = money_to_double(delta);
         if (delta_val != 0.0) {
-            balance_apply_delta((csilk_db_pool_t*)pool,
-                                asset_id,
-                                user_id,
-                                delta_val,
-                                "asset_market_sync",
-                                asset_id,
-                                "Market quote sync");
+            int b_rc = balance_apply_delta(db_pool,
+                                           asset_id,
+                                           user_id,
+                                           delta_val,
+                                           "asset_market_sync",
+                                           asset_id,
+                                           "Market quote sync");
+            if (b_rc != 0) {
+                db_tx_scope_rollback(db_pool, &scope);
+                csilk_json_free(asset_rows);
+                out_res->code = (b_rc == -1) ? 1002 : 1004;
+                snprintf(out_res->message, sizeof(out_res->message), "更新资产余额失败");
+                return -1;
+            }
         }
+    }
+
+    if (db_tx_scope_commit(db_pool, &scope) != 0) {
+        db_tx_scope_rollback(db_pool, &scope);
+        csilk_json_free(asset_rows);
+        out_res->code = 1004;
+        snprintf(out_res->message, sizeof(out_res->message), "提交事务失败");
+        return -1;
     }
 
     csilk_json_free(asset_rows);
