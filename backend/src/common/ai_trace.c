@@ -27,7 +27,12 @@ ai_trace_init(ai_trace_t* t, int64_t user_id, int64_t session_id)
     t->user_id = user_id;
     t->session_id = session_id;
     t->input_messages = strdup("[]");
-    t->output_content = strdup("");
+    t->output_cap = 1024;
+    t->output_len = 0;
+    t->output_content = (char*)malloc(t->output_cap);
+    if (t->output_content) {
+        t->output_content[0] = '\0';
+    }
     t->system_prompt = strdup("");
     t->error_message = strdup("");
     t->metadata = strdup("{}");
@@ -149,20 +154,29 @@ ai_trace_serialize_messages(ai_trace_t* t, csilk_json_t* messages_array)
 void
 ai_trace_append_output(ai_trace_t* t, const char* chunk)
 {
-    if (!chunk || !chunk[0]) {
+    if (!t || !chunk || !chunk[0]) {
         return;
     }
     size_t clen = strlen(chunk);
-    size_t olen = strlen(t->output_content);
-    size_t nlen = olen + clen + 1;
-    char*  buf = (char*)realloc(t->output_content, nlen);
-    if (!buf) {
-        return;
+    size_t required = t->output_len + clen + 1;
+
+    if (required > t->output_cap) {
+        size_t new_cap = t->output_cap ? (t->output_cap * 2) : 1024;
+        while (new_cap < required) {
+            new_cap *= 2;
+        }
+        char* buf = (char*)realloc(t->output_content, new_cap);
+        if (!buf) {
+            return;
+        }
+        t->output_content = buf;
+        t->output_cap = new_cap;
     }
-    memcpy(buf + olen, chunk, clen);
-    buf[olen + clen] = '\0';
-    t->output_content = buf;
-    t->accumulated_len = (long)nlen;
+
+    memcpy(t->output_content + t->output_len, chunk, clen);
+    t->output_len += clen;
+    t->output_content[t->output_len] = '\0';
+    t->accumulated_len = (long)t->output_len;
 }
 
 /**

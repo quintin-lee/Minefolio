@@ -26,6 +26,8 @@ typedef struct {
     char            model[128];        /**< 所选模型名称（如 "deepseek-chat", "gpt-4o"） */
     char*           input_messages;    /**< 动态堆字符串：输入上下文消息列表的 JSON 序列化字符串 */
     char*           output_content;    /**< 动态堆字符串：模型生成的完整回复内容 */
+    size_t          output_len;        /**< 当前输出内容字节长度 (O(1) 访问) */
+    size_t          output_cap;        /**< 当前输出缓冲区分配容量 (含末尾 '\0') */
     char*           system_prompt;     /**< 动态堆字符串：使用的系统提示词 */
     int             prompt_tokens;     /**< 输入提示词所消耗的 Token 数 */
     int             completion_tokens; /**< 模型生成内容所消耗的 Token 数 */

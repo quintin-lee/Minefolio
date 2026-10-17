@@ -295,6 +295,39 @@ test_ai_json_escape_fast_comprehensive(void)
     printf("PASS: test_ai_json_escape_fast_comprehensive\n");
 }
 
+#include "common/ai_trace.h"
+
+static void
+test_ai_trace_amortized_growth(void)
+{
+    printf("--- Running test_ai_trace_amortized_growth ---\n");
+
+    ai_trace_t t;
+    ai_trace_init(&t, 1, 100);
+
+    assert(t.output_content != NULL);
+    assert(t.output_len == 0);
+    assert(t.output_cap >= 1024);
+
+    /* 模拟追加 10,000 次短 Token */
+    const char* token = "abc";
+    for (int i = 0; i < 10000; i++) {
+        ai_trace_append_output(&t, token);
+    }
+
+    assert(t.output_len == 30000);
+    assert(t.output_cap >= 30001);
+    assert(t.accumulated_len == 30000);
+    assert(strlen(t.output_content) == 30000);
+
+    /* 验证前缀与后缀完整性 */
+    assert(strncmp(t.output_content, "abcabcabc", 9) == 0);
+    assert(strcmp(t.output_content + 30000 - 3, "abc") == 0);
+
+    ai_trace_free(&t);
+    printf("PASS: test_ai_trace_amortized_growth\n");
+}
+
 int main(void) {
     test_runtime_error_taxonomy();
     test_runtime_limits_and_budgets();
@@ -306,7 +339,9 @@ int main(void) {
     test_runtime_elapsed_timeout();
     test_workflow_executor_auth_boundary();
     test_ai_json_escape_fast_comprehensive();
+    test_ai_trace_amortized_growth();
     printf("All runtime unit and edge tests passed!\n");
     return 0;
 }
+
 
