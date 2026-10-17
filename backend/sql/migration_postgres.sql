@@ -94,8 +94,12 @@ CREATE TABLE IF NOT EXISTS transfers (
     transfer_date TIMESTAMP NOT NULL,
     note          TEXT,
     ledger_id     BIGINT REFERENCES ledgers(id) ON DELETE SET NULL,
+    from_tx_id    BIGINT REFERENCES transactions(id) ON DELETE CASCADE,
+    to_tx_id      BIGINT REFERENCES transactions(id) ON DELETE CASCADE,
     created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+CREATE INDEX IF NOT EXISTS idx_transfers_from_tx ON transfers(from_tx_id);
+CREATE INDEX IF NOT EXISTS idx_transfers_to_tx ON transfers(to_tx_id);
 
 CREATE TABLE IF NOT EXISTS tags (
     id         BIGSERIAL PRIMARY KEY,
