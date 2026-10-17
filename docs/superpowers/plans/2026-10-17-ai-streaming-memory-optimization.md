@@ -35,7 +35,7 @@
 - Create: `backend/src/services/ai/runtime/fast_json.c`
 - Test: `backend/tests/unit/test_ai_runtime.c`
 
-- [ ] **Step 1: 在 `backend/tests/unit/test_ai_runtime.c` 编写失败的转义单元测试**
+- [x] **Step 1: 在 `backend/tests/unit/test_ai_runtime.c` 编写失败的转义单元测试**
 
 ```c
 /* 在 test_ai_runtime.c 顶部引入头文件声明（待创建） */
@@ -93,14 +93,14 @@ test_ai_json_escape_fast_comprehensive(void)
 
 并在 `main()` 中注册调用 `test_ai_json_escape_fast_comprehensive()`。
 
-- [ ] **Step 2: 运行测试验证编译/执行失败**
+- [x] **Step 2: 运行测试验证编译/执行失败**
 
 ```bash
 cmake --build backend/build --target test_ai_runtime
 ```
 Expected: FAIL，提示找不到 `fast_json.h` 或未定义标识符。
 
-- [ ] **Step 3: 编写 `fast_json.h` 与 `fast_json.c` 最小实现**
+- [x] **Step 3: 编写 `fast_json.h` 与 `fast_json.c` 最小实现**
 
 在 `backend/src/services/ai/runtime/fast_json.h` 中写入：
 ```c
@@ -195,14 +195,14 @@ ai_json_escape_fast(const char* src, size_t src_len, char* dst, size_t dst_cap)
 }
 ```
 
-- [ ] **Step 4: 编译并运行测试验证通过**
+- [x] **Step 4: 编译并运行测试验证通过**
 
 ```bash
 cmake --build backend/build --target test_ai_runtime && ./backend/build/test_ai_runtime
 ```
 Expected: PASS，控制台输出 `--- Running test_ai_json_escape_fast_comprehensive ---` 且所有断言通过。
 
-- [ ] **Step 5: 提交代码**
+- [x] **Step 5: 提交代码**
 
 ```bash
 git add backend/src/services/ai/runtime/fast_json.h backend/src/services/ai/runtime/fast_json.c backend/tests/unit/test_ai_runtime.c
@@ -218,7 +218,7 @@ git commit -m "feat(ai): ✨ add fast zero-heap JSON string escaper with unit te
 - Modify: `backend/src/common/ai_trace.c:40-70,145-170`
 - Test: `backend/tests/unit/test_ai_runtime.c`
 
-- [ ] **Step 1: 在 `backend/tests/unit/test_ai_runtime.c` 编写扩容测试**
+- [x] **Step 1: 在 `backend/tests/unit/test_ai_runtime.c` 编写扩容测试**
 
 ```c
 static void
@@ -252,14 +252,14 @@ test_ai_trace_amortized_growth(void)
 }
 ```
 
-- [ ] **Step 2: 运行测试确认编译失败（字段不存在）**
+- [x] **Step 2: 运行测试确认编译失败（字段不存在）**
 
 ```bash
 cmake --build backend/build --target test_ai_runtime
 ```
 Expected: FAIL，提示 `output_len` 或 `output_cap` 不是 `ai_trace_t` 的成员。
 
-- [ ] **Step 3: 修改 `ai_trace.h` 增加长度与容量字段**
+- [x] **Step 3: 修改 `ai_trace.h` 增加长度与容量字段**
 
 在 `backend/src/common/ai_trace.h` 的 `ai_trace_t` 定义中增加：
 ```c
@@ -268,7 +268,7 @@ Expected: FAIL，提示 `output_len` 或 `output_cap` 不是 `ai_trace_t` 的成
     size_t          output_cap;         /**< 当前输出缓冲区分配容量 (含末尾 '\0') */
 ```
 
-- [ ] **Step 4: 修改 `ai_trace.c` 实现几何级数倍增**
+- [x] **Step 4: 修改 `ai_trace.c` 实现几何级数倍增**
 
 在 `ai_trace_init()` 中：
 ```c
@@ -312,14 +312,14 @@ ai_trace_append_output(ai_trace_t* t, const char* chunk)
 }
 ```
 
-- [ ] **Step 5: 编译并运行测试验证通过**
+- [x] **Step 5: 编译并运行测试验证通过**
 
 ```bash
 cmake --build backend/build --target test_ai_runtime && ./backend/build/test_ai_runtime
 ```
 Expected: PASS，10,000 次追加在 1 毫秒内完成，验证平摊 $O(1)$。
 
-- [ ] **Step 6: 提交代码**
+- [x] **Step 6: 提交代码**
 
 ```bash
 git add backend/src/common/ai_trace.h backend/src/common/ai_trace.c backend/tests/unit/test_ai_runtime.c
@@ -333,7 +333,7 @@ git commit -m "perf(ai): ⚡️ amortize ai_trace output buffer growth and elimi
 **Files:**
 - Modify: `backend/src/services/ai_service.c:200-265,500-535`
 
-- [ ] **Step 1: 在 `backend/src/services/ai_service.c` 扩展 `sse_bridge_t`**
+- [x] **Step 1: 在 `backend/src/services/ai_service.c` 扩展 `sse_bridge_t`**
 
 在 `sse_bridge_t` 中加入 `csilk_arena_t* arena` 声明：
 ```c
@@ -346,7 +346,7 @@ typedef struct {
 } sse_bridge_t;
 ```
 
-- [ ] **Step 2: 改造 `sse_bridge_text_chunk` 为栈缓冲与就地转义**
+- [x] **Step 2: 改造 `sse_bridge_text_chunk` 为栈缓冲与就地转义**
 
 包含 `#include "services/ai/runtime/fast_json.h"`，将原先构造 `csilk_json_t`、序列化及释放代码替换为：
 ```c
@@ -423,7 +423,7 @@ sse_bridge_text_chunk(const char* delta, void* udata)
 }
 ```
 
-- [ ] **Step 3: 在 `ai_service_stream_chat` 注入并管理 Arena 生命周期**
+- [x] **Step 3: 在 `ai_service_stream_chat` 注入并管理 Arena 生命周期**
 
 ```c
     csilk_arena_t* arena = csilk_arena_new(16384);
@@ -445,14 +445,14 @@ sse_bridge_text_chunk(const char* delta, void* udata)
     }
 ```
 
-- [ ] **Step 4: 编译 Minefolio 主程序及测试套件**
+- [x] **Step 4: 编译 Minefolio 主程序及测试套件**
 
 ```bash
 cmake --build backend/build --parallel
 ```
 Expected: PASS，0 警告 0 错误编译成功。
 
-- [ ] **Step 5: 提交代码**
+- [x] **Step 5: 提交代码**
 
 ```bash
 git add backend/src/services/ai_service.c
@@ -466,7 +466,7 @@ git commit -m "perf(ai): ⚡️ assemble stream delta using fast-path stack buff
 **Files:**
 - Modify: `backend/src/services/ai/workflow/executor.c:120-140`
 
-- [ ] **Step 1: 包含 `fast_json.h` 并重写步骤分块循环**
+- [x] **Step 1: 包含 `fast_json.h` 并重写步骤分块循环**
 
 在 `backend/src/services/ai/workflow/executor.c` 中，引入 `services/ai/runtime/fast_json.h`。将原有的 `ev_chunk = csilk_json_object()` 动态构建替换为：
 
@@ -489,14 +489,14 @@ git commit -m "perf(ai): ⚡️ assemble stream delta using fast-path stack buff
                     }
 ```
 
-- [ ] **Step 2: 编译后端并运行单元测试**
+- [x] **Step 2: 编译后端并运行单元测试**
 
 ```bash
 cmake --build backend/build --target test_ai_tools && ./backend/build/test_ai_tools
 ```
 Expected: PASS。
 
-- [ ] **Step 3: 提交代码**
+- [x] **Step 3: 提交代码**
 
 ```bash
 git add backend/src/services/ai/workflow/executor.c
@@ -511,21 +511,21 @@ git commit -m "perf(workflow): ⚡️ optimize step chunk SSE streaming with zer
 - Test: 全量 CTest 单元测试
 - Test: 前端 Vitest 单元测试
 
-- [ ] **Step 1: 运行后端全部 CTest 套件**
+- [x] **Step 1: 运行后端全部 CTest 套件**
 
 ```bash
 cd backend/build && ctest -R "test_ai.*" --output-on-failure
 ```
 Expected: `test_ai_tools`, `test_ai_policy`, `test_ai_runtime`, `test_ai_summary` 100% 全部通过。
 
-- [ ] **Step 2: 运行前端全量单元测试确保协议完全无损兼容**
+- [x] **Step 2: 运行前端全量单元测试确保协议完全无损兼容**
 
 ```bash
 npm --prefix frontend test -- --run
 ```
 Expected: 20 个测试套件，105 个用例全部 PASS，重点包含 `chat.store.spec.ts` 与 `typewriter.spec.ts`。
 
-- [ ] **Step 3: 最终文档与交付提交**
+- [x] **Step 3: 最终文档与交付提交**
 
 ```bash
 git add docs/superpowers/plans/2026-10-17-ai-streaming-memory-optimization.md
