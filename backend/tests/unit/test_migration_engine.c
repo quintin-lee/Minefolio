@@ -287,8 +287,10 @@ test_postgres_migration_dialect(void)
 {
     printf("--- Running PostgreSQL Migration Dialect Contract Test ---\n");
 
+    csilk_db_driver_t* orig_driver = csilk_db_get_driver("postgres");
+
     csilk_db_register_driver("postgres", &s_mock_pg_driver);
-    csilk_db_pool_t* pool = csilk_db_pool_new("postgres", "host=localhost dbname=minefolio");
+    csilk_db_pool_t* pool = csilk_db_pool_new("postgres", "mock_dsn");
     assert(pool != NULL);
 
     csilk_migration_engine_t* engine = NULL;
@@ -297,12 +299,16 @@ test_postgres_migration_dialect(void)
     csilk_migration_item_t* items = NULL;
     int                     count = 0;
     assert(csilk_migration_discover(engine, &items, &count) == 0);
-    assert(count >= 7);
+    assert(count >= 13);
     assert(strstr(items[0].filepath, "postgres") != NULL);
 
     free(items);
     csilk_migration_engine_free(engine);
     csilk_db_pool_free(pool);
+
+    if (orig_driver) {
+        csilk_db_register_driver("postgres", orig_driver);
+    }
     printf("PostgreSQL migration dialect contract passed.\n");
 }
 
