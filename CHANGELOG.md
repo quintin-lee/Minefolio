@@ -10,16 +10,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Transfer Explicit Transactions (`backend/sql/migrations/{sqlite,postgres}/V014__transfer_explicit_transactions.sql`)**:
+  - Added `from_tx_id` and `to_tx_id` explicit foreign keys referencing `transactions(id)` in `transfers` table.
+  - Rescheduled transfer write sequence so transaction records are created and committed first, then linked to the `transfers` row.
+  - Made transfer deletion deterministic via `from_tx_id = ? OR to_tx_id = ?`, with legacy `(from_asset_id, to_asset_id, amount)` attribute matching strictly preserved as backwards-compatibility fallback.
+- **Global Market Indices & Minute Sync (`backend/sql/migrations/{sqlite,postgres}/V013__market_indices_table.sql`)**:
+  - Added `market_indices` schema table and `/api/market/indices` endpoint for tracking major global market indices and intraday data.
+  - Added `test_market_indices` unit test suite.
+- **Exchange Rate Safe Semantics & Fallback Warning (`backend/src/services/market/exchange_rate_service.c/.h`)**:
+  - Added `exchange_rate_get_to_cny_safe()` returning `-1` on unknown currency or invalid parameters.
+  - Added `[WARN]` logging to `exchange_rate_get_to_cny()` fallback to prevent silent currency misconfigurations.
+  - Added `test_fx_semantics` unit test suite.
+- **Trade Performance Alignment & Fixed-Point Replay (`backend/src/application/portfolio/usecases.c`)**:
+  - Migrated `/reports/transaction/performance` calculation to Financial Core fixed-point arithmetic (`money_t`, `quantity_t`, `price_t`, `decimal_t`), aligning with `/reports/holdings` domain rules.
+  - Replaced static `trackers[256]` float array with dynamically allocated `asset_perf_tracker_t` array.
+  - Added `test_portfolio_pnl_alignment` unit test suite.
+- **Deterministic DTO Rounding (`backend/src/common/db.h`)**:
+  - Added `mf_round_to_decimals(double val, int decimals)` helper to standardize float JSON DTO output, eliminating IEEE 754 tail residuals.
 - **PostgreSQL Prepared Statement Engine (`csilk/src/drivers/db/postgres.c`)**:
   - Implemented full native prepared statement lifecycle in PostgreSQL driver: `?` parameter rewriting to `$1`, `$2`, ..., `PQprepare`, `PQexecPrepared`, parameter type binding, binary/text JSON conversion, and `DEALLOCATE` resource cleanup.
   - Resolved multi-instance concurrency lock failures (`UPDATE schema_migration_lock ... WHERE ... ?`) on PostgreSQL during database startup migrations, enabling flawless PostgreSQL deployments.
 - **csilk Framework Feature Downstreaming & Integration (Phases 1-4)**:
   - **JSON Type Extraction (`<csilk/core/json.h>`)**: Adopted `csilk_json_as_int64`, `csilk_json_as_double`, and `csilk_json_as_bool` to safely handle column data types without string-to-number parse gotchas.
   - **Transaction Scope & Savepoint (`<csilk/drivers/db/db.h>`)**: Switched `db_tx_scope_*` to native `csilk_db_tx_scope_*` with full nested savepoint and rollback support.
-  - **Database Migration Engine (`<csilk/drivers/db/migration.h>`)**: Downstreamed Flyway-style migration engine (`csilk_migration_*`) supporting discovery, strict version ordering, SHA-256 CRLF normalization, distributed locks, and auto-baseline.
+  - **Database Migration Engine (`<csilk/drivers/db/migration.h>`)**: Downstreamed Flyway-style migration engine (`csilk_migration_*`) supporting discovery, strict version ordering, SHA-256 CRLF normalization, distributed locks, and auto-baseline (`V001`~`V014`).
   - **CSV Processing (`<csilk/util/csv.h>`)**: Replaced custom CSV utility with RFC 4180 streaming parser and generator (`csilk_csv_*`).
   - **TOTP 2FA Engine (`<csilk/crypto/totp.h>`)**: Replaced internal TOTP implementation with csilk RFC 6238 standard TOTP engine (`csilk_totp_*`).
   - **Middleware Whitelist & Revocation**: Enhanced CSRF and JWT middlewares using csilk native route whitelisting (`csilk_csrf_whitelist_path`) and token revocation callbacks.
+
+### Fixed
+- **Portfolio Trade Events Fee Child Filtering (`backend/src/infrastructure/repositories/portfolio_repo_impl.c`)**:
+  - Added `AND (parent_tx_id IS NULL OR parent_tx_id = 0)` in `mf_portfolio_repo_get_trade_events` to filter out child fee rows from holding PnL calculations.
+- **Database Error Propagation in Position Updates (`backend/src/common/balance.c`)**:
+  - Modified `apply_position_fc` and `rollback_position_fc` to return `-2` on DB update failure instead of silently returning 0, ensuring failure propagates to `ledger_apply_tx` for transaction rollback.
+- **Transactional Scopes on Quote Sync & Asset Updates (`backend/src/application/market/usecases.c`, `backend/src/application/asset/usecases.c`)**:
+  - Enclosed multi-step writes in `db_tx_scope_begin()` / `db_tx_scope_commit()`, checked `balance_apply_delta` return codes, and triggered rollback on error.
+- **Strict HTTP Parameter Validation**:
+  - Replaced ~70 instances of `atoll()` with `parse_query_int_strict()` across HTTP controllers (`transaction`, `ledger`, `asset`, `daily_expense`, `dca`, `ai_mcp`, `category`), rejecting non-numeric inputs with HTTP 1002 Bad Request.
 
 ### Removed
 - **Redundant Glue Code**:
@@ -28,7 +55,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Test Suite Expansion**:
-  - Expanded CTest unit test suite matrix from 28 to 32 suites, adding tests for MCP process pool, MCP risk policy, AI summary, domain MCP, and domain repositories.
+  - Expanded CTest unit test suite matrix from 28 to 35 suites (added `test_market_indices`, `test_fx_semantics`, `test_portfolio_pnl_alignment`), achieving 100% pass rate.
+  - Expanded integration test suite `test_link.sh` to 39 test cases (151 assertions).
 
 ---
 

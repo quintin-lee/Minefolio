@@ -1,6 +1,6 @@
 # Minefolio — 架构与设计说明书 (Architecture & Design Specification)
 
-> 版本: 2026-09-12 v1.3.1  
+> 版本: 2026-10-17 v1.3.1  
 > 适用范围: 仓库 HEAD (`master` 分支)  
 > 受众: 研发、运维、安全审计、二次开发
 
@@ -410,7 +410,7 @@ erDiagram
 | `categories` | `user_id`, `name`, `parent_id` (树), `type ∈ {asset,income,expense,transaction}`, `asset_type` | 11 种 `asset_type` 决定 balance 符号翻转策略 |
 | `assets` | `user_id`, `category_id`, `name`, `symbol`, `current_value`, `quantity`, `cost_basis`, `net_value`, `currency` | 持仓资产,`quantity/cost_basis` 联动更新 |
 | `transactions` | `user_id`, `asset_id`, `linked_asset_id`, `source_type`, `transaction_type`, `direction`, `amount`, `quantity`, `price_per_unit`, `fee`, `parent_tx_id`, `transaction_date` | 统一交易表,`parent_tx_id` 链接手续费子行(级联删除) |
-| `transfers` | `from_asset_id`, `to_asset_id`, `amount`, `transfer_date` | 跨资产转账 |
+| `transfers` | `from_asset_id`, `to_asset_id`, `amount`, `transfer_date`, `from_tx_id`, `to_tx_id` | 跨资产转账, V014 显式外键关联 transactions 表以实现确定性双向删除 |
 | `daily_expenses` | `category_id`, `asset_id`, `expense_type ∈ {expense,income}`, `amount`, `expense_date` | 日常收支快速记录 |
 | `tags` + `expense_tags` | 多对多关联 | 给 daily_expense 打标签 |
 
@@ -419,6 +419,7 @@ erDiagram
 | 表 | 用途 |
 |----|------|
 | `asset_price_history` | 历史行情 (`UNIQUE(asset_id, price_date)`) |
+| `market_indices` | 全球主要大盘指数日内与历史走势快照 (`V013`) |
 | `asset_balance_logs` | 余额变更审计,只增不删,无外键到 assets(删资产后日志保留) |
 | `category_seed_state` | 标记新用户默认分类已种入,幂等 |
 | `ledgers` + `ledger_members` | 账本空间,支持 owner/editor/viewer 三角色 + 邀请码 |
@@ -1023,7 +1024,7 @@ cmake --build backend/build --parallel && npm --prefix frontend run build
 
 | 脚本 | 覆盖范围 | 用例数 |
 |------|---------|--------|
-| `test_link.sh` | auth + CRUD + 余额联动 + PnL + CSV + 分页 | 38 cases |
+| `test_link.sh` | auth + CRUD + 余额联动 + PnL + CSV + 分页 + AI 工作流 | 39 cases (151 assertions) |
 | `test_full.sh` | 全量回归入口 | 所有 |
 | `test_ledgers.sh` | 多账本空间 + RBAC (Owner/Editor/Viewer) | 16 cases |
 | `test_2fa.sh` | TOTP 2FA 密钥生成、二维码、启用/禁用、登录验证 | 12 cases |
@@ -1032,7 +1033,7 @@ cmake --build backend/build --parallel && npm --prefix frontend run build
 | `test_market_sync.sh` | 多源行情拉取、缓存、批量同步 | 18 cases |
 | `test_fx_oauth.sh` | 汇率、FX 汇兑损益、OCR 票据识别、OAuth2/OIDC SSO | 20 cases |
 
-**CUnit 单元测试 (`backend/tests/unit/`, CMake CTest 集成, 32 套件):**
+**CUnit 单元测试 (`backend/tests/unit/`, CMake CTest 集成, 35 套件):**
 
 | 套件 | 覆盖模块 |
 |------|----------|
@@ -1044,6 +1045,7 @@ cmake --build backend/build --parallel && npm --prefix frontend run build
 | `test_rate` | 汇率类型 |
 | `test_pnl` | 盈亏计算 (已实现/浮动) |
 | `test_fx` | 外汇计算 |
+| `test_fx_semantics` | 外汇汇率安全查询语义与回退告警 |
 | `test_ledger_math` | Ledger 纯数学算子 (buy/sell position) |
 | `test_ledger_engine` | Ledger 事件溯源全链路 |
 | `test_ai_tools` | AI 工具 Schema 注册/分发 |
@@ -1068,6 +1070,8 @@ cmake --build backend/build --parallel && npm --prefix frontend run build
 | `test_database_repository` | 数据库仓储接口抽象 |
 | `test_migration_engine` | csilk 迁移引擎发现、版本排序、锁与基线 |
 | `test_domain_repositories` | 领域仓储契约集成 |
+| `test_market_indices` | 全球大盘指数历史与日内分时 |
+| `test_portfolio_pnl_alignment` | 投资组合交易事件重放与定点业绩对齐 |
 
 运行:
 ```bash
@@ -1121,7 +1125,7 @@ cd backend/build && ctest --output-on-failure
 | **适合场景** | 单用户/家庭自托管 | 多租户/集群 |
 
 Minefolio 采用下沉至 csilk 框架的原生**正式版本化迁移系统 (Database Migration System)**（`<csilk/drivers/db/migration.h>`），彻底替换历史上的动态字段检测与硬编码 ALTER TABLE：
-- **规范化版本脚本**：按 Flyway 规范统一组织于 `backend/sql/migrations/{sqlite,postgres}/`，文件命名格式 `V<num>__<name>.sql`（`V001`~`V009`）。
+- **规范化版本脚本**：按 Flyway 规范统一组织于 `backend/sql/migrations/{sqlite,postgres}/`，文件命名格式 `V<num>__<name>.sql`（`V001`~`V014`）。
 - **版本记录与审计 (`schema_migrations`)**：记录每个已应用的迁移版本、名称、SHA-256 校验和、应用时间及执行毫秒耗时。
 - **分布式并发互斥锁 (`schema_migration_lock`)**：通过数据库行锁与租约超时防死锁机制，有效防止多实例并行迁移竞争。
 - **PostgreSQL 原生 Prepared Statement 支持**：csilk PostgreSQL 驱动原生实现 `?` 转 `$1, $2, ...` 重写、`PQprepare`/`PQexecPrepared` 编译与执行、类型绑定与 `DEALLOCATE` 释放，确保并发锁及迁移语句在 SQLite / PostgreSQL 下均稳定执行。
@@ -1154,7 +1158,7 @@ Minefolio 采用下沉至 csilk 框架的原生**正式版本化迁移系统 (Da
 | **后端冷启动** | ≤ 50ms | 30ms |
 | **并发连接** | ≥ 10k (单节点) | epoll-based csilk |
 | **集成测试覆盖** | 10 套件全通过 | `test_*.sh` |
-| **CUnit 单测覆盖** | 32 套件全通过 | CTest |
+| **CUnit 单测覆盖** | 35 套件全通过 | CTest |
 | **前端单测覆盖** | 7 case (mobile spec) | vitest |
 | **定点精度** | 128-bit 定点,scale ≤ 18 | 零 IEEE 754 误差 |
 | **AI 风控评估延迟** | ≤ 5ms/tool | 纯 CPU 规则,无 IO |
@@ -1230,12 +1234,12 @@ Minefolio 采用下沉至 csilk 框架的原生**正式版本化迁移系统 (Da
 | `backend/src/services/ai/workflows/` | 4 个具体工作流实现 |
 | `backend/src/common/balance.h` | 余额符号翻转 + 持仓核算 |
 | `csilk (csilk/drivers/db/migration.h)` | 数据库迁移引擎 (下沉至 csilk，提供 checksum、分布式锁、auto-baseline) |
-| `backend/sql/migrations/{sqlite,postgres}/` | 版本化迁移文件 (V001~V009) |
+| `backend/sql/migrations/{sqlite,postgres}/` | 版本化迁移文件 (V001~V014) |
 | `backend/sql/migration.sql` | SQLite 16 表全量基准 |
 | `backend/sql/migration_postgres.sql` | PostgreSQL 16 表全量基准 |
-| `backend/tests/test_link.sh` | 38-case 核心集成测试 |
+| `backend/tests/test_link.sh` | 39-case 核心集成测试 (151 assertions) |
 | `backend/tests/test_*.sh` | 8 个专项集成测试脚本 (另有 test_full.sh 全量回归) |
-| `backend/tests/unit/test_*.c` | 32 个 CTest 单元单测 |
+| `backend/tests/unit/test_*.c` | 35 个 CTest 单元单测 |
 | `frontend/src/utils/http.ts` | axios + JWT + CSRF |
 | `frontend/src/stores/chat.ts` | SmoothStreamWriter |
 | `frontend/src/components/ChatMessageContent.vue` | 流式渲染分层 |
@@ -1255,7 +1259,7 @@ Minefolio 采用下沉至 csilk 框架的原生**正式版本化迁移系统 (Da
   ```bash
   cmake --build backend/build --parallel && npm --prefix frontend run build
   ./backend/tests/test_full.sh                    # 全量集成回归
-  ctest --test-dir backend/build --output-on-failure  # 32 个 CTest 单测
+  ctest --test-dir backend/build --output-on-failure  # 35 个 CTest 单测
   npm --prefix frontend test -- --run             # 移动端 vitest
   ```
 

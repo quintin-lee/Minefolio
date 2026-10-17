@@ -20,7 +20,7 @@ Minefolio 是一款极度轻量、安全、专业的**开源全资产管理与�
 * 🏛️ **统一账本状态引擎 (Ledger Engine)**：确立「Transaction 是唯一金融事实」准则，资产持仓、现金余额、成本基础、已实现/浮动盈亏全由账本引擎统一计算与更新，并提供基于时间序列事实全量重建 (`rebuild`) 的自愈能力。
 * 🤖 **统一 AI Runtime 与企业级五级风控引擎 (Unified AI Runtime & Risk Engine)**：建立原生 C 统一 AI 运行时架构，将 Controller 与 Workflow 彻底与 LLM 调用解耦，纳管会话 (Session)、统一上下文容器 (Context)、模型适配 (Model)、工具执行 (Tool)、工作流编排 (Workflow)、安全策略 (Policy)、全链路追踪 (Trace) 与滑动窗口记忆 (Memory)；全面支持硬预算与约束（迭代上限、超时、Token/Tool/Cost 预算与主动取消）及结构化错误分类，实行五级风险评估与带 Nonce 防重放的双重确认令牌机制。
 * 🔑 **统一 Secret Provider 与零硬编码安全门禁**：建立统一敏感配置检索机制，原生兼容环境变量、Docker/K8s Secret 文件挂载与外部密钥管理器 (Vault/AWS/K8s)；在生产启动期实施硬编码/弱口令主动熔断。
-* 🗄️ **企业级数据库迁移系统 (Database Migration System)**：下沉至 csilk 框架的原生 C 版本化迁移引擎（`<csilk/drivers/db/migration.h>`），支持 SQLite / PostgreSQL 双方言（`V001`~`V009`）；具备版本严格发现排序、SHA-256 CRLF 规范化哈希防篡改、基于行锁的分布式迁移互斥锁，并在 PostgreSQL 驱动层支持原生 Prepared Statement（`?` 自动转 `$N` 与参数绑定），实现生产环境存量数据库平滑升级（Auto-Baseline），绝不要求删除已有数据库重新初始化。
+* 🗄️ **企业级数据库迁移系统 (Database Migration System)**：下沉至 csilk 框架的原生 C 版本化迁移引擎（`<csilk/drivers/db/migration.h>`），支持 SQLite / PostgreSQL 双方言（`V001`~`V014`）；具备版本严格发现排序、SHA-256 CRLF 规范化哈希防篡改、基于行锁的分布式迁移互斥锁，并在 PostgreSQL 驱动层支持原生 Prepared Statement（`?` 自动转 `$N` 与参数绑定），实现生产环境存量数据库平滑升级（Auto-Baseline），绝不要求删除已有数据库重新初始化。
 * 💼 **全资产全场景覆盖**：支持现金、银行储蓄、股票、基金、债券、加密货币、房产、贷款、信用卡等资产与负债统一建档，支持负债方向自动正负号翻转。
 * 📈 **专业资管级投资模型**：加权买入成本、分红摊薄计价、卖出部分成本按比例核减、手续费联动与基于 `parent_tx_id` 的级联回滚，精确计算已实现与浮动盈亏。
 * 🌐 **多币种实时外汇引擎 (FX Engine)**：支持全币种资产管理，内置 Yahoo Finance 实时汇率同步与手动设置，支持基准折算净资产实时呈现。
@@ -304,7 +304,7 @@ Minefolio/
 | `GET/POST` | `/api/transactions` | JWT | 交易记录（买入/卖出/存取/分红，支持 fee 联动） |
 | `PUT/DELETE` | `/api/transactions/:id` | JWT | 编辑或删除交易（带 fee 子行级联回滚） |
 | `GET/POST` | `/api/daily-expenses` | JWT | 日常记账收支列表与创建收支 |
-| `POST` | `/api/transfers` | JWT | 账户间跨资产转账（自动生成配对流水） |
+| `POST` | `/api/transfers` | JWT | 账户间跨资产转账（带 from_tx_id / to_tx_id 显式关联与配对流水） |
 
 ### 4. 计划、定投与现金流日历 (Plans & Cashflow)
 | 方法 | 路径 | 鉴权 | 说明 |
@@ -323,6 +323,7 @@ Minefolio/
 | :--- | :--- | :---: | :--- |
 | `GET` | `/api/market/search` | JWT | 检索股票/基金/加密货币标的代码 |
 | `GET` | `/api/market/quote` | JWT | 拉取单一标的当前最新实时行情 |
+| `GET` | `/api/market/indices` | JWT | 获取全球大盘主要指数实时报价与日内分时 |
 | `POST` | `/api/market/sync` | JWT | 批量刷新当前用户持仓资产的市场价格与净值 |
 | `GET` | `/api/market/exchange-rates` | JWT | 获取多币种实时外汇对汇率表 |
 | `POST` | `/api/market/exchange-rates` | JWT | 手动设置与更新特定外汇汇率 |
@@ -331,6 +332,7 @@ Minefolio/
 | `GET` | `/api/reports/multi-currency-summary` | JWT | 多币种资产构成与指定基准币种一键折算报表 |
 | `GET` | `/api/reports/fx-pnl` | JWT | 境外外币资产「价格盈亏 vs 汇率损益」剥离归因报表 |
 | `GET` | `/api/reports/holdings` | JWT | 投资持仓明细（持仓量、摊薄成本、浮动盈亏） |
+| `GET` | `/api/reports/transaction/performance` | JWT | 投资交易历史绩效分析（实现收益、胜率、分红） |
 
 ### 6. 智能识别、智能规则与 AI 助理 (Smart Features & AI)
 | 方法 | 路径 | 鉴权 | 说明 |
@@ -366,23 +368,24 @@ Minefolio/
 
 Minefolio 拥有完整的双层测试矩阵（单元测试 + 端到端集成回归）：
 
-### 1. CTest 单元测试矩阵（32 大测试套件，高频毫秒级断言）
+### 1. CTest 单元测试矩阵（35 大测试套件，高频毫秒级断言）
 ```bash
 cd backend/build
 ctest --output-on-failure
 # 覆盖核心模块：
-# - 金融核心定点数：test_currency, test_decimal, test_money, test_quantity, test_price, test_rate, test_pnl, test_fx
+# - 金融核心定点数：test_currency, test_decimal, test_money, test_quantity, test_price, test_rate, test_pnl, test_fx, test_fx_semantics
 # - 统一账本数学与引擎：test_ledger_math, test_ledger_engine
 # - 领域业务规则与仓储：test_domain_transaction, test_domain_asset, test_domain_auth, test_domain_ai, test_domain_mcp,
 #                       test_domain_portfolio, test_domain_cashflow, test_domain_market,
 #                       test_domain_cost_basis, test_domain_pnl, test_domain_position, test_domain_multi_currency,
-#                       test_domain_repositories
+#                       test_domain_repositories, test_portfolio_pnl_alignment
+# - 全球行情与大盘指数：test_market_indices
 # - 统一 AI Runtime 与风控系统：test_ai_tools, test_ai_policy, test_mcp_pool, test_policy_mcp_risk, test_ai_runtime, test_ai_summary
 # - 统一机密提供者与安全门禁：test_secret_provider
 # - 数据库抽象与迁移引擎：test_database_repository, test_migration_engine
 ```
 
-### 2. 端到端集成测试矩阵（10 大测试套件，覆盖 139+ 真实断言）
+### 2. 端到端集成测试矩阵（10 大测试套件，覆盖 151+ 真实断言）
 ```bash
 ./backend/tests/test_full.sh              # 全量回归入口
 # 或单独运行：

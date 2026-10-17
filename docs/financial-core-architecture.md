@@ -91,6 +91,12 @@ typedef struct {
    * `transfer` (`money_t amount`, `currency_t currency`)
 5. **外汇与服务层 (`services/market/exchange_rate_service.c`, `services/report_asset_service.c`, `services/dca_service.c`)**：
    * 多币种分桶汇总与外汇双因子归因损益（标的价格盈亏 vs 纯汇率损益）采用 `rate_t`, `money_t`, `percentage_t` 无误差核算。
+   * 外汇汇率安全查询语义：`exchange_rate_get_to_cny_safe()` 对未知币种返回 `-1`；原 `exchange_rate_get_to_cny()` 在 1.0 回退时输出 `[WARN]` 日志，杜绝静默吞掉汇率配置缺失。
+6. **投资绩效与持仓对齐 (`application/portfolio/usecases.c`, `domain/portfolio/rules.c`)**：
+   * 彻底移除 `portfolio_usecase_get_performance` 中的静态 `trackers[256]` 限制，改为根据交易流数量动态分配。
+   * 交易绩效计算（均价、成本扣除、已实现盈亏）全面重构为 Financial Core 定点数 (`money_t`, `quantity_t`, `price_t`, `decimal_t`)，与持仓规则对齐。
+   * 仓储层 `mf_portfolio_repo_get_trade_events` 严格过滤 `parent_tx_id IS NULL OR parent_tx_id = 0` 手续费子行。
+   * 引入 `mf_round_to_decimals()` 工具规范化输出端浮点 DTO（数量 4 位、金额 2 位），消除 JSON 输出的 IEEE 754 尾部毛刺。
 
 ---
 
@@ -109,9 +115,11 @@ typedef struct {
 | `test_rate` | 外汇金额折算、反向汇率求逆、三角套汇链式合成、百分比税费与收益率提取 | ✅ 100% PASS |
 | `test_pnl` | 连续多次加仓、加权均价核算、部分减仓、分红摊薄、浮动盈亏精确验证 | ✅ 100% PASS |
 | `test_fx` | 境外外币资产投资回报之「标的价格涨跌」与「纯汇率波动损益」数学恒等式验证 | ✅ 100% PASS |
+| `test_fx_semantics` | 外汇汇率未知币种严格报错与回退告警语义测试 | ✅ 100% PASS |
+| `test_portfolio_pnl_alignment` | 投资组合交易事件定点重放、手续费摊销与已实现/浮动盈亏一致性测试 | ✅ 100% PASS |
 
 ### 集成测试套件 (Integration Tests)
-* `test_link.sh` (33 组用例，含 133 个细分子断言)：100% PASS
+* `test_link.sh` (39 组用例，含 151 个细分子断言)：100% PASS
 * `test_ledgers.sh` (16 组用例)：100% PASS
 * `test_2fa.sh` (12 组用例)：100% PASS
 * `test_dca_cashflow.sh` (18 组用例)：100% PASS

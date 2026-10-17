@@ -78,13 +78,13 @@ This prevents orphaned fee rows from leaving incorrect balance state.
 A transfer is stored as two rows: a `transfer_out` parent and a `transfer_in` child. Pairing on delete follows a strict precedence (see `application/transaction/usecases.c`):
 
 1. **`parent_tx_id` is the authoritative key.** The create path always writes `transfer_in.parent_tx_id = transfer_out.id` (`application/transfer/usecases.c`). Deletion locates the counterpart via `parent_tx_id` first.
-2. **The `(asset_id, linked_asset_id, amount)` attribute match is a legacy fallback only** — used solely for rows written before `parent_tx_id` existed (value `<= 0`). Do not treat the `%.6f` amount comparison as a bug to remove; deleting the fallback orphans legacy `transfer_in` rows and skips their balance reversal.
-3. **The `transfers` auxiliary table has no FK back to the transaction rows** (only `from_asset_id`/`to_asset_id`/`amount`), so its cleanup must match by asset pair + amount with `ORDER BY id DESC LIMIT 1`. This is a schema limitation, not a logic shortcut. Fixing it properly requires a migration adding a `transaction_id` linkage.
+2. **`transfers` auxiliary table explicit foreign keys (V014).** Migration `V014__transfer_explicit_transactions.sql` introduced `from_tx_id` and `to_tx_id` referencing `transactions(id)`. Transfer cleanup deletes deterministically via `from_tx_id = ? OR to_tx_id = ?`.
+3. **The `(from_asset_id, to_asset_id, amount)` attribute match is a legacy fallback only** — used solely for legacy rows written before V014 where `from_tx_id <= 0` or before `parent_tx_id` existed. Do not remove this fallback as it prevents orphaned legacy rows.
 
 ### Database Migration System
 
 Database schema changes are managed strictly via csilk's native C migration engine (`<csilk/drivers/db/migration.h>`):
-- **Versioned scripts**: `backend/sql/migrations/{sqlite,postgres}/` following Flyway naming `V<num>__<name>.sql` (`V001`~`V009`).
+- **Versioned scripts**: `backend/sql/migrations/{sqlite,postgres}/` following Flyway naming `V<num>__<name>.sql` (`V001`~`V014`).
 - **Tracking table**: `schema_migrations` records `version`, `name`, `checksum` (SHA-256 CRLF-normalized), `applied_at`, `execution_time_ms`, `execution_time`.
 - **Concurrency lock**: `schema_migration_lock` table acts as a distributed mutex with lease timeout to prevent multi-instance migration races. Under PostgreSQL, csilk provides full native prepared statement support (`?` rewritten to `$N`, `PQprepare`/`PQexecPrepared`), ensuring lock acquisition and statement execution run reliably.
 - **Engine lifecycle**: Automatic discovery, version sorting, checksum validation (tamper detection), transactional application, and status reporting.
@@ -130,10 +130,10 @@ AI Runtime (services/ai/runtime/)
 | `backend/src/infrastructure/database/` | Database abstraction layer and SQLite/PostgreSQL native adapters (migration engine downstreamed to csilk) |
 | `backend/src/common/` | Cross-cutting: `db.h`, `balance.h`, `jwt.h`, `response.h`, `ctx.h`, `tx_types.h`, `ledger_utils.h` (CSV, TOTP 2FA & REST response envelopes downstreamed to csilk) |
 | `backend/src/config/` | `db_config.h/.c` (DSN), `key_manager.h/.c` (RSA-OAEP keys), `secret.h/.c` (Secret Provider) |
-| `backend/sql/migrations/` | Versioned migration scripts (`sqlite/` & `postgres/`, `V001`~`V009`) |
+| `backend/sql/migrations/` | Versioned migration scripts (`sqlite/` & `postgres/`, `V001`~`V014`) |
 | `backend/sql/` | `migration.sql` (SQLite full schema), `migration_postgres.sql` |
-| `backend/tests/unit/` | 32 CTest unit test suites (financial core, ledger, domain rules, DB repository, migration engine, AI runtime, MCP pool & risk) |
-| `backend/tests/test_link.sh` | 143-case integration test suite (HTTP + sqlite3 verification) |
+| `backend/tests/unit/` | 35 CTest unit test suites (financial core, ledger, domain rules, DB repository, migration engine, AI runtime, MCP pool & risk, FX semantics, portfolio PnL alignment) |
+| `backend/tests/test_link.sh` | 39-case integration test suite (151 assertions: auth, CRUD, balance联动, PnL, CSV, pagination, ledger rebuild, AI trace/workflow) |
 | `frontend/src/main.ts` | Desktop entry: Pinia, router, Element Plus, i18n |
 | `frontend/src/main-mobile.ts` | Mobile entry: separate router, sql.js init |
 | `frontend/src/api/` | One file per domain; never call fetch/axios directly in components |
@@ -247,6 +247,8 @@ void register_<domain>_routes(csilk_app_t* app) {
 - **NEVER** interpolate user input into SQL strings
 - **ALWAYS** use `db_get_num(obj, "key")` and `db_get_int(obj, "key")` from `db.h`
 - **NEVER** call `csilk_json_get_number()` directly — it returns `0.0` for string nodes
+- **ALWAYS** use `parse_query_int_strict()` from `common/response.h` to parse HTTP query/path integer parameters; **NEVER** use `atoll()` which silently coerces invalid input to `0`. On failure, return HTTP 1002 (`respond_bad_request`).
+- **ALWAYS** wrap multi-step balance/asset mutations in `db_tx_scope_begin()` / `db_tx_scope_commit()`, check `balance_apply_delta()` return codes, and rollback on failure.
 
 ### C — Response Envelope
 
@@ -383,15 +385,15 @@ Mobile users can customize the backend server address (e.g. LAN IP `http://192.1
 
 ## Testing & QA
 
-### Backend Unit & Integration Tests (32 CTest Suites + 10 Integration Suites)
+### Backend Unit & Integration Tests (35 CTest Suites + 10 Integration Suites)
 
 ```bash
 cd backend
-# 1. Run all 32 CTest unit test suites (sub-second fast feedback)
+# 1. Run all 35 CTest unit test suites (sub-second fast feedback)
 cd build && ctest --output-on-failure && cd ..
 
 # 2. Run all 8 end-to-end integration test suites
-./tests/test_link.sh          # 38 cases (139 assertions): auth, CRUD, balance联动, PnL, CSV, pagination, ledger rebuild
+./tests/test_link.sh          # 39 cases (151 assertions): auth, CRUD, balance联动, PnL, CSV, pagination, ledger rebuild, AI trace/workflow
 ./tests/test_ledgers.sh       # 16 cases: multi-ledger spaces, member RBAC (Owner/Editor/Viewer)
 ./tests/test_2fa.sh           # 12 cases: TOTP 2FA secret gen, QR code, enable/disable, login verification
 ./tests/test_dca_cashflow.sh  # 18 cases: DCA periodic purchase execution, cashflow calendar projection
