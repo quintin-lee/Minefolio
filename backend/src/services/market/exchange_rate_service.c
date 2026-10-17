@@ -51,11 +51,15 @@ exchange_rate_upsert_sql(void)
                               "UPDATE SET rate = excluded.rate";
 }
 
-double
-exchange_rate_get_to_cny(const char* currency)
+int
+exchange_rate_get_to_cny_safe(const char* currency, double* out_rate)
 {
+    if (!out_rate) {
+        return -1;
+    }
+    *out_rate = 1.0;
     if (!currency || !currency[0]) {
-        return 1.0;
+        return -1;
     }
 
     /* Standardize case */
@@ -70,20 +74,38 @@ exchange_rate_get_to_cny(const char* currency)
     cur_upper[len] = '\0';
 
     if (strcmp(cur_upper, "CNY") == 0 || strcmp(cur_upper, "RMB") == 0) {
-        return 1.0;
+        *out_rate = 1.0;
+        return 0;
     }
 
-    double rate = 1.0;
     pthread_mutex_lock(&g_rate_mutex);
     for (int i = 0; g_rates[i].currency[0] != '\0'; i++) {
         if (strcmp(g_rates[i].currency, cur_upper) == 0) {
-            rate = g_rates[i].rate_to_cny;
-            break;
+            *out_rate = g_rates[i].rate_to_cny;
+            pthread_mutex_unlock(&g_rate_mutex);
+            return 0;
         }
     }
     pthread_mutex_unlock(&g_rate_mutex);
 
-    return rate > 0 ? rate : 1.0;
+    return -1;
+}
+
+double
+exchange_rate_get_to_cny(const char* currency)
+{
+    double rate = 1.0;
+    if (exchange_rate_get_to_cny_safe(currency, &rate) == 0) {
+        return rate > 0.0 ? rate : 1.0;
+    }
+    if (currency && currency[0] && strcasecmp(currency, "CNY") != 0 &&
+        strcasecmp(currency, "RMB") != 0) {
+        fprintf(stderr,
+                "[WARN] Unknown currency '%s' requested in exchange_rate_get_to_cny; falling back "
+                "to 1.0\n",
+                currency);
+    }
+    return 1.0;
 }
 
 rate_t

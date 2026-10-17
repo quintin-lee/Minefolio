@@ -130,9 +130,9 @@ mf_portfolio_repo_get_trade_events(void*                        db_pool,
                  "t.price_per_unit, t.fee, "
                  "t.currency "
                  "FROM transactions t JOIN assets a ON t.asset_id = a.id "
-                 "WHERE t.user_id = ? AND (t.ledger_id = ? OR a.ledger_id = ?) ORDER BY "
-                 "t.transaction_date "
-                 "ASC, t.id ASC");
+                 "WHERE t.user_id = ? AND (t.ledger_id = ? OR a.ledger_id = ?) "
+                 "AND (t.parent_tx_id IS NULL OR t.parent_tx_id = 0) "
+                 "ORDER BY t.transaction_date ASC, t.id ASC");
         params[pidx++] = lid_str;
         params[pidx++] = lid_str;
     } else {
@@ -140,7 +140,9 @@ mf_portfolio_repo_get_trade_events(void*                        db_pool,
                  sizeof(tx_sql),
                  "SELECT id, asset_id, transaction_type, quantity, amount, price_per_unit, fee, "
                  "currency "
-                 "FROM transactions WHERE user_id = ? ORDER BY transaction_date ASC, id ASC");
+                 "FROM transactions WHERE user_id = ? "
+                 "AND (parent_tx_id IS NULL OR parent_tx_id = 0) "
+                 "ORDER BY transaction_date ASC, id ASC");
     }
     params[pidx] = NULL;
 

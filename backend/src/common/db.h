@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <math.h>
 
 /**
  * @brief 初始化全局数据库连接池单例
@@ -260,4 +261,17 @@ db_get_percentage(const csilk_json_t* obj, const char* key)
 {
     decimal_t d = db_get_decimal(obj, key);
     return percentage_from_decimal(d);
+}
+
+/**
+ * @brief 对浮点数执行确定性精度四舍五入，消除 IEEE-754 尾部毛刺
+ */
+static inline double
+mf_round_to_decimals(double val, int decimals)
+{
+    double factor = 1.0;
+    for (int i = 0; i < decimals; i++) {
+        factor *= 10.0;
+    }
+    return round(val * factor) / factor;
 }

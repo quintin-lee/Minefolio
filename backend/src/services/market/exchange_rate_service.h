@@ -24,6 +24,14 @@ rate_t exchange_rate_get_rate(currency_t from_cur, currency_t to_cur);
 money_t exchange_rate_convert_m(money_t amount, currency_t to_currency);
 
 /**
+ * @brief 安全获取指定货币对 CNY 的汇率
+ * @param currency 货币代码 (如 "USD", "HKD")
+ * @param out_rate 输出汇率
+ * @return 0 成功匹配已知汇率; -1 未知货币或参数非法
+ */
+int exchange_rate_get_to_cny_safe(const char* currency, double* out_rate);
+
+/**
  * @brief 查询指定币种对基准币种 (CNY) 的实时折算汇率。
  *
  * @param currency 币种 ISO 3位代码（如 "USD", "EUR", "HKD", "JPY" 等，不区分大小写）
