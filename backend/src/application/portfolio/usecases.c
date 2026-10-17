@@ -69,26 +69,37 @@ portfolio_usecase_get_holdings(void*                        db_pool,
         csilk_json_add_string(h, "name", it->name);
         csilk_json_add_string(h, "asset_type", it->asset_type);
         csilk_json_add_string(h, "currency", currency_code(&it->currency));
-        csilk_json_add_number(h, "quantity", quantity_to_double(it->quantity));
-        csilk_json_add_number(h, "net_value", price_to_double(it->net_value));
-        csilk_json_add_number(h, "cost_basis", money_to_double(it->cost_basis));
-        csilk_json_add_number(h, "current_value", money_to_double(it->market_value));
-        csilk_json_add_number(h, "floating_pnl", money_to_double(it->floating_pnl));
-        csilk_json_add_number(h, "floating_pct", it->floating_pct);
-        csilk_json_add_number(h, "realized_pnl", money_to_double(it->realized_pnl));
+        csilk_json_add_number(
+            h, "quantity", mf_round_to_decimals(quantity_to_double(it->quantity), 4));
+        csilk_json_add_number(
+            h, "net_value", mf_round_to_decimals(price_to_double(it->net_value), 4));
+        csilk_json_add_number(
+            h, "cost_basis", mf_round_to_decimals(money_to_double(it->cost_basis), 2));
+        csilk_json_add_number(
+            h, "current_value", mf_round_to_decimals(money_to_double(it->market_value), 2));
+        csilk_json_add_number(
+            h, "floating_pnl", mf_round_to_decimals(money_to_double(it->floating_pnl), 2));
+        csilk_json_add_number(h, "floating_pct", mf_round_to_decimals(it->floating_pct, 2));
+        csilk_json_add_number(
+            h, "realized_pnl", mf_round_to_decimals(money_to_double(it->realized_pnl), 2));
         csilk_json_array_append(holdings_arr, h);
     }
 
     csilk_json_t* summary_obj = csilk_json_object();
+    csilk_json_add_number(summary_obj,
+                          "total_market_value",
+                          mf_round_to_decimals(money_to_double(summary.total_market_value), 2));
+    csilk_json_add_number(summary_obj,
+                          "total_cost_basis",
+                          mf_round_to_decimals(money_to_double(summary.total_cost_basis), 2));
+    csilk_json_add_number(summary_obj,
+                          "total_floating_pnl",
+                          mf_round_to_decimals(money_to_double(summary.total_floating_pnl), 2));
+    csilk_json_add_number(summary_obj,
+                          "total_realized_pnl",
+                          mf_round_to_decimals(money_to_double(summary.total_realized_pnl), 2));
     csilk_json_add_number(
-        summary_obj, "total_market_value", money_to_double(summary.total_market_value));
-    csilk_json_add_number(
-        summary_obj, "total_cost_basis", money_to_double(summary.total_cost_basis));
-    csilk_json_add_number(
-        summary_obj, "total_floating_pnl", money_to_double(summary.total_floating_pnl));
-    csilk_json_add_number(
-        summary_obj, "total_realized_pnl", money_to_double(summary.total_realized_pnl));
-    csilk_json_add_number(summary_obj, "floating_pct", summary.floating_pct);
+        summary_obj, "floating_pct", mf_round_to_decimals(summary.floating_pct, 2));
 
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_object(resp, "summary", summary_obj);
@@ -283,12 +294,13 @@ portfolio_usecase_get_performance(void*                        db_pool,
         csilk_json_add_string(trade, "asset_name", csilk_json_get_string(row, "asset_name"));
         csilk_json_add_string(trade, "type", type ? type : "");
         csilk_json_add_string(trade, "date", date_s ? date_s : "");
-        csilk_json_add_number(trade, "quantity", quantity_to_double(qty));
-        csilk_json_add_number(trade, "price", price_to_double(price));
-        csilk_json_add_number(trade, "amount", money_to_double(amt));
-        csilk_json_add_number(trade, "avg_cost_at_trade", avg_cost);
-        csilk_json_add_number(trade, "realized", money_to_double(realized_m));
-        csilk_json_add_number(trade, "fee", money_to_double(fee));
+        csilk_json_add_number(trade, "quantity", mf_round_to_decimals(quantity_to_double(qty), 4));
+        csilk_json_add_number(trade, "price", mf_round_to_decimals(price_to_double(price), 4));
+        csilk_json_add_number(trade, "amount", mf_round_to_decimals(money_to_double(amt), 2));
+        csilk_json_add_number(trade, "avg_cost_at_trade", mf_round_to_decimals(avg_cost, 4));
+        csilk_json_add_number(
+            trade, "realized", mf_round_to_decimals(money_to_double(realized_m), 2));
+        csilk_json_add_number(trade, "fee", mf_round_to_decimals(money_to_double(fee), 2));
         csilk_json_array_append(trades, trade);
     }
     free(trackers);
@@ -300,13 +312,15 @@ portfolio_usecase_get_performance(void*                        db_pool,
 
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_number(resp, "total_trades", total_trades);
-    csilk_json_add_number(resp, "total_gain", total_gain);
-    csilk_json_add_number(resp, "total_loss", total_loss);
-    csilk_json_add_number(resp, "net_gain", total_gain - total_loss);
-    csilk_json_add_number(resp, "total_cost_basis_remaining", cost_basis_remaining);
-    csilk_json_add_number(resp, "total_market_value", market_value);
-    csilk_json_add_number(resp, "floating_pnl", market_value - cost_basis_remaining);
-    csilk_json_add_number(resp, "realized_pnl", total_realized_pnl);
+    csilk_json_add_number(resp, "total_gain", mf_round_to_decimals(total_gain, 2));
+    csilk_json_add_number(resp, "total_loss", mf_round_to_decimals(total_loss, 2));
+    csilk_json_add_number(resp, "net_gain", mf_round_to_decimals(total_gain - total_loss, 2));
+    csilk_json_add_number(
+        resp, "total_cost_basis_remaining", mf_round_to_decimals(cost_basis_remaining, 2));
+    csilk_json_add_number(resp, "total_market_value", mf_round_to_decimals(market_value, 2));
+    csilk_json_add_number(
+        resp, "floating_pnl", mf_round_to_decimals(market_value - cost_basis_remaining, 2));
+    csilk_json_add_number(resp, "realized_pnl", mf_round_to_decimals(total_realized_pnl, 2));
     csilk_json_add_array(resp, "trades", trades);
 
     *out_resp = resp;
@@ -390,9 +404,9 @@ portfolio_usecase_get_dashboard_summary(void*                        db_pool,
         portfolio_repo_get_recent_transactions(db_pool, cmd->user_id, cmd->ledger_id, 5);
 
     csilk_json_t* resp = csilk_json_object();
-    csilk_json_add_number(resp, "total_assets", total_assets);
-    csilk_json_add_number(resp, "total_liabilities", total_liabilities);
-    csilk_json_add_number(resp, "net_worth", net_worth);
+    csilk_json_add_number(resp, "total_assets", mf_round_to_decimals(total_assets, 2));
+    csilk_json_add_number(resp, "total_liabilities", mf_round_to_decimals(total_liabilities, 2));
+    csilk_json_add_number(resp, "net_worth", mf_round_to_decimals(net_worth, 2));
     csilk_json_add_array(resp, "category_breakdown", breakdown);
     csilk_json_add_array(resp, "recent_transactions", recent_tx ? recent_tx : csilk_json_array());
 
