@@ -211,7 +211,8 @@ test_auto_baseline_existing_database(void)
                "name TEXT);"
                "INSERT INTO categories (id, user_id, ledger_id, name) VALUES (20, 1, NULL, 'legacy');"
                "CREATE TABLE assets (id INTEGER PRIMARY KEY, user_id INTEGER, ledger_id INTEGER);"
-               "CREATE TABLE transactions (id INTEGER PRIMARY KEY, user_id INTEGER, ledger_id INTEGER);"
+               "CREATE TABLE transactions (id INTEGER PRIMARY KEY, user_id INTEGER, ledger_id INTEGER, "
+               "asset_id INTEGER, linked_asset_id INTEGER, transaction_type TEXT, amount DECIMAL(18,2));"
                "CREATE TABLE daily_expenses (id INTEGER PRIMARY KEY, user_id INTEGER, ledger_id INTEGER);"
                "CREATE TABLE category_seed_state (user_id INTEGER PRIMARY KEY);"
                "INSERT INTO category_seed_state (user_id) VALUES (1);") == 0);
@@ -299,7 +300,7 @@ test_postgres_migration_dialect(void)
     csilk_migration_item_t* items = NULL;
     int                     count = 0;
     assert(csilk_migration_discover(engine, &items, &count) == 0);
-    assert(count >= 13);
+    assert(count >= 14);
     assert(strstr(items[0].filepath, "postgres") != NULL);
 
     free(items);

@@ -581,6 +581,148 @@ test_transfer_delete_clean_rollback(csilk_db_pool_t* pool, int64_t user_id)
 }
 
 static void
+test_transfer_identical_duplicate_deletion(csilk_db_pool_t* pool, int64_t user_id)
+{
+    printf("--- 3d-2. Testing Identical Duplicate Transfer Precise Deletion ---\n");
+
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+
+    // Create cash category
+    csilk_json_t* ins_cat = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO categories (user_id, name, type, asset_type, currency, ledger_id) "
+        "VALUES (?, 'Dup Transfer Cash Cat', 'asset', 'cash', 'CNY', 101) RETURNING id",
+        (const char*[]){uid_str, NULL});
+    assert(ins_cat && csilk_json_array_size(ins_cat) > 0);
+    int64_t cat_id = db_get_int(csilk_json_array_get(ins_cat, 0), "id");
+    csilk_json_free(ins_cat);
+
+    char cat_str[32];
+    snprintf(cat_str, sizeof(cat_str), "%lld", (long long)cat_id);
+
+    // Create from_asset and to_asset
+    csilk_json_t* ins_f = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO assets (user_id, category_id, name, current_value, currency, ledger_id) "
+        "VALUES (?, ?, 'Dup From Asset', 1000.0, 'CNY', 101) RETURNING id",
+        (const char*[]){uid_str, cat_str, NULL});
+    assert(ins_f && csilk_json_array_size(ins_f) > 0);
+    int64_t from_asset = db_get_int(csilk_json_array_get(ins_f, 0), "id");
+    csilk_json_free(ins_f);
+
+    csilk_json_t* ins_t = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO assets (user_id, category_id, name, current_value, currency, ledger_id) "
+        "VALUES (?, ?, 'Dup To Asset', 1000.0, 'CNY', 101) RETURNING id",
+        (const char*[]){uid_str, cat_str, NULL});
+    assert(ins_t && csilk_json_array_size(ins_t) > 0);
+    int64_t to_asset = db_get_int(csilk_json_array_get(ins_t, 0), "id");
+    csilk_json_free(ins_t);
+
+    // Create 2 transfers with IDENTICAL amount (300.0 CNY) and identical accounts
+    create_transfer_cmd_t cmd1 = {
+        .user_id = user_id,
+        .from_asset_id = from_asset,
+        .to_asset_id = to_asset,
+        .amount = 300.0,
+        .currency = "CNY",
+        .transfer_date = "2026-10-17 10:00:00",
+        .note = "Transfer One",
+        .ledger_id = 101
+    };
+    transfer_usecase_result_t res1 = {0};
+    assert(transfer_usecase_create(pool, &cmd1, &res1) == 0);
+
+    create_transfer_cmd_t cmd2 = {
+        .user_id = user_id,
+        .from_asset_id = from_asset,
+        .to_asset_id = to_asset,
+        .amount = 300.0,
+        .currency = "CNY",
+        .transfer_date = "2026-10-17 10:01:00",
+        .note = "Transfer Two",
+        .ledger_id = 101
+    };
+    transfer_usecase_result_t res2 = {0};
+    assert(transfer_usecase_create(pool, &cmd2, &res2) == 0);
+
+    // Query transfers table: verify both records exist with distinct from_tx_id and to_tx_id
+    char fid_str[32], tid_str[32];
+    snprintf(fid_str, sizeof(fid_str), "%lld", (long long)from_asset);
+    snprintf(tid_str, sizeof(tid_str), "%lld", (long long)to_asset);
+
+    csilk_json_t* tr_rows = csilk_db_query_param_json(
+        pool,
+        "SELECT id, from_tx_id, to_tx_id, note FROM transfers WHERE user_id=? AND from_asset_id=? ORDER BY id ASC",
+        (const char*[]){uid_str, fid_str, NULL});
+    assert(tr_rows && csilk_json_array_size(tr_rows) == 2);
+
+    const csilk_json_t* row1 = csilk_json_array_get(tr_rows, 0);
+    const csilk_json_t* row2 = csilk_json_array_get(tr_rows, 1);
+
+    int64_t tr1_id = db_get_int(row1, "id");
+    int64_t tr1_from_tx = db_get_int(row1, "from_tx_id");
+    int64_t tr1_to_tx = db_get_int(row1, "to_tx_id");
+
+    int64_t tr2_id = db_get_int(row2, "id");
+    int64_t tr2_from_tx = db_get_int(row2, "from_tx_id");
+    int64_t tr2_to_tx = db_get_int(row2, "to_tx_id");
+
+    assert(tr1_id > 0 && tr2_id > 0 && tr1_id != tr2_id);
+    assert(tr1_from_tx > 0 && tr2_from_tx > 0 && tr1_from_tx != tr2_from_tx);
+    assert(tr1_to_tx > 0 && tr2_to_tx > 0 && tr1_to_tx != tr2_to_tx);
+    csilk_json_free(tr_rows);
+
+    // Delete Transfer 1 by its transfer_out tx_id
+    delete_tx_cmd_t d_cmd = {.user_id = user_id, .tx_id = tr1_from_tx};
+    tx_usecase_result_t d_res = {0};
+    assert(tx_usecase_delete(pool, &d_cmd, &d_res) == 0);
+
+    // CRITICAL ASSERTION: Transfer 1 must be deleted, but Transfer 2 MUST REMAIN!
+    char tr1_str[32], tr2_str[32];
+    snprintf(tr1_str, sizeof(tr1_str), "%lld", (long long)tr1_id);
+    snprintf(tr2_str, sizeof(tr2_str), "%lld", (long long)tr2_id);
+
+    csilk_json_t* chk1 = csilk_db_query_param_json(
+        pool, "SELECT id FROM transfers WHERE id=?", (const char*[]){tr1_str, NULL});
+    assert(!chk1 || csilk_json_array_size(chk1) == 0);
+    if (chk1) csilk_json_free(chk1);
+
+    csilk_json_t* chk2 = csilk_db_query_param_json(
+        pool, "SELECT id, note FROM transfers WHERE id=?", (const char*[]){tr2_str, NULL});
+    assert(chk2 && csilk_json_array_size(chk2) == 1);
+    assert(strcmp(csilk_json_get_string(csilk_json_array_get(chk2, 0), "note"), "Transfer Two") == 0);
+    csilk_json_free(chk2);
+
+    // Delete Transfer 2 by its transfer_in tx_id
+    delete_tx_cmd_t d_cmd2 = {.user_id = user_id, .tx_id = tr2_to_tx};
+    tx_usecase_result_t d_res2 = {0};
+    assert(tx_usecase_delete(pool, &d_cmd2, &d_res2) == 0);
+
+    // Both transfers are now gone
+    csilk_json_t* chk2_after = csilk_db_query_param_json(
+        pool, "SELECT id FROM transfers WHERE id=?", (const char*[]){tr2_str, NULL});
+    assert(!chk2_after || csilk_json_array_size(chk2_after) == 0);
+    if (chk2_after) csilk_json_free(chk2_after);
+
+    // Balances are restored to 1000.0 each
+    csilk_json_t* f_check = csilk_db_query_param_json(pool, "SELECT current_value FROM assets WHERE id=?", (const char*[]){fid_str, NULL});
+    assert(f_check && csilk_json_array_size(f_check) > 0);
+    double f_val = db_get_num(csilk_json_array_get(f_check, 0), "current_value");
+    csilk_json_free(f_check);
+    assert(f_val == 1000.0);
+
+    csilk_json_t* t_check = csilk_db_query_param_json(pool, "SELECT current_value FROM assets WHERE id=?", (const char*[]){tid_str, NULL});
+    assert(t_check && csilk_json_array_size(t_check) > 0);
+    double t_val = db_get_num(csilk_json_array_get(t_check, 0), "current_value");
+    csilk_json_free(t_check);
+    assert(t_val == 1000.0);
+
+    printf("  ✅ Identical Duplicate Transfer Precise Deletion passed\n");
+}
+
+static void
 test_tx_monthly_excludes_transfers(csilk_db_pool_t* pool, int64_t user_id)
 {
     printf("--- 3e. Testing Transaction Monthly Excludes Transfers ---\n");
@@ -1181,6 +1323,7 @@ main(void)
     test_transaction_ledger_scoping(pool, user_id, asset_id);
     test_transaction_update_change_asset(pool, user_id);
     test_transfer_delete_clean_rollback(pool, user_id);
+    test_transfer_identical_duplicate_deletion(pool, user_id);
     test_tx_monthly_excludes_transfers(pool, user_id);
     test_portfolio_repository(pool, user_id, asset_id);
     test_cashflow_repository(pool, user_id);
