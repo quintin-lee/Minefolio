@@ -83,7 +83,7 @@ echo "Bob created OK (ID: $USER_B_ID)"
 
 # 3. Check Alice's default ledger
 LEDGERS_A=$(curl -s -X GET "$BASE/ledgers" -H "Authorization: Bearer $TOKEN_A")
-DEF_LID_A=$(echo "$LEDGERS_A" | jq -r '.data[0].id')
+DEF_LID_A=$(echo "$LEDGERS_A" | jq -r '.data[0].id | floor')
 DEF_NAME_A=$(echo "$LEDGERS_A" | jq -r '.data[0].name')
 test "$DEF_NAME_A" = "默认账本"
 echo "Alice has default ledger: $DEF_LID_A ($DEF_NAME_A)"

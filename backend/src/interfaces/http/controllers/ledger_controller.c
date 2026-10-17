@@ -61,7 +61,7 @@ ledger_service_create(csilk_ctx_t* c)
 
     if (new_id > 0 && res.code == 0) {
         csilk_json_t* r = csilk_json_object();
-        csilk_json_add_number(r, "id", (double)new_id);
+        csilk_json_add_int(r, "id", new_id);
         respond_ok(c, r);
     } else {
         respond_error(c,
@@ -363,7 +363,7 @@ ledger_service_join_by_invite(csilk_ctx_t* c)
 
     if (rc == 0 && res.code == 0) {
         csilk_json_t* r = csilk_json_object();
-        csilk_json_add_number(r, "id", (double)joined_id);
+        csilk_json_add_int(r, "id", joined_id);
         respond_ok(c, r);
     } else {
         respond_error(

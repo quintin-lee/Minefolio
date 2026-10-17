@@ -131,8 +131,24 @@ parse_query_int_strict(const char* s, int64_t dflt)
     errno = 0;
     char*     end = NULL;
     long long v = strtoll(s, &end, 10);
-    if (errno != 0 || end == s || *end != '\0') {
+    if (errno != 0 || end == s) {
         return dflt;
+    }
+    if (*end != '\0') {
+        if (*end == '.') {
+            const char* p = end + 1;
+            if (*p == '\0') {
+                return dflt;
+            }
+            while (*p == '0') {
+                p++;
+            }
+            if (*p != '\0') {
+                return dflt;
+            }
+        } else {
+            return dflt;
+        }
     }
     return (int64_t)v;
 }

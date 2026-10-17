@@ -36,8 +36,8 @@ static csilk_json_t*
 ledger_list_item_to_json(const mf_ledger_list_item_t* item)
 {
     csilk_json_t* obj = csilk_json_object();
-    csilk_json_add_number(obj, "id", (double)item->id);
-    csilk_json_add_number(obj, "owner_id", (double)item->owner_id);
+    csilk_json_add_int(obj, "id", item->id);
+    csilk_json_add_int(obj, "owner_id", item->owner_id);
     csilk_json_add_string(obj, "name", item->name);
     csilk_json_add_string(obj, "description", item->description);
     csilk_json_add_string(obj, "currency", item->currency);
@@ -50,7 +50,7 @@ ledger_list_item_to_json(const mf_ledger_list_item_t* item)
     csilk_json_add_string(obj, "updated_at", item->updated_at);
     csilk_json_add_string(obj, "my_role", item->my_role);
     csilk_json_add_string(obj, "owner_username", item->owner_username);
-    csilk_json_add_number(obj, "member_count", (double)item->member_count);
+    csilk_json_add_int(obj, "member_count", item->member_count);
     csilk_json_add_number(obj, "total_assets", item->total_assets);
     return obj;
 }
@@ -62,8 +62,8 @@ static csilk_json_t*
 ledger_to_json(const mf_ledger_t* ledger)
 {
     csilk_json_t* obj = csilk_json_object();
-    csilk_json_add_number(obj, "id", (double)ledger->id);
-    csilk_json_add_number(obj, "owner_id", (double)ledger->owner_id);
+    csilk_json_add_int(obj, "id", ledger->id);
+    csilk_json_add_int(obj, "owner_id", ledger->owner_id);
     csilk_json_add_string(obj, "name", ledger->name);
     csilk_json_add_string(obj, "description", ledger->description);
     csilk_json_add_string(obj, "currency", ledger->currency);
@@ -86,9 +86,9 @@ member_list_to_json(const mf_ledger_member_t* list, size_t count)
     csilk_json_t* arr = csilk_json_array();
     for (size_t i = 0; i < count; i++) {
         csilk_json_t* obj = csilk_json_object();
-        csilk_json_add_number(obj, "id", (double)list[i].id);
-        csilk_json_add_number(obj, "ledger_id", (double)list[i].ledger_id);
-        csilk_json_add_number(obj, "user_id", (double)list[i].user_id);
+        csilk_json_add_int(obj, "id", list[i].id);
+        csilk_json_add_int(obj, "ledger_id", list[i].ledger_id);
+        csilk_json_add_int(obj, "user_id", list[i].user_id);
         csilk_json_add_string(obj, "username", list[i].username);
         csilk_json_add_string(obj, "role", list[i].role);
         csilk_json_add_string(obj, "joined_at", list[i].joined_at);

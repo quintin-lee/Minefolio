@@ -19,8 +19,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$(cd "$SCRIPT_DIR/../build" && pwd)"
-PORT="${PORT:-8080}"
-MOCK_PORT="${MOCK_PORT:-18080}"
+PORT="${PORT:-18087}"
+MOCK_PORT="${MOCK_PORT:-18089}"
 BASE="http://127.0.0.1:$PORT/api"
 DB="$(mktemp -d)/mf_ai_tool.db"
 MOCK_LOG="$(dirname "$DB")/mock.log"
