@@ -52,33 +52,10 @@ transfer_usecase_create(void*                        pool,
         return -1;
     }
 
-    /* 1. Insert transfer record */
-    mf_transfer_t transfer = {0};
-    transfer.user_id = cmd->user_id;
-    transfer.from_asset_id = cmd->from_asset_id;
-    transfer.to_asset_id = cmd->to_asset_id;
-    transfer.amount = cmd->amount;
-    transfer.ledger_id = cmd->ledger_id;
-    strncpy(transfer.currency,
-            cmd->currency && cmd->currency[0] ? cmd->currency : "CNY",
-            sizeof(transfer.currency) - 1);
-    strncpy(transfer.transfer_date, cmd->transfer_date, sizeof(transfer.transfer_date) - 1);
-    if (cmd->note) {
-        strncpy(transfer.note, cmd->note, sizeof(transfer.note) - 1);
-    }
-
-    int64_t transfer_id = mf_transfer_repo_insert(pool, cmd->user_id, &transfer);
-    if (transfer_id <= 0) {
-        csilk_db_exec(pool, "ROLLBACK");
-        out_res->code = 500;
-        snprintf(out_res->message, sizeof(out_res->message), "转账失败");
-        return -1;
-    }
-
     const char* cur = cmd->currency && cmd->currency[0] ? cmd->currency : "CNY";
     const char* note = cmd->note ? cmd->note : "";
 
-    /* 2. Record transfer_out transaction */
+    /* 1. Record transfer_out transaction */
     int64_t out_tx_id = mf_transfer_repo_insert_out_transaction(pool,
                                                                 cmd->user_id,
                                                                 cmd->from_asset_id,
@@ -95,7 +72,7 @@ transfer_usecase_create(void*                        pool,
         return -1;
     }
 
-    /* 3. Record transfer_in transaction (paired with out_tx_id as parent_tx_id) */
+    /* 2. Record transfer_in transaction (paired with out_tx_id as parent_tx_id) */
     int64_t in_tx_id = mf_transfer_repo_insert_in_transaction(pool,
                                                               cmd->user_id,
                                                               cmd->to_asset_id,
@@ -110,6 +87,29 @@ transfer_usecase_create(void*                        pool,
         csilk_db_exec(pool, "ROLLBACK");
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "记录划转交易失败");
+        return -1;
+    }
+
+    /* 3. Insert transfer record with explicit from_tx_id and to_tx_id */
+    mf_transfer_t transfer = {0};
+    transfer.user_id = cmd->user_id;
+    transfer.from_asset_id = cmd->from_asset_id;
+    transfer.to_asset_id = cmd->to_asset_id;
+    transfer.amount = cmd->amount;
+    transfer.ledger_id = cmd->ledger_id;
+    transfer.from_tx_id = out_tx_id;
+    transfer.to_tx_id = in_tx_id;
+    strncpy(transfer.currency, cur, sizeof(transfer.currency) - 1);
+    strncpy(transfer.transfer_date, cmd->transfer_date, sizeof(transfer.transfer_date) - 1);
+    if (cmd->note) {
+        strncpy(transfer.note, cmd->note, sizeof(transfer.note) - 1);
+    }
+
+    int64_t transfer_id = mf_transfer_repo_insert(pool, cmd->user_id, &transfer);
+    if (transfer_id <= 0) {
+        csilk_db_exec(pool, "ROLLBACK");
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "转账失败");
         return -1;
     }
 

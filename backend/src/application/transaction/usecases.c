@@ -339,14 +339,15 @@ tx_usecase_delete(void* pool, const delete_tx_cmd_t* cmd, tx_usecase_result_t* o
     int is_transfer_out = (type && strcmp(type, "transfer_out") == 0);
     int is_transfer_in = (type && strcmp(type, "transfer_in") == 0);
 
-    /* 转账配对不变式（有意保留，勿当作 %.6f 浮点相等 bug 清理）：
+    /* 转账配对不变式：
        - 权威配对键是 parent_tx_id：创建路径恒定将 transfer_in.parent_tx_id 写为
          transfer_out.id（见 application/transfer/usecases.c 记录 in 交易处）。
          删除时优先据此定位主/子单（下方 parent_tx_id=? / main_out_id=parent_tx_id）。
        - 仅在「历史遗留行」（引入 parent_tx_id 之前落库、值 <= 0）时，才退化到
          (transaction_type + asset_id + linked_asset_id + amount) 属性匹配兜底。
-       - transfers 辅助表无回指 transactions 的外键（仅存 from/to/amount），故其清理
-         只能按资产对 + amount + ORDER BY id DESC LIMIT 1 取最近一条，属 schema 约束所致。
+       - transfers 辅助表在 V014 引入显式双向外键 (from_tx_id, to_tx_id) 建立强关联：
+         删除时优先按外键 (from_tx_id=? OR to_tx_id=?) 精准删除；
+         若无受影响记录（历史未回填外键的遗留行），才退化到属性匹配兜底。
        去掉上述兜底会孤立遗留 transfer_in、漏回滚余额，故此处维持现状。 */
     if (is_transfer_out) {
         /* 1. transfer_out 作为转账主单，执行状态回滚 (同时还原转出和转入资产余额) */
@@ -380,14 +381,24 @@ tx_usecase_delete(void* pool, const delete_tx_cmd_t* cmd, tx_usecase_result_t* o
             return -1;
         }
 
-        /* 4. 清理 transfers 记录 */
-        csilk_json_free(
-            csilk_db_query_param_json(pool,
-                                      "DELETE FROM transfers WHERE id IN ("
-                                      "  SELECT id FROM transfers WHERE user_id=? AND "
-                                      "from_asset_id=? AND to_asset_id=? AND amount=? "
-                                      "  ORDER BY id DESC LIMIT 1)",
-                                      (const char*[]){uid_str, aid_str, laid_str, amt_str, NULL}));
+        /* 4. 清理 transfers 记录 (优先精准按外键删除，兼容兜底历史遗留行) */
+        csilk_json_t* del_res = csilk_db_query_param_json(
+            pool,
+            "DELETE FROM transfers WHERE user_id=? AND (from_tx_id=? OR to_tx_id=?) RETURNING id",
+            (const char*[]){uid_str, tid_str, tid_str, NULL});
+        if (!del_res || csilk_json_array_size(del_res) == 0) {
+            // 历史遗留行兜底（未回填外键的数据）
+            csilk_json_free(csilk_db_query_param_json(
+                pool,
+                "DELETE FROM transfers WHERE id IN ("
+                "  SELECT id FROM transfers WHERE user_id=? AND "
+                "from_asset_id=? AND to_asset_id=? AND amount=? "
+                "  ORDER BY id DESC LIMIT 1)",
+                (const char*[]){uid_str, aid_str, laid_str, amt_str, NULL}));
+        }
+        if (del_res) {
+            csilk_json_free(del_res);
+        }
     } else if (is_transfer_in) {
         /* 若删除的是 transfer_in: 寻找配对的 transfer_out 主单执行回滚 */
         int64_t main_out_id = parent_tx_id;
@@ -429,14 +440,26 @@ tx_usecase_delete(void* pool, const delete_tx_cmd_t* cmd, tx_usecase_result_t* o
             // 也删除当前 transfer_in（以防未被 parent_tx_id 关联到）
             tx_delete(pool, cmd->user_id, cmd->tx_id);
 
-            // 清理 transfers
-            csilk_json_free(csilk_db_query_param_json(
+            // 清理 transfers (优先按主单或子单 ID 精准删除，兼容兜底)
+            const char*   target_tx_id = (main_out_id > 0) ? maid_str : tid_str;
+            csilk_json_t* del_res = csilk_db_query_param_json(
                 pool,
-                "DELETE FROM transfers WHERE id IN ("
-                "  SELECT id FROM transfers WHERE user_id=? AND from_asset_id=? AND to_asset_id=? "
-                "AND amount=? "
-                "  ORDER BY id DESC LIMIT 1)",
-                (const char*[]){uid_str, laid_str, aid_str, amt_str, NULL}));
+                "DELETE FROM transfers WHERE user_id=? AND (from_tx_id=? OR to_tx_id=?) RETURNING "
+                "id",
+                (const char*[]){uid_str, target_tx_id, target_tx_id, NULL});
+            if (!del_res || csilk_json_array_size(del_res) == 0) {
+                csilk_json_free(csilk_db_query_param_json(
+                    pool,
+                    "DELETE FROM transfers WHERE id IN ("
+                    "  SELECT id FROM transfers WHERE user_id=? AND from_asset_id=? AND "
+                    "to_asset_id=? "
+                    "AND amount=? "
+                    "  ORDER BY id DESC LIMIT 1)",
+                    (const char*[]){uid_str, laid_str, aid_str, amt_str, NULL}));
+            }
+            if (del_res) {
+                csilk_json_free(del_res);
+            }
         } else {
             // 单独存在的 transfer_in，直接单笔回滚
             if (ledger_reverse_tx(pool, cmd->user_id, cmd->tx_id) != 0) {
@@ -447,6 +470,11 @@ tx_usecase_delete(void* pool, const delete_tx_cmd_t* cmd, tx_usecase_result_t* o
                 return -1;
             }
             tx_delete(pool, cmd->user_id, cmd->tx_id);
+
+            csilk_json_free(csilk_db_query_param_json(
+                pool,
+                "DELETE FROM transfers WHERE user_id=? AND (from_tx_id=? OR to_tx_id=?)",
+                (const char*[]){uid_str, tid_str, tid_str, NULL}));
         }
     } else {
         /* 普通交易 */
