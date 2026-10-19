@@ -11,6 +11,18 @@
           <el-radio-button :value="90">近 90 天</el-radio-button>
           <el-radio-button :value="365">近 1 年</el-radio-button>
         </el-radio-group>
+
+        <el-dropdown trigger="click" @command="handleExport" class="chart-export-dropdown ml-2">
+          <el-button size="small" class="chart-action-btn" title="导出图表">
+            <Icon icon="ph:download-simple-bold" class="action-icon" />
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="png">📸 导出高清图 (PNG)</el-dropdown-item>
+              <el-dropdown-item command="csv">📊 导出数据表 (CSV)</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </div>
     </div>
     <div v-loading="loading" ref="chartRef" class="chart-body" />
@@ -19,10 +31,12 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
+import { Icon } from '@iconify/vue'
 import echarts, { type ECharts, type EChartsOption } from '@/utils/echarts'
 import { marketApi } from '@/api/market'
 import type { PriceHistoryItem } from '@/types'
 import { resolveChartPalette, useChartThemeSync, withAlpha } from '@/utils/echarts-theme'
+import { exportChartPng, exportChartCsv } from '@/utils/chart-export'
 
 const props = defineProps<{
   assetId: number
@@ -97,6 +111,16 @@ function renderChart() {
         formatter: (val: number) => val.toFixed(2)
       }
     },
+    dataZoom: [
+      {
+        type: 'inside',
+        start: 0,
+        end: 100,
+        zoomOnMouseWheel: true,
+        moveOnMouseMove: true,
+        moveOnMouseWheel: true,
+      },
+    ],
     series: [
       {
         name: '价格/净值',
@@ -119,6 +143,20 @@ function renderChart() {
   }
 
   chart.setOption(option)
+}
+
+function handleExport(cmd: string) {
+  if (!chart) return
+  const today = new Date().toISOString().slice(0, 10)
+  const safeName = (props.assetName || 'asset').replace(/[\\/:*?"<>|]/g, '_')
+  if (cmd === 'png') {
+    exportChartPng(chart, `${safeName}-price-history-${today}`)
+  } else if (cmd === 'csv') {
+    const headers = ['日期', '净值/价格', '币种']
+    const cur = props.currency || 'CNY'
+    const rows = historyData.value.map((item) => [item.price_date, item.price, cur])
+    exportChartCsv(`${safeName}-price-history-${today}.csv`, headers, rows)
+  }
 }
 
 function handleResize() {
@@ -167,6 +205,26 @@ useChartThemeSync(() => {
 }
 .ml-2 {
   margin-left: 8px;
+}
+.range-selector {
+  display: flex;
+  align-items: center;
+}
+.chart-action-btn {
+  background: var(--mf-surface-muted);
+  border-color: var(--mf-border);
+  color: var(--mf-text-muted);
+  padding: 5px 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.chart-action-btn:hover {
+  color: var(--mf-primary);
+  background: var(--mf-surface-hover);
+}
+.action-icon {
+  font-size: 14px;
 }
 .chart-body {
   flex: 1;

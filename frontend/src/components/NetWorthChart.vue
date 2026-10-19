@@ -7,6 +7,18 @@
         <el-radio-button label="1Y">1Y</el-radio-button>
         <el-radio-button label="ALL">全部</el-radio-button>
       </el-radio-group>
+
+      <el-dropdown trigger="click" @command="handleExport" class="chart-export-dropdown">
+        <el-button size="small" class="chart-action-btn" title="导出图表">
+          <Icon icon="ph:download-simple-bold" class="action-icon" />
+        </el-button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item command="png">📸 导出高清图 (PNG)</el-dropdown-item>
+            <el-dropdown-item command="csv">📊 导出数据表 (CSV)</el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
     </div>
     <div ref="chartRef" style="height: 285px; width: 100%;"></div>
   </div>
@@ -14,9 +26,11 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
+import { Icon } from '@iconify/vue'
 import echarts, { type ECharts } from '@/utils/echarts'
 import { resolveChartPalette, useChartThemeSync, makeAreaGradient, modernTooltipConfig, withAlpha } from '@/utils/echarts-theme'
 import { formatCurrency } from '@/utils/format'
+import { exportChartPng, exportChartCsv } from '@/utils/chart-export'
 
 const props = defineProps<{ data: { date: string; net_worth: number }[] }>()
 const chartRef = ref<HTMLElement>()
@@ -114,6 +128,16 @@ function updateChart() {
         formatter: (v: number) => (v >= 10000 ? `${(v / 10000).toFixed(1)}w` : v.toString())
       }
     },
+    dataZoom: [
+      {
+        type: 'inside',
+        start: 0,
+        end: 100,
+        zoomOnMouseWheel: true,
+        moveOnMouseMove: true,
+        moveOnMouseWheel: true,
+      },
+    ],
     series: [{
       name: '净资产',
       type: 'line',
@@ -138,6 +162,18 @@ function updateChart() {
     }],
   })
 }
+
+function handleExport(cmd: string) {
+  if (!chart) return
+  const today = new Date().toISOString().slice(0, 10)
+  if (cmd === 'png') {
+    exportChartPng(chart, `minefolio-net-worth-${today}`)
+  } else if (cmd === 'csv') {
+    const headers = ['日期', '净资产']
+    const rows = activeData.value.map((d) => [d.date, d.net_worth])
+    exportChartCsv(`minefolio-net-worth-${today}.csv`, headers, rows)
+  }
+}
 </script>
 
 <style scoped>
@@ -148,7 +184,25 @@ function updateChart() {
 .chart-header-actions {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
   margin-bottom: 6px;
+}
+.chart-action-btn {
+  background: var(--mf-surface-muted);
+  border-color: var(--mf-border);
+  color: var(--mf-text-muted);
+  padding: 5px 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.chart-action-btn:hover {
+  color: var(--mf-primary);
+  background: var(--mf-surface-hover);
+}
+.action-icon {
+  font-size: 14px;
 }
 :deep(.pill-radio-group .el-radio-button__inner) {
   background: var(--mf-surface-muted);

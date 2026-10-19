@@ -29,6 +29,18 @@
             <el-radio-button :value="90">{{ t('market.chart.periods.d90') }}</el-radio-button>
             <el-radio-button :value="365">{{ t('market.chart.periods.y1') }}</el-radio-button>
           </el-radio-group>
+
+          <el-dropdown trigger="click" @command="handleExport" class="chart-export-dropdown">
+            <el-button size="small" class="chart-action-btn" title="导出图表">
+              <Icon icon="ph:download-simple-bold" class="action-icon" />
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="png">📸 导出高清图 (PNG)</el-dropdown-item>
+                <el-dropdown-item command="csv">📊 导出数据表 (CSV)</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </div>
       </div>
     </template>
@@ -68,9 +80,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { Icon } from '@iconify/vue'
 import echarts, { type ECharts, type EChartsOption } from '@/utils/echarts'
 import { useMarketStore } from '@/stores/market'
 import { calculatePeriodStats, formatRate, calcCrossRate } from '@/utils/fx'
+import { exportChartPng, exportChartCsv } from '@/utils/chart-export'
 
 const { t } = useI18n()
 const marketStore = useMarketStore()
@@ -133,6 +147,16 @@ function updateChart() {
       splitLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.05)' } },
       axisLabel: { color: 'var(--el-text-color-secondary)', fontSize: 11 },
     },
+    dataZoom: [
+      {
+        type: 'inside',
+        start: 0,
+        end: 100,
+        zoomOnMouseWheel: true,
+        moveOnMouseMove: true,
+        moveOnMouseWheel: true,
+      },
+    ],
     series: [
       {
         name: `${marketStore.selectedCurrency}/${marketStore.baseCurrency}`,
@@ -152,6 +176,19 @@ function updateChart() {
   }
 
   chartInstance.setOption(option, true)
+}
+
+function handleExport(cmd: string) {
+  if (!chartInstance) return
+  const today = new Date().toISOString().slice(0, 10)
+  const pair = `${marketStore.selectedCurrency}_${marketStore.baseCurrency}`
+  if (cmd === 'png') {
+    exportChartPng(chartInstance, `fx-trend-${pair}-${today}`)
+  } else if (cmd === 'csv') {
+    const headers = ['日期', '汇率', '基准币种']
+    const rows = normalizedPoints.value.map((p) => [p.rate_date, p.rate, marketStore.baseCurrency])
+    exportChartCsv(`fx-trend-${pair}-${today}.csv`, headers, rows)
+  }
 }
 
 watch(
@@ -209,6 +246,29 @@ onUnmounted(() => {
   background: var(--mf-surface-muted);
   box-shadow: 0 0 0 1px var(--mf-border-subtle) inset;
   border-radius: var(--mf-radius-md);
+}
+
+.header-periods {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chart-action-btn {
+  background: var(--mf-surface-muted);
+  border-color: var(--mf-border-subtle);
+  color: var(--mf-text-muted);
+  padding: 5px 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.chart-action-btn:hover {
+  color: var(--mf-primary);
+  background: var(--mf-surface-hover);
+}
+.action-icon {
+  font-size: 14px;
 }
 
 :deep(.el-radio-button__inner) {
