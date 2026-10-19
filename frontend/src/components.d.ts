@@ -20,6 +20,7 @@ declare module 'vue' {
     CategoryTree: typeof import('./components/CategoryTree.vue')['default']
     ChatMessageContent: typeof import('./components/ChatMessageContent.vue')['default']
     CodeBlock: typeof import('./components/CodeBlock.vue')['default']
+    CommandPalette: typeof import('./components/CommandPalette.vue')['default']
     DailyExpenseForm: typeof import('./components/DailyExpenseForm.vue')['default']
     DashboardSkeleton: typeof import('./components/dashboard/DashboardSkeleton.vue')['default']
     DataExport: typeof import('./components/settings/DataExport.vue')['default']

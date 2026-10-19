@@ -145,7 +145,7 @@ const commands = computed<CommandItem[]>(() => [
     icon: 'ph:moon-stars-duotone',
     group: 'actions',
     action: () => {
-      themeStore.toggleTheme()
+      themeStore.toggle()
     },
   },
 

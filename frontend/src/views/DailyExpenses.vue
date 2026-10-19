@@ -56,7 +56,8 @@
           </el-row>
 
           <div class="table-container">
-            <el-table v-loading="loading" :data="expenses" class="premium-table stream-table" row-class-name="premium-row" header-cell-class-name="premium-header">
+            <el-table ref="tableRef" v-loading="loading" :data="expenses" class="premium-table stream-table" row-class-name="premium-row" header-cell-class-name="premium-header" @selection-change="handleSelectionChange">
+              <el-table-column type="selection" width="45" align="center" />
               <el-table-column prop="expense_date" label="日期" width="110" />
               <el-table-column prop="asset_name" label="关联资产" min-width="110" />
               <el-table-column prop="category_name" label="分类" min-width="120" />
@@ -112,6 +113,25 @@
         </div>
       </el-col>
     </el-row>
+
+    <!-- 批量操作悬浮条 -->
+    <transition name="slide-up">
+      <div v-if="selectedExpenses.length > 0" class="floating-batch-bar">
+        <div class="batch-bar-left">
+          <span class="selected-badge">{{ selectedExpenses.length }}</span>
+          <span>项已选中</span>
+        </div>
+        <div class="batch-bar-actions">
+          <el-button size="small" type="danger" :loading="isBatchDeleting" @click="handleBatchDelete">
+            <el-icon><Delete /></el-icon> 批量删除
+          </el-button>
+          <el-button size="small" @click="handleBatchExport">
+            <el-icon><Download /></el-icon> 导出所选
+          </el-button>
+          <el-button size="small" link @click="clearSelection">取消选择</el-button>
+        </div>
+      </div>
+    </transition>
 
     <!-- 新增/编辑对话框 -->
     <el-dialog v-model="dialogVisible" :title="editingId ? '编辑收支' : '新增收支'" width="500px" class="premium-dialog" :show-close="false">
@@ -198,7 +218,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Download, Upload, UploadFilled, SuccessFilled, Camera } from '@element-plus/icons-vue'
+import { Plus, Download, Upload, UploadFilled, SuccessFilled, Camera, Delete } from '@element-plus/icons-vue'
 import { dailyExpensesApi } from '@/api/daily_expenses'
 import { assetsApi } from '@/api/assets'
 import { useCategoryStore } from '@/stores/category'
@@ -207,6 +227,7 @@ import MonthlyChart from '@/components/MonthlyChart.vue'
 import ExpenseCategoryPie from '@/components/ExpenseCategoryPie.vue'
 import ReceiptScannerModal from '@/components/ReceiptScannerModal.vue'
 import { formatCurrency, localToday, localThisMonth } from '@/utils/format'
+import { exportChartCsv } from '@/utils/chart-export'
 import SummaryCard from '@/components/SummaryCard.vue'
 import type { DailyExpense, Tag, Category, Asset } from '@/types'
 
@@ -218,6 +239,10 @@ const page = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
 const receiptScanVisible = ref(false)
+
+const tableRef = ref()
+const selectedExpenses = ref<DailyExpense[]>([])
+const isBatchDeleting = ref(false)
 
 const form = reactive({ expense_type: 'expense' as 'income' | 'expense', category_id: null as number | null, asset_id: null as number | null, amount: 0, expense_date: '', note: '', tags: [] as Tag[], _catPath: [] as number[] })
 const rules = { expense_type: [{ required: true }], category_id: [{ required: true }], asset_id: [{ required: true, message: '请选择关联资产', trigger: 'change' }], amount: [{ required: true }], expense_date: [{ required: true }] }
@@ -340,6 +365,70 @@ async function handleDelete(expense: any) {
   await dailyExpensesApi.delete(expense.id)
   ElMessage.success('删除成功')
   loadData()
+}
+
+function handleSelectionChange(rows: DailyExpense[]) {
+  selectedExpenses.value = rows
+}
+
+function clearSelection() {
+  tableRef.value?.clearSelection()
+}
+
+async function handleBatchDelete() {
+  if (selectedExpenses.value.length === 0) return
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除选中的 ${selectedExpenses.value.length} 条收支记录吗？此操作无法撤销。`,
+      '批量删除确认',
+      {
+        confirmButtonText: '确定删除',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+    isBatchDeleting.value = true
+    let successCount = 0
+    let failCount = 0
+    for (const item of selectedExpenses.value) {
+      try {
+        await dailyExpensesApi.delete(item.id)
+        successCount++
+      } catch {
+        failCount++
+      }
+    }
+    if (failCount === 0) {
+      ElMessage.success(`成功删除 ${successCount} 条记录`)
+    } else {
+      ElMessage.warning(`删除完成：成功 ${successCount} 条，失败 ${failCount} 条`)
+    }
+    clearSelection()
+    loadData()
+  } catch (err: any) {
+    if (err !== 'cancel') {
+      ElMessage.error(err?.message || '批量删除失败')
+    }
+  } finally {
+    isBatchDeleting.value = false
+  }
+}
+
+function handleBatchExport() {
+  if (selectedExpenses.value.length === 0) return
+  const headers = ['日期', '关联资产', '分类', '类型', '金额', '备注', '标签']
+  const rows = selectedExpenses.value.map(item => [
+    item.expense_date,
+    item.asset_name || '',
+    item.category_name || '',
+    item.expense_type === 'income' ? '收入' : '支出',
+    item.amount,
+    item.note || '',
+    (item as any).tags?.map((t: any) => t.name).join('; ') || '',
+  ])
+  const now = localToday()
+  exportChartCsv(`daily_expenses_selected_${now}.csv`, headers, rows)
+  ElMessage.success(`已导出 ${selectedExpenses.value.length} 条记录`)
 }
 
 onMounted(async () => {
@@ -729,5 +818,62 @@ async function handleImport() {
   flex: 1;
   min-height: 0;
   overflow: hidden;
+}
+
+.floating-batch-bar {
+  position: fixed;
+  bottom: 32px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 10px 20px;
+  background: var(--mf-card-bg, #ffffff);
+  border: 1px solid var(--mf-border, #e2e8f0);
+  border-radius: 40px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.15), 0 2px 6px rgba(0, 0, 0, 0.08);
+  backdrop-filter: blur(12px);
+}
+
+.batch-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--mf-text-primary, #1e293b);
+}
+
+.selected-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 11px;
+  background-color: var(--mf-primary, #3b82f6);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.batch-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.slide-up-enter-active,
+.slide-up-leave-active {
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.slide-up-enter-from,
+.slide-up-leave-to {
+  opacity: 0;
+  transform: translate(-50%, 20px);
 }
 </style>

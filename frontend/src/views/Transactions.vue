@@ -92,12 +92,15 @@
       <!-- 表格记录视图 -->
       <div class="table-container">
         <el-table
+          ref="tableRef"
           v-loading="loading"
           :data="transactions"
           class="premium-table stream-table"
           row-class-name="premium-row"
           header-cell-class-name="premium-header"
+          @selection-change="handleSelectionChange"
         >
+          <el-table-column type="selection" width="45" align="center" />
           <el-table-column prop="transaction_date" label="日期" width="120" />
           <el-table-column prop="asset_name" label="账户资产" min-width="130" />
           <el-table-column prop="linked_asset_name" label="扣款/回流账户" min-width="130">
@@ -181,6 +184,25 @@
         </div>
       </div>
     </div>
+
+    <!-- 批量操作悬浮条 -->
+    <transition name="slide-up">
+      <div v-if="selectedTransactions.length > 0" class="floating-batch-bar">
+        <div class="batch-bar-left">
+          <span class="selected-badge">{{ selectedTransactions.length }}</span>
+          <span>项已选中</span>
+        </div>
+        <div class="batch-bar-actions">
+          <el-button size="small" type="danger" :loading="isBatchDeleting" @click="handleBatchDelete">
+            <el-icon><Delete /></el-icon> 批量删除
+          </el-button>
+          <el-button size="small" @click="handleBatchExport">
+            <el-icon><Download /></el-icon> 导出所选
+          </el-button>
+          <el-button size="small" link @click="clearSelection">取消选择</el-button>
+        </div>
+      </div>
+    </transition>
 
     <!-- 对话框：新增/编辑交易 -->
     <el-dialog
@@ -356,6 +378,7 @@ import { transactionsApi } from '@/api/transactions'
 import { assetsApi } from '@/api/assets'
 import { useCategoryStore } from '@/stores/category'
 import { formatCurrency, localToday, localThisMonth } from '@/utils/format'
+import { exportChartCsv } from '@/utils/chart-export'
 import SummaryCard from '@/components/SummaryCard.vue'
 import type { Transaction, Asset, Category, TransactionMonthly, Direction, TransactionInput } from '@/types'
 
@@ -365,6 +388,10 @@ const dialogVisible = ref(false)
 const editingId = ref<number | null>(null)
 const formRef = ref()
 const step = ref(0)
+
+const tableRef = ref()
+const selectedTransactions = ref<Transaction[]>([])
+const isBatchDeleting = ref(false)
 
 const transactions = ref<Transaction[]>([])
 const assets = ref<Asset[]>([])
@@ -691,6 +718,74 @@ async function handleDelete(txn: any) {
   }
 }
 
+function handleSelectionChange(rows: Transaction[]) {
+  selectedTransactions.value = rows
+}
+
+function clearSelection() {
+  tableRef.value?.clearSelection()
+}
+
+async function handleBatchDelete() {
+  if (selectedTransactions.value.length === 0) return
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除选中的 ${selectedTransactions.value.length} 条交易记录吗？关联的资金账户余额将同步联动调整，此操作无法撤销。`,
+      '批量删除确认',
+      {
+        confirmButtonText: '确定删除',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+    isBatchDeleting.value = true
+    let successCount = 0
+    let failCount = 0
+    for (const item of selectedTransactions.value) {
+      try {
+        await transactionsApi.delete(item.id)
+        successCount++
+      } catch {
+        failCount++
+      }
+    }
+    if (failCount === 0) {
+      ElMessage.success(`成功删除 ${successCount} 条交易记录`)
+    } else {
+      ElMessage.warning(`删除完成：成功 ${successCount} 条，失败 ${failCount} 条`)
+    }
+    clearSelection()
+    loadData()
+  } catch (err: any) {
+    if (err !== 'cancel') {
+      ElMessage.error(err?.message || '批量删除失败')
+    }
+  } finally {
+    isBatchDeleting.value = false
+  }
+}
+
+function handleBatchExport() {
+  if (selectedTransactions.value.length === 0) return
+  const headers = ['日期', '账户资产', '扣款/回流账户', '交易类型', '分类', '金额', '单价', '数量', '手续费', '币种', '备注']
+  const rows = selectedTransactions.value.map(item => [
+    item.transaction_date,
+    item.asset_name || '',
+    item.linked_asset_name || '',
+    typeLabel(item.transaction_type),
+    item.category_name || '',
+    item.amount,
+    item.price_per_unit || '',
+    item.quantity || '',
+    item.fee || '',
+    item.currency || 'CNY',
+    item.note || '',
+  ])
+  const now = localToday()
+  exportChartCsv(`transactions_selected_${now}.csv`, headers, rows)
+  ElMessage.success(`已导出 ${selectedTransactions.value.length} 条记录`)
+}
+
 onMounted(async () => {
   try {
     await Promise.all([loadAssets(), loadCategories()])
@@ -999,4 +1094,61 @@ async function handleImport() {
 .import-result.error { background: var(--mf-danger-light); border: 1px solid var(--mf-danger-border); color: var(--mf-danger); }
 .import-result .el-icon { font-size: 16px; }
 .import-errors { font-size: 12px; color: var(--mf-danger); white-space: pre-wrap; word-break: break-all; }
+
+.floating-batch-bar {
+  position: fixed;
+  bottom: 32px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 10px 20px;
+  background: var(--mf-card-bg, #ffffff);
+  border: 1px solid var(--mf-border, #e2e8f0);
+  border-radius: 40px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.15), 0 2px 6px rgba(0, 0, 0, 0.08);
+  backdrop-filter: blur(12px);
+}
+
+.batch-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--mf-text-primary, #1e293b);
+}
+
+.selected-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 11px;
+  background-color: var(--mf-primary, #3b82f6);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.batch-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.slide-up-enter-active,
+.slide-up-leave-active {
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.slide-up-enter-from,
+.slide-up-leave-to {
+  opacity: 0;
+  transform: translate(-50%, 20px);
+}
 </style>
