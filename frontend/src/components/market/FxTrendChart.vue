@@ -68,7 +68,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import * as echarts from 'echarts'
+import echarts, { type ECharts, type EChartsOption } from '@/utils/echarts'
 import { useMarketStore } from '@/stores/market'
 import { calculatePeriodStats, formatRate, calcCrossRate } from '@/utils/fx'
 
@@ -78,7 +78,7 @@ const marketStore = useMarketStore()
 const currencyOptions = ['USD', 'EUR', 'HKD', 'JPY', 'GBP', 'AUD', 'CAD', 'SGD']
 
 const chartRef = ref<HTMLDivElement | null>(null)
-let chartInstance: echarts.ECharts | null = null
+let chartInstance: ECharts | null = null
 
 // Normalized historical points adjusted by baseCurrency cross rate
 const normalizedPoints = computed(() => {
@@ -105,7 +105,7 @@ function updateChart() {
     return
   }
 
-  const option: echarts.EChartsOption = {
+  const option: EChartsOption = {
     tooltip: {
       trigger: 'axis',
       formatter: (params: any) => {

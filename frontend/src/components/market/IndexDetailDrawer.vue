@@ -53,13 +53,13 @@
 <script setup lang="ts">
 import { computed, ref, watch, nextTick, onBeforeUnmount } from 'vue'
 import { useI18n } from '@/composables/useI18n'
-import * as echarts from 'echarts'
+import echarts, { type ECharts, type EChartsOption } from '@/utils/echarts'
 import { useMarketStore } from '@/stores/market'
 
 const { t } = useI18n()
 const marketStore = useMarketStore()
 const chartRef = ref<HTMLDivElement | null>(null)
-let chartInstance: echarts.ECharts | null = null
+let chartInstance: ECharts | null = null
 
 const item = computed(() => marketStore.selectedDrawerIndex)
 const isPositive = computed(() => (Number(item.value?.change_percent) || 0) >= 0)
@@ -91,7 +91,7 @@ function renderChart() {
   const times = pts.map((_, i) => `${9 + Math.floor(i / 2)}:${i % 2 === 0 ? '30' : '00'}`)
   const color = isPositive.value ? '#67c23a' : '#f56c6c'
 
-  const option: echarts.EChartsOption = {
+  const option: EChartsOption = {
     tooltip: {
       trigger: 'axis',
       formatter: '{b}<br/>点位: <b>{c}</b>',
