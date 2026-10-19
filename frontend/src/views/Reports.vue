@@ -1,9 +1,26 @@
 <template>
   <div class="reports-page" v-loading="loading">
+    <!-- 打印专属抬头横幅（仅在打印/导出 PDF 时呈现） -->
+    <div class="print-header-banner">
+      <div class="print-logo-row">
+        <span class="print-title">Minefolio 资产与财务综合报告</span>
+        <span class="print-date">生成时间：{{ printDate }}</span>
+      </div>
+      <div class="print-sub-row">
+        <span>核算月份：{{ reportMonth }}</span>
+        <span>核算基准币种：CNY (人民币)</span>
+      </div>
+    </div>
+
     <div class="page-header">
       <div class="header-title">
         <div class="title-accent"></div>
         <h2>报表</h2>
+      </div>
+      <div class="header-actions">
+        <el-button type="primary" class="action-btn" @click="handlePrint">
+          <el-icon><Printer /></el-icon> 打印 / 导出 PDF
+        </el-button>
       </div>
     </div>
 
@@ -304,8 +321,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { Printer } from '@element-plus/icons-vue'
 import { reportsApi } from '@/api/reports'
 import { marketApi } from '@/api/market'
 import ExpenseCategoryPie from '@/components/ExpenseCategoryPie.vue'
@@ -367,6 +385,20 @@ async function loadAll() {
 }
 
 function loadMonthlyReport() { loadAll() }
+
+const printDate = computed(() => {
+  const now = new Date()
+  const y = now.getFullYear()
+  const m = String(now.getMonth() + 1).padStart(2, '0')
+  const d = String(now.getDate()).padStart(2, '0')
+  const hh = String(now.getHours()).padStart(2, '0')
+  const mm = String(now.getMinutes()).padStart(2, '0')
+  return `${y}-${m}-${d} ${hh}:${mm}`
+})
+
+function handlePrint() {
+  window.print()
+}
 
 onMounted(loadAll)
 </script>
@@ -707,5 +739,130 @@ onMounted(loadAll)
 .fx-table-card {
   flex: 1;
   min-height: 0;
+}
+
+.print-header-banner {
+  display: none;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.action-btn {
+  border-radius: var(--mf-radius-md);
+  font-weight: 500;
+  padding: 8px 16px;
+  transition: var(--mf-transition);
+}
+
+.action-btn:hover {
+  transform: translateY(-1px);
+}
+</style>
+
+<style>
+@media print {
+  /* Hide application shell elements when printing */
+  .aside,
+  .sidebar,
+  .el-aside,
+  .header,
+  .el-header,
+  .command-palette-btn,
+  .search-command-btn,
+  .floating-batch-bar,
+  .el-dialog__wrapper,
+  .el-overlay,
+  .page-header .header-actions,
+  .el-tabs__header,
+  .date-picker-subtle,
+  .radio-group-subtle {
+    display: none !important;
+  }
+
+  html,
+  body,
+  #app,
+  .layout-container,
+  .main-container,
+  .main,
+  .reports-page,
+  .tab-layout {
+    height: auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+  }
+
+  .reports-page {
+    display: block !important;
+  }
+
+  .print-header-banner {
+    display: block !important;
+    margin-bottom: 24px;
+    padding-bottom: 14px;
+    border-bottom: 2px solid #0f172a;
+  }
+
+  .print-logo-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 20px;
+    font-weight: 700;
+    color: #0f172a;
+  }
+
+  .print-title {
+    font-size: 20px;
+    font-weight: 700;
+  }
+
+  .print-date {
+    font-size: 12px;
+    color: #64748b;
+    font-weight: normal;
+  }
+
+  .print-sub-row {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 6px;
+    font-size: 13px;
+    color: #475569;
+  }
+
+  .report-card {
+    box-shadow: none !important;
+    border: 1px solid #cbd5e1 !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+    margin-bottom: 20px !important;
+    background: #ffffff !important;
+  }
+
+  .metric-card {
+    border: 1px solid #e2e8f0 !important;
+    background: #f8fafc !important;
+    box-shadow: none !important;
+  }
+
+  .chart-container {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Force exact colors for prints and PDF generation */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
 }
 </style>
