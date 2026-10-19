@@ -80,6 +80,11 @@
             </div>
           </el-tooltip>
           <h2 class="page-title">{{ pageTitle }}</h2>
+          <div class="search-command-btn" @click="commandPaletteVisible = true">
+            <Icon icon="ph:magnifying-glass" class="search-btn-icon" />
+            <span class="search-btn-placeholder">快速搜索...</span>
+            <span class="shortcut-key">{{ isMac ? '⌘K' : 'Ctrl+K' }}</span>
+          </div>
         </div>
         <div class="header-right">
           <el-tooltip :content="t('nav.quickAddHint')" placement="bottom" :show-after="300">
@@ -125,6 +130,12 @@
 
     <!-- 全局快捷记账弹窗 -->
     <QuickRecordDialog v-model="quickRecordVisible" />
+
+    <!-- 全局指令搜索面板 -->
+    <CommandPalette
+      v-model="commandPaletteVisible"
+      @quick-record="quickRecordVisible = true"
+    />
   </el-container>
 </template>
 
@@ -140,6 +151,7 @@ import { t } from '@/utils/locale'
 import LedgerSelector from '@/components/LedgerSelector.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 import QuickRecordDialog from '@/components/QuickRecordDialog.vue'
+import CommandPalette from '@/components/CommandPalette.vue'
 import AppLogo from '@/components/AppLogo.vue'
 
 const router = useRouter()
@@ -151,7 +163,9 @@ const activeMenu = computed(() => route.path)
 const mobileMenuOpen = ref(false)
 const isCollapsed = ref(localStorage.getItem('sidebar_collapsed') === 'true')
 const quickRecordVisible = ref(false)
+const commandPaletteVisible = ref(false)
 const routerViewKey = ref(0)
+const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.userAgent)
 
 function toggleCollapse() {
   isCollapsed.value = !isCollapsed.value
@@ -168,6 +182,11 @@ function handleLedgerChanged() {
 }
 
 function handleKeydown(e: KeyboardEvent) {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault()
+    commandPaletteVisible.value = !commandPaletteVisible.value
+    return
+  }
   if (e.key === 'n' || e.key === 'N') {
     const target = e.target as HTMLElement
     if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
@@ -420,6 +439,40 @@ function handleCommand(cmd: string) {
   font-weight: 600;
   color: var(--mf-text-main);
   margin: 0;
+}
+.search-command-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--mf-surface-muted);
+  border: 1px solid var(--mf-border-subtle);
+  border-radius: var(--mf-radius-md);
+  padding: 5px 10px;
+  cursor: pointer;
+  margin-left: 16px;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.search-command-btn:hover {
+  border-color: var(--mf-primary);
+  background: var(--mf-surface-hover);
+}
+.search-btn-icon {
+  font-size: 15px;
+  color: var(--mf-text-muted);
+}
+.search-btn-placeholder {
+  font-size: 12px;
+  color: var(--mf-text-muted);
+}
+.shortcut-key {
+  font-size: 10px;
+  font-family: var(--mf-font-mono);
+  background: var(--mf-surface-card);
+  border: 1px solid var(--mf-border-subtle);
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--mf-text-muted);
 }
 .user-profile {
   display: flex;
