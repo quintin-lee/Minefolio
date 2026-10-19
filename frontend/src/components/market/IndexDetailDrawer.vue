@@ -154,8 +154,8 @@ onBeforeUnmount(() => {
   gap: 16px;
 }
 .overview-box {
-  background: var(--el-fill-color-light);
-  border-radius: 8px;
+  background: var(--mf-surface-muted);
+  border-radius: var(--mf-radius-md);
   padding: 16px;
   display: flex;
   justify-content: space-between;
@@ -183,9 +183,9 @@ onBeforeUnmount(() => {
   gap: 10px;
 }
 .metric-item {
-  background: var(--el-bg-color-overlay);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 6px;
+  background: var(--mf-surface-muted);
+  border: 1px solid var(--mf-border-subtle);
+  border-radius: var(--mf-radius-sm);
   padding: 10px 12px;
   display: flex;
   justify-content: space-between;

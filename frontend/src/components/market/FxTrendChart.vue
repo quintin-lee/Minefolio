@@ -124,13 +124,13 @@ function updateChart() {
       type: 'category',
       data: dates,
       boundaryGap: false,
-      axisLine: { lineStyle: { color: 'var(--el-border-color)' } },
+      axisLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.08)' } },
       axisLabel: { color: 'var(--el-text-color-secondary)', fontSize: 11 },
     },
     yAxis: {
       type: 'value',
       scale: true,
-      splitLine: { lineStyle: { color: 'var(--el-border-color-lighter)' } },
+      splitLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.05)' } },
       axisLabel: { color: 'var(--el-text-color-secondary)', fontSize: 11 },
     },
     series: [
@@ -205,6 +205,32 @@ onUnmounted(() => {
 .currency-pair-select {
   width: 140px;
 }
+.currency-pair-select :deep(.el-select__wrapper) {
+  background: var(--mf-surface-muted);
+  box-shadow: 0 0 0 1px var(--mf-border-subtle) inset;
+  border-radius: var(--mf-radius-md);
+}
+
+:deep(.el-radio-button__inner) {
+  background: var(--mf-surface-muted) !important;
+  border: 1px solid transparent !important;
+  box-shadow: none !important;
+  color: var(--mf-text-muted) !important;
+  border-radius: var(--mf-radius-sm) !important;
+  margin-right: 4px;
+}
+:deep(.el-radio-button:first-child .el-radio-button__inner) {
+  border-left: 1px solid transparent !important;
+}
+:deep(.el-radio-button:hover .el-radio-button__inner) {
+  color: var(--mf-primary) !important;
+  background: var(--mf-surface-hover) !important;
+}
+:deep(.el-radio-button.is-active .el-radio-button__inner) {
+  background: var(--mf-primary) !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 8px rgba(59, 130, 246, 0.3) !important;
+}
 
 .trend-body {
   display: flex;
@@ -216,9 +242,10 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 8px;
-  background: var(--el-fill-color-light);
+  background: var(--mf-surface-muted);
+  border: 1px solid var(--mf-border-subtle);
   padding: 8px 12px;
-  border-radius: 8px;
+  border-radius: var(--mf-radius-md);
 }
 
 .stat-pill {

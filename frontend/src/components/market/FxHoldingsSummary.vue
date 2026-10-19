@@ -143,9 +143,10 @@ function getFlag(cur: string): string {
 }
 
 .metric-card {
-  background: var(--el-fill-color-light);
+  background: var(--mf-surface-muted);
+  border: 1px solid var(--mf-border-subtle);
   padding: 12px 16px;
-  border-radius: 8px;
+  border-radius: var(--mf-radius-md);
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -181,9 +182,9 @@ function getFlag(cur: string): string {
 }
 
 .bucket-chip {
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 6px;
+  background: var(--mf-surface-muted);
+  border: 1px solid var(--mf-border-subtle);
+  border-radius: var(--mf-radius-sm);
   padding: 6px 12px;
   font-size: 12px;
   display: flex;

@@ -130,6 +130,8 @@
 
   --el-border-color: var(--mf-border);
   --el-border-color-light: var(--mf-border-subtle);
+  --el-border-color-lighter: var(--mf-border-subtle);
+  --el-border-color-extra-light: rgba(255, 255, 255, 0.04);
   --el-border-color-hover: var(--mf-border-hover);
   --el-border-color-darker: var(--mf-border-hover);
 
@@ -299,6 +301,8 @@
 
   --el-border-color: var(--mf-border);
   --el-border-color-light: var(--mf-border-subtle);
+  --el-border-color-lighter: var(--mf-border-subtle);
+  --el-border-color-extra-light: #f8fafc;
   --el-border-color-hover: var(--mf-border-hover);
   --el-border-color-darker: var(--mf-border-hover);
 

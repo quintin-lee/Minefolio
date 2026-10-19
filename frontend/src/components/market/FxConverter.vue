@@ -196,6 +196,15 @@ async function handleCopy() {
   flex: 1;
 }
 
+.amount-input :deep(.el-input__wrapper) {
+  background: var(--mf-surface-muted);
+  box-shadow: 0 0 0 1px var(--mf-border-subtle) inset;
+  border-radius: var(--mf-radius-md);
+}
+.amount-input :deep(.el-input__wrapper.is-focus) {
+  box-shadow: 0 0 0 1px var(--mf-primary) inset;
+}
+
 .converted-result :deep(input) {
   font-weight: 700;
   color: var(--el-color-primary);
@@ -205,6 +214,11 @@ async function handleCopy() {
 .currency-select {
   width: 140px;
 }
+.currency-select :deep(.el-select__wrapper) {
+  background: var(--mf-surface-muted);
+  box-shadow: 0 0 0 1px var(--mf-border-subtle) inset;
+  border-radius: var(--mf-radius-md);
+}
 
 .swap-action {
   display: flex;
@@ -213,8 +227,8 @@ async function handleCopy() {
 }
 
 .swap-btn {
-  background: var(--el-fill-color-light);
-  border-color: var(--el-border-color);
+  background: var(--mf-surface-muted);
+  border: 1px solid var(--mf-border-subtle);
   color: var(--el-color-primary);
 }
 
@@ -244,6 +258,8 @@ async function handleCopy() {
 .preset-tag {
   cursor: pointer;
   font-size: 11px;
+  background: var(--mf-surface-muted);
+  border: 1px solid var(--mf-border-subtle);
 }
 
 .preset-tag:hover {

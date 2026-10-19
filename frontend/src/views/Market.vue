@@ -128,7 +128,7 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-bottom: 1px solid var(--el-border-color-light);
+  border-bottom: 1px solid var(--mf-border-subtle);
   padding-bottom: 8px;
   margin-bottom: 20px;
 }
@@ -151,6 +151,10 @@ onMounted(() => {
   border-bottom: none;
 }
 
+.market-tabs :deep(.el-tabs__nav-wrap::after) {
+  display: none;
+}
+
 .header-controls {
   display: flex;
   align-items: center;
@@ -170,6 +174,12 @@ onMounted(() => {
 
 .base-currency-select {
   width: 150px;
+}
+
+.base-currency-select :deep(.el-select__wrapper) {
+  background: var(--mf-surface-muted);
+  box-shadow: 0 0 0 1px var(--mf-border-subtle) inset;
+  border-radius: var(--mf-radius-md);
 }
 
 .sync-time {

@@ -76,9 +76,9 @@ function getStatusLabel(status: string) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: var(--el-fill-color-blank);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
+  background: var(--mf-surface-card);
+  border: 1px solid var(--mf-border-subtle);
+  border-radius: var(--mf-radius-md);
   padding: 8px 14px;
   margin-bottom: 12px;
   gap: 12px;
@@ -142,11 +142,17 @@ function getStatusLabel(status: string) {
 .interval-select {
   width: 95px;
 }
+.interval-select :deep(.el-select__wrapper) {
+  background: var(--mf-surface-muted);
+  box-shadow: 0 0 0 1px var(--mf-border-subtle) inset;
+}
 .sleep-tag {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   font-size: 11px;
+  border: none !important;
+  background: var(--mf-surface-muted) !important;
 }
 .sleep-dot {
   width: 6px;

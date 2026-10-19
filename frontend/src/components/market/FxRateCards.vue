@@ -143,23 +143,24 @@ function handleSelect(code: string) {
 }
 
 .rate-card {
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 10px;
+  background: var(--mf-surface-card);
+  border: 1px solid var(--mf-border-subtle);
+  border-radius: var(--mf-radius-md);
   padding: 14px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: var(--mf-transition);
 }
 
 .rate-card:hover {
-  border-color: var(--el-color-primary);
+  border-color: var(--mf-border-hover);
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--mf-shadow-md);
 }
 
 .rate-card.is-active {
-  border-color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
+  border-color: var(--mf-primary);
+  background: var(--mf-primary-light);
+  box-shadow: var(--mf-shadow-glow);
 }
 
 .card-top {

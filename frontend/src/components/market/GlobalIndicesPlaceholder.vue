@@ -55,11 +55,11 @@ const { t } = useI18n()
 }
 
 .placeholder-card {
-  border-radius: 12px;
+  border-radius: var(--mf-radius-lg);
   text-align: center;
   padding: 40px 20px;
-  background: var(--el-bg-color);
-  border: 2px dashed var(--el-border-color);
+  background: var(--mf-surface-card);
+  border: 1px dashed var(--mf-border-subtle);
 }
 
 .placeholder-content {
@@ -93,9 +93,9 @@ const { t } = useI18n()
 }
 
 .mock-index-box {
-  background: var(--el-fill-color-light);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
+  background: var(--mf-surface-muted);
+  border: 1px solid var(--mf-border-subtle);
+  border-radius: var(--mf-radius-sm);
   padding: 12px 8px;
   display: flex;
   flex-direction: column;

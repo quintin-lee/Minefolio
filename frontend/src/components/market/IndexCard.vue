@@ -124,19 +124,19 @@ const areaPoints = computed(() => {
 
 <style scoped>
 .index-card {
-  background: var(--el-bg-color-overlay);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 10px;
+  background: var(--mf-surface-card);
+  border: 1px solid var(--mf-border-subtle);
+  border-radius: var(--mf-radius-md);
   padding: 14px;
   cursor: pointer;
-  transition: all 0.25s ease;
+  transition: var(--mf-transition);
   position: relative;
   overflow: hidden;
 }
 .index-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
-  border-color: var(--el-color-primary-light-5);
+  box-shadow: var(--mf-shadow-md);
+  border-color: var(--mf-border-hover);
 }
 .card-header {
   display: flex;
