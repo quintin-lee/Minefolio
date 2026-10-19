@@ -50,21 +50,24 @@
 
     <!-- Tab 1: Real-time FX Rates -->
     <div v-if="activeTab === 'rates'" class="tab-content">
-      <!-- 1. Major Currency Cards -->
-      <FxRateCards />
+      <FxSkeleton v-if="marketStore.isLoadingRates && Object.keys(marketStore.rates).length <= 1" />
+      <template v-else>
+        <!-- 1. Major Currency Cards -->
+        <FxRateCards />
 
-      <!-- 2. Split Middle Row (Converter & Trend Chart) -->
-      <div class="middle-split-row">
-        <div class="split-col-converter">
-          <FxConverter />
+        <!-- 2. Split Middle Row (Converter & Trend Chart) -->
+        <div class="middle-split-row">
+          <div class="split-col-converter">
+            <FxConverter />
+          </div>
+          <div class="split-col-chart">
+            <FxTrendChart />
+          </div>
         </div>
-        <div class="split-col-chart">
-          <FxTrendChart />
-        </div>
-      </div>
 
-      <!-- 3. Holdings Summary -->
-      <FxHoldingsSummary />
+        <!-- 3. Holdings Summary -->
+        <FxHoldingsSummary />
+      </template>
     </div>
 
     <!-- Tab 2: Global Indices Board -->
@@ -83,6 +86,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { useMarketStore } from '@/stores/market'
+import FxSkeleton from '@/components/market/FxSkeleton.vue'
 import FxRateCards from '@/components/market/FxRateCards.vue'
 import FxConverter from '@/components/market/FxConverter.vue'
 import FxTrendChart from '@/components/market/FxTrendChart.vue'

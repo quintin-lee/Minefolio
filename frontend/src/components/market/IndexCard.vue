@@ -213,10 +213,10 @@ const areaPoints = computed(() => {
 }
 @keyframes flash-green {
   0% { background: var(--el-color-success-light-8); }
-  100% { background: var(--el-bg-color-overlay); }
+  100% { background: var(--mf-surface-card); }
 }
 @keyframes flash-red {
   0% { background: var(--el-color-danger-light-8); }
-  100% { background: var(--el-bg-color-overlay); }
+  100% { background: var(--mf-surface-card); }
 }
 </style>

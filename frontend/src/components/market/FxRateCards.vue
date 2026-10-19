@@ -15,7 +15,10 @@
         v-for="item in currencyCards"
         :key="item.code"
         class="rate-card"
-        :class="{ 'is-active': marketStore.selectedCurrency === item.code }"
+        :class="[
+          { 'is-active': marketStore.selectedCurrency === item.code },
+          marketStore.fxDirections[item.code] === 'up' ? 'flash-up' : marketStore.fxDirections[item.code] === 'down' ? 'flash-down' : ''
+        ]"
         @click="handleSelect(item.code)"
       >
         <div class="card-top">
@@ -161,6 +164,24 @@ function handleSelect(code: string) {
   border-color: var(--mf-primary);
   background: var(--mf-primary-light);
   box-shadow: var(--mf-shadow-glow);
+}
+
+.flash-up {
+  animation: flash-green 1.2s ease;
+}
+
+.flash-down {
+  animation: flash-red 1.2s ease;
+}
+
+@keyframes flash-green {
+  0% { background: var(--el-color-success-light-8); }
+  100% { background: var(--mf-surface-card); }
+}
+
+@keyframes flash-red {
+  0% { background: var(--el-color-danger-light-8); }
+  100% { background: var(--mf-surface-card); }
 }
 
 .card-top {

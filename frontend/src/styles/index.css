@@ -1407,3 +1407,47 @@ svg .error-text {
   left: -9999px !important;
   top: -9999px !important;
 }
+
+/* =========================================================================
+   FinTech Glassmorphic Skeletons & Shimmer Animation
+   ========================================================================= */
+@keyframes mf-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.mf-skeleton-card {
+  background: var(--mf-surface-card);
+  border: 1px solid var(--mf-border-subtle);
+  border-radius: var(--mf-radius-md);
+  position: relative;
+  overflow: hidden;
+}
+
+.mf-skeleton-block {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.03) 25%,
+    rgba(255, 255, 255, 0.08) 50%,
+    rgba(255, 255, 255, 0.03) 75%
+  );
+  background-size: 200% 100%;
+  animation: mf-shimmer 1.8s infinite ease-in-out;
+  border-radius: var(--mf-radius-sm);
+  display: inline-block;
+}
+
+[data-theme="light"] .mf-skeleton-block,
+html.light .mf-skeleton-block {
+  background: linear-gradient(
+    90deg,
+    rgba(0, 0, 0, 0.04) 25%,
+    rgba(0, 0, 0, 0.08) 50%,
+    rgba(0, 0, 0, 0.04) 75%
+  );
+  background-size: 200% 100%;
+}

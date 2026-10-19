@@ -1,5 +1,5 @@
 <template>
-  <div class="dashboard" v-loading="loading">
+  <div class="dashboard">
     <div class="page-header">
       <div class="header-title">
         <div class="title-accent"></div>
@@ -16,8 +16,13 @@
       </div>
     </div>
 
-    <!-- 待办定投灵动胶囊 -->
-    <div v-if="pendingDcaTasks.length > 0" class="floating-alert-capsule">
+    <!-- 首次加载展示 FinTech 骨架屏 -->
+    <DashboardSkeleton v-if="loading && isFirstLoad" />
+
+    <!-- 正常已加载内容 -->
+    <div v-else :class="{ 'dashboard-content-loading': loading }">
+      <!-- 待办定投灵动胶囊 -->
+      <div v-if="pendingDcaTasks.length > 0" class="floating-alert-capsule">
       <div class="capsule-left">
         <span class="pulse-dot-amber"></span>
         <span>您有 <strong>{{ pendingDcaTasks.length }}</strong> 项定投计划待执行</span>
@@ -218,6 +223,7 @@
         </el-card>
       </el-col>
     </el-row>
+    </div>
   </div>
 </template>
 
@@ -232,11 +238,13 @@ import { reportsApi } from '@/api/reports'
 import { dcaApi } from '@/api/dca'
 import { marketApi } from '@/api/market'
 import type { Summary, DailyExpense, MultiCurrencySummary } from '@/types'
+import DashboardSkeleton from '@/components/dashboard/DashboardSkeleton.vue'
 import NetWorthChart from '@/components/NetWorthChart.vue'
 import AssetBreakdownPie from '@/components/AssetBreakdownPie.vue'
 import YearlyChart from '@/components/YearlyChart.vue'
 
 const loading = ref(true)
+const isFirstLoad = ref(true)
 const selectedCurrency = ref('CNY')
 const multiCurrency = ref<MultiCurrencySummary | null>(null)
 const fxColors = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#06b6d4']
@@ -373,6 +381,7 @@ async function loadDashboard() {
     ElMessage.error(e?.response?.data?.message || '仪表盘数据加载失败')
   } finally {
     loading.value = false
+    isFirstLoad.value = false
   }
 }
 
@@ -410,6 +419,12 @@ onMounted(loadDashboard)
   gap: var(--mf-spacing-md);
   height: 100%;
   overflow: auto;
+}
+
+.dashboard-content-loading {
+  opacity: 0.65;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
 }
 
 /* 顶部货币切换 */

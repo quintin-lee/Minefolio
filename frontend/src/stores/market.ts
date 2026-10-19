@@ -21,6 +21,9 @@ export const useMarketStore = defineStore('market', () => {
     localStorage.getItem(BASE_CURRENCY_STORAGE_KEY) || 'CNY'
   )
   const rates = ref<Record<string, number>>(getInitialRates())
+  const prevRates = ref<Record<string, number>>({})
+  const fxDirections = ref<Record<string, 'up' | 'down' | 'same'>>({})
+  const isLoadingRates = ref(false)
 
   const lastSyncAt = ref<string | null>(null)
   const isSyncing = ref(false)
@@ -53,15 +56,32 @@ export const useMarketStore = defineStore('market', () => {
   }
 
   async function fetchRates() {
+    isLoadingRates.value = true
     try {
       const data = await marketApi.getExchangeRates()
       if (data && typeof data === 'object') {
-        rates.value = { ...data, CNY: 1.0 }
+        const nextRates: Record<string, number> = { ...data, CNY: 1.0 }
+        const nextDirections: Record<string, 'up' | 'down' | 'same'> = {}
+        for (const [cur, val] of Object.entries(nextRates)) {
+          const oldVal = prevRates.value[cur]
+          if (typeof oldVal === 'number' && oldVal > 0) {
+            if (val > oldVal) nextDirections[cur] = 'up'
+            else if (val < oldVal) nextDirections[cur] = 'down'
+            else nextDirections[cur] = 'same'
+          } else {
+            nextDirections[cur] = 'same'
+          }
+        }
+        fxDirections.value = nextDirections
+        prevRates.value = { ...nextRates }
+        rates.value = nextRates
         localStorage.setItem(RATES_CACHE_KEY, JSON.stringify(rates.value))
         lastSyncAt.value = new Date().toLocaleTimeString()
       }
     } catch (err) {
       console.warn('Failed to fetch exchange rates, using cached rates:', err)
+    } finally {
+      isLoadingRates.value = false
     }
   }
 
@@ -102,7 +122,21 @@ export const useMarketStore = defineStore('market', () => {
     try {
       const data = await marketApi.syncExchangeRates()
       if (data && typeof data === 'object') {
-        rates.value = { ...data, CNY: 1.0 }
+        const nextRates: Record<string, number> = { ...data, CNY: 1.0 }
+        const nextDirections: Record<string, 'up' | 'down' | 'same'> = {}
+        for (const [cur, val] of Object.entries(nextRates)) {
+          const oldVal = prevRates.value[cur]
+          if (typeof oldVal === 'number' && oldVal > 0) {
+            if (val > oldVal) nextDirections[cur] = 'up'
+            else if (val < oldVal) nextDirections[cur] = 'down'
+            else nextDirections[cur] = 'same'
+          } else {
+            nextDirections[cur] = 'same'
+          }
+        }
+        fxDirections.value = nextDirections
+        prevRates.value = { ...nextRates }
+        rates.value = nextRates
         localStorage.setItem(RATES_CACHE_KEY, JSON.stringify(rates.value))
         lastSyncAt.value = new Date().toLocaleTimeString()
         await Promise.allSettled([fetchHoldingsSummary(), fetchHistory()])
@@ -276,6 +310,8 @@ export const useMarketStore = defineStore('market', () => {
   return {
     baseCurrency,
     rates,
+    fxDirections,
+    isLoadingRates,
     lastSyncAt,
     isSyncing,
     selectedCurrency,

@@ -1,26 +1,32 @@
 <template>
   <div class="global-indices-board">
-    <!-- 1. Market Clocks Ribbon -->
-    <MarketClocksRibbon />
+    <!-- Initial Skeleton State -->
+    <MarketSkeleton v-if="marketStore.isLoadingIndices && marketStore.indices.length === 0" />
 
-    <!-- 2. Categories & Search Filter -->
-    <IndicesFilterBar @update:filter="keywordFilter = $event" />
+    <!-- Loaded Content -->
+    <template v-else>
+      <!-- 1. Market Clocks Ribbon -->
+      <MarketClocksRibbon />
 
-    <!-- 3. Indices Responsive Grid -->
-    <div v-loading="marketStore.isLoadingIndices" class="indices-grid">
-      <IndexCard
-        v-for="item in filteredIndices"
-        :key="item.symbol"
-        :item="item"
-        :direction="marketStore.priceDirections[item.symbol]"
-        @select="marketStore.openIndexDrawer($event)"
+      <!-- 2. Categories & Search Filter -->
+      <IndicesFilterBar @update:filter="keywordFilter = $event" />
+
+      <!-- 3. Indices Responsive Grid -->
+      <div v-loading="marketStore.isLoadingIndices && marketStore.indices.length > 0" class="indices-grid">
+        <IndexCard
+          v-for="item in filteredIndices"
+          :key="item.symbol"
+          :item="item"
+          :direction="marketStore.priceDirections[item.symbol]"
+          @select="marketStore.openIndexDrawer($event)"
+        />
+      </div>
+
+      <el-empty
+        v-if="!marketStore.isLoadingIndices && filteredIndices.length === 0"
+        description="未找到匹配的大盘指数"
       />
-    </div>
-
-    <el-empty
-      v-if="!marketStore.isLoadingIndices && filteredIndices.length === 0"
-      description="未找到匹配的大盘指数"
-    />
+    </template>
 
     <!-- 4. Interactive Detail Drawer -->
     <IndexDetailDrawer />
@@ -30,6 +36,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useMarketStore } from '@/stores/market'
+import MarketSkeleton from '@/components/market/MarketSkeleton.vue'
 import MarketClocksRibbon from '@/components/market/MarketClocksRibbon.vue'
 import IndicesFilterBar from '@/components/market/IndicesFilterBar.vue'
 import IndexCard from '@/components/market/IndexCard.vue'
