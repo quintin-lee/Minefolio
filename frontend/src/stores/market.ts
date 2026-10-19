@@ -3,9 +3,12 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { marketApi } from '@/api/market'
 import type { FxHistoryPoint, MultiCurrencySummary, GlobalIndexItem, MarketClockItem } from '@/types'
+import { getSwrCache, setSwrCache } from '@/utils/swr-cache'
 
 const BASE_CURRENCY_STORAGE_KEY = 'minefolio_base_currency'
 const RATES_CACHE_KEY = 'minefolio_cached_rates'
+const INDICES_CACHE_KEY = 'minefolio_cached_indices'
+const CLOCKS_CACHE_KEY = 'minefolio_cached_clocks'
 
 function getInitialRates(): Record<string, number> {
   try {
@@ -180,8 +183,8 @@ export const useMarketStore = defineStore('market', () => {
     localStorage.setItem(RATES_CACHE_KEY, JSON.stringify(rates.value))
   }
 
-  const indices = ref<GlobalIndexItem[]>([])
-  const marketClocks = ref<MarketClockItem[]>([])
+  const indices = ref<GlobalIndexItem[]>(getSwrCache<GlobalIndexItem[]>(INDICES_CACHE_KEY, []))
+  const marketClocks = ref<MarketClockItem[]>(getSwrCache<MarketClockItem[]>(CLOCKS_CACHE_KEY, []))
   const indicesUpdatedAt = ref<string | null>(null)
   const isLoadingIndices = ref(false)
   const autoRefreshInterval = ref<number>(60)
@@ -287,10 +290,14 @@ export const useMarketStore = defineStore('market', () => {
           priceDirections.value = nextDirections
           prevPrices.value = nextPrices
           indices.value = normalizedIndices
+          if (category === 'all') {
+            setSwrCache(INDICES_CACHE_KEY, normalizedIndices)
+          }
         }
 
         if (Array.isArray(data.market_clocks)) {
           marketClocks.value = data.market_clocks
+          setSwrCache(CLOCKS_CACHE_KEY, data.market_clocks)
         }
         indicesUpdatedAt.value = data.updated_at || new Date().toLocaleTimeString()
       }

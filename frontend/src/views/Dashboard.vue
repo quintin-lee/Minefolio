@@ -238,21 +238,35 @@ import { reportsApi } from '@/api/reports'
 import { dcaApi } from '@/api/dca'
 import { marketApi } from '@/api/market'
 import type { Summary, DailyExpense, MultiCurrencySummary } from '@/types'
+import { getSwrCache, setSwrCache } from '@/utils/swr-cache'
 import DashboardSkeleton from '@/components/dashboard/DashboardSkeleton.vue'
 import NetWorthChart from '@/components/NetWorthChart.vue'
 import AssetBreakdownPie from '@/components/AssetBreakdownPie.vue'
 import YearlyChart from '@/components/YearlyChart.vue'
 
-const loading = ref(true)
-const isFirstLoad = ref(true)
+const DASHBOARD_CACHE_KEY = 'minefolio_cache_dashboard_summary'
+
+const defaultSummary: Summary = {
+  total_assets: 0,
+  total_liabilities: 0,
+  net_worth: 0,
+  category_breakdown: [],
+  trend: [],
+}
+
+const cachedSummary = getSwrCache<Summary | null>(DASHBOARD_CACHE_KEY, null)
+const hasCachedData = Boolean(
+  cachedSummary &&
+  (cachedSummary.net_worth !== undefined || cachedSummary.total_assets !== undefined)
+)
+
+const loading = ref(!hasCachedData)
+const isFirstLoad = ref(!hasCachedData)
 const selectedCurrency = ref('CNY')
 const multiCurrency = ref<MultiCurrencySummary | null>(null)
 const fxColors = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#06b6d4']
 
-const summary = ref<Summary>({
-  total_assets: 0, total_liabilities: 0, net_worth: 0,
-  category_breakdown: [], trend: [],
-})
+const summary = ref<Summary>(cachedSummary || defaultSummary)
 
 const assetBreakdownData = computed(() => {
   const rows = summary.value.category_breakdown ?? []
@@ -372,13 +386,18 @@ async function loadMultiCurrency() {
 }
 
 async function loadDashboard() {
-  loading.value = true
+  if (!hasCachedData) {
+    loading.value = true
+  }
   try {
     const res = await summaryApi.get()
     summary.value = res
+    setSwrCache(DASHBOARD_CACHE_KEY, res)
     await Promise.allSettled([loadYearly(), loadCurrentMonth(), loadRecent(), loadPendingDca(), loadMultiCurrency()])
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.message || '仪表盘数据加载失败')
+    if (!hasCachedData) {
+      ElMessage.error(e?.response?.data?.message || '仪表盘数据加载失败')
+    }
   } finally {
     loading.value = false
     isFirstLoad.value = false

@@ -8,19 +8,39 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { categoriesApi } from '@/api/categories'
 import type { Category } from '@/types'
+import { getSwrCache, setSwrCache, clearSwrCache } from '@/utils/swr-cache'
+
+const CATEGORY_CACHE_KEY = 'minefolio_cache_categories'
 
 /**
  * 分类体系 Pinia Store
  */
 export const useCategoryStore = defineStore('category', () => {
+  const initialNodes = getSwrCache<Category[]>(CATEGORY_CACHE_KEY, [])
   /** 已加载的所有分类节点扁平数组 (顶级节点预加载，子节点按需加载) */
-  const allNodes = ref<Category[]>([])
+  const allNodes = ref<Category[]>(initialNodes)
   /** 顶级根分类是否已加载完毕 */
-  const loaded = ref(false)
+  const loaded = ref(initialNodes.length > 0)
   /** 是否正在请求加载分类数据 */
   const loading = ref(false)
   /** 记录已展开/已加载子节点的父分类 ID 集合 */
   const expanded = ref(new Set<number>())
+  /** 本会话是否已完成一次后台保鲜验证 */
+  let hasRevalidated = false
+
+  async function revalidateCategories() {
+    try {
+      const res = await categoriesApi.list()
+      if (Array.isArray(res)) {
+        allNodes.value = res
+        loaded.value = true
+        hasRevalidated = true
+        setSwrCache(CATEGORY_CACHE_KEY, res)
+      }
+    } catch (err) {
+      console.warn('[category store] SWR background revalidation failed:', err)
+    }
+  }
 
   /**
    * 加载分类列表 (默认加载顶级分类)
@@ -29,7 +49,12 @@ export const useCategoryStore = defineStore('category', () => {
    * @returns 分类列表
    */
   async function loadCategories(type?: string, force = false) {
-    if (loaded.value && !force && !type) return allNodes.value
+    if (loaded.value && !force && !type) {
+      if (!hasRevalidated && !loading.value) {
+        revalidateCategories()
+      }
+      return allNodes.value
+    }
     if (loading.value && !type) return allNodes.value
     loading.value = true
     try {
@@ -37,6 +62,8 @@ export const useCategoryStore = defineStore('category', () => {
       if (!type) {
         allNodes.value = res
         loaded.value = true
+        hasRevalidated = true
+        setSwrCache(CATEGORY_CACHE_KEY, res)
       }
       return res
     } finally {
@@ -99,6 +126,8 @@ export const useCategoryStore = defineStore('category', () => {
   function invalidate() {
     loaded.value = false
     expanded.value.clear()
+    hasRevalidated = false
+    clearSwrCache(CATEGORY_CACHE_KEY)
   }
 
   /**
@@ -110,6 +139,8 @@ export const useCategoryStore = defineStore('category', () => {
     loaded.value = false
     loading.value = false
     expanded.value.clear()
+    hasRevalidated = false
+    clearSwrCache(CATEGORY_CACHE_KEY)
   }
 
   return {

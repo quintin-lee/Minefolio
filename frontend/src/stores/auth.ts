@@ -8,6 +8,7 @@ import { ref } from 'vue'
 import { authApi } from '@/api/auth'
 import { systemApi } from '@/api/system'
 import { encryptPassword, clearCryptoKeyCache } from '@/utils/crypto'
+import { clearSwrCache } from '@/utils/swr-cache'
 
 /**
  * 用户信息接口
@@ -176,6 +177,7 @@ export const useAuthStore = defineStore('auth', () => {
         if (key && key.startsWith('minefolio:chat:draft:')) draftKeys.push(key)
       }
       draftKeys.forEach((key) => localStorage.removeItem(key))
+      clearSwrCache()
     }
     clearCryptoKeyCache()
     try {
