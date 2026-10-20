@@ -222,6 +222,8 @@
                       :workflow-config="msg.workflowConfig"
                       :is-streaming="chat.isStreaming && idx === chat.messages.length - 1 && msg.role === 'assistant'"
                       :enable-buffer="chat.enableTypewriterBuffer"
+                      :extracted-item-ids="extractedSegmentIdMap[msg.id] || []"
+                      @open-panel-item="handleOpenPanelItem"
                     />
                   </div>
                   <div v-if="msg.content && !chat.isStreaming" class="message-actions">
@@ -292,6 +294,27 @@
           </div>
         </div>
       </main>
+
+      <!-- Panel Overlay Backdrop (Mobile/Tablet drawer mode) -->
+      <div
+        v-if="panelOverlay && panelVisible && !isMobile"
+        class="panel-overlay-backdrop"
+        @click="panelVisible = false"
+      ></div>
+
+      <!-- Analysis Result Panel -->
+      <AnalysisPanel
+        v-if="!isMobile"
+        :visible="panelVisible"
+        :items="panelItems"
+        :active-tab-id="activeTabId"
+        :overlay="panelOverlay"
+        :width="panelWidth"
+        @close="panelVisible = false"
+        @update:active-tab-id="id => activeTabId = id"
+        @remove-tab="handleRemovePanelTab"
+        @resize-start="startPanelResize"
+      />
     </div>
   </div>
 </template>
@@ -305,6 +328,9 @@ import ChatMessageContent from '@/components/ChatMessageContent.vue'
 import PromptStarters from '@/components/PromptStarters.vue'
 import WorkflowBar from '@/components/WorkflowBar.vue'
 import WorkflowSlashMenu from '@/components/WorkflowSlashMenu.vue'
+import AnalysisPanel from '@/components/AnalysisPanel.vue'
+import { extractPanelItems } from '@/utils/chat-panel-extractor'
+import type { PanelItem } from '@/types/chat-panel'
 import { localToday } from '@/utils/format'
 import type { WorkflowDef } from '@/types'
 
@@ -330,7 +356,126 @@ const isMobile = ref(false)
 const inputAreaRef = ref<HTMLElement | null>(null)
 const scrollBtnRef = ref<HTMLButtonElement | null>(null)
 
-function checkMobile() { isMobile.value = window.innerWidth < 768; updateMessagesBottomPadding() }
+// --- 分析面板 (Analysis Panel) 状态与拖拽 ---
+const panelVisible = ref(false)
+const panelItems = ref<PanelItem[]>([])
+const activeTabId = ref('')
+const panelOverlay = ref(false)
+const PANEL_WIDTH_KEY = 'minefolio:analysis-panel-width'
+const DEFAULT_PANEL_WIDTH = 420
+const panelWidth = ref(DEFAULT_PANEL_WIDTH)
+const MAX_PANEL_ITEMS = 20
+
+function loadPanelWidth() {
+  try {
+    const saved = localStorage.getItem(PANEL_WIDTH_KEY)
+    if (saved) {
+      const w = parseInt(saved, 10)
+      if (!isNaN(w) && w >= 300 && w <= 600) {
+        panelWidth.value = w
+      }
+    }
+  } catch { /* ignore */ }
+}
+
+let isResizing = false
+let startX = 0
+let startWidth = 0
+
+function startPanelResize(e: MouseEvent) {
+  if (panelOverlay.value || isMobile.value) return
+  isResizing = true
+  startX = e.clientX
+  startWidth = panelWidth.value
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+  window.addEventListener('mousemove', onPanelMouseMove)
+  window.addEventListener('mouseup', stopPanelResize)
+}
+
+function onPanelMouseMove(e: MouseEvent) {
+  if (!isResizing) return
+  const delta = startX - e.clientX
+  const nextW = Math.min(Math.max(startWidth + delta, 300), 600)
+  panelWidth.value = nextW
+}
+
+function stopPanelResize() {
+  if (!isResizing) return
+  isResizing = false
+  document.body.style.cursor = ''
+  document.body.style.userSelect = ''
+  window.removeEventListener('mousemove', onPanelMouseMove)
+  window.removeEventListener('mouseup', stopPanelResize)
+  try {
+    localStorage.setItem(PANEL_WIDTH_KEY, String(panelWidth.value))
+  } catch { /* ignore */ }
+}
+
+function checkPanelMode() {
+  panelOverlay.value = !isMobile.value && window.innerWidth < 1200
+}
+
+function checkMobile() {
+  isMobile.value = window.innerWidth < 768
+  updateMessagesBottomPadding()
+  checkPanelMode()
+}
+
+// 抽取卡片映射表：messageId -> segmentId[]
+const extractedSegmentIdMap = computed(() => {
+  const map: Record<number, string[]> = {}
+  for (const item of panelItems.value) {
+    if (item.messageId !== undefined && item.segmentId) {
+      if (!map[item.messageId]) map[item.messageId] = []
+      map[item.messageId]!.push(item.segmentId)
+    }
+  }
+  return map
+})
+
+function scanAllMessagesToPanel() {
+  const idSet = new Set(panelItems.value.map(i => i.id))
+  for (const msg of chat.messages) {
+    if (msg.role !== 'assistant') continue
+    const res = extractPanelItems(msg.id, msg.content, msg.workflowData, msg.workflowConfig)
+    for (const item of res.panelItems) {
+      if (!idSet.has(item.id)) {
+        if (panelItems.value.length >= MAX_PANEL_ITEMS) {
+          panelItems.value.shift()
+        }
+        panelItems.value.push(item)
+        idSet.add(item.id)
+      }
+    }
+  }
+}
+
+function handleOpenPanelItem(itemId: string) {
+  const existing = panelItems.value.find(i => i.id === itemId)
+  if (existing) {
+    activeTabId.value = existing.id
+    panelVisible.value = true
+    return
+  }
+  scanAllMessagesToPanel()
+  activeTabId.value = itemId
+  panelVisible.value = true
+}
+
+function handleRemovePanelTab(tabId: string) {
+  const idx = panelItems.value.findIndex(i => i.id === tabId)
+  if (idx >= 0) {
+    panelItems.value.splice(idx, 1)
+  }
+  if (panelItems.value.length === 0) {
+    panelVisible.value = false
+    activeTabId.value = ''
+  } else if (activeTabId.value === tabId) {
+    const nextIdx = Math.min(idx, panelItems.value.length - 1)
+    activeTabId.value = panelItems.value[nextIdx]?.id || ''
+  }
+}
 
 const vFocus = {
   mounted: (el: HTMLElement) => el.focus(),
@@ -778,7 +923,7 @@ async function handleRetryMessage(msgId: number) {
 
 function setupInfiniteScroll() {
   if (scrollObserver) { scrollObserver.disconnect() }
-  if (!loadMoreTrigger.value) return
+  if (!loadMoreTrigger.value || typeof IntersectionObserver === 'undefined') return
   scrollObserver = new IntersectionObserver((entries) => {
     if (entries[0]?.isIntersecting && !chat.loadingMoreMessages && chat.loadedMessagePage * 50 < (chat.messageTotal ?? 0)) {
       chat.loadMoreMessages()
@@ -802,8 +947,38 @@ watch(lastMessageId, (id, prevId) => {
 
 watch(inputText, () => { persistDraft() })
 watch(() => chat.currentSessionId, () => {
+  panelItems.value = []
+  panelVisible.value = false
+  activeTabId.value = ''
   loadDraft()
   nextTick(() => setupInfiniteScroll())
+})
+
+// 流式生成结束时，自动扫描助理最新输出并弹出展示
+watch(() => chat.isStreaming, (streaming, prevStreaming) => {
+  if (!streaming && prevStreaming) {
+    const msgs = chat.messages
+    if (msgs.length > 0) {
+      const lastMsg = msgs[msgs.length - 1]
+      if (lastMsg && lastMsg.role === 'assistant') {
+        const res = extractPanelItems(lastMsg.id, lastMsg.content, lastMsg.workflowData, lastMsg.workflowConfig)
+        if (res.panelItems.length > 0) {
+          for (const item of res.panelItems) {
+            if (!panelItems.value.some(i => i.id === item.id)) {
+              if (panelItems.value.length >= MAX_PANEL_ITEMS) {
+                panelItems.value.shift()
+              }
+              panelItems.value.push(item)
+            }
+          }
+          if (!isMobile.value) {
+            activeTabId.value = res.panelItems[res.panelItems.length - 1].id
+            panelVisible.value = true
+          }
+        }
+      }
+    }
+  }
 })
 
 function onGlobalKeydown(e: KeyboardEvent) {
@@ -819,6 +994,7 @@ function onGlobalKeydown(e: KeyboardEvent) {
 }
 
 onMounted(async () => {
+  loadPanelWidth()
   checkMobile()
   window.addEventListener('resize', checkMobile)
   await Promise.allSettled([fetchSessions(), fetchSettings(), fetchModels()])
@@ -842,6 +1018,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  stopPanelResize()
   window.removeEventListener('keydown', onGlobalKeydown)
   window.removeEventListener('resize', checkMobile)
   if (scrollObserver) { scrollObserver.disconnect(); scrollObserver = null }
@@ -1764,5 +1941,19 @@ onUnmounted(() => {
   .model-bar { padding-left: 48px; }
 }
 
+/* 面板抽屉模式下的半透明遮罩 */
+.panel-overlay-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px);
+  z-index: 110;
+  animation: backdrop-fade 0.2s ease-out;
+}
+
+@keyframes backdrop-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
 
 </style>
