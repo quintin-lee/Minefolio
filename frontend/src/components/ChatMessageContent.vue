@@ -1,63 +1,113 @@
 <template>
   <div class="chat-message-content">
     <!-- Inline Workflow Config Card (if staged) -->
-    <WorkflowConfigCard
-      v-if="workflowConfig"
-      :message-id="messageId"
-      :config="workflowConfig"
-    />
+    <template v-if="workflowConfig">
+      <div
+        v-if="isExtracted('wf-config')"
+        class="panel-ref-pill"
+        @click="$emit('open-panel-item', `msg-${messageId}-wf-config`)"
+      >
+        <div class="ref-pill-left">
+          <Icon icon="ph:sliders-horizontal-bold" class="ref-pill-icon" />
+          <span class="ref-pill-label">工作流参数配置</span>
+        </div>
+        <div class="ref-pill-right">
+          <span class="ref-pill-hint">在右侧面板查看</span>
+          <Icon icon="ph:arrow-right-bold" class="ref-pill-arrow" />
+        </div>
+      </div>
+      <WorkflowConfigCard
+        v-else
+        :message-id="messageId"
+        :config="workflowConfig"
+      />
+    </template>
 
     <!-- Workflow Pipeline Progress Card (if present) -->
-    <WorkflowProgressCard
-      v-else-if="workflowData"
-      :workflow-data="workflowData"
-    />
+    <template v-else-if="workflowData">
+      <div
+        v-if="isExtracted('wf-progress')"
+        class="panel-ref-pill"
+        @click="$emit('open-panel-item', `msg-${messageId}-wf-progress`)"
+      >
+        <div class="ref-pill-left">
+          <Icon icon="ph:git-fork-bold" class="ref-pill-icon" />
+          <span class="ref-pill-label">工作流执行进度</span>
+        </div>
+        <div class="ref-pill-right">
+          <span class="ref-pill-hint">在右侧面板查看</span>
+          <Icon icon="ph:arrow-right-bold" class="ref-pill-arrow" />
+        </div>
+      </div>
+      <WorkflowProgressCard
+        v-else
+        :workflow-data="workflowData"
+      />
+    </template>
 
     <template v-for="seg in segments" :key="seg.id">
-      <!-- Markdown Segment -->
+      <!-- 若该段已被抽到面板中且非流式状态，呈现紧凑胶囊入口 -->
       <div
-        v-if="seg.type === 'markdown'"
-        class="markdown-part"
-        v-html="seg.renderedHtml"
-      ></div>
-
-      <!-- Streaming plain-text segment: append-only, no markdown re-parse per frame -->
-      <div
-        v-else-if="seg.type === 'streaming-text'"
-        class="markdown-part streaming-text"
-      >{{ seg.content }}<span v-if="showTrailingCursor" class="typing-cursor-inline"></span></div>
-
-      <!-- Action Card Block -->
-      <ActionCard
-        v-else-if="seg.type === 'action' && seg.actionData"
-        :action-data="seg.actionData"
-      />
-
-      <!-- Mermaid Diagram Block -->
-      <MermaidBlock
-        v-else-if="seg.type === 'mermaid'"
-        :code="seg.content"
-        :is-streaming="isStreaming"
-      />
-
-      <!-- Streaming Mermaid Code Block (in progress before closing ```) -->
-      <div v-else-if="seg.type === 'streaming-mermaid'" class="streaming-mermaid-placeholder">
-        <div class="placeholder-header">
-          <div class="header-left">
-            <Icon icon="ph:projector-screen-chart" class="placeholder-icon" />
-            <span>Mermaid 图表生成中...</span>
-          </div>
-          <span class="streaming-pulse-dot"></span>
+        v-if="isExtracted(seg.id)"
+        class="panel-ref-pill"
+        @click="$emit('open-panel-item', getPanelItemId(seg.id))"
+      >
+        <div class="ref-pill-left">
+          <Icon :icon="getSegmentIcon(seg)" class="ref-pill-icon" />
+          <span class="ref-pill-label">{{ getSegmentLabel(seg) }}</span>
         </div>
-        <pre class="streaming-code"><code>{{ seg.content }}</code></pre>
+        <div class="ref-pill-right">
+          <span class="ref-pill-hint">在右侧面板查看</span>
+          <Icon icon="ph:arrow-right-bold" class="ref-pill-arrow" />
+        </div>
       </div>
 
-      <!-- Generic Code Block with Syntax Highlighting & Copy -->
-      <CodeBlock
-        v-else-if="seg.type === 'code'"
-        :code="seg.content"
-        :lang="seg.lang"
-      />
+      <template v-else>
+        <!-- Markdown Segment -->
+        <div
+          v-if="seg.type === 'markdown'"
+          class="markdown-part"
+          v-html="seg.renderedHtml"
+        ></div>
+
+        <!-- Streaming plain-text segment: append-only, no markdown re-parse per frame -->
+        <div
+          v-else-if="seg.type === 'streaming-text'"
+          class="markdown-part streaming-text"
+        >{{ seg.content }}<span v-if="showTrailingCursor" class="typing-cursor-inline"></span></div>
+
+        <!-- Action Card Block -->
+        <ActionCard
+          v-else-if="seg.type === 'action' && seg.actionData"
+          :action-data="seg.actionData"
+        />
+
+        <!-- Mermaid Diagram Block -->
+        <MermaidBlock
+          v-else-if="seg.type === 'mermaid'"
+          :code="seg.content"
+          :is-streaming="isStreaming"
+        />
+
+        <!-- Streaming Mermaid Code Block (in progress before closing ```) -->
+        <div v-else-if="seg.type === 'streaming-mermaid'" class="streaming-mermaid-placeholder">
+          <div class="placeholder-header">
+            <div class="header-left">
+              <Icon icon="ph:projector-screen-chart" class="placeholder-icon" />
+              <span>Mermaid 图表生成中...</span>
+            </div>
+            <span class="streaming-pulse-dot"></span>
+          </div>
+          <pre class="streaming-code"><code>{{ seg.content }}</code></pre>
+        </div>
+
+        <!-- Generic Code Block with Syntax Highlighting & Copy -->
+        <CodeBlock
+          v-else-if="seg.type === 'code'"
+          :code="seg.content"
+          :lang="seg.lang"
+        />
+      </template>
     </template>
   </div>
 </template>
@@ -84,7 +134,58 @@ const props = defineProps<{
   workflowData?: WorkflowRunState
   workflowConfig?: WorkflowConfigState
   enableBuffer?: boolean
+  extractedItemIds?: string[]
 }>()
+
+const emit = defineEmits<{
+  (e: 'open-panel-item', itemId: string): void
+}>()
+
+function isExtracted(segId: string): boolean {
+  if (props.isStreaming || !props.extractedItemIds || props.extractedItemIds.length === 0) {
+    return false
+  }
+  return (
+    props.extractedItemIds.includes(segId) ||
+    (props.messageId !== undefined && props.extractedItemIds.includes(`msg-${props.messageId}-${segId}`))
+  )
+}
+
+function getPanelItemId(segId: string): string {
+  return props.messageId !== undefined ? `msg-${props.messageId}-${segId}` : segId
+}
+
+function getSegmentLabel(seg: Segment): string {
+  if (seg.type === 'action') {
+    return seg.actionData?.action_type === 'daily_expense' ? '日常记账确认' : '账户转账操作'
+  }
+  if (seg.type === 'mermaid') {
+    return '财务分析图表'
+  }
+  if (seg.type === 'code') {
+    return seg.lang ? `${seg.lang.toUpperCase()} 脚本` : '代码片段'
+  }
+  if (seg.type === 'markdown') {
+    return '财务数据表格'
+  }
+  return '查看分析'
+}
+
+function getSegmentIcon(seg: Segment): string {
+  if (seg.type === 'action') {
+    return seg.actionData?.action_type === 'daily_expense' ? 'ph:receipt-bold' : 'ph:arrows-left-right-bold'
+  }
+  if (seg.type === 'mermaid') {
+    return 'ph:chart-pie-slice-bold'
+  }
+  if (seg.type === 'code') {
+    return 'ph:code-bold'
+  }
+  if (seg.type === 'markdown') {
+    return 'ph:table-bold'
+  }
+  return 'ph:arrow-square-out-bold'
+}
 
 const debouncedContent = ref(props.content || '')
 let debounceTimer: number | null = null
@@ -521,4 +622,61 @@ const segments = computed<Segment[]>(() => {
   max-height: 160px;
 }
 
+/* 面板引用紧凑胶囊 */
+.panel-ref-pill {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 14px;
+  margin: 4px 0;
+  background: var(--mf-surface-card);
+  border: 1px solid var(--mf-primary-border);
+  border-radius: 12px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.panel-ref-pill:hover {
+  background: var(--mf-primary-light);
+  border-color: var(--mf-primary);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(0, 212, 255, 0.12);
+}
+
+.ref-pill-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ref-pill-icon {
+  font-size: 16px;
+  color: var(--mf-primary);
+}
+
+.ref-pill-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--mf-text-main);
+}
+
+.ref-pill-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--mf-primary);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.ref-pill-arrow {
+  font-size: 13px;
+  transition: transform 0.15s;
+}
+
+.panel-ref-pill:hover .ref-pill-arrow {
+  transform: translateX(3px);
+}
 </style>
