@@ -742,3 +742,5 @@ export interface GlobalIndicesData {
   indices: GlobalIndexItem[]
 }
 
+export * from './chat-panel'
+
