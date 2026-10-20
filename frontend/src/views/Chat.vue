@@ -352,7 +352,7 @@ const editDraft = ref('')
 const DRAFT_PREFIX = 'minefolio:chat:draft:'
 const loadMoreTrigger = ref<HTMLElement | null>(null)
 let scrollObserver: IntersectionObserver | null = null
-const isMobile = ref(false)
+const isMobile = ref(typeof window !== 'undefined' ? window.innerWidth < 768 : false)
 const inputAreaRef = ref<HTMLElement | null>(null)
 const scrollBtnRef = ref<HTMLButtonElement | null>(null)
 
@@ -423,7 +423,9 @@ function checkMobile() {
 }
 
 // 抽取卡片映射表：messageId -> segmentId[]
+// 在移动端模式下强制返回空映射，使所有结构化卡片直接全宽内联渲染
 const extractedSegmentIdMap = computed(() => {
+  if (isMobile.value) return {}
   const map: Record<number, string[]> = {}
   for (const item of panelItems.value) {
     if (item.messageId !== undefined && item.segmentId) {
@@ -972,7 +974,8 @@ watch(() => chat.isStreaming, (streaming, prevStreaming) => {
             }
           }
           if (!isMobile.value) {
-            activeTabId.value = res.panelItems[res.panelItems.length - 1].id
+            const latest = res.panelItems[res.panelItems.length - 1]
+            if (latest) activeTabId.value = latest.id
             panelVisible.value = true
           }
         }

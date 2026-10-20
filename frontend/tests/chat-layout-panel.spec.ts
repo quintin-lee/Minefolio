@@ -55,4 +55,30 @@ describe('Chat.vue with AnalysisPanel integration', () => {
     expect(panel.props('visible')).toBe(false)
     expect(panel.props('items')).toEqual([])
   })
+
+  it('does not render AnalysisPanel in mobile mode (<768px)', async () => {
+    // 模拟移动端视口
+    window.innerWidth = 500
+    window.dispatchEvent(new Event('resize'))
+
+    const wrapper = mount(Chat, {
+      global: {
+        stubs: {
+          ChatMessageContent: true,
+          PromptStarters: true,
+          WorkflowBar: true,
+          WorkflowSlashMenu: true,
+          Icon: true,
+          ElSelect: true,
+          ElOption: true,
+          ElButton: true
+        }
+      }
+    })
+
+    expect(wrapper.findComponent(AnalysisPanel).exists()).toBe(false)
+    // 恢复窗口尺寸
+    window.innerWidth = 1440
+    window.dispatchEvent(new Event('resize'))
+  })
 })
