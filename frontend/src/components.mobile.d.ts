@@ -10,6 +10,7 @@ declare module 'vue' {
     ActionCard: typeof import('./components/ActionCard.vue')['default']
     AiMcpManager: typeof import('./components/settings/AiMcpManager.vue')['default']
     AiProviderManager: typeof import('./components/settings/AiProviderManager.vue')['default']
+    AnalysisPanel: typeof import('./components/AnalysisPanel.vue')['default']
     AppearanceSettings: typeof import('./components/settings/AppearanceSettings.vue')['default']
     AppLogo: typeof import('./components/AppLogo.vue')['default']
     AssetBreakdownPie: typeof import('./components/AssetBreakdownPie.vue')['default']
