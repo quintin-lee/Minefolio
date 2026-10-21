@@ -34,7 +34,8 @@ int64_t mf_ai_message_insert(csilk_db_pool_t* pool,
                              const char*      role,
                              const char*      content,
                              const char*      model,
-                             const char*      thinking_content);
+                             const char*      thinking_content,
+                             const char*      tool_calls_json);
 
 int mf_ai_message_delete_last_assistant(csilk_db_pool_t* pool, int64_t session_id);
 

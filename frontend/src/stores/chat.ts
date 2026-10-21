@@ -10,9 +10,32 @@ import {
   listSessions, createSession, deleteSession, getSession, updateSession,
   getMessages, chatStream, getModels, getSettings, getWorkflows, runWorkflowStream,
 } from '@/api/ai'
-import type { AiMessage, AiSession, AiModelOption, AiSettings, WorkflowStreamChunk } from '@/api/ai'
+import type {
+  AiMessage, AiSession, AiModelOption, AiSettings, WorkflowStreamChunk, ToolCallInfo,
+} from '@/api/ai'
 import type { WorkflowDef, WorkflowRunState, WorkflowStepState } from '@/types'
 import { SmoothStreamWriter } from '@/utils/typewriter'
+
+/**
+ * 将历史消息行中的 tool_calls 字段 (JSON 数组字符串或已解析数组) 规范化为
+ * 流式渲染使用的 ToolCallInfo[] (字段名 arguments → args)，无效/空返回 undefined。
+ */
+function parseToolCalls(raw: unknown): ToolCallInfo[] | undefined {
+  if (!raw) return undefined
+  let arr: unknown = raw
+  if (typeof raw === 'string') {
+    if (!raw.trim()) return undefined
+    try { arr = JSON.parse(raw) } catch { return undefined }
+  }
+  if (!Array.isArray(arr)) return undefined
+  const out = (arr as Record<string, unknown>[]).map((r) => ({
+    id: String(r.id || ''),
+    name: String(r.name || ''),
+    args: r.arguments ? String(r.arguments) : undefined,
+    result: r.result != null && String(r.result) !== '' ? String(r.result) : undefined,
+  }))
+  return out.length ? out : undefined
+}
 
 /**
  * AI 对话与智能工作流 Pinia Store
@@ -210,6 +233,7 @@ export const useChatStore = defineStore('chat', () => {
       role: (m.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
       content: String(m.content || ''),
       thinking_content: m.thinking_content ? String(m.thinking_content) : undefined,
+      tool_calls: parseToolCalls(m.tool_calls),
       created_at: String(m.created_at || ''),
     }))
   }
@@ -238,6 +262,7 @@ export const useChatStore = defineStore('chat', () => {
         role: (m.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
         content: String(m.content || ''),
         thinking_content: m.thinking_content ? String(m.thinking_content) : undefined,
+        tool_calls: parseToolCalls(m.tool_calls),
         created_at: String(m.created_at || ''),
       }))
       // Prepend older messages (they come newest-first from backend)

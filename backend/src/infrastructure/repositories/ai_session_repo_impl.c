@@ -177,7 +177,7 @@ mf_ai_message_list(
 
     return csilk_db_query_param_json(
         pool,
-        "SELECT id, session_id, role, content, thinking_content, model, created_at "
+        "SELECT id, session_id, role, content, thinking_content, tool_calls, model, created_at "
         "FROM ai_messages WHERE session_id=? ORDER BY created_at ASC LIMIT ? OFFSET ?",
         (const char*[]){sid, lim, off, NULL});
 }
@@ -204,18 +204,20 @@ mf_ai_message_insert(csilk_db_pool_t* pool,
                      const char*      role,
                      const char*      content,
                      const char*      model,
-                     const char*      thinking_content)
+                     const char*      thinking_content,
+                     const char*      tool_calls_json)
 {
     char sid[32], m[128];
     sid_str(session_id, sid);
     strncpy(m, model ? model : "", sizeof(m) - 1);
     m[sizeof(m) - 1] = '\0';
     const char*   tc = thinking_content ? thinking_content : "";
+    const char*   tj = tool_calls_json ? tool_calls_json : "";
     csilk_json_t* r = csilk_db_query_param_json(
         pool,
         "INSERT INTO ai_messages (session_id, role, "
-        "content, model, thinking_content) VALUES (?, ?, ?, ?, ?) RETURNING id",
-        (const char*[]){sid, role, content, m, tc, NULL});
+        "content, model, thinking_content, tool_calls) VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
+        (const char*[]){sid, role, content, m, tc, tj, NULL});
     int64_t id = 0;
     if (r && csilk_json_array_size(r) > 0) {
         id = db_get_int(csilk_json_array_get(r, 0), "id");

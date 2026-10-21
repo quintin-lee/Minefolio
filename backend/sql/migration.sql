@@ -176,6 +176,7 @@ CREATE TABLE IF NOT EXISTS ai_messages (
     role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
     content TEXT NOT NULL,
     thinking_content TEXT DEFAULT '',
+    tool_calls TEXT DEFAULT '',
     model TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );

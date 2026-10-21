@@ -218,6 +218,10 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
         .thinking_accumulated_cap = 0,
     };
 
+    /* 工具调用持久化记录：本轮回到的每次工具调用（id/name/arguments/result）累计
+       成 JSON 数组，随最终 assistant 消息一并落库，历史重载时可还原工具调用卡片。 */
+    csilk_json_t* tc_record = csilk_json_array();
+
     struct timespec start_ts;
     clock_gettime(CLOCK_MONOTONIC, &start_ts);
 
@@ -292,12 +296,18 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
                     : (ai_res.reasoning_content ? ai_res.reasoning_content : NULL);
             if (pool && ctx->session_id > 0 &&
                 ((final_text && final_text[0]) || (final_thinking && final_thinking[0]))) {
+                size_t tcj_len = 0;
+                char*  tcj_str = csilk_json_array_size(tc_record) > 0
+                                     ? csilk_json_serialize(tc_record, &tcj_len)
+                                     : NULL;
                 mf_ai_message_insert(pool,
                                      ctx->session_id,
                                      "assistant",
                                      final_text ? final_text : "",
                                      model,
-                                     final_thinking);
+                                     final_thinking,
+                                     tcj_str);
+                free(tcj_str);
             }
             ai_runtime_status_set(&status, AI_RUNTIME_ERR_OK, "OK", NULL);
             csilk_ai_chat_response_free(&ai_res);
@@ -407,6 +417,14 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
                 cbs->on_tool_result(tc->id, tc->name, result_str ? result_str : "{}", user_data);
             }
 
+            /* 累计工具调用记录（供落库），result 保持原始 JSON 字符串 */
+            csilk_json_t* rec = csilk_json_object();
+            csilk_json_add_string(rec, "id", tc->id ? tc->id : "");
+            csilk_json_add_string(rec, "name", tc->name ? tc->name : "");
+            csilk_json_add_string(rec, "arguments", tc->arguments ? tc->arguments : "");
+            csilk_json_add_string(rec, "result", result_str ? result_str : "");
+            csilk_json_array_append(tc_record, rec);
+
             /* 追加 role="tool" 消息（使用 realloc 前备份的 tool_call_id） */
             mc++;
             msgs = (csilk_ai_message_t*)realloc(msgs, sizeof(csilk_ai_message_t) * mc);
@@ -437,8 +455,20 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
         status.code != AI_RUNTIME_ERR_MODEL) {
         const char* final_text =
             (bridge.accumulated && bridge.accumulated[0]) ? bridge.accumulated : "[思考已中断]";
-        mf_ai_message_insert(
-            pool, ctx->session_id, "assistant", final_text, model, bridge.thinking_accumulated);
+        {
+            size_t tcj_len = 0;
+            char*  tcj_str = csilk_json_array_size(tc_record) > 0
+                                 ? csilk_json_serialize(tc_record, &tcj_len)
+                                 : NULL;
+            mf_ai_message_insert(pool,
+                                 ctx->session_id,
+                                 "assistant",
+                                 final_text,
+                                 model,
+                                 bridge.thinking_accumulated,
+                                 tcj_str);
+            free(tcj_str);
+        }
         got_text = 1;
     }
 
@@ -494,6 +524,7 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
         }
     }
     free(msgs);
+    csilk_json_free(tc_record);
 
     return status;
 }

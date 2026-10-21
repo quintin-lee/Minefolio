@@ -558,7 +558,7 @@ ai_chat_handler(csilk_ctx_t* c)
 
     /* persist user message (skip on regenerate — already in history) */
     if (!regenerate) {
-        mf_ai_message_insert(pool, sid, "user", content, model_buf, NULL);
+        mf_ai_message_insert(pool, sid, "user", content, model_buf, NULL, NULL);
     }
 
     /* 构造统一 AI Runtime 上下文 */
