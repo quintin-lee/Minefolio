@@ -21,6 +21,7 @@ frontend/dist-mobile/
 .iconify_cache/
 .playwright-cli/
 .omo/
+.omp/
 .qoder
 .superpowers/
 deps/
