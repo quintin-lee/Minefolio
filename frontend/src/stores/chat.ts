@@ -424,7 +424,7 @@ export const useChatStore = defineStore('chat', () => {
           const tc = assistantMsg.tool_calls.find(t => t.id === chunk.id) || assistantMsg.tool_calls[assistantMsg.tool_calls.length - 1]
           if (tc) tc.result = chunk.result
         } else if (chunk.type === 'delta' && chunk.content) {
-          writer.push(chunk.content)
+          assistantMsg.content += chunk.content
         } else if (chunk.type === 'error') {
           writer.flushNow()
           assistantMsg.content = `⚠️ ${chunk.message}`
@@ -495,7 +495,7 @@ export const useChatStore = defineStore('chat', () => {
           const tc = assistantMsg.tool_calls.find(t => t.id === chunk.id) || assistantMsg.tool_calls[assistantMsg.tool_calls.length - 1]
           if (tc) tc.result = chunk.result
         } else if (chunk.type === 'delta' && chunk.content) {
-          writer.push(chunk.content)
+          assistantMsg.content += chunk.content
         } else if (chunk.type === 'error') {
           writer.flushNow()
           assistantMsg.content = `⚠️ ${chunk.message}`
@@ -573,7 +573,7 @@ export const useChatStore = defineStore('chat', () => {
           const tc = assistantMsg.tool_calls.find(t => t.id === chunk.id) || assistantMsg.tool_calls[assistantMsg.tool_calls.length - 1]
           if (tc) tc.result = chunk.result
         } else if (chunk.type === 'delta' && chunk.content) {
-          writer.push(chunk.content)
+          assistantMsg.content += chunk.content
         } else if (chunk.type === 'error') {
           writer.flushNow()
           assistantMsg.content = `⚠️ ${chunk.message}`
