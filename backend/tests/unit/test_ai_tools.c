@@ -379,6 +379,20 @@ main(void)
         assert(strcmp(csilk_json_get_string(first_res, "url"), "https://example.com/page1") == 0);
         assert(strcmp(csilk_json_get_string(first_res, "snippet"), "Snippet \"preview\" here.") == 0);
         csilk_json_free(parsed_results);
+
+        if (getenv("MINEFOLIO_TEST_LIVE_WEB")) {
+            printf("\n--- Running Live Web Search & Fetch Verification ---\n");
+            char* live_s = ai_tool_dispatch(ctx, "web_search", "{\"query\":\"美联储 利率\",\"num_results\":2}");
+            printf("Live search response:\n%s\n", live_s);
+            assert(live_s != NULL && strstr(live_s, "results") != NULL);
+            free(live_s);
+
+            char* live_f = ai_tool_dispatch(ctx, "fetch_webpage", "{\"url\":\"https://example.com\",\"max_chars\":500}");
+            printf("Live fetch response:\n%s\n", live_f);
+            assert(live_f != NULL && strstr(live_f, "Example Domain") != NULL);
+            free(live_f);
+        }
+
         printf("[Test 8] PASS: Web search & deep reading tools verified\n");
     }
 

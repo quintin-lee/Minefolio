@@ -10,10 +10,10 @@
 #include <string.h>
 
 #define SEARCH_USER_AGENT                                                                          \
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "           \
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "            \
     "Chrome/128.0.0.0 Safari/537.36"
-#define DEFAULT_SEARCH_TIMEOUT_MS 5000L
-#define DEFAULT_FETCH_TIMEOUT_MS  8000L
+#define DEFAULT_SEARCH_TIMEOUT_MS 8000L
+#define DEFAULT_FETCH_TIMEOUT_MS 10000L
 
 /* -------------------------------------------------------------------------- */
 /* curl 内存写缓冲与重定向安全处理                                            */
@@ -186,7 +186,8 @@ curl_http_get_with_redirect_check(const char* initial_url,
                             scheme_host[len] = '\0';
                         }
                     }
-                    snprintf(target_url, sizeof(target_url), "%s%s", scheme_host, hdr_state.location);
+                    snprintf(
+                        target_url, sizeof(target_url), "%s%s", scheme_host, hdr_state.location);
                 } else {
                     /* 不支持的重定向协议 */
                     free(body_buf.data);
@@ -197,6 +198,15 @@ curl_http_get_with_redirect_check(const char* initial_url,
                 if (!mf_ai_rule_validate_url(target_url, 4096)) {
                     free(body_buf.data);
                     return -2; /* 阻止重定向到内网地址 */
+                }
+
+                /* Bing 重定向可能丢失 /search 路由（例如跳转到 /?q=...），在此规范化为 /search?q=... */
+                const char* bq = strstr(target_url, "bing.com/?q=");
+                if (bq) {
+                    char fixed_url[4096];
+                    size_t pre_len = (size_t)(bq - target_url) + 9; /* 包括 "bing.com/" */
+                    snprintf(fixed_url, sizeof(fixed_url), "%.*ssearch?%s", (int)pre_len, target_url, bq + 11);
+                    snprintf(target_url, sizeof(target_url), "%s", fixed_url);
                 }
 
                 snprintf(current_url, sizeof(current_url), "%s", target_url);
@@ -348,16 +358,24 @@ html_strip_tags(const char* html)
 /* Bing 点击跟踪 URL base64 解码还原                                          */
 /* -------------------------------------------------------------------------- */
 
-static const char b64_table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
 static int
 base64_val(char c)
 {
-    if (c >= 'A' && c <= 'Z') return c - 'A';
-    if (c >= 'a' && c <= 'z') return c - 'a' + 26;
-    if (c >= '0' && c <= '9') return c - '0' + 52;
-    if (c == '+' || c == '-') return 62;
-    if (c == '/' || c == '_') return 63;
+    if (c >= 'A' && c <= 'Z') {
+        return c - 'A';
+    }
+    if (c >= 'a' && c <= 'z') {
+        return c - 'a' + 26;
+    }
+    if (c >= '0' && c <= '9') {
+        return c - '0' + 52;
+    }
+    if (c == '+' || c == '-') {
+        return 62;
+    }
+    if (c == '/' || c == '_') {
+        return 63;
+    }
     return -1;
 }
 
@@ -402,9 +420,13 @@ mf_bing_unpack_url(const char* href)
     int    bits = 0;
     for (size_t i = 0; i < in_len; i++) {
         char c = u_start[i];
-        if (c == '=') break;
+        if (c == '=') {
+            break;
+        }
         int val = base64_val(c);
-        if (val < 0) continue;
+        if (val < 0) {
+            continue;
+        }
         buf = (buf << 6) | val;
         bits += 6;
         if (bits >= 8) {
@@ -464,7 +486,7 @@ mf_bing_html_parse(const char* html, size_t max_results)
             continue;
         }
 
-        char raw_href[2048];
+        char   raw_href[2048];
         size_t hlen = (size_t)(href_end - href_attr);
         if (hlen >= sizeof(raw_href)) {
             hlen = sizeof(raw_href) - 1;
@@ -487,7 +509,7 @@ mf_bing_html_parse(const char* html, size_t max_results)
             continue;
         }
 
-        char raw_title[1024];
+        char   raw_title[1024];
         size_t tlen = (size_t)(a_content_end - a_content_start);
         if (tlen >= sizeof(raw_title)) {
             tlen = sizeof(raw_title) - 1;
@@ -592,7 +614,9 @@ wikipedia_opensearch(const char* query, size_t max_results)
     csilk_json_t* root = csilk_json_parse(body);
     free(body);
     if (!root || !csilk_json_is_array(root)) {
-        if (root) csilk_json_free(root);
+        if (root) {
+            csilk_json_free(root);
+        }
         return list;
     }
 
@@ -606,7 +630,8 @@ wikipedia_opensearch(const char* query, size_t max_results)
             size_t n = csilk_json_array_size(titles);
             for (size_t i = 0; i < n && i < max_results; i++) {
                 const char* t = csilk_json_get_string(csilk_json_array_get(titles, i), NULL);
-                const char* s = snippets ? csilk_json_get_string(csilk_json_array_get(snippets, i), NULL) : "";
+                const char* s =
+                    snippets ? csilk_json_get_string(csilk_json_array_get(snippets, i), NULL) : "";
                 const char* u = csilk_json_get_string(csilk_json_array_get(urls, i), NULL);
                 if (t && u) {
                     csilk_json_t* item = csilk_json_object();
@@ -658,21 +683,19 @@ exec_web_search(const ai_tool_t* tool, const ai_tool_context_t* ctx, const csilk
     }
 
     char search_url[2048];
-    snprintf(search_url,
-             sizeof(search_url),
-             "https://cn.bing.com/search?q=%s&ensearch=0",
-             encoded_q);
+    snprintf(
+        search_url, sizeof(search_url), "https://www.bing.com/search?q=%s", encoded_q);
     curl_free(encoded_q);
 
     char*  body = NULL;
     size_t body_len = 0;
     long   http_code = 0;
     int    rc = curl_http_get_with_redirect_check(search_url,
-                                               DEFAULT_SEARCH_TIMEOUT_MS,
-                                               "text/html,application/xhtml+xml",
-                                               &body,
-                                               &body_len,
-                                               &http_code);
+                                                  DEFAULT_SEARCH_TIMEOUT_MS,
+                                                  "text/html,application/xhtml+xml",
+                                                  &body,
+                                                  &body_len,
+                                                  &http_code);
 
     csilk_json_t* results_arr = NULL;
     if (rc == 0 && body && http_code == 200) {
@@ -768,8 +791,12 @@ exec_fetch_webpage(const ai_tool_t* tool, const ai_tool_context_t* ctx, const cs
         char*  direct_body = NULL;
         size_t direct_len = 0;
         long   direct_code = 0;
-        int    direct_rc = curl_http_get_with_redirect_check(
-            url, DEFAULT_FETCH_TIMEOUT_MS, "text/html,*/*", &direct_body, &direct_len, &direct_code);
+        int    direct_rc = curl_http_get_with_redirect_check(url,
+                                                             DEFAULT_FETCH_TIMEOUT_MS,
+                                                             "text/html,*/*",
+                                                             &direct_body,
+                                                             &direct_len,
+                                                             &direct_code);
 
         if (direct_rc == -2) {
             return strdup("{\"error\":\"forbidden_redirect_url\",\"message\":\"Redirect to "
@@ -853,8 +880,8 @@ ai_tool_web_search_register_all(void)
 
         ai_tool_t t = {
             .name = "web_search",
-            .description =
-                "搜索互联网获取最新的财经市场资讯、宏观经济数据及通用知识。返回相关网页的标题、链接和摘要。",
+            .description = "搜索互联网获取最新的财经市场资讯、宏观经济数据及通用知识。返回相关网页"
+                           "的标题、链接和摘要。",
             .parameters_schema = s,
             .permission = AI_PERM_READ,
             .risk = AI_RISK_LOW,
@@ -868,10 +895,8 @@ ai_tool_web_search_register_all(void)
     /* 2. fetch_webpage */
     {
         csilk_json_t* s = ai_schema_create_object();
-        ai_schema_add_prop(s,
-                           "url",
-                           "string",
-                           "要深入阅读的目标网页完整 URL（必须以 http:// 或 https:// 开头）");
+        ai_schema_add_prop(
+            s, "url", "string", "要深入阅读的目标网页完整 URL（必须以 http:// 或 https:// 开头）");
         ai_schema_add_prop(s,
                            "max_chars",
                            "integer",
@@ -880,8 +905,8 @@ ai_tool_web_search_register_all(void)
 
         ai_tool_t t = {
             .name = "fetch_webpage",
-            .description =
-                "抓取并深入阅读指定网页的正文详情，提取清洗后的纯文本/Markdown内容。当搜索结果摘要不足以回答用户问题时使用。",
+            .description = "抓取并深入阅读指定网页的正文详情，提取清洗后的纯文本/"
+                           "Markdown内容。当搜索结果摘要不足以回答用户问题时使用。",
             .parameters_schema = s,
             .permission = AI_PERM_READ,
             .risk = AI_RISK_LOW,
