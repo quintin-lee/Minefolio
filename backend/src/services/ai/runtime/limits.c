@@ -6,7 +6,7 @@ ai_runtime_limits_default(void)
 {
     return (ai_runtime_limits_t){
         .max_iterations = 10,
-        .timeout_ms = 60000,
+        .timeout_ms = 0,
         .token_budget = 32768,
         .tool_budget = 15,
         .cost_budget = 0.50,
