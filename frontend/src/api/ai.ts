@@ -52,6 +52,8 @@ export interface AiMessage {
   role: 'user' | 'assistant'
   /** 消息正文 Markdown 文本 */
   content: string
+  /** 思考推理过程文本 (具备思考能力的模型输出，可选) */
+  thinking_content?: string
   /** 生成该回答的模型名称 (可选) */
   model?: string
   /** 消息生成时间 (ISO 8601 字符串) */
@@ -184,9 +186,9 @@ export async function getMessages(sessionId: number, page = 1, page_size = 50) {
  * 流式对话返回的数据分块 (SSE Chunk)
  */
 export interface ChatStreamChunk {
-  /** 消息分块类型: 'delta' (增量文本), 'done' (生成结束), 'error' (发生错误) */
-  type: 'delta' | 'done' | 'error'
-  /** 增量文本内容 (当 type 为 'delta' 时) */
+  /** 消息分块类型: 'delta' (增量文本), 'thinking' (思考过程文本), 'done' (生成结束), 'error' (发生错误) */
+  type: 'delta' | 'thinking' | 'done' | 'error'
+  /** 增量文本内容 (当 type 为 'delta' 或 'thinking' 时) */
   content?: string
   /** 生成结束原因 (如 'stop', 'length' 等) */
   finish_reason?: string
@@ -280,7 +282,7 @@ export async function* chatStream(
             try {
               const parsed = JSON.parse(dataStr) as Record<string, unknown>
               yield {
-                type: (currentEvent || 'delta') as 'delta' | 'done' | 'error',
+                type: (currentEvent || 'delta') as 'delta' | 'thinking' | 'done' | 'error',
                 content: typeof parsed.content === 'string' ? parsed.content : undefined,
                 finish_reason: typeof parsed.finish_reason === 'string' ? parsed.finish_reason : undefined,
                 message: typeof parsed.message === 'string' ? parsed.message : undefined,

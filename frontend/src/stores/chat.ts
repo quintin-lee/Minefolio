@@ -182,6 +182,7 @@ export const useChatStore = defineStore('chat', () => {
       session_id: Number(m.session_id),
       role: (m.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
       content: String(m.content || ''),
+      thinking_content: m.thinking_content ? String(m.thinking_content) : undefined,
       created_at: String(m.created_at || ''),
     }))
   }
@@ -209,6 +210,7 @@ export const useChatStore = defineStore('chat', () => {
         session_id: Number(m.session_id),
         role: (m.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
         content: String(m.content || ''),
+        thinking_content: m.thinking_content ? String(m.thinking_content) : undefined,
         created_at: String(m.created_at || ''),
       }))
       // Prepend older messages (they come newest-first from backend)
@@ -356,8 +358,17 @@ export const useChatStore = defineStore('chat', () => {
         model: currentModel.value,
         provider: currentProvider.value,
       }, signal)) {
-        if (chunk.type === 'delta' && chunk.content) writer.push(chunk.content)
-        else if (chunk.type === 'error') { writer.flushNow(); assistantMsg.content = `⚠️ ${chunk.message}` }
+        if (chunk.type === 'thinking' && chunk.content) {
+          if (!assistantMsg.thinking_content) {
+            assistantMsg.thinking_content = ''
+          }
+          assistantMsg.thinking_content += chunk.content
+        } else if (chunk.type === 'delta' && chunk.content) {
+          writer.push(chunk.content)
+        } else if (chunk.type === 'error') {
+          writer.flushNow()
+          assistantMsg.content = `⚠️ ${chunk.message}`
+        }
       }
       await writer.finish()
     } catch (err: any) {
@@ -410,7 +421,12 @@ export const useChatStore = defineStore('chat', () => {
         provider: currentProvider.value,
         regenerate: true,
       }, signal)) {
-        if (chunk.type === 'delta' && chunk.content) {
+        if (chunk.type === 'thinking' && chunk.content) {
+          if (!assistantMsg.thinking_content) {
+            assistantMsg.thinking_content = ''
+          }
+          assistantMsg.thinking_content += chunk.content
+        } else if (chunk.type === 'delta' && chunk.content) {
           writer.push(chunk.content)
         } else if (chunk.type === 'error') {
           writer.flushNow()
@@ -475,7 +491,12 @@ export const useChatStore = defineStore('chat', () => {
         model: currentModel.value,
         provider: currentProvider.value,
       }, signal)) {
-        if (chunk.type === 'delta' && chunk.content) {
+        if (chunk.type === 'thinking' && chunk.content) {
+          if (!assistantMsg.thinking_content) {
+            assistantMsg.thinking_content = ''
+          }
+          assistantMsg.thinking_content += chunk.content
+        } else if (chunk.type === 'delta' && chunk.content) {
           writer.push(chunk.content)
         } else if (chunk.type === 'error') {
           writer.flushNow()
