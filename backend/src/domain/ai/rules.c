@@ -2,6 +2,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
 
 int
 mf_ai_rule_validate_session_title(
@@ -134,36 +137,49 @@ url_host_is_internal(const char* host)
         return true;
     }
 
-    /* 纯 IPv4 文本 */
-    if (hostpart[0] >= '0' && hostpart[0] <= '9') {
-        if (strncmp(hostpart, "127.", 4) == 0 || strcmp(hostpart, "0.0.0.0") == 0) {
+    /* 使用 inet_aton 检查 IPv4（支持十进制点分、八进制、十六进制、纯整数与 0） */
+    struct in_addr in4;
+    if (inet_aton(hostpart, &in4)) {
+        uint32_t ip = ntohl(in4.s_addr);
+        if ((ip >> 24) == 127 ||                /* 127.0.0.0/8 回环 */
+            (ip >> 24) == 10 ||                 /* 10.0.0.0/8 私网 */
+            (ip >> 20) == ((172 << 4) | 1) ||   /* 172.16.0.0/12 (172.16-172.31) */
+            (ip >> 16) == ((192 << 8) | 168) || /* 192.168.0.0/16 私网 */
+            (ip >> 16) == ((169 << 8) | 254) || /* 169.254.0.0/16 链路本地 */
+            (ip >> 24) == 0 ||                  /* 0.0.0.0/8 及 0 */
+            ip == 0xFFFFFFFF) {                 /* 255.255.255.255 广播 */
             return true;
-        }
-        if (strncmp(hostpart, "10.", 3) == 0) {
-            return true;
-        }
-        if (strncmp(hostpart, "192.168.", 8) == 0) {
-            return true;
-        }
-        if (strncmp(hostpart, "172.", 4) == 0) {
-            /* 172.16.0.0/12 */
-            int second = 0;
-            if (sscanf(hostpart + 4, "%d", &second) == 1) {
-                if (second >= 16 && second <= 31) {
-                    return true;
-                }
-            }
-        }
-        if (strncmp(hostpart, "169.254.", 8) == 0) {
-            return true; /* 链路本地 */
         }
         return false;
     }
 
-    /* IPv6 回环与内网 */
-    if (strcmp(hostpart, "::1") == 0 || strcmp(hostpart, "::") == 0 ||
-        strncmp(hostpart, "fe80:", 5) == 0 || strncmp(hostpart, "fc00:", 5) == 0 ||
-        strncmp(hostpart, "fd", 2) == 0) {
+    /* 使用 inet_pton 检查标准 IPv6 及 IPv4-mapped IPv6 */
+    struct in6_addr in6;
+    if (inet_pton(AF_INET6, hostpart, &in6) == 1) {
+        if (IN6_IS_ADDR_LOOPBACK(&in6) || IN6_IS_ADDR_LINKLOCAL(&in6) ||
+            IN6_IS_ADDR_SITELOCAL(&in6) || IN6_IS_ADDR_UNSPECIFIED(&in6)) {
+            return true;
+        }
+        if (IN6_IS_ADDR_V4MAPPED(&in6)) {
+            uint32_t v4 = ntohl(*(const uint32_t*)&in6.s6_addr[12]);
+            if ((v4 >> 24) == 127 || (v4 >> 24) == 10 || (v4 >> 20) == ((172 << 4) | 1) ||
+                (v4 >> 16) == ((192 << 8) | 168) || (v4 >> 16) == ((169 << 8) | 254) ||
+                (v4 >> 24) == 0 || v4 == 0xFFFFFFFF) {
+                return true;
+            }
+        }
+        /* 唯一本地 IPv6 fc00::/7 (包括 fc00:: 与 fd00::) */
+        if ((in6.s6_addr[0] & 0xfe) == 0xfc) {
+            return true;
+        }
+        return false;
+    }
+
+    /* 兜底文本前缀匹配 */
+    if (strncmp(hostpart, "127.", 4) == 0 || strcmp(hostpart, "0.0.0.0") == 0 ||
+        strncmp(hostpart, "10.", 3) == 0 || strncmp(hostpart, "192.168.", 8) == 0 ||
+        strncmp(hostpart, "169.254.", 8) == 0 || strcmp(hostpart, "::1") == 0 ||
+        strcmp(hostpart, "::") == 0) {
         return true;
     }
 
@@ -176,8 +192,8 @@ mf_ai_rule_validate_url(const char* url, size_t max_len)
     if (!url || !url[0]) {
         return false;
     }
-    if (max_len == 0 || max_len > 4096) {
-        max_len = 4096;
+    if (max_len == 0 || max_len > 4200) {
+        max_len = 4200;
     }
     size_t len = strlen(url);
     if (len > max_len) {

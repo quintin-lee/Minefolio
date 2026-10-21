@@ -20,6 +20,17 @@ char* mf_bing_unpack_url(const char* href);
  */
 csilk_json_t* mf_bing_html_parse(const char* html, size_t max_results);
 
+/**
+ * @brief 规范化 Bing 重定向 URL，修复丢失的 /search 路由与查询参数
+ */
+void mf_bing_normalize_redirect_url(char* target_url, size_t cap);
+
+/**
+ * @brief 安全截断 UTF-8 字符串，确保不切断多字节字符边界
+ * @return 截断后的有效字节长度
+ */
+size_t mf_utf8_truncate(char* str, size_t max_bytes);
+
 #ifdef __cplusplus
 }
 #endif

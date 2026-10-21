@@ -85,6 +85,60 @@ curl_header_location_cb(char* buffer, size_t size, size_t nitems, void* userdata
     return total;
 }
 
+void
+mf_bing_normalize_redirect_url(char* target_url, size_t cap)
+{
+    if (!target_url || cap == 0) {
+        return;
+    }
+    const char* bq = strstr(target_url, "bing.com/?q=");
+    if (bq) {
+        char   fixed_url[4200];
+        size_t pre_len = (size_t)(bq - target_url) + 9; /* "bing.com/" */
+        snprintf(fixed_url, sizeof(fixed_url), "%.*ssearch?%s", (int)pre_len, target_url, bq + 10);
+        strncpy(target_url, fixed_url, cap - 1);
+        target_url[cap - 1] = '\0';
+        return;
+    }
+    const char* bp = strstr(target_url, "bing.com/?");
+    if (bp) {
+        char   fixed_url[4200];
+        size_t pre_len = (size_t)(bp - target_url) + 9; /* "bing.com/" */
+        snprintf(fixed_url, sizeof(fixed_url), "%.*ssearch?%s", (int)pre_len, target_url, bp + 10);
+        strncpy(target_url, fixed_url, cap - 1);
+        target_url[cap - 1] = '\0';
+    }
+}
+
+size_t
+mf_utf8_truncate(char* str, size_t max_bytes)
+{
+    if (!str) {
+        return 0;
+    }
+    size_t len = strlen(str);
+    if (len <= max_bytes) {
+        return len;
+    }
+    size_t cut = max_bytes;
+    /* 回退 UTF-8 续接字节 10xxxxxx (0x80..0xBF) */
+    while (cut > 0 && ((unsigned char)str[cut] & 0xC0) == 0x80) {
+        cut--;
+    }
+    /* 检查 cut 前面的前导字节是否因截断而导致后续续接字节不足 */
+    if (cut > 0) {
+        unsigned char lead = (unsigned char)str[cut - 1];
+        if ((lead & 0x80) != 0) {
+            size_t need = (lead >= 0xF0) ? 4 : (lead >= 0xE0) ? 3 : (lead >= 0xC0) ? 2 : 1;
+            if (max_bytes - (cut - 1) < need) {
+                cut--;
+            }
+        }
+    }
+    str[cut] = '\0';
+    return cut;
+}
+
 /**
  * @brief 带多跳 SSRF 安全校验的 HTTP GET 请求
  * @return 0 成功；-1 网络错误/超时；-2 SSRF 拦截；-3 内存错误
@@ -107,11 +161,11 @@ curl_http_get_with_redirect_check(const char* initial_url,
         *out_http_code = 0;
     }
 
-    if (!initial_url || !mf_ai_rule_validate_url(initial_url, 4096)) {
+    if (!initial_url || !mf_ai_rule_validate_url(initial_url, 4200)) {
         return -2; /* SSRF 拒绝 */
     }
 
-    char current_url[4096];
+    char current_url[4200];
     snprintf(current_url, sizeof(current_url), "%s", initial_url);
 
     int max_hops = 3;
@@ -137,7 +191,8 @@ curl_http_get_with_redirect_check(const char* initial_url,
         curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
         curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
         curl_easy_setopt(curl, CURLOPT_USERAGENT, SEARCH_USER_AGENT);
-        curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, timeout_ms > 0 ? timeout_ms : 5000L);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, timeout_ms > 0 ? timeout_ms : 8000L);
+        curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);       /* 多线程安全，避免 SIGALRM */
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L); /* 禁用盲目跳转 */
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_mem_cb);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body_buf);
@@ -168,12 +223,12 @@ curl_http_get_with_redirect_check(const char* initial_url,
         if (http_code == 301 || http_code == 302 || http_code == 303 || http_code == 307 ||
             http_code == 308) {
             if (hdr_state.location[0] != '\0') {
-                char target_url[4096];
+                char target_url[4200];
                 if (strncmp(hdr_state.location, "http://", 7) == 0 ||
                     strncmp(hdr_state.location, "https://", 8) == 0) {
                     snprintf(target_url, sizeof(target_url), "%s", hdr_state.location);
                 } else if (hdr_state.location[0] == '/') {
-                    /* 相对路径拼接 scheme + host */
+                    /* 绝对路径拼接 scheme + host */
                     char scheme_host[1024];
                     scheme_host[0] = '\0';
                     const char* p = strstr(current_url, "://");
@@ -188,26 +243,46 @@ curl_http_get_with_redirect_check(const char* initial_url,
                     }
                     snprintf(
                         target_url, sizeof(target_url), "%s%s", scheme_host, hdr_state.location);
+                } else if (hdr_state.location[0] == '?') {
+                    /* 查询参数替换 */
+                    char base_without_q[2048];
+                    strncpy(base_without_q, current_url, sizeof(base_without_q) - 1);
+                    base_without_q[sizeof(base_without_q) - 1] = '\0';
+                    char* qpos = strchr(base_without_q, '?');
+                    if (qpos) {
+                        *qpos = '\0';
+                    }
+                    snprintf(
+                        target_url, sizeof(target_url), "%s%s", base_without_q, hdr_state.location);
                 } else {
-                    /* 不支持的重定向协议 */
-                    free(body_buf.data);
-                    return -2;
+                    /* 相对路径拼接当前 URL 所在目录 */
+                    char dir_path[2048];
+                    strncpy(dir_path, current_url, sizeof(dir_path) - 1);
+                    dir_path[sizeof(dir_path) - 1] = '\0';
+                    char* qpos = strchr(dir_path, '?');
+                    if (qpos) {
+                        *qpos = '\0';
+                    }
+                    char* last_slash = strrchr(dir_path, '/');
+                    if (last_slash && last_slash > strstr(dir_path, "://") + 2) {
+                        *(last_slash + 1) = '\0';
+                        snprintf(
+                            target_url, sizeof(target_url), "%s%s", dir_path, hdr_state.location);
+                    } else {
+                        /* 无法解析相对路径，返回通用网络解析错误而非 SSRF 拒绝 */
+                        free(body_buf.data);
+                        return -1;
+                    }
                 }
 
                 /* 校验重定向目标 URL 的 SSRF 安全性 */
-                if (!mf_ai_rule_validate_url(target_url, 4096)) {
+                if (!mf_ai_rule_validate_url(target_url, 4200)) {
                     free(body_buf.data);
                     return -2; /* 阻止重定向到内网地址 */
                 }
 
-                /* Bing 重定向可能丢失 /search 路由（例如跳转到 /?q=...），在此规范化为 /search?q=... */
-                const char* bq = strstr(target_url, "bing.com/?q=");
-                if (bq) {
-                    char fixed_url[4096];
-                    size_t pre_len = (size_t)(bq - target_url) + 9; /* 包括 "bing.com/" */
-                    snprintf(fixed_url, sizeof(fixed_url), "%.*ssearch?%s", (int)pre_len, target_url, bq + 11);
-                    snprintf(target_url, sizeof(target_url), "%s", fixed_url);
-                }
+                /* Bing 重定向丢失 /search 路由自动规范化 */
+                mf_bing_normalize_redirect_url(target_url, sizeof(target_url));
 
                 snprintf(current_url, sizeof(current_url), "%s", target_url);
                 free(body_buf.data);
@@ -305,18 +380,39 @@ html_strip_tags(const char* html)
     bool   in_tag = false;
 
     while (i < len) {
-        /* 跳过 <script>...</script> 和 <style>...</style> */
+        /* 跳过 <script>, <style>, <nav>, <header>, <footer> */
         if (!in_tag && strncasecmp(html + i, "<script", 7) == 0) {
-            const char* end = strstr(html + i, "</script>");
+            const char* end = strcasestr(html + i, "</script>");
             if (end) {
                 i = (size_t)(end - html) + 9;
                 continue;
             }
         }
         if (!in_tag && strncasecmp(html + i, "<style", 6) == 0) {
-            const char* end = strstr(html + i, "</style>");
+            const char* end = strcasestr(html + i, "</style>");
             if (end) {
                 i = (size_t)(end - html) + 8;
+                continue;
+            }
+        }
+        if (!in_tag && strncasecmp(html + i, "<nav", 4) == 0) {
+            const char* end = strcasestr(html + i, "</nav>");
+            if (end) {
+                i = (size_t)(end - html) + 6;
+                continue;
+            }
+        }
+        if (!in_tag && strncasecmp(html + i, "<header", 7) == 0) {
+            const char* end = strcasestr(html + i, "</header>");
+            if (end) {
+                i = (size_t)(end - html) + 9;
+                continue;
+            }
+        }
+        if (!in_tag && strncasecmp(html + i, "<footer", 7) == 0) {
+            const char* end = strcasestr(html + i, "</footer>");
+            if (end) {
+                i = (size_t)(end - html) + 9;
                 continue;
             }
         }
@@ -683,8 +779,7 @@ exec_web_search(const ai_tool_t* tool, const ai_tool_context_t* ctx, const csilk
     }
 
     char search_url[2048];
-    snprintf(
-        search_url, sizeof(search_url), "https://www.bing.com/search?q=%s", encoded_q);
+    snprintf(search_url, sizeof(search_url), "https://www.bing.com/search?q=%s", encoded_q);
     curl_free(encoded_q);
 
     char*  body = NULL;
@@ -828,6 +923,10 @@ exec_fetch_webpage(const ai_tool_t* tool, const ai_tool_context_t* ctx, const cs
                     }
                     memcpy(extracted_title, inner, tlen);
                     extracted_title[tlen] = '\0';
+                    char* utitle = html_unescape_entities(extracted_title);
+                    strncpy(extracted_title, utitle, sizeof(extracted_title) - 1);
+                    extracted_title[sizeof(extracted_title) - 1] = '\0';
+                    free(utitle);
                 }
             }
         }
@@ -840,12 +939,19 @@ exec_fetch_webpage(const ai_tool_t* tool, const ai_tool_context_t* ctx, const cs
         content_text = strdup("");
     }
 
-    /* 4. Token 预算安全截断 */
+    /* 4. Token 预算安全截断（UTF-8 字符边界对齐） */
     bool   truncated = false;
     size_t clen = strlen(content_text);
     if (clen > max_chars) {
-        content_text[max_chars] = '\0';
+        mf_utf8_truncate(content_text, max_chars);
         truncated = true;
+        const char* banner = "\n\n[Content truncated due to character limit]";
+        size_t      cur_len = strlen(content_text);
+        char*       expanded = (char*)realloc(content_text, cur_len + strlen(banner) + 1);
+        if (expanded) {
+            content_text = expanded;
+            strcat(content_text, banner);
+        }
     }
 
     csilk_json_t* res = csilk_json_object();

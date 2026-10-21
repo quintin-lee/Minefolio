@@ -72,8 +72,13 @@ test_ai_ssrf_url_validation(void)
     assert(!mf_ai_rule_validate_url("http://127.0.0.1:8080/api", 4096));
     assert(!mf_ai_rule_validate_url("http://127.0.0.2:3000", 4096));
     assert(!mf_ai_rule_validate_url("http://0.0.0.0", 4096));
+    assert(!mf_ai_rule_validate_url("http://0:8080", 4096));
+    assert(!mf_ai_rule_validate_url("http://017700000001:8080/", 4096));
+    assert(!mf_ai_rule_validate_url("http://2130706433:8080/", 4096));
+    assert(!mf_ai_rule_validate_url("http://0x7f000001:8080/", 4096));
     assert(!mf_ai_rule_validate_url("http://[::1]:8080", 4096));
     assert(!mf_ai_rule_validate_url("http://::1", 4096));
+    assert(!mf_ai_rule_validate_url("http://[::ffff:127.0.0.1]:8080", 4096));
 
     /* Private IPv4 subnets */
     assert(!mf_ai_rule_validate_url("http://10.0.0.1/status", 4096));
@@ -379,6 +384,17 @@ main(void)
         assert(strcmp(csilk_json_get_string(first_res, "url"), "https://example.com/page1") == 0);
         assert(strcmp(csilk_json_get_string(first_res, "snippet"), "Snippet \"preview\" here.") == 0);
         csilk_json_free(parsed_results);
+
+        /* 5. Bing redirect URL query parameter normalization */
+        char bing_red[512] = "https://www.bing.com/?q=apple&mkt=zh-CN";
+        mf_bing_normalize_redirect_url(bing_red, sizeof(bing_red));
+        assert(strcmp(bing_red, "https://www.bing.com/search?q=apple&mkt=zh-CN") == 0);
+
+        /* 6. UTF-8 Character Boundary Safe Truncation */
+        char utf8_text[64] = "你好世界Minefolio";
+        size_t cut_len = mf_utf8_truncate(utf8_text, 5); /* 5 falls inside '好' (bytes 3-5) */
+        assert(cut_len == 3);
+        assert(strcmp(utf8_text, "你") == 0);
 
         if (getenv("MINEFOLIO_TEST_LIVE_WEB")) {
             printf("\n--- Running Live Web Search & Fetch Verification ---\n");
