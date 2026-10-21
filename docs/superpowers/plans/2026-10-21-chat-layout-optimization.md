@@ -78,7 +78,7 @@
   Run: `npm --prefix frontend test -- tests/chat-toolbar.spec.ts`
   Expected: PASS
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
   ```bash
   git add frontend/src/views/Chat.vue frontend/tests/chat-toolbar.spec.ts
   git commit -m "feat(ui): unify chat page-header and model-bar into integrated chat-toolbar"
@@ -96,12 +96,12 @@
 - Consumes: 输入框卡片、工作流工具栏、回到底部按钮
 - Produces: Flex 自适应底栏，从根本上杜绝绝对定位对消息底部的遮挡
 
-- [ ] **Step 1: 编写输入框 Flex 解耦单测**
+- [x] **Step 1: 编写输入框 Flex 解耦单测**
   在 `frontend/tests/chat-input-layout.spec.ts` 中验证：
   - `.messages` 不再依赖硬编码的 `padding-bottom: 140px`；
   - `.chat-input-area` 位于 Flex 流中，其高度动态变化时不会遮挡 `.messages` 底部的任何消息和操作按钮。
 
-- [ ] **Step 2: 改造 `.chat-main` 容器结构与输入框样式**
+- [x] **Step 2: 改造 `.chat-main` 容器结构与输入框样式**
   - 在 `.chat-main` 内部划分为：
     1. 顶部：`.chat-toolbar` (`flex-shrink: 0`)；
     2. 中间：`.messages-container` (`flex: 1; min-height: 0; position: relative; overflow: hidden;`)；
@@ -112,11 +112,11 @@
        - 改为文档流自然沉底：`width: 100%; max-width: min(1060px, 100cqi); margin: 0 auto; padding: 0 20px 16px;`；
        - 保留 `.chat-input-box` 精致的浮岛圆角（`border-radius: 18px`）、毛玻璃背景与阴影。
 
-- [ ] **Step 3: 运行测试验证**
+- [x] **Step 3: 运行测试验证**
   Run: `npm --prefix frontend test -- tests/chat-input-layout.spec.ts`
   Expected: PASS
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
   ```bash
   git add frontend/src/views/Chat.vue frontend/tests/chat-input-layout.spec.ts
   git commit -m "feat(ui): decouple chat input area from absolute positioning to flex layout"
@@ -129,14 +129,14 @@
 **Files:**
 - Test: 全量前端单元测试与生产打包
 
-- [ ] **Step 1: 运行前端全量单元测试**
+- [x] **Step 1: 运行前端全量单元测试**
   Run: `npm --prefix frontend test`
   Expected: 所有测试套件全部通过 (100% PASS)。
 
-- [ ] **Step 2: 运行前端严格类型检查与 Vite 生产构建**
+- [x] **Step 2: 运行前端严格类型检查与 Vite 生产构建**
   Run: `npm --prefix frontend run build`
   Expected: `vue-tsc -b` 0 报错，Vite 编译打包成功。
 
-- [ ] **Step 3: 检查工作区状态**
+- [x] **Step 3: 检查工作区状态**
   Run: `git status`
   Expected: 工作区干净无残留。
