@@ -28,4 +28,10 @@ describe('Chat unified toolbar layout', () => {
     expect(chatSource).toMatch(/class="toolbar-right"[\s\S]*?copyAllChat/)
     expect(chatSource).toMatch(/class="toolbar-right"[\s\S]*?handleClearChat/)
   })
+
+  it('includes thinking mode toggle in toolbar and input bar', () => {
+    expect(chatSource).toMatch(/class="toolbar-thinking-btn"/)
+    expect(chatSource).toMatch(/class="input-thinking-btn"/)
+    expect(chatSource).toMatch(/chat\.toggleThinking\(\)/)
+  })
 })

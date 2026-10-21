@@ -358,6 +358,32 @@ test_runtime_thinking_callbacks(void)
     printf("PASS: test_runtime_thinking_callbacks\n");
 }
 
+static void
+test_runtime_enable_thinking_context(void)
+{
+    printf("--- Running test_runtime_enable_thinking_context ---\n");
+    ai_runtime_context_t ctx;
+    ai_runtime_context_init(&ctx);
+
+    assert(ctx.has_enable_thinking == false);
+    assert(ctx.enable_thinking == false);
+
+    ctx.has_enable_thinking = true;
+    ctx.enable_thinking = true;
+
+    csilk_ai_chat_request_t req = {
+        .model = "agnes-3.0-flash",
+        .has_enable_thinking = ctx.has_enable_thinking,
+        .enable_thinking = ctx.enable_thinking,
+    };
+
+    assert(req.has_enable_thinking == true);
+    assert(req.enable_thinking == true);
+
+    ai_runtime_context_free(&ctx);
+    printf("PASS: test_runtime_enable_thinking_context\n");
+}
+
 int main(void) {
     test_runtime_error_taxonomy();
     test_runtime_limits_and_budgets();
@@ -371,6 +397,7 @@ int main(void) {
     test_ai_json_escape_fast_comprehensive();
     test_ai_trace_amortized_growth();
     test_runtime_thinking_callbacks();
+    test_runtime_enable_thinking_context();
     printf("All runtime unit and edge tests passed!\n");
     return 0;
 }

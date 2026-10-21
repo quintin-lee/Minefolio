@@ -470,6 +470,14 @@ ai_chat_handler(csilk_ctx_t* c)
     int         req_max_tokens = (int)db_get_int(body, "max_tokens");
     double      req_top_p = db_get_num(body, "top_p");
 
+    csilk_json_t* et_node = csilk_json_get(body, "enable_thinking");
+    bool          has_enable_thinking = false;
+    bool          enable_thinking = false;
+    if (et_node) {
+        has_enable_thinking = true;
+        enable_thinking = csilk_json_as_bool(et_node, false);
+    }
+
     if (!content || content[0] == '\0') {
         csilk_json_free(body);
         respond_bad_request(c, "content 不能为空");
@@ -563,6 +571,16 @@ ai_chat_handler(csilk_ctx_t* c)
     rctx.temperature = (req_temperature > 0.0) ? req_temperature : 0.7;
     rctx.max_tokens = req_max_tokens;
     rctx.top_p = req_top_p;
+    if (!has_enable_thinking) {
+        /* Auto-detect thinking mode for Agnes, DeepSeek R1, or reasoner models if not specified */
+        if (model_buf[0] && (strstr(model_buf, "agnes") || strstr(model_buf, "r1") ||
+                             strstr(model_buf, "reasoner"))) {
+            has_enable_thinking = true;
+            enable_thinking = true;
+        }
+    }
+    rctx.has_enable_thinking = has_enable_thinking;
+    rctx.enable_thinking = enable_thinking;
 
     /* 构建受控记忆窗口 messages */
     csilk_json_free(rctx.messages);
@@ -1007,6 +1025,11 @@ ai_service_stream_report(csilk_ctx_t* c,
     rctx.session_id = session_id;
     snprintf(rctx.provider_id, sizeof(rctx.provider_id), "%s", prov->id);
     snprintf(rctx.model_name, sizeof(rctx.model_name), "%s", g_config.default_model);
+    if (rctx.model_name[0] && (strstr(rctx.model_name, "agnes") || strstr(rctx.model_name, "r1") ||
+                               strstr(rctx.model_name, "reasoner"))) {
+        rctx.has_enable_thinking = true;
+        rctx.enable_thinking = true;
+    }
     csilk_json_free(rctx.messages);
     rctx.messages = ai_memory_build_messages(sys_prompt, NULL, user_prompt, 1, NULL);
     rctx.trace = &trace;

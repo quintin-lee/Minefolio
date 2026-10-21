@@ -83,6 +83,33 @@ export const useChatStore = defineStore('chat', () => {
    */
   const enableTypewriterBuffer = ref(true)
 
+  /** LocalStorage 存储深度思考开关偏好设置键名 */
+  const THINKING_STORAGE_KEY = 'minefolio_chat_enable_thinking'
+
+  /** 是否开启深度思考模式 (Thinking / Reasoning，针对 Agnes / DeepSeek R1 / o1 等具备推理链的模型) */
+  const enableThinking = ref<boolean>(
+    (() => {
+      try {
+        const saved = localStorage.getItem(THINKING_STORAGE_KEY)
+        return saved !== null ? saved === 'true' : true
+      } catch {
+        return true
+      }
+    })()
+  )
+
+  /**
+   * 切换深度思考模式开启/关闭
+   */
+  function toggleThinking() {
+    enableThinking.value = !enableThinking.value
+    try {
+      localStorage.setItem(THINKING_STORAGE_KEY, String(enableThinking.value))
+    } catch {
+      // ignore
+    }
+  }
+
   /**
    * 从服务端获取会话历史列表 (默认最新 50 条)
    */
@@ -357,6 +384,7 @@ export const useChatStore = defineStore('chat', () => {
         content: trimmed,
         model: currentModel.value,
         provider: currentProvider.value,
+        enable_thinking: enableThinking.value,
       }, signal)) {
         if (chunk.type === 'thinking' && chunk.content) {
           if (!assistantMsg.thinking_content) {
@@ -420,6 +448,7 @@ export const useChatStore = defineStore('chat', () => {
         model: currentModel.value,
         provider: currentProvider.value,
         regenerate: true,
+        enable_thinking: enableThinking.value,
       }, signal)) {
         if (chunk.type === 'thinking' && chunk.content) {
           if (!assistantMsg.thinking_content) {
@@ -490,6 +519,7 @@ export const useChatStore = defineStore('chat', () => {
         content,
         model: currentModel.value,
         provider: currentProvider.value,
+        enable_thinking: enableThinking.value,
       }, signal)) {
         if (chunk.type === 'thinking' && chunk.content) {
           if (!assistantMsg.thinking_content) {
@@ -936,6 +966,8 @@ export const useChatStore = defineStore('chat', () => {
     loadedMessagePage,
     loadingMoreMessages,
     enableTypewriterBuffer,
+    enableThinking,
+    toggleThinking,
   }
 })
 

@@ -76,7 +76,7 @@ sequenceDiagram
 ### 3.2 csilk 驱动层改造 (`deps/csilk`)
 
 1. **接口扩展 (`deps/csilk/include/csilk/drivers/ai.h`)**：
-   - 在 `csilk_ai_chat_request_t` 中新增流式推理回调：
+   - 在 `csilk_ai_chat_request_t` 中新增流式推理回调与思考控制字段：
      ```c
      typedef void (*csilk_ai_stream_cb)(const char* chunk, void* user_data);
      ...
@@ -84,6 +84,10 @@ sequenceDiagram
          ...
          csilk_ai_stream_cb  on_chunk;           /**< Callback for text content delta */
          csilk_ai_stream_cb  on_reasoning_chunk; /**< Callback for reasoning/thinking delta */
+         const char*         reasoning_effort;   /**< "low", "medium", or "high" for o1/o3 */
+         bool                has_enable_thinking; /**< True if enable_thinking was explicitly specified */
+         bool                enable_thinking;     /**< Controls thinking mode via chat_template_kwargs.enable_thinking */
+         const csilk_json_t* chat_template_kwargs; /**< Optional additional template parameters */
          ...
      } csilk_ai_chat_request_t;
      ```
@@ -98,6 +102,8 @@ sequenceDiagram
    - 在 `csilk_ai_chat_response_free` 中 `free(res->reasoning_content)`。
 
 2. **OpenAI 驱动实现 (`deps/csilk/src/drivers/ai/openai.c`)**：
+   - **请求载荷扩展 (Agnes / Qwen / vLLM 兼容)**：
+     若 `req->chat_template_kwargs || req->has_enable_thinking`，自动向 OpenAI 请求体序列化 `"chat_template_kwargs": {"enable_thinking": true/false}`，实现针对 Agnes 3.0 Flash 等新型推理模型思考模式的精准开关控制。
    - **流式解析**：在 `process_stream_line` 的 `choices[0].delta` 处理中：
      - 读取 `delta.reasoning_content`，若为空则回退读取 `delta.reasoning`。
      - 若命中且为非空字符串，追加到 `ctx->res->reasoning_content`，若配置了 `ctx->req->on_reasoning_chunk` 则回调通知。

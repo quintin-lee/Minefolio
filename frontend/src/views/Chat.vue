@@ -118,6 +118,20 @@
               {{ chat.currentModel }}
             </span>
 
+            <!-- Thinking Mode Toggle in Toolbar -->
+            <button
+              type="button"
+              class="toolbar-thinking-btn"
+              :class="{ active: chat.enableThinking }"
+              @click="chat.toggleThinking()"
+              :title="chat.enableThinking ? '深度思考模式已开启 (点击关闭)' : '深度思考模式已关闭 (点击开启)'"
+              aria-label="切换深度思考模式"
+            >
+              <Icon :icon="chat.enableThinking ? 'ph:brain-fill' : 'ph:brain'" class="thinking-btn-icon" />
+              <span class="thinking-btn-text">深度思考</span>
+              <span class="thinking-status-tag" v-if="chat.enableThinking">开</span>
+            </button>
+
             <div class="chat-status" v-if="chat.isStreaming">
               <span class="status-dot"></span>
               <span>正在深度思考与生成...</span>
@@ -297,16 +311,32 @@
               @keydown="handleTextareaKeyDown"
             ></textarea>
             <div class="input-bottom-bar">
-              <span class="char-count" :class="{ near: inputText.length > 1800, over: inputText.length > 2000 }">{{ inputText.length }} / 2000</span>
-              <span class="input-hint" v-if="!chat.isStreaming">↵ 发送 · ⇧↵ 换行 · Esc 停止</span>
-              <el-button v-if="chat.isStreaming" type="danger" class="send-btn stop-btn" @click="handleStop">
-                <Icon icon="ph:stop-circle-bold" class="send-icon" />
-                <span>停止生成</span>
-              </el-button>
-              <el-button v-else type="primary" class="send-btn" :disabled="!inputText.trim()" @click="handleSend">
-                <Icon icon="ph:paper-plane-tilt-fill" class="send-icon" />
-                <span>发送</span>
-              </el-button>
+              <div class="input-bottom-left">
+                <button
+                  type="button"
+                  class="input-thinking-btn"
+                  :class="{ active: chat.enableThinking }"
+                  @click="chat.toggleThinking()"
+                  :title="chat.enableThinking ? '深度思考模式已开启 (点击关闭)' : '深度思考模式已关闭 (点击开启)'"
+                  aria-label="切换深度思考模式"
+                >
+                  <Icon :icon="chat.enableThinking ? 'ph:brain-fill' : 'ph:brain'" class="btn-icon" />
+                  <span>深度思考</span>
+                  <span class="thinking-dot" v-if="chat.enableThinking"></span>
+                </button>
+              </div>
+              <div class="input-bottom-right">
+                <span class="char-count" :class="{ near: inputText.length > 1800, over: inputText.length > 2000 }">{{ inputText.length }} / 2000</span>
+                <span class="input-hint" v-if="!chat.isStreaming">↵ 发送 · ⇧↵ 换行 · Esc 停止</span>
+                <el-button v-if="chat.isStreaming" type="danger" class="send-btn stop-btn" @click="handleStop">
+                  <Icon icon="ph:stop-circle-bold" class="send-icon" />
+                  <span>停止生成</span>
+                </el-button>
+                <el-button v-else type="primary" class="send-btn" :disabled="!inputText.trim()" @click="handleSend">
+                  <Icon icon="ph:paper-plane-tilt-fill" class="send-icon" />
+                  <span>发送</span>
+                </el-button>
+              </div>
             </div>
           </div>
         </div>
@@ -1339,6 +1369,53 @@ onUnmounted(() => {
   background: var(--mf-surface-hover);
 }
 
+.toolbar-thinking-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--mf-surface);
+  border: 1px solid var(--mf-border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--mf-text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.toolbar-thinking-btn:hover {
+  background: var(--mf-surface-hover);
+  color: var(--mf-text-primary);
+  border-color: var(--mf-border-focus);
+}
+
+.toolbar-thinking-btn.active {
+  background: rgba(99, 102, 241, 0.08);
+  border-color: rgba(99, 102, 241, 0.4);
+  color: var(--mf-primary);
+}
+
+.toolbar-thinking-btn .thinking-btn-icon {
+  font-size: 14px;
+}
+
+.toolbar-thinking-btn.active .thinking-btn-icon {
+  color: var(--mf-primary);
+}
+
+.toolbar-thinking-btn .thinking-status-tag {
+  font-size: 10px;
+  line-height: 1;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--mf-primary);
+  color: #ffffff;
+  font-weight: 600;
+}
+
 .toolbar-right {
   display: flex;
   align-items: center;
@@ -1731,6 +1808,57 @@ onUnmounted(() => {
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px solid var(--mf-border);
+}
+
+.input-bottom-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.input-bottom-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.input-thinking-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
+  border: 1px solid var(--mf-border);
+  border-radius: 20px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--mf-text-placeholder);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.input-thinking-btn:hover {
+  border-color: var(--mf-border-focus);
+  color: var(--mf-text-regular);
+}
+
+.input-thinking-btn.active {
+  background: rgba(99, 102, 241, 0.08);
+  border-color: rgba(99, 102, 241, 0.35);
+  color: var(--mf-primary);
+}
+
+.input-thinking-btn .btn-icon {
+  font-size: 14px;
+}
+
+.input-thinking-btn .thinking-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--mf-primary);
+  display: inline-block;
 }
 
 .char-count {

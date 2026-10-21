@@ -35,6 +35,8 @@ typedef struct {
     double temperature;
     int    max_tokens;
     double top_p;
+    bool   has_enable_thinking;
+    bool   enable_thinking;
 
     /* 6. 限制、统计与取消 */
     ai_runtime_limits_t limits;

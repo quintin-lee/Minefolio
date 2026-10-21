@@ -256,6 +256,8 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
             .tools = (csilk_ai_tool_t*)tools,
             .tool_count = tool_count,
             .tool_choice = "auto",
+            .has_enable_thinking = ctx->has_enable_thinking,
+            .enable_thinking = ctx->enable_thinking,
         };
 
         csilk_ai_chat_response_t ai_res = {0};

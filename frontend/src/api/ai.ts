@@ -234,6 +234,7 @@ function getStreamHeaders(): Record<string, string> {
  * @param params.model 使用的模型名称 (可选)
  * @param params.provider 使用的模型提供商 (可选)
  * @param params.regenerate 是否为重新生成上一轮回答 (可选)
+ * @param params.enable_thinking 是否开启思考推理模式 (可选，针对 Agnes / DeepSeek R1 / o1 等具备推理链的模型)
  * @param signal 用于中断流式请求的 AbortSignal
  * @returns 异步可迭代的数据分块生成器 AsyncIterable<ChatStreamChunk>
  */
@@ -244,6 +245,7 @@ export async function* chatStream(
     model?: string
     provider?: string
     regenerate?: boolean
+    enable_thinking?: boolean
   },
   signal?: AbortSignal
 ): AsyncIterable<ChatStreamChunk> {
