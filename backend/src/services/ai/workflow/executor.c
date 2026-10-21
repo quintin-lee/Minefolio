@@ -140,7 +140,7 @@ ai_workflow_execute_stream(csilk_ctx_t* c, const ai_workflow_graph_t* graph, ai_
 
                     if (pool && session_id > 0) {
                         mf_ai_message_insert(
-                            pool, session_id, "assistant", step_out, "workflow-agent");
+                            pool, session_id, "assistant", step_out, "workflow-agent", NULL);
                     }
                     free(step_out);
                 }

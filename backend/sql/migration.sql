@@ -175,6 +175,7 @@ CREATE TABLE IF NOT EXISTS ai_messages (
     session_id INTEGER NOT NULL REFERENCES ai_sessions(id) ON DELETE CASCADE,
     role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
     content TEXT NOT NULL,
+    thinking_content TEXT DEFAULT '',
     model TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );

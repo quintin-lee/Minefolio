@@ -250,7 +250,7 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
             const char* final_text =
                 ai_res.content ? ai_res.content : (bridge.accumulated ? bridge.accumulated : "");
             if (pool && ctx->session_id > 0 && final_text && final_text[0]) {
-                mf_ai_message_insert(pool, ctx->session_id, "assistant", final_text, model);
+                mf_ai_message_insert(pool, ctx->session_id, "assistant", final_text, model, NULL);
             }
             ai_runtime_status_set(&status, AI_RUNTIME_ERR_OK, "OK", NULL);
             csilk_ai_chat_response_free(&ai_res);
@@ -386,7 +386,7 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
     /* 7.5 被中断/超时轮次的部分 assistant 文本持久化，避免流式输出丢失 */
     if (!got_text && pool && ctx->session_id > 0 && bridge.accumulated && bridge.accumulated[0] &&
         status.code != AI_RUNTIME_ERR_MODEL) {
-        mf_ai_message_insert(pool, ctx->session_id, "assistant", bridge.accumulated, model);
+        mf_ai_message_insert(pool, ctx->session_id, "assistant", bridge.accumulated, model, NULL);
         got_text = 1;
     }
 

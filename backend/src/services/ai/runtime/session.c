@@ -70,7 +70,8 @@ ai_session_append_message(csilk_db_pool_t* pool,
     if (!pool || session_id <= 0 || !role) {
         return -1;
     }
-    int64_t msg_id = mf_ai_message_insert(pool, session_id, role, content ? content : "", model);
+    int64_t msg_id =
+        mf_ai_message_insert(pool, session_id, role, content ? content : "", model, NULL);
     return msg_id > 0 ? 0 : -1;
 }
 
