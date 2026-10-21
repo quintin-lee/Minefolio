@@ -287,6 +287,84 @@ sse_bridge_text_chunk(const char* delta, void* udata)
 }
 
 static void
+sse_bridge_thinking_chunk(const char* delta, void* udata)
+{
+    sse_bridge_t* b = (sse_bridge_t*)udata;
+    if (!delta || !b || !b->ctx) {
+        return;
+    }
+    if (!b->sse_initialized) {
+        csilk_sse_init(b->ctx);
+        clock_gettime(CLOCK_MONOTONIC, &b->last_send_time);
+        b->sse_initialized = 1;
+    }
+    if (b->trace) {
+        ai_trace_record_first_token(b->trace);
+    }
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    long elapsed_ms = (now.tv_sec - b->last_send_time.tv_sec) * 1000 +
+                      (now.tv_nsec - b->last_send_time.tv_nsec) / 1000000;
+    if (elapsed_ms >= 15000) {
+        csilk_sse_send(b->ctx, NULL, NULL);
+    }
+
+    struct timespec real_now;
+    clock_gettime(CLOCK_REALTIME, &real_now);
+    int64_t   ts_ms = (int64_t)real_now.tv_sec * 1000 + (real_now.tv_nsec / 1000000);
+    struct tm tm_buf;
+    localtime_r(&real_now.tv_sec, &tm_buf);
+    char time_str[64];
+    int  ms = (int)(real_now.tv_nsec / 1000000);
+    snprintf(time_str,
+             sizeof(time_str),
+             "%04d-%02d-%02d %02d:%02d:%02d.%03d",
+             tm_buf.tm_year + 1900,
+             tm_buf.tm_mon + 1,
+             tm_buf.tm_mday,
+             tm_buf.tm_hour,
+             tm_buf.tm_min,
+             tm_buf.tm_sec,
+             ms);
+
+    char   stack_buf[4096];
+    char*  target_buf = stack_buf;
+    size_t dlen = strlen(delta);
+    size_t max_needed = dlen * 6 + 128;
+
+    if (max_needed > sizeof(stack_buf)) {
+        if (b->arena) {
+            target_buf = (char*)csilk_arena_alloc(b->arena, max_needed);
+        } else {
+            target_buf = (char*)malloc(max_needed);
+        }
+        if (!target_buf) {
+            return;
+        }
+    }
+
+    int written = snprintf(target_buf, max_needed, "{\"content\":\"");
+    if (written > 0 && (size_t)written < max_needed) {
+        int esc_len =
+            ai_json_escape_fast(delta, dlen, target_buf + written, max_needed - written - 64);
+        if (esc_len >= 0) {
+            written += esc_len;
+            snprintf(target_buf + written,
+                     max_needed - written,
+                     "\",\"timestamp\":%lld,\"time\":\"%s\"}",
+                     (long long)ts_ms,
+                     time_str);
+            csilk_sse_send(b->ctx, "thinking", target_buf);
+        }
+    }
+
+    if (target_buf != stack_buf && !b->arena) {
+        free(target_buf);
+    }
+    b->last_send_time = now;
+}
+
+static void
 sse_bridge_tool_call(const char* id, const char* name, const char* args_json, void* udata)
 {
     sse_bridge_t* b = (sse_bridge_t*)udata;
@@ -543,6 +621,7 @@ ai_chat_handler(csilk_ctx_t* c)
 
     ai_runtime_callbacks_t cbs = {
         .on_text_chunk = sse_bridge_text_chunk,
+        .on_thinking_chunk = sse_bridge_thinking_chunk,
         .on_tool_call = sse_bridge_tool_call,
         .on_tool_result = sse_bridge_tool_result,
         .on_error = sse_bridge_error,
@@ -915,6 +994,7 @@ ai_service_stream_report(csilk_ctx_t* c,
 
     ai_runtime_callbacks_t cbs = {
         .on_text_chunk = sse_bridge_text_chunk,
+        .on_thinking_chunk = sse_bridge_thinking_chunk,
         .on_tool_call = sse_bridge_tool_call,
         .on_tool_result = sse_bridge_tool_result,
         .on_error = sse_bridge_error,

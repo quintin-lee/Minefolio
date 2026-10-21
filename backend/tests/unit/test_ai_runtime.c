@@ -328,6 +328,36 @@ test_ai_trace_amortized_growth(void)
     printf("PASS: test_ai_trace_amortized_growth\n");
 }
 
+static void
+dummy_think_cb(const char* chunk, void* udata)
+{
+    char* buf = (char*)udata;
+    strncat(buf, chunk, 255 - strlen(buf));
+}
+
+static void
+test_runtime_thinking_callbacks(void)
+{
+    printf("--- Running test_runtime_thinking_callbacks ---\n");
+    static char received[256] = {0};
+    memset(received, 0, sizeof(received));
+
+    ai_runtime_callbacks_t cbs = {
+        .on_text_chunk = NULL,
+        .on_thinking_chunk = dummy_think_cb,
+        .on_tool_call = NULL,
+        .on_tool_result = NULL,
+        .on_error = NULL,
+        .on_done = NULL,
+    };
+
+    assert(cbs.on_thinking_chunk != NULL);
+    cbs.on_thinking_chunk("think_step_1;", received);
+    cbs.on_thinking_chunk("think_step_2", received);
+    assert(strcmp(received, "think_step_1;think_step_2") == 0);
+    printf("PASS: test_runtime_thinking_callbacks\n");
+}
+
 int main(void) {
     test_runtime_error_taxonomy();
     test_runtime_limits_and_budgets();
@@ -340,6 +370,7 @@ int main(void) {
     test_workflow_executor_auth_boundary();
     test_ai_json_escape_fast_comprehensive();
     test_ai_trace_amortized_growth();
+    test_runtime_thinking_callbacks();
     printf("All runtime unit and edge tests passed!\n");
     return 0;
 }

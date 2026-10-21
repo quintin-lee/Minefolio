@@ -12,6 +12,7 @@ extern "C" {
 
 typedef struct {
     void (*on_text_chunk)(const char* chunk, void* udata);
+    void (*on_thinking_chunk)(const char* chunk, void* udata);
     void (*on_tool_call)(const char* id, const char* name, const char* args_json, void* udata);
     void (*on_tool_result)(const char* id, const char* name, const char* result_json, void* udata);
     void (*on_error)(const ai_runtime_status_t* status, void* udata);

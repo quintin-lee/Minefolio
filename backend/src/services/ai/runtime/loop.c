@@ -23,6 +23,9 @@ typedef struct {
     char*                         accumulated;
     size_t                        accumulated_len;
     size_t                        accumulated_cap;
+    char*                         thinking_accumulated;
+    size_t                        thinking_accumulated_len;
+    size_t                        thinking_accumulated_cap;
 } loop_stream_bridge_t;
 
 static void
@@ -48,6 +51,34 @@ on_chunk_bridge(const char* chunk, void* user_data)
     }
     if (b->cbs && b->cbs->on_text_chunk) {
         b->cbs->on_text_chunk(chunk, b->user_data);
+    }
+}
+
+static void
+on_reasoning_bridge(const char* chunk, void* user_data)
+{
+    if (!chunk || !user_data) {
+        return;
+    }
+    loop_stream_bridge_t* b = (loop_stream_bridge_t*)user_data;
+    size_t                clen = strlen(chunk);
+    if (b->thinking_accumulated_len + clen + 1 > b->thinking_accumulated_cap) {
+        size_t new_cap =
+            (b->thinking_accumulated_cap == 0) ? 1024 : (b->thinking_accumulated_cap * 2 + clen);
+        char* new_buf = (char*)realloc(b->thinking_accumulated, new_cap);
+        if (new_buf) {
+            b->thinking_accumulated = new_buf;
+            b->thinking_accumulated_cap = new_cap;
+        }
+    }
+    if (b->thinking_accumulated &&
+        b->thinking_accumulated_len + clen + 1 <= b->thinking_accumulated_cap) {
+        memcpy(b->thinking_accumulated + b->thinking_accumulated_len, chunk, clen);
+        b->thinking_accumulated_len += clen;
+        b->thinking_accumulated[b->thinking_accumulated_len] = '\0';
+    }
+    if (b->cbs && b->cbs->on_thinking_chunk) {
+        b->cbs->on_thinking_chunk(chunk, b->user_data);
     }
 }
 
@@ -182,6 +213,9 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
         .accumulated = NULL,
         .accumulated_len = 0,
         .accumulated_cap = 0,
+        .thinking_accumulated = NULL,
+        .thinking_accumulated_len = 0,
+        .thinking_accumulated_cap = 0,
     };
 
     struct timespec start_ts;
@@ -217,6 +251,7 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
             .message_count = mc,
             .stream = (cbs && cbs->on_text_chunk) ? 1 : 0,
             .on_chunk = on_chunk_bridge,
+            .on_reasoning_chunk = on_reasoning_bridge,
             .user_data = &bridge,
             .tools = (csilk_ai_tool_t*)tools,
             .tool_count = tool_count,
@@ -249,8 +284,14 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
         if (ai_res.tool_call_count == 0) {
             const char* final_text =
                 ai_res.content ? ai_res.content : (bridge.accumulated ? bridge.accumulated : "");
-            if (pool && ctx->session_id > 0 && final_text && final_text[0]) {
-                mf_ai_message_insert(pool, ctx->session_id, "assistant", final_text, model, NULL);
+            const char* final_thinking =
+                (bridge.thinking_accumulated && bridge.thinking_accumulated[0])
+                    ? bridge.thinking_accumulated
+                    : (ai_res.reasoning_content ? ai_res.reasoning_content : NULL);
+            if (pool && ctx->session_id > 0 &&
+                ((final_text && final_text[0]) || (final_thinking && final_thinking[0]))) {
+                mf_ai_message_insert(
+                    pool, ctx->session_id, "assistant", final_text ? final_text : "", model, final_thinking);
             }
             ai_runtime_status_set(&status, AI_RUNTIME_ERR_OK, "OK", NULL);
             csilk_ai_chat_response_free(&ai_res);
@@ -383,10 +424,16 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
                               "Max turns reached");
     }
 
-    /* 7.5 被中断/超时轮次的部分 assistant 文本持久化，避免流式输出丢失 */
-    if (!got_text && pool && ctx->session_id > 0 && bridge.accumulated && bridge.accumulated[0] &&
+    /* 7.5 被中断/超时轮次的部分 assistant 文本与思考过程持久化，避免流式输出丢失 */
+    if (!got_text && pool && ctx->session_id > 0 &&
+        ((bridge.accumulated && bridge.accumulated[0]) ||
+         (bridge.thinking_accumulated && bridge.thinking_accumulated[0])) &&
         status.code != AI_RUNTIME_ERR_MODEL) {
-        mf_ai_message_insert(pool, ctx->session_id, "assistant", bridge.accumulated, model, NULL);
+        const char* final_text = (bridge.accumulated && bridge.accumulated[0])
+                                     ? bridge.accumulated
+                                     : "[思考已中断]";
+        mf_ai_message_insert(
+            pool, ctx->session_id, "assistant", final_text, model, bridge.thinking_accumulated);
         got_text = 1;
     }
 
@@ -421,6 +468,9 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
     }
     if (bridge.accumulated) {
         free(bridge.accumulated);
+    }
+    if (bridge.thinking_accumulated) {
+        free(bridge.thinking_accumulated);
     }
     for (size_t i = initial_mc; i < mc; i++) {
         if (msgs[i].content) {
