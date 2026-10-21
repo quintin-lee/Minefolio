@@ -687,7 +687,7 @@ function scrollToBottom(smooth = true) {
   if (!el) return
   if (!autoStickToBottom.value) return
   requestAnimationFrame(() => {
-    if (smooth) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    if (smooth && typeof el.scrollTo === 'function') el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
     else el.scrollTop = el.scrollHeight
   })
 }
@@ -698,7 +698,8 @@ function forceScrollToBottom() {
   autoStickToBottom.value = true
   showScrollBottomBtn.value = false
   requestAnimationFrame(() => {
-    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    if (typeof el.scrollTo === 'function') el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    else el.scrollTop = el.scrollHeight
   })
 }
 

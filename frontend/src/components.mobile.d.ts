@@ -56,6 +56,7 @@ declare module 'vue' {
     ElTabs: typeof import('element-plus/es')['ElTabs']
     ElTag: typeof import('element-plus/es')['ElTag']
     ElText: typeof import('element-plus/es')['ElText']
+    ElTooltip: typeof import('element-plus/es')['ElTooltip']
     ExpenseCategoryPie: typeof import('./components/ExpenseCategoryPie.vue')['default']
     ExpenseTrendBar: typeof import('./components/ExpenseTrendBar.vue')['default']
     FxConverter: typeof import('./components/market/FxConverter.vue')['default']
