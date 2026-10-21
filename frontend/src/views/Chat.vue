@@ -1,50 +1,5 @@
 <template>
   <div class="chat-page">
-    <div class="page-header">
-      <div class="header-title">
-        <div class="title-accent"></div>
-        <h2>AI 财务助手</h2>
-        <span class="header-badge" v-if="chat.currentModel">
-          {{ chat.currentModel }}
-        </span>
-      </div>
-      <div class="header-actions">
-        <el-button type="primary" plain class="action-btn" @click="handleNewChat">
-          <Icon icon="ph:plus-bold" class="btn-icon" />
-          <span>新对话</span>
-        </el-button>
-        <el-button
-          v-if="chat.messages.length > 0"
-          text
-          class="action-btn"
-          @click="exportToMarkdown"
-          title="导出当前会话为 Markdown 文件"
-        >
-          <Icon icon="ph:download-simple" class="btn-icon" />
-          <span>导出</span>
-        </el-button>
-        <el-button
-          v-if="chat.messages.length > 0"
-          text
-          class="action-btn"
-          @click="copyAllChat"
-          title="复制当前会话全文"
-        >
-          <Icon icon="ph:copy" class="btn-icon" />
-          <span>复制</span>
-        </el-button>
-        <el-button
-          v-if="chat.messages.length > 0"
-          text
-          class="action-btn"
-          @click="handleClearChat"
-        >
-          <Icon icon="ph:trash" class="btn-icon" />
-          <span>清空记录</span>
-        </el-button>
-      </div>
-    </div>
-
     <div class="chat-layout">
       <!-- Mobile overlay backdrop -->
       <div class="sidebar-overlay" v-if="showSidebar && isMobile" @click="showSidebar = false"></div>
@@ -57,9 +12,18 @@
             <span>历史会话</span>
             <span class="session-count" v-if="chat.sessions.length > 0">({{ chat.sessions.length }})</span>
           </div>
-          <button class="icon-close-btn" @click="showSidebar = false" title="收起会话列表" aria-label="收起会话列表">
-            <Icon icon="ph:sidebar-simple" />
-          </button>
+          <div class="sidebar-header-actions">
+            <el-tooltip content="新建会话" placement="bottom" :show-after="300">
+              <button class="icon-header-btn" @click="handleNewChat" aria-label="新建会话">
+                <Icon icon="ph:plus-bold" />
+              </button>
+            </el-tooltip>
+            <el-tooltip content="收起会话列表" placement="bottom" :show-after="300">
+              <button class="icon-close-btn" @click="showSidebar = false" title="收起会话列表" aria-label="收起会话列表">
+                <Icon icon="ph:sidebar-simple" />
+              </button>
+            </el-tooltip>
+          </div>
         </div>
         <div class="session-search-wrap" v-if="chat.sessions.length > 3">
           <Icon icon="ph:magnifying-glass" class="session-search-icon" />
@@ -116,49 +80,99 @@
         </div>
       </aside>
 
-      <!-- Toggle sidebar button (only when sidebar is collapsed) -->
-      <div
-        v-if="!showSidebar"
-        class="toggle-sidebar"
-        @click="showSidebar = true"
-        title="展开会话列表"
-        aria-label="展开会话列表"
-      >
-        <Icon icon="ph:sidebar-simple" />
-      </div>
-
       <!-- Main chat area -->
       <main class="chat-main">
-        <!-- Model selector bar -->
-        <div class="model-bar" :class="{ 'with-toggle': !showSidebar }">
-          <div class="model-selector-wrap">
-            <Icon icon="ph:cpu-bold" class="model-icon" />
-            <el-select
-              v-model="selectedModelKey"
-              size="small"
-              class="model-select"
-              placeholder="选择 AI 模型"
-            >
-              <el-option
-                v-for="opt in modelOptions"
-                :key="opt.value"
-                :value="opt.value"
-                :label="opt.label"
+        <!-- Integrated Chat Toolbar -->
+        <div class="chat-toolbar" :class="{ 'with-toggle': !showSidebar }">
+          <div class="toolbar-left">
+            <!-- Toggle sidebar button (when sidebar is collapsed) -->
+            <el-tooltip v-if="!showSidebar" content="展开会话列表" placement="bottom" :show-after="300">
+              <button class="toggle-sidebar-btn" @click="showSidebar = true" aria-label="展开会话列表">
+                <Icon icon="ph:sidebar-simple" />
+              </button>
+            </el-tooltip>
+
+            <div class="model-selector-wrap">
+              <Icon icon="ph:cpu-bold" class="model-icon" />
+              <el-select
+                v-model="selectedModelKey"
+                size="small"
+                class="model-select"
+                placeholder="选择 AI 模型"
               >
-                <div class="model-option-item">
-                  <span class="opt-name">{{ opt.provider_name }}</span>
-                  <span class="opt-model">{{ opt.model }}</span>
-                </div>
-              </el-option>
-            </el-select>
+                <el-option
+                  v-for="opt in modelOptions"
+                  :key="opt.value"
+                  :value="opt.value"
+                  :label="opt.label"
+                >
+                  <div class="model-option-item">
+                    <span class="opt-name">{{ opt.provider_name }}</span>
+                    <span class="opt-model">{{ opt.model }}</span>
+                  </div>
+                </el-option>
+              </el-select>
+            </div>
+
+            <span class="current-model-badge" v-if="chat.currentModel && !chat.isStreaming">
+              {{ chat.currentModel }}
+            </span>
+
+            <div class="chat-status" v-if="chat.isStreaming">
+              <span class="status-dot"></span>
+              <span>正在深度思考与生成...</span>
+              <button class="stop-gen-btn" @click="handleStop" title="停止生成 (Esc)">
+                <Icon icon="ph:stop-bold" />
+                <span>停止</span>
+              </button>
+            </div>
           </div>
-          <div class="chat-status" v-if="chat.isStreaming">
-            <span class="status-dot"></span>
-            <span>正在深度思考与生成...</span>
-            <button class="stop-gen-btn" @click="handleStop" title="停止生成 (Esc)">
-              <Icon icon="ph:stop-bold" />
-              <span>停止</span>
-            </button>
+
+          <div class="toolbar-right">
+            <el-button
+              v-if="!showSidebar || isMobile"
+              type="primary"
+              size="small"
+              plain
+              class="toolbar-action-btn new-chat-btn"
+              @click="handleNewChat"
+            >
+              <Icon icon="ph:plus-bold" class="btn-icon" />
+              <span>新对话</span>
+            </el-button>
+
+            <template v-if="chat.messages.length > 0 && !chat.isStreaming">
+              <el-button
+                size="small"
+                text
+                class="toolbar-action-btn"
+                @click="exportToMarkdown"
+                title="导出当前会话为 Markdown 文件"
+              >
+                <Icon icon="ph:download-simple" class="btn-icon" />
+                <span>导出</span>
+              </el-button>
+              <el-button
+                size="small"
+                text
+                class="toolbar-action-btn"
+                @click="copyAllChat"
+                title="复制当前会话全文"
+              >
+                <Icon icon="ph:copy" class="btn-icon" />
+                <span>复制</span>
+              </el-button>
+              <el-button
+                size="small"
+                text
+                class="toolbar-action-btn"
+                @click="handleClearChat"
+                title="清空记录"
+              >
+                <Icon icon="ph:trash" class="btn-icon" />
+                <span>清空</span>
+              </el-button>
+            </template>
           </div>
         </div>
 
@@ -1042,81 +1056,12 @@ onUnmounted(() => {
   position: relative;
 }
 
-.page-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 20px;
-  height: 52px;
-  border-bottom: 1px solid var(--mf-border);
-  background: var(--mf-surface);
-  backdrop-filter: blur(16px);
-  flex-shrink: 0;
-  box-sizing: border-box;
-  z-index: 6;
-}
-
-.header-title {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.title-accent {
-  width: 4px;
-  height: 20px;
-  background: linear-gradient(180deg, var(--mf-primary), var(--mf-accent));
-  border-radius: 2px;
-  box-shadow: var(--mf-shadow-glow);
-}
-
-.header-title h2 {
-  margin: 0;
-  font-size: 16.5px;
-  font-weight: 700;
-  color: var(--mf-text-main);
-  letter-spacing: -0.3px;
-}
-
-.header-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  font-family: var(--mf-font-mono, monospace);
-  padding: 2px 8px;
-  border-radius: 12px;
-  background: var(--mf-primary-light);
-  color: var(--mf-primary);
-  border: 1px solid var(--mf-border);
-  font-weight: 500;
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.action-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border-radius: 8px;
-  font-size: 12.5px;
-  font-weight: 500;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.btn-icon {
-  font-size: 14px;
-}
-
 .chat-layout {
   flex: 1;
   display: flex;
   overflow: hidden;
   position: relative;
+  height: 100%;
 }
 
 /* Sidebar */
@@ -1161,6 +1106,13 @@ onUnmounted(() => {
   color: var(--mf-text-muted);
 }
 
+.sidebar-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.icon-header-btn,
 .icon-close-btn {
   background: transparent;
   border: none;
@@ -1171,10 +1123,11 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
+  font-size: 15px;
   transition: color 0.15s, background 0.15s;
 }
 
+.icon-header-btn:hover,
 .icon-close-btn:hover {
   color: var(--mf-text-main);
   background: var(--mf-surface-hover);
@@ -1315,32 +1268,6 @@ onUnmounted(() => {
   opacity: 0.4;
 }
 
-.toggle-sidebar {
-  position: absolute;
-  top: 9px;
-  left: 12px;
-  z-index: 10;
-  width: 28px;
-  height: 28px;
-  background: var(--mf-surface);
-  border: 1px solid var(--mf-border);
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  color: var(--mf-text-muted);
-  font-size: 16px;
-  transition: color 0.15s, border-color 0.15s, transform 0.15s;
-  backdrop-filter: blur(8px);
-}
-
-.toggle-sidebar:hover {
-  color: var(--mf-primary);
-  border-color: var(--mf-primary);
-  transform: scale(1.04);
-}
-
 /* Main Area - container for dynamic width queries.
    container-type enables .messages / .chat-input-area to size
    against the actual content area (which changes when the global
@@ -1370,20 +1297,83 @@ onUnmounted(() => {
   z-index: 0;
 }
 
-.model-bar {
-  padding: 8px 20px 8px 16px;
+/* Integrated Chat Toolbar */
+.chat-toolbar {
+  padding: 6px 16px;
   border-bottom: 1px solid var(--mf-border);
   background: var(--mf-surface);
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(16px);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 44px;
-  transition: padding-left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  min-height: 48px;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  z-index: 5;
 }
 
-.model-bar.with-toggle {
-  padding-left: 48px;
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.toggle-sidebar-btn {
+  background: var(--mf-surface);
+  border: 1px solid var(--mf-border);
+  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--mf-text-muted);
+  font-size: 15px;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.toggle-sidebar-btn:hover {
+  color: var(--mf-primary);
+  border-color: var(--mf-primary);
+  background: var(--mf-surface-hover);
+}
+
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.toolbar-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 6px;
+  padding: 4px 8px;
+  transition: all 0.15s ease;
+}
+
+.toolbar-action-btn .btn-icon {
+  font-size: 13px;
+}
+
+.current-model-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-family: var(--mf-font-mono, monospace);
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--mf-primary-light);
+  color: var(--mf-primary);
+  border: 1px solid var(--mf-primary-border, var(--mf-border));
+  white-space: nowrap;
 }
 
 .model-selector-wrap {
@@ -1942,7 +1932,6 @@ onUnmounted(() => {
   }
   .message-row.user { max-width: 90%; }
   .message-row.assistant { max-width: 100%; }
-  .model-bar { padding-left: 48px; }
 }
 
 /* 面板抽屉模式下的半透明遮罩 */
