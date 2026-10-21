@@ -45,6 +45,43 @@
       />
     </template>
 
+    <!-- Thinking Mode Collapsible Card -->
+    <div v-if="thinkingContent && thinkingContent.trim()" class="thinking-card">
+      <div class="thinking-header" @click="toggleThinking">
+        <div class="thinking-header-left">
+          <Icon
+            :icon="isThinkingStreaming ? 'ph:sparkle-fill' : 'ph:brain-bold'"
+            class="thinking-icon"
+            :class="{ 'spinning-sparkle': isThinkingStreaming }"
+          />
+          <span class="thinking-status">
+            {{ isThinkingStreaming ? '深度思考中...' : '已深度思考' }}
+          </span>
+          <span v-if="thinkingDuration > 0" class="thinking-duration">
+            ({{ thinkingDuration }}s)
+          </span>
+        </div>
+        <div class="thinking-header-right">
+          <button
+            type="button"
+            class="thinking-action-btn"
+            :title="thinkingCopied ? '已复制' : '复制思考过程'"
+            @click.stop="copyThinkingText"
+            aria-label="复制思考过程"
+          >
+            <Icon :icon="thinkingCopied ? 'ph:check-bold' : 'ph:copy-bold'" />
+          </button>
+          <Icon
+            :icon="isThinkingExpanded ? 'ph:caret-down-bold' : 'ph:caret-right-bold'"
+            class="thinking-caret"
+          />
+        </div>
+      </div>
+      <div v-if="isThinkingExpanded" class="thinking-content-body">
+        <div class="thinking-text-inner">{{ thinkingContent }}</div>
+      </div>
+    </div>
+
     <template v-for="seg in segments" :key="seg.id">
       <!-- 若该段已被抽到面板中且非流式状态，呈现紧凑胶囊入口 -->
       <div
@@ -130,6 +167,7 @@ const CodeBlock = defineAsyncComponent(() => import('@/components/CodeBlock.vue'
 const props = defineProps<{
   messageId?: number
   content: string
+  thinkingContent?: string
   isStreaming?: boolean
   workflowData?: WorkflowRunState
   workflowConfig?: WorkflowConfigState
@@ -220,8 +258,79 @@ watch(
   },
 )
 
+// Thinking Mode State & Timing
+const manualExpanded = ref<boolean | null>(null)
+const thinkingDuration = ref(0)
+let thinkingTimer: number | null = null
+const thinkingCopied = ref(false)
+let copyThinkingTimer: number | null = null
+
+const isThinkingStreaming = computed(() => {
+  return !!props.isStreaming && !props.content && !!props.thinkingContent
+})
+
+const isThinkingExpanded = computed({
+  get() {
+    if (manualExpanded.value !== null) {
+      return manualExpanded.value
+    }
+    return isThinkingStreaming.value
+  },
+  set(val: boolean) {
+    manualExpanded.value = val
+  },
+})
+
+function toggleThinking() {
+  isThinkingExpanded.value = !isThinkingExpanded.value
+}
+
+watch(
+  () => props.messageId,
+  () => {
+    manualExpanded.value = null
+    thinkingDuration.value = 0
+  },
+)
+
+watch(
+  isThinkingStreaming,
+  (streaming) => {
+    if (streaming) {
+      if (!thinkingTimer) {
+        thinkingDuration.value = 1
+        thinkingTimer = window.setInterval(() => {
+          thinkingDuration.value += 1
+        }, 1000)
+      }
+    } else {
+      if (thinkingTimer) {
+        clearInterval(thinkingTimer)
+        thinkingTimer = null
+      }
+    }
+  },
+  { immediate: true },
+)
+
+async function copyThinkingText() {
+  if (!props.thinkingContent) return
+  try {
+    await navigator.clipboard.writeText(props.thinkingContent)
+    thinkingCopied.value = true
+    if (copyThinkingTimer) clearTimeout(copyThinkingTimer)
+    copyThinkingTimer = window.setTimeout(() => {
+      thinkingCopied.value = false
+    }, 2000)
+  } catch {
+    // fallback or ignore
+  }
+}
+
 onUnmounted(() => {
   if (debounceTimer) clearTimeout(debounceTimer)
+  if (thinkingTimer) clearInterval(thinkingTimer)
+  if (copyThinkingTimer) clearTimeout(copyThinkingTimer)
 })
 
 interface Segment {
@@ -678,5 +787,117 @@ const segments = computed<Segment[]>(() => {
 
 .panel-ref-pill:hover .ref-pill-arrow {
   transform: translateX(3px);
+}
+
+/* 思考模式折叠卡片 */
+.thinking-card {
+  margin: 4px 0 12px 0;
+  background: var(--mf-surface-muted, rgba(248, 250, 252, 0.6));
+  border: 1px solid var(--mf-border-subtle, #e2e8f0);
+  border-left: 3px solid var(--mf-primary);
+  border-radius: var(--mf-radius-md, 8px);
+  overflow: hidden;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.thinking-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+  background: transparent;
+  transition: background 0.15s ease;
+}
+
+.thinking-header:hover {
+  background: var(--mf-surface-hover, rgba(0, 0, 0, 0.03));
+}
+
+.thinking-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--mf-text-secondary);
+}
+
+.thinking-icon {
+  font-size: 15px;
+  color: var(--mf-primary);
+  flex-shrink: 0;
+}
+
+.spinning-sparkle {
+  animation: sparkle-rotate 2s linear infinite;
+}
+
+@keyframes sparkle-rotate {
+  0% { transform: rotate(0deg) scale(0.9); }
+  50% { transform: rotate(180deg) scale(1.1); }
+  100% { transform: rotate(360deg) scale(0.9); }
+}
+
+.thinking-status {
+  color: var(--mf-text-main);
+  font-weight: 500;
+}
+
+.thinking-duration {
+  font-size: 11.5px;
+  color: var(--mf-text-muted);
+}
+
+.thinking-header-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--mf-text-secondary);
+}
+
+.thinking-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--mf-text-secondary);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.15s ease;
+}
+
+.thinking-action-btn:hover {
+  background: var(--mf-surface-hover, rgba(0, 0, 0, 0.05));
+  color: var(--mf-primary);
+}
+
+.thinking-caret {
+  font-size: 14px;
+  color: var(--mf-text-secondary);
+  transition: transform 0.2s ease;
+}
+
+.thinking-content-body {
+  padding: 10px 14px 12px 14px;
+  border-top: 1px dashed var(--mf-border-subtle, #e2e8f0);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--mf-text-secondary);
+  background: var(--mf-surface, #ffffff);
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.thinking-text-inner {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--mf-font-family, inherit);
 }
 </style>

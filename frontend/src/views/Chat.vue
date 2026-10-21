@@ -177,7 +177,7 @@
             <div
               v-for="(msg, idx) in chat.messages"
               :key="msg.id"
-              v-memo="[msg.content, msg.role, chat.isStreaming && idx === chat.messages.length - 1 ? 1 : 0, msg.workflowData?.status || '']"
+              v-memo="[msg.content, msg.thinking_content || '', msg.role, chat.isStreaming && idx === chat.messages.length - 1 ? 1 : 0, msg.workflowData?.status || '']"
               class="message-row"
               :class="msg.role"
             >
@@ -208,7 +208,7 @@
                   </template>
                 </template>
                 <template v-else>
-                  <div v-if="!msg.content && chat.isStreaming && !msg.workflowData && !msg.workflowConfig" class="message-content thinking">
+                  <div v-if="!msg.content && chat.isStreaming && !msg.workflowData && !msg.workflowConfig && !msg.thinking_content" class="message-content thinking">
                     <span class="pulse-dot"></span>
                     <span class="pulse-dot"></span>
                     <span class="pulse-dot"></span>
@@ -218,6 +218,7 @@
                     <ChatMessageContent
                       :message-id="msg.id"
                       :content="msg.content"
+                      :thinking-content="msg.thinking_content"
                       :workflow-data="msg.workflowData"
                       :workflow-config="msg.workflowConfig"
                       :is-streaming="chat.isStreaming && idx === chat.messages.length - 1 && msg.role === 'assistant'"
@@ -226,8 +227,8 @@
                       @open-panel-item="handleOpenPanelItem"
                     />
                   </div>
-                  <div v-if="msg.content && !chat.isStreaming" class="message-actions">
-                    <button class="msg-action-btn" title="复制回答" @click="copyText(msg.content)" aria-label="复制回答">
+                  <div v-if="(msg.content || msg.thinking_content) && !chat.isStreaming" class="message-actions">
+                    <button class="msg-action-btn" title="复制回答" @click="copyText(msg.content || msg.thinking_content || '')" aria-label="复制回答">
                       <Icon icon="ph:copy" />
                       <span>复制</span>
                     </button>
@@ -235,7 +236,7 @@
                       <Icon icon="ph:arrows-counter-clockwise" />
                       <span>重新生成</span>
                     </button>
-                    <button v-if="msg.content.startsWith('⚠️')" class="msg-action-btn" title="重试" @click="handleRetryMessage(msg.id)" aria-label="重试">
+                    <button v-if="msg.content && msg.content.startsWith('⚠️')" class="msg-action-btn" title="重试" @click="handleRetryMessage(msg.id)" aria-label="重试">
                       <Icon icon="ph:arrow-clockwise" />
                       <span>重试</span>
                     </button>
