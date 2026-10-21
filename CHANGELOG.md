@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **AI Trace Detail Slide-over Drawer Redesign (`frontend/src/views/AiTraceDetail.vue`)**:
+  - Replaced cramped 800px modal dialog with a modern right slide-over drawer (`el-drawer`), featuring width adaptability (75% on desktop, 100% on mobile) and a one-click maximize/restore toggle.
+  - Added Bento performance & cost metrics bar displaying latency, TTFT, token breakdown (Prompt vs Completion), tok/s generation rate, cost in USD, and sampling parameters.
+  - Implemented a two-column split workspace (`.workspace-split`) separating Prompt context cards from Assistant completion with independent vertical scroll containers, eliminating nested scroll conflicts.
+  - Added Markdown vs raw text view mode toggle for model completions, structured JSON payload viewer, and single-click copy actions for messages, inputs, outputs, and JSON payloads.
+  - Added unit test suite `ai-trace-detail.spec.ts`.
 - **Chat Layout Optimization & Decoupling (`frontend/src/views/Chat.vue`, `frontend/src/views/Layout.vue`, `frontend/src/router/index.ts`)**:
   - **Full-Bleed Route Mode**: Introduced `meta.fullBleed: true` for the `/chat` route and `.is-full-bleed` styling in `Layout.vue`, removing default outer padding (`24px 28px`) and outer scrollbars to achieve seamless edge-to-edge docking for the AI workspace.
   - **Integrated Chat Toolbar (3-in-1 Topbar)**: Eliminated redundant top-level `page-header` (~52px vertical height savings). Consolidated model selector, thinking mode badge, stream status, export markdown, copy, and clear controls into an integrated `.chat-toolbar` inside `.chat-main`. Integrated "New Chat" shortcut directly into the session sidebar header.
