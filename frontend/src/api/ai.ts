@@ -43,6 +43,13 @@ export interface AiSession {
 /**
  * AI 对话单条消息结构
  */
+export interface ToolCallInfo {
+  id: string
+  name: string
+  args?: string
+  result?: string
+}
+
 export interface AiMessage {
   /** 消息唯一标识 ID */
   id: number
@@ -54,6 +61,8 @@ export interface AiMessage {
   content: string
   /** 思考推理过程文本 (具备思考能力的模型输出，可选) */
   thinking_content?: string
+  /** 工具调用记录 (AI 调用的工具及结果) */
+  tool_calls?: ToolCallInfo[]
   /** 生成该回答的模型名称 (可选) */
   model?: string
   /** 消息生成时间 (ISO 8601 字符串) */
@@ -186,10 +195,18 @@ export async function getMessages(sessionId: number, page = 1, page_size = 50) {
  * 流式对话返回的数据分块 (SSE Chunk)
  */
 export interface ChatStreamChunk {
-  /** 消息分块类型: 'delta' (增量文本), 'thinking' (思考过程文本), 'done' (生成结束), 'error' (发生错误) */
-  type: 'delta' | 'thinking' | 'done' | 'error'
+  /** 消息分块类型: 'delta' (增量文本), 'thinking' (思考过程文本), 'tool_call' (工具调用), 'tool_result' (工具结果), 'done' (生成结束), 'error' (发生错误) */
+  type: 'delta' | 'thinking' | 'tool_call' | 'tool_result' | 'done' | 'error'
   /** 增量文本内容 (当 type 为 'delta' 或 'thinking' 时) */
   content?: string
+  /** 工具调用 ID (当 type 为 'tool_call' / 'tool_result' 时) */
+  id?: string
+  /** 工具名称 (当 type 为 'tool_call' / 'tool_result' 时) */
+  name?: string
+  /** 工具参数 JSON (当 type 为 'tool_call' 时) */
+  args?: string
+  /** 工具执行结果 JSON (当 type 为 'tool_result' 时) */
+  result?: string
   /** 生成结束原因 (如 'stop', 'length' 等) */
   finish_reason?: string
   /** 错误信息 (当 type 为 'error' 时) */
@@ -281,15 +298,19 @@ export async function* chatStream(
         } else if (trimmed.startsWith('data:')) {
           const dataStr = trimmed.slice(5).trim()
           if (dataStr) {
-            try {
-              const parsed = JSON.parse(dataStr) as Record<string, unknown>
-              yield {
-                type: (currentEvent || 'delta') as 'delta' | 'thinking' | 'done' | 'error',
-                content: typeof parsed.content === 'string' ? parsed.content : undefined,
-                finish_reason: typeof parsed.finish_reason === 'string' ? parsed.finish_reason : undefined,
-                message: typeof parsed.message === 'string' ? parsed.message : undefined,
-              }
-            } catch {
+             try {
+               const parsed = JSON.parse(dataStr) as Record<string, unknown>
+               yield {
+                 type: (currentEvent || 'delta') as 'delta' | 'thinking' | 'tool_call' | 'tool_result' | 'done' | 'error',
+                 content: typeof parsed.content === 'string' ? parsed.content : undefined,
+                 id: typeof parsed.id === 'string' ? parsed.id : (typeof parsed.tool_call_id === 'string' ? parsed.tool_call_id : undefined),
+                 name: typeof parsed.name === 'string' ? parsed.name : undefined,
+                 args: typeof parsed.arguments === 'string' ? parsed.arguments : (typeof parsed.args === 'string' ? parsed.args : undefined),
+                 result: parsed.result !== undefined ? (typeof parsed.result === 'string' ? parsed.result : JSON.stringify(parsed.result)) : undefined,
+                 finish_reason: typeof parsed.finish_reason === 'string' ? parsed.finish_reason : undefined,
+                 message: typeof parsed.message === 'string' ? parsed.message : undefined,
+               }
+             } catch {
               // ignore
             }
           }

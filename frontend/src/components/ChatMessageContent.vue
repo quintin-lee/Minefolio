@@ -82,6 +82,18 @@
       </div>
     </div>
 
+    <!-- Tool Calls -->
+    <div v-if="toolCalls && toolCalls.length" class="tool-calls">
+      <div v-for="(tc, i) in toolCalls" :key="i" class="tool-call-item">
+        <div class="tool-call-header">
+          <Icon icon="ph:wrench-bold" class="tool-icon" />
+          <span class="tool-name">{{ tc.name }}</span>
+        </div>
+        <pre v-if="tc.args" class="tool-args">{{ tc.args }}</pre>
+        <pre v-if="tc.result" class="tool-result">{{ tc.result }}</pre>
+      </div>
+    </div>
+
     <template v-for="seg in segments" :key="seg.id">
       <!-- 若该段已被抽到面板中且非流式状态，呈现紧凑胶囊入口 -->
       <div
@@ -169,6 +181,7 @@ const props = defineProps<{
   content: string
   thinkingContent?: string
   isStreaming?: boolean
+  toolCalls?: { id: string; name: string; args?: string; result?: string }[]
   workflowData?: WorkflowRunState
   workflowConfig?: WorkflowConfigState
   enableBuffer?: boolean

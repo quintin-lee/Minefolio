@@ -248,6 +248,7 @@
                         :message-id="msg.id"
                         :content="msg.content"
                         :thinking-content="msg.thinking_content"
+                        :tool-calls="msg.tool_calls"
                         :workflow-data="msg.workflowData"
                         :workflow-config="msg.workflowConfig"
                         :is-streaming="chat.isStreaming && idx === chat.messages.length - 1 && msg.role === 'assistant'"

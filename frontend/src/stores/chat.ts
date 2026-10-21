@@ -391,6 +391,13 @@ export const useChatStore = defineStore('chat', () => {
             assistantMsg.thinking_content = ''
           }
           assistantMsg.thinking_content += chunk.content
+        } else if (chunk.type === 'tool_call') {
+          if (!assistantMsg.tool_calls) assistantMsg.tool_calls = []
+          assistantMsg.tool_calls.push({ id: chunk.id || '', name: chunk.name || '', args: chunk.args })
+        } else if (chunk.type === 'tool_result') {
+          if (!assistantMsg.tool_calls) assistantMsg.tool_calls = []
+          const tc = assistantMsg.tool_calls.find(t => t.id === chunk.id) || assistantMsg.tool_calls[assistantMsg.tool_calls.length - 1]
+          if (tc) tc.result = chunk.result
         } else if (chunk.type === 'delta' && chunk.content) {
           writer.push(chunk.content)
         } else if (chunk.type === 'error') {
@@ -455,6 +462,13 @@ export const useChatStore = defineStore('chat', () => {
             assistantMsg.thinking_content = ''
           }
           assistantMsg.thinking_content += chunk.content
+        } else if (chunk.type === 'tool_call') {
+          if (!assistantMsg.tool_calls) assistantMsg.tool_calls = []
+          assistantMsg.tool_calls.push({ id: chunk.id || '', name: chunk.name || '', args: chunk.args })
+        } else if (chunk.type === 'tool_result') {
+          if (!assistantMsg.tool_calls) assistantMsg.tool_calls = []
+          const tc = assistantMsg.tool_calls.find(t => t.id === chunk.id) || assistantMsg.tool_calls[assistantMsg.tool_calls.length - 1]
+          if (tc) tc.result = chunk.result
         } else if (chunk.type === 'delta' && chunk.content) {
           writer.push(chunk.content)
         } else if (chunk.type === 'error') {
@@ -526,6 +540,13 @@ export const useChatStore = defineStore('chat', () => {
             assistantMsg.thinking_content = ''
           }
           assistantMsg.thinking_content += chunk.content
+        } else if (chunk.type === 'tool_call') {
+          if (!assistantMsg.tool_calls) assistantMsg.tool_calls = []
+          assistantMsg.tool_calls.push({ id: chunk.id || '', name: chunk.name || '', args: chunk.args })
+        } else if (chunk.type === 'tool_result') {
+          if (!assistantMsg.tool_calls) assistantMsg.tool_calls = []
+          const tc = assistantMsg.tool_calls.find(t => t.id === chunk.id) || assistantMsg.tool_calls[assistantMsg.tool_calls.length - 1]
+          if (tc) tc.result = chunk.result
         } else if (chunk.type === 'delta' && chunk.content) {
           writer.push(chunk.content)
         } else if (chunk.type === 'error') {
