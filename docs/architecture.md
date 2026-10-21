@@ -668,7 +668,20 @@ Runtime 严格区分故障来源，绝不笼统返回通用 500 异常：
 | 阶段 | 核心问题 | 解决手段 |
 |---|---|---|
 | **网络至 UI** | SSE-over-TCP 到达是**突发**的（单个网络数据包可包含 50+ 字符），直连 UI 会出现机械卡顿 | `SmoothStreamWriter` 按 60fps RAF 从 buffer 抽 1~4 字符渐进推进 |
-| **DOM 渲染** | 每收到字符如果都执行 `marked.parse` 与 `v-html` 渲染，将造成严重的 DOM 节点频繁重排重绘 | 尾部 plain text 纯文本插值，仅对闭合 Markdown/Code/Mermaid 段落进行高亮与富文本渲染 |
+| **DOM 渲染** | 每收到字符如果都执行 `marked.parse` 与 `v-html`渲染，将造成严重的 DOM 节点频繁重排重绘 | 尾部 plain text 纯文本插值，仅对闭合 Markdown/Code/Mermaid 段落进行高亮与富文本渲染 |
+
+**5. 深度思考推理机制 (Thinking / Reasoning Mode)**
+
+为了原生支持 DeepSeek-R1 / Anthropic Claude / OpenAI o-series 等具备慢思考（Chain-of-Thought）能力的推理模型，AI Runtime 与前端建立了全链路思考流协同协议：
+- **SSE 推理 Chunk 分发**：后端模型驱动将 `reasoning_content` 或 `<think>...</think>` 内容提取后，以 `data: {"type": "thinking", "content": "..."}` 独立事件推送到客户端，与正式回复 `type: "delta"` 彻底隔离；
+- **思考内容数据库持久化 (V015)**：在 `ai_messages` 表中新增 `thinking_content TEXT` 字段。后端 `loop.c` 实时维护 `thinking_buffer` 并在消息结束时原子持久化，保证历史记录可随时回溯思维链；
+- **前端折叠与打字交互**：Pinia `chat.store` 分离维护 `msg.thinking_content`，并在 `ChatMessageContent.vue` 中渲染专属可折叠卡片，带有耗时计时器、脉冲呼吸灯指示器与平滑打字机动画。
+
+**6. 现代化 AI 工作台与布局解耦 (Analysis Panel & Flex Layout)**
+
+- **三栏式弹性工作台**：左侧历史会话列表（可折叠） + 中间主对话流 + 右侧可拖拽宽度调整的 `AnalysisPanel.vue`，实现深度财务分析报告、Mermaid 图表与指标卡片的无缝预览与 Markdown 导出；
+- **Full-Bleed 贴边模式**：通过路由 `meta.fullBleed: true`，在 `Layout.vue` 中动态移除外层内边距和滚动条，提供沉浸式 edge-to-edge 体验；
+- **输入框与消息流 Flex 解耦**：废弃脆弱的绝对悬浮定位（`position: absolute; bottom: 18px`），采用 Flex 纵向底栏（`flex-shrink: 0`）与内部 `.messages-container`，从根本上杜绝多行输入展开或移动端缩放导致的消息被遮挡缺陷。
 
 ### 4.3 行情同步 (Market Scheduler)
 
@@ -1125,7 +1138,7 @@ cd backend/build && ctest --output-on-failure
 | **适合场景** | 单用户/家庭自托管 | 多租户/集群 |
 
 Minefolio 采用下沉至 csilk 框架的原生**正式版本化迁移系统 (Database Migration System)**（`<csilk/drivers/db/migration.h>`），彻底替换历史上的动态字段检测与硬编码 ALTER TABLE：
-- **规范化版本脚本**：按 Flyway 规范统一组织于 `backend/sql/migrations/{sqlite,postgres}/`，文件命名格式 `V<num>__<name>.sql`（`V001`~`V014`）。
+- **规范化版本脚本**：按 Flyway 规范统一组织于 `backend/sql/migrations/{sqlite,postgres}/`，文件命名格式 `V<num>__<name>.sql`（`V001`~`V015`）。
 - **版本记录与审计 (`schema_migrations`)**：记录每个已应用的迁移版本、名称、SHA-256 校验和、应用时间及执行毫秒耗时。
 - **分布式并发互斥锁 (`schema_migration_lock`)**：通过数据库行锁与租约超时防死锁机制，有效防止多实例并行迁移竞争。
 - **PostgreSQL 原生 Prepared Statement 支持**：csilk PostgreSQL 驱动原生实现 `?` 转 `$1, $2, ...` 重写、`PQprepare`/`PQexecPrepared` 编译与执行、类型绑定与 `DEALLOCATE` 释放，确保并发锁及迁移语句在 SQLite / PostgreSQL 下均稳定执行。
@@ -1234,7 +1247,7 @@ Minefolio 采用下沉至 csilk 框架的原生**正式版本化迁移系统 (Da
 | `backend/src/services/ai/workflows/` | 4 个具体工作流实现 |
 | `backend/src/common/balance.h` | 余额符号翻转 + 持仓核算 |
 | `csilk (csilk/drivers/db/migration.h)` | 数据库迁移引擎 (下沉至 csilk，提供 checksum、分布式锁、auto-baseline) |
-| `backend/sql/migrations/{sqlite,postgres}/` | 版本化迁移文件 (V001~V014) |
+| `backend/sql/migrations/{sqlite,postgres}/` | 版本化迁移文件 (V001~V015) |
 | `backend/sql/migration.sql` | SQLite 16 表全量基准 |
 | `backend/sql/migration_postgres.sql` | PostgreSQL 16 表全量基准 |
 | `backend/tests/test_link.sh` | 39-case 核心集成测试 (151 assertions) |

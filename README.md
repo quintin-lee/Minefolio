@@ -20,7 +20,7 @@ Minefolio 是一款极度轻量、安全、专业的**开源全资产管理与�
 * 🏛️ **统一账本状态引擎 (Ledger Engine)**：确立「Transaction 是唯一金融事实」准则，资产持仓、现金余额、成本基础、已实现/浮动盈亏全由账本引擎统一计算与更新，并提供基于时间序列事实全量重建 (`rebuild`) 的自愈能力。
 * 🤖 **统一 AI Runtime 与企业级五级风控引擎 (Unified AI Runtime & Risk Engine)**：建立原生 C 统一 AI 运行时架构，将 Controller 与 Workflow 彻底与 LLM 调用解耦，纳管会话 (Session)、统一上下文容器 (Context)、模型适配 (Model)、工具执行 (Tool)、工作流编排 (Workflow)、安全策略 (Policy)、全链路追踪 (Trace) 与滑动窗口记忆 (Memory)；全面支持硬预算与约束（迭代上限、超时、Token/Tool/Cost 预算与主动取消）及结构化错误分类，实行五级风险评估与带 Nonce 防重放的双重确认令牌机制。
 * 🔑 **统一 Secret Provider 与零硬编码安全门禁**：建立统一敏感配置检索机制，原生兼容环境变量、Docker/K8s Secret 文件挂载与外部密钥管理器 (Vault/AWS/K8s)；在生产启动期实施硬编码/弱口令主动熔断。
-* 🗄️ **企业级数据库迁移系统 (Database Migration System)**：下沉至 csilk 框架的原生 C 版本化迁移引擎（`<csilk/drivers/db/migration.h>`），支持 SQLite / PostgreSQL 双方言（`V001`~`V014`）；具备版本严格发现排序、SHA-256 CRLF 规范化哈希防篡改、基于行锁的分布式迁移互斥锁，并在 PostgreSQL 驱动层支持原生 Prepared Statement（`?` 自动转 `$N` 与参数绑定），实现生产环境存量数据库平滑升级（Auto-Baseline），绝不要求删除已有数据库重新初始化。
+* 🗄️ **企业级数据库迁移系统 (Database Migration System)**：下沉至 csilk 框架的原生 C 版本化迁移引擎（`<csilk/drivers/db/migration.h>`），支持 SQLite / PostgreSQL 双方言（`V001`~`V015`）；具备版本严格发现排序、SHA-256 CRLF 规范化哈希防篡改、基于行锁的分布式迁移互斥锁，并在 PostgreSQL 驱动层支持原生 Prepared Statement（`?` 自动转 `$N` 与参数绑定），实现生产环境存量数据库平滑升级（Auto-Baseline），绝不要求删除已有数据库重新初始化。
 * 💼 **全资产全场景覆盖**：支持现金、银行储蓄、股票、基金、债券、加密货币、房产、贷款、信用卡等资产与负债统一建档，支持负债方向自动正负号翻转。
 * 📈 **专业资管级投资模型**：加权买入成本、分红摊薄计价、卖出部分成本按比例核减、手续费联动与基于 `parent_tx_id` 的级联回滚，精确计算已实现与浮动盈亏。
 * 🌐 **多币种实时外汇引擎 (FX Engine)**：支持全币种资产管理，内置 Yahoo Finance 实时汇率同步与手动设置，支持基准折算净资产实时呈现。
@@ -30,6 +30,8 @@ Minefolio 是一款极度轻量、安全、专业的**开源全资产管理与�
 * 📸 **智能票据 OCR 识别与录单**：桌面端与移动端支持调用 OpenAI/DeepSeek 视觉多模态大模型解析发票与小票，内置纯离线启发式规则兜底，一键拍照自动填单并智能匹配分类。
 * ⚡ **多源行情定时同步引擎**：对接 A股/公募基金/Yahoo Finance/Binance 行情接口，支持防抖定时调度、交易时段自动刷新与 HTTP 代理连通性检测。
 * 🤖 **AI 财务助理与全链路追踪 (AI Traces)**：多轮财务上下文对话、财务函数 Tool Calling 自动化执行，全量追踪会话耗时、Token 消耗、模型供应商与工具调用 Spans。
+* 🧠 **AI 深度思考推理模式 (Thinking / Reasoning Mode)**：原生适配 DeepSeek-R1 / OpenAI o-series / Claude 等前沿推理模型，流式捕获思维链 (Thinking Process) 并持久化至数据库 (`ai_messages.thinking_content`, V015)；前端提供带平滑打字机动画的折叠式推理卡片。
+* 🖥️ **现代 AI 工作台与三栏式分析面板 (Analysis Panel & Flex Layout)**：提供 3 栏弹性工作台（会话侧栏、对话流、可拖拽/折叠右侧多维分析面板）；独创 Chat 专属 Full-Bleed 贴边与 Flex 纵向底栏解耦机制，彻底杜绝输入区域遮挡对话内容的痛点。
 * 🔐 **银行级安全与单点登录 (SSO)**：全链路 RSA-OAEP 前端口令加密传输、JWT 版本号即时吊销、TOTP 2FA 动态双因素认证、支持 GitHub 与通用 OIDC 单点登录。
 * 📱 **双端同构与移动端全功能适配**：基于 Capacitor 与内置 base64 嵌入式 `sql.js` WASM SQLite 引擎；支持动态配置自建服务端地址（局域网 IP / 公网域名均可，内置实时网络延迟探测与连通性自检），手机端无网环境下依然畅享完整记账体验与离线数据双向同步。
 * 🔬 **框架级可观测性管理后台**：内置 `/csilk-admin` 性能仪表盘，支持实时 RPS 与 HTTP 状态监控、工作流 Universal DAG 动态拓扑图可视化，以及 100Hz CPU 堆栈火焰图 Profiler。
@@ -124,7 +126,7 @@ docker compose ps
   MINEFOLIO_DB_DRIVER=postgres
   MINEFOLIO_DB_DSN=host=your-pg-host port=5432 user=minefolio password=your-db-pass dbname=minefolio sslmode=disable
   ```
-  同样需要镜像带 libpq（`Dockerfile` 默认已包含）。原生 C 数据库迁移引擎会在启动时自动完成版本化迁移（`V001`~`V009`）。
+  同样需要镜像带 libpq（`Dockerfile` 默认已包含）。原生 C 数据库迁移引擎会在启动时自动完成版本化迁移（`V001`~`V015`）。
 
 ### 方式 2：本地源码编译与开发
 
@@ -164,7 +166,7 @@ Minefolio/
 ├── backend/                      # C23 后端服务
 │   ├── CMakeLists.txt            # 构建配置（C23、csilk、yyjson）
 │   ├── sql/                      # 数据库迁移与初始化脚本
-│   │   ├── migrations/           # 版本化迁移脚本（V001~V009）
+│   │   ├── migrations/           # 版本化迁移脚本（V001~V015）
 │   │   │   ├── sqlite/           # SQLite 方言版本脚本
 │   │   │   └── postgres/         # PostgreSQL 方言版本脚本
 │   │   ├── migration.sql         # 16 张核心数据表全量基准（测试与初始化）
@@ -397,6 +399,18 @@ ctest --output-on-failure
 ./backend/tests/test_ai_tool_call.sh && \
 ./backend/tests/test_market_sync.sh && \
 ./backend/tests/test_fx_oauth.sh
+```
+
+### 3. 前端单元与组件测试矩阵（32 个测试套件，147+ 单元测试）
+```bash
+cd frontend
+npm test
+# 覆盖前端核心体系：
+# - 状态管理与数据持久化：auth.store, category.store, chat.store, market.store, sync.store, db.local
+# - AI 深度思考与分析面板：chat-thinking, chat-message-thinking, chat-message-content-panel, chat-layout-panel, analysis-panel
+# - Chat 页面现代化与解耦：layout-fullbleed, chat-toolbar, chat-input-layout
+# - 工具函数与网络层：http.utils, offline-http, swr-cache, crypto, format, typewriter, command-palette
+# - 国际化与移动端：i18n.keys, use-server-url, login-mobile
 ```
 
 ---

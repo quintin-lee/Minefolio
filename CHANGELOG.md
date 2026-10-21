@@ -10,6 +10,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Chat Layout Optimization & Decoupling (`frontend/src/views/Chat.vue`, `frontend/src/views/Layout.vue`, `frontend/src/router/index.ts`)**:
+  - **Full-Bleed Route Mode**: Introduced `meta.fullBleed: true` for the `/chat` route and `.is-full-bleed` styling in `Layout.vue`, removing default outer padding (`24px 28px`) and outer scrollbars to achieve seamless edge-to-edge docking for the AI workspace.
+  - **Integrated Chat Toolbar (3-in-1 Topbar)**: Eliminated redundant top-level `page-header` (~52px vertical height savings). Consolidated model selector, thinking mode badge, stream status, export markdown, copy, and clear controls into an integrated `.chat-toolbar` inside `.chat-main`. Integrated "New Chat" shortcut directly into the session sidebar header.
+  - **Flex Natural Input Docking**: Decoupled `.chat-input-area` from fragile `position: absolute; bottom: 18px` into normal vertical flex document flow (`flex-shrink: 0`), completely preventing input card expansion from obscuring trailing messages.
+  - **Messages Container Isolation**: Wrapped `.messages` inside a relative `.messages-container` with normal padding (`20px 20px 24px`), anchoring `.scroll-bottom-btn` inside `.messages-container` at `bottom: 14px`.
+  - Added unit test suites `layout-fullbleed.spec.ts`, `chat-toolbar.spec.ts`, and `chat-input-layout.spec.ts`.
+- **AI Thinking / Reasoning Mode (`backend/sql/migrations/{sqlite,postgres}/V015__ai_messages_thinking_content.sql`, `backend/src/services/ai/`, `frontend/src/`)**:
+  - **Database Schema Migration (V015)**: Added `thinking_content TEXT` column to `ai_messages` table across SQLite and PostgreSQL migrations.
+  - **AI Runtime Streaming Support**: Enhanced SSE event stream protocol to transmit `data: {"type": "thinking", "content": "..."}` chunks, parsing `reasoning_content` (DeepSeek-R1 / OpenAI o-series) and `<think>` blocks.
+  - **Session Repository Persistence**: Updated `ai_session_repo_impl.c` to persist `thinking_content` alongside assistant response messages.
+  - **Frontend Streaming & Collapsible Card**: Updated `chat.store.ts` to consume thinking chunks, and implemented a collapsible thinking card in `ChatMessageContent.vue` with smooth typewriter animation, duration counter, and expand/collapse transitions.
+  - Added unit test suites `chat-thinking.spec.ts` and `chat-message-thinking.spec.ts`.
+- **AI Analysis Panel & 3-Column Studio (`frontend/src/views/Chat.vue`, `frontend/src/components/AnalysisPanel.vue`)**:
+  - Introduced responsive 3-column workspace layout with draggable resize handle (`drag-handle`) and drawer fallback on mobile screens.
+  - Integrated `AnalysisPanel.vue` for rendering comprehensive financial markdown reports, metric callouts, and Mermaid diagrams without crowding the primary conversation stream.
+  - Added unit test suites `analysis-panel.spec.ts`, `chat-layout-panel.spec.ts`, `chat-message-content-panel.spec.ts`, and `chat-panel-extractor.spec.ts`.
 - **Transfer Explicit Transactions (`backend/sql/migrations/{sqlite,postgres}/V014__transfer_explicit_transactions.sql`)**:
   - Added `from_tx_id` and `to_tx_id` explicit foreign keys referencing `transactions(id)` in `transfers` table.
   - Rescheduled transfer write sequence so transaction records are created and committed first, then linked to the `transfers` row.
@@ -33,7 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **csilk Framework Feature Downstreaming & Integration (Phases 1-4)**:
   - **JSON Type Extraction (`<csilk/core/json.h>`)**: Adopted `csilk_json_as_int64`, `csilk_json_as_double`, and `csilk_json_as_bool` to safely handle column data types without string-to-number parse gotchas.
   - **Transaction Scope & Savepoint (`<csilk/drivers/db/db.h>`)**: Switched `db_tx_scope_*` to native `csilk_db_tx_scope_*` with full nested savepoint and rollback support.
-  - **Database Migration Engine (`<csilk/drivers/db/migration.h>`)**: Downstreamed Flyway-style migration engine (`csilk_migration_*`) supporting discovery, strict version ordering, SHA-256 CRLF normalization, distributed locks, and auto-baseline (`V001`~`V014`).
+  - **Database Migration Engine (`<csilk/drivers/db/migration.h>`)**: Downstreamed Flyway-style migration engine (`csilk_migration_*`) supporting discovery, strict version ordering, SHA-256 CRLF normalization, distributed locks, and auto-baseline (`V001`~`V015`).
   - **CSV Processing (`<csilk/util/csv.h>`)**: Replaced custom CSV utility with RFC 4180 streaming parser and generator (`csilk_csv_*`).
   - **TOTP 2FA Engine (`<csilk/crypto/totp.h>`)**: Replaced internal TOTP implementation with csilk RFC 6238 standard TOTP engine (`csilk_totp_*`).
   - **Middleware Whitelist & Revocation**: Enhanced CSRF and JWT middlewares using csilk native route whitelisting (`csilk_csrf_whitelist_path`) and token revocation callbacks.

@@ -177,7 +177,28 @@ typedef enum {
 
 ---
 
-## 8. 测试与验证矩阵 (Verification Matrix)
+## 8. 深度思考推理流与持久化 (Thinking Mode & Reasoning Stream)
+
+为了原生支持 DeepSeek-R1、OpenAI o-series 以及 Anthropic Claude 等具有显式慢思考思维链（Chain of Thought）的推理模型，AI Runtime 与 SSE 协议栈提供了深度思考专用传输与存储管道：
+
+### 8.1 SSE 流式事件协议扩展
+在模型流式回复期间，推理 Chunk 以独立事件 `type: "thinking"` 实时分发，客户端收到后可与正式回复正文解耦渲染：
+```
+event: delta
+data: {"type": "thinking", "content": "正在检索用户过去30天的日常支出明细与资产持仓..."}
+
+event: delta
+data: {"type": "delta", "content": "根据您的账本统计，上月总支出为..."}
+```
+
+### 8.2 运行时状态暂存与数据库落库
+- **运行时缓冲**：Agent Loop (`runtime/loop.c`) 在流式迭代中维护动态扩容的 `thinking_buffer`；
+- **数据库表扩展 (V015)**：Migration `V015__ai_messages_thinking_content.sql` 在 `ai_messages` 表中增加了 `thinking_content TEXT` 字段；
+- **原子持久化**：当一轮对话完成时，`mf_ai_session_repo_save_message_with_thinking()` 将正文回复与完整的思考过程原子持久化入库，保证历史会话在重新载入时能够完整回溯思维链。
+
+---
+
+## 9. 测试与验证矩阵 (Verification Matrix)
 
 AI Runtime 体系拥有 100% 覆盖的单元测试与真实的端到端集成测试验证：
 
