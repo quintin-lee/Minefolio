@@ -3,6 +3,7 @@
 #include "services/ai/tools/validation.h"
 #include "services/ai/tools/context.h"
 #include "services/ai/policy/confirmation.h"
+#include "domain/ai/rules.h"
 #include "infrastructure/repositories/asset_repo_impl.h"
 #include "common/db.h"
 #include "common/config.h"
@@ -49,10 +50,59 @@ init_test_db(const char* db_path)
     free(sql);
 }
 
+static void
+test_ai_ssrf_url_validation(void)
+{
+    printf("[Test SSRF] Testing mf_ai_rule_validate_url...\n");
+    /* Null & empty */
+    assert(!mf_ai_rule_validate_url(NULL, 4096));
+    assert(!mf_ai_rule_validate_url("", 4096));
+
+    /* Scheme checks */
+    assert(mf_ai_rule_validate_url("https://blogs.nvidia.cn/blog/test", 4096));
+    assert(mf_ai_rule_validate_url("http://example.com/path?a=1&b=2", 4096));
+    assert(!mf_ai_rule_validate_url("ftp://example.com", 4096));
+    assert(!mf_ai_rule_validate_url("file:///etc/passwd", 4096));
+    assert(!mf_ai_rule_validate_url("javascript:alert(1)", 4096));
+
+    /* Loopback & Localhost */
+    assert(!mf_ai_rule_validate_url("http://localhost/admin", 4096));
+    assert(!mf_ai_rule_validate_url("http://localhost:8080/api", 4096));
+    assert(!mf_ai_rule_validate_url("http://127.0.0.1:8080/api", 4096));
+    assert(!mf_ai_rule_validate_url("http://127.0.0.2:3000", 4096));
+    assert(!mf_ai_rule_validate_url("http://0.0.0.0", 4096));
+    assert(!mf_ai_rule_validate_url("http://[::1]:8080", 4096));
+    assert(!mf_ai_rule_validate_url("http://::1", 4096));
+
+    /* Private IPv4 subnets */
+    assert(!mf_ai_rule_validate_url("http://10.0.0.1/status", 4096));
+    assert(!mf_ai_rule_validate_url("http://10.255.255.255", 4096));
+    assert(!mf_ai_rule_validate_url("http://192.168.1.100", 4096));
+    assert(!mf_ai_rule_validate_url("http://192.168.0.1:80", 4096));
+    assert(!mf_ai_rule_validate_url("http://172.16.5.1", 4096));
+    assert(!mf_ai_rule_validate_url("http://172.31.255.255", 4096));
+    assert(mf_ai_rule_validate_url("http://172.15.0.1", 4096));  /* Public 172.15 */
+    assert(mf_ai_rule_validate_url("http://172.32.0.1", 4096));  /* Public 172.32 */
+    assert(!mf_ai_rule_validate_url("http://169.254.1.1", 4096)); /* Link-local */
+
+    /* Length limits */
+    char long_url[5000];
+    memset(long_url, 'a', sizeof(long_url));
+    memcpy(long_url, "https://example.com/", 20);
+    long_url[4000] = '\0';
+    assert(mf_ai_rule_validate_url(long_url, 4096)); /* 4000 <= 4096 */
+
+    memset(long_url + 4000, 'b', 97);
+    long_url[4097] = '\0';
+    assert(!mf_ai_rule_validate_url(long_url, 4096)); /* 4097 > 4096 */
+    printf("[Test SSRF] PASS: mf_ai_rule_validate_url verified\n");
+}
+
 int
 main(void)
 {
     printf("=== Running Integration Unit Test: AI Tool System ===\n");
+    test_ai_ssrf_url_validation();
     const char* db_file = "/tmp/test_ai_tools.db";
     init_test_db(db_file);
     csilk_db_pool_t* pool = db_get_pool();

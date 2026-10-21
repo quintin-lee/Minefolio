@@ -28,3 +28,10 @@ int mf_ai_rule_calculate_token_cost(int64_t prompt_tokens,
  * @brief 校验 AI 供应商标识符是否合法安全
  */
 bool mf_ai_rule_is_safe_provider(const char* provider_id);
+
+/**
+ * @brief 校验 AI 抓取目标的 URL 合法性与 SSRF 安全性
+ * 规则：必须为 http:// 或 https:// 开头；长度不超过 max_len（默认上限 4096）；
+ *       host 不得为内网/回环地址（localhost/127./10./172.16-31./192.168./169.254./::1/0.0.0.0）。
+ */
+bool mf_ai_rule_validate_url(const char* url, size_t max_len);
