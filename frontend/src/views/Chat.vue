@@ -176,101 +176,103 @@
           </div>
         </div>
 
-        <!-- Messages stream -->
-        <div class="messages" ref="messagesRef" v-loading="loadingMessages" @scroll.passive="handleScroll" role="log" aria-live="polite" aria-label="对话消息">
-          <!-- Load more trigger (invisible sentinel at top) -->
-          <div ref="loadMoreTrigger" class="load-more-sentinel"></div>
-          <div v-if="chat.loadingMoreMessages" class="load-more-spinner">
-            <span class="spinner-dot"></span><span class="spinner-dot"></span><span class="spinner-dot"></span>
-          </div>
-          <!-- Empty state: Quick prompts -->
-          <PromptStarters v-if="chat.messages.length === 0" @select="handleQuickPrompt" />
+        <!-- Messages stream container -->
+        <div class="messages-container">
+          <div class="messages" ref="messagesRef" v-loading="loadingMessages" @scroll.passive="handleScroll" role="log" aria-live="polite" aria-label="对话消息">
+            <!-- Load more trigger (invisible sentinel at top) -->
+            <div ref="loadMoreTrigger" class="load-more-sentinel"></div>
+            <div v-if="chat.loadingMoreMessages" class="load-more-spinner">
+              <span class="spinner-dot"></span><span class="spinner-dot"></span><span class="spinner-dot"></span>
+            </div>
+            <!-- Empty state: Quick prompts -->
+            <PromptStarters v-if="chat.messages.length === 0" @select="handleQuickPrompt" />
 
-          <!-- Message list -->
-          <template v-else>
-            <div
-              v-for="(msg, idx) in chat.messages"
-              :key="msg.id"
-              v-memo="[msg.content, msg.thinking_content || '', msg.role, chat.isStreaming && idx === chat.messages.length - 1 ? 1 : 0, msg.workflowData?.status || '']"
-              class="message-row"
-              :class="msg.role"
-            >
-              <div class="message-avatar">
-                <Icon :icon="msg.role === 'user' ? 'ph:user-bold' : 'ph:robot-bold'" />
-              </div>
-              <div class="message-bubble-wrap">
-                <template v-if="msg.role === 'user'">
-                  <div v-if="editingUserIdx === idx" class="user-edit-box">
-                    <textarea v-model="editDraft" class="user-edit-input" rows="2" @keydown.enter.exact.prevent="confirmEdit(idx)" @keydown.esc="cancelEdit" placeholder="编辑后按 Enter 发送，Esc 取消"></textarea>
-                    <div class="user-edit-actions">
-                      <el-button size="small" @click="cancelEdit">取消</el-button>
-                      <el-button size="small" type="primary" :disabled="!editDraft.trim()" @click="confirmEdit(idx)">发送</el-button>
+            <!-- Message list -->
+            <template v-else>
+              <div
+                v-for="(msg, idx) in chat.messages"
+                :key="msg.id"
+                v-memo="[msg.content, msg.thinking_content || '', msg.role, chat.isStreaming && idx === chat.messages.length - 1 ? 1 : 0, msg.workflowData?.status || '']"
+                class="message-row"
+                :class="msg.role"
+              >
+                <div class="message-avatar">
+                  <Icon :icon="msg.role === 'user' ? 'ph:user-bold' : 'ph:robot-bold'" />
+                </div>
+                <div class="message-bubble-wrap">
+                  <template v-if="msg.role === 'user'">
+                    <div v-if="editingUserIdx === idx" class="user-edit-box">
+                      <textarea v-model="editDraft" class="user-edit-input" rows="2" @keydown.enter.exact.prevent="confirmEdit(idx)" @keydown.esc="cancelEdit" placeholder="编辑后按 Enter 发送，Esc 取消"></textarea>
+                      <div class="user-edit-actions">
+                        <el-button size="small" @click="cancelEdit">取消</el-button>
+                        <el-button size="small" type="primary" :disabled="!editDraft.trim()" @click="confirmEdit(idx)">发送</el-button>
+                      </div>
                     </div>
-                  </div>
+                    <template v-else>
+                      <div class="message-content">{{ msg.content }}</div>
+                      <div v-if="!chat.isStreaming" class="message-actions user-actions">
+                      <button class="msg-action-btn" title="复制" @click="copyText(msg.content)" aria-label="复制消息">
+                        <Icon icon="ph:copy" />
+                        <span>复制</span>
+                      </button>
+                      <button class="msg-action-btn" title="编辑并重发" @click="startEdit(idx, msg.content)" aria-label="编辑并重发">
+                        <Icon icon="ph:pencil-simple" />
+                        <span>编辑</span>
+                      </button>
+                      </div>
+                    </template>
+                  </template>
                   <template v-else>
-                    <div class="message-content">{{ msg.content }}</div>
-                    <div v-if="!chat.isStreaming" class="message-actions user-actions">
-                    <button class="msg-action-btn" title="复制" @click="copyText(msg.content)" aria-label="复制消息">
-                      <Icon icon="ph:copy" />
-                      <span>复制</span>
-                    </button>
-                    <button class="msg-action-btn" title="编辑并重发" @click="startEdit(idx, msg.content)" aria-label="编辑并重发">
-                      <Icon icon="ph:pencil-simple" />
-                      <span>编辑</span>
-                    </button>
+                    <div v-if="!msg.content && chat.isStreaming && !msg.workflowData && !msg.workflowConfig && !msg.thinking_content" class="message-content thinking">
+                      <span class="pulse-dot"></span>
+                      <span class="pulse-dot"></span>
+                      <span class="pulse-dot"></span>
+                      <span class="thinking-text">思考中...</span>
+                    </div>
+                    <div v-else class="message-content" :class="{ 'streaming-active': chat.isStreaming && idx === chat.messages.length - 1 && msg.role === 'assistant' }">
+                      <ChatMessageContent
+                        :message-id="msg.id"
+                        :content="msg.content"
+                        :thinking-content="msg.thinking_content"
+                        :workflow-data="msg.workflowData"
+                        :workflow-config="msg.workflowConfig"
+                        :is-streaming="chat.isStreaming && idx === chat.messages.length - 1 && msg.role === 'assistant'"
+                        :enable-buffer="chat.enableTypewriterBuffer"
+                        :extracted-item-ids="extractedSegmentIdMap[msg.id] || []"
+                        @open-panel-item="handleOpenPanelItem"
+                      />
+                    </div>
+                    <div v-if="(msg.content || msg.thinking_content) && !chat.isStreaming" class="message-actions">
+                      <button class="msg-action-btn" title="复制回答" @click="copyText(msg.content || msg.thinking_content || '')" aria-label="复制回答">
+                        <Icon icon="ph:copy" />
+                        <span>复制</span>
+                      </button>
+                      <button v-if="idx === chat.messages.length - 1" class="msg-action-btn" title="重新生成" @click="handleRegenerate" aria-label="重新生成">
+                        <Icon icon="ph:arrows-counter-clockwise" />
+                        <span>重新生成</span>
+                      </button>
+                      <button v-if="msg.content && msg.content.startsWith('⚠️')" class="msg-action-btn" title="重试" @click="handleRetryMessage(msg.id)" aria-label="重试">
+                        <Icon icon="ph:arrow-clockwise" />
+                        <span>重试</span>
+                      </button>
                     </div>
                   </template>
-                </template>
-                <template v-else>
-                  <div v-if="!msg.content && chat.isStreaming && !msg.workflowData && !msg.workflowConfig && !msg.thinking_content" class="message-content thinking">
-                    <span class="pulse-dot"></span>
-                    <span class="pulse-dot"></span>
-                    <span class="pulse-dot"></span>
-                    <span class="thinking-text">思考中...</span>
-                  </div>
-                  <div v-else class="message-content" :class="{ 'streaming-active': chat.isStreaming && idx === chat.messages.length - 1 && msg.role === 'assistant' }">
-                    <ChatMessageContent
-                      :message-id="msg.id"
-                      :content="msg.content"
-                      :thinking-content="msg.thinking_content"
-                      :workflow-data="msg.workflowData"
-                      :workflow-config="msg.workflowConfig"
-                      :is-streaming="chat.isStreaming && idx === chat.messages.length - 1 && msg.role === 'assistant'"
-                      :enable-buffer="chat.enableTypewriterBuffer"
-                      :extracted-item-ids="extractedSegmentIdMap[msg.id] || []"
-                      @open-panel-item="handleOpenPanelItem"
-                    />
-                  </div>
-                  <div v-if="(msg.content || msg.thinking_content) && !chat.isStreaming" class="message-actions">
-                    <button class="msg-action-btn" title="复制回答" @click="copyText(msg.content || msg.thinking_content || '')" aria-label="复制回答">
-                      <Icon icon="ph:copy" />
-                      <span>复制</span>
-                    </button>
-                    <button v-if="idx === chat.messages.length - 1" class="msg-action-btn" title="重新生成" @click="handleRegenerate" aria-label="重新生成">
-                      <Icon icon="ph:arrows-counter-clockwise" />
-                      <span>重新生成</span>
-                    </button>
-                    <button v-if="msg.content && msg.content.startsWith('⚠️')" class="msg-action-btn" title="重试" @click="handleRetryMessage(msg.id)" aria-label="重试">
-                      <Icon icon="ph:arrow-clockwise" />
-                      <span>重试</span>
-                    </button>
-                  </div>
-                </template>
+                </div>
               </div>
-            </div>
-          </template>
-        </div>
+            </template>
+          </div>
 
-        <button
-          v-show="chat.messages.length > 0 && showScrollBottomBtn"
-          class="scroll-bottom-btn"
-          ref="scrollBtnRef"
-          title="回到底部"
-          @click="forceScrollToBottom"
-        >
-          <Icon icon="ph:arrow-down-bold" />
-          <span>回到底部</span>
-        </button>
+          <button
+            v-show="chat.messages.length > 0 && showScrollBottomBtn"
+            class="scroll-bottom-btn"
+            ref="scrollBtnRef"
+            title="回到底部"
+            @click="forceScrollToBottom"
+          >
+            <Icon icon="ph:arrow-down-bold" />
+            <span>回到底部</span>
+          </button>
+        </div>
 
         <!-- Input Area -->
         <div class="chat-input-area" ref="inputAreaRef">
@@ -702,17 +704,12 @@ function forceScrollToBottom() {
 
 let inputAreaObserver: ResizeObserver | null = null
 
-// 输入岛（工作流快捷栏 + 输入框）以 absolute 悬浮在消息流上方，
-// 高度随 textarea 自增高动态变化。用 ResizeObserver 实测其高度，
-// 同步写入 .messages 的底部留白与"回到底部"按钮位置，避免盖住最后一条对话。
+// 输入框已通过 Flex 纵向底栏与消息流解耦，天然不会遮挡最后一条消息。
+// 监听输入区域高度变化时，如果用户处于底部跟随状态，保持滚动锁定在最底端。
 function updateMessagesBottomPadding() {
-  const area = inputAreaRef.value
-  const msgs = messagesRef.value
-  if (!area || !msgs) return
-  const offset = parseFloat(getComputedStyle(area).bottom) || 0
-  const islandTop = area.offsetHeight + offset + 12
-  msgs.style.paddingBottom = `${islandTop}px`
-  if (scrollBtnRef.value) scrollBtnRef.value.style.bottom = `${area.offsetHeight + offset + 8}px`
+  if (autoStickToBottom.value && messagesRef.value) {
+    scrollToBottom()
+  }
 }
 
 function setupInputAreaObserver() {
@@ -1450,10 +1447,19 @@ onUnmounted(() => {
    Base 860px kept as fallback for browsers without container units;
    modern browsers use min(1060px, 100cqi) so the column widens when
    sidebars collapse and fills narrow pages without overflow. */
+.messages-container {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
 .messages {
   flex: 1;
   overflow-y: auto;
-  padding: 24px 20px 140px;
+  padding: 20px 20px 24px;
   display: flex;
   flex-direction: column;
   gap: 24px;
@@ -1659,17 +1665,14 @@ onUnmounted(() => {
   transform: translateY(-1px);
 }
 
-/* Input Area - Floating Island Capsule (fluid: same column as .messages) */
+/* Input Area - Natural Flex Bottom Dock */
 .chat-input-area {
-  position: absolute;
-  bottom: 18px;
-  left: 50%;
-  transform: translateX(-50%);
+  flex-shrink: 0;
   width: 100%;
   max-width: 860px;
   max-width: min(1060px, 100cqi);
-  padding: 0 20px;
-  pointer-events: none;
+  margin: 0 auto;
+  padding: 0 20px 16px;
   z-index: 10;
   box-sizing: border-box;
 }
@@ -1678,10 +1681,6 @@ onUnmounted(() => {
   .chat-input-area {
     max-width: min(1120px, 96cqi);
   }
-}
-
-.chat-input-area > * {
-  pointer-events: auto;
 }
 
 .chat-input-box {
@@ -1770,7 +1769,7 @@ onUnmounted(() => {
 
 .scroll-bottom-btn {
   position: absolute;
-  bottom: 125px;
+  bottom: 14px;
   left: 50%;
   transform: translateX(-50%);
   display: inline-flex;
@@ -1920,13 +1919,12 @@ onUnmounted(() => {
   .chat-sidebar:not(.is-collapsed) { transform: translateX(0); }
   .chat-main { width: 100% !important; }
   .chat-input-area {
-    bottom: 10px;
-    padding: 0 10px;
+    padding: 0 10px 10px;
     max-width: 100%;
     max-width: 100cqi;
   }
   .messages {
-    padding: 16px 12px 140px;
+    padding: 16px 12px 20px;
     max-width: 100%;
     max-width: 100cqi;
   }
