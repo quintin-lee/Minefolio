@@ -290,8 +290,12 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
                     : (ai_res.reasoning_content ? ai_res.reasoning_content : NULL);
             if (pool && ctx->session_id > 0 &&
                 ((final_text && final_text[0]) || (final_thinking && final_thinking[0]))) {
-                mf_ai_message_insert(
-                    pool, ctx->session_id, "assistant", final_text ? final_text : "", model, final_thinking);
+                mf_ai_message_insert(pool,
+                                     ctx->session_id,
+                                     "assistant",
+                                     final_text ? final_text : "",
+                                     model,
+                                     final_thinking);
             }
             ai_runtime_status_set(&status, AI_RUNTIME_ERR_OK, "OK", NULL);
             csilk_ai_chat_response_free(&ai_res);
@@ -429,9 +433,8 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
         ((bridge.accumulated && bridge.accumulated[0]) ||
          (bridge.thinking_accumulated && bridge.thinking_accumulated[0])) &&
         status.code != AI_RUNTIME_ERR_MODEL) {
-        const char* final_text = (bridge.accumulated && bridge.accumulated[0])
-                                     ? bridge.accumulated
-                                     : "[思考已中断]";
+        const char* final_text =
+            (bridge.accumulated && bridge.accumulated[0]) ? bridge.accumulated : "[思考已中断]";
         mf_ai_message_insert(
             pool, ctx->session_id, "assistant", final_text, model, bridge.thinking_accumulated);
         got_text = 1;

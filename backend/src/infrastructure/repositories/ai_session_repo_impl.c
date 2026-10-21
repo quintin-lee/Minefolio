@@ -211,12 +211,12 @@ mf_ai_message_insert(csilk_db_pool_t* pool,
     strncpy(m, model ? model : "", sizeof(m) - 1);
     m[sizeof(m) - 1] = '\0';
     const char*   tc = thinking_content ? thinking_content : "";
-    csilk_json_t* r =
-        csilk_db_query_param_json(pool,
-                                  "INSERT INTO ai_messages (session_id, role, "
-                                  "content, model, thinking_content) VALUES (?, ?, ?, ?, ?) RETURNING id",
-                                  (const char*[]){sid, role, content, m, tc, NULL});
-    int64_t       id = 0;
+    csilk_json_t* r = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO ai_messages (session_id, role, "
+        "content, model, thinking_content) VALUES (?, ?, ?, ?, ?) RETURNING id",
+        (const char*[]){sid, role, content, m, tc, NULL});
+    int64_t id = 0;
     if (r && csilk_json_array_size(r) > 0) {
         id = db_get_int(csilk_json_array_get(r, 0), "id");
     }
