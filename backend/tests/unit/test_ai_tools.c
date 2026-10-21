@@ -2,6 +2,7 @@
 #include "services/ai/tools/dispatcher.h"
 #include "services/ai/tools/validation.h"
 #include "services/ai/tools/context.h"
+#include "services/ai/tools/web_search_tool.h"
 #include "services/ai/policy/confirmation.h"
 #include "domain/ai/rules.h"
 #include "infrastructure/repositories/asset_repo_impl.h"
@@ -314,6 +315,71 @@ main(void)
 
         csilk_json_free(tf_obj);
         free(prop_tf);
+    }
+
+    /* 8. Web Search & Fetch Webpage Tools */
+    printf("[Test 8] Testing AI Web Search & Fetch Webpage Tools...\n");
+    {
+        /* Check registry finding */
+        const ai_tool_t* t_search = ai_tool_find("web_search");
+        assert(t_search != NULL);
+        assert(t_search->permission == AI_PERM_READ);
+        assert(t_search->risk == AI_RISK_LOW);
+        assert(!t_search->is_mutation);
+
+        const ai_tool_t* t_fetch = ai_tool_find("fetch_webpage");
+        assert(t_fetch != NULL);
+        assert(t_fetch->permission == AI_PERM_READ);
+        assert(t_fetch->risk == AI_RISK_LOW);
+        assert(!t_fetch->is_mutation);
+
+        /* Schema validation: missing required fields */
+        char* bad_search = ai_tool_dispatch(ctx, "web_search", "{}");
+        assert(bad_search != NULL);
+        assert(strstr(bad_search, "Missing required field") != NULL || strstr(bad_search, "query") != NULL);
+        free(bad_search);
+
+        char* bad_fetch = ai_tool_dispatch(ctx, "fetch_webpage", "{}");
+        assert(bad_fetch != NULL);
+        assert(strstr(bad_fetch, "Missing required field") != NULL || strstr(bad_fetch, "url") != NULL);
+        free(bad_fetch);
+
+        /* SSRF rejection on fetch_webpage */
+        char* ssrf_local = ai_tool_dispatch(ctx, "fetch_webpage", "{\"url\":\"http://127.0.0.1:8080/api/users\"}");
+        assert(ssrf_local != NULL);
+        assert(strstr(ssrf_local, "forbidden_url") != NULL);
+        free(ssrf_local);
+
+        char* ssrf_private = ai_tool_dispatch(ctx, "fetch_webpage", "{\"url\":\"http://192.168.1.1/admin\"}");
+        assert(ssrf_private != NULL);
+        assert(strstr(ssrf_private, "forbidden_url") != NULL);
+        free(ssrf_private);
+
+        /* 4. Mock SERP Parser & Bing base64 URL unpacker */
+        char* unpacked_direct = mf_bing_unpack_url("https://example.com/direct");
+        assert(strcmp(unpacked_direct, "https://example.com/direct") == 0);
+        free(unpacked_direct);
+
+        char* unpacked_tracking = mf_bing_unpack_url("https://www.bing.com/ck/a?!&&p=abc&u=a1aHR0cHM6Ly9ibG9ncy5udmlkaWEuY24vYmxvZy90ZXN0&ntb=1");
+        assert(strcmp(unpacked_tracking, "https://blogs.nvidia.cn/blog/test") == 0);
+        free(unpacked_tracking);
+
+        const char* mock_bing_html =
+            "<ol id=\"b_results\">"
+            "<li class=\"b_algo\">"
+            "  <h2><a href=\"https://example.com/page1\"><strong>Title</strong> &amp; News</a></h2>"
+            "  <div class=\"b_caption\"><p class=\"b_lineclamp2\">Snippet &quot;preview&quot; here.</p></div>"
+            "</li>"
+            "</ol>";
+        csilk_json_t* parsed_results = mf_bing_html_parse(mock_bing_html, 5);
+        assert(parsed_results != NULL);
+        assert(csilk_json_array_size(parsed_results) == 1);
+        const csilk_json_t* first_res = csilk_json_array_get(parsed_results, 0);
+        assert(strcmp(csilk_json_get_string(first_res, "title"), "Title & News") == 0);
+        assert(strcmp(csilk_json_get_string(first_res, "url"), "https://example.com/page1") == 0);
+        assert(strcmp(csilk_json_get_string(first_res, "snippet"), "Snippet \"preview\" here.") == 0);
+        csilk_json_free(parsed_results);
+        printf("[Test 8] PASS: Web search & deep reading tools verified\n");
     }
 
     ai_tool_context_free(ctx);
