@@ -426,7 +426,7 @@ mf_mcp_server_tool_repo_load_for_user(void*                  db_pool,
         "SELECT t.id, t.server_id, t.user_id, t.tool_name, t.qualified_name, t.description, "
         "t.input_schema, t.is_mutation, t.risk_level, t.fetched_at "
         "FROM mcp_server_tool t JOIN mcp_server s ON t.server_id = s.id "
-        "WHERE t.user_id=? AND s.enabled=1 ORDER BY t.qualified_name",
+        "WHERE t.user_id=? AND s.enabled = TRUE ORDER BY t.qualified_name",
         (const char*[]){uid_str, NULL});
 
     if (!rows) {

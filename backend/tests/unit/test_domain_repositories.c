@@ -15,6 +15,7 @@
 #include "domain/transfer/repository.h"
 #include "domain/market/repository.h"
 #include "domain/ai/repository.h"
+#include "domain/mcp/repository.h"
 #include "application/transaction/commands.h"
 #include "application/transaction/usecases.h"
 #include "application/transfer/usecases.h"
@@ -1305,6 +1306,68 @@ test_report_expense_percentage_closure(void)
     printf("  ✅ Report Expense Percentage Closure passed\n");
 }
 
+static void
+test_mcp_server_repository(csilk_db_pool_t* pool, int64_t user_id)
+{
+    printf("--- 15. Testing MCP Server & Tool Repository ---\n");
+
+    mf_mcp_server_t srv = {0};
+    srv.user_id = user_id;
+    strncpy(srv.name, "github_mcp", sizeof(srv.name) - 1);
+    srv.transport = MCP_TRANSPORT_HTTP;
+    strncpy(srv.url, "https://api.github.com/mcp", sizeof(srv.url) - 1);
+    srv.enabled = true;
+    srv.timeout_ms = 30000;
+
+    int64_t srv_id = 0;
+    int rc = mf_mcp_server_repo_create(pool, user_id, &srv, &srv_id);
+    assert(rc == 0 && srv_id > 0);
+
+    /* Upsert tool cache */
+    mf_mcp_server_tool_t tool = {0};
+    tool.server_id = srv_id;
+    tool.user_id = user_id;
+    strncpy(tool.tool_name, "create_issue", sizeof(tool.tool_name) - 1);
+    strncpy(tool.qualified_name, "github_mcp__create_issue", sizeof(tool.qualified_name) - 1);
+    strncpy(tool.description, "Create GitHub issue", sizeof(tool.description) - 1);
+    strncpy(tool.input_schema, "{\"type\":\"object\"}", sizeof(tool.input_schema) - 1);
+    tool.is_mutation = true;
+    strncpy(tool.risk_level, "high", sizeof(tool.risk_level) - 1);
+    strncpy(tool.fetched_at, "2026-10-21 15:00:00", sizeof(tool.fetched_at) - 1);
+
+    rc = mf_mcp_server_tool_repo_upsert(pool, user_id, srv_id, &tool, 1);
+    assert(rc == 0);
+
+    /* Query tools for enabled server (validates s.enabled = TRUE on SQLite & Postgres) */
+    mf_mcp_server_tool_t* tools = NULL;
+    size_t tool_count = 0;
+    rc = mf_mcp_server_tool_repo_load_for_user(pool, user_id, &tools, &tool_count);
+    assert(rc == 0);
+    assert(tool_count == 1);
+    assert(tools != NULL);
+    assert(strcmp(tools[0].qualified_name, "github_mcp__create_issue") == 0);
+    assert(tools[0].is_mutation == true);
+    mf_mcp_server_tool_repo_free_list(tools, tool_count);
+
+    /* Disable server and ensure tool is no longer returned */
+    srv.enabled = false;
+    rc = mf_mcp_server_repo_update(pool, user_id, srv_id, &srv);
+    assert(rc == 0);
+
+    tools = NULL;
+    tool_count = 0;
+    rc = mf_mcp_server_tool_repo_load_for_user(pool, user_id, &tools, &tool_count);
+    assert(rc == 0);
+    assert(tool_count == 0);
+    assert(tools == NULL);
+
+    /* Clean up */
+    rc = mf_mcp_server_repo_delete(pool, user_id, srv_id);
+    assert(rc == 0);
+
+    printf("  ✅ MCP Server & Tool Repository passed\n");
+}
+
 int
 main(void)
 {
@@ -1329,6 +1392,7 @@ main(void)
     test_cashflow_repository(pool, user_id);
     test_market_repository(pool, user_id);
     test_ai_repository(pool, user_id, asset_id);
+    test_mcp_server_repository(pool, user_id);
     test_multi_currency_balance_and_transfers(pool, user_id);
     test_daily_expense_multi_currency_totals(pool, user_id, asset_id);
     test_report_expense_percentage_closure();
