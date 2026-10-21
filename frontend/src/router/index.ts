@@ -39,7 +39,7 @@ const router = createRouter({
         { path: 'market', name: 'Market', component: () => import('@/views/Market.vue') },
         { path: 'audit-logs', name: 'AuditLogs', component: () => import('@/views/AuditLogs.vue') },
         { path: 'settings', name: 'Settings', component: () => import('@/views/Settings.vue') },
-        { path: 'chat', name: 'Chat', component: () => import('@/views/Chat.vue') },
+        { path: 'chat', name: 'Chat', component: () => import('@/views/Chat.vue'), meta: { fullBleed: true } },
         { path: 'ai-traces', name: 'AiTraces', component: () => import('@/views/AiTraces.vue') },
       ],
     },

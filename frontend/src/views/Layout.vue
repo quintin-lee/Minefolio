@@ -119,7 +119,7 @@
         </div>
       </el-header>
 
-      <el-main class="main">
+      <el-main class="main" :class="{ 'is-full-bleed': route.meta.fullBleed }">
         <router-view v-slot="{ Component, route }">
           <transition name="fade-transform" mode="out-in">
             <component :is="Component" :key="`${route.fullPath}-${routerViewKey}`" />
@@ -521,6 +521,10 @@ function handleCommand(cmd: string) {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
+}
+.main.is-full-bleed {
+  padding: 0;
+  overflow: hidden;
 }
 .fade-transform-enter-active,
 .fade-transform-leave-active {
