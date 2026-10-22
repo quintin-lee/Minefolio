@@ -280,14 +280,57 @@ const THEME_CUSTOM_CSS = `
     fill: #00d4ff !important;
     font-weight: 700 !important;
     font-size: 16px !important;
-  }
-  .legend text {
-    font-family: ${CJK_FONT_FAMILY} !important;
-    fill: #cbd5e1 !important;
-    font-size: 12px !important;
-  }
-`
-
+ +  .legend text {
+ +    font-family: ${CJK_FONT_FAMILY} !important;
+ +    fill: #cbd5e1 !important;
+ +    font-size: 12px !important;
+ +  }
+ +
+ +  /* ── 强化图表文字可读性（全局） ── */
+ +  .mermaid svg text,
+ +  .mermaid .label text,
+ +  .mermaid .nodeLabel,
+ +  .mermaid .edgeLabel,
+ +  .mermaid .cluster-label text,
+ +  .mermaid .cluster-label .nodeLabel,
+ +  .mermaid .pieTitleText,
+ +  .mermaid .pieOuterTitleText,
+ +  .mermaid .slice text,
+ +  .mermaid .legend text,
+ +  .mermaid .axisLabel text,
+ +  .mermaid .tick text,
+ +  .mermaid .titleText,
+ +  .mermaid .flowchart-label text {
+ +    fill: var(--mf-text-main) !important;
+ +    color: var(--mf-text-main) !important;
+ +    font-family: ${CJK_FONT_FAMILY} !important;
+ +    font-weight: 500 !important;
+ +    font-size: 12.5px !important;
+ +    paint-order: stroke fill !important;
+ +    stroke: var(--mf-surface) !important;
+ +    stroke-width: 3px !important;
+ +    stroke-linejoin: round !important;
+ +    stroke-linecap: round !important;
+ +  }
+ +
+ +  .mermaid .pieCircle + .slice text,
+ +  .mermaid .pieSection + text {
+ +    stroke: var(--mf-surface) !important;
+ +    stroke-width: 3.5px !important;
+ +  }
+ +
+ +  .mermaid .edgeLabel .label rect {
+ +    fill: color-mix(in srgb, var(--mf-surface) 92%, transparent) !important;
+ +    stroke: var(--mf-border) !important;
+ +    rx: 6px;
+ +    ry: 6px;
+ +  }
+ +  .mermaid .edgeLabel .label text {
+ +    fill: var(--mf-text-main) !important;
+ +    stroke: none !important;
+ +  }
+ +`;
+ +
 /**
  * 异步初始化并获取 Mermaid API 单例实例
  * @description 配置全局深色科技主题变量、CJK 中文字体栈、防止错误直接输出到 DOM 的安全配置以及解析错误静默拦截

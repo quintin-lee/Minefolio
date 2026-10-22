@@ -618,14 +618,14 @@ onUnmounted(() => {
   display: flex;
   justify-content: center;
   align-items: center;
-  padding: 24px 20px;
-  overflow-x: auto;
-  cursor: zoom-in;
-  background-color: var(--mf-surface-card);
-  background-image: radial-gradient(var(--mf-primary-light) 1.2px, transparent 1.2px);
-  background-size: 16px 16px;
-}
-
+ +  padding: 28px 24px;
+ +  overflow-x: auto;
+ +  cursor: zoom-in;
+ +  background-color: var(--mf-surface);
+ +  background-image: radial-gradient(circle at 1px 1px, var(--mf-border) 1.2px, transparent 0);
+ +  background-size: 18px 18px;
+ +  border-radius: calc(var(--mf-radius-lg, 12px) - 2px);
+ +}
 .svg-container {
   display: flex;
   justify-content: center;
