@@ -243,10 +243,14 @@ function handleCommand(cmd: string) {
 
 <style scoped>
 .layout-container {
+  height: 100vh;
+  overflow: hidden;
 }
 .aside {
   background: linear-gradient(180deg, var(--mf-background) 0%, color-mix(in srgb, var(--mf-background) 70%, var(--mf-primary)) 100%);
-  min-height: 100vh;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
   box-shadow: var(--mf-shadow-md);
   z-index: 10;
   display: flex;
@@ -366,6 +370,9 @@ function handleCommand(cmd: string) {
 .main-container {
   display: flex;
   flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 .header {
   background: var(--mf-surface);
@@ -517,7 +524,8 @@ function handleCommand(cmd: string) {
   padding: 24px 28px;
   padding-bottom: 0;
   background-color: var(--mf-background);
-  height: calc(100vh - 64px);
+  flex: 1 1 0%;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;

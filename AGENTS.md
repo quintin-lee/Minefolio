@@ -277,7 +277,7 @@ When updating an investment asset's `net_value` via `PUT /api/assets/:id`, decla
 ### Frontend — Page Layout
 
 - `.page-header` uses `justify-content: space-between`; action buttons wrapped in `<div class="header-actions">` with `gap: 8px`
-- `.main` in `Layout.vue` is the default single scroll container (`height: calc(100vh - 72px); overflow-y: auto`)
+- `Layout.vue` locks `.layout-container` to `height: 100vh; overflow: hidden`; `.main` (`flex: 1 1 0%; min-height: 0; overflow-y: auto`) is the default single scroll container, and `.aside` scrolls its menu internally
 - Page containers use `height: 100%; overflow: hidden` so only data areas scroll
 - **Full-Bleed Route Mode**: For immersive, full-bleed workspaces (e.g. `/chat`), configure `meta: { fullBleed: true }` in `router/index.ts`. `Layout.vue` conditionally attaches `.is-full-bleed` to `<el-main>`, eliminating outer padding (`padding: 0`) and outer scrollbars (`overflow: hidden`).
 - **Chat Flex Input Docking & Messages Container**: Never use `position: absolute; bottom: ...` for `.chat-input-area` to avoid masking trailing messages. Place it directly in normal Flex vertical document flow (`flex-shrink: 0`). Wrap `.messages` inside a dedicated `.messages-container` (`flex: 1; min-height: 0; position: relative`), with `.scroll-bottom-btn` inside `.messages-container` anchored at `bottom: 14px`.
