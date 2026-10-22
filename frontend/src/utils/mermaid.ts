@@ -6,9 +6,11 @@
 
 // frontend/src/utils/mermaid.ts
 import DOMPurify from 'dompurify'
+import mermaid from 'mermaid'
 
 /** Mermaid 实例 API 类型 */
-export type MermaidApi = typeof import('mermaid')['default']
+export type MermaidApi = typeof mermaid
+
 let mermaidInstance: MermaidApi | null = null
 let initPromise: Promise<MermaidApi | null> | null = null
 
@@ -46,122 +48,313 @@ export interface RenderOptions {
 const CJK_FONT_FAMILY =
   "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'WenQuanYi Micro Hei', 'Noto Sans CJK SC', 'Source Han Sans CN', sans-serif"
 
+export type MermaidThemeName = 'dark' | 'light'
+
+/** Theme-agnostic brand palette shared by dark & light modes. */
+const BRAND_PIE_COLORS = {
+  pie1: '#3b82f6',
+  pie2: '#8b5cf6',
+  pie3: '#10b981',
+  pie4: '#f59e0b',
+  pie5: '#ec4899',
+  pie6: '#06b6d4',
+  pie7: '#6366f1',
+  pie8: '#f97316',
+  pie9: '#14b8a6',
+  pie10: '#a855f7',
+  pie11: '#ef4444',
+  pie12: '#84cc16',
+}
+
 /**
- * Cyber/Dark Tech theme variables matching Minefolio's design system.
+ * Dark "cyber tech" theme variables. Text colors use the highest-contrast
+ * slate tones so labels stay readable over dark node fills.
  */
-const MINELOFIO_THEME_VARIABLES = {
+const DARK_THEME_VARIABLES = {
   darkMode: true,
   background: 'transparent',
   mainBkg: '#0b172a',
-  nodeBorder: '#00d4ff',
-  textColor: '#f1f5f9',
+  nodeBorder: '#38bdf8',
+  textColor: '#f8fafc',
   lineColor: '#38bdf8',
   fontSize: '13px',
   fontFamily: CJK_FONT_FAMILY,
 
   // Flowchart
-  nodeTextColor: '#f1f5f9',
+  nodeTextColor: '#f8fafc',
   primaryColor: '#0d2238',
-  primaryTextColor: '#f1f5f9',
-  primaryBorderColor: '#00d4ff',
+  primaryTextColor: '#f8fafc',
+  primaryBorderColor: '#38bdf8',
   edgeLabelBackground: '#0b1329',
   clusterBkg: 'rgba(12, 20, 38, 0.75)',
-  clusterBorder: 'rgba(0, 212, 255, 0.4)',
+  clusterBorder: 'rgba(56, 189, 248, 0.4)',
   defaultLinkColor: '#38bdf8',
-  titleColor: '#00d4ff',
+  titleColor: '#38bdf8',
 
   // Sequence
   actorBkg: '#0d2238',
-  actorBorder: '#00d4ff',
-  actorTextColor: '#f1f5f9',
+  actorBorder: '#38bdf8',
+  actorTextColor: '#f8fafc',
   actorLineColor: '#38bdf8',
   signalColor: '#38bdf8',
-  signalTextColor: '#f1f5f9',
+  signalTextColor: '#f8fafc',
   labelBoxBkgColor: '#0d2238',
-  labelBoxBorderColor: '#00d4ff',
-  labelTextColor: '#f1f5f9',
-  loopTextColor: '#f1f5f9',
+  labelBoxBorderColor: '#38bdf8',
+  labelTextColor: '#f8fafc',
+  loopTextColor: '#f8fafc',
   noteBorderColor: '#8b5cf6',
   noteBkgColor: 'rgba(124, 58, 237, 0.2)',
   noteTextColor: '#e2e8f0',
-  activationBorderColor: '#00d4ff',
-  activationBkgColor: 'rgba(0, 212, 255, 0.25)',
+  activationBorderColor: '#38bdf8',
+  activationBkgColor: 'rgba(56, 189, 248, 0.25)',
 
   // Pie
-  pie1: '#00d4ff',
-  pie2: '#7c3aed',
-  pie3: '#10b981',
-  pie4: '#f59e0b',
-  pie5: '#ec4899',
-  pie6: '#06b6d4',
-  pie7: '#8b5cf6',
-  pie8: '#3b82f6',
-  pie9: '#14b8a6',
-  pie10: '#f97316',
-  pie11: '#6366f1',
-  pie12: '#84cc16',
+  ...BRAND_PIE_COLORS,
   pieTitleTextSize: '16px',
-  pieTitleTextColor: '#00d4ff',
+  pieTitleTextColor: '#38bdf8',
   pieSectionTextColor: '#ffffff',
-  pieLegendTextColor: '#e2e8f0',
+  pieLegendTextColor: '#f8fafc',
   pieStrokeColor: '#0b172a',
   pieStrokeWidth: '2px',
 
   // State / Class
-  classText: '#f1f5f9',
+  classText: '#f8fafc',
   stateBkg: '#0d2238',
-  stateLabelColor: '#f1f5f9',
+  stateLabelColor: '#f8fafc',
   altBackground: 'rgba(15, 23, 42, 0.85)',
 
   // Mindmap
-  mindmapTextColor: '#f1f5f9',
+  mindmapTextColor: '#f8fafc',
 
   // Git
-  git0: '#00d4ff',
-  git1: '#7c3aed',
+  git0: '#38bdf8',
+  git1: '#8b5cf6',
   git2: '#10b981',
   git3: '#f59e0b',
-  gitBranchLabel0: '#00d4ff',
-  gitBranchLabel1: '#7c3aed',
+  gitBranchLabel0: '#38bdf8',
+  gitBranchLabel1: '#8b5cf6',
   gitBranchLabel2: '#10b981',
   gitBranchLabel3: '#f59e0b',
 
   // Quadrant
-  quadrant1Fill: 'rgba(0, 212, 255, 0.12)',
-  quadrant2Fill: 'rgba(124, 58, 237, 0.12)',
+  quadrant1Fill: 'rgba(56, 189, 248, 0.12)',
+  quadrant2Fill: 'rgba(139, 92, 246, 0.12)',
   quadrant3Fill: 'rgba(245, 158, 11, 0.12)',
   quadrant4Fill: 'rgba(16, 185, 129, 0.12)',
-  quadrant1TextFill: '#00d4ff',
+  quadrant1TextFill: '#38bdf8',
   quadrant2TextFill: '#a78bfa',
   quadrant3TextFill: '#fbbf24',
   quadrant4TextFill: '#34d399',
-  quadrantPointFill: '#00d4ff',
-  quadrantPointTextFill: '#f1f5f9',
+  quadrantPointFill: '#38bdf8',
+  quadrantPointTextFill: '#f8fafc',
   quadrantXAxisTextFill: '#94a3b8',
   quadrantYAxisTextFill: '#94a3b8',
 }
 
-const THEME_CUSTOM_CSS = `
+/**
+ * Light theme variables. Dark slate text on white/soft surfaces.
+ */
+const LIGHT_THEME_VARIABLES = {
+  darkMode: false,
+  background: 'transparent',
+  mainBkg: '#ffffff',
+  nodeBorder: '#2563eb',
+  textColor: '#0f172a',
+  lineColor: '#2563eb',
+  fontSize: '13px',
+  fontFamily: CJK_FONT_FAMILY,
+
+  // Flowchart
+  nodeTextColor: '#0f172a',
+  primaryColor: '#eff6ff',
+  primaryTextColor: '#0f172a',
+  primaryBorderColor: '#2563eb',
+  edgeLabelBackground: '#ffffff',
+  clusterBkg: 'rgba(241, 245, 249, 0.9)',
+  clusterBorder: 'rgba(37, 99, 235, 0.35)',
+  defaultLinkColor: '#2563eb',
+  titleColor: '#1d4ed8',
+
+  // Sequence
+  actorBkg: '#eff6ff',
+  actorBorder: '#2563eb',
+  actorTextColor: '#0f172a',
+  actorLineColor: '#2563eb',
+  signalColor: '#2563eb',
+  signalTextColor: '#0f172a',
+  labelBoxBkgColor: '#eff6ff',
+  labelBoxBorderColor: '#2563eb',
+  labelTextColor: '#0f172a',
+  loopTextColor: '#0f172a',
+  noteBorderColor: '#7c3aed',
+  noteBkgColor: 'rgba(124, 58, 237, 0.08)',
+  noteTextColor: '#1e1b4b',
+  activationBorderColor: '#2563eb',
+  activationBkgColor: 'rgba(37, 99, 235, 0.12)',
+
+  // Pie
+  ...BRAND_PIE_COLORS,
+  pieTitleTextSize: '16px',
+  pieTitleTextColor: '#1d4ed8',
+  pieSectionTextColor: '#ffffff',
+  pieLegendTextColor: '#0f172a',
+  pieStrokeColor: '#ffffff',
+  pieStrokeWidth: '2px',
+
+  // State / Class
+  classText: '#0f172a',
+  stateBkg: '#eff6ff',
+  stateLabelColor: '#0f172a',
+  altBackground: 'rgba(241, 245, 249, 0.9)',
+
+  // Mindmap
+  mindmapTextColor: '#0f172a',
+
+  // Git
+  git0: '#2563eb',
+  git1: '#7c3aed',
+  git2: '#059669',
+  git3: '#d97706',
+  gitBranchLabel0: '#2563eb',
+  gitBranchLabel1: '#7c3aed',
+  gitBranchLabel2: '#059669',
+  gitBranchLabel3: '#d97706',
+
+  // Quadrant
+  quadrant1Fill: 'rgba(37, 99, 235, 0.08)',
+  quadrant2Fill: 'rgba(124, 58, 237, 0.08)',
+  quadrant3Fill: 'rgba(217, 119, 6, 0.08)',
+  quadrant4Fill: 'rgba(5, 150, 105, 0.08)',
+  quadrant1TextFill: '#1d4ed8',
+  quadrant2TextFill: '#6d28d9',
+  quadrant3TextFill: '#b45309',
+  quadrant4TextFill: '#047857',
+  quadrantPointFill: '#2563eb',
+  quadrantPointTextFill: '#0f172a',
+  quadrantXAxisTextFill: '#64748b',
+  quadrantYAxisTextFill: '#64748b',
+}
+
+const THEME_VARIABLES: Record<MermaidThemeName, typeof DARK_THEME_VARIABLES> = {
+  dark: DARK_THEME_VARIABLES,
+  light: LIGHT_THEME_VARIABLES,
+}
+
+/**
+ * Resolve Mermaid theme variables for the given theme name.
+ * @param theme 'dark' | 'light' (unknown values fall back to dark)
+ */
+export function getMermaidThemeVariables(theme: MermaidThemeName): typeof DARK_THEME_VARIABLES {
+  return THEME_VARIABLES[theme] ?? DARK_THEME_VARIABLES
+}
+
+interface ThemeCssTokens {
+  text: string
+  textSoft: string
+  nodeFill: string
+  nodeStroke: string
+  nodeStrokeHover: string
+  edge: string
+  edgeGlow: string
+  clusterFill: string
+  clusterStroke: string
+  clusterText: string
+  edgeLabelFill: string
+  edgeLabelStroke: string
+  edgeLabelText: string
+  labelOutline: string
+  messageText: string
+  noteFill: string
+  noteStroke: string
+  noteText: string
+  titleText: string
+  legendText: string
+  surfaceShadow: string
+}
+
+const DARK_CSS_TOKENS: ThemeCssTokens = {
+  text: '#f8fafc',
+  textSoft: '#e2e8f0',
+  nodeFill: '#0c1a2e',
+  nodeStroke: '#38bdf8',
+  nodeStrokeHover: '#7dd3fc',
+  edge: '#38bdf8',
+  edgeGlow: 'rgba(56, 189, 248, 0.6)',
+  clusterFill: 'rgba(10, 18, 36, 0.65)',
+  clusterStroke: 'rgba(56, 189, 248, 0.35)',
+  clusterText: '#38bdf8',
+  edgeLabelFill: 'rgba(11, 19, 41, 0.95)',
+  edgeLabelStroke: 'rgba(56, 189, 248, 0.3)',
+  edgeLabelText: '#bae6fd',
+  labelOutline: 'rgba(8, 12, 20, 0.85)',
+  messageText: '#e2e8f0',
+  noteFill: 'rgba(124, 58, 237, 0.2)',
+  noteStroke: '#8b5cf6',
+  noteText: '#ddd6fe',
+  titleText: '#38bdf8',
+  legendText: '#cbd5e1',
+  surfaceShadow: 'rgba(0, 0, 0, 0.4)',
+}
+
+const LIGHT_CSS_TOKENS: ThemeCssTokens = {
+  text: '#0f172a',
+  textSoft: '#1e293b',
+  nodeFill: '#ffffff',
+  nodeStroke: '#2563eb',
+  nodeStrokeHover: '#1d4ed8',
+  edge: '#2563eb',
+  edgeGlow: 'rgba(37, 99, 235, 0.45)',
+  clusterFill: 'rgba(241, 245, 249, 0.92)',
+  clusterStroke: 'rgba(37, 99, 235, 0.3)',
+  clusterText: '#1d4ed8',
+  edgeLabelFill: 'rgba(255, 255, 255, 0.96)',
+  edgeLabelStroke: 'rgba(37, 99, 235, 0.28)',
+  edgeLabelText: '#1e3a8a',
+  labelOutline: 'rgba(255, 255, 255, 0.92)',
+  messageText: '#0f172a',
+  noteFill: 'rgba(124, 58, 237, 0.08)',
+  noteStroke: '#7c3aed',
+  noteText: '#1e1b4b',
+  titleText: '#1d4ed8',
+  legendText: '#334155',
+  surfaceShadow: 'rgba(15, 23, 42, 0.08)',
+}
+
+const CSS_TOKENS: Record<MermaidThemeName, ThemeCssTokens> = {
+  dark: DARK_CSS_TOKENS,
+  light: LIGHT_CSS_TOKENS,
+}
+
+/**
+ * Build Mermaid `themeCSS` for the given theme.
+ *
+ * Selectors deliberately carry NO `.mermaid` ancestor prefix: themeCSS is
+ * injected into a `<style>` tag *inside* the rendered SVG, where no
+ * `.mermaid` wrapper exists. Concrete colors (not `var(--mf-*)`) are used so
+ * exported SVG/PNG files keep their contrast outside the app DOM.
+ */
+export function getMermaidThemeCss(theme: MermaidThemeName): string {
+  const t = CSS_TOKENS[theme] ?? DARK_CSS_TOKENS
+  return `
   /* ── High-Tech Node Cards & Shapes ── */
   .node rect, .node circle, .node ellipse, .node polygon, .node path {
-    fill: #0c1a2e !important;
-    stroke: #00d4ff !important;
+    fill: ${t.nodeFill} !important;
+    stroke: ${t.nodeStroke} !important;
     stroke-width: 1.5px !important;
     rx: 8px !important;
     ry: 8px !important;
-    filter: drop-shadow(0 2px 8px rgba(0, 212, 255, 0.12));
     transition: stroke 0.2s ease, filter 0.2s ease;
   }
   .node:hover rect, .node:hover circle, .node:hover ellipse, .node:hover polygon {
-    stroke: #38bdf8 !important;
+    stroke: ${t.nodeStrokeHover} !important;
     stroke-width: 2px !important;
-    filter: drop-shadow(0 0 10px rgba(0, 212, 255, 0.35));
+    filter: drop-shadow(0 0 10px ${t.edgeGlow});
   }
 
   /* ── Subgraphs & Clusters (Group Containers) ── */
   .cluster rect {
-    fill: rgba(10, 18, 36, 0.65) !important;
-    stroke: rgba(0, 212, 255, 0.35) !important;
+    fill: ${t.clusterFill} !important;
+    stroke: ${t.clusterStroke} !important;
     stroke-width: 1.5px !important;
     stroke-dasharray: 6 4 !important;
     rx: 12px !important;
@@ -169,103 +362,110 @@ const THEME_CUSTOM_CSS = `
   }
   .cluster-label text, .cluster text, .cluster-label span, .cluster span, .cluster .nodeLabel {
     font-family: ${CJK_FONT_FAMILY} !important;
-    fill: #00d4ff !important;
-    color: #00d4ff !important;
+    fill: ${t.clusterText} !important;
+    color: ${t.clusterText} !important;
     font-weight: 700 !important;
     font-size: 13px !important;
     letter-spacing: 0.5px !important;
   }
 
-  /* ── Flowchart Edges & Connector Lines (Straight Lines with Rounded Joints) ── */
+  /* ── Flowchart Edges & Connector Lines ── */
   .edgePath .path, .edge-thickness-normal, .flowchart-link {
-    stroke: #38bdf8 !important;
+    stroke: ${t.edge} !important;
     stroke-width: 1.8px !important;
     stroke-linecap: round !important;
     stroke-linejoin: round !important;
     opacity: 0.92;
   }
   .edgePath:hover .path {
-    stroke: #00d4ff !important;
+    stroke: ${t.nodeStrokeHover} !important;
     stroke-width: 2.2px !important;
-    filter: drop-shadow(0 0 6px rgba(0, 212, 255, 0.6));
+    filter: drop-shadow(0 0 6px ${t.edgeGlow});
   }
   .marker, marker path, #flowchart-pointEnd, #statediagram-barbEnd, [id^="flowchart-"] {
-    fill: #38bdf8 !important;
-    stroke: #38bdf8 !important;
+    fill: ${t.edge} !important;
+    stroke: ${t.edge} !important;
   }
 
   /* ── Edge Labels & Pills ── */
   .edgeLabel {
-    background-color: rgba(11, 19, 41, 0.95) !important;
-    border: 1px solid rgba(0, 212, 255, 0.3) !important;
+    background-color: ${t.edgeLabelFill} !important;
+    border: 1px solid ${t.edgeLabelStroke} !important;
     border-radius: 4px !important;
     padding: 2px 6px !important;
-    color: #bae6fd !important;
+    color: ${t.edgeLabelText} !important;
     font-size: 11px !important;
-    font-weight: 500 !important;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+    font-weight: 600 !important;
+    box-shadow: 0 2px 6px ${t.surfaceShadow};
   }
   .edgeLabel rect {
-    fill: rgba(11, 19, 41, 0.95) !important;
-    stroke: rgba(0, 212, 255, 0.3) !important;
+    fill: ${t.edgeLabelFill} !important;
+    stroke: ${t.edgeLabelStroke} !important;
     rx: 4px !important;
     ry: 4px !important;
   }
   .edgeLabel span, .edgeLabel p {
     font-family: ${CJK_FONT_FAMILY} !important;
-    color: #bae6fd !important;
-    fill: #bae6fd !important;
+    color: ${t.edgeLabelText} !important;
+    fill: ${t.edgeLabelText} !important;
+    font-weight: 600 !important;
+  }
+  .edgeLabel .label div, .edgeLabel .label span {
+    color: ${t.edgeLabelText} !important;
   }
 
   /* ── Node Labels & Text Typography ── */
   .node text, .node span, .nodeLabel, .label, .label text, text.actor, .actor > tspan, .labelText, .node .label {
     font-family: ${CJK_FONT_FAMILY} !important;
-    fill: #f1f5f9 !important;
-    color: #f1f5f9 !important;
+    fill: ${t.text} !important;
+    color: ${t.text} !important;
     font-size: 12.5px !important;
-    font-weight: 500 !important;
+    font-weight: 600 !important;
   }
   foreignObject, foreignObject div, foreignObject span, foreignObject p {
     font-family: ${CJK_FONT_FAMILY} !important;
-    color: #f1f5f9 !important;
+    color: ${t.text} !important;
     text-align: center;
     word-break: break-word;
     line-height: 1.4 !important;
+    font-weight: 600 !important;
   }
 
   /* ── Sequence Diagrams ── */
   .actor {
-    fill: #0c1a2e !important;
-    stroke: #00d4ff !important;
+    fill: ${t.nodeFill} !important;
+    stroke: ${t.nodeStroke} !important;
     stroke-width: 1.5px !important;
     rx: 8px !important;
     ry: 8px !important;
   }
   .actor-line {
-    stroke: rgba(56, 189, 248, 0.4) !important;
+    stroke: ${t.clusterStroke} !important;
     stroke-dasharray: 4 4 !important;
     stroke-width: 1.5px !important;
   }
   .messageLine0, .messageLine1 {
-    stroke: #38bdf8 !important;
+    stroke: ${t.edge} !important;
     stroke-width: 1.8px !important;
     stroke-linecap: round !important;
     stroke-linejoin: round !important;
   }
   .messageText {
-    fill: #e2e8f0 !important;
+    fill: ${t.messageText} !important;
     font-size: 12px !important;
+    font-weight: 600 !important;
   }
   .note {
-    fill: rgba(124, 58, 237, 0.2) !important;
-    stroke: #8b5cf6 !important;
+    fill: ${t.noteFill} !important;
+    stroke: ${t.noteStroke} !important;
     stroke-width: 1.2px !important;
     rx: 6px !important;
     ry: 6px !important;
   }
   .noteText {
-    fill: #ddd6fe !important;
+    fill: ${t.noteText} !important;
     font-size: 11.5px !important;
+    font-weight: 600 !important;
   }
 
   /* ── Mindmap ── */
@@ -277,59 +477,51 @@ const THEME_CUSTOM_CSS = `
   /* ── Pie & Titles ── */
   .pieTitleText {
     font-family: ${CJK_FONT_FAMILY} !important;
-    fill: #00d4ff !important;
+    fill: ${t.titleText} !important;
     font-weight: 700 !important;
     font-size: 16px !important;
+  }
   .legend text {
     font-family: ${CJK_FONT_FAMILY} !important;
-    fill: #cbd5e1 !important;
+    fill: ${t.legendText} !important;
     font-size: 12px !important;
+    font-weight: 600 !important;
+  }
+  .slice text {
+    font-family: ${CJK_FONT_FAMILY} !important;
+    fill: #ffffff !important;
+    font-weight: 700 !important;
   }
 
-  /* ── 强化图表文字可读性（全局） ── */
-  .mermaid svg text,
-  .mermaid .label text,
-  .mermaid .nodeLabel,
-  .mermaid .edgeLabel,
-  .mermaid .cluster-label text,
-  .mermaid .cluster-label .nodeLabel,
-  .mermaid .pieTitleText,
-  .mermaid .pieOuterTitleText,
-  .mermaid .slice text,
-  .mermaid .legend text,
-  .mermaid .axisLabel text,
-  .mermaid .tick text,
-  .mermaid .titleText,
-  .mermaid .flowchart-label text {
-    fill: var(--mf-text-main) !important;
-    color: var(--mf-text-main) !important;
+  /* ── 强化图表文字可读性（全局描边兜底） ── */
+  svg text, .label text, .nodeLabel, .edgeLabel, .cluster-label text,
+  .cluster-label .nodeLabel, .pieTitleText, .pieOuterTitleText, .slice text,
+  .legend text, .axisLabel text, .tick text, .titleText, .flowchart-label text,
+  .messageText, .noteText {
     font-family: ${CJK_FONT_FAMILY} !important;
-    font-weight: 500 !important;
-    font-size: 12.5px !important;
     paint-order: stroke fill !important;
-    stroke: var(--mf-surface) !important;
-    stroke-width: 3px !important;
+    stroke: ${t.labelOutline} !important;
+    stroke-width: 2.5px !important;
     stroke-linejoin: round !important;
     stroke-linecap: round !important;
   }
 
-  .mermaid .pieCircle + .slice text,
-  .mermaid .pieSection + text {
-    stroke: var(--mf-surface) !important;
-    stroke-width: 3.5px !important;
+  .pieCircle + .slice text, .pieSection + text {
+    stroke: ${t.labelOutline} !important;
+    stroke-width: 3px !important;
   }
 
-  .mermaid .edgeLabel .label rect {
-    fill: color-mix(in srgb, var(--mf-surface) 92%, transparent) !important;
-    stroke: var(--mf-border) !important;
-    rx: 6px;
-    ry: 6px;
+  .edgeLabel .label rect {
+    fill: ${t.edgeLabelFill} !important;
+    stroke: ${t.edgeLabelStroke} !important;
   }
-  .mermaid .edgeLabel .label text {
-    fill: var(--mf-text-main) !important;
-    stroke: none !important;
+  .edgeLabel .label text, .edgeLabel div, .edgeLabel span {
+    fill: ${t.edgeLabelText} !important;
+    color: ${t.edgeLabelText} !important;
+    stroke: ${t.edgeLabelFill} !important;
   }
-`;
+`
+}
 
 /**
  * 异步初始化并获取 Mermaid API 单例实例
@@ -342,15 +534,18 @@ export async function ensureMermaid(): Promise<MermaidApi | null> {
 
   initPromise = (async () => {
     try {
-      const mod = await import('mermaid')
-      const api = mod.default
+      const api: MermaidApi = mermaid
+      const theme: MermaidThemeName =
+        typeof document !== 'undefined' && document.documentElement.getAttribute('data-theme') === 'light'
+          ? 'light'
+          : 'dark'
       api.initialize({
         startOnLoad: false,
         suppressErrorRendering: true, // 严禁 Mermaid 直接将错误 SVG 写入 DOM
         securityLevel: 'loose',
         theme: 'base',
-        themeVariables: MINELOFIO_THEME_VARIABLES,
-        themeCSS: THEME_CUSTOM_CSS,
+        themeVariables: getMermaidThemeVariables(theme),
+        themeCSS: getMermaidThemeCss(theme),
         fontFamily: CJK_FONT_FAMILY,
         flowchart: {
           htmlLabels: true,
