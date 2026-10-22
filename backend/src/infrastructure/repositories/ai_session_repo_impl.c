@@ -142,13 +142,34 @@ mf_ai_message_delete_last_assistant(csilk_db_pool_t* pool, int64_t session_id)
 {
     char sid[32];
     sid_str(session_id, sid);
+    /* 只删除「最后一个用户消息之后」的 assistant 行：若上一轮失败（仅持久化了
+       用户行、无 assistant 行），旧实现会误删更早一轮的正确回答，破坏上下文 */
     csilk_json_t* r = csilk_db_query_param_json(
         pool,
-        "DELETE FROM ai_messages WHERE id = ("
-        "  SELECT id FROM ai_messages WHERE session_id=? AND role='assistant' "
-        "  ORDER BY id DESC LIMIT 1"
+        "DELETE FROM ai_messages WHERE session_id=? AND role='assistant' AND id > COALESCE("
+        "  (SELECT MAX(id) FROM ai_messages WHERE session_id=? AND role='user'), 0"
         ") RETURNING id",
-        (const char*[]){sid, NULL});
+        (const char*[]){sid, sid, NULL});
+    int affected = r ? (int)csilk_json_array_size(r) : 0;
+    if (r) {
+        csilk_json_free(r);
+    }
+    return affected;
+}
+
+int
+mf_ai_messages_delete_from(csilk_db_pool_t* pool, int64_t session_id, int64_t from_id)
+{
+    if (!pool || session_id <= 0 || from_id <= 0) {
+        return -1;
+    }
+    char sid[32], fid[32];
+    sid_str(session_id, sid);
+    snprintf(fid, sizeof(fid), "%lld", (long long)from_id);
+    csilk_json_t* r = csilk_db_query_param_json(
+        pool,
+        "DELETE FROM ai_messages WHERE session_id=? AND id>=? RETURNING id",
+        (const char*[]){sid, fid, NULL});
     int affected = r ? (int)csilk_json_array_size(r) : 0;
     if (r) {
         csilk_json_free(r);

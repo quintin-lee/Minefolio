@@ -17,6 +17,8 @@ typedef struct {
     void (*on_tool_result)(const char* id, const char* name, const char* result_json, void* udata);
     void (*on_error)(const ai_runtime_status_t* status, void* udata);
     void (*on_done)(const ai_runtime_stats_t* stats, void* udata);
+    /** 消息持久化完成回调（assistant 落库后携带真实数据库 ID，可为 NULL） */
+    void (*on_message_persisted)(const char* role, int64_t message_id, void* udata);
 } ai_runtime_callbacks_t;
 
 typedef struct {

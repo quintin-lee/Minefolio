@@ -296,17 +296,20 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
                     : (ai_res.reasoning_content ? ai_res.reasoning_content : NULL);
             if (pool && ctx->session_id > 0 &&
                 ((final_text && final_text[0]) || (final_thinking && final_thinking[0]))) {
-                size_t tcj_len = 0;
-                char*  tcj_str = csilk_json_array_size(tc_record) > 0
-                                     ? csilk_json_serialize(tc_record, &tcj_len)
-                                     : NULL;
-                mf_ai_message_insert(pool,
-                                     ctx->session_id,
-                                     "assistant",
-                                     final_text ? final_text : "",
-                                     model,
-                                     final_thinking,
-                                     tcj_str);
+                size_t  tcj_len = 0;
+                char*   tcj_str = csilk_json_array_size(tc_record) > 0
+                                      ? csilk_json_serialize(tc_record, &tcj_len)
+                                      : NULL;
+                int64_t persisted_id = mf_ai_message_insert(pool,
+                                                            ctx->session_id,
+                                                            "assistant",
+                                                            final_text ? final_text : "",
+                                                            model,
+                                                            final_thinking,
+                                                            tcj_str);
+                if (persisted_id > 0 && cbs && cbs->on_message_persisted) {
+                    cbs->on_message_persisted("assistant", persisted_id, user_data);
+                }
                 free(tcj_str);
             }
             ai_runtime_status_set(&status, AI_RUNTIME_ERR_OK, "OK", NULL);
@@ -456,17 +459,20 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
         const char* final_text =
             (bridge.accumulated && bridge.accumulated[0]) ? bridge.accumulated : "[思考已中断]";
         {
-            size_t tcj_len = 0;
-            char*  tcj_str = csilk_json_array_size(tc_record) > 0
-                                 ? csilk_json_serialize(tc_record, &tcj_len)
-                                 : NULL;
-            mf_ai_message_insert(pool,
-                                 ctx->session_id,
-                                 "assistant",
-                                 final_text,
-                                 model,
-                                 bridge.thinking_accumulated,
-                                 tcj_str);
+            size_t  tcj_len = 0;
+            char*   tcj_str = csilk_json_array_size(tc_record) > 0
+                                  ? csilk_json_serialize(tc_record, &tcj_len)
+                                  : NULL;
+            int64_t persisted_id = mf_ai_message_insert(pool,
+                                                        ctx->session_id,
+                                                        "assistant",
+                                                        final_text,
+                                                        model,
+                                                        bridge.thinking_accumulated,
+                                                        tcj_str);
+            if (persisted_id > 0 && cbs && cbs->on_message_persisted) {
+                cbs->on_message_persisted("assistant", persisted_id, user_data);
+            }
             free(tcj_str);
         }
         got_text = 1;

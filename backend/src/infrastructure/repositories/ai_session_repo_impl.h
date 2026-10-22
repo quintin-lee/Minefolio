@@ -39,6 +39,15 @@ int64_t mf_ai_message_insert(csilk_db_pool_t* pool,
 
 int mf_ai_message_delete_last_assistant(csilk_db_pool_t* pool, int64_t session_id);
 
+/**
+ * @brief 删除会话中 id >= from_id 的全部消息（编辑重发前的历史截断）
+ * @param pool 数据库连接池
+ * @param session_id 会话 ID
+ * @param from_id 起始消息 ID（包含）；传一个不存在的大 ID 时等价于不删除
+ * @return 实际删除的行数；失败返回 -1
+ */
+int mf_ai_messages_delete_from(csilk_db_pool_t* pool, int64_t session_id, int64_t from_id);
+
 char* mf_ai_summary_get(csilk_db_pool_t* pool, int64_t session_id);
 
 int mf_ai_summary_upsert(csilk_db_pool_t* pool,

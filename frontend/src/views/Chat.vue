@@ -206,7 +206,7 @@
               <div
                 v-for="(msg, idx) in chat.messages"
                 :key="msg.id"
-                v-memo="[msg.content, msg.thinking_content || '', msg.role, chat.isStreaming && idx === chat.messages.length - 1 ? 1 : 0, msg.workflowData?.status || '']"
+                v-memo="[msg.content, msg.thinking_content || '', msg.role, chat.isStreaming && idx === chat.messages.length - 1 ? 1 : 0, msg.workflowData?.status || '', msg.tool_calls?.length || 0, msg.tool_calls?.[msg.tool_calls.length - 1]?.result?.length || 0, msg.workflowConfig ? 1 : 0]"
                 class="message-row"
                 :class="msg.role"
               >

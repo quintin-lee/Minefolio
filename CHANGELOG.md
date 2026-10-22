@@ -61,6 +61,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Middleware Whitelist & Revocation**: Enhanced CSRF and JWT middlewares using csilk native route whitelisting (`csilk_csrf_whitelist_path`) and token revocation callbacks.
 
 ### Fixed
+- **AI Chat Interaction Correctness (`backend/src/services/ai_service.c`, `backend/src/services/ai/runtime/{loop,loop.h}`, `backend/src/infrastructure/repositories/ai_session_repo_impl.c`, `frontend/src/stores/chat.ts`, `frontend/src/api/ai.ts`)**:
+  - **Edit-Resend Server History Truncation**: `POST /api/ai/chat` now accepts `truncate_from_id` and deletes that message plus every later row *before* loading context, eliminating duplicate user rows and ghost replies that previously resurfaced after reload; the SSE stream returns the persisted `user_message_id` / `assistant_message_id` so the frontend addresses messages by real database id (`server_id`).
+  - **Regenerate Delete Semantics**: `mf_ai_message_delete_last_assistant` now removes only assistant rows that follow the *last user row*, so a dangling user row from a failed turn can no longer cause the previous turn's answer to be deleted.
+  - **Double-Submit Race Guard**: `sendMessage` / `regenerateLastMessage` / `editAndResend` / `runWorkflow` set `isStreaming` synchronously at entry, closing the `await createNewSession()` window in which a double Enter press could dispatch two concurrent turns.
+  - **Tool-Call Live Re-render**: chat message `v-memo` now tracks `tool_calls` length and last result, so "executing → done" state flips appear immediately during streaming.
+  - Added integration test suite `test_ai_truncate.sh` (14 assertions).
 - **Portfolio Trade Events Fee Child Filtering (`backend/src/infrastructure/repositories/portfolio_repo_impl.c`)**:
   - Added `AND (parent_tx_id IS NULL OR parent_tx_id = 0)` in `mf_portfolio_repo_get_trade_events` to filter out child fee rows from holding PnL calculations.
 - **Database Error Propagation in Position Updates (`backend/src/common/balance.c`)**:

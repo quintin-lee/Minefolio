@@ -387,25 +387,26 @@ Mobile users can customize the backend server address (e.g. LAN IP `http://192.1
 
 ## Testing & QA
 
-### Backend Unit & Integration Tests (35 CTest Suites + 10 Integration Suites)
+### Backend Unit & Integration Tests (35 CTest Suites + 11 Integration Suites)
 
 ```bash
 cd backend
 # 1. Run all 35 CTest unit test suites (sub-second fast feedback)
 cd build && ctest --output-on-failure && cd ..
 
-# 2. Run all 8 end-to-end integration test suites
+# 2. Run all 9 end-to-end integration test suites
 ./tests/test_link.sh          # 39 cases (151 assertions): auth, CRUD, balance联动, PnL, CSV, pagination, ledger rebuild, AI trace/workflow
 ./tests/test_ledgers.sh       # 16 cases: multi-ledger spaces, member RBAC (Owner/Editor/Viewer)
 ./tests/test_2fa.sh           # 12 cases: TOTP 2FA secret gen, QR code, enable/disable, login verification
 ./tests/test_dca_cashflow.sh  # 18 cases: DCA periodic purchase execution, cashflow calendar projection
 ./tests/test_ai_trace.sh      # 17 cases: AI conversation traces, token usage, tool spans
 ./tests/test_ai_tool_call.sh  # 15 cases: AI tool-call loop (single + 2 parallel tools) vs mock OpenAI server; regression for tool-message use-after-free
+./tests/test_ai_truncate.sh   # 14 cases: edit-resend server history truncation, persisted message-id SSE events, regenerate delete semantics
 ./tests/test_market_sync.sh   # 18 cases: Multi-source market quotes, caching, bulk sync
 ./tests/test_fx_oauth.sh      # 20 cases: Exchange rates, FX gain/loss PnL, receipt OCR, OAuth2/OIDC SSO
 ```
 
-Tests start real servers with temp SQLite DBs, exercise all API endpoints via curl/JSON, and verify database state directly with `sqlite3`. `test_ai_tool_call.sh` also starts `mock_ai_tool_server.js` (node) as its AI provider. Run before committing any changes.
+Tests start real servers with temp SQLite DBs, exercise all API endpoints via curl/JSON, and verify database state directly with `sqlite3`. `test_ai_tool_call.sh` and `test_ai_truncate.sh` also start `mock_ai_tool_server.js` (node) as their AI provider. Run before committing any changes.
 
 ### Frontend Tests
 

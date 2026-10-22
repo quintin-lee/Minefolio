@@ -51,8 +51,15 @@ export interface ToolCallInfo {
 }
 
 export interface AiMessage {
-  /** 消息唯一标识 ID */
+  /** 消息唯一标识 ID (本地生成或服务端加载) */
   id: number
+  /**
+   * 服务端数据库真实 ID。
+   * 本次会话新发送的消息本地 id 为 Date.now() 占位，落库后由 SSE
+   * `user_message_id` / `assistant_message_id` 事件回填此字段，
+   * 编辑重发需用它向服务端截断历史。
+   */
+  server_id?: number
   /** 所属会话 ID */
   session_id: number
   /** 发送者角色 ('user': 用户, 'assistant': AI 助手) */
@@ -195,8 +202,8 @@ export async function getMessages(sessionId: number, page = 1, page_size = 50) {
  * 流式对话返回的数据分块 (SSE Chunk)
  */
 export interface ChatStreamChunk {
-  /** 消息分块类型: 'delta' (增量文本), 'thinking' (思考过程文本), 'tool_call' (工具调用), 'tool_result' (工具结果), 'done' (生成结束), 'error' (发生错误) */
-  type: 'delta' | 'thinking' | 'tool_call' | 'tool_result' | 'done' | 'error'
+  /** 消息分块类型: 'delta' (增量文本), 'thinking' (思考过程文本), 'tool_call' (工具调用), 'tool_result' (工具结果), 'done' (生成结束), 'error' (发生错误), 'user_message_id' / 'assistant_message_id' (服务端落库 ID 回传) */
+  type: 'delta' | 'thinking' | 'tool_call' | 'tool_result' | 'done' | 'error' | 'user_message_id' | 'assistant_message_id'
   /** 增量文本内容 (当 type 为 'delta' 或 'thinking' 时) */
   content?: string
   /** 工具调用 ID (当 type 为 'tool_call' / 'tool_result' 时) */
@@ -252,6 +259,7 @@ function getStreamHeaders(): Record<string, string> {
  * @param params.provider 使用的模型提供商 (可选)
  * @param params.regenerate 是否为重新生成上一轮回答 (可选)
  * @param params.enable_thinking 是否开启思考推理模式 (可选，针对 Agnes / DeepSeek R1 / o1 等具备推理链的模型)
+ * @param params.truncate_from_id 编辑重发：服务端截断此消息 ID（含）之后的全部历史 (可选)
  * @param signal 用于中断流式请求的 AbortSignal
  * @returns 异步可迭代的数据分块生成器 AsyncIterable<ChatStreamChunk>
  */
@@ -263,6 +271,7 @@ export async function* chatStream(
     provider?: string
     regenerate?: boolean
     enable_thinking?: boolean
+    truncate_from_id?: number
   },
   signal?: AbortSignal
 ): AsyncIterable<ChatStreamChunk> {

@@ -447,6 +447,28 @@ sse_bridge_done(const ai_runtime_stats_t* stats, void* udata)
     send_done(b->ctx);
 }
 
+/**
+ * @brief 消息落库后向前端回传真实数据库 ID
+ * @description 前端本地消息使用 Date.now() 占位 ID，编辑重发需要以此 ID 截断服务端历史；
+ *              id 以字符串序列化，复用前端 SSE 解析器已有的 id 字段映射
+ */
+static void
+sse_bridge_message_persisted(const char* role, int64_t message_id, void* udata)
+{
+    sse_bridge_t* b = (sse_bridge_t*)udata;
+    if (!b || !b->ctx || !role || message_id <= 0) {
+        return;
+    }
+    if (!b->sse_initialized) {
+        csilk_sse_init(b->ctx);
+        b->sse_initialized = 1;
+    }
+    char payload[96];
+    snprintf(payload, sizeof(payload), "{\"id\":\"%lld\"}", (long long)message_id);
+    csilk_sse_send(
+        b->ctx, strcmp(role, "user") == 0 ? "user_message_id" : "assistant_message_id", payload);
+}
+
 void
 ai_chat_handler(csilk_ctx_t* c)
 {
@@ -466,9 +488,11 @@ ai_chat_handler(csilk_ctx_t* c)
     const char* model_override = csilk_json_get_string(body, "model");
     const char* provider_override = csilk_json_get_string(body, "provider");
     int         regenerate = csilk_json_get_bool(body, "regenerate");
-    double      req_temperature = db_get_num(body, "temperature");
-    int         req_max_tokens = (int)db_get_int(body, "max_tokens");
-    double      req_top_p = db_get_num(body, "top_p");
+    /* 编辑重发：截断该消息（含）之后的历史后再落库新内容；缺省 0 表示不截断 */
+    int64_t truncate_from_id = db_get_int(body, "truncate_from_id");
+    double  req_temperature = db_get_num(body, "temperature");
+    int     req_max_tokens = (int)db_get_int(body, "max_tokens");
+    double  req_top_p = db_get_num(body, "top_p");
 
     csilk_json_t* et_node = csilk_json_get(body, "enable_thinking");
     bool          has_enable_thinking = false;
@@ -550,6 +574,11 @@ ai_chat_handler(csilk_ctx_t* c)
         if (regenerate) {
             mf_ai_message_delete_last_assistant(pool, sid);
         }
+        /* 编辑重发：先截断被编辑消息（含）之后的所有历史，再落库新内容。
+           必须在 load history 之前执行，否则上下文会带上即将被删除的旧尾巴 */
+        if (!regenerate && truncate_from_id > 0) {
+            mf_ai_messages_delete_from(pool, sid, truncate_from_id);
+        }
     }
 
     /* load history */
@@ -557,8 +586,9 @@ ai_chat_handler(csilk_ctx_t* c)
     csilk_json_t* history = mf_ai_message_recent(pool, sid, ctx_size);
 
     /* persist user message (skip on regenerate — already in history) */
+    int64_t user_msg_id = 0;
     if (!regenerate) {
-        mf_ai_message_insert(pool, sid, "user", content, model_buf, NULL, NULL);
+        user_msg_id = mf_ai_message_insert(pool, sid, "user", content, model_buf, NULL, NULL);
     }
 
     /* 构造统一 AI Runtime 上下文 */
@@ -627,6 +657,13 @@ ai_chat_handler(csilk_ctx_t* c)
     /* SSE init: establish event-stream connection immediately so proxies never time out */
     csilk_sse_init(c);
 
+    /* 回传已落库的用户消息真实 ID（编辑重发据此截断服务端历史） */
+    if (user_msg_id > 0) {
+        char payload[96];
+        snprintf(payload, sizeof(payload), "{\"id\":\"%lld\"}", (long long)user_msg_id);
+        csilk_sse_send(c, "user_message_id", payload);
+    }
+
     csilk_arena_t* arena = csilk_arena_new(16384);
     sse_bridge_t   sse_bridge = {
         .ctx = c,
@@ -644,6 +681,7 @@ ai_chat_handler(csilk_ctx_t* c)
         .on_tool_result = sse_bridge_tool_result,
         .on_error = sse_bridge_error,
         .on_done = sse_bridge_done,
+        .on_message_persisted = sse_bridge_message_persisted,
     };
 
     /* 委托 AI Runtime 执行 Agent 循环 */

@@ -11,7 +11,7 @@ import {
   getMessages, chatStream, getModels, getSettings, getWorkflows, runWorkflowStream,
 } from '@/api/ai'
 import type {
-  AiMessage, AiSession, AiModelOption, AiSettings, WorkflowStreamChunk, ToolCallInfo,
+  AiMessage, AiSession, AiModelOption, AiSettings, WorkflowStreamChunk, ToolCallInfo, ChatStreamChunk,
 } from '@/api/ai'
 import type { WorkflowDef, WorkflowRunState, WorkflowStepState } from '@/types'
 import { SmoothStreamWriter } from '@/utils/typewriter'
@@ -229,6 +229,7 @@ export const useChatStore = defineStore('chat', () => {
     messageTotal.value = total
     messages.value = rawList.map((m) => ({
       id: Number(m.id),
+      server_id: Number(m.id),
       session_id: Number(m.session_id),
       role: (m.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
       content: String(m.content || ''),
@@ -258,6 +259,7 @@ export const useChatStore = defineStore('chat', () => {
       loadedMessagePage.value = nextPage
       const newMsgs = rawList.map((m) => ({
         id: Number(m.id),
+        server_id: Number(m.id),
         session_id: Number(m.session_id),
         role: (m.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
         content: String(m.content || ''),
@@ -381,9 +383,17 @@ export const useChatStore = defineStore('chat', () => {
   async function editAndResend(targetIdx: number, newContent: string) {
     const trimmed = newContent.trim()
     if (!trimmed || isStreaming.value) return
-    if (targetIdx < 0 || targetIdx >= messages.value.length) return
+    // 守卫前移：同步置位，避免校验/截断窗口内被二次触发
+    isStreaming.value = true
+    if (targetIdx < 0 || targetIdx >= messages.value.length) {
+      isStreaming.value = false
+      return
+    }
     const target = messages.value[targetIdx]
-    if (!target || target.role !== 'user') return
+    if (!target || target.role !== 'user') {
+      isStreaming.value = false
+      return
+    }
     messages.value = messages.value.slice(0, targetIdx + 1)
     messages.value[targetIdx]!.content = trimmed
 
@@ -401,7 +411,7 @@ export const useChatStore = defineStore('chat', () => {
     activeAbortController = new AbortController()
     const signal = activeAbortController.signal
     enableTypewriterBuffer.value = true
-    isStreaming.value = true
+    // isStreaming 已在入口同步置位
     const writer = new SmoothStreamWriter(assistantMsg)
     try {
       for await (const chunk of chatStream({
@@ -410,8 +420,13 @@ export const useChatStore = defineStore('chat', () => {
         model: currentModel.value,
         provider: currentProvider.value,
         enable_thinking: enableThinking.value,
+        // 服务端截断被编辑消息（含）之后的历史，避免重复用户消息与幽灵旧回答
+        // server_id 缺失时回退本地占位 id（Date.now 量级），服务端匹配不到任何行 → 不删除
+        truncate_from_id: target.server_id ?? target.id,
       }, signal)) {
-        if (chunk.type === 'thinking' && chunk.content) {
+        if (chunk.type === 'user_message_id' || chunk.type === 'assistant_message_id') {
+          adoptServerMessageId(chunk)
+        } else if (chunk.type === 'thinking' && chunk.content) {
           if (!assistantMsg.thinking_content) {
             assistantMsg.thinking_content = ''
           }
@@ -441,6 +456,8 @@ export const useChatStore = defineStore('chat', () => {
    */
   async function regenerateLastMessage() {
     if (isStreaming.value || messages.value.length === 0) return
+    // 守卫前移：同步置位，避免遍历/截断窗口内被二次触发
+    isStreaming.value = true
     let lastUserIdx = -1
     for (let i = messages.value.length - 1; i >= 0; i--) {
       if (messages.value[i]?.role === 'user') {
@@ -448,7 +465,10 @@ export const useChatStore = defineStore('chat', () => {
         break
       }
     }
-    if (lastUserIdx < 0) return
+    if (lastUserIdx < 0) {
+      isStreaming.value = false
+      return
+    }
     const userMsg = messages.value[lastUserIdx]!
 
     // 移除用户提问之后的所有后续消息
@@ -470,7 +490,7 @@ export const useChatStore = defineStore('chat', () => {
     const signal = activeAbortController.signal
 
     enableTypewriterBuffer.value = true
-    isStreaming.value = true
+    // isStreaming 已在入口同步置位
     const writer = new SmoothStreamWriter(assistantMsg)
 
     try {
@@ -482,7 +502,9 @@ export const useChatStore = defineStore('chat', () => {
         regenerate: true,
         enable_thinking: enableThinking.value,
       }, signal)) {
-        if (chunk.type === 'thinking' && chunk.content) {
+        if (chunk.type === 'user_message_id' || chunk.type === 'assistant_message_id') {
+          adoptServerMessageId(chunk)
+        } else if (chunk.type === 'thinking' && chunk.content) {
           if (!assistantMsg.thinking_content) {
             assistantMsg.thinking_content = ''
           }
@@ -516,11 +538,43 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   /**
+   * 采纳 SSE 回传的服务端真实消息 ID
+   * @description 本会话新发送的消息本地 id 为 Date.now() 占位；服务端落库后回传
+   * `user_message_id` / `assistant_message_id` 事件，将其写入 messages 尾部对应角色的
+   * `server_id` 字段，编辑重发时据此向服务端截断历史。
+   * @param chunk SSE 数据分块
+   */
+  function adoptServerMessageId(chunk: ChatStreamChunk) {
+    if (chunk.type !== 'user_message_id' && chunk.type !== 'assistant_message_id') return
+    const targetRole = chunk.type === 'user_message_id' ? 'user' : 'assistant'
+    const serverId = Number(chunk.id)
+    if (!serverId) return
+    for (let i = messages.value.length - 1; i >= 0; i--) {
+      const m = messages.value[i]!
+      if (m.role === targetRole) {
+        m.server_id = serverId
+        return
+      }
+    }
+  }
+
+  /**
    * 发送新的用户消息并开启流式打字机接收 AI 回答
    * @param content 用户提问内容文本
    */
   async function sendMessage(content: string) {
     if (!content.trim() || isStreaming.value) return
+    // 守卫前移：同步置位，防止 createNewSession 的 await 窗口内被双击 Enter 二次进入
+    isStreaming.value = true
+    try {
+      await doSendMessage(content)
+    } finally {
+      // doSendMessage 正常完成时已自行收尾；仅在早期 return（未开启流）时复位
+      if (!activeAbortController) isStreaming.value = false
+    }
+  }
+
+  async function doSendMessage(content: string) {
     const sid = currentSessionId.value
     if (!sid) await createNewSession()
 
@@ -549,7 +603,7 @@ export const useChatStore = defineStore('chat', () => {
     const signal = activeAbortController.signal
 
     enableTypewriterBuffer.value = true
-    isStreaming.value = true
+    // isStreaming 已由 sendMessage 入口同步置位
     const writer = new SmoothStreamWriter(assistantMsg)
 
     try {
@@ -560,7 +614,9 @@ export const useChatStore = defineStore('chat', () => {
         provider: currentProvider.value,
         enable_thinking: enableThinking.value,
       }, signal)) {
-        if (chunk.type === 'thinking' && chunk.content) {
+        if (chunk.type === 'user_message_id' || chunk.type === 'assistant_message_id') {
+          adoptServerMessageId(chunk)
+        } else if (chunk.type === 'thinking' && chunk.content) {
           if (!assistantMsg.thinking_content) {
             assistantMsg.thinking_content = ''
           }
@@ -630,6 +686,16 @@ export const useChatStore = defineStore('chat', () => {
    */
   async function runWorkflow(workflowId: string, params?: Record<string, unknown>) {
     if (isStreaming.value) return
+    // 守卫前移：同步置位，防止 createNewSession await 窗口内被二次触发
+    isStreaming.value = true
+    try {
+      await doRunWorkflow(workflowId, params)
+    } finally {
+      if (!activeAbortController) isStreaming.value = false
+    }
+  }
+
+  async function doRunWorkflow(workflowId: string, params?: Record<string, unknown>) {
     const targetWf = workflows.value.find(w => w.id === workflowId)
     const wfTitle = targetWf ? targetWf.title : '智能财务工作流'
 
@@ -683,7 +749,7 @@ export const useChatStore = defineStore('chat', () => {
     const signal = activeAbortController.signal
 
     enableTypewriterBuffer.value = true
-    isStreaming.value = true
+    // isStreaming 已由 runWorkflow 入口同步置位
     const writer = new SmoothStreamWriter(activeMsg)
 
     try {
