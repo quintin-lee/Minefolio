@@ -307,6 +307,10 @@ const isThinkingExpanded = computed({
     if (manualExpanded.value !== null) {
       return manualExpanded.value
     }
+    // 思考内容输出过程中保持展开
+    if (props.isStreaming && props.thinkingContent) {
+      return true
+    }
     return isThinkingStreaming.value
   },
   set(val: boolean) {
