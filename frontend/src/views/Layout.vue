@@ -446,6 +446,8 @@ function handleCommand(cmd: string) {
   font-weight: 600;
   color: var(--mf-text-main);
   margin: 0;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .search-command-btn {
   display: flex;
@@ -459,6 +461,8 @@ function handleCommand(cmd: string) {
   margin-left: 16px;
   transition: all 0.15s ease;
   user-select: none;
+  min-width: 0;
+  flex-shrink: 1;
 }
 .search-command-btn:hover {
   border-color: var(--mf-primary);
@@ -471,8 +475,13 @@ function handleCommand(cmd: string) {
 .search-btn-placeholder {
   font-size: 12px;
   color: var(--mf-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 .shortcut-key {
+  white-space: nowrap;
   font-size: 10px;
   font-family: var(--mf-font-mono);
   background: var(--mf-surface-card);
@@ -573,6 +582,17 @@ function handleCommand(cmd: string) {
 }
 .header-mobile-logo {
   display: none;
+}
+
+@media (max-width: 1100px) {
+  .search-btn-placeholder,
+  .shortcut-key {
+    display: none;
+  }
+  .search-command-btn {
+    padding: 6px 8px;
+    margin-left: 12px;
+  }
 }
 
 @media (max-width: 768px) {

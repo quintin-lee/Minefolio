@@ -132,6 +132,8 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  row-gap: 12px;
   border-bottom: 1px solid var(--mf-border-subtle);
   padding-bottom: 8px;
   margin-bottom: 20px;
@@ -141,6 +143,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 24px;
+  min-width: 0;
 }
 
 .page-title {
@@ -148,6 +151,8 @@ onMounted(() => {
   font-weight: 700;
   color: var(--el-text-color-primary);
   margin: 0;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .market-tabs :deep(.el-tabs__header) {
@@ -162,7 +167,10 @@ onMounted(() => {
 .header-controls {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
+  row-gap: 8px;
+  margin-left: auto;
 }
 
 .control-item {
@@ -174,6 +182,7 @@ onMounted(() => {
 .control-label {
   font-size: 13px;
   color: var(--el-text-color-secondary);
+  white-space: nowrap;
 }
 
 .base-currency-select {
@@ -189,6 +198,7 @@ onMounted(() => {
 .sync-time {
   font-size: 12px;
   color: var(--el-text-color-secondary);
+  white-space: nowrap;
 }
 
 .middle-split-row {
