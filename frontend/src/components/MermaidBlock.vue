@@ -618,20 +618,13 @@ onUnmounted(() => {
   display: flex;
   justify-content: center;
   align-items: center;
- +  padding: 28px 24px;
- +  overflow-x: auto;
- +  cursor: zoom-in;
- +  background-color: var(--mf-surface);
- +  background-image: radial-gradient(circle at 1px 1px, var(--mf-border) 1.2px, transparent 0);
- +  background-size: 18px 18px;
- +  border-radius: calc(var(--mf-radius-lg, 12px) - 2px);
- +}
-.svg-container {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  max-width: 100%;
-  width: 100%;
+  padding: 28px 24px;
+  overflow-x: auto;
+  cursor: zoom-in;
+  background-color: var(--mf-surface);
+  background-image: radial-gradient(circle at 1px 1px, var(--mf-border) 1.2px, transparent 0);
+  background-size: 18px 18px;
+  border-radius: calc(var(--mf-radius-lg, 12px) - 2px);
 }
 
 .svg-container :deep(svg) {
@@ -654,7 +647,17 @@ onUnmounted(() => {
 
 [data-theme="light"] .mermaid-chart-view,
 html.light .mermaid-chart-view {
-  background-color: #0b1329;
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 28px 24px;
+  overflow-x: auto;
+  cursor: zoom-in;
+  background-color: var(--mf-surface);
+  background-image: radial-gradient(circle at 1px 1px, var(--mf-border) 1.2px, transparent 0);
+  background-size: 18px 18px;
+  border-radius: calc(var(--mf-radius-lg, 12px) - 2px);
 }
 
 .chart-hover-hint {
