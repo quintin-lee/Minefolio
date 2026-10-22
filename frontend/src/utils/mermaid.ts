@@ -39,6 +39,8 @@ export interface RenderOptions {
   nodeSpacing?: number
   /** 层级之间的垂直间距 (像素) */
   rankSpacing?: number
+  /** 图表渲染主题风格 ('dark' | 'light') */
+  theme?: MermaidThemeName
 }
 
 
@@ -493,6 +495,113 @@ export function getMermaidThemeCss(theme: MermaidThemeName): string {
     font-weight: 700 !important;
   }
 
+  /* ── Class Diagrams ── */
+  .classGroup rect {
+    fill: ${t.nodeFill} !important;
+    stroke: ${t.nodeStroke} !important;
+    stroke-width: 1.5px !important;
+  }
+  .classGroup text, .classGroup .label {
+    fill: ${t.text} !important;
+    color: ${t.text} !important;
+  }
+  .classGroup .divider {
+    stroke: ${t.nodeStroke} !important;
+    stroke-width: 1px !important;
+  }
+  .relation {
+    stroke: ${t.edge} !important;
+    stroke-width: 1.8px !important;
+  }
+  .cardinality, .cardinality text {
+    fill: ${t.edgeLabelText} !important;
+  }
+
+  /* ── State Diagrams ── */
+  .statediagram-state rect, .stateGroup rect {
+    fill: ${t.nodeFill} !important;
+    stroke: ${t.nodeStroke} !important;
+    stroke-width: 1.5px !important;
+    rx: 8px !important;
+    ry: 8px !important;
+  }
+  .statediagram-state text, .stateGroup text {
+    fill: ${t.text} !important;
+    color: ${t.text} !important;
+  }
+  .statediagram-note rect {
+    fill: ${t.noteFill} !important;
+    stroke: ${t.noteStroke} !important;
+  }
+  .statediagram-note text {
+    fill: ${t.noteText} !important;
+  }
+  .transition {
+    stroke: ${t.edge} !important;
+    stroke-width: 1.8px !important;
+  }
+
+  /* ── Entity-Relationship Diagrams ── */
+  .er.entityBox {
+    fill: ${t.nodeFill} !important;
+    stroke: ${t.nodeStroke} !important;
+    stroke-width: 1.5px !important;
+  }
+  .er.entityLabel {
+    fill: ${t.clusterText} !important;
+    font-weight: 700 !important;
+  }
+  .er.attributeBoxOdd {
+    fill: ${t.clusterFill} !important;
+    stroke: ${t.clusterStroke} !important;
+  }
+  .er.attributeBoxEven {
+    fill: ${t.nodeFill} !important;
+    stroke: ${t.clusterStroke} !important;
+  }
+  .er.attributeLabelOdd, .er.attributeLabelEven {
+    fill: ${t.text} !important;
+    font-size: 11.5px !important;
+  }
+  .er.relationshipLine {
+    stroke: ${t.edge} !important;
+    stroke-width: 1.8px !important;
+  }
+  .er.relationshipLabel {
+    fill: ${t.edgeLabelText} !important;
+  }
+
+  /* ── Git Diagrams ── */
+  .branch-label text, .branchLabel {
+    fill: ${t.text} !important;
+    font-weight: 600 !important;
+  }
+  .commit-label {
+    fill: ${t.text} !important;
+    font-weight: 600 !important;
+  }
+  .commit-label-bkg {
+    fill: ${t.edgeLabelFill} !important;
+    stroke: ${t.edgeLabelStroke} !important;
+  }
+
+  /* ── Sequence Diagram Overrides (Loops & Activation) ── */
+  .labelBox {
+    fill: ${t.nodeFill} !important;
+    stroke: ${t.nodeStroke} !important;
+  }
+  .labelText {
+    fill: ${t.clusterText} !important;
+    font-weight: 700 !important;
+  }
+  .loopText {
+    fill: ${t.text} !important;
+  }
+  .loopLine {
+    stroke: ${t.edge} !important;
+    stroke-dasharray: 4 4 !important;
+  }
+
   /* ── 强化图表文字可读性（全局描边兜底） ── */
   svg text, .label text, .nodeLabel, .edgeLabel, .cluster-label text,
   .cluster-label .nodeLabel, .pieTitleText, .pieOuterTitleText, .slice text,
@@ -722,10 +831,24 @@ async function executeRender(id: string, code: string, options?: RenderOptions):
     throw new Error('Mermaid renderer is not available')
   }
 
-  // 若指定了连线曲率等选项则动态覆盖配置
+  const themeMode: MermaidThemeName =
+    options?.theme ??
+    (typeof document !== 'undefined' && document.documentElement.getAttribute('data-theme') === 'light'
+      ? 'light'
+      : 'dark')
+
+  // mermaid.initialize() 是整体替换而非合并：必须显式传入 themeVariables/themeCSS，
+  // 避免二次调用清空配置导致图表文字回落到默认 `#333`。
+  const currentConfig = mermaid.mermaidAPI.getConfig()
   const curveType = options?.curve || 'linear'
   mermaid.initialize({
+    ...currentConfig,
+    theme: 'base',
+    themeVariables: getMermaidThemeVariables(themeMode),
+    themeCSS: getMermaidThemeCss(themeMode),
+    fontFamily: CJK_FONT_FAMILY,
     flowchart: {
+      ...(currentConfig?.flowchart || {}),
       htmlLabels: true,
       useMaxWidth: true,
       curve: curveType,
@@ -814,9 +937,15 @@ export function downloadSvg(svgContent: string, filename = 'minefolio-diagram.sv
  * @param svgContent SVG 文本内容
  * @param filename 导出的文件名 (默认 'minefolio-diagram.png')
  * @param scale 放大缩放倍率 (默认 2 倍高清导出)
+ * @param theme 导出目标主题背景 ('dark' | 'light'，默认当前主题)
  * @returns Promise<void>
  */
-export function downloadPng(svgContent: string, filename = 'minefolio-diagram.png', scale = 2): Promise<void> {
+export function downloadPng(
+  svgContent: string,
+  filename = 'minefolio-diagram.png',
+  scale = 2,
+  theme?: MermaidThemeName
+): Promise<void> {
   return new Promise((resolve, reject) => {
     try {
       const parser = new DOMParser()
@@ -854,8 +983,11 @@ export function downloadPng(svgContent: string, filename = 'minefolio-diagram.pn
         throw new Error('Canvas context not available')
       }
 
-      // 绘制深色背景以契合 Minefolio 科技主题
-      ctx.fillStyle = '#0b172a'
+      // 绘制背景以契合当前主题模式
+      const isLight =
+        theme === 'light' ||
+        (!theme && typeof document !== 'undefined' && document.documentElement.getAttribute('data-theme') === 'light')
+      ctx.fillStyle = isLight ? '#ffffff' : '#0b172a'
       ctx.fillRect(0, 0, canvas.width, canvas.height)
       ctx.scale(scale, scale)
 

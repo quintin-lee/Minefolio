@@ -79,6 +79,17 @@ describe('Mermaid utilities & theming', () => {
       expect(darkCss).toContain('.slice text')
       expect(darkCss).toContain('.edgeLabel')
       expect(darkCss).toContain('.messageText')
+
+      // Verify domain-specific diagram types have explicit high-contrast rules
+      expect(darkCss).toContain('.classGroup rect')
+      expect(darkCss).toContain('.classGroup text')
+      expect(darkCss).toContain('.statediagram-state rect')
+      expect(darkCss).toContain('.statediagram-state text')
+      expect(darkCss).toContain('.er.entityBox')
+      expect(darkCss).toContain('.er.attributeLabelOdd')
+      expect(darkCss).toContain('.branch-label text')
+      expect(darkCss).toContain('.labelBox')
+      expect(darkCss).toContain('.labelText')
     })
 
     it('generates light theme CSS with dark text and light surface strokes', () => {
@@ -89,6 +100,9 @@ describe('Mermaid utilities & theming', () => {
 
       expect(lightCss).toContain('#0f172a')
       expect(lightCss).toContain('paint-order: stroke fill')
+      expect(lightCss).toContain('.classGroup rect')
+      expect(lightCss).toContain('.statediagram-state rect')
+      expect(lightCss).toContain('.er.entityBox')
     })
   })
 })

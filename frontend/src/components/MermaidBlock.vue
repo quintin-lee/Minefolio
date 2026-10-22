@@ -221,6 +221,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { Icon } from '@iconify/vue'
 import { ElMessage } from 'element-plus'
+import { useThemeStore } from '@/stores/theme'
 import {
   detectDiagramType,
   renderMermaidSvg,
@@ -232,6 +233,8 @@ const props = defineProps<{
   code: string
   isStreaming?: boolean
 }>()
+
+const themeStore = useThemeStore()
 
 const loading = ref(true)
 const svgContent = ref('')
@@ -258,7 +261,8 @@ async function renderDiagram(isSilent = false) {
     return
   }
 
-  const key = cacheKeyForRender(props.code, curveMode.value)
+  const currentTheme = themeStore.resolvedTheme
+  const key = cacheKeyForRender(props.code, curveMode.value, currentTheme)
   const cached = svgCache.get(key)
   if (cached) {
     svgContent.value = cached
@@ -277,6 +281,7 @@ async function renderDiagram(isSilent = false) {
     const id = generateId()
     const result = await renderMermaidSvg(id, props.code, {
       curve: curveMode.value,
+      theme: currentTheme,
     })
     if (seq !== renderSeq) return
     svgContent.value = result.svg
@@ -338,7 +343,7 @@ async function handleExport(type: string) {
   } else if (type === 'png') {
     try {
       ElMessage.info('正在生成高清 PNG...')
-      await downloadPng(svgContent.value, `${baseName}.png`, 2)
+      await downloadPng(svgContent.value, `${baseName}.png`, 2, themeStore.resolvedTheme)
       ElMessage.success('已导出 PNG 图片')
     } catch {
       ElMessage.error('导出 PNG 失败')
@@ -426,13 +431,13 @@ let renderSeq = 0
 const svgCache = new Map<string, string>()
 const SVG_CACHE_LIMIT = 40
 
-function cacheKeyForRender(code: string, curve: string): string {
-  return `${curve}::${code.length}::${code.slice(0, 200)}`
+function cacheKeyForRender(code: string, curve: string, theme: string): string {
+  return `${theme}::${curve}::${code.length}::${code.slice(0, 200)}`
 }
 
 watch(
-  () => [props.code, props.isStreaming] as const,
-  ([, isStreaming]) => {
+  () => [props.code, props.isStreaming, themeStore.resolvedTheme] as const,
+  ([, isStreaming, currentTheme]) => {
     if (isStreaming) {
       if (streamDebounceTimer) clearTimeout(streamDebounceTimer)
       streamDebounceTimer = window.setTimeout(() => {
@@ -440,7 +445,7 @@ watch(
       }, 500)
     } else {
       if (streamDebounceTimer) clearTimeout(streamDebounceTimer)
-      const key = cacheKeyForRender(props.code, curveMode.value)
+      const key = cacheKeyForRender(props.code, curveMode.value, currentTheme)
       if (svgCache.has(key) && svgContent.value) {
         return
       }
