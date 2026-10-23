@@ -715,8 +715,13 @@ onMounted(loadAll)
   padding: 48px 24px;
   gap: 16px;
 }
-.mf-empty-state.pf-empty-sm {
-  padding: 24px 12px;
+.mf-empty-state.mf-empty-sm {
+  padding: 12px;
+  gap: 8px;
+}
+.mf-empty-state.mf-empty-sm .mf-empty-circle {
+  width: 56px;
+  height: 56px;
 }
 .mf-empty-circle {
   width: 64px;
