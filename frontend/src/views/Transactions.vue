@@ -20,22 +20,22 @@
 
     <!-- 顶部汇总统计卡片 -->
     <el-row :gutter="16" class="summary-cards">
-      <el-col :xs="12" :sm="6">
+      <el-col :xs="24" :sm="12" :lg="6">
         <div class="summary-card-with-bar bar-cyan">
           <SummaryCard label="本月交易总额" :value="formatCurrency(monthlyTotalVolume)" extraClass="font-mono text-primary" />
         </div>
       </el-col>
-      <el-col :xs="12" :sm="6">
+      <el-col :xs="24" :sm="12" :lg="6">
         <div class="summary-card-with-bar bar-red">
           <SummaryCard label="卖出/存入/收益" :value="'+' + formatCurrency(monthlyInflows)" type="income" extraClass="font-mono" />
         </div>
       </el-col>
-      <el-col :xs="12" :sm="6">
+      <el-col :xs="24" :sm="12" :lg="6">
         <div class="summary-card-with-bar bar-green">
           <SummaryCard label="买入/取出/支出" :value="'-' + formatCurrency(monthlyOutflows)" type="expense" extraClass="font-mono" />
         </div>
       </el-col>
-      <el-col :xs="12" :sm="6">
+      <el-col :xs="24" :sm="12" :lg="6">
         <div class="summary-card-with-bar bar-amber">
           <SummaryCard label="本月交易笔数" :value="monthlyCount + ' 笔'" type="highlight" extraClass="font-mono" />
         </div>
