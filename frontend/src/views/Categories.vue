@@ -495,9 +495,16 @@ onMounted(loadData)
 
 .panels-scroll-wrapper {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   margin: 0 -12px;
   padding: 0 12px;
+}
+
+/* 两栏面板必须固定为滚动容器的高度,否则 el-col 随内容增高,面板被撑成整页长条 */
+.panels-scroll-wrapper > .el-row,
+.panels-scroll-wrapper .el-col {
+  height: 100%;
 }
 
 .panel-container {
@@ -506,7 +513,9 @@ onMounted(loadData)
   padding: 20px;
   box-shadow: var(--mf-shadow-sm);
   border: 1px solid var(--mf-border);
+  box-sizing: border-box;
   height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }
@@ -569,10 +578,6 @@ onMounted(loadData)
   border: 1px solid var(--mf-border);
 }
 
-.tree-panel-container {
-  min-height: 600px;
-}
-
 .panel-header {
   margin-bottom: 20px;
   flex-shrink: 0;
@@ -583,6 +588,7 @@ onMounted(loadData)
   font-size: 16px;
   font-weight: 600;
   color: var(--mf-text-main);
+  white-space: nowrap;
 }
 
 .panel-header-with-search {
@@ -593,7 +599,10 @@ onMounted(loadData)
 }
 
 .search-input {
+  flex: 1 1 auto;
   width: 180px;
+  min-width: 90px;
+  max-width: 180px;
 }
 
 .tree-empty {
