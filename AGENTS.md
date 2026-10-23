@@ -84,7 +84,7 @@ A transfer is stored as two rows: a `transfer_out` parent and a `transfer_in` ch
 ### Database Migration System
 
 Database schema changes are managed strictly via csilk's native C migration engine (`<csilk/drivers/db/migration.h>`):
-- **Versioned scripts**: `backend/sql/migrations/{sqlite,postgres}/` following Flyway naming `V<num>__<name>.sql` (`V001`~`V015`).
+- **Versioned scripts**: `backend/sql/migrations/{sqlite,postgres}/` following Flyway naming `V<num>__<name>.sql` (`V001`~`V016`).
 - **Tracking table**: `schema_migrations` records `version`, `name`, `checksum` (SHA-256 CRLF-normalized), `applied_at`, `execution_time_ms`, `execution_time`.
 - **Concurrency lock**: `schema_migration_lock` table acts as a distributed mutex with lease timeout to prevent multi-instance migration races. Under PostgreSQL, csilk provides full native prepared statement support (`?` rewritten to `$N`, `PQprepare`/`PQexecPrepared`), ensuring lock acquisition and statement execution run reliably.
 - **Engine lifecycle**: Automatic discovery, version sorting, checksum validation (tamper detection), transactional application, and status reporting.
@@ -130,7 +130,7 @@ AI Runtime (services/ai/runtime/)
 | `backend/src/infrastructure/database/` | Database abstraction layer and SQLite/PostgreSQL native adapters (migration engine downstreamed to csilk) |
 | `backend/src/common/` | Cross-cutting: `db.h`, `balance.h`, `jwt.h`, `response.h`, `ctx.h`, `tx_types.h`, `ledger_utils.h` (CSV, TOTP 2FA & REST response envelopes downstreamed to csilk) |
 | `backend/src/config/` | `db_config.h/.c` (DSN), `key_manager.h/.c` (RSA-OAEP keys), `secret.h/.c` (Secret Provider) |
-| `backend/sql/migrations/` | Versioned migration scripts (`sqlite/` & `postgres/`, `V001`~`V015`) |
+| `backend/sql/migrations/` | Versioned migration scripts (`sqlite/` & `postgres/`, `V001`~`V016`) |
 | `backend/sql/` | `migration.sql` (SQLite full schema), `migration_postgres.sql` |
 | `backend/tests/unit/` | 35 CTest unit test suites (financial core, ledger, domain rules, DB repository, migration engine, AI runtime, MCP pool & risk, FX semantics, portfolio PnL alignment) |
 | `backend/tests/test_link.sh` | 39-case integration test suite (151 assertions: auth, CRUD, balance联动, PnL, CSV, pagination, ledger rebuild, AI trace/workflow) |

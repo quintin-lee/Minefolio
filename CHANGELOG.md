@@ -55,10 +55,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **csilk Framework Feature Downstreaming & Integration (Phases 1-4)**:
   - **JSON Type Extraction (`<csilk/core/json.h>`)**: Adopted `csilk_json_as_int64`, `csilk_json_as_double`, and `csilk_json_as_bool` to safely handle column data types without string-to-number parse gotchas.
   - **Transaction Scope & Savepoint (`<csilk/drivers/db/db.h>`)**: Switched `db_tx_scope_*` to native `csilk_db_tx_scope_*` with full nested savepoint and rollback support.
-  - **Database Migration Engine (`<csilk/drivers/db/migration.h>`)**: Downstreamed Flyway-style migration engine (`csilk_migration_*`) supporting discovery, strict version ordering, SHA-256 CRLF normalization, distributed locks, and auto-baseline (`V001`~`V015`).
+  - **Database Migration Engine (`<csilk/drivers/db/migration.h>`)**: Downstreamed Flyway-style migration engine (`csilk_migration_*`) supporting discovery, strict version ordering, SHA-256 CRLF normalization, distributed locks, and auto-baseline (`V001`~`V016`).
   - **CSV Processing (`<csilk/util/csv.h>`)**: Replaced custom CSV utility with RFC 4180 streaming parser and generator (`csilk_csv_*`).
   - **TOTP 2FA Engine (`<csilk/crypto/totp.h>`)**: Replaced internal TOTP implementation with csilk RFC 6238 standard TOTP engine (`csilk_totp_*`).
   - **Middleware Whitelist & Revocation**: Enhanced CSRF and JWT middlewares using csilk native route whitelisting (`csilk_csrf_whitelist_path`) and token revocation callbacks.
+- **Database Migration V016 (AI Message Tool Calls)**:
+  - Added `backend/sql/migrations/{sqlite,postgres}/V016__ai_messages_tool_calls.sql` introducing `tool_calls TEXT DEFAULT ''` column on `ai_messages` table.
+  - Backend `ai_session_repo_impl.c` persists `tool_calls` JSON alongside message content for Agent Loop context reconstruction.
+  - Frontend chat store renders persisted tool call state for message rehydration.
 
 ### Fixed
 - **AI Chat Interaction Correctness (`backend/src/services/ai_service.c`, `backend/src/services/ai/runtime/{loop,loop.h}`, `backend/src/infrastructure/repositories/ai_session_repo_impl.c`, `frontend/src/stores/chat.ts`, `frontend/src/api/ai.ts`)**:
