@@ -1,6 +1,6 @@
 # Minefolio — 架构与设计说明书 (Architecture & Design Specification)
 
-> 版本: 2026-10-17 v1.3.1  
+> 版本: 2026-10-24 v1.3.2  
 > 适用范围: 仓库 HEAD (`master` 分支)  
 > 受众: 研发、运维、安全审计、二次开发
 

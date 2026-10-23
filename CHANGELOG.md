@@ -92,6 +92,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.2] - 2026-10-24
+
+### Changed
+- **Version Bump**: Bumped version to `1.3.2` across backend (`CMakeLists.txt`, `admin_controller.c`), frontend (`package.json`, `package-lock.json`), Android (`build.gradle`), tests (`http.utils.spec.ts`, `mcp-settings.spec.ts`), and documentation (`README.md`, `docs/architecture.md`, `CHANGELOG.md`).
+
 ## [1.3.1] - 2026-09-12
 
 ### Added
