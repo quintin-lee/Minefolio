@@ -58,25 +58,25 @@
           <div class="table-container">
             <el-table ref="tableRef" v-loading="loading" :data="expenses" class="premium-table stream-table" row-class-name="premium-row" header-cell-class-name="premium-header" @selection-change="handleSelectionChange">
               <el-table-column type="selection" width="45" align="center" />
-              <el-table-column prop="expense_date" label="日期" width="110" />
-              <el-table-column prop="asset_name" label="关联资产" min-width="110" />
-              <el-table-column prop="category_name" label="分类" min-width="120" />
-              <el-table-column prop="expense_type" label="类型" width="80">
+              <el-table-column prop="expense_date" label="日期" width="98" />
+              <el-table-column prop="asset_name" label="关联资产" min-width="84" show-overflow-tooltip />
+              <el-table-column prop="category_name" label="分类" min-width="96" show-overflow-tooltip />
+              <el-table-column prop="expense_type" label="类型" width="70">
                 <template #default="{ row }">
                   <el-tag :type="row.expense_type === 'income' ? 'danger' : 'success'" effect="light" class="type-badge" round>
                     {{ row.expense_type === 'income' ? '收入' : '支出' }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column prop="amount" label="金额" width="120" align="right">
+              <el-table-column prop="amount" label="金额" width="106" align="right">
                 <template #default="{ row }">
                   <span :class="['mono-amount', row.expense_type === 'income' ? 'income-text' : 'expense-text']">
                     {{ row.expense_type === 'income' ? '+' : '-' }}{{ formatCurrency(row.amount) }}
                   </span>
                 </template>
               </el-table-column>
-              <el-table-column prop="note" label="备注" min-width="150" />
-              <el-table-column label="标签" min-width="140">
+              <el-table-column prop="note" label="备注" min-width="110" show-overflow-tooltip />
+              <el-table-column label="标签" min-width="96">
                 <template #default="{ row }">
                   <div class="tag-list">
                     <el-tag v-for="tag in (row as any).tags" :key="tag.id" :color="tag.color" size="small" effect="dark" class="custom-tag">
@@ -85,7 +85,7 @@
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column label="操作" width="120" align="center">
+              <el-table-column label="操作" width="108" align="center" fixed="right">
                 <template #default="{ row }">
                   <div class="action-buttons">
                     <el-button link type="primary" @click="openDialog(row as any)">编辑</el-button>
@@ -607,7 +607,7 @@ async function handleImport() {
 .table-container {
   background: var(--mf-surface);
   border-radius: var(--mf-radius-lg);
-  padding: 16px;
+  padding: 12px;
   box-shadow: var(--mf-shadow-sm);
   border: 1px solid var(--mf-border);
   overflow: auto;
