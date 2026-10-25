@@ -14,6 +14,7 @@
 #include "common/jwt.h"
 #include "config/key_manager.h"
 #include "application/category/usecases.h"
+#include "application/account/usecases.h"
 #include "csilk/csilk.h"
 #include "csilk/core/bcrypt.h"
 #include "csilk/core/codec.h"
@@ -146,6 +147,7 @@ system_setup(csilk_ctx_t* c)
     // Seed default ledger first, then ledger-scoped categories & import rules
     int64_t ledger_id = ledger_get_default(pool, user_id);
     category_usecase_seed_defaults(pool, user_id, ledger_id);
+    account_usecase_seed_default(pool, user_id, ledger_id);
     mf_import_rule_seed_defaults(pool, user_id);
 
     /* Persist DB config if provided */

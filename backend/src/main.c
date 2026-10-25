@@ -11,10 +11,11 @@
 #include "interfaces/http/controllers/admin_controller.h"
 #include "interfaces/http/controllers/category_controller.h"
 #include "interfaces/http/controllers/asset_controller.h"
-#include "interfaces/http/controllers/transaction_controller.h"
+#include "interfaces/http/controllers/account_controller.h"
 #include "interfaces/http/controllers/daily_expense_controller.h"
 #include "interfaces/http/controllers/tag_controller.h"
 #include "interfaces/http/controllers/transfer_controller.h"
+#include "interfaces/http/controllers/transaction_controller.h"
 #include "interfaces/http/controllers/report_controller.h"
 #include "interfaces/http/controllers/ai_controller.h"
 #include "interfaces/http/controllers/file_controller.h"
@@ -133,6 +134,7 @@ main(int argc, char** argv)
     register_admin_routes(app);
     register_category_routes(app);
     register_asset_routes(app);
+    register_account_routes(app);
     register_transaction_routes(app);
     register_daily_expense_routes(app);
     register_tag_routes(app);

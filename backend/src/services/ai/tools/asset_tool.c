@@ -1,5 +1,6 @@
 #include "services/ai/tools/asset_tool.h"
 #include "services/ai/tools/schema.h"
+#include "infrastructure/repositories/asset_repo_impl.h"
 #include "infrastructure/repositories/ai_repo_impl.h"
 #include "common/db.h"
 #include <stdio.h>
@@ -28,9 +29,16 @@ exec_get_assets(const ai_tool_t* tool, const ai_tool_context_t* ctx, const csilk
         }
     }
 
-    int64_t       total = 0;
-    csilk_json_t* list =
-        mf_ai_repo_asset_list(ctx->pool, ctx->user_id, page, page_size, type, &total);
+    int64_t total = 0;
+    int64_t account_id = 0;
+    if (args) {
+        double ac = db_get_num(args, "account_id");
+        if (ac >= 1.0) {
+            account_id = (int64_t)ac;
+        }
+    }
+    csilk_json_t* list = asset_list(
+        (csilk_db_pool_t*)ctx->pool, ctx->user_id, page, page_size, type, account_id, &total);
 
     csilk_json_t* res = csilk_json_object();
     csilk_json_add_number(res, "total", (double)total);
@@ -164,6 +172,7 @@ ai_tool_asset_register_all(void)
                            "可选资产分类筛选：cash, bank, stock, fund, crypto, loan, credit_card");
         ai_schema_add_prop(s, "page", "integer", "当前页码，默认 1");
         ai_schema_add_prop(s, "page_size", "integer", "每页条数，默认 20");
+        ai_schema_add_prop(s, "account_id", "integer", "可选账户 ID 筛选");
 
         ai_tool_t t = {
             .name = "get_assets",

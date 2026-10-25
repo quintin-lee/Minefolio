@@ -32,7 +32,7 @@
           <el-option
             v-for="a in assets"
             :key="a.id"
-            :label="`${a.name} (${formatAssetBalance(a)})`"
+            :label="`${assetLabel(a)} (${formatAssetBalance(a)})`"
             :value="a.id"
           />
         </el-select>
@@ -43,7 +43,7 @@
           <el-option
             v-for="a in assets"
             :key="a.id"
-            :label="`${a.name} (${formatAssetBalance(a)})`"
+            :label="`${assetLabel(a)} (${formatAssetBalance(a)})`"
             :value="a.id"
             :disabled="a.id === form.asset_id"
           />
@@ -99,7 +99,7 @@ import { assetsApi } from '@/api/assets'
 import { dailyExpensesApi } from '@/api/daily_expenses'
 import { transactionsApi } from '@/api/transactions'
 import { useCategoryStore } from '@/stores/category'
-import { formatCurrency, localToday } from '@/utils/format'
+import { formatCurrency, localToday, assetLabel } from '@/utils/format'
 import type { Asset } from '@/types'
 
 const props = defineProps<{

@@ -6,6 +6,9 @@
         <h2>资产</h2>
       </div>
       <div class="header-actions">
+        <el-button plain class="action-btn" @click="openAccountDialog()">
+          <el-icon><Wallet /></el-icon> 账户
+        </el-button>
         <el-button type="success" plain class="action-btn" :loading="syncingAll" @click="handleSyncAll">
           <el-icon><Refresh /></el-icon> 同步行情
         </el-button>
@@ -28,77 +31,74 @@
       </el-col>
     </el-row>
 
-    <!-- 资产列表 -->
+    <!-- 资产列表（按账户分组） -->
     <div class="table-container">
-      <el-table v-loading="loading" :data="assets" class="premium-table" row-class-name="premium-row" header-cell-class-name="premium-header">
-        <el-table-column label="名称" min-width="160">
-          <template #default="{ row }">
+      <div v-if="groupedAccounts.length === 0 && !loading" class="empty-state">暂无资产数据</div>
+      <div v-for="group in groupedAccounts" :key="group.key" class="account-group">
+        <div class="account-group-header" @click="toggleGroup(group.key)">
+          <div class="group-title">
+            <span class="account-avatar"><Icon :icon="group.icon || 'ph:wallet'" /></span>
+            <div class="group-name-wrap">
+              <span class="group-name">{{ group.label }}</span>
+              <span v-if="group.institution" class="institution-tag">{{ group.institution }}</span>
+              <el-tag v-if="group.archived" size="small" type="info">已归档</el-tag>
+            </div>
+          </div>
+          <div class="group-meta">
+            <span class="group-count">{{ group.assets.length }} 项资产</span>
+            <span v-if="group.subtotalCny !== 0" class="group-subtotal mono-amount">≈ ¥{{ group.subtotalCny.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</span>
+            <el-tooltip v-if="group.editable" content="编辑账户" placement="top">
+              <el-button class="group-edit" type="primary" link :icon="Edit" @click.stop="openAccountDialog(group.account)" />
+            </el-tooltip>
+            <el-icon class="group-chevron">
+              <ArrowDown v-if="collapsedGroups.has(group.key)" />
+              <ArrowUp v-else />
+            </el-icon>
+          </div>
+        </div>
+        <div v-if="!collapsedGroups.has(group.key)" class="account-group-body">
+          <div v-for="a in group.assets" :key="a.id" class="asset-row">
             <div class="asset-name-cell">
-              <span class="asset-icon"><Icon :icon="ASSET_TYPE_ICONS[row.asset_type] ?? 'ph:briefcase'" /></span>
+              <span class="asset-icon"><Icon :icon="ASSET_TYPE_ICONS[a.asset_type ?? ''] ?? 'ph:briefcase'" /></span>
               <div class="asset-name-group">
-                <span class="asset-name">{{ row.name }}</span>
-                <span v-if="row.symbol" class="asset-symbol-sub">
-                  <el-tag size="small" effect="plain" class="symbol-tag">{{ row.symbol }}</el-tag>
-                  <span v-if="row.last_sync_at" class="last-sync-time">同步于 {{ row.last_sync_at.slice(5, 16) }}</span>
+                <span class="asset-name">{{ a.name }}</span>
+                <span v-if="a.symbol" class="asset-symbol-sub">
+                  <el-tag size="small" effect="plain" class="symbol-tag">{{ a.symbol }}</el-tag>
+                  <span v-if="a.last_sync_at" class="last-sync-time">同步于 {{ a.last_sync_at.slice(5, 16) }}</span>
+                </span>
+                <span v-if="hasInvestmentAssets && isInvestmentType(a.asset_type)" class="asset-sub-meta">
+                  {{ Number(a.quantity ?? 0).toFixed(2) }} 份 · 成本 {{ formatCurrency(Number(a.cost_basis ?? 0), a.currency) }} · 净值 {{ Number(a.net_value ?? 0).toFixed(4) }}
                 </span>
               </div>
             </div>
-          </template>
-        </el-table-column>
-        <el-table-column prop="category_name" label="分类" min-width="110" />
-        <el-table-column prop="account_no" label="账户编号" min-width="120" />
-        <el-table-column label="币种" width="80">
-          <template #default="{ row }">
-            <el-tag size="small" class="currency-tag" effect="plain">{{ row.currency }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="当前价值" min-width="150" align="right">
-          <template #default="{ row }">
-            <div style="display: flex; flex-direction: column; align-items: flex-end; justify-content: center;">
-              <span class="mono-amount">{{ formatCurrency(row.current_value, row.currency) }}</span>
-              <span v-if="row.currency && row.currency !== 'CNY' && exchangeRates[row.currency]" class="cny-converted-hint">
-                ≈ ¥{{ (Number(row.current_value) * (exchangeRates[row.currency] || 1)).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
+            <span class="asset-cat">{{ a.category_name }}</span>
+            <div class="value-col">
+              <span class="mono-amount">{{ formatCurrency(a.current_value, a.currency) }}</span>
+              <span v-if="a.currency && a.currency !== 'CNY' && exchangeRates[a.currency]" class="cny-converted-hint">
+                ≈ ¥{{ (Number(a.current_value) * (exchangeRates[a.currency] || 1)).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
               </span>
             </div>
-          </template>
-        </el-table-column>
-        <el-table-column v-if="hasInvestmentAssets" label="份额" min-width="100" align="right">
-          <template #default="{ row }">
-            <span class="mono-amount">{{ row.quantity != null ? Number(row.quantity).toFixed(2) : '-' }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column v-if="hasInvestmentAssets" label="成本" min-width="110" align="right">
-          <template #default="{ row }">
-            <span class="mono-amount">{{ row.cost_basis != null ? formatCurrency(Number(row.cost_basis), row.currency) : '-' }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column v-if="hasInvestmentAssets" label="净值" min-width="100" align="right">
-          <template #default="{ row }">
-            <span class="mono-amount">{{ row.net_value != null ? Number(row.net_value).toFixed(4) : '-' }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="160" align="center">
-          <template #default="{ row }">
-            <div class="action-buttons">
-              <el-tooltip v-if="row.symbol" content="同步最新行情" placement="top">
-                <el-button link type="success" size="small" :loading="syncingId === row.id" :icon="Refresh" @click="handleSyncSingle(row)" />
+            <div class="row-actions">
+              <el-tooltip v-if="a.symbol" content="同步最新行情" placement="top">
+                <el-button link type="success" size="small" :loading="syncingId === a.id" :icon="Refresh" @click="handleSyncSingle(a)" />
               </el-tooltip>
-              <el-tooltip v-if="row.symbol || isInvestmentType(row.asset_type)" content="查看净值走势" placement="top">
-                <el-button link type="warning" size="small" :icon="TrendCharts" @click="openHistoryChart(row)" />
+              <el-tooltip v-if="a.symbol || isInvestmentType(a.asset_type)" content="查看净值走势" placement="top">
+                <el-button link type="warning" size="small" :icon="TrendCharts" @click="openHistoryChart(a)" />
               </el-tooltip>
               <el-tooltip content="编辑" placement="top">
-                <el-button link type="primary" size="small" :icon="Edit" @click="openDialog(row)" />
+                <el-button link type="primary" size="small" :icon="Edit" @click="openDialog(a)" />
               </el-tooltip>
               <el-tooltip content="删除" placement="top">
-                <el-button link type="danger" size="small" :icon="Delete" @click="handleDelete(row)" />
+                <el-button link type="danger" size="small" :icon="Delete" @click="handleDelete(a)" />
               </el-tooltip>
             </div>
-          </template>
-        </el-table-column>
-      </el-table>
-      <div class="pagination-bar">
-        <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[10, 20, 50, 100]" layout="total, sizes, prev, pager, next, jumper" background @current-change="loadAssets" @size-change="handleSizeChange" />
+          </div>
+          <div v-if="group.assets.length === 0" class="group-empty">暂无资产</div>
+        </div>
       </div>
+      <el-button v-if="groupedAccounts.length > 0" class="add-account-cta" plain @click="openAccountDialog()">
+        <el-icon><Wallet /></el-icon> 新建账户
+      </el-button>
     </div>
 
     <!-- 新增/编辑对话框 -->
@@ -115,6 +115,12 @@
               }
             } }"
             placeholder="选择分类" style="width: 100%" @change="onCatChange" />
+        </el-form-item>
+
+        <el-form-item label="归属账户">
+          <el-select v-model="form.account_id" style="width: 100%" clearable placeholder="默认账户">
+            <el-option v-for="acc in accounts" :key="acc.id" :label="`${acc.name}${acc.account_no ? '（' + acc.account_no + '）' : ''}`" :value="acc.id" />
+          </el-select>
         </el-form-item>
 
         <template v-if="isInvestment">
@@ -177,21 +183,26 @@
         :currency="selectedHistoryAsset.currency"
       />
     </el-dialog>
+
+    <!-- 账户管理对话框 -->
+    <AccountDialog v-model:visible="accountDialogVisible" :account="editingAccount" @saved="handleAccountSaved" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Edit, Delete, Plus, Refresh, TrendCharts } from '@element-plus/icons-vue'
+import { Edit, Delete, Plus, Refresh, TrendCharts, Wallet, ArrowDown, ArrowUp } from '@element-plus/icons-vue'
 import { assetsApi } from '@/api/assets'
+import { accountsApi } from '@/api/accounts'
 import { summaryApi } from '@/api/summary'
 import { marketApi } from '@/api/market'
 import { useCategoryStore } from '@/stores/category'
-import type { Asset, Category, Summary, MarketSearchItem } from '@/types'
+import type { Asset, Category, Summary, MarketSearchItem, Account } from '@/types'
 import SummaryCard from '@/components/SummaryCard.vue'
 import SymbolSelect from '@/components/SymbolSelect.vue'
 import PriceHistoryChart from '@/components/PriceHistoryChart.vue'
+import AccountDialog from '@/components/AccountDialog.vue'
 import { formatCurrency } from '@/utils/format'
 import { Icon } from '@iconify/vue'
 
@@ -221,10 +232,13 @@ const saving = ref(false)
 const syncingAll = ref(false)
 const syncingId = ref<number | null>(null)
 const formRef = ref()
-const page = ref(1)
-const pageSize = ref(20)
-const total = ref(0)
 const summary = ref<Summary>({ total_assets: 0, total_liabilities: 0, net_worth: 0, category_breakdown: [], trend: [] })
+
+/* 账户维度 */
+const accounts = ref<Account[]>([])
+const accountDialogVisible = ref(false)
+const editingAccount = ref<Account | null>(null)
+const collapsedGroups = ref<Set<string>>(new Set())
 const exchangeRates = ref<Record<string, number>>({})
 
 const totalAssets = computed(() => summary.value.total_assets)
@@ -259,9 +273,8 @@ async function loadSummary() {
 async function loadAssets() {
   loading.value = true
   try {
-    const res = await assetsApi.list({ page: page.value, page_size: pageSize.value })
+    const res = await assetsApi.list({ page_size: 500 })
     assets.value = res.list
-    total.value = res.total
   } catch (err) {
     console.error('[Assets] loadAssets failed:', err)
   } finally {
@@ -269,9 +282,91 @@ async function loadAssets() {
   }
 }
 
-function handleSizeChange() {
-  page.value = 1
-  loadAssets()
+async function loadAccounts() {
+  try {
+    accounts.value = await accountsApi.list({ include_archived: 1 })
+  } catch (err) {
+    console.error('[Assets] loadAccounts failed:', err)
+  }
+}
+
+const groupedAccounts = computed(() => {
+  const institutionLabels: Record<string, string> = {
+    bank_card: '银行卡',
+    platform: '平台账户',
+    broker: '券商',
+    fund_platform: '基金平台',
+    cash_wallet: '现金钱包',
+    other: '其他',
+  }
+  type Group = { key: string; label: string; icon: string; institution: string; archived: boolean; account: Account | null; assets: Asset[]; subtotalCny: number; editable: boolean }
+  const byKey = new Map<string, Group>()
+  for (const acc of accounts.value) {
+    byKey.set(`acct-${acc.id}`, {
+      key: `acct-${acc.id}`,
+      label: acc.name,
+      icon: acc.icon || 'ph:wallet',
+      institution: institutionLabels[acc.institution] || acc.institution,
+      archived: !!acc.archived,
+      account: acc,
+      assets: [],
+      subtotalCny: 0,
+      editable: true,
+    })
+  }
+  for (const a of assets.value) {
+    const known = a.account_id && a.account_id > 0 ? byKey.get(`acct-${a.account_id}`) : undefined
+    const key = known ? known.key : 'ungrouped'
+    let g = byKey.get(key)
+    if (!g) {
+      g = {
+        key: 'ungrouped',
+        label: '未分组',
+        icon: 'ph:wallet',
+        institution: '',
+        archived: false,
+        account: null,
+        assets: [],
+        subtotalCny: 0,
+        editable: false,
+      }
+      byKey.set(key, g)
+    }
+    g.assets.push(a)
+    const rate = a.currency && a.currency !== 'CNY' ? exchangeRates.value[a.currency] || 1 : 1
+    g.subtotalCny += Number(a.current_value ?? 0) * rate
+  }
+  const groups = Array.from(byKey.values())
+  groups.sort((x, y) => {
+    if (x.key === 'ungrouped') return 1
+    if (y.key === 'ungrouped') return -1
+    const xa = x.account
+    const ya = y.account
+    if (!xa && !ya) return 0
+    if (!xa) return 1
+    if (!ya) return -1
+    return (xa.sort_order - ya.sort_order) || (xa.id - ya.id)
+  })
+  return groups
+})
+
+function toggleGroup(key: string) {
+  if (collapsedGroups.value.has(key)) {
+    collapsedGroups.value.delete(key)
+  } else {
+    collapsedGroups.value.add(key)
+  }
+}
+
+function openAccountDialog(acc?: Account | null) {
+  editingAccount.value = acc ?? null
+  accountDialogVisible.value = true
+}
+
+async function handleAccountSaved() {
+  await loadAccounts()
+  await loadAssets()
+  await loadSummary()
 }
 
 async function loadCategories() {
@@ -340,9 +435,10 @@ function openDialog(asset?: any) {
     current_value: asset.current_value, currency: asset.currency, note: asset.note,
     quantity: asset.quantity ?? 0, net_value: asset.net_value ?? 0,
     cost_basis: asset.cost_basis ?? 0,
+    account_id: asset.account_id ?? null,
     _catPath: [asset.category_id],
     _isInvestment: isInv,
-  } : { name: '', category_id: null, account_no: '', symbol: '', quote_source: '', current_value: 0, currency: 'CNY', note: '', quantity: 0, net_value: 0, cost_basis: 0, _catPath: [], _isInvestment: false })
+  } : { name: '', category_id: null, account_no: '', symbol: '', quote_source: '', current_value: 0, currency: 'CNY', note: '', quantity: 0, net_value: 0, cost_basis: 0, account_id: null, _catPath: [], _isInvestment: false })
   dialogVisible.value = true
 }
 
@@ -358,6 +454,7 @@ const form = reactive({
   quantity: 0,
   net_value: 0,
   cost_basis: 0,
+  account_id: null as number | null,
   _catPath: [] as number[],
   _isInvestment: false as boolean
 })
@@ -396,6 +493,7 @@ async function handleSubmit() {
         name: form.name,
         category_id: form.category_id,
         account_no: form.account_no,
+        account_id: form.account_id ?? 0,
         currency: form.currency,
         note: form.note,
         symbol: form.symbol,
@@ -432,6 +530,7 @@ async function handleDelete(asset: any) {
 
 onMounted(async () => {
   try {
+    await loadAccounts()
     await Promise.allSettled([loadAssets(), loadSummary(), loadCategories(), loadRates()])
   } catch (err) {
     console.error('[Assets] onMounted failed:', err)
@@ -579,5 +678,139 @@ onMounted(async () => {
   justify-content: flex-end;
   margin-top: 16px;
   flex-shrink: 0;
+}
+.account-group {
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: var(--mf-radius-md, 8px);
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+.account-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  cursor: pointer;
+  user-select: none;
+  background: var(--el-fill-color-lighter);
+}
+
+.group-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.account-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: var(--el-color-primary-light-8);
+  color: var(--el-color-primary);
+  font-size: 18px;
+}
+
+.group-name-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.group-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--el-text-color-primary);
+}
+
+.institution-tag {
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(0, 212, 255, 0.08);
+  color: var(--el-text-color-secondary);
+  border: 1px solid rgba(0, 212, 255, 0.15);
+}
+
+.group-meta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.group-count {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.group-subtotal {
+  font-size: 14px;
+  color: var(--el-color-primary);
+}
+
+.group-chevron {
+  color: var(--el-text-color-secondary);
+}
+
+.account-group-body {
+  padding: 8px 12px;
+}
+
+.asset-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.4fr) 100px minmax(160px, 1fr) 150px;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+
+.asset-row:last-child {
+  border-bottom: none;
+}
+
+.asset-cat {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.asset-sub-meta {
+  font-size: 11px;
+  color: var(--el-text-color-secondary);
+}
+
+.row-actions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.value-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.group-empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+}
+
+.add-account-cta {
+  width: 100%;
+  margin-top: 4px;
+  border-style: dashed;
+}
+
+.empty-state {
+  text-align: center;
+  color: var(--el-text-color-secondary);
+  padding: 48px 0;
 }
 </style>

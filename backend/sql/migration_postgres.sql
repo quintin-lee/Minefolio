@@ -320,6 +320,30 @@ CREATE INDEX IF NOT EXISTS idx_transactions_ledger ON transactions(ledger_id);
 CREATE INDEX IF NOT EXISTS idx_daily_expenses_ledger ON daily_expenses(ledger_id);
 CREATE INDEX IF NOT EXISTS idx_categories_ledger ON categories(ledger_id);
 
+-- 账户维度（纯容器：账户不记余额；小计 = 子资产 SUM(current_value)）
+CREATE TABLE IF NOT EXISTS accounts (
+    id           BIGSERIAL PRIMARY KEY,
+    user_id      BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    ledger_id    BIGINT NOT NULL REFERENCES ledgers(id) ON DELETE CASCADE,
+    name         TEXT NOT NULL,
+    institution  VARCHAR(32) NOT NULL DEFAULT 'other'
+                 CHECK (institution IN ('bank_card','platform','broker','fund_platform','cash_wallet','other')),
+    account_no   TEXT,
+    currency     VARCHAR(16) DEFAULT 'CNY',
+    icon         VARCHAR(64),
+    note         TEXT,
+    sort_order   INTEGER NOT NULL DEFAULT 0,
+    archived     BOOLEAN NOT NULL DEFAULT false,
+    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (user_id, ledger_id, name)
+);
+CREATE INDEX IF NOT EXISTS idx_accounts_user ON accounts(user_id);
+CREATE INDEX IF NOT EXISTS idx_accounts_ledger ON accounts(ledger_id);
+
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS account_id BIGINT REFERENCES accounts(id) ON DELETE RESTRICT;
+CREATE INDEX IF NOT EXISTS idx_assets_account ON assets(account_id);
+
 -- 账单导入智能规则表
 CREATE TABLE IF NOT EXISTS import_rules (
     id               BIGSERIAL PRIMARY KEY,

@@ -7,6 +7,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AccountDialog: typeof import('./components/AccountDialog.vue')['default']
     ActionCard: typeof import('./components/ActionCard.vue')['default']
     AiMcpManager: typeof import('./components/settings/AiMcpManager.vue')['default']
     AiProviderManager: typeof import('./components/settings/AiProviderManager.vue')['default']

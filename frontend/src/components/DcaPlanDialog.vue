@@ -23,7 +23,7 @@
           <el-option
             v-for="item in investmentAssets"
             :key="item.id"
-            :label="`${item.name} (${item.symbol || item.category_name || item.currency})`"
+            :label="`${assetLabel(item)} (${item.symbol || item.category_name || item.currency})`"
             :value="item.id"
           />
         </el-select>
@@ -39,7 +39,7 @@
           <el-option
             v-for="item in fundingAssets"
             :key="item.id"
-            :label="`${item.name} (余额: ¥${Number(item.current_value).toFixed(2)})`"
+            :label="`${assetLabel(item)} (余额: ¥${Number(item.current_value).toFixed(2)})`"
             :value="item.id"
           />
         </el-select>
@@ -144,6 +144,7 @@ import { ref, reactive, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { dcaApi } from '@/api/dca'
+import { assetLabel } from '@/utils/format'
 import type { Asset, DcaPlan } from '@/types'
 
 const props = defineProps<{

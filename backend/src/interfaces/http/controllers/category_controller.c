@@ -1,5 +1,6 @@
 #include "interfaces/http/controllers/category_controller.h"
 #include "application/category/usecases.h"
+#include "application/account/usecases.h"
 #include "application/category/commands.h"
 #include "domain/category/entity.h"
 #include "infrastructure/repositories/category_repo_impl.h"
@@ -129,6 +130,7 @@ api_categories_list(csilk_ctx_t* c)
     }
 
     category_usecase_seed_defaults(db_get_pool(), user_id, ledger_id);
+    account_usecase_seed_default(db_get_pool(), user_id, ledger_id);
     const char* type_query = csilk_get_query(c, "type");
 
     if (type_query && strstr(type_query, ",")) {
@@ -317,6 +319,7 @@ api_categories_children(csilk_ctx_t* c)
     }
 
     category_usecase_seed_defaults(db_get_pool(), user_id, ledger_id);
+    account_usecase_seed_default(db_get_pool(), user_id, ledger_id);
     csilk_json_t* list = NULL;
     if (category_usecase_children(db_get_pool(), user_id, ledger_id, cid, &list) != 0) {
         respond_error(c, 500, "查询子分类失败");

@@ -153,8 +153,8 @@
         </el-form-item>
         <el-form-item label="关联资产" prop="asset_id">
           <el-select v-model="form.asset_id" placeholder="选择资产" style="width: 100%" filterable>
-            <el-option v-for="a in allAssets" :key="a.id" :label="`${a.name}（${a.currency} ${Number(a.current_value).toFixed(2)}）`" :value="Number(a.id)">
-              <span>{{ a.name }}</span>
+            <el-option v-for="a in allAssets" :key="a.id" :label="`${assetLabel(a)}（${a.currency} ${Number(a.current_value).toFixed(2)}）`" :value="Number(a.id)">
+              <span>{{ assetLabel(a) }}</span>
               <el-tag v-if="a.asset_type === 'loan' || a.asset_type === 'credit_card' || a.asset_type === 'other_liability'" size="small" type="warning" effect="light" style="margin-left: 8px">负债</el-tag>
               <span style="float: right; color: var(--mf-text-muted); font-size: 13px">{{ a.currency }} {{ Number(a.current_value).toFixed(2) }}</span>
             </el-option>
@@ -226,7 +226,7 @@ import TagPicker from '@/components/TagPicker.vue'
 import MonthlyChart from '@/components/MonthlyChart.vue'
 import ExpenseCategoryPie from '@/components/ExpenseCategoryPie.vue'
 import ReceiptScannerModal from '@/components/ReceiptScannerModal.vue'
-import { formatCurrency, localToday, localThisMonth } from '@/utils/format'
+import { formatCurrency, localToday, localThisMonth, assetLabel } from '@/utils/format'
 import { exportChartCsv } from '@/utils/chart-export'
 import SummaryCard from '@/components/SummaryCard.vue'
 import type { DailyExpense, Tag, Category, Asset } from '@/types'

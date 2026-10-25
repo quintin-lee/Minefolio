@@ -72,7 +72,7 @@
               <el-option
                 v-for="asset in availableAssets"
                 :key="asset.id"
-                :label="`${asset.name} (¥${Number(asset.current_value).toFixed(2)})`"
+                :label="`${assetLabel(asset)} (¥${Number(asset.current_value).toFixed(2)})`"
                 :value="asset.id"
               />
             </el-select>
@@ -129,7 +129,7 @@
               <el-option
                 v-for="asset in availableAssets"
                 :key="asset.id"
-                :label="`${asset.name} (¥${Number(asset.current_value).toFixed(2)})`"
+                :label="`${assetLabel(asset)} (¥${Number(asset.current_value).toFixed(2)})`"
                 :value="asset.id"
               />
             </el-select>
@@ -147,7 +147,7 @@
               <el-option
                 v-for="asset in availableAssets"
                 :key="asset.id"
-                :label="`${asset.name} (¥${Number(asset.current_value).toFixed(2)})`"
+                :label="`${assetLabel(asset)} (¥${Number(asset.current_value).toFixed(2)})`"
                 :value="asset.id"
               />
             </el-select>
@@ -219,7 +219,7 @@ import { dailyExpensesApi } from '@/api/daily_expenses'
 import { transactionsApi } from '@/api/transactions'
 import { assetsApi } from '@/api/assets'
 import { useCategoryStore } from '@/stores/category'
-import { localToday } from '@/utils/format'
+import { localToday, assetLabel } from '@/utils/format'
 import type { Asset, Category } from '@/types'
 
 export interface ProposedAction {

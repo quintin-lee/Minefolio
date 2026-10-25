@@ -10,6 +10,7 @@ import { getDb, run, query, rowsFrom, persist, resetLocalDb } from '@/db/local'
 import { dailyExpensesApi } from '@/api/daily_expenses'
 import { transactionsApi } from '@/api/transactions'
 import { assetsApi } from '@/api/assets'
+import { accountsApi } from '@/api/accounts'
 import type { SyncQueueItem, SqlValue } from '@/types/mobile'
 
 /** 表名到对应 API 模块的映射字典 */
@@ -17,12 +18,14 @@ const API_BY_TABLE: Record<string, any> = {
   daily_expenses: dailyExpensesApi,
   transactions: transactionsApi,
   assets: assetsApi,
+  accounts: accountsApi,
 }
 
 /** 允许本地同步写入的白名单列集合 */
 const TABLE_COLUMNS: Record<string, Set<string>> = {
   categories: new Set(['id', 'user_id', 'name', 'parent_id', 'type', 'asset_type', 'currency', 'icon', 'sort_order', 'created_at', 'updated_at']),
-  assets: new Set(['id', 'user_id', 'category_id', 'name', 'account_no', 'current_value', 'quantity', 'cost_basis', 'net_value', 'currency', 'note', 'created_at', 'updated_at']),
+  assets: new Set(['id', 'user_id', 'category_id', 'name', 'account_no', 'account_id', 'current_value', 'quantity', 'cost_basis', 'net_value', 'currency', 'note', 'created_at', 'updated_at']),
+  accounts: new Set(['id', 'user_id', 'ledger_id', 'name', 'institution', 'account_no', 'currency', 'icon', 'note', 'sort_order', 'archived', 'created_at', 'updated_at']),
   transactions: new Set(['id', 'user_id', 'asset_id', 'linked_asset_id', 'category_id', 'source_type', 'transaction_type', 'direction', 'linked_direction', 'amount', 'price_per_unit', 'quantity', 'fee', 'currency', 'transaction_date', 'note', 'created_at', 'updated_at']),
   tags: new Set(['id', 'user_id', 'name', 'color', 'created_at', 'updated_at']),
   daily_expenses: new Set(['id', 'user_id', 'category_id', 'asset_id', 'expense_type', 'amount', 'currency', 'expense_date', 'note', 'created_at', 'updated_at']),
@@ -169,6 +172,34 @@ export const useSyncStore = defineStore('sync', () => {
   }
 
   /**
+   * 将离线创建的账户获得服务端真实 ID 后，把本地 assets.account_id 以及
+   * 后续待推送队列中 assets 记录的 account_id 字段一并重映射。
+   * @param oldId 本地占位 ID
+   * @param newId 服务端分配的真实 ID
+   * @param afterQueueId 只处理排在当前 create 之后的队列项
+   */
+  function remapAccountRefs(oldId: number, newId: number, afterQueueId: number): void {
+    run('UPDATE assets SET account_id = ? WHERE account_id = ?', [newId, oldId])
+    const queued = rowsFrom(query(
+      "SELECT id, payload FROM sync_queue WHERE synced = 0 AND id > ? AND table_name = 'assets'",
+      [afterQueueId]
+    ))
+    for (const q of queued) {
+      let payload: Record<string, unknown>
+      try {
+        payload = JSON.parse(String(q.payload))
+      } catch {
+        continue
+      }
+      if (payload.account_id === oldId) {
+        payload.account_id = newId
+        run('UPDATE sync_queue SET payload = ? WHERE id = ?', [JSON.stringify(payload), Number(q.id)])
+      }
+    }
+    persist()
+  }
+
+  /**
    * 将本地离线队列中的数据依次推送到服务端 API (Push)
    */
   async function pushLocal(): Promise<void> {
@@ -204,6 +235,8 @@ export const useSyncStore = defineStore('sync', () => {
             if (item.table_name === 'assets') {
               // 资产获得真实 ID 后，同步重映射本地依赖行与后续待推送 payload
               remapAssetRefs(recordId, newId, item.id)
+            } else if (item.table_name === 'accounts') {
+              remapAccountRefs(recordId, newId, item.id)
             } else {
               persist()
             }
@@ -230,7 +263,7 @@ export const useSyncStore = defineStore('sync', () => {
    * 从服务端拉取最新数据覆盖本地 SQLite (Pull，服务端胜出策略：updated_at 较新则覆盖)
    */
   async function pullRemote(): Promise<void> {
-    const tables = ['daily_expenses', 'transactions', 'assets']
+    const tables = ['accounts', 'daily_expenses', 'transactions', 'assets']
     for (const table of tables) {
       const api = API_BY_TABLE[table]
       if (!api?.list) continue

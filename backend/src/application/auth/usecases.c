@@ -6,6 +6,7 @@
 #include "common/ledger_utils.h"
 #include "infrastructure/repositories/import_rule_repo_impl.h"
 #include "application/category/usecases.h"
+#include "application/account/usecases.h"
 #include "config/key_manager.h"
 #include "common/config.h"
 #include "common/jwt.h"
@@ -127,6 +128,7 @@ auth_usecase_register(void*                      pool,
     csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
     int64_t          ledger_id = ledger_get_default(db_pool, user_id);
     category_usecase_seed_defaults(db_pool, user_id, ledger_id);
+    account_usecase_seed_default(db_pool, user_id, ledger_id);
     mf_import_rule_seed_defaults(db_pool, user_id);
 
     char*         token = jwt_generate_token(c, user_id, 0);
@@ -711,6 +713,7 @@ auth_usecase_oauth_callback(void*                       pool,
         csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
         int64_t          ledger_id = ledger_get_default(db_pool, user_id);
         category_usecase_seed_defaults(db_pool, user_id, ledger_id);
+        account_usecase_seed_default(db_pool, user_id, ledger_id);
         mf_import_rule_seed_defaults(db_pool, user_id);
     }
 

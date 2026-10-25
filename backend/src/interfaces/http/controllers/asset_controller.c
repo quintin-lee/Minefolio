@@ -23,6 +23,7 @@ api_assets_list(csilk_ctx_t* c)
     query_asset_filter_t filter = {
         .user_id = user_id,
         .category_id = csilk_get_query(c, "category_id"),
+        .account_id = parse_query_int_strict(csilk_get_query(c, "account_id"), 0),
         .page = page,
         .page_size = page_size,
     };
@@ -60,6 +61,7 @@ api_assets_create(csilk_ctx_t* c)
         .ledger_id = ledger_id,
         .category_id = db_get_int(body, "category_id"),
         .name = csilk_json_get_string(body, "name"),
+        .account_id = db_get_int(body, "account_id"),
         .account_no = csilk_json_get_string(body, "account_no"),
         .current_value = db_get_num(body, "current_value"),
         .currency = csilk_json_get_string(body, "currency"),
@@ -126,6 +128,8 @@ api_assets_update(csilk_ctx_t* c)
         .net_value = db_get_num(body, "net_value"),
         .symbol = csilk_json_get_string(body, "symbol"),
         .quote_source = csilk_json_get_string(body, "quote_source"),
+        .has_account_id = (csilk_json_get(body, "account_id") != NULL),
+        .account_id = db_get_int(body, "account_id"),
     };
 
     asset_usecase_result_t res = {0};

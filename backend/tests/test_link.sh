@@ -724,6 +724,78 @@ DASH_TREND_LEN=$(echo "$DASH_RES" | jq -r '.data.trend | length')
 check "GET /summary 包含 30 天连续趋势" "30" "$DASH_TREND_LEN"
 
 echo ""
+echo "--- Case 40: 账户维度 (accounts) 验证 ---"
+# 1. 懒种子钩子：默认账本已创建「默认账户」
+DEFAULT_ACCT=$(sqlite3 "$DB" "SELECT id FROM accounts WHERE user_id=(SELECT id FROM users WHERE username='linktest') AND name='默认账户' AND institution='cash_wallet' LIMIT 1")
+test -n "$DEFAULT_ACCT" && DEF_ACCT_PASS="1" || DEF_ACCT_PASS="0"
+check "懒种子：默认账本已创建默认账户" "1" "$DEF_ACCT_PASS"
+
+# 2. 存量回填：钱包/信用卡资产的 account_id 已挂到默认账户
+WALLET_ACCT=$(sqlite3 "$DB" "SELECT account_id FROM assets WHERE id=$WALLET_ID")
+check "存量资产回填 account_id 指向默认账户" "$DEFAULT_ACCT" "$WALLET_ACCT"
+
+# 3. 账户列表 API：GET /api/accounts 返回默认账户，含 asset_count
+ACCT_LIST=$(curl -s -H "$AUTH" "$BASE/accounts")
+ACCT_LIST_CODE=$(echo "$ACCT_LIST" | jq -r '.code | floor')
+check "GET /accounts code=0" "0" "$ACCT_LIST_CODE"
+ACCT_COUNT=$(echo "$ACCT_LIST" | jq -r --argjson d "$DEFAULT_ACCT" '[.data[] | select((.id|tostring) == ($d|tostring))] | length')
+check "默认账户出现在列表中" "1" "$ACCT_COUNT"
+
+# 4. 创建账户
+NEW_ACCT_RES=$(curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/accounts" -d '{"name":"招行储蓄卡","institution":"bank_card","account_no":"6225****1234","currency":"CNY"}')
+NEW_ACCT_CODE=$(echo "$NEW_ACCT_RES" | jq -r '.code | floor')
+check "创建银行卡账户 code=0" "0" "$NEW_ACCT_CODE"
+NEW_ACCT_ID=$(echo "$NEW_ACCT_RES" | jq -r '.data.id | floor')
+DB_ACCT_NAME=$(sqlite3 "$DB" "SELECT name FROM accounts WHERE id=$NEW_ACCT_ID AND user_id=(SELECT id FROM users WHERE username='linktest')")
+check "新账户落库" "招行储蓄卡" "$DB_ACCT_NAME"
+
+# 5. 创建重名账户 → 1004 冲突
+DUP_ACCT_CODE=$(curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/accounts" -d '{"name":"招行储蓄卡","institution":"bank_card"}' | jq -r '.code | floor')
+check "重名账户 code=1004" "1004" "$DUP_ACCT_CODE"
+
+# 6. 更新账户（归档）
+ARCH_CODE=$(curl -s -X PUT -H "$AUTH" -H "Content-Type: application/json" "$BASE/accounts/$NEW_ACCT_ID" -d '{"archived":true,"institution":"platform"}' | jq -r '.code | floor')
+check "归档账户 code=0" "0" "$ARCH_CODE"
+ARCH_FLAG=$(sqlite3 "$DB" "SELECT archived FROM accounts WHERE id=$NEW_ACCT_ID")
+check "账户 archived 标志已置位" "1" "$ARCH_FLAG"
+
+# 6b. 列表过滤：默认列表不含已归档账户；include_archived=1 含
+ARCH_EXCLUDED=$(curl -s -H "$AUTH" "$BASE/accounts" | jq -r --arg id "$NEW_ACCT_ID" '[.data[] | select((.id|tostring) == $id)] | length')
+check "默认列表过滤已归档账户" "0" "$ARCH_EXCLUDED"
+ARCH_INCLUDED=$(curl -s -H "$AUTH" "$BASE/accounts?include_archived=1" | jq -r --arg id "$NEW_ACCT_ID" '[.data[] | select((.id|tostring) == $id)] | length')
+check "include_archived=1 返回已归档账户" "1" "$ARCH_INCLUDED"
+
+# 7. 资产挂新账户：创建资产时携带 account_id
+HANG_ASSET_RES=$(curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/assets" -d "{\"name\":\"支付宝余额\",\"category_id\":$ASSET_CAT,\"current_value\":200,\"currency\":\"CNY\",\"account_id\":$NEW_ACCT_ID}")
+check "创建资产携带 account_id code=0" "0" "$(echo "$HANG_ASSET_RES" | jq -r '.code | floor')"
+HANG_ASSET_ID=$(sqlite3 "$DB" "SELECT id FROM assets WHERE name='支付宝余额' AND user_id=1 LIMIT 1")
+HANG_ASSET_ACCT=$(sqlite3 "$DB" "SELECT account_id FROM assets WHERE id=$HANG_ASSET_ID")
+check "资产已挂到指定账户" "$NEW_ACCT_ID" "$HANG_ASSET_ACCT"
+
+# 8. 资产按账户过滤：GET /api/assets?account_id=<new> 仅含新资产
+FILT_TOTAL=$(curl -s -H "$AUTH" "$BASE/assets?account_id=$NEW_ACCT_ID" | jq -r '.data.total | floor')
+check "assets?account_id 过滤命中 1 条" "1" "$FILT_TOTAL"
+
+# 9. 资产 detail 含 account_name
+DETAIL_RES=$(curl -s -H "$AUTH" "$BASE/assets/$HANG_ASSET_ID")
+DETAIL_ACCT_NAME=$(echo "$DETAIL_RES" | jq -r '.data.account_name // empty')
+check "资产详情含 account_name" "招行储蓄卡" "$DETAIL_ACCT_NAME"
+
+# 10. 删除账户：有资产 → 拒绝
+DEL_ACCT_CODE=$(curl -s -X DELETE -H "$AUTH" "$BASE/accounts/$NEW_ACCT_ID" | jq -r '.code | floor')
+check "含资产的账户删除被拒绝 code=1004" "1004" "$DEL_ACCT_CODE"
+# 恢复归档便于后续用例
+curl -s -X PUT -H "$AUTH" -H "Content-Type: application/json" "$BASE/accounts/$NEW_ACCT_ID" -d '{"archived":false}' >/dev/null
+
+# 11. 资产重挂账户：PUT /assets/:id 携带 account_id
+REHANG_CODE=$(curl -s -X PUT -H "$AUTH" -H "Content-Type: application/json" "$BASE/assets/$HANG_ASSET_ID" -d "{\"account_id\":$DEFAULT_ACCT}" | jq -r '.code | floor')
+check "资产重挂账户 code=0" "0" "$REHANG_CODE"
+REHANG_ACCT=$(sqlite3 "$DB" "SELECT account_id FROM assets WHERE id=$HANG_ASSET_ID")
+check "重挂后 account_id 已更新" "$DEFAULT_ACCT" "$REHANG_ACCT"
+# 删除测试资产
+curl -s -X DELETE -H "$AUTH" "$BASE/assets/$HANG_ASSET_ID" >/dev/null
+
+echo ""
 echo "结果: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1
 

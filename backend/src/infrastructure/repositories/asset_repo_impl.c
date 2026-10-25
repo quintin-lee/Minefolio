@@ -13,6 +13,7 @@ asset_list(csilk_db_pool_t* pool,
            int64_t          page,
            int64_t          page_size,
            const char*      category_id,
+           int64_t          account_id,
            int64_t*         total)
 {
     char uid[32], limit[32], offset[32];
@@ -20,44 +21,68 @@ asset_list(csilk_db_pool_t* pool,
     snprintf(limit, sizeof(limit), "%lld", (long long)page_size);
     snprintf(offset, sizeof(offset), "%lld", (long long)((page - 1) * page_size));
     char        sql[1024], count_sql[512];
-    const char *params[8], *cnt_params[4];
+    const char *params[6], *cnt_params[4];
     int         pidx = 0, cnt_pidx = 0;
+    char        acct_str[32];
+    int         has_cat = category_id && category_id[0];
+    int         has_acct = account_id > 0;
+    if (has_acct) {
+        snprintf(acct_str, sizeof(acct_str), "%lld", (long long)account_id);
+    }
+
     params[pidx++] = uid;
     cnt_params[cnt_pidx++] = uid;
-    if (category_id && category_id[0]) {
-        snprintf(
-            sql,
-            sizeof(sql),
-            "SELECT "
-            "a.id,a.category_id,a.name,a.account_no,a.symbol,a.quote_source,CAST(a.last_sync_at AS "
-            "TEXT) as last_sync_at,"
-            "a.current_value,a.currency,a.note,a.created_at,"
-            "a.updated_at,c.name as category_name,c.asset_type,a.quantity,a.cost_basis,a.net_value "
-            "FROM assets a LEFT JOIN categories c ON a.category_id=c.id WHERE a.user_id=? AND "
-            "a.category_id=? ORDER BY c.name,a.name LIMIT ? OFFSET ?");
-        snprintf(count_sql,
-                 sizeof(count_sql),
-                 "SELECT COUNT(*) AS cnt FROM assets a WHERE a.user_id=? AND a.category_id=?");
+    if (has_cat) {
         params[pidx++] = category_id;
         cnt_params[cnt_pidx++] = category_id;
-    } else {
-        snprintf(
-            sql,
-            sizeof(sql),
-            "SELECT "
-            "a.id,a.category_id,a.name,a.account_no,a.symbol,a.quote_source,CAST(a.last_sync_at AS "
-            "TEXT) as last_sync_at,"
-            "a.current_value,a.currency,a.note,a.created_at,"
-            "a.updated_at,c.name as category_name,c.asset_type,a.quantity,a.cost_basis,a.net_value "
-            "FROM assets a LEFT JOIN categories c ON a.category_id=c.id WHERE a.user_id=? ORDER BY "
-            "c.name,a.name LIMIT ? OFFSET ?");
-        snprintf(
-            count_sql, sizeof(count_sql), "SELECT COUNT(*) AS cnt FROM assets a WHERE a.user_id=?");
+    }
+    if (has_acct) {
+        params[pidx++] = acct_str;
+        cnt_params[cnt_pidx++] = acct_str;
     }
     params[pidx++] = limit;
     params[pidx++] = offset;
     params[pidx] = NULL;
     cnt_params[cnt_pidx] = NULL;
+
+    {
+        char buf[1024];
+        int  off = 0;
+        off += snprintf(buf + off,
+                        sizeof(buf) - off,
+                        "SELECT a.id,a.category_id,a.name,a.account_no,a.symbol,a.quote_source,"
+                        "CAST(a.last_sync_at AS TEXT) as last_sync_at,"
+                        "a.current_value,a.currency,a.note,a.created_at,a.updated_at,"
+                        "a.account_id,ac.name as account_name,ac.institution,"
+                        "c.name as category_name,c.asset_type,"
+                        "a.quantity,a.cost_basis,a.net_value "
+                        "FROM assets a "
+                        "LEFT JOIN categories c ON a.category_id=c.id "
+                        "LEFT JOIN accounts ac ON a.account_id=ac.id "
+                        "WHERE a.user_id=?");
+        if (has_cat) {
+            off += snprintf(buf + off, sizeof(buf) - off, " AND a.category_id=?");
+        }
+        if (has_acct) {
+            off += snprintf(buf + off, sizeof(buf) - off, " AND a.account_id=?");
+        }
+        off += snprintf(buf + off, sizeof(buf) - off, " ORDER BY c.name,a.name LIMIT ? OFFSET ?");
+        snprintf(sql, sizeof(sql), "%s", buf);
+    }
+    {
+        char cbuf[512];
+        int  coff = 0;
+        coff += snprintf(cbuf + coff,
+                         sizeof(cbuf) - coff,
+                         "SELECT COUNT(*) AS cnt FROM assets a WHERE a.user_id=?");
+        if (has_cat) {
+            coff += snprintf(cbuf + coff, sizeof(cbuf) - coff, " AND a.category_id=?");
+        }
+        if (has_acct) {
+            coff += snprintf(cbuf + coff, sizeof(cbuf) - coff, " AND a.account_id=?");
+        }
+        snprintf(count_sql, sizeof(count_sql), "%s", cbuf);
+    }
 
     csilk_json_t* cnt_res = csilk_db_query_param_json(pool, count_sql, cnt_params);
     *total = 0;
@@ -82,8 +107,10 @@ asset_get(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
         "a.id,a.category_id,a.name,a.account_no,a.symbol,a.quote_source,CAST(a.last_sync_at AS "
         "TEXT) as last_sync_at,"
         "a.current_value,a.currency,a.note,a.created_at,a."
-        "updated_at,c.name as category_name,c.asset_type,a.quantity,a.cost_basis,a.net_value FROM "
-        "assets a LEFT JOIN categories c ON a.category_id=c.id WHERE a.id=? AND a.user_id=?",
+        "updated_at,a.account_id,ac.name AS account_name,ac.institution,"
+        "c.name as category_name,c.asset_type,a.quantity,a.cost_basis,a.net_value FROM "
+        "assets a LEFT JOIN categories c ON a.category_id=c.id "
+        "LEFT JOIN accounts ac ON a.account_id=ac.id WHERE a.id=? AND a.user_id=?",
         (const char*[]){idstr, uid, NULL});
 }
 
@@ -91,6 +118,7 @@ int64_t
 asset_insert(csilk_db_pool_t* pool,
              int64_t          user_id,
              int64_t          category_id,
+             int64_t          account_id,
              const char*      name,
              const char*      account_no,
              double           current_value,
@@ -102,36 +130,49 @@ asset_insert(csilk_db_pool_t* pool,
              const char*      symbol,
              const char*      quote_source)
 {
-    char uid[32], cat[32], val[64], qty[64], cb[64], nv[64];
+    char uid[32], cat[32], val[64], qty[64], cb[64], nv[64], acct[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     snprintf(cat, sizeof(cat), "%lld", (long long)category_id);
+    snprintf(acct, sizeof(acct), "%lld", (long long)account_id);
     snprintf(val, sizeof(val), "%.6f", current_value);
     snprintf(qty, sizeof(qty), "%.4f", quantity);
     snprintf(cb, sizeof(cb), "%.4f", cost_basis);
     snprintf(nv, sizeof(nv), "%.4f", net_value);
-    csilk_json_t* res = csilk_db_query_param_json(
-        pool,
-        "INSERT INTO assets "
-        "(user_id,category_id,name,account_no,current_value,currency,note,quantity,cost_basis,net_"
-        "value,symbol,quote_source,ledger_id) VALUES (?,?,?, ?,?, ?,?,?,?,?, ?,?, "
-        "COALESCE((SELECT ledger_id FROM categories WHERE id=?), (SELECT id FROM ledgers WHERE "
-        "owner_id=? AND is_default=1))) RETURNING id",
-        (const char*[]){uid,
-                        cat,
-                        name,
-                        account_no ? account_no : "",
-                        val,
-                        currency ? currency : "CNY",
-                        note ? note : "",
-                        qty,
-                        cb,
-                        nv,
-                        symbol ? symbol : "",
-                        quote_source ? quote_source : "",
-                        cat,
-                        uid,
-                        NULL});
-    int64_t id = 0;
+    /* account_id > 0：真实账户；account_id <= 0 时写 NULL（避免 FK RESTRICT 违规） */
+    char        ins_sql[512];
+    const char* ins_params[16];
+    int         nparams = 0;
+    ins_params[nparams++] = uid;
+    ins_params[nparams++] = cat;
+    ins_params[nparams++] = name;
+    ins_params[nparams++] = account_no ? account_no : "";
+    ins_params[nparams++] = val;
+    ins_params[nparams++] = currency ? currency : "CNY";
+    ins_params[nparams++] = note ? note : "";
+    ins_params[nparams++] = qty;
+    ins_params[nparams++] = cb;
+    ins_params[nparams++] = nv;
+    ins_params[nparams++] = symbol ? symbol : "";
+    ins_params[nparams++] = quote_source ? quote_source : "";
+    ins_params[nparams++] = cat;
+    ins_params[nparams++] = uid;
+    if (account_id > 0) {
+        ins_params[nparams++] = acct;
+    }
+    ins_params[nparams] = NULL;
+
+    snprintf(ins_sql,
+             sizeof(ins_sql),
+             "INSERT INTO assets "
+             "(user_id,category_id,name,account_no,current_value,currency,note,quantity,cost_"
+             "basis,net_value,symbol,quote_source,ledger_id,account_id) VALUES "
+             "(?,?,?,?,?,?,?,?,?,?,?,?,"
+             "COALESCE((SELECT ledger_id FROM categories WHERE id=?), (SELECT id FROM ledgers "
+             "WHERE owner_id=? AND is_default=1)),%s) RETURNING id",
+             account_id > 0 ? "?" : "NULL");
+
+    csilk_json_t* res = csilk_db_query_param_json(pool, ins_sql, ins_params);
+    int64_t       id = 0;
     if (res && csilk_json_array_size(res) > 0) {
         id = db_get_int(csilk_json_array_get(res, 0), "id");
     }
@@ -226,6 +267,39 @@ asset_update_basic(csilk_db_pool_t* pool,
     }
 
     return ok;
+}
+
+int
+asset_update_account(csilk_db_pool_t* pool, int64_t user_id, int64_t id, int64_t account_id)
+{
+    char uid[32], idstr[32], acct[32];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    snprintf(idstr, sizeof(idstr), "%lld", (long long)id);
+
+    char        sql[256];
+    const char* params[4] = {NULL, NULL, NULL, NULL};
+    if (account_id > 0) {
+        snprintf(acct, sizeof(acct), "%lld", (long long)account_id);
+        snprintf(sql,
+                 sizeof(sql),
+                 "UPDATE assets SET account_id=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND "
+                 "user_id=? RETURNING id");
+        params[0] = acct;
+    } else {
+        snprintf(sql,
+                 sizeof(sql),
+                 "UPDATE assets SET account_id=NULL, updated_at=CURRENT_TIMESTAMP WHERE id=? AND "
+                 "user_id=? RETURNING id");
+    }
+    params[1] = idstr;
+    params[2] = uid;
+
+    csilk_json_t* res = csilk_db_query_param_json(pool, sql, params);
+    int           ok = res && csilk_json_array_size(res) > 0;
+    if (res) {
+        csilk_json_free(res);
+    }
+    return ok ? 0 : 1;
 }
 
 int
@@ -486,6 +560,7 @@ mf_asset_repo_find_by_id(void* db_pool, int64_t user_id, int64_t id, mf_asset_t*
     out_asset->id = db_get_int(r, "id");
     out_asset->user_id = user_id;
     out_asset->category_id = db_get_int(r, "category_id");
+    out_asset->account_id = db_get_int(r, "account_id");
     const char* s = csilk_json_get_string(r, "name");
     if (s) {
         snprintf(out_asset->name, sizeof(out_asset->name), "%s", s);
@@ -536,6 +611,7 @@ mf_asset_repo_save(void* db_pool, const mf_asset_t* asset, int64_t* out_id)
     int64_t id = asset_insert((csilk_db_pool_t*)db_pool,
                               asset->user_id,
                               asset->category_id,
+                              asset->account_id,
                               asset->name,
                               asset->account_no,
                               money_to_double(asset->current_value),

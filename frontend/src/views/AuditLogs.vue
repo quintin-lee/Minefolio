@@ -76,7 +76,7 @@
 import { ref, onMounted } from 'vue'
 import { assetLogsApi } from '@/api/asset_logs'
 import { assetsApi } from '@/api/assets'
-import { formatCurrency } from '@/utils/format'
+import { formatCurrency, assetLabel } from '@/utils/format'
 import type { AssetBalanceLog, Asset } from '@/types'
 
 const logs = ref<AssetBalanceLog[]>([])

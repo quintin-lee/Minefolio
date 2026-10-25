@@ -128,7 +128,7 @@
               <el-option
                 v-for="asset in assets"
                 :key="asset.id"
-                :label="`${asset.name} (${asset.asset_type})`"
+                :label="`${assetLabel(asset)} (${asset.asset_type})`"
                 :value="asset.id"
               />
             </el-select>
@@ -175,7 +175,7 @@ import { dailyExpensesApi } from '@/api/daily_expenses'
 import { assetsApi } from '@/api/assets'
 import { getSettings } from '@/api/ai'
 import { useCategoryStore } from '@/stores/category'
-import { localToday } from '@/utils/format'
+import { localToday, assetLabel } from '@/utils/format'
 import type { Category, Asset } from '@/types'
 import type { FormInstance, FormRules } from 'element-plus'
 

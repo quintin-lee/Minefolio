@@ -31,6 +31,27 @@ CREATE TABLE IF NOT EXISTS categories (
     UNIQUE(user_id, name, parent_id)
 );
 
+-- 账户维度（纯容器：账户不记余额；小计 = 子资产 SUM(current_value)）
+CREATE TABLE IF NOT EXISTS accounts (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    ledger_id    INTEGER NOT NULL REFERENCES ledgers(id) ON DELETE CASCADE,
+    name         TEXT NOT NULL,
+    institution  TEXT NOT NULL DEFAULT 'other'
+                 CHECK (institution IN ('bank_card','platform','broker','fund_platform','cash_wallet','other')),
+    account_no   TEXT,
+    currency     TEXT DEFAULT 'CNY',
+    icon         TEXT,
+    note         TEXT,
+    sort_order   INTEGER NOT NULL DEFAULT 0,
+    archived     INTEGER NOT NULL DEFAULT 0,
+    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (user_id, ledger_id, name)
+);
+CREATE INDEX IF NOT EXISTS idx_accounts_user ON accounts(user_id);
+CREATE INDEX IF NOT EXISTS idx_accounts_ledger ON accounts(ledger_id);
+
 CREATE TABLE IF NOT EXISTS assets (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -47,8 +68,11 @@ CREATE TABLE IF NOT EXISTS assets (
     currency      TEXT DEFAULT 'CNY',
     note          TEXT,
     created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    account_id    INTEGER REFERENCES accounts(id) ON DELETE RESTRICT
 );
+
+CREATE INDEX IF NOT EXISTS idx_assets_account ON assets(account_id);
 
 CREATE TABLE IF NOT EXISTS asset_price_history (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -411,5 +435,6 @@ INSERT OR IGNORE INTO market_indices (symbol, name, category, region_flag, curre
 ('BTC-USD', '比特币', 'crypto', '🪙', 67800.00, 1620.00, 2.45, 66180.00, 66200.00, 68200.00, 66100.00, 'USD', '2026-10-16 15:30:00', '[66200,66500,66800,67100,67400,67600,67750,67800]'),
 ('ETH-USD', '以太坊', 'crypto', '🪙', 2640.00, 47.20, 1.82, 2592.80, 2600.00, 2660.00, 2590.00, 'USD', '2026-10-16 15:30:00', '[2595,2605,2615,2625,2630,2635,2638,2640]'),
 ('GC=F', '黄金现货', 'crypto', '🪙', 2680.50, 10.10, 0.38, 2670.40, 2672.00, 2688.00, 2670.00, 'USD', '2026-10-16 15:30:00', '[2671,2673,2675,2678,2676,2679,2680,2680.5]');
+
 
 

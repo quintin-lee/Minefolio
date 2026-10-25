@@ -16,12 +16,17 @@ export const assetsApi = {
    * @route GET /api/assets
    * @param params 筛选与分页参数
    * @param params.category_id 按资产分类 ID 筛选 (可选)
+   * @param params.account_id 按归属账户 ID 筛选 (可选)
    * @param params.page 当前页码 (默认 1)
    * @param params.page_size 每页数量 (默认 20)
    * @returns 分页资产列表数据
    */
-  list: (params?: { category_id?: string; page?: number; page_size?: number }) =>
-    http.get<PageResult<Asset>>('/assets', { params }),
+  list: (params?: {
+    category_id?: string
+    account_id?: number
+    page?: number
+    page_size?: number
+  }) => http.get<PageResult<Asset>>('/assets', { params }),
 
   /**
    * 创建新的资产或账户 (如银行卡、现金、证券账户、信用卡等)

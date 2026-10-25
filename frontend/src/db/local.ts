@@ -61,13 +61,30 @@ export async function initLocalDb(): Promise<Database> {
     } catch (err) {
       console.error('[localDb] Failed to restore database from localStorage, initializing fresh:', err)
       db = new SQL.Database()
-      db.run(LOCAL_SCHEMA)
     }
   } else {
     db = new SQL.Database()
-    db.run(LOCAL_SCHEMA)
   }
+  // 幂等迁移：新建表 + 旧库补列（CREATE/ALTER 均带 IF NOT EXISTS 语义）
+  db.run(LOCAL_SCHEMA)
+  migrateColumns(db)
   return db
+}
+
+/**
+ * 旧本地库补列迁移（列已存在时 ALTER 会抛错，捕获后忽略）
+ */
+function migrateColumns(database: Database): void {
+  const stmts = [
+    'ALTER TABLE assets ADD COLUMN account_id INTEGER',
+  ]
+  for (const sql of stmts) {
+    try {
+      database.run(sql)
+    } catch {
+      // 列已存在 → 忽略
+    }
+  }
 }
 
 export function getDb(): Database {

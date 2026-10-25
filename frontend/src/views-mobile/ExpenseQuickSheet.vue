@@ -34,7 +34,7 @@
         </el-form-item>
         <el-form-item label="资产">
           <el-select v-model="form.asset_id" filterable placeholder="选择资产" style="width:100%">
-            <el-option v-for="a in assets" :key="a.id" :label="a.name" :value="Number(a.id)" />
+            <el-option v-for="a in assets" :key="a.id" :label="assetLabel(a)" :value="Number(a.id)" />
           </el-select>
         </el-form-item>
         <el-form-item label="日期">
@@ -59,7 +59,7 @@ import { assetsApi } from '@/api/assets'
 import { offlineApi } from '@/utils/offline-http'
 import { receiptsApi } from '@/api/receipts'
 import { query, rowsFrom } from '@/db/local'
-import { localToday } from '@/utils/format'
+import { localToday, assetLabel } from '@/utils/format'
 import type { DailyExpense, Category, Asset } from '@/types'
 
 const props = defineProps<{ modelValue?: boolean; record?: DailyExpense | null }>()

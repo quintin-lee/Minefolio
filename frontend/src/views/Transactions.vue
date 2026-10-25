@@ -48,7 +48,7 @@
         <el-form :inline="true" :model="filters" class="premium-filters">
           <el-form-item label="资产账户">
             <el-select v-model="filters.asset_id" placeholder="全部资产" clearable class="filter-select">
-              <el-option v-for="a in assets" :key="a.id" :label="a.name" :value="String(a.id)" />
+              <el-option v-for="a in assets" :key="a.id" :label="assetLabel(a)" :value="String(a.id)" />
             </el-select>
           </el-form-item>
             <el-form-item label="交易分类">
@@ -271,7 +271,7 @@
             <el-col :span="14">
               <el-form-item label="资产账户" prop="asset_id">
                 <el-select v-model="form.asset_id" placeholder="选择资产账户" style="width: 100%" @change="onAssetChange">
-                  <el-option v-for="a in assets" :key="a.id" :label="`${a.name} (${formatCurrency(a.current_value)})`" :value="a.id" />
+                  <el-option v-for="a in assets" :key="a.id" :label="`${assetLabel(a)} (${formatCurrency(a.current_value)})`" :value="a.id" />
                 </el-select>
               </el-form-item>
             </el-col>
@@ -288,7 +288,7 @@
             <el-col :span="24">
               <el-form-item label="资金账户 (扣款/回流账户)" prop="linked_asset_id">
                 <el-select v-model="form.linked_asset_id" placeholder="选择资金账户（可选）" clearable style="width: 100%" filterable>
-                  <el-option v-for="a in assets" :key="a.id" :disabled="a.id === form.asset_id" :label="`${a.name} (${formatCurrency(a.current_value)})`" :value="a.id" />
+                  <el-option v-for="a in assets" :key="a.id" :disabled="a.id === form.asset_id" :label="`${assetLabel(a)} (${formatCurrency(a.current_value)})`" :value="a.id" />
                 </el-select>
               </el-form-item>
             </el-col>
@@ -377,7 +377,7 @@ import { Plus, Download, Upload, UploadFilled, SuccessFilled, Edit, Delete } fro
 import { transactionsApi } from '@/api/transactions'
 import { assetsApi } from '@/api/assets'
 import { useCategoryStore } from '@/stores/category'
-import { formatCurrency, localToday, localThisMonth } from '@/utils/format'
+import { formatCurrency, localToday, localThisMonth, assetLabel } from '@/utils/format'
 import { exportChartCsv } from '@/utils/chart-export'
 import SummaryCard from '@/components/SummaryCard.vue'
 import type { Transaction, Asset, Category, TransactionMonthly, Direction, TransactionInput } from '@/types'

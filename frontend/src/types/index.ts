@@ -31,6 +31,56 @@ export interface Asset {
   quantity?: number
   cost_basis?: number
   net_value?: number
+  /** 归属账户 ID (可选) */
+  account_id?: number | null
+  /** 归属账户名称 (列表/详情 JOIN 返回) */
+  account_name?: string
+  /** 归属账户机构类型 (列表/详情 JOIN 返回) */
+  institution?: string
+}
+
+/** 账户 (accounts 表；现金/银行卡/平台等资金账户维度) */
+export interface Account {
+  id: number
+  ledger_id: number
+  name: string
+  institution: string
+  account_no?: string
+  currency: string
+  icon?: string
+  note?: string
+  sort_order: number
+  archived: number
+  created_at: string
+  updated_at: string
+  /** 该账户下资产数量 */
+  asset_count: number
+  /** 该账户下资产市值合计 */
+  total_value: number
+}
+
+/** 创建账户请求载荷 (POST /api/accounts) */
+export interface AccountInput {
+  name: string
+  institution: string
+  account_no?: string
+  currency?: string
+  icon?: string
+  note?: string
+  sort_order?: number
+  ledger_id?: number
+}
+
+/** 更新账户请求载荷 (PUT /api/accounts/:id；省略字段不更新) */
+export interface AccountUpdate {
+  name?: string
+  institution?: string
+  account_no?: string
+  currency?: string
+  icon?: string
+  note?: string
+  sort_order?: number
+  archived?: boolean
 }
 
 export type Direction = 'in' | 'out' | 'neutral'
@@ -133,6 +183,8 @@ export interface AssetInput {
   net_value?: number
   /** 备注说明 (可选) */
   note?: string
+  /** 归属账户 ID (可选) */
+  account_id?: number | null
 }
 
 export interface Tag {

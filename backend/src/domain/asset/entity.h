@@ -8,7 +8,6 @@
 #include "core/financial/price.h"
 #include "core/financial/quantity.h"
 #include "domain/asset/instrument.h"
-#include "domain/asset/account.h"
 #include "domain/asset/cost_basis.h"
 #include "domain/asset/valuation.h"
 #include "domain/asset/pnl.h"
@@ -21,6 +20,7 @@
 typedef struct mf_asset {
     int64_t    id;
     int64_t    user_id;
+    int64_t    account_id;
     int64_t    category_id;
     char       name[128];
     char       account_no[64];

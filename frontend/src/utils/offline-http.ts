@@ -16,6 +16,7 @@ const TABLE_BY_PATH: Record<string, string> = {
   'daily-expenses': 'daily_expenses',
   'transactions': 'transactions',
   'assets': 'assets',
+  'accounts': 'accounts',
 }
 
 /**

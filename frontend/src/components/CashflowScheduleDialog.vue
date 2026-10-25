@@ -32,7 +32,7 @@
           <el-option
             v-for="item in assets"
             :key="item.id"
-            :label="`${item.name} (${item.category_name || item.currency})`"
+            :label="`${assetLabel(item)} (${item.category_name || item.currency})`"
             :value="item.id"
           />
         </el-select>
@@ -48,7 +48,7 @@
           <el-option
             v-for="item in fundingAssets"
             :key="item.id"
-            :label="`${item.name} (余额: ¥${Number(item.current_value).toFixed(2)})`"
+            :label="`${assetLabel(item)} (余额: ¥${Number(item.current_value).toFixed(2)})`"
             :value="item.id"
           />
         </el-select>
@@ -122,7 +122,7 @@ import { ref, reactive, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { cashflowApi } from '@/api/cashflow'
-import { localToday } from '@/utils/format'
+import { localToday, assetLabel } from '@/utils/format'
 import type { Asset, CashflowSchedule } from '@/types'
 
 const props = defineProps<{

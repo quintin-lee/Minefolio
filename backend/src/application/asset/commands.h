@@ -10,6 +10,7 @@ typedef struct create_asset_cmd {
     int64_t     user_id;
     int64_t     ledger_id;
     int64_t     category_id;
+    int64_t     account_id;
     const char* name;
     const char* account_no;
     double      current_value;
@@ -41,6 +42,8 @@ typedef struct update_asset_cmd {
     double      net_value;
     const char* symbol;
     const char* quote_source;
+    int64_t     account_id;
+    bool        has_account_id;
 } update_asset_cmd_t;
 
 /**
@@ -57,6 +60,7 @@ typedef struct delete_asset_cmd {
 typedef struct query_asset_filter {
     int64_t     user_id;
     const char* category_id;
+    int64_t     account_id;
     int64_t     page;
     int64_t     page_size;
 } query_asset_filter_t;

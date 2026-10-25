@@ -134,12 +134,12 @@
         </el-form-item>
         <el-form-item label="标的资产 (购买)">
           <el-select v-model="dcaForm.target_asset_id" placeholder="选择资产" style="width: 100%">
-            <el-option v-for="a in assets" :key="a.id" :label="a.name" :value="a.id" />
+            <el-option v-for="a in assets" :key="a.id" :label="assetLabel(a)" :value="a.id" />
           </el-select>
         </el-form-item>
         <el-form-item label="扣款账户 (出资)">
           <el-select v-model="dcaForm.funding_asset_id" placeholder="选择出资账户" style="width: 100%">
-            <el-option v-for="a in assets" :key="a.id" :label="a.name" :value="a.id" />
+            <el-option v-for="a in assets" :key="a.id" :label="assetLabel(a)" :value="a.id" />
           </el-select>
         </el-form-item>
         <el-form-item label="定投金额 (元)">
@@ -167,6 +167,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { dcaApi } from '@/api/dca'
 import { cashflowApi } from '@/api/cashflow'
 import { assetsApi } from '@/api/assets'
+import { assetLabel } from '@/utils/format'
 import type { DcaPlan, DcaExecution, CashflowCalendarEvent, MonthlyCashflowSummary, Asset } from '@/types'
 
 const activeTab = ref<'dca' | 'cashflow'>('dca')

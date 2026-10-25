@@ -69,6 +69,17 @@ export function formatCurrency(val: number, currency = DEFAULT_CURRENCY): string
 }
 
 /**
+ * 资产选择器展示名：携带归属账户前缀（如「招行 · 余额宝」），无账户时仅显示资产名
+ * @param asset 含 name / account_name 的对象（Asset 或同形状结构）
+ * @returns 展示标签
+ */
+export function assetLabel(asset: { name?: string | null; account_name?: string | null }): string {
+  const name = asset.name ?? ''
+  const acc = asset.account_name
+  return acc ? `${acc} · ${name}` : name
+}
+
+/**
  * 格式化带正负符号的指定币种货币字符串 (正数加 +，负数加 -)
  * @param val 盈亏金额数值 (如 50 或 -50)
  * @param currency ISO 4217 币种代码 (如 'CNY', 'USD')，默认 'CNY'

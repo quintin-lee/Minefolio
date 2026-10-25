@@ -25,12 +25,30 @@ CREATE TABLE IF NOT EXISTS assets (
   category_id   INTEGER NOT NULL,
   name          TEXT NOT NULL,
   account_no    TEXT,
+  account_id    INTEGER,
   current_value REAL DEFAULT 0,
   quantity      REAL DEFAULT 0,
   cost_basis    REAL DEFAULT 0,
   net_value     REAL DEFAULT 0,
   currency      TEXT DEFAULT 'CNY',
   note          TEXT,
+  created_at    TEXT,
+  updated_at    TEXT,
+  __deleted     INTEGER DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS accounts (
+  id            INTEGER PRIMARY KEY,
+  user_id       INTEGER DEFAULT 0,
+  ledger_id     INTEGER DEFAULT 0,
+  name          TEXT NOT NULL,
+  institution   TEXT NOT NULL DEFAULT 'other',
+  account_no    TEXT,
+  currency      TEXT DEFAULT 'CNY',
+  icon          TEXT,
+  note          TEXT,
+  sort_order    INTEGER DEFAULT 0,
+  archived      INTEGER DEFAULT 0,
   created_at    TEXT,
   updated_at    TEXT,
   __deleted     INTEGER DEFAULT 0

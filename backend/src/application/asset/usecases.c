@@ -5,9 +5,37 @@
 #include "common/balance.h"
 #include "common/db.h"
 #include "core/ledger/ledger_engine.h"
+#include "application/account/usecases.h"
+#include "infrastructure/repositories/account_repo_impl.h"
+#include "common/ledger_utils.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* 解析目标账户 id：account_id > 0 时校验归属（user）；account_id <= 0 时
+   兜底「默认账户」（幂等创建），保证无 account_id 的旧调用路径仍可创建资产。 */
+static int64_t
+asset_resolve_account_id(csilk_db_pool_t* pool,
+                         int64_t          user_id,
+                         int64_t          ledger_id,
+                         int64_t          account_id)
+{
+    if (account_id > 0) {
+        csilk_json_t* ac = account_get(pool, user_id, account_id);
+        int           ok = ac && csilk_json_array_size(ac) > 0;
+        if (ac) {
+            csilk_json_free(ac);
+        }
+        return ok ? account_id : 0;
+    }
+    if (ledger_id <= 0) {
+        ledger_id = ledger_get_default(pool, user_id);
+    }
+    if (ledger_id <= 0) {
+        return 0;
+    }
+    return account_create_default(pool, user_id, ledger_id);
+}
 
 int
 asset_usecase_create(void* pool, const create_asset_cmd_t* cmd, asset_usecase_result_t* out_res)
@@ -71,10 +99,19 @@ asset_usecase_create(void* pool, const create_asset_cmd_t* cmd, asset_usecase_re
     if (asset_type) {
         free(asset_type);
     }
+    /* 账户维度：account_id > 0 需校验归属（查不到 → 1002）；account_id <= 0 兜底「默认账户」 */
+    int64_t resolved_account_id = asset_resolve_account_id(
+        (csilk_db_pool_t*)pool, cmd->user_id, cmd->ledger_id, cmd->account_id);
+    if (cmd->account_id > 0 && resolved_account_id <= 0) {
+        out_res->code = 1002;
+        snprintf(out_res->message, sizeof(out_res->message), "账户不存在或不属于该用户");
+        return -1;
+    }
 
     int64_t id = asset_insert((csilk_db_pool_t*)pool,
                               asset.user_id,
                               asset.category_id,
+                              resolved_account_id,
                               asset.name,
                               asset.account_no,
                               money_to_double(asset.current_value),
@@ -142,6 +179,35 @@ asset_usecase_update(void* pool, const update_asset_cmd_t* cmd, asset_usecase_re
 
     int is_investment = mf_asset_is_investment_type_str(asset_type);
 
+    /* 账户重挂：body 携带 account_id 时生效；>0 须属于该用户否则 1002，<=0 沿资产账本兜底默认账户 */
+    int64_t reattach_acct = 0;
+    int     need_reattach = 0;
+    if (cmd->has_account_id) {
+        char lid_buf[32], uid_buf[32];
+        snprintf(lid_buf, sizeof(lid_buf), "%lld", (long long)cmd->id);
+        snprintf(uid_buf, sizeof(uid_buf), "%lld", (long long)cmd->user_id);
+        int64_t       asset_ledger = 0;
+        csilk_json_t* lid_res =
+            csilk_db_query_param_json(db_pool,
+                                      "SELECT ledger_id FROM assets WHERE id=? AND user_id=?",
+                                      (const char*[]){lid_buf, uid_buf, NULL});
+        if (lid_res && csilk_json_array_size(lid_res) > 0) {
+            asset_ledger = db_get_int(csilk_json_array_get(lid_res, 0), "ledger_id");
+        }
+        if (lid_res) {
+            csilk_json_free(lid_res);
+        }
+        reattach_acct =
+            asset_resolve_account_id(db_pool, cmd->user_id, asset_ledger, cmd->account_id);
+        if (cmd->account_id > 0 && reattach_acct <= 0) {
+            csilk_json_free(cur);
+            out_res->code = 1002;
+            snprintf(out_res->message, sizeof(out_res->message), "账户不存在或不属于该用户");
+            return -1;
+        }
+        need_reattach = 1;
+    }
+
     if (cmd->has_net_value || cmd->has_quantity || cmd->has_cost_basis) {
         if (is_investment) {
             double old_qty = db_get_num(cr, "quantity");
@@ -198,6 +264,15 @@ asset_usecase_update(void* pool, const update_asset_cmd_t* cmd, asset_usecase_re
                 return -1;
             }
 
+            if (need_reattach &&
+                asset_update_account(db_pool, cmd->user_id, cmd->id, reattach_acct)) {
+                db_tx_scope_rollback(db_pool, &scope);
+                csilk_json_free(cur);
+                out_res->code = 1004;
+                snprintf(out_res->message, sizeof(out_res->message), "账户重挂失败");
+                return -1;
+            }
+
             if (db_tx_scope_commit(db_pool, &scope) != 0) {
                 db_tx_scope_rollback(db_pool, &scope);
                 csilk_json_free(cur);
@@ -226,6 +301,13 @@ asset_usecase_update(void* pool, const update_asset_cmd_t* cmd, asset_usecase_re
         csilk_json_free(cur);
         out_res->code = 1003;
         snprintf(out_res->message, sizeof(out_res->message), "更新失败");
+        return -1;
+    }
+
+    if (need_reattach && asset_update_account(db_pool, cmd->user_id, cmd->id, reattach_acct)) {
+        csilk_json_free(cur);
+        out_res->code = 1004;
+        snprintf(out_res->message, sizeof(out_res->message), "账户重挂失败");
         return -1;
     }
 
@@ -288,6 +370,9 @@ asset_usecase_get(void* pool, int64_t user_id, int64_t id, csilk_json_t** out_js
     csilk_json_add_string(resp, "currency", csilk_json_get_string(row, "currency"));
     csilk_json_add_string(resp, "note", csilk_json_get_string(row, "note"));
     csilk_json_add_string(resp, "category_name", csilk_json_get_string(row, "category_name"));
+    csilk_json_add_number(resp, "account_id", db_get_num(row, "account_id"));
+    csilk_json_add_string(resp, "account_name", csilk_json_get_string(row, "account_name"));
+    csilk_json_add_string(resp, "institution", csilk_json_get_string(row, "institution"));
     csilk_json_add_string(resp, "asset_type", csilk_json_get_string(row, "asset_type"));
     csilk_json_add_number(resp, "quantity", db_get_num(row, "quantity"));
     csilk_json_add_number(resp, "cost_basis", db_get_num(row, "cost_basis"));
@@ -339,6 +424,7 @@ asset_usecase_query(void*                       pool,
                            filter->page,
                            filter->page_size,
                            filter->category_id,
+                           filter->account_id,
                            out_total);
     return (*out_list != NULL) ? 0 : -1;
 }
