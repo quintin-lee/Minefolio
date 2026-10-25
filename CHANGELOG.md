@@ -10,6 +10,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Account-Dimension Asset Management (`backend/sql/migrations/{sqlite,postgres}/V017__accounts_table.sql`, `backend/src/domain/account/`, `application/account/`, `infrastructure/repositories/account_repo_impl.c`, `interfaces/http/controllers/account_controller.c`, `frontend/src/`)**:
+  - Introduced independent `accounts` table (V017) as pure container grouping assets per (user, ledger) with institution type, account number, currency, icon, note, manual sort order, and soft-archive flag; backfill migration auto-creates a "默认账户" per ledger and re-parents all existing assets.
+  - Full DDD backend stack: domain rules (`mf_account_rule_*`), repository with `asset_count`/`total_value` aggregates, use cases with duplicate-name 1004 and delete-protection (assets/transactions present → 1004, guide to archive), lazy seeding of the default account alongside category seeds, and REST endpoints `GET/POST /api/accounts`, `PUT/DELETE /api/accounts/:id`.
+  - Asset chain integration: `asset_list`/`asset_get` LEFT JOIN accounts (`account_name`, `institution`), optional `?account_id=` filter, `asset_insert` accepts `account_id` with default-account fallback for backwards compatibility; AI `asset_tool` gains optional `account_id` filter.
+  - Desktop Assets page rewritten as account-card groups (header: icon + institution tag + subtotal + edit/archive; child asset rows), with `AccountDialog.vue` shared by desktop and mobile; mobile Assets page uses collapsible account cards (collapsed by default showing subtotal).
+  - All 14 asset-picker entry points label options as `{account_name} · {asset name}`; transaction, DCA, cashflow, import, and transfer flows pick up the account dimension automatically.
+  - Mobile offline sync: local sql.js schema adds `accounts` table and `assets.account_id`; `sync.ts` pulls/pushes accounts with `remapAccountRefs()` for offline-created account IDs; `offline-http.ts` maps `/api/accounts` paths.
+  - Added accounts coverage in `test_link.sh` (169 assertions total, including archived-account list-filter regression).
+
+### Fixed
+- **Archived Account List Filter (`backend/src/infrastructure/repositories/account_repo_impl.c`)**:
+  - `account_list` passed the `archived=0` conditional filter and `ORDER BY` as extra `snprintf` arguments with no matching format specifier, silently dropping both; default list now hides archived accounts and `include_archived=1` includes them.
+
+## [1.3.2] - 2026-10-24
+
+### Added
 - **AI Trace Detail Slide-over Drawer Redesign (`frontend/src/views/AiTraceDetail.vue`)**:
   - Replaced cramped 800px modal dialog with a modern right slide-over drawer (`el-drawer`), featuring width adaptability (75% on desktop, 100% on mobile) and a one-click maximize/restore toggle.
   - Added Bento performance & cost metrics bar displaying latency, TTFT, token breakdown (Prompt vs Completion), tok/s generation rate, cost in USD, and sampling parameters.
@@ -55,7 +71,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **csilk Framework Feature Downstreaming & Integration (Phases 1-4)**:
   - **JSON Type Extraction (`<csilk/core/json.h>`)**: Adopted `csilk_json_as_int64`, `csilk_json_as_double`, and `csilk_json_as_bool` to safely handle column data types without string-to-number parse gotchas.
   - **Transaction Scope & Savepoint (`<csilk/drivers/db/db.h>`)**: Switched `db_tx_scope_*` to native `csilk_db_tx_scope_*` with full nested savepoint and rollback support.
-  - **Database Migration Engine (`<csilk/drivers/db/migration.h>`)**: Downstreamed Flyway-style migration engine (`csilk_migration_*`) supporting discovery, strict version ordering, SHA-256 CRLF normalization, distributed locks, and auto-baseline (`V001`~`V016`).
+  - **Database Migration Engine (`<csilk/drivers/db/migration.h>`)**: Downstreamed Flyway-style migration engine (`csilk_migration_*`) supporting discovery, strict version ordering, SHA-256 CRLF normalization, distributed locks, and auto-baseline (`V001`~`V017`).
   - **CSV Processing (`<csilk/util/csv.h>`)**: Replaced custom CSV utility with RFC 4180 streaming parser and generator (`csilk_csv_*`).
   - **TOTP 2FA Engine (`<csilk/crypto/totp.h>`)**: Replaced internal TOTP implementation with csilk RFC 6238 standard TOTP engine (`csilk_totp_*`).
   - **Middleware Whitelist & Revocation**: Enhanced CSRF and JWT middlewares using csilk native route whitelisting (`csilk_csrf_whitelist_path`) and token revocation callbacks.
@@ -90,12 +106,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Expanded CTest unit test suite matrix from 28 to 35 suites (added `test_market_indices`, `test_fx_semantics`, `test_portfolio_pnl_alignment`), achieving 100% pass rate.
   - Expanded integration test suite `test_link.sh` to 39 test cases (151 assertions).
 
----
-
-## [1.3.2] - 2026-10-24
-
-### Changed
 - **Version Bump**: Bumped version to `1.3.2` across backend (`CMakeLists.txt`, `admin_controller.c`), frontend (`package.json`, `package-lock.json`), Android (`build.gradle`), tests (`http.utils.spec.ts`, `mcp-settings.spec.ts`), and documentation (`README.md`, `docs/architecture.md`, `CHANGELOG.md`).
+
+---
 
 ## [1.3.1] - 2026-09-12
 
