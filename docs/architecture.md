@@ -1,6 +1,6 @@
 # Minefolio — 架构与设计说明书 (Architecture & Design Specification)
 
-> 版本: 2026-10-24 v1.3.2  
+> 版本: 2026-10-26 v1.3.2+account-dimension  
 > 适用范围: 仓库 HEAD (`master` 分支)  
 > 受众: 研发、运维、安全审计、二次开发
 
@@ -354,7 +354,7 @@ Model (请求/响应) → Policy (五级风控) → Runtime (会话/循环)
 
 ### 3.1 总
 
-Minefolio 数据模型围绕**"资产 (Asset) — 交易 (Transaction) — 余额联动"**三核心组织,辅以分类树、标签、账本、成员、行情历史、AI 会话/消息/追踪、用户、设置共 **16 张主表 + 5 张关联表**。SQLite 与 PostgreSQL 两套 schema 语义对齐,迁移在启动时由 `db.c` 应用。**Ledger Engine** 作为账本事件溯源引擎,所有交易通过 `ledger_tx_t` 事件对象驱动,支持原子 apply/reverse 及 `ledger_rebuild_*` 重算。**余额方向**在 `common/balance.c` 集中处理:对 `loan / credit_card / other_liability` 类资产符号翻转,使 net worth 计算永远 `assets - liabilities` 正确。
+Minefolio 数据模型围绕**"资产 (Asset) — 交易 (Transaction) — 余额联动"**三核心组织,辅以**账户 (Account) 分组容器 (V017)**、分类树、标签、账本、成员、行情历史、AI 会话/消息/追踪、用户、设置共 **17 张主表 + 5 张关联表**。SQLite 与 PostgreSQL 两套 schema 语义对齐,迁移在启动时由 csilk 迁移引擎应用。**Ledger Engine** 作为账本事件溯源引擎,所有交易通过 `ledger_tx_t` 事件对象驱动,支持原子 apply/reverse 及 `ledger_rebuild_*` 重算。**余额方向**在 `common/balance.c` 集中处理:对 `loan / credit_card / other_liability` 类资产符号翻转,使 net worth 计算永远 `assets - liabilities` 正确。
 
 ### 3.2 图
 
@@ -376,8 +376,11 @@ erDiagram
     USERS ||--o{ LEDGER_MEMBERS : "joins"
     LEDGERS ||--o{ LEDGER_MEMBERS : "has"
     USERS ||--o{ CATEGORIES : "owns"
+    USERS ||--o{ ACCOUNTS : "owns"
+    LEDGERS ||--o{ ACCOUNTS : "scopes"
     USERS ||--o{ ASSETS : "owns"
     CATEGORIES ||--o{ ASSETS : "classifies"
+    ACCOUNTS ||--o{ ASSETS : "groups (RESTRICT)"
     USERS ||--o{ TRANSACTIONS : "creates"
     ASSETS ||--o{ TRANSACTIONS : "debits/credits"
     ASSETS ||--o{ TRANSACTIONS : "linked (transfer)"
@@ -408,7 +411,8 @@ erDiagram
 |----|----------|------|
 | `users` | `id`, `username` UNIQUE, `password` (RSA-OAEP 加密), `token_version`, `totp_*` | 密码经 RSA-OAEP 加密落盘;TOTP/备份码可选 |
 | `categories` | `user_id`, `name`, `parent_id` (树), `type ∈ {asset,income,expense,transaction}`, `asset_type` | 11 种 `asset_type` 决定 balance 符号翻转策略 |
-| `assets` | `user_id`, `category_id`, `name`, `symbol`, `current_value`, `quantity`, `cost_basis`, `net_value`, `currency` | 持仓资产,`quantity/cost_basis` 联动更新 |
+| `accounts` (V017) | `user_id`, `ledger_id`, `name` (UNIQUE per user+ledger), `institution ∈ {bank_card,platform,broker,fund_platform,cash_wallet,other}`, `account_no`, `sort_order`, `archived` | 资产分组纯容器,不记余额;小计由子资产 `SUM(current_value)` 派生;迁移按 (user, ledger) 回填「默认账户」 |
+| `assets` | `user_id`, `category_id`, `account_id` (V017, REFERENCES accounts ON DELETE RESTRICT), `name`, `symbol`, `current_value`, `quantity`, `cost_basis`, `net_value`, `currency` | 持仓资产,`quantity/cost_basis` 联动更新;`account_id<=0` 创建时兜底到账本默认账户 |
 | `transactions` | `user_id`, `asset_id`, `linked_asset_id`, `source_type`, `transaction_type`, `direction`, `amount`, `quantity`, `price_per_unit`, `fee`, `parent_tx_id`, `transaction_date` | 统一交易表,`parent_tx_id` 链接手续费子行(级联删除) |
 | `transfers` | `from_asset_id`, `to_asset_id`, `amount`, `transfer_date`, `from_tx_id`, `to_tx_id` | 跨资产转账, V014 显式外键关联 transactions 表以实现确定性双向删除 |
 | `daily_expenses` | `category_id`, `asset_id`, `expense_type ∈ {expense,income}`, `amount`, `expense_date` | 日常收支快速记录 |
@@ -1037,7 +1041,7 @@ cmake --build backend/build --parallel && npm --prefix frontend run build
 
 | 脚本 | 覆盖范围 | 用例数 |
 |------|---------|--------|
-| `test_link.sh` | auth + CRUD + 余额联动 + PnL + CSV + 分页 + AI 工作流 | 39 cases (151 assertions) |
+| `test_link.sh` | auth + 账户维度 + CRUD + 余额联动 + PnL + CSV + 分页 + AI 工作流 | 40 cases (169 assertions) |
 | `test_full.sh` | 全量回归入口 | 所有 |
 | `test_ledgers.sh` | 多账本空间 + RBAC (Owner/Editor/Viewer) | 16 cases |
 | `test_2fa.sh` | TOTP 2FA 密钥生成、二维码、启用/禁用、登录验证 | 12 cases |
@@ -1045,6 +1049,9 @@ cmake --build backend/build --parallel && npm --prefix frontend run build
 | `test_ai_trace.sh` | AI 对话追踪、Token 消耗、工具调用 Span | 17 cases |
 | `test_market_sync.sh` | 多源行情拉取、缓存、批量同步 | 18 cases |
 | `test_fx_oauth.sh` | 汇率、FX 汇兑损益、OCR 票据识别、OAuth2/OIDC SSO | 20 cases |
+| `test_mcp.sh` | MCP stdio/HTTP 服务配置、工具缓存刷新与对话分发路由 | 14 cases |
+| `test_mcp_server.sh` | 外部客户端视角 `/mcp` JSON-RPC (initialize/tools/list/tools/call、鉴权、限流) | 10 cases |
+| `test_report_isolation.sh` | 月度支出/报表 user_id + ledger_id 隔离回归 | 6 cases |
 
 **CUnit 单元测试 (`backend/tests/unit/`, CMake CTest 集成, 35 套件):**
 
@@ -1111,7 +1118,7 @@ cd backend/build && ctest --output-on-failure
 | 迁移成本 | 低 (当前) | 中 (需逐步迁移,双注册过渡期) |
 | 长期维护 | 业务规则随 Service 膨胀 | **规则明确,接口契约清晰** |
 
-**结论**: 选 DDD 四层是 Minefolio v1.2 的核心架构决策。所有 16 个业务域已完成迁移,Legacy 双轨代码已完全清除。
+**结论**: 选 DDD 四层是 Minefolio v1.2 的核心架构决策。所有 17 个业务域已完成迁移,Legacy 双轨代码已完全清除。
 
 ### 8.2 后端语言: C23 vs Go vs Rust
 
@@ -1138,7 +1145,7 @@ cd backend/build && ctest --output-on-failure
 | **适合场景** | 单用户/家庭自托管 | 多租户/集群 |
 
 Minefolio 采用下沉至 csilk 框架的原生**正式版本化迁移系统 (Database Migration System)**（`<csilk/drivers/db/migration.h>`），彻底替换历史上的动态字段检测与硬编码 ALTER TABLE：
-- **规范化版本脚本**：按 Flyway 规范统一组织于 `backend/sql/migrations/{sqlite,postgres}/`，文件命名格式 `V<num>__<name>.sql`（`V001`~`V016`）。
+- **规范化版本脚本**：按 Flyway 规范统一组织于 `backend/sql/migrations/{sqlite,postgres}/`，文件命名格式 `V<num>__<name>.sql`（`V001`~`V017`）。
 - **版本记录与审计 (`schema_migrations`)**：记录每个已应用的迁移版本、名称、SHA-256 校验和、应用时间及执行毫秒耗时。
 - **分布式并发互斥锁 (`schema_migration_lock`)**：通过数据库行锁与租约超时防死锁机制，有效防止多实例并行迁移竞争。
 - **PostgreSQL 原生 Prepared Statement 支持**：csilk PostgreSQL 驱动原生实现 `?` 转 `$1, $2, ...` 重写、`PQprepare`/`PQexecPrepared` 编译与执行、类型绑定与 `DEALLOCATE` 释放，确保并发锁及迁移语句在 SQLite / PostgreSQL 下均稳定执行。
@@ -1205,6 +1212,7 @@ Minefolio 采用下沉至 csilk 框架的原生**正式版本化迁移系统 (Da
 | 鉴权 | `/api/auth/*` | `interfaces/http/controllers/auth_controller.c` → `application/auth/` | |
 | 初始化 | `/api/setup`, `/api/system/status` | `interfaces/http/controllers/auth_controller.c` | |
 | 分类 | `/api/categories` | `interfaces/http/controllers/category_controller.c` → `application/` | |
+| 账户 | `/api/accounts`, `/api/accounts/:id` | `interfaces/http/controllers/account_controller.c` → `application/account/` | |
 | 资产 | `/api/assets`, `/api/assets/:id/logs` | `interfaces/http/controllers/asset_controller.c` → `application/asset/` | |
 | 交易 | `/api/transactions`, `/api/transactions/batch` | `interfaces/http/controllers/transaction_controller.c` → `application/transaction/` | |
 | 日常收支 | `/api/daily-expenses` | `interfaces/http/controllers/daily_expense_controller.c` → `application/` | |
@@ -1227,12 +1235,12 @@ Minefolio 采用下沉至 csilk 框架的原生**正式版本化迁移系统 (Da
 | 路径 | 用途 |
 |------|------|
 | `backend/src/main.c` | 入口、middleware 栈、路由注册、服务初始化 |
-| `backend/src/interfaces/http/controllers/*_controller.c` | 20 个 HTTP 控制器 (全部委托到 application 层) |
-| `backend/src/application/*/usecases.c` | 16 个域的用例编排模块 |
-| `backend/src/domain/*/entity.h` | 16 个域的纯业务实体定义 |
-| `backend/src/domain/*/repository.h` | 16 个域的仓储契约接口 |
-| `backend/src/domain/*/rules.h` | 8 个域的业务规则函数 |
-| `backend/src/infrastructure/repositories/*_repo_impl.c` | 18 个文件,16 个域的 SQL 仓储实现 (零 legacy repo 残留) |
+| `backend/src/interfaces/http/controllers/*_controller.c` | 23 个 HTTP 控制器 (全部委托到 application 层) |
+| `backend/src/application/*/usecases.c` | 17 个域的用例编排模块 (application/ 共 18 目录) |
+| `backend/src/domain/*/entity.h` | 17 个域的纯业务实体定义 |
+| `backend/src/domain/*/repository.h` | 17 个域的仓储契约接口 |
+| `backend/src/domain/*/rules.h` | 17 个域的业务规则函数 (全部含 rules.c 实现) |
+| `backend/src/infrastructure/repositories/*_repo_impl.c` | 20 个文件,17 个域的 SQL 仓储实现 (零 legacy repo 残留) |
 | `backend/src/core/financial/decimal.h` | 128 位定点十进制引擎 |
 | `backend/src/core/financial/money.h` | 绑定 currency 的金额强类型 |
 | `backend/src/core/financial/currency.h` | ISO 4217 货币模型 |
@@ -1247,11 +1255,11 @@ Minefolio 采用下沉至 csilk 框架的原生**正式版本化迁移系统 (Da
 | `backend/src/services/ai/workflows/` | 4 个具体工作流实现 |
 | `backend/src/common/balance.h` | 余额符号翻转 + 持仓核算 |
 | `csilk (csilk/drivers/db/migration.h)` | 数据库迁移引擎 (下沉至 csilk，提供 checksum、分布式锁、auto-baseline) |
-| `backend/sql/migrations/{sqlite,postgres}/` | 版本化迁移文件 (V001~V016) |
-| `backend/sql/migration.sql` | SQLite 16 表全量基准 |
-| `backend/sql/migration_postgres.sql` | PostgreSQL 16 表全量基准 |
-| `backend/tests/test_link.sh` | 39-case 核心集成测试 (151 assertions) |
-| `backend/tests/test_*.sh` | 8 个专项集成测试脚本 (另有 test_full.sh 全量回归) |
+| `backend/sql/migrations/{sqlite,postgres}/` | 版本化迁移文件 (V001~V017) |
+| `backend/sql/migration.sql` | SQLite 18 表全量基准 (V017 起) |
+| `backend/sql/migration_postgres.sql` | PostgreSQL 18 表全量基准 (V017 起) |
+| `backend/tests/test_link.sh` | 40-case 核心集成测试 (169 assertions) |
+| `backend/tests/test_*.sh` | 12 个专项集成测试脚本 (另有 test_full.sh 全量回归) |
 | `backend/tests/unit/test_*.c` | 35 个 CTest 单元单测 |
 | `frontend/src/utils/http.ts` | axios + JWT + CSRF |
 | `frontend/src/stores/chat.ts` | SmoothStreamWriter |

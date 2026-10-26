@@ -36,7 +36,7 @@ backend/src/services/ai/
 ├── tools/                # 领域工具注册表与 Schema 校验
 │   ├── registry.h / .c   # 工具注册表、入参类型反射与 Schema 生成
 │   ├── dispatcher.h / .c # 工具调用路由与上下文环境注入
-│   ├── asset_tool.c      # 资产与余额查询工具
+│   ├── asset_tool.c      # 资产与余额查询工具 (get_assets 支持可选 account_id 过滤; 结果含 account_name/institution)
 │   ├── transaction_tool.c# 交易查询与记账草案工具
 │   ├── expense_tool.c    # 收支明细记录工具
 │   ├── cashflow_tool.c   # 现金流排程与预测工具
@@ -195,6 +195,7 @@ data: {"type": "delta", "content": "根据您的账本统计，上月总支出�
 - **运行时缓冲**：Agent Loop (`runtime/loop.c`) 在流式迭代中维护动态扩容的 `thinking_buffer`；
 - **数据库表扩展 (V015)**：Migration `V015__ai_messages_thinking_content.sql` 在 `ai_messages` 表中增加了 `thinking_content TEXT` 字段；
 - **数据库表扩展 (V016)**：Migration `V016__ai_messages_tool_calls.sql` 在 `ai_messages` 表中增加了 `tool_calls TEXT DEFAULT ''` 字段，用于持久化模型返回的工具调用记录（JSON 数组），供前端回显工具执行状态与 Agent Loop 上下文重建；
+- **账户维度 Schema (V017)**：Migration `V017__accounts_table.sql` 引入 `accounts` 表与 `assets.account_id` 外键；AI 资产工具 (`exec_get_assets`) 的查询结果随之携带 `account_name` / `institution` 字段，并支持可选 `account_id` 整型入参过滤，Agent 可按账户维度检索与汇总资产（`V001`~`V017` 自动迁移基线）。
 - **原子持久化**：当一轮对话完成时，`mf_ai_session_repo_save_message_with_thinking()` 将正文回复、完整的思考过程与 `tool_calls` JSON 原子持久化入库，保证历史会话在重新载入时能够完整回溯思维链与工具调用轨迹。
 
 ---

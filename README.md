@@ -20,8 +20,9 @@ Minefolio 是一款极度轻量、安全、专业的**开源全资产管理与�
 * 🏛️ **统一账本状态引擎 (Ledger Engine)**：确立「Transaction 是唯一金融事实」准则，资产持仓、现金余额、成本基础、已实现/浮动盈亏全由账本引擎统一计算与更新，并提供基于时间序列事实全量重建 (`rebuild`) 的自愈能力。
 * 🤖 **统一 AI Runtime 与企业级五级风控引擎 (Unified AI Runtime & Risk Engine)**：建立原生 C 统一 AI 运行时架构，将 Controller 与 Workflow 彻底与 LLM 调用解耦，纳管会话 (Session)、统一上下文容器 (Context)、模型适配 (Model)、工具执行 (Tool)、工作流编排 (Workflow)、安全策略 (Policy)、全链路追踪 (Trace) 与滑动窗口记忆 (Memory)；全面支持硬预算与约束（迭代上限、超时、Token/Tool/Cost 预算与主动取消）及结构化错误分类，实行五级风险评估与带 Nonce 防重放的双重确认令牌机制。
 * 🔑 **统一 Secret Provider 与零硬编码安全门禁**：建立统一敏感配置检索机制，原生兼容环境变量、Docker/K8s Secret 文件挂载与外部密钥管理器 (Vault/AWS/K8s)；在生产启动期实施硬编码/弱口令主动熔断。
-* 🗄️ **企业级数据库迁移系统 (Database Migration System)**：下沉至 csilk 框架的原生 C 版本化迁移引擎（`<csilk/drivers/db/migration.h>`），支持 SQLite / PostgreSQL 双方言（`V001`~`V016`）；具备版本严格发现排序、SHA-256 CRLF 规范化哈希防篡改、基于行锁的分布式迁移互斥锁，并在 PostgreSQL 驱动层支持原生 Prepared Statement（`?` 自动转 `$N` 与参数绑定），实现生产环境存量数据库平滑升级（Auto-Baseline），绝不要求删除已有数据库重新初始化。
+* 🗄️ **企业级数据库迁移系统 (Database Migration System)**：下沉至 csilk 框架的原生 C 版本化迁移引擎（`<csilk/drivers/db/migration.h>`），支持 SQLite / PostgreSQL 双方言（`V001`~`V017`）；具备版本严格发现排序、SHA-256 CRLF 规范化哈希防篡改、基于行锁的分布式迁移互斥锁，并在 PostgreSQL 驱动层支持原生 Prepared Statement（`?` 自动转 `$N` 与参数绑定），实现生产环境存量数据库平滑升级（Auto-Baseline），绝不要求删除已有数据库重新初始化。
 * 💼 **全资产全场景覆盖**：支持现金、银行储蓄、股票、基金、债券、加密货币、房产、贷款、信用卡等资产与负债统一建档，支持负债方向自动正负号翻转。
+* 🗂️ **账户维度资产管理 (Account-Dimension Assets)**：以独立「账户」实体（银行卡/平台/券商/基金平台/现金钱包）归集各类资产，账户卡片分组呈现小计与资产数；支持账户归档（软删除）与手动排序；桌面端按账户分组卡片，移动端可折叠账户卡；全链路 14 处资产选择入口均以「账户 · 资产」前缀区分同名声资产，离线同步完整覆盖。
 * 📈 **专业资管级投资模型**：加权买入成本、分红摊薄计价、卖出部分成本按比例核减、手续费联动与基于 `parent_tx_id` 的级联回滚，精确计算已实现与浮动盈亏。
 * 🌐 **多币种实时外汇引擎 (FX Engine)**：支持全币种资产管理，内置 Yahoo Finance 实时汇率同步与手动设置，支持基准折算净资产实时呈现。
 * 📊 **外汇损益双因子归因分析**：在报表中心将境外资产收益严格拆解为「**资产标的自身价格涨跌**」与「**纯外汇汇率波动汇兑损益 (FX PnL)**」。
@@ -125,7 +126,7 @@ docker compose ps
   MINEFOLIO_DB_DRIVER=postgres
   MINEFOLIO_DB_DSN=host=your-pg-host port=5432 user=minefolio password=your-db-pass dbname=minefolio sslmode=disable
   ```
-  同样需要镜像带 libpq（`Dockerfile` 默认已包含）。原生 C 数据库迁移引擎会在启动时自动完成版本化迁移（`V001`~`V016`）。
+  同样需要镜像带 libpq（`Dockerfile` 默认已包含）。原生 C 数据库迁移引擎会在启动时自动完成版本化迁移（`V001`~`V017`）。
 
 ### 方式 2：本地源码编译与开发
 
@@ -165,10 +166,10 @@ Minefolio/
 ├── backend/                      # C23 后端服务
 │   ├── CMakeLists.txt            # 构建配置（C23、csilk、yyjson）
 │   ├── sql/                      # 数据库迁移与初始化脚本
-│   │   ├── migrations/           # 版本化迁移脚本（V001~V016）
+│   │   ├── migrations/           # 版本化迁移脚本（V001~V017）
 │   │   │   ├── sqlite/           # SQLite 方言版本脚本
 │   │   │   └── postgres/         # PostgreSQL 方言版本脚本
-│   │   ├── migration.sql         # 16 张核心数据表全量基准（测试与初始化）
+│   │   ├── migration.sql         # 18 张核心数据表全量基准（测试与初始化）
 │   │   └── migration_postgres.sql
 │   ├── src/
 │   │   ├── main.c                # 服务主入口、中间件装配、路由注册与静态托管
@@ -179,7 +180,8 @@ Minefolio/
 │   │   │   ├── ai/               # sessions/messages/workflows 用例
 │   │   │   ├── market/           # sync/quote/exchange_rates 用例
 │   │   │   ├── transaction/      # create/update/delete/query 用例
-│   │   │   ├── asset/            # asset CRUD 用例
+│   │   │   ├── asset/            # asset CRUD 用例（account_id 兜底默认账户）
+│   │   │   ├── account/          # 账户 CRUD/归档/懒种子用例
 │   │   │   ├── portfolio/        # 投资组合汇总用例
 │   │   │   └── cashflow/         # 现金流排程用例
 │   │   ├── domain/               # 领域层：纯业务实体、规则与仓储契约（新架构）
@@ -188,11 +190,12 @@ Minefolio/
 │   │   │   ├── market/           # mf_market_*_t + 规则
 │   │   │   ├── transaction/      # mf_transaction_t + 规则
 │   │   │   ├── asset/            # mf_asset_t + 规则
+│   │   │   ├── account/          # mf_account_t + 校验/删除保护规则
 │   │   │   ├── portfolio/        # mf_holding_item_t + 规则
 │   │   │   └── cashflow/         # mf_cashflow_*_t + 规则
 │   │   ├── infrastructure/       # 基础设施层
 │   │   │   ├── database/         # 数据库抽象、连接与原生 SQLite/Postgres 适配器（迁移引擎由 csilk 提供）
-│   │   │   └── repositories/     # auth_repo_impl, tx_repo_impl... (18 个仓储实现，零 legacy 残留)
+│   │   │   └── repositories/     # auth_repo_impl, tx_repo_impl... (20 个仓储实现，零 legacy 残留)
 │   │   ├── core/                 # 金融核心与基础引擎
 │   │   │   ├── financial/        # 128位定点数（money, decimal, quantity, price, rate, currency, percentage）
 │   │   │   └── ledger/           # 事件溯源账本引擎（ledger_apply_tx/reverse/rebuild）
@@ -203,7 +206,7 @@ Minefolio/
 │   │   ├── config/               # 密钥对管理、数据库配置、统一 Secret Provider (secret.h/.c)
 │   │   └── middlewares/          # JWT 鉴权、CORS、CSRF、限流与安全头中间件
 │   └── tests/                    # 单元测试与集成测试矩阵
-│       ├── unit/                 # 32 项高覆盖 CTest 单元测试
+│       ├── unit/                 # 35 项高覆盖 CTest 单元测试
 │       │   ├── test_currency.c   # 货币模型（ISO 4217、精度、比较）
 │       │   ├── test_decimal.c    # 128位定点算术（加/减/乘/除/舍入）
 │       │   ├── test_money.c      # 金额类型（跨币种安全校验）
@@ -236,15 +239,19 @@ Minefolio/
 │       │   ├── test_database_repository.c # 数据库仓储接口抽象
 │       │   ├── test_migration_engine.c   # csilk 迁移引擎发现、锁与基线
 │       │   └── test_domain_repositories.c # 领域仓储契约集成
-│       ├── test_link.sh          # 核心业务闭环测试 (38 用例，139 断言)
+│       ├── test_link.sh          # 核心业务闭环测试 (40 用例，169 断言，含账户维度)
 │       ├── test_full.sh          # 全量回归测试入口
 │       ├── test_ledgers.sh       # 多账本与 RBAC 测试 (16 用例)
 │       ├── test_2fa.sh           # TOTP 双因素认证测试 (12 用例)
 │       ├── test_dca_cashflow.sh  # 定投与现金流日历测试 (18 用例)
 │       ├── test_ai_trace.sh      # AI 会话与全链路追踪测试 (17 用例)
 │       ├── test_ai_tool_call.sh  # AI 工具调用循环回归测试 (15 用例, mock OpenAI 流式工具)
+│       ├── test_ai_truncate.sh   # AI 编辑重发历史截断测试 (14 用例)
 │       ├── test_market_sync.sh   # 实时行情多源同步测试 (18 用例)
-│       └── test_fx_oauth.sh      # 汇率、汇兑损益、OCR、OAuth 单点登录测试 (20 用例)
+│       ├── test_fx_oauth.sh      # 汇率、汇兑损益、OCR、OAuth 单点登录测试 (20 用例)
+│       ├── test_mcp.sh           # MCP 服务配置与工具调用分发测试
+│       ├── test_mcp_server.sh    # MCP JSON-RPC 端点外部客户端视角测试
+│       └── test_report_isolation.sh # 报表/月度支出多用户隔离回归测试
 ├── frontend/                     # Vue 3 现代化前端
 │   ├── src/
 │   │   ├── api/                  # 强类型 API 接口封装（桌面端与移动端共享）
@@ -298,8 +305,10 @@ Minefolio/
 ### 3. 资产、负债与交易 (Assets & Transactions)
 | 方法 | 路径 | 鉴权 | 说明 |
 | :--- | :--- | :---: | :--- |
-| `GET/POST` | `/api/assets` | JWT | 资产列表（分页/过滤）与新建资产 |
-| `GET/PUT/DELETE` | `/api/assets/:id` | JWT | 资产详情、编辑资产净值、删除资产 |
+| `GET/POST` | `/api/accounts` | JWT | 账户列表（含 asset_count/total_value 聚合，`?include_archived=1` 含归档）与新建账户 |
+| `PUT/DELETE` | `/api/accounts/:id` | JWT | 编辑账户字段与归档/恢复；删除有资产或交易的账户返回 1004 |
+| `GET/POST` | `/api/assets` | JWT | 资产列表（分页/过滤，JOIN 账户名与机构，支持 `?account_id=`）与新建资产 |
+| `GET/PUT/DELETE` | `/api/assets/:id` | JWT | 资产详情（含 account_name）、编辑资产净值与改挂账户、删除资产 |
 | `POST` | `/api/assets/:id/rebuild` | JWT | 账本引擎：重放单标的事实交易，全量重建持仓量、成本与市值 |
 | `POST` | `/api/assets/rebuild` | JWT | 账本引擎：全量重建用户所有投资资产的持仓与成本状态 |
 | `GET/POST` | `/api/transactions` | JWT | 交易记录（买入/卖出/存取/分红，支持 fee 联动） |
@@ -386,7 +395,7 @@ ctest --output-on-failure
 # - 数据库抽象与迁移引擎：test_database_repository, test_migration_engine
 ```
 
-### 2. 端到端集成测试矩阵（10 大测试套件，覆盖 151+ 真实断言）
+### 2. 端到端集成测试矩阵（12 大测试套件，test_link 覆盖 169 真实断言）
 ```bash
 ./backend/tests/test_full.sh              # 全量回归入口
 # 或单独运行：
@@ -396,11 +405,12 @@ ctest --output-on-failure
 ./backend/tests/test_dca_cashflow.sh && \
 ./backend/tests/test_ai_trace.sh && \
 ./backend/tests/test_ai_tool_call.sh && \
+./backend/tests/test_ai_truncate.sh && \
 ./backend/tests/test_market_sync.sh && \
 ./backend/tests/test_fx_oauth.sh
 ```
 
-### 3. 前端单元与组件测试矩阵（32 个测试套件，147+ 单元测试）
+### 3. 前端单元与组件测试矩阵（35 个测试套件，168+ 单元测试）
 ```bash
 cd frontend
 npm test

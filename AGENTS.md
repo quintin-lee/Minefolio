@@ -12,7 +12,7 @@ Minefolio is a self-hosted personal finance and investment tracker. It supports 
 Interfaces Layer   interfaces/http/controllers/  Parse params, call usecase, format response
 Application Layer  application/*/{usecases,commands,dtos}.h/.c  Use case orchestration
 Domain Layer       domain/*/{entity,repository,rules}.h/.c  Pure business rules, zero dependencies
-Infrastructure     infrastructure/repositories/*_repo_impl.c  SQL implementations (18 files)
+Infrastructure     infrastructure/repositories/*_repo_impl.c  SQL implementations (20 files)
                    infrastructure/database/  Database abstraction and SQLite/Postgres adapters
                    (Migration engine, CSV parsing, TOTP 2FA, and REST response envelopes downstreamed to csilk framework)
 Core Layer         core/financial/  Fixed-point core: money, decimal, quantity, price, rate, pnl
@@ -30,8 +30,8 @@ Shared             common/  db, jwt, balance, response, ctx, tx_types, ledger_ut
 - `domain/*` → zero external dependencies (pure C, only `core/financial`)
 - `infrastructure/repositories/*` → `common/db.h`, `domain/*` (contracts)
 
-**All 16 business domains have been migrated to DDD architecture:**
-tag, category, ledger, daily_expense, transfer, dca, report, file, import/export, auth, ai, market, asset, transaction, portfolio, cashflow.
+**All 17 business domains have been migrated to DDD architecture:**
+tag, category, ledger, daily_expense, transfer, dca, report, file, import/export, auth, ai, market, asset, transaction, portfolio, cashflow, account.
 
 **Legacy repos have been completely removed.** All SQL now lives in `infrastructure/repositories/*_repo_impl.c`.
 
@@ -81,10 +81,21 @@ A transfer is stored as two rows: a `transfer_out` parent and a `transfer_in` ch
 2. **`transfers` auxiliary table explicit foreign keys (V014).** Migration `V014__transfer_explicit_transactions.sql` introduced `from_tx_id` and `to_tx_id` referencing `transactions(id)`. Transfer cleanup deletes deterministically via `from_tx_id = ? OR to_tx_id = ?`.
 3. **The `(from_asset_id, to_asset_id, amount)` attribute match is a legacy fallback only** — used solely for legacy rows written before V014 where `from_tx_id <= 0` or before `parent_tx_id` existed. Do not remove this fallback as it prevents orphaned legacy rows.
 
+### Accounts — Account-Dimension Asset Grouping (V017)
+
+Assets group under **account** containers (bank card, Alipay, broker…). Accounts are **pure containers**: they hold no balance; an account's subtotal is always derived as `SUM(assets.current_value)` of its children (`asset_count`/`total_value` aggregates in `account_list`).
+
+- **Schema (V017)**: `accounts` table — `UNIQUE(user_id, ledger_id, name)`, `institution` CHECK enum (`bank_card`/`platform`/`broker`/`fund_platform`/`cash_wallet`/`other`), soft-delete via `archived INTEGER`; `assets.account_id INTEGER REFERENCES accounts(id) ON DELETE RESTRICT` (usecase-level delete protection is the first gate: assets or transactions present → 1004, guide to archive).
+- **Migration backfill**: per (user, ledger) creates `默认账户` (institution `cash_wallet`, icon `ph:wallet`) and re-parents all existing assets. **Never rename that literal** — `account_find_default`/`account_create_default`/the V017 backfill SQL all match on `name='默认账户'`.
+- **Lazy seed**: `account_usecase_seed_default(pool, user_id, ledger_id)` is idempotent and is invoked at the same call sites as `category_usecase_seed_defaults` (`auth/usecases.c`, `admin_controller.c`, `category_controller.c`).
+- **Asset fallback**: `asset_usecase_create/update` accept optional `account_id`; `account_id <= 0` falls back to the ledger's default account (keeps pre-V017 clients and `test_link.sh` asset cases passing). A provided `account_id > 0` is ownership-validated (user + ledger) → 1002 on mismatch.
+- **List semantics**: `GET /api/accounts` is **unpaginated** (full array in `data`), ordered by `sort_order, id`; archived accounts are excluded unless `?include_archived=1`.
+- **Frontend**: all 14 asset-picker entry points label options `{account_name} · {asset name}`; offline sql.js schema mirrors `accounts` + `assets.account_id`, and `sync.ts` pulls accounts first (before assets) with `remapAccountRefs()` for offline-created account IDs.
+
 ### Database Migration System
 
 Database schema changes are managed strictly via csilk's native C migration engine (`<csilk/drivers/db/migration.h>`):
-- **Versioned scripts**: `backend/sql/migrations/{sqlite,postgres}/` following Flyway naming `V<num>__<name>.sql` (`V001`~`V016`).
+- **Versioned scripts**: `backend/sql/migrations/{sqlite,postgres}/` following Flyway naming `V<num>__<name>.sql` (`V001`~`V017`).
 - **Tracking table**: `schema_migrations` records `version`, `name`, `checksum` (SHA-256 CRLF-normalized), `applied_at`, `execution_time_ms`, `execution_time`.
 - **Concurrency lock**: `schema_migration_lock` table acts as a distributed mutex with lease timeout to prevent multi-instance migration races. Under PostgreSQL, csilk provides full native prepared statement support (`?` rewritten to `$N`, `PQprepare`/`PQexecPrepared`), ensuring lock acquisition and statement execution run reliably.
 - **Engine lifecycle**: Automatic discovery, version sorting, checksum validation (tamper detection), transactional application, and status reporting.
@@ -121,19 +132,24 @@ AI Runtime (services/ai/runtime/)
 |------|---------|
 | `backend/src/main.c` | Entry point: DB init, migrations, middleware stack, route registration, static serve |
 | `backend/src/interfaces/http/controllers/` | Thin HTTP handlers; one per domain; `register_*_routes(app)` |
-| `backend/src/domain/` | Domain layer: entities, repository contracts, business rules (9+ domains) |
-| `backend/src/application/` | Application layer: use case orchestration (9+ domains) |
-| `backend/src/infrastructure/repositories/` | Infrastructure layer: SQL implementations of repository contracts (18 files, zero legacy) |
+| `backend/src/domain/` | Domain layer: entities, repository contracts, business rules (10+ domains) |
+| `backend/src/application/` | Application layer: use case orchestration (10+ domains) |
+| `backend/src/infrastructure/repositories/` | Infrastructure layer: SQL implementations of repository contracts (20 files, zero legacy) |
 | `backend/src/services/ai/` | Unified AI Runtime: session, context, model, tool, workflow, policy, trace, memory |
 | `backend/src/core/financial/` | Fixed-point core arithmetic: money, decimal, quantity, price, rate, pnl |
 | `backend/src/core/ledger/` | Ledger engine: single source of truth, position calculation, history replay/rebuild |
 | `backend/src/infrastructure/database/` | Database abstraction layer and SQLite/PostgreSQL native adapters (migration engine downstreamed to csilk) |
 | `backend/src/common/` | Cross-cutting: `db.h`, `balance.h`, `jwt.h`, `response.h`, `ctx.h`, `tx_types.h`, `ledger_utils.h` (CSV, TOTP 2FA & REST response envelopes downstreamed to csilk) |
 | `backend/src/config/` | `db_config.h/.c` (DSN), `key_manager.h/.c` (RSA-OAEP keys), `secret.h/.c` (Secret Provider) |
-| `backend/sql/migrations/` | Versioned migration scripts (`sqlite/` & `postgres/`, `V001`~`V016`) |
+| `backend/sql/migrations/` | Versioned migration scripts (`sqlite/` & `postgres/`, `V001`~`V017`) |
 | `backend/sql/` | `migration.sql` (SQLite full schema), `migration_postgres.sql` |
 | `backend/tests/unit/` | 35 CTest unit test suites (financial core, ledger, domain rules, DB repository, migration engine, AI runtime, MCP pool & risk, FX semantics, portfolio PnL alignment) |
-| `backend/tests/test_link.sh` | 39-case integration test suite (151 assertions: auth, CRUD, balance联动, PnL, CSV, pagination, ledger rebuild, AI trace/workflow) |
+| `backend/tests/test_link.sh` | Core integration test suite (40 cases, 169 assertions: auth, accounts, CRUD, balance联动, PnL, CSV, pagination, ledger rebuild, AI trace/workflow) |
+| `backend/src/domain/account/` | Account domain: `mf_account_t` entity, validation/delete rules, repository contract |
+| `backend/src/application/account/usecases.c` | Account use cases: create/update/delete/archive/query, lazy `默认账户` seed, duplicate-name 1004, delete-protection 1004 |
+| `backend/src/infrastructure/repositories/account_repo_impl.c` | Accounts SQL repo (with `asset_count`/`total_value` aggregates, archived filter) |
+| `frontend/src/api/accounts.ts` | Account API: list (full-set array), create, update, delete |
+| `frontend/src/components/AccountDialog.vue` | Account create/edit dialog shared by desktop and mobile |
 | `frontend/src/main.ts` | Desktop entry: Pinia, router, Element Plus, i18n |
 | `frontend/src/main-mobile.ts` | Mobile entry: separate router, sql.js init |
 | `frontend/src/api/` | One file per domain; never call fetch/axios directly in components |
@@ -216,6 +232,7 @@ int           tx_delete_fee_children(csilk_db_pool_t* pool, int64_t user_id, int
 - ALL SQL uses `?` placeholders with `csilk_db_query_param_json(pool, sql, params)`
 - Raw SQL via `csilk_db_exec` is only acceptable for self-contained literals (e.g. fee-row insertion)
 - **No legacy `repositories/` directory** — all SQL lives in `infrastructure/repositories/`
+- **Dynamic SQL fragments MUST use a matching `%s` specifier**: `snprintf(sql, ..., "...%s...", cond)` — a conditional SQL piece passed as an extra argument **without** a corresponding `%s` in the format string is silently dropped by `snprintf` (regression: `account_list` lost its `archived=0` filter and `ORDER BY` this way; guarded by test_link.sh Case 40 assertions).
 
 ### C — Service Pattern
 
@@ -387,15 +404,15 @@ Mobile users can customize the backend server address (e.g. LAN IP `http://192.1
 
 ## Testing & QA
 
-### Backend Unit & Integration Tests (35 CTest Suites + 11 Integration Suites)
+### Backend Unit & Integration Tests (35 CTest Suites + 12 Integration Suites)
 
 ```bash
 cd backend
 # 1. Run all 35 CTest unit test suites (sub-second fast feedback)
 cd build && ctest --output-on-failure && cd ..
 
-# 2. Run all 9 end-to-end integration test suites
-./tests/test_link.sh          # 39 cases (151 assertions): auth, CRUD, balance联动, PnL, CSV, pagination, ledger rebuild, AI trace/workflow
+# 2. Run all core integration test suites
+./tests/test_link.sh          # 169 assertions across 40 cases: auth, accounts dimension, CRUD, balance联动, PnL, CSV, pagination, ledger rebuild, AI trace/workflow
 ./tests/test_ledgers.sh       # 16 cases: multi-ledger spaces, member RBAC (Owner/Editor/Viewer)
 ./tests/test_2fa.sh           # 12 cases: TOTP 2FA secret gen, QR code, enable/disable, login verification
 ./tests/test_dca_cashflow.sh  # 18 cases: DCA periodic purchase execution, cashflow calendar projection
@@ -404,6 +421,9 @@ cd build && ctest --output-on-failure && cd ..
 ./tests/test_ai_truncate.sh   # 14 cases: edit-resend server history truncation, persisted message-id SSE events, regenerate delete semantics
 ./tests/test_market_sync.sh   # 18 cases: Multi-source market quotes, caching, bulk sync
 ./tests/test_fx_oauth.sh      # 20 cases: Exchange rates, FX gain/loss PnL, receipt OCR, OAuth2/OIDC SSO
+./tests/test_mcp.sh           # MCP stdio server config + chat tool-call dispatch routing
+./tests/test_mcp_server.sh    # External-client view of POST /mcp (initialize/tools/list/tools/call JSON-RPC)
+./tests/test_report_isolation.sh # Expense monthly/report isolation regression (user_id + ledger_id)
 ```
 
 Tests start real servers with temp SQLite DBs, exercise all API endpoints via curl/JSON, and verify database state directly with `sqlite3`. `test_ai_tool_call.sh` and `test_ai_truncate.sh` also start `mock_ai_tool_server.js` (node) as their AI provider. Run before committing any changes.
