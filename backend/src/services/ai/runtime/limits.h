@@ -23,6 +23,8 @@ typedef struct {
     int     tool_calls_count;  /**< 累计工具调用次数 */
     double  total_cost;        /**< 累计估计成本 (USD) */
     int64_t elapsed_ms;        /**< 累计已消耗时间 (ms) */
+    /** 结束原因："stop" 正常应答 / "budget" 预算耗尽后收敛 / "cancelled" 客户端中断 */
+    char finish_reason[24];
 } ai_runtime_stats_t;
 
 ai_runtime_limits_t ai_runtime_limits_default(void);

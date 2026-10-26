@@ -1,5 +1,6 @@
 #include "services/ai/runtime/loop.h"
 #include "services/ai/runtime/context.h"
+#include "services/ai/runtime/fast_json.h"
 #include "services/ai/runtime/session.h"
 #include "services/ai/memory/memory.h"
 #include "services/ai/memory/summary.h"
@@ -20,6 +21,7 @@
 typedef struct {
     const ai_runtime_callbacks_t* cbs;
     void*                         user_data;
+    volatile bool*                cancel_token;
     char*                         accumulated;
     size_t                        accumulated_len;
     size_t                        accumulated_cap;
@@ -35,7 +37,11 @@ on_chunk_bridge(const char* chunk, void* user_data)
         return;
     }
     loop_stream_bridge_t* b = (loop_stream_bridge_t*)user_data;
-    size_t                clen = strlen(chunk);
+    /* 客户端已断开：停止累积与转发，保证落库文本 == 用户实际看到的文本 */
+    if (b->cancel_token && *(b->cancel_token)) {
+        return;
+    }
+    size_t clen = strlen(chunk);
     if (b->accumulated_len + clen + 1 > b->accumulated_cap) {
         size_t new_cap = (b->accumulated_cap == 0) ? 1024 : (b->accumulated_cap * 2 + clen);
         char*  new_buf = (char*)realloc(b->accumulated, new_cap);
@@ -61,7 +67,10 @@ on_reasoning_bridge(const char* chunk, void* user_data)
         return;
     }
     loop_stream_bridge_t* b = (loop_stream_bridge_t*)user_data;
-    size_t                clen = strlen(chunk);
+    if (b->cancel_token && *(b->cancel_token)) {
+        return;
+    }
+    size_t clen = strlen(chunk);
     if (b->thinking_accumulated_len + clen + 1 > b->thinking_accumulated_cap) {
         size_t new_cap =
             (b->thinking_accumulated_cap == 0) ? 1024 : (b->thinking_accumulated_cap * 2 + clen);
@@ -80,6 +89,77 @@ on_reasoning_bridge(const char* chunk, void* user_data)
     if (b->cbs && b->cbs->on_thinking_chunk) {
         b->cbs->on_thinking_chunk(chunk, b->user_data);
     }
+}
+
+/** 单次运行内同参工具调用的去重槽位上限 */
+#define LOOP_DUP_CALL_SLOTS 64
+/** 进入模型上下文的单条工具结果字节上限（超出仅保留前缀预览） */
+#define LOOP_TOOL_RESULT_MAX_BYTES 8192
+
+static uint64_t
+loop_call_hash(const char* name, const char* args)
+{
+    uint64_t    h = 1469598103934665603ULL; /* FNV-1a 64bit */
+    const char* p = name ? name : "";
+    while (*p) {
+        h ^= (unsigned char)*p++;
+        h *= 1099511628211ULL;
+    }
+    h ^= 0x1f;
+    h *= 1099511628211ULL;
+    p = args ? args : "";
+    while (*p) {
+        h ^= (unsigned char)*p++;
+        h *= 1099511628211ULL;
+    }
+    return h;
+}
+
+static int
+loop_call_seen(const uint64_t* hashes, size_t count, uint64_t h)
+{
+    for (size_t i = 0; i < count; i++) {
+        if (hashes[i] == h) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/**
+ * @brief 为模型上下文裁剪过大的工具结果
+ * @details 超限时输出 `{"truncated":true,"original_bytes":N,"preview":"<前 8KB 预览>"}`，
+ *          保持 JSON 合法；完整结果仍用于 SSE 展示与落库（tc_record）。
+ */
+static char*
+loop_clamp_tool_result(const char* result)
+{
+    if (!result) {
+        return strdup("");
+    }
+    size_t len = strlen(result);
+    if (len <= LOOP_TOOL_RESULT_MAX_BYTES) {
+        return strdup(result);
+    }
+    size_t preview_len = LOOP_TOOL_RESULT_MAX_BYTES;
+    while (preview_len > 0 && ((unsigned char)result[preview_len] & 0xC0) == 0x80) {
+        preview_len--; /* 回退到 UTF-8 字符边界 */
+    }
+    size_t cap = preview_len * 6 + 160;
+    char*  out = (char*)malloc(cap);
+    if (!out) {
+        return strdup(result);
+    }
+    size_t n = (size_t)snprintf(
+        out, cap, "{\"truncated\":true,\"original_bytes\":%zu,\"preview\":\"", len);
+    int esc = ai_json_escape_fast(result, preview_len, out + n, cap - n - 32);
+    if (esc < 0) {
+        free(out);
+        return strdup(result);
+    }
+    n += (size_t)esc;
+    snprintf(out + n, cap - n, "\"}");
+    return out;
 }
 
 ai_runtime_status_t
@@ -210,6 +290,7 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
     loop_stream_bridge_t bridge = {
         .cbs = cbs,
         .user_data = user_data,
+        .cancel_token = ctx->cancel_token,
         .accumulated = NULL,
         .accumulated_len = 0,
         .accumulated_cap = 0,
@@ -227,6 +308,11 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
 
     int max_turns = (ctx->limits.max_iterations > 0) ? ctx->limits.max_iterations : 10;
     int got_text = 0;
+    snprintf(ctx->stats.finish_reason, sizeof(ctx->stats.finish_reason), "stop");
+
+    /* 单次运行内同参工具调用去重表（防止模型反复执行完全相同的调用耗尽预算） */
+    uint64_t seen_hashes[LOOP_DUP_CALL_SLOTS];
+    size_t   seen_count = 0;
 
     /* 7. Agent 循环核心状态机 */
     while (!got_text && ctx->stats.iterations_done < max_turns) {
@@ -267,6 +353,27 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
         csilk_ai_chat_response_t ai_res = {0};
         int                      rc = csilk_ai_chat(ai_inst, &req, &ai_res);
 
+        /* Runtime 层兜底重试：仅当本轮尚未向客户端流出正文（避免重复输出）时生效。
+           - 配置类错误（400/401/403/404）不可恢复，直接放弃；
+           - CURL 网络错误与 429/502/503 已由 csilk_ai_chat 内部退避重试，不重复风暴；
+           - 其余瞬时错误（如 500/504/521）再补 2 次（0.5s / 1.5s 退避）。 */
+        for (int attempt = 0; rc != 0 && attempt < 2; attempt++) {
+            const char* emsg =
+                (ai_res.error_message && ai_res.error_message[0]) ? ai_res.error_message : "";
+            if (bridge.accumulated_len > 0 || strstr(emsg, "400") || strstr(emsg, "401") ||
+                strstr(emsg, "403") || strstr(emsg, "404") || strstr(emsg, "CURL error") ||
+                strstr(emsg, "429") || strstr(emsg, "502") || strstr(emsg, "503") ||
+                (ctx->cancel_token && *(ctx->cancel_token))) {
+                break;
+            }
+            csilk_ai_chat_response_free(&ai_res);
+            memset(&ai_res, 0, sizeof(ai_res));
+            struct timespec backoff = {.tv_sec = 0,
+                                       .tv_nsec = (attempt == 0 ? 500L : 1500L) * 1000000L};
+            nanosleep(&backoff, NULL);
+            rc = csilk_ai_chat(ai_inst, &req, &ai_res);
+        }
+
         /* 记录 Token 消耗与费用 */
         double step_cost = 0.0;
         mf_ai_rule_calculate_token_cost(
@@ -274,8 +381,15 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
         ai_runtime_limits_record_tokens(
             &ctx->stats, ai_res.prompt_tokens, ai_res.completion_tokens, step_cost);
 
-        /* 触发异步摘要：token 用量达预算 80% 时后台生成会话摘要 */
-        ai_summary_maybe_trigger(pool, ctx);
+        /* 客户端断开（SSE 写失败）→ 协作取消：不执行本轮工具，保留已流出的部分文本 */
+        if (ctx->cancel_token && *(ctx->cancel_token)) {
+            ai_runtime_status_set(&status,
+                                  AI_RUNTIME_ERR_CANCELLED,
+                                  "Cancelled by client disconnect",
+                                  "SSE write failed; client closed the stream");
+            csilk_ai_chat_response_free(&ai_res);
+            break;
+        }
 
         if (rc != 0) {
             const char* emsg = (ai_res.error_message && ai_res.error_message[0])
@@ -285,6 +399,9 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
             csilk_ai_chat_response_free(&ai_res);
             break;
         }
+
+        /* 触发异步摘要：token 用量达预算 80% 时后台生成会话摘要 */
+        ai_summary_maybe_trigger(pool, ctx);
 
         /* C. 模型输出最终文本（无后续工具调用） */
         if (ai_res.tool_call_count == 0) {
@@ -370,6 +487,7 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
                 ctx->user_id, ctx->session_id, tc->name, args, AI_RISK_NO_OVERRIDE);
             char*           result_str = NULL;
             int             tool_success = 0;
+            int             executed = 0;
             struct timespec t0, t1;
             clock_gettime(CLOCK_MONOTONIC, &t0);
 
@@ -389,13 +507,26 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
                 result_str = csilk_json_serialize(err_obj, &elen);
                 csilk_json_free(err_obj);
             } else {
-                /* 2. 工具执行 (Tool Execution)
-                   线程化协作式取消标志：MCP 远端调用可在用户取消时中止。 */
-                result_str = ai_tools_execute_parsed_cancel(
-                    pool, ctx->user_id, ctx->session_id, args, tc->name, ctx->cancel_token);
-                tool_success = (result_str != NULL);
-                if (!result_str) {
-                    result_str = strdup("{\"error\":\"tool execution failed\"}");
+                uint64_t call_hash = loop_call_hash(tc->name, tc->arguments);
+                if (loop_call_seen(seen_hashes, seen_count, call_hash)) {
+                    /* 同参重复调用：直接回放提示而非再次执行，避免模型耗尽工具预算 */
+                    result_str =
+                        strdup("{\"error\":\"duplicate_call\",\"note\":\"identical tool call "
+                               "already executed in this run; reuse the previous result or "
+                               "answer directly\"}");
+                } else {
+                    /* 2. 工具执行 (Tool Execution)
+                       线程化协作式取消标志：MCP 远端调用可在用户取消时中止。 */
+                    result_str = ai_tools_execute_parsed_cancel(
+                        pool, ctx->user_id, ctx->session_id, args, tc->name, ctx->cancel_token);
+                    executed = 1;
+                    tool_success = (result_str != NULL);
+                    if (!result_str) {
+                        result_str = strdup("{\"error\":\"tool execution failed\"}");
+                    }
+                    if (seen_count < LOOP_DUP_CALL_SLOTS) {
+                        seen_hashes[seen_count++] = call_hash;
+                    }
                 }
             }
 
@@ -407,7 +538,9 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
             }
             csilk_json_free(args);
 
-            ai_runtime_limits_record_tool_call(&ctx->stats, 1);
+            if (executed) {
+                ai_runtime_limits_record_tool_call(&ctx->stats, 1);
+            }
             if (trace) {
                 ai_trace_add_tool_span(trace,
                                        tc->name ? tc->name : "",
@@ -433,11 +566,13 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
             msgs = (csilk_ai_message_t*)realloc(msgs, sizeof(csilk_ai_message_t) * mc);
             msgs[mc - 1] = (csilk_ai_message_t){
                 .role = "tool",
-                .content = result_str,
+                .content = loop_clamp_tool_result(result_str),
                 .tool_call_id = tc_id_copy,
                 .tool_calls = NULL,
                 .tool_call_count = 0,
             };
+            /* clamp 已生成独立副本进入 msgs（清理段释放），原完整结果串在此释放 */
+            free(result_str);
         }
 
         csilk_ai_chat_response_free(&ai_res);
@@ -451,11 +586,72 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
                               "Max turns reached");
     }
 
-    /* 7.5 被中断/超时轮次的部分 assistant 文本与思考过程持久化，避免流式输出丢失 */
+    /* 7.4 预算/轮数耗尽 → 追加一次无工具收敛调用：基于已获取的信息产出最终答复，
+       而非直接以错误结束（用户至少能得到一个结论） */
+    if (!got_text &&
+        (status.code == AI_RUNTIME_ERR_TIMEOUT || status.code == AI_RUNTIME_ERR_TOOL ||
+         status.code == AI_RUNTIME_ERR_CONTEXT_OVERFLOW) &&
+        !(ctx->cancel_token && *(ctx->cancel_token))) {
+        if (bridge.accumulated) {
+            bridge.accumulated[0] = '\0';
+            bridge.accumulated_len = 0;
+        }
+        csilk_ai_chat_request_t wrap_req = {
+            .model = model,
+            .messages = msgs,
+            .message_count = mc,
+            .stream = (cbs && cbs->on_text_chunk) ? 1 : 0,
+            .on_chunk = on_chunk_bridge,
+            .on_reasoning_chunk = on_reasoning_bridge,
+            .user_data = &bridge,
+            .tools = NULL,
+            .tool_count = 0,
+            .tool_choice = "none",
+            .has_enable_thinking = ctx->has_enable_thinking,
+            .enable_thinking = ctx->enable_thinking,
+        };
+        csilk_ai_chat_response_t wrap_res = {0};
+        int                      wrap_rc = csilk_ai_chat(ai_inst, &wrap_req, &wrap_res);
+        double                   wrap_cost = 0.0;
+        mf_ai_rule_calculate_token_cost(
+            wrap_res.prompt_tokens, wrap_res.completion_tokens, 2.5, 10.0, &wrap_cost);
+        ai_runtime_limits_record_tokens(
+            &ctx->stats, wrap_res.prompt_tokens, wrap_res.completion_tokens, wrap_cost);
+        const char* wrap_text = wrap_res.content ? wrap_res.content : bridge.accumulated;
+        if (wrap_rc == 0 && wrap_text && wrap_text[0]) {
+            snprintf(ctx->stats.finish_reason, sizeof(ctx->stats.finish_reason), "budget");
+            ai_runtime_status_set(&status, AI_RUNTIME_ERR_OK, "OK", NULL);
+            if (pool && ctx->session_id > 0) {
+                size_t  tcj_len = 0;
+                char*   tcj_str = csilk_json_array_size(tc_record) > 0
+                                      ? csilk_json_serialize(tc_record, &tcj_len)
+                                      : NULL;
+                int64_t persisted_id = mf_ai_message_insert(
+                    pool,
+                    ctx->session_id,
+                    "assistant",
+                    wrap_text,
+                    model,
+                    (bridge.thinking_accumulated && bridge.thinking_accumulated[0])
+                        ? bridge.thinking_accumulated
+                        : NULL,
+                    tcj_str);
+                if (persisted_id > 0 && cbs && cbs->on_message_persisted) {
+                    cbs->on_message_persisted("assistant", persisted_id, user_data);
+                }
+                free(tcj_str);
+            }
+            got_text = 1;
+        }
+        csilk_ai_chat_response_free(&wrap_res);
+    }
+
+    /* 7.5 被中断/超时轮次的部分 assistant 文本与思考过程持久化，避免流式输出丢失；
+       模型错误（MODEL）仅在已流出正文时落库——把用户实际看到的内容与界面保持一致 */
     if (!got_text && pool && ctx->session_id > 0 &&
         ((bridge.accumulated && bridge.accumulated[0]) ||
          (bridge.thinking_accumulated && bridge.thinking_accumulated[0])) &&
-        status.code != AI_RUNTIME_ERR_MODEL) {
+        (status.code != AI_RUNTIME_ERR_MODEL || (bridge.accumulated && bridge.accumulated[0]))) {
         const char* final_text =
             (bridge.accumulated && bridge.accumulated[0]) ? bridge.accumulated : "[思考已中断]";
         {

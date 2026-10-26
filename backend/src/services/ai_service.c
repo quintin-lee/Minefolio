@@ -151,16 +151,33 @@ ai_get_config(void)
     return &g_config;
 }
 
-static void
-send_done(csilk_ctx_t* c)
+/**
+ * @brief 发送 done 事件（携带终止原因与用量统计，供前端展示 tokens/成本/耗时）
+ * @return csilk_sse_send 的返回值（<0 表示客户端已断开）
+ */
+static int
+send_done(csilk_ctx_t* c, const ai_runtime_stats_t* stats)
 {
-    csilk_json_t* d = csilk_json_object();
-    csilk_json_add_string(d, "finish_reason", "stop");
-    size_t slen = 0;
-    char*  s = csilk_json_serialize(d, &slen);
-    csilk_sse_send(c, "done", s ? s : "");
-    free(s);
-    csilk_json_free(d);
+    char        payload[384];
+    const char* fr = (stats && stats->finish_reason[0]) ? stats->finish_reason : "stop";
+    if (stats) {
+        snprintf(payload,
+                 sizeof(payload),
+                 "{\"finish_reason\":\"%s\",\"prompt_tokens\":%d,\"completion_tokens\":%d,"
+                 "\"total_tokens\":%d,\"cost_usd\":%.6f,\"elapsed_ms\":%lld,"
+                 "\"iterations\":%d,\"tool_calls\":%d}",
+                 fr,
+                 stats->prompt_tokens,
+                 stats->completion_tokens,
+                 stats->total_tokens,
+                 stats->total_cost,
+                 (long long)stats->elapsed_ms,
+                 stats->iterations_done,
+                 stats->tool_calls_count);
+    } else {
+        snprintf(payload, sizeof(payload), "{\"finish_reason\":\"%s\"}", fr);
+    }
+    return csilk_sse_send(c, "done", payload);
 }
 
 static void
@@ -185,18 +202,24 @@ format_friendly_error(const char* raw_err, char* out_buf, size_t out_cap)
     }
 }
 
-static void
-send_error(csilk_ctx_t* c, const char* err)
+/**
+ * @brief 发送 error 事件（携带结构化错误码，便于前端分型提示）
+ * @return csilk_sse_send 的返回值（<0 表示客户端已断开）
+ */
+static int
+send_error(csilk_ctx_t* c, const char* err, int code)
 {
     char friendly_err[512];
     format_friendly_error(err, friendly_err, sizeof(friendly_err));
     csilk_json_t* d = csilk_json_object();
+    csilk_json_add_number(d, "code", code);
     csilk_json_add_string(d, "message", friendly_err);
     size_t slen = 0;
     char*  s = csilk_json_serialize(d, &slen);
-    csilk_sse_send(c, "error", s ? s : "");
+    int    rc = csilk_sse_send(c, "error", s ? s : "");
     free(s);
     csilk_json_free(d);
+    return rc;
 }
 
 typedef struct {
@@ -205,7 +228,27 @@ typedef struct {
     int             sse_initialized;
     ai_trace_t*     trace;
     csilk_arena_t*  arena;
+    /** 客户端断开协作取消标志：任一 SSE 写失败即置位，Runtime 据此停止后续轮次 */
+    volatile bool* cancel_token;
 } sse_bridge_t;
+
+/**
+ * @brief 统一处理 SSE 发送结果：写失败（<0）即认定客户端断开并置位协作取消标志
+ *
+ * @note 尽力而为：csilk 处理器同步执行在事件循环线程上，libuv 的写完成回调需等循环
+ *       恢复运行才会触发，因此处理器阻塞期间本检测未必能及时发现断开。Runtime 会在
+ *       每个流式分块与每轮开始检查该标志，一旦置位立即停止后续轮次与工具执行。
+ */
+static void
+sse_note_send_result(sse_bridge_t* b, int send_rc)
+{
+    if (send_rc < 0 && b && b->cancel_token) {
+        if (!*(b->cancel_token)) {
+            CSILK_LOG_I("SSE: client disconnected (send rc=%d), cancelling runtime", send_rc);
+        }
+        *(b->cancel_token) = true;
+    }
+}
 
 static void
 sse_bridge_text_chunk(const char* delta, void* udata)
@@ -228,7 +271,7 @@ sse_bridge_text_chunk(const char* delta, void* udata)
     long elapsed_ms = (now.tv_sec - b->last_send_time.tv_sec) * 1000 +
                       (now.tv_nsec - b->last_send_time.tv_nsec) / 1000000;
     if (elapsed_ms >= 15000) {
-        csilk_sse_send(b->ctx, NULL, NULL);
+        sse_note_send_result(b, csilk_sse_send(b->ctx, NULL, NULL));
     }
 
     struct timespec real_now;
@@ -276,7 +319,7 @@ sse_bridge_text_chunk(const char* delta, void* udata)
                      "\",\"timestamp\":%lld,\"time\":\"%s\"}",
                      (long long)ts_ms,
                      time_str);
-            csilk_sse_send(b->ctx, "delta", target_buf);
+            sse_note_send_result(b, csilk_sse_send(b->ctx, "delta", target_buf));
         }
     }
 
@@ -306,7 +349,7 @@ sse_bridge_thinking_chunk(const char* delta, void* udata)
     long elapsed_ms = (now.tv_sec - b->last_send_time.tv_sec) * 1000 +
                       (now.tv_nsec - b->last_send_time.tv_nsec) / 1000000;
     if (elapsed_ms >= 15000) {
-        csilk_sse_send(b->ctx, NULL, NULL);
+        sse_note_send_result(b, csilk_sse_send(b->ctx, NULL, NULL));
     }
 
     struct timespec real_now;
@@ -354,7 +397,7 @@ sse_bridge_thinking_chunk(const char* delta, void* udata)
                      "\",\"timestamp\":%lld,\"time\":\"%s\"}",
                      (long long)ts_ms,
                      time_str);
-            csilk_sse_send(b->ctx, "thinking", target_buf);
+            sse_note_send_result(b, csilk_sse_send(b->ctx, "thinking", target_buf));
         }
     }
 
@@ -382,7 +425,7 @@ sse_bridge_tool_call(const char* id, const char* name, const char* args_json, vo
     csilk_json_add_string(evt, "arguments", args_json ? args_json : "");
     size_t ev_len = 0;
     char*  ev_str = csilk_json_serialize(evt, &ev_len);
-    csilk_sse_send(b->ctx, "tool_call", ev_str ? ev_str : "");
+    sse_note_send_result(b, csilk_sse_send(b->ctx, "tool_call", ev_str ? ev_str : ""));
     free(ev_str);
     csilk_json_free(evt);
 }
@@ -410,7 +453,7 @@ sse_bridge_tool_result(const char* id, const char* name, const char* result_json
     }
     size_t ev_len = 0;
     char*  ev_str = csilk_json_serialize(evt, &ev_len);
-    csilk_sse_send(b->ctx, "tool_result", ev_str ? ev_str : "");
+    sse_note_send_result(b, csilk_sse_send(b->ctx, "tool_result", ev_str ? ev_str : ""));
     free(ev_str);
     csilk_json_free(evt);
 }
@@ -430,7 +473,7 @@ sse_bridge_error(const ai_runtime_status_t* status, void* udata)
         (status && status->detail[0])
             ? status->detail
             : ((status && status->message[0]) ? status->message : "AI request failed");
-    send_error(b->ctx, emsg);
+    sse_note_send_result(b, send_error(b->ctx, emsg, status ? status->code : 0));
 }
 
 static void
@@ -444,7 +487,7 @@ sse_bridge_done(const ai_runtime_stats_t* stats, void* udata)
         csilk_sse_init(b->ctx);
         b->sse_initialized = 1;
     }
-    send_done(b->ctx);
+    sse_note_send_result(b, send_done(b->ctx, stats));
 }
 
 /**
@@ -465,8 +508,11 @@ sse_bridge_message_persisted(const char* role, int64_t message_id, void* udata)
     }
     char payload[96];
     snprintf(payload, sizeof(payload), "{\"id\":\"%lld\"}", (long long)message_id);
-    csilk_sse_send(
-        b->ctx, strcmp(role, "user") == 0 ? "user_message_id" : "assistant_message_id", payload);
+    sse_note_send_result(
+        b,
+        csilk_sse_send(b->ctx,
+                       strcmp(role, "user") == 0 ? "user_message_id" : "assistant_message_id",
+                       payload));
 }
 
 void
@@ -476,6 +522,9 @@ ai_chat_handler(csilk_ctx_t* c)
     if (user_id < 0) {
         return;
     }
+
+    /* 客户端断开协作取消标志：任一 SSE 写失败即置位，Runtime 停止后续轮次 */
+    volatile bool client_gone = false;
 
     csilk_json_t* body = csilk_bind_json(c);
     if (!body) {
@@ -653,6 +702,7 @@ ai_chat_handler(csilk_ctx_t* c)
     csilk_json_free(input_arr);
 
     rctx.trace = &trace;
+    rctx.cancel_token = &client_gone;
 
     /* SSE init: establish event-stream connection immediately so proxies never time out */
     csilk_sse_init(c);
@@ -661,7 +711,9 @@ ai_chat_handler(csilk_ctx_t* c)
     if (user_msg_id > 0) {
         char payload[96];
         snprintf(payload, sizeof(payload), "{\"id\":\"%lld\"}", (long long)user_msg_id);
-        csilk_sse_send(c, "user_message_id", payload);
+        if (csilk_sse_send(c, "user_message_id", payload) < 0) {
+            client_gone = true;
+        }
     }
 
     csilk_arena_t* arena = csilk_arena_new(16384);
@@ -671,6 +723,7 @@ ai_chat_handler(csilk_ctx_t* c)
         .sse_initialized = 1,
         .trace = &trace,
         .arena = arena,
+        .cancel_token = &client_gone,
     };
     clock_gettime(CLOCK_MONOTONIC, &sse_bridge.last_send_time);
 
@@ -1038,6 +1091,9 @@ ai_service_stream_report(csilk_ctx_t* c,
     ai_trace_serialize_messages(&trace, input_arr);
     csilk_json_free(input_arr);
 
+    /* 客户端断开协作取消标志：SSE 写失败即置位，Runtime 停止后续轮次 */
+    volatile bool client_gone = false;
+
     csilk_arena_t* arena = csilk_arena_new(16384);
     sse_bridge_t   sse_bridge = {
         .ctx = c,
@@ -1045,6 +1101,7 @@ ai_service_stream_report(csilk_ctx_t* c,
         .sse_initialized = 1,
         .trace = &trace,
         .arena = arena,
+        .cancel_token = &client_gone,
     };
     clock_gettime(CLOCK_MONOTONIC, &sse_bridge.last_send_time);
 
@@ -1071,6 +1128,7 @@ ai_service_stream_report(csilk_ctx_t* c,
     csilk_json_free(rctx.messages);
     rctx.messages = ai_memory_build_messages(sys_prompt, NULL, user_prompt, 1, NULL);
     rctx.trace = &trace;
+    rctx.cancel_token = &client_gone;
 
     ai_runtime_status_t status = ai_runtime_execute_stream(db_get_pool(), &rctx, &cbs, &sse_bridge);
     if (arena) {

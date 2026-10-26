@@ -12,11 +12,34 @@
 //
 // Env: MOCK_TOOL_COUNT (default 1), MOCK_TOOL_NAMES (comma separated,
 // default "get_summary"), MOCK_PORT (default 18080).
+//
+// Extra modes used by tests/test_ai_loop_hardening.sh:
+//   MOCK_ALWAYS_TOOLS=1   — emit a tool-call turn on every request that still
+//                           offers tools; when the request carries no tools or
+//                           tool_choice="none" (runtime budget wrap-up) answer
+//                           with text. Forces the loop into max_iterations.
+//   MOCK_TEXT_ONLY=1      — always answer with a text turn (no tool calls).
+//   MOCK_TEXT_PARTS=n     — text turn split into n chunks "P1 ", "P2 ", ...
+//                           (used both for slow-stream and partial checks).
+//   MOCK_CHUNK_DELAY_MS=n — delay n ms between text chunks (slow stream).
+//   MOCK_FAIL_FIRST=n     — the first n requests fail with HTTP 500
+//                           (transient error for the runtime retry path).
 const http = require('http');
 
 const PORT = Number(process.env.MOCK_PORT || 18080);
 const TOOL_COUNT = Number(process.env.MOCK_TOOL_COUNT || 1);
 const TOOL_NAMES = (process.env.MOCK_TOOL_NAMES || 'get_summary').split(',').map(s => s.trim());
+const ALWAYS_TOOLS = process.env.MOCK_ALWAYS_TOOLS === '1';
+const TEXT_ONLY = process.env.MOCK_TEXT_ONLY === '1';
+const TEXT_PARTS = Number(process.env.MOCK_TEXT_PARTS || 0);
+const CHUNK_DELAY_MS = Number(process.env.MOCK_CHUNK_DELAY_MS || 0);
+const FAIL_FIRST = Number(process.env.MOCK_FAIL_FIRST || 0);
+
+let requestCount = 0;
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 function chunk(res, choices, extra) {
   const payload = Object.assign({
@@ -61,8 +84,10 @@ function streamToolCallTurn(res) {
   res.end();
 }
 
-function streamTextTurn(res) {
-  const parts = ['查询完成', '，以上是通过工具获取的最新数据汇总。'];
+async function streamTextTurn(res) {
+  const parts = TEXT_PARTS > 0
+    ? Array.from({ length: TEXT_PARTS }, (_, i) => `P${i + 1} `)
+    : ['查询完成', '，以上是通过工具获取的最新数据汇总。'];
   for (let i = 0; i < parts.length; i++) {
     chunk(res, [{
       index: 0,
@@ -71,6 +96,9 @@ function streamTextTurn(res) {
         : { content: parts[i] },
       finish_reason: i === parts.length - 1 ? 'stop' : null,
     }]);
+    if (CHUNK_DELAY_MS > 0 && i < parts.length - 1) {
+      await sleep(CHUNK_DELAY_MS);
+    }
   }
   chunk(res, [], {
     usage: { prompt_tokens: 30, completion_tokens: 12, total_tokens: 42 },
@@ -83,18 +111,34 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && (req.url || '').includes('/chat/completions')) {
     let body = '';
     req.on('data', c => { body += c; });
-    req.on('end', () => {
+    req.on('end', async () => {
+      requestCount += 1;
+      if (requestCount <= FAIL_FIRST) {
+        console.log(`REQ ${requestCount} transient-fail`);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: { message: 'mock transient failure', type: 'server_error' } }));
+        return;
+      }
       let parsed = {};
       try { parsed = JSON.parse(body); } catch (e) { /* ignore */ }
       const messages = parsed.messages || [];
       const hasToolResult = messages.some(m => m && m.role === 'tool');
+      const toolsOffered = Array.isArray(parsed.tools) && parsed.tools.length > 0
+        && parsed.tool_choice !== 'none';
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
         'Connection': 'close',
       });
-      if (hasToolResult) {
-        streamTextTurn(res);
+      let mode = 'tool';
+      if (TEXT_ONLY || !toolsOffered) {
+        mode = 'text';
+      } else if (!ALWAYS_TOOLS && hasToolResult) {
+        mode = 'text';
+      }
+      console.log(`REQ ${requestCount} mode=${mode} tools=${toolsOffered ? 1 : 0} tool_result=${hasToolResult ? 1 : 0}`);
+      if (mode === 'text') {
+        await streamTextTurn(res);
       } else {
         streamToolCallTurn(res);
       }
