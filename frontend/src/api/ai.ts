@@ -74,6 +74,21 @@ export interface AiMessage {
   model?: string
   /** 消息生成时间 (ISO 8601 字符串) */
   created_at: string
+  /**
+   * 流式生成失败原因（可选）。
+   * 与 content 解耦：失败时保留已流式输出的正文，由界面单独渲染错误条，
+   * 并提供"重试"入口。
+   */
+  error?: string
+  /** 本次生成的用量统计（随 done 事件回传，本地消息不持久化） */
+  usage?: {
+    prompt_tokens: number
+    completion_tokens: number
+    total_tokens: number
+    cost_usd: number
+    elapsed_ms: number
+    finish_reason: string
+  }
   /** 关联的工作流运行时状态数据 (若该消息触发了工作流执行) */
   workflowData?: WorkflowRunState
   /** 关联的工作流配置就绪状态数据 (若该消息内嵌工作流配置卡片) */
@@ -214,10 +229,22 @@ export interface ChatStreamChunk {
   args?: string
   /** 工具执行结果 JSON (当 type 为 'tool_result' 时) */
   result?: string
-  /** 生成结束原因 (如 'stop', 'length' 等) */
+  /** 生成结束原因 (如 'stop', 'budget', 'length' 等；type 为 'done' 时) */
   finish_reason?: string
+  /** 输入 Token 数 (type 为 'done' 时) */
+  prompt_tokens?: number
+  /** 输出 Token 数 (type 为 'done' 时) */
+  completion_tokens?: number
+  /** 总 Token 数 (type 为 'done' 时) */
+  total_tokens?: number
+  /** 预估成本 (USD, type 为 'done' 时) */
+  cost_usd?: number
+  /** 本次运行耗时 (毫秒, type 为 'done' 时) */
+  elapsed_ms?: number
   /** 错误信息 (当 type 为 'error' 时) */
   message?: string
+  /** 错误码 (当 type 为 'error' 时；对应 Runtime 错误分类) */
+  code?: number
 }
 
 /**
@@ -317,7 +344,13 @@ export async function* chatStream(
                  args: typeof parsed.arguments === 'string' ? parsed.arguments : (typeof parsed.args === 'string' ? parsed.args : undefined),
                  result: parsed.result !== undefined ? (typeof parsed.result === 'string' ? parsed.result : JSON.stringify(parsed.result)) : undefined,
                  finish_reason: typeof parsed.finish_reason === 'string' ? parsed.finish_reason : undefined,
+                 prompt_tokens: typeof parsed.prompt_tokens === 'number' ? parsed.prompt_tokens : undefined,
+                 completion_tokens: typeof parsed.completion_tokens === 'number' ? parsed.completion_tokens : undefined,
+                 total_tokens: typeof parsed.total_tokens === 'number' ? parsed.total_tokens : undefined,
+                 cost_usd: typeof parsed.cost_usd === 'number' ? parsed.cost_usd : undefined,
+                 elapsed_ms: typeof parsed.elapsed_ms === 'number' ? parsed.elapsed_ms : undefined,
                  message: typeof parsed.message === 'string' ? parsed.message : undefined,
+                 code: typeof parsed.code === 'number' ? parsed.code : undefined,
                }
              } catch {
               // ignore

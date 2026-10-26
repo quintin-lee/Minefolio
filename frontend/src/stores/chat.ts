@@ -280,6 +280,10 @@ export const useChatStore = defineStore('chat', () => {
    */
   async function deleteSessionById(id: number) {
     const numId = Number(id)
+    // 删除的是当前会话时先中断在途流，避免其继续写入已脱离的消息对象并浪费 token
+    if (Number(currentSessionId.value) === numId) {
+      abortCurrentStream()
+    }
     await deleteSession(numId)
     sessions.value = sessions.value.filter(s => Number(s.id) !== numId)
     if (Number(currentSessionId.value) === numId) {
@@ -440,14 +444,25 @@ export const useChatStore = defineStore('chat', () => {
           if (tc) tc.result = chunk.result
         } else if (chunk.type === 'delta' && chunk.content) {
           assistantMsg.content += chunk.content
+        } else if (chunk.type === 'done') {
+          // 用量统计（token/成本/耗时/结束原因）随消息保留，供界面展示
+          assistantMsg.usage = {
+            prompt_tokens: chunk.prompt_tokens ?? 0,
+            completion_tokens: chunk.completion_tokens ?? 0,
+            total_tokens: chunk.total_tokens ?? 0,
+            cost_usd: chunk.cost_usd ?? 0,
+            elapsed_ms: chunk.elapsed_ms ?? 0,
+            finish_reason: chunk.finish_reason ?? 'stop',
+          }
         } else if (chunk.type === 'error') {
+          // 失败不覆盖已流式输出的正文，改为独立错误条渲染（保留重试入口）
           writer.flushNow()
-          assistantMsg.content = `⚠️ ${chunk.message}`
+          assistantMsg.error = chunk.message || '请求失败'
         }
       }
       await writer.finish()
     } catch (err: any) {
-      if (err?.name !== 'AbortError') { writer.flushNow(); assistantMsg.content = `⚠️ 请求发生异常` }
+      if (err?.name !== 'AbortError') { writer.flushNow(); assistantMsg.error = '请求发生异常' }
     } finally { writer.flushNow(); enableTypewriterBuffer.value = false; isStreaming.value = false; activeAbortController = null }
   }
 
@@ -518,16 +533,27 @@ export const useChatStore = defineStore('chat', () => {
           if (tc) tc.result = chunk.result
         } else if (chunk.type === 'delta' && chunk.content) {
           assistantMsg.content += chunk.content
+        } else if (chunk.type === 'done') {
+          // 用量统计（token/成本/耗时/结束原因）随消息保留，供界面展示
+          assistantMsg.usage = {
+            prompt_tokens: chunk.prompt_tokens ?? 0,
+            completion_tokens: chunk.completion_tokens ?? 0,
+            total_tokens: chunk.total_tokens ?? 0,
+            cost_usd: chunk.cost_usd ?? 0,
+            elapsed_ms: chunk.elapsed_ms ?? 0,
+            finish_reason: chunk.finish_reason ?? 'stop',
+          }
         } else if (chunk.type === 'error') {
+          // 失败不覆盖已流式输出的正文，改为独立错误条渲染（保留重试入口）
           writer.flushNow()
-          assistantMsg.content = `⚠️ ${chunk.message}`
+          assistantMsg.error = chunk.message || '请求失败'
         }
       }
       await writer.finish()
     } catch (err: any) {
       if (err?.name !== 'AbortError') {
         writer.flushNow()
-        assistantMsg.content = `⚠️ 请求发生异常`
+        assistantMsg.error = '请求发生异常'
       }
     } finally {
       writer.flushNow()
@@ -630,9 +656,20 @@ export const useChatStore = defineStore('chat', () => {
           if (tc) tc.result = chunk.result
         } else if (chunk.type === 'delta' && chunk.content) {
           assistantMsg.content += chunk.content
+        } else if (chunk.type === 'done') {
+          // 用量统计（token/成本/耗时/结束原因）随消息保留，供界面展示
+          assistantMsg.usage = {
+            prompt_tokens: chunk.prompt_tokens ?? 0,
+            completion_tokens: chunk.completion_tokens ?? 0,
+            total_tokens: chunk.total_tokens ?? 0,
+            cost_usd: chunk.cost_usd ?? 0,
+            elapsed_ms: chunk.elapsed_ms ?? 0,
+            finish_reason: chunk.finish_reason ?? 'stop',
+          }
         } else if (chunk.type === 'error') {
+          // 失败不覆盖已流式输出的正文，改为独立错误条渲染（保留重试入口）
           writer.flushNow()
-          assistantMsg.content = `⚠️ ${chunk.message}`
+          assistantMsg.error = chunk.message || '请求失败'
         }
       }
       await writer.finish()
@@ -657,7 +694,7 @@ export const useChatStore = defineStore('chat', () => {
     } catch (err: any) {
       if (err?.name !== 'AbortError') {
         writer.flushNow()
-        assistantMsg.content = `⚠️ 请求发生异常`
+        assistantMsg.error = '请求发生异常'
       }
     } finally {
       writer.flushNow()
@@ -798,7 +835,7 @@ export const useChatStore = defineStore('chat', () => {
         } else if (chunk.type === 'error') {
           wfState.status = 'error'
           writer.flushNow()
-          activeMsg.content = `⚠️ ${chunk.message || '工作流执行失败'}`
+          activeMsg.error = chunk.message || '工作流执行失败'
         }
       }
       await writer.finish()
@@ -832,7 +869,7 @@ export const useChatStore = defineStore('chat', () => {
       if (err?.name !== 'AbortError') {
         wfState.status = 'error'
         writer.flushNow()
-        activeMsg.content = `⚠️ 工作流执行发生异常`
+        activeMsg.error = '工作流执行发生异常'
       }
     } finally {
       writer.flushNow()
@@ -978,7 +1015,7 @@ export const useChatStore = defineStore('chat', () => {
         } else if (chunk.type === 'error') {
           wfState.status = 'error'
           writer.flushNow()
-          msg.content = `⚠️ ${chunk.message || '工作流执行失败'}`
+          msg.error = chunk.message || '工作流执行失败'
         }
       }
       await writer.finish()
@@ -1011,7 +1048,7 @@ export const useChatStore = defineStore('chat', () => {
       if (err?.name !== 'AbortError') {
         wfState.status = 'error'
         writer.flushNow()
-        msg.content = `⚠️ 工作流执行发生异常`
+        msg.error = '工作流执行发生异常'
       }
     } finally {
       writer.flushNow()

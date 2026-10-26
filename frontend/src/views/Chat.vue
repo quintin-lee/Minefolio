@@ -206,7 +206,7 @@
               <div
                 v-for="(msg, idx) in chat.messages"
                 :key="msg.id"
-                v-memo="[msg.content, msg.thinking_content || '', msg.role, chat.isStreaming && idx === chat.messages.length - 1 ? 1 : 0, msg.workflowData?.status || '', msg.tool_calls?.length || 0, msg.tool_calls?.[msg.tool_calls.length - 1]?.result?.length || 0, msg.workflowConfig ? 1 : 0]"
+                v-memo="[msg.content, msg.thinking_content || '', msg.role, chat.isStreaming && idx === chat.messages.length - 1 ? 1 : 0, msg.workflowData?.status || '', msg.tool_calls?.length || 0, msg.tool_calls?.[msg.tool_calls.length - 1]?.result?.length || 0, msg.workflowConfig ? 1 : 0, msg.error || '', msg.usage ? JSON.stringify(msg.usage) : '']"
                 class="message-row"
                 :class="msg.role"
               >
@@ -257,8 +257,17 @@
                         @open-panel-item="handleOpenPanelItem"
                       />
                     </div>
-                    <div v-if="(msg.content || msg.thinking_content) && !chat.isStreaming" class="message-actions">
-                      <button class="msg-action-btn" title="复制回答" @click="copyText(msg.content || msg.thinking_content || '')" aria-label="复制回答">
+                    <div v-if="msg.usage" class="message-usage">
+                      <span v-if="msg.usage.total_tokens">⚡ {{ msg.usage.total_tokens.toLocaleString() }} tokens · ${{ msg.usage.cost_usd.toFixed(4) }}</span>
+                      <span v-if="msg.usage.elapsed_ms"> · {{ (msg.usage.elapsed_ms / 1000).toFixed(1) }}s</span>
+                      <span v-if="msg.usage.finish_reason && msg.usage.finish_reason !== 'stop'" class="budget-tag" :title="'结束原因: ' + msg.usage.finish_reason">{{ msg.usage.finish_reason }}</span>
+                    </div>
+                    <div v-if="msg.error" class="message-error">
+                      <Icon icon="ph:warning-circle-fill" />
+                      <span>{{ msg.error }}</span>
+                    </div>
+                    <div v-if="(msg.content || msg.thinking_content || msg.error) && !chat.isStreaming" class="message-actions">
+                      <button v-if="msg.content || msg.thinking_content" class="msg-action-btn" title="复制回答" @click="copyText(msg.content || msg.thinking_content || '')" aria-label="复制回答">
                         <Icon icon="ph:copy" />
                         <span>复制</span>
                       </button>
@@ -266,7 +275,7 @@
                         <Icon icon="ph:arrows-counter-clockwise" />
                         <span>重新生成</span>
                       </button>
-                      <button v-if="msg.content && msg.content.startsWith('⚠️')" class="msg-action-btn" title="重试" @click="handleRetryMessage(msg.id)" aria-label="重试">
+                      <button v-if="(msg.content && msg.content.startsWith('⚠️')) || msg.error" class="msg-action-btn" title="重试" @click="handleRetryMessage(msg.id)" aria-label="重试">
                         <Icon icon="ph:arrow-clockwise" />
                         <span>重试</span>
                       </button>
@@ -959,10 +968,15 @@ async function confirmEdit(idx: number) {
 async function handleRetryMessage(msgId: number) {
   const idx = chat.messages.findIndex(m => m.id === msgId)
   if (idx < 0) return
-  const userMsg = chat.messages.slice(0, idx).find(m => m.role === 'user')
-  if (!userMsg) { ElMessage.error('无法找到对应用户消息') }
+  // 取该失败消息之前最近的一条用户消息（而非会话首条），避免重发陈旧 prompt 并误截断整段
+  let userIdx = -1
+  for (let i = idx - 1; i >= 0; i--) {
+    if (chat.messages[i]?.role === 'user') { userIdx = i; break }
+  }
+  if (userIdx < 0) { ElMessage.error('无法找到对应用户消息') }
   else {
-    await chat.editAndResend(chat.messages.indexOf(userMsg), userMsg.content)
+    const userMsg = chat.messages[userIdx]!
+    await chat.editAndResend(userIdx, userMsg.content)
     nextTick(() => scrollToBottom())
   }
 }
@@ -1705,6 +1719,43 @@ onUnmounted(() => {
   font-size: 12.5px;
   color: var(--mf-text-muted);
   font-weight: 500;
+}
+
+/* 用量统计行：随 done 事件回传的 token/成本/耗时 */
+.message-usage {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--mf-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.message-usage .budget-tag {
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--mf-warning-light, rgba(250, 204, 21, 0.16));
+  border: 1px solid var(--mf-warning-border, rgba(250, 204, 21, 0.3));
+  color: var(--mf-warning, #ca8a04);
+}
+
+/* 流式失败提示：与正文解耦展示，不覆盖已生成的内容 */
+.message-error {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 6px 12px;
+  font-size: 12.5px;
+  border-radius: 10px;
+  background: var(--mf-danger-light);
+  border: 1px solid var(--mf-danger-border);
+  color: var(--mf-danger);
+}
+
+.message-error svg {
+  flex-shrink: 0;
 }
 
 /* Message Actions */
