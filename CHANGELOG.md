@@ -19,9 +19,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Mobile offline sync: local sql.js schema adds `accounts` table and `assets.account_id`; `sync.ts` pulls/pushes accounts with `remapAccountRefs()` for offline-created account IDs; `offline-http.ts` maps `/api/accounts` paths.
   - Added accounts coverage in `test_link.sh` (169 assertions total, including archived-account list-filter regression).
 
+- **AI Agent Loop Hardening (`backend/src/services/ai/runtime/{loop,limits}.c`, `backend/src/services/ai_service.c`, `frontend/src/{api/ai.ts,stores/chat.ts,views/Chat.vue}`)**:
+  - **Client-Disconnect Cooperative Cancel**: any failed SSE write sets a `cancel_token` shared with the runtime; the loop checks it per turn and per stream chunk, aborts further tool execution, and persists exactly the partial text the client had seen — no ghost full-text rows, no wasted provider calls.
+  - **Transient Provider Error Retry**: the runtime retries remaining transient errors (e.g. HTTP 500/504) twice with 0.5s/1.5s backoff, only while no body text has streamed to the client; configuration-class errors (400/401/403/404) and errors already retried inside `csilk_ai_chat` (CURL, 429/502/503) are not re-stormed.
+  - **Budget-Exhaustion Wrap-Up**: when turns/tokens/timeout budgets run out, a final tool-less (`tool_choice="none"`) call converges the conversation into a real answer persisted with `finish_reason="budget"`, instead of ending on a bare error.
+  - **Duplicate Tool-Call Guard**: identical (name+arguments) tool calls within one run are short-circuited with a `duplicate_call` replay notice and no longer consume the tool budget; oversized tool results are clamped to an 8KB JSON preview before entering model context (full results still reach SSE and persistence).
+  - **Typed SSE Errors & Decoupled Frontend Failure UI**: `error` events now carry the runtime error code (e.g. 1001 model) and stream failures no longer overwrite already-streamed content — the store records `msg.error` and the UI renders a separate error strip with a retry action; deleting the active session aborts its in-flight stream; retry now resends the nearest preceding user message instead of the session's first one.
+  - **Usage Stats on `done`**: the `done` SSE event carries prompt/completion/total tokens, estimated cost, elapsed time and finish reason; the chat UI renders a per-message usage line (tokens · $ · duration) with a `budget` badge.
+  - Added integration test suite `test_ai_loop_hardening.sh` (20 assertions: retry, budget wrap-up + duplicate interception, mid-stream provider death) and frontend unit tests `chat-stream-error.spec.ts` (error decoupling, session-delete abort).
+
 ### Fixed
 - **Archived Account List Filter (`backend/src/infrastructure/repositories/account_repo_impl.c`)**:
   - `account_list` passed the `archived=0` conditional filter and `ORDER BY` as extra `snprintf` arguments with no matching format specifier, silently dropping both; default list now hides archived accounts and `include_archived=1` includes them.
+
+### Changed
+- **Test Suite Expansion**:
+  - Expanded integration coverage with `test_ai_loop_hardening.sh` (20 assertions) and frontend `chat-stream-error.spec.ts` (36 suites / 170 tests total).
 
 ## [1.3.2] - 2026-10-24
 

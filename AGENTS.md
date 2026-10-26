@@ -419,6 +419,7 @@ cd build && ctest --output-on-failure && cd ..
 ./tests/test_ai_trace.sh      # 17 cases: AI conversation traces, token usage, tool spans
 ./tests/test_ai_tool_call.sh  # 15 cases: AI tool-call loop (single + 2 parallel tools) vs mock OpenAI server; regression for tool-message use-after-free
 ./tests/test_ai_truncate.sh   # 14 cases: edit-resend server history truncation, persisted message-id SSE events, regenerate delete semantics
+./tests/test_ai_loop_hardening.sh  # 20 assertions: runtime transient retry, budget wrap-up with duplicate-call guard, client-disconnect cancel, partial-text persistence
 ./tests/test_market_sync.sh   # 18 cases: Multi-source market quotes, caching, bulk sync
 ./tests/test_fx_oauth.sh      # 20 cases: Exchange rates, FX gain/loss PnL, receipt OCR, OAuth2/OIDC SSO
 ./tests/test_mcp.sh           # MCP stdio server config + chat tool-call dispatch routing
@@ -426,7 +427,7 @@ cd build && ctest --output-on-failure && cd ..
 ./tests/test_report_isolation.sh # Expense monthly/report isolation regression (user_id + ledger_id)
 ```
 
-Tests start real servers with temp SQLite DBs, exercise all API endpoints via curl/JSON, and verify database state directly with `sqlite3`. `test_ai_tool_call.sh` and `test_ai_truncate.sh` also start `mock_ai_tool_server.js` (node) as their AI provider. Run before committing any changes.
+Tests start real servers with temp SQLite DBs, exercise all API endpoints via curl/JSON, and verify database state directly with `sqlite3`. `test_ai_tool_call.sh`, `test_ai_truncate.sh` and `test_ai_loop_hardening.sh` also start `mock_ai_tool_server.js` (node) as their AI provider. Run before committing any changes.
 
 ### Frontend Tests
 
@@ -437,7 +438,7 @@ npm run build         # Desktop type-check + build
 npm run build:mobile  # Mobile type-check + build
 ```
 
-Frontend unit tests cover 32 test suites (147+ unit tests) including format helpers, crypto, auth store, offline-http sync, chat store race guards, AI thinking/reasoning mode, analysis panel, and chat layout decoupling; the integration test suite (`test_link.sh`) covers the critical paths end-to-end.
+Frontend unit tests cover 36 test suites (170+ unit tests) including format helpers, crypto, auth store, offline-http sync, chat store race guards, AI thinking/reasoning mode, analysis panel, chat layout decoupling, and AI stream failure handling; the integration test suite (`test_link.sh`) covers the critical paths end-to-end.
 
 ### Manual Smoke Test
 

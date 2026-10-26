@@ -1,6 +1,7 @@
 # backend build output
-backend/build/
 backend/Testing/
+backend/build/
+backend/build-asan/
 backend/compile_commands.json
 backend/config/*.json
 
