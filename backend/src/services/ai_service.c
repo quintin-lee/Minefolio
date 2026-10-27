@@ -1,6 +1,7 @@
 #include "services/ai_service.h"
 #include "services/ai_tools.h"
 #include "services/ai/runtime/runtime.h"
+#include "services/ai/memory/summary.h"
 #include "infrastructure/repositories/ai_session_repo_impl.h"
 #include "infrastructure/repositories/ai_settings_repo_impl.h"
 #include "common/ai_config.h"
@@ -663,6 +664,8 @@ ai_chat_handler(csilk_ctx_t* c)
 
     /* 构建受控记忆窗口 messages */
     csilk_json_free(rctx.messages);
+    /* 异步摘要的落库统一在主线程：先持久化上一轮 worker 暂存的结果，再读取注入 */
+    ai_summary_flush_pending(pool, sid);
     char* summary = mf_ai_summary_get(pool, sid);
     rctx.messages = ai_memory_build_messages(
         g_config.system_prompt, history, regenerate ? NULL : content, ctx_size, summary);

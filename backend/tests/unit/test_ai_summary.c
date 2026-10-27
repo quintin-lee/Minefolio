@@ -171,9 +171,10 @@ main(void)
 
     ai_summary_maybe_trigger(pool, &ctx);
 
-    /* detached 线程不可 join → 轮询 ai_session_summaries，最多 15s */
+    /* detached 线程不可 join → 轮询：flush 模拟「下一次交互」把暂存摘要落库，最多 15s */
     char* summary = NULL;
     for (int i = 0; i < 150; i++) {
+        ai_summary_flush_pending(pool, 1);
         summary = mf_ai_summary_get(pool, 1);
         if (summary && summary[0]) {
             break;
@@ -185,7 +186,7 @@ main(void)
 
     assert(summary != NULL);
     assert(strstr(summary, "对话摘要") != NULL);
-    printf("PASS: summary persisted by detached worker -> \"%s\"\n", summary);
+    printf("PASS: summary staged by detached worker, flushed by main thread -> \"%s\"\n", summary);
     free(summary);
 
     /* 验证摘要能被 ai_memory_build_messages 注入（第二条 system 消息） */

@@ -869,6 +869,10 @@ ai_runtime_run_loop(csilk_db_pool_t* pool, const ai_loop_options_t* opts, ai_tra
     ai_config_t*  cfg = ai_get_config();
     csilk_json_t* hist =
         (pool && opts->session_id > 0) ? mf_ai_message_recent(pool, opts->session_id, 20) : NULL;
+    /* 异步摘要的落库统一在主线程：先持久化暂存结果，再读取注入 */
+    if (pool && opts->session_id > 0) {
+        ai_summary_flush_pending(pool, opts->session_id);
+    }
     char* summary =
         (pool && opts->session_id > 0) ? mf_ai_summary_get(pool, opts->session_id) : NULL;
     csilk_json_free(ctx.messages);

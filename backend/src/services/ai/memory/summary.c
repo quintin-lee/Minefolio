@@ -12,20 +12,33 @@
 #define SUMMARY_MAX_OUTPUT_TOKENS 2048
 #define SUMMARY_INFLIGHT_SLOTS 256
 #define SUMMARY_TRIGGER_RATIO 0.8
+/** 待落库摘要槽位上限：worker 只做 LLM 调用，结果暂存于此，
+    由主线程在下次交互（触发或读取摘要）时串行落库 */
+#define SUMMARY_PENDING_SLOTS 16
 
 typedef struct {
     int64_t user_id;
     int64_t session_id;
     /* Provider 配置快照：在 trigger 线程（g_config 有效时）深拷贝，detached worker 只读本地副本，
      * 与 g_config 生命周期解耦，消除 UAF。 */
-    char             dname[16];
-    char             api_key[512];
-    char             base_url[512];
-    char             model[128];
-    int              has_key;
-    csilk_db_pool_t* pool;
-    size_t           inflight_idx;
+    char   dname[16];
+    char   api_key[512];
+    char   base_url[512];
+    char   model[128];
+    int    has_key;
+    size_t inflight_idx;
+    char*  user_prompt; /**< 触发线程构建好的摘要 prompt；worker 全程不触库 */
 } summary_task_t;
+
+typedef struct {
+    int64_t session_id;
+    int64_t user_id;
+    char*   text;
+    int     completion_tokens;
+} summary_pending_t;
+
+static summary_pending_t s_pending[SUMMARY_PENDING_SLOTS];
+static pthread_mutex_t   s_pending_lock = PTHREAD_MUTEX_INITIALIZER;
 
 typedef struct {
     int64_t session_id;
@@ -64,6 +77,76 @@ inflight_release(size_t idx)
     s_inflight[idx].in_flight = 0;
     s_inflight[idx].session_id = 0;
     pthread_mutex_unlock(&s_inflight_lock);
+}
+
+/* worker 线程：暂存生成的摘要。不触库——与请求线程共享的 csilk 单连接 SQLite
+ * 池无法跨线程安全读写，落库职责统一交回主线程（ai_summary_flush_pending）。 */
+static void
+summary_stage_result(int64_t session_id, int64_t user_id, const char* text, int completion_tokens)
+{
+    if (!text || !text[0]) {
+        return;
+    }
+    char* copy = strdup(text);
+    if (!copy) {
+        return;
+    }
+    pthread_mutex_lock(&s_pending_lock);
+    size_t slot = SUMMARY_PENDING_SLOTS;
+    for (size_t i = 0; i < SUMMARY_PENDING_SLOTS; i++) {
+        if (s_pending[i].text && s_pending[i].session_id == session_id) {
+            free(s_pending[i].text); /* 同会话旧暂存被新结果覆盖 */
+            slot = i;
+            break;
+        }
+    }
+    if (slot == SUMMARY_PENDING_SLOTS) {
+        for (size_t i = 0; i < SUMMARY_PENDING_SLOTS; i++) {
+            if (!s_pending[i].text) {
+                slot = i;
+                break;
+            }
+        }
+    }
+    if (slot == SUMMARY_PENDING_SLOTS) {
+        /* 槽位全满：丢弃本次结果（摘要为尽力而为的上下文压缩优化） */
+        pthread_mutex_unlock(&s_pending_lock);
+        free(copy);
+        return;
+    }
+    s_pending[slot].session_id = session_id;
+    s_pending[slot].user_id = user_id;
+    s_pending[slot].text = copy;
+    s_pending[slot].completion_tokens = completion_tokens;
+    pthread_mutex_unlock(&s_pending_lock);
+}
+
+/* 主线程：把该会话暂存的摘要串行落库（应在每次读取摘要/触发摘要前调用）。 */
+void
+ai_summary_flush_pending(csilk_db_pool_t* pool, int64_t session_id)
+{
+    if (!pool || session_id <= 0) {
+        return;
+    }
+    char*   text = NULL;
+    int64_t user_id = 0;
+    int     tokens = 0;
+    pthread_mutex_lock(&s_pending_lock);
+    for (size_t i = 0; i < SUMMARY_PENDING_SLOTS; i++) {
+        if (s_pending[i].text && s_pending[i].session_id == session_id) {
+            text = s_pending[i].text;
+            user_id = s_pending[i].user_id;
+            tokens = s_pending[i].completion_tokens;
+            s_pending[i].text = NULL;
+            s_pending[i].session_id = 0;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&s_pending_lock);
+    if (text) {
+        mf_ai_summary_upsert(pool, session_id, user_id, text, tokens);
+        free(text);
+    }
 }
 
 /* 把 csilk_json_t 消息数组拼成 "role: content\n" 行，供摘要 LLM 阅读。 */
@@ -112,73 +195,23 @@ build_history_transcript(const csilk_json_t* msgs)
 static void
 summary_worker(summary_task_t* task)
 {
-    csilk_db_pool_t* pool = task->pool;
-
-    csilk_json_t* hist = mf_ai_message_recent(pool, task->session_id, SUMMARY_HISTORY_LIMIT);
-    char*         prev = mf_ai_summary_get(pool, task->session_id);
-    char*         transcript = build_history_transcript(hist);
-
-    if (!transcript) {
-        free(prev);
-        if (hist) {
-            csilk_json_free(hist);
-        }
-        free(task);
-        return;
-    }
-
-    size_t prompt_cap = strlen(transcript) + (prev && prev[0] ? strlen(prev) : 0) + 512;
-    char*  user_prompt = (char*)malloc(prompt_cap);
-    if (!user_prompt) {
-        free(transcript);
-        free(prev);
-        if (hist) {
-            csilk_json_free(hist);
-        }
-        free(task);
-        return;
-    }
-    if (prev && prev[0]) {
-        snprintf(user_prompt,
-                 prompt_cap,
-                 "以下是历史对话摘要：\n%s\n\n以下是最新的对话记录：\n%s\n\n"
-                 "请综合以上信息，生成一份简洁连贯的整体对话摘要，"
-                 "保留关键财务事实、用户偏好与决策要点，不超过 500 字。",
-                 prev,
-                 transcript);
-    } else {
-        snprintf(
-            user_prompt,
-            prompt_cap,
-            "以下是对话记录：\n%s\n\n"
-            "请生成一份简洁连贯的对话摘要，保留关键财务事实、用户偏好与决策要点，不超过 500 字。",
-            transcript);
-    }
-
-    /* Provider 配置已在 trigger 线程快照到 task，worker 只读本地副本，
-     * 与 g_config 生命周期完全解耦。 */
-    const char* dname = task->dname;
-    const char* key = task->api_key;
-    const char* model = task->model;
-
-    csilk_ai_t* inst = csilk_ai_new(dname, key, task->base_url[0] ? task->base_url : NULL);
+    /* worker 全程不触库：历史读取与 prompt 构建已由触发线程完成
+       （task->user_prompt），结果经 summary_stage_result 暂存、由主线程落库。 */
+    csilk_ai_t* inst =
+        csilk_ai_new(task->dname, task->api_key, task->base_url[0] ? task->base_url : NULL);
     if (!inst) {
-        free(user_prompt);
-        free(transcript);
-        free(prev);
-        if (hist) {
-            csilk_json_free(hist);
-        }
+        free(task->user_prompt);
+        inflight_release(task->inflight_idx);
         free(task);
         return;
     }
 
     csilk_ai_message_t messages[2] = {
         {.role = "system", .content = "你是对话摘要助手，负责将长对话浓缩为简洁摘要。"},
-        {.role = "user",   .content = user_prompt                                     },
+        {.role = "user",   .content = task->user_prompt                               },
     };
     csilk_ai_chat_request_t req = {
-        .model = model,
+        .model = task->model,
         .messages = messages,
         .message_count = 2,
         .temperature = 0.2,
@@ -190,8 +223,8 @@ summary_worker(summary_task_t* task)
     int                      rc = csilk_ai_chat(inst, &req, &res);
 
     if (rc == 0 && res.content && res.content[0]) {
-        mf_ai_summary_upsert(
-            pool, task->session_id, task->user_id, res.content, res.completion_tokens);
+        /* 不在此触库（与请求线程共享 csilk 单连接）：暂存结果待主线程落库 */
+        summary_stage_result(task->session_id, task->user_id, res.content, res.completion_tokens);
     } else if (res.error_message && res.error_message[0]) {
         fprintf(stderr,
                 "[ai-summary] session=%ld summary failed: %s\n",
@@ -201,12 +234,7 @@ summary_worker(summary_task_t* task)
 
     csilk_ai_chat_response_free(&res);
     csilk_ai_free(inst);
-    free(user_prompt);
-    free(transcript);
-    free(prev);
-    if (hist) {
-        csilk_json_free(hist);
-    }
+    free(task->user_prompt);
     /* 释放 in-flight 槽位后再销毁 task */
     inflight_release(task->inflight_idx);
     free(task);
@@ -225,6 +253,9 @@ ai_summary_maybe_trigger(csilk_db_pool_t* pool, ai_runtime_context_t* ctx)
     if (!pool || !ctx || ctx->session_id <= 0 || ctx->limits.token_budget <= 0) {
         return;
     }
+    /* 先把上一轮 worker 暂存的摘要落库（主线程串行触库），再评估是否触发新摘要 */
+    ai_summary_flush_pending(pool, ctx->session_id);
+
     if (ctx->stats.total_tokens < (int)(ctx->limits.token_budget * SUMMARY_TRIGGER_RATIO)) {
         return;
     }
@@ -235,15 +266,56 @@ ai_summary_maybe_trigger(csilk_db_pool_t* pool, ai_runtime_context_t* ctx)
         return;
     }
 
+    /* 历史与旧摘要在本线程读取、prompt 在本线程构建：worker 后续只做 LLM 调用，
+       与请求线程共享的 csilk 单连接 SQLite 池完全解耦。 */
+    csilk_json_t* hist = mf_ai_message_recent(pool, ctx->session_id, SUMMARY_HISTORY_LIMIT);
+    char*         prev = mf_ai_summary_get(pool, ctx->session_id);
+    char*         transcript = build_history_transcript(hist);
+    if (hist) {
+        csilk_json_free(hist);
+    }
+    if (!transcript) {
+        free(prev);
+        inflight_release(idx);
+        return;
+    }
+    size_t prompt_cap = strlen(transcript) + (prev && prev[0] ? strlen(prev) : 0) + 512;
+    char*  user_prompt = (char*)malloc(prompt_cap);
+    if (user_prompt) {
+        if (prev && prev[0]) {
+            snprintf(user_prompt,
+                     prompt_cap,
+                     "以下是历史对话摘要：\n%s\n\n以下是最新的对话记录：\n%s\n\n"
+                     "请综合以上信息，生成一份简洁连贯的整体对话摘要，"
+                     "保留关键财务事实、用户偏好与决策要点，不超过 500 字。",
+                     prev,
+                     transcript);
+        } else {
+            snprintf(user_prompt,
+                     prompt_cap,
+                     "以下是对话记录：\n%s\n\n"
+                     "请生成一份简洁连贯的对话摘要，保留关键财务事实、用户偏好与决策要点，不超过 "
+                     "500 字。",
+                     transcript);
+        }
+    }
+    free(transcript);
+    free(prev);
+    if (!user_prompt) {
+        inflight_release(idx);
+        return;
+    }
+
     summary_task_t* task = (summary_task_t*)calloc(1, sizeof(summary_task_t));
     if (!task) {
+        free(user_prompt);
         inflight_release(idx);
         return;
     }
     task->user_id = ctx->user_id;
     task->session_id = ctx->session_id;
-    task->pool = pool;
     task->inflight_idx = idx;
+    task->user_prompt = user_prompt;
 
     /* 快照 provider 配置到 task：g_config 此刻由调用者（主线程）保证有效，
      * worker 只读本地副本，彻底消除 detached 线程对 g_config 的生命周期耦合。 */
@@ -277,6 +349,7 @@ ai_summary_maybe_trigger(csilk_db_pool_t* pool, ai_runtime_context_t* ctx)
         }
     }
     if (!task->has_key) {
+        free(task->user_prompt);
         free(task);
         inflight_release(idx);
         return;
@@ -284,6 +357,7 @@ ai_summary_maybe_trigger(csilk_db_pool_t* pool, ai_runtime_context_t* ctx)
 
     pthread_t tid;
     if (pthread_create(&tid, NULL, summary_worker_entry, task) != 0) {
+        free(task->user_prompt);
         free(task);
         inflight_release(idx);
         return;
