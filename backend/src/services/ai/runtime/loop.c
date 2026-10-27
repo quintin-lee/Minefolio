@@ -96,6 +96,29 @@ on_reasoning_bridge(const char* chunk, void* user_data)
 /** 进入模型上下文的单条工具结果字节上限（超出仅保留前缀预览） */
 #define LOOP_TOOL_RESULT_MAX_BYTES 8192
 
+/** 单次模型 HTTP 调用总超时（含流式接收全程，默认 5 分钟）
+    此前完全不设超时：挂起的上游会无限期占住请求线程（csilk 同步 curl），拖垮整个实例。
+    csilk_ai_chat 对 CURL 错误最多重试 2 次，故最坏阻塞 ≈ 3 × 本值。
+    env MINEFOLIO_AI_HTTP_TIMEOUT_MS 覆盖：正数生效；0 = 恢复不限（历史行为）；非法值用默认。
+    注：仅 OpenAI 兼容驱动消费 timeout_ms（csilk ollama 驱动未实现）。 */
+#define LOOP_AI_HTTP_TIMEOUT_MS 300000
+
+static int
+loop_ai_http_timeout_ms(void)
+{
+    const char* env = getenv("MINEFOLIO_AI_HTTP_TIMEOUT_MS");
+    if (env && env[0]) {
+        long v = atol(env);
+        if (v > 0) {
+            return (int)v;
+        }
+        if (v == 0) {
+            return 0;
+        }
+    }
+    return LOOP_AI_HTTP_TIMEOUT_MS;
+}
+
 static uint64_t
 loop_call_hash(const char* name, const char* args)
 {
@@ -308,6 +331,8 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
 
     int max_turns = (ctx->limits.max_iterations > 0) ? ctx->limits.max_iterations : 10;
     int got_text = 0;
+    int model_call_failed = 0;
+    int http_timeout_ms = loop_ai_http_timeout_ms();
     snprintf(ctx->stats.finish_reason, sizeof(ctx->stats.finish_reason), "stop");
 
     /* 单次运行内同参工具调用去重表（防止模型反复执行完全相同的调用耗尽预算） */
@@ -348,6 +373,7 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
             .tool_choice = "auto",
             .has_enable_thinking = ctx->has_enable_thinking,
             .enable_thinking = ctx->enable_thinking,
+            .timeout_ms = http_timeout_ms,
         };
 
         csilk_ai_chat_response_t ai_res = {0};
@@ -395,7 +421,16 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
             const char* emsg = (ai_res.error_message && ai_res.error_message[0])
                                    ? ai_res.error_message
                                    : "AI model invocation error";
-            ai_runtime_status_set(&status, AI_RUNTIME_ERR_MODEL, "AI model request failed", emsg);
+            /* 网络层超时（CURL 28 "Timeout was reached"）映射为 TIMEOUT，
+               便于前端分型提示；其他调用失败保持 MODEL。 */
+            int timed_out = (strstr(emsg, "CURL error (28)") != NULL) ||
+                            (strstr(emsg, "Timeout was reached") != NULL);
+            ai_runtime_status_set(&status,
+                                  timed_out ? AI_RUNTIME_ERR_TIMEOUT : AI_RUNTIME_ERR_MODEL,
+                                  timed_out ? "AI model request timed out"
+                                            : "AI model request failed",
+                                  emsg);
+            model_call_failed = 1;
             csilk_ai_chat_response_free(&ai_res);
             break;
         }
@@ -587,8 +622,9 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
     }
 
     /* 7.4 预算/轮数耗尽 → 追加一次无工具收敛调用：基于已获取的信息产出最终答复，
-       而非直接以错误结束（用户至少能得到一个结论） */
-    if (!got_text &&
+       而非直接以错误结束（用户至少能得到一个结论）。
+       模型调用本身失败（含网络超时）时不收敛重试：上游已不可用，再打一轮只会翻倍阻塞。 */
+    if (!got_text && !model_call_failed &&
         (status.code == AI_RUNTIME_ERR_TIMEOUT || status.code == AI_RUNTIME_ERR_TOOL ||
          status.code == AI_RUNTIME_ERR_CONTEXT_OVERFLOW) &&
         !(ctx->cancel_token && *(ctx->cancel_token))) {
@@ -609,6 +645,7 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
             .tool_choice = "none",
             .has_enable_thinking = ctx->has_enable_thinking,
             .enable_thinking = ctx->enable_thinking,
+            .timeout_ms = http_timeout_ms,
         };
         csilk_ai_chat_response_t wrap_res = {0};
         int                      wrap_rc = csilk_ai_chat(ai_inst, &wrap_req, &wrap_res);

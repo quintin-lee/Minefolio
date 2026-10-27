@@ -9,9 +9,11 @@
 #      (max_iterations) then a tool-less "budget wrap-up" call produces a real
 #      final answer instead of an error; repeated tool call is short-circuited
 #      with `duplicate_call`;
-#   3. client aborts the SSE stream mid-generation → the runtime notices the
-#      broken pipe, stops the loop, and persists exactly the partial text the
-#      client had seen (no full-text row, no extra provider calls).
+#   3. provider dies mid-stream (mock killed) → typed MODEL error (1001), no
+#      done event, and only the partial text the client had seen is persisted;
+#   4. upstream stalls (accepts the request, never responds) → the HTTP timeout
+#      bounds the block: error(1004), no done, csilk retried twice, and the
+#      overall request finishes in seconds instead of hanging forever.
 #
 # Harness mirrors tests/test_ai_tool_call.sh: real backend + mock OpenAI server.
 set -euo pipefail
@@ -193,6 +195,30 @@ check "stream-death: error event received"      "1" "$(grep -c 'event: error' "$
 check "stream-death: error carries model code"  "1" "$([ "$(grep -c '"code":1001' "$SSE3")" -ge 1 ] && echo 1 || echo 0)"
 check "stream-death: no done event"             "0" "$(grep -c 'event: done' "$SSE3")"
 check "stream-death: partial text persisted"    "1" "$([ "${LEN3:-0}" -gt 0 ] && [ "${LEN3:-0}" -lt "$FULL_LEN" ] && echo 1 || echo 0)"
+
+echo "=== Scenario 4: stalled upstream is bounded by the HTTP timeout ==="
+# 重启后端并启用毫秒级超时（其余场景的慢流需要更长的传输预算，短超时仅本场景需要）
+kill "$SERVER_PID" 2>/dev/null || true
+wait "$SERVER_PID" 2>/dev/null || true
+MINEFOLIO_PORT="$PORT" MINEFOLIO_DB_DRIVER=sqlite MINEFOLIO_DB_DSN="$DB" \
+  MINEFOLIO_JWT_SECRET="$TEST_JWT_SECRET" AI_CONFIG="$TMP_DIR/ai.json" \
+  MINEFOLIO_AI_HTTP_TIMEOUT_MS=1500 \
+  ./minefolio > "$SERVER_LOG" 2>&1 &
+SERVER_PID=$!
+for _ in $(seq 1 40); do
+  curl -sf "http://127.0.0.1:$PORT/healthz" >/dev/null 2>&1 && break
+  sleep 0.25
+done
+start_mock MOCK_TEXT_ONLY=1 MOCK_HANG=1
+SSE4="$TMP_DIR/sse_4.txt"
+T4_START=$(date +%s)
+run_chat "$SSE4"
+T4_ELAPSED=$(( $(date +%s) - T4_START ))
+check "timeout: error event received"         "1" "$(grep -c 'event: error' "$SSE4")"
+check "timeout: error carries timeout code"   "1" "$([ "$(grep -c '"code":1004' "$SSE4")" -ge 1 ] && echo 1 || echo 0)"
+check "timeout: no done event"                "0" "$(grep -c 'event: done' "$SSE4")"
+check "timeout: bounded under 25s"            "1" "$([ "${T4_ELAPSED:-99}" -lt 25 ] && echo 1 || echo 0)"
+check "timeout: csilk retried upstream twice" "3" "$(grep -c 'mode=hang' "$MOCK_LOG")"
 
 if kill -0 "$SERVER_PID" 2>/dev/null; then
   PASS=$((PASS + 1)); echo "  ✅ backend still alive"

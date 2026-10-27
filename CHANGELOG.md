@@ -26,18 +26,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Duplicate Tool-Call Guard**: identical (name+arguments) tool calls within one run are short-circuited with a `duplicate_call` replay notice and no longer consume the tool budget; oversized tool results are clamped to an 8KB JSON preview before entering model context (full results still reach SSE and persistence).
   - **Typed SSE Errors & Decoupled Frontend Failure UI**: `error` events now carry the runtime error code (e.g. 1001 model) and stream failures no longer overwrite already-streamed content — the store records `msg.error` and the UI renders a separate error strip with a retry action; deleting the active session aborts its in-flight stream; retry now resends the nearest preceding user message instead of the session's first one.
   - **Usage Stats on `done`**: the `done` SSE event carries prompt/completion/total tokens, estimated cost, elapsed time and finish reason; the chat UI renders a per-message usage line (tokens · $ · duration) with a `budget` badge.
-  - Added integration test suite `test_ai_loop_hardening.sh` (20 assertions: retry, budget wrap-up + duplicate interception, mid-stream provider death) and frontend unit tests `chat-stream-error.spec.ts` (error decoupling, session-delete abort).
+  - Added integration test suite `test_ai_loop_hardening.sh` (25 assertions: retry, budget wrap-up + duplicate interception, mid-stream provider death, stalled-upstream timeout) and frontend unit tests `chat-stream-error.spec.ts` (error decoupling, session-delete abort).
 
 ### Fixed
 - **AI Settings Instance-Admin Gating (`backend/src/interfaces/http/controllers/ai_controller.c`, `backend/src/infrastructure/repositories/auth_repo_impl.c`)**:
   - `PUT /api/settings/ai` and the `POST /api/settings/ai/test` / `fetch-models` probe endpoints now require the instance admin (earliest registered account, i.e. the `/system/setup` user) via new `mf_auth_repo_is_instance_admin()`; previously any authenticated user could rewrite the global provider config (base_url/api_key) or use the probes as an SSRF surface. `GET /api/settings/ai` stays open to authenticated users (chat model defaults and receipt OCR depend on it, and the payload carries no secret material) and is pinned by a regression assertion.
   - `test_link.sh` case 35 extended with non-admin `1004` assertions on all three endpoints plus a tamper check.
+- **Model Call HTTP Timeout (`backend/src/services/ai/runtime/loop.c`)**:
+  - Chat and wrap-up model requests now carry a total HTTP timeout (default 300s; override via `MINEFOLIO_AI_HTTP_TIMEOUT_MS`, `0` restores the previous unlimited behaviour). A stalled upstream used to hold the request thread indefinitely (csilk runs curl synchronously) and csilk's internal retry multiplied the hang threefold. Network timeouts (`CURL error (28)`) now surface as runtime error `1004` (TIMEOUT) instead of `1001`, and the model-call failure path is excluded from the budget wrap-up so a dead upstream is never hit a second time.
+  - `test_ai_loop_hardening.sh` scenario 4 pins it: hanging upstream → `error(1004)` within seconds, no `done`, exactly three provider attempts (csilk retries twice).
 - **Archived Account List Filter (`backend/src/infrastructure/repositories/account_repo_impl.c`)**:
   - `account_list` passed the `archived=0` conditional filter and `ORDER BY` as extra `snprintf` arguments with no matching format specifier, silently dropping both; default list now hides archived accounts and `include_archived=1` includes them.
 
 ### Changed
 - **Test Suite Expansion**:
-  - Expanded integration coverage with `test_ai_loop_hardening.sh` (20 assertions) and frontend `chat-stream-error.spec.ts` (36 suites / 170 tests total).
+  - Expanded integration coverage with `test_ai_loop_hardening.sh` (25 assertions) and frontend `chat-stream-error.spec.ts` (36 suites / 170 tests total).
 
 ## [1.3.2] - 2026-10-24
 

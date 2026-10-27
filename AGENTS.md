@@ -419,7 +419,7 @@ cd build && ctest --output-on-failure && cd ..
 ./tests/test_ai_trace.sh      # 17 cases: AI conversation traces, token usage, tool spans
 ./tests/test_ai_tool_call.sh  # 15 cases: AI tool-call loop (single + 2 parallel tools) vs mock OpenAI server; regression for tool-message use-after-free
 ./tests/test_ai_truncate.sh   # 14 cases: edit-resend server history truncation, persisted message-id SSE events, regenerate delete semantics
-./tests/test_ai_loop_hardening.sh  # 20 assertions: runtime transient retry, budget wrap-up with duplicate-call guard, client-disconnect cancel, partial-text persistence
+./tests/test_ai_loop_hardening.sh  # 25 assertions: runtime transient retry, budget wrap-up with duplicate-call guard, client-disconnect cancel, partial-text persistence, stalled-upstream HTTP timeout (error 1004)
 ./tests/test_market_sync.sh   # 18 cases: Multi-source market quotes, caching, bulk sync
 ./tests/test_fx_oauth.sh      # 20 cases: Exchange rates, FX gain/loss PnL, receipt OCR, OAuth2/OIDC SSO
 ./tests/test_mcp.sh           # MCP stdio server config + chat tool-call dispatch routing

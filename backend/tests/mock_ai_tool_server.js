@@ -24,6 +24,8 @@
 //   MOCK_CHUNK_DELAY_MS=n — delay n ms between text chunks (slow stream).
 //   MOCK_FAIL_FIRST=n     — the first n requests fail with HTTP 500
 //                           (transient error for the runtime retry path).
+//   MOCK_HANG=1           — accept the request and never respond (stalled
+//                           upstream; drives the HTTP-timeout path).
 const http = require('http');
 
 const PORT = Number(process.env.MOCK_PORT || 18080);
@@ -34,6 +36,7 @@ const TEXT_ONLY = process.env.MOCK_TEXT_ONLY === '1';
 const TEXT_PARTS = Number(process.env.MOCK_TEXT_PARTS || 0);
 const CHUNK_DELAY_MS = Number(process.env.MOCK_CHUNK_DELAY_MS || 0);
 const FAIL_FIRST = Number(process.env.MOCK_FAIL_FIRST || 0);
+const HANG = process.env.MOCK_HANG === '1';
 
 let requestCount = 0;
 
@@ -118,6 +121,10 @@ const server = http.createServer((req, res) => {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: { message: 'mock transient failure', type: 'server_error' } }));
         return;
+      }
+      if (HANG) {
+        console.log(`REQ ${requestCount} mode=hang`);
+        return; // 保持连接挂起、永不响应：驱动客户端 HTTP 超时路径
       }
       let parsed = {};
       try { parsed = JSON.parse(body); } catch (e) { /* ignore */ }
