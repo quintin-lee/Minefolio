@@ -550,9 +550,9 @@ mcp_bridge_dispatch(const ai_tool_context_t* ctx, const char* tool_name, const c
         return mcp_err_response("mcp_rate_limited", "MCP per-user rate limit exceeded");
     }
 
-    /* 统一策略引擎评估（限流 + 确认） */
+    /* 统一策略引擎评估（限流 + 确认）；二道门只读，频次已由 loop 外层计入 */
     ai_policy_decision_t* decision =
-        ai_policy_evaluate(ctx->user_id, ctx->session_id, tool_name, args, risk);
+        ai_policy_evaluate_ex(ctx->user_id, ctx->session_id, tool_name, args, risk, false);
     if (!decision || !decision->allowed) {
         const char* reason = decision ? decision->reason : "Policy rejection";
         if (cached) {

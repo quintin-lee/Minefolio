@@ -852,9 +852,10 @@ mf_mcp_client_list_tools(mf_mcp_client_t*       c,
         return -1;
     }
 
+    size_t kept = 0;
     for (size_t i = 0; i < count; i++) {
         const csilk_json_t*   t = csilk_json_array_get(tools_arr, i);
-        mf_mcp_server_tool_t* e = &arr[i];
+        mf_mcp_server_tool_t* e = &arr[kept];
         memset(e, 0, sizeof(*e));
         e->server_id = server_id;
         e->user_id = user_id;
@@ -863,6 +864,11 @@ mf_mcp_client_list_tools(mf_mcp_client_t*       c,
         if (name_j && csilk_json_is_string(name_j)) {
             snprintf(e->tool_name, sizeof(e->tool_name), "%s", csilk_json_string_value(name_j));
         }
+        /* 缺 name 的畸形条目直接丢弃：空 tool_name 会生成 "mcp:<id>:" 残缺路由名 */
+        if (!e->tool_name[0]) {
+            continue;
+        }
+        kept++;
         /* qualified_name = mcp:<serverId>:<tool_name> */
         snprintf(e->qualified_name,
                  sizeof(e->qualified_name),
@@ -894,7 +900,7 @@ mf_mcp_client_list_tools(mf_mcp_client_t*       c,
                     snprintf(e->input_schema, sizeof(e->input_schema), "{}");
                 }
 
-                /* is_mutation：inputSchema 内或工具名出现 mutation/delete/update 等启发式判定 */
+                /* is_mutation：inputSchema 内或工具名出现动账/提交类关键词的启发式判定 */
                 char   lower[1024];
                 size_t len = slen < sizeof(lower) - 1 ? slen : sizeof(lower) - 1;
                 for (size_t k = 0; k < len; k++) {
@@ -903,9 +909,12 @@ mf_mcp_client_list_tools(mf_mcp_client_t*       c,
                 lower[len] = '\0';
                 e->is_mutation =
                     (strstr(lower, "write") || strstr(lower, "delete") || strstr(lower, "update") ||
-                     strstr(lower, "mutation") || strstr(e->tool_name, "delete") ||
-                     strstr(e->tool_name, "update") || strstr(e->tool_name, "create") ||
-                     strstr(e->tool_name, "insert"))
+                     strstr(lower, "mutation") || strstr(lower, "submit") ||
+                     strstr(e->tool_name, "delete") || strstr(e->tool_name, "update") ||
+                     strstr(e->tool_name, "create") || strstr(e->tool_name, "insert") ||
+                     strstr(e->tool_name, "send") || strstr(e->tool_name, "submit") ||
+                     strstr(e->tool_name, "publish") || strstr(e->tool_name, "pay") ||
+                     strstr(e->tool_name, "transfer"))
                         ? 1
                         : 0;
                 free(sstr);
@@ -928,7 +937,7 @@ mf_mcp_client_list_tools(mf_mcp_client_t*       c,
 
     csilk_json_free(rj);
     *out_tools = arr;
-    *out_count = count;
+    *out_count = kept;
     return 0;
 }
 

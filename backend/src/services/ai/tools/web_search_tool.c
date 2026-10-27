@@ -141,15 +141,38 @@ mf_utf8_truncate(char* str, size_t max_bytes)
 
 /**
  * @brief 带多跳 SSRF 安全校验的 HTTP GET 请求
- * @return 0 成功；-1 网络错误/超时；-2 SSRF 拦截；-3 内存错误
+ * @return 0 成功；-1 网络错误/超时；-2 SSRF 拦截；-3 内存错误；-4 用户取消
  */
+
+/* 协作式取消探针：随 curl 进度回调周期触发。cancel_token 由工具上下文传入，
+ * 用户点停止后 web_search/fetch_webpage 不再把上游读完（旧实现完全无取消）。 */
+typedef struct {
+    const volatile bool* cancel_token;
+} curl_cancel_probe_t;
+
 static int
-curl_http_get_with_redirect_check(const char* initial_url,
-                                  long        timeout_ms,
-                                  const char* accept_header,
-                                  char**      out_body,
-                                  size_t*     out_len,
-                                  long*       out_http_code)
+curl_cancel_progress_cb(
+    void* clientp, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow)
+{
+    (void)dltotal;
+    (void)dlnow;
+    (void)ultotal;
+    (void)ulnow;
+    curl_cancel_probe_t* probe = (curl_cancel_probe_t*)clientp;
+    if (probe && probe->cancel_token && *(probe->cancel_token)) {
+        return 1; /* 非零中止传输（CURLE_ABORTED_BY_CALLBACK） */
+    }
+    return 0;
+}
+
+static int
+curl_http_get_with_redirect_check(const char*          initial_url,
+                                  long                 timeout_ms,
+                                  const char*          accept_header,
+                                  char**               out_body,
+                                  size_t*              out_len,
+                                  long*                out_http_code,
+                                  const volatile bool* cancel_token)
 {
     if (out_body) {
         *out_body = NULL;
@@ -196,6 +219,10 @@ curl_http_get_with_redirect_check(const char* initial_url,
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L); /* 禁用盲目跳转 */
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_mem_cb);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body_buf);
+        curl_cancel_probe_t probe = {.cancel_token = cancel_token};
+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, curl_cancel_progress_cb);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &probe);
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
         curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, curl_header_location_cb);
         curl_easy_setopt(curl, CURLOPT_HEADERDATA, &hdr_state);
 
@@ -214,6 +241,10 @@ curl_http_get_with_redirect_check(const char* initial_url,
         curl_slist_free_all(headers);
         curl_easy_cleanup(curl);
 
+        if (res == CURLE_ABORTED_BY_CALLBACK) {
+            free(body_buf.data);
+            return -4; /* 用户取消 */
+        }
         if (res != CURLE_OK) {
             free(body_buf.data);
             return -1;
@@ -701,7 +732,7 @@ wikipedia_opensearch(const char* query, size_t max_results)
     size_t body_len = 0;
     long   http_code = 0;
     int    rc = curl_http_get_with_redirect_check(
-        url, DEFAULT_SEARCH_TIMEOUT_MS, "application/json", &body, &body_len, &http_code);
+        url, DEFAULT_SEARCH_TIMEOUT_MS, "application/json", &body, &body_len, &http_code, NULL);
     if (rc != 0 || !body || http_code != 200) {
         free(body);
         return list;
@@ -752,7 +783,6 @@ static char*
 exec_web_search(const ai_tool_t* tool, const ai_tool_context_t* ctx, const csilk_json_t* args)
 {
     (void)tool;
-    (void)ctx;
     if (!args) {
         return strdup("{\"error\":\"invalid_parameters\",\"message\":\"missing query\"}");
     }
@@ -790,8 +820,12 @@ exec_web_search(const ai_tool_t* tool, const ai_tool_context_t* ctx, const csilk
                                                   "text/html,application/xhtml+xml",
                                                   &body,
                                                   &body_len,
-                                                  &http_code);
+                                                  &http_code,
+                                                  ctx->cancel_token);
 
+    if (rc == -4) {
+        return strdup("{\"error\":\"cancelled\",\"message\":\"用户已取消本次操作\"}");
+    }
     csilk_json_t* results_arr = NULL;
     if (rc == 0 && body && http_code == 200) {
         results_arr = mf_bing_html_parse(body, num_results);
@@ -830,7 +864,6 @@ static char*
 exec_fetch_webpage(const ai_tool_t* tool, const ai_tool_context_t* ctx, const csilk_json_t* args)
 {
     (void)tool;
-    (void)ctx;
     if (!args) {
         return strdup("{\"error\":\"invalid_parameters\",\"message\":\"missing url\"}");
     }
@@ -863,9 +896,17 @@ exec_fetch_webpage(const ai_tool_t* tool, const ai_tool_context_t* ctx, const cs
     char*  jina_body = NULL;
     size_t jina_len = 0;
     long   jina_code = 0;
-    int    rc = curl_http_get_with_redirect_check(
-        jina_url, DEFAULT_FETCH_TIMEOUT_MS, "text/plain", &jina_body, &jina_len, &jina_code);
+    int    rc = curl_http_get_with_redirect_check(jina_url,
+                                                  DEFAULT_FETCH_TIMEOUT_MS,
+                                                  "text/plain",
+                                                  &jina_body,
+                                                  &jina_len,
+                                                  &jina_code,
+                                                  ctx->cancel_token);
 
+    if (rc == -4) {
+        return strdup("{\"error\":\"cancelled\",\"message\":\"用户已取消本次操作\"}");
+    }
     if (rc == 0 && jina_body && jina_code == 200 && jina_len > 0) {
         /* 解析 Jina 返回的前置 Title 标头（形如 "Title: ...\n"） */
         if (strncmp(jina_body, "Title: ", 7) == 0) {
@@ -891,8 +932,13 @@ exec_fetch_webpage(const ai_tool_t* tool, const ai_tool_context_t* ctx, const cs
                                                              "text/html,*/*",
                                                              &direct_body,
                                                              &direct_len,
-                                                             &direct_code);
+                                                             &direct_code,
+                                                             ctx->cancel_token);
 
+        if (direct_rc == -4) {
+            free(direct_body);
+            return strdup("{\"error\":\"cancelled\",\"message\":\"用户已取消本次操作\"}");
+        }
         if (direct_rc == -2) {
             return strdup("{\"error\":\"forbidden_redirect_url\",\"message\":\"Redirect to "
                           "internal subnet was blocked.\"}");

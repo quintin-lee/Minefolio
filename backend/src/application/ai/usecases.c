@@ -566,6 +566,9 @@ ai_usecase_trace_stats(void*                pool,
     csilk_json_add_number(out, "total_tokens", db_get_int(stats, "total_tokens"));
     csilk_json_add_number(out, "avg_latency_ms", db_get_num(stats, "avg_latency_ms"));
     csilk_json_add_number(out, "avg_first_token_ms", db_get_num(stats, "avg_first_token_ms"));
+    /* repo 已聚合但此前被丢弃的字段：前端统计卡与类型定义均期待它们 */
+    csilk_json_add_number(out, "avg_tokens_per_sec", db_get_num(stats, "avg_tokens_per_sec"));
+    csilk_json_add_number(out, "total_cost_usd", db_get_num(stats, "total_cost_usd"));
     csilk_json_free(r);
 
     *out_data = out;

@@ -72,7 +72,7 @@ rate_limit_find(int64_t user_id)
 }
 
 static bool
-check_and_increment_frequency_locked(int64_t user_id, int max_per_minute)
+check_frequency_locked(int64_t user_id, int max_per_minute, bool count)
 {
     if (user_id <= 0 || max_per_minute <= 0) {
         return true;
@@ -85,11 +85,13 @@ check_and_increment_frequency_locked(int64_t user_id, int max_per_minute)
             if (s_rate_limits[idx].count >= max_per_minute) {
                 return false; /* 触发限流 */
             }
-            s_rate_limits[idx].count++;
+            if (count) {
+                s_rate_limits[idx].count++;
+            }
         } else {
             /* 新的一分钟，重置计数 */
             s_rate_limits[idx].minute_window = current_minute;
-            s_rate_limits[idx].count = 1;
+            s_rate_limits[idx].count = count ? 1 : 0;
         }
         return true;
     }
@@ -98,14 +100,14 @@ check_and_increment_frequency_locked(int64_t user_id, int max_per_minute)
     if (s_rate_limit_count < MAX_RATE_LIMIT_USERS) {
         s_rate_limits[s_rate_limit_count].user_id = user_id;
         s_rate_limits[s_rate_limit_count].minute_window = current_minute;
-        s_rate_limits[s_rate_limit_count].count = 1;
+        s_rate_limits[s_rate_limit_count].count = count ? 1 : 0;
         s_rate_limit_count++;
         return true;
     }
 
     s_rate_limits[s_rate_limit_head].user_id = user_id;
     s_rate_limits[s_rate_limit_head].minute_window = current_minute;
-    s_rate_limits[s_rate_limit_head].count = 1;
+    s_rate_limits[s_rate_limit_head].count = count ? 1 : 0;
     s_rate_limit_head = (s_rate_limit_head + 1) % MAX_RATE_LIMIT_USERS;
     return true;
 }
@@ -116,6 +118,17 @@ ai_policy_evaluate(int64_t             user_id,
                    const char*         tool_name,
                    const csilk_json_t* args,
                    ai_risk_level_t     risk_override)
+{
+    return ai_policy_evaluate_ex(user_id, session_id, tool_name, args, risk_override, true);
+}
+
+ai_policy_decision_t*
+ai_policy_evaluate_ex(int64_t             user_id,
+                      int64_t             session_id,
+                      const char*         tool_name,
+                      const csilk_json_t* args,
+                      ai_risk_level_t     risk_override,
+                      bool                count)
 {
     (void)session_id;
     ai_policy_decision_t* dec = (ai_policy_decision_t*)calloc(1, sizeof(ai_policy_decision_t));
@@ -149,12 +162,16 @@ ai_policy_evaluate(int64_t             user_id,
         return dec;
     }
 
-    /* 3. 频次限流检验 (Frequency Limit) */
+    /* 3. 频次限流检验 (Frequency Limit)
+     *
+     * 计数与检查分离：`count = true` 才记一次调用。loop.c 执行前的评估计入
+     * （count=true）；dispatcher/mcp_bridge 的二道门评估只读（count=false）——
+     * 旧实现每次调用被计两次，60/分名义上限实际只有 30。 */
     pthread_mutex_lock(&s_policy_lock);
     int    max_freq = s_rules.max_frequency_per_minute;
     double single_limit = s_rules.single_amount_limit;
     double large_threshold = s_rules.large_amount_threshold;
-    bool   freq_ok = check_and_increment_frequency_locked(user_id, max_freq);
+    bool   freq_ok = check_frequency_locked(user_id, max_freq, count);
     pthread_mutex_unlock(&s_policy_lock);
 
     if (!freq_ok) {

@@ -63,6 +63,13 @@ ai_policy_decision_t* ai_policy_evaluate(int64_t             user_id,
                                          const csilk_json_t* args,
                                          ai_risk_level_t     risk_override);
 
+ai_policy_decision_t* ai_policy_evaluate_ex(int64_t             user_id,
+                                            int64_t             session_id,
+                                            const char*         tool_name,
+                                            const csilk_json_t* args,
+                                            ai_risk_level_t     risk_override,
+                                            bool                count);
+
 /**
  * @brief 释放策略决策对象
  */
