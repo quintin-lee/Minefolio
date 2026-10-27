@@ -2,12 +2,33 @@
 #include "application/ai/usecases.h"
 #include "services/ai_service.h"
 #include "services/ai_workflow_service.h"
+#include "infrastructure/repositories/auth_repo_impl.h"
 #include "common/response.h"
 #include "common/ctx.h"
 #include "common/db.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/**
+ * @brief 实例管理员门禁：AI 全局配置为实例级共享资源，仅管理员（最早注册的账号）可改写/探测
+ *
+ * 读接口 GET /api/settings/ai 对全体登录用户保持开放：聊天工作台（默认模型）与票据
+ * OCR 依赖该接口，且响应不含密钥明文（仅 has_api_key 布尔位）。
+ *
+ * 注：base_url 允许指向内网/本机——自托管场景下 Ollama 等推理服务常部署于局域网，
+ * 属管理员预期配置，因此不套用 mf_ai_rule_validate_url 的内网阻断；探测端点的风险
+ * 面由「仅实例管理员可达」收敛。
+ */
+static int
+require_instance_admin(csilk_ctx_t* c, int64_t user_id)
+{
+    if (mf_auth_repo_is_instance_admin(db_get_pool(), user_id)) {
+        return 1;
+    }
+    respond_error(c, 1004, "仅实例管理员可管理 AI 配置");
+    return 0;
+}
 
 void
 api_ai_models_handler(csilk_ctx_t* c)
@@ -232,6 +253,9 @@ api_ai_settings_update_handler(csilk_ctx_t* c)
     if (user_id < 0) {
         return;
     }
+    if (!require_instance_admin(c, user_id)) {
+        return;
+    }
 
     csilk_json_t* body = csilk_bind_json(c);
     if (!body) {
@@ -253,12 +277,26 @@ api_ai_settings_update_handler(csilk_ctx_t* c)
 void
 api_ai_test_connection_handler(csilk_ctx_t* c)
 {
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) {
+        return;
+    }
+    if (!require_instance_admin(c, user_id)) {
+        return;
+    }
     ai_service_test_connection(c);
 }
 
 void
 api_ai_fetch_models_handler(csilk_ctx_t* c)
 {
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) {
+        return;
+    }
+    if (!require_instance_admin(c, user_id)) {
+        return;
+    }
     ai_service_fetch_models(c);
 }
 

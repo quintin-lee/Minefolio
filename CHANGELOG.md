@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Desktop Assets page rewritten as account-card groups (header: icon + institution tag + subtotal + edit/archive; child asset rows), with `AccountDialog.vue` shared by desktop and mobile; mobile Assets page uses collapsible account cards (collapsed by default showing subtotal).
   - All 14 asset-picker entry points label options as `{account_name} · {asset name}`; transaction, DCA, cashflow, import, and transfer flows pick up the account dimension automatically.
   - Mobile offline sync: local sql.js schema adds `accounts` table and `assets.account_id`; `sync.ts` pulls/pushes accounts with `remapAccountRefs()` for offline-created account IDs; `offline-http.ts` maps `/api/accounts` paths.
-  - Added accounts coverage in `test_link.sh` (169 assertions total, including archived-account list-filter regression).
+  - Added accounts coverage in `test_link.sh` (174 assertions total, including archived-account list-filter regression).
 
 - **AI Agent Loop Hardening (`backend/src/services/ai/runtime/{loop,limits}.c`, `backend/src/services/ai_service.c`, `frontend/src/{api/ai.ts,stores/chat.ts,views/Chat.vue}`)**:
   - **Client-Disconnect Cooperative Cancel**: any failed SSE write sets a `cancel_token` shared with the runtime; the loop checks it per turn and per stream chunk, aborts further tool execution, and persists exactly the partial text the client had seen — no ghost full-text rows, no wasted provider calls.
@@ -29,6 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added integration test suite `test_ai_loop_hardening.sh` (20 assertions: retry, budget wrap-up + duplicate interception, mid-stream provider death) and frontend unit tests `chat-stream-error.spec.ts` (error decoupling, session-delete abort).
 
 ### Fixed
+- **AI Settings Instance-Admin Gating (`backend/src/interfaces/http/controllers/ai_controller.c`, `backend/src/infrastructure/repositories/auth_repo_impl.c`)**:
+  - `PUT /api/settings/ai` and the `POST /api/settings/ai/test` / `fetch-models` probe endpoints now require the instance admin (earliest registered account, i.e. the `/system/setup` user) via new `mf_auth_repo_is_instance_admin()`; previously any authenticated user could rewrite the global provider config (base_url/api_key) or use the probes as an SSRF surface. `GET /api/settings/ai` stays open to authenticated users (chat model defaults and receipt OCR depend on it, and the payload carries no secret material) and is pinned by a regression assertion.
+  - `test_link.sh` case 35 extended with non-admin `1004` assertions on all three endpoints plus a tamper check.
 - **Archived Account List Filter (`backend/src/infrastructure/repositories/account_repo_impl.c`)**:
   - `account_list` passed the `archived=0` conditional filter and `ORDER BY` as extra `snprintf` arguments with no matching format specifier, silently dropping both; default list now hides archived accounts and `include_archived=1` includes them.
 

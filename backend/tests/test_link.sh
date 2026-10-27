@@ -571,6 +571,22 @@ check "AI 设置二次保存后 context_size 更新为 30" "30" "$(echo "$AI_SET
 DB_AI_KEY=$(sqlite3 "$DB" "SELECT json_extract(config_json, '$.providers[0].api_key') FROM ai_settings WHERE id=1")
 check "数据库中持久化了正确的 API Key" "sk-test-secret-key-12345" "$DB_AI_KEY"
 
+# 4. 实例管理员门禁（回归：非管理员不得改写/探测全局 AI 配置）
+AI_AUTH="Authorization: Bearer $LOGIN_TOKEN"
+NON_ADMIN_PUT=$(curl -s -X PUT -H "$AI_AUTH" -H "Content-Type: application/json" "$BASE/settings/ai" \
+  -d '{"context_size":10}' | jq -r '.code | floor')
+check "非管理员保存 AI 设置被拒 code=1004" "1004" "$NON_ADMIN_PUT"
+NON_ADMIN_TEST=$(curl -s -X POST -H "$AI_AUTH" -H "Content-Type: application/json" "$BASE/settings/ai/test" \
+  -d '{"id":"probe","base_url":"https://example.com/v1","api_key":"k"}' | jq -r '.code | floor')
+check "非管理员 AI 连通测试被拒 code=1004" "1004" "$NON_ADMIN_TEST"
+NON_ADMIN_FETCH=$(curl -s -X POST -H "$AI_AUTH" -H "Content-Type: application/json" "$BASE/settings/ai/fetch-models" \
+  -d '{"id":"probe","base_url":"https://example.com/v1","api_key":"k"}' | jq -r '.code | floor')
+check "非管理员拉取模型列表被拒 code=1004" "1004" "$NON_ADMIN_FETCH"
+NON_ADMIN_GET=$(curl -s -H "$AI_AUTH" "$BASE/settings/ai" | jq -r '.code | floor')
+check "非管理员可读 AI 元数据（聊天/OCR 依赖）code=0" "0" "$NON_ADMIN_GET"
+AI_SETTINGS_3=$(curl -s -H "$AUTH" "$BASE/settings/ai")
+check "非管理员被拒后配置未被篡改" "30" "$(echo "$AI_SETTINGS_3" | jq -r '.data.context_size | floor')"
+
 # =========================================================================
 # Case 36: AI 财务工作流 (Workflows List & Execution Engine)
 # =========================================================================

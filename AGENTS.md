@@ -412,7 +412,7 @@ cd backend
 cd build && ctest --output-on-failure && cd ..
 
 # 2. Run all core integration test suites
-./tests/test_link.sh          # 169 assertions across 40 cases: auth, accounts dimension, CRUD, balance联动, PnL, CSV, pagination, ledger rebuild, AI trace/workflow
+./tests/test_link.sh          # 174 assertions across 40 cases: auth, accounts dimension, CRUD, balance联动, PnL, CSV, pagination, ledger rebuild, AI trace/workflow
 ./tests/test_ledgers.sh       # 16 cases: multi-ledger spaces, member RBAC (Owner/Editor/Viewer)
 ./tests/test_2fa.sh           # 12 cases: TOTP 2FA secret gen, QR code, enable/disable, login verification
 ./tests/test_dca_cashflow.sh  # 18 cases: DCA periodic purchase execution, cashflow calendar projection

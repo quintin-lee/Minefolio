@@ -32,6 +32,14 @@ int mf_auth_repo_count(void* pool);
 
 int mf_auth_repo_is_initialized(void* pool);
 
+/**
+ * @brief 判断用户是否为实例管理员
+ * @note 实例管理员 = 最早注册的账号（/system/setup 创建的首个用户）。AI 全局配置等
+ *       实例级共享资源仅允许管理员改写；参数非法或查询失败时保守返回 0（拒绝）。
+ * @return int 1 是管理员；0 否
+ */
+int mf_auth_repo_is_instance_admin(void* pool, int64_t user_id);
+
 int mf_auth_repo_find_by_oauth(void*       pool,
                                const char* provider,
                                const char* oauth_id,

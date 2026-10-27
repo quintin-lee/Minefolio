@@ -262,6 +262,25 @@ mf_auth_repo_is_initialized(void* pool)
 }
 
 int
+mf_auth_repo_is_instance_admin(void* pool, int64_t user_id)
+{
+    if (!pool || user_id <= 0) {
+        return 0;
+    }
+    /* 实例管理员 = 最早注册的账号（/system/setup 创建的首个用户；无删除用户路径） */
+    csilk_json_t* res = csilk_db_query_param_json(
+        (csilk_db_pool_t*)pool, "SELECT MIN(id) as admin_id FROM users", (const char*[]){NULL});
+    int64_t admin_id = 0;
+    if (res && csilk_json_array_size(res) > 0) {
+        admin_id = db_get_int(csilk_json_array_get(res, 0), "admin_id");
+    }
+    if (res) {
+        csilk_json_free(res);
+    }
+    return admin_id > 0 && user_id == admin_id;
+}
+
+int
 mf_auth_repo_find_by_oauth(void*       pool,
                            const char* provider,
                            const char* oauth_id,
