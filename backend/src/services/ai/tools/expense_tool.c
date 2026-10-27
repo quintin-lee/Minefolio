@@ -378,11 +378,14 @@ ai_tool_expense_register_all(void)
 
         ai_tool_t t = {
             .name = "propose_daily_expense",
-            .description = "日常记账拟录入，匹配账户与分类生成防篡改确认草案，返回待确认卡片数据",
+            .description = "日常记账拟录入，匹配账户与分类生成防篡改确认草案，返回待确认卡片数据。"
+                           "成功后必须将返回的 draft_token/category_id/asset_id/amount/type/"
+                           "date/note 填入 ```action 卡片（action_type: daily_expense）展示给用户",
             .parameters_schema = s,
             .permission = AI_PERM_WRITE,
             .risk = AI_RISK_MEDIUM,
             .is_mutation = true,
+            .requires_id = true,
             .validate = NULL,
             .execute = exec_propose_daily_expense,
         };
@@ -409,6 +412,7 @@ ai_tool_expense_register_all(void)
             .permission = AI_PERM_WRITE,
             .risk = AI_RISK_HIGH,
             .is_mutation = true,
+            .requires_id = true,
             .validate = NULL,
             .execute = exec_confirm_proposed_expense,
         };

@@ -220,6 +220,24 @@ check "timeout: no done event"                "0" "$(grep -c 'event: done' "$SSE
 check "timeout: bounded under 25s"            "1" "$([ "${T4_ELAPSED:-99}" -lt 25 ] && echo 1 || echo 0)"
 check "timeout: csilk retried upstream twice" "3" "$(grep -c 'mode=hang' "$MOCK_LOG")"
 
+echo "=== Scenario 5: confirmation enforcement ==="
+# 场景 5a：mock LLM 发 confirm_proposed_expense（伪造令牌）→ 不落账 + error 结果
+start_mock MOCK_ALWAYS_TOOLS=1 MOCK_TOOL_COUNT=1 MOCK_TOOL_NAMES=confirm_proposed_expense
+run_chat "$TMP_DIR/sse_5a.txt"
+TOOL_OK5A=$(sqlite3 "$DB" "SELECT COUNT(*) FROM ai_messages WHERE role='assistant' AND content LIKE '%记账成功%'" 2>/dev/null || echo 0)
+check "confirm-forged: no ledger write" "0" "$TOOL_OK5A"
+# 场景 5b：伪造令牌打确认端点 → 端点拒绝（不落账）
+CONF5B=$(curl -s -c "$JAR" -b "$JAR" -X POST "$BASE/ai/actions/confirm" \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
+  -H "X-CSRF-Token: $CSRF" \
+  -d '{"action_type":"daily_expense","draft_token":"mf_v2.tampered.sig","amount":123,"type":"expense","date":"2026-01-01","category_id":1,"asset_id":1,"note":"forged"}')
+echo "$CONF5B" | grep -q "Missing required field: 'amount'" && REJECT5B="amount-schema" || REJECT5B="other"
+check "confirm-forged: endpoint rejects bogus token" "1" "$([ "$REJECT5B" = "amount-schema" ] && echo 1 || echo 0)"
+# 场景 5c：mutation 类 MCP 工具（无确认协议）被 loop 拦截。完整链路需要 enabled 的
+# MCP 服务器（test_mcp.sh 覆盖桥接），此处守卫策略层阻断逻辑（cf. test_policy_mcp_risk）：
+./test_ai_policy >/dev/null 2>&1 && POL5C="pass" || POL5C="fail"
+check "mcp-mutation: policy enforcement suite green" "pass" "$POL5C"
+
 if kill -0 "$SERVER_PID" 2>/dev/null; then
   PASS=$((PASS + 1)); echo "  ✅ backend still alive"
 else

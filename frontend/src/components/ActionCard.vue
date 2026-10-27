@@ -191,7 +191,17 @@
     <!-- Footer Actions -->
     <div class="card-footer" v-if="cardStatus === 'pending'">
       <el-button size="small" @click="handleCancel">取消</el-button>
+      <el-tooltip
+        v-if="!draftToken"
+        content="该卡片缺少服务端签发的确认令牌（须由 AI 通过 propose 工具发起），为防伪造已禁止写入"
+      >
+        <el-button type="info" size="small" disabled>
+          <Icon icon="ph:shield-warning-bold" class="btn-icon" />
+          <span>写入已禁用</span>
+        </el-button>
+      </el-tooltip>
       <el-button
+        v-else
         type="primary"
         size="small"
         :loading="loading"
@@ -215,9 +225,8 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Icon } from '@iconify/vue'
-import { dailyExpensesApi } from '@/api/daily_expenses'
-import { transactionsApi } from '@/api/transactions'
 import { assetsApi } from '@/api/assets'
+import { confirmAction as confirmAiAction } from '@/api/ai'
 import { useCategoryStore } from '@/stores/category'
 import { localToday, assetLabel } from '@/utils/format'
 import type { Asset, Category } from '@/types'
@@ -239,6 +248,8 @@ export interface ProposedAction {
     to_asset_id?: number
     to_asset_name?: string
     fee?: number
+    /** 服务端 propose 工具签发的 HMAC 令牌（300s TTL）。缺失 = 模型凭空捏造的卡片，不可落账 */
+    draft_token?: string
   }
 }
 
@@ -269,6 +280,9 @@ const form = reactive({
   fee: Number(props.actionData.data.fee) || 0,
   note: props.actionData.data.note || '',
 })
+
+/** 服务端签发的确认令牌：缺失 = 卡片并非由 propose 工具产生，落账按钮禁用 */
+const draftToken = computed(() => props.actionData.data.draft_token || '')
 
 const isReadonly = computed(() => cardStatus.value !== 'pending')
 
@@ -338,6 +352,13 @@ async function handleConfirm() {
   cardStatus.value = 'executing'
 
   try {
+    if (!draftToken.value) {
+      // 无 HMAC 令牌 = 卡片并非由 propose 工具产生（模型凭空捏造），拒绝落账
+      cardStatus.value = 'pending'
+      loading.value = false
+      ElMessage.error('该卡片缺少服务端签发的确认令牌，已阻止写入。请让 AI 重新发起 propose')
+      return
+    }
     if (props.actionData.action_type === 'daily_expense') {
       if (!form.asset_id) {
         ElMessage.warning('请选择扣款或收款账户')
@@ -352,15 +373,19 @@ async function handleConfirm() {
         return
       }
 
-      await dailyExpensesApi.create({
-        expense_type: form.type,
+      const res = (await confirmAiAction({
+        action_type: 'daily_expense',
+        draft_token: draftToken.value,
         amount: form.amount,
+        type: form.type,
+        date: form.date,
         category_id: form.category_id,
         asset_id: form.asset_id,
-        expense_date: form.date,
-        currency: 'CNY',
         note: form.note || '',
-      })
+      })) as unknown as { data?: { success?: boolean; error?: string; message?: string } }
+      if (res?.data?.error) {
+        throw new Error(res.data.message || res.data.error)
+      }
     } else if (props.actionData.action_type === 'transfer') {
       if (!form.from_asset_id || !form.to_asset_id) {
         ElMessage.warning('请选择转出与转入账户')
@@ -375,17 +400,18 @@ async function handleConfirm() {
         return
       }
 
-      await transactionsApi.create({
-        asset_id: form.from_asset_id!,
-        linked_asset_id: form.to_asset_id!,
-        category_id: 1, // Default transfer category
-        transaction_type: 'transfer_out',
+      const res = (await confirmAiAction({
+        action_type: 'transfer',
+        draft_token: draftToken.value,
         amount: form.amount,
-        fee: form.fee || 0,
-        currency: 'CNY',
-        transaction_date: form.date,
+        from_asset_id: form.from_asset_id,
+        to_asset_id: form.to_asset_id,
+        date: form.date,
         note: form.note || '转账',
-      })
+      })) as unknown as { data?: { success?: boolean; error?: string; message?: string } }
+      if (res?.data?.error) {
+        throw new Error(res.data.message || res.data.error)
+      }
     }
 
     categoryStore.invalidate()

@@ -549,6 +549,15 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
                         strdup("{\"error\":\"duplicate_call\",\"note\":\"identical tool call "
                                "already executed in this run; reuse the previous result or "
                                "answer directly\"}");
+                } else if (decision->requires_confirmation && !ai_tool_requires_id(tc->name)) {
+                    /* 策略要求二次确认且工具不自带确认协议（propose/confirm 令牌）：
+                       拒绝执行并把确认要求回注给模型，由其向用户转达。此前该标志仅
+                       作提示、变更操作照样静默执行，构成越权写路径。 */
+                    result_str = strdup(
+                        "{\"error\":\"confirmation_required\",\"note\":\"this action needs "
+                        "explicit user approval before it can run; summarize what it would "
+                        "do and ask the user to confirm, or use the propose/confirm tools\"}");
+                    executed = 0;
                 } else {
                     /* 2. 工具执行 (Tool Execution)
                        线程化协作式取消标志：MCP 远端调用可在用户取消时中止。 */

@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Duplicate Tool-Call Guard**: identical (name+arguments) tool calls within one run are short-circuited with a `duplicate_call` replay notice and no longer consume the tool budget; oversized tool results are clamped to an 8KB JSON preview before entering model context (full results still reach SSE and persistence).
   - **Typed SSE Errors & Decoupled Frontend Failure UI**: `error` events now carry the runtime error code (e.g. 1001 model) and stream failures no longer overwrite already-streamed content — the store records `msg.error` and the UI renders a separate error strip with a retry action; deleting the active session aborts its in-flight stream; retry now resends the nearest preceding user message instead of the session's first one.
   - **Usage Stats on `done`**: the `done` SSE event carries prompt/completion/total tokens, estimated cost, elapsed time and finish reason; the chat UI renders a per-message usage line (tokens · $ · duration) with a `budget` badge.
-  - Added integration test suite `test_ai_loop_hardening.sh` (25 assertions: retry, budget wrap-up + duplicate interception, mid-stream provider death, stalled-upstream timeout) and frontend unit tests `chat-stream-error.spec.ts` (error decoupling, session-delete abort).
+  - Added integration test suite `test_ai_loop_hardening.sh` (28 assertions: retry, budget wrap-up + duplicate interception, mid-stream provider death, stalled-upstream timeout, confirmation enforcement) and frontend unit tests `chat-stream-error.spec.ts` (error decoupling, session-delete abort).
 
 ### Fixed
 - **AI Settings Instance-Admin Gating (`backend/src/interfaces/http/controllers/ai_controller.c`, `backend/src/infrastructure/repositories/auth_repo_impl.c`)**:
@@ -38,12 +38,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Async Summary Worker Taken Off the Shared DB Connection (`backend/src/services/ai/memory/summary.c`, `backend/src/services/ai_service.c`)**:
   - csilk's SQLite pool is a single connection with no cross-thread locking; the detached summary worker read history and upserted `ai_session_summaries` through the same connection as the request threads, racing on interleaved statements/transactions. The worker now performs only the LLM call — history and previous summary are read (and the prompt built) on the triggering thread, and the result is staged in process memory, then persisted by the main thread via new `ai_summary_flush_pending()` on the next interaction (summary trigger, chat memory build, `ai_runtime_run_loop`).
   - `test_ai_summary.c` now asserts the staged-then-flushed flow ("staged by detached worker, flushed by main thread").
+- **Confirmation Enforcement End-to-End (`backend/src/services/ai/runtime/loop.c`, `backend/src/interfaces/http/controllers/ai_controller.c`, `frontend/src/components/ActionCard.vue`)**:
+  - **Loop-level blocking**: `requires_confirmation` is now enforced. Calls without their own confirmation protocol (everything except the propose/confirm token tools — e.g. MCP mutations) are rejected with a `confirmation_required` notice returned to the model instead of executing silently; a new `requires_id` tool-registry flag (set on the 4 write tools) marks the self-confirming protocol.
+  - **Signed confirm endpoint**: new `POST /api/ai/actions/confirm` routes the card payload through the tool dispatcher (`policy` + `audit` + HMAC `verify_and_consume`); the `draft_token` is re-bound server-side, so forged/tampered/replayed cards cannot write to the ledger.
+  - **Frontend**: ActionCard renders a disabled "写入已禁用" state when the card lacks a server-issued `draft_token` (model-fabricated cards), and real confirms go through the token endpoint instead of raw REST writes — closing the policy/audit bypass. `propose_*` tool descriptions now instruct the model to embed `draft_token` in the rendered action card.
+  - `test_ai_loop_hardening.sh` scenario 5: forged-token chat produces no ledger write; bogus-token confirm endpoint is rejected.
 - **Archived Account List Filter (`backend/src/infrastructure/repositories/account_repo_impl.c`)**:
   - `account_list` passed the `archived=0` conditional filter and `ORDER BY` as extra `snprintf` arguments with no matching format specifier, silently dropping both; default list now hides archived accounts and `include_archived=1` includes them.
 
 ### Changed
 - **Test Suite Expansion**:
-  - Expanded integration coverage with `test_ai_loop_hardening.sh` (25 assertions) and frontend `chat-stream-error.spec.ts` (36 suites / 170 tests total).
+  - Expanded integration coverage with `test_ai_loop_hardening.sh` (28 assertions) and frontend `chat-stream-error.spec.ts` (36 suites / 170 tests total).
 
 ## [1.3.2] - 2026-10-24
 

@@ -235,11 +235,14 @@ ai_tool_transfer_register_all(void)
         ai_tool_t t = {
             .name = "propose_transfer",
             .description =
-                "账户间转账智能拟录入草稿，自动匹配转出与转入资产账户，生成待确认卡片数据",
+                "账户间转账智能拟录入草稿，自动匹配转出与转入资产账户，生成待确认卡片数据。"
+                "成功后必须将返回的 draft_token/from_asset_id/to_asset_id/"
+                "amount/date/note 填入 ```action 卡片（action_type: transfer）展示给用户",
             .parameters_schema = s,
             .permission = AI_PERM_WRITE,
             .risk = AI_RISK_HIGH,
             .is_mutation = true,
+            .requires_id = true,
             .validate = NULL,
             .execute = exec_propose_transfer,
         };
@@ -267,6 +270,7 @@ ai_tool_transfer_register_all(void)
             .permission = AI_PERM_SENSITIVE,
             .risk = AI_RISK_CRITICAL,
             .is_mutation = true,
+            .requires_id = true,
             .validate = NULL,
             .execute = exec_confirm_proposed_transfer,
         };

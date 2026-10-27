@@ -39,14 +39,27 @@ struct ai_tool_s {
     ai_permission_level_t permission;        /**< 权限要求等级 */
     ai_risk_level_t       risk;              /**< 风险等级 */
     bool                  is_mutation;       /**< 是否为金融写操作/动账 */
-    ai_tool_validate_fn   validate;          /**< 业务规则校验函数（可选） */
-    ai_tool_execute_fn    execute;           /**< 执行逻辑函数 */
+    bool requires_id;             /**< 是否必须携带关联资源 ID（资产/分类/账户），防模型凭空捏造 */
+    ai_tool_validate_fn validate; /**< 业务规则校验函数（可选） */
+    ai_tool_execute_fn  execute;  /**< 执行逻辑函数 */
 };
 
 /**
  * @brief 初始化工具注册表并自动注册所有系统内置工具
  */
 void ai_tool_registry_init(void);
+
+/**
+ * @brief 查询工具是否要求必须携带关联资源 ID（资产/分类/账户）
+ *
+ * 内置写路径工具（propose/confirm）标记为 true。防伪造用途：来自模型文本的
+ * action 卡片可以写任意 id；要求携带注册表标记为 true 的工具签发的
+ * draft_token + 原始 id，使伪造卡片无法落账。
+ *
+ * @param name 工具全名（MCP 工具返回 false）
+ * @return true 要求关联 ID
+ */
+bool ai_tool_requires_id(const char* name);
 
 /**
  * @brief 注册工具

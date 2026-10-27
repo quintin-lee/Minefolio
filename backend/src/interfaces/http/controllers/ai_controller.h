@@ -14,6 +14,7 @@ void api_ai_settings_get_handler(csilk_ctx_t* c);
 void api_ai_settings_update_handler(csilk_ctx_t* c);
 void api_ai_test_connection_handler(csilk_ctx_t* c);
 void api_ai_fetch_models_handler(csilk_ctx_t* c);
+void api_ai_action_confirm_handler(csilk_ctx_t* c);
 void api_ai_workflows_list_handler(csilk_ctx_t* c);
 void api_ai_workflows_run_handler(csilk_ctx_t* c);
 

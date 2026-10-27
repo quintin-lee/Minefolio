@@ -3,6 +3,9 @@
 #include "services/ai_service.h"
 #include "services/ai_workflow_service.h"
 #include "infrastructure/repositories/auth_repo_impl.h"
+#include "services/ai/tools/dispatcher.h"
+#include "services/ai/tools/registry.h"
+#include "services/ai/tools/context.h"
 #include "common/response.h"
 #include "common/ctx.h"
 #include "common/db.h"
@@ -228,6 +231,91 @@ api_ai_messages_list_handler(csilk_ctx_t* c)
     }
 }
 
+/**
+ * @brief 用户确认执行 AI 拟录入的记账/转账动作
+ *
+ * 请求体：{action_type: "daily_expense"|"transfer", draft_token, ...confirm 参数}
+ * （confirm_proposed_expense: amount/type/date/category_id/asset_id/note；
+ *   confirm_proposed_transfer: amount/from_asset_id/to_asset_id/date/note）
+ *
+ * 动作经统一工具调度（policy + audit + HMAC 令牌验签）执行：
+ * - 令牌由 propose_* 工具在用户会话内签发（300s TTL、绑定参数哈希）；
+ * - 参数与令牌不符 / 令牌过期 / 重放 → 拒绝，不落账。
+ */
+void
+api_ai_action_confirm_handler(csilk_ctx_t* c)
+{
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) {
+        return;
+    }
+
+    csilk_json_t* body = csilk_bind_json(c);
+    if (!body) {
+        respond_bad_request(c, "请求体必须为 JSON");
+        return;
+    }
+
+    const char* action_type = csilk_json_get_string(body, "action_type");
+    const char* draft_token = csilk_json_get_string(body, "draft_token");
+    if (!action_type || !action_type[0] || !draft_token || !draft_token[0]) {
+        csilk_json_free(body);
+        respond_bad_request(c, "缺少 action_type 或 draft_token");
+        return;
+    }
+
+    csilk_db_pool_t* pool = db_get_pool();
+    const char*      tool_name = NULL;
+    if (strcmp(action_type, "daily_expense") == 0) {
+        tool_name = "confirm_proposed_expense";
+    } else if (strcmp(action_type, "transfer") == 0) {
+        tool_name = "confirm_proposed_transfer";
+    } else {
+        csilk_json_free(body);
+        respond_bad_request(c, "未知的 action_type");
+        return;
+    }
+
+    /* 透传 confirm 参数（剔除 action_type）并强制回填 draft_token，
+       防止模型伪造参数绕过令牌绑定 */
+    csilk_json_t*      args = csilk_json_object();
+    ai_tool_context_t* ctx = ai_tool_context_create(pool, user_id, 0 /* 无会话上下文 */, NULL);
+    if (!ctx) {
+        csilk_json_free(body);
+        respond_error(c, 500, "确认执行失败");
+        return;
+    }
+    size_t bsize = csilk_json_object_size(body);
+    for (size_t i = 0; i < bsize; i++) {
+        const char*         key = csilk_json_object_key(body, i);
+        const csilk_json_t* val = csilk_json_object_val(body, i);
+        if (!key || strcmp(key, "action_type") == 0 || strcmp(key, "draft_token") == 0) {
+            continue;
+        }
+        csilk_json_add_item(args, (csilk_json_t*)val);
+    }
+    csilk_json_add_string(args, "draft_token", draft_token);
+    csilk_json_free(body);
+
+    char* result = ai_tool_dispatch_parsed(ctx, tool_name, args);
+    ai_tool_context_free(ctx);
+    csilk_json_free(args);
+    if (!result) {
+        respond_error(c, 500, "确认执行失败");
+        return;
+    }
+
+    /* 工具结果为 {success:true,...} 或 {error:...}；原样透传给前端 */
+    csilk_json_t* parsed = csilk_json_parse(result);
+    if (parsed) {
+        respond_ok(c, parsed);
+        csilk_json_free(parsed);
+    } else {
+        respond_ok_null(c);
+    }
+    free(result);
+}
+
 void
 api_ai_settings_get_handler(csilk_ctx_t* c)
 {
@@ -391,6 +479,13 @@ register_ai_routes(csilk_app_t* app)
                        NULL,
                        "Fetch AI models",
                        "Fetches available models from provider");
+    csilk_app_post_ext(app,
+                       "/api/ai/actions/confirm",
+                       api_ai_action_confirm_handler,
+                       NULL,
+                       NULL,
+                       "Confirm AI proposed action",
+                       "Verify the draft token and execute the confirmed ledger write");
     csilk_app_get_ext(app,
                       "/api/ai/workflows",
                       api_ai_workflows_list_handler,

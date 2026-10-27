@@ -47,6 +47,25 @@ ai_tool_registry_init(void)
     pthread_once(&s_registry_once, registry_init_impl);
 }
 
+bool
+ai_tool_requires_id(const char* name)
+{
+    if (!name || !name[0]) {
+        return false;
+    }
+    pthread_once(&s_registry_once, registry_init_impl);
+    pthread_mutex_lock(&s_registry_mutex);
+    bool required = false;
+    for (size_t i = 0; i < s_tool_count; i++) {
+        if (strcmp(s_registered_tools[i].name, name) == 0) {
+            required = s_registered_tools[i].requires_id;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&s_registry_mutex);
+    return required;
+}
+
 int
 ai_tool_register(const ai_tool_t* tool)
 {

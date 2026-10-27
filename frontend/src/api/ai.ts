@@ -442,6 +442,28 @@ export async function fetchAiModels(data: {
 }
 
 /**
+ * 用户确认执行 AI 拟录入的记账/转账动作
+ * @route POST /api/ai/actions/confirm
+ * @param payload.action_type daily_expense | transfer
+ * @param payload.draft_token 服务端 propose 工具签发的 HMAC 令牌
+ * @returns 工具执行结果（{success:true,id,message} 或 {error}）
+ */
+export async function confirmAction(payload: {
+  action_type: 'daily_expense' | 'transfer'
+  draft_token: string
+  amount: number
+  type?: string
+  date?: string
+  category_id?: number
+  asset_id?: number
+  from_asset_id?: number
+  to_asset_id?: number
+  note?: string
+}) {
+  return http.post('/ai/actions/confirm', payload)
+}
+
+/**
  * 获取可用的预定义智能财务工作流列表
  * @route GET /api/ai/workflows
  * @returns 工作流定义对象数组
