@@ -83,6 +83,8 @@ STATS_RES=$(req GET /ai/traces/stats)
 check "trace stats code=0" "0" "$(echo "$STATS_RES" | jq -r '.code | floor')"
 check "trace stats total_traces=3" "3" "$(echo "$STATS_RES" | jq -r '.data.total_traces | floor')"
 check "trace stats total_tokens=4650" "4650" "$(echo "$STATS_RES" | jq -r '.data.total_tokens | floor')"
+check "trace stats avg_tokens_per_sec>0 (P1-a 回归)" "1" "$(echo "$STATS_RES" | jq -r '(.data.avg_tokens_per_sec > 140 and .data.avg_tokens_per_sec < 148) | if . then "1" else "0" end')"
+check "trace stats total_cost_usd>0 (P1-a 回归)" "1" "$(echo "$STATS_RES" | jq -r '(.data.total_cost_usd > 0.01 and .data.total_cost_usd < 0.02) | if . then "1" else "0" end')"
 
 echo "=== 4. Query AI Trace List (All) ==="
 LIST_RES=$(req GET "/ai/traces?page=1&page_size=20")
