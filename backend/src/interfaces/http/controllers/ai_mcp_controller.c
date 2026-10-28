@@ -301,6 +301,7 @@ _Thread_local static char*  g_script_filename = NULL;
 _Thread_local static char*  g_script_data = NULL;
 _Thread_local static size_t g_script_data_len = 0;
 _Thread_local static size_t g_script_data_cap = 0;
+_Thread_local static bool   g_script_overflow = false;
 
 static void
 script_part_handler(csilk_multipart_part_t* part)
@@ -311,6 +312,8 @@ script_part_handler(csilk_multipart_part_t* part)
     if (part->data && part->data_len > 0) {
         size_t need = g_script_data_len + part->data_len;
         if (need > 5 * 1024 * 1024) {
+            /* 拒收而非静默丢块：否则文件被截断落盘却返回成功 */
+            g_script_overflow = true;
             return;
         }
         if (need > g_script_data_cap) {
@@ -320,6 +323,7 @@ script_part_handler(csilk_multipart_part_t* part)
             }
             char* nd = realloc(g_script_data, cap);
             if (!nd) {
+                g_script_overflow = true;
                 return;
             }
             g_script_data = nd;
@@ -406,8 +410,21 @@ api_ai_mcp_scripts_upload(csilk_ctx_t* c)
     g_script_data = NULL;
     g_script_data_len = 0;
     g_script_data_cap = 0;
+    g_script_overflow = false;
 
     csilk_multipart_parse(c, script_part_handler);
+
+    if (g_script_overflow) {
+        free(g_script_filename);
+        free(g_script_data);
+        g_script_filename = NULL;
+        g_script_data = NULL;
+        g_script_data_len = 0;
+        g_script_data_cap = 0;
+        g_script_overflow = false;
+        respond_error(c, 413, "脚本超过 5MB 上限");
+        return;
+    }
 
     if (!g_script_filename || !g_script_data || g_script_data_len == 0) {
         free(g_script_filename);

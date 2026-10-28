@@ -2,6 +2,7 @@
 #include "application/market/usecases.h"
 #include "services/market/exchange_rate_service.h"
 #include "services/market/quote_engine.h"
+#include "services/ai/tools/mcp/mcp_stdio_pool.h"
 #include "infrastructure/repositories/dca_repo_impl.h"
 #include "csilk/csilk.h"
 #include <pthread.h>
@@ -222,6 +223,14 @@ scheduler_loop(void* arg)
                 quote_engine_sync_indices_to_db(g_pool);
                 pthread_mutex_lock(&g_sched_mutex);
             }
+        }
+
+        /* 2.5 MCP stdio 池巡检：回收空闲超过 TTL 的子进程（内部带 TTL<=0 短路），
+         * 每 30s 心跳一次即可，代价可忽略 */
+        {
+            pthread_mutex_unlock(&g_sched_mutex);
+            mf_mcp_stdio_pool_evict_idle();
+            pthread_mutex_lock(&g_sched_mutex);
         }
 
         /* 2. Forex Exchange Rates sync (Mon-Fri every 30m, skip weekends) */

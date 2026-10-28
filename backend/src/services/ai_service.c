@@ -15,6 +15,7 @@
 #include "config/secret.h"
 #include "csilk/core/server.h"
 #include "services/ai/runtime/fast_json.h"
+#include "services/ai/tools/mcp/mcp_stdio_pool.h"
 #include <curl/curl.h>
 #include <time.h>
 #include <stdio.h>
@@ -139,6 +140,11 @@ ai_init(csilk_db_pool_t* pool)
 void
 ai_shutdown(void)
 {
+    /* 先关 MCP stdio 子进程池（SIGTERM→SIGKILL），避免遗留孤儿进程 */
+    int killed = mf_mcp_stdio_pool_shutdown();
+    if (killed > 0) {
+        CSILK_LOG_I("ai_shutdown: terminated %d idle MCP stdio children", killed);
+    }
     if (g_ai) {
         csilk_ai_free(g_ai);
         g_ai = NULL;

@@ -1005,6 +1005,8 @@ graph TB
 | `MINEFOLIO_DB_DRIVER` | 否 | `config/db.json` | `sqlite` / `postgres` |
 | `MINEFOLIO_DB_DSN` | 否 | `config/db.json` | 数据库连接串(SQLite 路径 / PG DSN) |
 | `MINEFOLIO_TRACE_RETENTION_ROWS` | 否 | `0`（不清理） | `ai_traces` 保留策略：每个用户最多保留的最新 trace 行数，trace 写入后按行数上限裁剪，防止行宽大的 trace 表无限膨胀 |
+| `MINEFOLIO_MCP_CACHE_TTL` | 否 | `1800` | MCP stdio 子进程池空闲回收 TTL（秒）：后台调度心跳每 30s 回收空闲超 TTL 的子进程；`<=0` 禁用回收 |
+| `MINEFOLIO_AI_HTTP_TIMEOUT_MS` | 否 | `300000` | 聊天模型单次调用 HTTP 超时（毫秒）；`0` = 不限（仅 OpenAI 兼容驱动消费） |
 | `MINEFOLIO_PORT` | 否 | `PORT` → `8080` | 监听端口 |
 | `HTTP_PROXY` / `HTTPS_PROXY` | 否 | 无 | 容器构建时通过 apt/npm 代理 |
 | `TZ` | 否 | `Asia/Shanghai` | 容器时区；runtime 镜像安装 `tzdata`，并通过 `/etc/localtime` 挂载保证后端 `localtime`/`strftime` 输出一致 |

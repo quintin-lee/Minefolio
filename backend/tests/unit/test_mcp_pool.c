@@ -35,5 +35,9 @@ main(void)
     int shutdowns = mf_mcp_stdio_pool_shutdown();
     printf("PASS: test_mcp_pool (shutdowns=%d)\n", shutdowns);
     (void)shutdowns;
+
+    /* evict_idle 在空池上必须安全返回 0（调度心跳每 30s 调用一次） */
+    assert(mf_mcp_stdio_pool_evict_idle() == 0);
+    printf("PASS: test_mcp_pool_evict_idle_empty\n");
     return 0;
 }
