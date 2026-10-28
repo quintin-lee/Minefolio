@@ -118,6 +118,23 @@ ai_trace_set_params(ai_trace_t* t, double temperature, int max_tokens, double to
 }
 
 /**
+ * @brief 设置生效的每百万 Token 价格（USD）
+ *
+ * @param[in,out] t 追踪结构体
+ * @param[in] in_per_m 输入价（USD/百万 token）
+ * @param[in] out_per_m 输出价（USD/百万 token）
+ */
+void
+ai_trace_set_price(ai_trace_t* t, double in_per_m, double out_per_m)
+{
+    if (!t) {
+        return;
+    }
+    t->price_in_per_m = in_per_m;
+    t->price_out_per_m = out_per_m;
+}
+
+/**
  * @brief 设置系统提示词
  *
  * @param[in,out] t 追踪结构体
@@ -267,11 +284,15 @@ ai_trace_calculate_tokens_and_cost(ai_trace_t* t, int prompt_tokens, int complet
 
     t->total_tokens = t->prompt_tokens + t->completion_tokens;
 
-    /* 价格估算（每 100 万 Token 美元单价） */
+    /* 价格估算（每 100 万 Token 美元单价）：trace 已注入生效价（provider 配置价/
+     * 默认价表，见 ai_trace_set_price）时优先使用；未注入则按模型/服务商默认表 */
     double in_price_per_1m = 0.50;
     double out_price_per_1m = 1.50;
 
-    if (strstr(t->model, "gpt-4o-mini") || strstr(t->model, "4o-mini")) {
+    if (t->price_in_per_m > 0.0 || t->price_out_per_m > 0.0) {
+        in_price_per_1m = t->price_in_per_m;
+        out_price_per_1m = t->price_out_per_m;
+    } else if (strstr(t->model, "gpt-4o-mini") || strstr(t->model, "4o-mini")) {
         in_price_per_1m = 0.15;
         out_price_per_1m = 0.60;
     } else if (strstr(t->model, "gpt-4o") || strstr(t->model, "gpt-4")) {

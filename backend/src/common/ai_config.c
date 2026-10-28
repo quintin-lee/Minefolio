@@ -95,6 +95,10 @@ ai_config_parse_root(const csilk_json_t* root, ai_config_t* out)
             parse_string_array(csilk_json_get(p, "models"),
                                &out->providers[i].models,
                                &out->providers[i].model_count);
+            const csilk_json_t* pi = csilk_json_get(p, "price_input");
+            out->providers[i].price_input = pi ? (double)csilk_json_number_value(pi) : 0.0;
+            const csilk_json_t* po = csilk_json_get(p, "price_output");
+            out->providers[i].price_output = po ? (double)csilk_json_number_value(po) : 0.0;
         }
     }
 
@@ -190,6 +194,10 @@ ai_config_save(const char* path, const ai_config_t* cfg)
             csilk_json_array_append(ml, csilk_json_string_new(cfg->providers[i].models[j]));
         }
         csilk_json_add_array(p, "models", ml);
+        if (cfg->providers[i].price_input > 0.0 || cfg->providers[i].price_output > 0.0) {
+            csilk_json_add_number(p, "price_input", cfg->providers[i].price_input);
+            csilk_json_add_number(p, "price_output", cfg->providers[i].price_output);
+        }
         csilk_json_array_append(prov_arr, p);
     }
     csilk_json_add_array(root, "providers", prov_arr);

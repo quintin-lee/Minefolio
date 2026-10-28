@@ -64,6 +64,55 @@ mf_ai_rule_calculate_token_cost(int64_t prompt_tokens,
     return 0;
 }
 
+int
+mf_ai_rule_model_prices(const char*   provider,
+                        const char*   model,
+                        const double* provider_in,
+                        const double* provider_out,
+                        double*       out_in,
+                        double*       out_out)
+{
+    if (!out_in || !out_out) {
+        return -1;
+    }
+    if ((provider_in && *provider_in < 0.0) || (provider_out && *provider_out < 0.0)) {
+        return -1;
+    }
+    /* 默认价表（与既有 trace 估算口径一致；4o-mini 必须先于 gpt-4o 判定） */
+    double in_p = 0.50;
+    double out_p = 1.50;
+    if (model && strstr(model, "gpt-4o-mini")) {
+        in_p = 0.15;
+        out_p = 0.60;
+    } else if (model && strstr(model, "4o-mini")) {
+        in_p = 0.15;
+        out_p = 0.60;
+    } else if ((model && strstr(model, "gpt-4o")) || (model && strstr(model, "gpt-4"))) {
+        in_p = 2.50;
+        out_p = 10.00;
+    } else if ((provider && strstr(provider, "deepseek")) || (model && strstr(model, "deepseek"))) {
+        in_p = 0.14;
+        out_p = 0.28;
+    } else if ((provider && strstr(provider, "qwen")) || (model && strstr(model, "qwen"))) {
+        in_p = 0.20;
+        out_p = 0.60;
+    }
+    if (provider && strstr(provider, "ollama")) {
+        in_p = 0.0;
+        out_p = 0.0;
+    }
+    /* 配置价逐侧覆盖：>0 的字段生效，<=0 的侧保持默认表值 */
+    if (provider_in && *provider_in > 0.0) {
+        in_p = *provider_in;
+    }
+    if (provider_out && *provider_out > 0.0) {
+        out_p = *provider_out;
+    }
+    *out_in = in_p;
+    *out_out = out_p;
+    return 0;
+}
+
 bool
 mf_ai_rule_is_safe_provider(const char* provider_id)
 {

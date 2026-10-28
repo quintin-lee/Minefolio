@@ -334,6 +334,10 @@ ai_usecase_settings_get(csilk_json_t** out_data, ai_usecase_result_t* out_res)
             csilk_json_add_item(ml, csilk_json_string_new(cfg->providers[i].models[j]));
         }
         csilk_json_add_array(p, "models", ml);
+        if (cfg->providers[i].price_input > 0.0 || cfg->providers[i].price_output > 0.0) {
+            csilk_json_add_number(p, "price_input", cfg->providers[i].price_input);
+            csilk_json_add_number(p, "price_output", cfg->providers[i].price_output);
+        }
         csilk_json_array_append(prov_arr, p);
     }
     csilk_json_add_array(out, "providers", prov_arr);
@@ -426,6 +430,20 @@ ai_usecase_settings_update(void* pool, const csilk_json_t* body, ai_usecase_resu
                         sizeof(new_provs[i].base_url) - 1);
                 parse_string_array(
                     csilk_json_get(p, "models"), &new_provs[i].models, &new_provs[i].model_count);
+                /* 价格字段透传：body 有值用 body，未携带时继承旧配置（避免被清零） */
+                {
+                    const csilk_json_t* body_pi = csilk_json_get(p, "price_input");
+                    const csilk_json_t* body_po = csilk_json_get(p, "price_output");
+                    ai_provider_t* old_pi_p = ai_config_find_provider(&cfg, pid)
+                                                  ? ai_config_find_provider(&cfg, pid)
+                                                  : ai_config_find_provider(ai_get_config(), pid);
+                    new_provs[i].price_input = (body_pi && csilk_json_is_number(body_pi))
+                                                   ? csilk_json_number_value(body_pi)
+                                                   : (old_pi_p ? old_pi_p->price_input : 0.0);
+                    new_provs[i].price_output = (body_po && csilk_json_is_number(body_po))
+                                                    ? csilk_json_number_value(body_po)
+                                                    : (old_pi_p ? old_pi_p->price_output : 0.0);
+                }
             }
             if (cfg.providers) {
                 for (int i = 0; i < cfg.provider_count; i++) {
@@ -474,6 +492,10 @@ ai_usecase_settings_update(void* pool, const csilk_json_t* body, ai_usecase_resu
             csilk_json_array_append(ml, csilk_json_string_new(cfg.providers[i].models[j]));
         }
         csilk_json_add_array(p, "models", ml);
+        if (cfg.providers[i].price_input > 0.0 || cfg.providers[i].price_output > 0.0) {
+            csilk_json_add_number(p, "price_input", cfg.providers[i].price_input);
+            csilk_json_add_number(p, "price_output", cfg.providers[i].price_output);
+        }
         csilk_json_array_append(prov_arr_out, p);
     }
     csilk_json_add_array(root, "providers", prov_arr_out);

@@ -249,6 +249,18 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
                                                   ? prov->models[0]
                                                   : (cfg ? cfg->default_model : "default"));
 
+    /* 2.5 解析生效价格（USD/百万 token）：ai.json provider 级 price_input/price_output
+       逐侧覆盖（>0 生效），未配置侧/未配置 provider 回落默认价表——保证
+       cost_budget 预算检查与 trace 成本落库使用同一价源 */
+    double eff_price_in = 0.0;
+    double eff_price_out = 0.0;
+    mf_ai_rule_model_prices(prov->id,
+                            model,
+                            prov->price_input > 0.0 ? &prov->price_input : NULL,
+                            prov->price_output > 0.0 ? &prov->price_output : NULL,
+                            &eff_price_in,
+                            &eff_price_out);
+
     /* 3. 构造 AI 驱动实例 */
     const char* dname = (strcmp(prov->id, "ollama") == 0) ? "ollama" : "openai";
     const char* key = (prov->api_key[0] != '\0') ? prov->api_key : "dummy";
@@ -402,8 +414,11 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
 
         /* 记录 Token 消耗与费用 */
         double step_cost = 0.0;
-        mf_ai_rule_calculate_token_cost(
-            ai_res.prompt_tokens, ai_res.completion_tokens, 2.5, 10.0, &step_cost);
+        mf_ai_rule_calculate_token_cost(ai_res.prompt_tokens,
+                                        ai_res.completion_tokens,
+                                        eff_price_in,
+                                        eff_price_out,
+                                        &step_cost);
         ai_runtime_limits_record_tokens(
             &ctx->stats, ai_res.prompt_tokens, ai_res.completion_tokens, step_cost);
 
@@ -659,8 +674,11 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
         csilk_ai_chat_response_t wrap_res = {0};
         int                      wrap_rc = csilk_ai_chat(ai_inst, &wrap_req, &wrap_res);
         double                   wrap_cost = 0.0;
-        mf_ai_rule_calculate_token_cost(
-            wrap_res.prompt_tokens, wrap_res.completion_tokens, 2.5, 10.0, &wrap_cost);
+        mf_ai_rule_calculate_token_cost(wrap_res.prompt_tokens,
+                                        wrap_res.completion_tokens,
+                                        eff_price_in,
+                                        eff_price_out,
+                                        &wrap_cost);
         ai_runtime_limits_record_tokens(
             &ctx->stats, wrap_res.prompt_tokens, wrap_res.completion_tokens, wrap_cost);
         const char* wrap_text = wrap_res.content ? wrap_res.content : bridge.accumulated;
@@ -720,8 +738,9 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
         got_text = 1;
     }
 
-    /* 8. 链路追踪结算并保存 */
+    /* 8. 链路追踪结算并保存：注入与预算记账同一价源，保证 trace 成本口径一致 */
     if (trace) {
+        ai_trace_set_price(trace, eff_price_in, eff_price_out);
         ai_trace_calculate_tokens_and_cost(
             trace, ctx->stats.prompt_tokens, ctx->stats.completion_tokens);
         ai_trace_finish(trace, (status.code == AI_RUNTIME_ERR_OK) ? "ok" : "error", status.message);

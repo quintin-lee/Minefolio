@@ -22,6 +22,10 @@ typedef struct {
     char   base_url[512]; /**< API 基础请求路径（如 "https://api.deepseek.com/v1"） */
     char** models;        /**< 动态字符串指针数组：该服务商下支持的模型列表 */
     int    model_count;   /**< 支持的模型数量 */
+    /** 可选配置：每百万输入 Token 价格（USD）；<=0 = 用默认价表回落 */
+    double price_input; /**< 输入价（USD/1M tokens），ai.json "price_input" */
+    /** 可选配置：每百万输出 Token 价格（USD）；<=0 = 用默认价表回落 */
+    double price_output; /**< 输出价（USD/1M tokens），ai.json "price_output" */
 } ai_provider_t;
 
 /**

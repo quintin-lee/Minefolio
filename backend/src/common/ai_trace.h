@@ -19,35 +19,38 @@
  * @brief 单次 AI 请求全链路追踪跟踪上下文
  */
 typedef struct {
-    int64_t         id;                /**< 追踪记录在数据库中的主键 ID */
-    int64_t         user_id;           /**< 发起请求的用户 ID */
-    int64_t         session_id;        /**< 关联的 AI 对话会话 ID */
-    char            provider[64];      /**< 所选 AI 服务商标识（如 "openai", "deepseek"） */
-    char            model[128];        /**< 所选模型名称（如 "deepseek-chat", "gpt-4o"） */
-    char*           input_messages;    /**< 动态堆字符串：输入上下文消息列表的 JSON 序列化字符串 */
-    char*           output_content;    /**< 动态堆字符串：模型生成的完整回复内容 */
-    size_t          output_len;        /**< 当前输出内容字节长度 (O(1) 访问) */
-    size_t          output_cap;        /**< 当前输出缓冲区分配容量 (含末尾 '\0') */
-    char*           system_prompt;     /**< 动态堆字符串：使用的系统提示词 */
-    int             prompt_tokens;     /**< 输入提示词所消耗的 Token 数 */
-    int             completion_tokens; /**< 模型生成内容所消耗的 Token 数 */
-    int             total_tokens;      /**< 消耗的总 Token 数 (prompt + completion) */
-    long            latency_ms;        /**< 请求从发起到完全结束的总耗时（毫秒） */
-    long            first_token_ms;    /**< 首字延迟 TTFT (Time to First Token) 耗时（毫秒） */
-    double          tokens_per_sec;    /**< 模型流式输出吞吐速率（Tokens 每秒） */
-    double          cost_usd;          /**< 该次调用估算折合的花费（美元 USD） */
-    double          temperature;       /**< 采样温度参数 */
-    int             max_tokens;        /**< 最大生成 Token 限制 */
-    double          top_p;             /**< 核采样 top_p 参数 */
-    char            status[32];        /**< 请求完成状态（"ok", "error"） */
-    char*           error_message;     /**< 动态堆字符串：发生错误时的详细异常信息 */
-    char*           metadata;          /**< 动态堆字符串：扩展元数据 JSON 字符串 */
-    struct timespec t_start;           /**< 请求开始单调时钟时间戳 */
-    struct timespec t_first_token;     /**< 接收到首个流式数据块的单调时钟时间戳 */
-    struct timespec t_end;             /**< 请求结束单调时钟时间戳 */
-    int             has_first_token;   /**< 标记是否已记录首字到达 */
-    long            accumulated_len;   /**< 累积接收到的输出字符长度 */
-    char            tool_spans[3072];  /**< 固定缓冲区：工具函数调用跨度的 JSON 数组字符串 */
+    int64_t id;                /**< 追踪记录在数据库中的主键 ID */
+    int64_t user_id;           /**< 发起请求的用户 ID */
+    int64_t session_id;        /**< 关联的 AI 对话会话 ID */
+    char    provider[64];      /**< 所选 AI 服务商标识（如 "openai", "deepseek"） */
+    char    model[128];        /**< 所选模型名称（如 "deepseek-chat", "gpt-4o"） */
+    char*   input_messages;    /**< 动态堆字符串：输入上下文消息列表的 JSON 序列化字符串 */
+    char*   output_content;    /**< 动态堆字符串：模型生成的完整回复内容 */
+    size_t  output_len;        /**< 当前输出内容字节长度 (O(1) 访问) */
+    size_t  output_cap;        /**< 当前输出缓冲区分配容量 (含末尾 '\0') */
+    char*   system_prompt;     /**< 动态堆字符串：使用的系统提示词 */
+    int     prompt_tokens;     /**< 输入提示词所消耗的 Token 数 */
+    int     completion_tokens; /**< 模型生成内容所消耗的 Token 数 */
+    int     total_tokens;      /**< 消耗的总 Token 数 (prompt + completion) */
+    long    latency_ms;        /**< 请求从发起到完全结束的总耗时（毫秒） */
+    long    first_token_ms;    /**< 首字延迟 TTFT (Time to First Token) 耗时（毫秒） */
+    double  tokens_per_sec;    /**< 模型流式输出吞吐速率（Tokens 每秒） */
+    double  cost_usd;          /**< 该次调用估算折合的花费（美元 USD） */
+    double price_in_per_m; /**< 配置的每百万输入 Token 价（USD）；0=未配置，cost 计算回落默认价表 */
+    double
+        price_out_per_m;   /**< 配置的每百万输出 Token 价（USD）；0=未配置，cost 计算回落默认价表 */
+    double          temperature;      /**< 采样温度参数 */
+    int             max_tokens;       /**< 最大生成 Token 限制 */
+    double          top_p;            /**< 核采样 top_p 参数 */
+    char            status[32];       /**< 请求完成状态（"ok", "error"） */
+    char*           error_message;    /**< 动态堆字符串：发生错误时的详细异常信息 */
+    char*           metadata;         /**< 动态堆字符串：扩展元数据 JSON 字符串 */
+    struct timespec t_start;          /**< 请求开始单调时钟时间戳 */
+    struct timespec t_first_token;    /**< 接收到首个流式数据块的单调时钟时间戳 */
+    struct timespec t_end;            /**< 请求结束单调时钟时间戳 */
+    int             has_first_token;  /**< 标记是否已记录首字到达 */
+    long            accumulated_len;  /**< 累积接收到的输出字符长度 */
+    char            tool_spans[3072]; /**< 固定缓冲区：工具函数调用跨度的 JSON 数组字符串 */
 } ai_trace_t;
 
 /**
@@ -89,6 +92,18 @@ void ai_trace_set_params(ai_trace_t* t, double temperature, int max_tokens, doub
  * @param[in] prompt 系统提示词文本
  */
 void ai_trace_set_system_prompt(ai_trace_t* t, const char* prompt);
+
+/**
+ * @brief 设置生效的每百万 Token 价格（USD）
+ *
+ * 由 runtime 调用方解析（ai.json provider 配置价优先，默认价表回落）并显式注入，
+ * cost 计算据此计价；未调用时保持 0，回落到按模型/服务商匹配的内置默认表。
+ *
+ * @param[in,out] t 追踪上下文指针
+ * @param[in] in_per_m 输入价（USD/百万 token）
+ * @param[in] out_per_m 输出价（USD/百万 token）
+ */
+void ai_trace_set_price(ai_trace_t* t, double in_per_m, double out_per_m);
 
 /**
  * @brief 序列化输入对话消息列表并记录到追踪上下文中
