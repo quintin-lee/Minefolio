@@ -389,6 +389,7 @@ import AnalysisPanel from '@/components/AnalysisPanel.vue'
 import { extractPanelItems } from '@/utils/chat-panel-extractor'
 import type { PanelItem } from '@/types/chat-panel'
 import { localToday } from '@/utils/format'
+import { isDirectRunWorkflow } from '@/utils/workflow-meta'
 import type { WorkflowDef } from '@/types'
 
 const chat = useChatStore()
@@ -775,7 +776,6 @@ watch(lastMsgContent, () => {
 })
 
 
-const DIRECT_RUN_IDS = new Set(['wf_portfolio_rebalance', 'wf_goal_tracker', 'wf_bill_calendar', 'wf_health_score'])
 
 function handleInput() {
   adjustTextareaHeight()
@@ -819,7 +819,7 @@ function handleSelectWorkflow(wf: WorkflowDef) {
     inputText.value = (text.slice(0, slashIdx) + text.slice(cursor)).trim()
     nextTick(() => adjustTextareaHeight())
   }
-  if (DIRECT_RUN_IDS.has(wf.id)) {
+  if (isDirectRunWorkflow(wf.id)) {
     chat.runWorkflow(wf.id)
   } else {
     chat.stageWorkflow(wf.id)
