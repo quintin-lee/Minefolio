@@ -218,12 +218,44 @@ ai_usecase_sessions_delete(void* pool, int64_t user_id, int64_t id, ai_usecase_r
         return -1;
     }
 
-    int ok = mf_ai_session_delete((csilk_db_pool_t*)pool, user_id, id);
-    if (!ok) {
+    csilk_db_pool_t* p = (csilk_db_pool_t*)pool;
+
+    /* 先校验归属：FK 依赖要求子表(ai_traces)先删，而按 session_id 清 trace 必须在
+     * 确认会话属于该用户之后执行，避免用他人会话 id 删掉其 trace */
+    csilk_json_t* exist = mf_ai_session_get(p, user_id, id);
+    if (!exist) {
         out_res->code = 1003;
         snprintf(out_res->message, sizeof(out_res->message), "会话不存在");
         return -1;
     }
+    csilk_json_free(exist);
+
+    /* 应用层级联清理附属 trace：旧库 ai_traces.session_id FK 无 ON DELETE 行为
+     * （SQLite 无法 ALTER 约束；PRAGMA foreign_keys=ON 时直接删会话会 FK 失败）；
+     * PG 新库/重放 V018 后已有 ON DELETE CASCADE，此 DELETE 幂等无害。
+     * 必须先删子表再删会话，两步同事务保证不留半清理状态。 */
+    char id_s[32];
+    snprintf(id_s, sizeof(id_s), "%lld", (long long)id);
+    char uid_s[32];
+    snprintf(uid_s, sizeof(uid_s), "%lld", (long long)user_id);
+
+    db_tx_scope_t scope = {0};
+    db_tx_scope_begin(p, "ai_session_delete", &scope);
+    csilk_json_t* tr =
+        csilk_db_query_param_json(p,
+                                  "DELETE FROM ai_traces WHERE session_id=? AND user_id=?",
+                                  (const char*[]){id_s, uid_s, NULL});
+    if (tr) {
+        csilk_json_free(tr);
+    }
+    int ok = mf_ai_session_delete(p, user_id, id);
+    if (!ok) {
+        db_tx_scope_rollback(p, &scope);
+        out_res->code = 1003;
+        snprintf(out_res->message, sizeof(out_res->message), "会话不存在");
+        return -1;
+    }
+    db_tx_scope_commit(p, &scope);
 
     out_res->code = 0;
     snprintf(out_res->message, sizeof(out_res->message), "ok");

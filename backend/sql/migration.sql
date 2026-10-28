@@ -233,6 +233,7 @@ CREATE TABLE IF NOT EXISTS ai_traces (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE INDEX IF NOT EXISTS idx_ai_traces_session ON ai_traces(session_id);
 CREATE INDEX IF NOT EXISTS idx_ai_traces_user ON ai_traces(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_ai_traces_provider ON ai_traces(user_id, provider);
 CREATE INDEX IF NOT EXISTS idx_ai_traces_model ON ai_traces(user_id, model);

@@ -108,6 +108,21 @@ check "trace detail model=deepseek-chat" "deepseek-chat" "$(echo "$DETAIL_RES" |
 check "trace detail has input_messages" "true" "$(echo "$DETAIL_RES" | jq -r '.data.input_messages | length > 0')"
 check "trace detail has metadata tool_spans" "true" "$(echo "$DETAIL_RES" | jq -r '.data.metadata | contains("tool_spans")')"
 
+echo "=== 7. Session-Delete Cascade (V018) ==="
+# 种一个会话 + 挂到它的 trace，删除会话 → trace 随应用层级联清理（此前 FK 无 ON DELETE 直接失败）
+req POST "/ai/sessions" '{}' > /dev/null
+SEED_SID=$(sqlite3 "$DB" "SELECT id FROM ai_sessions ORDER BY id DESC LIMIT 1")
+sqlite3 "$DB" "INSERT INTO ai_traces (user_id, session_id, provider, model, input_messages, output_content, system_prompt) VALUES ($USER_ID, $SEED_SID, 'deepseek', 'deepseek-chat', '[]', 'x', 'p')"
+DEL_RES=$(req DELETE "/ai/sessions/$SEED_SID")
+DEL_CODE=$(echo "$DEL_RES" | jq -r '.code | floor')
+if [ "$DEL_CODE" = "0" ]; then
+  PASS=$((PASS + 1)); echo "  ✅ session delete with traces succeeds"
+  TRACES_LEFT=$(sqlite3 "$DB" "SELECT COUNT(*) FROM ai_traces WHERE session_id=$SEED_SID" 2>/dev/null || echo "?")
+  check "session delete cascades trace cleanup" "0" "$TRACES_LEFT"
+else
+  FAIL=$((FAIL + 1)); echo "  ❌ session delete failed: code=$DEL_CODE"
+fi
+
 echo ""
 echo "Summary: PASS=$PASS FAIL=$FAIL"
 if [ "$FAIL" -gt 0 ]; then

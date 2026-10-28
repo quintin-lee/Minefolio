@@ -221,6 +221,42 @@ mf_ai_trace_save(csilk_db_pool_t* pool, ai_trace_t* t)
     }
     CSILK_LOG_I("mf_ai_trace_save: id=%lld", (long long)id);
     csilk_json_free(r);
+
+    /* trace 保留策略（env MINEFOLIO_TRACE_RETENTION_ROWS，0/未设 = 不清理）：
+     * 插入后按行数上限裁剪，只保留该用户最新的 N 行，防止 ai_traces 无限膨胀
+     * （input_messages/output_content 行宽大）。插入后才裁剪，避免「先裁后插」
+     * 使表恒为 N+1 行的偏差。 */
+    {
+        static int retention_rows = -1;
+        if (retention_rows < 0) {
+            const char* env_rows = getenv("MINEFOLIO_TRACE_RETENTION_ROWS");
+            retention_rows = (env_rows && env_rows[0]) ? atoi(env_rows) : 0;
+            if (retention_rows < 1) {
+                retention_rows = 0;
+            }
+        }
+        if (retention_rows > 0) {
+            char limit_s[32];
+            snprintf(limit_s, sizeof(limit_s), "%d", retention_rows);
+            csilk_json_t* pr = csilk_db_query_param_json(
+                pool,
+                "DELETE FROM ai_traces WHERE user_id=? AND id NOT IN "
+                "(SELECT id FROM ai_traces WHERE user_id=? ORDER BY created_at DESC, id DESC "
+                "LIMIT ?) RETURNING id",
+                (const char*[]){uid, uid, limit_s, NULL});
+            int purged = pr ? (int)csilk_json_array_size(pr) : -1;
+            if (purged > 0) {
+                CSILK_LOG_I("trace retention purged=%d rows (limit=%d, user=%s)",
+                            purged,
+                            retention_rows,
+                            uid);
+            }
+            if (pr) {
+                csilk_json_free(pr);
+            }
+        }
+    }
+
     free(meta_final);
     return id;
 }

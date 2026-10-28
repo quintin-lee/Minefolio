@@ -186,7 +186,7 @@ CREATE INDEX IF NOT EXISTS idx_ai_messages_session ON ai_messages(session_id, cr
 CREATE TABLE IF NOT EXISTS ai_traces (
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL REFERENCES users(id),
-    session_id BIGINT REFERENCES ai_sessions(id),
+    session_id BIGINT REFERENCES ai_sessions(id) ON DELETE CASCADE,
     provider TEXT NOT NULL DEFAULT '',
     model TEXT NOT NULL DEFAULT '',
     input_messages TEXT NOT NULL DEFAULT '[]',
@@ -208,6 +208,7 @@ CREATE TABLE IF NOT EXISTS ai_traces (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE INDEX IF NOT EXISTS idx_ai_traces_session ON ai_traces(session_id);
 CREATE INDEX IF NOT EXISTS idx_ai_traces_user ON ai_traces(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_ai_traces_provider ON ai_traces(user_id, provider);
 CREATE INDEX IF NOT EXISTS idx_ai_traces_model ON ai_traces(user_id, model);

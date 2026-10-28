@@ -1004,6 +1004,7 @@ graph TB
 | `MINEFOLIO_ENABLE_CSRF` | 否 | 关 | 开启时 `csrf_middleware` 注册到 `/api` 路由组 |
 | `MINEFOLIO_DB_DRIVER` | 否 | `config/db.json` | `sqlite` / `postgres` |
 | `MINEFOLIO_DB_DSN` | 否 | `config/db.json` | 数据库连接串(SQLite 路径 / PG DSN) |
+| `MINEFOLIO_TRACE_RETENTION_ROWS` | 否 | `0`（不清理） | `ai_traces` 保留策略：每个用户最多保留的最新 trace 行数，trace 写入后按行数上限裁剪，防止行宽大的 trace 表无限膨胀 |
 | `MINEFOLIO_PORT` | 否 | `PORT` → `8080` | 监听端口 |
 | `HTTP_PROXY` / `HTTPS_PROXY` | 否 | 无 | 容器构建时通过 apt/npm 代理 |
 | `TZ` | 否 | `Asia/Shanghai` | 容器时区；runtime 镜像安装 `tzdata`，并通过 `/etc/localtime` 挂载保证后端 `localtime`/`strftime` 输出一致 |
