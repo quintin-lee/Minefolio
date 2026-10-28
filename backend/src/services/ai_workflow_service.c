@@ -55,6 +55,12 @@ ai_workflow_run_handler(csilk_ctx_t* c)
     }
 
     ai_wf_context_t* wf_ctx = ai_wf_context_create(pool, user_id, session_id, params);
+    /* 用户提示：前端传递展示文本（默认为工作流标题），用于落库到会话历史 */
+    const char* user_content = csilk_json_get_string(body, "content");
+    snprintf(wf_ctx->user_prompt,
+             sizeof(wf_ctx->user_prompt),
+             "%s",
+             (user_content && user_content[0]) ? user_content : "🪄 启动工作流");
     ai_workflow_execute_stream(c, graph, wf_ctx);
 
     ai_wf_context_free(wf_ctx);

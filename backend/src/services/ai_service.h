@@ -51,10 +51,12 @@ ai_config_t* ai_get_config(void);
  * @param session_id           对话会话 ID
  * @param workflow_title       工作流标题（如 "资产配置与流动性分析"）
  * @param structured_data_json 提取的结构化财务数据 JSON 字符串
+ * @param user_prompt          用户发起工作流的展示提示（落库 ai_messages user 行；可 NULL）
  * @return int                 0 成功启动流式推送；-1 出错
  */
 int ai_service_stream_report(csilk_ctx_t* c,
                              int64_t      user_id,
                              int64_t      session_id,
                              const char*  workflow_title,
-                             const char*  structured_data_json);
+                             const char*  structured_data_json,
+                             const char*  user_prompt);

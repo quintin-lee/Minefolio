@@ -26,6 +26,22 @@ main(void)
     const char* secret_b = "test_ai_secret_key_beta_diff";
     ai_confirmation_set_secret(secret_a);
 
+    /* 测试用户提权为 ADMIN：本套件验证的是风控/确认逻辑本身，而非角色权限。
+       默认角色降级（STANDARD）后 SENSITIVE 工具会被授权层先拦，
+       需要显式授 ADMIN 才能触达金额/频次断言。 */
+    ai_permission_set_user_role(1001, AI_USER_ROLE_ADMIN);
+    ai_permission_set_user_role(999, AI_USER_ROLE_ADMIN);
+
+    /* 默认角色降级回归：未提权用户（非实例管理员）对 SENSITIVE 工具被授权层拦截 */
+    {
+        ai_policy_decision_t* dec_std =
+            ai_policy_evaluate(7777, 1, "delete_asset", NULL, AI_RISK_NO_OVERRIDE);
+        assert(dec_std != NULL && dec_std->allowed == false);
+        assert(strstr(dec_std->reason, "Authorization denied") != NULL);
+        printf("  [ok] default STANDARD blocks SENSITIVE tool\n");
+        ai_policy_decision_free(dec_std);
+    }
+
     /* ------------------------------------------------------------- */
     /* Test 1: Constant-Time Comparison Verification                 */
     /* ------------------------------------------------------------- */

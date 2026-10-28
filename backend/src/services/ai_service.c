@@ -1027,7 +1027,8 @@ ai_service_stream_report(csilk_ctx_t* c,
                          int64_t      user_id,
                          int64_t      session_id,
                          const char*  workflow_title,
-                         const char*  structured_data_json)
+                         const char*  structured_data_json,
+                         const char*  user_prompt)
 {
     if (!g_config.default_provider[0] || !g_config.default_model[0]) {
         return 0;
@@ -1067,9 +1068,9 @@ ai_service_stream_report(csilk_ctx_t* c,
                  tm_buf.tm_min,
                  tm_buf.tm_sec);
     }
-    char user_prompt[16384];
-    snprintf(user_prompt,
-             sizeof(user_prompt),
+    char llm_prompt[16384];
+    snprintf(llm_prompt,
+             sizeof(llm_prompt),
              "【当前工作流】：%s\n"
              "【当前真实时间】：%s（服务器本地真实时间）\n\n"
              "【系统从数据库提取的用户真实财务上下文 JSON】：\n"
@@ -1095,10 +1096,23 @@ ai_service_stream_report(csilk_ctx_t* c,
     csilk_json_array_append(input_arr, sys_msg);
     csilk_json_t* usr_msg = csilk_json_object();
     csilk_json_add_string(usr_msg, "role", "user");
-    csilk_json_add_string(usr_msg, "content", user_prompt);
+    csilk_json_add_string(usr_msg, "content", llm_prompt);
     csilk_json_array_append(input_arr, usr_msg);
     ai_trace_serialize_messages(&trace, input_arr);
     csilk_json_free(input_arr);
+
+    /* 工作流用户提示落库（与 chat 路径对齐）：刷新后会话历史完整可还原。
+       优先使用调用方传入的用户展示提示（真实发起指令） */
+    csilk_db_pool_t* pool = db_get_pool();
+    if (pool && session_id > 0 && user_prompt && user_prompt[0]) {
+        int64_t umid = mf_ai_message_insert(
+            pool, session_id, "user", user_prompt, "workflow-report", NULL, NULL);
+        if (umid > 0) {
+            char mid_buf[48];
+            snprintf(mid_buf, sizeof(mid_buf), "{\"id\":\"%lld\"}", (long long)umid);
+            csilk_sse_send(c, "user_message_id", mid_buf);
+        }
+    }
 
     /* 客户端断开协作取消标志：SSE 写失败即置位，Runtime 停止后续轮次 */
     volatile bool client_gone = false;
@@ -1135,7 +1149,7 @@ ai_service_stream_report(csilk_ctx_t* c,
         rctx.enable_thinking = true;
     }
     csilk_json_free(rctx.messages);
-    rctx.messages = ai_memory_build_messages(sys_prompt, NULL, user_prompt, 1, NULL);
+    rctx.messages = ai_memory_build_messages(sys_prompt, NULL, llm_prompt, 1, NULL);
     rctx.trace = &trace;
     rctx.cancel_token = &client_gone;
 

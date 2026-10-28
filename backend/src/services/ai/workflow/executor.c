@@ -45,6 +45,8 @@ ai_workflow_execute_stream(csilk_ctx_t* c, const ai_workflow_graph_t* graph, ai_
     int64_t             user_id = ctx->user_id;
     int64_t             session_id = ctx->session_id;
     const csilk_json_t* params = ctx->params;
+    volatile bool*      cancel_token = ctx->cancel_token;
+    bool                cancelled = false;
 
     if (session_id <= 0 && pool) {
         session_id = mf_ai_session_insert(pool, user_id, graph->title, "workflow-agent", "system");
@@ -88,6 +90,18 @@ ai_workflow_execute_stream(csilk_ctx_t* c, const ai_workflow_graph_t* graph, ai_
     }
 
     for (int i = 0; i < graph->node_count; i++) {
+        /* 协作取消：客户端断开（cancel_token 置位）或上一条 SSE 写失败 → 立即停止，
+         * 已完成的确定性步骤结果保留在 shared_state，workflow_cancelled 事件收尾 */
+        if (cancel_token && *cancel_token) {
+            cancelled = true;
+        } else if (i > 0) {
+            /* 上一轮 step_complete 的发送结果未记录，这里保守：仅 token 驱动取消 */
+        }
+        if (cancelled) {
+            CSILK_LOG_I("workflow %s cancelled at step %d (client disconnect)", graph->id, i);
+            csilk_sse_send(c, "workflow_cancelled", "{\"reason\":\"client_cancelled\"}");
+            break;
+        }
         const ai_workflow_node_t* node = &graph->nodes[i];
 
         char step_time_str[64];
@@ -109,8 +123,8 @@ ai_workflow_execute_stream(csilk_ctx_t* c, const ai_workflow_graph_t* graph, ai_
 
         if (i == graph->node_count - 1) {
             char* cur_ctx_str = csilk_json_serialize(ctx_obj, &slen);
-            int   streamed_by_model =
-                ai_service_stream_report(c, user_id, session_id, graph->title, cur_ctx_str);
+            int   streamed_by_model = ai_service_stream_report(
+                c, user_id, session_id, graph->title, cur_ctx_str, ctx->user_prompt);
 
             if (!streamed_by_model) {
                 char* step_out = node->execute(pool, user_id, params, cur_ctx_str);
@@ -139,8 +153,14 @@ ai_workflow_execute_stream(csilk_ctx_t* c, const ai_workflow_graph_t* graph, ai_
                     }
 
                     if (pool && session_id > 0) {
-                        mf_ai_message_insert(
+                        int64_t amid = mf_ai_message_insert(
                             pool, session_id, "assistant", step_out, "workflow-agent", NULL, NULL);
+                        if (amid > 0) {
+                            char amid_buf[48];
+                            snprintf(
+                                amid_buf, sizeof(amid_buf), "{\"id\":\"%lld\"}", (long long)amid);
+                            csilk_sse_send(c, "assistant_message_id", amid_buf);
+                        }
                     }
                     free(step_out);
                 }

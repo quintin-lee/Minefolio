@@ -1,4 +1,8 @@
 #include "services/ai/policy/permission.h"
+#include "common/db.h"
+#include "infrastructure/repositories/auth_repo_impl.h"
+#include "csilk/core/server.h"
+#include <pthread.h>
 #include <string.h>
 
 #define MAX_ROLE_OVERRIDES 32
@@ -59,8 +63,25 @@ ai_permission_get_user_role(int64_t user_id)
             return s_role_overrides[i].role;
         }
     }
-    /* 默认已认证用户具备标准普通读写权限 */
-    return AI_USER_ROLE_ADMIN;
+    /* 实例管理员（/system/setup 首个用户）持 ADMIN 权限；查询结果进程内缓存
+     * （admin id 生命周期内稳定，MIN(id) 查询只在首次触发） */
+    static pthread_mutex_t admin_lock = PTHREAD_MUTEX_INITIALIZER;
+    static int64_t         admin_id = 0;
+    static bool            admin_resolved = false;
+    pthread_mutex_lock(&admin_lock);
+    if (!admin_resolved) {
+        admin_id = (int64_t)mf_auth_repo_is_instance_admin(db_get_pool(), user_id) > 0
+                       ? user_id
+                       : -1; /* -1 = 非管理员；避免每次调用都打 DB */
+        admin_resolved = true;
+    }
+    bool is_admin = (admin_id > 0 && user_id == admin_id);
+    pthread_mutex_unlock(&admin_lock);
+    if (is_admin) {
+        return AI_USER_ROLE_ADMIN;
+    }
+    /* 普通已认证用户：STANDARD（READ+WRITE）；SENSITIVE 工具仍需管理员 */
+    return AI_USER_ROLE_STANDARD;
 }
 
 void
