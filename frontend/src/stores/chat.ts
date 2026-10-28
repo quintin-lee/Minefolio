@@ -816,6 +816,12 @@ export const useChatStore = defineStore('chat', () => {
             curStep.status = 'running'
             if (chunk.title) curStep.title = chunk.title
           }
+        } else if (chunk.type === 'step_progress' && typeof chunk.progress === 'number') {
+          wfState.progress = chunk.progress
+          const pidx = typeof chunk.step_index === 'number' ? chunk.step_index : -1
+          if (pidx >= 0 && wfState.steps[pidx]) {
+            wfState.steps[pidx].status = 'running'
+          }
         } else if (chunk.type === 'step_complete' && typeof chunk.step_index === 'number') {
           const idx = chunk.step_index
           const curStep = wfState.steps[idx]
@@ -827,6 +833,7 @@ export const useChatStore = defineStore('chat', () => {
           writer.push(chunk.content)
         } else if (chunk.type === 'workflow_complete') {
           wfState.status = 'completed'
+          wfState.progress = 1
           wfState.steps.forEach(st => {
             if (st.status !== 'completed' && st.status !== 'error') {
               st.status = 'completed'
@@ -996,6 +1003,12 @@ export const useChatStore = defineStore('chat', () => {
             curStep.status = 'running'
             if (chunk.title) curStep.title = chunk.title
           }
+        } else if (chunk.type === 'step_progress' && typeof chunk.progress === 'number') {
+          wfState.progress = chunk.progress
+          const pidx = typeof chunk.step_index === 'number' ? chunk.step_index : -1
+          if (pidx >= 0 && wfState.steps[pidx]) {
+            wfState.steps[pidx].status = 'running'
+          }
         } else if (chunk.type === 'step_complete' && typeof chunk.step_index === 'number') {
           const idx = chunk.step_index
           const curStep = wfState.steps[idx]
@@ -1007,6 +1020,7 @@ export const useChatStore = defineStore('chat', () => {
           writer.push(chunk.content)
         } else if (chunk.type === 'workflow_complete') {
           wfState.status = 'completed'
+          wfState.progress = 1
           wfState.steps.forEach(st => {
             if (st.status !== 'completed' && st.status !== 'error') {
               st.status = 'completed'

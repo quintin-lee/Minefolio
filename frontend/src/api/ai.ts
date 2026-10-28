@@ -493,6 +493,8 @@ export interface WorkflowStreamChunk {
   step_index?: number
   /** 当前步骤标识 ID */
   step_id?: string
+  /** 整体执行进度 (0~1，step_progress 事件携带) */
+  progress?: number
   /** 步骤或工作流状态 ('pending' | 'running' | 'completed' | 'error') */
   status?: string
   /** 步骤完成后的执行摘要 */
@@ -564,6 +566,7 @@ export async function* runWorkflowStream(
                 total_steps: typeof parsed.total_steps === 'number' ? parsed.total_steps : undefined,
                 step_index: typeof parsed.step_index === 'number' ? parsed.step_index : undefined,
                 step_id: typeof parsed.step_id === 'string' ? parsed.step_id : undefined,
+                progress: typeof parsed.progress === 'number' ? parsed.progress : undefined,
                 status: typeof parsed.status === 'string' ? parsed.status : undefined,
                 summary: typeof parsed.summary === 'string' ? parsed.summary : undefined,
                 content: typeof parsed.content === 'string' ? parsed.content : undefined,

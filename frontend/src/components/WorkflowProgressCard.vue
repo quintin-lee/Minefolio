@@ -12,6 +12,7 @@
             <span v-if="workflowData.status === 'running'" class="status-tag running">
               <span class="pulse-dot"></span>
               执行中 ({{ completedCount }}/{{ workflowData.total_steps }})
+              <span v-if="workflowData.progress !== undefined" class="progress-text">· {{ Math.round(workflowData.progress * 100) }}%</span>
               <span v-if="formattedElapsed" class="elapsed-text">· 已耗时 {{ formattedElapsed }}</span>
               <span v-if="etaText" class="eta-text">· 预计剩余 {{ etaText }}</span>
             </span>
@@ -467,7 +468,7 @@ onUnmounted(() => {
   color: var(--mf-danger);
 }
 
-.eta-text, .elapsed-text {
+.eta-text, .elapsed-text, .progress-text {
   color: var(--mf-text-muted);
   font-size: 10.5px;
   margin-left: 2px;

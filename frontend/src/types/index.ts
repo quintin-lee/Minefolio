@@ -314,6 +314,8 @@ export interface WorkflowRunState {
   total_steps: number
   status: 'running' | 'completed' | 'error'
   steps: WorkflowStepState[]
+  /** 整体执行进度 (0~1)，由 step_progress 事件更新 */
+  progress?: number
 }
 
 export interface WorkflowConfigState {

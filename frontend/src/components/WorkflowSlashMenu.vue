@@ -33,6 +33,7 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import { Icon } from '@iconify/vue'
 import { useChatStore } from '@/stores/chat'
+import { isDirectRunWorkflow } from '@/utils/workflow-meta'
 import type { WorkflowDef } from '@/types'
 
 const props = defineProps<{
@@ -49,9 +50,8 @@ const chatStore = useChatStore()
 const selectedIndex = ref(0)
 const listRef = ref<HTMLElement | null>(null)
 
-const DIRECT_RUN_IDS = new Set(['wf_portfolio_rebalance', 'wf_goal_tracker', 'wf_bill_calendar', 'wf_health_score'])
 function isDirect(id: string) {
-  return DIRECT_RUN_IDS.has(id)
+  return isDirectRunWorkflow(id)
 }
 
 const filteredWorkflows = computed(() => {

@@ -93,15 +93,15 @@
 import { ref, computed, onMounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import { useChatStore } from '@/stores/chat'
+import { isDirectRunWorkflow } from '@/utils/workflow-meta'
 import type { WorkflowDef } from '@/types'
 
 const chatStore = useChatStore()
 const drawerVisible = ref(false)
 const searchQuery = ref('')
 
-const DIRECT_RUN_IDS = new Set(['wf_portfolio_rebalance', 'wf_goal_tracker', 'wf_bill_calendar', 'wf_health_score'])
 function isDirect(id: string) {
-  return DIRECT_RUN_IDS.has(id)
+  return isDirectRunWorkflow(id)
 }
 
 function isPinned(id: string) {
