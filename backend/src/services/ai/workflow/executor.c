@@ -223,6 +223,6 @@ ai_workflow_execute_stream(csilk_ctx_t* c, const ai_workflow_graph_t* graph, ai_
     free(str_cmp);
 
     csilk_json_free(ctx_obj);
-    csilk_sse_close(c);
+    /* 不主动关闭连接：与 ai_chat_handler 一致，避免 keep-alive 复用路径上的 uv_close 断言 */
     return 0;
 }

@@ -749,7 +749,8 @@ ai_chat_handler(csilk_ctx_t* c)
     /* 委托 AI Runtime 执行 Agent 循环 */
     ai_runtime_execute_stream(pool, &rctx, &cbs, &sse_bridge);
 
-    csilk_sse_close(c);
+    /* 不主动关闭连接：csilk 在写完成后按 keep-alive 语义回收/复用连接；
+       此处 csilk_sse_close 会在 keep-alive 复用路径上触发 uv_close 断言（新 csilk 生命周期修复后） */
     if (arena) {
         csilk_arena_free(arena);
     }
