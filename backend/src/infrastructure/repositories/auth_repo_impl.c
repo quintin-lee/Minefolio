@@ -261,10 +261,10 @@ mf_auth_repo_is_initialized(void* pool)
     return mf_auth_repo_count(pool) > 0;
 }
 
-int
-mf_auth_repo_is_instance_admin(void* pool, int64_t user_id)
+int64_t
+mf_auth_repo_get_instance_admin_id(void* pool)
 {
-    if (!pool || user_id <= 0) {
+    if (!pool) {
         return 0;
     }
     /* 实例管理员 = 最早注册的账号（/system/setup 创建的首个用户；无删除用户路径） */
@@ -277,6 +277,16 @@ mf_auth_repo_is_instance_admin(void* pool, int64_t user_id)
     if (res) {
         csilk_json_free(res);
     }
+    return admin_id;
+}
+
+int
+mf_auth_repo_is_instance_admin(void* pool, int64_t user_id)
+{
+    if (!pool || user_id <= 0) {
+        return 0;
+    }
+    int64_t admin_id = mf_auth_repo_get_instance_admin_id(pool);
     return admin_id > 0 && user_id == admin_id;
 }
 
