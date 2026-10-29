@@ -10,7 +10,7 @@
 #include "common/db.h"
 #include "common/jwt.h"
 #include "config/secret.h"
-#include "csilk/core/crypto.h"
+#include "csilk/crypto/crypto.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>

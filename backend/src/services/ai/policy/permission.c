@@ -1,7 +1,7 @@
 #include "services/ai/policy/permission.h"
 #include "common/db.h"
 #include "infrastructure/repositories/auth_repo_impl.h"
-#include "csilk/core/server.h"
+#include "csilk/core/server/server.h"
 #include <pthread.h>
 #include <string.h>
 

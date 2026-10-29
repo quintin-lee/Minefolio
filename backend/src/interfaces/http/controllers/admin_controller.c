@@ -16,9 +16,9 @@
 #include "application/category/usecases.h"
 #include "application/account/usecases.h"
 #include "csilk/csilk.h"
-#include "csilk/core/bcrypt.h"
-#include "csilk/core/codec.h"
-#include "csilk/core/crypto_dispatch.h"
+#include "csilk/crypto/bcrypt.h"
+#include "csilk/core/primitives/codec.h"
+#include "csilk/crypto/crypto_dispatch.h"
 #include "csilk/drivers/cipher.h"
 #include <stdlib.h>
 #include <stdio.h>

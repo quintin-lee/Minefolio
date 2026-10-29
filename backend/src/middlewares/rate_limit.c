@@ -9,7 +9,7 @@
 #include "middlewares/rate_limit.h"
 #include "common/response.h"
 #include "common/ctx.h"
-#include "csilk/core/response.h"
+#include "csilk/core/ctx/response.h"
 #include <pthread.h>
 #include <string.h>
 #include <time.h>

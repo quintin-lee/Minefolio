@@ -11,7 +11,7 @@
  */
 
 #include "csilk/csilk.h"
-#include "csilk/core/response.h"
+#include "csilk/core/ctx/response.h"
 #include <errno.h>
 #include <stdint.h>
 #include <stdlib.h>

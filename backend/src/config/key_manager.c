@@ -7,9 +7,9 @@
  */
 
 #include "common/response.h"
-#include "csilk/core/crypto_dispatch.h"
+#include "csilk/crypto/crypto_dispatch.h"
 #include "csilk/drivers/cipher.h"
-#include "csilk/core/codec.h"
+#include "csilk/core/primitives/codec.h"
 #include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <openssl/bio.h>

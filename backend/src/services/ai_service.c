@@ -13,7 +13,7 @@
 #include "csilk/protocols/sse.h"
 #include "config/key_manager.h"
 #include "config/secret.h"
-#include "csilk/core/server.h"
+#include "csilk/core/server/server.h"
 #include "services/ai/runtime/fast_json.h"
 #include "services/ai/tools/mcp/mcp_stdio_pool.h"
 #include <curl/curl.h>

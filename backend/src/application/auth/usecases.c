@@ -13,9 +13,9 @@
 #include "csilk/core/totp.h"
 #include "common/db.h"
 #include "csilk/csilk.h"
-#include "csilk/core/bcrypt.h"
-#include "csilk/core/codec.h"
-#include "csilk/core/crypto_dispatch.h"
+#include "csilk/crypto/bcrypt.h"
+#include "csilk/core/primitives/codec.h"
+#include "csilk/crypto/crypto_dispatch.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

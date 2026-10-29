@@ -16,7 +16,7 @@ FetchContent_Declare(
     csilk
     SOURCE_DIR     "${CMAKE_CURRENT_SOURCE_DIR}/../deps/csilk"
     GIT_REPOSITORY https://github.com/quintin-lee/csilk.git
-    GIT_TAG        csilk-minefolio-pin
+    GIT_TAG        master
 )
 
 FetchContent_MakeAvailable(csilk)

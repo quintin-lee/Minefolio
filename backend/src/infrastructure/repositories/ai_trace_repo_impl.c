@@ -1,5 +1,5 @@
 #include "infrastructure/repositories/ai_trace_repo_impl.h"
-#include "csilk/core/server.h"
+#include "csilk/core/server/server.h"
 #include "common/db.h"
 #include <stdio.h>
 #include <string.h>

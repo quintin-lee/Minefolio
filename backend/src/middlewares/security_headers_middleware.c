@@ -7,7 +7,7 @@
  */
 
 #include "middlewares/security_headers_middleware.h"
-#include "csilk/core/response.h"
+#include "csilk/core/ctx/response.h"
 
 /**
  * @brief 设置全局 HTTP 基础安全响应头

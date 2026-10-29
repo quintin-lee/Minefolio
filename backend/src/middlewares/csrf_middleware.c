@@ -6,7 +6,7 @@
  */
 
 #include "middlewares/csrf_middleware.h"
-#include "csilk/core/response.h"
+#include "csilk/core/ctx/response.h"
 #include <string.h>
 #include <stdio.h>
 
