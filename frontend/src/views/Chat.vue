@@ -192,7 +192,18 @@
 
         <!-- Messages stream container -->
         <div class="messages-container">
-          <div class="messages" ref="messagesRef" v-loading="loadingMessages" @scroll.passive="handleScroll" role="log" aria-live="polite" aria-label="对话消息">
+          <div
+            class="messages"
+            ref="messagesRef"
+            v-loading="loadingMessages"
+            @scroll.passive="handleScroll"
+            @wheel.passive="handleWheel"
+            @touchstart.passive="handleTouchStart"
+            @touchmove.passive="handleTouchMove"
+            role="log"
+            aria-live="polite"
+            aria-label="对话消息"
+          >
             <!-- Load more trigger (invisible sentinel at top) -->
             <div ref="loadMoreTrigger" class="load-more-sentinel"></div>
             <div v-if="chat.loadingMoreMessages" class="load-more-spinner">
@@ -206,9 +217,10 @@
               <div
                 v-for="(msg, idx) in chat.messages"
                 :key="msg.id"
+                :ref="el => { if (idx === chat.messages.length - 1) onLastMessageRef(el as HTMLElement | null) }"
                 v-memo="[msg.content, msg.thinking_content || '', msg.role, chat.isStreaming && idx === chat.messages.length - 1 ? 1 : 0, msg.workflowData?.status || '', msg.tool_calls?.length || 0, msg.tool_calls?.[msg.tool_calls.length - 1]?.result?.length || 0, msg.workflowConfig ? 1 : 0, msg.error || '', msg.usage ? JSON.stringify(msg.usage) : '']"
                 class="message-row"
-                :class="msg.role"
+                :class="[msg.role, { 'streaming-active-row': chat.isStreaming && idx === chat.messages.length - 1 }]"
               >
                 <div class="message-avatar">
                   <Icon :icon="msg.role === 'user' ? 'ph:user-bold' : 'ph:robot-bold'" />
@@ -289,12 +301,14 @@
           <button
             v-show="chat.messages.length > 0 && showScrollBottomBtn"
             class="scroll-bottom-btn"
+            :class="{ 'has-new-stream': chat.isStreaming }"
             ref="scrollBtnRef"
             title="回到底部"
             @click="forceScrollToBottom"
           >
+            <span v-if="chat.isStreaming" class="btn-streaming-dot"></span>
             <Icon icon="ph:arrow-down-bold" />
-            <span>回到底部</span>
+            <span>{{ chat.isStreaming ? '有新内容 · 回到底部' : '回到底部' }}</span>
           </button>
         </div>
 
@@ -709,7 +723,69 @@ const selectedModelKey = computed({
 const autoStickToBottom = ref(true)
 const showScrollBottomBtn = ref(false)
 let scrollTicking = false
+let scrollRafId: number | null = null
+let isProgrammaticScroll = false
+let lastMsgEl: HTMLElement | null = null
+let lastMsgResizeObserver: ResizeObserver | null = null
+let containerResizeObserver: ResizeObserver | null = null
 
+/**
+ * 滚动到底部
+ * @param smooth 是否平滑滚动。流式输出期间必须为 false (直达最底端)，
+ * 防止高频增量 token 与 smooth 滚动动画冲突积压引发的画面掉帧与脱节
+ */
+function scrollToBottom(smooth = false) {
+  const el = messagesRef.value
+  if (!el || !autoStickToBottom.value) return
+  if (scrollRafId !== null) return
+
+  scrollRafId = requestAnimationFrame(() => {
+    scrollRafId = null
+    const targetEl = messagesRef.value
+    if (!targetEl || !autoStickToBottom.value) return
+
+    isProgrammaticScroll = true
+    if (smooth && typeof targetEl.scrollTo === 'function') {
+      targetEl.scrollTo({ top: targetEl.scrollHeight, behavior: 'smooth' })
+    } else {
+      targetEl.scrollTop = targetEl.scrollHeight
+    }
+
+    // 延后一帧复位程序化滚动标志，吸收由自身设置 scrollTop 触发的 scroll 事件，避免误触判定
+    requestAnimationFrame(() => {
+      isProgrammaticScroll = false
+    })
+  })
+}
+
+/**
+ * 用户主动点击“回到底部”悬浮按钮：平滑滑至底端并重新激活吸底跟随
+ */
+function forceScrollToBottom() {
+  const el = messagesRef.value
+  if (!el) return
+  autoStickToBottom.value = true
+  showScrollBottomBtn.value = false
+  if (scrollRafId !== null) {
+    cancelAnimationFrame(scrollRafId)
+    scrollRafId = null
+  }
+  isProgrammaticScroll = true
+  if (typeof el.scrollTo === 'function') {
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+  } else {
+    el.scrollTop = el.scrollHeight
+  }
+  setTimeout(() => {
+    isProgrammaticScroll = false
+  }, 400)
+}
+
+/**
+ * 滚动事件处理：
+ * 1. 距离底部 <= 40px 时：认定用户已浏览回底端，自动恢复 autoStickToBottom 并隐藏按钮
+ * 2. 距离底部 > 100px 时：展现“回到底部”悬浮按钮；若非程序化写入且非吸底锁定状态，暂停自动滚动
+ */
 function handleScroll() {
   if (scrollTicking) return
   scrollTicking = true
@@ -718,30 +794,74 @@ function handleScroll() {
     const el = messagesRef.value
     if (!el) return
     const distance = el.scrollHeight - el.scrollTop - el.clientHeight
-    autoStickToBottom.value = distance < 100
-    showScrollBottomBtn.value = distance > 150
+
+    if (distance <= 40) {
+      autoStickToBottom.value = true
+      showScrollBottomBtn.value = false
+      return
+    }
+
+    if (distance > 100) {
+      showScrollBottomBtn.value = true
+      if (!isProgrammaticScroll) {
+        autoStickToBottom.value = false
+      }
+    }
   })
 }
 
-function scrollToBottom(smooth = true) {
-  const el = messagesRef.value
-  if (!el) return
-  if (!autoStickToBottom.value) return
-  requestAnimationFrame(() => {
-    if (smooth && typeof el.scrollTo === 'function') el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
-    else el.scrollTop = el.scrollHeight
-  })
+/**
+ * 滚轮事件拦截：用户主动向上滚动时，立即解除吸底跟随并显示“回到底部”按钮
+ */
+function handleWheel(e: WheelEvent) {
+  if (e.deltaY < -2) {
+    autoStickToBottom.value = false
+    showScrollBottomBtn.value = true
+  }
 }
 
-function forceScrollToBottom() {
-  const el = messagesRef.value
-  if (!el) return
-  autoStickToBottom.value = true
-  showScrollBottomBtn.value = false
-  requestAnimationFrame(() => {
-    if (typeof el.scrollTo === 'function') el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
-    else el.scrollTop = el.scrollHeight
+/**
+ * 移动端触控事件拦截：手指下拉（内容向上滚动翻看历史）时，立即解除吸底
+ */
+let touchStartY = 0
+function handleTouchStart(e: TouchEvent) {
+  if (e.touches[0]) {
+    touchStartY = e.touches[0].clientY
+  }
+}
+function handleTouchMove(e: TouchEvent) {
+  if (!e.touches[0]) return
+  const deltaY = e.touches[0].clientY - touchStartY
+  if (deltaY > 12) {
+    autoStickToBottom.value = false
+    showScrollBottomBtn.value = true
+  }
+}
+
+/**
+ * 动态挂载并监听最新一条消息（流式生成行）的 ResizeObserver：
+ * 只要最新输出产生高度增长（打字机逐字输出、思考过程膨胀、工具卡片展开、代码/图表/表格渲染），
+ * 且处于跟随状态，立即将视口牢牢锁在最新内容最底端
+ */
+function setupLastMsgObserver(el: HTMLElement | null) {
+  if (lastMsgResizeObserver) {
+    lastMsgResizeObserver.disconnect()
+    lastMsgResizeObserver = null
+  }
+  lastMsgEl = el
+  if (!el || typeof ResizeObserver === 'undefined') return
+  lastMsgResizeObserver = new ResizeObserver(() => {
+    if (autoStickToBottom.value) {
+      scrollToBottom(false)
+    }
   })
+  lastMsgResizeObserver.observe(el)
+}
+
+function onLastMessageRef(el: HTMLElement | null) {
+  if (el !== lastMsgEl) {
+    setupLastMsgObserver(el)
+  }
 }
 
 let inputAreaObserver: ResizeObserver | null = null
@@ -750,7 +870,7 @@ let inputAreaObserver: ResizeObserver | null = null
 // 监听输入区域高度变化时，如果用户处于底部跟随状态，保持滚动锁定在最底端。
 function updateMessagesBottomPadding() {
   if (autoStickToBottom.value && messagesRef.value) {
-    scrollToBottom()
+    scrollToBottom(false)
   }
 }
 
@@ -764,25 +884,54 @@ function setupInputAreaObserver() {
   updateMessagesBottomPadding()
 }
 
-const lastMsgContent = computed(() => {
+/**
+ * 监听消息容器自身视口尺寸变化（窗口 resize、软键盘弹出/收起、侧边栏折叠/展开等）：
+ * 保持底部内容锁定在可视区域
+ */
+function setupContainerResizeObserver() {
+  containerResizeObserver?.disconnect()
+  containerResizeObserver = null
+  const el = messagesRef.value
+  if (!el || typeof ResizeObserver === 'undefined') return
+  containerResizeObserver = new ResizeObserver(() => {
+    if (autoStickToBottom.value) {
+      scrollToBottom(false)
+    }
+  })
+  containerResizeObserver.observe(el)
+}
+
+// 监听最后一条消息的全部流式动态字段：正文增量、思考推理链、工具调用状态、工作流步骤与进度、错误与统计
+const lastMsgStreamTrack = computed(() => {
   const msgs = chat.messages
-  return msgs.length > 0 ? msgs[msgs.length - 1]?.content : ''
+  if (msgs.length === 0) return ''
+  const m = msgs[msgs.length - 1]
+  if (!m) return ''
+  return [
+    m.id,
+    m.role,
+    m.content || '',
+    m.thinking_content || '',
+    m.tool_calls?.length || 0,
+    m.tool_calls?.[m.tool_calls.length - 1]?.result || '',
+    m.workflowData?.status || '',
+    m.workflowData?.progress || 0,
+    m.workflowData?.steps?.length || 0,
+    m.error || '',
+    m.usage ? 1 : 0,
+  ].join('|')
 })
 
-// 流式期间 content 每帧变化（打字机 tick），滚动合并到 RAF：一帧至多一次 scrollTop 赋值，
-// 且仅在底部跟随（autoStickToBottom）时执行，避免与用户惯性滚动打架
-let scrollRafId: number | null = null
-watch(lastMsgContent, () => {
-  if (!chat.isStreaming || !autoStickToBottom.value) return
-  if (scrollRafId !== null) return
-  scrollRafId = requestAnimationFrame(() => {
-    scrollRafId = null
-    const el = messagesRef.value
-    if (el && autoStickToBottom.value) el.scrollTop = el.scrollHeight
-  })
+watch(lastMsgStreamTrack, () => {
+  if (autoStickToBottom.value) {
+    scrollToBottom(false)
+  }
 })
+
 onUnmounted(() => {
   if (scrollRafId !== null) cancelAnimationFrame(scrollRafId)
+  if (lastMsgResizeObserver) { lastMsgResizeObserver.disconnect(); lastMsgResizeObserver = null }
+  if (containerResizeObserver) { containerResizeObserver.disconnect(); containerResizeObserver = null }
 })
 
 
@@ -930,12 +1079,13 @@ async function handleSend() {
   adjustTextareaHeight()
   autoStickToBottom.value = true
   showScrollBottomBtn.value = false
+  nextTick(() => scrollToBottom(false))
   try {
     await chat.sendMessage(text)
   } catch (err) {
     console.error('[chat] sendMessage failed', err)
   }
-  nextTick(() => scrollToBottom())
+  nextTick(() => scrollToBottom(false))
   fetchSessions()
 }
 
@@ -944,12 +1094,15 @@ async function handleRegenerate() {
   autoStickToBottom.value = true
   showScrollBottomBtn.value = false
   await chat.regenerateLastMessage()
-  nextTick(() => scrollToBottom())
+  nextTick(() => scrollToBottom(false))
 }
 
 function handleStop() {
   if (!chat.isStreaming) return
   chat.abortCurrentStream()
+  if (autoStickToBottom.value) {
+    nextTick(() => scrollToBottom(false))
+  }
 }
 
 function startEdit(idx: number, content: string) {
@@ -971,7 +1124,7 @@ async function confirmEdit(idx: number) {
   autoStickToBottom.value = true
   showScrollBottomBtn.value = false
   await chat.editAndResend(idx, text)
-  nextTick(() => scrollToBottom())
+  nextTick(() => scrollToBottom(false))
   fetchSessions()
 }
 
@@ -987,7 +1140,7 @@ async function handleRetryMessage(msgId: number) {
   else {
     const userMsg = chat.messages[userIdx]!
     await chat.editAndResend(userIdx, userMsg.content)
-    nextTick(() => scrollToBottom())
+    nextTick(() => scrollToBottom(false))
   }
 }
 
@@ -1012,7 +1165,7 @@ const lastMessageId = computed(() => {
 watch(lastMessageId, (id, prevId) => {
   if (id === null || id === prevId) return
   autoStickToBottom.value = true
-  nextTick(() => scrollToBottom())
+  nextTick(() => scrollToBottom(false))
 })
 
 watch(inputText, () => { persistDraft() })
@@ -1024,9 +1177,17 @@ watch(() => chat.currentSessionId, () => {
   nextTick(() => setupInfiniteScroll())
 })
 
-// 流式生成结束时，自动扫描助理最新输出并弹出展示
+// 流式生成结束时，自动扫描助理最新输出并弹出展示，同时稳固吸底
 watch(() => chat.isStreaming, (streaming, prevStreaming) => {
   if (!streaming && prevStreaming) {
+    if (autoStickToBottom.value) {
+      nextTick(() => {
+        scrollToBottom(false)
+        setTimeout(() => {
+          if (autoStickToBottom.value) scrollToBottom(false)
+        }, 80)
+      })
+    }
     const msgs = chat.messages
     if (msgs.length > 0) {
       const lastMsg = msgs[msgs.length - 1]
@@ -1080,9 +1241,10 @@ onMounted(async () => {
   if (!chat.currentSessionId) handleNewChat()
   loadDraft()
   nextTick(() => {
-    scrollToBottom()
+    scrollToBottom(false)
     setupInfiniteScroll()
     setupInputAreaObserver()
+    setupContainerResizeObserver()
     textareaRef.value?.focus()
   })
   window.addEventListener('keydown', onGlobalKeydown)
@@ -1986,9 +2148,41 @@ onUnmounted(() => {
   transform: translateX(-50%) translateY(-2px);
 }
 
+.scroll-bottom-btn.has-new-stream {
+  border-color: var(--mf-primary);
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.35);
+  animation: bounce-subtle 2s infinite ease-in-out;
+}
+
+.btn-streaming-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--mf-primary);
+  box-shadow: 0 0 8px var(--mf-primary);
+  animation: dot-pulse 1.2s infinite ease-in-out;
+  flex-shrink: 0;
+}
+
+@keyframes dot-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.3; transform: scale(1.3); }
+}
+
+@keyframes bounce-subtle {
+  0%, 100% { transform: translateX(-50%) translateY(0); }
+  50% { transform: translateX(-50%) translateY(-3px); }
+}
+
 .message-row {
   content-visibility: auto;
   contain-intrinsic-size: 0 120px;
+}
+
+.message-row.streaming-active-row,
+.message-row:last-child {
+  content-visibility: visible;
+  contain-intrinsic-size: auto;
 }
 
 .session-search-wrap {
