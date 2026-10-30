@@ -332,6 +332,13 @@ target_compile_options(test_mcp_stderr_capture PRIVATE -UNDEBUG)
 target_link_libraries(test_mcp_stderr_capture PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
 add_test(NAME test_mcp_stderr_capture COMMAND test_mcp_stderr_capture)
 
+add_executable(test_mcp_child_sanitation tests/unit/test_mcp_child_sanitation.c ${LIB_SOURCES})
+target_include_directories(test_mcp_child_sanitation PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_mcp_child_sanitation PRIVATE -UNDEBUG)
+target_link_libraries(test_mcp_child_sanitation PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_test(NAME test_mcp_child_sanitation COMMAND test_mcp_child_sanitation)
+
+
 
 
 

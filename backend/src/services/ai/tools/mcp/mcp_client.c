@@ -523,48 +523,65 @@ stdio_call(mf_mcp_client_t* c, const char* request_json, char* out_err, size_t e
         size_t envc = 0;
         char** envp = build_envp(s, &envc);
 
-        int in_pipe[2], out_pipe[2];
-        if (pipe(in_pipe) != 0 || pipe(out_pipe) != 0) {
+        int in_pipe[2] = {-1, -1};
+        int out_pipe[2] = {-1, -1};
+        int err_pipe[2] = {-1, -1};
+        if (pipe(in_pipe) != 0 || pipe(out_pipe) != 0 || pipe(err_pipe) != 0) {
+            if (in_pipe[0] >= 0) { close(in_pipe[0]); close(in_pipe[1]); }
+            if (out_pipe[0] >= 0) { close(out_pipe[0]); close(out_pipe[1]); }
+            if (err_pipe[0] >= 0) { close(err_pipe[0]); close(err_pipe[1]); }
+            for (size_t i = 0; i < argc; i++) free(argv[i]);
             free(argv);
-            if (envp) {
-                free_envp(envp, envc);
-            }
+            if (envp) free_envp(envp, envc);
             snprintf(out_err, err_sz, "pipe() failed: %s", strerror(errno));
             return NULL;
         }
+        fcntl(err_pipe[0], F_SETFL, O_NONBLOCK);
 
         pid_t pid = fork();
         if (pid < 0) {
-            close(in_pipe[0]);
-            close(in_pipe[1]);
-            close(out_pipe[0]);
-            close(out_pipe[1]);
+            close(in_pipe[0]);  close(in_pipe[1]);
+            close(out_pipe[0]); close(out_pipe[1]);
+            close(err_pipe[0]); close(err_pipe[1]);
+            for (size_t i = 0; i < argc; i++) free(argv[i]);
             free(argv);
-            if (envp) {
-                free_envp(envp, envc);
-            }
+            if (envp) free_envp(envp, envc);
             snprintf(out_err, err_sz, "fork failed: %s", strerror(errno));
             return NULL;
         }
         if (pid == 0) {
-            close(in_pipe[1]);
-            close(out_pipe[0]);
-            if (dup2(in_pipe[0], STDIN_FILENO) < 0) {
+            /* 子进程分支：
+               1. 先重定向标准输入/输出/错误描述符 */
+            if (dup2(in_pipe[0], STDIN_FILENO) < 0 ||
+                dup2(out_pipe[1], STDOUT_FILENO) < 0 ||
+                dup2(err_pipe[1], STDERR_FILENO) < 0) {
                 _exit(127);
             }
-            if (dup2(out_pipe[1], STDOUT_FILENO) < 0) {
-                _exit(127);
+            /* 2. 关闭原始管道端 */
+            close(in_pipe[0]);  close(in_pipe[1]);
+            close(out_pipe[0]); close(out_pipe[1]);
+            close(err_pipe[0]); close(err_pipe[1]);
+
+            /* 3. 清理所有大于 2 的继承描述符，实现严格隔离 */
+#if defined(__GLIBC__) && (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 34))
+            closefrom(3);
+#else
+            int max_fd = (int)sysconf(_SC_OPEN_MAX);
+            if (max_fd < 0 || max_fd > 4096) max_fd = 4096;
+            for (int fd = 3; fd < max_fd; fd++) {
+                close(fd);
             }
-            close(in_pipe[0]);
-            close(out_pipe[1]);
+#endif
             execve(argv[0], argv, envp ? (char* const*)envp : environ);
             _exit(127);
         }
         c->child_pid = pid;
         c->read_fd = out_pipe[0]; /* 父读子 stdout */
         c->write_fd = in_pipe[1]; /* 父写子 stdin */
+        c->err_fd = err_pipe[0];  /* 父读子 stderr */
         close(in_pipe[0]);
         close(out_pipe[1]);
+        close(err_pipe[1]);
         for (size_t i = 0; i < argc; i++) {
             free(argv[i]);
         }
