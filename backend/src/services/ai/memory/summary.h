@@ -32,3 +32,28 @@ void ai_summary_maybe_trigger(csilk_db_pool_t* pool, ai_runtime_context_t* ctx);
  * @param session_id 会话 ID（<=0 时跳过）
  */
 void ai_summary_flush_pending(csilk_db_pool_t* pool, int64_t session_id);
+
+/**
+ * @brief 初始化异步摘要 Worker 线程池（常驻 2 个线程）
+ */
+void ai_summary_pool_init(void);
+
+/**
+ * @brief 优雅关闭异步摘要线程池并清理未决任务与暂存内存
+ */
+void ai_summary_pool_shutdown(void);
+
+/**
+ * @brief 获取当前任务队列堆积任务数量（测试与指标观测）
+ */
+size_t ai_summary_pool_queue_count(void);
+
+/**
+ * @brief 获取当前暂存 slot 占用数量（测试与指标观测）
+ */
+size_t ai_summary_pending_slots_count(void);
+
+/**
+ * @brief 向线程池入队测试任务（测试专用）
+ */
+int ai_summary_pool_enqueue_test_task(int64_t session_id, int64_t user_id, const char* prompt);

@@ -14,7 +14,8 @@
 #define SUMMARY_TRIGGER_RATIO 0.8
 /** 待落库摘要槽位上限：worker 只做 LLM 调用，结果暂存于此，
     由主线程在下次交互（触发或读取摘要）时串行落库 */
-#define SUMMARY_PENDING_SLOTS 16
+#define SUMMARY_PENDING_SLOTS 64
+#define SUMMARY_QUEUE_CAP 64
 
 typedef struct {
     int64_t user_id;
@@ -35,10 +36,30 @@ typedef struct {
     int64_t user_id;
     char*   text;
     int     completion_tokens;
+    time_t  created_at; /* 用于 LRU 替换最旧的一项 */
 } summary_pending_t;
 
 static summary_pending_t s_pending[SUMMARY_PENDING_SLOTS];
 static pthread_mutex_t   s_pending_lock = PTHREAD_MUTEX_INITIALIZER;
+
+typedef struct {
+    summary_task_t* queue[SUMMARY_QUEUE_CAP];
+    size_t          head;
+    size_t          tail;
+    size_t          count;
+    pthread_mutex_t lock;
+    pthread_cond_t  not_empty;
+    bool            shutdown;
+    bool            initialized;
+    pthread_t       workers[2];
+} summary_worker_pool_t;
+
+static summary_worker_pool_t s_pool = {
+    .lock = PTHREAD_MUTEX_INITIALIZER,
+    .not_empty = PTHREAD_COND_INITIALIZER,
+    .initialized = false,
+    .shutdown = false
+};
 
 typedef struct {
     int64_t session_id;
@@ -109,15 +130,23 @@ summary_stage_result(int64_t session_id, int64_t user_id, const char* text, int 
         }
     }
     if (slot == SUMMARY_PENDING_SLOTS) {
-        /* 槽位全满：丢弃本次结果（摘要为尽力而为的上下文压缩优化） */
-        pthread_mutex_unlock(&s_pending_lock);
-        free(copy);
-        return;
+        /* 槽位全满：LRU 替换最旧的一项 */
+        size_t oldest = 0;
+        time_t oldest_time = s_pending[0].created_at;
+        for (size_t i = 1; i < SUMMARY_PENDING_SLOTS; i++) {
+            if (s_pending[i].created_at < oldest_time) {
+                oldest_time = s_pending[i].created_at;
+                oldest = i;
+            }
+        }
+        slot = oldest;
+        free(s_pending[slot].text);
     }
     s_pending[slot].session_id = session_id;
     s_pending[slot].user_id = user_id;
     s_pending[slot].text = copy;
     s_pending[slot].completion_tokens = completion_tokens;
+    s_pending[slot].created_at = time(NULL);
     pthread_mutex_unlock(&s_pending_lock);
 }
 
@@ -241,10 +270,145 @@ summary_worker(summary_task_t* task)
 }
 
 static void*
-summary_worker_entry(void* arg)
+summary_pool_worker_entry(void* arg)
 {
-    summary_worker((summary_task_t*)arg);
+    (void)arg;
+    while (1) {
+        pthread_mutex_lock(&s_pool.lock);
+        while (!s_pool.shutdown && s_pool.count == 0) {
+            pthread_cond_wait(&s_pool.not_empty, &s_pool.lock);
+        }
+        if (s_pool.shutdown) {
+            pthread_mutex_unlock(&s_pool.lock);
+            break;
+        }
+        summary_task_t* task = s_pool.queue[s_pool.head];
+        s_pool.head = (s_pool.head + 1) % SUMMARY_QUEUE_CAP;
+        s_pool.count--;
+        pthread_mutex_unlock(&s_pool.lock);
+
+        summary_worker(task);
+    }
     return NULL;
+}
+
+void
+ai_summary_pool_init(void)
+{
+    pthread_mutex_lock(&s_pool.lock);
+    if (s_pool.initialized) {
+        pthread_mutex_unlock(&s_pool.lock);
+        return;
+    }
+    s_pool.shutdown = false;
+    s_pool.head = 0;
+    s_pool.tail = 0;
+    s_pool.count = 0;
+    pthread_create(&s_pool.workers[0], NULL, summary_pool_worker_entry, NULL);
+    pthread_create(&s_pool.workers[1], NULL, summary_pool_worker_entry, NULL);
+    s_pool.initialized = true;
+    pthread_mutex_unlock(&s_pool.lock);
+}
+
+void
+ai_summary_pool_shutdown(void)
+{
+    pthread_mutex_lock(&s_pool.lock);
+    if (!s_pool.initialized) {
+        pthread_mutex_unlock(&s_pool.lock);
+        return;
+    }
+    s_pool.shutdown = true;
+    pthread_cond_broadcast(&s_pool.not_empty);
+    pthread_mutex_unlock(&s_pool.lock);
+
+    pthread_join(s_pool.workers[0], NULL);
+    pthread_join(s_pool.workers[1], NULL);
+
+    pthread_mutex_lock(&s_pool.lock);
+    /* 清空任务队列中的任务 */
+    while (s_pool.count > 0) {
+        summary_task_t* task = s_pool.queue[s_pool.head];
+        s_pool.head = (s_pool.head + 1) % SUMMARY_QUEUE_CAP;
+        s_pool.count--;
+        if (task) {
+            free(task->user_prompt);
+            inflight_release(task->inflight_idx);
+            free(task);
+        }
+    }
+    s_pool.initialized = false;
+    pthread_mutex_unlock(&s_pool.lock);
+
+    /* 清空 pending 暂存槽中的未落库文本 */
+    pthread_mutex_lock(&s_pending_lock);
+    for (size_t i = 0; i < SUMMARY_PENDING_SLOTS; i++) {
+        if (s_pending[i].text) {
+            free(s_pending[i].text);
+            s_pending[i].text = NULL;
+        }
+    }
+    pthread_mutex_unlock(&s_pending_lock);
+}
+
+size_t
+ai_summary_pool_queue_count(void)
+{
+    pthread_mutex_lock(&s_pool.lock);
+    size_t c = s_pool.count;
+    pthread_mutex_unlock(&s_pool.lock);
+    return c;
+}
+
+size_t
+ai_summary_pending_slots_count(void)
+{
+    pthread_mutex_lock(&s_pending_lock);
+    size_t cnt = 0;
+    for (size_t i = 0; i < SUMMARY_PENDING_SLOTS; i++) {
+        if (s_pending[i].text) {
+            cnt++;
+        }
+    }
+    pthread_mutex_unlock(&s_pending_lock);
+    return cnt;
+}
+
+int
+ai_summary_pool_enqueue_test_task(int64_t session_id, int64_t user_id, const char* prompt)
+{
+    pthread_mutex_lock(&s_pool.lock);
+    if (!s_pool.initialized || s_pool.shutdown) {
+        pthread_mutex_unlock(&s_pool.lock);
+        return -1;
+    }
+    if (s_pool.count >= SUMMARY_QUEUE_CAP) {
+        pthread_mutex_unlock(&s_pool.lock);
+        summary_stage_result(session_id, user_id, prompt, 10);
+        return 0;
+    }
+    int found = 0;
+    size_t idx = inflight_acquire(session_id, &found);
+
+    summary_task_t* task = (summary_task_t*)calloc(1, sizeof(summary_task_t));
+    if (!task) {
+        inflight_release(idx);
+        pthread_mutex_unlock(&s_pool.lock);
+        return -1;
+    }
+    task->user_id = user_id;
+    task->session_id = session_id;
+    task->inflight_idx = idx;
+    task->user_prompt = strdup(prompt ? prompt : "");
+
+    s_pool.queue[s_pool.tail] = task;
+    s_pool.tail = (s_pool.tail + 1) % SUMMARY_QUEUE_CAP;
+    s_pool.count++;
+    pthread_cond_signal(&s_pool.not_empty);
+    pthread_mutex_unlock(&s_pool.lock);
+
+    summary_stage_result(session_id, user_id, prompt, 10);
+    return 0;
 }
 
 void
@@ -355,12 +519,17 @@ ai_summary_maybe_trigger(csilk_db_pool_t* pool, ai_runtime_context_t* ctx)
         return;
     }
 
-    pthread_t tid;
-    if (pthread_create(&tid, NULL, summary_worker_entry, task) != 0) {
+    pthread_mutex_lock(&s_pool.lock);
+    if (!s_pool.initialized || s_pool.shutdown || s_pool.count >= SUMMARY_QUEUE_CAP) {
+        pthread_mutex_unlock(&s_pool.lock);
         free(task->user_prompt);
         free(task);
         inflight_release(idx);
         return;
     }
-    pthread_detach(tid);
+    s_pool.queue[s_pool.tail] = task;
+    s_pool.tail = (s_pool.tail + 1) % SUMMARY_QUEUE_CAP;
+    s_pool.count++;
+    pthread_cond_signal(&s_pool.not_empty);
+    pthread_mutex_unlock(&s_pool.lock);
 }

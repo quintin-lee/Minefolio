@@ -85,6 +85,7 @@ utf8_truncate(char* str, size_t max_chars, size_t max_bytes)
 void
 ai_init(csilk_db_pool_t* pool)
 {
+    ai_summary_pool_init();
     char* json = pool ? mf_ai_settings_repo_load(pool) : NULL;
     if (json) {
         int loaded = (ai_config_load_json(json, &g_config) == 0);
@@ -140,6 +141,7 @@ ai_init(csilk_db_pool_t* pool)
 void
 ai_shutdown(void)
 {
+    ai_summary_pool_shutdown();
     /* 先关 MCP stdio 子进程池（SIGTERM→SIGKILL），避免遗留孤儿进程 */
     int killed = mf_mcp_stdio_pool_shutdown();
     if (killed > 0) {

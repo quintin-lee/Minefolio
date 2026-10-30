@@ -350,6 +350,13 @@ target_compile_options(test_workflow_step_error PRIVATE -UNDEBUG)
 target_link_libraries(test_workflow_step_error PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
 add_test(NAME test_workflow_step_error COMMAND test_workflow_step_error)
 
+add_executable(test_summary_worker_pool tests/unit/test_summary_worker_pool.c ${LIB_SOURCES})
+target_include_directories(test_summary_worker_pool PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_summary_worker_pool PRIVATE -UNDEBUG)
+target_link_libraries(test_summary_worker_pool PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_test(NAME test_summary_worker_pool COMMAND test_summary_worker_pool)
+
+
 
 
 
