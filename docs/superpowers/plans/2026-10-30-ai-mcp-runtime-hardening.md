@@ -12,6 +12,13 @@
 
 ---
 
+## Working Directory & Command Execution Convention
+
+All build, test, and shell commands in this plan are executed from the repository root directory:
+`/data/home/quintin/workspace/source/c/Minefolio`
+
+---
+
 ## File Structure & Decomposition
 
 ```
@@ -28,7 +35,7 @@ backend/
 │   │   │   ├── workflow/
 │   │   │   │   └── executor.c             # Modify: step_out & parsed_out null checks, emit SSE error
 │   │   │   └── memory/
-│   │   │       ├── summary.h              # Modify: export pool lifecycle & test enqueue helpers
+│   │   │       ├── summary.h              # Modify: export pool lifecycle & queue metrics helpers
 │   │   │       └── summary.c              # Modify: 2-worker pthread pool, 64-slot LRU deduplication
 │   │   └── ai_service.c                   # Modify: call ai_summary_pool_init and ai_summary_pool_shutdown
 ├── tests/
@@ -38,7 +45,7 @@ backend/
 │       ├── test_mcp_stderr_capture.c      # Create: unit test for anti-deadlock non-blocking stderr drain
 │       ├── test_ai_parallel_tools.c       # Create: unit test for parallel dispatch vs sequential fallback
 │       ├── test_workflow_step_error.c     # Create: unit test for deterministic node error propagation
-│       └── test_summary_worker_pool.c     # Create: unit test for 2-worker pool & 20-task queueing
+│       └── test_summary_worker_pool.c     # Create: unit test for 2-worker pool, 20-task queueing & LRU
 └── CMakeLists.txt                         # Modify: register new test targets using ${LIB_SOURCES}
 ```
 
@@ -61,6 +68,7 @@ Create `backend/tests/unit/test_mcp_client_io.c`:
 ```c
 #include <assert.h>
 #include <pthread.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -88,7 +96,10 @@ static void* huge_stream_feeder(void* arg) {
 }
 
 int main(void) {
+    /* Ignore SIGPIPE so feeder does not kill test process when framer caps at 1MB */
+    signal(SIGPIPE, SIG_IGN);
     printf("Running test_mcp_client_io...\n");
+
     mf_mcp_server_t s = {
         .transport = MCP_TRANSPORT_STDIO,
         .timeout_ms = 2000
@@ -145,7 +156,7 @@ int main(void) {
     assert(strstr(resp_m2, "\"idx\":4") != NULL);
     free(resp_m2);
 
-    /* Close previous out_pipe before Test 4 to avoid leaking descriptors */
+    /* Close previous out_pipe ends before Test 4 to avoid descriptor leaks */
     close(out_pipe[1]);
     close(out_pipe[0]);
 
@@ -162,7 +173,9 @@ int main(void) {
     assert(resp3 == NULL);
     assert(strstr(err, "1MB limit") != NULL);
 
+    /* Cleanly close huge_pipe and set c->read_fd to -1 to avoid double-close in free */
     close(huge_pipe[0]);
+    c->read_fd = -1;
     close(in_pipe[0]);
     mf_mcp_client_free(c);
     printf("PASS: test_mcp_client_io completed successfully\n");
@@ -195,7 +208,7 @@ In `backend/src/services/ai/tools/mcp/mcp_client.c`:
 4. Initialize `c->last_error[0] = '\0'`.
 5. Implement chunked memory scan via `memchr(c->framer.buf + c->framer.head, '\n', ...)` and 4KB `read()` refills.
 6. In dual-FD polling: poll both `c->read_fd` and `c->err_fd` (when `>= 0`). On stderr read activity, call `drain_stderr_nonblocking()`. If `read()` on stderr returns 0, close `c->err_fd` and set to `-1` to eliminate `POLLHUP` busy-loops.
-7. On timeout (`prc == 0`) or child EOF (`r == 0`), drain any trailing stderr before returning. If `c->last_error[0] != '\0'`, format `snprintf(out_err, err_sz, "stdio child stderr: %s", c->last_error)`.
+7. On timeout (`prc == 0`) or child EOF (`r == 0`), drain any trailing stderr before returning. If `c->last_error[0] != '\0'`, copy `c->last_error` to `out_err` via `snprintf(out_err, err_sz, "%s", c->last_error)`.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -209,6 +222,7 @@ Create `backend/tests/unit/test_mcp_stderr_capture.c`:
 #include <assert.h>
 #include <fcntl.h>
 #include <pthread.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -223,11 +237,11 @@ typedef struct {
 static void* verbose_stderr_feeder(void* arg) {
     child_sim_t* sim = (child_sim_t*)arg;
     
-    /* 1. First write distinct error string */
+    /* 1. First write distinct diagnostic error string */
     const char* header = "stdio child stderr: Module Crashed on Import!\n";
     assert(write(sim->err_pipe_wr, header, strlen(header)) == (ssize_t)strlen(header));
 
-    /* 2. Write 80 KB padding to prove parent drains without deadlocking child */
+    /* 2. Write 80 KB padding to prove parent drains without deadlocking child on 64KB buffer */
     char chunk[4096];
     memset(chunk, 'E', sizeof(chunk));
     size_t total = 80 * 1024;
@@ -246,6 +260,7 @@ static void* verbose_stderr_feeder(void* arg) {
 }
 
 int main(void) {
+    signal(SIGPIPE, SIG_IGN);
     printf("Running test_mcp_stderr_capture...\n");
     mf_mcp_server_t s = {
         .transport = MCP_TRANSPORT_STDIO,
@@ -465,25 +480,43 @@ int main(void) {
     const char* mixed_batch[] = {"web_search", "get_assets"};
     assert(ai_parallel_batch_eligible(mixed_batch, 2) == false);
 
-    /* 3. Benchmark parallel execution of 2 calls */
-    struct timespec start, end;
-    clock_gettime(CLOCK_MONOTONIC, &start);
+    /* 3. Benchmark parallel execution of 2 stateless calls (both 200ms) */
+    struct timespec start_par, end_par;
+    clock_gettime(CLOCK_MONOTONIC, &start_par);
 
     csilk_json_t* a1 = csilk_json_object();
     csilk_json_t* a2 = csilk_json_object();
     char* r1 = NULL;
     char* r2 = NULL;
 
-    int rc = ai_tools_execute_parallel_batch("web_search", a1, "web_search", a2, &r1, &r2);
-    clock_gettime(CLOCK_MONOTONIC, &end);
-    long elapsed_ms = (end.tv_sec - start.tv_sec) * 1000 + (end.tv_nsec - start.tv_nsec) / 1000000;
+    int rc_par = ai_tools_execute_parallel_batch(1, 1, "web_search", a1, "web_search", a2, &r1, &r2);
+    clock_gettime(CLOCK_MONOTONIC, &end_par);
+    long elapsed_par_ms = (end_par.tv_sec - start_par.tv_sec) * 1000 + (end_par.tv_nsec - start_par.tv_nsec) / 1000000;
 
-    assert(rc == 0);
+    assert(rc_par == 0);
     assert(r1 != NULL && r2 != NULL);
-    assert(elapsed_ms < 350); /* Parallel execution takes ~200ms, well below serial 400ms */
+    assert(elapsed_par_ms < 350); /* Parallel execution takes ~200ms, well below serial 400ms */
 
     free(r1);
     free(r2);
+
+    /* 4. Benchmark fallback sequential execution of mixed batch (1 web_search + 1 get_assets) */
+    struct timespec start_seq, end_seq;
+    clock_gettime(CLOCK_MONOTONIC, &start_seq);
+
+    char* r_mix1 = NULL;
+    char* r_mix2 = NULL;
+    int rc_seq = ai_tools_execute_parallel_batch(1, 1, "web_search", a1, "get_assets", a2, &r_mix1, &r_mix2);
+    clock_gettime(CLOCK_MONOTONIC, &end_seq);
+    long elapsed_seq_ms = (end_seq.tv_sec - start_seq.tv_sec) * 1000 + (end_seq.tv_nsec - start_seq.tv_nsec) / 1000000;
+
+    assert(rc_seq == 0);
+    assert(r_mix1 != NULL);
+    /* Ineligible batch executes sequentially */
+    assert(elapsed_seq_ms >= 180);
+
+    free(r_mix1);
+    if (r_mix2) free(r_mix2);
     csilk_json_free(a1);
     csilk_json_free(a2);
 
@@ -513,14 +546,16 @@ Declare:
 bool is_stateless_network_tool(const char* name);
 bool ai_parallel_batch_eligible(const char* const* names, size_t count);
 int ai_tools_execute_parallel_batch(
+    int64_t user_id, int64_t session_id,
     const char* name1, const csilk_json_t* a1,
     const char* name2, const csilk_json_t* a2,
     char** out1, char** out2);
 ```
 
 In `backend/src/services/ai/runtime/loop.c`:
-1. Implement `is_stateless_network_tool()` and `ai_parallel_batch_eligible()`.
-2. Define `ai_parallel_task_t`:
+1. Implement `is_stateless_network_tool(name)` checking `web_search` and `fetch_webpage`.
+2. Implement `ai_parallel_batch_eligible(names, count)` checking all items are stateless network tools and count <= 8.
+3. Define `ai_parallel_task_t`:
    ```c
    typedef struct {
        size_t               call_idx;
@@ -537,13 +572,16 @@ In `backend/src/services/ai/runtime/loop.c`:
        bool                 success;
    } ai_parallel_task_t;
    ```
-3. Implement `ai_parallel_tool_worker()` and `ai_tools_execute_parallel_batch()`.
-4. In `ai_runtime_execute_stream()`, when `n_calls > 1 && n_calls <= 8` and batch is eligible:
-   - Main thread pre-evaluation: populate task, evaluate policy (`AI_RISK_NO_OVERRIDE`), emit `cbs->on_tool_call`, check/record `seen_hashes` with bounds guard `seen_count < LOOP_DUP_CALL_SLOTS`, free `ai_policy_decision_free(decision)`.
+4. Implement `ai_parallel_tool_worker()`: passes `NULL` for pool, valid `user_id` and `session_id`, sets `task->executed = true`.
+5. Implement `ai_tools_execute_parallel_batch()`:
+   - If batch is eligible: spawns 2 pthreads running `ai_parallel_tool_worker`, joins, and returns results.
+   - If batch is not eligible: executes sequentially via `ai_tools_execute_parsed_cancel()` and returns results.
+6. In `ai_runtime_execute_stream()`, when `n_calls > 1 && n_calls <= 8` and batch is eligible:
+   - Main thread pre-evaluation: populate task with owned copies (`tool_call_id`, `tool_name`, `raw_arguments`), parse `args`, evaluate policy (`AI_RISK_NO_OVERRIDE`), emit `cbs->on_tool_call`, check/record `seen_hashes` with bounds guard `seen_count < LOOP_DUP_CALL_SLOTS`, free `ai_policy_decision_free(decision)`.
    - Thread spawn: for tasks where `!tasks[t].result_str`, spawn `pthread_create(&threads[t], ...)`, setting `thread_spawned[t] = true`. If spawn fails, execute inline via `ai_parallel_tool_worker(&tasks[t])`.
    - Joining: join all `thread_spawned[t]`.
    - Post-gather: iterate `t = 0 .. n_calls - 1` in exact order, record limits if `tasks[t].executed`, add trace span, emit `cbs->on_tool_result`, append to `tc_record`, append `loop_clamp_tool_result()` to `msgs`, and free task heap memory.
-5. If batch not eligible: retain existing sequential loop.
+7. If batch not eligible: retain existing sequential execution loop.
 
 - [ ] **Step 4: Run test to verify pass**
 
@@ -695,7 +733,6 @@ Create `backend/tests/unit/test_summary_worker_pool.c`:
 #include <string.h>
 #include <unistd.h>
 #include "services/ai/memory/summary.h"
-#include "services/ai/runtime/context.h"
 
 int main(void) {
     printf("Running test_summary_worker_pool...\n");
@@ -705,18 +742,34 @@ int main(void) {
 
     /* 2. Enqueue 20 dummy test tasks and verify queue processing */
     for (int i = 1; i <= 20; i++) {
-        int rc = ai_summary_pool_enqueue_task(i, 100 + i, "User prompt for summary test");
+        int rc = ai_summary_pool_enqueue_test_task((int64_t)i, (int64_t)(100 + i), "Test prompt");
         assert(rc == 0);
     }
 
-    /* Allow background workers to consume */
-    usleep(150000);
+    /* Wait for 2 persistent workers to drain queue */
+    int retries = 50;
+    while (retries-- > 0 && ai_summary_pool_queue_count() > 0) {
+        usleep(10000); /* 10ms */
+    }
+    assert(ai_summary_pool_queue_count() == 0);
 
-    /* 3. Shutdown and verify queue draining and slot clearing */
+    /* 3. Verify LRU replacement when all 64 slots are full */
+    for (int i = 1; i <= 65; i++) {
+        ai_summary_pool_enqueue_test_task((int64_t)(1000 + i), (int64_t)i, "LRU test prompt");
+    }
+    retries = 50;
+    while (retries-- > 0 && ai_summary_pool_queue_count() > 0) {
+        usleep(10000);
+    }
+    /* Slots capped at 64 */
+    assert(ai_summary_pending_slots_count() == 64);
+
+    /* 4. Shutdown and verify queue draining and slot clearing */
     ai_summary_pool_shutdown();
+    assert(ai_summary_pending_slots_count() == 0);
     ai_summary_pool_shutdown(); /* duplicate no-op */
 
-    /* 4. Re-init to verify clean state reset */
+    /* 5. Re-init to verify clean state reset */
     ai_summary_pool_init();
     ai_summary_pool_shutdown();
 
@@ -744,7 +797,9 @@ Expected: FAIL with `implicit declaration of function 'ai_summary_pool_init'`
    ```c
    void ai_summary_pool_init(void);
    void ai_summary_pool_shutdown(void);
-   int ai_summary_pool_enqueue_task(int64_t session_id, int64_t user_id, const char* prompt);
+   size_t ai_summary_pool_queue_count(void);
+   size_t ai_summary_pending_slots_count(void);
+   int ai_summary_pool_enqueue_test_task(int64_t session_id, int64_t user_id, const char* prompt);
    ```
 2. In `summary.c`:
    - Expand `#define SUMMARY_PENDING_SLOTS 64`.
@@ -753,7 +808,8 @@ Expected: FAIL with `implicit declaration of function 'ai_summary_pool_init'`
    - Implement `summary_pool_worker_entry()`: on `s_pool.shutdown`, exit immediately without executing queued tasks.
    - Implement `ai_summary_pool_init()`: reset head, tail, count, shutdown=false, start workers, initialized=true.
    - Implement `ai_summary_pool_shutdown()`: set shutdown=true, broadcast not_empty, join workers, drain queue (free tasks and release inflight slots), and free pending slot strings.
-   - Implement `ai_summary_pool_enqueue_task()`: acquires lock, queues task or drops if full.
+   - Implement `ai_summary_pool_queue_count()` and `ai_summary_pending_slots_count()`.
+   - Implement `ai_summary_pool_enqueue_test_task()` acquiring inflight slot and enqueuing task.
    - Update `ai_summary_maybe_trigger()` to check `!s_pool.initialized || s_pool.shutdown`, enqueue non-blockingly, and drop task if queue full.
    - Update slot placement: check matching `session_id` to overwrite, then empty slot, then oldest `created_at`.
 3. In `ai_service.c`:
