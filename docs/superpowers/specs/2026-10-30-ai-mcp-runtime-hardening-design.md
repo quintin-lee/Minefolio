@@ -8,7 +8,7 @@ During recent in-depth architectural and code-level audits, four structural bott
 1. **MCP STDIO I/O Syscall Storm**: In `src/services/ai/tools/mcp/mcp_client.c`, `stdio_call` reads child process stdout byte-by-byte via `read(fd, cur, 1)` with a per-byte `poll()`. For large tool payloads (e.g. 100 KB JSON schemas), this causes over 100,000 user/kernel context switches, leading to CPU thrashing and elevated latency across `initialize`, `tools/list`, and `tools/call`.
 2. **Child Process Resource & Debugging Leak**:
    - `fork()` without child-side file descriptor sanitation leaks host TCP listening sockets and open database pool connections to child processes, risking `Address already in use` upon daemon restarts.
-   - Child process `stderr` is uncaptured. Script syntax errors or missing environment packages (e.g. Python module import errors) produce silent `EOF` failures with unhelpful `"stdio child produced no response"` messages.
+   - Child process `stderr` is uncaptured. Script syntax errors or missing environment packages (e.g. Python module import errors) produce silent `EOF` failures with unhelpful `"stdio child produced no response"` messages. Furthermore, unread stderr can fill the 64KB pipe buffer and deadlock the child process.
 3. **Serial Network Tool Execution Bottleneck**:
    - When the LLM emits multiple read-only stateless network tool calls in a single turn (e.g. concurrent `web_search` for different ticker symbols, followed by `fetch_webpage`), the runtime executes them strictly sequentially in a `for` loop, multiplying round-trip response time.
 4. **Silent Workflow Step Failures & Unpooled Summary Workers**:
@@ -31,7 +31,7 @@ This design document establishes the architectural specification for hardening t
         ▼                                                             ▼
 ┌──────────────────────────────┐                            ┌──────────────────────────────┐
 │     Parallel Tool Router     │                            │    Summary Task Queue Pool   │
-│ (Stateless Web vs DB-bound)  │                            │    (2 Workers, Init/Shutdown)│
+│ (Stateless Web vs DB-bound)  │                            │    (2 Workers, Idempotent)   │
 └──────────────┬───────────────┘                            └──────────────┬───────────────┘
                │                                                           │
        ┌───────┴───────┐                                           ┌───────┴───────┐
@@ -107,15 +107,18 @@ All stdio reading in `mcp_client.c` (`initialize`, `list_tools`, `call_tool`) ro
      - If found at pointer `p`:
        - Append bytes from `head` to `p` to output buffer `resp`.
        - Update `c->framer.head = (size_t)(p - c->framer.buf) + 1`.
-       - Trim trailing `\r` and `\n` from `resp`, null-terminate, and return `resp`.
+       - Trim trailing `\r` and `\n` from `resp`, append null terminator `\0`, and return `resp`.
      - If not found:
        - Append all bytes from `head` to `tail` to `resp`.
        - Reset `c->framer.head = c->framer.tail = 0`.
    - If `c->framer.head == c->framer.tail`:
      - Reset `c->framer.head = c->framer.tail = 0`.
      - Execute `poll(&pfd, 1, timeout_ms)`. If `prc < 0 && errno == EINTR`, retry. If `prc == 0`, report timeout and return `NULL`.
+     - Also drain stderr non-blockingly if `c->err_fd >= 0` to prevent pipe deadlocks.
      - Call `ssize_t r = read(c->read_fd, c->framer.buf, MCP_IO_BUFFER_SIZE)`.
-     - If `r == 0`: EOF reached. If `n > 0`, break and evaluate accumulated buffer; if `n == 0`, report child termination and return `NULL`.
+     - If `r == 0`: EOF reached.
+       - If `n > 0`: break loop, trim trailing `\r` and `\n`, null-terminate `resp[n] = '\0'`, and return `resp`.
+       - If `n == 0`: report child termination and return `NULL`.
      - If `r < 0`: on `EAGAIN` retry poll; on other errors, return `NULL`.
      - Update `c->framer.tail = (size_t)r`.
 3. If `n >= MCP_MAX_FRAME_SIZE`, free `resp`, write error `"stdio response frame exceeded 1MB limit"`, and return `NULL`.
@@ -160,21 +163,19 @@ To prevent closing pipe file descriptors before redirection:
    - Store `c->child_pid = pid; c->read_fd = out_pipe[0]; c->write_fd = in_pipe[1]; c->err_fd = err_pipe[0];`.
    - Close `in_pipe[0]`, `out_pipe[1]`, `err_pipe[1]`.
 
-#### Stderr Capture on Failure
-If child terminates, timeouts, or returns EOF without completing a valid JSON-RPC frame:
+#### Stderr Capture on Failure & Anti-Deadlock Drain
+During `stdio_call()`, whenever `c->err_fd >= 0`, drain non-blocking:
 ```c
 if (c->err_fd >= 0) {
-    char err_buf[sizeof(c->last_error)];
+    char err_buf[512];
     ssize_t n_err = read(c->err_fd, err_buf, sizeof(err_buf) - 1);
     if (n_err > 0) {
         err_buf[n_err] = '\0';
         snprintf(c->last_error, sizeof(c->last_error), "stdio child stderr: %s", err_buf);
-        if (out_err && err_sz > 0) {
-            snprintf(out_err, err_sz, "%s", c->last_error);
-        }
     }
 }
 ```
+If child terminates with EOF or timeout, `c->last_error` is copied into `out_err` to provide explicit diagnostic details.
 
 ---
 
@@ -196,6 +197,8 @@ Therefore, parallel dispatch is strictly isolated to **stateless network tools t
 ```c
 typedef struct {
     size_t               call_idx;
+    int64_t              user_id;
+    int64_t              session_id;
     const char*          name;
     csilk_json_t*        args;
     const volatile bool* cancel_token;
@@ -209,9 +212,9 @@ static void* ai_parallel_tool_worker(void* arg) {
     struct timespec t0, t1;
     clock_gettime(CLOCK_MONOTONIC, &t0);
     
-    /* Stateless network tools pass NULL for pool, 0 for user/session */
+    /* Stateless network tools pass NULL for pool, valid user_id/session_id to pass auth */
     task->result_str = ai_tools_execute_parsed_cancel(
-        NULL, 0, 0, task->args, task->name, task->cancel_token);
+        NULL, task->user_id, task->session_id, task->args, task->name, task->cancel_token);
         
     clock_gettime(CLOCK_MONOTONIC, &t1);
     task->span_ms = (t1.tv_sec - t0.tv_sec) * 1000 + (t1.tv_nsec - t0.tv_nsec) / 1000000;
@@ -230,22 +233,28 @@ When `n_calls > 1`:
    - Check `n_calls <= 8`. If `n_calls > 8` or any tool requires database access or is a mutation, fallback to standard serial execution.
 2. **Main-Thread Pre-Evaluation (Serialized)**:
    - For each `t = 0 .. n_calls - 1`:
-     - Parse `args`.
-     - Run `ai_policy_evaluate(user_id, session_id, tc->name, args)`.
+     - Initialize `tasks[t]` with `user_id = ctx->user_id`, `session_id = ctx->session_id`, `name = tc[t].name`, `cancel_token = ctx->cancel_token`.
+     - Parse `args` into `tasks[t].args`.
+     - Run `ai_policy_evaluate(ctx->user_id, ctx->session_id, tc[t].name, tasks[t].args, AI_RISK_NO_OVERRIDE)`.
      - Emit `cbs->on_tool_call()`.
-     - Check `seen_hashes` duplicate call check.
-     - If blocked or duplicate, mark `tasks[t].result_str` pre-filled.
+     - Check `loop_call_seen(seen_hashes, seen_count, call_hash)`.
+     - If blocked by policy or duplicate, mark `tasks[t].result_str` pre-filled.
+     - If not duplicate, record `seen_hashes[seen_count++] = call_hash` immediately to prevent intra-batch duplicates.
 3. **Parallel Execution**:
-   - For all unblocked tasks, spawn `pthread_create(&threads[t], NULL, ai_parallel_tool_worker, &tasks[t])`.
-   - Call `pthread_join(threads[t], NULL)`.
+   - Track spawned threads: `bool spawned[8] = {false}; pthread_t threads[8];`.
+   - For each unblocked task `t`:
+     - If `pthread_create(&threads[t], NULL, ai_parallel_tool_worker, &tasks[t]) == 0`, set `spawned[t] = true`.
+     - If creation fails, fallback to calling `ai_tools_execute_parsed_cancel()` inline on the main thread.
+   - For each `t = 0 .. n_calls - 1`:
+     - If `spawned[t] == true`, execute `pthread_join(threads[t], NULL)`.
 4. **Main-Thread Post-Gather (Serialized & In Exact Turn Order)**:
    - Iterate `t = 0 .. n_calls - 1`:
-     - Record tool call budget: `ai_runtime_limits_record_tool_call()`.
-     - Add trace span: `ai_trace_add_tool_span()`.
+     - Record tool call budget: `ai_runtime_limits_record_tool_call(&ctx->stats, 1)`.
+     - Add trace span: `ai_trace_add_tool_span(trace, tc[t].name, tasks[t].span_ms, strlen(tasks[t].result_str), tasks[t].success)`.
      - Emit `cbs->on_tool_result()`.
      - Append to `tc_record` for persistence.
      - Append `role="tool"` message into `msgs`.
-     - Free temporary task resources.
+     - Clean up parsed `tasks[t].args` and free `tasks[t].result_str`.
 
 ---
 
@@ -321,17 +330,23 @@ typedef struct {
     pthread_mutex_t lock;
     pthread_cond_t  not_empty; /* Non-blocking enqueue on full; no not_full needed */
     bool            shutdown;
+    bool            initialized;
     pthread_t       workers[2];
 } summary_worker_pool_t;
 ```
 
 #### Pool Lifecycle Management
 - `void ai_summary_pool_init(void)`:
-  - Called during `ai_init()` in `src/services/ai_service.c`.
-  - Initializes mutex, condition variable, and spawns 2 worker threads.
+  - Called at the **very entry** of `ai_init()` in `src/services/ai_service.c` (line 86) before any configuration loading or early returns.
+  - Idempotent: checks `if (s_pool.initialized) return;`.
+  - Initializes mutex, condition variable, spawns 2 worker threads, and sets `s_pool.initialized = true`.
 - `void ai_summary_pool_shutdown(void)`:
   - Called during `ai_shutdown()` in `src/services/ai_service.c`.
-  - Sets `shutdown = true`, broadcasts `not_empty`, joins both worker threads, drains/frees any remaining queued tasks, and destroys synchronizers.
+  - Idempotent: checks `if (!s_pool.initialized) return;`.
+  - Sets `shutdown = true`, broadcasts `not_empty`, joins both worker threads.
+  - Drains queue: for any remaining queued tasks, calls `inflight_release(task->inflight_idx)`, frees `task->user_prompt`, and frees `task`.
+  - Drains pending slots: iterates `s_pending`, frees all `s_pending[i].text != NULL` to ensure zero AddressSanitizer leaks.
+  - Destroys synchronizers and sets `s_pool.initialized = false`.
 
 #### Non-blocking Enqueue & Associative Deduplicating Pending Slots
 1. **Non-blocking Enqueue**:
@@ -383,7 +398,7 @@ typedef struct {
 6. **`tests/unit/test_summary_worker_pool.c`**:
    - Enqueue 20 concurrent summary tasks.
    - Assert tasks are processed by the 2 persistent worker threads without spawning additional pthreads.
-   - Assert clean shutdown via `ai_summary_pool_shutdown()` without thread leaks or hung processes.
+   - Assert clean shutdown via `ai_summary_pool_shutdown()` without thread leaks, dangling in-flight locks, or AddressSanitizer errors.
 
 ### 5.2 Regression Tests
 - Execute full existing regression test suite:
