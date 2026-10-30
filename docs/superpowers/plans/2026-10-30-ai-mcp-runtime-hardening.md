@@ -51,6 +51,7 @@ backend/
 - Modify: `backend/src/services/ai/tools/mcp/mcp_client.h`
 - Modify: `backend/src/services/ai/tools/mcp/mcp_client.c`
 - Test: `backend/tests/unit/test_mcp_client_io.c`
+- Test: `backend/tests/unit/test_mcp_stderr_capture.c`
 - Modify: `backend/CMakeLists.txt`
 
 - [ ] **Step 1: Write unit test for block-buffered framer (`test_mcp_client_io.c`)**
@@ -58,11 +59,32 @@ backend/
 Create `backend/tests/unit/test_mcp_client_io.c`:
 ```c
 #include <assert.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include "services/ai/tools/mcp/mcp_client.h"
+
+typedef struct {
+    int   pipe_fd;
+    size_t total_bytes;
+} feeder_arg_t;
+
+static void* huge_stream_feeder(void* arg) {
+    feeder_arg_t* a = (feeder_arg_t*)arg;
+    char chunk[4096];
+    memset(chunk, 'X', sizeof(chunk));
+    size_t written = 0;
+    while (written < a->total_bytes) {
+        size_t to_write = (a->total_bytes - written > sizeof(chunk)) ? sizeof(chunk) : (a->total_bytes - written);
+        ssize_t w = write(a->pipe_fd, chunk, to_write);
+        if (w <= 0) break;
+        written += w;
+    }
+    close(a->pipe_fd);
+    return NULL;
+}
 
 int main(void) {
     printf("Running test_mcp_client_io...\n");
@@ -76,7 +98,6 @@ int main(void) {
     assert(c->framer.head == 0 && c->framer.tail == 0);
     assert(sizeof(c->last_error) >= 1024);
 
-    /* Setup mocked stdout and stdin pipes so stdio_call doesn't fork */
     int out_pipe[2];
     int in_pipe[2];
     assert(pipe(out_pipe) == 0);
@@ -86,7 +107,7 @@ int main(void) {
 
     /* Test 1: Single small frame */
     const char* frame1 = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"status\":\"ok\"}}\n";
-    write(out_pipe[1], frame1, strlen(frame1));
+    assert(write(out_pipe[1], frame1, strlen(frame1)) == (ssize_t)strlen(frame1));
 
     char err[256] = {0};
     char* resp1 = mf_mcp_client_call_tool(c, "dummy", "{}", err, sizeof(err));
@@ -104,24 +125,37 @@ int main(void) {
     big_frame[prefix_len + big_sz] = '\0';
     strcat(big_frame, "\"}}\n");
 
-    write(out_pipe[1], big_frame, strlen(big_frame));
+    assert(write(out_pipe[1], big_frame, strlen(big_frame)) == (ssize_t)strlen(big_frame));
     char* resp2 = mf_mcp_client_call_tool(c, "dummy", "{}", err, sizeof(err));
     assert(resp2 != NULL);
     assert(strlen(resp2) > big_sz);
     free(resp2);
     free(big_frame);
 
-    /* Test 3: Frame exceeding 1MB cap cleanly fails */
-    size_t huge_sz = 1024 * 1024 + 10;
-    char* huge_chunk = (char*)malloc(huge_sz);
-    assert(huge_chunk != NULL);
-    memset(huge_chunk, 'X', huge_sz);
-    write(out_pipe[1], huge_chunk, huge_sz);
+    /* Test 3: Multiple small frames in one buffer (framing cursor advancement) */
+    const char* multi = "{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"idx\":3}}\n{\"jsonrpc\":\"2.0\",\"id\":4,\"result\":{\"idx\":4}}\n";
+    assert(write(out_pipe[1], multi, strlen(multi)) == (ssize_t)strlen(multi));
+    char* resp_m1 = mf_mcp_client_call_tool(c, "dummy", "{}", err, sizeof(err));
+    assert(resp_m1 != NULL);
+    assert(strstr(resp_m1, "\"idx\":3") != NULL);
+    free(resp_m1);
+    char* resp_m2 = mf_mcp_client_call_tool(c, "dummy", "{}", err, sizeof(err));
+    assert(resp_m2 != NULL);
+    assert(strstr(resp_m2, "\"idx\":4") != NULL);
+    free(resp_m2);
+
+    /* Test 4: Frame exceeding 1MB cap safely intercepted without pipe deadlock */
+    int huge_pipe[2];
+    assert(pipe(huge_pipe) == 0);
+    c->read_fd = huge_pipe[0];
+    feeder_arg_t f_arg = { .pipe_fd = huge_pipe[1], .total_bytes = 1024 * 1024 + 16 };
+    pthread_t f_th;
+    assert(pthread_create(&f_th, NULL, huge_stream_feeder, &f_arg) == 0);
 
     char* resp3 = mf_mcp_client_call_tool(c, "dummy", "{}", err, sizeof(err));
+    pthread_join(f_th, NULL);
     assert(resp3 == NULL);
     assert(strstr(err, "1MB limit") != NULL);
-    free(huge_chunk);
 
     close(out_pipe[1]);
     close(in_pipe[0]);
@@ -168,18 +202,38 @@ Expected: PASS
 Create `backend/tests/unit/test_mcp_stderr_capture.c`:
 ```c
 #include <assert.h>
+#include <fcntl.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <fcntl.h>
 #include "services/ai/tools/mcp/mcp_client.h"
+
+static void* verbose_stderr_feeder(void* arg) {
+    int fd = *(int*)arg;
+    char chunk[4096];
+    memset(chunk, 'E', sizeof(chunk));
+    /* Write 80 KB to exceed 64 KB kernel pipe buffer */
+    size_t total = 80 * 1024;
+    size_t written = 0;
+    while (written < total) {
+        size_t take = (total - written > sizeof(chunk)) ? sizeof(chunk) : (total - written);
+        ssize_t w = write(fd, chunk, take);
+        if (w <= 0) break;
+        written += w;
+    }
+    const char* tail_msg = "FinalError: Module Crashed\n";
+    write(fd, tail_msg, strlen(tail_msg));
+    close(fd);
+    return NULL;
+}
 
 int main(void) {
     printf("Running test_mcp_stderr_capture...\n");
     mf_mcp_server_t s = {
         .transport = MCP_TRANSPORT_STDIO,
-        .timeout_ms = 1000
+        .timeout_ms = 2000
     };
     mf_mcp_client_t* c = mf_mcp_client_new(&s);
     assert(c != NULL);
@@ -196,16 +250,21 @@ int main(void) {
     c->write_fd = in_pipe[1];
     c->err_fd = err_pipe[0];
 
-    /* Child writes stderr error message and closes without writing stdout */
-    const char* mock_err = "ImportError: No module named 'mcp'\n";
-    write(err_pipe[1], mock_err, strlen(mock_err));
-    close(err_pipe[1]);
+    /* Asynchronously feed >64KB stderr without deadlock */
+    int feeder_fd = err_pipe[1];
+    pthread_t th;
+    assert(pthread_create(&th, NULL, verbose_stderr_feeder, &feeder_fd) == 0);
+
+    /* Close out_pipe write end to trigger EOF on stdout */
     close(out_pipe[1]);
 
-    char err[256] = {0};
+    char err[512] = {0};
     char* resp = mf_mcp_client_call_tool(c, "dummy", "{}", err, sizeof(err));
+    pthread_join(th, NULL);
+
     assert(resp == NULL);
-    assert(strstr(err, "ImportError: No module named 'mcp'") != NULL);
+    assert(strlen(c->last_error) > 0);
+    assert(strstr(err, "stderr") != NULL || strstr(err, "FinalError") != NULL);
 
     close(in_pipe[0]);
     mf_mcp_client_free(c);
@@ -259,16 +318,18 @@ Create `backend/tests/unit/test_mcp_child_sanitation.c`:
 int main(void) {
     printf("Running test_mcp_child_sanitation...\n");
 
-    /* Create dummy file descriptor that parent holds open */
-    int dummy_pipe[2];
-    assert(pipe(dummy_pipe) == 0);
+    /* Create dummy file descriptors that parent process holds open */
+    int dummy_pipe1[2];
+    int dummy_pipe2[2];
+    assert(pipe(dummy_pipe1) == 0);
+    assert(pipe(dummy_pipe2) == 0);
 
-    /* Use bash script that checks if descriptor > 2 is open */
+    /* Use bash script checking that only descriptors 0, 1, 2 remain open */
     mf_mcp_server_t s = {
         .transport = MCP_TRANSPORT_STDIO,
         .command = "bash",
         .args_json = "[\"-c\", \"if ls /proc/self/fd | grep -E '^([4-9]|[1-9][0-9]+)$' >/dev/null; then echo '{\\\"error\\\":\\\"leaked_fds\\\"}'; else echo '{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":1,\\\"result\\\":{\\\"clean\\\":true}}'; fi\"]",
-        .timeout_ms = 3000
+        .timeout_ms = 4000
     };
 
     mf_mcp_client_t* c = mf_mcp_client_new(&s);
@@ -280,8 +341,10 @@ int main(void) {
     assert(strstr(resp, "\"clean\":true") != NULL);
     free(resp);
 
-    close(dummy_pipe[0]);
-    close(dummy_pipe[1]);
+    close(dummy_pipe1[0]);
+    close(dummy_pipe1[1]);
+    close(dummy_pipe2[0]);
+    close(dummy_pipe2[1]);
     mf_mcp_client_free(c);
     printf("PASS: test_mcp_child_sanitation completed successfully\n");
     return 0;
@@ -299,7 +362,7 @@ target_link_libraries(test_mcp_child_sanitation PRIVATE csilk crypto CURL::libcu
 add_test(NAME test_mcp_child_sanitation COMMAND test_mcp_child_sanitation)
 ```
 Run: `cmake --build backend/build --target test_mcp_child_sanitation && ./backend/build/test_mcp_child_sanitation`
-Expected: FAIL (assertion fails with `"clean":true` missing because dummy_pipe leaked to child).
+Expected: FAIL (assertion fails with `"clean":true` missing because dummy pipes leaked to child).
 
 - [ ] **Step 3: Implement parent `err_pipe` setup and post-dup2 `closefrom(3)` in `mcp_client.c`**
 
@@ -368,7 +431,7 @@ int main(void) {
     printf("Running test_ai_parallel_tools...\n");
     ai_tool_registry_init();
 
-    /* Register two stateless test tools */
+    /* Register test tools */
     ai_tool_t t1 = {
         .name = "web_search",
         .permission = AI_PERM_READ,
@@ -377,13 +440,44 @@ int main(void) {
     };
     ai_tool_register(&t1);
 
-    /* Test 1: Verify is_stateless_network_tool recognizes web_search and fetch_webpage */
-    /* Test 2: Measure parallel execution of 2 web_search calls: total time < 350ms */
+    /* Test 1: Verify stateless tool detection */
+    extern bool is_stateless_network_tool(const char* name);
+    assert(is_stateless_network_tool("web_search") == true);
+    assert(is_stateless_network_tool("fetch_webpage") == true);
+    assert(is_stateless_network_tool("get_assets") == false);
+    assert(is_stateless_network_tool("mcp:1:calc") == false);
+
+    /* Test 2: Parallel execution benchmark (2 calls of 200ms each) */
     struct timespec start, end;
     clock_gettime(CLOCK_MONOTONIC, &start);
 
-    /* Construct 2 calls and simulate parallel loop worker execution */
-    /* Assert elapsed < 350ms */
+    csilk_json_t* args1 = csilk_json_object();
+    csilk_json_t* args2 = csilk_json_object();
+    char* r1 = NULL;
+    char* r2 = NULL;
+
+    /* Execute parallel mock dispatch */
+    extern char* ai_tools_execute_parallel_batch(
+        const char* name1, const csilk_json_t* a1,
+        const char* name2, const csilk_json_t* a2,
+        char** out1, char** out2);
+
+    int rc = ai_tools_execute_parallel_batch("web_search", args1, "web_search", args2, &r1, &r2);
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    long elapsed_ms = (end.tv_sec - start.tv_sec) * 1000 + (end.tv_nsec - start.tv_nsec) / 1000000;
+
+    assert(rc == 0);
+    assert(r1 != NULL && r2 != NULL);
+    assert(elapsed_ms < 350); /* Parallel: ~200ms instead of 400ms */
+    free(r1);
+    free(r2);
+    csilk_json_free(args1);
+    csilk_json_free(args2);
+
+    /* Test 3: Sequential fallback verification when mixing DB tool */
+    extern bool ai_parallel_batch_eligible(const char* const* names, size_t count);
+    const char* mixed_batch[] = {"web_search", "get_assets"};
+    assert(ai_parallel_batch_eligible(mixed_batch, 2) == false);
 
     printf("PASS: test_ai_parallel_tools completed successfully\n");
     return 0;
@@ -400,12 +494,15 @@ target_compile_options(test_ai_parallel_tools PRIVATE -UNDEBUG)
 target_link_libraries(test_ai_parallel_tools PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
 add_test(NAME test_ai_parallel_tools COMMAND test_ai_parallel_tools)
 ```
-Run: `cmake --build backend/build --target test_ai_parallel_tools && ./backend/build/test_ai_parallel_tools`
+Run: `cmake --build backend/build --target test_ai_parallel_tools`
+Expected: FAIL with `undefined reference to 'is_stateless_network_tool'`
 
 - [ ] **Step 3: Implement parallel dispatch in `src/services/ai/runtime/loop.c`**
 
 In `src/services/ai/runtime/loop.c`:
-1. Define `ai_parallel_task_t`:
+1. Define and export `is_stateless_network_tool(name)` checking `web_search` and `fetch_webpage`.
+2. Define `ai_parallel_batch_eligible()` checking that all names are stateless web tools and count <= 8.
+3. Define `ai_parallel_task_t`:
    ```c
    typedef struct {
        size_t               call_idx;
@@ -422,15 +519,13 @@ In `src/services/ai/runtime/loop.c`:
        bool                 success;
    } ai_parallel_task_t;
    ```
-2. Define `static void* ai_parallel_tool_worker(void* arg)` calling `ai_tools_execute_parsed_cancel(NULL, task->user_id, task->session_id, task->args, task->tool_name, task->cancel_token)`.
-3. In `ai_runtime_execute_stream()` when `n_calls > 1 && n_calls <= 8`:
-   - Check if all tool names in batch are `"web_search"` or `"fetch_webpage"`.
-   - If not, fall back to sequential loop.
-   - If yes:
-     - Pre-evaluation: populate task, evaluate policy (`AI_RISK_NO_OVERRIDE`), emit `cbs->on_tool_call`, check/record `seen_hashes` with bounds guard `seen_count < LOOP_DUP_CALL_SLOTS`, free `ai_policy_decision_free(decision)`.
-     - Thread spawn: for tasks without `result_str`, spawn `pthread_create(&threads[t], ...)`, setting `thread_spawned[t] = true`. If spawn fails, execute inline via `ai_parallel_tool_worker(&tasks[t])`.
-     - Joining: join all `thread_spawned[t]`.
-     - Post-gather: iterate `t = 0 .. n_calls - 1` in exact order, record limits if `tasks[t].executed`, add trace span, emit `cbs->on_tool_result`, append to `tc_record`, append `loop_clamp_tool_result()` to `msgs`, and free task heap memory.
+4. Define `static void* ai_parallel_tool_worker(void* arg)` calling `ai_tools_execute_parsed_cancel(NULL, task->user_id, task->session_id, task->args, task->tool_name, task->cancel_token)`.
+5. In `ai_runtime_execute_stream()` when `n_calls > 1 && n_calls <= 8` and `ai_parallel_batch_eligible`:
+   - Pre-evaluation: populate task, evaluate policy (`AI_RISK_NO_OVERRIDE`), emit `cbs->on_tool_call`, check/record `seen_hashes` with bounds guard `seen_count < LOOP_DUP_CALL_SLOTS`, free `ai_policy_decision_free(decision)`.
+   - Thread spawn: for tasks where `!tasks[t].result_str`, spawn `pthread_create(&threads[t], ...)`, setting `thread_spawned[t] = true`. If spawn fails, execute inline via `ai_parallel_tool_worker(&tasks[t])`.
+   - Joining: join all `thread_spawned[t]`.
+   - Post-gather: iterate `t = 0 .. n_calls - 1` in exact order, record limits if `tasks[t].executed`, add trace span, emit `cbs->on_tool_result`, append to `tc_record`, append `loop_clamp_tool_result()` to `msgs`, and free task heap memory.
+6. If not eligible: keep existing sequential execution loop.
 
 - [ ] **Step 4: Run test to verify pass**
 
@@ -468,7 +563,7 @@ Create `backend/tests/unit/test_workflow_step_error.c`:
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "services/ai/workflow/engine.h"
+#include "services/ai/workflow/graph.h"
 #include "services/ai/workflow/executor.h"
 
 static char* mock_fail_node(csilk_db_pool_t* pool, int64_t user_id, const csilk_json_t* params, const char* ctx_json) {
@@ -476,9 +571,45 @@ static char* mock_fail_node(csilk_db_pool_t* pool, int64_t user_id, const csilk_
     return NULL; /* Simulation of deterministic calculation failure */
 }
 
+static char* mock_success_terminal_node(csilk_db_pool_t* pool, int64_t user_id, const csilk_json_t* params, const char* ctx_json) {
+    (void)pool; (void)user_id; (void)params; (void)ctx_json;
+    return strdup("{\"status\":\"ok\"}");
+}
+
 int main(void) {
     printf("Running test_workflow_step_error...\n");
-    /* Register mock graph with mock_fail_node and verify ai_workflow_execute_stream returns -1 on step failure */
+
+    ai_workflow_node_t nodes[2] = {
+        {
+            .node_id = "failing_step",
+            .title = "Failing Step",
+            .execute = mock_fail_node
+        },
+        {
+            .node_id = "terminal_step",
+            .title = "Terminal Report Step",
+            .execute = mock_success_terminal_node
+        }
+    };
+
+    ai_workflow_graph_t graph = {
+        .id = "test_err_wf",
+        .title = "Test Error Workflow",
+        .nodes = nodes,
+        .node_count = 2
+    };
+
+    ai_wf_context_t ctx = {
+        .user_id = 1,
+        .session_id = 1,
+        .params = csilk_json_object()
+    };
+
+    csilk_ctx_t dummy_http_ctx = {0};
+    int rc = ai_workflow_execute_stream(&dummy_http_ctx, &graph, &ctx);
+    assert(rc == -1);
+
+    csilk_json_free((csilk_json_t*)ctx.params);
     printf("PASS: test_workflow_step_error completed successfully\n");
     return 0;
 }
@@ -494,7 +625,8 @@ target_compile_options(test_workflow_step_error PRIVATE -UNDEBUG)
 target_link_libraries(test_workflow_step_error PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
 add_test(NAME test_workflow_step_error COMMAND test_workflow_step_error)
 ```
-Run: `cmake --build backend/build --target test_workflow_step_error`
+Run: `cmake --build backend/build --target test_workflow_step_error && ./backend/build/test_workflow_step_error`
+Expected: FAIL (assertion `rc == -1` fails because `executor.c` currently ignores step failures and continues).
 
 - [ ] **Step 3: Implement step validation & error emission in `executor.c`**
 
@@ -538,17 +670,29 @@ Create `backend/tests/unit/test_summary_worker_pool.c`:
 #include <stdlib.h>
 #include <string.h>
 #include "services/ai/memory/summary.h"
+#include "services/ai/runtime/context.h"
 
 int main(void) {
     printf("Running test_summary_worker_pool...\n");
-    /* Test idempotent initialization and shutdown */
+    /* 1. Test idempotent initialization and shutdown */
     ai_summary_pool_init();
     ai_summary_pool_init(); /* duplicate no-op */
 
+    /* 2. Enqueue multiple dummy triggers when limits exceeded */
+    ai_runtime_context_t ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.session_id = 999;
+    ctx.limits.token_budget = 100;
+    ctx.stats.total_tokens = 90;
+
+    /* Enqueue trigger without DB pool should safely no-op */
+    ai_summary_maybe_trigger(NULL, &ctx);
+
+    /* 3. Shutdown and verify queue draining and slot clearing */
     ai_summary_pool_shutdown();
     ai_summary_pool_shutdown(); /* duplicate no-op */
 
-    /* Re-init to verify clean state reset */
+    /* 4. Re-init to verify clean state reset */
     ai_summary_pool_init();
     ai_summary_pool_shutdown();
 
