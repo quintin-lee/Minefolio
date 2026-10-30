@@ -53,6 +53,25 @@ ai_runtime_status_t ai_runtime_execute_stream(csilk_db_pool_t*              pool
 ai_runtime_result_t
 ai_runtime_execute(csilk_db_pool_t* pool, ai_runtime_context_t* ctx, ai_trace_t** out_trace);
 
+/**
+ * @brief 判断工具是否属于无数据库依赖的无状态网络工具
+ */
+bool is_stateless_network_tool(const char* name);
+
+/**
+ * @brief 判断工具调用批次是否符合全量并行分发条件
+ */
+bool ai_parallel_batch_eligible(const char* const* names, size_t count);
+
+/**
+ * @brief 并发/串行执行双工具批次（测试与高层辅助）
+ */
+int ai_tools_execute_parallel_batch(
+    int64_t user_id, int64_t session_id,
+    const char* name1, const csilk_json_t* a1,
+    const char* name2, const csilk_json_t* a2,
+    char** out1, char** out2);
+
 /* 兼容旧签名 */
 typedef void (*ai_stream_chunk_cb)(const char* chunk, void* user_data);
 typedef struct {

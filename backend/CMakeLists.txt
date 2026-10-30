@@ -338,6 +338,13 @@ target_compile_options(test_mcp_child_sanitation PRIVATE -UNDEBUG)
 target_link_libraries(test_mcp_child_sanitation PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
 add_test(NAME test_mcp_child_sanitation COMMAND test_mcp_child_sanitation)
 
+add_executable(test_ai_parallel_tools tests/unit/test_ai_parallel_tools.c ${LIB_SOURCES})
+target_include_directories(test_ai_parallel_tools PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_ai_parallel_tools PRIVATE -UNDEBUG)
+target_link_libraries(test_ai_parallel_tools PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_test(NAME test_ai_parallel_tools COMMAND test_ai_parallel_tools)
+
+
 
 
 
