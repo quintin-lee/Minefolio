@@ -1,3 +1,7 @@
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
 /**
  * @file mcp_client.c
  * @brief MCP 远端工具源客户端实现 — M2
@@ -484,6 +488,26 @@ free_envp(char** envp, size_t envc)
 }
 
 /* 向 stdio 子进程写一帧并读回响应帧（换行分帧） */
+static bool drain_stderr_nonblocking(mf_mcp_client_t* c) {
+    if (!c || c->err_fd < 0) return false;
+    char buf[512];
+    ssize_t n;
+    while ((n = read(c->err_fd, buf, sizeof(buf) - 1)) > 0) {
+        buf[n] = '\0';
+        size_t cur_len = strlen(c->last_error);
+        if (cur_len + (size_t)n < sizeof(c->last_error) - 1) {
+            strncat(c->last_error, buf, sizeof(c->last_error) - cur_len - 1);
+        }
+    }
+    if (n == 0) {
+        /* EOF reached on stderr: close descriptor to eliminate POLLHUP busy-loop */
+        close(c->err_fd);
+        c->err_fd = -1;
+        return false;
+    }
+    return true;
+}
+
 static char*
 stdio_call(mf_mcp_client_t* c, const char* request_json, char* out_err, size_t err_sz)
 {
@@ -580,70 +604,112 @@ stdio_call(mf_mcp_client_t* c, const char* request_json, char* out_err, size_t e
     }
     free(frame);
 
-    /* 读响应帧（到换行为止，堆分配 1MB 缓冲避免栈溢出，poll 超时控制） */
-    int    timeout_ms = c->server->timeout_ms > 0 ? c->server->timeout_ms : 30000;
-    size_t cap = 1 << 20;
-    char*  resp = (char*)malloc(cap);
+    /* 读响应帧（4KB 块缓冲读取，memchr 快速内存扫描分帧，双 FD poll 控制） */
+    int timeout_ms = c->server->timeout_ms > 0 ? c->server->timeout_ms : 30000;
+    c->last_error[0] = '\0';
+    char* resp = (char*)malloc(MCP_MAX_FRAME_SIZE + MCP_IO_BUFFER_SIZE + 1);
     if (!resp) {
         snprintf(out_err, err_sz, "oom allocating stdio response buffer");
         return NULL;
     }
-    char*  cur = resp;
     size_t n = 0;
-    while (n < cap - 1) {
-        struct pollfd pfd = {
-            .fd = c->read_fd,
-            .events = POLLIN,
-            .revents = 0,
-        };
-        int prc = poll(&pfd, 1, timeout_ms);
-        if (prc < 0) {
-            if (errno == EINTR) {
-                continue;
+
+    while (n < MCP_MAX_FRAME_SIZE) {
+        /* 1. 若缓冲区中有未消费数据，在内存中扫描换行符 */
+        if (c->framer.head < c->framer.tail) {
+            char* p = (char*)memchr(c->framer.buf + c->framer.head, '\n', c->framer.tail - c->framer.head);
+            if (p) {
+                size_t len = (size_t)(p - (c->framer.buf + c->framer.head));
+                memcpy(resp + n, c->framer.buf + c->framer.head, len);
+                n += len;
+                c->framer.head = (size_t)(p - c->framer.buf) + 1;
+                resp[n] = '\0';
+                /* 截断尾部换行并返回 */
+                while (n > 0 && (resp[n - 1] == '\n' || resp[n - 1] == '\r')) {
+                    resp[--n] = '\0';
+                }
+                return resp;
+            } else {
+                /* 缓冲区内无换行，全部移入 resp */
+                size_t len = c->framer.tail - c->framer.head;
+                memcpy(resp + n, c->framer.buf + c->framer.head, len);
+                n += len;
+                c->framer.head = c->framer.tail = 0;
             }
-            snprintf(out_err, err_sz, "stdio poll failed: %s", strerror(errno));
-            free(resp);
-            return NULL;
         }
-        if (prc == 0) {
-            snprintf(out_err, err_sz, "stdio read timed out after %d ms", timeout_ms);
-            free(resp);
-            return NULL;
-        }
-        if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) {
-            if (!(pfd.revents & POLLIN)) {
-                break;
+
+        /* 2. 缓冲区已空，执行双路 poll 并块读取 */
+        if (c->framer.head == c->framer.tail) {
+            c->framer.head = c->framer.tail = 0;
+            struct pollfd pfds[2] = {
+                { .fd = c->read_fd, .events = POLLIN, .revents = 0 },
+                { .fd = c->err_fd,  .events = POLLIN, .revents = 0 }
+            };
+            int nfds = (c->err_fd >= 0) ? 2 : 1;
+            int prc = poll(pfds, nfds, timeout_ms);
+            if (prc < 0) {
+                if (errno == EINTR) {
+                    continue;
+                }
+                snprintf(out_err, err_sz, "stdio poll failed: %s", strerror(errno));
+                c->framer.head = c->framer.tail = 0;
+                free(resp);
+                return NULL;
             }
-        }
-        ssize_t r = read(c->read_fd, cur, 1);
-        if (r == 0) {
-            break; /* EOF */
-        }
-        if (r < 0) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
-                continue;
+            if (prc == 0) {
+                drain_stderr_nonblocking(c);
+                if (c->last_error[0] != '\0') {
+                    snprintf(out_err, err_sz, "stdio read timed out after %d ms. %s", timeout_ms, c->last_error);
+                } else {
+                    snprintf(out_err, err_sz, "stdio read timed out after %d ms", timeout_ms);
+                }
+                c->framer.head = c->framer.tail = 0;
+                free(resp);
+                return NULL;
             }
-            snprintf(out_err, err_sz, "stdio read failed: %s", strerror(errno));
-            free(resp);
-            return NULL;
-        }
-        cur++;
-        n++;
-        if (cur[-1] == '\n') {
-            break;
+            if (c->err_fd >= 0 && (pfds[1].revents & (POLLIN | POLLHUP | POLLERR))) {
+                drain_stderr_nonblocking(c);
+            }
+            if (pfds[0].revents & (POLLIN | POLLHUP | POLLERR)) {
+                ssize_t r = read(c->read_fd, c->framer.buf, MCP_IO_BUFFER_SIZE);
+                if (r == 0) {
+                    /* EOF */
+                    drain_stderr_nonblocking(c);
+                    if (n > 0) {
+                        resp[n] = '\0';
+                        while (n > 0 && (resp[n - 1] == '\n' || resp[n - 1] == '\r')) {
+                            resp[--n] = '\0';
+                        }
+                        return resp;
+                    }
+                    if (c->last_error[0] != '\0') {
+                        snprintf(out_err, err_sz, "%s", c->last_error);
+                    } else {
+                        snprintf(out_err, err_sz, "stdio child produced no response");
+                    }
+                    c->framer.head = c->framer.tail = 0;
+                    free(resp);
+                    return NULL;
+                }
+                if (r < 0) {
+                    if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
+                        continue;
+                    }
+                    snprintf(out_err, err_sz, "stdio read failed: %s", strerror(errno));
+                    c->framer.head = c->framer.tail = 0;
+                    free(resp);
+                    return NULL;
+                }
+                c->framer.tail = (size_t)r;
+            }
         }
     }
-    *cur = '\0';
-    if (n == 0) {
-        snprintf(out_err, err_sz, "stdio child produced no response");
-        free(resp);
-        return NULL;
-    }
-    /* 截断尾部换行 */
-    while (n > 0 && (resp[n - 1] == '\n' || resp[n - 1] == '\r')) {
-        resp[--n] = '\0';
-    }
-    return resp;
+
+    /* 超过 1MB 阈值 */
+    c->framer.head = c->framer.tail = 0;
+    snprintf(out_err, err_sz, "stdio response frame exceeded 1MB limit");
+    free(resp);
+    return NULL;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -664,7 +730,10 @@ mf_mcp_client_new(const mf_mcp_server_t* server)
     c->session_id = NULL;
     c->read_fd = -1;
     c->write_fd = -1;
+    c->err_fd = -1;
     c->child_pid = 0;
+    c->framer.head = 0;
+    c->framer.tail = 0;
     c->last_error[0] = '\0';
     return c;
 }
@@ -698,6 +767,9 @@ mf_mcp_client_free(mf_mcp_client_t* c)
     }
     if (c->write_fd >= 0) {
         close(c->write_fd);
+    }
+    if (c->err_fd >= 0) {
+        close(c->err_fd);
     }
     free(c->session_id);
     free(c);

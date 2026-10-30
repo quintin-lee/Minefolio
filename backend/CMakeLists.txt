@@ -320,7 +320,19 @@ add_executable(test_portfolio_pnl_alignment tests/unit/test_portfolio_pnl_alignm
 target_include_directories(test_portfolio_pnl_alignment PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_options(test_portfolio_pnl_alignment PRIVATE -UNDEBUG)
 target_link_libraries(test_portfolio_pnl_alignment PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
-add_test(NAME test_portfolio_pnl_alignment COMMAND test_portfolio_pnl_alignment)
+add_executable(test_mcp_client_io tests/unit/test_mcp_client_io.c ${LIB_SOURCES})
+target_include_directories(test_mcp_client_io PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_mcp_client_io PRIVATE -UNDEBUG)
+target_link_libraries(test_mcp_client_io PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_test(NAME test_mcp_client_io COMMAND test_mcp_client_io)
+
+add_executable(test_mcp_stderr_capture tests/unit/test_mcp_stderr_capture.c ${LIB_SOURCES})
+target_include_directories(test_mcp_stderr_capture PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_mcp_stderr_capture PRIVATE -UNDEBUG)
+target_link_libraries(test_mcp_stderr_capture PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_test(NAME test_mcp_stderr_capture COMMAND test_mcp_stderr_capture)
+
+
 
 
 

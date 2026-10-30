@@ -19,14 +19,25 @@
   *  - STDIO：fork+execve 拉起子进程，stdin 写、stdout 读，换行分帧；空闲超时清理
  */
 
+#define MCP_IO_BUFFER_SIZE 4096
+#define MCP_MAX_FRAME_SIZE (1 << 20) /* 1 MB */
+
+typedef struct {
+    char   buf[MCP_IO_BUFFER_SIZE];
+    size_t head;
+    size_t tail;
+} mcp_io_reader_t;
+
 /** MCP 客户端句柄（每用户每服务器一个，短生命周期，函数内建即拆） */
 typedef struct {
     const mf_mcp_server_t* server;
     char*                  session_id; /* HTTP：Mcp-Session-Id；stdio 为 NULL */
     int                    read_fd;    /* stdio：子进程 stdout 读端 */
     int                    write_fd;   /* stdio：子进程 stdin 写端 */
+    int                    err_fd;     /* stdio：子进程 stderr 读端；-1 表示无 */
     pid_t                  child_pid;  /* stdio 子进程；0 = http */
-    char                   last_error[256];
+    mcp_io_reader_t        framer;     /* 块缓冲读取器 */
+    char                   last_error[1024];
 } mf_mcp_client_t;
 
 /**
