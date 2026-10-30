@@ -174,14 +174,29 @@ ai_workflow_execute_stream(csilk_ctx_t* c, const ai_workflow_graph_t* graph, ai_
             char* step_out = node->execute(pool, user_id, params, cur_ctx_str);
             free(cur_ctx_str);
 
-            if (step_out) {
-                csilk_json_t* parsed_out = csilk_json_parse(step_out);
-                if (parsed_out) {
-                    snprintf(summary_buf, sizeof(summary_buf), "完成数据计算与分析");
-                    csilk_json_add_object(ctx_obj, node->node_id, parsed_out);
+            csilk_json_t* parsed_out = step_out ? csilk_json_parse(step_out) : NULL;
+            if (!step_out || !parsed_out) {
+                if (step_out) {
+                    free(step_out);
                 }
-                free(step_out);
+                csilk_json_t* ev_err = csilk_json_object();
+                csilk_json_add_string(ev_err, "type", "error");
+                csilk_json_add_number(ev_err, "step_index", (double)i);
+                csilk_json_add_string(ev_err, "step_id", node->node_id ? node->node_id : "");
+                const char* emsg = !step_out ? "Node execution failed" : "Malformed JSON returned by node";
+                csilk_json_add_string(ev_err, "message", emsg);
+                csilk_json_add_string(ev_err, "error", emsg);
+                char* err_str = csilk_json_serialize(ev_err, &slen);
+                csilk_json_free(ev_err);
+                csilk_sse_send(c, "error", err_str ? err_str : "{}");
+                free(err_str);
+                csilk_json_free(ctx_obj);
+                return -1;
             }
+
+            snprintf(summary_buf, sizeof(summary_buf), "完成数据计算与分析");
+            csilk_json_add_object(ctx_obj, node->node_id, parsed_out);
+            free(step_out);
         }
 
         /* step_progress event */

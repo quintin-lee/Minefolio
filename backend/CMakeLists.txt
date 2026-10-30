@@ -344,6 +344,13 @@ target_compile_options(test_ai_parallel_tools PRIVATE -UNDEBUG)
 target_link_libraries(test_ai_parallel_tools PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
 add_test(NAME test_ai_parallel_tools COMMAND test_ai_parallel_tools)
 
+add_executable(test_workflow_step_error tests/unit/test_workflow_step_error.c ${LIB_SOURCES})
+target_include_directories(test_workflow_step_error PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_workflow_step_error PRIVATE -UNDEBUG)
+target_link_libraries(test_workflow_step_error PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_test(NAME test_workflow_step_error COMMAND test_workflow_step_error)
+
+
 
 
 
