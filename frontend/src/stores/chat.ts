@@ -443,7 +443,8 @@ export const useChatStore = defineStore('chat', () => {
           const tc = assistantMsg.tool_calls.find(t => t.id === chunk.id) || assistantMsg.tool_calls[assistantMsg.tool_calls.length - 1]
           if (tc) tc.result = chunk.result
         } else if (chunk.type === 'delta' && chunk.content) {
-          assistantMsg.content += chunk.content
+          // 经打字机平滑输出：writer 按帧吐字写回 assistantMsg.content（target 即该响应式消息）
+          writer.push(chunk.content)
         } else if (chunk.type === 'done') {
           // 用量统计（token/成本/耗时/结束原因）随消息保留，供界面展示
           assistantMsg.usage = {
@@ -532,7 +533,8 @@ export const useChatStore = defineStore('chat', () => {
           const tc = assistantMsg.tool_calls.find(t => t.id === chunk.id) || assistantMsg.tool_calls[assistantMsg.tool_calls.length - 1]
           if (tc) tc.result = chunk.result
         } else if (chunk.type === 'delta' && chunk.content) {
-          assistantMsg.content += chunk.content
+          // 经打字机平滑输出：writer 按帧吐字写回 assistantMsg.content（target 即该响应式消息）
+          writer.push(chunk.content)
         } else if (chunk.type === 'done') {
           // 用量统计（token/成本/耗时/结束原因）随消息保留，供界面展示
           assistantMsg.usage = {
@@ -655,7 +657,8 @@ export const useChatStore = defineStore('chat', () => {
           const tc = assistantMsg.tool_calls.find(t => t.id === chunk.id) || assistantMsg.tool_calls[assistantMsg.tool_calls.length - 1]
           if (tc) tc.result = chunk.result
         } else if (chunk.type === 'delta' && chunk.content) {
-          assistantMsg.content += chunk.content
+          // 经打字机平滑输出：writer 按帧吐字写回 assistantMsg.content（target 即该响应式消息）
+          writer.push(chunk.content)
         } else if (chunk.type === 'done') {
           // 用量统计（token/成本/耗时/结束原因）随消息保留，供界面展示
           assistantMsg.usage = {

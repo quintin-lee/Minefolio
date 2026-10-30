@@ -143,7 +143,7 @@
         <div
           v-else-if="seg.type === 'streaming-text'"
           class="markdown-part streaming-text"
-        >{{ seg.content }}<span v-if="showTrailingCursor" class="typing-cursor-inline"></span></div>
+        ><span v-html="renderInlineMarkdown(seg.content)"></span></div>
 
         <!-- Action Card Block -->
         <ActionCard
@@ -178,6 +178,7 @@
         />
       </template>
     </template>
+    <span v-if="showTrailingCursor" class="typing-cursor-inline"></span>
   </div>
 </template>
 
@@ -404,6 +405,23 @@ const showTrailingCursor = computed(() => props.isStreaming && props.enableBuffe
 
 const mdCache = new Map<string, string>()
 const MD_CACHE_LIMIT = 80
+
+/**
+ * 流式尾段轻量行内渲染：只处理粗体/斜体/行内代码/删除线，不跑完整 marked 解析。
+ * 目的是消除流式期间 **粗体**、`代码` 等语法以原始符号裸露、段落结束才跳变的问题。
+ * 输出已 HTML 转义，天然免疫注入，无需 DOMPurify 二次过滤。
+ */
+function renderInlineMarkdown(text: string): string {
+  const esc = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+  return esc
+    .replace(/`([^`\n]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
+    .replace(/~~([^~\n]+)~~/g, '<del>$1</del>')
+}
 
 function renderMarkdown(text?: string): string {
   if (!text) return ''

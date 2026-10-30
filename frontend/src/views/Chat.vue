@@ -769,10 +769,20 @@ const lastMsgContent = computed(() => {
   return msgs.length > 0 ? msgs[msgs.length - 1]?.content : ''
 })
 
+// 流式期间 content 每帧变化（打字机 tick），滚动合并到 RAF：一帧至多一次 scrollTop 赋值，
+// 且仅在底部跟随（autoStickToBottom）时执行，避免与用户惯性滚动打架
+let scrollRafId: number | null = null
 watch(lastMsgContent, () => {
-  if (chat.isStreaming) {
-    scrollToBottom(false)
-  }
+  if (!chat.isStreaming || !autoStickToBottom.value) return
+  if (scrollRafId !== null) return
+  scrollRafId = requestAnimationFrame(() => {
+    scrollRafId = null
+    const el = messagesRef.value
+    if (el && autoStickToBottom.value) el.scrollTop = el.scrollHeight
+  })
+})
+onUnmounted(() => {
+  if (scrollRafId !== null) cancelAnimationFrame(scrollRafId)
 })
 
 

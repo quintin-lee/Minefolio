@@ -69,3 +69,55 @@ describe('chat store stream failure handling', () => {
     expect(store.messages.length).toBe(0)
   })
 })
+
+describe('chat store streaming pacing', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    localStorage.clear()
+    vi.clearAllMocks()
+  })
+
+  it('buffers deltas through the typewriter instead of appending bursts', async () => {
+    async function* burstStream() {
+      yield { type: 'delta' as const, content: '这一段'.repeat(20) } // 60 字符突发
+      yield { type: 'done' as const, finish_reason: 'stop' }
+    }
+    ;(chatStream as any).mockReturnValue(burstStream())
+
+    // fake RAF：手动推进帧，观察每帧吐字量
+    let frameCb: (() => void) | null = null
+    const raf = (cb: () => void) => { frameCb = cb; return 1 }
+    const caf = () => { frameCb = null }
+    vi.stubGlobal('requestAnimationFrame', raf)
+    vi.stubGlobal('cancelAnimationFrame', caf)
+
+    const store = useChatStore()
+    store.currentSessionId = 1
+    const sending = store.sendMessage('测试平滑输出')
+
+    // delta 已到达：writer 持有积压，正文尚未整块蹦出
+    await Promise.resolve()
+    await Promise.resolve()
+    const assistantMsg = store.messages.find(m => m.role === 'assistant')!
+    const afterFirstFrames = assistantMsg.content.length
+    expect(afterFirstFrames).toBeLessThan(60) // 不是整块直写
+
+    // 推进若干帧：逐步吐字
+    const observed: number[] = []
+    for (let i = 0; i < 10; i++) {
+      frameCb?.()
+      await Promise.resolve()
+      observed.push(assistantMsg.content.length)
+    }
+    // 每帧增量有上限（自适应步长，非整块）
+    const maxStep = Math.max(...observed.map((v, i) => v - (observed[i - 1] ?? afterFirstFrames)))
+    expect(maxStep).toBeLessThanOrEqual(20)
+
+    // 推进到清空缓冲
+    for (let i = 0; i < 200 && frameCb; i++) { frameCb?.(); await Promise.resolve() }
+    expect(assistantMsg.content.length).toBe(60)
+
+    await sending
+    vi.unstubAllGlobals()
+  })
+})
