@@ -1,6 +1,6 @@
 # AI Agent & MCP Runtime Hardening Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Eliminate system call storms and child process leaks in MCP STDIO communications, accelerate ReAct tool invocation round-trips via safe parallel network dispatch without violating SQLite single-connection constraints, explicitly propagate deterministic workflow step failures, and thread-pool asynchronous memory summarization.
 
@@ -62,7 +62,7 @@ backend/
 - Test: `backend/tests/unit/test_mcp_stderr_capture.c`
 - Modify: `backend/CMakeLists.txt`
 
-- [ ] **Step 1: Write unit test for block-buffered framer (`test_mcp_client_io.c`)**
+- [x] **Step 1: Write unit test for block-buffered framer (`test_mcp_client_io.c`)**
 
 Create `backend/tests/unit/test_mcp_client_io.c`:
 ```c
@@ -183,7 +183,7 @@ int main(void) {
 }
 ```
 
-- [ ] **Step 2: Register `test_mcp_client_io` in `backend/CMakeLists.txt` and verify compilation fails**
+- [x] **Step 2: Register `test_mcp_client_io` in `backend/CMakeLists.txt` and verify compilation fails**
 
 Add to `backend/CMakeLists.txt`:
 ```cmake
@@ -196,7 +196,7 @@ add_test(NAME test_mcp_client_io COMMAND test_mcp_client_io)
 Run: `cmake --build backend/build --target test_mcp_client_io`
 Expected: FAIL with `error: ‘mf_mcp_client_t’ has no member named ‘framer’`
 
-- [ ] **Step 3: Update `mcp_client.h` and implement block-buffered read in `stdio_call()`**
+- [x] **Step 3: Update `mcp_client.h` and implement block-buffered read in `stdio_call()`**
 
 In `backend/src/services/ai/tools/mcp/mcp_client.h`:
 Add `mcp_io_reader_t` definition, add `err_fd` and `framer` to `mf_mcp_client_t`, and expand `last_error[1024]`.
@@ -210,12 +210,12 @@ In `backend/src/services/ai/tools/mcp/mcp_client.c`:
 6. In dual-FD polling: poll both `c->read_fd` and `c->err_fd` (when `>= 0`). On stderr read activity, call `drain_stderr_nonblocking()`. If `read()` on stderr returns 0, close `c->err_fd` and set to `-1` to eliminate `POLLHUP` busy-loops.
 7. On timeout (`prc == 0`) or child EOF (`r == 0`), drain any trailing stderr before returning. If `c->last_error[0] != '\0'`, copy `c->last_error` to `out_err` via `snprintf(out_err, err_sz, "%s", c->last_error)`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cmake --build backend/build --target test_mcp_client_io && ./backend/build/test_mcp_client_io`
 Expected: PASS
 
-- [ ] **Step 5: Write unit test for anti-deadlock non-blocking stderr drain (`test_mcp_stderr_capture.c`)**
+- [x] **Step 5: Write unit test for anti-deadlock non-blocking stderr drain (`test_mcp_stderr_capture.c`)**
 
 Create `backend/tests/unit/test_mcp_stderr_capture.c`:
 ```c
@@ -303,7 +303,7 @@ int main(void) {
 }
 ```
 
-- [ ] **Step 6: Register test in CMakeLists.txt and verify execution**
+- [x] **Step 6: Register test in CMakeLists.txt and verify execution**
 
 Add to `backend/CMakeLists.txt`:
 ```cmake
@@ -316,7 +316,7 @@ add_test(NAME test_mcp_stderr_capture COMMAND test_mcp_stderr_capture)
 Run: `cmake --build backend/build --target test_mcp_stderr_capture && ./backend/build/test_mcp_stderr_capture`
 Expected: PASS
 
-- [ ] **Step 7: Commit Chunk 1**
+- [x] **Step 7: Commit Chunk 1**
 
 ```bash
 git add backend/src/services/ai/tools/mcp/mcp_client.h backend/src/services/ai/tools/mcp/mcp_client.c backend/tests/unit/test_mcp_client_io.c backend/tests/unit/test_mcp_stderr_capture.c backend/CMakeLists.txt
@@ -334,7 +334,7 @@ git commit -m "perf(mcp): ⚡ implement block-buffered io and dual-fd poll in st
 - Test: `backend/tests/unit/test_mcp_child_sanitation.c`
 - Modify: `backend/CMakeLists.txt`
 
-- [ ] **Step 1: Write unit test for child process file descriptor isolation (`test_mcp_child_sanitation.c`)**
+- [x] **Step 1: Write unit test for child process file descriptor isolation (`test_mcp_child_sanitation.c`)**
 
 Create `backend/tests/unit/test_mcp_child_sanitation.c`:
 ```c
@@ -381,7 +381,7 @@ int main(void) {
 }
 ```
 
-- [ ] **Step 2: Register `test_mcp_child_sanitation` in CMakeLists.txt and verify failure**
+- [x] **Step 2: Register `test_mcp_child_sanitation` in CMakeLists.txt and verify failure**
 
 Add to `backend/CMakeLists.txt`:
 ```cmake
@@ -394,7 +394,7 @@ add_test(NAME test_mcp_child_sanitation COMMAND test_mcp_child_sanitation)
 Run: `cmake --build backend/build --target test_mcp_child_sanitation && ./backend/build/test_mcp_child_sanitation`
 Expected: FAIL (assertion fails with `"clean":true` missing because dummy pipes leaked to child).
 
-- [ ] **Step 3: Implement parent `err_pipe` setup and post-dup2 `closefrom(3)` in `mcp_client.c`**
+- [x] **Step 3: Implement parent `err_pipe` setup and post-dup2 `closefrom(3)` in `mcp_client.c`**
 
 In `backend/src/services/ai/tools/mcp/mcp_client.c`:
 1. Ensure `#define _GNU_SOURCE` is defined.
@@ -412,12 +412,12 @@ In `backend/src/services/ai/tools/mcp/mcp_client.c`:
    - `c->read_fd = out_pipe[0]; c->write_fd = in_pipe[1]; c->err_fd = err_pipe[0];`.
    - Close `in_pipe[0]`, `out_pipe[1]`, `err_pipe[1]`.
 
-- [ ] **Step 4: Run test to verify pass**
+- [x] **Step 4: Run test to verify pass**
 
 Run: `cmake --build backend/build --target test_mcp_child_sanitation && ./backend/build/test_mcp_child_sanitation`
 Expected: PASS
 
-- [ ] **Step 5: Commit Chunk 2**
+- [x] **Step 5: Commit Chunk 2**
 
 ```bash
 git add backend/src/services/ai/tools/mcp/mcp_client.c backend/tests/unit/test_mcp_child_sanitation.c backend/CMakeLists.txt
@@ -436,7 +436,7 @@ git commit -m "fix(mcp): 🐛 sanitize inherited file descriptors in stdio child
 - Test: `backend/tests/unit/test_ai_parallel_tools.c`
 - Modify: `backend/CMakeLists.txt`
 
-- [ ] **Step 1: Write unit test for parallel tool dispatch (`test_ai_parallel_tools.c`)**
+- [x] **Step 1: Write unit test for parallel tool dispatch (`test_ai_parallel_tools.c`)**
 
 Create `backend/tests/unit/test_ai_parallel_tools.c`:
 ```c
@@ -525,7 +525,7 @@ int main(void) {
 }
 ```
 
-- [ ] **Step 2: Register `test_ai_parallel_tools` in CMakeLists.txt and verify compilation failure**
+- [x] **Step 2: Register `test_ai_parallel_tools` in CMakeLists.txt and verify compilation failure**
 
 Add to `backend/CMakeLists.txt`:
 ```cmake
@@ -538,7 +538,7 @@ add_test(NAME test_ai_parallel_tools COMMAND test_ai_parallel_tools)
 Run: `cmake --build backend/build --target test_ai_parallel_tools`
 Expected: FAIL with `undefined reference to 'is_stateless_network_tool'`
 
-- [ ] **Step 3: Implement parallel dispatch in `loop.h` and `loop.c`**
+- [x] **Step 3: Implement parallel dispatch in `loop.h` and `loop.c`**
 
 In `backend/src/services/ai/runtime/loop.h`:
 Declare:
@@ -583,17 +583,17 @@ In `backend/src/services/ai/runtime/loop.c`:
    - Post-gather: iterate `t = 0 .. n_calls - 1` in exact order, record limits if `tasks[t].executed`, add trace span, emit `cbs->on_tool_result`, append to `tc_record`, append `loop_clamp_tool_result()` to `msgs`, and free task heap memory.
 7. If batch not eligible: retain existing sequential execution loop.
 
-- [ ] **Step 4: Run test to verify pass**
+- [x] **Step 4: Run test to verify pass**
 
 Run: `cmake --build backend/build --target test_ai_parallel_tools && ./backend/build/test_ai_parallel_tools`
 Expected: PASS
 
-- [ ] **Step 5: Run existing loop hardening regression test**
+- [x] **Step 5: Run existing loop hardening regression test**
 
 Run: `bash backend/tests/test_ai_loop_hardening.sh`
 Expected: PASS
 
-- [ ] **Step 6: Commit Chunk 3**
+- [x] **Step 6: Commit Chunk 3**
 
 ```bash
 git add backend/src/services/ai/runtime/loop.h backend/src/services/ai/runtime/loop.c backend/tests/unit/test_ai_parallel_tools.c backend/CMakeLists.txt
@@ -611,7 +611,7 @@ git commit -m "feat(ai): ⚡ add parallel dispatch for stateless web tools in ru
 - Test: `backend/tests/unit/test_workflow_step_error.c`
 - Modify: `backend/CMakeLists.txt`
 
-- [ ] **Step 1: Write unit test for workflow error propagation (`test_workflow_step_error.c`)**
+- [x] **Step 1: Write unit test for workflow error propagation (`test_workflow_step_error.c`)**
 
 Create `backend/tests/unit/test_workflow_step_error.c`:
 ```c
@@ -677,7 +677,7 @@ int main(void) {
 }
 ```
 
-- [ ] **Step 2: Register test in CMakeLists.txt and verify failure**
+- [x] **Step 2: Register test in CMakeLists.txt and verify failure**
 
 Add to `backend/CMakeLists.txt`:
 ```cmake
@@ -690,7 +690,7 @@ add_test(NAME test_workflow_step_error COMMAND test_workflow_step_error)
 Run: `cmake --build backend/build --target test_workflow_step_error && ./backend/build/test_workflow_step_error`
 Expected: FAIL (assertion `rc1 == -1` fails because `executor.c` currently ignores step failures and executes terminal step).
 
-- [ ] **Step 3: Implement step validation & error emission in `executor.c`**
+- [x] **Step 3: Implement step validation & error emission in `executor.c`**
 
 In `backend/src/services/ai/workflow/executor.c`:
 1. Parse `parsed_out = step_out ? csilk_json_parse(step_out) : NULL;`.
@@ -700,12 +700,12 @@ In `backend/src/services/ai/workflow/executor.c`:
    - Send SSE event `csilk_sse_send(c, "error", err_str)`.
    - Free `err_str`, `ev_err`, `ctx_obj` and return `-1`.
 
-- [ ] **Step 4: Run test to verify pass**
+- [x] **Step 4: Run test to verify pass**
 
 Run: `cmake --build backend/build --target test_workflow_step_error && ./backend/build/test_workflow_step_error`
 Expected: PASS
 
-- [ ] **Step 5: Commit Task 4.1**
+- [x] **Step 5: Commit Task 4.1**
 
 ```bash
 git add backend/src/services/ai/workflow/executor.c backend/tests/unit/test_workflow_step_error.c backend/CMakeLists.txt
@@ -723,7 +723,7 @@ git commit -m "fix(ai): 🐛 explicitly propagate workflow step errors and halt 
 - Test: `backend/tests/unit/test_summary_worker_pool.c`
 - Modify: `backend/CMakeLists.txt`
 
-- [ ] **Step 1: Write unit test for summary worker pool (`test_summary_worker_pool.c`)**
+- [x] **Step 1: Write unit test for summary worker pool (`test_summary_worker_pool.c`)**
 
 Create `backend/tests/unit/test_summary_worker_pool.c`:
 ```c
@@ -778,7 +778,7 @@ int main(void) {
 }
 ```
 
-- [ ] **Step 2: Register test in CMakeLists.txt and verify compilation failure**
+- [x] **Step 2: Register test in CMakeLists.txt and verify compilation failure**
 
 Add to `backend/CMakeLists.txt`:
 ```cmake
@@ -791,7 +791,7 @@ add_test(NAME test_summary_worker_pool COMMAND test_summary_worker_pool)
 Run: `cmake --build backend/build --target test_summary_worker_pool`
 Expected: FAIL with `implicit declaration of function 'ai_summary_pool_init'`
 
-- [ ] **Step 3: Implement worker pool in `summary.h` and `summary.c`**
+- [x] **Step 3: Implement worker pool in `summary.h` and `summary.c`**
 
 1. In `summary.h`:
    ```c
@@ -816,17 +816,17 @@ Expected: FAIL with `implicit declaration of function 'ai_summary_pool_init'`
    - Call `ai_summary_pool_init()` at line 86 (first line of `ai_init()`).
    - Call `ai_summary_pool_shutdown()` in `ai_shutdown()`.
 
-- [ ] **Step 4: Run test to verify pass**
+- [x] **Step 4: Run test to verify pass**
 
 Run: `cmake --build backend/build --target test_summary_worker_pool && ./backend/build/test_summary_worker_pool`
 Expected: PASS
 
-- [ ] **Step 5: Run existing summary pipeline unit test**
+- [x] **Step 5: Run existing summary pipeline unit test**
 
 Run: `cmake --build backend/build --target test_ai_summary && ./backend/build/test_ai_summary`
 Expected: PASS
 
-- [ ] **Step 6: Commit Task 4.2**
+- [x] **Step 6: Commit Task 4.2**
 
 ```bash
 git add backend/src/services/ai/memory/summary.h backend/src/services/ai/memory/summary.c backend/src/services/ai_service.c backend/tests/unit/test_summary_worker_pool.c backend/CMakeLists.txt
@@ -837,11 +837,11 @@ git commit -m "perf(ai): ⚡ implement persistent worker pool and lru queue for 
 
 ## Final Verification Gate
 
-- [ ] Run full test suite:
+- [x] Run full test suite:
   ```bash
   cd backend && cmake --build build --target all && ctest --test-dir build --output-on-failure
   bash tests/test_ai_tool_call.sh
   bash tests/test_ai_loop_hardening.sh
   bash tests/test_mcp.sh
   ```
-- [ ] Expected: 100% test pass with 0 leaks under AddressSanitizer.
+- [x] Expected: 100% test pass with 0 leaks under AddressSanitizer.

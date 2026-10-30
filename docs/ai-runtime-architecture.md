@@ -89,23 +89,22 @@ Agent 循环是 Runtime 最核心的状态机引擎，其完整的状态转移�
         │         包含 Tool Calls? ── 否 ──► [Append Assistant Msg] ──► [Finish]
         │                      │ 是
         │                      ▼
-        │            [Tool Budget Check]
+        │            [Tool Batch Eligibility Check]
+        │         (全为无状态 Web 工具? -> 并行工作组; 含 DB/写操作? -> 串行保序)
         │                      │
-        │             超限? ───┴─── 是 ──► [AI_RUNTIME_ERR_TOOL] ──► [Finish]
-        │                      │ 否
         │                      ▼
-        │          [Security Policy Evaluate]
+        │          [Security Policy & De-dup Check]
         │                      │
         │         风控拦截/需确认? ── 是 ──► [Emit Confirmation Draft] ──► [Finish]
         │                      │ 否
         │                      ▼
-        │            [Execute Parsed Tool]
+        │       [Execute Tools (Parallel / Sequential)]
         │                      │
         │                      ▼
-        │             [Record Tool Span]
+        │             [Record Tool Spans]
         │                      │
         │                      ▼
-        │          [Append Tool Result to Context]
+        │      [Append Tool Results (Ordered Barrier)]
         │                      │
         └──────────────────────┘
 ```
@@ -200,15 +199,51 @@ data: {"type": "delta", "content": "根据您的账本统计，上月总支出�
 
 ---
 
-## 9. 测试与验证矩阵 (Verification Matrix)
+## 10. MCP 客户端与进程沙箱加固 (MCP Client Hardening)
+
+位于 `services/ai/tools/mcp/mcp_client.c`：
+1. **4KB 块缓冲读取器 (`mcp_io_reader_t`)**：采用 4KB 局部缓冲与 `memchr` 内存扫描换行分帧，彻底消除 100K 级别的逐字节单系统调用；单帧超过 1MB 时主动熔断报错，防止畸形数据打爆内存。
+2. **双描述符 Polling 与非阻塞 Stderr 排空**：`poll()` 同时监听 stdout (`read_fd`) 与 stderr (`err_fd`)。通过 `drain_stderr_nonblocking` 实时排空子进程标准错误，彻底防止外部 MCP 脚本输出大量诊断日志打满 64KB 内核管道而导致写阻塞死锁；对端关闭时安全重置 `err_fd = -1` 避免 `POLLHUP` CPU 100% 忙轮询。
+3. **子进程 post-dup2 隔离沙箱 (`closefrom`)**：子进程在 `dup2(0, 1, 2)` 重定向标准文件描述符后，立即调用 `closefrom(3)`（支持扫描 `/proc/self/fd/` 兜底），杜绝父进程的 HTTP 监听套接字与数据库连接池泄漏至第三方工具子进程。
+
+---
+
+## 11. 异步记忆 Worker 线程池 (Summary Thread Pool)
+
+位于 `services/ai/memory/summary.c`：
+1. **常驻 2-Worker 线程池**：淘汰按需裸起 `pthread_create` 的模式，常驻 2 个背景 Worker 线程消费环形任务队列（容量 64）。
+2. **64 槽 LRU 暂存队列**：待落库摘要暂存区从 16 槽扩容至 64 槽，支持同一 `session_id` 覆盖更新与全满时基于 `created_at` 时间戳的 LRU 淘汰保底。
+3. **零跨线程 DB 竞争**：Worker 线程在内存中完成大模型推理并放入暂存区；数据库写入完全由主请求线程在 `ai_summary_flush_pending()` 串行执行，确保 SQLite 单连接绝对线程安全。
+4. **生命周期管理**：在 `ai_init()` 首行幂等初始化，在 `ai_shutdown()` 中广播退出并完整回收队列与内存，实现 AddressSanitizer 零内存泄漏。
+
+---
+
+## 12. 确定性工作流节点容错与错误显式传播 (Workflow Step Error)
+
+位于 `services/ai/workflow/executor.c`：
+1. **拒绝静默掩盖**：确定性前置节点（如月度收支汇总、投资组合计算）返回 `NULL` 或畸形 JSON 时，执行器主动拦截，释放当前上下文。
+2. **协议对齐的 SSE 错误通知**：向客户端推送包含 `type: "error"`、`step_index`、`step_id`、`message` 的 SSE 事件，并返回 `-1` 立即终止流程，避免下游终态大模型依据残缺上下文胡乱生成财务建议，并节约 Token。
+
+---
+
+## 13. 测试与验证矩阵 (Verification Matrix)
 
 AI Runtime 体系拥有 100% 覆盖的单元测试与真实的端到端集成测试验证：
 
-1. **CTest 单元测试套件 (`test_ai_runtime.c`)**：
+1. **CTest 单元测试套件 (`tests/unit/`)**：
    - 上下文容器初始化与自动释放测试 (`test_context_lifecycle`)
    - 错误码枚举与结构化状态对象转换 (`test_error_taxonomy`)
    - 运行预算校验与统计累加器 (`test_limits_and_budgets`)
    - 记忆滑动窗口与系统提示词保留截断 (`test_memory_sliding_window`)
    - 超时、超限与外部中断信号模拟 (`test_runtime_cancellation_and_timeouts`)
-2. **端到端集成回归 (`test_ai_trace.sh`)**：
-   - 验证真实会话创建、多轮对话流式返回、工具 Span 上报与 `ai_traces` 表落库统计。
+   - MCP 4KB 块缓冲读取与 1MB 上限截断 (`test_mcp_client_io`)
+   - MCP Stderr 非阻塞排空与防管道死锁 (`test_mcp_stderr_capture`)
+   - MCP 子进程 post-dup2 `closefrom(3)` 描述符隔离 (`test_mcp_child_sanitation`)
+   - 无状态网络工具并行调度 vs 串行回退 (`test_ai_parallel_tools`)
+   - 确定性工作流节点错误显式传播与阻断 (`test_workflow_step_error`)
+   - 异步记忆 Worker 线程池入队、LRU 淘汰与清理 (`test_summary_worker_pool`)
+2. **端到端集成回归**：
+   - 验证真实会话创建、多轮对话流式返回、工具 Span 上报与 `ai_traces` 表落库统计 (`test_ai_trace.sh`)
+   - 验证超时重试、预算收敛总结、去重拦截与动账令牌强制拦截 (`test_ai_loop_hardening.sh`)
+   - 验证 HTTP 与 STDIO 模式下的 MCP 服务端点通信与工具调用 (`test_mcp.sh`)
+

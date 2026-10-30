@@ -10,6 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **AI Agent & MCP Runtime Hardening (`backend/src/services/ai/tools/mcp/`, `backend/src/services/ai/runtime/`, `backend/src/services/ai/workflow/`, `backend/src/services/ai/memory/`, `backend/tests/unit/`)**:
+  - **MCP Block-Buffered I/O & Dual-FD Anti-Deadlock (`mcp_client.h/c`)**: Replaced 1-byte syscall loop with 4KB `mcp_io_reader_t` and `memchr` newline fast-scan, eliminating ~100k syscall context switches on large JSON schemas; added dual-FD `poll()` monitoring both child stdout and stderr with non-blocking stderr drain to prevent 64KB pipe buffer deadlocks; safely clears `err_fd` on EOF/POLLHUP to prevent CPU 100% busy-polling.
+  - **Child Process Sandbox FD Sanitation (`mcp_client.c`)**: Child process executes `dup2` for standard descriptors (0, 1, 2) followed by `closefrom(3)` before `execve`, preventing server listening sockets and database pool connections from leaking into external MCP child processes.
+  - **Parallel Stateless Network Tool Dispatch (`loop.h/c`)**: While strictly protecting single-connection SQLite safety by keeping DB tools serialized, stateless web tools (`web_search`, `fetch_webpage`) are dispatched concurrently across pthreads with an exact turn-order gathering barrier, reducing multi-tool latency by 50%+.
+  - **Explicit Deterministic Workflow Error Propagation (`executor.c`)**: Intermediate calculation step failures (NULL output or malformed JSON) now actively emit frontend-compatible `error` SSE events and halt execution before the terminal LLM report generator, eliminating financial hallucinations and wasted tokens.
+  - **Asynchronous Summary Worker Pool & LRU Deduplication (`summary.h/c`, `ai_service.c`)**: Replaced unpooled native thread creation with a persistent 2-worker pthread pool; expanded staging slots to 64 with timestamp-based associative LRU replacement and session deduplication; fully managed lifecycle via `ai_summary_pool_init()` and `ai_summary_pool_shutdown()` with zero memory leaks.
+  - Added 6 dedicated unit test targets in CMake: `test_mcp_client_io`, `test_mcp_stderr_capture`, `test_mcp_child_sanitation`, `test_ai_parallel_tools`, `test_workflow_step_error`, and `test_summary_worker_pool` (40/40 tests passing in 0.8s).
+
+### Fixed
+- **Frontend Thinking Mode Persistence (`frontend/src/components/ChatMessageContent.vue`, `frontend/tests/chat-message-thinking.spec.ts`)**:
+  - Thinking process cards now remain expanded by default both during streaming and after completion, preventing cards from abruptly auto-collapsing while preserving manual click-to-toggle capability.
+
 - **Account-Dimension Asset Management (`backend/sql/migrations/{sqlite,postgres}/V017__accounts_table.sql`, `backend/src/domain/account/`, `application/account/`, `infrastructure/repositories/account_repo_impl.c`, `interfaces/http/controllers/account_controller.c`, `frontend/src/`)**:
   - Introduced independent `accounts` table (V017) as pure container grouping assets per (user, ledger) with institution type, account number, currency, icon, note, manual sort order, and soft-archive flag; backfill migration auto-creates a "默认账户" per ledger and re-parents all existing assets.
   - Full DDD backend stack: domain rules (`mf_account_rule_*`), repository with `asset_count`/`total_value` aggregates, use cases with duplicate-name 1004 and delete-protection (assets/transactions present → 1004, guide to archive), lazy seeding of the default account alongside category seeds, and REST endpoints `GET/POST /api/accounts`, `PUT/DELETE /api/accounts/:id`.

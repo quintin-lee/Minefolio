@@ -628,11 +628,11 @@ sequenceDiagram
 | **Session** | `services/ai/runtime/session.h` | 会话元数据持久化、自动标题提取（30字限长截断）、历史消息分页拉取 |
 | **Context** | `services/ai/runtime/context.h` | 统一运行容器 `ai_runtime_context_t`：集成 user_id、session_id、messages、tools、permissions、limits、stats 与 trace 上下文 |
 | **Model** | `services/ai/model/` | 多模型抽象（DeepSeek / OpenAI 兼容）、请求提示词组织、Token 估算与费率成本计量 |
-| **Tool** | `services/ai/tools/` | 统一工具注册表、JSON Schema 自动校验、类型安全入参解析，工具绝不直接调用 LLM |
-| **Workflow** | `services/ai/workflow/` | Universal DAG 图调度、拓扑排序、节点状态机迁移，调用统一 Runtime 完成报告生成 |
+| **Tool** | `services/ai/tools/` | 统一工具注册表、JSON Schema 自动校验、无状态网络工具并发并行调度（Parallel Dispatch）、类型安全入参解析，工具绝不直接调用 LLM |
+| **Workflow** | `services/ai/workflow/` | Universal DAG 图调度、拓扑排序、节点状态机迁移、确定性前置节点显式错误传播与熔断，调用统一 Runtime 完成报告生成 |
 | **Policy** | `services/ai/policy/` | 五级金融风控（READ_ONLY 至 CRITICAL）、带 Nonce 防重放 HMAC 确认令牌、敏感字段脱敏审计 |
 | **Trace** | `services/ai/trace/` | OpenTelemetry 兼容 Span 追踪、网络与工具执行延迟分析、Token/Cost 统计导出至 `ai_traces` |
-| **Memory** | `services/ai/memory/` | 上下文记忆管理：系统提示词永久置顶、滑动窗口历史消息截断、严格遵守模型 Token Budget |
+| **Memory** | `services/ai/memory/` | 上下文记忆管理：系统提示词永久置顶、滑动窗口历史消息截断、2-Worker 异步常驻摘要线程池与 64 槽 LRU 暂存队列 |
 
 **2. 运行时预算与限制 (Limits & Budgets)**
 
