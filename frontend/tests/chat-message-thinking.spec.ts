@@ -51,17 +51,17 @@ describe('ChatMessageContent thinking mode card', () => {
     const header = wrapper.find('.thinking-header')
     expect(header.exists()).toBe(true)
 
-    // 非流式历史状态：默认折叠
-    expect(wrapper.find('.thinking-content-body').exists()).toBe(false)
-
-    // 点击展开
-    await header.trigger('click')
+    // 默认保持展开，不折叠
     expect(wrapper.find('.thinking-content-body').exists()).toBe(true)
     expect(wrapper.find('.thinking-content-body').text()).toContain('这是思考分析过程')
 
-    // 再次点击收起
+    // 点击收起
     await header.trigger('click')
     expect(wrapper.find('.thinking-content-body').exists()).toBe(false)
+
+    // 再次点击展开
+    await header.trigger('click')
+    expect(wrapper.find('.thinking-content-body').exists()).toBe(true)
   })
 
   it('auto-expands thinking card during streaming thinking phase', () => {
