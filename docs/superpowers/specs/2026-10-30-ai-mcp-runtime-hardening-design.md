@@ -8,7 +8,7 @@ During recent in-depth architectural and code-level audits, four structural bott
 1. **MCP STDIO I/O Syscall Storm**: In `src/services/ai/tools/mcp/mcp_client.c`, `stdio_call` reads child process stdout byte-by-byte via `read(fd, cur, 1)` with a per-byte `poll()`. For large tool payloads (e.g. 100 KB JSON schemas), this causes over 100,000 user/kernel context switches, leading to CPU thrashing and elevated latency across `initialize`, `tools/list`, and `tools/call`.
 2. **Child Process Resource & Debugging Leak**:
    - `fork()` without child-side file descriptor sanitation leaks host TCP listening sockets and open database pool connections to child processes, risking `Address already in use` upon daemon restarts.
-   - Child process `stderr` is uncaptured. Script syntax errors or missing environment packages (e.g. Python module import errors) produce silent `EOF` failures with unhelpful `"stdio child produced no response"` messages. Furthermore, unread stderr can fill the 64KB pipe buffer and deadlock the child process.
+   - Child process `stderr` is uncaptured. Script syntax errors or missing environment packages (e.g. Python module import errors) produce silent `EOF` failures with unhelpful `"stdio child produced no response"` messages. Furthermore, unread stderr exceeding 64KB fills the kernel pipe buffer, causing the child process to block indefinitely on `write(2, ...)` while the parent polls only for stdout.
 3. **Serial Network Tool Execution Bottleneck**:
    - When the LLM emits multiple read-only stateless network tool calls in a single turn (e.g. concurrent `web_search` for different ticker symbols, followed by `fetch_webpage`), the runtime executes them strictly sequentially in a `for` loop, multiplying round-trip response time.
 4. **Silent Workflow Step Failures & Unpooled Summary Workers**:
@@ -60,7 +60,7 @@ This design document establishes the architectural specification for hardening t
 │ mf_mcp_client_t Framer State             │ │ Child Sandbox Post-dup2 Sanitation       │
 │ - mcp_io_reader_t framer in stdio_call   │ │ - dup2(0, 1, 2) FIRST                   │
 │ - err_fd + last_error[1024]              │ │ - closefrom(3) AFTER dup2                │
-│ - closed in mf_mcp_client_free           │ │ - non-blocking stderr drain to last_error│
+│ - 2-FD poll (stdout + stderr drain)      │ │ - non-blocking stderr anti-deadlock drain│
 └──────────────────────────────────────────┘ └──────────────────────────────────────────┘
 ```
 
@@ -98,11 +98,28 @@ typedef struct {
 - `mf_mcp_client_new()` initializes `c->err_fd = -1`, `c->framer.head = 0`, `c->framer.tail = 0`, and zeroes `c->last_error`.
 - `mf_mcp_client_free()` closes `c->err_fd` if `>= 0` in addition to `c->read_fd` and `c->write_fd`.
 
-#### Framing Protocol Implementation in `stdio_call()`
+#### Dual-FD Polling and Framing Implementation in `stdio_call()`
 All stdio reading in `mcp_client.c` (`initialize`, `list_tools`, `call_tool`) routes through static `stdio_call()`. The read loop is updated as follows:
-1. `stdio_call()` operates on `c->framer`.
+
+```c
+/* Helper: Drain stderr non-blockingly to prevent 64KB pipe buffer deadlock */
+static void drain_stderr_nonblocking(mf_mcp_client_t* c) {
+    if (!c || c->err_fd < 0) return;
+    char buf[512];
+    ssize_t n;
+    while ((n = read(c->err_fd, buf, sizeof(buf) - 1)) > 0) {
+        buf[n] = '\0';
+        size_t cur_len = strlen(c->last_error);
+        if (cur_len + n < sizeof(c->last_error) - 1) {
+            strncat(c->last_error, buf, sizeof(c->last_error) - cur_len - 1);
+        }
+    }
+}
+```
+
+1. `stdio_call()` operates on persistent `c->framer`.
 2. While total accumulated response bytes `n < MCP_MAX_FRAME_SIZE`:
-   - If `c->framer.head < c->framer.tail`:
+   - **Step A (In-memory scan)**: If `c->framer.head < c->framer.tail`:
      - Search for `\n` using `memchr(c->framer.buf + c->framer.head, '\n', c->framer.tail - c->framer.head)`.
      - If found at pointer `p`:
        - Append bytes from `head` to `p` to output buffer `resp`.
@@ -111,17 +128,29 @@ All stdio reading in `mcp_client.c` (`initialize`, `list_tools`, `call_tool`) ro
      - If not found:
        - Append all bytes from `head` to `tail` to `resp`.
        - Reset `c->framer.head = c->framer.tail = 0`.
-   - If `c->framer.head == c->framer.tail`:
+   - **Step B (Dual-FD Poll)**: If `c->framer.head == c->framer.tail`:
      - Reset `c->framer.head = c->framer.tail = 0`.
-     - Execute `poll(&pfd, 1, timeout_ms)`. If `prc < 0 && errno == EINTR`, retry. If `prc == 0`, report timeout and return `NULL`.
-     - Also drain stderr non-blockingly if `c->err_fd >= 0` to prevent pipe deadlocks.
-     - Call `ssize_t r = read(c->read_fd, c->framer.buf, MCP_IO_BUFFER_SIZE)`.
-     - If `r == 0`: EOF reached.
-       - If `n > 0`: break loop, trim trailing `\r` and `\n`, null-terminate `resp[n] = '\0'`, and return `resp`.
-       - If `n == 0`: report child termination and return `NULL`.
-     - If `r < 0`: on `EAGAIN` retry poll; on other errors, return `NULL`.
-     - Update `c->framer.tail = (size_t)r`.
-3. If `n >= MCP_MAX_FRAME_SIZE`, free `resp`, write error `"stdio response frame exceeded 1MB limit"`, and return `NULL`.
+     - Set up dual polling:
+       ```c
+       struct pollfd pfds[2] = {
+           { .fd = c->read_fd, .events = POLLIN, .revents = 0 },
+           { .fd = c->err_fd,  .events = POLLIN, .revents = 0 }
+       };
+       int nfds = (c->err_fd >= 0) ? 2 : 1;
+       int prc = poll(pfds, nfds, timeout_ms);
+       ```
+     - If `prc < 0 && errno == EINTR`, retry.
+     - If `prc == 0`: drain stderr via `drain_stderr_nonblocking(c)`, report timeout in `out_err`, reset `c->framer.head = c->framer.tail = 0`, free `resp`, and return `NULL`.
+     - If `nfds == 2 && (pfds[1].revents & (POLLIN | POLLHUP | POLLERR))`:
+       - Call `drain_stderr_nonblocking(c)`.
+     - If `pfds[0].revents & (POLLIN | POLLHUP | POLLERR)`:
+       - Call `ssize_t r = read(c->read_fd, c->framer.buf, MCP_IO_BUFFER_SIZE)`.
+       - If `r == 0`: EOF reached. Drain stderr via `drain_stderr_nonblocking(c)`.
+         - If `n > 0`: trim trailing `\r` and `\n`, null-terminate `resp[n] = '\0'`, and return `resp`.
+         - If `n == 0`: reset framer to 0, report child termination in `out_err`, free `resp`, and return `NULL`.
+       - If `r < 0`: on `EAGAIN` retry poll; on other errors, reset framer to 0, free `resp`, and return `NULL`.
+       - Update `c->framer.tail = (size_t)r`.
+3. If `n >= MCP_MAX_FRAME_SIZE`, reset `c->framer.head = c->framer.tail = 0`, free `resp`, write error `"stdio response frame exceeded 1MB limit"`, and return `NULL`.
 
 ---
 
@@ -163,20 +192,6 @@ To prevent closing pipe file descriptors before redirection:
    - Store `c->child_pid = pid; c->read_fd = out_pipe[0]; c->write_fd = in_pipe[1]; c->err_fd = err_pipe[0];`.
    - Close `in_pipe[0]`, `out_pipe[1]`, `err_pipe[1]`.
 
-#### Stderr Capture on Failure & Anti-Deadlock Drain
-During `stdio_call()`, whenever `c->err_fd >= 0`, drain non-blocking:
-```c
-if (c->err_fd >= 0) {
-    char err_buf[512];
-    ssize_t n_err = read(c->err_fd, err_buf, sizeof(err_buf) - 1);
-    if (n_err > 0) {
-        err_buf[n_err] = '\0';
-        snprintf(c->last_error, sizeof(c->last_error), "stdio child stderr: %s", err_buf);
-    }
-}
-```
-If child terminates with EOF or timeout, `c->last_error` is copied into `out_err` to provide explicit diagnostic details.
-
 ---
 
 ### 3.3 Parallel Stateless Network Tool Dispatch (`src/services/ai/runtime/loop.c`)
@@ -194,12 +209,15 @@ Therefore, parallel dispatch is strictly isolated to **stateless network tools t
   - All mutation tools (`is_mutation == true` or `requires_id == true`).
 
 #### Parallel Dispatch Data Structures & Worker
+To guarantee heap memory safety across `realloc(msgs)` in the main thread:
 ```c
 typedef struct {
     size_t               call_idx;
     int64_t              user_id;
     int64_t              session_id;
-    const char*          name;
+    char                 tool_call_id[64];
+    char*                tool_name;       /* strdup'd owned string */
+    char*                raw_arguments;   /* strdup'd owned string */
     csilk_json_t*        args;
     const volatile bool* cancel_token;
     char*                result_str;
@@ -214,7 +232,7 @@ static void* ai_parallel_tool_worker(void* arg) {
     
     /* Stateless network tools pass NULL for pool, valid user_id/session_id to pass auth */
     task->result_str = ai_tools_execute_parsed_cancel(
-        NULL, task->user_id, task->session_id, task->args, task->name, task->cancel_token);
+        NULL, task->user_id, task->session_id, task->args, task->tool_name, task->cancel_token);
         
     clock_gettime(CLOCK_MONOTONIC, &t1);
     task->span_ms = (t1.tv_sec - t0.tv_sec) * 1000 + (t1.tv_nsec - t0.tv_nsec) / 1000000;
@@ -230,31 +248,41 @@ static void* ai_parallel_tool_worker(void* arg) {
 When `n_calls > 1`:
 1. **Pre-check Batch Eligibility**:
    - Check if all `t = 0 .. n_calls - 1` satisfy `is_stateless_network_tool(tc[t].name)`.
-   - Check `n_calls <= 8`. If `n_calls > 8` or any tool requires database access or is a mutation, fallback to standard serial execution.
-2. **Main-Thread Pre-Evaluation (Serialized)**:
+   - Check `n_calls <= 8`. If `n_calls > 8` or any tool touches local DB / MCP / mutation, fallback to standard serial execution.
+2. **Main-Thread Pre-Evaluation (Serialized & In Exact Turn Order)**:
    - For each `t = 0 .. n_calls - 1`:
-     - Initialize `tasks[t]` with `user_id = ctx->user_id`, `session_id = ctx->session_id`, `name = tc[t].name`, `cancel_token = ctx->cancel_token`.
-     - Parse `args` into `tasks[t].args`.
-     - Run `ai_policy_evaluate(ctx->user_id, ctx->session_id, tc[t].name, tasks[t].args, AI_RISK_NO_OVERRIDE)`.
-     - Emit `cbs->on_tool_call()`.
-     - Check `loop_call_seen(seen_hashes, seen_count, call_hash)`.
-     - If blocked by policy or duplicate, mark `tasks[t].result_str` pre-filled.
-     - If not duplicate, record `seen_hashes[seen_count++] = call_hash` immediately to prevent intra-batch duplicates.
+     - Initialize `tasks[t]` with `user_id = ctx->user_id`, `session_id = ctx->session_id`, `cancel_token = ctx->cancel_token`.
+     - Secure owned copies: `strncpy(tasks[t].tool_call_id, tc[t].id ? tc[t].id : "", sizeof(tasks[t].tool_call_id) - 1)`.
+     - `tasks[t].tool_name = strdup(tc[t].name ? tc[t].name : "");`
+     - `tasks[t].raw_arguments = strdup(tc[t].arguments ? tc[t].arguments : "{}");`
+     - Parse `tasks[t].args = csilk_json_parse(tasks[t].raw_arguments)`.
+     - Run policy check:
+       ```c
+       ai_policy_decision_t* decision = ai_policy_evaluate(
+           ctx->user_id, ctx->session_id, tasks[t].tool_name, tasks[t].args, AI_RISK_NO_OVERRIDE);
+       ```
+     - Emit `cbs->on_tool_call()` before any execution begins.
+     - Evaluate duplicate call hash `loop_call_hash()`. If duplicate or blocked by policy, populate `tasks[t].result_str` immediately.
+     - If allowed and not duplicate, record `seen_hashes[seen_count++] = call_hash` immediately to prevent intra-batch duplicate executions.
+     - Free policy decision: `ai_policy_decision_free(decision);`.
 3. **Parallel Execution**:
-   - Track spawned threads: `bool spawned[8] = {false}; pthread_t threads[8];`.
+   - Track spawned threads: `bool thread_spawned[8] = {false}; pthread_t threads[8];`.
    - For each unblocked task `t`:
-     - If `pthread_create(&threads[t], NULL, ai_parallel_tool_worker, &tasks[t]) == 0`, set `spawned[t] = true`.
-     - If creation fails, fallback to calling `ai_tools_execute_parsed_cancel()` inline on the main thread.
-   - For each `t = 0 .. n_calls - 1`:
-     - If `spawned[t] == true`, execute `pthread_join(threads[t], NULL)`.
+     - If `pthread_create(&threads[t], NULL, ai_parallel_tool_worker, &tasks[t]) == 0`:
+       - `thread_spawned[t] = true;`
+     - Else (spawn failure):
+       - Fallback immediately inline: `ai_parallel_tool_worker(&tasks[t]);`.
+   - Join all spawned workers:
+     - For each `t = 0 .. n_calls - 1`:
+       - If `thread_spawned[t]`: `pthread_join(threads[t], NULL);`.
 4. **Main-Thread Post-Gather (Serialized & In Exact Turn Order)**:
    - Iterate `t = 0 .. n_calls - 1`:
      - Record tool call budget: `ai_runtime_limits_record_tool_call(&ctx->stats, 1)`.
-     - Add trace span: `ai_trace_add_tool_span(trace, tc[t].name, tasks[t].span_ms, strlen(tasks[t].result_str), tasks[t].success)`.
-     - Emit `cbs->on_tool_result()`.
-     - Append to `tc_record` for persistence.
-     - Append `role="tool"` message into `msgs`.
-     - Clean up parsed `tasks[t].args` and free `tasks[t].result_str`.
+     - Add trace span: `ai_trace_add_tool_span(trace, tasks[t].tool_name, tasks[t].span_ms, strlen(tasks[t].result_str), tasks[t].success)`.
+     - Emit `cbs->on_tool_result(tasks[t].tool_call_id, tasks[t].tool_name, tasks[t].result_str, user_data)`.
+     - Append to `tc_record` for persistence using owned strings (`tool_call_id`, `tool_name`, `raw_arguments`).
+     - Append `role="tool"` message into `msgs` via `realloc()` (safe because `tasks[t]` strings are independent copies).
+     - Free task resources: `csilk_json_free(tasks[t].args); free(tasks[t].tool_name); free(tasks[t].raw_arguments); free(tasks[t].result_str);`.
 
 ---
 
@@ -333,25 +361,55 @@ typedef struct {
     bool            initialized;
     pthread_t       workers[2];
 } summary_worker_pool_t;
+
+static summary_worker_pool_t s_pool = {0};
+```
+
+#### Worker Loop Implementation
+```c
+static void* summary_pool_worker_entry(void* arg) {
+    (void)arg;
+    while (1) {
+        pthread_mutex_lock(&s_pool.lock);
+        while (!s_pool.shutdown && s_pool.count == 0) {
+            pthread_cond_wait(&s_pool.not_empty, &s_pool.lock);
+        }
+        if (s_pool.shutdown && s_pool.count == 0) {
+            pthread_mutex_unlock(&s_pool.lock);
+            break;
+        }
+        summary_task_t* task = s_pool.queue[s_pool.head];
+        s_pool.head = (s_pool.head + 1) % SUMMARY_QUEUE_CAP;
+        s_pool.count--;
+        pthread_mutex_unlock(&s_pool.lock);
+
+        summary_worker(task);
+    }
+    return NULL;
+}
 ```
 
 #### Pool Lifecycle Management
 - `void ai_summary_pool_init(void)`:
-  - Called at the **very entry** of `ai_init()` in `src/services/ai_service.c` (line 86) before any configuration loading or early returns.
+  - Called at the **very entry** of `ai_init()` in `src/services/ai_service.c` before any configuration loading or early returns.
   - Idempotent: checks `if (s_pool.initialized) return;`.
-  - Initializes mutex, condition variable, spawns 2 worker threads, and sets `s_pool.initialized = true`.
+  - Initializes mutex, condition variable, spawns 2 worker threads running `summary_pool_worker_entry`, and sets `s_pool.initialized = true`.
 - `void ai_summary_pool_shutdown(void)`:
   - Called during `ai_shutdown()` in `src/services/ai_service.c`.
   - Idempotent: checks `if (!s_pool.initialized) return;`.
-  - Sets `shutdown = true`, broadcasts `not_empty`, joins both worker threads.
+  - Acquires `s_pool.lock`, sets `s_pool.shutdown = true`, broadcasts `not_empty`, releases lock.
+  - Joins both worker threads: `pthread_join(s_pool.workers[0], NULL); pthread_join(s_pool.workers[1], NULL);`.
   - Drains queue: for any remaining queued tasks, calls `inflight_release(task->inflight_idx)`, frees `task->user_prompt`, and frees `task`.
   - Drains pending slots: iterates `s_pending`, frees all `s_pending[i].text != NULL` to ensure zero AddressSanitizer leaks.
   - Destroys synchronizers and sets `s_pool.initialized = false`.
 
 #### Non-blocking Enqueue & Associative Deduplicating Pending Slots
 1. **Non-blocking Enqueue**:
-   - `ai_summary_maybe_trigger()` acquires pool lock.
-   - If `count == SUMMARY_QUEUE_CAP`, drop task immediately: free `task->user_prompt`, free `task`, call `inflight_release(task->inflight_idx)`, unlock, and log warning. Never block main HTTP request threads.
+   - `ai_summary_maybe_trigger()` first guards: `if (!s_pool.initialized || s_pool.shutdown) return;`.
+   - Acquires `s_pool.lock`.
+   - If `s_pool.count == SUMMARY_QUEUE_CAP`, drop task immediately: free `task->user_prompt`, free `task`, call `inflight_release(task->inflight_idx)`, unlock, and log warning. Never block main HTTP request threads.
+   - Enqueue task: `s_pool.queue[s_pool.tail] = task; s_pool.tail = (s_pool.tail + 1) % SUMMARY_QUEUE_CAP; s_pool.count++;`.
+   - Signals `pthread_cond_signal(&s_pool.not_empty)` and unlocks.
 2. **Pending Slot Replacement with Session Deduplication**:
    - Worker acquires `s_pending_lock`.
    - **Step 1: Check existing session**: If an entry exists where `s_pending[i].text != NULL && s_pending[i].session_id == session_id`, free `s_pending[i].text`, update slot with new summary, and set `created_at = time(NULL)`.
@@ -367,7 +425,8 @@ typedef struct {
 | Failure Condition | Detection Mechanism | Mitigation / Recovery Action | User-Facing Outcome |
 | :--- | :--- | :--- | :--- |
 | MCP child script crashes (e.g. missing import) | `read(stdout)` returns EOF; `err_fd` has bytes | Read up to 1024B from `err_fd`, populate `c->last_error` | Explicit error: `"stdio child stderr: ImportError: No module named 'mcp'"` |
-| Malicious / runaway MCP payload (>1MB) | Byte counter in framer exceeds `MCP_MAX_FRAME_SIZE` | Abort read, close pipes, mark client error | Tool returns error: `"payload exceeded 1MB limit"` |
+| Child emits >64KB stderr before writing stdout | Stderr pipe buffer fills; `pfds[1]` reports `POLLIN` | Parent drains stderr non-blockingly during poll loop | Anti-deadlock: child continues execution; parent captures stderr |
+| Malicious / runaway MCP payload (>1MB) | Byte counter in framer exceeds `MCP_MAX_FRAME_SIZE` | Abort read, close pipes, reset framer | Tool returns error: `"payload exceeded 1MB limit"` |
 | Client disconnects during parallel tool execution | `*ctx->cancel_token == true` | Workers observe cancel token, skip operations, join | In-flight execution cleanly halted; no orphaned threads |
 | Child inherits listening socket / DB pool | Child executes `closefrom(3)` after `dup2(0,1,2)` | All inherited file descriptors > 2 closed | Zero socket leaks or daemon restart lockups |
 | Deterministic calculation SQL failure | `node->execute` returns NULL or invalid JSON | Free `cur_ctx_str`, emit SSE `type: "error"`, abort | Client UI transitions to error status; 0 token waste |
@@ -377,7 +436,8 @@ typedef struct {
 
 ## 5. Verification & Testing Strategy
 
-### 5.1 Unit Tests
+### 5.1 Unit Tests & CMake Targets
+The following new unit test targets are registered under `CMakeLists.txt` via `add_executable()` and `add_test()`:
 1. **`tests/unit/test_mcp_client_io.c`**:
    - Feed multi-kilobyte JSON-RPC responses (10KB, 100KB, 500KB) through a pipe to `stdio_call()`.
    - Assert `mcp_io_reader_t` correctly extracts single and multiple frames across buffer boundaries without dropping bytes.
@@ -386,8 +446,8 @@ typedef struct {
    - Spawn mock child script that inspects `/proc/self/fd/`.
    - Assert that only descriptors 0, 1, 2 exist in child process.
 3. **`tests/unit/test_mcp_stderr_capture.c`**:
-   - Spawn script writing to stderr and exiting with code 1.
-   - Assert `c->last_error` contains the captured stderr text.
+   - Spawn script writing >64KB to stderr to verify non-blocking drain immunity against pipe deadlock.
+   - Assert `c->last_error` captures the stderr text and execution succeeds or fails cleanly.
 4. **`tests/unit/test_ai_parallel_tools.c`**:
    - Dispatch 2 mock `web_search` queries with 200ms sleep each.
    - Assert total wall-clock duration is < 300ms (parallel), compared to 400ms (serial).
