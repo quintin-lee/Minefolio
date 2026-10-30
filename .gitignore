@@ -24,7 +24,9 @@ frontend/dist-mobile/
 .omo/
 .omp/
 .qoder
+.openviking/
 .superpowers/
+*/.jeikcode/
 deps/
 playwright-*/
 
