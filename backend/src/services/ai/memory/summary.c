@@ -54,12 +54,10 @@ typedef struct {
     pthread_t       workers[2];
 } summary_worker_pool_t;
 
-static summary_worker_pool_t s_pool = {
-    .lock = PTHREAD_MUTEX_INITIALIZER,
-    .not_empty = PTHREAD_COND_INITIALIZER,
-    .initialized = false,
-    .shutdown = false
-};
+static summary_worker_pool_t s_pool = {.lock = PTHREAD_MUTEX_INITIALIZER,
+                                       .not_empty = PTHREAD_COND_INITIALIZER,
+                                       .initialized = false,
+                                       .shutdown = false};
 
 typedef struct {
     int64_t session_id;
@@ -387,7 +385,7 @@ ai_summary_pool_enqueue_test_task(int64_t session_id, int64_t user_id, const cha
         summary_stage_result(session_id, user_id, prompt, 10);
         return 0;
     }
-    int found = 0;
+    int    found = 0;
     size_t idx = inflight_acquire(session_id, &found);
 
     summary_task_t* task = (summary_task_t*)calloc(1, sizeof(summary_task_t));

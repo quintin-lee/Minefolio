@@ -183,7 +183,8 @@ ai_workflow_execute_stream(csilk_ctx_t* c, const ai_workflow_graph_t* graph, ai_
                 csilk_json_add_string(ev_err, "type", "error");
                 csilk_json_add_number(ev_err, "step_index", (double)i);
                 csilk_json_add_string(ev_err, "step_id", node->node_id ? node->node_id : "");
-                const char* emsg = !step_out ? "Node execution failed" : "Malformed JSON returned by node";
+                const char* emsg =
+                    !step_out ? "Node execution failed" : "Malformed JSON returned by node";
                 csilk_json_add_string(ev_err, "message", emsg);
                 csilk_json_add_string(ev_err, "error", emsg);
                 char* err_str = csilk_json_serialize(ev_err, &slen);

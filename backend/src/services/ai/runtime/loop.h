@@ -66,11 +66,14 @@ bool ai_parallel_batch_eligible(const char* const* names, size_t count);
 /**
  * @brief 并发/串行执行双工具批次（测试与高层辅助）
  */
-int ai_tools_execute_parallel_batch(
-    int64_t user_id, int64_t session_id,
-    const char* name1, const csilk_json_t* a1,
-    const char* name2, const csilk_json_t* a2,
-    char** out1, char** out2);
+int ai_tools_execute_parallel_batch(int64_t             user_id,
+                                    int64_t             session_id,
+                                    const char*         name1,
+                                    const csilk_json_t* a1,
+                                    const char*         name2,
+                                    const csilk_json_t* a2,
+                                    char**              out1,
+                                    char**              out2);
 
 /* 兼容旧签名 */
 typedef void (*ai_stream_chunk_cb)(const char* chunk, void* user_data);

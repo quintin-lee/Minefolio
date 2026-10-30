@@ -159,15 +159,25 @@ loop_call_seen(const uint64_t* hashes, size_t count, uint64_t h)
 /* 无状态网络工具并行调度                                                      */
 /* -------------------------------------------------------------------------- */
 
-bool is_stateless_network_tool(const char* name) {
-    if (!name) return false;
+bool
+is_stateless_network_tool(const char* name)
+{
+    if (!name) {
+        return false;
+    }
     return (strcmp(name, "web_search") == 0 || strcmp(name, "fetch_webpage") == 0);
 }
 
-bool ai_parallel_batch_eligible(const char* const* names, size_t count) {
-    if (!names || count == 0 || count > 8) return false;
+bool
+ai_parallel_batch_eligible(const char* const* names, size_t count)
+{
+    if (!names || count == 0 || count > 8) {
+        return false;
+    }
     for (size_t i = 0; i < count; i++) {
-        if (!is_stateless_network_tool(names[i])) return false;
+        if (!is_stateless_network_tool(names[i])) {
+            return false;
+        }
     }
     return true;
 }
@@ -187,9 +197,11 @@ typedef struct {
     bool                 success;
 } ai_parallel_task_t;
 
-static void* ai_parallel_tool_worker(void* arg) {
+static void*
+ai_parallel_tool_worker(void* arg)
+{
     ai_parallel_task_t* task = (ai_parallel_task_t*)arg;
-    struct timespec t0, t1;
+    struct timespec     t0, t1;
     clock_gettime(CLOCK_MONOTONIC, &t0);
 
     task->result_str = ai_tools_execute_parsed_cancel(
@@ -205,24 +217,38 @@ static void* ai_parallel_tool_worker(void* arg) {
     return NULL;
 }
 
-int ai_tools_execute_parallel_batch(
-    int64_t user_id, int64_t session_id,
-    const char* name1, const csilk_json_t* a1,
-    const char* name2, const csilk_json_t* a2,
-    char** out1, char** out2)
+int
+ai_tools_execute_parallel_batch(int64_t             user_id,
+                                int64_t             session_id,
+                                const char*         name1,
+                                const csilk_json_t* a1,
+                                const char*         name2,
+                                const csilk_json_t* a2,
+                                char**              out1,
+                                char**              out2)
 {
-    const char* names[2] = { name1, name2 };
+    const char* names[2] = {name1, name2};
     if (!ai_parallel_batch_eligible(names, 2)) {
-        if (out1) *out1 = ai_tools_execute_parsed_cancel(NULL, user_id, session_id, (csilk_json_t*)a1, name1, NULL);
-        if (out2) *out2 = ai_tools_execute_parsed_cancel(NULL, user_id, session_id, (csilk_json_t*)a2, name2, NULL);
+        if (out1) {
+            *out1 = ai_tools_execute_parsed_cancel(
+                NULL, user_id, session_id, (csilk_json_t*)a1, name1, NULL);
+        }
+        if (out2) {
+            *out2 = ai_tools_execute_parsed_cancel(
+                NULL, user_id, session_id, (csilk_json_t*)a2, name2, NULL);
+        }
         return 0;
     }
     ai_parallel_task_t tasks[2];
     memset(tasks, 0, sizeof(tasks));
-    tasks[0].user_id = user_id; tasks[0].session_id = session_id;
-    tasks[0].tool_name = (char*)name1; tasks[0].args = (csilk_json_t*)a1;
-    tasks[1].user_id = user_id; tasks[1].session_id = session_id;
-    tasks[1].tool_name = (char*)name2; tasks[1].args = (csilk_json_t*)a2;
+    tasks[0].user_id = user_id;
+    tasks[0].session_id = session_id;
+    tasks[0].tool_name = (char*)name1;
+    tasks[0].args = (csilk_json_t*)a1;
+    tasks[1].user_id = user_id;
+    tasks[1].session_id = session_id;
+    tasks[1].tool_name = (char*)name2;
+    tasks[1].args = (csilk_json_t*)a2;
 
     pthread_t threads[2];
     pthread_create(&threads[0], NULL, ai_parallel_tool_worker, &tasks[0]);
@@ -230,8 +256,16 @@ int ai_tools_execute_parallel_batch(
     pthread_join(threads[0], NULL);
     pthread_join(threads[1], NULL);
 
-    if (out1) *out1 = tasks[0].result_str; else free(tasks[0].result_str);
-    if (out2) *out2 = tasks[1].result_str; else free(tasks[1].result_str);
+    if (out1) {
+        *out1 = tasks[0].result_str;
+    } else {
+        free(tasks[0].result_str);
+    }
+    if (out2) {
+        *out2 = tasks[1].result_str;
+    } else {
+        free(tasks[1].result_str);
+    }
     return 0;
 }
 
@@ -600,7 +634,7 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
 
         /* 检查当前批次是否全为无状态网络只读工具 */
         const char* tool_names[8];
-        bool batch_eligible = (n_calls > 1 && n_calls <= 8);
+        bool        batch_eligible = (n_calls > 1 && n_calls <= 8);
         if (batch_eligible) {
             for (size_t t = 0; t < n_calls; t++) {
                 tool_names[t] = msgs[asst_idx].tool_calls[t].name;
@@ -620,7 +654,8 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
                 tasks[t].user_id = ctx->user_id;
                 tasks[t].session_id = ctx->session_id;
                 tasks[t].cancel_token = ctx->cancel_token;
-                strncpy(tasks[t].tool_call_id, tc->id ? tc->id : "", sizeof(tasks[t].tool_call_id) - 1);
+                strncpy(
+                    tasks[t].tool_call_id, tc->id ? tc->id : "", sizeof(tasks[t].tool_call_id) - 1);
                 tasks[t].tool_name = strdup(tc->name ? tc->name : "");
                 tasks[t].raw_arguments = strdup(tc->arguments ? tc->arguments : "{}");
                 tasks[t].args = csilk_json_parse(tasks[t].raw_arguments);
@@ -632,13 +667,19 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
                     cbs->on_tool_call(tc->id, tc->name, tc->arguments, user_data);
                 }
 
-                ai_policy_decision_t* decision = ai_policy_evaluate(
-                    ctx->user_id, ctx->session_id, tasks[t].tool_name, tasks[t].args, AI_RISK_NO_OVERRIDE);
+                ai_policy_decision_t* decision = ai_policy_evaluate(ctx->user_id,
+                                                                    ctx->session_id,
+                                                                    tasks[t].tool_name,
+                                                                    tasks[t].args,
+                                                                    AI_RISK_NO_OVERRIDE);
 
                 if (decision && !decision->allowed) {
                     csilk_json_t* err_obj = csilk_json_object();
                     csilk_json_add_string(err_obj, "error", "policy_denied");
-                    csilk_json_add_string(err_obj, "reason", decision->reason[0] ? decision->reason : "Tool blocked by policy");
+                    csilk_json_add_string(err_obj,
+                                          "reason",
+                                          decision->reason[0] ? decision->reason
+                                                              : "Tool blocked by policy");
                     size_t elen = 0;
                     tasks[t].result_str = csilk_json_serialize(err_obj, &elen);
                     csilk_json_free(err_obj);
@@ -646,7 +687,10 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
                 } else {
                     uint64_t call_hash = loop_call_hash(tasks[t].tool_name, tasks[t].raw_arguments);
                     if (loop_call_seen(seen_hashes, seen_count, call_hash)) {
-                        tasks[t].result_str = strdup("{\"error\":\"duplicate_call\",\"note\":\"identical tool call already executed in this run; reuse the previous result or answer directly\"}");
+                        tasks[t].result_str =
+                            strdup("{\"error\":\"duplicate_call\",\"note\":\"identical tool call "
+                                   "already executed in this run; reuse the previous result or "
+                                   "answer directly\"}");
                         tasks[t].executed = false;
                     } else {
                         if (seen_count < LOOP_DUP_CALL_SLOTS) {
@@ -661,10 +705,11 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
 
             /* 2. 并行 Worker 执行 */
             pthread_t threads[8];
-            bool spawned[8] = {false};
+            bool      spawned[8] = {false};
             for (size_t t = 0; t < n_calls; t++) {
                 if (!tasks[t].result_str) {
-                    if (pthread_create(&threads[t], NULL, ai_parallel_tool_worker, &tasks[t]) == 0) {
+                    if (pthread_create(&threads[t], NULL, ai_parallel_tool_worker, &tasks[t]) ==
+                        0) {
                         spawned[t] = true;
                     } else {
                         ai_parallel_tool_worker(&tasks[t]);
@@ -683,19 +728,24 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
                     ai_runtime_limits_record_tool_call(&ctx->stats, 1);
                 }
                 if (trace) {
-                    ai_trace_add_tool_span(trace, tasks[t].tool_name, tasks[t].span_ms,
+                    ai_trace_add_tool_span(trace,
+                                           tasks[t].tool_name,
+                                           tasks[t].span_ms,
                                            tasks[t].result_str ? strlen(tasks[t].result_str) : 0,
                                            tasks[t].success);
                 }
                 if (cbs && cbs->on_tool_result) {
-                    cbs->on_tool_result(tasks[t].tool_call_id, tasks[t].tool_name,
-                                        tasks[t].result_str ? tasks[t].result_str : "{}", user_data);
+                    cbs->on_tool_result(tasks[t].tool_call_id,
+                                        tasks[t].tool_name,
+                                        tasks[t].result_str ? tasks[t].result_str : "{}",
+                                        user_data);
                 }
                 csilk_json_t* rec = csilk_json_object();
                 csilk_json_add_string(rec, "id", tasks[t].tool_call_id);
                 csilk_json_add_string(rec, "name", tasks[t].tool_name);
                 csilk_json_add_string(rec, "arguments", tasks[t].raw_arguments);
-                csilk_json_add_string(rec, "result", tasks[t].result_str ? tasks[t].result_str : "");
+                csilk_json_add_string(
+                    rec, "result", tasks[t].result_str ? tasks[t].result_str : "");
                 csilk_json_array_append(tc_record, rec);
 
                 mc++;
@@ -714,122 +764,123 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
                 free(tasks[t].result_str);
             }
         } else {
-        /* 逐一校验安全策略并执行工具 */
-        for (size_t t = 0; t < n_calls; t++) {
-            csilk_ai_tool_call_t* tc = &msgs[asst_idx].tool_calls[t];
-            /* tc 指向 msgs 数组内部；下方追加工具消息会 realloc 移动数组，先备份需要
+            /* 逐一校验安全策略并执行工具 */
+            for (size_t t = 0; t < n_calls; t++) {
+                csilk_ai_tool_call_t* tc = &msgs[asst_idx].tool_calls[t];
+                /* tc 指向 msgs 数组内部；下方追加工具消息会 realloc 移动数组，先备份需要
              * 在 realloc 之后才使用的字段，避免悬垂指针读取 (use-after-free)。 */
-            char* tc_id_copy = strdup(tc->id && tc->id[0] ? tc->id : "");
-            if (cbs && cbs->on_tool_call) {
-                cbs->on_tool_call(tc->id, tc->name, tc->arguments, user_data);
-            }
-
-            csilk_json_t* args = csilk_json_parse(tc->arguments ? tc->arguments : "{}");
-            if (!args) {
-                args = csilk_json_object();
-            }
-
-            /* 1. 安全策略综合评估 (Policy Evaluation) */
-            ai_policy_decision_t* decision = ai_policy_evaluate(
-                ctx->user_id, ctx->session_id, tc->name, args, AI_RISK_NO_OVERRIDE);
-            char*           result_str = NULL;
-            int             tool_success = 0;
-            int             executed = 0;
-            struct timespec t0, t1;
-            clock_gettime(CLOCK_MONOTONIC, &t0);
-
-            if (decision && !decision->allowed) {
-                /* 策略拦截或需二次确认 */
-                csilk_json_t* err_obj = csilk_json_object();
-                csilk_json_add_string(err_obj, "error", "policy_denied");
-                csilk_json_add_string(err_obj,
-                                      "reason",
-                                      decision->reason[0] ? decision->reason
-                                                          : "Tool blocked by policy");
-                if (decision->requires_confirmation && decision->draft) {
-                    csilk_json_add_string(err_obj, "confirmation_required", "true");
-                    csilk_json_add_string(err_obj, "draft_id", decision->draft->draft_id);
+                char* tc_id_copy = strdup(tc->id && tc->id[0] ? tc->id : "");
+                if (cbs && cbs->on_tool_call) {
+                    cbs->on_tool_call(tc->id, tc->name, tc->arguments, user_data);
                 }
-                size_t elen = 0;
-                result_str = csilk_json_serialize(err_obj, &elen);
-                csilk_json_free(err_obj);
-            } else {
-                uint64_t call_hash = loop_call_hash(tc->name, tc->arguments);
-                if (loop_call_seen(seen_hashes, seen_count, call_hash)) {
-                    /* 同参重复调用：直接回放提示而非再次执行，避免模型耗尽工具预算 */
-                    result_str =
-                        strdup("{\"error\":\"duplicate_call\",\"note\":\"identical tool call "
-                               "already executed in this run; reuse the previous result or "
-                               "answer directly\"}");
-                } else if (decision->requires_confirmation && !ai_tool_requires_id(tc->name)) {
-                    /* 策略要求二次确认且工具不自带确认协议（propose/confirm 令牌）：
+
+                csilk_json_t* args = csilk_json_parse(tc->arguments ? tc->arguments : "{}");
+                if (!args) {
+                    args = csilk_json_object();
+                }
+
+                /* 1. 安全策略综合评估 (Policy Evaluation) */
+                ai_policy_decision_t* decision = ai_policy_evaluate(
+                    ctx->user_id, ctx->session_id, tc->name, args, AI_RISK_NO_OVERRIDE);
+                char*           result_str = NULL;
+                int             tool_success = 0;
+                int             executed = 0;
+                struct timespec t0, t1;
+                clock_gettime(CLOCK_MONOTONIC, &t0);
+
+                if (decision && !decision->allowed) {
+                    /* 策略拦截或需二次确认 */
+                    csilk_json_t* err_obj = csilk_json_object();
+                    csilk_json_add_string(err_obj, "error", "policy_denied");
+                    csilk_json_add_string(err_obj,
+                                          "reason",
+                                          decision->reason[0] ? decision->reason
+                                                              : "Tool blocked by policy");
+                    if (decision->requires_confirmation && decision->draft) {
+                        csilk_json_add_string(err_obj, "confirmation_required", "true");
+                        csilk_json_add_string(err_obj, "draft_id", decision->draft->draft_id);
+                    }
+                    size_t elen = 0;
+                    result_str = csilk_json_serialize(err_obj, &elen);
+                    csilk_json_free(err_obj);
+                } else {
+                    uint64_t call_hash = loop_call_hash(tc->name, tc->arguments);
+                    if (loop_call_seen(seen_hashes, seen_count, call_hash)) {
+                        /* 同参重复调用：直接回放提示而非再次执行，避免模型耗尽工具预算 */
+                        result_str =
+                            strdup("{\"error\":\"duplicate_call\",\"note\":\"identical tool call "
+                                   "already executed in this run; reuse the previous result or "
+                                   "answer directly\"}");
+                    } else if (decision->requires_confirmation && !ai_tool_requires_id(tc->name)) {
+                        /* 策略要求二次确认且工具不自带确认协议（propose/confirm 令牌）：
                        拒绝执行并把确认要求回注给模型，由其向用户转达。此前该标志仅
                        作提示、变更操作照样静默执行，构成越权写路径。 */
-                    result_str = strdup(
-                        "{\"error\":\"confirmation_required\",\"note\":\"this action needs "
-                        "explicit user approval before it can run; summarize what it would "
-                        "do and ask the user to confirm, or use the propose/confirm tools\"}");
-                    executed = 0;
-                } else {
-                    /* 2. 工具执行 (Tool Execution)
+                        result_str = strdup(
+                            "{\"error\":\"confirmation_required\",\"note\":\"this action needs "
+                            "explicit user approval before it can run; summarize what it would "
+                            "do and ask the user to confirm, or use the propose/confirm tools\"}");
+                        executed = 0;
+                    } else {
+                        /* 2. 工具执行 (Tool Execution)
                        线程化协作式取消标志：MCP 远端调用可在用户取消时中止。 */
-                    result_str = ai_tools_execute_parsed_cancel(
-                        pool, ctx->user_id, ctx->session_id, args, tc->name, ctx->cancel_token);
-                    executed = 1;
-                    tool_success = (result_str != NULL);
-                    if (!result_str) {
-                        result_str = strdup("{\"error\":\"tool execution failed\"}");
-                    }
-                    if (seen_count < LOOP_DUP_CALL_SLOTS) {
-                        seen_hashes[seen_count++] = call_hash;
+                        result_str = ai_tools_execute_parsed_cancel(
+                            pool, ctx->user_id, ctx->session_id, args, tc->name, ctx->cancel_token);
+                        executed = 1;
+                        tool_success = (result_str != NULL);
+                        if (!result_str) {
+                            result_str = strdup("{\"error\":\"tool execution failed\"}");
+                        }
+                        if (seen_count < LOOP_DUP_CALL_SLOTS) {
+                            seen_hashes[seen_count++] = call_hash;
+                        }
                     }
                 }
+
+                clock_gettime(CLOCK_MONOTONIC, &t1);
+                long span_ms = (t1.tv_sec - t0.tv_sec) * 1000 + (t1.tv_nsec - t0.tv_nsec) / 1000000;
+
+                if (decision) {
+                    ai_policy_decision_free(decision);
+                }
+                csilk_json_free(args);
+
+                if (executed) {
+                    ai_runtime_limits_record_tool_call(&ctx->stats, 1);
+                }
+                if (trace) {
+                    ai_trace_add_tool_span(trace,
+                                           tc->name ? tc->name : "",
+                                           span_ms,
+                                           result_str ? strlen(result_str) : 0,
+                                           tool_success);
+                }
+
+                if (cbs && cbs->on_tool_result) {
+                    cbs->on_tool_result(
+                        tc->id, tc->name, result_str ? result_str : "{}", user_data);
+                }
+
+                /* 累计工具调用记录（供落库），result 保持原始 JSON 字符串 */
+                csilk_json_t* rec = csilk_json_object();
+                csilk_json_add_string(rec, "id", tc->id ? tc->id : "");
+                csilk_json_add_string(rec, "name", tc->name ? tc->name : "");
+                csilk_json_add_string(rec, "arguments", tc->arguments ? tc->arguments : "");
+                csilk_json_add_string(rec, "result", result_str ? result_str : "");
+                csilk_json_array_append(tc_record, rec);
+
+                /* 追加 role="tool" 消息（使用 realloc 前备份的 tool_call_id） */
+                mc++;
+                msgs = (csilk_ai_message_t*)realloc(msgs, sizeof(csilk_ai_message_t) * mc);
+                msgs[mc - 1] = (csilk_ai_message_t){
+                    .role = "tool",
+                    .content = loop_clamp_tool_result(result_str),
+                    .tool_call_id = tc_id_copy,
+                    .tool_calls = NULL,
+                    .tool_call_count = 0,
+                };
+                /* clamp 已生成独立副本进入 msgs（清理段释放），原完整结果串在此释放 */
+                free(result_str);
             }
-
-            clock_gettime(CLOCK_MONOTONIC, &t1);
-            long span_ms = (t1.tv_sec - t0.tv_sec) * 1000 + (t1.tv_nsec - t0.tv_nsec) / 1000000;
-
-            if (decision) {
-                ai_policy_decision_free(decision);
-            }
-            csilk_json_free(args);
-
-            if (executed) {
-                ai_runtime_limits_record_tool_call(&ctx->stats, 1);
-            }
-            if (trace) {
-                ai_trace_add_tool_span(trace,
-                                       tc->name ? tc->name : "",
-                                       span_ms,
-                                       result_str ? strlen(result_str) : 0,
-                                       tool_success);
-            }
-
-            if (cbs && cbs->on_tool_result) {
-                cbs->on_tool_result(tc->id, tc->name, result_str ? result_str : "{}", user_data);
-            }
-
-            /* 累计工具调用记录（供落库），result 保持原始 JSON 字符串 */
-            csilk_json_t* rec = csilk_json_object();
-            csilk_json_add_string(rec, "id", tc->id ? tc->id : "");
-            csilk_json_add_string(rec, "name", tc->name ? tc->name : "");
-            csilk_json_add_string(rec, "arguments", tc->arguments ? tc->arguments : "");
-            csilk_json_add_string(rec, "result", result_str ? result_str : "");
-            csilk_json_array_append(tc_record, rec);
-
-            /* 追加 role="tool" 消息（使用 realloc 前备份的 tool_call_id） */
-            mc++;
-            msgs = (csilk_ai_message_t*)realloc(msgs, sizeof(csilk_ai_message_t) * mc);
-            msgs[mc - 1] = (csilk_ai_message_t){
-                .role = "tool",
-                .content = loop_clamp_tool_result(result_str),
-                .tool_call_id = tc_id_copy,
-                .tool_calls = NULL,
-                .tool_call_count = 0,
-            };
-            /* clamp 已生成独立副本进入 msgs（清理段释放），原完整结果串在此释放 */
-            free(result_str);
-        }
         }
 
         csilk_ai_chat_response_free(&ai_res);

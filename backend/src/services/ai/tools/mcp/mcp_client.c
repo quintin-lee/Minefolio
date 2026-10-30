@@ -488,9 +488,13 @@ free_envp(char** envp, size_t envc)
 }
 
 /* 向 stdio 子进程写一帧并读回响应帧（换行分帧） */
-static bool drain_stderr_nonblocking(mf_mcp_client_t* c) {
-    if (!c || c->err_fd < 0) return false;
-    char buf[512];
+static bool
+drain_stderr_nonblocking(mf_mcp_client_t* c)
+{
+    if (!c || c->err_fd < 0) {
+        return false;
+    }
+    char    buf[512];
     ssize_t n;
     while ((n = read(c->err_fd, buf, sizeof(buf) - 1)) > 0) {
         buf[n] = '\0';
@@ -527,12 +531,25 @@ stdio_call(mf_mcp_client_t* c, const char* request_json, char* out_err, size_t e
         int out_pipe[2] = {-1, -1};
         int err_pipe[2] = {-1, -1};
         if (pipe(in_pipe) != 0 || pipe(out_pipe) != 0 || pipe(err_pipe) != 0) {
-            if (in_pipe[0] >= 0) { close(in_pipe[0]); close(in_pipe[1]); }
-            if (out_pipe[0] >= 0) { close(out_pipe[0]); close(out_pipe[1]); }
-            if (err_pipe[0] >= 0) { close(err_pipe[0]); close(err_pipe[1]); }
-            for (size_t i = 0; i < argc; i++) free(argv[i]);
+            if (in_pipe[0] >= 0) {
+                close(in_pipe[0]);
+                close(in_pipe[1]);
+            }
+            if (out_pipe[0] >= 0) {
+                close(out_pipe[0]);
+                close(out_pipe[1]);
+            }
+            if (err_pipe[0] >= 0) {
+                close(err_pipe[0]);
+                close(err_pipe[1]);
+            }
+            for (size_t i = 0; i < argc; i++) {
+                free(argv[i]);
+            }
             free(argv);
-            if (envp) free_envp(envp, envc);
+            if (envp) {
+                free_envp(envp, envc);
+            }
             snprintf(out_err, err_sz, "pipe() failed: %s", strerror(errno));
             return NULL;
         }
@@ -540,34 +557,45 @@ stdio_call(mf_mcp_client_t* c, const char* request_json, char* out_err, size_t e
 
         pid_t pid = fork();
         if (pid < 0) {
-            close(in_pipe[0]);  close(in_pipe[1]);
-            close(out_pipe[0]); close(out_pipe[1]);
-            close(err_pipe[0]); close(err_pipe[1]);
-            for (size_t i = 0; i < argc; i++) free(argv[i]);
+            close(in_pipe[0]);
+            close(in_pipe[1]);
+            close(out_pipe[0]);
+            close(out_pipe[1]);
+            close(err_pipe[0]);
+            close(err_pipe[1]);
+            for (size_t i = 0; i < argc; i++) {
+                free(argv[i]);
+            }
             free(argv);
-            if (envp) free_envp(envp, envc);
+            if (envp) {
+                free_envp(envp, envc);
+            }
             snprintf(out_err, err_sz, "fork failed: %s", strerror(errno));
             return NULL;
         }
         if (pid == 0) {
             /* 子进程分支：
                1. 先重定向标准输入/输出/错误描述符 */
-            if (dup2(in_pipe[0], STDIN_FILENO) < 0 ||
-                dup2(out_pipe[1], STDOUT_FILENO) < 0 ||
+            if (dup2(in_pipe[0], STDIN_FILENO) < 0 || dup2(out_pipe[1], STDOUT_FILENO) < 0 ||
                 dup2(err_pipe[1], STDERR_FILENO) < 0) {
                 _exit(127);
             }
             /* 2. 关闭原始管道端 */
-            close(in_pipe[0]);  close(in_pipe[1]);
-            close(out_pipe[0]); close(out_pipe[1]);
-            close(err_pipe[0]); close(err_pipe[1]);
+            close(in_pipe[0]);
+            close(in_pipe[1]);
+            close(out_pipe[0]);
+            close(out_pipe[1]);
+            close(err_pipe[0]);
+            close(err_pipe[1]);
 
             /* 3. 清理所有大于 2 的继承描述符，实现严格隔离 */
 #if defined(__GLIBC__) && (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 34))
             closefrom(3);
 #else
             int max_fd = (int)sysconf(_SC_OPEN_MAX);
-            if (max_fd < 0 || max_fd > 4096) max_fd = 4096;
+            if (max_fd < 0 || max_fd > 4096) {
+                max_fd = 4096;
+            }
             for (int fd = 3; fd < max_fd; fd++) {
                 close(fd);
             }
@@ -634,7 +662,8 @@ stdio_call(mf_mcp_client_t* c, const char* request_json, char* out_err, size_t e
     while (n < MCP_MAX_FRAME_SIZE) {
         /* 1. 若缓冲区中有未消费数据，在内存中扫描换行符 */
         if (c->framer.head < c->framer.tail) {
-            char* p = (char*)memchr(c->framer.buf + c->framer.head, '\n', c->framer.tail - c->framer.head);
+            char* p = (char*)memchr(
+                c->framer.buf + c->framer.head, '\n', c->framer.tail - c->framer.head);
             if (p) {
                 size_t len = (size_t)(p - (c->framer.buf + c->framer.head));
                 memcpy(resp + n, c->framer.buf + c->framer.head, len);
@@ -659,8 +688,8 @@ stdio_call(mf_mcp_client_t* c, const char* request_json, char* out_err, size_t e
         if (c->framer.head == c->framer.tail) {
             c->framer.head = c->framer.tail = 0;
             struct pollfd pfds[2] = {
-                { .fd = c->read_fd, .events = POLLIN, .revents = 0 },
-                { .fd = c->err_fd,  .events = POLLIN, .revents = 0 }
+                {.fd = c->read_fd, .events = POLLIN, .revents = 0},
+                {.fd = c->err_fd,  .events = POLLIN, .revents = 0}
             };
             int nfds = (c->err_fd >= 0) ? 2 : 1;
             int prc = poll(pfds, nfds, timeout_ms);
@@ -676,7 +705,11 @@ stdio_call(mf_mcp_client_t* c, const char* request_json, char* out_err, size_t e
             if (prc == 0) {
                 drain_stderr_nonblocking(c);
                 if (c->last_error[0] != '\0') {
-                    snprintf(out_err, err_sz, "stdio read timed out after %d ms. %s", timeout_ms, c->last_error);
+                    snprintf(out_err,
+                             err_sz,
+                             "stdio read timed out after %d ms. %s",
+                             timeout_ms,
+                             c->last_error);
                 } else {
                     snprintf(out_err, err_sz, "stdio read timed out after %d ms", timeout_ms);
                 }
