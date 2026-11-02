@@ -28,7 +28,7 @@ This design document establishes the architectural specification to address all 
       ▼                                                                 ▼
 ┌──────────────────────────────┐                      ┌──────────────────────────────┐
 │  db_tx_scope_begin / commit  │                      │  128-bit Fixed-Point Types   │
-│  (SAVEPOINT-based nesting)   │                      │  (price_times_quantity)      │
+│  (SAVEPOINT-based nesting)   │                      │  (price_times_quantity, sub) │
 └──────────────┬───────────────┘                      └──────────────┬───────────────┘
                │                                                     │
                ▼                                                     ▼
@@ -48,13 +48,13 @@ This design document establishes the architectural specification to address all 
                                        │
 ┌──────────────────────────────┐       │              ┌──────────────────────────────┐
 │  JWT Middleware              │       │              │  AI Policy Confirmation      │
-│  (Secure /mcp pass-through)  │───────┼─────────────►│  (Dual-layer Nonce Defense:  │
+│  (Clean /mcp pass-through)   │───────┼─────────────►│  (Dual-layer Nonce Defense:  │
 │  (jwt_get_user_id: -32001)   │       │              │   Fast Ring + Persistent DB) │
 └──────────────────────────────┘       │              └──────────────────────────────┘
                                        │
 ┌──────────────────────────────┐       │
 │  file_parser (mkstemps)      │───────┘
-│  (Portable BSD/GNU extension)│
+│  (Exported helper & test)    │
 └──────────────────────────────┘
 ```
 
@@ -73,13 +73,13 @@ All application use cases replace raw string execution with `db_tx_scope_t`:
    - `tx_usecase_delete` (lines 293–511: lines 306, 507; rollbacks at lines 326, 361, 406, 439, 476, 491, 499)
 3. `src/application/daily_expense/usecases.c`:
    - In `check_asset_exists` (line 36): remove the embedded `csilk_db_exec(pool, "ROLLBACK")`. The function simply returns 0 on success and -1 on failure.
-   - In `daily_expense_usecase_create` and `daily_expense_usecase_update`, move the call to `check_asset_exists` to occur **before** `db_tx_scope_begin`, since asset verification is a read-only query that does not require an active transaction scope.
+   - In `daily_expense_usecase_create` and `daily_expense_usecase_update`: move the call to `check_asset_exists` to execute **prior to** `db_tx_scope_begin`. If asset verification fails, return `-1` immediately without opening an unnecessary transaction scope.
    - `daily_expense_usecase_create` (lines 375, 424; rollbacks at lines 396, 411, 418)
    - `daily_expense_usecase_update` (lines 467, 535; rollbacks at lines 486, 505, 520, 529)
    - `daily_expense_usecase_delete` (lines 555, 587; rollbacks at lines 573, 581)
 4. `src/application/dca/usecases.c`:
    - Replace raw transaction calls with `db_tx_scope_begin(pool, "mf_dca_scope", &scope)` (lines 249, 283; rollback at line 270).
-   - If `db_tx_scope_begin` fails at line 249, ensure `csilk_json_free(exec_arr)` is called before returning `-1`.
+   - If `db_tx_scope_begin` fails at line 249, call `csilk_json_free(exec_arr)` before returning `-1` to prevent a memory leak.
 5. `src/interfaces/http/controllers/admin_controller.c`: replace system setup transaction with `db_tx_scope_begin(pool, "mf_setup_scope", &scope)` (lines 115, 161; rollback at line 135).
 6. `src/infrastructure/repositories/mcp_server_repo_impl.c`: replace tool refresh transaction with `db_tx_scope_begin(pool, "mf_mcp_tools_refresh", &scope)` (lines 367, 409; rollbacks at lines 373, 405).
 
@@ -210,6 +210,7 @@ balance_apply_delta_m(csilk_db_pool_t* pool,
     csilk_json_free(res5);
 
     if (db_tx_scope_commit(pool, &scope) != 0) {
+        db_tx_scope_rollback(pool, &scope);
         return -2;
     }
     return 0;
@@ -245,7 +246,13 @@ if (price_times_quantity(net_obj, qty_obj, &new_val_m) != DECIMAL_OK) {
 money_t old_val_m;
 money_from_double(old_current, asset_currency, &old_val_m);
 
-money_t delta_m = money_sub(new_val_m, old_val_m);
+money_t delta_m;
+if (money_sub(new_val_m, old_val_m, &delta_m) != DECIMAL_OK) {
+    csilk_json_free(cur);
+    out_res->code = 1004;
+    snprintf(out_res->message, sizeof(out_res->message), "金额计算溢出");
+    return -1;
+}
 
 db_tx_scope_t scope;
 if (db_tx_scope_begin(db_pool, "mf_asset_update_investment", &scope) != 0) {
@@ -339,70 +346,95 @@ if (!money_is_zero(delta_m)) {
 
 #### 1. Middleware Update (`src/middlewares/jwt_middleware.c`)
 In `jwt_middleware_wrapper()`:
+Preserve entry guards (`s_jwt_exclude_paths` and `config_secret_get("JWT_SECRET", ...)`).
+Update token verification to never attach invalid or unverified payloads on `/mcp`:
 ```c
-const char* path = csilk_get_path(c);
-bool is_mcp_path = (path && strcmp(path, "/mcp") == 0);
-
-const char* auth_header = csilk_get_header(c, "Authorization");
-if (!auth_header || strncmp(auth_header, "Bearer ", 7) != 0) {
-    if (is_mcp_path) {
-        /* No Bearer header on /mcp: pass through without jwt_payload so
-         * mcp_endpoint_handler returns JSON-RPC -32001 */
-        csilk_next(c);
+void
+jwt_middleware_wrapper(csilk_ctx_t* c)
+{
+    if (!c) {
         return;
     }
-    csilk_json_error(c, CSILK_STATUS_UNAUTHORIZED, "Bearer token required");
-    csilk_abort(c);
-    return;
-}
-const char* token = auth_header + 7;
 
-csilk_jwt_options_t opts = {
-    .algorithm = CSILK_JWT_HS256,
-    .flags = CSILK_JWT_REQUIRE_EXP,
-    .leeway_sec = 0,
-};
-csilk_json_t* payload = csilk_jwt_verify_options(c, token, secret, strlen(secret), &opts);
-if (!payload) {
-    if (is_mcp_path) {
-        /* Invalid or expired token on /mcp: pass through unauthenticated */
-        csilk_next(c);
+    const char* path = csilk_get_path(c);
+    if (path) {
+        for (int i = 0; s_jwt_exclude_paths[i]; i++) {
+            if (strcmp(path, s_jwt_exclude_paths[i]) == 0) {
+                csilk_next(c);
+                return;
+            }
+        }
+    }
+
+    const char* secret = config_secret_get("JWT_SECRET", NULL, 0);
+    if (!secret || secret[0] == '\0') {
+        csilk_json_error(c,
+                         CSILK_STATUS_INTERNAL_SERVER_ERROR,
+                         "JWT_SECRET is required and must be properly configured");
+        csilk_abort(c);
         return;
     }
-    csilk_json_error(c, CSILK_STATUS_UNAUTHORIZED, "Invalid or expired token");
-    csilk_abort(c);
-    return;
-}
 
-/* Extract and validate claims BEFORE attaching to request context */
-int64_t user_id = (int64_t)csilk_json_get_number(payload, "sub");
-if (user_id < 0) {
-    csilk_json_free(payload);
-    if (is_mcp_path) {
-        csilk_next(c);
+    bool is_mcp_path = (path && strcmp(path, "/mcp") == 0);
+
+    const char* auth_header = csilk_get_header(c, "Authorization");
+    if (!auth_header || strncmp(auth_header, "Bearer ", 7) != 0) {
+        if (is_mcp_path) {
+            /* Pass through unauthenticated so mcp_endpoint_handler returns JSON-RPC -32001 */
+            csilk_next(c);
+            return;
+        }
+        csilk_json_error(c, CSILK_STATUS_UNAUTHORIZED, "Bearer token required");
+        csilk_abort(c);
         return;
     }
-    csilk_json_error(c, CSILK_STATUS_UNAUTHORIZED, "Invalid user in token claims");
-    csilk_abort(c);
-    return;
-}
+    const char* token = auth_header + 7;
 
-/* Temporarily attach payload to context for jwt_validate_token_version */
-csilk_set_ex(c, "jwt_payload", payload, (void (*)(void*))csilk_json_free);
-
-if (jwt_validate_token_version(c, user_id) != 0) {
-    if (is_mcp_path) {
-        /* Token revoked or version invalidated: clear payload so user_id remains unauthenticated */
-        csilk_set_ex(c, "jwt_payload", NULL, NULL);
-        csilk_next(c);
+    csilk_jwt_options_t opts = {
+        .algorithm = CSILK_JWT_HS256,
+        .flags = CSILK_JWT_REQUIRE_EXP,
+        .leeway_sec = 0,
+    };
+    csilk_json_t* payload = csilk_jwt_verify_options(c, token, secret, strlen(secret), &opts);
+    if (!payload) {
+        if (is_mcp_path) {
+            csilk_next(c);
+            return;
+        }
+        csilk_json_error(c, CSILK_STATUS_UNAUTHORIZED, "Invalid or expired token");
+        csilk_abort(c);
         return;
     }
-    csilk_json_error(c, CSILK_STATUS_UNAUTHORIZED, "Token invalidated — please log in again");
-    csilk_abort(c);
-    return;
-}
 
-csilk_next(c);
+    int64_t user_id = (int64_t)csilk_json_get_number(payload, "sub");
+    int     jwt_v = (int)csilk_json_get_number(payload, "v");
+    if (user_id < 0) {
+        csilk_json_free(payload);
+        if (is_mcp_path) {
+            csilk_next(c);
+            return;
+        }
+        csilk_json_error(c, CSILK_STATUS_UNAUTHORIZED, "Invalid user in token claims");
+        csilk_abort(c);
+        return;
+    }
+
+    /* Validate token version against DB / cache before context attachment */
+    if (jwt_validate_version_num(user_id, jwt_v) != 0) {
+        csilk_json_free(payload);
+        if (is_mcp_path) {
+            csilk_next(c);
+            return;
+        }
+        csilk_json_error(c, CSILK_STATUS_UNAUTHORIZED, "Token invalidated — please log in again");
+        csilk_abort(c);
+        return;
+    }
+
+    /* All checks passed: attach payload to context for authenticated requests */
+    csilk_set_ex(c, "jwt_payload", payload, (void (*)(void*))csilk_json_free);
+    csilk_next(c);
+}
 ```
 
 #### 2. Non-Intrusive User ID Extraction in MCP Controller & Rate Limiter
@@ -541,9 +573,18 @@ pthread_mutex_unlock(&s_nonce_lock);
 
 ---
 
-### 3.5 POSIX `mkstemps` File Creation Compliance (`src/services/file_parser.c`)
+### 3.5 POSIX `mkstemps` File Creation Compliance (`src/services/file_parser.h` & `file_parser.c`)
 
-Replace `snprintf(...) + mkstemp()` with `mkstemps()` and unlink on partial write failure:
+Export helper in `src/services/file_parser.h` for direct, deterministic unit test verification:
+```c
+/**
+ * @brief 创建带指定后缀的安全临时文件 (POSIX mkstemps 包装)
+ */
+int file_parser_write_temp(const char* data, size_t len, const char* suffix,
+                           char* out_path, size_t out_path_len);
+```
+
+In `src/services/file_parser.c`:
 ```c
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
@@ -551,9 +592,9 @@ Replace `snprintf(...) + mkstemp()` with `mkstemps()` and unlink on partial writ
 #include <stdlib.h>
 #include <unistd.h>
 
-static int
-write_temp_file(const char* data, size_t len, const char* suffix,
-                char* out_path, size_t out_path_len)
+int
+file_parser_write_temp(const char* data, size_t len, const char* suffix,
+                       char* out_path, size_t out_path_len)
 {
     if (!suffix) suffix = "";
     size_t suffix_len = strlen(suffix);
@@ -590,7 +631,7 @@ write_temp_file(const char* data, size_t len, const char* suffix,
 | Revoked / expired token accessing `/mcp` | `jwt_middleware.c` | Invalid token clears `jwt_payload` and passes through; handler emits `-32001` |
 | Replay attack on draft token after server restart | `ai_consumed_nonces` table | Database lookup identifies previously consumed nonce; rejects replay |
 | Concurrent replay of same draft token | `INSERT INTO ai_consumed_nonces` | Database PRIMARY KEY violation safely caught and mapped to `AI_CONFIRM_ERR_REPLAY` |
-| PDF upload on musl/Alpine environment | `mkstemps()` with suffix length | Eliminates `EINVAL` template failures; unlinks file on write failure |
+| PDF upload on musl/Alpine environment | `file_parser_write_temp()` | Eliminates `EINVAL` template failures; unlinks file on write failure |
 
 ---
 
@@ -617,7 +658,7 @@ The following new unit test targets are registered under `CMakeLists.txt` via `a
    - Attempt to verify and consume same token again.
    - Assert verification fails with `AI_CONFIRM_ERR_REPLAY` via database lookup.
 5. **`tests/unit/test_file_parser_mkstemps.c`**:
-   - Invoke `write_temp_file` with `.pdf` and `.zip` suffixes.
+   - Invoke `file_parser_write_temp()` with `.pdf` and `.zip` suffixes.
    - Assert file is created, written, closed, and deleted cleanly with valid file descriptors.
 
 ### 5.2 Regression Testing
@@ -625,5 +666,5 @@ The following new unit test targets are registered under `CMakeLists.txt` via `a
 - Execute integration scripts:
   - `bash tests/test_link.sh`
   - `bash tests/test_mcp.sh`
-  - `bash tests/test_mcp_server.sh`
+  - `bash tests/test_mcp_server.sh` (line 136 strictly asserts `'"code":-32001'`)
   - `bash tests/test_ai_loop_hardening.sh`
