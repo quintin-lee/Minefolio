@@ -562,7 +562,7 @@ git commit -m "feat(ai): 🛡️ persist consumed confirmation nonces to prevent
 - Test: `tests/unit/test_file_parser_mkstemps.c`
 - Modify: `CMakeLists.txt`
 
-- [ ] **Step 1: Write unit test for `file_parser_write_temp` (`test_file_parser_mkstemps.c`)**
+- [x] **Step 1: Write unit test for `file_parser_write_temp` (`test_file_parser_mkstemps.c`)**
 
 Create `backend/tests/unit/test_file_parser_mkstemps.c`:
 ```c
@@ -597,7 +597,7 @@ int main(void) {
 }
 ```
 
-- [ ] **Step 2: Register `test_file_parser_mkstemps` in `CMakeLists.txt`**
+- [x] **Step 2: Register `test_file_parser_mkstemps` in `CMakeLists.txt`**
 
 Add to `backend/CMakeLists.txt`:
 ```cmake
@@ -609,7 +609,7 @@ target_link_libraries(test_file_parser_mkstemps PRIVATE csilk crypto CURL::libcu
 add_test(NAME test_file_parser_mkstemps COMMAND test_file_parser_mkstemps)
 ```
 
-- [ ] **Step 3: Implement `file_parser_write_temp` with `mkstemps` in `file_parser.c`**
+- [x] **Step 3: Implement `file_parser_write_temp` with `mkstemps` in `file_parser.c`**
 
 In `src/services/file_parser.h`:
 Export `int file_parser_write_temp(const char* data, size_t len, const char* suffix, char* out_path, size_t out_path_len);`.
@@ -619,12 +619,12 @@ In `src/services/file_parser.c`:
 2. Implement `file_parser_write_temp()` using `mkstemps(out_path, (int)suffix_len)`. If write fails, call `unlink(out_path)`.
 3. Update `parse_pdf` and `parse_zip` to call `file_parser_write_temp`.
 
-- [ ] **Step 4: Run test to verify pass**
+- [x] **Step 4: Run test to verify pass**
 
 Run: `cmake -B build -S . && cmake --build build --target test_file_parser_mkstemps && ./build/test_file_parser_mkstemps`
 Expected: PASS
 
-- [ ] **Step 5: Commit Task 6**
+- [x] **Step 5: Commit Task 6**
 
 ```bash
 git add src/services/file_parser.h src/services/file_parser.c tests/unit/test_file_parser_mkstemps.c CMakeLists.txt

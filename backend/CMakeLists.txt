@@ -380,6 +380,14 @@ target_compile_options(test_nonce_persistence PRIVATE -UNDEBUG)
 target_link_libraries(test_nonce_persistence PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
 add_test(NAME test_nonce_persistence COMMAND test_nonce_persistence)
 
+add_executable(test_file_parser_mkstemps tests/unit/test_file_parser_mkstemps.c ${LIB_SOURCES})
+target_include_directories(test_file_parser_mkstemps PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_definitions(test_file_parser_mkstemps PRIVATE _GNU_SOURCE)
+target_compile_options(test_file_parser_mkstemps PRIVATE -UNDEBUG)
+target_link_libraries(test_file_parser_mkstemps PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_test(NAME test_file_parser_mkstemps COMMAND test_file_parser_mkstemps)
+
+
 
 
 

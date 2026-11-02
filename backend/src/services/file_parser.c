@@ -1,3 +1,7 @@
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
 #include "services/file_parser.h"
 #include "common/db.h"
 #include <stdio.h>
@@ -16,18 +20,32 @@ file_ext(const char* filename)
     return dot ? dot + 1 : "";
 }
 
-static int
-write_temp_file(
+int
+file_parser_write_temp(
     const char* data, size_t len, const char* suffix, char* out_path, size_t out_path_len)
 {
-    snprintf(out_path, out_path_len, "/tmp/minefolio_upload_XXXXXX%s", suffix);
-    int fd = mkstemp(out_path);
+    if (!suffix) {
+        suffix = "";
+    }
+    size_t suffix_len = strlen(suffix);
+
+    int r = snprintf(out_path, out_path_len, "/tmp/minefolio_upload_XXXXXX%s", suffix);
+    if (r < 0 || (size_t)r >= out_path_len) {
+        return -1;
+    }
+
+    /* mkstemps is supported by glibc/musl; takes length of suffix to keep XXXXXX replaceable */
+    int fd = mkstemps(out_path, (int)suffix_len);
     if (fd < 0) {
         return -1;
     }
     ssize_t n = write(fd, data, len);
     close(fd);
-    return (n == (ssize_t)len) ? 0 : -1;
+    if (n != (ssize_t)len) {
+        unlink(out_path);
+        return -1;
+    }
+    return 0;
 }
 
 static int
@@ -53,7 +71,7 @@ static int
 parse_pdf(const char* data, size_t len, char* out, size_t out_len)
 {
     char tmp_path[256];
-    if (write_temp_file(data, len, ".pdf", tmp_path, sizeof(tmp_path)) != 0) {
+    if (file_parser_write_temp(data, len, ".pdf", tmp_path, sizeof(tmp_path)) != 0) {
         return -1;
     }
 
@@ -85,7 +103,7 @@ static int
 parse_zip(const char* data, size_t len, char* out, size_t out_len)
 {
     char tmp_path[256];
-    if (write_temp_file(data, len, ".zip", tmp_path, sizeof(tmp_path)) != 0) {
+    if (file_parser_write_temp(data, len, ".zip", tmp_path, sizeof(tmp_path)) != 0) {
         return -1;
     }
 
