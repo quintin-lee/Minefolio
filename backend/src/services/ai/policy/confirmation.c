@@ -412,7 +412,7 @@ ai_confirmation_verify_and_consume(int64_t             user_id,
     if (pool) {
         char now_str[32];
         snprintf(now_str, sizeof(now_str), "%lld", (long long)now);
-        const char* params_chk[] = {tok_nonce, now_str, NULL};
+        const char*   params_chk[] = {tok_nonce, now_str, NULL};
         csilk_json_t* res_chk = csilk_db_query_param_json(
             pool,
             "SELECT 1 FROM ai_consumed_nonces WHERE nonce = ? AND expiration >= ?",
@@ -435,7 +435,7 @@ ai_confirmation_verify_and_consume(int64_t             user_id,
         char exp_str[32], uid_str[32];
         snprintf(exp_str, sizeof(exp_str), "%lld", (long long)tok_exp);
         snprintf(uid_str, sizeof(uid_str), "%lld", (long long)tok_uid);
-        const char* params_ins[] = {tok_nonce, exp_str, uid_str, NULL};
+        const char*   params_ins[] = {tok_nonce, exp_str, uid_str, NULL};
         csilk_json_t* res_ins = csilk_db_query_param_json(
             pool,
             "INSERT INTO ai_consumed_nonces (nonce, expiration, user_id) VALUES (?, ?, ?)",
@@ -451,9 +451,13 @@ ai_confirmation_verify_and_consume(int64_t             user_id,
         if ((++s_gc_counter % 10) == 0) {
             char old_str[32];
             snprintf(old_str, sizeof(old_str), "%lld", (long long)(now - 300));
-            csilk_json_t* res_del = csilk_db_query_param_json(
-                pool, "DELETE FROM ai_consumed_nonces WHERE expiration < ?", (const char*[]){old_str, NULL});
-            if (res_del) csilk_json_free(res_del);
+            csilk_json_t* res_del =
+                csilk_db_query_param_json(pool,
+                                          "DELETE FROM ai_consumed_nonces WHERE expiration < ?",
+                                          (const char*[]){old_str, NULL});
+            if (res_del) {
+                csilk_json_free(res_del);
+            }
         }
     }
 

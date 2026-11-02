@@ -133,7 +133,16 @@ run_chat() {
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $TOKEN" \
     -H "X-CSRF-Token: $CSRF" \
-    -d "$CHAT_BODY" > "$body_file" || true
+    -d "$CHAT_BODY" > "$body_file" 2>/dev/null &
+  local cpid=$!
+  for _ in $(seq 1 120); do
+    if grep -q -E 'event: (done|error)' "$body_file" 2>/dev/null; then
+      break
+    fi
+    sleep 0.25
+  done
+  kill -9 "$cpid" 2>/dev/null || true
+  wait "$cpid" 2>/dev/null || true
 }
 
 # ---------------------------------------------------------------------------

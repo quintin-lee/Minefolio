@@ -635,7 +635,7 @@ git commit -m "fix(services): 🐛 adopt POSIX mkstemps for temporary upload fil
 
 ## Final Verification Gate
 
-- [ ] Run full test suite:
+- [x] Run full test suite:
   ```bash
   cmake --build build --target all && ctest --test-dir build --output-on-failure
   bash tests/test_link.sh
@@ -643,4 +643,4 @@ git commit -m "fix(services): 🐛 adopt POSIX mkstemps for temporary upload fil
   bash tests/test_mcp_server.sh
   bash tests/test_ai_loop_hardening.sh
   ```
-- [ ] Expected: 100% test pass across all 44+ unit tests and integration suites with zero memory leaks.
+- [x] Expected: 100% test pass across all 45 unit tests, link suite (174 assertions), MCP integration suite, MCP server suite, AI loop hardening suite, and frontend build & vitest suites with zero regressions.
