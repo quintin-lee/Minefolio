@@ -1,5 +1,7 @@
 #include "services/ai/policy/confirmation.h"
 #include "common/config.h"
+#include "common/db.h"
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -36,6 +38,16 @@ ai_confirmation_set_secret(const char* secret)
         s_custom_secret[0] = '\0';
         s_has_custom_secret = false;
     }
+    pthread_mutex_unlock(&s_nonce_lock);
+}
+
+void
+ai_confirmation_reset_nonce_cache(void)
+{
+    pthread_mutex_lock(&s_nonce_lock);
+    s_nonce_count = 0;
+    s_nonce_ring = 0;
+    memset(s_consumed_nonces, 0, sizeof(s_consumed_nonces));
     pthread_mutex_unlock(&s_nonce_lock);
 }
 
@@ -387,11 +399,66 @@ ai_confirmation_verify_and_consume(int64_t             user_id,
     }
 
     /* 8. 防重放校验与原子消费 (Anti-replay single-use check) */
+    /* 8.1 快速路径：内存环形缓冲区检测 */
     pthread_mutex_lock(&s_nonce_lock);
     if (is_nonce_consumed_locked(tok_nonce, now)) {
         pthread_mutex_unlock(&s_nonce_lock);
         return AI_CONFIRM_ERR_REPLAY;
     }
+    pthread_mutex_unlock(&s_nonce_lock);
+
+    /* 8.2 持久化层检测：数据库查询（若连接池已初始化） */
+    csilk_db_pool_t* pool = db_get_pool();
+    if (pool) {
+        char now_str[32];
+        snprintf(now_str, sizeof(now_str), "%lld", (long long)now);
+        const char* params_chk[] = {tok_nonce, now_str, NULL};
+        csilk_json_t* res_chk = csilk_db_query_param_json(
+            pool,
+            "SELECT 1 FROM ai_consumed_nonces WHERE nonce = ? AND expiration >= ?",
+            params_chk);
+        if (res_chk && csilk_json_array_size(res_chk) > 0) {
+            csilk_json_free(res_chk);
+            /* 回填内存环形缓存 */
+            pthread_mutex_lock(&s_nonce_lock);
+            record_nonce_consumed_locked(tok_nonce, tok_exp);
+            pthread_mutex_unlock(&s_nonce_lock);
+            return AI_CONFIRM_ERR_REPLAY;
+        }
+        if (res_chk) {
+            csilk_json_free(res_chk);
+        }
+    }
+
+    /* 8.3 持久化消费落库 */
+    if (pool) {
+        char exp_str[32], uid_str[32];
+        snprintf(exp_str, sizeof(exp_str), "%lld", (long long)tok_exp);
+        snprintf(uid_str, sizeof(uid_str), "%lld", (long long)tok_uid);
+        const char* params_ins[] = {tok_nonce, exp_str, uid_str, NULL};
+        csilk_json_t* res_ins = csilk_db_query_param_json(
+            pool,
+            "INSERT INTO ai_consumed_nonces (nonce, expiration, user_id) VALUES (?, ?, ?)",
+            params_ins);
+        if (!res_ins) {
+            /* 主键冲突说明并发重放 */
+            return AI_CONFIRM_ERR_REPLAY;
+        }
+        csilk_json_free(res_ins);
+
+        /* 低频清理过期 Nonce（每 10 次写入触发一次） */
+        static _Atomic uint32_t s_gc_counter = 0;
+        if ((++s_gc_counter % 10) == 0) {
+            char old_str[32];
+            snprintf(old_str, sizeof(old_str), "%lld", (long long)(now - 300));
+            csilk_json_t* res_del = csilk_db_query_param_json(
+                pool, "DELETE FROM ai_consumed_nonces WHERE expiration < ?", (const char*[]){old_str, NULL});
+            if (res_del) csilk_json_free(res_del);
+        }
+    }
+
+    /* 8.4 更新内存环形缓冲区 */
+    pthread_mutex_lock(&s_nonce_lock);
     record_nonce_consumed_locked(tok_nonce, tok_exp);
     pthread_mutex_unlock(&s_nonce_lock);
 

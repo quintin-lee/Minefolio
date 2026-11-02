@@ -454,7 +454,7 @@ git commit -m "fix(mcp): 🐛 align unauthenticated MCP requests with JSON-RPC -
 - Test: `tests/unit/test_nonce_persistence.c`
 - Modify: `CMakeLists.txt`
 
-- [ ] **Step 1: Create V019 migrations for SQLite and PostgreSQL**
+- [x] **Step 1: Create V019 migrations for SQLite and PostgreSQL**
 
 Create `backend/sql/migrations/sqlite/V019__ai_consumed_nonces.sql` and `backend/sql/migrations/postgres/V019__ai_consumed_nonces.sql`:
 ```sql
@@ -468,7 +468,7 @@ CREATE INDEX IF NOT EXISTS idx_ai_consumed_nonces_exp ON ai_consumed_nonces(expi
 ```
 Append identical statements to `sql/migration.sql` and `sql/migration_postgres.sql`.
 
-- [ ] **Step 2: Write unit test for persistent nonce verification (`test_nonce_persistence.c`)**
+- [x] **Step 2: Write unit test for persistent nonce verification (`test_nonce_persistence.c`)**
 
 Create `backend/tests/unit/test_nonce_persistence.c`:
 ```c
@@ -514,7 +514,7 @@ int main(void) {
 }
 ```
 
-- [ ] **Step 3: Register `test_nonce_persistence` in `CMakeLists.txt`**
+- [x] **Step 3: Register `test_nonce_persistence` in `CMakeLists.txt`**
 
 Add to `backend/CMakeLists.txt`:
 ```cmake
@@ -525,7 +525,7 @@ target_link_libraries(test_nonce_persistence PRIVATE csilk crypto CURL::libcurl 
 add_test(NAME test_nonce_persistence COMMAND test_nonce_persistence)
 ```
 
-- [ ] **Step 4: Implement persistent nonce storage & verification in `confirmation.c`**
+- [x] **Step 4: Implement persistent nonce storage & verification in `confirmation.c`**
 
 In `src/services/ai/policy/confirmation.h`:
 Export `void ai_confirmation_reset_nonce_cache(void);`.
@@ -540,12 +540,12 @@ In `src/services/ai/policy/confirmation.c`:
    - Trigger background GC on every 10th write (`DELETE FROM ai_consumed_nonces WHERE expiration < now - 300`).
    - Update in-memory ring buffer.
 
-- [ ] **Step 5: Run test to verify pass**
+- [x] **Step 5: Run test to verify pass**
 
 Run: `cmake -B build -S . && cmake --build build --target test_nonce_persistence && ./build/test_nonce_persistence`
 Expected: PASS
 
-- [ ] **Step 6: Commit Task 5**
+- [x] **Step 6: Commit Task 5**
 
 ```bash
 git add sql/migrations/sqlite/V019__ai_consumed_nonces.sql sql/migrations/postgres/V019__ai_consumed_nonces.sql sql/migration.sql sql/migration_postgres.sql src/services/ai/policy/confirmation.h src/services/ai/policy/confirmation.c tests/unit/test_nonce_persistence.c CMakeLists.txt

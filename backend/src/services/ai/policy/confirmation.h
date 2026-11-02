@@ -55,6 +55,11 @@ typedef struct {
 void ai_confirmation_set_secret(const char* secret);
 
 /**
+ * @brief 重置在内存中的 Nonce 缓存（供单元测试重置状态使用）
+ */
+void ai_confirmation_reset_nonce_cache(void);
+
+/**
  * @brief 获取当前生效的签名密钥（优先读取环境变量 MINEFOLIO_AI_SECRET / MINEFOLIO_JWT_SECRET，再查配置）
  */
 const char* ai_confirmation_get_secret(void);

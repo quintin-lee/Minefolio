@@ -420,3 +420,12 @@ INSERT INTO market_indices (symbol, name, category, region_flag, current_price, 
 ('ETH-USD', '以太坊', 'crypto', '🪙', 2640.00, 47.20, 1.82, 2592.80, 2600.00, 2660.00, 2590.00, 'USD', '2026-10-16 15:30:00', '[2595,2605,2615,2625,2630,2635,2638,2640]'),
 ('GC=F', '黄金现货', 'crypto', '🪙', 2680.50, 10.10, 0.38, 2670.40, 2672.00, 2688.00, 2670.00, 'USD', '2026-10-16 15:30:00', '[2671,2673,2675,2678,2676,2679,2680,2680.5]')
 ON CONFLICT (symbol) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS ai_consumed_nonces (
+    nonce       VARCHAR(64) PRIMARY KEY,
+    expiration  BIGINT NOT NULL,
+    user_id     BIGINT NOT NULL,
+    consumed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ai_consumed_nonces_exp ON ai_consumed_nonces(expiration);
+

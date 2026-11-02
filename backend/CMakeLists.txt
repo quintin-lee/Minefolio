@@ -374,6 +374,13 @@ target_compile_options(test_mcp_unauth_protocol PRIVATE -UNDEBUG)
 target_link_libraries(test_mcp_unauth_protocol PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
 add_test(NAME test_mcp_unauth_protocol COMMAND test_mcp_unauth_protocol)
 
+add_executable(test_nonce_persistence tests/unit/test_nonce_persistence.c ${LIB_SOURCES})
+target_include_directories(test_nonce_persistence PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_nonce_persistence PRIVATE -UNDEBUG)
+target_link_libraries(test_nonce_persistence PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_test(NAME test_nonce_persistence COMMAND test_nonce_persistence)
+
+
 
 
 
