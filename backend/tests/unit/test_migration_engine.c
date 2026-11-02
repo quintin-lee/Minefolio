@@ -2,10 +2,23 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "csilk/csilk.h"
 #include "csilk/drivers/db.h"
 #include "csilk/drivers/db/migration.h"
+
+static const char*
+get_migrations_path(void)
+{
+    if (access("sql/migrations", F_OK) == 0) {
+        return "sql/migrations";
+    }
+    if (access("backend/sql/migrations", F_OK) == 0) {
+        return "backend/sql/migrations";
+    }
+    return "../sql/migrations";
+}
 
 static void
 test_checksum_normalization(void)
@@ -43,12 +56,12 @@ test_discovery_and_ordering(void)
     assert(pool != NULL);
 
     csilk_migration_engine_t* engine = NULL;
-    assert(csilk_migration_engine_new(pool, "sql/migrations", &engine) == 0 && engine != NULL);
+    assert(csilk_migration_engine_new(pool, get_migrations_path(), &engine) == 0 && engine != NULL);
 
     csilk_migration_item_t* items = NULL;
     int                     count = 0;
     assert(csilk_migration_discover(engine, &items, &count) == 0);
-    assert(count >= 7);
+    assert(count >= 20);
 
     assert(items[0].version == 1);
     assert(strcmp(items[0].name, "initial_auth_and_system") == 0);
@@ -106,13 +119,13 @@ test_fresh_apply_and_status(void)
     assert(pool != NULL);
 
     csilk_migration_engine_t* engine = NULL;
-    assert(csilk_migration_engine_new(pool, "sql/migrations", &engine) == 0 && engine != NULL);
+    assert(csilk_migration_engine_new(pool, get_migrations_path(), &engine) == 0 && engine != NULL);
 
     /* Status before apply */
     csilk_migration_item_t* items = NULL;
     int                     count = 0;
     assert(csilk_migration_status(engine, &items, &count) == 0);
-    assert(count >= 7);
+    assert(count >= 20);
     for (int i = 0; i < count; i++) {
         assert(!items[i].is_applied);
         assert(items[i].execution_time_ms == 0);
@@ -134,7 +147,7 @@ test_fresh_apply_and_status(void)
 
     /* Verify core tables were created */
     const char* check_tables[] = {
-        "users", "categories", "assets", "transactions", "ledgers", "schema_migrations", NULL
+        "users", "categories", "assets", "transactions", "ledgers", "schema_migrations", "ledger_snapshots", NULL
     };
     for (int i = 0; check_tables[i] != NULL; i++) {
         const char* params[] = {check_tables[i], NULL};
@@ -143,6 +156,11 @@ test_fresh_apply_and_status(void)
         assert(res != NULL && csilk_json_array_size(res) == 1);
         csilk_json_free(res);
     }
+
+    csilk_json_t* fx_col_res = csilk_db_query_json(
+        pool, "SELECT fx_rate_to_cny FROM transactions LIMIT 1;");
+    assert(fx_col_res != NULL);
+    csilk_json_free(fx_col_res);
 
     /* Idempotent second apply */
     int second_applied = 0;
@@ -166,11 +184,11 @@ test_tampering_detection(void)
     assert(pool != NULL);
 
     csilk_migration_engine_t* engine = NULL;
-    assert(csilk_migration_engine_new(pool, "sql/migrations", &engine) == 0 && engine != NULL);
+    assert(csilk_migration_engine_new(pool, get_migrations_path(), &engine) == 0 && engine != NULL);
 
     int applied = 0;
     assert(csilk_migration_apply(engine, &applied) == 0);
-    assert(applied >= 7);
+    assert(applied >= 20);
     assert(csilk_migration_validate(engine) == 0);
 
     /* Tamper with checksum of V001 in schema_migrations */
@@ -210,7 +228,7 @@ test_auto_baseline_existing_database(void)
                "CREATE TABLE categories (id INTEGER PRIMARY KEY, user_id INTEGER, ledger_id INTEGER, "
                "name TEXT);"
                "INSERT INTO categories (id, user_id, ledger_id, name) VALUES (20, 1, NULL, 'legacy');"
-               "CREATE TABLE assets (id INTEGER PRIMARY KEY, user_id INTEGER, ledger_id INTEGER);"
+               "CREATE TABLE assets (id INTEGER PRIMARY KEY, user_id INTEGER, ledger_id INTEGER, currency TEXT DEFAULT 'CNY');"
                "CREATE TABLE transactions (id INTEGER PRIMARY KEY, user_id INTEGER, ledger_id INTEGER, "
                "asset_id INTEGER, linked_asset_id INTEGER, transaction_type TEXT, amount DECIMAL(18,2));"
                "CREATE TABLE daily_expenses (id INTEGER PRIMARY KEY, user_id INTEGER, ledger_id INTEGER);"
@@ -218,7 +236,7 @@ test_auto_baseline_existing_database(void)
                "INSERT INTO category_seed_state (user_id) VALUES (1);") == 0);
 
     csilk_migration_engine_t* engine = NULL;
-    assert(csilk_migration_engine_new(pool, "sql/migrations", &engine) == 0 && engine != NULL);
+    assert(csilk_migration_engine_new(pool, get_migrations_path(), &engine) == 0 && engine != NULL);
     assert(csilk_migration_engine_set_baseline(engine, 7, "users") == 0);
 
     /* Apply on existing database triggers auto-baseline */
@@ -245,7 +263,7 @@ test_auto_baseline_existing_database(void)
     csilk_migration_item_t* items = NULL;
     int                     count = 0;
     assert(csilk_migration_status(engine, &items, &count) == 0);
-    assert(count >= 7);
+    assert(count >= 20);
     for (int i = 0; i < count; i++) {
         if (items[i].version <= 7) {
             assert(items[i].is_applied == true);
@@ -295,12 +313,12 @@ test_postgres_migration_dialect(void)
     assert(pool != NULL);
 
     csilk_migration_engine_t* engine = NULL;
-    assert(csilk_migration_engine_new(pool, "sql/migrations", &engine) == 0 && engine != NULL);
+    assert(csilk_migration_engine_new(pool, get_migrations_path(), &engine) == 0 && engine != NULL);
 
     csilk_migration_item_t* items = NULL;
     int                     count = 0;
     assert(csilk_migration_discover(engine, &items, &count) == 0);
-    assert(count >= 14);
+    assert(count >= 20);
     assert(strstr(items[0].filepath, "postgres") != NULL);
 
     free(items);
