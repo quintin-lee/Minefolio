@@ -329,11 +329,12 @@ money_t delta_m;
 mf_market_rule_calc_sync_delta(p_old, p_new, qty, cur, &delta_m);
 
 if (!money_is_zero(delta_m)) {
-    if (balance_apply_delta_m(db_pool, asset_id, user_id, delta_m,
-                              "asset_market_sync", asset_id, "Market quote sync") != 0) {
+    int b_rc = balance_apply_delta_m(db_pool, asset_id, user_id, delta_m,
+                                     "asset_market_sync", asset_id, "Market quote sync");
+    if (b_rc != 0) {
         db_tx_scope_rollback(db_pool, &scope);
         csilk_json_free(asset_rows);
-        out_res->code = 1002;
+        out_res->code = (b_rc == -1) ? 1002 : 1004;
         snprintf(out_res->message, sizeof(out_res->message), "资产余额更新失败");
         return -1;
     }
@@ -344,10 +345,76 @@ if (!money_is_zero(delta_m)) {
 
 ### 3.3 MCP Endpoint Optional Auth & JSON-RPC Protocol Alignment
 
-#### 1. Middleware Update (`src/middlewares/jwt_middleware.c`)
+#### 1. Version Validation Helper & Middleware Refactoring (`src/middlewares/jwt_middleware.c`)
+Refactor token version validation into `jwt_validate_version_num` which verifies version number directly:
+```c
+static int
+jwt_validate_version_num(int64_t user_id, int jwt_version)
+{
+    int64_t now_ms;
+    {
+        struct timespec now;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        now_ms = (int64_t)now.tv_sec * 1000 + now.tv_nsec / 1000000;
+    }
+
+    pthread_mutex_lock(&g_tv_cache_mutex);
+    for (size_t i = 0; i < g_tv_cache_count; i++) {
+        struct tv_cache_entry* e = &g_tv_cache[i];
+        if (e->user_id == user_id && e->expire_mono_ms > now_ms && e->found &&
+            jwt_version == e->db_version) {
+            pthread_mutex_unlock(&g_tv_cache_mutex);
+            return 0;
+        }
+    }
+    pthread_mutex_unlock(&g_tv_cache_mutex);
+
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    csilk_db_pool_t* pool = db_get_pool();
+    const char*      params[] = {uid_str, NULL};
+    csilk_json_t*    row =
+        csilk_db_query_param_json(pool, "SELECT token_version FROM users WHERE id=?", params);
+    int db_version, found;
+    if (!row || csilk_json_array_size(row) == 0) {
+        if (row) csilk_json_free(row);
+        found = 0;
+        db_version = 0;
+    } else {
+        found = 1;
+        db_version = (int)db_get_int(csilk_json_array_get(row, 0), "token_version");
+        csilk_json_free(row);
+    }
+
+    pthread_mutex_lock(&g_tv_cache_mutex);
+    size_t slot = g_tv_cache_count;
+    for (size_t i = 0; i < g_tv_cache_count; i++) {
+        if (g_tv_cache[i].user_id == user_id) {
+            slot = i;
+            break;
+        }
+    }
+    if (slot == g_tv_cache_count) {
+        if (g_tv_cache_count < TOKEN_VERSION_CACHE_MAX_USERS) {
+            g_tv_cache_count++;
+        } else {
+            slot = now_ms % TOKEN_VERSION_CACHE_MAX_USERS;
+        }
+    }
+    struct tv_cache_entry* e = &g_tv_cache[slot];
+    e->user_id = user_id;
+    e->db_version = db_version;
+    e->found = found;
+    e->expire_mono_ms = now_ms + TOKEN_VERSION_CACHE_TTL_SEC * 1000;
+    pthread_mutex_unlock(&g_tv_cache_mutex);
+
+    return (found && jwt_version == db_version) ? 0 : -1;
+}
+```
+
 In `jwt_middleware_wrapper()`:
 Preserve entry guards (`s_jwt_exclude_paths` and `config_secret_get("JWT_SECRET", ...)`).
-Update token verification to never attach invalid or unverified payloads on `/mcp`:
+Validate claims and version *before* attaching payload to context, and pass through cleanly on `/mcp`:
 ```c
 void
 jwt_middleware_wrapper(csilk_ctx_t* c)
@@ -419,10 +486,11 @@ jwt_middleware_wrapper(csilk_ctx_t* c)
         return;
     }
 
-    /* Validate token version against DB / cache before context attachment */
+    /* Validate token version against DB / cache BEFORE context attachment */
     if (jwt_validate_version_num(user_id, jwt_v) != 0) {
         csilk_json_free(payload);
         if (is_mcp_path) {
+            /* Token revoked/invalidated on /mcp: pass through unauthenticated without context payload */
             csilk_next(c);
             return;
         }
@@ -455,10 +523,10 @@ if (user_id < 0) {
 }
 ```
 
-In `src/middlewares/rate_limit.c:mcp_rate_limit_middleware`:
+In `src/middlewares/rate_limit.c:mcp_rate_limit_middleware` (preserve `user_id` identifier):
 ```c
-int64_t uid = jwt_get_user_id(c);
-if (uid <= 0) {
+int64_t user_id = jwt_get_user_id(c);
+if (user_id <= 0) {
     /* Unauthenticated MCP requests pass through to mcp_endpoint_handler */
     csilk_next(c);
     return;
@@ -575,7 +643,7 @@ pthread_mutex_unlock(&s_nonce_lock);
 
 ### 3.5 POSIX `mkstemps` File Creation Compliance (`src/services/file_parser.h` & `file_parser.c`)
 
-Export helper in `src/services/file_parser.h` for direct, deterministic unit test verification:
+Export helper in `src/services/file_parser.h`:
 ```c
 /**
  * @brief 创建带指定后缀的安全临时文件 (POSIX mkstemps 包装)
@@ -585,12 +653,17 @@ int file_parser_write_temp(const char* data, size_t len, const char* suffix,
 ```
 
 In `src/services/file_parser.c`:
+Place `#define _GNU_SOURCE` at the very top of `file_parser.c`. Implement `file_parser_write_temp()` and update internal calls in `parse_pdf()` and `parse_zip()` to invoke `file_parser_write_temp`:
 ```c
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
+
+#include "services/file_parser.h"
 #include <stdlib.h>
 #include <unistd.h>
+#include <stdio.h>
+#include <string.h>
 
 int
 file_parser_write_temp(const char* data, size_t len, const char* suffix,
@@ -599,7 +672,8 @@ file_parser_write_temp(const char* data, size_t len, const char* suffix,
     if (!suffix) suffix = "";
     size_t suffix_len = strlen(suffix);
 
-    if (snprintf(out_path, out_path_len, "/tmp/minefolio_upload_XXXXXX%s", suffix) >= (int)out_path_len) {
+    int r = snprintf(out_path, out_path_len, "/tmp/minefolio_upload_XXXXXX%s", suffix);
+    if (r < 0 || (size_t)r >= out_path_len) {
         return -1;
     }
 
@@ -615,6 +689,26 @@ file_parser_write_temp(const char* data, size_t len, const char* suffix,
         return -1;
     }
     return 0;
+}
+
+static int
+parse_pdf(const char* data, size_t len, char* out, size_t out_len)
+{
+    char tmp_path[256];
+    if (file_parser_write_temp(data, len, ".pdf", tmp_path, sizeof(tmp_path)) != 0) {
+        return -1;
+    }
+    ...
+}
+
+static int
+parse_zip(const char* data, size_t len, char* out, size_t out_len)
+{
+    char tmp_path[256];
+    if (file_parser_write_temp(data, len, ".zip", tmp_path, sizeof(tmp_path)) != 0) {
+        return -1;
+    }
+    ...
 }
 ```
 
@@ -658,6 +752,7 @@ The following new unit test targets are registered under `CMakeLists.txt` via `a
    - Attempt to verify and consume same token again.
    - Assert verification fails with `AI_CONFIRM_ERR_REPLAY` via database lookup.
 5. **`tests/unit/test_file_parser_mkstemps.c`**:
+   - Add `target_compile_definitions(test_file_parser_mkstemps PRIVATE _GNU_SOURCE)`.
    - Invoke `file_parser_write_temp()` with `.pdf` and `.zip` suffixes.
    - Assert file is created, written, closed, and deleted cleanly with valid file descriptors.
 
