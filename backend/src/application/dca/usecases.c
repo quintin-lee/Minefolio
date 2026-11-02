@@ -245,8 +245,14 @@ dca_usecase_confirm_execution(void*                              pool,
     money_div_price(actual_m, price_p, 8, ROUND_HALF_UP, &qty_q);
     double executed_quantity = quantity_to_double(qty_q);
 
-    /* Execute Transaction within BEGIN / COMMIT block */
-    csilk_db_exec(pool, "BEGIN TRANSACTION");
+    /* Execute Transaction within db_tx_scope block */
+    db_tx_scope_t scope;
+    if (db_tx_scope_begin(pool, "mf_dca_scope", &scope) != 0) {
+        csilk_json_free(exec_arr);
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "数据库错误");
+        return -1;
+    }
 
     char tx_date[32];
     snprintf(tx_date, sizeof(tx_date), "%s 09:30:00", period_date ? period_date : "2026-08-28");
@@ -267,7 +273,7 @@ dca_usecase_confirm_execution(void*                              pool,
                        .parent_tx_id = 0};
 
     if (ledger_apply_tx(pool, &ltx) != 0) {
-        csilk_db_exec(pool, "ROLLBACK");
+        db_tx_scope_rollback(pool, &scope);
         csilk_json_free(exec_arr);
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "定投执行失败");
@@ -280,7 +286,13 @@ dca_usecase_confirm_execution(void*                              pool,
     mf_dca_repo_execution_update_confirmed(
         pool, cmd->exec_id, actual_amount, executed_price, executed_quantity, tx_id);
 
-    csilk_db_exec(pool, "COMMIT");
+    if (db_tx_scope_commit(pool, &scope) != 0) {
+        db_tx_scope_rollback(pool, &scope);
+        csilk_json_free(exec_arr);
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "提交事务失败");
+        return -1;
+    }
     csilk_json_free(exec_arr);
 
     out_res->code = 0;

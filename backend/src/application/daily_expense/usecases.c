@@ -33,7 +33,6 @@ check_asset_exists(void*                           pool,
     if (asset_exists((csilk_db_pool_t*)pool, user_id, asset_id)) {
         return 0;
     }
-    csilk_db_exec(pool, "ROLLBACK");
     out_res->code = 1002;
     snprintf(out_res->message, sizeof(out_res->message), "资产无效");
     return -1;
@@ -372,13 +371,14 @@ daily_expense_usecase_create(void*                             pool,
         return -1;
     }
 
-    if (csilk_db_exec(pool, "BEGIN TRANSACTION") != 0) {
-        out_res->code = 500;
-        snprintf(out_res->message, sizeof(out_res->message), "数据库错误");
+    if (check_asset_exists(pool, cmd->user_id, cmd->asset_id, out_res) != 0) {
         return -1;
     }
 
-    if (check_asset_exists(pool, cmd->user_id, cmd->asset_id, out_res) != 0) {
+    db_tx_scope_t scope;
+    if (db_tx_scope_begin(pool, "mf_expense_create", &scope) != 0) {
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "数据库错误");
         return -1;
     }
 
@@ -393,7 +393,7 @@ daily_expense_usecase_create(void*                             pool,
                                                       cmd->expense_date,
                                                       cmd->note);
     if (expense_id <= 0) {
-        csilk_db_exec(pool, "ROLLBACK");
+        db_tx_scope_rollback(pool, &scope);
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "创建失败");
         return -1;
@@ -408,20 +408,25 @@ daily_expense_usecase_create(void*                             pool,
                       cmd->expense_type,
                       expense_id,
                       cmd->note) != 0) {
-        csilk_db_exec(pool, "ROLLBACK");
+        db_tx_scope_rollback(pool, &scope);
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "资产无效");
         return -1;
     }
 
     if (process_tags(pool, cmd->user_id, expense_id, tags) != 0) {
-        csilk_db_exec(pool, "ROLLBACK");
+        db_tx_scope_rollback(pool, &scope);
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "创建失败");
         return -1;
     }
 
-    csilk_db_exec(pool, "COMMIT");
+    if (db_tx_scope_commit(pool, &scope) != 0) {
+        db_tx_scope_rollback(pool, &scope);
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "提交事务失败");
+        return -1;
+    }
     out_res->code = 0;
     return 0;
 }
@@ -464,13 +469,14 @@ daily_expense_usecase_update(void*                             pool,
         return -1;
     }
 
-    if (csilk_db_exec(pool, "BEGIN TRANSACTION") != 0) {
-        out_res->code = 500;
-        snprintf(out_res->message, sizeof(out_res->message), "数据库错误");
+    if (check_asset_exists(pool, cmd->user_id, cmd->asset_id, out_res) != 0) {
         return -1;
     }
 
-    if (check_asset_exists(pool, cmd->user_id, cmd->asset_id, out_res) != 0) {
+    db_tx_scope_t scope;
+    if (db_tx_scope_begin(pool, "mf_expense_update", &scope) != 0) {
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "数据库错误");
         return -1;
     }
 
@@ -483,7 +489,7 @@ daily_expense_usecase_update(void*                             pool,
                         old.expense_type,
                         cmd->id,
                         old.note) != 0) {
-        csilk_db_exec(pool, "ROLLBACK");
+        db_tx_scope_rollback(pool, &scope);
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "回滚旧收支失败");
         return -1;
@@ -502,7 +508,7 @@ daily_expense_usecase_update(void*                             pool,
                                      cur,
                                      cmd->expense_date,
                                      cmd->note) != 0) {
-        csilk_db_exec(pool, "ROLLBACK");
+        db_tx_scope_rollback(pool, &scope);
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "更新失败");
         return -1;
@@ -517,7 +523,7 @@ daily_expense_usecase_update(void*                             pool,
                       cmd->expense_type,
                       cmd->id,
                       cmd->note) != 0) {
-        csilk_db_exec(pool, "ROLLBACK");
+        db_tx_scope_rollback(pool, &scope);
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "资产无效");
         return -1;
@@ -526,13 +532,18 @@ daily_expense_usecase_update(void*                             pool,
     /* 4. Rebind tags */
     mf_daily_expense_repo_tag_delete_all(pool, cmd->id);
     if (process_tags(pool, cmd->user_id, cmd->id, tags) != 0) {
-        csilk_db_exec(pool, "ROLLBACK");
+        db_tx_scope_rollback(pool, &scope);
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "更新失败");
         return -1;
     }
 
-    csilk_db_exec(pool, "COMMIT");
+    if (db_tx_scope_commit(pool, &scope) != 0) {
+        db_tx_scope_rollback(pool, &scope);
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "提交事务失败");
+        return -1;
+    }
     out_res->code = 0;
     return 0;
 }
@@ -552,7 +563,8 @@ daily_expense_usecase_delete(void*                           pool,
         return -1;
     }
 
-    if (csilk_db_exec(pool, "BEGIN TRANSACTION") != 0) {
+    db_tx_scope_t scope;
+    if (db_tx_scope_begin(pool, "mf_expense_delete", &scope) != 0) {
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "数据库错误");
         return -1;
@@ -570,7 +582,7 @@ daily_expense_usecase_delete(void*                           pool,
                         old.expense_type,
                         id,
                         old.note) != 0) {
-        csilk_db_exec(pool, "ROLLBACK");
+        db_tx_scope_rollback(pool, &scope);
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "删除失败");
         return -1;
@@ -578,13 +590,18 @@ daily_expense_usecase_delete(void*                           pool,
 
     /* 3. Delete record */
     if (mf_daily_expense_repo_delete(pool, user_id, ledger_id, id) != 0) {
-        csilk_db_exec(pool, "ROLLBACK");
+        db_tx_scope_rollback(pool, &scope);
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "删除失败");
         return -1;
     }
 
-    csilk_db_exec(pool, "COMMIT");
+    if (db_tx_scope_commit(pool, &scope) != 0) {
+        db_tx_scope_rollback(pool, &scope);
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "提交事务失败");
+        return -1;
+    }
     out_res->code = 0;
     return 0;
 }

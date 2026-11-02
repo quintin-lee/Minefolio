@@ -46,7 +46,8 @@ transfer_usecase_create(void*                        pool,
     }
 
     /* Begin transaction */
-    if (csilk_db_exec(pool, "BEGIN TRANSACTION") != 0) {
+    db_tx_scope_t scope;
+    if (db_tx_scope_begin(pool, "mf_transfer_create", &scope) != 0) {
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "数据库错误");
         return -1;
@@ -66,7 +67,7 @@ transfer_usecase_create(void*                        pool,
                                                                 note,
                                                                 cmd->ledger_id);
     if (out_tx_id <= 0) {
-        csilk_db_exec(pool, "ROLLBACK");
+        db_tx_scope_rollback(pool, &scope);
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "记录划转交易失败");
         return -1;
@@ -84,7 +85,7 @@ transfer_usecase_create(void*                        pool,
                                                               out_tx_id,
                                                               cmd->ledger_id);
     if (in_tx_id <= 0) {
-        csilk_db_exec(pool, "ROLLBACK");
+        db_tx_scope_rollback(pool, &scope);
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "记录划转交易失败");
         return -1;
@@ -107,7 +108,7 @@ transfer_usecase_create(void*                        pool,
 
     int64_t transfer_id = mf_transfer_repo_insert(pool, cmd->user_id, &transfer);
     if (transfer_id <= 0) {
-        csilk_db_exec(pool, "ROLLBACK");
+        db_tx_scope_rollback(pool, &scope);
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "转账失败");
         return -1;
@@ -121,14 +122,21 @@ transfer_usecase_create(void*                        pool,
     if (ledger_apply_transfer(
             pool, cmd->user_id, cmd->from_asset_id, cmd->to_asset_id, amt_m, transfer_id, note) !=
         0) {
-        csilk_db_exec(pool, "ROLLBACK");
+        db_tx_scope_rollback(pool, &scope);
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "资产余额更新失败");
         return -1;
     }
 
     /* Commit */
-    csilk_db_exec(pool, "COMMIT");
+    if (db_tx_scope_commit(pool, &scope) != 0) {
+        db_tx_scope_rollback(pool, &scope);
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "提交事务失败");
+        return -1;
+    }
+    out_res->code = 0;
+    return 0;
     out_res->code = 0;
     return 0;
 }

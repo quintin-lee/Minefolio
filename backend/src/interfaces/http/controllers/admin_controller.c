@@ -112,7 +112,8 @@ system_setup(csilk_ctx_t* c)
     const char* password = (const char*)pt_buf;
 
     // Start transaction
-    if (csilk_db_exec(pool, "BEGIN TRANSACTION") != 0) {
+    db_tx_scope_t scope;
+    if (db_tx_scope_begin(pool, "mf_setup_scope", &scope) != 0) {
         csilk_json_free(body);
         respond_error(c, 500, "数据库错误");
         return;
@@ -132,7 +133,7 @@ system_setup(csilk_ctx_t* c)
     csilk_json_t* user_res = csilk_db_query_param_json(
         pool, "SELECT id, username, password FROM users WHERE username = ?", get_params);
     if (!user_res || csilk_json_array_size(user_res) == 0) {
-        csilk_db_exec(pool, "ROLLBACK");
+        db_tx_scope_rollback(pool, &scope);
         if (user_res) {
             csilk_json_free(user_res);
         }
@@ -158,7 +159,12 @@ system_setup(csilk_ctx_t* c)
         config_set("config/db.json", kv);
     }
 
-    csilk_db_exec(pool, "COMMIT");
+    if (db_tx_scope_commit(pool, &scope) != 0) {
+        db_tx_scope_rollback(pool, &scope);
+        csilk_json_free(body);
+        respond_error(c, 500, "提交事务失败");
+        return;
+    }
     csilk_json_free(body);
 
     char*         token = jwt_generate_token(c, user_id, 0); /* new admin, version 0 */

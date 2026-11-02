@@ -105,7 +105,8 @@ tx_usecase_create(void* pool, const create_tx_cmd_t* cmd, tx_usecase_result_t* o
         return -1;
     }
 
-    if (csilk_db_exec(pool, "BEGIN TRANSACTION") != 0) {
+    db_tx_scope_t scope;
+    if (db_tx_scope_begin(pool, "mf_tx_create", &scope) != 0) {
         out_res->code = 1004;
         snprintf(out_res->message, sizeof(out_res->message), "数据库错误");
         return -1;
@@ -130,13 +131,18 @@ tx_usecase_create(void* pool, const create_tx_cmd_t* cmd, tx_usecase_result_t* o
     };
 
     if (ledger_apply_tx(pool, &ltx) != 0) {
-        csilk_db_exec(pool, "ROLLBACK");
+        db_tx_scope_rollback(pool, &scope);
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "持有份额不足或资产处理失败");
         return -1;
     }
 
-    csilk_db_exec(pool, "COMMIT");
+    if (db_tx_scope_commit(pool, &scope) != 0) {
+        db_tx_scope_rollback(pool, &scope);
+        out_res->code = 1004;
+        snprintf(out_res->message, sizeof(out_res->message), "提交事务失败");
+        return -1;
+    }
     out_res->code = 0;
     out_res->created_id = ltx.id;
     snprintf(out_res->message, sizeof(out_res->message), "OK");
@@ -230,7 +236,8 @@ tx_usecase_update(void* pool, const update_tx_cmd_t* cmd, tx_usecase_result_t* o
         return -1;
     }
 
-    if (csilk_db_exec((csilk_db_pool_t*)pool, "BEGIN TRANSACTION") != 0) {
+    db_tx_scope_t scope;
+    if (db_tx_scope_begin((csilk_db_pool_t*)pool, "mf_tx_update", &scope) != 0) {
         csilk_json_free(old_rows);
         out_res->code = 1004;
         snprintf(out_res->message, sizeof(out_res->message), "数据库错误");
@@ -239,7 +246,7 @@ tx_usecase_update(void* pool, const update_tx_cmd_t* cmd, tx_usecase_result_t* o
 
     /* 1. 回滚原有交易 */
     if (ledger_reverse_tx((csilk_db_pool_t*)pool, cmd->user_id, cmd->tx_id) != 0) {
-        csilk_db_exec((csilk_db_pool_t*)pool, "ROLLBACK");
+        db_tx_scope_rollback((csilk_db_pool_t*)pool, &scope);
         csilk_json_free(old_rows);
         out_res->code = 1004;
         snprintf(out_res->message, sizeof(out_res->message), "原交易回滚失败");
@@ -275,14 +282,20 @@ tx_usecase_update(void* pool, const update_tx_cmd_t* cmd, tx_usecase_result_t* o
     };
 
     if (ledger_apply_tx((csilk_db_pool_t*)pool, &ltx) != 0) {
-        csilk_db_exec((csilk_db_pool_t*)pool, "ROLLBACK");
+        db_tx_scope_rollback((csilk_db_pool_t*)pool, &scope);
         csilk_json_free(old_rows);
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "新交易处理失败或持有份额不足");
         return -1;
     }
 
-    csilk_db_exec((csilk_db_pool_t*)pool, "COMMIT");
+    if (db_tx_scope_commit((csilk_db_pool_t*)pool, &scope) != 0) {
+        db_tx_scope_rollback((csilk_db_pool_t*)pool, &scope);
+        csilk_json_free(old_rows);
+        out_res->code = 1004;
+        snprintf(out_res->message, sizeof(out_res->message), "提交事务失败");
+        return -1;
+    }
     csilk_json_free(old_rows);
     out_res->code = 0;
     snprintf(out_res->message, sizeof(out_res->message), "OK");
@@ -303,7 +316,8 @@ tx_usecase_delete(void* pool, const delete_tx_cmd_t* cmd, tx_usecase_result_t* o
         return -1;
     }
 
-    if (csilk_db_exec(pool, "BEGIN TRANSACTION") != 0) {
+    db_tx_scope_t scope;
+    if (db_tx_scope_begin(pool, "mf_tx_delete", &scope) != 0) {
         out_res->code = 1004;
         snprintf(out_res->message, sizeof(out_res->message), "数据库错误");
         return -1;
@@ -323,7 +337,7 @@ tx_usecase_delete(void* pool, const delete_tx_cmd_t* cmd, tx_usecase_result_t* o
         if (tx_rows) {
             csilk_json_free(tx_rows);
         }
-        csilk_db_exec(pool, "ROLLBACK");
+        db_tx_scope_rollback(pool, &scope);
         out_res->code = 1003;
         snprintf(out_res->message, sizeof(out_res->message), "交易不存在");
         return -1;
@@ -358,7 +372,7 @@ tx_usecase_delete(void* pool, const delete_tx_cmd_t* cmd, tx_usecase_result_t* o
         /* 1. transfer_out 作为转账主单，执行状态回滚 (同时还原转出和转入资产余额) */
         if (ledger_reverse_tx(pool, cmd->user_id, cmd->tx_id) != 0) {
             csilk_json_free(tx_rows);
-            csilk_db_exec(pool, "ROLLBACK");
+            db_tx_scope_rollback(pool, &scope);
             out_res->code = 1004;
             snprintf(out_res->message, sizeof(out_res->message), "删除回滚失败");
             return -1;
@@ -403,7 +417,7 @@ tx_usecase_delete(void* pool, const delete_tx_cmd_t* cmd, tx_usecase_result_t* o
         /* 4. 物理删除 transfer_out 主记录 */
         if (!tx_delete(pool, cmd->user_id, cmd->tx_id)) {
             csilk_json_free(tx_rows);
-            csilk_db_exec(pool, "ROLLBACK");
+            db_tx_scope_rollback(pool, &scope);
             out_res->code = 1004;
             snprintf(out_res->message, sizeof(out_res->message), "删除失败");
             return -1;
@@ -436,7 +450,7 @@ tx_usecase_delete(void* pool, const delete_tx_cmd_t* cmd, tx_usecase_result_t* o
             snprintf(maid_str, sizeof(maid_str), "%lld", (long long)main_out_id);
             if (ledger_reverse_tx(pool, cmd->user_id, main_out_id) != 0) {
                 csilk_json_free(tx_rows);
-                csilk_db_exec(pool, "ROLLBACK");
+                db_tx_scope_rollback(pool, &scope);
                 out_res->code = 1004;
                 snprintf(out_res->message, sizeof(out_res->message), "删除回滚失败");
                 return -1;
@@ -473,7 +487,7 @@ tx_usecase_delete(void* pool, const delete_tx_cmd_t* cmd, tx_usecase_result_t* o
             // 单独存在的 transfer_in，直接单笔回滚
             if (ledger_reverse_tx(pool, cmd->user_id, cmd->tx_id) != 0) {
                 csilk_json_free(tx_rows);
-                csilk_db_exec(pool, "ROLLBACK");
+                db_tx_scope_rollback(pool, &scope);
                 out_res->code = 1004;
                 snprintf(out_res->message, sizeof(out_res->message), "删除回滚失败");
                 return -1;
@@ -488,7 +502,7 @@ tx_usecase_delete(void* pool, const delete_tx_cmd_t* cmd, tx_usecase_result_t* o
         /* 普通交易 */
         if (ledger_reverse_tx(pool, cmd->user_id, cmd->tx_id) != 0) {
             csilk_json_free(tx_rows);
-            csilk_db_exec(pool, "ROLLBACK");
+            db_tx_scope_rollback(pool, &scope);
             out_res->code = 1004;
             snprintf(out_res->message, sizeof(out_res->message), "删除回滚失败");
             return -1;
@@ -496,7 +510,7 @@ tx_usecase_delete(void* pool, const delete_tx_cmd_t* cmd, tx_usecase_result_t* o
 
         if (!tx_delete(pool, cmd->user_id, cmd->tx_id)) {
             csilk_json_free(tx_rows);
-            csilk_db_exec(pool, "ROLLBACK");
+            db_tx_scope_rollback(pool, &scope);
             out_res->code = 1004;
             snprintf(out_res->message, sizeof(out_res->message), "删除失败");
             return -1;
@@ -504,7 +518,13 @@ tx_usecase_delete(void* pool, const delete_tx_cmd_t* cmd, tx_usecase_result_t* o
     }
 
     csilk_json_free(tx_rows);
-    csilk_db_exec(pool, "COMMIT");
+    if (db_tx_scope_commit(pool, &scope) != 0) {
+        db_tx_scope_rollback(pool, &scope);
+        out_res->code = 1004;
+        snprintf(out_res->message, sizeof(out_res->message), "提交事务失败");
+        return -1;
+    }
+    out_res->code = 0;
     out_res->code = 0;
     snprintf(out_res->message, sizeof(out_res->message), "OK");
     return 0;

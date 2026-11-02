@@ -364,13 +364,16 @@ mf_mcp_server_tool_repo_upsert(void*                       db_pool,
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     snprintf(sid_str, sizeof(sid_str), "%lld", (long long)server_id);
 
-    csilk_db_exec(pool, "BEGIN TRANSACTION");
+    db_tx_scope_t scope;
+    if (db_tx_scope_begin(pool, "mf_mcp_tools_refresh", &scope) != 0) {
+        return -1;
+    }
 
     /* 先删旧缓存 */
     if (csilk_db_exec_param(pool,
                             "DELETE FROM mcp_server_tool WHERE user_id=? AND server_id=?",
                             (const char*[]){uid_str, sid_str, NULL}) != 0) {
-        csilk_db_exec(pool, "ROLLBACK");
+        db_tx_scope_rollback(pool, &scope);
         return -1;
     }
 
@@ -402,11 +405,14 @@ mf_mcp_server_tool_repo_upsert(void*                       db_pool,
                                                 is_mutation,
                                                 risk_level,
                                                 NULL}) != 0) {
-            csilk_db_exec(pool, "ROLLBACK");
+            db_tx_scope_rollback(pool, &scope);
             return -1;
         }
     }
-    csilk_db_exec(pool, "COMMIT");
+    if (db_tx_scope_commit(pool, &scope) != 0) {
+        db_tx_scope_rollback(pool, &scope);
+        return -1;
+    }
     return 0;
 }
 

@@ -185,7 +185,7 @@ git commit -m "fix(balance): 🐛 ensure balance_apply_delta_m is atomic with in
 - Modify: `src/interfaces/http/controllers/admin_controller.c`
 - Modify: `src/infrastructure/repositories/mcp_server_repo_impl.c`
 
-- [ ] **Step 1: Replace raw transactions in `transfer/usecases.c`**
+- [x] **Step 1: Replace raw transactions in `transfer/usecases.c`**
 
 In `src/application/transfer/usecases.c`:
 1. Declare `db_tx_scope_t scope;`.
@@ -208,14 +208,14 @@ In `src/application/transfer/usecases.c`:
    }
    ```
 
-- [ ] **Step 2: Replace raw transactions in `transaction/usecases.c`**
+- [x] **Step 2: Replace raw transactions in `transaction/usecases.c`**
 
 In `src/application/transaction/usecases.c`:
 1. In `tx_usecase_create` (line 108): replace with `db_tx_scope_begin(pool, "mf_tx_create", &scope)` and commit check `if (db_tx_scope_commit(pool, &scope) != 0) { db_tx_scope_rollback(pool, &scope); return -1; }`. Rollback at line 133 with `db_tx_scope_rollback(pool, &scope)`.
 2. In `tx_usecase_update` (lines 147–290: line 233): replace with `db_tx_scope_begin(pool, "mf_tx_update", &scope)` and commit check `if (db_tx_scope_commit(pool, &scope) != 0) { db_tx_scope_rollback(pool, &scope); return -1; }`. Rollbacks at lines 242, 278 with `db_tx_scope_rollback(pool, &scope)`.
 3. In `tx_usecase_delete` (lines 293–511: line 306): replace with `db_tx_scope_begin(pool, "mf_tx_delete", &scope)` and commit check `if (db_tx_scope_commit(pool, &scope) != 0) { db_tx_scope_rollback(pool, &scope); return -1; }`. Rollbacks at lines 326, 361, 406, 439, 476, 491, 499 with `db_tx_scope_rollback(pool, &scope)`.
 
-- [ ] **Step 3: Clean up asset check and replace transactions in `daily_expense/usecases.c`**
+- [x] **Step 3: Clean up asset check and replace transactions in `daily_expense/usecases.c`**
 
 In `src/application/daily_expense/usecases.c`:
 1. In `check_asset_exists` (line 36): delete `csilk_db_exec(pool, "ROLLBACK");`. Function returns 0 on success, -1 on failure.
@@ -223,18 +223,18 @@ In `src/application/daily_expense/usecases.c`:
 3. In `daily_expense_usecase_update` (line 467): move `check_asset_exists` call to before `db_tx_scope_begin`. Replace `BEGIN TRANSACTION` and `COMMIT` with `db_tx_scope_begin(pool, "mf_expense_update", &scope)` and commit check `if (db_tx_scope_commit(pool, &scope) != 0) { db_tx_scope_rollback(pool, &scope); return -1; }`. Rollbacks at lines 486, 505, 520, 529 with `db_tx_scope_rollback(pool, &scope)`.
 4. In `daily_expense_usecase_delete` (line 555): replace with `db_tx_scope_begin(pool, "mf_expense_delete", &scope)` and commit check `if (db_tx_scope_commit(pool, &scope) != 0) { db_tx_scope_rollback(pool, &scope); return -1; }`. Rollbacks at lines 573, 581 with `db_tx_scope_rollback(pool, &scope)`.
 
-- [ ] **Step 4: Replace raw transactions in `dca/usecases.c`, `admin_controller.c`, `mcp_server_repo_impl.c`**
+- [x] **Step 4: Replace raw transactions in `dca/usecases.c`, `admin_controller.c`, `mcp_server_repo_impl.c`**
 
 1. In `src/application/dca/usecases.c`: replace lines 249, 283 with `db_tx_scope_begin(pool, "mf_dca_scope", &scope)` and commit check. If begin fails, call `csilk_json_free(exec_arr)`. Rollback at line 270 with `db_tx_scope_rollback(pool, &scope)`.
 2. In `src/interfaces/http/controllers/admin_controller.c`: replace lines 115, 161 with `db_tx_scope_begin(pool, "mf_setup_scope", &scope)` and commit check. Rollback at line 135 with `db_tx_scope_rollback(pool, &scope)`.
 3. In `src/infrastructure/repositories/mcp_server_repo_impl.c`: replace lines 367, 409 with `db_tx_scope_begin(pool, "mf_mcp_tools_refresh", &scope)` and commit check. Rollbacks at lines 373, 405 with `db_tx_scope_rollback(pool, &scope)`.
 
-- [ ] **Step 5: Run existing integration tests to verify no transaction regression**
+- [x] **Step 5: Run existing integration tests to verify no transaction regression**
 
 Run: `bash tests/test_link.sh`
 Expected: PASS
 
-- [ ] **Step 6: Commit Task 2**
+- [x] **Step 6: Commit Task 2**
 
 ```bash
 git add src/application/transfer/usecases.c src/application/transaction/usecases.c src/application/daily_expense/usecases.c src/application/dca/usecases.c src/interfaces/http/controllers/admin_controller.c src/infrastructure/repositories/mcp_server_repo_impl.c
