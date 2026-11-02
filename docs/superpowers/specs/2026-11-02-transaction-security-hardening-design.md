@@ -48,7 +48,7 @@ This design document establishes the architectural specification to address all 
                                        │
 ┌──────────────────────────────┐       │              ┌──────────────────────────────┐
 │  JWT Middleware              │       │              │  AI Policy Confirmation      │
-│  (Loose /mcp pass-through)   │───────┼─────────────►│  (Dual-layer Nonce Defense:  │
+│  (Secure /mcp pass-through)  │───────┼─────────────►│  (Dual-layer Nonce Defense:  │
 │  (jwt_get_user_id: -32001)   │       │              │   Fast Ring + Persistent DB) │
 └──────────────────────────────┘       │              └──────────────────────────────┘
                                        │
@@ -69,14 +69,17 @@ All application use cases replace raw string execution with `db_tx_scope_t`:
 1. `src/application/transfer/usecases.c`: replace `csilk_db_exec(pool, "BEGIN TRANSACTION")` (line 49) and `csilk_db_exec(pool, "COMMIT")` (line 131) with `db_tx_scope_begin(pool, "mf_transfer_create", &scope)` and `db_tx_scope_commit(pool, &scope)`. Replace all 4 rollback sites (lines 69, 87, 110, 124) with `db_tx_scope_rollback(pool, &scope)`.
 2. `src/application/transaction/usecases.c`: replace all 3 transaction boundaries with `db_tx_scope_begin(pool, "mf_tx_scope", &scope)` and `db_tx_scope_commit`:
    - `tx_usecase_create` (lines 108, 139; rollback at line 133)
-   - `tx_usecase_delete` (lines 233, 285; rollbacks at lines 242, 278)
-   - `tx_usecase_update` (lines 306, 507; rollbacks at lines 326, 361, 406, 439, 476, 491, 499)
+   - `tx_usecase_update` (lines 147–290: lines 233, 285; rollbacks at lines 242, 278)
+   - `tx_usecase_delete` (lines 293–511: lines 306, 507; rollbacks at lines 326, 361, 406, 439, 476, 491, 499)
 3. `src/application/daily_expense/usecases.c`:
-   - In `check_asset_exists` (line 36): remove the embedded `csilk_db_exec(pool, "ROLLBACK")`. The function simply returns 0 on failure, allowing callers to manage their own `db_tx_scope_rollback`.
+   - In `check_asset_exists` (line 36): remove the embedded `csilk_db_exec(pool, "ROLLBACK")`. The function simply returns 0 on success and -1 on failure.
+   - In `daily_expense_usecase_create` and `daily_expense_usecase_update`, move the call to `check_asset_exists` to occur **before** `db_tx_scope_begin`, since asset verification is a read-only query that does not require an active transaction scope.
    - `daily_expense_usecase_create` (lines 375, 424; rollbacks at lines 396, 411, 418)
    - `daily_expense_usecase_update` (lines 467, 535; rollbacks at lines 486, 505, 520, 529)
    - `daily_expense_usecase_delete` (lines 555, 587; rollbacks at lines 573, 581)
-4. `src/application/dca/usecases.c`: replace raw transaction calls with `db_tx_scope_begin(pool, "mf_dca_scope", &scope)` (lines 249, 283; rollback at line 270).
+4. `src/application/dca/usecases.c`:
+   - Replace raw transaction calls with `db_tx_scope_begin(pool, "mf_dca_scope", &scope)` (lines 249, 283; rollback at line 270).
+   - If `db_tx_scope_begin` fails at line 249, ensure `csilk_json_free(exec_arr)` is called before returning `-1`.
 5. `src/interfaces/http/controllers/admin_controller.c`: replace system setup transaction with `db_tx_scope_begin(pool, "mf_setup_scope", &scope)` (lines 115, 161; rollback at line 135).
 6. `src/infrastructure/repositories/mcp_server_repo_impl.c`: replace tool refresh transaction with `db_tx_scope_begin(pool, "mf_mcp_tools_refresh", &scope)` (lines 367, 409; rollbacks at lines 373, 405).
 
@@ -207,7 +210,6 @@ balance_apply_delta_m(csilk_db_pool_t* pool,
     csilk_json_free(res5);
 
     if (db_tx_scope_commit(pool, &scope) != 0) {
-        db_tx_scope_rollback(pool, &scope);
         return -2;
     }
     return 0;
@@ -281,7 +283,7 @@ if (!asset_update_position(db_pool, cmd->user_id, cmd->id, new_net, new_qty, new
     return -1;
 }
 
-if (need_reattach && !asset_update_account(db_pool, cmd->user_id, cmd->id, new_account_id)) {
+if (need_reattach && asset_update_account(db_pool, cmd->user_id, cmd->id, reattach_acct)) {
     db_tx_scope_rollback(db_pool, &scope);
     csilk_json_free(cur);
     out_res->code = 1004;
@@ -344,8 +346,8 @@ bool is_mcp_path = (path && strcmp(path, "/mcp") == 0);
 const char* auth_header = csilk_get_header(c, "Authorization");
 if (!auth_header || strncmp(auth_header, "Bearer ", 7) != 0) {
     if (is_mcp_path) {
-        /* Allow unauthenticated request to reach mcp_endpoint_handler
-         * which emits standard JSON-RPC 2.0 error code -32001 */
+        /* No Bearer header on /mcp: pass through without jwt_payload so
+         * mcp_endpoint_handler returns JSON-RPC -32001 */
         csilk_next(c);
         return;
     }
@@ -353,12 +355,17 @@ if (!auth_header || strncmp(auth_header, "Bearer ", 7) != 0) {
     csilk_abort(c);
     return;
 }
-```
+const char* token = auth_header + 7;
 
-If a Bearer token is provided but fails verification (e.g. invalid signature, expired, or version mismatch):
-```c
+csilk_jwt_options_t opts = {
+    .algorithm = CSILK_JWT_HS256,
+    .flags = CSILK_JWT_REQUIRE_EXP,
+    .leeway_sec = 0,
+};
+csilk_json_t* payload = csilk_jwt_verify_options(c, token, secret, strlen(secret), &opts);
 if (!payload) {
     if (is_mcp_path) {
+        /* Invalid or expired token on /mcp: pass through unauthenticated */
         csilk_next(c);
         return;
     }
@@ -367,10 +374,10 @@ if (!payload) {
     return;
 }
 
-csilk_set_ex(c, "jwt_payload", payload, (void (*)(void*))csilk_json_free);
-
-int64_t user_id = jwt_get_user_id(c);
+/* Extract and validate claims BEFORE attaching to request context */
+int64_t user_id = (int64_t)csilk_json_get_number(payload, "sub");
 if (user_id < 0) {
+    csilk_json_free(payload);
     if (is_mcp_path) {
         csilk_next(c);
         return;
@@ -379,8 +386,14 @@ if (user_id < 0) {
     csilk_abort(c);
     return;
 }
+
+/* Temporarily attach payload to context for jwt_validate_token_version */
+csilk_set_ex(c, "jwt_payload", payload, (void (*)(void*))csilk_json_free);
+
 if (jwt_validate_token_version(c, user_id) != 0) {
     if (is_mcp_path) {
+        /* Token revoked or version invalidated: clear payload so user_id remains unauthenticated */
+        csilk_set_ex(c, "jwt_payload", NULL, NULL);
         csilk_next(c);
         return;
     }
@@ -388,6 +401,8 @@ if (jwt_validate_token_version(c, user_id) != 0) {
     csilk_abort(c);
     return;
 }
+
+csilk_next(c);
 ```
 
 #### 2. Non-Intrusive User ID Extraction in MCP Controller & Rate Limiter
@@ -435,8 +450,26 @@ CREATE INDEX IF NOT EXISTS idx_ai_consumed_nonces_exp ON ai_consumed_nonces(expi
 ```
 Also append the table definition to `sql/migration.sql` and `sql/migration_postgres.sql` to maintain unit test database schema parity.
 
+#### Header Export & Testing Hook (`src/services/ai/policy/confirmation.h`)
+Declare test reset function:
+```c
+void ai_confirmation_reset_nonce_cache(void);
+```
+
 #### Dual-Layer Ring Cache & DB Verification (`src/services/ai/policy/confirmation.c`)
 Include `#include "common/db.h"` and `#include <stdatomic.h>`.
+```c
+void
+ai_confirmation_reset_nonce_cache(void)
+{
+    pthread_mutex_lock(&s_nonce_lock);
+    s_nonce_count = 0;
+    s_nonce_ring = 0;
+    memset(s_consumed_nonces, 0, sizeof(s_consumed_nonces));
+    pthread_mutex_unlock(&s_nonce_lock);
+}
+```
+
 In `ai_confirmation_verify_and_consume()`:
 ```c
 /* 1. Fast-path: check in-memory ring buffer */
@@ -551,10 +584,10 @@ write_temp_file(const char* data, size_t len, const char* suffix,
 | Hazard Condition | Detection Point | Prevention / Recovery Strategy |
 | :--- | :--- | :--- |
 | Nested transaction in `transfer/usecases.c` | `db_tx_scope_begin()` | Automatically uses `SAVEPOINT mf_transfer_create`; no SQLite error |
-| Hidden rollback in `check_asset_exists` | Caller error check | Caller invokes `db_tx_scope_rollback(&scope)`; scope state stays synchronized |
 | Partial failure during `balance_apply_delta_m` | `db_tx_scope_rollback()` | Internal scope rolls back `current_value` update and `asset_balance_logs` together |
 | Floating-point precision error on position update | `price_times_quantity()` | Exact 128-bit integer mantissa multiplication; zero ghost diffs |
 | Unauthenticated Claude Desktop accessing `/mcp` | `jwt_middleware.c` + `jwt_get_user_id` | Passes request through to handler; emits JSON-RPC `-32001` with HTTP 200 |
+| Revoked / expired token accessing `/mcp` | `jwt_middleware.c` | Invalid token clears `jwt_payload` and passes through; handler emits `-32001` |
 | Replay attack on draft token after server restart | `ai_consumed_nonces` table | Database lookup identifies previously consumed nonce; rejects replay |
 | Concurrent replay of same draft token | `INSERT INTO ai_consumed_nonces` | Database PRIMARY KEY violation safely caught and mapped to `AI_CONFIRM_ERR_REPLAY` |
 | PDF upload on musl/Alpine environment | `mkstemps()` with suffix length | Eliminates `EINVAL` template failures; unlinks file on write failure |
@@ -580,7 +613,7 @@ The following new unit test targets are registered under `CMakeLists.txt` via `a
    - Assert response body is valid JSON-RPC with `error.code == -32001`.
 4. **`tests/unit/test_nonce_persistence.c`**:
    - Verify and consume draft token.
-   - Clear memory cache `s_consumed_nonces`.
+   - Clear memory cache with `ai_confirmation_reset_nonce_cache()`.
    - Attempt to verify and consume same token again.
    - Assert verification fails with `AI_CONFIRM_ERR_REPLAY` via database lookup.
 5. **`tests/unit/test_file_parser_mkstemps.c`**:
