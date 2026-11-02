@@ -5,10 +5,10 @@
 Minefolio is a self-hosted personal wealth and investment management platform written in C23 using the csilk framework and Clean Architecture layering.
 
 During a penetrating full-system code review, six critical issues and stability hazards across transaction management, precision arithmetic, MCP protocol alignment, token replay defense, and POSIX file compliance were identified:
-1. **Transaction Boundary Violation (P0)**: Application use cases (`transfer`, `transaction`, `daily_expense`, `dca`, `admin`, `mcp_server_repo`) directly execute raw SQL string commands (`csilk_db_exec(pool, "BEGIN TRANSACTION/COMMIT/ROLLBACK")`). When nested with internal ledger transactions (`ledger_apply_transfer`), this bypasses the framework's `SAVEPOINT`-based `db_tx_scope_t` abstraction, triggering SQLite `cannot start a transaction within a transaction` errors and prematurely truncating outer transactions.
-2. **Non-Atomic Balance Delta Application (P0)**: `balance_apply_delta_m()` performs a 5-step sequence (asset lookup, currency conversion, update, post-balance retrieval, audit log insertion) without an internal transaction scope, risking ledger balance changes with lost audit logs if caller doesn't wrap it in a transaction.
-3. **Domain Precision Degradation via Bare Doubles (P0)**: Domain precision rules prohibit bare double arithmetic. However, `asset/usecases.c` calculates investment market values with `new_qty * new_net`, and `market/usecases.c` casts computed 128-bit fixed-point `money_t` to `double` and back across both batch and single-asset sync paths, risking IEEE-754 precision drift and ghost audit entries.
-4. **JWT Middleware vs. MCP Server Protocol Conflict (P1)**: `mcp_server_controller.c` correctly formats standard JSON-RPC 2.0 error `-32001 (unauthorized)` responses for unauthenticated requests. However, global `jwt_middleware_wrapper` intercepts `/mcp` prior to the handler and aborts with raw HTTP 401. Furthermore, `ctx_user_id()` automatically emits Minefolio HTTP envelope errors (`{"code": 1001, ...}`) on unauthenticated requests. Both issues render controller JSON-RPC responses dead code and break third-party MCP clients like Claude Desktop.
+1. **Transaction Boundary Violation (P0)**: Application use cases (`transfer`, `transaction`, `daily_expense`, `dca`, `admin`, `mcp_server_repo`) directly execute raw SQL string commands (`csilk_db_exec(pool, "BEGIN TRANSACTION/COMMIT/ROLLBACK")`). When nested with internal ledger transactions (`ledger_apply_transfer`), this bypasses the framework's `SAVEPOINT`-based `db_tx_scope_t` abstraction, triggering SQLite `cannot start a transaction within a transaction` errors and prematurely truncating outer transactions. Furthermore, hidden raw `ROLLBACK` calls inside helper functions (e.g. `check_asset_exists` in `daily_expense/usecases.c:36`) silently desynchronize active transaction scopes.
+2. **Non-Atomic Balance Delta Application (P0)**: `balance_apply_delta_m()` performs a 5-step sequence (asset lookup, currency conversion, update, post-balance retrieval, audit log insertion into `asset_balance_logs`) without an internal transaction scope, risking ledger balance changes with lost audit logs if caller doesn't wrap it in a transaction.
+3. **Domain Precision Degradation via Bare Doubles (P0)**: Domain precision rules prohibit bare double arithmetic. However, `asset/usecases.c` calculates investment market values with `new_qty * new_net`, and `market/usecases.c` casts computed 128-bit fixed-point `money_t` to `double` and back across both batch (`market_service_sync_quotes`) and single-asset (`mf_market_sync_single_asset`) sync paths, risking IEEE-754 precision drift and ghost audit entries.
+4. **JWT Middleware vs. MCP Server Protocol Conflict (P1)**: `mcp_server_controller.c` correctly formats standard JSON-RPC 2.0 error `-32001 (unauthorized)` responses for unauthenticated requests. However, global `jwt_middleware_wrapper` intercepts `/mcp` prior to the handler and aborts with raw HTTP 401 on missing, expired, or invalidated tokens. Furthermore, `mcp_rate_limit_middleware` (`src/middlewares/rate_limit.c`) and `mcp_endpoint_handler` call `ctx_user_id()`, which writes a Minefolio HTTP envelope error (`{"code": 1001, ...}`) on unauthenticated requests. Both issues render controller JSON-RPC responses dead code and break third-party MCP clients like Claude Desktop.
 5. **In-Memory Nonce Replay Vulnerability (P1)**: The AI confirmation token subsystem tracks consumed nonces in an in-memory static ring array `s_consumed_nonces`. Server restarts or container redeployments clear the array, allowing previously consumed tokens to be replayed before their TTL expires.
 6. **POSIX `mkstemp` Template Non-Compliance (P1)**: `file_parser.c` constructs upload templates as `/tmp/minefolio_upload_XXXXXX%s` (e.g. `XXXXXX.pdf`). POSIX requires `mkstemp` templates to end strictly with six `XXXXXX` characters; on musl libc and strict glibc systems, this returns `-1 (EINVAL)`, causing file parsing to fail consistently.
 
@@ -42,7 +42,7 @@ This design document establishes the architectural specification to address all 
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                 Database & Infrastructure Layer (SQLite / PG)               │
 │ - Safe nested transactions via SAVEPOINT rollback / release                 │
-│ - Persistent ai_consumed_nonces table (V019 migration)                      │
+│ - Persistent ai_consumed_nonces table (V019 migration & migration.sql)      │
 └─────────────────────────────────────────────────────────────────────────────┘
                                        ▲
                                        │
@@ -66,21 +66,22 @@ This design document establishes the architectural specification to address all 
 
 #### Use Case Transaction Migration
 All application use cases replace raw string execution with `db_tx_scope_t`:
-1. `src/application/transfer/usecases.c`: replace `csilk_db_exec(pool, "BEGIN TRANSACTION")` and `"COMMIT"` / `"ROLLBACK"` (lines 49, 131) with `db_tx_scope_begin(pool, "mf_transfer_create", &scope)`.
-2. `src/application/transaction/usecases.c`: replace all 3 transaction boundaries with `db_tx_scope_begin(pool, "mf_tx_scope", &scope)`:
-   - `transaction_usecase_create` (line 108)
-   - `transaction_usecase_delete` (line 233)
-   - `transaction_usecase_update` (line 306)
-3. `src/application/daily_expense/usecases.c`: replace all 3 transaction boundaries with `db_tx_scope_begin(pool, "mf_expense_scope", &scope)`:
-   - `daily_expense_usecase_create` (line 375)
-   - `daily_expense_usecase_update` (line 467)
-   - `daily_expense_usecase_delete` (line 555)
-4. `src/application/dca/usecases.c`: replace raw transaction calls with `db_tx_scope_begin(pool, "mf_dca_scope", &scope)` (lines 249, 283).
-5. `src/interfaces/http/controllers/admin_controller.c`: replace system setup transaction with `db_tx_scope_begin(pool, "mf_setup_scope", &scope)` (lines 115, 161).
-6. `src/infrastructure/repositories/mcp_server_repo_impl.c`: replace tool refresh transaction with `db_tx_scope_begin(pool, "mf_mcp_tools_refresh", &scope)` (lines 367, 409).
+1. `src/application/transfer/usecases.c`: replace `csilk_db_exec(pool, "BEGIN TRANSACTION")` (line 49) and `csilk_db_exec(pool, "COMMIT")` (line 131) with `db_tx_scope_begin(pool, "mf_transfer_create", &scope)` and `db_tx_scope_commit(pool, &scope)`. Replace all 4 rollback sites (lines 69, 87, 110, 124) with `db_tx_scope_rollback(pool, &scope)`.
+2. `src/application/transaction/usecases.c`: replace all 3 transaction boundaries with `db_tx_scope_begin(pool, "mf_tx_scope", &scope)` and `db_tx_scope_commit`:
+   - `tx_usecase_create` (lines 108, 139; rollback at line 133)
+   - `tx_usecase_delete` (lines 233, 285; rollbacks at lines 242, 278)
+   - `tx_usecase_update` (lines 306, 507; rollbacks at lines 326, 361, 406, 439, 476, 491, 499)
+3. `src/application/daily_expense/usecases.c`:
+   - In `check_asset_exists` (line 36): remove the embedded `csilk_db_exec(pool, "ROLLBACK")`. The function simply returns 0 on failure, allowing callers to manage their own `db_tx_scope_rollback`.
+   - `daily_expense_usecase_create` (lines 375, 424; rollbacks at lines 396, 411, 418)
+   - `daily_expense_usecase_update` (lines 467, 535; rollbacks at lines 486, 505, 520, 529)
+   - `daily_expense_usecase_delete` (lines 555, 587; rollbacks at lines 573, 581)
+4. `src/application/dca/usecases.c`: replace raw transaction calls with `db_tx_scope_begin(pool, "mf_dca_scope", &scope)` (lines 249, 283; rollback at line 270).
+5. `src/interfaces/http/controllers/admin_controller.c`: replace system setup transaction with `db_tx_scope_begin(pool, "mf_setup_scope", &scope)` (lines 115, 161; rollback at line 135).
+6. `src/infrastructure/repositories/mcp_server_repo_impl.c`: replace tool refresh transaction with `db_tx_scope_begin(pool, "mf_mcp_tools_refresh", &scope)` (lines 367, 409; rollbacks at lines 373, 405).
 
 #### Self-Contained Atomic Balance Delta Application
-In `src/common/balance.c`, `balance_apply_delta_m()` wraps its internal execution in an autonomous transaction scope with complete error cleanup:
+In `src/common/balance.c`, `balance_apply_delta_m()` wraps its internal execution in an autonomous transaction scope with complete error cleanup and writes to `asset_balance_logs`:
 ```c
 int
 balance_apply_delta_m(csilk_db_pool_t* pool,
@@ -177,7 +178,7 @@ balance_apply_delta_m(csilk_db_pool_t* pool,
         db_get_money(csilk_json_array_get(after, 0), "current_value", asset_cur);
     csilk_json_free(after);
 
-    // 5. 写审计日志
+    // 5. 写审计日志 (表名为 asset_balance_logs)
     char balance_after_str[64], source_id_str[32];
     money_to_string(balance_after, balance_after_str, sizeof(balance_after_str));
     snprintf(source_id_str, sizeof(source_id_str), "%lld", (long long)source_id);
@@ -192,7 +193,7 @@ balance_apply_delta_m(csilk_db_pool_t* pool,
                                NULL};
     csilk_json_t* res5 = csilk_db_query_param_json(
         pool,
-        "INSERT INTO balance_audit_logs "
+        "INSERT INTO asset_balance_logs "
         "(asset_id, user_id, delta, balance_after, source_type, source_id, note) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
         params5);
@@ -218,7 +219,8 @@ balance_apply_delta_m(csilk_db_pool_t* pool,
 ### 3.2 Domain Strong-Typing & Elimination of Bare Doubles
 
 #### Asset Position Update (`src/application/asset/usecases.c`)
-Replace float arithmetic with 128-bit decimal fixed-point routines:
+Include `#include "core/financial/price.h"` and `#include "core/financial/quantity.h"`.
+Perform all value calculations using 128-bit decimal arithmetic before starting `scope`:
 ```c
 /* Pre-compute values before starting the transaction scope */
 currency_t asset_currency = currency_from_str(currency);
@@ -271,11 +273,19 @@ if (!money_is_zero(delta_m)) {
 double updated_current = money_to_double(new_val_m);
 if (!asset_update_position(db_pool, cmd->user_id, cmd->id, new_net, new_qty, new_cost) ||
     !asset_update_basic(db_pool, cmd->user_id, cmd->id, name, account_no,
-                        updated_current, account_id_val, note)) {
+                        updated_current, currency, note, symbol, quote_source)) {
     db_tx_scope_rollback(db_pool, &scope);
     csilk_json_free(cur);
     out_res->code = 1004;
     snprintf(out_res->message, sizeof(out_res->message), "更新资产失败");
+    return -1;
+}
+
+if (need_reattach && !asset_update_account(db_pool, cmd->user_id, cmd->id, new_account_id)) {
+    db_tx_scope_rollback(db_pool, &scope);
+    csilk_json_free(cur);
+    out_res->code = 1004;
+    snprintf(out_res->message, sizeof(out_res->message), "更新账户归属失败");
     return -1;
 }
 
@@ -310,9 +320,13 @@ money_t delta_m;
 mf_market_rule_calc_sync_delta(p_old, p_new, qty, cur, &delta_m);
 
 if (!money_is_zero(delta_m)) {
-    if (balance_apply_delta_m(pool, asset_id, user_id, delta_m,
+    if (balance_apply_delta_m(db_pool, asset_id, user_id, delta_m,
                               "asset_market_sync", asset_id, "Market quote sync") != 0) {
-        write_ok = 0;
+        db_tx_scope_rollback(db_pool, &scope);
+        csilk_json_free(asset_rows);
+        out_res->code = 1002;
+        snprintf(out_res->message, sizeof(out_res->message), "资产余额更新失败");
+        return -1;
     }
 }
 ```
@@ -352,15 +366,38 @@ if (!payload) {
     csilk_abort(c);
     return;
 }
+
+csilk_set_ex(c, "jwt_payload", payload, (void (*)(void*))csilk_json_free);
+
+int64_t user_id = jwt_get_user_id(c);
+if (user_id < 0) {
+    if (is_mcp_path) {
+        csilk_next(c);
+        return;
+    }
+    csilk_json_error(c, CSILK_STATUS_UNAUTHORIZED, "Invalid user in token claims");
+    csilk_abort(c);
+    return;
+}
+if (jwt_validate_token_version(c, user_id) != 0) {
+    if (is_mcp_path) {
+        csilk_next(c);
+        return;
+    }
+    csilk_json_error(c, CSILK_STATUS_UNAUTHORIZED, "Token invalidated — please log in again");
+    csilk_abort(c);
+    return;
+}
 ```
 
 #### 2. Non-Intrusive User ID Extraction in MCP Controller & Rate Limiter
-In `src/interfaces/http/controllers/mcp_server_controller.c:176` and `src/main.c:mcp_rate_limit_middleware`:
+In `src/interfaces/http/controllers/mcp_server_controller.c:176` and `src/middlewares/rate_limit.c:220` (`mcp_rate_limit_middleware`):
 Replace `ctx_user_id(c)` with `jwt_get_user_id(c)`:
 - `ctx_user_id(c)` triggers `respond_unauthorized(c)` writing HTTP 200 `{"code":1001,"message":"未授权"}` on failure.
 - `jwt_get_user_id(c)` safely returns `-1` without side effects or HTTP writes when unauthenticated.
+
+In `src/interfaces/http/controllers/mcp_server_controller.c:mcp_endpoint_handler`:
 ```c
-/* In mcp_server_controller.c:mcp_endpoint_handler */
 int64_t user_id = jwt_get_user_id(c);
 if (user_id < 0) {
     /* 未认证：JSON-RPC error -32001（unauthorized），HTTP 仍 200 承载 JSON-RPC 体 */
@@ -371,7 +408,7 @@ if (user_id < 0) {
 }
 ```
 
-In `src/main.c:mcp_rate_limit_middleware`:
+In `src/middlewares/rate_limit.c:mcp_rate_limit_middleware`:
 ```c
 int64_t uid = jwt_get_user_id(c);
 if (uid <= 0) {
@@ -383,7 +420,7 @@ if (uid <= 0) {
 
 ---
 
-### 3.4 Persistent AI Confirmation Nonce Defense (V019 Migration)
+### 3.4 Persistent AI Confirmation Nonce Defense (V019 Migration & migration.sql)
 
 #### Schema Definition (`sql/migrations/sqlite/V019__ai_consumed_nonces.sql`)
 In `sql/migrations/sqlite/V019__ai_consumed_nonces.sql` and `sql/migrations/postgres/V019__ai_consumed_nonces.sql`:
@@ -396,14 +433,16 @@ CREATE TABLE IF NOT EXISTS ai_consumed_nonces (
 );
 CREATE INDEX IF NOT EXISTS idx_ai_consumed_nonces_exp ON ai_consumed_nonces(expiration);
 ```
+Also append the table definition to `sql/migration.sql` and `sql/migration_postgres.sql` to maintain unit test database schema parity.
 
 #### Dual-Layer Ring Cache & DB Verification (`src/services/ai/policy/confirmation.c`)
+Include `#include "common/db.h"` and `#include <stdatomic.h>`.
 In `ai_confirmation_verify_and_consume()`:
 ```c
 /* 1. Fast-path: check in-memory ring buffer */
 pthread_mutex_lock(&s_nonce_lock);
 for (size_t i = 0; i < s_nonce_count; i++) {
-    if (strcmp(s_consumed_nonces[i].nonce, nonce) == 0 &&
+    if (strcmp(s_consumed_nonces[i].nonce, tok_nonce) == 0 &&
         s_consumed_nonces[i].expiration >= now) {
         pthread_mutex_unlock(&s_nonce_lock);
         return AI_CONFIRM_ERR_REPLAY;
@@ -411,12 +450,12 @@ for (size_t i = 0; i < s_nonce_count; i++) {
 }
 pthread_mutex_unlock(&s_nonce_lock);
 
-/* 2. Persistent check: verify database if db_get_pool() is initialized */
+/* 2. Persistent check: verify database if db_get_pool() is initialized (graceful degrade in tests) */
 csilk_db_pool_t* pool = db_get_pool();
 if (pool) {
     char now_str[32];
     snprintf(now_str, sizeof(now_str), "%lld", (long long)now);
-    const char* params_chk[] = {nonce, now_str, NULL};
+    const char* params_chk[] = {tok_nonce, now_str, NULL};
     csilk_json_t* res_chk = csilk_db_query_param_json(
         pool,
         "SELECT 1 FROM ai_consumed_nonces WHERE nonce = ? AND expiration >= ?",
@@ -425,7 +464,7 @@ if (pool) {
         csilk_json_free(res_chk);
         /* Backfill memory ring */
         pthread_mutex_lock(&s_nonce_lock);
-        record_nonce_consumed_locked(nonce, exp);
+        record_nonce_consumed_locked(tok_nonce, tok_exp);
         pthread_mutex_unlock(&s_nonce_lock);
         return AI_CONFIRM_ERR_REPLAY;
     }
@@ -437,9 +476,9 @@ if (pool) {
 /* 3. Execute database consumption */
 if (pool) {
     char exp_str[32], uid_str[32];
-    snprintf(exp_str, sizeof(exp_str), "%lld", (long long)exp);
-    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-    const char* params_ins[] = {nonce, exp_str, uid_str, NULL};
+    snprintf(exp_str, sizeof(exp_str), "%lld", (long long)tok_exp);
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)tok_uid);
+    const char* params_ins[] = {tok_nonce, exp_str, uid_str, NULL};
     csilk_json_t* res_ins = csilk_db_query_param_json(
         pool,
         "INSERT INTO ai_consumed_nonces (nonce, expiration, user_id) VALUES (?, ?, ?)",
@@ -463,7 +502,7 @@ if (pool) {
 
 /* 4. Update memory ring buffer */
 pthread_mutex_lock(&s_nonce_lock);
-record_nonce_consumed_locked(nonce, exp);
+record_nonce_consumed_locked(tok_nonce, tok_exp);
 pthread_mutex_unlock(&s_nonce_lock);
 ```
 
@@ -471,7 +510,7 @@ pthread_mutex_unlock(&s_nonce_lock);
 
 ### 3.5 POSIX `mkstemps` File Creation Compliance (`src/services/file_parser.c`)
 
-Replace `snprintf(...) + mkstemp()` with `mkstemps()`:
+Replace `snprintf(...) + mkstemp()` with `mkstemps()` and unlink on partial write failure:
 ```c
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
@@ -512,7 +551,8 @@ write_temp_file(const char* data, size_t len, const char* suffix,
 | Hazard Condition | Detection Point | Prevention / Recovery Strategy |
 | :--- | :--- | :--- |
 | Nested transaction in `transfer/usecases.c` | `db_tx_scope_begin()` | Automatically uses `SAVEPOINT mf_transfer_create`; no SQLite error |
-| Partial failure during `balance_apply_delta_m` | `db_tx_scope_rollback()` | Internal scope rolls back `current_value` update and audit log together |
+| Hidden rollback in `check_asset_exists` | Caller error check | Caller invokes `db_tx_scope_rollback(&scope)`; scope state stays synchronized |
+| Partial failure during `balance_apply_delta_m` | `db_tx_scope_rollback()` | Internal scope rolls back `current_value` update and `asset_balance_logs` together |
 | Floating-point precision error on position update | `price_times_quantity()` | Exact 128-bit integer mantissa multiplication; zero ghost diffs |
 | Unauthenticated Claude Desktop accessing `/mcp` | `jwt_middleware.c` + `jwt_get_user_id` | Passes request through to handler; emits JSON-RPC `-32001` with HTTP 200 |
 | Replay attack on draft token after server restart | `ai_consumed_nonces` table | Database lookup identifies previously consumed nonce; rejects replay |
