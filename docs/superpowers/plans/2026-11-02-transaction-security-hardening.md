@@ -253,7 +253,7 @@ git commit -m "refactor(usecases): ♻️ migrate application transactions to db
 - Test: `tests/unit/test_financial_precision_edge.c`
 - Modify: `CMakeLists.txt`
 
-- [ ] **Step 1: Write unit test for financial precision edge cases (`test_financial_precision_edge.c`)**
+- [x] **Step 1: Write unit test for financial precision edge cases (`test_financial_precision_edge.c`)**
 
 Create `backend/tests/unit/test_financial_precision_edge.c`:
 ```c
@@ -309,7 +309,7 @@ int main(void) {
 }
 ```
 
-- [ ] **Step 2: Register `test_financial_precision_edge` in `CMakeLists.txt`**
+- [x] **Step 2: Register `test_financial_precision_edge` in `CMakeLists.txt`**
 
 Add to `backend/CMakeLists.txt`:
 ```cmake
@@ -320,7 +320,7 @@ target_link_libraries(test_financial_precision_edge PRIVATE csilk crypto CURL::l
 add_test(NAME test_financial_precision_edge COMMAND test_financial_precision_edge)
 ```
 
-- [ ] **Step 3: Refactor `asset/usecases.c` with strong-typed calculation**
+- [x] **Step 3: Refactor `asset/usecases.c` with strong-typed calculation**
 
 In `src/application/asset/usecases.c`:
 1. Include `#include "core/financial/price.h"` and `#include "core/financial/quantity.h"`.
@@ -329,18 +329,18 @@ In `src/application/asset/usecases.c`:
 4. Update `asset_update_basic` with `money_to_double(new_val_m)` and full 10 arguments.
 5. Check `if (need_reattach && asset_update_account(db_pool, cmd->user_id, cmd->id, reattach_acct))`.
 
-- [ ] **Step 4: Refactor batch and single asset quote sync in `market/usecases.c`**
+- [x] **Step 4: Refactor batch and single asset quote sync in `market/usecases.c`**
 
 In `src/application/market/usecases.c`:
 1. In `market_service_sync_quotes` (lines 157–170): eliminate `money_to_double(delta)` and directly invoke `balance_apply_delta_m(db_pool, aid, uid, delta_m, ...)`.
 2. In `mf_market_sync_single_asset` (lines 313–328): eliminate `money_to_double(delta)` and directly invoke `balance_apply_delta_m(db_pool, asset_id, user_id, delta_m, ...)`. On failure, rollback `scope` and return `(b_rc == -1) ? 1002 : 1004`.
 
-- [ ] **Step 5: Run tests to verify pass**
+- [x] **Step 5: Run tests to verify pass**
 
 Run: `cmake -B build -S . && cmake --build build --target test_financial_precision_edge && ./build/test_financial_precision_edge`
 Expected: PASS
 
-- [ ] **Step 6: Commit Task 3**
+- [x] **Step 6: Commit Task 3**
 
 ```bash
 git add src/application/asset/usecases.c src/application/market/usecases.c tests/unit/test_financial_precision_edge.c CMakeLists.txt

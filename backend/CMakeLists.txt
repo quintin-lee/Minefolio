@@ -362,6 +362,13 @@ target_compile_options(test_tx_scope_nesting PRIVATE -UNDEBUG)
 target_link_libraries(test_tx_scope_nesting PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
 add_test(NAME test_tx_scope_nesting COMMAND test_tx_scope_nesting)
 
+add_executable(test_financial_precision_edge tests/unit/test_financial_precision_edge.c ${LIB_SOURCES})
+target_include_directories(test_financial_precision_edge PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_financial_precision_edge PRIVATE -UNDEBUG)
+target_link_libraries(test_financial_precision_edge PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_test(NAME test_financial_precision_edge COMMAND test_financial_precision_edge)
+
+
 
 
 

@@ -156,15 +156,14 @@ market_usecase_do_sync_user(void* pool, int64_t user_id, int* out_synced, int* o
                 quantity_from_double(qty_val, 4, &qty);
                 money_t delta;
                 mf_market_rule_calc_sync_delta(p_old, p_new, qty, cur, &delta);
-                double delta_val = money_to_double(delta);
-                if (delta_val != 0.0) {
-                    if (balance_apply_delta(db_pool,
-                                            aid,
-                                            uid,
-                                            delta_val,
-                                            "asset_market_sync",
-                                            aid,
-                                            "Market quote sync") != 0) {
+                if (!money_is_zero(delta)) {
+                    if (balance_apply_delta_m(db_pool,
+                                              aid,
+                                              uid,
+                                              delta,
+                                              "asset_market_sync",
+                                              aid,
+                                              "Market quote sync") != 0) {
                         write_ok = 0;
                     }
                 }
@@ -310,15 +309,14 @@ market_usecase_sync_single(void*                    pool,
         quantity_from_double(qty_val, 4, &qty);
         money_t delta;
         mf_market_rule_calc_sync_delta(p_old, p_new, qty, cur, &delta);
-        double delta_val = money_to_double(delta);
-        if (delta_val != 0.0) {
-            int b_rc = balance_apply_delta(db_pool,
-                                           asset_id,
-                                           user_id,
-                                           delta_val,
-                                           "asset_market_sync",
-                                           asset_id,
-                                           "Market quote sync");
+        if (!money_is_zero(delta)) {
+            int b_rc = balance_apply_delta_m(db_pool,
+                                             asset_id,
+                                             user_id,
+                                             delta,
+                                             "asset_market_sync",
+                                             asset_id,
+                                             "Market quote sync");
             if (b_rc != 0) {
                 db_tx_scope_rollback(db_pool, &scope);
                 csilk_json_free(asset_rows);

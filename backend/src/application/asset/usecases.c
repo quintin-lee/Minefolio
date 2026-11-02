@@ -4,6 +4,8 @@
 #include "infrastructure/repositories/asset_repo_impl.h"
 #include "common/balance.h"
 #include "common/db.h"
+#include "core/financial/price.h"
+#include "core/financial/quantity.h"
 #include "core/ledger/ledger_engine.h"
 #include "application/account/usecases.h"
 #include "infrastructure/repositories/account_repo_impl.h"
@@ -218,8 +220,35 @@ asset_usecase_update(void* pool, const update_asset_cmd_t* cmd, asset_usecase_re
             double new_qty = cmd->has_quantity ? cmd->quantity : old_qty;
             double new_net = cmd->has_net_value ? cmd->net_value : old_net;
             double new_cost = cmd->has_cost_basis ? cmd->cost_basis : old_cost;
-            double new_current = new_qty * new_net;
-            double delta = new_current - old_current;
+
+            /* Pre-compute values before starting the transaction scope */
+            currency_t asset_currency = currency_from_str(currency);
+
+            quantity_t qty_obj;
+            quantity_from_double(new_qty, 4, &qty_obj);
+
+            price_t net_obj;
+            price_from_double(new_net, 4, asset_currency, &net_obj);
+
+            /* Multiply: money_t (2 decimal places) = price_times_quantity(net_obj, qty_obj, &new_val_m) */
+            money_t new_val_m;
+            if (price_times_quantity(net_obj, qty_obj, &new_val_m) != DECIMAL_OK) {
+                csilk_json_free(cur);
+                out_res->code = 1004;
+                snprintf(out_res->message, sizeof(out_res->message), "金额计算溢出");
+                return -1;
+            }
+
+            money_t old_val_m;
+            money_from_double(old_current, asset_currency, &old_val_m);
+
+            money_t delta_m;
+            if (money_sub(new_val_m, old_val_m, &delta_m) != DECIMAL_OK) {
+                csilk_json_free(cur);
+                out_res->code = 1004;
+                snprintf(out_res->message, sizeof(out_res->message), "金额计算溢出");
+                return -1;
+            }
 
             db_tx_scope_t scope;
             if (db_tx_scope_begin(db_pool, "mf_asset_update_investment", &scope) != 0) {
@@ -229,14 +258,14 @@ asset_usecase_update(void* pool, const update_asset_cmd_t* cmd, asset_usecase_re
                 return -1;
             }
 
-            if (delta != 0) {
-                int b_rc = balance_apply_delta(db_pool,
-                                               cmd->id,
-                                               cmd->user_id,
-                                               delta,
-                                               "asset_netvalue",
-                                               cmd->id,
-                                               "net_value update");
+            if (!money_is_zero(delta_m)) {
+                int b_rc = balance_apply_delta_m(db_pool,
+                                                 cmd->id,
+                                                 cmd->user_id,
+                                                 delta_m,
+                                                 "asset_netvalue",
+                                                 cmd->id,
+                                                 "net_value update");
                 if (b_rc != 0) {
                     db_tx_scope_rollback(db_pool, &scope);
                     csilk_json_free(cur);
@@ -245,6 +274,8 @@ asset_usecase_update(void* pool, const update_asset_cmd_t* cmd, asset_usecase_re
                     return -1;
                 }
             }
+
+            double updated_current = money_to_double(new_val_m);
             if (!asset_update_position(
                     db_pool, cmd->user_id, cmd->id, new_net, new_qty, new_cost) ||
                 !asset_update_basic(db_pool,
@@ -252,7 +283,7 @@ asset_usecase_update(void* pool, const update_asset_cmd_t* cmd, asset_usecase_re
                                     cmd->id,
                                     name,
                                     account_no,
-                                    new_current,
+                                    updated_current,
                                     currency,
                                     note,
                                     symbol,
