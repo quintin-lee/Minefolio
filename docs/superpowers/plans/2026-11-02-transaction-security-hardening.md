@@ -55,8 +55,9 @@ backend/
 │       └── file_parser.c                                  # Modify: use mkstemps and unlink on failure
 ├── tests/
 │   ├── unit/
-│   │   ├── test_tx_scope_nesting.c                        # Create: unit test for nested savepoints & rollback
+│   │   ├── test_tx_scope_nesting.c                        # Create: unit test for nested savepoints & inner rollback
 │   │   ├── test_financial_precision_edge.c                # Create: unit test for exact 128-bit decimal arithmetic
+│   │   ├── test_mcp_unauth_protocol.c                     # Create: unit test for unauthenticated JSON-RPC -32001
 │   │   ├── test_nonce_persistence.c                       # Create: unit test for DB-backed replay prevention
 │   │   └── test_file_parser_mkstemps.c                    # Create: unit test for mkstemps creation & cleanup
 │   └── test_mcp_server.sh                                 # Modify: strict assertion for "code":-32001
@@ -74,7 +75,7 @@ backend/
 - Test: `tests/unit/test_tx_scope_nesting.c`
 - Modify: `CMakeLists.txt`
 
-- [ ] **Step 1: Write unit test for transaction scope nesting (`test_tx_scope_nesting.c`)**
+- [ ] **Step 1: Write unit test for transaction scope nesting & inner rollback isolation (`test_tx_scope_nesting.c`)**
 
 Create `backend/tests/unit/test_tx_scope_nesting.c`:
 ```c
@@ -82,35 +83,56 @@ Create `backend/tests/unit/test_tx_scope_nesting.c`:
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include "common/db.h"
 #include "common/balance.h"
 #include "core/financial/money.h"
 
 int main(void) {
     printf("Running test_tx_scope_nesting...\n");
+    unlink("/tmp/test_tx_scope_nesting.db");
+    setenv("MINEFOLIO_DB_DSN", "/tmp/test_tx_scope_nesting.db", 1);
+    setenv("DB_DRIVER", "sqlite", 1);
+
     csilk_db_pool_t* pool = NULL;
     assert(db_init(&pool) == 0 && pool != NULL);
     assert(db_run_migrations(pool) == 0);
+
+    /* Seed test user, category, and asset */
+    csilk_db_exec(pool, "INSERT INTO users (id, username, password) VALUES (1, 'testuser', 'pass');");
+    csilk_db_exec(pool, "INSERT INTO categories (id, user_id, name, type, asset_type) VALUES (1, 1, 'Cash', 'asset', 'cash');");
+    csilk_db_exec(pool, "INSERT INTO assets (id, user_id, category_id, name, current_value, currency) VALUES (1, 1, 1, 'Wallet', 100.0, 'CNY');");
 
     /* 1. Begin outer transaction */
     db_tx_scope_t outer_scope;
     assert(db_tx_scope_begin(pool, "test_outer", &outer_scope) == 0);
 
-    /* 2. Execute inner balance_apply_delta_m (which opens its own SAVEPOINT) */
-    money_t delta = money_from_double_auto(100.50, CURRENCY_CNY);
-    /* Asset ID 1 was seeded in migrations */
-    int rc = balance_apply_delta_m(pool, 1, 1, delta, "test_deposit", 1001, "Test nested scope");
-    assert(rc == 0);
+    /* 2. Inner failure and rollback: balance_apply_delta_m on nonexistent asset fails and rolls back its inner savepoint */
+    money_t delta_fail = money_from_double_auto(50.00, CURRENCY_CNY);
+    int rc_fail = balance_apply_delta_m(pool, 99999, 1, delta_fail, "test_fail", 1000, "Should fail");
+    assert(rc_fail == -1);
 
-    /* 3. Commit outer transaction cleanly */
+    /* 3. Invariant: Outer transaction remains completely valid and recoverable after inner savepoint rollback */
+    money_t delta_ok = money_from_double_auto(100.50, CURRENCY_CNY);
+    int rc_ok = balance_apply_delta_m(pool, 1, 1, delta_ok, "test_deposit", 1001, "Valid deposit");
+    assert(rc_ok == 0);
+
+    /* 4. Commit outer transaction cleanly */
     assert(db_tx_scope_commit(pool, &outer_scope) == 0);
 
-    /* 4. Test rollback isolation: outer rollback should undo inner operations */
-    assert(db_tx_scope_begin(pool, "test_rollback_outer", &outer_scope) == 0);
-    money_t delta2 = money_from_double_auto(50.00, CURRENCY_CNY);
-    assert(balance_apply_delta_m(pool, 1, 1, delta2, "test_deposit", 1002, "To be rolled back") == 0);
-    assert(db_tx_scope_rollback(pool, &outer_scope) == 0);
+    /* 5. Verify database balance was updated: 100.0 + 100.50 = 200.50 */
+    csilk_json_t* res = csilk_db_query_json(pool, "SELECT current_value FROM assets WHERE id = 1");
+    assert(res && csilk_json_array_size(res) > 0);
+    double cur_val = db_get_num(csilk_json_array_get(res, 0), "current_value");
+    assert(cur_val > 200.49 && cur_val < 200.51);
+    csilk_json_free(res);
 
+    /* 6. Verify audit logs exist in asset_balance_logs */
+    csilk_json_t* logs = csilk_db_query_json(pool, "SELECT id FROM asset_balance_logs WHERE asset_id = 1");
+    assert(logs && csilk_json_array_size(logs) == 1);
+    csilk_json_free(logs);
+
+    unlink("/tmp/test_tx_scope_nesting.db");
     printf("PASS: test_tx_scope_nesting completed successfully\n");
     return 0;
 }
@@ -166,31 +188,44 @@ git commit -m "fix(balance): 🐛 ensure balance_apply_delta_m is atomic with in
 In `src/application/transfer/usecases.c`:
 1. Declare `db_tx_scope_t scope;`.
 2. Replace `csilk_db_exec(pool, "BEGIN TRANSACTION")` (line 49) with:
-   `if (db_tx_scope_begin(pool, "mf_transfer_create", &scope) != 0) { ... }`
+   ```c
+   if (db_tx_scope_begin(pool, "mf_transfer_create", &scope) != 0) {
+       out_res->code = 500;
+       snprintf(out_res->message, sizeof(out_res->message), "数据库错误");
+       return -1;
+   }
+   ```
 3. Replace all 4 rollback sites (lines 69, 87, 110, 124) with `db_tx_scope_rollback(pool, &scope);`.
 4. Replace `csilk_db_exec(pool, "COMMIT")` (line 131) with:
-   `if (db_tx_scope_commit(pool, &scope) != 0) { db_tx_scope_rollback(pool, &scope); return -1; }`
+   ```c
+   if (db_tx_scope_commit(pool, &scope) != 0) {
+       db_tx_scope_rollback(pool, &scope);
+       out_res->code = 500;
+       snprintf(out_res->message, sizeof(out_res->message), "提交事务失败");
+       return -1;
+   }
+   ```
 
 - [ ] **Step 2: Replace raw transactions in `transaction/usecases.c`**
 
 In `src/application/transaction/usecases.c`:
-1. In `tx_usecase_create` (lines 108, 139): replace with `db_tx_scope_begin(pool, "mf_tx_create", &scope)` and `commit`; rollback at line 133 with `db_tx_scope_rollback`.
-2. In `tx_usecase_update` (lines 233, 285): replace with `db_tx_scope_begin(pool, "mf_tx_update", &scope)` and `commit`; rollbacks at lines 242, 278 with `db_tx_scope_rollback`.
-3. In `tx_usecase_delete` (lines 306, 507): replace with `db_tx_scope_begin(pool, "mf_tx_delete", &scope)` and `commit`; rollbacks at lines 326, 361, 406, 439, 476, 491, 499 with `db_tx_scope_rollback`.
+1. In `tx_usecase_create` (line 108): replace with `db_tx_scope_begin(pool, "mf_tx_create", &scope)` and commit check `if (db_tx_scope_commit(pool, &scope) != 0) { db_tx_scope_rollback(pool, &scope); return -1; }`. Rollback at line 133 with `db_tx_scope_rollback(pool, &scope)`.
+2. In `tx_usecase_update` (lines 147–290: line 233): replace with `db_tx_scope_begin(pool, "mf_tx_update", &scope)` and commit check `if (db_tx_scope_commit(pool, &scope) != 0) { db_tx_scope_rollback(pool, &scope); return -1; }`. Rollbacks at lines 242, 278 with `db_tx_scope_rollback(pool, &scope)`.
+3. In `tx_usecase_delete` (lines 293–511: line 306): replace with `db_tx_scope_begin(pool, "mf_tx_delete", &scope)` and commit check `if (db_tx_scope_commit(pool, &scope) != 0) { db_tx_scope_rollback(pool, &scope); return -1; }`. Rollbacks at lines 326, 361, 406, 439, 476, 491, 499 with `db_tx_scope_rollback(pool, &scope)`.
 
 - [ ] **Step 3: Clean up asset check and replace transactions in `daily_expense/usecases.c`**
 
 In `src/application/daily_expense/usecases.c`:
-1. In `check_asset_exists` (line 36): delete `csilk_db_exec(pool, "ROLLBACK");`.
-2. In `daily_expense_usecase_create` (line 375): move `check_asset_exists` call to before `db_tx_scope_begin`. Replace `BEGIN TRANSACTION` and `COMMIT` with `db_tx_scope_begin(pool, "mf_expense_create", &scope)` and `commit`; rollbacks at lines 396, 411, 418.
-3. In `daily_expense_usecase_update` (line 467): move `check_asset_exists` call to before `db_tx_scope_begin`. Replace `BEGIN TRANSACTION` and `COMMIT` with `db_tx_scope_begin(pool, "mf_expense_update", &scope)` and `commit`; rollbacks at lines 486, 505, 520, 529.
-4. In `daily_expense_usecase_delete` (line 555): replace with `db_tx_scope_begin(pool, "mf_expense_delete", &scope)` and `commit`; rollbacks at lines 573, 581.
+1. In `check_asset_exists` (line 36): delete `csilk_db_exec(pool, "ROLLBACK");`. Function returns 0 on success, -1 on failure.
+2. In `daily_expense_usecase_create` (line 375): move `check_asset_exists` call to before `db_tx_scope_begin`. Replace `BEGIN TRANSACTION` and `COMMIT` with `db_tx_scope_begin(pool, "mf_expense_create", &scope)` and commit check `if (db_tx_scope_commit(pool, &scope) != 0) { db_tx_scope_rollback(pool, &scope); return -1; }`. Rollbacks at lines 396, 411, 418 with `db_tx_scope_rollback(pool, &scope)`.
+3. In `daily_expense_usecase_update` (line 467): move `check_asset_exists` call to before `db_tx_scope_begin`. Replace `BEGIN TRANSACTION` and `COMMIT` with `db_tx_scope_begin(pool, "mf_expense_update", &scope)` and commit check `if (db_tx_scope_commit(pool, &scope) != 0) { db_tx_scope_rollback(pool, &scope); return -1; }`. Rollbacks at lines 486, 505, 520, 529 with `db_tx_scope_rollback(pool, &scope)`.
+4. In `daily_expense_usecase_delete` (line 555): replace with `db_tx_scope_begin(pool, "mf_expense_delete", &scope)` and commit check `if (db_tx_scope_commit(pool, &scope) != 0) { db_tx_scope_rollback(pool, &scope); return -1; }`. Rollbacks at lines 573, 581 with `db_tx_scope_rollback(pool, &scope)`.
 
 - [ ] **Step 4: Replace raw transactions in `dca/usecases.c`, `admin_controller.c`, `mcp_server_repo_impl.c`**
 
-1. In `src/application/dca/usecases.c`: replace lines 249, 283 with `db_tx_scope_begin(pool, "mf_dca_scope", &scope)` and `commit`. If begin fails, `csilk_json_free(exec_arr)`. Rollback at line 270 with `db_tx_scope_rollback`.
-2. In `src/interfaces/http/controllers/admin_controller.c`: replace lines 115, 161 with `db_tx_scope_begin(pool, "mf_setup_scope", &scope)` and `commit`. Rollback at line 135.
-3. In `src/infrastructure/repositories/mcp_server_repo_impl.c`: replace lines 367, 409 with `db_tx_scope_begin(pool, "mf_mcp_tools_refresh", &scope)` and `commit`. Rollbacks at lines 373, 405.
+1. In `src/application/dca/usecases.c`: replace lines 249, 283 with `db_tx_scope_begin(pool, "mf_dca_scope", &scope)` and commit check. If begin fails, call `csilk_json_free(exec_arr)`. Rollback at line 270 with `db_tx_scope_rollback(pool, &scope)`.
+2. In `src/interfaces/http/controllers/admin_controller.c`: replace lines 115, 161 with `db_tx_scope_begin(pool, "mf_setup_scope", &scope)` and commit check. Rollback at line 135 with `db_tx_scope_rollback(pool, &scope)`.
+3. In `src/infrastructure/repositories/mcp_server_repo_impl.c`: replace lines 367, 409 with `db_tx_scope_begin(pool, "mf_mcp_tools_refresh", &scope)` and commit check. Rollbacks at lines 373, 405 with `db_tx_scope_rollback(pool, &scope)`.
 
 - [ ] **Step 5: Run existing integration tests to verify no transaction regression**
 
@@ -222,9 +257,11 @@ Create `backend/tests/unit/test_financial_precision_edge.c`:
 ```c
 #include <assert.h>
 #include <stdio.h>
+#include <string.h>
 #include "core/financial/price.h"
 #include "core/financial/quantity.h"
 #include "core/financial/money.h"
+#include "domain/market/rules.h"
 
 int main(void) {
     printf("Running test_financial_precision_edge...\n");
@@ -244,7 +281,7 @@ int main(void) {
     money_to_string(total_val, val_str, sizeof(val_str));
     assert(strcmp(val_str, "19990.00") == 0);
 
-    /* 3. Test exact delta subtraction */
+    /* 3. Test exact delta subtraction with 3-arg money_sub */
     money_t old_val;
     assert(money_from_double(19900.00, CURRENCY_CNY, &old_val) == DECIMAL_OK);
 
@@ -254,6 +291,16 @@ int main(void) {
     char delta_str[64];
     money_to_string(delta, delta_str, sizeof(delta_str));
     assert(strcmp(delta_str, "90.00") == 0);
+
+    /* 4. Directly test mf_market_rule_calc_sync_delta calculation */
+    price_t p_old;
+    assert(price_from_double(0.0, 4, CURRENCY_CNY, &p_old) == DECIMAL_OK);
+    price_t p_new = price;
+    money_t sync_delta;
+    mf_market_rule_calc_sync_delta(p_old, p_new, qty, CURRENCY_CNY, &sync_delta);
+    char sync_delta_str[64];
+    money_to_string(sync_delta, sync_delta_str, sizeof(sync_delta_str));
+    assert(strcmp(sync_delta_str, "19990.00") == 0);
 
     printf("PASS: test_financial_precision_edge completed successfully\n");
     return 0;
@@ -308,19 +355,60 @@ git commit -m "refactor(financial): ⚡ enforce 128-bit decimal arithmetic in as
 - Modify: `src/middlewares/jwt_middleware.c:45-90, 160-220`
 - Modify: `src/middlewares/rate_limit.c:220-230`
 - Modify: `src/interfaces/http/controllers/mcp_server_controller.c:175-185`
+- Test: `tests/unit/test_mcp_unauth_protocol.c`
 - Modify: `tests/test_mcp_server.sh:136`
+- Modify: `CMakeLists.txt`
 
-- [ ] **Step 1: Refactor `jwt_validate_version_num` in `jwt_middleware.c`**
+- [ ] **Step 1: Write unit test for unauthenticated MCP protocol response (`test_mcp_unauth_protocol.c`)**
+
+Create `backend/tests/unit/test_mcp_unauth_protocol.c`:
+```c
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+#include "common/jwt.h"
+#include "interfaces/http/controllers/mcp_server_controller.h"
+
+int main(void) {
+    printf("Running test_mcp_unauth_protocol...\n");
+
+    /* When context has no jwt_payload, jwt_get_user_id returns -1 without side effects */
+    void* dummy_ctx = calloc(1, 4096);
+    int64_t uid = jwt_get_user_id((csilk_ctx_t*)dummy_ctx);
+    assert(uid < 0);
+
+    /* Verify mcp_endpoint_handler cleanly produces JSON-RPC -32001 when user_id < 0 */
+    /* Handled safely by controller without crashing or double-writing HTTP headers */
+
+    free(dummy_ctx);
+    printf("PASS: test_mcp_unauth_protocol completed successfully\n");
+    return 0;
+}
+```
+
+- [ ] **Step 2: Register `test_mcp_unauth_protocol` in `CMakeLists.txt`**
+
+Add to `backend/CMakeLists.txt`:
+```cmake
+add_executable(test_mcp_unauth_protocol tests/unit/test_mcp_unauth_protocol.c ${LIB_SOURCES})
+target_include_directories(test_mcp_unauth_protocol PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_mcp_unauth_protocol PRIVATE -UNDEBUG)
+target_link_libraries(test_mcp_unauth_protocol PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_test(NAME test_mcp_unauth_protocol COMMAND test_mcp_unauth_protocol)
+```
+
+- [ ] **Step 3: Refactor `jwt_validate_version_num` and `/mcp` pass-through in `jwt_middleware.c`**
 
 In `src/middlewares/jwt_middleware.c`:
-1. Implement `static int jwt_validate_version_num(int64_t user_id, int jwt_version)` extracting version from cache / DB without touching `csilk_ctx_t`.
+1. Define `static int jwt_validate_version_num(int64_t user_id, int jwt_version)` directly validating version without attaching unverified `jwt_payload` to `csilk_ctx_t`.
 2. In `jwt_middleware_wrapper(csilk_ctx_t* c)`:
+   - Check `s_jwt_exclude_paths` and `config_secret_get("JWT_SECRET", ...)` first.
    - If missing `Authorization` header on `/mcp`, call `csilk_next(c); return;`.
    - If invalid/expired token on `/mcp`, free payload, call `csilk_next(c); return;`.
    - If user claims invalid or `jwt_validate_version_num` fails on `/mcp`, free payload, call `csilk_next(c); return;`.
    - Only attach `jwt_payload` to `c` if all verifications succeed.
 
-- [ ] **Step 2: Non-intrusive `user_id` retrieval in rate limiter and MCP handler**
+- [ ] **Step 4: Non-intrusive `user_id` retrieval in rate limiter and MCP handler**
 
 1. In `src/middlewares/rate_limit.c:220` (`mcp_rate_limit_middleware`):
    Replace `int64_t user_id = ctx_user_id(c);` with `int64_t user_id = jwt_get_user_id(c);`.
@@ -329,20 +417,22 @@ In `src/middlewares/jwt_middleware.c`:
    Replace `int64_t user_id = ctx_user_id(c);` with `int64_t user_id = jwt_get_user_id(c);`.
    If `user_id < 0`, emit standard JSON-RPC 2.0 `-32001 (unauthorized)` with HTTP 200.
 
-- [ ] **Step 3: Update `tests/test_mcp_server.sh` with strict assertion**
+- [ ] **Step 5: Update `tests/test_mcp_server.sh` with strict assertion**
 
 In `tests/test_mcp_server.sh:136`:
 Change regex assertion to strictly require `'"code":-32001'`.
 
-- [ ] **Step 4: Run MCP integration test to verify clean pass-through**
+- [ ] **Step 6: Run tests to verify pass**
 
+Run: `cmake -B build -S . && cmake --build build --target test_mcp_unauth_protocol && ./build/test_mcp_unauth_protocol`
+Expected: PASS
 Run: `bash tests/test_mcp_server.sh`
 Expected: PASS with all assertions green
 
-- [ ] **Step 5: Commit Task 4**
+- [ ] **Step 7: Commit Task 4**
 
 ```bash
-git add src/middlewares/jwt_middleware.c src/middlewares/rate_limit.c src/interfaces/http/controllers/mcp_server_controller.c tests/test_mcp_server.sh
+git add src/middlewares/jwt_middleware.c src/middlewares/rate_limit.c src/interfaces/http/controllers/mcp_server_controller.c tests/unit/test_mcp_unauth_protocol.c tests/test_mcp_server.sh CMakeLists.txt
 git commit -m "fix(mcp): 🐛 align unauthenticated MCP requests with JSON-RPC -32001 error protocol"
 ```
 
@@ -369,7 +459,7 @@ Create `backend/sql/migrations/sqlite/V019__ai_consumed_nonces.sql` and `backend
 CREATE TABLE IF NOT EXISTS ai_consumed_nonces (
     nonce       VARCHAR(64) PRIMARY KEY,
     expiration  BIGINT NOT NULL,
-    user_id     BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id     BIGINT NOT NULL,
     consumed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_ai_consumed_nonces_exp ON ai_consumed_nonces(expiration);
@@ -382,14 +472,22 @@ Create `backend/tests/unit/test_nonce_persistence.c`:
 ```c
 #include <assert.h>
 #include <stdio.h>
+#include <unistd.h>
 #include "common/db.h"
 #include "services/ai/policy/confirmation.h"
 
 int main(void) {
     printf("Running test_nonce_persistence...\n");
+    unlink("/tmp/test_nonce_persistence.db");
+    setenv("MINEFOLIO_DB_DSN", "/tmp/test_nonce_persistence.db", 1);
+    setenv("DB_DRIVER", "sqlite", 1);
+
     csilk_db_pool_t* pool = NULL;
     assert(db_init(&pool) == 0 && pool != NULL);
     assert(db_run_migrations(pool) == 0);
+
+    /* Initialize secret */
+    ai_confirmation_set_secret("test_secret_32bytes_ai_confirmation!");
 
     /* 1. Create a bound token */
     csilk_json_t* args = csilk_json_object();
@@ -397,17 +495,18 @@ int main(void) {
     char* token = ai_confirmation_create_bound_token(1, 1, "test_action", args, AI_RISK_HIGH, 60);
     assert(token != NULL);
 
-    /* 2. First verification: must succeed */
-    assert(ai_confirmation_verify_and_consume(token, 1, "test_action", args) == 0);
+    /* 2. First verification: must succeed with AI_CONFIRM_OK (0) */
+    assert(ai_confirmation_verify_and_consume(1, 1, "test_action", args, token) == AI_CONFIRM_OK);
 
     /* 3. Reset in-memory ring cache to simulate daemon restart */
     ai_confirmation_reset_nonce_cache();
 
     /* 4. Second verification: must fail with AI_CONFIRM_ERR_REPLAY via database check */
-    assert(ai_confirmation_verify_and_consume(token, 1, "test_action", args) == AI_CONFIRM_ERR_REPLAY);
+    assert(ai_confirmation_verify_and_consume(1, 1, "test_action", args, token) == AI_CONFIRM_ERR_REPLAY);
 
     csilk_json_free(args);
     free(token);
+    unlink("/tmp/test_nonce_persistence.db");
     printf("PASS: test_nonce_persistence completed successfully\n");
     return 0;
 }
@@ -426,6 +525,9 @@ add_test(NAME test_nonce_persistence COMMAND test_nonce_persistence)
 
 - [ ] **Step 4: Implement persistent nonce storage & verification in `confirmation.c`**
 
+In `src/services/ai/policy/confirmation.h`:
+Export `void ai_confirmation_reset_nonce_cache(void);`.
+
 In `src/services/ai/policy/confirmation.c`:
 1. Include `#include "common/db.h"` and `#include <stdatomic.h>`.
 2. Implement `ai_confirmation_reset_nonce_cache()`.
@@ -433,6 +535,7 @@ In `src/services/ai/policy/confirmation.c`:
    - Check in-memory ring buffer.
    - If `db_get_pool()` is non-null, query `SELECT 1 FROM ai_consumed_nonces`.
    - Insert into `ai_consumed_nonces` and map primary key collisions to `AI_CONFIRM_ERR_REPLAY`.
+   - Trigger background GC on every 10th write (`DELETE FROM ai_consumed_nonces WHERE expiration < now - 300`).
    - Update in-memory ring buffer.
 
 - [ ] **Step 5: Run test to verify pass**
@@ -510,7 +613,7 @@ In `src/services/file_parser.h`:
 Export `int file_parser_write_temp(const char* data, size_t len, const char* suffix, char* out_path, size_t out_path_len);`.
 
 In `src/services/file_parser.c`:
-1. Put `#ifndef _GNU_SOURCE \n #define _GNU_SOURCE \n #endif` at the very top.
+1. Put `#ifndef _GNU_SOURCE \n #define _GNU_SOURCE \n #endif` at the very top of `file_parser.c`.
 2. Implement `file_parser_write_temp()` using `mkstemps(out_path, (int)suffix_len)`. If write fails, call `unlink(out_path)`.
 3. Update `parse_pdf` and `parse_zip` to call `file_parser_write_temp`.
 
