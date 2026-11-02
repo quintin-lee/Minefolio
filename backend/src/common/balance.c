@@ -40,6 +40,11 @@ balance_apply_delta_m(csilk_db_pool_t* pool,
         return -1;
     }
 
+    db_tx_scope_t scope;
+    if (db_tx_scope_begin(pool, "mf_balance_delta", &scope) != 0) {
+        return -2;
+    }
+
     char asset_id_str[32], user_id_str[32];
     snprintf(asset_id_str, sizeof(asset_id_str), "%lld", (long long)asset_id);
     snprintf(user_id_str, sizeof(user_id_str), "%lld", (long long)user_id);
@@ -53,6 +58,7 @@ balance_apply_delta_m(csilk_db_pool_t* pool,
                                   "WHERE a.id=? AND a.user_id=?",
                                   params1);
     if (!row) {
+        db_tx_scope_rollback(pool, &scope);
         return -2;
     }
     if (csilk_json_array_size(row) == 0) {
@@ -60,6 +66,7 @@ balance_apply_delta_m(csilk_db_pool_t* pool,
         CSILK_LOG_W("balance_apply_delta: asset not found asset_id=%lld user_id=%lld",
                     (long long)asset_id,
                     (long long)user_id);
+        db_tx_scope_rollback(pool, &scope);
         return -1;
     }
     const csilk_json_t* asset = csilk_json_array_get(row, 0);
@@ -93,6 +100,7 @@ balance_apply_delta_m(csilk_db_pool_t* pool,
     if (!res3) {
         CSILK_LOG_E("balance_apply_delta: failed to update balance asset_id=%lld",
                     (long long)asset_id);
+        db_tx_scope_rollback(pool, &scope);
         return -2;
     }
     csilk_json_free(res3);
@@ -107,6 +115,7 @@ balance_apply_delta_m(csilk_db_pool_t* pool,
         }
         CSILK_LOG_E("balance_apply_delta: failed to read balance_after asset_id=%lld",
                     (long long)asset_id);
+        db_tx_scope_rollback(pool, &scope);
         return -2;
     }
     money_t balance_after =
@@ -135,9 +144,15 @@ balance_apply_delta_m(csilk_db_pool_t* pool,
     if (!res5) {
         CSILK_LOG_E("balance_apply_delta: failed to insert audit log asset_id=%lld",
                     (long long)asset_id);
+        db_tx_scope_rollback(pool, &scope);
         return -2;
     }
     csilk_json_free(res5);
+
+    if (db_tx_scope_commit(pool, &scope) != 0) {
+        db_tx_scope_rollback(pool, &scope);
+        return -2;
+    }
 
     return 0;
 }

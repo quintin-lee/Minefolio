@@ -75,7 +75,7 @@ backend/
 - Test: `tests/unit/test_tx_scope_nesting.c`
 - Modify: `CMakeLists.txt`
 
-- [ ] **Step 1: Write unit test for transaction scope nesting & inner rollback isolation (`test_tx_scope_nesting.c`)**
+- [x] **Step 1: Write unit test for transaction scope nesting & inner rollback isolation (`test_tx_scope_nesting.c`)**
 
 Create `backend/tests/unit/test_tx_scope_nesting.c`:
 ```c
@@ -108,12 +108,14 @@ int main(void) {
     assert(db_tx_scope_begin(pool, "test_outer", &outer_scope) == 0);
 
     /* 2. Inner failure and rollback: balance_apply_delta_m on nonexistent asset fails and rolls back its inner savepoint */
-    money_t delta_fail = money_from_double_auto(50.00, CURRENCY_CNY);
+    money_t delta_fail;
+    assert(money_from_double(50.00, CURRENCY_CNY, &delta_fail) == DECIMAL_OK);
     int rc_fail = balance_apply_delta_m(pool, 99999, 1, delta_fail, "test_fail", 1000, "Should fail");
     assert(rc_fail == -1);
 
     /* 3. Invariant: Outer transaction remains completely valid and recoverable after inner savepoint rollback */
-    money_t delta_ok = money_from_double_auto(100.50, CURRENCY_CNY);
+    money_t delta_ok;
+    assert(money_from_double(100.50, CURRENCY_CNY, &delta_ok) == DECIMAL_OK);
     int rc_ok = balance_apply_delta_m(pool, 1, 1, delta_ok, "test_deposit", 1001, "Valid deposit");
     assert(rc_ok == 0);
 
@@ -138,7 +140,7 @@ int main(void) {
 }
 ```
 
-- [ ] **Step 2: Register `test_tx_scope_nesting` in `CMakeLists.txt`**
+- [x] **Step 2: Register `test_tx_scope_nesting` in `CMakeLists.txt`**
 
 Add to `backend/CMakeLists.txt`:
 ```cmake
@@ -149,7 +151,7 @@ target_link_libraries(test_tx_scope_nesting PRIVATE csilk crypto CURL::libcurl $
 add_test(NAME test_tx_scope_nesting COMMAND test_tx_scope_nesting)
 ```
 
-- [ ] **Step 3: Implement internal `db_tx_scope_t` in `balance_apply_delta_m()`**
+- [x] **Step 3: Implement internal `db_tx_scope_t` in `balance_apply_delta_m()`**
 
 In `src/common/balance.c`:
 1. Call `db_tx_scope_begin(pool, "mf_balance_delta", &scope)` at function entry.
@@ -159,12 +161,12 @@ In `src/common/balance.c`:
 5. If `!res5` (audit log insertion failure into `asset_balance_logs`), call `db_tx_scope_rollback(pool, &scope)` and return `-2`.
 6. If `db_tx_scope_commit(pool, &scope) != 0`, call `db_tx_scope_rollback(pool, &scope)` and return `-2`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cmake -B build -S . && cmake --build build --target test_tx_scope_nesting && ./build/test_tx_scope_nesting`
 Expected: PASS
 
-- [ ] **Step 5: Commit Task 1**
+- [x] **Step 5: Commit Task 1**
 
 ```bash
 git add src/common/balance.c tests/unit/test_tx_scope_nesting.c CMakeLists.txt

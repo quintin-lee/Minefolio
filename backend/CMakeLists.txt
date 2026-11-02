@@ -356,6 +356,12 @@ target_compile_options(test_summary_worker_pool PRIVATE -UNDEBUG)
 target_link_libraries(test_summary_worker_pool PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
 add_test(NAME test_summary_worker_pool COMMAND test_summary_worker_pool)
 
+add_executable(test_tx_scope_nesting tests/unit/test_tx_scope_nesting.c ${LIB_SOURCES})
+target_include_directories(test_tx_scope_nesting PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_tx_scope_nesting PRIVATE -UNDEBUG)
+target_link_libraries(test_tx_scope_nesting PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_test(NAME test_tx_scope_nesting COMMAND test_tx_scope_nesting)
+
 
 
 
