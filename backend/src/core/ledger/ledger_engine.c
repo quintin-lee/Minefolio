@@ -1,4 +1,5 @@
 #include "core/ledger/ledger_engine.h"
+#include "infrastructure/repositories/ledger_snapshot_repo_impl.h"
 #include "common/balance.h"
 #include "common/tx_types.h"
 #include "common/db.h"
@@ -812,18 +813,60 @@ ledger_rebuild_position(csilk_db_pool_t*         pool,
     price_t             orig_net = db_get_price(a_obj, "net_value", cur);
     csilk_json_free(a_rows);
 
-    // 2. Query all investment transactions in chronological order
-    csilk_json_t* tx_rows = csilk_db_query_param_json(
-        pool,
-        "SELECT id, transaction_type, amount, price_per_unit, quantity, fee "
-        "FROM transactions WHERE user_id=? AND asset_id=? AND transaction_type IN ('buy', 'sell') "
-        "ORDER BY transaction_date ASC, id ASC",
-        (const char*[]){uid_str, ast_str, NULL});
+    // 2. Check for latest checkpoint snapshot (Two-stage incremental rebuild)
+    csilk_json_t* snap = NULL;
+    ledger_snapshot_get_latest(pool, user_id, asset_id, NULL, &snap);
+    bool had_snapshot = (snap != NULL);
 
-    quantity_t curr_qty = quantity_zero();
-    money_t    curr_cost = money_zero(cur);
-    price_t    latest_price = price_zero(cur);
-    money_t    cum_realized = money_zero(cur);
+    quantity_t curr_qty;
+    money_t    curr_cost;
+    price_t    latest_price;
+    money_t    cum_realized;
+
+    csilk_json_t* tx_rows = NULL;
+
+    if (had_snapshot) {
+        curr_qty = db_get_quantity(snap, "quantity");
+        curr_cost = db_get_money(snap, "cost_basis", cur);
+        latest_price = db_get_price(snap, "net_value", cur);
+        cum_realized = db_get_money(snap, "realized_pnl", cur);
+
+        const char* ckpt_date = csilk_json_get_string(snap, "tx_checkpoint_date");
+        if (!ckpt_date || !ckpt_date[0]) {
+            ckpt_date = csilk_json_get_string(snap, "snapshot_date");
+        }
+        if (!ckpt_date) {
+            ckpt_date = "";
+        }
+        int64_t ckpt_id = db_get_int(snap, "tx_checkpoint_id");
+        char    ckpt_id_str[32];
+        snprintf(ckpt_id_str, sizeof(ckpt_id_str), "%lld", (long long)ckpt_id);
+
+        const char* sub_params[] = {uid_str, ast_str, ckpt_date, ckpt_date, ckpt_id_str, NULL};
+        tx_rows = csilk_db_query_param_json(
+            pool,
+            "SELECT id, transaction_type, amount, price_per_unit, quantity, fee "
+            "FROM transactions WHERE user_id=? AND asset_id=? AND transaction_type IN ('buy', "
+            "'sell') "
+            "AND (transaction_date > ? OR (transaction_date = ? AND id > ?)) "
+            "ORDER BY transaction_date ASC, id ASC",
+            sub_params);
+
+        csilk_json_free(snap);
+    } else {
+        curr_qty = quantity_zero();
+        curr_cost = money_zero(cur);
+        latest_price = price_zero(cur);
+        cum_realized = money_zero(cur);
+
+        tx_rows = csilk_db_query_param_json(
+            pool,
+            "SELECT id, transaction_type, amount, price_per_unit, quantity, fee "
+            "FROM transactions WHERE user_id=? AND asset_id=? AND transaction_type IN ('buy', "
+            "'sell') "
+            "ORDER BY transaction_date ASC, id ASC",
+            (const char*[]){uid_str, ast_str, NULL});
+    }
 
     if (tx_rows && csilk_json_array_size(tx_rows) > 0) {
         size_t n = csilk_json_array_size(tx_rows);
@@ -851,10 +894,12 @@ ledger_rebuild_position(csilk_db_pool_t*         pool,
         if (tx_rows) {
             csilk_json_free(tx_rows);
         }
-        // No transactions found: preserve baseline initial quantity and cost basis
-        curr_qty = orig_qty;
-        curr_cost = orig_cost;
-        latest_price = orig_net;
+        // No transactions found: if no snapshot was present, preserve baseline initial quantity and cost basis
+        if (!had_snapshot) {
+            curr_qty = orig_qty;
+            curr_cost = orig_cost;
+            latest_price = orig_net;
+        }
     }
 
     money_t curr_mkt_val;
