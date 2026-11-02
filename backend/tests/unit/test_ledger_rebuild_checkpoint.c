@@ -260,6 +260,69 @@ main(void)
     assert(price_to_double(pos3.net_value) == 2.0);
     assert(money_to_double(pos3.current_value) == 3000.0);
 
+    /* -------------------------------------------------------------
+     * Test 5: Backdated transaction invalidation scenario (RF-1)
+     * ------------------------------------------------------------- */
+    printf("Test 5: Backdated transaction invalidation scenario (RF-1)...\n");
+    // Verify snapshot at 2026-09-02 still exists
+    snap = NULL;
+    rc = ledger_snapshot_get_latest(pool, user_id, 201, NULL, &snap);
+    assert(rc == 0 && snap != NULL);
+    csilk_json_free(snap);
+
+    // Restore tx1 amount to original 1000.0
+    csilk_db_exec(pool, "UPDATE transactions SET amount = 1000.0 WHERE id = 1");
+
+    // Insert backdated tx 4 at 2026-09-01 15:00:00: Buy 1000 shares @ 3.00 CNY, amount 3000.00 CNY
+    money_t    b4_amt, b4_fee;
+    price_t    b4_price;
+    quantity_t b4_qty;
+    money_from_double(3000.0, CURRENCY_CNY, &b4_amt);
+    money_from_double(0.0, CURRENCY_CNY, &b4_fee);
+    price_from_double(3.0, 2, CURRENCY_CNY, &b4_price);
+    quantity_from_double(1000.0, 0, &b4_qty);
+
+    csilk_db_exec(pool, "BEGIN TRANSACTION");
+    ledger_tx_t tx4 = {.id = 0,
+                       .user_id = user_id,
+                       .asset_id = 201,
+                       .linked_asset_id = 101,
+                       .category_id = 20,
+                       .type = LEDGER_TX_BUY,
+                       .type_str = "buy",
+                       .amount = b4_amt,
+                       .price = b4_price,
+                       .quantity = b4_qty,
+                       .fee = b4_fee,
+                       .tx_date = "2026-09-01 15:00:00",
+                       .note = "Backdated Buy 4",
+                       .parent_tx_id = 0};
+    rc = ledger_apply_tx(pool, &tx4);
+    assert(rc == 0);
+    assert(tx4.id > 0);
+    csilk_db_exec(pool, "COMMIT");
+
+    // Invalidate snapshots from 2026-09-01 15:00:00 onwards
+    rc = ledger_snapshot_invalidate_from(pool, user_id, 201, "2026-09-01 15:00:00");
+    assert(rc == 0);
+
+    // Assert latest snapshot is now gone
+    snap = NULL;
+    rc = ledger_snapshot_get_latest(pool, user_id, 201, NULL, &snap);
+    assert(rc == 0);
+    assert(snap == NULL);
+
+    // Rebuild position and verify position is rebuilt from scratch incorporating tx4
+    ledger_position_state_t pos5;
+    memset(&pos5, 0, sizeof(pos5));
+    rc = ledger_rebuild_position(pool, user_id, 201, &pos5);
+    assert(rc == 0);
+    assert(quantity_to_double(pos5.quantity) == 2500.0);
+    assert(money_to_double(pos5.cost_basis) == 5000.0);
+    assert(money_to_double(pos5.realized_pnl) == 500.0);
+    assert(price_to_double(pos5.net_value) == 2.0);
+    assert(money_to_double(pos5.current_value) == 5000.0);
+
     printf("=== All Ledger Rebuild Checkpoint Tests Passed! ===\n");
     return 0;
 }

@@ -46,6 +46,20 @@ int ledger_snapshot_save(csilk_db_pool_t*               pool,
                          int64_t                        checkpoint_id,
                          const char*                    lots_json);
 
+/**
+ * @brief 失效/删除指定标的在给定日期及之后的所有账本检查点快照
+ *
+ * @param pool 数据库连接池
+ * @param user_id 用户 ID
+ * @param asset_id 目标资产 ID
+ * @param from_date 起始业务时间或日期 (如 "2026-09-01" 或 "2026-09-01 15:00:00")
+ * @return 0 成功；<0 失败
+ */
+int ledger_snapshot_invalidate_from(csilk_db_pool_t* pool,
+                                    int64_t          user_id,
+                                    int64_t          asset_id,
+                                    const char*      from_date);
+
 #ifdef __cplusplus
 }
 #endif

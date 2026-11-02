@@ -138,3 +138,31 @@ ledger_snapshot_save(csilk_db_pool_t*               pool,
     csilk_json_free(res);
     return 0;
 }
+
+int
+ledger_snapshot_invalidate_from(csilk_db_pool_t* pool,
+                                int64_t          user_id,
+                                int64_t          asset_id,
+                                const char*      from_date)
+{
+    if (!pool || user_id <= 0 || asset_id <= 0 || !from_date || !from_date[0]) {
+        return -1;
+    }
+
+    char uid_str[32], ast_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    snprintf(ast_str, sizeof(ast_str), "%lld", (long long)asset_id);
+
+    char from_day[16] = {0};
+    snprintf(from_day, sizeof(from_day), "%.10s", from_date);
+
+    const char* sql =
+        "DELETE FROM ledger_snapshots WHERE user_id=? AND asset_id=? AND snapshot_date >= ?";
+    const char*   params[] = {uid_str, ast_str, from_day, NULL};
+    csilk_json_t* res = csilk_db_query_param_json(pool, sql, params);
+    if (!res) {
+        return -1;
+    }
+    csilk_json_free(res);
+    return 0;
+}

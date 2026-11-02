@@ -4,6 +4,7 @@
 #include "core/ledger/ledger_engine.h"
 #include "core/financial/currency.h"
 #include "infrastructure/repositories/transaction_repo_impl.h"
+#include "infrastructure/repositories/ledger_snapshot_repo_impl.h"
 #include "common/tx_types.h"
 #include "common/db.h"
 #include <stdio.h>
@@ -137,6 +138,16 @@ tx_usecase_create(void* pool, const create_tx_cmd_t* cmd, tx_usecase_result_t* o
         return -1;
     }
 
+    /* 失效受影响资产在交易日期及之后的快照 */
+    if (cmd->date && cmd->date[0]) {
+        if (cmd->asset_id > 0) {
+            ledger_snapshot_invalidate_from(pool, cmd->user_id, cmd->asset_id, cmd->date);
+        }
+        if (cmd->linked_asset_id > 0) {
+            ledger_snapshot_invalidate_from(pool, cmd->user_id, cmd->linked_asset_id, cmd->date);
+        }
+    }
+
     if (db_tx_scope_commit(pool, &scope) != 0) {
         db_tx_scope_rollback(pool, &scope);
         out_res->code = 1004;
@@ -175,6 +186,8 @@ tx_usecase_update(void* pool, const update_tx_cmd_t* cmd, tx_usecase_result_t* o
     const csilk_json_t* old_row = csilk_json_array_get(old_rows, 0);
 
     int64_t     old_asset_id = db_get_int(old_row, "asset_id");
+    int64_t     old_linked_asset_id = db_get_int(old_row, "linked_asset_id");
+    const char* old_date = csilk_json_get_string(old_row, "transaction_date");
     const char* type = (cmd->type && cmd->type[0])
                            ? cmd->type
                            : csilk_json_get_string(old_row, "transaction_type");
@@ -289,6 +302,28 @@ tx_usecase_update(void* pool, const update_tx_cmd_t* cmd, tx_usecase_result_t* o
         return -1;
     }
 
+    /* 失效受影响资产在交易日期及之后的快照 (包括原资产/原日期与新资产/新日期) */
+    if (old_date && old_date[0]) {
+        if (old_asset_id > 0) {
+            ledger_snapshot_invalidate_from(
+                (csilk_db_pool_t*)pool, cmd->user_id, old_asset_id, old_date);
+        }
+        if (old_linked_asset_id > 0) {
+            ledger_snapshot_invalidate_from(
+                (csilk_db_pool_t*)pool, cmd->user_id, old_linked_asset_id, old_date);
+        }
+    }
+    if (date && date[0]) {
+        if (target_asset_id > 0) {
+            ledger_snapshot_invalidate_from(
+                (csilk_db_pool_t*)pool, cmd->user_id, target_asset_id, date);
+        }
+        if (target_linked_id > 0) {
+            ledger_snapshot_invalidate_from(
+                (csilk_db_pool_t*)pool, cmd->user_id, target_linked_id, date);
+        }
+    }
+
     if (db_tx_scope_commit((csilk_db_pool_t*)pool, &scope) != 0) {
         db_tx_scope_rollback((csilk_db_pool_t*)pool, &scope);
         csilk_json_free(old_rows);
@@ -330,8 +365,8 @@ tx_usecase_delete(void* pool, const delete_tx_cmd_t* cmd, tx_usecase_result_t* o
 
     csilk_json_t* tx_rows = csilk_db_query_param_json(
         pool,
-        "SELECT id, transaction_type, parent_tx_id, asset_id, linked_asset_id, amount "
-        "FROM transactions WHERE id=? AND user_id=?",
+        "SELECT id, transaction_type, parent_tx_id, asset_id, linked_asset_id, amount, "
+        "transaction_date FROM transactions WHERE id=? AND user_id=?",
         (const char*[]){tid_str, uid_str, NULL});
     if (!tx_rows || csilk_json_array_size(tx_rows) == 0) {
         if (tx_rows) {
@@ -349,6 +384,7 @@ tx_usecase_delete(void* pool, const delete_tx_cmd_t* cmd, tx_usecase_result_t* o
     int64_t       asset_id = (int64_t)db_get_int(tx_row, "asset_id");
     int64_t       linked_asset_id = (int64_t)db_get_int(tx_row, "linked_asset_id");
     double        amount = db_get_num(tx_row, "amount");
+    const char*   tx_date = csilk_json_get_string(tx_row, "transaction_date");
 
     int is_transfer_out = (type && strcmp(type, "transfer_out") == 0);
     int is_transfer_in = (type && strcmp(type, "transfer_in") == 0);
@@ -517,6 +553,18 @@ tx_usecase_delete(void* pool, const delete_tx_cmd_t* cmd, tx_usecase_result_t* o
         }
     }
 
+    /* 失效受影响资产在交易日期及之后的快照 */
+    if (tx_date && tx_date[0]) {
+        if (asset_id > 0) {
+            ledger_snapshot_invalidate_from(
+                (csilk_db_pool_t*)pool, cmd->user_id, asset_id, tx_date);
+        }
+        if (linked_asset_id > 0) {
+            ledger_snapshot_invalidate_from(
+                (csilk_db_pool_t*)pool, cmd->user_id, linked_asset_id, tx_date);
+        }
+    }
+
     csilk_json_free(tx_rows);
     if (db_tx_scope_commit(pool, &scope) != 0) {
         db_tx_scope_rollback(pool, &scope);
@@ -524,7 +572,6 @@ tx_usecase_delete(void* pool, const delete_tx_cmd_t* cmd, tx_usecase_result_t* o
         snprintf(out_res->message, sizeof(out_res->message), "提交事务失败");
         return -1;
     }
-    out_res->code = 0;
     out_res->code = 0;
     snprintf(out_res->message, sizeof(out_res->message), "OK");
     return 0;
