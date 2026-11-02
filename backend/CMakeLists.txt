@@ -368,6 +368,13 @@ target_compile_options(test_financial_precision_edge PRIVATE -UNDEBUG)
 target_link_libraries(test_financial_precision_edge PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
 add_test(NAME test_financial_precision_edge COMMAND test_financial_precision_edge)
 
+add_executable(test_mcp_unauth_protocol tests/unit/test_mcp_unauth_protocol.c ${LIB_SOURCES})
+target_include_directories(test_mcp_unauth_protocol PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_mcp_unauth_protocol PRIVATE -UNDEBUG)
+target_link_libraries(test_mcp_unauth_protocol PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_test(NAME test_mcp_unauth_protocol COMMAND test_mcp_unauth_protocol)
+
+
 
 
 

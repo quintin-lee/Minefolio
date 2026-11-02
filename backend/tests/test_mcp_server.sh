@@ -130,17 +130,15 @@ UNK=$(curl -s -X POST "http://127.0.0.1:$PORT/mcp" \
     -d '{"jsonrpc":"2.0","id":4,"method":"bogus/method","params":{}}' || true)
 grep_check "mcp: unknown method returns -32601" '"code":-32601' "$UNK"
 
-# 未认证 /mcp（不带 Bearer）：/mcp 挂在 jwt 中间件组，缺 Bearer 会被中间件拦为 401 信封
-# （{"error":"Bearer token required"}）而非 handler 的 -32001；以"未出现 protocolVersion
-# 且出现鉴权拒绝字样"作为弱断言
+# 未认证 /mcp（不带 Bearer）：透传到 mcp_endpoint_handler 返回 JSON-RPC -32001 (unauthorized)
 NOAUTH=$(curl -s -X POST "http://127.0.0.1:$PORT/mcp" \
     -H 'Content-Type: application/json' \
     -d '{"jsonrpc":"2.0","id":5,"method":"initialize","params":{}}' || true)
-if echo "$NOAUTH" | grep -qE '"code":-32001|unauthorized|401|Bearer token required'; then
-    echo "PASS: mcp: unauthenticated rejected"
+if echo "$NOAUTH" | grep -qE '"code":-32001'; then
+    echo "PASS: mcp: unauthenticated rejected with JSON-RPC -32001"
     PASS=$((PASS+1))
 else
-    echo "FAIL: mcp: unauthenticated rejected (got: $NOAUTH)"
+    echo "FAIL: mcp: unauthenticated rejected with JSON-RPC -32001 (got: $NOAUTH)"
     FAIL=$((FAIL+1))
 fi
 

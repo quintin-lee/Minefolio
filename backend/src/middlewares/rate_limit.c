@@ -9,6 +9,7 @@
 #include "middlewares/rate_limit.h"
 #include "common/response.h"
 #include "common/ctx.h"
+#include "common/jwt.h"
 #include "csilk/core/ctx/response.h"
 #include <pthread.h>
 #include <string.h>
@@ -225,9 +226,9 @@ mcp_rate_limit_middleware(csilk_ctx_t* c)
         return;
     }
 
-    int64_t user_id = ctx_user_id(c);
+    int64_t user_id = jwt_get_user_id(c);
     if (user_id <= 0) {
-        /* 未认证：交由 JWT 中间件拦截（/mcp 组已挂 JWT），此处直接放行 */
+        /* 未认证：交由 mcp_endpoint_handler 返回 JSON-RPC -32001，此处直接放行 */
         csilk_next(c);
         return;
     }

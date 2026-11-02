@@ -2,6 +2,7 @@
 
 #include "csilk/protocols/mcp.h"
 #include "common/ctx.h"
+#include "common/jwt.h"
 #include "common/db.h"
 #include "services/ai_tools.h"
 #include "services/ai/tools/registry.h"
@@ -173,7 +174,7 @@ mcp_handle_tools_call(csilk_ctx_t* c, const csilk_json_t* body, int64_t user_id)
 void
 mcp_endpoint_handler(csilk_ctx_t* c)
 {
-    int64_t user_id = ctx_user_id(c);
+    int64_t user_id = jwt_get_user_id(c);
     if (user_id < 0) {
         /* 未认证：JSON-RPC error -32001（unauthorized），HTTP 仍 200 承载 JSON-RPC 体 */
         csilk_json_t* body = csilk_bind_json(c);

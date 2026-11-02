@@ -361,7 +361,7 @@ git commit -m "refactor(financial): ⚡ enforce 128-bit decimal arithmetic in as
 - Modify: `tests/test_mcp_server.sh:136`
 - Modify: `CMakeLists.txt`
 
-- [ ] **Step 1: Write unit test for unauthenticated MCP protocol response (`test_mcp_unauth_protocol.c`)**
+- [x] **Step 1: Write unit test for unauthenticated MCP protocol response (`test_mcp_unauth_protocol.c`)**
 
 Create `backend/tests/unit/test_mcp_unauth_protocol.c`:
 ```c
@@ -388,7 +388,7 @@ int main(void) {
 }
 ```
 
-- [ ] **Step 2: Register `test_mcp_unauth_protocol` in `CMakeLists.txt`**
+- [x] **Step 2: Register `test_mcp_unauth_protocol` in `CMakeLists.txt`**
 
 Add to `backend/CMakeLists.txt`:
 ```cmake
@@ -399,7 +399,7 @@ target_link_libraries(test_mcp_unauth_protocol PRIVATE csilk crypto CURL::libcur
 add_test(NAME test_mcp_unauth_protocol COMMAND test_mcp_unauth_protocol)
 ```
 
-- [ ] **Step 3: Refactor `jwt_validate_version_num` and `/mcp` pass-through in `jwt_middleware.c`**
+- [x] **Step 3: Refactor `jwt_validate_version_num` and `/mcp` pass-through in `jwt_middleware.c`**
 
 In `src/middlewares/jwt_middleware.c`:
 1. Define `static int jwt_validate_version_num(int64_t user_id, int jwt_version)` directly validating version without attaching unverified `jwt_payload` to `csilk_ctx_t`.
@@ -410,7 +410,7 @@ In `src/middlewares/jwt_middleware.c`:
    - If user claims invalid or `jwt_validate_version_num` fails on `/mcp`, free payload, call `csilk_next(c); return;`.
    - Only attach `jwt_payload` to `c` if all verifications succeed.
 
-- [ ] **Step 4: Non-intrusive `user_id` retrieval in rate limiter and MCP handler**
+- [x] **Step 4: Non-intrusive `user_id` retrieval in rate limiter and MCP handler**
 
 1. In `src/middlewares/rate_limit.c:220` (`mcp_rate_limit_middleware`):
    Replace `int64_t user_id = ctx_user_id(c);` with `int64_t user_id = jwt_get_user_id(c);`.
@@ -419,19 +419,19 @@ In `src/middlewares/jwt_middleware.c`:
    Replace `int64_t user_id = ctx_user_id(c);` with `int64_t user_id = jwt_get_user_id(c);`.
    If `user_id < 0`, emit standard JSON-RPC 2.0 `-32001 (unauthorized)` with HTTP 200.
 
-- [ ] **Step 5: Update `tests/test_mcp_server.sh` with strict assertion**
+- [x] **Step 5: Update `tests/test_mcp_server.sh` with strict assertion**
 
 In `tests/test_mcp_server.sh:136`:
 Change regex assertion to strictly require `'"code":-32001'`.
 
-- [ ] **Step 6: Run tests to verify pass**
+- [x] **Step 6: Run tests to verify pass**
 
 Run: `cmake -B build -S . && cmake --build build --target test_mcp_unauth_protocol && ./build/test_mcp_unauth_protocol`
 Expected: PASS
 Run: `bash tests/test_mcp_server.sh`
 Expected: PASS with all assertions green
 
-- [ ] **Step 7: Commit Task 4**
+- [x] **Step 7: Commit Task 4**
 
 ```bash
 git add src/middlewares/jwt_middleware.c src/middlewares/rate_limit.c src/interfaces/http/controllers/mcp_server_controller.c tests/unit/test_mcp_unauth_protocol.c tests/test_mcp_server.sh CMakeLists.txt

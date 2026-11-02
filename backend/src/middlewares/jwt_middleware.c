@@ -55,14 +55,8 @@ static pthread_mutex_t       g_tv_cache_mutex = PTHREAD_MUTEX_INITIALIZER;
  * @note 内部函数，优先命中 5 s 进程内缓存，未命中时回退到数据库单行查询。
  */
 static int
-jwt_validate_token_version(csilk_ctx_t* c, int64_t user_id)
+jwt_validate_version_num(int64_t user_id, int jwt_version)
 {
-    csilk_json_t* root = (csilk_json_t*)csilk_get(c, "jwt_payload");
-    if (!root) {
-        return -1;
-    }
-    int jwt_version = (int)csilk_json_get_number(root, "v");
-
     int64_t now_ms;
     {
         struct timespec now;
@@ -70,15 +64,6 @@ jwt_validate_token_version(csilk_ctx_t* c, int64_t user_id)
         now_ms = (int64_t)now.tv_sec * 1000 + now.tv_nsec / 1000000;
     }
 
-    /*
-     * Fast path: only a cache entry whose stored version matches the token is
-     * trusted. A mismatch must NOT short-circuit to a rejection — the entry can
-     * predate a password change / logout that bumped users.token_version, so a
-     * token carrying a newer version is re-checked against the DB below. Without
-     * this, every freshly issued token is refused for up to
-     * TOKEN_VERSION_CACHE_TTL_SEC after a version bump (e.g. re-login right
-     * after a password change would be rejected with "Token invalidated").
-     */
     pthread_mutex_lock(&g_tv_cache_mutex);
     for (size_t i = 0; i < g_tv_cache_count; i++) {
         struct tv_cache_entry* e = &g_tv_cache[i];
@@ -109,8 +94,6 @@ jwt_validate_token_version(csilk_ctx_t* c, int64_t user_id)
         csilk_json_free(row);
     }
 
-    /* Store into cache, refreshing an existing entry for this user in place so a
-     * re-queried version does not get shadowed by a stale duplicate. */
     pthread_mutex_lock(&g_tv_cache_mutex);
     size_t slot = g_tv_cache_count;
     for (size_t i = 0; i < g_tv_cache_count; i++) {
@@ -177,8 +160,15 @@ jwt_middleware_wrapper(csilk_ctx_t* c)
         return;
     }
 
+    bool is_mcp_path = (path && strcmp(path, "/mcp") == 0);
+
     const char* auth_header = csilk_get_header(c, "Authorization");
     if (!auth_header || strncmp(auth_header, "Bearer ", 7) != 0) {
+        if (is_mcp_path) {
+            /* Pass through unauthenticated so mcp_endpoint_handler returns JSON-RPC -32001 */
+            csilk_next(c);
+            return;
+        }
         csilk_json_error(c, CSILK_STATUS_UNAUTHORIZED, "Bearer token required");
         csilk_abort(c);
         return;
@@ -192,24 +182,42 @@ jwt_middleware_wrapper(csilk_ctx_t* c)
     };
     csilk_json_t* payload = csilk_jwt_verify_options(c, token, secret, strlen(secret), &opts);
     if (!payload) {
+        if (is_mcp_path) {
+            csilk_next(c);
+            return;
+        }
         csilk_json_error(c, CSILK_STATUS_UNAUTHORIZED, "Invalid or expired token");
         csilk_abort(c);
         return;
     }
 
-    csilk_set_ex(c, "jwt_payload", payload, (void (*)(void*))csilk_json_free);
-
-    int64_t user_id = jwt_get_user_id(c);
+    int64_t user_id = (int64_t)csilk_json_get_number(payload, "sub");
+    int     jwt_v = (int)csilk_json_get_number(payload, "v");
     if (user_id < 0) {
+        csilk_json_free(payload);
+        if (is_mcp_path) {
+            csilk_next(c);
+            return;
+        }
         csilk_json_error(c, CSILK_STATUS_UNAUTHORIZED, "Invalid user in token claims");
         csilk_abort(c);
         return;
     }
-    if (jwt_validate_token_version(c, user_id) != 0) {
+
+    /* Validate token version against DB / cache BEFORE context attachment */
+    if (jwt_validate_version_num(user_id, jwt_v) != 0) {
+        csilk_json_free(payload);
+        if (is_mcp_path) {
+            /* Token revoked/invalidated on /mcp: pass through unauthenticated without context payload */
+            csilk_next(c);
+            return;
+        }
         csilk_json_error(c, CSILK_STATUS_UNAUTHORIZED, "Token invalidated — please log in again");
         csilk_abort(c);
         return;
     }
 
+    /* All checks passed: attach payload to context for authenticated requests */
+    csilk_set_ex(c, "jwt_payload", payload, (void (*)(void*))csilk_json_free);
     csilk_next(c);
 }
