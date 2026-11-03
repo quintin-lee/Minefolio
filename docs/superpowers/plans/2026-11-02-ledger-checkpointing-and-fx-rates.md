@@ -41,7 +41,7 @@
 - Consumes: csilk migration engine (`<csilk/drivers/db/migration.h>`)
 - Produces: `ledger_snapshots` table with index `idx_snapshots_lookup`, `transactions.fx_rate_to_cny` column with backfilled rates.
 
-- [ ] **Step 1: Write SQLite V020 migration script**
+- [x] **Step 1: Write SQLite V020 migration script**
 
 Create `backend/sql/migrations/sqlite/V020__ledger_snapshots_and_tx_fx.sql`:
 ```sql
@@ -75,7 +75,7 @@ UPDATE transactions SET fx_rate_to_cny = 1.0
 WHERE asset_id IN (SELECT id FROM assets WHERE currency = 'CNY');
 ```
 
-- [ ] **Step 2: Write PostgreSQL V020 migration script**
+- [x] **Step 2: Write PostgreSQL V020 migration script**
 
 Create `backend/sql/migrations/postgres/V020__ledger_snapshots_and_tx_fx.sql`:
 ```sql
@@ -107,16 +107,16 @@ UPDATE transactions SET fx_rate_to_cny = 1.0
 WHERE asset_id IN (SELECT id FROM assets WHERE currency = 'CNY');
 ```
 
-- [ ] **Step 3: Append DDL into `sql/migration.sql` and `sql/migration_postgres.sql`**
+- [x] **Step 3: Append DDL into `sql/migration.sql` and `sql/migration_postgres.sql`**
 
 Append `ledger_snapshots` table definition and `ALTER TABLE transactions ADD COLUMN fx_rate_to_cny` to both baseline schema files.
 
-- [ ] **Step 4: Run unit test `test_migration_engine` to verify migration applies clean**
+- [x] **Step 4: Run unit test `test_migration_engine` to verify migration applies clean**
 
 Run: `cmake --build backend/build --target test_migration_engine && ./backend/build/test_migration_engine`
 Expected: PASS with 100% migration verification.
 
-- [ ] **Step 5: Commit Task 1**
+- [x] **Step 5: Commit Task 1**
 
 ```bash
 git add backend/sql/migrations/ backend/sql/migration.sql backend/sql/migration_postgres.sql
@@ -142,7 +142,7 @@ git commit -m "feat(migration): 📦 deploy V020 ledger snapshots table and tx f
   - `int ledger_snapshot_save(csilk_db_pool_t* pool, int64_t user_id, int64_t asset_id, const char* snapshot_date, const ledger_position_state_t* pos, money_t balance, const char* checkpoint_date, int64_t checkpoint_id, const char* lots_json);`
   - Two-stage `ledger_rebuild_position` in `core/ledger/ledger_engine.c`.
 
-- [ ] **Step 1: Write unit test `test_ledger_rebuild_checkpoint.c` testing incremental replay from snapshot**
+- [x] **Step 1: Write unit test `test_ledger_rebuild_checkpoint.c` testing incremental replay from snapshot**
 
 Create `backend/tests/unit/test_ledger_rebuild_checkpoint.c`:
 ```c
@@ -206,7 +206,7 @@ int main(void) {
 }
 ```
 
-- [ ] **Step 2: Register `test_ledger_rebuild_checkpoint` in `CMakeLists.txt`**
+- [x] **Step 2: Register `test_ledger_rebuild_checkpoint` in `CMakeLists.txt`**
 
 Add to `backend/CMakeLists.txt`:
 ```cmake
@@ -217,16 +217,16 @@ target_link_libraries(test_ledger_rebuild_checkpoint PRIVATE csilk crypto CURL::
 add_test(NAME test_ledger_rebuild_checkpoint COMMAND test_ledger_rebuild_checkpoint)
 ```
 
-- [ ] **Step 3: Run test to verify it fails before implementation**
+- [x] **Step 3: Run test to verify it fails before implementation**
 
 Run: `cmake --build backend/build --target test_ledger_rebuild_checkpoint`
 Expected: FAIL with undefined reference to snapshot repo functions.
 
-- [ ] **Step 4: Implement snapshot repo in `ledger_snapshot_repo_impl.h/.c`**
+- [x] **Step 4: Implement snapshot repo in `ledger_snapshot_repo_impl.h/.c`**
 
 Implement `ledger_snapshot_get_latest` and `ledger_snapshot_save` using parameter queries (`?`).
 
-- [ ] **Step 5: Refactor `ledger_rebuild_position` in `core/ledger/ledger_engine.c` to use snapshots**
+- [x] **Step 5: Refactor `ledger_rebuild_position` in `core/ledger/ledger_engine.c` to use snapshots**
 
 1. Call `ledger_snapshot_get_latest(pool, user_id, asset_id, NULL, &snap)`.
 2. If snapshot exists:
@@ -236,12 +236,12 @@ Implement `ledger_snapshot_get_latest` and `ledger_snapshot_save` using paramete
    - Fall back to replaying from zero as before.
 4. Update asset materialized fields atomically within `db_tx_scope_t`.
 
-- [ ] **Step 6: Run test to verify it passes**
+- [x] **Step 6: Run test to verify it passes**
 
 Run: `cmake --build backend/build --target test_ledger_rebuild_checkpoint && ./backend/build/test_ledger_rebuild_checkpoint`
 Expected: PASS.
 
-- [ ] **Step 7: Commit Task 2**
+- [x] **Step 7: Commit Task 2**
 
 ```bash
 git add backend/src/infrastructure/repositories/ledger_snapshot_repo_impl.* backend/src/core/ledger/ledger_engine.* backend/tests/unit/test_ledger_rebuild_checkpoint.c backend/CMakeLists.txt
@@ -262,7 +262,7 @@ git commit -m "feat(ledger): ⚡ implement checkpoint snapshot repo and incremen
 - Consumes: `ledger_snapshot_repo_impl.h`, `application/transaction/usecases.c`
 - Produces: `int ledger_snapshot_invalidate_from(csilk_db_pool_t* pool, int64_t user_id, int64_t asset_id, const char* from_date);`
 
-- [ ] **Step 1: Add failing test case in `test_ledger_rebuild_checkpoint.c` for backdated mutation**
+- [x] **Step 1: Add failing test case in `test_ledger_rebuild_checkpoint.c` for backdated mutation**
 
 Add test scenario:
 1. Asset has a snapshot at `2026-01-31`.
@@ -271,12 +271,12 @@ Add test scenario:
 4. Verify `ledger_snapshot_get_latest` on or after `2026-01-18` returns no snapshot.
 5. `ledger_rebuild_position` runs and produces the correct recalculated balance incorporating the backdated transaction.
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run: `cmake --build backend/build --target test_ledger_rebuild_checkpoint && ./backend/build/test_ledger_rebuild_checkpoint`
 Expected: FAIL with undefined reference `ledger_snapshot_invalidate_from`.
 
-- [ ] **Step 3: Implement `ledger_snapshot_invalidate_from` in `ledger_snapshot_repo_impl.c`**
+- [x] **Step 3: Implement `ledger_snapshot_invalidate_from` in `ledger_snapshot_repo_impl.c`**
 
 ```c
 int ledger_snapshot_invalidate_from(csilk_db_pool_t* pool, int64_t user_id, int64_t asset_id, const char* from_date) {
@@ -291,18 +291,18 @@ int ledger_snapshot_invalidate_from(csilk_db_pool_t* pool, int64_t user_id, int6
 }
 ```
 
-- [ ] **Step 4: Hook snapshot invalidation in `application/transaction/usecases.c`**
+- [x] **Step 4: Hook snapshot invalidation in `application/transaction/usecases.c`**
 
 1. In `tx_usecase_create`: before commit, call `ledger_snapshot_invalidate_from(pool, cmd->user_id, cmd->asset_id, cmd->transaction_date)`.
 2. In `tx_usecase_update`: before commit, invalidate from `MIN(old_tx_date, new_tx_date)`.
 3. In `tx_usecase_delete`: before commit, invalidate from `old_tx_date`.
 
-- [ ] **Step 5: Run tests to verify pass**
+- [x] **Step 5: Run tests to verify pass**
 
 Run: `cmake --build backend/build --target test_ledger_rebuild_checkpoint && ./backend/build/test_ledger_rebuild_checkpoint`
 Expected: PASS.
 
-- [ ] **Step 6: Commit Task 3**
+- [x] **Step 6: Commit Task 3**
 
 ```bash
 git add backend/src/infrastructure/repositories/ledger_snapshot_repo_impl.* backend/src/application/transaction/usecases.c backend/tests/unit/test_ledger_rebuild_checkpoint.c
@@ -324,36 +324,36 @@ git commit -m "fix(ledger): 🛡️ cascade invalidate downstream snapshots on b
 - Consumes: `exchange_rate_history` table, `transactions.fx_rate_to_cny`
 - Produces: `double exchange_rate_get_historical_or_latest(csilk_db_pool_t* pool, currency_t cur, const char* sample_date);`
 
-- [ ] **Step 1: Write unit test in `test_fx_semantics.c` for historical rate lookup with fallback**
+- [x] **Step 1: Write unit test in `test_fx_semantics.c` for historical rate lookup with fallback**
 
 Add test case in `backend/tests/unit/test_fx_semantics.c` verifying:
 1. Lookup with valid historical date returns historical quote.
 2. Lookup with non-existent old date falls back to latest rate without error or NaN.
 3. CNY to CNY always returns 1.0.
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run: `cmake --build backend/build --target test_fx_semantics && ./backend/build/test_fx_semantics`
 Expected: FAIL with missing `exchange_rate_get_historical_or_latest`.
 
-- [ ] **Step 3: Implement `exchange_rate_get_historical_or_latest` in `exchange_rate_service.c`**
+- [x] **Step 3: Implement `exchange_rate_get_historical_or_latest` in `exchange_rate_service.c`**
 
 Query `exchange_rate_history` for `quote_date <= sample_date ORDER BY quote_date DESC LIMIT 1`. If found, return rate; if not found, return `exchange_rate_get_to_cny(cur)`.
 
-- [ ] **Step 4: Populate `fx_rate_to_cny` at transaction creation time in `transaction/usecases.c`**
+- [x] **Step 4: Populate `fx_rate_to_cny` at transaction creation time in `transaction/usecases.c`**
 
 When creating a transaction, look up the effective rate for `transaction_date` and insert into `transactions(..., fx_rate_to_cny)`.
 
-- [ ] **Step 5: Update `portfolio_repo_impl.c` historical trend calculation**
+- [x] **Step 5: Update `portfolio_repo_impl.c` historical trend calculation**
 
 In `portfolio_repo_impl.c` trend loop: replace `exchange_rate_get_to_cny(cur)` with `exchange_rate_get_historical_or_latest(pool, cur, sample_date)`.
 
-- [ ] **Step 6: Run `test_fx_semantics` to verify it passes**
+- [x] **Step 6: Run `test_fx_semantics` to verify it passes**
 
 Run: `cmake --build backend/build --target test_fx_semantics && ./backend/build/test_fx_semantics`
 Expected: PASS.
 
-- [ ] **Step 7: Commit Task 4**
+- [x] **Step 7: Commit Task 4**
 
 ```bash
 git add backend/src/services/market/exchange_rate_service.* backend/src/infrastructure/repositories/portfolio_repo_impl.c backend/src/application/transaction/usecases.c backend/tests/unit/test_fx_semantics.c
@@ -371,17 +371,17 @@ git commit -m "feat(portfolio): 📈 evaluate historical asset trends against po
 - Test: `backend/tests/test_mcp_server.sh`
 - Test: `backend/tests/test_ai_loop_hardening.sh`
 
-- [ ] **Step 1: Run full unit test suite**
+- [x] **Step 1: Run full unit test suite**
 
 Run: `cmake --build backend/build --target all && ctest --test-dir backend/build --output-on-failure`
 Expected: 46/46 tests passed (100%).
 
-- [ ] **Step 2: Run core integration test suite**
+- [x] **Step 2: Run core integration test suite**
 
 Run: `bash backend/tests/test_link.sh`
 Expected: PASS=174 FAIL=0.
 
-- [ ] **Step 3: Run MCP and AI Loop regression suites**
+- [x] **Step 3: Run MCP and AI Loop regression suites**
 
 Run:
 ```bash
@@ -391,7 +391,7 @@ bash backend/tests/test_ai_loop_hardening.sh
 ```
 Expected: All suites PASS.
 
-- [ ] **Step 4: Update plan checkmarks and commit**
+- [x] **Step 4: Update plan checkmarks and commit**
 
 ```bash
 git add docs/superpowers/plans/2026-11-02-ledger-checkpointing-and-fx-rates.md
