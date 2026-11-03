@@ -9,6 +9,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <time.h>
+#include <math.h>
 
 typedef struct {
     char   currency[16];
@@ -497,4 +498,53 @@ exchange_rate_history_list(const char* target_currency, int days)
     }
 
     return list;
+}
+
+double
+exchange_rate_get_historical_or_latest(csilk_db_pool_t* pool,
+                                       currency_t       cur,
+                                       const char*      sample_date)
+{
+    const char* code = currency_code(&cur);
+    if (!code || !code[0]) {
+        return 1.0;
+    }
+
+    char code_upper[16] = {0};
+    for (size_t i = 0; i < strlen(code) && i < sizeof(code_upper) - 1; i++) {
+        code_upper[i] = (char)toupper((unsigned char)code[i]);
+    }
+
+    if (strcmp(code_upper, "CNY") == 0 || strcmp(code_upper, "RMB") == 0) {
+        return 1.0;
+    }
+
+    if (pool && sample_date && sample_date[0]) {
+        char sample_day[16] = {0};
+        snprintf(sample_day, sizeof(sample_day), "%.10s", sample_date);
+
+        const char*   sql = "SELECT rate FROM exchange_rate_history "
+                            "WHERE target_currency = ? AND rate_date <= ? "
+                            "ORDER BY rate_date DESC LIMIT 1";
+        csilk_json_t* rows =
+            csilk_db_query_param_json(pool, sql, (const char*[]){code_upper, sample_day, NULL});
+        if (rows) {
+            if (csilk_json_array_size(rows) > 0) {
+                const csilk_json_t* row = csilk_json_array_get(rows, 0);
+                double              r = db_get_num(row, "rate");
+                csilk_json_free(rows);
+                if (!isnan(r) && !isinf(r) && r > 0.0) {
+                    return r;
+                }
+            } else {
+                csilk_json_free(rows);
+            }
+        }
+    }
+
+    double fallback = exchange_rate_get_to_cny(code_upper);
+    if (isnan(fallback) || isinf(fallback) || fallback <= 0.0) {
+        fallback = 1.0;
+    }
+    return fallback;
 }

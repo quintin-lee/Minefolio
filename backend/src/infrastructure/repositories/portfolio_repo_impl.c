@@ -443,7 +443,9 @@ portfolio_repo_get_trend_30d(void* pool, int64_t user_id, int64_t ledger_id)
                     val -= logs[l].delta;
                 }
             }
-            double conv_val = val * exchange_rate_get_to_cny(assets[a].currency);
+            currency_t acur = currency_from_str(assets[a].currency);
+            double     rate = exchange_rate_get_historical_or_latest(pool, acur, target_date);
+            double     conv_val = val * rate;
             if (assets[a].is_liability) {
                 day_liabs[d] += conv_val;
             } else {

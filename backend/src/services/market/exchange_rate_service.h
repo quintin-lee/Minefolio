@@ -83,3 +83,15 @@ csilk_json_t* exchange_rate_list_all(void);
  * @return csilk_json_t*  按日期升序排列的历史点数组 [ { "rate_date": "2026-08-01", "rate": 7.20 }, ... ]（调用方负责释放）。
  */
 csilk_json_t* exchange_rate_history_list(const char* target_currency, int days);
+
+/**
+ * @brief 按采样日期获取历史汇率（Point-in-Time），缺失时平滑回退至最新汇率 (RF-2)
+ *
+ * @param pool        数据库连接池指针（若为 NULL 则直接回退最新汇率）
+ * @param cur         目标币种
+ * @param sample_date 采样日期字符串（支持 "YYYY-MM-DD" 或时间戳前缀）
+ * @return double     对应折算为 CNY 的汇率；CNY/RMB 恒为 1.0；严防 0 或 NaN。
+ */
+double exchange_rate_get_historical_or_latest(csilk_db_pool_t* pool,
+                                              currency_t       cur,
+                                              const char*      sample_date);

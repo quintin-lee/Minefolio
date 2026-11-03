@@ -5,6 +5,7 @@
 #include "core/financial/currency.h"
 #include "infrastructure/repositories/transaction_repo_impl.h"
 #include "infrastructure/repositories/ledger_snapshot_repo_impl.h"
+#include "services/market/exchange_rate_service.h"
 #include "common/tx_types.h"
 #include "common/db.h"
 #include <stdio.h>
@@ -136,6 +137,19 @@ tx_usecase_create(void* pool, const create_tx_cmd_t* cmd, tx_usecase_result_t* o
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "持有份额不足或资产处理失败");
         return -1;
+    }
+
+    /* 更新交易对基准货币 (CNY) 的 Point-in-Time 历史汇率 */
+    double fx_rate = exchange_rate_get_historical_or_latest((csilk_db_pool_t*)pool, cur, cmd->date);
+    char   fx_str[32], tid_str[32];
+    snprintf(fx_str, sizeof(fx_str), "%.6f", fx_rate);
+    snprintf(tid_str, sizeof(tid_str), "%lld", (long long)ltx.id);
+    csilk_json_t* fx_res =
+        csilk_db_query_param_json((csilk_db_pool_t*)pool,
+                                  "UPDATE transactions SET fx_rate_to_cny = ? WHERE id = ?",
+                                  (const char*[]){fx_str, tid_str, NULL});
+    if (fx_res) {
+        csilk_json_free(fx_res);
     }
 
     /* 失效受影响资产在交易日期及之后的快照 */
@@ -300,6 +314,19 @@ tx_usecase_update(void* pool, const update_tx_cmd_t* cmd, tx_usecase_result_t* o
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "新交易处理失败或持有份额不足");
         return -1;
+    }
+
+    /* 更新交易对基准货币 (CNY) 的 Point-in-Time 历史汇率 */
+    double fx_rate = exchange_rate_get_historical_or_latest((csilk_db_pool_t*)pool, cur, date);
+    char   fx_str[32], tid_str[32];
+    snprintf(fx_str, sizeof(fx_str), "%.6f", fx_rate);
+    snprintf(tid_str, sizeof(tid_str), "%lld", (long long)cmd->tx_id);
+    csilk_json_t* fx_res =
+        csilk_db_query_param_json((csilk_db_pool_t*)pool,
+                                  "UPDATE transactions SET fx_rate_to_cny = ? WHERE id = ?",
+                                  (const char*[]){fx_str, tid_str, NULL});
+    if (fx_res) {
+        csilk_json_free(fx_res);
     }
 
     /* 失效受影响资产在交易日期及之后的快照 (包括原资产/原日期与新资产/新日期) */
