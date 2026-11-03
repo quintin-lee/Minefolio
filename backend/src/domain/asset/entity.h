@@ -33,6 +33,7 @@ typedef struct mf_asset {
     price_t    net_value;        /**< 最新单位净值/成交单价 */
     char       symbol[64];       /**< 行情标的代码 (如 600519, AAPL) */
     char       quote_source[32]; /**< 行情源标识 (如 stock_cn, yahoo, binance) */
+    char       cost_method[32];  /**< 成本结转方法: weighted_average, fifo */
     char       created_at[64];
     char       updated_at[64];
 } mf_asset_t;

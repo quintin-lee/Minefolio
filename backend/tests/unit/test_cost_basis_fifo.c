@@ -1,4 +1,7 @@
 #include "core/ledger/ledger_engine.h"
+#include "application/asset/usecases.h"
+#include "application/asset/commands.h"
+#include "application/asset/dtos.h"
 #include "infrastructure/repositories/transaction_lot_repo_impl.h"
 #include "infrastructure/repositories/ledger_snapshot_repo_impl.h"
 #include "infrastructure/repositories/transaction_repo_impl.h"
@@ -608,6 +611,135 @@ main(void)
     }
     printf("  ✓ Buy reversal verified.\n");
 
-    printf("\n>>> All 8 FIFO Cost Basis Accounting Scenarios PASSED! <<<\n");
+    /* -------------------------------------------------------------
+     * Scenario 9: Asset usecase create with cost_method = 'fifo'
+     * ------------------------------------------------------------- */
+    printf("Scenario 9: Create asset via usecase with cost_method = 'fifo'...\n");
+    create_asset_cmd_t create_cmd = {
+        .user_id = user_id,
+        .ledger_id = 1,
+        .category_id = 10,
+        .account_id = 1,
+        .name = "FIFO Stock C",
+        .currency = "CNY",
+        .cost_method = "fifo",
+    };
+    asset_usecase_result_t create_res = {0};
+    rc = asset_usecase_create(pool, &create_cmd, &create_res);
+    assert(rc == 0);
+    assert(create_res.code == 0);
+    int64_t asset_id_c = create_res.id;
+    assert(asset_id_c > 0);
+
+    // Verify in DB that cost_method is 'fifo'
+    char c_id_str[32];
+    snprintf(c_id_str, sizeof(c_id_str), "%lld", (long long)asset_id_c);
+    csilk_json_t* c_row = csilk_db_query_param_json(
+        pool, "SELECT cost_method FROM assets WHERE id=?", (const char*[]){c_id_str, NULL});
+    assert(c_row && csilk_json_array_size(c_row) == 1);
+    assert(strcmp(csilk_json_get_string(csilk_json_array_get(c_row, 0), "cost_method"), "fifo") == 0);
+    csilk_json_free(c_row);
+    printf("  ✓ Scenario 9 passed.\n");
+
+    /* -------------------------------------------------------------
+     * Scenario 10: Update asset cost_method to 'weighted_average' without transactions succeeds
+     * ------------------------------------------------------------- */
+    printf("Scenario 10: Update asset cost_method when no transactions exist...\n");
+    update_asset_cmd_t update_cmd = {
+        .user_id = user_id,
+        .id = asset_id_c,
+        .cost_method = "weighted_average",
+    };
+    asset_usecase_result_t update_res = {0};
+    rc = asset_usecase_update(pool, &update_cmd, &update_res);
+    assert(rc == 0);
+    assert(update_res.code == 0);
+
+    // Verify in DB that cost_method was changed to 'weighted_average'
+    c_row = csilk_db_query_param_json(
+        pool, "SELECT cost_method FROM assets WHERE id=?", (const char*[]){c_id_str, NULL});
+    assert(c_row && csilk_json_array_size(c_row) == 1);
+    assert(strcmp(csilk_json_get_string(csilk_json_array_get(c_row, 0), "cost_method"), "weighted_average") == 0);
+    csilk_json_free(c_row);
+    printf("  ✓ Scenario 10 passed.\n");
+
+    /* -------------------------------------------------------------
+     * Scenario 11: Update asset cost_method when transactions exist fails with code 1004 (RF-2)
+     * ------------------------------------------------------------- */
+    printf("Scenario 11: Update asset cost_method when transactions exist fails with 1004...\n");
+    // Add a buy transaction on asset_id_c
+    quantity_t c_qty;
+    price_t    c_price;
+    money_t    c_amt, c_fee;
+    assert(quantity_from_string("10.00000000", &c_qty) == DECIMAL_OK);
+    assert(price_from_string("100.0000", CURRENCY_CNY, &c_price) == DECIMAL_OK);
+    assert(money_from_string("1000.00", CURRENCY_CNY, &c_amt) == DECIMAL_OK);
+    assert(money_from_string("5.00", CURRENCY_CNY, &c_fee) == DECIMAL_OK);
+
+    ledger_tx_t c_tx = {
+        .id = 0,
+        .user_id = user_id,
+        .asset_id = asset_id_c,
+        .linked_asset_id = funding_asset_id,
+        .category_id = 10,
+        .type = LEDGER_TX_BUY,
+        .type_str = "buy",
+        .amount = c_amt,
+        .price = c_price,
+        .quantity = c_qty,
+        .fee = c_fee,
+        .tx_date = "2026-03-01 10:00:00",
+        .note = "Buy C 10 @ 100",
+        .parent_tx_id = 0,
+        .ledger_id = 1
+    };
+    rc = ledger_apply_tx(pool, &c_tx);
+    assert(rc == 0);
+    assert(c_tx.id > 0);
+
+    // Attempt to change cost_method from 'weighted_average' to 'fifo'
+    update_asset_cmd_t update_cmd_blocked = {
+        .user_id = user_id,
+        .id = asset_id_c,
+        .cost_method = "fifo",
+    };
+    asset_usecase_result_t update_res_blocked = {0};
+    rc = asset_usecase_update(pool, &update_cmd_blocked, &update_res_blocked);
+    assert(rc == -1);
+    assert(update_res_blocked.code == 1004);
+    assert(strcmp(update_res_blocked.message, "资产已存在交易记录，禁止变更成本结转方法") == 0);
+
+    // Verify in DB that cost_method remains 'weighted_average'
+    c_row = csilk_db_query_param_json(
+        pool, "SELECT cost_method FROM assets WHERE id=?", (const char*[]){c_id_str, NULL});
+    assert(c_row && csilk_json_array_size(c_row) == 1);
+    assert(strcmp(csilk_json_get_string(csilk_json_array_get(c_row, 0), "cost_method"), "weighted_average") == 0);
+    csilk_json_free(c_row);
+
+    // Also test: updating with same cost_method ("weighted_average") is not blocked even with transactions
+    update_asset_cmd_t update_cmd_same = {
+        .user_id = user_id,
+        .id = asset_id_c,
+        .cost_method = "weighted_average",
+    };
+    asset_usecase_result_t update_res_same = {0};
+    rc = asset_usecase_update(pool, &update_cmd_same, &update_res_same);
+    assert(rc == 0);
+    assert(update_res_same.code == 0);
+
+    // Also test: invalid cost_method rejected with 1002
+    update_asset_cmd_t update_cmd_invalid = {
+        .user_id = user_id,
+        .id = asset_id_c,
+        .cost_method = "invalid_foo",
+    };
+    asset_usecase_result_t update_res_invalid = {0};
+    rc = asset_usecase_update(pool, &update_cmd_invalid, &update_res_invalid);
+    assert(rc == -1);
+    assert(update_res_invalid.code == 1002);
+
+    printf("  ✓ Scenario 11 passed (RF-2 immutability enforced).\n");
+
+    printf("\n>>> All 11 FIFO Cost Basis Accounting Scenarios PASSED! <<<\n");
     return 0;
 }

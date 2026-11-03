@@ -29,7 +29,8 @@ int64_t       asset_insert(csilk_db_pool_t* pool,
                            double           cost_basis,
                            double           net_value,
                            const char*      symbol,
-                           const char*      quote_source);
+                           const char*      quote_source,
+                           const char*      cost_method);
 int           asset_update_basic(csilk_db_pool_t* pool,
                                  int64_t          user_id,
                                  int64_t          id,
@@ -41,6 +42,10 @@ int           asset_update_basic(csilk_db_pool_t* pool,
                                  const char*      symbol,
                                  const char*      quote_source);
 int asset_update_account(csilk_db_pool_t* pool, int64_t user_id, int64_t id, int64_t account_id);
+int asset_update_cost_method(csilk_db_pool_t* pool,
+                             int64_t          user_id,
+                             int64_t          id,
+                             const char*      cost_method);
 int asset_update_position(csilk_db_pool_t* pool,
                           int64_t          user_id,
                           int64_t          id,

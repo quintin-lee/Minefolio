@@ -71,6 +71,7 @@ api_assets_create(csilk_ctx_t* c)
         .net_value = db_get_num(body, "net_value"),
         .symbol = csilk_json_get_string(body, "symbol"),
         .quote_source = csilk_json_get_string(body, "quote_source"),
+        .cost_method = csilk_json_get_string(body, "cost_method"),
     };
 
     asset_usecase_result_t res = {0};
@@ -81,6 +82,8 @@ api_assets_create(csilk_ctx_t* c)
         respond_ok_null(c);
     } else if (res.code == 1002) {
         respond_bad_request(c, res.message);
+    } else if (res.code == 1004) {
+        respond_conflict(c, res.message);
     } else {
         respond_error(c, 500, res.message[0] ? res.message : "创建失败");
     }
@@ -130,6 +133,7 @@ api_assets_update(csilk_ctx_t* c)
         .quote_source = csilk_json_get_string(body, "quote_source"),
         .has_account_id = (csilk_json_get(body, "account_id") != NULL),
         .account_id = db_get_int(body, "account_id"),
+        .cost_method = csilk_json_get_string(body, "cost_method"),
     };
 
     asset_usecase_result_t res = {0};
@@ -142,6 +146,8 @@ api_assets_update(csilk_ctx_t* c)
         respond_not_found(c);
     } else if (res.code == 1002) {
         respond_bad_request(c, res.message);
+    } else if (res.code == 1004) {
+        respond_conflict(c, res.message);
     } else {
         respond_error(c, 500, res.message[0] ? res.message : "更新失败");
     }
