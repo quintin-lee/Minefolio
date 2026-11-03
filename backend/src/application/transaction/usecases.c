@@ -141,16 +141,21 @@ tx_usecase_create(void* pool, const create_tx_cmd_t* cmd, tx_usecase_result_t* o
 
     /* 更新交易对基准货币 (CNY) 的 Point-in-Time 历史汇率 */
     double fx_rate = exchange_rate_get_historical_or_latest((csilk_db_pool_t*)pool, cur, cmd->date);
-    char   fx_str[32], tid_str[32];
+    char   fx_str[32], tid_str[32], uid_str[32];
     snprintf(fx_str, sizeof(fx_str), "%.6f", fx_rate);
     snprintf(tid_str, sizeof(tid_str), "%lld", (long long)ltx.id);
-    csilk_json_t* fx_res =
-        csilk_db_query_param_json((csilk_db_pool_t*)pool,
-                                  "UPDATE transactions SET fx_rate_to_cny = ? WHERE id = ?",
-                                  (const char*[]){fx_str, tid_str, NULL});
-    if (fx_res) {
-        csilk_json_free(fx_res);
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)cmd->user_id);
+    csilk_json_t* fx_res = csilk_db_query_param_json(
+        (csilk_db_pool_t*)pool,
+        "UPDATE transactions SET fx_rate_to_cny = ? WHERE id = ? AND user_id = ?",
+        (const char*[]){fx_str, tid_str, uid_str, NULL});
+    if (!fx_res) {
+        db_tx_scope_rollback(pool, &scope);
+        out_res->code = 1004;
+        snprintf(out_res->message, sizeof(out_res->message), "更新交易汇率失败");
+        return -1;
     }
+    csilk_json_free(fx_res);
 
     /* 失效受影响资产在交易日期及之后的快照 */
     if (cmd->date && cmd->date[0]) {
@@ -318,16 +323,22 @@ tx_usecase_update(void* pool, const update_tx_cmd_t* cmd, tx_usecase_result_t* o
 
     /* 更新交易对基准货币 (CNY) 的 Point-in-Time 历史汇率 */
     double fx_rate = exchange_rate_get_historical_or_latest((csilk_db_pool_t*)pool, cur, date);
-    char   fx_str[32], tid_str[32];
+    char   fx_str[32], tid_str[32], uid_str[32];
     snprintf(fx_str, sizeof(fx_str), "%.6f", fx_rate);
     snprintf(tid_str, sizeof(tid_str), "%lld", (long long)cmd->tx_id);
-    csilk_json_t* fx_res =
-        csilk_db_query_param_json((csilk_db_pool_t*)pool,
-                                  "UPDATE transactions SET fx_rate_to_cny = ? WHERE id = ?",
-                                  (const char*[]){fx_str, tid_str, NULL});
-    if (fx_res) {
-        csilk_json_free(fx_res);
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)cmd->user_id);
+    csilk_json_t* fx_res = csilk_db_query_param_json(
+        (csilk_db_pool_t*)pool,
+        "UPDATE transactions SET fx_rate_to_cny = ? WHERE id = ? AND user_id = ?",
+        (const char*[]){fx_str, tid_str, uid_str, NULL});
+    if (!fx_res) {
+        db_tx_scope_rollback((csilk_db_pool_t*)pool, &scope);
+        csilk_json_free(old_rows);
+        out_res->code = 1004;
+        snprintf(out_res->message, sizeof(out_res->message), "更新交易汇率失败");
+        return -1;
     }
+    csilk_json_free(fx_res);
 
     /* 失效受影响资产在交易日期及之后的快照 (包括原资产/原日期与新资产/新日期) */
     if (old_date && old_date[0]) {

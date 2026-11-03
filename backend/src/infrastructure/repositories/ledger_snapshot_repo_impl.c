@@ -145,7 +145,7 @@ ledger_snapshot_invalidate_from(csilk_db_pool_t* pool,
                                 int64_t          asset_id,
                                 const char*      from_date)
 {
-    if (!pool || user_id <= 0 || asset_id <= 0 || !from_date || !from_date[0]) {
+    if (!pool || user_id <= 0 || asset_id <= 0 || !from_date || strlen(from_date) < 10) {
         return -1;
     }
 
