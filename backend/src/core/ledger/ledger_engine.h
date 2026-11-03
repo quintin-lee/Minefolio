@@ -66,6 +66,32 @@ int ledger_calc_sell_position(quantity_t  prev_qty,
                               money_t*    out_realized_pnl);
 
 /**
+ * @brief FIFO 先进先出法计算减仓/卖出后的新持仓份额、成本扣减额及已实现盈亏，并依次核销批次 (Lot Deduct)
+ *
+ * @param pool                数据库连接池
+ * @param user_id             用户 ID
+ * @param asset_id            资产 ID
+ * @param sell_qty            本次卖出份额
+ * @param sell_price          本次卖出成交单价
+ * @param sell_fee            本次卖出手续费
+ * @param out_qty             输出减仓后剩余总份额
+ * @param out_cost            输出减仓后剩余总成本
+ * @param out_cost_reduction  输出扣减的持仓成本
+ * @param out_realized_pnl    输出本次卖出实现的净盈亏额
+ * @return 0 成功；<0 错误（如持仓不足）
+ */
+int ledger_calc_sell_position_fifo(csilk_db_pool_t* pool,
+                                   int64_t          user_id,
+                                   int64_t          asset_id,
+                                   quantity_t       sell_qty,
+                                   price_t          sell_price,
+                                   money_t          sell_fee,
+                                   quantity_t*      out_qty,
+                                   money_t*         out_cost,
+                                   money_t*         out_cost_reduction,
+                                   money_t*         out_realized_pnl);
+
+/**
  * @brief 计算浮动盈亏 (Unrealized PnL = current_market_value - cost_basis)
  */
 int ledger_calc_unrealized_pnl(quantity_t qty,
