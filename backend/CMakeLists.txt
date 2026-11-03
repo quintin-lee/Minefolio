@@ -161,6 +161,7 @@ add_financial_unit_test(test_fx tests/unit/test_fx.c)
 add_financial_unit_test(test_ledger_math tests/unit/test_ledger_math.c)
 add_financial_unit_test(test_ledger_engine tests/unit/test_ledger_engine.c)
 add_financial_unit_test(test_ledger_rebuild_checkpoint tests/unit/test_ledger_rebuild_checkpoint.c)
+add_financial_unit_test(test_transaction_lots tests/unit/test_transaction_lots.c)
 
 add_executable(test_ai_tools tests/unit/test_ai_tools.c ${LIB_SOURCES})
 target_include_directories(test_ai_tools PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
