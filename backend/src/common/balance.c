@@ -200,7 +200,8 @@ apply_position_fc(csilk_db_pool_t* pool,
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     csilk_json_t* pos = csilk_db_query_param_json(
         pool,
-        "SELECT a.quantity, a.cost_basis, a.net_value, a.current_value, a.currency, a.cost_method, c.asset_type "
+        "SELECT a.quantity, a.cost_basis, a.net_value, a.current_value, a.currency, a.cost_method, "
+        "c.asset_type "
         "FROM assets a JOIN categories c ON a.category_id=c.id WHERE a.id=? AND a.user_id=?",
         (const char*[]){aid_str, uid_str, NULL});
     if (!pos || csilk_json_array_size(pos) == 0) {
@@ -250,20 +251,33 @@ apply_position_fc(csilk_db_pool_t* pool,
         new_net = price;
     } else if (strcmp(type, "sell") == 0) {
         const char* cost_method = csilk_json_get_string(pr, "cost_method");
-        money_t cost_red, trade_pnl;
+        money_t     cost_red, trade_pnl;
         if (cost_method && strcmp(cost_method, "fifo") == 0) {
-            if (ledger_calc_sell_position_fifo(
-                    pool, user_id, asset_id, qty, price, fee, &new_qty, &new_cost, &cost_red, &trade_pnl) !=
-                0) {
+            if (ledger_calc_sell_position_fifo(pool,
+                                               user_id,
+                                               asset_id,
+                                               qty,
+                                               price,
+                                               fee,
+                                               &new_qty,
+                                               &new_cost,
+                                               &cost_red,
+                                               &trade_pnl) != 0) {
                 csilk_json_free(pos);
                 CSILK_LOG_W("apply_position: fifo sell calculation failed asset_id=%lld",
                             (long long)asset_id);
                 return -1;
             }
         } else {
-            if (ledger_calc_sell_position(
-                    old_qty, old_cost, qty, price, fee, &new_qty, &new_cost, &cost_red, &trade_pnl) !=
-                0) {
+            if (ledger_calc_sell_position(old_qty,
+                                          old_cost,
+                                          qty,
+                                          price,
+                                          fee,
+                                          &new_qty,
+                                          &new_cost,
+                                          &cost_red,
+                                          &trade_pnl) != 0) {
                 csilk_json_free(pos);
                 CSILK_LOG_W("apply_position: sell calculation failed asset_id=%lld",
                             (long long)asset_id);
@@ -369,7 +383,8 @@ rollback_position_fc(csilk_db_pool_t* pool,
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     csilk_json_t* pos = csilk_db_query_param_json(
         pool,
-        "SELECT a.quantity, a.cost_basis, a.net_value, a.current_value, a.currency, a.cost_method, c.asset_type "
+        "SELECT a.quantity, a.cost_basis, a.net_value, a.current_value, a.currency, a.cost_method, "
+        "c.asset_type "
         "FROM assets a JOIN categories c ON a.category_id=c.id WHERE a.id=? AND a.user_id=?",
         (const char*[]){aid_str, uid_str, NULL});
     if (!pos || csilk_json_array_size(pos) == 0) {

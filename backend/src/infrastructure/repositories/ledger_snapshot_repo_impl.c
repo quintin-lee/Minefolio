@@ -103,10 +103,10 @@ ledger_snapshot_save(csilk_db_pool_t*               pool,
 
     char* auto_lots = NULL;
     if (!lots_json) {
-        csilk_json_t* cm_rows = csilk_db_query_param_json(
-            pool,
-            "SELECT cost_method FROM assets WHERE id=? AND user_id=?",
-            (const char*[]){ast_str, uid_str, NULL});
+        csilk_json_t* cm_rows =
+            csilk_db_query_param_json(pool,
+                                      "SELECT cost_method FROM assets WHERE id=? AND user_id=?",
+                                      (const char*[]){ast_str, uid_str, NULL});
         if (cm_rows && csilk_json_array_size(cm_rows) > 0) {
             const char* cm = csilk_json_get_string(csilk_json_array_get(cm_rows, 0), "cost_method");
             if (cm && strcmp(cm, "fifo") == 0) {

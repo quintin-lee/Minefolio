@@ -1,6 +1,7 @@
 #include "core/ledger/ledger_engine.h"
 #include "infrastructure/repositories/transaction_lot_repo_impl.h"
 #include "infrastructure/repositories/ledger_snapshot_repo_impl.h"
+#include "infrastructure/repositories/transaction_repo_impl.h"
 #include "common/db.h"
 #include "core/financial/quantity.h"
 #include "core/financial/price.h"
@@ -420,6 +421,181 @@ main(void)
     printf("  ✓ Scenario 6 passed.\n");
 
     /* -------------------------------------------------------------
+     * Scenario 7: FIFO sell transaction reversal / usecase delete.
+     * Verify ledger_reverse_tx restores open lots correctly,
+     * DOES NOT delete the transaction row from transactions, and subsequent
+     * tx_delete succeeds.
+     * ------------------------------------------------------------- */
+    printf("Scenario 7: Testing FIFO sell transaction reversal & tx_delete...\n");
+    char s2_id_str[32];
+    snprintf(s2_id_str, sizeof(s2_id_str), "%lld", (long long)sell2_tx.id);
+
+    // Verify transaction exists in transactions table before reversal
+    csilk_json_t* tx_chk = csilk_db_query_param_json(
+        pool, "SELECT id FROM transactions WHERE id=? AND user_id=?",
+        (const char*[]){s2_id_str, "1", NULL});
+    assert(tx_chk && csilk_json_array_size(tx_chk) == 1);
+    csilk_json_free(tx_chk);
+
+    // Reverse sell2_tx
+    rc = ledger_reverse_tx(pool, user_id, sell2_tx.id);
+    assert(rc == 0);
+
+    // 1. Transaction row MUST STILL EXIST in transactions table
+    tx_chk = csilk_db_query_param_json(
+        pool, "SELECT id FROM transactions WHERE id=? AND user_id=?",
+        (const char*[]){s2_id_str, "1", NULL});
+    assert(tx_chk && csilk_json_array_size(tx_chk) == 1);
+    csilk_json_free(tx_chk);
+
+    // 2. Asset 101 state restored: 150 shares, 2500 cost basis
+    a_rows = csilk_db_query_param_json(
+        pool, "SELECT quantity, cost_basis FROM assets WHERE id=?", (const char*[]){"101", NULL});
+    assert(a_rows && csilk_json_array_size(a_rows) == 1);
+    assert(db_get_num(csilk_json_array_get(a_rows, 0), "quantity") == 150.0);
+    assert(db_get_num(csilk_json_array_get(a_rows, 0), "cost_basis") == 2500.0);
+    csilk_json_free(a_rows);
+
+    // 3. Open lots restored: Lot 1 (50 shares @ 10.0), Lot 2 (100 shares @ 20.0)
+    lots = tx_lots_get_open(pool, user_id, asset_id_a);
+    assert(lots && csilk_json_array_size(lots) == 2);
+    l1 = csilk_json_array_get(lots, 0);
+    l2 = csilk_json_array_get(lots, 1);
+    assert(db_get_num(l1, "remaining_quantity") == 50.0);
+    assert(db_get_num(l1, "cost_per_unit") == 10.0);
+    assert(db_get_num(l2, "remaining_quantity") == 100.0);
+    assert(db_get_num(l2, "cost_per_unit") == 20.0);
+    csilk_json_free(lots);
+
+    // 4. Subsequent tx_delete succeeds (as performed by tx_usecase_delete)
+    int del_ok = tx_delete(pool, user_id, sell2_tx.id);
+    assert(del_ok == 1);
+
+    // Verify transaction row is now deleted
+    tx_chk = csilk_db_query_param_json(
+        pool, "SELECT id FROM transactions WHERE id=? AND user_id=?",
+        (const char*[]){s2_id_str, "1", NULL});
+    assert(!tx_chk || csilk_json_array_size(tx_chk) == 0);
+    if (tx_chk) {
+        csilk_json_free(tx_chk);
+    }
+    printf("  ✓ Scenario 7 passed.\n");
+
+    /* -------------------------------------------------------------
+     * Scenario 8: FIFO sell transaction update.
+     * Verify ledger_reverse_tx followed by ledger_apply_tx with modified
+     * sell quantity succeeds and lot states match new sell quantity.
+     * ------------------------------------------------------------- */
+    printf("Scenario 8: Testing FIFO sell transaction update...\n");
+    // Asset 101 currently has 150 shares (50 in Lot 1 @ 10, 100 in Lot 2 @ 20).
+    // Create a new sell transaction sell3_tx: Sell 40 shares @ 30 CNY.
+    money_t s3_amt, s3_fee;
+    price_t s3_price;
+    quantity_t s3_qty;
+    assert(money_from_string("1200.00", CURRENCY_CNY, &s3_amt) == DECIMAL_OK);
+    assert(money_from_string("0.00", CURRENCY_CNY, &s3_fee) == DECIMAL_OK);
+    assert(price_from_string("30.00", CURRENCY_CNY, &s3_price) == DECIMAL_OK);
+    assert(quantity_from_string("40.00000000", &s3_qty) == DECIMAL_OK);
+
+    ledger_tx_t sell3_tx = {
+        .id = 0,
+        .user_id = user_id,
+        .asset_id = asset_id_a,
+        .linked_asset_id = funding_asset_id,
+        .category_id = 10,
+        .type = LEDGER_TX_SELL,
+        .type_str = "sell",
+        .amount = s3_amt,
+        .price = s3_price,
+        .quantity = s3_qty,
+        .fee = s3_fee,
+        .tx_date = "2026-02-10 10:00:00",
+        .note = "Sell 40 @ 30",
+        .parent_tx_id = 0,
+        .ledger_id = 1
+    };
+    rc = ledger_apply_tx(pool, &sell3_tx);
+    assert(rc == 0);
+    assert(sell3_tx.id > 0);
+
+    // Verify Asset 101 state: 110 shares, 2100 cost basis (10 @ 10 in Lot 1, 100 @ 20 in Lot 2)
+    a_rows = csilk_db_query_param_json(
+        pool, "SELECT quantity, cost_basis FROM assets WHERE id=?", (const char*[]){"101", NULL});
+    assert(a_rows && csilk_json_array_size(a_rows) == 1);
+    assert(db_get_num(csilk_json_array_get(a_rows, 0), "quantity") == 110.0);
+    assert(db_get_num(csilk_json_array_get(a_rows, 0), "cost_basis") == 2100.0);
+    csilk_json_free(a_rows);
+
+    lots = tx_lots_get_open(pool, user_id, asset_id_a);
+    assert(lots && csilk_json_array_size(lots) == 2);
+    l1 = csilk_json_array_get(lots, 0);
+    l2 = csilk_json_array_get(lots, 1);
+    assert(db_get_num(l1, "remaining_quantity") == 10.0);
+    assert(db_get_num(l2, "remaining_quantity") == 100.0);
+    csilk_json_free(lots);
+
+    // Now execute UPDATE flow (as in tx_usecase_update):
+    // 1. ledger_reverse_tx on sell3_tx
+    rc = ledger_reverse_tx(pool, user_id, sell3_tx.id);
+    assert(rc == 0);
+
+    char s3_id_str[32];
+    snprintf(s3_id_str, sizeof(s3_id_str), "%lld", (long long)sell3_tx.id);
+
+    // Verify transaction row was preserved (NOT deleted)
+    tx_chk = csilk_db_query_param_json(
+        pool, "SELECT id FROM transactions WHERE id=? AND user_id=?",
+        (const char*[]){s3_id_str, "1", NULL});
+    assert(tx_chk && csilk_json_array_size(tx_chk) == 1);
+    csilk_json_free(tx_chk);
+
+    // Verify lots were restored to pre-sell3 state: 50 in Lot 1, 100 in Lot 2
+    lots = tx_lots_get_open(pool, user_id, asset_id_a);
+    assert(lots && csilk_json_array_size(lots) == 2);
+    l1 = csilk_json_array_get(lots, 0);
+    l2 = csilk_json_array_get(lots, 1);
+    assert(db_get_num(l1, "remaining_quantity") == 50.0);
+    assert(db_get_num(l2, "remaining_quantity") == 100.0);
+    csilk_json_free(lots);
+
+    // 2. Modify sell3_tx to sell 80 shares @ 30 CNY (crosses Lot 1 and consumes 30 from Lot 2)
+    assert(quantity_from_string("80.00000000", &sell3_tx.quantity) == DECIMAL_OK);
+    assert(money_from_string("2400.00", CURRENCY_CNY, &sell3_tx.amount) == DECIMAL_OK);
+    sell3_tx.note = "Sell 80 @ 30 (Updated)";
+
+    // 3. Re-apply transaction via ledger_apply_tx with sell3_tx.id preserved
+    rc = ledger_apply_tx(pool, &sell3_tx);
+    assert(rc == 0);
+
+    // 4. Verify new lot states:
+    // Lot 1 (50 shares) fully depleted (closed, 0 remaining)
+    // Lot 2 (100 shares): 30 shares consumed, 70 remaining @ 20.0 CNY
+    // Asset 101 totals: 70 shares, 1400.0 CNY cost basis
+    a_rows = csilk_db_query_param_json(
+        pool, "SELECT quantity, cost_basis FROM assets WHERE id=?", (const char*[]){"101", NULL});
+    assert(a_rows && csilk_json_array_size(a_rows) == 1);
+    assert(db_get_num(csilk_json_array_get(a_rows, 0), "quantity") == 70.0);
+    assert(db_get_num(csilk_json_array_get(a_rows, 0), "cost_basis") == 1400.0);
+    csilk_json_free(a_rows);
+
+    lots = tx_lots_get_open(pool, user_id, asset_id_a);
+    assert(lots && csilk_json_array_size(lots) == 1);
+    l2 = csilk_json_array_get(lots, 0);
+    assert(db_get_num(l2, "remaining_quantity") == 70.0);
+    assert(db_get_num(l2, "cost_per_unit") == 20.0);
+    csilk_json_free(lots);
+
+    all_lots = csilk_db_query_param_json(
+        pool, "SELECT remaining_quantity, status FROM transaction_lots WHERE asset_id=? ORDER BY id ASC", (const char*[]){"101", NULL});
+    assert(all_lots && csilk_json_array_size(all_lots) == 2);
+    assert(db_get_num(csilk_json_array_get(all_lots, 0), "remaining_quantity") == 0.0);
+    assert(strcmp(csilk_json_get_string(csilk_json_array_get(all_lots, 0), "status"), "closed") == 0);
+    assert(db_get_num(csilk_json_array_get(all_lots, 1), "remaining_quantity") == 70.0);
+    assert(strcmp(csilk_json_get_string(csilk_json_array_get(all_lots, 1), "status"), "open") == 0);
+    csilk_json_free(all_lots);
+    printf("  ✓ Scenario 8 passed.\n");
+
+    /* -------------------------------------------------------------
      * Extra Test: Reversal of Buy deletes its lot
      * ------------------------------------------------------------- */
     printf("Extra: Testing Buy reversal deletes lot on Asset 102...\n");
@@ -432,6 +608,6 @@ main(void)
     }
     printf("  ✓ Buy reversal verified.\n");
 
-    printf("\n>>> All 6 FIFO Cost Basis Accounting Scenarios PASSED! <<<\n");
+    printf("\n>>> All 8 FIFO Cost Basis Accounting Scenarios PASSED! <<<\n");
     return 0;
 }
