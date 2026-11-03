@@ -61,7 +61,7 @@ test_discovery_and_ordering(void)
     csilk_migration_item_t* items = NULL;
     int                     count = 0;
     assert(csilk_migration_discover(engine, &items, &count) == 0);
-    assert(count >= 20);
+    assert(count >= 21);
 
     assert(items[0].version == 1);
     assert(strcmp(items[0].name, "initial_auth_and_system") == 0);
@@ -125,7 +125,7 @@ test_fresh_apply_and_status(void)
     csilk_migration_item_t* items = NULL;
     int                     count = 0;
     assert(csilk_migration_status(engine, &items, &count) == 0);
-    assert(count >= 20);
+    assert(count >= 21);
     for (int i = 0; i < count; i++) {
         assert(!items[i].is_applied);
         assert(items[i].execution_time_ms == 0);
@@ -147,7 +147,7 @@ test_fresh_apply_and_status(void)
 
     /* Verify core tables were created */
     const char* check_tables[] = {
-        "users", "categories", "assets", "transactions", "ledgers", "schema_migrations", "ledger_snapshots", NULL
+        "users", "categories", "assets", "transactions", "ledgers", "schema_migrations", "ledger_snapshots", "transaction_lots", NULL
     };
     for (int i = 0; check_tables[i] != NULL; i++) {
         const char* params[] = {check_tables[i], NULL};
@@ -161,6 +161,11 @@ test_fresh_apply_and_status(void)
         pool, "SELECT fx_rate_to_cny FROM transactions LIMIT 1;");
     assert(fx_col_res != NULL);
     csilk_json_free(fx_col_res);
+
+    csilk_json_t* cost_col_res = csilk_db_query_json(
+        pool, "SELECT cost_method FROM assets LIMIT 1;");
+    assert(cost_col_res != NULL);
+    csilk_json_free(cost_col_res);
 
     /* Idempotent second apply */
     int second_applied = 0;
@@ -188,7 +193,7 @@ test_tampering_detection(void)
 
     int applied = 0;
     assert(csilk_migration_apply(engine, &applied) == 0);
-    assert(applied >= 20);
+    assert(applied >= 21);
     assert(csilk_migration_validate(engine) == 0);
 
     /* Tamper with checksum of V001 in schema_migrations */
@@ -263,7 +268,7 @@ test_auto_baseline_existing_database(void)
     csilk_migration_item_t* items = NULL;
     int                     count = 0;
     assert(csilk_migration_status(engine, &items, &count) == 0);
-    assert(count >= 20);
+    assert(count >= 21);
     for (int i = 0; i < count; i++) {
         if (items[i].version <= 7) {
             assert(items[i].is_applied == true);
@@ -318,7 +323,7 @@ test_postgres_migration_dialect(void)
     csilk_migration_item_t* items = NULL;
     int                     count = 0;
     assert(csilk_migration_discover(engine, &items, &count) == 0);
-    assert(count >= 20);
+    assert(count >= 21);
     assert(strstr(items[0].filepath, "postgres") != NULL);
 
     free(items);

@@ -79,6 +79,11 @@ asset_usecase_create(void* pool, const create_asset_cmd_t* cmd, asset_usecase_re
     if (cmd->quote_source) {
         snprintf(asset.quote_source, sizeof(asset.quote_source), "%s", cmd->quote_source);
     }
+    if (cmd->cost_method && cmd->cost_method[0]) {
+        snprintf(asset.cost_method, sizeof(asset.cost_method), "%s", cmd->cost_method);
+    } else {
+        snprintf(asset.cost_method, sizeof(asset.cost_method), "weighted_average");
+    }
 
     money_from_double(cmd->current_value, cur, &asset.current_value);
     quantity_from_double(cmd->quantity, 4, &asset.quantity);
@@ -123,7 +128,8 @@ asset_usecase_create(void* pool, const create_asset_cmd_t* cmd, asset_usecase_re
                               money_to_double(asset.cost_basis),
                               price_to_double(asset.net_value),
                               asset.symbol,
-                              asset.quote_source);
+                              asset.quote_source,
+                              asset.cost_method);
     if (id <= 0) {
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "创建失败");
@@ -178,6 +184,55 @@ asset_usecase_update(void* pool, const update_asset_cmd_t* cmd, asset_usecase_re
     const char* quote_source =
         cmd->quote_source ? cmd->quote_source : csilk_json_get_string(cr, "quote_source");
     const char* asset_type = csilk_json_get_string(cr, "asset_type");
+
+    /* RF-2: 成本结转方法变更检查与防篡改规则 */
+    if (cmd->cost_method && cmd->cost_method[0] != '\0') {
+        if (!mf_asset_rule_is_valid_cost_method(cmd->cost_method)) {
+            csilk_json_free(cur);
+            out_res->code = 1002;
+            snprintf(out_res->message,
+                     sizeof(out_res->message),
+                     "无效的成本结转方法: 仅支持 weighted_average 或 fifo");
+            return -1;
+        }
+
+        const char* cur_method = csilk_json_get_string(cr, "cost_method");
+        if (!cur_method || cur_method[0] == '\0') {
+            cur_method = "weighted_average";
+        }
+
+        if (strcmp(cmd->cost_method, cur_method) != 0) {
+            char uid_str[32], aid_str[32];
+            snprintf(uid_str, sizeof(uid_str), "%lld", (long long)cmd->user_id);
+            snprintf(aid_str, sizeof(aid_str), "%lld", (long long)cmd->id);
+            csilk_json_t* tx_check = csilk_db_query_param_json(
+                db_pool,
+                "SELECT COUNT(*) as cnt FROM transactions WHERE user_id=? AND asset_id=?",
+                (const char*[]){uid_str, aid_str, NULL});
+            int64_t tx_cnt = 0;
+            if (tx_check && csilk_json_array_size(tx_check) > 0) {
+                tx_cnt = db_get_int(csilk_json_array_get(tx_check, 0), "cnt");
+            }
+            if (tx_check) {
+                csilk_json_free(tx_check);
+            }
+            if (tx_cnt > 0) {
+                csilk_json_free(cur);
+                out_res->code = 1004;
+                snprintf(out_res->message,
+                         sizeof(out_res->message),
+                         "资产已存在交易记录，禁止变更成本结转方法");
+                return -1;
+            }
+
+            if (asset_update_cost_method(db_pool, cmd->user_id, cmd->id, cmd->cost_method) != 0) {
+                csilk_json_free(cur);
+                out_res->code = 1004;
+                snprintf(out_res->message, sizeof(out_res->message), "更新成本结转方法失败");
+                return -1;
+            }
+        }
+    }
 
     int is_investment = mf_asset_is_investment_type_str(asset_type);
 
@@ -319,12 +374,14 @@ asset_usecase_update(void* pool, const update_asset_cmd_t* cmd, asset_usecase_re
     }
 
     /* 普通资产更新 */
+    double upd_current_val =
+        (cmd->current_value != 0.0) ? cmd->current_value : db_get_num(cr, "current_value");
     if (!asset_update_basic(db_pool,
                             cmd->user_id,
                             cmd->id,
                             name,
                             account_no,
-                            cmd->current_value,
+                            upd_current_val,
                             currency,
                             note,
                             symbol,

@@ -4,6 +4,18 @@
 #include "domain/asset/entity.h"
 
 /**
+ * @brief 判断成本结转方法是否合法 (空/"weighted_average"/"fifo")
+ */
+static inline bool
+mf_asset_rule_is_valid_cost_method(const char* method)
+{
+    if (!method || method[0] == '\0') {
+        return true;
+    }
+    return (strcmp(method, "weighted_average") == 0 || strcmp(method, "fifo") == 0);
+}
+
+/**
  * @brief 校验资产实体的领域业务规则
  */
 int mf_asset_rule_validate(const mf_asset_t* asset, char* err_buf, size_t err_len);

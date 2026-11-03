@@ -63,9 +63,43 @@ static void test_asset_investment_derivation_and_pnl(void) {
     printf("PASS: test_asset_investment_derivation_and_pnl\n");
 }
 
+static void test_asset_cost_method_validation(void) {
+    mf_asset_t asset = {0};
+    asset.id = 1;
+    asset.user_id = 10;
+    asset.category_id = 5;
+    snprintf(asset.name, sizeof(asset.name), "贵州茅台");
+    snprintf(asset.asset_type, sizeof(asset.asset_type), "stock");
+
+    // Case 1: Empty cost_method is valid (defaults to weighted_average)
+    char err[256] = {0};
+    assert(mf_asset_rule_validate(&asset, err, sizeof(err)) == 0);
+
+    // Case 2: "weighted_average" is valid
+    snprintf(asset.cost_method, sizeof(asset.cost_method), "weighted_average");
+    assert(mf_asset_rule_validate(&asset, err, sizeof(err)) == 0);
+
+    // Case 3: "fifo" is valid
+    snprintf(asset.cost_method, sizeof(asset.cost_method), "fifo");
+    assert(mf_asset_rule_validate(&asset, err, sizeof(err)) == 0);
+
+    // Case 4: Invalid cost method (e.g. "lifo", "invalid_method") rejected
+    snprintf(asset.cost_method, sizeof(asset.cost_method), "lifo");
+    assert(mf_asset_rule_validate(&asset, err, sizeof(err)) != 0);
+    assert(strlen(err) > 0);
+
+    snprintf(asset.cost_method, sizeof(asset.cost_method), "invalid_method");
+    err[0] = '\0';
+    assert(mf_asset_rule_validate(&asset, err, sizeof(err)) != 0);
+    assert(strlen(err) > 0);
+
+    printf("PASS: test_asset_cost_method_validation\n");
+}
+
 int main(void) {
     test_asset_entity_and_predicates();
     test_asset_investment_derivation_and_pnl();
+    test_asset_cost_method_validation();
     printf("All domain asset tests passed successfully!\n");
     return 0;
 }

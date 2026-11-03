@@ -55,7 +55,7 @@ asset_list(csilk_db_pool_t* pool,
                         "a.current_value,a.currency,a.note,a.created_at,a.updated_at,"
                         "a.account_id,ac.name as account_name,ac.institution,"
                         "c.name as category_name,c.asset_type,"
-                        "a.quantity,a.cost_basis,a.net_value "
+                        "a.quantity,a.cost_basis,a.net_value,a.cost_method "
                         "FROM assets a "
                         "LEFT JOIN categories c ON a.category_id=c.id "
                         "LEFT JOIN accounts ac ON a.account_id=ac.id "
@@ -108,7 +108,8 @@ asset_get(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
         "TEXT) as last_sync_at,"
         "a.current_value,a.currency,a.note,a.created_at,a."
         "updated_at,a.account_id,ac.name AS account_name,ac.institution,"
-        "c.name as category_name,c.asset_type,a.quantity,a.cost_basis,a.net_value FROM "
+        "c.name as category_name,c.asset_type,a.quantity,a.cost_basis,a.net_value,a.cost_method "
+        "FROM "
         "assets a LEFT JOIN categories c ON a.category_id=c.id "
         "LEFT JOIN accounts ac ON a.account_id=ac.id WHERE a.id=? AND a.user_id=?",
         (const char*[]){idstr, uid, NULL});
@@ -128,7 +129,8 @@ asset_insert(csilk_db_pool_t* pool,
              double           cost_basis,
              double           net_value,
              const char*      symbol,
-             const char*      quote_source)
+             const char*      quote_source,
+             const char*      cost_method)
 {
     char uid[32], cat[32], val[64], qty[64], cb[64], nv[64], acct[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
@@ -138,9 +140,11 @@ asset_insert(csilk_db_pool_t* pool,
     snprintf(qty, sizeof(qty), "%.4f", quantity);
     snprintf(cb, sizeof(cb), "%.4f", cost_basis);
     snprintf(nv, sizeof(nv), "%.4f", net_value);
+    const char* method = (cost_method && cost_method[0]) ? cost_method : "weighted_average";
+
     /* account_id > 0：真实账户；account_id <= 0 时写 NULL（避免 FK RESTRICT 违规） */
     char        ins_sql[512];
-    const char* ins_params[16];
+    const char* ins_params[20];
     int         nparams = 0;
     ins_params[nparams++] = uid;
     ins_params[nparams++] = cat;
@@ -154,6 +158,7 @@ asset_insert(csilk_db_pool_t* pool,
     ins_params[nparams++] = nv;
     ins_params[nparams++] = symbol ? symbol : "";
     ins_params[nparams++] = quote_source ? quote_source : "";
+    ins_params[nparams++] = method;
     ins_params[nparams++] = cat;
     ins_params[nparams++] = uid;
     if (account_id > 0) {
@@ -165,8 +170,8 @@ asset_insert(csilk_db_pool_t* pool,
              sizeof(ins_sql),
              "INSERT INTO assets "
              "(user_id,category_id,name,account_no,current_value,currency,note,quantity,cost_"
-             "basis,net_value,symbol,quote_source,ledger_id,account_id) VALUES "
-             "(?,?,?,?,?,?,?,?,?,?,?,?,"
+             "basis,net_value,symbol,quote_source,cost_method,ledger_id,account_id) VALUES "
+             "(?,?,?,?,?,?,?,?,?,?,?,?,?,"
              "COALESCE((SELECT ledger_id FROM categories WHERE id=?), (SELECT id FROM ledgers "
              "WHERE owner_id=? AND is_default=1)),%s) RETURNING id",
              account_id > 0 ? "?" : "NULL");
@@ -303,6 +308,29 @@ asset_update_account(csilk_db_pool_t* pool, int64_t user_id, int64_t id, int64_t
 }
 
 int
+asset_update_cost_method(csilk_db_pool_t* pool,
+                         int64_t          user_id,
+                         int64_t          id,
+                         const char*      cost_method)
+{
+    char uid[32], idstr[32];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    snprintf(idstr, sizeof(idstr), "%lld", (long long)id);
+    const char* method = (cost_method && cost_method[0]) ? cost_method : "weighted_average";
+
+    csilk_json_t* res =
+        csilk_db_query_param_json(pool,
+                                  "UPDATE assets SET cost_method=?, updated_at=CURRENT_TIMESTAMP "
+                                  "WHERE id=? AND user_id=? RETURNING id",
+                                  (const char*[]){method, idstr, uid, NULL});
+    int ok = res && csilk_json_array_size(res) > 0;
+    if (res) {
+        csilk_json_free(res);
+    }
+    return ok ? 0 : 1;
+}
+
+int
 asset_update_market_quote(csilk_db_pool_t* pool,
                           int64_t          user_id,
                           int64_t          asset_id,
@@ -355,7 +383,7 @@ asset_list_for_sync(csilk_db_pool_t* pool, int64_t user_id)
             "SELECT id, user_id, category_id, name, symbol, quote_source, "
             "COALESCE(CAST(net_value AS REAL), 0.0) as net_value, "
             "COALESCE(CAST(quantity AS REAL), 0.0) as quantity, "
-            "currency "
+            "currency, cost_method "
             "FROM assets WHERE user_id=? AND symbol IS NOT NULL AND symbol != ''",
             (const char*[]){uid, NULL});
     } else {
@@ -363,7 +391,7 @@ asset_list_for_sync(csilk_db_pool_t* pool, int64_t user_id)
                                    "SELECT id, user_id, category_id, name, symbol, quote_source, "
                                    "COALESCE(CAST(net_value AS REAL), 0.0) as net_value, "
                                    "COALESCE(CAST(quantity AS REAL), 0.0) as quantity, "
-                                   "currency "
+                                   "currency, cost_method "
                                    "FROM assets WHERE symbol IS NOT NULL AND symbol != ''");
     }
 }
@@ -598,6 +626,12 @@ mf_asset_repo_find_by_id(void* db_pool, int64_t user_id, int64_t id, mf_asset_t*
         double nv_d = db_get_num(r, "net_value");
         price_from_double(nv_d, 4, out_asset->currency, &out_asset->net_value);
     }
+    s = csilk_json_get_string(r, "cost_method");
+    if (s && s[0]) {
+        snprintf(out_asset->cost_method, sizeof(out_asset->cost_method), "%s", s);
+    } else {
+        snprintf(out_asset->cost_method, sizeof(out_asset->cost_method), "weighted_average");
+    }
     csilk_json_free(res);
     return 0;
 }
@@ -621,7 +655,8 @@ mf_asset_repo_save(void* db_pool, const mf_asset_t* asset, int64_t* out_id)
                               money_to_double(asset->cost_basis),
                               price_to_double(asset->net_value),
                               asset->symbol,
-                              asset->quote_source);
+                              asset->quote_source,
+                              asset->cost_method);
     if (id <= 0) {
         return -1;
     }

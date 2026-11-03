@@ -44,6 +44,13 @@ mf_asset_rule_validate(const mf_asset_t* asset, char* err_buf, size_t err_len)
         return -1;
     }
 
+    if (!mf_asset_rule_is_valid_cost_method(asset->cost_method)) {
+        if (err_buf && err_len) {
+            snprintf(err_buf, err_len, "Invalid cost_method: must be weighted_average or fifo");
+        }
+        return -1;
+    }
+
     return 0;
 }
 

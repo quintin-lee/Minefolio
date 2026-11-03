@@ -1,6 +1,8 @@
 #include "infrastructure/repositories/ledger_snapshot_repo_impl.h"
+#include "infrastructure/repositories/transaction_lot_repo_impl.h"
 #include "common/db.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 int
@@ -98,7 +100,24 @@ ledger_snapshot_save(csilk_db_pool_t*               pool,
 
     const char* ckpt_date =
         (checkpoint_date && checkpoint_date[0]) ? checkpoint_date : snapshot_date;
-    const char* lots_str = lots_json ? lots_json : "";
+
+    char* auto_lots = NULL;
+    if (!lots_json) {
+        csilk_json_t* cm_rows =
+            csilk_db_query_param_json(pool,
+                                      "SELECT cost_method FROM assets WHERE id=? AND user_id=?",
+                                      (const char*[]){ast_str, uid_str, NULL});
+        if (cm_rows && csilk_json_array_size(cm_rows) > 0) {
+            const char* cm = csilk_json_get_string(csilk_json_array_get(cm_rows, 0), "cost_method");
+            if (cm && strcmp(cm, "fifo") == 0) {
+                auto_lots = tx_lots_serialize_open_json(pool, user_id, asset_id);
+            }
+        }
+        if (cm_rows) {
+            csilk_json_free(cm_rows);
+        }
+    }
+    const char* lots_str = lots_json ? lots_json : (auto_lots ? auto_lots : "");
 
     const char* sql = "INSERT INTO ledger_snapshots ("
                       "user_id, asset_id, snapshot_date, quantity, cost_basis, net_value, "
@@ -132,6 +151,9 @@ ledger_snapshot_save(csilk_db_pool_t*               pool,
                             NULL};
 
     csilk_json_t* res = csilk_db_query_param_json(pool, sql, params);
+    if (auto_lots) {
+        free(auto_lots);
+    }
     if (!res) {
         return -1;
     }

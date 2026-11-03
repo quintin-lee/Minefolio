@@ -21,6 +21,7 @@ typedef struct create_asset_cmd {
     double      net_value;
     const char* symbol;
     const char* quote_source;
+    const char* cost_method;
 } create_asset_cmd_t;
 
 /**
@@ -44,6 +45,7 @@ typedef struct update_asset_cmd {
     const char* quote_source;
     int64_t     account_id;
     bool        has_account_id;
+    const char* cost_method;
 } update_asset_cmd_t;
 
 /**
