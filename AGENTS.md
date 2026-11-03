@@ -95,7 +95,7 @@ Assets group under **account** containers (bank card, Alipay, broker…). Accoun
 ### Database Migration System
 
 Database schema changes are managed strictly via csilk's native C migration engine (`<csilk/drivers/db/migration.h>`):
-- **Versioned scripts**: `backend/sql/migrations/{sqlite,postgres}/` following Flyway naming `V<num>__<name>.sql` (`V001`~`V017`).
+- **Versioned scripts**: `backend/sql/migrations/{sqlite,postgres}/` following Flyway naming `V<num>__<name>.sql` (`V001`~`V020`).
 - **Tracking table**: `schema_migrations` records `version`, `name`, `checksum` (SHA-256 CRLF-normalized), `applied_at`, `execution_time_ms`, `execution_time`.
 - **Concurrency lock**: `schema_migration_lock` table acts as a distributed mutex with lease timeout to prevent multi-instance migration races. Under PostgreSQL, csilk provides full native prepared statement support (`?` rewritten to `$N`, `PQprepare`/`PQexecPrepared`), ensuring lock acquisition and statement execution run reliably.
 - **Engine lifecycle**: Automatic discovery, version sorting, checksum validation (tamper detection), transactional application, and status reporting.
@@ -141,10 +141,10 @@ AI Runtime (services/ai/runtime/)
 | `backend/src/infrastructure/database/` | Database abstraction layer and SQLite/PostgreSQL native adapters (migration engine downstreamed to csilk) |
 | `backend/src/common/` | Cross-cutting: `db.h`, `balance.h`, `jwt.h`, `response.h`, `ctx.h`, `tx_types.h`, `ledger_utils.h` (CSV, TOTP 2FA & REST response envelopes downstreamed to csilk) |
 | `backend/src/config/` | `db_config.h/.c` (DSN), `key_manager.h/.c` (RSA-OAEP keys), `secret.h/.c` (Secret Provider) |
-| `backend/sql/migrations/` | Versioned migration scripts (`sqlite/` & `postgres/`, `V001`~`V017`) |
+| `backend/sql/migrations/` | Versioned migration scripts (`sqlite/` & `postgres/`, `V001`~`V020`) |
 | `backend/sql/` | `migration.sql` (SQLite full schema), `migration_postgres.sql` |
-| `backend/tests/unit/` | 35 CTest unit test suites (financial core, ledger, domain rules, DB repository, migration engine, AI runtime, MCP pool & risk, FX semantics, portfolio PnL alignment) |
-| `backend/tests/test_link.sh` | Core integration test suite (40 cases, 169 assertions: auth, accounts, CRUD, balance联动, PnL, CSV, pagination, ledger rebuild, AI trace/workflow) |
+| `backend/tests/unit/` | 49 CTest unit test suites (financial core, ledger engine + checkpoint rebuild, domain rules, DB repository, migration engine, AI runtime/policy/nonces, compact projection, MCP client/pool/risk, FX semantics, portfolio PnL alignment) |
+| `backend/tests/test_link.sh` | Core integration test suite (40 cases, 174 assertions: auth, accounts, CRUD, balance联动, PnL, CSV, pagination, ledger rebuild, AI trace/workflow) |
 | `backend/src/domain/account/` | Account domain: `mf_account_t` entity, validation/delete rules, repository contract |
 | `backend/src/application/account/usecases.c` | Account use cases: create/update/delete/archive/query, lazy `默认账户` seed, duplicate-name 1004, delete-protection 1004 |
 | `backend/src/infrastructure/repositories/account_repo_impl.c` | Accounts SQL repo (with `asset_count`/`total_value` aggregates, archived filter) |
@@ -363,7 +363,7 @@ Mobile users can customize the backend server address (e.g. LAN IP `http://192.1
 | File | Role |
 |------|------|
 | `backend/src/main.c` | Entry point; middleware stack; route registration |
-| `backend/CMakeLists.txt` | C23 standard; FetchContent for csilk v0.5.2; optional PostgreSQL |
+| `backend/CMakeLists.txt` | C23 standard; FetchContent for csilk (GIT_TAG master, local `deps/csilk` override); optional PostgreSQL |
 | `backend/src/common/balance.h` | `balance_apply_delta()` (incl. liability sign flip); `apply_position()` |
 | `backend/src/common/tx_types.h` | Transaction type registry — use `tx_type_lookup()`, don't hard-code |
 | `backend/src/common/response.h` | `respond_ok`, `respond_error`, etc. |
@@ -404,15 +404,16 @@ Mobile users can customize the backend server address (e.g. LAN IP `http://192.1
 
 ## Testing & QA
 
-### Backend Unit & Integration Tests (35 CTest Suites + 12 Integration Suites)
+### Backend Unit & Integration Tests (49 CTest Suites + 16 Integration Suites)
 
 ```bash
 cd backend
-# 1. Run all 35 CTest unit test suites (sub-second fast feedback)
+# 1. Run all 49 CTest unit test suites (sub-second fast feedback)
 cd build && ctest --output-on-failure && cd ..
 
 # 2. Run all core integration test suites
 ./tests/test_link.sh          # 174 assertions across 40 cases: auth, accounts dimension, CRUD, balance联动, PnL, CSV, pagination, ledger rebuild, AI trace/workflow
+
 ./tests/test_ledgers.sh       # 16 cases: multi-ledger spaces, member RBAC (Owner/Editor/Viewer)
 ./tests/test_2fa.sh           # 12 cases: TOTP 2FA secret gen, QR code, enable/disable, login verification
 ./tests/test_dca_cashflow.sh  # 18 cases: DCA periodic purchase execution, cashflow calendar projection
@@ -423,7 +424,7 @@ cd build && ctest --output-on-failure && cd ..
 ./tests/test_market_sync.sh   # 18 cases: Multi-source market quotes, caching, bulk sync
 ./tests/test_fx_oauth.sh      # 20 cases: Exchange rates, FX gain/loss PnL, receipt OCR, OAuth2/OIDC SSO
 ./tests/test_mcp.sh           # MCP stdio server config + chat tool-call dispatch routing
-./tests/test_mcp_server.sh    # External-client view of POST /mcp (initialize/tools/list/tools/call JSON-RPC)
+./tests/test_mcp_server.sh    # External-client view of POST /mcp (initialize/tools/list/tools/call JSON-RPC); unauthenticated requests rejected with JSON-RPC -32001
 ./tests/test_report_isolation.sh # Expense monthly/report isolation regression (user_id + ledger_id)
 ```
 
@@ -438,7 +439,7 @@ npm run build         # Desktop type-check + build
 npm run build:mobile  # Mobile type-check + build
 ```
 
-Frontend unit tests cover 36 test suites (170+ unit tests) including format helpers, crypto, auth store, offline-http sync, chat store race guards, AI thinking/reasoning mode, analysis panel, chat layout decoupling, and AI stream failure handling; the integration test suite (`test_link.sh`) covers the critical paths end-to-end.
+Frontend unit tests cover 37 test suites (177 unit tests) including format helpers, crypto, auth store, offline-http sync, chat store race guards, AI thinking/reasoning mode, analysis panel, chat layout decoupling, and AI stream failure handling; the integration test suite (`test_link.sh`) covers the critical paths end-to-end.
 
 ### Manual Smoke Test
 
