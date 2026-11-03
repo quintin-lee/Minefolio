@@ -41,7 +41,7 @@
 - Consumes: csilk migration engine (`<csilk/drivers/db/migration.h>`)
 - Produces: `assets.cost_method` column with default `'weighted_average'`, `transaction_lots` table with composite index `idx_lots_open`.
 
-- [ ] **Step 1: Write SQLite V021 migration script**
+- [x] **Step 1: Write SQLite V021 migration script** (Commit: `079115cd`)
 
 Create `backend/sql/migrations/sqlite/V021__asset_cost_method_and_lots.sql`:
 ```sql
@@ -67,7 +67,7 @@ CREATE INDEX IF NOT EXISTS idx_lots_open
     ON transaction_lots(user_id, asset_id, status, buy_date ASC, id ASC);
 ```
 
-- [ ] **Step 2: Write PostgreSQL V021 migration script**
+- [x] **Step 2: Write PostgreSQL V021 migration script** (Commit: `079115cd`)
 
 Create `backend/sql/migrations/postgres/V021__asset_cost_method_and_lots.sql`:
 ```sql
@@ -93,17 +93,17 @@ CREATE INDEX IF NOT EXISTS idx_lots_open
     ON transaction_lots(user_id, asset_id, status, buy_date ASC, id ASC);
 ```
 
-- [ ] **Step 3: Append DDL into `sql/migration.sql` and `sql/migration_postgres.sql`**
+- [x] **Step 3: Append DDL into `sql/migration.sql` and `sql/migration_postgres.sql`** (Commit: `079115cd`)
 
 Append `ALTER TABLE assets ADD COLUMN cost_method ...` and `transaction_lots` table definition to both baseline files.
 
-- [ ] **Step 4: Update `test_migration_engine.c` assertions and run test**
+- [x] **Step 4: Update `test_migration_engine.c` assertions and run test** (Commit: `079115cd`)
 
 Update migration count assertion to `>= 21` and add table presence check for `transaction_lots`.
 Run: `cmake --build backend/build --target test_migration_engine && ./backend/build/test_migration_engine`
 Expected: PASS with 100% verification.
 
-- [ ] **Step 5: Commit Task 1**
+- [x] **Step 5: Commit Task 1** (Commit: `079115cd`)
 
 ```bash
 git add backend/sql/migrations/ backend/sql/migration.sql backend/sql/migration_postgres.sql backend/tests/unit/test_migration_engine.c
@@ -132,7 +132,7 @@ git commit -m "feat(migration): 📦 deploy V021 asset cost method and transacti
   char* tx_lots_serialize_open_json(csilk_db_pool_t* pool, int64_t user_id, int64_t asset_id);
   ```
 
-- [ ] **Step 1: Write unit test `test_transaction_lots.c`**
+- [x] **Step 1: Write unit test `test_transaction_lots.c`** (Commit: `eedf3e27`)
 
 Create `backend/tests/unit/test_transaction_lots.c` testing:
 1. `tx_lot_create` creates open lot with 128-bit fixed point quantities.
@@ -141,25 +141,25 @@ Create `backend/tests/unit/test_transaction_lots.c` testing:
 4. `tx_lots_serialize_open_json` produces valid JSON array of open lots.
 5. `tx_lots_delete_by_asset` cleans up lots cleanly.
 
-- [ ] **Step 2: Register `test_transaction_lots` in `backend/CMakeLists.txt`**
+- [x] **Step 2: Register `test_transaction_lots` in `backend/CMakeLists.txt`** (Commit: `eedf3e27`)
 
 Add `test_transaction_lots` via `add_financial_unit_test`.
 
-- [ ] **Step 3: Run test to verify failure before implementation**
+- [x] **Step 3: Run test to verify failure before implementation** (Commit: `eedf3e27`)
 
 Run: `cmake --build backend/build --target test_transaction_lots`
 Expected: FAIL with missing headers/functions.
 
-- [ ] **Step 4: Implement `transaction_lot_repo_impl.h` and `transaction_lot_repo_impl.c`**
+- [x] **Step 4: Implement `transaction_lot_repo_impl.h` and `transaction_lot_repo_impl.c`** (Commit: `eedf3e27`)
 
 Implement parameterized queries with `?` placeholders, 128-bit decimal serialization (`quantity_to_string_fixed`, `price_to_string`, `money_to_string`), and clean memory management.
 
-- [ ] **Step 5: Run test to verify pass**
+- [x] **Step 5: Run test to verify pass** (Commit: `eedf3e27`)
 
 Run: `cmake --build backend/build --target test_transaction_lots && ./backend/build/test_transaction_lots`
 Expected: PASS.
 
-- [ ] **Step 6: Commit Task 2**
+- [x] **Step 6: Commit Task 2** (Commit: `eedf3e27`)
 
 ```bash
 git add backend/src/infrastructure/repositories/transaction_lot_repo_impl.* backend/tests/unit/test_transaction_lots.c backend/CMakeLists.txt
@@ -192,7 +192,7 @@ git commit -m "feat(ledger): 📦 implement transaction lots repository for FIFO
                                      money_t*         out_realized_pnl);
   ```
 
-- [ ] **Step 1: Write unit test `test_cost_basis_fifo.c`**
+- [x] **Step 1: Write unit test `test_cost_basis_fifo.c`** (Commits: `6688f77d`, `48e76fa8`)
 
 Create `backend/tests/unit/test_cost_basis_fifo.c`:
 - Scenario 1: Buy 100 shares @ 10 CNY (Lot 1), Buy 100 shares @ 20 CNY (Lot 2). Total = 200 shares, 3000 CNY cost.
@@ -206,12 +206,12 @@ Create `backend/tests/unit/test_cost_basis_fifo.c`:
 - Scenario 5: Rebuild position: resets lots and replays FIFO transactions to exact same values (RF-3).
 - Scenario 6: Checkpoint snapshot saves open lots to `lots_snapshot_json` (RF-4).
 
-- [ ] **Step 2: Register in `backend/CMakeLists.txt` and verify RED failure**
+- [x] **Step 2: Register in `backend/CMakeLists.txt` and verify RED failure** (Commit: `6688f77d`)
 
 Run: `cmake --build backend/build --target test_cost_basis_fifo`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement FIFO sell calculator and integrate with `ledger_apply_tx` and `ledger_rebuild_position`**
+- [x] **Step 3: Implement FIFO sell calculator and integrate with `ledger_apply_tx` and `ledger_rebuild_position`** (Commits: `6688f77d`, `48e76fa8`)
 
 1. In `ledger_apply_tx`:
    - Inspect asset `cost_method` (from `assets.cost_method`).
@@ -228,12 +228,12 @@ Expected: FAIL.
 3. In `ledger_snapshot_save`:
    - When snapshotting a FIFO asset, call `tx_lots_serialize_open_json` and pass into `lots_snapshot_json` (RF-4).
 
-- [ ] **Step 4: Run test to verify GREEN pass**
+- [x] **Step 4: Run test to verify GREEN pass** (Commits: `6688f77d`, `48e76fa8`)
 
 Run: `cmake --build backend/build --target test_cost_basis_fifo && ./backend/build/test_cost_basis_fifo`
 Expected: PASS.
 
-- [ ] **Step 5: Commit Task 3**
+- [x] **Step 5: Commit Task 3** (Commits: `6688f77d`, `48e76fa8`)
 
 ```bash
 git add backend/src/core/ledger/ledger_engine.* backend/tests/unit/test_cost_basis_fifo.c backend/CMakeLists.txt
@@ -261,18 +261,18 @@ git commit -m "feat(ledger): ⚡ implement FIFO cost basis allocation and multi-
   - Validation rule: `cost_method` must be valid enum value.
   - Immutability check in `asset_usecase_update`: If asset has transactions, attempt to change `cost_method` returns HTTP 1004 (RF-2).
 
-- [ ] **Step 1: Write unit tests in `test_domain_asset.c` for `cost_method` validation**
+- [x] **Step 1: Write unit tests in `test_domain_asset.c` for `cost_method` validation** (Commit: `8d7b23a0`)
 
 Add test cases in `backend/tests/unit/test_domain_asset.c`:
 1. Valid `cost_method` values (`weighted_average`, `fifo`, empty defaults to `weighted_average`).
 2. Invalid `cost_method` (e.g. `invalid_method`) rejected with validation error.
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure** (Commit: `8d7b23a0`)
 
 Run: `cmake --build backend/build --target test_domain_asset && ./backend/build/test_domain_asset`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement domain rules and repository extensions**
+- [x] **Step 3: Implement domain rules and repository extensions** (Commit: `8d7b23a0`)
 
 1. In `mf_asset_entity.h`: add `char cost_method[32]`.
 2. In `mf_asset_rules.c`: add validation for `cost_method`.
@@ -295,12 +295,12 @@ Expected: FAIL.
      }
      ```
 
-- [ ] **Step 4: Run test to verify pass**
+- [x] **Step 4: Run test to verify pass** (Commit: `8d7b23a0`)
 
 Run: `cmake --build backend/build --target test_domain_asset && ./backend/build/test_domain_asset`
 Expected: PASS.
 
-- [ ] **Step 5: Commit Task 4**
+- [x] **Step 5: Commit Task 4** (Commit: `8d7b23a0`)
 
 ```bash
 git add backend/src/domain/asset/* backend/src/application/asset/* backend/src/infrastructure/repositories/asset_repo_impl.* backend/src/dtos/asset_dto.h backend/tests/unit/test_domain_asset.c
@@ -319,17 +319,19 @@ git commit -m "feat(asset): 🛡️ enforce cost method validation and freeze on
 - Test: `backend/tests/test_ai_loop_hardening.sh`
 - Modify: `docs/superpowers/plans/2026-11-03-multi-method-cost-basis-fifo.md`
 
-- [ ] **Step 1: Run full unit test suite**
+- [x] **Step 1: Run full unit test suite** (Evidence: 48/48 CTest suites passed 100%)
 
 Run: `cmake --build backend/build --target all && ctest --test-dir backend/build --output-on-failure`
 Expected: 48/48 tests passed (100%).
+Actual: 48/48 passed in 0.90 sec.
 
-- [ ] **Step 2: Run core integration test suite**
+- [x] **Step 2: Run core integration test suite** (Evidence: 40 cases, PASS=174, FAIL=0)
 
 Run: `bash backend/tests/test_link.sh`
 Expected: PASS=174+ FAIL=0.
+Actual: PASS=174, FAIL=0 (100%).
 
-- [ ] **Step 3: Run MCP and AI Loop regression suites**
+- [x] **Step 3: Run MCP and AI Loop regression suites** (Evidence: `test_mcp.sh` PASS=14, `test_mcp_server.sh` PASS=10, `test_ai_loop_hardening.sh` PASS=28)
 
 Run:
 ```bash
@@ -338,8 +340,18 @@ bash backend/tests/test_mcp_server.sh
 bash backend/tests/test_ai_loop_hardening.sh
 ```
 Expected: All suites PASS.
+Actual:
+- `test_mcp.sh`: PASS=14, FAIL=0, SKIP=1
+- `test_mcp_server.sh`: PASS=10, FAIL=0
+- `test_ai_loop_hardening.sh`: PASS=28, FAIL=0
 
-- [ ] **Step 4: Update plan checkmarks and commit**
+- [x] **Step 4: Run frontend production build** (Evidence: `npm --prefix frontend run build` 0 errors, built in 11.29s)
+
+Run: `npm --prefix frontend run build`
+Expected: 0 errors.
+Actual: Built successfully in 11.29s (`dist/` generated with 0 errors).
+
+- [x] **Step 5: Update plan checkmarks and commit**
 
 ```bash
 git add docs/superpowers/plans/2026-11-03-multi-method-cost-basis-fifo.md
