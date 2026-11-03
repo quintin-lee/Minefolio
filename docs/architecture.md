@@ -8,7 +8,7 @@
 
 ## 0. 摘要 (TL;DR)
 
-Minefolio 是一个**自托管的个人财务与投资追踪平台**,支持多账户类型(现金、银行、信用卡、贷款)、多资产持仓(股票/基金/债券/加密货币,含完整成本基础与盈亏)、AI 对话式记账、定投(DCA)计划、被动现金流台账、多账本协作与 CSV 导入导出。**后端采用 C23 + csilk v0.5.2 HTTP 框架 + 分层架构 (Domain/Application/Infrastructure/Interfaces) + 128 位定点 Financial Core + 事件溯源 Ledger Engine + 统一 AI Runtime (8 大子系统解耦与 Agent Loop)**;**前端采用 Vue 3 + TypeScript SPA**;**移动端使用 Capacitor + sql.js WASM 完全离线运行**。本文档按"总-图-分"黄金法则,从物理拓扑、模块分解、数据模型、关键数据流、部署拓扑、安全边界六个维度给出完整工程级架构说明。
+Minefolio 是一个**自托管的个人财务与投资追踪平台**,支持多账户类型(现金、银行、信用卡、贷款)、多资产持仓(股票/基金/债券/加密货币,含完整成本基础与盈亏)、AI 对话式记账、定投(DCA)计划、被动现金流台账、多账本协作与 CSV 导入导出。**后端采用 C23 + csilk HTTP 框架 (FetchContent) + 分层架构 (Domain/Application/Infrastructure/Interfaces) + 128 位定点 Financial Core + 事件溯源 Ledger Engine (检查点快照增量重建) + 统一 AI Runtime (8 大子系统解耦与 Agent Loop)**;**前端采用 Vue 3 + TypeScript SPA**;**移动端使用 Capacitor + sql.js WASM 完全离线运行**。本文档按"总-图-分"黄金法则,从物理拓扑、模块分解、数据模型、关键数据流、部署拓扑、安全边界六个维度给出完整工程级架构说明。
 
 ---
 
@@ -305,9 +305,10 @@ graph TB
 | `ledger_reverse_tx(pool, user_id, tx_id)` | 逆向回滚已生效交易 |
 | `ledger_apply_expense` / `ledger_reverse_expense` | 日常收支原子操作 |
 | `ledger_apply_transfer` / `ledger_reverse_transfer` | 跨资产转账原子操作 |
-| `ledger_rebuild_position(pool, user_id, asset_id, out_state)` | 按时间顺序重放持仓交易,物化最终状态(用于对账) |
-| `ledger_rebuild_account(pool, user_id, asset_id, out_state)` | 按时间顺序重放账户流水,物化最终余额 |
+| `ledger_rebuild_position(pool, user_id, asset_id, out_state)` | 按时间顺序重放持仓交易,物化最终状态(用于对账);V020 起从最近检查点快照增量推进 |
+| `ledger_rebuild_account(pool, user_id, asset_id, out_state)` | 按时间顺序重放账户流水,物化最终余额;检查点加速 |
 | `ledger_rebuild_portfolio(pool, user_id)` | 全局重算(保证 `original state == rebuild state`) |
+| `ledger_snapshot_invalidate_from(repo_impl)` | 回溯改账后按 (user, asset, from_date) 级联失效下游检查点快照 |
 | `ledger_calc_buy_position` / `ledger_calc_sell_position` | 纯数学算子,计算加仓/减仓后的份额与成本基础 |
 
 **AI Subsystem (`backend/src/services/ai/`) — 七层流水线:**
@@ -343,7 +344,7 @@ Model (请求/响应) → Policy (五级风控) → Runtime (会话/循环)
 | `common/*` | csilk, 彼此 | controllers, services |
 
 **关键不变量:**
-- C23 标准 (`-std=c23`),GCC 14,CMake 3.16+ (使用 Unix Makefiles,**禁用 Ninja** — csilk v0.5.2 存在 stale-dependency bug)
+- C23 标准 (`-std=c23`),GCC 14,CMake 3.16+ (使用 Unix Makefiles,**禁用 Ninja** — csilk 曾存在 stale-dependency bug)
 - 所有响应: HTTP 200 + JSON 信封 `{code, message, data}`,通过 `common/response.h` 的 `respond_*` 系列构造
 - 错误码语义: `0` OK,`1001` Unauthorized,`1002` Bad Request,`1003` Not Found,`1004` Conflict/Forbidden
 - Domain 层**严禁**引入 `csilk`,`json`,`db` 等外部头文件;仓储契约仅接受 `void* db_pool` 裸指针
@@ -354,7 +355,7 @@ Model (请求/响应) → Policy (五级风控) → Runtime (会话/循环)
 
 ### 3.1 总
 
-Minefolio 数据模型围绕**"资产 (Asset) — 交易 (Transaction) — 余额联动"**三核心组织,辅以**账户 (Account) 分组容器 (V017)**、分类树、标签、账本、成员、行情历史、AI 会话/消息/追踪、用户、设置共 **17 张主表 + 5 张关联表**。SQLite 与 PostgreSQL 两套 schema 语义对齐,迁移在启动时由 csilk 迁移引擎应用。**Ledger Engine** 作为账本事件溯源引擎,所有交易通过 `ledger_tx_t` 事件对象驱动,支持原子 apply/reverse 及 `ledger_rebuild_*` 重算。**余额方向**在 `common/balance.c` 集中处理:对 `loan / credit_card / other_liability` 类资产符号翻转,使 net worth 计算永远 `assets - liabilities` 正确。
+Minefolio 数据模型围绕**"资产 (Asset) — 交易 (Transaction) — 余额联动"**三核心组织,辅以**账户 (Account) 分组容器 (V017)**、分类树、标签、账本、成员、行情历史、**账本检查点快照 (V020)**、AI 会话/消息/追踪、用户、设置共 **17 张主表 + 5 张关联表**。SQLite 与 PostgreSQL 两套 schema 语义对齐,迁移在启动时由 csilk 迁移引擎应用。**Ledger Engine** 作为账本事件溯源引擎,所有交易通过 `ledger_tx_t` 事件对象驱动,支持原子 apply/reverse 及 `ledger_rebuild_*` 重算——V020 起重建从最近有效检查点快照增量推进,回溯改账自动级联失效下游快照。**余额方向**在 `common/balance.c` 集中处理:对 `loan / credit_card / other_liability` 类资产符号翻转,使 net worth 计算永远 `assets - liabilities` 正确。
 
 ### 3.2 图
 
@@ -413,7 +414,7 @@ erDiagram
 | `categories` | `user_id`, `name`, `parent_id` (树), `type ∈ {asset,income,expense,transaction}`, `asset_type` | 11 种 `asset_type` 决定 balance 符号翻转策略 |
 | `accounts` (V017) | `user_id`, `ledger_id`, `name` (UNIQUE per user+ledger), `institution ∈ {bank_card,platform,broker,fund_platform,cash_wallet,other}`, `account_no`, `sort_order`, `archived` | 资产分组纯容器,不记余额;小计由子资产 `SUM(current_value)` 派生;迁移按 (user, ledger) 回填「默认账户」 |
 | `assets` | `user_id`, `category_id`, `account_id` (V017, REFERENCES accounts ON DELETE RESTRICT), `name`, `symbol`, `current_value`, `quantity`, `cost_basis`, `net_value`, `currency` | 持仓资产,`quantity/cost_basis` 联动更新;`account_id<=0` 创建时兜底到账本默认账户 |
-| `transactions` | `user_id`, `asset_id`, `linked_asset_id`, `source_type`, `transaction_type`, `direction`, `amount`, `quantity`, `price_per_unit`, `fee`, `parent_tx_id`, `transaction_date` | 统一交易表,`parent_tx_id` 链接手续费子行(级联删除) |
+| `transactions` | `user_id`, `asset_id`, `linked_asset_id`, `source_type`, `transaction_type`, `direction`, `amount`, `quantity`, `price_per_unit`, `fee`, `parent_tx_id`, `fx_rate_to_cny` (V020, DEFAULT 1.0), `transaction_date` | 统一交易表,`parent_tx_id` 链接手续费子行(级联删除);`fx_rate_to_cny` 落库时固化 Point-in-Time 历史汇率 |
 | `transfers` | `from_asset_id`, `to_asset_id`, `amount`, `transfer_date`, `from_tx_id`, `to_tx_id` | 跨资产转账, V014 显式外键关联 transactions 表以实现确定性双向删除 |
 | `daily_expenses` | `category_id`, `asset_id`, `expense_type ∈ {expense,income}`, `amount`, `expense_date` | 日常收支快速记录 |
 | `tags` + `expense_tags` | 多对多关联 | 给 daily_expense 打标签 |
@@ -432,6 +433,8 @@ erDiagram
 | `ai_sessions` + `ai_messages` | AI 对话历史 |
 | `ai_traces` | AI 调用的完整快照(provider/model/prompt/tokens/cost/latency),用于调试与优化 |
 | `ai_settings` | singleton (id=1),AI provider 配置持久化 |
+| `ai_consumed_nonces` (V019) | 已消费确认令牌 Nonce 台账,重放防护跨重启生效 |
+| `ledger_snapshots` (V020) | 账本检查点快照,按 (user, asset, snapshot_date) 存持仓/成本/余额,支撑增量重建 |
 
 **索引策略:**
 
@@ -445,6 +448,7 @@ CREATE INDEX idx_ai_traces_user ON ai_traces(user_id, created_at);
 CREATE INDEX idx_dca_exec_user_pending ON dca_executions(user_id, status);
 CREATE UNIQUE INDEX idx_dca_exec_plan_period ON dca_executions(plan_id, period_date);
 CREATE INDEX idx_ledger_members_user ON ledger_members(user_id);
+CREATE INDEX idx_ledger_snapshots_user_asset_date ON ledger_snapshots(user_id, asset_id, snapshot_date DESC);
 ```
 
 **约束:** 外键 `ON DELETE CASCADE` 用于所有权终结时强清理;`ON DELETE RESTRICT` 用于业务完整性(防止误删有交易的资产);`parent_tx_id` 级联删除保证手续费子行不留孤儿。
@@ -524,6 +528,8 @@ sequenceDiagram
 #### 4.1.3 分
 
 - **失败语义**: 任意一步失败 MUST `ROLLBACK` 后再返回错误,**禁止**部分提交
+- **Point-in-Time 汇率固化 (V020)**: `tx_usecase_create/update` 在 scope 内执行 `UPDATE transactions SET fx_rate_to_cny = ? WHERE id = ? AND user_id = ?`（汇率取自 `exchange_rate_get_historical_or_latest()`）；写回失败 MUST 回滚整个 scope
+- **检查点失效 (V020)**: 回溯日期交易写入/更新/删除后 MUST 调用 `ledger_snapshot_invalidate_from()` 级联失效该资产下游快照,下次读取从上一个有效检查点重建
 - **费用子行删除**: 删交易时 MUST 先 `tx_repo_find_fee_children()` 查子行 → 反向 `balance_apply_delta_m()` → `tx_repo_delete_fee_children()` → 再删 parent
 - **投资↔非投资类型切换**: 修改交易时 MUST 先回滚旧持仓的 position+balance,再按新类型应用(Ledger Engine 内部处理)
 - **符号翻转**: `balance_apply_delta_m()` 对 `loan / credit_card / other_liability` 资产自动取反
@@ -1044,7 +1050,7 @@ cmake --build backend/build --parallel && npm --prefix frontend run build
 
 | 脚本 | 覆盖范围 | 用例数 |
 |------|---------|--------|
-| `test_link.sh` | auth + 账户维度 + CRUD + 余额联动 + PnL + CSV + 分页 + AI 工作流 | 40 cases (169 assertions) |
+| `test_link.sh` | auth + 账户维度 + CRUD + 余额联动 + PnL + CSV + 分页 + AI 工作流 | 40 cases (174 assertions) |
 | `test_full.sh` | 全量回归入口 | 所有 |
 | `test_ledgers.sh` | 多账本空间 + RBAC (Owner/Editor/Viewer) | 16 cases |
 | `test_2fa.sh` | TOTP 2FA 密钥生成、二维码、启用/禁用、登录验证 | 12 cases |
@@ -1148,7 +1154,7 @@ cd backend/build && ctest --output-on-failure
 | **适合场景** | 单用户/家庭自托管 | 多租户/集群 |
 
 Minefolio 采用下沉至 csilk 框架的原生**正式版本化迁移系统 (Database Migration System)**（`<csilk/drivers/db/migration.h>`），彻底替换历史上的动态字段检测与硬编码 ALTER TABLE：
-- **规范化版本脚本**：按 Flyway 规范统一组织于 `backend/sql/migrations/{sqlite,postgres}/`，文件命名格式 `V<num>__<name>.sql`（`V001`~`V017`）。
+- **规范化版本脚本**：按 Flyway 规范统一组织于 `backend/sql/migrations/{sqlite,postgres}/`，文件命名格式 `V<num>__<name>.sql`（`V001`~`V020`）。
 - **版本记录与审计 (`schema_migrations`)**：记录每个已应用的迁移版本、名称、SHA-256 校验和、应用时间及执行毫秒耗时。
 - **分布式并发互斥锁 (`schema_migration_lock`)**：通过数据库行锁与租约超时防死锁机制，有效防止多实例并行迁移竞争。
 - **PostgreSQL 原生 Prepared Statement 支持**：csilk PostgreSQL 驱动原生实现 `?` 转 `$1, $2, ...` 重写、`PQprepare`/`PQexecPrepared` 编译与执行、类型绑定与 `DEALLOCATE` 释放，确保并发锁及迁移语句在 SQLite / PostgreSQL 下均稳定执行。
@@ -1192,7 +1198,7 @@ Minefolio 采用下沉至 csilk 框架的原生**正式版本化迁移系统 (Da
 
 | # | 风险 | 影响 | 缓解措施 |
 |:-:|------|------|----------|
-| 1 | csilk v0.5.2 偶发崩溃 | 服务中断 | 见 `docs/csilk-v0.5.2-crash-report.md`;逐步迁到更新版本 |
+| 1 | csilk 上游偶发崩溃（历史 v0.5.2 记录） | 服务中断 | 见 `docs/csilk-v0.5.2-crash-report.md`;当前 GIT_TAG master,遇回归可回退 pin |
 | 2 | 移动端 sql.js WASM 体积大 (~1MB base64) | APK 增大 | 已接受;考虑用 `vite-plugin-compress` |
 | 3 | 单写者 SQLite 写入瓶颈 | 高并发写阻塞 | PG 可选;热点表可考虑分片 |
 | 4 | AI 流式 SSE 长连接占用 fd | 大量并发耗尽 | csilk 连接池有上限;前端必须 `AbortController` |
@@ -1258,12 +1264,12 @@ Minefolio 采用下沉至 csilk 框架的原生**正式版本化迁移系统 (Da
 | `backend/src/services/ai/workflows/` | 4 个具体工作流实现 |
 | `backend/src/common/balance.h` | 余额符号翻转 + 持仓核算 |
 | `csilk (csilk/drivers/db/migration.h)` | 数据库迁移引擎 (下沉至 csilk，提供 checksum、分布式锁、auto-baseline) |
-| `backend/sql/migrations/{sqlite,postgres}/` | 版本化迁移文件 (V001~V017) |
-| `backend/sql/migration.sql` | SQLite 18 表全量基准 (V017 起) |
-| `backend/sql/migration_postgres.sql` | PostgreSQL 18 表全量基准 (V017 起) |
-| `backend/tests/test_link.sh` | 40-case 核心集成测试 (169 assertions) |
-| `backend/tests/test_*.sh` | 12 个专项集成测试脚本 (另有 test_full.sh 全量回归) |
-| `backend/tests/unit/test_*.c` | 35 个 CTest 单元单测 |
+| `backend/sql/migrations/{sqlite,postgres}/` | 版本化迁移文件 (V001~V020) |
+| `backend/sql/migration.sql` | SQLite 18 表全量基准 (V020 起) |
+| `backend/sql/migration_postgres.sql` | PostgreSQL 18 表全量基准 (V020 起) |
+| `backend/tests/test_link.sh` | 40-case 核心集成测试 (174 assertions) |
+| `backend/tests/test_*.sh` | 16 个专项集成测试脚本 (另有 test_full.sh 全量回归) |
+| `backend/tests/unit/test_*.c` | 50 个 CTest 单元单测 |
 | `frontend/src/utils/http.ts` | axios + JWT + CSRF |
 | `frontend/src/stores/chat.ts` | SmoothStreamWriter |
 | `frontend/src/components/ChatMessageContent.vue` | 流式渲染分层 |
@@ -1283,7 +1289,7 @@ Minefolio 采用下沉至 csilk 框架的原生**正式版本化迁移系统 (Da
   ```bash
   cmake --build backend/build --parallel && npm --prefix frontend run build
   ./backend/tests/test_full.sh                    # 全量集成回归
-  ctest --test-dir backend/build --output-on-failure  # 35 个 CTest 单测
+  ctest --test-dir backend/build --output-on-failure  # 50 个 CTest 单测
   npm --prefix frontend test -- --run             # 移动端 vitest
   ```
 

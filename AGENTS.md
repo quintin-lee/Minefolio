@@ -81,6 +81,36 @@ A transfer is stored as two rows: a `transfer_out` parent and a `transfer_in` ch
 2. **`transfers` auxiliary table explicit foreign keys (V014).** Migration `V014__transfer_explicit_transactions.sql` introduced `from_tx_id` and `to_tx_id` referencing `transactions(id)`. Transfer cleanup deletes deterministically via `from_tx_id = ? OR to_tx_id = ?`.
 3. **The `(from_asset_id, to_asset_id, amount)` attribute match is a legacy fallback only** — used solely for legacy rows written before V014 where `from_tx_id <= 0` or before `parent_tx_id` existed. Do not remove this fallback as it prevents orphaned legacy rows.
 
+### Transaction Write Path — Savepoint Scope (db_tx_scope_t)
+
+All multi-step balance/asset mutations in `application/{transaction,transfer,daily_expense,dca}/usecases.c` run inside `db_tx_scope_begin()` / `db_tx_scope_commit()` (csilk native nested-savepoint scope). Rules:
+
+- `balance_apply_delta_m()` (fixed-point variant) opens its **own internal tx scope**, making the balance flip atomic even when called outside a caller scope; do not wrap it in a second explicit scope without understanding nesting (savepoints, not transactions, so nesting is safe but counts against SQLite's depth limit).
+- Rollback on any failure path before responding; never partially commit position + balance + fee rows.
+
+### Ledger Snapshots — Checkpoint Rebuild (V020)
+
+Migration `V020__ledger_snapshots_and_tx_fx.sql` adds:
+- `ledger_snapshots` table: per (user, asset, snapshot_date) position checkpoint (`quantity`, `cost_basis`, `net_value`, `current_value`, `realized_pnl`, `balance`, `tx_checkpoint_date`, `tx_checkpoint_id`), indexed `(user_id, asset_id, snapshot_date DESC)`. Written by `infrastructure/repositories/ledger_snapshot_repo_impl.c`; consumed by `core/ledger/ledger_engine.c` incremental rebuild (`ledger_rebuild_*` starts from the latest checkpoint instead of replaying full history).
+- `transactions.fx_rate_to_cny REAL DEFAULT 1.0`: point-in-time exchange rate stamped at transaction create; historical asset-trend evaluation (`exchange_rate_service.c`) reads the stamped rate instead of today's rate. Backfill sets `1.0` for CNY-denominated assets.
+- **Cascade invalidation**: editing/deleting a transaction dated on/before a snapshot date calls `ledger_snapshot_invalidate_from(pool, user_id, asset_id, from_date)` (`infrastructure/repositories/ledger_snapshot_repo_impl.c`), deleting that snapshot and all downstream ones; next read rebuilds from the prior valid checkpoint. Never write snapshots from use cases directly — go through the engine.
+
+### AI Confirmation Nonces — Replay Protection (V019)
+
+Migration `V019__ai_consumed_nonces.sql` adds `ai_consumed_nonces` (per-instance HMAC nonce ledger). `services/ai/policy/confirmation.c` persists consumed `draft_token` nonces via `ai_confirmation_verify_and_consume()` — a replayed confirmation token is rejected even across server restarts. Any new confirm-style tool MUST route through the policy verify/consume path, never a local boolean check.
+
+### Financial Precision — 128-bit Decimal at Use-Case Boundary
+
+`application/{asset,market}/usecases.c` MUST perform aggregation/arithmetic in `decimal_t` (128-bit fixed-point, `core/financial/decimal.h`) and convert to double only at the JSON DTO boundary (`mf_round_to_decimals`). `test_financial_precision_edge` pins float-accumulation regressions; do not reintroduce `double` accumulation loops in use cases.
+
+### File Upload — mkstemps Temporary Parsing
+
+`services/file_parser.c` writes uploaded bytes to `mkstemps`-created temp files (mode 0600, auto-unlinked) instead of predictable `/tmp` paths — no symlink races. New parsing entry points must follow `file_parser.h` temp-file contract.
+
+### MCP HTTP Endpoint — JSON-RPC Error Protocol
+
+Unauthenticated/rate-limited `POST /mcp` requests respond with JSON-RPC error `-32001` (not HTTP 401/429 bodies), aligned with the MCP spec; `jwt_middleware.c` and `rate_limit.c` special-case the `/mcp` path. `test_mcp_server.sh` pins the protocol.
+
 ### Accounts — Account-Dimension Asset Grouping (V017)
 
 Assets group under **account** containers (bank card, Alipay, broker…). Accounts are **pure containers**: they hold no balance; an account's subtotal is always derived as `SUM(assets.current_value)` of its children (`asset_count`/`total_value` aggregates in `account_list`).
@@ -143,7 +173,7 @@ AI Runtime (services/ai/runtime/)
 | `backend/src/config/` | `db_config.h/.c` (DSN), `key_manager.h/.c` (RSA-OAEP keys), `secret.h/.c` (Secret Provider) |
 | `backend/sql/migrations/` | Versioned migration scripts (`sqlite/` & `postgres/`, `V001`~`V020`) |
 | `backend/sql/` | `migration.sql` (SQLite full schema), `migration_postgres.sql` |
-| `backend/tests/unit/` | 49 CTest unit test suites (financial core, ledger engine + checkpoint rebuild, domain rules, DB repository, migration engine, AI runtime/policy/nonces, compact projection, MCP client/pool/risk, FX semantics, portfolio PnL alignment) |
+| `backend/tests/unit/` | 50 CTest unit test suites (financial core, ledger engine + checkpoint rebuild, domain rules, DB repository, migration engine, AI runtime/policy/nonces/batch confirmation, MCP client/pool/risk, FX semantics, portfolio PnL alignment) |
 | `backend/tests/test_link.sh` | Core integration test suite (40 cases, 174 assertions: auth, accounts, CRUD, balance联动, PnL, CSV, pagination, ledger rebuild, AI trace/workflow) |
 | `backend/src/domain/account/` | Account domain: `mf_account_t` entity, validation/delete rules, repository contract |
 | `backend/src/application/account/usecases.c` | Account use cases: create/update/delete/archive/query, lazy `默认账户` seed, duplicate-name 1004, delete-protection 1004 |
@@ -404,11 +434,11 @@ Mobile users can customize the backend server address (e.g. LAN IP `http://192.1
 
 ## Testing & QA
 
-### Backend Unit & Integration Tests (49 CTest Suites + 16 Integration Suites)
+### Backend Unit & Integration Tests (50 CTest Suites + 16 Integration Suites)
 
 ```bash
 cd backend
-# 1. Run all 49 CTest unit test suites (sub-second fast feedback)
+# 1. Run all 50 CTest unit test suites (sub-second fast feedback)
 cd build && ctest --output-on-failure && cd ..
 
 # 2. Run all core integration test suites

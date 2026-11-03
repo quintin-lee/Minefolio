@@ -1,5 +1,7 @@
 # Minefolio 账本状态与资产所有权审计报告 (Ledger & Asset Ownership Audit)
 
+> ⚠️ **历史快照报告**：本文档是 Ledger Engine 收编改造启动时的审计存档。文中引用的 `*_service.c` / `*_write.c` 文件名对应当时结构，现已演进为 DDD 四层（`application/*/usecases.c` 等）；所有权与统一接管的设计原则仍然有效，现状以 `AGENTS.md` 不变量小节与 `docs/architecture.md` 为准。
+
 ## 1. 核心设计原则 (Core Principle)
 
 * **Transaction / Event 是唯一金融事实 (Single Source of Truth)**
