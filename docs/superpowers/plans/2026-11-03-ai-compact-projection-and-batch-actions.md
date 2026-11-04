@@ -197,25 +197,25 @@ ai_confirmation_status_t ai_confirmation_verify_and_consume_batch(
   }
   ```
 
-- [ ] **Step 1: Add test cases to `test_ai_tools.c` for `propose_batch_actions`**
+- [x] **Step 1: Add test cases to `test_ai_tools.c` for `propose_batch_actions`**
   - Test rejection on empty action list or > 20 actions.
   - Test rejection on invalid action types.
   - Test valid proposal returning structured summary and `mf_batch_v1` draft token.
 
-- [ ] **Step 2: Run test to verify RED failure**
+- [x] **Step 2: Run test to verify RED failure**
   - Run `cmake --build backend/build --target test_ai_tools` -> expected FAIL.
 
-- [ ] **Step 3: Implement `batch_tool.h/.c` and register in `registry.c`**
+- [x] **Step 3: Implement `batch_tool.h/.c` and register in `registry.c`**
   - Implement action array validation and asset ownership check.
   - Form human-readable summary ("1. 支出 45.00 CNY (午餐); 2. 转账 1000.00 CNY...").
   - Call `ai_confirmation_create_batch_token`.
   - Return JSON draft object.
 
-- [ ] **Step 4: Run test to verify GREEN pass**
+- [x] **Step 4: Run test to verify GREEN pass**
   - Run `./backend/build/test_ai_tools` -> expected PASS.
   - Run `ctest --test-dir backend/build --output-on-failure`.
 
-- [ ] **Step 5: Commit Task 3**
+- [x] **Step 5: Commit Task 3**
   - `git commit -m "feat(ai): 📦 implement propose_batch_actions tool and schema registry"`
 
 ---

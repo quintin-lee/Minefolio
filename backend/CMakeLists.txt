@@ -166,6 +166,7 @@ add_financial_unit_test(test_cost_basis_fifo tests/unit/test_cost_basis_fifo.c)
 add_financial_unit_test(test_ai_token_compact tests/unit/test_ai_token_compact.c)
 add_financial_unit_test(test_ai_batch_confirmation tests/unit/test_ai_batch_confirmation.c)
 
+# AI Tool System (propose_batch_actions, propose_daily_expense, propose_transfer, web_search, etc.)
 add_executable(test_ai_tools tests/unit/test_ai_tools.c ${LIB_SOURCES})
 target_include_directories(test_ai_tools PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_options(test_ai_tools PRIVATE -UNDEBUG)

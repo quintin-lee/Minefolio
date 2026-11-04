@@ -7,6 +7,7 @@
 #include "services/ai/tools/portfolio_tool.h"
 #include "services/ai/tools/report_tool.h"
 #include "services/ai/tools/web_search_tool.h"
+#include "services/ai/tools/batch_tool.h"
 #include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
@@ -37,6 +38,7 @@ registry_init_impl(void)
     ai_tool_portfolio_register_all();
     ai_tool_report_register_all();
     ai_tool_web_search_register_all();
+    ai_tool_batch_register_all();
 
     s_initialized = true;
 }
