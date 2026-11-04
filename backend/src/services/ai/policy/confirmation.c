@@ -304,6 +304,79 @@ ai_confirmation_create_bound_token(int64_t             user_id,
     return token;
 }
 
+static ai_confirmation_status_t
+consume_nonce_atomic(const char* tok_nonce, int64_t tok_uid, int64_t tok_exp, int64_t now)
+{
+    /* 8.1 快速路径：内存环形缓冲区检测 */
+    pthread_mutex_lock(&s_nonce_lock);
+    if (is_nonce_consumed_locked(tok_nonce, now)) {
+        pthread_mutex_unlock(&s_nonce_lock);
+        return AI_CONFIRM_ERR_REPLAY;
+    }
+    pthread_mutex_unlock(&s_nonce_lock);
+
+    /* 8.2 持久化层检测：数据库查询（若连接池已初始化） */
+    csilk_db_pool_t* pool = db_get_pool();
+    if (pool) {
+        char now_str[32];
+        snprintf(now_str, sizeof(now_str), "%lld", (long long)now);
+        const char*   params_chk[] = {tok_nonce, now_str, NULL};
+        csilk_json_t* res_chk = csilk_db_query_param_json(
+            pool,
+            "SELECT 1 FROM ai_consumed_nonces WHERE nonce = ? AND expiration >= ?",
+            params_chk);
+        if (res_chk && csilk_json_array_size(res_chk) > 0) {
+            csilk_json_free(res_chk);
+            /* 回填内存环形缓存 */
+            pthread_mutex_lock(&s_nonce_lock);
+            record_nonce_consumed_locked(tok_nonce, tok_exp);
+            pthread_mutex_unlock(&s_nonce_lock);
+            return AI_CONFIRM_ERR_REPLAY;
+        }
+        if (res_chk) {
+            csilk_json_free(res_chk);
+        }
+    }
+
+    /* 8.3 持久化消费落库 */
+    if (pool) {
+        char exp_str[32], uid_str[32];
+        snprintf(exp_str, sizeof(exp_str), "%lld", (long long)tok_exp);
+        snprintf(uid_str, sizeof(uid_str), "%lld", (long long)tok_uid);
+        const char*   params_ins[] = {tok_nonce, exp_str, uid_str, NULL};
+        csilk_json_t* res_ins = csilk_db_query_param_json(
+            pool,
+            "INSERT INTO ai_consumed_nonces (nonce, expiration, user_id) VALUES (?, ?, ?)",
+            params_ins);
+        if (!res_ins) {
+            /* 主键冲突说明并发重放 */
+            return AI_CONFIRM_ERR_REPLAY;
+        }
+        csilk_json_free(res_ins);
+
+        /* 低频清理过期 Nonce（每 10 次写入触发一次） */
+        static _Atomic uint32_t s_gc_counter = 0;
+        if ((++s_gc_counter % 10) == 0) {
+            char old_str[32];
+            snprintf(old_str, sizeof(old_str), "%lld", (long long)(now - 300));
+            csilk_json_t* res_del =
+                csilk_db_query_param_json(pool,
+                                          "DELETE FROM ai_consumed_nonces WHERE expiration < ?",
+                                          (const char*[]){old_str, NULL});
+            if (res_del) {
+                csilk_json_free(res_del);
+            }
+        }
+    }
+
+    /* 8.4 更新内存环形缓冲区 */
+    pthread_mutex_lock(&s_nonce_lock);
+    record_nonce_consumed_locked(tok_nonce, tok_exp);
+    pthread_mutex_unlock(&s_nonce_lock);
+
+    return AI_CONFIRM_OK;
+}
+
 ai_confirmation_status_t
 ai_confirmation_verify_and_consume(int64_t             user_id,
                                    int64_t             session_id,
@@ -399,74 +472,216 @@ ai_confirmation_verify_and_consume(int64_t             user_id,
     }
 
     /* 8. 防重放校验与原子消费 (Anti-replay single-use check) */
-    /* 8.1 快速路径：内存环形缓冲区检测 */
-    pthread_mutex_lock(&s_nonce_lock);
-    if (is_nonce_consumed_locked(tok_nonce, now)) {
-        pthread_mutex_unlock(&s_nonce_lock);
-        return AI_CONFIRM_ERR_REPLAY;
-    }
-    pthread_mutex_unlock(&s_nonce_lock);
+    return consume_nonce_atomic(tok_nonce, tok_uid, tok_exp, now);
+}
 
-    /* 8.2 持久化层检测：数据库查询（若连接池已初始化） */
-    csilk_db_pool_t* pool = db_get_pool();
-    if (pool) {
-        char now_str[32];
-        snprintf(now_str, sizeof(now_str), "%lld", (long long)now);
-        const char*   params_chk[] = {tok_nonce, now_str, NULL};
-        csilk_json_t* res_chk = csilk_db_query_param_json(
-            pool,
-            "SELECT 1 FROM ai_consumed_nonces WHERE nonce = ? AND expiration >= ?",
-            params_chk);
-        if (res_chk && csilk_json_array_size(res_chk) > 0) {
-            csilk_json_free(res_chk);
-            /* 回填内存环形缓存 */
-            pthread_mutex_lock(&s_nonce_lock);
-            record_nonce_consumed_locked(tok_nonce, tok_exp);
-            pthread_mutex_unlock(&s_nonce_lock);
-            return AI_CONFIRM_ERR_REPLAY;
-        }
-        if (res_chk) {
-            csilk_json_free(res_chk);
-        }
+void
+ai_confirmation_hash_batch_actions(const csilk_json_t* actions_array,
+                                   char*               out_hash,
+                                   size_t              out_hash_sz)
+{
+    if (!out_hash || out_hash_sz < 65) {
+        return;
+    }
+    if (!actions_array || !csilk_json_is_array(actions_array)) {
+        strncpy(out_hash,
+                "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                out_hash_sz - 1);
+        out_hash[64] = '\0';
+        return;
     }
 
-    /* 8.3 持久化消费落库 */
-    if (pool) {
-        char exp_str[32], uid_str[32];
-        snprintf(exp_str, sizeof(exp_str), "%lld", (long long)tok_exp);
-        snprintf(uid_str, sizeof(uid_str), "%lld", (long long)tok_uid);
-        const char*   params_ins[] = {tok_nonce, exp_str, uid_str, NULL};
-        csilk_json_t* res_ins = csilk_db_query_param_json(
-            pool,
-            "INSERT INTO ai_consumed_nonces (nonce, expiration, user_id) VALUES (?, ?, ?)",
-            params_ins);
-        if (!res_ins) {
-            /* 主键冲突说明并发重放 */
-            return AI_CONFIRM_ERR_REPLAY;
-        }
-        csilk_json_free(res_ins);
-
-        /* 低频清理过期 Nonce（每 10 次写入触发一次） */
-        static _Atomic uint32_t s_gc_counter = 0;
-        if ((++s_gc_counter % 10) == 0) {
-            char old_str[32];
-            snprintf(old_str, sizeof(old_str), "%lld", (long long)(now - 300));
-            csilk_json_t* res_del =
-                csilk_db_query_param_json(pool,
-                                          "DELETE FROM ai_consumed_nonces WHERE expiration < ?",
-                                          (const char*[]){old_str, NULL});
-            if (res_del) {
-                csilk_json_free(res_del);
-            }
-        }
+    size_t n = csilk_json_array_size(actions_array);
+    if (n == 0) {
+        strncpy(out_hash,
+                "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                out_hash_sz - 1);
+        out_hash[64] = '\0';
+        return;
     }
 
-    /* 8.4 更新内存环形缓冲区 */
-    pthread_mutex_lock(&s_nonce_lock);
-    record_nonce_consumed_locked(tok_nonce, tok_exp);
-    pthread_mutex_unlock(&s_nonce_lock);
+    /* 每个动作项计算 64 字节十六进制哈希，项之间用 ':' 拼接，总长度为 65 * n */
+    size_t buf_sz = n * 65 + 1;
+    char*  concat_buf = (char*)malloc(buf_sz);
+    if (!concat_buf) {
+        strncpy(out_hash,
+                "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                out_hash_sz - 1);
+        out_hash[64] = '\0';
+        return;
+    }
+    concat_buf[0] = '\0';
 
-    return AI_CONFIRM_OK;
+    for (size_t i = 0; i < n; i++) {
+        const csilk_json_t* item = csilk_json_array_get(actions_array, i);
+        char                item_hash[65] = {0};
+        ai_confirmation_hash_args(item, item_hash, sizeof(item_hash));
+        if (i > 0) {
+            strcat(concat_buf, ":");
+        }
+        strcat(concat_buf, item_hash);
+    }
+
+    unsigned char md[SHA256_DIGEST_LENGTH];
+    SHA256((const unsigned char*)concat_buf, strlen(concat_buf), md);
+    free(concat_buf);
+
+    static const char* hex = "0123456789abcdef";
+    for (size_t i = 0; i < SHA256_DIGEST_LENGTH; i++) {
+        out_hash[i * 2] = hex[md[i] >> 4];
+        out_hash[i * 2 + 1] = hex[md[i] & 0xf];
+    }
+    out_hash[64] = '\0';
+}
+
+char*
+ai_confirmation_create_batch_token(int64_t             user_id,
+                                   int64_t             session_id,
+                                   const csilk_json_t* actions_array,
+                                   ai_risk_level_t     risk,
+                                   int                 ttl_seconds)
+{
+    if (!actions_array) {
+        return NULL;
+    }
+    if (ttl_seconds == 0) {
+        ttl_seconds = DEFAULT_TTL_SEC;
+    }
+
+    int64_t now = (int64_t)time(NULL);
+    int64_t exp = now + ttl_seconds;
+
+    char batch_hash[65] = {0};
+    ai_confirmation_hash_batch_actions(actions_array, batch_hash, sizeof(batch_hash));
+
+    /* 生成随机高熵 Nonce */
+    char          nonce[32];
+    unsigned char rnd[4] = {0};
+    if (RAND_bytes(rnd, (int)sizeof(rnd)) != 1) {
+        rnd[0] = (unsigned char)(now & 0xff);
+        rnd[1] = (unsigned char)((now >> 8) & 0xff);
+        rnd[2] = (unsigned char)(((uintptr_t)nonce) & 0xff);
+        rnd[3] = (unsigned char)(((uintptr_t)&rnd) & 0xff);
+    }
+    unsigned int rnd_val = ((unsigned int)rnd[0] << 24) | ((unsigned int)rnd[1] << 16) |
+                           ((unsigned int)rnd[2] << 8) | (unsigned int)rnd[3];
+    snprintf(nonce, sizeof(nonce), "nc%08lx%08x", (unsigned long)now, rnd_val);
+
+    /* 规范载荷字符串: batch_v1|%lld|%lld|%s|%d|%lld|%s|%lld */
+    char canonical[512];
+    snprintf(canonical,
+             sizeof(canonical),
+             "batch_v1|%lld|%lld|%s|%d|%lld|%s|%lld",
+             (long long)user_id,
+             (long long)session_id,
+             batch_hash,
+             (int)risk,
+             (long long)now,
+             nonce,
+             (long long)exp);
+
+    const char* secret = ai_confirmation_get_secret();
+    if (!secret || secret[0] == '\0') {
+        return NULL;
+    }
+    char mac[SHA256_DIGEST_LENGTH * 2 + 1];
+    compute_hmac_hex(canonical, secret, mac, sizeof(mac));
+
+    /* 返回格式: mf_batch_v1.<canonical>.<mac> */
+    size_t out_sz = strlen(canonical) + strlen(mac) + 32;
+    char*  token = (char*)malloc(out_sz);
+    if (!token) {
+        return NULL;
+    }
+    snprintf(token, out_sz, "mf_batch_v1.%s.%s", canonical, mac);
+    return token;
+}
+
+ai_confirmation_status_t
+ai_confirmation_verify_and_consume_batch(int64_t             user_id,
+                                         int64_t             session_id,
+                                         const csilk_json_t* actions_array,
+                                         const char*         token)
+{
+    if (!token || !token[0] || !actions_array) {
+        return AI_CONFIRM_ERR_FORMAT;
+    }
+
+    /* 1. 检验 token 前缀结构 (mf_batch_v1.) */
+    if (strncmp(token, "mf_batch_v1.", 12) != 0) {
+        return AI_CONFIRM_ERR_FORMAT;
+    }
+
+    const char* payload_start = token + 12;
+    const char* last_dot = strrchr(payload_start, '.');
+    if (!last_dot || last_dot == payload_start) {
+        return AI_CONFIRM_ERR_FORMAT;
+    }
+
+    size_t canonical_len = (size_t)(last_dot - payload_start);
+    char   canonical[512];
+    if (canonical_len >= sizeof(canonical)) {
+        return AI_CONFIRM_ERR_FORMAT;
+    }
+    memcpy(canonical, payload_start, canonical_len);
+    canonical[canonical_len] = '\0';
+
+    const char* signature = last_dot + 1;
+
+    /* 2. 恒定时间签名验证 (Constant-time comparison) */
+    const char* secret = ai_confirmation_get_secret();
+    if (!secret || secret[0] == '\0') {
+        return AI_CONFIRM_ERR_SIGNATURE;
+    }
+    char expected_mac[SHA256_DIGEST_LENGTH * 2 + 1];
+    compute_hmac_hex(canonical, secret, expected_mac, sizeof(expected_mac));
+
+    size_t sig_len = strlen(signature);
+    if (sig_len != strlen(expected_mac)) {
+        return AI_CONFIRM_ERR_SIGNATURE;
+    }
+    if (ai_confirmation_constant_time_memcmp(signature, expected_mac, sig_len) != 0) {
+        return AI_CONFIRM_ERR_SIGNATURE;
+    }
+
+    /* 3. 解析载荷字段: batch_v1|uid|sid|batch_hash|risk|timestamp|nonce|exp */
+    int64_t tok_uid = 0, tok_sid = 0, tok_ts = 0, tok_exp = 0;
+    char    tok_hash[65] = {0}, tok_nonce[64] = {0};
+    int     tok_risk = 0;
+
+    int parsed = sscanf(canonical,
+                        "batch_v1|%lld|%lld|%64[^|]|%d|%lld|%63[^|]|%lld",
+                        (long long*)&tok_uid,
+                        (long long*)&tok_sid,
+                        tok_hash,
+                        &tok_risk,
+                        (long long*)&tok_ts,
+                        tok_nonce,
+                        (long long*)&tok_exp);
+    if (parsed != 7) {
+        return AI_CONFIRM_ERR_FORMAT;
+    }
+
+    /* 4. 过期校验 (Expiration) */
+    int64_t now = (int64_t)time(NULL);
+    if (tok_exp <= now) {
+        return AI_CONFIRM_ERR_EXPIRED;
+    }
+
+    /* 5. 用户身份隔离校验 (User isolation) */
+    if (tok_uid != user_id) {
+        return AI_CONFIRM_ERR_USER_MISMATCH;
+    }
+
+    /* 6. 复合动作哈希防篡改校验 (Batch actions tamper-proofing) */
+    char cur_hash[65] = {0};
+    ai_confirmation_hash_batch_actions(actions_array, cur_hash, sizeof(cur_hash));
+    if (ai_confirmation_constant_time_memcmp(tok_hash, cur_hash, 64) != 0) {
+        return AI_CONFIRM_ERR_ARGS_MISMATCH;
+    }
+
+    /* 7. 防重放校验与原子消费 */
+    return consume_nonce_atomic(tok_nonce, tok_uid, tok_exp, now);
 }
 
 const char*

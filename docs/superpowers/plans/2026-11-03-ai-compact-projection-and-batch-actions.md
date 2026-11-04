@@ -81,26 +81,26 @@ char* ai_project_tool_result(const char* tool_name, const char* raw_json);
 #endif
 ```
 
-- [ ] **Step 1: Write unit test `test_ai_token_compact.c`**
+- [x] **Step 1: Write unit test `test_ai_token_compact.c`**
   - Verify `get_assets`: Retains `id`, `name`, `asset_type`, `currency`, `balance`, `current_value`, `cost_basis`. Removes `user_id`, `created_at`, `updated_at`, `note`, `icon`, `sort_order`, `quote_source`, `symbol`.
   - Verify `get_daily_expenses`: Limits array to max 15 items, retains `id`, `date`, `amount`, `category_name`, `asset_name`, `type`, `note`.
   - Verify `get_transactions`: Limits array to max 15 items, retains `id`, `transaction_date`, `transaction_type`, `amount`, `category_name`, `asset_name`, `note`.
   - Verify byte/token reduction is >= 60%.
   - Verify non-query tools (e.g. `web_search` or error payloads) are passed through un-altered.
 
-- [ ] **Step 2: Register in `backend/CMakeLists.txt` and verify RED failure**
+- [x] **Step 2: Register in `backend/CMakeLists.txt` and verify RED failure**
   - Add `test_ai_token_compact` via `add_financial_unit_test`.
   - Run `cmake --build backend/build --target test_ai_token_compact` -> expected FAIL.
 
-- [ ] **Step 3: Implement `projection.h` and `projection.c`**
+- [x] **Step 3: Implement `projection.h` and `projection.c`**
   - Implement selective field extraction and array slicing.
   - Integrate with `ai_tool_dispatch_parsed` in `dispatcher.c`: after `tool->execute(tool, ctx, normalized)`, if result is not an error, apply `ai_project_tool_result`.
 
-- [ ] **Step 4: Run test to verify GREEN pass**
+- [x] **Step 4: Run test to verify GREEN pass**
   - Run `./backend/build/test_ai_token_compact` -> expected PASS.
   - Run `ctest --test-dir backend/build --output-on-failure`.
 
-- [ ] **Step 5: Commit Task 1**
+- [x] **Step 5: Commit Task 1**
   - `git commit -m "feat(ai): ⚡ implement semantic result projection for compact tool context"`
 
 ---
@@ -132,7 +132,7 @@ ai_confirmation_status_t ai_confirmation_verify_and_consume_batch(
     const char*         token);
 ```
 
-- [ ] **Step 1: Write unit tests in `test_ai_batch_confirmation.c`**
+- [x] **Step 1: Write unit tests in `test_ai_batch_confirmation.c`**
   - Test batch hash determinism for multiple actions.
   - Test batch token generation with `mf_batch_v1` prefix.
   - Test successful verification and single-use nonce consumption.
@@ -141,19 +141,19 @@ ai_confirmation_status_t ai_confirmation_verify_and_consume_batch(
   - Test user ID mismatch rejection (`AI_CONFIRM_ERR_USER_MISMATCH`).
   - Test expired token rejection (`AI_CONFIRM_ERR_EXPIRED`).
 
-- [ ] **Step 2: Register in `backend/CMakeLists.txt` and verify RED failure**
+- [x] **Step 2: Register in `backend/CMakeLists.txt` and verify RED failure**
   - Run `cmake --build backend/build --target test_ai_batch_confirmation` -> expected FAIL.
 
-- [ ] **Step 3: Implement batch hashing and verification in `confirmation.c`**
+- [x] **Step 3: Implement batch hashing and verification in `confirmation.c`**
   - Canonicalize JSON for each action in the array.
   - Compute composite SHA-256 hash across canonical action representations.
   - Implement `ai_confirmation_create_batch_token` and `ai_confirmation_verify_and_consume_batch`.
 
-- [ ] **Step 4: Run test to verify GREEN pass**
+- [x] **Step 4: Run test to verify GREEN pass**
   - Run `./backend/build/test_ai_batch_confirmation` -> expected PASS.
   - Run `ctest --test-dir backend/build --output-on-failure`.
 
-- [ ] **Step 5: Commit Task 2**
+- [x] **Step 5: Commit Task 2**
   - `git commit -m "feat(ai): 🛡️ implement composite HMAC token protocol for multi-action batches"`
 
 ---
