@@ -5,6 +5,76 @@
 #include <unistd.h>
 #include "common/db.h"
 #include "services/ai/policy/confirmation.h"
+#include "services/ai/tools/batch_tool.h"
+
+static void
+seed_test_user_and_assets(csilk_db_pool_t* pool,
+                          int64_t          user_id,
+                          int64_t*         out_a1,
+                          int64_t*         out_a2,
+                          int64_t*         out_cat)
+{
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+
+    csilk_json_free(csilk_db_query_param_json(
+        pool,
+        "INSERT INTO users (id, username, password) VALUES (?, 'batch_user', 'hash')",
+        (const char*[]){uid_str, NULL}));
+    csilk_json_free(csilk_db_query_param_json(
+        pool,
+        "INSERT INTO ledgers (id, owner_id, name, is_default) VALUES (1, ?, '默认账本', 1)",
+        (const char*[]){uid_str, NULL}));
+    csilk_json_free(csilk_db_query_param_json(
+        pool,
+        "INSERT INTO accounts (id, user_id, ledger_id, name, institution) VALUES (1, ?, 1, '默认账户', 'cash_wallet')",
+        (const char*[]){uid_str, NULL}));
+    csilk_json_free(csilk_db_query_param_json(
+        pool,
+        "INSERT INTO categories (id, user_id, name, type, icon) VALUES (10, ?, '餐饮', "
+        "'expense', '')",
+        (const char*[]){uid_str, NULL}));
+    csilk_json_free(csilk_db_query_param_json(
+        pool,
+        "INSERT INTO assets (id, user_id, category_id, account_id, name, current_value, currency, "
+        "ledger_id) VALUES (101, ?, 10, 1, '现金钱包', 1000.0, 'CNY', 1)",
+        (const char*[]){uid_str, NULL}));
+    csilk_json_free(csilk_db_query_param_json(
+        pool,
+        "INSERT INTO assets (id, user_id, category_id, account_id, name, current_value, currency, "
+        "ledger_id) VALUES (102, ?, 10, 1, '银行卡', 500.0, 'CNY', 1)",
+        (const char*[]){uid_str, NULL}));
+
+    if (out_a1) {
+        *out_a1 = 101;
+    }
+    if (out_a2) {
+        *out_a2 = 102;
+    }
+    if (out_cat) {
+        *out_cat = 10;
+    }
+}
+
+static double
+get_asset_balance(csilk_db_pool_t* pool, int64_t user_id, int64_t asset_id)
+{
+    char uid_str[32], aid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    snprintf(aid_str, sizeof(aid_str), "%lld", (long long)asset_id);
+    csilk_json_t* res = csilk_db_query_param_json(
+        pool,
+        "SELECT current_value FROM assets WHERE id=? AND user_id=?",
+        (const char*[]){aid_str, uid_str, NULL});
+    double val = 0.0;
+    if (res && csilk_json_array_size(res) > 0) {
+        val = db_get_num(csilk_json_array_get(res, 0), "current_value");
+    }
+    if (res) {
+        csilk_json_free(res);
+    }
+    return val;
+}
 
 static csilk_json_t*
 create_sample_actions_a(void)
@@ -300,8 +370,175 @@ main(void)
         unlink(test_db);
     }
 
+    /* ------------------------------------------------------------- */
+    /* Test 9: Atomic Batch Confirmation Execution                  */
+    /* ------------------------------------------------------------- */
+    printf("[Test 9] Atomic Batch Confirmation Execution...\n");
+    {
+        const char* test_db = "/tmp/test_ai_batch_exec.db";
+        unlink(test_db);
+        setenv("MINEFOLIO_DB_DSN", test_db, 1);
+        setenv("DB_DRIVER", "sqlite", 1);
+
+        csilk_db_pool_t* pool = NULL;
+        assert(db_init(&pool) == 0 && pool != NULL);
+        assert(db_run_migrations(pool) == 0);
+
+        int64_t user_id = 2001;
+        int64_t a1 = 0, a2 = 0, cat = 0;
+        seed_test_user_and_assets(pool, user_id, &a1, &a2, &cat);
+
+        assert(get_asset_balance(pool, user_id, a1) == 1000.0);
+        assert(get_asset_balance(pool, user_id, a2) == 500.0);
+
+        /* Construct batch: 1 expense (50 CNY from a1) + 1 transfer (200 CNY from a1 to a2) */
+        csilk_json_t* actions = csilk_json_array();
+        csilk_json_t* act1 = csilk_json_object();
+        csilk_json_add_string(act1, "action_type", "daily_expense");
+        csilk_json_add_number(act1, "amount", 50.0);
+        csilk_json_add_string(act1, "type", "expense");
+        csilk_json_add_number(act1, "category_id", (double)cat);
+        csilk_json_add_number(act1, "asset_id", (double)a1);
+        csilk_json_add_string(act1, "note", "Lunch");
+        csilk_json_array_append(actions, act1);
+
+        csilk_json_t* act2 = csilk_json_object();
+        csilk_json_add_string(act2, "action_type", "transfer");
+        csilk_json_add_number(act2, "amount", 200.0);
+        csilk_json_add_number(act2, "from_asset_id", (double)a1);
+        csilk_json_add_number(act2, "to_asset_id", (double)a2);
+        csilk_json_add_string(act2, "note", "Pocket money");
+        csilk_json_array_append(actions, act2);
+
+        char* token = ai_confirmation_create_batch_token(user_id, 0, actions, AI_RISK_HIGH, 300);
+        assert(token != NULL);
+
+        csilk_json_t* out_data = NULL;
+        int           code = 0;
+        char          err_buf[256] = {0};
+        int           rc = ai_batch_actions_execute(
+            pool, user_id, actions, token, &out_data, &code, err_buf, sizeof(err_buf));
+        assert(rc == 0);
+        assert(code == 0);
+        assert(out_data != NULL);
+        assert(db_get_num(out_data, "executed_count") == 2.0);
+        csilk_json_free(out_data);
+
+        /* Verify balances: a1 = 1000 - 50 - 200 = 750, a2 = 500 + 200 = 700 */
+        double bal1 = get_asset_balance(pool, user_id, a1);
+        double bal2 = get_asset_balance(pool, user_id, a2);
+        assert(bal1 == 750.0);
+        assert(bal2 == 700.0);
+        printf("  ✅ Batch execution verified: a1 balance=%.2f, a2 balance=%.2f\n", bal1, bal2);
+
+        /* ------------------------------------------------------------- */
+        /* Test 11: Anti-Replay on Execution                            */
+        /* ------------------------------------------------------------- */
+        printf("[Test 11] Anti-Replay on Execution...\n");
+        {
+            csilk_json_t* out_data_replay = NULL;
+            int           code_replay = 0;
+            char          err_replay[256] = {0};
+            int           rc_replay = ai_batch_actions_execute(pool,
+                                                     user_id,
+                                                     actions,
+                                                     token,
+                                                     &out_data_replay,
+                                                     &code_replay,
+                                                     err_replay,
+                                                     sizeof(err_replay));
+            assert(rc_replay < 0);
+            assert(code_replay == 1004);
+            printf("  ✅ Replay rejected with code %d: %s\n", code_replay, err_replay);
+        }
+
+        /* ------------------------------------------------------------- */
+        /* Test 12: Tampering Detection on Execution                     */
+        /* ------------------------------------------------------------- */
+        printf("[Test 12] Tampering Detection on Execution...\n");
+        {
+            char* fresh_token =
+                ai_confirmation_create_batch_token(user_id, 0, actions, AI_RISK_HIGH, 300);
+            assert(fresh_token != NULL);
+
+            /* Modify amount before executing */
+            csilk_json_add_number(act1, "amount", 999.0);
+
+            csilk_json_t* out_data_tamper = NULL;
+            int           code_tamper = 0;
+            char          err_tamper[256] = {0};
+            int           rc_tamper = ai_batch_actions_execute(pool,
+                                                     user_id,
+                                                     actions,
+                                                     fresh_token,
+                                                     &out_data_tamper,
+                                                     &code_tamper,
+                                                     err_tamper,
+                                                     sizeof(err_tamper));
+            assert(rc_tamper < 0);
+            assert(code_tamper == 1002);
+            printf("  ✅ Tampering rejected with code %d: %s\n", code_tamper, err_tamper);
+
+            free(fresh_token);
+        }
+
+        /* ------------------------------------------------------------- */
+        /* Test 10: Atomic Rollback on Partial Failure                  */
+        /* ------------------------------------------------------------- */
+        printf("[Test 10] Atomic Rollback on Partial Failure...\n");
+        {
+            csilk_json_t* bad_batch = csilk_json_array();
+            csilk_json_t* b_act1 = csilk_json_object();
+            csilk_json_add_string(b_act1, "action_type", "daily_expense");
+            csilk_json_add_number(b_act1, "amount", 100.0);
+            csilk_json_add_number(b_act1, "category_id", (double)cat);
+            csilk_json_add_number(b_act1, "asset_id", (double)a1);
+            csilk_json_add_string(b_act1, "note", "Dinner");
+            csilk_json_array_append(bad_batch, b_act1);
+
+            /* Action 2 has non-existent target asset ID */
+            csilk_json_t* b_act2 = csilk_json_object();
+            csilk_json_add_string(b_act2, "action_type", "transfer");
+            csilk_json_add_number(b_act2, "amount", 50.0);
+            csilk_json_add_number(b_act2, "from_asset_id", (double)a1);
+            csilk_json_add_number(b_act2, "to_asset_id", 999999.0);
+            csilk_json_add_string(b_act2, "note", "Bad transfer");
+            csilk_json_array_append(bad_batch, b_act2);
+
+            char* bad_token =
+                ai_confirmation_create_batch_token(user_id, 0, bad_batch, AI_RISK_HIGH, 300);
+            assert(bad_token != NULL);
+
+            csilk_json_t* out_bad = NULL;
+            int           code_bad = 0;
+            char          err_bad[256] = {0};
+            int           rc_bad = ai_batch_actions_execute(pool,
+                                                  user_id,
+                                                  bad_batch,
+                                                  bad_token,
+                                                  &out_bad,
+                                                  &code_bad,
+                                                  err_bad,
+                                                  sizeof(err_bad));
+            assert(rc_bad < 0);
+            printf("  ✅ Batch failure caught: %s\n", err_bad);
+
+            /* Verify rollback: Asset 1 balance must STILL be 750 (Action 1 rolled back!) */
+            double bal1_post = get_asset_balance(pool, user_id, a1);
+            assert(bal1_post == 750.0);
+            printf("  ✅ Atomic rollback verified: a1 balance retained at %.2f\n", bal1_post);
+
+            free(bad_token);
+            csilk_json_free(bad_batch);
+        }
+
+        free(token);
+        csilk_json_free(actions);
+        unlink(test_db);
+    }
+
     printf("============================================================\n");
-    printf("   ALL 8 BATCH CONFIRMATION TESTS PASSED SUCCESSFULLY!       \n");
+    printf("   ALL 12 BATCH CONFIRMATION TESTS PASSED SUCCESSFULLY!      \n");
     printf("============================================================\n");
     return 0;
 }

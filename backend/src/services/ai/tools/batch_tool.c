@@ -3,6 +3,8 @@
 #include "services/ai/tools/schema.h"
 #include "services/ai/policy/confirmation.h"
 #include "infrastructure/repositories/ai_repo_impl.h"
+#include "core/ledger/ledger_engine.h"
+#include "common/balance.h"
 #include "common/db.h"
 #include "csilk/csilk.h"
 #include <stdio.h>
@@ -574,4 +576,274 @@ ai_tool_batch_register_all(void)
         .execute = exec_propose_batch_actions,
     };
     ai_tool_register(&t);
+}
+
+int
+ai_batch_actions_execute(csilk_db_pool_t*    pool,
+                         int64_t             user_id,
+                         const csilk_json_t* actions,
+                         const char*         draft_token,
+                         csilk_json_t**      out_data,
+                         int*                out_code,
+                         char*               err_buf,
+                         size_t              err_len)
+{
+    if (out_data) {
+        *out_data = NULL;
+    }
+    if (out_code) {
+        *out_code = 1002;
+    }
+    if (err_buf && err_len > 0) {
+        err_buf[0] = '\0';
+    }
+
+    if (!pool || user_id <= 0 || !actions || !csilk_json_is_array(actions) || !draft_token ||
+        !draft_token[0]) {
+        if (err_buf && err_len > 0) {
+            snprintf(err_buf, err_len, "缺少参数或用户未授权");
+        }
+        return -1;
+    }
+
+    size_t cnt = csilk_json_array_size(actions);
+    if (cnt == 0 || cnt > 20) {
+        if (err_buf && err_len > 0) {
+            snprintf(err_buf, err_len, "动作列表数量必须在 1~20 之间");
+        }
+        return -1;
+    }
+
+    /* 1. 验证并原子消费 draft_token (Anti-replay + HMAC verification) */
+    ai_confirmation_status_t st =
+        ai_confirmation_verify_and_consume_batch(user_id, 0, actions, draft_token);
+    if (st != AI_CONFIRM_OK) {
+        if (st == AI_CONFIRM_ERR_REPLAY) {
+            if (out_code) {
+                *out_code = 1004;
+            }
+            if (err_buf && err_len > 0) {
+                snprintf(err_buf, err_len, "确认令牌已被使用或已失效");
+            }
+        } else if (st == AI_CONFIRM_ERR_EXPIRED) {
+            if (out_code) {
+                *out_code = 1002;
+            }
+            if (err_buf && err_len > 0) {
+                snprintf(err_buf, err_len, "确认令牌已过期");
+            }
+        } else if (st == AI_CONFIRM_ERR_USER_MISMATCH) {
+            if (out_code) {
+                *out_code = 1004;
+            }
+            if (err_buf && err_len > 0) {
+                snprintf(err_buf, err_len, "用户身份不匹配");
+            }
+        } else if (st == AI_CONFIRM_ERR_ARGS_MISMATCH) {
+            if (out_code) {
+                *out_code = 1002;
+            }
+            if (err_buf && err_len > 0) {
+                snprintf(err_buf, err_len, "提交参数与拟执行草案不匹配，禁止执行");
+            }
+        } else {
+            if (out_code) {
+                *out_code = 1002;
+            }
+            if (err_buf && err_len > 0) {
+                snprintf(err_buf, err_len, "确认令牌校验失败: %s", ai_confirmation_strerror(st));
+            }
+        }
+        return -1;
+    }
+
+    /* 2. 开启原子事务保存点 */
+    db_tx_scope_t scope;
+    if (db_tx_scope_begin(pool, "mf_confirm_batch", &scope) != 0) {
+        if (out_code) {
+            *out_code = 500;
+        }
+        if (err_buf && err_len > 0) {
+            snprintf(err_buf, err_len, "数据库事务开启失败");
+        }
+        return -1;
+    }
+
+    char today_buf[32];
+    get_today_date(today_buf, sizeof(today_buf));
+
+    csilk_json_t* results_arr = csilk_json_array();
+    for (size_t i = 0; i < cnt; i++) {
+        const csilk_json_t* it = csilk_json_array_get(actions, i);
+        const char*         action_type = csilk_json_get_string(it, "action_type");
+        if (!action_type || !action_type[0]) {
+            action_type = csilk_json_get_string(it, "type");
+        }
+        if (!action_type || !action_type[0]) {
+            db_tx_scope_rollback(pool, &scope);
+            csilk_json_free(results_arr);
+            if (out_code) {
+                *out_code = 1002;
+            }
+            if (err_buf && err_len > 0) {
+                snprintf(err_buf, err_len, "动作 #%zu 缺少 action_type", i + 1);
+            }
+            return -1;
+        }
+
+        double amount = db_get_num(it, "amount");
+        if (amount <= 0.0) {
+            db_tx_scope_rollback(pool, &scope);
+            csilk_json_free(results_arr);
+            if (out_code) {
+                *out_code = 1002;
+            }
+            if (err_buf && err_len > 0) {
+                snprintf(err_buf, err_len, "动作 #%zu 金额必须大于 0", i + 1);
+            }
+            return -1;
+        }
+
+        const char* note = csilk_json_get_string(it, "note");
+        const char* dt = csilk_json_get_string(it, "date");
+        if (!dt || !dt[0]) {
+            dt = today_buf;
+        }
+
+        if (strcmp(action_type, "daily_expense") == 0) {
+            const char* type = csilk_json_get_string(it, "type");
+            if (!type || !type[0] || strcmp(type, "daily_expense") == 0) {
+                type = "expense";
+            }
+            int64_t category_id = (int64_t)db_get_num(it, "category_id");
+            int64_t asset_id = (int64_t)db_get_num(it, "asset_id");
+            if (asset_id <= 0) {
+                db_tx_scope_rollback(pool, &scope);
+                csilk_json_free(results_arr);
+                if (out_code) {
+                    *out_code = 1002;
+                }
+                if (err_buf && err_len > 0) {
+                    snprintf(err_buf, err_len, "动作 #%zu 缺少有效 asset_id", i + 1);
+                }
+                return -1;
+            }
+
+            int64_t de_id = mf_ai_repo_daily_expense_insert(
+                pool, user_id, dt, type, amount, "CNY", category_id, asset_id, note ? note : "");
+            if (de_id <= 0) {
+                db_tx_scope_rollback(pool, &scope);
+                csilk_json_free(results_arr);
+                if (out_code) {
+                    *out_code = 500;
+                }
+                if (err_buf && err_len > 0) {
+                    snprintf(err_buf, err_len, "动作 #%zu 写入收支失败", i + 1);
+                }
+                return -1;
+            }
+
+            int     is_inc = (strcmp(type, "income") == 0);
+            money_t amt_m;
+            money_from_double(amount, CURRENCY_CNY, &amt_m);
+            if (ledger_apply_expense(
+                    pool, user_id, asset_id, amt_m, is_inc, de_id, note ? note : "AI 批量记账") !=
+                0) {
+                db_tx_scope_rollback(pool, &scope);
+                csilk_json_free(results_arr);
+                if (out_code) {
+                    *out_code = 500;
+                }
+                if (err_buf && err_len > 0) {
+                    snprintf(err_buf, err_len, "动作 #%zu 联动账户余额失败", i + 1);
+                }
+                return -1;
+            }
+
+            csilk_json_t* item_res = csilk_json_object();
+            csilk_json_add_string(item_res, "action_type", "daily_expense");
+            csilk_json_add_number(item_res, "id", (double)de_id);
+            csilk_json_add_bool(item_res, "success", true);
+            csilk_json_array_append(results_arr, item_res);
+        } else if (strcmp(action_type, "transfer") == 0) {
+            int64_t from_id = (int64_t)db_get_num(it, "from_asset_id");
+            int64_t to_id = (int64_t)db_get_num(it, "to_asset_id");
+            if (from_id <= 0 || to_id <= 0 || from_id == to_id) {
+                db_tx_scope_rollback(pool, &scope);
+                csilk_json_free(results_arr);
+                if (out_code) {
+                    *out_code = 1002;
+                }
+                if (err_buf && err_len > 0) {
+                    snprintf(err_buf, err_len, "动作 #%zu 转账双方账户无效或相同", i + 1);
+                }
+                return -1;
+            }
+
+            int64_t transfer_id = mf_ai_repo_transfer_insert(
+                pool, user_id, from_id, to_id, amount, "CNY", note ? note : "");
+            if (transfer_id <= 0) {
+                db_tx_scope_rollback(pool, &scope);
+                csilk_json_free(results_arr);
+                if (out_code) {
+                    *out_code = 500;
+                }
+                if (err_buf && err_len > 0) {
+                    snprintf(err_buf, err_len, "动作 #%zu 写入转账失败", i + 1);
+                }
+                return -1;
+            }
+
+            money_t amt_m;
+            money_from_double(amount, CURRENCY_CNY, &amt_m);
+            if (ledger_apply_transfer(pool,
+                                      user_id,
+                                      from_id,
+                                      to_id,
+                                      amt_m,
+                                      transfer_id,
+                                      note ? note : "AI 批量转账") != 0) {
+                db_tx_scope_rollback(pool, &scope);
+                csilk_json_free(results_arr);
+                if (out_code) {
+                    *out_code = 500;
+                }
+                if (err_buf && err_len > 0) {
+                    snprintf(err_buf, err_len, "动作 #%zu 联动转账余额失败", i + 1);
+                }
+                return -1;
+            }
+
+            csilk_json_t* item_res = csilk_json_object();
+            csilk_json_add_string(item_res, "action_type", "transfer");
+            csilk_json_add_number(item_res, "id", (double)transfer_id);
+            csilk_json_add_bool(item_res, "success", true);
+            csilk_json_array_append(results_arr, item_res);
+        } else {
+            db_tx_scope_rollback(pool, &scope);
+            csilk_json_free(results_arr);
+            if (out_code) {
+                *out_code = 1002;
+            }
+            if (err_buf && err_len > 0) {
+                snprintf(err_buf, err_len, "动作 #%zu 未知动作类型: %s", i + 1, action_type);
+            }
+            return -1;
+        }
+    }
+
+    db_tx_scope_commit(pool, &scope);
+
+    csilk_json_t* resp = csilk_json_object();
+    csilk_json_add_number(resp, "executed_count", (double)cnt);
+    csilk_json_add_array(resp, "action_results", results_arr);
+    if (out_data) {
+        *out_data = resp;
+    } else {
+        csilk_json_free(resp);
+    }
+    if (out_code) {
+        *out_code = 0;
+    }
+    return 0;
 }

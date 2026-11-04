@@ -6,6 +6,7 @@
 #include "services/ai/tools/dispatcher.h"
 #include "services/ai/tools/registry.h"
 #include "services/ai/tools/context.h"
+#include "services/ai/tools/batch_tool.h"
 #include "common/response.h"
 #include "common/ctx.h"
 #include "common/db.h"
@@ -317,6 +318,55 @@ api_ai_action_confirm_handler(csilk_ctx_t* c)
 }
 
 void
+api_ai_action_confirm_batch_handler(csilk_ctx_t* c)
+{
+    int64_t user_id = ctx_user_id(c);
+    if (user_id < 0) {
+        return;
+    }
+
+    csilk_json_t* body = csilk_bind_json(c);
+    if (!body) {
+        respond_bad_request(c, "请求体必须为 JSON");
+        return;
+    }
+
+    const char* draft_token = csilk_json_get_string(body, "draft_token");
+    if (!draft_token || !draft_token[0]) {
+        csilk_json_free(body);
+        respond_bad_request(c, "缺少 draft_token");
+        return;
+    }
+
+    const csilk_json_t* actions = csilk_json_get(body, "actions");
+    if (!actions || !csilk_json_is_array(actions) || csilk_json_array_size(actions) == 0) {
+        csilk_json_free(body);
+        respond_bad_request(c, "缺少 actions 数组");
+        return;
+    }
+
+    csilk_json_t* out_data = NULL;
+    int           code = 0;
+    char          err_buf[256] = {0};
+    int           rc = ai_batch_actions_execute(
+        db_get_pool(), user_id, actions, draft_token, &out_data, &code, err_buf, sizeof(err_buf));
+    csilk_json_free(body);
+
+    if (rc == 0 && out_data) {
+        respond_ok(c, out_data);
+        csilk_json_free(out_data);
+    } else {
+        if (code == 1004) {
+            respond_error(c, 1004, err_buf[0] ? err_buf : "操作冲突或令牌已被使用");
+        } else if (code == 1002) {
+            respond_bad_request(c, err_buf[0] ? err_buf : "参数错误或令牌篡改");
+        } else {
+            respond_error(c, 500, err_buf[0] ? err_buf : "批量执行失败");
+        }
+    }
+}
+
+void
 api_ai_settings_get_handler(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
@@ -486,6 +536,14 @@ register_ai_routes(csilk_app_t* app)
                        NULL,
                        "Confirm AI proposed action",
                        "Verify the draft token and execute the confirmed ledger write");
+    csilk_app_post_ext(
+        app,
+        "/api/ai/actions/confirm-batch",
+        api_ai_action_confirm_batch_handler,
+        NULL,
+        NULL,
+        "Confirm AI proposed batch actions",
+        "Verify the composite batch draft token and execute multi-action ledger writes atomically");
     csilk_app_get_ext(app,
                       "/api/ai/workflows",
                       api_ai_workflows_list_handler,
