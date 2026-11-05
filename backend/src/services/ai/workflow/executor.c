@@ -34,6 +34,34 @@ exec_get_current_month_str(char* out, size_t sz)
     snprintf(out, sz, "%04d-%02d", tm_buf.tm_year + 1900, tm_buf.tm_mon + 1);
 }
 
+static void
+exec_saga_compensate(csilk_ctx_t*               c,
+                     csilk_db_pool_t*           pool,
+                     int64_t                    user_id,
+                     const ai_workflow_graph_t* graph,
+                     const int*                 succeeded_steps,
+                     int                        succeeded_count,
+                     const csilk_json_t*        ctx_obj)
+{
+    size_t slen = 0;
+    for (int s = succeeded_count - 1; s >= 0; s--) {
+        int                       prev_idx = succeeded_steps[s];
+        const ai_workflow_node_t* prev_node = &graph->nodes[prev_idx];
+        if (prev_node->compensate) {
+            prev_node->compensate(pool, user_id, ctx_obj);
+            csilk_json_t* ev_comp = csilk_json_object();
+            csilk_json_add_number(ev_comp, "step_index", (double)prev_idx);
+            csilk_json_add_string(ev_comp, "step_id", prev_node->node_id ? prev_node->node_id : "");
+            csilk_json_add_string(ev_comp, "title", prev_node->title ? prev_node->title : "");
+            csilk_json_add_string(ev_comp, "status", "compensated");
+            char* str_comp = csilk_json_serialize(ev_comp, &slen);
+            csilk_json_free(ev_comp);
+            csilk_sse_send(c, "step_compensated", str_comp ? str_comp : "{}");
+            free(str_comp);
+        }
+    }
+}
+
 int
 ai_workflow_execute_stream(csilk_ctx_t* c, const ai_workflow_graph_t* graph, ai_wf_context_t* ctx)
 {
@@ -47,6 +75,9 @@ ai_workflow_execute_stream(csilk_ctx_t* c, const ai_workflow_graph_t* graph, ai_
     const csilk_json_t* params = ctx->params;
     volatile bool*      cancel_token = ctx->cancel_token;
     bool                cancelled = false;
+
+    int succeeded_steps[AI_WF_MAX_STEPS];
+    int succeeded_count = 0;
 
     if (session_id <= 0 && pool) {
         session_id = mf_ai_session_insert(pool, user_id, graph->title, "workflow-agent", "system");
@@ -104,6 +135,20 @@ ai_workflow_execute_stream(csilk_ctx_t* c, const ai_workflow_graph_t* graph, ai_
         }
         const ai_workflow_node_t* node = &graph->nodes[i];
 
+        /* 前置判定条件：若不满足则跳过当前步骤 */
+        if (node->condition && !node->condition(pool, user_id, ctx_obj)) {
+            csilk_json_t* ev_skip = csilk_json_object();
+            csilk_json_add_number(ev_skip, "step_index", (double)i);
+            csilk_json_add_string(ev_skip, "step_id", node->node_id ? node->node_id : "");
+            csilk_json_add_string(ev_skip, "title", node->title ? node->title : "");
+            csilk_json_add_string(ev_skip, "reason", "condition_not_met");
+            char* str_skip = csilk_json_serialize(ev_skip, &slen);
+            csilk_json_free(ev_skip);
+            csilk_sse_send(c, "step_skipped", str_skip ? str_skip : "{}");
+            free(str_skip);
+            continue;
+        }
+
         char step_time_str[64];
         exec_get_datetime_str(step_time_str, sizeof(step_time_str));
 
@@ -127,58 +172,122 @@ ai_workflow_execute_stream(csilk_ctx_t* c, const ai_workflow_graph_t* graph, ai_
                 c, user_id, session_id, graph->title, cur_ctx_str, ctx->user_prompt);
 
             if (!streamed_by_model) {
-                char* step_out = node->execute(pool, user_id, params, cur_ctx_str);
-                if (step_out && step_out[0]) {
-                    size_t rlen = strlen(step_out);
-                    size_t offset = 0;
-                    size_t chunk_sz = 64;
-                    while (offset < rlen) {
-                        size_t take = (offset + chunk_sz < rlen) ? chunk_sz : (rlen - offset);
-                        char   chunk[128];
-                        memcpy(chunk, step_out + offset, take);
-                        chunk[take] = '\0';
-                        offset += take;
-
-                        char sse_payload[512];
-                        int  w = snprintf(sse_payload, sizeof(sse_payload), "{\"content\":\"");
-                        if (w > 0 && (size_t)w < sizeof(sse_payload)) {
-                            int el = ai_json_escape_fast(
-                                chunk, take, sse_payload + w, sizeof(sse_payload) - w - 8);
-                            if (el >= 0) {
-                                w += el;
-                                snprintf(sse_payload + w, sizeof(sse_payload) - w, "\"}");
-                                csilk_sse_send(c, "delta", sse_payload);
-                            }
+                int   max_attempts = (node->max_retries > 0) ? (node->max_retries + 1) : 1;
+                char* step_out = NULL;
+                for (int attempt = 0; attempt < max_attempts; attempt++) {
+                    if (attempt > 0) {
+                        unsigned long sleep_us = 50000UL * (1UL << (attempt - 1));
+                        if (sleep_us > 1000000UL) {
+                            sleep_us = 1000000UL;
                         }
+                        struct timespec req = {.tv_sec = (time_t)(sleep_us / 1000000UL),
+                                               .tv_nsec = (long)((sleep_us % 1000000UL) * 1000UL)};
+                        nanosleep(&req, NULL);
                     }
-
-                    if (pool && session_id > 0) {
-                        int64_t amid = mf_ai_message_insert(
-                            pool, session_id, "assistant", step_out, "workflow-agent", NULL, NULL);
-                        if (amid > 0) {
-                            char amid_buf[48];
-                            snprintf(
-                                amid_buf, sizeof(amid_buf), "{\"id\":\"%lld\"}", (long long)amid);
-                            csilk_sse_send(c, "assistant_message_id", amid_buf);
-                        }
+                    step_out = node->execute(pool, user_id, params, cur_ctx_str);
+                    if (step_out && step_out[0]) {
+                        break;
                     }
-                    free(step_out);
+                    if (step_out) {
+                        free(step_out);
+                        step_out = NULL;
+                    }
                 }
+
+                if (!step_out || !step_out[0]) {
+                    if (step_out) {
+                        free(step_out);
+                    }
+                    free(cur_ctx_str);
+                    exec_saga_compensate(
+                        c, pool, user_id, graph, succeeded_steps, succeeded_count, ctx_obj);
+                    csilk_json_t* ev_err = csilk_json_object();
+                    csilk_json_add_string(ev_err, "type", "error");
+                    csilk_json_add_number(ev_err, "step_index", (double)i);
+                    csilk_json_add_string(ev_err, "step_id", node->node_id ? node->node_id : "");
+                    csilk_json_add_string(ev_err, "message", "Terminal node execution failed");
+                    csilk_json_add_string(ev_err, "error", "Terminal node execution failed");
+                    char* err_str = csilk_json_serialize(ev_err, &slen);
+                    csilk_json_free(ev_err);
+                    csilk_sse_send(c, "error", err_str ? err_str : "{}");
+                    free(err_str);
+                    csilk_json_free(ctx_obj);
+                    return -1;
+                }
+
+                size_t rlen = strlen(step_out);
+                size_t offset = 0;
+                size_t chunk_sz = 64;
+                while (offset < rlen) {
+                    size_t take = (offset + chunk_sz < rlen) ? chunk_sz : (rlen - offset);
+                    char   chunk[128];
+                    memcpy(chunk, step_out + offset, take);
+                    chunk[take] = '\0';
+                    offset += take;
+
+                    char sse_payload[512];
+                    int  w = snprintf(sse_payload, sizeof(sse_payload), "{\"content\":\"");
+                    if (w > 0 && (size_t)w < sizeof(sse_payload)) {
+                        int el = ai_json_escape_fast(
+                            chunk, take, sse_payload + w, sizeof(sse_payload) - w - 8);
+                        if (el >= 0) {
+                            w += el;
+                            snprintf(sse_payload + w, sizeof(sse_payload) - w, "\"}");
+                            csilk_sse_send(c, "delta", sse_payload);
+                        }
+                    }
+                }
+
+                if (pool && session_id > 0) {
+                    int64_t amid = mf_ai_message_insert(
+                        pool, session_id, "assistant", step_out, "workflow-agent", NULL, NULL);
+                    if (amid > 0) {
+                        char amid_buf[48];
+                        snprintf(amid_buf, sizeof(amid_buf), "{\"id\":\"%lld\"}", (long long)amid);
+                        csilk_sse_send(c, "assistant_message_id", amid_buf);
+                    }
+                }
+                free(step_out);
                 snprintf(summary_buf, sizeof(summary_buf), "财务复盘与图表渲染完毕");
             } else {
                 snprintf(summary_buf, sizeof(summary_buf), "AI 大模型已完成深度诊断与图表生成");
             }
             free(cur_ctx_str);
+            succeeded_steps[succeeded_count++] = i;
         } else {
-            char* cur_ctx_str = csilk_json_serialize(ctx_obj, &slen);
-            char* step_out = node->execute(pool, user_id, params, cur_ctx_str);
-            free(cur_ctx_str);
+            int           max_attempts = (node->max_retries > 0) ? (node->max_retries + 1) : 1;
+            char*         step_out = NULL;
+            csilk_json_t* parsed_out = NULL;
+            for (int attempt = 0; attempt < max_attempts; attempt++) {
+                if (attempt > 0) {
+                    unsigned long sleep_us = 50000UL * (1UL << (attempt - 1));
+                    if (sleep_us > 1000000UL) {
+                        sleep_us = 1000000UL;
+                    }
+                    struct timespec req = {.tv_sec = (time_t)(sleep_us / 1000000UL),
+                                           .tv_nsec = (long)((sleep_us % 1000000UL) * 1000UL)};
+                    nanosleep(&req, NULL);
+                }
+                char* cur_ctx_str = csilk_json_serialize(ctx_obj, &slen);
+                step_out = node->execute(pool, user_id, params, cur_ctx_str);
+                free(cur_ctx_str);
 
-            csilk_json_t* parsed_out = step_out ? csilk_json_parse(step_out) : NULL;
+                if (step_out) {
+                    parsed_out = csilk_json_parse(step_out);
+                    if (parsed_out) {
+                        break;
+                    }
+                    free(step_out);
+                    step_out = NULL;
+                }
+            }
+
             if (!step_out || !parsed_out) {
                 if (step_out) {
                     free(step_out);
                 }
+                exec_saga_compensate(
+                    c, pool, user_id, graph, succeeded_steps, succeeded_count, ctx_obj);
                 csilk_json_t* ev_err = csilk_json_object();
                 csilk_json_add_string(ev_err, "type", "error");
                 csilk_json_add_number(ev_err, "step_index", (double)i);
@@ -198,6 +307,7 @@ ai_workflow_execute_stream(csilk_ctx_t* c, const ai_workflow_graph_t* graph, ai_
             snprintf(summary_buf, sizeof(summary_buf), "完成数据计算与分析");
             csilk_json_add_object(ctx_obj, node->node_id, parsed_out);
             free(step_out);
+            succeeded_steps[succeeded_count++] = i;
         }
 
         /* step_progress event */
