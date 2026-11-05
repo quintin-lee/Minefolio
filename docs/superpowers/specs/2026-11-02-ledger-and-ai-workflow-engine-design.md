@@ -1,7 +1,7 @@
 # 账本与金融核心重塑及 AI 运行时工作流升级设计方案
 
 - **日期**：2026-11-02
-- **状态**：Approved & Finalized（用户已确认并完成详细拆解）
+- **状态**：Completed & Verified（四大里程碑全量交付与验证完毕，已合并至 master）
 - **目标路径**：`docs/superpowers/specs/2026-11-02-ledger-and-ai-workflow-engine-design.md`
 
 ---
@@ -138,11 +138,11 @@ Minefolio 作为一个基于 C23 + csilk 构建的自托管个人资产与投资
   - 改用按历史时点抽样的汇率切片函数 `exchange_rate_get_historical_or_latest(pool, cur, sample_date)`，使历史资产走势图反映当时真实的汇率波动。
 
 #### 1.5 细分实施子任务（Milestone 1 Tasks）
-- [ ] Task 1.1: 编写 SQLite 与 PostgreSQL 的 V020 迁移脚本与汇率回填逻辑。
-- [ ] Task 1.2: 在 `core/ledger/` 中实现快照查询、反序列化与增量重放。
-- [ ] Task 1.3: 在交易增删改用例中实现快照级联失效与联动重算。
-- [ ] Task 1.4: 在投资组合报表中应用历史时点汇率查询。
-- [ ] Task 1.5: 编写 `test_ledger_rebuild_checkpoint.c` 并在 `test_link.sh` 中验证通过。
+- [x] Task 1.1: 编写 SQLite 与 PostgreSQL 的 V020 迁移脚本与汇率回填逻辑。
+- [x] Task 1.2: 在 `core/ledger/` 中实现快照查询、反序列化与增量重放。
+- [x] Task 1.3: 在交易增删改用例中实现快照级联失效与联动重算。
+- [x] Task 1.4: 在投资组合报表中应用历史时点汇率查询。
+- [x] Task 1.5: 编写 `test_ledger_rebuild_checkpoint.c` 并在 `test_link.sh` 中验证通过。
 
 ---
 
@@ -189,11 +189,11 @@ Minefolio 作为一个基于 C23 + csilk 构建的自托管个人资产与投资
 - `asset_usecase_update` 校验：若资产已存在相关交易，拒绝修改 `cost_method` 并返回 HTTP 1004。
 
 #### 2.4 细分实施子任务（Milestone 2 Tasks）
-- [ ] Task 2.1: 编写 V021 批次表与资产字段迁移脚本。
-- [ ] Task 2.2: 在 `core/ledger/` 中抽象并实现成本策略接口（加权平均 + FIFO）。
-- [ ] Task 2.3: 实现 FIFO 卖出批次逐层核销与盈亏计算，快照支持批次序列化。
-- [ ] Task 2.4: 在资产用例中增加成本法锁定校验。
-- [ ] Task 2.5: 编写 `test_cost_basis_fifo.c` 验证各种买入/卖出交叉算例与盈亏精确度。
+- [x] Task 2.1: 编写 V021 批次表与资产字段迁移脚本。
+- [x] Task 2.2: 在 `core/ledger/` 中抽象并实现成本策略接口（加权平均 + FIFO）。
+- [x] Task 2.3: 实现 FIFO 卖出批次逐层核销与盈亏计算，快照支持批次序列化。
+- [x] Task 2.4: 在资产用例中增加成本法锁定校验。
+- [x] Task 2.5: 编写 `test_cost_basis_fifo.c` 验证各种买入/卖出交叉算例与盈亏精确度。
 
 ---
 
@@ -225,11 +225,11 @@ Minefolio 作为一个基于 C23 + csilk 构建的自托管个人资产与投资
   - 若任一项出错，整批回滚并返回具体失败原因；全部成功则单事务提交。
 
 #### 3.3 细分实施子任务（Milestone 3 Tasks）
-- [ ] Task 3.1: 在 `dispatcher.c` 中实现针对模型的返回值紧凑投影过滤函数。
-- [ ] Task 3.2: 在 `confirmation.h/.c` 中扩展支持批量操作的 Hash 计算与验签。
-- [ ] Task 3.3: 注册 `propose_batch_actions` 工具并编写对应参数校验。
-- [ ] Task 3.4: 实现 `POST /api/ai/actions/confirm-batch` 原子执行端点。
-- [ ] Task 3.5: 编写 `test_ai_token_compact.c` 与 `test_ai_batch_actions.sh` 集成测试。
+- [x] Task 3.1: 在 `dispatcher.c` 中实现针对模型的返回值紧凑投影过滤函数。
+- [x] Task 3.2: 在 `confirmation.h/.c` 中扩展支持批量操作的 Hash 计算与验签。
+- [x] Task 3.3: 注册 `propose_batch_actions` 工具并编写对应参数校验。
+- [x] Task 3.4: 实现 `POST /api/ai/actions/confirm-batch` 原子执行端点。
+- [x] Task 3.5: 编写 `test_ai_token_compact.c` 与 `test_ai_batch_actions.sh` 集成测试。
 
 ---
 
@@ -261,11 +261,11 @@ Minefolio 作为一个基于 C23 + csilk 构建的自托管个人资产与投资
 - 为关键分析流（如 `financial_health`、`portfolio_analysis`）增加条件跳步与降级数据回退逻辑。
 
 #### 4.3 细分实施子任务（Milestone 4 Tasks）
-- [ ] Task 4.1: 在 `workflow/engine.h` 中扩展节点数据结构。
-- [ ] Task 4.2: 在 `executor.c` 中增加条件判定、步骤重试与逆向 Saga 补偿栈逻辑。
-- [ ] Task 4.3: 为 SSE 新增 `step_skipped` 与 `step_compensated` 事件类型。
-- [ ] Task 4.4: 升级 1-2 个代表性工作流以验证动态分支与错误回退。
-- [ ] Task 4.5: 编写 `test_workflow_branching.c` 与集成测试套件。
+- [x] Task 4.1: 在 `workflow/engine.h` 中扩展节点数据结构。
+- [x] Task 4.2: 在 `executor.c` 中增加条件判定、步骤重试与逆向 Saga 补偿栈逻辑。
+- [x] Task 4.3: 为 SSE 新增 `step_skipped` 与 `step_compensated` 事件类型。
+- [x] Task 4.4: 升级 1-2 个代表性工作流以验证动态分支与错误回退。
+- [x] Task 4.5: 编写 `test_workflow_branching.c` 与集成测试套件。
 
 ---
 
