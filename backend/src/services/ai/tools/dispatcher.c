@@ -1,4 +1,5 @@
 #include "services/ai/tools/dispatcher.h"
+#include "services/ai/tools/projection.h"
 #include "services/ai/tools/validation.h"
 #include "services/ai/tools/mcp/mcp_bridge.h"
 #include "services/ai/policy/policy.h"
@@ -189,6 +190,15 @@ ai_tool_dispatch_parsed(const ai_tool_context_t* ctx,
 
     if (normalized) {
         csilk_json_free(normalized);
+    }
+
+    /* 语义精简投影 (Semantic Projection for Compact Tool Results) */
+    if (result && strstr(result, "\"error\":") == NULL) {
+        char* projected = ai_project_tool_result(tool_name, result);
+        if (projected) {
+            free(result);
+            result = projected;
+        }
     }
 
     /* 8. 审计归档 (Audit) */

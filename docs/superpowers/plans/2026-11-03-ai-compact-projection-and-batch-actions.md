@@ -81,26 +81,26 @@ char* ai_project_tool_result(const char* tool_name, const char* raw_json);
 #endif
 ```
 
-- [ ] **Step 1: Write unit test `test_ai_token_compact.c`**
+- [x] **Step 1: Write unit test `test_ai_token_compact.c`**
   - Verify `get_assets`: Retains `id`, `name`, `asset_type`, `currency`, `balance`, `current_value`, `cost_basis`. Removes `user_id`, `created_at`, `updated_at`, `note`, `icon`, `sort_order`, `quote_source`, `symbol`.
   - Verify `get_daily_expenses`: Limits array to max 15 items, retains `id`, `date`, `amount`, `category_name`, `asset_name`, `type`, `note`.
   - Verify `get_transactions`: Limits array to max 15 items, retains `id`, `transaction_date`, `transaction_type`, `amount`, `category_name`, `asset_name`, `note`.
   - Verify byte/token reduction is >= 60%.
   - Verify non-query tools (e.g. `web_search` or error payloads) are passed through un-altered.
 
-- [ ] **Step 2: Register in `backend/CMakeLists.txt` and verify RED failure**
+- [x] **Step 2: Register in `backend/CMakeLists.txt` and verify RED failure**
   - Add `test_ai_token_compact` via `add_financial_unit_test`.
   - Run `cmake --build backend/build --target test_ai_token_compact` -> expected FAIL.
 
-- [ ] **Step 3: Implement `projection.h` and `projection.c`**
+- [x] **Step 3: Implement `projection.h` and `projection.c`**
   - Implement selective field extraction and array slicing.
   - Integrate with `ai_tool_dispatch_parsed` in `dispatcher.c`: after `tool->execute(tool, ctx, normalized)`, if result is not an error, apply `ai_project_tool_result`.
 
-- [ ] **Step 4: Run test to verify GREEN pass**
+- [x] **Step 4: Run test to verify GREEN pass**
   - Run `./backend/build/test_ai_token_compact` -> expected PASS.
   - Run `ctest --test-dir backend/build --output-on-failure`.
 
-- [ ] **Step 5: Commit Task 1**
+- [x] **Step 5: Commit Task 1**
   - `git commit -m "feat(ai): ⚡ implement semantic result projection for compact tool context"`
 
 ---
@@ -132,7 +132,7 @@ ai_confirmation_status_t ai_confirmation_verify_and_consume_batch(
     const char*         token);
 ```
 
-- [ ] **Step 1: Write unit tests in `test_ai_batch_confirmation.c`**
+- [x] **Step 1: Write unit tests in `test_ai_batch_confirmation.c`**
   - Test batch hash determinism for multiple actions.
   - Test batch token generation with `mf_batch_v1` prefix.
   - Test successful verification and single-use nonce consumption.
@@ -141,19 +141,19 @@ ai_confirmation_status_t ai_confirmation_verify_and_consume_batch(
   - Test user ID mismatch rejection (`AI_CONFIRM_ERR_USER_MISMATCH`).
   - Test expired token rejection (`AI_CONFIRM_ERR_EXPIRED`).
 
-- [ ] **Step 2: Register in `backend/CMakeLists.txt` and verify RED failure**
+- [x] **Step 2: Register in `backend/CMakeLists.txt` and verify RED failure**
   - Run `cmake --build backend/build --target test_ai_batch_confirmation` -> expected FAIL.
 
-- [ ] **Step 3: Implement batch hashing and verification in `confirmation.c`**
+- [x] **Step 3: Implement batch hashing and verification in `confirmation.c`**
   - Canonicalize JSON for each action in the array.
   - Compute composite SHA-256 hash across canonical action representations.
   - Implement `ai_confirmation_create_batch_token` and `ai_confirmation_verify_and_consume_batch`.
 
-- [ ] **Step 4: Run test to verify GREEN pass**
+- [x] **Step 4: Run test to verify GREEN pass**
   - Run `./backend/build/test_ai_batch_confirmation` -> expected PASS.
   - Run `ctest --test-dir backend/build --output-on-failure`.
 
-- [ ] **Step 5: Commit Task 2**
+- [x] **Step 5: Commit Task 2**
   - `git commit -m "feat(ai): 🛡️ implement composite HMAC token protocol for multi-action batches"`
 
 ---
@@ -197,25 +197,25 @@ ai_confirmation_status_t ai_confirmation_verify_and_consume_batch(
   }
   ```
 
-- [ ] **Step 1: Add test cases to `test_ai_tools.c` for `propose_batch_actions`**
+- [x] **Step 1: Add test cases to `test_ai_tools.c` for `propose_batch_actions`**
   - Test rejection on empty action list or > 20 actions.
   - Test rejection on invalid action types.
   - Test valid proposal returning structured summary and `mf_batch_v1` draft token.
 
-- [ ] **Step 2: Run test to verify RED failure**
+- [x] **Step 2: Run test to verify RED failure**
   - Run `cmake --build backend/build --target test_ai_tools` -> expected FAIL.
 
-- [ ] **Step 3: Implement `batch_tool.h/.c` and register in `registry.c`**
+- [x] **Step 3: Implement `batch_tool.h/.c` and register in `registry.c`**
   - Implement action array validation and asset ownership check.
   - Form human-readable summary ("1. 支出 45.00 CNY (午餐); 2. 转账 1000.00 CNY...").
   - Call `ai_confirmation_create_batch_token`.
   - Return JSON draft object.
 
-- [ ] **Step 4: Run test to verify GREEN pass**
+- [x] **Step 4: Run test to verify GREEN pass**
   - Run `./backend/build/test_ai_tools` -> expected PASS.
   - Run `ctest --test-dir backend/build --output-on-failure`.
 
-- [ ] **Step 5: Commit Task 3**
+- [x] **Step 5: Commit Task 3**
   - `git commit -m "feat(ai): 📦 implement propose_batch_actions tool and schema registry"`
 
 ---
@@ -243,16 +243,16 @@ ai_confirmation_status_t ai_confirmation_verify_and_consume_batch(
   - Success (200): `{code: 0, message: "ok", data: {executed_count: 2, action_results: [...]}}`
   - Replay / Expired / Invalid (200): `{code: 1002 or 1004, message: "...", data: null}`
 
-- [ ] **Step 1: Write integration tests in `test_ai_batch_confirmation.c`**
+- [x] **Step 1: Write integration tests in `test_ai_batch_confirmation.c`**
   - Test successful batch confirmation: 2 expenses + 1 transfer executed in a single transaction.
   - Verify asset balances updated correctly.
   - Test atomic rollback: create a batch where action 3 has an invalid asset ID. Verify actions 1 and 2 are rolled back completely.
   - Test replay attempt on already confirmed batch fails with error code.
 
-- [ ] **Step 2: Run test to verify RED failure**
+- [x] **Step 2: Run test to verify RED failure**
   - Run `cmake --build backend/build --target test_ai_batch_confirmation` -> expected FAIL.
 
-- [ ] **Step 3: Implement `api_ai_action_confirm_batch_handler` in `ai_controller.c`**
+- [x] **Step 3: Implement `api_ai_action_confirm_batch_handler` in `ai_controller.c`**
   - Extract user ID from context.
   - Validate and consume batch token via `ai_confirmation_verify_and_consume_batch`.
   - Open transaction scope `db_tx_scope_begin(pool, "mf_confirm_batch", &scope)`.
@@ -263,11 +263,11 @@ ai_confirmation_status_t ai_confirmation_verify_and_consume_batch(
   - If all succeed: `db_tx_scope_commit(pool, &scope)` and return success response.
   - Register route `POST /api/ai/actions/confirm-batch` in `register_ai_routes`.
 
-- [ ] **Step 4: Run test to verify GREEN pass**
+- [x] **Step 4: Run test to verify GREEN pass**
   - Run `./backend/build/test_ai_batch_confirmation` -> expected PASS.
   - Run `ctest --test-dir backend/build --output-on-failure`.
 
-- [ ] **Step 5: Commit Task 4**
+- [x] **Step 5: Commit Task 4**
   - `git commit -m "feat(ai): ⚡ implement atomic batch confirmation endpoint with tx rollback"`
 
 ---
@@ -282,26 +282,26 @@ ai_confirmation_status_t ai_confirmation_verify_and_consume_batch(
 - Build: Frontend production build
 - Modify: `docs/superpowers/plans/2026-11-03-ai-compact-projection-and-batch-actions.md`
 
-- [ ] **Step 1: Run complete CTest unit test suites**
+- [x] **Step 1: Run complete CTest unit test suites**
   - Run: `ctest --test-dir backend/build --output-on-failure`
   - Target: 50/50 test suites passed (100%).
 
-- [ ] **Step 2: Add Case 41 in `backend/tests/test_link.sh` and run integration test**
+- [x] **Step 2: Add Case 41 in `backend/tests/test_link.sh` and run integration test**
   - Case 41 tests:
     - Propose batch actions (expense + transfer) -> receives batch draft token.
     - Confirm batch actions via `POST /api/ai/actions/confirm-batch` -> returns code 0.
     - Assert expense and transfer recorded in database and balances updated.
     - Replay confirm batch with same token -> rejected with code 1004.
     - Tampered confirm batch -> rejected with code 1002.
-  - Run: `./backend/tests/test_link.sh` -> Target: all cases pass.
+  - Run: `./backend/tests/test_link.sh` -> Target: all cases pass (184/184 PASS).
 
-- [ ] **Step 3: Run AI & MCP test suites**
+- [x] **Step 3: Run AI & MCP test suites**
   - Run: `./backend/tests/test_ai_loop_hardening.sh`
   - Run: `./backend/tests/test_mcp.sh`
   - Run: `./backend/tests/test_mcp_server.sh`
 
-- [ ] **Step 4: Run frontend production build**
+- [x] **Step 4: Run frontend production build**
   - Run: `npm --prefix frontend run build` -> Target: 0 errors.
 
-- [ ] **Step 5: Check off all plan tasks and commit**
+- [x] **Step 5: Check off all plan tasks and commit**
   - Commit: `git commit -m "docs: 📝 mark milestone 3 implementation plan as fully verified"`

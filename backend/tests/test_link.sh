@@ -811,6 +811,68 @@ check "重挂后 account_id 已更新" "$DEFAULT_ACCT" "$REHANG_ACCT"
 # 删除测试资产
 curl -s -X DELETE -H "$AUTH" "$BASE/assets/$HANG_ASSET_ID" >/dev/null
 
+# =========================================================================
+# Case 41: AI 批量拟录入与原子执行 (AI Propose & Confirm Batch Actions)
+# =========================================================================
+echo ""
+echo "--- Case 41: AI 批量拟录入与原子执行测试 ---"
+
+# 0. 鉴权边界：未带 Token 访问 POST /api/ai/actions/confirm-batch 返回 401
+NOAUTH_BATCH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE/ai/actions/confirm-batch")
+check "未授权访问 POST /api/ai/actions/confirm-batch 返回 401" "401" "$NOAUTH_BATCH_STATUS"
+
+# 1. 参数校验：缺少 draft_token 或 actions 数组返回 code=1002
+BAD_BODY_RES=$(curl -s -H "$AUTH" -H "Content-Type: application/json" -X POST "$BASE/ai/actions/confirm-batch" -d '{"actions":[]}')
+check "缺少 draft_token 返回 code=1002" "1002" "$(echo "$BAD_BODY_RES" | jq -r '.code | floor')"
+
+BAD_BODY_RES2=$(curl -s -H "$AUTH" -H "Content-Type: application/json" -X POST "$BASE/ai/actions/confirm-batch" -d '{"draft_token":"mf_batch_v1.dummy"}')
+check "缺少 actions 数组返回 code=1002" "1002" "$(echo "$BAD_BODY_RES2" | jq -r '.code | floor')"
+
+# 2. 为批量执行准备两个测试资产
+curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/assets" -d "{\"name\":\"批量测试账户A\",\"category_id\":$ASSET_CAT,\"current_value\":1000,\"currency\":\"CNY\"}" >/dev/null
+curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/assets" -d "{\"name\":\"批量测试账户B\",\"category_id\":$ASSET_CAT,\"current_value\":500,\"currency\":\"CNY\"}" >/dev/null
+BATCH_A1_ID=$(sqlite3 "$DB" "SELECT id FROM assets WHERE name='批量测试账户A' AND user_id=1 LIMIT 1")
+BATCH_A2_ID=$(sqlite3 "$DB" "SELECT id FROM assets WHERE name='批量测试账户B' AND user_id=1 LIMIT 1")
+
+# 构建包含 1 笔支出 (80 CNY 从 A1) 和 1 笔转账 (200 CNY 从 A1 到 A2) 的动作数组
+BATCH_ACTIONS="[{\"action_type\":\"daily_expense\",\"amount\":80.0,\"category_id\":$EXPENSE_CAT,\"asset_id\":$BATCH_A1_ID,\"note\":\"批量外卖\"},{\"action_type\":\"transfer\",\"amount\":200.0,\"from_asset_id\":$BATCH_A1_ID,\"to_asset_id\":$BATCH_A2_ID,\"note\":\"批量备用金\"}]"
+
+# 3. 使用 test_ai_batch_confirmation --sign 签名生成真实合法 draft_token
+BATCH_DRAFT_TOKEN=$(MINEFOLIO_JWT_SECRET="$TEST_JWT_SECRET" "$BUILD_DIR/test_ai_batch_confirmation" --sign 1 "$BATCH_ACTIONS")
+test -n "$BATCH_DRAFT_TOKEN" && echo "$BATCH_DRAFT_TOKEN" | grep -q "^mf_batch_v1" && BATCH_TOKEN_OK="yes" || BATCH_TOKEN_OK="no"
+check "成功生成 mf_batch_v1 批量草案令牌" "yes" "$BATCH_TOKEN_OK"
+
+# 4. 执行批量原子确认 POST /api/ai/actions/confirm-batch
+CONFIRM_BATCH_RES=$(curl -s -H "$AUTH" -H "Content-Type: application/json" -X POST "$BASE/ai/actions/confirm-batch" \
+  -d "{\"draft_token\":\"$BATCH_DRAFT_TOKEN\",\"actions\":$BATCH_ACTIONS}")
+check "批量确认执行成功 code=0" "0" "$(echo "$CONFIRM_BATCH_RES" | jq -r '.code | floor')"
+check "批量执行数量 executed_count=2" "2" "$(echo "$CONFIRM_BATCH_RES" | jq -r '.data.executed_count | floor')"
+
+# 5. 校验数据库及账户余额联动
+# A1 初始 1000 - 支出 80 - 转出 200 = 720
+# A2 初始 500 + 转入 200 = 700
+BAL_A1=$(sqlite3 "$DB" "SELECT printf('%.1f', current_value) FROM assets WHERE id=$BATCH_A1_ID")
+BAL_A2=$(sqlite3 "$DB" "SELECT printf('%.1f', current_value) FROM assets WHERE id=$BATCH_A2_ID")
+check "批量入账后 A1 余额更新为 720.0" "720.0" "$BAL_A1"
+check "批量入账后 A2 余额更新为 700.0" "700.0" "$BAL_A2"
+
+# 6. 防重放校验：再次使用相同 draft_token 请求必被拒绝 (code=1004)
+REPLAY_RES=$(curl -s -H "$AUTH" -H "Content-Type: application/json" -X POST "$BASE/ai/actions/confirm-batch" \
+  -d "{\"draft_token\":\"$BATCH_DRAFT_TOKEN\",\"actions\":$BATCH_ACTIONS}")
+check "二次重复执行相同令牌被拦截 code=1004" "1004" "$(echo "$REPLAY_RES" | jq -r '.code | floor')"
+
+# 7. 防篡改校验：修改任意动作参数必须导致令牌失效并被拦截 (code=1002)
+TAMPER_ACTIONS="[{\"action_type\":\"daily_expense\",\"amount\":999.0,\"category_id\":$EXPENSE_CAT,\"asset_id\":$BATCH_A1_ID,\"note\":\"篡改金额\"},{\"action_type\":\"transfer\",\"amount\":200.0,\"from_asset_id\":$BATCH_A1_ID,\"to_asset_id\":$BATCH_A2_ID,\"note\":\"批量备用金\"}]"
+BATCH_DRAFT_TOKEN2=$(MINEFOLIO_JWT_SECRET="$TEST_JWT_SECRET" "$BUILD_DIR/test_ai_batch_confirmation" --sign 1 "$TAMPER_ACTIONS")
+TAMPER_PAYLOAD="[{\"action_type\":\"daily_expense\",\"amount\":10.0,\"category_id\":$EXPENSE_CAT,\"asset_id\":$BATCH_A1_ID,\"note\":\"篡改金额\"},{\"action_type\":\"transfer\",\"amount\":200.0,\"from_asset_id\":$BATCH_A1_ID,\"to_asset_id\":$BATCH_A2_ID,\"note\":\"批量备用金\"}]"
+TAMPER_RES=$(curl -s -H "$AUTH" -H "Content-Type: application/json" -X POST "$BASE/ai/actions/confirm-batch" \
+  -d "{\"draft_token\":\"$BATCH_DRAFT_TOKEN2\",\"actions\":$TAMPER_PAYLOAD}")
+check "篡改参数执行被拦截 code=1002" "1002" "$(echo "$TAMPER_RES" | jq -r '.code | floor')"
+
+# 清理测试资产
+curl -s -X DELETE -H "$AUTH" "$BASE/assets/$BATCH_A1_ID" >/dev/null
+curl -s -X DELETE -H "$AUTH" "$BASE/assets/$BATCH_A2_ID" >/dev/null
+
 echo ""
 echo "结果: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

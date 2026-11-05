@@ -16,11 +16,11 @@ Minefolio 是一款极度轻量、安全、专业的**开源全资产管理与�
 
 ## 🌟 核心特性与亮点
 
-* 🧮 **高精度金融核心与定点数引擎 (Financial Core)**：基于 64 位有符号整型定点数与标准舍入算法，彻底消除浮点数计算误差，支持高精度货币 (Money)、持仓数量 (Quantity)、成交价 (Price)、汇率 (Rate)、百分比 (Percentage) 与盈亏 (PnL) 严谨核算。
-* 🏛️ **统一账本状态引擎 (Ledger Engine)**：确立「Transaction 是唯一金融事实」准则，资产持仓、现金余额、成本基础、已实现/浮动盈亏全由账本引擎统一计算与更新，并提供基于时间序列事实全量重建 (`rebuild`) 的自愈能力。
-* 🤖 **统一 AI Runtime 与企业级五级风控引擎 (Unified AI Runtime & Risk Engine)**：建立原生 C 统一 AI 运行时架构，将 Controller 与 Workflow 彻底与 LLM 调用解耦，纳管会话 (Session)、统一上下文容器 (Context)、模型适配 (Model)、工具执行 (Tool)、工作流编排 (Workflow)、安全策略 (Policy)、全链路追踪 (Trace) 与滑动窗口记忆 (Memory)；全面支持硬预算与约束（迭代上限、超时、Token/Tool/Cost 预算与主动取消）及结构化错误分类，实行五级风险评估与带 Nonce 防重放的双重确认令牌机制。
+* 🧮 **高精度金融核心与定点数引擎 (Financial Core)**：基于 64 位有符号整型定点数与 128 位 `decimal_t` 扩展精度（资产/行情用例层聚合全程 128 位，仅在 JSON DTO 边界回落 double）与标准舍入算法，彻底消除浮点数计算误差，支持高精度货币 (Money)、持仓数量 (Quantity)、成交价 (Price)、汇率 (Rate)、百分比 (Percentage) 与盈亏 (PnL) 严谨核算。
+* 🏛️ **统一账本状态引擎 (Ledger Engine)**：确立「Transaction 是唯一金融事实」准则，资产持仓、现金余额、成本基础、已实现/浮动盈亏全由账本引擎统一计算与更新，并提供基于时间序列事实全量重建 (`rebuild`) 的自愈能力；V020 引入账本检查点快照 (`ledger_snapshots`)，重建从最近有效检查点增量推进而非全量回放，回溯改账自动级联失效下游快照；交易落库时同步固化 Point-in-Time 历史汇率 (`transactions.fx_rate_to_cny`)，历史估值不再随其后汇率变动漂移。
+* 🤖 **统一 AI Runtime 与企业级五级风控引擎 (Unified AI Runtime & Risk Engine)**：建立原生 C 统一 AI 运行时架构，将 Controller 与 Workflow 彻底与 LLM 调用解耦，纳管会话 (Session)、统一上下文容器 (Context)、模型适配 (Model)、工具执行 (Tool)、工作流编排 (Workflow)、安全策略 (Policy)、全链路追踪 (Trace) 与滑动窗口记忆 (Memory)；全面支持硬预算与约束（迭代上限、超时、Token/Tool/Cost 预算与主动取消）及结构化错误分类，实行五级风险评估与带 Nonce 防重放的双重确认令牌机制（V019 将已消费 Nonce 持久化至 `ai_consumed_nonces` 表，重放防护跨进程重启生效）。
 * 🔑 **统一 Secret Provider 与零硬编码安全门禁**：建立统一敏感配置检索机制，原生兼容环境变量、Docker/K8s Secret 文件挂载与外部密钥管理器 (Vault/AWS/K8s)；在生产启动期实施硬编码/弱口令主动熔断。
-* 🗄️ **企业级数据库迁移系统 (Database Migration System)**：下沉至 csilk 框架的原生 C 版本化迁移引擎（`<csilk/drivers/db/migration.h>`），支持 SQLite / PostgreSQL 双方言（`V001`~`V017`）；具备版本严格发现排序、SHA-256 CRLF 规范化哈希防篡改、基于行锁的分布式迁移互斥锁，并在 PostgreSQL 驱动层支持原生 Prepared Statement（`?` 自动转 `$N` 与参数绑定），实现生产环境存量数据库平滑升级（Auto-Baseline），绝不要求删除已有数据库重新初始化。
+* 🗄️ **企业级数据库迁移系统 (Database Migration System)**：下沉至 csilk 框架的原生 C 版本化迁移引擎（`<csilk/drivers/db/migration.h>`），支持 SQLite / PostgreSQL 双方言（`V001`~`V020`）；具备版本严格发现排序、SHA-256 CRLF 规范化哈希防篡改、基于行锁的分布式迁移互斥锁，并在 PostgreSQL 驱动层支持原生 Prepared Statement（`?` 自动转 `$N` 与参数绑定），实现生产环境存量数据库平滑升级（Auto-Baseline），绝不要求删除已有数据库重新初始化。
 * 💼 **全资产全场景覆盖**：支持现金、银行储蓄、股票、基金、债券、加密货币、房产、贷款、信用卡等资产与负债统一建档，支持负债方向自动正负号翻转。
 * 🗂️ **账户维度资产管理 (Account-Dimension Assets)**：以独立「账户」实体（银行卡/平台/券商/基金平台/现金钱包）归集各类资产，账户卡片分组呈现小计与资产数；支持账户归档（软删除）与手动排序；桌面端按账户分组卡片，移动端可折叠账户卡；全链路 14 处资产选择入口均以「账户 · 资产」前缀区分同名声资产，离线同步完整覆盖。
 * 📈 **专业资管级投资模型**：加权买入成本、分红摊薄计价、卖出部分成本按比例核减、手续费联动与基于 `parent_tx_id` 的级联回滚，精确计算已实现与浮动盈亏。
@@ -126,7 +126,7 @@ docker compose ps
   MINEFOLIO_DB_DRIVER=postgres
   MINEFOLIO_DB_DSN=host=your-pg-host port=5432 user=minefolio password=your-db-pass dbname=minefolio sslmode=disable
   ```
-  同样需要镜像带 libpq（`Dockerfile` 默认已包含）。原生 C 数据库迁移引擎会在启动时自动完成版本化迁移（`V001`~`V017`）。
+  同样需要镜像带 libpq（`Dockerfile` 默认已包含）。原生 C 数据库迁移引擎会在启动时自动完成版本化迁移（`V001`~`V020`）。
 
 ### 方式 2：本地源码编译与开发
 
@@ -166,7 +166,7 @@ Minefolio/
 ├── backend/                      # C23 后端服务
 │   ├── CMakeLists.txt            # 构建配置（C23、csilk、yyjson）
 │   ├── sql/                      # 数据库迁移与初始化脚本
-│   │   ├── migrations/           # 版本化迁移脚本（V001~V017）
+│   │   ├── migrations/           # 版本化迁移脚本（V001~V020）
 │   │   │   ├── sqlite/           # SQLite 方言版本脚本
 │   │   │   └── postgres/         # PostgreSQL 方言版本脚本
 │   │   ├── migration.sql         # 18 张核心数据表全量基准（测试与初始化）
@@ -378,24 +378,28 @@ Minefolio/
 
 Minefolio 拥有完整的双层测试矩阵（单元测试 + 端到端集成回归）：
 
-### 1. CTest 单元测试矩阵（35 大测试套件，高频毫秒级断言）
+### 1. CTest 单元测试矩阵（50 大测试套件，高频毫秒级断言）
 ```bash
 cd backend/build
 ctest --output-on-failure
 # 覆盖核心模块：
 # - 金融核心定点数：test_currency, test_decimal, test_money, test_quantity, test_price, test_rate, test_pnl, test_fx, test_fx_semantics
-# - 统一账本数学与引擎：test_ledger_math, test_ledger_engine
+# - 统一账本数学与引擎：test_ledger_math, test_ledger_engine, test_ledger_rebuild_checkpoint（快照增量重建）
 # - 领域业务规则与仓储：test_domain_transaction, test_domain_asset, test_domain_auth, test_domain_ai, test_domain_mcp,
 #                       test_domain_portfolio, test_domain_cashflow, test_domain_market,
 #                       test_domain_cost_basis, test_domain_pnl, test_domain_position, test_domain_multi_currency,
-#                       test_domain_repositories, test_portfolio_pnl_alignment
+#                       test_domain_repositories, test_portfolio_pnl_alignment, test_cost_basis_fifo, test_transaction_lots
 # - 全球行情与大盘指数：test_market_indices
-# - 统一 AI Runtime 与风控系统：test_ai_tools, test_ai_policy, test_mcp_pool, test_policy_mcp_risk, test_ai_runtime, test_ai_summary
+# - 统一 AI Runtime 与风控系统：test_ai_tools, test_ai_policy, test_mcp_pool, test_policy_mcp_risk, test_ai_runtime, test_ai_summary,
+#                               test_nonce_persistence（确认令牌防重放）, test_ai_token_compact（工具结果语义投影）, test_ai_batch_confirmation（批量操作确认协议）
+# - MCP 客户端进程沙箱：test_mcp_client_io, test_mcp_stderr_capture, test_mcp_child_sanitation, test_ai_parallel_tools
+# - 工作流与并发：test_workflow_step_error, test_summary_worker_pool, test_tx_scope_nesting
+# - 精度与文件安全：test_financial_precision_edge, test_file_parser_mkstemps, test_mcp_unauth_protocol
 # - 统一机密提供者与安全门禁：test_secret_provider
 # - 数据库抽象与迁移引擎：test_database_repository, test_migration_engine
 ```
 
-### 2. 端到端集成测试矩阵（12 大测试套件，test_link 覆盖 169 真实断言）
+### 2. 端到端集成测试矩阵（16 大测试套件，test_link 覆盖 174 真实断言）
 ```bash
 ./backend/tests/test_full.sh              # 全量回归入口
 # 或单独运行：
@@ -406,11 +410,15 @@ ctest --output-on-failure
 ./backend/tests/test_ai_trace.sh && \
 ./backend/tests/test_ai_tool_call.sh && \
 ./backend/tests/test_ai_truncate.sh && \
+./backend/tests/test_ai_loop_hardening.sh && \
+./backend/tests/test_mcp.sh && \
+./backend/tests/test_mcp_server.sh && \
+./backend/tests/test_report_isolation.sh && \
 ./backend/tests/test_market_sync.sh && \
 ./backend/tests/test_fx_oauth.sh
 ```
 
-### 3. 前端单元与组件测试矩阵（35 个测试套件，168+ 单元测试）
+### 3. 前端单元与组件测试矩阵（37 个测试套件，177+ 单元测试）
 ```bash
 cd frontend
 npm test

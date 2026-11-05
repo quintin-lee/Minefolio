@@ -113,6 +113,51 @@ ai_confirmation_status_t ai_confirmation_verify_and_consume(int64_t             
                                                             const char*         token);
 
 /**
+ * @brief 对复合操作动作数组计算确定性 SHA-256 复合哈希
+ *
+ * 遍历 actions_array 中的每一个动作对象，计算其规范化哈希并按数组顺序复合为全局哈希。
+ *
+ * @param actions_array 动作 JSON 数组
+ * @param out_hash 输出 64 字节十六进制哈希字符串缓冲区（至少 65 字节容量）
+ * @param out_hash_sz 缓冲区大小
+ */
+void ai_confirmation_hash_batch_actions(const csilk_json_t* actions_array,
+                                        char*               out_hash,
+                                        size_t              out_hash_sz);
+
+/**
+ * @brief 为批量操作生成绑定全要素的防篡改防重放确认 Token (mf_batch_v1)
+ *
+ * @param user_id 用户 ID
+ * @param session_id 会话 ID (若无传 0)
+ * @param actions_array 拟执行的动作 JSON 数组
+ * @param risk 评定风险等级
+ * @param ttl_seconds 有效期（秒，默认 300）
+ * @return char* 堆分配的 Token 字符串（调用方负责 free）
+ */
+char* ai_confirmation_create_batch_token(int64_t             user_id,
+                                         int64_t             session_id,
+                                         const csilk_json_t* actions_array,
+                                         ai_risk_level_t     risk,
+                                         int                 ttl_seconds);
+
+/**
+ * @brief 校验并单次原子消费批量操作确认 Token
+ *
+ * 校验签名、过期时间、用户隔离、复合动作哈希匹配，并原子消费防重放 Nonce。
+ *
+ * @param user_id 当前调用用户 ID
+ * @param session_id 当前会话 ID (若无传 0)
+ * @param actions_array 客户端提交的动作 JSON 数组
+ * @param token 客户端回传的 draft_token
+ * @return ai_confirmation_status_t 成功返回 AI_CONFIRM_OK (0)，失败返回错误码
+ */
+ai_confirmation_status_t ai_confirmation_verify_and_consume_batch(int64_t             user_id,
+                                                                  int64_t             session_id,
+                                                                  const csilk_json_t* actions_array,
+                                                                  const char*         token);
+
+/**
  * @brief 转换确认状态码为用户可读的错误说明
  */
 const char* ai_confirmation_strerror(ai_confirmation_status_t status);

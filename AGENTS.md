@@ -81,6 +81,36 @@ A transfer is stored as two rows: a `transfer_out` parent and a `transfer_in` ch
 2. **`transfers` auxiliary table explicit foreign keys (V014).** Migration `V014__transfer_explicit_transactions.sql` introduced `from_tx_id` and `to_tx_id` referencing `transactions(id)`. Transfer cleanup deletes deterministically via `from_tx_id = ? OR to_tx_id = ?`.
 3. **The `(from_asset_id, to_asset_id, amount)` attribute match is a legacy fallback only** — used solely for legacy rows written before V014 where `from_tx_id <= 0` or before `parent_tx_id` existed. Do not remove this fallback as it prevents orphaned legacy rows.
 
+### Transaction Write Path — Savepoint Scope (db_tx_scope_t)
+
+All multi-step balance/asset mutations in `application/{transaction,transfer,daily_expense,dca}/usecases.c` run inside `db_tx_scope_begin()` / `db_tx_scope_commit()` (csilk native nested-savepoint scope). Rules:
+
+- `balance_apply_delta_m()` (fixed-point variant) opens its **own internal tx scope**, making the balance flip atomic even when called outside a caller scope; do not wrap it in a second explicit scope without understanding nesting (savepoints, not transactions, so nesting is safe but counts against SQLite's depth limit).
+- Rollback on any failure path before responding; never partially commit position + balance + fee rows.
+
+### Ledger Snapshots — Checkpoint Rebuild (V020)
+
+Migration `V020__ledger_snapshots_and_tx_fx.sql` adds:
+- `ledger_snapshots` table: per (user, asset, snapshot_date) position checkpoint (`quantity`, `cost_basis`, `net_value`, `current_value`, `realized_pnl`, `balance`, `tx_checkpoint_date`, `tx_checkpoint_id`), indexed `(user_id, asset_id, snapshot_date DESC)`. Written by `infrastructure/repositories/ledger_snapshot_repo_impl.c`; consumed by `core/ledger/ledger_engine.c` incremental rebuild (`ledger_rebuild_*` starts from the latest checkpoint instead of replaying full history).
+- `transactions.fx_rate_to_cny REAL DEFAULT 1.0`: point-in-time exchange rate stamped at transaction create; historical asset-trend evaluation (`exchange_rate_service.c`) reads the stamped rate instead of today's rate. Backfill sets `1.0` for CNY-denominated assets.
+- **Cascade invalidation**: editing/deleting a transaction dated on/before a snapshot date calls `ledger_snapshot_invalidate_from(pool, user_id, asset_id, from_date)` (`infrastructure/repositories/ledger_snapshot_repo_impl.c`), deleting that snapshot and all downstream ones; next read rebuilds from the prior valid checkpoint. Never write snapshots from use cases directly — go through the engine.
+
+### AI Confirmation Nonces — Replay Protection (V019)
+
+Migration `V019__ai_consumed_nonces.sql` adds `ai_consumed_nonces` (per-instance HMAC nonce ledger). `services/ai/policy/confirmation.c` persists consumed `draft_token` nonces via `ai_confirmation_verify_and_consume()` — a replayed confirmation token is rejected even across server restarts. Any new confirm-style tool MUST route through the policy verify/consume path, never a local boolean check.
+
+### Financial Precision — 128-bit Decimal at Use-Case Boundary
+
+`application/{asset,market}/usecases.c` MUST perform aggregation/arithmetic in `decimal_t` (128-bit fixed-point, `core/financial/decimal.h`) and convert to double only at the JSON DTO boundary (`mf_round_to_decimals`). `test_financial_precision_edge` pins float-accumulation regressions; do not reintroduce `double` accumulation loops in use cases.
+
+### File Upload — mkstemps Temporary Parsing
+
+`services/file_parser.c` writes uploaded bytes to `mkstemps`-created temp files (mode 0600, auto-unlinked) instead of predictable `/tmp` paths — no symlink races. New parsing entry points must follow `file_parser.h` temp-file contract.
+
+### MCP HTTP Endpoint — JSON-RPC Error Protocol
+
+Unauthenticated/rate-limited `POST /mcp` requests respond with JSON-RPC error `-32001` (not HTTP 401/429 bodies), aligned with the MCP spec; `jwt_middleware.c` and `rate_limit.c` special-case the `/mcp` path. `test_mcp_server.sh` pins the protocol.
+
 ### Accounts — Account-Dimension Asset Grouping (V017)
 
 Assets group under **account** containers (bank card, Alipay, broker…). Accounts are **pure containers**: they hold no balance; an account's subtotal is always derived as `SUM(assets.current_value)` of its children (`asset_count`/`total_value` aggregates in `account_list`).
@@ -95,7 +125,7 @@ Assets group under **account** containers (bank card, Alipay, broker…). Accoun
 ### Database Migration System
 
 Database schema changes are managed strictly via csilk's native C migration engine (`<csilk/drivers/db/migration.h>`):
-- **Versioned scripts**: `backend/sql/migrations/{sqlite,postgres}/` following Flyway naming `V<num>__<name>.sql` (`V001`~`V017`).
+- **Versioned scripts**: `backend/sql/migrations/{sqlite,postgres}/` following Flyway naming `V<num>__<name>.sql` (`V001`~`V020`).
 - **Tracking table**: `schema_migrations` records `version`, `name`, `checksum` (SHA-256 CRLF-normalized), `applied_at`, `execution_time_ms`, `execution_time`.
 - **Concurrency lock**: `schema_migration_lock` table acts as a distributed mutex with lease timeout to prevent multi-instance migration races. Under PostgreSQL, csilk provides full native prepared statement support (`?` rewritten to `$N`, `PQprepare`/`PQexecPrepared`), ensuring lock acquisition and statement execution run reliably.
 - **Engine lifecycle**: Automatic discovery, version sorting, checksum validation (tamper detection), transactional application, and status reporting.
@@ -141,10 +171,10 @@ AI Runtime (services/ai/runtime/)
 | `backend/src/infrastructure/database/` | Database abstraction layer and SQLite/PostgreSQL native adapters (migration engine downstreamed to csilk) |
 | `backend/src/common/` | Cross-cutting: `db.h`, `balance.h`, `jwt.h`, `response.h`, `ctx.h`, `tx_types.h`, `ledger_utils.h` (CSV, TOTP 2FA & REST response envelopes downstreamed to csilk) |
 | `backend/src/config/` | `db_config.h/.c` (DSN), `key_manager.h/.c` (RSA-OAEP keys), `secret.h/.c` (Secret Provider) |
-| `backend/sql/migrations/` | Versioned migration scripts (`sqlite/` & `postgres/`, `V001`~`V017`) |
+| `backend/sql/migrations/` | Versioned migration scripts (`sqlite/` & `postgres/`, `V001`~`V020`) |
 | `backend/sql/` | `migration.sql` (SQLite full schema), `migration_postgres.sql` |
-| `backend/tests/unit/` | 35 CTest unit test suites (financial core, ledger, domain rules, DB repository, migration engine, AI runtime, MCP pool & risk, FX semantics, portfolio PnL alignment) |
-| `backend/tests/test_link.sh` | Core integration test suite (40 cases, 169 assertions: auth, accounts, CRUD, balance联动, PnL, CSV, pagination, ledger rebuild, AI trace/workflow) |
+| `backend/tests/unit/` | 50 CTest unit test suites (financial core, ledger engine + checkpoint rebuild, domain rules, DB repository, migration engine, AI runtime/policy/nonces/batch confirmation, MCP client/pool/risk, FX semantics, portfolio PnL alignment) |
+| `backend/tests/test_link.sh` | Core integration test suite (40 cases, 174 assertions: auth, accounts, CRUD, balance联动, PnL, CSV, pagination, ledger rebuild, AI trace/workflow) |
 | `backend/src/domain/account/` | Account domain: `mf_account_t` entity, validation/delete rules, repository contract |
 | `backend/src/application/account/usecases.c` | Account use cases: create/update/delete/archive/query, lazy `默认账户` seed, duplicate-name 1004, delete-protection 1004 |
 | `backend/src/infrastructure/repositories/account_repo_impl.c` | Accounts SQL repo (with `asset_count`/`total_value` aggregates, archived filter) |
@@ -363,7 +393,7 @@ Mobile users can customize the backend server address (e.g. LAN IP `http://192.1
 | File | Role |
 |------|------|
 | `backend/src/main.c` | Entry point; middleware stack; route registration |
-| `backend/CMakeLists.txt` | C23 standard; FetchContent for csilk v0.5.2; optional PostgreSQL |
+| `backend/CMakeLists.txt` | C23 standard; FetchContent for csilk (GIT_TAG master, local `deps/csilk` override); optional PostgreSQL |
 | `backend/src/common/balance.h` | `balance_apply_delta()` (incl. liability sign flip); `apply_position()` |
 | `backend/src/common/tx_types.h` | Transaction type registry — use `tx_type_lookup()`, don't hard-code |
 | `backend/src/common/response.h` | `respond_ok`, `respond_error`, etc. |
@@ -404,15 +434,16 @@ Mobile users can customize the backend server address (e.g. LAN IP `http://192.1
 
 ## Testing & QA
 
-### Backend Unit & Integration Tests (35 CTest Suites + 12 Integration Suites)
+### Backend Unit & Integration Tests (50 CTest Suites + 16 Integration Suites)
 
 ```bash
 cd backend
-# 1. Run all 35 CTest unit test suites (sub-second fast feedback)
+# 1. Run all 50 CTest unit test suites (sub-second fast feedback)
 cd build && ctest --output-on-failure && cd ..
 
 # 2. Run all core integration test suites
 ./tests/test_link.sh          # 174 assertions across 40 cases: auth, accounts dimension, CRUD, balance联动, PnL, CSV, pagination, ledger rebuild, AI trace/workflow
+
 ./tests/test_ledgers.sh       # 16 cases: multi-ledger spaces, member RBAC (Owner/Editor/Viewer)
 ./tests/test_2fa.sh           # 12 cases: TOTP 2FA secret gen, QR code, enable/disable, login verification
 ./tests/test_dca_cashflow.sh  # 18 cases: DCA periodic purchase execution, cashflow calendar projection
@@ -423,7 +454,7 @@ cd build && ctest --output-on-failure && cd ..
 ./tests/test_market_sync.sh   # 18 cases: Multi-source market quotes, caching, bulk sync
 ./tests/test_fx_oauth.sh      # 20 cases: Exchange rates, FX gain/loss PnL, receipt OCR, OAuth2/OIDC SSO
 ./tests/test_mcp.sh           # MCP stdio server config + chat tool-call dispatch routing
-./tests/test_mcp_server.sh    # External-client view of POST /mcp (initialize/tools/list/tools/call JSON-RPC)
+./tests/test_mcp_server.sh    # External-client view of POST /mcp (initialize/tools/list/tools/call JSON-RPC); unauthenticated requests rejected with JSON-RPC -32001
 ./tests/test_report_isolation.sh # Expense monthly/report isolation regression (user_id + ledger_id)
 ```
 
@@ -438,7 +469,7 @@ npm run build         # Desktop type-check + build
 npm run build:mobile  # Mobile type-check + build
 ```
 
-Frontend unit tests cover 36 test suites (170+ unit tests) including format helpers, crypto, auth store, offline-http sync, chat store race guards, AI thinking/reasoning mode, analysis panel, chat layout decoupling, and AI stream failure handling; the integration test suite (`test_link.sh`) covers the critical paths end-to-end.
+Frontend unit tests cover 37 test suites (177 unit tests) including format helpers, crypto, auth store, offline-http sync, chat store race guards, AI thinking/reasoning mode, analysis panel, chat layout decoupling, and AI stream failure handling; the integration test suite (`test_link.sh`) covers the critical paths end-to-end.
 
 ### Manual Smoke Test
 

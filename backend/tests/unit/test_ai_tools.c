@@ -412,6 +412,105 @@ main(void)
         printf("[Test 8] PASS: Web search & deep reading tools verified\n");
     }
 
+    /* 9. Propose Batch Actions Tool & Protocol */
+    {
+        printf("[Test 9] Testing Propose Batch Actions Tool & Protocol...\n");
+
+        /* 1. Tool registration & metadata */
+        const ai_tool_t* t_batch = ai_tool_find("propose_batch_actions");
+        assert(t_batch != NULL);
+        assert(t_batch->permission == AI_PERM_WRITE);
+        assert(t_batch->risk == AI_RISK_MEDIUM);
+        assert(t_batch->is_mutation == true);
+        assert(t_batch->requires_id == true);
+
+        /* 2. Empty actions rejected */
+        char* r_empty = ai_tool_dispatch(ctx, "propose_batch_actions", "{\"actions\":[]}");
+        assert(r_empty != NULL);
+        assert(strstr(r_empty, "error") != NULL);
+        free(r_empty);
+
+        /* 3. Action count > 20 rejected */
+        csilk_json_t* big_req = csilk_json_object();
+        csilk_json_t* big_actions = csilk_json_array();
+        for (int i = 0; i < 21; i++) {
+            csilk_json_t* a = csilk_json_object();
+            csilk_json_add_string(a, "action_type", "daily_expense");
+            csilk_json_add_number(a, "amount", 10.0);
+            csilk_json_array_append(big_actions, a);
+        }
+        csilk_json_add_array(big_req, "actions", big_actions);
+        size_t big_len = 0;
+        char* big_json = csilk_json_serialize(big_req, &big_len);
+        csilk_json_free(big_req);
+        char* r_large = ai_tool_dispatch(ctx, "propose_batch_actions", big_json);
+        free(big_json);
+        assert(r_large != NULL);
+        assert(strstr(r_large, "error") != NULL);
+        free(r_large);
+
+        /* 4. Action with invalid amount <= 0 rejected */
+        char* r_bad_amt = ai_tool_dispatch(ctx, "propose_batch_actions",
+            "{\"actions\":[{\"action_type\":\"daily_expense\",\"amount\":0.0}]}");
+        assert(r_bad_amt != NULL);
+        assert(strstr(r_bad_amt, "error") != NULL);
+        free(r_bad_amt);
+
+        char* r_neg_amt = ai_tool_dispatch(ctx, "propose_batch_actions",
+            "{\"actions\":[{\"action_type\":\"daily_expense\",\"amount\":-15.0}]}");
+        assert(r_neg_amt != NULL);
+        assert(strstr(r_neg_amt, "error") != NULL);
+        free(r_neg_amt);
+
+        /* 5. Unknown action_type rejected */
+        char* r_bad_type = ai_tool_dispatch(ctx, "propose_batch_actions",
+            "{\"actions\":[{\"action_type\":\"crypto_trade\",\"amount\":100.0}]}");
+        assert(r_bad_type != NULL);
+        assert(strstr(r_bad_type, "error") != NULL);
+        free(r_bad_type);
+
+        /* 6. Valid batch: 1 expense + 1 transfer */
+        const char* valid_payload =
+            "{\"actions\":["
+            "{\"action_type\":\"daily_expense\",\"amount\":45.0,\"type\":\"expense\",\"category_name\":\"餐饮美食\",\"asset_name\":\"招商储蓄卡\",\"note\":\"午餐\"},"
+            "{\"action_type\":\"transfer\",\"amount\":200.0,\"from_asset_name\":\"招商储蓄卡\",\"to_asset_name\":\"微信零钱\",\"note\":\"零花钱\"}"
+            "]}";
+        char* r_ok = ai_tool_dispatch(ctx, "propose_batch_actions", valid_payload);
+        assert(r_ok != NULL);
+        assert(strstr(r_ok, "propose_success") != NULL);
+        assert(strstr(r_ok, "requires_confirmation") != NULL);
+        assert(strstr(r_ok, "mf_batch_v1.") != NULL);
+        assert(strstr(r_ok, "summary") != NULL);
+
+        csilk_json_t* res_obj = csilk_json_parse(r_ok);
+        assert(res_obj != NULL);
+        assert(csilk_json_get_bool(res_obj, "propose_success") == true);
+        assert(csilk_json_get_bool(res_obj, "requires_confirmation") == true);
+        assert((int64_t)db_get_num(res_obj, "count") == 2);
+
+        const char* draft_token = csilk_json_get_string(res_obj, "draft_token");
+        assert(draft_token != NULL && strncmp(draft_token, "mf_batch_v1.", 12) == 0);
+
+        const char* summary = csilk_json_get_string(res_obj, "summary");
+        assert(summary != NULL);
+        assert(strstr(summary, "45.00") != NULL);
+        assert(strstr(summary, "200.00") != NULL);
+
+        csilk_json_t* act_arr = csilk_json_get(res_obj, "actions");
+        assert(act_arr != NULL && csilk_json_is_array(act_arr));
+        assert(csilk_json_array_size(act_arr) == 2);
+
+        /* 7. Verify draft_token validates successfully with ai_confirmation_verify_and_consume_batch */
+        ai_confirmation_status_t st = ai_confirmation_verify_and_consume_batch(
+            ctx->user_id, ctx->session_id, act_arr, draft_token);
+        assert(st == AI_CONFIRM_OK);
+
+        csilk_json_free(res_obj);
+        free(r_ok);
+
+        printf("[Test 9] PASS: Propose batch actions tool & HMAC draft protocol verified\n");
+    }
+
     ai_tool_context_free(ctx);
     unlink(db_file);
 

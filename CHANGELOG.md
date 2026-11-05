@@ -10,6 +10,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **AI Tool Result Semantic Projection & Batch Confirmation Protocol (Milestone 3, in progress)**:
+  - `services/ai/tools/projection.c`: read-only tool results (get_assets/get_daily_expenses/get_transactions) are projected before returning to the LLM — technical metadata stripped, arrays clamped to 15 items, ≥60% token reduction; non-query/error payloads pass through untouched (`test_ai_token_compact`).
+  - `services/ai/policy/confirmation.c`: composite SHA-256 hashing over multi-action arrays + `mf_batch_v1` HMAC tokens bound to user/actions-hash/TTL, single-use with persisted nonces (`ai_confirmation_create_batch_token()` / `ai_confirmation_verify_and_consume_batch()`; `test_ai_batch_confirmation`). HTTP endpoint wiring (`POST /api/ai/actions/confirm-batch`) is still pending per `docs/superpowers/plans/2026-11-03-ai-compact-projection-and-batch-actions.md`.
+- **Ledger Checkpoint Snapshots & Point-in-Time FX (`backend/sql/migrations/{sqlite,postgres}/V020__ledger_snapshots_and_tx_fx.sql`, `backend/src/infrastructure/repositories/ledger_snapshot_repo_impl.c`, `backend/src/core/ledger/ledger_engine.c`, `backend/src/application/transaction/usecases.c`, `backend/src/services/market/exchange_rate_service.c`)**:
+  - **V020 Migration**: new `ledger_snapshots` table — per (user, asset, snapshot_date) position checkpoints (`quantity`, `cost_basis`, `net_value`, `current_value`, `realized_pnl`, `balance`, `tx_checkpoint_date/id`), indexed `(user_id, asset_id, snapshot_date DESC)`; plus `transactions.fx_rate_to_cny` column (default `1.0`, backfilled for CNY assets) stamping the exchange rate at transaction time.
+  - **Incremental Rebuild**: `ledger_rebuild_*` now starts from the latest valid checkpoint instead of replaying full transaction history; snapshot repo (`ledger_snapshot_repo_impl.c`) handles read/write/invalidate.
+  - **Cascade Invalidation**: editing or deleting a backdated transaction invalidates its snapshot and every downstream one (`ledger_snapshot_invalidate_from()`); the next read rebuilds from the prior valid checkpoint — no stale positions after retroactive edits.
+  - **Point-in-Time FX Valuation**: transaction create/update stamps `exchange_rate_get_historical_or_latest()` at write time and historical asset-trend evaluation reads each transaction's stamped `fx_rate_to_cny` instead of today's rate, so historical PnL no longer drifts with later rate changes.
+  - Added unit suites `test_ledger_rebuild_checkpoint` and extended `test_fx_semantics` (point-in-time rate scenarios).
+- **AI Confirmation Nonce Persistence (`backend/sql/migrations/{sqlite,postgres}/V019__ai_consumed_nonces.sql`, `backend/src/services/ai/policy/confirmation.c`)**:
+  - Consumed `draft_token` nonces are now persisted to the new `ai_consumed_nonces` table, so replayed confirmation tokens are rejected even across server restarts (previously only an in-memory cache guarded replay).
+  - Added unit suite `test_nonce_persistence`.
+
+### Changed
+- **128-bit Decimal Enforcement in Use Cases (`backend/src/application/asset/usecases.c`, `backend/src/application/market/usecases.c`)**:
+  - Asset and market use-case arithmetic/aggregation now runs in `decimal_t` (128-bit fixed-point) with double conversion only at the JSON DTO boundary; eliminates float accumulation drift in net-value and quote paths. Added `test_financial_precision_edge`.
+- **Application Transactions on Native Savepoint Scopes (`backend/src/application/{transaction,transfer,daily_expense,dca}/usecases.c`)**:
+  - Migrated all multi-step balance/position mutations to `db_tx_scope_t` (csilk nested savepoints); `balance_apply_delta_m()` is now atomic with an internal tx scope. Added `test_tx_scope_nesting`.
+
+### Fixed
+- **Transaction FX Rate Write-Back Hardening (`backend/src/application/transaction/usecases.c`, `backend/src/infrastructure/repositories/ledger_snapshot_repo_impl.c`)**:
+  - The point-in-time FX write-back (`UPDATE transactions SET fx_rate_to_cny = ?`) is now scoped with `AND user_id = ?` and a length-guarded currency string, and a failed write-back rolls back the whole transaction scope instead of silently continuing; `ledger_snapshot_repo_impl.c` snapshot queries get the same guard.
+- **Unauthenticated MCP Protocol (`backend/src/middlewares/jwt_middleware.c`, `backend/src/middlewares/rate_limit.c`, `backend/tests/test_mcp_server.sh`)**:
+  - Unauthenticated and rate-limited `POST /mcp` requests now return JSON-RPC error `-32001` per the MCP spec instead of bare HTTP 401/429 responses; pinned by `test_mcp_server.sh` and `test_mcp_unauth_protocol`.
+- **Temp File Parsing Race (`backend/src/services/file_parser.c`)**:
+  - Uploaded files are parsed through `mkstemps`-created 0600 temp files instead of predictable `/tmp` paths, removing symlink-spoofing races. Added `test_file_parser_mkstemps`.
+
 - **AI Agent & MCP Runtime Hardening (`backend/src/services/ai/tools/mcp/`, `backend/src/services/ai/runtime/`, `backend/src/services/ai/workflow/`, `backend/src/services/ai/memory/`, `backend/tests/unit/`)**:
   - **MCP Block-Buffered I/O & Dual-FD Anti-Deadlock (`mcp_client.h/c`)**: Replaced 1-byte syscall loop with 4KB `mcp_io_reader_t` and `memchr` newline fast-scan, eliminating ~100k syscall context switches on large JSON schemas; added dual-FD `poll()` monitoring both child stdout and stderr with non-blocking stderr drain to prevent 64KB pipe buffer deadlocks; safely clears `err_fd` on EOF/POLLHUP to prevent CPU 100% busy-polling.
   - **Child Process Sandbox FD Sanitation (`mcp_client.c`)**: Child process executes `dup2` for standard descriptors (0, 1, 2) followed by `closefrom(3)` before `execve`, preventing server listening sockets and database pool connections from leaking into external MCP child processes.

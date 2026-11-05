@@ -163,15 +163,15 @@ typedef struct ai_runtime_context {
 
 ```c
 typedef enum {
-    AI_RUNTIME_ERR_OK               = 0, // 正常完成
-    AI_RUNTIME_ERR_MODEL            = 1, // 模型网络不可达、鉴权失败或响应解析错误
-    AI_RUNTIME_ERR_TOOL             = 2, // 工具执行内部异常或参数校验失败
-    AI_RUNTIME_ERR_POLICY           = 3, // 权限不足或被五级风控拦截
-    AI_RUNTIME_ERR_TIMEOUT          = 4, // 运行超时或超出最大迭代轮数
-    AI_RUNTIME_ERR_CONTEXT_OVERFLOW = 5, // 消息上下文超出 Token 预算
-    AI_RUNTIME_ERR_VALIDATION       = 6, // 运行时输入参数校验不合法
-    AI_RUNTIME_ERR_CANCELLED        = 7  // 客户端主动取消或中断
-} ai_runtime_error_t;
+    AI_RUNTIME_ERR_OK               = 0,    // 正常完成
+    AI_RUNTIME_ERR_MODEL            = 1001, // 模型网络不可达、鉴权失败或响应解析错误
+    AI_RUNTIME_ERR_TOOL             = 1002, // 工具执行内部异常或参数校验失败
+    AI_RUNTIME_ERR_POLICY           = 1003, // 权限不足或被五级风控拦截
+    AI_RUNTIME_ERR_TIMEOUT          = 1004, // 运行超时、上游 HTTP 超时或超出最大迭代轮数
+    AI_RUNTIME_ERR_CONTEXT_OVERFLOW = 1005, // 消息上下文超出 Token 预算
+    AI_RUNTIME_ERR_VALIDATION       = 1006, // 运行时输入参数校验不合法
+    AI_RUNTIME_ERR_CANCELLED        = 1007  // 客户端主动取消或中断
+} ai_runtime_error_t;                    // (services/ai/runtime/error.h)
 ```
 
 ---
@@ -194,7 +194,8 @@ data: {"type": "delta", "content": "根据您的账本统计，上月总支出�
 - **运行时缓冲**：Agent Loop (`runtime/loop.c`) 在流式迭代中维护动态扩容的 `thinking_buffer`；
 - **数据库表扩展 (V015)**：Migration `V015__ai_messages_thinking_content.sql` 在 `ai_messages` 表中增加了 `thinking_content TEXT` 字段；
 - **数据库表扩展 (V016)**：Migration `V016__ai_messages_tool_calls.sql` 在 `ai_messages` 表中增加了 `tool_calls TEXT DEFAULT ''` 字段，用于持久化模型返回的工具调用记录（JSON 数组），供前端回显工具执行状态与 Agent Loop 上下文重建；
-- **账户维度 Schema (V017)**：Migration `V017__accounts_table.sql` 引入 `accounts` 表与 `assets.account_id` 外键；AI 资产工具 (`exec_get_assets`) 的查询结果随之携带 `account_name` / `institution` 字段，并支持可选 `account_id` 整型入参过滤，Agent 可按账户维度检索与汇总资产（`V001`~`V017` 自动迁移基线）。
+- **账户维度 Schema (V017)**：Migration `V017__accounts_table.sql` 引入 `accounts` 表与 `assets.account_id` 外键；AI 资产工具 (`exec_get_assets`) 的查询结果随之携带 `account_name` / `institution` 字段，并支持可选 `account_id` 整型入参过滤，Agent 可按账户维度检索与汇总资产（`V001`~`V020` 自动迁移基线）。
+- **确认令牌 Nonce 持久化 (V019)**：Migration `V019__ai_consumed_nonces.sql` 引入 `ai_consumed_nonces` 表；`ai_confirmation_verify_and_consume()` 在签名校验通过后将已消费 Nonce 落库，重放的 `draft_token` 即使跨进程重启也会被拒绝（此前仅内存缓存防护）。
 - **原子持久化**：当一轮对话完成时，`mf_ai_session_repo_save_message_with_thinking()` 将正文回复、完整的思考过程与 `tool_calls` JSON 原子持久化入库，保证历史会话在重新载入时能够完整回溯思维链与工具调用轨迹。
 
 ---
@@ -231,17 +232,15 @@ data: {"type": "delta", "content": "根据您的账本统计，上月总支出�
 AI Runtime 体系拥有 100% 覆盖的单元测试与真实的端到端集成测试验证：
 
 1. **CTest 单元测试套件 (`tests/unit/`)**：
-   - 上下文容器初始化与自动释放测试 (`test_context_lifecycle`)
-   - 错误码枚举与结构化状态对象转换 (`test_error_taxonomy`)
-   - 运行预算校验与统计累加器 (`test_limits_and_budgets`)
-   - 记忆滑动窗口与系统提示词保留截断 (`test_memory_sliding_window`)
-   - 超时、超限与外部中断信号模拟 (`test_runtime_cancellation_and_timeouts`)
+   - 上下文容器初始化与自动释放、错误码分类、预算校验、记忆窗口、取消/超时/校验拒绝(同套件 `test_ai_runtime`)
    - MCP 4KB 块缓冲读取与 1MB 上限截断 (`test_mcp_client_io`)
    - MCP Stderr 非阻塞排空与防管道死锁 (`test_mcp_stderr_capture`)
    - MCP 子进程 post-dup2 `closefrom(3)` 描述符隔离 (`test_mcp_child_sanitation`)
    - 无状态网络工具并行调度 vs 串行回退 (`test_ai_parallel_tools`)
    - 确定性工作流节点错误显式传播与阻断 (`test_workflow_step_error`)
    - 异步记忆 Worker 线程池入队、LRU 淘汰与清理 (`test_summary_worker_pool`)
+   - 已消费确认 Nonce 持久化与跨重启重放拒绝 (`test_nonce_persistence`)
+   - 未认证 MCP 请求返回 JSON-RPC -32001 协议错误 (`test_mcp_unauth_protocol`)
 2. **端到端集成回归**：
    - 验证真实会话创建、多轮对话流式返回、工具 Span 上报与 `ai_traces` 表落库统计 (`test_ai_trace.sh`)
    - 验证超时重试、预算收敛总结、去重拦截与动账令牌强制拦截 (`test_ai_loop_hardening.sh`)
