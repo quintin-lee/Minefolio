@@ -143,14 +143,33 @@ postgres_adapter_open(const mf_db_config_t* config, void** out_handle)
 #if defined(HAVE_LIBPQ)
     PGconn* conn = PQconnectdb(h->dsn);
     if (PQstatus(conn) != CONNECTION_OK) {
+        const char* conn_err = PQerrorMessage(conn);
         PQfinish(conn);
-        /* 若无法连接外部真实服务，标记为 mock/contract 模式以支持环境隔离测试 */
+        if (!config->allow_mock) {
+            /* 生产路径：连接失败必须 fail fast，禁止静默 mock 兜底。
+               若显式开启 allow_mock（仅测试契约场景）才回退 mock。 */
+            fprintf(stderr,
+                    "FATAL: postgres adapter: connection failed (%s); "
+                    "refusing to fall back to mock in non-test mode (allow_mock=false)\n",
+                    conn_err ? conn_err : "unknown");
+            free(h->dsn);
+            free(h);
+            return -1;
+        }
         h->is_mock = true;
     } else {
         h->native_conn = conn;
         h->is_mock = false;
     }
 #else
+    if (!config->allow_mock) {
+        fprintf(stderr,
+                "FATAL: postgres adapter built without libpq; refusing mock in non-test mode "
+                "(allow_mock=false)\n");
+        free(h->dsn);
+        free(h);
+        return -1;
+    }
     h->is_mock = true;
 #endif
     h->owns_conn = true;

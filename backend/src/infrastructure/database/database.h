@@ -24,6 +24,14 @@ typedef struct {
     int            busy_timeout_ms;
     int            max_retries;
     int            retry_interval_ms;
+    /**
+     * 是否允许 mock 兜底（仅测试使用）。
+     *
+     * 默认 false：PostgreSQL 驱动在无法建立真实连接时让 open() 失败（fail fast），
+     * 绝不在生产环境静默降级为"看似成功实则不落库"的 mock 适配器。
+     * 仅当显式置为 true（单元测试契约场景）时，连接失败才回退为 mock。
+     */
+    bool allow_mock;
 } mf_db_config_t;
 
 typedef struct mf_db_s     mf_db_t;
