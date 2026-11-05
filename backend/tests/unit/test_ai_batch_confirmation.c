@@ -108,8 +108,28 @@ create_sample_actions_b(void)
 }
 
 int
-main(void)
+main(int argc, char** argv)
 {
+    if (argc >= 4 && strcmp(argv[1], "--sign") == 0) {
+        int64_t       user_id = atoll(argv[2]);
+        const char*   json_str = argv[3];
+        csilk_json_t* actions = csilk_json_parse(json_str);
+        if (!actions) {
+            fprintf(stderr, "Invalid actions JSON\n");
+            return 1;
+        }
+        char* token = ai_confirmation_create_batch_token(user_id, 0, actions, AI_RISK_HIGH, 300);
+        if (!token) {
+            fprintf(stderr, "Failed to create batch token\n");
+            csilk_json_free(actions);
+            return 1;
+        }
+        printf("%s\n", token);
+        free(token);
+        csilk_json_free(actions);
+        return 0;
+    }
+
     printf("============================================================\n");
     printf("   TEST SUITE: AI Batch Confirmation Protocol (mf_batch_v1)  \n");
     printf("============================================================\n");

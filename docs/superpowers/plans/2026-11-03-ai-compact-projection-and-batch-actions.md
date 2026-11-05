@@ -243,16 +243,16 @@ ai_confirmation_status_t ai_confirmation_verify_and_consume_batch(
   - Success (200): `{code: 0, message: "ok", data: {executed_count: 2, action_results: [...]}}`
   - Replay / Expired / Invalid (200): `{code: 1002 or 1004, message: "...", data: null}`
 
-- [ ] **Step 1: Write integration tests in `test_ai_batch_confirmation.c`**
+- [x] **Step 1: Write integration tests in `test_ai_batch_confirmation.c`**
   - Test successful batch confirmation: 2 expenses + 1 transfer executed in a single transaction.
   - Verify asset balances updated correctly.
   - Test atomic rollback: create a batch where action 3 has an invalid asset ID. Verify actions 1 and 2 are rolled back completely.
   - Test replay attempt on already confirmed batch fails with error code.
 
-- [ ] **Step 2: Run test to verify RED failure**
+- [x] **Step 2: Run test to verify RED failure**
   - Run `cmake --build backend/build --target test_ai_batch_confirmation` -> expected FAIL.
 
-- [ ] **Step 3: Implement `api_ai_action_confirm_batch_handler` in `ai_controller.c`**
+- [x] **Step 3: Implement `api_ai_action_confirm_batch_handler` in `ai_controller.c`**
   - Extract user ID from context.
   - Validate and consume batch token via `ai_confirmation_verify_and_consume_batch`.
   - Open transaction scope `db_tx_scope_begin(pool, "mf_confirm_batch", &scope)`.
@@ -263,11 +263,11 @@ ai_confirmation_status_t ai_confirmation_verify_and_consume_batch(
   - If all succeed: `db_tx_scope_commit(pool, &scope)` and return success response.
   - Register route `POST /api/ai/actions/confirm-batch` in `register_ai_routes`.
 
-- [ ] **Step 4: Run test to verify GREEN pass**
+- [x] **Step 4: Run test to verify GREEN pass**
   - Run `./backend/build/test_ai_batch_confirmation` -> expected PASS.
   - Run `ctest --test-dir backend/build --output-on-failure`.
 
-- [ ] **Step 5: Commit Task 4**
+- [x] **Step 5: Commit Task 4**
   - `git commit -m "feat(ai): ⚡ implement atomic batch confirmation endpoint with tx rollback"`
 
 ---
@@ -282,26 +282,26 @@ ai_confirmation_status_t ai_confirmation_verify_and_consume_batch(
 - Build: Frontend production build
 - Modify: `docs/superpowers/plans/2026-11-03-ai-compact-projection-and-batch-actions.md`
 
-- [ ] **Step 1: Run complete CTest unit test suites**
+- [x] **Step 1: Run complete CTest unit test suites**
   - Run: `ctest --test-dir backend/build --output-on-failure`
   - Target: 50/50 test suites passed (100%).
 
-- [ ] **Step 2: Add Case 41 in `backend/tests/test_link.sh` and run integration test**
+- [x] **Step 2: Add Case 41 in `backend/tests/test_link.sh` and run integration test**
   - Case 41 tests:
     - Propose batch actions (expense + transfer) -> receives batch draft token.
     - Confirm batch actions via `POST /api/ai/actions/confirm-batch` -> returns code 0.
     - Assert expense and transfer recorded in database and balances updated.
     - Replay confirm batch with same token -> rejected with code 1004.
     - Tampered confirm batch -> rejected with code 1002.
-  - Run: `./backend/tests/test_link.sh` -> Target: all cases pass.
+  - Run: `./backend/tests/test_link.sh` -> Target: all cases pass (184/184 PASS).
 
-- [ ] **Step 3: Run AI & MCP test suites**
+- [x] **Step 3: Run AI & MCP test suites**
   - Run: `./backend/tests/test_ai_loop_hardening.sh`
   - Run: `./backend/tests/test_mcp.sh`
   - Run: `./backend/tests/test_mcp_server.sh`
 
-- [ ] **Step 4: Run frontend production build**
+- [x] **Step 4: Run frontend production build**
   - Run: `npm --prefix frontend run build` -> Target: 0 errors.
 
-- [ ] **Step 5: Check off all plan tasks and commit**
+- [x] **Step 5: Check off all plan tasks and commit**
   - Commit: `git commit -m "docs: 📝 mark milestone 3 implementation plan as fully verified"`
