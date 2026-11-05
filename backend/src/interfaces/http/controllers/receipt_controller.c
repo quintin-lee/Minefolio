@@ -314,6 +314,7 @@ receipt_service_scan(csilk_ctx_t* c)
         }
         /* Offline heuristic fallback */
         receipt_offline_fallback(c, user_id);
+        ai_config_release(cfg);
         return;
     }
 
@@ -397,6 +398,7 @@ receipt_service_scan(csilk_ctx_t* c)
 
     if (!req_json_str) {
         receipt_offline_fallback(c, user_id);
+        ai_config_release(cfg);
         return;
     }
 
@@ -405,6 +407,7 @@ receipt_service_scan(csilk_ctx_t* c)
     if (!curl) {
         free(req_json_str);
         receipt_offline_fallback(c, user_id);
+        ai_config_release(cfg);
         return;
     }
 
@@ -443,6 +446,7 @@ receipt_service_scan(csilk_ctx_t* c)
             free(resp_buf.data);
         }
         receipt_offline_fallback(c, user_id);
+        ai_config_release(cfg);
         return;
     }
 
@@ -451,6 +455,7 @@ receipt_service_scan(csilk_ctx_t* c)
     free(resp_buf.data);
     if (!api_resp) {
         receipt_offline_fallback(c, user_id);
+        ai_config_release(cfg);
         return;
     }
 
@@ -467,6 +472,7 @@ receipt_service_scan(csilk_ctx_t* c)
     if (!ai_content || !ai_content[0]) {
         csilk_json_free(api_resp);
         receipt_offline_fallback(c, user_id);
+        ai_config_release(cfg);
         return;
     }
 
@@ -593,6 +599,7 @@ receipt_service_scan(csilk_ctx_t* c)
 
     csilk_json_free(api_resp);
     respond_ok(c, result);
+    ai_config_release(cfg);
 }
 
 void

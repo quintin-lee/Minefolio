@@ -338,8 +338,8 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
         return status;
     }
 
-    /* 2. 匹配大模型服务商与模型配置 */
-    ai_config_t*   cfg = ai_get_config();
+    /* 2. 匹配大模型服务商与模型配置（acquire 快照引用，整个函数期间持有） */
+    ai_config_t*   cfg = ai_config_acquire();
     ai_provider_t* prov = NULL;
     if (ctx->provider_id[0]) {
         prov = ai_config_find_provider(cfg, ctx->provider_id);
@@ -356,8 +356,10 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
         if (cbs && cbs->on_error) {
             cbs->on_error(&status, user_data);
         }
+        ai_config_release(cfg);
         return status;
     }
+    char* owner_sys_prompt = NULL; /* 堆上 system_prompt 副本（若有），函数末尾统一释放 */
 
     const char* model = ctx->model_name[0] ? ctx->model_name
                                            : ((prov->models[0] && prov->models[0][0])
@@ -388,6 +390,10 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
         if (cbs && cbs->on_error) {
             cbs->on_error(&status, user_data);
         }
+        if (owner_sys_prompt) {
+            free(owner_sys_prompt);
+        }
+        ai_config_release(cfg);
         return status;
     }
 
@@ -422,6 +428,15 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
             .content = (cfg && cfg->system_prompt[0]) ? cfg->system_prompt
                                                       : "你是一个专业的个人财务与财富管理AI助手。",
         };
+        /* 拷贝 system_prompt 到堆，避免 csilk_ai_message_t.content 持有指向快照内部
+           缓冲区的裸指针（快照可能在本请求 release 后先于其它读者被销毁） */
+        if (cfg && cfg->system_prompt[0]) {
+            char* sys_copy = strdup(cfg->system_prompt);
+            if (sys_copy) {
+                msgs[0].content = sys_copy;
+                owner_sys_prompt = sys_copy;
+            }
+        }
     }
     size_t initial_mc = mc;
 
@@ -1041,6 +1056,10 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
     }
     free(msgs);
     csilk_json_free(tc_record);
+    if (owner_sys_prompt) {
+        free(owner_sys_prompt);
+    }
+    ai_config_release(cfg);
 
     return status;
 }
@@ -1155,6 +1174,7 @@ ai_runtime_run_loop(csilk_db_pool_t* pool, const ai_loop_options_t* opts, ai_tra
     csilk_json_free(ctx.messages);
     ctx.messages = ai_memory_build_messages(
         cfg ? cfg->system_prompt : NULL, hist, opts->user_prompt, 20, summary);
+    ai_config_release(cfg); /* 已用完 system_prompt；后续 execute 内部自取快照 */
     free(summary);
     if (hist) {
         csilk_json_free(hist);

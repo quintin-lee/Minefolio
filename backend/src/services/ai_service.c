@@ -21,9 +21,111 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stddef.h>
+#include <stdatomic.h>
+#include <pthread.h>
 
-static ai_config_t g_config = {0};
-static csilk_ai_t* g_ai = NULL;
+/**
+ * 不可变 AI 配置快照 + 引用计数（RCU 风格）：
+ * 写者（ai_init/热重载）构建新快照后原子交换 g_snapshot；
+ * 读者通过 ai_config_acquire()/ai_config_release() 持有引用，
+ * 保证流式请求整段生命周期内 config 与预建 csilk_ai_t 实例不会因热重载被释放。
+ */
+typedef struct ai_config_snapshot_s {
+    ai_config_t config;      /* 深拷贝，所有权归快照 */
+    csilk_ai_t* ai_instance; /* 预建实例（可能为 NULL） */
+    atomic_int  refcount;    /* 写者初始持 1；读者 acquire 后 >=2 */
+} ai_config_snapshot_t;
+
+static ai_config_snapshot_t* volatile g_snapshot = NULL;
+static pthread_mutex_t g_snapshot_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static ai_config_snapshot_t*
+make_snapshot(ai_config_t* config_src, csilk_ai_t* instance)
+{
+    ai_config_snapshot_t* s = calloc(1, sizeof(*s));
+    if (!s) {
+        return NULL;
+    }
+    s->config = *config_src;      /* 标量字段拷贝；providers/models 堆内存独占归快照 */
+    s->ai_instance = instance;
+    atomic_init(&s->refcount, 1); /* 写者（安装者）持有一份 */
+    return s;
+}
+
+/**
+ * @brief 释放写者（安装者）对快照的一份引用；归零时销毁整个快照
+ */
+static void
+snapshot_writer_release(ai_config_snapshot_t* s)
+{
+    if (!s) {
+        return;
+    }
+    int old = atomic_fetch_sub(&s->refcount, 1);
+    if (old == 1) {
+        ai_config_free(&s->config);
+        if (s->ai_instance) {
+            csilk_ai_free(s->ai_instance);
+        }
+        free(s);
+    }
+}
+
+/**
+ * @brief 读者获取当前快照（refcount++），返回配置指针；无快照时返回 NULL。
+ *        读者须在用完（含所有由此派生的 ai_provider_t* 指针）后调用 ai_config_release()。
+ */
+ai_config_t*
+ai_config_acquire(void)
+{
+    pthread_mutex_lock(&g_snapshot_lock);
+    ai_config_snapshot_t* s = g_snapshot;
+    if (s) {
+        atomic_fetch_add(&s->refcount, 1);
+    }
+    pthread_mutex_unlock(&g_snapshot_lock);
+    return s ? &s->config : NULL;
+}
+
+/**
+ * @brief 读者释放快照引用（refcount--，最后一个释放时销毁快照）。
+ *        参数为 ai_config_acquire() 返回的指针。
+ */
+void
+ai_config_release(ai_config_t* cfg)
+{
+    if (!cfg) {
+        return;
+    }
+    /* container_of：config 是快照第一个成员，偏移为 offsetof */
+    ai_config_snapshot_t* s =
+        (ai_config_snapshot_t*)((char*)cfg - offsetof(ai_config_snapshot_t, config));
+    int old = atomic_fetch_sub(&s->refcount, 1);
+    if (old == 1) {
+        ai_config_free(&s->config);
+        if (s->ai_instance) {
+            csilk_ai_free(s->ai_instance);
+        }
+        free(s);
+    }
+}
+
+/**
+ * @brief 查询当前预建 csilk_ai_t 实例（需先 acquire）
+ * @return csilk_ai_t* 实例指针或 NULL（未配置/实例创建失败）
+ */
+csilk_ai_t*
+ai_snapshot_ai_instance(const ai_config_t* cfg)
+{
+    if (!cfg) {
+        return NULL;
+    }
+    const ai_config_snapshot_t* s =
+        (const ai_config_snapshot_t*)((const char*)cfg - offsetof(ai_config_snapshot_t, config));
+    return s->ai_instance;
+}
+
 static const char*
 get_driver_name(const char* prov_id)
 {
@@ -86,56 +188,64 @@ void
 ai_init(csilk_db_pool_t* pool)
 {
     ai_summary_pool_init();
-    char* json = pool ? mf_ai_settings_repo_load(pool) : NULL;
+
+    /* 构建一份全新的不可变配置（堆上独立生命周期，不与旧快照共享） */
+    ai_config_t cfg_copy = {0};
+    char*       json = pool ? mf_ai_settings_repo_load(pool) : NULL;
+    int         loaded_from_db = 0;
     if (json) {
-        int loaded = (ai_config_load_json(json, &g_config) == 0);
+        loaded_from_db = (ai_config_load_json(json, &cfg_copy) == 0);
         free(json);
-        if (loaded) {
-            ai_provider_t* prov = ai_config_default_provider(&g_config);
-            if (prov) {
-                const char* key = (prov->api_key[0] != '\0') ? prov->api_key : "dummy";
-                const char* dname = get_driver_name(prov->id);
-                g_ai = csilk_ai_new(dname, key, prov->base_url[0] ? prov->base_url : NULL);
-                if (g_ai) {
-                    printf("AI initialized (DB): provider=%s model=%s\n",
-                           prov->id,
-                           g_config.default_model);
-                } else {
-                    fprintf(
-                        stderr, "WARN: failed to create AI instance for provider '%s'\n", prov->id);
-                }
-                return;
-            }
-            /* DB config loaded but no usable provider — keep g_config, do not fall through */
+    }
+    if (!loaded_from_db) {
+        const char* cfg_path = config_env_get("AI_CONFIG", NULL, 0, "config/ai.json");
+        if (ai_config_load(cfg_path, &cfg_copy) != 0) {
             fprintf(stderr,
-                    "WARN: default provider '%s' not found in DB AI config\n",
-                    g_config.default_provider);
+                    "WARN: could not load ai_config from %s; keeping prior snapshot\n",
+                    cfg_path);
             return;
         }
     }
-    const char* cfg_path = config_env_get("AI_CONFIG", NULL, 0, "config/ai.json");
-    if (ai_config_load(cfg_path, &g_config) != 0) {
-        fprintf(stderr, "WARN: could not load ai_config from %s\n", cfg_path);
-        return;
-    }
-    ai_provider_t* prov = ai_config_default_provider(&g_config);
-    if (!prov) {
-        fprintf(
-            stderr, "WARN: default provider '%s' not found in config\n", g_config.default_provider);
-        return;
-    }
-    char        api_key_buf[512];
-    const char* sec_key = config_secret_get("AI_API_KEY", api_key_buf, sizeof(api_key_buf));
-    const char* key = (sec_key && sec_key[0])      ? sec_key
-                      : (prov->api_key[0] != '\0') ? prov->api_key
-                                                   : "";
-    const char* dname = get_driver_name(prov->id);
-    g_ai = csilk_ai_new(dname, key, prov->base_url[0] ? prov->base_url : NULL);
-    if (g_ai) {
-        printf("AI initialized (file): provider=%s model=%s\n", prov->id, g_config.default_model);
+
+    ai_provider_t* prov = ai_config_default_provider(&cfg_copy);
+    csilk_ai_t*    new_inst = NULL;
+    if (prov) {
+        char        api_key_buf[512];
+        const char* sec_key = config_secret_get("AI_API_KEY", api_key_buf, sizeof(api_key_buf));
+        const char* key = (sec_key && sec_key[0])      ? sec_key
+                          : (prov->api_key[0] != '\0') ? prov->api_key
+                                                       : "";
+        const char* dname = get_driver_name(prov->id);
+        new_inst = csilk_ai_new(dname, key, prov->base_url[0] ? prov->base_url : NULL);
+        if (!new_inst) {
+            fprintf(stderr, "WARN: failed to create AI instance for provider '%s'\n", prov->id);
+        } else {
+            printf("AI initialized: provider=%s model=%s\n", prov->id, cfg_copy.default_model);
+        }
     } else {
-        fprintf(stderr, "WARN: failed to create AI instance for provider '%s'\n", prov->id);
+        fprintf(stderr,
+                "WARN: default provider '%s' not found; AI remains unconfigured\n",
+                cfg_copy.default_provider);
     }
+
+    /* 原子交换快照（持锁安装新快照、释放旧快照写者引用） */
+    pthread_mutex_lock(&g_snapshot_lock);
+    ai_config_snapshot_t* old_snap = g_snapshot;
+    ai_config_snapshot_t* new_snap = make_snapshot(&cfg_copy, new_inst);
+    if (new_snap) {
+        g_snapshot = new_snap;
+        /* 旧快照写者引用在锁外释放（读者持有不受影响） */
+        if (old_snap) {
+            snapshot_writer_release(old_snap);
+        }
+    } else {
+        /* 分配失败：保留旧快照，清理新配置堆内存 */
+        ai_config_free(&cfg_copy);
+        if (new_inst) {
+            csilk_ai_free(new_inst);
+        }
+    }
+    pthread_mutex_unlock(&g_snapshot_lock);
 }
 
 void
@@ -147,17 +257,20 @@ ai_shutdown(void)
     if (killed > 0) {
         CSILK_LOG_I("ai_shutdown: terminated %d idle MCP stdio children", killed);
     }
-    if (g_ai) {
-        csilk_ai_free(g_ai);
-        g_ai = NULL;
+    /* 摘除写者持有的快照引用；in-flight 读者仍持有引用，最后一个释放时才销毁 */
+    pthread_mutex_lock(&g_snapshot_lock);
+    ai_config_snapshot_t* old_snap = g_snapshot;
+    g_snapshot = NULL;
+    pthread_mutex_unlock(&g_snapshot_lock);
+    if (old_snap) {
+        snapshot_writer_release(old_snap);
     }
-    ai_config_free(&g_config);
 }
 
 ai_config_t*
 ai_get_config(void)
 {
-    return &g_config;
+    return ai_config_acquire();
 }
 
 /**
@@ -560,15 +673,21 @@ ai_chat_handler(csilk_ctx_t* c)
         enable_thinking = csilk_json_as_bool(et_node, false);
     }
 
+    /* 获取 AI 配置快照引用（整个 handler 期间持有，热重载不会使 prov/cfg 指针悬空） */
+    ai_config_t* cfg = ai_config_acquire();
+    csilk_ai_t*  snap_ai = ai_snapshot_ai_instance(cfg);
+
     if (!content || content[0] == '\0') {
         csilk_json_free(body);
         respond_bad_request(c, "content 不能为空");
+        ai_config_release(cfg);
         return;
     }
 
-    if (!g_ai) {
+    if (!snap_ai) {
         csilk_json_free(body);
         respond_error(c, 500, "AI 服务未配置，请先在设置中配置供应商");
+        ai_config_release(cfg);
         return;
     }
 
@@ -579,14 +698,15 @@ ai_chat_handler(csilk_ctx_t* c)
     char           model_buf[128] = {0};
     if (provider_override && provider_override[0]) {
         strncpy(provider_buf, provider_override, sizeof(provider_buf) - 1);
-        prov = ai_config_find_provider(&g_config, provider_buf);
+        prov = ai_config_find_provider(cfg, provider_buf);
     }
     if (!prov) {
-        prov = ai_config_default_provider(&g_config);
+        prov = ai_config_default_provider(cfg);
     }
     if (!prov) {
         csilk_json_free(body);
         respond_error(c, 500, "未找到可用 AI 供应商");
+        ai_config_release(cfg);
         return;
     }
     const char* model_sel = model_override ? model_override : prov->models[0];
@@ -640,7 +760,7 @@ ai_chat_handler(csilk_ctx_t* c)
     }
 
     /* load history */
-    int           ctx_size = g_config.context_size > 0 ? g_config.context_size : 20;
+    int           ctx_size = cfg->context_size > 0 ? cfg->context_size : 20;
     csilk_json_t* history = mf_ai_message_recent(pool, sid, ctx_size);
 
     /* persist user message (skip on regenerate — already in history) */
@@ -676,7 +796,7 @@ ai_chat_handler(csilk_ctx_t* c)
     ai_summary_flush_pending(pool, sid);
     char* summary = mf_ai_summary_get(pool, sid);
     rctx.messages = ai_memory_build_messages(
-        g_config.system_prompt, history, regenerate ? NULL : content, ctx_size, summary);
+        cfg->system_prompt, history, regenerate ? NULL : content, ctx_size, summary);
     free(summary);
 
     /* 初始化 Trace */
@@ -684,12 +804,12 @@ ai_chat_handler(csilk_ctx_t* c)
     ai_trace_init(&trace, user_id, sid);
     ai_trace_set_provider(&trace, prov->id, model_buf);
     ai_trace_set_params(&trace, req_temperature, req_max_tokens, req_top_p);
-    ai_trace_set_system_prompt(&trace, g_config.system_prompt);
+    ai_trace_set_system_prompt(&trace, cfg->system_prompt);
 
     csilk_json_t* input_arr = csilk_json_array();
     csilk_json_t* sys_msg = csilk_json_object();
     csilk_json_add_string(sys_msg, "role", "system");
-    csilk_json_add_string(sys_msg, "content", g_config.system_prompt);
+    csilk_json_add_string(sys_msg, "content", cfg->system_prompt);
     csilk_json_array_append(input_arr, sys_msg);
     int hsz = history ? (int)csilk_json_array_size(history) : 0;
     for (int i = 0; i < hsz; i++) {
@@ -762,6 +882,7 @@ ai_chat_handler(csilk_ctx_t* c)
         csilk_json_free(history);
     }
     csilk_json_free(body);
+    ai_config_release(cfg);
 }
 void
 ai_service_test_connection(csilk_ctx_t* c)
@@ -776,6 +897,9 @@ ai_service_test_connection(csilk_ctx_t* c)
         respond_bad_request(c, "请求体必须为 JSON");
         return;
     }
+
+    /* 快照引用：本函数期间持有，避免热重载使 provider 指针悬空 */
+    ai_config_t* cfg = ai_config_acquire();
 
     const char* id =
         csilk_json_get_string(body, "id") ? csilk_json_get_string(body, "id") : "openai";
@@ -795,7 +919,7 @@ ai_service_test_connection(csilk_ctx_t* c)
             key_buf[_copy_len] = '\0';
         }
     } else {
-        ai_provider_t* old_p = ai_config_find_provider(&g_config, id);
+        ai_provider_t* old_p = ai_config_find_provider(cfg, id);
         if (old_p && old_p->api_key[0]) {
             size_t _src_len = strlen(old_p->api_key);
             size_t _copy_len = _src_len < sizeof(key_buf) - 1 ? _src_len : sizeof(key_buf) - 1;
@@ -823,7 +947,7 @@ ai_service_test_connection(csilk_ctx_t* c)
 
     const char* test_model = model;
     if (!test_model || !test_model[0]) {
-        ai_provider_t* p = ai_config_find_provider(&g_config, id);
+        ai_provider_t* p = ai_config_find_provider(cfg, id);
         if (p && p->model_count > 0 && p->models[0] && p->models[0][0]) {
             test_model = p->models[0];
         } else if (strcmp(id, "deepseek") == 0) {
@@ -874,6 +998,7 @@ ai_service_test_connection(csilk_ctx_t* c)
     csilk_ai_chat_response_free(&res);
     csilk_ai_free(test_ai);
     csilk_json_free(body);
+    ai_config_release(cfg);
     respond_ok(c, resp);
 }
 
@@ -912,6 +1037,8 @@ ai_service_fetch_models(csilk_ctx_t* c)
         return;
     }
 
+    ai_config_t* cfg = ai_config_acquire();
+
     const char* id =
         csilk_json_get_string(body, "id") ? csilk_json_get_string(body, "id") : "openai";
     const char* base_url = csilk_json_get_string(body, "base_url");
@@ -929,7 +1056,7 @@ ai_service_fetch_models(csilk_ctx_t* c)
             key_buf[_copy_len] = '\0';
         }
     } else {
-        ai_provider_t* old_p = ai_config_find_provider(&g_config, id);
+        ai_provider_t* old_p = ai_config_find_provider(cfg, id);
         if (old_p && old_p->api_key[0]) {
             size_t _src_len = strlen(old_p->api_key);
             size_t _copy_len = _src_len < sizeof(key_buf) - 1 ? _src_len : sizeof(key_buf) - 1;
@@ -1021,6 +1148,7 @@ ai_service_fetch_models(csilk_ctx_t* c)
 
     free(chunk.data);
     csilk_json_free(body);
+    ai_config_release(cfg);
     csilk_json_add_array(out, "models", model_arr);
     respond_ok(c, out);
 }
@@ -1033,11 +1161,14 @@ ai_service_stream_report(csilk_ctx_t* c,
                          const char*  structured_data_json,
                          const char*  user_prompt)
 {
-    if (!g_config.default_provider[0] || !g_config.default_model[0]) {
+    ai_config_t* cfg = ai_config_acquire();
+    if (!cfg || !cfg->default_provider[0] || !cfg->default_model[0]) {
+        ai_config_release(cfg);
         return 0;
     }
-    ai_provider_t* prov = ai_config_find_provider(&g_config, g_config.default_provider);
+    ai_provider_t* prov = ai_config_find_provider(cfg, cfg->default_provider);
     if (!prov || (!prov->api_key[0] && strcmp(prov->id, "ollama") != 0)) {
+        ai_config_release(cfg);
         return 0;
     }
 
@@ -1089,7 +1220,7 @@ ai_service_stream_report(csilk_ctx_t* c,
 
     ai_trace_t trace;
     ai_trace_init(&trace, user_id, session_id);
-    ai_trace_set_provider(&trace, prov->id, g_config.default_model);
+    ai_trace_set_provider(&trace, prov->id, cfg->default_model);
     ai_trace_set_system_prompt(&trace, sys_prompt);
 
     csilk_json_t* input_arr = csilk_json_array();
@@ -1145,7 +1276,7 @@ ai_service_stream_report(csilk_ctx_t* c,
     rctx.user_id = user_id;
     rctx.session_id = session_id;
     snprintf(rctx.provider_id, sizeof(rctx.provider_id), "%s", prov->id);
-    snprintf(rctx.model_name, sizeof(rctx.model_name), "%s", g_config.default_model);
+    snprintf(rctx.model_name, sizeof(rctx.model_name), "%s", cfg->default_model);
     if (rctx.model_name[0] && (strstr(rctx.model_name, "agnes") || strstr(rctx.model_name, "r1") ||
                                strstr(rctx.model_name, "reasoner"))) {
         rctx.has_enable_thinking = true;
@@ -1160,6 +1291,7 @@ ai_service_stream_report(csilk_ctx_t* c,
     if (arena) {
         csilk_arena_free(arena);
     }
+    ai_config_release(cfg);
     ai_trace_free(&trace);
     ai_runtime_context_free(&rctx);
 

@@ -509,6 +509,8 @@ ai_summary_maybe_trigger(csilk_db_pool_t* pool, ai_runtime_context_t* ctx)
                      : (prov->models[0] && prov->models[0][0]) ? prov->models[0]
                                                                : "gpt-4o-mini");
         }
+        /* 已将所有所需字段值拷贝到 task 本地缓冲，快照引用可立即归还 */
+        ai_config_release(cfg);
     }
     if (!task->has_key) {
         free(task->user_prompt);

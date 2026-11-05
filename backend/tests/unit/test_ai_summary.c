@@ -1,4 +1,5 @@
 #include "services/ai/memory/summary.h"
+#include "services/ai_service.h"
 #include "services/ai/memory/memory.h"
 #include "services/ai/runtime/context.h"
 #include "common/db.h"
@@ -158,6 +159,7 @@ main(void)
     ai_provider_t* prov = ai_config_find_provider(cfg, "mockai");
     assert(prov != NULL);
     printf("mock provider ready: base_url=%s model=%s\n", prov->base_url, prov->models[0]);
+    ai_config_release(cfg); /* 已用完探针检查；后续 ai_summary_maybe_trigger 内部自行 acquire */
 
     /* 构造 ctx：token 预算 100，已用 90 → 超过 80% 阈值，应触发摘要 */
     ai_runtime_context_t ctx = {0};
