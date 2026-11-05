@@ -365,21 +365,91 @@ step_hs_report(csilk_db_pool_t*    pool,
     return strdup(buf);
 }
 
+static bool
+condition_hs_has_debt(csilk_db_pool_t* pool, int64_t user_id, const csilk_json_t* shared_state)
+{
+    (void)pool;
+    (void)user_id;
+    if (!shared_state) {
+        return false;
+    }
+    const csilk_json_t* coll = csilk_json_get(shared_state, "hs_collect");
+    if (!coll) {
+        return false;
+    }
+    double total_debt = db_get_num(coll, "total_debt");
+    return total_debt > 0.0;
+}
+
+static char*
+step_hs_debt_deepdive(csilk_db_pool_t*    pool,
+                      int64_t             user_id,
+                      const csilk_json_t* params,
+                      const char*         ctx_json)
+{
+    (void)pool;
+    (void)user_id;
+    (void)params;
+    csilk_json_t* ctx = ctx_json ? csilk_json_parse(ctx_json) : NULL;
+    double        debt = 0.0, income = 0.0;
+    if (ctx) {
+        const csilk_json_t* coll = csilk_json_get(ctx, "hs_collect");
+        if (coll) {
+            debt = db_get_num(coll, "total_debt");
+            income = db_get_num(coll, "avg_income");
+        }
+        csilk_json_free(ctx);
+    }
+    double      dti = (income > 0.0) ? (debt / (income * 12.0) * 100.0) : 0.0;
+    const char* risk_level = (dti > 40.0) ? "high" : ((dti > 20.0) ? "medium" : "low");
+
+    csilk_json_t* out = csilk_json_object();
+    csilk_json_add_number(out, "debt_to_annual_income_pct", dti);
+    csilk_json_add_string(out, "debt_risk_level", risk_level);
+    csilk_json_add_string(
+        out, "recommendation", (dti > 40.0) ? "优先清偿高息负债" : "负债处于健康安全线以内");
+    char* s = csilk_json_serialize(out, NULL);
+    csilk_json_free(out);
+    return s;
+}
+
 static const ai_workflow_graph_t g_hs_graph = {
     .id = "wf_health_score",
     .title = "财务健康分评估",
     .description =
         "从流动性/负债/储蓄/纪律四维度计算 0-100 健康分，定位短板并给出 3 个月提升路径。",
     .icon = "ph:heart",
-    .node_count = 3,
+    .node_count = 4,
     .nodes =
         {
-                {"hs_collect", "财务数据汇聚", "汇聚资产负债与月均收支", step_hs_collect},
-                {"hs_score", "四维度评分", "流动性/负债/储蓄/纪律加权评分", step_hs_score},
+                {"hs_collect",
+             "财务数据汇聚",
+             "汇聚资产负债与月均收支",
+             step_hs_collect,
+             NULL,
+             NULL,
+             1},
+                {"hs_debt_deepdive",
+             "负债深度诊断",
+             "评估负债收入比与偿债压力",
+             step_hs_debt_deepdive,
+             condition_hs_has_debt,
+             NULL,
+             0},
+                {"hs_score",
+             "四维度评分",
+             "流动性/负债/储蓄/纪律加权评分",
+             step_hs_score,
+             NULL,
+             NULL,
+             0},
                 {"generate_report",
              "健康分报告与提升建议",
              "生成健康分雷达图与短板改进方案",
-             step_hs_report},
+             step_hs_report,
+             NULL,
+             NULL,
+             0},
                 },
 };
 
