@@ -32,3 +32,14 @@ int mf_asset_rule_derive_investment_values(mf_asset_t* asset);
  */
 int
 mf_asset_rule_calculate_floating_pnl(const mf_asset_t* asset, money_t* out_pnl, double* out_pct);
+
+/**
+ * @brief 判断资产是否允许被物理删除
+ * @param has_transactions 是否存在关联交易记录
+ * @return 若无关联交易返回 true，否则返回 false
+ */
+static inline bool
+mf_asset_rule_can_delete(bool has_transactions)
+{
+    return !has_transactions;
+}

@@ -662,12 +662,13 @@ stdio_call(mf_mcp_client_t* c, const char* request_json, char* out_err, size_t e
     }
 
     /* 写请求帧（带换行） */
-    char* frame = malloc(strlen(request_json) + 2);
+    size_t frame_len = strlen(request_json) + 2;
+    char*  frame = malloc(frame_len);
     if (!frame) {
         snprintf(out_err, err_sz, "oom");
         return NULL;
     }
-    sprintf(frame, "%s\n", request_json);
+    snprintf(frame, frame_len, "%s\n", request_json);
     size_t off = 0;
     while (off < strlen(frame)) {
         ssize_t w = write(c->write_fd, frame + off, strlen(frame) - off);
@@ -942,9 +943,10 @@ mf_mcp_client_initialize(mf_mcp_client_t* c, char* out_err, size_t err_sz)
                     free(nresp);
                 }
             } else if (c->write_fd >= 0) {
-                char* nframe = malloc(strlen(notif) + 2);
+                size_t nframe_len = strlen(notif) + 2;
+                char*  nframe = malloc(nframe_len);
                 if (nframe) {
-                    sprintf(nframe, "%s\n", notif);
+                    snprintf(nframe, nframe_len, "%s\n", notif);
                     size_t noff = 0;
                     while (noff < strlen(nframe)) {
                         ssize_t nw = write(c->write_fd, nframe + noff, strlen(nframe) - noff);

@@ -420,6 +420,21 @@ asset_usecase_delete(void* pool, const delete_asset_cmd_t* cmd, asset_usecase_re
     }
 
     csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
+
+    int has_tx = 0;
+    if (asset_has_transactions(db_pool, cmd->user_id, cmd->id, &has_tx) != 0) {
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "查询关联交易失败");
+        return -1;
+    }
+    if (has_tx) {
+        out_res->code = 1004;
+        snprintf(out_res->message,
+                 sizeof(out_res->message),
+                 "该资产存在关联交易记录，无法直接删除，请先清理交易或归档资产");
+        return -1;
+    }
+
     if (!asset_delete(db_pool, cmd->user_id, cmd->id)) {
         out_res->code = 1003;
         snprintf(out_res->message, sizeof(out_res->message), "资产不存在或删除失败");

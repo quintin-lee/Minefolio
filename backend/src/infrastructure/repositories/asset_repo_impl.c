@@ -423,6 +423,27 @@ asset_update_position(csilk_db_pool_t* pool,
 }
 
 int
+asset_has_transactions(csilk_db_pool_t* pool, int64_t user_id, int64_t asset_id, int* out_flag)
+{
+    if (!pool || user_id <= 0 || asset_id <= 0 || !out_flag) {
+        return -1;
+    }
+    char uid[32], aid[32];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    snprintf(aid, sizeof(aid), "%lld", (long long)asset_id);
+    csilk_json_t* res =
+        csilk_db_query_param_json(pool,
+                                  "SELECT 1 AS hit FROM transactions "
+                                  "WHERE user_id=? AND (asset_id=? OR linked_asset_id=?) LIMIT 1",
+                                  (const char*[]){uid, aid, aid, NULL});
+    *out_flag = (res && csilk_json_array_size(res) > 0) ? 1 : 0;
+    if (res) {
+        csilk_json_free(res);
+    }
+    return 0;
+}
+
+int
 asset_delete(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
 {
     char uid[32], idstr[32];

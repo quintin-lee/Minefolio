@@ -57,8 +57,9 @@ int asset_update_market_quote(csilk_db_pool_t* pool,
                               int64_t          asset_id,
                               double           new_net_value);
 csilk_json_t* asset_list_for_sync(csilk_db_pool_t* pool, int64_t user_id);
-int           asset_delete(csilk_db_pool_t* pool, int64_t user_id, int64_t id);
-int           asset_exists(csilk_db_pool_t* pool, int64_t user_id, int64_t id);
+int asset_has_transactions(csilk_db_pool_t* pool, int64_t user_id, int64_t asset_id, int* out_flag);
+int asset_delete(csilk_db_pool_t* pool, int64_t user_id, int64_t id);
+int asset_exists(csilk_db_pool_t* pool, int64_t user_id, int64_t id);
 char*         asset_get_category_type(csilk_db_pool_t* pool, int64_t user_id, int64_t category_id);
 csilk_json_t* asset_transactions(csilk_db_pool_t* pool, int64_t user_id, int64_t asset_id);
 csilk_json_t* asset_balance_logs_list(csilk_db_pool_t* pool,

@@ -96,10 +96,17 @@ static void test_asset_cost_method_validation(void) {
     printf("PASS: test_asset_cost_method_validation\n");
 }
 
+static void test_asset_delete_validation(void) {
+    assert(mf_asset_rule_can_delete(true) == false);
+    assert(mf_asset_rule_can_delete(false) == true);
+    printf("PASS: test_asset_delete_validation\n");
+}
+
 int main(void) {
     test_asset_entity_and_predicates();
     test_asset_investment_derivation_and_pnl();
     test_asset_cost_method_validation();
+    test_asset_delete_validation();
     printf("All domain asset tests passed successfully!\n");
     return 0;
 }
