@@ -39,7 +39,9 @@ struct ai_tool_s {
     ai_permission_level_t permission;        /**< 权限要求等级 */
     ai_risk_level_t       risk;              /**< 风险等级 */
     bool                  is_mutation;       /**< 是否为金融写操作/动账 */
-    bool requires_id;             /**< 是否必须携带关联资源 ID（资产/分类/账户），防模型凭空捏造 */
+    bool requires_id; /**< 是否必须携带关联资源 ID（资产/分类/账户），防模型凭空捏造 */
+    bool
+        internal_only; /**< 仅供后端/卡片确认调用，不对 LLM 开放 Function Calling 定义（防御 HITL 绕过） */
     ai_tool_validate_fn validate; /**< 业务规则校验函数（可选） */
     ai_tool_execute_fn  execute;  /**< 执行逻辑函数 */
 };

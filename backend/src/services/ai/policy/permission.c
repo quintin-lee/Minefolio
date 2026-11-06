@@ -14,6 +14,7 @@ typedef struct {
 
 static user_role_entry_t s_role_overrides[MAX_ROLE_OVERRIDES];
 static size_t            s_role_count = 0;
+static pthread_mutex_t   s_role_lock = PTHREAD_MUTEX_INITIALIZER;
 
 ai_permission_level_t
 ai_permission_get_level(const char* tool_name)
@@ -58,11 +59,15 @@ ai_permission_get_user_role(int64_t user_id)
     if (user_id <= 0) {
         return AI_USER_ROLE_GUEST;
     }
+    pthread_mutex_lock(&s_role_lock);
     for (size_t i = 0; i < s_role_count; i++) {
         if (s_role_overrides[i].user_id == user_id) {
-            return s_role_overrides[i].role;
+            ai_user_role_t r = s_role_overrides[i].role;
+            pthread_mutex_unlock(&s_role_lock);
+            return r;
         }
     }
+    pthread_mutex_unlock(&s_role_lock);
     /* 实例管理员（/system/setup 首个用户）持 ADMIN 权限；查询结果进程内缓存
      * （admin id 生命周期内稳定，MIN(id) 查询只在首次成功触发） */
     static pthread_mutex_t admin_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -88,9 +93,11 @@ ai_permission_get_user_role(int64_t user_id)
 void
 ai_permission_set_user_role(int64_t user_id, ai_user_role_t role)
 {
+    pthread_mutex_lock(&s_role_lock);
     for (size_t i = 0; i < s_role_count; i++) {
         if (s_role_overrides[i].user_id == user_id) {
             s_role_overrides[i].role = role;
+            pthread_mutex_unlock(&s_role_lock);
             return;
         }
     }
@@ -99,6 +106,7 @@ ai_permission_set_user_role(int64_t user_id, ai_user_role_t role)
         s_role_overrides[s_role_count].role = role;
         s_role_count++;
     }
+    pthread_mutex_unlock(&s_role_lock);
 }
 
 bool

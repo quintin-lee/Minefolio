@@ -271,6 +271,7 @@ ai_tool_transfer_register_all(void)
             .risk = AI_RISK_CRITICAL,
             .is_mutation = true,
             .requires_id = true,
+            .internal_only = true,
             .validate = NULL,
             .execute = exec_confirm_proposed_transfer,
         };

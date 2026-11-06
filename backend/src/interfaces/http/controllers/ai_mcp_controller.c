@@ -2,6 +2,7 @@
 #include "application/mcp/usecases.h"
 #include "application/mcp/commands.h"
 #include "services/ai/tools/mcp/mcp_bridge.h"
+#include "infrastructure/repositories/auth_repo_impl.h"
 #include "common/response.h"
 #include "common/ctx.h"
 #include "common/db.h"
@@ -13,6 +14,17 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <sys/stat.h>
+
+/* 安全门禁：本地可执行脚本与 stdio 进程级 MCP 扩展仅实例管理员有权操作（防御普通用户 RCE） */
+static int
+require_instance_admin(csilk_ctx_t* c, int64_t user_id)
+{
+    if (mf_auth_repo_is_instance_admin(db_get_pool(), user_id)) {
+        return 1;
+    }
+    respond_forbidden(c, "仅实例管理员允许管理本地脚本与 Stdio MCP 扩展");
+    return 0;
+}
 
 /* Helper: 从请求体 JSON 读取可选字符串字段（缺失返回 NULL） */
 static const char*
@@ -38,6 +50,14 @@ api_ai_mcp_servers_create(csilk_ctx_t* c)
     if (!body) {
         respond_bad_request(c, "请求体必须为 JSON");
         return;
+    }
+
+    const char* transport = body_get_str(body, "transport");
+    if (transport && strcmp(transport, "stdio") == 0) {
+        if (!require_instance_admin(c, user_id)) {
+            csilk_json_free(body);
+            return;
+        }
     }
 
     /* 读取 timeout_ms，缺省 30000 */
@@ -94,6 +114,14 @@ api_ai_mcp_servers_update(csilk_ctx_t* c)
     if (!body) {
         respond_bad_request(c, "请求体必须为 JSON");
         return;
+    }
+
+    const char* transport = body_get_str(body, "transport");
+    if (transport && strcmp(transport, "stdio") == 0) {
+        if (!require_instance_admin(c, user_id)) {
+            csilk_json_free(body);
+            return;
+        }
     }
 
     int timeout_ms = (int)db_get_num(body, "timeout_ms");
@@ -403,6 +431,9 @@ api_ai_mcp_scripts_upload(csilk_ctx_t* c)
     if (user_id < 0) {
         return;
     }
+    if (!require_instance_admin(c, user_id)) {
+        return;
+    }
 
     free(g_script_filename);
     free(g_script_data);
@@ -506,6 +537,9 @@ api_ai_mcp_scripts_list(csilk_ctx_t* c)
     if (user_id < 0) {
         return;
     }
+    if (!require_instance_admin(c, user_id)) {
+        return;
+    }
 
     char user_dir[512];
     snprintf(user_dir, sizeof(user_dir), "./data/mcp_scripts/%lld", (long long)user_id);
@@ -561,6 +595,9 @@ api_ai_mcp_scripts_delete(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
     if (user_id < 0) {
+        return;
+    }
+    if (!require_instance_admin(c, user_id)) {
         return;
     }
 

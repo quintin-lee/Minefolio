@@ -90,6 +90,11 @@ test_ai_ssrf_url_validation(void)
     assert(mf_ai_rule_validate_url("http://172.15.0.1", 4096));  /* Public 172.15 */
     assert(mf_ai_rule_validate_url("http://172.32.0.1", 4096));  /* Public 172.32 */
     assert(!mf_ai_rule_validate_url("http://169.254.1.1", 4096)); /* Link-local */
+    /* Private TLD domains (SEC-03) */
+    assert(!mf_ai_rule_validate_url("http://service.local/api", 4096));
+    assert(!mf_ai_rule_validate_url("http://meta.internal/latest", 4096));
+    assert(!mf_ai_rule_validate_url("http://nas.lan/share", 4096));
+    assert(!mf_ai_rule_validate_url("http://gateway.home.arpa/status", 4096));
 
     /* Length limits */
     char long_url[5000];
@@ -123,6 +128,22 @@ main(void)
     assert(rc1 == 0 && rc2 == 0 && rc3 == 0 && rc4 == 0 && rc5 == 0 && rc6 == 0);
 
     ai_tool_registry_init();
+
+    /* 0. Verify confirm_* tools are NOT exposed to LLM (SEC-02) */
+    printf("[Test 0] Verifying confirm tools are internal-only (not in LLM definitions)...\n");
+    {
+        size_t csilk_count = 0;
+        const csilk_ai_tool_t* defs = ai_tool_get_csilk_definitions(&csilk_count);
+        assert(defs != NULL && csilk_count > 0);
+        for (size_t i = 0; i < csilk_count; i++) {
+            assert(strcmp(defs[i].function.name, "confirm_proposed_transfer") != 0);
+            assert(strcmp(defs[i].function.name, "confirm_proposed_expense") != 0);
+        }
+        /* 但是通过 ai_tool_find 内部仍可查到供人类交互确认调用 */
+        assert(ai_tool_find("confirm_proposed_transfer") != NULL);
+        assert(ai_tool_find("confirm_proposed_expense") != NULL);
+    }
+
     ai_tool_context_t* ctx = ai_tool_context_create(pool, user_id, 1, "test_trace_123");
 
     /* 1. Invalid schema / Malformed JSON */

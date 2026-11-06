@@ -143,10 +143,14 @@ ai_tool_get_csilk_definitions(size_t* count)
     ai_tool_registry_init();
     s_csilk_tool_count = 0;
     for (size_t i = 0; i < s_tool_count; i++) {
-        s_csilk_tools[i].type = "function";
-        s_csilk_tools[i].function.name = s_registered_tools[i].name;
-        s_csilk_tools[i].function.description = s_registered_tools[i].description;
-        s_csilk_tools[i].function.parameters_json = s_registered_tools[i].parameters_schema;
+        if (s_registered_tools[i].internal_only) {
+            continue; /* 内部专用工具（如 confirm_*）绝不暴露给 LLM，防止 Prompt Injection 自主绕过确认 */
+        }
+        s_csilk_tools[s_csilk_tool_count].type = "function";
+        s_csilk_tools[s_csilk_tool_count].function.name = s_registered_tools[i].name;
+        s_csilk_tools[s_csilk_tool_count].function.description = s_registered_tools[i].description;
+        s_csilk_tools[s_csilk_tool_count].function.parameters_json =
+            s_registered_tools[i].parameters_schema;
         s_csilk_tool_count++;
     }
     if (count) {

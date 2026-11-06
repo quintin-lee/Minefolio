@@ -60,6 +60,8 @@ static void test_validate_url(void)
     assert(mf_mcp_rule_validate_url("http://172.16.0.1:80", false) == false);
     assert(mf_mcp_rule_validate_url("http://0.0.0.0:80", false) == false);
     assert(mf_mcp_rule_validate_url("http://::1", false) == false);
+    assert(mf_mcp_rule_validate_url("http://server.local/mcp", false) == false);
+    assert(mf_mcp_rule_validate_url("http://backend.internal/mcp", false) == false);
 
     /* same local addresses allowed when allow_local=true */
     assert(mf_mcp_rule_validate_url("http://localhost:3000", true) == true);

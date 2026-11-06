@@ -413,6 +413,7 @@ ai_tool_expense_register_all(void)
             .risk = AI_RISK_HIGH,
             .is_mutation = true,
             .requires_id = true,
+            .internal_only = true,
             .validate = NULL,
             .execute = exec_confirm_proposed_expense,
         };

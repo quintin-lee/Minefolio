@@ -373,6 +373,9 @@ api_ai_settings_get_handler(csilk_ctx_t* c)
     if (user_id < 0) {
         return;
     }
+    if (!require_instance_admin(c, user_id)) {
+        return;
+    }
 
     csilk_json_t*       out_data = NULL;
     ai_usecase_result_t res = {0};

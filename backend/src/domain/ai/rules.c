@@ -5,6 +5,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <netdb.h>
 
 int
 mf_ai_rule_validate_session_title(
@@ -186,6 +187,16 @@ url_host_is_internal(const char* host)
         return true;
     }
 
+    /* 常见的私有局域网/保留顶级域名直接拦截 */
+    size_t hlen = strlen(hostpart);
+    if ((hlen > 6 && strcmp(hostpart + hlen - 6, ".local") == 0) ||
+        (hlen > 9 && strcmp(hostpart + hlen - 9, ".internal") == 0) ||
+        (hlen > 4 && strcmp(hostpart + hlen - 4, ".lan") == 0) ||
+        (hlen > 12 && strcmp(hostpart + hlen - 12, ".localdomain") == 0) ||
+        (hlen > 10 && strcmp(hostpart + hlen - 10, ".home.arpa") == 0)) {
+        return true;
+    }
+
     /* 使用 inet_aton 检查 IPv4（支持十进制点分、八进制、十六进制、纯整数与 0） */
     struct in_addr in4;
     if (inet_aton(hostpart, &in4)) {
@@ -230,6 +241,54 @@ url_host_is_internal(const char* host)
         strncmp(hostpart, "169.254.", 8) == 0 || strcmp(hostpart, "::1") == 0 ||
         strcmp(hostpart, "::") == 0) {
         return true;
+    }
+
+    /* 域名深度检测：通过 getaddrinfo 解析目标域名背后的真实 IP，防止域名指向内网 (SSRF/DNS Rebinding) */
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+
+    struct addrinfo* addr_res = NULL;
+    if (getaddrinfo(hostpart, NULL, &hints, &addr_res) == 0 && addr_res) {
+        bool resolved_internal = false;
+        for (struct addrinfo* it = addr_res; it != NULL; it = it->ai_next) {
+            if (it->ai_family == AF_INET) {
+                struct sockaddr_in* s4 = (struct sockaddr_in*)it->ai_addr;
+                uint32_t            ip = ntohl(s4->sin_addr.s_addr);
+                if ((ip >> 24) == 127 || (ip >> 24) == 10 || (ip >> 20) == ((172 << 4) | 1) ||
+                    (ip >> 16) == ((192 << 8) | 168) || (ip >> 16) == ((169 << 8) | 254) ||
+                    (ip >> 24) == 0 || ip == 0xFFFFFFFF) {
+                    resolved_internal = true;
+                    break;
+                }
+            } else if (it->ai_family == AF_INET6) {
+                struct sockaddr_in6* s6 = (struct sockaddr_in6*)it->ai_addr;
+                if (IN6_IS_ADDR_LOOPBACK(&s6->sin6_addr) || IN6_IS_ADDR_LINKLOCAL(&s6->sin6_addr) ||
+                    IN6_IS_ADDR_SITELOCAL(&s6->sin6_addr) ||
+                    IN6_IS_ADDR_UNSPECIFIED(&s6->sin6_addr)) {
+                    resolved_internal = true;
+                    break;
+                }
+                if (IN6_IS_ADDR_V4MAPPED(&s6->sin6_addr)) {
+                    uint32_t v4 = ntohl(*(const uint32_t*)&s6->sin6_addr.s6_addr[12]);
+                    if ((v4 >> 24) == 127 || (v4 >> 24) == 10 || (v4 >> 20) == ((172 << 4) | 1) ||
+                        (v4 >> 16) == ((192 << 8) | 168) || (v4 >> 16) == ((169 << 8) | 254) ||
+                        (v4 >> 24) == 0 || v4 == 0xFFFFFFFF) {
+                        resolved_internal = true;
+                        break;
+                    }
+                }
+                if ((s6->sin6_addr.s6_addr[0] & 0xfe) == 0xfc) {
+                    resolved_internal = true;
+                    break;
+                }
+            }
+        }
+        freeaddrinfo(addr_res);
+        if (resolved_internal) {
+            return true;
+        }
     }
 
     return false;
