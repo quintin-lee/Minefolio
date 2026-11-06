@@ -67,11 +67,20 @@ static void test_backup_code_verification(void) {
     printf("PASS: test_backup_code_verification\n");
 }
 
+static void test_jwt_user_id_validation(void) {
+    assert(mf_auth_rule_validate_user_id(-1) == false);
+    assert(mf_auth_rule_validate_user_id(0) == false);
+    assert(mf_auth_rule_validate_user_id(1) == true);
+    assert(mf_auth_rule_validate_user_id(1002) == true);
+    printf("PASS: test_jwt_user_id_validation\n");
+}
+
 int main(void) {
     test_username_validation();
     test_password_validation();
     test_registration_policy();
     test_backup_code_verification();
+    test_jwt_user_id_validation();
     printf("All domain auth tests passed successfully!\n");
     return 0;
 }

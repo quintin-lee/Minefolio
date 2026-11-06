@@ -83,3 +83,9 @@ mf_auth_rule_verify_backup_code(char        backup_codes[16][16],
 
     return false;
 }
+
+bool
+mf_auth_rule_validate_user_id(int64_t user_id)
+{
+    return user_id > 0;
+}

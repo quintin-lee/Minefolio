@@ -70,5 +70,5 @@ jwt_get_user_id(csilk_ctx_t* c)
     }
 
     int64_t uid = (int64_t)csilk_json_get_number(payload, "sub");
-    return uid;
+    return uid <= 0 ? -1 : uid;
 }

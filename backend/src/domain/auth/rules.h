@@ -2,6 +2,7 @@
 
 #include <stddef.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 /**
  * @brief 校验用户名长度及合法性
@@ -27,3 +28,8 @@ bool mf_auth_rule_verify_backup_code(char        backup_codes[16][16],
                                      int         count,
                                      const char* input_code,
                                      int*        out_matched_index);
+
+/**
+ * @brief 校验 JWT 用户 Subject 声明是否为有效正整数 ID (sub > 0)
+ */
+bool mf_auth_rule_validate_user_id(int64_t user_id);

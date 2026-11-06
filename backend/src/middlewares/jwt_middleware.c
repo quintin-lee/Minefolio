@@ -193,7 +193,7 @@ jwt_middleware_wrapper(csilk_ctx_t* c)
 
     int64_t user_id = (int64_t)csilk_json_get_number(payload, "sub");
     int     jwt_v = (int)csilk_json_get_number(payload, "v");
-    if (user_id < 0) {
+    if (user_id <= 0) {
         csilk_json_free(payload);
         if (is_mcp_path) {
             csilk_next(c);

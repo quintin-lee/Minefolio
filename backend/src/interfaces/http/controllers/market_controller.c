@@ -226,7 +226,15 @@ api_market_get_fx_history(csilk_ctx_t* c)
 {
     const char* currency = csilk_get_query(c, "currency");
     const char* days_str = csilk_get_query(c, "days");
-    int         days = (days_str && days_str[0]) ? atoi(days_str) : 30;
+    int64_t     days_val = 30;
+    if (days_str && days_str[0]) {
+        days_val = parse_query_int_strict(days_str, -1);
+        if (days_val <= 0 || days_val > 365) {
+            respond_bad_request(c, "Invalid days parameter (expected 1-365)");
+            return;
+        }
+    }
+    int days = (int)days_val;
 
     csilk_json_t*           list = NULL;
     market_usecase_result_t res = {0};

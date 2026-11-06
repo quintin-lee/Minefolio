@@ -31,7 +31,7 @@
  * @def RATE_LIMIT_RING
  * @brief 环形缓冲区最大容量（记录数）
  */
-#define RATE_LIMIT_RING 64
+#define RATE_LIMIT_RING 1024
 
 /**
  * @struct entry_t
