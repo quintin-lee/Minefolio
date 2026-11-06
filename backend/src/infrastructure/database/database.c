@@ -80,14 +80,22 @@ mf_db_wrap_csilk(void* csilk_pool, mf_db_engine_t engine, mf_db_t** out_db)
         if (native_conn) {
             mf_postgres_adapter_wrap_native(native_conn, &db->native_handle);
         } else {
-            db->ops->open(&cfg, &db->native_handle);
+            if (db->ops->open(&cfg, &db->native_handle) != 0) {
+                pthread_mutex_destroy(&db->lock);
+                free(db);
+                return -1;
+            }
         }
     } else {
         db->ops = mf_sqlite_adapter_get_ops();
         if (native_conn) {
             mf_sqlite_adapter_wrap_native((sqlite3*)native_conn, &db->native_handle);
         } else {
-            db->ops->open(&cfg, &db->native_handle);
+            if (db->ops->open(&cfg, &db->native_handle) != 0) {
+                pthread_mutex_destroy(&db->lock);
+                free(db);
+                return -1;
+            }
         }
     }
 

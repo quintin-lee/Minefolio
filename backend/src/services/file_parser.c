@@ -20,10 +20,32 @@ file_ext(const char* filename)
     return dot ? dot + 1 : "";
 }
 
+static bool
+is_valid_file_suffix(const char* suffix)
+{
+    if (!suffix || !suffix[0]) {
+        return true;
+    }
+    size_t len = strlen(suffix);
+    if (len > 16 || suffix[0] != '.') {
+        return false;
+    }
+    for (size_t i = 1; i < len; i++) {
+        char c = suffix[i];
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'))) {
+            return false;
+        }
+    }
+    return true;
+}
+
 int
 file_parser_write_temp(
     const char* data, size_t len, const char* suffix, char* out_path, size_t out_path_len)
 {
+    if (!is_valid_file_suffix(suffix)) {
+        return -1;
+    }
     if (!suffix) {
         suffix = "";
     }
@@ -84,7 +106,7 @@ parse_pdf(const char* data, size_t len, char* out, size_t out_len)
     }
 
     size_t total = 0;
-    char   buf[65536];
+    char   buf[4096];
     while (total < out_len - 1 && fgets(buf, sizeof(buf), fp)) {
         size_t blen = strlen(buf);
         if (total + blen >= out_len - 1) {
@@ -117,7 +139,7 @@ parse_zip(const char* data, size_t len, char* out, size_t out_len)
     }
 
     size_t total = 0;
-    char   buf[65536];
+    char   buf[4096];
     while (total < out_len - 1 && fgets(buf, sizeof(buf), fp)) {
         size_t blen = strlen(buf);
         if (total + blen >= out_len - 1) {

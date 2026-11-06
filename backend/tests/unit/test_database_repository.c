@@ -141,6 +141,12 @@ test_sqlite_transactions_and_savepoints(void)
     assert(mf_tx_execute(tx, "INSERT INTO items (val) VALUES ('Record_A');") == 0);
 
     assert(mf_tx_savepoint(tx, "sp_after_a") == 0);
+    /* 拒绝包含空格、分号、单引号或超长（>64字节）的 Savepoint 标识符 */
+    assert(mf_tx_savepoint(tx, "invalid; name") == -1);
+    assert(mf_tx_savepoint(tx, "sp'quote") == -1);
+    assert(mf_tx_rollback_to_savepoint(tx, "invalid; name") == -1);
+    assert(mf_tx_release_savepoint(tx, "invalid; name") == -1);
+    assert(mf_tx_savepoint(tx, "012345678901234567890123456789012345678901234567890123456789012345") == -1);
     assert(mf_tx_execute(tx, "INSERT INTO items (val) VALUES ('Record_B');") == 0);
 
     /* 回滚到 sp_after_a，Record_B 应当被抹去，Record_A 应当保留 */
@@ -220,6 +226,9 @@ test_postgres_adapter_and_translation(void)
     mf_tx_t* tx = NULL;
     assert(mf_tx_begin(db, &tx) == 0);
     assert(mf_tx_savepoint(tx, "pg_sp1") == 0);
+    assert(mf_tx_savepoint(tx, "invalid; name") == -1);
+    assert(mf_tx_rollback_to_savepoint(tx, "invalid; name") == -1);
+    assert(mf_tx_release_savepoint(tx, "invalid; name") == -1);
     assert(mf_tx_rollback_to_savepoint(tx, "pg_sp1") == 0);
     assert(mf_tx_release_savepoint(tx, "pg_sp1") == 0);
     assert(mf_tx_commit(tx) == 0);

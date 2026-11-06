@@ -257,10 +257,30 @@ postgres_adapter_tx_rollback(void* handle)
     return postgres_adapter_execute(handle, "ROLLBACK;");
 }
 
+static bool
+is_valid_savepoint_name(const char* name)
+{
+    if (!name || !name[0]) {
+        return false;
+    }
+    size_t len = strlen(name);
+    if (len > 64) {
+        return false;
+    }
+    for (size_t i = 0; i < len; i++) {
+        char c = name[i];
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+              c == '_')) {
+            return false;
+        }
+    }
+    return true;
+}
+
 static int
 postgres_adapter_tx_savepoint(void* handle, const char* name)
 {
-    if (!handle || !name || !name[0]) {
+    if (!handle || !is_valid_savepoint_name(name)) {
         return -1;
     }
     char buf[128];
@@ -271,7 +291,7 @@ postgres_adapter_tx_savepoint(void* handle, const char* name)
 static int
 postgres_adapter_tx_rollback_to_savepoint(void* handle, const char* name)
 {
-    if (!handle || !name || !name[0]) {
+    if (!handle || !is_valid_savepoint_name(name)) {
         return -1;
     }
     char buf[128];
@@ -282,7 +302,7 @@ postgres_adapter_tx_rollback_to_savepoint(void* handle, const char* name)
 static int
 postgres_adapter_tx_release_savepoint(void* handle, const char* name)
 {
-    if (!handle || !name || !name[0]) {
+    if (!handle || !is_valid_savepoint_name(name)) {
         return -1;
     }
     char buf[128];
