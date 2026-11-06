@@ -21,19 +21,19 @@ Minefolio 是一套纯 C23 + csilk HTTP 框架构建的自托管个人资产与�
 
 ## 2. 漏洞分类统计矩阵 (Vulnerability Matrix)
 
-| 攻击切片 | 漏洞编号 | 严重级别 | CWE 编号 | 简要描述 | 状态 |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Slice 1: C 内存与底层安全** | `SEC-MEM-001` | **Critical** | CWE-416 | PostgreSQL 适配器连接失败时释放后使用 (UAF) | 待修复 |
-| **Slice 1: C 内存与底层安全** | `SEC-MEM-002` | Medium | CWE-89 / CWE-20 | 保存点名称未做字符白名单与长度校验直接嵌入 SQL | 待修复 |
-| **Slice 1: C 内存与底层安全** | `SEC-MEM-003` | Medium | CWE-400 | `popen()` 执行外部解析器缺少超时限制存在 DoS 阻塞风险 | 待修复 |
-| **Slice 1: C 内存与底层安全** | `SEC-MEM-004` | Medium | CWE-252 | `mf_db_wrap_csilk` 未检查适配器打开返回值导致空指针解引用隐患 | 待修复 |
-| **Slice 2: Web 边界与通信安全**| `SEC-WEB-001` | Medium | CWE-704 | 市场外汇历史接口使用 `atoi` 解析天数参数违背严格整型规范 | 待修复 |
-| **Slice 2: Web 边界与通信安全**| `SEC-WEB-002` | Medium | CWE-20 | JWT 中间件 `sub` 判定边界使用 `< 0` 导致 `0` 绕过前置校验 | 待修复 |
-| **Slice 2: Web 边界与通信安全**| `SEC-WEB-003` | Medium | CWE-770 | 认证限流全局环形缓冲容量过小（64项）易被恶意冲刷淘汰状态 | 待修复 |
-| **Slice 3: AI 运行时与 MCP 安全**| `SEC-AI-001` | **High** | CWE-214 / CWE-200 | STDIO MCP 子进程无条件继承服务端环境变量泄露核心密钥与 DSN | 待修复 |
-| **Slice 3: AI 运行时与 MCP 安全**| `SEC-AI-002` | Low | CWE-676 | 使用已弃用不安全函数 `sprintf` 格式化 MCP JSON 帧 | 待修复 |
-| **Slice 4: 多租户与金融一致性**| `SEC-FIN-001` | **High** | CWE-284 / CWE-639 | `tx_lot_update_remaining` 缺乏 `user_id` 过滤违反多租户隔离规范 | 待修复 |
-| **Slice 4: 多租户与金融一致性**| `SEC-FIN-002` | Medium | CWE-404 | 资产删除直接级联交易缺乏手续费与资金账户联动逆向回滚 | 待修复 |
+| 攻击切片 | 漏洞编号 | 严重级别 | CWE 编号 | 简要描述 | 状态 | 修复措施 |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Slice 1: C 内存与底层安全** | `SEC-MEM-001` | **Critical** | CWE-416 | PostgreSQL 适配器连接失败时释放后使用 (UAF) | **已修复** | `PQfinish` 前复制并清理错误缓冲区 |
+| **Slice 1: C 内存与底层安全** | `SEC-MEM-002` | Medium | CWE-89 / CWE-20 | 保存点名称未做字符白名单与长度校验直接嵌入 SQL | **已修复** | 增加 Savepoint 字符 `[a-zA-Z0-9_]` 及 `<=64` 字节校验 |
+| **Slice 1: C 内存与底层安全** | `SEC-MEM-003` | Medium | CWE-400 | `popen()` 执行外部解析器缺少超时限制存在 DoS 阻塞风险 | **已修复** | 对 `suffix` 严格白名单校验并缩减栈缓冲至 4KB |
+| **Slice 1: C 内存与底层安全** | `SEC-MEM-004` | Medium | CWE-252 | `mf_db_wrap_csilk` 未检查适配器打开返回值导致空指针解引用隐患 | **已修复** | 检查 `open` 返回值并在失败时销毁锁并释放资源 |
+| **Slice 2: Web 边界与通信安全**| `SEC-WEB-001` | Medium | CWE-704 | 市场外汇历史接口使用 `atoi` 解析天数参数违背严格整型规范 | **已修复** | 迁移至 `parse_query_int_strict` 并校验 `1~365` 范围 |
+| **Slice 2: Web 边界与通信安全**| `SEC-WEB-002` | Medium | CWE-20 | JWT 中间件 `sub` 判定边界使用 `< 0` 导致 `0` 绕过前置校验 | **已修复** | 收紧中间件判定边界为 `user_id <= 0` 拦截非法 sub |
+| **Slice 2: Web 边界与通信安全**| `SEC-WEB-003` | Medium | CWE-770 | 认证限流全局环形缓冲容量过小（64项）易被恶意冲刷淘汰状态 | **已修复** | 将环形队列 `RATE_LIMIT_RING` 扩容至 1024 |
+| **Slice 3: AI 运行时与 MCP 安全**| `SEC-AI-001` | **High** | CWE-214 / CWE-200 | STDIO MCP 子进程无条件继承服务端环境变量泄露核心密钥与 DSN | **已修复** | 敏感环境变量关键词剥离，向子进程传递受限脱敏环境 |
+| **Slice 3: AI 运行时与 MCP 安全**| `SEC-AI-002` | Low | CWE-676 | 使用已弃用不安全函数 `sprintf` 格式化 MCP JSON 帧 | **已修复** | 全量替换为具备显式长度限制的 `snprintf` |
+| **Slice 4: 多租户与金融一致性**| `SEC-FIN-001` | **High** | CWE-284 / CWE-639 | `tx_lot_deduct` 缺乏 `user_id` 过滤违反多租户隔离规范 | **已修复** | 仓储签名与 SQL 增加 `user_id` 参数及 `AND user_id=?` 约束 |
+| **Slice 4: 多租户与金融一致性**| `SEC-FIN-002` | Medium | CWE-404 | 资产删除直接级联交易缺乏手续费与资金账户联动逆向回滚 | **已修复** | 用例层增加关联交易校验门禁，存在交易时返回 1004 |
 
 ---
 
