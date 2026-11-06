@@ -274,7 +274,6 @@ api_auth_oauth_callback(csilk_ctx_t* c)
     oauth_callback_cmd_t cmd = {
         .provider = csilk_json_get_string(body, "provider"),
         .code = csilk_json_get_string(body, "code"),
-        .oauth_id = csilk_json_get_string(body, "oauth_id"),
         .username = csilk_json_get_string(body, "username"),
     };
 

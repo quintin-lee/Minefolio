@@ -40,6 +40,5 @@ typedef struct verify_2fa_login_cmd {
 typedef struct oauth_callback_cmd {
     const char* provider;
     const char* code;
-    const char* oauth_id;
     const char* username;
 } oauth_callback_cmd_t;

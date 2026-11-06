@@ -405,6 +405,12 @@ target_compile_options(test_auth_2fa_lifecycle PRIVATE -UNDEBUG)
 target_link_libraries(test_auth_2fa_lifecycle PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
 add_test(NAME test_auth_2fa_lifecycle COMMAND test_auth_2fa_lifecycle)
 
+add_executable(test_oauth_security tests/unit/test_oauth_security.c ${LIB_SOURCES})
+target_include_directories(test_oauth_security PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_oauth_security PRIVATE -UNDEBUG)
+target_link_libraries(test_oauth_security PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_test(NAME test_oauth_security COMMAND test_oauth_security)
+
 
 
 
