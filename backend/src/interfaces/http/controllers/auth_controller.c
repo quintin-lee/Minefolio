@@ -201,13 +201,24 @@ api_auth_2fa_disable(csilk_ctx_t* c)
         return;
     }
 
+    csilk_json_t* body = csilk_bind_json(c);
+    disable_2fa_cmd_t cmd = {
+        .user_id = user_id,
+        .password = body ? csilk_json_get_string(body, "password") : NULL,
+        .password_enc = body ? csilk_json_get_string(body, "password_enc") : NULL,
+        .code = body ? csilk_json_get_string(body, "code") : NULL,
+    };
+
     auth_usecase_result_t res = {0};
-    int                   rc = auth_usecase_2fa_disable(db_get_pool(), user_id, &res);
+    int                   rc = auth_usecase_2fa_disable(db_get_pool(), &cmd, c, &res);
+    if (body) {
+        csilk_json_free(body);
+    }
 
     if (rc == 0 && res.code == 0) {
         respond_ok_null(c);
     } else {
-        respond_error(c, res.code ? res.code : 1001, res.message);
+        respond_error(c, res.code ? res.code : 1002, res.message);
     }
 }
 

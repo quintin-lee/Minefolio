@@ -399,6 +399,12 @@ target_compile_options(test_file_parser_mkstemps PRIVATE -UNDEBUG)
 target_link_libraries(test_file_parser_mkstemps PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
 add_test(NAME test_file_parser_mkstemps COMMAND test_file_parser_mkstemps)
 
+add_executable(test_auth_2fa_lifecycle tests/unit/test_auth_2fa_lifecycle.c ${LIB_SOURCES})
+target_include_directories(test_auth_2fa_lifecycle PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_auth_2fa_lifecycle PRIVATE -UNDEBUG)
+target_link_libraries(test_auth_2fa_lifecycle PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_test(NAME test_auth_2fa_lifecycle COMMAND test_auth_2fa_lifecycle)
+
 
 
 

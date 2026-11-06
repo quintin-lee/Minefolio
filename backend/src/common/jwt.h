@@ -28,6 +28,21 @@
 char* jwt_generate_token(csilk_ctx_t* c, int64_t user_id, int token_version);
 
 /**
+ * @brief 生成 2FA 临时受限 JWT 令牌 (type: "2fa_pending")
+ *
+ * 仅用于 2FA 验证登录接口 (/api/auth/2fa/verify-login)，有效期短 (默认300秒)，
+ * jwt_middleware 将对所有业务路由拦截拒绝该类型令牌。
+ *
+ * @param[in,out] c csilk HTTP 上下文指针，可为 NULL
+ * @param[in] user_id 目标用户主键 ID
+ * @param[in] token_version 当前用户的 Token 版本号
+ * @param[in] expire_sec 有效期秒数（<=0 默认为 300）
+ *
+ * @return char* 堆分配的 JWT 字符串，调用方需 free()
+ */
+char* jwt_generate_temp_token(csilk_ctx_t* c, int64_t user_id, int token_version, int expire_sec);
+
+/**
  * @brief 从请求上下文中提取已由 jwt_middleware 校验并挂载的用户 ID
  *
  * 从上下文属性 "jwt_payload" 中安全读取 "sub" 声明，且不会销毁或消耗该载荷指针。

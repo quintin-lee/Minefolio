@@ -54,6 +54,29 @@ jwt_generate_token(csilk_ctx_t* c, int64_t user_id, int token_version)
     return token;
 }
 
+char*
+jwt_generate_temp_token(csilk_ctx_t* c, int64_t user_id, int token_version, int expire_sec)
+{
+    csilk_json_t* payload = csilk_json_object();
+    int64_t       now = (int64_t)time(NULL);
+    int           sec = expire_sec > 0 ? expire_sec : 300;
+    csilk_json_add_int(payload, "sub", user_id);
+    csilk_json_add_int(payload, "iat", now);
+    csilk_json_add_int(payload, "exp", now + sec);
+    csilk_json_add_int(payload, "v", token_version);
+    csilk_json_add_string(payload, "type", "2fa_pending");
+
+    const char* secret = jwt_secret();
+    if (!secret) {
+        fprintf(stderr, "FATAL: JWT secret not set\n");
+        csilk_json_free(payload);
+        return NULL;
+    }
+    char* token = csilk_jwt_generate(c, payload, secret);
+    csilk_json_free(payload);
+    return token;
+}
+
 /**
  * @brief 从上下文中安全获取用户 ID
  *

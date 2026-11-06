@@ -201,7 +201,7 @@ auth_usecase_login(void*                   pool,
                                                strcmp(user.totp_backup_codes, "[]") != 0));
 
     if (is_2fa_active) {
-        char*         temp_token = jwt_generate_token(c, user.id, user.token_version);
+        char*         temp_token = jwt_generate_temp_token(c, user.id, user.token_version, 300);
         csilk_json_t* resp = csilk_json_object();
         csilk_json_add_bool(resp, "require_2fa", true);
         csilk_json_add_string(resp, "temp_token", temp_token ? temp_token : "");
@@ -491,19 +491,58 @@ auth_usecase_2fa_enable(void*                   pool,
 }
 
 int
-auth_usecase_2fa_disable(void* pool, int64_t user_id, auth_usecase_result_t* out_res)
+auth_usecase_2fa_disable(void*                    pool,
+                         const disable_2fa_cmd_t* cmd,
+                         csilk_ctx_t*             c,
+                         auth_usecase_result_t*   out_res)
 {
     if (!out_res) {
         return -1;
     }
     memset(out_res, 0, sizeof(*out_res));
-    if (!pool || user_id <= 0) {
+    if (!pool || !cmd || cmd->user_id <= 0) {
         out_res->code = 1001;
         snprintf(out_res->message, sizeof(out_res->message), "未授权");
         return -1;
     }
 
-    mf_auth_repo_disable_totp(pool, user_id);
+    mf_user_t user = {0};
+    if (mf_auth_repo_get_by_id(pool, cmd->user_id, &user) != 0) {
+        out_res->code = 1001;
+        snprintf(out_res->message, sizeof(out_res->message), "未授权");
+        return -1;
+    }
+
+    bool authenticated = false;
+
+    /* 1. 验证登录密码（支持明文或加密密文） */
+    char        pw_buf[256] = {0};
+    const char* pwd = NULL;
+    size_t      pwd_len = 0;
+    decrypt_password_if_needed(
+        c, cmd->password_enc, cmd->password, pw_buf, sizeof(pw_buf) - 1, &pwd, &pwd_len);
+
+    if (pwd && pwd_len > 0 && user.password_hash[0]) {
+        if (csilk_bcrypt_verify(pwd, pwd_len, user.password_hash) == 0) {
+            authenticated = true;
+        }
+    }
+
+    /* 2. 或验证当前有效的 6 位 TOTP 动态码 */
+    if (!authenticated && cmd->code && cmd->code[0] && user.totp_secret[0]) {
+        if (csilk_totp_verify_code(user.totp_secret, cmd->code)) {
+            authenticated = true;
+        }
+    }
+
+    if (!authenticated) {
+        out_res->code = 1002;
+        snprintf(out_res->message, sizeof(out_res->message), "解绑 2FA 需验证当前密码或有效 6 位动态验证码");
+        return -1;
+    }
+
+    mf_auth_repo_disable_totp(pool, cmd->user_id);
+    mf_auth_repo_update_token_version(pool, cmd->user_id);
     out_res->code = 0;
     snprintf(out_res->message, sizeof(out_res->message), "ok");
     return 0;
@@ -539,7 +578,16 @@ auth_usecase_2fa_verify_login(void*                         pool,
         return -1;
     }
 
+    const char* token_type = csilk_json_get_string(payload, "type");
+    if (!token_type || strcmp(token_type, "2fa_pending") != 0) {
+        csilk_json_free(payload);
+        out_res->code = 1001;
+        snprintf(out_res->message, sizeof(out_res->message), "无效的 2FA 临时凭证");
+        return -1;
+    }
+
     int64_t user_id = db_get_int(payload, "sub");
+    int     token_v = (int)db_get_int(payload, "v");
     csilk_json_free(payload);
     if (user_id <= 0) {
         out_res->code = 1001;
@@ -548,9 +596,9 @@ auth_usecase_2fa_verify_login(void*                         pool,
     }
 
     mf_user_t user = {0};
-    if (mf_auth_repo_get_by_id(pool, user_id, &user) != 0) {
+    if (mf_auth_repo_get_by_id(pool, user_id, &user) != 0 || user.token_version != token_v) {
         out_res->code = 1001;
-        snprintf(out_res->message, sizeof(out_res->message), "未授权");
+        snprintf(out_res->message, sizeof(out_res->message), "未授权或临时凭证已失效");
         return -1;
     }
 

@@ -25,6 +25,13 @@ typedef struct enable_2fa_cmd {
     const char* code;
 } enable_2fa_cmd_t;
 
+typedef struct disable_2fa_cmd {
+    int64_t     user_id;
+    const char* password;
+    const char* password_enc;
+    const char* code;
+} disable_2fa_cmd_t;
+
 typedef struct verify_2fa_login_cmd {
     const char* temp_token;
     const char* code;

@@ -191,6 +191,23 @@ jwt_middleware_wrapper(csilk_ctx_t* c)
         return;
     }
 
+    const char* token_type = csilk_json_get_string(payload, "type");
+    if (token_type && strcmp(token_type, "2fa_pending") == 0) {
+        if (!path || strcmp(path, "/api/auth/2fa/verify-login") != 0) {
+            csilk_json_free(payload);
+            if (is_mcp_path) {
+                csilk_next(c);
+                return;
+            }
+            csilk_json_error(
+                c,
+                CSILK_STATUS_UNAUTHORIZED,
+                "2FA verification required: temporary token cannot access protected endpoints");
+            csilk_abort(c);
+            return;
+        }
+    }
+
     int64_t user_id = (int64_t)csilk_json_get_number(payload, "sub");
     int     jwt_v = (int)csilk_json_get_number(payload, "v");
     if (user_id <= 0) {

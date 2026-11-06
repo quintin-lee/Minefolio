@@ -41,7 +41,10 @@ int auth_usecase_2fa_enable(void*                   pool,
                             csilk_json_t**          out_data,
                             auth_usecase_result_t*  out_res);
 
-int auth_usecase_2fa_disable(void* pool, int64_t user_id, auth_usecase_result_t* out_res);
+int auth_usecase_2fa_disable(void*                    pool,
+                             const disable_2fa_cmd_t* cmd,
+                             csilk_ctx_t*             c,
+                             auth_usecase_result_t*   out_res);
 
 int auth_usecase_2fa_verify_login(void*                         pool,
                                   const verify_2fa_login_cmd_t* cmd,
