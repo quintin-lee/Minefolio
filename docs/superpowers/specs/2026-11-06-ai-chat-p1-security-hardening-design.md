@@ -51,8 +51,9 @@
 ### 3.1 现状
 
 ```
-loop.c (每轮工具调用前)
-  └─ ai_policy_evaluate_ex(..., risk_override, count=true)   ← 全局 LRU s_rate_limits[256] 60/分
+loop.c (每轮工具调用前, L689/L798)
+  └─ ai_policy_evaluate(...)        ← 计数封装 (内部 count=true) → 统一 LRU
+     ai_policy_evaluate_ex(..., risk_override, count=true)   ← 全局 LRU s_rate_limits[256] 60/分
 dispatcher.c (二道门)
   └─ ai_policy_evaluate_ex(..., NO_OVERRIDE, count=false)    ← 只读不计
 mcp_bridge.c (MCP 工具调用)
@@ -94,28 +95,27 @@ mcp_bridge.c (MCP 工具调用)
 | `policy/permission.h` | 增 `AI_PERM_NO_OVERRIDE` 哨兵（若放 policy 头则复用） |
 | `tools/mcp/mcp_bridge.c` | 删自有 LRU 与 `mcp_rate_limit_check`；bridge perm 判定改传 `perm_override`；删 `ctx->permissions` 位图门禁 |
 | `runtime/loop.c` | 工具调用计数处按 `mcp:` 前缀选通道；`count=true` 调统一 LRU |
-| `tools/context.c` | `permissions` 位图降级注释（不再作为门禁） |
+| `tools/context.c` | `permissions` 位图当前仅有默认值 `0xFFFFFFFF`（无任何其他代码路径写入，属死配置）；本模块后不再作为门禁，补注释说明其已废弃、勿在后续代码中读取 |
 | `domain/ai/rules.*`（可选） | MCP 通道上限并入 policy rules 读取 |
 
 ---
 
 ## 4. 模块 2：取消传播补齐（web_search 兜底通道）
 
-`exec_web_search` 主通道已传 `ctx->cancel_token`，唯 **Wikipedia 兜底抓取（`web_search_tool.c` 约 L735 `curl_http_get_with_redirect_check(..., NULL)`）传 NULL**。设计：
-- 兜底通道改传 `ctx->cancel_token`；`rc==-4`（取消）时返回 `{"error":"cancelled","message":"用户已取消本次操作"}`。
+`exec_web_search` 主通道已传 `ctx->cancel_token`，唯 **Wikipedia 兜底抓取（`web_search_tool.c` 约 L734 `curl_http_get_with_redirect_check(..., NULL)`）传 NULL**。设计：
+- 内部静态 helper `wikipedia_opensearch(query, max_results)` 增加 `const volatile bool* cancel_token` 参数；调用点 L840 改传 `ctx->cancel_token`，helper 内 curl 调用改传该 token（非 NULL）。
+- 兜底通道 `rc==-4`（取消）时返回 `{"error":"cancelled","message":"用户已取消本次操作"}`。
 - 在主搜索返回后、进入 Wikipedia 兜底解析前，加一次显式取消检查：`if (ctx->cancel_token && *ctx->cancel_token) return cancelled_json;`，避免取消后仍跑完兜底抓取。
 - `exec_fetch_webpage` 双通道已传 cancel_token，无需改动（保持现状）。
-
-改动仅 `web_search_tool.c` 单文件，无接口变化。
+- 改动仅 `web_search_tool.c` 单文件；**公共工具 API 不变**，但内部静态 helper 签名变更，计划中需列明。
 
 ---
 
 ## 5. 模块 3：ai_traces 保留清理策略
 
 - 新增 env `MINEFOLIO_AI_TRACE_RETENTION_DAYS`（默认 `0`=不清理，向后兼容；>0 为保留天数）。
-- 清理时机：`ai_init(pool)`（`ai_service.c`）启动/热重载时执行一次幂等清理：若 >0 且距上次清理 ≥24h（内存记录 `last_cleanup_ts`），执行
-  `DELETE FROM ai_traces WHERE created_at < CURRENT_TIMESTAMP - N days`（PG 方言）/ 对应 SQLite 方言。
-- 幂等保护：进程内 `static time_t s_last_trace_cleanup`，24h 内不重复执行，避免热重载频繁大 DELETE。
+- 清理时机：`ai_init(pool)`（`ai_service.c`）启动/热重载时执行一次幂等清理。**首轮语义**：冷启动时若 `MINEFOLIO_AI_TRACE_RETENTION_DAYS>0`，立即执行一次清理；24h 幂等保护仅抑制**同一进程生命周期内**的后续热重载调用（`s_last_trace_cleanup` 为进程内 static，重启即重置）。
+- 执行 `DELETE FROM ai_traces WHERE created_at < CURRENT_TIMESTAMP - N days`（PG 方言）/ 对应 SQLite 方言。
 - 同步补 SQLite baseline（`sql/migration_sqlite.sql` 若缺 `ai_traces` 保留字段则无需 DDL，清理为运行时 DML，无迁移）。
 - 影响文件：`ai_service.c`（`ai_init` 内触发）、新增 helper `common/ai_trace.c` 或 `infrastructure/repositories/ai_trace_repo_impl.c` 增 `mf_ai_trace_cleanup(pool, days)`。
 
@@ -123,19 +123,11 @@ mcp_bridge.c (MCP 工具调用)
 
 ## 6. 模块 4：MCP SSRF IP 形式绕过加固
 
-`domain/mcp/rules.c:url_host_is_internal` 现仅识别点分十进制 IP 与已知 IPv6 常量。残留绕过：
-- IPv4 十进制字面量 `2130706433`（=127.0.0.1）
-- IPv4 十六进制字面量 `0x7f000001`
-- IPv6 压缩/完整短写（`0:0:0:0:0:ffff:7f00:1`、`::ffff:7f00:1`）
-- 域名解析到内网（`getaddrinfo` 全 IP 扫描，现状已覆盖 nip.io 类）
-
-设计（在 host 解析后、域名 `getaddrinfo` 前）：
-1. 尝试 `inet_pton(AF_INET, host, &v4)` 成功 → 按 `ntohl` 32bit 判回环/私有/链路本地/0.0.0.0/255.255.255.255（复用现有位运算）。
-2. 失败再试 `inet_pton(AF_INET6, host, &v6)` 成功 → 按 128bit 判 `IN6_IS_ADDR_*` 与 v4-mapped（复用现有逻辑）。
-3. 纯数字字面量（`atoi` 全数字）当 IPv4 十进制 int32 解析后判段。
-4. `0x` 前缀十六进制当 uint32 解析后判段。
-5. 其余走既有 `getaddrinfo` 全 IP 扫描。
-影响文件：`domain/mcp/rules.c`（`url_host_is_internal` 与 `ai/rules.c` 同名函数如复用需同步；`ai/rules.c` 是聊天 fetch_webpage 路径，建议抽出共用 helper `domain/net/internal_ip.c` 供两处复用，避免逻辑分叉）。
+`domain/mcp/rules.c:url_host_is_internal` 现仅识别点分十进制 IP 与已知 IPv6 常量。**注意**：`domain/ai/rules.c` 中存在**同名但独立实现**的 `url_host_is_internal`（`mf_ai_rule_validate_url` 调用），其实现**更完整**——已用 `inet_aton`（glibc 下接受十进制/十六进制/八进制 IP 字面量）与 `inet_pton(AF_INET6)` 处理 v6，意味着 `mf_ai_rule_validate_url` 路径**已实际拒绝** `2130706433`/`0x7f000001` 等绕过形式；而 `domain/mcp/rules.c` 的拷贝缺少这些处理，是真实残留绕过面。设计（以 `ai/rules.c` 的较完整实现为基准）：
+1. 抽出共用 helper `domain/net/internal_ip.c/.h`，实现为 `ai/rules.c` 现行逻辑的超集：`inet_pton(AF_INET)` + `inet_pton(AF_INET6)` + 纯数字字面量当 IPv4 int32 + `0x` 前缀十六进制 uint32，逐段判回环/私有/链路本地/0.0.0.0/255.255.255.255。
+2. `domain/mcp/rules.c` 与 `domain/ai/rules.c` 的本地 `url_host_is_internal` 均删除，改调共用 helper（消除双实现分叉风险）。
+3. 域名仍走既有 `getaddrinfo` 全 IP 扫描（保留现状，nip.io 类已覆盖）。
+影响文件：新增 `domain/net/internal_ip.c/.h`；`domain/mcp/rules.c`、`domain/ai/rules.c` 删本地实现改调 helper；CMake 增 `domain/net` 源目录（若独立成目录则需同步 `cmake/source-list`）。
 
 ---
 
@@ -147,7 +139,7 @@ mcp_bridge.c (MCP 工具调用)
 | `tests/unit/test_policy_mcp_risk.c` | mutation 工具 risk 升级（low→medium）与 perm 联动 |
 | `tests/unit/test_ai_runtime.c` 或 loop 套件 | 内置工具 60/分、MCP 工具 30/分双通道独立计数 |
 | `tests/test_ai_loop_hardening.sh` | web_search 取消传播到兜底通道（rc=-4 → cancelled） |
-| `tests/test_mcp.sh` / `test_mcp_server.sh` | SSRF 十进制/十六进制/IPv6 短写 IP 拒绝；MCP mutation 权限收紧回归 |
+| `tests/test_mcp.sh` / `test_mcp_server.sh` | **行为保持回归**：`mf_ai_rule_validate_url("http://2130706433/")`、`.../0x7f000001/` 本已返回 false（`ai/rules.c` 既有 `inet_aton` 路径），helper 化后须维持该行为；**新增能力**：`mf_mcp_rule_validate_url` 对相同输入由（可能误放行）变为明确拒绝，补断言；MCP mutation 权限收紧回归 |
 | `tests/test_link.sh` case 34-37 | AI 端点核心回归（含 `/ai/...` 不破坏 148 条契约） |
 
 全量门禁：`cmake --build` + `ctest`（全部套件）+ `test_link.sh` + `test_ai_loop_hardening.sh` + `test_mcp.sh` + `test_mcp_server.sh` + `npm --prefix frontend run build`。
@@ -171,9 +163,9 @@ mcp_bridge.c (MCP 工具调用)
 
 ## 9. 实施顺序（供 writing-plans 拆解）
 
-1. 模块 4（SSRF 共用 helper 抽出 + 字面量识别）——独立、低风险，先行。
-2. 模块 2（取消传播）——单文件，独立。
-3. 模块 3（trace 保留清理）——独立。
+1. 模块 4（SSRF：先抽出 `domain/net/internal_ip.c` 共用 helper（以 `ai/rules.c` 现行较完整实现为基准），再让 `mcp/rules.c`、`ai/rules.c` 改调）——独立、低风险，先行；**须在模块 1 动 `mcp_bridge.c` 之前完成**，避免同一文件两处顺序改写。
+2. 模块 2（取消传播：`wikipedia_opensearch` helper 签名加 cancel_token + 兜底通道传参）——单文件，独立。
+3. 模块 3（trace 保留清理：`ai_init` 首轮幂等触发 + `mf_ai_trace_cleanup`）——独立。
 4. 模块 1（频次 + 权限统一重构）——最大改动面，依赖前三不冲突后实施。
 5. 模块 5（测试补齐与全量回归）——贯穿各模块，最后统一跑门禁。
 
