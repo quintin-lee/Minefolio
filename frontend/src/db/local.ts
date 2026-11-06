@@ -1,8 +1,9 @@
-// sql.js (WASM SQLite) wrapper, persisted to localStorage as Uint8Array JSON.
+// sql.js (WASM SQLite) wrapper, persisted to localStorage with Web Crypto (AES-256-GCM) encryption.
 import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js'
 import { LOCAL_SCHEMA } from './schema'
 import type { DbResult, SqlValue } from '@/types/mobile'
 import { SQL_WASM_BASE64 } from './generated/sql-wasm-base64'
+import { encryptPayload, decryptPayload } from '@/utils/crypto-storage'
 
 const STORAGE_KEY = 'minefolio_local_db'
 let db: Database | null = null
@@ -56,7 +57,7 @@ export async function initLocalDb(): Promise<Database> {
   const saved = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null
   if (saved) {
     try {
-      const bytes = parseSavedBytes(saved)
+      const bytes = await decryptPayload(saved)
       db = new SQL.Database(bytes)
     } catch (err) {
       console.error('[localDb] Failed to restore database from localStorage, initializing fresh:', err)
@@ -107,6 +108,25 @@ export function persist(): void {
     const data = db.export()
     const encoded = 'b64:' + bytesToBase64(data)
     localStorage.setItem(STORAGE_KEY, encoded)
+    encryptPayload(data).then((encrypted) => {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(STORAGE_KEY, encrypted)
+      }
+    }).catch((err) => {
+      console.warn('[localDb] Failed to encrypt state:', err)
+    })
+  } catch (err) {
+    console.error('[localDb] Failed to persist SQLite state to localStorage:', err)
+  }
+}
+
+export async function persistAsync(): Promise<void> {
+  if (!db) return
+  if (typeof localStorage === 'undefined') return
+  try {
+    const data = db.export()
+    const encrypted = await encryptPayload(data)
+    localStorage.setItem(STORAGE_KEY, encrypted)
   } catch (err) {
     console.error('[localDb] Failed to persist SQLite state to localStorage:', err)
   }

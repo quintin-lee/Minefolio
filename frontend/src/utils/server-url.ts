@@ -40,6 +40,51 @@ function notifyServerUrlChange(newUrl: string): void {
   }
 }
 
+function isPrivateOrLocalHost(hostname: string): boolean {
+  if (!hostname) return false
+  const lower = hostname.toLowerCase()
+  if (lower === 'localhost' || lower === '127.0.0.1' || lower === '::1' || lower === '[::1]') {
+    return true
+  }
+  if (
+    lower.endsWith('.local') ||
+    lower.endsWith('.lan') ||
+    lower.endsWith('.internal') ||
+    lower.endsWith('.bar')
+  ) {
+    return true
+  }
+  // 检查 IPv4 私有网段
+  const ipv4Match = lower.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
+  if (ipv4Match && ipv4Match[1] && ipv4Match[2] && ipv4Match[3] && ipv4Match[4]) {
+    const a = parseInt(ipv4Match[1], 10)
+    const b = parseInt(ipv4Match[2], 10)
+    const c = parseInt(ipv4Match[3], 10)
+    const d = parseInt(ipv4Match[4], 10)
+    if (a > 255 || b > 255 || c > 255 || d > 255) return false
+    // 127.0.0.0/8 回环
+    if (a === 127) return true
+    // 10.0.0.0/8 私网
+    if (a === 10) return true
+    // 172.16.0.0/12 私网 (172.16 - 172.31)
+    if (a === 172 && b >= 16 && b <= 31) return true
+    // 192.168.0.0/16 私网
+    if (a === 192 && b === 168) return true
+    // 169.254.0.0/16 链路本地
+    if (a === 169 && b === 254) return true
+    return false // 公网 IPv4
+  }
+  // 已知公网服务域名禁止纯明文 HTTP
+  if (lower.endsWith('.minefolio.com') || lower === 'minefolio.com') {
+    return false
+  }
+  // 无点的单标签主机名 (如局域网 NAS "home-server")
+  if (!lower.includes('.')) {
+    return true
+  }
+  return false
+}
+
 /**
  * 规范化服务端 URL 格式
  * @description 去除首尾空白，若缺少 http/https 协议则默认补齐 http://，去除末尾斜杠
@@ -49,6 +94,11 @@ function notifyServerUrlChange(newUrl: string): void {
 export function normalizeServerUrl(url: string): string {
   let trimmed = (url || '').trim()
   if (!trimmed) return ''
+
+  // 若显式包含危险伪协议 (如 javascript:, file:, data:)，保留原格式以便校验阻断
+  if (/^(javascript|data|file|vbscript|about|blob):/i.test(trimmed)) {
+    return trimmed
+  }
   if (!/^https?:\/\//i.test(trimmed)) {
     trimmed = `http://${trimmed}`
   }
@@ -56,17 +106,33 @@ export function normalizeServerUrl(url: string): string {
 }
 
 /**
- * 校验服务端 URL 字符串是否有效
+ * 校验服务端 URL 字符串是否有效且符合安全规范
  * @param url URL 字符串
  * @returns 是否为有效格式 (空字符串视为使用默认地址，返回 true)
  */
 export function isValidServerUrl(url: string): boolean {
   const trimmed = (url || '').trim()
   if (!trimmed) return true
+
+  // 1. 严格阻断伪协议注入
+  if (/^(javascript|data|file|vbscript|about|blob):/i.test(trimmed)) {
+    return false
+  }
+
   try {
     const normalized = normalizeServerUrl(trimmed)
     const parsed = new URL(normalized)
-    return Boolean(parsed.host)
+    if (!parsed.host) return false
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return false
+    }
+
+    // 2. 对明文 HTTP 协议限制仅限本地回环或局域网私有地址，公网主机强制要求 HTTPS
+    if (parsed.protocol === 'http:') {
+      return isPrivateOrLocalHost(parsed.hostname)
+    }
+
+    return true
   } catch {
     return false
   }
