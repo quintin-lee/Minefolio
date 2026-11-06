@@ -106,8 +106,9 @@ main(void)
     assert(tx_lots_get_open(pool, -1, asset_id) == NULL);
     assert(tx_lots_get_open(pool, user_id, -1) == NULL);
 
-    assert(tx_lot_deduct(NULL, 1, q100, q100, false) == -1);
-    assert(tx_lot_deduct(pool, -1, q100, q100, false) == -1);
+    assert(tx_lot_deduct(NULL, user_id, 1, q100, q100, false) == -1);
+    assert(tx_lot_deduct(pool, -1, 1, q100, q100, false) == -1);
+    assert(tx_lot_deduct(pool, user_id, -1, q100, q100, false) == -1);
 
     assert(tx_lots_delete_by_asset(NULL, user_id, asset_id) == -1);
     assert(tx_lots_delete_by_asset(pool, -1, asset_id) == -1);
@@ -166,7 +167,8 @@ main(void)
     quantity_t deduct40, rem60;
     assert(quantity_from_string("40.0", &deduct40) == DECIMAL_OK);
     assert(quantity_from_string("60.0", &rem60) == DECIMAL_OK);
-    int rc = tx_lot_deduct(pool, lot1, deduct40, rem60, false);
+    assert(tx_lot_deduct(pool, user_id + 999, lot1, deduct40, rem60, false) == -1);
+    int rc = tx_lot_deduct(pool, user_id, lot1, deduct40, rem60, false);
     assert(rc == 0);
 
     open_lots = tx_lots_get_open(pool, user_id, asset_id);
@@ -187,7 +189,7 @@ main(void)
     quantity_t deduct60;
     assert(quantity_from_string("60.0", &deduct60) == DECIMAL_OK);
     quantity_t rem0 = quantity_zero();
-    rc = tx_lot_deduct(pool, lot1, deduct60, rem0, true);
+    rc = tx_lot_deduct(pool, user_id, lot1, deduct60, rem0, true);
     assert(rc == 0);
 
     open_lots = tx_lots_get_open(pool, user_id, asset_id);

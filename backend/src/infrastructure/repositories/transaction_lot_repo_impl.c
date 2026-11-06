@@ -78,13 +78,14 @@ tx_lots_get_open(csilk_db_pool_t* pool, int64_t user_id, int64_t asset_id)
 
 int
 tx_lot_deduct(csilk_db_pool_t* pool,
+              int64_t          user_id,
               int64_t          lot_id,
               quantity_t       deduct_qty,
               quantity_t       new_remaining_qty,
               bool             is_closed)
 {
     (void)deduct_qty;
-    if (!pool || lot_id <= 0) {
+    if (!pool || user_id <= 0 || lot_id <= 0) {
         return -1;
     }
 
@@ -94,10 +95,12 @@ tx_lot_deduct(csilk_db_pool_t* pool,
     const char* status_str = is_closed ? "closed" : "open";
     char        lot_id_str[32];
     snprintf(lot_id_str, sizeof(lot_id_str), "%lld", (long long)lot_id);
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
 
-    const char* sql =
-        "UPDATE transaction_lots SET remaining_quantity=?, status=? WHERE id=? RETURNING id";
-    const char* params[] = {rem_qty_str, status_str, lot_id_str, NULL};
+    const char* sql = "UPDATE transaction_lots SET remaining_quantity=?, status=? WHERE id=? AND "
+                      "user_id=? RETURNING id";
+    const char* params[] = {rem_qty_str, status_str, lot_id_str, uid_str, NULL};
 
     csilk_json_t* res = csilk_db_query_param_json(pool, sql, params);
     if (!res) {

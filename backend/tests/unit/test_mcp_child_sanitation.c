@@ -14,11 +14,15 @@ int main(void) {
     assert(pipe(dummy_pipe1) == 0);
     assert(pipe(dummy_pipe2) == 0);
 
-    /* Use bash script checking that only descriptors 0, 1, 2 remain open */
+    /* Set sensitive secrets in parent environment */
+    setenv("JWT_SECRET", "super_secret_jwt_key_12345", 1);
+    setenv("MINEFOLIO_DB_DSN", "postgres://user:pass@localhost/db", 1);
+
+    /* Use bash script checking that descriptors are clean AND secrets are not leaked */
     mf_mcp_server_t s = {
         .transport = MCP_TRANSPORT_STDIO,
         .command = "bash",
-        .args_json = "[\"-c\", \"if ls /proc/self/fd | grep -E '^([4-9]|[1-9][0-9]+)$' >/dev/null; then echo '{\\\"error\\\":\\\"leaked_fds\\\"}'; else echo '{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":1,\\\"result\\\":{\\\"clean\\\":true}}'; fi\"]",
+        .args_json = "[\"-c\", \"if ls /proc/self/fd | grep -E '^([4-9]|[1-9][0-9]+)$' >/dev/null; then echo '{\\\"error\\\":\\\"leaked_fds\\\"}'; elif [ -n \\\"$JWT_SECRET\\\" ] || [ -n \\\"$MINEFOLIO_DB_DSN\\\" ]; then echo '{\\\"error\\\":\\\"leaked_secrets\\\"}'; else echo '{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":1,\\\"result\\\":{\\\"clean\\\":true}}'; fi\"]",
         .timeout_ms = 4000
     };
 

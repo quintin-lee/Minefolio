@@ -197,6 +197,15 @@ test_postgres_adapter_and_translation(void)
     /* 2. PostgreSQL 适配器生命周期与契约测试。
        此处使用不可达 DSN，依赖 mock 兜底以验证纯契约/语法层；
        生产环境默认 allow_mock=false，连接失败将 fail fast。 */
+    mf_db_config_t cfg_fail = {
+        .engine = MF_DB_ENGINE_POSTGRES,
+        .dsn = "host=127.0.0.1 port=1 dbname=unreachable_test",
+        .allow_mock = false,
+    };
+    mf_db_t* db_fail = NULL;
+    assert(mf_db_open(&cfg_fail, &db_fail) != 0);
+    assert(db_fail == NULL);
+
     mf_db_config_t cfg = {
         .engine = MF_DB_ENGINE_POSTGRES,
         .dsn = "host=localhost dbname=test_mf",

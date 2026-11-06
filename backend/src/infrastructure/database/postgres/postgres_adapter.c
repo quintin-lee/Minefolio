@@ -143,7 +143,15 @@ postgres_adapter_open(const mf_db_config_t* config, void** out_handle)
 #if defined(HAVE_LIBPQ)
     PGconn* conn = PQconnectdb(h->dsn);
     if (PQstatus(conn) != CONNECTION_OK) {
-        const char* conn_err = PQerrorMessage(conn);
+        char        conn_err[512] = {0};
+        const char* raw_err = PQerrorMessage(conn);
+        if (raw_err) {
+            snprintf(conn_err, sizeof(conn_err), "%s", raw_err);
+            size_t elen = strlen(conn_err);
+            while (elen > 0 && (conn_err[elen - 1] == '\n' || conn_err[elen - 1] == '\r')) {
+                conn_err[--elen] = '\0';
+            }
+        }
         PQfinish(conn);
         if (!config->allow_mock) {
             /* 生产路径：连接失败必须 fail fast，禁止静默 mock 兜底。
@@ -151,7 +159,7 @@ postgres_adapter_open(const mf_db_config_t* config, void** out_handle)
             fprintf(stderr,
                     "FATAL: postgres adapter: connection failed (%s); "
                     "refusing to fall back to mock in non-test mode (allow_mock=false)\n",
-                    conn_err ? conn_err : "unknown");
+                    conn_err[0] ? conn_err : "unknown");
             free(h->dsn);
             free(h);
             return -1;

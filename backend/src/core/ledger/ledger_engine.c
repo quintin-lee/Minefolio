@@ -262,7 +262,7 @@ ledger_calc_sell_position_fifo(csilk_db_pool_t* pool,
         quantity_sub(lot_rem, deduct_qty, &new_rem);
         bool is_closed = quantity_is_zero(new_rem);
 
-        if (tx_lot_deduct(pool, lot_id, deduct_qty, new_rem, is_closed) != 0) {
+        if (tx_lot_deduct(pool, user_id, lot_id, deduct_qty, new_rem, is_closed) != 0) {
             csilk_json_free(lots);
             return -1;
         }

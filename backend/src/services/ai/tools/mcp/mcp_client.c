@@ -424,65 +424,99 @@ build_argv(const mf_mcp_server_t* s, size_t* out_argc)
     return result;
 }
 
-/* 构造 envp（env_json 非空时追加 KEY=VALUE，基底 environ） */
-static char**
-build_envp(const mf_mcp_server_t* s, size_t* out_envc)
+/* 检查环境变量名是否包含敏感关键词（JWT、SECRET、KEY、PASSWORD、DSN、MINEFOLIO 等） */
+static bool
+is_sensitive_env(const char* entry)
 {
-    if (!s->env_json[0]) {
-        *out_envc = 0;
-        return environ; /* 继承当前环境 */
+    if (!entry) {
+        return true;
     }
-    csilk_json_t* obj = csilk_json_parse(s->env_json);
-    if (!obj || !csilk_json_is_object(obj)) {
+    const char* eq = strchr(entry, '=');
+    size_t      key_len = eq ? (size_t)(eq - entry) : strlen(entry);
+    char        key[128];
+    if (key_len >= sizeof(key)) {
+        key_len = sizeof(key) - 1;
+    }
+    for (size_t i = 0; i < key_len; i++) {
+        char c = entry[i];
+        if (c >= 'a' && c <= 'z') {
+            c -= 32;
+        }
+        key[i] = c;
+    }
+    key[key_len] = '\0';
+
+    if (strstr(key, "SECRET") || strstr(key, "KEY") || strstr(key, "PASSWORD") ||
+        strstr(key, "PASSWD") || strstr(key, "TOKEN") || strstr(key, "DSN") ||
+        strstr(key, "MINEFOLIO") || strstr(key, "DATABASE") || strstr(key, "AUTH") ||
+        strstr(key, "CREDENTIAL")) {
+        return true;
+    }
+    return false;
+}
+
+/* 构造受限脱敏 envp（过滤敏感键，env_json 非空时追加自定义 KEY=VALUE） */
+static char**
+build_envp(const mf_mcp_server_t* s, size_t* out_envc, size_t* out_basec)
+{
+    size_t env_total = 0;
+    for (char** p = environ; *p; p++) {
+        env_total++;
+    }
+
+    char** envp = malloc((env_total + 64 + 1) * sizeof(char*));
+    if (!envp) {
+        *out_envc = 0;
+        if (out_basec) {
+            *out_basec = 0;
+        }
+        return NULL;
+    }
+
+    size_t idx = 0;
+    for (char** p = environ; *p; p++) {
+        if (!is_sensitive_env(*p)) {
+            envp[idx++] = *p;
+        }
+    }
+    size_t base_c = idx;
+    if (out_basec) {
+        *out_basec = base_c;
+    }
+
+    if (s && s->env_json[0]) {
+        csilk_json_t* obj = csilk_json_parse(s->env_json);
+        if (obj && csilk_json_is_object(obj)) {
+            size_t obj_n = csilk_json_object_size(obj);
+            for (size_t i = 0; i < obj_n && idx < env_total + 64; i++) {
+                const char*         key = csilk_json_object_key(obj, i);
+                const csilk_json_t* val = csilk_json_object_val(obj, i);
+                if (key && val && csilk_json_is_string(val)) {
+                    char buf[512];
+                    snprintf(buf, sizeof(buf), "%s=%s", key, csilk_json_string_value(val));
+                    envp[idx++] = strdup(buf);
+                }
+            }
+        }
         if (obj) {
             csilk_json_free(obj);
         }
-        *out_envc = 0;
-        return environ;
     }
 
-    /* 基底 environ + 自定义键值 */
-    size_t base_count = 0;
-    for (char** p = environ; *p; p++) {
-        base_count++;
-    }
-    char** envp = malloc((base_count + 64 + 1) * sizeof(char*));
-    if (!envp) {
-        csilk_json_free(obj);
-        *out_envc = 0;
-        return environ;
-    }
-    size_t idx = 0;
-    for (char** p = environ; *p; p++) {
-        envp[idx++] = *p;
-    }
-    size_t i = 0;
-    size_t obj_n = csilk_json_object_size(obj);
-    while (idx < base_count + 64 && i < obj_n) {
-        const char*         key = csilk_json_object_key(obj, i);
-        const csilk_json_t* val = csilk_json_object_val(obj, i);
-        if (val && csilk_json_is_string(val)) {
-            char buf[512];
-            snprintf(buf, sizeof(buf), "%s=%s", key ? key : "", csilk_json_string_value(val));
-            envp[idx++] = strdup(buf);
-        }
-        i++;
-    }
     envp[idx] = NULL;
     *out_envc = idx;
-    csilk_json_free(obj);
     return envp;
 }
 
-/* 释放 build_envp 返回的 malloc 数组（仅在 envp != environ 时调用）。
-   environ 基底串不可 free，自定义 strdup 串子进程短命故不单独追踪，
-   仅释放数组本身避免大对象泄漏。 */
+/* 释放 build_envp 返回的 malloc 数组及自定义分配的字符串 */
 static void
-free_envp(char** envp, size_t envc)
+free_envp(char** envp, size_t base_count, size_t total_count)
 {
-    (void)envc;
-    if (envp == environ) {
+    if (!envp) {
         return;
+    }
+    for (size_t i = base_count; i < total_count; i++) {
+        free(envp[i]);
     }
     free(envp);
 }
@@ -525,7 +559,8 @@ stdio_call(mf_mcp_client_t* c, const char* request_json, char* out_err, size_t e
             return NULL;
         }
         size_t envc = 0;
-        char** envp = build_envp(s, &envc);
+        size_t env_basec = 0;
+        char** envp = build_envp(s, &envc, &env_basec);
 
         int in_pipe[2] = {-1, -1};
         int out_pipe[2] = {-1, -1};
@@ -548,7 +583,7 @@ stdio_call(mf_mcp_client_t* c, const char* request_json, char* out_err, size_t e
             }
             free(argv);
             if (envp) {
-                free_envp(envp, envc);
+                free_envp(envp, env_basec, envc);
             }
             snprintf(out_err, err_sz, "pipe() failed: %s", strerror(errno));
             return NULL;
@@ -568,7 +603,7 @@ stdio_call(mf_mcp_client_t* c, const char* request_json, char* out_err, size_t e
             }
             free(argv);
             if (envp) {
-                free_envp(envp, envc);
+                free_envp(envp, env_basec, envc);
             }
             snprintf(out_err, err_sz, "fork failed: %s", strerror(errno));
             return NULL;
@@ -600,7 +635,11 @@ stdio_call(mf_mcp_client_t* c, const char* request_json, char* out_err, size_t e
                 close(fd);
             }
 #endif
-            execve(argv[0], argv, envp ? (char* const*)envp : environ);
+            static char* const safe_fallback_env[] = {
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "TERM=dumb",
+                NULL};
+            execve(argv[0], argv, envp ? (char* const*)envp : safe_fallback_env);
             _exit(127);
         }
         c->child_pid = pid;
@@ -615,7 +654,7 @@ stdio_call(mf_mcp_client_t* c, const char* request_json, char* out_err, size_t e
         }
         free(argv);
         if (envp) {
-            free_envp(envp, envc);
+            free_envp(envp, env_basec, envc);
         }
 
         /* 超时由调用层（http/curl 的 CURL timeout + bridge 的整体预算）兜底；

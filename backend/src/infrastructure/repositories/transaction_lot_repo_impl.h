@@ -22,6 +22,7 @@ int64_t tx_lot_create(csilk_db_pool_t* pool,
 csilk_json_t* tx_lots_get_open(csilk_db_pool_t* pool, int64_t user_id, int64_t asset_id);
 
 int tx_lot_deduct(csilk_db_pool_t* pool,
+                  int64_t          user_id,
                   int64_t          lot_id,
                   quantity_t       deduct_qty,
                   quantity_t       new_remaining_qty,
