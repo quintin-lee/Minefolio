@@ -154,11 +154,9 @@ RUN strip backend/build/minefolio \
 
 
 # Download swagger-ui distribution (csilk share/swagger-ui contains only placeholders).
-# 两级回退, 全部使用扁平命令列表 (Docker 默认 /bin/sh=dash, 不支持 for-loop
-# 作为 if-elif 条件; 顶层命令列表 + `||` 短路 + `{ }` 分组可正常执行):
-#   主源   registry.npmjs.org tgz (npm 官方 registry, GitHub runner 直连稳定);
-#   次源   registry.npmmirror.com tgz (国内镜像, 经 hosts 固定 IP 挂载)。
-# 主源成功时 touch /tmp/.swagger-ok 短路次源; 两级全部失败则显式报错退出。
+# 主源 registry.npmjs.org tgz (npm 官方 registry, GitHub runner 直连稳定);
+# 回退源 registry.npmmirror.com tgz (国内镜像, 经 hosts 固定 IP 挂载)。
+# 两级独立 RUN, 主源失败不影响回退; 回退也失败才报错退出。
 RUN --mount=type=bind,source=hosts,target=/etc/hosts \
     mkdir -p /src/deps/csilk/share/swagger-ui \
     && curl --noproxy '*' -fsSL -o /tmp/swagger-ui-dist.tgz \
@@ -167,18 +165,16 @@ RUN --mount=type=bind,source=hosts,target=/etc/hosts \
     && tar -xzf /tmp/swagger-ui-dist.tgz -C /tmp/swagger-ui-extract \
     && cp -r $(find /tmp/swagger-ui-extract -type d -name package | head -1)/* /src/deps/csilk/share/swagger-ui/ \
     && rm -rf /tmp/swagger-ui-dist.tgz /tmp/swagger-ui-extract \
-    && touch /tmp/.swagger-ok \
-    || { [ -f /tmp/.swagger-ok ] || { \
-           curl --noproxy '*' -fsSL -o /tmp/swagger-ui-dist.tgz \
-               https://registry.npmmirror.com/swagger-ui-dist/-/swagger-ui-dist-5.32.6.tgz \
-           && mkdir -p /tmp/swagger-ui-extract \
-           && tar -xzf /tmp/swagger-ui-dist.tgz -C /tmp/swagger-ui-extract \
-           && cp -r $(find /tmp/swagger-ui-extract -type d -name package | head -1)/* /src/deps/csilk/share/swagger-ui/ \
-           && rm -rf /tmp/swagger-ui-dist.tgz /tmp/swagger-ui-extract \
-           && touch /tmp/.swagger-ok \
-         }; \
-         [ -f /tmp/.swagger-ok ] || { echo "ERROR: all swagger-ui sources failed" >&2; exit 1; }; \
-         }
+    || { echo "WARN: npmjs primary failed, trying npmmirror"; \
+         curl --noproxy '*' -fsSL -o /tmp/swagger-ui-dist.tgz \
+             https://registry.npmmirror.com/swagger-ui-dist/-/swagger-ui-dist-5.32.6.tgz \
+         && mkdir -p /tmp/swagger-ui-extract \
+         && tar -xzf /tmp/swagger-ui-dist.tgz -C /tmp/swagger-ui-extract \
+         && cp -r $(find /tmp/swagger-ui-extract -type d -name package | head -1)/* /src/deps/csilk/share/swagger-ui/ \
+         && rm -rf /tmp/swagger-ui-dist.tgz /tmp/swagger-ui-extract \
+         || { echo "ERROR: all swagger-ui sources failed"; exit 1; }; \
+         ls /src/deps/csilk/share/swagger-ui/; \
+       }
 
 
 
