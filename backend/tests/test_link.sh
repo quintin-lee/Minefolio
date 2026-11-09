@@ -873,6 +873,53 @@ check "篡改参数执行被拦截 code=1002" "1002" "$(echo "$TAMPER_RES" | jq 
 curl -s -X DELETE -H "$AUTH" "$BASE/assets/$BATCH_A1_ID" >/dev/null
 curl -s -X DELETE -H "$AUTH" "$BASE/assets/$BATCH_A2_ID" >/dev/null
 
+# =========================================================================
+# Case 42: Wave 2 深度安全防御纵深校验 (2FA 临时令牌隔离、2FA 解绑凭证校验、OAuth 客户端防伪造)
+# =========================================================================
+echo ""
+echo "--- Case 42: Wave 2 深度安全防御纵深验证 ---"
+
+# 1. 2FA 启用状态下登录返回 temp_token，且 temp_token 无法越权访问受保护路由
+sqlite3 "$DB" "UPDATE users SET totp_secret='JBSWY3DPEHPK3PXP', totp_enabled=1 WHERE id=1"
+LOGIN_2FA_PASS=$(rsa_encrypt "newpass123")
+LOGIN_2FA_RES=$(curl -s -X POST -H "Content-Type: application/json" "$BASE/auth/login" -d "{\"username\":\"linktest\",\"password_enc\":\"$LOGIN_2FA_PASS\"}")
+check "2FA 开启时登录要求二次验证 require_2fa=true" "true" "$(echo "$LOGIN_2FA_RES" | jq -r '.data.require_2fa')"
+TEMP_TOKEN=$(echo "$LOGIN_2FA_RES" | jq -r '.data.temp_token')
+test -n "$TEMP_TOKEN" && [ "$TEMP_TOKEN" != "null" ] && HAS_TEMP_TOKEN="yes" || HAS_TEMP_TOKEN="no"
+check "2FA 开启时签发 temp_token" "yes" "$HAS_TEMP_TOKEN"
+
+# 尝试使用 2fa_pending 的 temp_token 访问受保护路由 /api/accounts
+TEMP_AUTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $TEMP_TOKEN" "$BASE/accounts")
+check "使用 temp_token 访问保护路由 /api/accounts 被 401 拦截" "401" "$TEMP_AUTH_STATUS"
+
+# 2. 2FA 解绑二次安全凭证校验
+# 2.1 无密码或验证码直接解绑被拦截 (code=1002)
+DISABLE_NO_CRED_RES=$(curl -s -H "$AUTH" -H "Content-Type: application/json" -X POST "$BASE/auth/2fa/disable" -d '{}')
+check "无凭证解绑 2FA 返回 code=1002" "1002" "$(echo "$DISABLE_NO_CRED_RES" | jq -r '.code | floor')"
+
+# 2.2 错误密码解绑被拦截 (code=1002)
+DISABLE_BAD_PW_RES=$(curl -s -H "$AUTH" -H "Content-Type: application/json" -X POST "$BASE/auth/2fa/disable" -d '{"password":"wrong_password"}')
+check "错误密码解绑 2FA 返回 code=1002" "1002" "$(echo "$DISABLE_BAD_PW_RES" | jq -r '.code | floor')"
+
+# 2.3 正确密码解绑成功 (code=0)
+DISABLE_OK_RES=$(curl -s -H "$AUTH" -H "Content-Type: application/json" -X POST "$BASE/auth/2fa/disable" -d '{"password":"newpass123"}')
+check "正确密码解绑 2FA 成功 code=0" "0" "$(echo "$DISABLE_OK_RES" | jq -r '.code | floor')"
+TOTP_AFTER_DISABLE=$(sqlite3 "$DB" "SELECT totp_enabled FROM users WHERE id=1")
+check "数据库中 2FA 状态已关闭 totp_enabled=0" "0" "$TOTP_AFTER_DISABLE"
+
+# 3. OAuth 客户端防伪造与服务端权威 Code 置换校验
+# 3.1 尝试伪造 oauth_id 且不传有效 code 返回 code=1002
+OAUTH_SPOOF_RES=$(curl -s -H "Content-Type: application/json" -X POST "$BASE/auth/oauth/callback" -d '{"provider":"github","oauth_id":"spoofed_id"}')
+check "伪造 oauth_id 且缺少 code 返回 code=1002" "1002" "$(echo "$OAUTH_SPOOF_RES" | jq -r '.code | floor')"
+
+# 3.2 传入空 code 返回 code=1002
+OAUTH_EMPTY_CODE_RES=$(curl -s -H "Content-Type: application/json" -X POST "$BASE/auth/oauth/callback" -d '{"provider":"github","code":""}')
+check "传入空 code 返回 code=1002" "1002" "$(echo "$OAUTH_EMPTY_CODE_RES" | jq -r '.code | floor')"
+
+# 3.3 未配置服务端 Secret 或无效 Code 拒绝置换返回 code=1002
+OAUTH_BAD_CODE_RES=$(curl -s -H "Content-Type: application/json" -X POST "$BASE/auth/oauth/callback" -d '{"provider":"github","code":"invalid_code"}')
+check "无效 Code 拒绝置换返回 code=1002" "1002" "$(echo "$OAUTH_BAD_CODE_RES" | jq -r '.code | floor')"
+
 echo ""
 echo "结果: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1
