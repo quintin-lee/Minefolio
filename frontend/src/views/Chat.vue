@@ -1653,57 +1653,87 @@ onUnmounted(() => {
   background: var(--mf-surface-hover);
 }
 
-.toolbar-thinking-btn {
+/* Center: Session title & inline rename */
+.toolbar-center {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 0 12px;
+}
+
+.session-title-wrap {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  background: var(--mf-surface);
-  border: 1px solid var(--mf-border);
-  border-radius: 6px;
+  gap: 6px;
+  max-width: 380px;
   padding: 4px 10px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--mf-text-secondary);
+  border-radius: 8px;
   cursor: pointer;
-  transition: all 0.2s ease;
-  flex-shrink: 0;
+  transition: background 0.15s ease;
+}
+
+.session-title-wrap:hover {
+  background: var(--mf-surface-hover);
+}
+
+.top-session-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--mf-text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   user-select: none;
 }
 
-.toolbar-thinking-btn:hover {
-  background: var(--mf-surface-hover);
-  color: var(--mf-text-primary);
-  border-color: var(--mf-border-focus);
-}
-
-.toolbar-thinking-btn.active {
-  background: rgba(99, 102, 241, 0.08);
-  border-color: rgba(99, 102, 241, 0.4);
-  color: var(--mf-primary);
-}
-
-.toolbar-thinking-btn .thinking-btn-icon {
-  font-size: 14px;
-}
-
-.toolbar-thinking-btn.active .thinking-btn-icon {
-  color: var(--mf-primary);
-}
-
-.toolbar-thinking-btn .thinking-status-tag {
-  font-size: 10px;
-  line-height: 1;
-  padding: 1px 4px;
+.top-rename-btn {
+  background: transparent;
+  border: none;
+  color: var(--mf-text-muted);
+  cursor: pointer;
+  padding: 2px;
   border-radius: 4px;
-  background: var(--mf-primary);
-  color: #ffffff;
-  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+
+.session-title-wrap:hover .top-rename-btn {
+  opacity: 1;
+}
+
+.top-rename-btn:hover {
+  color: var(--mf-primary);
+}
+
+.top-rename-box {
+  width: 100%;
+  max-width: 320px;
+}
+
+.top-rename-input {
+  width: 100%;
+  padding: 4px 8px;
+  background: var(--mf-background);
+  border: 1px solid var(--mf-primary);
+  border-radius: 6px;
+  color: var(--mf-text-main);
+  font-size: 12px;
+  font-weight: 500;
+  outline: none;
+  box-sizing: border-box;
+  box-shadow: 0 0 8px rgba(0, 212, 255, 0.15);
 }
 
 .toolbar-right {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex-shrink: 0;
 }
 
@@ -1722,17 +1752,123 @@ onUnmounted(() => {
   font-size: 13px;
 }
 
-.current-model-badge {
+/* Right: Metrics pill, panel toggle, dropdown */
+.session-stat-pill {
   display: inline-flex;
   align-items: center;
-  font-size: 11px;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  background: var(--mf-background);
+  border: 1px solid var(--mf-border);
   font-family: var(--mf-font-mono, monospace);
-  padding: 2px 8px;
-  border-radius: 10px;
-  background: var(--mf-primary-light);
-  color: var(--mf-primary);
-  border: 1px solid var(--mf-primary-border, var(--mf-border));
+  font-size: 11px;
+  color: var(--mf-text-muted);
   white-space: nowrap;
+  cursor: default;
+  user-select: none;
+  transition: border-color 0.15s ease;
+}
+
+.session-stat-pill:hover {
+  border-color: var(--mf-border-hover);
+  color: var(--mf-text-secondary);
+}
+
+.session-stat-pill .stat-icon {
+  font-size: 12px;
+  color: var(--mf-warning, #f59e0b);
+}
+
+.session-stat-pill .stat-divider {
+  opacity: 0.5;
+}
+
+.session-stat-pill .stat-cost {
+  color: var(--mf-primary);
+  font-weight: 500;
+}
+
+/* Panel toggle button */
+.toolbar-panel-btn {
+  background: var(--mf-surface);
+  border: 1px solid var(--mf-border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  color: var(--mf-text-muted);
+  font-size: 13px;
+  transition: all 0.15s ease;
+  position: relative;
+}
+
+.toolbar-panel-btn:hover {
+  color: var(--mf-primary);
+  border-color: var(--mf-border-hover);
+  background: var(--mf-surface-hover);
+}
+
+.toolbar-panel-btn.active {
+  color: var(--mf-primary);
+  border-color: var(--mf-primary);
+  background: var(--mf-primary-light);
+}
+
+.toolbar-panel-btn .panel-badge {
+  font-size: 10px;
+  line-height: 1;
+  padding: 1px 5px;
+  border-radius: 8px;
+  background: var(--mf-primary);
+  color: #ffffff;
+  font-weight: 700;
+}
+
+/* More menu button */
+.more-menu-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--mf-text-muted);
+  font-size: 16px;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.more-menu-btn:hover {
+  color: var(--mf-text-main);
+  background: var(--mf-surface-hover);
+  border-color: var(--mf-border);
+}
+
+:deep(.chat-more-dropdown .el-dropdown-menu__item) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 6px 14px;
+}
+
+:deep(.chat-more-dropdown .dropdown-item-icon) {
+  font-size: 14px;
+  color: var(--mf-text-muted);
+}
+
+:deep(.chat-more-dropdown .danger-item) {
+  color: var(--mf-danger, #ef4444);
+}
+
+:deep(.chat-more-dropdown .danger-item .dropdown-item-icon) {
+  color: var(--mf-danger, #ef4444);
 }
 
 .model-selector-wrap {
@@ -2388,6 +2524,18 @@ onUnmounted(() => {
   backdrop-filter: blur(2px);
 }
 
+@media (max-width: 1024px) {
+  .session-stat-pill {
+    display: none;
+  }
+  .toolbar-center {
+    max-width: 220px;
+  }
+  .new-chat-btn .btn-text {
+    display: none;
+  }
+}
+
 @media (max-width: 768px) {
   .sidebar-overlay { display: block; }
   .chat-sidebar {
@@ -2400,6 +2548,16 @@ onUnmounted(() => {
   }
   .chat-sidebar:not(.is-collapsed) { transform: translateX(0); }
   .chat-main { width: 100% !important; }
+  .chat-toolbar {
+    padding: 6px 10px;
+    gap: 6px;
+  }
+  .toolbar-center {
+    display: none;
+  }
+  .model-select {
+    width: 160px;
+  }
   .chat-input-area {
     padding: 0 10px 10px;
     max-width: 100%;
