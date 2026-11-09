@@ -131,9 +131,11 @@ export const authApi = {
   /**
    * 关闭两步验证
    * @route POST /api/auth/2fa/disable
+   * @param params 验证参数 (包含密码或动态验证码)
    * @returns 操作结果
    */
-  disable2Fa: () => http.post<void>('/auth/2fa/disable'),
+  disable2Fa: (params?: { password?: string; password_enc?: string; code?: string }) =>
+    http.post<void>('/auth/2fa/disable', params || {}),
 
   /**
    * 两步验证第二阶段登录认证 (使用临时 Token + 6 位 TOTP 动态码换取正式 JWT)

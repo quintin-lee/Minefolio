@@ -35,10 +35,14 @@ mf_auth_repo_find_by_username(void* pool, const char* username, mf_user_t* out_u
         snprintf(out_user->password_hash, sizeof(out_user->password_hash), "%s", s);
     }
     out_user->token_version = (int64_t)db_get_int(row, "token_version");
-    out_user->totp_enabled = (db_get_int(row, "totp_enabled") != 0);
+    out_user->totp_enabled = (db_get_bool(row, "totp_enabled") != 0);
     s = csilk_json_get_string(row, "totp_secret");
     if (s) {
         snprintf(out_user->totp_secret, sizeof(out_user->totp_secret), "%s", s);
+    }
+    s = csilk_json_get_string(row, "totp_backup_codes");
+    if (s) {
+        snprintf(out_user->totp_backup_codes, sizeof(out_user->totp_backup_codes), "%s", s);
     }
     s = csilk_json_get_string(row, "created_at");
     if (s) {
@@ -82,7 +86,7 @@ mf_auth_repo_get_by_id(void* pool, int64_t user_id, mf_user_t* out_user)
         snprintf(out_user->password_hash, sizeof(out_user->password_hash), "%s", s);
     }
     out_user->token_version = (int64_t)db_get_int(row, "token_version");
-    out_user->totp_enabled = (db_get_int(row, "totp_enabled") != 0);
+    out_user->totp_enabled = (db_get_bool(row, "totp_enabled") != 0);
     s = csilk_json_get_string(row, "totp_secret");
     if (s) {
         snprintf(out_user->totp_secret, sizeof(out_user->totp_secret), "%s", s);

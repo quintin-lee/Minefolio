@@ -130,6 +130,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { authApi } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 import { t } from '@/utils/locale'
+import { encryptPassword } from '@/utils/crypto'
 
 const auth = useAuthStore()
 const twoFactorEnabled = ref(false)
@@ -214,13 +215,19 @@ async function confirmEnableTwoFactor() {
 
 async function handleDisableTwoFactor() {
   try {
-    await ElMessageBox.confirm(t('settings.disableConfirmMsg'), t('settings.disableConfirmTitle'), {
-      confirmButtonText: t('settings.confirmDisable'),
-      cancelButtonText: t('common.cancel'),
-      type: 'warning'
-    })
+    const { value: password } = await ElMessageBox.prompt(
+      t('settings.disablePasswordPromptMsg'),
+      t('settings.disableConfirmTitle'),
+      {
+        confirmButtonText: t('settings.confirmDisable'),
+        cancelButtonText: t('common.cancel'),
+        inputType: 'password',
+        inputValidator: (val) => (!val ? t('settings.passwordRequired') : true)
+      }
+    )
     twoFactorLoading.value = true
-    await authApi.disable2Fa()
+    const password_enc = await encryptPassword(password)
+    await authApi.disable2Fa({ password_enc })
     twoFactorEnabled.value = false
     ElMessage.success(t('settings.twoFactorDisabled'))
   } catch (e: any) {

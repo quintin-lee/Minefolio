@@ -19,7 +19,30 @@
 
     <ServerConfigDialog v-model="showServerDialog" @saved="handleServerSaved" />
 
-    <el-form :model="form" label-position="top">
+    <div v-if="isTwoFactorStep" class="two-factor-mobile-box">
+      <p class="two-factor-hint">当前账号已开启两步验证，请输入身份验证器动态码或 8 位应急备用码：</p>
+      <el-form label-position="top">
+        <el-form-item label="动态验证码 / 备用码">
+          <el-input
+            v-model="twoFactorCode"
+            placeholder="请输入 6 位动态验证码或备用码"
+            size="large"
+            autofocus
+            @keyup.enter="handle2FaSubmit"
+          />
+        </el-form-item>
+        <el-button type="primary" :loading="loading" @click="handle2FaSubmit" block style="margin-top: 12px">
+          验证并登录
+        </el-button>
+        <div class="switch-mode-mobile">
+          <el-button link type="info" @click="isTwoFactorStep = false">
+            返回密码登录
+          </el-button>
+        </div>
+      </el-form>
+    </div>
+
+    <el-form v-else :model="form" label-position="top">
       <el-form-item label="用户名">
         <el-input v-model="form.username" placeholder="请输入用户名" />
       </el-form-item>
@@ -88,6 +111,9 @@ const loading = ref(false)
 const isRegister = ref(false)
 const showServerDialog = ref(false)
 const form = reactive({ username: '', password: '', confirmPassword: '' })
+const isTwoFactorStep = ref(false)
+const tempToken = ref('')
+const twoFactorCode = ref('')
 const oauthProviders = ref<OAuthProvider[]>([])
 
 function handleOAuth(p: OAuthProvider) {
@@ -130,11 +156,19 @@ async function submit() {
     if (isRegister.value) {
       await auth.register(form.username, form.password)
       ElMessage.success('注册成功')
+      router.replace('/m/dashboard')
     } else {
-      await auth.login(form.username, form.password)
+      const res = await auth.login(form.username, form.password)
+      if (res?.require_2fa) {
+        isTwoFactorStep.value = true
+        tempToken.value = res.temp_token || ''
+        twoFactorCode.value = ''
+        ElMessage.info('请输入两步验证动态码或备用码')
+        return
+      }
       ElMessage.success('登录成功')
+      router.replace('/m/dashboard')
     }
-    router.replace('/m/dashboard')
   } catch (e: any) {
     const isNetworkErr = !e?.response
     if (isNetworkErr) {
@@ -142,6 +176,23 @@ async function submit() {
     } else {
       ElMessage.error(e?.response?.data?.message || (isRegister.value ? '注册失败' : '登录失败'))
     }
+  } finally {
+    loading.value = false
+  }
+}
+
+async function handle2FaSubmit() {
+  if (!twoFactorCode.value.trim()) {
+    ElMessage.warning('请输入 6 位动态验证码或备用码')
+    return
+  }
+  loading.value = true
+  try {
+    await auth.verify2FaLogin(tempToken.value, twoFactorCode.value.trim())
+    ElMessage.success('登录成功')
+    router.replace('/m/dashboard')
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.message || '动态验证码错误或备用码失效')
   } finally {
     loading.value = false
   }
@@ -231,5 +282,14 @@ async function submit() {
   font-weight: 500;
   cursor: pointer;
   margin-bottom: 8px;
+}
+.two-factor-mobile-box {
+  margin-top: 12px;
+}
+.two-factor-hint {
+  font-size: 13px;
+  color: var(--mf-text-muted);
+  line-height: 1.5;
+  margin-bottom: 16px;
 }
 </style>

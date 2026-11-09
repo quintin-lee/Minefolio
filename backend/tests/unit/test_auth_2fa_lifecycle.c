@@ -67,7 +67,43 @@ int main(void) {
     mf_auth_repo_set_totp_secret(pool, test_uid, "JBSWY3DPEHPK3PXP");
     mf_auth_repo_enable_totp(pool, test_uid, "[\"BACKUP01\"]");
 
-    /* 3. 测试 auth_usecase_2fa_verify_login 拒绝非 2fa_pending 的普通 token */
+    /* 验证 find_by_username 能正确解析 totp_enabled 与 totp_backup_codes */
+    memset(&test_user, 0, sizeof(test_user));
+    assert(mf_auth_repo_find_by_username(pool, "user_2fa_test", &test_user) == 0);
+    assert(test_user.totp_enabled == true);
+    assert(strcmp(test_user.totp_backup_codes, "[\"BACKUP01\"]") == 0);
+
+    /* 3. 测试 2FA 开启后普通登录必须返回 require_2fa: true，禁止直接发放正式 Token */
+    login_user_cmd_t login_cmd = {
+        .username = "user_2fa_test",
+        .plain_password = "Password123!",
+    };
+    csilk_json_t* login_data = NULL;
+    auth_usecase_result_t login_res = {0};
+    assert(auth_usecase_login(pool, &login_cmd, NULL, &login_data, &login_res) == 0);
+    assert(login_res.code == 0);
+    assert(login_data != NULL);
+    assert(csilk_json_as_bool(csilk_json_get(login_data, "require_2fa"), false) == true);
+    const char* login_temp_tok = csilk_json_get_string(login_data, "temp_token");
+    assert(login_temp_tok != NULL && strlen(login_temp_tok) > 10);
+    assert(csilk_json_get(login_data, "token") == NULL);
+    printf("PASS: test_login_requires_2fa_when_enabled\n");
+
+    /* 用生成的 temp_token 与备份码进行 2FA 验证登录，确保能正常换取正式 Token */
+    verify_2fa_login_cmd_t verify_cmd_ok = {
+        .temp_token = login_temp_tok,
+        .code = "BACKUP01",
+    };
+    csilk_json_t* verify_ok_data = NULL;
+    auth_usecase_result_t verify_ok_res = {0};
+    assert(auth_usecase_2fa_verify_login(pool, &verify_cmd_ok, &verify_ok_data, &verify_ok_res) == 0);
+    assert(verify_ok_res.code == 0 && verify_ok_data != NULL);
+    assert(csilk_json_get_string(verify_ok_data, "token") != NULL);
+    csilk_json_free(verify_ok_data);
+    csilk_json_free(login_data);
+    printf("PASS: test_2fa_verify_login_succeeds_with_backup_code\n");
+
+    /* 4. 测试 auth_usecase_2fa_verify_login 拒绝非 2fa_pending 的普通 token */
     char* normal_token = jwt_generate_token(NULL, test_uid, 0);
     assert(normal_token != NULL);
 

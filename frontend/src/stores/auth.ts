@@ -93,6 +93,8 @@ export const useAuthStore = defineStore('auth', () => {
     const raw = (await authApi.login(username, password_enc, totpCode)) as unknown
     const res = (raw && typeof raw === 'object' && 'data' in raw ? (raw as { data: any }).data : raw) as any
     if (res?.require_2fa) {
+      token.value = ''
+      localStorage.removeItem('token')
       return { require_2fa: true, temp_token: res.temp_token as string }
     }
     if (res && res.token) {

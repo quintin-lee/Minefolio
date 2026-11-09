@@ -414,6 +414,8 @@ export const zhCN = {
     activationFailed: '动态验证码错误，激活失败',
     disableConfirmMsg: '确定要关闭两步验证吗？关闭后账户将降低为仅密码保护级别。',
     disableConfirmTitle: '关闭两步验证',
+    disablePasswordPromptMsg: '关闭两步验证需验证当前登录密码，请输入密码：',
+    passwordRequired: '请输入当前登录密码',
     confirmDisable: '确认关闭',
     twoFactorDisabled: '两步验证已成功关闭',
     disableFailed: '关闭两步验证失败',

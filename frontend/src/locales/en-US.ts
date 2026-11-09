@@ -414,6 +414,8 @@ export const enUS = {
     activationFailed: 'Wrong verification code; activation failed',
     disableConfirmMsg: 'Disable two-step verification? Your account will drop to password-only protection.',
     disableConfirmTitle: 'Disable Two-Step Verification',
+    disablePasswordPromptMsg: 'Enter your account password to confirm disabling two-step verification:',
+    passwordRequired: 'Password is required',
     confirmDisable: 'Confirm Disable',
     twoFactorDisabled: 'Two-step verification disabled',
     disableFailed: 'Failed to disable two-step verification',
