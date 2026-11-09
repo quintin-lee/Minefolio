@@ -88,6 +88,11 @@ db_init(csilk_db_pool_t** out_pool)
         csilk_db_exec(g_pool, "UPDATE ai_traces SET top_p = 0.0 WHERE typeof(top_p) = 'text';");
         csilk_db_exec(g_pool,
                       "UPDATE ai_traces SET temperature = 0.0 WHERE typeof(temperature) = 'text';");
+
+        /* 可观测性：打印实际链接的 SQLite 库版本；RETURNING 语法要求 3.35+ */
+        CSILK_LOG_I("SQLite version: %s (min required 3.35 for RETURNING; "
+                    "older versions will fail on repository files using RETURNING)",
+                    sqlite3_libversion());
     }
 
     *out_pool = g_pool;
