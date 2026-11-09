@@ -241,11 +241,16 @@ ai_config_save(const char* path, const ai_config_t* cfg)
 void
 ai_config_free(ai_config_t* cfg)
 {
+    if (!cfg) {
+        return;
+    }
     if (cfg->providers) {
         for (int i = 0; i < cfg->provider_count; i++) {
             free_string_array(cfg->providers[i].models);
         }
         free(cfg->providers);
+        cfg->providers = NULL;
+        cfg->provider_count = 0;
     }
 }
 
@@ -259,6 +264,9 @@ ai_config_free(ai_config_t* cfg)
 ai_provider_t*
 ai_config_find_provider(const ai_config_t* cfg, const char* provider_id)
 {
+    if (!cfg || !provider_id || !provider_id[0] || !cfg->providers) {
+        return NULL;
+    }
     for (int i = 0; i < cfg->provider_count; i++) {
         if (strcmp(cfg->providers[i].id, provider_id) == 0) {
             return &cfg->providers[i];
@@ -276,5 +284,8 @@ ai_config_find_provider(const ai_config_t* cfg, const char* provider_id)
 ai_provider_t*
 ai_config_default_provider(const ai_config_t* cfg)
 {
+    if (!cfg || !cfg->default_provider[0]) {
+        return NULL;
+    }
     return ai_config_find_provider(cfg, cfg->default_provider);
 }

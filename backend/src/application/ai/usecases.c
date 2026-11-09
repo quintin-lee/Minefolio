@@ -415,12 +415,19 @@ ai_usecase_settings_update(void* pool, const csilk_json_t* body, ai_usecase_resu
                     ai_provider_t* old_p = ai_config_find_provider(&cfg, pid);
                     if (!old_p || old_p->api_key[0] == '\0') {
                         ai_config_t* snap = ai_config_acquire();
-                        old_p = ai_config_find_provider(snap, pid);
-                        ai_config_release(snap);
-                    }
-                    if (old_p && old_p->api_key[0]) {
-                        /* 立即拷贝 api_key 到 new_provs[i]（值拷贝），
-                           后续使用 new_provs 而非快照指针，避免悬空引用 */
+                        if (snap) {
+                            old_p = ai_config_find_provider(snap, pid);
+                            if (old_p && old_p->api_key[0]) {
+                                size_t _src_len = strlen(old_p->api_key);
+                                size_t _copy_len = _src_len < sizeof(new_provs[i].api_key) - 1
+                                                       ? _src_len
+                                                       : sizeof(new_provs[i].api_key) - 1;
+                                memcpy(new_provs[i].api_key, old_p->api_key, _copy_len);
+                                new_provs[i].api_key[_copy_len] = '\0';
+                            }
+                            ai_config_release(snap);
+                        }
+                    } else if (old_p && old_p->api_key[0]) {
                         size_t _src_len = strlen(old_p->api_key);
                         size_t _copy_len = _src_len < sizeof(new_provs[i].api_key) - 1
                                                ? _src_len
@@ -439,25 +446,31 @@ ai_usecase_settings_update(void* pool, const csilk_json_t* body, ai_usecase_resu
                 {
                     const csilk_json_t* body_pi = csilk_json_get(p, "price_input");
                     const csilk_json_t* body_po = csilk_json_get(p, "price_output");
-                    ai_provider_t*      old_pi_p = ai_config_find_provider(&cfg, pid)
-                                                       ? ai_config_find_provider(&cfg, pid)
-                                                       : NULL;
+                    ai_provider_t*      old_pi_p = ai_config_find_provider(&cfg, pid);
                     if (!old_pi_p) {
                         ai_config_t* snap = ai_config_acquire();
-                        old_pi_p = ai_config_find_provider(snap, pid);
-                        if (old_pi_p) {
-                            /* 立即拷贝价格到本地变量，不持快照指针 */
-                            new_provs[i].price_input = old_pi_p->price_input;
-                            new_provs[i].price_output = old_pi_p->price_output;
+                        if (snap) {
+                            old_pi_p = ai_config_find_provider(snap, pid);
+                            if (old_pi_p) {
+                                new_provs[i].price_input = old_pi_p->price_input;
+                                new_provs[i].price_output = old_pi_p->price_output;
+                            }
+                            ai_config_release(snap);
                         }
-                        ai_config_release(snap);
-                        if (old_pi_p) { /* 已拷贝 */
+                        if (old_pi_p) {
                             new_provs[i].price_input = (body_pi && csilk_json_is_number(body_pi))
                                                            ? csilk_json_number_value(body_pi)
                                                            : new_provs[i].price_input;
                             new_provs[i].price_output = (body_po && csilk_json_is_number(body_po))
                                                             ? csilk_json_number_value(body_po)
                                                             : new_provs[i].price_output;
+                        } else {
+                            new_provs[i].price_input = (body_pi && csilk_json_is_number(body_pi))
+                                                           ? csilk_json_number_value(body_pi)
+                                                           : 0.0;
+                            new_provs[i].price_output = (body_po && csilk_json_is_number(body_po))
+                                                            ? csilk_json_number_value(body_po)
+                                                            : 0.0;
                         }
                     } else {
                         new_provs[i].price_input = (body_pi && csilk_json_is_number(body_pi))
