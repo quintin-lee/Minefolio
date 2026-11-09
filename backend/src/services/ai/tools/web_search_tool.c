@@ -1,5 +1,6 @@
 #include "services/ai/tools/web_search_tool.h"
 #include "services/ai/tools/schema.h"
+#include "services/ai/runtime/loop.h"
 #include "domain/ai/rules.h"
 #include "common/db.h"
 #include <curl/curl.h>
@@ -983,6 +984,12 @@ exec_fetch_webpage(const ai_tool_t* tool, const ai_tool_context_t* ctx, const cs
 
     if (!content_text) {
         content_text = strdup("");
+    } else {
+        char* cleaned = ai_strip_markdown_images(content_text);
+        if (cleaned) {
+            free(content_text);
+            content_text = cleaned;
+        }
     }
 
     /* 4. Token 预算安全截断（UTF-8 字符边界对齐） */

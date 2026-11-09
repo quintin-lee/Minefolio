@@ -201,7 +201,7 @@ api_auth_2fa_disable(csilk_ctx_t* c)
         return;
     }
 
-    csilk_json_t* body = csilk_bind_json(c);
+    csilk_json_t*     body = csilk_bind_json(c);
     disable_2fa_cmd_t cmd = {
         .user_id = user_id,
         .password = body ? csilk_json_get_string(body, "password") : NULL,

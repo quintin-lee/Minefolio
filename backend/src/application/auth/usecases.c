@@ -538,7 +538,9 @@ auth_usecase_2fa_disable(void*                    pool,
 
     if (!authenticated) {
         out_res->code = 1002;
-        snprintf(out_res->message, sizeof(out_res->message), "解绑 2FA 需验证当前密码或有效 6 位动态验证码");
+        snprintf(out_res->message,
+                 sizeof(out_res->message),
+                 "解绑 2FA 需验证当前密码或有效 6 位动态验证码");
         return -1;
     }
 
@@ -704,7 +706,9 @@ oauth_curl_write_cb(void* ptr, size_t size, size_t nmemb, void* userdata)
     if (b->size + total + 1 > b->cap) {
         size_t new_cap = (b->cap + total + 1) * 2;
         char*  nd = realloc(b->data, new_cap);
-        if (!nd) return 0;
+        if (!nd) {
+            return 0;
+        }
         b->data = nd;
         b->cap = new_cap;
     }
@@ -715,7 +719,8 @@ oauth_curl_write_cb(void* ptr, size_t size, size_t nmemb, void* userdata)
 }
 
 static int
-oauth_exchange_github(const char* code, char* out_oauth_id, size_t id_cap, char* out_username, size_t un_cap)
+oauth_exchange_github(
+    const char* code, char* out_oauth_id, size_t id_cap, char* out_username, size_t un_cap)
 {
     const char* client_id = config_secret_get("OAUTH_GITHUB_CLIENT_ID", NULL, 0);
     const char* client_secret = config_secret_get("OAUTH_GITHUB_CLIENT_SECRET", NULL, 0);
@@ -724,19 +729,26 @@ oauth_exchange_github(const char* code, char* out_oauth_id, size_t id_cap, char*
     }
 
     CURL* curl = curl_easy_init();
-    if (!curl) return -1;
+    if (!curl) {
+        return -1;
+    }
 
     char post_fields[512];
-    snprintf(post_fields, sizeof(post_fields),
+    snprintf(post_fields,
+             sizeof(post_fields),
              "client_id=%s&client_secret=%s&code=%s",
-             client_id, client_secret, code);
+             client_id,
+             client_secret,
+             code);
 
     struct curl_slist* headers = NULL;
     headers = curl_slist_append(headers, "Accept: application/json");
     headers = curl_slist_append(headers, "User-Agent: Minefolio-Backend");
 
     oauth_curl_buf_t buf = {.data = malloc(4096), .size = 0, .cap = 4096};
-    if (buf.data) buf.data[0] = '\0';
+    if (buf.data) {
+        buf.data[0] = '\0';
+    }
 
     curl_easy_setopt(curl, CURLOPT_URL, "https://github.com/login/oauth/access_token");
     curl_easy_setopt(curl, CURLOPT_POST, 1L);
@@ -747,11 +759,13 @@ oauth_exchange_github(const char* code, char* out_oauth_id, size_t id_cap, char*
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
 
     CURLcode res = curl_easy_perform(curl);
-    long http_code = 0;
+    long     http_code = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
 
     if (res != CURLE_OK || http_code != 200 || !buf.data || buf.size == 0) {
-        if (buf.data) free(buf.data);
+        if (buf.data) {
+            free(buf.data);
+        }
         curl_slist_free_all(headers);
         curl_easy_cleanup(curl);
         return -1;
@@ -782,7 +796,9 @@ oauth_exchange_github(const char* code, char* out_oauth_id, size_t id_cap, char*
     csilk_json_free(tok_resp);
 
     oauth_curl_buf_t user_buf = {.data = malloc(8192), .size = 0, .cap = 8192};
-    if (user_buf.data) user_buf.data[0] = '\0';
+    if (user_buf.data) {
+        user_buf.data[0] = '\0';
+    }
 
     curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
     curl_easy_setopt(curl, CURLOPT_URL, "https://api.github.com/user");
@@ -795,15 +811,19 @@ oauth_exchange_github(const char* code, char* out_oauth_id, size_t id_cap, char*
     curl_easy_cleanup(curl);
 
     if (res != CURLE_OK || http_code != 200 || !user_buf.data || user_buf.size == 0) {
-        if (user_buf.data) free(user_buf.data);
+        if (user_buf.data) {
+            free(user_buf.data);
+        }
         return -1;
     }
 
     csilk_json_t* u_resp = csilk_json_parse(user_buf.data);
     free(user_buf.data);
-    if (!u_resp) return -1;
+    if (!u_resp) {
+        return -1;
+    }
 
-    int64_t gh_id = (int64_t)csilk_json_get_number(u_resp, "id");
+    int64_t     gh_id = (int64_t)csilk_json_get_number(u_resp, "id");
     const char* gh_login = csilk_json_get_string(u_resp, "login");
     if (gh_id <= 0) {
         csilk_json_free(u_resp);
@@ -847,20 +867,24 @@ auth_usecase_oauth_callback(void*                       pool,
     if (mock_env && strcmp(mock_env, "1") == 0) {
         if (strncmp(cmd->code, "mock_code_", 10) == 0) {
             snprintf(oauth_id_buf, sizeof(oauth_id_buf), "sub_%s", cmd->code + 10);
-            snprintf(username_buf, sizeof(username_buf), "%s",
+            snprintf(username_buf,
+                     sizeof(username_buf),
+                     "%s",
                      cmd->username && cmd->username[0] ? cmd->username : oauth_id_buf);
         } else {
             out_res->code = 1002;
-            snprintf(out_res->message, sizeof(out_res->message), "OAuth 授权置换失败 (Mock 拒识 Code)");
+            snprintf(
+                out_res->message, sizeof(out_res->message), "OAuth 授权置换失败 (Mock 拒识 Code)");
             return -1;
         }
     } else {
         if (strcmp(provider_buf, "github") == 0) {
-            int ex_rc = oauth_exchange_github(cmd->code, oauth_id_buf, sizeof(oauth_id_buf),
-                                              username_buf, sizeof(username_buf));
+            int ex_rc = oauth_exchange_github(
+                cmd->code, oauth_id_buf, sizeof(oauth_id_buf), username_buf, sizeof(username_buf));
             if (ex_rc == -2) {
                 out_res->code = 1002;
-                snprintf(out_res->message, sizeof(out_res->message), "GitHub OAuth 服务端配置未就绪");
+                snprintf(
+                    out_res->message, sizeof(out_res->message), "GitHub OAuth 服务端配置未就绪");
                 return -1;
             } else if (ex_rc != 0) {
                 out_res->code = 1002;

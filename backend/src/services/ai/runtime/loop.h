@@ -90,6 +90,21 @@ typedef struct {
 
 char* ai_runtime_run_loop(csilk_db_pool_t* pool, const ai_loop_options_t* opts, ai_trace_t* trace);
 
+/**
+ * @brief 对来自外部工具的不受信任内容进行结构化 XML 隔离封装并转义闭合标签
+ */
+char* ai_sanitize_untrusted_content(const char* tool_name, const char* raw_content);
+
+/**
+ * @brief 移除或防御 Markdown 中可能用于隐式数据外带的图片链接 ![...](...)
+ */
+char* ai_strip_markdown_images(const char* text);
+
+/**
+ * @brief 获取防外部 Prompt 注入的系统级安全指令
+ */
+const char* ai_get_security_guardrail_prompt(void);
+
 #ifdef __cplusplus
 }
 #endif

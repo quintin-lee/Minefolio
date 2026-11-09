@@ -411,6 +411,12 @@ target_compile_options(test_oauth_security PRIVATE -UNDEBUG)
 target_link_libraries(test_oauth_security PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
 add_test(NAME test_oauth_security COMMAND test_oauth_security)
 
+add_executable(test_ai_prompt_injection_defense tests/unit/test_ai_prompt_injection_defense.c ${LIB_SOURCES})
+target_include_directories(test_ai_prompt_injection_defense PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_ai_prompt_injection_defense PRIVATE -UNDEBUG)
+target_link_libraries(test_ai_prompt_injection_defense PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_test(NAME test_ai_prompt_injection_defense COMMAND test_ai_prompt_injection_defense)
+
 
 
 
