@@ -20,10 +20,10 @@
 
 | commit | 内容 |
 |---|---|
-| commit 1 | `chore: 清理 transfer usecase 死代码 + 补全文档说明（汇率单实例假设 / SQLite 最低版本 / void* 设计意图）` |
-| commit 2 | `feat(db): db_init 启动时打印实际 SQLite 版本作为可观测性信号` |
+| commit 1 | `chore(db): 🧹 清理 transfer usecase 死代码 + 补全文档说明（汇率单实例假设 / SQLite 最低版本 / void* 设计意图）` |
+| commit 2 | `perf(db): ⚡️ db_init 启动时打印实际 SQLite 版本作为可观测性信号（仅新增日志，无行为变化）` |
 
-理由：文档类改动零运行时风险，可立即合入；`db.c` 涉及新增代码路径，单独一个 commit 便于单独回滚或测试覆盖。
+理由：文档类 + 死代码清理合并为 1 个 commit（零运行时风险，可立即合入）；`db.c` 新增日志打印单独 1 个 commit（可观测性改进，便于单独回滚或测试覆盖）。
 
 ## 详细设计
 
