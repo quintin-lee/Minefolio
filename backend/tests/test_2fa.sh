@@ -198,15 +198,23 @@ if echo "$REUSED_RES" | grep -q '"token":"'; then
 fi
 
 echo "=== 13. Disable 2FA ==="
-DISABLE_RES=$(curl -s -X POST "http://127.0.0.1:$PORT/api/auth/2fa/disable" \
+# Disabling without credentials should be rejected (code 1002)
+DISABLE_UNAUTH=$(curl -s -X POST "http://127.0.0.1:$PORT/api/auth/2fa/disable" \
     -H "Authorization: Bearer $NEW_TOKEN")
-echo "Disable res: $DISABLE_RES"
+echo "Disable unauth res: $DISABLE_UNAUTH"
+if ! echo "$DISABLE_UNAUTH" | grep -q '"code":1002'; then
+    echo "Expected 1002 when disabling 2FA without credentials"
+    exit 1
+fi
 
-STATUS_DISABLED=$(curl -s -X GET "http://127.0.0.1:$PORT/api/auth/2fa/status" \
-    -H "Authorization: Bearer $NEW_TOKEN")
-echo "Status disabled: $STATUS_DISABLED"
-if ! echo "$STATUS_DISABLED" | grep -q '"enabled":false'; then
-    echo "Expected 2FA to be disabled"
+# Disabling with password should succeed and revoke current tokens (bump token_version)
+DISABLE_RES=$(curl -s -X POST "http://127.0.0.1:$PORT/api/auth/2fa/disable" \
+    -H "Authorization: Bearer $NEW_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{\"password\":\"password123\"}")
+echo "Disable res: $DISABLE_RES"
+if ! echo "$DISABLE_RES" | grep -q '"code":0'; then
+    echo "Expected 0 when disabling 2FA with password"
     exit 1
 fi
 
@@ -216,8 +224,18 @@ DIRECT_LOGIN=$(curl -s -X POST "http://127.0.0.1:$PORT/api/auth/login" \
     -H "Content-Type: application/json" \
     -d "{\"username\":\"admin\",\"password_enc\":\"$LOGIN_ENC_4\"}")
 echo "Direct login: $DIRECT_LOGIN"
-if ! echo "$DIRECT_LOGIN" | grep -q '"token":"'; then
+FINAL_TOKEN=$(echo "$DIRECT_LOGIN" | grep -o '"token":"[^"]*' | cut -d'"' -f4)
+if [ -z "$FINAL_TOKEN" ]; then
     echo "Failed to login directly after disabling 2FA"
+    exit 1
+fi
+
+# Query 2FA status using the newly issued valid token
+STATUS_DISABLED=$(curl -s -X GET "http://127.0.0.1:$PORT/api/auth/2fa/status" \
+    -H "Authorization: Bearer $FINAL_TOKEN")
+echo "Status disabled: $STATUS_DISABLED"
+if ! echo "$STATUS_DISABLED" | grep -q '"enabled":false'; then
+    echo "Expected 2FA to be disabled"
     exit 1
 fi
 

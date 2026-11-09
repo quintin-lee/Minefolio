@@ -93,6 +93,7 @@ MINEFOLIO_DB_DRIVER=sqlite MINEFOLIO_DB_DSN="$DB_FILE" MINEFOLIO_PORT="$PORT" \
 MINEFOLIO_JWT_SECRET="test_fx_oauth_secret_12345678" \
 MINEFOLIO_OAUTH_GITHUB_CLIENT_ID="gh_client_id_test" \
 MINEFOLIO_MARKET_MOCK="${MINEFOLIO_MARKET_MOCK:-1}" \
+MINEFOLIO_TEST_OAUTH_MOCK="1" \
 "$BIN" > /tmp/minefolio_fx_oauth.log 2>&1 &
 SERVER_PID=$!
 
@@ -220,7 +221,7 @@ assert_eq "Providers contains GitHub" "$HAS_GH" "github"
 # Test OAuth Callback user provision
 CALLBACK_RES=$(curl -s -X POST "$BASE/auth/oauth/callback" \
     -H "Content-Type: application/json" \
-    -d '{"provider":"github","oauth_id":"gh_user_9988","username":"octocat"}')
+    -d '{"provider":"github","code":"mock_code_gh_user_9988","username":"octocat"}')
 CB_CODE=$(echo "$CALLBACK_RES" | jq -r '.code | floor')
 assert_eq "OAuth callback creates user and returns code 0" "$CB_CODE" "0"
 
@@ -230,9 +231,16 @@ assert_nonzero "OAuth login returns JWT token" "$CB_TOKEN"
 # Test OAuth login with same user retrieves existing user
 CALLBACK_RES2=$(curl -s -X POST "$BASE/auth/oauth/callback" \
     -H "Content-Type: application/json" \
-    -d '{"provider":"github","oauth_id":"gh_user_9988"}')
+    -d '{"provider":"github","code":"mock_code_gh_user_9988"}')
 CB_CODE2=$(echo "$CALLBACK_RES2" | jq -r '.code | floor')
 assert_eq "OAuth callback for existing user returns code 0" "$CB_CODE2" "0"
+
+# Test spoofing oauth_id without valid code is rejected
+SPOOF_RES=$(curl -s -X POST "$BASE/auth/oauth/callback" \
+    -H "Content-Type: application/json" \
+    -d '{"provider":"github","oauth_id":"gh_user_9988"}')
+SPOOF_CODE=$(echo "$SPOOF_RES" | jq -r '.code | floor')
+assert_eq "OAuth callback rejects request without code" "$SPOOF_CODE" "1002"
 
 echo ""
 echo "Summary: PASS=$PASS FAIL=$FAIL"
