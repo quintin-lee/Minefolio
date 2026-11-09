@@ -358,10 +358,40 @@
 
         <!-- Input Area -->
         <div class="chat-input-area" ref="inputAreaRef">
-          <!-- Financial AI Workflows Trigger Bar -->
-          <WorkflowBar />
+          <!-- Financial AI Workflows Trigger Bar in Progressive Wrapper -->
+          <div class="workflow-bar-wrapper" :class="{ 'is-collapsed': isWorkflowCollapsed }">
+            <WorkflowBar />
+          </div>
 
-          <div class="chat-input-box" style="position: relative;">
+          <div
+            class="chat-input-box"
+            :class="{ 'is-dragover': isDragOver }"
+            style="position: relative;"
+            @paste="handlePaste"
+            @dragover.prevent="isDragOver = true"
+            @dragleave.prevent="isDragOver = false"
+            @drop.prevent="handleDrop"
+          >
+            <!-- Attachment Preview Capsule -->
+            <div v-if="attachedImage" class="attachment-pill">
+              <div class="attachment-thumb-wrap">
+                <img :src="attachedImage.dataUrl" class="attachment-thumb" alt="票据截图" />
+              </div>
+              <div class="attachment-meta">
+                <span class="attachment-name" :title="attachedImage.name">{{ attachedImage.name }}</span>
+                <span class="attachment-size">{{ attachedImage.sizeText }} · 待 AI 多模态识别</span>
+              </div>
+              <button
+                type="button"
+                class="attachment-remove-btn"
+                title="移除图片"
+                aria-label="移除图片"
+                @click="removeAttachment"
+              >
+                <Icon icon="ph:x-bold" />
+              </button>
+            </div>
+
             <WorkflowSlashMenu
               ref="slashMenuRef"
               :visible="showSlashMenu"
@@ -372,14 +402,24 @@
             <textarea
               ref="textareaRef"
               v-model="inputText"
-              :disabled="chat.isStreaming"
-              placeholder="输入财务咨询、收支分析，或键入 / 快速唤起工作流... (Enter 发送，Shift+Enter 换行)"
+              :disabled="chat.isStreaming || isScanningReceipt"
+              placeholder="输入财务咨询、收支分析，或按 Ctrl+V 粘贴票据截图... (Enter 发送，Shift+Enter 换行)"
               rows="1"
               @input="handleInput"
               @keydown="handleTextareaKeyDown"
             ></textarea>
             <div class="input-bottom-bar">
               <div class="input-bottom-left">
+                <label class="input-attach-btn" :class="{ 'has-file': !!attachedImage }" title="上传或粘贴发票/账单截图 (Ctrl+V)">
+                  <Icon icon="ph:image-square-bold" class="btn-icon" />
+                  <span>{{ attachedImage ? '更换票据' : '上传票据' }}</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    @change="handleFileSelect"
+                    style="display: none;"
+                  />
+                </label>
                 <button
                   type="button"
                   class="input-thinking-btn"
@@ -395,14 +435,22 @@
               </div>
               <div class="input-bottom-right">
                 <span class="char-count" :class="{ near: inputText.length > 1800, over: inputText.length > 2000 }">{{ inputText.length }} / 2000</span>
-                <span class="input-hint" v-if="!chat.isStreaming">↵ 发送 · ⇧↵ 换行 · Esc 停止</span>
+                <span class="input-hint" v-if="!chat.isStreaming && !isScanningReceipt">↵ 发送 · ⇧↵ 换行 · Esc 停止</span>
+                <span class="input-hint scanning-hint" v-else-if="isScanningReceipt">正在多模态智能识别票据中...</span>
                 <el-button v-if="chat.isStreaming" type="danger" class="send-btn stop-btn" @click="handleStop">
                   <Icon icon="ph:stop-circle-bold" class="send-icon" />
                   <span>停止生成</span>
                 </el-button>
-                <el-button v-else type="primary" class="send-btn" :disabled="!inputText.trim()" @click="handleSend">
-                  <Icon icon="ph:paper-plane-tilt-fill" class="send-icon" />
-                  <span>发送</span>
+                <el-button
+                  v-else
+                  type="primary"
+                  class="send-btn"
+                  :loading="isScanningReceipt"
+                  :disabled="(!inputText.trim() && !attachedImage) || isScanningReceipt"
+                  @click="handleSend"
+                >
+                  <Icon v-if="!isScanningReceipt" icon="ph:paper-plane-tilt-fill" class="send-icon" />
+                  <span>{{ isScanningReceipt ? '识别中' : '发送' }}</span>
                 </el-button>
               </div>
             </div>
@@ -440,6 +488,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import { useChatStore } from '@/stores/chat'
+import { receiptsApi } from '@/api/receipts'
 import ChatMessageContent from '@/components/ChatMessageContent.vue'
 import PromptStarters from '@/components/PromptStarters.vue'
 import WorkflowBar from '@/components/WorkflowBar.vue'
@@ -456,6 +505,89 @@ const chat = useChatStore()
 
 function goToTraces() {
   router.push('/ai-traces')
+}
+
+// --- 多模态发票/票据截图附件与渐进式工作流 ---
+export interface AttachedImageInfo {
+  file: File
+  dataUrl: string
+  name: string
+  sizeText: string
+}
+
+const attachedImage = ref<AttachedImageInfo | null>(null)
+const isDragOver = ref(false)
+const isScanningReceipt = ref(false)
+
+const isWorkflowCollapsed = computed(() => {
+  return inputText.value.trim().length > 0 || attachedImage.value !== null
+})
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function processImageFile(file: File) {
+  if (!file.type.startsWith('image/')) {
+    ElMessage.warning('仅支持上传图片格式（如 JPG, PNG, WebP）')
+    return
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    ElMessage.warning('图片大小不能超过 10MB')
+    return
+  }
+  const reader = new FileReader()
+  reader.onload = (e) => {
+    const dataUrl = e.target?.result as string
+    if (dataUrl) {
+      attachedImage.value = {
+        file,
+        dataUrl,
+        name: file.name || `screenshot_${Date.now()}.png`,
+        sizeText: formatFileSize(file.size),
+      }
+      ElMessage.success('已添加票据截图，发送时将自动调用 AI 多模态识别')
+    }
+  }
+  reader.readAsDataURL(file)
+}
+
+function handlePaste(e: ClipboardEvent) {
+  if (!e.clipboardData?.items) return
+  for (let i = 0; i < e.clipboardData.items.length; i++) {
+    const item = e.clipboardData.items[i]!
+    if (item.type.startsWith('image/')) {
+      const file = item.getAsFile()
+      if (file) {
+        e.preventDefault()
+        processImageFile(file)
+        return
+      }
+    }
+  }
+}
+
+function handleDrop(e: DragEvent) {
+  isDragOver.value = false
+  if (!e.dataTransfer?.files?.length) return
+  const file = e.dataTransfer.files[0]!
+  if (file.type.startsWith('image/')) {
+    processImageFile(file)
+  }
+}
+
+function handleFileSelect(e: Event) {
+  const target = e.target as HTMLInputElement
+  if (target.files && target.files.length > 0) {
+    processImageFile(target.files[0]!)
+    target.value = ''
+  }
+}
+
+function removeAttachment() {
+  attachedImage.value = null
 }
 
 // --- 顶部会话标题展示与原地重命名 ---
@@ -1170,15 +1302,48 @@ function handleQuickPrompt(promptText: string) {
 }
 
 async function handleSend() {
-  const text = inputText.value.trim()
-  if (!text || chat.isStreaming) return
+  if (chat.isStreaming || isScanningReceipt.value) return
+  const rawText = inputText.value.trim()
+  const img = attachedImage.value
+  if (!rawText && !img) return
+
   inputText.value = ''
+  attachedImage.value = null
   adjustTextareaHeight()
   autoStickToBottom.value = true
   showScrollBottomBtn.value = false
   nextTick(() => scrollToBottom(false))
+
+  let finalPrompt = rawText
+  if (img) {
+    isScanningReceipt.value = true
+    try {
+      ElMessage.info('正在调用 AI 视觉识别发票与票据明细...')
+      const res = await receiptsApi.scan({ image: img.dataUrl })
+      if (res && res.amount !== undefined) {
+        finalPrompt = `【消费票据识别结果】
+- 商户/交易对手: ${res.counterparty || '未知'}
+- 交易日期: ${res.date}
+- 交易金额: ¥${res.amount} (${res.currency || 'CNY'})
+- 推荐分类: ${res.category_name || '日常消费'}
+- 消费摘要: ${res.description || '无'}
+- 交易类型: ${res.type === 'income' ? '收入' : '支出'}
+
+${rawText || '请核对上述识别结果，并生成记账确认卡片协助入账。'}`
+        ElMessage.success('票据识别成功，已组装智能记账分析')
+      } else {
+        finalPrompt = `[已上传消费票据截图: ${img.name}]\n${rawText || '请根据此消费票据协助记账。'}`
+      }
+    } catch (err) {
+      console.warn('[chat] receipt scan fallback', err)
+      finalPrompt = `[已上传消费票据截图: ${img.name}]\n${rawText || '请根据此消费票据协助记账。'}`
+    } finally {
+      isScanningReceipt.value = false
+    }
+  }
+
   try {
-    await chat.sendMessage(text)
+    await chat.sendMessage(finalPrompt)
   } catch (err) {
     console.error('[chat] sendMessage failed', err)
   }
@@ -2218,6 +2383,24 @@ onUnmounted(() => {
   }
 }
 
+/* Progressive Workflow Bar Wrapper */
+.workflow-bar-wrapper {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  max-height: 48px;
+  opacity: 1;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+
+.workflow-bar-wrapper.is-collapsed {
+  max-height: 0;
+  opacity: 0;
+  margin-bottom: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  pointer-events: none;
+}
+
 .chat-input-box {
   background: var(--mf-surface);
   border: 1px solid var(--mf-border);
@@ -2233,6 +2416,96 @@ onUnmounted(() => {
 .chat-input-box:focus-within {
   border-color: var(--mf-primary);
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.16), 0 0 0 2px var(--mf-primary-light);
+}
+
+.chat-input-box.is-dragover {
+  border-color: var(--mf-primary);
+  background: var(--mf-primary-light);
+  box-shadow: 0 0 20px rgba(99, 102, 241, 0.3);
+}
+
+/* Attachment preview pill inside input box */
+.attachment-pill {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--mf-background);
+  border: 1px solid var(--mf-border);
+  border-radius: 10px;
+  padding: 6px 10px;
+  margin-bottom: 8px;
+  animation: pill-pop 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes pill-pop {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.attachment-thumb-wrap {
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: var(--mf-surface-hover);
+  border: 1px solid var(--mf-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.attachment-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.attachment-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.attachment-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--mf-text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.attachment-size {
+  font-size: 11px;
+  color: var(--mf-text-muted);
+}
+
+.attachment-remove-btn {
+  background: transparent;
+  border: none;
+  color: var(--mf-text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  transition: color 0.15s, background 0.15s;
+}
+
+.attachment-remove-btn:hover {
+  color: var(--mf-danger, #ef4444);
+  background: var(--mf-danger-light);
 }
 
 .chat-input-box textarea {
@@ -2316,6 +2589,43 @@ onUnmounted(() => {
   border-radius: 50%;
   background: var(--mf-primary);
   display: inline-block;
+}
+
+/* Upload receipt button in input bottom bar */
+.input-attach-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
+  border: 1px solid var(--mf-border);
+  border-radius: 20px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--mf-text-placeholder);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.input-attach-btn:hover {
+  border-color: var(--mf-border-focus);
+  color: var(--mf-text-regular);
+}
+
+.input-attach-btn.has-file {
+  background: rgba(99, 102, 241, 0.08);
+  border-color: rgba(99, 102, 241, 0.35);
+  color: var(--mf-primary);
+}
+
+.input-attach-btn .btn-icon {
+  font-size: 14px;
+}
+
+.scanning-hint {
+  color: var(--mf-primary) !important;
+  font-weight: 500;
 }
 
 .char-count {
