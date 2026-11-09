@@ -1278,6 +1278,124 @@ test_daily_expense_multi_currency_totals(csilk_db_pool_t* pool, int64_t user_id,
 }
 
 static void
+test_daily_expense_tags_array_contract(csilk_db_pool_t* pool, int64_t user_id, int64_t asset_id)
+{
+    printf("Testing Daily Expense Tags Array Contract (Fixing String vs Array Bug)...\n");
+
+    /* 1. 创建分类 */
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    csilk_json_t* ins_cat = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO categories (user_id, name, type, ledger_id) VALUES (?, 'TagsTestCat', 'expense', 0) RETURNING id",
+        (const char*[]){uid_str, NULL});
+    assert(ins_cat && csilk_json_array_size(ins_cat) > 0);
+    int64_t cat_id = db_get_int(csilk_json_array_get(ins_cat, 0), "id");
+    csilk_json_free(ins_cat);
+
+    /* 2. 创建带标签的收支记录 */
+    csilk_json_t* tags_input = csilk_json_array();
+    csilk_json_t* t1 = csilk_json_object();
+    csilk_json_add_int(t1, "id", 0);
+    csilk_json_add_string(t1, "name", "差旅报销");
+    csilk_json_add_string(t1, "color", "#ff5722");
+    csilk_json_array_append(tags_input, t1);
+
+    csilk_json_t* t2 = csilk_json_object();
+    csilk_json_add_int(t2, "id", 0);
+    csilk_json_add_string(t2, "name", "餐饮发票");
+    csilk_json_add_string(t2, "color", "#4caf50");
+    csilk_json_array_append(tags_input, t2);
+
+    create_daily_expense_cmd_t cmd_with_tags = {
+        .user_id = user_id,
+        .ledger_id = 0,
+        .category_id = cat_id,
+        .asset_id = asset_id,
+        .expense_type = "expense",
+        .amount = 88.0,
+        .currency = "CNY",
+        .expense_date = "2026-11-01",
+        .note = "Business lunch with tags"
+    };
+    daily_expense_usecase_result_t out_res = {0};
+    int rc = daily_expense_usecase_create(pool, &cmd_with_tags, tags_input, &out_res);
+    csilk_json_free(tags_input);
+    assert(rc == 0 && out_res.code == 0);
+
+    /* 3. 创建不带标签的收支记录 */
+    create_daily_expense_cmd_t cmd_no_tags = {
+        .user_id = user_id,
+        .ledger_id = 0,
+        .category_id = cat_id,
+        .asset_id = asset_id,
+        .expense_type = "expense",
+        .amount = 12.0,
+        .currency = "CNY",
+        .expense_date = "2026-11-02",
+        .note = "Coffee without tags"
+    };
+    memset(&out_res, 0, sizeof(out_res));
+    rc = daily_expense_usecase_create(pool, &cmd_no_tags, NULL, &out_res);
+    assert(rc == 0 && out_res.code == 0);
+
+    /* 4. 测试 daily_expense_usecase_list 契约：tags 必须为 JSON Array，绝非 String */
+    csilk_json_t* list = NULL;
+    int64_t total = 0;
+    rc = daily_expense_usecase_list(pool, user_id, 0, 1, 10, NULL, NULL, NULL, "2026-11-01", "2026-11-02", &list, &total);
+    assert(rc == 0);
+    assert(list != NULL && csilk_json_is_array(list));
+    size_t count = csilk_json_array_size(list);
+    assert(count >= 2);
+
+    bool verified_tagged = false;
+    bool verified_empty = false;
+    for (size_t i = 0; i < count; i++) {
+        const csilk_json_t* item = csilk_json_array_get(list, i);
+        assert(item != NULL && csilk_json_is_object(item));
+        const csilk_json_t* tags_val = csilk_json_get(item, "tags");
+        assert(tags_val != NULL);
+        /* 核心断言：tags 必须是 JSON Array 类型，不能是字符串 */
+        assert(csilk_json_is_array(tags_val));
+        assert(!csilk_json_is_string(tags_val));
+
+        const char* note = csilk_json_get_string(item, "note");
+        if (note && strcmp(note, "Business lunch with tags") == 0) {
+            size_t tag_cnt = csilk_json_array_size(tags_val);
+            assert(tag_cnt == 2);
+            const csilk_json_t* tag_0 = csilk_json_array_get(tags_val, 0);
+            assert(tag_0 != NULL && csilk_json_is_object(tag_0));
+            assert(csilk_json_get_string(tag_0, "name") != NULL);
+            assert(csilk_json_get_string(tag_0, "color") != NULL);
+            verified_tagged = true;
+        } else if (note && strcmp(note, "Coffee without tags") == 0) {
+            size_t tag_cnt = csilk_json_array_size(tags_val);
+            assert(tag_cnt == 0);
+            verified_empty = true;
+        }
+    }
+    assert(verified_tagged && verified_empty);
+    csilk_json_free(list);
+
+    /* 5. 测试 mf_ai_repo_daily_expense_list 契约：tags 必须为 JSON Array */
+    int64_t ai_total = 0;
+    csilk_json_t* ai_list = mf_ai_repo_daily_expense_list(pool, user_id, 1, 10, "2026-11-01", "2026-11-02", 0, NULL, &ai_total);
+    assert(ai_list != NULL && csilk_json_is_array(ai_list));
+    size_t ai_cnt = csilk_json_array_size(ai_list);
+    assert(ai_cnt >= 2);
+    for (size_t i = 0; i < ai_cnt; i++) {
+        const csilk_json_t* item = csilk_json_array_get(ai_list, i);
+        const csilk_json_t* tags_val = csilk_json_get(item, "tags");
+        assert(tags_val != NULL);
+        assert(csilk_json_is_array(tags_val));
+        assert(!csilk_json_is_string(tags_val));
+    }
+    csilk_json_free(ai_list);
+
+    printf("  ✅ Daily Expense Tags Array Contract passed.\n");
+}
+
+static void
 test_report_expense_percentage_closure(void)
 {
     // 模拟三笔等额开销：100.0, 100.0, 100.0 (各占 33.3333...%)
@@ -1395,6 +1513,7 @@ main(void)
     test_mcp_server_repository(pool, user_id);
     test_multi_currency_balance_and_transfers(pool, user_id);
     test_daily_expense_multi_currency_totals(pool, user_id, asset_id);
+    test_daily_expense_tags_array_contract(pool, user_id, asset_id);
     test_report_expense_percentage_closure();
 
     teardown_test_db(pool);

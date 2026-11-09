@@ -449,15 +449,17 @@ ai_usecase_settings_update(void* pool, const csilk_json_t* body, ai_usecase_resu
                     ai_provider_t*      old_pi_p = ai_config_find_provider(&cfg, pid);
                     if (!old_pi_p) {
                         ai_config_t* snap = ai_config_acquire();
+                        bool         found_in_snap = false;
                         if (snap) {
-                            old_pi_p = ai_config_find_provider(snap, pid);
-                            if (old_pi_p) {
-                                new_provs[i].price_input = old_pi_p->price_input;
-                                new_provs[i].price_output = old_pi_p->price_output;
+                            ai_provider_t* snap_p = ai_config_find_provider(snap, pid);
+                            if (snap_p) {
+                                new_provs[i].price_input = snap_p->price_input;
+                                new_provs[i].price_output = snap_p->price_output;
+                                found_in_snap = true;
                             }
                             ai_config_release(snap);
                         }
-                        if (old_pi_p) {
+                        if (found_in_snap) {
                             new_provs[i].price_input = (body_pi && csilk_json_is_number(body_pi))
                                                            ? csilk_json_number_value(body_pi)
                                                            : new_provs[i].price_input;

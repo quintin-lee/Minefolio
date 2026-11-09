@@ -529,13 +529,15 @@ daily_expense_usecase_update(void*                             pool,
         return -1;
     }
 
-    /* 4. Rebind tags */
-    mf_daily_expense_repo_tag_delete_all(pool, cmd->id);
-    if (process_tags(pool, cmd->user_id, cmd->id, tags) != 0) {
-        db_tx_scope_rollback(pool, &scope);
-        out_res->code = 500;
-        snprintf(out_res->message, sizeof(out_res->message), "更新失败");
-        return -1;
+    /* 4. Rebind tags (only if tags parameter was provided) */
+    if (tags) {
+        mf_daily_expense_repo_tag_delete_all(pool, cmd->id);
+        if (process_tags(pool, cmd->user_id, cmd->id, tags) != 0) {
+            db_tx_scope_rollback(pool, &scope);
+            out_res->code = 500;
+            snprintf(out_res->message, sizeof(out_res->message), "更新失败");
+            return -1;
+        }
     }
 
     if (db_tx_scope_commit(pool, &scope) != 0) {

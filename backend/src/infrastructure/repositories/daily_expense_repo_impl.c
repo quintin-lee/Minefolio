@@ -100,8 +100,60 @@ mf_daily_expense_repo_list(void*          db_pool,
         csilk_json_free(cnt_res);
     }
 
-    *out_json = csilk_db_query_param_json(pool, sql, params);
+    csilk_json_t* raw_res = csilk_db_query_param_json(pool, sql, params);
+    *out_json = raw_res ? mf_format_expense_rows_with_tags(raw_res) : NULL;
     return *out_json ? 0 : -1;
+}
+
+csilk_json_t*
+mf_format_expense_rows_with_tags(csilk_json_t* raw_rows)
+{
+    if (!raw_rows || !csilk_json_is_array(raw_rows)) {
+        return raw_rows;
+    }
+    size_t        count = csilk_json_array_size(raw_rows);
+    csilk_json_t* out_arr = csilk_json_array();
+    if (!out_arr) {
+        return raw_rows;
+    }
+    for (size_t i = 0; i < count; i++) {
+        const csilk_json_t* r = csilk_json_array_get(raw_rows, i);
+        if (!r || !csilk_json_is_object(r)) {
+            continue;
+        }
+        csilk_json_t* item = csilk_json_object();
+        csilk_json_add_int(item, "id", db_get_int(r, "id"));
+        csilk_json_add_int(item, "user_id", db_get_int(r, "user_id"));
+        csilk_json_add_int(item, "category_id", db_get_int(r, "category_id"));
+        csilk_json_add_int(item, "asset_id", db_get_int(r, "asset_id"));
+        csilk_json_add_string(item, "expense_type", csilk_json_get_string(r, "expense_type"));
+        csilk_json_add_number(item, "amount", db_get_num(r, "amount"));
+        csilk_json_add_string(item, "currency", csilk_json_get_string(r, "currency"));
+        csilk_json_add_string(item, "expense_date", csilk_json_get_string(r, "expense_date"));
+        csilk_json_add_string(item, "note", csilk_json_get_string(r, "note"));
+        csilk_json_add_string(item, "created_at", csilk_json_get_string(r, "created_at"));
+        csilk_json_add_string(item, "updated_at", csilk_json_get_string(r, "updated_at"));
+        csilk_json_add_string(item, "category_name", csilk_json_get_string(r, "category_name"));
+        csilk_json_add_string(item, "asset_name", csilk_json_get_string(r, "asset_name"));
+
+        const csilk_json_t* direct_tags = csilk_json_get(r, "tags");
+        if (direct_tags && csilk_json_is_array(direct_tags)) {
+            csilk_json_add_array(item, "tags", csilk_json_copy(direct_tags));
+        } else {
+            const char*   tags_str = csilk_json_get_string(r, "tags");
+            csilk_json_t* tags_arr = (tags_str && tags_str[0]) ? csilk_json_parse(tags_str) : NULL;
+            if (!tags_arr || !csilk_json_is_array(tags_arr)) {
+                if (tags_arr) {
+                    csilk_json_free(tags_arr);
+                }
+                tags_arr = csilk_json_array();
+            }
+            csilk_json_add_array(item, "tags", tags_arr);
+        }
+        csilk_json_array_append(out_arr, item);
+    }
+    csilk_json_free(raw_rows);
+    return out_arr;
 }
 
 csilk_json_t*

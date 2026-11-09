@@ -79,7 +79,7 @@
               <el-table-column label="标签" min-width="96">
                 <template #default="{ row }">
                   <div class="tag-list">
-                    <el-tag v-for="tag in (row as any).tags" :key="tag.id" :color="tag.color" size="small" effect="dark" class="custom-tag">
+                    <el-tag v-for="tag in normalizeTags((row as any).tags)" :key="tag.id || tag.name" :color="tag.color" size="small" effect="dark" class="custom-tag">
                       {{ tag.name }}
                     </el-tag>
                   </div>
@@ -324,11 +324,25 @@ function handleSizeChange() {
   loadData()
 }
 
+function normalizeTags(raw: any): Tag[] {
+  if (!raw) return []
+  let list = raw
+  if (typeof raw === 'string') {
+    try {
+      list = JSON.parse(raw)
+    } catch {
+      return []
+    }
+  }
+  if (!Array.isArray(list)) return []
+  return list.filter((t: any) => t && typeof t === 'object' && t.name)
+}
+
 function onCatChange(val: any) { const last = (val as any[])?.[(val as any[]).length - 1]; form.category_id = last != null ? Number(last) : null }
 
 function openDialog(expense?: any) {
   editingId.value = expense?.id ?? null
-  Object.assign(form, expense ? { expense_type: expense.expense_type, category_id: Number(expense.category_id), asset_id: Number(expense.asset_id), amount: Number(expense.amount), expense_date: expense.expense_date, note: expense.note, tags: expense.tags ?? [], _catPath: [Number(expense.category_id)] }
+  Object.assign(form, expense ? { expense_type: expense.expense_type, category_id: Number(expense.category_id), asset_id: Number(expense.asset_id), amount: Number(expense.amount), expense_date: expense.expense_date, note: expense.note, tags: normalizeTags(expense.tags), _catPath: [Number(expense.category_id)] }
     : { expense_type: 'expense', category_id: null, asset_id: null, amount: 0, expense_date: localToday(), note: '', tags: [], _catPath: [] })
   dialogVisible.value = true
 }
@@ -424,7 +438,7 @@ function handleBatchExport() {
     item.expense_type === 'income' ? '收入' : '支出',
     item.amount,
     item.note || '',
-    (item as any).tags?.map((t: any) => t.name).join('; ') || '',
+    normalizeTags((item as any).tags).map((t: any) => t.name).join('; ') || '',
   ])
   const now = localToday()
   exportChartCsv(`daily_expenses_selected_${now}.csv`, headers, rows)

@@ -4,6 +4,7 @@
 #include "infrastructure/repositories/market_repo_impl.h"
 #include "infrastructure/repositories/asset_repo_impl.h"
 #include "infrastructure/repositories/transaction_repo_impl.h"
+#include "infrastructure/repositories/daily_expense_repo_impl.h"
 #include "common/db.h"
 #include <string.h>
 
@@ -109,7 +110,8 @@ mf_ai_repo_daily_expense_list(void*       pool,
         csilk_json_free(cnt_res);
     }
 
-    return csilk_db_query_param_json((csilk_db_pool_t*)pool, sql, params);
+    csilk_json_t* res = csilk_db_query_param_json((csilk_db_pool_t*)pool, sql, params);
+    return res ? mf_format_expense_rows_with_tags(res) : NULL;
 }
 
 int64_t

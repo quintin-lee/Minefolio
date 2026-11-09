@@ -11,6 +11,11 @@
     <div v-for="e in list" :key="e.id" class="expense-card" @click="edit(e)">
       <div class="top"><span class="cat">{{ e.category_name }}</span><span :class="e.expense_type === 'income' ? 'income' : 'expense'">{{ e.expense_type === 'income' ? '+' : '-' }}{{ formatCurrency(e.amount) }}</span></div>
       <div class="bottom"><span>{{ e.expense_date }}</span><span>{{ e.asset_name }}</span></div>
+      <div v-if="normalizeTags(e.tags).length" class="card-tags">
+        <el-tag v-for="t in normalizeTags(e.tags)" :key="t.id || t.name" :color="t.color" size="small" effect="dark" class="mobile-tag">
+          {{ t.name }}
+        </el-tag>
+      </div>
     </div>
 
     <el-button class="fab" type="primary" circle :icon="Plus" @click="create" />
@@ -122,6 +127,20 @@ async function loadData(reset = false) {
   }
 }
 
+function normalizeTags(raw: any): any[] {
+  if (!raw) return []
+  let res = raw
+  if (typeof raw === 'string') {
+    try {
+      res = JSON.parse(raw)
+    } catch {
+      return []
+    }
+  }
+  if (!Array.isArray(res)) return []
+  return res.filter((t: any) => t && typeof t === 'object' && t.name)
+}
+
 function loadMore() { page.value++; loadData() }
 function create() { editing.value = null; sheetOpen.value = true }
 function edit(e: DailyExpense) { editing.value = e; sheetOpen.value = true }
@@ -137,5 +156,7 @@ onMounted(() => loadData(true))
 .expense-card .top { display: flex; justify-content: space-between; font-size: 16px; }
 .expense-card .bottom { display: flex; justify-content: space-between; color: var(--mf-text-muted); font-size: 12px; margin-top: 6px; }
 .income { color: var(--mf-gain); } .expense { color: var(--mf-loss); }
+.card-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+.mobile-tag { border: none; font-size: 11px; padding: 0 6px; height: 20px; line-height: 20px; }
 .fab { position: fixed; right: 20px; bottom: 80px; width: 56px; height: 56px; box-shadow: var(--mf-shadow-glow); }
 </style>
