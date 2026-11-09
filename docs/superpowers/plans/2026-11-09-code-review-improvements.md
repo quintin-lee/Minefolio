@@ -94,21 +94,13 @@
 
 - [ ] **Step 1: "Runtime / Tooling Preferences" 表 Backend 行下方新增 SQLite 最低版本一行**
 
-  定位现有表格：
-
-  ```
-  | Layer | Runtime | Package Manager | Notes |
-  |-------|---------|-----------------|-------|
-  | Backend | Linux (gcc-14) | CMake 3.16+ | C23 standard; GNU extensions |
-  ```
-
-  在 Backend 行下方插入一行：
+  定位现有表格（当前已存在一行 `| Backend (SQLite) | SQLite 3.35+ | — | ...`，即本计划初次编写前 `AGENTS.md` 已被人工/历史改动补充过——**无需重复新增**）。用 `grep` 确认该行内容已存在且措辞与本 Task 目标一致；若措辞有差异（例如缺少"18 个 repository 实现文件"或"3.35 引入"等关键信息），用 `edit` 工具精确替换为：
 
   ```
   | Backend (SQLite) | SQLite 3.35+ | — | 18 个 repository 实现文件依赖 `RETURNING` 语法（该特性于 SQLite 3.35 引入），版本过低时相关写入路径会失败 |
   ```
 
-  注意：不要改动原有 Backend 行本身，仅新增一行（`Layer` 列写 "Backend (SQLite)"，与原 "Backend" 行区分开）。
+  若该行已存在且措辞已包含上述关键信息（当前实际已满足），**跳过本步骤，直接执行 Step 2**，并在 Task 5 提交前用 `git diff AGENTS.md` 复核确认此改动未引入重复行。
 
 - [ ] **Step 2: 新增 `## Market / FX — 单实例假设` 小节**
 
