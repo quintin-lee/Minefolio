@@ -137,6 +137,4 @@ transfer_usecase_create(void*                        pool,
     }
     out_res->code = 0;
     return 0;
-    out_res->code = 0;
-    return 0;
 }

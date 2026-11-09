@@ -45,7 +45,7 @@ Minefolio 是一款极度轻量、安全、专业的**开源全资产管理与�
 | :--- | :--- | :--- |
 | **后端语言 & 标准** | C23 (GCC 14 / Clang 18) | 原生编译，极低资源占用（~2.8MB 二进制，~15MB 内存） |
 | **Web 框架** | [csilk](https://github.com/quintin-lee/csilk) v0.5.2 | 高性能现代 C 异步 HTTP/HTTP2 框架 |
-| **数据库** | SQLite 3 (WAL 模式) / PostgreSQL 16+ | 双引擎通用，支持动态运行时无感数据库迁移 |
+| **数据库** | SQLite 3.35+ (WAL 模式) / PostgreSQL 16+ | 双引擎通用，支持动态运行时无感数据库迁移；RETURNING 语法要求 SQLite ≥ 3.35 |
 | **JSON 解析** | yyjson | 超高性能 C 语言 JSON 序列化/反序列化库 |
 | **前端架构** | Vue 3 + TypeScript + Vite | 严格模式 `vue-tsc -b` 0 错误编译 |
 | **UI 组件库** | Element Plus + Iconify (Phosphor Icons) | Glassmorphism 科技感暗色/渐变主题 |

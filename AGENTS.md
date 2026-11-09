@@ -264,6 +264,12 @@ int           tx_delete_fee_children(csilk_db_pool_t* pool, int64_t user_id, int
 - **No legacy `repositories/` directory** — all SQL lives in `infrastructure/repositories/`
 - **Dynamic SQL fragments MUST use a matching `%s` specifier**: `snprintf(sql, ..., "...%s...", cond)` — a conditional SQL piece passed as an extra argument **without** a corresponding `%s` in the format string is silently dropped by `snprintf` (regression: `account_list` lost its `archived=0` filter and `ORDER BY` this way; guarded by test_link.sh Case 40 assertions).
 
+### C — 用例层 `void* pool` 参数是刻意设计
+
+`application/*/usecases.h` 中所有用例函数签名统一使用 `void* pool`（而非 `csilk_db_pool_t*`），这是 DDD 分层刻意的解耦设计——用例层不直接 include 基础设施层（`csilk_db_pool_t` 定义所在）头文件，仅在 `.c` 实现里做一次性强转 `(csilk_db_pool_t*)pool`。
+
+这是**有意为之，不是疏漏**，请勿“修复”为强类型签名（改动面涉及 15 个 `usecases.h` 头文件 + 所有调用点，违背当前分层约束）。如需更强类型检查，可参考未来在 `common/db.h` 引入 `typedef csilk_db_pool_t* mf_db_pool_t` 的方案，但当前暂不实施。
+
 ### C — Service Pattern
 
 - Extract params with `ctx_user_id(c)`, `csilk_get_param()`, `csilk_bind_json()`
@@ -415,11 +421,23 @@ Mobile users can customize the backend server address (e.g. LAN IP `http://192.1
 | `scripts/dev.sh` | Local dev: build backend, start server :8080, start frontend :5173 |
 | `scripts/build.sh` | Production build: cmake Release + npm run build |
 
+## Market / FX — 单实例假设
+
+汇率同步（`backend/src/services/market/exchange_rate_service.c`）当前按**单实例部署**设计：`g_rates[]` 是进程内静态内存表，`exchange_rate_refresh_all()` 无跨实例协调机制。多副本部署时不同实例的内存表可能不一致（读路径 `exchange_rate_get_to_cny` 优先查内存表，查不到时才回落到 `exchange_rate_history` 表）。
+
+**多副本部署前需改造或明确标注**，可选方向：
+- （a）读路径改为优先查 `exchange_rate_history` 最新一行，消除对内存表的依赖；
+- （b）引入类似 `schema_migration_lock` 的行锁机制做单写者仲裁；
+- （c）保持现状，并在部署文档中明确标注"汇率同步仅支持单实例部署"。
+
+本次改动仅为文档标注，不做代码改造。
+
 ## Runtime / Tooling Preferences
 
 | Layer | Runtime | Package Manager | Notes |
 |-------|---------|-----------------|-------|
 | Backend | Linux (gcc-14) | CMake 3.16+ | C23 standard; GNU extensions |
+| Backend (SQLite) | SQLite 3.35+ | — | 18 个 repository 实现文件依赖 `RETURNING` 语法（该特性于 SQLite 3.35 引入），版本过低时相关写入路径会失败 |
 | Frontend | Node.js 20 | npm | vue-tsc strict mode required |
 | Mobile | Android (Gradle) | npm + Gradle | Capacitor 6; full Android SDK needed |
 | Docker | Ubuntu 24.04 / nginx:alpine | apt / npm | Multi-stage; local `deps/` cache for offline csilk fetch |
