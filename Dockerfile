@@ -154,45 +154,31 @@ RUN strip backend/build/minefolio \
 
 
 # Download swagger-ui distribution (csilk share/swagger-ui contains only placeholders).
-# 三级回退: 主源 jsDelivr tgz (GitHub 官方 CDN, 国际 runner 直连);
-# 次源 unpkg 逐文件 (jsDelivr 故障时, unpkg 文件端点稳定直连 200);
-# 后备 npmmirror tgz (经 hosts 固定 IP, 其 302 跳转在固定 IP 路径上偶发 500/502/503)。
+# 两级回退, 全部使用扁平命令列表 (Docker 默认 /bin/sh=dash, 不支持 for-loop
+# 作为 if-elif 条件; 顶层命令列表 + `||` 短路 + `{ }` 分组可正常执行):
+#   主源   registry.npmjs.org tgz (npm 官方 registry, GitHub runner 直连稳定);
+#   次源   registry.npmmirror.com tgz (国内镜像, 经 hosts 固定 IP 挂载)。
+# 主源成功时 touch /tmp/.swagger-ok 短路次源; 两级全部失败则显式报错退出。
 RUN --mount=type=bind,source=hosts,target=/etc/hosts \
     mkdir -p /src/deps/csilk/share/swagger-ui \
-    && if curl --noproxy '*' -fsSL -o /tmp/swagger-ui-dist.tgz \
-           https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.32.6/swagger-ui-dist.tgz \
-       && mkdir -p /tmp/swagger-ui-extract \
-       && tar -xzf /tmp/swagger-ui-dist.tgz -C /tmp/swagger-ui-extract \
-       && cp -r $(find /tmp/swagger-ui-extract -type d -name package | head -1)/* /src/deps/csilk/share/swagger-ui/ \
-       && rm -rf /tmp/swagger-ui-dist.tgz /tmp/swagger-ui-extract; then \
-       : \
-    elif for f in LICENSE NOTICE index.css swagger-ui.css index.html oauth2-redirect.html \
-              absolute-path.js index.js oauth2-redirect.js swagger-initializer.js \
-              swagger-ui-bundle.js swagger-ui-es-bundle-core.js swagger-ui-es-bundle.js \
-              swagger-ui-standalone-preset.js swagger-ui.js package.json README.md \
-              favicon-16x16.png favicon-32x32.png \
-              log.bundle-sizes.swagger-ui.txt log.es-bundle-core-sizes.swagger-ui.txt \
-              log.es-bundle-sizes.swagger-ui.txt \
-              swagger-ui-bundle.js.map swagger-ui-es-bundle-core.js.map \
-              swagger-ui-es-bundle.js.map swagger-ui-standalone-preset.js.map \
-              swagger-ui.css.map swagger-ui.js.map \
-              swagger-ui-bundle.js.LICENSE.txt swagger-ui-es-bundle-core.js.LICENSE.txt \
-              swagger-ui-es-bundle.js.LICENSE.txt swagger-ui-standalone-preset.js.LICENSE.txt; do \
-             curl --noproxy '*' -fsSL \
-                 "https://unpkg.com/swagger-ui-dist@5.32.6/$f" \
-                 -o "/src/deps/csilk/share/swagger-ui/$f"; \
-         done; then \
-       : \
-    elif curl --noproxy '*' -fsSL -o /tmp/swagger-ui-dist.tgz \
-              https://registry.npmmirror.com/swagger-ui-dist/-/swagger-ui-dist-5.32.6.tgz \
-       && mkdir -p /tmp/swagger-ui-extract \
-       && tar -xzf /tmp/swagger-ui-dist.tgz -C /tmp/swagger-ui-extract \
-       && cp -r $(find /tmp/swagger-ui-extract -type d -name package | head -1)/* /src/deps/csilk/share/swagger-ui/ \
-       && rm -rf /tmp/swagger-ui-dist.tgz /tmp/swagger-ui-extract; then \
-       : \
-    else \
-       echo "ERROR: all swagger-ui sources failed" >&2; exit 1; \
-    fi
+    && curl --noproxy '*' -fsSL -o /tmp/swagger-ui-dist.tgz \
+         https://registry.npmjs.org/swagger-ui-dist/-/swagger-ui-dist-5.32.6.tgz \
+    && mkdir -p /tmp/swagger-ui-extract \
+    && tar -xzf /tmp/swagger-ui-dist.tgz -C /tmp/swagger-ui-extract \
+    && cp -r $(find /tmp/swagger-ui-extract -type d -name package | head -1)/* /src/deps/csilk/share/swagger-ui/ \
+    && rm -rf /tmp/swagger-ui-dist.tgz /tmp/swagger-ui-extract \
+    && touch /tmp/.swagger-ok \
+    || { [ -f /tmp/.swagger-ok ] || { \
+           curl --noproxy '*' -fsSL -o /tmp/swagger-ui-dist.tgz \
+               https://registry.npmmirror.com/swagger-ui-dist/-/swagger-ui-dist-5.32.6.tgz \
+           && mkdir -p /tmp/swagger-ui-extract \
+           && tar -xzf /tmp/swagger-ui-dist.tgz -C /tmp/swagger-ui-extract \
+           && cp -r $(find /tmp/swagger-ui-extract -type d -name package | head -1)/* /src/deps/csilk/share/swagger-ui/ \
+           && rm -rf /tmp/swagger-ui-dist.tgz /tmp/swagger-ui-extract \
+           && touch /tmp/.swagger-ok \
+         }; \
+         [ -f /tmp/.swagger-ok ] || { echo "ERROR: all swagger-ui sources failed" >&2; exit 1; }; \
+         }
 
 
 
