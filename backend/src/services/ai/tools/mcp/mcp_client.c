@@ -745,9 +745,11 @@ stdio_call(mf_mcp_client_t* c, const char* request_json, char* out_err, size_t e
             if (prc == 0) {
                 drain_stderr_nonblocking(c);
                 if (c->last_error[0] != '\0') {
+                    /* 显式精度截断：last_error(1024B) 可能超出调用方 256B 的 out_err，
+                       保留前 100 字节以容纳前缀文案与结尾 NUL，消除 -Wformat-truncation */
                     snprintf(out_err,
                              err_sz,
-                             "stdio read timed out after %d ms. %s",
+                             "stdio read timed out after %d ms. %.100s",
                              timeout_ms,
                              c->last_error);
                 } else {
@@ -773,7 +775,9 @@ stdio_call(mf_mcp_client_t* c, const char* request_json, char* out_err, size_t e
                         return resp;
                     }
                     if (c->last_error[0] != '\0') {
-                        snprintf(out_err, err_sz, "%s", c->last_error);
+                        /* 显式精度截断：last_error(1024B) 可能超出调用方 256B 的 out_err，
+                           最多保留 250 字节以容纳结尾 NUL，消除 -Wformat-truncation */
+                        snprintf(out_err, err_sz, "%.250s", c->last_error);
                     } else {
                         snprintf(out_err, err_sz, "stdio child produced no response");
                     }
