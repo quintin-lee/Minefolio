@@ -114,27 +114,9 @@
               </el-select>
             </div>
 
-            <span class="current-model-badge" v-if="chat.currentModel && !chat.isStreaming">
-              {{ chat.currentModel }}
-            </span>
-
-            <!-- Thinking Mode Toggle in Toolbar -->
-            <button
-              type="button"
-              class="toolbar-thinking-btn"
-              :class="{ active: chat.enableThinking }"
-              @click="chat.toggleThinking()"
-              :title="chat.enableThinking ? '深度思考模式已开启 (点击关闭)' : '深度思考模式已关闭 (点击开启)'"
-              aria-label="切换深度思考模式"
-            >
-              <Icon :icon="chat.enableThinking ? 'ph:brain-fill' : 'ph:brain'" class="thinking-btn-icon" />
-              <span class="thinking-btn-text">深度思考</span>
-              <span class="thinking-status-tag" v-if="chat.enableThinking">开</span>
-            </button>
-
             <div class="chat-status" v-if="chat.isStreaming">
               <span class="status-dot"></span>
-              <span>正在深度思考与生成...</span>
+              <span>正在生成...</span>
               <button class="stop-gen-btn" @click="handleStop" title="停止生成 (Esc)">
                 <Icon icon="ph:stop-bold" />
                 <span>停止</span>
@@ -142,51 +124,113 @@
             </div>
           </div>
 
+          <!-- Toolbar Center: Session Title & Inline Rename -->
+          <div class="toolbar-center">
+            <div v-if="editingTopTitle" class="top-rename-box" @click.stop>
+              <input
+                v-focus
+                v-model="topRenameText"
+                class="top-rename-input"
+                placeholder="输入会话标题..."
+                @keydown.enter="saveTopRename"
+                @keydown.esc="cancelTopRename"
+                @blur="saveTopRename"
+              />
+            </div>
+            <div
+              v-else
+              class="session-title-wrap"
+              :title="currentSessionTitle"
+              @dblclick="startTopRename"
+            >
+              <span class="top-session-title">{{ currentSessionTitle }}</span>
+              <button
+                v-if="chat.currentSessionId"
+                class="top-rename-btn"
+                title="重命名会话"
+                aria-label="重命名会话"
+                @click.stop="startTopRename"
+              >
+                <Icon icon="ph:pencil-simple" />
+              </button>
+            </div>
+          </div>
+
           <div class="toolbar-right">
+            <!-- Session Metrics Pill -->
+            <div
+              v-if="sessionMetrics.totalTokens > 0"
+              class="session-stat-pill"
+              :title="`本场累计消耗 ${sessionMetrics.totalTokens.toLocaleString()} tokens，预估费用 $${sessionMetrics.totalCostUsd.toFixed(4)}`"
+            >
+              <Icon icon="ph:lightning-fill" class="stat-icon" />
+              <span class="stat-tokens">{{ sessionMetrics.totalTokens.toLocaleString() }}</span>
+              <span class="stat-divider">·</span>
+              <span class="stat-cost">${{ sessionMetrics.totalCostUsd.toFixed(4) }}</span>
+            </div>
+
+            <!-- Quick Analysis Panel Toggle (Desktop) -->
+            <button
+              v-if="!isMobile && panelItems.length > 0"
+              class="toolbar-panel-btn"
+              :class="{ active: panelVisible }"
+              :title="panelVisible ? '收起分析面板' : '展开分析面板'"
+              @click="panelVisible = !panelVisible"
+            >
+              <Icon icon="ph:sparkle-bold" class="panel-btn-icon" />
+              <span class="panel-badge">{{ panelItems.length }}</span>
+            </button>
+
+            <!-- New Chat Action -->
             <el-button
-              v-if="!showSidebar || isMobile"
               type="primary"
               size="small"
               plain
               class="toolbar-action-btn new-chat-btn"
               @click="handleNewChat"
+              title="新建会话 (Ctrl+N)"
             >
               <Icon icon="ph:plus-bold" class="btn-icon" />
-              <span>新对话</span>
+              <span class="btn-text">新对话</span>
             </el-button>
 
-            <template v-if="chat.messages.length > 0 && !chat.isStreaming">
-              <el-button
-                size="small"
-                text
-                class="toolbar-action-btn"
-                @click="exportToMarkdown"
-                title="导出当前会话为 Markdown 文件"
-              >
-                <Icon icon="ph:download-simple" class="btn-icon" />
-                <span>导出</span>
-              </el-button>
-              <el-button
-                size="small"
-                text
-                class="toolbar-action-btn"
-                @click="copyAllChat"
-                title="复制当前会话全文"
-              >
-                <Icon icon="ph:copy" class="btn-icon" />
-                <span>复制</span>
-              </el-button>
-              <el-button
-                size="small"
-                text
-                class="toolbar-action-btn"
-                @click="handleClearChat"
-                title="清空记录"
-              >
-                <Icon icon="ph:trash" class="btn-icon" />
-                <span>清空</span>
-              </el-button>
-            </template>
+            <!-- More Actions Dropdown -->
+            <el-dropdown trigger="click" placement="bottom-end">
+              <button class="more-menu-btn" title="更多操作" aria-label="更多操作">
+                <Icon icon="ph:dots-three-vertical-bold" />
+              </button>
+              <template #dropdown>
+                <el-dropdown-menu class="chat-more-dropdown">
+                  <el-dropdown-item
+                    @click="exportToMarkdown"
+                    :disabled="chat.messages.length === 0"
+                  >
+                    <Icon icon="ph:download-simple" class="dropdown-item-icon" />
+                    <span>导出 Markdown</span>
+                  </el-dropdown-item>
+                  <el-dropdown-item
+                    @click="copyAllChat"
+                    :disabled="chat.messages.length === 0"
+                  >
+                    <Icon icon="ph:copy" class="dropdown-item-icon" />
+                    <span>复制全文</span>
+                  </el-dropdown-item>
+                  <el-dropdown-item @click="goToTraces">
+                    <Icon icon="ph:chart-line-up" class="dropdown-item-icon" />
+                    <span>AI 审计追踪</span>
+                  </el-dropdown-item>
+                  <el-dropdown-item
+                    divided
+                    @click="handleClearChat"
+                    :disabled="chat.messages.length === 0"
+                    class="danger-item"
+                  >
+                    <Icon icon="ph:trash" class="dropdown-item-icon" />
+                    <span>清空本场记录</span>
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </div>
         </div>
 
@@ -392,6 +436,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, nextTick, watch, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import { useChatStore } from '@/stores/chat'
@@ -406,7 +451,59 @@ import { localToday } from '@/utils/format'
 import { isDirectRunWorkflow } from '@/utils/workflow-meta'
 import type { WorkflowDef } from '@/types'
 
+const router = useRouter()
 const chat = useChatStore()
+
+function goToTraces() {
+  router.push('/ai-traces')
+}
+
+// --- 顶部会话标题展示与原地重命名 ---
+const currentSessionTitle = computed(() => {
+  if (!chat.currentSessionId) return '新对话'
+  const s = chat.sessions.find(item => item.id === chat.currentSessionId)
+  return s?.title?.trim() || '未命名对话'
+})
+
+const editingTopTitle = ref(false)
+const topRenameText = ref('')
+
+function startTopRename() {
+  if (!chat.currentSessionId) return
+  topRenameText.value = currentSessionTitle.value
+  editingTopTitle.value = true
+}
+
+async function saveTopRename() {
+  if (!editingTopTitle.value) return
+  const next = topRenameText.value.trim()
+  editingTopTitle.value = false
+  if (next && next !== currentSessionTitle.value && chat.currentSessionId) {
+    await chat.renameSession(chat.currentSessionId, next)
+    ElMessage.success('会话重命名成功')
+  }
+}
+
+function cancelTopRename() {
+  editingTopTitle.value = false
+}
+
+// --- 整场会话累计度量指标统计 ---
+const sessionMetrics = computed(() => {
+  let totalTokens = 0
+  let totalCostUsd = 0
+  for (const m of chat.messages) {
+    if (m.usage) {
+      totalTokens += m.usage.total_tokens || 0
+      totalCostUsd += m.usage.cost_usd || 0
+    }
+  }
+  return {
+    totalTokens,
+    totalCostUsd,
+    msgCount: chat.messages.length,
+  }
+})
 const inputText = ref('')
 const messagesRef = ref<HTMLElement | null>(null)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
