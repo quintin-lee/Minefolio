@@ -201,6 +201,8 @@ cmake --build build --parallel
 ./tests/test_link.sh                 # full integration test suite
 ```
 
+**编译目录约定**：始终使用 `backend/build/` 作为 out-of-source 构建目录（即 `cmake -B build`，在 `backend/` 下执行）。禁止直接在 `backend/` 源码目录运行 in-source `cmake .`（会生成 `CMakeCache.txt`、`CMakeFiles/`、`_deps/`、`Makefile` 等构建产物污染源码目录，这些文件已在 `.gitignore` 中排除，但仍应通过正确的 `-B build` 用法避免产生它们）。
+
 **DB driver selection** (env vars override `config/db.json`):
 ```bash
 MINEFOLIO_DB_DRIVER=sqlite  MINEFOLIO_DB_DSN=./data/minefolio.db   ./build/minefolio

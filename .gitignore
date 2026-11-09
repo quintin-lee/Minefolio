@@ -5,6 +5,17 @@ backend/build-asan/
 backend/compile_commands.json
 backend/config/*.json
 
+# in-source CMake artifacts (should use backend/build/, not backend/)
+backend/CMakeCache.txt
+backend/CMakeFiles/
+backend/CPackConfig.cmake
+backend/CPackSourceConfig.cmake
+backend/CTestTestfile.cmake
+backend/Makefile
+backend/_deps/
+backend/yyjson.pc
+backend/cmake_install.cmake
+
 */data/
 data/
 
