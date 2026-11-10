@@ -1,27 +1,25 @@
-#include "common/response.h"
-#include "common/ctx.h"
+/**
+ * @file report_asset_service.c
+ * @brief 资产报表查询实现（Application Layer - 报表域）
+ *
+ * 依赖：pool（controller 通过 db_get_pool() 传入）+ report_query_t，
+ * 不依赖 csilk_ctx_t / ctx_* / respond_*。结果通过 out_res->data_payload 承载。
+ */
+
+#include "services/report_asset_service.h"
+#include "application/report/commands.h"
 #include "common/db.h"
-#include "common/jwt.h"
 #include "services/market/exchange_rate_service.h"
-#include "interfaces/http/controllers/portfolio_controller.h"
-#include "csilk/csilk.h"
+#include "domain/portfolio/fx_table.h"
+#include "core/financial/price.h"
+#include "core/financial/quantity.h"
+#include "core/financial/percentage.h"
+#include "csilk/drivers/db.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-
-typedef struct {
-
-    int64_t asset_id;
-
-    double cost_for_pnl;
-
-    double qty;
-
-    double realized;
-
-} holding_pnl_t;
 
 typedef struct {
     int64_t id;
@@ -38,25 +36,25 @@ typedef struct {
 } asset_trend_log_t;
 
 void
-report_asset_trend(csilk_ctx_t* c)
+report_asset_trend(void* pool, const report_query_t* q, report_result_t* out_res)
 {
-    int64_t user_id = ctx_user_id(c);
-    if (user_id < 0) {
+    if (!pool || !q || !out_res) {
+        if (out_res) {
+            out_res->code = 1002;
+            snprintf(out_res->message, sizeof(out_res->message), "参数错误");
+        }
         return;
     }
-    int64_t ledger_id = ctx_ledger_id(c, user_id, "viewer");
-    if (ledger_id < 0) {
-        return;
-    }
-    const char* period_str = csilk_get_query(c, "period");
-    int         days = 30;
-    if (period_str) {
-        if (strcmp(period_str, "90d") == 0) {
+    memset(out_res, 0, sizeof(*out_res));
+
+    int days = (q->days > 0) ? q->days : 30;
+    if (q->period) {
+        if (strcmp(q->period, "90d") == 0) {
             days = 90;
-        } else if (strcmp(period_str, "365d") == 0 || strcmp(period_str, "1y") == 0) {
+        } else if (strcmp(q->period, "365d") == 0 || strcmp(q->period, "1y") == 0) {
             days = 365;
         } else {
-            days = atoi(period_str);
+            days = atoi(q->period);
         }
     }
     if (days <= 0 || days > 365) {
@@ -64,8 +62,8 @@ report_asset_trend(csilk_ctx_t* c)
     }
 
     char uid_str[32], lid_str[32];
-    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)q->user_id);
+    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)q->ledger_id);
 
     // 1. Generate 5 sample points (labels) across the period
     time_t    now = time(NULL);
@@ -83,25 +81,25 @@ report_asset_trend(csilk_ctx_t* c)
     // 2. Query all assets for the user / ledger
     const char* asset_sql =
         db_is_postgres()
-            ? (ledger_id > 0 ? "SELECT a.id, a.current_value, a.currency, c.asset_type, "
-                               "to_char(a.created_at, 'YYYY-MM-DD') as created_date "
-                               "FROM assets a JOIN categories c ON a.category_id=c.id "
-                               "WHERE a.user_id=? AND a.ledger_id=?"
-                             : "SELECT a.id, a.current_value, a.currency, c.asset_type, "
-                               "to_char(a.created_at, 'YYYY-MM-DD') as created_date "
-                               "FROM assets a JOIN categories c ON a.category_id=c.id "
-                               "WHERE a.user_id=?")
-            : (ledger_id > 0 ? "SELECT a.id, a.current_value, a.currency, c.asset_type, "
-                               "date(a.created_at) as created_date "
-                               "FROM assets a JOIN categories c ON a.category_id=c.id "
-                               "WHERE a.user_id=? AND a.ledger_id=?"
-                             : "SELECT a.id, a.current_value, a.currency, c.asset_type, "
-                               "date(a.created_at) as created_date "
-                               "FROM assets a JOIN categories c ON a.category_id=c.id "
-                               "WHERE a.user_id=?");
-    const char*      asset_params[3] = {uid_str, (ledger_id > 0 ? lid_str : NULL), NULL};
-    csilk_db_pool_t* pool = db_get_pool();
-    csilk_json_t*    asset_rows = csilk_db_query_param_json(pool, asset_sql, asset_params);
+            ? (q->ledger_id > 0 ? "SELECT a.id, a.current_value, a.currency, c.asset_type, "
+                                  "to_char(a.created_at, 'YYYY-MM-DD') as created_date "
+                                  "FROM assets a JOIN categories c ON a.category_id=c.id "
+                                  "WHERE a.user_id=? AND a.ledger_id=?"
+                                : "SELECT a.id, a.current_value, a.currency, c.asset_type, "
+                                  "to_char(a.created_at, 'YYYY-MM-DD') as created_date "
+                                  "FROM assets a JOIN categories c ON a.category_id=c.id "
+                                  "WHERE a.user_id=?")
+            : (q->ledger_id > 0 ? "SELECT a.id, a.current_value, a.currency, c.asset_type, "
+                                  "date(a.created_at) as created_date "
+                                  "FROM assets a JOIN categories c ON a.category_id=c.id "
+                                  "WHERE a.user_id=? AND a.ledger_id=?"
+                                : "SELECT a.id, a.current_value, a.currency, c.asset_type, "
+                                  "date(a.created_at) as created_date "
+                                  "FROM assets a JOIN categories c ON a.category_id=c.id "
+                                  "WHERE a.user_id=?");
+    const char*   asset_params[3] = {uid_str, (q->ledger_id > 0 ? lid_str : NULL), NULL};
+    csilk_json_t* asset_rows =
+        csilk_db_query_param_json((csilk_db_pool_t*)pool, asset_sql, asset_params);
 
     size_t              num_assets = asset_rows ? csilk_json_array_size(asset_rows) : 0;
     asset_trend_item_t* assets =
@@ -127,7 +125,7 @@ report_asset_trend(csilk_ctx_t* c)
     // 3. Query all balance delta logs on or after dates[0]
     const char* log_sql =
         db_is_postgres()
-            ? (ledger_id > 0
+            ? (q->ledger_id > 0
                    ? "SELECT abl.asset_id, abl.delta, to_char(abl.created_at, 'YYYY-MM-DD') as "
                      "log_date "
                      "FROM asset_balance_logs abl JOIN assets a ON abl.asset_id=a.id "
@@ -136,15 +134,18 @@ report_asset_trend(csilk_ctx_t* c)
                      "log_date "
                      "FROM asset_balance_logs abl "
                      "WHERE abl.user_id=? AND abl.created_at::date >= ?::date")
-            : (ledger_id > 0 ? "SELECT abl.asset_id, abl.delta, date(abl.created_at) as log_date "
-                               "FROM asset_balance_logs abl JOIN assets a ON abl.asset_id=a.id "
-                               "WHERE abl.user_id=? AND a.ledger_id=? AND date(abl.created_at) >= ?"
-                             : "SELECT abl.asset_id, abl.delta, date(abl.created_at) as log_date "
-                               "FROM asset_balance_logs abl "
-                               "WHERE abl.user_id=? AND date(abl.created_at) >= ?");
-    const char* log_params[4] = {
-        uid_str, (ledger_id > 0 ? lid_str : dates[0]), (ledger_id > 0 ? dates[0] : NULL), NULL};
-    csilk_json_t* log_rows = csilk_db_query_param_json(pool, log_sql, log_params);
+            : (q->ledger_id > 0
+                   ? "SELECT abl.asset_id, abl.delta, date(abl.created_at) as log_date "
+                     "FROM asset_balance_logs abl JOIN assets a ON abl.asset_id=a.id "
+                     "WHERE abl.user_id=? AND a.ledger_id=? AND date(abl.created_at) >= ?"
+                   : "SELECT abl.asset_id, abl.delta, date(abl.created_at) as log_date "
+                     "FROM asset_balance_logs abl "
+                     "WHERE abl.user_id=? AND date(abl.created_at) >= ?");
+    const char*   log_params[4] = {uid_str,
+                                   (q->ledger_id > 0 ? lid_str : dates[0]),
+                                   (q->ledger_id > 0 ? dates[0] : NULL),
+                                   NULL};
+    csilk_json_t* log_rows = csilk_db_query_param_json((csilk_db_pool_t*)pool, log_sql, log_params);
 
     size_t             num_logs = log_rows ? csilk_json_array_size(log_rows) : 0;
     asset_trend_log_t* logs =
@@ -194,7 +195,7 @@ report_asset_trend(csilk_ctx_t* c)
 
     // 5. Build response object
     csilk_json_t* resp = csilk_json_object();
-    csilk_json_add_string(resp, "period", period_str ? period_str : "30d");
+    csilk_json_add_string(resp, "period", q->period ? q->period : "30d");
 
     csilk_json_t* labels_arr = csilk_json_array();
     csilk_json_t* nw_arr = csilk_json_array();
@@ -213,36 +214,37 @@ report_asset_trend(csilk_ctx_t* c)
     csilk_json_add_array(resp, "assets", assets_arr);
     csilk_json_add_array(resp, "liabilities", liabs_arr);
 
-    respond_ok(c, resp);
+    out_res->code = 0;
+    out_res->data_payload = resp;
+    snprintf(out_res->message, sizeof(out_res->message), "ok");
 }
 
 void
-report_asset_breakdown(csilk_ctx_t* c)
+report_asset_breakdown(void* pool, const report_query_t* q, report_result_t* out_res)
 {
-    int64_t user_id = ctx_user_id(c);
-    if (user_id < 0) {
+    if (!pool || !q || !out_res) {
+        if (out_res) {
+            out_res->code = 1002;
+            snprintf(out_res->message, sizeof(out_res->message), "参数错误");
+        }
         return;
     }
-    int64_t ledger_id = ctx_ledger_id(c, user_id, "viewer");
-    if (ledger_id < 0) {
-        return;
-    }
-    csilk_db_pool_t* pool = db_get_pool();
+    memset(out_res, 0, sizeof(*out_res));
 
     char uid_str[32], lid_str[32];
-    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)q->user_id);
+    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)q->ledger_id);
     const char* params[] = {uid_str, lid_str, NULL};
 
     csilk_json_t* assets = csilk_db_query_param_json(
-        pool,
+        (csilk_db_pool_t*)pool,
         "SELECT c.name as name, a.current_value as value, a.currency as currency "
         "FROM assets a JOIN categories c ON a.category_id=c.id "
         "WHERE a.user_id=? AND a.ledger_id=? AND c.asset_type NOT IN "
         "('loan','credit_card','other_liability')",
         params);
     csilk_json_t* liabs = csilk_db_query_param_json(
-        pool,
+        (csilk_db_pool_t*)pool,
         "SELECT c.name as name, a.current_value as value, a.currency as currency "
         "FROM assets a JOIN categories c ON a.category_id=c.id "
         "WHERE a.user_id=? AND a.ledger_id=? AND c.asset_type IN "
@@ -346,35 +348,31 @@ report_asset_breakdown(csilk_ctx_t* c)
     csilk_json_add_number(resp, "total_assets", total_assets);
     csilk_json_add_number(resp, "total_liabilities", total_liabs);
     csilk_json_add_number(resp, "net_worth", total_assets - total_liabs);
-    respond_ok(c, resp);
+
+    out_res->code = 0;
+    out_res->data_payload = resp;
+    snprintf(out_res->message, sizeof(out_res->message), "ok");
 }
 
 void
-report_transaction_performance(csilk_ctx_t* c)
+report_asset_summary(void* pool, const report_query_t* q, report_result_t* out_res)
 {
-    api_portfolio_performance(c);
-}
-
-void
-report_asset_summary(csilk_ctx_t* c)
-{
-    int64_t user_id = ctx_user_id(c);
-    if (user_id < 0) {
+    if (!pool || !q || !out_res) {
+        if (out_res) {
+            out_res->code = 1002;
+            snprintf(out_res->message, sizeof(out_res->message), "参数错误");
+        }
         return;
     }
-    int64_t ledger_id = ctx_ledger_id(c, user_id, "viewer");
-    if (ledger_id < 0) {
-        return;
-    }
-    csilk_db_pool_t* pool = db_get_pool();
+    memset(out_res, 0, sizeof(*out_res));
 
     char uid_str[32], lid_str[32];
-    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)q->user_id);
+    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)q->ledger_id);
     const char* params[] = {uid_str, lid_str, NULL};
 
     csilk_json_t* rows = csilk_db_query_param_json(
-        pool,
+        (csilk_db_pool_t*)pool,
         "SELECT a.current_value, a.currency, c.name as name, c.asset_type "
         "FROM assets a JOIN categories c ON a.category_id=c.id "
         "WHERE a.user_id=? AND a.ledger_id=?",
@@ -445,7 +443,7 @@ report_asset_summary(csilk_ctx_t* c)
 
     // 30-day net wealth change calculated from multi-currency balance audit logs
     csilk_json_t* logs = csilk_db_query_param_json(
-        pool,
+        (csilk_db_pool_t*)pool,
         db_is_postgres() ? "SELECT abl.delta, a.currency, c.asset_type "
                            "FROM asset_balance_logs abl "
                            "JOIN assets a ON abl.asset_id = a.id "
@@ -496,45 +494,33 @@ report_asset_summary(csilk_ctx_t* c)
     csilk_json_add_number(resp, "change_30d", change_30d);
     csilk_json_add_number(resp, "change_30d_pct", change_30d_pct);
     csilk_json_add_array(resp, "by_category", by_cat);
-    respond_ok(c, resp);
+
+    out_res->code = 0;
+    out_res->data_payload = resp;
+    snprintf(out_res->message, sizeof(out_res->message), "ok");
 }
 
-/**
- * @brief 生成多币种资产构成分布及基准币种统一折算报表
- *
- * 核心逻辑：
- * 1. 扫描当前用户所有的有效资产与负债，按 original currency 聚合为资产池桶 (currency buckets)；
- * 2. 统计每个币种的原币总资产 (original_assets)、总负债 (original_liabilities) 及净额；
- * 3. 调用外汇转换引擎 exchange_rate_convert，将各币种资产统一折合为请求指定的基准币种 (默认 CNY)；
- * 4. 计算各币种在折算总净资产中的占比 (percentage)，构建结构化报表响应。
- *
- * @param c HTTP 上下文（支持 query 参数 base_currency，默认 "CNY"）
- */
 void
-report_multi_currency_summary(csilk_ctx_t* c)
+report_multi_currency_summary(void* pool, const report_query_t* q, report_result_t* out_res)
 {
-    int64_t user_id = ctx_user_id(c);
-    if (user_id < 0) {
-        respond_unauthorized(c);
+    if (!pool || !q || !out_res) {
+        if (out_res) {
+            out_res->code = 1002;
+            snprintf(out_res->message, sizeof(out_res->message), "参数错误");
+        }
         return;
     }
-    int64_t ledger_id = ctx_ledger_id(c, user_id, "viewer");
-    if (ledger_id < 0) {
-        return;
-    }
-    const char* base_cur = csilk_get_query(c, "base_currency");
-    if (!base_cur || !base_cur[0]) {
-        base_cur = "CNY";
-    }
+    memset(out_res, 0, sizeof(*out_res));
+
+    const char* base_cur = (q->base_currency && q->base_currency[0]) ? q->base_currency : "CNY";
 
     char uid_str[32], lid_str[32];
-    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)q->user_id);
+    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)q->ledger_id);
     const char* params[] = {uid_str, lid_str, NULL};
 
-    csilk_db_pool_t* pool = db_get_pool();
-    csilk_json_t*    rows = csilk_db_query_param_json(
-        pool,
+    csilk_json_t* rows = csilk_db_query_param_json(
+        (csilk_db_pool_t*)pool,
         "SELECT a.id, a.name, a.currency, a.net_value, a.quantity, a.current_value, "
         "CASE WHEN a.quantity > 0 AND a.net_value > 0 THEN a.quantity * a.net_value ELSE "
         "a.current_value END as val, "
@@ -631,52 +617,28 @@ report_multi_currency_summary(csilk_ctx_t* c)
     csilk_json_add_number(resp, "total_liabilities", grand_total_liabs);
     csilk_json_add_array(resp, "currencies", cur_arr);
 
-    respond_ok(c, resp);
+    out_res->code = 0;
+    out_res->data_payload = resp;
+    snprintf(out_res->message, sizeof(out_res->message), "ok");
 }
 
-/**
- * @brief 境外外币资产投资回报之「标的价格涨跌」与「纯汇率波动损益 (FX PnL)」双因子剥离分析
- *
- * 金融归因数学模型：
- * 设某外币资产 A（计价币种 C，基准币种 B）：
- * - 原币当前市值：P_current = current_value 或 quantity * net_value
- * - 原币持仓成本：C_basis = cost_basis
- * - 当前实时汇率 (C -> B)：R_current
- * - 买入历史加权汇率 (C -> B)：R_cost（从 exchange_rate_history 或买入时快照获取）
- *
- * 收益拆解归因：
- * 1. 标的价格盈亏（折合基准币）：
- *    Asset_Price_PnL_in_Base = (P_current - C_basis) * R_current
- * 2. 纯汇率波动损益（折合基准币）：
- *    FX_PnL_in_Base = C_basis * (R_current - R_cost)
- * 3. 综合总回报（基准币总收益）：
- *    Combined_PnL_in_Base = Asset_Price_PnL_in_Base + FX_PnL_in_Base
- *                         = P_current * R_current - C_basis * R_cost
- *
- * @param c HTTP 上下文（支持 query 参数 base_currency，默认 "CNY"）
- */
 void
-report_fx_pnl(csilk_ctx_t* c)
+report_fx_pnl(void* pool, const report_query_t* q, report_result_t* out_res)
 {
-    int64_t user_id = ctx_user_id(c);
-    if (user_id < 0) {
-        respond_unauthorized(c);
+    if (!pool || !q || !out_res) {
+        if (out_res) {
+            out_res->code = 1002;
+            snprintf(out_res->message, sizeof(out_res->message), "参数错误");
+        }
         return;
     }
-    int64_t ledger_id = ctx_ledger_id(c, user_id, "viewer");
-    if (ledger_id < 0) {
-        return;
-    }
+    memset(out_res, 0, sizeof(*out_res));
 
-    const char* base_cur = csilk_get_query(c, "base_currency");
-    if (!base_cur || !base_cur[0]) {
-        base_cur = "CNY";
-    }
+    const char* base_cur = (q->base_currency && q->base_currency[0]) ? q->base_currency : "CNY";
 
-    csilk_db_pool_t* pool = db_get_pool();
-    char             uid_str[32], lid_str[32];
-    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
+    char uid_str[32], lid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)q->user_id);
+    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)q->ledger_id);
 
     const char* sql =
         db_is_postgres()
@@ -718,8 +680,8 @@ report_fx_pnl(csilk_ctx_t* c)
               "!= ? AND a.currency "
               "!= ''";
 
-    csilk_json_t* rows =
-        csilk_db_query_param_json(pool, sql, (const char*[]){uid_str, lid_str, base_cur, NULL});
+    csilk_json_t* rows = csilk_db_query_param_json(
+        (csilk_db_pool_t*)pool, sql, (const char*[]){uid_str, lid_str, base_cur, NULL});
 
     csilk_json_t* items = csilk_json_array();
     currency_t    base_currency = currency_from_str(base_cur);
@@ -740,7 +702,7 @@ report_fx_pnl(csilk_ctx_t* c)
             const char*   cname = csilk_json_get_string(r, "category_name");
             currency_t    asset_cur = currency_from_str(cur);
 
-            quantity_t q = db_get_quantity(r, "quantity");
+            quantity_t q_qty = db_get_quantity(r, "quantity");
             money_t    cost = db_get_money(r, "cost_basis", asset_cur);
             price_t    nv = db_get_price(r, "net_value", asset_cur);
             money_t    cv = db_get_money(r, "current_value", asset_cur);
@@ -748,8 +710,8 @@ report_fx_pnl(csilk_ctx_t* c)
             money_t current_val_orig;
             if (!money_is_zero(cv)) {
                 current_val_orig = cv;
-            } else if (!quantity_is_zero(q) && !decimal_is_zero(nv.unit_price)) {
-                price_times_quantity(nv, q, &current_val_orig);
+            } else if (!quantity_is_zero(q_qty) && !decimal_is_zero(nv.unit_price)) {
+                price_times_quantity(nv, q_qty, &current_val_orig);
             } else {
                 current_val_orig = money_zero(asset_cur);
             }
@@ -764,17 +726,14 @@ report_fx_pnl(csilk_ctx_t* c)
             if (!decimal_is_zero(init_rate_d)) {
                 cost_fx_r = rate_from_decimal(init_rate_d, asset_cur, base_currency);
             } else {
-                // If historical exchange rate is unavailable, default cost rate to current rate (0 FX fluctuation gain)
                 cost_fx_r = curr_fx_r;
             }
 
-            // Asset Price PnL: (curr_val_orig - cost) * curr_fx_r
             money_t orig_pnl;
             money_sub(current_val_orig, cost, &orig_pnl);
             money_t asset_pnl_base;
             rate_convert_money(orig_pnl, curr_fx_r, &asset_pnl_base);
 
-            // FX PnL: cost * (curr_fx_r - cost_fx_r)
             rate_t r_diff;
             r_diff.from_currency = asset_cur;
             r_diff.to_currency = base_currency;
@@ -787,7 +746,6 @@ report_fx_pnl(csilk_ctx_t* c)
                 rate_convert_money(current_val_orig, r_diff, &fx_pnl_base);
             }
 
-            // Combined PnL: asset_pnl_base + fx_pnl_base
             money_t combined_pnl_base;
             money_add(asset_pnl_base, fx_pnl_base, &combined_pnl_base);
 
@@ -842,5 +800,7 @@ report_fx_pnl(csilk_ctx_t* c)
         resp, "total_combined_pnl_base", money_to_double(total_combined_pnl_base));
     csilk_json_add_array(resp, "assets", items);
 
-    respond_ok(c, resp);
+    out_res->code = 0;
+    out_res->data_payload = resp;
+    snprintf(out_res->message, sizeof(out_res->message), "ok");
 }
