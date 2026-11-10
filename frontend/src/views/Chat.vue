@@ -35,12 +35,12 @@
         <div class="session-list" v-loading="loadingSessions">
           <template v-if="groupedSessions.length > 0">
             <template v-for="group in groupedSessions" :key="group.label">
-              <div class="session-group-label">{{ group.label }}</div>
+              <div class="session-group-label" :class="{ 'pinned-group-label': group.isPinnedGroup }">{{ group.label }}</div>
               <div
                 v-for="s in group.items"
                 :key="s.id"
                 class="session-item"
-                :class="{ active: chat.currentSessionId === s.id }"
+                :class="{ active: chat.currentSessionId === s.id, pinned: chat.isSessionPinned(s.id) }"
                 @click="selectSession(s.id)"
                 role="listitem"
               >
@@ -57,17 +57,55 @@
                 <template v-else>
                   <div class="session-item-content">
                     <div class="session-title" :title="s.title" @dblclick.stop="startRename(s)">
-                      {{ s.title }}
+                      <span v-if="getSessionTag(s.title)" class="session-scenario-tag" :title="s.title">
+                        {{ getSessionTag(s.title) }}
+                      </span>
+                      <span class="session-title-text">{{ s.title }}</span>
+                      <Icon
+                        v-if="chat.isSessionPinned(s.id)"
+                        icon="ph:push-pin-fill"
+                        class="session-pin-icon"
+                        title="已置顶"
+                      />
                     </div>
                     <div class="session-meta">{{ formatTime(s.updated_at) }}</div>
                   </div>
                   <div class="session-item-actions" @click.stop>
-                    <button class="item-action-btn" title="重命名" @click.stop="startRename(s)">
-                      <Icon icon="ph:pencil-simple" />
-                    </button>
-                    <button class="item-action-btn delete-btn" title="删除对话" @click.stop="handleDeleteSession(s.id)">
-                      <Icon icon="ph:trash" />
-                    </button>
+                    <el-tooltip :content="chat.isSessionPinned(s.id) ? '取消置顶' : '置顶会话'" placement="top" :show-after="300">
+                      <button
+                        class="item-action-btn pin-btn"
+                        :class="{ 'is-pinned': chat.isSessionPinned(s.id) }"
+                        :title="chat.isSessionPinned(s.id) ? '取消置顶' : '置顶会话'"
+                        @click.stop="chat.togglePinSession(s.id)"
+                      >
+                        <Icon :icon="chat.isSessionPinned(s.id) ? 'ph:push-pin-slash' : 'ph:push-pin'" />
+                      </button>
+                    </el-tooltip>
+                    <el-dropdown trigger="click" placement="bottom-end">
+                      <button class="item-action-btn session-more-btn" title="更多操作">
+                        <Icon icon="ph:dots-three-vertical-bold" />
+                      </button>
+                      <template #dropdown>
+                        <el-dropdown-menu class="session-action-dropdown">
+                          <el-dropdown-item @click="chat.togglePinSession(s.id)">
+                            <Icon :icon="chat.isSessionPinned(s.id) ? 'ph:push-pin-slash' : 'ph:push-pin'" class="dropdown-item-icon" />
+                            <span>{{ chat.isSessionPinned(s.id) ? '取消置顶' : '置顶会话' }}</span>
+                          </el-dropdown-item>
+                          <el-dropdown-item @click="handleExportSingleSession(s)">
+                            <Icon icon="ph:download-simple" class="dropdown-item-icon" />
+                            <span>导出为 Markdown</span>
+                          </el-dropdown-item>
+                          <el-dropdown-item @click="startRename(s)">
+                            <Icon icon="ph:pencil-simple" class="dropdown-item-icon" />
+                            <span>重命名</span>
+                          </el-dropdown-item>
+                          <el-dropdown-item divided @click="handleDeleteSession(s.id)" class="danger-item">
+                            <Icon icon="ph:trash" class="dropdown-item-icon" />
+                            <span>删除会话</span>
+                          </el-dropdown-item>
+                        </el-dropdown-menu>
+                      </template>
+                    </el-dropdown>
                   </div>
                 </template>
               </div>
@@ -488,6 +526,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import { useChatStore } from '@/stores/chat'
+import { getMessages, type AiMessage } from '@/api/ai'
 import { receiptsApi } from '@/api/receipts'
 import ChatMessageContent from '@/components/ChatMessageContent.vue'
 import PromptStarters from '@/components/PromptStarters.vue'
@@ -790,14 +829,44 @@ const filteredSessions = computed(() => {
   return chat.sessions.filter(s => s.title.toLowerCase().includes(q))
 })
 
-// Group sessions by time period
-interface SessionGroup { label: string; items: typeof chat.sessions }
+/** 智能场景识别微徽章 */
+function getSessionTag(title: string): string | null {
+  if (!title) return null
+  if (/体检|健康|诊断/.test(title)) return '📊'
+  if (/记账|消费|支出|调拨/.test(title)) return '🧾'
+  if (/行情|汇率|定投|复利/.test(title)) return '📈'
+  return null
+}
+
+// Group sessions by pinned state and time period
+interface SessionGroup { label: string; isPinnedGroup?: boolean; items: typeof chat.sessions }
 const groupedSessions = computed<SessionGroup[]>(() => {
+  const allFiltered = filteredSessions.value
+  const pinnedItems: typeof chat.sessions = []
+  const regularItems: typeof chat.sessions = []
+
+  for (const s of allFiltered) {
+    if (chat.isSessionPinned(s.id)) {
+      pinnedItems.push(s)
+    } else {
+      regularItems.push(s)
+    }
+  }
+
+  const result: SessionGroup[] = []
+  if (pinnedItems.length > 0) {
+    result.push({
+      label: '📌 置顶会话',
+      isPinnedGroup: true,
+      items: pinnedItems,
+    })
+  }
+
   const now = Date.now()
   const DAY = 86400000
   const groups: Record<string, typeof chat.sessions> = {}
   const order: string[] = []
-  for (const s of filteredSessions.value) {
+  for (const s of regularItems) {
     const t = new Date(s.updated_at).getTime()
     const diff = now - t
     let label: string
@@ -809,8 +878,63 @@ const groupedSessions = computed<SessionGroup[]>(() => {
     if (!groups[label]) { groups[label] = []; order.push(label) }
     groups[label]!.push(s)
   }
-  return order.map(label => ({ label, items: groups[label]! }))
+
+  for (const label of order) {
+    result.push({ label, items: groups[label]! })
+  }
+  return result
 })
+
+const exportingSessionId = ref<number | null>(null)
+
+/** 导出单场指定会话为 Markdown 文件 */
+async function handleExportSingleSession(s: { id: number; title: string }) {
+  if (s.id === chat.currentSessionId && chat.messages.length > 0) {
+    exportToMarkdown()
+    return
+  }
+
+  exportingSessionId.value = s.id
+  try {
+    const res = await getMessages(s.id, 1, 100)
+    const msgs = (res && (res as any).list) || []
+    if (msgs.length === 0) {
+      ElMessage.info('该会话暂无消息内容')
+      return
+    }
+    const lines: string[] = [
+      `# ${s.title || 'Minefolio AI 对话'}`,
+      `*导出时间: ${new Date().toLocaleString()}*`,
+      '',
+      '---',
+      '',
+    ]
+    for (const m of msgs) {
+      const roleLabel = m.role === 'user' ? '👤 用户' : '🤖 Minefolio AI 助手'
+      lines.push(`### ${roleLabel}`)
+      if (m.thinking_content) {
+        lines.push('> 💭 **深度思考过程**:\n> ' + m.thinking_content.split('\n').join('\n> '))
+        lines.push('')
+      }
+      lines.push(m.content || '')
+      lines.push('')
+    }
+    const blob = new Blob([lines.join('\n')], { type: 'text/markdown;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${s.title.replace(/[\\/:*?"<>|]/g, '_') || 'Minefolio-Chat'}-${localToday()}.md`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    ElMessage.success(`会话「${s.title}」已导出为 Markdown 文件！`)
+  } catch {
+    ElMessage.error('导出失败，请稍后重试')
+  } finally {
+    exportingSessionId.value = null
+  }
+}
 
 function draftKey(): string {
   return `${DRAFT_PREFIX}${chat.currentSessionId ?? 'new'}`
@@ -1658,13 +1782,54 @@ onUnmounted(() => {
   min-width: 0;
 }
 
+.session-item.pinned {
+  background: var(--mf-surface-muted, rgba(248, 250, 252, 0.4));
+  border-color: var(--mf-border-subtle, rgba(226, 232, 240, 0.6));
+}
+
+.pinned-group-label {
+  color: var(--mf-primary);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 700;
+}
+
 .session-title {
+  display: flex;
+  align-items: center;
   font-size: 13px;
   color: var(--mf-text-main);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   font-weight: 500;
+}
+
+.session-scenario-tag {
+  font-size: 13px;
+  margin-right: 4px;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.session-title-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.session-pin-icon {
+  font-size: 11px;
+  color: var(--mf-primary);
+  margin-left: 4px;
+  flex-shrink: 0;
+}
+
+.item-action-btn.pin-btn.is-pinned {
+  color: var(--mf-primary);
 }
 
 .session-item.active .session-title {
