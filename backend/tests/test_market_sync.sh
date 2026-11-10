@@ -1,27 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PORT=8091
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/db_helper.sh"
+
+PORT="${PORT:-8091}"
+db_init_context "$PORT" "market_sync"
 BASE_URL="http://127.0.0.1:${PORT}"
 TMP_DIR=$(mktemp -d)
-DB_PATH="${TMP_DIR}/test_market.db"
-SERVER_PID=""
+DB_PATH="$DB_FILE"
+export TEST_JWT_SECRET="test_secret_for_market_integration_suite"
 
 cleanup() {
     echo "Cleaning up..."
-    if [ -n "$SERVER_PID" ]; then
-        kill "$SERVER_PID" 2>/dev/null || true
-        wait "$SERVER_PID" 2>/dev/null || true
-    fi
+    db_stop_server
+    db_clean
     rm -rf "$TMP_DIR"
 }
-trap cleanup EXIT
+trap cleanup EXIT INT TERM
 
 echo "=== Starting Minefolio Test Server on port ${PORT} ==="
-export MINEFOLIO_JWT_SECRET="test_secret_for_market_integration_suite"
-export MINEFOLIO_DB_DRIVER="sqlite"
-export MINEFOLIO_DB_DSN="${DB_PATH}"
-export PORT="${PORT}"
 # 默认启用离线 mock 行情（MINEFOLIO_MARKET_MOCK=1），使整套行情链路（搜索/报价/同步/历史/连通性）
 # 可完全离线、确定性地运行，CI 不依赖 Yahoo/东财等外部行情源（避免限流/网络抖动导致误红）。
 # 需要验证真实行情源集成时，设置 MINEFOLIO_TEST_LIVE_MARKET=1 切换为实时抓取。
@@ -31,18 +29,8 @@ else
     export MINEFOLIO_MARKET_MOCK=1
 fi
 
-cd "$(dirname "$0")/.."
-./build/minefolio > "${TMP_DIR}/server.log" 2>&1 &
-SERVER_PID=$!
-
-# Wait for server to start
-for i in {1..30}; do
-    if curl -s "${BASE_URL}/healthz" >/dev/null 2>&1 || grep -q "Starting Minefolio server" "${TMP_DIR}/server.log" 2>/dev/null; then
-        echo "Server is up!"
-        break
-    fi
-    sleep 0.2
-done
+db_clean
+db_start_server "$PORT" "$SCRIPT_DIR/../build" "${TMP_DIR}/server.log"
 
 rsa_encrypt() {
   local plain="$1"

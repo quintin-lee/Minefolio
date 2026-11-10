@@ -1,41 +1,28 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/db_helper.sh"
+
 PORT="${PORT:-18081}"
+db_init_context "$PORT" "dca_cashflow"
 BASE="http://127.0.0.1:${PORT}/api"
 TMP_DIR=$(mktemp -d)
-DB_PATH="${TMP_DIR}/test_plans.db"
-SERVER_PID=""
+DB_PATH="$DB_FILE"
+export TEST_JWT_SECRET="test_secret_for_plans_and_cashflow_suite"
 
 cleanup() {
     echo "Cleaning up..."
-    if [ -n "$SERVER_PID" ]; then
-        kill "$SERVER_PID" 2>/dev/null || true
-        wait "$SERVER_PID" 2>/dev/null || true
-    fi
+    db_stop_server
+    db_clean
     rm -rf "$TMP_DIR"
 }
-trap cleanup EXIT
+trap cleanup EXIT INT TERM
 
 echo "=== Starting Minefolio Test Server on port ${PORT} ==="
-export MINEFOLIO_JWT_SECRET="test_secret_for_plans_and_cashflow_suite"
-export MINEFOLIO_DB_DRIVER="sqlite"
-export MINEFOLIO_DB_DSN="${DB_PATH}"
-export MINEFOLIO_PORT="${PORT}"
-export PORT="${PORT}"
-
-cd "$(dirname "$0")/.."
-./build/minefolio > "${TMP_DIR}/server.log" 2>&1 &
-SERVER_PID=$!
-
-# Wait for server to start
-for i in {1..30}; do
-    if curl -sf "http://127.0.0.1:${PORT}/healthz" >/dev/null 2>&1; then
-        echo "Server is up!"
-        break
-    fi
-    sleep 0.2
-done
+db_clean
+db_start_server "$PORT" "$SCRIPT_DIR/../build" "${TMP_DIR}/server.log"
+echo "Server is up!"
 
 rsa_encrypt() {
   local plain="$1"

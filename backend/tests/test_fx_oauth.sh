@@ -2,11 +2,13 @@
 set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/db_helper.sh"
 BACKEND_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 BUILD_DIR="$BACKEND_DIR/build"
 BIN="$BUILD_DIR/minefolio"
 
-PORT=8089
+PORT="${PORT:-8089}"
+db_init_context "$PORT" "fx_oauth"
 BASE="http://127.0.0.1:$PORT/api"
 PASS=0
 FAIL=0
@@ -73,23 +75,16 @@ req.on('error', (e) => {
 "
 }
 
-DB_FILE=$(mktemp /tmp/minefolio_fx_oauth_XXXXXX.db)
 cleanup() {
-    if [ -n "$SERVER_PID" ]; then
-        kill -9 "$SERVER_PID" 2>/dev/null || true
-        wait "$SERVER_PID" 2>/dev/null || true
-    fi
-    rm -f "$DB_FILE" "$DB_FILE-wal" "$DB_FILE-shm"
+    db_stop_server
+    db_clean
 }
 trap cleanup EXIT INT TERM
 
-# Kill any lingering process on PORT
-kill $(lsof -t -i:${PORT} 2>/dev/null) 2>/dev/null || true
-sleep 0.3
-
 echo "=== Starting Test Server on port $PORT ==="
+db_clean
 cd "$BUILD_DIR"
-MINEFOLIO_DB_DRIVER=sqlite MINEFOLIO_DB_DSN="$DB_FILE" MINEFOLIO_PORT="$PORT" \
+MINEFOLIO_DB_DRIVER="$DB_DRIVER" MINEFOLIO_DB_DSN="$MINEFOLIO_DB_DSN" MINEFOLIO_PORT="$PORT" PORT="$PORT" \
 MINEFOLIO_JWT_SECRET="test_fx_oauth_secret_12345678" \
 MINEFOLIO_OAUTH_GITHUB_CLIENT_ID="gh_client_id_test" \
 MINEFOLIO_MARKET_MOCK="${MINEFOLIO_MARKET_MOCK:-1}" \

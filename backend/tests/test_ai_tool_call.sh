@@ -18,14 +18,15 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/db_helper.sh"
 BUILD_DIR="$(cd "$SCRIPT_DIR/../build" && pwd)"
 PORT="${PORT:-18087}"
 MOCK_PORT="${MOCK_PORT:-18089}"
+db_init_context "$PORT" "ai_tool"
 BASE="http://127.0.0.1:$PORT/api"
-DB="$(mktemp -d)/mf_ai_tool.db"
-MOCK_LOG="$(dirname "$DB")/mock.log"
-SERVER_LOG="$(dirname "$DB")/server.log"
-TMP_DIR="$(dirname "$DB")"
+TMP_DIR="$(mktemp -d)"
+MOCK_LOG="$TMP_DIR/mock.log"
+SERVER_LOG="$TMP_DIR/server.log"
 PASS=0
 FAIL=0
 SERVER_PID=""
@@ -34,9 +35,10 @@ MOCK_PID=""
 cleanup() {
   [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null || true
   [ -n "$MOCK_PID" ] && kill "$MOCK_PID" 2>/dev/null || true
+  db_clean
   rm -rf "$TMP_DIR"
 }
-trap cleanup EXIT
+trap cleanup EXIT INT TERM
 
 check() {
   if [ "$2" = "$3" ]; then
@@ -64,13 +66,13 @@ start_mock() {
 
 # --- backend ----------------------------------------------------------------
 echo "=== AI tool-call loop regression ==="
-rm -f "$DB" "$DB-wal" "$DB-shm"
+db_clean
 cat > "$TMP_DIR/ai.json" <<EOF
 {"providers":[{"id":"mockai","name":"Mock AI","api_key":"dummy","base_url":"http://127.0.0.1:$MOCK_PORT/v1","models":["mock-model"]}],"default_provider":"mockai","default_model":"mock-model","context_size":20,"system_prompt":"你是测试助手"}
 EOF
 export TEST_JWT_SECRET="test-jwt-secret-for-ai-tool-call-1234567890"
 cd "$BUILD_DIR"
-MINEFOLIO_PORT="$PORT" MINEFOLIO_DB_DRIVER=sqlite MINEFOLIO_DB_DSN="$DB" \
+MINEFOLIO_PORT="$PORT" PORT="$PORT" MINEFOLIO_DB_DRIVER="$DB_DRIVER" MINEFOLIO_DB_DSN="$MINEFOLIO_DB_DSN" \
   MINEFOLIO_JWT_SECRET="$TEST_JWT_SECRET" AI_CONFIG="$TMP_DIR/ai.json" \
   ./minefolio > "$SERVER_LOG" 2>&1 &
 SERVER_PID=$!

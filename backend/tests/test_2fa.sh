@@ -2,33 +2,23 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/db_helper.sh"
 BACKEND_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$BACKEND_DIR"
 
-PORT=8092
-SERVER_PID=""
-DB_PATH="/tmp/test_2fa_$$.db"
+PORT="${PORT:-8092}"
+db_init_context "$PORT" "test_2fa"
+export TEST_JWT_SECRET="test_2fa_secret_1234567890123456"
 
 cleanup() {
-    if [ -n "$SERVER_PID" ] && kill -0 "$SERVER_PID" 2>/dev/null; then
-        kill "$SERVER_PID" 2>/dev/null || true
-        wait "$SERVER_PID" 2>/dev/null || true
-    fi
-    rm -f "$DB_PATH"
+    db_stop_server
+    db_clean
 }
 trap cleanup EXIT INT TERM
 
 echo "=== 1. Starting Minefolio server on port $PORT ==="
-MINEFOLIO_PORT=$PORT MINEFOLIO_DB_DRIVER=sqlite MINEFOLIO_DB_DSN="$DB_PATH" MINEFOLIO_JWT_SECRET="test_2fa_secret_1234567890123456" ./build/minefolio &
-SERVER_PID=$!
-
-# Wait for server to start
-for i in {1..30}; do
-    if curl -s "http://127.0.0.1:$PORT/api/system/status" >/dev/null 2>&1; then
-        break
-    fi
-    sleep 0.2
-done
+db_clean
+db_start_server "$PORT" "$BACKEND_DIR/build"
 
 rsa_encrypt() {
   local plain="$1"

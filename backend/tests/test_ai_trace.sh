@@ -2,27 +2,23 @@
 set -euo pipefail
 
 PORT="${MINEFOLIO_PORT:-18086}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/db_helper.sh"
+
+db_init_context "$PORT" "ai_trace"
 BASE="http://127.0.0.1:${PORT}/api"
-DB="/tmp/mf_trace_test.db"
-BUILD_DIR="$(cd "$(dirname "$0")/../build" && pwd)"
+BUILD_DIR="$(cd "$SCRIPT_DIR/../build" && pwd)"
 PASS=0; FAIL=0
 
 cleanup() {
-  [ -n "${SERVER_PID:-}" ] && kill "$SERVER_PID" 2>/dev/null || true
-  rm -f "$DB" "$DB-wal" "$DB-shm"
+  db_stop_server
+  db_clean
 }
-trap cleanup EXIT
+trap cleanup EXIT INT TERM
 
 export TEST_JWT_SECRET="test-jwt-secret-for-trace-verification-1234567890"
-rm -f "$DB" "$DB-wal" "$DB-shm"
-cd "$BUILD_DIR"
-MINEFOLIO_PORT="${PORT}" MINEFOLIO_DB_DSN="$DB" MINEFOLIO_JWT_SECRET="$TEST_JWT_SECRET" ./minefolio >/tmp/minefolio_trace_test.log 2>&1 &
-SERVER_PID=$!
-
-for _i in $(seq 1 30); do
-  curl -sf "http://127.0.0.1:${PORT}/healthz" >/dev/null 2>&1 && break
-  sleep 0.2
-done
+db_clean
+db_start_server "$PORT" "$BUILD_DIR" "/tmp/minefolio_trace_test.log"
 
 req() {
   local method="$1" path="$2" data="${3:-}"
