@@ -781,7 +781,7 @@ ai_batch_actions_execute(csilk_db_pool_t*    pool,
             }
 
             int64_t transfer_id = mf_ai_repo_transfer_insert(
-                pool, user_id, from_id, to_id, amount, "CNY", note ? note : "");
+                pool, user_id, from_id, to_id, amount, "CNY", dt, note ? note : "");
             if (transfer_id <= 0) {
                 db_tx_scope_rollback(pool, &scope);
                 csilk_json_free(results_arr);

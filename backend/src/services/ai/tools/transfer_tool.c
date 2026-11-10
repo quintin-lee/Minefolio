@@ -165,6 +165,7 @@ exec_confirm_proposed_transfer(const ai_tool_t*         tool,
     int64_t     to_id = (int64_t)db_get_num(args, "to_asset_id");
     const char* note = args ? csilk_json_get_string(args, "note") : "";
     const char* draft_token = args ? csilk_json_get_string(args, "draft_token") : "";
+    const char* date = args ? csilk_json_get_string(args, "date") : NULL;
 
     if (amount <= 0.0) {
         return strdup("{\"error\":\"amount must be positive\"}");
@@ -187,7 +188,7 @@ exec_confirm_proposed_transfer(const ai_tool_t*         tool,
     }
 
     int64_t transfer_id = mf_ai_repo_transfer_insert(
-        ctx->pool, ctx->user_id, from_id, to_id, amount, "CNY", note ? note : "");
+        ctx->pool, ctx->user_id, from_id, to_id, amount, "CNY", date, note ? note : "");
     if (transfer_id <= 0) {
         db_tx_scope_rollback(ctx->pool, &scope);
         return strdup("{\"error\":\"failed to insert transfer record\"}");

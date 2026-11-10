@@ -7,6 +7,7 @@
 #include "infrastructure/repositories/daily_expense_repo_impl.h"
 #include "common/db.h"
 #include <string.h>
+#include <time.h>
 
 csilk_json_t*
 mf_ai_repo_asset_list(
@@ -125,11 +126,19 @@ mf_ai_repo_daily_expense_insert(void*       pool,
                                 int64_t     asset_id,
                                 const char* note)
 {
-    char uid[32], cat[32], ast[32], amt[64];
+    char uid[32], cat[32], ast[32], amt[64], date_buf[64];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     snprintf(cat, sizeof(cat), "%lld", (long long)category_id);
     snprintf(ast, sizeof(ast), "%lld", (long long)asset_id);
     snprintf(amt, sizeof(amt), "%.6f", amount);
+
+    if (!expense_date || !expense_date[0]) {
+        time_t    now = time(NULL);
+        struct tm tm_now;
+        localtime_r(&now, &tm_now);
+        strftime(date_buf, sizeof(date_buf), "%Y-%m-%d", &tm_now);
+        expense_date = date_buf;
+    }
     csilk_json_t* res =
         csilk_db_query_param_json((csilk_db_pool_t*)pool,
                                   "INSERT INTO daily_expenses "
@@ -222,20 +231,36 @@ mf_ai_repo_transfer_insert(void*       pool,
                            int64_t     to_asset_id,
                            double      amount,
                            const char* currency,
+                           const char* transfer_date,
                            const char* note)
 {
-    char uid[32], fid[32], tid[32], amt[64];
+    char uid[32], fid[32], tid[32], amt[64], date_buf[64];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     snprintf(fid, sizeof(fid), "%lld", (long long)from_asset_id);
     snprintf(tid, sizeof(tid), "%lld", (long long)to_asset_id);
     snprintf(amt, sizeof(amt), "%.6f", amount);
+
+    if (!transfer_date || !transfer_date[0]) {
+        time_t    now = time(NULL);
+        struct tm tm_now;
+        localtime_r(&now, &tm_now);
+        strftime(date_buf, sizeof(date_buf), "%Y-%m-%d %H:%M:%S", &tm_now);
+        transfer_date = date_buf;
+    }
+
     csilk_json_t* res = csilk_db_query_param_json(
         (csilk_db_pool_t*)pool,
         "INSERT INTO transfers (user_id, from_asset_id, to_asset_id, amount, currency, "
         "transfer_date, note) "
         "VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id",
-        (const char*[]){
-            uid, fid, tid, amt, currency ? currency : "CNY", "", note ? note : "", NULL});
+        (const char*[]){uid,
+                        fid,
+                        tid,
+                        amt,
+                        currency ? currency : "CNY",
+                        transfer_date,
+                        note ? note : "",
+                        NULL});
     int64_t id = 0;
     if (res && csilk_json_array_size(res) > 0) {
         id = db_get_int(csilk_json_array_get(res, 0), "id");

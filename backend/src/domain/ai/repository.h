@@ -74,6 +74,7 @@ int64_t mf_ai_repo_transfer_insert(void*       pool,
                                    int64_t     to_asset_id,
                                    double      amount,
                                    const char* currency,
+                                   const char* transfer_date,
                                    const char* note);
 
 /**
