@@ -105,6 +105,14 @@ mf_daily_expense_repo_list(void*          db_pool,
     return *out_json ? 0 : -1;
 }
 
+/**
+ * @brief 将日常收支行结果中的 tags 字段从 DB 字符串标量反序列化为真实的 JSON Array
+ *
+ * @note 背景契约：根据 csilk_db_query_json_locked (deps/csilk/src/drivers/db/db.c:122) 约定，驱动层将所有列值作为
+ *       csilk_json_string 标量输出，因此 DB 中存储的 JSON 文本列不会被自动解析。
+ *       前端与 API 契约（test_daily_expense_tags_array_contract）严格要求 tags 必须是
+ *       真正的 JSON Array 类型，因此本函数必须对 tags 字段显式执行 csilk_json_parse。
+ */
 csilk_json_t*
 mf_format_expense_rows_with_tags(csilk_json_t* raw_rows)
 {

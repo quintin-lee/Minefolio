@@ -124,6 +124,31 @@ int db_tx_scope_commit(csilk_db_pool_t* pool, db_tx_scope_t* scope);
 int db_tx_scope_rollback(csilk_db_pool_t* pool, db_tx_scope_t* scope);
 
 /**
+ * @section csilk_json_db_contract csilk JSON 所有权模型与 DB 驱动层字符串标量契约
+ *
+ * 【重要约定 - 请在修改任何仓库层/用例层 JSON 处理前通读】
+ *
+ * 1. DB 驱动层统一序列化为 String 标量（详见 csilk/src/drivers/db/db.c:122）：
+ *    csilk_db_query_param_json / csilk_db_query_json_locked 遍历 SQL 查询结果集时，
+ *    将所有字段无差别序列化为 csilk_json_string_new(val) 字符串标量节点，不进行任何类型推断。
+ *    - 读取数值/布尔必须调用 db_get_num / db_get_int / db_get_bool / db_get_decimal；
+ *    - 严禁直接调用 csilk_json_get_number()（其对 string 节点直接返回 0.0）；
+ *    - DB 中的 JSON 复合列（如 tags、config_json、metadata）：在查询结果行中是【未解析的 JSON 字符串标量】，
+ *      绝非 JSON 数组或对象！在交付给前端前（如 mf_format_expense_rows_with_tags），必须显式调用
+ *      csilk_json_parse(tags_str) 进行反序列化并挂载为真正的 csilk_json_array/object。
+ *
+ * 2. 容器挂载转移所有权（Ownership Transfer）：
+ *    调用 csilk_json_array_append(arr, item) 或 csilk_json_add_object(obj, key, child) 会转移 child 的所有权给父容器。
+ *    父容器释放时会递归级联释放所有子节点。严禁在挂载后对子节点单独调用 csilk_json_free()（会导致 Double-Free）。
+ *
+ * 3. 借用视图与跨文档深拷贝（View vs Deep-Copy）：
+ *    csilk_json_get(obj, key) 与 csilk_json_array_get(arr, idx) 返回的是借用视图指针（Borrowed View），
+ *    其生命周期与原文档绑定，严禁单独释放。
+ *    若需将一个文档中的子节点挂载到另一个独立文档中，必须调用 csilk_json_copy(view) 执行跨文档深拷贝；
+ *    严禁跨文档直接复用指针挂载，否则原文档被 free 后会导致悬空引用与 Use-After-Free (UAF)。
+ */
+
+/**
  * @brief 从查询结果行的 JSON 对象中安全提取浮点数值
  *
  * 封装底层 csilk_json_as_double，支持透明解析 number、boolean 以及文本型数值。

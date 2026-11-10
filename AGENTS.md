@@ -297,6 +297,22 @@ void register_<domain>_routes(csilk_app_t* app) {
 - Include service header, not repository header
 - `main.c` includes only controller headers
 
+### C — csilk JSON Ownership & DB Column Stringification Contract (STRICT)
+
+`csilk_json_t` 的对象所有权模型具有三种必须严格遵守的隐式语义（详见 `deps/csilk/src/drivers/db/db.c:122`）：
+
+1. **DB 驱动层统一序列化为 String 标量**：
+   - `csilk_db_query_param_json` / `csilk_db_query_json_locked` 会将查询结果集中的**所有列值无差别序列化为 `csilk_json_string_new` 字符串标量**，不进行任何底层类型推断。
+   - **数值与布尔**：必须通过 `common/db.h` 中的 `db_get_num()`、`db_get_int()`、`db_get_bool()`、`db_get_decimal()` 解析；**严禁**直接调用 `csilk_json_get_number()`（对字符串节点永远返回 `0.0`）。
+   - **嵌套 JSON 列**（如 `tags`、`config_json`、`metadata`）：在 DB 返回的 JSON 行对象中是**未解析的 JSON 转义字符串标量**，绝非 JSON 数组或对象！向前端或上层交付前（如 `mf_format_expense_rows_with_tags`），必须显式执行一次 `csilk_json_parse()` 将字符串反序列化为真正的 `csilk_json_array/object`，并挂载回结果集。
+
+2. **所有权转移（Ownership Transfer）**：
+   - 将子对象/数组挂载到父节点（如 `csilk_json_array_append(arr, item)`、`csilk_json_add_object(parent, key, child)`）会**转移所有权**。父节点销毁时会级联 `csilk_json_free` 释放其所有子节点。挂载后严禁对子节点单独调用 `csilk_json_free`（会导致 Double-Free 崩溃）。
+
+3. **视图借用 vs 跨文档深拷贝（View vs Deep-Copy）**：
+   - `csilk_json_get(obj, key)` 与 `csilk_json_array_get(arr, idx)` 返回的是**借用指针（Borrowed View）**，生命周期与宿主文档绑定，禁止单独释放。
+   - 若需将借用指针挂载到另一个独立的 JSON 文档中，**必须先通过 `csilk_json_copy()` 进行跨文档 Deep-Copy**。禁止跨文档直接指针挂载，否则原文档释放后立即引发 Use-After-Free (UAF)。
+
 ### C — Database & Number Parsing (STRICT)
 
 - **NEVER** interpolate user input into SQL strings
