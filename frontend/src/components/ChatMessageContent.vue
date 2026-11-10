@@ -94,6 +94,20 @@
           <span class="tool-card-status">
             {{ isToolsStreaming ? '正在调用工具...' : `已调用 ${toolCalls.length} 个工具` }}
           </span>
+          <div class="tool-steps-preview">
+            <span
+              v-for="(tc, i) in toolCalls"
+              :key="i"
+              class="tool-step-pill"
+              :class="{
+                'pill-pending': tc.args && !tc.result,
+                'pill-done': !!tc.result,
+              }"
+            >
+              <Icon :icon="getToolIcon(tc.name)" class="pill-icon" />
+              <span class="pill-text">{{ getToolLabel(tc.name) }}</span>
+            </span>
+          </div>
         </div>
         <Icon
           :icon="isToolsExpanded ? 'ph:caret-down-bold' : 'ph:caret-right-bold'"
@@ -101,15 +115,59 @@
         />
       </div>
       <div v-if="isToolsExpanded" class="tool-card-body">
-        <div v-for="(tc, i) in toolCalls" :key="i" class="tool-call-item">
-          <div class="tool-call-item-header">
-            <Icon icon="ph:cube-bold" class="tool-item-icon" />
-            <span class="tool-call-name">{{ tc.name }}</span>
-            <span v-if="tc.args && !tc.result" class="tool-item-pending">执行中...</span>
-            <span v-else-if="tc.result" class="tool-item-done">完成</span>
+        <div
+          v-for="(tc, i) in toolCalls"
+          :key="i"
+          class="tool-timeline-step tool-call-item"
+          :class="{ 'step-expanded': isStepExpanded(i) }"
+        >
+          <div class="tool-step-header tool-call-item-header" @click="toggleStep(i)">
+            <div class="step-badge">
+              <span class="step-num">{{ i + 1 }}</span>
+              <Icon :icon="getToolIcon(tc.name)" class="tool-item-icon" />
+            </div>
+            <div class="step-title-area">
+              <span class="tool-step-label">{{ getToolLabel(tc.name) }}</span>
+              <span class="tool-call-name">{{ tc.name }}</span>
+            </div>
+            <div class="step-status-area">
+              <span v-if="tc.args && !tc.result" class="tool-item-pending">
+                <Icon icon="ph:spinner-gap" class="spinning-sparkle" />
+                执行中...
+              </span>
+              <span v-else-if="tc.result" class="tool-item-done">
+                <Icon icon="ph:check-circle-bold" />
+                完成
+              </span>
+              <button
+                type="button"
+                class="tool-step-toggle"
+                :title="isStepExpanded(i) ? '收起详情' : '展开参数与结果'"
+                :aria-expanded="isStepExpanded(i)"
+                @click.stop="toggleStep(i)"
+              >
+                <span class="toggle-text">{{ isStepExpanded(i) ? '收起' : '详情' }}</span>
+                <Icon
+                  :icon="isStepExpanded(i) ? 'ph:caret-up-bold' : 'ph:caret-down-bold'"
+                  class="toggle-caret"
+                />
+              </button>
+            </div>
           </div>
-          <pre v-if="tc.args" class="tool-call-args">{{ tc.args }}</pre>
-          <pre v-if="tc.result" class="tool-call-result">{{ tc.result }}</pre>
+          <div v-if="isStepExpanded(i)" class="tool-step-details">
+            <div v-if="tc.args" class="tool-detail-section">
+              <div class="tool-detail-label">
+                <span>调用参数 (Arguments)</span>
+              </div>
+              <pre class="tool-call-args">{{ tc.args }}</pre>
+            </div>
+            <div v-if="tc.result" class="tool-detail-section">
+              <div class="tool-detail-label">
+                <span>执行结果 (Result)</span>
+              </div>
+              <pre class="tool-call-result">{{ tc.result }}</pre>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -324,8 +382,52 @@ const isThinkingExpanded = computed({
 function toggleThinking() {
   isThinkingExpanded.value = !isThinkingExpanded.value
 }
-// Tool Calls Card State
+// Tool Calls Card State & Semantic Labels
+const TOOL_META_MAP: Record<string, { label: string; icon: string }> = {
+  query_assets: { label: '查询持仓资产', icon: 'ph:vault-bold' },
+  list_assets: { label: '获取资产列表', icon: 'ph:vault-bold' },
+  sync_quotes: { label: '同步市场行情', icon: 'ph:trend-up-bold' },
+  fetch_market_index: { label: '查询大盘指数', icon: 'ph:chart-line-bold' },
+  propose_daily_expense: { label: '生成收支记账', icon: 'ph:receipt-bold' },
+  propose_transfer: { label: '生成资金调拨', icon: 'ph:arrows-left-right-bold' },
+  analyze_financial_health: { label: '财务健康体检', icon: 'ph:heartbeat-bold' },
+  web_search: { label: '全网实时检索', icon: 'ph:globe-bold' },
+  execute_workflow_step: { label: '执行工作流步骤', icon: 'ph:git-merge-bold' },
+}
+
+function formatFallbackToolName(name: string): string {
+  if (!name) return '未知工具'
+  return name
+    .replace(/[_-]+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, c => c.toUpperCase())
+}
+
+function getToolLabel(name: string): string {
+  return TOOL_META_MAP[name]?.label || formatFallbackToolName(name)
+}
+
+function getToolIcon(name: string): string {
+  return TOOL_META_MAP[name]?.icon || 'ph:cube-bold'
+}
+
 const toolsManualExpanded = ref<boolean | null>(null)
+const expandedStepIndices = ref(new Set<number>())
+
+function isStepExpanded(idx: number): boolean {
+  return expandedStepIndices.value.has(idx)
+}
+
+function toggleStep(idx: number) {
+  const next = new Set(expandedStepIndices.value)
+  if (next.has(idx)) {
+    next.delete(idx)
+  } else {
+    next.add(idx)
+  }
+  expandedStepIndices.value = next
+}
+
 const isToolsStreaming = computed(() => {
   return !!props.isStreaming && !!props.toolCalls?.some(tc => !tc.result)
 })
@@ -351,6 +453,7 @@ watch(
     manualExpanded.value = null
     toolsManualExpanded.value = null
     thinkingDuration.value = 0
+    expandedStepIndices.value = new Set()
   },
 )
 
@@ -1046,6 +1149,8 @@ const segments = computed<Segment[]>(() => {
   font-size: 12.5px;
   font-weight: 500;
   color: var(--mf-text-secondary);
+  flex-wrap: wrap;
+  flex: 1;
 }
 
 .tool-card-icon {
@@ -1057,11 +1162,51 @@ const segments = computed<Segment[]>(() => {
 .tool-card-status {
   color: var(--mf-text-main);
   font-weight: 500;
+  flex-shrink: 0;
+}
+
+.tool-steps-preview {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 4px;
+  flex-wrap: wrap;
+}
+
+.tool-step-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  font-size: 11px;
+  border-radius: 9999px;
+  background: var(--mf-surface-hover, rgba(0, 0, 0, 0.04));
+  color: var(--mf-text-secondary);
+  border: 1px solid var(--mf-border-subtle, #e2e8f0);
+  line-height: 1.4;
+}
+
+.tool-step-pill.pill-pending {
+  color: var(--mf-primary);
+  background: rgba(59, 130, 246, 0.08);
+  border-color: rgba(59, 130, 246, 0.25);
+}
+
+.tool-step-pill.pill-done {
+  color: var(--mf-success, #16a34a);
+  background: rgba(22, 163, 74, 0.08);
+  border-color: rgba(22, 163, 74, 0.2);
+}
+
+.pill-icon {
+  font-size: 11px;
 }
 
 .tool-card-caret {
   font-size: 14px;
   color: var(--mf-text-secondary);
+  flex-shrink: 0;
+  margin-left: 8px;
 }
 
 .tool-card-body {
@@ -1069,24 +1214,63 @@ const segments = computed<Segment[]>(() => {
   border-top: 1px dashed var(--mf-border-subtle, #e2e8f0);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   max-height: 400px;
   overflow-y: auto;
+  scrollbar-width: thin;
   background: var(--mf-surface, #ffffff);
 }
 
-.tool-call-item {
+.tool-timeline-step {
+  position: relative;
   border: 1px solid var(--mf-border-subtle, #e2e8f0);
   border-radius: 6px;
-  padding: 8px 10px;
-  background: var(--mf-surface-muted, rgba(248, 250, 252, 0.4));
+  background: var(--mf-surface-muted, rgba(248, 250, 252, 0.5));
+  transition: all 0.15s ease;
+  overflow: hidden;
 }
 
-.tool-call-item-header {
+.tool-timeline-step:hover {
+  border-color: var(--mf-border, #cbd5e1);
+}
+
+.tool-timeline-step.step-expanded {
+  background: var(--mf-surface, #ffffff);
+  border-color: var(--mf-border, #cbd5e1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+
+.tool-step-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12.5px;
+  padding: 8px 10px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.tool-step-header:hover {
+  background: var(--mf-surface-hover, rgba(0, 0, 0, 0.02));
+}
+
+.step-badge {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--mf-surface-hover, rgba(0, 0, 0, 0.06));
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--mf-text-secondary);
 }
 
 .tool-item-icon {
@@ -1094,27 +1278,102 @@ const segments = computed<Segment[]>(() => {
   color: var(--mf-success, #16a34a);
 }
 
+.step-title-area {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.tool-step-label {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--mf-text-main);
+  white-space: nowrap;
+}
+
 .tool-call-name {
   font-family: var(--font-mono, monospace);
-  color: var(--mf-text-main);
-  font-weight: 500;
+  font-size: 11px;
+  color: var(--mf-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.step-status-area {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .tool-item-pending {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: 11.5px;
-  color: var(--mf-text-muted);
-  margin-left: auto;
+  color: var(--mf-primary);
 }
 
 .tool-item-done {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   font-size: 11.5px;
   color: var(--mf-success, #16a34a);
-  margin-left: auto;
+}
+
+.tool-step-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 6px;
+  font-size: 11px;
+  border: 1px solid var(--mf-border-subtle, #e2e8f0);
+  border-radius: 4px;
+  background: var(--mf-surface, #ffffff);
+  color: var(--mf-text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tool-step-toggle:hover {
+  color: var(--mf-primary);
+  border-color: var(--mf-primary);
+  background: rgba(59, 130, 246, 0.05);
+}
+
+.toggle-caret {
+  font-size: 11px;
+}
+
+.tool-step-details {
+  padding: 6px 10px 10px;
+  border-top: 1px dashed var(--mf-border-subtle, #e2e8f0);
+  background: var(--mf-surface-muted, rgba(248, 250, 252, 0.4));
+}
+
+.tool-detail-section {
+  margin-top: 6px;
+}
+
+.tool-detail-section:first-child {
+  margin-top: 2px;
+}
+
+.tool-detail-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--mf-text-muted);
+  margin-bottom: 2px;
 }
 
 .tool-call-args,
 .tool-call-result {
-  margin: 6px 0 0;
+  margin: 4px 0 0;
   padding: 8px;
   font-size: 11.5px;
   line-height: 1.5;
