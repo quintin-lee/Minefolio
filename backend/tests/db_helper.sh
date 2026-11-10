@@ -13,7 +13,7 @@ db_init_context() {
   MINEFOLIO_PORT="$PORT"
   DB_DRIVER="${MINEFOLIO_DB_DRIVER:-sqlite}"
 
-  export PORT MINEFOLIO_PORT MINEFOLIO_DB_DRIVER
+  export PORT MINEFOLIO_PORT MINEFOLIO_DB_DRIVER DB_DRIVER
 
   if [ "$DB_DRIVER" = "postgres" ]; then
     PGHOST="${PGHOST:-localhost}"
@@ -103,7 +103,7 @@ sqlite3() {
     shift
   fi
   local sql="$1"
-  if [[ "$sql" =~ ^[[:space:]]*(INSERT|UPDATE|DELETE|CREATE|DROP) ]] && [[ ! "$sql" =~ last_insert_rowid ]]; then
+  if [[ "$sql" =~ ^[[:space:]]*([Ii][Nn][Ss][Ee][Rr][Tt]|[Uu][Pp][Dd][Aa][Tt][Ee]|[Dd][Ee][Ll][Ee][Tt][Ee]|[Cc][Rr][Ee][Aa][Tt][Ee]|[Dd][Rr][Oo][Pp]) ]] && [[ ! "$sql" =~ last_insert_rowid ]]; then
     db_exec "$sql"
   else
     db_query "$sql"
@@ -115,13 +115,15 @@ db_start_server() {
   local build_dir="${2:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../build" && pwd)}"
   local log_file="${3:-/dev/null}"
 
-  cd "$build_dir"
-  MINEFOLIO_DB_DRIVER="$DB_DRIVER" \
-  MINEFOLIO_DB_DSN="$MINEFOLIO_DB_DSN" \
-  MINEFOLIO_PORT="$port" \
-  PORT="$port" \
-  MINEFOLIO_JWT_SECRET="${TEST_JWT_SECRET:-test_jwt_secret_12345678901234567890}" \
-  ./minefolio > "$log_file" 2>&1 &
+  (
+    cd "$build_dir"
+    MINEFOLIO_DB_DRIVER="$DB_DRIVER" \
+    MINEFOLIO_DB_DSN="$MINEFOLIO_DB_DSN" \
+    MINEFOLIO_PORT="$port" \
+    PORT="$port" \
+    MINEFOLIO_JWT_SECRET="${TEST_JWT_SECRET:-test_jwt_secret_12345678901234567890}" \
+    ./minefolio > "$log_file" 2>&1
+  ) &
   SERVER_PID=$!
 
   # Poll health endpoint until server is ready

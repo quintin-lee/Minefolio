@@ -33,8 +33,11 @@ SERVER_PID=""
 MOCK_PID=""
 
 cleanup() {
-  [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null || true
-  [ -n "$MOCK_PID" ] && kill "$MOCK_PID" 2>/dev/null || true
+  db_stop_server "$SERVER_PID"
+  if [ -n "$MOCK_PID" ]; then
+    kill "$MOCK_PID" 2>/dev/null || true
+    wait "$MOCK_PID" 2>/dev/null || true
+  fi
   db_clean
   rm -rf "$TMP_DIR"
 }

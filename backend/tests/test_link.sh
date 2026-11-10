@@ -768,7 +768,7 @@ check "重名账户 code=1004" "1004" "$DUP_ACCT_CODE"
 # 6. 更新账户（归档）
 ARCH_CODE=$(curl -s -X PUT -H "$AUTH" -H "Content-Type: application/json" "$BASE/accounts/$NEW_ACCT_ID" -d '{"archived":true,"institution":"platform"}' | jq -r '.code | floor')
 check "归档账户 code=0" "0" "$ARCH_CODE"
-ARCH_FLAG=$(sqlite3 "$DB" "SELECT archived FROM accounts WHERE id=$NEW_ACCT_ID")
+ARCH_FLAG=$(sqlite3 "$DB" "SELECT CASE WHEN archived THEN 1 ELSE 0 END FROM accounts WHERE id=$NEW_ACCT_ID")
 check "账户 archived 标志已置位" "1" "$ARCH_FLAG"
 
 # 6b. 列表过滤：默认列表不含已归档账户；include_archived=1 含

@@ -32,7 +32,7 @@ account_list(csilk_db_pool_t* pool,
         "(SELECT COALESCE(SUM(a.current_value), 0) FROM assets a WHERE a.account_id = ac.id) AS "
         "total_value FROM accounts ac WHERE ac.user_id=? AND ac.ledger_id=? "
         "%s ORDER BY ac.sort_order, ac.id",
-        include_archived ? "" : "AND ac.archived=0 ");
+        include_archived ? "" : "AND NOT ac.archived ");
 
     const char*   params[3] = {uid, lid, NULL};
     csilk_json_t* rows = csilk_db_query_param_json(pool, sql, params);
