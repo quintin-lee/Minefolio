@@ -1,7 +1,9 @@
 #include "application/asset/usecases.h"
 #include "domain/asset/entity.h"
 #include "domain/asset/rules.h"
+#include "domain/asset/performance.h"
 #include "infrastructure/repositories/asset_repo_impl.h"
+#include "infrastructure/repositories/market_repo_impl.h"
 #include "common/balance.h"
 #include "common/db.h"
 #include "core/financial/price.h"
@@ -10,6 +12,7 @@
 #include "application/account/usecases.h"
 #include "infrastructure/repositories/account_repo_impl.h"
 #include "common/ledger_utils.h"
+#include <time.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -507,6 +510,106 @@ asset_usecase_get(void* pool, int64_t user_id, int64_t id, csilk_json_t** out_js
         csilk_json_free(tx_rows);
     }
     csilk_json_add_array(resp, "transactions", transactions);
+
+    /* ── 扩展：区间收益 + 当日涨跌 + 组合权重 ─────────────────── */
+
+    /* 1. 区间收益（1M/3M/6M/1Y/ALL）：从价格历史序列计算 */
+    int64_t aid64 = db_get_int(row, "id");
+    /* 取过去 365 天的价格序列 */
+    char today_str[16], year_ago_str[16];
+    {
+        time_t    now_t = time(NULL);
+        struct tm tm_now;
+        localtime_r(&now_t, &tm_now);
+        strftime(today_str, sizeof(today_str), "%Y-%m-%d", &tm_now);
+        time_t    year_ago = now_t - 365 * 86400;
+        struct tm tm_y;
+        localtime_r(&year_ago, &tm_y);
+        strftime(year_ago_str, sizeof(year_ago_str), "%Y-%m-%d", &tm_y);
+    }
+    csilk_json_t* price_rows =
+        mf_market_repo_price_history_range(db_pool, user_id, aid64, year_ago_str, today_str);
+    if (price_rows && csilk_json_array_size(price_rows) >= 2) {
+        size_t            pn = csilk_json_array_size(price_rows);
+        mf_price_point_t* series = (mf_price_point_t*)calloc(pn, sizeof(mf_price_point_t));
+        if (series) {
+            for (size_t i = 0; i < pn; i++) {
+                const csilk_json_t* pr = csilk_json_array_get(price_rows, i);
+                const char*         pd = csilk_json_get_string(pr, "price_date");
+                const char*         cur = csilk_json_get_string(pr, "currency");
+                currency_t          c = cur ? currency_from_str(cur) : currency_from_str("CNY");
+                if (pd) {
+                    snprintf(series[i].date, sizeof(series[i].date), "%s", pd);
+                }
+                double pv = db_get_num(pr, "price");
+                price_from_double(pv, 4, c, &series[i].price);
+            }
+            mf_interval_returns_t rets;
+            memset(&rets, 0, sizeof(rets));
+            if (mf_interval_returns_from_series(series, pn, today_str, &rets) == 0) {
+                csilk_json_t* ret_obj = csilk_json_object();
+                csilk_json_add_number(ret_obj, "ret_1m", rets.ret_1m);
+                csilk_json_add_bool(ret_obj, "valid_1m", rets.valid_1m ? 1 : 0);
+                csilk_json_add_number(ret_obj, "ret_3m", rets.ret_3m);
+                csilk_json_add_bool(ret_obj, "valid_3m", rets.valid_3m ? 1 : 0);
+                csilk_json_add_number(ret_obj, "ret_6m", rets.ret_6m);
+                csilk_json_add_bool(ret_obj, "valid_6m", rets.valid_6m ? 1 : 0);
+                csilk_json_add_number(ret_obj, "ret_1y", rets.ret_1y);
+                csilk_json_add_bool(ret_obj, "valid_1y", rets.valid_1y ? 1 : 0);
+                csilk_json_add_number(ret_obj, "ret_all", rets.ret_all);
+                csilk_json_add_bool(ret_obj, "valid_all", rets.valid_all ? 1 : 0);
+                csilk_json_add_object(resp, "interval_returns", ret_obj);
+            } else {
+                csilk_json_add_object(resp, "interval_returns", NULL);
+            }
+
+            /* 2. 当日涨跌（最新价 vs 前一日价） */
+            money_t daily_change;
+            double  daily_pct = 0.0;
+            if (mf_daily_change_from_series(series, pn, &daily_change, &daily_pct) == 0) {
+                csilk_json_t* daily_obj = csilk_json_object();
+                char          chg_str[64];
+                money_to_string(daily_change, chg_str, sizeof(chg_str));
+                csilk_json_add_string(daily_obj, "change", chg_str);
+                csilk_json_add_number(daily_obj, "pct", daily_pct);
+                csilk_json_add_object(resp, "daily_change", daily_obj);
+            }
+
+            free(series);
+        }
+    }
+    if (price_rows) {
+        csilk_json_free(price_rows);
+    }
+
+    /* 3. 组合权重（占该用户全部非负债资产市值比例） */
+    {
+        double self_val = db_get_num(row, "current_value");
+        /* 快速取该用户全部非负债资产合计市值 */
+        char uid_str[32];
+        snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+        csilk_json_t* all_rows =
+            csilk_db_query_param_json(db_pool,
+                                      "SELECT a.current_value, c.asset_type FROM assets a "
+                                      "JOIN categories c ON a.category_id=c.id "
+                                      "WHERE a.user_id=? AND c.asset_type NOT IN "
+                                      "('loan','credit_card','other_liability')",
+                                      (const char*[]){uid_str, NULL});
+        double total_mkt = 0.0;
+        if (all_rows) {
+            size_t tn = csilk_json_array_size(all_rows);
+            for (size_t i = 0; i < tn; i++) {
+                total_mkt += db_get_num(csilk_json_array_get(all_rows, i), "current_value");
+            }
+            csilk_json_free(all_rows);
+        }
+        double weight = 0.0;
+        if (total_mkt > 0.0 && self_val > 0.0) {
+            weight = self_val / total_mkt;
+        }
+        csilk_json_add_number(resp, "portfolio_weight", weight);
+    }
+
     csilk_json_free(result);
 
     *out_json = resp;
