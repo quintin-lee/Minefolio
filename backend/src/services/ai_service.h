@@ -26,18 +26,6 @@ void ai_shutdown(void);
  */
 void ai_chat_handler(csilk_ctx_t* c);
 
-/**
- * @brief 测试大模型服务商 API Key 及端点连通性 (POST /api/ai/test-connection)
- * @param c HTTP 上下文
- */
-void ai_service_test_connection(csilk_ctx_t* c);
-
-/**
- * @brief 动态拉取指定服务商可用的模型列表 (POST /api/ai/fetch-models)
- * @param c HTTP 上下文
- */
-void ai_service_fetch_models(csilk_ctx_t* c);
-
 #include "application/ai/config_provider.h"
 
 /**
