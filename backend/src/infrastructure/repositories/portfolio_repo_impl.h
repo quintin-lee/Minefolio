@@ -1,6 +1,8 @@
 #pragma once
 
 #include "domain/portfolio/repository.h"
+#include "core/financial/money.h"
+#include "core/financial/currency.h"
 #include "csilk/csilk.h"
 
 /**
@@ -9,9 +11,10 @@
 csilk_json_t* portfolio_repo_get_category_assets(void* pool, int64_t user_id, int64_t ledger_id);
 
 /**
- * @brief 查询用户总负债额
+ * @brief 查询用户总负债额（折算到基准币种后以高精度 money_t 累加，无 float 累加误差）
  */
-double portfolio_repo_get_total_liabilities(void* pool, int64_t user_id, int64_t ledger_id);
+int portfolio_repo_get_total_liabilities_m(
+    void* pool, int64_t user_id, int64_t ledger_id, currency_t base_currency, money_t* out_total);
 
 /**
  * @brief 查询最近 N 笔交易流水
@@ -31,11 +34,11 @@ csilk_json_t*
 portfolio_repo_get_performance_transactions(void* pool, int64_t user_id, int64_t ledger_id);
 
 /**
- * @brief 查询当前投资类资产持仓总市值与总成本
+ * @brief 查询当前投资类资产持仓总市值与总成本（折算到基准币种后以高精度 money_t 累加）
  */
-int portfolio_repo_get_current_holdings_totals(void*   pool,
-                                               int64_t user_id,
-                                               int64_t ledger_id,
-                                               double* out_qty,
-                                               double* out_cost,
-                                               double* out_market);
+int portfolio_repo_get_current_holdings_totals_m(void*      pool,
+                                                 int64_t    user_id,
+                                                 int64_t    ledger_id,
+                                                 currency_t base_currency,
+                                                 money_t*   out_cost,
+                                                 money_t*   out_market);

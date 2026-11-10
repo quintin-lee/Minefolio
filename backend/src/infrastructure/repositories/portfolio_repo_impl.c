@@ -228,9 +228,15 @@ portfolio_repo_get_category_assets(void* pool, int64_t user_id, int64_t ledger_i
     return csilk_db_query_param_json((csilk_db_pool_t*)pool, sql, params);
 }
 
-double
-portfolio_repo_get_total_liabilities(void* pool, int64_t user_id, int64_t ledger_id)
+int
+portfolio_repo_get_total_liabilities_m(
+    void* pool, int64_t user_id, int64_t ledger_id, currency_t base_currency, money_t* out_total)
 {
+    if (!out_total || !pool) {
+        return -1;
+    }
+    *out_total = money_zero(base_currency);
+
     char uid_str[32], lid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
@@ -258,18 +264,23 @@ portfolio_repo_get_total_liabilities(void* pool, int64_t user_id, int64_t ledger
     params[pidx] = NULL;
 
     csilk_json_t* liab_rows = csilk_db_query_param_json((csilk_db_pool_t*)pool, sql, params);
-    double        total = 0.0;
-    if (liab_rows) {
-        size_t n = csilk_json_array_size(liab_rows);
-        for (size_t i = 0; i < n; i++) {
-            csilk_json_t* row = csilk_json_array_get(liab_rows, i);
-            const char*   cur = csilk_json_get_string(row, "currency");
-            double        v = db_get_num(row, "current_value") * exchange_rate_get_to_cny(cur);
-            total += v;
-        }
-        csilk_json_free(liab_rows);
+    if (!liab_rows) {
+        return -1;
     }
-    return total;
+    size_t n = csilk_json_array_size(liab_rows);
+    for (size_t i = 0; i < n; i++) {
+        csilk_json_t* row = csilk_json_array_get(liab_rows, i);
+        const char*   cur = csilk_json_get_string(row, "currency");
+        currency_t    c = currency_from_str(cur ? cur : "CNY");
+        money_t       amt = db_get_money(row, "current_value", c);
+        money_t       conv = exchange_rate_convert_m(amt, base_currency);
+        money_t       acc;
+        if (money_add(*out_total, conv, &acc) == DECIMAL_OK) {
+            *out_total = acc;
+        }
+    }
+    csilk_json_free(liab_rows);
+    return 0;
 }
 
 csilk_json_t*
@@ -527,19 +538,18 @@ portfolio_repo_get_performance_transactions(void* pool, int64_t user_id, int64_t
 }
 
 int
-portfolio_repo_get_current_holdings_totals(void*   pool,
-                                           int64_t user_id,
-                                           int64_t ledger_id,
-                                           double* out_qty,
-                                           double* out_cost,
-                                           double* out_market)
+portfolio_repo_get_current_holdings_totals_m(void*      pool,
+                                             int64_t    user_id,
+                                             int64_t    ledger_id,
+                                             currency_t base_currency,
+                                             money_t*   out_cost,
+                                             money_t*   out_market)
 {
-    if (!out_qty || !out_cost || !out_market) {
+    if (!out_cost || !out_market || !pool) {
         return -1;
     }
-    *out_qty = 0.0;
-    *out_cost = 0.0;
-    *out_market = 0.0;
+    *out_cost = money_zero(base_currency);
+    *out_market = money_zero(base_currency);
 
     char uid_str[32], lid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
@@ -553,7 +563,7 @@ portfolio_repo_get_current_holdings_totals(void*   pool,
     if (ledger_id > 0) {
         snprintf(sql,
                  sizeof(sql),
-                 "SELECT a.quantity, a.cost_basis, a.current_value, a.currency "
+                 "SELECT a.cost_basis, a.current_value, a.currency "
                  "FROM assets a JOIN categories c ON a.category_id=c.id "
                  "WHERE a.user_id=? AND a.ledger_id=? AND c.asset_type IN "
                  "('stock','fund','bond','crypto')");
@@ -561,38 +571,35 @@ portfolio_repo_get_current_holdings_totals(void*   pool,
     } else {
         snprintf(sql,
                  sizeof(sql),
-                 "SELECT a.quantity, a.cost_basis, a.current_value, a.currency "
+                 "SELECT a.cost_basis, a.current_value, a.currency "
                  "FROM assets a JOIN categories c ON a.category_id=c.id "
                  "WHERE a.user_id=? AND c.asset_type IN ('stock','fund','bond','crypto')");
     }
     params[pidx] = NULL;
 
     csilk_json_t* pos_rows = csilk_db_query_param_json((csilk_db_pool_t*)pool, sql, params);
-
-    if (pos_rows) {
-        size_t count = csilk_json_array_size(pos_rows);
-        double total_qty = 0.0;
-        double total_cost = 0.0;
-        double total_market = 0.0;
-
-        for (size_t i = 0; i < count; i++) {
-            const csilk_json_t* row = csilk_json_array_get(pos_rows, i);
-            double              q = db_get_num(row, "quantity");
-            double              c = db_get_num(row, "cost_basis");
-            double              m = db_get_num(row, "current_value");
-            const char*         cur = csilk_json_get_string(row, "currency");
-            double              fx = exchange_rate_get_to_cny(cur);
-
-            total_qty += q;
-            total_cost += (c * fx);
-            total_market += (m * fx);
-        }
-
-        *out_market = total_market;
-        *out_cost = total_cost;
-        *out_qty = total_qty;
-        csilk_json_free(pos_rows);
-        return 0;
+    if (!pos_rows) {
+        return -1;
     }
-    return -1;
+
+    size_t count = csilk_json_array_size(pos_rows);
+    for (size_t i = 0; i < count; i++) {
+        const csilk_json_t* row = csilk_json_array_get(pos_rows, i);
+        const char*         cur = csilk_json_get_string(row, "currency");
+        currency_t          c = currency_from_str(cur ? cur : "CNY");
+        money_t             cost = db_get_money(row, "cost_basis", c);
+        money_t             mkt = db_get_money(row, "current_value", c);
+        money_t             ccost = exchange_rate_convert_m(cost, base_currency);
+        money_t             cmkt = exchange_rate_convert_m(mkt, base_currency);
+        money_t             sum_cost, sum_mkt;
+        if (money_add(*out_cost, ccost, &sum_cost) == DECIMAL_OK) {
+            *out_cost = sum_cost;
+        }
+        if (money_add(*out_market, cmkt, &sum_mkt) == DECIMAL_OK) {
+            *out_market = sum_mkt;
+        }
+    }
+
+    csilk_json_free(pos_rows);
+    return 0;
 }

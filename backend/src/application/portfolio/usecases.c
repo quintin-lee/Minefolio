@@ -157,8 +157,9 @@ portfolio_usecase_get_performance(void*                        db_pool,
     size_t tracker_count = 0;
 
     currency_t    base_cur = currency_from_str(cmd->base_currency ? cmd->base_currency : "CNY");
-    double        total_gain = 0, total_loss = 0;
-    double        total_realized_pnl = 0;
+    money_t       total_gain_m = money_zero(base_cur);
+    money_t       total_loss_m = money_zero(base_cur);
+    money_t       total_realized_m = money_zero(base_cur);
     int           total_trades = 0;
     csilk_json_t* trades = csilk_json_array();
 
@@ -258,23 +259,37 @@ portfolio_usecase_get_performance(void*                        db_pool,
             }
 
             money_t conv_realized = exchange_rate_convert_m(realized_m, base_cur);
-            double  conv_r = money_to_double(conv_realized);
-            total_realized_pnl += conv_r;
-            if (conv_r >= 0) {
-                total_gain += conv_r;
+            money_t acc;
+            if (money_add(total_realized_m, conv_realized, &acc) == DECIMAL_OK) {
+                total_realized_m = acc;
+            }
+            if (money_is_positive(conv_realized)) {
+                if (money_add(total_gain_m, conv_realized, &acc) == DECIMAL_OK) {
+                    total_gain_m = acc;
+                }
             } else {
-                total_loss += (-conv_r);
+                money_t mag = money_abs(conv_realized);
+                if (money_add(total_loss_m, mag, &acc) == DECIMAL_OK) {
+                    total_loss_m = acc;
+                }
             }
         } else if (type && (strcmp(type, "income") == 0 || strcmp(type, "dividend") == 0)) {
             total_trades++;
             realized_m = amt;
             money_t conv_realized = exchange_rate_convert_m(realized_m, base_cur);
-            double  conv_r = money_to_double(conv_realized);
-            total_realized_pnl += conv_r;
-            if (conv_r >= 0) {
-                total_gain += conv_r;
+            money_t acc;
+            if (money_add(total_realized_m, conv_realized, &acc) == DECIMAL_OK) {
+                total_realized_m = acc;
+            }
+            if (money_is_positive(conv_realized)) {
+                if (money_add(total_gain_m, conv_realized, &acc) == DECIMAL_OK) {
+                    total_gain_m = acc;
+                }
             } else {
-                total_loss += (-conv_r);
+                money_t mag = money_abs(conv_realized);
+                if (money_add(total_loss_m, mag, &acc) == DECIMAL_OK) {
+                    total_loss_m = acc;
+                }
             }
             avg_cost = 0.0;
         } else if (type && strcmp(type, "fee") == 0) {
@@ -282,9 +297,15 @@ portfolio_usecase_get_performance(void*                        db_pool,
             money_t fee_amt = money_is_positive(amt) ? amt : fee;
             realized_m = money_neg(fee_amt);
             money_t conv_realized = exchange_rate_convert_m(realized_m, base_cur);
-            double  conv_r = money_to_double(conv_realized);
-            total_realized_pnl += conv_r;
-            total_loss += (-conv_r);
+            money_t acc;
+            if (money_add(total_realized_m, conv_realized, &acc) == DECIMAL_OK) {
+                total_realized_m = acc;
+            }
+            /* fee 折算到基准币种后恒为负数（扣减），mag = |conv| 加到 total_loss */
+            money_t mag = money_abs(conv_realized);
+            if (money_add(total_loss_m, mag, &acc) == DECIMAL_OK) {
+                total_loss_m = acc;
+            }
             avg_cost = 0.0;
         }
 
@@ -305,21 +326,37 @@ portfolio_usecase_get_performance(void*                        db_pool,
     free(trackers);
     csilk_json_free(result);
 
-    double market_value = 0, cost_basis_remaining = 0, dummy_qty = 0;
-    portfolio_repo_get_current_holdings_totals(
-        db_pool, cmd->user_id, cmd->ledger_id, &dummy_qty, &cost_basis_remaining, &market_value);
+    money_t cost_basis_remaining = money_zero(base_cur);
+    money_t market_value_m = money_zero(base_cur);
+    portfolio_repo_get_current_holdings_totals_m(
+        db_pool, cmd->user_id, cmd->ledger_id, base_cur, &cost_basis_remaining, &market_value_m);
+
+    /* net_gain = total_gain - total_loss (money_t 精确运算) */
+    money_t net_gain;
+    if (money_sub(total_gain_m, total_loss_m, &net_gain) != DECIMAL_OK) {
+        net_gain = total_gain_m;
+    }
 
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_number(resp, "total_trades", total_trades);
-    csilk_json_add_number(resp, "total_gain", mf_round_to_decimals(total_gain, 2));
-    csilk_json_add_number(resp, "total_loss", mf_round_to_decimals(total_loss, 2));
-    csilk_json_add_number(resp, "net_gain", mf_round_to_decimals(total_gain - total_loss, 2));
     csilk_json_add_number(
-        resp, "total_cost_basis_remaining", mf_round_to_decimals(cost_basis_remaining, 2));
-    csilk_json_add_number(resp, "total_market_value", mf_round_to_decimals(market_value, 2));
+        resp, "total_gain", mf_round_to_decimals(money_to_double(total_gain_m), 2));
     csilk_json_add_number(
-        resp, "floating_pnl", mf_round_to_decimals(market_value - cost_basis_remaining, 2));
-    csilk_json_add_number(resp, "realized_pnl", mf_round_to_decimals(total_realized_pnl, 2));
+        resp, "total_loss", mf_round_to_decimals(money_to_double(total_loss_m), 2));
+    csilk_json_add_number(resp, "net_gain", mf_round_to_decimals(money_to_double(net_gain), 2));
+    csilk_json_add_number(resp,
+                          "total_cost_basis_remaining",
+                          mf_round_to_decimals(money_to_double(cost_basis_remaining), 2));
+    csilk_json_add_number(
+        resp, "total_market_value", mf_round_to_decimals(money_to_double(market_value_m), 2));
+    money_t floating_pnl;
+    if (money_sub(market_value_m, cost_basis_remaining, &floating_pnl) != DECIMAL_OK) {
+        floating_pnl = market_value_m;
+    }
+    csilk_json_add_number(
+        resp, "floating_pnl", mf_round_to_decimals(money_to_double(floating_pnl), 2));
+    csilk_json_add_number(
+        resp, "realized_pnl", mf_round_to_decimals(money_to_double(total_realized_m), 2));
     csilk_json_add_array(resp, "trades", trades);
 
     *out_resp = resp;
@@ -351,22 +388,29 @@ portfolio_usecase_get_dashboard_summary(void*                        db_pool,
         return -1;
     }
 
+    currency_t base_cur = currency_from_str(cmd->base_currency ? cmd->base_currency : "CNY");
+
     typedef struct {
-        char   name[128];
-        double value;
+        char    name[128];
+        money_t value;
     } cat_item_t;
 
     cat_item_t cat_arr[128];
     int        cat_count = 0;
-    double     total_assets = 0;
+    money_t    total_assets_m = money_zero(base_cur);
     size_t     n = csilk_json_array_size(rows);
 
     for (size_t i = 0; i < n; i++) {
         csilk_json_t* row = csilk_json_array_get(rows, i);
         const char*   cat_name = csilk_json_get_string(row, "category_name");
         const char*   cur = csilk_json_get_string(row, "currency");
-        double        v = db_get_num(row, "value") * exchange_rate_get_to_cny(cur);
-        total_assets += v;
+        currency_t    c = currency_from_str(cur ? cur : "CNY");
+        money_t       amt = db_get_money(row, "value", c);
+        money_t       conv = exchange_rate_convert_m(amt, base_cur);
+        money_t       acc;
+        if (money_add(total_assets_m, conv, &acc) == DECIMAL_OK) {
+            total_assets_m = acc;
+        }
         if (cat_name) {
             int found = -1;
             for (int k = 0; k < cat_count; k++) {
@@ -376,11 +420,13 @@ portfolio_usecase_get_dashboard_summary(void*                        db_pool,
                 }
             }
             if (found >= 0) {
-                cat_arr[found].value += v;
+                if (money_add(cat_arr[found].value, conv, &acc) == DECIMAL_OK) {
+                    cat_arr[found].value = acc;
+                }
             } else if (cat_count < 128) {
                 strncpy(cat_arr[cat_count].name, cat_name, sizeof(cat_arr[0].name) - 1);
                 cat_arr[cat_count].name[sizeof(cat_arr[0].name) - 1] = '\0';
-                cat_arr[cat_count].value = v;
+                cat_arr[cat_count].value = conv;
                 cat_count++;
             }
         }
@@ -391,21 +437,34 @@ portfolio_usecase_get_dashboard_summary(void*                        db_pool,
     for (int k = 0; k < cat_count; k++) {
         csilk_json_t* item = csilk_json_object();
         csilk_json_add_string(item, "category", cat_arr[k].name);
-        csilk_json_add_number(item, "value", cat_arr[k].value);
+        csilk_json_add_number(
+            item, "value", mf_round_to_decimals(money_to_double(cat_arr[k].value), 2));
         csilk_json_array_append(breakdown, item);
     }
 
-    double total_liabilities =
-        portfolio_repo_get_total_liabilities(db_pool, cmd->user_id, cmd->ledger_id);
-    double net_worth = total_assets - total_liabilities;
+    money_t total_liabilities_m = money_zero(base_cur);
+    if (portfolio_repo_get_total_liabilities_m(
+            db_pool, cmd->user_id, cmd->ledger_id, base_cur, &total_liabilities_m) != 0) {
+        csilk_json_free(breakdown);
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "查询失败");
+        return -1;
+    }
+
+    money_t net_worth_m;
+    if (money_sub(total_assets_m, total_liabilities_m, &net_worth_m) != DECIMAL_OK) {
+        net_worth_m = total_assets_m;
+    }
 
     csilk_json_t* recent_tx =
         portfolio_repo_get_recent_transactions(db_pool, cmd->user_id, cmd->ledger_id, 5);
 
     csilk_json_t* resp = csilk_json_object();
-    csilk_json_add_number(resp, "total_assets", mf_round_to_decimals(total_assets, 2));
-    csilk_json_add_number(resp, "total_liabilities", mf_round_to_decimals(total_liabilities, 2));
-    csilk_json_add_number(resp, "net_worth", mf_round_to_decimals(net_worth, 2));
+    csilk_json_add_number(
+        resp, "total_assets", mf_round_to_decimals(money_to_double(total_assets_m), 2));
+    csilk_json_add_number(
+        resp, "total_liabilities", mf_round_to_decimals(money_to_double(total_liabilities_m), 2));
+    csilk_json_add_number(resp, "net_worth", mf_round_to_decimals(money_to_double(net_worth_m), 2));
     csilk_json_add_array(resp, "category_breakdown", breakdown);
     csilk_json_add_array(resp, "recent_transactions", recent_tx ? recent_tx : csilk_json_array());
 

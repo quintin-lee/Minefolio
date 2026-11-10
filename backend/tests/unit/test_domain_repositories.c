@@ -868,13 +868,14 @@ test_portfolio_repository(csilk_db_pool_t* pool, int64_t user_id, int64_t asset_
     int64_t usd_asset_id = db_get_int(csilk_json_array_get(ins_usd_res, 0), "id");
     csilk_json_free(ins_usd_res);
 
-    double total_qty = 0.0, total_cost = 0.0, total_market = 0.0;
-    rc = portfolio_repo_get_current_holdings_totals(pool, user_id, 0, &total_qty, &total_cost, &total_market);
+    money_t total_cost_m = money_zero(CURRENCY_CNY);
+    money_t total_market_m = money_zero(CURRENCY_CNY);
+    rc = portfolio_repo_get_current_holdings_totals_m(pool, user_id, 0, CURRENCY_CNY, &total_cost_m, &total_market_m);
     assert(rc == 0);
     /* Asset 1 (CNY): cost=10000.0, current_value=0.0 */
     /* Asset 2 (USD): cost=1000.0 * 7.20 = 7200.0, market=1200.0 * 7.20 = 8640.0 */
     /* total_cost must be 10000.0 + 7200.0 = 17200.0 (NOT 11000.0!) */
-    assert(fabs(total_cost - 17200.0) < 1e-2);
+    assert(fabs(money_to_double(total_cost_m) - 17200.0) < 1e-2);
 
     /* 4b. Test portfolio_usecase_get_performance gain/loss & fee accounting */
     /* Insert a new tradeable asset */
