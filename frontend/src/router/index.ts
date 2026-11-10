@@ -30,6 +30,7 @@ const router = createRouter({
         { path: '', redirect: '/dashboard' },
         { path: 'dashboard', name: 'Dashboard', component: () => import('@/views/Dashboard.vue') },
         { path: 'assets', name: 'Assets', component: () => import('@/views/Assets.vue') },
+        { path: 'assets/:id', name: 'AssetDetail', component: () => import('@/views/AssetDetail.vue') },
         { path: 'holdings', name: 'Holdings', component: () => import('@/views/Holdings.vue') },
         { path: 'transactions', name: 'Transactions', component: () => import('@/views/Transactions.vue') },
         { path: 'daily-expenses', name: 'DailyExpenses', component: () => import('@/views/DailyExpenses.vue') },
