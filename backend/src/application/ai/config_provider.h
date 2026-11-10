@@ -50,9 +50,8 @@ csilk_ai_t* ai_config_get_ai_instance(const ai_config_t* cfg);
 /**
  * @brief RAII 风格作用域守卫宏（退出代码块时自动执行 release）
  */
-#define AI_CONFIG_SCOPE(cfg)                                             \
-    for (ai_config_t *cfg = ai_config_acquire(), *__once = (void*)1;    \
-         __once && cfg;                                                  \
+#define AI_CONFIG_SCOPE(cfg)                                                                       \
+    for (ai_config_t* cfg = ai_config_acquire(), *__once = (void*)1; __once && cfg;                \
          __once = NULL, ai_config_release(cfg))
 
 #ifdef __cplusplus

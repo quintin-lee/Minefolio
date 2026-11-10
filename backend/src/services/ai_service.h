@@ -54,7 +54,9 @@ ai_config_t* ai_get_config(void);
  *        返回的实例随快照生命周期，acquire 持有期间保证有效。
  * @return csilk_ai_t* 实例指针或 NULL（未配置/实例创建失败）
  */
-static inline csilk_ai_t* ai_snapshot_ai_instance(const ai_config_t* cfg) {
+static inline csilk_ai_t*
+ai_snapshot_ai_instance(const ai_config_t* cfg)
+{
     return ai_config_get_ai_instance(cfg);
 }
 

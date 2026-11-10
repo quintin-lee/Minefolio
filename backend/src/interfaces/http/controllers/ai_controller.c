@@ -1,5 +1,6 @@
 #include "interfaces/http/controllers/ai_controller.h"
 #include "application/ai/usecases.h"
+#include "application/ai/probe_usecase.h"
 #include "services/ai_service.h"
 #include "services/ai_workflow_service.h"
 #include "infrastructure/repositories/auth_repo_impl.h"
@@ -422,7 +423,23 @@ api_ai_test_connection_handler(csilk_ctx_t* c)
     if (!require_instance_admin(c, user_id)) {
         return;
     }
-    ai_service_test_connection(c);
+
+    csilk_json_t* body = csilk_bind_json(c);
+    if (!body) {
+        respond_bad_request(c, "请求体必须为 JSON");
+        return;
+    }
+
+    csilk_json_t*       out_resp = NULL;
+    ai_usecase_result_t res = {0};
+    int                 rc = ai_usecase_test_connection(body, &out_resp, &res);
+    csilk_json_free(body);
+
+    if (rc == 0 && out_resp) {
+        respond_ok(c, out_resp);
+    } else {
+        respond_error(c, res.code ? res.code : 500, res.message);
+    }
 }
 
 void
@@ -435,7 +452,23 @@ api_ai_fetch_models_handler(csilk_ctx_t* c)
     if (!require_instance_admin(c, user_id)) {
         return;
     }
-    ai_service_fetch_models(c);
+
+    csilk_json_t* body = csilk_bind_json(c);
+    if (!body) {
+        respond_bad_request(c, "请求体必须为 JSON");
+        return;
+    }
+
+    csilk_json_t*       out_resp = NULL;
+    ai_usecase_result_t res = {0};
+    int                 rc = ai_usecase_fetch_models(body, &out_resp, &res);
+    csilk_json_free(body);
+
+    if (rc == 0 && out_resp) {
+        respond_ok(c, out_resp);
+    } else {
+        respond_error(c, res.code ? res.code : 500, res.message);
+    }
 }
 
 void
