@@ -57,6 +57,62 @@ jobs:
           name: minefolio-linux-x86_64
           path: minefolio-linux-x86_64.tar.gz
 
+  backend-postgres:
+    name: Backend PostgreSQL Integration Tests
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres_password
+          POSTGRES_DB: minefolio_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential gcc-14 g++-14 cmake pkg-config \
+            libuv1-dev libyaml-dev libsqlite3-dev libssl-dev \
+            libcurl4-openssl-dev zlib1g-dev sqlite3 curl python3 \
+            libpq-dev postgresql-client nodejs jq
+
+      - name: Build backend with PostgreSQL support
+        run: |
+          cd backend
+          CC=gcc-14 CXX=g++-14 cmake -B build -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel $(nproc)
+
+      - name: Run backend integration tests (PostgreSQL)
+        env:
+          MINEFOLIO_DB_DRIVER: postgres
+          MINEFOLIO_DB_DSN: "host=localhost port=5432 user=postgres password=postgres_password dbname=minefolio_test sslmode=disable"
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres_password
+          PGDATABASE: minefolio_test
+        run: |
+          cd backend
+          ./tests/test_link.sh
+          ./tests/test_2fa.sh
+          ./tests/test_dca_cashflow.sh
+          ./tests/test_ai_trace.sh
+          ./tests/test_ai_tool_call.sh
+          ./tests/test_market_sync.sh
+          ./tests/test_ledgers.sh
+          ./tests/test_fx_oauth.sh
+
   frontend:
     name: Frontend Typecheck, Build & Test
     runs-on: ubuntu-latest
