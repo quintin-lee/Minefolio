@@ -306,6 +306,12 @@ target_compile_options(test_domain_pnl PRIVATE -UNDEBUG)
 target_link_libraries(test_domain_pnl PRIVATE m)
 add_test(NAME test_domain_pnl COMMAND test_domain_pnl)
 
+add_executable(test_domain_performance tests/unit/test_domain_performance.c src/domain/asset/performance.c ${CORE_FINANCIAL_SRCS})
+target_include_directories(test_domain_performance PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_domain_performance PRIVATE -UNDEBUG)
+target_link_libraries(test_domain_performance PRIVATE m)
+add_test(NAME test_domain_performance COMMAND test_domain_performance)
+
 add_executable(test_domain_position tests/unit/test_domain_position.c src/domain/asset/position.c src/domain/asset/cost_basis.c src/domain/asset/pnl.c ${CORE_FINANCIAL_SRCS})
 target_include_directories(test_domain_position PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_options(test_domain_position PRIVATE -UNDEBUG)
