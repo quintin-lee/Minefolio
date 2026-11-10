@@ -918,3 +918,169 @@ report_fx_pnl(void* pool, const report_query_t* q, report_result_t* out_res)
     out_res->data_payload = resp;
     snprintf(out_res->message, sizeof(out_res->message), "ok");
 }
+
+void
+report_position_overview(void* pool, const report_query_t* q, report_result_t* out_res)
+{
+    if (!pool || !q || !out_res) {
+        if (out_res) {
+            out_res->code = 1002;
+            snprintf(out_res->message, sizeof(out_res->message), "参数错误");
+        }
+        return;
+    }
+    memset(out_res, 0, sizeof(*out_res));
+
+    char uid_str[32], lid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)q->user_id);
+    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)q->ledger_id);
+    const char* params[] = {uid_str, lid_str, NULL};
+
+    csilk_json_t* rows = csilk_db_query_param_json(
+        (csilk_db_pool_t*)pool,
+        "SELECT a.id, a.name, a.current_value, a.currency, a.quantity, a.cost_basis, "
+        "a.net_value, c.name as category_name, c.asset_type "
+        "FROM assets a "
+        "JOIN categories c ON a.category_id = c.id "
+        "WHERE a.user_id = ? AND a.ledger_id = ?",
+        params);
+
+    double  total_assets = 0.0, total_liabs = 0.0;
+    double  total_cost = 0.0;
+    double  max_weight = 0.0;
+    int64_t max_asset_id = 0;
+    char    max_asset_name[128] = "";
+    double  hhi = 0.0;
+    int     asset_cnt = 0;
+
+    typedef struct {
+        char   name[128];
+        double value;
+    } cat_agg_t;
+    cat_agg_t cats[128];
+    int       cat_cnt = 0;
+
+    if (rows) {
+        size_t n = csilk_json_array_size(rows);
+        for (size_t i = 0; i < n; i++) {
+            const csilk_json_t* r = csilk_json_array_get(rows, i);
+            const char*         cur = csilk_json_get_string(r, "currency");
+            double              cv =
+                db_get_num(r, "current_value") * exchange_rate_get_to_cny(cur ? cur : "CNY");
+            const char* atype = csilk_json_get_string(r, "asset_type");
+            int         is_liab =
+                (atype && (strcmp(atype, "loan") == 0 || strcmp(atype, "credit_card") == 0 ||
+                           strcmp(atype, "other_liability") == 0));
+
+            if (is_liab) {
+                total_liabs += cv;
+            } else {
+                total_assets += cv;
+                asset_cnt++;
+                total_cost +=
+                    db_get_num(r, "cost_basis") * exchange_rate_get_to_cny(cur ? cur : "CNY");
+
+                double w = (total_assets > 0.0 && cv > 0.0) ? cv / total_assets : 0.0;
+                hhi += w * w;
+                if (w > max_weight) {
+                    max_weight = w;
+                    max_asset_id = db_get_int(r, "id");
+                    const char* nm = csilk_json_get_string(r, "name");
+                    snprintf(max_asset_name, sizeof(max_asset_name), "%s", nm ? nm : "");
+                }
+
+                const char* cat_name = csilk_json_get_string(r, "category_name");
+                int         found = -1;
+                for (int k = 0; k < cat_cnt; k++) {
+                    if (strcmp(cats[k].name, cat_name ? cat_name : "") == 0) {
+                        found = k;
+                        break;
+                    }
+                }
+                if (found >= 0) {
+                    cats[found].value += cv;
+                } else if (cat_cnt < 128) {
+                    cats[cat_cnt].value = cv;
+                    snprintf(cats[cat_cnt].name,
+                             sizeof(cats[cat_cnt].name),
+                             "%s",
+                             cat_name ? cat_name : "");
+                    cat_cnt++;
+                }
+            }
+        }
+        csilk_json_free(rows);
+    }
+
+    double net_worth = total_assets - total_liabs;
+    double total_pnl = total_assets - total_cost;
+    double total_return_pct = total_cost > 0.0 ? (total_pnl / total_cost * 100.0) : 0.0;
+
+    char today_str[16];
+    {
+        time_t    now_t = time(NULL);
+        struct tm tm_now;
+        localtime_r(&now_t, &tm_now);
+        strftime(today_str, sizeof(today_str), "%Y-%m-%d", &tm_now);
+    }
+    double daily_pnl = 0.0;
+    {
+        const char* today_sql =
+            db_is_postgres() ? "SELECT c.asset_type, COALESCE(SUM(abl.delta), 0.0) as total_delta "
+                               "FROM asset_balance_logs abl "
+                               "JOIN assets a ON abl.asset_id = a.id "
+                               "JOIN categories c ON a.category_id = c.id "
+                               "WHERE abl.user_id = ? AND a.ledger_id = ? "
+                               "AND abl.created_at::date = ?::date GROUP BY c.asset_type"
+                             : "SELECT c.asset_type, COALESCE(SUM(abl.delta), 0.0) as total_delta "
+                               "FROM asset_balance_logs abl "
+                               "JOIN assets a ON abl.asset_id = a.id "
+                               "JOIN categories c ON a.category_id = c.id "
+                               "WHERE abl.user_id = ? AND a.ledger_id = ? "
+                               "AND date(abl.created_at) = ? GROUP BY c.asset_type";
+        csilk_json_t* dlog = csilk_db_query_param_json(
+            (csilk_db_pool_t*)pool, today_sql, (const char*[]){uid_str, lid_str, today_str, NULL});
+        if (dlog) {
+            size_t dn = csilk_json_array_size(dlog);
+            for (size_t i = 0; i < dn; i++) {
+                const csilk_json_t* r = csilk_json_array_get(dlog, i);
+                double              delta = db_get_num(r, "total_delta");
+                const char*         atype = csilk_json_get_string(r, "asset_type");
+                int                 is_liab =
+                    (atype && (strcmp(atype, "loan") == 0 || strcmp(atype, "credit_card") == 0 ||
+                               strcmp(atype, "other_liability") == 0));
+                daily_pnl += is_liab ? -delta : delta;
+            }
+            csilk_json_free(dlog);
+        }
+    }
+
+    csilk_json_t* resp = csilk_json_object();
+    csilk_json_add_number(resp, "total_assets", total_assets);
+    csilk_json_add_number(resp, "total_liabilities", total_liabs);
+    csilk_json_add_number(resp, "net_worth", net_worth);
+    csilk_json_add_number(resp, "total_cost", total_cost);
+    csilk_json_add_number(resp, "total_pnl", total_pnl);
+    csilk_json_add_number(resp, "total_return_pct", total_return_pct);
+    csilk_json_add_number(resp, "daily_pnl", daily_pnl);
+    csilk_json_add_number(resp, "hhi", hhi);
+    csilk_json_add_number(resp, "max_holding_weight", max_weight);
+    csilk_json_add_number(resp, "max_holding_asset_id", (double)max_asset_id);
+    csilk_json_add_string(resp, "max_holding_name", max_asset_name);
+    csilk_json_add_number(resp, "asset_count", (double)asset_cnt);
+
+    csilk_json_t* cat_arr = csilk_json_array();
+    for (int k = 0; k < cat_cnt; k++) {
+        csilk_json_t* item = csilk_json_object();
+        csilk_json_add_string(item, "name", cats[k].name);
+        csilk_json_add_number(item, "value", cats[k].value);
+        csilk_json_add_number(
+            item, "pct", total_assets > 0.0 ? (cats[k].value / total_assets * 100.0) : 0.0);
+        csilk_json_array_append(cat_arr, item);
+    }
+    csilk_json_add_array(resp, "by_category", cat_arr);
+
+    out_res->code = 0;
+    out_res->data_payload = resp;
+    snprintf(out_res->message, sizeof(out_res->message), "ok");
+}

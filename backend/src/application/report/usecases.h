@@ -73,6 +73,13 @@ int report_usecase_multi_currency_summary(void*                 pool,
  */
 int report_usecase_fx_pnl(void* pool, const report_query_t* q, report_result_t* out_res);
 
+/**
+ * @brief 持仓总览报表用例（对标支付宝/天天基金首页）
+ * 返回：当日收益、累计总收益、资产/负债合计、净资产、HHI 集中度、
+ * 最大单一持仓占比、资产配置分布
+ */
+int report_usecase_position_overview(void* pool, const report_query_t* q, report_result_t* out_res);
+
 #ifdef __cplusplus
 }
 #endif

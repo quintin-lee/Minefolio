@@ -115,3 +115,13 @@ report_usecase_fx_pnl(void* pool, const report_query_t* q, report_result_t* out_
     report_fx_pnl(pool, q, out_res);
     return 0;
 }
+
+int
+report_usecase_position_overview(void* pool, const report_query_t* q, report_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
+    report_position_overview(pool, q, out_res);
+    return 0;
+}
