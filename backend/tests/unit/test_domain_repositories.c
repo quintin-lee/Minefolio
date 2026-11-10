@@ -1268,14 +1268,88 @@ test_daily_expense_multi_currency_totals(csilk_db_pool_t* pool, int64_t user_id,
     assert(rc == 0);
 
     /* 预期合计支出折算为 100 + 10 * 7.20 = 172.0 CNY，而不是 110.0 */
-    printf("  total_expense = %.2f (expected 172.00)\n", m_res.total_expense);
-    assert(fabs(m_res.total_expense - 172.0) < 0.1);
+    printf("  total_expense = %.2f (expected 172.00)\n", money_to_double(m_res.total_expense));
+    assert(fabs(money_to_double(m_res.total_expense) - 172.0) < 0.1);
 
     if (by_cat) csilk_json_free(by_cat);
     if (by_tag) csilk_json_free(by_tag);
     if (daily) csilk_json_free(daily);
 
     printf("  ✅ Daily Expense Multi-Currency Monthly Totals passed\n");
+}
+
+/* 钉住 P0 修复：跨币种月度合计必须走 128 位定点 money_t，而非 double 累加。
+ * 使用一个全新的隔离用户（不与其他用例共享 2026-10 的 daily_expenses），
+ * 录入 3 笔 0.10 USD 支出（汇率 7.20），合计应精确为 2.16 CNY。 */
+static void
+test_report_monthly_precision_edge(csilk_db_pool_t* pool, int64_t user_id, int64_t asset_id)
+{
+    printf("Testing Report Multi-Currency Monthly Totals Precision Edge (money_t vs double)...\n");
+
+    /* 全新隔离用户，避免与其他用例在 2026-10 的 daily_expenses 交叉污染 */
+    int64_t iso_user = 0;
+    assert(mf_auth_repo_create(pool, "precision_user", "hash_precision_1", &iso_user) == 0 &&
+           iso_user > 0);
+    char iso_uid[32];
+    snprintf(iso_uid, sizeof(iso_uid), "%lld", (long long)iso_user);
+
+    /* 为该隔离用户建一个资产与分类 */
+    csilk_json_t* ins_asset = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO assets (user_id, category_id, name, currency, current_value, quantity, cost_basis, net_value, ledger_id) "
+        "VALUES (?, 1, 'PrecisionAsset', 'USD', 0, 0, 0, 0, 0) RETURNING id",
+        (const char*[]){iso_uid, NULL});
+    int64_t iso_asset = 0;
+    if (ins_asset && csilk_json_array_size(ins_asset) > 0) {
+        iso_asset = db_get_int(csilk_json_array_get(ins_asset, 0), "id");
+        csilk_json_free(ins_asset);
+    }
+    csilk_json_t* ins_cat = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO categories (user_id, name, type, ledger_id) VALUES (?, 'PrecisionCat', 'expense', 0) RETURNING id",
+        (const char*[]){iso_uid, NULL});
+    assert(ins_cat && csilk_json_array_size(ins_cat) > 0);
+    int64_t cat_id = db_get_int(csilk_json_array_get(ins_cat, 0), "id");
+    csilk_json_free(ins_cat);
+
+    /* 3 × (0.10 USD × 7.20) = 3 × 0.72 = 2.16 CNY（精确固定点值） */
+    for (int i = 0; i < 3; i++) {
+        char date[16];
+        snprintf(date, sizeof(date), "2026-10-%02d", i + 1);
+        create_daily_expense_cmd_t cmd = {
+            .user_id = iso_user,
+            .ledger_id = 0,
+            .category_id = cat_id,
+            .asset_id = iso_asset > 0 ? iso_asset : asset_id,
+            .expense_type = "expense",
+            .amount = 0.10,
+            .currency = "USD",
+            .expense_date = date,
+            .note = "precision test"
+        };
+        daily_expense_usecase_result_t out_res = {0};
+        int rc = daily_expense_usecase_create(pool, &cmd, NULL, &out_res);
+        assert(rc == 0 && out_res.code == 0);
+    }
+
+    daily_expense_monthly_result_t m_res = {0};
+    csilk_json_t* by_cat = NULL, *by_tag = NULL, *daily = NULL;
+    int rc = daily_expense_usecase_monthly(pool, iso_user, 0, 2026, 10, &m_res, &by_cat, &by_tag, &daily);
+    assert(rc == 0);
+
+    double actual = money_to_double(m_res.total_expense);
+    printf("  money_t total_expense = %.6f (expected 2.16)\n", actual);
+    assert(fabs(actual - 2.16) < 1e-4);
+
+    /* balance = income - expense = -2.16 */
+    double balance = money_to_double(m_res.balance);
+    assert(fabs(balance + 2.16) < 1e-4);
+
+    if (by_cat) csilk_json_free(by_cat);
+    if (by_tag) csilk_json_free(by_tag);
+    if (daily) csilk_json_free(daily);
+
+    printf("  ✅ Report Multi-Currency Monthly Totals Precision Edge passed\n");
 }
 
 static void
@@ -1514,6 +1588,7 @@ main(void)
     test_mcp_server_repository(pool, user_id);
     test_multi_currency_balance_and_transfers(pool, user_id);
     test_daily_expense_multi_currency_totals(pool, user_id, asset_id);
+    test_report_monthly_precision_edge(pool, user_id, asset_id);
     test_daily_expense_tags_array_contract(pool, user_id, asset_id);
     test_report_expense_percentage_closure();
 

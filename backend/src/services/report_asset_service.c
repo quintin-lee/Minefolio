@@ -14,6 +14,9 @@
 #include "core/financial/price.h"
 #include "core/financial/quantity.h"
 #include "core/financial/percentage.h"
+#include "core/financial/money.h"
+#include "core/financial/currency.h"
+#include "core/financial/decimal.h"
 #include "csilk/drivers/db.h"
 #include <math.h>
 #include <stdio.h>
@@ -22,16 +25,16 @@
 #include <time.h>
 
 typedef struct {
-    int64_t id;
-    double  current_value;
-    char    currency[16];
-    char    created_date[16];
-    int     is_liability;
+    int64_t    id;
+    money_t    current_value;
+    currency_t currency;
+    char       created_date[16];
+    int        is_liability;
 } asset_trend_item_t;
 
 typedef struct {
     int64_t asset_id;
-    double  delta;
+    money_t delta;
     char    log_date[16];
 } asset_trend_log_t;
 
@@ -107,9 +110,9 @@ report_asset_trend(void* pool, const report_query_t* q, report_result_t* out_res
     for (size_t i = 0; i < num_assets; i++) {
         csilk_json_t* r = csilk_json_array_get(asset_rows, i);
         assets[i].id = db_get_int(r, "id");
-        assets[i].current_value = db_get_num(r, "current_value");
-        const char* cur = csilk_json_get_string(r, "currency");
-        snprintf(assets[i].currency, sizeof(assets[i].currency), "%s", cur ? cur : "CNY");
+        const char* cur_s = csilk_json_get_string(r, "currency");
+        assets[i].currency = currency_from_str(cur_s ? cur_s : "CNY");
+        assets[i].current_value = db_get_money(r, "current_value", assets[i].currency);
         const char* cd = csilk_json_get_string(r, "created_date");
         snprintf(
             assets[i].created_date, sizeof(assets[i].created_date), "%s", cd ? cd : "1970-01-01");
@@ -126,20 +129,22 @@ report_asset_trend(void* pool, const report_query_t* q, report_result_t* out_res
     const char* log_sql =
         db_is_postgres()
             ? (q->ledger_id > 0
-                   ? "SELECT abl.asset_id, abl.delta, to_char(abl.created_at, 'YYYY-MM-DD') as "
-                     "log_date "
+                   ? "SELECT abl.asset_id, abl.delta, a.currency, "
+                     "to_char(abl.created_at, 'YYYY-MM-DD') as log_date "
                      "FROM asset_balance_logs abl JOIN assets a ON abl.asset_id=a.id "
                      "WHERE abl.user_id=? AND a.ledger_id=? AND abl.created_at::date >= ?::date"
-                   : "SELECT abl.asset_id, abl.delta, to_char(abl.created_at, 'YYYY-MM-DD') as "
-                     "log_date "
-                     "FROM asset_balance_logs abl "
+                   : "SELECT abl.asset_id, abl.delta, a.currency, "
+                     "to_char(abl.created_at, 'YYYY-MM-DD') as log_date "
+                     "FROM asset_balance_logs abl JOIN assets a ON abl.asset_id=a.id "
                      "WHERE abl.user_id=? AND abl.created_at::date >= ?::date")
             : (q->ledger_id > 0
-                   ? "SELECT abl.asset_id, abl.delta, date(abl.created_at) as log_date "
+                   ? "SELECT abl.asset_id, abl.delta, a.currency, "
+                     "date(abl.created_at) as log_date "
                      "FROM asset_balance_logs abl JOIN assets a ON abl.asset_id=a.id "
                      "WHERE abl.user_id=? AND a.ledger_id=? AND date(abl.created_at) >= ?"
-                   : "SELECT abl.asset_id, abl.delta, date(abl.created_at) as log_date "
-                     "FROM asset_balance_logs abl "
+                   : "SELECT abl.asset_id, abl.delta, a.currency, "
+                     "date(abl.created_at) as log_date "
+                     "FROM asset_balance_logs abl JOIN assets a ON abl.asset_id=a.id "
                      "WHERE abl.user_id=? AND date(abl.created_at) >= ?");
     const char*   log_params[4] = {uid_str,
                                    (q->ledger_id > 0 ? lid_str : dates[0]),
@@ -153,7 +158,8 @@ report_asset_trend(void* pool, const report_query_t* q, report_result_t* out_res
     for (size_t i = 0; i < num_logs; i++) {
         csilk_json_t* r = csilk_json_array_get(log_rows, i);
         logs[i].asset_id = db_get_int(r, "asset_id");
-        logs[i].delta = db_get_num(r, "delta");
+        const char* log_cur = csilk_json_get_string(r, "currency");
+        logs[i].delta = db_get_money(r, "delta", currency_from_str(log_cur ? log_cur : "CNY"));
         const char* ld = csilk_json_get_string(r, "log_date");
         snprintf(logs[i].log_date, sizeof(logs[i].log_date), "%s", ld ? ld : "");
     }
@@ -162,8 +168,13 @@ report_asset_trend(void* pool, const report_query_t* q, report_result_t* out_res
     }
 
     // 4. Reconstruct historical balances for each sample point
-    double pt_assets[5] = {0};
-    double pt_liabs[5] = {0};
+    currency_t base_cur = currency_from_str("CNY");
+    money_t    pt_assets[5] = {0};
+    money_t    pt_liabs[5] = {0};
+    for (int k = 0; k < 5; k++) {
+        pt_assets[k] = money_zero(base_cur);
+        pt_liabs[k] = money_zero(base_cur);
+    }
 
     for (int k = 0; k < 5; k++) {
         const char* target_date = dates[k];
@@ -171,17 +182,26 @@ report_asset_trend(void* pool, const report_query_t* q, report_result_t* out_res
             if (strcmp(assets[a].created_date, target_date) > 0) {
                 continue;
             }
-            double val = assets[a].current_value;
+            money_t val = assets[a].current_value;
             for (size_t l = 0; l < num_logs; l++) {
                 if (logs[l].asset_id == assets[a].id && strcmp(logs[l].log_date, target_date) > 0) {
-                    val -= logs[l].delta;
+                    money_t neg_delta = money_neg(logs[l].delta);
+                    money_t acc2;
+                    if (money_add(val, neg_delta, &acc2) == DECIMAL_OK) {
+                        val = acc2;
+                    }
                 }
             }
-            double conv_val = val * exchange_rate_get_to_cny(assets[a].currency);
+            money_t conv_val = exchange_rate_convert_m(val, base_cur);
+            money_t acc;
             if (assets[a].is_liability) {
-                pt_liabs[k] += conv_val;
+                if (money_add(pt_liabs[k], conv_val, &acc) == DECIMAL_OK) {
+                    pt_liabs[k] = acc;
+                }
             } else {
-                pt_assets[k] += conv_val;
+                if (money_add(pt_assets[k], conv_val, &acc) == DECIMAL_OK) {
+                    pt_assets[k] = acc;
+                }
             }
         }
     }
@@ -203,10 +223,14 @@ report_asset_trend(void* pool, const report_query_t* q, report_result_t* out_res
     csilk_json_t* liabs_arr = csilk_json_array();
 
     for (int k = 0; k < 5; k++) {
+        money_t nw;
+        if (money_sub(pt_assets[k], pt_liabs[k], &nw) != DECIMAL_OK) {
+            nw = pt_assets[k];
+        }
         csilk_json_array_append(labels_arr, csilk_json_string_new(dates[k]));
-        csilk_json_array_append(nw_arr, csilk_json_number(pt_assets[k] - pt_liabs[k]));
-        csilk_json_array_append(assets_arr, csilk_json_number(pt_assets[k]));
-        csilk_json_array_append(liabs_arr, csilk_json_number(pt_liabs[k]));
+        csilk_json_array_append(nw_arr, csilk_json_number(money_to_double(nw)));
+        csilk_json_array_append(assets_arr, csilk_json_number(money_to_double(pt_assets[k])));
+        csilk_json_array_append(liabs_arr, csilk_json_number(money_to_double(pt_liabs[k])));
     }
 
     csilk_json_add_array(resp, "labels", labels_arr);
@@ -251,23 +275,28 @@ report_asset_breakdown(void* pool, const report_query_t* q, report_result_t* out
         "('loan','credit_card','other_liability')",
         params);
 
+    currency_t base_cur = currency_from_str("CNY");
     typedef struct {
-        char   name[128];
-        double value;
+        char    name[128];
+        money_t value;
     } cat_acc_t;
 
     cat_acc_t asset_cats[128];
     int       asset_cats_count = 0;
-    double    total_assets = 0;
+    money_t   total_assets = money_zero(base_cur);
 
     if (assets) {
         size_t n = csilk_json_array_size(assets);
         for (size_t i = 0; i < n; i++) {
             csilk_json_t* row = csilk_json_array_get(assets, i);
             const char*   name = csilk_json_get_string(row, "name");
-            const char*   cur = csilk_json_get_string(row, "currency");
-            double        v = db_get_num(row, "value") * exchange_rate_get_to_cny(cur);
-            total_assets += v;
+            const char*   cur_s = csilk_json_get_string(row, "currency");
+            currency_t    cur = currency_from_str(cur_s ? cur_s : "CNY");
+            money_t       v = exchange_rate_convert_m(db_get_money(row, "value", cur), base_cur);
+            money_t       acc;
+            if (money_add(total_assets, v, &acc) == DECIMAL_OK) {
+                total_assets = acc;
+            }
             if (name) {
                 int found = -1;
                 for (int k = 0; k < asset_cats_count; k++) {
@@ -277,7 +306,9 @@ report_asset_breakdown(void* pool, const report_query_t* q, report_result_t* out
                     }
                 }
                 if (found >= 0) {
-                    asset_cats[found].value += v;
+                    if (money_add(asset_cats[found].value, v, &acc) == DECIMAL_OK) {
+                        asset_cats[found].value = acc;
+                    }
                 } else if (asset_cats_count < 128) {
                     strncpy(
                         asset_cats[asset_cats_count].name, name, sizeof(asset_cats[0].name) - 1);
@@ -292,16 +323,20 @@ report_asset_breakdown(void* pool, const report_query_t* q, report_result_t* out
 
     cat_acc_t liab_cats[128];
     int       liab_cats_count = 0;
-    double    total_liabs = 0;
+    money_t   total_liabs = money_zero(base_cur);
 
     if (liabs) {
         size_t n = csilk_json_array_size(liabs);
         for (size_t i = 0; i < n; i++) {
             csilk_json_t* row = csilk_json_array_get(liabs, i);
             const char*   name = csilk_json_get_string(row, "name");
-            const char*   cur = csilk_json_get_string(row, "currency");
-            double        v = db_get_num(row, "value") * exchange_rate_get_to_cny(cur);
-            total_liabs += v;
+            const char*   cur_s = csilk_json_get_string(row, "currency");
+            currency_t    cur = currency_from_str(cur_s ? cur_s : "CNY");
+            money_t       v = exchange_rate_convert_m(db_get_money(row, "value", cur), base_cur);
+            money_t       acc;
+            if (money_add(total_liabs, v, &acc) == DECIMAL_OK) {
+                total_liabs = acc;
+            }
             if (name) {
                 int found = -1;
                 for (int k = 0; k < liab_cats_count; k++) {
@@ -311,7 +346,9 @@ report_asset_breakdown(void* pool, const report_query_t* q, report_result_t* out
                     }
                 }
                 if (found >= 0) {
-                    liab_cats[found].value += v;
+                    if (money_add(liab_cats[found].value, v, &acc) == DECIMAL_OK) {
+                        liab_cats[found].value = acc;
+                    }
                 } else if (liab_cats_count < 128) {
                     strncpy(liab_cats[liab_cats_count].name, name, sizeof(liab_cats[0].name) - 1);
                     liab_cats[liab_cats_count].name[sizeof(liab_cats[0].name) - 1] = '\0';
@@ -328,9 +365,15 @@ report_asset_breakdown(void* pool, const report_query_t* q, report_result_t* out
     for (int i = 0; i < asset_cats_count; i++) {
         csilk_json_t* item = csilk_json_object();
         csilk_json_add_string(item, "name", asset_cats[i].name);
-        csilk_json_add_number(item, "value", asset_cats[i].value);
-        csilk_json_add_number(
-            item, "pct", total_assets > 0 ? (asset_cats[i].value / total_assets * 100) : 0);
+        csilk_json_add_number(item, "value", money_to_double(asset_cats[i].value));
+        percentage_t pct;
+        if (decimal_is_zero(total_assets.amount)) {
+            pct = percentage_zero();
+        } else if (percentage_calc(asset_cats[i].value, total_assets, 2, ROUND_HALF_UP, &pct) !=
+                   DECIMAL_OK) {
+            pct = percentage_zero();
+        }
+        csilk_json_add_number(item, "pct", percentage_to_double(pct));
         csilk_json_array_append(asset_items, item);
     }
     csilk_json_add_array(resp, "assets", asset_items);
@@ -339,15 +382,25 @@ report_asset_breakdown(void* pool, const report_query_t* q, report_result_t* out
     for (int i = 0; i < liab_cats_count; i++) {
         csilk_json_t* item = csilk_json_object();
         csilk_json_add_string(item, "name", liab_cats[i].name);
-        csilk_json_add_number(item, "value", liab_cats[i].value);
-        csilk_json_add_number(
-            item, "pct", total_liabs > 0 ? (liab_cats[i].value / total_liabs * 100) : 0);
+        csilk_json_add_number(item, "value", money_to_double(liab_cats[i].value));
+        percentage_t pct;
+        if (decimal_is_zero(total_liabs.amount)) {
+            pct = percentage_zero();
+        } else if (percentage_calc(liab_cats[i].value, total_liabs, 2, ROUND_HALF_UP, &pct) !=
+                   DECIMAL_OK) {
+            pct = percentage_zero();
+        }
+        csilk_json_add_number(item, "pct", percentage_to_double(pct));
         csilk_json_array_append(liab_items, item);
     }
     csilk_json_add_array(resp, "liabilities", liab_items);
-    csilk_json_add_number(resp, "total_assets", total_assets);
-    csilk_json_add_number(resp, "total_liabilities", total_liabs);
-    csilk_json_add_number(resp, "net_worth", total_assets - total_liabs);
+    money_t net_worth_m;
+    if (money_sub(total_assets, total_liabs, &net_worth_m) != DECIMAL_OK) {
+        net_worth_m = total_assets;
+    }
+    csilk_json_add_number(resp, "total_assets", money_to_double(total_assets));
+    csilk_json_add_number(resp, "total_liabilities", money_to_double(total_liabs));
+    csilk_json_add_number(resp, "net_worth", money_to_double(net_worth_m));
 
     out_res->code = 0;
     out_res->data_payload = resp;
@@ -377,14 +430,15 @@ report_asset_summary(void* pool, const report_query_t* q, report_result_t* out_r
         "FROM assets a JOIN categories c ON a.category_id=c.id "
         "WHERE a.user_id=? AND a.ledger_id=?",
         params);
-    double        current_assets = 0, current_liabs = 0;
+    currency_t    base_cur = currency_from_str("CNY");
+    money_t       current_assets = money_zero(base_cur), current_liabs = money_zero(base_cur);
     csilk_json_t* by_cat = csilk_json_array();
 
     typedef struct {
-        char   name[128];
-        char   asset_type[32];
-        double value;
-        int    is_liab;
+        char    name[128];
+        char    asset_type[32];
+        money_t value;
+        int     is_liab;
     } cat_summary_item_t;
 
     cat_summary_item_t cat_items[128];
@@ -394,17 +448,23 @@ report_asset_summary(void* pool, const report_query_t* q, report_result_t* out_r
         size_t n = csilk_json_array_size(rows);
         for (size_t i = 0; i < n; i++) {
             csilk_json_t* row = csilk_json_array_get(rows, i);
-            const char*   cur = csilk_json_get_string(row, "currency");
-            double        v = db_get_num(row, "current_value") * exchange_rate_get_to_cny(cur);
-            const char*   name = csilk_json_get_string(row, "name");
-            const char*   atype = csilk_json_get_string(row, "asset_type");
-            int           is_liab =
+            const char*   cur_s = csilk_json_get_string(row, "currency");
+            currency_t    cur = currency_from_str(cur_s ? cur_s : "CNY");
+            money_t v = exchange_rate_convert_m(db_get_money(row, "current_value", cur), base_cur);
+            const char* name = csilk_json_get_string(row, "name");
+            const char* atype = csilk_json_get_string(row, "asset_type");
+            int         is_liab =
                 (atype && (strcmp(atype, "loan") == 0 || strcmp(atype, "credit_card") == 0 ||
                            strcmp(atype, "other_liability") == 0));
+            money_t acc;
             if (is_liab) {
-                current_liabs += v;
+                if (money_add(current_liabs, v, &acc) == DECIMAL_OK) {
+                    current_liabs = acc;
+                }
             } else {
-                current_assets += v;
+                if (money_add(current_assets, v, &acc) == DECIMAL_OK) {
+                    current_assets = acc;
+                }
             }
 
             int found = -1;
@@ -416,7 +476,9 @@ report_asset_summary(void* pool, const report_query_t* q, report_result_t* out_r
                 }
             }
             if (found >= 0) {
-                cat_items[found].value += v;
+                if (money_add(cat_items[found].value, v, &acc) == DECIMAL_OK) {
+                    cat_items[found].value = acc;
+                }
             } else if (cat_item_count < 128) {
                 strncpy(cat_items[cat_item_count].name,
                         name ? name : "",
@@ -436,7 +498,7 @@ report_asset_summary(void* pool, const report_query_t* q, report_result_t* out_r
     for (int k = 0; k < cat_item_count; k++) {
         csilk_json_t* item = csilk_json_object();
         csilk_json_add_string(item, "name", cat_items[k].name);
-        csilk_json_add_number(item, "value", cat_items[k].value);
+        csilk_json_add_number(item, "value", money_to_double(cat_items[k].value));
         csilk_json_add_bool(item, "is_liability", cat_items[k].is_liab);
         csilk_json_array_append(by_cat, item);
     }
@@ -457,42 +519,62 @@ report_asset_summary(void* pool, const report_query_t* q, report_result_t* out_r
                            "WHERE abl.user_id = ? AND a.ledger_id = ? "
                            "AND date(abl.created_at) >= date('now', '-30 days')",
         params);
-    double change_30d = 0;
+    money_t change_30d = money_zero(base_cur);
     if (logs) {
         size_t n = csilk_json_array_size(logs);
         for (size_t i = 0; i < n; i++) {
             csilk_json_t* r = csilk_json_array_get(logs, i);
-            double        delta = db_get_num(r, "delta");
-            const char*   cur = csilk_json_get_string(r, "currency");
+            const char*   cur_s = csilk_json_get_string(r, "currency");
+            currency_t    cur = currency_from_str(cur_s ? cur_s : "CNY");
+            money_t       delta = db_get_money(r, "delta", cur);
             const char*   atype = csilk_json_get_string(r, "asset_type");
-            double        conv_delta = delta * exchange_rate_get_to_cny(cur);
+            money_t       conv_delta = exchange_rate_convert_m(delta, base_cur);
             int           is_liab =
                 (atype && (strcmp(atype, "loan") == 0 || strcmp(atype, "credit_card") == 0 ||
                            strcmp(atype, "other_liability") == 0));
+            money_t acc;
             if (is_liab) {
-                change_30d -= conv_delta;
+                money_t neg_delta = money_neg(conv_delta);
+                if (money_add(change_30d, neg_delta, &acc) == DECIMAL_OK) {
+                    change_30d = acc;
+                }
             } else {
-                change_30d += conv_delta;
+                if (money_add(change_30d, conv_delta, &acc) == DECIMAL_OK) {
+                    change_30d = acc;
+                }
             }
         }
         csilk_json_free(logs);
     }
 
-    double nw = current_assets - current_liabs;
-    double prev_nw = nw - change_30d;
-    double change_30d_pct = 0.0;
-    if (prev_nw > 0) {
-        change_30d_pct = (change_30d / prev_nw) * 100.0;
-    } else if (nw != 0) {
-        change_30d_pct = (change_30d / fabs(nw)) * 100.0;
+    money_t nw;
+    if (money_sub(current_assets, current_liabs, &nw) != DECIMAL_OK) {
+        nw = current_assets;
+    }
+    money_t prev_nw;
+    if (money_sub(nw, change_30d, &prev_nw) != DECIMAL_OK) {
+        prev_nw = nw;
+    }
+    percentage_t change_30d_pct;
+    { /* 30-day net worth percentage change */
+        money_t denom = prev_nw;
+        if (money_is_negative(denom) || decimal_is_zero(denom.amount)) {
+            denom = money_abs(nw);
+        }
+        if (decimal_is_zero(denom.amount)) {
+            change_30d_pct = percentage_zero();
+        } else if (percentage_calc(change_30d, denom, 2, ROUND_HALF_UP, &change_30d_pct) !=
+                   DECIMAL_OK) {
+            change_30d_pct = percentage_zero();
+        }
     }
 
     csilk_json_t* resp = csilk_json_object();
-    csilk_json_add_number(resp, "current_value", nw);
-    csilk_json_add_number(resp, "total_assets", current_assets);
-    csilk_json_add_number(resp, "total_liabilities", current_liabs);
-    csilk_json_add_number(resp, "change_30d", change_30d);
-    csilk_json_add_number(resp, "change_30d_pct", change_30d_pct);
+    csilk_json_add_number(resp, "current_value", money_to_double(nw));
+    csilk_json_add_number(resp, "total_assets", money_to_double(current_assets));
+    csilk_json_add_number(resp, "total_liabilities", money_to_double(current_liabs));
+    csilk_json_add_number(resp, "change_30d", money_to_double(change_30d));
+    csilk_json_add_number(resp, "change_30d_pct", percentage_to_double(change_30d_pct));
     csilk_json_add_array(resp, "by_category", by_cat);
 
     out_res->code = 0;
@@ -530,19 +612,22 @@ report_multi_currency_summary(void* pool, const report_query_t* q, report_result
         "WHERE a.user_id = ? AND a.ledger_id = ?",
         params);
 
+    currency_t base_currency_t = currency_from_str(base_cur);
+
     typedef struct {
-        char   currency[16];
-        double assets;
-        double liabilities;
-        int    count;
+        char       currency[16];
+        currency_t cur;
+        money_t    assets;
+        money_t    liabilities;
+        int        count;
     } cur_bucket_t;
 
     cur_bucket_t buckets[32];
     int          bucket_count = 0;
     memset(buckets, 0, sizeof(buckets));
 
-    double grand_total_assets = 0;
-    double grand_total_liabs = 0;
+    money_t grand_total_assets = money_zero(base_currency_t);
+    money_t grand_total_liabs = money_zero(base_currency_t);
 
     if (rows) {
         size_t n = csilk_json_array_size(rows);
@@ -552,7 +637,8 @@ report_multi_currency_summary(void* pool, const report_query_t* q, report_result
             if (!cur || !cur[0]) {
                 cur = "CNY";
             }
-            double      val = db_get_num(r, "val");
+            currency_t  cur_t = currency_from_str(cur);
+            money_t     val = db_get_money(r, "val", cur_t);
             const char* atype = csilk_json_get_string(r, "asset_type");
             int         is_liab =
                 (atype && (strcmp(atype, "loan") == 0 || strcmp(atype, "credit_card") == 0 ||
@@ -560,61 +646,89 @@ report_multi_currency_summary(void* pool, const report_query_t* q, report_result
 
             int b_idx = -1;
             for (int b = 0; b < bucket_count; b++) {
-                if (strcasecmp(buckets[b].currency, cur) == 0) {
+                if (currency_equals(buckets[b].cur, cur_t)) {
                     b_idx = b;
                     break;
                 }
             }
             if (b_idx < 0 && bucket_count < 32) {
                 b_idx = bucket_count++;
-                strncpy(buckets[b_idx].currency, cur, sizeof(buckets[b_idx].currency) - 1);
+                buckets[b_idx].cur = cur_t;
+                strncpy(buckets[b_idx].currency,
+                        currency_code(&cur_t),
+                        sizeof(buckets[b_idx].currency) - 1);
+                buckets[b_idx].assets = money_zero(cur_t);
+                buckets[b_idx].liabilities = money_zero(cur_t);
             }
 
+            money_t acc;
             if (b_idx >= 0) {
                 buckets[b_idx].count++;
                 if (is_liab) {
-                    buckets[b_idx].liabilities += val;
+                    if (money_add(buckets[b_idx].liabilities, val, &acc) == DECIMAL_OK) {
+                        buckets[b_idx].liabilities = acc;
+                    }
                 } else {
-                    buckets[b_idx].assets += val;
+                    if (money_add(buckets[b_idx].assets, val, &acc) == DECIMAL_OK) {
+                        buckets[b_idx].assets = acc;
+                    }
                 }
             }
 
-            double converted_val = exchange_rate_convert(val, cur, base_cur);
+            money_t converted_val = exchange_rate_convert_m(val, base_currency_t);
             if (is_liab) {
-                grand_total_liabs += converted_val;
+                if (money_add(grand_total_liabs, converted_val, &acc) == DECIMAL_OK) {
+                    grand_total_liabs = acc;
+                }
             } else {
-                grand_total_assets += converted_val;
+                if (money_add(grand_total_assets, converted_val, &acc) == DECIMAL_OK) {
+                    grand_total_assets = acc;
+                }
             }
         }
         csilk_json_free(rows);
     }
 
-    double grand_net_worth = grand_total_assets - grand_total_liabs;
+    money_t grand_net_worth;
+    if (money_sub(grand_total_assets, grand_total_liabs, &grand_net_worth) != DECIMAL_OK) {
+        grand_net_worth = grand_total_assets;
+    }
 
     csilk_json_t* cur_arr = csilk_json_array();
     for (int b = 0; b < bucket_count; b++) {
-        double b_net = buckets[b].assets - buckets[b].liabilities;
-        double converted_net = exchange_rate_convert(b_net, buckets[b].currency, base_cur);
-        double rate_to_base = exchange_rate_convert(1.0, buckets[b].currency, base_cur);
+        money_t b_net;
+        if (money_sub(buckets[b].assets, buckets[b].liabilities, &b_net) != DECIMAL_OK) {
+            b_net = buckets[b].assets;
+        }
+        money_t converted_net = exchange_rate_convert_m(b_net, base_currency_t);
+        double  rate_to_base =
+            rate_to_double(exchange_rate_get_rate(buckets[b].cur, base_currency_t));
 
         csilk_json_t* b_obj = csilk_json_object();
         csilk_json_add_string(b_obj, "currency", buckets[b].currency);
         csilk_json_add_number(b_obj, "asset_count", buckets[b].count);
-        csilk_json_add_number(b_obj, "original_assets", buckets[b].assets);
-        csilk_json_add_number(b_obj, "original_liabilities", buckets[b].liabilities);
-        csilk_json_add_number(b_obj, "original_net_worth", b_net);
+        csilk_json_add_number(b_obj, "original_assets", money_to_double(buckets[b].assets));
+        csilk_json_add_number(
+            b_obj, "original_liabilities", money_to_double(buckets[b].liabilities));
+        csilk_json_add_number(b_obj, "original_net_worth", money_to_double(b_net));
         csilk_json_add_number(b_obj, "rate_to_base", rate_to_base);
-        csilk_json_add_number(b_obj, "converted_net_worth", converted_net);
-        double pct = (grand_net_worth > 0) ? (converted_net / grand_net_worth * 100.0) : 0.0;
-        csilk_json_add_number(b_obj, "percentage", pct);
+        csilk_json_add_number(b_obj, "converted_net_worth", money_to_double(converted_net));
+        percentage_t pct;
+        if (decimal_is_zero(grand_net_worth.amount)) {
+            pct = percentage_zero();
+        } else if (percentage_calc(converted_net, grand_net_worth, 2, ROUND_HALF_UP, &pct) !=
+                   DECIMAL_OK) {
+            pct = percentage_zero();
+        }
+        csilk_json_add_number(b_obj, "percentage", percentage_to_double(pct));
         csilk_json_array_append(cur_arr, b_obj);
     }
 
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_string(resp, "base_currency", base_cur);
-    csilk_json_add_number(resp, "total_net_worth", grand_net_worth);
-    csilk_json_add_number(resp, "total_assets", grand_total_assets);
-    csilk_json_add_number(resp, "total_liabilities", grand_total_liabs);
+    csilk_json_add_number(resp, "total_net_worth", money_to_double(grand_net_worth));
+    csilk_json_add_number(resp, "total_assets", money_to_double(grand_total_assets));
+    csilk_json_add_number(resp, "total_liabilities", money_to_double(grand_total_liabs));
     csilk_json_add_array(resp, "currencies", cur_arr);
 
     out_res->code = 0;

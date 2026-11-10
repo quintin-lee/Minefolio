@@ -94,9 +94,9 @@ daily_expenses_monthly(csilk_ctx_t* c)
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_number(resp, "year", (double)year);
     csilk_json_add_number(resp, "month", (double)month);
-    csilk_json_add_number(resp, "total_income", res.total_income);
-    csilk_json_add_number(resp, "total_expense", res.total_expense);
-    csilk_json_add_number(resp, "balance", res.balance);
+    csilk_json_add_number(resp, "total_income", money_to_double(res.total_income));
+    csilk_json_add_number(resp, "total_expense", money_to_double(res.total_expense));
+    csilk_json_add_number(resp, "balance", money_to_double(res.balance));
     csilk_json_add_array(resp, "by_category", by_cat ? by_cat : csilk_json_array());
     csilk_json_add_array(resp, "by_tag", by_tag ? by_tag : csilk_json_array());
     csilk_json_add_array(resp, "daily_breakdown", daily ? daily : csilk_json_array());

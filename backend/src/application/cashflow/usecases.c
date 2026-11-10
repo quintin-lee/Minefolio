@@ -4,6 +4,9 @@
 #include "infrastructure/repositories/transaction_repo_impl.h"
 #include "common/balance.h"
 #include "common/db.h"
+#include "core/financial/money.h"
+#include "core/financial/currency.h"
+#include "core/financial/decimal.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -276,9 +279,10 @@ cashflow_usecase_get_calendar(void*                       pool,
     snprintf(ym, sizeof(ym), "%04d-%02d", year, month);
 
     csilk_json_t* events_arr = csilk_json_array();
-    double        actual_total = 0.0;
-    double        projected_total = 0.0;
-    double        annual_projected_total = 0.0;
+    currency_t    cny_cur = currency_from_str("CNY");
+    money_t       actual_total = money_zero(cny_cur);
+    money_t       projected_total = money_zero(cny_cur);
+    money_t       annual_projected_total = money_zero(cny_cur);
 
     /* 1. 查询真实历史已确认入账 */
     mf_cashflow_event_t* actual_evs = NULL;
@@ -287,8 +291,11 @@ cashflow_usecase_get_calendar(void*                       pool,
             0 &&
         actual_evs) {
         for (size_t i = 0; i < actual_count; i++) {
-            double amt = money_to_double(actual_evs[i].amount);
-            actual_total += amt;
+            double  amt = money_to_double(actual_evs[i].amount);
+            money_t acc;
+            if (money_add(actual_total, actual_evs[i].amount, &acc) == DECIMAL_OK) {
+                actual_total = acc;
+            }
 
             csilk_json_t* ev = csilk_json_object();
             csilk_json_add_number(ev, "id", (double)actual_evs[i].id);
@@ -315,12 +322,22 @@ cashflow_usecase_get_calendar(void*                       pool,
 
             double factor = 12.0;
             mf_cashflow_rule_annual_factor(sch->frequency, &factor);
-            annual_projected_total += exp_amt * factor;
+            money_t   annual_add;
+            decimal_t annual_factor_d, annual_amt_d;
+            decimal_from_double(factor, 4, &annual_factor_d);
+            decimal_mul(sch->expected_amount.amount, annual_factor_d, &annual_amt_d);
+            annual_add = money_from_decimal(annual_amt_d, cny_cur);
+            money_t acc;
+            if (money_add(annual_projected_total, annual_add, &acc) == DECIMAL_OK) {
+                annual_projected_total = acc;
+            }
 
             int target_day = 0;
             if (mf_cashflow_rule_matches_month(
                     sch->frequency, sch->start_date, sch->end_date, year, month, &target_day)) {
-                projected_total += exp_amt;
+                if (money_add(projected_total, sch->expected_amount, &acc) == DECIMAL_OK) {
+                    projected_total = acc;
+                }
                 char pdate[64];
                 snprintf(pdate, sizeof(pdate), "%s-%02d", ym, target_day);
 
@@ -347,9 +364,9 @@ cashflow_usecase_get_calendar(void*                       pool,
     csilk_json_add_number(res, "year", (double)year);
     csilk_json_add_number(res, "month", (double)month);
     csilk_json_add_string(res, "year_month", ym);
-    csilk_json_add_number(res, "actual_total", actual_total);
-    csilk_json_add_number(res, "projected_total", projected_total);
-    csilk_json_add_number(res, "annual_projected_total", annual_projected_total);
+    csilk_json_add_number(res, "actual_total", money_to_double(actual_total));
+    csilk_json_add_number(res, "projected_total", money_to_double(projected_total));
+    csilk_json_add_number(res, "annual_projected_total", money_to_double(annual_projected_total));
     csilk_json_add_array(res, "events", events_arr);
 
     *out_resp = res;
