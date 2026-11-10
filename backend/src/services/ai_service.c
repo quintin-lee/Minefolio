@@ -2,6 +2,7 @@
 #include "services/ai_tools.h"
 #include "services/ai/runtime/runtime.h"
 #include "services/ai/memory/summary.h"
+#include "application/ai/config_provider.h"
 #include "infrastructure/repositories/ai_session_repo_impl.h"
 #include "infrastructure/repositories/ai_settings_repo_impl.h"
 #include "common/ai_config.h"
@@ -24,107 +25,6 @@
 #include <stddef.h>
 #include <stdatomic.h>
 #include <pthread.h>
-
-/**
- * 不可变 AI 配置快照 + 引用计数（RCU 风格）：
- * 写者（ai_init/热重载）构建新快照后原子交换 g_snapshot；
- * 读者通过 ai_config_acquire()/ai_config_release() 持有引用，
- * 保证流式请求整段生命周期内 config 与预建 csilk_ai_t 实例不会因热重载被释放。
- */
-typedef struct ai_config_snapshot_s {
-    ai_config_t config;      /* 深拷贝，所有权归快照 */
-    csilk_ai_t* ai_instance; /* 预建实例（可能为 NULL） */
-    atomic_int  refcount;    /* 写者初始持 1；读者 acquire 后 >=2 */
-} ai_config_snapshot_t;
-
-static ai_config_snapshot_t* volatile g_snapshot = NULL;
-static pthread_mutex_t g_snapshot_lock = PTHREAD_MUTEX_INITIALIZER;
-
-static ai_config_snapshot_t*
-make_snapshot(ai_config_t* config_src, csilk_ai_t* instance)
-{
-    ai_config_snapshot_t* s = calloc(1, sizeof(*s));
-    if (!s) {
-        return NULL;
-    }
-    s->config = *config_src;      /* 标量字段拷贝；providers/models 堆内存独占归快照 */
-    s->ai_instance = instance;
-    atomic_init(&s->refcount, 1); /* 写者（安装者）持有一份 */
-    return s;
-}
-
-/**
- * @brief 释放写者（安装者）对快照的一份引用；归零时销毁整个快照
- */
-static void
-snapshot_writer_release(ai_config_snapshot_t* s)
-{
-    if (!s) {
-        return;
-    }
-    int old = atomic_fetch_sub(&s->refcount, 1);
-    if (old == 1) {
-        ai_config_free(&s->config);
-        if (s->ai_instance) {
-            csilk_ai_free(s->ai_instance);
-        }
-        free(s);
-    }
-}
-
-/**
- * @brief 读者获取当前快照（refcount++），返回配置指针；无快照时返回 NULL。
- *        读者须在用完（含所有由此派生的 ai_provider_t* 指针）后调用 ai_config_release()。
- */
-ai_config_t*
-ai_config_acquire(void)
-{
-    pthread_mutex_lock(&g_snapshot_lock);
-    ai_config_snapshot_t* s = g_snapshot;
-    if (s) {
-        atomic_fetch_add(&s->refcount, 1);
-    }
-    pthread_mutex_unlock(&g_snapshot_lock);
-    return s ? &s->config : NULL;
-}
-
-/**
- * @brief 读者释放快照引用（refcount--，最后一个释放时销毁快照）。
- *        参数为 ai_config_acquire() 返回的指针。
- */
-void
-ai_config_release(ai_config_t* cfg)
-{
-    if (!cfg) {
-        return;
-    }
-    /* container_of：config 是快照第一个成员，偏移为 offsetof */
-    ai_config_snapshot_t* s =
-        (ai_config_snapshot_t*)((char*)cfg - offsetof(ai_config_snapshot_t, config));
-    int old = atomic_fetch_sub(&s->refcount, 1);
-    if (old == 1) {
-        ai_config_free(&s->config);
-        if (s->ai_instance) {
-            csilk_ai_free(s->ai_instance);
-        }
-        free(s);
-    }
-}
-
-/**
- * @brief 查询当前预建 csilk_ai_t 实例（需先 acquire）
- * @return csilk_ai_t* 实例指针或 NULL（未配置/实例创建失败）
- */
-csilk_ai_t*
-ai_snapshot_ai_instance(const ai_config_t* cfg)
-{
-    if (!cfg) {
-        return NULL;
-    }
-    const ai_config_snapshot_t* s =
-        (const ai_config_snapshot_t*)((const char*)cfg - offsetof(ai_config_snapshot_t, config));
-    return s->ai_instance;
-}
 
 static const char*
 get_driver_name(const char* prov_id)
@@ -187,65 +87,8 @@ utf8_truncate(char* str, size_t max_chars, size_t max_bytes)
 void
 ai_init(csilk_db_pool_t* pool)
 {
+    ai_config_provider_init(pool);
     ai_summary_pool_init();
-
-    /* 构建一份全新的不可变配置（堆上独立生命周期，不与旧快照共享） */
-    ai_config_t cfg_copy = {0};
-    char*       json = pool ? mf_ai_settings_repo_load(pool) : NULL;
-    int         loaded_from_db = 0;
-    if (json) {
-        loaded_from_db = (ai_config_load_json(json, &cfg_copy) == 0);
-        free(json);
-    }
-    if (!loaded_from_db) {
-        const char* cfg_path = config_env_get("AI_CONFIG", NULL, 0, "config/ai.json");
-        if (ai_config_load(cfg_path, &cfg_copy) != 0) {
-            fprintf(stderr,
-                    "WARN: could not load ai_config from %s; keeping prior snapshot\n",
-                    cfg_path);
-            return;
-        }
-    }
-
-    ai_provider_t* prov = ai_config_default_provider(&cfg_copy);
-    csilk_ai_t*    new_inst = NULL;
-    if (prov) {
-        char        api_key_buf[512];
-        const char* sec_key = config_secret_get("AI_API_KEY", api_key_buf, sizeof(api_key_buf));
-        const char* key = (sec_key && sec_key[0])      ? sec_key
-                          : (prov->api_key[0] != '\0') ? prov->api_key
-                                                       : "";
-        const char* dname = get_driver_name(prov->id);
-        new_inst = csilk_ai_new(dname, key, prov->base_url[0] ? prov->base_url : NULL);
-        if (!new_inst) {
-            fprintf(stderr, "WARN: failed to create AI instance for provider '%s'\n", prov->id);
-        } else {
-            printf("AI initialized: provider=%s model=%s\n", prov->id, cfg_copy.default_model);
-        }
-    } else {
-        fprintf(stderr,
-                "WARN: default provider '%s' not found; AI remains unconfigured\n",
-                cfg_copy.default_provider);
-    }
-
-    /* 原子交换快照（持锁安装新快照、释放旧快照写者引用） */
-    pthread_mutex_lock(&g_snapshot_lock);
-    ai_config_snapshot_t* old_snap = g_snapshot;
-    ai_config_snapshot_t* new_snap = make_snapshot(&cfg_copy, new_inst);
-    if (new_snap) {
-        g_snapshot = new_snap;
-        /* 旧快照写者引用在锁外释放（读者持有不受影响） */
-        if (old_snap) {
-            snapshot_writer_release(old_snap);
-        }
-    } else {
-        /* 分配失败：保留旧快照，清理新配置堆内存 */
-        ai_config_free(&cfg_copy);
-        if (new_inst) {
-            csilk_ai_free(new_inst);
-        }
-    }
-    pthread_mutex_unlock(&g_snapshot_lock);
 }
 
 void
@@ -257,14 +100,7 @@ ai_shutdown(void)
     if (killed > 0) {
         CSILK_LOG_I("ai_shutdown: terminated %d idle MCP stdio children", killed);
     }
-    /* 摘除写者持有的快照引用；in-flight 读者仍持有引用，最后一个释放时才销毁 */
-    pthread_mutex_lock(&g_snapshot_lock);
-    ai_config_snapshot_t* old_snap = g_snapshot;
-    g_snapshot = NULL;
-    pthread_mutex_unlock(&g_snapshot_lock);
-    if (old_snap) {
-        snapshot_writer_release(old_snap);
-    }
+    ai_config_provider_shutdown();
 }
 
 ai_config_t*

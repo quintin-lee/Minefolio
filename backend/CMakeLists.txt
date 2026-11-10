@@ -203,6 +203,12 @@ target_compile_options(test_ai_summary PRIVATE -UNDEBUG)
 target_link_libraries(test_ai_summary PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
 add_test(NAME test_ai_summary COMMAND test_ai_summary)
 
+add_executable(test_ai_config_provider tests/unit/test_ai_config_provider.c ${LIB_SOURCES})
+target_include_directories(test_ai_config_provider PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_ai_config_provider PRIVATE -UNDEBUG)
+target_link_libraries(test_ai_config_provider PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_test(NAME test_ai_config_provider COMMAND test_ai_config_provider)
+
 
 add_executable(test_secret_provider tests/unit/test_secret_provider.c ${LIB_SOURCES})
 target_include_directories(test_secret_provider PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)

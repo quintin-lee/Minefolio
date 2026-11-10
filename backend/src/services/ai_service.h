@@ -38,6 +38,8 @@ void ai_service_test_connection(csilk_ctx_t* c);
  */
 void ai_service_fetch_models(csilk_ctx_t* c);
 
+#include "application/ai/config_provider.h"
+
 /**
  * @brief 获取当前全局 AI 运行时配置（内部调用 ai_config_acquire）。
  *        调用者须在用完配置（及由此派生的 ai_provider_t* 指针）后
@@ -48,26 +50,13 @@ void ai_service_fetch_models(csilk_ctx_t* c);
 ai_config_t* ai_get_config(void);
 
 /**
- * @brief 获取当前全局 AI 配置快照的引用（refcount++）。
- *        在热重载（ai_init/ai_shutdown）期间保证已 acquire 的快照不被释放，
- *        长时流式请求可安全持有配置及 ai_provider_t* 指针直至 release。
- * @return ai_config_t* 指向快照内配置；未初始化时返回 NULL（无需 release）
- */
-ai_config_t* ai_config_acquire(void);
-
-/**
- * @brief 归还 ai_config_acquire() 获取的配置快照引用（refcount--）。
- *        传入 NULL 安全（无操作）。最后一个读者释放后快照才真正销毁。
- * @param cfg 之前 ai_config_acquire() 返回的指针
- */
-void ai_config_release(ai_config_t* cfg);
-
-/**
  * @brief 获取当前快照预建的 csilk_ai_t 实例（需先 ai_config_acquire）。
  *        返回的实例随快照生命周期，acquire 持有期间保证有效。
  * @return csilk_ai_t* 实例指针或 NULL（未配置/实例创建失败）
  */
-csilk_ai_t* ai_snapshot_ai_instance(const ai_config_t* cfg);
+static inline csilk_ai_t* ai_snapshot_ai_instance(const ai_config_t* cfg) {
+    return ai_config_get_ai_instance(cfg);
+}
 
 /**
  * @brief 执行深度财务诊断工作流并以 SSE 流式推送诊断报告
