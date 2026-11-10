@@ -326,5 +326,13 @@ export const reportsApi = {
     http.get<import('@/types').FxPnlReport>('/reports/fx-pnl', {
       params: { base_currency: baseCurrency },
     }),
+
+  /**
+   * 获取持仓总览（当日收益 + 累计总收益 + HHI 集中度 + 资产配置分布）
+   * @route GET /api/reports/position-overview
+   * @returns 持仓总览数据
+   */
+  positionOverview: () =>
+    http.get<import('@/types').PositionOverview>('/reports/position-overview'),
 }
 

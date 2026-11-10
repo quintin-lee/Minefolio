@@ -796,6 +796,89 @@ export interface GlobalIndicesData {
   indices: GlobalIndexItem[]
 }
 
+/* ── 持仓总览 (对标支付宝/天天基金) ─────────────────────────── */
+
+/** 持仓总览 API 响应模型 */
+export interface PositionOverview {
+  /** 非负债资产合计市值 (CNY 折算) */
+  total_assets: number
+  /** 负债合计市值 */
+  total_liabilities: number
+  /** 净资产 (total_assets − total_liabilities) */
+  net_worth: number
+  /** 总成本基础 */
+  total_cost: number
+  /** 累计总盈亏 */
+  total_pnl: number
+  /** 总回报率 (%) */
+  total_return_pct: number
+  /** 当日盈亏 (资金流入/流出 + 行情市值变动) */
+  daily_pnl: number
+  /** 赫芬达尔集中度指数 HHI (0~1，越接近 1 越集中) */
+  hhi: number
+  /** 最大单一持仓占比 (0~1) */
+  max_holding_weight: number
+  /** 最大持仓资产 ID */
+  max_holding_asset_id: number
+  /** 最大持仓资产名称 */
+  max_holding_name: string
+  /** 非负债资产数量 */
+  asset_count: number
+  /** 分类聚合 (饼图数据) */
+  by_category: { name: string; value: number; pct: number }[]
+}
+
+/** 区间收益率 (单只资产) */
+export interface IntervalReturns {
+  ret_1m: number
+  valid_1m: number
+  ret_3m: number
+  valid_3m: number
+  ret_6m: number
+  valid_6m: number
+  ret_1y: number
+  valid_1y: number
+  ret_all: number
+  valid_all: number
+}
+
+/** 当日涨跌 (单只资产) */
+export interface DailyChange {
+  /** 涨跌额 (绝对值，CNY 折算) */
+  change: string
+  /** 涨跌幅 (%) */
+  pct: number
+}
+
+/** 单只资产详情扩展字段 (asset_usecase_get 响应) */
+export interface AssetDetailResponse {
+  id: number
+  name: string
+  asset_type: string
+  currency: string
+  quantity: number
+  cost_basis: number
+  net_value: number
+  current_value: number
+  /** 占组合总市值权重 (0-1) */
+  portfolio_weight?: number
+  /** 区间收益率 */
+  interval_returns?: IntervalReturns
+  /** 当日涨跌 */
+  daily_change?: DailyChange
+  /** 交易流水 */
+  transactions: {
+    id: number
+    transaction_type: string
+    amount: number
+    quantity: number
+    price_per_unit: number
+    currency: string
+    transaction_date: string
+    note: string
+  }[]
+}
+
 export * from './chat-panel'
 export * from './skill'
 

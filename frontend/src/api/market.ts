@@ -138,6 +138,17 @@ export const marketApi = {
    */
   getIndices: (category?: string) =>
     http.get<import('@/types').GlobalIndicesData>('/market/indices', { params: { category } }),
+
+  /**
+   * 获取指定资产的历史价格/净值走势序列（默认 90 天，可指定上限）
+   * @route GET /api/market/history/:asset_id
+   * @param assetId 资产 ID
+   * @param limit 获取最近 N 天的数据 (默认 90，最大 365)
+   */
+  priceHistory: (assetId: number, limit = 365) =>
+    http.get<import('@/types').PriceHistoryItem[]>(`/market/history/${assetId}`, {
+      params: { limit },
+    }),
 }
 
 
