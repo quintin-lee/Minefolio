@@ -467,6 +467,63 @@ asset_delete(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
 }
 
 int
+asset_daily_balance_log_sum(csilk_db_pool_t* pool,
+                            int64_t          user_id,
+                            int64_t          asset_id,
+                            const char*      start_date,
+                            const char*      end_date,
+                            double*          out_sum)
+{
+    if (!pool || user_id <= 0 || asset_id <= 0 || !out_sum) {
+        return -1;
+    }
+    *out_sum = 0.0;
+
+    char uid_str[32], aid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    snprintf(aid_str, sizeof(aid_str), "%lld", (long long)asset_id);
+
+    /* 负债类资产方向翻转（与 balance_apply_delta 一致）：
+     * 负债增加 → 净资产减少，所以 SUM(delta) 对负债取负 */
+    const char* sql = "SELECT c.asset_type, COALESCE(SUM(abl.delta), 0.0) as total_delta "
+                      "FROM asset_balance_logs abl "
+                      "JOIN assets a ON abl.asset_id = a.id "
+                      "JOIN categories c ON a.category_id = c.id "
+                      "WHERE abl.user_id = ? AND abl.asset_id = ? "
+                      "AND date(abl.created_at) >= ? AND date(abl.created_at) <= ? "
+                      "GROUP BY c.asset_type";
+
+    csilk_json_t* rows =
+        csilk_db_query_param_json(pool,
+                                  sql,
+                                  (const char*[]){uid_str,
+                                                  aid_str,
+                                                  start_date ? start_date : "1970-01-01",
+                                                  end_date ? end_date : "9999-12-31",
+                                                  NULL});
+
+    if (!rows) {
+        return -1;
+    }
+
+    size_t n = csilk_json_array_size(rows);
+    for (size_t i = 0; i < n; i++) {
+        const csilk_json_t* row = csilk_json_array_get(rows, i);
+        double              delta = db_get_num(row, "total_delta");
+        const char*         atype = csilk_json_get_string(row, "asset_type");
+        int is_liab = (atype && (strcmp(atype, "loan") == 0 || strcmp(atype, "credit_card") == 0 ||
+                                 strcmp(atype, "other_liability") == 0));
+        if (is_liab) {
+            delta = -delta;
+        }
+        *out_sum += delta;
+    }
+
+    csilk_json_free(rows);
+    return 0;
+}
+
+int
 asset_exists(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
 {
     char uid[32], idstr[32];

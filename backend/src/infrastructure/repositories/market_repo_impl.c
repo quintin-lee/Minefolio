@@ -96,6 +96,33 @@ mf_market_repo_price_history_list(void* pool, int64_t user_id, int64_t asset_id,
 }
 
 csilk_json_t*
+mf_market_repo_price_history_range(
+    void* pool, int64_t user_id, int64_t asset_id, const char* start_date, const char* end_date)
+{
+    char uid_str[32], aid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    snprintf(aid_str, sizeof(aid_str), "%lld", (long long)asset_id);
+
+    const char* sql = "SELECT h.id, h.asset_id, "
+                      "CAST(h.price_date AS TEXT) as price_date, "
+                      "COALESCE(CAST(h.price AS REAL), 0.0) as price, "
+                      "h.currency, "
+                      "CAST(h.created_at AS TEXT) as created_at "
+                      "FROM asset_price_history h "
+                      "JOIN assets a ON h.asset_id = a.id "
+                      "WHERE a.user_id = ? AND h.asset_id = ? "
+                      "AND h.price_date >= ? AND h.price_date <= ? "
+                      "ORDER BY h.price_date ASC";
+    return csilk_db_query_param_json((csilk_db_pool_t*)pool,
+                                     sql,
+                                     (const char*[]){uid_str,
+                                                     aid_str,
+                                                     start_date ? start_date : "1970-01-01",
+                                                     end_date ? end_date : "9999-12-31",
+                                                     NULL});
+}
+
+csilk_json_t*
 mf_market_repo_get_indices(void* pool, const char* category)
 {
     if (!pool) {

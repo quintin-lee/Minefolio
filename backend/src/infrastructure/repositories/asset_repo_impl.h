@@ -68,3 +68,14 @@ csilk_json_t* asset_balance_logs_list(csilk_db_pool_t* pool,
                                       int64_t          page_size,
                                       const char*      asset_id,
                                       int64_t*         total);
+
+/**
+ * @brief 汇总指定资产在 [start_date, end_date] 区间的余额变动 delta 总和
+ * @return 0 成功 (out_sum 写入 double 合计，负债方向已翻转)；-1 失败
+ */
+int asset_daily_balance_log_sum(csilk_db_pool_t* pool,
+                                int64_t          user_id,
+                                int64_t          asset_id,
+                                const char*      start_date,
+                                const char*      end_date,
+                                double*          out_sum);

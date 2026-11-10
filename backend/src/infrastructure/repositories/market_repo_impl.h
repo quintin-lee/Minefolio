@@ -12,6 +12,13 @@ csilk_json_t*
 mf_market_repo_price_history_list(void* pool, int64_t user_id, int64_t asset_id, int limit);
 
 /**
+ * @brief 查询指定资产在 [start_date, end_date] 区间内的完整价格序列（升序）
+ * @return csilk_json_t* JSON 数组，每项含 price_date / price / currency
+ */
+csilk_json_t* mf_market_repo_price_history_range(
+    void* pool, int64_t user_id, int64_t asset_id, const char* start_date, const char* end_date);
+
+/**
  * @brief 从数据库查询大盘指数记录列表 (只读)
  * @param pool 数据库连接池
  * @param category 分类过滤 ("all" 或 NULL 表示全量)
