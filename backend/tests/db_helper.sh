@@ -82,18 +82,31 @@ EOF
 db_query() {
   local sql="$1"
   if [ "${DB_DRIVER:-sqlite}" = "postgres" ]; then
-    PGPASSWORD="${PGPASSWORD:-postgres_password}" psql -h "${PGHOST:-localhost}" -p "${PGPORT:-5432}" -U "${PGUSER:-postgres}" -d "${PGDATABASE:-minefolio_test}" -t -A -c "$sql"
+    PGPASSWORD="${PGPASSWORD:-postgres_password}" psql -h "${PGHOST:-localhost}" -p "${PGPORT:-5432}" -U "${PGUSER:-postgres}" -d "${PGDATABASE:-minefolio_test}" -t -A -c "$sql" | tail -n 1
   else
-    sqlite3 "$DB_FILE" "$sql"
+    command sqlite3 "$DB_FILE" "$sql"
   fi
 }
 
 db_exec() {
   local sql="$1"
   if [ "${DB_DRIVER:-sqlite}" = "postgres" ]; then
-    PGPASSWORD="${PGPASSWORD:-postgres_password}" psql -h "${PGHOST:-localhost}" -p "${PGPORT:-5432}" -U "${PGUSER:-postgres}" -d "${PGDATABASE:-minefolio_test}" -q -v ON_ERROR_STOP=1 -c "$sql"
+    PGPASSWORD="${PGPASSWORD:-postgres_password}" psql -h "${PGHOST:-localhost}" -p "${PGPORT:-5432}" -U "${PGUSER:-postgres}" -d "${PGDATABASE:-minefolio_test}" -q -v ON_ERROR_STOP=1 -c "$sql" >/dev/null
   else
-    sqlite3 "$DB_FILE" "$sql"
+    command sqlite3 "$DB_FILE" "$sql" >/dev/null
+  fi
+}
+
+# Universal sqlite3 CLI interception wrapper to support legacy tests on both SQLite and PostgreSQL
+sqlite3() {
+  if [ "$#" -ge 2 ]; then
+    shift
+  fi
+  local sql="$1"
+  if [[ "$sql" =~ ^[[:space:]]*(INSERT|UPDATE|DELETE|CREATE|DROP) ]] && [[ ! "$sql" =~ last_insert_rowid ]]; then
+    db_exec "$sql"
+  else
+    db_query "$sql"
   fi
 }
 

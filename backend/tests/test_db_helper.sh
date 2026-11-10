@@ -56,6 +56,14 @@ assert_eq "Query returns inserted string" "apple" "$VAL"
 NUM=$(db_query "SELECT amount FROM test_items WHERE id=1;")
 assert_eq "Query returns inserted number" "12.5" "$NUM"
 
+# Test sqlite3 compatibility wrapper
+WRAP_VAL=$(sqlite3 "$DB" "SELECT name FROM test_items WHERE id=1;")
+assert_eq "sqlite3 wrapper returns string" "apple" "$WRAP_VAL"
+
+sqlite3 "$DB" "UPDATE test_items SET name='banana' WHERE id=1;"
+WRAP_MOD=$(sqlite3 "$DB" "SELECT name FROM test_items WHERE id=1;")
+assert_eq "sqlite3 wrapper update works" "banana" "$WRAP_MOD"
+
 # Clean after test
 db_clean
 if [ -f "$DB_FILE" ]; then

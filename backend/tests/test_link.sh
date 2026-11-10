@@ -4,29 +4,25 @@
 set -euo pipefail
 
 TEST_PORT="${TEST_PORT:-18080}"
-BASE="http://localhost:${TEST_PORT}/api"
-DB="/tmp/mf_link_test.db"
-BUILD_DIR="$(cd "$(dirname "$0")/../build" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/db_helper.sh"
+
+db_init_context "$TEST_PORT" "link_test"
+BASE="http://localhost:${PORT}/api"
+BUILD_DIR="$(cd "$SCRIPT_DIR/../build" && pwd)"
 PASS=0; FAIL=0
 
 cleanup() {
-  [ -n "${SERVER_PID:-}" ] && kill "$SERVER_PID" 2>/dev/null || true
-  rm -f "$DB" "$DB-wal" "$DB-shm"
+  db_stop_server
+  db_clean
 }
-trap cleanup EXIT
+trap cleanup EXIT INT TERM
 
 # Generate a random JWT secret for this test run
 export TEST_JWT_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
 # --- 启动服务器 ---
-rm -f "$DB" "$DB-wal" "$DB-shm"
-cd "$BUILD_DIR"
-MINEFOLIO_DB_DRIVER=sqlite PORT="$TEST_PORT" MINEFOLIO_PORT="$TEST_PORT" MINEFOLIO_DB_DSN="$DB" MINEFOLIO_JWT_SECRET="$TEST_JWT_SECRET" ./minefolio >/dev/null 2>&1 &
-SERVER_PID=$!
-# Wait for server to be ready
-for _i in $(seq 1 30); do
-  curl -sf "http://localhost:${TEST_PORT}/healthz" >/dev/null 2>&1 && break
-  sleep 0.5
-done
+db_clean
+db_start_server "$PORT" "$BUILD_DIR"
 
 
 req() { # req METHOD PATH JSON
@@ -880,7 +876,7 @@ echo ""
 echo "--- Case 42: Wave 2 深度安全防御纵深验证 ---"
 
 # 1. 2FA 启用状态下登录返回 temp_token，且 temp_token 无法越权访问受保护路由
-sqlite3 "$DB" "UPDATE users SET totp_secret='JBSWY3DPEHPK3PXP', totp_enabled=1 WHERE id=1"
+sqlite3 "$DB" "UPDATE users SET totp_secret='JBSWY3DPEHPK3PXP', totp_enabled=TRUE WHERE id=1"
 LOGIN_2FA_PASS=$(rsa_encrypt "newpass123")
 LOGIN_2FA_RES=$(curl -s -X POST -H "Content-Type: application/json" "$BASE/auth/login" -d "{\"username\":\"linktest\",\"password_enc\":\"$LOGIN_2FA_PASS\"}")
 check "2FA 开启时登录要求二次验证 require_2fa=true" "true" "$(echo "$LOGIN_2FA_RES" | jq -r '.data.require_2fa')"
@@ -904,7 +900,7 @@ check "错误密码解绑 2FA 返回 code=1002" "1002" "$(echo "$DISABLE_BAD_PW_
 # 2.3 正确密码解绑成功 (code=0)
 DISABLE_OK_RES=$(curl -s -H "$AUTH" -H "Content-Type: application/json" -X POST "$BASE/auth/2fa/disable" -d '{"password":"newpass123"}')
 check "正确密码解绑 2FA 成功 code=0" "0" "$(echo "$DISABLE_OK_RES" | jq -r '.code | floor')"
-TOTP_AFTER_DISABLE=$(sqlite3 "$DB" "SELECT totp_enabled FROM users WHERE id=1")
+TOTP_AFTER_DISABLE=$(sqlite3 "$DB" "SELECT CASE WHEN totp_enabled THEN 1 ELSE 0 END FROM users WHERE id=1")
 check "数据库中 2FA 状态已关闭 totp_enabled=0" "0" "$TOTP_AFTER_DISABLE"
 
 # 3. OAuth 客户端防伪造与服务端权威 Code 置换校验
