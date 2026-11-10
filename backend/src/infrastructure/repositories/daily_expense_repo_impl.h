@@ -1,6 +1,7 @@
 /**
  * @file daily_expense_repo_impl.h
  * @brief 日常收支仓储 SQL 实现声明 (Infrastructure Daily Expense Repository)
+ * 注意：tags/嵌套列在 DB层永远是字符串标量，必须 csilk_json_parse一次（见 db.c:122）
  */
 
 #pragma once

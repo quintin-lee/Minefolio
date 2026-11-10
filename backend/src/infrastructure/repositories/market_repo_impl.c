@@ -1,3 +1,7 @@
+/** @file market_repo_impl.c @brief Market repository implementation with inlined SQL
+ *  注意：tags/嵌套列在 DB层永远是字符串标量，必须 csilk_json_parse一次（见 db.c:122）
+ */
+
 #include "infrastructure/repositories/market_repo_impl.h"
 #include "common/db.h"
 #include "csilk/csilk.h"
