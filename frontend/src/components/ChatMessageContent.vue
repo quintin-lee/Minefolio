@@ -77,7 +77,7 @@
           />
         </div>
       </div>
-      <div v-if="isThinkingExpanded" class="thinking-content-body">
+      <div v-if="isThinkingExpanded" ref="thinkingBodyRef" class="thinking-content-body">
         <div class="thinking-text-inner">{{ thinkingContent }}</div>
       </div>
     </div>
@@ -183,7 +183,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, defineAsyncComponent, onUnmounted } from 'vue'
+import { computed, ref, watch, defineAsyncComponent, onUnmounted, nextTick } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { Icon } from '@iconify/vue'
@@ -293,6 +293,7 @@ watch(
 )
 
 // Thinking Mode State & Timing
+const thinkingBodyRef = ref<HTMLElement | null>(null)
 const manualExpanded = ref<boolean | null>(null)
 const thinkingDuration = ref(0)
 let thinkingTimer: number | null = null
@@ -308,7 +309,11 @@ const isThinkingExpanded = computed({
     if (manualExpanded.value !== null) {
       return manualExpanded.value
     }
-    // 思考内容输出时与输出后默认保持展开，不折叠
+    // 若正文已开始输出或已有正文，自动平滑收拢为紧凑状态，释放垂直空间给正文阅读
+    if (props.content && props.content.trim()) {
+      return false
+    }
+    // 无正文时（思考流式阶段或纯思考阶段）：默认展开
     return true
   },
   set(val: boolean) {
@@ -367,6 +372,26 @@ watch(
     }
   },
   { immediate: true },
+)
+
+// 思考中微滚动跟随：流式吐字时若接近底部则平滑下滚
+watch(
+  () => props.thinkingContent,
+  () => {
+    if (isThinkingStreaming.value && thinkingBodyRef.value) {
+      nextTick(() => {
+        const el = thinkingBodyRef.value
+        if (!el) return
+        const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150
+        if (isNearBottom) {
+          el.scrollTo({
+            top: el.scrollHeight,
+            behavior: 'smooth',
+          })
+        }
+      })
+    }
+  },
 )
 
 async function copyThinkingText() {
@@ -958,14 +983,30 @@ const segments = computed<Segment[]>(() => {
 }
 
 .thinking-content-body {
+  position: relative;
   padding: 10px 14px 12px 14px;
   border-top: 1px dashed var(--mf-border-subtle, #e2e8f0);
   font-size: 12.5px;
   line-height: 1.6;
   color: var(--mf-text-secondary);
   background: var(--mf-surface, #ffffff);
-  max-height: 400px;
+  max-height: 220px;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scroll-behavior: smooth;
+}
+
+.thinking-content-body::-webkit-scrollbar {
+  width: 4px;
+}
+
+.thinking-content-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.thinking-content-body::-webkit-scrollbar-thumb {
+  background: var(--mf-border-subtle, #cbd5e1);
+  border-radius: 4px;
 }
 
 .thinking-text-inner {
