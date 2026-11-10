@@ -29,15 +29,6 @@ void ai_chat_handler(csilk_ctx_t* c);
 #include "application/ai/config_provider.h"
 
 /**
- * @brief 获取当前全局 AI 运行时配置（内部调用 ai_config_acquire）。
- *        调用者须在用完配置（及由此派生的 ai_provider_t* 指针）后
- *        调用 ai_config_release() 归还引用，否则快照引用泄漏。
- *        为历史 API 保留；新代码请直接用 ai_config_acquire()/ai_config_release() 对。
- * @return ai_config_t* 配置对象指针，未初始化时返回 NULL
- */
-ai_config_t* ai_get_config(void);
-
-/**
  * @brief 获取当前快照预建的 csilk_ai_t 实例（需先 ai_config_acquire）。
  *        返回的实例随快照生命周期，acquire 持有期间保证有效。
  * @return csilk_ai_t* 实例指针或 NULL（未配置/实例创建失败）

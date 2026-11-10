@@ -5,7 +5,7 @@
 #include "infrastructure/repositories/ai_settings_repo_impl.h"
 #include "infrastructure/repositories/ai_trace_repo_impl.h"
 #include "services/ai_workflow_service.h"
-#include "services/ai_service.h"
+#include "application/ai/config_provider.h"
 #include "common/ai_config.h"
 #include "config/key_manager.h"
 #include "config/secret.h"
@@ -50,7 +50,7 @@ ai_usecase_models_list(csilk_json_t** out_data, ai_usecase_result_t* out_res)
         return -1;
     }
 
-    ai_config_t* cfg = ai_get_config();
+    ai_config_t* cfg = ai_config_acquire();
     if (!cfg) {
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "AI config not loaded");
@@ -70,6 +70,7 @@ ai_usecase_models_list(csilk_json_t** out_data, ai_usecase_result_t* out_res)
         csilk_json_array_append(out, p);
     }
 
+    ai_config_release(cfg);
     *out_data = out;
     out_res->code = 0;
     snprintf(out_res->message, sizeof(out_res->message), "ok");
@@ -314,7 +315,7 @@ ai_usecase_settings_get(csilk_json_t** out_data, ai_usecase_result_t* out_res)
         return -1;
     }
 
-    ai_config_t* cfg = ai_get_config();
+    ai_config_t* cfg = ai_config_acquire();
     if (!cfg) {
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "AI config not loaded");
@@ -563,10 +564,7 @@ ai_usecase_settings_update(void* pool, const csilk_json_t* body, ai_usecase_resu
         return -1;
     }
 
-    extern void ai_init(csilk_db_pool_t * pool);
-    extern void ai_shutdown(void);
-    ai_shutdown();
-    ai_init(db_pool);
+    ai_config_provider_reload(db_pool);
 
     out_res->code = 0;
     snprintf(out_res->message, sizeof(out_res->message), "ok");

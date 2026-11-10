@@ -18,5 +18,5 @@ ai_runtime_shutdown(void)
 ai_config_t*
 ai_runtime_get_config(void)
 {
-    return ai_get_config();
+    return ai_config_acquire();
 }

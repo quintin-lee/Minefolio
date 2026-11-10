@@ -482,7 +482,7 @@ ai_summary_maybe_trigger(csilk_db_pool_t* pool, ai_runtime_context_t* ctx)
     /* 快照 provider 配置到 task：g_config 此刻由调用者（主线程）保证有效，
      * worker 只读本地副本，彻底消除 detached 线程对 g_config 的生命周期耦合。 */
     {
-        ai_config_t*   cfg = ai_get_config();
+        ai_config_t*   cfg = ai_config_acquire();
         ai_provider_t* prov = NULL;
         if (cfg) {
             prov = ai_config_find_provider(cfg, ctx->provider_id[0] ? ctx->provider_id : NULL);

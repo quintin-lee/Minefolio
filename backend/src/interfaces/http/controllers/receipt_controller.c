@@ -1,5 +1,5 @@
 #include "interfaces/http/controllers/receipt_controller.h"
-#include "services/ai_service.h"
+#include "application/ai/config_provider.h"
 #include "infrastructure/repositories/import_rule_repo_impl.h"
 #include "common/ai_config.h"
 #include "common/db.h"
@@ -296,7 +296,7 @@ receipt_service_scan(csilk_ctx_t* c)
     }
 
     /* Locate AI Provider */
-    ai_config_t*   cfg = ai_get_config();
+    ai_config_t*   cfg = ai_config_acquire();
     ai_provider_t* prov = NULL;
     if (cfg && cfg->provider_count > 0) {
         if (provider_override && provider_override[0]) {

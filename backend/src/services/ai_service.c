@@ -93,12 +93,6 @@ ai_shutdown(void)
     ai_config_provider_shutdown();
 }
 
-ai_config_t*
-ai_get_config(void)
-{
-    return ai_config_acquire();
-}
-
 /**
  * @brief 发送 done 事件（携带终止原因与用量统计，供前端展示 tokens/成本/耗时）
  * @return csilk_sse_send 的返回值（<0 表示客户端已断开）

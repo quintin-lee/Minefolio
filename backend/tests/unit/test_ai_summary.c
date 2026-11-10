@@ -154,7 +154,7 @@ main(void)
 
     /* 初始化 AI 全局配置（从 ai_settings 表读 mockai provider） */
     ai_init(pool);
-    ai_config_t* cfg = ai_get_config();
+    ai_config_t* cfg = ai_config_acquire();
     assert(cfg != NULL);
     ai_provider_t* prov = ai_config_find_provider(cfg, "mockai");
     assert(prov != NULL);
