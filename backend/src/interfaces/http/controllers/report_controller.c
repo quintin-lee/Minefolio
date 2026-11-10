@@ -310,6 +310,20 @@ report_dashboard_summary_handler(csilk_ctx_t* c)
 /* ── 路由注册 ──────────────────────────────────────────────────── */
 
 void
+report_position_overview_handler(csilk_ctx_t* c)
+{
+    report_query_t  q = {0};
+    report_result_t res = {0};
+    if (report_ctx_resolve(c, &q) != 0) {
+        return;
+    }
+    report_usecase_position_overview(db_get_pool(), &q, &res);
+    report_respond(c, &res, true);
+}
+
+/* ── 路由注册 ──────────────────────────────────────────────────── */
+
+void
 register_report_routes(csilk_app_t* app)
 {
     csilk_app_get_ext(app,
@@ -413,4 +427,12 @@ register_report_routes(csilk_app_t* app)
         nullptr,
         "Dashboard summary",
         "Returns dashboard aggregate: net worth, monthly income/expense, recent transactions");
+    csilk_app_get_ext(
+        app,
+        "/api/reports/position-overview",
+        report_position_overview_handler,
+        nullptr,
+        nullptr,
+        "Position overview",
+        "Returns daily P&L, total P&L, HHI concentration, and asset category breakdown");
 }
