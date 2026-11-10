@@ -438,6 +438,9 @@ api_ai_test_connection_handler(csilk_ctx_t* c)
     if (rc == 0 && out_resp) {
         respond_ok(c, out_resp);
     } else {
+        if (out_resp) {
+            csilk_json_free(out_resp);
+        }
         respond_error(c, res.code ? res.code : 500, res.message);
     }
 }
@@ -467,6 +470,9 @@ api_ai_fetch_models_handler(csilk_ctx_t* c)
     if (rc == 0 && out_resp) {
         respond_ok(c, out_resp);
     } else {
+        if (out_resp) {
+            csilk_json_free(out_resp);
+        }
         respond_error(c, res.code ? res.code : 500, res.message);
     }
 }

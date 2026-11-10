@@ -135,6 +135,7 @@ ai_config_provider_reload(void* pool)
                                                        : "";
         const char* dname = get_driver_name(prov->id);
         new_inst = csilk_ai_new(dname, key, prov->base_url[0] ? prov->base_url : NULL);
+        explicit_bzero(api_key_buf, sizeof(api_key_buf));
         if (!new_inst) {
             fprintf(stderr, "WARN: failed to create AI instance for provider '%s'\n", prov->id);
         }

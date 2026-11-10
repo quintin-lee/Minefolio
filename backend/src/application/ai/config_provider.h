@@ -49,6 +49,8 @@ csilk_ai_t* ai_config_get_ai_instance(const ai_config_t* cfg);
 
 /**
  * @brief RAII 风格作用域守卫宏（退出代码块时自动执行 release）
+ * @warning 该宏基于 for 循环展开，请勿在代码块内部使用 return、break 或 goto 提前跳出，
+ *          否则将跳过释放子句导致快照引用泄漏；如需提前退出，请保持单出口或显式 release。
  */
 #define AI_CONFIG_SCOPE(cfg)                                                                       \
     for (ai_config_t* cfg = ai_config_acquire(), *__once = (void*)1; __once && cfg;                \

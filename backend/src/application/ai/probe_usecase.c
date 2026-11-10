@@ -98,6 +98,7 @@ ai_usecase_test_connection(const csilk_json_t*  body,
 
     const char* dname = get_driver_name(id);
     csilk_ai_t* test_ai = csilk_ai_new(dname, key_buf, (base_url && base_url[0]) ? base_url : NULL);
+    explicit_bzero(key_buf, sizeof(key_buf));
     if (!test_ai) {
         csilk_json_t* resp = csilk_json_object();
         csilk_json_add_bool(resp, "success", false);
@@ -267,7 +268,9 @@ ai_usecase_fetch_models(const csilk_json_t*  body,
     struct curl_slist* headers = NULL;
     char               auth_hdr[512];
     snprintf(auth_hdr, sizeof(auth_hdr), "Authorization: Bearer %s", key_buf);
+    explicit_bzero(key_buf, sizeof(key_buf));
     headers = curl_slist_append(headers, auth_hdr);
+    explicit_bzero(auth_hdr, sizeof(auth_hdr));
 
     curl_easy_setopt(curl, CURLOPT_URL, url);
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
