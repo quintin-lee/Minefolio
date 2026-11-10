@@ -923,12 +923,13 @@ async function handleExportSingleSession(s: { id: number; title: string }) {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${s.title.replace(/[\\/:*?"<>|]/g, '_') || 'Minefolio-Chat'}-${localToday()}.md`
+    const safeTitle = (s.title || 'Minefolio-Chat').replace(/[\\/:*?"<>|]/g, '_')
+    a.download = `${safeTitle}-${localToday()}.md`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
-    ElMessage.success(`会话「${s.title}」已导出为 Markdown 文件！`)
+    ElMessage.success(`会话「${s.title || 'Minefolio-Chat'}」已导出为 Markdown 文件！`)
   } catch {
     ElMessage.error('导出失败，请稍后重试')
   } finally {
@@ -1782,7 +1783,7 @@ onUnmounted(() => {
   min-width: 0;
 }
 
-.session-item.pinned {
+.session-item.pinned:not(.active) {
   background: var(--mf-surface-muted, rgba(248, 250, 252, 0.4));
   border-color: var(--mf-border-subtle, rgba(226, 232, 240, 0.6));
 }
@@ -2188,16 +2189,19 @@ onUnmounted(() => {
   padding: 6px 14px;
 }
 
-:deep(.chat-more-dropdown .dropdown-item-icon) {
+:deep(.chat-more-dropdown .dropdown-item-icon),
+:deep(.session-action-dropdown .dropdown-item-icon) {
   font-size: 14px;
   color: var(--mf-text-muted);
 }
 
-:deep(.chat-more-dropdown .danger-item) {
+:deep(.chat-more-dropdown .danger-item),
+:deep(.session-action-dropdown .danger-item) {
   color: var(--mf-danger, #ef4444);
 }
 
-:deep(.chat-more-dropdown .danger-item .dropdown-item-icon) {
+:deep(.chat-more-dropdown .danger-item .dropdown-item-icon),
+:deep(.session-action-dropdown .danger-item .dropdown-item-icon) {
   color: var(--mf-danger, #ef4444);
 }
 

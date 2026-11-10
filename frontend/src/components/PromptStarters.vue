@@ -24,7 +24,7 @@
         <div class="capsule-item">
           <span class="capsule-label">资产负债率</span>
           <span class="capsule-value" :class="{ 'warning-debt': debtRatio > 40 }">
-            {{ summaryData.total_assets > 0 ? `${debtRatio.toFixed(1)}%` : '0.0%' }}
+            {{ summaryData.total_liabilities === 0 ? '零负债' : (summaryData.total_assets > 0 ? `${debtRatio.toFixed(1)}%` : '0.0%') }}
           </span>
         </div>
         <div class="capsule-status-tag">

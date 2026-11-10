@@ -39,6 +39,28 @@ describe('PromptStarters financial context capsule and dynamic recommendations',
     expect(capsule.text()).toContain('已连通实时账本')
   })
 
+  it('displays 零负债 when total liabilities is 0', async () => {
+    vi.mocked(summaryApi.get).mockResolvedValueOnce({
+      total_assets: 100000,
+      total_liabilities: 0,
+      net_worth: 100000,
+      category_breakdown: [],
+      trend: [],
+    } as any)
+
+    const wrapper = mount(PromptStarters, {
+      global: {
+        stubs: { Icon: true },
+      },
+    })
+
+    await flushPromises()
+
+    const capsule = wrapper.find('.context-summary-capsule')
+    expect(capsule.exists()).toBe(true)
+    expect(capsule.text()).toContain('零负债')
+  })
+
   it('generates dynamic prompt recommendations with real financial figures embedded', async () => {
     vi.mocked(summaryApi.get).mockResolvedValueOnce({
       total_assets: 200000,

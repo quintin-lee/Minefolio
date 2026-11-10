@@ -99,7 +99,11 @@ export const useChatStore = defineStore('chat', () => {
     (() => {
       try {
         const raw = localStorage.getItem(PINNED_SESSIONS_STORAGE_KEY)
-        return raw ? JSON.parse(raw) : []
+        if (!raw) return []
+        const parsed = JSON.parse(raw)
+        return Array.isArray(parsed)
+          ? parsed.filter((id): id is number => typeof id === 'number' && Number.isFinite(id))
+          : []
       } catch {
         return []
       }
@@ -329,6 +333,14 @@ export const useChatStore = defineStore('chat', () => {
     if (Number(currentSessionId.value) === numId) {
       currentSessionId.value = null
       messages.value = []
+    }
+    // 同步清理置顶列表中的残留 ID
+    const pinIdx = pinnedSessionIds.value.indexOf(numId)
+    if (pinIdx >= 0) {
+      pinnedSessionIds.value.splice(pinIdx, 1)
+      try {
+        localStorage.setItem(PINNED_SESSIONS_STORAGE_KEY, JSON.stringify(pinnedSessionIds.value))
+      } catch { /* ignore */ }
     }
   }
 

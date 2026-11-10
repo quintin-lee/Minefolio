@@ -5,7 +5,7 @@ import { useChatStore } from '@/stores/chat'
 vi.mock('@/api/ai', () => ({
   listSessions: vi.fn().mockResolvedValue({ list: [] }),
   createSession: vi.fn(),
-  deleteSession: vi.fn(),
+  deleteSession: vi.fn().mockResolvedValue({ success: true }),
   getSession: vi.fn(),
   updateSession: vi.fn(),
   getMessages: vi.fn(),
@@ -140,5 +140,34 @@ describe('chat store session pinning', () => {
     expect(store.isSessionPinned(50)).toBe(false)
     expect(localStorage.getItem('minefolio_pinned_sessions')).toBe(JSON.stringify([60]))
   })
-})
 
+  it('handles non-array or corrupt localStorage data gracefully without throwing', () => {
+    localStorage.setItem('minefolio_pinned_sessions', 'null')
+    let store = useChatStore()
+    expect(store.pinnedSessionIds).toEqual([])
+    expect(store.isSessionPinned(1)).toBe(false)
+
+    setActivePinia(createPinia())
+    localStorage.setItem('minefolio_pinned_sessions', '{"foo":"bar"}')
+    store = useChatStore()
+    expect(store.pinnedSessionIds).toEqual([])
+    expect(store.isSessionPinned(1)).toBe(false)
+
+    setActivePinia(createPinia())
+    localStorage.setItem('minefolio_pinned_sessions', '[1, "invalid", null, 2]')
+    store = useChatStore()
+    expect(store.pinnedSessionIds).toEqual([1, 2])
+  })
+
+  it('cleans up pinned session ID when session is deleted via deleteSessionById', async () => {
+    const store = useChatStore()
+    store.pinnedSessionIds = [10, 20]
+    store.sessions = [
+      { id: 10, title: '会话10', model: 'm', provider: 'p', created_at: '', updated_at: '', user_id: 1 },
+      { id: 20, title: '会话20', model: 'm', provider: 'p', created_at: '', updated_at: '', user_id: 1 },
+    ]
+    await store.deleteSessionById(10)
+    expect(store.pinnedSessionIds).toEqual([20])
+    expect(store.isSessionPinned(10)).toBe(false)
+  })
+})

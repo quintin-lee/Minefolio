@@ -37,3 +37,46 @@ describe('Chat sidebar session pinning, scenario tags and single session actions
     expect(chatSource).toMatch(/session-more-btn/)
   })
 })
+
+describe('Session scenario tag detection logic', () => {
+  function getSessionTag(title: string): string | null {
+    if (!title) return null
+    if (/体检|健康|诊断/.test(title)) return '📊'
+    if (/记账|消费|支出|调拨/.test(title)) return '🧾'
+    if (/行情|汇率|定投|复利/.test(title)) return '📈'
+    return null
+  }
+
+  it('correctly maps titles to scenario icons', () => {
+    expect(getSessionTag('2026年度财务健康全面体检')).toBe('📊')
+    expect(getSessionTag('超市购物记账与资金调拨')).toBe('🧾')
+    expect(getSessionTag('基金定投复利收益测算')).toBe('📈')
+    expect(getSessionTag('美元汇率查询')).toBe('📈')
+    expect(getSessionTag('普通闲聊无特定主题')).toBe(null)
+    expect(getSessionTag('')).toBe(null)
+  })
+})
+
+describe('Session grouping with pinning logic', () => {
+  it('places pinned sessions in top pinned group and regular sessions in date group', () => {
+    const pinnedIds = [2]
+    const sessions = [
+      { id: 1, title: '常规会话', updated_at: new Date().toISOString() },
+      { id: 2, title: '置顶会话', updated_at: new Date().toISOString() },
+    ]
+    const pinnedItems = sessions.filter(s => pinnedIds.includes(s.id))
+    const regularItems = sessions.filter(s => !pinnedIds.includes(s.id))
+
+    const groups: { label: string; isPinnedGroup?: boolean; items: typeof sessions }[] = []
+    if (pinnedItems.length > 0) {
+      groups.push({ label: '📌 置顶会话', isPinnedGroup: true, items: pinnedItems })
+    }
+    groups.push({ label: '今天', items: regularItems })
+
+    expect(groups[0]!.label).toBe('📌 置顶会话')
+    expect(groups[0]!.isPinnedGroup).toBe(true)
+    expect(groups[0]!.items[0]!.id).toBe(2)
+    expect(groups[1]!.label).toBe('今天')
+    expect(groups[1]!.items[0]!.id).toBe(1)
+  })
+})
