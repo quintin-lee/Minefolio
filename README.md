@@ -206,7 +206,7 @@ Minefolio/
 │   │   ├── config/               # 密钥对管理、数据库配置、统一 Secret Provider (secret.h/.c)
 │   │   └── middlewares/          # JWT 鉴权、CORS、CSRF、限流与安全头中间件
 │   └── tests/                    # 单元测试与集成测试矩阵
-│       ├── unit/                 # 35 项高覆盖 CTest 单元测试
+│       ├── unit/                 # 55 项高覆盖 CTest 单元测试
 │       │   ├── test_currency.c   # 货币模型（ISO 4217、精度、比较）
 │       │   ├── test_decimal.c    # 128位定点算术（加/减/乘/除/舍入）
 │       │   ├── test_money.c      # 金额类型（跨币种安全校验）
@@ -239,7 +239,9 @@ Minefolio/
 │       │   ├── test_database_repository.c # 数据库仓储接口抽象
 │       │   ├── test_migration_engine.c   # csilk 迁移引擎发现、锁与基线
 │       │   └── test_domain_repositories.c # 领域仓储契约集成
-│       ├── test_link.sh          # 核心业务闭环测试 (40 用例，169 断言，含账户维度)
+│       ├── db_helper.sh          # 跨引擎统一数据库测试桩（端口冲突自愈、环境检测、双引擎重置）
+│       ├── test_db_helper.sh     # 数据库辅助脚本单测
+│       ├── test_link.sh          # 核心业务闭环测试 (40 用例，194 断言，含账户维度与双引擎适配)
 │       ├── test_full.sh          # 全量回归测试入口
 │       ├── test_ledgers.sh       # 多账本与 RBAC 测试 (16 用例)
 │       ├── test_2fa.sh           # TOTP 双因素认证测试 (12 用例)
@@ -378,7 +380,7 @@ Minefolio/
 
 Minefolio 拥有完整的双层测试矩阵（单元测试 + 端到端集成回归）：
 
-### 1. CTest 单元测试矩阵（50 大测试套件，高频毫秒级断言）
+### 1. CTest 单元测试矩阵（55 大测试套件，高频毫秒级断言）
 ```bash
 cd backend/build
 ctest --output-on-failure
@@ -391,31 +393,37 @@ ctest --output-on-failure
 #                       test_domain_repositories, test_portfolio_pnl_alignment, test_cost_basis_fifo, test_transaction_lots
 # - 全球行情与大盘指数：test_market_indices
 # - 统一 AI Runtime 与风控系统：test_ai_tools, test_ai_policy, test_mcp_pool, test_policy_mcp_risk, test_ai_runtime, test_ai_summary,
-#                               test_nonce_persistence（确认令牌防重放）, test_ai_token_compact（工具结果语义投影）, test_ai_batch_confirmation（批量操作确认协议）
+#                               test_nonce_persistence（确认令牌防重放）, test_ai_token_compact（工具结果语义投影）, test_ai_batch_confirmation（批量操作确认协议）,
+#                               test_ai_prompt_injection_defense（提示词注入防御）, test_ai_config_provider（配置生命周期）
 # - MCP 客户端进程沙箱：test_mcp_client_io, test_mcp_stderr_capture, test_mcp_child_sanitation, test_ai_parallel_tools
-# - 工作流与并发：test_workflow_step_error, test_summary_worker_pool, test_tx_scope_nesting
-# - 精度与文件安全：test_financial_precision_edge, test_file_parser_mkstemps, test_mcp_unauth_protocol
+# - 工作流与并发：test_workflow_step_error, test_workflow_branching, test_summary_worker_pool, test_tx_scope_nesting
+# - 精度与文件安全：test_financial_precision_edge, test_file_parser_mkstemps, test_mcp_unauth_protocol, test_auth_2fa_lifecycle, test_oauth_security
 # - 统一机密提供者与安全门禁：test_secret_provider
 # - 数据库抽象与迁移引擎：test_database_repository, test_migration_engine
 ```
 
-### 2. 端到端集成测试矩阵（16 大测试套件，test_link 覆盖 174 真实断言）
+### 2. 端到端集成测试矩阵（8 大核心测试套件，test_link 覆盖 194 真实断言，双引擎支持）
+Minefolio 端到端集成测试采用模块化测试桩 `backend/tests/db_helper.sh`，原生支持 **SQLite (默认)** 与 **PostgreSQL** 双数据库引擎：
 ```bash
-./backend/tests/test_full.sh              # 全量回归入口
-# 或单独运行：
+# 默认使用 SQLite 运行集成测试：
 ./backend/tests/test_link.sh && \
 ./backend/tests/test_ledgers.sh && \
 ./backend/tests/test_2fa.sh && \
 ./backend/tests/test_dca_cashflow.sh && \
 ./backend/tests/test_ai_trace.sh && \
 ./backend/tests/test_ai_tool_call.sh && \
-./backend/tests/test_ai_truncate.sh && \
-./backend/tests/test_ai_loop_hardening.sh && \
-./backend/tests/test_mcp.sh && \
-./backend/tests/test_mcp_server.sh && \
-./backend/tests/test_report_isolation.sh && \
 ./backend/tests/test_market_sync.sh && \
 ./backend/tests/test_fx_oauth.sh
+
+# 指定 PostgreSQL 运行集成测试（自动清理测试库 schema 并通过原生 C 迁移引擎自动初始化）：
+export MINEFOLIO_DB_DRIVER=postgres
+export MINEFOLIO_DB_DSN="host=localhost port=5432 user=postgres password=postgres_password dbname=minefolio_test sslmode=disable"
+export PGHOST=localhost PGPORT=5432 PGUSER=postgres PGPASSWORD=postgres_password PGDATABASE=minefolio_test
+./backend/tests/test_link.sh
+
+# CI 自动化流水线：
+# GitHub Actions (.github/workflows/ci.yml) 包含并行的 backend (SQLite) 与 backend-postgres (PostgreSQL 16) Jobs，
+# 每次代码推送与 PR 均全量覆盖两套数据库引擎的 8 大集成测试套件。
 ```
 
 ### 3. 前端单元与组件测试矩阵（37 个测试套件，177+ 单元测试）

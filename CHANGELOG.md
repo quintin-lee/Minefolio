@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Dual-Engine Integration Testing & PostgreSQL CI (`backend/tests/db_helper.sh`, `backend/tests/test_db_helper.sh`, `.github/workflows/ci.yml`, all 8 integration test suites)**:
+  - Created modular database test helper `db_helper.sh` standardizing dynamic port selection, engine-agnostic schema resets (`sqlite3` / `psql`), server lifecycle management, and SQL verification across SQLite and PostgreSQL.
+  - Adapted all 8 integration suites (`test_link.sh`, `test_2fa.sh`, `test_dca_cashflow.sh`, `test_ai_trace.sh`, `test_ai_tool_call.sh`, `test_market_sync.sh`, `test_ledgers.sh`, `test_fx_oauth.sh`) to support dual execution via `MINEFOLIO_DB_DRIVER=postgres`.
+  - Added parallel `backend-postgres` job in `.github/workflows/ci.yml` running against a PostgreSQL 16 container service.
+  - Normalized dialect differences across engines: fixed boolean comparisons (`AND NOT ac.archived` in `account_repo_impl.c`), explicit integer casting for boolean schema columns in assertions.
+- **csilk JSON Ownership Model & DB String-Scalar Contract Documentation (`AGENTS.md`, `backend/src/common/db.h`, `backend/src/infrastructure/repositories/daily_expense_repo_impl.c`, `docs/architecture.md`)**:
+  - Formalized `csilk_json_t` ownership model: documented mutable/immutable nodes, borrowed views vs cross-document deep-copy (`csilk_json_copy()`), and container ownership transfer to prevent UAF and double-free issues.
+  - Established database driver layer string-scalar serialization invariant (`csilk_db_query_json_locked` in `deps/csilk/src/drivers/db/db.c:122`): all database columns are uniformly serialized as string scalars; numerical/boolean fields must be read via `db_get_num()`/`db_get_int()`/`db_get_bool()`/`db_get_decimal()`, and embedded JSON columns (`tags`, `config_json`, `metadata`) must be explicitly parsed via `csilk_json_parse()` before response mounting.
 - **AI Tool Result Semantic Projection & Batch Confirmation Protocol (Milestone 3, in progress)**:
   - `services/ai/tools/projection.c`: read-only tool results (get_assets/get_daily_expenses/get_transactions) are projected before returning to the LLM — technical metadata stripped, arrays clamped to 15 items, ≥60% token reduction; non-query/error payloads pass through untouched (`test_ai_token_compact`).
   - `services/ai/policy/confirmation.c`: composite SHA-256 hashing over multi-action arrays + `mf_batch_v1` HMAC tokens bound to user/actions-hash/TTL, single-use with persisted nonces (`ai_confirmation_create_batch_token()` / `ai_confirmation_verify_and_consume_batch()`; `test_ai_batch_confirmation`). HTTP endpoint wiring (`POST /api/ai/actions/confirm-batch`) is still pending per `docs/superpowers/plans/2026-11-03-ai-compact-projection-and-batch-actions.md`.

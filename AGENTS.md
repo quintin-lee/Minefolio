@@ -173,8 +173,8 @@ AI Runtime (services/ai/runtime/)
 | `backend/src/config/` | `db_config.h/.c` (DSN), `key_manager.h/.c` (RSA-OAEP keys), `secret.h/.c` (Secret Provider) |
 | `backend/sql/migrations/` | Versioned migration scripts (`sqlite/` & `postgres/`, `V001`~`V020`) |
 | `backend/sql/` | `migration.sql` (SQLite full schema), `migration_postgres.sql` |
-| `backend/tests/unit/` | 50 CTest unit test suites (financial core, ledger engine + checkpoint rebuild, domain rules, DB repository, migration engine, AI runtime/policy/nonces/batch confirmation, MCP client/pool/risk, FX semantics, portfolio PnL alignment) |
-| `backend/tests/test_link.sh` | Core integration test suite (40 cases, 174 assertions: auth, accounts, CRUD, balance联动, PnL, CSV, pagination, ledger rebuild, AI trace/workflow) |
+| `backend/tests/unit/` | 55 CTest unit test suites (financial core, ledger engine + checkpoint rebuild, domain rules, DB repository, migration engine, AI runtime/policy/nonces/batch confirmation, MCP client/pool/risk, FX semantics, portfolio PnL alignment) |
+| `backend/tests/test_link.sh` | Core integration test suite (40 cases, 194 assertions: auth, accounts, CRUD, balance联动, PnL, CSV, pagination, ledger rebuild, AI trace/workflow) |
 | `backend/src/domain/account/` | Account domain: `mf_account_t` entity, validation/delete rules, repository contract |
 | `backend/src/application/account/usecases.c` | Account use cases: create/update/delete/archive/query, lazy `默认账户` seed, duplicate-name 1004, delete-protection 1004 |
 | `backend/src/infrastructure/repositories/account_repo_impl.c` | Accounts SQL repo (with `asset_count`/`total_value` aggregates, archived filter) |
@@ -198,7 +198,7 @@ cd backend
 cmake -B build -G "Unix Makefiles"   # MUST use Makefiles — Ninja has stale-dependency bugs
 cmake --build build --parallel
 ./build/minefolio                    # reads config/db.json relative to cwd
-./tests/test_link.sh                 # full integration test suite
+./tests/test_link.sh                 # full integration test suite (SQLite by default)
 ```
 
 **编译目录约定**：始终使用 `backend/build/` 作为 out-of-source 构建目录（即 `cmake -B build`，在 `backend/` 下执行）。禁止直接在 `backend/` 源码目录运行 in-source `cmake .`（会生成 `CMakeCache.txt`、`CMakeFiles/`、`_deps/`、`Makefile` 等构建产物污染源码目录，这些文件已在 `.gitignore` 中排除，但仍应通过正确的 `-B build` 用法避免产生它们）。
@@ -208,6 +208,18 @@ cmake --build build --parallel
 MINEFOLIO_DB_DRIVER=sqlite  MINEFOLIO_DB_DSN=./data/minefolio.db   ./build/minefolio
 MINEFOLIO_DB_DRIVER=postgres MINEFOLIO_DB_DSN="host=… user=… dbname=…"  ./build/minefolio
 ```
+
+**Dual-Engine Integration Testing (`backend/tests/db_helper.sh`)**:
+All 8 integration test suites (`test_link.sh`, `test_2fa.sh`, `test_dca_cashflow.sh`, `test_ai_trace.sh`, `test_ai_tool_call.sh`, `test_market_sync.sh`, `test_ledgers.sh`, `test_fx_oauth.sh`) source `db_helper.sh` and support both SQLite and PostgreSQL.
+To run tests against PostgreSQL locally:
+```bash
+export MINEFOLIO_DB_DRIVER=postgres
+export MINEFOLIO_DB_DSN="host=localhost port=5432 user=postgres password=postgres_password dbname=minefolio_test sslmode=disable"
+export PGHOST=localhost PGPORT=5432 PGUSER=postgres PGPASSWORD=postgres_password PGDATABASE=minefolio_test
+./tests/test_db_helper.sh            # helper self-test
+./tests/test_link.sh                 # core integration test suite
+```
+CI runs dual-engine verification automatically: `.github/workflows/ci.yml` executes `backend` (SQLite) and `backend-postgres` (PostgreSQL 16 Alpine container) in parallel.
 
 ### Frontend
 

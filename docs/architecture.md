@@ -285,7 +285,24 @@ graph TB
 **Infrastructure Layer (`backend/src/infrastructure/repositories/`):**
 - 实现 Domain Repository 契约;内部调用 `csilk_db_query_param_json()` 执行参数化 SQL
 - 负责 JSON ↔ 领域实体转换 (解析 `csilk_json_t*` 为 `mf_*_t`)
+- 严格遵循 csilk JSON 对象所有权模型与 DB 驱动层 String 标量约定
 - 命名: `<domain>_repo_impl.c/h` (如 `transaction_repo_impl.c`, `auth_repo_impl.c`)
+
+#### 2.1.1 csilk JSON 对象所有权模型与 DB 驱动层 String 标量约定 (STRICT)
+
+`csilk_json_t` 的对象生命周期与所有权具有三条核心隐式约定（详见 `deps/csilk/src/drivers/db/db.c:122`）：
+
+1. **DB 驱动层统一序列化为 String 标量**：
+   - `csilk_db_query_param_json` / `csilk_db_query_json_locked` 会将数据库查询结果集中的**所有列值无差别序列化为 `csilk_json_string_new` 字符串标量**，不进行任何底层字段类型推断。
+   - **数值与布尔**：必须通过 `common/db.h` 中的 `db_get_num()`、`db_get_int()`、`db_get_bool()`、`db_get_decimal()` 解析；**严禁**直接调用 `csilk_json_get_number()`（对字符串节点永远返回 `0.0`）。
+   - **嵌套 JSON 列**（如 `tags`、`config_json`、`metadata`）：在 DB 返回的 JSON 行对象中是**未解析的 JSON 转义字符串标量**，绝非 JSON 数组或对象。向前端或上层交付前（如 `mf_format_expense_rows_with_tags`），必须显式执行一次 `csilk_json_parse()` 将字符串反序列化为真正的 `csilk_json_array/object`，并挂载回结果集。
+
+2. **所有权转移（Ownership Transfer）**：
+   - 将子对象/数组挂载到父节点（如 `csilk_json_array_append(arr, item)`、`csilk_json_add_object(parent, key, child)`）会**转移所有权**。父节点销毁时会级联 `csilk_json_free` 释放其所有子节点。挂载后严禁对子节点单独调用 `csilk_json_free`（会导致 Double-Free 崩溃）。
+
+3. **视图借用 vs 跨文档深拷贝（View vs Deep-Copy）**：
+   - `csilk_json_get(obj, key)` 与 `csilk_json_array_get(arr, idx)` 返回的是**借用指针（Borrowed View）**，生命周期与宿主文档绑定，禁止单独释放。
+   - 若需将借用指针挂载到另一个独立的 JSON 文档中，**必须先通过 `csilk_json_copy()` 进行跨文档 Deep-Copy**。禁止跨文档直接指针挂载，否则原文档释放后立即引发 Use-After-Free (UAF)。
 
 **Financial Core (`backend/src/core/financial/`):** 纯 C 数学引擎,零副作用,可在无任何 DB/HTTP 依赖下独立运行、单测。
 
@@ -1048,21 +1065,25 @@ cmake --build backend/build --parallel && npm --prefix frontend run build
 
 **集成测试套件 (`backend/tests/*.sh`):**
 
-| 脚本 | 覆盖范围 | 用例数 |
+| 脚本 | 覆盖范围 | 用例数 / 说明 |
 |------|---------|--------|
-| `test_link.sh` | auth + 账户维度 + CRUD + 余额联动 + PnL + CSV + 分页 + AI 工作流 | 40 cases (174 assertions) |
+| `db_helper.sh` | 跨引擎测试脚手架 (端口冲突自愈、子进程托管、双引擎重置) | 桩模块 |
+| `test_db_helper.sh` | 测试辅助桩自测 | 单测 |
+| `test_link.sh` | auth + 账户维度 + CRUD + 余额联动 + PnL + CSV + 分页 + AI 工作流 (双引擎适配) | 40 cases (194 assertions) |
 | `test_full.sh` | 全量回归入口 | 所有 |
 | `test_ledgers.sh` | 多账本空间 + RBAC (Owner/Editor/Viewer) | 16 cases |
 | `test_2fa.sh` | TOTP 2FA 密钥生成、二维码、启用/禁用、登录验证 | 12 cases |
 | `test_dca_cashflow.sh` | DCA 定投周期执行、现金流日历推演 | 18 cases |
 | `test_ai_trace.sh` | AI 对话追踪、Token 消耗、工具调用 Span | 17 cases |
+| `test_ai_tool_call.sh` | AI 工具调用循环回归 (mock OpenAI 流式工具) | 15 cases |
+| `test_ai_truncate.sh` | AI 编辑重发历史截断测试 | 14 cases |
 | `test_market_sync.sh` | 多源行情拉取、缓存、批量同步 | 18 cases |
 | `test_fx_oauth.sh` | 汇率、FX 汇兑损益、OCR 票据识别、OAuth2/OIDC SSO | 20 cases |
 | `test_mcp.sh` | MCP stdio/HTTP 服务配置、工具缓存刷新与对话分发路由 | 14 cases |
 | `test_mcp_server.sh` | 外部客户端视角 `/mcp` JSON-RPC (initialize/tools/list/tools/call、鉴权、限流) | 10 cases |
 | `test_report_isolation.sh` | 月度支出/报表 user_id + ledger_id 隔离回归 | 6 cases |
 
-**CUnit 单元测试 (`backend/tests/unit/`, CMake CTest 集成, 35 套件):**
+**CTest 单元测试 (`backend/tests/unit/`, 55 套件):**
 
 | 套件 | 覆盖模块 |
 |------|----------|
@@ -1074,15 +1095,20 @@ cmake --build backend/build --parallel && npm --prefix frontend run build
 | `test_rate` | 汇率类型 |
 | `test_pnl` | 盈亏计算 (已实现/浮动) |
 | `test_fx` | 外汇计算 |
-| `test_fx_semantics` | 外汇汇率安全查询语义与回退告警 |
 | `test_ledger_math` | Ledger 纯数学算子 (buy/sell position) |
 | `test_ledger_engine` | Ledger 事件溯源全链路 |
+| `test_ledger_rebuild_checkpoint` | 账本检查点快照与增量状态重建 |
+| `test_transaction_lots` | 交易批次核算与持仓追溯 |
+| `test_cost_basis_fifo` | FIFO 成本基础核算与收益结算 |
+| `test_ai_token_compact` | AI 工具返回结果语义精简与上下文压缩 |
+| `test_ai_batch_confirmation` | AI 批量操作确认令牌与签名校验 |
 | `test_ai_tools` | AI 工具 Schema 注册/分发 |
 | `test_ai_policy` | AI 五级风控策略 |
 | `test_mcp_pool` | MCP STDIO 子进程长连接池管理 |
 | `test_policy_mcp_risk` | MCP 工具风险评估策略 |
 | `test_ai_runtime` | AI Runtime 统一执行循环、预算限制与错误分类 |
 | `test_ai_summary` | AI 财务摘要生成与流式解析 |
+| `test_ai_config_provider` | AI 配置生命周期管理与热重载 |
 | `test_secret_provider` | 统一密钥提供者 (环境变量/文件/外部) |
 | `test_domain_transaction` | 交易领域规则 (类型校验、方向校验) |
 | `test_domain_asset` | 资产领域规则 (投资类型判定、负债类型判定) |
@@ -1100,7 +1126,22 @@ cmake --build backend/build --parallel && npm --prefix frontend run build
 | `test_migration_engine` | csilk 迁移引擎发现、版本排序、锁与基线 |
 | `test_domain_repositories` | 领域仓储契约集成 |
 | `test_market_indices` | 全球大盘指数历史与日内分时 |
-| `test_portfolio_pnl_alignment` | 投资组合交易事件重放与定点业绩对齐 |
+| `test_fx_semantics` | 外汇汇率安全查询语义与回退告警 |
+| `test_mcp_client_io` | MCP 块缓冲 I/O 与双管道非阻塞轮询 |
+| `test_mcp_stderr_capture` | MCP 错误输出捕获与跨进程状态排错 |
+| `test_mcp_child_sanitation` | MCP 子进程文件描述符泄漏防护 (`closefrom`) |
+| `test_ai_parallel_tools` | 无状态网络工具并发并行调度与 Turn-order 汇聚 |
+| `test_workflow_step_error` | 工作流单步执行错误显式中断与状态传播 |
+| `test_workflow_branching` | 条件工作流分支决策与路径补偿 |
+| `test_summary_worker_pool` | 异步摘要计算线程池与 LRU 会话去重 |
+| `test_tx_scope_nesting` | 嵌套事务 Savepoint Scope 隔离与自愈 |
+| `test_financial_precision_edge` | 128 位十进制数跨层边界转换精度防漂移 |
+| `test_mcp_unauth_protocol` | MCP 未鉴权协议 JSON-RPC 规范响应 (`-32001`) |
+| `test_nonce_persistence` | AI 二次确认防重放令牌持久化与恢复 |
+| `test_file_parser_mkstemps` | 上传临时文件安全解析与无竞态释放 |
+| `test_auth_2fa_lifecycle` | TOTP 2FA 全生命周期动态绑定与解绑 |
+| `test_oauth_security` | OAuth / OIDC 防 CSRF 与授权码服务端安全兑换 |
+| `test_ai_prompt_injection_defense` | 提示词注入攻击主动检测与防御拦截 |
 
 运行:
 ```bash
@@ -1158,6 +1199,7 @@ Minefolio 采用下沉至 csilk 框架的原生**正式版本化迁移系统 (Da
 - **版本记录与审计 (`schema_migrations`)**：记录每个已应用的迁移版本、名称、SHA-256 校验和、应用时间及执行毫秒耗时。
 - **分布式并发互斥锁 (`schema_migration_lock`)**：通过数据库行锁与租约超时防死锁机制，有效防止多实例并行迁移竞争。
 - **PostgreSQL 原生 Prepared Statement 支持**：csilk PostgreSQL 驱动原生实现 `?` 转 `$1, $2, ...` 重写、`PQprepare`/`PQexecPrepared` 编译与执行、类型绑定与 `DEALLOCATE` 释放，确保并发锁及迁移语句在 SQLite / PostgreSQL 下均稳定执行。
+- **双引擎集成测试与 CI 双轨验证 (`backend/tests/db_helper.sh`)**：所有端到端集成测试脚本均通过 `db_helper.sh` 封装端口冲突自愈、多进程生命周期管控与跨引擎 schema 重置；CI 流水线 (`.github/workflows/ci.yml`) 设有独立的 `backend-postgres` Job，在 PostgreSQL 16 容器环境下全量验证迁移与 8 大核心集成测试套件。
 - **跨平台哈希规范化**：计算校验和时自动规范化 CRLF/LF 换行符并修剪尾随空白，杜绝跨平台或跨编辑器修改导致的校验和漂移。
 - **存量生产平滑升级 (Auto-Baseline)**：自动检测已有业务表数据库，并将基准版本自动标记为已应用，**严禁且无需清空生产环境数据库**。
 
@@ -1186,8 +1228,8 @@ Minefolio 采用下沉至 csilk 框架的原生**正式版本化迁移系统 (Da
 | **后端二进制体积** | ≤ 5MB strip | 4.2MB |
 | **后端冷启动** | ≤ 50ms | 30ms |
 | **并发连接** | ≥ 10k (单节点) | epoll-based csilk |
-| **集成测试覆盖** | 10 套件全通过 | `test_*.sh` |
-| **CUnit 单测覆盖** | 35 套件全通过 | CTest |
+| **集成测试覆盖** | 8 大核心套件双引擎全通过 | `test_*.sh` + `db_helper.sh` |
+| **CUnit/CTest 单测覆盖** | 55 套件全通过 | CTest |
 | **前端单测覆盖** | 7 case (mobile spec) | vitest |
 | **定点精度** | 128-bit 定点,scale ≤ 18 | 零 IEEE 754 误差 |
 | **AI 风控评估延迟** | ≤ 5ms/tool | 纯 CPU 规则,无 IO |
@@ -1267,9 +1309,9 @@ Minefolio 采用下沉至 csilk 框架的原生**正式版本化迁移系统 (Da
 | `backend/sql/migrations/{sqlite,postgres}/` | 版本化迁移文件 (V001~V020) |
 | `backend/sql/migration.sql` | SQLite 18 表全量基准 (V020 起) |
 | `backend/sql/migration_postgres.sql` | PostgreSQL 18 表全量基准 (V020 起) |
-| `backend/tests/test_link.sh` | 40-case 核心集成测试 (174 assertions) |
+| `backend/tests/test_link.sh` | 40-case 核心集成测试 (194 assertions) |
 | `backend/tests/test_*.sh` | 16 个专项集成测试脚本 (另有 test_full.sh 全量回归) |
-| `backend/tests/unit/test_*.c` | 50 个 CTest 单元单测 |
+| `backend/tests/unit/test_*.c` | 55 个 CTest 单元单测 |
 | `frontend/src/utils/http.ts` | axios + JWT + CSRF |
 | `frontend/src/stores/chat.ts` | SmoothStreamWriter |
 | `frontend/src/components/ChatMessageContent.vue` | 流式渲染分层 |
@@ -1288,9 +1330,11 @@ Minefolio 采用下沉至 csilk 框架的原生**正式版本化迁移系统 (Da
 - **CI 验证命令**:
   ```bash
   cmake --build backend/build --parallel && npm --prefix frontend run build
-  ./backend/tests/test_full.sh                    # 全量集成回归
-  ctest --test-dir backend/build --output-on-failure  # 50 个 CTest 单测
+  ./backend/tests/test_full.sh                    # 全量集成回归 (SQLite)
+  ctest --test-dir backend/build --output-on-failure  # 55 个 CTest 单测
   npm --prefix frontend test -- --run             # 移动端 vitest
+  # PostgreSQL 集成测试验证 (CI 自动执行)：
+  MINEFOLIO_DB_DRIVER=postgres MINEFOLIO_DB_DSN="host=localhost port=5432 user=postgres password=postgres_password dbname=minefolio_test sslmode=disable" ./backend/tests/test_link.sh
   ```
 
 ---
