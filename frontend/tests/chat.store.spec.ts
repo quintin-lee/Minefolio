@@ -102,3 +102,43 @@ describe('chat store session switching races', () => {
     expect(store.loadedMessagePage).toBe(1)
   })
 })
+
+describe('chat store session pinning', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    localStorage.clear()
+    vi.clearAllMocks()
+  })
+
+  it('initializes pinned sessions from localStorage', () => {
+    localStorage.setItem('minefolio_pinned_sessions', JSON.stringify([101, 102]))
+    const store = useChatStore()
+    expect(store.pinnedSessionIds).toEqual([101, 102])
+    expect(store.isSessionPinned(101)).toBe(true)
+    expect(store.isSessionPinned(103)).toBe(false)
+  })
+
+  it('togglePinSession adds, removes session ID, and persists to localStorage', () => {
+    const store = useChatStore()
+    expect(store.pinnedSessionIds).toEqual([])
+    expect(store.isSessionPinned(50)).toBe(false)
+
+    // 置顶会话 50
+    store.togglePinSession(50)
+    expect(store.pinnedSessionIds).toEqual([50])
+    expect(store.isSessionPinned(50)).toBe(true)
+    expect(localStorage.getItem('minefolio_pinned_sessions')).toBe(JSON.stringify([50]))
+
+    // 置顶会话 60
+    store.togglePinSession(60)
+    expect(store.pinnedSessionIds).toEqual([50, 60])
+    expect(store.isSessionPinned(60)).toBe(true)
+
+    // 再次点击 50 取消置顶
+    store.togglePinSession(50)
+    expect(store.pinnedSessionIds).toEqual([60])
+    expect(store.isSessionPinned(50)).toBe(false)
+    expect(localStorage.getItem('minefolio_pinned_sessions')).toBe(JSON.stringify([60]))
+  })
+})
+

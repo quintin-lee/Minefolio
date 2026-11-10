@@ -92,6 +92,46 @@ export const useChatStore = defineStore('chat', () => {
     localStorage.setItem(PINNED_STORAGE_KEY, JSON.stringify(pinnedWorkflowIds.value))
   }
 
+  /** LocalStorage 存储置顶会话 ID 列表键名 */
+  const PINNED_SESSIONS_STORAGE_KEY = 'minefolio_pinned_sessions'
+  /** 用户置顶固定的会话 ID 响应式列表 */
+  const pinnedSessionIds = ref<number[]>(
+    (() => {
+      try {
+        const raw = localStorage.getItem(PINNED_SESSIONS_STORAGE_KEY)
+        return raw ? JSON.parse(raw) : []
+      } catch {
+        return []
+      }
+    })()
+  )
+
+  /**
+   * 判断指定会话是否处于置顶状态
+   * @param id 会话 ID
+   */
+  function isSessionPinned(id: number): boolean {
+    return pinnedSessionIds.value.includes(id)
+  }
+
+  /**
+   * 切换指定会话的置顶固定状态
+   * @param id 会话 ID
+   */
+  function togglePinSession(id: number) {
+    const idx = pinnedSessionIds.value.indexOf(id)
+    if (idx >= 0) {
+      pinnedSessionIds.value.splice(idx, 1)
+    } else {
+      pinnedSessionIds.value.push(id)
+    }
+    try {
+      localStorage.setItem(PINNED_SESSIONS_STORAGE_KEY, JSON.stringify(pinnedSessionIds.value))
+    } catch {
+      // ignore localStorage quota errors
+    }
+  }
+
   /** 当前会话的历史消息总条数 */
   const messageTotal = ref(0)
   /** 已加载的历史消息分页页码 */
@@ -1105,6 +1145,9 @@ export const useChatStore = defineStore('chat', () => {
     workflows,
     activeWorkflow,
     pinnedWorkflowIds,
+    pinnedSessionIds,
+    isSessionPinned,
+    togglePinSession,
     fetchSessions,
     fetchModels,
     fetchSettings,
