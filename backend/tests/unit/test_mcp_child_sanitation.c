@@ -40,6 +40,32 @@ int main(void) {
     close(dummy_pipe2[0]);
     close(dummy_pipe2[1]);
     mf_mcp_client_free(c);
+
+    /* Test argv truncation when argc exceeds 40 arguments */
+    {
+        mf_mcp_server_t s_trunc = {
+            .name = "test_trunc",
+            .transport = MCP_TRANSPORT_STDIO,
+            .command = "bash",
+            .args_json = "[\"-c\", \"echo '{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":1,\\\"result\\\":{\\\"count\\\":'$#'}}'\", \"x\", "
+                         "\"1\",\"2\",\"3\",\"4\",\"5\",\"6\",\"7\",\"8\",\"9\",\"10\","
+                         "\"11\",\"12\",\"13\",\"14\",\"15\",\"16\",\"17\",\"18\",\"19\",\"20\","
+                         "\"21\",\"22\",\"23\",\"24\",\"25\",\"26\",\"27\",\"28\",\"29\",\"30\","
+                         "\"31\",\"32\",\"33\",\"34\",\"35\",\"36\",\"37\",\"38\",\"39\",\"40\","
+                         "\"41\",\"42\",\"43\",\"44\",\"45\"]",
+            .timeout_ms = 4000
+        };
+        mf_mcp_client_t* c_trunc = mf_mcp_client_new(&s_trunc);
+        assert(c_trunc != NULL);
+        char err_trunc[256] = {0};
+        char* resp_trunc = mf_mcp_client_call_tool(c_trunc, "dummy", "{}", err_trunc, sizeof(err_trunc));
+        assert(resp_trunc != NULL);
+        /* Total args in argv capped at 40: argv[0]=bash, argv[1]=-c, argv[2]=script, argv[3]=$0, argv[4..39]=$1..$36 */
+        assert(strstr(resp_trunc, "\"count\":36") != NULL);
+        free(resp_trunc);
+        mf_mcp_client_free(c_trunc);
+    }
+
     printf("PASS: test_mcp_child_sanitation completed successfully\n");
     return 0;
 }

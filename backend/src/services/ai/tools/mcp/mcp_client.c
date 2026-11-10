@@ -13,6 +13,7 @@
 
 #include "services/ai/tools/mcp/mcp_client.h"
 #include "config/secret.h"
+#include "csilk/core/server/server.h"
 
 #include <curl/curl.h>
 #include <fcntl.h>
@@ -307,14 +308,19 @@ build_argv(const mf_mcp_server_t* s, size_t* out_argc)
     /* command 形如 "node /path/script.js"（含空格、无 shell 元字符，rules 已校验）。
      * 按空白 token 化：argv[0]=可执行文件，余为参数；再追加 args_json。
      * execve 不做 PATH 查找，故 argv[0] 须解析为绝对路径（resolve_exec）。 */
-    char* stack_argv[41];
+    char* stack_argv[64];
     int   argc = 0;
     char  cmd_copy[512];
     snprintf(cmd_copy, sizeof(cmd_copy), "%s", s->command);
 
+    bool  truncated = false;
     char* saveptr = NULL;
     char* tok = strtok_r(cmd_copy, " \t", &saveptr);
-    while (tok && argc < 40) {
+    while (tok) {
+        if (argc >= 40) {
+            truncated = true;
+            break;
+        }
         stack_argv[argc++] = strdup(tok);
         if (!stack_argv[argc - 1]) {
             for (int k = 0; k < argc; k++) {
@@ -332,7 +338,11 @@ build_argv(const mf_mcp_server_t* s, size_t* out_argc)
         csilk_json_t* arr = csilk_json_parse(s->args_json);
         if (arr && csilk_json_is_array(arr)) {
             size_t n = csilk_json_array_size(arr);
-            for (size_t i = 0; i < n && argc < 40; i++) {
+            for (size_t i = 0; i < n; i++) {
+                if (argc >= 40) {
+                    truncated = true;
+                    break;
+                }
                 const csilk_json_t* item = csilk_json_array_get(arr, i);
                 if (item && csilk_json_is_string(item)) {
                     stack_argv[argc++] = strdup(csilk_json_string_value(item));
@@ -351,6 +361,11 @@ build_argv(const mf_mcp_server_t* s, size_t* out_argc)
         }
     }
     stack_argv[argc] = NULL;
+
+    if (truncated) {
+        CSILK_LOG_W("MCP server '%s' command/args truncated to 40 arguments limit",
+                    s->name[0] ? s->name : "unknown");
+    }
 
     /* execve 对 argv[0] 不做 PATH 查找，须解析为绝对路径，否则 ENOENT。
        仅当 argv[0] 不含 '/'（裸命令名）时走 PATH 解析。 */
