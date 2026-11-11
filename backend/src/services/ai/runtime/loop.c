@@ -445,13 +445,33 @@ loop_clamp_tool_result(const char* result)
     return out;
 }
 
-ai_runtime_status_t
-ai_runtime_execute_stream(csilk_db_pool_t*              pool,
-                          ai_runtime_context_t*         ctx,
-                          const ai_runtime_callbacks_t* cbs,
-                          void*                         user_data)
+typedef struct {
+    ai_config_t*           cfg;
+    ai_provider_t*         prov;
+    const char*            model;
+    double                 eff_price_in;
+    double                 eff_price_out;
+    csilk_ai_t*            ai_inst;
+    const csilk_ai_tool_t* tools;
+    size_t                 tool_count;
+    int                    mcp_merged;
+    csilk_ai_message_t*    msgs;
+    size_t                 mc;
+    size_t                 initial_mc;
+    char*                  owner_sys_prompt;
+    ai_trace_t*            trace;
+    int                    auto_created_trace;
+    int                    http_timeout_ms;
+} loop_exec_env_t;
+
+static ai_runtime_status_t
+loop_prepare_env(ai_runtime_context_t*         ctx,
+                 const ai_runtime_callbacks_t* cbs,
+                 void*                         user_data,
+                 loop_exec_env_t*              env)
 {
     ai_runtime_status_t status = {0};
+    memset(env, 0, sizeof(*env));
 
     /* 1. 验证上下文有效性 */
     if (!ctx) {
@@ -484,16 +504,15 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
     }
 
     /* 2. 匹配大模型服务商与模型配置（acquire 快照引用，整个函数期间持有） */
-    ai_config_t*   cfg = ai_config_acquire();
-    ai_provider_t* prov = NULL;
+    env->cfg = ai_config_acquire();
     if (ctx->provider_id[0]) {
-        prov = ai_config_find_provider(cfg, ctx->provider_id);
+        env->prov = ai_config_find_provider(env->cfg, ctx->provider_id);
     }
-    if (!prov && cfg) {
-        prov = ai_config_default_provider(cfg);
+    if (!env->prov && env->cfg) {
+        env->prov = ai_config_default_provider(env->cfg);
     }
 
-    if (!prov || (!prov->api_key[0] && strcmp(prov->id, "ollama") != 0)) {
+    if (!env->prov || (!env->prov->api_key[0] && strcmp(env->prov->id, "ollama") != 0)) {
         ai_runtime_status_set(&status,
                               AI_RUNTIME_ERR_MODEL,
                               "No available AI provider",
@@ -501,33 +520,29 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
         if (cbs && cbs->on_error) {
             cbs->on_error(&status, user_data);
         }
-        ai_config_release(cfg);
+        ai_config_release(env->cfg);
+        env->cfg = NULL;
         return status;
     }
-    char* owner_sys_prompt = NULL; /* 堆上 system_prompt 副本（若有），函数末尾统一释放 */
 
-    const char* model = ctx->model_name[0] ? ctx->model_name
-                                           : ((prov->models[0] && prov->models[0][0])
-                                                  ? prov->models[0]
-                                                  : (cfg ? cfg->default_model : "default"));
+    env->model = ctx->model_name[0] ? ctx->model_name
+                                    : ((env->prov->models[0] && env->prov->models[0][0])
+                                           ? env->prov->models[0]
+                                           : (env->cfg ? env->cfg->default_model : "default"));
 
-    /* 2.5 解析生效价格（USD/百万 token）：ai.json provider 级 price_input/price_output
-       逐侧覆盖（>0 生效），未配置侧/未配置 provider 回落默认价表——保证
-       cost_budget 预算检查与 trace 成本落库使用同一价源 */
-    double eff_price_in = 0.0;
-    double eff_price_out = 0.0;
-    mf_ai_rule_model_prices(prov->id,
-                            model,
-                            prov->price_input > 0.0 ? &prov->price_input : NULL,
-                            prov->price_output > 0.0 ? &prov->price_output : NULL,
-                            &eff_price_in,
-                            &eff_price_out);
+    /* 2.5 解析生效价格 */
+    mf_ai_rule_model_prices(env->prov->id,
+                            env->model,
+                            env->prov->price_input > 0.0 ? &env->prov->price_input : NULL,
+                            env->prov->price_output > 0.0 ? &env->prov->price_output : NULL,
+                            &env->eff_price_in,
+                            &env->eff_price_out);
 
     /* 3. 构造 AI 驱动实例 */
-    const char* dname = (strcmp(prov->id, "ollama") == 0) ? "ollama" : "openai";
-    const char* key = (prov->api_key[0] != '\0') ? prov->api_key : "dummy";
-    csilk_ai_t* ai_inst = csilk_ai_new(dname, key, prov->base_url[0] ? prov->base_url : NULL);
-    if (!ai_inst) {
+    const char* dname = (strcmp(env->prov->id, "ollama") == 0) ? "ollama" : "openai";
+    const char* key = (env->prov->api_key[0] != '\0') ? env->prov->api_key : "dummy";
+    env->ai_inst = csilk_ai_new(dname, key, env->prov->base_url[0] ? env->prov->base_url : NULL);
+    if (!env->ai_inst) {
         ai_runtime_status_set(&status,
                               AI_RUNTIME_ERR_MODEL,
                               "Failed to create AI driver instance",
@@ -535,83 +550,561 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
         if (cbs && cbs->on_error) {
             cbs->on_error(&status, user_data);
         }
-        if (owner_sys_prompt) {
-            free(owner_sys_prompt);
-        }
-        ai_config_release(cfg);
+        ai_config_release(env->cfg);
+        env->cfg = NULL;
         return status;
     }
 
-    /* 4. 解析可用工具集 — 若 ctx 未预置工具，则合并内置工具 + 该用户已启用的 MCP 远端工具
-       （mcp_bridge 深拷贝为堆数组，须在清理分支经 mcp_bridge_free_merged 统一释放） */
-    size_t                 tool_count = ctx->tool_count;
-    const csilk_ai_tool_t* tools = ctx->tools;
-    int                    mcp_merged = 0;
-    if (!tools && tool_count == 0) {
-        tools = mcp_bridge_merge_tools(db_get_pool(), ctx->user_id, &tool_count);
-        mcp_merged = (tools != NULL);
+    /* 4. 解析可用工具集 */
+    env->tool_count = ctx->tool_count;
+    env->tools = ctx->tools;
+    if (!env->tools && env->tool_count == 0) {
+        env->tools = mcp_bridge_merge_tools(db_get_pool(), ctx->user_id, &env->tool_count);
+        env->mcp_merged = (env->tools != NULL);
     }
 
     /* 5. 组装初始消息结构数组 */
-    size_t              json_msg_count = ctx->messages ? csilk_json_array_size(ctx->messages) : 0;
-    size_t              mc = json_msg_count;
-    csilk_ai_message_t* msgs = NULL;
-    if (mc > 0) {
-        msgs = (csilk_ai_message_t*)calloc(mc, sizeof(csilk_ai_message_t));
-        for (size_t i = 0; i < mc; i++) {
+    size_t json_msg_count = ctx->messages ? csilk_json_array_size(ctx->messages) : 0;
+    env->mc = json_msg_count;
+    if (env->mc > 0) {
+        env->msgs = (csilk_ai_message_t*)calloc(env->mc, sizeof(csilk_ai_message_t));
+        for (size_t i = 0; i < env->mc; i++) {
             csilk_json_t* item = csilk_json_array_get(ctx->messages, i);
-            msgs[i] = (csilk_ai_message_t){
+            env->msgs[i] = (csilk_ai_message_t){
                 .role = csilk_json_get_string(item, "role"),
                 .content = csilk_json_get_string(item, "content"),
             };
         }
-        if (mc > 0 && msgs[0].role && strcmp(msgs[0].role, "system") == 0 && msgs[0].content) {
+        if (env->mc > 0 && env->msgs[0].role && strcmp(env->msgs[0].role, "system") == 0 &&
+            env->msgs[0].content) {
             const char* guard = ai_get_security_guardrail_prompt();
-            if (strstr(msgs[0].content, "<untrusted_tool_result>") == NULL) {
-                size_t nlen = strlen(msgs[0].content) + strlen(guard) + 1;
+            if (strstr(env->msgs[0].content, "<untrusted_tool_result>") == NULL) {
+                size_t nlen = strlen(env->msgs[0].content) + strlen(guard) + 1;
                 char*  combined = (char*)malloc(nlen);
                 if (combined) {
-                    snprintf(combined, nlen, "%s%s", msgs[0].content, guard);
-                    msgs[0].content = combined;
-                    owner_sys_prompt = combined;
+                    snprintf(combined, nlen, "%s%s", env->msgs[0].content, guard);
+                    env->msgs[0].content = combined;
+                    env->owner_sys_prompt = combined;
                 }
             }
         }
     } else {
-        mc = 1;
-        msgs = (csilk_ai_message_t*)calloc(mc, sizeof(csilk_ai_message_t));
-        const char* base_prompt = (cfg && cfg->system_prompt[0])
-                                      ? cfg->system_prompt
+        env->mc = 1;
+        env->msgs = (csilk_ai_message_t*)calloc(env->mc, sizeof(csilk_ai_message_t));
+        const char* base_prompt = (env->cfg && env->cfg->system_prompt[0])
+                                      ? env->cfg->system_prompt
                                       : "你是一个专业的个人财务与财富管理AI助手。";
         const char* guard = ai_get_security_guardrail_prompt();
         size_t      total_sys_len = strlen(base_prompt) + strlen(guard) + 1;
         char*       sys_full = (char*)malloc(total_sys_len);
         if (sys_full) {
             snprintf(sys_full, total_sys_len, "%s%s", base_prompt, guard);
-            msgs[0] = (csilk_ai_message_t){
+            env->msgs[0] = (csilk_ai_message_t){
                 .role = "system",
                 .content = sys_full,
             };
-            owner_sys_prompt = sys_full;
+            env->owner_sys_prompt = sys_full;
         } else {
-            msgs[0] = (csilk_ai_message_t){
+            env->msgs[0] = (csilk_ai_message_t){
                 .role = "system",
                 .content = base_prompt,
             };
         }
     }
-    size_t initial_mc = mc;
+    env->initial_mc = env->mc;
 
-    /* 6. 链路追踪初始化：调用方未预设 trace 时自动创建堆对象，结束后释放 */
-    ai_trace_t* trace = ctx->trace;
-    int         auto_created_trace = 0;
-    if (!trace) {
-        trace = ai_trace_create(ctx->user_id, ctx->session_id);
-        if (trace) {
-            auto_created_trace = 1;
-            ai_trace_set_provider(trace, prov->id, model);
-            ai_trace_set_params(trace, ctx->temperature, ctx->max_tokens, ctx->top_p);
+    /* 6. 链路追踪初始化 */
+    env->trace = ctx->trace;
+    if (!env->trace) {
+        env->trace = ai_trace_create(ctx->user_id, ctx->session_id);
+        if (env->trace) {
+            env->auto_created_trace = 1;
+            ai_trace_set_provider(env->trace, env->prov->id, env->model);
+            ai_trace_set_params(env->trace, ctx->temperature, ctx->max_tokens, ctx->top_p);
         }
+    }
+
+    env->http_timeout_ms = loop_ai_http_timeout_ms();
+
+    return status;
+}
+
+static void
+loop_cleanup_env(loop_exec_env_t* env)
+{
+    if (!env) {
+        return;
+    }
+    if (env->ai_inst) {
+        csilk_ai_free(env->ai_inst);
+        env->ai_inst = NULL;
+    }
+    if (env->mcp_merged && env->tools) {
+        mcp_bridge_free_merged(env->tools, env->tool_count);
+        env->tools = NULL;
+    }
+    if (env->msgs) {
+        for (size_t i = env->initial_mc; i < env->mc; i++) {
+            if (env->msgs[i].content) {
+                free((void*)env->msgs[i].content);
+            }
+            if (env->msgs[i].tool_call_id) {
+                free((void*)env->msgs[i].tool_call_id);
+            }
+            if (env->msgs[i].tool_calls) {
+                for (size_t j = 0; j < env->msgs[i].tool_call_count; j++) {
+                    free(env->msgs[i].tool_calls[j].id);
+                    free(env->msgs[i].tool_calls[j].name);
+                    free(env->msgs[i].tool_calls[j].arguments);
+                }
+                free(env->msgs[i].tool_calls);
+            }
+        }
+        free(env->msgs);
+        env->msgs = NULL;
+    }
+    if (env->owner_sys_prompt) {
+        free(env->owner_sys_prompt);
+        env->owner_sys_prompt = NULL;
+    }
+    if (env->cfg) {
+        ai_config_release(env->cfg);
+        env->cfg = NULL;
+    }
+}
+
+static void
+loop_persist_assistant_message(csilk_db_pool_t*              pool,
+                               int64_t                       session_id,
+                               const char*                   model,
+                               const char*                   content,
+                               const char*                   thinking,
+                               csilk_json_t*                 tc_record,
+                               const ai_runtime_callbacks_t* cbs,
+                               void*                         user_data)
+{
+    if (!pool || session_id <= 0) {
+        return;
+    }
+    if ((!content || !content[0]) && (!thinking || !thinking[0])) {
+        return;
+    }
+    size_t tcj_len = 0;
+    char*  tcj_str =
+        csilk_json_array_size(tc_record) > 0 ? csilk_json_serialize(tc_record, &tcj_len) : NULL;
+    int64_t persisted_id = mf_ai_message_insert(
+        pool, session_id, "assistant", content ? content : "", model, thinking, tcj_str);
+    if (persisted_id > 0 && cbs && cbs->on_message_persisted) {
+        cbs->on_message_persisted("assistant", persisted_id, user_data);
+    }
+    free(tcj_str);
+}
+
+static size_t
+loop_append_assistant_tool_message(csilk_ai_message_t**  msgs_ptr,
+                                   size_t*               mc_ptr,
+                                   const char*           content,
+                                   csilk_ai_tool_call_t* tool_calls,
+                                   size_t                tool_call_count)
+{
+    size_t mc = *mc_ptr + 1;
+    *msgs_ptr = (csilk_ai_message_t*)realloc(*msgs_ptr, sizeof(csilk_ai_message_t) * mc);
+    (*msgs_ptr)[mc - 1] = (csilk_ai_message_t){
+        .role = "assistant",
+        .content = content ? strdup(content) : strdup(""),
+        .tool_call_id = NULL,
+        .tool_call_count = tool_call_count,
+        .tool_calls = (csilk_ai_tool_call_t*)calloc(tool_call_count, sizeof(csilk_ai_tool_call_t)),
+    };
+    for (size_t j = 0; j < tool_call_count; j++) {
+        (*msgs_ptr)[mc - 1].tool_calls[j].id =
+            tool_calls[j].id ? strdup(tool_calls[j].id) : strdup("");
+        (*msgs_ptr)[mc - 1].tool_calls[j].name =
+            tool_calls[j].name ? strdup(tool_calls[j].name) : strdup("");
+        (*msgs_ptr)[mc - 1].tool_calls[j].arguments =
+            tool_calls[j].arguments ? strdup(tool_calls[j].arguments) : strdup("{}");
+    }
+    *mc_ptr = mc;
+    return mc - 1; /* asst_idx */
+}
+
+static void
+loop_dispatch_parallel_tools(ai_runtime_context_t*         ctx,
+                             csilk_ai_tool_call_t*         tool_calls,
+                             size_t                        n_calls,
+                             ai_trace_t*                   trace,
+                             const ai_runtime_callbacks_t* cbs,
+                             void*                         user_data,
+                             csilk_json_t*                 tc_record,
+                             uint64_t*                     seen_hashes,
+                             size_t*                       seen_count,
+                             csilk_ai_message_t**          msgs_ptr,
+                             size_t*                       mc_ptr)
+{
+    ai_parallel_task_t tasks[8];
+    memset(tasks, 0, sizeof(tasks));
+
+    /* 1. 主线程保序预评估 (Pre-evaluation & Policy Check) */
+    for (size_t t = 0; t < n_calls; t++) {
+        csilk_ai_tool_call_t* tc = &tool_calls[t];
+        tasks[t].call_idx = t;
+        tasks[t].user_id = ctx->user_id;
+        tasks[t].session_id = ctx->session_id;
+        tasks[t].cancel_token = ctx->cancel_token;
+        strncpy(tasks[t].tool_call_id, tc->id ? tc->id : "", sizeof(tasks[t].tool_call_id) - 1);
+        tasks[t].tool_name = strdup(tc->name ? tc->name : "");
+        tasks[t].raw_arguments = strdup(tc->arguments ? tc->arguments : "{}");
+        tasks[t].args = csilk_json_parse(tasks[t].raw_arguments);
+        if (!tasks[t].args) {
+            tasks[t].args = csilk_json_object();
+        }
+
+        if (cbs && cbs->on_tool_call) {
+            cbs->on_tool_call(tc->id, tc->name, tc->arguments, user_data);
+        }
+
+        ai_policy_decision_t* decision = ai_policy_evaluate(
+            ctx->user_id, ctx->session_id, tasks[t].tool_name, tasks[t].args, AI_RISK_NO_OVERRIDE);
+
+        if (decision && !decision->allowed) {
+            csilk_json_t* err_obj = csilk_json_object();
+            csilk_json_add_string(err_obj, "error", "policy_denied");
+            csilk_json_add_string(err_obj,
+                                  "reason",
+                                  decision->reason[0] ? decision->reason
+                                                      : "Tool blocked by policy");
+            size_t elen = 0;
+            tasks[t].result_str = csilk_json_serialize(err_obj, &elen);
+            csilk_json_free(err_obj);
+            tasks[t].executed = false;
+        } else {
+            uint64_t call_hash = loop_call_hash(tasks[t].tool_name, tasks[t].raw_arguments);
+            if (loop_call_seen(seen_hashes, *seen_count, call_hash)) {
+                tasks[t].result_str =
+                    strdup("{\"error\":\"duplicate_call\",\"note\":\"identical tool call "
+                           "already executed in this run; reuse the previous result or "
+                           "answer directly\"}");
+                tasks[t].executed = false;
+            } else {
+                if (*seen_count < LOOP_DUP_CALL_SLOTS) {
+                    seen_hashes[(*seen_count)++] = call_hash;
+                }
+            }
+        }
+        if (decision) {
+            ai_policy_decision_free(decision);
+        }
+    }
+
+    /* 2. 并行 Worker 执行 */
+    pthread_t threads[8];
+    bool      spawned[8] = {false};
+    for (size_t t = 0; t < n_calls; t++) {
+        if (!tasks[t].result_str) {
+            if (pthread_create(&threads[t], NULL, ai_parallel_tool_worker, &tasks[t]) == 0) {
+                spawned[t] = true;
+            } else {
+                ai_parallel_tool_worker(&tasks[t]);
+            }
+        }
+    }
+    for (size_t t = 0; t < n_calls; t++) {
+        if (spawned[t]) {
+            pthread_join(threads[t], NULL);
+        }
+    }
+
+    /* 3. 主线程保序汇聚屏障 */
+    for (size_t t = 0; t < n_calls; t++) {
+        if (tasks[t].executed) {
+            ai_runtime_limits_record_tool_call(&ctx->stats, 1);
+        }
+        if (trace) {
+            ai_trace_add_tool_span(trace,
+                                   tasks[t].tool_name,
+                                   tasks[t].span_ms,
+                                   tasks[t].result_str ? strlen(tasks[t].result_str) : 0,
+                                   tasks[t].success);
+        }
+        if (cbs && cbs->on_tool_result) {
+            cbs->on_tool_result(tasks[t].tool_call_id,
+                                tasks[t].tool_name,
+                                tasks[t].result_str ? tasks[t].result_str : "{}",
+                                user_data);
+        }
+        csilk_json_t* rec = csilk_json_object();
+        csilk_json_add_string(rec, "id", tasks[t].tool_call_id);
+        csilk_json_add_string(rec, "name", tasks[t].tool_name);
+        csilk_json_add_string(rec, "arguments", tasks[t].raw_arguments);
+        csilk_json_add_string(rec, "result", tasks[t].result_str ? tasks[t].result_str : "");
+        csilk_json_array_append(tc_record, rec);
+
+        char* clamped = loop_clamp_tool_result(tasks[t].result_str);
+        char* isolated = ai_sanitize_untrusted_content(tasks[t].tool_name, clamped);
+        free(clamped);
+
+        size_t mc = *mc_ptr + 1;
+        *msgs_ptr = (csilk_ai_message_t*)realloc(*msgs_ptr, sizeof(csilk_ai_message_t) * mc);
+        (*msgs_ptr)[mc - 1] = (csilk_ai_message_t){
+            .role = "tool",
+            .content = isolated,
+            .tool_call_id = strdup(tasks[t].tool_call_id),
+            .tool_calls = NULL,
+            .tool_call_count = 0,
+        };
+        *mc_ptr = mc;
+
+        csilk_json_free(tasks[t].args);
+        free(tasks[t].tool_name);
+        free(tasks[t].raw_arguments);
+        free(tasks[t].result_str);
+    }
+}
+
+static void
+loop_dispatch_sequential_tools(csilk_db_pool_t*              pool,
+                               ai_runtime_context_t*         ctx,
+                               csilk_ai_tool_call_t*         tool_calls,
+                               size_t                        n_calls,
+                               ai_trace_t*                   trace,
+                               const ai_runtime_callbacks_t* cbs,
+                               void*                         user_data,
+                               csilk_json_t*                 tc_record,
+                               uint64_t*                     seen_hashes,
+                               size_t*                       seen_count,
+                               csilk_ai_message_t**          msgs_ptr,
+                               size_t*                       mc_ptr)
+{
+    for (size_t t = 0; t < n_calls; t++) {
+        csilk_ai_tool_call_t* tc = &tool_calls[t];
+        char*                 tc_id_copy = strdup(tc->id && tc->id[0] ? tc->id : "");
+        if (cbs && cbs->on_tool_call) {
+            cbs->on_tool_call(tc->id, tc->name, tc->arguments, user_data);
+        }
+
+        csilk_json_t* args = csilk_json_parse(tc->arguments ? tc->arguments : "{}");
+        if (!args) {
+            args = csilk_json_object();
+        }
+
+        ai_policy_decision_t* decision =
+            ai_policy_evaluate(ctx->user_id, ctx->session_id, tc->name, args, AI_RISK_NO_OVERRIDE);
+        char*           result_str = NULL;
+        int             tool_success = 0;
+        int             executed = 0;
+        struct timespec t0, t1;
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+
+        if (decision && !decision->allowed) {
+            csilk_json_t* err_obj = csilk_json_object();
+            csilk_json_add_string(err_obj, "error", "policy_denied");
+            csilk_json_add_string(err_obj,
+                                  "reason",
+                                  decision->reason[0] ? decision->reason
+                                                      : "Tool blocked by policy");
+            if (decision->requires_confirmation && decision->draft) {
+                csilk_json_add_string(err_obj, "confirmation_required", "true");
+                csilk_json_add_string(err_obj, "draft_id", decision->draft->draft_id);
+            }
+            size_t elen = 0;
+            result_str = csilk_json_serialize(err_obj, &elen);
+            csilk_json_free(err_obj);
+        } else {
+            uint64_t call_hash = loop_call_hash(tc->name, tc->arguments);
+            if (loop_call_seen(seen_hashes, *seen_count, call_hash)) {
+                result_str = strdup("{\"error\":\"duplicate_call\",\"note\":\"identical tool call "
+                                    "already executed in this run; reuse the previous result or "
+                                    "answer directly\"}");
+            } else if (decision->requires_confirmation && !ai_tool_requires_id(tc->name)) {
+                result_str =
+                    strdup("{\"error\":\"confirmation_required\",\"note\":\"this action needs "
+                           "explicit user approval before it can run; summarize what it would "
+                           "do and ask the user to confirm, or use the propose/confirm tools\"}");
+                executed = 0;
+            } else {
+                result_str = ai_tools_execute_parsed_cancel(
+                    pool, ctx->user_id, ctx->session_id, args, tc->name, ctx->cancel_token);
+                executed = 1;
+                tool_success = (result_str != NULL);
+                if (!result_str) {
+                    result_str = strdup("{\"error\":\"tool execution failed\"}");
+                }
+                if (*seen_count < LOOP_DUP_CALL_SLOTS) {
+                    seen_hashes[(*seen_count)++] = call_hash;
+                }
+            }
+        }
+
+        clock_gettime(CLOCK_MONOTONIC, &t1);
+        long span_ms = (t1.tv_sec - t0.tv_sec) * 1000 + (t1.tv_nsec - t0.tv_nsec) / 1000000;
+
+        if (decision) {
+            ai_policy_decision_free(decision);
+        }
+        csilk_json_free(args);
+
+        if (executed) {
+            ai_runtime_limits_record_tool_call(&ctx->stats, 1);
+        }
+        if (trace) {
+            ai_trace_add_tool_span(trace,
+                                   tc->name ? tc->name : "",
+                                   span_ms,
+                                   result_str ? strlen(result_str) : 0,
+                                   tool_success);
+        }
+
+        if (cbs && cbs->on_tool_result) {
+            cbs->on_tool_result(tc->id, tc->name, result_str ? result_str : "{}", user_data);
+        }
+
+        csilk_json_t* rec = csilk_json_object();
+        csilk_json_add_string(rec, "id", tc->id ? tc->id : "");
+        csilk_json_add_string(rec, "name", tc->name ? tc->name : "");
+        csilk_json_add_string(rec, "arguments", tc->arguments ? tc->arguments : "");
+        csilk_json_add_string(rec, "result", result_str ? result_str : "");
+        csilk_json_array_append(tc_record, rec);
+
+        char* clamped = loop_clamp_tool_result(result_str);
+        char* isolated = ai_sanitize_untrusted_content(tc->name, clamped);
+        free(clamped);
+
+        size_t mc = *mc_ptr + 1;
+        *msgs_ptr = (csilk_ai_message_t*)realloc(*msgs_ptr, sizeof(csilk_ai_message_t) * mc);
+        (*msgs_ptr)[mc - 1] = (csilk_ai_message_t){
+            .role = "tool",
+            .content = isolated,
+            .tool_call_id = tc_id_copy,
+            .tool_calls = NULL,
+            .tool_call_count = 0,
+        };
+        *mc_ptr = mc;
+
+        free(result_str);
+    }
+}
+
+static bool
+loop_execute_budget_wrap(csilk_db_pool_t*              pool,
+                         ai_runtime_context_t*         ctx,
+                         csilk_ai_t*                   ai_inst,
+                         const char*                   model,
+                         csilk_ai_message_t*           msgs,
+                         size_t                        mc,
+                         int                           http_timeout_ms,
+                         double                        eff_price_in,
+                         double                        eff_price_out,
+                         loop_stream_bridge_t*         bridge,
+                         csilk_json_t*                 tc_record,
+                         const ai_runtime_callbacks_t* cbs,
+                         void*                         user_data,
+                         ai_runtime_status_t*          status)
+{
+    if (bridge->accumulated) {
+        bridge->accumulated[0] = '\0';
+        bridge->accumulated_len = 0;
+    }
+    csilk_ai_chat_request_t wrap_req = {
+        .model = model,
+        .messages = msgs,
+        .message_count = mc,
+        .stream = (cbs && cbs->on_text_chunk) ? 1 : 0,
+        .on_chunk = on_chunk_bridge,
+        .on_reasoning_chunk = on_reasoning_bridge,
+        .user_data = bridge,
+        .tools = NULL,
+        .tool_count = 0,
+        .tool_choice = "none",
+        .has_enable_thinking = ctx->has_enable_thinking,
+        .enable_thinking = ctx->enable_thinking,
+        .timeout_ms = http_timeout_ms,
+    };
+    csilk_ai_chat_response_t wrap_res = {0};
+    int                      wrap_rc = csilk_ai_chat(ai_inst, &wrap_req, &wrap_res);
+    double                   wrap_cost = 0.0;
+    mf_ai_rule_calculate_token_cost(wrap_res.prompt_tokens,
+                                    wrap_res.completion_tokens,
+                                    eff_price_in,
+                                    eff_price_out,
+                                    &wrap_cost);
+    ai_runtime_limits_record_tokens(
+        &ctx->stats, wrap_res.prompt_tokens, wrap_res.completion_tokens, wrap_cost);
+    const char* wrap_text = wrap_res.content ? wrap_res.content : bridge->accumulated;
+    bool        success = false;
+    if (wrap_rc == 0 && wrap_text && wrap_text[0]) {
+        snprintf(ctx->stats.finish_reason, sizeof(ctx->stats.finish_reason), "budget");
+        ai_runtime_status_set(status, AI_RUNTIME_ERR_OK, "OK", NULL);
+        loop_persist_assistant_message(
+            pool,
+            ctx->session_id,
+            model,
+            wrap_text,
+            (bridge->thinking_accumulated && bridge->thinking_accumulated[0])
+                ? bridge->thinking_accumulated
+                : NULL,
+            tc_record,
+            cbs,
+            user_data);
+        success = true;
+    }
+    csilk_ai_chat_response_free(&wrap_res);
+    return success;
+}
+
+static void
+loop_finalize_trace(ai_trace_t*          trace,
+                    int                  auto_created_trace,
+                    csilk_db_pool_t*     pool,
+                    double               eff_price_in,
+                    double               eff_price_out,
+                    int64_t              prompt_tokens,
+                    int64_t              completion_tokens,
+                    ai_runtime_status_t* status)
+{
+    if (!trace) {
+        return;
+    }
+    ai_trace_set_price(trace, eff_price_in, eff_price_out);
+    ai_trace_calculate_tokens_and_cost(trace, prompt_tokens, completion_tokens);
+    ai_trace_finish(trace, (status->code == AI_RUNTIME_ERR_OK) ? "ok" : "error", status->message);
+    if (pool) {
+        mf_ai_trace_save(pool, trace);
+    }
+    if (auto_created_trace == 1) {
+        ai_trace_destroy(trace);
+    }
+}
+
+static void
+loop_notify_final_status(const ai_runtime_status_t*    status,
+                         const ai_runtime_stats_t*     stats,
+                         const ai_runtime_callbacks_t* cbs,
+                         void*                         user_data)
+{
+    if (status->code == AI_RUNTIME_ERR_OK) {
+        if (cbs && cbs->on_done) {
+            cbs->on_done(stats, user_data);
+        }
+    } else {
+        if (cbs && cbs->on_error) {
+            cbs->on_error(status, user_data);
+        }
+    }
+}
+
+ai_runtime_status_t
+ai_runtime_execute_stream(csilk_db_pool_t*              pool,
+                          ai_runtime_context_t*         ctx,
+                          const ai_runtime_callbacks_t* cbs,
+                          void*                         user_data)
+{
+    ai_runtime_status_t status = {0};
+
+    /* 1. 环境准备 (参数验证、大模型驱动初始化、工具组装、消息准备、链路追踪初始化) */
+    loop_exec_env_t env;
+    status = loop_prepare_env(ctx, cbs, user_data, &env);
+    if (status.code != AI_RUNTIME_ERR_OK) {
+        return status;
     }
 
     loop_stream_bridge_t bridge = {
@@ -636,7 +1129,6 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
     int max_turns = (ctx->limits.max_iterations > 0) ? ctx->limits.max_iterations : 10;
     int got_text = 0;
     int model_call_failed = 0;
-    int http_timeout_ms = loop_ai_http_timeout_ms();
     snprintf(ctx->stats.finish_reason, sizeof(ctx->stats.finish_reason), "stop");
 
     /* 单次运行内同参工具调用去重表（防止模型反复执行完全相同的调用耗尽预算） */
@@ -665,23 +1157,23 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
 
         /* B. 构建大模型调用请求 */
         csilk_ai_chat_request_t req = {
-            .model = model,
-            .messages = msgs,
-            .message_count = mc,
+            .model = env.model,
+            .messages = env.msgs,
+            .message_count = env.mc,
             .stream = (cbs && cbs->on_text_chunk) ? 1 : 0,
             .on_chunk = on_chunk_bridge,
             .on_reasoning_chunk = on_reasoning_bridge,
             .user_data = &bridge,
-            .tools = (csilk_ai_tool_t*)tools,
-            .tool_count = tool_count,
+            .tools = (csilk_ai_tool_t*)env.tools,
+            .tool_count = env.tool_count,
             .tool_choice = "auto",
             .has_enable_thinking = ctx->has_enable_thinking,
             .enable_thinking = ctx->enable_thinking,
-            .timeout_ms = http_timeout_ms,
+            .timeout_ms = env.http_timeout_ms,
         };
 
         csilk_ai_chat_response_t ai_res = {0};
-        int                      rc = csilk_ai_chat(ai_inst, &req, &ai_res);
+        int                      rc = csilk_ai_chat(env.ai_inst, &req, &ai_res);
 
         /* Runtime 层兜底重试：仅当本轮尚未向客户端流出正文（避免重复输出）时生效。
            - 配置类错误（400/401/403/404）不可恢复，直接放弃；
@@ -701,15 +1193,15 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
             struct timespec backoff = {.tv_sec = 0,
                                        .tv_nsec = (attempt == 0 ? 500L : 1500L) * 1000000L};
             nanosleep(&backoff, NULL);
-            rc = csilk_ai_chat(ai_inst, &req, &ai_res);
+            rc = csilk_ai_chat(env.ai_inst, &req, &ai_res);
         }
 
         /* 记录 Token 消耗与费用 */
         double step_cost = 0.0;
         mf_ai_rule_calculate_token_cost(ai_res.prompt_tokens,
                                         ai_res.completion_tokens,
-                                        eff_price_in,
-                                        eff_price_out,
+                                        env.eff_price_in,
+                                        env.eff_price_out,
                                         &step_cost);
         ai_runtime_limits_record_tokens(
             &ctx->stats, ai_res.prompt_tokens, ai_res.completion_tokens, step_cost);
@@ -753,24 +1245,14 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
                 (bridge.thinking_accumulated && bridge.thinking_accumulated[0])
                     ? bridge.thinking_accumulated
                     : (ai_res.reasoning_content ? ai_res.reasoning_content : NULL);
-            if (pool && ctx->session_id > 0 &&
-                ((final_text && final_text[0]) || (final_thinking && final_thinking[0]))) {
-                size_t  tcj_len = 0;
-                char*   tcj_str = csilk_json_array_size(tc_record) > 0
-                                      ? csilk_json_serialize(tc_record, &tcj_len)
-                                      : NULL;
-                int64_t persisted_id = mf_ai_message_insert(pool,
-                                                            ctx->session_id,
-                                                            "assistant",
-                                                            final_text ? final_text : "",
-                                                            model,
-                                                            final_thinking,
-                                                            tcj_str);
-                if (persisted_id > 0 && cbs && cbs->on_message_persisted) {
-                    cbs->on_message_persisted("assistant", persisted_id, user_data);
-                }
-                free(tcj_str);
-            }
+            loop_persist_assistant_message(pool,
+                                           ctx->session_id,
+                                           env.model,
+                                           final_text,
+                                           final_thinking,
+                                           tc_record,
+                                           cbs,
+                                           user_data);
             ai_runtime_status_set(&status, AI_RUNTIME_ERR_OK, "OK", NULL);
             csilk_ai_chat_response_free(&ai_res);
             got_text = 1;
@@ -785,287 +1267,45 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
         }
 
         /* 追加 assistant 消息（包含 tool_calls） */
-        size_t n_calls = ai_res.tool_call_count;
-        mc++;
-        msgs = (csilk_ai_message_t*)realloc(msgs, sizeof(csilk_ai_message_t) * mc);
-        msgs[mc - 1] = (csilk_ai_message_t){
-            .role = "assistant",
-            .content = ai_res.content ? strdup(ai_res.content) : strdup(""),
-            .tool_call_id = NULL,
-            .tool_call_count = n_calls,
-            .tool_calls = (csilk_ai_tool_call_t*)calloc(n_calls, sizeof(csilk_ai_tool_call_t)),
-        };
-        for (size_t j = 0; j < n_calls; j++) {
-            msgs[mc - 1].tool_calls[j].id =
-                ai_res.tool_calls[j].id ? strdup(ai_res.tool_calls[j].id) : strdup("");
-            msgs[mc - 1].tool_calls[j].name =
-                ai_res.tool_calls[j].name ? strdup(ai_res.tool_calls[j].name) : strdup("");
-            msgs[mc - 1].tool_calls[j].arguments = ai_res.tool_calls[j].arguments
-                                                       ? strdup(ai_res.tool_calls[j].arguments)
-                                                       : strdup("{}");
-        }
-
-        /* assistant 消息在 msgs 中的下标。后续追加 role="tool" 消息会 realloc 整个数组，
-         * 不能缓存指向数组元素的指针，必须按下标重新取；且助手消息不总在 mc-1（追加工具消息后）。 */
-        const size_t asst_idx = mc - 1;
+        size_t       n_calls = ai_res.tool_call_count;
+        const size_t asst_idx = loop_append_assistant_tool_message(
+            &env.msgs, &env.mc, ai_res.content, ai_res.tool_calls, n_calls);
 
         /* 检查当前批次是否全为无状态网络只读工具 */
         const char* tool_names[8];
         bool        batch_eligible = (n_calls > 1 && n_calls <= 8);
         if (batch_eligible) {
             for (size_t t = 0; t < n_calls; t++) {
-                tool_names[t] = msgs[asst_idx].tool_calls[t].name;
+                tool_names[t] = env.msgs[asst_idx].tool_calls[t].name;
             }
             batch_eligible = ai_parallel_batch_eligible(tool_names, n_calls);
         }
 
         if (batch_eligible) {
-            /* 并行分发分支 (Parallel Dispatch for Stateless Network Tools) */
-            ai_parallel_task_t tasks[8];
-            memset(tasks, 0, sizeof(tasks));
-
-            /* 1. 主线程保序预评估 (Pre-evaluation & Policy Check) */
-            for (size_t t = 0; t < n_calls; t++) {
-                csilk_ai_tool_call_t* tc = &msgs[asst_idx].tool_calls[t];
-                tasks[t].call_idx = t;
-                tasks[t].user_id = ctx->user_id;
-                tasks[t].session_id = ctx->session_id;
-                tasks[t].cancel_token = ctx->cancel_token;
-                strncpy(
-                    tasks[t].tool_call_id, tc->id ? tc->id : "", sizeof(tasks[t].tool_call_id) - 1);
-                tasks[t].tool_name = strdup(tc->name ? tc->name : "");
-                tasks[t].raw_arguments = strdup(tc->arguments ? tc->arguments : "{}");
-                tasks[t].args = csilk_json_parse(tasks[t].raw_arguments);
-                if (!tasks[t].args) {
-                    tasks[t].args = csilk_json_object();
-                }
-
-                if (cbs && cbs->on_tool_call) {
-                    cbs->on_tool_call(tc->id, tc->name, tc->arguments, user_data);
-                }
-
-                ai_policy_decision_t* decision = ai_policy_evaluate(ctx->user_id,
-                                                                    ctx->session_id,
-                                                                    tasks[t].tool_name,
-                                                                    tasks[t].args,
-                                                                    AI_RISK_NO_OVERRIDE);
-
-                if (decision && !decision->allowed) {
-                    csilk_json_t* err_obj = csilk_json_object();
-                    csilk_json_add_string(err_obj, "error", "policy_denied");
-                    csilk_json_add_string(err_obj,
-                                          "reason",
-                                          decision->reason[0] ? decision->reason
-                                                              : "Tool blocked by policy");
-                    size_t elen = 0;
-                    tasks[t].result_str = csilk_json_serialize(err_obj, &elen);
-                    csilk_json_free(err_obj);
-                    tasks[t].executed = false;
-                } else {
-                    uint64_t call_hash = loop_call_hash(tasks[t].tool_name, tasks[t].raw_arguments);
-                    if (loop_call_seen(seen_hashes, seen_count, call_hash)) {
-                        tasks[t].result_str =
-                            strdup("{\"error\":\"duplicate_call\",\"note\":\"identical tool call "
-                                   "already executed in this run; reuse the previous result or "
-                                   "answer directly\"}");
-                        tasks[t].executed = false;
-                    } else {
-                        if (seen_count < LOOP_DUP_CALL_SLOTS) {
-                            seen_hashes[seen_count++] = call_hash;
-                        }
-                    }
-                }
-                if (decision) {
-                    ai_policy_decision_free(decision);
-                }
-            }
-
-            /* 2. 并行 Worker 执行 */
-            pthread_t threads[8];
-            bool      spawned[8] = {false};
-            for (size_t t = 0; t < n_calls; t++) {
-                if (!tasks[t].result_str) {
-                    if (pthread_create(&threads[t], NULL, ai_parallel_tool_worker, &tasks[t]) ==
-                        0) {
-                        spawned[t] = true;
-                    } else {
-                        ai_parallel_tool_worker(&tasks[t]);
-                    }
-                }
-            }
-            for (size_t t = 0; t < n_calls; t++) {
-                if (spawned[t]) {
-                    pthread_join(threads[t], NULL);
-                }
-            }
-
-            /* 3. 主线程保序汇聚屏障 (Post-gather in Exact Turn Order) */
-            for (size_t t = 0; t < n_calls; t++) {
-                if (tasks[t].executed) {
-                    ai_runtime_limits_record_tool_call(&ctx->stats, 1);
-                }
-                if (trace) {
-                    ai_trace_add_tool_span(trace,
-                                           tasks[t].tool_name,
-                                           tasks[t].span_ms,
-                                           tasks[t].result_str ? strlen(tasks[t].result_str) : 0,
-                                           tasks[t].success);
-                }
-                if (cbs && cbs->on_tool_result) {
-                    cbs->on_tool_result(tasks[t].tool_call_id,
-                                        tasks[t].tool_name,
-                                        tasks[t].result_str ? tasks[t].result_str : "{}",
-                                        user_data);
-                }
-                csilk_json_t* rec = csilk_json_object();
-                csilk_json_add_string(rec, "id", tasks[t].tool_call_id);
-                csilk_json_add_string(rec, "name", tasks[t].tool_name);
-                csilk_json_add_string(rec, "arguments", tasks[t].raw_arguments);
-                csilk_json_add_string(
-                    rec, "result", tasks[t].result_str ? tasks[t].result_str : "");
-                csilk_json_array_append(tc_record, rec);
-
-                char* clamped = loop_clamp_tool_result(tasks[t].result_str);
-                char* isolated = ai_sanitize_untrusted_content(tasks[t].tool_name, clamped);
-                free(clamped);
-
-                mc++;
-                msgs = (csilk_ai_message_t*)realloc(msgs, sizeof(csilk_ai_message_t) * mc);
-                msgs[mc - 1] = (csilk_ai_message_t){
-                    .role = "tool",
-                    .content = isolated,
-                    .tool_call_id = strdup(tasks[t].tool_call_id),
-                    .tool_calls = NULL,
-                    .tool_call_count = 0,
-                };
-
-                csilk_json_free(tasks[t].args);
-                free(tasks[t].tool_name);
-                free(tasks[t].raw_arguments);
-                free(tasks[t].result_str);
-            }
+            loop_dispatch_parallel_tools(ctx,
+                                         env.msgs[asst_idx].tool_calls,
+                                         n_calls,
+                                         env.trace,
+                                         cbs,
+                                         user_data,
+                                         tc_record,
+                                         seen_hashes,
+                                         &seen_count,
+                                         &env.msgs,
+                                         &env.mc);
         } else {
-            /* 逐一校验安全策略并执行工具 */
-            for (size_t t = 0; t < n_calls; t++) {
-                csilk_ai_tool_call_t* tc = &msgs[asst_idx].tool_calls[t];
-                /* tc 指向 msgs 数组内部；下方追加工具消息会 realloc 移动数组，先备份需要
-             * 在 realloc 之后才使用的字段，避免悬垂指针读取 (use-after-free)。 */
-                char* tc_id_copy = strdup(tc->id && tc->id[0] ? tc->id : "");
-                if (cbs && cbs->on_tool_call) {
-                    cbs->on_tool_call(tc->id, tc->name, tc->arguments, user_data);
-                }
-
-                csilk_json_t* args = csilk_json_parse(tc->arguments ? tc->arguments : "{}");
-                if (!args) {
-                    args = csilk_json_object();
-                }
-
-                /* 1. 安全策略综合评估 (Policy Evaluation) */
-                ai_policy_decision_t* decision = ai_policy_evaluate(
-                    ctx->user_id, ctx->session_id, tc->name, args, AI_RISK_NO_OVERRIDE);
-                char*           result_str = NULL;
-                int             tool_success = 0;
-                int             executed = 0;
-                struct timespec t0, t1;
-                clock_gettime(CLOCK_MONOTONIC, &t0);
-
-                if (decision && !decision->allowed) {
-                    /* 策略拦截或需二次确认 */
-                    csilk_json_t* err_obj = csilk_json_object();
-                    csilk_json_add_string(err_obj, "error", "policy_denied");
-                    csilk_json_add_string(err_obj,
-                                          "reason",
-                                          decision->reason[0] ? decision->reason
-                                                              : "Tool blocked by policy");
-                    if (decision->requires_confirmation && decision->draft) {
-                        csilk_json_add_string(err_obj, "confirmation_required", "true");
-                        csilk_json_add_string(err_obj, "draft_id", decision->draft->draft_id);
-                    }
-                    size_t elen = 0;
-                    result_str = csilk_json_serialize(err_obj, &elen);
-                    csilk_json_free(err_obj);
-                } else {
-                    uint64_t call_hash = loop_call_hash(tc->name, tc->arguments);
-                    if (loop_call_seen(seen_hashes, seen_count, call_hash)) {
-                        /* 同参重复调用：直接回放提示而非再次执行，避免模型耗尽工具预算 */
-                        result_str =
-                            strdup("{\"error\":\"duplicate_call\",\"note\":\"identical tool call "
-                                   "already executed in this run; reuse the previous result or "
-                                   "answer directly\"}");
-                    } else if (decision->requires_confirmation && !ai_tool_requires_id(tc->name)) {
-                        /* 策略要求二次确认且工具不自带确认协议（propose/confirm 令牌）：
-                       拒绝执行并把确认要求回注给模型，由其向用户转达。此前该标志仅
-                       作提示、变更操作照样静默执行，构成越权写路径。 */
-                        result_str = strdup(
-                            "{\"error\":\"confirmation_required\",\"note\":\"this action needs "
-                            "explicit user approval before it can run; summarize what it would "
-                            "do and ask the user to confirm, or use the propose/confirm tools\"}");
-                        executed = 0;
-                    } else {
-                        /* 2. 工具执行 (Tool Execution)
-                       线程化协作式取消标志：MCP 远端调用可在用户取消时中止。 */
-                        result_str = ai_tools_execute_parsed_cancel(
-                            pool, ctx->user_id, ctx->session_id, args, tc->name, ctx->cancel_token);
-                        executed = 1;
-                        tool_success = (result_str != NULL);
-                        if (!result_str) {
-                            result_str = strdup("{\"error\":\"tool execution failed\"}");
-                        }
-                        if (seen_count < LOOP_DUP_CALL_SLOTS) {
-                            seen_hashes[seen_count++] = call_hash;
-                        }
-                    }
-                }
-
-                clock_gettime(CLOCK_MONOTONIC, &t1);
-                long span_ms = (t1.tv_sec - t0.tv_sec) * 1000 + (t1.tv_nsec - t0.tv_nsec) / 1000000;
-
-                if (decision) {
-                    ai_policy_decision_free(decision);
-                }
-                csilk_json_free(args);
-
-                if (executed) {
-                    ai_runtime_limits_record_tool_call(&ctx->stats, 1);
-                }
-                if (trace) {
-                    ai_trace_add_tool_span(trace,
-                                           tc->name ? tc->name : "",
-                                           span_ms,
-                                           result_str ? strlen(result_str) : 0,
-                                           tool_success);
-                }
-
-                if (cbs && cbs->on_tool_result) {
-                    cbs->on_tool_result(
-                        tc->id, tc->name, result_str ? result_str : "{}", user_data);
-                }
-
-                /* 累计工具调用记录（供落库），result 保持原始 JSON 字符串 */
-                csilk_json_t* rec = csilk_json_object();
-                csilk_json_add_string(rec, "id", tc->id ? tc->id : "");
-                csilk_json_add_string(rec, "name", tc->name ? tc->name : "");
-                csilk_json_add_string(rec, "arguments", tc->arguments ? tc->arguments : "");
-                csilk_json_add_string(rec, "result", result_str ? result_str : "");
-                csilk_json_array_append(tc_record, rec);
-
-                char* clamped = loop_clamp_tool_result(result_str);
-                char* isolated = ai_sanitize_untrusted_content(tc->name, clamped);
-                free(clamped);
-
-                /* 追加 role="tool" 消息（使用 realloc 前备份的 tool_call_id） */
-                mc++;
-                msgs = (csilk_ai_message_t*)realloc(msgs, sizeof(csilk_ai_message_t) * mc);
-                msgs[mc - 1] = (csilk_ai_message_t){
-                    .role = "tool",
-                    .content = isolated,
-                    .tool_call_id = tc_id_copy,
-                    .tool_calls = NULL,
-                    .tool_call_count = 0,
-                };
-                /* isolated 已进入 msgs（清理段释放），原完整结果串在此释放 */
-                free(result_str);
-            }
+            loop_dispatch_sequential_tools(pool,
+                                           ctx,
+                                           env.msgs[asst_idx].tool_calls,
+                                           n_calls,
+                                           env.trace,
+                                           cbs,
+                                           user_data,
+                                           tc_record,
+                                           seen_hashes,
+                                           &seen_count,
+                                           &env.msgs,
+                                           &env.mc);
         }
 
         csilk_ai_chat_response_free(&ai_res);
@@ -1086,62 +1326,22 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
         (status.code == AI_RUNTIME_ERR_TIMEOUT || status.code == AI_RUNTIME_ERR_TOOL ||
          status.code == AI_RUNTIME_ERR_CONTEXT_OVERFLOW) &&
         !(ctx->cancel_token && *(ctx->cancel_token))) {
-        if (bridge.accumulated) {
-            bridge.accumulated[0] = '\0';
-            bridge.accumulated_len = 0;
-        }
-        csilk_ai_chat_request_t wrap_req = {
-            .model = model,
-            .messages = msgs,
-            .message_count = mc,
-            .stream = (cbs && cbs->on_text_chunk) ? 1 : 0,
-            .on_chunk = on_chunk_bridge,
-            .on_reasoning_chunk = on_reasoning_bridge,
-            .user_data = &bridge,
-            .tools = NULL,
-            .tool_count = 0,
-            .tool_choice = "none",
-            .has_enable_thinking = ctx->has_enable_thinking,
-            .enable_thinking = ctx->enable_thinking,
-            .timeout_ms = http_timeout_ms,
-        };
-        csilk_ai_chat_response_t wrap_res = {0};
-        int                      wrap_rc = csilk_ai_chat(ai_inst, &wrap_req, &wrap_res);
-        double                   wrap_cost = 0.0;
-        mf_ai_rule_calculate_token_cost(wrap_res.prompt_tokens,
-                                        wrap_res.completion_tokens,
-                                        eff_price_in,
-                                        eff_price_out,
-                                        &wrap_cost);
-        ai_runtime_limits_record_tokens(
-            &ctx->stats, wrap_res.prompt_tokens, wrap_res.completion_tokens, wrap_cost);
-        const char* wrap_text = wrap_res.content ? wrap_res.content : bridge.accumulated;
-        if (wrap_rc == 0 && wrap_text && wrap_text[0]) {
-            snprintf(ctx->stats.finish_reason, sizeof(ctx->stats.finish_reason), "budget");
-            ai_runtime_status_set(&status, AI_RUNTIME_ERR_OK, "OK", NULL);
-            if (pool && ctx->session_id > 0) {
-                size_t  tcj_len = 0;
-                char*   tcj_str = csilk_json_array_size(tc_record) > 0
-                                      ? csilk_json_serialize(tc_record, &tcj_len)
-                                      : NULL;
-                int64_t persisted_id = mf_ai_message_insert(
-                    pool,
-                    ctx->session_id,
-                    "assistant",
-                    wrap_text,
-                    model,
-                    (bridge.thinking_accumulated && bridge.thinking_accumulated[0])
-                        ? bridge.thinking_accumulated
-                        : NULL,
-                    tcj_str);
-                if (persisted_id > 0 && cbs && cbs->on_message_persisted) {
-                    cbs->on_message_persisted("assistant", persisted_id, user_data);
-                }
-                free(tcj_str);
-            }
+        if (loop_execute_budget_wrap(pool,
+                                     ctx,
+                                     env.ai_inst,
+                                     env.model,
+                                     env.msgs,
+                                     env.mc,
+                                     env.http_timeout_ms,
+                                     env.eff_price_in,
+                                     env.eff_price_out,
+                                     &bridge,
+                                     tc_record,
+                                     cbs,
+                                     user_data,
+                                     &status)) {
             got_text = 1;
         }
-        csilk_ai_chat_response_free(&wrap_res);
     }
 
     /* 7.5 被中断/超时轮次的部分 assistant 文本与思考过程持久化，避免流式输出丢失；
@@ -1152,84 +1352,39 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
         (status.code != AI_RUNTIME_ERR_MODEL || (bridge.accumulated && bridge.accumulated[0]))) {
         const char* final_text =
             (bridge.accumulated && bridge.accumulated[0]) ? bridge.accumulated : "[思考已中断]";
-        {
-            size_t  tcj_len = 0;
-            char*   tcj_str = csilk_json_array_size(tc_record) > 0
-                                  ? csilk_json_serialize(tc_record, &tcj_len)
-                                  : NULL;
-            int64_t persisted_id = mf_ai_message_insert(pool,
-                                                        ctx->session_id,
-                                                        "assistant",
-                                                        final_text,
-                                                        model,
-                                                        bridge.thinking_accumulated,
-                                                        tcj_str);
-            if (persisted_id > 0 && cbs && cbs->on_message_persisted) {
-                cbs->on_message_persisted("assistant", persisted_id, user_data);
-            }
-            free(tcj_str);
-        }
+        loop_persist_assistant_message(pool,
+                                       ctx->session_id,
+                                       env.model,
+                                       final_text,
+                                       bridge.thinking_accumulated,
+                                       tc_record,
+                                       cbs,
+                                       user_data);
         got_text = 1;
     }
 
     /* 8. 链路追踪结算并保存：注入与预算记账同一价源，保证 trace 成本口径一致 */
-    if (trace) {
-        ai_trace_set_price(trace, eff_price_in, eff_price_out);
-        ai_trace_calculate_tokens_and_cost(
-            trace, ctx->stats.prompt_tokens, ctx->stats.completion_tokens);
-        ai_trace_finish(trace, (status.code == AI_RUNTIME_ERR_OK) ? "ok" : "error", status.message);
-        if (pool) {
-            mf_ai_trace_save(pool, trace);
-        }
-        if (auto_created_trace == 1) {
-            ai_trace_destroy(trace);
-        }
-    }
+    loop_finalize_trace(env.trace,
+                        env.auto_created_trace,
+                        pool,
+                        env.eff_price_in,
+                        env.eff_price_out,
+                        ctx->stats.prompt_tokens,
+                        ctx->stats.completion_tokens,
+                        &status);
 
     /* 9. 事件回调终态通知 */
-    if (status.code == AI_RUNTIME_ERR_OK) {
-        if (cbs && cbs->on_done) {
-            cbs->on_done(&ctx->stats, user_data);
-        }
-    } else {
-        if (cbs && cbs->on_error) {
-            cbs->on_error(&status, user_data);
-        }
-    }
+    loop_notify_final_status(&status, &ctx->stats, cbs, user_data);
 
     /* 10. 资源清理 */
-    csilk_ai_free(ai_inst);
-    if (mcp_merged) {
-        mcp_bridge_free_merged(tools, tool_count);
-    }
     if (bridge.accumulated) {
         free(bridge.accumulated);
     }
     if (bridge.thinking_accumulated) {
         free(bridge.thinking_accumulated);
     }
-    for (size_t i = initial_mc; i < mc; i++) {
-        if (msgs[i].content) {
-            free((void*)msgs[i].content);
-        }
-        if (msgs[i].tool_call_id) {
-            free((void*)msgs[i].tool_call_id);
-        }
-        if (msgs[i].tool_calls) {
-            for (size_t j = 0; j < msgs[i].tool_call_count; j++) {
-                free(msgs[i].tool_calls[j].id);
-                free(msgs[i].tool_calls[j].name);
-                free(msgs[i].tool_calls[j].arguments);
-            }
-            free(msgs[i].tool_calls);
-        }
-    }
-    free(msgs);
     csilk_json_free(tc_record);
-    if (owner_sys_prompt) {
-        free(owner_sys_prompt);
-    }
-    ai_config_release(cfg);
+    loop_cleanup_env(&env);
 
     return status;
 }
