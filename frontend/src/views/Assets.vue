@@ -723,7 +723,7 @@ onMounted(async () => {
 }
 
 .table-container {
-  overflow: hidden;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   flex: 1;

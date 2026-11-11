@@ -323,9 +323,8 @@
         <div class="dialog-footer">
           <el-button class="cancel-btn" @click="dialogVisible = false">取消</el-button>
           <el-button v-if="!editingId && step > 0" @click="step--">上一步</el-button>
-          <el-button v-else-if="!editingId" type="primary" @click="dialogVisible = false">取消</el-button>
           <el-button v-if="!editingId && step === 0" type="primary" @click="nextStep">下一步</el-button>
-          <el-button type="primary" class="save-btn" :loading="saving" @click="handleSubmit" v-else>
+          <el-button v-else type="primary" class="save-btn" :loading="saving" @click="handleSubmit">
             保存记录
           </el-button>
         </div>

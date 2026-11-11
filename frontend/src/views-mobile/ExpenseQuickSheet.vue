@@ -51,7 +51,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, nextTick, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import { useCategoryStore } from '@/stores/category'
@@ -134,6 +134,46 @@ async function onFileSelected(e: Event) {
   reader.readAsDataURL(file)
 }
 
+function populateForm() {
+  if (props.record) {
+    form.expense_type = props.record.expense_type
+    form.category_id = Number(props.record.category_id)
+    form.asset_id = Number(props.record.asset_id)
+    form.amount = props.record.amount
+    form.expense_date = props.record.expense_date
+    form.note = props.record.note ?? ''
+  } else {
+    form.expense_type = 'expense'
+    form.category_id = null
+    form.asset_id = null
+    form.amount = ''
+    form.expense_date = localToday()
+    form.note = ''
+  }
+}
+
+watch(
+  () => props.modelValue,
+  (val) => {
+    if (val) {
+      populateForm()
+      nextTick(() => {
+        amountRef.value?.focus()
+      })
+    }
+  },
+  { immediate: true }
+)
+
+watch(
+  () => props.record,
+  () => {
+    if (props.modelValue) {
+      populateForm()
+    }
+  }
+)
+
 onMounted(async () => {
   try {
     await categoryStore.loadCategories()
@@ -160,16 +200,11 @@ onMounted(async () => {
     }
   }
 
-  if (props.record) {
-    form.expense_type = props.record.expense_type
-    form.category_id = Number(props.record.category_id)
-    form.asset_id = Number(props.record.asset_id)
-    form.amount = props.record.amount
-    form.expense_date = props.record.expense_date
-    form.note = props.record.note ?? ''
+  populateForm()
+  if (props.modelValue) {
+    await nextTick()
+    amountRef.value?.focus()
   }
-  await nextTick()
-  amountRef.value?.focus()
 })
 
 async function save() {

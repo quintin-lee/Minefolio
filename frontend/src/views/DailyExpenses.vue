@@ -890,4 +890,26 @@ async function handleImport() {
   opacity: 0;
   transform: translate(-50%, 20px);
 }
+
+@media (max-width: 1199px) {
+  .daily-expenses-page {
+    overflow-y: auto;
+    height: auto;
+    min-height: 100%;
+  }
+  .daily-expenses-page > .el-row {
+    flex: none;
+    height: auto;
+  }
+  .daily-expenses-page > .el-row > .el-col {
+    height: auto !important;
+    overflow: visible !important;
+    flex: none !important;
+    margin-bottom: 16px;
+  }
+  .main-panel {
+    height: auto;
+    overflow: visible;
+  }
+}
 </style>

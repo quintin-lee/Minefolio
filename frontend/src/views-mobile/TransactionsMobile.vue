@@ -21,7 +21,7 @@ import { query, rowsFrom } from '@/db/local'
 import type { Transaction } from '@/types'
 
 const list = ref<Transaction[]>([])
-function isIncome(t: Transaction) { return ['deposit', 'transfer_in', 'income', 'interest', 'sell'].includes(t.transaction_type) }
+function isIncome(t: Transaction) { return ['deposit', 'transfer_in', 'income', 'interest', 'sell', 'dividend'].includes(t.transaction_type) }
 
 onMounted(async () => {
   try {
@@ -29,7 +29,15 @@ onMounted(async () => {
     list.value = res.list
   } catch {
     try {
-      const res = query('SELECT * FROM transactions WHERE __deleted = 0 ORDER BY transaction_date DESC LIMIT 50')
+      const res = query(`
+        SELECT t.*, c.name AS category_name, a.name AS asset_name
+        FROM transactions t
+        LEFT JOIN categories c ON c.id = t.category_id
+        LEFT JOIN assets a ON a.id = t.asset_id
+        WHERE t.__deleted = 0
+        ORDER BY t.transaction_date DESC, t.id DESC
+        LIMIT 50
+      `)
       list.value = rowsFrom(res) as unknown as Transaction[]
     } catch (e) {
       console.error('[TransactionsMobile] load failed:', e)

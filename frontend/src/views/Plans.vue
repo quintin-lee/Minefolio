@@ -204,7 +204,7 @@
         <el-table-column prop="name" label="项目名称" min-width="120" />
         <el-table-column label="标的/收款" min-width="140">
           <template #default="{ row }">
-            <div>{{ row.source_asset_name }} $\to$ {{ row.target_asset_name }}</div>
+            <div>{{ row.source_asset_name }} → {{ row.target_asset_name }}</div>
           </template>
         </el-table-column>
         <el-table-column prop="frequency" label="频次" width="90">

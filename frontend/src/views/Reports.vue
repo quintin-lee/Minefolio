@@ -766,6 +766,39 @@ onMounted(loadAll)
 .action-btn:hover {
   transform: translateY(-1px);
 }
+
+@media (max-width: 1199px) {
+  .reports-page {
+    overflow-y: auto;
+    height: auto;
+    min-height: 100%;
+  }
+  .report-content {
+    overflow-y: visible;
+    height: auto;
+    flex: none;
+  }
+  .tab-layout {
+    overflow-y: visible;
+    height: auto;
+    min-height: 100%;
+  }
+  .tab-row {
+    flex: none;
+    height: auto;
+    flex-direction: column;
+  }
+  .tab-row > .el-col {
+    height: auto;
+    min-height: 420px;
+    margin-bottom: 16px;
+  }
+  .report-card {
+    min-height: 420px;
+    height: auto;
+    overflow: visible;
+  }
+}
 </style>
 
 <style>
