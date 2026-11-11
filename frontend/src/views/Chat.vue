@@ -130,31 +130,36 @@
               </button>
             </el-tooltip>
 
-            <div class="model-selector-wrap">
-              <Icon icon="ph:cpu-bold" class="model-icon" />
-              <el-select
-                v-model="selectedModelKey"
-                size="small"
-                class="model-select"
-                placeholder="选择 AI 模型"
-              >
-                <el-option
-                  v-for="opt in modelOptions"
-                  :key="opt.value"
-                  :value="opt.value"
-                  :label="opt.label"
+            <!-- Session Title & Inline Rename (Left-aligned for natural document hierarchy) -->
+            <div class="session-title-wrap" :title="currentSessionTitle" @dblclick="startTopRename">
+              <div v-if="editingTopTitle" class="top-rename-box" @click.stop>
+                <input
+                  v-focus
+                  v-model="topRenameText"
+                  class="top-rename-input"
+                  placeholder="输入会话标题..."
+                  @keydown.enter="saveTopRename"
+                  @keydown.esc="cancelTopRename"
+                  @blur="saveTopRename"
+                />
+              </div>
+              <template v-else>
+                <span class="top-session-title">{{ currentSessionTitle }}</span>
+                <button
+                  v-if="chat.currentSessionId"
+                  class="top-rename-btn"
+                  title="重命名会话"
+                  aria-label="重命名会话"
+                  @click.stop="startTopRename"
                 >
-                  <div class="model-option-item">
-                    <span class="opt-name">{{ opt.provider_name }}</span>
-                    <span class="opt-model">{{ opt.model }}</span>
-                  </div>
-                </el-option>
-              </el-select>
+                  <Icon icon="ph:pencil-simple" />
+                </button>
+              </template>
             </div>
 
             <div class="chat-status" v-if="chat.isStreaming">
               <span class="status-dot"></span>
-              <span>正在生成...</span>
+              <span class="status-text">生成中</span>
               <button class="stop-gen-btn" @click="handleStop" title="停止生成 (Esc)">
                 <Icon icon="ph:stop-bold" />
                 <span>停止</span>
@@ -162,39 +167,33 @@
             </div>
           </div>
 
-          <!-- Toolbar Center: Session Title & Inline Rename -->
-          <div class="toolbar-center">
-            <div v-if="editingTopTitle" class="top-rename-box" @click.stop>
-              <input
-                v-focus
-                v-model="topRenameText"
-                class="top-rename-input"
-                placeholder="输入会话标题..."
-                @keydown.enter="saveTopRename"
-                @keydown.esc="cancelTopRename"
-                @blur="saveTopRename"
-              />
-            </div>
-            <div
-              v-else
-              class="session-title-wrap"
-              :title="currentSessionTitle"
-              @dblclick="startTopRename"
-            >
-              <span class="top-session-title">{{ currentSessionTitle }}</span>
-              <button
-                v-if="chat.currentSessionId"
-                class="top-rename-btn"
-                title="重命名会话"
-                aria-label="重命名会话"
-                @click.stop="startTopRename"
-              >
-                <Icon icon="ph:pencil-simple" />
-              </button>
-            </div>
-          </div>
-
           <div class="toolbar-right">
+            <!-- Compact Model Selector Pill -->
+            <el-dropdown trigger="click" placement="bottom-end" @command="(val: string) => selectedModelKey = val">
+              <button class="model-pill-btn" :title="`当前模型: ${currentModelProvider ? currentModelProvider + ' · ' : ''}${currentModelDisplay}`">
+                <Icon icon="ph:cpu-bold" class="model-pill-icon" />
+                <span class="model-pill-text">{{ currentModelDisplay }}</span>
+                <Icon icon="ph:caret-down-bold" class="model-pill-caret" />
+              </button>
+              <template #dropdown>
+                <el-dropdown-menu class="model-select-dropdown">
+                  <el-dropdown-item
+                    v-for="opt in modelOptions"
+                    :key="opt.value"
+                    :command="opt.value"
+                    :class="{ 'is-active-model': selectedModelKey === opt.value }"
+                  >
+                    <div class="model-option-card">
+                      <div class="model-option-meta">
+                        <span class="opt-provider-tag">{{ opt.provider_name }}</span>
+                        <span class="opt-name-main">{{ opt.model }}</span>
+                      </div>
+                      <Icon v-if="selectedModelKey === opt.value" icon="ph:check-bold" class="model-check-icon" />
+                    </div>
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
             <!-- Session Metrics Pill -->
             <div
               v-if="sessionMetrics.totalTokens > 0"
@@ -1072,6 +1071,19 @@ const selectedModelKey = computed({
       chat.setModel(val)
     }
   },
+})
+
+const currentModelDisplay = computed(() => {
+  const currentKey = selectedModelKey.value
+  const opt = modelOptions.value.find(o => o.value === currentKey)
+  if (!opt) return '选择模型'
+  return opt.model || opt.label
+})
+
+const currentModelProvider = computed(() => {
+  const currentKey = selectedModelKey.value
+  const opt = modelOptions.value.find(o => o.value === currentKey)
+  return opt?.provider_name || ''
 })
 
 const autoStickToBottom = ref(true)
@@ -1958,8 +1970,9 @@ onUnmounted(() => {
 .toolbar-left {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
+  flex: 1;
 }
 
 .toggle-sidebar-btn {
@@ -1984,25 +1997,16 @@ onUnmounted(() => {
   background: var(--mf-surface-hover);
 }
 
-/* Center: Session title & inline rename */
-.toolbar-center {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 0;
-  padding: 0 12px;
-}
-
 .session-title-wrap {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  max-width: 380px;
-  padding: 4px 10px;
+  max-width: 320px;
+  padding: 4px 8px;
   border-radius: 8px;
   cursor: pointer;
   transition: background 0.15s ease;
+  min-width: 0;
 }
 
 .session-title-wrap:hover {
@@ -2010,7 +2014,7 @@ onUnmounted(() => {
 }
 
 .top-session-title {
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--mf-text-main);
   white-space: nowrap;
@@ -2032,6 +2036,7 @@ onUnmounted(() => {
   font-size: 13px;
   opacity: 0;
   transition: opacity 0.15s ease, color 0.15s ease;
+  flex-shrink: 0;
 }
 
 .session-title-wrap:hover .top-rename-btn {
@@ -2044,7 +2049,7 @@ onUnmounted(() => {
 
 .top-rename-box {
   width: 100%;
-  max-width: 320px;
+  max-width: 260px;
 }
 
 .top-rename-input {
@@ -2205,52 +2210,88 @@ onUnmounted(() => {
   color: var(--mf-danger, #ef4444);
 }
 
-.model-selector-wrap {
-  display: flex;
+.model-pill-btn {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-}
-
-.model-icon {
-  font-size: 16px;
-  color: var(--mf-primary);
-}
-
-.model-select {
-  width: 230px;
-}
-
-.model-select :deep(.el-input__wrapper) {
+  gap: 6px;
   background: var(--mf-background);
-  box-shadow: none !important;
   border: 1px solid var(--mf-border);
   border-radius: 8px;
-  padding: 2px 10px;
-}
-
-.model-select :deep(.el-input__wrapper:hover) {
-  border-color: var(--mf-border-hover);
-}
-
-.model-select :deep(.el-input__wrapper.is-focus) {
-  border-color: var(--mf-primary);
-}
-
-.model-option-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  width: 100%;
-}
-
-.opt-name {
+  padding: 4px 10px;
+  font-size: 12px;
   font-weight: 500;
+  color: var(--mf-text-main);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  max-width: 170px;
 }
 
-.opt-model {
-  font-size: 11px;
+.model-pill-btn:hover {
+  border-color: var(--mf-border-hover);
+  background: var(--mf-surface-hover);
+}
+
+.model-pill-icon {
+  font-size: 14px;
+  color: var(--mf-primary);
+  flex-shrink: 0;
+}
+
+.model-pill-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-pill-caret {
+  font-size: 10px;
   color: var(--mf-text-muted);
-  font-family: var(--mf-font-mono, monospace);
+  flex-shrink: 0;
+}
+
+/* Model Dropdown items */
+:deep(.model-select-dropdown) {
+  min-width: 220px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+:deep(.model-option-card) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 12px;
+}
+
+:deep(.model-option-meta) {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+:deep(.opt-provider-tag) {
+  font-size: 10px;
+  color: var(--mf-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+:deep(.opt-name-main) {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--mf-text-main);
+}
+
+:deep(.model-check-icon) {
+  font-size: 14px;
+  color: var(--mf-primary);
+  flex-shrink: 0;
+}
+
+:deep(.el-dropdown-menu__item.is-active-model) {
+  background: var(--mf-primary-light);
+  color: var(--mf-primary);
 }
 
 .chat-status {
@@ -3007,8 +3048,8 @@ onUnmounted(() => {
   .session-stat-pill {
     display: none;
   }
-  .toolbar-center {
-    max-width: 220px;
+  .session-title-wrap {
+    max-width: 200px;
   }
   .new-chat-btn .btn-text {
     display: none;
@@ -3031,11 +3072,15 @@ onUnmounted(() => {
     padding: 6px 10px;
     gap: 6px;
   }
-  .toolbar-center {
-    display: none;
+  .session-title-wrap {
+    max-width: 130px;
   }
-  .model-select {
-    width: 160px;
+  .model-pill-btn {
+    max-width: 110px;
+    padding: 3px 6px;
+  }
+  .model-pill-icon {
+    font-size: 13px;
   }
   .chat-input-area {
     padding: 0 10px 10px;
