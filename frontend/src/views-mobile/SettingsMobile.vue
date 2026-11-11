@@ -95,9 +95,11 @@
       <span>上次同步：{{ lastSync || '从未' }}</span>
       <el-button size="small" :loading="syncing" @click="syncNow">立即同步</el-button>
     </div>
-    <el-button @click="exportCsv" block>导出 CSV</el-button>
-    <el-button @click="goCategories" block>分类管理</el-button>
-    <el-button @click="logout" block>退出登录</el-button>
+    <div class="action-buttons-group">
+      <el-button class="full-width-btn" @click="exportCsv">导出 CSV</el-button>
+      <el-button class="full-width-btn" @click="goCategories">分类管理</el-button>
+      <el-button class="full-width-btn danger-btn" @click="logout">退出登录</el-button>
+    </div>
   </div>
 </template>
 
@@ -309,5 +311,22 @@ function logout() { auth.logout(); router.replace('/m/login') }
   margin-top: 12px;
   font-size: 12px;
   color: var(--mf-text-muted);
+}
+.action-buttons-group {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.full-width-btn {
+  width: 100%;
+  margin-left: 0 !important;
+  height: 42px;
+  font-size: 14px;
+  border-radius: 8px;
+}
+.full-width-btn.danger-btn {
+  color: var(--mf-danger);
+  border-color: var(--mf-danger-border);
 }
 </style>

@@ -31,7 +31,7 @@
             @keyup.enter="handle2FaSubmit"
           />
         </el-form-item>
-        <el-button type="primary" :loading="loading" @click="handle2FaSubmit" block style="margin-top: 12px">
+        <el-button type="primary" :loading="loading" class="submit-btn" @click="handle2FaSubmit">
           验证并登录
         </el-button>
         <div class="switch-mode-mobile">
@@ -64,7 +64,7 @@
           @keyup.enter="submit"
         />
       </el-form-item>
-      <el-button type="primary" :loading="loading" @click="submit" block style="margin-top: 12px">
+      <el-button type="primary" :loading="loading" class="submit-btn" @click="submit">
         {{ isRegister ? '注册并登录' : '登录系统' }}
       </el-button>
 
@@ -291,5 +291,13 @@ async function handle2FaSubmit() {
   color: var(--mf-text-muted);
   line-height: 1.5;
   margin-bottom: 16px;
+}
+.submit-btn {
+  width: 100%;
+  margin-top: 12px;
+  height: 42px;
+  font-size: 15px;
+  font-weight: 600;
+  border-radius: 8px;
 }
 </style>

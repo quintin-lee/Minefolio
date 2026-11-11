@@ -45,7 +45,7 @@
         </el-form-item>
       </el-form>
 
-      <el-button type="primary" size="large" :loading="saving" @click="save" block>保存</el-button>
+      <el-button type="primary" size="large" :loading="saving" class="save-btn" @click="save">保存</el-button>
     </div>
   </el-drawer>
 </template>
@@ -207,4 +207,5 @@ async function save() {
 .currency { font-size: 24px; color: var(--mf-text-muted); }
 .amount-field { flex: 1; background: transparent; border: none; border-bottom: 2px solid var(--mf-border); color: var(--mf-text-main); font-size: 36px; font-family: 'JetBrains Mono', monospace; outline: none; text-align: right; }
 .amount-field:focus { border-color: var(--mf-primary); }
+.save-btn { width: 100%; margin-top: 16px; height: 44px; font-size: 16px; border-radius: var(--mf-radius-md); }
 </style>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, reactive, watch } from 'vue'
-import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
+import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import { accountsApi } from '@/api/accounts'
 import type { Account } from '@/types'
@@ -114,17 +114,31 @@ async function handleToggleArchive() {
   }
 }
 
-function handleDelete() {
+async function handleDelete() {
   const acc = props.account
   if (!acc) return
-  accountsApi
-    .delete(acc.id)
-    .then(() => {
-      ElMessage.success('账户删除成功')
-      emit('saved')
-      emit('update:visible', false)
-    })
-    .catch((err: any) => ElMessage.error(err?.message || '删除失败'))
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除账户「${acc.name}」吗？若该账户下仍有资产或关联流水记录，系统将阻止删除。`,
+      '删除账户确认',
+      {
+        confirmButtonText: '确定删除',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+  } catch {
+    return
+  }
+
+  try {
+    await accountsApi.delete(acc.id)
+    ElMessage.success('账户删除成功')
+    emit('saved')
+    emit('update:visible', false)
+  } catch (err: any) {
+    ElMessage.error(err?.message || '删除失败')
+  }
 }
 
 function institutionLabel(value: string) {
