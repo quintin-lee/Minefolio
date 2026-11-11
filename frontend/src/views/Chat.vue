@@ -206,9 +206,9 @@
               <span class="stat-cost">${{ sessionMetrics.totalCostUsd.toFixed(4) }}</span>
             </div>
 
-            <!-- Quick Analysis Panel Toggle (Desktop) -->
+            <!-- Quick Analysis Panel Toggle -->
             <button
-              v-if="!isMobile && panelItems.length > 0"
+              v-if="panelItems.length > 0"
               class="toolbar-panel-btn"
               :class="{ active: panelVisible }"
               :title="panelVisible ? '收起分析面板' : '展开分析面板'"
@@ -495,14 +495,14 @@
         </div>
       </main>
 
-      <!-- Panel Overlay Backdrop (Mobile/Tablet drawer mode) -->
+      <!-- Panel Overlay Backdrop (Tablet drawer mode) -->
       <div
         v-if="panelOverlay && panelVisible && !isMobile"
         class="panel-overlay-backdrop"
         @click="panelVisible = false"
       ></div>
 
-      <!-- Analysis Result Panel -->
+      <!-- Analysis Result Panel (Desktop & Tablet) -->
       <AnalysisPanel
         v-if="!isMobile"
         :visible="panelVisible"
@@ -515,6 +515,33 @@
         @remove-tab="handleRemovePanelTab"
         @resize-start="startPanelResize"
       />
+
+      <!-- Mobile Bottom Sheet Drawer for Analysis Panel -->
+      <el-drawer
+        v-if="isMobile"
+        v-model="panelVisible"
+        direction="btt"
+        size="82%"
+        :with-header="false"
+        class="analysis-mobile-drawer"
+        append-to-body
+      >
+        <div class="mobile-drawer-sheet">
+          <div class="drawer-drag-handle-bar" @click="panelVisible = false">
+            <div class="drawer-drag-indicator"></div>
+          </div>
+          <AnalysisPanel
+            :visible="true"
+            :items="panelItems"
+            :active-tab-id="activeTabId"
+            :overlay="false"
+            width="100%"
+            @close="panelVisible = false"
+            @update:active-tab-id="id => activeTabId = id"
+            @remove-tab="handleRemovePanelTab"
+          />
+        </div>
+      </el-drawer>
     </div>
   </div>
 </template>
@@ -3109,6 +3136,45 @@ onUnmounted(() => {
 @keyframes backdrop-fade {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+
+/* 移动端 Bottom Sheet 抽屉 */
+:deep(.analysis-mobile-drawer) {
+  border-radius: 18px 18px 0 0 !important;
+  overflow: hidden;
+  background: var(--mf-surface) !important;
+}
+
+:deep(.analysis-mobile-drawer .el-drawer__body) {
+  padding: 0 !important;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.mobile-drawer-sheet {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  background: var(--mf-surface);
+}
+
+.drawer-drag-handle-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 0 4px;
+  background: var(--mf-surface);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.drawer-drag-indicator {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--mf-border-hover);
 }
 
 </style>

@@ -136,7 +136,7 @@ const props = withDefaults(
     items: PanelItem[]
     activeTabId: string
     overlay?: boolean
-    width?: number
+    width?: number | string
   }>(),
   {
     overlay: false,
@@ -157,13 +157,16 @@ const currentTab = computed({
 })
 
 const panelStyle = computed(() => {
+  const w = props.width || 420
+  const widthVal = typeof w === 'number' ? `${w}px` : w
   if (props.overlay) {
+    const numericW = typeof w === 'number' ? Math.min(w, 520) : w
     return {
-      width: `${Math.min(props.width || 420, 520)}px`
+      width: typeof numericW === 'number' ? `${numericW}px` : numericW
     }
   }
   return {
-    width: props.visible ? `${props.width || 420}px` : '0px'
+    width: props.visible ? widthVal : '0px'
   }
 })
 

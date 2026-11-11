@@ -12,7 +12,7 @@
           <span class="ref-pill-label">工作流参数配置</span>
         </div>
         <div class="ref-pill-right">
-          <span class="ref-pill-hint">在右侧面板查看</span>
+          <span class="ref-pill-hint">查看分析详情</span>
           <Icon icon="ph:arrow-right-bold" class="ref-pill-arrow" />
         </div>
       </div>
@@ -35,7 +35,7 @@
           <span class="ref-pill-label">工作流执行进度</span>
         </div>
         <div class="ref-pill-right">
-          <span class="ref-pill-hint">在右侧面板查看</span>
+          <span class="ref-pill-hint">查看分析详情</span>
           <Icon icon="ph:arrow-right-bold" class="ref-pill-arrow" />
         </div>
       </div>
@@ -184,7 +184,7 @@
           <span class="ref-pill-label">{{ getSegmentLabel(seg) }}</span>
         </div>
         <div class="ref-pill-right">
-          <span class="ref-pill-hint">在右侧面板查看</span>
+          <span class="ref-pill-hint">查看分析详情</span>
           <Icon icon="ph:arrow-right-bold" class="ref-pill-arrow" />
         </div>
       </div>
