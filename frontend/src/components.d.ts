@@ -16,6 +16,7 @@ declare module 'vue' {
     AppLogo: typeof import('./components/AppLogo.vue')['default']
     AssetBreakdownPie: typeof import('./components/AssetBreakdownPie.vue')['default']
     AssetCard: typeof import('./components/AssetCard.vue')['default']
+    AssetMentionMenu: typeof import('./components/AssetMentionMenu.vue')['default']
     AssetTrendLine: typeof import('./components/AssetTrendLine.vue')['default']
     CashflowCalendar: typeof import('./components/CashflowCalendar.vue')['default']
     CashflowScheduleDialog: typeof import('./components/CashflowScheduleDialog.vue')['default']
