@@ -1,5 +1,10 @@
 <template>
-  <div class="chat-message-content">
+  <div
+    class="chat-message-content"
+    @mouseover="handleMouseOver"
+    @mouseout="handleMouseOut"
+    @click="handleClick"
+  >
     <!-- Inline Workflow Config Card (if staged) -->
     <template v-if="workflowConfig">
       <div
@@ -249,6 +254,7 @@ import { computed, ref, watch, defineAsyncComponent, onUnmounted, nextTick } fro
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { Icon } from '@iconify/vue'
+import { useFinancialEntities } from '@/composables/useFinancialEntities'
 import ActionCard from '@/components/ActionCard.vue'
 import WorkflowProgressCard from '@/components/WorkflowProgressCard.vue'
 import WorkflowConfigCard from '@/components/WorkflowConfigCard.vue'
@@ -258,6 +264,8 @@ import type { WorkflowRunState, WorkflowConfigState } from '@/types'
 // Lazy-load MermaidBlock and CodeBlock to avoid bundling heavy renderers into main chat chunk
 const MermaidBlock = defineAsyncComponent(() => import('@/components/MermaidBlock.vue'))
 const CodeBlock = defineAsyncComponent(() => import('@/components/CodeBlock.vue'))
+
+const { linkFinancialEntities } = useFinancialEntities()
 
 const props = defineProps<{
   messageId?: number
@@ -273,6 +281,9 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'open-panel-item', itemId: string): void
+  (e: 'entity-hover', payload: { el: HTMLElement; type: 'asset' | 'account'; id: string; name: string; rect: DOMRect }): void
+  (e: 'entity-leave'): void
+  (e: 'entity-click', payload: { el: HTMLElement; type: 'asset' | 'account'; id: string; name: string; rect: DOMRect }): void
 }>()
 
 function isExtracted(segId: string): boolean {
@@ -654,8 +665,10 @@ function renderMarkdown(text?: string): string {
   try {
     const rawHtml = marked.parse(text, { async: false, breaks: true }) as string
     html = DOMPurify.sanitize(rawHtml)
+    html = linkFinancialEntities(html)
   } catch {
     html = DOMPurify.sanitize(text.replace(/</g, '&lt;').replace(/>/g, '&gt;'))
+    html = linkFinancialEntities(html)
   }
   if (mdCache.size >= MD_CACHE_LIMIT) {
     const firstKey = mdCache.keys().next().value as string
@@ -663,6 +676,49 @@ function renderMarkdown(text?: string): string {
   }
   mdCache.set(text, html)
   return html
+}
+
+function handleMouseOver(e: MouseEvent) {
+  const target = (e.target as HTMLElement)?.closest('.mf-entity-badge') as HTMLElement | null
+  if (target) {
+    const type = target.getAttribute('data-entity-type') as 'asset' | 'account'
+    const id = target.getAttribute('data-entity-id')
+    const name = target.getAttribute('data-entity-name') || target.textContent || ''
+    if (type && id) {
+      emit('entity-hover', {
+        el: target,
+        type,
+        id,
+        name,
+        rect: target.getBoundingClientRect(),
+      })
+    }
+  }
+}
+
+function handleMouseOut(e: MouseEvent) {
+  const target = (e.target as HTMLElement)?.closest('.mf-entity-badge')
+  if (target) {
+    emit('entity-leave')
+  }
+}
+
+function handleClick(e: MouseEvent) {
+  const target = (e.target as HTMLElement)?.closest('.mf-entity-badge') as HTMLElement | null
+  if (target) {
+    const type = target.getAttribute('data-entity-type') as 'asset' | 'account'
+    const id = target.getAttribute('data-entity-id')
+    const name = target.getAttribute('data-entity-name') || target.textContent || ''
+    if (type && id) {
+      emit('entity-click', {
+        el: target,
+        type,
+        id,
+        name,
+        rect: target.getBoundingClientRect(),
+      })
+    }
+  }
 }
 
 const segments = computed<Segment[]>(() => {
@@ -1497,5 +1553,32 @@ const segments = computed<Segment[]>(() => {
 
 .tool-call-result {
   color: var(--mf-text-main);
+}
+
+:deep(.mf-entity-badge) {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 5px;
+  margin: 0 2px;
+  border-radius: 4px;
+  background: var(--mf-primary-light);
+  color: var(--mf-primary);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: 1px solid var(--mf-primary-border);
+  vertical-align: baseline;
+  user-select: none;
+}
+
+:deep(.mf-entity-badge:hover) {
+  background: var(--mf-primary);
+  color: #ffffff;
+}
+
+:deep(.mf-amount-pill) {
+  font-family: var(--mf-font-mono, monospace);
+  font-weight: 600;
+  letter-spacing: -0.2px;
 }
 </style>

@@ -79,6 +79,7 @@ declare module 'vue' {
     ElUpload: typeof import('element-plus/es')['ElUpload']
     ExpenseCategoryPie: typeof import('./components/ExpenseCategoryPie.vue')['default']
     ExpenseTrendBar: typeof import('./components/ExpenseTrendBar.vue')['default']
+    FinancialEntityPopover: typeof import('./components/FinancialEntityPopover.vue')['default']
     FxConverter: typeof import('./components/market/FxConverter.vue')['default']
     FxHoldingsSummary: typeof import('./components/market/FxHoldingsSummary.vue')['default']
     FxRateCards: typeof import('./components/market/FxRateCards.vue')['default']

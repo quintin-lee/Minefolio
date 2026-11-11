@@ -348,6 +348,9 @@
                         :enable-buffer="chat.enableTypewriterBuffer"
                         :extracted-item-ids="extractedSegmentIdMap[msg.id] || []"
                         @open-panel-item="handleOpenPanelItem"
+                        @entity-hover="handleEntityHover"
+                        @entity-leave="handleEntityLeave"
+                        @entity-click="handleEntityClick"
                       />
                     </div>
                     <div v-if="msg.usage" class="message-usage">
@@ -572,6 +575,18 @@
           />
         </div>
       </el-drawer>
+
+      <!-- Global Financial Entity Popover -->
+      <FinancialEntityPopover
+        :visible="popoverVisible"
+        :target-rect="popoverTargetRect"
+        :detail="popoverDetail"
+        :collision="popoverCollision"
+        @close="popoverVisible = false"
+        @mouseenter="clearPopoverLeaveTimer"
+        @mouseleave="handleEntityLeave"
+        @navigate="handlePopoverNavigate"
+      />
     </div>
   </div>
 </template>
@@ -589,6 +604,8 @@ import PromptStarters from '@/components/PromptStarters.vue'
 import WorkflowBar from '@/components/WorkflowBar.vue'
 import WorkflowSlashMenu from '@/components/WorkflowSlashMenu.vue'
 import AssetMentionMenu, { type MentionItem } from '@/components/AssetMentionMenu.vue'
+import FinancialEntityPopover from '@/components/FinancialEntityPopover.vue'
+import { useFinancialEntities, type EntityDetail } from '@/composables/useFinancialEntities'
 import AnalysisPanel from '@/components/AnalysisPanel.vue'
 import { extractPanelItems } from '@/utils/chat-panel-extractor'
 import type { PanelItem } from '@/types/chat-panel'
@@ -601,6 +618,66 @@ const chat = useChatStore()
 
 function goToTraces() {
   router.push('/ai-traces')
+}
+
+// --- 金融实体悬浮微卡与穿透交互 ---
+const { loadEntities, getEntityDetail, getCollisionEntities } = useFinancialEntities()
+
+const popoverVisible = ref(false)
+const popoverTargetRect = ref<DOMRect | null>(null)
+const popoverDetail = ref<EntityDetail | null>(null)
+const popoverCollision = ref<{ asset?: EntityDetail; account?: EntityDetail } | null>(null)
+let popoverHoverTimer: number | null = null
+let popoverLeaveTimer: number | null = null
+
+function clearPopoverLeaveTimer() {
+  if (popoverLeaveTimer) {
+    clearTimeout(popoverLeaveTimer)
+    popoverLeaveTimer = null
+  }
+}
+
+function handleEntityHover(payload: { el: HTMLElement; type: 'asset' | 'account'; id: string; name: string; rect: DOMRect }) {
+  clearPopoverLeaveTimer()
+  if (popoverHoverTimer) clearTimeout(popoverHoverTimer)
+  popoverHoverTimer = window.setTimeout(() => {
+    const detail = getEntityDetail(payload.type, payload.id)
+    const collision = getCollisionEntities(payload.name)
+    popoverDetail.value = detail
+    popoverCollision.value = collision
+    popoverTargetRect.value = payload.rect
+    popoverVisible.value = true
+  }, 180)
+}
+
+function handleEntityLeave() {
+  if (popoverHoverTimer) {
+    clearTimeout(popoverHoverTimer)
+    popoverHoverTimer = null
+  }
+  clearPopoverLeaveTimer()
+  popoverLeaveTimer = window.setTimeout(() => {
+    popoverVisible.value = false
+  }, 220)
+}
+
+function handleEntityClick(payload: { el: HTMLElement; type: 'asset' | 'account'; id: string; name: string; rect: DOMRect }) {
+  if (popoverHoverTimer) clearTimeout(popoverHoverTimer)
+  clearPopoverLeaveTimer()
+  const detail = getEntityDetail(payload.type, payload.id)
+  const collision = getCollisionEntities(payload.name)
+  popoverDetail.value = detail
+  popoverCollision.value = collision
+  popoverTargetRect.value = payload.rect
+  popoverVisible.value = !popoverVisible.value
+}
+
+function handlePopoverNavigate(payload: { type: 'asset' | 'account'; id: string | number }) {
+  popoverVisible.value = false
+  router.push({
+    path: '/assets',
+    query: payload.type === 'asset' ? { asset_id: payload.id } : { account_id: payload.id },
+  })
 }
 
 // --- 多模态发票/票据截图附件与渐进式工作流 ---
@@ -1775,6 +1852,7 @@ onMounted(async () => {
   loadPanelWidth()
   checkMobile()
   window.addEventListener('resize', checkMobile)
+  loadEntities()
   await Promise.allSettled([fetchSessions(), fetchSettings(), fetchModels()])
   if (chat.settings?.default_provider) {
     chat.setModel(chat.currentModel, chat.settings.default_provider)
