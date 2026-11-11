@@ -8,61 +8,61 @@
         <div v-show="!isCollapsed" class="nav-group-label">{{ t('navGroups.assetsOverview') }}</div>
         <el-menu-item index="/dashboard" @click="goTo('/dashboard')">
           <Icon icon="ph:squares-four-duotone" class="nav-icon" />
-          <span>{{ t('nav.dashboard') }}</span>
+          <template #title><span>{{ t('nav.dashboard') }}</span></template>
         </el-menu-item>
         <el-menu-item index="/assets" @click="goTo('/assets')">
           <Icon icon="ph:vault-duotone" class="nav-icon" />
-          <span>{{ t('nav.assets') }}</span>
+          <template #title><span>{{ t('nav.assets') }}</span></template>
         </el-menu-item>
         <el-menu-item index="/holdings" @click="goTo('/holdings')">
           <Icon icon="ph:trend-up-duotone" class="nav-icon" />
-          <span>{{ t('nav.holdings') }}</span>
+          <template #title><span>{{ t('nav.holdings') }}</span></template>
         </el-menu-item>
         <el-menu-item index="/reports" @click="goTo('/reports')">
           <Icon icon="ph:presentation-chart-duotone" class="nav-icon" />
-          <span>{{ t('nav.reports') }}</span>
+          <template #title><span>{{ t('nav.reports') }}</span></template>
         </el-menu-item>
         <el-menu-item index="/market" @click="goTo('/market')">
           <Icon icon="ph:chart-line-up-duotone" class="nav-icon" />
-          <span>{{ t('nav.market') }}</span>
+          <template #title><span>{{ t('nav.market') }}</span></template>
         </el-menu-item>
 
         <div v-show="!isCollapsed" class="nav-group-label">{{ t('navGroups.incomeExpense') }}</div>
         <el-menu-item index="/transactions" @click="goTo('/transactions')">
           <Icon icon="ph:arrows-left-right-duotone" class="nav-icon" />
-          <span>{{ t('nav.transactions') }}</span>
+          <template #title><span>{{ t('nav.transactions') }}</span></template>
         </el-menu-item>
         <el-menu-item index="/daily-expenses" @click="goTo('/daily-expenses')">
           <Icon icon="ph:receipt-duotone" class="nav-icon" />
-          <span>{{ t('nav.dailyExpenses') }}</span>
+          <template #title><span>{{ t('nav.dailyExpenses') }}</span></template>
         </el-menu-item>
         <el-menu-item index="/plans" @click="goTo('/plans')">
           <Icon icon="ph:target-duotone" class="nav-icon" />
-          <span>{{ t('nav.plans') }}</span>
+          <template #title><span>{{ t('nav.plans') }}</span></template>
         </el-menu-item>
         <el-menu-item index="/categories" @click="goTo('/categories')">
           <Icon icon="ph:tree-structure-duotone" class="nav-icon" />
-          <span>{{ t('nav.categories') }}</span>
+          <template #title><span>{{ t('nav.categories') }}</span></template>
         </el-menu-item>
 
         <div v-show="!isCollapsed" class="nav-group-label">{{ t('navGroups.aiSpace') }}</div>
         <el-menu-item index="/chat" @click="goTo('/chat')">
           <Icon icon="ph:sparkle-duotone" class="nav-icon" />
-          <span>{{ t('nav.aiChat') }}</span>
+          <template #title><span>{{ t('nav.aiChat') }}</span></template>
         </el-menu-item>
         <el-menu-item index="/ai-traces" @click="goTo('/ai-traces')">
           <Icon icon="ph:activity-duotone" class="nav-icon" />
-          <span>{{ t('nav.aiTraces') }}</span>
+          <template #title><span>{{ t('nav.aiTraces') }}</span></template>
         </el-menu-item>
 
         <div v-show="!isCollapsed" class="nav-group-label">{{ t('navGroups.system') }}</div>
         <el-menu-item index="/audit-logs" @click="goTo('/audit-logs')">
           <Icon icon="ph:shield-check-duotone" class="nav-icon" />
-          <span>{{ t('nav.auditLogs') }}</span>
+          <template #title><span>{{ t('nav.auditLogs') }}</span></template>
         </el-menu-item>
         <el-menu-item index="/settings" @click="goTo('/settings')">
           <Icon icon="ph:sliders-horizontal-duotone" class="nav-icon" />
-          <span>{{ t('nav.settings') }}</span>
+          <template #title><span>{{ t('nav.settings') }}</span></template>
         </el-menu-item>
       </el-menu>
     </el-aside>

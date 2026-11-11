@@ -144,7 +144,7 @@ onMounted(async () => {
   align-items: center;
   gap: 10px;
   padding: 12px 14px;
-  background: rgba(0, 212, 255, 0.04);
+  background: var(--mf-surface-muted);
   cursor: pointer;
 }
 .account-avatar {
@@ -154,7 +154,7 @@ onMounted(async () => {
   width: 34px;
   height: 34px;
   border-radius: 8px;
-  background: rgba(0, 212, 255, 0.12);
+  background: var(--mf-info-light);
   color: var(--mf-info);
   font-size: 18px;
   flex-shrink: 0;
@@ -214,9 +214,9 @@ onMounted(async () => {
   font-size: 10px;
   padding: 1px 6px;
   border-radius: 4px;
-  background: rgba(0, 212, 255, 0.1);
+  background: var(--mf-info-light);
   color: var(--mf-info);
-  border: 1px solid rgba(0, 212, 255, 0.2);
+  border: 1px solid var(--mf-info-border);
 }
 .value-col {
   display: flex;

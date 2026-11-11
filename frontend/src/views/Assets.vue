@@ -33,7 +33,11 @@
 
     <!-- 资产列表（按账户分组） -->
     <div class="table-container">
-      <div v-if="groupedAccounts.length === 0 && !loading" class="empty-state">暂无资产数据</div>
+      <div v-if="groupedAccounts.length === 0 && !loading" class="empty-state">
+        <el-empty description="暂无资产数据">
+          <el-button type="primary" :icon="Plus" @click="openDialog()">新增资产</el-button>
+        </el-empty>
+      </div>
       <div
         v-for="group in groupedAccounts"
         :key="group.key"

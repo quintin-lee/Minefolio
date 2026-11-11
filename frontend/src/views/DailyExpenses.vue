@@ -93,6 +93,11 @@
                   </div>
                 </template>
               </el-table-column>
+              <template #empty>
+                <el-empty description="暂无收支记录">
+                  <el-button type="primary" :icon="Plus" @click="openDialog()">记一笔</el-button>
+                </el-empty>
+              </template>
             </el-table>
             <div class="pagination-bar">
               <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[10, 20, 50, 100]" layout="total, sizes, prev, pager, next, jumper" background @current-change="loadData" @size-change="handleSizeChange" />

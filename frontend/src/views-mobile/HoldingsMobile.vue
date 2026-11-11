@@ -147,17 +147,17 @@ onMounted(async () => {
   font-size: 10px;
   padding: 1px 6px;
   border-radius: 4px;
-  background: rgba(0, 212, 255, 0.1);
+  background: var(--mf-info-light);
   color: var(--mf-info);
-  border: 1px solid rgba(0, 212, 255, 0.2);
+  border: 1px solid var(--mf-info-border);
 }
 .type-pill {
   font-size: 11px;
   padding: 2px 8px;
   border-radius: 9999px;
-  background: rgba(0, 212, 255, 0.08);
+  background: var(--mf-info-light);
   color: var(--mf-info);
-  border: 1px solid rgba(0, 212, 255, 0.15);
+  border: 1px solid var(--mf-info-border);
   font-weight: 500;
 }
 .type-pill.pill-crypto {

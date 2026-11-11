@@ -169,6 +169,11 @@
               </div>
             </template>
           </el-table-column>
+          <template #empty>
+            <el-empty description="暂无交易记录">
+              <el-button type="primary" :icon="Plus" @click="openDialog()">记一笔交易</el-button>
+            </el-empty>
+          </template>
         </el-table>
         <div class="pagination-bar">
           <el-pagination

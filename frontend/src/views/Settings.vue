@@ -114,7 +114,7 @@ onErrorCaptured((err, instance, info) => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 24px;
+  padding: 0 0 16px 0;
   border-bottom: 1px solid var(--mf-border);
   background: var(--mf-background);
   flex-shrink: 0;
@@ -143,7 +143,7 @@ onErrorCaptured((err, instance, info) => {
 .settings-tabs {
   flex: 1;
   overflow: hidden;
-  padding: 0 24px;
+  padding: 0;
 }
 
 .settings-tabs :deep(.el-tabs__nav) {
@@ -184,56 +184,5 @@ onErrorCaptured((err, instance, info) => {
 
 .tab-label {
   font-size: 13px;
-}
-
-.panel-container {
-  background: var(--mf-surface);
-  border-radius: var(--mf-radius-lg);
-  box-shadow: var(--mf-shadow-sm);
-  border: 1px solid var(--mf-border);
-  padding: 24px;
-}
-
-.panel-header {
-  margin-bottom: 20px;
-}
-
-.panel-header h3 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--mf-text-main);
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.export-hint {
-  font-size: 13px;
-  color: var(--mf-text-muted);
-  margin-bottom: 16px;
-  line-height: 1.6;
-}
-
-.premium-form .el-form-item {
-  margin-bottom: 24px;
-}
-
-.premium-form :deep(.el-input__wrapper) {
-  background-color: var(--mf-surface-muted) !important;
-  box-shadow: 0 0 0 1px var(--mf-border) inset !important;
-  border-radius: var(--mf-radius-md);
-  padding: 6px 12px;
-}
-
-.action-btn {
-  width: 160px;
-}
-
-:deep(.el-divider) {
-  margin: 24px 0;
 }
 </style>

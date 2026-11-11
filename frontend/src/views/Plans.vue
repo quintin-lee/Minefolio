@@ -160,6 +160,11 @@
                 </div>
               </template>
             </el-table-column>
+            <template #empty>
+              <el-empty description="暂无定投计划">
+                <el-button type="primary" :icon="Plus" @click="openDcaDialog()">新建定投计划</el-button>
+              </el-empty>
+            </template>
           </el-table>
 
           <div class="pagination-bar">
@@ -223,6 +228,11 @@
             <el-button link type="danger" size="small" :icon="Delete" @click="handleDeleteSchedule(row as any)" />
           </template>
         </el-table-column>
+        <template #empty>
+          <el-empty description="暂无计划规则">
+            <el-button type="primary" :icon="Plus" @click="openScheduleDialog()">新增计划规则</el-button>
+          </el-empty>
+        </template>
       </el-table>
     </el-drawer>
 
@@ -565,7 +575,7 @@ onMounted(() => {
 .banner-title {
   font-size: 14px;
   font-weight: 600;
-  color: #b45309;
+  color: var(--mf-warning);
   display: flex;
   align-items: center;
   gap: 6px;

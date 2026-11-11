@@ -3,7 +3,10 @@
     <!-- Top Hub Header -->
     <div class="market-header">
       <div class="header-left">
-        <h1 class="page-title">📊 {{ t('market.title') }}</h1>
+        <div class="header-title">
+          <div class="title-accent"></div>
+          <h2>{{ t('market.title') }}</h2>
+        </div>
         <el-tabs v-model="activeTab" class="market-tabs" @tab-change="handleTabChange">
           <el-tab-pane :label="`💱 ${t('market.tabs.rates')}`" name="rates" />
           <el-tab-pane :label="`📈 ${t('market.tabs.indices')}`" name="indices" />
@@ -144,13 +147,26 @@ onMounted(() => {
   min-width: 0;
 }
 
-.page-title {
+.header-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.header-title h2 {
   font-size: 20px;
   font-weight: 700;
-  color: var(--el-text-color-primary);
+  color: var(--mf-text-main);
   margin: 0;
-  white-space: nowrap;
-  flex-shrink: 0;
+  letter-spacing: -0.5px;
+}
+
+.title-accent {
+  width: 4px;
+  height: 18px;
+  background: var(--mf-primary);
+  border-radius: 2px;
 }
 
 .market-tabs :deep(.el-tabs__header) {
