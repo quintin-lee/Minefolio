@@ -373,6 +373,29 @@
                         <span>重试</span>
                       </button>
                     </div>
+
+                    <!-- Smart Follow-up Suggestion Chips -->
+                    <div
+                      v-if="idx === chat.messages.length - 1 && !chat.isStreaming && followUpSuggestions.length > 0"
+                      class="followup-chips-wrap"
+                    >
+                      <div class="followup-title">
+                        <Icon icon="ph:sparkle-fill" class="followup-icon" />
+                        <span>建议下一步探索</span>
+                      </div>
+                      <div class="followup-chips-list">
+                        <button
+                          v-for="(chip, chipIdx) in followUpSuggestions"
+                          :key="chipIdx"
+                          type="button"
+                          class="followup-chip-btn"
+                          @click="handleSelectFollowup(chip)"
+                        >
+                          <Icon :icon="chip.icon || 'ph:arrow-elbow-down-right-bold'" class="chip-icon" />
+                          <span>{{ chip.text }}</span>
+                        </button>
+                      </div>
+                    </div>
                   </template>
                 </div>
               </div>
@@ -435,6 +458,13 @@
               :query="slashQuery"
               @select="handleSelectWorkflow"
               @close="showSlashMenu = false"
+            />
+            <AssetMentionMenu
+              ref="mentionMenuRef"
+              :visible="showMentionMenu"
+              :query="mentionQuery"
+              @select="handleSelectMention"
+              @close="showMentionMenu = false"
             />
             <textarea
               ref="textareaRef"
@@ -558,6 +588,7 @@ import ChatMessageContent from '@/components/ChatMessageContent.vue'
 import PromptStarters from '@/components/PromptStarters.vue'
 import WorkflowBar from '@/components/WorkflowBar.vue'
 import WorkflowSlashMenu from '@/components/WorkflowSlashMenu.vue'
+import AssetMentionMenu, { type MentionItem } from '@/components/AssetMentionMenu.vue'
 import AnalysisPanel from '@/components/AnalysisPanel.vue'
 import { extractPanelItems } from '@/utils/chat-panel-extractor'
 import type { PanelItem } from '@/types/chat-panel'
@@ -707,6 +738,9 @@ const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const slashMenuRef = ref<InstanceType<typeof WorkflowSlashMenu> | null>(null)
 const showSlashMenu = ref(false)
 const slashQuery = ref('')
+const mentionMenuRef = ref<InstanceType<typeof AssetMentionMenu> | null>(null)
+const showMentionMenu = ref(false)
+const mentionQuery = ref('')
 const showSidebar = ref(true)
 const loadingSessions = ref(false)
 const loadingMessages = ref(false)
@@ -1334,13 +1368,25 @@ function handleInput() {
   const text = inputText.value
   const cursor = textareaRef.value?.selectionStart ?? text.length
   const textBeforeCursor = text.slice(0, cursor)
+
   const slashMatch = textBeforeCursor.match(/(?:^|\s)\/([^\s/]*)$/)
   if (slashMatch) {
     showSlashMenu.value = true
     slashQuery.value = slashMatch[1] ?? ''
+    showMentionMenu.value = false
+    return
   } else {
     showSlashMenu.value = false
     slashQuery.value = ''
+  }
+
+  const mentionMatch = textBeforeCursor.match(/(?:^|\s)@([^\s@]*)$/)
+  if (mentionMatch) {
+    showMentionMenu.value = true
+    mentionQuery.value = mentionMatch[1] ?? ''
+  } else {
+    showMentionMenu.value = false
+    mentionQuery.value = ''
   }
 }
 
@@ -1349,16 +1395,90 @@ function handleTextareaKeyDown(e: KeyboardEvent) {
     const handled = slashMenuRef.value.handleKeyDown(e)
     if (handled) return
   }
+  if (showMentionMenu.value && mentionMenuRef.value) {
+    const handled = mentionMenuRef.value.handleKeyDown(e)
+    if (handled) return
+  }
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
     handleSend()
   } else if (e.key === 'Escape') {
     if (showSlashMenu.value) {
       showSlashMenu.value = false
+    } else if (showMentionMenu.value) {
+      showMentionMenu.value = false
     } else {
       handleStop()
     }
   }
+}
+
+function handleSelectMention(item: MentionItem) {
+  showMentionMenu.value = false
+  const text = inputText.value
+  const cursor = textareaRef.value?.selectionStart ?? text.length
+  const textBeforeCursor = text.slice(0, cursor)
+  const atIdx = textBeforeCursor.lastIndexOf('@')
+  if (atIdx >= 0) {
+    const replacement = `[@${item.name}] `
+    inputText.value = text.slice(0, atIdx) + replacement + text.slice(cursor)
+    nextTick(() => {
+      adjustTextareaHeight()
+      const nextCursor = atIdx + replacement.length
+      textareaRef.value?.setSelectionRange(nextCursor, nextCursor)
+      textareaRef.value?.focus()
+    })
+  }
+}
+
+interface FollowupChip {
+  text: string
+  icon?: string
+}
+
+const followUpSuggestions = computed<FollowupChip[]>(() => {
+  if (chat.isStreaming || chat.messages.length === 0) return []
+  const lastMsg = chat.messages[chat.messages.length - 1]
+  if (!lastMsg || lastMsg.role !== 'assistant' || (!lastMsg.content && !lastMsg.tool_calls?.length)) {
+    return []
+  }
+
+  const content = (lastMsg.content || '').toLowerCase()
+  const tools = (lastMsg.tool_calls || []).map(t => t.name)
+  const chips: FollowupChip[] = []
+
+  // Case 1: Expense / spending analysis
+  if (content.includes('支出') || content.includes('消费') || content.includes('超支') || tools.includes('get_daily_expenses') || tools.includes('get_expense_by_category')) {
+    chips.push({ text: '查看超支商户与大额支出排行', icon: 'ph:ranking-bold' })
+    chips.push({ text: '生成近30天收支环比对比图', icon: 'ph:chart-bar-bold' })
+    chips.push({ text: '针对超支项目给出预算削减建议', icon: 'ph:lightbulb-bold' })
+  }
+  // Case 2: Asset / portfolio / investment
+  else if (content.includes('资产') || content.includes('持仓') || content.includes('投资') || content.includes('收益') || tools.includes('get_assets') || tools.includes('analyze_financial_health')) {
+    chips.push({ text: '评估当前资产配置风险与回撤', icon: 'ph:shield-check-bold' })
+    chips.push({ text: '分析不同资产大类的收益贡献', icon: 'ph:chart-pie-bold' })
+    chips.push({ text: '如何进行下一阶段的组合再平衡？', icon: 'ph:git-merge-bold' })
+  }
+  // Case 3: Transfer / bookkeeping proposal
+  else if (tools.includes('propose_daily_expense') || tools.includes('propose_transfer') || content.includes('记账') || content.includes('转账')) {
+    chips.push({ text: '查看今日已入账的所有交易明细', icon: 'ph:receipt-bold' })
+    chips.push({ text: '核对本月预算剩余额度', icon: 'ph:wallet-bold' })
+  }
+  // Case 4: General / Fallback finance followups
+  else {
+    chips.push({ text: '深入分析背后的核心财务原因', icon: 'ph:magnifying-glass-plus-bold' })
+    chips.push({ text: '将该建议总结并转化为执行清单', icon: 'ph:check-square-bold' })
+    chips.push({ text: '评估该方案对我现金流的影响', icon: 'ph:currency-cny-bold' })
+  }
+
+  return chips.slice(0, 3)
+})
+
+function handleSelectFollowup(chip: FollowupChip) {
+  inputText.value = chip.text
+  nextTick(() => {
+    handleSend()
+  })
 }
 
 function handleSelectWorkflow(wf: WorkflowDef) {
@@ -3175,6 +3295,64 @@ onUnmounted(() => {
   height: 4px;
   border-radius: 2px;
   background: var(--mf-border-hover);
+}
+
+/* 智能追问建议胶囊 */
+.followup-chips-wrap {
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: var(--mf-surface);
+  border: 1px solid var(--mf-border);
+  border-radius: 12px;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.followup-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--mf-primary);
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.followup-icon {
+  font-size: 13px;
+}
+
+.followup-chips-list {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.followup-chip-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 16px;
+  background: var(--mf-surface-hover);
+  border: 1px solid var(--mf-border);
+  color: var(--mf-text-main);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.followup-chip-btn:hover {
+  background: var(--mf-primary-light);
+  border-color: var(--mf-primary);
+  color: var(--mf-primary);
+  transform: translateY(-1px);
+}
+
+.followup-chip-btn .chip-icon {
+  font-size: 12px;
+  color: var(--mf-primary);
 }
 
 </style>
