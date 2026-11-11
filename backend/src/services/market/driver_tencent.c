@@ -285,7 +285,7 @@ tencent_fetch_single(const char* symbol, market_quote_t* out_quote)
     normalize_tencent_symbol(symbol, norm_sym, sizeof(norm_sym));
 
     char url[256];
-    snprintf(url, sizeof(url), "http://qt.gtimg.cn/q=%s", norm_sym);
+    snprintf(url, sizeof(url), "https://qt.gtimg.cn/q=%s", norm_sym);
 
     size_t len = 0;
     char*  body = quote_engine_http_get(url, NULL, 5, &len);
@@ -322,7 +322,7 @@ tencent_fetch_batch(const char** symbols, int count, market_quote_t* out_quotes,
     }
 
     char url[2560];
-    snprintf(url, sizeof(url), "http://qt.gtimg.cn/q=%s", query);
+    snprintf(url, sizeof(url), "https://qt.gtimg.cn/q=%s", query);
 
     size_t len = 0;
     char*  body = quote_engine_http_get(url, NULL, 8, &len);

@@ -298,7 +298,7 @@ exchange_rate_refresh_fast_batch(time_t           now,
 {
     size_t len = 0;
     char*  body = quote_engine_http_get(
-        "http://qt.gtimg.cn/"
+        "https://qt.gtimg.cn/"
         "q=whUSDCNY,whEURCNY,whHKDCNY,whGBPCNY,whSGDCNY,whAUDCNY,whCADCNY,whCNYJPY",
         NULL,
         4,

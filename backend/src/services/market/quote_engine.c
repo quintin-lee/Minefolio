@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <time.h>
 
 static char g_market_proxy[256] = {0};
@@ -72,13 +73,47 @@ quote_engine_http_get(const char* url, const char* proxy, int timeout_sec, size_
 
     struct curl_buf buf = {NULL, 0, 0};
     curl_easy_setopt(curl, CURLOPT_URL, url);
-    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_sec > 0 ? (long)timeout_sec : 3L);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_cb);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buf);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+
+    /* SSL / TLS Verification: strict peer and host verification by default */
+    long verify_peer = 1L;
+    long verify_host = 2L;
+
+    const char* insecure_env = getenv("MINEFOLIO_ALLOW_INSECURE_SSL");
+    if (insecure_env && (strcmp(insecure_env, "1") == 0 || strcasecmp(insecure_env, "true") == 0)) {
+        verify_peer = 0L;
+        verify_host = 0L;
+        static int s_warned_insecure_ssl = 0;
+        if (!s_warned_insecure_ssl) {
+            s_warned_insecure_ssl = 1;
+            fprintf(stderr,
+                    "[SECURITY WARNING] quote_engine: Insecure SSL verification is explicitly "
+                    "enabled via MINEFOLIO_ALLOW_INSECURE_SSL!\n");
+        }
+    }
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, verify_peer);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, verify_host);
+
+    /* Optional custom CA bundle path (e.g. for enterprise proxy or self-hosted CA) */
+    const char* custom_ca = getenv("MINEFOLIO_CA_BUNDLE");
+    if (!custom_ca || !custom_ca[0]) {
+        custom_ca = getenv("SSL_CERT_FILE");
+    }
+    if (custom_ca && custom_ca[0]) {
+        curl_easy_setopt(curl, CURLOPT_CAINFO, custom_ca);
+    }
+
+    /* Restrict redirect protocols and limit hops to prevent SSRF */
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+#if defined(CURLOPT_REDIR_PROTOCOLS_STR)
+    curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "http,https");
+#elif defined(CURLOPT_REDIR_PROTOCOLS)
+    curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS, (long)(CURLPROTO_HTTP | CURLPROTO_HTTPS));
+#endif
+    curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 3L);
 
     const char* px = (proxy && proxy[0]) ? proxy : (g_market_proxy[0] ? g_market_proxy : NULL);
     if (px && px[0]) {
@@ -216,7 +251,7 @@ quote_engine_test_connection(const char* proxy, char* out_msg, size_t msg_cap, i
 
     /* Test Tencent market quote for standard index (sh000001) */
     size_t len = 0;
-    char*  data = quote_engine_http_get("http://qt.gtimg.cn/q=sh000001", proxy, 5, &len);
+    char*  data = quote_engine_http_get("https://qt.gtimg.cn/q=sh000001", proxy, 5, &len);
 
     clock_gettime(CLOCK_MONOTONIC, &end);
     long ms = (end.tv_sec - start.tv_sec) * 1000 + (end.tv_nsec - start.tv_nsec) / 1000000;
