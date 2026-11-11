@@ -1035,6 +1035,18 @@ DEL_NONEXIST_RES=$(curl -s -X DELETE -H "$AUTH" "$BASE/ai/skills/999999")
 check "删除不存在的技能返回 code=1002" "1002" "$(echo "$DEL_NONEXIST_RES" | jq -r '.code | floor')"
 
 echo ""
+echo "== 36. 持仓总览（position-overview）与资产详情扩展字段 =="
+# 36.1 position-overview 返回 code=0 且含关键键
+PO_RES=$(curl -s -H "$AUTH" "$BASE/reports/position-overview")
+check "position-overview code=0" "0" "$(echo "$PO_RES" | jq -r '.code | floor')"
+PO_KEYS=$(echo "$PO_RES" | jq -r '[.data | has("total_assets"),has("net_worth"),has("hhi"),has("daily_pnl"),has("by_category")] | map(if . then 1 else 0 end) | add')
+check "position-overview data 含 5 个关键键" "5" "$PO_KEYS"
+# 36.2 资产详情含 portfolio_weight 与 transactions
+ASSET_DETAIL=$(curl -s -H "$AUTH" "$BASE/assets/$WALLET_ID")
+check "asset detail data 含 portfolio_weight 键" "true" "$(echo "$ASSET_DETAIL" | jq '.data | has("portfolio_weight")')"
+check "asset detail data 含 transactions 键" "true" "$(echo "$ASSET_DETAIL" | jq '.data | has("transactions")')"
+
+echo ""
 echo "结果: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1
 
