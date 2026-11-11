@@ -141,7 +141,9 @@ const lastSync = computed(() => sync.lastSyncAt)
 const syncing = computed(() => sync.syncing)
 
 function syncNow() { sync.syncNow() }
-function goCategories() { router.push('/m/settings') }
+function goCategories() {
+  ElMessage.info('分类增删与层级配置请前往桌面端管理')
+}
 
 async function handleTest() {
   const target = inputUrl.value.trim()

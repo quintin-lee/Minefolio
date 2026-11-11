@@ -1162,6 +1162,37 @@ html.light .loss-text {
   border: 1px solid var(--mf-loss-border);
 }
 
+/* =========================================================================
+   Mobile UI Shared Utility Tokens & Classes
+   ========================================================================= */
+.mobile-segmented {
+  display: inline-flex;
+  background: var(--mf-surface-muted);
+  border: 1px solid var(--mf-border-subtle);
+  border-radius: var(--mf-radius-pill);
+  padding: 2px;
+  gap: 2px;
+}
+
+.mobile-segmented .segmented-item {
+  border: none;
+  background: transparent;
+  color: var(--mf-text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 4px 14px;
+  border-radius: var(--mf-radius-pill);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.mobile-segmented .segmented-item.active {
+  background: var(--mf-surface-card);
+  color: var(--mf-primary);
+  font-weight: 600;
+  box-shadow: var(--mf-shadow-sm);
+}
+
 .badge-pill.warning {
   background-color: var(--mf-warning-light);
   color: var(--mf-warning);

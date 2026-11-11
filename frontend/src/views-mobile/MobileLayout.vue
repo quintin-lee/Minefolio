@@ -1,9 +1,12 @@
 <template>
   <div class="mobile-layout">
+    <header class="mobile-top-bar">
+      <LedgerSelector class="mobile-ledger" />
+      <LocaleToggle class="locale-chip" />
+    </header>
     <main class="mobile-content">
       <router-view :key="routerViewKey" />
     </main>
-    <LocaleToggle class="locale-chip" />
     <nav class="tab-bar">
       <button
         v-for="tab in tabs"
@@ -24,6 +27,7 @@ import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import LocaleToggle from '@/components/LocaleToggle.vue'
+import LedgerSelector from '@/components/LedgerSelector.vue'
 import { useCategoryStore } from '@/stores/category'
 import { useSyncStore } from '@/stores/sync'
 import { t } from '@/utils/locale'
@@ -72,17 +76,39 @@ function go(tab: { prefix: string }) {
   height: 100vh;
   background: var(--mf-background);
 }
+.mobile-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  padding-top: calc(8px + env(safe-area-inset-top));
+  background: var(--mf-surface);
+  border-bottom: 1px solid var(--mf-border);
+  flex-shrink: 0;
+  z-index: 20;
+}
+.mobile-ledger :deep(.ledger-selector-wrap) {
+  margin-right: 0;
+}
+.mobile-ledger :deep(.current-ledger-btn) {
+  padding: 4px 8px;
+  max-width: 210px;
+}
+.mobile-ledger :deep(.ledger-name) {
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.locale-chip {
+  flex-shrink: 0;
+}
 .mobile-content {
   flex: 1;
   overflow-y: auto;
-  padding: 16px;
-  padding-bottom: 80px;
-}
-.locale-chip {
-  position: fixed;
-  top: 14px;
-  right: 14px;
-  z-index: 20;
+  padding: 14px;
+  padding-bottom: calc(76px + env(safe-area-inset-bottom));
 }
 .tab-bar {
   position: fixed;

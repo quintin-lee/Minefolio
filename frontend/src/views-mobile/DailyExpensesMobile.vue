@@ -1,7 +1,10 @@
 <template>
   <div class="expenses-mobile">
     <div class="page-header">
-      <h2>收支</h2>
+      <div class="mobile-segmented">
+        <button class="segmented-item active">日常收支</button>
+        <button class="segmented-item" @click="$router.push('/m/transactions')">交易流水</button>
+      </div>
       <el-button size="small" @click="loadMore" :loading="loading">加载更多</el-button>
     </div>
     <div class="summary-row">
@@ -151,6 +154,7 @@ onMounted(() => loadData(true))
 
 <style scoped>
 .expenses-mobile { padding-bottom: 80px; }
+.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
 .summary-row { display: flex; gap: 16px; margin: 12px 0; color: var(--mf-text-muted); font-size: 13px; }
 .expense-card { background: var(--mf-surface); border: 1px solid var(--mf-border); border-radius: 12px; padding: 14px; margin-bottom: 10px; cursor: pointer; }
 .expense-card .top { display: flex; justify-content: space-between; font-size: 16px; }
@@ -158,5 +162,5 @@ onMounted(() => loadData(true))
 .income { color: var(--mf-gain); } .expense { color: var(--mf-loss); }
 .card-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
 .mobile-tag { border: none; font-size: 11px; padding: 0 6px; height: 20px; line-height: 20px; }
-.fab { position: fixed; right: 20px; bottom: 80px; width: 56px; height: 56px; box-shadow: var(--mf-shadow-glow); }
+.fab { position: fixed; right: 20px; bottom: calc(76px + env(safe-area-inset-bottom)); width: 56px; height: 56px; box-shadow: var(--mf-shadow-glow); }
 </style>

@@ -1,6 +1,11 @@
 <template>
   <div class="holdings-mobile" v-loading="loading">
-    <div class="page-header"><h2>持仓</h2></div>
+    <div class="page-header">
+      <div class="mobile-segmented">
+        <button class="segmented-item" @click="$router.push('/m/assets')">资产账户</button>
+        <button class="segmented-item active">投资持仓</button>
+      </div>
+    </div>
 
     <!-- 汇总卡片 -->
     <div class="summary-row">
@@ -112,8 +117,8 @@ onMounted(async () => {
   flex-direction: column;
   gap: 4px;
 }
-.kpi-card.profit { border-color: rgba(244, 63, 94, 0.35); background: rgba(244, 63, 94, 0.06); }
-.kpi-card.loss { border-color: rgba(16, 185, 129, 0.35); background: rgba(16, 185, 129, 0.06); }
+.kpi-card.profit { border-color: var(--mf-gain-border); background: var(--mf-gain-light); }
+.kpi-card.loss { border-color: var(--mf-loss-border); background: var(--mf-loss-light); }
 .kpi-card .label { color: var(--mf-text-muted); font-size: 11px; }
 .kpi-card .value { font-family: 'JetBrains Mono', monospace; font-size: 14px; }
 .kpi-card.profit .value { color: var(--mf-gain); }

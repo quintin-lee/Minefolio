@@ -1,6 +1,11 @@
 <template>
   <div class="assets-mobile" v-loading="loading">
-    <div class="page-header"><h2>资产</h2></div>
+    <div class="page-header">
+      <div class="mobile-segmented">
+        <button class="segmented-item active">资产账户</button>
+        <button class="segmented-item" @click="$router.push('/m/holdings')">投资持仓</button>
+      </div>
+    </div>
     <div v-if="list.length === 0 && !loading" class="empty-state">暂无资产数据</div>
     <div v-for="group in groups" :key="group.key" class="account-group">
       <div class="account-header" @click="toggle(group.key)">

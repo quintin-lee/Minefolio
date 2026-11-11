@@ -1,6 +1,11 @@
 <template>
   <div class="tx-mobile">
-    <div class="page-header"><h2>交易</h2></div>
+    <div class="page-header">
+      <div class="mobile-segmented">
+        <button class="segmented-item" @click="$router.push('/m/expenses')">日常收支</button>
+        <button class="segmented-item active">交易流水</button>
+      </div>
+    </div>
     <div v-for="t in list" :key="t.id" class="tx-card">
       <div class="top"><span>{{ t.category_name || t.transaction_type }}</span><span :class="isIncome(t) ? 'income' : 'expense'">{{ isIncome(t) ? '+' : '-' }}{{ formatCurrency(t.amount, t.currency) }}</span></div>
       <div class="bottom"><span>{{ t.transaction_date }}</span><span>{{ t.asset_name }}</span></div>
@@ -34,6 +39,7 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.page-header { margin-bottom: 12px; }
 .tx-card { background: var(--mf-surface); border: 1px solid var(--mf-border); border-radius: 12px; padding: 14px; margin-bottom: 10px; }
 .tx-card .top { display: flex; justify-content: space-between; font-size: 16px; }
 .tx-card .bottom { display: flex; justify-content: space-between; color: var(--mf-text-muted); font-size: 12px; margin-top: 6px; }
