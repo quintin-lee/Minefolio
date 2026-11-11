@@ -1,0 +1,21 @@
+# LeakSanitizer suppressions for Minefolio and csilk known runtime false positives.
+# See: https://github.com/google/sanitizers/wiki/AddressSanitizerLeakSanitizer
+
+# libuv, OpenSSL, and libcurl internal memory held at exit
+leak:libuv
+leak:OPENSSL_init
+leak:CRYPTO_
+leak:BIO_
+leak:SSL_
+leak:curl_
+leak:nghttp2_session
+leak:nghttp2_
+leak:pthread_
+
+# csilk_json_t transient view circular scratch ring buffer (tls_view_scratch)
+leak:json_view_immutable
+leak:json_view_mutable
+leak:json_view_str
+leak:json_view_unsafe
+leak:csilk_client_write
+leak:_csilk_send_data_owned

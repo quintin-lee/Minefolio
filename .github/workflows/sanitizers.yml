@@ -1,0 +1,132 @@
+name: Sanitizers (ASan & UBSan)
+
+on:
+  schedule:
+    - cron: '0 3 * * *' # Daily at 03:00 UTC (11:00 CST)
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+    paths:
+      - '.github/workflows/sanitizers.yml'
+      - 'backend/src/**'
+      - 'backend/CMakeLists.txt'
+      - 'backend/tests/**'
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - '.github/workflows/sanitizers.yml'
+
+jobs:
+  backend-sanitizers-sqlite:
+    name: Backend ASan & UBSan Tests (SQLite)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential gcc-14 g++-14 cmake pkg-config \
+            libuv1-dev libyaml-dev libsqlite3-dev libssl-dev \
+            libcurl4-openssl-dev zlib1g-dev sqlite3 curl python3 nodejs jq
+
+      - name: Build backend with ASan & UBSan
+        run: |
+          cd backend
+          CC=gcc-14 CXX=g++-14 cmake -B build -G "Unix Makefiles" \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DMINEFOLIO_SANITIZE=ON
+          cmake --build build --parallel $(nproc)
+
+      - name: Run CTest unit tests (ASan & UBSan)
+        env:
+          ASAN_OPTIONS: "detect_leaks=1:check_initialization_order=1:strict_init_order=1:abort_on_error=1"
+          UBSAN_OPTIONS: "print_stacktrace=1:halt_on_error=1"
+          LSAN_OPTIONS: "suppressions=${{ github.workspace }}/backend/tests/.lsan-suppressions"
+        run: |
+          cd backend/build
+          ctest --output-on-failure
+
+      - name: Run full backend integration tests (SQLite, ASan & UBSan)
+        env:
+          ASAN_OPTIONS: "detect_leaks=1:check_initialization_order=1:strict_init_order=1:abort_on_error=1"
+          UBSAN_OPTIONS: "print_stacktrace=1:halt_on_error=1"
+          LSAN_OPTIONS: "suppressions=${{ github.workspace }}/backend/tests/.lsan-suppressions"
+          MINEFOLIO_DB_DRIVER: sqlite
+        run: |
+          cd backend
+          ./tests/test_link.sh
+          ./tests/test_2fa.sh
+          ./tests/test_dca_cashflow.sh
+          ./tests/test_ai_trace.sh
+          ./tests/test_ai_tool_call.sh
+          ./tests/test_market_sync.sh
+          ./tests/test_ledgers.sh
+          ./tests/test_fx_oauth.sh
+          ./tests/test_ai_loop_hardening.sh
+          ./tests/test_mcp_server.sh
+
+  backend-sanitizers-postgres:
+    name: Backend ASan & UBSan Tests (PostgreSQL)
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres_password
+          POSTGRES_DB: minefolio_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential gcc-14 g++-14 cmake pkg-config \
+            libuv1-dev libyaml-dev libsqlite3-dev libssl-dev \
+            libcurl4-openssl-dev zlib1g-dev sqlite3 curl python3 \
+            libpq-dev postgresql-client nodejs jq
+
+      - name: Build backend with PostgreSQL support & ASan + UBSan
+        run: |
+          cd backend
+          CC=gcc-14 CXX=g++-14 cmake -B build -G "Unix Makefiles" \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DMINEFOLIO_SANITIZE=ON
+          cmake --build build --parallel $(nproc)
+
+      - name: Run full backend integration tests (PostgreSQL, ASan & UBSan)
+        env:
+          ASAN_OPTIONS: "detect_leaks=1:check_initialization_order=1:strict_init_order=1:abort_on_error=1"
+          UBSAN_OPTIONS: "print_stacktrace=1:halt_on_error=1"
+          LSAN_OPTIONS: "suppressions=${{ github.workspace }}/backend/tests/.lsan-suppressions"
+          MINEFOLIO_DB_DRIVER: postgres
+          MINEFOLIO_DB_DSN: "host=localhost port=5432 user=postgres password=postgres_password dbname=minefolio_test sslmode=disable"
+          PGHOST: localhost
+          PGPORT: "5432"
+          PGUSER: postgres
+          PGPASSWORD: postgres_password
+          PGDATABASE: minefolio_test
+        run: |
+          cd backend
+          ./tests/test_link.sh
+          ./tests/test_2fa.sh
+          ./tests/test_dca_cashflow.sh
+          ./tests/test_ai_trace.sh
+          ./tests/test_ai_tool_call.sh
+          ./tests/test_market_sync.sh
+          ./tests/test_ledgers.sh
+          ./tests/test_fx_oauth.sh
+          ./tests/test_ai_loop_hardening.sh
+          ./tests/test_mcp_server.sh

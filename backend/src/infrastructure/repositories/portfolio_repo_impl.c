@@ -23,7 +23,7 @@ mf_portfolio_repo_get_holdings(void*               db_pool,
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
 
-    const char* params[4];
+    const char* params[8];
     int         pidx = 0;
     params[pidx++] = uid_str;
 
@@ -118,7 +118,7 @@ mf_portfolio_repo_get_trade_events(void*                        db_pool,
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
 
-    const char* params[4];
+    const char* params[8];
     int         pidx = 0;
     params[pidx++] = uid_str;
 
@@ -202,7 +202,7 @@ portfolio_repo_get_category_assets(void* pool, int64_t user_id, int64_t ledger_i
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
 
-    const char* params[4];
+    const char* params[8];
     int         pidx = 0;
     params[pidx++] = uid_str;
 
@@ -241,7 +241,7 @@ portfolio_repo_get_total_liabilities_m(
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
 
-    const char* params[4];
+    const char* params[8];
     int         pidx = 0;
     params[pidx++] = uid_str;
 
@@ -291,7 +291,7 @@ portfolio_repo_get_recent_transactions(void* pool, int64_t user_id, int64_t ledg
     snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
     snprintf(lim_str, sizeof(lim_str), "%d", limit > 0 ? limit : 5);
 
-    const char* params[4];
+    const char* params[8];
     int         pidx = 0;
     params[pidx++] = uid_str;
 
@@ -504,7 +504,7 @@ portfolio_repo_get_performance_transactions(void* pool, int64_t user_id, int64_t
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
 
-    const char* params[4];
+    const char* params[8];
     int         pidx = 0;
     params[pidx++] = uid_str;
 
@@ -555,7 +555,7 @@ portfolio_repo_get_current_holdings_totals_m(void*      pool,
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
 
-    const char* params[4];
+    const char* params[8];
     int         pidx = 0;
     params[pidx++] = uid_str;
 

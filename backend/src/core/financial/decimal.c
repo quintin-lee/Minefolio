@@ -753,7 +753,7 @@ decimal_div(decimal_t a, decimal_t b, int32_t target_scale, round_mode_t mode, d
 decimal_t
 decimal_abs(decimal_t d)
 {
-    if (d.mantissa < 0 && d.mantissa != ((__int128_t)1 << 127)) {
+    if (d.mantissa < 0 && d.mantissa != ((__int128_t)((unsigned __int128)1 << 127))) {
         d.mantissa = -d.mantissa;
     }
     return d;
@@ -762,7 +762,7 @@ decimal_abs(decimal_t d)
 decimal_t
 decimal_neg(decimal_t d)
 {
-    if (d.mantissa != ((__int128_t)1 << 127)) {
+    if (d.mantissa != ((__int128_t)((unsigned __int128)1 << 127))) {
         d.mantissa = -d.mantissa;
     }
     return d;
