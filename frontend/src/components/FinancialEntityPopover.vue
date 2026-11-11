@@ -52,6 +52,15 @@
       <span class="type-badge" :class="activeDetail.type">
         {{ activeDetail.type === 'asset' ? '资产' : '账户' }}
       </span>
+      <button
+        type="button"
+        class="popover-close-btn"
+        title="关闭"
+        aria-label="关闭微卡"
+        @click.stop="$emit('close')"
+      >
+        <Icon icon="ph:x-bold" />
+      </button>
     </div>
 
     <!-- Metrics Body -->
@@ -402,5 +411,26 @@ function handleNavigate() {
 .popover-action-btn:hover {
   background: var(--mf-primary);
   color: #ffffff;
+}
+
+.popover-close-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--mf-text-muted);
+  cursor: pointer;
+  transition: all 0.12s ease;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.popover-close-btn:hover {
+  background: var(--mf-surface-hover);
+  color: var(--mf-text-main);
 }
 </style>

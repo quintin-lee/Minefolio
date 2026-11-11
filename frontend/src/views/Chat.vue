@@ -129,7 +129,9 @@
                 <Icon icon="ph:sidebar-simple" />
               </button>
             </el-tooltip>
+          </div>
 
+          <div class="toolbar-center">
             <!-- Session Title & Inline Rename (Left-aligned for natural document hierarchy) -->
             <div class="session-title-wrap" :title="currentSessionTitle" @dblclick="startTopRename">
               <div v-if="editingTopTitle" class="top-rename-box" @click.stop>
@@ -678,6 +680,16 @@ function handlePopoverNavigate(payload: { type: 'asset' | 'account'; id: string 
     path: '/assets',
     query: payload.type === 'asset' ? { asset_id: payload.id } : { account_id: payload.id },
   })
+}
+
+function onGlobalPointerDown(e: PointerEvent) {
+  if (!popoverVisible.value) return
+  const target = e.target as HTMLElement | null
+  if (!target) return
+  if (target.closest('.financial-entity-popover') || target.closest('.mf-entity-badge')) {
+    return
+  }
+  popoverVisible.value = false
 }
 
 // --- 多模态发票/票据截图附件与渐进式工作流 ---
@@ -1291,6 +1303,9 @@ function forceScrollToBottom() {
  * 2. 距离底部 > 100px 时：展现“回到底部”悬浮按钮；若非程序化写入且非吸底锁定状态，暂停自动滚动
  */
 function handleScroll() {
+  if (popoverVisible.value) {
+    popoverVisible.value = false
+  }
   if (scrollTicking) return
   scrollTicking = true
   requestAnimationFrame(() => {
@@ -1872,11 +1887,13 @@ onMounted(async () => {
     textareaRef.value?.focus()
   })
   window.addEventListener('keydown', onGlobalKeydown)
+  window.addEventListener('pointerdown', onGlobalPointerDown)
 })
 
 onUnmounted(() => {
   stopPanelResize()
   window.removeEventListener('keydown', onGlobalKeydown)
+  window.removeEventListener('pointerdown', onGlobalPointerDown)
   window.removeEventListener('resize', checkMobile)
   if (scrollObserver) { scrollObserver.disconnect(); scrollObserver = null }
   if (inputAreaObserver) { inputAreaObserver.disconnect(); inputAreaObserver = null }
@@ -2193,6 +2210,13 @@ onUnmounted(() => {
 }
 
 .toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.toolbar-center {
   display: flex;
   align-items: center;
   gap: 8px;
