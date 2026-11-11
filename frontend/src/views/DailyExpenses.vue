@@ -21,9 +21,9 @@
       </div>
     </div>
 
-    <el-row :gutter="24">
+    <el-row :gutter="16">
       <!-- 左侧：记账列表 -->
-      <el-col :span="16">
+      <el-col :xs="24" :lg="16">
         <div class="main-panel">
           <div class="filter-panel">
             <el-form :inline="true" class="premium-filters">
@@ -44,13 +44,13 @@
 
           <!-- 月度汇总 -->
           <el-row :gutter="16" class="monthly-summary">
-            <el-col :span="8">
+            <el-col :xs="24" :sm="8">
               <SummaryCard label="本月收入" :value="formatCurrency(monthSummary?.total_income ?? 0)" type="income" />
             </el-col>
-            <el-col :span="8">
+            <el-col :xs="24" :sm="8">
               <SummaryCard label="本月支出" :value="formatCurrency(monthSummary?.total_expense ?? 0)" type="expense" />
             </el-col>
-            <el-col :span="8">
+            <el-col :xs="24" :sm="8">
               <SummaryCard label="本月结余" :value="formatCurrency(monthSummary?.balance ?? 0)" type="highlight" />
             </el-col>
           </el-row>
@@ -102,7 +102,7 @@
       </el-col>
 
       <!-- 右侧：月度图表 -->
-      <el-col :span="8">
+      <el-col :xs="24" :lg="8">
         <div class="chart-panel">
           <h3 class="panel-title">月度收支趋势</h3>
           <MonthlyChart :data="monthSummary" />

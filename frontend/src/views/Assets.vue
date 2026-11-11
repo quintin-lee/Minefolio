@@ -19,14 +19,14 @@
     </div>
 
     <!-- 总资产概览 -->
-    <el-row :gutter="24" class="asset-summary">
-      <el-col :span="8">
+    <el-row :gutter="16" class="asset-summary">
+      <el-col :xs="24" :sm="12" :md="8">
         <SummaryCard label="总资产" :value="formatCurrency(totalAssets)" type="income" />
       </el-col>
-      <el-col :span="8">
+      <el-col :xs="24" :sm="12" :md="8">
         <SummaryCard label="总负债" :value="formatCurrency(totalLiabilities)" type="expense" />
       </el-col>
-      <el-col :span="8">
+      <el-col :xs="24" :sm="24" :md="8">
         <SummaryCard label="净资产" :value="formatCurrency(netWorth)" type="highlight" />
       </el-col>
     </el-row>

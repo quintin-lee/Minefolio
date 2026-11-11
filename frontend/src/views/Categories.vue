@@ -23,7 +23,7 @@
 
     <div class="panels-scroll-wrapper">
       <el-row :gutter="24">
-        <el-col :span="8">
+        <el-col :xs="24" :md="9" :lg="8">
           <div class="panel-container tree-panel-container">
             <div class="panel-header panel-header-with-search">
               <h3>分类结构</h3>
@@ -64,7 +64,7 @@
             </div>
           </div>
         </el-col>
-        <el-col :span="16">
+        <el-col :xs="24" :md="15" :lg="16">
           <div class="panel-container">
             <div class="panel-header">
               <h3>分类列表</h3>
@@ -522,6 +522,12 @@ onMounted(loadData)
 
 .tree-panel-container {
   min-height: 0;
+}
+
+@media (max-width: 991px) {
+  .tree-panel-container {
+    margin-bottom: 20px;
+  }
 }
 
 .action-btn {

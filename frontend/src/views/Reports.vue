@@ -34,7 +34,7 @@
           <div class="tab-layout">
             <el-row :gutter="16" class="tab-row">
               <!-- 月度收支报表 -->
-              <el-col :span="12">
+              <el-col :xs="24" :lg="12">
                 <div class="report-card">
                   <div class="card-header">
                     <h3>月度收支</h3>
@@ -65,7 +65,7 @@
               </el-col>
 
               <!-- 收支趋势 -->
-              <el-col :span="12">
+              <el-col :xs="24" :lg="12">
                 <div class="report-card">
                   <div class="card-header">
                     <h3>收支趋势（近6月）</h3>
@@ -78,7 +78,7 @@
             </el-row>
 
             <el-row :gutter="16" class="tab-row">
-              <el-col :span="12">
+              <el-col :xs="24" :lg="12">
                 <div class="report-card">
                   <div class="card-header">
                     <h3>标签支出分析</h3>
@@ -119,7 +119,7 @@
                   </div>
                 </div>
               </el-col>
-              <el-col :span="12">
+              <el-col :xs="24" :lg="12">
                 <div class="report-card">
                   <div class="card-header">
                     <h3>交易表现</h3>

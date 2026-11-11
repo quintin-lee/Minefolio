@@ -31,7 +31,7 @@ export const useThemeStore = defineStore('theme', () => {
   function applyTheme() {
     if (typeof window === 'undefined') return
     if (mode.value === 'auto') {
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+      const prefersDark = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: dark)').matches
       resolvedTheme.value = prefersDark ? 'dark' : 'light'
     } else {
       resolvedTheme.value = mode.value
@@ -70,11 +70,13 @@ export const useThemeStore = defineStore('theme', () => {
 
   if (typeof window !== 'undefined') {
     // 监听系统深色模式变更 (当模式设为 auto 时响应)
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-      if (mode.value === 'auto') {
-        applyTheme()
-      }
-    })
+    if (typeof window.matchMedia === 'function') {
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => {
+        if (mode.value === 'auto') {
+          applyTheme()
+        }
+      })
+    }
     // 首次加载初始化应用主题
     applyTheme()
   }

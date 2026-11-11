@@ -11,11 +11,11 @@
     </div>
 
     <!-- 汇总卡片 -->
-    <el-row :gutter="24">
-      <el-col :span="8">
+    <el-row :gutter="16">
+      <el-col :xs="24" :sm="12" :md="8">
         <SummaryCard label="总市值" :value="formatCurrency(report?.summary.total_market_value ?? 0)" type="highlight" />
       </el-col>
-      <el-col :span="8">
+      <el-col :xs="24" :sm="12" :md="8">
         <SummaryCard
           label="总浮动盈亏"
           :value="formatSigned(report?.summary.total_floating_pnl ?? 0)"
@@ -32,7 +32,7 @@
           class="pnl-progress"
         />
       </el-col>
-      <el-col :span="8">
+      <el-col :xs="24" :sm="24" :md="8">
         <SummaryCard
           label="总已实现盈亏"
           :value="formatSigned(report?.summary.total_realized_pnl ?? 0)"
@@ -43,14 +43,14 @@
     </el-row>
 
     <!-- 图表 -->
-    <el-row :gutter="24" class="chart-row">
-      <el-col :span="10">
+    <el-row :gutter="16" class="chart-row">
+      <el-col :xs="24" :lg="10">
         <div class="chart-card">
           <div class="chart-title">资产配置</div>
           <HoldingsTypePie :data="typeShare" />
         </div>
       </el-col>
-      <el-col :span="14">
+      <el-col :xs="24" :lg="14">
         <div class="chart-card">
           <div class="chart-title">成本 vs 市值</div>
           <HoldingsCostBar :data="barData" />
