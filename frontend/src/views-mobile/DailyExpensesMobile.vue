@@ -5,7 +5,6 @@
         <button class="segmented-item active">日常收支</button>
         <button class="segmented-item" @click="$router.push('/m/transactions')">交易流水</button>
       </div>
-      <el-button size="small" @click="loadMore" :loading="loading">加载更多</el-button>
     </div>
     <div class="summary-row">
       <span>收入 {{ formatCurrency(month?.total_income ?? 0) }}</span>
@@ -19,6 +18,12 @@
           {{ t.name }}
         </el-tag>
       </div>
+    </div>
+
+    <div v-if="list.length > 0" class="load-more-wrap">
+      <el-button plain class="load-more-btn" :loading="loading" @click="loadMore">
+        加载更多
+      </el-button>
     </div>
 
     <el-button class="fab" type="primary" circle :icon="Plus" @click="create" />
@@ -162,5 +167,7 @@ onMounted(() => loadData(true))
 .income { color: var(--mf-gain); } .expense { color: var(--mf-loss); }
 .card-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
 .mobile-tag { border: none; font-size: 11px; padding: 0 6px; height: 20px; line-height: 20px; }
-.fab { position: fixed; right: 20px; bottom: calc(76px + env(safe-area-inset-bottom)); width: 56px; height: 56px; box-shadow: var(--mf-shadow-glow); }
+.load-more-wrap { display: flex; justify-content: center; margin: 16px 0 24px; }
+.load-more-btn { width: 100%; border-radius: var(--mf-radius-md); color: var(--mf-text-muted); }
+.fab { position: fixed; right: calc(20px + env(safe-area-inset-right)); bottom: calc(76px + env(safe-area-inset-bottom)); width: 56px; height: 56px; box-shadow: var(--mf-shadow-glow); }
 </style>

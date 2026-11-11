@@ -910,7 +910,7 @@ function stopPanelResize() {
 }
 
 function checkPanelMode() {
-  panelOverlay.value = !isMobile.value && window.innerWidth < 1200
+  panelOverlay.value = !isMobile.value && window.innerWidth < 1400
 }
 
 function checkMobile() {

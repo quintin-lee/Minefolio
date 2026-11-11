@@ -244,11 +244,18 @@ async function handleConfirmDca(exec: DcaExecution) {
 
 async function handleSkipDca(exec: DcaExecution) {
   try {
+    await ElMessageBox.confirm(`确定跳过本期 "${exec.plan_name}" 定投吗？`, '跳过确认', {
+      type: 'warning',
+      confirmButtonText: '确定跳过',
+      cancelButtonText: '取消',
+    })
     await dcaApi.skipExecution(exec.id)
     ElMessage.info('已跳过本期定投')
     await loadData()
   } catch (e: any) {
-    ElMessage.error(e.message || '操作失败')
+    if (e !== 'cancel') {
+      ElMessage.error(e.message || '操作失败')
+    }
   }
 }
 
@@ -408,6 +415,16 @@ onMounted(() => {
   font-size: 12px;
   color: var(--mf-text-regular);
 }
+.p-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.p-actions :deep(.el-button) {
+  min-height: 32px;
+  padding: 6px 12px;
+}
 .card-list {
   display: flex;
   flex-direction: column;
@@ -496,6 +513,6 @@ onMounted(() => {
   gap: 8px;
   margin-top: 8px;
   padding-top: 6px;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-top: 1px solid var(--mf-border-subtle);
 }
 </style>

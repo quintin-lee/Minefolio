@@ -74,6 +74,7 @@ function go(tab: { prefix: string }) {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  height: 100dvh;
   background: var(--mf-background);
 }
 .mobile-top-bar {
@@ -82,6 +83,8 @@ function go(tab: { prefix: string }) {
   justify-content: space-between;
   padding: 8px 14px;
   padding-top: calc(8px + env(safe-area-inset-top));
+  padding-left: calc(14px + env(safe-area-inset-left));
+  padding-right: calc(14px + env(safe-area-inset-right));
   background: var(--mf-surface);
   border-bottom: 1px solid var(--mf-border);
   flex-shrink: 0;
@@ -108,6 +111,8 @@ function go(tab: { prefix: string }) {
   flex: 1;
   overflow-y: auto;
   padding: 14px;
+  padding-left: calc(14px + env(safe-area-inset-left));
+  padding-right: calc(14px + env(safe-area-inset-right));
   padding-bottom: calc(76px + env(safe-area-inset-bottom));
 }
 .tab-bar {
@@ -115,11 +120,14 @@ function go(tab: { prefix: string }) {
   bottom: 0;
   left: 0;
   right: 0;
-  height: 64px;
+  height: calc(56px + env(safe-area-inset-bottom));
   display: flex;
   background: var(--mf-surface);
   border-top: 1px solid var(--mf-border);
   padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  box-sizing: border-box;
 }
 .tab-item {
   flex: 1;

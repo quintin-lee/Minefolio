@@ -233,7 +233,10 @@ async function save() {
 </script>
 
 <style scoped>
-.sheet-body { padding: 16px; }
+.sheet-body {
+  padding: 16px;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom));
+}
 .sheet-header-actions { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .type-switch { display: flex; }
 .ocr-btn { display: flex; align-items: center; gap: 4px; border-radius: 16px; font-weight: 600; }

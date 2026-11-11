@@ -28,6 +28,9 @@
             placeholder="请输入 6 位动态验证码或备用码"
             size="large"
             autofocus
+            inputmode="numeric"
+            pattern="[0-9]*"
+            autocomplete="one-time-code"
             @keyup.enter="handle2FaSubmit"
           />
         </el-form-item>
@@ -44,7 +47,12 @@
 
     <el-form v-else :model="form" label-position="top">
       <el-form-item label="用户名">
-        <el-input v-model="form.username" placeholder="请输入用户名" />
+        <el-input
+          v-model="form.username"
+          placeholder="请输入用户名"
+          autocapitalize="off"
+          autocomplete="username"
+        />
       </el-form-item>
       <el-form-item label="密码">
         <el-input
@@ -52,6 +60,7 @@
           type="password"
           show-password
           :placeholder="isRegister ? '请设置密码 (≥6位)' : '请输入密码'"
+          :autocomplete="isRegister ? 'new-password' : 'current-password'"
           @keyup.enter="submit"
         />
       </el-form-item>
@@ -61,6 +70,7 @@
           type="password"
           show-password
           placeholder="请再次输入密码"
+          autocomplete="new-password"
           @keyup.enter="submit"
         />
       </el-form-item>
@@ -200,7 +210,15 @@ async function handle2FaSubmit() {
 </script>
 
 <style scoped>
-.login-mobile { padding: 40px 24px; display: flex; flex-direction: column; gap: 20px; }
+.login-mobile {
+  padding: calc(40px + env(safe-area-inset-top)) calc(24px + env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) calc(24px + env(safe-area-inset-left));
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-height: 100vh;
+  min-height: 100dvh;
+  box-sizing: border-box;
+}
 .brand-header {
   display: flex;
   justify-content: center;

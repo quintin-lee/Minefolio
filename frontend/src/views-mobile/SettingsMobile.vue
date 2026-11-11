@@ -217,7 +217,19 @@ async function exportCsv() {
     // ignore
   }
 }
-function logout() { auth.logout(); router.replace('/m/login') }
+async function logout() {
+  try {
+    await ElMessageBox.confirm('确定要退出当前账号吗？', '退出登录', {
+      type: 'warning',
+      confirmButtonText: '退出',
+      cancelButtonText: '取消',
+    })
+    auth.logout()
+    router.replace('/m/login')
+  } catch {
+    // ignore
+  }
+}
 </script>
 
 <style scoped>
