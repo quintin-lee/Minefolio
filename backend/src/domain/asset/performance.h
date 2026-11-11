@@ -62,9 +62,10 @@ typedef struct {
  * - ret = (end - start) / start * 100%；
  * - ret_all 的区间起点 = 序列首行（最早可查价的成本锚点），终点 = 最新价。
  */
-int
-mf_interval_returns_from_series(
-    const mf_price_point_t* series, size_t n, const char* target_date_str, mf_interval_returns_t* out);
+int mf_interval_returns_from_series(const mf_price_point_t* series,
+                                    size_t                  n,
+                                    const char*             target_date_str,
+                                    mf_interval_returns_t*  out);
 
 /**
  * @brief 计算"当日涨跌"（最新价相对前一日价）
@@ -78,8 +79,7 @@ mf_interval_returns_from_series(
  * 约定：序列最后一行为最新价，倒数第二行为"前一日"价。
  * 涨跌额 / 涨跌幅均继承序列的计价币种；前一日价为 0 时 pct 置 0。
  */
-int
-mf_daily_change_from_series(const mf_price_point_t* series,
-                            size_t                   n,
-                            money_t*                 out_change,
-                            double*                  out_pct);
+int mf_daily_change_from_series(const mf_price_point_t* series,
+                                size_t                  n,
+                                money_t*                out_change,
+                                double*                 out_pct);
