@@ -46,7 +46,11 @@
     </template>
 
     <!-- Thinking Mode Collapsible Card -->
-    <div v-if="thinkingContent && thinkingContent.trim()" class="thinking-card">
+    <div
+      v-if="thinkingContent && thinkingContent.trim()"
+      class="thinking-card"
+      :class="{ 'is-streaming': isThinkingStreaming, 'is-collapsed': !isThinkingExpanded }"
+    >
       <div class="thinking-header" @click="toggleThinking">
         <div class="thinking-header-left">
           <Icon
@@ -127,7 +131,7 @@
               <Icon :icon="getToolIcon(tc.name)" class="tool-item-icon" />
             </div>
             <div class="step-title-area">
-              <span class="tool-step-label">{{ getToolLabel(tc.name) }}</span>
+              <span class="tool-step-label">{{ getToolSemanticSummary(tc.name, tc.args) }}</span>
               <span class="tool-call-name">{{ tc.name }}</span>
             </div>
             <div class="step-status-area">
@@ -135,14 +139,14 @@
                 <Icon icon="ph:spinner-gap" class="spinning-sparkle" />
                 执行中...
               </span>
-              <span v-else-if="tc.result" class="tool-item-done">
+              <span v-else-if="tc.result" class="tool-item-done" :title="getResultSummary(tc.result)">
                 <Icon icon="ph:check-circle-bold" />
-                完成
+                <span>{{ getResultSummary(tc.result) }}</span>
               </span>
               <button
                 type="button"
                 class="tool-step-toggle"
-                :title="isStepExpanded(i) ? '收起详情' : '展开参数与结果'"
+                :title="isStepExpanded(i) ? '收起详情' : '展开参数与结果 (极客模式)'"
                 :aria-expanded="isStepExpanded(i)"
                 @click.stop="toggleStep(i)"
               >
@@ -384,15 +388,33 @@ function toggleThinking() {
 }
 // Tool Calls Card State & Semantic Labels
 const TOOL_META_MAP: Record<string, { label: string; icon: string }> = {
+  get_daily_expenses: { label: '查询日常收支', icon: 'ph:receipt-bold' },
+  get_expense_by_category: { label: '分类支出统计', icon: 'ph:chart-pie-slice-bold' },
+  propose_daily_expense: { label: '拟录入收支记账', icon: 'ph:pencil-simple-line-bold' },
+  confirm_proposed_expense: { label: '确认记账入库', icon: 'ph:check-circle-bold' },
+  propose_transfer: { label: '拟生成资金调拨', icon: 'ph:arrows-left-right-bold' },
+  confirm_proposed_transfer: { label: '确认转账入库', icon: 'ph:check-circle-bold' },
+  get_transactions: { label: '查询交易明细', icon: 'ph:list-dashes-bold' },
+  get_expense_trend: { label: '分析支出趋势', icon: 'ph:chart-line-up-bold' },
+  get_assets: { label: '获取资产持仓', icon: 'ph:vault-bold' },
+  get_asset_detail: { label: '查询资产详情', icon: 'ph:info-bold' },
+  get_asset_breakdown: { label: '分析资产结构', icon: 'ph:chart-polar-bold' },
+  propose_batch_actions: { label: '批量拟录入交易', icon: 'ph:stack-bold' },
+  get_summary: { label: '读取财务全景概况', icon: 'ph:presentation-chart-bold' },
+  get_categories: { label: '读取分类字典', icon: 'ph:tag-bold' },
+  get_exchange_rate: { label: '查询外汇汇率', icon: 'ph:currency-circle-dollar-bold' },
+  web_search: { label: '全网实时检索', icon: 'ph:globe-bold' },
+  fetch_webpage: { label: '读取网页正文', icon: 'ph:article-bold' },
+  analyze_financial_health: { label: '财务健康度体检', icon: 'ph:heartbeat-bold' },
+  calculate_compound_interest: { label: '计算复利回报', icon: 'ph:percent-bold' },
+  calculate_loan_repayment: { label: '计算还款排期', icon: 'ph:calendar-check-bold' },
+  get_current_time: { label: '获取当前时间', icon: 'ph:clock-bold' },
+  calculate_date_range: { label: '核算时间周期', icon: 'ph:calendar-blank-bold' },
+  execute_workflow_step: { label: '执行工作流步骤', icon: 'ph:git-merge-bold' },
   query_assets: { label: '查询持仓资产', icon: 'ph:vault-bold' },
   list_assets: { label: '获取资产列表', icon: 'ph:vault-bold' },
   sync_quotes: { label: '同步市场行情', icon: 'ph:trend-up-bold' },
   fetch_market_index: { label: '查询大盘指数', icon: 'ph:chart-line-bold' },
-  propose_daily_expense: { label: '生成收支记账', icon: 'ph:receipt-bold' },
-  propose_transfer: { label: '生成资金调拨', icon: 'ph:arrows-left-right-bold' },
-  analyze_financial_health: { label: '财务健康体检', icon: 'ph:heartbeat-bold' },
-  web_search: { label: '全网实时检索', icon: 'ph:globe-bold' },
-  execute_workflow_step: { label: '执行工作流步骤', icon: 'ph:git-merge-bold' },
 }
 
 function formatFallbackToolName(name: string): string {
@@ -405,6 +427,82 @@ function formatFallbackToolName(name: string): string {
 
 function getToolLabel(name: string): string {
   return TOOL_META_MAP[name]?.label || formatFallbackToolName(name)
+}
+
+function getToolSemanticSummary(name: string, argsStr?: string): string {
+  const baseLabel = getToolLabel(name)
+  if (!argsStr || !argsStr.trim()) return baseLabel
+
+  try {
+    const parsed = JSON.parse(argsStr)
+    if (typeof parsed !== 'object' || !parsed) return baseLabel
+
+    if (name === 'web_search' && parsed.query) {
+      return `搜索: "${parsed.query}"`
+    }
+    if (name === 'fetch_webpage' && parsed.url) {
+      const shortUrl = String(parsed.url).replace(/^https?:\/\//, '').split('/')[0]
+      return `读取网页: ${shortUrl}`
+    }
+    if (name === 'get_daily_expenses') {
+      if (parsed.start_date && parsed.end_date) {
+        return `检索流水: ${parsed.start_date} ~ ${parsed.end_date}`
+      }
+      if (parsed.start_date) {
+        return `检索 ${parsed.start_date} 起流水`
+      }
+    }
+    if (name === 'get_expense_by_category' && parsed.category_name) {
+      return `分类统计: 【${parsed.category_name}】开销`
+    }
+    if (name === 'get_asset_detail' && (parsed.asset_name || parsed.asset_id)) {
+      return `查询资产: ${parsed.asset_name || `ID #${parsed.asset_id}`}`
+    }
+    if (name === 'propose_daily_expense') {
+      const amt = parsed.amount ? `¥${parsed.amount}` : ''
+      const note = parsed.note || parsed.category_name || ''
+      return `拟记账: ${amt} ${note}`.trim()
+    }
+    if (name === 'propose_transfer') {
+      const amt = parsed.amount ? `¥${parsed.amount}` : ''
+      return `拟调拨资金: ${amt}`.trim()
+    }
+    if (name === 'get_exchange_rate' && (parsed.from_currency || parsed.to_currency)) {
+      return `汇率换算: ${parsed.from_currency || ''} ➔ ${parsed.to_currency || 'CNY'}`
+    }
+    if (name === 'calculate_compound_interest' && parsed.principal) {
+      return `复利测算: 本金 ¥${parsed.principal}`
+    }
+    if (name === 'calculate_loan_repayment' && parsed.principal) {
+      return `还款测算: 贷款 ¥${parsed.principal}`
+    }
+    if (name === 'execute_workflow_step' && parsed.step_title) {
+      return `步骤: ${parsed.step_title}`
+    }
+  } catch {
+    // fallback to base label
+  }
+
+  return baseLabel
+}
+
+function getResultSummary(resultStr?: string): string {
+  if (!resultStr || !resultStr.trim()) return '完成'
+  try {
+    const res = JSON.parse(resultStr)
+    if (Array.isArray(res)) {
+      return `返回 ${res.length} 条数据`
+    }
+    if (res && typeof res === 'object') {
+      if (Array.isArray(res.items)) return `返回 ${res.items.length} 条数据`
+      if (Array.isArray(res.data)) return `返回 ${res.data.length} 条数据`
+      if (res.total !== undefined) return `共 ${res.total} 笔`
+      if (res.status === 'ok' || res.code === 0) return '执行成功'
+    }
+  } catch {
+    if (resultStr.length < 24) return resultStr
+  }
+  return '完成'
 }
 
 function getToolIcon(name: string): string {
@@ -998,7 +1096,17 @@ const segments = computed<Segment[]>(() => {
   border-left: 3px solid var(--mf-primary);
   border-radius: var(--mf-radius-md, 8px);
   overflow: hidden;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.thinking-card.is-streaming {
+  box-shadow: 0 0 16px rgba(99, 102, 241, 0.2);
+  animation: thinking-card-glow 2s infinite ease-in-out;
+}
+
+@keyframes thinking-card-glow {
+  0%, 100% { border-color: var(--mf-border-subtle, #e2e8f0); }
+  50% { border-color: rgba(99, 102, 241, 0.5); }
 }
 
 .thinking-header {
