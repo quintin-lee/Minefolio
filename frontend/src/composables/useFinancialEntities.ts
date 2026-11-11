@@ -67,14 +67,15 @@ export function buildEntityRegex(names: string[]): RegExp | null {
   return new RegExp(pattern, 'g')
 }
 
+const AMOUNT_REGEX = /(?:¥|\$|€|£)\s*\d+(?:,\d{3})*(?:\.\d+)?/g
+
 export function replaceTextNodesWithEntities(
   html: string,
   lookup: Map<string, EntityMatch>
 ): string {
-  if (!html || lookup.size === 0) return html
+  if (!html) return html
   const names = Array.from(lookup.keys())
-  const regex = buildEntityRegex(names)
-  if (!regex) return html
+  const entityRegex = buildEntityRegex(names)
 
   if (typeof DOMParser !== 'undefined') {
     try {
@@ -91,19 +92,53 @@ export function replaceTextNodesWithEntities(
           const text = node.nodeValue || ''
           if (!text.trim()) return
 
-          if (regex && regex.test(text)) {
-            regex.lastIndex = 0
-            const temp = doc.createElement('div')
-            temp.innerHTML = text.replace(regex, (matched) => {
-              const item = lookup.get(matched)
-              if (!item) return matched
-              return `<span class="mf-entity-badge" data-entity-type="${item.type}" data-entity-id="${item.id}">${matched}</span>`
-            })
-            while (temp.firstChild) {
-              parent?.insertBefore(temp.firstChild, node)
+          const hasEntity = entityRegex ? entityRegex.test(text) : false
+          if (entityRegex) entityRegex.lastIndex = 0
+          const hasAmount = AMOUNT_REGEX.test(text)
+          AMOUNT_REGEX.lastIndex = 0
+
+          if (!hasEntity && !hasAmount) return
+
+          const entityPattern = entityRegex ? entityRegex.source : ''
+          const amountPattern = '(?:(?:¥|\\$|€|£)\\s*\\d+(?:,\\d{3})*(?:\\.\\d+)?)'
+          const combinedPattern = entityPattern
+            ? `(${entityPattern})|(${amountPattern})`
+            : `(${amountPattern})`
+          const combinedRegex = new RegExp(combinedPattern, 'g')
+
+          const fragment = doc.createDocumentFragment()
+          let lastIndex = 0
+          let m: RegExpExecArray | null
+
+          while ((m = combinedRegex.exec(text)) !== null) {
+            if (m.index > lastIndex) {
+              fragment.appendChild(doc.createTextNode(text.slice(lastIndex, m.index)))
             }
-            parent?.removeChild(node)
+            const matched = m[0]
+            const item = lookup.get(matched)
+            if (item) {
+              const span = doc.createElement('span')
+              span.className = 'mf-entity-badge'
+              span.setAttribute('data-entity-type', item.type)
+              span.setAttribute('data-entity-id', String(item.id))
+              span.textContent = matched
+              fragment.appendChild(span)
+            } else if (/(?:¥|\$|€|£)/.test(matched)) {
+              const span = doc.createElement('span')
+              span.className = 'mf-amount-pill'
+              span.textContent = matched
+              fragment.appendChild(span)
+            } else {
+              fragment.appendChild(doc.createTextNode(matched))
+            }
+            lastIndex = m.index + matched.length
           }
+
+          if (lastIndex < text.length) {
+            fragment.appendChild(doc.createTextNode(text.slice(lastIndex)))
+          }
+
+          node.parentNode?.replaceChild(fragment, node)
         } else if (node.nodeType === 1) { // Element node
           const el = node as HTMLElement
           if (!ignoreTags.has(el.tagName.toUpperCase())) {
@@ -128,6 +163,15 @@ function getAssetIcon(type?: string): string {
   if (type === 'fund') return 'ph:chart-pie-slice-bold'
   if (type === 'bond') return 'ph:certificate-bold'
   return 'ph:coins-bold'
+}
+
+const INSTITUTION_LABELS: Record<string, string> = {
+  bank_card: '银行卡',
+  platform: '数字支付平台',
+  broker: '证券券商',
+  fund_platform: '基金平台',
+  cash_wallet: '现金钱包',
+  other: '其他账户',
 }
 
 // Global cached singletons
@@ -165,7 +209,7 @@ export function useFinancialEntities() {
             name: a.name,
             type: 'account',
             icon: a.icon || 'ph:wallet-bold',
-            institution: a.institution || '账户容器',
+            institution: INSTITUTION_LABELS[a.institution] || a.institution || '账户容器',
             assetCount: a.asset_count || 0,
             currentValue: Number(a.total_value || 0),
           }

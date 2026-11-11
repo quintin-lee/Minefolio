@@ -659,23 +659,21 @@ function renderInlineMarkdown(text: string): string {
 
 function renderMarkdown(text?: string): string {
   if (!text) return ''
-  const cached = mdCache.get(text)
-  if (cached !== undefined) return cached
-  let html: string
-  try {
-    const rawHtml = marked.parse(text, { async: false, breaks: true }) as string
-    html = DOMPurify.sanitize(rawHtml)
-    html = linkFinancialEntities(html)
-  } catch {
-    html = DOMPurify.sanitize(text.replace(/</g, '&lt;').replace(/>/g, '&gt;'))
-    html = linkFinancialEntities(html)
+  let html = mdCache.get(text)
+  if (html === undefined) {
+    try {
+      const rawHtml = marked.parse(text, { async: false, breaks: true }) as string
+      html = DOMPurify.sanitize(rawHtml)
+    } catch {
+      html = DOMPurify.sanitize(text.replace(/</g, '&lt;').replace(/>/g, '&gt;'))
+    }
+    if (mdCache.size >= MD_CACHE_LIMIT) {
+      const firstKey = mdCache.keys().next().value as string
+      mdCache.delete(firstKey)
+    }
+    mdCache.set(text, html)
   }
-  if (mdCache.size >= MD_CACHE_LIMIT) {
-    const firstKey = mdCache.keys().next().value as string
-    mdCache.delete(firstKey)
-  }
-  mdCache.set(text, html)
-  return html
+  return linkFinancialEntities(html)
 }
 
 function handleMouseOver(e: MouseEvent) {

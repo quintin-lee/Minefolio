@@ -668,10 +668,18 @@ function handleEntityClick(payload: { el: HTMLElement; type: 'asset' | 'account'
   clearPopoverLeaveTimer()
   const detail = getEntityDetail(payload.type, payload.id)
   const collision = getCollisionEntities(payload.name)
-  popoverDetail.value = detail
-  popoverCollision.value = collision
-  popoverTargetRect.value = payload.rect
-  popoverVisible.value = !popoverVisible.value
+  const isSameTarget = popoverVisible.value &&
+    popoverDetail.value?.id === detail?.id &&
+    popoverDetail.value?.type === detail?.type
+
+  if (isSameTarget) {
+    popoverVisible.value = false
+  } else {
+    popoverDetail.value = detail
+    popoverCollision.value = collision
+    popoverTargetRect.value = payload.rect
+    popoverVisible.value = true
+  }
 }
 
 function handlePopoverNavigate(payload: { type: 'asset' | 'account'; id: string | number }) {
@@ -1891,6 +1899,8 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  if (popoverHoverTimer) clearTimeout(popoverHoverTimer)
+  clearPopoverLeaveTimer()
   stopPanelResize()
   window.removeEventListener('keydown', onGlobalKeydown)
   window.removeEventListener('pointerdown', onGlobalPointerDown)

@@ -75,7 +75,7 @@
 
       <!-- Asset Holding & PnL (for assets) -->
       <template v-if="activeDetail.type === 'asset'">
-        <div v-if="activeDetail.floatingPnl !== undefined && activeDetail.costBasis" class="metric-row pnl-metric">
+        <div v-if="activeDetail.floatingPnl !== undefined && activeDetail.costBasis !== undefined" class="metric-row pnl-metric">
           <span class="metric-label">浮动盈亏</span>
           <span
             class="metric-value mono-val"
@@ -180,6 +180,9 @@ const popoverStyle = computed(() => {
   let top = rect.top - popoverHeight - margin
   if (top < 50) {
     top = rect.bottom + margin
+  }
+  if (top + popoverHeight > window.innerHeight - 12) {
+    top = Math.max(12, window.innerHeight - popoverHeight - 12)
   }
 
   return {
