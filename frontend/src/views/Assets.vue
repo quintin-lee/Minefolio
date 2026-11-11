@@ -34,7 +34,13 @@
     <!-- 资产列表（按账户分组） -->
     <div class="table-container">
       <div v-if="groupedAccounts.length === 0 && !loading" class="empty-state">暂无资产数据</div>
-      <div v-for="group in groupedAccounts" :key="group.key" class="account-group">
+      <div
+        v-for="group in groupedAccounts"
+        :key="group.key"
+        :id="'account-group-' + group.key"
+        class="account-group"
+        :class="{ 'highlight-pulse': highlightedTarget === group.key }"
+      >
         <div class="account-group-header" @click="toggleGroup(group.key)">
           <div class="group-title">
             <span class="account-avatar"><Icon :icon="group.icon || 'ph:wallet'" /></span>
@@ -57,7 +63,13 @@
           </div>
         </div>
         <div v-if="!collapsedGroups.has(group.key)" class="account-group-body">
-          <div v-for="a in group.assets" :key="a.id" class="asset-row">
+          <div
+            v-for="a in group.assets"
+            :key="a.id"
+            :id="'asset-row-' + a.id"
+            class="asset-row"
+            :class="{ 'highlight-pulse': highlightedTarget === 'asset-' + a.id }"
+          >
             <div class="asset-name-cell">
               <span class="asset-icon"><Icon :icon="ASSET_TYPE_ICONS[a.asset_type ?? ''] ?? 'ph:briefcase'" /></span>
               <div class="asset-name-group">
@@ -190,7 +202,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, computed, watch, nextTick } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Edit, Delete, Plus, Refresh, TrendCharts, Wallet, ArrowDown, ArrowUp } from '@element-plus/icons-vue'
 import { assetsApi } from '@/api/assets'
@@ -528,10 +541,69 @@ async function handleDelete(asset: any) {
   loadSummary()
 }
 
+const route = useRoute()
+const highlightedTarget = ref<string | null>(null)
+
+async function handleDeepLinkTarget() {
+  const assetId = route.query.asset_id ? Number(route.query.asset_id) : null
+  const accountId = route.query.account_id ? Number(route.query.account_id) : null
+
+  if (!assetId && !accountId) return
+
+  if (assetId) {
+    for (const g of groupedAccounts.value) {
+      if (g.assets.some(a => a.id === assetId)) {
+        collapsedGroups.value.delete(g.key)
+        break
+      }
+    }
+    highlightedTarget.value = `asset-${assetId}`
+    await nextTick()
+    setTimeout(() => {
+      const el = document.getElementById(`asset-row-${assetId}`)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+    }, 100)
+    setTimeout(() => {
+      if (highlightedTarget.value === `asset-${assetId}`) {
+        highlightedTarget.value = null
+      }
+    }, 2400)
+    return
+  }
+
+  if (accountId) {
+    const key = `acct-${accountId}`
+    collapsedGroups.value.delete(key)
+    highlightedTarget.value = key
+    await nextTick()
+    setTimeout(() => {
+      const el = document.getElementById(`account-group-${key}`)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+    }, 100)
+    setTimeout(() => {
+      if (highlightedTarget.value === key) {
+        highlightedTarget.value = null
+      }
+    }, 2400)
+  }
+}
+
+watch(
+  () => [route.query.asset_id, route.query.account_id],
+  () => {
+    handleDeepLinkTarget()
+  }
+)
+
 onMounted(async () => {
   try {
     await loadAccounts()
     await Promise.allSettled([loadAssets(), loadSummary(), loadCategories(), loadRates()])
+    handleDeepLinkTarget()
   } catch (err) {
     console.error('[Assets] onMounted failed:', err)
   }
@@ -812,5 +884,24 @@ onMounted(async () => {
   text-align: center;
   color: var(--el-text-color-secondary);
   padding: 48px 0;
+}
+
+@keyframes entityPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(var(--mf-primary-rgb, 99, 102, 241), 0.6);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(var(--mf-primary-rgb, 99, 102, 241), 0.25);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+.highlight-pulse {
+  animation: entityPulse 2s ease-out;
+  border-color: var(--mf-primary) !important;
+  background: var(--mf-primary-light) !important;
+  border-radius: var(--mf-radius-md, 8px);
 }
 </style>
