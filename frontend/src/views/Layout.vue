@@ -136,6 +136,13 @@
       v-model="commandPaletteVisible"
       @quick-record="quickRecordVisible = true"
     />
+
+    <!-- 响应式移动端抽屉遮罩 -->
+    <div
+      v-if="mobileMenuOpen"
+      class="mobile-backdrop"
+      @click="mobileMenuOpen = false"
+    />
   </el-container>
 </template>
 
@@ -210,6 +217,7 @@ onBeforeUnmount(() => {
 })
 
 function goTo(path: string) {
+  mobileMenuOpen.value = false
   router.push(path)
 }
 
@@ -533,7 +541,7 @@ function handleCommand(cmd: string) {
 }
 .main {
   padding: 24px 28px;
-  padding-bottom: 0;
+  padding-bottom: 28px;
   background-color: var(--mf-background);
   flex: 1 1 0%;
   min-height: 0;
@@ -630,5 +638,15 @@ function handleCommand(cmd: string) {
   .username {
     display: none;
   }
+}
+
+.mobile-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--el-mask-color);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 90;
+  animation: fadeIn 0.2s ease;
 }
 </style>

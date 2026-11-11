@@ -122,9 +122,7 @@ onMounted(() => {
 
 <style scoped>
 .market-view-container {
-  padding: 24px;
-  height: 100%;
-  overflow-y: auto;
+  width: 100%;
   box-sizing: border-box;
 }
 

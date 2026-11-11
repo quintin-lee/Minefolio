@@ -85,6 +85,7 @@ import echarts, { type ECharts, type EChartsOption } from '@/utils/echarts'
 import { useMarketStore } from '@/stores/market'
 import { calculatePeriodStats, formatRate, calcCrossRate } from '@/utils/fx'
 import { exportChartPng, exportChartCsv } from '@/utils/chart-export'
+import { resolveChartPalette, useChartThemeSync } from '@/utils/echarts-theme'
 
 const { t } = useI18n()
 const marketStore = useMarketStore()
@@ -119,6 +120,8 @@ function updateChart() {
     return
   }
 
+  const palette = resolveChartPalette()
+
   const option: EChartsOption = {
     tooltip: {
       trigger: 'axis',
@@ -138,14 +141,14 @@ function updateChart() {
       type: 'category',
       data: dates,
       boundaryGap: false,
-      axisLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.08)' } },
-      axisLabel: { color: 'var(--el-text-color-secondary)', fontSize: 11 },
+      axisLine: { lineStyle: { color: palette.borderSubtle } },
+      axisLabel: { color: palette.textMuted, fontSize: 11 },
     },
     yAxis: {
       type: 'value',
       scale: true,
-      splitLine: { lineStyle: { color: 'rgba(255, 255, 255, 0.05)' } },
-      axisLabel: { color: 'var(--el-text-color-secondary)', fontSize: 11 },
+      splitLine: { lineStyle: { color: palette.isLight ? 'rgba(0, 0, 0, 0.06)' : 'rgba(255, 255, 255, 0.05)' } },
+      axisLabel: { color: palette.textMuted, fontSize: 11 },
     },
     dataZoom: [
       {
@@ -198,6 +201,10 @@ watch(
   },
   { deep: true }
 )
+
+useChartThemeSync(() => {
+  updateChart()
+})
 
 function handleResize() {
   chartInstance?.resize()

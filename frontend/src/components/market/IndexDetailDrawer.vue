@@ -55,6 +55,7 @@ import { computed, ref, watch, nextTick, onBeforeUnmount } from 'vue'
 import { useI18n } from '@/composables/useI18n'
 import echarts, { type ECharts, type EChartsOption } from '@/utils/echarts'
 import { useMarketStore } from '@/stores/market'
+import { resolveChartPalette, useChartThemeSync, withAlpha } from '@/utils/echarts-theme'
 
 const { t } = useI18n()
 const marketStore = useMarketStore()
@@ -87,9 +88,10 @@ function renderChart() {
     chartInstance = echarts.init(chartRef.value)
   }
 
+  const palette = resolveChartPalette()
   const pts = item.value.sparkline || []
   const times = pts.map((_, i) => `${9 + Math.floor(i / 2)}:${i % 2 === 0 ? '30' : '00'}`)
-  const color = isPositive.value ? '#67c23a' : '#f56c6c'
+  const color = isPositive.value ? palette.success : palette.danger
 
   const option: EChartsOption = {
     tooltip: {
@@ -100,12 +102,14 @@ function renderChart() {
     xAxis: {
       type: 'category',
       data: times,
-      axisLine: { lineStyle: { color: '#888' } },
+      axisLine: { lineStyle: { color: palette.borderSubtle } },
+      axisLabel: { color: palette.textMuted },
     },
     yAxis: {
       type: 'value',
       scale: true,
-      splitLine: { lineStyle: { type: 'dashed', opacity: 0.2 } },
+      splitLine: { lineStyle: { type: 'dashed', color: palette.isLight ? 'rgba(0, 0, 0, 0.06)' : 'rgba(255, 255, 255, 0.06)' } },
+      axisLabel: { color: palette.textMuted },
     },
     series: [
       {
@@ -117,7 +121,7 @@ function renderChart() {
         lineStyle: { width: 2.5, color },
         areaStyle: {
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: isPositive.value ? 'rgba(103,194,58,0.35)' : 'rgba(245,108,108,0.35)' },
+            { offset: 0, color: isPositive.value ? withAlpha(palette.success, 0.35) : withAlpha(palette.danger, 0.35) },
             { offset: 1, color: 'rgba(0,0,0,0)' },
           ]),
         },
@@ -128,18 +132,32 @@ function renderChart() {
   chartInstance.setOption(option)
 }
 
+function handleResize() {
+  chartInstance?.resize()
+}
+
+useChartThemeSync(() => {
+  if (marketStore.isDrawerOpen) {
+    renderChart()
+  }
+})
+
 watch(
   () => marketStore.isDrawerOpen,
   (open) => {
     if (open) {
+      window.addEventListener('resize', handleResize)
       nextTick(() => {
         renderChart()
       })
+    } else {
+      window.removeEventListener('resize', handleResize)
     }
   }
 )
 
 onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleResize)
   if (chartInstance) {
     chartInstance.dispose()
     chartInstance = null
