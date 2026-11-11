@@ -116,7 +116,7 @@ onErrorCaptured((err, instance, info) => {
   justify-content: space-between;
   padding: 16px 24px;
   border-bottom: 1px solid var(--mf-border);
-  background: var(--bg-primary);
+  background: var(--mf-background);
   flex-shrink: 0;
 }
 
@@ -137,7 +137,7 @@ onErrorCaptured((err, instance, info) => {
   margin: 0;
   font-size: 18px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--mf-text-main);
 }
 
 .settings-tabs {

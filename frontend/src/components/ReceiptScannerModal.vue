@@ -482,8 +482,8 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 8px 12px;
-  background: var(--bg-primary, rgba(255, 255, 255, 0.04));
-  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+  background: var(--mf-surface-muted);
+  border: 1px solid var(--mf-border);
   border-radius: 8px;
   margin-bottom: 16px;
   font-size: 13px;
@@ -496,7 +496,7 @@ onMounted(() => {
 }
 
 .model-info-left .label {
-  color: var(--mf-text-secondary, #94a3b8);
+  color: var(--mf-text-muted);
 }
 
 .settings-link {
@@ -524,8 +524,8 @@ onMounted(() => {
 .receipt-uploader :deep(.el-upload-dragger) {
   padding: 36px 16px;
   border-radius: 12px;
-  background: var(--bg-primary, rgba(255, 255, 255, 0.03));
-  border: 2px dashed var(--border-color, rgba(255, 255, 255, 0.15));
+  background: var(--mf-surface-card);
+  border: 2px dashed var(--mf-border);
 }
 
 .camera-action-row {

@@ -1105,10 +1105,10 @@ async function handleImport() {
   align-items: center;
   gap: 20px;
   padding: 10px 20px;
-  background: var(--mf-card-bg, #ffffff);
-  border: 1px solid var(--mf-border, #e2e8f0);
+  background: var(--mf-surface-card);
+  border: 1px solid var(--mf-border);
   border-radius: 40px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.15), 0 2px 6px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--mf-shadow-lg);
   backdrop-filter: blur(12px);
 }
 
@@ -1118,7 +1118,7 @@ async function handleImport() {
   gap: 8px;
   font-size: 14px;
   font-weight: 500;
-  color: var(--mf-text-primary, #1e293b);
+  color: var(--mf-text-main);
 }
 
 .selected-badge {
