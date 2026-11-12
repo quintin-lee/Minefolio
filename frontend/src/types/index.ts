@@ -797,4 +797,5 @@ export interface GlobalIndicesData {
 }
 
 export * from './chat-panel'
+export * from './skill'
 
