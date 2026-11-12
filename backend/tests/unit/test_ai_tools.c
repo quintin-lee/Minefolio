@@ -532,6 +532,38 @@ main(void)
         printf("[Test 9] PASS: Propose batch actions tool & HMAC draft protocol verified\n");
     }
 
+    /* Test 10: Agent Skills Discovery and Invocation Tools (use_skill, list_skills) */
+    {
+        printf("[Test 10] Testing Agent Skills tools...\n");
+        const ai_tool_t* t_use = ai_tool_find("use_skill");
+        assert(t_use != NULL);
+        assert(t_use->permission == AI_PERM_READ);
+        assert(!t_use->is_mutation);
+
+        const ai_tool_t* t_list = ai_tool_find("list_skills");
+        assert(t_list != NULL);
+
+        /* 1. list_skills */
+        char* r_list = ai_tool_dispatch(ctx, "list_skills", "{}");
+        assert(r_list != NULL);
+        assert(strstr(r_list, "skills") != NULL);
+        free(r_list);
+
+        /* 2. use_skill missing parameter */
+        char* r_miss = ai_tool_dispatch(ctx, "use_skill", "{}");
+        assert(r_miss != NULL);
+        assert(strstr(r_miss, "error") != NULL);
+        free(r_miss);
+
+        /* 3. use_skill not found */
+        char* r_notfound = ai_tool_dispatch(ctx, "use_skill", "{\"skill_name\":\"non-existent-skill\"}");
+        assert(r_notfound != NULL);
+        assert(strstr(r_notfound, "not found") != NULL);
+        free(r_notfound);
+
+        printf("[Test 10] PASS: Agent skills tools (use_skill, list_skills) verified\n");
+    }
+
     ai_tool_context_free(ctx);
     unlink(db_file);
 
