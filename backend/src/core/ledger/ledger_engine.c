@@ -409,11 +409,11 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
             "source_type, transaction_type, direction, linked_direction, "
             "amount, price_per_unit, quantity, fee, currency, transaction_date, note, "
             "parent_tx_id, ledger_id) "
-            "VALUES (?, ?, CAST(NULLIF(?, '0') AS BIGINT), CAST(NULLIF(?, '0') AS BIGINT), ?, ?, "
+            "VALUES (?, ?, NULLIF(CAST(? AS BIGINT), 0), NULLIF(CAST(? AS BIGINT), 0), ?, ?, "
             "?, NULLIF(?, ''), ?, ?, ?, ?, "
             "?, ?, ?, "
-            "CAST(NULLIF(?, '') AS BIGINT), "
-            "COALESCE(CAST(NULLIF(?, '0') AS BIGINT), (SELECT ledger_id FROM assets WHERE id = ?), "
+            "NULLIF(CAST(? AS BIGINT), 0), "
+            "COALESCE(NULLIF(CAST(? AS BIGINT), 0), (SELECT ledger_id FROM assets WHERE id = ?), "
             "(SELECT id FROM ledgers WHERE owner_id = ? AND is_default = 1))) "
             "RETURNING id",
             ins_params);
@@ -467,9 +467,9 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
             "UPDATE transactions SET "
             "asset_id=?, transaction_type=?, direction=?, linked_direction=NULLIF(?, ''), "
             "amount=?, price_per_unit=?, quantity=?, fee=?, currency=?, "
-            "transaction_date=?, note=?, category_id=CAST(NULLIF(?, '0') AS BIGINT), "
+            "transaction_date=?, note=?, category_id=NULLIF(CAST(? AS BIGINT), 0), "
             "source_type=?, "
-            "linked_asset_id=CAST(NULLIF(?, '0') AS BIGINT) "
+            "linked_asset_id=NULLIF(CAST(? AS BIGINT), 0) "
             "WHERE id=? AND user_id=? RETURNING id",
             upd_params);
 
@@ -582,9 +582,9 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
             "source_type, transaction_type, direction, linked_direction, "
             "amount, price_per_unit, quantity, fee, currency, transaction_date, note, "
             "parent_tx_id, ledger_id) "
-            "VALUES (?, ?, CAST(NULLIF(?, '0') AS BIGINT), CAST(NULLIF(?, '0') AS BIGINT), ?, ?, "
+            "VALUES (?, ?, NULLIF(CAST(? AS BIGINT), 0), NULLIF(CAST(? AS BIGINT), 0), ?, ?, "
             "?, NULL, ?, ?, ?, ?, ?, ?, ?, "
-            "?, CAST(NULLIF(?, '0') AS BIGINT))",
+            "?, NULLIF(CAST(? AS BIGINT), 0))",
             fee_params);
         if (fee_res) {
             csilk_json_free(fee_res);

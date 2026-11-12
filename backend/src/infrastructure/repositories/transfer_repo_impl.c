@@ -49,9 +49,9 @@ mf_transfer_repo_insert(void* db_pool, int64_t user_id, const mf_transfer_t* tra
         "INSERT INTO transfers (user_id, from_asset_id, to_asset_id, amount, currency, "
         "transfer_date, note, ledger_id, from_tx_id, to_tx_id) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, "
-        "COALESCE(CAST(NULLIF(?, '0') AS BIGINT), (SELECT ledger_id FROM assets WHERE id=?)), "
-        "CAST(NULLIF(?, '0') AS BIGINT), "
-        "CAST(NULLIF(?, '0') AS BIGINT)) "
+        "COALESCE(NULLIF(CAST(? AS BIGINT), 0), (SELECT ledger_id FROM assets WHERE id=?)), "
+        "NULLIF(CAST(? AS BIGINT), 0), "
+        "NULLIF(CAST(? AS BIGINT), 0)) "
         "RETURNING id",
         (const char*[]){uid,
                         fid,
@@ -100,7 +100,7 @@ mf_transfer_repo_insert_out_transaction(void*       db_pool,
         "transaction_type, direction, linked_direction, amount, currency, transaction_date, note, "
         "ledger_id) "
         "VALUES (?, ?, ?, 'expense', 'transfer_out', 'out', 'in', ?, ?, ?, ?, "
-        "COALESCE(CAST(NULLIF(?, '0') AS BIGINT), (SELECT ledger_id FROM assets WHERE id=?))) "
+        "COALESCE(NULLIF(CAST(? AS BIGINT), 0), (SELECT ledger_id FROM assets WHERE id=?))) "
         "RETURNING id",
         (const char*[]){uid, aid, laid, amt, currency, date, note ? note : "", lid, aid, NULL});
     int64_t id = 0;
@@ -140,8 +140,8 @@ mf_transfer_repo_insert_in_transaction(void*       db_pool,
         "transaction_type, direction, linked_direction, amount, currency, transaction_date, note, "
         "parent_tx_id, ledger_id) "
         "VALUES (?, ?, ?, 'income', 'transfer_in', 'in', 'out', ?, ?, ?, ?, "
-        "CAST(NULLIF(?, '0') AS BIGINT), "
-        "COALESCE(CAST(NULLIF(?, '0') AS BIGINT), (SELECT ledger_id FROM assets WHERE id=?))) "
+        "NULLIF(CAST(? AS BIGINT), 0), "
+        "COALESCE(NULLIF(CAST(? AS BIGINT), 0), (SELECT ledger_id FROM assets WHERE id=?))) "
         "RETURNING id",
         (const char*[]){
             uid, aid, laid, amt, currency, date, note ? note : "", pid, lid, aid, NULL});

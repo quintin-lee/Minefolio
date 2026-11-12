@@ -150,8 +150,8 @@ main(void)
     assert(db_get_int(item0, "buy_tx_id") == 1001);
     assert(strcmp(csilk_json_get_string(item0, "buy_date"), "2026-01-01") == 0);
     assert(strcmp(csilk_json_get_string(item0, "status"), "open") == 0);
-    assert(strcmp(csilk_json_get_string(item0, "original_quantity"), "100.00000000") == 0);
-    assert(strcmp(csilk_json_get_string(item0, "remaining_quantity"), "100.00000000") == 0);
+    assert(db_get_num(item0, "original_quantity") == 100.0);
+    assert(db_get_num(item0, "remaining_quantity") == 100.0);
 
     assert(db_get_int(item1, "id") == lot2);
     assert(db_get_int(item1, "buy_tx_id") == 1002);
@@ -177,7 +177,7 @@ main(void)
 
     item0 = (csilk_json_t*)csilk_json_array_get(open_lots, 0);
     assert(db_get_int(item0, "id") == lot1);
-    assert(strcmp(csilk_json_get_string(item0, "remaining_quantity"), "60.00000000") == 0);
+    assert(db_get_num(item0, "remaining_quantity") == 60.0);
     assert(strcmp(csilk_json_get_string(item0, "status"), "open") == 0);
 
     csilk_json_free(open_lots);
