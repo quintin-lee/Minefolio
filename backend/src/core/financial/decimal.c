@@ -383,7 +383,7 @@ decimal_from_string(const char* str, decimal_t* out)
         if (scaled.lo > ((unsigned __int128)1 << 127)) {
             return DECIMAL_ERR_OVERFLOW;
         }
-        out->mantissa = -(__int128_t)scaled.lo;
+        out->mantissa = (__int128_t)(-(unsigned __int128)scaled.lo);
     } else {
         if (scaled.lo > (((unsigned __int128)1 << 127) - 1)) {
             return DECIMAL_ERR_OVERFLOW;

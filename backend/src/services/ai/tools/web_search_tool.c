@@ -543,9 +543,9 @@ mf_bing_unpack_url(const char* href)
         return strdup(href);
     }
 
-    size_t di = 0;
-    int    buf = 0;
-    int    bits = 0;
+    size_t   di = 0;
+    uint32_t buf = 0;
+    int      bits = 0;
     for (size_t i = 0; i < in_len; i++) {
         char c = u_start[i];
         if (c == '=') {

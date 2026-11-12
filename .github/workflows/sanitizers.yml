@@ -46,6 +46,7 @@ jobs:
           UBSAN_OPTIONS: "print_stacktrace=1:halt_on_error=1"
           LSAN_OPTIONS: "suppressions=${{ github.workspace }}/backend/tests/.lsan-suppressions"
         run: |
+          export LD_PRELOAD=$(gcc-14 -print-file-name=libasan.so 2>/dev/null || gcc -print-file-name=libasan.so)
           cd backend/build
           ctest --output-on-failure
 
@@ -56,6 +57,7 @@ jobs:
           LSAN_OPTIONS: "suppressions=${{ github.workspace }}/backend/tests/.lsan-suppressions"
           MINEFOLIO_DB_DRIVER: sqlite
         run: |
+          export LD_PRELOAD=$(gcc-14 -print-file-name=libasan.so 2>/dev/null || gcc -print-file-name=libasan.so)
           cd backend
           ./tests/test_link.sh
           ./tests/test_2fa.sh
@@ -119,6 +121,7 @@ jobs:
           PGPASSWORD: postgres_password
           PGDATABASE: minefolio_test
         run: |
+          export LD_PRELOAD=$(gcc-14 -print-file-name=libasan.so 2>/dev/null || gcc -print-file-name=libasan.so)
           cd backend
           ./tests/test_link.sh
           ./tests/test_2fa.sh

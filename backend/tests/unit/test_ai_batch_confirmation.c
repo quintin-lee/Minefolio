@@ -387,6 +387,7 @@ main(int argc, char** argv)
 
         free(token);
         csilk_json_free(actions);
+        csilk_db_pool_free(pool);
         unlink(test_db);
     }
 
@@ -482,7 +483,8 @@ main(int argc, char** argv)
             assert(fresh_token != NULL);
 
             /* Modify amount before executing */
-            csilk_json_add_number(act1, "amount", 999.0);
+            csilk_json_t* act1_mod = csilk_json_array_get(actions, 0);
+            csilk_json_add_number(act1_mod, "amount", 999.0);
 
             csilk_json_t* out_data_tamper = NULL;
             int           code_tamper = 0;
@@ -554,6 +556,7 @@ main(int argc, char** argv)
 
         free(token);
         csilk_json_free(actions);
+        csilk_db_pool_free(pool);
         unlink(test_db);
     }
 

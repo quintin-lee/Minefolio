@@ -17,5 +17,6 @@ leak:json_view_immutable
 leak:json_view_mutable
 leak:json_view_str
 leak:json_view_unsafe
+leak:json_mut_new
 leak:csilk_client_write
 leak:_csilk_send_data_owned

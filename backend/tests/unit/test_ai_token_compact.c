@@ -311,7 +311,9 @@ test_pass_through(void)
     free(proj_custom);
 
     /* 4. Null safety */
-    assert(ai_project_tool_result(NULL, search_json) != NULL);
+    char* proj_null_tool = ai_project_tool_result(NULL, search_json);
+    assert(proj_null_tool != NULL);
+    free(proj_null_tool);
     assert(ai_project_tool_result("get_assets", NULL) == NULL);
 
     printf("  ✓ pass-through cases passed.\n");

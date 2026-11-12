@@ -116,7 +116,8 @@ mf_tx_repo_save(void* db_pool, const mf_transaction_t* tx, int64_t* out_id)
         "INSERT INTO transactions (user_id, asset_id, linked_asset_id, parent_tx_id, "
         "transaction_type, "
         "amount, price_per_unit, quantity, fee, currency, note, transaction_date, ledger_id) "
-        "VALUES (?, ?, NULLIF(CAST(? AS BIGINT), 0), NULLIF(CAST(? AS BIGINT), 0), ?, ?, ?, ?, "
+        "VALUES (?, ?, NULLIF(CAST(NULLIF(?, '') AS BIGINT), 0), NULLIF(CAST(NULLIF(?, '') AS "
+        "BIGINT), 0), ?, ?, ?, ?, "
         "?, ?, ?, ?, "
         "COALESCE((SELECT ledger_id FROM assets WHERE id = ?), (SELECT id FROM ledgers WHERE "
         "owner_id = ? AND is_default = 1))) RETURNING id",
@@ -178,7 +179,8 @@ mf_tx_repo_update(void* db_pool, const mf_transaction_t* tx)
 
     csilk_json_t* res = csilk_db_query_param_json(
         (csilk_db_pool_t*)db_pool,
-        "UPDATE transactions SET asset_id=?, linked_asset_id=NULLIF(CAST(? AS BIGINT), 0), "
+        "UPDATE transactions SET asset_id=?, linked_asset_id=NULLIF(CAST(NULLIF(?, '') AS BIGINT), "
+        "0), "
         "transaction_type=?, "
         "amount=?, price_per_unit=?, quantity=?, fee=?, currency=?, note=?, transaction_date=? "
         "WHERE id=? AND user_id=? RETURNING id",
@@ -467,7 +469,8 @@ tx_insert(csilk_db_pool_t* pool,
         "(user_id,asset_id,linked_asset_id,category_id,source_type,transaction_type,direction,"
         "linked_direction,amount,price_per_unit,quantity,fee,currency,transaction_date,note,ledger_"
         "id) "
-        "VALUES (?,?,NULLIF(CAST(? AS BIGINT), 0),NULLIF(CAST(? AS BIGINT), 0),?,?,?, "
+        "VALUES (?,?,NULLIF(CAST(NULLIF(?, '') AS BIGINT), 0),NULLIF(CAST(NULLIF(?, '') AS "
+        "BIGINT), 0),?,?,?, "
         "NULLIF(?, ''),?,?,?,?,?,?,?, "
         "COALESCE((SELECT ledger_id FROM assets WHERE id = ?), (SELECT id FROM ledgers WHERE "
         "owner_id = ? AND is_default = 1))) RETURNING id",
