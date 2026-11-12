@@ -938,10 +938,18 @@ check "预置金融技能数量应为 4" "4" "$SKILLS_COUNT"
 HAS_AUDITOR=$(echo "$SKILLS_LIST_RES" | jq -r '.data[] | select(.name=="financial-health-auditor") | .name')
 check "预置技能包含 financial-health-auditor" "financial-health-auditor" "$HAS_AUDITOR"
 
-# 4. 分类过滤查询：category=tax
+# 4. 分类过滤查询：category=tax, category=finance, category=expense
 TAX_SKILLS_RES=$(curl -s -H "$AUTH" "$BASE/ai/skills?category=tax")
 TAX_COUNT=$(echo "$TAX_SKILLS_RES" | jq -r '.data | length')
 check "税务分类过滤技能数量为 1" "1" "$TAX_COUNT"
+
+FIN_SKILLS_RES=$(curl -s -H "$AUTH" "$BASE/ai/skills?category=finance")
+FIN_COUNT=$(echo "$FIN_SKILLS_RES" | jq -r '.data | length')
+check "财务分类过滤技能数量为 1" "1" "$FIN_COUNT"
+
+EXP_SKILLS_RES=$(curl -s -H "$AUTH" "$BASE/ai/skills?category=expense")
+EXP_COUNT=$(echo "$EXP_SKILLS_RES" | jq -r '.data | length')
+check "支出分类过滤技能数量为 1" "1" "$EXP_COUNT"
 
 # 5. 创建自定义技能：合法创建
 CREATE_SKILL_PAYLOAD='{"name":"crypto-arbitrage-scanner","description":"扫描多交易所数字资产套利机会","category":"investment","tags":"crypto,arbitrage","instructions_l2":"# 套利规则\n监控跨交易所价差超过1.5%时的无风险套利路径。","enabled":1}'
@@ -1019,6 +1027,10 @@ curl -s -X DELETE -H "$AUTH" "$BASE/ai/skills/$CUSTOM_SKILL_ID" >/dev/null
 curl -s -X DELETE -H "$AUTH" "$BASE/ai/skills/$IMPORTED_ID" >/dev/null
 DEL_VERIFY_RES=$(curl -s -H "$AUTH" "$BASE/ai/skills/$CUSTOM_SKILL_ID")
 check "删除后查询返回 code=1002" "1002" "$(echo "$DEL_VERIFY_RES" | jq -r '.code | floor')"
+
+# 15. 删除不存在的技能返回 code=1002
+DEL_NONEXIST_RES=$(curl -s -X DELETE -H "$AUTH" "$BASE/ai/skills/999999")
+check "删除不存在的技能返回 code=1002" "1002" "$(echo "$DEL_NONEXIST_RES" | jq -r '.code | floor')"
 
 echo ""
 echo "结果: PASS=$PASS FAIL=$FAIL"

@@ -193,7 +193,7 @@ function handleEdit(skill: AiSkill) {
 }
 
 function handleTest(skill: AiSkill) {
-  dialogRef.value?.openEdit(skill)
+  dialogRef.value?.openEdit(skill, 'test')
 }
 
 async function handleToggle(skill: AiSkill, enabled: boolean) {

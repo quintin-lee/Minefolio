@@ -124,7 +124,11 @@ int main(void) {
     assert(skill_repo_delete(pool, user_id, id) == 0);
     got = skill_repo_get(pool, user_id, id);
     assert(got == NULL);
-    printf("  [OK] skill_repo_delete\n");
+    assert(skill_repo_delete(pool, user_id, id) == -1); // Deleting already deleted id must return -1
+    assert(skill_repo_delete(pool, user_id, 999999) == -1);
+    assert(skill_repo_update(pool, user_id, 999999, &sk) == -1);
+    assert(skill_repo_toggle(pool, user_id, 999999, 1) == -1);
+    printf("  [OK] skill_repo_delete and non-existent id guards\n");
 
     printf("=== ALL SKILL REPO TESTS PASSED ===\n");
     unlink(TEST_DB_PATH);

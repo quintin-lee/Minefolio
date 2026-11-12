@@ -13,8 +13,8 @@
 static const mf_skill_t S_DEFAULT_SKILLS[] = {
     {.name = "financial-health-auditor",
      .description =
-         "全面审计家庭与个人财务健康度：流动性资金覆盖月数、负债收入比、月均储蓄率与风险诊断。", .category = "audit",
-     .tags = "audit,cashflow,health,debt",
+         "全面审计家庭与个人财务健康度：流动性资金覆盖月数、负债收入比、月均储蓄率与风险诊断。", .category = "finance",
+     .tags = "finance,cashflow,health,debt",
      .license = "MIT",
      .compatibility = "minefolio >= 1.0",
      .enabled = 1,
@@ -66,8 +66,8 @@ static const mf_skill_t S_DEFAULT_SKILLS[] = {
          "列出各标的当前市值、当前占比、目标占比与建议加仓差额（元）。"                       },
     {.name = "impulse-expense-guard",
      .description =
-         "防冲动消费守护者：折算等效工作时长，运用苏格拉底式提问进行消费决策挑战与冷却拦截。",   .category = "budgeting",
-     .tags = "budgeting,expense,guard,psychology",
+         "防冲动消费守护者：折算等效工作时长，运用苏格拉底式提问进行消费决策挑战与冷却拦截。",   .category = "expense",
+     .tags = "expense,guard,psychology",
      .license = "MIT",
      .compatibility = "minefolio >= 1.0",
      .enabled = 1,
@@ -387,8 +387,9 @@ skill_usecase_import_markdown(void* pool, int64_t user_id, const char* md_conten
     strncpy(dto.category, "finance", sizeof(dto.category) - 1);
     dto.instructions_l2 = body;
 
-    // Line-by-line simple YAML key: value parser
-    char* line = strtok(fm, "\n");
+    // Line-by-line simple YAML key: value parser (thread-safe strtok_r)
+    char* saveptr = NULL;
+    char* line = strtok_r(fm, "\n", &saveptr);
     while (line) {
         while (*line == ' ' || *line == '\t' || *line == '\r') {
             line++;
@@ -426,7 +427,7 @@ skill_usecase_import_markdown(void* pool, int64_t user_id, const char* md_conten
                 strncpy(dto.tags, val, sizeof(dto.tags) - 1);
             }
         }
-        line = strtok(NULL, "\n");
+        line = strtok_r(NULL, "\n", &saveptr);
     }
     free(fm);
 
@@ -454,7 +455,7 @@ skill_usecase_export_markdown(void* pool, int64_t user_id, int64_t id, char** ou
     const char* tags = csilk_json_get_string(sk, "tags");
     const char* l2 = csilk_json_get_string(sk, "instructions_l2");
 
-    size_t est_size = 512 + (l2 ? strlen(l2) : 0);
+    size_t est_size = 2048 + (l2 ? strlen(l2) : 0);
     char*  buf = malloc(est_size);
     if (!buf) {
         csilk_json_free(sk);

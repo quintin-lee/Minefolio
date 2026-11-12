@@ -137,10 +137,10 @@
             <el-form-item label="执行脚本路径 (exec_path)">
               <el-input
                 v-model="form.exec_path"
-                placeholder="例如: /usr/bin/python3 scripts/tax_calc.py"
+                placeholder="例如: scripts/tax_calc.py 或 bin/tax_tool (相对路径)"
                 clearable
               />
-              <div class="field-hint">本地可执行程序绝对路径或相对于执行根目录的相对路径。</div>
+              <div class="field-hint">相对于工作根目录的相对路径（禁止以 / 开头或包含 .. 穿越）。</div>
             </el-form-item>
 
             <el-form-item label="工作根目录 (exec_root)">
@@ -363,10 +363,10 @@ function openCreate() {
   visible.value = true
 }
 
-function openEdit(skill: AiSkill) {
+function openEdit(skill: AiSkill, tab: string = 'l1') {
   isEdit.value = true
   currentSkillId.value = skill.id
-  activeTab.value = 'l1'
+  activeTab.value = tab
   testResult.value = null
   testArgs.value = ''
 

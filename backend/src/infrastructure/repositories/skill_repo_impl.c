@@ -218,8 +218,15 @@ skill_repo_delete(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     snprintf(id_str, sizeof(id_str), "%lld", (long long)id);
 
-    const char* sql = "DELETE FROM ai_skills WHERE user_id = ? AND id = ?";
-    return csilk_db_exec_param(pool, sql, (const char*[]){uid_str, id_str, NULL});
+    const char*   sql = "DELETE FROM ai_skills WHERE user_id = ? AND id = ? RETURNING id";
+    csilk_json_t* res =
+        csilk_db_query_param_json(pool, sql, (const char*[]){uid_str, id_str, NULL});
+    if (!res) {
+        return -1;
+    }
+    int success = (csilk_json_array_size(res) > 0) ? 0 : -1;
+    csilk_json_free(res);
+    return success;
 }
 
 int

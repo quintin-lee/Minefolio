@@ -10,7 +10,7 @@ mf_skill_validate_name(const char* name)
         return -1;
     }
     size_t len = strlen(name);
-    if (len > 64) {
+    if (len >= 64) {
         return -1;
     }
     if (name[0] == '-' || name[len - 1] == '-') {

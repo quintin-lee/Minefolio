@@ -26,17 +26,27 @@ exec_use_skill(const ai_tool_t* tool, const ai_tool_context_t* ctx, const csilk_
     csilk_json_t* sk =
         skill_repo_get_by_name((csilk_db_pool_t*)ctx->pool, ctx->user_id, skill_name);
     if (!sk) {
-        char err[128];
-        snprintf(err, sizeof(err), "{\"error\":\"Skill '%s' not found\"}", skill_name);
-        return strdup(err);
+        csilk_json_t* err_obj = csilk_json_object();
+        char          msg[128];
+        snprintf(msg, sizeof(msg), "Skill '%s' not found", skill_name);
+        csilk_json_add_string(err_obj, "error", msg);
+        size_t len = 0;
+        char*  out = csilk_json_serialize(err_obj, &len);
+        csilk_json_free(err_obj);
+        return out;
     }
 
     int enabled = db_get_int(sk, "enabled");
     if (enabled == 0) {
         csilk_json_free(sk);
-        char err[128];
-        snprintf(err, sizeof(err), "{\"error\":\"Skill '%s' is disabled\"}", skill_name);
-        return strdup(err);
+        csilk_json_t* err_obj = csilk_json_object();
+        char          msg[128];
+        snprintf(msg, sizeof(msg), "Skill '%s' is disabled", skill_name);
+        csilk_json_add_string(err_obj, "error", msg);
+        size_t len = 0;
+        char*  out = csilk_json_serialize(err_obj, &len);
+        csilk_json_free(err_obj);
+        return out;
     }
 
     int64_t id = (int64_t)db_get_num(sk, "id");
