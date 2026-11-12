@@ -3,7 +3,9 @@
 #include <string.h>
 #include <stdio.h>
 
-int mf_skill_validate_name(const char* name) {
+int
+mf_skill_validate_name(const char* name)
+{
     if (!name || name[0] == '\0') {
         return -1;
     }
@@ -21,15 +23,17 @@ int mf_skill_validate_name(const char* name) {
                 return -1; // consecutive hyphens
             }
         } else if (!islower((unsigned char)c) && !isdigit((unsigned char)c)) {
-            return -1; // must be lowercase a-z or 0-9
+            return -1;     // must be lowercase a-z or 0-9
         }
     }
     return 0;
 }
 
-int mf_skill_validate_exec_path(const char* path) {
+int
+mf_skill_validate_exec_path(const char* path)
+{
     if (!path || path[0] == '\0') {
-        return 0; // empty path allowed (pure L2 skill)
+        return 0;  // empty path allowed (pure L2 skill)
     }
     if (path[0] == '/') {
         return -1; // absolute path rejected
@@ -43,21 +47,33 @@ int mf_skill_validate_exec_path(const char* path) {
     return 0;
 }
 
-int mf_skill_validate(const mf_skill_t* skill, char* err_buf, size_t err_size) {
+int
+mf_skill_validate(const mf_skill_t* skill, char* err_buf, size_t err_size)
+{
     if (!skill) {
-        if (err_buf && err_size > 0) snprintf(err_buf, err_size, "Skill cannot be NULL");
+        if (err_buf && err_size > 0) {
+            snprintf(err_buf, err_size, "Skill cannot be NULL");
+        }
         return -1;
     }
     if (mf_skill_validate_name(skill->name) != 0) {
-        if (err_buf && err_size > 0) snprintf(err_buf, err_size, "技能名称必须为符合规范的 kebab-case (小写字母、数字及单连字符，长度 1-64)");
+        if (err_buf && err_size > 0) {
+            snprintf(err_buf,
+                     err_size,
+                     "技能名称必须为符合规范的 kebab-case (小写字母、数字及单连字符，长度 1-64)");
+        }
         return -1;
     }
     if (skill->description[0] == '\0') {
-        if (err_buf && err_size > 0) snprintf(err_buf, err_size, "技能描述不能为空");
+        if (err_buf && err_size > 0) {
+            snprintf(err_buf, err_size, "技能描述不能为空");
+        }
         return -1;
     }
     if (mf_skill_validate_exec_path(skill->exec_cfg.path) != 0) {
-        if (err_buf && err_size > 0) snprintf(err_buf, err_size, "非法脚本路径，禁止目录穿越或绝对路径");
+        if (err_buf && err_size > 0) {
+            snprintf(err_buf, err_size, "非法脚本路径，禁止目录穿越或绝对路径");
+        }
         return -1;
     }
     return 0;

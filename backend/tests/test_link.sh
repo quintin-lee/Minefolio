@@ -916,6 +916,110 @@ check "传入空 code 返回 code=1002" "1002" "$(echo "$OAUTH_EMPTY_CODE_RES" |
 OAUTH_BAD_CODE_RES=$(curl -s -H "Content-Type: application/json" -X POST "$BASE/auth/oauth/callback" -d '{"provider":"github","code":"invalid_code"}')
 check "无效 Code 拒绝置换返回 code=1002" "1002" "$(echo "$OAUTH_BAD_CODE_RES" | jq -r '.code | floor')"
 
+# =========================================================================
+# Case 43: Agent Skills 技能管理端到端测试
+# =========================================================================
+echo ""
+echo "--- Case 43: Agent Skills 技能管理与生命周期测试 ---"
+
+# 1. 鉴权边界：未授权访问 GET /api/ai/skills 返回 401
+SKILL_NOAUTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/ai/skills")
+check "未授权访问 GET /api/ai/skills 返回 401" "401" "$SKILL_NOAUTH_STATUS"
+
+# 2. 默认预置技能数量验证：用户应已自动拥有 4 个默认金融技能
+# 如果由于测试顺序未自动 seed，可调用 reset-defaults 确保初始化
+curl -s -X POST -H "$AUTH" "$BASE/ai/skills/reset-defaults" >/dev/null
+SKILLS_LIST_RES=$(curl -s -H "$AUTH" "$BASE/ai/skills")
+check "获取技能列表 code=0" "0" "$(echo "$SKILLS_LIST_RES" | jq -r '.code | floor')"
+SKILLS_COUNT=$(echo "$SKILLS_LIST_RES" | jq -r '.data | length')
+check "预置金融技能数量应为 4" "4" "$SKILLS_COUNT"
+
+# 3. 验证默认技能名称存在
+HAS_AUDITOR=$(echo "$SKILLS_LIST_RES" | jq -r '.data[] | select(.name=="financial-health-auditor") | .name')
+check "预置技能包含 financial-health-auditor" "financial-health-auditor" "$HAS_AUDITOR"
+
+# 4. 分类过滤查询：category=tax
+TAX_SKILLS_RES=$(curl -s -H "$AUTH" "$BASE/ai/skills?category=tax")
+TAX_COUNT=$(echo "$TAX_SKILLS_RES" | jq -r '.data | length')
+check "税务分类过滤技能数量为 1" "1" "$TAX_COUNT"
+
+# 5. 创建自定义技能：合法创建
+CREATE_SKILL_PAYLOAD='{"name":"crypto-arbitrage-scanner","description":"扫描多交易所数字资产套利机会","category":"investment","tags":"crypto,arbitrage","instructions_l2":"# 套利规则\n监控跨交易所价差超过1.5%时的无风险套利路径。","enabled":1}'
+CREATE_SKILL_RES=$(curl -s -X POST -H "$AUTH" -H "Content-Type: application/json" "$BASE/ai/skills" -d "$CREATE_SKILL_PAYLOAD")
+check "创建自定义技能 code=0" "0" "$(echo "$CREATE_SKILL_RES" | jq -r '.code | floor')"
+CUSTOM_SKILL_ID=$(echo "$CREATE_SKILL_RES" | jq -r '.data.id | floor')
+test -n "$CUSTOM_SKILL_ID" && [ "$CUSTOM_SKILL_ID" -gt 0 ] && HAS_SKILL_ID="yes" || HAS_SKILL_ID="no"
+check "创建成功返回合法技能 id" "yes" "$HAS_SKILL_ID"
+
+# 6. 非法参数校验：非 kebab-case 命名被拦截 (code=1002)
+INVALID_NAME_PAYLOAD='{"name":"Invalid_Name!","description":"非法名称","category":"investment"}'
+INVALID_NAME_RES=$(curl -s -X POST -H "$AUTH" -H "Content-Type: application/json" "$BASE/ai/skills" -d "$INVALID_NAME_PAYLOAD")
+check "非法命名格式返回 code=1002" "1002" "$(echo "$INVALID_NAME_RES" | jq -r '.code | floor')"
+
+# 7. 重名校验：已存在的技能名称被拦截 (code=1004)
+DUP_NAME_RES=$(curl -s -X POST -H "$AUTH" -H "Content-Type: application/json" "$BASE/ai/skills" -d "$CREATE_SKILL_PAYLOAD")
+check "重复技能名称返回 code=1004" "1004" "$(echo "$DUP_NAME_RES" | jq -r '.code | floor')"
+
+# 8. 查询技能详情：GET /api/ai/skills/:id
+GET_SKILL_RES=$(curl -s -H "$AUTH" "$BASE/ai/skills/$CUSTOM_SKILL_ID")
+check "获取单个技能详情 code=0" "0" "$(echo "$GET_SKILL_RES" | jq -r '.code | floor')"
+GET_SKILL_NAME=$(echo "$GET_SKILL_RES" | jq -r '.data.name')
+check "查询返回的技能名称匹配" "crypto-arbitrage-scanner" "$GET_SKILL_NAME"
+
+# 9. 启闭状态切换：POST /api/ai/skills/:id/toggle
+TOGGLE_RES=$(curl -s -X POST -H "$AUTH" -H "Content-Type: application/json" "$BASE/ai/skills/$CUSTOM_SKILL_ID/toggle" -d '{"enabled":0}')
+check "禁用技能 code=0" "0" "$(echo "$TOGGLE_RES" | jq -r '.code | floor')"
+TOGGLED_SKILL_RES=$(curl -s -H "$AUTH" "$BASE/ai/skills/$CUSTOM_SKILL_ID")
+TOGGLED_ENABLED=$(echo "$TOGGLED_SKILL_RES" | jq -r '.data.enabled')
+check "禁用后 enabled 字段为 0" "0" "$TOGGLED_ENABLED"
+
+# 10. enabled_only 过滤
+ENABLED_ONLY_RES=$(curl -s -H "$AUTH" "$BASE/ai/skills?enabled_only=1")
+ENABLED_MATCH=$(echo "$ENABLED_ONLY_RES" | jq -r ".data[] | select(.id==$CUSTOM_SKILL_ID) | .name")
+check "enabled_only=1 列表中不包含已禁用的技能" "" "$ENABLED_MATCH"
+
+# 重新启用
+curl -s -X POST -H "$AUTH" -H "Content-Type: application/json" "$BASE/ai/skills/$CUSTOM_SKILL_ID/toggle" -d '{"enabled":1}' >/dev/null
+
+# 11. 导出技能为 Markdown (SKILL.md)
+EXPORT_RES=$(curl -s -H "$AUTH" "$BASE/ai/skills/$CUSTOM_SKILL_ID/export")
+check "导出技能 Markdown code=0" "0" "$(echo "$EXPORT_RES" | jq -r '.code | floor')"
+EXPORT_CONTENT=$(echo "$EXPORT_RES" | jq -r '.data.content')
+test -n "$EXPORT_CONTENT" && echo "$EXPORT_CONTENT" | grep -q "name: crypto-arbitrage-scanner" && HAS_EXP_NAME="yes" || HAS_EXP_NAME="no"
+check "导出的 Markdown 包含 YAML Frontmatter name" "yes" "$HAS_EXP_NAME"
+
+# 12. 从 Markdown 导入技能
+IMPORT_MD_BODY=$(cat << 'EOF'
+---
+name: custom-portfolio-stress-tester
+description: 压力测试投资组合在极端市场行情下的最大回撤
+category: risk
+tags: stress-test,risk
+license: Apache-2.0
+---
+## 压力测试规则
+模拟标普500单日下挫10%、中概指数重挫15%情景，测算各持仓平仓风险。
+EOF
+)
+IMPORT_PAYLOAD=$(jq -n --arg content "$IMPORT_MD_BODY" '{"content": $content}')
+IMPORT_RES=$(curl -s -X POST -H "$AUTH" -H "Content-Type: application/json" "$BASE/ai/skills/import" -d "$IMPORT_PAYLOAD")
+check "从 Markdown 导入技能 code=0" "0" "$(echo "$IMPORT_RES" | jq -r '.code | floor')"
+IMPORTED_ID=$(echo "$IMPORT_RES" | jq -r '.data.id | floor')
+test -n "$IMPORTED_ID" && [ "$IMPORTED_ID" -gt 0 ] && HAS_IMP_ID="yes" || HAS_IMP_ID="no"
+check "导入成功返回合法技能 id" "yes" "$HAS_IMP_ID"
+
+# 13. 测试执行技能运行测试
+TEST_EXEC_RES=$(curl -s -X POST -H "$AUTH" -H "Content-Type: application/json" "$BASE/ai/skills/$CUSTOM_SKILL_ID/test" -d '{"arguments":"{\"test_param\":123}"}')
+check "测试执行技能 code=0" "0" "$(echo "$TEST_EXEC_RES" | jq -r '.code | floor')"
+TEST_STATUS=$(echo "$TEST_EXEC_RES" | jq -r '.data.status')
+check "指令型技能执行状态为 success" "success" "$TEST_STATUS"
+
+# 14. 清理创建的技能
+curl -s -X DELETE -H "$AUTH" "$BASE/ai/skills/$CUSTOM_SKILL_ID" >/dev/null
+curl -s -X DELETE -H "$AUTH" "$BASE/ai/skills/$IMPORTED_ID" >/dev/null
+DEL_VERIFY_RES=$(curl -s -H "$AUTH" "$BASE/ai/skills/$CUSTOM_SKILL_ID")
+check "删除后查询返回 code=1002" "1002" "$(echo "$DEL_VERIFY_RES" | jq -r '.code | floor')"
+
 echo ""
 echo "结果: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1
