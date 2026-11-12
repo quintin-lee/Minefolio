@@ -11,6 +11,7 @@ export const zhCN = {
     reports: '报表',
     auditLogs: '日志',
     aiChat: 'AI助手',
+    skills: '技能库',
     aiTraces: 'AI追踪',
     settings: '设置',
     login: '登录',

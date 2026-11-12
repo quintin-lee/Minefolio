@@ -11,6 +11,7 @@ export const enUS = {
     reports: 'Reports',
     auditLogs: 'Logs',
     aiChat: 'AI Assistant',
+    skills: 'Skill Library',
     aiTraces: 'AI Traces',
     settings: 'Settings',
     login: 'Login',

@@ -241,6 +241,15 @@ const commands = computed<CommandItem[]>(() => [
     route: '/chat',
   },
   {
+    id: 'nav-skills',
+    label: 'AI 技能库 (Skills)',
+    description: 'Anthropic 标准 Agent 专属技能管理、指令配置与调试',
+    keywords: ['技能', 'skill', 'skills', 'prompt', 'agent', 'tool'],
+    icon: 'ph:magic-wand-duotone',
+    group: 'navigation',
+    route: '/skills',
+  },
+  {
     id: 'nav-ai-traces',
     label: 'AI 调用追踪',
     description: 'LLM 运行日志、工具耗时与 Policy 审计',
