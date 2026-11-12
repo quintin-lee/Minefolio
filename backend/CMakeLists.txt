@@ -264,6 +264,12 @@ target_compile_options(test_domain_mcp PRIVATE -UNDEBUG)
 target_link_libraries(test_domain_mcp PRIVATE m)
 add_test(NAME test_domain_mcp COMMAND test_domain_mcp)
 
+add_executable(test_domain_skill tests/unit/test_domain_skill.c src/domain/skill/rules.c)
+target_include_directories(test_domain_skill PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_domain_skill PRIVATE -UNDEBUG)
+target_link_libraries(test_domain_skill PRIVATE m)
+add_test(NAME test_domain_skill COMMAND test_domain_skill)
+
 set(CORE_FINANCIAL_SRCS
     src/core/financial/currency.c
     src/core/financial/decimal.c
