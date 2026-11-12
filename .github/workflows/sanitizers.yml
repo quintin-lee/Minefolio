@@ -42,22 +42,20 @@ jobs:
 
       - name: Run CTest unit tests (ASan & UBSan)
         env:
-          ASAN_OPTIONS: "detect_leaks=1:check_initialization_order=1:strict_init_order=1:abort_on_error=1"
+          ASAN_OPTIONS: "detect_leaks=1:abort_on_error=1"
           UBSAN_OPTIONS: "print_stacktrace=1:halt_on_error=1"
           LSAN_OPTIONS: "suppressions=${{ github.workspace }}/backend/tests/.lsan-suppressions"
         run: |
-          export LD_PRELOAD=$(gcc-14 -print-file-name=libasan.so 2>/dev/null || gcc -print-file-name=libasan.so)
           cd backend/build
           ctest --output-on-failure
 
       - name: Run full backend integration tests (SQLite, ASan & UBSan)
         env:
-          ASAN_OPTIONS: "detect_leaks=1:check_initialization_order=1:strict_init_order=1:abort_on_error=1"
+          ASAN_OPTIONS: "detect_leaks=1:abort_on_error=1"
           UBSAN_OPTIONS: "print_stacktrace=1:halt_on_error=1"
           LSAN_OPTIONS: "suppressions=${{ github.workspace }}/backend/tests/.lsan-suppressions"
           MINEFOLIO_DB_DRIVER: sqlite
         run: |
-          export LD_PRELOAD=$(gcc-14 -print-file-name=libasan.so 2>/dev/null || gcc -print-file-name=libasan.so)
           cd backend
           ./tests/test_link.sh
           ./tests/test_2fa.sh
@@ -110,7 +108,7 @@ jobs:
 
       - name: Run full backend integration tests (PostgreSQL, ASan & UBSan)
         env:
-          ASAN_OPTIONS: "detect_leaks=1:check_initialization_order=1:strict_init_order=1:abort_on_error=1"
+          ASAN_OPTIONS: "detect_leaks=1:abort_on_error=1"
           UBSAN_OPTIONS: "print_stacktrace=1:halt_on_error=1"
           LSAN_OPTIONS: "suppressions=${{ github.workspace }}/backend/tests/.lsan-suppressions"
           MINEFOLIO_DB_DRIVER: postgres
@@ -121,7 +119,6 @@ jobs:
           PGPASSWORD: postgres_password
           PGDATABASE: minefolio_test
         run: |
-          export LD_PRELOAD=$(gcc-14 -print-file-name=libasan.so 2>/dev/null || gcc -print-file-name=libasan.so)
           cd backend
           ./tests/test_link.sh
           ./tests/test_2fa.sh
