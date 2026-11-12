@@ -7,6 +7,7 @@
 #include "infrastructure/repositories/import_rule_repo_impl.h"
 #include "application/category/usecases.h"
 #include "application/account/usecases.h"
+#include "application/skill/usecases.h"
 #include "config/key_manager.h"
 #include "common/config.h"
 #include "common/jwt.h"
@@ -131,6 +132,7 @@ auth_usecase_register(void*                      pool,
     category_usecase_seed_defaults(db_pool, user_id, ledger_id);
     account_usecase_seed_default(db_pool, user_id, ledger_id);
     mf_import_rule_seed_defaults(db_pool, user_id);
+    skill_usecase_seed_defaults(db_pool, user_id);
 
     char*         token = jwt_generate_token(c, user_id, 0);
     csilk_json_t* resp = csilk_json_object();
@@ -934,6 +936,7 @@ auth_usecase_oauth_callback(void*                       pool,
         category_usecase_seed_defaults(db_pool, user_id, ledger_id);
         account_usecase_seed_default(db_pool, user_id, ledger_id);
         mf_import_rule_seed_defaults(db_pool, user_id);
+        skill_usecase_seed_defaults(db_pool, user_id);
     }
 
     char*         token = jwt_generate_token(NULL, user_id, token_version);
