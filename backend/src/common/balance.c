@@ -133,7 +133,7 @@ balance_apply_delta_m(csilk_db_pool_t* pool,
                                balance_after_str,
                                source_type,
                                source_id_str,
-                               note ? note : "",
+                             note ? note : "",
                                NULL};
     csilk_json_t* res5 = csilk_db_query_param_json(
         pool,

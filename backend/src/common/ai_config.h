@@ -37,8 +37,8 @@ typedef struct {
     int            provider_count;       /**< 服务商总数量 */
     char           default_provider[64]; /**< 默认选用的服务商 ID */
     char           default_model[128];   /**< 默认选用的模型标识 */
-    int            context_size;         /**< 上下文对话历史携带的最大消息条数（默认 20） */
-    char           system_prompt[2048];  /**< 全局系统提示词预设 */
+    int  context_size; /**< 上下文对话历史携带的最大消息条数（默认 20） */
+    char system_prompt[2048]; /**< 全局系统提示词预设 */
 } ai_config_t;
 
 /**

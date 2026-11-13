@@ -15,17 +15,17 @@ static struct {
     {"BTC",  "Bitcoin (比特币)" },
     {"ETH",  "Ethereum (以太坊)"},
     {"BNB",  "BNB (币安币)"     },
-    {"SOL",  "Solana"           },
+    {"SOL",  "Solana"              },
     {"XRP",  "Ripple (瑞波币)"  },
     {"DOGE", "Dogecoin (狗狗币)"},
     {"ADA",  "Cardano (艾达币)" },
-    {"AVAX", "Avalanche"        },
-    {"DOT",  "Polkadot (波卡)"  },
-    {"TRX",  "TRON (波场)"      },
-    {"LINK", "Chainlink"        },
+    {"AVAX", "Avalanche"           },
+    {"DOT",  "Polkadot (波卡)"   },
+    {"TRX",  "TRON (波场)"       },
+    {"LINK", "Chainlink"           },
     {"USDT", "Tether (泰达币)"  },
-    {"USDC", "USD Coin"         },
-    {NULL,   NULL               }
+    {"USDC", "USD Coin"            },
+    {NULL,   NULL                  }
 };
 
 static int

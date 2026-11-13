@@ -212,14 +212,14 @@ mf_dca_repo_plan_create(void* db_pool, int64_t user_id, const mf_dca_plan_t* pla
     const char*   params[] = {uid,
                               tid,
                               fid,
-                              plan->name[0] ? plan->name : "",
-                              plan->frequency[0] ? plan->frequency : "monthly",
+                            plan->name[0] ? plan->name : "",
+                            plan->frequency[0] ? plan->frequency : "monthly",
                               dop,
                               amt,
                               pr,
                               tta,
                               ttp,
-                              plan->note[0] ? plan->note : "",
+                            plan->note[0] ? plan->note : "",
                               NULL};
     csilk_json_t* res = csilk_db_query_param_json((csilk_db_pool_t*)db_pool, sql, params);
     int64_t       new_id = 0;
@@ -252,14 +252,14 @@ mf_dca_repo_plan_update(void* db_pool, int64_t user_id, int64_t id, const mf_dca
                         "WHERE user_id=? AND id=? RETURNING id";
     const char*   params[] = {tid,
                               fid,
-                              plan->name[0] ? plan->name : "",
-                              plan->frequency[0] ? plan->frequency : "monthly",
+                            plan->name[0] ? plan->name : "",
+                            plan->frequency[0] ? plan->frequency : "monthly",
                               dop,
                               amt,
                               pr,
                               tta,
                               ttp,
-                              plan->note[0] ? plan->note : "",
+                            plan->note[0] ? plan->note : "",
                               uid,
                               pid,
                               NULL};

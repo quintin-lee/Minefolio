@@ -41,7 +41,7 @@ typedef struct {
     /* 风险度量与集中度指标 (Risk Metrics & Concentration) */
     double  max_holding_weight;   /**< 最大单一标的持仓权重比例 (0.0 ~ 1.0) */
     int64_t max_holding_asset_id; /**< 第一大重仓标的 ID */
-    double  herfindahl_index;     /**< 赫芬达尔集中度指数 HHI = sum(weight_i^2) (0.0 ~ 1.0) */
+    double  herfindahl_index; /**< 赫芬达尔集中度指数 HHI = sum(weight_i^2) (0.0 ~ 1.0) */
 } mf_portfolio_t;
 
 /**

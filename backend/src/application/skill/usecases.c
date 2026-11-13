@@ -13,7 +13,8 @@
 static const mf_skill_t S_DEFAULT_SKILLS[] = {
     {.name = "financial-health-auditor",
      .description =
-         "全面审计家庭与个人财务健康度：流动性资金覆盖月数、负债收入比、月均储蓄率与风险诊断。", .category = "finance",
+         "全面审计家庭与个人财务健康度：流动性资金覆盖月数、负债收入比、月均储蓄率与风险诊断。",
+     .category = "finance",
      .tags = "finance,cashflow,health,debt",
      .license = "MIT",
      .compatibility = "minefolio >= 1.0",
@@ -37,7 +38,7 @@ static const mf_skill_t S_DEFAULT_SKILLS[] = {
          "   - 计算：(月收入 - 月支出) / 月收入。\n"
          "   - 建议基准：>= 30% 优秀，10%~30% 正常，<10% 或赤字需削减弹性开支。\n\n"
          "## 输出格式\n"
-         "以 Markdown 表格输出指标得分，给出 1-2 条当前优先级最高的可落地调整动作。"          },
+         "以 Markdown 表格输出指标得分，给出 1-2 条当前优先级最高的可落地调整动作。"             },
     {.name = "dca-rebalance-advisor",
      .description = "定投偏离度测算与资产动态再平衡顾问：低吸加仓指引与大类资产配置比例优化。",
      .category = "investment",
@@ -63,10 +64,11 @@ static const mf_skill_t S_DEFAULT_SKILLS[] = {
          "   - 处于 20%~80% 区间：保持 1.0× 基准\n"
          "   - 处于 > 80% 区间：定投基准金额 × 0.7 或停止定投囤积现金等待机会。\n\n"
          "## 输出格式\n"
-         "列出各标的当前市值、当前占比、目标占比与建议加仓差额（元）。"                       },
+         "列出各标的当前市值、当前占比、目标占比与建议加仓差额（元）。"                         },
     {.name = "impulse-expense-guard",
      .description =
-         "防冲动消费守护者：折算等效工作时长，运用苏格拉底式提问进行消费决策挑战与冷却拦截。",   .category = "expense",
+         "防冲动消费守护者：折算等效工作时长，运用苏格拉底式提问进行消费决策挑战与冷却拦截。",
+     .category = "expense",
      .tags = "expense,guard,psychology",
      .license = "MIT",
      .compatibility = "minefolio >= 1.0",
@@ -88,10 +90,11 @@ static const mf_skill_t S_DEFAULT_SKILLS[] = {
                         "4. **48 小时冷却机制**：\n"
                         "   - 超过 500 元的非即时必需品，建议加入愿望清单冷却 48 小时。\n\n"
                         "## 态度与基调\n"
-                        "真诚、温和且具说服力，不用说教语气，而是用数据启发用户自省。"        },
+                        "真诚、温和且具说服力，不用说教语气，而是用数据启发用户自省。"          },
     {.name = "receipt-tax-classifier",
      .description =
-         "发票与票据税务智能归类专家：增值税合规抵扣、个税专项附加扣除与商用报销类别判定。",     .category = "tax",
+         "发票与票据税务智能归类专家：增值税合规抵扣、个税专项附加扣除与商用报销类别判定。",
+     .category = "tax",
      .tags = "tax,receipt,invoice,classification",
      .license = "MIT",
      .compatibility = "minefolio >= 1.0",
@@ -520,7 +523,7 @@ skill_usecase_export_markdown(void* pool, int64_t user_id, int64_t id, char** ou
     size_t est_size = 256 + (name ? strlen(name) : 0) + (desc ? strlen(desc) : 0) +
                       (lic ? strlen(lic) : 0) + (comp ? strlen(comp) : 0) +
                       (cat ? strlen(cat) : 0) + (tags ? strlen(tags) : 0) + (l2 ? strlen(l2) : 0);
-    char*  buf = malloc(est_size);
+    char* buf = malloc(est_size);
     if (!buf) {
         csilk_json_free(sk);
         return -1;

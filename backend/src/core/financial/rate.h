@@ -15,7 +15,7 @@
  * @brief 汇率/转换率结构体
  */
 typedef struct {
-    decimal_t  factor; /**< 汇率折算乘数因子 (1 单位 from_currency = factor 单位 to_currency) */
+    decimal_t factor; /**< 汇率折算乘数因子 (1 单位 from_currency = factor 单位 to_currency) */
     currency_t from_currency; /**< 源币种 */
     currency_t to_currency;   /**< 目标币种 */
 } rate_t;

@@ -11,10 +11,10 @@ extern "C" {
 #endif
 
 typedef struct {
-    double single_amount_limit;      /**< 单笔最高金额上限（超过则硬拦截，默认 500,000） */
-    double large_amount_threshold;   /**< 大额临界值（超过则自动升至 CRITICAL 风险，默认 50,000） */
-    int    max_frequency_per_minute; /**< 每分钟最高调用频次限制（默认 60 次/分） */
-    bool   enforce_confirmation;     /**< 是否强制所有变更操作需要二次确认 */
+    double single_amount_limit; /**< 单笔最高金额上限（超过则硬拦截，默认 500,000） */
+    double large_amount_threshold; /**< 大额临界值（超过则自动升至 CRITICAL 风险，默认 50,000） */
+    int  max_frequency_per_minute; /**< 每分钟最高调用频次限制（默认 60 次/分） */
+    bool enforce_confirmation;     /**< 是否强制所有变更操作需要二次确认 */
 } ai_policy_rules_t;
 
 typedef struct {
@@ -22,8 +22,8 @@ typedef struct {
     bool                     requires_confirmation; /**< 是否需要确认 */
     ai_risk_level_t          risk_level;            /**< 综合评估风险等级 */
     ai_permission_level_t    perm_level;            /**< 工具所需权限 */
-    ai_confirmation_draft_t* draft;                 /**< 若需确认，生成对应的草案对象 */
-    char                     reason[256];           /**< 放行或拦截的详细原因 */
+    ai_confirmation_draft_t* draft;       /**< 若需确认，生成对应的草案对象 */
+    char                     reason[256]; /**< 放行或拦截的详细原因 */
 } ai_policy_decision_t;
 
 /**

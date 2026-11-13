@@ -21,16 +21,16 @@ typedef struct {
     int64_t target_asset_id;  /**< 目标买入投资标的资产 ID */
     int64_t funding_asset_id; /**< 扣款扣费来源账户 ID */
     char    name[128];        /**< 定投计划名称 */
-    char    frequency[32];    /**< 定投执行周期："weekly" 每周, "biweekly" 每双周, "monthly" 每月 */
-    int     day_of_period;    /**< 周期内执行日期：每周对应 1-7（周一至周日），每月对应 1-31 */
-    double  amount;           /**< 每期计划扣款定投金额 */
-    double  target_profit_rate;   /**< 目标止盈收益率（如 0.15 表示 15%） */
-    double  target_total_amount;  /**< 累计计划总定投金额上限 */
-    int     target_total_periods; /**< 计划执行总期数上限 */
-    char    status[32];     /**< 计划状态："active" 进行中, "paused" 已暂停, "completed" 已终止 */
-    char    note[256];      /**< 备注信息 */
-    char    created_at[32]; /**< 创建时间戳 */
-    char    updated_at[32]; /**< 最后修改时间戳 */
+    char frequency[32]; /**< 定投执行周期："weekly" 每周, "biweekly" 每双周, "monthly" 每月 */
+    int day_of_period; /**< 周期内执行日期：每周对应 1-7（周一至周日），每月对应 1-31 */
+    double amount;               /**< 每期计划扣款定投金额 */
+    double target_profit_rate;   /**< 目标止盈收益率（如 0.15 表示 15%） */
+    double target_total_amount;  /**< 累计计划总定投金额上限 */
+    int    target_total_periods; /**< 计划执行总期数上限 */
+    char status[32]; /**< 计划状态："active" 进行中, "paused" 已暂停, "completed" 已终止 */
+    char note[256];      /**< 备注信息 */
+    char created_at[32]; /**< 创建时间戳 */
+    char updated_at[32]; /**< 最后修改时间戳 */
 } dca_plan_t;
 
 /**
@@ -47,9 +47,9 @@ typedef struct {
     double  executed_price;    /**< 实际成交单价 */
     double  executed_quantity; /**< 实际成交买入份额 */
     int64_t transaction_id;    /**< 关联生成的实际交易流水 ID */
-    char    status[32];     /**< 执行状态："pending" 待执行, "confirmed" 已完成, "skipped" 已跳过 */
-    char    created_at[32]; /**< 记录生成时间戳 */
-    char    updated_at[32]; /**< 记录状态变更时间戳 */
+    char status[32]; /**< 执行状态："pending" 待执行, "confirmed" 已完成, "skipped" 已跳过 */
+    char created_at[32]; /**< 记录生成时间戳 */
+    char updated_at[32]; /**< 记录状态变更时间戳 */
 } dca_execution_t;
 
 /**
@@ -69,8 +69,8 @@ typedef struct {
     char   start_date[16];  /**< 现金流开始生效日期 ("YYYY-MM-DD") */
     char   end_date[16];    /**< 现金流终止日期 ("YYYY-MM-DD"，空字符串表示长期) */
     double expected_amount; /**< 预计每期产生现金流金额 */
-    char   status[32];      /**< 状态："active" 启用, "completed" 已完成, "cancelled" 已作废 */
-    char   note[256];       /**< 备注信息 */
-    char   created_at[32];  /**< 创建时间戳 */
-    char   updated_at[32];  /**< 更新时间戳 */
+    char status[32]; /**< 状态："active" 启用, "completed" 已完成, "cancelled" 已作废 */
+    char note[256];  /**< 备注信息 */
+    char created_at[32]; /**< 创建时间戳 */
+    char updated_at[32]; /**< 更新时间戳 */
 } cashflow_schedule_t;

@@ -34,13 +34,13 @@ typedef int (*ai_wf_compensate_fn)(csilk_db_pool_t*    pool,
                                    const csilk_json_t* shared_state);
 
 typedef struct {
-    const char*         node_id;
-    const char*         title;
-    const char*         description;
-    ai_wf_node_fn       execute;
-    ai_wf_condition_fn  condition;   /**< 前置判定条件：若不为空且返回 false，则跳过该步骤 */
-    ai_wf_compensate_fn compensate;  /**< 失败补偿清理函数：工作流异常中止时逆序触发 */
-    int                 max_retries; /**< 瞬时重试次数，默认 0 */
+    const char*   node_id;
+    const char*   title;
+    const char*   description;
+    ai_wf_node_fn execute;
+    ai_wf_condition_fn condition; /**< 前置判定条件：若不为空且返回 false，则跳过该步骤 */
+    ai_wf_compensate_fn compensate; /**< 失败补偿清理函数：工作流异常中止时逆序触发 */
+    int max_retries;                /**< 瞬时重试次数，默认 0 */
 } ai_workflow_node_t;
 
 #ifdef __cplusplus

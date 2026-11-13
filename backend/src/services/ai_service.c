@@ -669,12 +669,12 @@ ai_chat_handler(csilk_ctx_t* c)
 
     csilk_arena_t* arena = csilk_arena_new(16384);
     sse_bridge_t   sse_bridge = {
-        .ctx = c,
-        .last_send_time = {0},
-        .sse_initialized = 1,
-        .trace = &trace,
-        .arena = arena,
-        .cancel_token = &client_gone,
+          .ctx = c,
+          .last_send_time = {0},
+          .sse_initialized = 1,
+          .trace = &trace,
+          .arena = arena,
+          .cancel_token = &client_gone,
     };
     clock_gettime(CLOCK_MONOTONIC, &sse_bridge.last_send_time);
 
@@ -805,12 +805,12 @@ ai_service_stream_report(csilk_ctx_t* c,
 
     csilk_arena_t* arena = csilk_arena_new(16384);
     sse_bridge_t   sse_bridge = {
-        .ctx = c,
-        .last_send_time = {0},
-        .sse_initialized = 1,
-        .trace = &trace,
-        .arena = arena,
-        .cancel_token = &client_gone,
+          .ctx = c,
+          .last_send_time = {0},
+          .sse_initialized = 1,
+          .trace = &trace,
+          .arena = arena,
+          .cancel_token = &client_gone,
     };
     clock_gettime(CLOCK_MONOTONIC, &sse_bridge.last_send_time);
 

@@ -817,12 +817,12 @@ exec_web_search(const ai_tool_t* tool, const ai_tool_context_t* ctx, const csilk
     size_t body_len = 0;
     long   http_code = 0;
     int    rc = curl_http_get_with_redirect_check(search_url,
-                                                  DEFAULT_SEARCH_TIMEOUT_MS,
-                                                  "text/html,application/xhtml+xml",
-                                                  &body,
-                                                  &body_len,
-                                                  &http_code,
-                                                  ctx->cancel_token);
+                                               DEFAULT_SEARCH_TIMEOUT_MS,
+                                               "text/html,application/xhtml+xml",
+                                               &body,
+                                               &body_len,
+                                               &http_code,
+                                               ctx->cancel_token);
 
     if (rc == -4) {
         return strdup("{\"error\":\"cancelled\",\"message\":\"用户已取消本次操作\"}");
@@ -898,12 +898,12 @@ exec_fetch_webpage(const ai_tool_t* tool, const ai_tool_context_t* ctx, const cs
     size_t jina_len = 0;
     long   jina_code = 0;
     int    rc = curl_http_get_with_redirect_check(jina_url,
-                                                  DEFAULT_FETCH_TIMEOUT_MS,
-                                                  "text/plain",
-                                                  &jina_body,
-                                                  &jina_len,
-                                                  &jina_code,
-                                                  ctx->cancel_token);
+                                               DEFAULT_FETCH_TIMEOUT_MS,
+                                               "text/plain",
+                                               &jina_body,
+                                               &jina_len,
+                                               &jina_code,
+                                               ctx->cancel_token);
 
     if (rc == -4) {
         return strdup("{\"error\":\"cancelled\",\"message\":\"用户已取消本次操作\"}");
@@ -929,12 +929,12 @@ exec_fetch_webpage(const ai_tool_t* tool, const ai_tool_context_t* ctx, const cs
         size_t direct_len = 0;
         long   direct_code = 0;
         int    direct_rc = curl_http_get_with_redirect_check(url,
-                                                             DEFAULT_FETCH_TIMEOUT_MS,
-                                                             "text/html,*/*",
-                                                             &direct_body,
-                                                             &direct_len,
-                                                             &direct_code,
-                                                             ctx->cancel_token);
+                                                          DEFAULT_FETCH_TIMEOUT_MS,
+                                                          "text/html,*/*",
+                                                          &direct_body,
+                                                          &direct_len,
+                                                          &direct_code,
+                                                          ctx->cancel_token);
 
         if (direct_rc == -4) {
             free(direct_body);

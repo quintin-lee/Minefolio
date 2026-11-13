@@ -15,20 +15,20 @@ static struct {
     const char* desc;
     const char* currency;
 } g_yahoo_presets[] = {
-    {"USDCNY=X", "美元/人民币汇率 (USD/CNY)", "forex",     "外汇汇率", "CNY"},
-    {"HKDCNY=X", "港币/人民币汇率 (HKD/CNY)", "forex",     "外汇汇率", "CNY"},
-    {"EURCNY=X", "欧元/人民币汇率 (EUR/CNY)", "forex",     "外汇汇率", "CNY"},
-    {"JPYCNY=X", "日元/人民币汇率 (JPY/CNY)", "forex",     "外汇汇率", "CNY"},
-    {"GBPCNY=X", "英镑/人民币汇率 (GBP/CNY)", "forex",     "外汇汇率", "CNY"},
-    {"GC=F",     "黄金期货 (Gold Futures)",   "commodity", "大宗商品", "USD"},
-    {"SI=F",     "白银期货 (Silver Futures)", "commodity", "大宗商品", "USD"},
-    {"CL=F",     "原油期货 (Crude Oil WTI)",  "commodity", "大宗商品", "USD"},
-    {"^GSPC",    "标普500指数 (S&P 500)",     "index",     "全球指数", "USD"},
+    {"USDCNY=X", "美元/人民币汇率 (USD/CNY)",  "forex",     "外汇汇率", "CNY"},
+    {"HKDCNY=X", "港币/人民币汇率 (HKD/CNY)",  "forex",     "外汇汇率", "CNY"},
+    {"EURCNY=X", "欧元/人民币汇率 (EUR/CNY)",  "forex",     "外汇汇率", "CNY"},
+    {"JPYCNY=X", "日元/人民币汇率 (JPY/CNY)",  "forex",     "外汇汇率", "CNY"},
+    {"GBPCNY=X", "英镑/人民币汇率 (GBP/CNY)",  "forex",     "外汇汇率", "CNY"},
+    {"GC=F",     "黄金期货 (Gold Futures)",       "commodity", "大宗商品", "USD"},
+    {"SI=F",     "白银期货 (Silver Futures)",     "commodity", "大宗商品", "USD"},
+    {"CL=F",     "原油期货 (Crude Oil WTI)",      "commodity", "大宗商品", "USD"},
+    {"^GSPC",    "标普500指数 (S&P 500)",         "index",     "全球指数", "USD"},
     {"^IXIC",    "纳斯达克综合指数 (NASDAQ)", "index",     "全球指数", "USD"},
-    {"^DJI",     "道琼斯工业平均指数 (DJI)",  "index",     "全球指数", "USD"},
-    {"^N225",    "日经225指数 (Nikkei 225)",  "index",     "全球指数", "JPY"},
-    {"^HSI",     "恒生指数 (Hang Seng)",      "index",     "全球指数", "HKD"},
-    {NULL,       NULL,                        NULL,        NULL,       NULL }
+    {"^DJI",     "道琼斯工业平均指数 (DJI)", "index",     "全球指数", "USD"},
+    {"^N225",    "日经225指数 (Nikkei 225)",      "index",     "全球指数", "JPY"},
+    {"^HSI",     "恒生指数 (Hang Seng)",          "index",     "全球指数", "HKD"},
+    {NULL,       NULL,                                NULL,        NULL,           NULL }
 };
 
 static int

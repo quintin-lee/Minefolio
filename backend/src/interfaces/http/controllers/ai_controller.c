@@ -280,7 +280,7 @@ api_ai_action_confirm_handler(csilk_ctx_t* c)
 
     /* 透传 confirm 参数（剔除 action_type）并强制回填 draft_token，
        防止模型伪造参数绕过令牌绑定 */
-    csilk_json_t*      args = csilk_json_object();
+    csilk_json_t* args = csilk_json_object();
     ai_tool_context_t* ctx = ai_tool_context_create(pool, user_id, 0 /* 无会话上下文 */, NULL);
     if (!ctx) {
         csilk_json_free(body);
