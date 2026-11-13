@@ -139,6 +139,22 @@
               {{ formatCurrency(currentMonthBalance?.balance ?? 0) }}
             </div>
           </div>
+
+          <!-- 当日收益 -->
+          <div v-if="positionOverview" class="bento-sub-card daily-card">
+            <div class="sub-header">
+              <span class="sub-title">当日收益</span>
+              <div class="sub-icon-wrap daily">
+                <Icon :icon="positionOverview.daily_pnl >= 0 ? 'ph:trend-up' : 'ph:trend-down'" />
+              </div>
+            </div>
+            <div
+              class="sub-val tabular-nums"
+              :class="positionOverview.daily_pnl >= 0 ? 'income-text' : 'expense-text'"
+            >
+              {{ positionOverview.daily_pnl >= 0 ? '+' : '' }}{{ formatCurrency(positionOverview.daily_pnl) }}
+            </div>
+          </div>
         </div>
       </el-col>
     </el-row>
@@ -154,6 +170,18 @@
           </template>
           <div class="nw-chart-wrap">
             <NetWorthChart :data="summary.trend" />
+          </div>
+          <div v-if="positionOverview" class="hhi-row">
+            <ConcentrationBadge
+              :hhi="positionOverview.hhi"
+              :max-holding-weight="positionOverview.max_holding_weight"
+            />
+            <span v-if="positionOverview.total_pnl !== 0" class="total-pnl-inline">
+              累计收益
+              <span :class="positionOverview.total_pnl >= 0 ? 'income-text' : 'expense-text'">
+                {{ positionOverview.total_pnl >= 0 ? '+' : '' }}{{ formatCurrency(positionOverview.total_pnl) }}
+              </span>
+            </span>
           </div>
         </el-card>
       </el-col>
@@ -237,12 +265,13 @@ import { dailyExpensesApi } from '@/api/daily_expenses'
 import { reportsApi } from '@/api/reports'
 import { dcaApi } from '@/api/dca'
 import { marketApi } from '@/api/market'
-import type { Summary, DailyExpense, MultiCurrencySummary } from '@/types'
+import type { Summary, DailyExpense, MultiCurrencySummary, PositionOverview } from '@/types'
 import { getSwrCache, setSwrCache } from '@/utils/swr-cache'
 import DashboardSkeleton from '@/components/dashboard/DashboardSkeleton.vue'
 import NetWorthChart from '@/components/NetWorthChart.vue'
 import AssetBreakdownPie from '@/components/AssetBreakdownPie.vue'
 import YearlyChart from '@/components/YearlyChart.vue'
+import ConcentrationBadge from '@/components/ConcentrationBadge.vue'
 
 const DASHBOARD_CACHE_KEY = 'minefolio_cache_dashboard_summary'
 
@@ -264,6 +293,7 @@ const loading = ref(!hasCachedData)
 const isFirstLoad = ref(!hasCachedData)
 const selectedCurrency = ref('CNY')
 const multiCurrency = ref<MultiCurrencySummary | null>(null)
+const positionOverview = ref<PositionOverview | null>(null)
 const fxColors = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#06b6d4']
 
 const summary = ref<Summary>(cachedSummary || defaultSummary)
@@ -393,7 +423,7 @@ async function loadDashboard() {
     const res = await summaryApi.get()
     summary.value = res
     setSwrCache(DASHBOARD_CACHE_KEY, res)
-    await Promise.allSettled([loadYearly(), loadCurrentMonth(), loadRecent(), loadPendingDca(), loadMultiCurrency()])
+    await Promise.allSettled([loadYearly(), loadCurrentMonth(), loadRecent(), loadPendingDca(), loadMultiCurrency(), loadPositionOverview()])
   } catch (e: any) {
     if (!hasCachedData) {
       ElMessage.error(e?.response?.data?.message || '仪表盘数据加载失败')
@@ -426,6 +456,14 @@ async function loadCurrentMonth() {
 async function loadRecent() {
   const res = await dailyExpensesApi.list({ page_size: 10 })
   recentExpenses.value = res.list
+}
+
+async function loadPositionOverview() {
+  try {
+    positionOverview.value = await reportsApi.positionOverview()
+  } catch {
+    /* silent: non-critical enrichment */
+  }
 }
 
 onMounted(loadDashboard)
