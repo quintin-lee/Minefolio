@@ -5,6 +5,62 @@
 #include <pthread.h>
 #include <unistd.h>
 #include "application/ai/config_provider.h"
+#include "config/secret.h"
+
+/**
+ * @brief 测试用最小 AI 配置（写在临时文件里）
+ *
+ * ai_config_provider_init(NULL) 会先查 DB（此处传 NULL，无库），再回退到
+ * 环境变量 AI_CONFIG 指定的路径，最后才用 "config/ai.json" 这个相对路径。
+ * config/ai.json 被 .gitignore 排除，CI 干净克隆里没有它；且 ctest 从构建
+ * 目录运行时相对路径也不成立。所以测试必须自带配置，不能依赖仓库里的
+ * config/ 目录（copy_assets 也复制不出未被跟踪的文件）。
+ */
+static const char* TEST_AI_CONFIG_JSON =
+    "{\"providers\":[{\"id\":\"openai\",\"name\":\"Test OpenAI\",\"api_key\":\"\","
+    "\"base_url\":\"\",\"models\":[\"gpt-test\"]}],\"default_provider\":\"openai\","
+    "\"default_model\":\"gpt-test\",\"context_size\":20,"
+    "\"system_prompt\":\"test system prompt\"}";
+
+static char s_cfg_path[256];
+
+/** @brief 写出临时配置文件并让 AI_CONFIG 指向它；返回 0 成功 */
+static int
+setup_temp_config(void)
+{
+    const char* tmpdir = getenv("TMPDIR");
+    if (!tmpdir || !tmpdir[0]) {
+        tmpdir = "/tmp";
+    }
+    snprintf(s_cfg_path, sizeof(s_cfg_path), "%s/mf_test_ai_config_%d.json", tmpdir, (int)getpid());
+
+    FILE* f = fopen(s_cfg_path, "w");
+    if (!f) {
+        return -1;
+    }
+    size_t n = strlen(TEST_AI_CONFIG_JSON);
+    int    ok = (fwrite(TEST_AI_CONFIG_JSON, 1, n, f) == n);
+    ok = (fclose(f) == 0) && ok;
+    if (!ok) {
+        unlink(s_cfg_path);
+        return -1;
+    }
+
+    /* config_env_get("AI_CONFIG", ...) 会先查 Secret Provider，再查环境变量，
+     * 因此覆盖点必须落在 Secret Provider 上（test override 优先级最高）。 */
+    config_secret_set_test_override("AI_CONFIG", s_cfg_path);
+    return 0;
+}
+
+static void
+teardown_temp_config(void)
+{
+    config_secret_set_test_override("AI_CONFIG", NULL);
+    if (s_cfg_path[0]) {
+        unlink(s_cfg_path);
+        s_cfg_path[0] = '\0';
+    }
+}
 
 static void test_lifecycle_and_scope(void) {
     ai_config_provider_init(NULL);
@@ -120,9 +176,19 @@ static void test_rcu_hot_reload_isolation(void) {
 
 int main(void) {
     printf("Running AI config provider unit tests...\n");
+    /* config 必须由测试自己提供：config/ai.json 未被 git 跟踪（.gitignore
+     * 第 6 行），CI 干净克隆里不存在；ctest 也从构建目录运行，相对路径不成立。 */
+    if (setup_temp_config() != 0) {
+        fprintf(stderr, "FAIL: could not create temporary AI config in %s\n",
+                (getenv("TMPDIR") && getenv("TMPDIR")[0]) ? getenv("TMPDIR") : "/tmp");
+        return 1;
+    }
+
     test_lifecycle_and_scope();
     test_concurrent_acquire_release();
     test_rcu_hot_reload_isolation();
+
+    teardown_temp_config();
     printf("ALL AI CONFIG PROVIDER TESTS PASSED!\n");
     return 0;
 }

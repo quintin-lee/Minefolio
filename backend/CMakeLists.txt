@@ -207,6 +207,12 @@ add_executable(test_ai_config_provider tests/unit/test_ai_config_provider.c ${LI
 target_include_directories(test_ai_config_provider PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_options(test_ai_config_provider PRIVATE -UNDEBUG)
 target_link_libraries(test_ai_config_provider PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+# 该测试经 ai_config_provider_init(NULL) 回退读取相对路径 config/ai.json。
+# config/ai.json 被 .gitignore 排除，CI 干净克隆里不存在，copy_assets 也无从复制；
+# 因此测试改为在 main() 里自建临时 config 并用 AI_CONFIG 绝对路径覆盖（见
+# tests/unit/test_ai_config_provider.c），不依赖构建目录里的 config/。
+#
+# 如需恢复对构建目录 config/ 的依赖，应同时把 config/ai.json 纳入版本控制。
 add_test(NAME test_ai_config_provider COMMAND test_ai_config_provider)
 
 
