@@ -152,10 +152,9 @@ api_ai_skills_create(csilk_ctx_t* c)
         }
     }
 
-    csilk_json_free(body);
-
     int64_t new_id = 0;
     int     rc = skill_usecase_create(db_get_pool(), user_id, &dto, &new_id);
+    csilk_json_free(body);
     if (rc == 1004) {
         respond_error(c, 1004, "技能名称已存在");
         return;
@@ -256,9 +255,8 @@ api_ai_skills_update(csilk_ctx_t* c)
         }
     }
 
-    csilk_json_free(body);
-
     int rc = skill_usecase_update(db_get_pool(), user_id, id, &dto);
+    csilk_json_free(body);
     if (rc != 0) {
         respond_error(c, 1002, "更新失败，技能不存在或参数非法");
         return;
