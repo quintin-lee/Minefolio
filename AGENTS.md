@@ -508,6 +508,18 @@ cd build && ctest --output-on-failure && cd ..
 
 Tests start real servers with temp SQLite DBs, exercise all API endpoints via curl/JSON, and verify database state directly with `sqlite3`. `test_ai_tool_call.sh`, `test_ai_truncate.sh` and `test_ai_loop_hardening.sh` also start `mock_ai_tool_server.js` (node) as their AI provider. Run before committing any changes.
 
+### Memory-Isolated ASan & cgroups v2 Testing
+
+To prevent ASan/UBSan builds or runaway allocations in tests from exhausting host RAM or swap:
+- **CMake Sanitizer Build**: `-DMINEFOLIO_SANITIZE=ON` enables `-fsanitize=address,undefined -fno-omit-frame-pointer -g` and generates `CTestCustom.cmake` with default `ASAN_OPTIONS="hard_rss_limit_mb=2048:detect_leaks=1:abort_on_error=1"`, `UBSAN_OPTIONS`, and `LSAN_OPTIONS` (`.lsan-suppressions`).
+- **cgroups v2 Isolation (`systemd-run`)**: `backend/tests/cgroup_helper.sh` wraps `./minefolio` test server launches via `systemd-run --user --scope -p MemoryMax=2G -p MemorySwapMax=0` (when systemd cgroups v2 is available). Use `backend/tests/run_isolated.sh` for safe builds and test runs:
+  ```bash
+  ./backend/tests/run_isolated.sh build backend/build-asan     # capped parallel jobs & memory
+  ./backend/tests/run_isolated.sh unit backend/build-asan      # ctest inside MemoryMax=4G, MemorySwapMax=0
+  ./backend/tests/run_isolated.sh integration backend/build-asan
+  ./backend/tests/run_isolated.sh -- ./backend/build-asan/test_ai_tools
+  ```
+
 ### Frontend Tests
 
 ```bash
