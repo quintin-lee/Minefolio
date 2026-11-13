@@ -104,7 +104,10 @@ jobs:
       - name: Run backend integration tests (PostgreSQL)
         env:
           MINEFOLIO_DB_DRIVER: postgres
-          MINEFOLIO_SERVER_MEM_LIMIT: "${MINEFOLIO_SERVER_MEM_LIMIT:-4096M}"
+          # Plain literal value: YAML `env:` blocks do NOT shell-expand `${VAR:-default}`,
+          # so a default-syntax string would leak the literal text into the test and crash
+          # db_helper.sh's memory-cap normalization. Use a concrete value; raise for ASan.
+          MINEFOLIO_SERVER_MEM_LIMIT: "4096M"
           MINEFOLIO_DB_DSN: "host=localhost port=5432 user=postgres password=postgres_password dbname=minefolio_test sslmode=disable"
           PGHOST: localhost
           PGPORT: "5432"

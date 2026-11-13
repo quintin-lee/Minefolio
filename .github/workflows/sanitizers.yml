@@ -59,7 +59,10 @@ jobs:
           # Cap ctest in a systemd cgroup scope when available; the runner's
           # ASan test binaries reserve large virtual ranges. Convert the G-based
           # limit to KiB for the cgroup property (cgroup wants KiB).
-          MEM_KB=$(( ${MINEFOLIO_CTEST_MEM_LIMIT%G} * 1024 * 1024 ))
+          # Guard against an empty/malformed MINEFOLIO_CTEST_MEM_LIMIT.
+          MEM_G="${MINEFOLIO_CTEST_MEM_LIMIT%G}"; [ -z "$MEM_G" ] && MEM_G=12
+          [[ "$MEM_G" =~ ^[0-9]+$ ]] || MEM_G=12
+          MEM_KB=$(( MEM_G * 1024 * 1024 ))
           if command -v systemd-run >/dev/null 2>&1; then
             JOBS=$(($(nproc) / 2)); [ "$JOBS" -lt 1 ] && JOBS=1
             systemd-run --user --quiet --scope -p "MemoryMax=${MEM_KB}K" \
@@ -76,8 +79,11 @@ jobs:
           UBSAN_OPTIONS: "print_stacktrace=1:halt_on_error=1"
           LSAN_OPTIONS: "suppressions=${{ github.workspace }}/backend/tests/.lsan-suppressions"
           MINEFOLIO_DB_DRIVER: sqlite
-          # ASan servers reserve ~2x virtual memory; raise the per-server cap.
-          MINEFOLIO_SERVER_MEM_LIMIT: "12G"
+          # ASan servers reserve ~2x memory. Under ASan the virtual ulimit cap is
+          # skipped (it aborts ASan at startup); the effective ceiling is this
+          # cgroup RSS limit applied by mf_exec_isolated. Raise it so a healthy
+          # ASan server isn't OOM-killed by the 2G default.
+          MINEFOLIO_TEST_MEM_MAX: "8G"
         run: |
           cd backend
           ./tests/test_link.sh
@@ -139,7 +145,8 @@ jobs:
           UBSAN_OPTIONS: "print_stacktrace=1:halt_on_error=1"
           LSAN_OPTIONS: "suppressions=${{ github.workspace }}/backend/tests/.lsan-suppressions"
           MINEFOLIO_DB_DRIVER: postgres
-          MINEFOLIO_SERVER_MEM_LIMIT: "12G"
+          # ASan: virtual cap is skipped; this cgroup RSS limit is the effective ceiling.
+          MINEFOLIO_TEST_MEM_MAX: "8G"
           MINEFOLIO_DB_DSN: "host=localhost port=5432 user=postgres password=postgres_password dbname=minefolio_test sslmode=disable"
           PGHOST: localhost
           PGPORT: "5432"

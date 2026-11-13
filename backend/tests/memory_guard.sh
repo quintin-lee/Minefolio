@@ -36,6 +36,12 @@ capped_parallel_flag() {
 _limit_to_kb() {
   local spec="$1"
   local num suffix
+  # Reject malformed input (e.g. a literal `${VAR:-default}` leaked from a
+  # YAML env block) up-front so the arithmetic below never sees a non-numeric
+  # operand. Fall back to a safe default of 4 GiB.
+  case "$spec" in
+    "" | *[!0-9KMGTkmgtBb]*) spec="4G" ;;
+  esac
   # Split into a leading number and an optional unit suffix.
   num="${spec%%[KMGTkmgtBb]*}"
   suffix="${spec#"$num"}"

@@ -132,6 +132,13 @@ db_start_server() {
   # virtual ranges, so keep it generous. Override via MINEFOLIO_SERVER_MEM_LIMIT.
   local mem_limit="${MINEFOLIO_SERVER_MEM_LIMIT:-4096M}"
   local mem_kb
+  # Validate the limit is a clean `<int><K|M|G|T|B>` before arithmetic. A
+  # malformed value (e.g. a literal `${VAR:-default}` leaked from a YAML env:
+  # block, which GitHub Actions does NOT shell-expand) must fall back to a
+  # safe default instead of crashing the test under `set -e`.
+  case "$mem_limit" in
+    "" | *[!0-9KMGTkmgtBb]*) mem_limit="4096M" ;;
+  esac
   mem_kb="$(
     spec="$mem_limit"; num="${spec%%[KMGTkmgtBb]*}"; suffix="${spec#"$num"}"
     [ -z "$num" ] && num=0; [ -z "$suffix" ] && suffix="K"
@@ -142,13 +149,22 @@ db_start_server() {
     if [ "$factor" -eq 0 ]; then printf '%s' "$(( (num + 1023) / 1024 ))"; else printf '%s' "$(( num * factor ))"; fi
   )"
 
-  # Launch the server in a backgrounded subshell with a virtual-memory ceiling so
-  # a runaway suite cannot take down the host. The subshell keeps SERVER_PID=$!
-  # pointing at the actual server process group (a systemd-run cgroup would
-  # detach and break the PID capture / health-poll loop below).
+  # Launch the server in a backgrounded subshell. A virtual-memory ceiling
+  # (ulimit -v) protects a *normal* build from exhausting host memory. Under
+  # ASan/UBSan we must NOT set a virtual cap: ASan reserves enormous virtual
+  # address ranges (shadow memory ~1/8 of the address space + redzones), so
+  # any finite `ulimit -v` aborts the binary at startup (core dump). The hard
+  # ceiling under ASan is the cgroup RSS cap applied by mf_exec_isolated
+  # (MINEFOLIO_TEST_MEM_MAX), which is RSS-based and safe for ASan.
+  # ASAN_OPTIONS is exported at source time by mf_setup_sanitizer_env, so its
+  # presence reliably flags an ASan build.
+  local apply_vlimit=1
+  [ -n "${ASAN_OPTIONS:-}" ] && apply_vlimit=0
   (
     cd "$build_dir"
-    ulimit -v "$mem_kb" 2>/dev/null || true
+    if [ "$apply_vlimit" -eq 1 ]; then
+      ulimit -v "$mem_kb" 2>/dev/null || true
+    fi
     MINEFOLIO_DB_DRIVER="$DB_DRIVER" \
     MINEFOLIO_DB_DSN="$MINEFOLIO_DB_DSN" \
     MINEFOLIO_PORT="$port" \
