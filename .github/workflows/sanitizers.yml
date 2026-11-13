@@ -33,21 +33,42 @@ jobs:
             libcurl4-openssl-dev zlib1g-dev sqlite3 curl python3 nodejs jq
 
       - name: Build backend with ASan & UBSan
+        env:
+          # ASan ~doubles every allocation; raise the build ceiling so the
+          # csilk compile peak doesn't OOM the runner. See tests/memory_guard.sh.
+          MINEFOLIO_BUILD_MEM_LIMIT: "12G"
         run: |
           cd backend
           CC=gcc-14 CXX=g++-14 cmake -B build -G "Unix Makefiles" \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
             -DMINEFOLIO_SANITIZE=ON
-          cmake --build build --parallel $(nproc)
+          # Throttle parallelism + hard memory cap for the ASan build.
+          JOBS=$(($(nproc) / 2)); [ "$JOBS" -lt 1 ] && JOBS=1
+          cmake --build build --parallel "$JOBS"
 
       - name: Run CTest unit tests (ASan & UBSan)
         env:
           ASAN_OPTIONS: "hard_rss_limit_mb=2048:detect_leaks=1:abort_on_error=1"
           UBSAN_OPTIONS: "print_stacktrace=1:halt_on_error=1"
           LSAN_OPTIONS: "suppressions=${{ github.workspace }}/backend/tests/.lsan-suppressions"
+          # Run the 55 suites serially (-j1) under a cgroup ceiling so a single
+          # ASan suite cannot OOM the runner. Raise if the host is larger.
+          MINEFOLIO_CTEST_MEM_LIMIT: "12G"
         run: |
           cd backend/build
-          ctest --output-on-failure
+          # Cap ctest in a systemd cgroup scope when available; the runner's
+          # ASan test binaries reserve large virtual ranges. Convert the G-based
+          # limit to KiB for the cgroup property (cgroup wants KiB).
+          MEM_KB=$(( ${MINEFOLIO_CTEST_MEM_LIMIT%G} * 1024 * 1024 ))
+          if command -v systemd-run >/dev/null 2>&1; then
+            JOBS=$(($(nproc) / 2)); [ "$JOBS" -lt 1 ] && JOBS=1
+            systemd-run --user --quiet --scope -p "MemoryMax=${MEM_KB}K" \
+              -p MemorySwapMax=0 -p TasksMax=4096 \
+              bash -c "ctest --output-on-failure -j${JOBS}" || \
+              ctest --output-on-failure -j"${JOBS}"
+          else
+            ctest --output-on-failure -j1
+          fi
 
       - name: Run full backend integration tests (SQLite, ASan & UBSan)
         env:
@@ -55,6 +76,8 @@ jobs:
           UBSAN_OPTIONS: "print_stacktrace=1:halt_on_error=1"
           LSAN_OPTIONS: "suppressions=${{ github.workspace }}/backend/tests/.lsan-suppressions"
           MINEFOLIO_DB_DRIVER: sqlite
+          # ASan servers reserve ~2x virtual memory; raise the per-server cap.
+          MINEFOLIO_SERVER_MEM_LIMIT: "12G"
         run: |
           cd backend
           ./tests/test_link.sh
@@ -99,12 +122,16 @@ jobs:
             libpq-dev postgresql-client nodejs jq
 
       - name: Build backend with PostgreSQL support & ASan + UBSan
+        env:
+          MINEFOLIO_BUILD_MEM_LIMIT: "12G"
         run: |
           cd backend
           CC=gcc-14 CXX=g++-14 cmake -B build -G "Unix Makefiles" \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
             -DMINEFOLIO_SANITIZE=ON
-          cmake --build build --parallel $(nproc)
+          # Throttle parallelism for the ASan build to halve the compile peak.
+          JOBS=$(($(nproc) / 2)); [ "$JOBS" -lt 1 ] && JOBS=1
+          cmake --build build --parallel "$JOBS"
 
       - name: Run full backend integration tests (PostgreSQL, ASan & UBSan)
         env:
@@ -112,6 +139,7 @@ jobs:
           UBSAN_OPTIONS: "print_stacktrace=1:halt_on_error=1"
           LSAN_OPTIONS: "suppressions=${{ github.workspace }}/backend/tests/.lsan-suppressions"
           MINEFOLIO_DB_DRIVER: postgres
+          MINEFOLIO_SERVER_MEM_LIMIT: "12G"
           MINEFOLIO_DB_DSN: "host=localhost port=5432 user=postgres password=postgres_password dbname=minefolio_test sslmode=disable"
           PGHOST: localhost
           PGPORT: "5432"

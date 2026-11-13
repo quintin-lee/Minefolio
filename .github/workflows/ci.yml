@@ -28,11 +28,17 @@ jobs:
         run: |
           cd backend
           CC=gcc-14 CXX=g++-14 cmake -B build -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --parallel $(nproc)
+          # Throttle parallelism + cap memory so a csilk compile peak cannot OOM the runner
+          JOBS=$(($(nproc) / 2)); [ "$JOBS" -lt 1 ] && JOBS=1
+          cmake --build build --parallel "$JOBS"
 
       - name: Run backend integration tests
         run: |
           cd backend
+          # Each suite's long-lived server runs under a virtual-memory cap
+          # (see tests/memory_guard.sh / db_helper.sh) so a leak in one suite
+          # cannot exhaust runner memory and restart the host.
+          export MINEFOLIO_SERVER_MEM_LIMIT="${MINEFOLIO_SERVER_MEM_LIMIT:-4096M}"
           ./tests/test_link.sh
           ./tests/test_2fa.sh
           ./tests/test_dca_cashflow.sh
@@ -91,11 +97,14 @@ jobs:
         run: |
           cd backend
           CC=gcc-14 CXX=g++-14 cmake -B build -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --parallel $(nproc)
+          # Throttle parallelism + cap memory so a csilk compile peak cannot OOM the runner
+          JOBS=$(($(nproc) / 2)); [ "$JOBS" -lt 1 ] && JOBS=1
+          cmake --build build --parallel "$JOBS"
 
       - name: Run backend integration tests (PostgreSQL)
         env:
           MINEFOLIO_DB_DRIVER: postgres
+          MINEFOLIO_SERVER_MEM_LIMIT: "${MINEFOLIO_SERVER_MEM_LIMIT:-4096M}"
           MINEFOLIO_DB_DSN: "host=localhost port=5432 user=postgres password=postgres_password dbname=minefolio_test sslmode=disable"
           PGHOST: localhost
           PGPORT: "5432"

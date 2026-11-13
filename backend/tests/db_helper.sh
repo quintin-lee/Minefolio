@@ -126,9 +126,29 @@ db_start_server() {
   local port="${1:-18080}"
   local build_dir="${2:-${MINEFOLIO_BUILD_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../build" && pwd)}}"
   local log_file="${3:-/dev/null}"
+  # Memory ceiling for the long-lived server. A leak or an ASan build (~2x every
+  # allocation) can otherwise exhaust host memory and trigger an OOM reboot.
+  # This is a *virtual-address* cap (ulimit -v); csilk + ASan reserve large
+  # virtual ranges, so keep it generous. Override via MINEFOLIO_SERVER_MEM_LIMIT.
+  local mem_limit="${MINEFOLIO_SERVER_MEM_LIMIT:-4096M}"
+  local mem_kb
+  mem_kb="$(
+    spec="$mem_limit"; num="${spec%%[KMGTkmgtBb]*}"; suffix="${spec#"$num"}"
+    [ -z "$num" ] && num=0; [ -z "$suffix" ] && suffix="K"
+    case "$suffix" in
+      K|k) factor=1 ;; M|m) factor=1024 ;; G|g) factor=$((1024 * 1024)) ;;
+      T|t) factor=$((1024 * 1024 * 1024)) ;; B|b) factor=0 ;; *) factor=1 ;;
+    esac
+    if [ "$factor" -eq 0 ]; then printf '%s' "$(( (num + 1023) / 1024 ))"; else printf '%s' "$(( num * factor ))"; fi
+  )"
 
+  # Launch the server in a backgrounded subshell with a virtual-memory ceiling so
+  # a runaway suite cannot take down the host. The subshell keeps SERVER_PID=$!
+  # pointing at the actual server process group (a systemd-run cgroup would
+  # detach and break the PID capture / health-poll loop below).
   (
     cd "$build_dir"
+    ulimit -v "$mem_kb" 2>/dev/null || true
     MINEFOLIO_DB_DRIVER="$DB_DRIVER" \
     MINEFOLIO_DB_DSN="$MINEFOLIO_DB_DSN" \
     MINEFOLIO_PORT="$port" \
