@@ -5,6 +5,7 @@
 #include "services/ai/tools/web_search_tool.h"
 #include "services/ai/policy/confirmation.h"
 #include "domain/ai/rules.h"
+#include "application/skill/usecases.h"
 #include "infrastructure/repositories/asset_repo_impl.h"
 #include "common/db.h"
 #include "common/config.h"
@@ -561,7 +562,43 @@ main(void)
         assert(strstr(r_notfound, "not found") != NULL);
         free(r_notfound);
 
-        printf("[Test 10] PASS: Agent skills tools (use_skill, list_skills) verified\n");
+        /* 4. Seed defaults and invoke L2 skill via use_skill */
+        assert(skill_usecase_seed_defaults(ctx->pool, ctx->user_id) == 0);
+        char* r_l2 = ai_tool_dispatch(
+            ctx, "use_skill", "{\"skill_name\":\"financial-health-auditor\"}");
+        assert(r_l2 != NULL);
+        assert(strstr(r_l2, "\"status\":\"success\"") != NULL);
+        assert(strstr(r_l2, "\"mode\":\"l2\"") != NULL);
+        assert(strstr(r_l2, "\"skill_name\":\"financial-health-auditor\"") != NULL);
+        assert(strstr(r_l2, "\"instructions\":") != NULL);
+        free(r_l2);
+
+        /* 5. L3 skill execution with exec_args and newline-separated exec_env */
+        mf_skill_create_dto_t l3_dto = {0};
+        strncpy(l3_dto.name, "env-echo-runner", sizeof(l3_dto.name) - 1);
+        strncpy(l3_dto.description, "Test L3 args and env forwarding", sizeof(l3_dto.description) - 1);
+        strncpy(l3_dto.category, "finance", sizeof(l3_dto.category) - 1);
+        l3_dto.enabled = 1;
+        l3_dto.instructions_l2 = "# L3 Runner";
+        l3_dto.backend = MF_SKILL_BACKEND_LOCAL;
+        strncpy(l3_dto.exec_cfg.root, "/usr/bin", sizeof(l3_dto.exec_cfg.root) - 1);
+        strncpy(l3_dto.exec_cfg.path, "env", sizeof(l3_dto.exec_cfg.path) - 1);
+        strncpy(l3_dto.exec_cfg.env,
+                "MF_SKILL_ENV_1=alpha_ok\nMF_SKILL_ENV_2=beta_ok",
+                sizeof(l3_dto.exec_cfg.env) - 1);
+        int64_t l3_id = 0;
+        assert(skill_usecase_create(ctx->pool, ctx->user_id, &l3_dto, &l3_id) == 0);
+        assert(l3_id > 0);
+
+        char* r_l3 = ai_tool_dispatch(
+            ctx, "use_skill", "{\"skill_name\":\"env-echo-runner\"}");
+        assert(r_l3 != NULL);
+        assert(strstr(r_l3, "\"mode\":\"l3\"") != NULL);
+        assert(strstr(r_l3, "MF_SKILL_ENV_1=alpha_ok") != NULL);
+        assert(strstr(r_l3, "MF_SKILL_ENV_2=beta_ok") != NULL);
+        free(r_l3);
+
+        printf("[Test 10] PASS: Agent skills tools (use_skill, list_skills, L2/L3) verified\n");
     }
 
     ai_tool_context_free(ctx);

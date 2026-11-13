@@ -15,6 +15,7 @@
 #include "config/key_manager.h"
 #include "application/category/usecases.h"
 #include "application/account/usecases.h"
+#include "application/skill/usecases.h"
 #include "csilk/csilk.h"
 #include "csilk/crypto/bcrypt.h"
 #include "csilk/core/primitives/codec.h"
@@ -150,6 +151,7 @@ system_setup(csilk_ctx_t* c)
     category_usecase_seed_defaults(pool, user_id, ledger_id);
     account_usecase_seed_default(pool, user_id, ledger_id);
     mf_import_rule_seed_defaults(pool, user_id);
+    skill_usecase_seed_defaults(pool, user_id);
 
     /* Persist DB config if provided */
     const char* db_driver = csilk_json_get_string(body, "db_driver");

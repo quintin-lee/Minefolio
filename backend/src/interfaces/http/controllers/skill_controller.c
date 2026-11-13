@@ -49,7 +49,7 @@ api_ai_skills_get(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    int64_t     id = id_str ? atoll(id_str) : 0;
+    int64_t     id = parse_query_int_strict(id_str, 0);
     if (id <= 0) {
         respond_error(c, 1002, "无效的技能 ID");
         return;
@@ -177,7 +177,7 @@ api_ai_skills_update(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    int64_t     id = id_str ? atoll(id_str) : 0;
+    int64_t     id = parse_query_int_strict(id_str, 0);
     if (id <= 0) {
         respond_error(c, 1002, "无效的技能 ID");
         return;
@@ -273,7 +273,7 @@ api_ai_skills_delete(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    int64_t     id = id_str ? atoll(id_str) : 0;
+    int64_t     id = parse_query_int_strict(id_str, 0);
     if (id <= 0) {
         respond_error(c, 1002, "无效的技能 ID");
         return;
@@ -296,7 +296,7 @@ api_ai_skills_toggle(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    int64_t     id = id_str ? atoll(id_str) : 0;
+    int64_t     id = parse_query_int_strict(id_str, 0);
     if (id <= 0) {
         respond_error(c, 1002, "无效的技能 ID");
         return;
@@ -326,7 +326,7 @@ api_ai_skills_test(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    int64_t     id = id_str ? atoll(id_str) : 0;
+    int64_t     id = parse_query_int_strict(id_str, 0);
     if (id <= 0) {
         respond_error(c, 1002, "无效的技能 ID");
         return;
@@ -398,7 +398,7 @@ api_ai_skills_export(csilk_ctx_t* c)
     }
 
     const char* id_str = csilk_get_param(c, "id");
-    int64_t     id = id_str ? atoll(id_str) : 0;
+    int64_t     id = parse_query_int_strict(id_str, 0);
     if (id <= 0) {
         respond_error(c, 1002, "无效的技能 ID");
         return;

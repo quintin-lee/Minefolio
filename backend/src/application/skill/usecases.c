@@ -148,12 +148,12 @@ skill_usecase_create(void* pool, int64_t user_id, const mf_skill_create_dto_t* d
     }
 
     mf_skill_t sk = {0};
-    strncpy(sk.name, dto->name, sizeof(sk.name) - 1);
-    strncpy(sk.description, dto->description, sizeof(sk.description) - 1);
-    strncpy(sk.license, dto->license, sizeof(sk.license) - 1);
-    strncpy(sk.compatibility, dto->compatibility, sizeof(sk.compatibility) - 1);
-    strncpy(sk.category, dto->category[0] ? dto->category : "finance", sizeof(sk.category) - 1);
-    strncpy(sk.tags, dto->tags, sizeof(sk.tags) - 1);
+    snprintf(sk.name, sizeof(sk.name), "%s", dto->name);
+    snprintf(sk.description, sizeof(sk.description), "%s", dto->description);
+    snprintf(sk.license, sizeof(sk.license), "%s", dto->license);
+    snprintf(sk.compatibility, sizeof(sk.compatibility), "%s", dto->compatibility);
+    snprintf(sk.category, sizeof(sk.category), "%s", dto->category[0] ? dto->category : "finance");
+    snprintf(sk.tags, sizeof(sk.tags), "%s", dto->tags);
     sk.enabled = dto->enabled;
     sk.instructions_l2 = (char*)(dto->instructions_l2 ? dto->instructions_l2 : "");
     sk.backend = dto->backend;
@@ -200,11 +200,11 @@ skill_usecase_update(void* pool, int64_t user_id, int64_t id, const mf_skill_upd
     }
     csilk_json_free(existing);
 
-    strncpy(sk.description, dto->description, sizeof(sk.description) - 1);
-    strncpy(sk.license, dto->license, sizeof(sk.license) - 1);
-    strncpy(sk.compatibility, dto->compatibility, sizeof(sk.compatibility) - 1);
-    strncpy(sk.category, dto->category[0] ? dto->category : "finance", sizeof(sk.category) - 1);
-    strncpy(sk.tags, dto->tags, sizeof(sk.tags) - 1);
+    snprintf(sk.description, sizeof(sk.description), "%s", dto->description);
+    snprintf(sk.license, sizeof(sk.license), "%s", dto->license);
+    snprintf(sk.compatibility, sizeof(sk.compatibility), "%s", dto->compatibility);
+    snprintf(sk.category, sizeof(sk.category), "%s", dto->category[0] ? dto->category : "finance");
+    snprintf(sk.tags, sizeof(sk.tags), "%s", dto->tags);
     sk.instructions_l2 = (char*)(dto->instructions_l2 ? dto->instructions_l2 : "");
     sk.backend = dto->backend;
     memcpy(&sk.exec_cfg, &dto->exec_cfg, sizeof(mf_skill_exec_cfg_t));
@@ -251,7 +251,10 @@ skill_usecase_test_execute(
 
     const char* path = csilk_json_get_string(sk, "exec_path");
     const char* root = csilk_json_get_string(sk, "exec_root");
+    const char* def_args = csilk_json_get_string(sk, "exec_args");
+    const char* def_env = csilk_json_get_string(sk, "exec_env");
     const char* name = csilk_json_get_string(sk, "name");
+    const char* desc = csilk_json_get_string(sk, "description");
     const char* l2 = csilk_json_get_string(sk, "instructions_l2");
     int         timeout = db_get_int(sk, "timeout_ms");
     int         max_out = db_get_int(sk, "max_output_bytes");
@@ -262,21 +265,66 @@ skill_usecase_test_execute(
         // L3 script execution
         csilk_skill_meta_t meta = {0};
         if (name) {
-            strncpy(meta.name, name, sizeof(meta.name) - 1);
+            snprintf(meta.name, sizeof(meta.name), "%s", name);
+        }
+        /* csilk_ai_skill_new requires non-empty description without '<' or '>' */
+        if (desc && desc[0] != '\0') {
+            snprintf(meta.description, sizeof(meta.description), "%s", desc);
+            for (char* p = meta.description; *p; p++) {
+                if (*p == '<') {
+                    *p = '(';
+                } else if (*p == '>') {
+                    *p = ')';
+                }
+            }
+        } else {
+            snprintf(meta.description, sizeof(meta.description), "%s", "Minefolio L3 skill");
         }
         csilk_ai_skill_t* csk = csilk_ai_skill_new(&meta, CSILK_SKILL_LOCAL, NULL, NULL);
         if (csk) {
+            char* norm_env = NULL;
+            if (def_env && def_env[0] != '\0') {
+                norm_env = strdup(def_env);
+                if (norm_env) {
+                    for (char* p = norm_env; *p; p++) {
+                        if (*p == '\r' || *p == '\n' || *p == '\t') {
+                            *p = ' ';
+                        }
+                    }
+                }
+            }
+
+            char*       combined_args = NULL;
+            const char* eff_args = NULL;
+            if (def_args && def_args[0] != '\0' && args && args[0] != '\0') {
+                size_t alen = strlen(def_args) + strlen(args) + 2;
+                combined_args = malloc(alen);
+                if (combined_args) {
+                    snprintf(combined_args, alen, "%s %s", def_args, args);
+                    eff_args = combined_args;
+                } else {
+                    eff_args = args;
+                }
+            } else if (args && args[0] != '\0') {
+                eff_args = args;
+            } else if (def_args && def_args[0] != '\0') {
+                eff_args = def_args;
+            }
+
             csilk_skill_exec_cfg_t cfg = {.root = (char*)(root && root[0] ? root : "/"),
                                           .timeout_ms = timeout > 0 ? timeout : 5000,
                                           .max_output_bytes = max_out > 0 ? max_out : 65536,
-                                          .env = NULL};
+                                          .env = norm_env};
             csilk_ai_skill_set_exec_cfg(csk, &cfg);
             char* exec_out = NULL;
-            int   rc = csilk_skill_exec_local(csk, path, args, 0, &exec_out);
+            int   rc = csilk_skill_exec_local(csk, path, eff_args, 0, &exec_out);
             csilk_ai_skill_free(csk);
+            free(norm_env);
+            free(combined_args);
 
             csilk_json_add_string(res, "status", rc == 0 ? "success" : "failed");
             csilk_json_add_string(res, "mode", "l3");
+            csilk_json_add_string(res, "skill_name", name ? name : "");
             csilk_json_add_number(res, "rc", rc);
             if (exec_out) {
                 csilk_json_t* parsed = csilk_json_parse(exec_out);
@@ -287,15 +335,23 @@ skill_usecase_test_execute(
                 }
                 free(exec_out);
             }
+        } else {
+            csilk_json_add_string(res, "status", "failed");
+            csilk_json_add_string(res, "mode", "l3");
+            csilk_json_add_string(res, "skill_name", name ? name : "");
+            csilk_json_add_number(res, "rc", -1);
+            csilk_json_add_string(res, "error", "Failed to initialize L3 skill runtime");
         }
     } else {
         // Pure L2 Prompt Inspection
         csilk_json_add_string(res, "status", "success");
         csilk_json_add_string(res, "mode", "l2");
+        csilk_json_add_string(res, "skill_name", name ? name : "");
         csilk_json_add_bool(res, "valid", true);
         size_t l2_len = l2 ? strlen(l2) : 0;
         csilk_json_add_number(res, "char_count", (double)l2_len);
         csilk_json_add_number(res, "token_estimate", (double)(l2_len / 4 + 1));
+        csilk_json_add_string(res, "instructions", l2 ? l2 : "");
         csilk_json_add_string(res, "instructions_preview", l2 ? l2 : "");
     }
 
@@ -344,11 +400,17 @@ skill_usecase_reset_defaults(void* pool, int64_t user_id)
     return 0;
 }
 
+#define MF_SKILL_IMPORT_MAX_BYTES (256 * 1024)
+
 int
 skill_usecase_import_markdown(void* pool, int64_t user_id, const char* md_content, int64_t* out_id)
 {
     if (!pool || !md_content) {
         return -1;
+    }
+    size_t content_len = strlen(md_content);
+    if (content_len == 0 || content_len > MF_SKILL_IMPORT_MAX_BYTES) {
+        return 1002;
     }
 
     // Parse YAML frontmatter: must start with "---\n" or "---\r\n"
@@ -455,7 +517,9 @@ skill_usecase_export_markdown(void* pool, int64_t user_id, int64_t id, char** ou
     const char* tags = csilk_json_get_string(sk, "tags");
     const char* l2 = csilk_json_get_string(sk, "instructions_l2");
 
-    size_t est_size = 2048 + (l2 ? strlen(l2) : 0);
+    size_t est_size = 256 + (name ? strlen(name) : 0) + (desc ? strlen(desc) : 0) +
+                      (lic ? strlen(lic) : 0) + (comp ? strlen(comp) : 0) +
+                      (cat ? strlen(cat) : 0) + (tags ? strlen(tags) : 0) + (l2 ? strlen(l2) : 0);
     char*  buf = malloc(est_size);
     if (!buf) {
         csilk_json_free(sk);

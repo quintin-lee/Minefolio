@@ -926,13 +926,15 @@ echo "--- Case 43: Agent Skills 技能管理与生命周期测试 ---"
 SKILL_NOAUTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/ai/skills")
 check "未授权访问 GET /api/ai/skills 返回 401" "401" "$SKILL_NOAUTH_STATUS"
 
-# 2. 默认预置技能数量验证：用户应已自动拥有 4 个默认金融技能
-# 如果由于测试顺序未自动 seed，可调用 reset-defaults 确保初始化
-curl -s -X POST -H "$AUTH" "$BASE/ai/skills/reset-defaults" >/dev/null
+# 2. 默认预置技能数量验证：/api/system/setup 初始化后用户应已自动拥有 4 个默认金融技能
 SKILLS_LIST_RES=$(curl -s -H "$AUTH" "$BASE/ai/skills")
 check "获取技能列表 code=0" "0" "$(echo "$SKILLS_LIST_RES" | jq -r '.code | floor')"
 SKILLS_COUNT=$(echo "$SKILLS_LIST_RES" | jq -r '.data | length')
 check "预置金融技能数量应为 4" "4" "$SKILLS_COUNT"
+
+# 2.1 非法非数字 ID 严格解析拦截 (parse_query_int_strict -> code=1002)
+BAD_ID_RES=$(curl -s -H "$AUTH" "$BASE/ai/skills/12abc")
+check "非法技能路径 ID 12abc 被严格拦截返回 code=1002" "1002" "$(echo "$BAD_ID_RES" | jq -r '.code | floor')"
 
 # 3. 验证默认技能名称存在
 HAS_AUDITOR=$(echo "$SKILLS_LIST_RES" | jq -r '.data[] | select(.name=="financial-health-auditor") | .name')
