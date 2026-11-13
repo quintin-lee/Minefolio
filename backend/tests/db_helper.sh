@@ -2,6 +2,18 @@
 # Shared Database & Server Lifecycle Helper for Minefolio Integration Tests
 # Supports SQLite and PostgreSQL with automated environment switching and dialect compatibility.
 
+_DB_HELPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$_DB_HELPER_DIR/cgroup_helper.sh"
+
+if [ -n "${MINEFOLIO_BUILD_DIR:-}" ] && [ "${MINEFOLIO_BUILD_DIR#/}" = "$MINEFOLIO_BUILD_DIR" ]; then
+  if [ -d "$MINEFOLIO_BUILD_DIR" ]; then
+    MINEFOLIO_BUILD_DIR="$(cd "$MINEFOLIO_BUILD_DIR" && pwd)"
+  elif [ -d "$_DB_HELPER_DIR/../$MINEFOLIO_BUILD_DIR" ]; then
+    MINEFOLIO_BUILD_DIR="$(cd "$_DB_HELPER_DIR/../$MINEFOLIO_BUILD_DIR" && pwd)"
+  fi
+  export MINEFOLIO_BUILD_DIR
+fi
+
 DB_DRIVER="${MINEFOLIO_DB_DRIVER:-sqlite}"
 SERVER_PID=""
 
@@ -112,7 +124,7 @@ sqlite3() {
 
 db_start_server() {
   local port="${1:-18080}"
-  local build_dir="${2:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../build" && pwd)}"
+  local build_dir="${2:-${MINEFOLIO_BUILD_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../build" && pwd)}}"
   local log_file="${3:-/dev/null}"
 
   (
@@ -122,7 +134,7 @@ db_start_server() {
     MINEFOLIO_PORT="$port" \
     PORT="$port" \
     MINEFOLIO_JWT_SECRET="${TEST_JWT_SECRET:-test_jwt_secret_12345678901234567890}" \
-    ./minefolio > "$log_file" 2>&1
+    mf_exec_isolated ./minefolio > "$log_file" 2>&1
   ) &
   SERVER_PID=$!
 

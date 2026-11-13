@@ -9,7 +9,7 @@ source "$SCRIPT_DIR/db_helper.sh"
 
 db_init_context "$TEST_PORT" "link_test"
 BASE="http://localhost:${PORT}/api"
-BUILD_DIR="$(cd "$SCRIPT_DIR/../build" && pwd)"
+BUILD_DIR="${MINEFOLIO_BUILD_DIR:-$(cd "$SCRIPT_DIR/../build" && pwd)}"
 PASS=0; FAIL=0
 
 cleanup() {

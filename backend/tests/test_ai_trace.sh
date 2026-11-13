@@ -7,7 +7,7 @@ source "$SCRIPT_DIR/db_helper.sh"
 
 db_init_context "$PORT" "ai_trace"
 BASE="http://127.0.0.1:${PORT}/api"
-BUILD_DIR="$(cd "$SCRIPT_DIR/../build" && pwd)"
+BUILD_DIR="${MINEFOLIO_BUILD_DIR:-$(cd "$SCRIPT_DIR/../build" && pwd)}"
 PASS=0; FAIL=0
 
 cleanup() {

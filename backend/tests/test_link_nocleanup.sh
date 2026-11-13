@@ -5,7 +5,9 @@ set -euo pipefail
 
 BASE="http://localhost:8080/api"   # 后端硬编码 8080（main.c:234），运行前确认 8080 空闲
 DB="/tmp/mf_link_final.db"
-BUILD_DIR="$(cd "$(dirname "$0")/../build" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cgroup_helper.sh"
+BUILD_DIR="${MINEFOLIO_BUILD_DIR:-$(cd "$SCRIPT_DIR/../build" && pwd)}"
 PASS=0; FAIL=0
 
 cleanup() {
@@ -16,8 +18,10 @@ trap cleanup EXIT
 
 # --- 启动服务器 ---
 # rm -f "$DB"
-cd "$BUILD_DIR"
-MINEFOLIO_DB_DSN="$DB" ./minefolio &
+(
+  cd "$BUILD_DIR"
+  MINEFOLIO_DB_DSN="$DB" mf_exec_isolated ./minefolio
+) &
 SERVER_PID=$!
 sleep 1
 

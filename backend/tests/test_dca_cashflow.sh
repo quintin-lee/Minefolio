@@ -21,7 +21,7 @@ trap cleanup EXIT INT TERM
 
 echo "=== Starting Minefolio Test Server on port ${PORT} ==="
 db_clean
-db_start_server "$PORT" "$SCRIPT_DIR/../build" "${TMP_DIR}/server.log"
+db_start_server "$PORT" "${MINEFOLIO_BUILD_DIR:-$SCRIPT_DIR/../build}" "${TMP_DIR}/server.log"
 echo "Server is up!"
 
 rsa_encrypt() {

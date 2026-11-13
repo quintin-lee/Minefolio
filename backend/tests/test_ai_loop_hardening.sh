@@ -19,7 +19,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-BUILD_DIR="$(cd "$SCRIPT_DIR/../build" && pwd)"
+source "$SCRIPT_DIR/cgroup_helper.sh"
+BUILD_DIR="${MINEFOLIO_BUILD_DIR:-$(cd "$SCRIPT_DIR/../build" && pwd)}"
 PORT="${PORT:-18091}"
 MOCK_PORT="${MOCK_PORT:-18093}"
 BASE="http://127.0.0.1:$PORT/api"
@@ -75,10 +76,12 @@ cat > "$TMP_DIR/ai.json" <<EOF
 {"providers":[{"id":"mockai","name":"Mock AI","api_key":"dummy","base_url":"http://127.0.0.1:$MOCK_PORT/v1","models":["mock-model"]}],"default_provider":"mockai","default_model":"mock-model","context_size":20,"system_prompt":"你是测试助手"}
 EOF
 export TEST_JWT_SECRET="test-jwt-secret-for-ai-loop-hardening-1234567890"
-cd "$BUILD_DIR"
-MINEFOLIO_PORT="$PORT" MINEFOLIO_DB_DRIVER=sqlite MINEFOLIO_DB_DSN="$DB" \
-  MINEFOLIO_JWT_SECRET="$TEST_JWT_SECRET" AI_CONFIG="$TMP_DIR/ai.json" \
-  ./minefolio > "$SERVER_LOG" 2>&1 &
+(
+  cd "$BUILD_DIR"
+  MINEFOLIO_PORT="$PORT" MINEFOLIO_DB_DRIVER=sqlite MINEFOLIO_DB_DSN="$DB" \
+    MINEFOLIO_JWT_SECRET="$TEST_JWT_SECRET" AI_CONFIG="$TMP_DIR/ai.json" \
+    mf_exec_isolated ./minefolio > "$SERVER_LOG" 2>&1
+) &
 SERVER_PID=$!
 
 for _ in $(seq 1 40); do
@@ -209,10 +212,13 @@ echo "=== Scenario 4: stalled upstream is bounded by the HTTP timeout ==="
 # 重启后端并启用毫秒级超时（其余场景的慢流需要更长的传输预算，短超时仅本场景需要）
 kill "$SERVER_PID" 2>/dev/null || true
 wait "$SERVER_PID" 2>/dev/null || true
-MINEFOLIO_PORT="$PORT" MINEFOLIO_DB_DRIVER=sqlite MINEFOLIO_DB_DSN="$DB" \
-  MINEFOLIO_JWT_SECRET="$TEST_JWT_SECRET" AI_CONFIG="$TMP_DIR/ai.json" \
-  MINEFOLIO_AI_HTTP_TIMEOUT_MS=1500 \
-  ./minefolio > "$SERVER_LOG" 2>&1 &
+(
+  cd "$BUILD_DIR"
+  MINEFOLIO_PORT="$PORT" MINEFOLIO_DB_DRIVER=sqlite MINEFOLIO_DB_DSN="$DB" \
+    MINEFOLIO_JWT_SECRET="$TEST_JWT_SECRET" AI_CONFIG="$TMP_DIR/ai.json" \
+    MINEFOLIO_AI_HTTP_TIMEOUT_MS=1500 \
+    mf_exec_isolated ./minefolio > "$SERVER_LOG" 2>&1
+) &
 SERVER_PID=$!
 for _ in $(seq 1 40); do
   curl -sf "http://127.0.0.1:$PORT/healthz" >/dev/null 2>&1 && break
@@ -244,7 +250,7 @@ echo "$CONF5B" | grep -q "Missing required field: 'amount'" && REJECT5B="amount-
 check "confirm-forged: endpoint rejects bogus token" "1" "$([ "$REJECT5B" = "amount-schema" ] && echo 1 || echo 0)"
 # 场景 5c：mutation 类 MCP 工具（无确认协议）被 loop 拦截。完整链路需要 enabled 的
 # MCP 服务器（test_mcp.sh 覆盖桥接），此处守卫策略层阻断逻辑（cf. test_policy_mcp_risk）：
-./test_ai_policy >/dev/null 2>&1 && POL5C="pass" || POL5C="fail"
+"$BUILD_DIR/test_ai_policy" >/dev/null 2>&1 && POL5C="pass" || POL5C="fail"
 check "mcp-mutation: policy enforcement suite green" "pass" "$POL5C"
 
 if kill -0 "$SERVER_PID" 2>/dev/null; then

@@ -15,7 +15,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-BUILD_DIR="$(cd "$SCRIPT_DIR/../build" && pwd)"
+source "$SCRIPT_DIR/cgroup_helper.sh"
+BUILD_DIR="${MINEFOLIO_BUILD_DIR:-$(cd "$SCRIPT_DIR/../build" && pwd)}"
 PORT="${PORT:-8081}"
 MOCK_PORT="${MOCK_PORT:-18081}"
 BASE="http://127.0.0.1:$PORT/api"
@@ -95,11 +96,13 @@ cat > "$TMP_DIR/ai.json" <<EOF
 {"providers":[{"id":"mockai","name":"Mock AI","api_key":"dummy","base_url":"http://127.0.0.1:$MOCK_PORT/v1","models":["mock-model"]}],"default_provider":"mockai","default_model":"mock-model","context_size":20,"system_prompt":"你是测试助手"}
 EOF
 export TEST_JWT_SECRET="test-jwt-secret-for-mcp-1234567890"
-cd "$BUILD_DIR"
-MINEFOLIO_PORT="$PORT" MINEFOLIO_DB_DRIVER=sqlite MINEFOLIO_DB_DSN="$DB" \
-  MINEFOLIO_JWT_SECRET="$TEST_JWT_SECRET" AI_CONFIG="$TMP_DIR/ai.json" \
-  MINEFOLIO_MCP_ALLOW_LOCAL=1 \
-  ./minefolio > "$SERVER_LOG" 2>&1 &
+(
+  cd "$BUILD_DIR"
+  MINEFOLIO_PORT="$PORT" MINEFOLIO_DB_DRIVER=sqlite MINEFOLIO_DB_DSN="$DB" \
+    MINEFOLIO_JWT_SECRET="$TEST_JWT_SECRET" AI_CONFIG="$TMP_DIR/ai.json" \
+    MINEFOLIO_MCP_ALLOW_LOCAL=1 \
+    mf_exec_isolated ./minefolio > "$SERVER_LOG" 2>&1
+) &
 SERVER_PID=$!
 for _ in $(seq 1 40); do
   curl -sf "http://127.0.0.1:$PORT/healthz" >/dev/null 2>&1 && break
@@ -235,12 +238,24 @@ echo "=== Scenario 2: chat routes mcp:<id>:mcp_echo via bridge (http) ==="
 QUALIFIED="mcp:$HTTP_MCP_ID:mcp_echo"
 start_mock_llm "$QUALIFIED"
 CHAT_BODY="$TMP_DIR/mcp_chat.txt"
+: > "$CHAT_BODY"
 curl -sN --max-time 60 -b "$JAR" -X POST "$BASE/ai/chat" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -H "X-CSRF-Token: $CSRF" \
   -d '{"content":"echo 一下","provider":"mockai","model":"mock-model"}' \
-  > "$CHAT_BODY" || true
+  > "$CHAT_BODY" 2>/dev/null &
+CPID=$!
+for _ in $(seq 1 240); do
+  if grep -q -E 'event: (done|error)' "$CHAT_BODY" 2>/dev/null; then
+    sleep 0.05
+    break
+  fi
+  kill -0 "$CPID" 2>/dev/null || break
+  sleep 0.1
+done
+kill "$CPID" 2>/dev/null || true
+wait "$CPID" 2>/dev/null || true
 check "chat: mcp tool_call named (call+result)" "2" "$(grep -c "\"name\":\"$QUALIFIED\"" "$CHAT_BODY")"
 check "chat: done event" "1" "$(grep -c 'event: done' "$CHAT_BODY")"
 if kill -0 "$SERVER_PID" 2>/dev/null; then

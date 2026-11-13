@@ -17,13 +17,17 @@ cleanup() {
 }
 trap cleanup EXIT
 
-BUILD_DIR="$(cd "$(dirname "$0")/../build" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cgroup_helper.sh"
+BUILD_DIR="${MINEFOLIO_BUILD_DIR:-$(cd "$SCRIPT_DIR/../build" && pwd)}"
 export MINEFOLIO_DB_DRIVER=sqlite
 export MINEFOLIO_DB_DSN="$DB_PATH"
 export MINEFOLIO_JWT_SECRET="report_isolation_test_secret_32_bytes_minimum"
 
-cd "$BUILD_DIR"
-PORT="$PORT" ./minefolio >"$TMP_DIR/server.log" 2>&1 &
+(
+  cd "$BUILD_DIR"
+  PORT="$PORT" mf_exec_isolated ./minefolio >"$TMP_DIR/server.log" 2>&1
+) &
 SERVER_PID=$!
 for _i in $(seq 1 30); do
     curl -sf "http://127.0.0.1:${PORT}/healthz" >/dev/null 2>&1 && break

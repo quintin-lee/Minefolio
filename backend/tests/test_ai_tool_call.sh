@@ -19,7 +19,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/db_helper.sh"
-BUILD_DIR="$(cd "$SCRIPT_DIR/../build" && pwd)"
+BUILD_DIR="${MINEFOLIO_BUILD_DIR:-$(cd "$SCRIPT_DIR/../build" && pwd)}"
 PORT="${PORT:-18087}"
 MOCK_PORT="${MOCK_PORT:-18089}"
 db_init_context "$PORT" "ai_tool"
@@ -74,10 +74,12 @@ cat > "$TMP_DIR/ai.json" <<EOF
 {"providers":[{"id":"mockai","name":"Mock AI","api_key":"dummy","base_url":"http://127.0.0.1:$MOCK_PORT/v1","models":["mock-model"]}],"default_provider":"mockai","default_model":"mock-model","context_size":20,"system_prompt":"你是测试助手"}
 EOF
 export TEST_JWT_SECRET="test-jwt-secret-for-ai-tool-call-1234567890"
-cd "$BUILD_DIR"
-MINEFOLIO_PORT="$PORT" PORT="$PORT" MINEFOLIO_DB_DRIVER="$DB_DRIVER" MINEFOLIO_DB_DSN="$MINEFOLIO_DB_DSN" \
-  MINEFOLIO_JWT_SECRET="$TEST_JWT_SECRET" AI_CONFIG="$TMP_DIR/ai.json" \
-  ./minefolio > "$SERVER_LOG" 2>&1 &
+(
+  cd "$BUILD_DIR"
+  MINEFOLIO_PORT="$PORT" PORT="$PORT" MINEFOLIO_DB_DRIVER="$DB_DRIVER" MINEFOLIO_DB_DSN="$MINEFOLIO_DB_DSN" \
+    MINEFOLIO_JWT_SECRET="$TEST_JWT_SECRET" AI_CONFIG="$TMP_DIR/ai.json" \
+    mf_exec_isolated ./minefolio > "$SERVER_LOG" 2>&1
+) &
 SERVER_PID=$!
 
 for _ in $(seq 1 40); do
@@ -124,15 +126,28 @@ CSRF=$(awk '$6 == "csrf_token" { print $7 }' "$JAR" | head -1)
 [ -n "$TOKEN" ] && PASS=$((PASS + 1)) && echo "  ✅ user setup got token" \
   || { FAIL=$((FAIL + 1)); echo "  ❌ user setup failed: $SETUP_RES"; exit 1; }
 
-# run one chat and count SSE events; returns nothing, sets globals via files
+# run one chat and count SSE events; polls until `event: done|error` because
+# csilk keeps SSE connections open under keep-alive semantics.
 run_chat() {
   local label="$1" body_file="$TMP_DIR/sse_$2.txt"
+  : > "$body_file"
   curl -sN --max-time 60 -c "$JAR" -b "$JAR" -X POST "$BASE/ai/chat" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $TOKEN" \
     -H "X-CSRF-Token: $CSRF" \
     -d '{"content":"请查询资产概况并总结","provider":"mockai","model":"mock-model"}' \
-    > "$body_file" || true
+    > "$body_file" 2>/dev/null &
+  local cpid=$!
+  for _ in $(seq 1 240); do
+    if grep -q -E 'event: (done|error)' "$body_file" 2>/dev/null; then
+      sleep 0.05
+      break
+    fi
+    kill -0 "$cpid" 2>/dev/null || break
+    sleep 0.1
+  done
+  kill "$cpid" 2>/dev/null || true
+  wait "$cpid" 2>/dev/null || true
 }
 
 # ---------------------------------------------------------------------------

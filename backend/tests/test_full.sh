@@ -6,7 +6,9 @@ set -o pipefail
 
 BASE="http://localhost:8181/api"
 DB="/tmp/mf_full_test.db"
-BUILD_DIR="$(cd "$(dirname "$0")/../build" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/cgroup_helper.sh"
+BUILD_DIR="${MINEFOLIO_BUILD_DIR:-$(cd "$SCRIPT_DIR/../build" && pwd)}"
 export TEST_PORT=8181
 PASS=0; FAIL=0; FAILED_CASES=()
 
@@ -94,8 +96,10 @@ http.get('$BASE/auth/public-key', (res) => {
 
 export TEST_JWT_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
 rm -f "$DB" "$DB-wal" "$DB-shm"
-cd "$BUILD_DIR"
-MINEFOLIO_DB_DSN="$DB" MINEFOLIO_JWT_SECRET="$TEST_JWT_SECRET" PORT="$TEST_PORT" ./minefolio >/dev/null 2>&1 &
+(
+  cd "$BUILD_DIR"
+  MINEFOLIO_DB_DSN="$DB" MINEFOLIO_JWT_SECRET="$TEST_JWT_SECRET" PORT="$TEST_PORT" mf_exec_isolated ./minefolio >/dev/null 2>&1
+) &
 SERVER_PID=$!
 for _i in $(seq 1 30); do
   curl -sf http://localhost:$TEST_PORT/healthz >/dev/null 2>&1 && break

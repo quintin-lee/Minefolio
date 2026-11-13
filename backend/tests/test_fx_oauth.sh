@@ -4,7 +4,7 @@ set -eo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/db_helper.sh"
 BACKEND_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-BUILD_DIR="$BACKEND_DIR/build"
+BUILD_DIR="${MINEFOLIO_BUILD_DIR:-$BACKEND_DIR/build}"
 BIN="$BUILD_DIR/minefolio"
 
 PORT="${PORT:-8089}"
@@ -83,13 +83,15 @@ trap cleanup EXIT INT TERM
 
 echo "=== Starting Test Server on port $PORT ==="
 db_clean
-cd "$BUILD_DIR"
-MINEFOLIO_DB_DRIVER="$DB_DRIVER" MINEFOLIO_DB_DSN="$MINEFOLIO_DB_DSN" MINEFOLIO_PORT="$PORT" PORT="$PORT" \
-MINEFOLIO_JWT_SECRET="test_fx_oauth_secret_12345678" \
-MINEFOLIO_OAUTH_GITHUB_CLIENT_ID="gh_client_id_test" \
-MINEFOLIO_MARKET_MOCK="${MINEFOLIO_MARKET_MOCK:-1}" \
-MINEFOLIO_TEST_OAUTH_MOCK="1" \
-"$BIN" > /tmp/minefolio_fx_oauth.log 2>&1 &
+(
+  cd "$BUILD_DIR"
+  MINEFOLIO_DB_DRIVER="$DB_DRIVER" MINEFOLIO_DB_DSN="$MINEFOLIO_DB_DSN" MINEFOLIO_PORT="$PORT" PORT="$PORT" \
+  MINEFOLIO_JWT_SECRET="test_fx_oauth_secret_12345678" \
+  MINEFOLIO_OAUTH_GITHUB_CLIENT_ID="gh_client_id_test" \
+  MINEFOLIO_MARKET_MOCK="${MINEFOLIO_MARKET_MOCK:-1}" \
+  MINEFOLIO_TEST_OAUTH_MOCK="1" \
+  mf_exec_isolated "$BIN" > /tmp/minefolio_fx_oauth.log 2>&1
+) &
 SERVER_PID=$!
 
 SERVER_UP=0

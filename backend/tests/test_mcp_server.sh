@@ -4,8 +4,10 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/cgroup_helper.sh"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-BIN="$REPO_DIR/build/minefolio"
+BUILD_DIR="${MINEFOLIO_BUILD_DIR:-$REPO_DIR/build}"
+BIN="$BUILD_DIR/minefolio"
 PORT=8080
 BASE="http://127.0.0.1:$PORT/api"
 
@@ -44,13 +46,15 @@ fi
 DB="$(mktemp -u /tmp/mf_mcp_srv.XXXXXX.db)"
 JAR="$DB.jar"
 rm -f "$JAR"
-cd "$REPO_DIR"
-MINEFOLIO_PORT="$PORT" \
-MINEFOLIO_DB_DRIVER=sqlite \
-MINEFOLIO_DB_DSN="$DB" \
-MINEFOLIO_JWT_SECRET=test-secret-abcdef-0000 \
-MINEFOLIO_MCP_ALLOW_LOCAL=1 \
-"$BIN" > /tmp/mcp_srv.log 2>&1 &
+(
+  cd "$REPO_DIR"
+  MINEFOLIO_PORT="$PORT" \
+  MINEFOLIO_DB_DRIVER=sqlite \
+  MINEFOLIO_DB_DSN="$DB" \
+  MINEFOLIO_JWT_SECRET=test-secret-abcdef-0000 \
+  MINEFOLIO_MCP_ALLOW_LOCAL=1 \
+  mf_exec_isolated "$BIN" > /tmp/mcp_srv.log 2>&1
+) &
 MINEFOLIO_PID=$!
 
 for i in $(seq 1 40); do

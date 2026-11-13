@@ -30,7 +30,7 @@ else
 fi
 
 db_clean
-db_start_server "$PORT" "$SCRIPT_DIR/../build" "${TMP_DIR}/server.log"
+db_start_server "$PORT" "${MINEFOLIO_BUILD_DIR:-$SCRIPT_DIR/../build}" "${TMP_DIR}/server.log"
 
 rsa_encrypt() {
   local plain="$1"

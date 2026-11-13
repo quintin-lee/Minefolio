@@ -18,7 +18,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-BUILD_DIR="$(cd "$SCRIPT_DIR/../build" && pwd)"
+source "$SCRIPT_DIR/cgroup_helper.sh"
+BUILD_DIR="${MINEFOLIO_BUILD_DIR:-$(cd "$SCRIPT_DIR/../build" && pwd)}"
 PORT="${PORT:-18095}"
 MOCK_PORT="${MOCK_PORT:-18096}"
 BASE="http://127.0.0.1:$PORT/api"
@@ -66,10 +67,12 @@ echo "  mock up (port $MOCK_PORT)"
 cat > "$TMP_DIR/ai.json" <<EOF
 {"providers":[{"id":"mockai","name":"Mock AI","api_key":"dummy","base_url":"http://127.0.0.1:$MOCK_PORT/v1","models":["mock-model"]}],"default_provider":"mockai","default_model":"mock-model","context_size":20,"system_prompt":"你是测试助手"}
 EOF
-cd "$BUILD_DIR"
-MINEFOLIO_PORT="$PORT" MINEFOLIO_DB_DRIVER=sqlite MINEFOLIO_DB_DSN="$DB" \
-  MINEFOLIO_JWT_SECRET="truncate-test-secret-1234567890" AI_CONFIG="$TMP_DIR/ai.json" \
-  ./minefolio > "$SERVER_LOG" 2>&1 &
+(
+  cd "$BUILD_DIR"
+  MINEFOLIO_PORT="$PORT" MINEFOLIO_DB_DRIVER=sqlite MINEFOLIO_DB_DSN="$DB" \
+    MINEFOLIO_JWT_SECRET="truncate-test-secret-1234567890" AI_CONFIG="$TMP_DIR/ai.json" \
+    mf_exec_isolated ./minefolio > "$SERVER_LOG" 2>&1
+) &
 SERVER_PID=$!
 for _ in $(seq 1 40); do
   curl -sf "http://127.0.0.1:$PORT/healthz" >/dev/null 2>&1 && break
@@ -108,9 +111,21 @@ CSRF=$(awk '$6 == "csrf_token" { print $7 }' "$JAR" | head -1)
 echo "  user setup ok"
 
 chat() { # $1=json body  $2=out file
+  : > "$2"
   curl -sN --max-time 60 -c "$JAR" -b "$JAR" -X POST "$BASE/ai/chat" \
     -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
-    -H "X-CSRF-Token: $CSRF" -d "$1" > "$2" || true
+    -H "X-CSRF-Token: $CSRF" -d "$1" > "$2" 2>/dev/null &
+  local cpid=$!
+  for _ in $(seq 1 240); do
+    if grep -q -E 'event: (done|error)' "$2" 2>/dev/null; then
+      sleep 0.05
+      break
+    fi
+    kill -0 "$cpid" 2>/dev/null || break
+    sleep 0.1
+  done
+  kill "$cpid" 2>/dev/null || true
+  wait "$cpid" 2>/dev/null || true
 }
 
 # === Scenario 1: message id SSE events match persisted rows ==================

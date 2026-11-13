@@ -18,7 +18,7 @@ trap cleanup EXIT INT TERM
 
 echo "=== 1. Starting Minefolio server on port $PORT ==="
 db_clean
-db_start_server "$PORT" "$BACKEND_DIR/build"
+db_start_server "$PORT" "${MINEFOLIO_BUILD_DIR:-$BACKEND_DIR/build}"
 
 rsa_encrypt() {
   local plain="$1"
