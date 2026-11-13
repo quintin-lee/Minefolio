@@ -64,9 +64,11 @@ export interface SkillUpdatePayload {
 export interface SkillTestResult {
   status: 'success' | 'failed'
   mode: 'l2' | 'l3'
+  skill_name?: string
   valid?: boolean
   char_count?: number
   token_estimate?: number
+  instructions?: string
   instructions_preview?: string
   rc?: number
   output?: string

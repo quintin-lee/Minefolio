@@ -312,11 +312,12 @@ const formattedTestOutput = computed(() => {
   if (testResult.value.exec_result) {
     return JSON.stringify(testResult.value.exec_result, null, 2)
   }
-  if (testResult.value.output) {
+  if (typeof testResult.value.output === 'string' && testResult.value.output.length > 0) {
     return testResult.value.output
   }
-  if (testResult.value.instructions_preview) {
-    return testResult.value.instructions_preview
+  if (testResult.value.mode === 'l2') {
+    const preview = testResult.value.instructions ?? testResult.value.instructions_preview ?? ''
+    return preview || '(当前技能尚未填写 L2 指令规则正文)'
   }
   return JSON.stringify(testResult.value, null, 2)
 })
