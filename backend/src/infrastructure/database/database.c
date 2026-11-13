@@ -49,6 +49,31 @@ mf_db_open(const mf_db_config_t* config, mf_db_t** out_db)
     return 0;
 }
 
+/**
+ * @brief csilk_db_with_conn() 回调：借出 PostgreSQL 驱动原生连接
+ *
+ * csilk 的 `pool->connection` 对 PG 驱动是 `pg_conn_t*`，其首成员即
+ * `PGconn*`（deps/csilk/src/drivers/db/postgres.c 的 pg_conn_t 定义），
+ * 故经公共回调即可取到原生连接，无需触碰驱动私有头文件。
+ *
+ * @param conn     csilk 借出的驱动连接块（borrowed，生命周期归 csilk）
+ * @param user_ctx mf_db_t* 输出句柄
+ * @return 0 成功；-1 参数/空指针
+ */
+static int
+wrap_postgres_conn(void* conn, void* user_ctx)
+{
+    mf_db_t* db = (mf_db_t*)user_ctx;
+    if (!conn || !db || !db->ops) {
+        return -1;
+    }
+    void* native = *(void**)conn; /* pg_conn_t.db */
+    if (!native) {
+        return -1;
+    }
+    return mf_postgres_adapter_wrap_native(native, &db->native_handle);
+}
+
 int
 mf_db_wrap_csilk(void* csilk_pool, mf_db_engine_t engine, mf_db_t** out_db)
 {
@@ -72,14 +97,22 @@ mf_db_wrap_csilk(void* csilk_pool, mf_db_engine_t engine, mf_db_t** out_db)
     db->underlying_csilk_pool = csilk_pool;
     pthread_mutex_init(&db->lock, NULL);
 
-    void* raw_conn = csilk_db_pool_get_connection((csilk_db_pool_t*)csilk_pool);
-    void* native_conn = raw_conn ? *(void**)raw_conn : NULL;
-
+    /* csilk#1: the bare csilk_db_pool_get_connection() returns the pool's
+     * only connection with no holder tracking, no mutex and no lifetime
+     * contract; driving it from another thread was the documented
+     * heap-use-after-free.  csilk_db_with_conn() is the safe replacement:
+     * the callback runs under pool->mutex with the caller recorded as
+     * holder, and the connection is returned automatically on exit.
+     *
+     * Ownership: a wrapped native handle is borrowed from csilk, never
+     * owned.  wrap_native() sets owns_* = false, so mf_db_close() will not
+     * close a connection whose lifetime belongs to the pool. */
     if (engine == MF_DB_ENGINE_POSTGRES) {
         db->ops = mf_postgres_adapter_get_ops();
-        if (native_conn) {
-            mf_postgres_adapter_wrap_native(native_conn, &db->native_handle);
-        } else {
+        /* pg_conn_t's first member is the PGconn*, so the native handle is
+         * reachable through the public callback. */
+        if (csilk_db_with_conn((csilk_db_pool_t*)csilk_pool, wrap_postgres_conn, db) != 0) {
+            /* 借用失败（池未连接）→ 退回适配器自开独立连接 */
             if (db->ops->open(&cfg, &db->native_handle) != 0) {
                 pthread_mutex_destroy(&db->lock);
                 free(db);
@@ -88,14 +121,13 @@ mf_db_wrap_csilk(void* csilk_pool, mf_db_engine_t engine, mf_db_t** out_db)
         }
     } else {
         db->ops = mf_sqlite_adapter_get_ops();
-        if (native_conn) {
-            mf_sqlite_adapter_wrap_native((sqlite3*)native_conn, &db->native_handle);
-        } else {
-            if (db->ops->open(&cfg, &db->native_handle) != 0) {
-                pthread_mutex_destroy(&db->lock);
-                free(db);
-                return -1;
-            }
+        /* sqlite 的 csilk 连接块是驱动私有结构，公共 API 取不到内嵌的
+         * sqlite3*；改用适配器自开一条独立连接（owns_db=true），
+         * 生命周期完全由本句柄掌握。 */
+        if (db->ops->open(&cfg, &db->native_handle) != 0) {
+            pthread_mutex_destroy(&db->lock);
+            free(db);
+            return -1;
         }
     }
 

@@ -32,6 +32,22 @@ static csilk_db_pool_t* g_pool = NULL;
 static int g_is_postgres = 0;
 
 /**
+ * @brief PostgreSQL 连接池的连接数（csilk#6 多连接池）
+ *
+ * csilk_db_pool_new() 等价于 max_conns=1：所有 csilk_db_with_conn() /
+ * acquire() 调用者都只能拿到同一条连接，跨线程时被 mutex 串行化。
+ * 对 PostgreSQL 请求显式多连接池，使不同线程可各持一条连接。
+ *
+ * 不对 SQLite 启用：文件级写锁本就串行，多连接只在只读时有收益，
+ * 且 ":memory:" DSN 下每条连接是彼此独立的库。
+ *
+ * 注意：这条池解决的是「csilk 公共 API 之间的并发」；当前每个 HTTP 请求
+ * 仍由同一 worker 线程串行执行 usecase，故并发收益要到请求级并发或
+ * 工具级并行（AI runtime 的 pthread worker）真正触库时才体现。
+ */
+#define MF_DB_DEFAULT_POOL_CONNS 8
+
+/**
  * @brief 初始化全局数据库连接池
  *
  * @param[out] out_pool 接收连接池指针的地址
@@ -74,17 +90,33 @@ db_init(csilk_db_pool_t** out_pool)
             mkdir(dir, 0755);
         }
     }
-    g_pool = csilk_db_pool_new(driver, dsn);
+    /* csilk#6: csilk_db_pool_new() is hard-wired to max_conns=1, which
+     * serialises every caller (including the parallel tool workers) onto a
+     * single connection.  Request an explicit pool for PostgreSQL, where
+     * multiple real connections are usable; keep SQLite at 1 because a
+     * file-level write lock serialises writes anyway and ":memory:" would
+     * give each connection its own private database. */
+    int pool_conns = 1;
+    if (g_is_postgres) {
+        pool_conns = MF_DB_DEFAULT_POOL_CONNS;
+    }
+    g_pool = csilk_db_pool_new_ex(driver, dsn, pool_conns);
     if (!g_pool) {
-        CSILK_LOG_E("Failed to create database pool driver=%s dsn=%s", driver, dsn);
+        CSILK_LOG_E(
+            "Failed to create database pool driver=%s dsn=%s conns=%d", driver, dsn, pool_conns);
         return -1;
     }
+    CSILK_LOG_I("Database pool ready: driver=%s conns=%d", driver, pool_conns);
 
     if (!g_is_postgres) {
-        csilk_db_exec(g_pool, "PRAGMA journal_mode=WAL;");
-        csilk_db_exec(g_pool, "PRAGMA busy_timeout=5000;");
-        csilk_db_exec(g_pool, "PRAGMA synchronous=NORMAL;");
-        csilk_db_exec(g_pool, "PRAGMA foreign_keys=ON;");
+        /* csilk#4: apply dialect optimisations through the driver-aware
+         * entry point instead of hand-written PRAGMA strings.  This keeps
+         * the dialect knowledge inside the driver (a PG pool treats these
+         * kinds as no-ops instead of executing SQLite PRAGMA syntax). */
+        (void)csilk_db_set_pragma(g_pool, CSILK_DB_PRAGMA_JOURNAL_MODE, "WAL");
+        (void)csilk_db_set_pragma(g_pool, CSILK_DB_PRAGMA_BUSY_TIMEOUT, "5000");
+        (void)csilk_db_set_pragma(g_pool, CSILK_DB_PRAGMA_SYNCHRONOUS, "NORMAL");
+        (void)csilk_db_set_pragma(g_pool, CSILK_DB_PRAGMA_FOREIGN_KEYS, "ON");
         csilk_db_exec(g_pool, "UPDATE ai_traces SET top_p = 0.0 WHERE typeof(top_p) = 'text';");
         csilk_db_exec(g_pool,
                       "UPDATE ai_traces SET temperature = 0.0 WHERE typeof(temperature) = 'text';");

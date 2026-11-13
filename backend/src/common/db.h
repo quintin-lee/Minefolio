@@ -124,24 +124,39 @@ int db_tx_scope_commit(csilk_db_pool_t* pool, db_tx_scope_t* scope);
 int db_tx_scope_rollback(csilk_db_pool_t* pool, db_tx_scope_t* scope);
 
 /**
- * @section csilk_json_db_contract csilk JSON 所有权模型与 DB 驱动层字符串标量契约
+ * @section csilk_json_db_contract csilk JSON 所有权模型与 DB 驱动层类型契约
  *
  * 【重要约定 - 请在修改任何仓库层/用例层 JSON 处理前通读】
  *
- * 1. DB 驱动层统一序列化为 String 标量（详见 csilk/src/drivers/db/db.c:122）：
- *    csilk_db_query_param_json / csilk_db_query_json_locked 遍历 SQL 查询结果集时，
- *    将所有字段无差别序列化为 csilk_json_string_new(val) 字符串标量节点，不进行任何类型推断。
- *    - 读取数值/布尔必须调用 db_get_num / db_get_int / db_get_bool / db_get_decimal；
- *    - 严禁直接调用 csilk_json_get_number()（其对 string 节点直接返回 0.0）；
- *    - DB 中的 JSON 复合列（如 tags、config_json、metadata）：在查询结果行中是【未解析的 JSON 字符串标量】，
- *      绝非 JSON 数组或对象！在交付给前端前（如 mf_format_expense_rows_with_tags），必须显式调用
- *      csilk_json_parse(tags_str) 进行反序列化并挂载为真正的 csilk_json_array/object。
+ * 1. 结果集类型因驱动而异（csilk#2 修复后的现状）：
+ *    - SQLite 驱动（deps/csilk/src/drivers/db/sqlite.c 的 sqlite_stmt_query_json）
+ *      按列的真实类型建节点：SQLITE_INTEGER → int 节点、SQLITE_FLOAT → number 节点、
+ *      SQLITE_NULL → null 节点、SQLITE_TEXT/BLOB → string 节点。
+ *    - PostgreSQL 驱动（postgres.c 的 pg_result_to_json）仍把每个非 NULL 列
+ *      一律建成 string 节点。
+ *    - csilk_db_query_json（无参数旧路径）同样全字符串化。
+ *    因此**同一份 repository 代码在 SQLite 下可能拿到 int，在 PG 下拿到 string**。
  *
- * 2. 容器挂载转移所有权（Ownership Transfer）：
+ * 2. 读取任何 DB 字段必须走 db_get_num / db_get_int / db_get_bool / db_get_decimal：
+ *    它们对 int / number / string / bool 节点透明解析，是消除上述双引擎差异的唯一正确入口。
+ *    严禁直接调用 csilk_json_get_number()（对 string 节点返回 0.0）或
+ *    csilk_json_get_int()，也严禁假设某字段"一定是字符串/一定是数字"。
+ *
+ * 3. DB 中的 JSON 复合列（tags、config_json、metadata 等）：
+ *    两条路径下它们都是【未解析的 JSON 字符串标量】——SQLite 驱动把 TEXT/BLOB
+    列建成 string 节点，PG 驱动把全部列建成 string 节点。交付前端前必须
+    csilk_json_parse() 反序列化后挂载为真正的 array/object。
+ *    统一做法：先看 csilk_json_is_array/is_object，命中则深拷贝使用，
+ *    否则取字符串再 parse——即 daily_expense_repo_impl.c 里
+ *    mf_format_expense_rows_with_tags 的既有双分支写法。
+ *    若要驱动层直接产出原生 array/object，可用 csilk_db_query_param_json_with_columns()
+    显式声明 JSON 列名，避免每处手写 parse。
+ *
+ * 4. 容器挂载转移所有权（Ownership Transfer）：
  *    调用 csilk_json_array_append(arr, item) 或 csilk_json_add_object(obj, key, child) 会转移 child 的所有权给父容器。
  *    父容器释放时会递归级联释放所有子节点。严禁在挂载后对子节点单独调用 csilk_json_free()（会导致 Double-Free）。
  *
- * 3. 借用视图与跨文档深拷贝（View vs Deep-Copy）：
+ * 5. 借用视图与跨文档深拷贝（View vs Deep-Copy）：
  *    csilk_json_get(obj, key) 与 csilk_json_array_get(arr, idx) 返回的是借用视图指针（Borrowed View），
  *    其生命周期与原文档绑定，严禁单独释放。
  *    若需将一个文档中的子节点挂载到另一个独立文档中，必须调用 csilk_json_copy(view) 执行跨文档深拷贝；
