@@ -1,0 +1,15 @@
+# Auto-generated in CMAKE_BINARY_DIR when MINEFOLIO_SANITIZE=ON.
+# Applies safe ASan/UBSan/LSan defaults for direct `ctest` runs without
+# overriding explicit environment variables provided by CI or developers.
+
+if(NOT DEFINED ENV{ASAN_OPTIONS} OR "$ENV{ASAN_OPTIONS}" STREQUAL "")
+    set(ENV{ASAN_OPTIONS} "hard_rss_limit_mb=@MINEFOLIO_ASAN_RSS_LIMIT_MB@:detect_leaks=1:abort_on_error=1:verify_asan_link_order=0")
+endif()
+
+if(NOT DEFINED ENV{UBSAN_OPTIONS} OR "$ENV{UBSAN_OPTIONS}" STREQUAL "")
+    set(ENV{UBSAN_OPTIONS} "print_stacktrace=1:halt_on_error=1")
+endif()
+
+if(NOT DEFINED ENV{LSAN_OPTIONS} OR "$ENV{LSAN_OPTIONS}" STREQUAL "")
+    set(ENV{LSAN_OPTIONS} "suppressions=@CMAKE_CURRENT_SOURCE_DIR@/tests/.lsan-suppressions")
+endif()

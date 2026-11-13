@@ -42,7 +42,7 @@ jobs:
 
       - name: Run CTest unit tests (ASan & UBSan)
         env:
-          ASAN_OPTIONS: "detect_leaks=1:abort_on_error=1"
+          ASAN_OPTIONS: "hard_rss_limit_mb=2048:detect_leaks=1:abort_on_error=1"
           UBSAN_OPTIONS: "print_stacktrace=1:halt_on_error=1"
           LSAN_OPTIONS: "suppressions=${{ github.workspace }}/backend/tests/.lsan-suppressions"
         run: |
@@ -51,7 +51,7 @@ jobs:
 
       - name: Run full backend integration tests (SQLite, ASan & UBSan)
         env:
-          ASAN_OPTIONS: "detect_leaks=1:abort_on_error=1"
+          ASAN_OPTIONS: "hard_rss_limit_mb=2048:detect_leaks=1:abort_on_error=1"
           UBSAN_OPTIONS: "print_stacktrace=1:halt_on_error=1"
           LSAN_OPTIONS: "suppressions=${{ github.workspace }}/backend/tests/.lsan-suppressions"
           MINEFOLIO_DB_DRIVER: sqlite
@@ -108,7 +108,7 @@ jobs:
 
       - name: Run full backend integration tests (PostgreSQL, ASan & UBSan)
         env:
-          ASAN_OPTIONS: "detect_leaks=1:abort_on_error=1"
+          ASAN_OPTIONS: "hard_rss_limit_mb=2048:detect_leaks=1:abort_on_error=1"
           UBSAN_OPTIONS: "print_stacktrace=1:halt_on_error=1"
           LSAN_OPTIONS: "suppressions=${{ github.workspace }}/backend/tests/.lsan-suppressions"
           MINEFOLIO_DB_DRIVER: postgres
