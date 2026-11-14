@@ -456,6 +456,64 @@ target_compile_options(test_ai_prompt_injection_defense PRIVATE -UNDEBUG)
 target_link_libraries(test_ai_prompt_injection_defense PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
 add_test(NAME test_ai_prompt_injection_defense COMMAND test_ai_prompt_injection_defense)
 
+add_executable(test_domain_account tests/unit/test_domain_account.c src/domain/account/rules.c)
+target_include_directories(test_domain_account PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_domain_account PRIVATE -UNDEBUG)
+target_link_libraries(test_domain_account PRIVATE m)
+add_test(NAME test_domain_account COMMAND test_domain_account)
+
+add_executable(test_domain_tag tests/unit/test_domain_tag.c src/domain/tag/rules.c)
+target_include_directories(test_domain_tag PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_domain_tag PRIVATE -UNDEBUG)
+target_link_libraries(test_domain_tag PRIVATE m)
+add_test(NAME test_domain_tag COMMAND test_domain_tag)
+
+add_executable(test_domain_category tests/unit/test_domain_category.c src/domain/category/rules.c)
+target_include_directories(test_domain_category PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_domain_category PRIVATE -UNDEBUG)
+target_link_libraries(test_domain_category PRIVATE m)
+add_test(NAME test_domain_category COMMAND test_domain_category)
+
+add_executable(test_domain_ledger tests/unit/test_domain_ledger.c src/domain/ledger/rules.c)
+target_include_directories(test_domain_ledger PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_domain_ledger PRIVATE -UNDEBUG)
+target_link_libraries(test_domain_ledger PRIVATE m)
+add_test(NAME test_domain_ledger COMMAND test_domain_ledger)
+
+add_executable(test_domain_dca tests/unit/test_domain_dca.c src/domain/dca/rules.c)
+target_include_directories(test_domain_dca PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_domain_dca PRIVATE -UNDEBUG)
+target_link_libraries(test_domain_dca PRIVATE m)
+add_test(NAME test_domain_dca COMMAND test_domain_dca)
+
+add_executable(test_account_usecases tests/unit/test_account_usecases.c ${LIB_SOURCES})
+target_include_directories(test_account_usecases PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_account_usecases PRIVATE -UNDEBUG)
+target_link_libraries(test_account_usecases PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_dependencies(test_account_usecases copy_assets)
+add_test(NAME test_account_usecases COMMAND test_account_usecases)
+
+add_executable(test_tag_usecases tests/unit/test_tag_usecases.c ${LIB_SOURCES})
+target_include_directories(test_tag_usecases PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_tag_usecases PRIVATE -UNDEBUG)
+target_link_libraries(test_tag_usecases PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_dependencies(test_tag_usecases copy_assets)
+add_test(NAME test_tag_usecases COMMAND test_tag_usecases)
+
+add_executable(test_category_usecases tests/unit/test_category_usecases.c ${LIB_SOURCES})
+target_include_directories(test_category_usecases PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_category_usecases PRIVATE -UNDEBUG)
+target_link_libraries(test_category_usecases PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_dependencies(test_category_usecases copy_assets)
+add_test(NAME test_category_usecases COMMAND test_category_usecases)
+
+add_executable(test_report_services tests/unit/test_report_services.c ${LIB_SOURCES})
+target_include_directories(test_report_services PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_report_services PRIVATE -UNDEBUG)
+target_link_libraries(test_report_services PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_dependencies(test_report_services copy_assets)
+add_test(NAME test_report_services COMMAND test_report_services)
+
 
 
 
