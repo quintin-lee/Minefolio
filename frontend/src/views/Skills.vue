@@ -15,6 +15,14 @@
       <div class="header-actions">
         <el-button
           plain
+          @click="$router.push('/mcp')"
+        >
+          <Icon icon="ph:plugs-connected-duotone" class="btn-icon" />
+          MCP 工具箱
+        </el-button>
+
+        <el-button
+          plain
           :loading="resetting"
           @click="handleResetDefaults"
         >

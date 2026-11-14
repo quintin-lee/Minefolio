@@ -12,6 +12,7 @@ export const zhCN = {
     auditLogs: '日志',
     aiChat: 'AI助手',
     skills: '技能库',
+    mcp: 'MCP工具箱',
     aiTraces: 'AI追踪',
     settings: '设置',
     login: '登录',

@@ -12,6 +12,7 @@ export const enUS = {
     auditLogs: 'Logs',
     aiChat: 'AI Assistant',
     skills: 'Skill Library',
+    mcp: 'MCP Tools',
     aiTraces: 'AI Traces',
     settings: 'Settings',
     login: 'Login',

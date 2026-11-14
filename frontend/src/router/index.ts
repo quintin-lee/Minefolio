@@ -42,6 +42,7 @@ const router = createRouter({
         { path: 'settings', name: 'Settings', component: () => import('@/views/Settings.vue') },
         { path: 'chat', name: 'Chat', component: () => import('@/views/Chat.vue'), meta: { fullBleed: true } },
         { path: 'skills', name: 'Skills', component: () => import('@/views/Skills.vue') },
+        { path: 'mcp', name: 'Mcp', component: () => import('@/views/Mcp.vue') },
         { path: 'ai-traces', name: 'AiTraces', component: () => import('@/views/AiTraces.vue') },
       ],
     },

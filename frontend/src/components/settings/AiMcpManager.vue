@@ -2,6 +2,10 @@
   <div class="panel-container mcp-panel">
     <div class="panel-header">
       <h3>{{ t('settings.mcpTitle') }}</h3>
+      <el-button type="primary" plain size="small" @click="$router.push('/mcp')">
+        <Icon icon="ph:arrow-square-out-duotone" style="margin-right: 4px" />
+        前往独立「MCP 工具箱」画廊
+      </el-button>
     </div>
     <p class="export-hint">{{ t('settings.mcpDesc') }}</p>
 
