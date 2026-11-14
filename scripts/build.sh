@@ -18,6 +18,11 @@ BUILD_JOBS="$(capped_parallel_flag 2>/dev/null || echo -j"$(nproc)")"
 # Default build ceiling; raise via MINEFOLIO_BUILD_MEM_LIMIT for ASan builds.
 BUILD_MEM="${MINEFOLIO_BUILD_MEM_LIMIT:-6G}"
 
+# Static contract check: enforce safe numeric extraction from DB results
+if [ -f "${PROJECT_DIR}/scripts/check_db_contract.sh" ]; then
+  bash "${PROJECT_DIR}/scripts/check_db_contract.sh"
+fi
+
 echo "Building backend... (parallelism ${BUILD_JOBS}, memory cap ${BUILD_MEM})"
 mkdir -p "${PROJECT_DIR}/backend/build"
 cd "${PROJECT_DIR}/backend/build"

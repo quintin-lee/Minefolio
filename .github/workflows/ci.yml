@@ -24,6 +24,10 @@ jobs:
             libuv1-dev libyaml-dev libsqlite3-dev libssl-dev \
             libcurl4-openssl-dev zlib1g-dev sqlite3 curl python3
 
+      - name: Verify DB JSON Contract
+        run: |
+          ./scripts/check_db_contract.sh
+
       - name: Build backend
         run: |
           cd backend
