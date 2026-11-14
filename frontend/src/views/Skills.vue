@@ -140,7 +140,7 @@ const dialogRef = ref<InstanceType<typeof SkillDialog>>()
 const importDialogRef = ref<InstanceType<typeof SkillImportDialog>>()
 
 const enabledCount = computed(() => {
-  return skills.value.filter(s => s.enabled === 1).length
+  return skills.value.filter(s => Number(s.enabled) === 1).length
 })
 
 const l3Count = computed(() => {
@@ -149,7 +149,7 @@ const l3Count = computed(() => {
 
 const filteredSkills = computed(() => {
   return skills.value.filter(s => {
-    if (enabledOnly.value && s.enabled !== 1) {
+    if (enabledOnly.value && Number(s.enabled) !== 1) {
       return false
     }
     if (selectedCategory.value !== 'all' && s.category !== selectedCategory.value) {
@@ -171,7 +171,12 @@ const filteredSkills = computed(() => {
 async function loadSkills() {
   try {
     loading.value = true
-    skills.value = await listSkills()
+    const list = await listSkills()
+    skills.value = list.map(s => ({
+      ...s,
+      id: Number(s.id),
+      enabled: Number(s.enabled) === 1 ? 1 : 0,
+    }))
   } catch (err: unknown) {
     const e = err as { response?: { data?: { message?: string } }; message?: string }
     ElMessage.error(e?.response?.data?.message || e?.message || '加载技能列表失败')
@@ -196,15 +201,10 @@ function handleTest(skill: AiSkill) {
   dialogRef.value?.openEdit(skill, 'test')
 }
 
-async function handleToggle(skill: AiSkill, enabled: boolean) {
-  try {
-    await toggleSkill(skill.id, enabled)
-    skill.enabled = enabled ? 1 : 0
-    ElMessage.success(enabled ? `技能 ${skill.name} 已启用` : `技能 ${skill.name} 已禁用`)
-  } catch (err: unknown) {
-    const e = err as { response?: { data?: { message?: string } }; message?: string }
-    ElMessage.error(e?.response?.data?.message || e?.message || '切换状态失败')
-    await loadSkills()
+function handleToggle(skill: AiSkill, enabled: boolean) {
+  const target = skills.value.find(s => s.id === skill.id)
+  if (target) {
+    target.enabled = enabled ? 1 : 0
   }
 }
 

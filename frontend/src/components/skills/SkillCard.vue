@@ -1,5 +1,5 @@
 <template>
-  <el-card class="skill-card" :class="{ 'is-disabled': skill.enabled === 0 }" shadow="hover">
+  <el-card class="skill-card" :class="{ 'is-disabled': Number(skill.enabled) === 0 }" shadow="hover">
     <div class="card-header">
       <div class="header-left">
         <div class="category-icon-box" :class="`cat-${skill.category}`">
@@ -25,13 +25,13 @@
           </div>
         </div>
       </div>
-      <div class="header-right">
+      <div class="header-right" @click.stop>
         <el-switch
-          :model-value="skill.enabled === 1"
+          :model-value="Number(skill.enabled) === 1"
           active-text=""
           inactive-text=""
           :loading="toggling"
-          @change="handleToggle"
+          :before-change="handleBeforeChange"
         />
       </div>
     </div>
@@ -97,8 +97,10 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { ElMessage } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import type { AiSkill } from '@/types'
+import { toggleSkill } from '@/api/skills'
 
 const props = defineProps<{
   skill: AiSkill
@@ -126,8 +128,23 @@ const tagList = computed(() => {
     .filter(Boolean)
 })
 
-function handleToggle(val: string | number | boolean) {
-  emit('toggle', props.skill, Boolean(val))
+async function handleBeforeChange(): Promise<boolean> {
+  const currentVal = Number(props.skill.enabled) === 1
+  const targetVal = !currentVal
+  toggling.value = true
+  try {
+    await toggleSkill(props.skill.id, targetVal)
+    props.skill.enabled = targetVal ? 1 : 0
+    ElMessage.success(targetVal ? `技能「${props.skill.name}」已启用` : `技能「${props.skill.name}」已禁用`)
+    emit('toggle', props.skill, targetVal)
+    return true
+  } catch (err: unknown) {
+    const e = err as { response?: { data?: { message?: string } }; message?: string }
+    ElMessage.error(e?.response?.data?.message || e?.message || '切换状态失败')
+    return false
+  } finally {
+    toggling.value = false
+  }
 }
 
 function getCategoryIcon(cat: string): string {

@@ -51,6 +51,7 @@ export interface SkillUpdatePayload {
   compatibility?: string
   category?: string
   tags?: string
+  enabled?: number
   instructions_l2?: string
   backend?: string
   exec_root?: string

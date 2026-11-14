@@ -217,6 +217,11 @@ api_ai_skills_update(csilk_ctx_t* c)
         strncpy(dto.tags, tags, sizeof(dto.tags) - 1);
     }
 
+    if (csilk_json_get(body, "enabled")) {
+        dto.has_enabled = 1;
+        dto.enabled = (int)db_get_int(body, "enabled");
+    }
+
     const char* l2 = body_get_str(body, "instructions_l2");
     dto.instructions_l2 = l2 ? l2 : "";
 

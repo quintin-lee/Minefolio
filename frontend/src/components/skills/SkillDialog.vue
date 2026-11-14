@@ -406,6 +406,7 @@ async function handleSave() {
           compatibility: form.compatibility,
           category: form.category,
           tags: form.tags,
+          enabled: form.enabled,
           instructions_l2: form.instructions_l2,
           exec_path: form.exec_path,
           exec_root: form.exec_root,

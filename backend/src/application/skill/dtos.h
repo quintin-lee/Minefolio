@@ -26,6 +26,8 @@ typedef struct {
     char                compatibility[MF_SKILL_COMPAT_MAX];
     char                category[MF_SKILL_CATEGORY_MAX];
     char                tags[MF_SKILL_TAGS_MAX];
+    int                 has_enabled;
+    int                 enabled;
     const char*         instructions_l2;
     mf_skill_backend_t  backend;
     mf_skill_exec_cfg_t exec_cfg;

@@ -208,6 +208,7 @@ skill_usecase_update(void* pool, int64_t user_id, int64_t id, const mf_skill_upd
     snprintf(sk.compatibility, sizeof(sk.compatibility), "%s", dto->compatibility);
     snprintf(sk.category, sizeof(sk.category), "%s", dto->category[0] ? dto->category : "finance");
     snprintf(sk.tags, sizeof(sk.tags), "%s", dto->tags);
+    sk.enabled = dto->has_enabled ? (dto->enabled ? 1 : 0) : (int)db_get_int(existing, "enabled");
     sk.instructions_l2 = (char*)(dto->instructions_l2 ? dto->instructions_l2 : "");
     sk.backend = dto->backend;
     memcpy(&sk.exec_cfg, &dto->exec_cfg, sizeof(mf_skill_exec_cfg_t));

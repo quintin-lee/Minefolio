@@ -161,9 +161,10 @@ skill_repo_update(csilk_db_pool_t* pool, int64_t user_id, int64_t id, const mf_s
         return -1;
     }
 
-    char uid_str[32], id_str[32], timeout_str[16], max_out_str[16];
+    char uid_str[32], id_str[32], timeout_str[16], max_out_str[16], en_str[16];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     snprintf(id_str, sizeof(id_str), "%lld", (long long)id);
+    snprintf(en_str, sizeof(en_str), "%d", skill->enabled ? 1 : 0);
     snprintf(timeout_str,
              sizeof(timeout_str),
              "%d",
@@ -175,18 +176,20 @@ skill_repo_update(csilk_db_pool_t* pool, int64_t user_id, int64_t id, const mf_s
 
     const char* backend_str = (skill->backend == MF_SKILL_BACKEND_REMOTE) ? "remote" : "local";
 
-    const char* sql = "UPDATE ai_skills SET "
-                      "description = ?, license = ?, compatibility = ?, category = ?, tags = ?, "
-                      "instructions_l2 = ?, backend = ?, exec_root = ?, exec_path = ?, exec_args = "
-                      "?, exec_env = ?, "
-                      "timeout_ms = ?, max_output_bytes = ?, updated_at = CURRENT_TIMESTAMP "
-                      "WHERE user_id = ? AND id = ? RETURNING id";
+    const char* sql =
+        "UPDATE ai_skills SET "
+        "description = ?, license = ?, compatibility = ?, category = ?, tags = ?, "
+        "enabled = ?, instructions_l2 = ?, backend = ?, exec_root = ?, exec_path = ?, exec_args = "
+        "?, exec_env = ?, "
+        "timeout_ms = ?, max_output_bytes = ?, updated_at = CURRENT_TIMESTAMP "
+        "WHERE user_id = ? AND id = ? RETURNING id";
 
     const char* params[] = {skill->description,
                             skill->license[0] ? skill->license : "",
                             skill->compatibility[0] ? skill->compatibility : "",
                             skill->category[0] ? skill->category : "finance",
                             skill->tags[0] ? skill->tags : "",
+                            en_str,
                             skill->instructions_l2 ? skill->instructions_l2 : "",
                             backend_str,
                             skill->exec_cfg.root[0] ? skill->exec_cfg.root : "",
