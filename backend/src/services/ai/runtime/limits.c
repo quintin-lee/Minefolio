@@ -9,7 +9,7 @@ ai_runtime_limits_default(void)
         .timeout_ms = 0,
         .token_budget = 32768,
         .tool_budget = 15,
-        .cost_budget = 0.50,
+        .cost_budget = 0.0, /* 默认不限；调用方按场景显式设置 */
     };
 }
 
