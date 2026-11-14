@@ -11,6 +11,7 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libraries by default" FORCE)
 set(BUILD_STATIC_LIBS ON CACHE BOOL "Build static libraries" FORCE)
 set(CSILK_BUILD_SHARED OFF CACHE BOOL "Build shared library (in addition to static)" FORCE)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+set(FETCHCONTENT_UPDATES_DISCONNECTED ON CACHE BOOL "Don't update already-populated dependencies" FORCE)
 
 FetchContent_Declare(
     csilk

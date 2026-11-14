@@ -11,8 +11,7 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 TARGET_DIRS=(
   "$ROOT_DIR/backend/src/infrastructure/repositories"
-  "$ROOT_DIR/backend/src/services/report_asset_service.c"
-  "$ROOT_DIR/backend/src/services/report_expense_service.c"
+  "$ROOT_DIR/backend/src/services"
   "$ROOT_DIR/backend/src/core/ledger"
 )
 
