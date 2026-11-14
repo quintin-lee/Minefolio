@@ -165,11 +165,11 @@ db_start_server() {
     if [ "$apply_vlimit" -eq 1 ]; then
       ulimit -v "$mem_kb" 2>/dev/null || true
     fi
-    MINEFOLIO_DB_DRIVER="$DB_DRIVER" \
-    MINEFOLIO_DB_DSN="$MINEFOLIO_DB_DSN" \
-    MINEFOLIO_PORT="$port" \
-    PORT="$port" \
-    MINEFOLIO_JWT_SECRET="${TEST_JWT_SECRET:-test_jwt_secret_12345678901234567890}" \
+    export MINEFOLIO_DB_DRIVER="$DB_DRIVER"
+    export MINEFOLIO_DB_DSN="$MINEFOLIO_DB_DSN"
+    export MINEFOLIO_PORT="$port"
+    export PORT="$port"
+    export MINEFOLIO_JWT_SECRET="${TEST_JWT_SECRET:-test_jwt_secret_12345678901234567890}"
     mf_exec_isolated ./minefolio > "$log_file" 2>&1
   ) &
   SERVER_PID=$!

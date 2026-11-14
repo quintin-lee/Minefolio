@@ -96,11 +96,11 @@ curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/categories" -d '{"
 curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/categories" -d '{"name":"工资","type":"income","currency":"CNY"}' >/dev/null
 curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/categories" -d '{"name":"现金","type":"asset","currency":"CNY"}' >/dev/null
 curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/categories" -d '{"name":"信用卡","type":"asset","asset_type":"credit_card","currency":"CNY"}' >/dev/null
-# 读取真实分类 id（避免依赖插入顺序）
-EXPENSE_CAT=$(sqlite3 "$DB" "SELECT id FROM categories WHERE name='日常消费' AND user_id=1 LIMIT 1")
-INCOME_CAT=$(sqlite3 "$DB" "SELECT id FROM categories WHERE name='工资' AND user_id=1 LIMIT 1")
-ASSET_CAT=$(sqlite3 "$DB" "SELECT id FROM categories WHERE name='现金' AND user_id=1 LIMIT 1")
-CC_CAT=$(sqlite3 "$DB" "SELECT id FROM categories WHERE name='信用卡' AND user_id=1 LIMIT 1")
+# 读取真实分类 id（优先精确匹配自定义分类，若无则回退至已播种的默认分类，防止空变量导致语法错误）
+EXPENSE_CAT=$(sqlite3 "$DB" "SELECT id FROM categories WHERE user_id=1 AND (name='日常消费' OR type='expense') ORDER BY (name='日常消费') DESC LIMIT 1")
+INCOME_CAT=$(sqlite3 "$DB" "SELECT id FROM categories WHERE user_id=1 AND (name='工资' OR type='income') ORDER BY (name='工资') DESC LIMIT 1")
+ASSET_CAT=$(sqlite3 "$DB" "SELECT id FROM categories WHERE user_id=1 AND (name='现金' OR type='asset') ORDER BY (name='现金') DESC LIMIT 1")
+CC_CAT=$(sqlite3 "$DB" "SELECT id FROM categories WHERE user_id=1 AND (name='信用卡' OR asset_type='credit_card') ORDER BY (name='信用卡') DESC LIMIT 1")
 
 echo "== 2. 建资产 =="
 WALLET_RES=$(curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/assets" -d "{\"name\":\"钱包\",\"category_id\":$ASSET_CAT,\"current_value\":10000,\"currency\":\"CNY\"}")
@@ -337,7 +337,7 @@ check "存量 transfer_out 行 linked_direction='in'" "in" "$(sqlite3 "$DB" "SEL
 echo "== 28. 股票基金交易：买入建仓 =="
 # 创建基金类资产
 curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/categories" -d '{"name":"基金","type":"asset","asset_type":"fund","currency":"CNY"}' >/dev/null
-FUND_CAT=$(sqlite3 "$DB" "SELECT id FROM categories WHERE name='基金' AND type='asset' LIMIT 1")
+FUND_CAT=$(sqlite3 "$DB" "SELECT id FROM categories WHERE user_id=1 AND (name='基金' OR asset_type='fund' OR type='asset') ORDER BY (name='基金') DESC, (asset_type='fund') DESC LIMIT 1")
 curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/assets" -d "{\"name\":\"XX基金\",\"category_id\":$FUND_CAT,\"current_value\":0,\"currency\":\"CNY\"}" >/dev/null
 FUND_ID=$(sqlite3 "$DB" "SELECT id FROM assets WHERE name='XX基金' LIMIT 1")
 # 买 1000 份 × 2 元
@@ -388,7 +388,7 @@ WALLET_BAL_AFTER=$(sqlite3 "$DB" "SELECT printf('%.1f', current_value) FROM asse
 check "T6 钱包余额还原(原${WALLET_BAL_BEFORE}+2000)" "$(echo "$WALLET_BAL_BEFORE" | awk '{printf "%.1f",$1+2000}')" "$WALLET_BAL_AFTER"
 
 # T7: fee 行 note 空 fallback — 原 note 为空时 fee 行 note='fee'
-FUND_CAT2=$(sqlite3 "$DB" "SELECT id FROM categories WHERE name='基金' LIMIT 1")
+FUND_CAT2=$(sqlite3 "$DB" "SELECT id FROM categories WHERE user_id=1 AND (name='基金' OR asset_type='fund' OR type='asset') ORDER BY (name='基金') DESC, (asset_type='fund') DESC LIMIT 1")
 WALLET_ID2=$(sqlite3 "$DB" "SELECT id FROM assets WHERE name='钱包' LIMIT 1")
 # 买入有 fee 但无 note 的交易
 curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/transactions" \
