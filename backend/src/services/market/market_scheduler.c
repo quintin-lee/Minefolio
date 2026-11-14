@@ -306,6 +306,9 @@ market_scheduler_start(csilk_db_pool_t* pool)
     g_pool = pool;
     g_sched_running = true;
 
+    /* Pre-warm exchange rates from database history into memory table */
+    exchange_rate_preload_from_db(pool);
+
     /* Re-bind the condvar to CLOCK_MONOTONIC before the worker thread starts,
      * so timedwait deadlines are immune to NTP wall-clock rollback. Done on the
      * caller thread (no concurrent signal/stop in flight) to avoid a destroy

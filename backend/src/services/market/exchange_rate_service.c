@@ -52,6 +52,64 @@ exchange_rate_upsert_sql(void)
                               "UPDATE SET rate = excluded.rate";
 }
 
+static double
+query_latest_rate_from_db(csilk_db_pool_t* pool, const char* cur_upper)
+{
+    if (!pool || !cur_upper || !cur_upper[0]) {
+        return 0.0;
+    }
+    const char*   sql = "SELECT rate FROM exchange_rate_history "
+                        "WHERE target_currency = ? "
+                        "ORDER BY rate_date DESC LIMIT 1";
+    csilk_json_t* rows = csilk_db_query_param_json(pool, sql, (const char*[]){cur_upper, NULL});
+    double        r = 0.0;
+    if (rows) {
+        if (csilk_json_array_size(rows) > 0) {
+            const csilk_json_t* row = csilk_json_array_get(rows, 0);
+            double              val = db_get_num(row, "rate");
+            if (!isnan(val) && !isinf(val) && val > 0.0) {
+                r = val;
+            }
+        }
+        csilk_json_free(rows);
+    }
+    return r;
+}
+
+int
+exchange_rate_preload_from_db(csilk_db_pool_t* pool)
+{
+    if (!pool) {
+        return -1;
+    }
+    const char*   sql = "SELECT target_currency, rate FROM exchange_rate_history "
+                        "ORDER BY rate_date ASC";
+    csilk_json_t* rows = csilk_db_query_param_json(pool, sql, NULL);
+    if (!rows) {
+        return -1;
+    }
+    time_t now = time(NULL);
+    size_t count = csilk_json_array_size(rows);
+    pthread_mutex_lock(&g_rate_mutex);
+    for (size_t i = 0; i < count; i++) {
+        const csilk_json_t* r = csilk_json_array_get(rows, i);
+        const char*         cur = csilk_json_get_string(r, "target_currency");
+        double              rate = db_get_num(r, "rate");
+        if (cur && rate > 0.0) {
+            for (int j = 0; g_rates[j].currency[0] != '\0'; j++) {
+                if (strcasecmp(g_rates[j].currency, cur) == 0) {
+                    g_rates[j].rate_to_cny = rate;
+                    g_rates[j].last_updated = now;
+                    break;
+                }
+            }
+        }
+    }
+    pthread_mutex_unlock(&g_rate_mutex);
+    csilk_json_free(rows);
+    return 0;
+}
+
 int
 exchange_rate_get_to_cny_safe(const char* currency, double* out_rate)
 {
@@ -79,15 +137,41 @@ exchange_rate_get_to_cny_safe(const char* currency, double* out_rate)
         return 0;
     }
 
+    time_t now = time(NULL);
     pthread_mutex_lock(&g_rate_mutex);
+    int idx = -1;
     for (int i = 0; g_rates[i].currency[0] != '\0'; i++) {
         if (strcmp(g_rates[i].currency, cur_upper) == 0) {
-            *out_rate = g_rates[i].rate_to_cny;
-            pthread_mutex_unlock(&g_rate_mutex);
-            return 0;
+            idx = i;
+            break;
         }
     }
+
+    if (idx >= 0) {
+        /* If cache is cold (never fetched) or stale (> 300s), check DB for cross-instance sync */
+        if (g_rates[idx].last_updated == 0 || (now - g_rates[idx].last_updated > 300)) {
+            pthread_mutex_unlock(&g_rate_mutex);
+            csilk_db_pool_t* pool = db_get_pool();
+            double           db_rate = query_latest_rate_from_db(pool, cur_upper);
+            pthread_mutex_lock(&g_rate_mutex);
+            if (db_rate > 0.0) {
+                g_rates[idx].rate_to_cny = db_rate;
+                g_rates[idx].last_updated = now;
+            }
+        }
+        *out_rate = g_rates[idx].rate_to_cny;
+        pthread_mutex_unlock(&g_rate_mutex);
+        return 0;
+    }
     pthread_mutex_unlock(&g_rate_mutex);
+
+    /* Currency not in static g_rates table -> check if available dynamically in DB */
+    csilk_db_pool_t* pool = db_get_pool();
+    double           db_rate = query_latest_rate_from_db(pool, cur_upper);
+    if (db_rate > 0.0) {
+        *out_rate = db_rate;
+        return 0;
+    }
 
     return -1;
 }

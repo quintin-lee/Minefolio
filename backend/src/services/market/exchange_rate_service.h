@@ -95,3 +95,11 @@ csilk_json_t* exchange_rate_history_list(const char* target_currency, int days);
 double exchange_rate_get_historical_or_latest(csilk_db_pool_t* pool,
                                               currency_t       cur,
                                               const char*      sample_date);
+
+/**
+ * @brief 从 exchange_rate_history 历史表中预热最新汇率至内存缓存 (支持多实例与持久化恢复)
+ *
+ * @param pool 数据库连接池指针
+ * @return int 0 成功预热；<0 失败或连接不可用
+ */
+int exchange_rate_preload_from_db(csilk_db_pool_t* pool);
