@@ -3,10 +3,23 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import ElementPlus from 'element-plus'
-import AiMcpManager from '@/components/settings/AiMcpManager.vue'
+import McpCard from '@/components/mcp/McpCard.vue'
+import McpDialog from '@/components/mcp/McpDialog.vue'
 import AiProviderManager from '@/components/settings/AiProviderManager.vue'
 import Settings from '@/views/Settings.vue'
 import { useAuthStore } from '@/stores/auth'
+import type { McpServer } from '@/types'
+
+const sampleServer: McpServer = {
+  id: 1,
+  user_id: 1,
+  name: 'filesystem',
+  transport: 'stdio',
+  command: 'npx -y @modelcontextprotocol/server-filesystem /tmp',
+  enabled: 1,
+  timeout_ms: 30000,
+  tool_count: 2,
+}
 
 const mockAiSettings = {
   providers: [
@@ -69,22 +82,27 @@ vi.mock('@/api/ledger', () => ({
   },
 }))
 
-describe('Settings.vue AI Tab & MCP Manager', () => {
+describe('Settings.vue AI Tab & MCP Gallery Components', () => {
   beforeEach(() => {
     localStorage.clear()
     localStorage.setItem('minefolio_token', 'test-token')
     localStorage.setItem('minefolio_user', JSON.stringify({ id: 1, username: 'admin', created_at: '2026-01-01' }))
   })
 
-  it('mounts AiMcpManager directly with empty servers', async () => {
+  it('mounts McpCard directly with sample server', async () => {
     setActivePinia(createPinia())
-    const wrapper = mount(AiMcpManager, {
+    const wrapper = mount(McpCard, {
+      props: {
+        server: sampleServer,
+        tools: [{ id: 1, server_id: 1, tool_name: 'read_file', qualified_name: 'mcp:1:read_file', input_schema: '{}', is_mutation: 0, risk_level: 'low' }],
+      },
       global: {
         plugins: [ElementPlus],
       },
     })
-    await new Promise((r) => setTimeout(r, 50))
     expect(wrapper.exists()).toBe(true)
+    expect(wrapper.text()).toContain('filesystem')
+    expect(wrapper.text()).toContain('read_file')
   })
 
   it('mounts AiProviderManager directly with realistic settings', async () => {
@@ -98,19 +116,17 @@ describe('Settings.vue AI Tab & MCP Manager', () => {
     expect(wrapper.exists()).toBe(true)
   })
 
-  it('clicks addServer and renders add card', async () => {
+  it('mounts McpDialog directly and opens create dialog', async () => {
     setActivePinia(createPinia())
-    const wrapper = mount(AiMcpManager, {
+    const wrapper = mount(McpDialog, {
       global: {
         plugins: [ElementPlus],
       },
     })
-    await new Promise((r) => setTimeout(r, 50))
-    const addBtn = wrapper.find('.add-server-btn')
-    expect(addBtn.exists()).toBe(true)
-    await addBtn.trigger('click')
+    expect(wrapper.exists()).toBe(true)
+    wrapper.vm.openCreate()
     await wrapper.vm.$nextTick()
-    expect(wrapper.find('.server-form-wrap').exists()).toBe(true)
+    expect(wrapper.find('.mcp-form').exists()).toBe(true)
   })
 
   it('mounts Settings.vue, switches to AI tab, and checks for error capture', async () => {
