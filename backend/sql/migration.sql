@@ -523,3 +523,9 @@ CREATE TABLE IF NOT EXISTS ai_skills (
 CREATE INDEX IF NOT EXISTS idx_ai_skills_user_enabled ON ai_skills(user_id, enabled);
 CREATE INDEX IF NOT EXISTS idx_ai_skills_category ON ai_skills(user_id, category);
 
+-- Reporting & FX Query Indices (V023)
+CREATE INDEX IF NOT EXISTS idx_fx_history_currency_date ON exchange_rate_history(target_currency, rate_date DESC);
+CREATE INDEX IF NOT EXISTS idx_transactions_asset_date ON transactions(asset_id, transaction_date);
+CREATE INDEX IF NOT EXISTS idx_balance_logs_user_date ON asset_balance_logs(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_daily_expenses_user_date ON daily_expenses(user_id, expense_date);
+

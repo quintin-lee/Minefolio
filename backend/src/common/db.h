@@ -80,6 +80,12 @@ int db_is_postgres(void);
  * 事务作用域与保存点管理 (Transaction Scope & Savepoint Guard)
  * ========================================================================= */
 
+/**
+ * @brief Minefolio 统一数据库连接池抽象类型别名
+ *
+ * 为连接池句柄提供统一语义抽象，对标 db_tx_scope_t。
+ */
+typedef csilk_db_pool_t*    mf_db_pool_t;
 typedef csilk_db_tx_scope_t db_tx_scope_t;
 
 /**

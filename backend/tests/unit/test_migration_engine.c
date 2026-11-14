@@ -167,6 +167,12 @@ test_fresh_apply_and_status(void)
     assert(cost_col_res != NULL);
     csilk_json_free(cost_col_res);
 
+    /* Verify V023 reporting query index */
+    csilk_json_t* idx_res = csilk_db_query_json(
+        pool, "SELECT 1 FROM sqlite_master WHERE type='index' AND name = 'idx_fx_history_currency_date';");
+    assert(idx_res != NULL && csilk_json_array_size(idx_res) == 1);
+    csilk_json_free(idx_res);
+
     /* Idempotent second apply */
     int second_applied = 0;
     assert(csilk_migration_apply(engine, &second_applied) == 0);
@@ -235,8 +241,10 @@ test_auto_baseline_existing_database(void)
                "INSERT INTO categories (id, user_id, ledger_id, name) VALUES (20, 1, NULL, 'legacy');"
                "CREATE TABLE assets (id INTEGER PRIMARY KEY, user_id INTEGER, ledger_id INTEGER, currency TEXT DEFAULT 'CNY');"
                "CREATE TABLE transactions (id INTEGER PRIMARY KEY, user_id INTEGER, ledger_id INTEGER, "
-               "asset_id INTEGER, linked_asset_id INTEGER, transaction_type TEXT, amount DECIMAL(18,2));"
-               "CREATE TABLE daily_expenses (id INTEGER PRIMARY KEY, user_id INTEGER, ledger_id INTEGER);"
+               "asset_id INTEGER, linked_asset_id INTEGER, transaction_type TEXT, amount DECIMAL(18,2), transaction_date TEXT);"
+               "CREATE TABLE daily_expenses (id INTEGER PRIMARY KEY, user_id INTEGER, ledger_id INTEGER, expense_date TEXT);"
+               "CREATE TABLE asset_balance_logs (id INTEGER PRIMARY KEY, user_id INTEGER, asset_id INTEGER, delta DECIMAL(18,2), created_at TIMESTAMP);"
+               "CREATE TABLE exchange_rate_history (id INTEGER PRIMARY KEY, rate_date TEXT, base_currency TEXT, target_currency TEXT, rate DECIMAL(18,6));"
                "CREATE TABLE category_seed_state (user_id INTEGER PRIMARY KEY);"
                "INSERT INTO category_seed_state (user_id) VALUES (1);") == 0);
 
