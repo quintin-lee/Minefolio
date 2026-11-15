@@ -256,6 +256,7 @@ import DOMPurify from 'dompurify'
 import { Icon } from '@iconify/vue'
 import { useFinancialEntities } from '@/composables/useFinancialEntities'
 import ActionCard from '@/components/ActionCard.vue'
+import { normalizeActionCard } from '@/utils/normalize-action'
 import WorkflowProgressCard from '@/components/WorkflowProgressCard.vue'
 import WorkflowConfigCard from '@/components/WorkflowConfigCard.vue'
 import type { ProposedAction } from '@/components/ActionCard.vue'
@@ -744,7 +745,7 @@ const segments = computed<Segment[]>(() => {
 
     if (lang === 'action') {
       try {
-        actionObj = JSON.parse(code)
+        actionObj = normalizeActionCard(JSON.parse(code))
         if (actionObj && (actionObj.action_type === 'daily_expense' || actionObj.action_type === 'transfer')) {
           isAction = true
         }
@@ -753,7 +754,7 @@ const segments = computed<Segment[]>(() => {
       }
     } else if (lang === 'json' && (code.includes('"action_type"') || code.includes('"daily_expense"') || code.includes('"transfer"'))) {
       try {
-        const parsed = JSON.parse(code)
+        const parsed = normalizeActionCard(JSON.parse(code))
         if (parsed && (parsed.action_type === 'daily_expense' || parsed.action_type === 'transfer')) {
           actionObj = parsed
           isAction = true
