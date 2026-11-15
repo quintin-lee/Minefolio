@@ -19,6 +19,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <pthread.h>
 
 /* 报告提示词模板 */
 static const char* NEWS_ANALYSIS_PROMPT =
@@ -40,6 +41,16 @@ get_local_date_str(char* out, size_t sz)
     localtime_r(&now, &tm_buf);
     snprintf(out, sz, "%04d-%02d-%02d", tm_buf.tm_year + 1900, tm_buf.tm_mon + 1, tm_buf.tm_mday);
 }
+
+/* 后台 worker 参数（堆分配，detached 线程使用）。pool 为进程级连接池。 */
+typedef struct {
+    csilk_db_pool_t* pool;
+    int64_t          user_id;
+    int64_t          report_id;
+} news_worker_arg_t;
+
+static int ai_news_execute_analysis(csilk_db_pool_t* pool, int64_t user_id, int64_t report_id);
+void*      ai_news_execute_analysis_wrapper(void* p);
 
 /**
  * @brief 执行单次 AI 分析并更新报告状态
@@ -72,7 +83,7 @@ ai_news_execute_analysis(csilk_db_pool_t* pool, int64_t user_id, int64_t report_
 
     /* 3. 构建 AI 上下文并执行 */
     char  prompt[8192];
-    char* portfolio_str = "{}";
+    char* portfolio_str = NULL;
     if (portfolio && csilk_json_array_size(portfolio) > 0) {
         size_t plen = 0;
         portfolio_str = csilk_json_serialize(portfolio, &plen);
@@ -88,13 +99,14 @@ ai_news_execute_analysis(csilk_db_pool_t* pool, int64_t user_id, int64_t report_
     ai_runtime_context_t ctx;
     ai_runtime_context_init(&ctx);
     ctx.user_id = user_id;
-    ctx.session_id = -1;
+    ctx.session_id = 0; /* 非会话型报告：0 表示不关联 ai_sessions，trace 保存时跳过 */
     ctx.limits.max_iterations = 3;
     ctx.limits.token_budget = 16384;
     ctx.temperature = 0.3;
     ctx.max_tokens = 2048;
 
-    csilk_json_t* msgs = csilk_json_array();
+    /* 直接用 init 已创建的 ctx.messages（init 已分配空 array），追加 system + user。 */
+    csilk_json_t* msgs = ctx.messages;
     csilk_json_t* sys = csilk_json_object();
     csilk_json_add_string(sys, "role", "system");
     csilk_json_add_string(
@@ -111,8 +123,8 @@ ai_news_execute_analysis(csilk_db_pool_t* pool, int64_t user_id, int64_t report_
     ai_runtime_context_free(&ctx);
 
     if (res.status.code != AI_RUNTIME_ERR_OK || !res.final_content) {
-        /* 更新为 error 状态 */
-        const char* err_msg = res.status.detail ? res.status.detail : "AI execution failed";
+        /* 更新为 error 状态（非会话型：session_id=0，跳过 trace 外键保存） */
+        const char* err_msg = res.status.detail[0] ? res.status.detail : res.status.message;
         char        id_str[32];
         snprintf(id_str, sizeof(id_str), "%lld", (long long)report_id);
         csilk_db_query_param_json(
@@ -120,7 +132,10 @@ ai_news_execute_analysis(csilk_db_pool_t* pool, int64_t user_id, int64_t report_
             "UPDATE ai_news_reports SET status='error', error_msg=? WHERE id=? AND user_id=?",
             (const char*[]){err_msg, id_str, uid_str, NULL});
         free(res.final_content);
-        if (trace) {
+        if (trace && ctx.session_id > 0) {
+            mf_ai_trace_save(pool, trace);
+            ai_trace_destroy(trace);
+        } else if (trace) {
             ai_trace_destroy(trace);
         }
         return -1;
@@ -135,8 +150,10 @@ ai_news_execute_analysis(csilk_db_pool_t* pool, int64_t user_id, int64_t report_
         (const char*[]){res.final_content, id_str, uid_str, NULL});
 
     free(res.final_content);
-    if (trace) {
+    if (trace && ctx.session_id > 0) {
         mf_ai_trace_save(pool, trace);
+    }
+    if (trace) {
         ai_trace_destroy(trace);
     }
     return 0;
@@ -211,9 +228,45 @@ ai_news_trigger(csilk_db_pool_t* pool, int64_t user_id)
     csilk_json_free(row);
 
     if (report_id > 0) {
-        ai_news_execute_analysis(pool, user_id, report_id);
+        /* 非阻塞：将 AI 分析交给后台 detached worker，HTTP handler 立即返回 pending。
+         * 同步调用 ai_runtime_execute 会在 HTTP 线程里阻塞数秒并因 provider
+         * 缺失/并发而引发 502；改为 detached 线程隔离该风险。 */
+        news_worker_arg_t* arg = (news_worker_arg_t*)malloc(sizeof(news_worker_arg_t));
+        if (arg) {
+            arg->pool = pool;
+            arg->user_id = user_id;
+            arg->report_id = report_id;
+            pthread_t tid;
+            int       trc = pthread_create(&tid, NULL, ai_news_execute_analysis_wrapper, arg);
+            if (trc == 0) {
+                pthread_detach(tid);
+            } else {
+                /* 线程创建失败：降级为 error 状态，避免悬挂 pending */
+                char id_str[32];
+                snprintf(id_str, sizeof(id_str), "%lld", (long long)report_id);
+                csilk_db_query_param_json(
+                    pool,
+                    "UPDATE ai_news_reports SET status='error', error_msg=? WHERE id=? AND "
+                    "user_id=?",
+                    (const char*[]){"worker spawn failed", id_str, uid_str, NULL});
+                free(arg);
+            }
+        }
     }
     return report_id;
+}
+
+/* 后台 worker 包装：堆参数 + detached 线程。ai_news_execute_analysis 内部完成
+ * DB 更新与 trace 清理；pool 为进程级连接池，生命周期覆盖整个进程。 */
+void*
+ai_news_execute_analysis_wrapper(void* p)
+{
+    news_worker_arg_t* arg = (news_worker_arg_t*)p;
+    if (arg) {
+        ai_news_execute_analysis(arg->pool, arg->user_id, arg->report_id);
+        free(arg);
+    }
+    return NULL;
 }
 
 void
