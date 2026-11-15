@@ -13,6 +13,7 @@
 #include "services/ai/runtime/context.h"
 #include "services/ai/trace/trace.h"
 #include "services/ai_service.h"
+#include "application/ai/config_provider.h"
 #include "common/db.h"
 #include "domain/ai/rules.h"
 #include <stdio.h>
@@ -104,6 +105,18 @@ ai_news_execute_analysis(csilk_db_pool_t* pool, int64_t user_id, int64_t report_
     ctx.limits.token_budget = 16384;
     ctx.temperature = 0.3;
     ctx.max_tokens = 2048;
+
+    /* 显式指定模型：避免 runtime 落到 provider.models[0]（可能是不可用的旧模型）。
+     * 优先用 ai_settings 的 default_model；为空则让 runtime 自行决定。 */
+    {
+        ai_config_t* acfg = ai_config_acquire();
+        if (acfg && acfg->default_model[0]) {
+            snprintf(ctx.model_name, sizeof(ctx.model_name), "%s", acfg->default_model);
+        }
+        if (acfg) {
+            ai_config_release(acfg);
+        }
+    }
 
     /* 直接用 init 已创建的 ctx.messages（init 已分配空 array），追加 system + user。 */
     csilk_json_t* msgs = ctx.messages;
