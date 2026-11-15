@@ -9,11 +9,13 @@ ai_model_resolve_name(const ai_provider_t* provider,
     if (requested_model && requested_model[0]) {
         return requested_model;
     }
-    if (provider && provider->model_count > 0 && provider->models && provider->models[0]) {
-        return provider->models[0];
-    }
+    /* default_model 是用户在设置中明确选定的模型，优先级高于 provider.models[0]
+     * （后者只是供应商模型列表首项，常为不可用/旧模型，直接命中会 404）。 */
     if (cfg && cfg->default_model[0]) {
         return cfg->default_model;
+    }
+    if (provider && provider->model_count > 0 && provider->models && provider->models[0]) {
+        return provider->models[0];
     }
     return "gpt-4o";
 }

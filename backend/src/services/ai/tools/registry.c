@@ -6,6 +6,7 @@
 #include "services/ai/tools/cashflow_tool.h"
 #include "services/ai/tools/portfolio_tool.h"
 #include "services/ai/tools/report_tool.h"
+#include "services/ai/tools/news_tool.h"
 #include "services/ai/tools/web_search_tool.h"
 #include "services/ai/tools/batch_tool.h"
 #include "services/ai/tools/skill_tool.h"
@@ -38,6 +39,7 @@ registry_init_impl(void)
     ai_tool_cashflow_register_all();
     ai_tool_portfolio_register_all();
     ai_tool_report_register_all();
+    ai_tool_news_register_all();
     ai_tool_web_search_register_all();
     ai_tool_batch_register_all();
     ai_tool_skill_register_all();

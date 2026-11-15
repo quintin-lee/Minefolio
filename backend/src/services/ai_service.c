@@ -529,7 +529,12 @@ ai_chat_handler(csilk_ctx_t* c)
         ai_config_release(cfg);
         return;
     }
-    const char* model_sel = model_override ? model_override : prov->models[0];
+    /* 模型选择优先级：显式 model_override > ai_settings.default_model > provider.models[0]。
+     * default_model 是用户实际选定的模型；models[0] 仅是供应商模型列表首项，
+     * 常为不可用/旧模型（如 01-ai/yi-large），直接命中会 404。 */
+    const char* model_sel = model_override
+                                ? model_override
+                                : (cfg->default_model[0] ? cfg->default_model : prov->models[0]);
     if (!model_sel) {
         model_sel = "default";
     }
