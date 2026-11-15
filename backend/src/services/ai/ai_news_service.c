@@ -47,17 +47,19 @@ get_local_date_str(char* out, size_t sz)
 static int
 ai_news_execute_analysis(csilk_db_pool_t* pool, int64_t user_id, int64_t report_id)
 {
-    /* 1. 获取用户持仓 */
+    /* 1. 获取用户持仓（非现金/非负债；类型由 categories.asset_type 承载） */
     char uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     csilk_json_t* portfolio = csilk_db_query_param_json(
         pool,
-        "SELECT name as asset_name, type as asset_type, "
-        "  COALESCE(current_value, 0) as current_value, "
-        "  COALESCE(cost_basis, 0) as cost_basis, "
-        "  COALESCE(quantity, 0) as quantity "
-        "FROM assets WHERE user_id = ? AND archived = 0 AND type != 'cash' "
-        "ORDER BY current_value DESC LIMIT 15",
+        "SELECT a.name as asset_name, COALESCE(c.asset_type, '') as asset_type, "
+        "  COALESCE(a.current_value, 0) as current_value, "
+        "  COALESCE(a.cost_basis, 0) as cost_basis, "
+        "  COALESCE(a.quantity, 0) as quantity "
+        "FROM assets a LEFT JOIN categories c ON c.id = a.category_id "
+        "WHERE a.user_id = ? AND COALESCE(c.asset_type, '') NOT IN "
+        "  ('cash','loan','credit_card','other_liability') "
+        "ORDER BY a.current_value DESC LIMIT 15",
         (const char*[]){uid_str, NULL});
 
     /* 2. 获取当日新闻（当前为模拟数据源，后续可接入真实 RSS/API） */
@@ -188,7 +190,7 @@ ai_news_trigger(csilk_db_pool_t* pool, int64_t user_id)
     char uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
 
-    /* 插入或重置当日 pending 记录（幂等） */
+    /* 插入或重置当日 pending 记录（幂等；upsert 失败不影响幂等语义，由后续 SELECT 兜底） */
     csilk_db_query_param_json(
         pool,
         "INSERT INTO ai_news_reports (user_id, report_date, title, status) "
@@ -222,8 +224,10 @@ ai_news_scheduler_tick(csilk_db_pool_t* pool)
     }
     csilk_json_t* users =
         csilk_db_query_json(pool,
-                            "SELECT DISTINCT user_id FROM assets WHERE archived = 0 AND "
-                            "type != 'cash' LIMIT 50");
+                            "SELECT DISTINCT a.user_id FROM assets a "
+                            "LEFT JOIN categories c ON c.id = a.category_id "
+                            "WHERE COALESCE(c.asset_type, '') NOT IN "
+                            "  ('cash','loan','credit_card','other_liability') LIMIT 50");
     if (!users) {
         return;
     }
