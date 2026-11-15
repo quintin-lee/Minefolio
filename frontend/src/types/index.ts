@@ -789,6 +789,22 @@ export interface GlobalIndexItem {
   sparkline: number[]
 }
 
+/** AI 每日市场脉搏报告 */
+export interface AiNewsReport {
+  id: number
+  report_date: string
+  title: string
+  summary: string
+  analysis: string
+  affected_assets: string
+  sources: string
+  model_used: string
+  token_cost: number
+  status: 'pending' | 'done' | 'error'
+  error_msg: string
+  created_at: string
+}
+
 /** 全球大盘实时聚合响应数据模型 */
 export interface GlobalIndicesData {
   updated_at: string

@@ -28,6 +28,7 @@
 #include "interfaces/http/controllers/import_rule_controller.h"
 #include "interfaces/http/controllers/receipt_controller.h"
 #include "interfaces/http/controllers/ai_mcp_controller.h"
+#include "interfaces/http/controllers/ai_news_controller.h"
 #include "interfaces/http/controllers/mcp_server_controller.h"
 #include "interfaces/http/controllers/skill_controller.h"
 #include "services/market/market_scheduler.h"
@@ -154,6 +155,7 @@ main(int argc, char** argv)
     register_ai_mcp_routes(app);
     register_mcp_server_routes(app);
     register_skill_routes(app);
+    register_ai_news_routes(app);
     csilk_admin_serve_secure(app, "/csilk-admin", NULL);
 
     const char* dist = "./frontend/dist";

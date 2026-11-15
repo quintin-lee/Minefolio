@@ -58,6 +58,10 @@
           <Icon icon="ph:plugs-connected-duotone" class="nav-icon" />
           <template #title><span>{{ t('nav.mcp') }}</span></template>
         </el-menu-item>
+        <el-menu-item index="/news" @click="goTo('/news')">
+          <Icon icon="ph:newspaper-duotone" class="nav-icon" />
+          <template #title><span>{{ t('nav.news') }}</span></template>
+        </el-menu-item>
         <el-menu-item index="/ai-traces" @click="goTo('/ai-traces')">
           <Icon icon="ph:activity-duotone" class="nav-icon" />
           <template #title><span>{{ t('nav.aiTraces') }}</span></template>
@@ -245,6 +249,7 @@ function goTo(path: string) {
       '/chat': t('nav.aiChat'),
       '/skills': t('nav.skills'),
       '/mcp': t('nav.mcp'),
+      '/news': t('nav.news'),
       '/ai-traces': t('nav.aiTraces'),
     }
     return map[route.path] || 'Minefolio'

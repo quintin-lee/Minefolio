@@ -13,6 +13,7 @@ export const enUS = {
     aiChat: 'AI Assistant',
     skills: 'Skill Library',
     mcp: 'MCP Tools',
+    news: 'Market Pulse',
     aiTraces: 'AI Traces',
     settings: 'Settings',
     login: 'Login',

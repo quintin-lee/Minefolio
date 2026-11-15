@@ -3,6 +3,7 @@
 #include "services/market/exchange_rate_service.h"
 #include "services/market/quote_engine.h"
 #include "services/ai/tools/mcp/mcp_stdio_pool.h"
+#include "services/ai/ai_news_service.h"
 #include "infrastructure/repositories/dca_repo_impl.h"
 #include "csilk/csilk.h"
 #include <pthread.h>
@@ -194,6 +195,7 @@ scheduler_loop(void* arg)
     time_t last_sync_time = 0;
     time_t last_nightly_time = 0;
     int    last_dca_check_day = -1;
+    int    last_news_check_day = -1;
     time_t last_indices_sync = 0;
     time_t last_fx_sync = 0;
 
@@ -210,6 +212,15 @@ scheduler_loop(void* arg)
             last_dca_check_day = tm_now.tm_yday;
             pthread_mutex_unlock(&g_sched_mutex);
             check_and_trigger_dca_plans(g_pool, &tm_now);
+            pthread_mutex_lock(&g_sched_mutex);
+        }
+
+        /* AI 每日金融资讯分析（每个 tm_yday 触发一次，约在 08:00 后执行） */
+        if (g_pool && tm_now.tm_yday != last_news_check_day && tm_now.tm_hour >= 8) {
+            last_news_check_day = tm_now.tm_yday;
+            pthread_mutex_unlock(&g_sched_mutex);
+            CSILK_LOG_I("Scheduler: triggering daily AI news analysis");
+            ai_news_scheduler_tick(g_pool);
             pthread_mutex_lock(&g_sched_mutex);
         }
 

@@ -13,6 +13,7 @@ export const zhCN = {
     aiChat: 'AI助手',
     skills: '技能库',
     mcp: 'MCP工具箱',
+    news: '市场脉搏',
     aiTraces: 'AI追踪',
     settings: '设置',
     login: '登录',

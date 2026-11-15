@@ -1,0 +1,314 @@
+<template>
+  <div class="news-page">
+    <!-- Header -->
+    <div class="page-header">
+      <div class="header-intro">
+        <h1 class="page-title">
+          <Icon icon="ph:newspaper-duotone" class="title-icon" />
+          市场脉搏 (AI 每日资讯分析)
+        </h1>
+        <p class="page-subtitle">
+          每日定时抓取金融要闻，AI 自动分析对您持仓的影响并给出操作建议。
+        </p>
+      </div>
+      <div class="header-actions">
+        <el-button
+          plain
+          :loading="triggering"
+          @click="handleTrigger"
+        >
+          <Icon icon="ph:play-bold" class="btn-icon" />
+          立即生成
+        </el-button>
+        <el-button
+          plain
+          @click="loadReports"
+        >
+          <Icon icon="ph:arrows-clockwise" class="btn-icon" />
+          刷新
+        </el-button>
+      </div>
+    </div>
+
+    <!-- Reports Timeline -->
+    <div v-loading="loading" class="reports-timeline">
+      <div v-if="reports.length > 0">
+        <div
+          v-for="report in reports"
+          :key="report.id"
+          class="report-card"
+          :class="{ 'is-pending': report.status === 'pending', 'is-error': report.status === 'error' }"
+          @click="expandReport(report)"
+        >
+          <div class="report-date-row">
+            <span class="date-badge">{{ formatReportDate(report.report_date) }}</span>
+            <el-tag
+              :type="report.status === 'done' ? 'success' : report.status === 'pending' ? 'warning' : 'danger'"
+              size="small"
+              effect="light"
+            >
+              {{ report.status === 'done' ? '已完成' : report.status === 'pending' ? '生成中…' : '失败' }}
+            </el-tag>
+            <span v-if="report.status === 'done'" class="model-hint">
+              {{ report.model_used || 'AI' }} · {{ report.token_cost > 0 ? `$${report.token_cost.toFixed(4)}` : '免费' }}
+            </span>
+          </div>
+
+          <div class="report-title">{{ report.title || '每日市场脉搏' }}</div>
+
+          <div v-if="expandedId === report.id && report.status === 'done' && report.analysis" class="report-body" v-html="renderMarkdown(report.analysis)"></div>
+          <div v-else-if="report.status === 'pending'" class="report-pending">
+            <el-skeleton :rows="3" animated />
+          </div>
+          <div v-else-if="report.status === 'error'" class="report-error">
+            {{ report.error_msg || '生成失败，请重试' }}
+          </div>
+          <div v-else class="report-expand-hint">点击展开分析报告</div>
+        </div>
+      </div>
+
+      <el-empty v-else-if="!loading" description="暂无 AI 分析报告，点击上方「立即生成」获取今日市场脉搏">
+        <template #extra>
+          <el-button type="primary" plain @click="handleTrigger">生成今日报告</el-button>
+        </template>
+      </el-empty>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, onMounted, onUnmounted } from 'vue'
+import { ElMessage } from 'element-plus'
+import { Icon } from '@iconify/vue'
+import { marked } from 'marked'
+import type { AiNewsReport } from '@/types'
+import { listNewsReports, triggerNewsAnalysis } from '@/api/ai-news'
+
+const loading = ref(false)
+const triggering = ref(false)
+const reports = ref<AiNewsReport[]>([])
+const expandedId = ref<number>(-1)
+
+let pollTimer: ReturnType<typeof setInterval> | null = null
+
+function formatReportDate(dateStr: string): string {
+  if (!dateStr) return ''
+  const d = new Date(dateStr + 'T00:00:00')
+  const days = ['日', '一', '二', '三', '四', '五', '六']
+  return `${d.getMonth() + 1}月${d.getDate()}日 周${days[d.getDay()]}`
+}
+
+function expandReport(report: AiNewsReport) {
+  if (report.status === 'done') {
+    expandedId.value = expandedId.value === report.id ? -1 : report.id
+  }
+}
+
+function renderMarkdown(md: string): string {
+  return marked.parse(md, { async: false, breaks: true }) as string
+}
+
+async function loadReports() {
+  loading.value = true
+  try {
+    reports.value = await listNewsReports(7)
+  } catch (err: unknown) {
+    const e = err as { response?: { data?: { message?: string } }; message?: string }
+    ElMessage.error(e?.response?.data?.message || e?.message || '加载报告列表失败')
+  } finally {
+    loading.value = false
+  }
+}
+
+async function handleTrigger() {
+  triggering.value = true
+  try {
+    await triggerNewsAnalysis()
+    ElMessage.success('已触发 AI 分析，请稍候…')
+    /* 开始轮询等待报告完成 */
+    startPolling()
+    await loadReports()
+  } catch (err: unknown) {
+    const e = err as { response?: { data?: { message?: string } }; message?: string }
+    ElMessage.error(e?.response?.data?.message || e?.message || '触发失败')
+  } finally {
+    triggering.value = false
+  }
+}
+
+function startPolling() {
+  if (pollTimer) return
+  let pollCount = 0
+  pollTimer = setInterval(async () => {
+    pollCount++
+    if (pollCount > 30) {
+      stopPolling()
+      return
+    }
+    try {
+      const list = await listNewsReports(1)
+      if (list.length > 0 && list[0] && list[0].status !== 'pending') {
+        stopPolling()
+        await loadReports()
+        ElMessage.success('AI 分析报告已生成完毕')
+      }
+    } catch {
+      // silent
+    }
+  }, 5000)
+}
+
+function stopPolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
+onMounted(() => {
+  loadReports()
+})
+
+onUnmounted(() => {
+  stopPolling()
+})
+</script>
+
+<style scoped>
+.news-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 4px 0 24px 0;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.header-intro {
+  max-width: 720px;
+}
+
+.page-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--el-text-color-primary);
+  margin: 0 0 6px 0;
+}
+
+.title-icon {
+  font-size: 26px;
+  color: var(--el-color-primary);
+}
+
+.page-subtitle {
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.btn-icon {
+  margin-right: 4px;
+  font-size: 15px;
+}
+
+.reports-timeline {
+  min-height: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.report-card {
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 12px;
+  padding: 18px 20px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.report-card:hover {
+  border-color: var(--el-color-primary-light-5);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+  transform: translateY(-1px);
+}
+
+.report-card.is-pending {
+  opacity: 0.85;
+}
+
+.report-card.is-error {
+  border-color: var(--el-color-danger-light-7);
+}
+
+.report-date-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.date-badge {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  font-family: var(--font-mono, monospace);
+}
+
+.model-hint {
+  font-size: 12px;
+  color: var(--el-text-color-placeholder);
+  margin-left: auto;
+}
+
+.report-title {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--el-text-color-regular);
+  margin-bottom: 10px;
+}
+
+.report-body {
+  margin-top: 12px;
+  padding: 14px 16px;
+  background: var(--el-fill-color-light);
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--el-text-color-regular);
+  max-height: 480px;
+  overflow-y: auto;
+}
+
+.report-pending {
+  margin-top: 10px;
+}
+
+.report-error {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--el-color-danger);
+}
+
+.report-expand-hint {
+  font-size: 12px;
+  color: var(--el-text-color-placeholder);
+}
+</style>
