@@ -126,7 +126,7 @@
         <el-input-number v-model="aiForm.context_size" :min="5" :max="100" :step="5" />
       </el-form-item>
       <el-form-item :label="t('settings.aiSystemPrompt')">
-        <el-input v-model="aiForm.system_prompt" type="textarea" :rows="4" :maxlength="500" show-word-limit />
+        <el-input v-model="aiForm.system_prompt" type="textarea" :rows="8" :maxlength="2000" show-word-limit />
       </el-form-item>
       <el-form-item>
         <el-button type="primary" @click="saveAiSettings" :loading="aiSaving">
