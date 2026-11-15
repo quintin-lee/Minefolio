@@ -149,4 +149,28 @@ describe('SmoothStreamWriter', () => {
     expect(writer.hasPending).toBe(false)
     expect(fake.getPendingCount()).toBe(0)
   })
+
+  it('stop() flushes residual buffered content into target when finish() closes the loop', async () => {
+    const fake = createFakeRaf()
+    const target: TypewriterTarget = { content: '' }
+    const writer = new SmoothStreamWriter(target, { raf: fake.raf, caf: fake.caf })
+
+    // Simulate a large burst arriving — push enough that the RAF loop hasn't drained it yet
+    writer.push('A'.repeat(500))
+
+    // Simulate a quick user-abort (abortCurrentStream) before RAF ticks run
+    // finish() sets isFinishing=true but does not force-complete; stop() in the
+    // RAF tick path flushes the buffer. Verify that after finish() resolves the
+    // target actually has all 500 chars, not fewer.
+    let finished = false
+    const finishPromise = writer.finish().then(() => { finished = true })
+
+    // Run all pending RAF frames (the fake RAF loop will drain the buffer)
+    fake.runAll()
+    await finishPromise
+    expect(finished).toBe(true)
+    expect(target.content).toBe('A'.repeat(500))
+    expect(target.content.length).toBe(500)
+    expect(writer.hasPending).toBe(false)
+  })
 })

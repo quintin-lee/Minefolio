@@ -178,6 +178,7 @@ export class SmoothStreamWriter {
 
   /**
    * 立即将缓冲区中所有未输出字符刷入目标消息（仅用于用户强制取消或异常中断）
+   * 已停止的写入器调用此方法也安全：将残余字符写入目标并保证 finish 回调被触发
    */
   flushNow() {
     if (this.buf) {
@@ -194,6 +195,12 @@ export class SmoothStreamWriter {
     if (this.rafId !== null) {
       this.caf(this.rafId)
       this.rafId = null
+    }
+    // 停止时若缓冲区仍有残余字符（例如 finish 在缓冲未清空时被调用），
+    // 立即刷入目标，避免打字机收尾阶段内容"跳变"丢失
+    if (this.buf) {
+      this.target.content += this.buf
+      this.buf = ''
     }
   }
 }
