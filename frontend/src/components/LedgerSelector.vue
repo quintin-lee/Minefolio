@@ -371,4 +371,14 @@ async function handleDeleteLedger(ledger: Ledger) {
   justify-content: space-between;
   padding: 0 4px;
 }
+@media (max-width: 768px) {
+  .current-ledger-btn .ledger-name,
+  .current-ledger-btn .role-tag,
+  .current-ledger-btn .caret {
+    display: none;
+  }
+  .current-ledger-btn {
+    padding: 4px;
+  }
+}
 </style>

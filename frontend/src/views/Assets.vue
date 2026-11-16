@@ -801,6 +801,8 @@ onMounted(async () => {
   font-weight: 600;
   font-size: 14px;
   color: var(--el-text-color-primary);
+  white-space: nowrap;
+  word-break: keep-all;
 }
 
 .institution-tag {
@@ -907,5 +909,26 @@ onMounted(async () => {
   border-color: var(--mf-primary) !important;
   background: var(--mf-primary-light) !important;
   border-radius: var(--mf-radius-md, 8px);
+}
+
+@media (max-width: 768px) {
+  .header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .header-actions .action-btn {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+  .account-group-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .group-meta {
+    width: 100%;
+    justify-content: space-between;
+  }
 }
 </style>

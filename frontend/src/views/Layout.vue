@@ -621,6 +621,29 @@ function handleCommand(cmd: string) {
 }
 
 @media (max-width: 768px) {
+  .search-command-btn {
+    display: none;
+  }
+  .quick-add-btn span {
+    display: none;
+  }
+  .quick-add-btn {
+    padding: 6px !important;
+  }
+  .header-left {
+    min-width: 0;
+    gap: 6px;
+  }
+  .header-right {
+    gap: 6px;
+  }
+  .page-title {
+    font-size: 15px;
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   .header-mobile-logo {
     display: inline-flex;
     margin-right: 8px;
