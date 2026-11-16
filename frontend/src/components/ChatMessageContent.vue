@@ -216,6 +216,7 @@
         <ActionCard
           v-else-if="seg.type === 'action' && seg.actionData"
           :action-data="seg.actionData"
+          @executed="onActionExecuted(seg, $event)"
         />
 
         <!-- Mermaid Diagram Block -->
@@ -626,6 +627,12 @@ onUnmounted(() => {
   if (thinkingTimer) clearInterval(thinkingTimer)
   if (copyThinkingTimer) clearTimeout(copyThinkingTimer)
 })
+
+function onActionExecuted(seg: Segment, action: ProposedAction) {
+  if (seg.actionData) {
+    seg.actionData.status = 'executed'
+  }
+}
 
 interface Segment {
   id: string

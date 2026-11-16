@@ -382,9 +382,16 @@ async function handleConfirm() {
         category_id: form.category_id,
         asset_id: form.asset_id,
         note: form.note || '',
-      })) as unknown as { data?: { success?: boolean; error?: string; message?: string } }
-      if (res?.data?.error) {
-        throw new Error(res.data.message || res.data.error)
+      })) as unknown as { success?: boolean; error?: string; message?: string }
+      if (res?.error) {
+        if (res.error.includes('已被使用') || res.error.toLowerCase().includes('replay') || res.error.includes('consumed')) {
+          props.actionData.status = 'executed'
+          cardStatus.value = 'executed'
+          ElMessage.info('该操作此前已记账入库')
+          emit('executed', props.actionData)
+          return
+        }
+        throw new Error(res.message || res.error)
       }
     } else if (props.actionData.action_type === 'transfer') {
       if (!form.from_asset_id || !form.to_asset_id) {
@@ -408,19 +415,35 @@ async function handleConfirm() {
         to_asset_id: form.to_asset_id,
         date: form.date,
         note: form.note || '转账',
-      })) as unknown as { data?: { success?: boolean; error?: string; message?: string } }
-      if (res?.data?.error) {
-        throw new Error(res.data.message || res.data.error)
+      })) as unknown as { success?: boolean; error?: string; message?: string }
+      if (res?.error) {
+        if (res.error.includes('已被使用') || res.error.toLowerCase().includes('replay') || res.error.includes('consumed')) {
+          props.actionData.status = 'executed'
+          cardStatus.value = 'executed'
+          ElMessage.info('该操作此前已转账入库')
+          emit('executed', props.actionData)
+          return
+        }
+        throw new Error(res.message || res.error)
       }
     }
 
     categoryStore.invalidate()
+    props.actionData.status = 'executed'
     cardStatus.value = 'executed'
     ElMessage.success('记账成功！')
     emit('executed', props.actionData)
   } catch (err: any) {
-    cardStatus.value = 'pending'
-    ElMessage.error(err?.response?.data?.message || '操作失败，请重试')
+    const errMsg = err?.message || err?.response?.data?.message || '操作失败，请重试'
+    if (errMsg.includes('已被使用') || errMsg.toLowerCase().includes('replay')) {
+      props.actionData.status = 'executed'
+      cardStatus.value = 'executed'
+      ElMessage.info('该操作此前已记账入库')
+      emit('executed', props.actionData)
+    } else {
+      cardStatus.value = 'pending'
+      ElMessage.error(errMsg)
+    }
   } finally {
     loading.value = false
   }
