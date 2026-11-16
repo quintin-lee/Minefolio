@@ -33,6 +33,16 @@ api_ai_skills_list(csilk_ctx_t* c)
 
     csilk_json_t* data = NULL;
     int           rc = skill_usecase_list(db_get_pool(), user_id, category, enabled_only, &data);
+
+    /* 懒加载预置技能：当用户未指定过滤条件且列表为空时，自动播种默认技能 */
+    if (data && csilk_json_is_array(data) && csilk_json_array_size(data) == 0 &&
+        (!category || !category[0]) && !enabled_only) {
+        csilk_json_free(data);
+        data = NULL;
+        skill_usecase_seed_defaults(db_get_pool(), user_id);
+        rc = skill_usecase_list(db_get_pool(), user_id, category, enabled_only, &data);
+    }
+
     if (rc != 0 || !data) {
         respond_ok(c, csilk_json_array());
         return;
