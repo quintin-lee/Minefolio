@@ -285,14 +285,16 @@ mf_market_repo_get_all_exchange_rates(void* pool)
         return NULL;
     }
     const char* sql =
+        "SELECT base_currency as currency, rate FROM exchange_rates WHERE target_currency = 'CNY' "
+        "AND rate > 0 "
+        "UNION ALL "
+        "SELECT target_currency as currency, (1.0 / rate) as rate FROM exchange_rates "
+        "WHERE base_currency = 'CNY' AND rate > 0 "
+        "UNION ALL "
         "SELECT target_currency as currency, rate FROM exchange_rate_history "
         "WHERE base_currency = 'CNY' AND rate_date = ("
-        "  SELECT MAX(rate_date) FROM exchange_rate_history WHERE base_currency = 'CNY') "
-        "UNION "
-        "SELECT base_currency as currency, rate FROM exchange_rates WHERE target_currency = 'CNY' "
-        "UNION "
-        "SELECT target_currency as currency, (1.0 / rate) as rate FROM exchange_rates "
-        "WHERE base_currency = 'CNY' AND rate > 0";
+        "  SELECT MAX(rate_date) FROM exchange_rate_history WHERE base_currency = 'CNY') AND rate "
+        "> 0";
 
     csilk_json_t* rows =
         csilk_db_query_param_json((csilk_db_pool_t*)pool, sql, (const char*[]){NULL});
@@ -307,7 +309,9 @@ mf_market_repo_get_all_exchange_rates(void* pool)
             const char*   cur = csilk_json_get_string(r, "currency");
             double        rate = db_get_num(r, "rate");
             if (cur && cur[0] && rate > 0.0) {
-                csilk_json_add_number(out, cur, rate);
+                if (!csilk_json_get(out, cur)) {
+                    csilk_json_add_number(out, cur, rate);
+                }
             }
         }
     }
