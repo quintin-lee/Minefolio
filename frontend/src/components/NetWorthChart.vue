@@ -2,10 +2,10 @@
   <div class="net-worth-chart-container">
     <div class="chart-header-actions">
       <el-radio-group v-model="timeRange" size="small" class="pill-radio-group" @change="updateChart">
-        <el-radio-button label="30D">30D</el-radio-button>
-        <el-radio-button label="90D">90D</el-radio-button>
-        <el-radio-button label="1Y">1Y</el-radio-button>
-        <el-radio-button label="ALL">全部</el-radio-button>
+        <el-radio-button value="30D">30D</el-radio-button>
+        <el-radio-button value="90D">90D</el-radio-button>
+        <el-radio-button value="1Y">1Y</el-radio-button>
+        <el-radio-button value="ALL">全部</el-radio-button>
       </el-radio-group>
 
       <el-dropdown trigger="click" @command="handleExport" class="chart-export-dropdown">

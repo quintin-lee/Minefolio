@@ -55,9 +55,9 @@
         </el-input>
 
         <el-radio-group v-model="selectedTransport" size="default" class="transport-filter">
-          <el-radio-button label="all">全部</el-radio-button>
-          <el-radio-button label="stdio">Stdio 命令行</el-radio-button>
-          <el-radio-button label="http">HTTP/SSE 远端</el-radio-button>
+          <el-radio-button value="all">全部</el-radio-button>
+          <el-radio-button value="stdio">Stdio 命令行</el-radio-button>
+          <el-radio-button value="http">HTTP/SSE 远端</el-radio-button>
         </el-radio-group>
       </div>
 

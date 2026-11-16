@@ -63,12 +63,12 @@
         </el-input>
 
         <el-radio-group v-model="selectedCategory" size="default" class="category-filter">
-          <el-radio-button label="all">全部</el-radio-button>
-          <el-radio-button label="finance">财务审计</el-radio-button>
-          <el-radio-button label="investment">投资再平衡</el-radio-button>
-          <el-radio-button label="expense">支出风控</el-radio-button>
-          <el-radio-button label="tax">税务分类</el-radio-button>
-          <el-radio-button label="risk">风险管理</el-radio-button>
+          <el-radio-button value="all">全部</el-radio-button>
+          <el-radio-button value="finance">财务审计</el-radio-button>
+          <el-radio-button value="investment">投资再平衡</el-radio-button>
+          <el-radio-button value="expense">支出风控</el-radio-button>
+          <el-radio-button value="tax">税务分类</el-radio-button>
+          <el-radio-button value="risk">风险管理</el-radio-button>
         </el-radio-group>
       </div>
 

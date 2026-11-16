@@ -8,10 +8,10 @@
       <div class="header-currency-selector">
         <span class="curr-label">基准折算:</span>
         <el-radio-group v-model="selectedCurrency" size="small" @change="onCurrencyChange">
-          <el-radio-button label="CNY">CNY ¥</el-radio-button>
-          <el-radio-button label="USD">USD $</el-radio-button>
-          <el-radio-button label="EUR">EUR €</el-radio-button>
-          <el-radio-button label="HKD">HKD HK$</el-radio-button>
+          <el-radio-button value="CNY">CNY ¥</el-radio-button>
+          <el-radio-button value="USD">USD $</el-radio-button>
+          <el-radio-button value="EUR">EUR €</el-radio-button>
+          <el-radio-button value="HKD">HKD HK$</el-radio-button>
         </el-radio-group>
       </div>
     </div>

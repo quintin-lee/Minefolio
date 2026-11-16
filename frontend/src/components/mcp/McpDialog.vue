@@ -41,8 +41,8 @@
 
             <el-form-item label="传输协议类型 (Transport)" prop="transport">
               <el-radio-group v-model="form.transport" size="default">
-                <el-radio-button label="stdio">Stdio 命令行</el-radio-button>
-                <el-radio-button label="http">HTTP/SSE 远端</el-radio-button>
+                <el-radio-button value="stdio">Stdio 命令行</el-radio-button>
+                <el-radio-button value="http">HTTP/SSE 远端</el-radio-button>
               </el-radio-group>
             </el-form-item>
           </div>

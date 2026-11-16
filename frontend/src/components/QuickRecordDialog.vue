@@ -10,9 +10,9 @@
     <el-form ref="formRef" :model="form" :rules="rules" label-width="80px" class="quick-form">
       <el-form-item label="记账类型" prop="recordType">
         <el-radio-group v-model="form.recordType" size="default" class="type-radio-group">
-          <el-radio-button label="expense">支出</el-radio-button>
-          <el-radio-button label="income">收入</el-radio-button>
-          <el-radio-button label="transfer">转账</el-radio-button>
+          <el-radio-button value="expense">支出</el-radio-button>
+          <el-radio-button value="income">收入</el-radio-button>
+          <el-radio-button value="transfer">转账</el-radio-button>
         </el-radio-group>
       </el-form-item>
 

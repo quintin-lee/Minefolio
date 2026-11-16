@@ -70,10 +70,10 @@
         <div class="table-container">
           <div class="table-toolbar">
             <el-radio-group v-model="dcaStatus" size="default" @change="handleDcaStatusChange">
-              <el-radio-button label="">全部计划</el-radio-button>
-              <el-radio-button label="active">运行中</el-radio-button>
-              <el-radio-button label="paused">已暂停</el-radio-button>
-              <el-radio-button label="completed">已完成</el-radio-button>
+              <el-radio-button value="">全部计划</el-radio-button>
+              <el-radio-button value="active">运行中</el-radio-button>
+              <el-radio-button value="paused">已暂停</el-radio-button>
+              <el-radio-button value="completed">已完成</el-radio-button>
             </el-radio-group>
           </div>
 
