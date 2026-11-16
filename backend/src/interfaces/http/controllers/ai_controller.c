@@ -280,7 +280,7 @@ api_ai_action_confirm_handler(csilk_ctx_t* c)
 
     /* 透传 confirm 参数（剔除 action_type）并强制回填 draft_token，
        防止模型伪造参数绕过令牌绑定 */
-    csilk_json_t* args = csilk_json_object();
+    csilk_json_t*      args = csilk_json_object();
     ai_tool_context_t* ctx = ai_tool_context_create(pool, user_id, 0 /* 无会话上下文 */, NULL);
     if (!ctx) {
         csilk_json_free(body);
@@ -311,7 +311,6 @@ api_ai_action_confirm_handler(csilk_ctx_t* c)
     csilk_json_t* parsed = csilk_json_parse(result);
     if (parsed) {
         respond_ok(c, parsed);
-        csilk_json_free(parsed);
     } else {
         respond_ok_null(c);
     }
@@ -355,8 +354,10 @@ api_ai_action_confirm_batch_handler(csilk_ctx_t* c)
 
     if (rc == 0 && out_data) {
         respond_ok(c, out_data);
-        csilk_json_free(out_data);
     } else {
+        if (out_data) {
+            csilk_json_free(out_data);
+        }
         if (code == 1004) {
             respond_error(c, 1004, err_buf[0] ? err_buf : "操作冲突或令牌已被使用");
         } else if (code == 1002) {

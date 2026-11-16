@@ -163,14 +163,25 @@ mf_ai_trace_save(csilk_db_pool_t* pool, ai_trace_t* t)
 
     char*         meta_final = NULL;
     size_t        meta_len = 0;
-    csilk_json_t* meta_obj = csilk_json_parse(t->metadata[0] ? t->metadata : "{}");
+    csilk_json_t* meta_obj = NULL;
+    if (t->metadata[0] && strcmp(t->metadata, "{}") != 0) {
+        csilk_json_t* parsed_meta = csilk_json_parse(t->metadata);
+        if (parsed_meta) {
+            if (csilk_json_is_object(parsed_meta)) {
+                meta_obj = csilk_json_copy(parsed_meta);
+            }
+            csilk_json_free(parsed_meta);
+        }
+    }
     if (!meta_obj) {
         meta_obj = csilk_json_object();
     }
     if (t->tool_spans[0]) {
         csilk_json_t* spans = csilk_json_parse(t->tool_spans);
         if (spans) {
-            csilk_json_add_object(meta_obj, "tool_spans", spans);
+            if (!csilk_json_add_object(meta_obj, "tool_spans", spans)) {
+                csilk_json_free(spans);
+            }
         }
     }
     meta_final = csilk_json_serialize(meta_obj, &meta_len);

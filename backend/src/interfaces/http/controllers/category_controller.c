@@ -160,7 +160,6 @@ api_categories_list(csilk_ctx_t* c)
         csilk_json_t* tree = build_tree(merged);
         csilk_json_free(merged);
         respond_ok(c, tree);
-        csilk_json_free(tree);
         return;
     }
 
@@ -177,7 +176,6 @@ api_categories_list(csilk_ctx_t* c)
         csilk_json_free(list);
     }
     respond_ok(c, tree);
-    csilk_json_free(tree);
 }
 
 void

@@ -66,20 +66,20 @@ report_ctx_resolve_base_currency(csilk_ctx_t* c, report_query_t* q)
 
 /**
  * @brief 封装 report 用例结果到响应信封
- * @param out_res  结果对象（code==0 时 data_payload 被挂载并释放；非 0 时 data_payload 须为 NULL）
- * @param owned    true 表示 data_payload 为本次调用临时构造的所有权，需在此释放；false 表示由调用方持有
+ * @param out_res 结果对象。code==0 时 data_payload 所有权转移给 respond_ok
+ *                （csilk_respond_ok 内部序列化并释放）；code!=0 时释放
+ *                data_payload（可能非 NULL）后走 respond_error。
  */
 static void
 report_respond(csilk_ctx_t* c, const report_result_t* out_res, bool owned)
 {
+    (void)owned;
     if (out_res->code == 0) {
-        if (owned) {
-            respond_ok(c, out_res->data_payload);
-            csilk_json_free(out_res->data_payload);
-        } else {
-            respond_ok(c, out_res->data_payload);
-        }
+        respond_ok(c, out_res->data_payload);
     } else {
+        if (owned && out_res->data_payload) {
+            csilk_json_free(out_res->data_payload);
+        }
         respond_error(c, out_res->code, out_res->message);
     }
 }
@@ -241,8 +241,10 @@ report_holdings_handler(csilk_ctx_t* c)
 
     if (rc == 0 && res.code == 0) {
         respond_ok(c, resp);
-        csilk_json_free(resp);
     } else {
+        if (resp) {
+            csilk_json_free(resp);
+        }
         respond_error(c, res.code ? res.code : 500, res.message[0] ? res.message : "查询失败");
     }
 }
@@ -271,8 +273,10 @@ report_transaction_performance_handler(csilk_ctx_t* c)
 
     if (rc == 0 && res.code == 0) {
         respond_ok(c, resp);
-        csilk_json_free(resp);
     } else {
+        if (resp) {
+            csilk_json_free(resp);
+        }
         respond_error(c, res.code ? res.code : 500, res.message[0] ? res.message : "查询失败");
     }
 }
@@ -301,8 +305,10 @@ report_dashboard_summary_handler(csilk_ctx_t* c)
 
     if (rc == 0 && res.code == 0) {
         respond_ok(c, resp);
-        csilk_json_free(resp);
     } else {
+        if (resp) {
+            csilk_json_free(resp);
+        }
         respond_error(c, res.code ? res.code : 500, res.message[0] ? res.message : "查询失败");
     }
 }
