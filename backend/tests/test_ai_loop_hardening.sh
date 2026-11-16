@@ -246,8 +246,10 @@ CONF5B=$(curl -s -c "$JAR" -b "$JAR" -X POST "$BASE/ai/actions/confirm" \
   -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
   -H "X-CSRF-Token: $CSRF" \
   -d '{"action_type":"daily_expense","draft_token":"mf_v2.tampered.sig","amount":123,"type":"expense","date":"2026-01-01","category_id":1,"asset_id":1,"note":"forged"}')
-echo "$CONF5B" | grep -q "Missing required field: 'amount'" && REJECT5B="amount-schema" || REJECT5B="other"
-check "confirm-forged: endpoint rejects bogus token" "1" "$([ "$REJECT5B" = "amount-schema" ] && echo 1 || echo 0)"
+echo "$CONF5B" | grep -E -q '("error"|Missing required field)' && REJECT5B="rejected" || REJECT5B="other"
+check "confirm-forged: endpoint rejects bogus token" "1" "$([ "$REJECT5B" = "rejected" ] && echo 1 || echo 0)"
+FORGED_CNT=$(sqlite3 "$DB" "SELECT COUNT(*) FROM daily_expenses WHERE note='forged'" 2>/dev/null || echo 0)
+check "confirm-forged: no daily expense inserted" "0" "$FORGED_CNT"
 # 场景 5c：mutation 类 MCP 工具（无确认协议）被 loop 拦截。完整链路需要 enabled 的
 # MCP 服务器（test_mcp.sh 覆盖桥接），此处守卫策略层阻断逻辑（cf. test_policy_mcp_risk）：
 "$BUILD_DIR/test_ai_policy" >/dev/null 2>&1 && POL5C="pass" || POL5C="fail"
