@@ -233,7 +233,7 @@ api_ai_messages_list_handler(csilk_ctx_t* c)
     }
 }
 
-static void
+void
 ai_message_mark_action_executed(csilk_db_pool_t* pool, int64_t user_id, const char* draft_token)
 {
     if (!pool || user_id <= 0 || !draft_token || !draft_token[0]) {
@@ -268,30 +268,44 @@ ai_message_mark_action_executed(csilk_db_pool_t* pool, int64_t user_id, const ch
     if (msg_id > 0 && content && content[0]) {
         if (!strstr(content, "\"status\":\"executed\"") &&
             !strstr(content, "\"status\": \"executed\"")) {
-            const char* target = "\"action_type\"";
-            const char* pos = strstr(content, target);
-            if (pos) {
-                size_t      prefix_len = (size_t)(pos - content);
-                size_t      orig_len = strlen(content);
-                const char* replacement = "\"status\":\"executed\",\"action_type\"";
-                size_t      repl_len = strlen(replacement);
-                size_t      new_len = orig_len + repl_len - strlen(target) + 1;
-                char*       new_content = (char*)malloc(new_len);
-                if (new_content) {
-                    memcpy(new_content, content, prefix_len);
-                    memcpy(new_content + prefix_len, replacement, repl_len);
-                    strcpy(new_content + prefix_len + repl_len, pos + strlen(target));
+            const char* target = NULL;
+            const char* replacement = NULL;
+            if (strstr(content, "\"status\": \"pending\"")) {
+                target = "\"status\": \"pending\"";
+                replacement = "\"status\": \"executed\"";
+            } else if (strstr(content, "\"status\":\"pending\"")) {
+                target = "\"status\":\"pending\"";
+                replacement = "\"status\":\"executed\"";
+            } else if (strstr(content, "\"action_type\"")) {
+                target = "\"action_type\"";
+                replacement = "\"status\":\"executed\",\"action_type\"";
+            }
 
-                    char mid_str[32];
-                    snprintf(mid_str, sizeof(mid_str), "%lld", (long long)msg_id);
-                    csilk_json_t* upd =
-                        csilk_db_query_param_json(pool,
-                                                  "UPDATE ai_messages SET content = ? WHERE id = ?",
-                                                  (const char*[]){new_content, mid_str, NULL});
-                    if (upd) {
-                        csilk_json_free(upd);
+            if (target && replacement) {
+                const char* pos = strstr(content, target);
+                if (pos) {
+                    size_t prefix_len = (size_t)(pos - content);
+                    size_t orig_len = strlen(content);
+                    size_t target_len = strlen(target);
+                    size_t repl_len = strlen(replacement);
+                    size_t new_len = orig_len + repl_len - target_len + 1;
+                    char*  new_content = (char*)malloc(new_len);
+                    if (new_content) {
+                        memcpy(new_content, content, prefix_len);
+                        memcpy(new_content + prefix_len, replacement, repl_len);
+                        strcpy(new_content + prefix_len + repl_len, pos + target_len);
+
+                        char mid_str[32];
+                        snprintf(mid_str, sizeof(mid_str), "%lld", (long long)msg_id);
+                        csilk_json_t* upd =
+                            csilk_db_query_param_json(pool,
+                                                      "UPDATE ai_messages SET content = ? WHERE id = ?",
+                                                      (const char*[]){new_content, mid_str, NULL});
+                        if (upd) {
+                            csilk_json_free(upd);
+                        }
+                        free(new_content);
                     }
-                    free(new_content);
                 }
             }
         }

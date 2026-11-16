@@ -16,6 +16,8 @@ void api_ai_test_connection_handler(csilk_ctx_t* c);
 void api_ai_fetch_models_handler(csilk_ctx_t* c);
 void api_ai_action_confirm_handler(csilk_ctx_t* c);
 void api_ai_action_confirm_batch_handler(csilk_ctx_t* c);
+void
+ai_message_mark_action_executed(csilk_db_pool_t* pool, int64_t user_id, const char* draft_token);
 void api_ai_workflows_list_handler(csilk_ctx_t* c);
 void api_ai_workflows_run_handler(csilk_ctx_t* c);
 
