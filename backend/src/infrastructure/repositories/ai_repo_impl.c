@@ -141,20 +141,53 @@ mf_ai_repo_daily_expense_insert(void*       pool,
         strftime(date_buf, sizeof(date_buf), "%Y-%m-%d", &tm_now);
         expense_date = date_buf;
     }
-    csilk_json_t* res =
-        csilk_db_query_param_json((csilk_db_pool_t*)pool,
-                                  "INSERT INTO daily_expenses "
-                                  "(user_id,category_id,asset_id,expense_type,amount,currency,"
-                                  "expense_date,note) VALUES (?,?,?,?,?,?,?,?) RETURNING id",
-                                  (const char*[]){uid,
-                                                  cat,
-                                                  ast,
-                                                  expense_type,
-                                                  amt,
-                                                  currency ? currency : "CNY",
-                                                  expense_date,
-                                                  note ? note : "",
-                                                  NULL});
+    int64_t ledger_id = 0;
+    if (asset_id > 0) {
+        csilk_json_t* a_rows =
+            csilk_db_query_param_json((csilk_db_pool_t*)pool,
+                                      "SELECT ledger_id FROM assets WHERE id = ? AND user_id = ?",
+                                      (const char*[]){ast, uid, NULL});
+        if (a_rows && csilk_json_array_size(a_rows) > 0) {
+            ledger_id = db_get_int(csilk_json_array_get(a_rows, 0), "ledger_id");
+        }
+        if (a_rows) {
+            csilk_json_free(a_rows);
+        }
+    }
+    if (ledger_id <= 0) {
+        csilk_json_t* l_rows = csilk_db_query_param_json(
+            (csilk_db_pool_t*)pool,
+            "SELECT id FROM ledgers WHERE owner_id = ? AND is_default = 1 LIMIT 1",
+            (const char*[]){uid, NULL});
+        if (l_rows && csilk_json_array_size(l_rows) > 0) {
+            ledger_id = db_get_int(csilk_json_array_get(l_rows, 0), "id");
+        }
+        if (l_rows) {
+            csilk_json_free(l_rows);
+        }
+    }
+    if (ledger_id <= 0) {
+        ledger_id = 1;
+    }
+
+    char lid[32];
+    snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
+
+    csilk_json_t* res = csilk_db_query_param_json(
+        (csilk_db_pool_t*)pool,
+        "INSERT INTO daily_expenses "
+        "(user_id,ledger_id,category_id,asset_id,expense_type,amount,currency,"
+        "expense_date,note) VALUES (?,?,?,?,?,?,?,?,?) RETURNING id",
+        (const char*[]){uid,
+                        lid,
+                        cat,
+                        ast,
+                        expense_type,
+                        amt,
+                        currency ? currency : "CNY",
+                        expense_date,
+                        note ? note : "",
+                        NULL});
     int64_t id = 0;
     if (res && csilk_json_array_size(res) > 0) {
         id = db_get_int(csilk_json_array_get(res, 0), "id");

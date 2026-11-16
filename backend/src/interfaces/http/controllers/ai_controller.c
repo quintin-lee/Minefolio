@@ -297,10 +297,10 @@ ai_message_mark_action_executed(csilk_db_pool_t* pool, int64_t user_id, const ch
 
                         char mid_str[32];
                         snprintf(mid_str, sizeof(mid_str), "%lld", (long long)msg_id);
-                        csilk_json_t* upd =
-                            csilk_db_query_param_json(pool,
-                                                      "UPDATE ai_messages SET content = ? WHERE id = ?",
-                                                      (const char*[]){new_content, mid_str, NULL});
+                        csilk_json_t* upd = csilk_db_query_param_json(
+                            pool,
+                            "UPDATE ai_messages SET content = ? WHERE id = ?",
+                            (const char*[]){new_content, mid_str, NULL});
                         if (upd) {
                             csilk_json_free(upd);
                         }

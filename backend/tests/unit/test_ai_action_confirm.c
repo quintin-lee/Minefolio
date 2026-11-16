@@ -92,8 +92,29 @@ seed_user_and_assets(csilk_db_pool_t* pool,
 }
 
 int
-main(void)
+main(int argc, char** argv)
 {
+    if (argc >= 5 && strcmp(argv[1], "--sign") == 0) {
+        int64_t       user_id = atoll(argv[2]);
+        const char*   tool_name = argv[3];
+        const char*   json_str = argv[4];
+        csilk_json_t* args = csilk_json_parse(json_str);
+        if (!args) {
+            fprintf(stderr, "Invalid args JSON\n");
+            return 1;
+        }
+        char* token = ai_confirmation_create_bound_token(user_id, 0, tool_name, args, AI_RISK_MEDIUM, 300);
+        if (!token) {
+            fprintf(stderr, "Failed to create bound token\n");
+            csilk_json_free(args);
+            return 1;
+        }
+        printf("%s\n", token);
+        free(token);
+        csilk_json_free(args);
+        return 0;
+    }
+
     const char* test_db = "/tmp/test_ai_action_confirm.db";
     csilk_db_pool_t* pool = NULL;
     init_test_db(test_db, &pool);
