@@ -213,6 +213,9 @@ scheduler_loop(void* arg)
             pthread_mutex_unlock(&g_sched_mutex);
             check_and_trigger_dca_plans(g_pool, &tm_now);
             pthread_mutex_lock(&g_sched_mutex);
+            if (!g_sched_running) {
+                break;
+            }
         }
 
         /* AI 每日金融资讯分析（每个 tm_yday 触发一次，约在 08:00 后执行） */
@@ -222,6 +225,9 @@ scheduler_loop(void* arg)
             CSILK_LOG_I("Scheduler: triggering daily AI news analysis");
             ai_news_scheduler_tick(g_pool);
             pthread_mutex_lock(&g_sched_mutex);
+            if (!g_sched_running) {
+                break;
+            }
         }
 
         /* 1. Global Market Indices sync (direct to DB: 60s when any equity market open, 15m when closed) */
@@ -233,6 +239,9 @@ scheduler_loop(void* arg)
                 pthread_mutex_unlock(&g_sched_mutex);
                 quote_engine_sync_indices_to_db(g_pool);
                 pthread_mutex_lock(&g_sched_mutex);
+                if (!g_sched_running) {
+                    break;
+                }
             }
         }
 
@@ -242,6 +251,9 @@ scheduler_loop(void* arg)
             pthread_mutex_unlock(&g_sched_mutex);
             mf_mcp_stdio_pool_evict_idle();
             pthread_mutex_lock(&g_sched_mutex);
+            if (!g_sched_running) {
+                break;
+            }
         }
 
         /* 2. Forex Exchange Rates sync (Mon-Fri every 30m, skip weekends) */
@@ -253,6 +265,9 @@ scheduler_loop(void* arg)
                 pthread_mutex_unlock(&g_sched_mutex);
                 exchange_rate_refresh_all();
                 pthread_mutex_lock(&g_sched_mutex);
+                if (!g_sched_running) {
+                    break;
+                }
             }
         }
 
@@ -292,6 +307,9 @@ scheduler_loop(void* arg)
             market_usecase_do_sync_user(g_pool, 0, &synced, &failed);
             CSILK_LOG_I("Market scheduler completed sync: %d synced, %d failed", synced, failed);
             pthread_mutex_lock(&g_sched_mutex);
+            if (!g_sched_running) {
+                break;
+            }
         }
 
         /* Wait 30 seconds or until notified (MONOTONIC absolute deadline,

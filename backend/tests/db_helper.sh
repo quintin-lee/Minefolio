@@ -199,7 +199,7 @@ db_start_server() {
 db_stop_server() {
   local pid="${1:-${SERVER_PID:-}}"
   if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-    kill "$pid" 2>/dev/null || true
+    kill -INT "$pid" 2>/dev/null || true
     wait "$pid" 2>/dev/null || true
   fi
 }
