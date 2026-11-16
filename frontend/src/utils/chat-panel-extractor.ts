@@ -10,7 +10,8 @@ export function extractPanelItems(
   messageId: number,
   content: string,
   workflowData?: WorkflowRunState,
-  workflowConfig?: WorkflowConfigState
+  workflowConfig?: WorkflowConfigState,
+  toolCalls?: { id?: string; name?: string; args?: string; result?: string }[]
 ): ExtractResult {
   const panelItems: PanelItem[] = []
   const extractedSegmentIds = new Set<string>()
@@ -144,6 +145,47 @@ export function extractPanelItems(
   if (lastIndex < text.length) {
     const trailingText = text.slice(lastIndex).trim()
     checkAndExtractTable(trailingText, `md-${segIdx++}`)
+  }
+
+  // 兜底回退：如果正文中未包含 ```action 代码块，但 toolCalls 中调用了 propose_daily_expense 或 propose_transfer
+  // 并且成功生成了草案（带 draft_token），自动抽取为分析面板中的操作卡片
+  const hasActionInPanel = panelItems.some(i => i.type === 'action')
+  if (!hasActionInPanel && toolCalls && toolCalls.length > 0) {
+    for (const tc of toolCalls) {
+      if ((tc.name === 'propose_daily_expense' || tc.name === 'propose_transfer') && tc.result) {
+        try {
+          const resObj = typeof tc.result === 'string' ? JSON.parse(tc.result) : tc.result
+          if (resObj && typeof resObj === 'object') {
+            const hasDraft = !!(resObj as Record<string, unknown>).draft_token
+            const isSuccess = !!(resObj as Record<string, unknown>).propose_success
+            if (hasDraft || isSuccess) {
+              const defaultActionType = tc.name === 'propose_daily_expense' ? 'daily_expense' : 'transfer'
+              const rawObj = {
+                action_type: (resObj as Record<string, unknown>).action_type || defaultActionType,
+                ...(resObj as Record<string, unknown>),
+              }
+              const normalized = normalizeActionCard(rawObj)
+              const segId = `act-tool-0`
+              const isExpense = normalized.action_type === 'daily_expense'
+              panelItems.push({
+                id: `msg-${messageId}-${segId}`,
+                segmentId: segId,
+                label: isExpense ? '日常记账确认' : '账户转账操作',
+                icon: isExpense ? 'ph:receipt-bold' : 'ph:arrows-left-right-bold',
+                type: 'action',
+                content: typeof tc.result === 'string' ? tc.result : JSON.stringify(tc.result),
+                actionData: normalized,
+                messageId,
+                createdAt: Date.now(),
+              })
+              extractedSegmentIds.add(segId)
+            }
+          }
+        } catch {
+          // ignore invalid tool result
+        }
+      }
+    }
   }
 
   function checkAndExtractTable(markdownPart: string, segId: string) {

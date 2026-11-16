@@ -42,9 +42,29 @@ describe('chat-panel-extractor', () => {
     expect(result.panelItems[0].lang).toBe('typescript')
   })
 
-  it('extracts workflow cards when provided in params', () => {
-    const wfProgress = { workflow_id: 'wf_health_score', status: 'completed', steps: [] } as any
-    const result = extractPanelItems(106, '已执行工作流', wfProgress)
-    expect(result.panelItems.some(i => i.type === 'workflow-progress')).toBe(true)
+  it('falls back to extract action card from toolCalls when content has no action block', () => {
+    const plainContent = '已为您生成记账草稿：\n- 类型：支出\n- 金额：86.5 元\n请确认上述信息。'
+    const toolCalls = [
+      {
+        name: 'propose_daily_expense',
+        result: JSON.stringify({
+          propose_success: true,
+          amount: 86.5,
+          category_id: 12,
+          category_name: '日常购物',
+          asset_id: 0,
+          asset_name: '微信零钱',
+          note: '超市购物',
+          draft_token: 'test_draft_token_123',
+        }),
+      },
+    ]
+    const result = extractPanelItems(107, plainContent, undefined, undefined, toolCalls)
+    expect(result.panelItems.length).toBe(1)
+    expect(result.panelItems[0].type).toBe('action')
+    expect(result.panelItems[0].label).toContain('记账')
+    expect(result.panelItems[0].actionData?.action_type).toBe('daily_expense')
+    expect(result.panelItems[0].actionData?.data?.amount).toBe(86.5)
+    expect(result.panelItems[0].actionData?.data?.draft_token).toBe('test_draft_token_123')
   })
 })

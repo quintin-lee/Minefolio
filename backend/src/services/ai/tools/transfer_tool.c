@@ -130,6 +130,7 @@ exec_propose_transfer(const ai_tool_t* tool, const ai_tool_context_t* ctx, const
     csilk_json_free(proposed_args);
 
     csilk_json_t* res = csilk_json_object();
+    csilk_json_add_string(res, "action_type", "transfer");
     csilk_json_add_bool(res, "propose_success", true);
     csilk_json_add_number(res, "amount", amount);
     csilk_json_add_string(res, "date", date);

@@ -865,6 +865,54 @@ const segments = computed<Segment[]>(() => {
     }
   }
 
+  // 保证基本文本段已放入 result
+  if (result.length === 0 && text) {
+    if (streaming) {
+      result.push({ id: 'stream-tail', type: 'streaming-text', content: text })
+    } else if (text.trim()) {
+      result.push({
+        id: `md-${segIdx++}`,
+        type: 'markdown',
+        content: text,
+        renderedHtml: renderMarkdown(text),
+      })
+    }
+  }
+
+  // 兜底回退：如果模型调用了 propose_daily_expense 或 propose_transfer 并成功生成了草案（带 draft_token），
+  // 但回复正文中未输出 ```action 代码块，则从 toolCalls 中自动回退挂载 ActionCard，
+  // 确保用户 100% 能在界面上看到确认入库卡片，彻底避免因 LLM 输出格式不规范导致的流程断裂。
+  const hasActionInResult = result.some(s => s.type === 'action')
+  if (!hasActionInResult && props.toolCalls && props.toolCalls.length > 0) {
+    for (const tc of props.toolCalls) {
+      if ((tc.name === 'propose_daily_expense' || tc.name === 'propose_transfer') && tc.result) {
+        try {
+          const resObj = typeof tc.result === 'string' ? JSON.parse(tc.result) : tc.result
+          if (resObj && typeof resObj === 'object') {
+            const hasDraft = !!(resObj as Record<string, unknown>).draft_token
+            const isSuccess = !!(resObj as Record<string, unknown>).propose_success
+            if (hasDraft || isSuccess) {
+              const defaultActionType = tc.name === 'propose_daily_expense' ? 'daily_expense' : 'transfer'
+              const rawObj = {
+                action_type: (resObj as Record<string, unknown>).action_type || defaultActionType,
+                ...(resObj as Record<string, unknown>),
+              }
+              const normalized = normalizeActionCard(rawObj)
+              result.push({
+                id: `act-tool-${segIdx++}`,
+                type: 'action',
+                content: typeof tc.result === 'string' ? tc.result : JSON.stringify(tc.result),
+                actionData: normalized,
+              })
+            }
+          }
+        } catch {
+          // ignore invalid tool result JSON
+        }
+      }
+    }
+  }
+
   return result.length > 0 ? result : streaming
     ? [{ id: 'stream-tail', type: 'streaming-text', content: text }]
     : [{

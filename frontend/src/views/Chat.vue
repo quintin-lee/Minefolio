@@ -937,7 +937,7 @@ function scanAllMessagesToPanel() {
   const idSet = new Set(panelItems.value.map(i => i.id))
   for (const msg of chat.messages) {
     if (msg.role !== 'assistant') continue
-    const res = extractPanelItems(msg.id, msg.content, msg.workflowData, msg.workflowConfig)
+    const res = extractPanelItems(msg.id, msg.content, msg.workflowData, msg.workflowConfig, msg.tool_calls)
     for (const item of res.panelItems) {
       if (!idSet.has(item.id)) {
         if (panelItems.value.length >= MAX_PANEL_ITEMS) {
@@ -1838,7 +1838,7 @@ watch(() => chat.isStreaming, (streaming, prevStreaming) => {
     if (msgs.length > 0) {
       const lastMsg = msgs[msgs.length - 1]
       if (lastMsg && lastMsg.role === 'assistant') {
-        const res = extractPanelItems(lastMsg.id, lastMsg.content, lastMsg.workflowData, lastMsg.workflowConfig)
+        const res = extractPanelItems(lastMsg.id, lastMsg.content, lastMsg.workflowData, lastMsg.workflowConfig, lastMsg.tool_calls)
         if (res.panelItems.length > 0) {
           for (const item of res.panelItems) {
             if (!panelItems.value.some(i => i.id === item.id)) {
