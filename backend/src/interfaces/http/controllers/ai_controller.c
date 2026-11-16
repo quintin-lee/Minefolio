@@ -233,6 +233,72 @@ api_ai_messages_list_handler(csilk_ctx_t* c)
     }
 }
 
+static void
+ai_message_mark_action_executed(csilk_db_pool_t* pool, int64_t user_id, const char* draft_token)
+{
+    if (!pool || user_id <= 0 || !draft_token || !draft_token[0]) {
+        return;
+    }
+
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+
+    char pattern[512];
+    snprintf(pattern, sizeof(pattern), "%%%s%%", draft_token);
+
+    csilk_json_t* rows = csilk_db_query_param_json(
+        pool,
+        "SELECT id, content FROM ai_messages "
+        "WHERE session_id IN (SELECT id FROM ai_sessions WHERE user_id = ?) "
+        "  AND content LIKE ? "
+        "ORDER BY id DESC LIMIT 1",
+        (const char*[]){uid_str, pattern, NULL});
+
+    if (!rows || !csilk_json_is_array(rows) || csilk_json_array_size(rows) == 0) {
+        if (rows) {
+            csilk_json_free(rows);
+        }
+        return;
+    }
+
+    const csilk_json_t* row = csilk_json_array_get(rows, 0);
+    int64_t             msg_id = db_get_int(row, "id");
+    const char*         content = csilk_json_get_string(row, "content");
+
+    if (msg_id > 0 && content && content[0]) {
+        if (!strstr(content, "\"status\":\"executed\"") &&
+            !strstr(content, "\"status\": \"executed\"")) {
+            const char* target = "\"action_type\"";
+            const char* pos = strstr(content, target);
+            if (pos) {
+                size_t      prefix_len = (size_t)(pos - content);
+                size_t      orig_len = strlen(content);
+                const char* replacement = "\"status\":\"executed\",\"action_type\"";
+                size_t      repl_len = strlen(replacement);
+                size_t      new_len = orig_len + repl_len - strlen(target) + 1;
+                char*       new_content = (char*)malloc(new_len);
+                if (new_content) {
+                    memcpy(new_content, content, prefix_len);
+                    memcpy(new_content + prefix_len, replacement, repl_len);
+                    strcpy(new_content + prefix_len + repl_len, pos + strlen(target));
+
+                    char mid_str[32];
+                    snprintf(mid_str, sizeof(mid_str), "%lld", (long long)msg_id);
+                    csilk_json_t* upd =
+                        csilk_db_query_param_json(pool,
+                                                  "UPDATE ai_messages SET content = ? WHERE id = ?",
+                                                  (const char*[]){new_content, mid_str, NULL});
+                    if (upd) {
+                        csilk_json_free(upd);
+                    }
+                    free(new_content);
+                }
+            }
+        }
+    }
+    csilk_json_free(rows);
+}
+
 /**
  * @brief 用户确认执行 AI 拟录入的记账/转账动作
  *
@@ -284,6 +350,7 @@ api_ai_action_confirm_handler(csilk_ctx_t* c)
     ai_tool_context_t* ctx = ai_tool_context_create(pool, user_id, 0 /* 无会话上下文 */, NULL);
     if (!ctx) {
         csilk_json_free(body);
+        csilk_json_free(args);
         respond_error(c, 500, "确认执行失败");
         return;
     }
@@ -294,7 +361,7 @@ api_ai_action_confirm_handler(csilk_ctx_t* c)
         if (!key || strcmp(key, "action_type") == 0 || strcmp(key, "draft_token") == 0) {
             continue;
         }
-        csilk_json_add_item(args, (csilk_json_t*)val);
+        csilk_json_add_object(args, key, csilk_json_copy((csilk_json_t*)val));
     }
     csilk_json_add_string(args, "draft_token", draft_token);
     csilk_json_free(body);
@@ -310,6 +377,9 @@ api_ai_action_confirm_handler(csilk_ctx_t* c)
     /* 工具结果为 {success:true,...} 或 {error:...}；原样透传给前端 */
     csilk_json_t* parsed = csilk_json_parse(result);
     if (parsed) {
+        if (csilk_json_get_bool(parsed, "success")) {
+            ai_message_mark_action_executed(pool, user_id, draft_token);
+        }
         respond_ok(c, parsed);
     } else {
         respond_ok_null(c);
@@ -353,6 +423,7 @@ api_ai_action_confirm_batch_handler(csilk_ctx_t* c)
     csilk_json_free(body);
 
     if (rc == 0 && out_data) {
+        ai_message_mark_action_executed(db_get_pool(), user_id, draft_token);
         respond_ok(c, out_data);
     } else {
         if (out_data) {
