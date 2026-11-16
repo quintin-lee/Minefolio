@@ -1,0 +1,483 @@
+// Auto-generated offline Phosphor icons bundle for Minefolio
+// Pre-registers all Phosphor icons in Iconify memory to eliminate runtime CDN calls and FOUI.
+import { addIcon } from '@iconify/vue'
+
+import icon_activity_duotone from '@iconify-icons/ph/activity-duotone'
+import icon_airplane_tilt from '@iconify-icons/ph/airplane-tilt'
+import icon_arrow_clockwise from '@iconify-icons/ph/arrow-clockwise'
+import icon_arrow_counter_clockwise from '@iconify-icons/ph/arrow-counter-clockwise'
+import icon_arrow_counter_clockwise_duotone from '@iconify-icons/ph/arrow-counter-clockwise-duotone'
+import icon_arrow_down_bold from '@iconify-icons/ph/arrow-down-bold'
+import icon_arrow_down_left from '@iconify-icons/ph/arrow-down-left'
+import icon_arrow_elbow_down_left_bold from '@iconify-icons/ph/arrow-elbow-down-left-bold'
+import icon_arrow_elbow_down_right_bold from '@iconify-icons/ph/arrow-elbow-down-right-bold'
+import icon_arrow_fat_down_bold from '@iconify-icons/ph/arrow-fat-down-bold'
+import icon_arrow_right_bold from '@iconify-icons/ph/arrow-right-bold'
+import icon_arrow_square_out_bold from '@iconify-icons/ph/arrow-square-out-bold'
+import icon_arrow_up_right_bold from '@iconify-icons/ph/arrow-up-right-bold'
+import icon_arrows_clockwise from '@iconify-icons/ph/arrows-clockwise'
+import icon_arrows_clockwise_duotone from '@iconify-icons/ph/arrows-clockwise-duotone'
+import icon_arrows_counter_clockwise from '@iconify-icons/ph/arrows-counter-clockwise'
+import icon_arrows_left_right from '@iconify-icons/ph/arrows-left-right'
+import icon_arrows_left_right_bold from '@iconify-icons/ph/arrows-left-right-bold'
+import icon_arrows_left_right_duotone from '@iconify-icons/ph/arrows-left-right-duotone'
+import icon_arrows_out_simple from '@iconify-icons/ph/arrows-out-simple'
+import icon_arrows_split from '@iconify-icons/ph/arrows-split'
+import icon_article_bold from '@iconify-icons/ph/article-bold'
+import icon_at_bold from '@iconify-icons/ph/at-bold'
+import icon_baby from '@iconify-icons/ph/baby'
+import icon_bank from '@iconify-icons/ph/bank'
+import icon_bank_bold from '@iconify-icons/ph/bank-bold'
+import icon_bezier_curve from '@iconify-icons/ph/bezier-curve'
+import icon_book_bookmark_bold from '@iconify-icons/ph/book-bookmark-bold'
+import icon_bounding_box from '@iconify-icons/ph/bounding-box'
+import icon_brackets_curly_bold from '@iconify-icons/ph/brackets-curly-bold'
+import icon_brain from '@iconify-icons/ph/brain'
+import icon_brain_bold from '@iconify-icons/ph/brain-bold'
+import icon_brain_fill from '@iconify-icons/ph/brain-fill'
+import icon_briefcase from '@iconify-icons/ph/briefcase'
+import icon_broadcast_duotone from '@iconify-icons/ph/broadcast-duotone'
+import icon_calendar_blank from '@iconify-icons/ph/calendar-blank'
+import icon_calendar_blank_bold from '@iconify-icons/ph/calendar-blank-bold'
+import icon_calendar_check_bold from '@iconify-icons/ph/calendar-check-bold'
+import icon_camera_bold from '@iconify-icons/ph/camera-bold'
+import icon_caret_down_bold from '@iconify-icons/ph/caret-down-bold'
+import icon_caret_right from '@iconify-icons/ph/caret-right'
+import icon_caret_right_bold from '@iconify-icons/ph/caret-right-bold'
+import icon_caret_up_bold from '@iconify-icons/ph/caret-up-bold'
+import icon_certificate_bold from '@iconify-icons/ph/certificate-bold'
+import icon_chart_bar_bold from '@iconify-icons/ph/chart-bar-bold'
+import icon_chart_bar_horizontal from '@iconify-icons/ph/chart-bar-horizontal'
+import icon_chart_line from '@iconify-icons/ph/chart-line'
+import icon_chart_line_bold from '@iconify-icons/ph/chart-line-bold'
+import icon_chart_line_up from '@iconify-icons/ph/chart-line-up'
+import icon_chart_line_up_bold from '@iconify-icons/ph/chart-line-up-bold'
+import icon_chart_line_up_duotone from '@iconify-icons/ph/chart-line-up-duotone'
+import icon_chart_pie from '@iconify-icons/ph/chart-pie'
+import icon_chart_pie_bold from '@iconify-icons/ph/chart-pie-bold'
+import icon_chart_pie_slice from '@iconify-icons/ph/chart-pie-slice'
+import icon_chart_pie_slice_bold from '@iconify-icons/ph/chart-pie-slice-bold'
+import icon_chart_polar from '@iconify-icons/ph/chart-polar'
+import icon_chart_polar_bold from '@iconify-icons/ph/chart-polar-bold'
+import icon_chat_circle from '@iconify-icons/ph/chat-circle'
+import icon_chat_circle_dots from '@iconify-icons/ph/chat-circle-dots'
+import icon_chat_circle_text_bold from '@iconify-icons/ph/chat-circle-text-bold'
+import icon_chats from '@iconify-icons/ph/chats'
+import icon_check from '@iconify-icons/ph/check'
+import icon_check_bold from '@iconify-icons/ph/check-bold'
+import icon_check_circle from '@iconify-icons/ph/check-circle'
+import icon_check_circle_bold from '@iconify-icons/ph/check-circle-bold'
+import icon_check_circle_fill from '@iconify-icons/ph/check-circle-fill'
+import icon_check_square_bold from '@iconify-icons/ph/check-square-bold'
+import icon_clipboard_text from '@iconify-icons/ph/clipboard-text'
+import icon_clock from '@iconify-icons/ph/clock'
+import icon_clock_bold from '@iconify-icons/ph/clock-bold'
+import icon_clock_countdown from '@iconify-icons/ph/clock-countdown'
+import icon_cloud_arrow_down_bold from '@iconify-icons/ph/cloud-arrow-down-bold'
+import icon_code from '@iconify-icons/ph/code'
+import icon_code_bold from '@iconify-icons/ph/code-bold'
+import icon_coins_bold from '@iconify-icons/ph/coins-bold'
+import icon_copy from '@iconify-icons/ph/copy'
+import icon_copy_bold from '@iconify-icons/ph/copy-bold'
+import icon_copy_duotone from '@iconify-icons/ph/copy-duotone'
+import icon_corners_in_bold from '@iconify-icons/ph/corners-in-bold'
+import icon_corners_out_bold from '@iconify-icons/ph/corners-out-bold'
+import icon_cpu_bold from '@iconify-icons/ph/cpu-bold'
+import icon_credit_card from '@iconify-icons/ph/credit-card'
+import icon_crown_bold from '@iconify-icons/ph/crown-bold'
+import icon_cube_bold from '@iconify-icons/ph/cube-bold'
+import icon_currency_btc from '@iconify-icons/ph/currency-btc'
+import icon_currency_btc_bold from '@iconify-icons/ph/currency-btc-bold'
+import icon_currency_circle_dollar from '@iconify-icons/ph/currency-circle-dollar'
+import icon_currency_circle_dollar_bold from '@iconify-icons/ph/currency-circle-dollar-bold'
+import icon_currency_cny_bold from '@iconify-icons/ph/currency-cny-bold'
+import icon_database from '@iconify-icons/ph/database'
+import icon_desktop from '@iconify-icons/ph/desktop'
+import icon_device_mobile from '@iconify-icons/ph/device-mobile'
+import icon_dots_three_vertical_bold from '@iconify-icons/ph/dots-three-vertical-bold'
+import icon_download_simple from '@iconify-icons/ph/download-simple'
+import icon_download_simple_bold from '@iconify-icons/ph/download-simple-bold'
+import icon_export from '@iconify-icons/ph/export'
+import icon_export_duotone from '@iconify-icons/ph/export-duotone'
+import icon_eye_bold from '@iconify-icons/ph/eye-bold'
+import icon_file_arrow_up_duotone from '@iconify-icons/ph/file-arrow-up-duotone'
+import icon_file_code_bold from '@iconify-icons/ph/file-code-bold'
+import icon_file_code_duotone from '@iconify-icons/ph/file-code-duotone'
+import icon_file_svg from '@iconify-icons/ph/file-svg'
+import icon_file_text from '@iconify-icons/ph/file-text'
+import icon_file_text_duotone from '@iconify-icons/ph/file-text-duotone'
+import icon_flow_arrow from '@iconify-icons/ph/flow-arrow'
+import icon_frame_corners from '@iconify-icons/ph/frame-corners'
+import icon_git_branch from '@iconify-icons/ph/git-branch'
+import icon_git_commit from '@iconify-icons/ph/git-commit'
+import icon_git_fork from '@iconify-icons/ph/git-fork'
+import icon_git_fork_bold from '@iconify-icons/ph/git-fork-bold'
+import icon_git_merge from '@iconify-icons/ph/git-merge'
+import icon_git_merge_bold from '@iconify-icons/ph/git-merge-bold'
+import icon_globe_bold from '@iconify-icons/ph/globe-bold'
+import icon_globe_duotone from '@iconify-icons/ph/globe-duotone'
+import icon_graph from '@iconify-icons/ph/graph'
+import icon_grid_four from '@iconify-icons/ph/grid-four'
+import icon_hand_grabbing from '@iconify-icons/ph/hand-grabbing'
+import icon_hard_drives from '@iconify-icons/ph/hard-drives'
+import icon_hash_bold from '@iconify-icons/ph/hash-bold'
+import icon_heartbeat_bold from '@iconify-icons/ph/heartbeat-bold'
+import icon_house from '@iconify-icons/ph/house'
+import icon_identification_badge from '@iconify-icons/ph/identification-badge'
+import icon_image from '@iconify-icons/ph/image'
+import icon_image_square_bold from '@iconify-icons/ph/image-square-bold'
+import icon_info_bold from '@iconify-icons/ph/info-bold'
+import icon_key from '@iconify-icons/ph/key'
+import icon_key_bold from '@iconify-icons/ph/key-bold'
+import icon_key_duotone from '@iconify-icons/ph/key-duotone'
+import icon_lightbulb_bold from '@iconify-icons/ph/lightbulb-bold'
+import icon_lightning from '@iconify-icons/ph/lightning'
+import icon_lightning_bold from '@iconify-icons/ph/lightning-bold'
+import icon_lightning_fill from '@iconify-icons/ph/lightning-fill'
+import icon_link_bold from '@iconify-icons/ph/link-bold'
+import icon_list_dashes_bold from '@iconify-icons/ph/list-dashes-bold'
+import icon_lock_key from '@iconify-icons/ph/lock-key'
+import icon_lock_key_bold from '@iconify-icons/ph/lock-key-bold'
+import icon_magic_wand_duotone from '@iconify-icons/ph/magic-wand-duotone'
+import icon_magnifying_glass from '@iconify-icons/ph/magnifying-glass'
+import icon_magnifying_glass_bold from '@iconify-icons/ph/magnifying-glass-bold'
+import icon_magnifying_glass_plus from '@iconify-icons/ph/magnifying-glass-plus'
+import icon_magnifying_glass_plus_bold from '@iconify-icons/ph/magnifying-glass-plus-bold'
+import icon_mask_sad_duotone from '@iconify-icons/ph/mask-sad-duotone'
+import icon_minus_bold from '@iconify-icons/ph/minus-bold'
+import icon_moon_stars from '@iconify-icons/ph/moon-stars'
+import icon_moon_stars_duotone from '@iconify-icons/ph/moon-stars-duotone'
+import icon_newspaper_duotone from '@iconify-icons/ph/newspaper-duotone'
+import icon_palette from '@iconify-icons/ph/palette'
+import icon_paper_plane_tilt_fill from '@iconify-icons/ph/paper-plane-tilt-fill'
+import icon_path from '@iconify-icons/ph/path'
+import icon_pencil_simple from '@iconify-icons/ph/pencil-simple'
+import icon_pencil_simple_duotone from '@iconify-icons/ph/pencil-simple-duotone'
+import icon_pencil_simple_line_bold from '@iconify-icons/ph/pencil-simple-line-bold'
+import icon_percent_bold from '@iconify-icons/ph/percent-bold'
+import icon_phone from '@iconify-icons/ph/phone'
+import icon_piggy_bank from '@iconify-icons/ph/piggy-bank'
+import icon_plant_bold from '@iconify-icons/ph/plant-bold'
+import icon_play_bold from '@iconify-icons/ph/play-bold'
+import icon_play_circle_duotone from '@iconify-icons/ph/play-circle-duotone'
+import icon_play_fill from '@iconify-icons/ph/play-fill'
+import icon_plug from '@iconify-icons/ph/plug'
+import icon_plug_bold from '@iconify-icons/ph/plug-bold'
+import icon_plugs_connected_duotone from '@iconify-icons/ph/plugs-connected-duotone'
+import icon_plus_bold from '@iconify-icons/ph/plus-bold'
+import icon_plus_circle from '@iconify-icons/ph/plus-circle'
+import icon_plus_circle_duotone from '@iconify-icons/ph/plus-circle-duotone'
+import icon_presentation_chart_bold from '@iconify-icons/ph/presentation-chart-bold'
+import icon_presentation_chart_duotone from '@iconify-icons/ph/presentation-chart-duotone'
+import icon_projector_screen_chart from '@iconify-icons/ph/projector-screen-chart'
+import icon_push_pin from '@iconify-icons/ph/push-pin'
+import icon_push_pin_fill from '@iconify-icons/ph/push-pin-fill'
+import icon_push_pin_slash from '@iconify-icons/ph/push-pin-slash'
+import icon_receipt_bold from '@iconify-icons/ph/receipt-bold'
+import icon_receipt_duotone from '@iconify-icons/ph/receipt-duotone'
+import icon_robot_bold from '@iconify-icons/ph/robot-bold'
+import icon_scales from '@iconify-icons/ph/scales'
+import icon_share_network_bold from '@iconify-icons/ph/share-network-bold'
+import icon_shield_check from '@iconify-icons/ph/shield-check'
+import icon_shield_check_bold from '@iconify-icons/ph/shield-check-bold'
+import icon_shield_check_duotone from '@iconify-icons/ph/shield-check-duotone'
+import icon_shield_check_fill from '@iconify-icons/ph/shield-check-fill'
+import icon_shield_warning_bold from '@iconify-icons/ph/shield-warning-bold'
+import icon_shield_warning_duotone from '@iconify-icons/ph/shield-warning-duotone'
+import icon_shopping_bag from '@iconify-icons/ph/shopping-bag'
+import icon_shopping_bag_bold from '@iconify-icons/ph/shopping-bag-bold'
+import icon_shopping_cart_bold from '@iconify-icons/ph/shopping-cart-bold'
+import icon_sidebar_simple from '@iconify-icons/ph/sidebar-simple'
+import icon_sliders_horizontal_bold from '@iconify-icons/ph/sliders-horizontal-bold'
+import icon_sliders_horizontal_duotone from '@iconify-icons/ph/sliders-horizontal-duotone'
+import icon_sparkle from '@iconify-icons/ph/sparkle'
+import icon_sparkle_bold from '@iconify-icons/ph/sparkle-bold'
+import icon_sparkle_duotone from '@iconify-icons/ph/sparkle-duotone'
+import icon_sparkle_fill from '@iconify-icons/ph/sparkle-fill'
+import icon_spinner_gap from '@iconify-icons/ph/spinner-gap'
+import icon_squares_four from '@iconify-icons/ph/squares-four'
+import icon_squares_four_duotone from '@iconify-icons/ph/squares-four-duotone'
+import icon_stack from '@iconify-icons/ph/stack'
+import icon_stack_bold from '@iconify-icons/ph/stack-bold'
+import icon_star from '@iconify-icons/ph/star'
+import icon_star_fill from '@iconify-icons/ph/star-fill'
+import icon_stop_bold from '@iconify-icons/ph/stop-bold'
+import icon_stop_circle_bold from '@iconify-icons/ph/stop-circle-bold'
+import icon_sun from '@iconify-icons/ph/sun'
+import icon_table_bold from '@iconify-icons/ph/table-bold'
+import icon_tag_bold from '@iconify-icons/ph/tag-bold'
+import icon_target_duotone from '@iconify-icons/ph/target-duotone'
+import icon_terminal from '@iconify-icons/ph/terminal'
+import icon_terminal_bold from '@iconify-icons/ph/terminal-bold'
+import icon_terminal_window_duotone from '@iconify-icons/ph/terminal-window-duotone'
+import icon_text_t from '@iconify-icons/ph/text-t'
+import icon_ticket from '@iconify-icons/ph/ticket'
+import icon_timer from '@iconify-icons/ph/timer'
+import icon_timer_bold from '@iconify-icons/ph/timer-bold'
+import icon_trash from '@iconify-icons/ph/trash'
+import icon_trash_bold from '@iconify-icons/ph/trash-bold'
+import icon_trash_duotone from '@iconify-icons/ph/trash-duotone'
+import icon_tree_structure from '@iconify-icons/ph/tree-structure'
+import icon_tree_structure_duotone from '@iconify-icons/ph/tree-structure-duotone'
+import icon_trend_down from '@iconify-icons/ph/trend-down'
+import icon_trend_up from '@iconify-icons/ph/trend-up'
+import icon_trend_up_bold from '@iconify-icons/ph/trend-up-bold'
+import icon_trend_up_duotone from '@iconify-icons/ph/trend-up-duotone'
+import icon_user from '@iconify-icons/ph/user'
+import icon_user_bold from '@iconify-icons/ph/user-bold'
+import icon_user_circle from '@iconify-icons/ph/user-circle'
+import icon_user_plus_bold from '@iconify-icons/ph/user-plus-bold'
+import icon_users from '@iconify-icons/ph/users'
+import icon_users_three_bold from '@iconify-icons/ph/users-three-bold'
+import icon_vault_bold from '@iconify-icons/ph/vault-bold'
+import icon_vault_duotone from '@iconify-icons/ph/vault-duotone'
+import icon_wallet from '@iconify-icons/ph/wallet'
+import icon_wallet_bold from '@iconify-icons/ph/wallet-bold'
+import icon_warning_circle from '@iconify-icons/ph/warning-circle'
+import icon_warning_circle_bold from '@iconify-icons/ph/warning-circle-bold'
+import icon_warning_circle_fill from '@iconify-icons/ph/warning-circle-fill'
+import icon_wrench_bold from '@iconify-icons/ph/wrench-bold'
+import icon_wrench_duotone from '@iconify-icons/ph/wrench-duotone'
+import icon_x from '@iconify-icons/ph/x'
+import icon_x_bold from '@iconify-icons/ph/x-bold'
+
+export function registerPhosphorIcons() {
+  addIcon('ph:activity-duotone', icon_activity_duotone as any)
+  addIcon('ph:airplane-tilt', icon_airplane_tilt as any)
+  addIcon('ph:arrow-clockwise', icon_arrow_clockwise as any)
+  addIcon('ph:arrow-counter-clockwise', icon_arrow_counter_clockwise as any)
+  addIcon('ph:arrow-counter-clockwise-duotone', icon_arrow_counter_clockwise_duotone as any)
+  addIcon('ph:arrow-down-bold', icon_arrow_down_bold as any)
+  addIcon('ph:arrow-down-left', icon_arrow_down_left as any)
+  addIcon('ph:arrow-elbow-down-left-bold', icon_arrow_elbow_down_left_bold as any)
+  addIcon('ph:arrow-elbow-down-right-bold', icon_arrow_elbow_down_right_bold as any)
+  addIcon('ph:arrow-fat-down-bold', icon_arrow_fat_down_bold as any)
+  addIcon('ph:arrow-right-bold', icon_arrow_right_bold as any)
+  addIcon('ph:arrow-square-out-bold', icon_arrow_square_out_bold as any)
+  addIcon('ph:arrow-up-right-bold', icon_arrow_up_right_bold as any)
+  addIcon('ph:arrows-clockwise', icon_arrows_clockwise as any)
+  addIcon('ph:arrows-clockwise-duotone', icon_arrows_clockwise_duotone as any)
+  addIcon('ph:arrows-counter-clockwise', icon_arrows_counter_clockwise as any)
+  addIcon('ph:arrows-left-right', icon_arrows_left_right as any)
+  addIcon('ph:arrows-left-right-bold', icon_arrows_left_right_bold as any)
+  addIcon('ph:arrows-left-right-duotone', icon_arrows_left_right_duotone as any)
+  addIcon('ph:arrows-out-simple', icon_arrows_out_simple as any)
+  addIcon('ph:arrows-split', icon_arrows_split as any)
+  addIcon('ph:article-bold', icon_article_bold as any)
+  addIcon('ph:at-bold', icon_at_bold as any)
+  addIcon('ph:baby', icon_baby as any)
+  addIcon('ph:bank', icon_bank as any)
+  addIcon('ph:bank-bold', icon_bank_bold as any)
+  addIcon('ph:bezier-curve', icon_bezier_curve as any)
+  addIcon('ph:book-bookmark-bold', icon_book_bookmark_bold as any)
+  addIcon('ph:bounding-box', icon_bounding_box as any)
+  addIcon('ph:brackets-curly-bold', icon_brackets_curly_bold as any)
+  addIcon('ph:brain', icon_brain as any)
+  addIcon('ph:brain-bold', icon_brain_bold as any)
+  addIcon('ph:brain-fill', icon_brain_fill as any)
+  addIcon('ph:briefcase', icon_briefcase as any)
+  addIcon('ph:broadcast-duotone', icon_broadcast_duotone as any)
+  addIcon('ph:calendar-blank', icon_calendar_blank as any)
+  addIcon('ph:calendar-blank-bold', icon_calendar_blank_bold as any)
+  addIcon('ph:calendar-check-bold', icon_calendar_check_bold as any)
+  addIcon('ph:camera-bold', icon_camera_bold as any)
+  addIcon('ph:caret-down-bold', icon_caret_down_bold as any)
+  addIcon('ph:caret-right', icon_caret_right as any)
+  addIcon('ph:caret-right-bold', icon_caret_right_bold as any)
+  addIcon('ph:caret-up-bold', icon_caret_up_bold as any)
+  addIcon('ph:certificate-bold', icon_certificate_bold as any)
+  addIcon('ph:chart-bar-bold', icon_chart_bar_bold as any)
+  addIcon('ph:chart-bar-horizontal', icon_chart_bar_horizontal as any)
+  addIcon('ph:chart-line', icon_chart_line as any)
+  addIcon('ph:chart-line-bold', icon_chart_line_bold as any)
+  addIcon('ph:chart-line-up', icon_chart_line_up as any)
+  addIcon('ph:chart-line-up-bold', icon_chart_line_up_bold as any)
+  addIcon('ph:chart-line-up-duotone', icon_chart_line_up_duotone as any)
+  addIcon('ph:chart-pie', icon_chart_pie as any)
+  addIcon('ph:chart-pie-bold', icon_chart_pie_bold as any)
+  addIcon('ph:chart-pie-slice', icon_chart_pie_slice as any)
+  addIcon('ph:chart-pie-slice-bold', icon_chart_pie_slice_bold as any)
+  addIcon('ph:chart-polar', icon_chart_polar as any)
+  addIcon('ph:chart-polar-bold', icon_chart_polar_bold as any)
+  addIcon('ph:chat-circle', icon_chat_circle as any)
+  addIcon('ph:chat-circle-dots', icon_chat_circle_dots as any)
+  addIcon('ph:chat-circle-text-bold', icon_chat_circle_text_bold as any)
+  addIcon('ph:chats', icon_chats as any)
+  addIcon('ph:check', icon_check as any)
+  addIcon('ph:check-bold', icon_check_bold as any)
+  addIcon('ph:check-circle', icon_check_circle as any)
+  addIcon('ph:check-circle-bold', icon_check_circle_bold as any)
+  addIcon('ph:check-circle-fill', icon_check_circle_fill as any)
+  addIcon('ph:check-square-bold', icon_check_square_bold as any)
+  addIcon('ph:clipboard-text', icon_clipboard_text as any)
+  addIcon('ph:clock', icon_clock as any)
+  addIcon('ph:clock-bold', icon_clock_bold as any)
+  addIcon('ph:clock-countdown', icon_clock_countdown as any)
+  addIcon('ph:cloud-arrow-down-bold', icon_cloud_arrow_down_bold as any)
+  addIcon('ph:code', icon_code as any)
+  addIcon('ph:code-bold', icon_code_bold as any)
+  addIcon('ph:coins-bold', icon_coins_bold as any)
+  addIcon('ph:copy', icon_copy as any)
+  addIcon('ph:copy-bold', icon_copy_bold as any)
+  addIcon('ph:copy-duotone', icon_copy_duotone as any)
+  addIcon('ph:corners-in-bold', icon_corners_in_bold as any)
+  addIcon('ph:corners-out-bold', icon_corners_out_bold as any)
+  addIcon('ph:cpu-bold', icon_cpu_bold as any)
+  addIcon('ph:credit-card', icon_credit_card as any)
+  addIcon('ph:crown-bold', icon_crown_bold as any)
+  addIcon('ph:cube-bold', icon_cube_bold as any)
+  addIcon('ph:currency-btc', icon_currency_btc as any)
+  addIcon('ph:currency-btc-bold', icon_currency_btc_bold as any)
+  addIcon('ph:currency-circle-dollar', icon_currency_circle_dollar as any)
+  addIcon('ph:currency-circle-dollar-bold', icon_currency_circle_dollar_bold as any)
+  addIcon('ph:currency-cny-bold', icon_currency_cny_bold as any)
+  addIcon('ph:database', icon_database as any)
+  addIcon('ph:desktop', icon_desktop as any)
+  addIcon('ph:device-mobile', icon_device_mobile as any)
+  addIcon('ph:dots-three-vertical-bold', icon_dots_three_vertical_bold as any)
+  addIcon('ph:download-simple', icon_download_simple as any)
+  addIcon('ph:download-simple-bold', icon_download_simple_bold as any)
+  addIcon('ph:export', icon_export as any)
+  addIcon('ph:export-duotone', icon_export_duotone as any)
+  addIcon('ph:eye-bold', icon_eye_bold as any)
+  addIcon('ph:file-arrow-up-duotone', icon_file_arrow_up_duotone as any)
+  addIcon('ph:file-code-bold', icon_file_code_bold as any)
+  addIcon('ph:file-code-duotone', icon_file_code_duotone as any)
+  addIcon('ph:file-svg', icon_file_svg as any)
+  addIcon('ph:file-text', icon_file_text as any)
+  addIcon('ph:file-text-duotone', icon_file_text_duotone as any)
+  addIcon('ph:flow-arrow', icon_flow_arrow as any)
+  addIcon('ph:frame-corners', icon_frame_corners as any)
+  addIcon('ph:git-branch', icon_git_branch as any)
+  addIcon('ph:git-commit', icon_git_commit as any)
+  addIcon('ph:git-fork', icon_git_fork as any)
+  addIcon('ph:git-fork-bold', icon_git_fork_bold as any)
+  addIcon('ph:git-merge', icon_git_merge as any)
+  addIcon('ph:git-merge-bold', icon_git_merge_bold as any)
+  addIcon('ph:globe-bold', icon_globe_bold as any)
+  addIcon('ph:globe-duotone', icon_globe_duotone as any)
+  addIcon('ph:graph', icon_graph as any)
+  addIcon('ph:grid-four', icon_grid_four as any)
+  addIcon('ph:hand-grabbing', icon_hand_grabbing as any)
+  addIcon('ph:hard-drives', icon_hard_drives as any)
+  addIcon('ph:hash-bold', icon_hash_bold as any)
+  addIcon('ph:heartbeat-bold', icon_heartbeat_bold as any)
+  addIcon('ph:house', icon_house as any)
+  addIcon('ph:identification-badge', icon_identification_badge as any)
+  addIcon('ph:image', icon_image as any)
+  addIcon('ph:image-square-bold', icon_image_square_bold as any)
+  addIcon('ph:info-bold', icon_info_bold as any)
+  addIcon('ph:key', icon_key as any)
+  addIcon('ph:key-bold', icon_key_bold as any)
+  addIcon('ph:key-duotone', icon_key_duotone as any)
+  addIcon('ph:lightbulb-bold', icon_lightbulb_bold as any)
+  addIcon('ph:lightning', icon_lightning as any)
+  addIcon('ph:lightning-bold', icon_lightning_bold as any)
+  addIcon('ph:lightning-fill', icon_lightning_fill as any)
+  addIcon('ph:link-bold', icon_link_bold as any)
+  addIcon('ph:list-dashes-bold', icon_list_dashes_bold as any)
+  addIcon('ph:lock-key', icon_lock_key as any)
+  addIcon('ph:lock-key-bold', icon_lock_key_bold as any)
+  addIcon('ph:magic-wand-duotone', icon_magic_wand_duotone as any)
+  addIcon('ph:magnifying-glass', icon_magnifying_glass as any)
+  addIcon('ph:magnifying-glass-bold', icon_magnifying_glass_bold as any)
+  addIcon('ph:magnifying-glass-plus', icon_magnifying_glass_plus as any)
+  addIcon('ph:magnifying-glass-plus-bold', icon_magnifying_glass_plus_bold as any)
+  addIcon('ph:mask-sad-duotone', icon_mask_sad_duotone as any)
+  addIcon('ph:minus-bold', icon_minus_bold as any)
+  addIcon('ph:moon-stars', icon_moon_stars as any)
+  addIcon('ph:moon-stars-duotone', icon_moon_stars_duotone as any)
+  addIcon('ph:newspaper-duotone', icon_newspaper_duotone as any)
+  addIcon('ph:palette', icon_palette as any)
+  addIcon('ph:paper-plane-tilt-fill', icon_paper_plane_tilt_fill as any)
+  addIcon('ph:path', icon_path as any)
+  addIcon('ph:pencil-simple', icon_pencil_simple as any)
+  addIcon('ph:pencil-simple-duotone', icon_pencil_simple_duotone as any)
+  addIcon('ph:pencil-simple-line-bold', icon_pencil_simple_line_bold as any)
+  addIcon('ph:percent-bold', icon_percent_bold as any)
+  addIcon('ph:phone', icon_phone as any)
+  addIcon('ph:piggy-bank', icon_piggy_bank as any)
+  addIcon('ph:plant-bold', icon_plant_bold as any)
+  addIcon('ph:play-bold', icon_play_bold as any)
+  addIcon('ph:play-circle-duotone', icon_play_circle_duotone as any)
+  addIcon('ph:play-fill', icon_play_fill as any)
+  addIcon('ph:plug', icon_plug as any)
+  addIcon('ph:plug-bold', icon_plug_bold as any)
+  addIcon('ph:plugs-connected-duotone', icon_plugs_connected_duotone as any)
+  addIcon('ph:plus-bold', icon_plus_bold as any)
+  addIcon('ph:plus-circle', icon_plus_circle as any)
+  addIcon('ph:plus-circle-duotone', icon_plus_circle_duotone as any)
+  addIcon('ph:presentation-chart-bold', icon_presentation_chart_bold as any)
+  addIcon('ph:presentation-chart-duotone', icon_presentation_chart_duotone as any)
+  addIcon('ph:projector-screen-chart', icon_projector_screen_chart as any)
+  addIcon('ph:push-pin', icon_push_pin as any)
+  addIcon('ph:push-pin-fill', icon_push_pin_fill as any)
+  addIcon('ph:push-pin-slash', icon_push_pin_slash as any)
+  addIcon('ph:receipt-bold', icon_receipt_bold as any)
+  addIcon('ph:receipt-duotone', icon_receipt_duotone as any)
+  addIcon('ph:robot-bold', icon_robot_bold as any)
+  addIcon('ph:scales', icon_scales as any)
+  addIcon('ph:share-network-bold', icon_share_network_bold as any)
+  addIcon('ph:shield-check', icon_shield_check as any)
+  addIcon('ph:shield-check-bold', icon_shield_check_bold as any)
+  addIcon('ph:shield-check-duotone', icon_shield_check_duotone as any)
+  addIcon('ph:shield-check-fill', icon_shield_check_fill as any)
+  addIcon('ph:shield-warning-bold', icon_shield_warning_bold as any)
+  addIcon('ph:shield-warning-duotone', icon_shield_warning_duotone as any)
+  addIcon('ph:shopping-bag', icon_shopping_bag as any)
+  addIcon('ph:shopping-bag-bold', icon_shopping_bag_bold as any)
+  addIcon('ph:shopping-cart-bold', icon_shopping_cart_bold as any)
+  addIcon('ph:sidebar-simple', icon_sidebar_simple as any)
+  addIcon('ph:sliders-horizontal-bold', icon_sliders_horizontal_bold as any)
+  addIcon('ph:sliders-horizontal-duotone', icon_sliders_horizontal_duotone as any)
+  addIcon('ph:sparkle', icon_sparkle as any)
+  addIcon('ph:sparkle-bold', icon_sparkle_bold as any)
+  addIcon('ph:sparkle-duotone', icon_sparkle_duotone as any)
+  addIcon('ph:sparkle-fill', icon_sparkle_fill as any)
+  addIcon('ph:spinner-gap', icon_spinner_gap as any)
+  addIcon('ph:squares-four', icon_squares_four as any)
+  addIcon('ph:squares-four-duotone', icon_squares_four_duotone as any)
+  addIcon('ph:stack', icon_stack as any)
+  addIcon('ph:stack-bold', icon_stack_bold as any)
+  addIcon('ph:star', icon_star as any)
+  addIcon('ph:star-fill', icon_star_fill as any)
+  addIcon('ph:stop-bold', icon_stop_bold as any)
+  addIcon('ph:stop-circle-bold', icon_stop_circle_bold as any)
+  addIcon('ph:sun', icon_sun as any)
+  addIcon('ph:table-bold', icon_table_bold as any)
+  addIcon('ph:tag-bold', icon_tag_bold as any)
+  addIcon('ph:target-duotone', icon_target_duotone as any)
+  addIcon('ph:terminal', icon_terminal as any)
+  addIcon('ph:terminal-bold', icon_terminal_bold as any)
+  addIcon('ph:terminal-window-duotone', icon_terminal_window_duotone as any)
+  addIcon('ph:text-t', icon_text_t as any)
+  addIcon('ph:ticket', icon_ticket as any)
+  addIcon('ph:timer', icon_timer as any)
+  addIcon('ph:timer-bold', icon_timer_bold as any)
+  addIcon('ph:trash', icon_trash as any)
+  addIcon('ph:trash-bold', icon_trash_bold as any)
+  addIcon('ph:trash-duotone', icon_trash_duotone as any)
+  addIcon('ph:tree-structure', icon_tree_structure as any)
+  addIcon('ph:tree-structure-duotone', icon_tree_structure_duotone as any)
+  addIcon('ph:trend-down', icon_trend_down as any)
+  addIcon('ph:trend-up', icon_trend_up as any)
+  addIcon('ph:trend-up-bold', icon_trend_up_bold as any)
+  addIcon('ph:trend-up-duotone', icon_trend_up_duotone as any)
+  addIcon('ph:user', icon_user as any)
+  addIcon('ph:user-bold', icon_user_bold as any)
+  addIcon('ph:user-circle', icon_user_circle as any)
+  addIcon('ph:user-plus-bold', icon_user_plus_bold as any)
+  addIcon('ph:users', icon_users as any)
+  addIcon('ph:users-three-bold', icon_users_three_bold as any)
+  addIcon('ph:vault-bold', icon_vault_bold as any)
+  addIcon('ph:vault-duotone', icon_vault_duotone as any)
+  addIcon('ph:wallet', icon_wallet as any)
+  addIcon('ph:wallet-bold', icon_wallet_bold as any)
+  addIcon('ph:warning-circle', icon_warning_circle as any)
+  addIcon('ph:warning-circle-bold', icon_warning_circle_bold as any)
+  addIcon('ph:warning-circle-fill', icon_warning_circle_fill as any)
+  addIcon('ph:wrench-bold', icon_wrench_bold as any)
+  addIcon('ph:wrench-duotone', icon_wrench_duotone as any)
+  addIcon('ph:x', icon_x as any)
+  addIcon('ph:x-bold', icon_x_bold as any)
+}

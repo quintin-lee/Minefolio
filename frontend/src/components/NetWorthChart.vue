@@ -9,8 +9,9 @@
       </el-radio-group>
 
       <el-dropdown trigger="click" @command="handleExport" class="chart-export-dropdown">
-        <el-button size="small" class="chart-action-btn" title="导出图表">
+        <el-button size="small" class="chart-action-btn" title="导出图表" aria-label="导出图表">
           <Icon icon="ph:download-simple-bold" class="action-icon" />
+          <span class="action-btn-text">导出</span>
         </el-button>
         <template #dropdown>
           <el-dropdown-menu>
@@ -203,6 +204,10 @@ function handleExport(cmd: string) {
 }
 .action-icon {
   font-size: 14px;
+}
+.action-btn-text {
+  font-size: 11px;
+  margin-left: 4px;
 }
 :deep(.pill-radio-group .el-radio-button__inner) {
   background: var(--mf-surface-muted);

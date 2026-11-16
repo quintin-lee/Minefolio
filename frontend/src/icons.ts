@@ -1,4 +1,5 @@
 import type { App } from 'vue'
+import { registerPhosphorIcons } from './icons/phosphor'
 import {
   Plus,
   Refresh,
@@ -73,4 +74,5 @@ export function registerIcons(app: App) {
   for (const [key, component] of Object.entries(appIcons)) {
     app.component(key, component)
   }
+  registerPhosphorIcons()
 }
