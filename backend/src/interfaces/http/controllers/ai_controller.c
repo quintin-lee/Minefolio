@@ -346,6 +346,9 @@ api_ai_action_confirm_handler(csilk_ctx_t* c)
         return;
     }
 
+    char token_buf[512] = {0};
+    strncpy(token_buf, draft_token, sizeof(token_buf) - 1);
+
     csilk_db_pool_t* pool = db_get_pool();
     const char*      tool_name = NULL;
     if (strcmp(action_type, "daily_expense") == 0) {
@@ -377,7 +380,7 @@ api_ai_action_confirm_handler(csilk_ctx_t* c)
         }
         csilk_json_add_object(args, key, csilk_json_copy((csilk_json_t*)val));
     }
-    csilk_json_add_string(args, "draft_token", draft_token);
+    csilk_json_add_string(args, "draft_token", token_buf);
     csilk_json_free(body);
 
     char* result = ai_tool_dispatch_parsed(ctx, tool_name, args);
@@ -392,7 +395,7 @@ api_ai_action_confirm_handler(csilk_ctx_t* c)
     csilk_json_t* parsed = csilk_json_parse(result);
     if (parsed) {
         if (csilk_json_get_bool(parsed, "success")) {
-            ai_message_mark_action_executed(pool, user_id, draft_token);
+            ai_message_mark_action_executed(pool, user_id, token_buf);
         }
         respond_ok(c, parsed);
     } else {
@@ -422,6 +425,9 @@ api_ai_action_confirm_batch_handler(csilk_ctx_t* c)
         return;
     }
 
+    char token_buf[512] = {0};
+    strncpy(token_buf, draft_token, sizeof(token_buf) - 1);
+
     const csilk_json_t* actions = csilk_json_get(body, "actions");
     if (!actions || !csilk_json_is_array(actions) || csilk_json_array_size(actions) == 0) {
         csilk_json_free(body);
@@ -433,11 +439,11 @@ api_ai_action_confirm_batch_handler(csilk_ctx_t* c)
     int           code = 0;
     char          err_buf[256] = {0};
     int           rc = ai_batch_actions_execute(
-        db_get_pool(), user_id, actions, draft_token, &out_data, &code, err_buf, sizeof(err_buf));
+        db_get_pool(), user_id, actions, token_buf, &out_data, &code, err_buf, sizeof(err_buf));
     csilk_json_free(body);
 
     if (rc == 0 && out_data) {
-        ai_message_mark_action_executed(db_get_pool(), user_id, draft_token);
+        ai_message_mark_action_executed(db_get_pool(), user_id, token_buf);
         respond_ok(c, out_data);
     } else {
         if (out_data) {

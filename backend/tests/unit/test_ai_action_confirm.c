@@ -329,6 +329,7 @@ main(int argc, char** argv)
         assert(strstr(updated_content, "好的，已为您准备记账信息：") != NULL);
         assert(strstr(updated_content, "请在上方卡片点击确认记账入库。") != NULL);
         printf("  ✅ Message content status successfully updated to 'executed':\n%s\n", updated_content);
+        char* saved_content = strdup(updated_content);
         csilk_json_free(check);
 
         /* Idempotency check: Calling it again does not corrupt content */
@@ -339,7 +340,8 @@ main(int argc, char** argv)
             (const char*[]){"1", NULL});
         assert(check2 != NULL && csilk_json_array_size(check2) > 0);
         const char* updated_content2 = csilk_json_get_string(csilk_json_array_get(check2, 0), "content");
-        assert(strcmp(updated_content, updated_content2) == 0);
+        assert(strcmp(saved_content, updated_content2) == 0);
+        free(saved_content);
         csilk_json_free(check2);
         printf("  ✅ Idempotent execution verified\n");
     }
