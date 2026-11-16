@@ -94,8 +94,8 @@ function updateChart() {
         itemStyle: {
           borderRadius: [6, 6, 0, 0],
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: P.success },
-            { offset: 1, color: shade(P.success, 0.72) }
+            { offset: 0, color: P.danger },
+            { offset: 1, color: shade(P.danger, 0.72) }
           ])
         }
       },
@@ -107,8 +107,8 @@ function updateChart() {
         itemStyle: {
           borderRadius: [6, 6, 0, 0],
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: P.danger },
-            { offset: 1, color: shade(P.danger, 0.72) }
+            { offset: 0, color: P.success },
+            { offset: 1, color: shade(P.success, 0.72) }
           ])
         }
       },

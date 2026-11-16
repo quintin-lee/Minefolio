@@ -60,7 +60,7 @@
 
     <!-- 持仓表格 -->
     <div class="table-card">
-      <el-table :data="pagedHoldings" class="premium-table" row-class-name="premium-row" header-cell-class-name="premium-header" empty-text="">
+      <el-table :data="pagedHoldings" height="100%" class="premium-table" row-class-name="premium-row" header-cell-class-name="premium-header" empty-text="">
         <el-table-column label="标的名称" min-width="160">
           <template #default="{ row }">
             <div class="symbol-cell">

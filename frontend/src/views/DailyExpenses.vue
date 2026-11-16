@@ -59,7 +59,7 @@
             <el-table ref="tableRef" v-loading="loading" :data="expenses" class="premium-table stream-table" row-class-name="premium-row" header-cell-class-name="premium-header" @selection-change="handleSelectionChange">
               <el-table-column type="selection" width="45" align="center" />
               <el-table-column prop="expense_date" label="日期" width="98" />
-              <el-table-column prop="asset_name" label="关联资产" min-width="84" show-overflow-tooltip />
+              <el-table-column prop="asset_name" label="关联资产" min-width="110" show-overflow-tooltip />
               <el-table-column prop="category_name" label="分类" min-width="96" show-overflow-tooltip />
               <el-table-column prop="expense_type" label="类型" width="70">
                 <template #default="{ row }">
@@ -68,7 +68,7 @@
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column prop="amount" label="金额" width="106" align="right">
+              <el-table-column prop="amount" label="金额" min-width="120" align="right">
                 <template #default="{ row }">
                   <span :class="['mono-amount', row.expense_type === 'income' ? 'income-text' : 'expense-text']">
                     {{ row.expense_type === 'income' ? '+' : '-' }}{{ formatCurrency(row.amount) }}
@@ -693,6 +693,19 @@ async function handleImport() {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-weight: 600;
   font-size: 15px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  word-break: keep-all;
+}
+
+.table-container :deep(.el-table__fixed-right),
+.table-container :deep(.el-table__fixed-right-patch) {
+  background: var(--mf-surface-card) !important;
+  box-shadow: -4px 0 12px rgba(0, 0, 0, 0.15);
+}
+
+.table-container :deep(.el-table__fixed-right .el-table__cell) {
+  background: var(--mf-surface-card) !important;
 }
 
 .tag-list {

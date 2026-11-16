@@ -131,7 +131,7 @@
               </span>
             </template>
           </el-table-column>
-          <el-table-column label="单价 × 数量" min-width="150" align="center">
+          <el-table-column label="单价 × 数量" min-width="170" align="center">
             <template #default="{ row }">
               <div v-if="row.quantity > 0 || row.price_per_unit > 0" class="trade-detail font-mono">
                 <span class="price-tag">{{ formatCurrency(row.price_per_unit || 0, row.currency) }}</span>
@@ -1033,6 +1033,25 @@ async function handleImport() {
 .trade-detail {
   font-size: 13px;
   color: var(--mf-text-muted);
+  white-space: nowrap;
+  word-break: keep-all;
+  font-variant-numeric: tabular-nums;
+}
+
+.mono-amount {
+  white-space: nowrap;
+  word-break: keep-all;
+  font-variant-numeric: tabular-nums;
+}
+
+.transactions-table :deep(.el-table__fixed-right),
+.transactions-table :deep(.el-table__fixed-right-patch) {
+  background: var(--mf-surface-card) !important;
+  box-shadow: -4px 0 12px rgba(0, 0, 0, 0.15);
+}
+
+.transactions-table :deep(.el-table__fixed-right .el-table__cell) {
+  background: var(--mf-surface-card) !important;
 }
 
 .price-tag { color: var(--mf-primary); }
