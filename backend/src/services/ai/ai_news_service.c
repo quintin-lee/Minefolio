@@ -154,13 +154,18 @@ ai_news_execute_analysis(csilk_db_pool_t* pool, int64_t user_id, int64_t report_
         return -1;
     }
 
-    /* 4. 更新报告为 done */
+    /* 4. 更新报告为 done 并设置标题 */
+    char date_str[32];
+    get_local_date_str(date_str, sizeof(date_str));
+    char title_buf[128];
+    snprintf(title_buf, sizeof(title_buf), "每日市场脉搏 — %s", date_str);
+
     char id_str[32];
     snprintf(id_str, sizeof(id_str), "%lld", (long long)report_id);
     csilk_db_query_param_json(
         pool,
-        "UPDATE ai_news_reports SET analysis=?, status='done' WHERE id=? AND user_id=?",
-        (const char*[]){res.final_content, id_str, uid_str, NULL});
+        "UPDATE ai_news_reports SET title=?, analysis=?, status='done' WHERE id=? AND user_id=?",
+        (const char*[]){title_buf, res.final_content, id_str, uid_str, NULL});
 
     free(res.final_content);
     if (trace && ctx.session_id > 0) {
@@ -215,7 +220,7 @@ ai_news_trigger(csilk_db_pool_t* pool, int64_t user_id)
     if (!pool || user_id <= 0) {
         return -1;
     }
-    char date_str[16];
+    char date_str[32];
     get_local_date_str(date_str, sizeof(date_str));
     char uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
