@@ -121,7 +121,7 @@
                 <Icon icon="ph:credit-card" />
               </div>
             </div>
-            <div class="sub-val tabular-nums expense-text">{{ formatCurrency(summary.total_liabilities) }}</div>
+            <div class="sub-val tabular-nums expense-text">{{ formatCurrency(Math.abs(summary.total_liabilities)) }}</div>
           </div>
 
           <!-- 本月结余 -->
@@ -315,7 +315,7 @@ const currentYear = ref(new Date())
 
 const debtRatio = computed(() => {
   const assets = Number(summary.value.total_assets) || 0
-  const liabilities = Number(summary.value.total_liabilities) || 0
+  const liabilities = Math.abs(Number(summary.value.total_liabilities) || 0)
   if (assets <= 0) return '0.0%'
   return `${((liabilities / assets) * 100).toFixed(1)}%`
 })

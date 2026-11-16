@@ -259,7 +259,7 @@ const collapsedGroups = ref<Set<string>>(new Set())
 const exchangeRates = ref<Record<string, number>>({})
 
 const totalAssets = computed(() => summary.value.total_assets)
-const totalLiabilities = computed(() => summary.value.total_liabilities)
+const totalLiabilities = computed(() => Math.abs(summary.value.total_liabilities))
 const netWorth = computed(() => summary.value.net_worth)
 
 const hasInvestmentAssets = computed(() =>
@@ -324,7 +324,7 @@ const groupedAccounts = computed(() => {
       label: acc.name,
       icon: acc.icon || 'ph:wallet',
       institution: institutionLabels[acc.institution] || acc.institution,
-      archived: !!acc.archived,
+      archived: Number(acc.archived) === 1,
       account: acc,
       assets: [],
       subtotalCny: 0,

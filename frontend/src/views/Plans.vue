@@ -307,9 +307,16 @@ function formatNumber(num: number) {
 }
 
 function formatFrequency(freq: string, dop: number) {
-  if (freq === 'weekly') return `每周周${['一','二','三','四','五','六','日'][dop - 1] || dop}`
-  if (freq === 'biweekly') return `每双周周${['一','二','三','四','五','六','日'][dop - 1] || dop}`
-  return `每月 ${dop} 号`
+  const day = Number(dop) || 0
+  if (freq === 'weekly') {
+    const weekday = ['一','二','三','四','五','六','日'][day - 1] || '一'
+    return `每周周${weekday}`
+  }
+  if (freq === 'biweekly') {
+    const weekday = ['一','二','三','四','五','六','日'][day - 1] || '一'
+    return `每双周周${weekday}`
+  }
+  return day > 0 ? `每月 ${day} 号` : '每月 1 号'
 }
 
 function formatFlowFreq(freq: string) {

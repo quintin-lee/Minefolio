@@ -272,7 +272,7 @@ portfolio_repo_get_total_liabilities_m(
         csilk_json_t* row = csilk_json_array_get(liab_rows, i);
         const char*   cur = csilk_json_get_string(row, "currency");
         currency_t    c = currency_from_str(cur ? cur : "CNY");
-        money_t       amt = db_get_money(row, "current_value", c);
+        money_t       amt = money_abs(db_get_money(row, "current_value", c));
         money_t       conv = exchange_rate_convert_m(amt, base_currency);
         money_t       acc;
         if (money_add(*out_total, conv, &acc) == DECIMAL_OK) {
@@ -458,7 +458,7 @@ portfolio_repo_get_trend_30d(void* pool, int64_t user_id, int64_t ledger_id)
             double     rate = exchange_rate_get_historical_or_latest(pool, acur, target_date);
             double     conv_val = val * rate;
             if (assets[a].is_liability) {
-                day_liabs[d] += conv_val;
+                day_liabs[d] += fabs(conv_val);
             } else {
                 day_assets[d] += conv_val;
             }

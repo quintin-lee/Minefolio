@@ -105,7 +105,8 @@ async function handleToggleArchive() {
   if (!acc) return
   archiving.value = true
   try {
-    await accountsApi.update(acc.id, { archived: !acc.archived })
+    const isArchived = Number(acc.archived) === 1
+    await accountsApi.update(acc.id, { archived: !isArchived })
     emit('saved')
   } catch (err: any) {
     ElMessage.error(err?.message || '操作失败')
@@ -211,7 +212,7 @@ function institutionLabel(value: string) {
             <el-button type="danger" plain disabled>删除</el-button>
           </el-tooltip>
           <el-button :loading="archiving" @click="handleToggleArchive">
-            {{ account.archived ? '恢复' : '归档' }}
+            {{ Number(account.archived) === 1 ? '恢复' : '归档' }}
           </el-button>
         </template>
         <div class="footer-right">

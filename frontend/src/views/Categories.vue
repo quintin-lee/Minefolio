@@ -87,9 +87,9 @@
                     </el-tag>
                   </template>
                 </el-table-column>
-                <el-table-column prop="parent_name" label="上级分类" min-width="120">
+                <el-table-column label="上级分类" min-width="120">
                   <template #default="{ row }">
-                    <span class="text-muted">{{ row.parent_name || '-' }}</span>
+                    <span class="text-muted">{{ getParentName(row.parent_id) }}</span>
                   </template>
                 </el-table-column>
                 <el-table-column prop="asset_type" label="资产细分" width="140">
@@ -319,6 +319,19 @@ function rowClassName({ row }: { row: any }) {
 
 function onRowClick(row: any) {
   selectedId.value = row.id
+}
+
+const categoryNameMap = computed(() => {
+  const map = new Map<number, string>()
+  for (const c of categories.value) {
+    if (c.id) map.set(Number(c.id), c.name)
+  }
+  return map
+})
+
+function getParentName(parentId: any): string {
+  if (!parentId) return '—'
+  return categoryNameMap.value.get(Number(parentId)) || '—'
 }
 
 function categoryTypeLabel(t: CategoryType) {
