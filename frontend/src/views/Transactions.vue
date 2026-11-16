@@ -643,7 +643,7 @@ function openDialog(txn?: any) {
     quantity: Number(txn.quantity) || 0,
     price_per_unit: Number(txn.price_per_unit) || 0,
     fee: Number(txn.fee) || 0,
-    transaction_date: txn.transaction_date,
+    transaction_date: txn.transaction_date || localToday(),
     note: txn.note || '',
     category_id: txn.category_id && txn.category_id !== '0' ? Number(txn.category_id) : null,
     currency: cur,
