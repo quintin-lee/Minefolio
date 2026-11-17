@@ -46,7 +46,7 @@ char* jwt_generate_temp_token(csilk_ctx_t* c, int64_t user_id, int token_version
  * @brief 生成 IM 机器人绑定码 JWT (type: "im_bind")
  *
  * 仅用于 IM 网关 (QQ / 微信个人号) 回调 /api/im/:platform/{bind,chat}。
- * 有效期短 (默认300秒)，jwt_middleware 仅放行该类型令牌访问 /api/im/* 路径，
+ * 有效期短 (默认300秒)，jwt_middleware 仅放行该类型令牌访问 /api/im/ 路径，
  * 无法访问其他业务端点。
  *
  * @param[in,out] c csilk HTTP 上下文指针，可为 NULL

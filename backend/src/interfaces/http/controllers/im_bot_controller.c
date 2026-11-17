@@ -39,10 +39,22 @@ im_platform_valid(const char* p)
     return p && (strcmp(p, IM_PLATFORM_QQ) == 0 || strcmp(p, IM_PLATFORM_WECHAT) == 0);
 }
 
-static const char*
-im_platform_param(csilk_ctx_t* c)
+/**
+ * @brief 取 platform 并复制到栈 (防止后续 csilk_bind_json 覆写 csilk 内部参数缓冲)。
+ * @return 1 合法 (out 已填), 0 非法 (out 填 "")
+ */
+static int
+im_platform_param_safe(csilk_ctx_t* c, char* out, size_t sz)
 {
-    return csilk_get_param(c, "platform");
+    const char* p = csilk_get_param(c, "platform");
+    if (p) {
+        snprintf(out, sz, "%s", p);
+    }
+    if (im_platform_valid(out)) {
+        return 1;
+    }
+    out[0] = '\0';
+    return 0;
 }
 
 /**
@@ -139,8 +151,9 @@ api_im_bind(csilk_ctx_t* c)
         respond_unauthorized(c);
         return;
     }
-    const char* platform = im_platform_param(c);
-    if (!im_platform_valid(platform)) {
+    /* platform 在 csilk_bind_json 前 snapshot 到栈, 避免内部参数缓冲被 body 解析覆写 */
+    char platform_buf[16];
+    if (!im_platform_param_safe(c, platform_buf, sizeof(platform_buf))) {
         respond_bad_request(c, "未知的 IM 平台");
         return;
     }
@@ -154,23 +167,26 @@ api_im_bind(csilk_ctx_t* c)
 
     /* 防抢占: 该 im_user_id 若已绑定他人, 拒绝 — 不可用自己的绑定码改写他人绑定 */
     char    pre_scope[32] = "readonly";
-    int64_t pre_bound =
-        mf_im_bot_repo_lookup(db_get_pool(), platform, im_user_id, pre_scope, sizeof(pre_scope));
+    int64_t pre_bound = mf_im_bot_repo_lookup(
+        db_get_pool(), platform_buf, im_user_id, pre_scope, sizeof(pre_scope));
     if (pre_bound > 0 && pre_bound != user_id) {
         csilk_json_free(body);
         respond_error(c, 1004, "该 IM 账号已被其他用户绑定");
         return;
     }
 
-    int rc = mf_im_bot_repo_upsert(db_get_pool(), platform, im_user_id, user_id, "readonly");
+    int rc = mf_im_bot_repo_upsert(db_get_pool(), platform_buf, im_user_id, user_id, "readonly");
+    /* im_user_id 是 body 的借用指针, free 前复制到栈 */
+    char im_user_id_buf[128];
+    snprintf(im_user_id_buf, sizeof(im_user_id_buf), "%s", im_user_id);
     csilk_json_free(body);
     if (rc != 0) {
         respond_error(c, 500, "绑定失败");
         return;
     }
     csilk_json_t* data = csilk_json_object();
-    csilk_json_add_string(data, "platform", platform);
-    csilk_json_add_string(data, "im_user_id", im_user_id);
+    csilk_json_add_string(data, "platform", platform_buf);
+    csilk_json_add_string(data, "im_user_id", im_user_id_buf);
     csilk_json_add_string(data, "scope", "readonly");
     csilk_json_add_string(data, "message", "绑定成功，现在可以问我持仓/汇率了");
     respond_ok(c, data);
@@ -194,8 +210,9 @@ api_im_chat(csilk_ctx_t* c)
         respond_unauthorized(c);
         return;
     }
-    const char* platform = im_platform_param(c);
-    if (!im_platform_valid(platform)) {
+    /* platform 在 csilk_bind_json 前 snapshot 到栈, 避免内部参数缓冲被 body 解析覆写 */
+    char platform_buf[16];
+    if (!im_platform_param_safe(c, platform_buf, sizeof(platform_buf))) {
         respond_bad_request(c, "未知的 IM 平台");
         return;
     }
@@ -223,7 +240,7 @@ api_im_chat(csilk_ctx_t* c)
      * 否则拒绝 — 防止一个绑定码被未绑定的他人借用, 污染他人 IM 会话。 */
     char    scope[32] = "readonly";
     int64_t bound =
-        mf_im_bot_repo_lookup(db_get_pool(), platform, im_user_id, scope, sizeof(scope));
+        mf_im_bot_repo_lookup(db_get_pool(), platform_buf, im_user_id, scope, sizeof(scope));
     if (bound <= 0 || bound != user_id) {
         csilk_json_free(body);
         csilk_json_t* data = csilk_json_object();
@@ -240,9 +257,11 @@ api_im_chat(csilk_ctx_t* c)
 
     /* 会话映射: 固定标题定位该 IM 用户的会话 (与 App 数据统一) */
     char sess_title[128];
-    snprintf(sess_title, sizeof(sess_title), "IM: %s@%s", platform, im_user_id);
-    csilk_json_t* found = mf_ai_session_list(pool, user_id, 1, 50, NULL);
-    int64_t       session_id = 0;
+    snprintf(sess_title, sizeof(sess_title), "IM: %s@%s", platform_buf, im_user_id);
+    int64_t       list_total = 0;
+    csilk_json_t* found = mf_ai_session_list(pool, user_id, 1, 50, &list_total);
+    (void)list_total; /* 会话列表仅按 title 定位, 不用 total */
+    int64_t session_id = 0;
     if (found) {
         for (size_t i = 0; i < csilk_json_array_size(found); i++) {
             csilk_json_t* row = csilk_json_array_get(found, i);
