@@ -207,6 +207,17 @@ jwt_middleware_wrapper(csilk_ctx_t* c)
             return;
         }
     }
+    /* IM 绑定码 (type=im_bind) 仅放行 /api/im/* 路径，不得访问其他业务端点 */
+    if (token_type && strcmp(token_type, "im_bind") == 0) {
+        if (!path || strncmp(path, "/api/im/", 8) != 0) {
+            csilk_json_free(payload);
+            csilk_json_error(c,
+                             CSILK_STATUS_UNAUTHORIZED,
+                             "IM bind token is only valid for /api/im/* endpoints");
+            csilk_abort(c);
+            return;
+        }
+    }
 
     int64_t user_id = (int64_t)csilk_json_get_number(payload, "sub");
     int     jwt_v = (int)csilk_json_get_number(payload, "v");

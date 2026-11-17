@@ -43,6 +43,23 @@ char* jwt_generate_token(csilk_ctx_t* c, int64_t user_id, int token_version);
 char* jwt_generate_temp_token(csilk_ctx_t* c, int64_t user_id, int token_version, int expire_sec);
 
 /**
+ * @brief 生成 IM 机器人绑定码 JWT (type: "im_bind")
+ *
+ * 仅用于 IM 网关 (QQ / 微信个人号) 回调 /api/im/:platform/{bind,chat}。
+ * 有效期短 (默认300秒)，jwt_middleware 仅放行该类型令牌访问 /api/im/* 路径，
+ * 无法访问其他业务端点。
+ *
+ * @param[in,out] c csilk HTTP 上下文指针，可为 NULL
+ * @param user_id 目标用户 ID
+ * @param token_version 用户 Token 版本号
+ * @param expire_sec 有效期秒数（<=0 默认为 300）
+ *
+ * @return char* 堆分配的 JWT 字符串，调用方需 free()
+ */
+char*
+jwt_generate_im_bind_token(csilk_ctx_t* c, int64_t user_id, int token_version, int expire_sec);
+
+/**
  * @brief 从请求上下文中提取已由 jwt_middleware 校验并挂载的用户 ID
  *
  * 从上下文属性 "jwt_payload" 中安全读取 "sub" 声明，且不会销毁或消耗该载荷指针。
