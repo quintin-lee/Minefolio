@@ -517,6 +517,14 @@ target_link_libraries(test_report_services PRIVATE csilk crypto CURL::libcurl ${
 add_dependencies(test_report_services copy_assets)
 add_test(NAME test_report_services COMMAND test_report_services)
 
+add_executable(test_ai_news_privacy tests/unit/test_ai_news_privacy.c ${LIB_SOURCES})
+target_include_directories(test_ai_news_privacy PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_ai_news_privacy PRIVATE -UNDEBUG)
+target_link_libraries(test_ai_news_privacy PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_dependencies(test_ai_news_privacy copy_assets)
+add_test(NAME test_ai_news_privacy COMMAND test_ai_news_privacy)
+
+
 
 
 

@@ -43,6 +43,19 @@ exec_get_market_pulse(const ai_tool_t* tool, const ai_tool_context_t* ctx, const
     char uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)ctx->user_id);
 
+    int64_t ledger_id = 0;
+    if (args) {
+        const char* lid_str = csilk_json_get_string(args, "ledger_id");
+        if (lid_str && lid_str[0]) {
+            ledger_id = atoll(lid_str);
+        }
+    }
+    if (ledger_id <= 0 && ctx->metadata) {
+        ledger_id = db_get_int(ctx->metadata, "ledger_id");
+    }
+    char lid_str[32];
+    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
+
     csilk_json_t* result = NULL;
     if (date_str && date_str[0]) {
         /* 指定日期 */
@@ -50,8 +63,8 @@ exec_get_market_pulse(const ai_tool_t* tool, const ai_tool_context_t* ctx, const
             ctx->pool,
             "SELECT report_date, title, analysis, status, error_msg, model_used, "
             "       created_at FROM ai_news_reports "
-            "WHERE user_id=? AND report_date=? LIMIT 1",
-            (const char*[]){uid_str, date_str, NULL});
+            "WHERE user_id=? AND (? <= 0 OR ledger_id=?) AND report_date=? LIMIT 1",
+            (const char*[]){uid_str, lid_str, lid_str, date_str, NULL});
     } else {
         /* 最近 N 天 */
         char sql[512];
@@ -59,10 +72,11 @@ exec_get_market_pulse(const ai_tool_t* tool, const ai_tool_context_t* ctx, const
                  sizeof(sql),
                  "SELECT report_date, title, analysis, status, error_msg, model_used, "
                  "       created_at FROM ai_news_reports "
-                 "WHERE user_id=? AND status IN ('done','error') "
+                 "WHERE user_id=? AND (? <= 0 OR ledger_id=?) AND status IN ('done','error') "
                  "ORDER BY report_date DESC LIMIT %ld",
                  days);
-        result = csilk_db_query_param_json(ctx->pool, sql, (const char*[]){uid_str, NULL});
+        result = csilk_db_query_param_json(
+            ctx->pool, sql, (const char*[]){uid_str, lid_str, lid_str, NULL});
     }
 
     if (!result || csilk_json_array_size(result) == 0) {
