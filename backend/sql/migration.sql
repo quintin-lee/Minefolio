@@ -530,3 +530,55 @@ CREATE INDEX IF NOT EXISTS idx_transactions_asset_date ON transactions(asset_id,
 CREATE INDEX IF NOT EXISTS idx_balance_logs_user_date ON asset_balance_logs(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_daily_expenses_user_date ON daily_expenses(user_id, expense_date);
 
+-- AI 每日金融资讯与持仓隔离 (V024, V028)
+CREATE TABLE IF NOT EXISTS market_news_digests (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    digest_date     TEXT NOT NULL UNIQUE,
+    title           TEXT NOT NULL DEFAULT '',
+    macro_summary   TEXT NOT NULL DEFAULT '',
+    sector_impacts  TEXT NOT NULL DEFAULT '[]',
+    sources         TEXT NOT NULL DEFAULT '[]',
+    model_used      TEXT NOT NULL DEFAULT '',
+    token_cost      REAL NOT NULL DEFAULT 0.0,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_news_digests_date ON market_news_digests(digest_date DESC);
+
+CREATE TABLE IF NOT EXISTS ai_news_reports (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id           INTEGER NOT NULL,
+    ledger_id         INTEGER NOT NULL DEFAULT 0,
+    report_date       TEXT NOT NULL,
+    digest_id         INTEGER NOT NULL DEFAULT 0,
+    title             TEXT NOT NULL DEFAULT '',
+    summary           TEXT NOT NULL DEFAULT '',
+    analysis          TEXT NOT NULL DEFAULT '',
+    holdings_snapshot TEXT NOT NULL DEFAULT '[]',
+    affected_assets   TEXT NOT NULL DEFAULT '[]',
+    sources           TEXT NOT NULL DEFAULT '[]',
+    model_used        TEXT NOT NULL DEFAULT '',
+    token_cost        REAL NOT NULL DEFAULT 0.0,
+    status            TEXT NOT NULL DEFAULT 'pending',
+    error_msg         TEXT NOT NULL DEFAULT '',
+    created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(user_id, ledger_id, report_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_news_reports_user_ledger ON ai_news_reports(user_id, ledger_id, report_date DESC);
+
+-- IM 机器人绑定关系 (V027)
+CREATE TABLE IF NOT EXISTS im_bot_bindings (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    platform     TEXT NOT NULL,
+    im_user_id   TEXT NOT NULL,
+    mf_user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    scope        TEXT NOT NULL DEFAULT 'readonly',
+    enabled      INTEGER NOT NULL DEFAULT 1,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(platform, im_user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_im_bindings_mf ON im_bot_bindings(mf_user_id);
+
+
