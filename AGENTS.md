@@ -508,17 +508,20 @@ cd build && ctest --output-on-failure && cd ..
 
 Tests start real servers with temp SQLite DBs, exercise all API endpoints via curl/JSON, and verify database state directly with `sqlite3`. `test_ai_tool_call.sh`, `test_ai_truncate.sh` and `test_ai_loop_hardening.sh` also start `mock_ai_tool_server.js` (node) as their AI provider. Run before committing any changes.
 
-### Memory-Isolated ASan & cgroups v2 Testing
+### Memory-Isolated Build & Testing (MANDATORY Locally)
+
+**Rule: 本机编译与测试必须通过 `backend/tests/run_isolated.sh` 执行（cgroups v2 `systemd-run` 内存隔离 + ASan RSS 上限），禁止裸跑 `cmake --build ... --parallel` / `ctest` 不限并行、不限内存**——本机构建/ASan 测试曾导致主机内存不足。若环境不支持 cgroups v2（helper 自动降级为 `none`），至少显式限制并行度（`-j 4`）。
 
 To prevent ASan/UBSan builds or runaway allocations in tests from exhausting host RAM or swap:
 - **CMake Sanitizer Build**: `-DMINEFOLIO_SANITIZE=ON` enables `-fsanitize=address,undefined -fno-omit-frame-pointer -g` and generates `CTestCustom.cmake` with default `ASAN_OPTIONS="hard_rss_limit_mb=2048:detect_leaks=1:abort_on_error=1"`, `UBSAN_OPTIONS`, and `LSAN_OPTIONS` (`.lsan-suppressions`).
-- **cgroups v2 Isolation (`systemd-run`)**: `backend/tests/cgroup_helper.sh` wraps `./minefolio` test server launches via `systemd-run --user --scope -p MemoryMax=2G -p MemorySwapMax=0` (when systemd cgroups v2 is available). Use `backend/tests/run_isolated.sh` for safe builds and test runs:
+- **cgroups v2 Isolation (`systemd-run`)**: `backend/tests/cgroup_helper.sh` wraps `./minefolio` test server launches via `systemd-run --user --scope -p MemoryMax=2G -p MemorySwapMax=0` (when systemd cgroups v2 is available; disabled via `MINEFOLIO_ISOLATE_CGROUP=0`). Use `backend/tests/run_isolated.sh` for safe builds and test runs:
   ```bash
   ./backend/tests/run_isolated.sh build backend/build-asan     # capped parallel jobs & memory
   ./backend/tests/run_isolated.sh unit backend/build-asan      # ctest inside MemoryMax=4G, MemorySwapMax=0
   ./backend/tests/run_isolated.sh integration backend/build-asan
   ./backend/tests/run_isolated.sh -- ./backend/build-asan/test_ai_tools
   ```
+  Tunables: `-m/--mem <limit>` (cgroups MemoryMax, e.g. `2G`/`4G`), `-j/--jobs <N>` (default 4 on 32-core hosts), `--rss <MB>` (ASan `hard_rss_limit_mb`, default 2048); env `MINEFOLIO_TEST_MEM_MAX` / `MINEFOLIO_TEST_SWAP_MAX` override the scope limits.
 
 ### Frontend Tests
 
