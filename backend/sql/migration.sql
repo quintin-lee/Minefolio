@@ -369,24 +369,25 @@ CREATE TABLE IF NOT EXISTS exchange_rates (
     target_currency  TEXT NOT NULL,
     rate             DECIMAL(18,6) NOT NULL,
     updated_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    manual           INTEGER NOT NULL DEFAULT 0,
     UNIQUE (base_currency, target_currency)
 );
 CREATE INDEX IF NOT EXISTS idx_exchange_rates_pair ON exchange_rates(base_currency, target_currency);
 
--- 默认基准汇率种子数据
-INSERT OR IGNORE INTO exchange_rates (base_currency, target_currency, rate) VALUES
-('USD', 'CNY', 7.240000),
-('CNY', 'USD', 0.138122),
-('EUR', 'CNY', 7.850000),
-('CNY', 'EUR', 0.127389),
-('HKD', 'CNY', 0.925000),
-('CNY', 'HKD', 1.081081),
-('JPY', 'CNY', 0.048000),
-('CNY', 'JPY', 20.833333),
-('GBP', 'CNY', 9.180000),
-('CNY', 'GBP', 0.108932),
-('USDT', 'CNY', 7.250000),
-('CNY', 'USDT', 0.137931);
+-- 默认基准汇率种子数据 (manual=0: 仅作全新库无实时同步时的兑底, 非手动钉住值)
+INSERT OR IGNORE INTO exchange_rates (base_currency, target_currency, rate, manual) VALUES
+('USD', 'CNY', 7.240000, 0),
+('CNY', 'USD', 0.138122, 0),
+('EUR', 'CNY', 7.850000, 0),
+('CNY', 'EUR', 0.127389, 0),
+('HKD', 'CNY', 0.925000, 0),
+('CNY', 'HKD', 1.081081, 0),
+('JPY', 'CNY', 0.048000, 0),
+('CNY', 'JPY', 20.833333, 0),
+('GBP', 'CNY', 9.180000, 0),
+('CNY', 'GBP', 0.108932, 0),
+('USDT', 'CNY', 7.250000, 0),
+('CNY', 'USDT', 0.137931, 0);
 
 -- 汇率历史走势快照表
 CREATE TABLE IF NOT EXISTS exchange_rate_history (

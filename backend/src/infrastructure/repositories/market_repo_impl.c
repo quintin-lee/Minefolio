@@ -20,10 +20,10 @@ mf_market_repo_save_exchange_rate(void* pool, const char* currency, double rate)
 
     csilk_json_t* res = csilk_db_query_param_json(
         (csilk_db_pool_t*)pool,
-        "INSERT INTO exchange_rates (base_currency, target_currency, rate, updated_at) "
-        "VALUES (?, 'CNY', ?, CURRENT_TIMESTAMP) "
+        "INSERT INTO exchange_rates (base_currency, target_currency, rate, updated_at, manual) "
+        "VALUES (?, 'CNY', ?, CURRENT_TIMESTAMP, 1) "
         "ON CONFLICT(base_currency, target_currency) DO UPDATE SET rate = excluded.rate, "
-        "updated_at = CURRENT_TIMESTAMP",
+        "manual = 1, updated_at = CURRENT_TIMESTAMP",
         (const char*[]){currency, rate_str, NULL});
     if (res) {
         csilk_json_free(res);
@@ -284,39 +284,96 @@ mf_market_repo_get_all_exchange_rates(void* pool)
     if (!pool) {
         return NULL;
     }
-    const char* sql =
-        "SELECT base_currency as currency, rate FROM exchange_rates WHERE target_currency = 'CNY' "
-        "AND rate > 0 "
-        "UNION ALL "
-        "SELECT target_currency as currency, (1.0 / rate) as rate FROM exchange_rates "
-        "WHERE base_currency = 'CNY' AND rate > 0 "
-        "UNION ALL "
+
+    /* 权威源语义 (V026):
+     *  1. 基础集 = 实时同步表 exchange_rate_history 最新一行的 CNY 折算汇率
+     *     (由 scheduler 30min 自动刷新 / 手动 sync 写入), 这是页面展示的权威汇率。
+     *  2. 手动钉住 = exchange_rates 中 manual=1 的行 (用户显式 POST 覆盖), 仅对
+     *     已存在于基础集的币种做覆盖; manual=0 的 V007 种子行视为陈旧, 不再冒充手动值。
+     *
+     *  实现: 两条独立查询, 先装实时基础集, 再用手动表覆盖已命中 key (csilk_json_set)。
+     */
+    const char* live_sql =
         "SELECT target_currency as currency, rate FROM exchange_rate_history "
         "WHERE base_currency = 'CNY' AND rate_date = ("
-        "  SELECT MAX(rate_date) FROM exchange_rate_history WHERE base_currency = 'CNY') AND rate "
-        "> 0";
+        "  SELECT MAX(rate_date) FROM exchange_rate_history WHERE base_currency = 'CNY') "
+        "AND rate > 0";
 
-    csilk_json_t* rows =
-        csilk_db_query_param_json((csilk_db_pool_t*)pool, sql, (const char*[]){NULL});
     csilk_json_t* out = csilk_json_object();
     csilk_json_add_number(out, "CNY", 1.0);
     csilk_json_add_number(out, "RMB", 1.0);
 
-    if (rows && csilk_json_is_array(rows)) {
-        size_t n = csilk_json_array_size(rows);
+    csilk_json_t* live_rows =
+        csilk_db_query_param_json((csilk_db_pool_t*)pool, live_sql, (const char*[]){NULL});
+    if (live_rows && csilk_json_is_array(live_rows)) {
+        size_t n = csilk_json_array_size(live_rows);
         for (size_t i = 0; i < n; i++) {
-            csilk_json_t* r = csilk_json_array_get(rows, i);
+            csilk_json_t* r = csilk_json_array_get(live_rows, i);
             const char*   cur = csilk_json_get_string(r, "currency");
             double        rate = db_get_num(r, "rate");
             if (cur && cur[0] && rate > 0.0) {
-                if (!csilk_json_get(out, cur)) {
-                    csilk_json_add_number(out, cur, rate);
-                }
+                csilk_json_add_number(out, cur, rate);
             }
         }
     }
-    if (rows) {
-        csilk_json_free(rows);
+    if (live_rows) {
+        csilk_json_free(live_rows);
     }
+
+    /* 手动钉住层: 仅 manual=1 的行; csilk_json_add_number 底层 yyjson_mut_obj_add
+     * 对已存在 key 语义为覆盖, 故手动值天然压在实时基础集之上 (先到先得 -> 手动优先)。
+     * 仅当该币种已存在于实时基础集时才覆盖, 避免手动表凭空引入未知币种。 */
+    const char* manual_sql_final =
+        "SELECT base_currency as currency, rate FROM exchange_rates "
+        "WHERE target_currency = 'CNY' AND rate > 0 AND manual = 1 "
+        "UNION ALL "
+        "SELECT target_currency as currency, (1.0 / rate) as rate FROM exchange_rates "
+        "WHERE base_currency = 'CNY' AND rate > 0 AND manual = 1";
+
+    csilk_json_t* manual_rows =
+        csilk_db_query_param_json((csilk_db_pool_t*)pool, manual_sql_final, (const char*[]){NULL});
+    if (manual_rows && csilk_json_is_array(manual_rows)) {
+        size_t n = csilk_json_array_size(manual_rows);
+        for (size_t i = 0; i < n; i++) {
+            csilk_json_t* r = csilk_json_array_get(manual_rows, i);
+            const char*   cur = csilk_json_get_string(r, "currency");
+            double        rate = db_get_num(r, "rate");
+            if (cur && cur[0] && rate > 0.0 && csilk_json_get(out, cur)) {
+                csilk_json_add_number(out, cur, rate);
+            }
+        }
+    }
+    if (manual_rows) {
+        csilk_json_free(manual_rows);
+    }
+
+    /* 种子兑底层: 实时同步表与手动钉住层都缺失某币种时 (如全新库尚未同步 / 离线测试
+     * 环境 mock 禁用, exchange_rate_history 为空), 用 V007 预置的种子 (manual=0) 兑底,
+     * 保证页面始终有可用汇率值。已存在的 key (实时或手动) 不被种子覆盖。 */
+    const char* seed_sql =
+        "SELECT base_currency as currency, rate FROM exchange_rates "
+        "WHERE target_currency = 'CNY' AND rate > 0 AND manual = 0 "
+        "UNION ALL "
+        "SELECT target_currency as currency, (1.0 / rate) as rate FROM exchange_rates "
+        "WHERE base_currency = 'CNY' AND rate > 0 AND manual = 0";
+
+    csilk_json_t* seed_rows =
+        csilk_db_query_param_json((csilk_db_pool_t*)pool, seed_sql, (const char*[]){NULL});
+    if (seed_rows && csilk_json_is_array(seed_rows)) {
+        size_t n = csilk_json_array_size(seed_rows);
+        for (size_t i = 0; i < n; i++) {
+            csilk_json_t* r = csilk_json_array_get(seed_rows, i);
+            const char*   cur = csilk_json_get_string(r, "currency");
+            double        rate = db_get_num(r, "rate");
+            /* 仅当该币种尚未被实时或手动层填充时才补种子值 */
+            if (cur && cur[0] && rate > 0.0 && !csilk_json_get(out, cur)) {
+                csilk_json_add_number(out, cur, rate);
+            }
+        }
+    }
+    if (seed_rows) {
+        csilk_json_free(seed_rows);
+    }
+
     return out;
 }

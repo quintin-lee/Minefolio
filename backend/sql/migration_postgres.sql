@@ -367,6 +367,7 @@ CREATE TABLE IF NOT EXISTS exchange_rates (
     target_currency  VARCHAR(10) NOT NULL,
     rate             DOUBLE PRECISION NOT NULL,
     updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    manual           INTEGER NOT NULL DEFAULT 0,
     CONSTRAINT uq_exchange_rates UNIQUE (base_currency, target_currency)
 );
 CREATE INDEX IF NOT EXISTS idx_exchange_rates_pair ON exchange_rates(base_currency, target_currency);

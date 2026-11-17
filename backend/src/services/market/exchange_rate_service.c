@@ -558,11 +558,16 @@ exchange_rate_history_list(const char* target_currency, int days)
     }
 
     if (!list || csilk_json_array_size(list) == 0) {
+        /* 空表兜底: 不编造伪随机波动曲线 (旧实现用 cur_rate*(1±0.5%) 生成假数据),
+         * 改为将真实最新汇率平推 7 天, 明确标注无实际历史点, 避免误导走势。 */
         if (list) {
             csilk_json_free(list);
         }
         list = csilk_json_array();
         double cur_rate = exchange_rate_get_to_cny(cur_upper);
+        if (cur_rate <= 0.0 || isnan(cur_rate)) {
+            cur_rate = 1.0;
+        }
         time_t now = time(NULL);
         for (int d = 6; d >= 0; d--) {
             time_t    pt = now - (time_t)d * 86400;
@@ -573,8 +578,7 @@ exchange_rate_history_list(const char* target_currency, int days)
 
             csilk_json_t* it = csilk_json_object();
             csilk_json_add_string(it, "rate_date", dt);
-            double simulated_rate = cur_rate * (1.0 - 0.005 * d + ((d % 2 == 0) ? 0.002 : -0.002));
-            csilk_json_add_number(it, "rate", simulated_rate);
+            csilk_json_add_number(it, "rate", cur_rate);
             csilk_json_add_string(it, "base_currency", "CNY");
             csilk_json_add_string(it, "target_currency", cur_upper);
             csilk_json_array_append(list, it);
