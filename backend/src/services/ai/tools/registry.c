@@ -21,6 +21,8 @@ static size_t          s_tool_count = 0;
 static bool            s_initialized = false;
 static csilk_ai_tool_t s_csilk_tools[MAX_TOOLS];
 static size_t          s_csilk_tool_count = 0;
+static csilk_ai_tool_t s_csilk_readonly_tools[MAX_TOOLS];
+static size_t          s_csilk_readonly_count = 0;
 
 /* 工具表为只读注册：启动后只读，find/list 无需持锁 */
 static pthread_once_t  s_registry_once = PTHREAD_ONCE_INIT;
@@ -161,4 +163,30 @@ ai_tool_get_csilk_definitions(size_t* count)
         *count = s_csilk_tool_count;
     }
     return s_csilk_tools;
+}
+
+const csilk_ai_tool_t*
+ai_tool_get_readonly_csilk_definitions(size_t* count)
+{
+    ai_tool_registry_init();
+    s_csilk_readonly_count = 0;
+    for (size_t i = 0; i < s_tool_count; i++) {
+        if (s_registered_tools[i].internal_only) {
+            continue; /* 内部专用工具不暴露给 LLM */
+        }
+        if (s_registered_tools[i].is_mutation) {
+            continue; /* 只读入口 (IM 机器人) 仅放行非动账工具 */
+        }
+        s_csilk_readonly_tools[s_csilk_readonly_count].type = "function";
+        s_csilk_readonly_tools[s_csilk_readonly_count].function.name = s_registered_tools[i].name;
+        s_csilk_readonly_tools[s_csilk_readonly_count].function.description =
+            s_registered_tools[i].description;
+        s_csilk_readonly_tools[s_csilk_readonly_count].function.parameters_json =
+            s_registered_tools[i].parameters_schema;
+        s_csilk_readonly_count++;
+    }
+    if (count) {
+        *count = s_csilk_readonly_count;
+    }
+    return s_csilk_readonly_tools;
 }

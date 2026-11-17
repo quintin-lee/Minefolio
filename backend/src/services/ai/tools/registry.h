@@ -88,6 +88,13 @@ const ai_tool_t** ai_tool_list_all(size_t* count);
  */
 const csilk_ai_tool_t* ai_tool_get_csilk_definitions(size_t* count);
 
+/**
+ * @brief 获取仅非动账（只读）工具的 csilk_ai_tool_t 数组定义。
+ *        供 IM 机器人等只读入口使用: 过滤掉 is_mutation 与 internal_only 工具,
+ *        使 LLM 只能调用查询类工具 (持仓/汇率/交易历史等), 无法发起写操作。
+ */
+const csilk_ai_tool_t* ai_tool_get_readonly_csilk_definitions(size_t* count);
+
 #ifdef __cplusplus
 }
 #endif
