@@ -740,13 +740,100 @@ const segments = computed<Segment[]>(() => {
   const text = debouncedContent.value || ''
   if (!text) return []
 
+  // 流式阶段：尾部活跃段落以 streaming-text 轻量渲染，仅对代码块/Action 做轻量切分，
+  // 不对整个正文跑 marked.parse 与 DOMPurify.sanitize，避免高频 RAF 下 O(N) 全文重解析导致卡顿
+  if (props.isStreaming && props.enableBuffer !== false) {
+    const result: Segment[] = []
+    let segIdx = 0
+    const blockRegex = /```([\w\-+#.]+)?\s*\n([\s\S]*?)(?:```|$)/g
+    let lastIndex = 0
+    let match: RegExpExecArray | null
+
+    while ((match = blockRegex.exec(text)) !== null) {
+      const matchStart = match.index
+      const fullMatch = match[0]
+      const lang = (match[1] || '').trim().toLowerCase()
+      const code = match[2] ?? ''
+      const hasClosed = fullMatch.endsWith('``')
+
+      let isAction = false
+      let actionObj: ProposedAction | null = null
+      if (lang === 'action') {
+        try {
+          actionObj = normalizeActionCard(JSON.parse(code))
+          if (actionObj && (actionObj.action_type === 'daily_expense' || actionObj.action_type === 'transfer')) {
+            isAction = true
+          }
+        } catch { /* ignore */ }
+      } else if (lang === 'json' && (code.includes('"action_type"') || code.includes('"daily_expense"') || code.includes('"transfer"'))) {
+        try {
+          const parsed = normalizeActionCard(JSON.parse(code))
+          if (parsed && (parsed.action_type === 'daily_expense' || parsed.action_type === 'transfer')) {
+            actionObj = parsed
+            isAction = true
+          }
+        } catch { /* ignore */ }
+      }
+
+      const isMermaid = lang === 'mermaid'
+
+      if (matchStart > lastIndex) {
+        const markdownBefore = text.slice(lastIndex, matchStart)
+        if (markdownBefore.trim()) {
+          result.push({
+            id: `md-${segIdx++}`,
+            type: 'streaming-text',
+            content: markdownBefore.trim(),
+          })
+        }
+      }
+
+      if (isAction && actionObj) {
+        if (actionObj.data?.draft_token && executedTokens.value.has(actionObj.data.draft_token)) {
+          actionObj.status = 'executed'
+        }
+        result.push({
+          id: `act-${segIdx++}`,
+          type: 'action',
+          content: code.trim(),
+          actionData: actionObj,
+        })
+      } else if (isMermaid) {
+        if (hasClosed) {
+          result.push({ id: `mmd-${segIdx++}`, type: 'mermaid', content: code.trim() })
+        } else {
+          result.push({ id: `mmd-stream-${segIdx++}`, type: 'streaming-mermaid', content: code })
+        }
+      } else {
+        result.push({
+          id: `code-${segIdx++}`,
+          type: 'code',
+          content: hasClosed ? code.trim() : code,
+          lang: lang || undefined,
+        })
+      }
+      lastIndex = matchStart + fullMatch.length
+    }
+
+    if (lastIndex < text.length) {
+      const trailing = text.slice(lastIndex)
+      if (trailing.length > 0) {
+        result.push({ id: 'stream-tail', type: 'streaming-text', content: trailing })
+      }
+    }
+
+    if (result.length === 0) {
+      result.push({ id: 'stream-tail', type: 'streaming-text', content: text })
+    }
+    return result
+  }
+
+  // 非流式阶段：全文量做一次 Markdown 解析与渲染
   const result: Segment[] = []
   let lastIndex = 0
   const blockRegex = /```([\w\-+#.]+)?\s*\n([\s\S]*?)(?:```|$)/g
   let match: RegExpExecArray | null
   let segIdx = 0
-
-  const streaming = props.isStreaming && props.enableBuffer !== false
 
   while ((match = blockRegex.exec(text)) !== null) {
     const matchStart = match.index
@@ -844,58 +931,25 @@ const segments = computed<Segment[]>(() => {
   if (lastIndex < text.length) {
     const trailing = text.slice(lastIndex)
     if (trailing.length > 0) {
-      if (streaming) {
-        // 如果尾部积累了多个完整段落（以双换行 \n\n 隔开），将已完成段落提前作为 Markdown 渲染，
-        // 仅将正在流式输入的最后一个活跃段落保持为 streaming-text，避免整体在结束瞬间产生突兀的样式跳跃！
-        const lastDoubleNewline = trailing.lastIndexOf('\n\n')
-        if (lastDoubleNewline !== -1) {
-          const completedPart = trailing.slice(0, lastDoubleNewline).trim()
-          const activeTail = trailing.slice(lastDoubleNewline + 2)
-          if (completedPart) {
-            result.push({
-              id: `md-${segIdx++}`,
-              type: 'markdown',
-              content: completedPart,
-              renderedHtml: renderMarkdown(completedPart),
-            })
-          }
-          result.push({
-            id: 'stream-tail',
-            type: 'streaming-text',
-            content: activeTail,
-          })
-        } else {
-          result.push({
-            id: 'stream-tail',
-            type: 'streaming-text',
-            content: trailing,
-          })
-        }
-      } else {
-        if (trailing.trim()) {
-          result.push({
-            id: `md-${segIdx++}`,
-            type: 'markdown',
-            content: trailing.trim(),
-            renderedHtml: renderMarkdown(trailing.trim()),
-          })
-        }
+      if (trailing.trim()) {
+        result.push({
+          id: `md-${segIdx++}`,
+          type: 'markdown',
+          content: trailing.trim(),
+          renderedHtml: renderMarkdown(trailing.trim()),
+        })
       }
     }
   }
 
   // 保证基本文本段已放入 result
   if (result.length === 0 && text) {
-    if (streaming) {
-      result.push({ id: 'stream-tail', type: 'streaming-text', content: text })
-    } else if (text.trim()) {
-      result.push({
-        id: `md-${segIdx++}`,
-        type: 'markdown',
-        content: text,
-        renderedHtml: renderMarkdown(text),
-      })
-    }
+    result.push({
+      id: `md-${segIdx++}`,
+      type: 'markdown',
+      content: text,
+      renderedHtml: renderMarkdown(text),
+    })
   }
 
   // 兜底回退：如果模型调用了 propose_daily_expense 或 propose_transfer 并成功生成了草案（带 draft_token），
@@ -935,14 +989,14 @@ const segments = computed<Segment[]>(() => {
     }
   }
 
-  return result.length > 0 ? result : streaming
-    ? [{ id: 'stream-tail', type: 'streaming-text', content: text }]
-    : [{
-        id: 'md-0',
-        type: 'markdown',
-        content: text,
-        renderedHtml: renderMarkdown(text),
-      }]
+  return result.length > 0 ? result : [
+    {
+      id: 'md-0',
+      type: 'markdown',
+      content: text,
+      renderedHtml: renderMarkdown(text),
+    }
+  ]
 })
 </script>
 
