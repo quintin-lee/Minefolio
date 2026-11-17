@@ -222,7 +222,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import { assetsApi } from '@/api/assets'
@@ -267,6 +267,19 @@ const availableAssets = ref<Asset[]>([])
 const loading = ref(false)
 const cardStatus = ref<'pending' | 'executing' | 'executed' | 'cancelled'>(
   props.actionData.status === 'executed' ? 'executed' : (props.actionData.status === 'cancelled' ? 'cancelled' : 'pending')
+)
+
+watch(
+  () => props.actionData.status,
+  (newStatus) => {
+    if (newStatus === 'executed') {
+      cardStatus.value = 'executed'
+    } else if (newStatus === 'cancelled') {
+      cardStatus.value = 'cancelled'
+    } else if (newStatus === 'pending') {
+      cardStatus.value = 'pending'
+    }
+  }
 )
 
 const form = reactive({

@@ -286,6 +286,7 @@ const emit = defineEmits<{
   (e: 'entity-hover', payload: { el: HTMLElement; type: 'asset' | 'account'; id: string; name: string; rect: DOMRect }): void
   (e: 'entity-leave'): void
   (e: 'entity-click', payload: { el: HTMLElement; type: 'asset' | 'account'; id: string; name: string; rect: DOMRect }): void
+  (e: 'action-executed', payload: { draftToken: string }): void
 }>()
 
 function isExtracted(segId: string): boolean {
@@ -628,9 +629,17 @@ onUnmounted(() => {
   if (copyThinkingTimer) clearTimeout(copyThinkingTimer)
 })
 
+// 记录本组件生命周期内已确认执行的 draft_token，以便 segments computed 重算时保持"已执行"状态
+const executedTokens = ref(new Set<string>())
+
 function onActionExecuted(seg: Segment, action: ProposedAction) {
   if (seg.actionData) {
     seg.actionData.status = 'executed'
+  }
+  const token = action.data?.draft_token
+  if (token) {
+    executedTokens.value = new Set([...executedTokens.value, token])
+    emit('action-executed', { draftToken: token })
   }
 }
 
@@ -787,6 +796,9 @@ const segments = computed<Segment[]>(() => {
     }
 
     if (isAction && actionObj) {
+      if (actionObj.data?.draft_token && executedTokens.value.has(actionObj.data.draft_token)) {
+        actionObj.status = 'executed'
+      }
       result.push({
         id: `act-${segIdx++}`,
         type: 'action',
@@ -905,6 +917,9 @@ const segments = computed<Segment[]>(() => {
                 ...(resObj as Record<string, unknown>),
               }
               const normalized = normalizeActionCard(rawObj)
+              if (normalized.data?.draft_token && executedTokens.value.has(normalized.data.draft_token)) {
+                normalized.status = 'executed'
+              }
               result.push({
                 id: `act-tool-${segIdx++}`,
                 type: 'action',

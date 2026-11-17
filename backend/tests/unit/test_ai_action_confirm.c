@@ -430,6 +430,64 @@ main(int argc, char** argv)
         free(prop_tf);
     }
 
+    /* ----------------------------------------------------------------- */
+    /* Test 6: tool_calls column update & proposed status in content    */
+    /* ----------------------------------------------------------------- */
+    printf("[Test 6] Verifying tool_calls column update & proposed status in content...\n");
+    {
+        const char* tc_token = "mf_v2.v2|1|1|confirm_proposed_expense|dummy_hash|2|1732000000|nctest6|1732000300.dummymac";
+
+        /* 6a: draft_token in tool_calls only (natural language content without code block) */
+        char tc_json[2048];
+        snprintf(tc_json, sizeof(tc_json),
+                 "[{\"id\":\"call_test6\",\"name\":\"propose_daily_expense\",\"result\":\"{\\\"action_type\\\":\\\"daily_expense\\\",\\\"propose_success\\\":true,\\\"amount\\\":30.0,\\\"draft_token\\\":\\\"%s\\\"}\"}]",
+                 tc_token);
+
+        csilk_json_free(csilk_db_query_param_json(
+            pool,
+            "INSERT INTO ai_messages (id, session_id, role, content, tool_calls) VALUES (3, 1, 'assistant', '已为您生成记账卡片，请点击确认。', ?)",
+            (const char*[]){tc_json, NULL}));
+
+        ai_message_mark_action_executed(pool, user_id, tc_token);
+
+        csilk_json_t* check3 = csilk_db_query_param_json(
+            pool,
+            "SELECT tool_calls FROM ai_messages WHERE id = ?",
+            (const char*[]){"3", NULL});
+        assert(check3 != NULL && csilk_json_array_size(check3) > 0);
+        const char* upd_tc = csilk_json_get_string(csilk_json_array_get(check3, 0), "tool_calls");
+        assert(upd_tc != NULL);
+        assert(strstr(upd_tc, "\\\"status\\\":\\\"executed\\\"") != NULL || strstr(upd_tc, "\\\"status\\\": \\\"executed\\\"") != NULL);
+        csilk_json_free(check3);
+        printf("  ✅ tool_calls column successfully updated with 'executed' status\n");
+
+        /* 6b: content with 'proposed' status */
+        const char* prop_token = "mf_v2.v2|1|1|confirm_proposed_expense|dummy_hash2|2|1732000000|nctest6b|1732000300.dummymac";
+        char prop_content[1024];
+        snprintf(prop_content, sizeof(prop_content),
+                 "```action\n{\"action_type\":\"daily_expense\",\"amount\":20,\"status\":\"proposed\",\"draft_token\":\"%s\"}\n```",
+                 prop_token);
+
+        csilk_json_free(csilk_db_query_param_json(
+            pool,
+            "INSERT INTO ai_messages (id, session_id, role, content) VALUES (4, 1, 'assistant', ?)",
+            (const char*[]){prop_content, NULL}));
+
+        ai_message_mark_action_executed(pool, user_id, prop_token);
+
+        csilk_json_t* check4 = csilk_db_query_param_json(
+            pool,
+            "SELECT content FROM ai_messages WHERE id = ?",
+            (const char*[]){"4", NULL});
+        assert(check4 != NULL && csilk_json_array_size(check4) > 0);
+        const char* upd_prop = csilk_json_get_string(csilk_json_array_get(check4, 0), "content");
+        assert(upd_prop != NULL);
+        assert(strstr(upd_prop, "\"status\":\"executed\"") != NULL || strstr(upd_prop, "\"status\": \"executed\"") != NULL);
+        assert(strstr(upd_prop, "\"status\":\"proposed\"") == NULL);
+        csilk_json_free(check4);
+        printf("  ✅ Content with 'proposed' status successfully updated to 'executed'\n");
+    }
+
     if (saved_draft_token) {
         free(saved_draft_token);
     }

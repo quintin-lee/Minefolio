@@ -353,6 +353,7 @@
                         @entity-hover="handleEntityHover"
                         @entity-leave="handleEntityLeave"
                         @entity-click="handleEntityClick"
+                        @action-executed="handleActionExecuted(msg, $event)"
                       />
                     </div>
                     <div v-if="msg.usage" class="message-usage">
@@ -679,6 +680,34 @@ function handleEntityClick(payload: { el: HTMLElement; type: 'asset' | 'account'
     popoverCollision.value = collision
     popoverTargetRect.value = payload.rect
     popoverVisible.value = true
+  }
+}
+
+function handleActionExecuted(msg: any, payload: { draftToken: string }) {
+  if (!msg || !payload?.draftToken) return
+  const token = payload.draftToken
+  if (msg.content && msg.content.includes(token)) {
+    msg.content = msg.content
+      .replace(/"status"\s*:\s*"pending"/g, '"status": "executed"')
+      .replace(/"status"\s*:\s*"proposed"/g, '"status": "executed"')
+  }
+  if (msg.tool_calls && Array.isArray(msg.tool_calls)) {
+    for (const tc of msg.tool_calls) {
+      if (tc.result && typeof tc.result === 'string' && tc.result.includes(token)) {
+        try {
+          const parsed = JSON.parse(tc.result)
+          parsed.status = 'executed'
+          tc.result = JSON.stringify(parsed)
+        } catch {
+          // ignore
+        }
+      } else if (tc.result && typeof tc.result === 'object') {
+        const obj = tc.result as Record<string, unknown>
+        if (obj.draft_token === token) {
+          obj.status = 'executed'
+        }
+      }
+    }
   }
 }
 
