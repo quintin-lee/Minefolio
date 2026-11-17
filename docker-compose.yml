@@ -39,6 +39,9 @@ services:
       - /usr/share/zoneinfo/Asia/Shanghai:/etc/localtime:ro
       - minefolio-data:/app/data
       - ./docker/db-wait.sh:/usr/local/bin/db-wait.sh:ro
+    # 资源限制: 防异常分配/连接风暴拖垮宿主 (正常峰值远低于限, 上限只兜底)。
+    mem_limit: 512m
+    cpus: 1.0
     restart: unless-stopped
 
   # 可选 PostgreSQL 服务 —— 仅当 postgres profile 激活时创建。
@@ -61,6 +64,10 @@ services:
       timeout: 5s
       retries: 20
       start_period: 10s
+    # PG 16 不感知 cgroup, 默认 shared_buffers 偏小; 显式 128MB, 其余查询内存走 work_mem。
+    command: ["postgres", "-c", "shared_buffers=128MB"]
+    mem_limit: 512m
+    cpus: 1.0
     restart: unless-stopped
 
   nginx:
@@ -71,6 +78,9 @@ services:
     depends_on:
       minefolio:
         condition: service_healthy
+    # 静态 SPA + 反代, 占用几乎不涨, 256m 封顶即可。
+    mem_limit: 256m
+    cpus: 0.5
     restart: unless-stopped
 
 volumes:
