@@ -58,6 +58,20 @@
 
           <div v-if="report.summary" class="report-summary">{{ report.summary }}</div>
 
+          <!-- 脱敏持仓概览 -->
+          <div v-if="parseHoldings(report.holdings_snapshot).length > 0" class="report-holdings-row">
+            <span class="holdings-label">分析基准组合 (脱敏权重)：</span>
+            <div class="holdings-pills">
+              <span
+                v-for="(h, idx) in parseHoldings(report.holdings_snapshot)"
+                :key="idx"
+                class="holding-pill"
+              >
+                {{ h.name }} <small>{{ h.weight }}</small>
+              </span>
+            </div>
+          </div>
+
           <div
             v-if="expandedId === report.id && report.status === 'done' && report.analysis"
             class="report-body"
@@ -160,6 +174,16 @@ async function expandReport(report: AiNewsReport) {
     if (fetchingId.value === report.id) {
       fetchingId.value = -1
     }
+  }
+}
+
+function parseHoldings(snapshotStr?: string): Array<{ name: string; category: string; weight: string }> {
+  if (!snapshotStr || snapshotStr === '[]') return []
+  try {
+    const arr = JSON.parse(snapshotStr)
+    return Array.isArray(arr) ? arr : []
+  } catch {
+    return []
   }
 }
 
@@ -378,6 +402,44 @@ onUnmounted(() => {
   color: var(--el-text-color-secondary);
   line-height: 1.6;
   margin-bottom: 8px;
+}
+
+.report-holdings-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.holdings-label {
+  color: var(--el-text-color-placeholder);
+  font-size: 12px;
+}
+
+.holdings-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.holding-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--el-fill-color);
+  color: var(--el-text-color-regular);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.holding-pill small {
+  color: var(--el-color-primary);
+  font-family: var(--font-mono, monospace);
+  font-weight: 500;
 }
 
 .report-body {

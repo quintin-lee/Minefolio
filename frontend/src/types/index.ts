@@ -792,11 +792,15 @@ export interface GlobalIndexItem {
 /** AI 每日市场脉搏报告 */
 export interface AiNewsReport {
   id: number
+  user_id?: number
+  ledger_id?: number
+  digest_id?: number
   report_date: string
   title: string
   summary: string
   /** 列表轻量投影不含 analysis/sources; 仅展开单条按需取回后存在 */
   analysis?: string
+  holdings_snapshot?: string
   affected_assets: string
   sources?: string
   model_used: string
