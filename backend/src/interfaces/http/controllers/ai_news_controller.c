@@ -34,9 +34,26 @@ api_ai_news_list(csilk_ctx_t* c)
         }
     }
 
+    int         offset = 0;
+    const char* offset_str = csilk_get_query(c, "offset");
+    if (offset_str && offset_str[0]) {
+        int parsed = atoi(offset_str);
+        if (parsed > 0) {
+            offset = parsed;
+        }
+    }
+
     csilk_db_pool_t* pool = db_get_pool();
-    csilk_json_t*    result = ai_news_list(pool, user_id, limit);
-    respond_ok(c, result);
+    int              has_more = 0;
+    csilk_json_t*    result = ai_news_list(pool, user_id, limit, offset, &has_more);
+    if (!result) {
+        result = csilk_json_array();
+    }
+    /* 包一层信封: { list, has_more } —— 分页加载需要 has_more 判断是否还有下一页 */
+    csilk_json_t* envelope = csilk_json_object();
+    csilk_json_add_array(envelope, "list", result);
+    csilk_json_add_int(envelope, "has_more", has_more);
+    respond_ok(c, envelope);
 }
 
 static void

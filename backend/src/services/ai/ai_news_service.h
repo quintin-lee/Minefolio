@@ -6,9 +6,12 @@ extern "C" {
 #endif
 
 /**
- * @brief 获取用户最近 N 天的 AI 资讯分析报告
+ * @brief 获取用户最近 N 天的 AI 资讯分析报告（轻量投影，不含 analysis/sources 大字段）
+ * @param offset  分页偏移 (>=0)
+ * @param out_has_more 若非 NULL, 输出是否还有下一页 (1/0)
  */
-csilk_json_t* ai_news_list(csilk_db_pool_t* pool, int64_t user_id, int limit);
+csilk_json_t*
+ai_news_list(csilk_db_pool_t* pool, int64_t user_id, int limit, int offset, int* out_has_more);
 
 /**
  * @brief 获取用户指定日期的报告

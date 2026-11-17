@@ -178,24 +178,51 @@ ai_news_execute_analysis(csilk_db_pool_t* pool, int64_t user_id, int64_t report_
 }
 
 csilk_json_t*
-ai_news_list(csilk_db_pool_t* pool, int64_t user_id, int limit)
+ai_news_list(csilk_db_pool_t* pool, int64_t user_id, int limit, int offset, int* out_has_more)
 {
+    if (out_has_more) {
+        *out_has_more = 0;
+    }
     if (!pool || user_id <= 0) {
         return csilk_json_array();
     }
     if (limit <= 0 || limit > 30) {
         limit = 7;
     }
+    if (offset < 0) {
+        offset = 0;
+    }
     char uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+
+    /* 列表轻量化: 不返回 analysis/sources 大字段 (单条正文可达数 KB, 随 limit 线性膨胀),
+     * 正文与来源改为展开时按需走 ai_news_get_by_date 单取, 列表恒定小载荷。 */
     char sql[256];
     snprintf(sql,
              sizeof(sql),
-             "SELECT id, report_date, title, summary, analysis, affected_assets, "
-             "       sources, model_used, token_cost, status, error_msg, created_at "
-             "FROM ai_news_reports WHERE user_id=? ORDER BY report_date DESC LIMIT %d",
-             limit);
-    return csilk_db_query_param_json(pool, sql, (const char*[]){uid_str, NULL});
+             "SELECT id, report_date, title, summary, affected_assets, "
+             "       model_used, token_cost, status, error_msg, created_at "
+             "FROM ai_news_reports WHERE user_id=? ORDER BY report_date DESC LIMIT %d OFFSET %d",
+             limit,
+             offset);
+    csilk_json_t* rows = csilk_db_query_param_json(pool, sql, (const char*[]){uid_str, NULL});
+
+    /* has_more: 多取 1 行的存在性判定 (limit+1 再砍 1), 避免额外 COUNT 全表。 */
+    char more_sql[256];
+    snprintf(more_sql,
+             sizeof(more_sql),
+             "SELECT 1 FROM ai_news_reports WHERE user_id=? ORDER BY report_date DESC "
+             "LIMIT 1 OFFSET %d",
+             offset + limit);
+    csilk_json_t* more = csilk_db_query_param_json(pool, more_sql, (const char*[]){uid_str, NULL});
+    int has_more = (more && csilk_json_is_array(more) && csilk_json_array_size(more) > 0) ? 1 : 0;
+    if (out_has_more) {
+        *out_has_more = has_more;
+    }
+    if (more) {
+        csilk_json_free(more);
+    }
+    return rows;
 }
 
 csilk_json_t*
