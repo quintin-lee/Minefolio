@@ -245,6 +245,7 @@ test_auto_baseline_existing_database(void)
                "CREATE TABLE daily_expenses (id INTEGER PRIMARY KEY, user_id INTEGER, ledger_id INTEGER, expense_date TEXT);"
                "CREATE TABLE asset_balance_logs (id INTEGER PRIMARY KEY, user_id INTEGER, asset_id INTEGER, delta DECIMAL(18,2), created_at TIMESTAMP);"
                "CREATE TABLE exchange_rate_history (id INTEGER PRIMARY KEY, rate_date TEXT, base_currency TEXT, target_currency TEXT, rate DECIMAL(18,6));"
+               "CREATE TABLE exchange_rates (id INTEGER PRIMARY KEY, base_currency TEXT, target_currency TEXT, rate DECIMAL(18,6), updated_at TIMESTAMP);"
                "CREATE TABLE category_seed_state (user_id INTEGER PRIMARY KEY);"
                "INSERT INTO category_seed_state (user_id) VALUES (1);") == 0);
 
