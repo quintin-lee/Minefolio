@@ -241,6 +241,13 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Runtime packages
 ############################################################
 
+# 运行时包：
+# - 核心 C 服务依赖 (libuv1/libyaml/libsqlite3/...) + tini/curl (健康检查)
+# - python3: 供 stdio transport 的 .py MCP server 解释器 (mcp_client.c 自动注入 python3)
+#
+# stdio MCP server 由 fork+execve 在容器内拉起 (mcp_client.c), 解释器缺失则 spawn 失败。
+# .js MCP server 需要 node+npx (见下方 Node.js 安装段); .py 需要 python3; .sh 需 bash (已内置)。
+
 RUN --mount=type=bind,source=hosts,target=/etc/hosts \
     sed -i 's@archive.ubuntu.com@mirrors.tuna.tsinghua.edu.cn@g; s@security.ubuntu.com@mirrors.tuna.tsinghua.edu.cn@g; s@ports.ubuntu.com@mirrors.tuna.tsinghua.edu.cn@g' /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list 2>/dev/null || true \
     && rm -f /etc/apt/apt.conf.d/80proxy \
@@ -258,7 +265,26 @@ RUN --mount=type=bind,source=hosts,target=/etc/hosts \
     ca-certificates \
     tini \
     curl \
+    python3 \
     && rm -rf /var/lib/apt/lists/*
+
+# Node.js 20 + npm + npx (供 stdio transport 的 .js MCP server 解释器; mcp_client.c 自动注入 node)
+# 取自 tuna 的 nodejs-release 镜像 (nodejs 官方二进制 tarball, hosts 已固定 101.6.15.130 可达),
+# 与前端构建 node:20 对齐。Ubuntu 24.04 apt 自带 nodejs 为 EOL 的 v18 且无 npx, 故不直接用 apt。
+# 解包后把 bin/lib/include/share 拷入 /usr/local (node/npm/npx 为真实文件, 非软链), 再删临时目录,
+# 使 node/npm/npx 进入默认 PATH, resolve_exec_on_path() 可解析; 同时不保留 tarball 冗余目录减小镜像体积。
+# 用 .tar.gz (gzip 为 tar 内置解压), 无需额外 xz 包; Ubuntu 24.04 默认 tar 无 xz 解压器。
+ARG NODE_VERSION=20.18.1
+RUN --mount=type=bind,source=hosts,target=/etc/hosts \
+    curl --noproxy '*' -fsSL -o /tmp/node.tar.gz \
+         https://mirrors.tuna.tsinghua.edu.cn/nodejs-release/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.gz \
+    && tar -xzf /tmp/node.tar.gz -C /opt \
+    && cp -a /opt/node-v${NODE_VERSION}-linux-x64/bin /usr/local/ \
+    && cp -a /opt/node-v${NODE_VERSION}-linux-x64/lib /usr/local/ \
+    && cp -a /opt/node-v${NODE_VERSION}-linux-x64/include /usr/local/ \
+    && cp -a /opt/node-v${NODE_VERSION}-linux-x64/share /usr/local/ \
+    && rm -rf /opt/node-v${NODE_VERSION}-linux-x64 /tmp/node.tar.gz \
+    && node --version && npm --version && npx --version
 
 
 
