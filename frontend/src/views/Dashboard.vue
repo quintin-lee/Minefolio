@@ -905,4 +905,21 @@ onMounted(loadDashboard)
   font-size: 12px;
   color: var(--mf-text-muted);
 }
+
+@media (max-width: 768px) {
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .header-title h2 {
+    white-space: nowrap;
+    word-break: keep-all;
+  }
+  .header-currency-selector {
+    width: 100%;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+}
 </style>

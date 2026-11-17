@@ -1174,4 +1174,44 @@ async function handleImport() {
   opacity: 0;
   transform: translate(-50%, 20px);
 }
+
+@media (max-width: 768px) {
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .header-title h2 {
+    white-space: nowrap;
+    word-break: keep-all;
+  }
+  .header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    width: 100%;
+  }
+  .header-actions .action-btn {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+  .filter-panel .premium-filters .el-form-item {
+    width: 100%;
+    margin-right: 0;
+    margin-bottom: 12px;
+  }
+  .filter-select,
+  .filter-date.el-date-editor--daterange {
+    width: 100% !important;
+    max-width: 100%;
+  }
+  .transactions-table :deep(.el-table__fixed-right),
+  .transactions-table :deep(.el-table__fixed-right-patch),
+  :deep(.el-table-fixed-column--right) {
+    position: static !important;
+  }
+  .transactions-table :deep(.el-table__body-wrapper) {
+    overflow-x: auto !important;
+  }
+}
 </style>

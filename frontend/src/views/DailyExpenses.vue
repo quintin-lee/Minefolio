@@ -930,4 +930,34 @@ async function handleImport() {
     overflow: visible;
   }
 }
+
+@media (max-width: 768px) {
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .header-title h2 {
+    white-space: nowrap;
+    word-break: keep-all;
+  }
+  .header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    width: 100%;
+  }
+  .header-actions .action-btn {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+  .table-container :deep(.el-table__fixed-right),
+  .table-container :deep(.el-table__fixed-right-patch),
+  :deep(.el-table-fixed-column--right) {
+    position: static !important;
+  }
+  .table-container :deep(.el-table__body-wrapper) {
+    overflow-x: auto !important;
+  }
+}
 </style>

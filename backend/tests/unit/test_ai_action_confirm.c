@@ -179,6 +179,7 @@ main(int argc, char** argv)
     /* ----------------------------------------------------------------- */
     printf("[Test 2] Propose daily expense -> Confirm execution...\n");
     char* saved_draft_token = NULL;
+    char* saved_date = NULL;
     {
         /* 1. Call propose_daily_expense */
         char* prop_res = ai_tool_dispatch(
@@ -195,6 +196,9 @@ main(int argc, char** argv)
         assert(dt != NULL && dt[0] != '\0');
         saved_draft_token = strdup(dt);
         const char* prop_date = csilk_json_get_string(prop_obj, "date");
+        if (prop_date) {
+            saved_date = strdup(prop_date);
+        }
 
         /* 2. Simulate client confirm body */
         csilk_json_t* client_body = csilk_json_object();
@@ -263,7 +267,7 @@ main(int argc, char** argv)
         csilk_json_t* replay_args = csilk_json_object();
         csilk_json_add_number(replay_args, "amount", 85.0);
         csilk_json_add_string(replay_args, "type", "expense");
-        csilk_json_add_string(replay_args, "date", "2026-11-16");
+        csilk_json_add_string(replay_args, "date", saved_date ? saved_date : "2026-11-17");
         csilk_json_add_number(replay_args, "category_id", (double)cat);
         csilk_json_add_number(replay_args, "asset_id", (double)a1);
         csilk_json_add_string(replay_args, "note", "下午茶");
@@ -276,6 +280,9 @@ main(int argc, char** argv)
         printf("  ✅ Replay blocked with expected error: %s\n", replay_res);
 
         free(replay_res);
+        if (saved_date) {
+            free(saved_date);
+        }
         csilk_json_free(replay_args);
     }
 

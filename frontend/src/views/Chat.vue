@@ -3346,6 +3346,18 @@ onUnmounted(() => {
     max-width: 100%;
     max-width: 100cqi;
   }
+  .input-hint {
+    display: none !important;
+  }
+  .char-count {
+    white-space: nowrap;
+    margin-right: 6px;
+    font-size: 10px;
+  }
+  .input-thinking-btn {
+    padding: 4px 8px;
+    font-size: 12px;
+  }
   .messages {
     padding: 16px 12px 20px;
     max-width: 100%;

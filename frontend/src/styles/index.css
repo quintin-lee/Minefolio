@@ -1500,3 +1500,17 @@ html.light .mf-skeleton-block {
   );
   background-size: 200% 100%;
 }
+
+@media (max-width: 768px) {
+  .el-message {
+    top: auto !important;
+    bottom: 84px !important;
+    max-width: 88vw;
+    border-radius: var(--mf-radius-lg);
+  }
+  .el-table .el-table__header-wrapper tr th.el-table-fixed-column--right,
+  .el-table .el-table__body-wrapper tr td.el-table-fixed-column--right,
+  .el-table .el-table__footer-wrapper tr td.el-table-fixed-column--right {
+    position: static !important;
+  }
+}
