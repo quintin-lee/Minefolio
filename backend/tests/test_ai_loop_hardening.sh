@@ -57,7 +57,11 @@ check() {
 # --- mock OpenAI server ------------------------------------------------------
 # start_mock <extra env assignments...>
 start_mock() {
-  [ -n "$MOCK_PID" ] && kill "$MOCK_PID" 2>/dev/null || true
+  if [ -n "$MOCK_PID" ]; then
+    kill "$MOCK_PID" 2>/dev/null || true
+    wait "$MOCK_PID" 2>/dev/null || true
+    MOCK_PID=""
+  fi
   : > "$MOCK_LOG"
   env MOCK_PORT="$MOCK_PORT" "$@" \
     node "$SCRIPT_DIR/mock_ai_tool_server.js" > "$MOCK_LOG" 2>&1 &

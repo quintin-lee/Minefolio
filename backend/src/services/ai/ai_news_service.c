@@ -613,6 +613,21 @@ ai_news_scheduler_tick(csilk_db_pool_t* pool)
     if (!pool) {
         return;
     }
+    /* 仅当系统中存在有效投资类资产时，才触发每日公共大盘分析，避免空库/测试环境无谓消耗 Token 与并发干扰 */
+    csilk_json_t* has_assets = csilk_db_query_json(
+        pool,
+        "SELECT 1 FROM assets a "
+        "LEFT JOIN categories c ON c.id = a.category_id "
+        "WHERE COALESCE(c.asset_type, '') NOT IN ('cash','loan','credit_card','other_liability') "
+        "LIMIT 1");
+    if (!has_assets || csilk_json_array_size(has_assets) == 0) {
+        if (has_assets) {
+            csilk_json_free(has_assets);
+        }
+        return;
+    }
+    csilk_json_free(has_assets);
+
     /* 阶段一：每日自动生成全站公共大盘摘要（Stage 1 全局唯一执行） */
     char date_str[32];
     get_local_date_str(date_str, sizeof(date_str));

@@ -8,7 +8,7 @@ source "$SCRIPT_DIR/cgroup_helper.sh"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 BUILD_DIR="${MINEFOLIO_BUILD_DIR:-$REPO_DIR/build}"
 BIN="$BUILD_DIR/minefolio"
-PORT=8080
+PORT="${PORT:-18092}"
 BASE="http://127.0.0.1:$PORT/api"
 
 PASS=0
@@ -48,6 +48,7 @@ JAR="$DB.jar"
 rm -f "$JAR"
 (
   cd "$REPO_DIR"
+  PORT="$PORT" \
   MINEFOLIO_PORT="$PORT" \
   MINEFOLIO_DB_DRIVER=sqlite \
   MINEFOLIO_DB_DSN="$DB" \
