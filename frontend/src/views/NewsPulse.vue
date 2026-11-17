@@ -56,7 +56,16 @@
 
           <div class="report-title">{{ report.title || '每日市场脉搏' }}</div>
 
-          <div v-if="expandedId === report.id && report.status === 'done' && report.analysis" class="report-body" v-html="renderMarkdown(report.analysis)"></div>
+          <div v-if="report.summary" class="report-summary">{{ report.summary }}</div>
+
+          <div
+            v-if="expandedId === report.id && report.status === 'done' && report.analysis"
+            class="report-body"
+            v-html="renderMarkdown(report.analysis)"
+          ></div>
+          <div v-else-if="expandedId === report.id && report.status === 'done' && fetchingId === report.id" class="report-pending">
+            <el-skeleton :rows="3" animated />
+          </div>
           <div v-else-if="report.status === 'pending'" class="report-pending">
             <el-skeleton :rows="3" animated />
           </div>
@@ -64,6 +73,13 @@
             {{ report.error_msg || '生成失败，请重试' }}
           </div>
           <div v-else class="report-expand-hint">点击展开分析报告</div>
+        </div>
+
+        <!-- 无限滚动 / 加载更多 -->
+        <div v-if="hasMore" class="load-more-row">
+          <el-button plain :loading="loadingMore" @click="loadMoreReports">
+            加载更多报告
+          </el-button>
         </div>
       </div>
 
@@ -82,12 +98,19 @@ import { ElMessage } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import { marked } from 'marked'
 import type { AiNewsReport } from '@/types'
-import { listNewsReports, triggerNewsAnalysis } from '@/api/ai-news'
+import { listNewsReports, triggerNewsAnalysis, getNewsReportByDate } from '@/api/ai-news'
 
 const loading = ref(false)
+const loadingMore = ref(false)
 const triggering = ref(false)
+const hasMore = ref(false)
+const PAGE_SIZE = 10
 const reports = ref<AiNewsReport[]>([])
 const expandedId = ref<number>(-1)
+
+/** 展开时按需拉取的正文缓存 (report_date -> 完整 markdown), 避免重复请求与重复渲染 */
+const analysisCache = ref<Map<string, string>>(new Map())
+const fetchingId = ref<number>(-1)
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
@@ -98,9 +121,45 @@ function formatReportDate(dateStr: string): string {
   return `${d.getMonth() + 1}月${d.getDate()}日 周${days[d.getDay()]}`
 }
 
-function expandReport(report: AiNewsReport) {
-  if (report.status === 'done') {
-    expandedId.value = expandedId.value === report.id ? -1 : report.id
+/**
+ * 展开报告: 列表是轻量投影 (无 analysis), 此处按需拉取完整正文并缓存。
+ * 若该条已带 analysis (如轮询/旧数据), 直接渲染不再请求。
+ */
+async function expandReport(report: AiNewsReport) {
+  if (report.status !== 'done') {
+    return
+  }
+  if (expandedId.value === report.id) {
+    expandedId.value = -1
+    return
+  }
+  expandedId.value = report.id
+  const cached = analysisCache.value.get(report.report_date)
+  if (cached !== undefined) {
+    report.analysis = cached
+    return
+  }
+  if (report.analysis && report.analysis.length > 0) {
+    analysisCache.value.set(report.report_date, report.analysis)
+    return
+  }
+  if (fetchingId.value !== -1) return
+  fetchingId.value = report.id
+  try {
+    const full = await getNewsReportByDate(report.report_date)
+    const body = full.analysis || ''
+    analysisCache.value.set(report.report_date, body)
+    if (expandedId.value === report.id) {
+      report.analysis = body
+    }
+  } catch {
+    if (expandedId.value === report.id) {
+      report.analysis = ''
+    }
+  } finally {
+    if (fetchingId.value === report.id) {
+      fetchingId.value = -1
+    }
   }
 }
 
@@ -108,10 +167,13 @@ function renderMarkdown(md: string): string {
   return marked.parse(md, { async: false, breaks: true }) as string
 }
 
+/** 首屏加载第一页 */
 async function loadReports() {
   loading.value = true
   try {
-    reports.value = await listNewsReports(7)
+    const res = await listNewsReports(PAGE_SIZE, 0)
+    reports.value = res.list
+    hasMore.value = res.has_more
   } catch (err: unknown) {
     const e = err as { response?: { data?: { message?: string } }; message?: string }
     ElMessage.error(e?.response?.data?.message || e?.message || '加载报告列表失败')
@@ -120,13 +182,35 @@ async function loadReports() {
   }
 }
 
+/** 无限滚动 / 点击“加载更多”时追加下一页 */
+async function loadMoreReports() {
+  if (loadingMore.value || !hasMore.value) {
+    return
+  }
+  loadingMore.value = true
+  try {
+    const res = await listNewsReports(PAGE_SIZE, reports.value.length)
+    const seen = new Set(reports.value.map((r) => r.id))
+    for (const item of res.list) {
+      if (!seen.has(item.id)) {
+        reports.value.push(item)
+      }
+    }
+    hasMore.value = res.has_more
+  } catch {
+    /* 静默: 加载更多失败保留已有数据 */
+  } finally {
+    loadingMore.value = false
+  }
+}
+
 async function handleTrigger() {
   triggering.value = true
   try {
     await triggerNewsAnalysis()
     ElMessage.success('已触发 AI 分析，请稍候…')
-    /* 开始轮询等待报告完成 */
     startPolling()
+    /* 刷新首屏 (最新一条 pending -> 完成后转为 done) */
     await loadReports()
   } catch (err: unknown) {
     const e = err as { response?: { data?: { message?: string } }; message?: string }
@@ -146,8 +230,9 @@ function startPolling() {
       return
     }
     try {
-      const list = await listNewsReports(1)
-      if (list.length > 0 && list[0] && list[0].status !== 'pending') {
+      /* 轻量轮询: limit=1 只探顶部一条, 不拉全量正文 */
+      const res = await listNewsReports(1, 0)
+      if (res.list.length > 0 && res.list[0] && res.list[0].status !== 'pending') {
         stopPolling()
         await loadReports()
         ElMessage.success('AI 分析报告已生成完毕')
@@ -242,6 +327,9 @@ onUnmounted(() => {
   padding: 18px 20px;
   cursor: pointer;
   transition: all 0.2s;
+  /* 数据量增大时: 视口外卡片跳过布局/渲染, 降低首帧与滚动成本 (零依赖优化) */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 120px;
 }
 
 .report-card:hover {
@@ -285,6 +373,13 @@ onUnmounted(() => {
   margin-bottom: 10px;
 }
 
+.report-summary {
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.6;
+  margin-bottom: 8px;
+}
+
 .report-body {
   margin-top: 12px;
   padding: 14px 16px;
@@ -299,6 +394,12 @@ onUnmounted(() => {
 
 .report-pending {
   margin-top: 10px;
+}
+
+.load-more-row {
+  display: flex;
+  justify-content: center;
+  padding: 6px 0;
 }
 
 .report-error {

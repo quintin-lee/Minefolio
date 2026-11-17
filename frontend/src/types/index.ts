@@ -795,14 +795,21 @@ export interface AiNewsReport {
   report_date: string
   title: string
   summary: string
-  analysis: string
+  /** 列表轻量投影不含 analysis/sources; 仅展开单条按需取回后存在 */
+  analysis?: string
   affected_assets: string
-  sources: string
+  sources?: string
   model_used: string
   token_cost: number
   status: 'pending' | 'done' | 'error'
   error_msg: string
   created_at: string
+}
+
+/** 市场脉搏列表分页响应信封 */
+export interface AiNewsListResponse {
+  list: AiNewsReport[]
+  has_more: boolean
 }
 
 /** 全球大盘实时聚合响应数据模型 */
