@@ -1,10 +1,10 @@
 /**
  * @file ai_news_controller.c
- * @brief AI 每日资讯分析报告 HTTP 端点
+ * @brief AI 每日资讯分析报告 HTTP 端点 (多账本 RBAC 与持仓隔离)
  *
- * GET  /api/ai/news?limit=7          获取最近报告列表
- * GET  /api/ai/news/:date            获取指定日期报告
- * POST /api/ai/news/trigger          手动触发一次分析
+ * GET  /api/ai/news?limit=7          获取指定账本最近报告列表
+ * GET  /api/ai/news/:date            获取指定账本指定日期报告
+ * POST /api/ai/news/trigger          手动触发指定账本分析
  */
 #include "interfaces/http/controllers/ai_news_controller.h"
 #include "services/ai/ai_news_service.h"
@@ -21,7 +21,11 @@ api_ai_news_list(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
     if (user_id < 0) {
-        respond_unauthorized(c);
+        return;
+    }
+
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "viewer");
+    if (ledger_id < 0) {
         return;
     }
 
@@ -45,7 +49,7 @@ api_ai_news_list(csilk_ctx_t* c)
 
     csilk_db_pool_t* pool = db_get_pool();
     int              has_more = 0;
-    csilk_json_t*    result = ai_news_list(pool, user_id, limit, offset, &has_more);
+    csilk_json_t* result = ai_news_list_ledger(pool, user_id, ledger_id, limit, offset, &has_more);
     if (!result) {
         result = csilk_json_array();
     }
@@ -61,7 +65,11 @@ api_ai_news_get_date(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
     if (user_id < 0) {
-        respond_unauthorized(c);
+        return;
+    }
+
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "viewer");
+    if (ledger_id < 0) {
         return;
     }
 
@@ -72,7 +80,7 @@ api_ai_news_get_date(csilk_ctx_t* c)
     }
 
     csilk_db_pool_t* pool = db_get_pool();
-    csilk_json_t*    result = ai_news_get_by_date(pool, user_id, date_str);
+    csilk_json_t*    result = ai_news_get_by_date_ledger(pool, user_id, ledger_id, date_str);
     if (!result || csilk_json_array_size(result) == 0) {
         respond_not_found(c);
         csilk_json_free(result);
@@ -88,12 +96,16 @@ api_ai_news_trigger(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
     if (user_id < 0) {
-        respond_unauthorized(c);
+        return;
+    }
+
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "viewer");
+    if (ledger_id < 0) {
         return;
     }
 
     csilk_db_pool_t* pool = db_get_pool();
-    int64_t          report_id = ai_news_trigger(pool, user_id);
+    int64_t          report_id = ai_news_trigger_ledger(pool, user_id, ledger_id);
     if (report_id < 0) {
         respond_error(c, 1004, "Failed to trigger news analysis");
         return;
@@ -101,6 +113,7 @@ api_ai_news_trigger(csilk_ctx_t* c)
 
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_int(resp, "report_id", report_id);
+    csilk_json_add_int(resp, "ledger_id", ledger_id);
     csilk_json_add_string(resp, "message", "分析任务已触发");
     respond_ok(c, resp);
 }

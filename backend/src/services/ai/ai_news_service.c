@@ -398,13 +398,17 @@ ai_news_execute_analysis(csilk_db_pool_t* pool,
 
     char id_str[32];
     snprintf(id_str, sizeof(id_str), "%lld", (long long)report_id);
+    char did_str[32];
+    snprintf(did_str, sizeof(did_str), "%lld", (long long)digest_id);
+    const char* snapshot_to_save = holdings_snapshot_str ? holdings_snapshot_str : "[]";
 
     if (res.status.code != AI_RUNTIME_ERR_OK || !res.final_content) {
         const char* err_msg = res.status.detail[0] ? res.status.detail : res.status.message;
         csilk_db_query_param_json(
             pool,
-            "UPDATE ai_news_reports SET status='error', error_msg=? WHERE id=? AND user_id=?",
-            (const char*[]){err_msg, id_str, uid_str, NULL});
+            "UPDATE ai_news_reports SET status='error', error_msg=?, holdings_snapshot=?, "
+            "digest_id=? WHERE id=? AND user_id=?",
+            (const char*[]){err_msg, snapshot_to_save, did_str, id_str, uid_str, NULL});
         free(res.final_content);
         free(holdings_snapshot_str);
         if (trace) {
@@ -416,10 +420,6 @@ ai_news_execute_analysis(csilk_db_pool_t* pool,
     /* 5. 更新用户报告为 done 并持久化 holdings_snapshot 和 digest_id */
     char title_buf[128];
     snprintf(title_buf, sizeof(title_buf), "每日市场脉搏 — %s", date_str);
-    char did_str[32];
-    snprintf(did_str, sizeof(did_str), "%lld", (long long)digest_id);
-
-    const char* snapshot_to_save = holdings_snapshot_str ? holdings_snapshot_str : "[]";
 
     csilk_db_query_param_json(
         pool,

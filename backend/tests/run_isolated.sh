@@ -118,6 +118,7 @@ case "$MODE" in
       test_mcp.sh
       test_mcp_server.sh
       test_report_isolation.sh
+      test_ai_news_isolation.sh
     )
     for s in "${SUITES[@]}"; do
       echo ">>> Running $s (isolated MemoryMax=$MINEFOLIO_TEST_MEM_MAX, MemorySwapMax=$MINEFOLIO_TEST_SWAP_MAX)..."
