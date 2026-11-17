@@ -51,12 +51,16 @@ mf_im_bot_repo_upsert(csilk_db_pool_t* pool,
     const char* eff_scope = (scope && scope[0]) ? scope : "readonly";
     char        uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)mf_user_id);
+    /* 原子 upsert:
+     * - 新绑定 (无冲突) → INSERT
+     * - 冲突且旧行 mf_user_id == 本人 → 幂等 UPDATE (重绑, 仅刷新 scope/enabled)
+     * - 冲突且旧行 mf_user_id != 本人 → WHERE 过滤不命中, 不覆盖他人绑定 (防抢占, 无 TOCTOU) */
     csilk_json_t* res = csilk_db_query_param_json(
         pool,
         "INSERT INTO im_bot_bindings (platform, im_user_id, mf_user_id, scope, enabled) "
         "VALUES (?, ?, ?, ?, 1) "
-        "ON CONFLICT(platform, im_user_id) DO UPDATE SET mf_user_id = excluded.mf_user_id, "
-        "scope = excluded.scope, enabled = 1",
+        "ON CONFLICT(platform, im_user_id) DO UPDATE SET scope = excluded.scope, enabled = 1 "
+        "WHERE im_bot_bindings.mf_user_id = excluded.mf_user_id",
         (const char*[]){platform, im_user_id, uid_str, eff_scope, NULL});
     int rc = 0;
     if (res) {

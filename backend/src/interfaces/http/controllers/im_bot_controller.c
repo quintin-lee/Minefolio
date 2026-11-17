@@ -152,6 +152,16 @@ api_im_bind(csilk_ctx_t* c)
         return;
     }
 
+    /* 防抢占: 该 im_user_id 若已绑定他人, 拒绝 — 不可用自己的绑定码改写他人绑定 */
+    char    pre_scope[32] = "readonly";
+    int64_t pre_bound =
+        mf_im_bot_repo_lookup(db_get_pool(), platform, im_user_id, pre_scope, sizeof(pre_scope));
+    if (pre_bound > 0 && pre_bound != user_id) {
+        csilk_json_free(body);
+        respond_error(c, 1004, "该 IM 账号已被其他用户绑定");
+        return;
+    }
+
     int rc = mf_im_bot_repo_upsert(db_get_pool(), platform, im_user_id, user_id, "readonly");
     csilk_json_free(body);
     if (rc != 0) {
@@ -208,11 +218,13 @@ api_im_chat(csilk_ctx_t* c)
         return;
     }
 
-    /* 能力锚点: 无绑定 → 拒绝查询, 引导绑定 */
+    /* 能力锚点: 无绑定 → 拒绝查询, 引导绑定。
+     * 一致性校验: 该 im_user_id 绑定的 mf_user_id 必须等于当前 JWT 身份 (ctx_user_id),
+     * 否则拒绝 — 防止一个绑定码被未绑定的他人借用, 污染他人 IM 会话。 */
     char    scope[32] = "readonly";
     int64_t bound =
         mf_im_bot_repo_lookup(db_get_pool(), platform, im_user_id, scope, sizeof(scope));
-    if (bound <= 0) {
+    if (bound <= 0 || bound != user_id) {
         csilk_json_free(body);
         csilk_json_t* data = csilk_json_object();
         csilk_json_add_string(

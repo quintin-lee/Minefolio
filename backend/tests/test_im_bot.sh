@@ -123,6 +123,25 @@ req DELETE /im/bindings '{"platform":"qq","im_user_id":"qq_user_001"}' "$TOKEN" 
 DB_ROW2=$(sqlite3 "SELECT count(*) FROM im_bot_bindings WHERE platform='qq' AND im_user_id='qq_user_001';" 2>/dev/null)
 check "unbind: 行已删除" "$DB_ROW2" "0"
 
+# --- Case 9: 抢占防护 (防他人绑定码改写本 im_user_id 的归属) ---
+# 第一用户重新绑定 qq_user_001
+req POST /im/qq/bind '{"im_user_id":"qq_user_001"}' "$BIND_TOKEN" > /dev/null
+# 第二用户: register (RSA 加密密码) + login + 绑定码
+OTHER_PUB=$(rsa_encrypt "other1234")
+REG=$(req POST /auth/register "{\"username\":\"imbot2\",\"password_enc\":\"$OTHER_PUB\"}")
+OTHER_TOKEN=$(echo "$REG" | jq -r '.data.token // empty')
+if [ -z "$OTHER_TOKEN" ]; then
+  LOGIN2=$(req POST /auth/login '{"username":"imbot2","password":"other1234"}')
+  OTHER_TOKEN=$(echo "$LOGIN2" | jq -r '.data.token // empty')
+fi
+OTHER_BIND=$(req POST /im/bindings/token "" "$OTHER_TOKEN")
+OTHER_BIND_TOKEN=$(echo "$OTHER_BIND" | jq -r '.data.bind_token // empty')
+# 第二用户尝试绑同一 im_user_id → 已被第一用户绑定 → 1004
+STEAL=$(req POST /im/qq/bind '{"im_user_id":"qq_user_001"}' "$OTHER_BIND_TOKEN")
+grep_check "抢占防护: 他人绑定码被拒 (1004)" '"code":1004' "$STEAL"
+# 原绑定未被改写 (仍 1 行)
+check "抢占防护: 归属未改写 (仍 1 行)" "$(sqlite3 "SELECT count(*) FROM im_bot_bindings WHERE platform='qq' AND im_user_id='qq_user_001';" 2>/dev/null)" "1"
+
 echo "----------------------"
 echo "PASS: $PASS  FAIL: $FAIL"
 [ "$FAIL" -eq 0 ]
