@@ -19,6 +19,15 @@
 
     <ServerConfigDialog v-model="showServerDialog" @saved="handleServerSaved" />
 
+    <el-alert
+      v-if="auth.isInitialized === false"
+      title="系统尚未初始化"
+      type="warning"
+      description="检测到服务端尚未创建管理员账号，请先通过桌面端浏览器访问 /setup 完成系统初始设置后即可使用移动端。"
+      show-icon
+      :closable="false"
+    />
+
     <div v-if="isTwoFactorStep" class="two-factor-mobile-box">
       <p class="two-factor-hint">当前账号已开启两步验证，请输入身份验证器动态码或 8 位应急备用码：</p>
       <el-form label-position="top">

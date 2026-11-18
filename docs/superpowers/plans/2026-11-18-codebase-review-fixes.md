@@ -146,14 +146,14 @@
 - Modify: `frontend/src/router/mobile.ts`
 - Run: 全量回归测试脚本
 
-- [ ] **Step 1: 优化移动端路由守卫未初始化逻辑**
+- [x] **Step 1: 优化移动端路由守卫未初始化逻辑**
   - 在 `frontend/src/router/mobile.ts` 中，当 `auth.isInitialized === false` 时，引导至移动端登录/初始化说明或 `/m/login` 时展示明确引导，避免死循环重定向。
-- [ ] **Step 2: 前端测试与生产构建验证**
+- [x] **Step 2: 前端测试与生产构建验证**
   - `npm --prefix frontend test`
   - `npm --prefix frontend run build`
-- [ ] **Step 3: 全量隔离环境单元测试 (70 项)**
+- [x] **Step 3: 全量隔离环境单元测试 (70 项)**
   - `./backend/tests/run_isolated.sh unit backend/build`
-- [ ] **Step 4: 全量隔离环境端到端集成测试 (14 项)**
+- [x] **Step 4: 全量隔离环境端到端集成测试 (14 项)**
   - `./backend/tests/run_isolated.sh integration backend/build`
-- [ ] **Step 5: 提交代码并交付**
+- [x] **Step 5: 提交代码并交付**
   - Git commit: `fix(mobile): optimize uninitialized route guard and verify regression suites`
