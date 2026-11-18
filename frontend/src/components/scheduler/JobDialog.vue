@@ -2,7 +2,7 @@
   <el-dialog
     v-model="visible"
     :title="isEdit ? '编辑定时任务' : '新建定时任务'"
-    width="680px"
+    :width="dialogWidth"
     destroy-on-close
     :close-on-click-modal="false"
   >
@@ -35,7 +35,7 @@
       <!-- Base Info -->
       <div class="form-section-title">基本信息</div>
       <el-row :gutter="16">
-        <el-col :span="16">
+        <el-col :xs="24" :sm="16">
           <el-form-item label="任务名称" prop="name">
             <el-input
               v-model="form.name"
@@ -45,7 +45,7 @@
             />
           </el-form-item>
         </el-col>
-        <el-col :span="8">
+        <el-col :xs="24" :sm="8">
           <el-form-item label="触发机制" prop="trigger_type">
             <el-select v-model="form.trigger_type" style="width: 100%">
               <el-option label="Cron 定时触发" value="cron" />
@@ -68,7 +68,7 @@
       <div class="form-section-title">触发与调度配置</div>
       <template v-if="form.trigger_type === 'cron'">
         <el-form-item label="常用周期快捷选择">
-          <el-radio-group v-model="cronPreset" size="small" @change="applyCronPreset">
+          <el-radio-group v-model="cronPreset" size="small" class="cron-presets-group" @change="applyCronPreset">
             <el-radio-button value="0 8 * * *">每天早晨 08:00</el-radio-button>
             <el-radio-button value="0 18 * * 1-5">工作日收盘 18:00</el-radio-button>
             <el-radio-button value="0 21 * * *">每天晚间 21:00</el-radio-button>
@@ -81,6 +81,7 @@
           <el-input
             v-model="form.cron_expr"
             placeholder="例如: 0 8 * * *"
+            class="cron-input"
             @input="onCronInput"
           >
             <template #prepend>
@@ -113,6 +114,33 @@
 
       <template v-if="activeTab === 'ai_prompt'">
         <el-form-item label="AI 提示词 (Prompt)" prop="ai_prompt">
+          <div class="prompt-templates-row">
+            <span class="template-label">推荐指令参考:</span>
+            <el-tag
+              size="small"
+              effect="plain"
+              class="prompt-tag"
+              @click="applyPromptTemplate('closing_summary')"
+            >
+              每日收盘复盘
+            </el-tag>
+            <el-tag
+              size="small"
+              effect="plain"
+              class="prompt-tag"
+              @click="applyPromptTemplate('risk_audit')"
+            >
+              资产风险与集中度
+            </el-tag>
+            <el-tag
+              size="small"
+              effect="plain"
+              class="prompt-tag"
+              @click="applyPromptTemplate('macro_news')"
+            >
+              宏观热点与异动
+            </el-tag>
+          </div>
           <el-input
             v-model="form.ai_prompt"
             type="textarea"
@@ -122,7 +150,7 @@
         </el-form-item>
 
         <el-row :gutter="16">
-          <el-col :span="12">
+          <el-col :xs="24" :sm="12" class="switch-col">
             <div class="switch-card">
               <div class="switch-info">
                 <span class="switch-title">注入持仓上下文</span>
@@ -131,7 +159,7 @@
               <el-switch v-model="form.with_holdings" />
             </div>
           </el-col>
-          <el-col :span="12">
+          <el-col :xs="24" :sm="12" class="switch-col">
             <div class="switch-card">
               <div class="switch-info">
                 <span class="switch-title">全网联网搜索</span>
@@ -153,7 +181,7 @@
         </el-form-item>
 
         <el-row :gutter="16">
-          <el-col :span="12">
+          <el-col :xs="24" :sm="12" class="switch-col">
             <div class="switch-card">
               <div class="switch-info">
                 <span class="switch-title">包含持仓明细清单</span>
@@ -162,7 +190,7 @@
               <el-switch v-model="form.include_positions" />
             </div>
           </el-col>
-          <el-col :span="12">
+          <el-col :xs="24" :sm="12" class="switch-col">
             <div class="switch-card">
               <div class="switch-info">
                 <span class="switch-title">包含近 7 日收支记录</span>
@@ -180,14 +208,14 @@
         <el-radio-group v-model="form.delivery_channel" class="delivery-group">
           <el-radio-button value="user_default">
             <span class="radio-label">
-              <Icon icon="ph:wechat-logo-bold" class="radio-icon" />
-              个人默认微信通道 (推荐)
+              <Icon icon="ph:wechat-logo-bold" class="radio-icon wechat-icon" />
+              个人微信 (默认通道)
             </span>
           </el-radio-button>
           <el-radio-button value="silent_db">
             <span class="radio-label">
               <Icon icon="ph:archive-box-bold" class="radio-icon" />
-              静默归档 (仅记日志不推微信)
+              静默归档 (仅记日志)
             </span>
           </el-radio-button>
           <el-radio-button value="custom_webhook">
@@ -226,7 +254,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import { schedulerApi } from '@/api/scheduler'
@@ -241,6 +269,21 @@ const saving = ref(false)
 const editingJobId = ref<number | null>(null)
 const activeTab = ref<JobType>('ai_prompt')
 const cronPreset = ref('0 8 * * *')
+const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1024)
+
+const updateWindowWidth = () => {
+  windowWidth.value = window.innerWidth
+}
+
+onMounted(() => {
+  window.addEventListener('resize', updateWindowWidth)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', updateWindowWidth)
+})
+
+const dialogWidth = computed(() => (windowWidth.value < 768 ? '94vw' : '680px'))
 
 const isEdit = computed(() => editingJobId.value !== null)
 
@@ -324,6 +367,25 @@ const onCronInput = () => {
     cronPreset.value = 'custom'
   } else {
     cronPreset.value = form.cron_expr.trim()
+  }
+}
+
+const applyPromptTemplate = (tpl: string) => {
+  if (tpl === 'closing_summary') {
+    form.ai_prompt =
+      '总结今日大盘与全球核心指数走势，结合我当前的持仓资产净值变动，生成一份条理清晰的盘后分析报告。'
+    form.with_holdings = true
+    form.with_web_search = true
+  } else if (tpl === 'risk_audit') {
+    form.ai_prompt =
+      '对当前投资组合进行集中度诊断、单一标的权重预警与资产类别风险暴露评估，给出定投或仓位再平衡建议。'
+    form.with_holdings = true
+    form.with_web_search = false
+  } else if (tpl === 'macro_news') {
+    form.ai_prompt =
+      '检索今日国内外财经重大新闻资讯，筛选与我当前重仓标的相关的行业动态与突发事件并进行深度解读。'
+    form.with_holdings = true
+    form.with_web_search = true
   }
 }
 
@@ -518,6 +580,16 @@ defineExpose({
   border-left: 3px solid var(--el-color-primary);
 }
 
+.cron-presets-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cron-input :deep(input) {
+  font-family: var(--font-mono, monospace);
+}
+
 .field-tip {
   font-size: 12px;
   color: var(--el-text-color-secondary);
@@ -529,6 +601,35 @@ defineExpose({
   background: var(--el-fill-color-light);
   padding: 2px 4px;
   border-radius: 4px;
+  font-family: var(--font-mono, monospace);
+}
+
+.prompt-templates-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.template-label {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.prompt-tag {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.prompt-tag:hover {
+  color: var(--el-color-primary);
+  border-color: var(--el-color-primary);
+  background: var(--mf-primary-light, rgba(59, 130, 246, 0.08));
+}
+
+.switch-col {
+  margin-bottom: 12px;
 }
 
 .switch-card {
@@ -545,6 +646,7 @@ defineExpose({
   display: flex;
   flex-direction: column;
   gap: 4px;
+  padding-right: 12px;
 }
 
 .switch-title {
@@ -556,15 +658,18 @@ defineExpose({
 .switch-desc {
   font-size: 12px;
   color: var(--el-text-color-secondary);
+  line-height: 1.4;
 }
 
 .delivery-group {
   display: flex;
   width: 100%;
+  flex-wrap: wrap;
 }
 
 .delivery-group :deep(.el-radio-button) {
   flex: 1;
+  min-width: 160px;
 }
 
 .delivery-group :deep(.el-radio-button__inner) {
@@ -582,6 +687,10 @@ defineExpose({
 
 .radio-icon {
   font-size: 16px;
+}
+
+.wechat-icon {
+  color: #10b981;
 }
 
 .dialog-footer {

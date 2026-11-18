@@ -433,8 +433,9 @@ scheduler_usecase_save_channel(void* pool, int64_t user_id, const channel_save_d
     const char* real_secret = dto->secret_key;
     char        saved_secret[128] = "";
 
-    /* If secret_key is masked or unchanged, keep existing */
-    if (dto->secret_key[0] == '*' || strstr(dto->secret_key, "******")) {
+    /* If secret_key is empty, masked or unchanged, keep existing */
+    if (dto->secret_key[0] == '\0' || dto->secret_key[0] == '*' ||
+        strstr(dto->secret_key, "******")) {
         csilk_json_t* existing = mf_scheduler_repo_get_user_channel(pool, user_id);
         if (existing) {
             const char* orig = csilk_json_get_string(existing, "secret_key");

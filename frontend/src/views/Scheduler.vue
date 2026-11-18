@@ -48,7 +48,7 @@
         </div>
         <div class="metric-body">
           <div class="metric-label">运行中任务数</div>
-          <div class="metric-value">{{ dashboard?.active_jobs ?? 0 }}</div>
+          <div class="metric-value tabular-nums">{{ dashboard?.active_jobs ?? 0 }}</div>
         </div>
       </div>
 
@@ -58,7 +58,7 @@
         </div>
         <div class="metric-body">
           <div class="metric-label">今日调度触发</div>
-          <div class="metric-value">{{ dashboard?.today_runs ?? 0 }} 次</div>
+          <div class="metric-value tabular-nums">{{ dashboard?.today_runs ?? 0 }} <span class="unit-text">次</span></div>
         </div>
       </div>
 
@@ -71,7 +71,7 @@
           <div class="metric-value small" :title="dashboard?.next_run_job?.name || '暂无计划任务'">
             {{ dashboard?.next_run_job?.name ? `${dashboard.next_run_job.name}` : '暂无计划' }}
           </div>
-          <div v-if="dashboard?.next_run_job?.next_run_at" class="metric-sub">
+          <div v-if="dashboard?.next_run_job?.next_run_at" class="metric-sub tabular-nums">
             {{ dashboard.next_run_job.next_run_at }}
           </div>
         </div>
@@ -148,10 +148,11 @@
       <el-table
         v-if="filteredJobs.length > 0"
         :data="paginatedJobs"
-        stripe
-        class="jobs-table"
+        class="premium-table jobs-table"
+        row-class-name="premium-row"
+        header-cell-class-name="premium-header"
       >
-        <el-table-column label="任务名称" min-width="200">
+        <el-table-column label="任务名称" min-width="220">
           <template #default="{ row }">
             <div class="job-name-cell">
               <div class="job-icon-wrap" :class="row.job_type">
@@ -162,7 +163,7 @@
               </div>
               <div class="job-name-info">
                 <div class="job-title-row">
-                  <span class="job-name">{{ row.name }}</span>
+                  <span class="job-name" :title="row.name">{{ row.name }}</span>
                   <el-tag
                     size="small"
                     :type="row.job_type === 'ai_prompt' ? 'primary' : 'warning'"
@@ -180,7 +181,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="调度频次 / 触发机制" min-width="160">
+        <el-table-column label="调度频次 / 触发机制" min-width="170">
           <template #default="{ row }">
             <div class="trigger-cell">
               <div class="trigger-main">
@@ -190,7 +191,7 @@
                 />
                 <span class="trigger-text">{{ formatTriggerConfig(row as any) }}</span>
               </div>
-              <div v-if="row.trigger_type === 'cron'" class="cron-sub">
+              <div v-if="row.trigger_type === 'cron'" class="cron-sub tabular-nums">
                 {{ parseCronExpr(row.trigger_config) }}
               </div>
             </div>
@@ -209,30 +210,57 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="最近执行" min-width="160">
+        <el-table-column label="最近执行" min-width="170">
           <template #default="{ row }">
             <div v-if="row.last_run_at" class="last-run-cell">
               <div class="last-run-status-row">
                 <el-tag
+                  v-if="row.last_run_status === 'running'"
                   size="small"
-                  :type="row.last_run_status === 'success' ? 'success' : 'danger'"
+                  type="primary"
+                  effect="light"
+                  class="running-tag"
+                >
+                  <Icon icon="ph:spinner-gap-bold" class="spin-icon" />
+                  执行中
+                </el-tag>
+                <el-tag
+                  v-else-if="row.last_run_status === 'success'"
+                  size="small"
+                  type="success"
                   effect="plain"
                 >
-                  {{ row.last_run_status === 'success' ? '成功' : '失败' }}
+                  成功
                 </el-tag>
-                <span v-if="row.last_run_duration_ms" class="duration-hint">
+                <el-tag
+                  v-else-if="row.last_run_status === 'failed'"
+                  size="small"
+                  type="danger"
+                  effect="plain"
+                >
+                  失败
+                </el-tag>
+                <el-tag
+                  v-else
+                  size="small"
+                  type="info"
+                  effect="plain"
+                >
+                  {{ row.last_run_status }}
+                </el-tag>
+                <span v-if="row.last_run_duration_ms" class="duration-hint tabular-nums">
                   {{ row.last_run_duration_ms }}ms
                 </span>
               </div>
-              <div class="last-run-time">{{ row.last_run_at }}</div>
+              <div class="last-run-time tabular-nums">{{ row.last_run_at }}</div>
             </div>
             <span v-else class="text-placeholder">未执行</span>
           </template>
         </el-table-column>
 
-        <el-table-column label="下次触发" min-width="155">
+        <el-table-column label="下次触发" min-width="160">
           <template #default="{ row }">
-            <span v-if="row.enabled && row.next_run_at" class="next-run-time">
+            <span v-if="row.enabled && row.next_run_at" class="next-run-time tabular-nums">
               {{ row.next_run_at }}
             </span>
             <span v-else-if="!row.enabled" class="text-placeholder">已暂停</span>
@@ -240,7 +268,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="状态" width="80" align="center">
+        <el-table-column label="状态" width="85" align="center">
           <template #default="{ row }">
             <el-switch
               :model-value="Boolean(row.enabled)"
@@ -250,7 +278,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="190" fixed="right">
+        <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
             <div class="row-actions">
               <el-button
@@ -590,7 +618,7 @@ onMounted(() => {
 }
 
 .wechat-btn-icon {
-  color: #07c160;
+  color: #10b981;
 }
 
 /* Metric Cards */
@@ -605,11 +633,11 @@ onMounted(() => {
   align-items: center;
   gap: 16px;
   padding: 18px 20px;
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 10px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-  transition: transform 0.2s, box-shadow 0.2s;
+  background: var(--mf-surface-card, var(--el-bg-color));
+  border: 1px solid var(--mf-border, var(--el-border-color-lighter));
+  border-radius: var(--mf-radius-md, 10px);
+  box-shadow: var(--mf-shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.04));
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s ease;
 }
 
 .metric-card.clickable {
@@ -618,7 +646,8 @@ onMounted(() => {
 
 .metric-card.clickable:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  border-color: var(--mf-border-hover, var(--el-color-primary));
+  box-shadow: var(--mf-shadow-glow, 0 4px 16px rgba(59, 130, 246, 0.2));
 }
 
 .metric-icon-wrap {
@@ -632,23 +661,23 @@ onMounted(() => {
 }
 
 .metric-icon-wrap.primary {
-  background: var(--el-color-primary-light-9);
-  color: var(--el-color-primary);
+  background: var(--mf-primary-light, rgba(59, 130, 246, 0.12));
+  color: var(--mf-primary, #3b82f6);
 }
 
 .metric-icon-wrap.success {
-  background: var(--el-color-success-light-9);
-  color: var(--el-color-success);
+  background: var(--mf-success-light, rgba(16, 185, 129, 0.14));
+  color: var(--mf-success, #10b981);
 }
 
 .metric-icon-wrap.warning {
-  background: var(--el-color-warning-light-9);
-  color: var(--el-color-warning);
+  background: var(--mf-warning-light, rgba(245, 158, 11, 0.14));
+  color: var(--mf-warning, #f59e0b);
 }
 
 .metric-icon-wrap.info {
-  background: #ecfdf5;
-  color: #059669;
+  background: rgba(16, 185, 129, 0.14);
+  color: #10b981;
 }
 
 .metric-icon {
@@ -674,6 +703,12 @@ onMounted(() => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.unit-text {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--el-text-color-secondary);
 }
 
 .metric-value.small {
@@ -704,8 +739,8 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 14px 18px;
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-lighter);
+  background: var(--mf-surface-card, var(--el-bg-color));
+  border: 1px solid var(--mf-border, var(--el-border-color-lighter));
   border-radius: 8px;
   gap: 16px;
 }
@@ -745,10 +780,30 @@ onMounted(() => {
 
 /* Table */
 .table-container {
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-lighter);
+  background: var(--mf-surface-card, var(--el-bg-color));
+  border: 1px solid var(--mf-border, var(--el-border-color-lighter));
   border-radius: 8px;
-  padding: 12px;
+  padding: 14px;
+}
+
+.premium-table {
+  --el-table-border-color: transparent;
+  --el-table-header-bg-color: var(--mf-primary-light, rgba(59, 130, 246, 0.08));
+}
+
+:deep(.premium-header th) {
+  background-color: var(--mf-primary-light, rgba(59, 130, 246, 0.08)) !important;
+  color: var(--mf-text-muted, var(--el-text-color-secondary)) !important;
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--mf-border, var(--el-border-color-lighter)) !important;
+}
+
+:deep(.premium-row td) {
+  border-bottom: 1px solid var(--mf-border, var(--el-border-color-lighter));
+  padding: 14px 0;
 }
 
 .jobs-table {
@@ -759,6 +814,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
 }
 
 .job-icon-wrap {
@@ -772,13 +828,13 @@ onMounted(() => {
 }
 
 .job-icon-wrap.ai_prompt {
-  background: #f5f3ff;
-  color: #8b5cf6;
+  background: rgba(139, 92, 246, 0.16);
+  color: #a78bfa;
 }
 
 .job-icon-wrap.structured_report {
-  background: #eff6ff;
-  color: #3b82f6;
+  background: rgba(59, 130, 246, 0.16);
+  color: #60a5fa;
 }
 
 .job-type-icon {
@@ -789,18 +845,23 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-width: 0;
 }
 
 .job-title-row {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .job-name {
   font-size: 14px;
   font-weight: 600;
   color: var(--el-text-color-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .job-desc {
@@ -831,7 +892,7 @@ onMounted(() => {
 }
 
 .cron-sub {
-  font-family: monospace;
+  font-family: var(--font-mono, monospace);
   font-size: 11px;
   color: var(--el-text-color-placeholder);
   margin-top: 2px;
@@ -848,21 +909,42 @@ onMounted(() => {
   gap: 6px;
 }
 
+.running-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.spin-icon {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .duration-hint {
-  font-family: monospace;
+  font-family: var(--font-mono, monospace);
   font-size: 11px;
   color: var(--el-text-color-placeholder);
 }
 
 .last-run-time {
+  font-family: var(--font-mono, monospace);
   font-size: 11px;
   color: var(--el-text-color-placeholder);
   margin-top: 2px;
 }
 
 .next-run-time {
+  font-family: var(--font-mono, monospace);
   font-size: 12px;
   color: var(--el-text-color-regular);
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
 }
 
 .text-placeholder {
@@ -884,5 +966,50 @@ onMounted(() => {
   margin-top: 16px;
   display: flex;
   justify-content: flex-end;
+}
+
+/* Responsive Media Queries */
+@media (max-width: 1200px) {
+  .metrics-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 900px) {
+  .toolbar-card {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+  }
+  .search-filter-wrap {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .search-input {
+    max-width: 100%;
+  }
+  .toggle-stats-wrap {
+    justify-content: space-between;
+  }
+}
+
+@media (max-width: 768px) {
+  .scheduler-page {
+    padding: 16px;
+  }
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+  }
+  .header-actions {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 640px) {
+  .metrics-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

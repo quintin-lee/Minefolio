@@ -2,7 +2,7 @@
   <el-dialog
     v-model="visible"
     title="个人微信推送通道配置"
-    width="560px"
+    :width="dialogWidth"
     destroy-on-close
     :close-on-click-modal="false"
   >
@@ -42,7 +42,7 @@
             <el-radio-button value="wechat_work">
               <span class="radio-label">
                 <Icon icon="ph:chats-circle-bold" class="radio-icon" />
-                企业微信机器人
+                企微机器人
               </span>
             </el-radio-button>
             <el-radio-button value="webhook">
@@ -66,11 +66,15 @@
         <!-- ServerChan Key -->
         <template v-if="form.channel_type === 'serverchan'">
           <el-form-item label="Server酱 SendKey" prop="secret_key">
+            <div v-if="existingKeyMasked" class="existing-key-hint">
+              <Icon icon="ph:shield-check-bold" class="key-icon" />
+              当前已绑定密钥: <code>{{ existingKeyMasked }}</code> (如保持不变请留空)
+            </div>
             <el-input
               v-model="form.secret_key"
               type="password"
               show-password
-              :placeholder="existingKeyMasked ? `已配置: ${existingKeyMasked} (如需更新请输入新Key)` : '请输入以 SCT 开头的 SendKey'"
+              :placeholder="existingKeyMasked ? '留空表示使用当前已配置密钥，输入新Key覆盖' : '请输入以 SCT 开头的 SendKey'"
             />
             <div class="field-tip">
               前往 <a href="https://sct.ftqq.com" target="_blank" rel="noopener noreferrer">Server酱·Turbo版官网</a> 登录微信扫码即可获取专属 SendKey。
@@ -81,11 +85,15 @@
         <!-- PushDeer Key -->
         <template v-if="form.channel_type === 'pushdeer'">
           <el-form-item label="PushDeer PushKey" prop="secret_key">
+            <div v-if="existingKeyMasked" class="existing-key-hint">
+              <Icon icon="ph:shield-check-bold" class="key-icon" />
+              当前已绑定密钥: <code>{{ existingKeyMasked }}</code> (如保持不变请留空)
+            </div>
             <el-input
               v-model="form.secret_key"
               type="password"
               show-password
-              :placeholder="existingKeyMasked ? `已配置: ${existingKeyMasked} (如需更新请输入新Key)` : '请输入 PushDeer 生成的 PushKey'"
+              :placeholder="existingKeyMasked ? '留空表示使用当前已配置密钥，输入新Key覆盖' : '请输入 PushDeer 生成的 PushKey'"
             />
             <div class="field-tip">
               PushDeer 支持苹果/安卓客户端及快应用推送，请至 <a href="https://www.pushdeer.com" target="_blank" rel="noopener noreferrer">PushDeer 官网</a> 或小程序扫码获取 Key。
@@ -142,7 +150,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import { schedulerApi } from '@/api/scheduler'
@@ -157,6 +165,21 @@ const loading = ref(false)
 const saving = ref(false)
 const testing = ref(false)
 const existingKeyMasked = ref('')
+const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1024)
+
+const updateWindowWidth = () => {
+  windowWidth.value = window.innerWidth
+}
+
+onMounted(() => {
+  window.addEventListener('resize', updateWindowWidth)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', updateWindowWidth)
+})
+
+const dialogWidth = computed(() => (windowWidth.value < 640 ? '94vw' : '560px'))
 
 const formRef = ref<FormInstance>()
 
@@ -253,7 +276,7 @@ const handleSave = async () => {
 const handleTest = async () => {
   testing.value = true
   try {
-    // If user edited key/url, prompt or persist first
+    // If user edited key/url, persist first so test utilizes newest value
     if (form.secret_key.trim() || form.webhook_url) {
       await schedulerApi.saveChannel({
         channel_type: form.channel_type,
@@ -288,10 +311,13 @@ defineExpose({
 .channel-type-group {
   display: flex;
   width: 100%;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
 .channel-type-group :deep(.el-radio-button) {
   flex: 1;
+  min-width: 120px;
 }
 
 .channel-type-group :deep(.el-radio-button__inner) {
@@ -309,6 +335,27 @@ defineExpose({
 
 .radio-icon {
   font-size: 16px;
+}
+
+.existing-key-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--el-color-success);
+  margin-bottom: 6px;
+  background: var(--mf-success-light, rgba(16, 185, 129, 0.1));
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.key-icon {
+  font-size: 14px;
+}
+
+.existing-key-hint code {
+  font-family: var(--font-mono, monospace);
+  font-weight: 600;
 }
 
 .field-tip {
@@ -331,6 +378,8 @@ defineExpose({
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .footer-right {
