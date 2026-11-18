@@ -223,18 +223,18 @@
 - Produces:
   - 对应 Spec 4.3 节的全部 12 个 REST 接口端点，集成身份认证、多租户归属校验与管理员权限守卫。
 
-- [ ] **Step 1: 编写集成测试脚本 `backend/tests/test_scheduler.sh`**
+- [x] **Step 1: 编写集成测试脚本 `backend/tests/test_scheduler.sh`**
   - 覆盖系统概览查询、任务创建、普通用户越权修改他人任务被拦截（1004）、非管理员启停系统内置任务被拦截（1004）、立即触发执行、微信通道配置保存与测试发送、历史日志分页查询。
 
-- [ ] **Step 2: 实现用例层 `usecases.c` 与控制器 `scheduler_controller.c`**
+- [x] **Step 2: 实现用例层 `usecases.c` 与控制器 `scheduler_controller.c`**
   - 绑定 JSON 请求参数，调用 DDD 仓储层，将成功结果封装为 `respond_ok(c, data)`。
 
-- [ ] **Step 3: 在 `main.c` 中注册路由并在隔离环境中运行端到端测试**
+- [x] **Step 3: 在 `main.c` 中注册路由并在隔离环境中运行端到端测试**
   - Run: `./backend/tests/run_isolated.sh build backend/build`
   - Run: `./backend/tests/run_isolated.sh -- bash backend/tests/test_scheduler.sh`
   - Expected: ALL ASSERTIONS PASS
 
-- [ ] **Step 4: 提交 Task 6 代码**
+- [x] **Step 4: 提交 Task 6 代码**
   - Git commit: `feat(api): implement scheduler use cases and http controller`
 
 ---

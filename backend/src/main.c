@@ -32,6 +32,7 @@
 #include "interfaces/http/controllers/im_bot_controller.h"
 #include "interfaces/http/controllers/mcp_server_controller.h"
 #include "interfaces/http/controllers/skill_controller.h"
+#include "interfaces/http/controllers/scheduler_controller.h"
 #include "services/market/market_scheduler.h"
 #include "core/scheduler/scheduler_engine.h"
 #include "services/ai_service.h"
@@ -159,6 +160,7 @@ main(int argc, char** argv)
     register_skill_routes(app);
     register_ai_news_routes(app);
     register_im_bot_routes(app);
+    register_scheduler_routes(app);
     csilk_admin_serve_secure(app, "/csilk-admin", NULL);
 
     const char* dist = "./frontend/dist";
