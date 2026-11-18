@@ -275,26 +275,26 @@
 - Create: `frontend/src/components/scheduler/JobLogDrawer.vue`
 - Test: `npm --prefix frontend test` & `npm --prefix frontend run build`
 
-- [ ] **Step 1: 实现 `ChannelConfigDialog.vue` 微信通道配置组件**
+- [x] **Step 1: 实现 `ChannelConfigDialog.vue` 微信通道配置组件**
   - 支持选择通道类型（Server酱 / PushDeer / 企业微信代推 / Webhook），输入密钥，并带有“发送测试消息”按钮。
 
-- [ ] **Step 2: 实现 `JobDialog.vue` 新建/编辑作业弹窗**
+- [x] **Step 2: 实现 `JobDialog.vue` 新建/编辑作业弹窗**
   - 顶部 Tab 切换：`AI 智能任务 (Prompt 驱动)` 与 `结构化报表任务 (表单驱动)`。
   - 频次配置：提供直观的常用周期快捷选择（工作日收盘后、每天指定时刻等）与 Cron 表达式输入框。
   - AI 任务项：持仓上下文注入开关（带脱敏配置）、联网搜索开关。
 
-- [ ] **Step 3: 实现 `JobLogDrawer.vue` 运行日志抽屉**
+- [x] **Step 3: 实现 `JobLogDrawer.vue` 运行日志抽屉**
   - 展示任务最近 30 天运行记录，卡片展开显示推送至微信的 Markdown 简报内容或执行报错详情。
 
-- [ ] **Step 4: 实现 `Scheduler.vue` 主面板**
+- [x] **Step 4: 实现 `Scheduler.vue` 主面板**
   - 顶部 4 项运行指标卡片，主区域任务表格，包含状态开关、立即执行、编辑与日志操作按钮。
 
-- [ ] **Step 5: 前端测试与生产构建验证**
+- [x] **Step 5: 前端测试与生产构建验证**
   - Run: `npm --prefix frontend test`
   - Run: `npm --prefix frontend run build`
   - Expected: 0 失败，0 告警，生产 bundle 打包完成。
 
-- [ ] **Step 6: 提交 Task 8 代码**
+- [x] **Step 6: 提交 Task 8 代码**
   - Git commit: `feat(frontend): implement scheduler dashboard, job dialog, and log drawer`
 
 ---
@@ -304,13 +304,13 @@
 **Files:**
 - Modify: `backend/tests/run_isolated.sh` (将 `test_scheduler.sh` 纳入 `integration` 测试列表)
 
-- [ ] **Step 1: 运行全量隔离环境单元测试 (75+ 项)**
+- [x] **Step 1: 运行全量隔离环境单元测试 (75+ 项)**
   - Run: `./backend/tests/run_isolated.sh unit backend/build`
   - Expected: 100% tests passed, 0 failures.
 
-- [ ] **Step 2: 运行全量端到端隔离集成测试 (15 套)**
+- [x] **Step 2: 运行全量端到端隔离集成测试 (15 套)**
   - Run: `./backend/tests/run_isolated.sh integration backend/build`
   - Expected: 包含 `test_link.sh`, `test_scheduler.sh` 在内的全部测试套件 100% 通过。
 
-- [ ] **Step 3: 提交 Task 9 代码与实施计划勾选完成**
+- [x] **Step 3: 提交 Task 9 代码与实施计划勾选完成**
   - Git commit: `test(scheduler): integrate scheduler into regression suites and verify dual engines`
