@@ -124,18 +124,18 @@
   - `time_t cron_next_after(const cron_expr_t* parsed, time_t after_time)`
   - `int cron_format_next_str(const char* expr, time_t after_time, char* out_buf, size_t buf_len)`
 
-- [ ] **Step 1: 编写 Cron 解析器单元测试 `test_cron_parser.c`**
+- [x] **Step 1: 编写 Cron 解析器单元测试 `test_cron_parser.c`**
   - 涵盖：每分钟 `* * * * *`、工作日 05:00 `0 5 * * 1-5`、步长 `*/15 * * * *`、多项逗号 `0 8,12,18 * * *`、月末/闰年跨度推算。
 
-- [ ] **Step 2: 实现 `cron_parser.c`**
+- [x] **Step 2: 实现 `cron_parser.c`**
   - 纯标准 C 实现，解析 5 个字段（分钟 0-59、小时 0-23、日 1-31、月 1-12、周 0-7），基于 `struct tm` 进行下一有效时间步进。
 
-- [ ] **Step 3: 运行 Cron 单元测试验证**
+- [x] **Step 3: 运行 Cron 单元测试验证**
   - Run: `./backend/tests/run_isolated.sh build backend/build`
   - Run: `./backend/tests/run_isolated.sh -- ./backend/build/test_cron_parser`
   - Expected: PASS
 
-- [ ] **Step 4: 提交 Task 3 代码**
+- [x] **Step 4: 提交 Task 3 代码**
   - Git commit: `feat(scheduler): implement pure C standard 5-part cron parser`
 
 ---

@@ -538,6 +538,13 @@ target_link_libraries(test_scheduler_repo PRIVATE csilk crypto CURL::libcurl ${P
 add_dependencies(test_scheduler_repo copy_assets)
 add_test(NAME test_scheduler_repo COMMAND test_scheduler_repo)
 
+add_executable(test_cron_parser tests/unit/test_cron_parser.c ${LIB_SOURCES})
+target_include_directories(test_cron_parser PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_cron_parser PRIVATE -UNDEBUG)
+target_link_libraries(test_cron_parser PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_dependencies(test_cron_parser copy_assets)
+add_test(NAME test_cron_parser COMMAND test_cron_parser)
+
 
 
 
