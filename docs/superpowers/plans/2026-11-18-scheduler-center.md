@@ -249,19 +249,19 @@
 - Modify: `frontend/src/views/Layout.vue`
 - Modify: `frontend/src/utils/locale.ts`
 
-- [ ] **Step 1: 声明 TypeScript 接口与 API 方法**
+- [x] **Step 1: 声明 TypeScript 接口与 API 方法**
   - `ScheduledJob`, `JobRunLog`, `SchedulerDashboard`, `UserPushChannel` 类型定义。
   - `schedulerApi` 封装完整 REST 请求。
 
-- [ ] **Step 2: 注册路由并在左侧导航“系统”组增加菜单入口**
+- [x] **Step 2: 注册路由并在左侧导航“系统”组增加菜单入口**
   - 在 `router/index.ts` 注册 `/scheduler` 指向 `Scheduler.vue`。
   - 在 `Layout.vue` 增加导航项及多语言键值。
 
-- [ ] **Step 3: 运行前端类型检查**
+- [x] **Step 3: 运行前端类型检查**
   - Run: `npm --prefix frontend run build`
   - Expected: 无类型错误编译通过
 
-- [ ] **Step 4: 提交 Task 7 代码**
+- [x] **Step 4: 提交 Task 7 代码**
   - Git commit: `feat(frontend): add scheduler types, api client, router and navigation`
 
 ---

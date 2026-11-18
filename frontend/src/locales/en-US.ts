@@ -9,6 +9,7 @@ export const enUS = {
     categories: 'Categories',
     transfer: 'Transfer',
     reports: 'Reports',
+    scheduler: 'Scheduler',
     auditLogs: 'Logs',
     aiChat: 'AI Assistant',
     skills: 'Skill Library',

@@ -68,6 +68,10 @@
         </el-menu-item>
 
         <div v-show="!isCollapsed" class="nav-group-label">{{ t('navGroups.system') }}</div>
+        <el-menu-item index="/scheduler" @click="goTo('/scheduler')">
+          <Icon icon="ph:clock-countdown-duotone" class="nav-icon" />
+          <template #title><span>{{ t('nav.scheduler') }}</span></template>
+        </el-menu-item>
         <el-menu-item index="/audit-logs" @click="goTo('/audit-logs')">
           <Icon icon="ph:shield-check-duotone" class="nav-icon" />
           <template #title><span>{{ t('nav.auditLogs') }}</span></template>
@@ -244,6 +248,7 @@ function goTo(path: string) {
       '/plans': t('nav.plans'),
       '/categories': t('nav.categories'),
       '/reports': t('nav.reports'),
+      '/scheduler': t('nav.scheduler'),
       '/audit-logs': t('nav.auditLogs'),
       '/settings': t('nav.settings'),
       '/chat': t('nav.aiChat'),

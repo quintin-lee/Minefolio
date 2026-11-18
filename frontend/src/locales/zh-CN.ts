@@ -9,6 +9,7 @@ export const zhCN = {
     categories: '分类',
     transfer: '转账',
     reports: '报表',
+    scheduler: '定时任务',
     auditLogs: '日志',
     aiChat: 'AI助手',
     skills: '技能库',
