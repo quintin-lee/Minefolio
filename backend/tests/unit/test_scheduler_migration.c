@@ -69,12 +69,12 @@ main(void)
     assert(cnt_str && atoi(cnt_str) == 1);
     csilk_json_free(res);
 
-    /* Verify inserting test job */
+    /* Verify inserting test job with is_builtin (V030) */
     rc = csilk_db_exec_param(
         pool,
-        "INSERT INTO scheduled_jobs (user_id, name, description, job_type, trigger_type, trigger_config, payload_config, delivery_channel) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?);",
-        (const char*[]){"1", "Test Job", "Desc", "ai_prompt", "cron", "{\"cron\":\"0 5 * * *\"}", "{\"prompt\":\"test\"}", "wechat", NULL});
+        "INSERT INTO scheduled_jobs (user_id, name, description, job_type, trigger_type, trigger_config, payload_config, delivery_channel, is_builtin) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);",
+        (const char*[]){"1", "Test Job", "Desc", "ai_prompt", "cron", "{\"cron\":\"0 5 * * *\"}", "{\"prompt\":\"test\"}", "wechat", "1", NULL});
     assert(rc == 0);
 
     /* Verify inserting test channel */

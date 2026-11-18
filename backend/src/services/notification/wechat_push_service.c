@@ -63,6 +63,9 @@ wechat_push_service_send(const push_channel_config_t* cfg,
 
     bool is_serverchan = (strcasecmp(cfg->channel_type, "serverchan") == 0);
     bool is_pushdeer = (strcasecmp(cfg->channel_type, "pushdeer") == 0);
+    bool is_wechat_work = (strcasecmp(cfg->channel_type, "wechat_work") == 0 ||
+                           strcasecmp(cfg->channel_type, "wechatwork") == 0 ||
+                           strcasecmp(cfg->channel_type, "qywx") == 0);
     bool is_webhook = (strcasecmp(cfg->channel_type, "webhook") == 0);
 
     if (is_serverchan) {
@@ -117,6 +120,54 @@ wechat_push_service_send(const push_channel_config_t* cfg,
         csilk_json_add_string(payload_json, "text", title);
         csilk_json_add_string(payload_json, "desp", markdown_body ? markdown_body : "");
         csilk_json_add_string(payload_json, "type", "markdown");
+    } else if (is_wechat_work) {
+        if (!cfg->webhook_url[0] && !cfg->secret_key[0]) {
+            csilk_json_free(payload_json);
+            set_err(err_buf, err_len, "WeChat Work webhook URL or secret_key is required");
+            return -1;
+        }
+
+        if (cfg->webhook_url[0] != '\0') {
+            if (strstr(cfg->webhook_url, "key=")) {
+                snprintf(target_url, sizeof(target_url), "%s", cfg->webhook_url);
+            } else if (cfg->secret_key[0] != '\0') {
+                char sep = strchr(cfg->webhook_url, '?') ? '&' : '?';
+                snprintf(target_url,
+                         sizeof(target_url),
+                         "%s%ckey=%s",
+                         cfg->webhook_url,
+                         sep,
+                         cfg->secret_key);
+            } else {
+                snprintf(target_url, sizeof(target_url), "%s", cfg->webhook_url);
+            }
+        } else {
+            snprintf(target_url,
+                     sizeof(target_url),
+                     "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=%s",
+                     cfg->secret_key);
+        }
+
+        size_t b_len = markdown_body ? strlen(markdown_body) : 0;
+        size_t t_len = strlen(title);
+        char*  combined_md = (char*)malloc(t_len + b_len + 32);
+        if (combined_md) {
+            snprintf(combined_md,
+                     t_len + b_len + 32,
+                     "### %s\n\n%s",
+                     title,
+                     markdown_body ? markdown_body : "");
+        }
+
+        csilk_json_add_string(payload_json, "msgtype", "markdown");
+        csilk_json_t* md_obj = csilk_json_object();
+        csilk_json_add_string(
+            md_obj, "content", combined_md ? combined_md : (markdown_body ? markdown_body : ""));
+        csilk_json_add_object(payload_json, "markdown", md_obj);
+
+        if (combined_md) {
+            free(combined_md);
+        }
     } else if (is_webhook) {
         if (!cfg->webhook_url[0]) {
             csilk_json_free(payload_json);
@@ -165,7 +216,8 @@ wechat_push_service_send(const push_channel_config_t* cfg,
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void*)&resp);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 5L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 15L);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "Minefolio/1.0 NotificationAgent");
 
     /* Support test environments */
@@ -238,6 +290,21 @@ wechat_push_service_send(const push_channel_config_t* cfg,
                              sizeof(msg),
                              "PushDeer error code %lld: %s",
                              (long long)code,
+                             errmsg ? errmsg : "unknown");
+                    set_err(err_buf, err_len, msg);
+                    csilk_json_free(res_json);
+                    free(resp.data);
+                    return -1;
+                }
+            } else if (is_wechat_work) {
+                int64_t errcode = csilk_json_get_int(res_json, "errcode");
+                if (errcode != 0) {
+                    const char* errmsg = csilk_json_get_string(res_json, "errmsg");
+                    char        msg[256];
+                    snprintf(msg,
+                             sizeof(msg),
+                             "WeChat Work error code %lld: %s",
+                             (long long)errcode,
                              errmsg ? errmsg : "unknown");
                     set_err(err_buf, err_len, msg);
                     csilk_json_free(res_json);

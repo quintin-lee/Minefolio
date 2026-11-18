@@ -35,6 +35,10 @@ int64_t       mf_scheduler_repo_job_create_builtin(void*       pool,
                                                    const char* next_run_at);
 csilk_json_t* mf_scheduler_repo_job_get_by_name(void* pool, const char* name);
 bool          mf_scheduler_repo_is_builtin_enabled(void* pool, const char* handler_name);
+int           mf_scheduler_repo_job_claim_cron_run(void*       pool,
+                                                   int64_t     job_id,
+                                                   const char* expected_next_run,
+                                                   const char* new_next_run);
 int           mf_scheduler_repo_job_update(void*       pool,
                                            int64_t     user_id,
                                            bool        is_admin,

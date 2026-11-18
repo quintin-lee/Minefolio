@@ -246,15 +246,22 @@ mf_scheduler_repo_job_update_last_run(
     snprintf(dur_str, sizeof(dur_str), "%d", duration_ms);
     get_now_str(now_str, sizeof(now_str));
 
+    if (next_run_at && *next_run_at) {
+        const char* sql = "UPDATE scheduled_jobs SET last_run_at = ?, last_run_status = ?, "
+                          "last_run_duration_ms = ?, "
+                          "next_run_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?";
+        return csilk_db_exec_param(
+            db_pool,
+            sql,
+            (const char*[]){now_str, status ? status : "", dur_str, next_run_at, jid_str, NULL});
+    }
+
     const char* sql =
         "UPDATE scheduled_jobs SET last_run_at = ?, last_run_status = ?, last_run_duration_ms = ?, "
-        "next_run_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?";
+        "updated_at = CURRENT_TIMESTAMP WHERE id = ?";
 
     return csilk_db_exec_param(
-        db_pool,
-        sql,
-        (const char*[]){
-            now_str, status ? status : "", dur_str, next_run_at ? next_run_at : "", jid_str, NULL});
+        db_pool, sql, (const char*[]){now_str, status ? status : "", dur_str, jid_str, NULL});
 }
 
 int64_t
@@ -358,6 +365,35 @@ mf_scheduler_repo_is_builtin_enabled(void* pool, const char* handler_name)
     }
     csilk_json_free(res);
     return enabled;
+}
+
+int
+mf_scheduler_repo_job_claim_cron_run(void*       pool,
+                                     int64_t     job_id,
+                                     const char* expected_next_run,
+                                     const char* new_next_run)
+{
+    if (!pool || job_id <= 0 || !expected_next_run || !new_next_run) {
+        return 0;
+    }
+    csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
+
+    char jid_str[32];
+    snprintf(jid_str, sizeof(jid_str), "%lld", (long long)job_id);
+
+    const char* sql =
+        "UPDATE scheduled_jobs SET next_run_at = ?, last_run_status = 'running', updated_at = "
+        "CURRENT_TIMESTAMP WHERE id = ? AND next_run_at = ? RETURNING id";
+
+    csilk_json_t* res = csilk_db_query_param_json(
+        db_pool, sql, (const char*[]){new_next_run, jid_str, expected_next_run, NULL});
+    if (!res) {
+        return 0;
+    }
+
+    int claimed = (csilk_json_array_size(res) > 0) ? 1 : 0;
+    csilk_json_free(res);
+    return claimed;
 }
 
 csilk_json_t*

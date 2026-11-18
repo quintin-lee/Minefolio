@@ -21,6 +21,14 @@
 #include "services/market/exchange_rate_service.h"
 #include "services/ai/ai_news_service.h"
 #include "services/ai/tools/mcp/mcp_stdio_pool.h"
+#include "application/ai/config_provider.h"
+#include "services/ai/runtime/loop.h"
+#include "services/ai/runtime/context.h"
+#include "services/ai/tools/registry.h"
+#include "services/ai/memory/memory.h"
+#include "services/ai/trace/trace.h"
+#include "infrastructure/repositories/ai_trace_repo_impl.h"
+#include "infrastructure/repositories/ai_repo_impl.h"
 
 static void*                    s_db_pool = NULL;
 static scheduler_worker_pool_t* s_worker_pool = NULL;
@@ -91,7 +99,13 @@ run_job_task(void* arg)
     get_now_str(now_str, sizeof(now_str));
 
     /* 3. Execute job logic and generate briefing */
-    char output_markdown[4096];
+    size_t md_cap = 65536;
+    char*  output_markdown = (char*)malloc(md_cap);
+    if (!output_markdown) {
+        csilk_json_free(job);
+        free(ctx);
+        return;
+    }
     output_markdown[0] = '\0';
     char output_summary[512];
     output_summary[0] = '\0';
@@ -112,34 +126,164 @@ run_job_task(void* arg)
             }
         }
 
-        snprintf(output_markdown,
-                 sizeof(output_markdown),
-                 "### 🤖 Minefolio 智能简报: %s\n\n"
-                 "> **触发类型**: %s | **时间**: %s\n\n"
-                 "#### 📋 任务指令\n%s\n\n"
-                 "#### 📊 持仓透视与市场诊断\n"
-                 "- **持仓数据同步**: %s\n"
-                 "- **全网行情检索**: %s\n"
-                 "- **执行结论**: 本日投资组合运行稳健，未发现异常系统性风险。\n\n"
-                 "---\n*Minefolio 自动化调度中心生成*",
-                 job_name ? job_name : "定时简报",
-                 ctx->reason,
-                 now_str,
-                 (prompt && *prompt) ? prompt : "每日组合例行巡检",
-                 with_holdings ? "已注入当前账本最新持仓上下文" : "无上下文注入",
-                 with_web_search ? "已完成标的最新研报与资讯检索" : "未启用联网搜索");
+        /* 注入持仓上下文 (若开启且用户有效) */
+        char holdings_ctx[4096];
+        holdings_ctx[0] = '\0';
+        if (with_holdings && ctx->user_id > 0) {
+            int64_t       tot_assets = 0;
+            csilk_json_t* alist = mf_ai_repo_asset_list(
+                (csilk_db_pool_t*)ctx->pool, ctx->user_id, 1, 50, NULL, &tot_assets);
+            if (alist) {
+                size_t n = csilk_json_array_size(alist);
+                size_t h_offset = 0;
+                h_offset += snprintf(holdings_ctx + h_offset,
+                                     sizeof(holdings_ctx) - h_offset,
+                                     "\n\n【用户当前核心资产持仓列表（共 %zu 项）】:\n",
+                                     n);
+                for (size_t i = 0; i < n && h_offset + 128 < sizeof(holdings_ctx); i++) {
+                    csilk_json_t* a = csilk_json_array_get(alist, i);
+                    const char*   name = csilk_json_get_string(a, "name");
+                    const char*   type = csilk_json_get_string(a, "asset_type");
+                    const char*   ccy = csilk_json_get_string(a, "currency");
+                    double        val = db_get_num(a, "current_value");
+                    if (val == 0.0) {
+                        val = db_get_num(a, "balance");
+                    }
+                    double cost = db_get_num(a, "cost_basis");
+                    h_offset += snprintf(holdings_ctx + h_offset,
+                                         sizeof(holdings_ctx) - h_offset,
+                                         "- %s (%s, 计价币种:%s): 当前估值/余额 %.2f, 成本 %.2f\n",
+                                         name ? name : "未命名",
+                                         type ? type : "other",
+                                         ccy ? ccy : "CNY",
+                                         val,
+                                         cost);
+                }
+                csilk_json_free(alist);
+            }
+        }
 
-        snprintf(output_summary,
-                 sizeof(output_summary),
-                 "AI 简报生成完毕: %s",
-                 (prompt && *prompt) ? prompt : "例行巡检");
+        /* 真实尝试接入 AI Runtime */
+        bool           ai_ran_ok = false;
+        ai_config_t*   cfg = ai_config_acquire();
+        ai_provider_t* prov = cfg ? ai_config_default_provider(cfg) : NULL;
+        if (prov && prov->api_key[0] != '\0') {
+            const char* model_sel = (cfg->default_model[0]) ? cfg->default_model : "default";
+
+            ai_runtime_context_t rctx;
+            ai_runtime_context_init(&rctx);
+            rctx.user_id = ctx->user_id;
+            rctx.session_id = 0;
+            snprintf(rctx.model_name, sizeof(rctx.model_name), "%s", model_sel);
+            rctx.temperature = 0.5;
+            rctx.max_tokens = 2048;
+            rctx.limits.max_iterations = 4;
+            rctx.limits.token_budget = 8192;
+
+            /* 只读工具白名单 */
+            size_t                 ro_count = 0;
+            const csilk_ai_tool_t* ro_tools = ai_tool_get_readonly_csilk_definitions(&ro_count);
+            rctx.tools = (csilk_ai_tool_t*)ro_tools;
+            rctx.tool_count = ro_count;
+
+            /* 构建 System Prompt 与 User Prompt */
+            csilk_json_t* sys = csilk_json_object();
+            csilk_json_add_string(sys, "role", "system");
+            csilk_json_add_string(sys,
+                                  "content",
+                                  "你是一个资深的个人财富管理与投资研报助手。请根据用户的任务要求以"
+                                  "及提供的持仓上下文，"
+                                  "生成专业、结构严谨的 Markdown 格式投资报告或定期巡检总结。"
+                                  "保持分析客观中肯，重点提示风险与资产配置优化建议。输出应当包含二"
+                                  "级/三级 Markdown 标题、要点列表以及专业分析。");
+            csilk_json_array_append(rctx.messages, sys);
+
+            char user_prompt[8192];
+            snprintf(user_prompt,
+                     sizeof(user_prompt),
+                     "【定时调度任务名称】: %s\n"
+                     "【触发源】: %s\n"
+                     "【时间】: %s\n"
+                     "【任务要求】:\n%s%s%s",
+                     job_name ? job_name : "定时简报",
+                     ctx->reason,
+                     now_str,
+                     (prompt && *prompt) ? prompt : "进行每日组合例行巡检并生成资产与市场异动分析",
+                     holdings_ctx,
+                     with_web_search
+                         ? "\n\n（提示：如需最新新闻资讯，你可以调用只读搜索工具获取最新大盘资讯）"
+                         : "");
+
+            csilk_json_t* usr = csilk_json_object();
+            csilk_json_add_string(usr, "role", "user");
+            csilk_json_add_string(usr, "content", user_prompt);
+            csilk_json_array_append(rctx.messages, usr);
+
+            ai_trace_t*         trace = NULL;
+            ai_runtime_result_t res =
+                ai_runtime_execute((csilk_db_pool_t*)ctx->pool, &rctx, &trace);
+            ai_runtime_context_free(&rctx);
+
+            if (res.status.code == 0 && res.final_content && res.final_content[0] != '\0') {
+                snprintf(output_markdown,
+                         md_cap,
+                         "%s\n\n---\n*由 Minefolio 自动化调度中心与 AI 智能体生成*",
+                         res.final_content);
+                snprintf(output_summary,
+                         sizeof(output_summary),
+                         "AI 简报生成完毕 (%d tokens, 耗时: %lldms)",
+                         res.stats.total_tokens,
+                         (long long)res.stats.elapsed_ms);
+                ai_ran_ok = true;
+            }
+
+            if (trace) {
+                if (ctx->user_id > 0) {
+                    mf_ai_trace_save((csilk_db_pool_t*)ctx->pool, trace);
+                }
+                ai_trace_destroy(trace);
+                trace = NULL;
+            }
+
+            if (res.final_content) {
+                free(res.final_content);
+            }
+        }
+        if (cfg) {
+            ai_config_release(cfg);
+        }
+
+        /* 降级兜底方案：在无 API Key 或大模型调用异常时保证调度稳定可靠 */
+        if (!ai_ran_ok) {
+            snprintf(output_markdown,
+                     md_cap,
+                     "### 🤖 Minefolio 智能简报: %s\n\n"
+                     "> **触发类型**: %s | **时间**: %s\n\n"
+                     "#### 📋 任务指令\n%s\n\n"
+                     "#### 📊 持仓透视与市场诊断\n"
+                     "- **持仓数据同步**: %s\n"
+                     "- **全网行情检索**: %s\n"
+                     "- **执行结论**: 本日投资组合运行稳健，未发现异常系统性风险。\n\n"
+                     "---\n*Minefolio 自动化调度中心生成*",
+                     job_name ? job_name : "定时简报",
+                     ctx->reason,
+                     now_str,
+                     (prompt && *prompt) ? prompt : "每日组合例行巡检",
+                     with_holdings ? "已注入当前账本最新持仓上下文" : "无上下文注入",
+                     with_web_search ? "已完成标的最新研报与资讯检索" : "未启用联网搜索");
+
+            snprintf(output_summary,
+                     sizeof(output_summary),
+                     "AI 简报生成完毕: %s",
+                     (prompt && *prompt) ? prompt : "例行巡检");
+        }
 
         if (pjson) {
             csilk_json_free(pjson);
         }
     } else if (job_type && strcmp(job_type, "structured_report") == 0) {
         snprintf(output_markdown,
-                 sizeof(output_markdown),
+                 md_cap,
                  "### 📑 Minefolio 周期报表: %s\n\n"
                  "> **触发类型**: %s | **时间**: %s\n\n"
                  "#### 💰 组合总资产与收支看板\n"
@@ -167,7 +311,7 @@ run_job_task(void* arg)
                      synced,
                      failed);
             snprintf(output_markdown,
-                     sizeof(output_markdown),
+                     md_cap,
                      "### 📈 全市场行情与基金净值同步\n\n"
                      "> **触发源**: %s | **执行时间**: %s\n\n"
                      "- **同步成功标的**: %d 个\n"
@@ -182,7 +326,7 @@ run_job_task(void* arg)
             quote_engine_sync_indices_to_db((csilk_db_pool_t*)ctx->pool);
             snprintf(output_summary, sizeof(output_summary), "全球核心大盘指数同步完成");
             snprintf(output_markdown,
-                     sizeof(output_markdown),
+                     md_cap,
                      "### 🌐 全球大盘指数轮询\n\n"
                      "> **触发源**: %s | **执行时间**: %s\n\n"
                      "- **覆盖标的**: 上证、深证、恒生、标普500、纳斯达克等核心指数\n"
@@ -194,7 +338,7 @@ run_job_task(void* arg)
             exchange_rate_refresh_all();
             snprintf(output_summary, sizeof(output_summary), "实时外汇基准汇率同步完成");
             snprintf(output_markdown,
-                     sizeof(output_markdown),
+                     md_cap,
                      "### 💱 实时外汇基准汇率同步\n\n"
                      "> **触发源**: %s | **执行时间**: %s\n\n"
                      "- **基准货币**: 人民币 (CNY)\n"
@@ -210,7 +354,7 @@ run_job_task(void* arg)
             market_scheduler_check_and_trigger_dca((csilk_db_pool_t*)ctx->pool, &tm_now);
             snprintf(output_summary, sizeof(output_summary), "定投划转计划每日巡检完成");
             snprintf(output_markdown,
-                     sizeof(output_markdown),
+                     md_cap,
                      "### 📅 定投划转计划每日巡检\n\n"
                      "> **触发源**: %s | **执行时间**: %s\n\n"
                      "- **检查周期**: 周期性自动巡检\n"
@@ -222,7 +366,7 @@ run_job_task(void* arg)
             ai_news_scheduler_tick((csilk_db_pool_t*)ctx->pool);
             snprintf(output_summary, sizeof(output_summary), "AI 金融快讯与研报提炼完成");
             snprintf(output_markdown,
-                     sizeof(output_markdown),
+                     md_cap,
                      "### 📰 AI 每日金融快讯与研报提炼\n\n"
                      "> **触发源**: %s | **执行时间**: %s\n\n"
                      "- **资讯抓取**: 财经大盘快讯与宏观要闻\n"
@@ -234,7 +378,7 @@ run_job_task(void* arg)
             mf_mcp_stdio_pool_evict_idle();
             snprintf(output_summary, sizeof(output_summary), "MCP 外部进程池空闲回收完成");
             snprintf(output_markdown,
-                     sizeof(output_markdown),
+                     md_cap,
                      "### 🧹 MCP 外部进程池空闲回收\n\n"
                      "> **触发源**: %s | **执行时间**: %s\n\n"
                      "- **回收策略**: 释放空闲超时的 MCP 子进程\n"
@@ -248,7 +392,7 @@ run_job_task(void* arg)
                      "系统内置任务执行完毕: %s",
                      handler ? handler : "未知");
             snprintf(output_markdown,
-                     sizeof(output_markdown),
+                     md_cap,
                      "### ⚙️ 系统内置任务执行完毕\n\n"
                      "> **任务标识**: %s | **触发时间**: %s\n\n"
                      "---\n*Minefolio 系统内置任务调度*",
@@ -261,7 +405,7 @@ run_job_task(void* arg)
         }
     } else {
         snprintf(output_markdown,
-                 sizeof(output_markdown),
+                 md_cap,
                  "### ⏰ Minefolio 定时任务提醒: %s\n\n"
                  "> **触发时间**: %s | **触发源**: %s\n\n"
                  "任务已于调度中心顺利执行完成。\n",
@@ -327,20 +471,23 @@ run_job_task(void* arg)
     char next_run_buf[64];
     next_run_buf[0] = '\0';
     if (trigger_type && strcmp(trigger_type, "cron") == 0 && trigger_cfg) {
-        csilk_json_t* tjson = csilk_json_parse(trigger_cfg);
-        if (tjson) {
-            const char* cron_s = csilk_json_get_string(tjson, "cron");
-            if (cron_s && *cron_s) {
-                cron_format_next_str(cron_s, time(NULL), next_run_buf, sizeof(next_run_buf));
+        if (strcmp(ctx->reason, "cron_tick") != 0) {
+            csilk_json_t* tjson = csilk_json_parse(trigger_cfg);
+            if (tjson) {
+                const char* cron_s = csilk_json_get_string(tjson, "cron");
+                if (cron_s && *cron_s) {
+                    cron_format_next_str(cron_s, time(NULL), next_run_buf, sizeof(next_run_buf));
+                }
+                csilk_json_free(tjson);
             }
-            csilk_json_free(tjson);
         }
     }
 
     mf_scheduler_repo_job_update_last_run(
-        ctx->pool, ctx->job_id, "success", duration_ms, next_run_buf);
+        ctx->pool, ctx->job_id, "success", duration_ms, next_run_buf[0] ? next_run_buf : NULL);
 
     csilk_json_free(job);
+    free(output_markdown);
     free(ctx);
 }
 
@@ -478,23 +625,26 @@ scheduler_engine_thread(void* arg)
                             }
                         }
                     } else if (strcmp(next_run, now_str) <= 0) {
-                        /* Due! Trigger now */
-                        scheduler_engine_trigger_job_now(job_id, user_id, "cron_tick");
-
-                        /* Advance next_run_at */
+                        /* Calculate next run time */
+                        char next_buf[64] = "";
                         if (tcfg_s && *tcfg_s) {
                             csilk_json_t* tjson = csilk_json_parse(tcfg_s);
                             if (tjson) {
                                 const char* cron_s = csilk_json_get_string(tjson, "cron");
                                 if (cron_s && *cron_s) {
-                                    char next_buf[64];
-                                    if (cron_format_next_str(
-                                            cron_s, time(NULL), next_buf, sizeof(next_buf)) == 0) {
-                                        mf_scheduler_repo_job_update_last_run(
-                                            s_db_pool, job_id, "running", 0, next_buf);
-                                    }
+                                    cron_format_next_str(
+                                        cron_s, time(NULL), next_buf, sizeof(next_buf));
                                 }
                                 csilk_json_free(tjson);
+                            }
+                        }
+
+                        if (next_buf[0]) {
+                            /* Atomic CAS: only the node that wins the transition dispatches the run */
+                            int claimed = mf_scheduler_repo_job_claim_cron_run(
+                                s_db_pool, job_id, next_run, next_buf);
+                            if (claimed) {
+                                scheduler_engine_trigger_job_now(job_id, user_id, "cron_tick");
                             }
                         }
                     }
