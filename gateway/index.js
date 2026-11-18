@@ -33,7 +33,7 @@ async function callImApi(platform, op, body, bearer) {
     op === 'bind' ? `/api/im/${platform}/bind` :
     '/api/im/bindings/token';
 
-  const res = await fetch(API_BASE + path, {
+  const res = await fetch((process.env.MINEFOLIO_API || API_BASE) + path, {
     method: op === 'token' ? 'POST' : 'POST',
     headers: {
       'Content-Type': 'application/json',

@@ -10,7 +10,9 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "cli": "node cli.js"
+    "cli": "node cli.js",
+    "onebot": "node adapters/onebot-server.js",
+    "test:adapters": "node --test adapters/test/"
   },
   "dependencies": {}
 }

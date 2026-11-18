@@ -77,8 +77,8 @@ check "gateway CLI: 未绑定 → 引导绑定" "$(echo "$REPLY" | grep -c '尚�
 REPLY=$(node "$GW/cli.js" qq qq_user_001 "$BIND_TOKEN" "我最近一个月花了多少" 2>&1)
 # 未配 AI 模型时后端回 "AI 查询失败" 或正常结果; 关键: 不报越权/绑定错误, 且是 bound=1 路径
 case "$REPLY" in
-  *尚未绑定*|*被拒*|*1004*|*查询失败*) check "gateway CLI: 已绑定查账 (无越权)" "FAIL" "PASS";;
-  *) check "gateway CLI: 已绑定查账 (正常路径)" "PASS" "PASS";;
+  *尚未绑定*|*被拒*|*已被其他用户*|*empty*response*) check "gateway CLI: 已绑定查账 (无越权)" "FAIL" "PASS";;
+  *) check "gateway CLI: 已绑定查账 (正常路径, 含 AI 未配置的友好降级)" "PASS" "PASS";;
 esac
 
 # --- Case 3: 只读收敛 — 写操作被拦截 (LLM 无写工具) ---
