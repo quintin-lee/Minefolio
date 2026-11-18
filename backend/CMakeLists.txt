@@ -524,6 +524,13 @@ target_link_libraries(test_ai_news_privacy PRIVATE csilk crypto CURL::libcurl ${
 add_dependencies(test_ai_news_privacy copy_assets)
 add_test(NAME test_ai_news_privacy COMMAND test_ai_news_privacy)
 
+add_executable(test_scheduler_migration tests/unit/test_scheduler_migration.c ${LIB_SOURCES})
+target_include_directories(test_scheduler_migration PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_scheduler_migration PRIVATE -UNDEBUG)
+target_link_libraries(test_scheduler_migration PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_dependencies(test_scheduler_migration copy_assets)
+add_test(NAME test_scheduler_migration COMMAND test_scheduler_migration)
+
 
 
 

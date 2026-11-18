@@ -38,11 +38,11 @@
 
 ## Task Decomposition
 
-### Task 1: 数据库迁移脚本与表结构（Flyway V021）
+### Task 1: 数据库迁移脚本与表结构（Flyway V029）
 
 **Files:**
-- Create: `backend/sql/migrations/sqlite/V021__scheduled_jobs_and_logs.sql`
-- Create: `backend/sql/migrations/postgres/V021__scheduled_jobs_and_logs.sql`
+- Create: `backend/sql/migrations/sqlite/V029__scheduled_jobs_and_logs.sql`
+- Create: `backend/sql/migrations/postgres/V029__scheduled_jobs_and_logs.sql`
 - Test: `backend/tests/unit/test_scheduler_migration.c`
 
 **Interfaces:**
@@ -51,22 +51,22 @@
   - `user_notification_channels` 表（包含 `user_id`, `channel_type`, `webhook_url`, `secret_key`, `is_active`）
   - `job_run_logs` 表（包含 `job_id`, `user_id`, `started_at`, `completed_at`, `status`, `duration_ms`, `trigger_reason`, `output_summary`, `error_message`, `notification_status`）
 
-- [ ] **Step 1: 编写 SQLite 与 PostgreSQL 的 V021 迁移 SQL 文件**
-  - 在 `backend/sql/migrations/sqlite/V021__scheduled_jobs_and_logs.sql` 中使用 `INTEGER PRIMARY KEY AUTOINCREMENT`。
-  - 在 `backend/sql/migrations/postgres/V021__scheduled_jobs_and_logs.sql` 中使用 `BIGSERIAL PRIMARY KEY`。
+- [x] **Step 1: 编写 SQLite 与 PostgreSQL 的 V029 迁移 SQL 文件**
+  - 在 `backend/sql/migrations/sqlite/V029__scheduled_jobs_and_logs.sql` 中使用 `INTEGER PRIMARY KEY AUTOINCREMENT`。
+  - 在 `backend/sql/migrations/postgres/V029__scheduled_jobs_and_logs.sql` 中使用 `BIGSERIAL PRIMARY KEY`。
   - 建立索引 `idx_scheduled_jobs_user_enabled`、`idx_job_run_logs_job_id`、`idx_job_run_logs_user_started`。
 
-- [ ] **Step 2: 编写迁移单元测试 `test_scheduler_migration.c`**
+- [x] **Step 2: 编写迁移单元测试 `test_scheduler_migration.c`**
   - 在内存/临时 SQLite 库中执行迁移并验证表结构存在、列约束有效。
   - 验证 `user_notification_channels` 的 `UNIQUE(user_id)` 约束。
 
-- [ ] **Step 3: 隔离环境编译并运行迁移测试**
+- [x] **Step 3: 隔离环境编译并运行迁移测试**
   - Run: `./backend/tests/run_isolated.sh build backend/build`
   - Run: `./backend/tests/run_isolated.sh -- ./backend/build/test_scheduler_migration`
   - Expected: PASS
 
-- [ ] **Step 4: 提交 Task 1 代码**
-  - Git commit: `feat(db): add V021 migration for scheduled jobs and run logs`
+- [x] **Step 4: 提交 Task 1 代码**
+  - Git commit: `feat(db): add V029 migration for scheduled jobs and run logs`
 
 ---
 
