@@ -335,11 +335,73 @@ tx_list(csilk_db_pool_t* pool,
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     snprintf(limit, sizeof(limit), "%lld", (long long)page_size);
     snprintf(offset, sizeof(offset), "%lld", (long long)((page - 1) * page_size));
-    char        sql[1024], count_sql[1024];
+
+    /* 动态条件片段与参数一一对应，避免 strncat 拼接导致参数数组越界或
+       条件片段与参数错位（AGENTS.md: 动态 SQL 必须用匹配 %s 指定符）。 */
+    char cond_sql[512] = {0};
+    int  cond_len = 0;
+
     const char *params[16], *cnt_params[16];
     int         pidx = 0, cnt_pidx = 0;
     params[pidx++] = uid;
     cnt_params[cnt_pidx++] = uid;
+
+    if (ledger_id > 0) {
+        snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
+        cond_len +=
+            snprintf(cond_sql + cond_len, sizeof(cond_sql) - cond_len, " AND t.ledger_id = ?");
+        params[pidx++] = lid;
+        cnt_params[cnt_pidx++] = lid;
+    }
+    if (asset_id && asset_id[0]) {
+        cond_len +=
+            snprintf(cond_sql + cond_len, sizeof(cond_sql) - cond_len, " AND t.asset_id = ?");
+        params[pidx++] = asset_id;
+        cnt_params[cnt_pidx++] = asset_id;
+    }
+    if (category_id && category_id[0]) {
+        cond_len +=
+            snprintf(cond_sql + cond_len, sizeof(cond_sql) - cond_len, " AND t.category_id = ?");
+        params[pidx++] = category_id;
+        cnt_params[cnt_pidx++] = category_id;
+    }
+    if (type && type[0]) {
+        cond_len += snprintf(
+            cond_sql + cond_len, sizeof(cond_sql) - cond_len, " AND t.transaction_type = ?");
+        params[pidx++] = type;
+        cnt_params[cnt_pidx++] = type;
+    }
+    if (source_type && source_type[0]) {
+        cond_len +=
+            snprintf(cond_sql + cond_len, sizeof(cond_sql) - cond_len, " AND t.source_type = ?");
+        params[pidx++] = source_type;
+        cnt_params[cnt_pidx++] = source_type;
+    }
+    if (start_date && start_date[0]) {
+        cond_len += snprintf(
+            cond_sql + cond_len, sizeof(cond_sql) - cond_len, " AND t.transaction_date >= ?");
+        params[pidx++] = start_date;
+        cnt_params[cnt_pidx++] = start_date;
+    }
+    if (end_date && end_date[0]) {
+        cond_len += snprintf(
+            cond_sql + cond_len, sizeof(cond_sql) - cond_len, " AND t.transaction_date <= ?");
+        params[pidx++] = end_date;
+        cnt_params[cnt_pidx++] = end_date;
+    }
+
+    /* 守恒断言：条件片段长度不得溢出缓冲，参数个数不得超过数组容量 */
+    if (cond_len < 0 || cond_len >= (int)sizeof(cond_sql)) {
+        *total = 0;
+        return NULL;
+    }
+    if (pidx + 2 > 16 || cnt_pidx + 1 > 16) { /* +2: LIMIT/OFFSET, +1: COUNT uid */
+        *total = 0;
+        return NULL;
+    }
+
+    char sql[1024];
+    char count_sql[1024];
     snprintf(sql,
              sizeof(sql),
              "SELECT "
@@ -348,53 +410,17 @@ tx_list(csilk_db_pool_t* pool,
              "transaction_date,t.note,a.name as asset_name,la.name as linked_asset_name,c.name as "
              "category_name FROM transactions t LEFT JOIN assets a ON t.asset_id=a.id LEFT JOIN "
              "assets la ON t.linked_asset_id=la.id LEFT JOIN categories c ON t.category_id=c.id "
-             "WHERE t.user_id=?");
-    snprintf(count_sql,
-             sizeof(count_sql),
-             "SELECT COUNT(*) AS cnt FROM transactions t WHERE t.user_id=?");
-#define AF(col, val)                                                                               \
-    do {                                                                                           \
-        strncat(sql, " AND t." col "=?", sizeof(sql) - strlen(sql) - 1);                           \
-        strncat(count_sql, " AND t." col "=?", sizeof(count_sql) - strlen(count_sql) - 1);         \
-        params[pidx++] = (val);                                                                    \
-        cnt_params[cnt_pidx++] = (val);                                                            \
-    } while (0)
-    if (ledger_id > 0) {
-        snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
-        AF("ledger_id", lid);
-    }
-    if (asset_id) {
-        AF("asset_id", asset_id);
-    }
-    if (category_id) {
-        AF("category_id", category_id);
-    }
-    if (type) {
-        AF("transaction_type", type);
-    }
-    if (source_type) {
-        AF("source_type", source_type);
-    }
-    if (start_date) {
-        strncat(sql, " AND t.transaction_date >= ?", sizeof(sql) - strlen(sql) - 1);
-        strncat(
-            count_sql, " AND t.transaction_date >= ?", sizeof(count_sql) - strlen(count_sql) - 1);
-        params[pidx++] = start_date;
-        cnt_params[cnt_pidx++] = start_date;
-    }
-    if (end_date) {
-        strncat(sql, " AND t.transaction_date <= ?", sizeof(sql) - strlen(sql) - 1);
-        strncat(
-            count_sql, " AND t.transaction_date <= ?", sizeof(count_sql) - strlen(count_sql) - 1);
-        params[pidx++] = end_date;
-        cnt_params[cnt_pidx++] = end_date;
-    }
-#undef AF
-    strncat(
-        sql, " ORDER BY t.transaction_date DESC LIMIT ? OFFSET ?", sizeof(sql) - strlen(sql) - 1);
+             "WHERE t.user_id=?%s "
+             "ORDER BY t.transaction_date DESC LIMIT ? OFFSET ?",
+             cond_sql);
     params[pidx++] = limit;
     params[pidx++] = offset;
     params[pidx] = NULL;
+
+    snprintf(count_sql,
+             sizeof(count_sql),
+             "SELECT COUNT(*) AS cnt FROM transactions t WHERE t.user_id=?%s",
+             cond_sql);
     cnt_params[cnt_pidx] = NULL;
 
     csilk_json_t* cnt_res = csilk_db_query_param_json(pool, count_sql, cnt_params);

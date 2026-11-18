@@ -87,7 +87,7 @@ balance_apply_delta_m(csilk_db_pool_t* pool,
     }
     csilk_json_free(row);
 
-    // 3. 原子更新余额（定点数字符串格式化）
+    // 3. 原子更新余额并读取变动后余额（RETURNING 合并两次查询为一次）
     char signed_delta_str[64];
     money_to_string(signed_delta, signed_delta_str, sizeof(signed_delta_str));
 
@@ -95,32 +95,20 @@ balance_apply_delta_m(csilk_db_pool_t* pool,
     csilk_json_t* res3 =
         csilk_db_query_param_json(pool,
                                   "UPDATE assets SET current_value = current_value + ?, "
-                                  "updated_at = CURRENT_TIMESTAMP WHERE id=? AND user_id=?",
+                                  "updated_at = CURRENT_TIMESTAMP WHERE id=? AND user_id=? "
+                                  "RETURNING current_value",
                                   params3);
-    if (!res3) {
+    if (!res3 || csilk_json_array_size(res3) == 0) {
+        if (res3) {
+            csilk_json_free(res3);
+        }
         CSILK_LOG_E("balance_apply_delta: failed to update balance asset_id=%lld",
                     (long long)asset_id);
         db_tx_scope_rollback(pool, &scope);
         return -2;
     }
+    money_t balance_after = db_get_money(csilk_json_array_get(res3, 0), "current_value", asset_cur);
     csilk_json_free(res3);
-
-    // 4. 读取变动后余额（balance_after 快照）
-    const char*   params4[] = {asset_id_str, user_id_str, NULL};
-    csilk_json_t* after = csilk_db_query_param_json(
-        pool, "SELECT current_value FROM assets WHERE id=? AND user_id=?", params4);
-    if (!after || csilk_json_array_size(after) == 0) {
-        if (after) {
-            csilk_json_free(after);
-        }
-        CSILK_LOG_E("balance_apply_delta: failed to read balance_after asset_id=%lld",
-                    (long long)asset_id);
-        db_tx_scope_rollback(pool, &scope);
-        return -2;
-    }
-    money_t balance_after =
-        db_get_money(csilk_json_array_get(after, 0), "current_value", asset_cur);
-    csilk_json_free(after);
 
     // 5. 写审计日志
     char balance_after_str[64], source_id_str[32];
@@ -133,8 +121,8 @@ balance_apply_delta_m(csilk_db_pool_t* pool,
                                balance_after_str,
                                source_type,
                                source_id_str,
-                               note ? note : "",
-                               NULL};
+                             note ? note : "",
+                             NULL};
     csilk_json_t* res5 = csilk_db_query_param_json(
         pool,
         "INSERT INTO asset_balance_logs (asset_id, user_id, delta, balance_after, "
