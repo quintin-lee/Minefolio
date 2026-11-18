@@ -263,6 +263,8 @@ check "export daily-expenses 含 BOM" "1" "$(echo -n "$EXP_CSV" | head -c 3 | xx
 check "导出含日期列名" "1" "$(echo "$EXP_CSV" | grep -c 'date,asset_name,category_name')"
 check "导出含数据行" "1" "$(echo "$EXP_CSV" | wc -l | awk '{print ($1 > 1) ? 1 : 0}')"
 check "导出 Content-Type 正确" "1" "$(curl -s -o /dev/null -w '%{content_type}' -H "$AUTH" "$BASE/export/daily-expenses" | grep -c 'text/csv')"
+FORBIDDEN_EXP_CODE=$(curl -s -H "$AUTH" "$BASE/export/daily-expenses?ledger_id=999999" | jq -r '.code // empty')
+check "越权导出日常收支被拦截 code=1004" "1004" "$FORBIDDEN_EXP_CODE"
 
 echo "== 21. 导入日常收支 CSV =="
 BEFORE_EXP=$(sqlite3 "$DB" "SELECT COUNT(*) FROM daily_expenses")
@@ -302,6 +304,8 @@ check "部分失败含错误详情" "1" "$(echo "$IMPORT_RES2" | jq -r 'if .data
 echo "== 23. 导出交易 CSV =="
 TX_EXPORT=$(curl -s -H "$AUTH" "$BASE/export/transactions")
 check "export transactions 含日期列名" "1" "$(echo "$TX_EXPORT" | grep -c 'date,asset_name,category_name')"
+FORBIDDEN_TX_CODE=$(curl -s -H "$AUTH" "$BASE/export/transactions?ledger_id=999999" | jq -r '.code // empty')
+check "越权导出交易被拦截 code=1004" "1004" "$FORBIDDEN_TX_CODE"
 
 echo "== 24. 方向数据化：新类型 interest 驱动统计、余额、列表 =="
 curl -s -H "$AUTH" -H "Content-Type: application/json" "$BASE/transactions" -d "{\"asset_id\":$WALLET_ID,\"category_id\":$ASSET_CAT,\"transaction_type\":\"interest\",\"amount\":200,\"currency\":\"CNY\",\"transaction_date\":\"2026-09-01\"}" >/dev/null

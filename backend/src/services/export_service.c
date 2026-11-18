@@ -21,9 +21,16 @@ transactions_export_csv(csilk_ctx_t* c)
         return;
     }
 
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "viewer");
+    if (ledger_id <= 0) {
+        return;
+    }
+
     csilk_db_pool_t* pool = db_get_pool();
     char             uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    char lid_str[32];
+    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
 
     csilk_json_t* rows = csilk_db_query_param_json(
         pool,
@@ -34,8 +41,8 @@ transactions_export_csv(csilk_ctx_t* c)
         "LEFT JOIN assets a ON t.asset_id=a.id "
         "LEFT JOIN assets la ON t.linked_asset_id=la.id "
         "LEFT JOIN categories c ON t.category_id=c.id "
-        "WHERE t.user_id=? ORDER BY t.transaction_date DESC",
-        (const char*[]){uid_str, NULL});
+        "WHERE t.user_id=? AND t.ledger_id=? ORDER BY t.transaction_date DESC",
+        (const char*[]){uid_str, lid_str, NULL});
 
     char*  csv = NULL;
     size_t csv_len = 0;
@@ -154,9 +161,16 @@ daily_expenses_export_csv(csilk_ctx_t* c)
         return;
     }
 
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "viewer");
+    if (ledger_id <= 0) {
+        return;
+    }
+
     csilk_db_pool_t* pool = db_get_pool();
     char             uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    char lid_str[32];
+    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
 
     csilk_json_t* rows = csilk_db_query_param_json(
         pool,
@@ -165,8 +179,8 @@ daily_expenses_export_csv(csilk_ctx_t* c)
         "FROM daily_expenses de "
         "LEFT JOIN assets a ON de.asset_id=a.id "
         "LEFT JOIN categories c ON de.category_id=c.id "
-        "WHERE de.user_id=? ORDER BY de.expense_date DESC",
-        (const char*[]){uid_str, NULL});
+        "WHERE de.user_id=? AND de.ledger_id=? ORDER BY de.expense_date DESC",
+        (const char*[]){uid_str, lid_str, NULL});
 
     char*  csv = NULL;
     size_t csv_len = 0, csv_cap = 4096;

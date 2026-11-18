@@ -83,17 +83,17 @@
 - Modify: `backend/src/services/export_service.c:20-40, 150-175`
 - Test: `backend/tests/test_link.sh`
 
-- [ ] **Step 1: 在 `transactions_export_csv` 中增加账本范围过滤**
+- [x] **Step 1: 在 `transactions_export_csv` 中增加账本范围过滤**
   - 调用 `ctx_ledger_id(c, user_id, "viewer")` 校验只读权限。
   - 查询语句由 `WHERE t.user_id=?` 改为 `WHERE t.user_id=? AND t.ledger_id=?`，参数追加 `lid_str`。
-- [ ] **Step 2: 在 `daily_expenses_export_csv` 中增加账本范围过滤**
+- [x] **Step 2: 在 `daily_expenses_export_csv` 中增加账本范围过滤**
   - 调用 `ctx_ledger_id(c, user_id, "viewer")` 校验只读权限。
   - 查询语句由 `WHERE de.user_id=?` 改为 `WHERE de.user_id=? AND de.ledger_id=?`，参数追加 `lid_str`。
-- [ ] **Step 3: 更新相关测试**
+- [x] **Step 3: 更新相关测试**
   - 确认带有 `X-Ledger-Id` 或 `?ledger_id=` 请求头时导出指定账本数据；跨账本越权时被正确拦截。
-- [ ] **Step 4: 隔离环境编译并测试验证**
+- [x] **Step 4: 隔离环境编译并测试验证**
   - `./backend/tests/run_isolated.sh -- bash backend/tests/test_link.sh`
-- [ ] **Step 5: 提交代码**
+- [x] **Step 5: 提交代码**
   - Git commit: `fix(export): scope transaction and expense csv export to active ledger`
 
 ---
