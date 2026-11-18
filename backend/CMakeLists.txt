@@ -531,6 +531,14 @@ target_link_libraries(test_scheduler_migration PRIVATE csilk crypto CURL::libcur
 add_dependencies(test_scheduler_migration copy_assets)
 add_test(NAME test_scheduler_migration COMMAND test_scheduler_migration)
 
+add_executable(test_scheduler_repo tests/unit/test_scheduler_repo.c ${LIB_SOURCES})
+target_include_directories(test_scheduler_repo PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_scheduler_repo PRIVATE -UNDEBUG)
+target_link_libraries(test_scheduler_repo PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_dependencies(test_scheduler_repo copy_assets)
+add_test(NAME test_scheduler_repo COMMAND test_scheduler_repo)
+
+
 
 
 

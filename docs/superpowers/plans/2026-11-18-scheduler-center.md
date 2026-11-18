@@ -94,19 +94,19 @@
   - `int mf_scheduler_repo_log_complete(void* pool, int64_t log_id, const char* status, int duration_ms, const char* output_summary, const char* error_msg, const char* notif_status)`
   - `csilk_json_t* mf_scheduler_repo_log_list(void* pool, int64_t user_id, bool is_admin, int64_t job_id, int64_t page, int64_t page_size, int64_t* out_total)`
 
-- [ ] **Step 1: 编写失败的仓储单元测试 `test_scheduler_repo.c`**
+- [x] **Step 1: 编写失败的仓储单元测试 `test_scheduler_repo.c`**
   - 测试创建作业、更新状态、用户隔离查询（普通用户查不到他人作业）、保存和读取用户微信通道配置、记录运行日志等。
 
-- [ ] **Step 2: 实现 `domain/scheduler/` 契约与 `scheduler_repo_impl.c`**
+- [x] **Step 2: 实现 `domain/scheduler/` 契约与 `scheduler_repo_impl.c`**
   - 所有 SQL 使用 `?` 参数化绑定，写操作使用 `csilk_db_exec_param`，避免堆泄漏。
   - 普通用户只查 `user_id = ?`，管理员可查 `(user_id = ? OR user_id = 0)`。
 
-- [ ] **Step 3: 运行仓储单元测试并验证通过**
+- [x] **Step 3: 运行仓储单元测试并验证通过**
   - Run: `./backend/tests/run_isolated.sh build backend/build`
   - Run: `./backend/tests/run_isolated.sh -- ./backend/build/test_scheduler_repo`
   - Expected: PASS
 
-- [ ] **Step 4: 提交 Task 2 代码**
+- [x] **Step 4: 提交 Task 2 代码**
   - Git commit: `feat(scheduler): implement domain entities and repository layer`
 
 ---
