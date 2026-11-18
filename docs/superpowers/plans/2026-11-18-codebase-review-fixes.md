@@ -61,18 +61,18 @@
 - Modify: `backend/src/application/import_export/usecases.c`
 - Test: `backend/tests/test_link.sh`
 
-- [ ] **Step 1: 更新 `services/import_service.c` 中的日常收支导入逻辑**
+- [x] **Step 1: 更新 `services/import_service.c` 中的日常收支导入逻辑**
   - 在 `daily_expenses_import_csv` 中通过 `ctx_ledger_id(c, user_id, "editor")` 获取并校验当前激活账本；未授权（返回 <= 0）时直接拦截并返回 1004。
   - 将 `INSERT INTO daily_expenses` 改为显式包含 `ledger_id` 字段：
     `INSERT INTO daily_expenses (user_id, ledger_id, category_id, asset_id, expense_type, amount, currency, expense_date, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-- [ ] **Step 2: 更新交易导入中的 `ledger_id` 显式透传**
+- [x] **Step 2: 更新交易导入中的 `ledger_id` 显式透传**
   - 在 `transactions_import_csv` 中同样调用 `ctx_ledger_id(c, user_id, "editor")` 校验账本编辑权限，并在构造 `ledger_tx_t ltx` 时设置 `ltx.ledger_id = ledger_id`。
-- [ ] **Step 3: 在 `backend/tests/test_link.sh` 中验证导入数据的账本归属**
+- [x] **Step 3: 在 `backend/tests/test_link.sh` 中验证导入数据的账本归属**
   - 验证 CSV 导入日常收支后，通过 `GET /api/daily-expenses?ledger_id=1` 能查到导入的数据，而在 `ledger_id=2` 中查不到。
-- [ ] **Step 4: 隔离环境编译并测试验证**
+- [x] **Step 4: 隔离环境编译并测试验证**
   - `./backend/tests/run_isolated.sh build backend/build`
   - `./backend/tests/run_isolated.sh -- bash backend/tests/test_link.sh`
-- [ ] **Step 5: 提交代码**
+- [x] **Step 5: 提交代码**
   - Git commit: `fix(import): enforce ledger isolation and persist ledger_id on csv import`
 
 ---

@@ -280,6 +280,10 @@ check "导入成功 imported=2" "2" "$IMPORTED"
 check "导入成功 errors=0" "0" "$ERRS"
 AFTER_EXP=$(sqlite3 "$DB" "SELECT COUNT(*) FROM daily_expenses")
 check "数据库新增 2 条记录" "$((BEFORE_EXP + 2))" "$AFTER_EXP"
+IMP_LID=$(sqlite3 "$DB" "SELECT ledger_id FROM daily_expenses WHERE note='测试导入' LIMIT 1")
+check "导入日常收支自动绑定账本" "1" "$([ -n "$IMP_LID" ] && [ "$IMP_LID" -gt 0 ] && echo 1 || echo 0)"
+EXP_LIST_CUR=$(curl -s -H "$AUTH" "$BASE/daily-expenses?ledger_id=$IMP_LID")
+check "当前账本能查出导入记录" "1" "$(echo "$EXP_LIST_CUR" | grep -c '测试导入')"
 
 echo "== 22. 导入失败行不中断整体 =="
 cat > /tmp/mf_import_fail.csv << 'CSVEOF'

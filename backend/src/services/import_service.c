@@ -117,8 +117,15 @@ transactions_import_csv(csilk_ctx_t* c)
         return;
     }
 
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "editor");
+    if (ledger_id <= 0) {
+        return;
+    }
+
     char uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    char lid_str[32];
+    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
 
     size_t      body_len = 0;
     const char* body = csilk_get_body(c, &body_len);
@@ -338,6 +345,7 @@ transactions_import_csv(csilk_ctx_t* c)
             .tx_date = date_s,
             .note = note_s,
             .parent_tx_id = 0,
+            .ledger_id = ledger_id,
         };
 
         if (ledger_apply_tx(pool, &ltx) != 0) {
@@ -376,8 +384,15 @@ daily_expenses_import_csv(csilk_ctx_t* c)
         return;
     }
 
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "editor");
+    if (ledger_id <= 0) {
+        return;
+    }
+
     char uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    char lid_str[32];
+    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
 
     size_t      body_len = 0;
     const char* body = csilk_get_body(c, &body_len);
@@ -517,11 +532,13 @@ daily_expenses_import_csv(csilk_ctx_t* c)
         const char* currency = currency_s[0] ? currency_s : "CNY";
         const char* exp_type = strcmp(exp_type_s, "income") == 0 ? "income" : "expense";
 
-        char asset_param[32], cat_param[32];
+        char asset_param[32], cat_param[32], lid_param[32];
         snprintf(asset_param, sizeof(asset_param), "%lld", (long long)asset_id);
         snprintf(cat_param, sizeof(cat_param), "%lld", (long long)category_id);
+        snprintf(lid_param, sizeof(lid_param), "%lld", (long long)ledger_id);
 
         const char* ins_params[] = {uid_str,
+                                    lid_param,
                                     cat_param,
                                     asset_param,
                                     exp_type,
@@ -542,12 +559,12 @@ daily_expenses_import_csv(csilk_ctx_t* c)
             continue;
         }
 
-        csilk_json_t* res =
-            csilk_db_query_param_json(pool,
-                                      "INSERT INTO daily_expenses (user_id, category_id, asset_id, "
-                                      "expense_type, amount, currency, expense_date, note) "
-                                      "VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
-                                      ins_params);
+        csilk_json_t* res = csilk_db_query_param_json(
+            pool,
+            "INSERT INTO daily_expenses (user_id, ledger_id, category_id, asset_id, "
+            "expense_type, amount, currency, expense_date, note) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+            ins_params);
         int64_t expense_id = 0;
         if (res && csilk_json_array_size(res) > 0) {
             expense_id = db_get_int(csilk_json_array_get(res, 0), "id");
