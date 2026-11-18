@@ -41,12 +41,41 @@ node gateway/cli.js qq 12345 "$BIND" "我最近一个月花了多少"  # 只读�
 node gateway/cli.js qq 12345 "$BIND" "帮我记一笔 500 吃饭"   # 写操作 → 只读收敛, 不产生动账
 ```
 
-## QQ / 微信 适配（P1+，本仓库未实现）
+## QQ / 微信 适配（P1，本仓库已实现核心桥接）
 
-适配器把平台消息喂给 `handleImMessage`，并把返回的 reply 回平台：
+`gateway/adapters/` 提供 transport-agnostic 适配器，复用 `handleImMessage`：
 
-- **QQ**：NapCat / LLObot（OneBot v11）。订阅 `message` 事件，`imUserId = sender.id`，`platform='qq'`；回消息用 OneBot `send-private-msg`。
-- **微信个人号**：wechaty + puppet。`bot.on('message', m => handleImMessage('wechat', m.from(), m.text(), bindToken))`；`bot.say(reply)`。
+| 文件 | 职责 |
+|------|------|
+| `adapters/onebot.js` | OneBot v11 协议桥接（通吃 NapCat/LLObot/go-cqhttp）；可注入 `getBindToken` + `transport`，只处理私聊 |
+| `adapters/onebot-server.js` | 可运行 QQ 服务：连 OneBot WS 收事件，HTTP `send_private_msg` 回复（零依赖，仅 `ws` 可选） |
+| `adapters/wechaty.js` | wechaty 桥接（可选依赖 `npm i wechaty <puppet>`），1:1 只读 |
+| `adapters/mock-events.js` | 测试用 mock transport + OneBot 事件构造 |
+
+### 启动 QQ 网关（NapCat）
+
+```bash
+cd gateway
+# NapCat 开 OneBot: 3001 端口 (WS + HTTP)
+export ONEBOT_WS_URL=ws://127.0.0.1:3001
+export ONEBOT_API_URL=http://127.0.0.1:3001
+export ONEBOT_ACCESS_TOKEN=...            # NapCat access token
+export ONEBOT_BIND_TOKEN=<某用户的 im_bind 码>   # 单一服务码 (P1)
+# 或按 uid 区分:
+export ONEBOT_BIND_MAP='{"12345":"<bind_token>"}'
+npm run onebot
+```
+
+P1 的绑定码是**静态配置**（`ONEBOT_BIND_TOKEN`/`ONEBOT_BIND_MAP`）。P2-A 会用后端
+`/im/{platform}/bind-auth` 替换 `getBindToken`，让 IM 用户自助绑定。
+
+### 测试（不连真 IM）
+
+```bash
+cd gateway
+npm run test:adapters      # node --test adapters/test/  (5 用例: 桥接/群忽略/wechaty guard)
+```
+
 
 绑定码管理（生产）：
 - `refreshBindToken(appToken)` 可周期刷新某用户的 300s 绑定码；

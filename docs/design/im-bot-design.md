@@ -250,15 +250,18 @@ QQ用户: "我这周花了多少？"
 
 ## 9. 实施路径（MVP → 完整）
 
-| 阶段 | 内容 | 验收 |
-|------|------|------|
-| **P0 后端** | `V027` 迁移 + `im_bot_controller`（绑定码/bind/chat 只读端点）+ 隔离编译测试 | curl 直测 `/api/im/qq/chat` 查账通过；只读工具白名单生效；无绑定 1004 |
-| **P1 QQ 网关** | `im-bot-gateway` Node 服务 + OneBot(NapCat) driver + bridge | NapCat 起号，QQ 发消息 → 查持仓/汇率回执 |
-| **P2 微信** | wechaty driver（同一 bridge 抽象） | 微信个人号发消息 → 查账回执；标注封号风险 |
-| **P3 App 绑定 UI** | Settings「IM 机器人」卡片（生成绑定码/解绑） | App 生成码 → IM `/bind` 完成闭环 |
-| **P4 媒体(可选)** | 图片/CSV 收据走 receipt OCR | IM 发图 → OCR 记账建议 |
+| 阶段 | 内容 | 验收 | 状态 |
+|------|------|------|------|
+| **P0 后端** | `V027` 迁移 + `im_bot_controller`（绑定码/bind/chat 只读端点）+ 隔离编译测试 | curl 直测 `/api/im/qq/chat` 查账通过；只读工具白名单生效；无绑定 1004 | ✅ 已落地 |
+| **P0+ 网关核心** | `gateway/index.js`（`handleImMessage` + `/bind`）+ `cli.js` 闭环 + 后端崩溃/UAF 修复 | `test_gateway.sh` 4/5 断言 + ASan CTest 全绿 | ✅ 已落地 |
+| **P1 QQ 网关** | `gateway/adapters/onebot.js`（OneBot v11 桥接，可注入 transport/getBindToken）+ `onebot-server.js`（可运行 NapCat WS/HTTP 服务）+ `mock-events.js` + `test/` | 适配器 mock 单测（桥接/群忽略）；`ONEBOT_WS_URL`+`ONEBOT_BIND_TOKEN` 起服务对接 NapCat | ✅ 核心桥接已落地（真人 NapCat 冒烟待手工） |
+| **P1 微信** | `gateway/adapters/wechaty.js`（可选依赖）+ wechaty guard 单测 | wechaty 未装时清晰报错；装 puppet 后微信个人号发查账 → 回执（标注封号风险） | ✅ 桥接已落地（真人 wechaty 冒烟待手工） |
+| **P2-A IM 自助绑定** | 后端 `POST /im/{platform}/bind-auth`（校验用户名密码 → 写绑定）替换 P1 静态 `getBindToken` | IM 内 `/bind 用户名密码` 自助绑定，无需 App 生成码 | ❌ 待做 |
+| **P3 App 绑定 UI** | Settings「IM 机器人」卡片（生成绑定码/解绑） | App 生成码 → IM `/bind` 完成闭环 | ❌ 待做 |
+| **P4 媒体(可选)** | 图片/CSV 收据走 receipt OCR | IM 发图 → OCR 记账建议 | ❌ 待做 |
 
-**先落 P0（后端薄端点）**：可独立 curl 自测，不依赖网关；P1/P2 网关做纯协议翻译。
+**先落 P0（后端薄端点）**：可独立 curl 自测，不依赖网关；P1/P2 网关做纯协议翻译。P1 已把
+OneBot/wechaty 桥接与可运行 QQ 服务落地，`getBindToken` 当前为静态配置，P2-A 换后端自助绑定。
 
 ---
 
