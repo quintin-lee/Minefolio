@@ -1,0 +1,254 @@
+#include "services/notification/wechat_push_service.h"
+
+#include <curl/curl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <strings.h>
+
+#include "csilk/csilk.h"
+
+struct response_buf {
+    char*  data;
+    size_t size;
+};
+
+static size_t
+write_callback(void* contents, size_t size, size_t nmemb, void* userp)
+{
+    size_t               realsize = size * nmemb;
+    struct response_buf* mem = (struct response_buf*)userp;
+
+    char* ptr = realloc(mem->data, mem->size + realsize + 1);
+    if (!ptr) {
+        return 0;
+    }
+
+    mem->data = ptr;
+    memcpy(&(mem->data[mem->size]), contents, realsize);
+    mem->size += realsize;
+    mem->data[mem->size] = 0;
+
+    return realsize;
+}
+
+static void
+set_err(char* err_buf, size_t err_len, const char* msg)
+{
+    if (err_buf && err_len > 0 && msg) {
+        snprintf(err_buf, err_len, "%s", msg);
+    }
+}
+
+int
+wechat_push_service_send(const push_channel_config_t* cfg,
+                         const char*                  title,
+                         const char*                  markdown_body,
+                         char*                        err_buf,
+                         size_t                       err_len)
+{
+    if (!cfg || !title || !*title) {
+        set_err(err_buf, err_len, "Invalid arguments: cfg or title is null");
+        return -1;
+    }
+
+    char target_url[512];
+    target_url[0] = '\0';
+
+    csilk_json_t* payload_json = csilk_json_object();
+    if (!payload_json) {
+        set_err(err_buf, err_len, "Failed to allocate payload json");
+        return -1;
+    }
+
+    bool is_serverchan = (strcasecmp(cfg->channel_type, "serverchan") == 0);
+    bool is_pushdeer = (strcasecmp(cfg->channel_type, "pushdeer") == 0);
+    bool is_webhook = (strcasecmp(cfg->channel_type, "webhook") == 0);
+
+    if (is_serverchan) {
+        if (!cfg->secret_key[0]) {
+            csilk_json_free(payload_json);
+            set_err(err_buf, err_len, "ServerChan secret_key is required");
+            return -1;
+        }
+
+        if (cfg->webhook_url[0] != '\0') {
+            size_t ulen = strlen(cfg->webhook_url);
+            if (strstr(cfg->webhook_url, ".send")) {
+                snprintf(target_url, sizeof(target_url), "%s", cfg->webhook_url);
+            } else if (cfg->webhook_url[ulen - 1] == '/') {
+                snprintf(
+                    target_url, sizeof(target_url), "%s%s.send", cfg->webhook_url, cfg->secret_key);
+            } else {
+                snprintf(target_url,
+                         sizeof(target_url),
+                         "%s/%s.send",
+                         cfg->webhook_url,
+                         cfg->secret_key);
+            }
+        } else {
+            snprintf(
+                target_url, sizeof(target_url), "https://sctapi.ftqq.com/%s.send", cfg->secret_key);
+        }
+
+        csilk_json_add_string(payload_json, "title", title);
+        csilk_json_add_string(payload_json, "desp", markdown_body ? markdown_body : "");
+    } else if (is_pushdeer) {
+        if (!cfg->secret_key[0]) {
+            csilk_json_free(payload_json);
+            set_err(err_buf, err_len, "PushDeer pushkey/secret_key is required");
+            return -1;
+        }
+
+        if (cfg->webhook_url[0] != '\0') {
+            size_t ulen = strlen(cfg->webhook_url);
+            if (strstr(cfg->webhook_url, "/push")) {
+                snprintf(target_url, sizeof(target_url), "%s", cfg->webhook_url);
+            } else if (cfg->webhook_url[ulen - 1] == '/') {
+                snprintf(target_url, sizeof(target_url), "%smessage/push", cfg->webhook_url);
+            } else {
+                snprintf(target_url, sizeof(target_url), "%s/message/push", cfg->webhook_url);
+            }
+        } else {
+            snprintf(target_url, sizeof(target_url), "https://api2.pushdeer.com/message/push");
+        }
+
+        csilk_json_add_string(payload_json, "pushkey", cfg->secret_key);
+        csilk_json_add_string(payload_json, "text", title);
+        csilk_json_add_string(payload_json, "desp", markdown_body ? markdown_body : "");
+        csilk_json_add_string(payload_json, "type", "markdown");
+    } else if (is_webhook) {
+        if (!cfg->webhook_url[0]) {
+            csilk_json_free(payload_json);
+            set_err(err_buf, err_len, "Webhook URL is required");
+            return -1;
+        }
+        snprintf(target_url, sizeof(target_url), "%s", cfg->webhook_url);
+
+        csilk_json_add_string(payload_json, "title", title);
+        csilk_json_add_string(payload_json, "content", markdown_body ? markdown_body : "");
+        csilk_json_add_string(payload_json, "text", markdown_body ? markdown_body : "");
+    } else {
+        csilk_json_free(payload_json);
+        set_err(err_buf, err_len, "Unknown channel_type");
+        return -1;
+    }
+
+    size_t plen = 0;
+    char*  payload_str = csilk_json_serialize(payload_json, &plen);
+    csilk_json_free(payload_json);
+    if (!payload_str) {
+        set_err(err_buf, err_len, "Failed to serialize payload to string");
+        return -1;
+    }
+
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        free(payload_str);
+        set_err(err_buf, err_len, "curl_easy_init failed");
+        return -1;
+    }
+
+    struct response_buf resp = {NULL, 0};
+    struct curl_slist*  headers = NULL;
+    headers = curl_slist_append(headers, "Content-Type: application/json; charset=utf-8");
+
+    char auth_header[256];
+    if (is_webhook && cfg->secret_key[0] != '\0') {
+        snprintf(auth_header, sizeof(auth_header), "Authorization: Bearer %s", cfg->secret_key);
+        headers = curl_slist_append(headers, auth_header);
+    }
+
+    curl_easy_setopt(curl, CURLOPT_URL, target_url);
+    curl_easy_setopt(curl, CURLOPT_POST, 1L);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload_str);
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void*)&resp);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "Minefolio/1.0 NotificationAgent");
+
+    /* Support test environments */
+    const char* insecure_env = getenv("MINEFOLIO_ALLOW_INSECURE_SSL");
+    if (insecure_env && (strcmp(insecure_env, "1") == 0 || strcasecmp(insecure_env, "true") == 0)) {
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+    }
+
+    CURLcode res = curl_easy_perform(curl);
+    long     http_code = 0;
+    if (res == CURLE_OK) {
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+    }
+
+    curl_slist_free_all(headers);
+    free(payload_str);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK) {
+        if (resp.data) {
+            free(resp.data);
+        }
+        char msg[128];
+        snprintf(msg, sizeof(msg), "cURL request failed: %s", curl_easy_strerror(res));
+        set_err(err_buf, err_len, msg);
+        return -1;
+    }
+
+    if (http_code < 200 || http_code >= 300) {
+        char msg[256];
+        snprintf(msg,
+                 sizeof(msg),
+                 "HTTP %ld error from push gateway%s%s",
+                 http_code,
+                 resp.data ? ": " : "",
+                 resp.data ? resp.data : "");
+        if (resp.data) {
+            free(resp.data);
+        }
+        set_err(err_buf, err_len, msg);
+        return -1;
+    }
+
+    /* Check gateway-level JSON errors if returned */
+    if (resp.data) {
+        csilk_json_t* res_json = csilk_json_parse(resp.data);
+        if (res_json) {
+            if (is_serverchan) {
+                int64_t code = csilk_json_get_int(res_json, "code");
+                if (code != 0) {
+                    const char* errmsg = csilk_json_get_string(res_json, "message");
+                    char        msg[256];
+                    snprintf(msg,
+                             sizeof(msg),
+                             "ServerChan error code %lld: %s",
+                             (long long)code,
+                             errmsg ? errmsg : "unknown");
+                    set_err(err_buf, err_len, msg);
+                    csilk_json_free(res_json);
+                    free(resp.data);
+                    return -1;
+                }
+            } else if (is_pushdeer) {
+                int64_t code = csilk_json_get_int(res_json, "code");
+                if (code != 0) {
+                    const char* errmsg = csilk_json_get_string(res_json, "error");
+                    char        msg[256];
+                    snprintf(msg,
+                             sizeof(msg),
+                             "PushDeer error code %lld: %s",
+                             (long long)code,
+                             errmsg ? errmsg : "unknown");
+                    set_err(err_buf, err_len, msg);
+                    csilk_json_free(res_json);
+                    free(resp.data);
+                    return -1;
+                }
+            }
+            csilk_json_free(res_json);
+        }
+        free(resp.data);
+    }
+
+    return 0;
+}

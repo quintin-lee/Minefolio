@@ -545,6 +545,13 @@ target_link_libraries(test_cron_parser PRIVATE csilk crypto CURL::libcurl ${PQ_L
 add_dependencies(test_cron_parser copy_assets)
 add_test(NAME test_cron_parser COMMAND test_cron_parser)
 
+add_executable(test_wechat_push_service tests/unit/test_wechat_push_service.c ${LIB_SOURCES})
+target_include_directories(test_wechat_push_service PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_wechat_push_service PRIVATE -UNDEBUG)
+target_link_libraries(test_wechat_push_service PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m pthread)
+add_dependencies(test_wechat_push_service copy_assets)
+add_test(NAME test_wechat_push_service COMMAND test_wechat_push_service)
+
 
 
 

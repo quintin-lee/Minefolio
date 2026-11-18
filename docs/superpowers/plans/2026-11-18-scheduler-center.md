@@ -152,18 +152,18 @@
   - `typedef struct { char channel_type[32]; char webhook_url[256]; char secret_key[128]; } push_channel_config_t;`
   - `int wechat_push_service_send(const push_channel_config_t* cfg, const char* title, const char* markdown_body, char* err_buf, size_t err_len)`
 
-- [ ] **Step 1: 编写测试用例 `test_wechat_push_service.c`**
+- [x] **Step 1: 编写测试用例 `test_wechat_push_service.c`**
   - 启动本地 Mock HTTP 服务器，验证 Server酱协议（`title`, `desp` 参数）、PushDeer 协议（`text`, `desp`, `type=markdown`）与通用 JSON Webhook 协议的请求构造与返回校验。
 
-- [ ] **Step 2: 实现 `wechat_push_service.c`**
+- [x] **Step 2: 实现 `wechat_push_service.c`**
   - 使用 `curl_easy_*` 发送 HTTPS POST，设置 10 秒超时，返回标准错误诊断。
 
-- [ ] **Step 3: 编译并运行推送适配测试**
+- [x] **Step 3: 编译并运行推送适配测试**
   - Run: `./backend/tests/run_isolated.sh build backend/build`
   - Run: `./backend/tests/run_isolated.sh -- ./backend/build/test_wechat_push_service`
   - Expected: PASS
 
-- [ ] **Step 4: 提交 Task 4 代码**
+- [x] **Step 4: 提交 Task 4 代码**
   - Git commit: `feat(notification): implement wechat push service for serverchan, pushdeer, and webhooks`
 
 ---
