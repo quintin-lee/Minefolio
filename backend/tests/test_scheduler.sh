@@ -70,12 +70,12 @@ process.stdout.write(header + '.' + payload + '.' + sig);
 ")
 echo "Bob setup OK (ID: $USER_B_ID)"
 
-# 3. Test GET /api/scheduler/dashboard
+# 3. Test GET /api/scheduler/dashboard (Active jobs count includes 6 built-in tasks)
 echo "Testing GET /api/scheduler/dashboard..."
 DASH=$(curl -s -X GET "$BASE/scheduler/dashboard" -H "Authorization: Bearer $TOKEN_A")
 echo "$DASH" | jq .
 test "$(echo "$DASH" | jq -r '.code')" = "0"
-test "$(echo "$DASH" | jq -r '.data.active_jobs | floor')" = "0"
+test "$(echo "$DASH" | jq -r '.data.active_jobs | floor')" = "6"
 test "$(echo "$DASH" | jq -r '.data.push_channel.channel_type')" = "none"
 
 # 4. Test POST /api/scheduler/jobs (Create AI Task)
@@ -98,12 +98,57 @@ JOB_ID=$(echo "$CREATE_RES" | jq -r '.data.id | floor')
 test -n "$JOB_ID" && test "$JOB_ID" -gt 0
 echo "Created Job ID: $JOB_ID"
 
-# 5. Test GET /api/scheduler/jobs (List)
+# 5. Test GET /api/scheduler/jobs (List: 6 built-in + 1 custom = 7 total)
 echo "Testing GET /api/scheduler/jobs..."
 LIST_RES=$(curl -s -X GET "$BASE/scheduler/jobs" -H "Authorization: Bearer $TOKEN_A")
 test "$(echo "$LIST_RES" | jq -r '.code')" = "0"
-test "$(echo "$LIST_RES" | jq -r '.data.total | floor')" = "1"
-test "$(echo "$LIST_RES" | jq -r '.data.items[0].name')" = "每日智能简报"
+test "$(echo "$LIST_RES" | jq -r '.data.total | floor')" = "7"
+# Built-in tasks appear first
+test "$(echo "$LIST_RES" | jq -r '.data.items[0].is_builtin | floor')" = "1"
+test "$(echo "$LIST_RES" | jq -r '.data.items[0].name')" = "全市场行情与基金净值同步"
+BUILTIN_JOB_ID=$(echo "$LIST_RES" | jq -r '.data.items[0].id | floor')
+echo "Built-in Job ID: $BUILTIN_JOB_ID"
+
+# 5.1 Verify standard user Bob can also view built-in tasks (total 6 for Bob)
+echo "Testing GET /api/scheduler/jobs as standard user Bob..."
+BOB_LIST=$(curl -s -X GET "$BASE/scheduler/jobs" -H "Authorization: Bearer $TOKEN_B")
+test "$(echo "$BOB_LIST" | jq -r '.code')" = "0"
+test "$(echo "$BOB_LIST" | jq -r '.data.total | floor')" = "6"
+test "$(echo "$BOB_LIST" | jq -r '.data.items[0].is_builtin | floor')" = "1"
+
+# 5.2 Test Bob can toggle built-in task on and off
+echo "Testing toggle built-in job as Bob..."
+BOB_TOGGLE=$(curl -s -X POST "$BASE/scheduler/jobs/$BUILTIN_JOB_ID/toggle" \
+  -H "Authorization: Bearer $TOKEN_B" \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": false}')
+test "$(echo "$BOB_TOGGLE" | jq -r '.code')" = "0"
+test "$(echo "$BOB_TOGGLE" | jq -r '.data.enabled')" = "false"
+
+# Re-enable built-in job
+curl -s -X POST "$BASE/scheduler/jobs/$BUILTIN_JOB_ID/toggle" \
+  -H "Authorization: Bearer $TOKEN_B" \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": true}' > /dev/null
+
+# 5.3 Test built-in job cannot be deleted by either Bob or Alice (Admin)
+echo "Testing DELETE protection on built-in job..."
+BOB_DEL_BUILTIN=$(curl -s -X DELETE "$BASE/scheduler/jobs/$BUILTIN_JOB_ID" \
+  -H "Authorization: Bearer $TOKEN_B")
+test "$(echo "$BOB_DEL_BUILTIN" | jq -r '.code')" = "1004"
+test "$(echo "$BOB_DEL_BUILTIN" | jq -r '.message')" = "系统内置任务不可删除，如不需要可将其停用"
+
+ALICE_DEL_BUILTIN=$(curl -s -X DELETE "$BASE/scheduler/jobs/$BUILTIN_JOB_ID" \
+  -H "Authorization: Bearer $TOKEN_A")
+test "$(echo "$ALICE_DEL_BUILTIN" | jq -r '.code')" = "1004"
+test "$(echo "$ALICE_DEL_BUILTIN" | jq -r '.message')" = "系统内置任务不可删除，如不需要可将其停用"
+
+# 5.4 Test run built-in job immediately
+echo "Testing POST /api/scheduler/jobs/:id/run for built-in job..."
+RUN_BUILTIN=$(curl -s -X POST "$BASE/scheduler/jobs/$BUILTIN_JOB_ID/run" \
+  -H "Authorization: Bearer $TOKEN_B")
+test "$(echo "$RUN_BUILTIN" | jq -r '.code')" = "0"
+sleep 1
 
 # 6. Test GET /api/scheduler/jobs/:id (Detail)
 echo "Testing GET /api/scheduler/jobs/$JOB_ID..."

@@ -1,4 +1,4 @@
-export type JobType = 'ai_prompt' | 'structured_report'
+export type JobType = 'ai_prompt' | 'structured_report' | 'system_builtin'
 export type TriggerType = 'cron' | 'market_event'
 export type DeliveryChannel = 'user_default' | 'custom_webhook' | 'silent_db'
 export type ChannelType = 'serverchan' | 'pushdeer' | 'wechat_work' | 'webhook' | 'none'
@@ -15,6 +15,7 @@ export interface ScheduledJob {
   delivery_channel: DeliveryChannel
   delivery_config?: string
   enabled: number | boolean
+  is_builtin?: number | boolean
   last_run_at?: string
   last_run_status?: string
   last_run_duration_ms?: number

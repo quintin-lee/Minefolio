@@ -49,6 +49,8 @@ int scheduler_usecase_get_channel(void* pool, int64_t user_id, csilk_json_t** ou
 
 int scheduler_usecase_save_channel(void* pool, int64_t user_id, const channel_save_dto_t* dto);
 
+int scheduler_usecase_seed_builtin_jobs(void* pool);
+
 int scheduler_usecase_test_channel(void* pool, int64_t user_id, char* err_buf, size_t err_len);
 
 #ifdef __cplusplus

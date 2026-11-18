@@ -5,6 +5,7 @@
 #include "services/ai/tools/mcp/mcp_stdio_pool.h"
 #include "services/ai/ai_news_service.h"
 #include "infrastructure/repositories/dca_repo_impl.h"
+#include "infrastructure/repositories/scheduler_repo_impl.h"
 #include "csilk/csilk.h"
 #include <pthread.h>
 #include <stdbool.h>
@@ -120,6 +121,12 @@ check_and_trigger_dca_plans(csilk_db_pool_t* pool, struct tm* tm_now)
     csilk_json_free(plans);
 }
 
+void
+market_scheduler_check_and_trigger_dca(csilk_db_pool_t* pool, struct tm* tm_now)
+{
+    check_and_trigger_dca_plans(pool, tm_now);
+}
+
 static bool
 is_cn_trading_hour(struct tm* tm_now)
 {
@@ -210,23 +217,27 @@ scheduler_loop(void* arg)
         /* Check DCA plans once per day */
         if (g_pool && tm_now.tm_yday != last_dca_check_day) {
             last_dca_check_day = tm_now.tm_yday;
-            pthread_mutex_unlock(&g_sched_mutex);
-            check_and_trigger_dca_plans(g_pool, &tm_now);
-            pthread_mutex_lock(&g_sched_mutex);
-            if (!g_sched_running) {
-                break;
+            if (mf_scheduler_repo_is_builtin_enabled(g_pool, "dca_plan_trigger")) {
+                pthread_mutex_unlock(&g_sched_mutex);
+                check_and_trigger_dca_plans(g_pool, &tm_now);
+                pthread_mutex_lock(&g_sched_mutex);
+                if (!g_sched_running) {
+                    break;
+                }
             }
         }
 
         /* AI 每日金融资讯分析（每个 tm_yday 触发一次，约在 08:00 后执行） */
         if (g_pool && tm_now.tm_yday != last_news_check_day && tm_now.tm_hour >= 8) {
             last_news_check_day = tm_now.tm_yday;
-            pthread_mutex_unlock(&g_sched_mutex);
-            CSILK_LOG_I("Scheduler: triggering daily AI news analysis");
-            ai_news_scheduler_tick(g_pool);
-            pthread_mutex_lock(&g_sched_mutex);
-            if (!g_sched_running) {
-                break;
+            if (mf_scheduler_repo_is_builtin_enabled(g_pool, "ai_news_digest")) {
+                pthread_mutex_unlock(&g_sched_mutex);
+                CSILK_LOG_I("Scheduler: triggering daily AI news analysis");
+                ai_news_scheduler_tick(g_pool);
+                pthread_mutex_lock(&g_sched_mutex);
+                if (!g_sched_running) {
+                    break;
+                }
             }
         }
 
@@ -236,18 +247,20 @@ scheduler_loop(void* arg)
             int  indices_interval = any_open ? 60 : 900;
             if (now - last_indices_sync >= indices_interval) {
                 last_indices_sync = now;
-                pthread_mutex_unlock(&g_sched_mutex);
-                quote_engine_sync_indices_to_db(g_pool);
-                pthread_mutex_lock(&g_sched_mutex);
-                if (!g_sched_running) {
-                    break;
+                if (mf_scheduler_repo_is_builtin_enabled(g_pool, "global_indices_sync")) {
+                    pthread_mutex_unlock(&g_sched_mutex);
+                    quote_engine_sync_indices_to_db(g_pool);
+                    pthread_mutex_lock(&g_sched_mutex);
+                    if (!g_sched_running) {
+                        break;
+                    }
                 }
             }
         }
 
         /* 2.5 MCP stdio 池巡检：回收空闲超过 TTL 的子进程（内部带 TTL<=0 短路），
          * 每 30s 心跳一次即可，代价可忽略 */
-        {
+        if (mf_scheduler_repo_is_builtin_enabled(g_pool, "mcp_pool_cleanup")) {
             pthread_mutex_unlock(&g_sched_mutex);
             mf_mcp_stdio_pool_evict_idle();
             pthread_mutex_lock(&g_sched_mutex);
@@ -262,16 +275,19 @@ scheduler_loop(void* arg)
             int  fx_interval = 1800; /* 30 minutes */
             if ((last_fx_sync == 0 || is_weekday) && (now - last_fx_sync >= fx_interval)) {
                 last_fx_sync = now;
-                pthread_mutex_unlock(&g_sched_mutex);
-                exchange_rate_refresh_all();
-                pthread_mutex_lock(&g_sched_mutex);
-                if (!g_sched_running) {
-                    break;
+                if (mf_scheduler_repo_is_builtin_enabled(g_pool, "forex_rates_sync")) {
+                    pthread_mutex_unlock(&g_sched_mutex);
+                    exchange_rate_refresh_all();
+                    pthread_mutex_lock(&g_sched_mutex);
+                    if (!g_sched_running) {
+                        break;
+                    }
                 }
             }
         }
 
-        if (g_config_auto_sync && strcmp(g_config_sync_mode, "manual") != 0) {
+        if (g_config_auto_sync && strcmp(g_config_sync_mode, "manual") != 0 &&
+            mf_scheduler_repo_is_builtin_enabled(g_pool, "market_quote_sync")) {
             if (strcmp(g_config_sync_mode, "interval") == 0) {
                 int interval_sec = g_config_interval_min > 0 ? (g_config_interval_min * 60) : 1800;
                 if (now - last_sync_time >= interval_sec) {

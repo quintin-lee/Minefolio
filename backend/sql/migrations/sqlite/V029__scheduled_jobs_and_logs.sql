@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS scheduled_jobs (
     delivery_channel    TEXT NOT NULL DEFAULT 'user_default',
     delivery_config     TEXT DEFAULT '{}',
     enabled             INTEGER NOT NULL DEFAULT 1,
+    is_builtin          INTEGER NOT NULL DEFAULT 0,
     last_run_at         TEXT DEFAULT '',
     last_run_status     TEXT DEFAULT '',
     last_run_duration_ms INTEGER DEFAULT 0,
@@ -22,6 +23,9 @@ CREATE TABLE IF NOT EXISTS scheduled_jobs (
 
 CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_user_enabled 
     ON scheduled_jobs(user_id, enabled);
+
+CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_builtin 
+    ON scheduled_jobs(is_builtin);
 
 CREATE TABLE IF NOT EXISTS user_notification_channels (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,

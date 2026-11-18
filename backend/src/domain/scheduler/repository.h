@@ -23,6 +23,18 @@ int64_t       mf_scheduler_repo_job_create(void*       pool,
                                            const char* delivery_channel,
                                            const char* delivery_cfg,
                                            const char* next_run_at);
+int64_t       mf_scheduler_repo_job_create_builtin(void*       pool,
+                                                   const char* name,
+                                                   const char* desc,
+                                                   const char* job_type,
+                                                   const char* trigger_type,
+                                                   const char* trigger_cfg,
+                                                   const char* payload_cfg,
+                                                   const char* delivery_channel,
+                                                   const char* delivery_cfg,
+                                                   const char* next_run_at);
+csilk_json_t* mf_scheduler_repo_job_get_by_name(void* pool, const char* name);
+bool          mf_scheduler_repo_is_builtin_enabled(void* pool, const char* handler_name);
 int           mf_scheduler_repo_job_update(void*       pool,
                                            int64_t     user_id,
                                            bool        is_admin,

@@ -6,7 +6,21 @@
     destroy-on-close
     :close-on-click-modal="false"
   >
-    <el-tabs v-model="activeTab" class="job-mode-tabs" :before-leave="handleTabChange">
+    <el-alert
+      v-if="isBuiltin"
+      title="系统内置任务：支持启停和修改执行计划与推送配置，底层业务由 Minefolio 核心系统托管。"
+      type="info"
+      :closable="false"
+      show-icon
+      class="builtin-alert"
+    />
+
+    <el-tabs
+      v-if="!isBuiltin"
+      v-model="activeTab"
+      class="job-mode-tabs"
+      :before-leave="handleTabChange"
+    >
       <el-tab-pane name="ai_prompt">
         <template #label>
           <span class="tab-label">
@@ -108,98 +122,100 @@
       </template>
 
       <!-- Task Payload Config -->
-      <div class="form-section-title">
-        {{ activeTab === 'ai_prompt' ? 'AI 智能任务指令配置' : '结构化报表生成选项' }}
-      </div>
+      <template v-if="!isBuiltin">
+        <div class="form-section-title">
+          {{ activeTab === 'ai_prompt' ? 'AI 智能任务指令配置' : '结构化报表生成选项' }}
+        </div>
 
-      <template v-if="activeTab === 'ai_prompt'">
-        <el-form-item label="AI 提示词 (Prompt)" prop="ai_prompt">
-          <div class="prompt-templates-row">
-            <span class="template-label">推荐指令参考:</span>
-            <el-tag
-              size="small"
-              effect="plain"
-              class="prompt-tag"
-              @click="applyPromptTemplate('closing_summary')"
-            >
-              每日收盘复盘
-            </el-tag>
-            <el-tag
-              size="small"
-              effect="plain"
-              class="prompt-tag"
-              @click="applyPromptTemplate('risk_audit')"
-            >
-              资产风险与集中度
-            </el-tag>
-            <el-tag
-              size="small"
-              effect="plain"
-              class="prompt-tag"
-              @click="applyPromptTemplate('macro_news')"
-            >
-              宏观热点与异动
-            </el-tag>
-          </div>
-          <el-input
-            v-model="form.ai_prompt"
-            type="textarea"
-            :rows="4"
-            placeholder="下达给 AI Agent 的分析指令，例如：分析当前投资组合的集中度与风险暴露，结合近期市场大盘走势，生成一份精炼的投资早报。"
-          />
-        </el-form-item>
+        <template v-if="activeTab === 'ai_prompt'">
+          <el-form-item label="AI 提示词 (Prompt)" prop="ai_prompt">
+            <div class="prompt-templates-row">
+              <span class="template-label">推荐指令参考:</span>
+              <el-tag
+                size="small"
+                effect="plain"
+                class="prompt-tag"
+                @click="applyPromptTemplate('closing_summary')"
+              >
+                每日收盘复盘
+              </el-tag>
+              <el-tag
+                size="small"
+                effect="plain"
+                class="prompt-tag"
+                @click="applyPromptTemplate('risk_audit')"
+              >
+                资产风险与集中度
+              </el-tag>
+              <el-tag
+                size="small"
+                effect="plain"
+                class="prompt-tag"
+                @click="applyPromptTemplate('macro_news')"
+              >
+                宏观热点与异动
+              </el-tag>
+            </div>
+            <el-input
+              v-model="form.ai_prompt"
+              type="textarea"
+              :rows="4"
+              placeholder="下达给 AI Agent 的分析指令，例如：分析当前投资组合的集中度与风险暴露，结合近期市场大盘走势，生成一份精炼的投资早报。"
+            />
+          </el-form-item>
 
-        <el-row :gutter="16">
-          <el-col :xs="24" :sm="12" class="switch-col">
-            <div class="switch-card">
-              <div class="switch-info">
-                <span class="switch-title">注入持仓上下文</span>
-                <span class="switch-desc">自动将个人当前持仓资产、成本与市值注入模型</span>
+          <el-row :gutter="16">
+            <el-col :xs="24" :sm="12" class="switch-col">
+              <div class="switch-card">
+                <div class="switch-info">
+                  <span class="switch-title">注入持仓上下文</span>
+                  <span class="switch-desc">自动将个人当前持仓资产、成本与市值注入模型</span>
+                </div>
+                <el-switch v-model="form.with_holdings" />
               </div>
-              <el-switch v-model="form.with_holdings" />
-            </div>
-          </el-col>
-          <el-col :xs="24" :sm="12" class="switch-col">
-            <div class="switch-card">
-              <div class="switch-info">
-                <span class="switch-title">全网联网搜索</span>
-                <span class="switch-desc">允许 AI Agent 联网检索实时财经资讯与研报</span>
+            </el-col>
+            <el-col :xs="24" :sm="12" class="switch-col">
+              <div class="switch-card">
+                <div class="switch-info">
+                  <span class="switch-title">全网联网搜索</span>
+                  <span class="switch-desc">允许 AI Agent 联网检索实时财经资讯与研报</span>
+                </div>
+                <el-switch v-model="form.with_web_search" />
               </div>
-              <el-switch v-model="form.with_web_search" />
-            </div>
-          </el-col>
-        </el-row>
-      </template>
+            </el-col>
+          </el-row>
+        </template>
 
-      <template v-else>
-        <el-form-item label="报表模板类型" prop="report_type">
-          <el-select v-model="form.report_type" style="width: 100%">
-            <el-option label="每日资产盘后速报 (Daily Closing Report)" value="daily_closing_report" />
-            <el-option label="周度收益与归因分析 (Weekly PnL Summary)" value="weekly_pnl_summary" />
-            <el-option label="月度资产负债表 (Monthly Balance Sheet)" value="monthly_asset_audit" />
-          </el-select>
-        </el-form-item>
+        <template v-else>
+          <el-form-item label="报表模板类型" prop="report_type">
+            <el-select v-model="form.report_type" style="width: 100%">
+              <el-option label="每日资产盘后速报 (Daily Closing Report)" value="daily_closing_report" />
+              <el-option label="周度收益与归因分析 (Weekly PnL Summary)" value="weekly_pnl_summary" />
+              <el-option label="月度资产负债表 (Monthly Balance Sheet)" value="monthly_asset_audit" />
+            </el-select>
+          </el-form-item>
 
-        <el-row :gutter="16">
-          <el-col :xs="24" :sm="12" class="switch-col">
-            <div class="switch-card">
-              <div class="switch-info">
-                <span class="switch-title">包含持仓明细清单</span>
-                <span class="switch-desc">按仓位排序罗列前十大资产头寸与盈亏比率</span>
+          <el-row :gutter="16">
+            <el-col :xs="24" :sm="12" class="switch-col">
+              <div class="switch-card">
+                <div class="switch-info">
+                  <span class="switch-title">包含持仓明细清单</span>
+                  <span class="switch-desc">按仓位排序罗列前十大资产头寸与盈亏比率</span>
+                </div>
+                <el-switch v-model="form.include_positions" />
               </div>
-              <el-switch v-model="form.include_positions" />
-            </div>
-          </el-col>
-          <el-col :xs="24" :sm="12" class="switch-col">
-            <div class="switch-card">
-              <div class="switch-info">
-                <span class="switch-title">包含近 7 日收支记录</span>
-                <span class="switch-desc">附加统计周期内的现金流出入变动</span>
+            </el-col>
+            <el-col :xs="24" :sm="12" class="switch-col">
+              <div class="switch-card">
+                <div class="switch-info">
+                  <span class="switch-title">包含近 7 日收支记录</span>
+                  <span class="switch-desc">附加统计周期内的现金流出入变动</span>
+                </div>
+                <el-switch v-model="form.include_cashflow" />
               </div>
-              <el-switch v-model="form.include_cashflow" />
-            </div>
-          </el-col>
-        </el-row>
+            </el-col>
+          </el-row>
+        </template>
       </template>
 
       <!-- Delivery Config -->
@@ -267,6 +283,8 @@ const emit = defineEmits<{
 const visible = ref(false)
 const saving = ref(false)
 const editingJobId = ref<number | null>(null)
+const isBuiltin = ref(false)
+const existingPayloadConfig = ref('')
 const activeTab = ref<JobType>('ai_prompt')
 const cronPreset = ref('0 8 * * *')
 const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1024)
@@ -327,7 +345,7 @@ const rules: FormRules = {
   ai_prompt: [
     {
       validator: (_rule, value, callback) => {
-        if (activeTab.value === 'ai_prompt') {
+        if (!isBuiltin.value && activeTab.value === 'ai_prompt') {
           if (!value || !value.trim()) {
             return callback(new Error('请输入 AI 任务提示词指令'))
           }
@@ -401,7 +419,9 @@ const open = (job?: ScheduledJob) => {
   visible.value = true
   if (job) {
     editingJobId.value = job.id
-    activeTab.value = job.job_type
+    isBuiltin.value = Boolean(job.is_builtin)
+    existingPayloadConfig.value = job.payload_config || '{}'
+    activeTab.value = (job.job_type === 'system_builtin' ? 'ai_prompt' : job.job_type) as JobType
     form.name = job.name
     form.description = job.description || ''
     form.trigger_type = job.trigger_type
@@ -461,6 +481,8 @@ const open = (job?: ScheduledJob) => {
     }
   } else {
     editingJobId.value = null
+    isBuiltin.value = false
+    existingPayloadConfig.value = ''
     activeTab.value = 'ai_prompt'
     form.name = ''
     form.description = ''
@@ -488,18 +510,25 @@ const handleSave = async () => {
       ? { cron_expr: form.cron_expr.trim() }
       : { event_name: form.event_name }
 
-  const payloadConfigObj =
-    activeTab.value === 'ai_prompt'
-      ? {
-          prompt: form.ai_prompt.trim(),
-          with_holdings: form.with_holdings,
-          with_web_search: form.with_web_search
+  const payloadConfigObj = isBuiltin.value
+    ? (() => {
+        try {
+          return JSON.parse(existingPayloadConfig.value || '{}')
+        } catch {
+          return {}
         }
-      : {
-          report_type: form.report_type,
-          include_positions: form.include_positions,
-          include_cashflow: form.include_cashflow
-        }
+      })()
+    : (activeTab.value === 'ai_prompt'
+        ? {
+            prompt: form.ai_prompt.trim(),
+            with_holdings: form.with_holdings,
+            with_web_search: form.with_web_search
+          }
+        : {
+            report_type: form.report_type,
+            include_positions: form.include_positions,
+            include_cashflow: form.include_cashflow
+          })
 
   const deliveryConfigObj =
     form.delivery_channel === 'custom_webhook'
@@ -659,6 +688,10 @@ defineExpose({
   font-size: 12px;
   color: var(--el-text-color-secondary);
   line-height: 1.4;
+}
+
+.builtin-alert {
+  margin-bottom: 18px;
 }
 
 .delivery-group {

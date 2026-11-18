@@ -14,6 +14,13 @@
 #include "csilk/csilk.h"
 #include "infrastructure/repositories/scheduler_repo_impl.h"
 #include "services/notification/wechat_push_service.h"
+#include "application/scheduler/usecases.h"
+#include "application/market/usecases.h"
+#include "services/market/market_scheduler.h"
+#include "services/market/quote_engine.h"
+#include "services/market/exchange_rate_service.h"
+#include "services/ai/ai_news_service.h"
+#include "services/ai/tools/mcp/mcp_stdio_pool.h"
 
 static void*                    s_db_pool = NULL;
 static scheduler_worker_pool_t* s_worker_pool = NULL;
@@ -144,6 +151,114 @@ run_job_task(void* arg)
                  now_str);
 
         snprintf(output_summary, sizeof(output_summary), "结构化报表生成完毕");
+    } else if (job_type && strcmp(job_type, "system_builtin") == 0) {
+        const char*   handler = "";
+        csilk_json_t* pjson = payload_cfg ? csilk_json_parse(payload_cfg) : NULL;
+        if (pjson) {
+            handler = csilk_json_get_string(pjson, "handler");
+        }
+
+        if (handler && strcmp(handler, "market_quote_sync") == 0) {
+            int synced = 0, failed = 0;
+            market_usecase_do_sync_user(ctx->pool, 0, &synced, &failed);
+            snprintf(output_summary,
+                     sizeof(output_summary),
+                     "全市场行情与基金净值同步完成 (成功: %d, 失败: %d)",
+                     synced,
+                     failed);
+            snprintf(output_markdown,
+                     sizeof(output_markdown),
+                     "### 📈 全市场行情与基金净值同步\n\n"
+                     "> **触发源**: %s | **执行时间**: %s\n\n"
+                     "- **同步成功标的**: %d 个\n"
+                     "- **同步失败标的**: %d 个\n"
+                     "- **执行结论**: 全量持仓与自选标的行情已成功同步刷新。\n\n"
+                     "---\n*Minefolio 系统内置任务调度*",
+                     ctx->reason,
+                     now_str,
+                     synced,
+                     failed);
+        } else if (handler && strcmp(handler, "global_indices_sync") == 0) {
+            quote_engine_sync_indices_to_db((csilk_db_pool_t*)ctx->pool);
+            snprintf(output_summary, sizeof(output_summary), "全球核心大盘指数同步完成");
+            snprintf(output_markdown,
+                     sizeof(output_markdown),
+                     "### 🌐 全球大盘指数轮询\n\n"
+                     "> **触发源**: %s | **执行时间**: %s\n\n"
+                     "- **覆盖标的**: 上证、深证、恒生、标普500、纳斯达克等核心指数\n"
+                     "- **执行结论**: 核心大盘指数最新点位与涨跌幅已持久化到数据库。\n\n"
+                     "---\n*Minefolio 系统内置任务调度*",
+                     ctx->reason,
+                     now_str);
+        } else if (handler && strcmp(handler, "forex_rates_sync") == 0) {
+            exchange_rate_refresh_all();
+            snprintf(output_summary, sizeof(output_summary), "实时外汇基准汇率同步完成");
+            snprintf(output_markdown,
+                     sizeof(output_markdown),
+                     "### 💱 实时外汇基准汇率同步\n\n"
+                     "> **触发源**: %s | **执行时间**: %s\n\n"
+                     "- **基准货币**: 人民币 (CNY)\n"
+                     "- **对价币种**: USD, HKD, EUR, JPY, GBP 等主要外汇牌价\n"
+                     "- **执行结论**: 国际基准外汇汇率已更新并预热至内存缓存。\n\n"
+                     "---\n*Minefolio 系统内置任务调度*",
+                     ctx->reason,
+                     now_str);
+        } else if (handler && strcmp(handler, "dca_plan_trigger") == 0) {
+            time_t    now_sec = time(NULL);
+            struct tm tm_now;
+            localtime_r(&now_sec, &tm_now);
+            market_scheduler_check_and_trigger_dca((csilk_db_pool_t*)ctx->pool, &tm_now);
+            snprintf(output_summary, sizeof(output_summary), "定投划转计划每日巡检完成");
+            snprintf(output_markdown,
+                     sizeof(output_markdown),
+                     "### 📅 定投划转计划每日巡检\n\n"
+                     "> **触发源**: %s | **执行时间**: %s\n\n"
+                     "- **检查周期**: 周期性自动巡检\n"
+                     "- **执行结论**: 当日到期定投计划已生成待执行流水。\n\n"
+                     "---\n*Minefolio 系统内置任务调度*",
+                     ctx->reason,
+                     now_str);
+        } else if (handler && strcmp(handler, "ai_news_digest") == 0) {
+            ai_news_scheduler_tick((csilk_db_pool_t*)ctx->pool);
+            snprintf(output_summary, sizeof(output_summary), "AI 金融快讯与研报提炼完成");
+            snprintf(output_markdown,
+                     sizeof(output_markdown),
+                     "### 📰 AI 每日金融快讯与研报提炼\n\n"
+                     "> **触发源**: %s | **执行时间**: %s\n\n"
+                     "- **资讯抓取**: 财经大盘快讯与宏观要闻\n"
+                     "- **执行结论**: 大模型已提炼核心要点与市场情绪指数。\n\n"
+                     "---\n*Minefolio 系统内置任务调度*",
+                     ctx->reason,
+                     now_str);
+        } else if (handler && strcmp(handler, "mcp_pool_cleanup") == 0) {
+            mf_mcp_stdio_pool_evict_idle();
+            snprintf(output_summary, sizeof(output_summary), "MCP 外部进程池空闲回收完成");
+            snprintf(output_markdown,
+                     sizeof(output_markdown),
+                     "### 🧹 MCP 外部进程池空闲回收\n\n"
+                     "> **触发源**: %s | **执行时间**: %s\n\n"
+                     "- **回收策略**: 释放空闲超时的 MCP 子进程\n"
+                     "- **执行结论**: 系统空闲进程资源已成功释放。\n\n"
+                     "---\n*Minefolio 系统内置任务调度*",
+                     ctx->reason,
+                     now_str);
+        } else {
+            snprintf(output_summary,
+                     sizeof(output_summary),
+                     "系统内置任务执行完毕: %s",
+                     handler ? handler : "未知");
+            snprintf(output_markdown,
+                     sizeof(output_markdown),
+                     "### ⚙️ 系统内置任务执行完毕\n\n"
+                     "> **任务标识**: %s | **触发时间**: %s\n\n"
+                     "---\n*Minefolio 系统内置任务调度*",
+                     handler ? handler : "未知",
+                     now_str);
+        }
+
+        if (pjson) {
+            csilk_json_free(pjson);
+        }
     } else {
         snprintf(output_markdown,
                  sizeof(output_markdown),
@@ -414,6 +529,10 @@ scheduler_engine_start(void* pool)
     }
 
     s_db_pool = pool;
+
+    /* Seed built-in scheduled tasks idempotently */
+    scheduler_usecase_seed_builtin_jobs(pool);
+
     s_worker_pool = scheduler_worker_pool_create(3);
     if (!s_worker_pool) {
         pthread_mutex_unlock(&s_engine_lock);

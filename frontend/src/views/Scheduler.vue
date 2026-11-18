@@ -120,9 +120,11 @@
         </el-input>
 
         <el-radio-group v-model="selectedType" size="default" class="type-filter">
-          <el-radio-button value="all">全部类型</el-radio-button>
-          <el-radio-button value="ai_prompt">AI 智能任务</el-radio-button>
-          <el-radio-button value="structured_report">结构化报表</el-radio-button>
+          <el-radio-button value="all">全部任务</el-radio-button>
+          <el-radio-button value="system_builtin">系统内置</el-radio-button>
+          <el-radio-button value="custom">自定义任务</el-radio-button>
+          <el-radio-button value="ai_prompt">AI 研报</el-radio-button>
+          <el-radio-button value="structured_report">结构报表</el-radio-button>
         </el-radio-group>
       </div>
 
@@ -133,7 +135,15 @@
 
         <div class="stats-pills">
           <span class="pill-item">
-            共 <b>{{ filteredJobs.length }}</b> 个任务
+            共 <b>{{ jobs.length }}</b> 个任务
+          </span>
+          <span class="pill-divider">·</span>
+          <span class="pill-item builtin">
+            内置 <b>{{ builtinJobsCount }}</b>
+          </span>
+          <span class="pill-divider">·</span>
+          <span class="pill-item custom">
+            自定义 <b>{{ customJobsCount }}</b>
           </span>
           <span class="pill-divider">·</span>
           <span class="pill-item success">
@@ -152,12 +162,12 @@
         row-class-name="premium-row"
         header-cell-class-name="premium-header"
       >
-        <el-table-column label="任务名称" min-width="220">
+        <el-table-column label="任务名称" min-width="230">
           <template #default="{ row }">
             <div class="job-name-cell">
-              <div class="job-icon-wrap" :class="row.job_type">
+              <div class="job-icon-wrap" :class="row.is_builtin ? 'system_builtin' : row.job_type">
                 <Icon
-                  :icon="row.job_type === 'ai_prompt' ? 'ph:sparkle-bold' : 'ph:chart-line-up-bold'"
+                  :icon="row.is_builtin ? 'ph:gear-duotone' : (row.job_type === 'ai_prompt' ? 'ph:sparkle-bold' : 'ph:chart-line-up-bold')"
                   class="job-type-icon"
                 />
               </div>
@@ -165,6 +175,16 @@
                 <div class="job-title-row">
                   <span class="job-name" :title="row.name">{{ row.name }}</span>
                   <el-tag
+                    v-if="row.is_builtin"
+                    size="small"
+                    type="info"
+                    effect="plain"
+                    class="job-type-tag builtin-badge"
+                  >
+                    <Icon icon="ph:shield-check-bold" class="badge-icon" /> 系统内置
+                  </el-tag>
+                  <el-tag
+                    v-else
                     size="small"
                     :type="row.job_type === 'ai_prompt' ? 'primary' : 'warning'"
                     effect="plain"
@@ -307,6 +327,7 @@
                 编辑
               </el-button>
               <el-button
+                v-if="!row.is_builtin"
                 type="danger"
                 link
                 size="small"
@@ -381,7 +402,15 @@ const logDrawerRef = ref<InstanceType<typeof JobLogDrawer>>()
 const filteredJobs = computed(() => {
   return jobs.value.filter(job => {
     if (enabledOnly.value && !job.enabled) return false
-    if (selectedType.value !== 'all' && job.job_type !== selectedType.value) return false
+    if (selectedType.value === 'system_builtin') {
+      if (!job.is_builtin) return false
+    } else if (selectedType.value === 'custom') {
+      if (job.is_builtin) return false
+    } else if (selectedType.value === 'ai_prompt') {
+      if (job.job_type !== 'ai_prompt' || job.is_builtin) return false
+    } else if (selectedType.value === 'structured_report') {
+      if (job.job_type !== 'structured_report' || job.is_builtin) return false
+    }
     if (searchQuery.value.trim()) {
       const q = searchQuery.value.trim().toLowerCase()
       const matchName = job.name.toLowerCase().includes(q)
@@ -400,6 +429,14 @@ const paginatedJobs = computed(() => {
 
 const enabledJobsCount = computed(() => {
   return jobs.value.filter(j => Boolean(j.enabled)).length
+})
+
+const builtinJobsCount = computed(() => {
+  return jobs.value.filter(j => Boolean(j.is_builtin)).length
+})
+
+const customJobsCount = computed(() => {
+  return jobs.value.filter(j => !j.is_builtin).length
 })
 
 const fetchDashboard = async () => {
@@ -473,6 +510,10 @@ const handleRunNow = async (job: ScheduledJob) => {
 }
 
 const handleDelete = async (job: ScheduledJob) => {
+  if (job.is_builtin) {
+    ElMessage.warning('系统内置任务不可删除，如不需要可将其停用')
+    return
+  }
   try {
     await ElMessageBox.confirm(`确定删除定时任务「${job.name}」吗？历史运行日志将一并清理。`, '删除确认', {
       type: 'warning',
@@ -835,6 +876,33 @@ onMounted(() => {
 .job-icon-wrap.structured_report {
   background: rgba(59, 130, 246, 0.16);
   color: #60a5fa;
+}
+
+.job-icon-wrap.system_builtin {
+  background: rgba(14, 165, 233, 0.16);
+  color: #0284c7;
+}
+
+.job-type-tag.builtin-badge {
+  background: rgba(100, 116, 139, 0.1);
+  color: #475569;
+  border-color: rgba(100, 116, 139, 0.25);
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.badge-icon {
+  font-size: 12px;
+}
+
+.stats-pills .pill-item.builtin b {
+  color: #0284c7;
+}
+
+.stats-pills .pill-item.custom b {
+  color: #8b5cf6;
 }
 
 .job-type-icon {

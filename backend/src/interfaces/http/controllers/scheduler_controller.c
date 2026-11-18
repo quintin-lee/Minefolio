@@ -336,7 +336,7 @@ api_scheduler_jobs_delete(csilk_ctx_t* c)
 
     int rc = scheduler_usecase_job_delete(db_get_pool(), user_id, job_id);
     if (rc == 1004) {
-        respond_error(c, 1004, "Forbidden: cannot delete built-in or others' jobs");
+        respond_error(c, 1004, "系统内置任务不可删除，如不需要可将其停用");
         return;
     }
     if (rc != 0) {

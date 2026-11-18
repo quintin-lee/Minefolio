@@ -14,6 +14,7 @@ typedef struct {
     char    delivery_channel[32]; /* "user_default", "custom_webhook", "silent_db" */
     char    delivery_config[512]; /* JSON */
     bool    enabled;
+    int     is_builtin;
     char    last_run_at[32];
     char    last_run_status[16];
     int     last_run_duration_ms;

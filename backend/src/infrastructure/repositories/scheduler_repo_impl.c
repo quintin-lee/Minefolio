@@ -37,14 +37,10 @@ mf_scheduler_repo_job_list(
     snprintf(offset_str, sizeof(offset_str), "%lld", (long long)offset);
 
     const char* count_sql =
-        is_admin ? "SELECT COUNT(*) as total FROM scheduled_jobs WHERE (user_id = ? OR user_id = 0)"
-                 : "SELECT COUNT(*) as total FROM scheduled_jobs WHERE user_id = ?";
+        "SELECT COUNT(*) as total FROM scheduled_jobs WHERE (user_id = ? OR is_builtin = 1)";
 
-    const char* list_sql =
-        is_admin
-            ? "SELECT * FROM scheduled_jobs WHERE (user_id = ? OR user_id = 0) ORDER BY id DESC "
-              "LIMIT ? OFFSET ?"
-            : "SELECT * FROM scheduled_jobs WHERE user_id = ? ORDER BY id DESC LIMIT ? OFFSET ?";
+    const char* list_sql = "SELECT * FROM scheduled_jobs WHERE (user_id = ? OR is_builtin = 1) "
+                           "ORDER BY is_builtin DESC, id ASC LIMIT ? OFFSET ?";
 
     if (out_total) {
         *out_total = 0;
@@ -76,9 +72,7 @@ mf_scheduler_repo_job_get(void* pool, int64_t user_id, bool is_admin, int64_t jo
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
 
     const char* sql =
-        is_admin
-            ? "SELECT * FROM scheduled_jobs WHERE id = ? AND (user_id = ? OR user_id = 0) LIMIT 1"
-            : "SELECT * FROM scheduled_jobs WHERE id = ? AND user_id = ? LIMIT 1";
+        "SELECT * FROM scheduled_jobs WHERE id = ? AND (user_id = ? OR is_builtin = 1) LIMIT 1";
 
     csilk_json_t* res =
         csilk_db_query_param_json(db_pool, sql, (const char*[]){jid_str, uid_str, NULL});
@@ -211,8 +205,9 @@ mf_scheduler_repo_job_delete(void* pool, int64_t user_id, int64_t job_id)
     snprintf(jid_str, sizeof(jid_str), "%lld", (long long)job_id);
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
 
-    /* Built-in tasks (user_id = 0) cannot be deleted */
-    const char* sql = "DELETE FROM scheduled_jobs WHERE id = ? AND user_id = ? AND user_id != 0";
+    /* Built-in tasks (user_id = 0 or is_builtin = 1) cannot be deleted */
+    const char* sql = "DELETE FROM scheduled_jobs WHERE id = ? AND user_id = ? AND is_builtin = 0 "
+                      "AND user_id != 0";
     return csilk_db_exec_param(db_pool, sql, (const char*[]){jid_str, uid_str, NULL});
 }
 
@@ -220,6 +215,7 @@ int
 mf_scheduler_repo_job_set_enabled(
     void* pool, int64_t user_id, bool is_admin, int64_t job_id, bool enabled)
 {
+    (void)is_admin;
     if (!pool || job_id <= 0) {
         return -1;
     }
@@ -230,10 +226,8 @@ mf_scheduler_repo_job_set_enabled(
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     snprintf(en_str, sizeof(en_str), "%d", enabled ? 1 : 0);
 
-    const char* sql = is_admin ? "UPDATE scheduled_jobs SET enabled = ?, updated_at = "
-                                 "CURRENT_TIMESTAMP WHERE id = ? AND (user_id = ? OR user_id = 0)"
-                               : "UPDATE scheduled_jobs SET enabled = ?, updated_at = "
-                                 "CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?";
+    const char* sql = "UPDATE scheduled_jobs SET enabled = ?, updated_at = CURRENT_TIMESTAMP "
+                      "WHERE id = ? AND (user_id = ? OR is_builtin = 1)";
 
     return csilk_db_exec_param(db_pool, sql, (const char*[]){en_str, jid_str, uid_str, NULL});
 }
@@ -261,6 +255,109 @@ mf_scheduler_repo_job_update_last_run(
         sql,
         (const char*[]){
             now_str, status ? status : "", dur_str, next_run_at ? next_run_at : "", jid_str, NULL});
+}
+
+int64_t
+mf_scheduler_repo_job_create_builtin(void*       pool,
+                                     const char* name,
+                                     const char* desc,
+                                     const char* job_type,
+                                     const char* trigger_type,
+                                     const char* trigger_cfg,
+                                     const char* payload_cfg,
+                                     const char* delivery_channel,
+                                     const char* delivery_cfg,
+                                     const char* next_run_at)
+{
+    if (!pool || !name || !job_type || !trigger_type) {
+        return -1;
+    }
+    csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
+
+    const char* sql =
+        "INSERT INTO scheduled_jobs (user_id, name, description, job_type, trigger_type, "
+        "trigger_config, payload_config, delivery_channel, delivery_config, enabled, is_builtin, "
+        "next_run_at) "
+        "VALUES (0, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?) RETURNING id";
+
+    csilk_json_t* res =
+        csilk_db_query_param_json(db_pool,
+                                  sql,
+                                  (const char*[]){name,
+                                                  desc ? desc : "",
+                                                  job_type,
+                                                  trigger_type,
+                                                  trigger_cfg ? trigger_cfg : "{}",
+                                                  payload_cfg ? payload_cfg : "{}",
+                                                  delivery_channel ? delivery_channel : "silent_db",
+                                                  delivery_cfg ? delivery_cfg : "{}",
+                                                  next_run_at ? next_run_at : "",
+                                                  NULL});
+    if (!res) {
+        return -1;
+    }
+
+    int64_t new_id = -1;
+    if (csilk_json_array_size(res) > 0) {
+        csilk_json_t* row = csilk_json_array_get(res, 0);
+        new_id = db_get_int(row, "id");
+    }
+    csilk_json_free(res);
+    return new_id;
+}
+
+csilk_json_t*
+mf_scheduler_repo_job_get_by_name(void* pool, const char* name)
+{
+    if (!pool || !name || !*name) {
+        return NULL;
+    }
+    csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
+
+    const char*   sql = "SELECT * FROM scheduled_jobs WHERE name = ? LIMIT 1";
+    csilk_json_t* res = csilk_db_query_param_json(db_pool, sql, (const char*[]){name, NULL});
+    if (!res) {
+        return NULL;
+    }
+
+    if (csilk_json_array_size(res) == 0) {
+        csilk_json_free(res);
+        return NULL;
+    }
+
+    csilk_json_t* row = csilk_json_array_get(res, 0);
+    csilk_json_t* item = csilk_json_copy(row);
+    csilk_json_free(res);
+    return item;
+}
+
+bool
+mf_scheduler_repo_is_builtin_enabled(void* pool, const char* handler_name)
+{
+    if (!pool || !handler_name || !*handler_name) {
+        return true;
+    }
+    csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
+
+    char like_pattern[128];
+    snprintf(like_pattern, sizeof(like_pattern), "%%\"handler\":\"%s\"%%", handler_name);
+
+    const char* sql =
+        "SELECT enabled FROM scheduled_jobs WHERE is_builtin = 1 AND payload_config LIKE ? LIMIT 1";
+
+    csilk_json_t* res =
+        csilk_db_query_param_json(db_pool, sql, (const char*[]){like_pattern, NULL});
+    if (!res) {
+        return true;
+    }
+
+    bool enabled = true;
+    if (csilk_json_array_size(res) > 0) {
+        csilk_json_t* row = csilk_json_array_get(res, 0);
+        enabled = (db_get_int(row, "enabled") == 1);
+    }
+    csilk_json_free(res);
+    return enabled;
 }
 
 csilk_json_t*

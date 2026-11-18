@@ -44,9 +44,8 @@ scheduler_usecase_dashboard(void* pool, int64_t user_id, bool is_admin, csilk_js
 
     /* 1. Active jobs count */
     const char* active_sql =
-        is_admin ? "SELECT COUNT(*) as cnt FROM scheduled_jobs WHERE enabled = 1 AND (user_id = ? "
-                   "OR user_id = 0)"
-                 : "SELECT COUNT(*) as cnt FROM scheduled_jobs WHERE enabled = 1 AND user_id = ?";
+        "SELECT COUNT(*) as cnt FROM scheduled_jobs WHERE enabled = 1 AND (user_id = ? "
+        "OR is_builtin = 1)";
     int64_t       active_jobs = 0;
     csilk_json_t* ares =
         csilk_db_query_param_json(db_pool, active_sql, (const char*[]){uid_str, NULL});
@@ -59,9 +58,8 @@ scheduler_usecase_dashboard(void* pool, int64_t user_id, bool is_admin, csilk_js
 
     /* 2. Today's run count */
     const char* runs_sql =
-        is_admin ? "SELECT COUNT(*) as cnt FROM job_run_logs WHERE (user_id = ? OR user_id = 0) "
-                   "AND started_at >= ?"
-                 : "SELECT COUNT(*) as cnt FROM job_run_logs WHERE user_id = ? AND started_at >= ?";
+        "SELECT COUNT(*) as cnt FROM job_run_logs WHERE (user_id = ? OR user_id = 0) "
+        "AND started_at >= ?";
     int64_t       today_runs = 0;
     csilk_json_t* rres =
         csilk_db_query_param_json(db_pool, runs_sql, (const char*[]){uid_str, today_start, NULL});
@@ -74,10 +72,8 @@ scheduler_usecase_dashboard(void* pool, int64_t user_id, bool is_admin, csilk_js
 
     /* 3. Nearest next run job */
     const char* next_sql =
-        is_admin ? "SELECT name, next_run_at FROM scheduled_jobs WHERE enabled = 1 AND (user_id = "
-                   "? OR user_id = 0) AND next_run_at > ? ORDER BY next_run_at ASC LIMIT 1"
-                 : "SELECT name, next_run_at FROM scheduled_jobs WHERE enabled = 1 AND user_id = ? "
-                   "AND next_run_at > ? ORDER BY next_run_at ASC LIMIT 1";
+        "SELECT name, next_run_at FROM scheduled_jobs WHERE enabled = 1 AND (user_id = "
+        "? OR is_builtin = 1) AND next_run_at > ? ORDER BY next_run_at ASC LIMIT 1";
     char          next_job_name[128] = "";
     char          next_job_time[64] = "";
     csilk_json_t* nres =
@@ -282,10 +278,11 @@ scheduler_usecase_job_delete(void* pool, int64_t user_id, int64_t job_id)
         return 1004;
     }
 
+    int     is_builtin = db_get_int(existing, "is_builtin");
     int64_t job_user_id = db_get_int(existing, "user_id");
     csilk_json_free(existing);
 
-    if (job_user_id == 0) {
+    if (is_builtin || job_user_id == 0) {
         return 1004; /* Built-in tasks cannot be deleted */
     }
     if (job_user_id != user_id) {
@@ -314,10 +311,12 @@ scheduler_usecase_job_toggle(
         return 1004;
     }
 
+    int     is_builtin = db_get_int(existing, "is_builtin");
     int64_t job_user_id = db_get_int(existing, "user_id");
     csilk_json_free(existing);
 
-    if (job_user_id == 0 && !is_admin) {
+    /* Built-in tasks can be toggled by any authenticated user */
+    if (!is_builtin && job_user_id != 0 && job_user_id != user_id && !is_admin) {
         return 1004;
     }
 
@@ -498,4 +497,72 @@ scheduler_usecase_test_channel(void* pool, int64_t user_id, char* err_buf, size_
                            "---\n*Minefolio 自动化调度中心*";
 
     return wechat_push_service_send(&cfg, "Minefolio 推送连通性测试", test_msg, err_buf, err_len);
+}
+
+typedef struct {
+    const char* name;
+    const char* desc;
+    const char* cron_expr;
+    const char* handler;
+    const char* delivery_channel;
+} builtin_job_seed_t;
+
+int
+scheduler_usecase_seed_builtin_jobs(void* pool)
+{
+    if (!pool) {
+        return -1;
+    }
+
+    static const builtin_job_seed_t seeds[] = {
+        {"全市场行情与基金净值同步",
+         "定期自动抓取并更新用户自选与持仓标的的最新股票/ETF/基金行情与净值",           "*/15 9-15 * * 1-5",
+         "market_quote_sync",   "silent_db"   },
+        {"全球大盘指数轮询",
+         "同步上证、深证、恒生、标普500、纳斯达克等全球基准股指最新点位与涨跌幅",       "*/5 * * * *",
+         "global_indices_sync", "silent_db"   },
+        {"实时外汇基准汇率同步",
+         "定时同步央行及国际外汇市场基准中行折算价与离岸外汇汇率（CNY/USD/HKD/EUR等）", "0 */1 * * 1-5",
+         "forex_rates_sync",    "silent_db"   },
+        {"定投划转计划每日巡检",
+         "每日0点巡检有效定投计划，在执行日自动生成待确认扣款与买入流水",               "0 0 * * *",
+         "dca_plan_trigger",    "silent_db"   },
+        {"AI 每日金融快讯提炼",
+         "每日早间自动归集财经大盘要闻，通过 AI 提炼核心资讯与市场情绪研报",            "0 8 * * *",
+         "ai_news_digest",      "user_default"},
+        {"MCP 外部进程池空闲回收",
+         "定期巡检并清理空闲超过存活周期的 Model Context Protocol (MCP) 外部子进程",    "*/5 * * * *",
+         "mcp_pool_cleanup",    "silent_db"   },
+    };
+
+    size_t count = sizeof(seeds) / sizeof(seeds[0]);
+    for (size_t i = 0; i < count; i++) {
+        csilk_json_t* existing = mf_scheduler_repo_job_get_by_name(pool, seeds[i].name);
+        if (existing) {
+            csilk_json_free(existing);
+            continue;
+        }
+
+        char trig_cfg[128];
+        snprintf(trig_cfg, sizeof(trig_cfg), "{\"cron\":\"%s\"}", seeds[i].cron_expr);
+
+        char pay_cfg[128];
+        snprintf(pay_cfg, sizeof(pay_cfg), "{\"handler\":\"%s\"}", seeds[i].handler);
+
+        char next_run[64] = "";
+        cron_format_next_str(seeds[i].cron_expr, time(NULL), next_run, sizeof(next_run));
+
+        mf_scheduler_repo_job_create_builtin(pool,
+                                             seeds[i].name,
+                                             seeds[i].desc,
+                                             "system_builtin",
+                                             "cron",
+                                             trig_cfg,
+                                             pay_cfg,
+                                             seeds[i].delivery_channel,
+                                             "{}",
+                                             next_run);
+    }
+
+    return 0;
 }
