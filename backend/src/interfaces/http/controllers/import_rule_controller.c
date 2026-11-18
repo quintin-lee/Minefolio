@@ -196,7 +196,7 @@ import_rule_service_reset_defaults(csilk_ctx_t* c)
     csilk_db_pool_t* pool = db_get_pool();
     char             uid[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
-    csilk_db_query_param_json(
+    csilk_db_exec_param(
         pool, "DELETE FROM import_rules WHERE user_id = ?", (const char*[]){uid, NULL});
 
     mf_import_rule_seed_defaults(pool, user_id);

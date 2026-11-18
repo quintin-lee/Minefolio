@@ -290,19 +290,18 @@ mf_ledger_repo_delete(void* db_pool, int64_t ledger_id)
     snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
 
     /* Cascade delete in FK dependency order */
-    csilk_db_query_param_json(
+    csilk_db_exec_param(
         pool, "DELETE FROM dca_plans WHERE ledger_id = ?", (const char*[]){lid, NULL});
-    csilk_db_query_param_json(
+    csilk_db_exec_param(
         pool, "DELETE FROM cashflow_schedules WHERE ledger_id = ?", (const char*[]){lid, NULL});
-    csilk_db_query_param_json(
+    csilk_db_exec_param(
         pool, "DELETE FROM daily_expenses WHERE ledger_id = ?", (const char*[]){lid, NULL});
-    csilk_db_query_param_json(
+    csilk_db_exec_param(
         pool, "DELETE FROM transactions WHERE ledger_id = ?", (const char*[]){lid, NULL});
-    csilk_db_query_param_json(
-        pool, "DELETE FROM assets WHERE ledger_id = ?", (const char*[]){lid, NULL});
-    csilk_db_query_param_json(
+    csilk_db_exec_param(pool, "DELETE FROM assets WHERE ledger_id = ?", (const char*[]){lid, NULL});
+    csilk_db_exec_param(
         pool, "DELETE FROM categories WHERE ledger_id = ?", (const char*[]){lid, NULL});
-    csilk_db_query_param_json(
+    csilk_db_exec_param(
         pool, "DELETE FROM ledger_members WHERE ledger_id = ?", (const char*[]){lid, NULL});
 
     csilk_json_t* res = csilk_db_query_param_json(

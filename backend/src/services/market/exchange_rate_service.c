@@ -287,7 +287,7 @@ exchange_rate_set(const char* currency, double rate_to_cny)
         if (pool) {
             char rate_str[32];
             snprintf(rate_str, sizeof(rate_str), "%.6f", rate_to_cny);
-            csilk_db_query_param_json(
+            csilk_db_exec_param(
                 pool, exchange_rate_upsert_sql(), (const char*[]){cur_upper, rate_str, NULL});
         }
     }
@@ -315,7 +315,7 @@ exchange_rate_store(
     if (pool) {
         char rate_str[32];
         snprintf(rate_str, sizeof(rate_str), "%.6f", rate_to_cny);
-        csilk_db_query_param_json(
+        csilk_db_exec_param(
             pool, exchange_rate_upsert_sql(), (const char*[]){currency, rate_str, NULL});
     }
 }

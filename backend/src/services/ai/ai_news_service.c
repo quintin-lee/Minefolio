@@ -225,7 +225,7 @@ ai_news_get_or_create_digest(csilk_db_pool_t* pool, const char* report_date, int
         snprintf(cost_buf, sizeof(cost_buf), "%.6f", res.stats.total_cost);
     }
 
-    csilk_db_query_param_json(
+    csilk_db_exec_param(
         pool,
         "INSERT INTO market_news_digests (digest_date, title, macro_summary, sector_impacts, "
         "sources, model_used, token_cost) "
@@ -404,7 +404,7 @@ ai_news_execute_analysis(csilk_db_pool_t* pool,
 
     if (res.status.code != AI_RUNTIME_ERR_OK || !res.final_content) {
         const char* err_msg = res.status.detail[0] ? res.status.detail : res.status.message;
-        csilk_db_query_param_json(
+        csilk_db_exec_param(
             pool,
             "UPDATE ai_news_reports SET status='error', error_msg=?, holdings_snapshot=?, "
             "digest_id=? WHERE id=? AND user_id=?",
@@ -421,7 +421,7 @@ ai_news_execute_analysis(csilk_db_pool_t* pool,
     char title_buf[128];
     snprintf(title_buf, sizeof(title_buf), "每日市场脉搏 — %s", date_str);
 
-    csilk_db_query_param_json(
+    csilk_db_exec_param(
         pool,
         "UPDATE ai_news_reports SET title=?, analysis=?, holdings_snapshot=?, digest_id=?, "
         "status='done' "
@@ -544,7 +544,7 @@ ai_news_trigger_ledger(csilk_db_pool_t* pool, int64_t user_id, int64_t ledger_id
     snprintf(lid_str, sizeof(lid_str), "%lld", (long long)resolved_lid);
 
     /* 插入或重置当日对应账本的 pending 记录 */
-    csilk_db_query_param_json(
+    csilk_db_exec_param(
         pool,
         "INSERT INTO ai_news_reports (user_id, ledger_id, report_date, title, status) "
         "VALUES (?, ?, ?, '正在生成今日市场脉搏…', 'pending') "
@@ -578,7 +578,7 @@ ai_news_trigger_ledger(csilk_db_pool_t* pool, int64_t user_id, int64_t ledger_id
             } else {
                 char id_str[32];
                 snprintf(id_str, sizeof(id_str), "%lld", (long long)report_id);
-                csilk_db_query_param_json(
+                csilk_db_exec_param(
                     pool,
                     "UPDATE ai_news_reports SET status='error', error_msg=? WHERE id=? AND "
                     "user_id=?",
