@@ -55,16 +55,7 @@ system_setup(csilk_ctx_t* c)
     csilk_db_pool_t* pool = db_get_pool();
 
     // Verify system is not initialized yet
-    csilk_json_t* count_res = csilk_db_query_json(pool, "SELECT COUNT(*) as count FROM users");
-    int           count = 0;
-    if (count_res && csilk_json_array_size(count_res) > 0) {
-        count = (int)db_get_int(csilk_json_array_get(count_res, 0), "count");
-    }
-    if (count_res) {
-        csilk_json_free(count_res);
-    }
-
-    if (count > 0) {
+    if (mf_auth_repo_count(pool) > 0) {
         respond_forbidden(c, "系统已完成初始化，禁止重复设置");
         return;
     }
@@ -123,28 +114,13 @@ system_setup(csilk_ctx_t* c)
     char hashed[CSILK_BCRYPT_HASH_LEN];
     store_bcrypt_hash(password, hashed);
 
-    const char*   insert_sql = "INSERT INTO users (username, password) VALUES (?, ?)";
-    const char*   insert_params[] = {username, hashed, NULL};
-    csilk_json_t* ins_res = csilk_db_query_param_json(pool, insert_sql, insert_params);
-    if (ins_res) {
-        csilk_json_free(ins_res);
-    }
-
-    const char*   get_params[] = {username, NULL};
-    csilk_json_t* user_res = csilk_db_query_param_json(
-        pool, "SELECT id, username, password FROM users WHERE username = ?", get_params);
-    if (!user_res || csilk_json_array_size(user_res) == 0) {
+    int64_t user_id = 0;
+    if (mf_auth_repo_create(pool, username, hashed, &user_id) != 0 || user_id <= 0) {
         db_tx_scope_rollback(pool, &scope);
-        if (user_res) {
-            csilk_json_free(user_res);
-        }
         csilk_json_free(body);
         respond_error(c, 500, "初始化失败");
         return;
     }
-
-    int64_t user_id = db_get_int(csilk_json_array_get(user_res, 0), "id");
-    csilk_json_free(user_res);
 
     // Seed default ledger first, then ledger-scoped categories & import rules
     int64_t ledger_id = ledger_get_default(pool, user_id);

@@ -125,17 +125,17 @@
 - Modify: `backend/src/infrastructure/repositories/import_rule_repo_impl.c/.h`
 - Modify: `backend/src/interfaces/http/controllers/import_rule_controller.c`
 
-- [ ] **Step 1: 下沉 `admin_controller.c` 的 SQL 至仓储与用例**
+- [x] **Step 1: 下沉 `admin_controller.c` 的 SQL 至仓储与用例**
   - 在 `auth_repo_impl` 中提供 `mf_auth_repo_user_count(pool)` 和 `mf_auth_repo_create_admin(pool, ...)`。
   - `admin_controller.c:system_setup` 改为调用仓储/用例函数。
-- [ ] **Step 2: 下沉 `receipt_controller.c` 的分类查询 SQL 至 `category_repo_impl`**
+- [x] **Step 2: 下沉 `receipt_controller.c` 的分类查询 SQL 至 `category_repo_impl`**
   - 使用已有的 `category_repo_impl` 查询首个支出分类和名称匹配分类。
-- [ ] **Step 3: 下沉 `import_rule_controller.c` 的规则重置 SQL 至 `import_rule_repo_impl`**
+- [x] **Step 3: 下沉 `import_rule_controller.c` 的规则重置 SQL 至 `import_rule_repo_impl`**
   - 在 `import_rule_repo_impl` 中封装 `mf_import_rule_delete_all(pool, user_id)`。
-- [ ] **Step 4: 隔离环境编译与全量单元测试验证**
+- [x] **Step 4: 隔离环境编译与全量单元测试验证**
   - `./backend/tests/run_isolated.sh build backend/build`
   - `./backend/tests/run_isolated.sh unit backend/build`
-- [ ] **Step 5: 提交代码**
+- [x] **Step 5: 提交代码**
   - Git commit: `refactor(controllers): eliminate direct SQL queries and enforce DDD repository boundary`
 
 ---

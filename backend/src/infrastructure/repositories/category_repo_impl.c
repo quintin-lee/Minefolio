@@ -359,3 +359,105 @@ mf_category_repo_free_list(mf_category_t* list, size_t count)
     (void)count;
     free(list);
 }
+
+int
+mf_category_repo_find_by_name(void*       db_pool,
+                              int64_t     user_id,
+                              int64_t     ledger_id,
+                              const char* name,
+                              int64_t*    out_id,
+                              char*       out_name,
+                              size_t      out_name_size)
+{
+    if (!db_pool || user_id <= 0 || !name || !name[0]) {
+        return -1;
+    }
+    csilk_db_pool_t* pool = (csilk_db_pool_t*)db_pool;
+    char             uid[32], lid[32];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    csilk_json_t* res = NULL;
+    if (ledger_id > 0) {
+        snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
+        res = csilk_db_query_param_json(
+            pool,
+            "SELECT id, name FROM categories WHERE user_id=? AND ledger_id=? AND name=?",
+            (const char*[]){uid, lid, name, NULL});
+    }
+    if (!res || csilk_json_array_size(res) == 0) {
+        if (res) {
+            csilk_json_free(res);
+        }
+        res =
+            csilk_db_query_param_json(pool,
+                                      "SELECT id, name FROM categories WHERE user_id=? AND name=?",
+                                      (const char*[]){uid, name, NULL});
+    }
+    if (!res || csilk_json_array_size(res) == 0) {
+        if (res) {
+            csilk_json_free(res);
+        }
+        return -1;
+    }
+    const csilk_json_t* row = csilk_json_array_get(res, 0);
+    if (out_id) {
+        *out_id = db_get_int(row, "id");
+    }
+    if (out_name && out_name_size > 0) {
+        const char* nm = csilk_json_get_string(row, "name");
+        strncpy(out_name, nm ? nm : "", out_name_size - 1);
+        out_name[out_name_size - 1] = '\0';
+    }
+    csilk_json_free(res);
+    return 0;
+}
+
+int
+mf_category_repo_find_first_by_type(void*       db_pool,
+                                    int64_t     user_id,
+                                    int64_t     ledger_id,
+                                    const char* type,
+                                    int64_t*    out_id,
+                                    char*       out_name,
+                                    size_t      out_name_size)
+{
+    if (!db_pool || user_id <= 0 || !type || !type[0]) {
+        return -1;
+    }
+    csilk_db_pool_t* pool = (csilk_db_pool_t*)db_pool;
+    char             uid[32], lid[32];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    csilk_json_t* res = NULL;
+    if (ledger_id > 0) {
+        snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
+        res = csilk_db_query_param_json(
+            pool,
+            "SELECT id, name FROM categories WHERE user_id=? AND ledger_id=? AND type=? LIMIT 1",
+            (const char*[]){uid, lid, type, NULL});
+    }
+    if (!res || csilk_json_array_size(res) == 0) {
+        if (res) {
+            csilk_json_free(res);
+        }
+        res = csilk_db_query_param_json(
+            pool,
+            "SELECT id, name FROM categories WHERE user_id=? AND type=? LIMIT 1",
+            (const char*[]){uid, type, NULL});
+    }
+    if (!res || csilk_json_array_size(res) == 0) {
+        if (res) {
+            csilk_json_free(res);
+        }
+        return -1;
+    }
+    const csilk_json_t* row = csilk_json_array_get(res, 0);
+    if (out_id) {
+        *out_id = db_get_int(row, "id");
+    }
+    if (out_name && out_name_size > 0) {
+        const char* nm = csilk_json_get_string(row, "name");
+        strncpy(out_name, nm ? nm : "", out_name_size - 1);
+        out_name[out_name_size - 1] = '\0';
+    }
+    csilk_json_free(res);
+    return 0;
+}

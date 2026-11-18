@@ -1,6 +1,7 @@
 #include "interfaces/http/controllers/receipt_controller.h"
 #include "application/ai/config_provider.h"
 #include "infrastructure/repositories/import_rule_repo_impl.h"
+#include "infrastructure/repositories/category_repo_impl.h"
 #include "common/ai_config.h"
 #include "common/db.h"
 #include "common/response.h"
@@ -180,25 +181,10 @@ receipt_offline_fallback(csilk_ctx_t* c, int64_t user_id)
     strftime(date_str, sizeof(date_str), "%Y-%m-%d", &tm_buf);
 
     csilk_db_pool_t* pool = db_get_pool();
-    char             uid_str[32];
-    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-    csilk_json_t* cats = csilk_db_query_param_json(
-        pool,
-        "SELECT id, name FROM categories WHERE user_id = ? AND type = 'expense' LIMIT 1",
-        (const char*[]){uid_str, NULL});
-    int64_t cat_id = 0;
-    char    cat_name[64] = "餐饮美食";
-    if (cats && csilk_json_array_size(cats) > 0) {
-        csilk_json_t* first_cat = csilk_json_array_get(cats, 0);
-        cat_id = db_get_int(first_cat, "id");
-        const char* cn = csilk_json_get_string(first_cat, "name");
-        if (cn) {
-            strncpy(cat_name, cn, sizeof(cat_name) - 1);
-        }
-    }
-    if (cats) {
-        csilk_json_free(cats);
-    }
+    int64_t          cat_id = 0;
+    char             cat_name[64] = "餐饮美食";
+    mf_category_repo_find_first_by_type(
+        pool, user_id, 0, "expense", &cat_id, cat_name, sizeof(cat_name));
 
     csilk_json_t* result = csilk_json_object();
     csilk_json_add_string(result, "date", date_str);
@@ -512,20 +498,13 @@ receipt_service_scan(csilk_ctx_t* c)
         char    matched_cat_name[128] = {0};
 
         if (cat_name && cat_name[0]) {
-            const char*   c_params[] = {uid_str, cat_name, NULL};
-            csilk_json_t* c_res = csilk_db_query_param_json(
-                pool, "SELECT id, name FROM categories WHERE user_id=? AND name=?", c_params);
-            if (c_res && csilk_json_array_size(c_res) > 0) {
-                csilk_json_t* row = csilk_json_array_get(c_res, 0);
-                matched_cat_id = db_get_int(row, "id");
-                const char* nm = csilk_json_get_string(row, "name");
-                if (nm) {
-                    strncpy(matched_cat_name, nm, sizeof(matched_cat_name) - 1);
-                }
-            }
-            if (c_res) {
-                csilk_json_free(c_res);
-            }
+            mf_category_repo_find_by_name(pool,
+                                          user_id,
+                                          0,
+                                          cat_name,
+                                          &matched_cat_id,
+                                          matched_cat_name,
+                                          sizeof(matched_cat_name));
         }
 
         /* If exact category match failed, try matching with smart import rules */

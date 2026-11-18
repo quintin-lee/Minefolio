@@ -57,3 +57,8 @@ int mf_import_rule_delete(csilk_db_pool_t* pool, int64_t user_id, int64_t id);
  * @brief 为新注册用户批量预置常用默认导入规则
  */
 void mf_import_rule_seed_defaults(csilk_db_pool_t* pool, int64_t user_id);
+
+/**
+ * @brief 清空并重置用户的导入规则为默认规则
+ */
+int mf_import_rule_reset_defaults(csilk_db_pool_t* pool, int64_t user_id);

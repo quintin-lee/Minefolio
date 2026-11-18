@@ -261,3 +261,17 @@ mf_import_rule_seed_defaults(csilk_db_pool_t* pool, int64_t user_id)
                               1);
     }
 }
+
+int
+mf_import_rule_reset_defaults(csilk_db_pool_t* pool, int64_t user_id)
+{
+    if (!pool || user_id <= 0) {
+        return -1;
+    }
+    char uid[32];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    csilk_db_exec_param(
+        pool, "DELETE FROM import_rules WHERE user_id = ?", (const char*[]){uid, NULL});
+    mf_import_rule_seed_defaults(pool, user_id);
+    return 0;
+}
