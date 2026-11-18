@@ -186,24 +186,24 @@
   - `void scheduler_event_publish_price_spike(int64_t asset_id, const char* symbol, double change_pct)`
   - `void scheduler_event_publish_market_closed(const char* market_code)`
 
-- [ ] **Step 1: 编写引擎集成与事件触发单元测试 `test_scheduler_engine.c`**
+- [x] **Step 1: 编写引擎集成与事件触发单元测试 `test_scheduler_engine.c`**
   - 模拟作业注册、时钟到期入池执行、边缘触发事件（异动超过阈值触发一次，第二次在冷却期内被拦截）。
 
-- [ ] **Step 2: 实现 `scheduler_worker_pool.c` 与 `scheduler_events.c`**
+- [x] **Step 2: 实现 `scheduler_worker_pool.c` 与 `scheduler_events.c`**
   - 固定 3 个 Worker 线程，队列基于互斥锁与条件变量，支持 60s 执行超时取消。
   - 事件总线维护最近触发时间戳字典，实现 240 分钟防刷冷却。
 
-- [ ] **Step 3: 实现 `scheduler_engine.c`**
+- [x] **Step 3: 实现 `scheduler_engine.c`**
   - 启动时加载活跃任务，维护时钟最小堆，循环使用 `pthread_cond_timedwait` 挂起与精确唤醒。
   - AI 任务解析 `payload_config`，构建持仓列表上下文，调用 `ai_runtime_execute`。
   - 任务完成后统一调用 `wechat_push_service_send` 并通过仓储更新运行日志。
 
-- [ ] **Step 4: 运行引擎单元测试**
+- [x] **Step 4: 运行引擎单元测试**
   - Run: `./backend/tests/run_isolated.sh build backend/build`
   - Run: `./backend/tests/run_isolated.sh -- ./backend/build/test_scheduler_engine`
   - Expected: PASS
 
-- [ ] **Step 5: 提交 Task 5 代码**
+- [x] **Step 5: 提交 Task 5 代码**
   - Git commit: `feat(scheduler): implement core scheduler engine, worker pool, and event bus`
 
 ---

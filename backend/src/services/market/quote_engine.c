@@ -2,6 +2,7 @@
 #include "services/market/quote_driver.h"
 #include "services/market/driver_mock.h"
 #include "infrastructure/repositories/market_repo_impl.h"
+#include "core/scheduler/scheduler_events.h"
 #include "csilk/csilk.h"
 #include <curl/curl.h>
 
@@ -223,6 +224,9 @@ quote_engine_fetch_quote(const char* symbol, const char* source_type, market_quo
         for (int d = 0; drivers[d] != NULL; d++) {
             if (driver_matches_source(drivers[d], source_type)) {
                 if (drivers[d]->fetch_single && drivers[d]->fetch_single(symbol, out_quote) == 0) {
+                    if (out_quote->change_percent >= 5.0 || out_quote->change_percent <= -5.0) {
+                        scheduler_event_publish_price_spike(0, symbol, out_quote->change_percent);
+                    }
                     return 0;
                 }
             }
@@ -232,6 +236,9 @@ quote_engine_fetch_quote(const char* symbol, const char* source_type, market_quo
     /* 2. Fallback: try all drivers in order */
     for (int d = 0; drivers[d] != NULL; d++) {
         if (drivers[d]->fetch_single && drivers[d]->fetch_single(symbol, out_quote) == 0) {
+            if (out_quote->change_percent >= 5.0 || out_quote->change_percent <= -5.0) {
+                scheduler_event_publish_price_spike(0, symbol, out_quote->change_percent);
+            }
             return 0;
         }
     }
@@ -522,6 +529,9 @@ quote_engine_sync_indices_to_db(void* pool)
         const char* mkt =
             get_market_clock_id(g_preset_indices[i].category, g_preset_indices[i].symbol);
         bool active = is_market_active(mkt, clocks, clock_count);
+        if (!active) {
+            scheduler_event_publish_market_closed(mkt);
+        }
 
         global_index_item_t item;
         memset(&item, 0, sizeof(item));

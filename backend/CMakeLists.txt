@@ -552,6 +552,13 @@ target_link_libraries(test_wechat_push_service PRIVATE csilk crypto CURL::libcur
 add_dependencies(test_wechat_push_service copy_assets)
 add_test(NAME test_wechat_push_service COMMAND test_wechat_push_service)
 
+add_executable(test_scheduler_engine tests/unit/test_scheduler_engine.c ${LIB_SOURCES})
+target_include_directories(test_scheduler_engine PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_scheduler_engine PRIVATE -UNDEBUG)
+target_link_libraries(test_scheduler_engine PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m pthread)
+add_dependencies(test_scheduler_engine copy_assets)
+add_test(NAME test_scheduler_engine COMMAND test_scheduler_engine)
+
 
 
 

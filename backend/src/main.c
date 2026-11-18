@@ -33,6 +33,7 @@
 #include "interfaces/http/controllers/mcp_server_controller.h"
 #include "interfaces/http/controllers/skill_controller.h"
 #include "services/market/market_scheduler.h"
+#include "core/scheduler/scheduler_engine.h"
 #include "services/ai_service.h"
 #include "dtos/request.h"
 #include "config/secret.h"
@@ -171,6 +172,7 @@ main(int argc, char** argv)
     csilk_app_static(app, "/", dist);
 
     market_scheduler_start(pool);
+    scheduler_engine_start(pool);
 
     const char* port_str =
         config_env_get("PORT", NULL, 0, config_env_get("MINEFOLIO_PORT", NULL, 0, "8080"));
@@ -178,6 +180,7 @@ main(int argc, char** argv)
     printf("Starting Minefolio server on :%d\n", port);
     csilk_app_run(app, port);
 
+    scheduler_engine_stop();
     market_scheduler_stop();
     csilk_app_free(app);
     ai_shutdown();
