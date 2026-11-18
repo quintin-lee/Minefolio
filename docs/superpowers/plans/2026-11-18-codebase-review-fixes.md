@@ -104,13 +104,13 @@
 - Modify: `backend/src/application/asset/usecases.c:585-615`
 - Test: `backend/tests/unit/test_account_usecases.c` 或针对性单元测试
 
-- [ ] **Step 1: 修正 `asset_usecase_detail` 中的资产总值聚合口径**
+- [x] **Step 1: 修正 `asset_usecase_detail` 中的资产总值聚合口径**
   - 从已有资产记录中提取 `ledger_id`（若未指定或 <=0，使用资产关联的账本 ID）。
   - 将 `total_mkt` 计算的 SQL 改为按账本过滤：
     `SELECT a.current_value FROM assets a JOIN categories c ON a.category_id=c.id WHERE a.user_id=? AND a.ledger_id=? AND c.asset_type NOT IN ('loan','credit_card','other_liability')`
-- [ ] **Step 2: 隔离环境编译与单元测试验证**
+- [x] **Step 2: 隔离环境编译与单元测试验证**
   - `./backend/tests/run_isolated.sh unit backend/build`
-- [ ] **Step 3: 提交代码**
+- [x] **Step 3: 提交代码**
   - Git commit: `fix(asset): compute asset portfolio weight within owning ledger scope`
 
 ---

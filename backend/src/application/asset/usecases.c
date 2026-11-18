@@ -469,6 +469,7 @@ asset_usecase_get(void* pool, int64_t user_id, int64_t id, csilk_json_t** out_js
     const csilk_json_t* row = csilk_json_array_get(result, 0);
     csilk_json_t*       resp = csilk_json_object();
     csilk_json_add_number(resp, "id", db_get_num(row, "id"));
+    csilk_json_add_number(resp, "ledger_id", db_get_num(row, "ledger_id"));
     csilk_json_add_number(resp, "category_id", db_get_num(row, "category_id"));
     csilk_json_add_string(resp, "name", csilk_json_get_string(row, "name"));
     csilk_json_add_string(resp, "account_no", csilk_json_get_string(row, "account_no"));
@@ -582,19 +583,33 @@ asset_usecase_get(void* pool, int64_t user_id, int64_t id, csilk_json_t** out_js
         csilk_json_free(price_rows);
     }
 
-    /* 3. 组合权重（占该用户全部非负债资产市值比例） */
+    /* 3. 组合权重（占该资产所属账本全部非负债资产市值比例） */
     {
-        double self_val = db_get_num(row, "current_value");
-        /* 快速取该用户全部非负债资产合计市值 */
-        char uid_str[32];
+        double  self_val = db_get_num(row, "current_value");
+        int64_t ledger_id = db_get_int(row, "ledger_id");
+        char    uid_str[32], lid_str[32];
         snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-        csilk_json_t* all_rows =
-            csilk_db_query_param_json(db_pool,
-                                      "SELECT a.current_value, c.asset_type FROM assets a "
-                                      "JOIN categories c ON a.category_id=c.id "
-                                      "WHERE a.user_id=? AND c.asset_type NOT IN "
-                                      "('loan','credit_card','other_liability')",
-                                      (const char*[]){uid_str, NULL});
+
+        csilk_json_t* all_rows = NULL;
+        if (ledger_id > 0) {
+            snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
+            all_rows = csilk_db_query_param_json(
+                db_pool,
+                "SELECT a.current_value, c.asset_type FROM assets a "
+                "JOIN categories c ON a.category_id=c.id "
+                "WHERE a.user_id=? AND a.ledger_id=? AND c.asset_type NOT IN "
+                "('loan','credit_card','other_liability')",
+                (const char*[]){uid_str, lid_str, NULL});
+        } else {
+            all_rows =
+                csilk_db_query_param_json(db_pool,
+                                          "SELECT a.current_value, c.asset_type FROM assets a "
+                                          "JOIN categories c ON a.category_id=c.id "
+                                          "WHERE a.user_id=? AND c.asset_type NOT IN "
+                                          "('loan','credit_card','other_liability')",
+                                          (const char*[]){uid_str, NULL});
+        }
+
         double total_mkt = 0.0;
         if (all_rows) {
             size_t tn = csilk_json_array_size(all_rows);

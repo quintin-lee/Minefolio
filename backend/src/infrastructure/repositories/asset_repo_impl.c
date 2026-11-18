@@ -104,7 +104,8 @@ asset_get(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
     return csilk_db_query_param_json(
         pool,
         "SELECT "
-        "a.id,a.category_id,a.name,a.account_no,a.symbol,a.quote_source,CAST(a.last_sync_at AS "
+        "a.id,a.ledger_id,a.category_id,a.name,a.account_no,a.symbol,a.quote_source,CAST(a.last_"
+        "sync_at AS "
         "TEXT) as last_sync_at,"
         "a.current_value,a.currency,a.note,a.created_at,a."
         "updated_at,a.account_id,ac.name AS account_name,ac.institution,"
