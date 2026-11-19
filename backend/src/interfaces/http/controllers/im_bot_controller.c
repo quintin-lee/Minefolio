@@ -12,6 +12,7 @@
  *   POST /api/im/:platform/chat   网关回调: 只读查账 (非流式 ai_runtime_execute)
  */
 #include "interfaces/http/controllers/im_bot_controller.h"
+#include "domain/auth/repository.h"
 #include "infrastructure/repositories/im_bot_repo_impl.h"
 #include "infrastructure/repositories/ai_session_repo_impl.h"
 #include "services/ai/runtime/loop.h"
@@ -71,17 +72,10 @@ api_im_bindings_token(csilk_ctx_t* c)
     }
 
     /* 取当前 token_version 以便绑定码与用户会话版本一致 */
-    char uid_str[32];
-    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-    int           token_version = 0;
-    csilk_json_t* tv = csilk_db_query_param_json(db_get_pool(),
-                                                 "SELECT token_version FROM users WHERE id=?",
-                                                 (const char*[]){uid_str, NULL});
-    if (tv && csilk_json_is_array(tv) && csilk_json_array_size(tv) > 0) {
-        token_version = (int)db_get_int(csilk_json_array_get(tv, 0), "token_version");
-    }
-    if (tv) {
-        csilk_json_free(tv);
+    int       token_version = 0;
+    mf_user_t user = {0};
+    if (mf_auth_repo_get_by_id(db_get_pool(), user_id, &user) == 0) {
+        token_version = (int)user.token_version;
     }
 
     char* bind_token = jwt_generate_im_bind_token(c, user_id, token_version, 300);

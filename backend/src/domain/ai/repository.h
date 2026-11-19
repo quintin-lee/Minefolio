@@ -93,3 +93,8 @@ mf_ai_repo_daily_expense_monthly_totals(void* pool, int64_t user_id, const char*
  * @brief 获取交易月度汇总
  */
 csilk_json_t* mf_ai_repo_transaction_monthly(void* pool, int64_t user_id, const char* pattern);
+
+/**
+ * @brief 标记指定用户消息中的草稿操作为已执行 (executed)
+ */
+int mf_ai_repo_mark_draft_executed(void* pool, int64_t user_id, const char* draft_token);
