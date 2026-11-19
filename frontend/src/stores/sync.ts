@@ -11,6 +11,8 @@ import { dailyExpensesApi } from '@/api/daily_expenses'
 import { transactionsApi } from '@/api/transactions'
 import { assetsApi } from '@/api/assets'
 import { accountsApi } from '@/api/accounts'
+import { categoriesApi } from '@/api/categories'
+import { tagsApi } from '@/api/tags'
 import type { SyncQueueItem, SqlValue } from '@/types/mobile'
 
 /** 表名到对应 API 模块的映射字典 */
@@ -19,16 +21,18 @@ const API_BY_TABLE: Record<string, any> = {
   transactions: transactionsApi,
   assets: assetsApi,
   accounts: accountsApi,
+  categories: categoriesApi,
+  tags: tagsApi,
 }
 
 /** 允许本地同步写入的白名单列集合 */
 const TABLE_COLUMNS: Record<string, Set<string>> = {
   categories: new Set(['id', 'user_id', 'name', 'parent_id', 'type', 'asset_type', 'currency', 'icon', 'sort_order', 'created_at', 'updated_at']),
-  assets: new Set(['id', 'user_id', 'category_id', 'name', 'account_no', 'account_id', 'current_value', 'quantity', 'cost_basis', 'net_value', 'currency', 'note', 'created_at', 'updated_at']),
+  assets: new Set(['id', 'user_id', 'category_id', 'name', 'account_no', 'account_id', 'current_value', 'quantity', 'cost_basis', 'net_value', 'currency', 'note', 'ledger_id', 'created_at', 'updated_at']),
   accounts: new Set(['id', 'user_id', 'ledger_id', 'name', 'institution', 'account_no', 'currency', 'icon', 'note', 'sort_order', 'archived', 'created_at', 'updated_at']),
-  transactions: new Set(['id', 'user_id', 'asset_id', 'linked_asset_id', 'category_id', 'source_type', 'transaction_type', 'direction', 'linked_direction', 'amount', 'price_per_unit', 'quantity', 'fee', 'currency', 'transaction_date', 'note', 'created_at', 'updated_at']),
+  transactions: new Set(['id', 'user_id', 'asset_id', 'linked_asset_id', 'category_id', 'source_type', 'transaction_type', 'direction', 'linked_direction', 'amount', 'price_per_unit', 'quantity', 'fee', 'currency', 'transaction_date', 'note', 'ledger_id', 'created_at', 'updated_at']),
   tags: new Set(['id', 'user_id', 'name', 'color', 'created_at', 'updated_at']),
-  daily_expenses: new Set(['id', 'user_id', 'category_id', 'asset_id', 'expense_type', 'amount', 'currency', 'expense_date', 'note', 'created_at', 'updated_at']),
+  daily_expenses: new Set(['id', 'user_id', 'category_id', 'asset_id', 'expense_type', 'amount', 'currency', 'expense_date', 'note', 'ledger_id', 'created_at', 'updated_at']),
 }
 
 /** 鉴权失败(1001)处理钩子：由移动端 main/router 注入，把桌面式 window.location 重定向换成路由导航 */
@@ -69,7 +73,7 @@ export const useSyncStore = defineStore('sync', () => {
    */
   function loadQueue(): void {
     const res = query(
-      'SELECT id, table_name, record_id, operation, payload, local_version, synced, conflict FROM sync_queue WHERE synced = 0 ORDER BY id ASC'
+      'SELECT id, table_name, record_id, operation, payload, local_version, synced, conflict, ledger_id FROM sync_queue WHERE synced = 0 ORDER BY id ASC'
     )
     queue.value = rowsFrom(res).map((r) => ({
       id: r.id as number,
@@ -80,6 +84,7 @@ export const useSyncStore = defineStore('sync', () => {
       local_version: r.local_version as string,
       synced: r.synced as number,
       conflict: r.conflict as number,
+      ledger_id: Number(r.ledger_id || 0),
     }))
   }
 
@@ -99,11 +104,24 @@ export const useSyncStore = defineStore('sync', () => {
    * @param recordId 本地记录 ID
    * @param operation 操作类型 ('create' | 'update' | 'delete')
    * @param payload 记录数据载荷
+   * @param ledgerId 可选指定账本 ID（不指定则优先使用 payload.ledger_id 或当前活跃账本）
    */
-  function enqueue(tableName: string, recordId: number, operation: SyncQueueItem['operation'], payload: Record<string, unknown>): void {
+  function enqueue(
+    tableName: string,
+    recordId: number,
+    operation: SyncQueueItem['operation'],
+    payload: Record<string, unknown>,
+    ledgerId?: number
+  ): void {
+    const activeLedger = Number(
+      ledgerId ??
+      (payload as any)?.ledger_id ??
+      localStorage.getItem('minefolio_active_ledger_id') ??
+      0
+    )
     run(
-      'INSERT INTO sync_queue (table_name, record_id, operation, payload, local_version) VALUES (?, ?, ?, ?, ?)',
-      [tableName, recordId, operation, JSON.stringify(payload), new Date().toISOString()]
+      'INSERT INTO sync_queue (table_name, record_id, operation, payload, local_version, ledger_id) VALUES (?, ?, ?, ?, ?, ?)',
+      [tableName, recordId, operation, JSON.stringify(payload), new Date().toISOString(), activeLedger]
     )
     persist()
     loadQueue()
@@ -210,21 +228,23 @@ export const useSyncStore = defineStore('sync', () => {
       // 实时读取队列行：record_id 可能已被本轮更早的 create 重映射（资产建占位 ID
       // → 服务端 ID），payload 也可能被 remapAssetRefs 改写，必须用最新版本推送。
       const fresh = rowsFrom(query(
-        'SELECT record_id, operation, payload FROM sync_queue WHERE id = ?',
+        'SELECT record_id, operation, payload, ledger_id FROM sync_queue WHERE id = ?',
         [item.id]
       ))[0]
       if (!fresh) continue
       const recordId = Number(fresh.record_id)
       const operation = fresh.operation as SyncQueueItem['operation']
+      const itemLedgerId = Number(fresh.ledger_id || item.ledger_id || 0)
       let payload: Record<string, unknown>
       try {
         payload = JSON.parse(String(fresh.payload))
       } catch {
         continue
       }
+      const config = itemLedgerId > 0 ? { headers: { 'X-Ledger-Id': String(itemLedgerId) } } : undefined
       try {
         if (operation === 'create') {
-          const res: any = await api.create(payload)
+          const res: any = config ? await api.create(payload, config) : await api.create(payload)
           const newId = res?.id ?? (typeof res === 'number' ? res : null)
           if (newId && newId !== recordId) {
             run(`UPDATE ${item.table_name} SET id = ? WHERE id = ?`, [newId, recordId])
@@ -242,9 +262,17 @@ export const useSyncStore = defineStore('sync', () => {
             }
           }
         } else if (operation === 'update') {
-          await api.update(recordId, payload)
+          if (config) {
+            await api.update(recordId, payload, config)
+          } else {
+            await api.update(recordId, payload)
+          }
         } else if (operation === 'delete') {
-          await api.delete(recordId)
+          if (config) {
+            await api.delete(recordId, config)
+          } else {
+            await api.delete(recordId)
+          }
         }
         markSynced(item.id)
       } catch (e: any) {
@@ -263,7 +291,7 @@ export const useSyncStore = defineStore('sync', () => {
    * 从服务端拉取最新数据覆盖本地 SQLite (Pull，服务端胜出策略：updated_at 较新则覆盖)
    */
   async function pullRemote(): Promise<void> {
-    const tables = ['accounts', 'daily_expenses', 'transactions', 'assets']
+    const tables = ['accounts', 'categories', 'tags', 'assets', 'transactions', 'daily_expenses']
     for (const table of tables) {
       const api = API_BY_TABLE[table]
       if (!api?.list) continue
@@ -283,7 +311,7 @@ export const useSyncStore = defineStore('sync', () => {
               upsertLocal(table, remote)
             }
           }
-          if (remoteRows.length < pageSize || (res?.total !== undefined && page * pageSize >= res.total)) {
+          if (Array.isArray(res) || remoteRows.length < pageSize || (res?.total !== undefined && page * pageSize >= res.total)) {
             break
           }
           page++

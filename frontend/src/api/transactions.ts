@@ -5,6 +5,7 @@
 
 // frontend/src/api/transactions.ts
 import http from '@/utils/http'
+import type { AxiosRequestConfig } from 'axios'
 import type { PageResult, Transaction, TransactionInput, TransactionMonthly } from '@/types'
 
 /**
@@ -60,7 +61,7 @@ export const transactionsApi = {
    * @param data.note 备注说明 (可选)
    * @returns 空响应
    */
-  create: (data: TransactionInput) => http.post<void>('/transactions', data),
+  create: (data: TransactionInput, config?: AxiosRequestConfig) => http.post<void>('/transactions', data, config),
 
   /**
    * 修改交易流水记录 (自动计算并回滚旧影响后再应用新影响)
@@ -69,7 +70,7 @@ export const transactionsApi = {
    * @param data 更新的数据载荷
    * @returns 空响应
    */
-  update: (id: number, data: TransactionInput) => http.put<void>(`/transactions/${id}`, data),
+  update: (id: number, data: TransactionInput, config?: AxiosRequestConfig) => http.put<void>(`/transactions/${id}`, data, config),
 
   /**
    * 删除交易流水 (自动级联回滚关联的手续费子交易及资产余额/持仓变动)
@@ -77,7 +78,7 @@ export const transactionsApi = {
    * @param id 交易 ID
    * @returns 空响应
    */
-  delete: (id: number) => http.delete<void>(`/transactions/${id}`),
+  delete: (id: number, config?: AxiosRequestConfig) => http.delete<void>(`/transactions/${id}`, config),
 
   /**
    * 导出交易流水全量数据为 CSV 文件流

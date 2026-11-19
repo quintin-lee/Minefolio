@@ -152,7 +152,8 @@ function createHttp(): AxiosInstance {
       config.headers.Authorization = `Bearer ${auth.token}`
     }
     const activeLedgerId = localStorage.getItem('minefolio_active_ledger_id')
-    if (activeLedgerId) {
+    const hasLedgerHeader = (config.headers as any)?.['X-Ledger-Id'] || (config.headers as any)?.['x-ledger-id']
+    if (activeLedgerId && !hasLedgerHeader) {
       config.headers['X-Ledger-Id'] = activeLedgerId
     }
     const method = (config.method || 'get').toUpperCase()

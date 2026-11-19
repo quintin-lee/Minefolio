@@ -3,6 +3,7 @@
  * @description 提供资金账户 (accounts) 的增删改查接口
  */
 import http from '@/utils/http'
+import type { AxiosRequestConfig } from 'axios'
 import type { Account, AccountInput, AccountUpdate } from '@/types'
 
 /**
@@ -24,7 +25,7 @@ export const accountsApi = {
    * @param data 账户创建载荷
    * @returns 新建账户 ID
    */
-  create: (data: AccountInput) => http.post<{ id: number }>('/accounts', data),
+  create: (data: AccountInput, config?: AxiosRequestConfig) => http.post<{ id: number }>('/accounts', data, config),
 
   /**
    * 更新账户字段（省略的字段保持不变）；archived 归档/恢复
@@ -32,12 +33,12 @@ export const accountsApi = {
    * @param id 账户 ID
    * @param data 更新载荷
    */
-  update: (id: number, data: AccountUpdate) => http.put<void>(`/accounts/${id}`, data),
+  update: (id: number, data: AccountUpdate, config?: AxiosRequestConfig) => http.put<void>(`/accounts/${id}`, data, config),
 
   /**
    * 删除账户（仍挂有资产时返回 1004 冲突）
    * @route DELETE /api/accounts/:id
    * @param id 账户 ID
    */
-  delete: (id: number) => http.delete<void>(`/accounts/${id}`),
+  delete: (id: number, config?: AxiosRequestConfig) => http.delete<void>(`/accounts/${id}`, config),
 }

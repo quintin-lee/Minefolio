@@ -5,6 +5,7 @@
 
 // frontend/src/api/daily_expenses.ts
 import http from '@/utils/http'
+import type { AxiosRequestConfig } from 'axios'
 import type { DailyExpense, DailyExpenseInput, ExpenseMonthly, PageResult } from '@/types'
 
 /**
@@ -51,7 +52,7 @@ export const dailyExpensesApi = {
    * @param data.tags 关联标签列表 (可选)
    * @returns 空响应
    */
-  create: (data: DailyExpenseInput) => http.post<void>('/daily-expenses', data),
+  create: (data: DailyExpenseInput, config?: AxiosRequestConfig) => http.post<void>('/daily-expenses', data, config),
 
   /**
    * 修改日常收支记录
@@ -60,7 +61,7 @@ export const dailyExpensesApi = {
    * @param data 更新的数据载荷
    * @returns 空响应
    */
-  update: (id: number, data: DailyExpenseInput) => http.put<void>(`/daily-expenses/${id}`, data),
+  update: (id: number, data: DailyExpenseInput, config?: AxiosRequestConfig) => http.put<void>(`/daily-expenses/${id}`, data, config),
 
   /**
    * 删除指定的日常收支记录 (同步回滚关联资产账户余额)
@@ -68,7 +69,7 @@ export const dailyExpensesApi = {
    * @param id 记录 ID
    * @returns 空响应
    */
-  delete: (id: number) => http.delete<void>(`/daily-expenses/${id}`),
+  delete: (id: number, config?: AxiosRequestConfig) => http.delete<void>(`/daily-expenses/${id}`, config),
 
   /**
    * 获取指定年月的收支月度聚合统计 (包含总收支、日均支出、分类与标签占比)

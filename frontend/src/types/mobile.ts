@@ -8,6 +8,7 @@ export interface SyncQueueItem {
   local_version: string // ISO 8601
   synced: number // 0|1
   conflict: number // 0|1
+  ledger_id?: number
 }
 
 export interface SyncMeta {

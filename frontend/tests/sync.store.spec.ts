@@ -8,12 +8,19 @@ vi.mock('@/api/daily_expenses', () => ({
 }))
 vi.mock('@/api/transactions', () => ({ transactionsApi: { create: vi.fn(), update: vi.fn(), delete: vi.fn(), list: vi.fn().mockResolvedValue({ list: [] }) } }))
 vi.mock('@/api/assets', () => ({ assetsApi: { create: vi.fn(), update: vi.fn(), delete: vi.fn(), list: vi.fn().mockResolvedValue({ list: [] }) } }))
+vi.mock('@/api/accounts', () => ({ accountsApi: { create: vi.fn(), update: vi.fn(), delete: vi.fn(), list: vi.fn().mockResolvedValue([]) } }))
+vi.mock('@/api/categories', () => ({ categoriesApi: { create: vi.fn(), update: vi.fn(), delete: vi.fn(), list: vi.fn().mockResolvedValue([]) } }))
+vi.mock('@/api/tags', () => ({ tagsApi: { create: vi.fn(), update: vi.fn(), delete: vi.fn(), list: vi.fn().mockResolvedValue([]) } }))
 
 import { dailyExpensesApi } from '@/api/daily_expenses'
 import { assetsApi } from '@/api/assets'
+import { categoriesApi } from '@/api/categories'
+import { tagsApi } from '@/api/tags'
 
 beforeEach(async () => {
   setActivePinia(createPinia())
+  localStorage.clear()
+  vi.clearAllMocks()
   resetLocalDb()
   await initLocalDb()
 })
@@ -96,5 +103,43 @@ describe('sync store', () => {
     // 下次登录 init() 重建空库
     await initLocalDb()
     expect(rowsFrom(query('SELECT * FROM sync_queue')).length).toBe(0)
+  })
+
+  it('enqueues with active ledger_id and saves to sync_queue.ledger_id', async () => {
+    localStorage.setItem('minefolio_active_ledger_id', '42')
+    const store = useSyncStore()
+    store.init()
+    store.enqueue('daily_expenses', 101, 'create', { amount: 50 })
+    const res = query('SELECT ledger_id FROM sync_queue WHERE record_id = 101')
+    expect(rowsFrom(res)[0]?.ledger_id).toBe(42)
+  })
+
+  it('injects X-Ledger-Id header matching item.ledger_id in pushLocal even if active ledger differs', async () => {
+    localStorage.setItem('minefolio_active_ledger_id', '99')
+    const store = useSyncStore()
+    store.init()
+    store.enqueue('daily_expenses', 102, 'create', { amount: 100 }, 2)
+    ;(dailyExpensesApi.create as any).mockResolvedValue({ id: 102 })
+    await store.syncNow()
+    expect(dailyExpensesApi.create).toHaveBeenCalledWith(
+      expect.objectContaining({ amount: 100 }),
+      { headers: { 'X-Ledger-Id': '2' } }
+    )
+  })
+
+  it('pullRemote fetches categories and tags along with other entities', async () => {
+    ;(categoriesApi.list as any).mockResolvedValue([
+      { id: 10, name: '餐饮', type: 'expense', updated_at: '2026-08-01T00:00:00Z' }
+    ])
+    ;(tagsApi.list as any).mockResolvedValue([
+      { id: 20, name: '工作餐', updated_at: '2026-08-01T00:00:00Z' }
+    ])
+    const store = useSyncStore()
+    store.init()
+    await store.pullRemote()
+    expect(categoriesApi.list).toHaveBeenCalled()
+    expect(tagsApi.list).toHaveBeenCalled()
+    expect(rowsFrom(query('SELECT * FROM categories WHERE id = 10')).length).toBe(1)
+    expect(rowsFrom(query('SELECT * FROM tags WHERE id = 20')).length).toBe(1)
   })
 })

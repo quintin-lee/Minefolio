@@ -5,6 +5,7 @@
 
 // frontend/src/api/assets.ts
 import http from '@/utils/http'
+import type { AxiosRequestConfig } from 'axios'
 import type { Asset, AssetInput, PageResult } from '@/types'
 
 /**
@@ -43,7 +44,7 @@ export const assetsApi = {
    * @param data.note 备注信息 (可选)
    * @returns 空响应
    */
-   create: (data: AssetInput) => http.post<void>('/assets', data),
+   create: (data: AssetInput, config?: AxiosRequestConfig) => http.post<void>('/assets', data, config),
 
   /**
    * 更新指定资产或账户信息
@@ -52,7 +53,7 @@ export const assetsApi = {
    * @param data 更新的数据载荷 (属性与创建类似)
    * @returns 空响应
    */
-   update: (id: number, data: AssetInput) => http.put<void>(`/assets/${id}`, data),
+   update: (id: number, data: AssetInput, config?: AxiosRequestConfig) => http.put<void>(`/assets/${id}`, data, config),
 
   /**
    * 删除指定资产或账户
@@ -60,7 +61,7 @@ export const assetsApi = {
    * @param id 资产 ID
    * @returns 空响应
    */
-  delete: (id: number) => http.delete<void>(`/assets/${id}`),
+  delete: (id: number, config?: AxiosRequestConfig) => http.delete<void>(`/assets/${id}`, config),
 
   /**
    * 获取指定资产的详细信息
