@@ -1064,30 +1064,39 @@ check "灾备状态包含 db_driver" "true" "$(echo "$BACKUP_STATUS_RES" | jq '.
 check "灾备状态包含 disk_free_bytes" "true" "$(echo "$BACKUP_STATUS_RES" | jq '.data | has("disk_free_bytes")')"
 
 # 41.2 一键在线热备份
-BACKUP_CREATE_RES=$(curl -s -X POST -H "$AUTH" "$BASE/system/backup/create")
-check "创建热备份 code=0" "0" "$(echo "$BACKUP_CREATE_RES" | jq -r '.code | floor')"
-BACKUP_FILENAME=$(echo "$BACKUP_CREATE_RES" | jq -r '.data.filename')
-test -n "$BACKUP_FILENAME" && echo "$BACKUP_FILENAME" | grep -q "minefolio_backup_.*\.db$" && VALID_FN="yes" || VALID_FN="no"
-check "创建备份返回合规文件名" "yes" "$VALID_FN"
+if [ "$DB_DRIVER" = "postgres" ]; then
+  BACKUP_CREATE_RES=$(curl -s -X POST -H "$AUTH" "$BASE/system/backup/create")
+  check "PostgreSQL 模式创建热备份返回 code=1005" "1005" "$(echo "$BACKUP_CREATE_RES" | jq -r '.code | floor')"
 
-# 41.3 安全流式下载备份
-DOWNLOAD_HTTP_CODE=$(curl -s -o /tmp/downloaded_backup.db -w "%{http_code}" -H "$AUTH" "$BASE/system/backup/download/$BACKUP_FILENAME")
-check "下载备份 HTTP 状态码 200" "200" "$DOWNLOAD_HTTP_CODE"
-test -s /tmp/downloaded_backup.db && HAS_DATA="yes" || HAS_DATA="no"
-check "下载的备份文件非空" "yes" "$HAS_DATA"
-rm -f /tmp/downloaded_backup.db
+  # 41.3 路径穿越攻击拦截 (RF-01)
+  TRAVERSAL_RES=$(curl -s -w "%{http_code}" -H "$AUTH" "$BASE/system/backup/download/..%2F..%2Fetc%2Fpasswd" -o /dev/null)
+  check "路径穿越下载请求被拒绝 (非 200)" "true" "$( [ "$TRAVERSAL_RES" -ne 200 ] && echo "true" || echo "false" )"
+else
+  BACKUP_CREATE_RES=$(curl -s -X POST -H "$AUTH" "$BASE/system/backup/create")
+  check "创建热备份 code=0" "0" "$(echo "$BACKUP_CREATE_RES" | jq -r '.code | floor')"
+  BACKUP_FILENAME=$(echo "$BACKUP_CREATE_RES" | jq -r '.data.filename')
+  test -n "$BACKUP_FILENAME" && echo "$BACKUP_FILENAME" | grep -q "minefolio_backup_.*\.db$" && VALID_FN="yes" || VALID_FN="no"
+  check "创建备份返回合规文件名" "yes" "$VALID_FN"
 
-# 41.4 路径穿越攻击拦截 (RF-01)
-TRAVERSAL_RES=$(curl -s -w "%{http_code}" -H "$AUTH" "$BASE/system/backup/download/..%2F..%2Fetc%2Fpasswd" -o /dev/null)
-check "路径穿越下载请求被拒绝 (非 200)" "true" "$( [ "$TRAVERSAL_RES" -ne 200 ] && echo "true" || echo "false" )"
+  # 41.3 安全流式下载备份
+  DOWNLOAD_HTTP_CODE=$(curl -s -o /tmp/downloaded_backup.db -w "%{http_code}" -H "$AUTH" "$BASE/system/backup/download/$BACKUP_FILENAME")
+  check "下载备份 HTTP 状态码 200" "200" "$DOWNLOAD_HTTP_CODE"
+  test -s /tmp/downloaded_backup.db && HAS_DATA="yes" || HAS_DATA="no"
+  check "下载的备份文件非空" "yes" "$HAS_DATA"
+  rm -f /tmp/downloaded_backup.db
 
-# 41.5 删除备份
-BACKUP_DEL_RES=$(curl -s -X DELETE -H "$AUTH" "$BASE/system/backup/$BACKUP_FILENAME")
-check "删除备份 code=0" "0" "$(echo "$BACKUP_DEL_RES" | jq -r '.code | floor')"
+  # 41.4 路径穿越攻击拦截 (RF-01)
+  TRAVERSAL_RES=$(curl -s -w "%{http_code}" -H "$AUTH" "$BASE/system/backup/download/..%2F..%2Fetc%2Fpasswd" -o /dev/null)
+  check "路径穿越下载请求被拒绝 (非 200)" "true" "$( [ "$TRAVERSAL_RES" -ne 200 ] && echo "true" || echo "false" )"
 
-# 41.6 重复删除返回错误
-BACKUP_DEL2_RES=$(curl -s -X DELETE -H "$AUTH" "$BASE/system/backup/$BACKUP_FILENAME")
-check "重复删除返回错误" "true" "$(echo "$BACKUP_DEL2_RES" | jq -r '.code != 0')"
+  # 41.5 删除备份
+  BACKUP_DEL_RES=$(curl -s -X DELETE -H "$AUTH" "$BASE/system/backup/$BACKUP_FILENAME")
+  check "删除备份 code=0" "0" "$(echo "$BACKUP_DEL_RES" | jq -r '.code | floor')"
+
+  # 41.6 重复删除返回错误
+  BACKUP_DEL2_RES=$(curl -s -X DELETE -H "$AUTH" "$BASE/system/backup/$BACKUP_FILENAME")
+  check "重复删除返回错误" "true" "$(echo "$BACKUP_DEL2_RES" | jq -r '.code != 0')"
+fi
 
 echo ""
 echo "结果: PASS=$PASS FAIL=$FAIL"
