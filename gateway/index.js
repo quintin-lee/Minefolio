@@ -18,11 +18,12 @@
  */
 
 const API_BASE = process.env.MINEFOLIO_API || 'http://localhost:8080';
+const TOKEN_CACHE = new Map(); // `${platform}:${imUserId}` -> bindToken
 
 /**
  * Call a backend /api/im/* endpoint with a Bearer bind token.
  * @param {string} platform  'qq' | 'wechat'
- * @param {'chat'|'bind'|'token'} op
+ * @param {'chat'|'bind'|'bind-auth'|'token'} op
  * @param {object} body
  * @param {string} bearer     bind token (im_bind JWT) or App token
  * @returns {Promise<{code:number, data?:object, message?:string, http:number}>}
@@ -31,10 +32,11 @@ async function callImApi(platform, op, body, bearer) {
   const path =
     op === 'chat' ? `/api/im/${platform}/chat` :
     op === 'bind' ? `/api/im/${platform}/bind` :
+    op === 'bind-auth' ? `/api/im/${platform}/bind-auth` :
     '/api/im/bindings/token';
 
   const res = await fetch((process.env.MINEFOLIO_API || API_BASE) + path, {
-    method: op === 'token' ? 'POST' : 'POST',
+    method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
@@ -53,9 +55,8 @@ async function callImApi(platform, op, body, bearer) {
 /**
  * Handle an incoming IM message and return the reply string.
  *
- * - Text starting with `/bind <code>` triggers a bind using that code as the
- *   bearer (the code IS the user-level bind token the App generated).
- * - Any other text is a read-only query via /chat using the supplied bearer.
+ * - Text starting with `/bind <code>` or `/bind <username> <password>` triggers binding.
+ * - Any other text is a read-only query via /chat using the supplied bearer or cached token.
  *
  * @param {string} platform  'qq' | 'wechat'
  * @param {string} imUserId  the IM account id (QQ uid / wechat user)
@@ -66,30 +67,56 @@ async function callImApi(platform, op, body, bearer) {
 async function handleImMessage(platform, imUserId, text, bindToken) {
   const trimmed = String(text || '').trim();
 
-  // /bind <code>: the code is a fresh App-generated bind token for this user.
+  // /bind <code> or /bind <username> <password>
   if (/^\/bind\b/.test(trimmed)) {
-    const code = trimmed.replace(/^\/bind\b/, '').trim();
-    if (!code) {
-      return '用法: /bind <绑定码>（在 App「IM 机器人」里生成）';
+    const rawArgs = trimmed.replace(/^\/bind\b/, '').trim();
+    if (!rawArgs) {
+      return '用法: /bind <绑定码>（在 App「IM 机器人」里生成），或 /bind <用户名> <密码>';
     }
-    const r = await callImApi(platform, 'bind', { im_user_id: imUserId }, code);
+
+    const parts = rawArgs.split(/\s+/);
+    let r;
+    let savedToken = null;
+
+    if (parts.length >= 2) {
+      // Self-bind via username & password (P2-A)
+      const username = parts[0];
+      const password = parts.slice(1).join(' ');
+      r = await callImApi(platform, 'bind-auth', { im_user_id: imUserId, username, password });
+      if (r.code === 0 && r.data && r.data.bind_token) {
+        savedToken = r.data.bind_token;
+      }
+    } else {
+      // Bind via token generated in App (P0)
+      const code = parts[0];
+      r = await callImApi(platform, 'bind', { im_user_id: imUserId }, code);
+      if (r.code === 0) {
+        savedToken = code;
+      }
+    }
+
     if (r.code === 0) {
+      if (savedToken) {
+        TOKEN_CACHE.set(`${platform}:${imUserId}`, savedToken);
+      }
       return r.data && r.data.message ? r.data.message : '绑定成功，现在可以问我持仓/汇率了';
     }
     return `绑定失败: ${r.message || ('HTTP ' + r.http)}`;
   }
 
   // Read-only query.
-  if (!bindToken) {
-    return '尚未绑定。请先到 App「IM 机器人」生成绑定码，发送 /bind <码> 完成绑定。';
+  const activeToken = bindToken || TOKEN_CACHE.get(`${platform}:${imUserId}`);
+  if (!activeToken) {
+    return '尚未绑定。请先到 App「IM 机器人」生成绑定码，发送 /bind <码> 完成绑定，或发送 /bind <用户名> <密码>。';
   }
-  const r = await callImApi(platform, 'chat', { im_user_id: imUserId, message: trimmed }, bindToken);
+  const r = await callImApi(platform, 'chat', { im_user_id: imUserId, message: trimmed }, activeToken);
   if (r.code === 0) {
     return (r.data && r.data.reply) || '（无回复）';
   }
   // Backend-level guidance (unbound / forbidden) vs transport error.
   if (r.http === 401 || r.code === 1001) {
-    return '绑定码已失效，请重新在 App 生成绑定码并 /bind。';
+    TOKEN_CACHE.delete(`${platform}:${imUserId}`);
+    return '绑定码已失效，请重新在 App 生成绑定码并 /bind，或发送 /bind <用户名> <密码>。';
   }
   return `查询失败: ${r.message || ('HTTP ' + r.http)}`;
 }
