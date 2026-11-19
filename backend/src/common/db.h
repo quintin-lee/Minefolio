@@ -56,6 +56,17 @@ int db_init(csilk_db_pool_t** out_pool);
 int db_run_migrations(csilk_db_pool_t* pool);
 
 /**
+ * @brief 执行 SQLite WAL 日志截断刷盘（PRAGMA wal_checkpoint(TRUNCATE)）
+ *
+ * 将当前 WAL 日志中未同步的数据页完全合并刷入主数据库文件，并将 WAL 文件大小截断为 0 字节。
+ * 在服务关机、断电防损或备份前调用，确保数据库磁盘文件处于完全一致状态。
+ *
+ * @param[in] pool 数据库连接池指针
+ * @return int 状态码 (0 成功或非 SQLite 驱动安全跳过, -1 失败)
+ */
+int db_wal_checkpoint(csilk_db_pool_t* pool);
+
+/**
  * @brief 获取已初始化的全局数据库连接池单例指针
  *
  * @return csilk_db_pool_t* 全局连接池指针；若未初始化则返回 NULL

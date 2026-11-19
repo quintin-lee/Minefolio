@@ -204,6 +204,24 @@ db_is_postgres(void)
 }
 
 int
+db_wal_checkpoint(csilk_db_pool_t* pool)
+{
+    if (!pool) {
+        return -1;
+    }
+    if (g_is_postgres) {
+        return 0;
+    }
+    int rc = csilk_db_exec(pool, "PRAGMA wal_checkpoint(TRUNCATE);");
+    if (rc != 0) {
+        CSILK_LOG_W("db_wal_checkpoint failed, rc=%d", rc);
+        return -1;
+    }
+    CSILK_LOG_I("db_wal_checkpoint(TRUNCATE) succeeded");
+    return 0;
+}
+
+int
 db_in_transaction(csilk_db_pool_t* pool)
 {
     return csilk_db_in_transaction(pool);

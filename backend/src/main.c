@@ -50,6 +50,20 @@ metrics_middleware_wrapper(csilk_ctx_t* c)
     csilk_metrics_middleware(c, NULL);
 }
 
+static csilk_app_t* g_app = NULL;
+
+static void
+handle_shutdown_signal(int sig)
+{
+    (void)sig;
+    if (g_app) {
+        csilk_server_t* server = csilk_app_server(g_app);
+        if (server) {
+            csilk_server_stop(server);
+        }
+    }
+}
+
 int
 main(int argc, char** argv)
 {
@@ -176,6 +190,10 @@ main(int argc, char** argv)
     market_scheduler_start(pool);
     scheduler_engine_start(pool);
 
+    g_app = app;
+    signal(SIGTERM, handle_shutdown_signal);
+    signal(SIGINT, handle_shutdown_signal);
+
     const char* port_str =
         config_env_get("PORT", NULL, 0, config_env_get("MINEFOLIO_PORT", NULL, 0, "8080"));
     int port = port_str ? atoi(port_str) : 8080;
@@ -186,7 +204,9 @@ main(int argc, char** argv)
     market_scheduler_stop();
     csilk_app_free(app);
     ai_shutdown();
+    db_wal_checkpoint(pool);
     csilk_db_pool_free(pool);
     curl_global_cleanup();
+    g_app = NULL;
     return 0;
 }

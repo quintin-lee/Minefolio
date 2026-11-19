@@ -566,6 +566,13 @@ target_link_libraries(test_scheduler_idle_sleep PRIVATE csilk crypto CURL::libcu
 add_dependencies(test_scheduler_idle_sleep copy_assets)
 add_test(NAME test_scheduler_idle_sleep COMMAND test_scheduler_idle_sleep)
 
+add_executable(test_wal_checkpoint tests/unit/test_wal_checkpoint.c ${LIB_SOURCES})
+target_include_directories(test_wal_checkpoint PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_wal_checkpoint PRIVATE -UNDEBUG)
+target_link_libraries(test_wal_checkpoint PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m pthread)
+add_dependencies(test_wal_checkpoint copy_assets)
+add_test(NAME test_wal_checkpoint COMMAND test_wal_checkpoint)
+
 
 
 
