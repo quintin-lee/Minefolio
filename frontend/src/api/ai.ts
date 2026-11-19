@@ -464,6 +464,29 @@ export async function confirmAction(payload: {
 }
 
 /**
+ * 用户确认执行 AI 批量拟录入动作（原子执行，任一失败整批回滚）
+ * @route POST /api/ai/actions/confirm-batch
+ * @param payload.draft_token 服务端 propose_batch_actions 工具签发的复合 HMAC 令牌
+ * @param payload.actions 动作数组（与拟录入草案完全一致）
+ */
+export async function confirmBatchActions(payload: {
+  draft_token: string
+  actions: Array<{
+    action_type: 'daily_expense' | 'transfer'
+    amount: number
+    type?: string
+    date?: string
+    category_id?: number
+    asset_id?: number
+    from_asset_id?: number
+    to_asset_id?: number
+    note?: string
+  }>
+}) {
+  return http.post('/ai/actions/confirm-batch', payload)
+}
+
+/**
  * 获取可用的预定义智能财务工作流列表
  * @route GET /api/ai/workflows
  * @returns 工作流定义对象数组

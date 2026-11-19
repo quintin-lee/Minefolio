@@ -31,9 +31,9 @@ extern "C" {
 typedef struct {
     int64_t     user_id;
     int64_t     ledger_id;
-    const char* year;          /**< 可选 "YYYY" */
-    const char* month;         /**< 可选 "MM" */
-    int         days;          /**< 趋势/走势采样天数（<=0 表示未指定，service 取默认） */
+    const char* year;  /**< 可选 "YYYY" */
+    const char* month; /**< 可选 "MM" */
+    int         days; /**< 趋势/走势采样天数（<=0 表示未指定，service 取默认） */
     const char* period;        /**< 可选趋势周期字符串，如 "30d"/"90d"/"365d"/"1y" */
     const char* base_currency; /**< 可选基准币种，默认 "CNY" */
 } report_query_t;

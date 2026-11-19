@@ -332,3 +332,36 @@ mf_round_to_decimals(double val, int decimals)
     }
     return round(val * factor) / factor;
 }
+
+/* ---------------------------------------------------------------------------
+ * SQL 动态拼接安全宏
+ *
+ * 背景：snprintf(buf, sz, "SELECT ... FROM t", cond1, cond2) 若格式串缺少
+ * 对应的 %s 占位符，编译器不会报错（无 -Wformat 警告），条件片段被静默丢弃。
+ * 使用以下宏代替裸 snprintf，可让 GCC -Wformat 在格式串与参数数量不匹配时
+ * 给出编译警告，从源头阻止此类静默 Bug。
+ * --------------------------------------------------------------------------- */
+
+/**
+ * @brief SQL 动态片段追加宏（追加模式，带 offset 累计）
+ *
+ * 用于替代手写 snprintf(buf + off, sz - off, " AND foo=?") 模式，
+ * 防止格式串与参数不匹配导致条件 SQL 静默丢失。
+ *
+ * 使用示例：
+ *   int off = 0;
+ *   off += SQL_APPEND(buf, sizeof(buf), off, "SELECT * FROM t WHERE 1=1");
+ *   if (has_cond) {
+ *       off += SQL_APPEND(buf, sizeof(buf), off, " AND col=?");
+ *   }
+ */
+#define SQL_APPEND(buf, bufsz, off, fmt, ...)                                                      \
+    snprintf((buf) + (off), (size_t)((bufsz) - (off)), (fmt), ##__VA_ARGS__)
+
+/**
+ * @brief 单次 SQL 格式化宏（非追加）
+ *
+ * 用于替代 snprintf(sql, sizeof(sql), fmt, cond1, cond2) 模式，
+ * 若 fmt 中 %s 数量与参数不匹配，编译器 -Wformat 会警告。
+ */
+#define SQL_FMT(buf, bufsz, fmt, ...) snprintf((buf), (bufsz), (fmt), ##__VA_ARGS__)

@@ -219,6 +219,15 @@
           @executed="onActionExecuted(seg, $event)"
         />
 
+        <!-- Batch Action Card Block -->
+        <BatchActionCard
+          v-else-if="seg.type === 'batch-action' && seg.batchActionData"
+          :draft_token="seg.batchActionData.draft_token"
+          :actions="seg.batchActionData.actions"
+          :status="seg.batchActionData.status"
+          @executed="onBatchActionExecuted(seg)"
+        />
+
         <!-- Mermaid Diagram Block -->
         <MermaidBlock
           v-else-if="seg.type === 'mermaid'"
@@ -261,6 +270,8 @@ import { normalizeActionCard } from '@/utils/normalize-action'
 import WorkflowProgressCard from '@/components/WorkflowProgressCard.vue'
 import WorkflowConfigCard from '@/components/WorkflowConfigCard.vue'
 import type { ProposedAction } from '@/components/ActionCard.vue'
+import BatchActionCard from '@/components/BatchActionCard.vue'
+import type { BatchProposedAction } from '@/components/BatchActionCard.vue'
 import type { WorkflowRunState, WorkflowConfigState } from '@/types'
 
 // Lazy-load MermaidBlock and CodeBlock to avoid bundling heavy renderers into main chat chunk
@@ -307,6 +318,9 @@ function getSegmentLabel(seg: Segment): string {
   if (seg.type === 'action') {
     return seg.actionData?.action_type === 'daily_expense' ? '日常记账确认' : '账户转账操作'
   }
+  if (seg.type === 'batch-action') {
+    return '批量交易确认'
+  }
   if (seg.type === 'mermaid') {
     return '财务分析图表'
   }
@@ -322,6 +336,9 @@ function getSegmentLabel(seg: Segment): string {
 function getSegmentIcon(seg: Segment): string {
   if (seg.type === 'action') {
     return seg.actionData?.action_type === 'daily_expense' ? 'ph:receipt-bold' : 'ph:arrows-left-right-bold'
+  }
+  if (seg.type === 'batch-action') {
+    return 'ph:stack-bold'
   }
   if (seg.type === 'mermaid') {
     return 'ph:chart-pie-slice-bold'
@@ -643,13 +660,29 @@ function onActionExecuted(seg: Segment, action: ProposedAction) {
   }
 }
 
+function onBatchActionExecuted(seg: Segment) {
+  const token = seg.batchActionData?.draft_token
+  if (token) {
+    executedTokens.value = new Set([...executedTokens.value, token])
+    if (seg.batchActionData) {
+      seg.batchActionData.status = 'executed'
+    }
+    emit('action-executed', { draftToken: token })
+  }
+}
+
 interface Segment {
   id: string
-  type: 'markdown' | 'streaming-text' | 'mermaid' | 'streaming-mermaid' | 'action' | 'code'
+  type: 'markdown' | 'streaming-text' | 'mermaid' | 'streaming-mermaid' | 'action' | 'batch-action' | 'code'
   content: string
   lang?: string
   renderedHtml?: string
   actionData?: ProposedAction
+  batchActionData?: {
+    draft_token: string
+    actions: BatchProposedAction[]
+    status?: 'pending' | 'executing' | 'executed' | 'cancelled'
+  }
 }
 
 const showTrailingCursor = computed(() => props.isStreaming && props.enableBuffer !== false)
@@ -952,10 +985,10 @@ const segments = computed<Segment[]>(() => {
     })
   }
 
-  // 兜底回退：如果模型调用了 propose_daily_expense 或 propose_transfer 并成功生成了草案（带 draft_token），
-  // 但回复正文中未输出 ```action 代码块，则从 toolCalls 中自动回退挂载 ActionCard，
+  // 兜底回退：如果模型调用了 propose_daily_expense 或 propose_transfer 或 propose_batch_actions 并成功生成了草案（带 draft_token），
+  // 但回复正文中未输出 ```action 代码块，则从 toolCalls 中自动回退挂载 ActionCard / BatchActionCard，
   // 确保用户 100% 能在界面上看到确认入库卡片，彻底避免因 LLM 输出格式不规范导致的流程断裂。
-  const hasActionInResult = result.some(s => s.type === 'action')
+  const hasActionInResult = result.some(s => s.type === 'action' || s.type === 'batch-action')
   if (!hasActionInResult && props.toolCalls && props.toolCalls.length > 0) {
     for (const tc of props.toolCalls) {
       if ((tc.name === 'propose_daily_expense' || tc.name === 'propose_transfer') && tc.result) {
@@ -979,6 +1012,51 @@ const segments = computed<Segment[]>(() => {
                 type: 'action',
                 content: typeof tc.result === 'string' ? tc.result : JSON.stringify(tc.result),
                 actionData: normalized,
+              })
+            }
+          }
+        } catch {
+          // ignore invalid tool result JSON
+        }
+      } else if (tc.name === 'propose_batch_actions' && tc.result) {
+        try {
+          const resObj = typeof tc.result === 'string' ? JSON.parse(tc.result) : tc.result
+          if (resObj && typeof resObj === 'object') {
+            const draftToken = ((resObj as Record<string, unknown>).draft_token as string) || ''
+            const rawActions = (resObj as Record<string, unknown>).actions
+            if (Array.isArray(rawActions) && rawActions.length > 0) {
+              const batchActions: BatchProposedAction[] = rawActions.map((item: any) => {
+                const actionType = item.action_type || 'daily_expense'
+                const data = item.data ? item.data : item
+                return {
+                  action_type: actionType,
+                  data: {
+                    type: data.type,
+                    amount: Number(data.amount) || 0,
+                    category_id: data.category_id,
+                    category_name: data.category_name,
+                    asset_id: data.asset_id,
+                    asset_name: data.asset_name,
+                    date: data.date,
+                    note: data.note,
+                    from_asset_id: data.from_asset_id,
+                    from_asset_name: data.from_asset_name,
+                    to_asset_id: data.to_asset_id,
+                    to_asset_name: data.to_asset_name,
+                    fee: data.fee,
+                  },
+                }
+              })
+              const isExec = !!(draftToken && executedTokens.value.has(draftToken))
+              result.push({
+                id: `batch-act-tool-${segIdx++}`,
+                type: 'batch-action',
+                content: typeof tc.result === 'string' ? tc.result : JSON.stringify(tc.result),
+                batchActionData: {
+                  draft_token: draftToken,
+                  actions: batchActions,
+                  status: isExec ? 'executed' : 'pending',
+                },
               })
             }
           }

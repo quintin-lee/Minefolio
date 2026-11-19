@@ -530,13 +530,13 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
                     money_div_quantity(buy_total, tx->quantity, 4, ROUND_HALF_UP, &cost_per_unit);
                     const char* tx_date_str = tx->tx_date ? tx->tx_date : now_fallback;
                     int64_t     lot_id = tx_lot_create(pool,
-                                                       tx->user_id,
-                                                       tx->asset_id,
-                                                       tx->id,
-                                                       tx_date_str,
-                                                       tx->quantity,
-                                                       cost_per_unit,
-                                                       tx->fee);
+                                                   tx->user_id,
+                                                   tx->asset_id,
+                                                   tx->id,
+                                                   tx_date_str,
+                                                   tx->quantity,
+                                                   cost_per_unit,
+                                                   tx->fee);
                     if (lot_id <= 0) {
                         csilk_json_free(cm_rows);
                         if (orig_tx_id <= 0) {
@@ -573,7 +573,7 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
                                       "0.0000",
                                       "0.0000",
                                       cur_str,
-                                      tx->tx_date ? tx->tx_date : now_fallback,
+                                    tx->tx_date ? tx->tx_date : now_fallback,
                                       fee_note,
                                       tx_id_str,
                                       lid_str,

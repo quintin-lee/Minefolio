@@ -29,7 +29,7 @@ typedef enum {
  * @brief 舍入模式定义
  */
 typedef enum {
-    ROUND_HALF_UP = 0,   /**< 四舍五入 (Standard accounting, >= 0.5 远离零向上进位) */
+    ROUND_HALF_UP = 0, /**< 四舍五入 (Standard accounting, >= 0.5 远离零向上进位) */
     ROUND_HALF_EVEN = 1, /**< 银行家舍入法 (Round to nearest even, 逢五向最近偶数舍入) */
     ROUND_DOWN = 2,      /**< 向零截断 (Truncate, 直接丢弃小数部分) */
     ROUND_UP = 3,        /**< 远离零进位 (Ceil magnitude) */

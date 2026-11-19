@@ -240,8 +240,8 @@ tx_usecase_update(void* pool, const update_tx_cmd_t* cmd, tx_usecase_result_t* o
 
     int64_t target_asset_id = (cmd->asset_id > 0) ? cmd->asset_id : old_asset_id;
     bool    type_supports_linked = (strcmp(type, "buy") == 0 || strcmp(type, "sell") == 0 ||
-                                    strcmp(type, "transfer_in") == 0 ||
-                                    strcmp(type, "transfer_out") == 0 || strcmp(type, "fee") == 0);
+                                 strcmp(type, "transfer_in") == 0 ||
+                                 strcmp(type, "transfer_out") == 0 || strcmp(type, "fee") == 0);
     int64_t target_linked_id = 0;
     if (type_supports_linked) {
         target_linked_id = (cmd->linked_asset_id > 0)

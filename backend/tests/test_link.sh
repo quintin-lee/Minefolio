@@ -22,7 +22,7 @@ trap cleanup EXIT INT TERM
 export TEST_JWT_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
 # --- 启动服务器 ---
 db_clean
-db_start_server "$PORT" "$BUILD_DIR"
+db_start_server "$PORT" "$BUILD_DIR" "${SERVER_LOG:-/dev/null}"
 
 
 req() { # req METHOD PATH JSON
@@ -910,6 +910,12 @@ DISABLE_OK_RES=$(curl -s -H "$AUTH" -H "Content-Type: application/json" -X POST 
 check "正确密码解绑 2FA 成功 code=0" "0" "$(echo "$DISABLE_OK_RES" | jq -r '.code | floor')"
 TOTP_AFTER_DISABLE=$(sqlite3 "$DB" "SELECT CASE WHEN totp_enabled THEN 1 ELSE 0 END FROM users WHERE id=1")
 check "数据库中 2FA 状态已关闭 totp_enabled=0" "0" "$TOTP_AFTER_DISABLE"
+
+# 2FA 解绑会递增 token_version 吊销旧 Token，重新登录获取最新有效 Token
+LOGIN_AFTER_2FA_PASS=$(rsa_encrypt "newpass123")
+LOGIN_AFTER_2FA_RES=$(req POST /auth/login "{\"username\":\"linktest\",\"password_enc\":\"$LOGIN_AFTER_2FA_PASS\"}")
+TOKEN=$(echo "$LOGIN_AFTER_2FA_RES" | jq -r '.data.token')
+AUTH="Authorization: Bearer $TOKEN"
 
 # 3. OAuth 客户端防伪造与服务端权威 Code 置换校验
 # 3.1 尝试伪造 oauth_id 且不传有效 code 返回 code=1002
