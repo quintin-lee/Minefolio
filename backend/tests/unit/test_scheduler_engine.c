@@ -60,8 +60,21 @@ main(void)
 
     assert(scheduler_engine_trigger_job_now(job_id, 1, "manual_invoke") == 0);
 
-    /* Allow worker thread to execute */
-    usleep(250000);
+    /* Wait for worker thread to execute */
+    int waited_ms = 0;
+    while (waited_ms < 2000) {
+        csilk_json_t* job = mf_scheduler_repo_job_get(pool, 1, false, job_id);
+        if (job) {
+            const char* st = csilk_json_get_string(job, "last_run_status");
+            if (st && strcmp(st, "success") == 0) {
+                csilk_json_free(job);
+                break;
+            }
+            csilk_json_free(job);
+        }
+        usleep(20000);
+        waited_ms += 20;
+    }
 
     /* Verify run log */
     int64_t       total_logs = 0;
@@ -104,8 +117,22 @@ main(void)
     /* Trigger price spike event for NVDA */
     scheduler_event_publish_price_spike(1001, "NVDA", 8.2);
 
-    /* Allow event handling and worker thread execution */
-    usleep(250000);
+    /* Wait for event handling and worker thread execution */
+    waited_ms = 0;
+    while (waited_ms < 2000) {
+        total_logs = 0;
+        csilk_json_t* check_logs =
+            mf_scheduler_repo_log_list(pool, 1, false, mkt_job_id, 1, 10, &total_logs);
+        if (check_logs) {
+            if (total_logs >= 1) {
+                csilk_json_free(check_logs);
+                break;
+            }
+            csilk_json_free(check_logs);
+        }
+        usleep(20000);
+        waited_ms += 20;
+    }
 
     total_logs = 0;
     csilk_json_t* mkt_logs =

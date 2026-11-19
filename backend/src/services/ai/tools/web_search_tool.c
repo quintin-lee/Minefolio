@@ -216,6 +216,7 @@ curl_http_get_with_redirect_check(const char*          initial_url,
         curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
         curl_easy_setopt(curl, CURLOPT_USERAGENT, SEARCH_USER_AGENT);
         curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, timeout_ms > 0 ? timeout_ms : 8000L);
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, 4000L);
         curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);       /* 多线程安全，避免 SIGALRM */
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L); /* 禁用盲目跳转 */
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_mem_cb);

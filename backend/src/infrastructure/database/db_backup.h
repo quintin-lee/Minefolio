@@ -35,7 +35,10 @@ bool db_backup_is_valid_filename(const char* filename);
  * @param out_filename_size 缓冲区大小
  * @return 0 成功, -1 失败
  */
-int db_backup_create(csilk_db_pool_t* pool, const char* backup_dir, char* out_filename, size_t out_filename_size);
+int db_backup_create(csilk_db_pool_t* pool,
+                     const char*      backup_dir,
+                     char*            out_filename,
+                     size_t           out_filename_size);
 
 /**
  * @brief 获取当前数据库存储指标、WAL 体积、磁盘剩余空间及备份历史列表

@@ -173,8 +173,7 @@ db_backup_create(csilk_db_pool_t* pool,
     unlink(tmp_path);
 
     sqlite3* dest_db = NULL;
-    int rc = sqlite3_open_v2(
-        tmp_path, &dest_db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, NULL);
+    int rc = sqlite3_open_v2(tmp_path, &dest_db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, NULL);
     if (rc != SQLITE_OK) {
         CSILK_LOG_E("Failed to open destination backup file: %s (rc=%d)", tmp_path, rc);
         if (dest_db) {
@@ -234,7 +233,7 @@ db_backup_rotate(const char* backup_dir, int max_keep)
         max_keep = 7;
     }
     const char* dir = (backup_dir && *backup_dir) ? backup_dir : "data/backups";
-    DIR* d = opendir(dir);
+    DIR*        d = opendir(dir);
     if (!d) {
         return 0;
     }
@@ -323,7 +322,7 @@ db_backup_get_status(csilk_db_pool_t* pool, const char* backup_dir, csilk_json_t
     csilk_json_add_int(obj, "db_size", db_size);
     csilk_json_add_int(obj, "wal_size", wal_size);
 
-    int64_t disk_free = 0;
+    int64_t        disk_free = 0;
     struct statvfs vfs;
     if (statvfs(dir, &vfs) == 0) {
         disk_free = (int64_t)vfs.f_bavail * (int64_t)vfs.f_frsize;
@@ -390,7 +389,7 @@ db_backup_delete(const char* backup_dir, const char* filename)
         return -1;
     }
     const char* dir = (backup_dir && *backup_dir) ? backup_dir : "data/backups";
-    char full[512];
+    char        full[512];
     snprintf(full, sizeof(full), "%s/%s", dir, filename);
     if (unlink(full) != 0) {
         return -1;

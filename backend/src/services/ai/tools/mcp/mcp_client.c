@@ -210,6 +210,7 @@ http_call(mf_mcp_client_t*    c,
     curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, curl_header_cb);
     curl_easy_setopt(curl, CURLOPT_HEADERDATA, (void*)c);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, timeout_ms);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, 4000L);
 
     CURLcode res = curl_easy_perform(curl);
     if (out_http_code) {
