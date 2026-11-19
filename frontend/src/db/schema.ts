@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS categories (
 CREATE TABLE IF NOT EXISTS assets (
   id            INTEGER PRIMARY KEY,
   user_id       INTEGER DEFAULT 0,
+  ledger_id     INTEGER DEFAULT 0,
   category_id   INTEGER NOT NULL,
   name          TEXT NOT NULL,
   account_no    TEXT,
@@ -57,6 +58,7 @@ CREATE TABLE IF NOT EXISTS accounts (
 CREATE TABLE IF NOT EXISTS transactions (
   id               INTEGER PRIMARY KEY,
   user_id          INTEGER DEFAULT 0,
+  ledger_id        INTEGER DEFAULT 0,
   asset_id         INTEGER NOT NULL,
   linked_asset_id  INTEGER,
   category_id      INTEGER,
@@ -96,6 +98,7 @@ CREATE TABLE IF NOT EXISTS expense_tags (
 CREATE TABLE IF NOT EXISTS daily_expenses (
   id           INTEGER PRIMARY KEY,
   user_id      INTEGER DEFAULT 0,
+  ledger_id    INTEGER DEFAULT 0,
   category_id  INTEGER NOT NULL,
   asset_id     INTEGER NOT NULL,
   expense_type TEXT NOT NULL DEFAULT 'expense',
@@ -113,6 +116,7 @@ CREATE TABLE IF NOT EXISTS sync_queue (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   table_name    TEXT NOT NULL,
   record_id     INTEGER NOT NULL,
+  ledger_id     INTEGER DEFAULT 0,
   operation     TEXT NOT NULL CHECK(operation IN ('create','update','delete')),
   payload       TEXT NOT NULL,
   local_version TEXT NOT NULL,

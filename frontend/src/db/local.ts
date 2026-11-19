@@ -78,6 +78,10 @@ export async function initLocalDb(): Promise<Database> {
 function migrateColumns(database: Database): void {
   const stmts = [
     'ALTER TABLE assets ADD COLUMN account_id INTEGER',
+    'ALTER TABLE assets ADD COLUMN ledger_id INTEGER DEFAULT 0',
+    'ALTER TABLE transactions ADD COLUMN ledger_id INTEGER DEFAULT 0',
+    'ALTER TABLE daily_expenses ADD COLUMN ledger_id INTEGER DEFAULT 0',
+    'ALTER TABLE sync_queue ADD COLUMN ledger_id INTEGER DEFAULT 0',
   ]
   for (const sql of stmts) {
     try {

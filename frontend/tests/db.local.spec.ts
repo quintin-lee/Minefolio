@@ -43,4 +43,24 @@ describe('local db', () => {
     const res = fresh.query("SELECT value FROM sync_meta WHERE key = 'last_sync_at'")
     expect(fresh.rowsFrom(res)[0].value).toBe('2026-08-13T00:00:00Z')
   })
+
+  it('migrates legacy db to add ledger_id columns to all sync tables', async () => {
+    await initLocalDb()
+    run('INSERT INTO assets (id, category_id, name, ledger_id) VALUES (?,?,?,?)', [101, 1, '测试资产', 2])
+    run('INSERT INTO transactions (id, asset_id, transaction_type, amount, transaction_date, ledger_id) VALUES (?,?,?,?,?,?)', [201, 101, 'income', 50, '2026-11-19', 2])
+    run('INSERT INTO daily_expenses (id, category_id, asset_id, expense_type, amount, expense_date, ledger_id) VALUES (?,?,?,?,?,?,?)', [301, 1, 101, 'expense', 15, '2026-11-19', 2])
+    run('INSERT INTO sync_queue (table_name, record_id, operation, payload, local_version, ledger_id) VALUES (?,?,?,?,?,?)', ['assets', 101, 'create', '{}', '2026-11-19T00:00:00Z', 2])
+
+    const assetRow = rowsFrom(query('SELECT ledger_id FROM assets WHERE id = 101'))[0]
+    expect(assetRow.ledger_id).toBe(2)
+
+    const txRow = rowsFrom(query('SELECT ledger_id FROM transactions WHERE id = 201'))[0]
+    expect(txRow.ledger_id).toBe(2)
+
+    const expRow = rowsFrom(query('SELECT ledger_id FROM daily_expenses WHERE id = 301'))[0]
+    expect(expRow.ledger_id).toBe(2)
+
+    const qRow = rowsFrom(query('SELECT ledger_id FROM sync_queue WHERE record_id = 101'))[0]
+    expect(qRow.ledger_id).toBe(2)
+  })
 })
