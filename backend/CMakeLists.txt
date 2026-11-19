@@ -559,6 +559,13 @@ target_link_libraries(test_scheduler_engine PRIVATE csilk crypto CURL::libcurl $
 add_dependencies(test_scheduler_engine copy_assets)
 add_test(NAME test_scheduler_engine COMMAND test_scheduler_engine)
 
+add_executable(test_scheduler_idle_sleep tests/unit/test_scheduler_idle_sleep.c ${LIB_SOURCES})
+target_include_directories(test_scheduler_idle_sleep PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_scheduler_idle_sleep PRIVATE -UNDEBUG)
+target_link_libraries(test_scheduler_idle_sleep PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m pthread)
+add_dependencies(test_scheduler_idle_sleep copy_assets)
+add_test(NAME test_scheduler_idle_sleep COMMAND test_scheduler_idle_sleep)
+
 
 
 

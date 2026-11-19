@@ -33,6 +33,11 @@ int scheduler_engine_trigger_job_now(int64_t job_id, int64_t user_id, const char
  */
 void scheduler_engine_notify_reload(void);
 
+/**
+ * Returns the sleep duration (in seconds) computed in the last scheduler loop iteration.
+ */
+int scheduler_engine_get_last_sleep_sec(void);
+
 #ifdef __cplusplus
 }
 #endif

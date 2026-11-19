@@ -37,6 +37,7 @@ static pthread_mutex_t          s_engine_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t           s_engine_cond = PTHREAD_COND_INITIALIZER;
 static bool                     s_running = false;
 static bool                     s_reload_requested = false;
+static int                      s_last_sleep_sec = 60;
 
 typedef struct {
     void*   pool;
@@ -44,6 +45,37 @@ typedef struct {
     int64_t user_id;
     char    reason[64];
 } job_exec_context_t;
+
+static time_t
+parse_time_str(const char* s)
+{
+    if (!s || !*s) {
+        return 0;
+    }
+    struct tm tm_val;
+    memset(&tm_val, 0, sizeof(tm_val));
+    int year = 0, mon = 0, day = 0, hour = 0, min = 0, sec = 0;
+    if (sscanf(s, "%d-%d-%d %d:%d:%d", &year, &mon, &day, &hour, &min, &sec) == 6) {
+        tm_val.tm_year = year - 1900;
+        tm_val.tm_mon = mon - 1;
+        tm_val.tm_mday = day;
+        tm_val.tm_hour = hour;
+        tm_val.tm_min = min;
+        tm_val.tm_sec = sec;
+        tm_val.tm_isdst = -1;
+        return mktime(&tm_val);
+    }
+    return 0;
+}
+
+int
+scheduler_engine_get_last_sleep_sec(void)
+{
+    pthread_mutex_lock(&s_engine_lock);
+    int sec = s_last_sleep_sec;
+    pthread_mutex_unlock(&s_engine_lock);
+    return sec;
+}
 
 static void
 get_now_str(char* buf, size_t len)
@@ -590,6 +622,10 @@ scheduler_engine_thread(void* arg)
         pthread_mutex_unlock(&s_engine_lock);
 
         /* 1. Poll database for scheduled cron jobs */
+        time_t now_sec = time(NULL);
+        time_t min_future_sec = 0;
+        size_t count = 0;
+
         if (s_db_pool) {
             char now_str[64];
             get_now_str(now_str, sizeof(now_str));
@@ -598,7 +634,7 @@ scheduler_engine_thread(void* arg)
                                 "scheduled_jobs WHERE trigger_type = 'cron' AND enabled = 1";
             csilk_json_t* rows = csilk_db_query_json((csilk_db_pool_t*)s_db_pool, sql);
             if (rows) {
-                size_t count = csilk_json_array_size(rows);
+                count = csilk_json_array_size(rows);
                 for (size_t i = 0; i < count; i++) {
                     csilk_json_t* row = csilk_json_array_get(rows, i);
                     int64_t       job_id = db_get_int(row, "id");
@@ -616,9 +652,14 @@ scheduler_engine_thread(void* arg)
                                 if (cron_s && *cron_s) {
                                     char next_buf[64];
                                     if (cron_format_next_str(
-                                            cron_s, time(NULL), next_buf, sizeof(next_buf)) == 0) {
+                                            cron_s, now_sec, next_buf, sizeof(next_buf)) == 0) {
                                         mf_scheduler_repo_job_update_last_run(
                                             s_db_pool, job_id, "", 0, next_buf);
+                                        time_t nb_sec = parse_time_str(next_buf);
+                                        if (nb_sec > now_sec &&
+                                            (min_future_sec == 0 || nb_sec < min_future_sec)) {
+                                            min_future_sec = nb_sec;
+                                        }
                                     }
                                 }
                                 csilk_json_free(tjson);
@@ -633,13 +674,18 @@ scheduler_engine_thread(void* arg)
                                 const char* cron_s = csilk_json_get_string(tjson, "cron");
                                 if (cron_s && *cron_s) {
                                     cron_format_next_str(
-                                        cron_s, time(NULL), next_buf, sizeof(next_buf));
+                                        cron_s, now_sec, next_buf, sizeof(next_buf));
                                 }
                                 csilk_json_free(tjson);
                             }
                         }
 
                         if (next_buf[0]) {
+                            time_t nb_sec = parse_time_str(next_buf);
+                            if (nb_sec > now_sec &&
+                                (min_future_sec == 0 || nb_sec < min_future_sec)) {
+                                min_future_sec = nb_sec;
+                            }
                             /* Atomic CAS: only the node that wins the transition dispatches the run */
                             int claimed = mf_scheduler_repo_job_claim_cron_run(
                                 s_db_pool, job_id, next_run, next_buf);
@@ -647,16 +693,39 @@ scheduler_engine_thread(void* arg)
                                 scheduler_engine_trigger_job_now(job_id, user_id, "cron_tick");
                             }
                         }
+                    } else {
+                        /* Future job */
+                        time_t nr_sec = parse_time_str(next_run);
+                        if (nr_sec > now_sec && (min_future_sec == 0 || nr_sec < min_future_sec)) {
+                            min_future_sec = nr_sec;
+                        }
                     }
                 }
                 csilk_json_free(rows);
             }
         }
 
-        /* 2. Sleep 1 second or until signaled */
+        /* 2. Compute dynamic sleep interval (capped at 60s for clock skew / safety) */
+        time_t sleep_sec = 60;
+        if (min_future_sec > now_sec) {
+            time_t diff = min_future_sec - now_sec;
+            sleep_sec = (diff < 60) ? diff : 60;
+            if (sleep_sec < 1) {
+                sleep_sec = 1;
+            }
+        } else if (count == 0) {
+            sleep_sec = 60;
+        } else {
+            sleep_sec = 1;
+        }
+
+        pthread_mutex_lock(&s_engine_lock);
+        s_last_sleep_sec = (int)sleep_sec;
+        pthread_mutex_unlock(&s_engine_lock);
+
         struct timespec ts;
         clock_gettime(CLOCK_REALTIME, &ts);
-        ts.tv_sec += 1;
+        ts.tv_sec += sleep_sec;
 
         pthread_mutex_lock(&s_engine_lock);
         if (s_running && !s_reload_requested) {
