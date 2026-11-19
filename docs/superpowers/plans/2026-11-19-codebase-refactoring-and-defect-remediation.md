@@ -273,13 +273,13 @@ git commit -m "feat(mobile): add ledger_id column to local schema and migration 
 - Consumes: `API_BY_TABLE`, `sync_queue`
 - Produces: 具有账本定向注入的 `pushLocal()` 与覆盖完整维表的 `pullRemote()`
 
-- [ ] **Step 1: 编写同步队列多账本隔离测试用例**
+- [x] **Step 1: 编写同步队列多账本隔离测试用例**
   - 在 `frontend/tests/sync.store.spec.ts` 中添加用例：
     - 断言 `enqueue` 能够写入 `ledger_id`；
     - 断言 `pushLocal` 时向 API 传递带 `X-Ledger-Id` 覆盖的 headers，而不是使用全局当前激活的账本；
     - 断言 `pullRemote` 会拉取 `categories` 与 `tags`。
 
-- [ ] **Step 2: 运行测试验证失败**
+- [x] **Step 2: 运行测试验证失败**
 
 运行：
 ```bash
@@ -288,10 +288,10 @@ run_mem_capped 4G npm --prefix frontend test tests/sync.store.spec.ts
 ```
 预期：FAIL。
 
-- [ ] **Step 3: 更新 API 模块支持动态请求头**
+- [x] **Step 3: 更新 API 模块支持动态请求头**
   - 在 `frontend/src/api/daily_expenses.ts`、`transactions.ts`、`assets.ts`、`accounts.ts` 的 `create`、`update`、`delete` 方法中支持可选的 `config?: AxiosRequestConfig` 参数，允许透传 headers。
 
-- [ ] **Step 4: 改造 `frontend/src/stores/sync.ts`**
+- [x] **Step 4: 改造 `frontend/src/stores/sync.ts`**
   - **白名单维护**：在 `TABLE_COLUMNS` 中为 `assets`、`transactions`、`daily_expenses` 增加 `'ledger_id'`；
   - **入队绑定账本**：在 `enqueue(tableName, recordId, operation, payload)` 中读取当前活跃 `ledger_id` 并存入 `sync_queue.ledger_id`；
   - **定向注入请求头**：在 `pushLocal()` 中，如果 `item.ledger_id > 0`，调用 API 时传入 `{ headers: { 'X-Ledger-Id': String(item.ledger_id) } }`；
@@ -301,7 +301,7 @@ run_mem_capped 4G npm --prefix frontend test tests/sync.store.spec.ts
     ```
   - **并发锁与防抖**：在 `syncNow()` 增加原子标记检查与异常安全释放。
 
-- [ ] **Step 5: 运行单测验证通过**
+- [x] **Step 5: 运行单测验证通过**
 
 运行：
 ```bash
@@ -310,7 +310,7 @@ run_mem_capped 4G npm --prefix frontend test tests/sync.store.spec.ts
 ```
 预期：PASS。
 
-- [ ] **Step 6: 提交代码**
+- [x] **Step 6: 提交代码**
 
 ```bash
 git add frontend/src/stores/sync.ts \
@@ -338,7 +338,7 @@ git commit -m "fix(mobile): enforce ledger_id header injection and include categ
 - Consumes: `useLedgerStore`, `useCategoryStore`, `useSyncStore`
 - Produces: 账本作用域隔离的离线移动端视图与可控的状态失效
 
-- [ ] **Step 1: 改造移动端离线列表 SQL 查询**
+- [x] **Step 1: 改造移动端离线列表 SQL 查询**
   - 在 `TransactionsMobile.vue` 的离线查询中加入账本条件：
     ```sql
     WHERE t.__deleted = 0 AND (t.ledger_id = ? OR t.ledger_id = 0)
@@ -347,12 +347,12 @@ git commit -m "fix(mobile): enforce ledger_id header injection and include categ
   - 在 `DailyExpensesMobile.vue` 的 `loadLocalList()` 与 `loadLocalMonth()` 中加入相同账本约束；
   - 在 `ExpenseQuickSheet.vue` 中确保录入的离线记录写入 `ledger_id = currentLedgerId`。
 
-- [ ] **Step 2: 规范 Pinia `ledger.ts` 切换响应**
+- [x] **Step 2: 规范 Pinia `ledger.ts` 切换响应**
   - 在 `useLedgerStore` 中提供统一的响应式切账本调度：
     - 保留对旧事件的兼容，同时提供直接的 store 级联失效；
     - 在移动端触发当前账本重新加载与局部刷新。
 
-- [ ] **Step 3: 前端类型检查与构建验证**
+- [x] **Step 3: 前端类型检查与构建验证**
 
 运行：
 ```bash
@@ -361,7 +361,7 @@ run_mem_capped 4G npm --prefix frontend run build
 ```
 预期：`vue-tsc -b` 0 错误，Vite 构建产物 0 告警顺利打包。
 
-- [ ] **Step 4: 提交代码**
+- [x] **Step 4: 提交代码**
 
 ```bash
 git add frontend/src/stores/ledger.ts \
@@ -380,26 +380,26 @@ git commit -m "refactor(frontend): filter mobile local queries by active ledger 
 **Files:**
 - Test: All unit and integration test suites
 
-- [ ] **Step 1: 隔离环境全量后端构建**
+- [x] **Step 1: 隔离环境全量后端构建**
 ```bash
 ./backend/tests/run_isolated.sh build backend/build
 ./backend/tests/run_isolated.sh build backend/build-asan
 ```
 预期：零编译错误，`-Werror` 零告警。
 
-- [ ] **Step 2: 隔离环境运行后端全量 CTest 单元测试 (包含 ASan 零泄漏)**
+- [x] **Step 2: 隔离环境运行后端全量 CTest 单元测试 (包含 ASan 零泄漏)**
 ```bash
 ./backend/tests/run_isolated.sh unit backend/build-asan
 ```
 预期：55+ 单元测试全部 PASS，ASan 零泄漏。
 
-- [ ] **Step 3: 隔离环境运行全套集成测试 (SQLite)**
+- [x] **Step 3: 隔离环境运行全套集成测试 (SQLite)**
 ```bash
 ./backend/tests/run_isolated.sh integration backend/build
 ```
 预期：15 个集成测试套件（含 `test_link.sh`, `test_ledgers.sh`, `test_ai_trace.sh` 等）100% 绿色通过。
 
-- [ ] **Step 4: 隔离环境运行前端测试与构建**
+- [x] **Step 4: 隔离环境运行前端测试与构建**
 ```bash
 source ./backend/tests/memory_guard.sh
 run_mem_capped 4G npm --prefix frontend test
@@ -407,7 +407,7 @@ run_mem_capped 4G npm --prefix frontend run build
 ```
 预期：Vitest 40+ 测试套件全绿，打包顺利完成。
 
-- [ ] **Step 5: 提交最终文档与改动收尾**
+- [x] **Step 5: 提交最终文档与改动收尾**
 ```bash
 git status
 ```
