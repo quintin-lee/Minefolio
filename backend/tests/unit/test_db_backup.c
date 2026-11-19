@@ -32,6 +32,9 @@ main(void)
     const char* test_db_path = "./data/test_backup_src.db";
     const char* test_backup_dir = "./data/test_backups_dir";
 
+    /* Ensure data directory exists */
+    mkdir("data", 0755);
+
     /* Cleanup test artifacts */
     unlink(test_db_path);
     char cleanup_cmd[256];

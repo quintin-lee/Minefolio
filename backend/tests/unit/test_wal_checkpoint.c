@@ -18,6 +18,9 @@ main(void)
     const char* test_db_path = "./data/test_wal_chkpt.db";
     const char* test_wal_path = "./data/test_wal_chkpt.db-wal";
 
+    /* Ensure data directory exists */
+    mkdir("data", 0755);
+
     /* Clean up pre-existing test files */
     unlink(test_db_path);
     unlink(test_wal_path);
