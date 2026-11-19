@@ -64,6 +64,14 @@
         <MarketSyncSettings />
       </el-tab-pane>
 
+      <el-tab-pane name="backup" lazy>
+        <template #label>
+          <Icon icon="ph:database" width="16" />
+          <span class="tab-label">{{ t('settings.tabBackup') }}</span>
+        </template>
+        <DatabaseBackup />
+      </el-tab-pane>
+
       <el-tab-pane name="appearance" lazy>
         <template #label>
           <Icon icon="ph:palette" width="16" />
@@ -87,6 +95,7 @@ import DataExport from '@/components/settings/DataExport.vue'
 import ImportRulesManager from '@/components/settings/ImportRulesManager.vue'
 import AiProviderManager from '@/components/settings/AiProviderManager.vue'
 import MarketSyncSettings from '@/components/settings/MarketSyncSettings.vue'
+import DatabaseBackup from '@/components/settings/DatabaseBackup.vue'
 import AppearanceSettings from '@/components/settings/AppearanceSettings.vue'
 
 const activeTab = ref('profile')
