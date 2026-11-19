@@ -573,6 +573,13 @@ target_link_libraries(test_wal_checkpoint PRIVATE csilk crypto CURL::libcurl ${P
 add_dependencies(test_wal_checkpoint copy_assets)
 add_test(NAME test_wal_checkpoint COMMAND test_wal_checkpoint)
 
+add_executable(test_db_backup tests/unit/test_db_backup.c ${LIB_SOURCES})
+target_include_directories(test_db_backup PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_db_backup PRIVATE -UNDEBUG)
+target_link_libraries(test_db_backup PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m pthread sqlite3)
+add_dependencies(test_db_backup copy_assets)
+add_test(NAME test_db_backup COMMAND test_db_backup)
+
 
 
 
