@@ -6,6 +6,7 @@
 #include "interfaces/http/controllers/admin_controller.h"
 #include "infrastructure/repositories/auth_repo_impl.h"
 #include "infrastructure/repositories/import_rule_repo_impl.h"
+#include "infrastructure/database/db_backup.h"
 #define MINEFOLIO_BCRYPT_COST CSILK_BCRYPT_DEFAULT_COST
 #include "common/response.h"
 #include "common/ctx.h"
@@ -155,6 +156,110 @@ system_setup(csilk_ctx_t* c)
 }
 
 void
+system_backup_status(csilk_ctx_t* c)
+{
+    int64_t user_id = ctx_user_id(c);
+    if (user_id <= 0) {
+        respond_unauthorized(c);
+        return;
+    }
+
+    csilk_db_pool_t* pool = db_get_pool();
+    csilk_json_t*    status = NULL;
+    if (db_backup_get_status(pool, "data/backups", &status) != 0 || !status) {
+        respond_error(c, 1005, "获取备份存储状态失败");
+        return;
+    }
+    respond_ok(c, status);
+}
+
+void
+system_backup_create(csilk_ctx_t* c)
+{
+    int64_t user_id = ctx_user_id(c);
+    if (user_id <= 0) {
+        respond_unauthorized(c);
+        return;
+    }
+
+    csilk_db_pool_t* pool = db_get_pool();
+    char             filename[128] = {0};
+    if (db_backup_create(pool, "data/backups", filename, sizeof(filename)) != 0) {
+        respond_error(c, 1005, "执行数据库在线热备份失败");
+        return;
+    }
+
+    csilk_json_t* resp = csilk_json_object();
+    csilk_json_add_string(resp, "filename", filename);
+    respond_ok(c, resp);
+}
+
+void
+system_backup_download(csilk_ctx_t* c)
+{
+    int64_t user_id = ctx_user_id(c);
+    if (user_id <= 0) {
+        respond_unauthorized(c);
+        return;
+    }
+
+    const char* filename = csilk_get_param(c, "filename");
+    if (!filename || !db_backup_is_valid_filename(filename)) {
+        respond_error(c, 1002, "非法文件名或检测到路径穿越");
+        return;
+    }
+
+    char full_path[512];
+    snprintf(full_path, sizeof(full_path), "data/backups/%s", filename);
+
+    FILE* fp = fopen(full_path, "rb");
+    if (!fp) {
+        respond_error(c, 1002, "备份文件不存在");
+        return;
+    }
+
+    char disp[256];
+    snprintf(disp, sizeof(disp), "attachment; filename=\"%s\"", filename);
+
+    csilk_status(c, CSILK_STATUS_OK);
+    csilk_set_header(c, "Content-Type", "application/x-sqlite3");
+    csilk_set_header(c, "Content-Disposition", disp);
+
+    uint8_t buf[16384];
+    size_t  n;
+    while ((n = fread(buf, 1, sizeof(buf), fp)) > 0) {
+        csilk_response_write(c, buf, n);
+    }
+    fclose(fp);
+    csilk_response_end(c);
+}
+
+void
+system_backup_delete(csilk_ctx_t* c)
+{
+    int64_t user_id = ctx_user_id(c);
+    if (user_id <= 0) {
+        respond_unauthorized(c);
+        return;
+    }
+
+    const char* filename = csilk_get_param(c, "filename");
+    if (!filename || !db_backup_is_valid_filename(filename)) {
+        respond_error(c, 1002, "非法文件名或检测到路径穿越");
+        return;
+    }
+
+    if (db_backup_delete("data/backups", filename) != 0) {
+        respond_error(c, 1002, "备份文件不存在或删除失败");
+        return;
+    }
+
+    csilk_json_t* resp = csilk_json_object();
+    csilk_json_add_bool(resp, "success", true);
+    respond_ok(c, resp);
+}
+
+void
 register_admin_routes(csilk_app_t* app)
 {
     csilk_app_get_ext(app,
@@ -171,4 +276,8 @@ register_admin_routes(csilk_app_t* app)
                        "token_resp_t",
                        "Initialize system",
                        "Seed the database with default categories for the first admin user");
+    csilk_app_get(app, "/api/system/backup/status", system_backup_status);
+    csilk_app_post(app, "/api/system/backup/create", system_backup_create);
+    csilk_app_get(app, "/api/system/backup/download/:filename", system_backup_download);
+    csilk_app_delete(app, "/api/system/backup/:filename", system_backup_delete);
 }

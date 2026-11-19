@@ -533,6 +533,9 @@ scheduler_usecase_seed_builtin_jobs(void* pool)
         {"MCP 外部进程池空闲回收",
          "定期巡检并清理空闲超过存活周期的 Model Context Protocol (MCP) 外部子进程",    "*/5 * * * *",
          "mcp_pool_cleanup",    "silent_db"   },
+        {"系统数据库每日自动备份",
+         "每日凌晨3点执行 SQLite 在线热备份并自动轮转保留最近7天备份副本",              "0 3 * * *",
+         "db_auto_backup",      "silent_db"   },
     };
 
     size_t count = sizeof(seeds) / sizeof(seeds[0]);

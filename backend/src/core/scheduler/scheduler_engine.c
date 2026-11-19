@@ -29,6 +29,7 @@
 #include "services/ai/trace/trace.h"
 #include "infrastructure/repositories/ai_trace_repo_impl.h"
 #include "infrastructure/repositories/ai_repo_impl.h"
+#include "infrastructure/database/db_backup.h"
 
 static void*                    s_db_pool = NULL;
 static scheduler_worker_pool_t* s_worker_pool = NULL;
@@ -418,6 +419,36 @@ run_job_task(void* arg)
                      "---\n*Minefolio 系统内置任务调度*",
                      ctx->reason,
                      now_str);
+        } else if (handler && strcmp(handler, "db_auto_backup") == 0) {
+            char backup_fn[128] = {0};
+            int  brc = db_backup_create(
+                (csilk_db_pool_t*)ctx->pool, "data/backups", backup_fn, sizeof(backup_fn));
+            if (brc == 0) {
+                snprintf(output_summary,
+                         sizeof(output_summary),
+                         "数据库自动在线热备份成功: %s",
+                         backup_fn);
+                snprintf(output_markdown,
+                         md_cap,
+                         "### 💾 数据库自动在线热备份成功\n\n"
+                         "> **触发源**: %s | **备份文件名**: `%s` | **执行时间**: %s\n\n"
+                         "- **备份机制**: SQLite 官方在线分片热备份（100页分片零阻塞）\n"
+                         "- **轮转策略**: 自动保留最近 7 份历史备份\n\n"
+                         "---\n*Minefolio 系统内置任务调度*",
+                         ctx->reason,
+                         backup_fn,
+                         now_str);
+            } else {
+                snprintf(output_summary, sizeof(output_summary), "数据库自动在线热备份失败");
+                snprintf(output_markdown,
+                         md_cap,
+                         "### ⚠️ 数据库自动在线热备份失败\n\n"
+                         "> **触发源**: %s | **执行时间**: %s\n\n"
+                         "请检查磁盘可用存储空间或目录写权限。\n\n"
+                         "---\n*Minefolio 系统内置任务调度*",
+                         ctx->reason,
+                         now_str);
+            }
         } else {
             snprintf(output_summary,
                      sizeof(output_summary),
