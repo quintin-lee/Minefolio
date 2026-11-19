@@ -72,6 +72,14 @@
         <DatabaseBackup />
       </el-tab-pane>
 
+      <el-tab-pane name="im-bot" lazy>
+        <template #label>
+          <Icon icon="ph:robot" width="16" />
+          <span class="tab-label">{{ t('settings.tabImBot') }}</span>
+        </template>
+        <ImBotSettings />
+      </el-tab-pane>
+
       <el-tab-pane name="appearance" lazy>
         <template #label>
           <Icon icon="ph:palette" width="16" />
@@ -96,6 +104,7 @@ import ImportRulesManager from '@/components/settings/ImportRulesManager.vue'
 import AiProviderManager from '@/components/settings/AiProviderManager.vue'
 import MarketSyncSettings from '@/components/settings/MarketSyncSettings.vue'
 import DatabaseBackup from '@/components/settings/DatabaseBackup.vue'
+import ImBotSettings from '@/components/settings/ImBotSettings.vue'
 import AppearanceSettings from '@/components/settings/AppearanceSettings.vue'
 
 const activeTab = ref('profile')

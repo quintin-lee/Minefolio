@@ -1,0 +1,70 @@
+# ============================================================================
+# Minefolio IM 机器人 (QQ / NapCat) 生产联合编排
+#
+# 使用方式:
+#   docker compose -f docker-compose.im.yml up -d
+#
+# 架构链路:
+#   NapCat (QQ 容器) <--(OneBot v11 WS/HTTP)--> IM 网关 (Node) <--(REST API)--> Minefolio 后端
+# ============================================================================
+
+version: '3.8'
+
+services:
+  minefolio:
+    image: ghcr.io/quintin-lee/minefolio:latest
+    container_name: minefolio
+    ports:
+      - "8080:8080"
+    environment:
+      MINEFOLIO_JWT_SECRET: "${MINEFOLIO_JWT_SECRET:?MINEFOLIO_JWT_SECRET is required}"
+      MINEFOLIO_DB_DRIVER: ${MINEFOLIO_DB_DRIVER:-sqlite}
+      MINEFOLIO_DB_DSN: ${MINEFOLIO_DB_DSN:-/app/data/minefolio.db}
+      MINEFOLIO_ENABLE_CSRF: "1"
+      TZ: "Asia/Shanghai"
+    volumes:
+      - /usr/share/zoneinfo/Asia/Shanghai:/etc/localtime:ro
+      - minefolio-data:/app/data
+    restart: unless-stopped
+
+  # NapCat QQ OneBot v11 服务
+  # 部署后在浏览器访问 http://<NAS或服务器IP>:6099 进入 NapCat WebUI 扫码登录 QQ 小号
+  napcat:
+    image: mlikiowa/napcat-docker:latest
+    container_name: minefolio-napcat
+    environment:
+      ACCOUNT: "${NAPCAT_QQ:-}"
+      NAPCAT_GID: "1000"
+      NAPCAT_UID: "1000"
+    ports:
+      - "3001:3001"   # OneBot v11 HTTP & WebSocket
+      - "6099:6099"   # NapCat WebUI 控制台 (扫码登录)
+    volumes:
+      - napcat-data:/app/.config/napcat
+      - napcat-qq:/app/NapCat/config
+    restart: unless-stopped
+
+  # IM 网关服务 (桥接 NapCat 与 Minefolio)
+  im-gateway:
+    image: node:20-alpine
+    container_name: minefolio-im-gateway
+    working_dir: /app
+    volumes:
+      - ./gateway:/app:ro
+    environment:
+      MINEFOLIO_API: "http://minefolio:8080"
+      ONEBOT_WS_URL: "ws://napcat:3001"
+      ONEBOT_API_URL: "http://napcat:3001"
+      ONEBOT_ACCESS_TOKEN: "${NAPCAT_ACCESS_TOKEN:-}"
+      ONEBOT_BIND_TOKEN: "${ONEBOT_BIND_TOKEN:-}"
+      NODE_ENV: "production"
+    command: ["node", "adapters/onebot-server.js"]
+    depends_on:
+      - minefolio
+      - napcat
+    restart: unless-stopped
+
+volumes:
+  minefolio-data:
+  napcat-data:
+  napcat-qq:

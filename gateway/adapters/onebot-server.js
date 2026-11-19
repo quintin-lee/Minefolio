@@ -14,7 +14,7 @@
  * Zero dependencies beyond Node >= 18 built-ins (WebSocket, fetch).
  */
 
-const { WebSocket } = require('ws-shim.js');
+const { WebSocket } = require('./ws-shim.js');
 const { createOneBotAdapter } = require('./onebot.js');
 
 const API_BASE = process.env.MINEFOLIO_API || 'http://localhost:8080';

@@ -96,6 +96,7 @@ declare module 'vue' {
     GlobalIndicesPlaceholder: typeof import('./components/market/GlobalIndicesPlaceholder.vue')['default']
     HoldingsCostBar: typeof import('./components/HoldingsCostBar.vue')['default']
     HoldingsTypePie: typeof import('./components/HoldingsTypePie.vue')['default']
+    ImBotSettings: typeof import('./components/settings/ImBotSettings.vue')['default']
     ImportRulesManager: typeof import('./components/settings/ImportRulesManager.vue')['default']
     IndexCard: typeof import('./components/market/IndexCard.vue')['default']
     IndexDetailDrawer: typeof import('./components/market/IndexDetailDrawer.vue')['default']
