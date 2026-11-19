@@ -11,6 +11,7 @@
 #include "core/ledger/ledger_engine.h"
 #include "application/account/usecases.h"
 #include "infrastructure/repositories/account_repo_impl.h"
+#include "services/market/exchange_rate_service.h"
 #include "common/ledger_utils.h"
 #include <time.h>
 #include <stdio.h>
@@ -583,44 +584,55 @@ asset_usecase_get(void* pool, int64_t user_id, int64_t id, csilk_json_t** out_js
         csilk_json_free(price_rows);
     }
 
-    /* 3. 组合权重（占该资产所属账本全部非负债资产市值比例） */
+    /* 3. 组合权重（占该资产所属账本全部非负债资产市值比例，按本位币折算） */
     {
-        double  self_val = db_get_num(row, "current_value");
         int64_t ledger_id = db_get_int(row, "ledger_id");
-        char    uid_str[32], lid_str[32];
-        snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-
-        csilk_json_t* all_rows = NULL;
-        if (ledger_id > 0) {
-            snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
-            all_rows = csilk_db_query_param_json(
-                db_pool,
-                "SELECT a.current_value, c.asset_type FROM assets a "
-                "JOIN categories c ON a.category_id=c.id "
-                "WHERE a.user_id=? AND a.ledger_id=? AND c.asset_type NOT IN "
-                "('loan','credit_card','other_liability')",
-                (const char*[]){uid_str, lid_str, NULL});
-        } else {
-            all_rows =
-                csilk_db_query_param_json(db_pool,
-                                          "SELECT a.current_value, c.asset_type FROM assets a "
-                                          "JOIN categories c ON a.category_id=c.id "
-                                          "WHERE a.user_id=? AND c.asset_type NOT IN "
-                                          "('loan','credit_card','other_liability')",
-                                          (const char*[]){uid_str, NULL});
+        if (ledger_id <= 0) {
+            ledger_id = ledger_get_default(db_pool, user_id);
         }
+        char uid_str[32], lid_str[32];
+        snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+        snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
 
-        double total_mkt = 0.0;
+        currency_t  base_cur = currency_from_str("CNY");
+        const char* self_cur_str = csilk_json_get_string(row, "currency");
+        currency_t  self_cur = currency_from_str(self_cur_str ? self_cur_str : "CNY");
+        money_t     self_val_m = db_get_money(row, "current_value", self_cur);
+        money_t     self_base = exchange_rate_convert_m(self_val_m, base_cur);
+
+        csilk_json_t* all_rows = csilk_db_query_param_json(
+            db_pool,
+            "SELECT a.current_value, a.currency, c.asset_type FROM assets a "
+            "JOIN categories c ON a.category_id=c.id "
+            "WHERE a.user_id=? AND a.ledger_id=? AND c.asset_type NOT IN "
+            "('loan','credit_card','other_liability')",
+            (const char*[]){uid_str, lid_str, NULL});
+
+        money_t total_mkt_base = money_zero(base_cur);
         if (all_rows) {
             size_t tn = csilk_json_array_size(all_rows);
             for (size_t i = 0; i < tn; i++) {
-                total_mkt += db_get_num(csilk_json_array_get(all_rows, i), "current_value");
+                const csilk_json_t* item = csilk_json_array_get(all_rows, i);
+                const char*         cur_s = csilk_json_get_string(item, "currency");
+                currency_t          item_cur = currency_from_str(cur_s ? cur_s : "CNY");
+                money_t             item_val = db_get_money(item, "current_value", item_cur);
+                money_t             item_base = exchange_rate_convert_m(item_val, base_cur);
+                money_t             sum;
+                if (money_add(total_mkt_base, item_base, &sum) == DECIMAL_OK) {
+                    total_mkt_base = sum;
+                }
             }
             csilk_json_free(all_rows);
         }
+
         double weight = 0.0;
-        if (total_mkt > 0.0 && self_val > 0.0) {
-            weight = self_val / total_mkt;
+        if (!money_is_zero(total_mkt_base) && !money_is_negative(total_mkt_base) &&
+            !money_is_zero(self_base) && !money_is_negative(self_base)) {
+            decimal_t w_dec;
+            if (decimal_div(self_base.amount, total_mkt_base.amount, 6, ROUND_HALF_UP, &w_dec) ==
+                DECIMAL_OK) {
+                weight = decimal_to_double(w_dec);
+            }
         }
         csilk_json_add_number(resp, "portfolio_weight", weight);
     }

@@ -277,6 +277,40 @@ static void test_portfolio_summary_multi_currency_aggregation(void) {
     printf("PASS: test_portfolio_summary_multi_currency_aggregation\n");
 }
 
+/* 2c. 组合权重多币种折算比例验证 */
+static void test_portfolio_multi_currency_holding_weight(void) {
+    currency_t cny = currency_from_str("CNY");
+    currency_t usd = currency_from_str("USD");
+
+    mf_fx_rate_table_t fx_table;
+    mf_fx_rate_table_init(&fx_table);
+    // 1 USD = 7.0 CNY
+    assert(mf_fx_rate_table_add(&fx_table, usd, cny, r_make(7.0, usd, cny)) == 0);
+
+    // 资产 A: 100 USD (折合 700 CNY)
+    // 资产 B: 700 CNY
+    // 总市值: 1400 CNY, 各自权重应当为 50% (0.5)
+    money_t mkt_usd, mkt_cny;
+    money_from_double(100.0, usd, &mkt_usd);
+    money_from_double(700.0, cny, &mkt_cny);
+
+    money_t usd_base;
+    assert(mf_fx_convert_money(mkt_usd, cny, &fx_table, &usd_base) == 0);
+    assert(fabs(money_to_double(usd_base) - 700.0) < 1e-2);
+
+    money_t total_base;
+    assert(money_add(usd_base, mkt_cny, &total_base) == DECIMAL_OK);
+    assert(fabs(money_to_double(total_base) - 1400.0) < 1e-2);
+
+    decimal_t weight_dec;
+    assert(decimal_div(usd_base.amount, total_base.amount, 4, ROUND_HALF_UP, &weight_dec) == DECIMAL_OK);
+    double weight = decimal_to_double(weight_dec);
+    assert(fabs(weight - 0.5) < 1e-4);
+
+    mf_fx_rate_table_free(&fx_table);
+    printf("PASS: test_portfolio_multi_currency_holding_weight\n");
+}
+
 
 /* 3. 跨币种显式汇率折算与集中度风险度量 */
 void test_portfolio_multi_currency_aggregation_and_risk() {
@@ -421,6 +455,7 @@ int main() {
     test_portfolio_r1_fee_vector();
     test_portfolio_summary_aggregation();
     test_portfolio_summary_multi_currency_aggregation();
+    test_portfolio_multi_currency_holding_weight();
     test_portfolio_multi_currency_aggregation_and_risk();
     test_portfolio_missing_fx_rate_fails();
     printf("All domain portfolio tests passed successfully!\n");
