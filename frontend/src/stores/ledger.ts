@@ -7,6 +7,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Ledger } from '@/types'
 import { ledgerApi } from '@/api/ledgers'
+import { useCategoryStore } from './category'
 
 /** LocalStorage 存储当前选中账本 ID 的键名 */
 const STORAGE_KEY = 'minefolio_active_ledger_id'
@@ -76,7 +77,14 @@ export const useLedgerStore = defineStore('ledger', () => {
   function setCurrentLedger(id: number) {
     currentLedgerId.value = id
     localStorage.setItem(STORAGE_KEY, String(id))
-    window.dispatchEvent(new CustomEvent('minefolio:ledger-changed', { detail: { id } }))
+    try {
+      useCategoryStore().invalidate()
+    } catch {
+      // Pinia might not be active in some test environments
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('minefolio:ledger-changed', { detail: { id } }))
+    }
   }
 
   /**

@@ -16,14 +16,17 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { transactionsApi } from '@/api/transactions'
+import { useLedgerStore } from '@/stores/ledger'
 import { formatCurrency } from '@/utils/format'
 import { query, rowsFrom } from '@/db/local'
 import type { Transaction } from '@/types'
 
 const list = ref<Transaction[]>([])
+const ledgerStore = useLedgerStore()
 function isIncome(t: Transaction) { return ['deposit', 'transfer_in', 'income', 'interest', 'sell', 'dividend'].includes(t.transaction_type) }
 
 onMounted(async () => {
+  const currentLedgerId = ledgerStore.currentLedgerId || 0
   try {
     const res = await transactionsApi.list({ page_size: 50 })
     list.value = res.list
@@ -34,10 +37,10 @@ onMounted(async () => {
         FROM transactions t
         LEFT JOIN categories c ON c.id = t.category_id
         LEFT JOIN assets a ON a.id = t.asset_id
-        WHERE t.__deleted = 0
+        WHERE t.__deleted = 0 AND (t.ledger_id = ? OR t.ledger_id = 0)
         ORDER BY t.transaction_date DESC, t.id DESC
         LIMIT 50
-      `)
+      `, [currentLedgerId])
       list.value = rowsFrom(res) as unknown as Transaction[]
     } catch (e) {
       console.error('[TransactionsMobile] load failed:', e)

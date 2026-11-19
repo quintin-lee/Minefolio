@@ -55,6 +55,7 @@ import { ref, reactive, computed, onMounted, nextTick, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import { useCategoryStore } from '@/stores/category'
+import { useLedgerStore } from '@/stores/ledger'
 import { assetsApi } from '@/api/assets'
 import { offlineApi } from '@/utils/offline-http'
 import { receiptsApi } from '@/api/receipts'
@@ -76,6 +77,7 @@ const scanning = ref(false)
 const categories = ref<Category[]>([])
 const assets = ref<Asset[]>([])
 const categoryStore = useCategoryStore()
+const ledgerStore = useLedgerStore()
 
 const form = reactive({
   expense_type: 'expense' as 'income' | 'expense',
@@ -193,7 +195,8 @@ onMounted(async () => {
     assets.value = res.list
   } catch {
     try {
-      const res = query('SELECT * FROM assets WHERE __deleted = 0')
+      const currentLedgerId = ledgerStore.currentLedgerId || 0
+      const res = query('SELECT * FROM assets WHERE __deleted = 0 AND (ledger_id = ? OR ledger_id = 0)', [currentLedgerId])
       assets.value = rowsFrom(res) as unknown as Asset[]
     } catch (e) {
       console.error('[ExpenseQuickSheet] load local assets failed:', e)
@@ -219,6 +222,7 @@ async function save() {
     currency: 'CNY',
     expense_date: form.expense_date,
     note: form.note,
+    ledger_id: ledgerStore.currentLedgerId || 0,
   }
   try {
     if (props.record) await offlineApi.put(`/daily-expenses/${props.record.id}`, payload)

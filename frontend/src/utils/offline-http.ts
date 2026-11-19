@@ -64,6 +64,12 @@ function nextLocalId(table: string): number {
  * @param payload 记录实体数据
  */
 async function writeLocal(table: string, operation: 'create' | 'update' | 'delete', recordId: number, payload: Record<string, unknown>): Promise<void> {
+  if (payload.ledger_id === undefined) {
+    const activeLedger = Number(localStorage.getItem('minefolio_active_ledger_id') || 0)
+    if (activeLedger > 0) {
+      payload.ledger_id = activeLedger
+    }
+  }
   if (operation === 'delete') {
     run(`UPDATE ${table} SET __deleted = 1 WHERE id = ?`, [recordId])
     persist()

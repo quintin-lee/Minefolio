@@ -35,6 +35,7 @@
 import { ref, onMounted } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
 import { dailyExpensesApi } from '@/api/daily_expenses'
+import { useLedgerStore } from '@/stores/ledger'
 import { query, rowsFrom } from '@/db/local'
 import { formatCurrency } from '@/utils/format'
 import type { DailyExpense, ExpenseMonthly } from '@/types'
@@ -47,12 +48,14 @@ const page = ref(1)
 const loading = ref(false)
 const sheetOpen = ref(false)
 const editing = ref<DailyExpense | null>(null)
+const ledgerStore = useLedgerStore()
 
 /**
  * 离线读取：从本地 sql.js 镜像分页查询收支记录，并关联出分类/资产名称。
  * 仅在网络请求失败时调用，避免覆盖线上更新的数据。
  */
 function loadLocalList(reset: boolean): void {
+  const currentLedgerId = ledgerStore.currentLedgerId || 0
   const offset = (page.value - 1) * PAGE_SIZE
   const res = query(
     `SELECT e.id, e.category_id, e.asset_id, e.expense_type, e.amount, e.currency,
@@ -61,10 +64,10 @@ function loadLocalList(reset: boolean): void {
        FROM daily_expenses e
        LEFT JOIN categories c ON c.id = e.category_id
        LEFT JOIN assets a ON a.id = e.asset_id
-      WHERE e.__deleted = 0
+      WHERE e.__deleted = 0 AND (e.ledger_id = ? OR e.ledger_id = 0)
       ORDER BY e.expense_date DESC, e.id DESC
       LIMIT ? OFFSET ?`,
-    [PAGE_SIZE, offset]
+    [currentLedgerId, PAGE_SIZE, offset]
   )
   const rows = rowsFrom(res) as unknown as DailyExpense[]
   list.value = reset ? rows : [...list.value, ...rows]
@@ -72,13 +75,14 @@ function loadLocalList(reset: boolean): void {
 
 /** 离线读取：从本地 sql.js 镜像聚合指定月份的收支合计 */
 function loadLocalMonth(year: number, monthNum: number): void {
+  const currentLedgerId = ledgerStore.currentLedgerId || 0
   const prefix = `${String(year).padStart(4, '0')}-${String(monthNum).padStart(2, '0')}`
   const rows = rowsFrom(query(
     `SELECT expense_type, SUM(amount) AS total
        FROM daily_expenses
-      WHERE __deleted = 0 AND substr(expense_date, 1, 7) = ?
+      WHERE __deleted = 0 AND (ledger_id = ? OR ledger_id = 0) AND substr(expense_date, 1, 7) = ?
       GROUP BY expense_type`,
-    [prefix]
+    [currentLedgerId, prefix]
   ))
   let totalIncome = 0
   let totalExpense = 0
