@@ -121,8 +121,8 @@ main(int argc, char** argv)
     csilk_app_use(app, metrics_middleware_wrapper);
     /* Security headers on every response */
     csilk_app_use(app, security_headers_middleware);
-    /* Rate-limit auth-write endpoints (login/register/setup) before JWT check */
-    csilk_app_use(app, rate_limit_auth_middleware);
+    /* Rate-limit auth-write endpoints (login/register/setup) + IM bind-auth, before JWT check. */
+    csilk_app_use_group(app, "/api", rate_limit_auth_middleware);
     /* CORS_ORIGIN 未设时回 "*" 且禁止凭证（规范禁止 * 与 credentials 共存）；
        生产若需带凭证跨域，必须显式配置 CORS_ORIGIN 白名单。 */
     if (!config_env_get("CORS_ORIGIN", NULL, 0, NULL)) {

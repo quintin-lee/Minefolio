@@ -93,9 +93,17 @@ rate_limit_auth_middleware(csilk_ctx_t* c)
         return;
     }
 
-    /* 仅对认证与安全设置类写接口执行限流 */
+    /* 仅对认证与安全设置类写接口执行限流。P2-A: /api/im/{platform}/bind-auth
+     * 是 IM 自助绑定（无 JWT、可密码爆破）, 归一化为固定限流维度 "/api/im/bind-auth"。 */
+    const char* limit_path = path;
+    size_t      plen = strlen(path);
+    if (plen > 16 && strncmp(path, "/api/im/", 8) == 0 &&
+        strncmp(path + plen - 10, "/bind-auth", 10) == 0) {
+        limit_path = "/api/im/bind-auth";
+    }
     if (strcmp(path, "/api/auth/login") != 0 && strcmp(path, "/api/auth/register") != 0 &&
-        strcmp(path, "/api/system/setup") != 0 && strcmp(path, "/api/auth/2fa/verify-login") != 0) {
+        strcmp(path, "/api/system/setup") != 0 && strcmp(path, "/api/auth/2fa/verify-login") != 0 &&
+        limit_path != "/api/im/bind-auth") {
         csilk_next(c);
         return;
     }
@@ -114,7 +122,7 @@ rate_limit_auth_middleware(csilk_ctx_t* c)
             break;
         }
         if ((now - ring[idx].ts) <= RATE_LIMIT_WINDOW_SEC &&
-            strncmp(ring[idx].path, path, sizeof(ring[idx].path) - 1) == 0 &&
+            strncmp(ring[idx].path, limit_path, sizeof(ring[idx].path) - 1) == 0 &&
             strncmp(ring[idx].ip, safe_ip, sizeof(ring[idx].ip) - 1) == 0) {
             matches++;
         }
@@ -131,14 +139,14 @@ rate_limit_auth_middleware(csilk_ctx_t* c)
         return;
     }
 
-    /* 记录当前请求到环形缓冲区 */
+    /* 记录当前请求到环形缓冲区 (用归一化 limit_path 作为限流维度) */
     if (ring_count >= RATE_LIMIT_RING) {
         ring_head = (ring_head + 1) % RATE_LIMIT_RING;
         ring_count--;
     }
     int idx = (ring_head + ring_count) % RATE_LIMIT_RING;
     ring[idx].ts = now;
-    strncpy(ring[idx].path, path, sizeof(ring[idx].path) - 1);
+    strncpy(ring[idx].path, limit_path, sizeof(ring[idx].path) - 1);
     ring[idx].path[sizeof(ring[idx].path) - 1] = '\0';
     strncpy(ring[idx].ip, safe_ip, sizeof(ring[idx].ip) - 1);
     ring[idx].ip[sizeof(ring[idx].ip) - 1] = '\0';

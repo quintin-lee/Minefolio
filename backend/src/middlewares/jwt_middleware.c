@@ -149,6 +149,15 @@ jwt_middleware_wrapper(csilk_ctx_t* c)
                 return;
             }
         }
+        /* P2-A: IM 自助绑定端点 /api/im/{platform}/bind-auth 无 JWT（IM 用户
+         * 未登录），靠限流 + 抢占防护保护。动态 platform 无法精确枚举，
+         * 用前缀 "/api/im/" + 尾段 "/bind-auth" 判定放行。 */
+        size_t plen = strlen(path);
+        if (plen > 16 && strncmp(path, "/api/im/", 8) == 0 &&
+            strncmp(path + plen - 10, "/bind-auth", 10) == 0) {
+            csilk_next(c);
+            return;
+        }
     }
 
     const char* secret = config_secret_get("JWT_SECRET", NULL, 0);

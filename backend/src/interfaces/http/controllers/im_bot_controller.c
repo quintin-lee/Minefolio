@@ -15,6 +15,7 @@
 #include "domain/auth/repository.h"
 #include "infrastructure/repositories/im_bot_repo_impl.h"
 #include "infrastructure/repositories/ai_session_repo_impl.h"
+#include "domain/auth/repository.h"
 #include "services/ai/runtime/loop.h"
 #include "services/ai/runtime/context.h"
 #include "services/ai/runtime/session.h"
@@ -26,6 +27,7 @@
 #include "common/response.h"
 #include "common/db.h"
 #include "common/jwt.h"
+#include "csilk/crypto/bcrypt.h"
 #include <csilk/csilk.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -238,10 +240,10 @@ api_im_chat(csilk_ctx_t* c)
     if (bound <= 0 || bound != user_id) {
         csilk_json_free(body);
         csilk_json_t* data = csilk_json_object();
-        csilk_json_add_string(
-            data,
-            "reply",
-            "尚未绑定。请先到 App「IM 机器人」生成绑定码，发送 /bind <码> 完成绑定。");
+        csilk_json_add_string(data,
+                              "reply",
+                              "尚未绑定。请在 IM 里发送 /bind <用户名> <密码> 完成绑定，或到 "
+                              "App「IM 机器人」生成绑定码。");
         csilk_json_add_int(data, "bound", 0);
         respond_ok(c, data);
         return;
@@ -342,6 +344,96 @@ api_im_chat(csilk_ctx_t* c)
     respond_ok(c, data);
 }
 
+/**
+ * @brief P2-A 网关回调: IM 自助绑定 (无 JWT)。
+ * 入参: { im_user_id, username, password }。IM 用户在 IM 里发
+ *   /bind <username> <password> → 网关调本端点 → 校验用户名密码 →
+ *   写绑定 → 回 bind_token (后续查账用)。
+ * 安全: 限流 (rate_limit 归一化 /api/im/bind-auth) + 抢占防护 (同 api_im_bind),
+ * 密码校验走 bcrypt (防时序攻击: 用户不存在也跑一次 bcrypt 对齐耗时)。
+ */
+static void
+api_im_bind_auth(csilk_ctx_t* c)
+{
+    char platform_buf[16];
+    if (!im_platform_param_safe(c, platform_buf, sizeof(platform_buf))) {
+        respond_bad_request(c, "未知的 IM 平台");
+        return;
+    }
+    csilk_json_t* body = csilk_bind_json(c);
+    if (!body) {
+        respond_bad_request(c, "请求体必须为 JSON");
+        return;
+    }
+    const char* im_user_id = csilk_json_get_string(body, "im_user_id");
+    const char* username = csilk_json_get_string(body, "username");
+    const char* password = csilk_json_get_string(body, "password");
+    if (!im_user_id || im_user_id[0] == 0 || !username || username[0] == 0 || !password ||
+        password[0] == 0) {
+        csilk_json_free(body);
+        respond_bad_request(c, "缺少 im_user_id / username / password");
+        return;
+    }
+
+    /* 复制到栈, 后续 free body 后可用 */
+    char im_user_id_buf[128];
+    char username_buf[64];
+    char password_buf[128];
+    snprintf(im_user_id_buf, sizeof(im_user_id_buf), "%s", im_user_id);
+    snprintf(username_buf, sizeof(username_buf), "%s", username);
+    snprintf(password_buf, sizeof(password_buf), "%s", password);
+    csilk_json_free(body);
+
+    csilk_db_pool_t* pool = db_get_pool();
+    mf_user_t        user;
+    memset(&user, 0, sizeof(user));
+    int rc = mf_auth_repo_find_by_username(pool, username_buf, &user);
+
+    /* 用户不存在: 也跑一次 bcrypt (对齐耗时防时序探测), 后回 1004 */
+    if (rc != 0 || user.id <= 0 || user.password_hash[0] == 0) {
+        csilk_bcrypt_verify(password_buf,
+                            strlen(password_buf),
+                            "$2b$12$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ01234");
+        respond_error(c, 1004, "用户名或密码错误");
+        return;
+    }
+    if (csilk_bcrypt_verify(password_buf, strlen(password_buf), user.password_hash) != 0) {
+        respond_error(c, 1004, "用户名或密码错误");
+        return;
+    }
+
+    /* 防抢占: 该 im_user_id 若已绑定他人, 拒绝 */
+    char    pre_scope[32] = "readonly";
+    int64_t pre_bound =
+        mf_im_bot_repo_lookup(pool, platform_buf, im_user_id_buf, pre_scope, sizeof(pre_scope));
+    if (pre_bound > 0 && pre_bound != user.id) {
+        respond_error(c, 1004, "该 IM 账号已被其他用户绑定");
+        return;
+    }
+
+    int up = mf_im_bot_repo_upsert(pool, platform_buf, im_user_id_buf, user.id, "readonly");
+    if (up != 0) {
+        respond_error(c, 500, "绑定失败");
+        return;
+    }
+
+    /* 签发 300s 受限绑定码 (与 App 侧同机制) */
+    char* bind_token = jwt_generate_im_bind_token(c, user.id, (int)user.token_version, 300);
+    if (!bind_token) {
+        respond_error(c, 500, "生成绑定码失败");
+        return;
+    }
+    csilk_json_t* data = csilk_json_object();
+    csilk_json_add_string(data, "platform", platform_buf);
+    csilk_json_add_string(data, "im_user_id", im_user_id_buf);
+    csilk_json_add_string(data, "scope", "readonly");
+    csilk_json_add_string(data, "bind_token", bind_token);
+    csilk_json_add_int(data, "ttl_sec", 300);
+    csilk_json_add_string(data, "message", "绑定成功，现在可以问我持仓/汇率了");
+    free(bind_token);
+    respond_ok(c, data);
+}
+
 void
 register_im_bot_routes(csilk_app_t* app)
 {
@@ -352,5 +444,6 @@ register_im_bot_routes(csilk_app_t* app)
     csilk_app_get(app, "/api/im/bindings", api_im_bindings_list);
     csilk_app_delete(app, "/api/im/bindings", api_im_bindings_unbind);
     csilk_app_post(app, "/api/im/:platform/bind", api_im_bind);
+    csilk_app_post(app, "/api/im/:platform/bind-auth", api_im_bind_auth);
     csilk_app_post(app, "/api/im/:platform/chat", api_im_chat);
 }
