@@ -394,7 +394,8 @@ loop_dispatch_sequential_tools(csilk_db_pool_t*              pool,
                 result_str = strdup("{\"error\":\"duplicate_call\",\"note\":\"identical tool call "
                                     "already executed in this run; reuse the previous result or "
                                     "answer directly\"}");
-            } else if (decision->requires_confirmation && !ai_tool_requires_id(tc->name)) {
+            } else if (decision && decision->requires_confirmation &&
+                       !ai_tool_requires_id(tc->name)) {
                 result_str =
                     strdup("{\"error\":\"confirmation_required\",\"note\":\"this action needs "
                            "explicit user approval before it can run; summarize what it would "

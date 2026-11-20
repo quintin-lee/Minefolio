@@ -1114,7 +1114,10 @@ mf_mcp_client_list_tools(mf_mcp_client_t*       c,
         struct tm tm;
         localtime_r(&now, &tm);
         char ts[32] = {0};
-        strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%S", &tm);
+        /* 时间戳格式必须与 mcp_bridge.c 的 TTL 解析器 strptime("%Y-%m-%d %H:%M:%S") 一致：
+           用空格分隔（非 ISO-8601 的 'T'）。若写 'T' 会导致 strptime 解析失败，
+           mcp_tool_is_stale 保守保留（TTL 形同虚设，工具缓存永不过期）。 */
+        strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", &tm);
         snprintf(e->fetched_at, sizeof(e->fetched_at), "%s", ts);
     }
 
