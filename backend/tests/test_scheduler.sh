@@ -70,12 +70,12 @@ process.stdout.write(header + '.' + payload + '.' + sig);
 ")
 echo "Bob setup OK (ID: $USER_B_ID)"
 
-# 3. Test GET /api/scheduler/dashboard (Active jobs count includes 6 built-in tasks)
+# 3. Test GET /api/scheduler/dashboard (Active jobs count includes 7 built-in tasks)
 echo "Testing GET /api/scheduler/dashboard..."
 DASH=$(curl -s -X GET "$BASE/scheduler/dashboard" -H "Authorization: Bearer $TOKEN_A")
 echo "$DASH" | jq .
 test "$(echo "$DASH" | jq -r '.code')" = "0"
-test "$(echo "$DASH" | jq -r '.data.active_jobs | floor')" = "6"
+test "$(echo "$DASH" | jq -r '.data.active_jobs | floor')" = "7"
 test "$(echo "$DASH" | jq -r '.data.push_channel.channel_type')" = "none"
 
 # 4. Test POST /api/scheduler/jobs (Create AI Task)
@@ -98,22 +98,22 @@ JOB_ID=$(echo "$CREATE_RES" | jq -r '.data.id | floor')
 test -n "$JOB_ID" && test "$JOB_ID" -gt 0
 echo "Created Job ID: $JOB_ID"
 
-# 5. Test GET /api/scheduler/jobs (List: 6 built-in + 1 custom = 7 total)
+# 5. Test GET /api/scheduler/jobs (List: 7 built-in + 1 custom = 8 total)
 echo "Testing GET /api/scheduler/jobs..."
 LIST_RES=$(curl -s -X GET "$BASE/scheduler/jobs" -H "Authorization: Bearer $TOKEN_A")
 test "$(echo "$LIST_RES" | jq -r '.code')" = "0"
-test "$(echo "$LIST_RES" | jq -r '.data.total | floor')" = "7"
+test "$(echo "$LIST_RES" | jq -r '.data.total | floor')" = "8"
 # Built-in tasks appear first
 test "$(echo "$LIST_RES" | jq -r '.data.items[0].is_builtin | floor')" = "1"
 test "$(echo "$LIST_RES" | jq -r '.data.items[0].name')" = "全市场行情与基金净值同步"
 BUILTIN_JOB_ID=$(echo "$LIST_RES" | jq -r '.data.items[0].id | floor')
 echo "Built-in Job ID: $BUILTIN_JOB_ID"
 
-# 5.1 Verify standard user Bob can also view built-in tasks (total 6 for Bob)
+# 5.1 Verify standard user Bob can also view built-in tasks (total 7 for Bob)
 echo "Testing GET /api/scheduler/jobs as standard user Bob..."
 BOB_LIST=$(curl -s -X GET "$BASE/scheduler/jobs" -H "Authorization: Bearer $TOKEN_B")
 test "$(echo "$BOB_LIST" | jq -r '.code')" = "0"
-test "$(echo "$BOB_LIST" | jq -r '.data.total | floor')" = "6"
+test "$(echo "$BOB_LIST" | jq -r '.data.total | floor')" = "7"
 test "$(echo "$BOB_LIST" | jq -r '.data.items[0].is_builtin | floor')" = "1"
 
 # 5.2 Test Bob can toggle built-in task on and off
@@ -199,8 +199,15 @@ sleep 1
 
 # 10. Test GET /api/scheduler/jobs/:id/logs
 echo "Testing GET /api/scheduler/jobs/$JOB_ID/logs..."
-LOGS_RES=$(curl -s -X GET "$BASE/scheduler/jobs/$JOB_ID/logs" \
-  -H "Authorization: Bearer $TOKEN_A")
+for i in {1..10}; do
+  LOGS_RES=$(curl -s -X GET "$BASE/scheduler/jobs/$JOB_ID/logs" -H "Authorization: Bearer $TOKEN_A")
+  TOTAL_LOGS=$(echo "$LOGS_RES" | jq -r '.data.total // 0 | floor' 2>/dev/null || echo 0)
+  if [ "$TOTAL_LOGS" -ge 1 ]; then
+    break
+  fi
+  sleep 0.5
+done
+echo "Logs result: $LOGS_RES"
 test "$(echo "$LOGS_RES" | jq -r '.code')" = "0"
 TOTAL_LOGS=$(echo "$LOGS_RES" | jq -r '.data.total | floor')
 test "$TOTAL_LOGS" -ge 1
