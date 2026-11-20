@@ -20,14 +20,14 @@
  * @brief 交易类型元数据描述结构体
  */
 typedef struct {
-    const char* code;  /**< 交易类型唯一编码（数据库存储值，如 "buy", "sell", "transfer_in"） */
+    const char* code; /**< 交易类型唯一编码（数据库存储值，如 "buy", "sell", "transfer_in"） */
     const char* label; /**< 中文显示标签（用于 UI/日志展示，如 "买入", "卖出"） */
     const char* balance_dir; /**< 目标主资产的余额流动方向："in" 为增加 (+)，"out" 为扣减 (-) */
     const char*
         linked_dir; /**< 关联资金账户 (funding asset) 的余额流动方向："in" 为增加 (+)，"out" 为扣减 (-) */
-    const char* stat_dir;   /**< 现金流统计口径方向："in" (现金流入) 或 "out" (现金流出) */
-    int         is_trading; /**< 是否属于标的买卖交易（1: 是，需记录单价与数量；0: 普通资金变动） */
-    int in_performance;     /**< 是否纳入投资盈亏与回报率分析统计（1: 纳入；0: 排除，如纯转账） */
+    const char* stat_dir; /**< 现金流统计口径方向："in" (现金流入) 或 "out" (现金流出) */
+    int is_trading; /**< 是否属于标的买卖交易（1: 是，需记录单价与数量；0: 普通资金变动） */
+    int in_performance; /**< 是否纳入投资盈亏与回报率分析统计（1: 纳入；0: 排除，如纯转账） */
 } tx_type_t;
 
 /**

@@ -19,8 +19,8 @@ parse_date_to_time(const char* date_str)
     }
     int y = (date_str[0] - '0') * 1000 + (date_str[1] - '0') * 100 + (date_str[2] - '0') * 10 +
             (date_str[3] - '0');
-    int m = (date_str[5] - '0') * 10 + (date_str[6] - '0');
-    int d = (date_str[8] - '0') * 10 + (date_str[9] - '0');
+    int       m = (date_str[5] - '0') * 10 + (date_str[6] - '0');
+    int       d = (date_str[8] - '0') * 10 + (date_str[9] - '0');
     struct tm tm = {0};
     tm.tm_year = y - 1900;
     tm.tm_mon = m - 1;

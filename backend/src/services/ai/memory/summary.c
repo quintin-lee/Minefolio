@@ -235,7 +235,7 @@ summary_worker(summary_task_t* task)
 
     csilk_ai_message_t messages[2] = {
         {.role = "system", .content = "你是对话摘要助手，负责将长对话浓缩为简洁摘要。"},
-        {.role = "user",   .content = task->user_prompt                               },
+        {.role = "user",   .content = task->user_prompt                                                      },
     };
     csilk_ai_chat_request_t req = {
         .model = task->model,

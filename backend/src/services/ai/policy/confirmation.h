@@ -20,7 +20,7 @@ typedef enum {
     AI_CONFIRM_ERR_USER_MISMATCH = -3, /**< 用户身份不匹配 (Modified User / 越权) */
     AI_CONFIRM_ERR_TOOL_MISMATCH = -4, /**< 工具名称不匹配 (Modified Tool) */
     AI_CONFIRM_ERR_ARGS_MISMATCH = -5, /**< 确认参数与拟录入参数不匹配 (Modified Argument / 篡改) */
-    AI_CONFIRM_ERR_REPLAY = -6,        /**< 令牌已被使用或检测到重放 (Replay / Double Execution) */
+    AI_CONFIRM_ERR_REPLAY = -6, /**< 令牌已被使用或检测到重放 (Replay / Double Execution) */
     AI_CONFIRM_ERR_SIGNATURE = -7 /**< 签名校验失败或密钥错误 (Forged Signature / Wrong Secret) */
 } ai_confirmation_status_t;
 

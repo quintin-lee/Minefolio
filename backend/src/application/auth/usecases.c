@@ -904,7 +904,7 @@ auth_usecase_oauth_callback(void*                       pool,
     char oauth_id_buf[128] = {0};
     char username_buf[128] = {0};
 
-    const char* mock_env = NULL; /* 启动期固化，见 oauth_mock_enabled() */
+    /* 启动期固化的 OAuth mock 开关，见 oauth_mock_enabled() */
     if (oauth_mock_enabled()) {
         if (strncmp(cmd->code, "mock_code_", 10) == 0) {
             snprintf(oauth_id_buf, sizeof(oauth_id_buf), "sub_%s", cmd->code + 10);
