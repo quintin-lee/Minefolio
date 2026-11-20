@@ -86,7 +86,7 @@ services:
   # QQ 机器人 (NapCat OneBot v11) 服务
   # 部署后在浏览器访问 http://<NAS或服务器IP>:6099 进入 NapCat WebUI 扫码登录 QQ 小号
   napcat:
-    image: ${NAPCAT_IMAGE:-docker.1ms.run/lmq8267/napcat:latest}
+    image: ${NAPCAT_IMAGE:-lmq8267/napcat:latest}
     container_name: minefolio-napcat
     profiles:
       - im
