@@ -53,7 +53,7 @@ int           mf_scheduler_repo_job_update(void*       pool,
                                            const char* next_run_at);
 int           mf_scheduler_repo_job_delete(void* pool, int64_t user_id, int64_t job_id);
 int           mf_scheduler_repo_job_set_enabled(
-              void* pool, int64_t user_id, bool is_admin, int64_t job_id, bool enabled);
+    void* pool, int64_t user_id, bool is_admin, int64_t job_id, bool enabled);
 int mf_scheduler_repo_job_update_last_run(
     void* pool, int64_t job_id, const char* status, int duration_ms, const char* next_run_at);
 
