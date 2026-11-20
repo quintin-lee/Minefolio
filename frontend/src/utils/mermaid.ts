@@ -6,7 +6,7 @@
 
 // frontend/src/utils/mermaid.ts
 import DOMPurify from 'dompurify'
-import mermaid from 'mermaid'
+import type mermaid from 'mermaid'
 
 /** Mermaid 实例 API 类型 */
 export type MermaidApi = typeof mermaid
@@ -643,7 +643,10 @@ export async function ensureMermaid(): Promise<MermaidApi | null> {
 
   initPromise = (async () => {
     try {
-      const api: MermaidApi = mermaid
+      const mermaidMod = await import('mermaid')
+      const api: MermaidApi =
+        (mermaidMod as unknown as { default?: MermaidApi }).default ||
+        (mermaidMod as unknown as MermaidApi)
       const theme: MermaidThemeName =
         typeof document !== 'undefined' && document.documentElement.getAttribute('data-theme') === 'light'
           ? 'light'
