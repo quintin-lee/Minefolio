@@ -154,7 +154,13 @@ is_untrusted_tool(const char* tool_name)
     if (strcmp(tool_name, "web_search") == 0) {
         return true;
     }
-    if (strncmp(tool_name, "mcp_", 4) == 0) {
+    if (strcmp(tool_name, "fetch_webpage") == 0) {
+        return true;
+    }
+    /* MCP 远端工具：实际路由名为 mcp:<id>:<tool>（冒号，见 tools/dispatcher.c 的
+       "mcp:" 前缀分发）；同时保留旧的下划线前缀以覆盖历史命名。两者都必须包裹，
+       否则 MCP 抓取的外部内容会零包裹直进模型上下文（Prompt Injection 主通道）。 */
+    if (strncmp(tool_name, "mcp:", 4) == 0 || strncmp(tool_name, "mcp_", 4) == 0) {
         return true;
     }
     return false;
