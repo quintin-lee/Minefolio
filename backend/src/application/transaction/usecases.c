@@ -4,7 +4,9 @@
 #include "core/ledger/ledger_engine.h"
 #include "core/financial/currency.h"
 #include "infrastructure/repositories/transaction_repo_impl.h"
+#include "infrastructure/repositories/asset_repo_impl.h"
 #include "infrastructure/repositories/ledger_snapshot_repo_impl.h"
+#include "application/account/usecases.h"
 #include "services/market/exchange_rate_service.h"
 #include "common/tx_types.h"
 #include "common/db.h"
@@ -60,6 +62,32 @@ tx_usecase_create(void* pool, const create_tx_cmd_t* cmd, tx_usecase_result_t* o
         out_res->code = 1003;
         snprintf(out_res->message, sizeof(out_res->message), "标的资产不存在");
         return -1;
+    }
+
+    int64_t acct_id = asset_get_account_id((csilk_db_pool_t*)pool, cmd->asset_id);
+    if (acct_id > 0) {
+        int perm_chk = account_usecase_check_permission(
+            pool, cmd->ledger_id, cmd->user_id, acct_id, MF_ACCOUNT_ACTION_WRITE_TX);
+        if (perm_chk != 0) {
+            out_res->code = 1004;
+            snprintf(out_res->message, sizeof(out_res->message), "Forbidden: 目标账户无记账权限");
+            return -1;
+        }
+    }
+
+    if (cmd->linked_asset_id > 0) {
+        int64_t linked_acct_id = asset_get_account_id((csilk_db_pool_t*)pool, cmd->linked_asset_id);
+        if (linked_acct_id > 0) {
+            int perm_chk = account_usecase_check_permission(
+                pool, cmd->ledger_id, cmd->user_id, linked_acct_id, MF_ACCOUNT_ACTION_WRITE_TX);
+            if (perm_chk != 0) {
+                out_res->code = 1004;
+                snprintf(out_res->message,
+                         sizeof(out_res->message),
+                         "Forbidden: 关联资金账户无记账权限");
+                return -1;
+            }
+        }
     }
 
     if (cmd->linked_asset_id > 0 && !tx_asset_exists(pool, cmd->user_id, cmd->linked_asset_id)) {

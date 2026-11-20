@@ -7,6 +7,8 @@
 #include "domain/transfer/rules.h"
 #include "domain/transfer/repository.h"
 #include "infrastructure/repositories/transfer_repo_impl.h"
+#include "infrastructure/repositories/asset_repo_impl.h"
+#include "application/account/usecases.h"
 #include "common/balance.h"
 #include "core/financial/money.h"
 #include "core/financial/currency.h"
@@ -43,6 +45,27 @@ transfer_usecase_create(void*                        pool,
         out_res->code = 1003;
         snprintf(out_res->message, sizeof(out_res->message), "资产不存在");
         return -1;
+    }
+
+    int64_t from_acct_id = asset_get_account_id((csilk_db_pool_t*)pool, cmd->from_asset_id);
+    if (from_acct_id > 0) {
+        int perm_chk = account_usecase_check_permission(
+            pool, cmd->ledger_id, cmd->user_id, from_acct_id, MF_ACCOUNT_ACTION_WRITE_TX);
+        if (perm_chk != 0) {
+            out_res->code = 1004;
+            snprintf(out_res->message, sizeof(out_res->message), "Forbidden: 转出账户无记账权限");
+            return -1;
+        }
+    }
+    int64_t to_acct_id = asset_get_account_id((csilk_db_pool_t*)pool, cmd->to_asset_id);
+    if (to_acct_id > 0) {
+        int perm_chk = account_usecase_check_permission(
+            pool, cmd->ledger_id, cmd->user_id, to_acct_id, MF_ACCOUNT_ACTION_WRITE_TX);
+        if (perm_chk != 0) {
+            out_res->code = 1004;
+            snprintf(out_res->message, sizeof(out_res->message), "Forbidden: 转入账户无记账权限");
+            return -1;
+        }
     }
 
     /* Begin transaction */

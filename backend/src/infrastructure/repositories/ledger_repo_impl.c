@@ -298,7 +298,14 @@ mf_ledger_repo_delete(void* db_pool, int64_t ledger_id)
         pool, "DELETE FROM daily_expenses WHERE ledger_id = ?", (const char*[]){lid, NULL});
     csilk_db_exec_param(
         pool, "DELETE FROM transactions WHERE ledger_id = ?", (const char*[]){lid, NULL});
-    csilk_db_exec_param(pool, "DELETE FROM assets WHERE ledger_id = ?", (const char*[]){lid, NULL});
+    csilk_db_exec_param(
+        pool,
+        "DELETE FROM assets WHERE account_id IN (SELECT id FROM accounts WHERE ledger_id = ?)",
+        (const char*[]){lid, NULL});
+    csilk_db_exec_param(
+        pool, "DELETE FROM account_permissions WHERE ledger_id = ?", (const char*[]){lid, NULL});
+    csilk_db_exec_param(
+        pool, "DELETE FROM accounts WHERE ledger_id = ?", (const char*[]){lid, NULL});
     csilk_db_exec_param(
         pool, "DELETE FROM categories WHERE ledger_id = ?", (const char*[]){lid, NULL});
     csilk_db_exec_param(

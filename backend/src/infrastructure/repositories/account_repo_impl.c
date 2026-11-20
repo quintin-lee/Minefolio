@@ -22,19 +22,36 @@ account_list(csilk_db_pool_t* pool,
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
 
-    char sql[1024];
+    char sql[1536];
     snprintf(
         sql,
         sizeof(sql),
-        "SELECT ac.id, ac.name, ac.institution, ac.account_no, ac.currency, ac.icon, ac.note, "
+        "SELECT ac.id, ac.user_id, ac.ledger_id, ac.name, ac.institution, ac.account_no, "
+        "ac.currency, ac.icon, ac.note, "
         "ac.sort_order, CAST(ac.archived AS INTEGER) AS archived, ac.created_at, ac.updated_at, "
         "(SELECT COUNT(*) FROM assets a WHERE a.account_id = ac.id) AS asset_count, "
         "(SELECT COALESCE(SUM(a.current_value), 0) FROM assets a WHERE a.account_id = ac.id) AS "
-        "total_value FROM accounts ac WHERE ac.user_id=? AND ac.ledger_id=? "
+        "total_value, "
+        "ap.permission_level, "
+        "CAST(COALESCE(ap.mask_balance, 0) AS INTEGER) AS mask_balance, "
+        "CAST(COALESCE(ap.mask_account_no, 0) AS INTEGER) AS mask_account_no "
+        "FROM accounts ac "
+        "JOIN ledgers l ON ac.ledger_id = l.id "
+        "LEFT JOIN account_permissions ap ON ap.account_id = ac.id AND ap.user_id = ? "
+        "WHERE ac.ledger_id = ? "
+        "  AND ( "
+        "      ac.user_id = ? "
+        "      OR l.owner_id = ? "
+        "      OR ( "
+        "          EXISTS (SELECT 1 FROM ledger_members lm WHERE lm.ledger_id = ac.ledger_id AND "
+        "lm.user_id = ?) "
+        "          AND (ap.permission_level IS NULL OR ap.permission_level != 'none') "
+        "      ) "
+        "  ) "
         "%s ORDER BY ac.sort_order, ac.id",
         include_archived ? "" : "AND NOT ac.archived ");
 
-    const char*   params[3] = {uid, lid, NULL};
+    const char*   params[6] = {uid, lid, uid, uid, uid, NULL};
     csilk_json_t* rows = csilk_db_query_param_json(pool, sql, params);
     if (total) {
         *total = rows ? (int64_t)csilk_json_array_size(rows) : 0;
@@ -50,10 +67,27 @@ account_get(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
     snprintf(idstr, sizeof(idstr), "%lld", (long long)id);
     return csilk_db_query_param_json(
         pool,
-        "SELECT ac.id, ac.ledger_id, ac.name, ac.institution, ac.account_no, ac.currency, ac.icon, "
+        "SELECT ac.id, ac.user_id, ac.ledger_id, ac.name, ac.institution, ac.account_no, "
+        "ac.currency, ac.icon, "
         "ac.note, ac.sort_order, CAST(ac.archived AS INTEGER) AS archived, ac.created_at, "
-        "ac.updated_at FROM accounts ac WHERE ac.id=? AND ac.user_id=?",
-        (const char*[]){idstr, uid, NULL});
+        "ac.updated_at, "
+        "ap.permission_level, "
+        "CAST(COALESCE(ap.mask_balance, 0) AS INTEGER) AS mask_balance, "
+        "CAST(COALESCE(ap.mask_account_no, 0) AS INTEGER) AS mask_account_no "
+        "FROM accounts ac "
+        "JOIN ledgers l ON ac.ledger_id = l.id "
+        "LEFT JOIN account_permissions ap ON ap.account_id = ac.id AND ap.user_id = ? "
+        "WHERE ac.id = ? "
+        "  AND ( "
+        "      ac.user_id = ? "
+        "      OR l.owner_id = ? "
+        "      OR ( "
+        "          EXISTS (SELECT 1 FROM ledger_members lm WHERE lm.ledger_id = ac.ledger_id AND "
+        "lm.user_id = ?) "
+        "          AND (ap.permission_level IS NULL OR ap.permission_level != 'none') "
+        "      ) "
+        "  )",
+        (const char*[]){uid, idstr, uid, uid, uid, NULL});
 }
 
 int64_t

@@ -198,6 +198,135 @@ BOB_HOLD_CODE=$(echo "$BOB_HOLD" | jq -r '.code | floor')
 test "$BOB_HOLD_CODE" = "0"
 echo "✅ Bob accesses Family ledger holdings OK"
 
+# -------------------------------------------------------------
+# 10.5 Account-level & Field-level RBAC Tests
+# -------------------------------------------------------------
+echo "=== Testing Account-level & Field-level RBAC ==="
+
+# Alice creates Account A and Account B in Family ledger
+CR_ACCT_A=$(curl -s -X POST "$BASE/accounts" \
+  -H "Authorization: Bearer $TOKEN_A" \
+  -H "X-Ledger-Id: $FAM_LID" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"招行家庭卡","institution":"bank_card","account_no":"6225888812345678","currency":"CNY"}')
+test "$(echo "$CR_ACCT_A" | jq -r '.code | floor')" = "0"
+ACCT_A_ID=$(echo "$CR_ACCT_A" | jq -r '.data.id | floor')
+
+CR_ACCT_B=$(curl -s -X POST "$BASE/accounts" \
+  -H "Authorization: Bearer $TOKEN_A" \
+  -H "X-Ledger-Id: $FAM_LID" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"私密金库账户","institution":"cash_wallet","account_no":"SECRET999","currency":"CNY"}')
+test "$(echo "$CR_ACCT_B" | jq -r '.code | floor')" = "0"
+ACCT_B_ID=$(echo "$CR_ACCT_B" | jq -r '.data.id | floor')
+
+# Alice creates Asset A under Account A
+CR_ASSET_A=$(curl -s -X POST "$BASE/assets" \
+  -H "Authorization: Bearer $TOKEN_A" \
+  -H "X-Ledger-Id: $FAM_LID" \
+  -H "Content-Type: application/json" \
+  -d "{\"name\":\"家庭活期\",\"category_id\":1,\"account_id\":$ACCT_A_ID,\"current_value\":3000}")
+test "$(echo "$CR_ASSET_A" | jq -r '.code | floor')" = "0"
+
+# Alice configures Bob's permissions:
+# Account A: viewer, mask_balance=1, mask_account_no=1
+SET_PERM_A=$(curl -s -X PUT "$BASE/ledgers/${FAM_LID}/accounts/${ACCT_A_ID}/permissions" \
+  -H "Authorization: Bearer $TOKEN_A" \
+  -H "Content-Type: application/json" \
+  -d "{\"permissions\":[{\"user_id\":$USER_B_ID,\"permission_level\":\"viewer\",\"mask_balance\":1,\"mask_account_no\":1}]}")
+test "$(echo "$SET_PERM_A" | jq -r '.code | floor')" = "0"
+
+# Account B: none (completely hidden from Bob)
+SET_PERM_B=$(curl -s -X PUT "$BASE/ledgers/${FAM_LID}/accounts/${ACCT_B_ID}/permissions" \
+  -H "Authorization: Bearer $TOKEN_A" \
+  -H "Content-Type: application/json" \
+  -d "{\"permissions\":[{\"user_id\":$USER_B_ID,\"permission_level\":\"none\",\"mask_balance\":0,\"mask_account_no\":0}]}")
+test "$(echo "$SET_PERM_B" | jq -r '.code | floor')" = "0"
+
+# Bob queries accounts in Family ledger
+BOB_ACCOUNTS=$(curl -s -H "Authorization: Bearer $TOKEN_B" -H "X-Ledger-Id: $FAM_LID" "$BASE/accounts")
+test "$(echo "$BOB_ACCOUNTS" | jq -r '.code | floor')" = "0"
+
+# Verify Account A is masked for Bob
+BOB_ACCT_A_MASK_BAL=$(echo "$BOB_ACCOUNTS" | jq -r ".data[] | select((.id|floor) == $ACCT_A_ID) | .is_balance_masked")
+test "$BOB_ACCT_A_MASK_BAL" = "true"
+BOB_ACCT_A_MASK_NO=$(echo "$BOB_ACCOUNTS" | jq -r ".data[] | select((.id|floor) == $ACCT_A_ID) | .is_account_no_masked")
+test "$BOB_ACCT_A_MASK_NO" = "true"
+BOB_ACCT_A_VAL=$(echo "$BOB_ACCOUNTS" | jq -r ".data[] | select((.id|floor) == $ACCT_A_ID) | .total_value")
+test "$BOB_ACCT_A_VAL" = "0" -o "$BOB_ACCT_A_VAL" = "0.0" -o "$BOB_ACCT_A_VAL" = "0.00"
+BOB_ACCT_A_NO=$(echo "$BOB_ACCOUNTS" | jq -r ".data[] | select((.id|floor) == $ACCT_A_ID) | .account_no")
+test "$BOB_ACCT_A_NO" = "************5678"
+echo "✅ Account RBAC: Bob sees Account A with masked balance and masked account_no"
+
+# Verify Account B is completely hidden from Bob
+BOB_ACCT_B=$(echo "$BOB_ACCOUNTS" | jq -r ".data[] | select((.id|floor) == $ACCT_B_ID) | .id")
+test -z "$BOB_ACCT_B"
+echo "✅ Account RBAC: Account B ('none' permission) is completely hidden from Bob"
+
+# Verify Bob cannot create asset under Account A when role is viewer
+BOB_ASSET_FAIL=$(curl -s -X POST "$BASE/assets" \
+  -H "Authorization: Bearer $TOKEN_B" \
+  -H "X-Ledger-Id: $FAM_LID" \
+  -H "Content-Type: application/json" \
+  -d "{\"name\":\"Bob活期卡\",\"category_id\":1,\"account_id\":$ACCT_A_ID,\"current_value\":500}")
+test "$(echo "$BOB_ASSET_FAIL" | jq -r '.code | floor')" = "1004"
+echo "✅ Account RBAC: Bob creating asset under viewer Account A rejected with 1004"
+
+# Alice grants Bob operator permission on Account A
+SET_PERM_A_OP=$(curl -s -X PUT "$BASE/ledgers/${FAM_LID}/accounts/${ACCT_A_ID}/permissions" \
+  -H "Authorization: Bearer $TOKEN_A" \
+  -H "Content-Type: application/json" \
+  -d "{\"permissions\":[{\"user_id\":$USER_B_ID,\"permission_level\":\"operator\",\"mask_balance\":1,\"mask_account_no\":1}]}")
+test "$(echo "$SET_PERM_A_OP" | jq -r '.code | floor')" = "0"
+
+# Now Bob creates his asset under Account A
+BOB_ASSET_OK=$(curl -s -X POST "$BASE/assets" \
+  -H "Authorization: Bearer $TOKEN_B" \
+  -H "X-Ledger-Id: $FAM_LID" \
+  -H "Content-Type: application/json" \
+  -d "{\"name\":\"Bob活期卡\",\"category_id\":1,\"account_id\":$ACCT_A_ID,\"current_value\":500}")
+test "$(echo "$BOB_ASSET_OK" | jq -r '.code | floor')" = "0"
+BOB_ASSETS_LIST=$(curl -s -H "Authorization: Bearer $TOKEN_B" -H "X-Ledger-Id: $FAM_LID" "$BASE/assets")
+BOB_ASSET_ID=$(echo "$BOB_ASSETS_LIST" | jq -r '.data.list[] | select(.name == "Bob活期卡") | .id | floor')
+test -n "$BOB_ASSET_ID" && test "$BOB_ASSET_ID" -gt 0
+
+# Alice updates Bob back to viewer on Account A
+SET_PERM_A_VIEW=$(curl -s -X PUT "$BASE/ledgers/${FAM_LID}/accounts/${ACCT_A_ID}/permissions" \
+  -H "Authorization: Bearer $TOKEN_A" \
+  -H "Content-Type: application/json" \
+  -d "{\"permissions\":[{\"user_id\":$USER_B_ID,\"permission_level\":\"viewer\",\"mask_balance\":1,\"mask_account_no\":1}]}")
+test "$(echo "$SET_PERM_A_VIEW" | jq -r '.code | floor')" = "0"
+
+# Verify Bob cannot write daily-expense on Account A (viewer)
+BOB_WRITE_FAIL=$(curl -s -X POST "$BASE/daily-expenses" \
+  -H "Authorization: Bearer $TOKEN_B" \
+  -H "X-Ledger-Id: $FAM_LID" \
+  -H "Content-Type: application/json" \
+  -d "{\"category_id\":1,\"amount\":100,\"expense_type\":\"expense\",\"asset_id\":$BOB_ASSET_ID,\"expense_date\":\"2026-11-20\",\"note\":\"Blocked expense\"}")
+BOB_WRITE_CODE=$(echo "$BOB_WRITE_FAIL" | jq -r '.code | floor')
+test "$BOB_WRITE_CODE" = "1004"
+echo "✅ Account RBAC: Bob write to viewer Account A rejected with 1004"
+
+# Alice verifies member permissions API
+MEMBER_PERMS=$(curl -s -H "Authorization: Bearer $TOKEN_A" "$BASE/ledgers/${FAM_LID}/members/${USER_B_ID}/account-permissions")
+test "$(echo "$MEMBER_PERMS" | jq -r '.code | floor')" = "0"
+test "$(echo "$MEMBER_PERMS" | jq '.data | length')" = "2"
+echo "✅ Account RBAC: Member account permissions query OK"
+
+# Alice resets Bob's permission on Account A (deletes override, restoring inherit/editor)
+DEL_PERM_A=$(curl -s -X DELETE "$BASE/ledgers/${FAM_LID}/accounts/${ACCT_A_ID}/permissions/${USER_B_ID}" \
+  -H "Authorization: Bearer $TOKEN_A")
+test "$(echo "$DEL_PERM_A" | jq -r '.code | floor')" = "0"
+
+# Now Bob can write daily expense on Bob's asset under Account A
+BOB_WRITE_OK=$(curl -s -X POST "$BASE/daily-expenses" \
+  -H "Authorization: Bearer $TOKEN_B" \
+  -H "X-Ledger-Id: $FAM_LID" \
+  -H "Content-Type: application/json" \
+  -d "{\"category_id\":1,\"amount\":50,\"expense_type\":\"expense\",\"asset_id\":$BOB_ASSET_ID,\"expense_date\":\"2026-11-20\",\"note\":\"Restored expense\"}")
+test "$(echo "$BOB_WRITE_OK" | jq -r '.code | floor')" = "0"
+echo "✅ Account RBAC: Resetting permission restores ledger editor role, write succeeds"
+
 # 11. Alice removes Bob from family ledger
 REM_RES=$(curl -s -X DELETE "$BASE/ledgers/${FAM_LID}/members/${USER_B_ID}" \
   -H "Authorization: Bearer $TOKEN_A")
@@ -233,10 +362,13 @@ UPD_FAM=$(curl -s -X PUT "$BASE/ledgers/${FAM_LID}" \
   -H "Authorization: Bearer $TOKEN_A" \
   -H "Content-Type: application/json" \
   -d '{"name":"家庭公共账本(改)","description":"修改后的描述","currency":"CNY","color":"#ef4444","icon":"ph:wallet"}')
+echo "UPD_FAM: $UPD_FAM"
 test "$(echo "$UPD_FAM" | jq -r '.code | floor')" = "0"
 
 DEL_FAM=$(curl -s -X DELETE "$BASE/ledgers/${FAM_LID}" \
   -H "Authorization: Bearer $TOKEN_A")
+echo "DEL_FAM: $DEL_FAM"
+grep "DEBUG DEL_LEDGER" "${TMP_DIR}/server.log" || true
 test "$(echo "$DEL_FAM" | jq -r '.code | floor')" = "0"
 echo "Alice deleted the family ledger successfully"
 

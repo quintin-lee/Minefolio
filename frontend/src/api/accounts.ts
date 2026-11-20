@@ -4,7 +4,13 @@
  */
 import http from '@/utils/http'
 import type { AxiosRequestConfig } from 'axios'
-import type { Account, AccountInput, AccountUpdate } from '@/types'
+import type {
+  Account,
+  AccountInput,
+  AccountUpdate,
+  AccountPermission,
+  AccountPermissionBatchItem,
+} from '@/types'
 
 /**
  * 账户 API 服务对象
@@ -18,6 +24,13 @@ export const accountsApi = {
    */
   list: (params?: { include_archived?: number }) =>
     http.get<Account[]>('/accounts', { params }),
+
+  /**
+   * 获取指定账户详情
+   * @route GET /api/accounts/:id
+   * @param id 账户 ID
+   */
+  get: (id: number) => http.get<Account>(`/accounts/${id}`),
 
   /**
    * 创建新账户
@@ -41,4 +54,65 @@ export const accountsApi = {
    * @param id 账户 ID
    */
   delete: (id: number, config?: AxiosRequestConfig) => http.delete<void>(`/accounts/${id}`, config),
+
+  /**
+   * 查询指定账户的所有成员细粒度权限配置 (仅账本所有者)
+   * @route GET /api/ledgers/:ledgerId/accounts/:accountId/permissions
+   */
+  listPermissions: (ledgerId: number, accountId: number) =>
+    http.get<AccountPermission[]>(`/ledgers/${ledgerId}/accounts/${accountId}/permissions`),
+
+  /**
+   * 批量配置指定账户的成员细粒度权限 (仅账本所有者)
+   * @route PUT /api/ledgers/:ledgerId/accounts/:accountId/permissions
+   */
+  batchSetPermissions: (
+    ledgerId: number,
+    accountId: number,
+    permissions: AccountPermissionBatchItem[],
+    config?: AxiosRequestConfig
+  ) =>
+    http.put<void>(
+      `/ledgers/${ledgerId}/accounts/${accountId}/permissions`,
+      { permissions },
+      config
+    ),
+
+  /**
+   * 查询指定成员在账本中所有账户的细粒度权限配置 (仅账本所有者)
+   * @route GET /api/ledgers/:ledgerId/members/:userId/account-permissions
+   */
+  listMemberPermissions: (ledgerId: number, userId: number) =>
+    http.get<AccountPermission[]>(`/ledgers/${ledgerId}/members/${userId}/account-permissions`),
+
+  /**
+   * 批量配置指定成员在各账户上的细粒度权限 (仅账本所有者)
+   * @route PUT /api/ledgers/:ledgerId/members/:userId/account-permissions
+   */
+  batchSetMemberPermissions: (
+    ledgerId: number,
+    userId: number,
+    permissions: AccountPermissionBatchItem[],
+    config?: AxiosRequestConfig
+  ) =>
+    http.put<void>(
+      `/ledgers/${ledgerId}/members/${userId}/account-permissions`,
+      { permissions },
+      config
+    ),
+
+  /**
+   * 删除账户成员细粒度权限覆盖，重置为继承账本角色权限 (仅账本所有者)
+   * @route DELETE /api/ledgers/:ledgerId/accounts/:accountId/permissions/:userId
+   */
+  deletePermission: (
+    ledgerId: number,
+    accountId: number,
+    userId: number,
+    config?: AxiosRequestConfig
+  ) =>
+    http.delete<void>(
+      `/ledgers/${ledgerId}/accounts/${accountId}/permissions/${userId}`,
+      config
+    ),
 }

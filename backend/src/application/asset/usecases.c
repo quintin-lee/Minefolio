@@ -118,6 +118,17 @@ asset_usecase_create(void* pool, const create_asset_cmd_t* cmd, asset_usecase_re
         snprintf(out_res->message, sizeof(out_res->message), "账户不存在或不属于该用户");
         return -1;
     }
+    if (resolved_account_id > 0) {
+        if (account_usecase_check_permission(pool,
+                                             cmd->ledger_id,
+                                             cmd->user_id,
+                                             resolved_account_id,
+                                             MF_ACCOUNT_ACTION_WRITE_TX) != 0) {
+            out_res->code = 1004;
+            snprintf(out_res->message, sizeof(out_res->message), "Forbidden: 关联账户无操作权限");
+            return -1;
+        }
+    }
 
     int64_t id = asset_insert((csilk_db_pool_t*)pool,
                               asset.user_id,
@@ -265,6 +276,17 @@ asset_usecase_update(void* pool, const update_asset_cmd_t* cmd, asset_usecase_re
             out_res->code = 1002;
             snprintf(out_res->message, sizeof(out_res->message), "账户不存在或不属于该用户");
             return -1;
+        }
+        if (reattach_acct > 0) {
+            if (account_usecase_check_permission(
+                    pool, asset_ledger, cmd->user_id, reattach_acct, MF_ACCOUNT_ACTION_WRITE_TX) !=
+                0) {
+                csilk_json_free(cur);
+                out_res->code = 1004;
+                snprintf(
+                    out_res->message, sizeof(out_res->message), "Forbidden: 关联账户无操作权限");
+                return -1;
+            }
         }
         need_reattach = 1;
     }

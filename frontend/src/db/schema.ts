@@ -55,6 +55,19 @@ CREATE TABLE IF NOT EXISTS accounts (
   __deleted     INTEGER DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS account_permissions (
+  id               INTEGER PRIMARY KEY,
+  ledger_id        INTEGER NOT NULL,
+  account_id       INTEGER NOT NULL,
+  user_id          INTEGER NOT NULL,
+  permission_level TEXT NOT NULL DEFAULT 'inherit',
+  mask_balance     INTEGER NOT NULL DEFAULT 0,
+  mask_account_no  INTEGER NOT NULL DEFAULT 0,
+  created_at       TEXT,
+  updated_at       TEXT,
+  __deleted        INTEGER DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS transactions (
   id               INTEGER PRIMARY KEY,
   user_id          INTEGER DEFAULT 0,

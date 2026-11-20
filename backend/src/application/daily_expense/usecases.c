@@ -8,6 +8,7 @@
 #include "domain/daily_expense/repository.h"
 #include "infrastructure/repositories/daily_expense_repo_impl.h"
 #include "infrastructure/repositories/asset_repo_impl.h"
+#include "application/account/usecases.h"
 #include "common/balance.h"
 #include "core/financial/money.h"
 #include "core/financial/currency.h"
@@ -406,6 +407,17 @@ daily_expense_usecase_create(void*                             pool,
         return -1;
     }
 
+    int64_t acct_id = asset_get_account_id((csilk_db_pool_t*)pool, cmd->asset_id);
+    if (acct_id > 0) {
+        int perm_chk = account_usecase_check_permission(
+            pool, cmd->ledger_id, cmd->user_id, acct_id, MF_ACCOUNT_ACTION_WRITE_TX);
+        if (perm_chk != 0) {
+            out_res->code = 1004;
+            snprintf(out_res->message, sizeof(out_res->message), "Forbidden: 关联账户无记账权限");
+            return -1;
+        }
+    }
+
     db_tx_scope_t scope;
     if (db_tx_scope_begin(pool, "mf_expense_create", &scope) != 0) {
         out_res->code = 500;
@@ -502,6 +514,17 @@ daily_expense_usecase_update(void*                             pool,
 
     if (check_asset_exists(pool, cmd->user_id, cmd->asset_id, out_res) != 0) {
         return -1;
+    }
+
+    int64_t acct_id = asset_get_account_id((csilk_db_pool_t*)pool, cmd->asset_id);
+    if (acct_id > 0) {
+        int perm_chk = account_usecase_check_permission(
+            pool, cmd->ledger_id, cmd->user_id, acct_id, MF_ACCOUNT_ACTION_WRITE_TX);
+        if (perm_chk != 0) {
+            out_res->code = 1004;
+            snprintf(out_res->message, sizeof(out_res->message), "Forbidden: 关联账户无记账权限");
+            return -1;
+        }
     }
 
     db_tx_scope_t scope;

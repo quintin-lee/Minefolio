@@ -496,6 +496,13 @@ target_link_libraries(test_account_usecases PRIVATE csilk crypto CURL::libcurl $
 add_dependencies(test_account_usecases copy_assets)
 add_test(NAME test_account_usecases COMMAND test_account_usecases)
 
+add_executable(test_account_rbac tests/unit/test_account_rbac.c ${LIB_SOURCES})
+target_include_directories(test_account_rbac PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_compile_options(test_account_rbac PRIVATE -UNDEBUG)
+target_link_libraries(test_account_rbac PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_dependencies(test_account_rbac copy_assets)
+add_test(NAME test_account_rbac COMMAND test_account_rbac)
+
 add_executable(test_tag_usecases tests/unit/test_tag_usecases.c ${LIB_SOURCES})
 target_include_directories(test_tag_usecases PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_compile_options(test_tag_usecases PRIVATE -UNDEBUG)

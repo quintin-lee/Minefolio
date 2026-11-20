@@ -75,20 +75,37 @@ ledger_get_user_role(
 
     const char*   sql = "SELECT role FROM ledger_members WHERE ledger_id = ? AND user_id = ?";
     csilk_json_t* res = csilk_db_query_param_json(pool, sql, (const char*[]){lid, uid, NULL});
-    if (!res || csilk_json_array_size(res) == 0) {
-        if (res) {
-            csilk_json_free(res);
+    if (res && csilk_json_array_size(res) > 0) {
+        const char* r = csilk_json_get_string(csilk_json_array_get(res, 0), "role");
+        if (r && out_role && out_len > 0) {
+            strncpy(out_role, r, out_len - 1);
+            out_role[out_len - 1] = '\0';
         }
-        return NULL;
+        csilk_json_free(res);
+        return out_role;
+    }
+    if (res) {
+        csilk_json_free(res);
     }
 
-    const char* r = csilk_json_get_string(csilk_json_array_get(res, 0), "role");
-    if (r && out_role && out_len > 0) {
-        strncpy(out_role, r, out_len - 1);
-        out_role[out_len - 1] = '\0';
+    /* Fallback: check if user is ledger owner in ledgers table */
+    const char*   l_sql = "SELECT owner_id FROM ledgers WHERE id = ?";
+    csilk_json_t* l_res = csilk_db_query_param_json(pool, l_sql, (const char*[]){lid, NULL});
+    if (l_res && csilk_json_array_size(l_res) > 0) {
+        int64_t owner_id = (int64_t)db_get_int(csilk_json_array_get(l_res, 0), "owner_id");
+        csilk_json_free(l_res);
+        if (owner_id == user_id) {
+            if (out_role && out_len > 0) {
+                strncpy(out_role, "owner", out_len - 1);
+                out_role[out_len - 1] = '\0';
+            }
+            return out_role;
+        }
+    } else if (l_res) {
+        csilk_json_free(l_res);
     }
-    csilk_json_free(res);
-    return out_role;
+
+    return NULL;
 }
 
 csilk_json_t*

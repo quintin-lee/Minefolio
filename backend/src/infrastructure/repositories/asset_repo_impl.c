@@ -539,6 +539,26 @@ asset_exists(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
     return ok;
 }
 
+int64_t
+asset_get_account_id(csilk_db_pool_t* pool, int64_t asset_id)
+{
+    if (!pool || asset_id <= 0) {
+        return 0;
+    }
+    char aid_str[32];
+    snprintf(aid_str, sizeof(aid_str), "%lld", (long long)asset_id);
+    csilk_json_t* res = csilk_db_query_param_json(
+        pool, "SELECT account_id FROM assets WHERE id=?", (const char*[]){aid_str, NULL});
+    int64_t acct_id = 0;
+    if (res && csilk_json_array_size(res) > 0) {
+        acct_id = db_get_int(csilk_json_array_get(res, 0), "account_id");
+    }
+    if (res) {
+        csilk_json_free(res);
+    }
+    return acct_id;
+}
+
 char*
 asset_get_category_type(csilk_db_pool_t* pool, int64_t user_id, int64_t category_id)
 {

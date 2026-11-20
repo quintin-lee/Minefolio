@@ -57,6 +57,36 @@ export interface Account {
   asset_count: number
   /** 该账户下资产市值合计 */
   total_value: number
+  /** 账户细粒度 RBAC 权限级别（当前用户的有效权限或配置） */
+  permission_level?: 'inherit' | 'none' | 'viewer' | 'operator' | 'manager'
+  /** 是否已脱敏余额 (mask_balance) */
+  is_balance_masked?: boolean
+  /** 是否已脱敏卡号 (mask_account_no) */
+  is_account_no_masked?: boolean
+}
+
+/** 账户细粒度 RBAC 权限条目 (account_permissions) */
+export interface AccountPermission {
+  id?: number
+  ledger_id: number
+  account_id: number
+  user_id: number
+  username?: string
+  account_name?: string
+  permission_level: 'inherit' | 'none' | 'viewer' | 'operator' | 'manager'
+  mask_balance: number | boolean
+  mask_account_no: number | boolean
+  created_at?: string
+  updated_at?: string
+}
+
+/** 批量设置账户权限请求载荷条目 */
+export interface AccountPermissionBatchItem {
+  account_id?: number
+  user_id?: number
+  permission_level: 'inherit' | 'none' | 'viewer' | 'operator' | 'manager'
+  mask_balance?: boolean | number
+  mask_account_no?: boolean | number
 }
 
 /** 创建账户请求载荷 (POST /api/accounts) */
