@@ -210,7 +210,7 @@ CR_ACCT_A=$(curl -s -X POST "$BASE/accounts" \
   -H "Content-Type: application/json" \
   -d '{"name":"招行家庭卡","institution":"bank_card","account_no":"6225888812345678","currency":"CNY"}')
 test "$(echo "$CR_ACCT_A" | jq -r '.code | floor')" = "0"
-ACCT_A_ID=$(echo "$CR_ACCT_A" | jq -r '.data.id | floor')
+ACCT_A_ID=$(echo "$CR_ACCT_A" | jq -r '.data.id')
 
 CR_ACCT_B=$(curl -s -X POST "$BASE/accounts" \
   -H "Authorization: Bearer $TOKEN_A" \
@@ -218,7 +218,7 @@ CR_ACCT_B=$(curl -s -X POST "$BASE/accounts" \
   -H "Content-Type: application/json" \
   -d '{"name":"私密金库账户","institution":"cash_wallet","account_no":"SECRET999","currency":"CNY"}')
 test "$(echo "$CR_ACCT_B" | jq -r '.code | floor')" = "0"
-ACCT_B_ID=$(echo "$CR_ACCT_B" | jq -r '.data.id | floor')
+ACCT_B_ID=$(echo "$CR_ACCT_B" | jq -r '.data.id')
 
 # Alice creates Asset A under Account A
 CR_ASSET_A=$(curl -s -X POST "$BASE/assets" \
@@ -248,18 +248,18 @@ BOB_ACCOUNTS=$(curl -s -H "Authorization: Bearer $TOKEN_B" -H "X-Ledger-Id: $FAM
 test "$(echo "$BOB_ACCOUNTS" | jq -r '.code | floor')" = "0"
 
 # Verify Account A is masked for Bob
-BOB_ACCT_A_MASK_BAL=$(echo "$BOB_ACCOUNTS" | jq -r ".data[] | select((.id|floor) == $ACCT_A_ID) | .is_balance_masked")
+BOB_ACCT_A_MASK_BAL=$(echo "$BOB_ACCOUNTS" | jq -r ".data[] | select((.id|tostring) == \"$ACCT_A_ID\") | .is_balance_masked")
 test "$BOB_ACCT_A_MASK_BAL" = "true"
-BOB_ACCT_A_MASK_NO=$(echo "$BOB_ACCOUNTS" | jq -r ".data[] | select((.id|floor) == $ACCT_A_ID) | .is_account_no_masked")
+BOB_ACCT_A_MASK_NO=$(echo "$BOB_ACCOUNTS" | jq -r ".data[] | select((.id|tostring) == \"$ACCT_A_ID\") | .is_account_no_masked")
 test "$BOB_ACCT_A_MASK_NO" = "true"
-BOB_ACCT_A_VAL=$(echo "$BOB_ACCOUNTS" | jq -r ".data[] | select((.id|floor) == $ACCT_A_ID) | .total_value")
+BOB_ACCT_A_VAL=$(echo "$BOB_ACCOUNTS" | jq -r ".data[] | select((.id|tostring) == \"$ACCT_A_ID\") | .total_value")
 test "$BOB_ACCT_A_VAL" = "0" -o "$BOB_ACCT_A_VAL" = "0.0" -o "$BOB_ACCT_A_VAL" = "0.00"
-BOB_ACCT_A_NO=$(echo "$BOB_ACCOUNTS" | jq -r ".data[] | select((.id|floor) == $ACCT_A_ID) | .account_no")
+BOB_ACCT_A_NO=$(echo "$BOB_ACCOUNTS" | jq -r ".data[] | select((.id|tostring) == \"$ACCT_A_ID\") | .account_no")
 test "$BOB_ACCT_A_NO" = "************5678"
 echo "✅ Account RBAC: Bob sees Account A with masked balance and masked account_no"
 
 # Verify Account B is completely hidden from Bob
-BOB_ACCT_B=$(echo "$BOB_ACCOUNTS" | jq -r ".data[] | select((.id|floor) == $ACCT_B_ID) | .id")
+BOB_ACCT_B=$(echo "$BOB_ACCOUNTS" | jq -r ".data[] | select((.id|tostring) == \"$ACCT_B_ID\") | .id")
 test -z "$BOB_ACCT_B"
 echo "✅ Account RBAC: Account B ('none' permission) is completely hidden from Bob"
 
@@ -287,7 +287,7 @@ BOB_ASSET_OK=$(curl -s -X POST "$BASE/assets" \
   -d "{\"name\":\"Bob活期卡\",\"category_id\":1,\"account_id\":$ACCT_A_ID,\"current_value\":500}")
 test "$(echo "$BOB_ASSET_OK" | jq -r '.code | floor')" = "0"
 BOB_ASSETS_LIST=$(curl -s -H "Authorization: Bearer $TOKEN_B" -H "X-Ledger-Id: $FAM_LID" "$BASE/assets")
-BOB_ASSET_ID=$(echo "$BOB_ASSETS_LIST" | jq -r '.data.list[] | select(.name == "Bob活期卡") | .id | floor')
+BOB_ASSET_ID=$(echo "$BOB_ASSETS_LIST" | jq -r '.data.list[] | select(.name == "Bob活期卡") | .id')
 test -n "$BOB_ASSET_ID" && test "$BOB_ASSET_ID" -gt 0
 
 # Alice updates Bob back to viewer on Account A
