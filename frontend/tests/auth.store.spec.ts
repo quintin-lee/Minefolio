@@ -19,9 +19,22 @@ vi.mock('@/api/system', () => ({
   },
 }))
 
+vi.mock('@/db/local', () => {
+  let db: any = null
+  return {
+    initLocalDb: vi.fn(async () => {
+      db = { exec: vi.fn() }
+      return db
+    }),
+    getDb: vi.fn(() => db),
+    __resetDb: () => { db = null },
+  }
+})
+
 import { authApi } from '@/api/auth'
 import { systemApi } from '@/api/system'
 import { clearCryptoKeyCache } from '@/utils/crypto'
+import { initLocalDb, getDb } from '@/db/local'
 
 describe('auth store', () => {
   beforeEach(() => {
@@ -92,6 +105,41 @@ describe('auth store', () => {
     expect(res.token).toBe('verified-jwt-token')
     expect(store.token).toBe('verified-jwt-token')
     expect(localStorage.getItem('token')).toBe('verified-jwt-token')
+  })
+
+  it('re-initializes local db on successful login', async () => {
+    ;(authApi.login as any).mockResolvedValue({ token: 'reinit-jwt-token' })
+    ;(authApi.me as any).mockResolvedValue({ id: 1, username: 'admin', created_at: '2026-01-01' })
+
+    const store = useAuthStore()
+    const res = await store.login('admin', 'password123')
+    expect(res.token).toBe('reinit-jwt-token')
+    // 登出重置本地库后重新登录，必须调用 initLocalDb() 恢复离线功能，
+    // 否则 getDb() 抛 'localDb not initialized'，离线降级与同步队列全部失效直至重启 App
+    expect(initLocalDb).toHaveBeenCalled()
+    expect(getDb()).not.toBeNull()
+  })
+
+  it('re-initializes local db after 2FA verification', async () => {
+    ;(authApi.verify2FaLogin as any).mockResolvedValue({ token: 'verified-jwt-token' })
+    ;(authApi.me as any).mockResolvedValue({ id: 1, username: 'admin', created_at: '2026-01-01' })
+
+    const store = useAuthStore()
+    await store.verify2FaLogin('temp-2fa-token', '123456')
+    expect(initLocalDb).toHaveBeenCalled()
+    expect(getDb()).not.toBeNull()
+  })
+
+  it('survives local db re-init failure without breaking login', async () => {
+    ;(initLocalDb as any).mockRejectedValueOnce(new Error('wasm load failed'))
+    ;(authApi.login as any).mockResolvedValue({ token: 'still-ok-token' })
+    ;(authApi.me as any).mockResolvedValue({ id: 1, username: 'admin', created_at: '2026-01-01' })
+
+    const store = useAuthStore()
+    const res = await store.login('admin', 'password123')
+    // 离线库初始化失败不影响在线登录主流程（降级为纯在线模式）
+    expect(res.token).toBe('still-ok-token')
+    expect(store.token).toBe('still-ok-token')
   })
 
   it('clears state on logout', async () => {
