@@ -57,3 +57,10 @@ int auth_usecase_oauth_callback(void*                       pool,
                                 const oauth_callback_cmd_t* cmd,
                                 csilk_json_t**              out_data,
                                 auth_usecase_result_t*      out_res);
+
+/**
+ * @brief 重新固化 OAuth mock 开关（仅测试使用）
+ * @note mock 开关在启动期从 MINEFOLIO_TEST_OAUTH_MOCK 固化一次；
+ *       该函数供测试在改变环境变量后重新固化，模拟不同启动环境。
+ */
+void auth_oauth_mock_reset(void);
