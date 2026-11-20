@@ -63,6 +63,10 @@ static void test_validate_url(void)
     assert(mf_mcp_rule_validate_url("http://server.local/mcp", false) == false);
     assert(mf_mcp_rule_validate_url("http://backend.internal/mcp", false) == false);
 
+    /* Docker Desktop 内置别名：host.docker.internal 指向宿主机，等同于 localhost */
+    assert(mf_mcp_rule_validate_url("http://host.docker.internal:8070/mcp", false) == false);
+    assert(mf_mcp_rule_validate_url("http://host.docker.internal:8070/mcp", true) == true);
+
     /* same local addresses allowed when allow_local=true */
     assert(mf_mcp_rule_validate_url("http://localhost:3000", true) == true);
     assert(mf_mcp_rule_validate_url("http://127.0.0.1:3000", true) == true);

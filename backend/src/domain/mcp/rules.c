@@ -79,6 +79,12 @@ url_host_is_internal(const char* host)
         return true;
     }
 
+    /* Docker Desktop 内置别名：host.docker.internal 指向宿主机，等同于 127.0.0.1，
+       必须与 localhost 同等对待；不应被下方 .internal 后缀启发式误拦。 */
+    if (strcmp(hostpart, "host.docker.internal") == 0) {
+        return true;
+    }
+
     size_t hlen = strlen(hostpart);
     if ((hlen > 6 && strcmp(hostpart + hlen - 6, ".local") == 0) ||
         (hlen > 9 && strcmp(hostpart + hlen - 9, ".internal") == 0) ||
