@@ -488,6 +488,29 @@ main(int argc, char** argv)
         printf("  ✅ Content with 'proposed' status successfully updated to 'executed'\n");
     }
 
+    /* === 7. Regression: non-v2 format tokens are rejected without recursion ===
+       verify_and_consume 曾把非 v2 令牌回退给 verify_token，后者又反向调用
+       verify_and_consume 形成无限递归（工具线程栈溢出崩溃）。
+       修复后任何非 v2 前缀令牌直接返回 FORMAT 错，无递归、无崩溃。 */
+    {
+        ai_confirmation_status_t st;
+        st = ai_confirmation_verify_and_consume(user_id, 1, "legacy_action", NULL, "legacy_token");
+        assert(st == AI_CONFIRM_ERR_FORMAT);
+        st = ai_confirmation_verify_and_consume(user_id, 1, "legacy_action", NULL, "mf_batch_v1.forged.mac");
+        assert(st == AI_CONFIRM_ERR_FORMAT);
+        st = ai_confirmation_verify_and_consume(user_id, 1, "legacy_action", NULL, "");
+        assert(st == AI_CONFIRM_ERR_FORMAT);
+        st = ai_confirmation_verify_and_consume(user_id, 1, "legacy_action", NULL, "");
+        assert(st == AI_CONFIRM_ERR_FORMAT);
+
+        /* 兼容接口 verify_token：非 v2 前缀直接返回 0，不再进入 verify_and_consume */
+        assert(ai_confirmation_verify_token(user_id, 0.0, NULL, NULL, "legacy_token") == 0);
+        assert(ai_confirmation_verify_token(user_id, 0.0, NULL, NULL, "") == 0);
+        assert(ai_confirmation_verify_token(user_id, 0.0, NULL, NULL, NULL) == 0);
+
+        printf("  ✅ Non-v2 tokens rejected without recursion (legacy regression)\n");
+    }
+
     if (saved_draft_token) {
         free(saved_draft_token);
     }

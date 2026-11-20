@@ -390,10 +390,10 @@ ai_confirmation_verify_and_consume(int64_t             user_id,
 
     /* 1. 检验 token 前缀结构 */
     if (strncmp(token, "mf_v2.", 6) != 0) {
-        /* 兼容老版本格式 */
-        if (ai_confirmation_verify_token(user_id, 0.0, NULL, NULL, token)) {
-            return AI_CONFIRM_OK;
-        }
+        /* 非 v2 格式令牌一律拒绝：老版本无 HMAC 签名、无防重放能力，
+           且双向调用会形成无限递归（verify_and_consume ↔ verify_token），
+           legacy 兼容分支已移除，legacy 令牌直接返回 FORMAT 错。 */
+        (void)args;
         return AI_CONFIRM_ERR_FORMAT;
     }
 
@@ -731,6 +731,15 @@ int
 ai_confirmation_verify_token(
     int64_t user_id, double amount, const char* a, const char* b, const char* token)
 {
+    (void)amount;
+    (void)a;
+    (void)b;
+    /* 老版本兼容接口：仅接受本接口（create_token）签发的 v2 令牌。
+       注意：本函数是 verify_and_consume 的单向包装，不得被 verify_and_consume
+       反向调用（曾导致无限递归崩溃）。非 v2 前缀令牌在此直接判非法。 */
+    if (!token || strncmp(token, "mf_v2.", 6) != 0) {
+        return 0;
+    }
     csilk_json_t* dummy = csilk_json_object();
     csilk_json_add_number(dummy, "amount", amount);
     if (a) {
