@@ -538,7 +538,7 @@ ai_chat_handler(csilk_ctx_t* c)
     if (!model_sel) {
         model_sel = "default";
     }
-    strncpy(model_buf, model_sel, sizeof(model_buf) - 1);
+    snprintf(model_buf, sizeof(model_buf), "%s", model_sel);
 
     /* session: create if new, or auto-title default "新对话" session */
     int64_t sid = session_id;
