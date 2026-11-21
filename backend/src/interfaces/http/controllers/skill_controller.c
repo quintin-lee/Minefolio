@@ -1,6 +1,7 @@
 #include "interfaces/http/controllers/skill_controller.h"
 #include "application/skill/usecases.h"
 #include "application/skill/dtos.h"
+#include "application/task/async_task_manager.h"
 #include "infrastructure/repositories/auth_repo_impl.h"
 #include "common/response.h"
 #include "common/ctx.h"
@@ -332,11 +333,64 @@ api_ai_skills_toggle(csilk_ctx_t* c)
     respond_ok(c, NULL);
 }
 
+typedef struct {
+    int64_t skill_id;
+    char*   args;
+} skill_test_task_arg_t;
+
+static void
+skill_test_task_cleanup(void* raw)
+{
+    skill_test_task_arg_t* arg = (skill_test_task_arg_t*)raw;
+    if (!arg) {
+        return;
+    }
+    free(arg->args);
+    free(arg);
+}
+
+static int
+skill_test_task_fn(void*   pool,
+                   int64_t task_id,
+                   int64_t user_id,
+                   int64_t ledger_id,
+                   void*   arg,
+                   char**  out_result_json,
+                   char*   err_buf,
+                   size_t  err_cap)
+{
+    (void)ledger_id;
+    skill_test_task_arg_t* targ = (skill_test_task_arg_t*)arg;
+    if (!targ || targ->skill_id <= 0) {
+        snprintf(err_buf, err_cap, "参数错误");
+        return -1;
+    }
+
+    mf_async_task_update_progress(pool, task_id, 20, "正在沙箱执行 L3 技能脚本");
+
+    csilk_json_t* res = NULL;
+    int           rc = skill_usecase_test_execute(pool, user_id, targ->skill_id, targ->args, &res);
+    if (rc != 0 || !res) {
+        if (res) {
+            csilk_json_free(res);
+        }
+        snprintf(err_buf, err_cap, "测试执行失败");
+        return -1;
+    }
+
+    if (out_result_json) {
+        *out_result_json = csilk_json_serialize(res, NULL);
+    }
+    csilk_json_free(res);
+    return 0;
+}
+
 void
 api_ai_skills_test(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
-    if (user_id < 0) {
+    if (user_id <= 0) {
+        respond_unauthorized(c);
         return;
     }
 
@@ -347,23 +401,78 @@ api_ai_skills_test(csilk_ctx_t* c)
         return;
     }
 
+    csilk_db_pool_t* pool = db_get_pool();
+    csilk_json_t*    skill_obj = NULL;
+    if (skill_usecase_get(pool, user_id, id, &skill_obj) != 0 || !skill_obj) {
+        if (skill_obj) {
+            csilk_json_free(skill_obj);
+        }
+        respond_error(c, 1002, "测试执行失败");
+        return;
+    }
+
+    const char* exec_path = csilk_json_get_string(skill_obj, "exec_path");
+    bool        is_l3 = (exec_path && exec_path[0] != '\0');
+    csilk_json_free(skill_obj);
+
     csilk_json_t* body = csilk_bind_json(c);
     const char*   args = NULL;
     if (body) {
         args = body_get_str(body, "arguments");
     }
 
-    csilk_json_t* res = NULL;
-    int           rc = skill_usecase_test_execute(db_get_pool(), user_id, id, args, &res);
+    /* L2 指令型技能无外部子进程，保持同步快速返回 */
+    if (!is_l3) {
+        csilk_json_t* res = NULL;
+        int           rc = skill_usecase_test_execute(pool, user_id, id, args, &res);
+        if (body) {
+            csilk_json_free(body);
+        }
+        if (rc != 0 || !res) {
+            respond_error(c, 1002, "测试执行失败");
+            return;
+        }
+        respond_ok(c, res);
+        return;
+    }
+
+    /* L3 可执行脚本技能走异步任务队列，避免阻塞 HTTP worker */
+    skill_test_task_arg_t* targ = calloc(1, sizeof(*targ));
+    if (!targ) {
+        if (body) {
+            csilk_json_free(body);
+        }
+        respond_error(c, 500, "内存不足");
+        return;
+    }
+    targ->skill_id = id;
+    if (args) {
+        targ->args = strdup(args);
+    }
     if (body) {
         csilk_json_free(body);
     }
 
-    if (rc != 0 || !res) {
-        respond_error(c, 1002, "测试执行失败");
+    char dedupe_key[64];
+    snprintf(dedupe_key, sizeof(dedupe_key), "skill:test:%lld", (long long)id);
+
+    bool    deduplicated = false;
+    int64_t task_id = mf_async_task_submit(pool,
+                                           user_id,
+                                           0,
+                                           "skill_test",
+                                           dedupe_key,
+                                           "正在排队执行技能脚本测试",
+                                           skill_test_task_fn,
+                                           targ,
+                                           skill_test_task_cleanup,
+                                           &deduplicated);
+    if (task_id <= 0) {
+        respond_error(c, 1002, "提交异步技能测试任务失败");
         return;
     }
-    respond_ok(c, res);
+
+    mf_async_task_respond_submitted(c, task_id, "skill_test", deduplicated, NULL);
 }
 
 void

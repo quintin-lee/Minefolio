@@ -4,6 +4,7 @@
  */
 
 import http from '@/utils/http'
+import { resolveMaybeAsync, type AsyncTaskSubmission } from './tasks'
 import type {
   AiSkill,
   SkillCreatePayload,
@@ -84,10 +85,11 @@ export async function toggleSkill(id: number, enabled: boolean): Promise<void> {
  */
 export async function testSkill(id: number, args?: string): Promise<SkillTestResult> {
   const r = (await http.post(`/ai/skills/${id}/test`, { arguments: args || '' })) as unknown
-  if (r && typeof r === 'object' && 'data' in r && (r as { data: unknown }).data) {
-    return (r as { data: SkillTestResult }).data
-  }
-  return r as SkillTestResult
+  const payload =
+    r && typeof r === 'object' && 'data' in r && (r as { data: unknown }).data
+      ? (r as { data: SkillTestResult | AsyncTaskSubmission }).data
+      : (r as SkillTestResult | AsyncTaskSubmission)
+  return resolveMaybeAsync<SkillTestResult>(payload, { timeoutMs: 90000 })
 }
 
 /**

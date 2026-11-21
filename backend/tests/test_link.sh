@@ -1041,11 +1041,20 @@ IMPORTED_ID=$(echo "$IMPORT_RES" | jq -r '.data.id | floor')
 test -n "$IMPORTED_ID" && [ "$IMPORTED_ID" -gt 0 ] && HAS_IMP_ID="yes" || HAS_IMP_ID="no"
 check "导入成功返回合法技能 id" "yes" "$HAS_IMP_ID"
 
-# 13. 测试执行技能运行测试
+# 13. 测试执行技能运行测试 (L2 保持同步, 也兼容 async task_id)
 TEST_EXEC_RES=$(curl -s -X POST -H "$AUTH" -H "Content-Type: application/json" "$BASE/ai/skills/$CUSTOM_SKILL_ID/test" -d '{"arguments":"{\"test_param\":123}"}')
+TEST_EXEC_RES=$(db_poll_task "${BASE%/api}" "$AUTH" "$TEST_EXEC_RES")
 check "测试执行技能 code=0" "0" "$(echo "$TEST_EXEC_RES" | jq -r '.code | floor')"
 TEST_STATUS=$(echo "$TEST_EXEC_RES" | jq -r '.data.status')
 check "指令型技能执行状态为 success" "success" "$TEST_STATUS"
+
+# 13b. 显式 ?async=1 上传文本触发异步 file_parse 任务验证
+printf 'hello async file parser\n' > /tmp/mf_async_file.txt
+FILE_ASYNC_SUB=$(curl -s -X POST -H "$AUTH" -F "file=@/tmp/mf_async_file.txt" "$BASE/files/upload?async=1")
+rm -f /tmp/mf_async_file.txt
+check "异步文件解析返回 task_id" "1" "$(echo "$FILE_ASYNC_SUB" | jq -r 'if (.data.task_id // 0) > 0 then 1 else 0 end')"
+FILE_ASYNC_RES=$(db_poll_task "${BASE%/api}" "$AUTH" "$FILE_ASYNC_SUB")
+check "异步文件解析完成 status=parsed" "parsed" "$(echo "$FILE_ASYNC_RES" | jq -r '.data.status')"
 
 # 14. 清理创建的技能
 curl -s -X DELETE -H "$AUTH" "$BASE/ai/skills/$CUSTOM_SKILL_ID" >/dev/null

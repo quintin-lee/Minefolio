@@ -1,6 +1,7 @@
 #include "interfaces/http/controllers/ai_mcp_controller.h"
 #include "application/mcp/usecases.h"
 #include "application/mcp/commands.h"
+#include "application/task/async_task_manager.h"
 #include "services/ai/tools/mcp/mcp_bridge.h"
 #include "infrastructure/repositories/auth_repo_impl.h"
 #include "common/response.h"
@@ -262,38 +263,104 @@ api_ai_mcp_servers_tools(csilk_ctx_t* c)
     respond_ok(c, list ? list : csilk_json_array());
 }
 
-/* 探活 / 强制重拉：initialize + tools/list 回写缓存，返回工具数 + 状态 */
-static void
-mcp_server_refresh_response(csilk_ctx_t* c, int64_t user_id, int64_t server_id)
+typedef struct {
+    int64_t server_id;
+} mcp_refresh_task_arg_t;
+
+static int
+mcp_refresh_task_fn(void*   pool,
+                    int64_t task_id,
+                    int64_t user_id,
+                    int64_t ledger_id,
+                    void*   arg,
+                    char**  out_result_json,
+                    char*   err_buf,
+                    size_t  err_cap)
 {
+    (void)ledger_id;
+    mcp_refresh_task_arg_t* targ = (mcp_refresh_task_arg_t*)arg;
+    if (!targ || targ->server_id <= 0) {
+        snprintf(err_buf, err_cap, "参数错误");
+        return -1;
+    }
+
+    mf_async_task_update_progress(pool, task_id, 20, "正在连接并探活 MCP 服务器");
+
     size_t tool_count = 0;
     char*  err = NULL;
-    int    rc = mcp_bridge_refresh_server(db_get_pool(), user_id, server_id, &tool_count, &err);
+    int    rc = mcp_bridge_refresh_server(
+        (csilk_db_pool_t*)pool, user_id, targ->server_id, &tool_count, &err);
 
+    csilk_json_t* data = csilk_json_object();
+    csilk_json_add_int(data, "server_id", targ->server_id);
     if (rc != 0) {
-        csilk_json_t* data = csilk_json_object();
-        csilk_json_add_int(data, "server_id", server_id);
         csilk_json_add_string(data, "status", "failed");
         if (err) {
             csilk_json_add_string(data, "message", err);
             free(err);
         }
-        respond_ok(c, data);
+    } else {
+        csilk_json_add_string(data, "status", "ok");
+        csilk_json_add_int(data, "tool_count", (int)tool_count);
+    }
+
+    if (out_result_json) {
+        *out_result_json = csilk_json_serialize(data, NULL);
+    }
+    csilk_json_free(data);
+    return 0;
+}
+
+/* 探活 / 强制重拉：校验归属后投递异步后台任务 */
+static void
+mcp_server_refresh_enqueue(csilk_ctx_t* c, int64_t user_id, int64_t server_id)
+{
+    csilk_db_pool_t* pool = db_get_pool();
+    csilk_json_t*    srv = NULL;
+    if (mf_mcp_usecase_get(pool, user_id, server_id, &srv) != 0 || !srv) {
+        if (srv) {
+            csilk_json_free(srv);
+        }
+        respond_not_found(c);
+        return;
+    }
+    csilk_json_free(srv);
+
+    mcp_refresh_task_arg_t* arg = calloc(1, sizeof(*arg));
+    if (!arg) {
+        respond_error(c, 500, "内存不足");
+        return;
+    }
+    arg->server_id = server_id;
+
+    char dedupe_key[64];
+    snprintf(dedupe_key, sizeof(dedupe_key), "mcp:refresh:%lld", (long long)server_id);
+
+    bool    deduplicated = false;
+    int64_t task_id = mf_async_task_submit(pool,
+                                           user_id,
+                                           0,
+                                           "mcp_server_refresh",
+                                           dedupe_key,
+                                           "正在排队探活并刷新 MCP 工具列表",
+                                           mcp_refresh_task_fn,
+                                           arg,
+                                           free,
+                                           &deduplicated);
+    if (task_id <= 0) {
+        respond_error(c, 500, "提交异步 MCP 探活任务失败");
         return;
     }
 
-    csilk_json_t* data = csilk_json_object();
-    csilk_json_add_int(data, "server_id", server_id);
-    csilk_json_add_string(data, "status", "ok");
-    csilk_json_add_int(data, "tool_count", (int)tool_count);
-    respond_ok(c, data);
+    mf_async_task_respond_submitted(c, task_id, "mcp_server_refresh", deduplicated, NULL);
 }
 
 void
 api_ai_mcp_servers_test(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
-    if (user_id < 0) {
+    if (user_id <= 0) {
+        respond_unauthorized(c);
         return;
     }
     const char* id_str = csilk_get_param(c, "id");
@@ -302,14 +369,15 @@ api_ai_mcp_servers_test(csilk_ctx_t* c)
         respond_bad_request(c, "缺少或无效的 id");
         return;
     }
-    mcp_server_refresh_response(c, user_id, id);
+    mcp_server_refresh_enqueue(c, user_id, id);
 }
 
 void
 api_ai_mcp_servers_refresh(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
-    if (user_id < 0) {
+    if (user_id <= 0) {
+        respond_unauthorized(c);
         return;
     }
     const char* id_str = csilk_get_param(c, "id");
@@ -318,7 +386,7 @@ api_ai_mcp_servers_refresh(csilk_ctx_t* c)
         respond_bad_request(c, "缺少或无效的 id");
         return;
     }
-    mcp_server_refresh_response(c, user_id, id);
+    mcp_server_refresh_enqueue(c, user_id, id);
 }
 
 /* -------------------------------------------------------------------------- */

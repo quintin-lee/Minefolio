@@ -165,6 +165,56 @@ auth_get() {
     -H "X-CSRF-Token: $CSRF" || true
 }
 
+poll_mcp_task() {
+  local submit_json="$1"
+  local tid
+  tid=$(node -e "
+    try {
+      const r = JSON.parse(process.argv[1]);
+      const id = r && r.data && Number(r.data.task_id);
+      console.log(Number.isFinite(id) && id > 0 ? id : 0);
+    } catch { console.log(0); }
+  " "$submit_json")
+  if [ "$tid" = "0" ]; then
+    printf '%s\n' "$submit_json"
+    return 0
+  fi
+  local i=0
+  while [ "$i" -lt 120 ]; do
+    local poll_res
+    poll_res=$(auth_get "${BASE%/api}/api/tasks/${tid}")
+    local state
+    state=$(node -e "
+      try {
+        const r = JSON.parse(process.argv[1]);
+        const t = r && r.data;
+        if (!t) { console.log('WAIT|'); process.exit(0); }
+        if (t.status === 'completed') {
+          console.log('DONE|' + JSON.stringify({ code: 0, message: 'ok', data: t.result ?? {} }));
+        } else if (t.status === 'failed' || t.status === 'cancelled') {
+          console.log('FAIL|' + (t.error_message || 'task failed'));
+        } else {
+          console.log('WAIT|');
+        }
+      } catch { console.log('WAIT|'); }
+    " "$poll_res")
+    local tag="${state%%|*}"
+    local payload="${state#*|}"
+    if [ "$tag" = "DONE" ]; then
+      printf '%s\n' "$payload"
+      return 0
+    elif [ "$tag" = "FAIL" ]; then
+      printf '{"code":500,"message":%s,"data":{"status":"failed","message":%s}}\n' \
+        "$(node -e "console.log(JSON.stringify(process.argv[1]))" "$payload")" \
+        "$(node -e "console.log(JSON.stringify(process.argv[1]))" "$payload")"
+      return 0
+    fi
+    sleep 0.15
+    i=$((i + 1))
+  done
+  printf '%s\n' "$submit_json"
+}
+
 # --- Scenario 1: CRUD + refresh ---------------------------------------------
 echo "=== Scenario 1: mcp_server CRUD + refresh ==="
 MCP_CMD="node $SCRIPT_DIR/mock_mcp_stdio_server.js"
@@ -176,8 +226,9 @@ else
   FAIL=$((FAIL + 1)); echo "  ❌ create mcp_server failed: $CREATE_RES"
 fi
 
-REFRESH_RES=$(auth "$BASE/ai/mcp/servers/$MCP_ID/refresh" "{}")
-echo "   [debug] refresh body: $REFRESH_RES"
+REFRESH_SUB=$(auth "$BASE/ai/mcp/servers/$MCP_ID/refresh" "{}")
+REFRESH_RES=$(poll_mcp_task "$REFRESH_SUB")
+echo "   [debug] refresh submit: $REFRESH_SUB body: $REFRESH_RES"
 RC=$(printf '%s' "$REFRESH_RES" | sed -n 's/.*"status":"\([a-z]*\)".*/\1/p')
 
 # stdio live probe: if the runtime blocks fork+execve child stdio (design
@@ -213,7 +264,9 @@ if [ -n "$HTTP_MCP_ID" ]; then
 else
   FAIL=$((FAIL + 1)); echo "  ❌ create http mcp_server failed: $HTTP_CREATE"
 fi
-HTTP_REFRESH=$(auth "$BASE/ai/mcp/servers/$HTTP_MCP_ID/refresh" "{}")
+HTTP_REFRESH_SUB=$(auth "$BASE/ai/mcp/servers/$HTTP_MCP_ID/refresh" "{}")
+check "http refresh returned async task_id" "1" "$(echo "$HTTP_REFRESH_SUB" | jq -r 'if (.data.task_id // 0) > 0 then 1 else 0 end')"
+HTTP_REFRESH=$(poll_mcp_task "$HTTP_REFRESH_SUB")
 HTTP_RC=$(printf '%s' "$HTTP_REFRESH" | sed -n 's/.*"status":"\([a-z]*\)".*/\1/p')
 check "http refresh status" "ok" "$HTTP_RC"
 HTTP_TCOUNT=$(printf '%s' "$HTTP_REFRESH" | sed -n 's/.*"tool_count":\([0-9]*\).*/\1/p')

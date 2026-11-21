@@ -6,6 +6,8 @@ import { transactionsApi } from '@/api/transactions'
 import { dailyExpensesApi } from '@/api/daily_expenses'
 import { backupApi } from '@/api/backup'
 import { assetsApi } from '@/api/assets'
+import { testMcpServer, refreshMcpServer } from '@/api/ai-mcp'
+import { testSkill } from '@/api/skills'
 
 vi.mock('@/utils/http', () => ({
   default: {
@@ -181,5 +183,60 @@ describe('tasks API & pollTask', () => {
 
     const all = await assetsApi.rebuildAll()
     expect(all.status).toBe('rebuilt')
+  })
+
+  it('polls MCP probe/refresh and L3 skill test tasks seamlessly', async () => {
+    vi.mocked(http.post)
+      .mockResolvedValueOnce({
+        task_id: 71,
+        task_type: 'mcp_server_refresh',
+        status: 'pending',
+        deduplicated: false,
+      })
+      .mockResolvedValueOnce({
+        task_id: 72,
+        task_type: 'mcp_server_refresh',
+        status: 'pending',
+        deduplicated: true,
+      })
+      .mockResolvedValueOnce({
+        task_id: 73,
+        task_type: 'skill_test',
+        status: 'pending',
+        deduplicated: false,
+      })
+    vi.mocked(http.get)
+      .mockResolvedValueOnce({
+        id: 71,
+        status: 'completed',
+        progress: 100,
+        message: '已完成',
+        result: { server_id: 5, status: 'ok', tool_count: 3 },
+      })
+      .mockResolvedValueOnce({
+        id: 72,
+        status: 'completed',
+        progress: 100,
+        message: '已完成',
+        result: { server_id: 5, status: 'ok', tool_count: 3 },
+      })
+      .mockResolvedValueOnce({
+        id: 73,
+        status: 'completed',
+        progress: 100,
+        message: '已完成',
+        result: { status: 'success', mode: 'l3', output: 'ok' },
+      })
+
+    const probe = await testMcpServer(5)
+    expect(probe.status).toBe('ok')
+    expect(probe.tool_count).toBe(3)
+
+    const refreshed = await refreshMcpServer(5)
+    expect(refreshed.tool_count).toBe(3)
+
+    const l3 = await testSkill(9, '{"x":1}')
+    expect(l3.status).toBe('success')
+    expect(l3.mode).toBe('l3')
   })
 })
