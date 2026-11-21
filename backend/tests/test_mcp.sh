@@ -246,13 +246,21 @@ curl -sN --max-time 60 -b "$JAR" -X POST "$BASE/ai/chat" \
   -d '{"content":"echo 一下","provider":"mockai","model":"mock-model"}' \
   > "$CHAT_BODY" 2>/dev/null &
 CPID=$!
-for _ in $(seq 1 240); do
-  if grep -q -E 'event: (done|error)' "$CHAT_BODY" 2>/dev/null; then
-    sleep 0.05
-    break
-  fi
-  kill -0 "$CPID" 2>/dev/null || break
-  sleep 0.1
+CHAT_BODY_LEN=0 CHAT_BODY_LEN_PREV=0 CHAT_STALL_WINDOW_S=24
+# Poll with a bounded stall grace: under ASan the first MCP bridge tool
+# call can stall the SSE stream for 30-60s while the sanitizer-instrumented
+# runtime finishes. A curl hard exit (no stream data, no progress) aborts
+# immediately so real regressions are caught fast; a stalled stream with
+# partial data gets one grace window before the poll gives up.
+CHATELAP_START=$(date +%s)
+for _ in $(seq 1 600); do
+  if grep -q -E "event: (done|error)" "$CHAT_BODY" 2>/dev/null; then sleep 0.05; break; fi
+  if [ -f "$CHAT_BODY" ]; then CHAT_BODY_LEN=$(stat -c%s "$CHAT_BODY" 2>/dev/null || echo 0); fi
+  if ! kill -0 "$CPID" 2>/dev/null; then break; fi
+  CHATELAP_NOW=$(date +%s); CHATELAP=$(( CHATELAP_NOW - CHATELAP_START ))
+  if [ "$CHAT_BODY_LEN" -eq "$CHAT_BODY_LEN_PREV" ] && [ "$CHATELAP" -ge "$CHAT_STALL_WINDOW_S" ]; then break; fi
+  CHAT_BODY_LEN_PREV=$CHAT_BODY_LEN
+  sleep 0.05
 done
 kill "$CPID" 2>/dev/null || true
 wait "$CPID" 2>/dev/null || true
