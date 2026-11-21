@@ -168,6 +168,13 @@ export async function encryptPayload(data: Uint8Array): Promise<string> {
   }
 }
 
+export class CryptoStorageDecryptError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'CryptoStorageDecryptError'
+  }
+}
+
 /**
  * 解密本地持久化的载荷（透明兼容历史旧格式）
  * @param saved 本地存储的字符串
@@ -178,27 +185,33 @@ export async function decryptPayload(saved: string): Promise<Uint8Array> {
     return new Uint8Array(0)
   }
 
-  // 1. 加密格式：enc:v1:<iv_b64>:<ciphertext_b64>
+  // 1. 加密格式：enc:v1:<iv_b64>:<ciphertext_b64> — 绝不降级到明文解析，防止密文被静默当成损坏库覆盖
   if (saved.startsWith('enc:v1:')) {
     const parts = saved.split(':')
-    if (parts.length === 4 && parts[2] && parts[3]) {
-      const ivB64 = parts[2]
-      const cipherB64 = parts[3]
-      const key = await getCryptoKey()
-      if (key && typeof window !== 'undefined' && window.crypto && window.crypto.subtle) {
-        try {
-          const iv = base64ToBytes(ivB64)
-          const cipherBytes = base64ToBytes(cipherB64)
-          const decryptedBuffer = await window.crypto.subtle.decrypt(
-            { name: 'AES-GCM', iv },
-            key,
-            cipherBytes
-          )
-          return new Uint8Array(decryptedBuffer)
-        } catch (err) {
-          console.error('[crypto-storage] Decryption failed:', err)
-        }
-      }
+    if (parts.length !== 4 || !parts[2] || !parts[3]) {
+      throw new CryptoStorageDecryptError('Invalid encrypted local storage payload format')
+    }
+    if (typeof window === 'undefined' || !window.crypto || !window.crypto.subtle) {
+      throw new CryptoStorageDecryptError('WebCrypto API unavailable to decrypt local storage payload')
+    }
+    const key = await getCryptoKey()
+    if (!key) {
+      throw new CryptoStorageDecryptError('Missing AES-GCM decryption key for local storage payload')
+    }
+    try {
+      const iv = base64ToBytes(parts[2])
+      const cipherBytes = base64ToBytes(parts[3])
+      const decryptedBuffer = await window.crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv },
+        key,
+        cipherBytes
+      )
+      return new Uint8Array(decryptedBuffer)
+    } catch (err) {
+      console.error('[crypto-storage] Decryption failed:', err)
+      throw new CryptoStorageDecryptError(
+        err instanceof Error ? `Failed to decrypt local storage payload: ${err.message}` : 'Failed to decrypt local storage payload'
+      )
     }
   }
 

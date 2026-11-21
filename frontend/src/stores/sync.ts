@@ -47,6 +47,21 @@ function isAuthError(e: any): boolean {
 }
 
 /**
+ * 统一解析同步时间戳，将后端无时区后缀的 UTC 时间字符串（如 `2026-11-21 12:00:00`）按 UTC 解析，避免本地时区偏移
+ */
+export function parseSyncTimestamp(ts: unknown): number {
+  if (!ts || typeof ts !== 'string') return 0
+  const trimmed = ts.trim()
+  if (!trimmed) return 0
+  let normalized = trimmed
+  if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d+)?$/.test(trimmed)) {
+    normalized = trimmed.replace(' ', 'T') + 'Z'
+  }
+  const ms = Date.parse(normalized)
+  return Number.isNaN(ms) ? 0 : ms
+}
+
+/**
  * 离线同步 Pinia Store
  */
 export const useSyncStore = defineStore('sync', () => {
@@ -58,6 +73,10 @@ export const useSyncStore = defineStore('sync', () => {
   const lastSyncAt = ref<string | null>(null)
   /** 待推送同步的任务数量计算属性 */
   const pendingCount = computed(() => queue.value.filter((q) => q.synced === 0).length)
+  /** 处于冲突状态、需人工处理的队列项 */
+  const conflicts = computed(() => queue.value.filter((q) => q.synced === 0 && q.conflict === 1))
+  /** 实际等待自动推送的非冲突任务数量 */
+  const activePendingCount = computed(() => queue.value.filter((q) => q.synced === 0 && q.conflict === 0).length)
 
   /**
    * 从本地 SQLite 数据库中加载所有未同步 (synced = 0) 的队列项
@@ -216,15 +235,16 @@ export const useSyncStore = defineStore('sync', () => {
     const pushedInCycle = new Map<string, Set<number>>()
     loadQueue()
     for (const item of queue.value) {
+      if (item.conflict === 1) continue
       const api = API_BY_TABLE[item.table_name]
       if (!api) continue
       // 实时读取队列行：record_id 可能已被本轮更早的 create 重映射（资产建占位 ID
       // → 服务端 ID），payload 也可能被 remapAssetRefs 改写，必须用最新版本推送。
       const fresh = rowsFrom(query(
-        'SELECT record_id, operation, payload, ledger_id FROM sync_queue WHERE id = ?',
+        'SELECT record_id, operation, payload, ledger_id, conflict FROM sync_queue WHERE id = ?',
         [item.id]
       ))[0]
-      if (!fresh) continue
+      if (!fresh || Number(fresh.conflict) === 1) continue
       const recordId = Number(fresh.record_id)
       const operation = fresh.operation as SyncQueueItem['operation']
       const itemLedgerId = Number(fresh.ledger_id || item.ledger_id || 0)
@@ -315,8 +335,8 @@ export const useSyncStore = defineStore('sync', () => {
             }
             const local = query(`SELECT * FROM ${table} WHERE id = ?`, [remote.id])
             const localRow = rowsFrom(local)[0]
-            const localUpdated = localRow?.updated_at ? new Date(localRow.updated_at as string).getTime() : 0
-            const remoteUpdated = remote.updated_at ? new Date(remote.updated_at).getTime() : 0
+            const localUpdated = parseSyncTimestamp(localRow?.updated_at)
+            const remoteUpdated = parseSyncTimestamp(remote.updated_at)
             if (!localRow || remoteUpdated >= localUpdated) {
               upsertLocal(table, remote)
             }
@@ -402,6 +422,25 @@ export const useSyncStore = defineStore('sync', () => {
   }
 
   /**
+   * 清除冲突标记并重新尝试同步
+   */
+  async function resolveConflictRetry(queueId: number): Promise<void> {
+    run('UPDATE sync_queue SET conflict = 0 WHERE id = ?', [queueId])
+    persist()
+    loadQueue()
+    await syncNow()
+  }
+
+  /**
+   * 放弃冲突项（将其从待推送队列移除，等待后续 pullRemote 与服务端对齐）
+   */
+  function resolveConflictDiscard(queueId: number): void {
+    run('DELETE FROM sync_queue WHERE id = ?', [queueId])
+    persist()
+    loadQueue()
+  }
+
+  /**
    * 重置同步 Store (登出时调用)：清空内存队列与同步位，避免上一账号的离线
    * 写操作被下一账号 syncNow() 顶着新 token 推出去；同时丢弃本地库，
    * 下次登录 init() 会重建，天然按账号隔离。
@@ -418,9 +457,13 @@ export const useSyncStore = defineStore('sync', () => {
     syncing,
     lastSyncAt,
     pendingCount,
+    activePendingCount,
+    conflicts,
     enqueue,
     markSynced,
     markConflict,
+    resolveConflictRetry,
+    resolveConflictDiscard,
     pushLocal,
     pullRemote,
     syncNow,

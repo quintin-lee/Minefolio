@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { encryptPayload, decryptPayload } from '@/utils/crypto-storage'
+import { encryptPayload, decryptPayload, CryptoStorageDecryptError } from '@/utils/crypto-storage'
 
 describe('crypto-storage', () => {
   it('encrypts Uint8Array and returns enc:v1 prefix', async () => {
@@ -27,5 +27,10 @@ describe('crypto-storage', () => {
     const jsonSaved = JSON.stringify(Array.from(original))
     const decrypted = await decryptPayload(jsonSaved)
     expect(decrypted).toEqual(original)
+  })
+
+  it('throws CryptoStorageDecryptError instead of falling back when enc:v1 payload is corrupted', async () => {
+    await expect(decryptPayload('enc:v1:AAAA:invalidCiphertext')).rejects.toBeInstanceOf(CryptoStorageDecryptError)
+    await expect(decryptPayload('enc:v1:broken')).rejects.toBeInstanceOf(CryptoStorageDecryptError)
   })
 })
