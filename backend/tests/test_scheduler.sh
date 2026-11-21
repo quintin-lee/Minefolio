@@ -94,8 +94,8 @@ CREATE_RES=$(curl -s -X POST "$BASE/scheduler/jobs" \
   }')
 echo "$CREATE_RES" | jq .
 test "$(echo "$CREATE_RES" | jq -r '.code')" = "0"
-JOB_ID=$(echo "$CREATE_RES" | jq -r '.data.id | floor')
-test -n "$JOB_ID" && test "$JOB_ID" -gt 0
+JOB_ID=$(echo "$CREATE_RES" | jq -r 'if (.data.id|type) == "string" then .data.id|tonumber else .data.id end')
+test -n "$JOB_ID" && test "$JOB_ID" != "0" && test "$JOB_ID" != "null"
 echo "Created Job ID: $JOB_ID"
 
 # 5. Test GET /api/scheduler/jobs (List: 7 built-in + 1 custom = 8 total)
