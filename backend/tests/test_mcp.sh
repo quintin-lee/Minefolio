@@ -250,7 +250,7 @@ CPID=$!
 # cold-start slow (shadow-memory init + libcurl global init), so use 0.5s
 # poll interval to reduce CPU load on CI runners while staying responsive.
 CHATELAP_START=$(date +%s)
-while [ "$(date +%s)" -lt "$(( CHATELAP_START + 90 ))" ]; do
+while [ "$(date +%s)" -lt "$(( CHATELAP_START + 120 ))" ]; do
   if grep -q -E "event: (done|error)" "$CHAT_BODY" 2>/dev/null; then sleep 0.05; break; fi
   if ! kill -0 "$CPID" 2>/dev/null; then break; fi
   sleep 0.5
@@ -274,7 +274,7 @@ if ! grep -q 'event: done' "$CHAT_BODY" 2>/dev/null; then
       > "$CHAT_BODY" 2>/dev/null &
     CPID=$!
     CHATELAP_START=$(date +%s)
-    while [ "$(date +%s)" -lt "$(( CHATELAP_START + 90 ))" ]; do
+    while [ "$(date +%s)" -lt "$(( CHATELAP_START + 120 ))" ]; do
       if grep -q -E 'event: (done|error)' "$CHAT_BODY" 2>/dev/null; then break; fi
       if ! kill -0 "$CPID" 2>/dev/null; then break; fi
       sleep 0.5
