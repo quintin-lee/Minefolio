@@ -202,16 +202,26 @@ assert_eq "Historical FX PnL matches rate delta (350.0)" "$MSFT_FX_PNL" "350.0"
 
 
 
-echo "=== 4. Test Receipt OCR Scanning ==="
+echo "=== 4. Test Receipt OCR Scanning (Async) ==="
+# Missing image should fail fast synchronously with code=1002
+SCAN_EMPTY=$(curl -s -X POST "$BASE/receipts/scan" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{}")
+assert_eq "POST /api/receipts/scan without image fails fast (1002)" "$(echo "$SCAN_EMPTY" | jq -r '.code | floor')" "1002"
+
 # Mock receipt image base64
 DUMMY_IMG="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
-SCAN_RES=$(curl -s -X POST "$BASE/receipts/scan" \
+SCAN_SUB=$(curl -s -X POST "$BASE/receipts/scan" \
     -H "Authorization: Bearer $TOKEN" \
     -H "Content-Type: application/json" \
     -d "{\"image\":\"$DUMMY_IMG\"}")
-SCAN_CODE=$(echo "$SCAN_RES" | jq -r '.code | floor')
+SCAN_CODE=$(echo "$SCAN_SUB" | jq -r '.code | floor')
 assert_eq "POST /api/receipts/scan returns code 0" "$SCAN_CODE" "0"
+SCAN_TID=$(echo "$SCAN_SUB" | jq -r '.data.task_id // 0 | floor')
+assert_nonzero "POST /api/receipts/scan returned async task_id" "$SCAN_TID"
 
+SCAN_RES=$(db_poll_task "${BASE%/api}" "Authorization: Bearer $TOKEN" "$SCAN_SUB")
 SCAN_AMT=$(echo "$SCAN_RES" | jq -r '.data.amount')
 assert_nonzero "Receipt scan recognized amount" "$SCAN_AMT"
 

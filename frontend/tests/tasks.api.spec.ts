@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import http from '@/utils/http'
 import { pollTask, resolveMaybeAsync, isAsyncTaskSubmission } from '@/api/tasks'
+import { receiptsApi } from '@/api/receipts'
 
 vi.mock('@/utils/http', () => ({
   default: {
@@ -49,5 +50,36 @@ describe('tasks API & pollTask', () => {
     const direct = await resolveMaybeAsync({ status: 'ok', mode: 'l2' })
     expect(direct).toEqual({ status: 'ok', mode: 'l2' })
     expect(http.get).not.toHaveBeenCalled()
+  })
+
+  it('polls receipt OCR scan tasks via receiptsApi.scan', async () => {
+    vi.mocked(http.post).mockResolvedValueOnce({
+      task_id: 31,
+      task_type: 'receipt_scan',
+      status: 'pending',
+      deduplicated: false,
+    })
+    vi.mocked(http.get).mockResolvedValueOnce({
+      id: 31,
+      status: 'completed',
+      progress: 100,
+      message: '已完成',
+      result: {
+        date: '2026-11-21',
+        amount: 68.0,
+        type: 'expense',
+        category_id: 1,
+        category_name: '餐饮美食',
+        counterparty: '离线智能识图凭据',
+        description: '本地票据/发票',
+        currency: 'CNY',
+        confidence: 0.85,
+      },
+    })
+
+    const res = await receiptsApi.scan({ image: 'data:image/png;base64,AAA=' })
+    expect(http.post).toHaveBeenCalledWith('/receipts/scan', { image: 'data:image/png;base64,AAA=' })
+    expect(http.get).toHaveBeenCalledWith('/tasks/31')
+    expect(res.amount).toBe(68.0)
   })
 })
