@@ -744,6 +744,35 @@ asset_usecase_query_logs(void*                           pool,
 }
 
 int
+asset_usecase_validate_rebuild_single(void*                   pool,
+                                      int64_t                 user_id,
+                                      int64_t                 id,
+                                      asset_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
+    memset(out_res, 0, sizeof(*out_res));
+    if (!pool || user_id <= 0 || id <= 0) {
+        out_res->code = 1002;
+        snprintf(out_res->message, sizeof(out_res->message), "参数错误");
+        return -1;
+    }
+
+    csilk_json_t* cur = asset_get_raw((csilk_db_pool_t*)pool, user_id, id);
+    if (!cur || csilk_json_array_size(cur) == 0) {
+        if (cur) {
+            csilk_json_free(cur);
+        }
+        out_res->code = 1003;
+        snprintf(out_res->message, sizeof(out_res->message), "资产不存在");
+        return -1;
+    }
+    csilk_json_free(cur);
+    return 0;
+}
+
+int
 asset_usecase_rebuild_single(void*                   pool,
                              int64_t                 user_id,
                              int64_t                 id,

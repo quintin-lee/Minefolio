@@ -5,6 +5,7 @@ import { receiptsApi } from '@/api/receipts'
 import { transactionsApi } from '@/api/transactions'
 import { dailyExpensesApi } from '@/api/daily_expenses'
 import { backupApi } from '@/api/backup'
+import { assetsApi } from '@/api/assets'
 
 vi.mock('@/utils/http', () => ({
   default: {
@@ -143,5 +144,42 @@ describe('tasks API & pollTask', () => {
     expect(http.post).toHaveBeenCalledWith('/system/backup/create')
     expect(http.get).toHaveBeenCalledWith('/tasks/51')
     expect(res.filename).toBe('minefolio_backup_20261121_120000.db')
+  })
+
+  it('polls ledger rebuild tasks via assetsApi.rebuildSingle and assetsApi.rebuildAll', async () => {
+    vi.mocked(http.post)
+      .mockResolvedValueOnce({
+        task_id: 61,
+        task_type: 'asset_rebuild_single',
+        status: 'pending',
+        deduplicated: false,
+      })
+      .mockResolvedValueOnce({
+        task_id: 62,
+        task_type: 'asset_rebuild_all',
+        status: 'pending',
+        deduplicated: false,
+      })
+    vi.mocked(http.get)
+      .mockResolvedValueOnce({
+        id: 61,
+        status: 'completed',
+        progress: 100,
+        message: '已完成',
+        result: { asset_id: 10, balance: '5000.00', tx_count: 4 },
+      })
+      .mockResolvedValueOnce({
+        id: 62,
+        status: 'completed',
+        progress: 100,
+        message: '已完成',
+        result: { status: 'rebuilt' },
+      })
+
+    const single = await assetsApi.rebuildSingle(10)
+    expect(single.asset_id).toBe(10)
+
+    const all = await assetsApi.rebuildAll()
+    expect(all.status).toBe('rebuilt')
   })
 })

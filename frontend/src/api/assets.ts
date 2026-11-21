@@ -5,6 +5,7 @@
 
 // frontend/src/api/assets.ts
 import http from '@/utils/http'
+import { resolveMaybeAsync, type AsyncTaskSubmission } from './tasks'
 import type { AxiosRequestConfig } from 'axios'
 import type { Asset, AssetInput, PageResult } from '@/types'
 
@@ -70,5 +71,23 @@ export const assetsApi = {
    * @returns 资产详情对象
    */
   detail: (id: number) => http.get<Asset>(`/assets/${id}`),
+
+  /**
+   * 触发单资产从底层交易事实重建持仓或余额
+   * @route POST /api/assets/:id/rebuild
+   */
+  rebuildSingle: async (id: number) => {
+    const res = await http.post<Record<string, unknown> | AsyncTaskSubmission>(`/assets/${id}/rebuild`)
+    return resolveMaybeAsync<Record<string, unknown>>(res, { timeoutMs: 120000 })
+  },
+
+  /**
+   * 触发整个投资组合从底层交易事实全量重建
+   * @route POST /api/assets/rebuild
+   */
+  rebuildAll: async () => {
+    const res = await http.post<{ status: string } | AsyncTaskSubmission>('/assets/rebuild')
+    return resolveMaybeAsync<{ status: string }>(res, { timeoutMs: 120000 })
+  },
 }
 

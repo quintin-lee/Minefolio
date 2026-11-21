@@ -45,6 +45,14 @@ int asset_usecase_query_logs(void*                           pool,
                              int64_t*                        out_total);
 
 /**
+ * @brief 校验单资产是否存在且归属当前用户（重建前快速同步门禁）
+ */
+int asset_usecase_validate_rebuild_single(void*                   pool,
+                                          int64_t                 user_id,
+                                          int64_t                 id,
+                                          asset_usecase_result_t* out_res);
+
+/**
  * @brief 单资产从底层交易事实重建重算
  */
 int asset_usecase_rebuild_single(void*                   pool,

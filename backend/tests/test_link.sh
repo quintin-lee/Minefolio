@@ -711,10 +711,12 @@ ORIG_VAL=$(sqlite3 "$DB" "SELECT printf('%.2f', current_value) FROM assets WHERE
 # 2. 人为篡改/清空该资产物化状态
 sqlite3 "$DB" "UPDATE assets SET quantity=0, cost_basis=0, net_value=0, current_value=0 WHERE id=$TEST_AST_ID"
 
-# 3. 调用单资产重建 API: POST /api/assets/:id/rebuild
-REBUILD_RES=$(curl -s -X POST -H "$AUTH" "$BASE/assets/$TEST_AST_ID/rebuild")
-REBUILD_CODE=$(echo "$REBUILD_RES" | jq -r '.code | floor')
+# 3. 调用单资产重建 API: POST /api/assets/:id/rebuild (Async)
+REBUILD_SUB=$(curl -s -X POST -H "$AUTH" "$BASE/assets/$TEST_AST_ID/rebuild")
+REBUILD_CODE=$(echo "$REBUILD_SUB" | jq -r '.code | floor')
 check "POST /assets/:id/rebuild 单资产重建 code=0" "0" "$REBUILD_CODE"
+check "POST /assets/:id/rebuild 返回异步 task_id" "1" "$(echo "$REBUILD_SUB" | jq -r 'if (.data.task_id // 0) > 0 then 1 else 0 end')"
+REBUILD_RES=$(db_poll_task "${BASE%/api}" "$AUTH" "$REBUILD_SUB")
 
 # 4. 验证数据库中该资产状态是否被 Ledger Engine 从交易事实精确还原
 REST_QTY=$(sqlite3 "$DB" "SELECT printf('%.4f', quantity) FROM assets WHERE id=$TEST_AST_ID")
@@ -724,10 +726,12 @@ check "单资产重建后 quantity 精确还原" "$ORIG_QTY" "$REST_QTY"
 check "单资产重建后 cost_basis 精确还原" "$ORIG_COST" "$REST_COST"
 check "单资产重建后 current_value 精确还原" "$ORIG_VAL" "$REST_VAL"
 
-# 5. 全量组合重建 API: POST /api/assets/rebuild
-ALL_REBUILD_RES=$(curl -s -X POST -H "$AUTH" "$BASE/assets/rebuild")
-ALL_REBUILD_CODE=$(echo "$ALL_REBUILD_RES" | jq -r '.code | floor')
+# 5. 全量组合重建 API: POST /api/assets/rebuild (Async)
+ALL_REBUILD_SUB=$(curl -s -X POST -H "$AUTH" "$BASE/assets/rebuild")
+ALL_REBUILD_CODE=$(echo "$ALL_REBUILD_SUB" | jq -r '.code | floor')
 check "POST /assets/rebuild 全量投资组合重建 code=0" "0" "$ALL_REBUILD_CODE"
+check "POST /assets/rebuild 返回异步 task_id" "1" "$(echo "$ALL_REBUILD_SUB" | jq -r 'if (.data.task_id // 0) > 0 then 1 else 0 end')"
+ALL_REBUILD_RES=$(db_poll_task "${BASE%/api}" "$AUTH" "$ALL_REBUILD_SUB")
 AST_COUNT=$(sqlite3 "$DB" "SELECT COUNT(*) FROM assets WHERE user_id=(SELECT id FROM users WHERE username='linktest')")
 test "$AST_COUNT" -gt 0 && AST_PASS="1" || AST_PASS="0"
 check "全量重建后数据库资产数量 > 0" "1" "$AST_PASS"

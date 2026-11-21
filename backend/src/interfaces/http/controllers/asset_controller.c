@@ -2,6 +2,7 @@
 #include "application/asset/commands.h"
 #include "application/asset/dtos.h"
 #include "application/asset/usecases.h"
+#include "application/task/async_task_manager.h"
 #include "common/ctx.h"
 #include "common/db.h"
 #include "common/response.h"
@@ -243,11 +244,83 @@ api_assets_logs_list(csilk_ctx_t* c)
     respond_page_ok(c, result, total, page, page_size);
 }
 
+typedef struct {
+    int64_t asset_id;
+} asset_rebuild_single_task_arg_t;
+
+static int
+asset_rebuild_single_task_fn(void*   pool,
+                             int64_t task_id,
+                             int64_t user_id,
+                             int64_t ledger_id,
+                             void*   arg,
+                             char**  out_result_json,
+                             char*   err_buf,
+                             size_t  err_cap)
+{
+    (void)ledger_id;
+    asset_rebuild_single_task_arg_t* targ = (asset_rebuild_single_task_arg_t*)arg;
+    if (!targ || targ->asset_id <= 0) {
+        snprintf(err_buf, err_cap, "参数错误");
+        return -1;
+    }
+
+    mf_async_task_update_progress(pool, task_id, 20, "正在从交易事实重建单资产持仓与余额");
+
+    csilk_json_t*          data = NULL;
+    asset_usecase_result_t res = {0};
+    int rc = asset_usecase_rebuild_single(pool, user_id, targ->asset_id, &data, &res);
+    if (rc == 0 && res.code == 0 && data) {
+        if (out_result_json) {
+            *out_result_json = csilk_json_serialize(data, NULL);
+        }
+        csilk_json_free(data);
+        return 0;
+    }
+    if (data) {
+        csilk_json_free(data);
+    }
+
+    snprintf(err_buf, err_cap, "%s", res.message[0] ? res.message : "重建失败");
+    return -1;
+}
+
+static int
+asset_rebuild_all_task_fn(void*   pool,
+                          int64_t task_id,
+                          int64_t user_id,
+                          int64_t ledger_id,
+                          void*   arg,
+                          char**  out_result_json,
+                          char*   err_buf,
+                          size_t  err_cap)
+{
+    (void)ledger_id;
+    (void)arg;
+    mf_async_task_update_progress(pool, task_id, 20, "正在从交易事实全量重建投资组合");
+
+    asset_usecase_result_t res = {0};
+    int                    rc = asset_usecase_rebuild_all(pool, user_id, &res);
+    if (rc == 0 && res.code == 0) {
+        csilk_json_t* data = csilk_json_object();
+        csilk_json_add_string(data, "status", "rebuilt");
+        if (out_result_json) {
+            *out_result_json = csilk_json_serialize(data, NULL);
+        }
+        csilk_json_free(data);
+        return 0;
+    }
+
+    snprintf(err_buf, err_cap, "%s", res.message[0] ? res.message : "组合账本重建失败");
+    return -1;
+}
+
 void
 api_assets_rebuild_single(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
-    if (user_id < 0) {
+    if (user_id <= 0) {
+        respond_unauthorized(c);
         return;
     }
 
@@ -258,37 +331,72 @@ api_assets_rebuild_single(csilk_ctx_t* c)
         return;
     }
 
-    csilk_json_t*          data = NULL;
+    csilk_db_pool_t*       pool = db_get_pool();
     asset_usecase_result_t res = {0};
-    int rc = asset_usecase_rebuild_single(db_get_pool(), user_id, aid, &data, &res);
-
-    if (rc == 0 && res.code == 0 && data) {
-        respond_ok(c, data);
-    } else if (res.code == 1003) {
-        respond_not_found(c);
-    } else {
-        respond_error(c, 500, res.message[0] ? res.message : "重建失败");
+    if (asset_usecase_validate_rebuild_single(pool, user_id, aid, &res) != 0) {
+        if (res.code == 1003) {
+            respond_not_found(c);
+        } else {
+            respond_error(c, res.code ? res.code : 500, res.message[0] ? res.message : "重建失败");
+        }
+        return;
     }
+
+    asset_rebuild_single_task_arg_t* arg = calloc(1, sizeof(*arg));
+    if (!arg) {
+        respond_error(c, 500, "内存不足");
+        return;
+    }
+    arg->asset_id = aid;
+
+    char dedupe_key[64];
+    snprintf(dedupe_key, sizeof(dedupe_key), "ledger:rebuild:%lld", (long long)aid);
+
+    bool    deduplicated = false;
+    int64_t task_id = mf_async_task_submit(pool,
+                                           user_id,
+                                           0,
+                                           "asset_rebuild_single",
+                                           dedupe_key,
+                                           "正在排队重建资产账本",
+                                           asset_rebuild_single_task_fn,
+                                           arg,
+                                           free,
+                                           &deduplicated);
+    if (task_id <= 0) {
+        respond_error(c, 500, "提交异步资产重建任务失败");
+        return;
+    }
+
+    mf_async_task_respond_submitted(c, task_id, "asset_rebuild_single", deduplicated, NULL);
 }
 
 void
 api_assets_rebuild_all(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
-    if (user_id < 0) {
+    if (user_id <= 0) {
+        respond_unauthorized(c);
         return;
     }
 
-    asset_usecase_result_t res = {0};
-    int                    rc = asset_usecase_rebuild_all(db_get_pool(), user_id, &res);
-
-    if (rc == 0 && res.code == 0) {
-        csilk_json_t* data = csilk_json_object();
-        csilk_json_add_string(data, "status", "rebuilt");
-        respond_ok(c, data);
-    } else {
-        respond_error(c, 500, "组合账本重建失败");
+    bool    deduplicated = false;
+    int64_t task_id = mf_async_task_submit(db_get_pool(),
+                                           user_id,
+                                           0,
+                                           "asset_rebuild_all",
+                                           "ledger:rebuild:all",
+                                           "正在排队全量重建投资组合账本",
+                                           asset_rebuild_all_task_fn,
+                                           NULL,
+                                           NULL,
+                                           &deduplicated);
+    if (task_id <= 0) {
+        respond_error(c, 500, "提交异步组合重建任务失败");
+        return;
     }
+
+    mf_async_task_respond_submitted(c, task_id, "asset_rebuild_all", deduplicated, NULL);
 }
 
 void
