@@ -246,21 +246,14 @@ curl -sN --max-time 60 -b "$JAR" -X POST "$BASE/ai/chat" \
   -d '{"content":"echo 一下","provider":"mockai","model":"mock-model"}' \
   > "$CHAT_BODY" 2>/dev/null &
 CPID=$!
-CHAT_BODY_LEN=0 CHAT_BODY_LEN_PREV=0 CHAT_STALL_WINDOW_S=24
-# Poll with a bounded stall grace: under ASan the first MCP bridge tool
-# call can stall the SSE stream for 30-60s while the sanitizer-instrumented
-# runtime finishes. A curl hard exit (no stream data, no progress) aborts
-# immediately so real regressions are caught fast; a stalled stream with
-# partial data gets one grace window before the poll gives up.
+# Poll up to 90s for done/error. Under ASan the first MCP bridge call is
+# cold-start slow (shadow-memory init + libcurl global init), so use 0.5s
+# poll interval to reduce CPU load on CI runners while staying responsive.
 CHATELAP_START=$(date +%s)
-for _ in $(seq 1 600); do
+while [ "$(date +%s)" -lt "$(( CHATELAP_START + 90 ))" ]; do
   if grep -q -E "event: (done|error)" "$CHAT_BODY" 2>/dev/null; then sleep 0.05; break; fi
-  if [ -f "$CHAT_BODY" ]; then CHAT_BODY_LEN=$(stat -c%s "$CHAT_BODY" 2>/dev/null || echo 0); fi
   if ! kill -0 "$CPID" 2>/dev/null; then break; fi
-  CHATELAP_NOW=$(date +%s); CHATELAP=$(( CHATELAP_NOW - CHATELAP_START ))
-  if [ "$CHAT_BODY_LEN" -eq "$CHAT_BODY_LEN_PREV" ] && [ "$CHATELAP" -ge "$CHAT_STALL_WINDOW_S" ]; then break; fi
-  CHAT_BODY_LEN_PREV=$CHAT_BODY_LEN
-  sleep 0.05
+  sleep 0.5
 done
 kill "$CPID" 2>/dev/null || true
 wait "$CPID" 2>/dev/null || true
@@ -280,18 +273,10 @@ if ! grep -q 'event: done' "$CHAT_BODY" 2>/dev/null; then
       -d '{"content":"echo 一下","provider":"mockai","model":"mock-model"}' \
       > "$CHAT_BODY" 2>/dev/null &
     CPID=$!
-    CHAT_ELAP_START=$(date +%s)
-    CHAT_STALL_S=60
-    while [ "$(date +%s)" -lt "$(( CHAT_ELAP_START + 90 + 30 ))" ]; do
-      if grep -q -E 'event: (done|error)' "$CHAT_BODY" 2>/dev/null; then
-        break
-      fi
-      CHAT_ELAP_NOW=$(date +%s)
-      CHAT_ELAP=$(( CHAT_ELAP_NOW - CHAT_ELAP_START ))
-      if [ "$CHAT_ELAP" -ge "$CHAT_STALL_S" ] && [ "$(stat -c%s "$CHAT_BODY" 2>/dev/null || echo 0)" -eq 0 ]; then
-        # No data at all after 60s -> hard stall, give up on this attempt
-        break
-      fi
+    CHATELAP_START=$(date +%s)
+    while [ "$(date +%s)" -lt "$(( CHATELAP_START + 90 ))" ]; do
+      if grep -q -E 'event: (done|error)' "$CHAT_BODY" 2>/dev/null; then break; fi
+      if ! kill -0 "$CPID" 2>/dev/null; then break; fi
       sleep 0.5
     done
     kill "$CPID" 2>/dev/null || true
