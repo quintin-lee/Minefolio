@@ -95,7 +95,15 @@ jobs:
           ./tests/test_ledgers.sh
           ./tests/test_fx_oauth.sh
           ./tests/test_ai_loop_hardening.sh
+          ./tests/test_ai_truncate.sh
+          ./tests/test_mcp.sh
           ./tests/test_mcp_server.sh
+          ./tests/test_report_isolation.sh
+          ./tests/test_ai_news_isolation.sh
+          ./tests/test_scheduler.sh
+          ./tests/test_im_bot.sh
+          ./tests/test_im_bind_auth.sh
+          ./tests/test_gateway.sh
 
   backend-sanitizers-postgres:
     name: Backend ASan & UBSan Tests (PostgreSQL)
@@ -165,3 +173,7 @@ jobs:
           ./tests/test_fx_oauth.sh
           ./tests/test_ai_loop_hardening.sh
           ./tests/test_mcp_server.sh
+          ./tests/test_scheduler.sh
+          ./tests/test_im_bot.sh
+          ./tests/test_im_bind_auth.sh
+          ./tests/test_gateway.sh

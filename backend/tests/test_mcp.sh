@@ -17,7 +17,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/cgroup_helper.sh"
 BUILD_DIR="${MINEFOLIO_BUILD_DIR:-$(cd "$SCRIPT_DIR/../build" && pwd)}"
-PORT="${PORT:-8081}"
+PORT="${PORT:-18090}"
 MOCK_PORT="${MOCK_PORT:-18081}"
 BASE="http://127.0.0.1:$PORT/api"
 DB="$(mktemp -d)/mf_mcp.db"

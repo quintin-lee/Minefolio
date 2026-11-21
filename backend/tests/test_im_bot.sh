@@ -102,12 +102,12 @@ grep_check "chat: unbound flag bound=0" '"bound":0' "$CHAT_NA"
 # --- Case 4: /bind upsert (im_bind token) ---
 BIND_RES=$(req POST /im/qq/bind '{"im_user_id":"qq_user_001"}' "$BIND_TOKEN")
 grep_check "bind: 绑定成功文案" "绑定成功" "$BIND_RES"
-DB_ROW=$(sqlite3 "SELECT scope FROM im_bot_bindings WHERE platform='qq' AND im_user_id='qq_user_001';" 2>/dev/null)
+DB_ROW=$(db_query "SELECT scope FROM im_bot_bindings WHERE platform='qq' AND im_user_id='qq_user_001';" 2>/dev/null)
 check "bind: 行落库 scope=readonly" "$DB_ROW" "readonly"
 
 # --- Case 5: 幂等 upsert (重复 bind 不增行) ---
 req POST /im/qq/bind '{"im_user_id":"qq_user_001"}' "$BIND_TOKEN" > /dev/null
-DUP=$(sqlite3 "SELECT count(*) FROM im_bot_bindings WHERE platform='qq' AND im_user_id='qq_user_001';" 2>/dev/null)
+DUP=$(db_query "SELECT count(*) FROM im_bot_bindings WHERE platform='qq' AND im_user_id='qq_user_001';" 2>/dev/null)
 check "bind: 幂等单行" "$DUP" "1"
 
 # --- Case 6: bindings 列表 (App 侧正常 token) ---
@@ -120,7 +120,7 @@ grep_check "im_bind token: /assets 被拒 (IM bind token 白名单)" 'IM bind to
 
 # --- Case 8: 解绑 (App 侧正常 token) ---
 req DELETE /im/bindings '{"platform":"qq","im_user_id":"qq_user_001"}' "$TOKEN" > /dev/null
-DB_ROW2=$(sqlite3 "SELECT count(*) FROM im_bot_bindings WHERE platform='qq' AND im_user_id='qq_user_001';" 2>/dev/null)
+DB_ROW2=$(db_query "SELECT count(*) FROM im_bot_bindings WHERE platform='qq' AND im_user_id='qq_user_001';" 2>/dev/null)
 check "unbind: 行已删除" "$DB_ROW2" "0"
 
 # --- Case 9: 抢占防护 (防他人绑定码改写本 im_user_id 的归属) ---
@@ -140,7 +140,7 @@ OTHER_BIND_TOKEN=$(echo "$OTHER_BIND" | jq -r '.data.bind_token // empty')
 STEAL=$(req POST /im/qq/bind '{"im_user_id":"qq_user_001"}' "$OTHER_BIND_TOKEN")
 grep_check "抢占防护: 他人绑定码被拒 (1004)" '"code":1004' "$STEAL"
 # 原绑定未被改写 (仍 1 行)
-check "抢占防护: 归属未改写 (仍 1 行)" "$(sqlite3 "SELECT count(*) FROM im_bot_bindings WHERE platform='qq' AND im_user_id='qq_user_001';" 2>/dev/null)" "1"
+check "抢占防护: 归属未改写 (仍 1 行)" "$(db_query "SELECT count(*) FROM im_bot_bindings WHERE platform='qq' AND im_user_id='qq_user_001';" 2>/dev/null)" "1"
 
 echo "----------------------"
 echo "PASS: $PASS  FAIL: $FAIL"
