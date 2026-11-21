@@ -133,9 +133,10 @@ mcp_handle_tools_call(csilk_ctx_t* c, const csilk_json_t* body, int64_t user_id)
     csilk_json_t* args_json = args ? csilk_json_copy((csilk_json_t*)args) : csilk_json_object();
 
     /* 在执行前做 schema 校验（与内置 dispatcher 的 step 3 一致）：
-       未知工具 → -32602 unknown tool；必填/类型不符 → -32602 + 校验器消息。 */
+       未知工具或内部专用工具（internal_only）→ -32602 unknown tool；
+       必填/类型不符 → -32602 + 校验器消息。 */
     const ai_tool_t* tool = ai_tool_find(name);
-    if (!tool) {
+    if (!tool || tool->internal_only) {
         csilk_json_free(args_json);
         csilk_json_free(params);
         mcp_send_response(c, mcp_req_id(body), NULL, -32602, "unknown tool");
