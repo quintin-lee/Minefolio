@@ -91,7 +91,7 @@ All multi-step balance/asset mutations in `application/{transaction,transfer,dai
 ### Ledger Snapshots — Checkpoint Rebuild (V020)
 
 Migration `V020__ledger_snapshots_and_tx_fx.sql` adds:
-- `ledger_snapshots` table: per (user, asset, snapshot_date) position checkpoint (`quantity`, `cost_basis`, `net_value`, `current_value`, `realized_pnl`, `balance`, `tx_checkpoint_date`, `tx_checkpoint_id`), indexed `(user_id, asset_id, snapshot_date DESC)`. Written by `infrastructure/repositories/ledger_snapshot_repo_impl.c`; consumed by `core/ledger/ledger_engine.c` incremental rebuild (`ledger_rebuild_*` starts from the latest checkpoint instead of replaying full history).
+- `ledger_snapshots` table: per (user, asset, snapshot_date) position checkpoint (`quantity`, `cost_basis`, `net_value`, `current_value`, `realized_pnl`, `balance`, `tx_checkpoint_date`, `tx_checkpoint_id`), indexed `(user_id, asset_id, snapshot_date DESC)`. Written by `infrastructure/repositories/ledger_snapshot_repo_impl.c`; consumed by `core/ledger/ledger_rebuild.c` incremental rebuild (`ledger_rebuild_*` starts from the latest checkpoint instead of replaying full history).
 - `transactions.fx_rate_to_cny REAL DEFAULT 1.0`: point-in-time exchange rate stamped at transaction create; historical asset-trend evaluation (`exchange_rate_service.c`) reads the stamped rate instead of today's rate. Backfill sets `1.0` for CNY-denominated assets.
 - **Cascade invalidation**: editing/deleting a transaction dated on/before a snapshot date calls `ledger_snapshot_invalidate_from(pool, user_id, asset_id, from_date)` (`infrastructure/repositories/ledger_snapshot_repo_impl.c`), deleting that snapshot and all downstream ones; next read rebuilds from the prior valid checkpoint. Never write snapshots from use cases directly — go through the engine.
 
@@ -539,7 +539,7 @@ npm run build         # Desktop type-check + build
 npm run build:mobile  # Mobile type-check + build
 ```
 
-Frontend unit tests cover 43 test suites (233 unit tests) including format helpers, crypto, auth store, offline-http sync, chat store race guards, AI thinking/reasoning mode, analysis panel, chat layout decoupling, and AI stream failure handling; the integration test suite (`test_link.sh`) covers the critical paths end-to-end. Under cgroups v2 isolation on multi-core hosts, cap Vitest concurrency (`--pool=forks --poolOptions.forks.maxForks=2`) and give `-m 12G` headroom for `esbuild` transforms.
+Frontend unit tests cover 44 test suites (239 unit tests) including format helpers, crypto, auth store, offline-http sync, chat store race guards, chat composables, AI thinking/reasoning mode, analysis panel, chat layout decoupling, and AI stream failure handling; the integration test suite (`test_link.sh`) covers the critical paths end-to-end. Under cgroups v2 isolation on multi-core hosts, cap Vitest concurrency (`--pool=forks --poolOptions.forks.maxForks=2`) and give `-m 12G` headroom for `esbuild` transforms.
 
 ### Manual Smoke Test
 
