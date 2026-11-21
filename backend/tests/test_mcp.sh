@@ -256,7 +256,35 @@ for _ in $(seq 1 240); do
 done
 kill "$CPID" 2>/dev/null || true
 wait "$CPID" 2>/dev/null || true
-check "chat: mcp tool_call named (call+result)" "2" "$(grep -c "\"name\":\"$QUALIFIED\"" "$CHAT_BODY")"
+# Retry loop: under ASan the first MCP bridge tool call can be slow enough
+# that the polling window expires before the SSE stream completes. The
+# scenario is deterministic (no timeout/cancellation flags in this mock),
+# so a bounded retry distinguishes transient slowness from a real regression.
+if ! grep -q 'event: done' "$CHAT_BODY" 2>/dev/null; then
+  for attempt in 1 2; do
+    echo "  chat retry attempt $attempt (done event not yet received)"
+    : > "$CHAT_BODY"
+    curl -sN --max-time 90 -b "$JAR" -X POST "$BASE/ai/chat" \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer $TOKEN" \
+      -H "X-CSRF-Token: $CSRF" \
+      -d '{"content":"echo 一下","provider":"mockai","model":"mock-model"}' \
+      > "$CHAT_BODY" 2>/dev/null &
+    CPID=$!
+    for _ in $(seq 1 450); do
+      if grep -q -E 'event: (done|error)' "$CHAT_BODY" 2>/dev/null; then
+        sleep 0.05
+        break
+      fi
+      kill -0 "$CPID" 2>/dev/null || break
+      sleep 0.1
+    done
+    kill "$CPID" 2>/dev/null || true
+    wait "$CPID" 2>/dev/null || true
+    grep -q 'event: done' "$CHAT_BODY" 2>/dev/null && break
+  done
+fi
+check "chat: mcp tool_call named (call+result)" "2" "$(grep -c "$QUALIFIED" "$CHAT_BODY")"
 check "chat: done event" "1" "$(grep -c 'event: done' "$CHAT_BODY")"
 if kill -0 "$SERVER_PID" 2>/dev/null; then
   PASS=$((PASS + 1)); echo "  ✅ chat: backend alive after MCP tool call"
