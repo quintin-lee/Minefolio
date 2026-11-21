@@ -389,3 +389,6 @@ add_dependencies(test_wal_checkpoint copy_assets)
 add_minefolio_unit_test(test_db_backup tests/unit/test_db_backup.c pthread sqlite3)
 add_dependencies(test_db_backup copy_assets)
 
+add_minefolio_unit_test(test_async_task_manager tests/unit/test_async_task_manager.c pthread)
+add_dependencies(test_async_task_manager copy_assets)
+

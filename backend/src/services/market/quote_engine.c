@@ -13,23 +13,31 @@
 #include <strings.h>
 #include <time.h>
 
-static char g_market_proxy[256] = {0};
+static char            g_market_proxy[256] = {0};
+static pthread_mutex_t g_proxy_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void
 quote_engine_set_proxy(const char* proxy)
 {
+    pthread_mutex_lock(&g_proxy_mutex);
     if (proxy) {
         strncpy(g_market_proxy, proxy, sizeof(g_market_proxy) - 1);
         g_market_proxy[sizeof(g_market_proxy) - 1] = '\0';
     } else {
         g_market_proxy[0] = '\0';
     }
+    pthread_mutex_unlock(&g_proxy_mutex);
 }
 
 const char*
 quote_engine_get_proxy(void)
 {
-    return g_market_proxy;
+    _Thread_local static char tls_proxy[256];
+    pthread_mutex_lock(&g_proxy_mutex);
+    strncpy(tls_proxy, g_market_proxy, sizeof(tls_proxy) - 1);
+    tls_proxy[sizeof(tls_proxy) - 1] = '\0';
+    pthread_mutex_unlock(&g_proxy_mutex);
+    return tls_proxy;
 }
 
 struct curl_buf {
@@ -117,7 +125,18 @@ quote_engine_http_get(const char* url, const char* proxy, int timeout_sec, size_
 #endif
     curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 3L);
 
-    const char* px = (proxy && proxy[0]) ? proxy : (g_market_proxy[0] ? g_market_proxy : NULL);
+    char        local_proxy[256] = {0};
+    const char* px = NULL;
+    if (proxy && proxy[0]) {
+        px = proxy;
+    } else {
+        pthread_mutex_lock(&g_proxy_mutex);
+        if (g_market_proxy[0]) {
+            strncpy(local_proxy, g_market_proxy, sizeof(local_proxy) - 1);
+            px = local_proxy;
+        }
+        pthread_mutex_unlock(&g_proxy_mutex);
+    }
     if (px && px[0]) {
         curl_easy_setopt(curl, CURLOPT_PROXY, px);
     }
