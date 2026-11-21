@@ -103,6 +103,7 @@ export const enUS = {
     missingCode: 'No valid authorization code detected, returning to login in 3 seconds...',
     loginFailedWith: 'Login failed: {msg}, returning to login in 3 seconds...',
     invalidCredential: 'the credentials are invalid or have expired',
+    invalidState: 'OAuth state verification failed, please sign in again',
     loginSuccess: 'Third-party sign-in successful!',
     noToken: 'No valid login token was returned',
     failed: 'OAuth sign-in failed',

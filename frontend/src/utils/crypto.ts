@@ -70,10 +70,20 @@ export function clearCryptoKeyCache(): void {
   keyPromise = null
 }
 
+function ensureSubtleCrypto(): SubtleCrypto {
+  if (typeof globalThis.crypto === 'undefined' || !globalThis.crypto.subtle) {
+    throw new Error(
+      '当前浏览环境不支持 WebCrypto（RSA 加密仅在 HTTPS 或 localhost 下可用，请切换 HTTPS 或使用 localhost 访问）'
+    )
+  }
+  return globalThis.crypto.subtle
+}
+
 /**
  * 获取并缓存 RSA-OAEP-256 CryptoKey 对象
  */
 async function getCryptoKey(): Promise<CryptoKey> {
+  const subtle = ensureSubtleCrypto()
   if (cachedCryptoKey) {
     return cachedCryptoKey
   }
@@ -96,7 +106,7 @@ async function getCryptoKey(): Promise<CryptoKey> {
           .map((c) => c.charCodeAt(0))
       )
 
-      const key = await crypto.subtle.importKey(
+      const key = await subtle.importKey(
         'jwk',
         {
           kty: jwk.kty,
@@ -124,9 +134,10 @@ async function getCryptoKey(): Promise<CryptoKey> {
  * @returns 加密后的 Base64url 密文字符串 (作为 password_enc 字段提交给服务端)
  */
 export async function encryptPassword(password: string): Promise<string> {
+  const subtle = ensureSubtleCrypto()
   const cryptoKey = await getCryptoKey()
 
-  const encrypted = await crypto.subtle.encrypt(
+  const encrypted = await subtle.encrypt(
     { name: 'RSA-OAEP' },
     cryptoKey,
     new TextEncoder().encode(password)

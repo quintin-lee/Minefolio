@@ -125,6 +125,7 @@ import { useAuthStore } from '@/stores/auth'
 import { authApi } from '@/api/auth'
 import type { OAuthProvider } from '@/types'
 import { t } from '@/utils/locale'
+import { buildOAuthAuthUrl } from '@/utils/oauth-state'
 import AppLogo from '@/components/AppLogo.vue'
 
 const router = useRouter()
@@ -141,7 +142,7 @@ const twoFactorCode = ref('')
 
 function handleOAuthLogin(p: OAuthProvider) {
   if (p.auth_url) {
-    window.location.href = p.auth_url
+    window.location.href = buildOAuthAuthUrl(p.auth_url)
   }
 }
 

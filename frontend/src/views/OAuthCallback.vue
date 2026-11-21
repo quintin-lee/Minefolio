@@ -15,6 +15,7 @@ import { ElMessage } from 'element-plus'
 import { authApi } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 import { t } from '@/utils/locale'
+import { consumeAndVerifyOAuthState } from '@/utils/oauth-state'
 
 const router = useRouter()
 const route = useRoute()
@@ -32,6 +33,13 @@ onMounted(async () => {
     return
   }
 
+  if (!consumeAndVerifyOAuthState(state)) {
+    statusMsg.value = t('oauth.loginFailedWith', { msg: t('oauth.invalidState') })
+    ElMessage.error(t('oauth.invalidState'))
+    setTimeout(() => router.replace('/login'), 3000)
+    return
+  }
+
   try {
     const res = await authApi.oauthCallback({
       provider,
@@ -42,9 +50,14 @@ onMounted(async () => {
 
     if (res && res.token) {
       auth.setToken(res.token)
-      if (res.user) {
-        auth.setUser({ created_at: '', ...res.user })
+      try {
+        await auth.fetchUser()
+      } catch {
+        if (res.user) {
+          auth.setUser({ created_at: '', ...res.user })
+        }
       }
+      await auth.reinitLocalDb()
       ElMessage.success(t('oauth.loginSuccess'))
       router.replace('/dashboard')
     } else {

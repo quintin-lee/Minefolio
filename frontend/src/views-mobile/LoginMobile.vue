@@ -121,6 +121,7 @@ import AppLogo from '@/components/AppLogo.vue'
 import ServerConfigDialog from '@/components/mobile/ServerConfigDialog.vue'
 import { useServerUrl } from '@/composables/useServerUrl'
 import type { OAuthProvider } from '@/types'
+import { buildOAuthAuthUrl } from '@/utils/oauth-state'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -137,7 +138,7 @@ const oauthProviders = ref<OAuthProvider[]>([])
 
 function handleOAuth(p: OAuthProvider) {
   if (p.auth_url) {
-    window.location.href = p.auth_url
+    window.location.href = buildOAuthAuthUrl(p.auth_url)
   }
 }
 

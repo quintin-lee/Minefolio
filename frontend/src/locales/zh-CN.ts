@@ -103,6 +103,7 @@ export const zhCN = {
     missingCode: '未检测到有效的授权码，3秒后返回登录页...',
     loginFailedWith: '登录失败: {msg}，3秒后返回登录页...',
     invalidCredential: '凭据无效或已过期',
+    invalidState: '授权状态校验失败，请重新发起登录',
     loginSuccess: '第三方登录成功！',
     noToken: '未获取到有效的登录令牌',
     failed: 'OAuth 登录失败',
