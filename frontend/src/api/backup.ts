@@ -4,6 +4,7 @@
  */
 
 import http from '@/utils/http'
+import { resolveMaybeAsync, type AsyncTaskSubmission } from './tasks'
 
 export interface BackupItem {
   filename: string
@@ -34,7 +35,10 @@ export const backupApi = {
   /**
    * 手动触发一次在线热备份
    */
-  createBackup: () => http.post<BackupCreateResult>('/system/backup/create'),
+  createBackup: async () => {
+    const res = await http.post<BackupCreateResult | AsyncTaskSubmission>('/system/backup/create')
+    return resolveMaybeAsync<BackupCreateResult>(res, { timeoutMs: 120000 })
+  },
 
   /**
    * 下载指定的数据库备份文件

@@ -4,6 +4,7 @@ import { pollTask, resolveMaybeAsync, isAsyncTaskSubmission } from '@/api/tasks'
 import { receiptsApi } from '@/api/receipts'
 import { transactionsApi } from '@/api/transactions'
 import { dailyExpensesApi } from '@/api/daily_expenses'
+import { backupApi } from '@/api/backup'
 
 vi.mock('@/utils/http', () => ({
   default: {
@@ -121,5 +122,26 @@ describe('tasks API & pollTask', () => {
     const expRes = await dailyExpensesApi.importCsv('date,asset_name\n')
     expect(expRes.imported).toBe(5)
     expect(expRes.errors).toBe(1)
+  })
+
+  it('polls SQLite hot backup tasks via backupApi.createBackup', async () => {
+    vi.mocked(http.post).mockResolvedValueOnce({
+      task_id: 51,
+      task_type: 'system_backup_create',
+      status: 'pending',
+      deduplicated: false,
+    })
+    vi.mocked(http.get).mockResolvedValueOnce({
+      id: 51,
+      status: 'completed',
+      progress: 100,
+      message: '已完成',
+      result: { filename: 'minefolio_backup_20261121_120000.db', size: 65536, created_at: 1700000000 },
+    })
+
+    const res = await backupApi.createBackup()
+    expect(http.post).toHaveBeenCalledWith('/system/backup/create')
+    expect(http.get).toHaveBeenCalledWith('/tasks/51')
+    expect(res.filename).toBe('minefolio_backup_20261121_120000.db')
   })
 })

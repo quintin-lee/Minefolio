@@ -144,10 +144,25 @@ db_backup_create(csilk_db_pool_t* pool,
         return -1;
     }
 
-    sqlite3* src_db = get_sqlite_handle(pool);
-    if (!src_db) {
+    sqlite3* pool_db = get_sqlite_handle(pool);
+    if (!pool_db) {
         CSILK_LOG_E("Failed to obtain sqlite3 handle from pool");
         return -1;
+    }
+
+    sqlite3*    ro_src_db = NULL;
+    sqlite3*    src_db = pool_db;
+    const char* db_filename = sqlite3_db_filename(pool_db, "main");
+    if (db_filename && db_filename[0]) {
+        if (sqlite3_open_v2(
+                db_filename, &ro_src_db, SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX, NULL) ==
+            SQLITE_OK) {
+            sqlite3_busy_timeout(ro_src_db, 5000);
+            src_db = ro_src_db;
+        } else if (ro_src_db) {
+            sqlite3_close(ro_src_db);
+            ro_src_db = NULL;
+        }
     }
 
     time_t    now = time(NULL);
@@ -179,6 +194,9 @@ db_backup_create(csilk_db_pool_t* pool,
         if (dest_db) {
             sqlite3_close(dest_db);
         }
+        if (ro_src_db) {
+            sqlite3_close(ro_src_db);
+        }
         return -1;
     }
 
@@ -186,6 +204,9 @@ db_backup_create(csilk_db_pool_t* pool,
     if (!backup) {
         CSILK_LOG_E("sqlite3_backup_init failed: %s", sqlite3_errmsg(dest_db));
         sqlite3_close(dest_db);
+        if (ro_src_db) {
+            sqlite3_close(ro_src_db);
+        }
         unlink(tmp_path);
         return -1;
     }
@@ -204,6 +225,9 @@ db_backup_create(csilk_db_pool_t* pool,
 
     sqlite3_backup_finish(backup);
     sqlite3_close(dest_db);
+    if (ro_src_db) {
+        sqlite3_close(ro_src_db);
+    }
 
     if (rc != SQLITE_DONE) {
         CSILK_LOG_E("sqlite3_backup failed during copy (rc=%d)", rc);

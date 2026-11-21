@@ -1083,8 +1083,10 @@ if [ "$DB_DRIVER" = "postgres" ]; then
   TRAVERSAL_RES=$(curl -s -w "%{http_code}" -H "$AUTH" "$BASE/system/backup/download/..%2F..%2Fetc%2Fpasswd" -o /dev/null)
   check "路径穿越下载请求被拒绝 (非 200)" "true" "$( [ "$TRAVERSAL_RES" -ne 200 ] && echo "true" || echo "false" )"
 else
-  BACKUP_CREATE_RES=$(curl -s -X POST -H "$AUTH" "$BASE/system/backup/create")
-  check "创建热备份 code=0" "0" "$(echo "$BACKUP_CREATE_RES" | jq -r '.code | floor')"
+  BACKUP_CREATE_SUB=$(curl -s -X POST -H "$AUTH" "$BASE/system/backup/create")
+  check "创建热备份 code=0" "0" "$(echo "$BACKUP_CREATE_SUB" | jq -r '.code | floor')"
+  check "创建热备份返回异步 task_id" "1" "$(echo "$BACKUP_CREATE_SUB" | jq -r 'if (.data.task_id // 0) > 0 then 1 else 0 end')"
+  BACKUP_CREATE_RES=$(db_poll_task "${BASE%/api}" "$AUTH" "$BACKUP_CREATE_SUB")
   BACKUP_FILENAME=$(echo "$BACKUP_CREATE_RES" | jq -r '.data.filename')
   test -n "$BACKUP_FILENAME" && echo "$BACKUP_FILENAME" | grep -q "minefolio_backup_.*\.db$" && VALID_FN="yes" || VALID_FN="no"
   check "创建备份返回合规文件名" "yes" "$VALID_FN"
