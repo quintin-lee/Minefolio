@@ -264,10 +264,11 @@ for _ in $(seq 1 600); do
 done
 kill "$CPID" 2>/dev/null || true
 wait "$CPID" 2>/dev/null || true
-# Retry loop: under ASan the first MCP bridge tool call can be slow enough
-# that the polling window expires before the SSE stream completes. The
-# scenario is deterministic (no timeout/cancellation flags in this mock),
-# so a bounded retry distinguishes transient slowness from a real regression.
+# Retry loop: the first MCP bridge tool call in an ASan-instrumented
+# process is cold-start slow (ASan shadow-memory init + libcurl global init).
+# Under CI runner contention the stall can exceed the first attempt's poll
+# window. A bounded retry re-drives the request; a stalled stream with
+# partial data gets one grace window before the poll gives up.
 if ! grep -q 'event: done' "$CHAT_BODY" 2>/dev/null; then
   for attempt in 1 2; do
     echo "  chat retry attempt $attempt (done event not yet received)"
@@ -279,13 +280,19 @@ if ! grep -q 'event: done' "$CHAT_BODY" 2>/dev/null; then
       -d '{"content":"echo 一下","provider":"mockai","model":"mock-model"}' \
       > "$CHAT_BODY" 2>/dev/null &
     CPID=$!
-    for _ in $(seq 1 450); do
+    CHAT_ELAP_START=$(date +%s)
+    CHAT_STALL_S=60
+    while [ "$(date +%s)" -lt "$(( CHAT_ELAP_START + 90 + 30 ))" ]; do
       if grep -q -E 'event: (done|error)' "$CHAT_BODY" 2>/dev/null; then
-        sleep 0.05
         break
       fi
-      kill -0 "$CPID" 2>/dev/null || break
-      sleep 0.1
+      CHAT_ELAP_NOW=$(date +%s)
+      CHAT_ELAP=$(( CHAT_ELAP_NOW - CHAT_ELAP_START ))
+      if [ "$CHAT_ELAP" -ge "$CHAT_STALL_S" ] && [ "$(stat -c%s "$CHAT_BODY" 2>/dev/null || echo 0)" -eq 0 ]; then
+        # No data at all after 60s -> hard stall, give up on this attempt
+        break
+      fi
+      sleep 0.5
     done
     kill "$CPID" 2>/dev/null || true
     wait "$CPID" 2>/dev/null || true
