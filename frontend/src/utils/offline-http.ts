@@ -6,6 +6,7 @@
 // frontend/src/utils/offline-http.ts
 import http from './http'
 import { query, run, rowsFrom, persist } from '@/db/local'
+import { TABLE_COLUMNS } from '@/db/schema'
 import type { SqlValue } from '@/types/mobile'
 import { useSyncStore } from '@/stores/sync'
 import { useAuthStore } from '@/stores/auth'
@@ -64,34 +65,39 @@ function nextLocalId(table: string): number {
  * @param payload 记录实体数据
  */
 async function writeLocal(table: string, operation: 'create' | 'update' | 'delete', recordId: number, payload: Record<string, unknown>): Promise<void> {
-  if (payload.ledger_id === undefined) {
+  const queuePayload: Record<string, unknown> = { ...payload }
+  if (queuePayload.ledger_id === undefined) {
     const activeLedger = Number(localStorage.getItem('minefolio_active_ledger_id') || 0)
     if (activeLedger > 0) {
-      payload.ledger_id = activeLedger
+      queuePayload.ledger_id = activeLedger
     }
   }
   if (operation === 'delete') {
     run(`UPDATE ${table} SET __deleted = 1 WHERE id = ?`, [recordId])
     persist()
-    useSyncStore().enqueue(table, recordId, operation, payload)
+    useSyncStore().enqueue(table, recordId, operation, queuePayload)
     return
   }
-  const cols = Object.keys(payload).filter((k) => k !== '__deleted' && k !== 'id')
+  const allowed = TABLE_COLUMNS[table]
+  const cols = Object.keys(queuePayload).filter(
+    (k) => k !== '__deleted' && k !== 'id' && (!allowed || allowed.includes(k)) && queuePayload[k] !== undefined
+  )
   if (cols.length === 0) {
-    // 无有效字段可写（例如仅带 id 的载荷），只入队不做本地写入
+    // 无有效字段可写（例如仅带 id 或全为非持久化扩展字段），只入队不做本地写入
     persist()
-    useSyncStore().enqueue(table, recordId, operation, payload)
+    useSyncStore().enqueue(table, recordId, operation, queuePayload)
     return
   }
+  const toSqlVal = (v: unknown): SqlValue => (typeof v === 'boolean' ? (v ? 1 : 0) : (v as SqlValue))
   const placeholders = cols.map(() => '?').join(', ')
   const updates = cols.map((c) => `${c} = ?`).join(', ')
   run(
     `INSERT INTO ${table} (${cols.join(', ')}, id, __deleted) VALUES (${placeholders}, ?, 0)
      ON CONFLICT(id) DO UPDATE SET ${updates}, __deleted = 0`,
-    [...cols.map((c) => payload[c] as SqlValue), recordId, ...cols.map((c) => payload[c] as SqlValue)]
+    [...cols.map((c) => toSqlVal(queuePayload[c])), recordId, ...cols.map((c) => toSqlVal(queuePayload[c]))]
   )
   persist()
-  useSyncStore().enqueue(table, recordId, operation, payload)
+  useSyncStore().enqueue(table, recordId, operation, queuePayload)
 }
 
 /**
@@ -104,12 +110,27 @@ function isAuthError(err: any): boolean {
 }
 
 /**
+ * 判断异常是否属于无服务端响应的纯网络/超时故障（可安全降级本地离线保存）；
+ * 若存在 err.response（包括 HTTP 4xx/5xx 或业务错误信封），必须直接向上抛出，
+ * 避免将权限拒绝、参数校验失败或服务端报错误伪装为离线写入成功。
+ */
+export function isNetworkError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false
+  const e = err as { response?: unknown; message?: unknown }
+  if (e.response !== undefined && e.response !== null) return false
+  if (err instanceof TypeError && String(e.message || '').includes('is not a function')) {
+    return false
+  }
+  return true
+}
+
+/**
  * 执行支持离线降级的 HTTP 网络请求
  * @description
  * 1. 优先尝试向服务端发送在线请求
  * 2. 若发生 1001 鉴权错误则立即注销并抛出
- * 3. 若网络失败且为写操作 (POST/PUT/DELETE) 并且匹配业务表，则降级写入本地 SQLite 并提示用户离线保存
- * 4. 读操作 (GET) 失败直接透传抛出
+ * 3. 若发生网络/超时故障且为写操作 (POST/PUT/DELETE) 并且匹配业务表，则降级写入本地 SQLite 并提示用户离线保存
+ * 4. 读操作 (GET) 及 HTTP 4xx/5xx / 业务错误直接透传抛出
  *
  * @param method HTTP 方法 ('get' | 'post' | 'put' | 'delete')
  * @param url 接口路径
@@ -130,8 +151,8 @@ export async function offlineRequest(method: 'get' | 'post' | 'put' | 'delete', 
         useAuthStore().logout?.()
         throw err
       }
-      // 只对写操作做离线落库；失败的读请求直接透传错误（由 pullSync 负责离线读）
-      if (method === 'get') throw err
+      // 仅对网络故障下的写操作做离线落库；读操作与服务端响应错误(4xx/5xx/业务码)直接抛出
+      if (method === 'get' || !isNetworkError(err)) throw err
       const recordId = id ?? (data?.id as number) ?? nextLocalId(table)
       await writeLocal(table, operation, recordId, data ?? {})
       ElMessage.success('已离线保存，联网后自动同步')
