@@ -102,8 +102,12 @@ export const marketApi = {
    * @route POST /api/market/exchange-rates/sync
    * @returns 最新汇率字典
    */
-  syncExchangeRates: () =>
-    http.post<Record<string, number>>('/market/exchange-rates/sync'),
+  syncExchangeRates: async () => {
+    const res = await http.post<Record<string, number> | AsyncTaskSubmission>(
+      '/market/exchange-rates/sync',
+    )
+    return resolveMaybeAsync<Record<string, number>>(res, { timeoutMs: 60000 })
+  },
 
   /**
    * 手动更新或覆盖指定币种的兑换汇率

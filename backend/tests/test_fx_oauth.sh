@@ -145,16 +145,24 @@ assert_eq "GET /api/market/fx-history returns code 0" "$HIST_CODE" "0"
 HIST_LEN=$(echo "$FX_HIST" | jq '.data | length')
 assert_nonzero "FX history contains points" "$HIST_LEN"
 
-# Test Exchange Rates Sync Endpoints
-SYNC_FX_RES=$(curl -s -X POST -H "Authorization: Bearer $TOKEN" "$BASE/market/exchange-rates/sync")
-SYNC_FX_CODE=$(echo "$SYNC_FX_RES" | jq -r '.code | floor')
-assert_eq "POST /api/market/exchange-rates/sync returns code 0" "$SYNC_FX_CODE" "0"
+# Test Exchange Rates Sync Endpoints (Async)
+SYNC_FX_SUB=$(curl -s -X POST -H "Authorization: Bearer $TOKEN" "$BASE/market/exchange-rates/sync")
+SYNC_FX_SUB_CODE=$(echo "$SYNC_FX_SUB" | jq -r '.code | floor')
+assert_eq "POST /api/market/exchange-rates/sync returns code 0" "$SYNC_FX_SUB_CODE" "0"
+SYNC_FX_TID=$(echo "$SYNC_FX_SUB" | jq -r '.data.task_id // 0 | floor')
+assert_nonzero "FX sync returned async task_id" "$SYNC_FX_TID"
+SYNC_FX_RES=$(db_poll_task "${BASE%/api}" "Authorization: Bearer $TOKEN" "$SYNC_FX_SUB")
 SYNC_USD=$(echo "$SYNC_FX_RES" | jq -r '.data.USD')
 assert_nonzero "Synced rates contains USD" "$SYNC_USD"
 
-SYNC_ALIAS_RES=$(curl -s -X POST -H "Authorization: Bearer $TOKEN" "$BASE/market/fx-rates/sync")
-SYNC_ALIAS_CODE=$(echo "$SYNC_ALIAS_RES" | jq -r '.code | floor')
-assert_eq "POST /api/market/fx-rates/sync alias returns code 0" "$SYNC_ALIAS_CODE" "0"
+SYNC_ALIAS_SUB=$(curl -s -X POST -H "Authorization: Bearer $TOKEN" "$BASE/market/fx-rates/sync")
+SYNC_ALIAS_SUB_CODE=$(echo "$SYNC_ALIAS_SUB" | jq -r '.code | floor')
+assert_eq "POST /api/market/fx-rates/sync alias returns code 0" "$SYNC_ALIAS_SUB_CODE" "0"
+SYNC_ALIAS_TID=$(echo "$SYNC_ALIAS_SUB" | jq -r '.data.task_id // 0 | floor')
+assert_nonzero "FX sync alias returned async task_id" "$SYNC_ALIAS_TID"
+SYNC_ALIAS_RES=$(db_poll_task "${BASE%/api}" "Authorization: Bearer $TOKEN" "$SYNC_ALIAS_SUB")
+SYNC_ALIAS_USD=$(echo "$SYNC_ALIAS_RES" | jq -r '.data.USD')
+assert_nonzero "Synced alias rates contains USD" "$SYNC_ALIAS_USD"
 
 echo "=== 3. Test Multi-Currency Summary & FX Gain/Loss Report ==="
 # Create USD asset and CNY asset

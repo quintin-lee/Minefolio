@@ -289,17 +289,67 @@ api_market_get_exchange_rates(csilk_ctx_t* c)
     respond_ok(c, rates);
 }
 
-void
-api_market_sync_exchange_rates(csilk_ctx_t* c)
+static int
+market_fx_sync_task_fn(void*   pool,
+                       int64_t task_id,
+                       int64_t user_id,
+                       int64_t ledger_id,
+                       void*   arg,
+                       char**  out_result_json,
+                       char*   err_buf,
+                       size_t  err_cap)
 {
+    (void)user_id;
+    (void)ledger_id;
+    (void)arg;
+    mf_async_task_update_progress(pool, task_id, 25, "正在同步全球法币汇率");
+
     csilk_json_t*           rates = NULL;
     market_usecase_result_t res = {0};
     int                     rc = market_usecase_sync_exchange_rates(&rates, &res);
     if (rc == 0 && res.code == 0) {
-        respond_ok(c, rates);
-    } else {
-        respond_error(c, res.code ? res.code : 500, res.message);
+        if (rates) {
+            if (out_result_json) {
+                *out_result_json = csilk_json_serialize(rates, NULL);
+            }
+            csilk_json_free(rates);
+        }
+        return 0;
     }
+    if (rates) {
+        csilk_json_free(rates);
+    }
+
+    snprintf(err_buf, err_cap, "%s", res.message[0] ? res.message : "同步汇率失败");
+    return -1;
+}
+
+void
+api_market_sync_exchange_rates(csilk_ctx_t* c)
+{
+    int64_t user_id = ctx_user_id(c);
+    if (user_id <= 0) {
+        respond_unauthorized(c);
+        return;
+    }
+
+    bool    deduplicated = false;
+    int64_t task_id = mf_async_task_submit(db_get_pool(),
+                                           user_id,
+                                           0,
+                                           "market_fx_sync",
+                                           "market:fx:sync",
+                                           "正在排队同步实时汇率",
+                                           market_fx_sync_task_fn,
+                                           NULL,
+                                           NULL,
+                                           &deduplicated);
+    if (task_id <= 0) {
+        respond_error(c, 500, "提交异步汇率同步任务失败");
+        return;
+    }
+
+    mf_async_task_respond_submitted(c, task_id, "market_fx_sync", deduplicated, NULL);
 }
 
 void

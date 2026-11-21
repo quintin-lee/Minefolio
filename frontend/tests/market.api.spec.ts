@@ -63,4 +63,25 @@ describe('marketApi async task handling', () => {
     const syncRes = await marketApi.syncSingle(8)
     expect(syncRes.symbol).toBe('MSFT')
   })
+
+  it('resolves syncExchangeRates via async task polling', async () => {
+    vi.mocked(http.post).mockResolvedValueOnce({
+      task_id: 23,
+      task_type: 'market_fx_sync',
+      status: 'pending',
+      deduplicated: false,
+    })
+    vi.mocked(http.get).mockResolvedValueOnce({
+      id: 23,
+      status: 'completed',
+      progress: 100,
+      message: '已完成',
+      result: { USD: 7.24, EUR: 7.86 },
+    })
+
+    const rates = await marketApi.syncExchangeRates()
+    expect(http.post).toHaveBeenCalledWith('/market/exchange-rates/sync')
+    expect(http.get).toHaveBeenCalledWith('/tasks/23')
+    expect(rates.USD).toBe(7.24)
+  })
 })
