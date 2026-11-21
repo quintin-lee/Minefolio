@@ -1,0 +1,6 @@
+-- V032__quantity_price_precision.sql (SQLite)
+--
+-- SQLite stores DECIMAL(n,m) with NUMERIC affinity; application-layer 8-decimal
+-- fixed-point strings are preserved without loss. No schema change is required.
+-- This migration exists only to keep the SQLite and PostgreSQL version numbers
+-- aligned for the csilk migration engine.

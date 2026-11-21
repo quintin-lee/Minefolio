@@ -97,18 +97,26 @@ ledger_calc_buy_position(quantity_t  prev_qty,
     }
 
     // new_qty = prev_qty + buy_qty
-    quantity_add(prev_qty, buy_qty, out_qty);
+    if (quantity_add(prev_qty, buy_qty, out_qty) != DECIMAL_OK) {
+        return -1;
+    }
 
     // buy_amount = buy_price * buy_qty
     money_t buy_gross;
-    price_times_quantity(buy_price, buy_qty, &buy_gross);
+    if (price_times_quantity(buy_price, buy_qty, &buy_gross) != DECIMAL_OK) {
+        return -1;
+    }
 
     // buy_total = buy_gross + buy_fee
     money_t buy_total;
-    money_add(buy_gross, buy_fee, &buy_total);
+    if (money_add(buy_gross, buy_fee, &buy_total) != DECIMAL_OK) {
+        return -1;
+    }
 
     // new_cost = prev_cost + buy_total
-    money_add(prev_cost, buy_total, out_cost);
+    if (money_add(prev_cost, buy_total, out_cost) != DECIMAL_OK) {
+        return -1;
+    }
     return 0;
 }
 
@@ -137,37 +145,60 @@ ledger_calc_sell_position(quantity_t  prev_qty,
         *out_cost = money_zero(prev_cost.currency);
 
         money_t sell_gross;
-        price_times_quantity(sell_price, sell_qty, &sell_gross);
+        if (price_times_quantity(sell_price, sell_qty, &sell_gross) != DECIMAL_OK) {
+            return -1;
+        }
         money_t sell_net;
-        money_sub(sell_gross, sell_fee, &sell_net);
-        money_sub(sell_net, prev_cost, out_realized_pnl);
+        if (money_sub(sell_gross, sell_fee, &sell_net) != DECIMAL_OK) {
+            return -1;
+        }
+        if (money_sub(sell_net, prev_cost, out_realized_pnl) != DECIMAL_OK) {
+            return -1;
+        }
         return 0;
     }
 
     // Partial sell
     // ratio = sell_qty / prev_qty
     decimal_t ratio;
-    decimal_div(sell_qty.units, prev_qty.units, 12, ROUND_HALF_UP, &ratio);
+    if (decimal_div(sell_qty.units, prev_qty.units, 12, ROUND_HALF_UP, &ratio) != DECIMAL_OK) {
+        return -1;
+    }
 
     // cost_reduction = prev_cost * ratio
     decimal_t red_dec;
-    decimal_mul(prev_cost.amount, ratio, &red_dec);
+    if (decimal_mul(prev_cost.amount, ratio, &red_dec) != DECIMAL_OK) {
+        return -1;
+    }
     uint8_t prec = currency_precision(prev_cost.currency);
-    decimal_round(red_dec, (int32_t)prec, ROUND_HALF_UP, &out_cost_reduction->amount);
+    if (decimal_round(red_dec, (int32_t)prec, ROUND_HALF_UP, &out_cost_reduction->amount) !=
+        DECIMAL_OK) {
+        return -1;
+    }
     out_cost_reduction->currency = prev_cost.currency;
 
     // new_qty = prev_qty - sell_qty
-    quantity_sub(prev_qty, sell_qty, out_qty);
+    if (quantity_sub(prev_qty, sell_qty, out_qty) != DECIMAL_OK) {
+        return -1;
+    }
 
     // new_cost = prev_cost - cost_reduction
-    money_sub(prev_cost, *out_cost_reduction, out_cost);
+    if (money_sub(prev_cost, *out_cost_reduction, out_cost) != DECIMAL_OK) {
+        return -1;
+    }
 
     // realized_pnl = (sell_gross - sell_fee) - cost_reduction
     money_t sell_gross;
-    price_times_quantity(sell_price, sell_qty, &sell_gross);
+    if (price_times_quantity(sell_price, sell_qty, &sell_gross) != DECIMAL_OK) {
+        return -1;
+    }
     money_t sell_net;
-    money_sub(sell_gross, sell_fee, &sell_net);
-    money_sub(sell_net, *out_cost_reduction, out_realized_pnl);
+    if (money_sub(sell_gross, sell_fee, &sell_net) != DECIMAL_OK) {
+        return -1;
+    }
+    if (money_sub(sell_net, *out_cost_reduction, out_realized_pnl) != DECIMAL_OK) {
+        return -1;
+    }
 
     return 0;
 }
@@ -211,11 +242,17 @@ ledger_calc_sell_position_fifo(csilk_db_pool_t* pool,
         const csilk_json_t* lot_obj = csilk_json_array_get(lots, i);
         quantity_t          rem_q = db_get_quantity(lot_obj, "remaining_quantity");
         price_t             cpu = db_get_price(lot_obj, "cost_per_unit", cur);
-        quantity_add(total_avail_qty, rem_q, &total_avail_qty);
+        if (quantity_add(total_avail_qty, rem_q, &total_avail_qty) != DECIMAL_OK) {
+            csilk_json_free(lots);
+            return -1;
+        }
 
         money_t lot_cost;
-        price_times_quantity(cpu, rem_q, &lot_cost);
-        money_add(total_avail_cost, lot_cost, &total_avail_cost);
+        if (price_times_quantity(cpu, rem_q, &lot_cost) != DECIMAL_OK ||
+            money_add(total_avail_cost, lot_cost, &total_avail_cost) != DECIMAL_OK) {
+            csilk_json_free(lots);
+            return -1;
+        }
     }
 
     if (quantity_cmp(sell_qty, total_avail_qty) > 0) {
@@ -245,11 +282,17 @@ ledger_calc_sell_position_fifo(csilk_db_pool_t* pool,
         }
 
         money_t lot_cost_red;
-        price_times_quantity(cpu, deduct_qty, &lot_cost_red);
-        money_add(total_cost_reduction, lot_cost_red, &total_cost_reduction);
+        if (price_times_quantity(cpu, deduct_qty, &lot_cost_red) != DECIMAL_OK ||
+            money_add(total_cost_reduction, lot_cost_red, &total_cost_reduction) != DECIMAL_OK) {
+            csilk_json_free(lots);
+            return -1;
+        }
 
         quantity_t new_rem;
-        quantity_sub(lot_rem, deduct_qty, &new_rem);
+        if (quantity_sub(lot_rem, deduct_qty, &new_rem) != DECIMAL_OK) {
+            csilk_json_free(lots);
+            return -1;
+        }
         bool is_closed = quantity_is_zero(new_rem);
 
         if (tx_lot_deduct(pool, user_id, lot_id, deduct_qty, new_rem, is_closed) != 0) {
@@ -257,17 +300,24 @@ ledger_calc_sell_position_fifo(csilk_db_pool_t* pool,
             return -1;
         }
 
-        quantity_sub(sell_remaining, deduct_qty, &sell_remaining);
+        if (quantity_sub(sell_remaining, deduct_qty, &sell_remaining) != DECIMAL_OK) {
+            csilk_json_free(lots);
+            return -1;
+        }
     }
 
     csilk_json_free(lots);
 
     // 3. Compute final position state & realized PnL
-    quantity_sub(total_avail_qty, sell_qty, out_qty);
+    if (quantity_sub(total_avail_qty, sell_qty, out_qty) != DECIMAL_OK) {
+        return -1;
+    }
     if (quantity_is_zero(*out_qty)) {
         *out_cost = money_zero(cur);
     } else {
-        money_sub(total_avail_cost, total_cost_reduction, out_cost);
+        if (money_sub(total_avail_cost, total_cost_reduction, out_cost) != DECIMAL_OK) {
+            return -1;
+        }
         if (money_is_negative(*out_cost)) {
             *out_cost = money_zero(cur);
         }
@@ -276,14 +326,20 @@ ledger_calc_sell_position_fifo(csilk_db_pool_t* pool,
 
     // Gross proceeds = sell_price * sell_qty
     money_t sell_gross;
-    price_times_quantity(sell_price, sell_qty, &sell_gross);
+    if (price_times_quantity(sell_price, sell_qty, &sell_gross) != DECIMAL_OK) {
+        return -1;
+    }
 
     // Net proceeds = sell_gross - sell_fee
     money_t sell_net;
-    money_sub(sell_gross, sell_fee, &sell_net);
+    if (money_sub(sell_gross, sell_fee, &sell_net) != DECIMAL_OK) {
+        return -1;
+    }
 
     // Realized PnL = sell_net - total_cost_reduction
-    money_sub(sell_net, total_cost_reduction, out_realized_pnl);
+    if (money_sub(sell_net, total_cost_reduction, out_realized_pnl) != DECIMAL_OK) {
+        return -1;
+    }
 
     return 0;
 }

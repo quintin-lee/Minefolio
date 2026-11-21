@@ -10,8 +10,9 @@
 
 /**
  * @brief Replay chronological buy/sell transaction rows onto position state.
+ * @return 0 on success, -1 on arithmetic/lot failure.
  */
-static void
+static int
 replay_position_transactions(csilk_db_pool_t* pool,
                              int64_t          user_id,
                              int64_t          asset_id,
@@ -42,39 +43,44 @@ replay_position_transactions(csilk_db_pool_t* pool,
         }
 
         if (type && strcmp(type, "buy") == 0) {
-            ledger_calc_buy_position(*curr_qty, *curr_cost, q, p, f, curr_qty, curr_cost);
+            if (ledger_calc_buy_position(*curr_qty, *curr_cost, q, p, f, curr_qty, curr_cost) !=
+                0) {
+                return -1;
+            }
             if (is_fifo) {
                 money_t buy_amt = db_get_money(r, "amount", cur);
-                ledger_internal_create_buy_lot(
-                    pool, user_id, asset_id, tx_id, tx_date, buy_amt, p, q, f);
+                if (ledger_internal_create_buy_lot(
+                        pool, user_id, asset_id, tx_id, tx_date, buy_amt, p, q, f) <= 0) {
+                    return -1;
+                }
             }
             if (!decimal_is_zero(p.unit_price)) {
                 *latest_price = p;
             }
         } else if (type && strcmp(type, "sell") == 0) {
             money_t cost_red, real_pnl;
+            int     rc;
             if (is_fifo) {
-                if (ledger_calc_sell_position_fifo(pool,
-                                                   user_id,
-                                                   asset_id,
-                                                   q,
-                                                   p,
-                                                   f,
-                                                   curr_qty,
-                                                   curr_cost,
-                                                   &cost_red,
-                                                   &real_pnl) != 0) {
-                    // Fallback in case of lot discrepancy
-                    ledger_calc_sell_position(
+                rc = ledger_calc_sell_position_fifo(
+                    pool, user_id, asset_id, q, p, f, curr_qty, curr_cost, &cost_red, &real_pnl);
+                if (rc != 0) {
+                    // Legacy FIFO rows may lack lot records: fall back to weighted average.
+                    rc = ledger_calc_sell_position(
                         *curr_qty, *curr_cost, q, p, f, curr_qty, curr_cost, &cost_red, &real_pnl);
                 }
             } else {
-                ledger_calc_sell_position(
+                rc = ledger_calc_sell_position(
                     *curr_qty, *curr_cost, q, p, f, curr_qty, curr_cost, &cost_red, &real_pnl);
             }
-            money_add(*cum_realized, real_pnl, cum_realized);
+            if (rc != 0) {
+                return -1;
+            }
+            if (money_add(*cum_realized, real_pnl, cum_realized) != DECIMAL_OK) {
+                return -1;
+            }
         }
     }
+    return 0;
 }
 
 int
@@ -99,8 +105,9 @@ ledger_rebuild_position_ex(csilk_db_pool_t*         pool,
     // 1. Fetch asset metadata, quantity, cost_basis, net_value & currency
     csilk_json_t* a_rows = csilk_db_query_param_json(
         pool,
-        "SELECT currency, quantity, cost_basis, net_value, current_value, cost_method "
-        "FROM assets WHERE id=? AND user_id=?",
+        "SELECT a.currency, a.quantity, a.cost_basis, a.net_value, a.current_value, "
+        "a.cost_method, c.asset_type "
+        "FROM assets a JOIN categories c ON a.category_id=c.id WHERE a.id=? AND a.user_id=?",
         (const char*[]){ast_str, uid_str, NULL});
     if (!a_rows || csilk_json_array_size(a_rows) == 0) {
         if (a_rows) {
@@ -110,13 +117,22 @@ ledger_rebuild_position_ex(csilk_db_pool_t*         pool,
         return -1;
     }
     const csilk_json_t* a_obj = csilk_json_array_get(a_rows, 0);
-    const char*         cur_str = csilk_json_get_string(a_obj, "currency");
-    currency_t          cur = currency_from_str(cur_str);
-    quantity_t          orig_qty = db_get_quantity(a_obj, "quantity");
-    money_t             orig_cost = db_get_money(a_obj, "cost_basis", cur);
-    price_t             orig_net = db_get_price(a_obj, "net_value", cur);
-    const char*         cm_str = csilk_json_get_string(a_obj, "cost_method");
-    bool                is_fifo = (cm_str && strcmp(cm_str, "fifo") == 0);
+    const char*         atype_str = csilk_json_get_string(a_obj, "asset_type");
+    bool                is_inv =
+        (atype_str && (strcmp(atype_str, "stock") == 0 || strcmp(atype_str, "fund") == 0 ||
+                       strcmp(atype_str, "bond") == 0 || strcmp(atype_str, "crypto") == 0));
+    if (!is_inv) {
+        csilk_json_free(a_rows);
+        db_tx_scope_rollback(pool, &scope);
+        return -1;
+    }
+    const char* cur_str = csilk_json_get_string(a_obj, "currency");
+    currency_t  cur = currency_from_str(cur_str);
+    quantity_t  orig_qty = db_get_quantity(a_obj, "quantity");
+    money_t     orig_cost = db_get_money(a_obj, "cost_basis", cur);
+    price_t     orig_net = db_get_price(a_obj, "net_value", cur);
+    const char* cm_str = csilk_json_get_string(a_obj, "cost_method");
+    bool        is_fifo = (cm_str && strcmp(cm_str, "fifo") == 0);
     csilk_json_free(a_rows);
 
     // 2. Check for latest checkpoint snapshot (Two-stage incremental rebuild)
@@ -181,18 +197,22 @@ ledger_rebuild_position_ex(csilk_db_pool_t*         pool,
     }
 
     if (tx_rows && csilk_json_array_size(tx_rows) > 0) {
-        replay_position_transactions(pool,
-                                     user_id,
-                                     asset_id,
-                                     cur,
-                                     is_fifo,
-                                     exclude_tx_id,
-                                     tx_rows,
-                                     &curr_qty,
-                                     &curr_cost,
-                                     &latest_price,
-                                     &cum_realized);
+        int replay_rc = replay_position_transactions(pool,
+                                                     user_id,
+                                                     asset_id,
+                                                     cur,
+                                                     is_fifo,
+                                                     exclude_tx_id,
+                                                     tx_rows,
+                                                     &curr_qty,
+                                                     &curr_cost,
+                                                     &latest_price,
+                                                     &cum_realized);
         csilk_json_free(tx_rows);
+        if (replay_rc != 0) {
+            db_tx_scope_rollback(pool, &scope);
+            return -1;
+        }
     } else {
         if (tx_rows) {
             csilk_json_free(tx_rows);
@@ -211,10 +231,16 @@ ledger_rebuild_position_ex(csilk_db_pool_t*         pool,
     }
 
     money_t curr_mkt_val;
-    price_times_quantity(latest_price, curr_qty, &curr_mkt_val);
+    if (price_times_quantity(latest_price, curr_qty, &curr_mkt_val) != DECIMAL_OK) {
+        db_tx_scope_rollback(pool, &scope);
+        return -1;
+    }
 
     money_t curr_unrealized;
-    ledger_calc_unrealized_pnl(curr_qty, latest_price, curr_cost, &curr_unrealized);
+    if (ledger_calc_unrealized_pnl(curr_qty, latest_price, curr_cost, &curr_unrealized) != 0) {
+        db_tx_scope_rollback(pool, &scope);
+        return -1;
+    }
 
     // 3. Update assets table with rebuilt state
     char qty_str[64], cost_str[64], nv_str[64], cv_str[64];
@@ -230,9 +256,11 @@ ledger_rebuild_position_ex(csilk_db_pool_t*         pool,
                                   "current_value=?, updated_at=CURRENT_TIMESTAMP "
                                   "WHERE id=? AND user_id=?",
                                   upd_params);
-    if (upd_res) {
-        csilk_json_free(upd_res);
+    if (!upd_res) {
+        db_tx_scope_rollback(pool, &scope);
+        return -1;
     }
+    csilk_json_free(upd_res);
 
     if (out_state) {
         out_state->asset_id = asset_id;
@@ -391,9 +419,14 @@ ledger_rebuild_portfolio(csilk_db_pool_t* pool, int64_t user_id)
         int  reb_rc = is_inv ? ledger_rebuild_position(pool, user_id, aid, NULL)
                              : ledger_rebuild_account(pool, user_id, aid, NULL);
         if (reb_rc != 0) {
-            csilk_json_free(assets);
-            db_tx_scope_rollback(pool, &scope);
-            return -1;
+            /* An individual asset may have an inconsistent historical stream
+             * (e.g. a sell whose supporting buy was reversed). Skip it so the
+             * portfolio rebuild remains bounded; the asset keeps its last
+             * known state. */
+            CSILK_LOG_W("ledger_rebuild_portfolio: asset %lld rebuild failed rc=%d, skipping",
+                        (long long)aid,
+                        reb_rc);
+            continue;
         }
     }
     csilk_json_free(assets);

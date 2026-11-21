@@ -2,7 +2,9 @@
 #include "common/balance.h"
 #include "common/tx_types.h"
 #include "common/ledger_utils.h"
+#include "services/market/exchange_rate_service.h"
 #include "csilk/csilk.h"
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -49,13 +51,22 @@ ledger_internal_create_buy_lot(csilk_db_pool_t* pool,
 {
     money_t buy_gross = amount;
     if (money_is_zero(buy_gross) && !decimal_is_zero(price.unit_price)) {
-        price_times_quantity(price, qty, &buy_gross);
+        if (price_times_quantity(price, qty, &buy_gross) != DECIMAL_OK) {
+            return -1;
+        }
     }
     money_t buy_total;
-    money_add(buy_gross, fee, &buy_total);
+    if (money_add(buy_gross, fee, &buy_total) != DECIMAL_OK) {
+        return -1;
+    }
+    if (quantity_is_zero(qty) || quantity_is_negative(qty)) {
+        return -1;
+    }
 
     price_t cost_per_unit;
-    money_div_quantity(buy_total, qty, 4, ROUND_HALF_UP, &cost_per_unit);
+    if (money_div_quantity(buy_total, qty, 8, ROUND_HALF_UP, &cost_per_unit) != DECIMAL_OK) {
+        return -1;
+    }
 
     return tx_lot_create(pool, user_id, asset_id, tx_id, tx_date, qty, cost_per_unit, fee);
 }
@@ -125,7 +136,8 @@ upsert_parent_tx_row(csilk_db_pool_t* pool,
                      const char*      price_buf,
                      const char*      qty_buf,
                      const char*      fee_buf,
-                     const char*      cur_str)
+                     const char*      cur_str,
+                     const char*      fx_buf)
 {
     const char* dir = NULL;
     const char* ldir = NULL;
@@ -140,23 +152,38 @@ upsert_parent_tx_row(csilk_db_pool_t* pool,
             parent_tx_str = ptx_buf;
         }
 
-        const char* ins_params[] = {
-            uid_str,       ast_str, last_str, cat_str,        src_type,
-            tx_type_str,   dir,     ldir,     amt_buf,        price_buf,
-            qty_buf,       fee_buf, cur_str,  effective_date, tx->note ? tx->note : "",
-            parent_tx_str, lid_str, ast_str,  uid_str,        NULL};
+        const char* ins_params[] = {uid_str,
+                                    ast_str,
+                                    last_str,
+                                    cat_str,
+                                    src_type,
+                                    tx_type_str,
+                                    dir,
+                                    ldir,
+                                    amt_buf,
+                                    price_buf,
+                                    qty_buf,
+                                    fee_buf,
+                                    cur_str,
+                                    fx_buf,
+                                    effective_date,
+                                    tx->note ? tx->note : "",
+                                    parent_tx_str,
+                                    lid_str,
+                                    ast_str,
+                                    uid_str,
+                                    NULL};
 
         csilk_json_t* ins_res = csilk_db_query_param_json(
             pool,
             "INSERT INTO transactions (user_id, asset_id, linked_asset_id, category_id, "
             "source_type, transaction_type, direction, linked_direction, "
-            "amount, price_per_unit, quantity, fee, currency, transaction_date, note, "
-            "parent_tx_id, ledger_id) "
+            "amount, price_per_unit, quantity, fee, currency, fx_rate_to_cny, "
+            "transaction_date, note, parent_tx_id, ledger_id) "
             "VALUES (?, ?, NULLIF(CAST(NULLIF(?, '') AS BIGINT), 0), NULLIF(CAST(NULLIF(?, '') AS "
             "BIGINT), 0), ?, ?, "
-            "?, NULLIF(?, ''), ?, ?, ?, ?, "
-            "?, ?, ?, "
-            "NULLIF(CAST(NULLIF(?, '') AS BIGINT), 0), "
+            "?, NULLIF(?, ''), ?, ?, ?, ?, ?, ?, "
+            "?, ?, NULLIF(CAST(NULLIF(?, '') AS BIGINT), 0), "
             "COALESCE(NULLIF(CAST(NULLIF(?, '') AS BIGINT), 0), (SELECT ledger_id FROM assets "
             "WHERE id = ?), "
             "(SELECT id FROM ledgers WHERE owner_id = ? AND is_default = 1))) "
@@ -186,6 +213,7 @@ upsert_parent_tx_row(csilk_db_pool_t* pool,
                                 qty_buf,
                                 fee_buf,
                                 cur_str,
+                                fx_buf,
                                 effective_date,
                                 tx->note ? tx->note : "",
                                 cat_str,
@@ -199,7 +227,7 @@ upsert_parent_tx_row(csilk_db_pool_t* pool,
         pool,
         "UPDATE transactions SET "
         "asset_id=?, transaction_type=?, direction=?, linked_direction=NULLIF(?, ''), "
-        "amount=?, price_per_unit=?, quantity=?, fee=?, currency=?, "
+        "amount=?, price_per_unit=?, quantity=?, fee=?, currency=?, fx_rate_to_cny=?, "
         "transaction_date=?, note=?, category_id=NULLIF(CAST(NULLIF(?, '') AS BIGINT), 0), "
         "source_type=?, "
         "linked_asset_id=NULLIF(CAST(NULLIF(?, '') AS BIGINT), 0) "
@@ -228,7 +256,9 @@ insert_and_apply_fee_child(csilk_db_pool_t*   pool,
                            const char*        cat_str,
                            const char*        lid_str,
                            const char*        fee_buf,
-                           const char*        cur_str)
+                           const char*        cur_str,
+                           const char*        fx_buf,
+                           double             fx_rate_to_cny)
 {
     int64_t fee_target_asset = (tx->linked_asset_id > 0) ? tx->linked_asset_id : tx->asset_id;
     char    tx_id_str[32], fee_target_str[32];
@@ -244,10 +274,11 @@ insert_and_apply_fee_child(csilk_db_pool_t*   pool,
                                   "fee",
                                   "out",
                                   fee_buf,
-                                  "0.0000",
-                                  "0.0000",
-                                  "0.0000",
+                                  "0.00000000",
+                                  "0.00000000",
+                                  "0.00000000",
                                   cur_str,
+                                  fx_buf,
                                   effective_date,
                                   fee_note,
                                   tx_id_str,
@@ -257,27 +288,35 @@ insert_and_apply_fee_child(csilk_db_pool_t*   pool,
         pool,
         "INSERT INTO transactions (user_id, asset_id, linked_asset_id, category_id, "
         "source_type, transaction_type, direction, linked_direction, "
-        "amount, price_per_unit, quantity, fee, currency, transaction_date, note, "
-        "parent_tx_id, ledger_id) "
+        "amount, price_per_unit, quantity, fee, currency, fx_rate_to_cny, "
+        "transaction_date, note, parent_tx_id, ledger_id) "
         "VALUES (?, ?, NULLIF(CAST(NULLIF(?, '') AS BIGINT), 0), NULLIF(CAST(NULLIF(?, '') AS "
         "BIGINT), 0), ?, ?, "
         "?, NULL, ?, ?, ?, ?, ?, ?, ?, "
-        "?, NULLIF(CAST(NULLIF(?, '') AS BIGINT), 0))",
+        "?, ?, "
+        "NULLIF(CAST(NULLIF(?, '') AS BIGINT), 0))",
         fee_params);
     if (fee_res) {
         csilk_json_free(fee_res);
     }
 
     money_t neg_fee = money_neg(tx->fee);
-    return balance_apply_delta_m(
-        pool, fee_target_asset, tx->user_id, neg_fee, "transaction_fee", tx->id, fee_note);
+    return balance_apply_delta_m_fx(pool,
+                                    fee_target_asset,
+                                    tx->user_id,
+                                    neg_fee,
+                                    fx_rate_to_cny,
+                                    "transaction_fee",
+                                    tx->id,
+                                    fee_note);
 }
 
 /**
  * @brief Reverse balance deltas for all child fee rows and delete them.
  */
 static int
-reverse_fee_children(csilk_db_pool_t* pool, int64_t user_id, int64_t tx_id, currency_t cur)
+reverse_fee_children(
+    csilk_db_pool_t* pool, int64_t user_id, int64_t tx_id, currency_t cur, double fx_rate_to_cny)
 {
     csilk_json_t* fee_children = tx_child_fee_rows(pool, user_id, tx_id);
     if (!fee_children) {
@@ -291,13 +330,14 @@ reverse_fee_children(csilk_db_pool_t* pool, int64_t user_id, int64_t tx_id, curr
         int64_t       f_target = (f_last > 0) ? f_last : (int64_t)db_get_int(frow, "asset_id");
         money_t       f_amt = db_get_money(frow, "amount", cur);
         if (f_target > 0 && !money_is_zero(f_amt)) {
-            if (balance_apply_delta_m(pool,
-                                      f_target,
-                                      user_id,
-                                      f_amt,
-                                      "transaction_fee_reversal",
-                                      tx_id,
-                                      "fee rollback") != 0) {
+            if (balance_apply_delta_m_fx(pool,
+                                         f_target,
+                                         user_id,
+                                         f_amt,
+                                         fx_rate_to_cny,
+                                         "transaction_fee_reversal",
+                                         tx_id,
+                                         "fee rollback") != 0) {
                 csilk_json_free(fee_children);
                 return -1;
             }
@@ -409,6 +449,17 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
     format_now_timestamp(now_fallback, sizeof(now_fallback));
     const char* effective_date = tx->tx_date ? tx->tx_date : now_fallback;
 
+    /* Historical FX: stamp the point-in-time CNY rate on the row and use that same
+     * rate for every balance/position conversion so cross-currency transactions
+     * never drift with today's rate. */
+    double fx_rate =
+        exchange_rate_get_historical_or_latest(pool, tx->amount.currency, effective_date);
+    if (!isfinite(fx_rate) || fx_rate <= 0.0) {
+        fx_rate = 0.0;
+    }
+    char fx_buf[32];
+    snprintf(fx_buf, sizeof(fx_buf), "%.6f", fx_rate > 0.0 ? fx_rate : 1.0);
+
     char amt_buf[64], price_buf[64], qty_buf[64], fee_buf[64];
     money_to_string(tx->amount, amt_buf, sizeof(amt_buf));
     price_to_string(tx->price, price_buf, sizeof(price_buf));
@@ -432,7 +483,8 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
                              price_buf,
                              qty_buf,
                              fee_buf,
-                             cur_str) != 0) {
+                             cur_str,
+                             fx_buf) != 0) {
         goto fail_rollback;
     }
 
@@ -449,6 +501,7 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
                                        tx->fee,
                                        tx->price,
                                        tx->quantity,
+                                       fx_rate,
                                        &pos_delta);
         if (pos_rc < 0) {
             goto fail_rollback;
@@ -474,27 +527,45 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
 
     // 3. Fee record generation if fee > 0 on any non-fee transaction
     if (!money_is_zero(tx->fee) && tx->type != LEDGER_TX_FEE) {
-        if (insert_and_apply_fee_child(
-                pool, tx, effective_date, uid_str, ast_str, cat_str, lid_str, fee_buf, cur_str) !=
-            0) {
+        if (insert_and_apply_fee_child(pool,
+                                       tx,
+                                       effective_date,
+                                       uid_str,
+                                       ast_str,
+                                       cat_str,
+                                       lid_str,
+                                       fee_buf,
+                                       cur_str,
+                                       fx_buf,
+                                       fx_rate) != 0) {
             goto fail_rollback;
         }
     }
 
     // 4. Target Asset Balance Delta
     if (is_investment_tx) {
-        if (!money_is_zero(pos_delta) &&
-            balance_apply_delta_m(
-                pool, tx->asset_id, tx->user_id, pos_delta, "transaction", tx->id, tx->note) != 0) {
+        if (!money_is_zero(pos_delta) && balance_apply_delta_m_fx(pool,
+                                                                  tx->asset_id,
+                                                                  tx->user_id,
+                                                                  pos_delta,
+                                                                  fx_rate,
+                                                                  "transaction",
+                                                                  tx->id,
+                                                                  tx->note) != 0) {
             goto fail_rollback;
         }
     } else if (tx->type == LEDGER_TX_FEE && tx->linked_asset_id > 0) {
         // Standalone fee with linked account: debited from linked funding asset only
     } else {
         money_t tdelta = tx_delta_m(tx_type_str, tx->amount, tx->price, tx->quantity);
-        if (!money_is_zero(tdelta) &&
-            balance_apply_delta_m(
-                pool, tx->asset_id, tx->user_id, tdelta, "transaction", tx->id, tx->note) != 0) {
+        if (!money_is_zero(tdelta) && balance_apply_delta_m_fx(pool,
+                                                               tx->asset_id,
+                                                               tx->user_id,
+                                                               tdelta,
+                                                               fx_rate,
+                                                               "transaction",
+                                                               tx->id,
+                                                               tx->note) != 0) {
             goto fail_rollback;
         }
     }
@@ -503,13 +574,14 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
     if (tx->linked_asset_id > 0) {
         money_t ldelta =
             compute_linked_delta(tx->type, tx_type_str, tx->amount, tx->price, tx->quantity);
-        if (!money_is_zero(ldelta) && balance_apply_delta_m(pool,
-                                                            tx->linked_asset_id,
-                                                            tx->user_id,
-                                                            ldelta,
-                                                            "transaction_linked",
-                                                            tx->id,
-                                                            tx->note) != 0) {
+        if (!money_is_zero(ldelta) && balance_apply_delta_m_fx(pool,
+                                                               tx->linked_asset_id,
+                                                               tx->user_id,
+                                                               ldelta,
+                                                               fx_rate,
+                                                               "transaction_linked",
+                                                               tx->id,
+                                                               tx->note) != 0) {
             goto fail_rollback;
         }
     }
@@ -523,6 +595,130 @@ fail_rollback:
     }
     db_tx_scope_rollback(pool, &scope);
     return -1;
+}
+
+/**
+ * @brief Legacy manual position rollback used only when checkpoint replay is
+ *        inconsistent (e.g. removing a buy that supported a later sell).
+ */
+static int
+ledger_reverse_position_fallback(csilk_db_pool_t* pool,
+                                 int64_t          user_id,
+                                 int64_t          asset_id,
+                                 const char*      type,
+                                 money_t          amount,
+                                 money_t          fee,
+                                 price_t          price,
+                                 quantity_t       qty,
+                                 currency_t       cur,
+                                 money_t*         out_position_delta)
+{
+    char aid_str[32], uid_str[32];
+    snprintf(aid_str, sizeof(aid_str), "%lld", (long long)asset_id);
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    csilk_json_t* pos = csilk_db_query_param_json(
+        pool,
+        "SELECT a.quantity, a.cost_basis, a.net_value, a.current_value, a.currency, a.cost_method, "
+        "c.asset_type FROM assets a JOIN categories c ON a.category_id=c.id WHERE a.id=? AND "
+        "a.user_id=?",
+        (const char*[]){aid_str, uid_str, NULL});
+    if (!pos || csilk_json_array_size(pos) == 0) {
+        if (pos) {
+            csilk_json_free(pos);
+        }
+        return 0;
+    }
+    const csilk_json_t* pr = csilk_json_array_get(pos, 0);
+    const char*         atype = csilk_json_get_string(pr, "asset_type");
+    if (!atype || (strcmp(atype, "stock") != 0 && strcmp(atype, "fund") != 0 &&
+                   strcmp(atype, "bond") != 0 && strcmp(atype, "crypto") != 0)) {
+        csilk_json_free(pos);
+        return 0;
+    }
+
+    if (!currency_equals(amount.currency, cur)) {
+        amount = exchange_rate_convert_m(amount, cur);
+    }
+    if (!currency_equals(fee.currency, cur)) {
+        fee = exchange_rate_convert_m(fee, cur);
+    }
+    if (!currency_equals(price.currency, cur)) {
+        double p_dbl = price_to_double(price);
+        double conv_p =
+            exchange_rate_convert(p_dbl, currency_code(&price.currency), currency_code(&cur));
+        price_from_double(conv_p, 8, cur, &price);
+    }
+
+    quantity_t old_qty = db_get_quantity(pr, "quantity");
+    money_t    old_cost = db_get_money(pr, "cost_basis", cur);
+    price_t    old_net = db_get_price(pr, "net_value", cur);
+    money_t    old_current = db_get_money(pr, "current_value", cur);
+
+    quantity_t new_qty;
+    money_t    new_cost;
+    price_t    new_net;
+
+    if (strcmp(type, "buy") == 0) {
+        if (quantity_cmp(old_qty, qty) > 0) {
+            quantity_sub(old_qty, qty, &new_qty);
+        } else {
+            new_qty = quantity_zero();
+        }
+        money_t total_paid;
+        money_add(amount, fee, &total_paid);
+        if (money_cmp(old_cost, total_paid) > 0) {
+            money_sub(old_cost, total_paid, &new_cost);
+        } else {
+            new_cost = money_zero(cur);
+        }
+        new_net = !quantity_is_zero(new_qty) ? old_net : price_zero(cur);
+    } else if (strcmp(type, "sell") == 0) {
+        quantity_add(old_qty, qty, &new_qty);
+        money_t restored_cost;
+        if (!quantity_is_zero(old_qty)) {
+            decimal_t ratio;
+            decimal_div(qty.units, old_qty.units, 12, ROUND_HALF_UP, &ratio);
+            decimal_t rest_dec;
+            decimal_mul(old_cost.amount, ratio, &rest_dec);
+            uint8_t prec = currency_precision(cur);
+            decimal_round(rest_dec, (int32_t)prec, ROUND_HALF_UP, &restored_cost.amount);
+            restored_cost.currency = cur;
+        } else {
+            price_times_quantity(price, qty, &restored_cost);
+        }
+        money_add(old_cost, restored_cost, &new_cost);
+        new_net = old_net;
+    } else {
+        csilk_json_free(pos);
+        return 0;
+    }
+
+    money_t new_val;
+    money_t delta_m;
+    price_times_quantity(new_net, new_qty, &new_val);
+    money_sub(new_val, old_current, &delta_m);
+
+    if (out_position_delta) {
+        *out_position_delta = delta_m;
+    }
+
+    char nq[64], nc[64], nv[64];
+    quantity_to_string_fixed(new_qty, 8, nq, sizeof(nq));
+    money_to_string(new_cost, nc, sizeof(nc));
+    price_to_string_fixed(new_net, 8, nv, sizeof(nv));
+
+    const char*   p[] = {nq, nc, nv, aid_str, uid_str, NULL};
+    csilk_json_t* upd_res = csilk_db_query_param_json(
+        pool,
+        "UPDATE assets SET quantity=?, cost_basis=?, net_value=? WHERE id=? AND user_id=?",
+        p);
+    if (!upd_res) {
+        csilk_json_free(pos);
+        return -2;
+    }
+    csilk_json_free(upd_res);
+    csilk_json_free(pos);
+    return 0;
 }
 
 int
@@ -558,8 +754,13 @@ ledger_reverse_tx(csilk_db_pool_t* pool, int64_t user_id, int64_t tx_id)
     price_t    price = db_get_price(old_tx, "price_per_unit", cur);
     quantity_t qty = db_get_quantity(old_tx, "quantity");
 
+    double fx_rate = db_get_num(old_tx, "fx_rate_to_cny");
+    if (!isfinite(fx_rate) || fx_rate <= 0.0) {
+        fx_rate = 0.0;
+    }
+
     // 1. Query and reverse any fee children
-    if (reverse_fee_children(pool, user_id, tx_id, cur) != 0) {
+    if (reverse_fee_children(pool, user_id, tx_id, cur, fx_rate) != 0) {
         goto fail_rollback;
     }
 
@@ -568,28 +769,29 @@ ledger_reverse_tx(csilk_db_pool_t* pool, int64_t user_id, int64_t tx_id)
     bool is_fifo = is_inv && ledger_internal_asset_is_fifo(pool, user_id, asset_id);
 
     if (is_inv) {
-        if (is_fifo) {
-            if (strcmp(type, "buy") == 0) {
-                tx_lots_delete_by_buy_tx(pool, user_id, tx_id);
-            }
-            if (ledger_rebuild_position_ex(pool, user_id, asset_id, NULL, tx_id) != 0) {
-                goto fail_rollback;
-            }
-        } else {
-            money_t rollback_pos_delta = money_zero(cur);
-            if (rollback_position_fc(
-                    pool, asset_id, user_id, type, amount, fee, price, qty, &rollback_pos_delta) !=
+        if (is_fifo && strcmp(type, "buy") == 0) {
+            tx_lots_delete_by_buy_tx(pool, user_id, tx_id);
+        }
+        if (ledger_rebuild_position_ex(pool, user_id, asset_id, NULL, tx_id) != 0) {
+            /* Checkpoint replay can be inconsistent when the reversed
+             * transaction supported later events (e.g. removing a buy that
+             * covered a sell). Fall back to the legacy bounded rollback to
+             * preserve the pinned regression behavior. */
+            money_t fallback_delta;
+            if (ledger_reverse_position_fallback(
+                    pool, user_id, asset_id, type, amount, fee, price, qty, cur, &fallback_delta) !=
                 0) {
                 goto fail_rollback;
             }
-            if (!money_is_zero(rollback_pos_delta) &&
-                balance_apply_delta_m(pool,
-                                      asset_id,
-                                      user_id,
-                                      rollback_pos_delta,
-                                      "transaction_reversal",
-                                      tx_id,
-                                      "position rollback") != 0) {
+            if (!money_is_zero(fallback_delta) &&
+                balance_apply_delta_m_fx(pool,
+                                         asset_id,
+                                         user_id,
+                                         fallback_delta,
+                                         fx_rate,
+                                         "transaction_reversal",
+                                         tx_id,
+                                         "position rollback (manual fallback)") != 0) {
                 goto fail_rollback;
             }
         }
@@ -599,13 +801,14 @@ ledger_reverse_tx(csilk_db_pool_t* pool, int64_t user_id, int64_t tx_id)
         money_t tdelta = tx_delta_m(type, amount, price, qty);
         if (!money_is_zero(tdelta)) {
             money_t rev_tdelta = money_neg(tdelta);
-            if (balance_apply_delta_m(pool,
-                                      asset_id,
-                                      user_id,
-                                      rev_tdelta,
-                                      "transaction_reversal",
-                                      tx_id,
-                                      "rollback") != 0) {
+            if (balance_apply_delta_m_fx(pool,
+                                         asset_id,
+                                         user_id,
+                                         rev_tdelta,
+                                         fx_rate,
+                                         "transaction_reversal",
+                                         tx_id,
+                                         "rollback") != 0) {
                 goto fail_rollback;
             }
         }
@@ -615,13 +818,14 @@ ledger_reverse_tx(csilk_db_pool_t* pool, int64_t user_id, int64_t tx_id)
     if (linked_asset_id > 0) {
         ledger_tx_type_t ltype = ledger_tx_type_from_str(type);
         money_t          ldelta = money_neg(compute_linked_delta(ltype, type, amount, price, qty));
-        if (!money_is_zero(ldelta) && balance_apply_delta_m(pool,
-                                                            linked_asset_id,
-                                                            user_id,
-                                                            ldelta,
-                                                            "transaction_linked_reversal",
-                                                            tx_id,
-                                                            "rollback") != 0) {
+        if (!money_is_zero(ldelta) && balance_apply_delta_m_fx(pool,
+                                                               linked_asset_id,
+                                                               user_id,
+                                                               ldelta,
+                                                               fx_rate,
+                                                               "transaction_linked_reversal",
+                                                               tx_id,
+                                                               "rollback") != 0) {
             goto fail_rollback;
         }
     }
