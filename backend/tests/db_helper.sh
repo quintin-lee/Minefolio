@@ -203,3 +203,72 @@ db_stop_server() {
     wait "$pid" 2>/dev/null || true
   fi
 }
+
+# Poll an async task submission response until completion.
+# Usage: FINAL_JSON=$(db_poll_task "$BASE_URL" "$AUTH_HEADER" "$SUBMIT_JSON" [max_iters] [prefix])
+# If SUBMIT_JSON has no positive data.task_id, echoes SUBMIT_JSON unchanged.
+# On status=completed, echoes {"code":0,"message":"ok","data":task.result}.
+db_poll_task() {
+  local base_url="$1"
+  local auth_header="$2"
+  local submit_json="$3"
+  local max_iters="${4:-120}"
+  local prefix="${5:-/api/tasks}"
+
+  local task_id
+  task_id=$(node -e "
+    try {
+      const r = JSON.parse(process.argv[1]);
+      const id = r && r.data && Number(r.data.task_id);
+      console.log(Number.isFinite(id) && id > 0 ? id : 0);
+    } catch {
+      console.log(0);
+    }
+  " "$submit_json")
+
+  if [ "$task_id" = "0" ]; then
+    printf '%s\n' "$submit_json"
+    return 0
+  fi
+
+  local i=0
+  while [ "$i" -lt "$max_iters" ]; do
+    local poll_res
+    poll_res=$(curl -s -H "$auth_header" "${base_url}${prefix}/${task_id}")
+    local state
+    state=$(node -e "
+      try {
+        const r = JSON.parse(process.argv[1]);
+        const t = r && r.data;
+        if (!t) { console.log('ERR|invalid poll envelope'); process.exit(0); }
+        if (t.status === 'completed') {
+          console.log('DONE|' + JSON.stringify({ code: 0, message: 'ok', data: t.result ?? {} }));
+        } else if (t.status === 'failed' || t.status === 'cancelled') {
+          console.log('FAIL|' + (t.error_message || 'task failed'));
+        } else {
+          console.log('WAIT|');
+        }
+      } catch (e) {
+        console.log('ERR|' + e.message);
+      }
+    " "$poll_res")
+
+    local tag="${state%%|*}"
+    local payload="${state#*|}"
+    if [ "$tag" = "DONE" ]; then
+      printf '%s\n' "$payload"
+      return 0
+    elif [ "$tag" = "FAIL" ]; then
+      echo "❌ Async task #${task_id} failed: ${payload}" >&2
+      printf '{"code":500,"message":%s,"data":null}\n' "$(node -e "console.log(JSON.stringify(process.argv[1]))" "$payload")"
+      return 1
+    fi
+
+    sleep 0.15
+    i=$((i + 1))
+  done
+
+  echo "❌ Async task #${task_id} timed out after ${max_iters} polls" >&2
+  printf '{"code":504,"message":"async task timeout","data":null}\n'
+  return 1
+}

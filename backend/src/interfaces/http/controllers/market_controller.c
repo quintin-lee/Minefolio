@@ -1,5 +1,6 @@
 #include "interfaces/http/controllers/market_controller.h"
 #include "application/market/usecases.h"
+#include "application/task/async_task_manager.h"
 #include "common/response.h"
 #include "common/ctx.h"
 #include "common/db.h"
@@ -44,6 +45,79 @@ api_market_quote(csilk_ctx_t* c)
     }
 }
 
+typedef struct {
+    int64_t asset_id;
+} market_sync_single_task_arg_t;
+
+static int
+market_sync_all_task_fn(void*   pool,
+                        int64_t task_id,
+                        int64_t user_id,
+                        int64_t ledger_id,
+                        void*   arg,
+                        char**  out_result_json,
+                        char*   err_buf,
+                        size_t  err_cap)
+{
+    (void)ledger_id;
+    (void)arg;
+    mf_async_task_update_progress(pool, task_id, 15, "正在刷新汇率与全部持仓行情");
+
+    int                     synced = 0, failed = 0;
+    market_usecase_result_t res = {0};
+    int                     rc = market_usecase_sync_all(pool, user_id, &synced, &failed, &res);
+    if (rc == 0 && res.code == 0) {
+        csilk_json_t* out = csilk_json_object();
+        csilk_json_add_number(out, "synced_count", synced);
+        csilk_json_add_number(out, "failed_count", failed);
+        if (out_result_json) {
+            *out_result_json = csilk_json_serialize(out, NULL);
+        }
+        csilk_json_free(out);
+        return 0;
+    }
+
+    snprintf(err_buf, err_cap, "%s", res.message[0] ? res.message : "同步全部行情失败");
+    return -1;
+}
+
+static int
+market_sync_single_task_fn(void*   pool,
+                           int64_t task_id,
+                           int64_t user_id,
+                           int64_t ledger_id,
+                           void*   arg,
+                           char**  out_result_json,
+                           char*   err_buf,
+                           size_t  err_cap)
+{
+    (void)ledger_id;
+    market_sync_single_task_arg_t* targ = (market_sync_single_task_arg_t*)arg;
+    if (!targ || targ->asset_id <= 0) {
+        snprintf(err_buf, err_cap, "参数错误");
+        return -1;
+    }
+
+    mf_async_task_update_progress(pool, task_id, 20, "正在拉取最新行情");
+
+    csilk_json_t*           data = NULL;
+    market_usecase_result_t res = {0};
+    int rc = market_usecase_sync_single(pool, user_id, targ->asset_id, &data, &res);
+    if (rc == 0 && res.code == 0 && data) {
+        if (out_result_json) {
+            *out_result_json = csilk_json_serialize(data, NULL);
+        }
+        csilk_json_free(data);
+        return 0;
+    }
+    if (data) {
+        csilk_json_free(data);
+    }
+
+    snprintf(err_buf, err_cap, "%s", res.message[0] ? res.message : "同步行情数据失败");
+    return -1;
+}
+
 void
 api_market_sync_all(csilk_ctx_t* c)
 {
@@ -53,18 +127,23 @@ api_market_sync_all(csilk_ctx_t* c)
         return;
     }
 
-    int                     synced = 0, failed = 0;
-    market_usecase_result_t res = {0};
-    int rc = market_usecase_sync_all(db_get_pool(), user_id, &synced, &failed, &res);
-
-    if (rc == 0 && res.code == 0) {
-        csilk_json_t* out = csilk_json_object();
-        csilk_json_add_number(out, "synced_count", synced);
-        csilk_json_add_number(out, "failed_count", failed);
-        respond_ok(c, out);
-    } else {
-        respond_error(c, res.code ? res.code : 1002, res.message);
+    bool    deduplicated = false;
+    int64_t task_id = mf_async_task_submit(db_get_pool(),
+                                           user_id,
+                                           0,
+                                           "market_sync_all",
+                                           "market:sync:all",
+                                           "正在排队同步全部行情",
+                                           market_sync_all_task_fn,
+                                           NULL,
+                                           NULL,
+                                           &deduplicated);
+    if (task_id <= 0) {
+        respond_error(c, 500, "提交异步行情同步任务失败");
+        return;
     }
+
+    mf_async_task_respond_submitted(c, task_id, "market_sync_all", deduplicated, NULL);
 }
 
 void
@@ -83,17 +162,44 @@ api_market_sync_single(csilk_ctx_t* c)
         return;
     }
 
-    csilk_json_t*           data = NULL;
+    csilk_db_pool_t*        pool = db_get_pool();
     market_usecase_result_t res = {0};
-    int rc = market_usecase_sync_single(db_get_pool(), user_id, aid, &data, &res);
-
-    if (rc == 0 && res.code == 0) {
-        respond_ok(c, data);
-    } else if (res.code == 1003) {
-        respond_not_found(c);
-    } else {
-        respond_error(c, res.code ? res.code : 500, res.message);
+    if (market_usecase_validate_sync_single(pool, user_id, aid, &res) != 0) {
+        if (res.code == 1003) {
+            respond_not_found(c);
+        } else {
+            respond_error(c, res.code ? res.code : 1002, res.message);
+        }
+        return;
     }
+
+    market_sync_single_task_arg_t* arg = calloc(1, sizeof(*arg));
+    if (!arg) {
+        respond_error(c, 500, "内存不足");
+        return;
+    }
+    arg->asset_id = aid;
+
+    char dedupe_key[64];
+    snprintf(dedupe_key, sizeof(dedupe_key), "market:sync:%lld", (long long)aid);
+
+    bool    deduplicated = false;
+    int64_t task_id = mf_async_task_submit(pool,
+                                           user_id,
+                                           0,
+                                           "market_sync_single",
+                                           dedupe_key,
+                                           "正在排队同步资产行情",
+                                           market_sync_single_task_fn,
+                                           arg,
+                                           free,
+                                           &deduplicated);
+    if (task_id <= 0) {
+        respond_error(c, 500, "提交异步行情同步任务失败");
+        return;
+    }
+
+    mf_async_task_respond_submitted(c, task_id, "market_sync_single", deduplicated, NULL);
 }
 
 void

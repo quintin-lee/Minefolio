@@ -119,17 +119,36 @@ echo "Assets list: ${ASSETS_LIST}"
 ASSET_ID=$(node -e "const r=JSON.parse(process.argv[1]); console.log(r.data.list[0].id);" "$ASSETS_LIST")
 echo "Asset ID: ${ASSET_ID}"
 
-echo "=== 5. Test Single Asset Quote Sync ==="
-SYNC_ONE_RES=$(curl -s -X POST "${BASE_URL}/api/market/sync/${ASSET_ID}" -H "$AUTH_HEADER")
-echo "Sync single asset: ${SYNC_ONE_RES}"
+echo "=== 5. Test Single Asset Quote Sync (Async) ==="
+SYNC_BAD_RES=$(curl -s -X POST "${BASE_URL}/api/market/sync/999999" -H "$AUTH_HEADER")
+echo "Sync non-existent asset: ${SYNC_BAD_RES}"
+if ! echo "$SYNC_BAD_RES" | grep -q '"code":1003' || echo "$SYNC_BAD_RES" | grep -q '"task_id":'; then
+    echo "FATAL: Non-existent asset sync should fail fast with code=1003 and no task_id"
+    exit 1
+fi
+
+SYNC_ONE_SUB=$(curl -s -X POST "${BASE_URL}/api/market/sync/${ASSET_ID}" -H "$AUTH_HEADER")
+echo "Sync single submit: ${SYNC_ONE_SUB}"
+if ! echo "$SYNC_ONE_SUB" | grep -q '"task_id":'; then
+    echo "FATAL: Single sync did not return async task_id"
+    exit 1
+fi
+SYNC_ONE_RES=$(db_poll_task "$BASE_URL" "$AUTH_HEADER" "$SYNC_ONE_SUB")
+echo "Sync single asset result: ${SYNC_ONE_RES}"
 if ! echo "$SYNC_ONE_RES" | grep -q '"net_value":'; then
     echo "FATAL: Single sync failed"
     exit 1
 fi
 
-echo "=== 6. Test Bulk Market Sync ==="
-SYNC_ALL_RES=$(curl -s -X POST "${BASE_URL}/api/market/sync" -H "$AUTH_HEADER")
-echo "Sync all: ${SYNC_ALL_RES}"
+echo "=== 6. Test Bulk Market Sync (Async) ==="
+SYNC_ALL_SUB=$(curl -s -X POST "${BASE_URL}/api/market/sync" -H "$AUTH_HEADER")
+echo "Sync all submit: ${SYNC_ALL_SUB}"
+if ! echo "$SYNC_ALL_SUB" | grep -q '"task_id":'; then
+    echo "FATAL: Bulk sync did not return async task_id"
+    exit 1
+fi
+SYNC_ALL_RES=$(db_poll_task "$BASE_URL" "$AUTH_HEADER" "$SYNC_ALL_SUB")
+echo "Sync all result: ${SYNC_ALL_RES}"
 if ! echo "$SYNC_ALL_RES" | grep -q '"synced_count":1'; then
     echo "FATAL: Sync all did not sync asset"
     exit 1
