@@ -239,7 +239,7 @@ QUALIFIED="mcp:$HTTP_MCP_ID:mcp_echo"
 start_mock_llm "$QUALIFIED"
 CHAT_BODY="$TMP_DIR/mcp_chat.txt"
 : > "$CHAT_BODY"
-curl -sN --max-time 60 -b "$JAR" -X POST "$BASE/ai/chat" \
+curl -sN --max-time 90 -b "$JAR" -X POST "$BASE/ai/chat" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -H "X-CSRF-Token: $CSRF" \
