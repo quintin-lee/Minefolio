@@ -306,7 +306,7 @@ mcp_bridge_merge_tools(csilk_db_pool_t* pool, int64_t user_id, size_t* out_count
     /* 1) 内置工具静态数组（不计入合并堆，但需拷入 merged 数组供统一释放） */
     size_t                 builtin_count = 0;
     const csilk_ai_tool_t* builtin = ai_tool_get_csilk_definitions(&builtin_count);
-    size_t                 off = builtin_count; /* 已填充条目数；oom 回滚边界 */
+    size_t                 off = 0; /* 已填充条目数；oom 回滚边界 */
 
     /* 2) 加载当前用户已启用 MCP 服务器的工具缓存（JOIN mcp_server enabled=1），
        并按缓存 TTL 过滤过期工具（设计 §9 MINEFOLIO_MCP_CACHE_TTL）。 */
@@ -390,7 +390,7 @@ mcp_bridge_merge_tools(csilk_db_pool_t* pool, int64_t user_id, size_t* out_count
                 bparams = csilk_json_object(); /* 序列化/解析失败退化为空 schema */
             }
         }
-        merged[i] = (csilk_ai_tool_t){
+        merged[off] = (csilk_ai_tool_t){
             .type = "function",
             .function =
                 {
