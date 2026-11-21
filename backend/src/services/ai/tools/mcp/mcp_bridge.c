@@ -259,27 +259,38 @@ mcp_err_response(const char* code, const char* detail)
 /* ================================================================== */
 
 /* 检测 schema 是否含外部 $ref（http/https/urn 等 LLM 无法解析的引用）。
+   直接读取原始 schema 字符串而非 csilk_json_t 视图：视图借用 TLS scratch ring
+   buffer（深度嵌套时会环绕覆写旧槽位），且 $ref 只能以顶层/嵌套键名形式
+   出现在 object 中，文本扫描 "$ref" 键即可准确判定。
    csilk JSON API 无 remove，故策略：发现外部 $ref 时整个 schema 退化为空
    对象（外部引用对 LLM 无意义且可能有恶意 schema），保留内部 # 引用。
    design §15④ $ref 白名单。 */
 static bool
-mcp_schema_has_external_ref(const csilk_json_t* node)
+mcp_schema_has_external_ref(const char* schema_json)
 {
-    if (!csilk_json_is_object(node)) {
+    if (!schema_json || !schema_json[0]) {
         return false;
     }
-    csilk_json_t* ref = csilk_json_get(node, "$ref");
-    if (csilk_json_is_string(ref)) {
-        const char* v = csilk_json_string_value(ref);
-        if (v && v[0] != '#') {
-            return true; /* 外部引用 */
+    const char* p = schema_json;
+    while ((p = strstr(p, "\"$ref\"")) != NULL) {
+        /* 定位紧随其后的字符串值 */
+        const char* v = p + 6; /* 跳过 "\"$ref\"" */
+        while (*v == ' ' || *v == '\t' || *v == '\n' || *v == '\r') {
+            v++;
         }
-    }
-    size_t n = csilk_json_object_size(node);
-    for (size_t i = 0; i < n; i++) {
-        if (mcp_schema_has_external_ref(csilk_json_object_val(node, i))) {
-            return true;
+        if (*v == ':') {
+            v++;
+            while (*v == ' ' || *v == '\t' || *v == '\n' || *v == '\r') {
+                v++;
+            }
+            if (*v == '"') {
+                v++;
+                if (*v && *v != '#') {
+                    return true; /* 外部引用（http/https/urn 等） */
+                }
+            }
         }
+        p += 6;
     }
     return false;
 }
@@ -412,15 +423,13 @@ mcp_bridge_merge_tools(csilk_db_pool_t* pool, int64_t user_id, size_t* out_count
                  "%.511s",
                  t->description[0] ? t->description : "(MCP remote tool)");
 
-        /* parameters_json：input_schema 是 JSON 文本，parse 成 csilk_json_t* 再喂 LLM。
-           若含外部 $ref（LLM 无法解析的引用），整个 schema 退化为空对象。 */
-        /* 解析 input_schema；含外部 $ref 或解析失败时退化为空 schema。
-           csilk_json_parse 返回 immutable 对象 (CSILK_JSON_F_OWNER|F_HEAP)，
-           mcp_bridge_free_merged 的 csilk_json_free 可正确释放 yyjson_doc。 */
+        /* parameters_json：input_schema 是 DB 行 JSON 的字符串标量（双引擎契约），
+           直接 parse 出的 yyjson_doc 与行文档无生命周期关系，可长期持有并由
+           mcp_bridge_free_merged 释放。避免先 free 再建空对象的二次分配。 */
         csilk_json_t* params = NULL;
         if (t->input_schema[0]) {
             params = csilk_json_parse(t->input_schema);
-            if (!params || mcp_schema_has_external_ref(params)) {
+            if (!params || mcp_schema_has_external_ref(t->input_schema)) {
                 if (params) {
                     csilk_json_free(params);
                 }
