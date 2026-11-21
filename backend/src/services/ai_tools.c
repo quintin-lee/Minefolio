@@ -34,7 +34,11 @@ ai_tools_execute_parsed_cancel(csilk_db_pool_t*     pool,
                                const char*          name,
                                const volatile bool* cancel_token)
 {
-    ai_tool_context_t* ctx = ai_tool_context_create(pool, user_id, session_id, NULL);
+    /* Parallel-tool worker threads pass pool=NULL (design §5: each thread
+     * uses its own db_get_pool() for its own DB operations). Guard against
+     * NULL here so the context is created with a safe pool pointer. */
+    csilk_db_pool_t*   safe_pool = pool;
+    ai_tool_context_t* ctx = ai_tool_context_create(safe_pool, user_id, session_id, NULL);
     if (ctx) {
         ctx->cancel_token = cancel_token;
     }

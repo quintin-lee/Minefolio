@@ -73,6 +73,18 @@ pow10_val(int32_t scale)
     return 0;
 }
 
+/*
+ * Convert an unsigned magnitude (already bounded to <= 2^127 by the caller) into
+ * its negative signed representation. Negating in the unsigned domain is the only
+ * portable way to represent INT128_MIN: `-(__int128_t)mag` is signed overflow (UB)
+ * when mag == 2^127, whereas the two's-complement subtraction below is well defined.
+ */
+static inline __int128_t
+decimal_negate_magnitude(unsigned __int128 mag)
+{
+    return (__int128_t)((unsigned __int128)0 - mag);
+}
+
 /* 256-bit unsigned integer arithmetic for intermediate exact operations */
 typedef struct {
     unsigned __int128 hi;
@@ -613,7 +625,7 @@ decimal_mul(decimal_t a, decimal_t b, decimal_t* out)
             if (Q.lo > ((unsigned __int128)1 << 127)) {
                 return DECIMAL_ERR_OVERFLOW;
             }
-            out->mantissa = -(__int128_t)Q.lo;
+            out->mantissa = decimal_negate_magnitude(Q.lo);
         } else {
             if (Q.lo > (((unsigned __int128)1 << 127) - 1)) {
                 return DECIMAL_ERR_OVERFLOW;
@@ -631,7 +643,7 @@ decimal_mul(decimal_t a, decimal_t b, decimal_t* out)
         if (prod.lo > ((unsigned __int128)1 << 127)) {
             return DECIMAL_ERR_OVERFLOW;
         }
-        out->mantissa = -(__int128_t)prod.lo;
+        out->mantissa = decimal_negate_magnitude(prod.lo);
     } else {
         if (prod.lo > (((unsigned __int128)1 << 127) - 1)) {
             return DECIMAL_ERR_OVERFLOW;
@@ -739,7 +751,7 @@ decimal_div(decimal_t a, decimal_t b, int32_t target_scale, round_mode_t mode, d
         if (Q.lo > ((unsigned __int128)1 << 127)) {
             return DECIMAL_ERR_OVERFLOW;
         }
-        out->mantissa = -(__int128_t)Q.lo;
+        out->mantissa = decimal_negate_magnitude(Q.lo);
     } else {
         if (Q.lo > (((unsigned __int128)1 << 127) - 1)) {
             return DECIMAL_ERR_OVERFLOW;
@@ -762,9 +774,10 @@ decimal_abs(decimal_t d)
 decimal_t
 decimal_neg(decimal_t d)
 {
-    if (d.mantissa != ((__int128_t)((unsigned __int128)1 << 127))) {
-        d.mantissa = -d.mantissa;
+    if (d.mantissa == ((__int128_t)((unsigned __int128)1 << 127))) {
+        return d;
     }
+    d.mantissa = -d.mantissa;
     return d;
 }
 
@@ -909,7 +922,7 @@ decimal_round(decimal_t d, int32_t target_scale, round_mode_t mode, decimal_t* o
         if (q > ((unsigned __int128)1 << 127)) {
             return DECIMAL_ERR_OVERFLOW;
         }
-        out->mantissa = -(__int128_t)q;
+        out->mantissa = decimal_negate_magnitude(q);
     } else {
         if (q > (((unsigned __int128)1 << 127) - 1)) {
             return DECIMAL_ERR_OVERFLOW;

@@ -1,4 +1,4 @@
--- V032: Unified asynchronous background tasks table (PostgreSQL)
+-- V033: Unified asynchronous background tasks table (PostgreSQL)
 
 CREATE TABLE IF NOT EXISTS async_tasks (
     id            BIGSERIAL PRIMARY KEY,

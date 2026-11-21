@@ -33,7 +33,7 @@ mf_portfolio_repo_get_holdings(void*               db_pool,
         snprintf(hold_sql,
                  sizeof(hold_sql),
                  "SELECT a.id AS asset_id, a.name, c.asset_type, a.currency, "
-                 "a.quantity, a.net_value, a.cost_basis "
+                 "a.quantity, a.net_value, a.cost_basis, a.cost_method "
                  "FROM assets a JOIN categories c ON a.category_id = c.id "
                  "WHERE a.user_id = ? AND a.ledger_id = ? AND c.asset_type IN "
                  "('stock','fund','bond','crypto') AND " MF_RBAC_ASSET_UNMASKED_SQL(
@@ -44,7 +44,7 @@ mf_portfolio_repo_get_holdings(void*               db_pool,
         snprintf(hold_sql,
                  sizeof(hold_sql),
                  "SELECT a.id AS asset_id, a.name, c.asset_type, a.currency, "
-                 "a.quantity, a.net_value, a.cost_basis "
+                 "a.quantity, a.net_value, a.cost_basis, a.cost_method "
                  "FROM assets a JOIN categories c ON a.category_id = c.id "
                  "WHERE a.user_id = ? AND c.asset_type IN ('stock','fund','bond','crypto') "
                  "AND " MF_RBAC_ASSET_UNMASKED_SQL("a") " "
@@ -83,6 +83,11 @@ mf_portfolio_repo_get_holdings(void*               db_pool,
         if (atype) {
             snprintf(items[i].asset_type, sizeof(items[i].asset_type), "%s", atype);
         }
+        const char* cm = csilk_json_get_string(row, "cost_method");
+        snprintf(items[i].cost_method,
+                 sizeof(items[i].cost_method),
+                 "%s",
+                 (cm && cm[0]) ? cm : "weighted_average");
         const char* cur = csilk_json_get_string(row, "currency");
         items[i].currency = currency_from_str(cur ? cur : "CNY");
 

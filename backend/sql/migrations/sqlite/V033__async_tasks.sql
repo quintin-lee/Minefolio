@@ -1,4 +1,4 @@
--- V032: Unified asynchronous background tasks table (SQLite)
+-- V033: Unified asynchronous background tasks table (SQLite)
 
 CREATE TABLE IF NOT EXISTS async_tasks (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
