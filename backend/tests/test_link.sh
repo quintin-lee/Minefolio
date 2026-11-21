@@ -274,8 +274,10 @@ date,asset_name,category_name,expense_type,amount,currency,note
 2026-08-10,钱包,日常消费,expense,100,CNY,测试导入
 2026-08-11,钱包,工资,income,200,CNY,测试收入
 CSVEOF
-IMPORT_RES=$(curl -s -H "$AUTH" -H 'Content-Type: text/csv; charset=utf-8' --data-binary @/tmp/mf_import_test.csv "$BASE/import/daily-expenses")
+IMPORT_SUB=$(curl -s -H "$AUTH" -H 'Content-Type: text/csv; charset=utf-8' --data-binary @/tmp/mf_import_test.csv "$BASE/import/daily-expenses")
 rm -f /tmp/mf_import_test.csv
+check "导入日常收支返回异步 task_id" "1" "$(echo "$IMPORT_SUB" | jq -r 'if (.data.task_id // 0) > 0 then 1 else 0 end')"
+IMPORT_RES=$(db_poll_task "${BASE%/api}" "$AUTH" "$IMPORT_SUB")
 IMPORTED=$(echo "$IMPORT_RES" | jq -r '.data.imported | floor')
 ERRS=$(echo "$IMPORT_RES" | jq -r '.data.errors | floor')
 check "导入成功 imported=2" "2" "$IMPORTED"
@@ -293,8 +295,9 @@ date,asset_name,category_name,expense_type,amount,currency,note
 2026-08-12,钱包,日常消费,expense,50,CNY,有效行
 2026-08-13,不存在的资产,日常消费,expense,50,CNY,无效行
 CSVEOF
-IMPORT_RES2=$(curl -s -H "$AUTH" -H 'Content-Type: text/csv; charset=utf-8' --data-binary @/tmp/mf_import_fail.csv "$BASE/import/daily-expenses")
+IMPORT_SUB2=$(curl -s -H "$AUTH" -H 'Content-Type: text/csv; charset=utf-8' --data-binary @/tmp/mf_import_fail.csv "$BASE/import/daily-expenses")
 rm -f /tmp/mf_import_fail.csv
+IMPORT_RES2=$(db_poll_task "${BASE%/api}" "$AUTH" "$IMPORT_SUB2")
 IMPORTED2=$(echo "$IMPORT_RES2" | jq -r '.data.imported | floor')
 ERRS2=$(echo "$IMPORT_RES2" | jq -r '.data.errors | floor')
 check "部分失败 imported=1" "1" "$IMPORTED2"
@@ -332,8 +335,10 @@ cat > /tmp/mf_import_tx.csv << 'CSVEOF'
 date,asset_name,category_name,transaction_type,source_type,amount,price_per_unit,quantity,currency,linked_asset_name,note
 2026-09-03,钱包,现金,interest,income,50,0,0,CNY,,imp-int
 CSVEOF
-IMP_RES=$(curl -s -H "$AUTH" -H 'Content-Type: text/csv; charset=utf-8' --data-binary @/tmp/mf_import_tx.csv "$BASE/import/transactions")
+IMP_SUB=$(curl -s -H "$AUTH" -H 'Content-Type: text/csv; charset=utf-8' --data-binary @/tmp/mf_import_tx.csv "$BASE/import/transactions")
 rm -f /tmp/mf_import_tx.csv
+check "导入交易返回异步 task_id" "1" "$(echo "$IMP_SUB" | jq -r 'if (.data.task_id // 0) > 0 then 1 else 0 end')"
+IMP_RES=$(db_poll_task "${BASE%/api}" "$AUTH" "$IMP_SUB")
 check "导入 interest imported=1" "1" "$(echo "$IMP_RES" | jq -r '.data.imported | floor')"
 check "导入 interest errors=0" "0" "$(echo "$IMP_RES" | jq -r '.data.errors | floor')"
 check "导入行 direction='in'" "in" "$(sqlite3 "$DB" "SELECT direction FROM transactions WHERE note='imp-int' LIMIT 1")"

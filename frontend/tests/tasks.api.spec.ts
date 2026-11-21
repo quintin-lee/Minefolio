@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import http from '@/utils/http'
 import { pollTask, resolveMaybeAsync, isAsyncTaskSubmission } from '@/api/tasks'
 import { receiptsApi } from '@/api/receipts'
+import { transactionsApi } from '@/api/transactions'
+import { dailyExpensesApi } from '@/api/daily_expenses'
 
 vi.mock('@/utils/http', () => ({
   default: {
@@ -81,5 +83,43 @@ describe('tasks API & pollTask', () => {
     expect(http.post).toHaveBeenCalledWith('/receipts/scan', { image: 'data:image/png;base64,AAA=' })
     expect(http.get).toHaveBeenCalledWith('/tasks/31')
     expect(res.amount).toBe(68.0)
+  })
+
+  it('polls CSV import tasks via transactionsApi.importCsv and dailyExpensesApi.importCsv', async () => {
+    vi.mocked(http.post)
+      .mockResolvedValueOnce({
+        task_id: 41,
+        task_type: 'import_transactions',
+        status: 'pending',
+        deduplicated: false,
+      })
+      .mockResolvedValueOnce({
+        task_id: 42,
+        task_type: 'import_daily_expenses',
+        status: 'pending',
+        deduplicated: false,
+      })
+    vi.mocked(http.get)
+      .mockResolvedValueOnce({
+        id: 41,
+        status: 'completed',
+        progress: 100,
+        message: '已完成',
+        result: { imported: 2, errors: 0, matched_rules: 1 },
+      })
+      .mockResolvedValueOnce({
+        id: 42,
+        status: 'completed',
+        progress: 100,
+        message: '已完成',
+        result: { imported: 5, errors: 1, errors_detail: '第6行: 字段数不足' },
+      })
+
+    const txRes = await transactionsApi.importCsv('date,asset_name\n')
+    expect(txRes.imported).toBe(2)
+
+    const expRes = await dailyExpensesApi.importCsv('date,asset_name\n')
+    expect(expRes.imported).toBe(5)
+    expect(expRes.errors).toBe(1)
   })
 })
