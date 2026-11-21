@@ -27,7 +27,30 @@ before(async () => {
         // mock reply echoes whether a bound token was presented
         const bound = (req.headers.authorization || '').startsWith('Bearer ');
         res.setHeader('Content-Type', 'application/json');
+        if (bound && parsed.im_user_id === '77777') {
+          res.end(
+            JSON.stringify({
+              code: 0,
+              data: { task_id: 88, task_type: 'im_chat', status: 'pending', bound: 1 },
+            }),
+          );
+          return;
+        }
         res.end(JSON.stringify({ code: 0, data: { reply: bound ? `MOCK_REPLY:${parsed.im_user_id}` : 'UNBOUND', bound: bound ? 1 : 0 } }));
+      } else if (req.method === 'GET' && u.pathname === '/api/im/tasks/88') {
+        res.setHeader('Content-Type', 'application/json');
+        res.end(
+          JSON.stringify({
+            code: 0,
+            data: {
+              id: 88,
+              task_type: 'im_chat',
+              status: 'completed',
+              progress: 100,
+              result: { reply: 'ASYNC_MOCK_REPLY:77777', bound: 1 },
+            },
+          }),
+        );
       } else {
         res.statusCode = 404;
         res.end('{}');
@@ -50,6 +73,15 @@ test('bridges a private message to the backend and replies to the same uid', asy
   assert.strictEqual(transport.sent.length, 1);
   assert.strictEqual(transport.sent[0].uid, '12345');
   assert.match(transport.sent[0].text, /^MOCK_REPLY:12345$/);
+});
+
+test('polls /api/im/tasks/:id when backend chat returns an async task_id', async () => {
+  const transport = createMockTransport();
+  const adapter = createOneBotAdapter({ getBindToken: async () => 'SOME_BIND_TOKEN', transport });
+  await adapter.onEvent(makePrivateEvent({ userId: '77777', text: '查询资产汇总' }));
+  assert.strictEqual(transport.sent.length, 1);
+  assert.strictEqual(transport.sent[0].uid, '77777');
+  assert.match(transport.sent[0].text, /^ASYNC_MOCK_REPLY:77777$/);
 });
 
 test('unbound user (no bind token) gets the guidance reply', async () => {

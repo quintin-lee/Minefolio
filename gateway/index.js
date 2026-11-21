@@ -53,6 +53,54 @@ async function callImApi(platform, op, body, bearer) {
 }
 
 /**
+ * Poll GET /api/im/tasks/:id until completion or failure.
+ * @param {number} taskId
+ * @param {string} bearer
+ * @param {{intervalMs?:number, timeoutMs?:number}} [opts]
+ */
+async function pollImTask(taskId, bearer, opts) {
+  const intervalMs = Math.max(20, (opts && opts.intervalMs) || 150);
+  const timeoutMs = Math.max(1000, (opts && opts.timeoutMs) || 60000);
+  const deadline = Date.now() + timeoutMs;
+  const baseUrl = process.env.MINEFOLIO_API || API_BASE;
+
+  while (true) {
+    const res = await fetch(`${baseUrl}/api/im/tasks/${taskId}`, {
+      method: 'GET',
+      headers: bearer ? { Authorization: `Bearer ${bearer}` } : {},
+    });
+    let json = null;
+    try {
+      json = await res.json();
+    } catch {
+      json = null;
+    }
+    if (!json || json.code !== 0 || !json.data) {
+      return {
+        code: json ? json.code : -1,
+        message: (json && json.message) || 'poll failed',
+        http: res.status,
+      };
+    }
+    const task = json.data;
+    if (task.status === 'completed') {
+      return { code: 0, data: task.result || {}, http: res.status };
+    }
+    if (task.status === 'failed' || task.status === 'cancelled') {
+      return {
+        code: 500,
+        message: task.error_message || task.message || '后台任务执行失败',
+        http: res.status,
+      };
+    }
+    if (Date.now() >= deadline) {
+      return { code: 504, message: '查询超时，请稍后再试', http: 504 };
+    }
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+}
+
+/**
  * Handle an incoming IM message and return the reply string.
  *
  * - Text starting with `/bind <code>` or `/bind <username> <password>` triggers binding.
@@ -111,7 +159,17 @@ async function handleImMessage(platform, imUserId, text, bindToken) {
   }
   const r = await callImApi(platform, 'chat', { im_user_id: imUserId, message: trimmed }, activeToken);
   if (r.code === 0) {
-    return (r.data && r.data.reply) || '（无回复）';
+    if (r.data && typeof r.data.reply === 'string') {
+      return r.data.reply || '（无回复）';
+    }
+    if (r.data && Number(r.data.task_id) > 0) {
+      const polled = await pollImTask(Number(r.data.task_id), activeToken);
+      if (polled.code === 0) {
+        return (polled.data && polled.data.reply) || '（无回复）';
+      }
+      return `查询失败: ${polled.message || ('HTTP ' + polled.http)}`;
+    }
+    return '（无回复）';
   }
   // Backend-level guidance (unbound / forbidden) vs transport error.
   if (r.http === 401 || r.code === 1001) {
@@ -135,4 +193,4 @@ async function refreshBindToken(appToken) {
   return null;
 }
 
-module.exports = { handleImMessage, refreshBindToken, callImApi, API_BASE };
+module.exports = { handleImMessage, refreshBindToken, callImApi, pollImTask, API_BASE };

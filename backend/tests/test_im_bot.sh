@@ -142,6 +142,14 @@ grep_check "抢占防护: 他人绑定码被拒 (1004)" '"code":1004' "$STEAL"
 # 原绑定未被改写 (仍 1 行)
 check "抢占防护: 归属未改写 (仍 1 行)" "$(db_query "SELECT count(*) FROM im_bot_bindings WHERE platform='qq' AND im_user_id='qq_user_001';" 2>/dev/null)" "1"
 
+# --- Case 10: 已绑定 chat 返回异步 task_id 并可通过 /api/im/tasks/:id 轮询 ---
+CHAT_BOUND_SUB=$(req POST /im/qq/chat '{"im_user_id":"qq_user_001","message":"查持仓"}' "$BIND_TOKEN")
+grep_check "chat: bound → 返回异步 task_id" '"task_id":' "$CHAT_BOUND_SUB"
+grep_check "chat: bound → task_type=im_chat" '"task_type":"im_chat"' "$CHAT_BOUND_SUB"
+CHAT_BOUND_RES=$(db_poll_task "http://127.0.0.1:${PORT}" "Authorization: Bearer $BIND_TOKEN" "$CHAT_BOUND_SUB" 120 "/api/im/tasks")
+grep_check "chat: bound 轮询完成包含 reply" '"reply":' "$CHAT_BOUND_RES"
+grep_check "chat: bound 轮询完成 bound=1" '"bound":1' "$CHAT_BOUND_RES"
+
 echo "----------------------"
 echo "PASS: $PASS  FAIL: $FAIL"
 [ "$FAIL" -eq 0 ]
