@@ -181,7 +181,7 @@ add_financial_unit_test(test_ai_batch_confirmation tests/unit/test_ai_batch_conf
 add_financial_unit_test(test_ai_action_confirm tests/unit/test_ai_action_confirm.c)
 
 # AI Tool System (propose_batch_actions, propose_daily_expense, propose_transfer, web_search, etc.)
-add_minefolio_unit_test(test_ai_tools tests/unit/test_ai_tools.c)
+add_minefolio_unit_test(test_ai_tools tests/unit/test_ai_tools.c pthread)
 add_minefolio_unit_test(test_ai_policy tests/unit/test_ai_policy.c)
 add_minefolio_unit_test(test_mcp_pool tests/unit/test_mcp_pool.c)
 add_minefolio_unit_test(test_policy_mcp_risk tests/unit/test_policy_mcp_risk.c)
