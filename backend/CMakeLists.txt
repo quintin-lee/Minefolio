@@ -47,25 +47,31 @@ endif()
 
 # Minefolio sources (recursive glob for all subdirectories)
 file(GLOB_RECURSE SOURCES "src/*.c")
-add_executable(minefolio ${SOURCES})
-
-target_include_directories(minefolio PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/src"
-)
-
-target_compile_definitions(minefolio PRIVATE _GNU_SOURCE)
-target_compile_definitions(minefolio PRIVATE MINEFOLIO_VERSION="${PROJECT_VERSION}")
-target_compile_options(minefolio PRIVATE -Wall -Wextra -Wpedantic -Wno-unused-parameter)
-# decimal.c 的 __int128 定点数实现为故意设计，按文件豁免 -Wpedantic（头文件内另有 pragma 意图声明）
-set_source_files_properties(src/core/financial/decimal.c PROPERTIES COMPILE_OPTIONS -Wno-pedantic)
+set(LIB_SOURCES ${SOURCES})
+list(FILTER LIB_SOURCES EXCLUDE REGEX "src/main.c$")
 
 find_package(CURL REQUIRED)
 
-target_link_libraries(minefolio PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+# decimal.c 的 __int128 定点数实现为故意设计，按文件豁免 -Wpedantic（头文件内另有 pragma 意图声明）
+set_source_files_properties(src/core/financial/decimal.c PROPERTIES COMPILE_OPTIONS -Wno-pedantic)
 
+add_library(minefolio_core STATIC ${LIB_SOURCES})
+target_include_directories(minefolio_core PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+)
 if(PQ_INCLUDE_DIRS)
-    target_include_directories(minefolio PRIVATE ${PQ_INCLUDE_DIRS})
+    target_include_directories(minefolio_core PUBLIC ${PQ_INCLUDE_DIRS})
 endif()
+target_compile_definitions(minefolio_core PUBLIC
+    _GNU_SOURCE
+    MINEFOLIO_VERSION="${PROJECT_VERSION}"
+)
+target_compile_options(minefolio_core PRIVATE -Wall -Wextra -Wpedantic -Wno-unused-parameter)
+target_link_libraries(minefolio_core PUBLIC csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+
+add_executable(minefolio src/main.c)
+target_compile_options(minefolio PRIVATE -Wall -Wextra -Wpedantic -Wno-unused-parameter)
+target_link_libraries(minefolio PRIVATE minefolio_core)
 
 # ---------------------------------------------------------------------------
 # Pre-build auto-format: keep src/**/*.{c,h} conformant to .clang-format
@@ -96,6 +102,7 @@ if(CLANG_FORMAT_EXE)
             VERBATIM
         )
         add_custom_target(format_sources ALL DEPENDS "${FORMAT_STAMP}")
+        add_dependencies(minefolio_core format_sources)
         add_dependencies(minefolio format_sources)
     else()
         message(STATUS "no sources to format - skipping pre-build auto-format")
@@ -145,18 +152,15 @@ set(DATABASE_INFRA_SOURCES
     src/infrastructure/database/postgres/postgres_adapter.c
 )
 
-set(LIB_SOURCES ${SOURCES})
-list(FILTER LIB_SOURCES EXCLUDE REGEX "src/main.c$")
+function(add_minefolio_unit_test test_target test_source)
+    add_executable(${test_target} ${test_source})
+    target_compile_options(${test_target} PRIVATE -UNDEBUG)
+    target_link_libraries(${test_target} PRIVATE minefolio_core ${ARGN})
+    add_test(NAME ${test_target} COMMAND ${test_target})
+endfunction()
 
 function(add_financial_unit_test test_target test_source)
-    add_executable(${test_target}
-        ${test_source}
-        ${LIB_SOURCES}
-    )
-    target_include_directories(${test_target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-    target_compile_options(${test_target} PRIVATE -UNDEBUG)
-    target_link_libraries(${test_target} PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
-    add_test(NAME ${test_target} COMMAND ${test_target})
+    add_minefolio_unit_test(${test_target} ${test_source})
 endfunction()
 
 add_financial_unit_test(test_currency tests/unit/test_currency.c)
@@ -177,60 +181,21 @@ add_financial_unit_test(test_ai_batch_confirmation tests/unit/test_ai_batch_conf
 add_financial_unit_test(test_ai_action_confirm tests/unit/test_ai_action_confirm.c)
 
 # AI Tool System (propose_batch_actions, propose_daily_expense, propose_transfer, web_search, etc.)
-add_executable(test_ai_tools tests/unit/test_ai_tools.c ${LIB_SOURCES})
-target_include_directories(test_ai_tools PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_ai_tools PRIVATE -UNDEBUG)
-target_link_libraries(test_ai_tools PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
-add_test(NAME test_ai_tools COMMAND test_ai_tools)
+add_minefolio_unit_test(test_ai_tools tests/unit/test_ai_tools.c)
+add_minefolio_unit_test(test_ai_policy tests/unit/test_ai_policy.c)
+add_minefolio_unit_test(test_mcp_pool tests/unit/test_mcp_pool.c)
+add_minefolio_unit_test(test_policy_mcp_risk tests/unit/test_policy_mcp_risk.c)
+add_minefolio_unit_test(test_ai_runtime tests/unit/test_ai_runtime.c)
+add_minefolio_unit_test(test_ai_summary tests/unit/test_ai_summary.c)
 
-add_executable(test_ai_policy tests/unit/test_ai_policy.c ${LIB_SOURCES})
-target_include_directories(test_ai_policy PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_ai_policy PRIVATE -UNDEBUG)
-target_link_libraries(test_ai_policy PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
-add_test(NAME test_ai_policy COMMAND test_ai_policy)
-
-add_executable(test_mcp_pool tests/unit/test_mcp_pool.c ${LIB_SOURCES})
-target_include_directories(test_mcp_pool PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_mcp_pool PRIVATE -UNDEBUG)
-target_link_libraries(test_mcp_pool PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
-add_test(NAME test_mcp_pool COMMAND test_mcp_pool)
-
-add_executable(test_policy_mcp_risk tests/unit/test_policy_mcp_risk.c ${LIB_SOURCES})
-target_include_directories(test_policy_mcp_risk PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_policy_mcp_risk PRIVATE -UNDEBUG)
-target_link_libraries(test_policy_mcp_risk PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
-add_test(NAME test_policy_mcp_risk COMMAND test_policy_mcp_risk)
-
-add_executable(test_ai_runtime tests/unit/test_ai_runtime.c ${LIB_SOURCES})
-target_include_directories(test_ai_runtime PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_ai_runtime PRIVATE -UNDEBUG)
-target_link_libraries(test_ai_runtime PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
-add_test(NAME test_ai_runtime COMMAND test_ai_runtime)
-
-add_executable(test_ai_summary tests/unit/test_ai_summary.c ${LIB_SOURCES})
-target_include_directories(test_ai_summary PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_ai_summary PRIVATE -UNDEBUG)
-target_link_libraries(test_ai_summary PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
-add_test(NAME test_ai_summary COMMAND test_ai_summary)
-
-add_executable(test_ai_config_provider tests/unit/test_ai_config_provider.c ${LIB_SOURCES})
-target_include_directories(test_ai_config_provider PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_ai_config_provider PRIVATE -UNDEBUG)
-target_link_libraries(test_ai_config_provider PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
 # 该测试经 ai_config_provider_init(NULL) 回退读取相对路径 config/ai.json。
 # config/ai.json 被 .gitignore 排除，CI 干净克隆里不存在，copy_assets 也无从复制；
 # 因此测试改为在 main() 里自建临时 config 并用 AI_CONFIG 绝对路径覆盖（见
 # tests/unit/test_ai_config_provider.c），不依赖构建目录里的 config/。
 #
 # 如需恢复对构建目录 config/ 的依赖，应同时把 config/ai.json 纳入版本控制。
-add_test(NAME test_ai_config_provider COMMAND test_ai_config_provider)
-
-
-add_executable(test_secret_provider tests/unit/test_secret_provider.c ${LIB_SOURCES})
-target_include_directories(test_secret_provider PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_secret_provider PRIVATE -UNDEBUG)
-target_link_libraries(test_secret_provider PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
-add_test(NAME test_secret_provider COMMAND test_secret_provider)
+add_minefolio_unit_test(test_ai_config_provider tests/unit/test_ai_config_provider.c)
+add_minefolio_unit_test(test_secret_provider tests/unit/test_secret_provider.c)
 
 add_executable(test_domain_transaction tests/unit/test_domain_transaction.c ${FINANCIAL_CORE_SOURCES} src/domain/transaction/rules.c)
 target_include_directories(test_domain_transaction PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -326,138 +291,31 @@ target_compile_options(test_domain_multi_currency PRIVATE -UNDEBUG)
 target_link_libraries(test_domain_multi_currency PRIVATE m)
 add_test(NAME test_domain_multi_currency COMMAND test_domain_multi_currency)
 
-add_executable(test_database_repository tests/unit/test_database_repository.c ${LIB_SOURCES})
-target_include_directories(test_database_repository PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_database_repository PRIVATE -UNDEBUG)
-target_link_libraries(test_database_repository PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
-add_test(NAME test_database_repository COMMAND test_database_repository)
+add_minefolio_unit_test(test_database_repository tests/unit/test_database_repository.c)
 
-add_executable(test_skill_repository tests/unit/test_skill_repository.c ${LIB_SOURCES})
-target_include_directories(test_skill_repository PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_skill_repository PRIVATE -UNDEBUG)
-target_link_libraries(test_skill_repository PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_minefolio_unit_test(test_skill_repository tests/unit/test_skill_repository.c)
 add_dependencies(test_skill_repository copy_assets)
-add_test(NAME test_skill_repository COMMAND test_skill_repository)
 
-add_executable(test_migration_engine tests/unit/test_migration_engine.c ${LIB_SOURCES})
-target_include_directories(test_migration_engine PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_migration_engine PRIVATE -UNDEBUG)
-target_link_libraries(test_migration_engine PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
-add_test(NAME test_migration_engine COMMAND test_migration_engine)
-
-add_executable(test_domain_repositories tests/unit/test_domain_repositories.c ${LIB_SOURCES})
-target_include_directories(test_domain_repositories PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_domain_repositories PRIVATE -UNDEBUG)
-target_link_libraries(test_domain_repositories PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
-add_test(NAME test_domain_repositories COMMAND test_domain_repositories)
-
-add_executable(test_market_indices tests/unit/test_market_indices.c ${LIB_SOURCES})
-target_include_directories(test_market_indices PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_market_indices PRIVATE -UNDEBUG)
-target_link_libraries(test_market_indices PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
-add_test(NAME test_market_indices COMMAND test_market_indices)
-
-add_executable(test_fx_semantics tests/unit/test_fx_semantics.c ${LIB_SOURCES})
-target_include_directories(test_fx_semantics PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_fx_semantics PRIVATE -UNDEBUG)
-target_link_libraries(test_fx_semantics PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
-add_test(NAME test_fx_semantics COMMAND test_fx_semantics)
-
-add_executable(test_portfolio_pnl_alignment tests/unit/test_portfolio_pnl_alignment.c ${LIB_SOURCES})
-target_include_directories(test_portfolio_pnl_alignment PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_portfolio_pnl_alignment PRIVATE -UNDEBUG)
-target_link_libraries(test_portfolio_pnl_alignment PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
-add_test(NAME test_portfolio_pnl_alignment COMMAND test_portfolio_pnl_alignment)
-add_executable(test_mcp_client_io tests/unit/test_mcp_client_io.c ${LIB_SOURCES})
-target_include_directories(test_mcp_client_io PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_mcp_client_io PRIVATE -UNDEBUG)
-target_link_libraries(test_mcp_client_io PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
-add_test(NAME test_mcp_client_io COMMAND test_mcp_client_io)
-
-add_executable(test_mcp_stderr_capture tests/unit/test_mcp_stderr_capture.c ${LIB_SOURCES})
-target_include_directories(test_mcp_stderr_capture PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_mcp_stderr_capture PRIVATE -UNDEBUG)
-target_link_libraries(test_mcp_stderr_capture PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
-add_test(NAME test_mcp_stderr_capture COMMAND test_mcp_stderr_capture)
-
-add_executable(test_mcp_child_sanitation tests/unit/test_mcp_child_sanitation.c ${LIB_SOURCES})
-target_include_directories(test_mcp_child_sanitation PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_mcp_child_sanitation PRIVATE -UNDEBUG)
-target_link_libraries(test_mcp_child_sanitation PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
-add_test(NAME test_mcp_child_sanitation COMMAND test_mcp_child_sanitation)
-
-add_executable(test_ai_parallel_tools tests/unit/test_ai_parallel_tools.c ${LIB_SOURCES})
-target_include_directories(test_ai_parallel_tools PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_ai_parallel_tools PRIVATE -UNDEBUG)
-target_link_libraries(test_ai_parallel_tools PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
-add_test(NAME test_ai_parallel_tools COMMAND test_ai_parallel_tools)
-
-add_executable(test_workflow_step_error tests/unit/test_workflow_step_error.c ${LIB_SOURCES})
-target_include_directories(test_workflow_step_error PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_workflow_step_error PRIVATE -UNDEBUG)
-target_link_libraries(test_workflow_step_error PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
-add_test(NAME test_workflow_step_error COMMAND test_workflow_step_error)
-
-add_executable(test_workflow_branching tests/unit/test_workflow_branching.c ${LIB_SOURCES})
-target_include_directories(test_workflow_branching PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_workflow_branching PRIVATE -UNDEBUG)
-target_link_libraries(test_workflow_branching PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
-add_test(NAME test_workflow_branching COMMAND test_workflow_branching)
-
-add_executable(test_summary_worker_pool tests/unit/test_summary_worker_pool.c ${LIB_SOURCES})
-target_include_directories(test_summary_worker_pool PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_summary_worker_pool PRIVATE -UNDEBUG)
-target_link_libraries(test_summary_worker_pool PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
-add_test(NAME test_summary_worker_pool COMMAND test_summary_worker_pool)
-
-add_executable(test_tx_scope_nesting tests/unit/test_tx_scope_nesting.c ${LIB_SOURCES})
-target_include_directories(test_tx_scope_nesting PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_tx_scope_nesting PRIVATE -UNDEBUG)
-target_link_libraries(test_tx_scope_nesting PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
-add_test(NAME test_tx_scope_nesting COMMAND test_tx_scope_nesting)
-
-add_executable(test_financial_precision_edge tests/unit/test_financial_precision_edge.c ${LIB_SOURCES})
-target_include_directories(test_financial_precision_edge PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_financial_precision_edge PRIVATE -UNDEBUG)
-target_link_libraries(test_financial_precision_edge PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
-add_test(NAME test_financial_precision_edge COMMAND test_financial_precision_edge)
-
-add_executable(test_mcp_unauth_protocol tests/unit/test_mcp_unauth_protocol.c ${LIB_SOURCES})
-target_include_directories(test_mcp_unauth_protocol PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_mcp_unauth_protocol PRIVATE -UNDEBUG)
-target_link_libraries(test_mcp_unauth_protocol PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
-add_test(NAME test_mcp_unauth_protocol COMMAND test_mcp_unauth_protocol)
-
-add_executable(test_nonce_persistence tests/unit/test_nonce_persistence.c ${LIB_SOURCES})
-target_include_directories(test_nonce_persistence PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_nonce_persistence PRIVATE -UNDEBUG)
-target_link_libraries(test_nonce_persistence PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
-add_test(NAME test_nonce_persistence COMMAND test_nonce_persistence)
-
-add_executable(test_file_parser_mkstemps tests/unit/test_file_parser_mkstemps.c ${LIB_SOURCES})
-target_include_directories(test_file_parser_mkstemps PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_definitions(test_file_parser_mkstemps PRIVATE _GNU_SOURCE)
-target_compile_options(test_file_parser_mkstemps PRIVATE -UNDEBUG)
-target_link_libraries(test_file_parser_mkstemps PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
-add_test(NAME test_file_parser_mkstemps COMMAND test_file_parser_mkstemps)
-
-add_executable(test_auth_2fa_lifecycle tests/unit/test_auth_2fa_lifecycle.c ${LIB_SOURCES})
-target_include_directories(test_auth_2fa_lifecycle PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_auth_2fa_lifecycle PRIVATE -UNDEBUG)
-target_link_libraries(test_auth_2fa_lifecycle PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
-add_test(NAME test_auth_2fa_lifecycle COMMAND test_auth_2fa_lifecycle)
-
-add_executable(test_oauth_security tests/unit/test_oauth_security.c ${LIB_SOURCES})
-target_include_directories(test_oauth_security PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_oauth_security PRIVATE -UNDEBUG)
-target_link_libraries(test_oauth_security PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
-add_test(NAME test_oauth_security COMMAND test_oauth_security)
-
-add_executable(test_ai_prompt_injection_defense tests/unit/test_ai_prompt_injection_defense.c ${LIB_SOURCES})
-target_include_directories(test_ai_prompt_injection_defense PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_ai_prompt_injection_defense PRIVATE -UNDEBUG)
-target_link_libraries(test_ai_prompt_injection_defense PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
-add_test(NAME test_ai_prompt_injection_defense COMMAND test_ai_prompt_injection_defense)
+add_minefolio_unit_test(test_migration_engine tests/unit/test_migration_engine.c)
+add_minefolio_unit_test(test_domain_repositories tests/unit/test_domain_repositories.c)
+add_minefolio_unit_test(test_market_indices tests/unit/test_market_indices.c)
+add_minefolio_unit_test(test_fx_semantics tests/unit/test_fx_semantics.c)
+add_minefolio_unit_test(test_portfolio_pnl_alignment tests/unit/test_portfolio_pnl_alignment.c)
+add_minefolio_unit_test(test_mcp_client_io tests/unit/test_mcp_client_io.c)
+add_minefolio_unit_test(test_mcp_stderr_capture tests/unit/test_mcp_stderr_capture.c)
+add_minefolio_unit_test(test_mcp_child_sanitation tests/unit/test_mcp_child_sanitation.c)
+add_minefolio_unit_test(test_ai_parallel_tools tests/unit/test_ai_parallel_tools.c)
+add_minefolio_unit_test(test_workflow_step_error tests/unit/test_workflow_step_error.c)
+add_minefolio_unit_test(test_workflow_branching tests/unit/test_workflow_branching.c)
+add_minefolio_unit_test(test_summary_worker_pool tests/unit/test_summary_worker_pool.c)
+add_minefolio_unit_test(test_tx_scope_nesting tests/unit/test_tx_scope_nesting.c)
+add_minefolio_unit_test(test_financial_precision_edge tests/unit/test_financial_precision_edge.c)
+add_minefolio_unit_test(test_mcp_unauth_protocol tests/unit/test_mcp_unauth_protocol.c)
+add_minefolio_unit_test(test_nonce_persistence tests/unit/test_nonce_persistence.c)
+add_minefolio_unit_test(test_file_parser_mkstemps tests/unit/test_file_parser_mkstemps.c)
+add_minefolio_unit_test(test_auth_2fa_lifecycle tests/unit/test_auth_2fa_lifecycle.c)
+add_minefolio_unit_test(test_oauth_security tests/unit/test_oauth_security.c)
+add_minefolio_unit_test(test_ai_prompt_injection_defense tests/unit/test_ai_prompt_injection_defense.c)
 
 add_executable(test_domain_account tests/unit/test_domain_account.c src/domain/account/rules.c)
 target_include_directories(test_domain_account PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -489,124 +347,45 @@ target_compile_options(test_domain_dca PRIVATE -UNDEBUG)
 target_link_libraries(test_domain_dca PRIVATE m)
 add_test(NAME test_domain_dca COMMAND test_domain_dca)
 
-add_executable(test_account_usecases tests/unit/test_account_usecases.c ${LIB_SOURCES})
-target_include_directories(test_account_usecases PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_account_usecases PRIVATE -UNDEBUG)
-target_link_libraries(test_account_usecases PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_minefolio_unit_test(test_account_usecases tests/unit/test_account_usecases.c)
 add_dependencies(test_account_usecases copy_assets)
-add_test(NAME test_account_usecases COMMAND test_account_usecases)
 
-add_executable(test_account_rbac tests/unit/test_account_rbac.c ${LIB_SOURCES})
-target_include_directories(test_account_rbac PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_account_rbac PRIVATE -UNDEBUG)
-target_link_libraries(test_account_rbac PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_minefolio_unit_test(test_account_rbac tests/unit/test_account_rbac.c)
 add_dependencies(test_account_rbac copy_assets)
-add_test(NAME test_account_rbac COMMAND test_account_rbac)
 
-add_executable(test_tag_usecases tests/unit/test_tag_usecases.c ${LIB_SOURCES})
-target_include_directories(test_tag_usecases PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_tag_usecases PRIVATE -UNDEBUG)
-target_link_libraries(test_tag_usecases PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_minefolio_unit_test(test_tag_usecases tests/unit/test_tag_usecases.c)
 add_dependencies(test_tag_usecases copy_assets)
-add_test(NAME test_tag_usecases COMMAND test_tag_usecases)
 
-add_executable(test_category_usecases tests/unit/test_category_usecases.c ${LIB_SOURCES})
-target_include_directories(test_category_usecases PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_category_usecases PRIVATE -UNDEBUG)
-target_link_libraries(test_category_usecases PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_minefolio_unit_test(test_category_usecases tests/unit/test_category_usecases.c)
 add_dependencies(test_category_usecases copy_assets)
-add_test(NAME test_category_usecases COMMAND test_category_usecases)
 
-add_executable(test_report_services tests/unit/test_report_services.c ${LIB_SOURCES})
-target_include_directories(test_report_services PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_report_services PRIVATE -UNDEBUG)
-target_link_libraries(test_report_services PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_minefolio_unit_test(test_report_services tests/unit/test_report_services.c)
 add_dependencies(test_report_services copy_assets)
-add_test(NAME test_report_services COMMAND test_report_services)
 
-add_executable(test_ai_news_privacy tests/unit/test_ai_news_privacy.c ${LIB_SOURCES})
-target_include_directories(test_ai_news_privacy PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_ai_news_privacy PRIVATE -UNDEBUG)
-target_link_libraries(test_ai_news_privacy PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_minefolio_unit_test(test_ai_news_privacy tests/unit/test_ai_news_privacy.c)
 add_dependencies(test_ai_news_privacy copy_assets)
-add_test(NAME test_ai_news_privacy COMMAND test_ai_news_privacy)
 
-add_executable(test_scheduler_migration tests/unit/test_scheduler_migration.c ${LIB_SOURCES})
-target_include_directories(test_scheduler_migration PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_scheduler_migration PRIVATE -UNDEBUG)
-target_link_libraries(test_scheduler_migration PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_minefolio_unit_test(test_scheduler_migration tests/unit/test_scheduler_migration.c)
 add_dependencies(test_scheduler_migration copy_assets)
-add_test(NAME test_scheduler_migration COMMAND test_scheduler_migration)
 
-add_executable(test_scheduler_repo tests/unit/test_scheduler_repo.c ${LIB_SOURCES})
-target_include_directories(test_scheduler_repo PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_scheduler_repo PRIVATE -UNDEBUG)
-target_link_libraries(test_scheduler_repo PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_minefolio_unit_test(test_scheduler_repo tests/unit/test_scheduler_repo.c)
 add_dependencies(test_scheduler_repo copy_assets)
-add_test(NAME test_scheduler_repo COMMAND test_scheduler_repo)
 
-add_executable(test_cron_parser tests/unit/test_cron_parser.c ${LIB_SOURCES})
-target_include_directories(test_cron_parser PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_cron_parser PRIVATE -UNDEBUG)
-target_link_libraries(test_cron_parser PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m)
+add_minefolio_unit_test(test_cron_parser tests/unit/test_cron_parser.c)
 add_dependencies(test_cron_parser copy_assets)
-add_test(NAME test_cron_parser COMMAND test_cron_parser)
 
-add_executable(test_wechat_push_service tests/unit/test_wechat_push_service.c ${LIB_SOURCES})
-target_include_directories(test_wechat_push_service PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_wechat_push_service PRIVATE -UNDEBUG)
-target_link_libraries(test_wechat_push_service PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m pthread)
+add_minefolio_unit_test(test_wechat_push_service tests/unit/test_wechat_push_service.c pthread)
 add_dependencies(test_wechat_push_service copy_assets)
-add_test(NAME test_wechat_push_service COMMAND test_wechat_push_service)
 
-add_executable(test_scheduler_engine tests/unit/test_scheduler_engine.c ${LIB_SOURCES})
-target_include_directories(test_scheduler_engine PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_scheduler_engine PRIVATE -UNDEBUG)
-target_link_libraries(test_scheduler_engine PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m pthread)
+add_minefolio_unit_test(test_scheduler_engine tests/unit/test_scheduler_engine.c pthread)
 add_dependencies(test_scheduler_engine copy_assets)
-add_test(NAME test_scheduler_engine COMMAND test_scheduler_engine)
 
-add_executable(test_scheduler_idle_sleep tests/unit/test_scheduler_idle_sleep.c ${LIB_SOURCES})
-target_include_directories(test_scheduler_idle_sleep PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_scheduler_idle_sleep PRIVATE -UNDEBUG)
-target_link_libraries(test_scheduler_idle_sleep PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m pthread)
+add_minefolio_unit_test(test_scheduler_idle_sleep tests/unit/test_scheduler_idle_sleep.c pthread)
 add_dependencies(test_scheduler_idle_sleep copy_assets)
-add_test(NAME test_scheduler_idle_sleep COMMAND test_scheduler_idle_sleep)
 
-add_executable(test_wal_checkpoint tests/unit/test_wal_checkpoint.c ${LIB_SOURCES})
-target_include_directories(test_wal_checkpoint PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_wal_checkpoint PRIVATE -UNDEBUG)
-target_link_libraries(test_wal_checkpoint PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m pthread)
+add_minefolio_unit_test(test_wal_checkpoint tests/unit/test_wal_checkpoint.c pthread)
 add_dependencies(test_wal_checkpoint copy_assets)
-add_test(NAME test_wal_checkpoint COMMAND test_wal_checkpoint)
 
-add_executable(test_db_backup tests/unit/test_db_backup.c ${LIB_SOURCES})
-target_include_directories(test_db_backup PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_compile_options(test_db_backup PRIVATE -UNDEBUG)
-target_link_libraries(test_db_backup PRIVATE csilk crypto CURL::libcurl ${PQ_LIBRARIES} m pthread sqlite3)
+add_minefolio_unit_test(test_db_backup tests/unit/test_db_backup.c pthread sqlite3)
 add_dependencies(test_db_backup copy_assets)
-add_test(NAME test_db_backup COMMAND test_db_backup)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
