@@ -257,51 +257,48 @@ if ! kill -0 "$SERVER_PID" 2>/dev/null; then
   exit 1
 fi
 CHAT_BODY="$TMP_DIR/mcp_chat.txt"
-: > "$CHAT_BODY"
-curl -sN --max-time 90 -b "$JAR" -X POST "$BASE/ai/chat" \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-CSRF-Token: $CSRF" \
-  -d '{"content":"echo 一下","provider":"mockai","model":"mock-model"}' \
-  > "$CHAT_BODY" 2>/dev/null &
-CPID=$!
-# Poll up to 90s for done/error. Under ASan the first MCP bridge call is
-# cold-start slow (shadow-memory init + libcurl global init), so use 0.5s
-# poll interval to reduce CPU load on CI runners while staying responsive.
-CHATELAP_START=$(date +%s)
-while [ "$(date +%s)" -lt "$(( CHATELAP_START + 120 ))" ]; do
-  if grep -q -E "event: (done|error)" "$CHAT_BODY" 2>/dev/null; then sleep 0.05; break; fi
-  if ! kill -0 "$CPID" 2>/dev/null; then break; fi
-  sleep 0.5
-done
-kill "$CPID" 2>/dev/null || true
-wait "$CPID" 2>/dev/null || true
-# Retry loop: the first MCP bridge tool call in an ASan-instrumented
-# process is cold-start slow (ASan shadow-memory init + libcurl global init).
-# Under CI runner contention the stall can exceed the first attempt's poll
-# window. A bounded retry re-drives the request; a stalled stream with
-# partial data gets one grace window before the poll gives up.
-if ! grep -q 'event: done' "$CHAT_BODY" 2>/dev/null; then
-  for attempt in 1 2; do
-    echo "  chat retry attempt $attempt (done event not yet received)"
-    : > "$CHAT_BODY"
-    curl -sN --max-time 90 -b "$JAR" -X POST "$BASE/ai/chat" \
-      -H "Content-Type: application/json" \
-      -H "Authorization: Bearer $TOKEN" \
-      -H "X-CSRF-Token: $CSRF" \
-      -d '{"content":"echo 一下","provider":"mockai","model":"mock-model"}' \
-      > "$CHAT_BODY" 2>/dev/null &
-    CPID=$!
-    CHATELAP_START=$(date +%s)
-    while [ "$(date +%s)" -lt "$(( CHATELAP_START + 120 ))" ]; do
-      if grep -q -E 'event: (done|error)' "$CHAT_BODY" 2>/dev/null; then break; fi
-      if ! kill -0 "$CPID" 2>/dev/null; then break; fi
-      sleep 0.5
-    done
-    kill "$CPID" 2>/dev/null || true
-    wait "$CPID" 2>/dev/null || true
-    grep -q 'event: done' "$CHAT_BODY" 2>/dev/null && break
-  done
+
+# run_chat: synchronous SSE chat request with a bounded wait for the stream
+# to reach a terminal event (done/error). Uses --no-buffer so the server's
+# SSE events are written to $CHAT_BODY as they arrive rather than being
+# buffered by the shell's stdout pipe, which can delay visibility of
+# "event: done" under ASan where the process is CPU-starved.
+# $1 = max-time seconds for curl (default 120)
+# Returns 0 if a done/error event was observed, 1 otherwise.
+run_chat() {
+  local curl_max="${1:-120}"
+  local poll_deadline=$(( $(date +%s) + curl_max + 30 ))
+  : > "$CHAT_BODY"
+  curl -sN --no-buffer --max-time "$curl_max" \
+    -b "$JAR" -X POST "$BASE/ai/chat" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "X-CSRF-Token: $CSRF" \
+    -d '{"content":"echo 一下","provider":"mockai","model":"mock-model"}' \
+    > "$CHAT_BODY" 2>/dev/null
+  # curl --max-time bounds the request; after it returns the file is final.
+  # Under ASan the first MCP bridge tool call is cold-start slow
+  # (shadow-memory init + libcurl global init on the server side). The
+  # curl --max-time already bounds the wait; no extra polling needed.
+  grep -q 'event: done' "$CHAT_BODY" 2>/dev/null
+}
+
+# First attempt: 120s. If the stream reaches "done" we're green.
+if ! run_chat 120; then
+  echo "  chat attempt 1 incomplete (done event not received within 120s)"
+  # Retry 1: under ASan + CI runner CPU contention the first MCP bridge
+  # call can exceed the initial window. A second attempt gives the
+  # sanitizer-instrumented process more wall-clock time to complete.
+  if ! run_chat 120; then
+    echo "  chat attempt 2 incomplete"
+    # Diagnostic dump: if both attempts failed, the backend may have
+    # returned an error event or the stream stalled. Capture the actual
+    # SSE body so the failure is diagnosable in CI logs.
+    echo "  [debug] CHAT_BODY content on failure:"
+    cat "$CHAT_BODY" 2>/dev/null || echo "  (empty)"
+    echo "  [debug] server log tail:"
+    tail -30 "$SERVER_LOG" 2>/dev/null || true
+  fi
 fi
 check "chat: mcp tool_call named (call+result)" "2" "$(grep -c "$QUALIFIED" "$CHAT_BODY")"
 check "chat: done event" "1" "$(grep -c 'event: done' "$CHAT_BODY")"
