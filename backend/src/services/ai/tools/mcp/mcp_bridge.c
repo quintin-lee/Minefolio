@@ -363,10 +363,22 @@ mcp_bridge_merge_tools(csilk_db_pool_t* pool, int64_t user_id, size_t* out_count
         if (bdesc) {
             strcpy(bdesc, builtin[i].function.description ? builtin[i].function.description : "");
         }
-        csilk_json_t* bparams =
-            builtin[i].function.parameters_json
-                ? csilk_json_copy((csilk_json_t*)builtin[i].function.parameters_json)
-                : NULL;
+        /* csilk_json_copy 对 immutable JSON (u.ival 非 NULL, u.raw 为 NULL)
+           因 !v->u.raw 检查而返回 NULL，导致 LLM 收不到 schema。
+           改为 serialize→parse 深拷贝，确保 parameters_json 始终可用。 */
+        csilk_json_t* bparams = NULL;
+        if (builtin[i].function.parameters_json) {
+            size_t blen = 0;
+            char*  bstr =
+                csilk_json_serialize((csilk_json_t*)builtin[i].function.parameters_json, &blen);
+            if (bstr) {
+                bparams = csilk_json_parse(bstr);
+                free(bstr);
+            }
+            if (!bparams) {
+                bparams = csilk_json_object(); /* 序列化/解析失败退化为空 schema */
+            }
+        }
         merged[i] = (csilk_ai_tool_t){
             .type = "function",
             .function =
@@ -402,14 +414,17 @@ mcp_bridge_merge_tools(csilk_db_pool_t* pool, int64_t user_id, size_t* out_count
 
         /* parameters_json：input_schema 是 JSON 文本，parse 成 csilk_json_t* 再喂 LLM。
            若含外部 $ref（LLM 无法解析的引用），整个 schema 退化为空对象。 */
+        /* 解析 input_schema；含外部 $ref 或解析失败时退化为空 schema。
+           csilk_json_parse 返回 immutable 对象 (CSILK_JSON_F_OWNER|F_HEAP)，
+           mcp_bridge_free_merged 的 csilk_json_free 可正确释放 yyjson_doc。 */
         csilk_json_t* params = NULL;
         if (t->input_schema[0]) {
             params = csilk_json_parse(t->input_schema);
-            if (!params) {
-                params = csilk_json_object(); /* 解析失败退化为空 schema */
-            } else if (mcp_schema_has_external_ref(params)) {
-                csilk_json_free(params);
-                params = csilk_json_object(); /* 外部 $ref 不喂给 LLM */
+            if (!params || mcp_schema_has_external_ref(params)) {
+                if (params) {
+                    csilk_json_free(params);
+                }
+                params = csilk_json_object(); /* 解析失败或外部 $ref 退化为空 schema */
             }
         } else {
             params = csilk_json_object();
