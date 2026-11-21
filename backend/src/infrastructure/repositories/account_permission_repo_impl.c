@@ -1,5 +1,6 @@
 #include "infrastructure/repositories/account_permission_repo_impl.h"
 #include "common/db.h"
+#include "common/ledger_utils.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -104,4 +105,58 @@ account_perm_delete(csilk_db_pool_t* pool, int64_t ledger_id, int64_t account_id
         "DELETE FROM account_permissions WHERE ledger_id=? AND account_id=? AND user_id=?";
     const char* params[4] = {lid_str, aid_str, uid_str, NULL};
     return csilk_db_exec_param(pool, sql, params) >= 0 ? 0 : -1;
+}
+
+int
+account_perm_get_effective_masks(csilk_db_pool_t* pool,
+                                 int64_t          ledger_id,
+                                 int64_t          account_id,
+                                 int64_t          user_id,
+                                 int*             out_mask_balance,
+                                 int*             out_mask_account_no)
+{
+    if (out_mask_balance) {
+        *out_mask_balance = 0;
+    }
+    if (out_mask_account_no) {
+        *out_mask_account_no = 0;
+    }
+    if (!pool || account_id <= 0 || user_id <= 0) {
+        return 0;
+    }
+
+    if (ledger_id > 0) {
+        char role[32] = {0};
+        if (ledger_get_user_role(pool, ledger_id, user_id, role, sizeof(role)) &&
+            strcmp(role, "owner") == 0) {
+            return 0;
+        }
+    }
+
+    char aid_str[32], uid_str[32];
+    snprintf(aid_str, sizeof(aid_str), "%lld", (long long)account_id);
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+
+    csilk_json_t* res = csilk_db_query_param_json(
+        pool,
+        "SELECT CAST(ap.mask_balance AS INTEGER) AS mask_balance, "
+        "CAST(ap.mask_account_no AS INTEGER) AS mask_account_no "
+        "FROM account_permissions ap "
+        "JOIN accounts ac ON ap.account_id = ac.id "
+        "JOIN ledgers l ON ac.ledger_id = l.id "
+        "WHERE ap.account_id=? AND ap.user_id=? AND l.owner_id != ? LIMIT 1",
+        (const char*[]){aid_str, uid_str, uid_str, NULL});
+    if (res && csilk_json_array_size(res) > 0) {
+        const csilk_json_t* r = csilk_json_array_get(res, 0);
+        if (out_mask_balance) {
+            *out_mask_balance = db_get_int(r, "mask_balance") != 0 ? 1 : 0;
+        }
+        if (out_mask_account_no) {
+            *out_mask_account_no = db_get_int(r, "mask_account_no") != 0 ? 1 : 0;
+        }
+    }
+    if (res) {
+        csilk_json_free(res);
+    }
+    return 0;
 }

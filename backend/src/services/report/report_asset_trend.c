@@ -5,6 +5,7 @@
 
 #include "services/report_asset_service.h"
 #include "application/report/commands.h"
+#include "infrastructure/repositories/account_permission_repo_impl.h"
 #include "common/db.h"
 #include "services/market/exchange_rate_service.h"
 #include "core/financial/money.h"
@@ -76,23 +77,33 @@ report_asset_trend(void* pool, const report_query_t* q, report_result_t* out_res
     // 2. Query all assets for the user / ledger
     const char* asset_sql =
         db_is_postgres()
-            ? (q->ledger_id > 0 ? "SELECT a.id, a.current_value, a.currency, c.asset_type, "
-                                  "to_char(a.created_at, 'YYYY-MM-DD') as created_date "
-                                  "FROM assets a JOIN categories c ON a.category_id=c.id "
-                                  "WHERE a.user_id=? AND a.ledger_id=?"
-                                : "SELECT a.id, a.current_value, a.currency, c.asset_type, "
-                                  "to_char(a.created_at, 'YYYY-MM-DD') as created_date "
-                                  "FROM assets a JOIN categories c ON a.category_id=c.id "
-                                  "WHERE a.user_id=?")
-            : (q->ledger_id > 0 ? "SELECT a.id, a.current_value, a.currency, c.asset_type, "
-                                  "date(a.created_at) as created_date "
-                                  "FROM assets a JOIN categories c ON a.category_id=c.id "
-                                  "WHERE a.user_id=? AND a.ledger_id=?"
-                                : "SELECT a.id, a.current_value, a.currency, c.asset_type, "
-                                  "date(a.created_at) as created_date "
-                                  "FROM assets a JOIN categories c ON a.category_id=c.id "
-                                  "WHERE a.user_id=?");
-    const char*   asset_params[3] = {uid_str, (q->ledger_id > 0 ? lid_str : NULL), NULL};
+            ? (q->ledger_id > 0
+                   ? "SELECT a.id, a.current_value, a.currency, c.asset_type, "
+                     "to_char(a.created_at, 'YYYY-MM-DD') as created_date "
+                     "FROM assets a JOIN categories c ON a.category_id=c.id "
+                     "WHERE a.user_id=? AND a.ledger_id=? AND " MF_RBAC_ASSET_UNMASKED_SQL("a")
+                   : "SELECT a.id, a.current_value, a.currency, c.asset_type, "
+                     "to_char(a.created_at, 'YYYY-MM-DD') as created_date "
+                     "FROM assets a JOIN categories c ON a.category_id=c.id "
+                     "WHERE a.user_id=? AND " MF_RBAC_ASSET_UNMASKED_SQL("a"))
+            : (q->ledger_id > 0
+                   ? "SELECT a.id, a.current_value, a.currency, c.asset_type, "
+                     "date(a.created_at) as created_date "
+                     "FROM assets a JOIN categories c ON a.category_id=c.id "
+                     "WHERE a.user_id=? AND a.ledger_id=? AND " MF_RBAC_ASSET_UNMASKED_SQL("a")
+                   : "SELECT a.id, a.current_value, a.currency, c.asset_type, "
+                     "date(a.created_at) as created_date "
+                     "FROM assets a JOIN categories c ON a.category_id=c.id "
+                     "WHERE a.user_id=? AND " MF_RBAC_ASSET_UNMASKED_SQL("a"));
+    const char* asset_params[6];
+    int         apidx = 0;
+    asset_params[apidx++] = uid_str;
+    if (q->ledger_id > 0) {
+        asset_params[apidx++] = lid_str;
+    }
+    asset_params[apidx++] = uid_str;
+    asset_params[apidx++] = uid_str;
+    asset_params[apidx] = NULL;
     csilk_json_t* asset_rows =
         csilk_db_query_param_json((csilk_db_pool_t*)pool, asset_sql, asset_params);
 
@@ -120,15 +131,18 @@ report_asset_trend(void* pool, const report_query_t* q, report_result_t* out_res
     // 3. Query balance logs within the period (start_date <= log_date <= today)
     const char* start_date = dates[0];
     const char* log_sql =
-        db_is_postgres() ? "SELECT asset_id, delta, to_char(created_at, 'YYYY-MM-DD') as log_date "
-                           "FROM asset_balance_logs "
-                           "WHERE user_id=? AND to_char(created_at, 'YYYY-MM-DD') >= ? "
-                           "ORDER BY created_at ASC"
-                         : "SELECT asset_id, delta, date(created_at) as log_date "
-                           "FROM asset_balance_logs "
-                           "WHERE user_id=? AND date(created_at) >= ? "
-                           "ORDER BY created_at ASC";
-    const char*   log_params[] = {uid_str, start_date, NULL};
+        db_is_postgres()
+            ? "SELECT abl.asset_id, abl.delta, to_char(abl.created_at, 'YYYY-MM-DD') as log_date "
+              "FROM asset_balance_logs abl LEFT JOIN assets a ON abl.asset_id=a.id "
+              "WHERE abl.user_id=? AND to_char(abl.created_at, 'YYYY-MM-DD') >= ? "
+              "AND " MF_RBAC_ASSET_UNMASKED_SQL("a") " "
+                                                     "ORDER BY abl.created_at ASC"
+            : "SELECT abl.asset_id, abl.delta, date(abl.created_at) as log_date "
+              "FROM asset_balance_logs abl LEFT JOIN assets a ON abl.asset_id=a.id "
+              "WHERE abl.user_id=? AND date(abl.created_at) >= ? "
+              "AND " MF_RBAC_ASSET_UNMASKED_SQL("a") " "
+                                                     "ORDER BY abl.created_at ASC";
+    const char*   log_params[] = {uid_str, start_date, uid_str, uid_str, NULL};
     csilk_json_t* log_rows = csilk_db_query_param_json((csilk_db_pool_t*)pool, log_sql, log_params);
 
     size_t             num_logs = log_rows ? csilk_json_array_size(log_rows) : 0;

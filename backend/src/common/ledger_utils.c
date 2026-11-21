@@ -116,8 +116,8 @@ tx_get_old(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
     snprintf(id_str, sizeof(id_str), "%lld", (long long)id);
     return csilk_db_query_param_json(
         pool,
-        "SELECT id, asset_id, linked_asset_id, transaction_type, amount, price_per_unit, "
-        "quantity, fee, currency, transaction_date, note FROM transactions "
+        "SELECT id, ledger_id, category_id, asset_id, linked_asset_id, transaction_type, amount, "
+        "price_per_unit, quantity, fee, currency, transaction_date, note FROM transactions "
         "WHERE id=? AND user_id=?",
         (const char*[]){id_str, uid_str, NULL});
 }

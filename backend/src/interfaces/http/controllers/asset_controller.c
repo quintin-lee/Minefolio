@@ -185,6 +185,8 @@ api_assets_delete(csilk_ctx_t* c)
         respond_ok_null(c);
     } else if (res.code == 1003) {
         respond_not_found(c);
+    } else if (res.code == 1004) {
+        respond_conflict(c, res.message);
     } else {
         respond_bad_request(c, res.message);
     }

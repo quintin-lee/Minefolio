@@ -7,6 +7,7 @@
 #include "infrastructure/repositories/asset_repo_impl.h"
 #include "infrastructure/repositories/transaction_repo_impl.h"
 #include "infrastructure/repositories/daily_expense_repo_impl.h"
+#include "infrastructure/repositories/account_permission_repo_impl.h"
 #include "common/db.h"
 #include <string.h>
 #include <time.h>
@@ -46,11 +47,18 @@ mf_ai_repo_daily_expense_list(void*       pool,
     snprintf(limit_str, sizeof(limit_str), "%lld", (long long)page_size);
     snprintf(offset_str, sizeof(offset_str), "%lld", (long long)((page - 1) * page_size));
 
-    char        sql[2048], count_sql[1024];
-    const char* params[16];
-    const char* cnt_params[16];
+    char        sql[2560], count_sql[1536];
+    const char* params[24];
+    const char* cnt_params[20];
     int         pidx = 0, cnt_pidx = 0;
     params[pidx++] = uid;
+    params[pidx++] = uid;
+    params[pidx++] = uid;
+    params[pidx++] = uid;
+    params[pidx++] = uid;
+
+    cnt_params[cnt_pidx++] = uid;
+    cnt_params[cnt_pidx++] = uid;
     cnt_params[cnt_pidx++] = uid;
 
     snprintf(
@@ -60,15 +68,20 @@ mf_ai_repo_daily_expense_list(void*       pool,
         "de.currency,de.expense_date,de.note,de.created_at,de.updated_at,"
         "c.name as category_name,a.name as asset_name,"
         "(SELECT %s "
-        "FROM expense_tags et JOIN tags t ON et.tag_id=t.id WHERE et.expense_id=de.id) as tags "
-        "FROM daily_expenses de LEFT JOIN categories c ON de.category_id=c.id "
-        "LEFT JOIN assets a ON de.asset_id=a.id WHERE de.user_id=?",
+        "FROM expense_tags et JOIN tags t ON et.tag_id=t.id WHERE et.expense_id=de.id) as "
+        "tags," MF_RBAC_MASK_BALANCE_COL(
+            "a") " AS mask_balance "
+                 "FROM daily_expenses de LEFT JOIN categories c ON de.category_id=c.id "
+                 "LEFT JOIN assets a ON de.asset_id=a.id "
+                 "WHERE de.user_id=? AND " MF_RBAC_ASSET_VISIBLE_SQL("a"),
         db_is_postgres()
             ? "COALESCE(json_agg(json_build_object('id',t.id,'name',t.name,'color',t.color)),'[]')"
             : "json_group_array(json_object('id',t.id,'name',t.name,'color',t.color))");
     snprintf(count_sql,
              sizeof(count_sql),
-             "SELECT COUNT(*) AS cnt FROM daily_expenses de WHERE de.user_id=?");
+             "SELECT COUNT(*) AS cnt FROM daily_expenses de "
+             "LEFT JOIN assets a ON de.asset_id=a.id "
+             "WHERE de.user_id=? AND " MF_RBAC_ASSET_VISIBLE_SQL("a"));
 
     if (category_id > 0) {
         char cat_str[32];
@@ -235,9 +248,12 @@ mf_ai_repo_daily_expense_monthly_by_category(void* pool, int64_t user_id, const 
         (csilk_db_pool_t*)pool,
         "SELECT c.name as category_name,de.expense_type,SUM(de.amount) as amount FROM "
         "daily_expenses de JOIN categories c ON de.category_id=c.id AND c.user_id=? "
+        "LEFT JOIN assets a ON de.asset_id=a.id "
         "WHERE de.user_id=? AND CAST(de.expense_date AS TEXT) LIKE ? "
-        "GROUP BY c.name,de.expense_type ORDER BY amount DESC",
-        (const char*[]){uid, uid, pattern, NULL});
+        "AND " MF_RBAC_ASSET_UNMASKED_SQL(
+            "a") " "
+                 "GROUP BY c.name,de.expense_type ORDER BY amount DESC",
+        (const char*[]){uid, uid, pattern, uid, uid, NULL});
 }
 
 csilk_json_t*
@@ -247,10 +263,13 @@ mf_ai_repo_daily_expense_monthly_totals(void* pool, int64_t user_id, const char*
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     return csilk_db_query_param_json(
         (csilk_db_pool_t*)pool,
-        "SELECT COALESCE(SUM(CASE WHEN expense_type='income' THEN amount ELSE 0 END),0) as "
-        "total_income,COALESCE(SUM(CASE WHEN expense_type='expense' THEN amount ELSE 0 END),0) as "
-        "total_expense FROM daily_expenses WHERE user_id=? AND CAST(expense_date AS TEXT) LIKE ?",
-        (const char*[]){uid, pattern, NULL});
+        "SELECT COALESCE(SUM(CASE WHEN de.expense_type='income' THEN de.amount ELSE 0 END),0) as "
+        "total_income,COALESCE(SUM(CASE WHEN de.expense_type='expense' THEN de.amount ELSE 0 "
+        "END),0) as total_expense FROM daily_expenses de "
+        "LEFT JOIN assets a ON de.asset_id=a.id "
+        "WHERE de.user_id=? AND CAST(de.expense_date AS TEXT) LIKE ? "
+        "AND " MF_RBAC_ASSET_UNMASKED_SQL("a"),
+        (const char*[]){uid, pattern, uid, uid, NULL});
 }
 
 csilk_json_t*

@@ -64,10 +64,12 @@ tx_usecase_create(void* pool, const create_tx_cmd_t* cmd, tx_usecase_result_t* o
         return -1;
     }
 
-    int64_t acct_id = asset_get_account_id((csilk_db_pool_t*)pool, cmd->asset_id);
+    int64_t acct_ledger_id = 0, acct_id = 0;
+    asset_get_ledger_and_account((csilk_db_pool_t*)pool, cmd->asset_id, &acct_ledger_id, &acct_id);
     if (acct_id > 0) {
-        int perm_chk = account_usecase_check_permission(
-            pool, cmd->ledger_id, cmd->user_id, acct_id, MF_ACCOUNT_ACTION_WRITE_TX);
+        int64_t chk_lid = acct_ledger_id > 0 ? acct_ledger_id : cmd->ledger_id;
+        int     perm_chk = account_usecase_check_permission(
+            pool, chk_lid, cmd->user_id, acct_id, MF_ACCOUNT_ACTION_WRITE_TX);
         if (perm_chk != 0) {
             out_res->code = 1004;
             snprintf(out_res->message, sizeof(out_res->message), "Forbidden: 目标账户无记账权限");
@@ -76,10 +78,13 @@ tx_usecase_create(void* pool, const create_tx_cmd_t* cmd, tx_usecase_result_t* o
     }
 
     if (cmd->linked_asset_id > 0) {
-        int64_t linked_acct_id = asset_get_account_id((csilk_db_pool_t*)pool, cmd->linked_asset_id);
+        int64_t linked_ledger_id = 0, linked_acct_id = 0;
+        asset_get_ledger_and_account(
+            (csilk_db_pool_t*)pool, cmd->linked_asset_id, &linked_ledger_id, &linked_acct_id);
         if (linked_acct_id > 0) {
-            int perm_chk = account_usecase_check_permission(
-                pool, cmd->ledger_id, cmd->user_id, linked_acct_id, MF_ACCOUNT_ACTION_WRITE_TX);
+            int64_t chk_lid = linked_ledger_id > 0 ? linked_ledger_id : cmd->ledger_id;
+            int     perm_chk = account_usecase_check_permission(
+                pool, chk_lid, cmd->user_id, linked_acct_id, MF_ACCOUNT_ACTION_WRITE_TX);
             if (perm_chk != 0) {
                 out_res->code = 1004;
                 snprintf(out_res->message,
@@ -296,6 +301,32 @@ tx_usecase_update(void* pool, const update_tx_cmd_t* cmd, tx_usecase_result_t* o
         return -1;
     }
 
+    /* 校验原资产与目标资产所在账户的记账权限 (MF_ACCOUNT_ACTION_WRITE_TX) */
+    {
+        int64_t old_linked_id = (int64_t)db_get_int(old_row, "linked_asset_id");
+        int64_t check_assets[4] = {old_asset_id, old_linked_id, target_asset_id, target_linked_id};
+        for (int i = 0; i < 4; i++) {
+            if (check_assets[i] <= 0) {
+                continue;
+            }
+            int64_t alid = 0, aaid = 0;
+            if (asset_get_ledger_and_account(
+                    (csilk_db_pool_t*)pool, check_assets[i], &alid, &aaid) == 0 &&
+                aaid > 0) {
+                int64_t chk_lid = alid > 0 ? alid : target_ledger_id;
+                if (account_usecase_check_permission(
+                        pool, chk_lid, cmd->user_id, aaid, MF_ACCOUNT_ACTION_WRITE_TX) != 0) {
+                    csilk_json_free(old_rows);
+                    out_res->code = 1004;
+                    snprintf(out_res->message,
+                             sizeof(out_res->message),
+                             "Forbidden: 关联账户无记账权限");
+                    return -1;
+                }
+            }
+        }
+    }
+
     db_tx_scope_t scope;
     if (db_tx_scope_begin((csilk_db_pool_t*)pool, "mf_tx_update", &scope) != 0) {
         csilk_json_free(old_rows);
@@ -451,6 +482,31 @@ tx_usecase_delete(void* pool, const delete_tx_cmd_t* cmd, tx_usecase_result_t* o
     int64_t       linked_asset_id = (int64_t)db_get_int(tx_row, "linked_asset_id");
     double        amount = db_get_num(tx_row, "amount");
     const char*   tx_date = csilk_json_get_string(tx_row, "transaction_date");
+
+    /* 校验关联账户记账权限 */
+    {
+        int64_t check_assets[2] = {asset_id, linked_asset_id};
+        for (int i = 0; i < 2; i++) {
+            if (check_assets[i] <= 0) {
+                continue;
+            }
+            int64_t alid = 0, aaid = 0;
+            if (asset_get_ledger_and_account(
+                    (csilk_db_pool_t*)pool, check_assets[i], &alid, &aaid) == 0 &&
+                aaid > 0) {
+                if (account_usecase_check_permission(
+                        pool, alid, cmd->user_id, aaid, MF_ACCOUNT_ACTION_WRITE_TX) != 0) {
+                    csilk_json_free(tx_rows);
+                    db_tx_scope_rollback(pool, &scope);
+                    out_res->code = 1004;
+                    snprintf(out_res->message,
+                             sizeof(out_res->message),
+                             "Forbidden: 关联账户无记账权限");
+                    return -1;
+                }
+            }
+        }
+    }
 
     int is_transfer_out = (type && strcmp(type, "transfer_out") == 0);
     int is_transfer_in = (type && strcmp(type, "transfer_in") == 0);

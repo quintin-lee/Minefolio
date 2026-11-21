@@ -1,5 +1,5 @@
 #include "infrastructure/repositories/transaction_repo_impl.h"
-#include "infrastructure/repositories/transaction_repo_impl.h"
+#include "infrastructure/repositories/account_permission_repo_impl.h"
 #include "common/db.h"
 #include "core/financial/currency.h"
 #include "core/financial/quantity.h"
@@ -317,6 +317,71 @@ tx_asset_exists(csilk_db_pool_t* pool, int64_t user_id, int64_t asset_id)
 
 /* --- Inlined: tx_list, tx_insert, tx_monthly --- */
 
+static csilk_json_t*
+format_tx_rows(csilk_json_t* raw_rows)
+{
+    if (!raw_rows || !csilk_json_is_array(raw_rows)) {
+        return raw_rows;
+    }
+    size_t        n = csilk_json_array_size(raw_rows);
+    csilk_json_t* out = csilk_json_array();
+    if (!out) {
+        return raw_rows;
+    }
+    for (size_t i = 0; i < n; i++) {
+        const csilk_json_t* r = csilk_json_array_get(raw_rows, i);
+        if (!r || !csilk_json_is_object(r)) {
+            continue;
+        }
+        csilk_json_t* item = csilk_json_object();
+        csilk_json_add_int(item, "id", db_get_int(r, "id"));
+        csilk_json_add_int(item, "asset_id", db_get_int(r, "asset_id"));
+        const csilk_json_t* laid_v = csilk_json_get(r, "linked_asset_id");
+        if (laid_v && !csilk_json_is_null(laid_v)) {
+            csilk_json_add_int(item, "linked_asset_id", db_get_int(r, "linked_asset_id"));
+        } else {
+            csilk_json_add_null(item, "linked_asset_id");
+        }
+        const csilk_json_t* cat_v = csilk_json_get(r, "category_id");
+        if (cat_v && !csilk_json_is_null(cat_v)) {
+            csilk_json_add_int(item, "category_id", db_get_int(r, "category_id"));
+        } else {
+            csilk_json_add_null(item, "category_id");
+        }
+        csilk_json_add_string(
+            item, "transaction_type", csilk_json_get_string(r, "transaction_type"));
+        csilk_json_add_string(item, "source_type", csilk_json_get_string(r, "source_type"));
+        csilk_json_add_string(item, "direction", csilk_json_get_string(r, "direction"));
+        csilk_json_add_string(
+            item, "linked_direction", csilk_json_get_string(r, "linked_direction"));
+
+        int mask_bal =
+            (db_get_int(r, "mask_bal_a") != 0 || db_get_int(r, "mask_bal_la") != 0) ? 1 : 0;
+        if (mask_bal) {
+            csilk_json_add_number(item, "amount", 0.0);
+            csilk_json_add_number(item, "price_per_unit", 0.0);
+            csilk_json_add_number(item, "quantity", 0.0);
+            csilk_json_add_bool(item, "is_balance_masked", true);
+        } else {
+            csilk_json_add_number(item, "amount", db_get_num(r, "amount"));
+            csilk_json_add_number(item, "price_per_unit", db_get_num(r, "price_per_unit"));
+            csilk_json_add_number(item, "quantity", db_get_num(r, "quantity"));
+            csilk_json_add_bool(item, "is_balance_masked", false);
+        }
+        csilk_json_add_string(item, "currency", csilk_json_get_string(r, "currency"));
+        csilk_json_add_string(
+            item, "transaction_date", csilk_json_get_string(r, "transaction_date"));
+        csilk_json_add_string(item, "note", csilk_json_get_string(r, "note"));
+        csilk_json_add_string(item, "asset_name", csilk_json_get_string(r, "asset_name"));
+        csilk_json_add_string(
+            item, "linked_asset_name", csilk_json_get_string(r, "linked_asset_name"));
+        csilk_json_add_string(item, "category_name", csilk_json_get_string(r, "category_name"));
+        csilk_json_array_append(out, item);
+    }
+    csilk_json_free(raw_rows);
+    return out;
+}
+
 csilk_json_t*
 tx_list(csilk_db_pool_t* pool,
         int64_t          user_id,
@@ -341,9 +406,24 @@ tx_list(csilk_db_pool_t* pool,
     char cond_sql[512] = {0};
     int  cond_len = 0;
 
-    const char *params[16], *cnt_params[16];
+    const char *params[24], *cnt_params[20];
     int         pidx = 0, cnt_pidx = 0;
+    /* SELECT 中 2 个脱敏列共 4 个 uid 参数 */
     params[pidx++] = uid;
+    params[pidx++] = uid;
+    params[pidx++] = uid;
+    params[pidx++] = uid;
+    /* WHERE t.user_id=? + 可见性 (a + la) 共 5 个 uid 参数 */
+    params[pidx++] = uid;
+    params[pidx++] = uid;
+    params[pidx++] = uid;
+    params[pidx++] = uid;
+    params[pidx++] = uid;
+
+    cnt_params[cnt_pidx++] = uid;
+    cnt_params[cnt_pidx++] = uid;
+    cnt_params[cnt_pidx++] = uid;
+    cnt_params[cnt_pidx++] = uid;
     cnt_params[cnt_pidx++] = uid;
 
     if (ledger_id > 0) {
@@ -395,31 +475,41 @@ tx_list(csilk_db_pool_t* pool,
         *total = 0;
         return NULL;
     }
-    if (pidx + 2 > 16 || cnt_pidx + 1 > 16) { /* +2: LIMIT/OFFSET, +1: COUNT uid */
+    if (pidx + 3 > 24 || cnt_pidx + 1 > 20) { /* +2: LIMIT/OFFSET, +1: NULL */
         *total = 0;
         return NULL;
     }
 
-    char sql[1024];
-    char count_sql[1024];
-    snprintf(sql,
-             sizeof(sql),
-             "SELECT "
-             "t.id,t.asset_id,t.linked_asset_id,t.category_id,t.transaction_type,t.source_type,t."
-             "direction,t.linked_direction,t.amount,t.price_per_unit,t.quantity,t.currency,t."
-             "transaction_date,t.note,a.name as asset_name,la.name as linked_asset_name,c.name as "
-             "category_name FROM transactions t LEFT JOIN assets a ON t.asset_id=a.id LEFT JOIN "
-             "assets la ON t.linked_asset_id=la.id LEFT JOIN categories c ON t.category_id=c.id "
-             "WHERE t.user_id=?%s "
-             "ORDER BY t.transaction_date DESC LIMIT ? OFFSET ?",
-             cond_sql);
+    char sql[2560];
+    char count_sql[1536];
+    snprintf(
+        sql,
+        sizeof(sql),
+        "SELECT "
+        "t.id,t.asset_id,t.linked_asset_id,t.category_id,t.transaction_type,t.source_type,t."
+        "direction,t.linked_direction,t.amount,t.price_per_unit,t.quantity,t.currency,t."
+        "transaction_date,t.note,a.name as asset_name,la.name as linked_asset_name,c.name as "
+        "category_name," MF_RBAC_MASK_BALANCE_COL("a") " AS mask_bal_a," MF_RBAC_MASK_BALANCE_COL(
+            "la") " AS mask_bal_la "
+                  "FROM transactions t LEFT JOIN assets a ON t.asset_id=a.id LEFT JOIN "
+                  "assets la ON t.linked_asset_id=la.id LEFT JOIN categories c ON "
+                  "t.category_id=c.id "
+                  "WHERE t.user_id=? AND " MF_RBAC_ASSET_VISIBLE_SQL(
+                      "a") " AND " MF_RBAC_ASSET_VISIBLE_SQL("la") "%s "
+                                                                   "ORDER BY t.transaction_date "
+                                                                   "DESC LIMIT ? OFFSET ?",
+        cond_sql);
     params[pidx++] = limit;
     params[pidx++] = offset;
     params[pidx] = NULL;
 
     snprintf(count_sql,
              sizeof(count_sql),
-             "SELECT COUNT(*) AS cnt FROM transactions t WHERE t.user_id=?%s",
+             "SELECT COUNT(*) AS cnt FROM transactions t "
+             "LEFT JOIN assets a ON t.asset_id=a.id "
+             "LEFT JOIN assets la ON t.linked_asset_id=la.id "
+             "WHERE t.user_id=? AND " MF_RBAC_ASSET_VISIBLE_SQL(
+                 "a") " AND " MF_RBAC_ASSET_VISIBLE_SQL("la") "%s",
              cond_sql);
     cnt_params[cnt_pidx] = NULL;
 
@@ -431,7 +521,8 @@ tx_list(csilk_db_pool_t* pool,
     if (cnt_res) {
         csilk_json_free(cnt_res);
     }
-    return csilk_db_query_param_json(pool, sql, params);
+    csilk_json_t* raw_rows = csilk_db_query_param_json(pool, sql, params);
+    return raw_rows ? format_tx_rows(raw_rows) : NULL;
 }
 
 csilk_json_t*
@@ -443,23 +534,27 @@ tx_monthly(csilk_db_pool_t* pool, int64_t user_id, int64_t ledger_id, const char
         snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
         return csilk_db_query_param_json(
             pool,
-            "SELECT COALESCE(SUM(amount),0) AS total_volume, "
-            "COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE 0 END),0) AS inflows, "
-            "COALESCE(SUM(CASE WHEN direction='out' THEN amount ELSE 0 END),0) AS outflows, "
-            "COUNT(*) AS count FROM transactions "
-            "WHERE user_id=? AND ledger_id=? "
-            "AND CAST(transaction_date AS TEXT) LIKE ?",
-            (const char*[]){uid, lid, pattern, NULL});
+            "SELECT COALESCE(SUM(t.amount),0) AS total_volume, "
+            "COALESCE(SUM(CASE WHEN t.direction='in' THEN t.amount ELSE 0 END),0) AS inflows, "
+            "COALESCE(SUM(CASE WHEN t.direction='out' THEN t.amount ELSE 0 END),0) AS outflows, "
+            "COUNT(*) AS count FROM transactions t "
+            "LEFT JOIN assets a ON t.asset_id=a.id "
+            "WHERE t.user_id=? AND t.ledger_id=? "
+            "AND CAST(t.transaction_date AS TEXT) LIKE ? "
+            "AND " MF_RBAC_ASSET_UNMASKED_SQL("a"),
+            (const char*[]){uid, lid, pattern, uid, uid, NULL});
     }
     return csilk_db_query_param_json(
         pool,
-        "SELECT COALESCE(SUM(amount),0) AS total_volume, "
-        "COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE 0 END),0) AS inflows, "
-        "COALESCE(SUM(CASE WHEN direction='out' THEN amount ELSE 0 END),0) AS outflows, "
-        "COUNT(*) AS count FROM transactions "
-        "WHERE user_id=? "
-        "AND CAST(transaction_date AS TEXT) LIKE ?",
-        (const char*[]){uid, pattern, NULL});
+        "SELECT COALESCE(SUM(t.amount),0) AS total_volume, "
+        "COALESCE(SUM(CASE WHEN t.direction='in' THEN t.amount ELSE 0 END),0) AS inflows, "
+        "COALESCE(SUM(CASE WHEN t.direction='out' THEN t.amount ELSE 0 END),0) AS outflows, "
+        "COUNT(*) AS count FROM transactions t "
+        "LEFT JOIN assets a ON t.asset_id=a.id "
+        "WHERE t.user_id=? "
+        "AND CAST(t.transaction_date AS TEXT) LIKE ? "
+        "AND " MF_RBAC_ASSET_UNMASKED_SQL("a"),
+        (const char*[]){uid, pattern, uid, uid, NULL});
 }
 
 int64_t

@@ -8,6 +8,7 @@
 
 #include "services/report_expense_service.h"
 #include "application/report/commands.h"
+#include "infrastructure/repositories/account_permission_repo_impl.h"
 #include "common/db.h"
 #include "common/response.h"
 #include "core/financial/money.h"
@@ -49,15 +50,17 @@ report_expense_monthly(void* pool, const report_query_t* q, report_result_t* out
     char uid_str[32], lid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)q->user_id);
     snprintf(lid_str, sizeof(lid_str), "%lld", (long long)q->ledger_id);
-    const char* params[] = {uid_str, lid_str, date_pattern, NULL};
+    const char* params[] = {uid_str, lid_str, date_pattern, uid_str, uid_str, NULL};
 
     csilk_json_t* rows = csilk_db_query_param_json(
         (csilk_db_pool_t*)pool,
         "SELECT de.expense_date, de.expense_type, de.amount, de.currency, c.name as category_name "
         "FROM daily_expenses de JOIN categories c ON de.category_id=c.id "
         "AND c.user_id=de.user_id AND c.ledger_id=de.ledger_id "
+        "LEFT JOIN assets a ON de.asset_id=a.id "
         "WHERE de.user_id=? AND de.ledger_id=? AND CAST(de.expense_date AS TEXT) LIKE ? "
-        "ORDER BY de.expense_date ASC",
+        "AND " MF_RBAC_ASSET_UNMASKED_SQL("a") " "
+                                               "ORDER BY de.expense_date ASC",
         params);
 
     currency_t base_cur = currency_from_str("CNY");
@@ -182,7 +185,9 @@ report_expense_monthly(void* pool, const report_query_t* q, report_result_t* out
         "SELECT t.name as tag_name, de.amount, de.currency "
         "FROM daily_expenses de JOIN expense_tags et ON de.id=et.expense_id "
         "JOIN tags t ON et.tag_id=t.id AND t.user_id=de.user_id "
-        "WHERE de.user_id=? AND de.ledger_id=? AND CAST(de.expense_date AS TEXT) LIKE ?",
+        "LEFT JOIN assets a ON de.asset_id=a.id "
+        "WHERE de.user_id=? AND de.ledger_id=? AND CAST(de.expense_date AS TEXT) LIKE ? "
+        "AND " MF_RBAC_ASSET_UNMASKED_SQL("a"),
         params);
 
     typedef struct {
@@ -305,15 +310,17 @@ report_expense_trend(void* pool, const report_query_t* q, report_result_t* out_r
         mktime(&tmv);
         strftime(cutoff_buf, sizeof(cutoff_buf), "%Y-%m-%d", &tmv);
     }
-    const char* params[] = {uid_str, lid_str, cutoff_buf, NULL};
+    const char* params[] = {uid_str, lid_str, cutoff_buf, uid_str, uid_str, NULL};
 
-    csilk_json_t* result = csilk_db_query_param_json(
-        (csilk_db_pool_t*)pool,
-        "SELECT SUBSTR(CAST(expense_date AS TEXT),1,7) as period, "
-        "expense_type, amount, currency "
-        "FROM daily_expenses WHERE user_id=? AND ledger_id=? AND expense_date >= ? "
-        "ORDER BY period ASC",
-        params);
+    csilk_json_t* result =
+        csilk_db_query_param_json((csilk_db_pool_t*)pool,
+                                  "SELECT SUBSTR(CAST(de.expense_date AS TEXT),1,7) as period, "
+                                  "de.expense_type, de.amount, de.currency "
+                                  "FROM daily_expenses de LEFT JOIN assets a ON de.asset_id=a.id "
+                                  "WHERE de.user_id=? AND de.ledger_id=? AND de.expense_date >= ? "
+                                  "AND " MF_RBAC_ASSET_UNMASKED_SQL("a") " "
+                                                                         "ORDER BY period ASC",
+                                  params);
 
     if (!result) {
         out_res->code = 500;
@@ -416,15 +423,16 @@ report_expense_yearly(void* pool, const report_query_t* q, report_result_t* out_
     char uid_str[32], lid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)q->user_id);
     snprintf(lid_str, sizeof(lid_str), "%lld", (long long)q->ledger_id);
-    const char* params[] = {uid_str, lid_str, year_buf, NULL};
+    const char* params[] = {uid_str, lid_str, year_buf, uid_str, uid_str, NULL};
 
     csilk_json_t* rows = csilk_db_query_param_json(
         (csilk_db_pool_t*)pool,
-        "SELECT CAST(SUBSTR(CAST(expense_date AS TEXT),6,2) AS INTEGER) as m, "
-        "expense_type, amount, currency "
-        "FROM daily_expenses WHERE user_id=? AND ledger_id=? AND SUBSTR(CAST(expense_date AS "
-        "TEXT),1,4)=? "
-        "ORDER BY m",
+        "SELECT CAST(SUBSTR(CAST(de.expense_date AS TEXT),6,2) AS INTEGER) as m, "
+        "de.expense_type, de.amount, de.currency "
+        "FROM daily_expenses de LEFT JOIN assets a ON de.asset_id=a.id "
+        "WHERE de.user_id=? AND de.ledger_id=? AND SUBSTR(CAST(de.expense_date AS "
+        "TEXT),1,4)=? AND " MF_RBAC_ASSET_UNMASKED_SQL("a") " "
+                                                            "ORDER BY m",
         params);
     if (!rows) {
         out_res->code = 500;
@@ -513,15 +521,17 @@ report_expense_category(void* pool, const report_query_t* q, report_result_t* ou
     char uid_str[32], lid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)q->user_id);
     snprintf(lid_str, sizeof(lid_str), "%lld", (long long)q->ledger_id);
-    const char* params[] = {uid_str, lid_str, period_pattern, NULL};
+    const char* params[] = {uid_str, lid_str, period_pattern, uid_str, uid_str, NULL};
 
     csilk_json_t* rows = csilk_db_query_param_json(
         (csilk_db_pool_t*)pool,
         "SELECT c.name as name, de.amount, de.currency "
         "FROM daily_expenses de JOIN categories c ON de.category_id=c.id "
         "AND c.user_id=de.user_id AND c.ledger_id=de.ledger_id "
+        "LEFT JOIN assets a ON de.asset_id=a.id "
         "WHERE de.user_id=? AND de.ledger_id=? AND "
-        "de.expense_type='expense' AND CAST(de.expense_date AS TEXT) LIKE ?",
+        "de.expense_type='expense' AND CAST(de.expense_date AS TEXT) LIKE ? "
+        "AND " MF_RBAC_ASSET_UNMASKED_SQL("a"),
         params);
     if (!rows) {
         out_res->code = 500;
@@ -664,16 +674,17 @@ report_expense_tag(void* pool, const report_query_t* q, report_result_t* out_res
     char uid_str[32], lid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)q->user_id);
     snprintf(lid_str, sizeof(lid_str), "%lld", (long long)q->ledger_id);
-    const char* params[] = {uid_str, lid_str, period_pattern, NULL};
+    const char* params[] = {uid_str, lid_str, period_pattern, uid_str, uid_str, NULL};
 
     csilk_json_t* rows = csilk_db_query_param_json(
         (csilk_db_pool_t*)pool,
         "SELECT t.name as tag_name, de.amount, de.currency "
         "FROM daily_expenses de JOIN expense_tags et ON de.id=et.expense_id "
         "JOIN tags t ON et.tag_id=t.id AND t.user_id=de.user_id "
+        "LEFT JOIN assets a ON de.asset_id=a.id "
         "WHERE de.user_id=? AND de.ledger_id=? AND de.expense_type='expense' AND "
         "CAST(de.expense_date AS TEXT) "
-        "LIKE ? ",
+        "LIKE ? AND " MF_RBAC_ASSET_UNMASKED_SQL("a"),
         params);
     if (!rows) {
         out_res->code = 500;

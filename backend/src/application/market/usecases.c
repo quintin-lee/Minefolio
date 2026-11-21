@@ -239,7 +239,7 @@ market_usecase_sync_single(void*                    pool,
         return -1;
     }
 
-    csilk_json_t* asset_rows = asset_get((csilk_db_pool_t*)pool, user_id, asset_id);
+    csilk_json_t* asset_rows = asset_get_raw((csilk_db_pool_t*)pool, user_id, asset_id);
     if (!asset_rows || csilk_json_array_size(asset_rows) == 0) {
         if (asset_rows) {
             csilk_json_free(asset_rows);
