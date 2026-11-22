@@ -1,5 +1,6 @@
 #include "services/ai/policy/risk.h"
 #include "common/db.h"
+#include <math.h>
 #include <string.h>
 
 const char*
@@ -45,6 +46,90 @@ ai_risk_level_from_string(const char* str)
     return AI_RISK_LOW;
 }
 
+static double
+extract_object_amount(const csilk_json_t* obj)
+{
+    if (!obj || !csilk_json_is_object(obj)) {
+        return 0.0;
+    }
+
+    static const char* const k_amount_keys[] = {
+        "amount", "total_amount", "transfer_amount", "value", "cost", "fee", NULL};
+
+    double max_field = 0.0;
+    for (int i = 0; k_amount_keys[i]; i++) {
+        double v = db_get_num(obj, k_amount_keys[i]);
+        if (isfinite(v) && v > max_field) {
+            max_field = v;
+        }
+    }
+
+    double price = db_get_num(obj, "price");
+    double qty = db_get_num(obj, "quantity");
+    if (isfinite(price) && isfinite(qty) && price > 0.0 && qty > 0.0) {
+        double notional = price * qty;
+        if (isfinite(notional) && notional > max_field) {
+            max_field = notional;
+        }
+    }
+
+    return max_field;
+}
+
+void
+ai_risk_extract_amounts(const csilk_json_t* args, double* out_max_amount, double* out_total_amount)
+{
+    double max_amt = 0.0;
+    double total_amt = 0.0;
+
+    if (args && csilk_json_is_object(args)) {
+        max_amt = extract_object_amount(args);
+        total_amt = max_amt;
+
+        const csilk_json_t* actions = csilk_json_get(args, "actions");
+        if (actions && csilk_json_is_array(actions)) {
+            size_t count = csilk_json_array_size(actions);
+            double batch_sum = 0.0;
+            for (size_t i = 0; i < count; i++) {
+                const csilk_json_t* item = csilk_json_array_get(actions, i);
+                double              item_amt = extract_object_amount(item);
+
+                const csilk_json_t* sub_arguments = csilk_json_get(item, "arguments");
+                if (sub_arguments && csilk_json_is_object(sub_arguments)) {
+                    double sub_amt = extract_object_amount(sub_arguments);
+                    if (sub_amt > item_amt) {
+                        item_amt = sub_amt;
+                    }
+                }
+                const csilk_json_t* sub_args = csilk_json_get(item, "args");
+                if (sub_args && csilk_json_is_object(sub_args)) {
+                    double sub_amt = extract_object_amount(sub_args);
+                    if (sub_amt > item_amt) {
+                        item_amt = sub_amt;
+                    }
+                }
+
+                if (item_amt > max_amt) {
+                    max_amt = item_amt;
+                }
+                if (isfinite(item_amt) && item_amt > 0.0) {
+                    batch_sum += item_amt;
+                }
+            }
+            if (isfinite(batch_sum) && batch_sum > total_amt) {
+                total_amt = batch_sum;
+            }
+        }
+    }
+
+    if (out_max_amount) {
+        *out_max_amount = max_amt;
+    }
+    if (out_total_amount) {
+        *out_total_amount = total_amt;
+    }
+}
+
 ai_risk_level_t
 ai_risk_assess(const char* tool_name, const csilk_json_t* args)
 {
@@ -58,11 +143,11 @@ ai_risk_assess(const char* tool_name, const csilk_json_t* args)
         return AI_RISK_CRITICAL;
     }
 
-    /* 2. 检查交易/划转金额大小，动态升降级风险 */
-    double amount = 0.0;
-    if (args) {
-        amount = db_get_num(args, "amount");
-    }
+    /* 2. 检查交易/划转金额大小（含扩展字段及批处理累计额），动态升级风险 */
+    double max_amount = 0.0;
+    double total_amount = 0.0;
+    ai_risk_extract_amounts(args, &max_amount, &total_amount);
+    double amount = total_amount > max_amount ? total_amount : max_amount;
 
     /* 3. 执行确认类动账操作 (Execution) */
     if (strncmp(tool_name, "confirm_", 8) == 0 || strcmp(tool_name, "execute_transfer") == 0 ||

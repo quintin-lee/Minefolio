@@ -34,6 +34,19 @@ const char* ai_risk_level_to_string(ai_risk_level_t level);
 ai_risk_level_t ai_risk_level_from_string(const char* str);
 
 /**
+ * @brief 从工具调用参数中提取单笔最大金额与累计金额
+ *
+ * 检查 amount、total_amount、transfer_amount、value、cost、fee、
+ * price * quantity 以及批处理 actions 数组中的单项与累加和。
+ *
+ * @param args 工具调用参数 JSON 对象（可为 NULL）
+ * @param[out] out_max_amount 返回观测到的最大单笔/单字段金额（非负有限数，可为 NULL）
+ * @param[out] out_total_amount 返回主金额或批处理累计金额（非负有限数，可为 NULL）
+ */
+void
+ai_risk_extract_amounts(const csilk_json_t* args, double* out_max_amount, double* out_total_amount);
+
+/**
  * @brief 动态评估具体工具调用及参数的风险等级
  *
  * @param tool_name 工具名称

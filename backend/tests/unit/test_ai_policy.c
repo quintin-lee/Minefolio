@@ -413,6 +413,77 @@ main(void)
         printf("  ✅ Cross-session replay strongly rejected (AI_CONFIRM_ERR_SESSION_MISMATCH)\n");
     }
 
+    /* ------------------------------------------------------------- */
+    /* Test 14: Risk Non-Downgrade & Extended Amount Field Coverage  */
+    /* ------------------------------------------------------------- */
+    printf("[Test 14] Risk Non-Downgrade & Extended Amount Fields...\n");
+    {
+        ai_policy_rules_t rules = {
+            .single_amount_limit = 100000.0,
+            .large_amount_threshold = 20000.0,
+            .max_frequency_per_minute = 0,
+            .enforce_confirmation = true,
+        };
+        ai_policy_set_rules(&rules);
+        ai_policy_reset_frequency_limits();
+
+        /* 14a: risk_override 不允许向下覆盖 */
+        ai_policy_decision_t* dec_nodown =
+            ai_policy_evaluate(2001, 1, "confirm_proposed_transfer", NULL, AI_RISK_READ_ONLY);
+        assert(dec_nodown != NULL);
+        assert(dec_nodown->risk_level == AI_RISK_HIGH);
+        ai_policy_decision_free(dec_nodown);
+
+        /* 14b: total_amount 超出限额应拦截 */
+        csilk_json_t* tot_args = csilk_json_object();
+        csilk_json_add_number(tot_args, "total_amount", 150000.0);
+        ai_policy_decision_t* dec_tot =
+            ai_policy_evaluate(2001, 1, "confirm_proposed_transfer", tot_args, AI_RISK_NO_OVERRIDE);
+        assert(dec_tot != NULL && dec_tot->allowed == false);
+        ai_policy_decision_free(dec_tot);
+        csilk_json_free(tot_args);
+
+        /* 14c: price * quantity 名义金额触发 CRITICAL 升级与超限拦截 */
+        csilk_json_t* pq_args = csilk_json_object();
+        csilk_json_add_number(pq_args, "price", 250.0);
+        csilk_json_add_number(pq_args, "quantity", 100.0); /* 25,000 >= 20,000 */
+        ai_policy_decision_t* dec_pq =
+            ai_policy_evaluate(2001, 1, "propose_trade", pq_args, AI_RISK_NO_OVERRIDE);
+        assert(dec_pq != NULL && dec_pq->allowed == true);
+        assert(dec_pq->risk_level == AI_RISK_CRITICAL);
+        ai_policy_decision_free(dec_pq);
+        csilk_json_free(pq_args);
+
+        /* 14d: transfer_amount / value / cost 均参与金额阈值风控 */
+        csilk_json_t* val_args = csilk_json_object();
+        csilk_json_add_number(val_args, "transfer_amount", 30000.0);
+        ai_policy_decision_t* dec_val =
+            ai_policy_evaluate(2001, 1, "confirm_transfer", val_args, AI_RISK_LOW);
+        assert(dec_val != NULL && dec_val->allowed == true);
+        assert(dec_val->risk_level == AI_RISK_CRITICAL);
+        ai_policy_decision_free(dec_val);
+        csilk_json_free(val_args);
+
+        /* 14e: actions 数组累计总额超过 single_amount_limit 应拦截 */
+        csilk_json_t* batch_args = csilk_json_object();
+        csilk_json_t* actions = csilk_json_array();
+        csilk_json_t* item1 = csilk_json_object();
+        csilk_json_add_number(item1, "amount", 60000.0);
+        csilk_json_t* item2 = csilk_json_object();
+        csilk_json_add_number(item2, "cost", 60000.0);
+        csilk_json_array_append(actions, item1);
+        csilk_json_array_append(actions, item2);
+        csilk_json_add_array(batch_args, "actions", actions);
+
+        ai_policy_decision_t* dec_batch =
+            ai_policy_evaluate(2001, 1, "confirm_batch", batch_args, AI_RISK_NO_OVERRIDE);
+        assert(dec_batch != NULL && dec_batch->allowed == false);
+        ai_policy_decision_free(dec_batch);
+        csilk_json_free(batch_args);
+
+        printf("  ✅ Risk non-downgrade & extended amount extraction verified\n");
+    }
+
     printf("\n🎉 ALL AI POLICY / RISK / CONFIRMATION SECURITY TESTS PASSED!\n");
     return 0;
 }

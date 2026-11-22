@@ -7,26 +7,53 @@
 
 #include "middlewares/csrf_middleware.h"
 #include "csilk/core/ctx/response.h"
-#include <string.h>
+#include <openssl/crypto.h>
 #include <stdio.h>
+#include <string.h>
 
 static const char* s_csrf_exclude_paths[] = {
     "/api/auth/login", "/api/auth/register", "/api/system/status", "/api/system/setup", NULL};
+
+static bool
+is_csrf_excluded_path(const char* path)
+{
+    if (!path) {
+        return false;
+    }
+    for (int i = 0; s_csrf_exclude_paths[i]; i++) {
+        if (strcmp(path, s_csrf_exclude_paths[i]) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool
+is_safe_http_method(const char* method)
+{
+    return method && (strcmp(method, "GET") == 0 || strcmp(method, "HEAD") == 0 ||
+                      strcmp(method, "OPTIONS") == 0);
+}
 
 static bool
 csrf_skip_if_bearer_or_seed(csilk_ctx_t* c)
 {
     const char* cookie = csilk_get_cookie(c, "csrf_token");
     if (!cookie || !cookie[0]) {
-        /* 如果没有 csrf cookie，自动为后续请求下发 cookie */
-        char buf[33];
-        if (csilk_csrf_generate_token(buf, sizeof(buf)) == 0) {
-            csilk_set_cookie_ex(c, "csrf_token", buf, 86400, "/", NULL, 0, 0, "Lax");
-        }
-        /* 若携带了 Bearer 鉴权头，则放行（避免 API/移动端客户端因缺少 cookie 被拦截） */
+        /* 若携带了 Bearer 鉴权头，直接放行，避免 API/移动端客户端因缺少 cookie 被拦截 */
         const char* auth_hdr = csilk_get_header(c, "Authorization");
         if (auth_hdr && strncmp(auth_hdr, "Bearer ", 7) == 0) {
             return true;
+        }
+        /* 仅对安全方法或初始化/登录免检路径下发 csrf_token Cookie，避免在 403 拒绝响应中签发令牌 */
+        const char* method = csilk_get_method(c);
+        const char* path = csilk_get_path(c);
+        if (is_safe_http_method(method) || is_csrf_excluded_path(path)) {
+            char buf[33];
+            if (csilk_csrf_generate_token(buf, sizeof(buf)) == 0) {
+                csilk_set_cookie_ex(c, "csrf_token", buf, 86400, "/", NULL, 0, 0, "Lax");
+            }
+            OPENSSL_cleanse(buf, sizeof(buf));
         }
     }
     return false;

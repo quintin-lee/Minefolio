@@ -139,8 +139,9 @@ ai_policy_evaluate_ex(int64_t             user_id,
     dec->perm_level = ai_permission_get_level(tool_name);
     dec->risk_level = ai_risk_assess(tool_name, args);
     /* 调用方（如 MCP bridge）若持有权威的缓存风险，可传入覆盖值；
-       否则（AI_RISK_NO_OVERRIDE）沿用 name-pattern 默认风险。 */
-    if (risk_override != AI_RISK_NO_OVERRIDE) {
+       安全单调性：仅允许向上提升风险，禁止向下覆盖 ai_risk_assess 评估结果。 */
+    if (risk_override != AI_RISK_NO_OVERRIDE && risk_override >= AI_RISK_READ_ONLY &&
+        risk_override <= AI_RISK_CRITICAL && risk_override > dec->risk_level) {
         dec->risk_level = risk_override;
     }
     /* 1. 认证检验 (Authentication) */
@@ -185,7 +186,10 @@ ai_policy_evaluate_ex(int64_t             user_id,
 
     /* 4. 金额风控与动态风险升级 (Amount Limit & Risk Escalation) */
     if (args) {
-        double amount = db_get_num(args, "amount");
+        double max_amount = 0.0;
+        double total_amount = 0.0;
+        ai_risk_extract_amounts(args, &max_amount, &total_amount);
+        double amount = total_amount > max_amount ? total_amount : max_amount;
         if (amount > 0.0) {
             if (single_limit > 0.0 && amount > single_limit) {
                 dec->allowed = false;
