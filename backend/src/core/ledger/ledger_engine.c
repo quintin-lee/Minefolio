@@ -296,9 +296,12 @@ insert_and_apply_fee_child(csilk_db_pool_t*   pool,
         "?, ?, "
         "NULLIF(CAST(NULLIF(?, '') AS BIGINT), 0))",
         fee_params);
-    if (fee_res) {
-        csilk_json_free(fee_res);
+    if (!fee_res) {
+        CSILK_LOG_E("insert_and_apply_fee_child: failed to insert child fee row for tx_id=%lld",
+                    (long long)tx->id);
+        return -1;
     }
+    csilk_json_free(fee_res);
 
     money_t neg_fee = money_neg(tx->fee);
     return balance_apply_delta_m_fx(pool,
@@ -429,6 +432,12 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
     if (tx->type == LEDGER_TX_UNKNOWN) {
         return -1;
     }
+    if (money_is_negative(tx->fee)) {
+        CSILK_LOG_W("ledger_apply_tx: negative fee rejected user_id=%lld asset_id=%lld",
+                    (long long)tx->user_id,
+                    (long long)tx->asset_id);
+        return -1;
+    }
 
     db_tx_scope_t scope;
     if (db_tx_scope_begin(pool, "mf_ledger_apply_tx", &scope) != 0) {
@@ -526,7 +535,7 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
     }
 
     // 3. Fee record generation if fee > 0 on any non-fee transaction
-    if (!money_is_zero(tx->fee) && tx->type != LEDGER_TX_FEE) {
+    if (money_is_positive(tx->fee) && tx->type != LEDGER_TX_FEE) {
         if (insert_and_apply_fee_child(pool,
                                        tx,
                                        effective_date,
@@ -642,12 +651,7 @@ ledger_reverse_position_fallback(csilk_db_pool_t* pool,
     if (!currency_equals(fee.currency, cur)) {
         fee = exchange_rate_convert_m(fee, cur);
     }
-    if (!currency_equals(price.currency, cur)) {
-        double p_dbl = price_to_double(price);
-        double conv_p =
-            exchange_rate_convert(p_dbl, currency_code(&price.currency), currency_code(&cur));
-        price_from_double(conv_p, 8, cur, &price);
-    }
+    price = balance_convert_price_fx(price, cur, 0.0);
 
     quantity_t old_qty = db_get_quantity(pr, "quantity");
     money_t    old_cost = db_get_money(pr, "cost_basis", cur);

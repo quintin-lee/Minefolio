@@ -40,6 +40,34 @@ balance_convert_money_fx(money_t delta, currency_t asset_cur, double fx_rate_to_
     return exchange_rate_convert_m(delta, asset_cur);
 }
 
+price_t
+balance_convert_price_fx(price_t price, currency_t asset_cur, double fx_rate_to_cny)
+{
+    if (currency_equals(price.currency, asset_cur)) {
+        return price;
+    }
+    if (fx_rate_to_cny > 0.0) {
+        double target_to_cny = exchange_rate_get_to_cny(currency_code(&asset_cur));
+        if (target_to_cny > 0.0) {
+            double    factor = fx_rate_to_cny / target_to_cny;
+            decimal_t f, prod, rounded;
+            if (isfinite(factor) && factor > 0.0 &&
+                decimal_from_double(factor, 8, &f) == DECIMAL_OK &&
+                decimal_mul(price.unit_price, f, &prod) == DECIMAL_OK &&
+                decimal_round(prod, 8, ROUND_HALF_UP, &rounded) == DECIMAL_OK) {
+                return price_from_decimal(rounded, asset_cur);
+            }
+        }
+    }
+    rate_t    r = exchange_rate_get_rate(price.currency, asset_cur);
+    decimal_t prod, rounded;
+    if (decimal_mul(price.unit_price, r.factor, &prod) == DECIMAL_OK &&
+        decimal_round(prod, 8, ROUND_HALF_UP, &rounded) == DECIMAL_OK) {
+        return price_from_decimal(rounded, asset_cur);
+    }
+    return price_from_decimal(price.unit_price, asset_cur);
+}
+
 int
 balance_direction(const char* asset_type)
 {
@@ -270,11 +298,7 @@ apply_position_fc(csilk_db_pool_t* pool,
     /* Normalize amount, fee, and price to the asset's native currency */
     amount = balance_convert_money_fx(amount, cur, fx_rate_to_cny);
     fee = balance_convert_money_fx(fee, cur, fx_rate_to_cny);
-    if (!currency_equals(price.currency, cur)) {
-        money_t price_money = {price.unit_price, price.currency};
-        money_t converted = balance_convert_money_fx(price_money, cur, fx_rate_to_cny);
-        price = price_from_decimal(converted.amount, cur);
-    }
+    price = balance_convert_price_fx(price, cur, fx_rate_to_cny);
 
     quantity_t old_qty = db_get_quantity(pr, "quantity");
     money_t    old_cost = db_get_money(pr, "cost_basis", cur);

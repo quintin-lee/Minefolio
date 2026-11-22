@@ -1,4 +1,5 @@
 #include "core/ledger/ledger_engine.h"
+#include "common/balance.h"
 #include "common/db.h"
 #include "common/config.h"
 #include "infrastructure/repositories/transaction_repo_impl.h"
@@ -485,6 +486,30 @@ main(void)
         assert(quantity_is_zero(q3));
         assert(money_is_zero(c3));
         printf("    ✓ Position calculation and full liquidation zeroing passed.\n");
+    }
+
+    printf("  7. Testing Negative Fee Rejection & 8-Decimal Price FX Precision...\n");
+    {
+        ledger_tx_t neg_fee_tx = {0};
+        neg_fee_tx.user_id = user_id;
+        neg_fee_tx.asset_id = 101;
+        neg_fee_tx.type = LEDGER_TX_BUY;
+        neg_fee_tx.tx_date = "2026-11-22";
+        money_from_double(100.0, CURRENCY_CNY, &neg_fee_tx.amount);
+        money_from_double(-5.0, CURRENCY_CNY, &neg_fee_tx.fee);
+        neg_fee_tx.price = price_zero(CURRENCY_CNY);
+        neg_fee_tx.quantity = quantity_zero();
+        assert(ledger_apply_tx(pool, &neg_fee_tx) == -1);
+        printf("    ✓ Negative fee rejected cleanly.\n");
+
+        price_t usd_nav;
+        assert(price_from_string("1.23456789", CURRENCY_USD, &usd_nav) == DECIMAL_OK);
+        /* USD -> CNY at explicit fx_rate_to_cny=7.20: 1.23456789 * 7.2 = 8.888888808 -> 8.88888881 */
+        price_t cny_nav = balance_convert_price_fx(usd_nav, CURRENCY_CNY, 7.20);
+        char    nav_buf[64];
+        price_to_string_fixed(cny_nav, 8, nav_buf, sizeof(nav_buf));
+        assert(strcmp(nav_buf, "8.88888881") == 0);
+        printf("    ✓ 8-decimal price FX conversion preserved (%s).\n", nav_buf);
     }
 
     unlink(db_file);

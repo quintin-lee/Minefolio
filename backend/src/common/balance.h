@@ -32,6 +32,16 @@ int balance_direction(const char* asset_type);
 int is_investment_type(const char* atype);
 
 /**
+ * @brief 将投资标的单价折算到资产本币，独立保留 8 位小数精度（不走 2 位 currency_precision 截断）
+ *
+ * @param[in] price 源单价 (price_t)
+ * @param[in] asset_cur 目标资产币种
+ * @param[in] fx_rate_to_cny 交易发生时固化的源币种对 CNY 汇率（<=0 时回退当前牌价）
+ * @return price_t 保留 8 位小数的折算后单价
+ */
+price_t balance_convert_price_fx(price_t price, currency_t asset_cur, double fx_rate_to_cny);
+
+/**
  * @brief 对资产余额应用高精度金额增减变动，并同步写入资产流水审计日志
  *
  * @param[in] pool 数据库连接池指针
