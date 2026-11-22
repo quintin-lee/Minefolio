@@ -277,6 +277,38 @@ function getStreamHeaders(): Record<string, string> {
 }
 
 /**
+ * 校验 SSE 响应头与状态：拦截 HTTP 401 以及网关/后端在 HTTP 200 下返回 JSON `{ code: 1001 }` 的鉴权失效场景
+ */
+async function assertStreamResponseOk(resp: Response): Promise<ReadableStream<Uint8Array>> {
+  if (resp.status === 401) {
+    handleAuthError()
+    throw new Error('HTTP 401: Unauthorized')
+  }
+  const contentType = resp.headers?.get('content-type') || ''
+  if (contentType.includes('application/json')) {
+    let body: { code?: number; message?: string } | null = null
+    try {
+      body = (await resp.json()) as { code?: number; message?: string }
+    } catch {
+      body = null
+    }
+    if (body && typeof body.code === 'number') {
+      if (body.code === 1001) {
+        handleAuthError()
+        throw new Error(body.message || 'HTTP 401: Unauthorized')
+      }
+      if (body.code !== 0) {
+        throw new Error(body.message || `API Error (${body.code})`)
+      }
+    }
+  }
+  if (!resp.ok || !resp.body) {
+    throw new Error(`HTTP ${resp.status}`)
+  }
+  return resp.body
+}
+
+/**
  * 发起流式 AI 对话请求 (Server-Sent Events)
  * @route POST /api/ai/chat
  * @param params 对话请求参数
@@ -311,12 +343,8 @@ export async function* chatStream(
     body: JSON.stringify(params),
     signal,
   })
-  if (resp.status === 401) {
-    handleAuthError()
-    throw new Error('HTTP 401: Unauthorized')
-  }
-  if (!resp.ok || !resp.body) throw new Error(`HTTP ${resp.status}`)
-  const reader = resp.body.getReader()
+  const streamBody = await assertStreamResponseOk(resp)
+  const reader = streamBody.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
   let currentEvent = 'delta'
@@ -557,12 +585,8 @@ export async function* runWorkflowStream(
     body: JSON.stringify(params),
     signal,
   })
-  if (resp.status === 401) {
-    handleAuthError()
-    throw new Error('HTTP 401: Unauthorized')
-  }
-  if (!resp.ok || !resp.body) throw new Error(`HTTP ${resp.status}`)
-  const reader = resp.body.getReader()
+  const streamBody = await assertStreamResponseOk(resp)
+  const reader = streamBody.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
   let currentEvent = 'delta'

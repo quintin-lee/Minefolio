@@ -206,15 +206,17 @@ export const useAuthStore = defineStore('auth', () => {
     clearCryptoKeyCache()
     try {
       // 动态 import 各 store：避免把聊天/账本/分类/同步模块静态打入首屏包
-      const [{ useChatStore }, { useLedgerStore }, { useCategoryStore }, syncMod] = await Promise.all([
+      const [{ useChatStore }, { useLedgerStore }, { useCategoryStore }, { resetFinancialEntities }, syncMod] = await Promise.all([
         import('./chat'),
         import('./ledger'),
         import('./category'),
+        import('@/composables/useFinancialEntities'),
         __IS_MOBILE__ ? import('./sync') : Promise.resolve(null),
       ])
       useChatStore().resetState()
       useLedgerStore().reset()
       useCategoryStore().reset()
+      resetFinancialEntities()
       syncMod?.useSyncStore().reset()
     } catch {
       // 清理失败不影响登出主流程

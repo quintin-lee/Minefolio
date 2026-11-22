@@ -182,6 +182,17 @@ const collisionMap = ref<Map<string, { asset?: EntityDetail; account?: EntityDet
 const isLoaded = ref(false)
 const isLoading = ref(false)
 
+/**
+ * 清空模块级财务实体缓存（登出或切换账本时调用，防止跨用户/跨账本串台）
+ */
+export function resetFinancialEntities(): void {
+  accountMap.value = new Map()
+  assetMap.value = new Map()
+  nameToEntityLookup.value = new Map()
+  collisionMap.value = new Map()
+  isLoaded.value = false
+}
+
 export function useFinancialEntities() {
   async function loadEntities(force = false) {
     if (isLoading.value) return
@@ -293,6 +304,7 @@ export function useFinancialEntities() {
 
   return {
     loadEntities,
+    resetEntities: resetFinancialEntities,
     linkFinancialEntities,
     getEntityDetail,
     getCollisionEntities,
