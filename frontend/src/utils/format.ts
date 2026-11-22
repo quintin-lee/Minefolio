@@ -134,3 +134,14 @@ export function formatDate(val: string): string {
   return `${y}年${Number(m)}月${Number(d)}日`
 }
 
+const LEGACY_INCOME_TX_TYPES = new Set(['deposit', 'transfer_in', 'income', 'interest', 'sell', 'dividend'])
+
+/**
+ * 判断交易是否为资金流入方向：优先依据后端权威 `direction` 字段，缺省时才兼容旧版 `transaction_type` 映射
+ */
+export function isIncomeTransaction(tx: { direction?: string; transaction_type?: string }): boolean {
+  if (tx.direction === 'in') return true
+  if (tx.direction === 'out') return false
+  return LEGACY_INCOME_TX_TYPES.has(tx.transaction_type || '')
+}
+

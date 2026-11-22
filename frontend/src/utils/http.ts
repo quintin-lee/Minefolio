@@ -45,6 +45,24 @@ export function isMobileMode(): boolean {
   return mobileMode
 }
 
+/**
+ * 判断错误是否为网络断连 / 超时 / 无响应错误
+ */
+export function isNetworkError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false
+  return !('response' in err && Boolean((err as { response?: unknown }).response))
+}
+
+/**
+ * 移动端未接入离线本地库的只读视图在请求失败时调用：抑制重复弹窗并在断网时给出明确离线提示
+ */
+export function notifyMobileReadError(err: unknown, moduleLabel: string): void {
+  if (!isNetworkError(err)) {
+    return
+  }
+  showDebouncedError(`${moduleLabel}加载失败：当前离线或无法连接服务端`)
+}
+
 /** 上次错误提示内容 */
 let lastErrorMsg = ''
 /** 上次错误提示时间戳 */
