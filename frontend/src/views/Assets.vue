@@ -938,6 +938,9 @@ onMounted(async () => {
 
 .account-group-body {
   padding: 8px 12px;
+  max-height: 420px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .asset-row {

@@ -186,6 +186,9 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  max-height: 55vh;
+  max-height: 55dvh;
+  overflow-y: auto;
 }
 .group-empty {
   text-align: center;
@@ -194,6 +197,7 @@ onMounted(async () => {
   padding: 16px 0;
 }
 .asset-card {
+  flex-shrink: 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
