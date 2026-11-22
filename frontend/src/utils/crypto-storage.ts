@@ -1,18 +1,36 @@
 /**
  * @file crypto-storage.ts
  * @description 基于 Web Crypto API (AES-256-GCM) 的离线 SQLite 数据库与敏感存储透明加解密模块
+ *
+ * 安全设计：
+ * - 主密钥生成时强制 `extractable: false`，不可被 JS 脚本通过 exportKey 导出原始密钥字节。
+ * - `CryptoKey` 对象直接持久化在 IndexedDB 结构化存储中，绝不在 globalThis 或 localStorage 暴露明文密钥。
+ * - 拒绝加密失败后静默降级为 `b64:` 明文，统一抛出显式错误由调用方感知。
  */
 
 const DB_KEYSTORE_NAME = 'minefolio_keystore'
 const DB_STORE_NAME = 'keys'
 const KEYSTORE_KEY_ID = 'db_master_key_v1'
 
-declare global {
-  // eslint-disable-next-line no-var
-  var __minefolio_master_raw_key__: Uint8Array | undefined
+let inMemoryKey: CryptoKey | null = null
+
+export class CryptoStorageEncryptError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'CryptoStorageEncryptError'
+  }
 }
 
-let inMemoryKey: CryptoKey | null = null
+export class CryptoStorageDecryptError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'CryptoStorageDecryptError'
+  }
+}
+
+export function resetInMemoryCryptoKey(): void {
+  inMemoryKey = null
+}
 
 function base64ToBytes(b64: string): Uint8Array {
   const bin = atob(b64)
@@ -30,15 +48,20 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(bin)
 }
 
-/**
- * 访问 IndexedDB 或 globalThis 获取持久化主密钥
- */
-async function getStoredRawKey(): Promise<Uint8Array | null> {
-  if (typeof globalThis !== 'undefined' && globalThis.__minefolio_master_raw_key__) {
-    return globalThis.__minefolio_master_raw_key__
-  }
+function isCryptoKeyLike(val: unknown): val is CryptoKey {
+  if (!val || typeof val !== 'object') return false
+  if (typeof CryptoKey !== 'undefined' && val instanceof CryptoKey) return true
+  return (
+    !ArrayBuffer.isView(val) &&
+    'type' in val &&
+    'algorithm' in val &&
+    'usages' in val
+  )
+}
+
+function openKeystoreDb(): Promise<IDBDatabase | null> {
   if (typeof window === 'undefined' || !window.indexedDB) {
-    return null
+    return Promise.resolve(null)
   }
   return new Promise((resolve) => {
     try {
@@ -49,24 +72,7 @@ async function getStoredRawKey(): Promise<Uint8Array | null> {
           db.createObjectStore(DB_STORE_NAME)
         }
       }
-      req.onsuccess = () => {
-        const db = req.result
-        try {
-          const tx = db.transaction(DB_STORE_NAME, 'readonly')
-          const store = tx.objectStore(DB_STORE_NAME)
-          const getReq = store.get(KEYSTORE_KEY_ID)
-          getReq.onsuccess = () => {
-            const res = getReq.result || null
-            if (res && typeof globalThis !== 'undefined') {
-              globalThis.__minefolio_master_raw_key__ = res
-            }
-            resolve(res)
-          }
-          getReq.onerror = () => resolve(null)
-        } catch {
-          resolve(null)
-        }
-      }
+      req.onsuccess = () => resolve(req.result)
       req.onerror = () => resolve(null)
     } catch {
       resolve(null)
@@ -74,29 +80,47 @@ async function getStoredRawKey(): Promise<Uint8Array | null> {
   })
 }
 
-async function saveRawKey(rawKey: Uint8Array): Promise<void> {
-  if (typeof globalThis !== 'undefined') {
-    globalThis.__minefolio_master_raw_key__ = rawKey
-  }
-  if (typeof window === 'undefined' || !window.indexedDB) {
-    return
-  }
+async function getStoredKeyEntry(): Promise<CryptoKey | Uint8Array | null> {
+  const db = await openKeystoreDb()
+  if (!db) return null
   return new Promise((resolve) => {
     try {
-      const req = indexedDB.open(DB_KEYSTORE_NAME, 1)
-      req.onsuccess = () => {
-        const db = req.result
-        try {
-          const tx = db.transaction(DB_STORE_NAME, 'readwrite')
-          const store = tx.objectStore(DB_STORE_NAME)
-          store.put(rawKey, KEYSTORE_KEY_ID)
-          tx.oncomplete = () => resolve()
-          tx.onerror = () => resolve()
-        } catch {
-          resolve()
+      const tx = db.transaction(DB_STORE_NAME, 'readonly')
+      const store = tx.objectStore(DB_STORE_NAME)
+      const getReq = store.get(KEYSTORE_KEY_ID)
+      getReq.onsuccess = () => {
+        const res = getReq.result
+        if (isCryptoKeyLike(res)) {
+          resolve(res)
+          return
         }
+        if (res instanceof Uint8Array) {
+          resolve(res)
+          return
+        }
+        if (ArrayBuffer.isView(res)) {
+          resolve(new Uint8Array(res.buffer, res.byteOffset, res.byteLength))
+          return
+        }
+        resolve(null)
       }
-      req.onerror = () => resolve()
+      getReq.onerror = () => resolve(null)
+    } catch {
+      resolve(null)
+    }
+  })
+}
+
+async function saveCryptoKey(key: CryptoKey): Promise<void> {
+  const db = await openKeystoreDb()
+  if (!db) return
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(DB_STORE_NAME, 'readwrite')
+      const store = tx.objectStore(DB_STORE_NAME)
+      store.put(key, KEYSTORE_KEY_ID)
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => resolve()
     } catch {
       resolve()
     }
@@ -104,7 +128,7 @@ async function saveRawKey(rawKey: Uint8Array): Promise<void> {
 }
 
 /**
- * 获取或生成 AES-256-GCM CryptoKey
+ * 获取或生成不可导出 (extractable: false) 的 AES-256-GCM CryptoKey，并直接持久化至 IndexedDB
  */
 async function getCryptoKey(): Promise<CryptoKey | null> {
   if (inMemoryKey) return inMemoryKey
@@ -113,26 +137,33 @@ async function getCryptoKey(): Promise<CryptoKey | null> {
   }
 
   try {
-    const rawStored = await getStoredRawKey()
-    if (rawStored && rawStored.length === 32) {
-      inMemoryKey = await window.crypto.subtle.importKey(
-        'raw',
-        rawStored,
-        { name: 'AES-GCM', length: 256 },
-        true,
-        ['encrypt', 'decrypt']
-      )
+    const stored = await getStoredKeyEntry()
+    if (isCryptoKeyLike(stored)) {
+      inMemoryKey = stored
       return inMemoryKey
     }
 
-    // 生成新密钥并持久化
+    // 兼容历史旧版 Uint8Array 原始密钥：一次性导入为不可导出 CryptoKey 并回写 IndexedDB，同时擦除原始字节
+    if (stored instanceof Uint8Array && stored.length === 32) {
+      const migrated = await window.crypto.subtle.importKey(
+        'raw',
+        stored,
+        { name: 'AES-GCM', length: 256 },
+        false,
+        ['encrypt', 'decrypt']
+      )
+      stored.fill(0)
+      await saveCryptoKey(migrated)
+      inMemoryKey = migrated
+      return inMemoryKey
+    }
+
     const newKey = await window.crypto.subtle.generateKey(
       { name: 'AES-GCM', length: 256 },
-      true,
+      false,
       ['encrypt', 'decrypt']
     )
-    const exportedRaw = new Uint8Array(await window.crypto.subtle.exportKey('raw', newKey))
-    await saveRawKey(exportedRaw)
+    await saveCryptoKey(newKey)
     inMemoryKey = newKey
     return inMemoryKey
   } catch (err) {
@@ -142,14 +173,17 @@ async function getCryptoKey(): Promise<CryptoKey | null> {
 }
 
 /**
- * 加密二进制载荷
+ * 加密二进制载荷（严格要求 AES-256-GCM，禁止静默降级为 b64: 明文）
  * @param data 待加密的 Uint8Array
- * @returns enc:v1:<iv_b64>:<ciphertext_b64> 或降级 b64:<data_b64>
+ * @returns enc:v1:<iv_b64>:<ciphertext_b64>
  */
 export async function encryptPayload(data: Uint8Array): Promise<string> {
+  if (typeof window === 'undefined' || !window.crypto || !window.crypto.subtle) {
+    throw new CryptoStorageEncryptError('WebCrypto API unavailable for local storage encryption')
+  }
   const key = await getCryptoKey()
-  if (!key || typeof window === 'undefined' || !window.crypto || !window.crypto.subtle) {
-    return 'b64:' + bytesToBase64(data)
+  if (!key) {
+    throw new CryptoStorageEncryptError('AES-GCM CryptoKey unavailable for local storage encryption')
   }
 
   try {
@@ -163,20 +197,15 @@ export async function encryptPayload(data: Uint8Array): Promise<string> {
     const cipherB64 = bytesToBase64(new Uint8Array(cipherBuffer))
     return `enc:v1:${ivB64}:${cipherB64}`
   } catch (err) {
-    console.error('[crypto-storage] Encryption failed, falling back to plaintext base64:', err)
-    return 'b64:' + bytesToBase64(data)
-  }
-}
-
-export class CryptoStorageDecryptError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = 'CryptoStorageDecryptError'
+    console.error('[crypto-storage] Encryption failed:', err)
+    throw new CryptoStorageEncryptError(
+      err instanceof Error ? `Failed to encrypt local storage payload: ${err.message}` : 'Failed to encrypt local storage payload'
+    )
   }
 }
 
 /**
- * 解密本地持久化的载荷（透明兼容历史旧格式）
+ * 解密本地持久化的载荷（透明兼容历史旧格式；密文解密失败绝不降级回落）
  * @param saved 本地存储的字符串
  * @returns 还原的原始 Uint8Array 二进制
  */

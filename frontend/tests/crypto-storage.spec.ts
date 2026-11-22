@@ -1,18 +1,47 @@
-import { describe, it, expect } from 'vitest'
-import { encryptPayload, decryptPayload, CryptoStorageDecryptError } from '@/utils/crypto-storage'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+import {
+  encryptPayload,
+  decryptPayload,
+  CryptoStorageEncryptError,
+  CryptoStorageDecryptError,
+  resetInMemoryCryptoKey,
+} from '@/utils/crypto-storage'
 
 describe('crypto-storage', () => {
-  it('encrypts Uint8Array and returns enc:v1 prefix', async () => {
+  beforeEach(() => {
+    resetInMemoryCryptoKey()
+  })
+
+  it('encrypts Uint8Array with extractable:false CryptoKey and returns enc:v1 prefix without globalThis exposure', async () => {
     const data = new Uint8Array([1, 2, 3, 4, 5, 42, 99])
     const encrypted = await encryptPayload(data)
     expect(encrypted.startsWith('enc:v1:')).toBe(true)
-  })
+    expect((globalThis as Record<string, unknown>).__minefolio_master_raw_key__).toBeUndefined()
 
-  it('decrypts encrypted payload back to original bytes', async () => {
-    const data = new Uint8Array([10, 20, 30, 40, 50, 60, 70, 80])
-    const encrypted = await encryptPayload(data)
     const decrypted = await decryptPayload(encrypted)
     expect(decrypted).toEqual(data)
+
+    // Verify key persisted directly in IndexedDB is non-extractable
+    const storedKey = await new Promise<CryptoKey | null>((resolve) => {
+      const req = indexedDB.open('minefolio_keystore', 1)
+      req.onsuccess = () => {
+        const tx = req.result.transaction('keys', 'readonly')
+        const getReq = tx.objectStore('keys').get('db_master_key_v1')
+        getReq.onsuccess = () => resolve((getReq.result as CryptoKey) ?? null)
+      }
+    })
+    expect(storedKey).not.toBeNull()
+    expect(storedKey?.extractable).toBe(false)
+  })
+
+  it('throws CryptoStorageEncryptError instead of downgrading to b64: when WebCrypto is unavailable', async () => {
+    const origCrypto = globalThis.crypto
+    vi.stubGlobal('crypto', { ...origCrypto, subtle: undefined })
+    try {
+      await expect(encryptPayload(new Uint8Array([1, 2, 3]))).rejects.toBeInstanceOf(CryptoStorageEncryptError)
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('transparently decodes legacy b64: payload', async () => {

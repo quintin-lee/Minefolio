@@ -161,8 +161,7 @@ async function writeEncryptedSnapshot(data: Uint8Array, epoch: number): Promise<
   if (typeof localStorage === 'undefined') return
   if (epoch !== getPersistEpoch()) return
   try {
-    const canEncrypt = typeof window !== 'undefined' && Boolean(window.crypto?.subtle)
-    const encoded = canEncrypt ? await encryptPayload(data) : 'b64:' + bytesToBase64(data)
+    const encoded = await encryptPayload(data)
     if (epoch !== getPersistEpoch()) return
     localStorage.setItem(STORAGE_KEY, encoded)
     localDbStatus.quotaExceeded = false
