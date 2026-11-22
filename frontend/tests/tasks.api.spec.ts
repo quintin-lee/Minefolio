@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import http from '@/utils/http'
-import { pollTask, resolveMaybeAsync, isAsyncTaskSubmission } from '@/api/tasks'
+import { pollTask, resolveMaybeAsync, isAsyncTaskSubmission, TaskCancelledError } from '@/api/tasks'
+import { useAsyncTaskProgress } from '@/composables/useAsyncTaskProgress'
 import { receiptsApi } from '@/api/receipts'
 import { transactionsApi } from '@/api/transactions'
 import { dailyExpensesApi } from '@/api/daily_expenses'
@@ -238,5 +239,33 @@ describe('tasks API & pollTask', () => {
     const l3 = await testSkill(9, '{"x":1}')
     expect(l3.status).toBe('success')
     expect(l3.mode).toBe('l3')
+  })
+
+  it('aborts pollTask cleanly when AbortSignal fires', async () => {
+    const controller = new AbortController()
+    vi.mocked(http.get).mockImplementation(async () => {
+      controller.abort()
+      return { id: 88, status: 'running', progress: 15, message: '执行中', result: null }
+    })
+
+    await expect(
+      pollTask(88, { intervalMs: 5000, timeoutMs: 20000, signal: controller.signal }),
+    ).rejects.toBeInstanceOf(TaskCancelledError)
+    expect(http.get).toHaveBeenCalledTimes(1)
+  })
+
+  it('useAsyncTaskProgress tracks reactive progress and resets running flag on completion', async () => {
+    const tracker = useAsyncTaskProgress()
+    expect(tracker.running.value).toBe(false)
+
+    vi.mocked(http.get)
+      .mockResolvedValueOnce({ id: 90, status: 'running', progress: 45, message: '解析行 100/220', result: null })
+      .mockResolvedValueOnce({ id: 90, status: 'completed', progress: 100, message: '导入完成', result: { imported: 220 } })
+
+    const out = await tracker.run((opts) => pollTask<{ imported: number }>(90, { intervalMs: 1, ...opts }))
+    expect(out.imported).toBe(220)
+    expect(tracker.progress.value).toBe(100)
+    expect(tracker.message.value).toBe('导入完成')
+    expect(tracker.running.value).toBe(false)
   })
 })

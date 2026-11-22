@@ -37,13 +37,42 @@ export function isAsyncTaskSubmission(val: unknown): val is AsyncTaskSubmission 
 export interface PollTaskOptions {
   intervalMs?: number
   timeoutMs?: number
+  signal?: AbortSignal
   onProgress?: (task: AsyncTask<unknown>) => void
 }
 
+export class TaskCancelledError extends Error {
+  constructor(message = '任务轮询已取消') {
+    super(message)
+    this.name = 'TaskCancelledError'
+  }
+}
+
 export const tasksApi = {
-  get: <T = unknown>(id: number) => http.get<AsyncTask<T>>(`/tasks/${id}`),
+  get: <T = unknown>(id: number, signal?: AbortSignal) =>
+    signal ? http.get<AsyncTask<T>>(`/tasks/${id}`, { signal }) : http.get<AsyncTask<T>>(`/tasks/${id}`),
   list: (params?: { status?: string; task_type?: string; limit?: number }) =>
     http.get<AsyncTask[]>('/tasks', { params }),
+}
+
+function waitWithSignal(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!signal) {
+    return new Promise((resolve) => setTimeout(resolve, ms))
+  }
+  if (signal.aborted) {
+    return Promise.reject(new TaskCancelledError())
+  }
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer)
+      reject(new TaskCancelledError())
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
 }
 
 /**
@@ -58,7 +87,18 @@ export async function pollTask<T = unknown>(
   const deadline = Date.now() + timeoutMs
 
   while (true) {
-    const task = await tasksApi.get<T>(taskId)
+    if (options.signal?.aborted) {
+      throw new TaskCancelledError()
+    }
+    let task: AsyncTask<T>
+    try {
+      task = await tasksApi.get<T>(taskId, options.signal)
+    } catch (err) {
+      if (options.signal?.aborted) {
+        throw new TaskCancelledError()
+      }
+      throw err
+    }
     options.onProgress?.(task)
 
     if (task.status === 'completed') {
@@ -71,7 +111,7 @@ export async function pollTask<T = unknown>(
       throw new Error('任务处理超时，请稍后在任务列表中查看结果')
     }
 
-    await new Promise((resolve) => setTimeout(resolve, intervalMs))
+    await waitWithSignal(intervalMs, options.signal)
   }
 }
 

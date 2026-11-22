@@ -4,7 +4,7 @@
  */
 
 import http from '@/utils/http'
-import { resolveMaybeAsync, type AsyncTaskSubmission } from './tasks'
+import { resolveMaybeAsync, type AsyncTaskSubmission, type PollTaskOptions } from './tasks'
 
 export interface BackupItem {
   filename: string
@@ -35,9 +35,9 @@ export const backupApi = {
   /**
    * 手动触发一次在线热备份
    */
-  createBackup: async () => {
+  createBackup: async (options?: PollTaskOptions) => {
     const res = await http.post<BackupCreateResult | AsyncTaskSubmission>('/system/backup/create')
-    return resolveMaybeAsync<BackupCreateResult>(res, { timeoutMs: 120000 })
+    return resolveMaybeAsync<BackupCreateResult>(res, { timeoutMs: 120000, ...options })
   },
 
   /**

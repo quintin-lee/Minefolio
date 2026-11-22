@@ -10,7 +10,8 @@
           <el-icon><Wallet /></el-icon> 账户
         </el-button>
         <el-button type="success" plain class="action-btn" :loading="syncingAll" @click="handleSyncAll">
-          <el-icon><Refresh /></el-icon> 同步行情
+          <el-icon><Refresh /></el-icon>
+          {{ syncAllTask.running.value ? `同步行情 ${syncAllTask.progress.value}%` : '同步行情' }}
         </el-button>
         <el-button type="primary" class="action-btn" @click="openDialog()">
           <el-icon><Plus /></el-icon> 新增资产
@@ -208,6 +209,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, computed, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
+import { useAsyncTaskProgress } from '@/composables/useAsyncTaskProgress'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Edit, Delete, Plus, Refresh, TrendCharts, Wallet, ArrowDown, ArrowUp } from '@element-plus/icons-vue'
 import { assetsApi } from '@/api/assets'
@@ -400,13 +402,19 @@ function openHistoryChart(asset: any) {
   historyDialogVisible.value = true
 }
 
+const syncAllTask = useAsyncTaskProgress()
+
 async function handleSyncAll() {
   syncingAll.value = true
   try {
-    const res = await marketApi.syncAll()
+    const res = await syncAllTask.run(
+      (opts) => marketApi.syncAll(opts),
+      '正在提交行情同步任务...',
+    )
     ElMessage.success(`行情同步完成：成功 ${res.synced_count} 个，失败 ${res.failed_count} 个`)
     await Promise.all([loadAssets(), loadSummary()])
   } catch (err: any) {
+    if (syncAllTask.isCancelledError(err)) return
     ElMessage.error(err?.message || '同步行情失败')
   } finally {
     syncingAll.value = false

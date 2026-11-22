@@ -5,7 +5,7 @@
 
 // frontend/src/api/daily_expenses.ts
 import http from '@/utils/http'
-import { resolveMaybeAsync, type AsyncTaskSubmission } from './tasks'
+import { resolveMaybeAsync, type AsyncTaskSubmission, type PollTaskOptions } from './tasks'
 import type { AxiosRequestConfig } from 'axios'
 import type { DailyExpense, DailyExpenseInput, ExpenseMonthly, PageResult } from '@/types'
 
@@ -97,7 +97,7 @@ export const dailyExpensesApi = {
    * @param text CSV 格式纯文本内容
    * @returns 导入结果 (包含成功条数、失败条数与错误详情)
    */
-  importCsv: async (text: string) => {
+  importCsv: async (text: string, options?: PollTaskOptions) => {
     const res = await http.post<
       { imported: number; errors: number; matched_rules?: number; errors_detail?: string } | AsyncTaskSubmission
     >('/import/daily-expenses', text, {
@@ -105,7 +105,7 @@ export const dailyExpensesApi = {
     })
     return resolveMaybeAsync<{ imported: number; errors: number; matched_rules?: number; errors_detail?: string }>(
       res,
-      { timeoutMs: 120000 },
+      { timeoutMs: 120000, ...options },
     )
   },
 }

@@ -358,6 +358,10 @@
             <div class="el-upload__tip">仅支持 .csv 文件，UTF-8 编码</div>
           </template>
         </el-upload>
+        <div v-if="importTask.running.value" class="import-progress-box">
+          <el-progress :percentage="importTask.progress.value" :stroke-width="6" />
+          <div class="muted-text" style="margin-top: 6px; font-size: 12px">{{ importTask.message.value || '正在导入交易记录...' }}</div>
+        </div>
         <div v-if="importResult" class="import-result" :class="importResult.ok ? 'success' : 'error'">
           <el-icon><SuccessFilled /></el-icon>
           <span>成功导入 {{ importResult.imported }} 条，失败 {{ importResult.errors }} 条</span>
@@ -366,7 +370,7 @@
       </div>
       <template #footer>
         <div class="dialog-footer">
-          <el-button class="cancel-btn" @click="importDialogVisible = false; importResult = null; importFile = null">关闭</el-button>
+          <el-button class="cancel-btn" @click="importTask.cancel(); importDialogVisible = false; importResult = null; importFile = null">关闭</el-button>
           <el-button type="primary" class="save-btn" :loading="importing" @click="handleImport" :disabled="!importText">开始导入</el-button>
         </div>
       </template>
@@ -382,6 +386,7 @@ import { transactionsApi } from '@/api/transactions'
 import { assetsApi } from '@/api/assets'
 import { useCategoryStore } from '@/stores/category'
 import { formatCurrency, localToday, localThisMonth, assetLabel } from '@/utils/format'
+import { useAsyncTaskProgress } from '@/composables/useAsyncTaskProgress'
 import { exportChartCsv } from '@/utils/chart-export'
 import SummaryCard from '@/components/SummaryCard.vue'
 import type { Transaction, Asset, Category, TransactionMonthly, Direction, TransactionInput } from '@/types'
@@ -832,12 +837,18 @@ function handleFileChange(raw: any) {
   }
 }
 
+const importTask = useAsyncTaskProgress()
+
 async function handleImport() {
   if (!importText.value) return
   importing.value = true
   importResult.value = null
   try {
-    const res = await transactionsApi.importCsv(importText.value)
+    const text = importText.value
+    const res = await importTask.run(
+      (opts) => transactionsApi.importCsv(text, opts),
+      '正在上传并解析交易 CSV...',
+    )
     importResult.value = {
       imported: res.imported,
       errors: res.errors,
@@ -853,6 +864,7 @@ async function handleImport() {
       loadData()
     }
   } catch (err: any) {
+    if (importTask.isCancelledError(err)) return
     importResult.value = { imported: 0, errors: 1, errors_detail: err?.message || '导入失败', ok: false }
   } finally {
     importing.value = false

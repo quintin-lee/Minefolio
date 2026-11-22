@@ -4,7 +4,7 @@
  */
 
 import http from '@/utils/http'
-import { resolveMaybeAsync, type AsyncTaskSubmission } from './tasks'
+import { resolveMaybeAsync, type AsyncTaskSubmission, type PollTaskOptions } from './tasks'
 import type { MarketSearchItem, MarketQuote, PriceHistoryItem, MarketSettings, TestProxyResult } from '@/types'
 
 /**
@@ -35,11 +35,14 @@ export const marketApi = {
    * @route POST /api/market/sync
    * @returns 同步统计结果 (成功数量与失败数量)
    */
-  syncAll: async () => {
+  syncAll: async (options?: PollTaskOptions) => {
     const res = await http.post<{ synced_count: number; failed_count: number } | AsyncTaskSubmission>(
       '/market/sync',
     )
-    return resolveMaybeAsync<{ synced_count: number; failed_count: number }>(res, { timeoutMs: 120000 })
+    return resolveMaybeAsync<{ synced_count: number; failed_count: number }>(res, {
+      timeoutMs: 120000,
+      ...options,
+    })
   },
 
   /**

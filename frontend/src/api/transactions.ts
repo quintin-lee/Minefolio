@@ -5,7 +5,7 @@
 
 // frontend/src/api/transactions.ts
 import http from '@/utils/http'
-import { resolveMaybeAsync, type AsyncTaskSubmission } from './tasks'
+import { resolveMaybeAsync, type AsyncTaskSubmission, type PollTaskOptions } from './tasks'
 import type { AxiosRequestConfig } from 'axios'
 import type { PageResult, Transaction, TransactionInput, TransactionMonthly } from '@/types'
 
@@ -94,7 +94,7 @@ export const transactionsApi = {
    * @param text CSV 格式文本
    * @returns 导入结果 (包含成功数量、失败数量与错误信息)
    */
-  importCsv: async (text: string) => {
+  importCsv: async (text: string, options?: PollTaskOptions) => {
     const res = await http.post<
       { imported: number; errors: number; matched_rules?: number; errors_detail?: string } | AsyncTaskSubmission
     >('/import/transactions', text, {
@@ -102,7 +102,7 @@ export const transactionsApi = {
     })
     return resolveMaybeAsync<{ imported: number; errors: number; matched_rules?: number; errors_detail?: string }>(
       res,
-      { timeoutMs: 120000 },
+      { timeoutMs: 120000, ...options },
     )
   },
 }
