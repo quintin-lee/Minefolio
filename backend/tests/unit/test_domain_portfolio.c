@@ -447,6 +447,46 @@ static void test_portfolio_r1_fee_vector(void) {
     printf("PASS: test_portfolio_r1_fee_vector\n");
 }
 
+/* 5. 多笔外币持仓聚合不应累积逐笔折算尾差，且 money_add 溢出返回 -1 */
+static void test_portfolio_summary_no_per_item_fx_drift(void) {
+    currency_t cny = currency_from_str("CNY");
+    currency_t usd = currency_from_str("USD");
+
+    mf_fx_rate_table_t fx_table;
+    mf_fx_rate_table_init(&fx_table);
+    assert(mf_fx_rate_table_add(&fx_table, usd, cny, r_make(7.15, usd, cny)) == 0);
+
+    mf_holding_item_t items[10] = {0};
+    for (int i = 0; i < 10; i++) {
+        items[i].asset_id = 1000 + i;
+        items[i].currency = usd;
+        /* 每笔 0.01 USD * 7.15 = 0.0715 CNY；逐笔折算会变成 10 * 0.07 = 0.70，
+         * 先按原币种累加为 0.10 USD 再一次折算得 0.715 -> 0.72 CNY */
+        money_from_double(0.01, usd, &items[i].market_value);
+        money_from_double(0.01, usd, &items[i].cost_basis);
+        money_from_double(0.0, usd, &items[i].floating_pnl);
+        money_from_double(0.0, usd, &items[i].realized_pnl);
+    }
+
+    mf_portfolio_summary_t sum = {0};
+    assert(mf_portfolio_rule_aggregate_summary(items, 10, cny, &fx_table, &sum) == 0);
+    assert(fabs(money_to_double(sum.total_market_value) - 0.72) < 1e-6);
+    assert(fabs(money_to_double(sum.total_cost_basis) - 0.72) < 1e-6);
+
+    /* Overflow check: two huge numbers must cause mf_portfolio_rule_aggregate_summary to return -1 */
+    mf_holding_item_t oflow[2] = {0};
+    oflow[0].asset_id = 1;
+    oflow[0].currency = cny;
+    assert(money_from_string("1701411834604692317316873037158841057.00", cny, &oflow[0].market_value) == DECIMAL_OK);
+    oflow[1].asset_id = 2;
+    oflow[1].currency = cny;
+    assert(money_from_string("1701411834604692317316873037158841057.00", cny, &oflow[1].market_value) == DECIMAL_OK);
+    assert(mf_portfolio_rule_aggregate_summary(oflow, 2, cny, NULL, &sum) == -1);
+
+    mf_fx_rate_table_free(&fx_table);
+    printf("PASS: test_portfolio_summary_no_per_item_fx_drift\n");
+}
+
 int main() {
     test_portfolio_trade_events_and_pnl();
     test_portfolio_trade_events_partial_sells_cost_pool_decrement();
@@ -458,6 +498,7 @@ int main() {
     test_portfolio_multi_currency_holding_weight();
     test_portfolio_multi_currency_aggregation_and_risk();
     test_portfolio_missing_fx_rate_fails();
+    test_portfolio_summary_no_per_item_fx_drift();
     printf("All domain portfolio tests passed successfully!\n");
     return 0;
 }

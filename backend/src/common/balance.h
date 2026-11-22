@@ -39,6 +39,12 @@ int is_investment_type(const char* atype);
  * @param[in] fx_rate_to_cny 交易发生时固化的源币种对 CNY 汇率（<=0 时回退当前牌价）
  * @return price_t 保留 8 位小数的折算后单价
  */
+price_t balance_convert_price_fx_at(csilk_db_pool_t* pool,
+                                    price_t          price,
+                                    currency_t       asset_cur,
+                                    double           fx_rate_to_cny,
+                                    const char*      tx_date);
+
 price_t balance_convert_price_fx(price_t price, currency_t asset_cur, double fx_rate_to_cny);
 
 /**
@@ -71,6 +77,16 @@ int balance_apply_delta_m(csilk_db_pool_t* pool,
  *                           退化为 balance_apply_delta_m 的当前汇率路径。
  * @return int 0: 成功；-1: 资产不存在/不属于该用户；-2: 数据库错误
  */
+int balance_apply_delta_m_fx_at(csilk_db_pool_t* pool,
+                                int64_t          asset_id,
+                                int64_t          user_id,
+                                money_t          delta,
+                                double           fx_rate_to_cny,
+                                const char*      tx_date,
+                                const char*      source_type,
+                                int64_t          source_id,
+                                const char*      note);
+
 int balance_apply_delta_m_fx(csilk_db_pool_t* pool,
                              int64_t          asset_id,
                              int64_t          user_id,

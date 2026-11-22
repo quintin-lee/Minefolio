@@ -226,6 +226,16 @@ u128_mul_u128(unsigned __int128 a, unsigned __int128 b)
 static void
 u256_div_rem(u256_t num, u256_t den, u256_t* q_out, u256_t* rem_out)
 {
+    if (u256_is_zero(den)) {
+        if (q_out) {
+            *q_out = u256_zero();
+        }
+        if (rem_out) {
+            *rem_out = u256_zero();
+        }
+        return;
+    }
+
     int cmp = u256_cmp(num, den);
     if (cmp < 0) {
         if (q_out) {

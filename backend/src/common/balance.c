@@ -9,21 +9,33 @@
 #include <string.h>
 
 /**
- * @brief 将金额折算到资产本币；跨币种时优先使用历史汇率（交易发生时固化的 to-CNY 汇率）。
+ * @brief 将金额折算到资产本币；跨币种时优先使用交易日期对应历史汇率。
  *
  * 历史汇率因子 = fx_rate_to_cny(源币种) / target_to_cny(资产币种)，
- * 使历史回放/回滚不受当前汇率波动影响。任一步骤失败则退回当前汇率路径。
+ * 当提供 pool 与 tx_date 时，目标非 CNY 资产币种的 target_to_cny 也按 tx_date
+ * 查询历史牌价（而非实时汇率），使历史回放/回滚完全不受当前汇率波动影响。
  */
 static money_t
-balance_convert_money_fx(money_t delta, currency_t asset_cur, double fx_rate_to_cny)
+balance_convert_money_fx_at(csilk_db_pool_t* pool,
+                            money_t          delta,
+                            currency_t       asset_cur,
+                            double           fx_rate_to_cny,
+                            const char*      tx_date)
 {
     if (currency_equals(delta.currency, asset_cur)) {
         return delta;
     }
-    if (fx_rate_to_cny > 0.0) {
-        double target_to_cny = exchange_rate_get_to_cny(currency_code(&asset_cur));
+    double src_to_cny = fx_rate_to_cny;
+    if (src_to_cny <= 0.0 && pool && tx_date && tx_date[0]) {
+        src_to_cny = exchange_rate_get_historical_or_latest(pool, delta.currency, tx_date);
+    }
+    if (src_to_cny > 0.0) {
+        double target_to_cny =
+            (pool && tx_date && tx_date[0])
+                ? exchange_rate_get_historical_or_latest(pool, asset_cur, tx_date)
+                : exchange_rate_get_to_cny(currency_code(&asset_cur));
         if (target_to_cny > 0.0) {
-            double    factor = fx_rate_to_cny / target_to_cny;
+            double    factor = src_to_cny / target_to_cny;
             decimal_t f, prod;
             money_t   out;
             if (isfinite(factor) && factor > 0.0 &&
@@ -41,15 +53,26 @@ balance_convert_money_fx(money_t delta, currency_t asset_cur, double fx_rate_to_
 }
 
 price_t
-balance_convert_price_fx(price_t price, currency_t asset_cur, double fx_rate_to_cny)
+balance_convert_price_fx_at(csilk_db_pool_t* pool,
+                            price_t          price,
+                            currency_t       asset_cur,
+                            double           fx_rate_to_cny,
+                            const char*      tx_date)
 {
     if (currency_equals(price.currency, asset_cur)) {
         return price;
     }
-    if (fx_rate_to_cny > 0.0) {
-        double target_to_cny = exchange_rate_get_to_cny(currency_code(&asset_cur));
+    double src_to_cny = fx_rate_to_cny;
+    if (src_to_cny <= 0.0 && pool && tx_date && tx_date[0]) {
+        src_to_cny = exchange_rate_get_historical_or_latest(pool, price.currency, tx_date);
+    }
+    if (src_to_cny > 0.0) {
+        double target_to_cny =
+            (pool && tx_date && tx_date[0])
+                ? exchange_rate_get_historical_or_latest(pool, asset_cur, tx_date)
+                : exchange_rate_get_to_cny(currency_code(&asset_cur));
         if (target_to_cny > 0.0) {
-            double    factor = fx_rate_to_cny / target_to_cny;
+            double    factor = src_to_cny / target_to_cny;
             decimal_t f, prod, rounded;
             if (isfinite(factor) && factor > 0.0 &&
                 decimal_from_double(factor, 8, &f) == DECIMAL_OK &&
@@ -66,6 +89,12 @@ balance_convert_price_fx(price_t price, currency_t asset_cur, double fx_rate_to_
         return price_from_decimal(rounded, asset_cur);
     }
     return price_from_decimal(price.unit_price, asset_cur);
+}
+
+price_t
+balance_convert_price_fx(price_t price, currency_t asset_cur, double fx_rate_to_cny)
+{
+    return balance_convert_price_fx_at(NULL, price, asset_cur, fx_rate_to_cny, NULL);
 }
 
 int
@@ -94,6 +123,7 @@ balance_apply_delta_m_impl(csilk_db_pool_t* pool,
                            int64_t          user_id,
                            money_t          delta,
                            double           fx_rate_to_cny,
+                           const char*      tx_date,
                            const char*      source_type,
                            int64_t          source_id,
                            const char*      note)
@@ -137,7 +167,8 @@ balance_apply_delta_m_impl(csilk_db_pool_t* pool,
     currency_t          asset_cur = currency_from_str(asset_cur_str);
 
     /* Multi-currency normalization: convert delta to the asset's native currency if different */
-    money_t target_delta = balance_convert_money_fx(delta, asset_cur, fx_rate_to_cny);
+    money_t target_delta =
+        balance_convert_money_fx_at(pool, delta, asset_cur, fx_rate_to_cny, tx_date);
 
     // 2. Normalize delta (liability balance direction flip)
     money_t signed_delta = target_delta;
@@ -214,7 +245,22 @@ balance_apply_delta_m(csilk_db_pool_t* pool,
                       const char*      note)
 {
     return balance_apply_delta_m_impl(
-        pool, asset_id, user_id, delta, 0.0, source_type, source_id, note);
+        pool, asset_id, user_id, delta, 0.0, NULL, source_type, source_id, note);
+}
+
+int
+balance_apply_delta_m_fx_at(csilk_db_pool_t* pool,
+                            int64_t          asset_id,
+                            int64_t          user_id,
+                            money_t          delta,
+                            double           fx_rate_to_cny,
+                            const char*      tx_date,
+                            const char*      source_type,
+                            int64_t          source_id,
+                            const char*      note)
+{
+    return balance_apply_delta_m_impl(
+        pool, asset_id, user_id, delta, fx_rate_to_cny, tx_date, source_type, source_id, note);
 }
 
 int
@@ -228,7 +274,7 @@ balance_apply_delta_m_fx(csilk_db_pool_t* pool,
                          const char*      note)
 {
     return balance_apply_delta_m_impl(
-        pool, asset_id, user_id, delta, fx_rate_to_cny, source_type, source_id, note);
+        pool, asset_id, user_id, delta, fx_rate_to_cny, NULL, source_type, source_id, note);
 }
 
 int
@@ -362,9 +408,9 @@ apply_position_fc_dated(csilk_db_pool_t* pool,
     currency_t  cur = currency_from_str(cur_str);
 
     /* Normalize amount, fee, and price to the asset's native currency */
-    amount = balance_convert_money_fx(amount, cur, fx_rate_to_cny);
-    fee = balance_convert_money_fx(fee, cur, fx_rate_to_cny);
-    price = balance_convert_price_fx(price, cur, fx_rate_to_cny);
+    amount = balance_convert_money_fx_at(pool, amount, cur, fx_rate_to_cny, tx_date);
+    fee = balance_convert_money_fx_at(pool, fee, cur, fx_rate_to_cny, tx_date);
+    price = balance_convert_price_fx_at(pool, price, cur, fx_rate_to_cny, tx_date);
 
     quantity_t old_qty = db_get_quantity(pr, "quantity");
     money_t    old_cost = db_get_money(pr, "cost_basis", cur);

@@ -283,6 +283,14 @@ cleanup:
     return rc;
 }
 
+typedef struct {
+    currency_t cur;
+    money_t    market;
+    money_t    cost;
+    money_t    floating;
+    money_t    realized;
+} summary_currency_bucket_t;
+
 int
 mf_portfolio_rule_aggregate_summary(const mf_holding_item_t*  items,
                                     size_t                    item_count,
@@ -305,33 +313,85 @@ mf_portfolio_rule_aggregate_summary(const mf_holding_item_t*  items,
         return 0;
     }
 
-    for (size_t i = 0; i < item_count; i++) {
-        money_t conv_market = items[i].market_value;
-        money_t conv_cost = items[i].cost_basis;
-        money_t conv_floating = items[i].floating_pnl;
-        money_t conv_realized = items[i].realized_pnl;
+    /* 先按原币种累加后再做一次性汇率折算，避免逐笔独立折算四舍五入产生累加尾差。 */
+    summary_currency_bucket_t* buckets =
+        (summary_currency_bucket_t*)calloc(item_count, sizeof(summary_currency_bucket_t));
+    if (!buckets) {
+        return -1;
+    }
+    size_t bucket_count = 0;
+    int    rc = 0;
 
-        if (!currency_equals(items[i].currency, base_currency)) {
+    for (size_t i = 0; i < item_count; i++) {
+        size_t found = bucket_count;
+        for (size_t b = 0; b < bucket_count; b++) {
+            if (currency_equals(buckets[b].cur, items[i].currency)) {
+                found = b;
+                break;
+            }
+        }
+        if (found == bucket_count) {
+            buckets[found].cur = items[i].currency;
+            buckets[found].market = items[i].market_value;
+            buckets[found].cost = items[i].cost_basis;
+            buckets[found].floating = items[i].floating_pnl;
+            buckets[found].realized = items[i].realized_pnl;
+            bucket_count++;
+        } else {
+            if (money_add(buckets[found].market, items[i].market_value, &buckets[found].market) !=
+                    DECIMAL_OK ||
+                money_add(buckets[found].cost, items[i].cost_basis, &buckets[found].cost) !=
+                    DECIMAL_OK ||
+                money_add(buckets[found].floating,
+                          items[i].floating_pnl,
+                          &buckets[found].floating) != DECIMAL_OK ||
+                money_add(buckets[found].realized,
+                          items[i].realized_pnl,
+                          &buckets[found].realized) != DECIMAL_OK) {
+                rc = -1;
+                goto cleanup;
+            }
+        }
+    }
+
+    for (size_t b = 0; b < bucket_count; b++) {
+        money_t conv_market = buckets[b].market;
+        money_t conv_cost = buckets[b].cost;
+        money_t conv_floating = buckets[b].floating;
+        money_t conv_realized = buckets[b].realized;
+
+        if (!currency_equals(buckets[b].cur, base_currency)) {
             if (!fx_table) {
                 // 币种不一致且无汇率表时严禁盲目相加
-                return -1;
+                rc = -1;
+                goto cleanup;
             }
-            if (mf_fx_convert_money(items[i].market_value, base_currency, fx_table, &conv_market) !=
+            if (mf_fx_convert_money(buckets[b].market, base_currency, fx_table, &conv_market) !=
                     0 ||
-                mf_fx_convert_money(items[i].cost_basis, base_currency, fx_table, &conv_cost) !=
+                mf_fx_convert_money(buckets[b].cost, base_currency, fx_table, &conv_cost) != 0 ||
+                mf_fx_convert_money(buckets[b].floating, base_currency, fx_table, &conv_floating) !=
                     0 ||
-                mf_fx_convert_money(
-                    items[i].floating_pnl, base_currency, fx_table, &conv_floating) != 0 ||
-                mf_fx_convert_money(
-                    items[i].realized_pnl, base_currency, fx_table, &conv_realized) != 0) {
-                return -1;
+                mf_fx_convert_money(buckets[b].realized, base_currency, fx_table, &conv_realized) !=
+                    0) {
+                rc = -1;
+                goto cleanup;
             }
         }
 
-        money_add(out_summary->total_market_value, conv_market, &out_summary->total_market_value);
-        money_add(out_summary->total_cost_basis, conv_cost, &out_summary->total_cost_basis);
-        money_add(out_summary->total_floating_pnl, conv_floating, &out_summary->total_floating_pnl);
-        money_add(out_summary->total_realized_pnl, conv_realized, &out_summary->total_realized_pnl);
+        if (money_add(out_summary->total_market_value,
+                      conv_market,
+                      &out_summary->total_market_value) != DECIMAL_OK ||
+            money_add(out_summary->total_cost_basis, conv_cost, &out_summary->total_cost_basis) !=
+                DECIMAL_OK ||
+            money_add(out_summary->total_floating_pnl,
+                      conv_floating,
+                      &out_summary->total_floating_pnl) != DECIMAL_OK ||
+            money_add(out_summary->total_realized_pnl,
+                      conv_realized,
+                      &out_summary->total_realized_pnl) != DECIMAL_OK) {
+            rc = -1;
+            goto cleanup;
+        }
     }
 
     percentage_t pct;
@@ -345,5 +405,14 @@ mf_portfolio_rule_aggregate_summary(const mf_holding_item_t*  items,
         out_summary->floating_pct = 0.0;
     }
 
-    return 0;
+cleanup:
+    free(buckets);
+    if (rc != 0) {
+        memset(out_summary, 0, sizeof(*out_summary));
+        out_summary->total_market_value = money_zero(base_currency);
+        out_summary->total_cost_basis = money_zero(base_currency);
+        out_summary->total_floating_pnl = money_zero(base_currency);
+        out_summary->total_realized_pnl = money_zero(base_currency);
+    }
+    return rc;
 }

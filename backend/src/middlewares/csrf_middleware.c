@@ -9,7 +9,9 @@
 #include "csilk/core/ctx/response.h"
 #include <openssl/crypto.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 static const char* s_csrf_exclude_paths[] = {
     "/api/auth/login", "/api/auth/register", "/api/system/status", "/api/system/setup", NULL};
@@ -35,6 +37,48 @@ is_safe_http_method(const char* method)
                       strcmp(method, "OPTIONS") == 0);
 }
 
+static int
+csrf_should_set_secure(const csilk_ctx_t* c)
+{
+    const char* env_sec = getenv("MINEFOLIO_COOKIE_SECURE");
+    if (env_sec && env_sec[0]) {
+        if (strcmp(env_sec, "1") == 0 || strcasecmp(env_sec, "true") == 0 ||
+            strcasecmp(env_sec, "yes") == 0) {
+            return 1;
+        }
+        if (strcmp(env_sec, "0") == 0 || strcasecmp(env_sec, "false") == 0 ||
+            strcasecmp(env_sec, "no") == 0) {
+            return 0;
+        }
+    }
+
+    const char* xf_proto = csilk_get_header((csilk_ctx_t*)c, "X-Forwarded-Proto");
+    if (xf_proto && strcasecmp(xf_proto, "https") == 0) {
+        return 1;
+    }
+
+    const char* xf_ssl = csilk_get_header((csilk_ctx_t*)c, "X-Forwarded-Ssl");
+    if (xf_ssl && strcasecmp(xf_ssl, "on") == 0) {
+        return 1;
+    }
+
+    const char* forwarded = csilk_get_header((csilk_ctx_t*)c, "Forwarded");
+    if (forwarded) {
+        const char* p = forwarded;
+        while (*p) {
+            if (strncasecmp(p, "proto=https", 11) == 0) {
+                char next = p[11];
+                if (next == '\0' || next == ';' || next == ',' || next == ' ') {
+                    return 1;
+                }
+            }
+            p++;
+        }
+    }
+
+    return 0;
+}
+
 static bool
 csrf_skip_if_bearer_or_seed(csilk_ctx_t* c)
 {
@@ -51,7 +95,8 @@ csrf_skip_if_bearer_or_seed(csilk_ctx_t* c)
         if (is_safe_http_method(method) || is_csrf_excluded_path(path)) {
             char buf[33];
             if (csilk_csrf_generate_token(buf, sizeof(buf)) == 0) {
-                csilk_set_cookie_ex(c, "csrf_token", buf, 86400, "/", NULL, 0, 0, "Lax");
+                int secure = csrf_should_set_secure(c);
+                csilk_set_cookie_ex(c, "csrf_token", buf, 86400, "/", NULL, secure, 0, "Lax");
             }
             OPENSSL_cleanse(buf, sizeof(buf));
         }

@@ -613,6 +613,49 @@ main(void)
         printf("    ✓ Historical backdated buys preserved current net_value cleanly.\n");
     }
 
+    printf("  9. Testing Cross-Currency Non-CNY Target Uses Historical target_to_cny...\n");
+    {
+        csilk_db_exec(
+            pool,
+            "INSERT INTO assets (id, user_id, category_id, name, currency, current_value, "
+            "quantity, cost_basis, net_value) VALUES (204, 1, 10, 'USD Wallet', 'USD', 0, 0, 0, 0)");
+        /* Seed historical HKD->CNY = 0.90 and USD->CNY = 7.00 on 2026-10-01 */
+        csilk_db_exec(pool,
+                      "INSERT OR REPLACE INTO exchange_rate_history "
+                      "(rate_date, base_currency, target_currency, rate) VALUES "
+                      "('2026-10-01', 'CNY', 'HKD', 0.90), "
+                      "('2026-10-01', 'CNY', 'USD', 7.00)");
+
+        money_t hkd_amt, zero_fee;
+        money_from_double(700.0, CURRENCY_HKD, &hkd_amt);
+        money_from_double(0.0, CURRENCY_HKD, &zero_fee);
+
+        /* 700 HKD at HKD=0.90 CNY (630 CNY) into USD Wallet at historical USD=7.00 -> 90.00 USD */
+        ledger_tx_t fx_dep = {
+            .user_id = user_id,
+            .asset_id = 204,
+            .category_id = 10,
+            .type = LEDGER_TX_DEPOSIT,
+            .type_str = "deposit",
+            .amount = hkd_amt,
+            .price = price_zero(CURRENCY_HKD),
+            .quantity = quantity_zero(),
+            .fee = zero_fee,
+            .tx_date = "2026-10-01 12:00:00",
+        };
+        assert(ledger_apply_tx(pool, &fx_dep) == 0);
+
+        csilk_json_t* ast = csilk_db_query_param_json(
+            pool, "SELECT current_value FROM assets WHERE id=?", (const char*[]){"204", NULL});
+        assert(ast && csilk_json_array_size(ast) == 1);
+        double usd_bal = db_get_num(csilk_json_array_get(ast, 0), "current_value");
+        csilk_json_free(ast);
+        assert(fabs(usd_bal - 90.0) < 1e-4);
+
+        printf("    ✓ Non-CNY target cross-currency used historical target_to_cny (USD balance=%.2f).\n",
+               usd_bal);
+    }
+
     unlink(db_file);
     printf("🎉 ALL LEDGER ENGINE INTEGRATION TESTS PASSED SUCCESSFULLY!\n");
     return 0;

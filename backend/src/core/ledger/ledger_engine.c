@@ -304,22 +304,27 @@ insert_and_apply_fee_child(csilk_db_pool_t*   pool,
     csilk_json_free(fee_res);
 
     money_t neg_fee = money_neg(tx->fee);
-    return balance_apply_delta_m_fx(pool,
-                                    fee_target_asset,
-                                    tx->user_id,
-                                    neg_fee,
-                                    fx_rate_to_cny,
-                                    "transaction_fee",
-                                    tx->id,
-                                    fee_note);
+    return balance_apply_delta_m_fx_at(pool,
+                                       fee_target_asset,
+                                       tx->user_id,
+                                       neg_fee,
+                                       fx_rate_to_cny,
+                                       effective_date,
+                                       "transaction_fee",
+                                       tx->id,
+                                       fee_note);
 }
 
 /**
  * @brief Reverse balance deltas for all child fee rows and delete them.
  */
 static int
-reverse_fee_children(
-    csilk_db_pool_t* pool, int64_t user_id, int64_t tx_id, currency_t cur, double fx_rate_to_cny)
+reverse_fee_children(csilk_db_pool_t* pool,
+                     int64_t          user_id,
+                     int64_t          tx_id,
+                     currency_t       cur,
+                     double           fx_rate_to_cny,
+                     const char*      tx_date)
 {
     csilk_json_t* fee_children = tx_child_fee_rows(pool, user_id, tx_id);
     if (!fee_children) {
@@ -333,14 +338,15 @@ reverse_fee_children(
         int64_t       f_target = (f_last > 0) ? f_last : (int64_t)db_get_int(frow, "asset_id");
         money_t       f_amt = db_get_money(frow, "amount", cur);
         if (f_target > 0 && !money_is_zero(f_amt)) {
-            if (balance_apply_delta_m_fx(pool,
-                                         f_target,
-                                         user_id,
-                                         f_amt,
-                                         fx_rate_to_cny,
-                                         "transaction_fee_reversal",
-                                         tx_id,
-                                         "fee rollback") != 0) {
+            if (balance_apply_delta_m_fx_at(pool,
+                                            f_target,
+                                            user_id,
+                                            f_amt,
+                                            fx_rate_to_cny,
+                                            tx_date,
+                                            "transaction_fee_reversal",
+                                            tx_id,
+                                            "fee rollback") != 0) {
                 csilk_json_free(fee_children);
                 return -1;
             }
@@ -555,28 +561,30 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
 
     // 4. Target Asset Balance Delta
     if (is_investment_tx) {
-        if (!money_is_zero(pos_delta) && balance_apply_delta_m_fx(pool,
-                                                                  tx->asset_id,
-                                                                  tx->user_id,
-                                                                  pos_delta,
-                                                                  fx_rate,
-                                                                  "transaction",
-                                                                  tx->id,
-                                                                  tx->note) != 0) {
+        if (!money_is_zero(pos_delta) && balance_apply_delta_m_fx_at(pool,
+                                                                     tx->asset_id,
+                                                                     tx->user_id,
+                                                                     pos_delta,
+                                                                     fx_rate,
+                                                                     effective_date,
+                                                                     "transaction",
+                                                                     tx->id,
+                                                                     tx->note) != 0) {
             goto fail_rollback;
         }
     } else if (tx->type == LEDGER_TX_FEE && tx->linked_asset_id > 0) {
         // Standalone fee with linked account: debited from linked funding asset only
     } else {
         money_t tdelta = tx_delta_m(tx_type_str, tx->amount, tx->price, tx->quantity);
-        if (!money_is_zero(tdelta) && balance_apply_delta_m_fx(pool,
-                                                               tx->asset_id,
-                                                               tx->user_id,
-                                                               tdelta,
-                                                               fx_rate,
-                                                               "transaction",
-                                                               tx->id,
-                                                               tx->note) != 0) {
+        if (!money_is_zero(tdelta) && balance_apply_delta_m_fx_at(pool,
+                                                                  tx->asset_id,
+                                                                  tx->user_id,
+                                                                  tdelta,
+                                                                  fx_rate,
+                                                                  effective_date,
+                                                                  "transaction",
+                                                                  tx->id,
+                                                                  tx->note) != 0) {
             goto fail_rollback;
         }
     }
@@ -585,14 +593,15 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
     if (tx->linked_asset_id > 0) {
         money_t ldelta =
             compute_linked_delta(tx->type, tx_type_str, tx->amount, tx->price, tx->quantity);
-        if (!money_is_zero(ldelta) && balance_apply_delta_m_fx(pool,
-                                                               tx->linked_asset_id,
-                                                               tx->user_id,
-                                                               ldelta,
-                                                               fx_rate,
-                                                               "transaction_linked",
-                                                               tx->id,
-                                                               tx->note) != 0) {
+        if (!money_is_zero(ldelta) && balance_apply_delta_m_fx_at(pool,
+                                                                  tx->linked_asset_id,
+                                                                  tx->user_id,
+                                                                  ldelta,
+                                                                  fx_rate,
+                                                                  effective_date,
+                                                                  "transaction_linked",
+                                                                  tx->id,
+                                                                  tx->note) != 0) {
             goto fail_rollback;
         }
     }
@@ -764,9 +773,10 @@ ledger_reverse_tx(csilk_db_pool_t* pool, int64_t user_id, int64_t tx_id)
     if (!isfinite(fx_rate) || fx_rate <= 0.0) {
         fx_rate = 0.0;
     }
+    const char* rev_date = csilk_json_get_string(old_tx, "transaction_date");
 
     // 1. Query and reverse any fee children
-    if (reverse_fee_children(pool, user_id, tx_id, cur, fx_rate) != 0) {
+    if (reverse_fee_children(pool, user_id, tx_id, cur, fx_rate, rev_date) != 0) {
         goto fail_rollback;
     }
 
@@ -790,14 +800,15 @@ ledger_reverse_tx(csilk_db_pool_t* pool, int64_t user_id, int64_t tx_id)
                 goto fail_rollback;
             }
             if (!money_is_zero(fallback_delta) &&
-                balance_apply_delta_m_fx(pool,
-                                         asset_id,
-                                         user_id,
-                                         fallback_delta,
-                                         fx_rate,
-                                         "transaction_reversal",
-                                         tx_id,
-                                         "position rollback (manual fallback)") != 0) {
+                balance_apply_delta_m_fx_at(pool,
+                                            asset_id,
+                                            user_id,
+                                            fallback_delta,
+                                            fx_rate,
+                                            rev_date,
+                                            "transaction_reversal",
+                                            tx_id,
+                                            "position rollback (manual fallback)") != 0) {
                 goto fail_rollback;
             }
         }
@@ -807,14 +818,15 @@ ledger_reverse_tx(csilk_db_pool_t* pool, int64_t user_id, int64_t tx_id)
         money_t tdelta = tx_delta_m(type, amount, price, qty);
         if (!money_is_zero(tdelta)) {
             money_t rev_tdelta = money_neg(tdelta);
-            if (balance_apply_delta_m_fx(pool,
-                                         asset_id,
-                                         user_id,
-                                         rev_tdelta,
-                                         fx_rate,
-                                         "transaction_reversal",
-                                         tx_id,
-                                         "rollback") != 0) {
+            if (balance_apply_delta_m_fx_at(pool,
+                                            asset_id,
+                                            user_id,
+                                            rev_tdelta,
+                                            fx_rate,
+                                            rev_date,
+                                            "transaction_reversal",
+                                            tx_id,
+                                            "rollback") != 0) {
                 goto fail_rollback;
             }
         }
@@ -824,14 +836,15 @@ ledger_reverse_tx(csilk_db_pool_t* pool, int64_t user_id, int64_t tx_id)
     if (linked_asset_id > 0) {
         ledger_tx_type_t ltype = ledger_tx_type_from_str(type);
         money_t          ldelta = money_neg(compute_linked_delta(ltype, type, amount, price, qty));
-        if (!money_is_zero(ldelta) && balance_apply_delta_m_fx(pool,
-                                                               linked_asset_id,
-                                                               user_id,
-                                                               ldelta,
-                                                               fx_rate,
-                                                               "transaction_linked_reversal",
-                                                               tx_id,
-                                                               "rollback") != 0) {
+        if (!money_is_zero(ldelta) && balance_apply_delta_m_fx_at(pool,
+                                                                  linked_asset_id,
+                                                                  user_id,
+                                                                  ldelta,
+                                                                  fx_rate,
+                                                                  rev_date,
+                                                                  "transaction_linked_reversal",
+                                                                  tx_id,
+                                                                  "rollback") != 0) {
             goto fail_rollback;
         }
     }
