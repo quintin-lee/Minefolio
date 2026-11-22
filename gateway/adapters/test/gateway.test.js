@@ -100,3 +100,24 @@ test('enforces bounded LRU capacity on TOKEN_CACHE', async () => {
     }
   }
 });
+
+test('expires stale entries in TOKEN_CACHE after TTL elapses', async () => {
+  TOKEN_CACHE.clear();
+  const prevTtl = process.env.MINEFOLIO_GATEWAY_TOKEN_CACHE_TTL_MS;
+  process.env.MINEFOLIO_GATEWAY_TOKEN_CACHE_TTL_MS = '30';
+  try {
+    await handleImMessage('qq', 'ttl_user', '/bind TTL_TOK');
+    assert.strictEqual(TOKEN_CACHE.has('qq:ttl_user'), true);
+    await new Promise((r) => setTimeout(r, 45));
+    const reply = await handleImMessage('qq', 'ttl_user', '查询资产');
+    assert.match(reply, /尚未绑定/);
+    assert.strictEqual(TOKEN_CACHE.has('qq:ttl_user'), false);
+  } finally {
+    TOKEN_CACHE.clear();
+    if (prevTtl === undefined) {
+      delete process.env.MINEFOLIO_GATEWAY_TOKEN_CACHE_TTL_MS;
+    } else {
+      process.env.MINEFOLIO_GATEWAY_TOKEN_CACHE_TTL_MS = prevTtl;
+    }
+  }
+});

@@ -654,6 +654,14 @@ main(void)
 
         printf("    ✓ Non-CNY target cross-currency used historical target_to_cny (USD balance=%.2f).\n",
                usd_bal);
+
+        /* Missing/unknown target currency must fail closed instead of silently copying unit_price */
+        price_t p_src;
+        assert(price_from_double(25.0, 2, CURRENCY_CNY, &p_src) == DECIMAL_OK);
+        currency_t unk = currency_from_str("ZZZ");
+        price_t    p_zero =
+            balance_convert_price_fx_at(pool, p_src, unk, 7.0, "2026-10-01 12:00:00");
+        assert(fabs(price_to_double(p_zero)) < 1e-12);
     }
 
     unlink(db_file);

@@ -53,8 +53,19 @@ csrf_should_set_secure(const csilk_ctx_t* c)
     }
 
     const char* xf_proto = csilk_get_header((csilk_ctx_t*)c, "X-Forwarded-Proto");
-    if (xf_proto && strcasecmp(xf_proto, "https") == 0) {
-        return 1;
+    if (xf_proto && xf_proto[0]) {
+        /* 多跳代理常返回逗号分隔链 "https, http"，取首个原始客户端协议并忽略首尾空白 */
+        const char* p = xf_proto;
+        while (*p == ' ' || *p == '\t') {
+            p++;
+        }
+        size_t tok_len = 0;
+        while (p[tok_len] && p[tok_len] != ',' && p[tok_len] != ' ' && p[tok_len] != '\t') {
+            tok_len++;
+        }
+        if (tok_len == 5 && strncasecmp(p, "https", 5) == 0) {
+            return 1;
+        }
     }
 
     const char* xf_ssl = csilk_get_header((csilk_ctx_t*)c, "X-Forwarded-Ssl");

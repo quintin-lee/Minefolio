@@ -18,8 +18,9 @@
  */
 
 const API_BASE = process.env.MINEFOLIO_API || 'http://localhost:8080';
-const TOKEN_CACHE = new Map(); // `${platform}:${imUserId}` -> bindToken
+const TOKEN_CACHE = new Map(); // `${platform}:${imUserId}` -> { token, expiresAt }
 const DEFAULT_TOKEN_CACHE_MAX = 2000;
+const DEFAULT_TOKEN_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const PLATFORM_RE = /^(qq|wechat)$/;
 const DEFAULT_HTTP_TIMEOUT_MS = 15000;
 
@@ -28,17 +29,37 @@ function getTokenCacheMax() {
   return Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : DEFAULT_TOKEN_CACHE_MAX;
 }
 
+function getTokenCacheTtlMs() {
+  const raw = Number(process.env.MINEFOLIO_GATEWAY_TOKEN_CACHE_TTL_MS);
+  return Number.isFinite(raw) && raw >= 10 ? Math.floor(raw) : DEFAULT_TOKEN_CACHE_TTL_MS;
+}
+
+function purgeExpiredTokens(now = Date.now()) {
+  for (const [k, entry] of TOKEN_CACHE.entries()) {
+    if (!entry || typeof entry !== 'object' || now >= entry.expiresAt) {
+      TOKEN_CACHE.delete(k);
+    }
+  }
+}
+
 function getCachedToken(key) {
   if (!TOKEN_CACHE.has(key)) {
     return undefined;
   }
-  const val = TOKEN_CACHE.get(key);
+  const entry = TOKEN_CACHE.get(key);
+  const now = Date.now();
+  if (!entry || typeof entry !== 'object' || now >= entry.expiresAt) {
+    TOKEN_CACHE.delete(key);
+    return undefined;
+  }
   TOKEN_CACHE.delete(key);
-  TOKEN_CACHE.set(key, val);
-  return val;
+  TOKEN_CACHE.set(key, entry);
+  return entry.token;
 }
 
 function setCachedToken(key, val) {
+  const now = Date.now();
+  purgeExpiredTokens(now);
   const maxEntries = getTokenCacheMax();
   if (TOKEN_CACHE.has(key)) {
     TOKEN_CACHE.delete(key);
@@ -50,7 +71,7 @@ function setCachedToken(key, val) {
     }
     TOKEN_CACHE.delete(oldestKey);
   }
-  TOKEN_CACHE.set(key, val);
+  TOKEN_CACHE.set(key, { token: val, expiresAt: now + getTokenCacheTtlMs() });
 }
 
 function getHttpTimeoutMs() {

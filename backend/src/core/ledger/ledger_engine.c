@@ -631,6 +631,8 @@ ledger_reverse_position_fallback(csilk_db_pool_t* pool,
                                  price_t          price,
                                  quantity_t       qty,
                                  currency_t       cur,
+                                 double           fx_rate_to_cny,
+                                 const char*      tx_date,
                                  money_t*         out_position_delta)
 {
     char aid_str[32], uid_str[32];
@@ -657,12 +659,46 @@ ledger_reverse_position_fallback(csilk_db_pool_t* pool,
     }
 
     if (!currency_equals(amount.currency, cur)) {
-        amount = exchange_rate_convert_m(amount, cur);
+        double src_r = fx_rate_to_cny > 0.0
+                           ? fx_rate_to_cny
+                           : exchange_rate_get_historical_or_latest(pool, amount.currency, tx_date);
+        double tgt_r = exchange_rate_get_historical_or_latest(pool, cur, tx_date);
+        if (src_r > 0.0 && tgt_r > 0.0) {
+            decimal_t f, prod, rounded;
+            if (decimal_from_double(src_r / tgt_r, 6, &f) == DECIMAL_OK &&
+                decimal_mul(amount.amount, f, &prod) == DECIMAL_OK &&
+                decimal_round(prod, (int32_t)currency_precision(cur), ROUND_HALF_UP, &rounded) ==
+                    DECIMAL_OK) {
+                amount.amount = rounded;
+                amount.currency = cur;
+            } else {
+                amount = exchange_rate_convert_m(amount, cur);
+            }
+        } else {
+            amount = exchange_rate_convert_m(amount, cur);
+        }
     }
     if (!currency_equals(fee.currency, cur)) {
-        fee = exchange_rate_convert_m(fee, cur);
+        double src_r = fx_rate_to_cny > 0.0
+                           ? fx_rate_to_cny
+                           : exchange_rate_get_historical_or_latest(pool, fee.currency, tx_date);
+        double tgt_r = exchange_rate_get_historical_or_latest(pool, cur, tx_date);
+        if (src_r > 0.0 && tgt_r > 0.0) {
+            decimal_t f, prod, rounded;
+            if (decimal_from_double(src_r / tgt_r, 6, &f) == DECIMAL_OK &&
+                decimal_mul(fee.amount, f, &prod) == DECIMAL_OK &&
+                decimal_round(prod, (int32_t)currency_precision(cur), ROUND_HALF_UP, &rounded) ==
+                    DECIMAL_OK) {
+                fee.amount = rounded;
+                fee.currency = cur;
+            } else {
+                fee = exchange_rate_convert_m(fee, cur);
+            }
+        } else {
+            fee = exchange_rate_convert_m(fee, cur);
+        }
     }
-    price = balance_convert_price_fx(price, cur, 0.0);
+    price = balance_convert_price_fx_at(pool, price, cur, fx_rate_to_cny, tx_date);
 
     quantity_t old_qty = db_get_quantity(pr, "quantity");
     money_t    old_cost = db_get_money(pr, "cost_basis", cur);
@@ -794,9 +830,18 @@ ledger_reverse_tx(csilk_db_pool_t* pool, int64_t user_id, int64_t tx_id)
              * covered a sell). Fall back to the legacy bounded rollback to
              * preserve the pinned regression behavior. */
             money_t fallback_delta;
-            if (ledger_reverse_position_fallback(
-                    pool, user_id, asset_id, type, amount, fee, price, qty, cur, &fallback_delta) !=
-                0) {
+            if (ledger_reverse_position_fallback(pool,
+                                                 user_id,
+                                                 asset_id,
+                                                 type,
+                                                 amount,
+                                                 fee,
+                                                 price,
+                                                 qty,
+                                                 cur,
+                                                 fx_rate,
+                                                 rev_date,
+                                                 &fallback_delta) != 0) {
                 goto fail_rollback;
             }
             if (!money_is_zero(fallback_delta) &&

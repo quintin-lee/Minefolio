@@ -697,6 +697,18 @@ stdio_call(mf_mcp_client_t* c, const char* request_json, char* out_err, size_t e
                 (void)setrlimit(RLIMIT_NOFILE, &rl_nofile);
             }
 
+            struct rlimit rl_fsize = {64ULL * 1024ULL * 1024ULL, 64ULL * 1024ULL * 1024ULL};
+            const char*   fsize_mb_str = getenv("MINEFOLIO_MCP_RLIMIT_FSIZE_MB");
+            if (fsize_mb_str && fsize_mb_str[0]) {
+                long fsize_mb = strtol(fsize_mb_str, NULL, 10);
+                if (fsize_mb > 0 && fsize_mb <= 16384) {
+                    rlim_t fbytes = (rlim_t)fsize_mb * 1024ULL * 1024ULL;
+                    rl_fsize.rlim_cur = fbytes;
+                    rl_fsize.rlim_max = fbytes;
+                }
+            }
+            (void)setrlimit(RLIMIT_FSIZE, &rl_fsize);
+
             const char* as_mb_str = getenv("MINEFOLIO_MCP_RLIMIT_AS_MB");
             if (as_mb_str && as_mb_str[0]) {
                 long as_mb = strtol(as_mb_str, NULL, 10);
