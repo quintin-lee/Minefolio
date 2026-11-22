@@ -63,7 +63,7 @@ TOKEN_B=$(node -e "
 const crypto = require('crypto');
 const header = Buffer.from(JSON.stringify({alg:'HS256',typ:'JWT'})).toString('base64url');
 const now = Math.floor(Date.now()/1000);
-const payload = Buffer.from(JSON.stringify({sub: $USER_B_ID, user_id: $USER_B_ID, token_version: 0, exp: now + 604800, iat: now})).toString('base64url');
+const payload = Buffer.from(JSON.stringify({sub: $USER_B_ID, user_id: $USER_B_ID, v: 0, exp: now + 604800, iat: now})).toString('base64url');
 const secret = '$MINEFOLIO_JWT_SECRET';
 const sig = crypto.createHmac('sha256', secret).update(header + '.' + payload).digest('base64url');
 process.stdout.write(header + '.' + payload + '.' + sig);
