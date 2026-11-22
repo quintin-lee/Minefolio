@@ -7,6 +7,7 @@
 #include <string.h>
 #include <time.h>
 #include <openssl/crypto.h>
+#include <openssl/evp.h>
 #include <openssl/hmac.h>
 #include <openssl/rand.h>
 #include <openssl/sha.h>
@@ -62,9 +63,40 @@ ai_confirmation_get_secret(void)
     if (sec_ai && sec_ai[0]) {
         return sec_ai;
     }
+
+    static char            s_derived_key[65] = {0};
+    static char            s_derived_src[256] = {0};
+    static pthread_mutex_t s_derived_lock = PTHREAD_MUTEX_INITIALIZER;
+
     const char* sec_jwt = config_secret_get("JWT_SECRET", NULL, 0);
     if (sec_jwt && sec_jwt[0]) {
-        return sec_jwt;
+        /* 域分离派生：未显式配置 AI_SECRET 时，使用 HMAC-SHA256(JWT_SECRET, domain) 派生独立子密钥，
+         * 保留零配置自托管便利性同时杜绝与 HS256 JWT 直接复用同一签名密钥。 */
+        static const unsigned char k_domain[] = "minefolio-ai-confirmation-v1";
+        pthread_mutex_lock(&s_derived_lock);
+        if (strcmp(s_derived_src, sec_jwt) != 0 || s_derived_key[0] == '\0') {
+            unsigned char mac[EVP_MAX_MD_SIZE];
+            unsigned int  mac_len = 0;
+            if (HMAC(EVP_sha256(),
+                     sec_jwt,
+                     (int)strlen(sec_jwt),
+                     k_domain,
+                     sizeof(k_domain) - 1,
+                     mac,
+                     &mac_len) &&
+                mac_len == 32) {
+                for (unsigned int i = 0; i < mac_len; i++) {
+                    snprintf(s_derived_key + (i * 2), 3, "%02x", mac[i]);
+                }
+                s_derived_key[64] = '\0';
+                snprintf(s_derived_src, sizeof(s_derived_src), "%s", sec_jwt);
+            }
+            OPENSSL_cleanse(mac, sizeof(mac));
+        }
+        pthread_mutex_unlock(&s_derived_lock);
+        if (s_derived_key[0]) {
+            return s_derived_key;
+        }
     }
 
     static char cfg_secret[128];

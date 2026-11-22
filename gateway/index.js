@@ -19,8 +19,39 @@
 
 const API_BASE = process.env.MINEFOLIO_API || 'http://localhost:8080';
 const TOKEN_CACHE = new Map(); // `${platform}:${imUserId}` -> bindToken
+const DEFAULT_TOKEN_CACHE_MAX = 2000;
 const PLATFORM_RE = /^(qq|wechat)$/;
 const DEFAULT_HTTP_TIMEOUT_MS = 15000;
+
+function getTokenCacheMax() {
+  const raw = Number(process.env.MINEFOLIO_GATEWAY_TOKEN_CACHE_MAX);
+  return Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : DEFAULT_TOKEN_CACHE_MAX;
+}
+
+function getCachedToken(key) {
+  if (!TOKEN_CACHE.has(key)) {
+    return undefined;
+  }
+  const val = TOKEN_CACHE.get(key);
+  TOKEN_CACHE.delete(key);
+  TOKEN_CACHE.set(key, val);
+  return val;
+}
+
+function setCachedToken(key, val) {
+  const maxEntries = getTokenCacheMax();
+  if (TOKEN_CACHE.has(key)) {
+    TOKEN_CACHE.delete(key);
+  }
+  while (TOKEN_CACHE.size >= maxEntries) {
+    const oldestKey = TOKEN_CACHE.keys().next().value;
+    if (oldestKey === undefined) {
+      break;
+    }
+    TOKEN_CACHE.delete(oldestKey);
+  }
+  TOKEN_CACHE.set(key, val);
+}
 
 function getHttpTimeoutMs() {
   const raw = Number(process.env.MINEFOLIO_HTTP_TIMEOUT_MS);
@@ -199,7 +230,7 @@ async function handleImMessage(platform, imUserId, text, bindToken) {
 
     if (r.code === 0) {
       if (savedToken) {
-        TOKEN_CACHE.set(`${platform}:${imUserId}`, savedToken);
+        setCachedToken(`${platform}:${imUserId}`, savedToken);
       }
       return r.data && r.data.message ? r.data.message : '绑定成功，现在可以问我持仓/汇率了';
     }
@@ -207,7 +238,7 @@ async function handleImMessage(platform, imUserId, text, bindToken) {
   }
 
   // Read-only query.
-  const activeToken = bindToken || TOKEN_CACHE.get(`${platform}:${imUserId}`);
+  const activeToken = bindToken || getCachedToken(`${platform}:${imUserId}`);
   if (!activeToken) {
     return '尚未绑定。请先到 App「IM 机器人」生成绑定码，发送 /bind <码> 完成绑定，或发送 /bind <用户名> <密码>。';
   }
@@ -247,4 +278,4 @@ async function refreshBindToken(appToken) {
   return null;
 }
 
-module.exports = { handleImMessage, refreshBindToken, callImApi, pollImTask, API_BASE };
+module.exports = { handleImMessage, refreshBindToken, callImApi, pollImTask, API_BASE, TOKEN_CACHE };

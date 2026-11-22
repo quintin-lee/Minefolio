@@ -16,9 +16,10 @@
 #include "csilk/core/server/server.h"
 
 #include <curl/curl.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
-#include <errno.h>
+#include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
 
@@ -681,7 +682,32 @@ stdio_call(mf_mcp_client_t* c, const char* request_json, char* out_err, size_t e
         }
         if (pid == 0) {
             /* 子进程分支：
-               1. 先重定向标准输入/输出/错误描述符 */
+               0. 独立进程组与资源限制隔离（纵深防御，避免转储核心与泄漏或残留孙进程） */
+            (void)setpgid(0, 0);
+
+            struct rlimit rl_core = {0, 0};
+            (void)setrlimit(RLIMIT_CORE, &rl_core);
+
+            struct rlimit rl_nofile;
+            if (getrlimit(RLIMIT_NOFILE, &rl_nofile) == 0 && rl_nofile.rlim_cur > 1024) {
+                rl_nofile.rlim_cur = 1024;
+                if (rl_nofile.rlim_max > 1024) {
+                    rl_nofile.rlim_max = 1024;
+                }
+                (void)setrlimit(RLIMIT_NOFILE, &rl_nofile);
+            }
+
+            const char* as_mb_str = getenv("MINEFOLIO_MCP_RLIMIT_AS_MB");
+            if (as_mb_str && as_mb_str[0]) {
+                long as_mb = strtol(as_mb_str, NULL, 10);
+                if (as_mb > 0 && as_mb <= 65536) {
+                    rlim_t        bytes = (rlim_t)as_mb * 1024ULL * 1024ULL;
+                    struct rlimit rl_as = {bytes, bytes};
+                    (void)setrlimit(RLIMIT_AS, &rl_as);
+                }
+            }
+
+            /* 1. 先重定向标准输入/输出/错误描述符 */
             if (dup2(in_pipe[0], STDIN_FILENO) < 0 || dup2(out_pipe[1], STDOUT_FILENO) < 0 ||
                 dup2(err_pipe[1], STDERR_FILENO) < 0) {
                 _exit(127);
@@ -713,6 +739,7 @@ stdio_call(mf_mcp_client_t* c, const char* request_json, char* out_err, size_t e
             execve(argv[0], argv, envp ? (char* const*)envp : safe_fallback_env);
             _exit(127);
         }
+        (void)setpgid(pid, pid);
         c->child_pid = pid;
         c->read_fd = out_pipe[0]; /* 父读子 stdout */
         c->write_fd = in_pipe[1]; /* 父写子 stdin */
@@ -909,9 +936,11 @@ mf_mcp_client_free(mf_mcp_client_t* c)
     if (!c) {
         return;
     }
-    /* stdio 子进程清理：SIGTERM → 轮询等待至多 500ms → SIGKILL */
+    /* stdio 子进程清理：优先终止整条进程组 (-pid)，SIGTERM → 轮询至多 500ms → SIGKILL */
     if (c->child_pid > 0) {
-        kill(c->child_pid, SIGTERM);
+        if (kill(-c->child_pid, SIGTERM) != 0) {
+            (void)kill(c->child_pid, SIGTERM);
+        }
         int st = 0;
         int exited = 0;
         for (int w = 0; w < 50; w++) {
@@ -922,7 +951,9 @@ mf_mcp_client_free(mf_mcp_client_t* c)
             usleep(10000); /* 10ms */
         }
         if (!exited) {
-            kill(c->child_pid, SIGKILL);
+            if (kill(-c->child_pid, SIGKILL) != 0) {
+                (void)kill(c->child_pid, SIGKILL);
+            }
             waitpid(c->child_pid, &st, 0);
         }
         c->child_pid = 0;

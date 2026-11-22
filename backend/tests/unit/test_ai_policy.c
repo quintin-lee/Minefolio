@@ -539,6 +539,35 @@ main(void)
         printf("  ✅ Both bound and batch confirmation tokens fail closed on RAND_bytes failure\n");
     }
 
+    /* ------------------------------------------------------------- */
+    /* Test 16: Domain-Separated Key Derivation from JWT_SECRET      */
+    /* ------------------------------------------------------------- */
+    printf("[Test 16] Domain-Separated Confirmation Key Derivation...\n");
+    {
+        ai_confirmation_set_secret(NULL);
+        unsetenv("MINEFOLIO_AI_SECRET");
+        setenv("MINEFOLIO_JWT_SECRET", "shared_jwt_master_secret_for_test_1234", 1);
+
+        const char* derived1 = ai_confirmation_get_secret();
+        assert(derived1 != NULL);
+        assert(strlen(derived1) == 64);
+        assert(strcmp(derived1, "shared_jwt_master_secret_for_test_1234") != 0);
+
+        char copy1[65];
+        snprintf(copy1, sizeof(copy1), "%s", derived1);
+
+        /* Deterministic across calls, distinct if JWT_SECRET rotates */
+        const char* derived2 = ai_confirmation_get_secret();
+        assert(derived2 != NULL && strcmp(copy1, derived2) == 0);
+
+        setenv("MINEFOLIO_JWT_SECRET", "another_jwt_master_secret_for_test_5678", 1);
+        const char* derived3 = ai_confirmation_get_secret();
+        assert(derived3 != NULL && strlen(derived3) == 64 && strcmp(copy1, derived3) != 0);
+
+        printf("  ✅ Derived AI confirmation key is deterministic and domain-separated from "
+               "JWT_SECRET\n");
+    }
+
     printf("\n🎉 ALL AI POLICY / RISK / CONFIRMATION SECURITY TESTS PASSED!\n");
     return 0;
 }

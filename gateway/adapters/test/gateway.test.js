@@ -8,7 +8,7 @@ const { test, before, after } = require('node:test');
 const assert = require('node:assert');
 const http = require('node:http');
 
-const { handleImMessage, callImApi, pollImTask } = require('../../index.js');
+const { handleImMessage, callImApi, pollImTask, TOKEN_CACHE } = require('../../index.js');
 
 let server;
 let apiBase;
@@ -75,6 +75,28 @@ test('aborts slow chat and task poll requests cleanly via AbortSignal.timeout', 
       delete process.env.MINEFOLIO_HTTP_TIMEOUT_MS;
     } else {
       process.env.MINEFOLIO_HTTP_TIMEOUT_MS = prevTimeout;
+    }
+  }
+});
+
+test('enforces bounded LRU capacity on TOKEN_CACHE', async () => {
+  TOKEN_CACHE.clear();
+  const prevMax = process.env.MINEFOLIO_GATEWAY_TOKEN_CACHE_MAX;
+  process.env.MINEFOLIO_GATEWAY_TOKEN_CACHE_MAX = '2';
+  try {
+    await handleImMessage('qq', 'u1', '/bind C1');
+    await handleImMessage('qq', 'u2', '/bind C2');
+    await handleImMessage('qq', 'u3', '/bind C3');
+    assert.strictEqual(TOKEN_CACHE.size, 2);
+    assert.strictEqual(TOKEN_CACHE.has('qq:u1'), false);
+    assert.strictEqual(TOKEN_CACHE.has('qq:u2'), true);
+    assert.strictEqual(TOKEN_CACHE.has('qq:u3'), true);
+  } finally {
+    TOKEN_CACHE.clear();
+    if (prevMax === undefined) {
+      delete process.env.MINEFOLIO_GATEWAY_TOKEN_CACHE_MAX;
+    } else {
+      process.env.MINEFOLIO_GATEWAY_TOKEN_CACHE_MAX = prevMax;
     }
   }
 });
