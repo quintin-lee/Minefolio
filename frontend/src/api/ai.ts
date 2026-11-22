@@ -479,6 +479,7 @@ export async function fetchAiModels(data: {
 export async function confirmAction(payload: {
   action_type: 'daily_expense' | 'transfer'
   draft_token: string
+  session_id?: number
   amount: number
   type?: string
   date?: string
@@ -499,6 +500,7 @@ export async function confirmAction(payload: {
  */
 export async function confirmBatchActions(payload: {
   draft_token: string
+  session_id?: number
   actions: Array<{
     action_type: 'daily_expense' | 'transfer'
     amount: number

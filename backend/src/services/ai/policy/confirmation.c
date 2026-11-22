@@ -459,6 +459,11 @@ ai_confirmation_verify_and_consume(int64_t             user_id,
         return AI_CONFIRM_ERR_USER_MISMATCH;
     }
 
+    /* 5b. 会话强绑定校验 (Session isolation) */
+    if (tok_sid != session_id) {
+        return AI_CONFIRM_ERR_SESSION_MISMATCH;
+    }
+
     /* 6. 工具绑定校验 (Tool binding) */
     if (strcmp(tok_tool, tool_name) != 0) {
         return AI_CONFIRM_ERR_TOOL_MISMATCH;
@@ -673,6 +678,11 @@ ai_confirmation_verify_and_consume_batch(int64_t             user_id,
         return AI_CONFIRM_ERR_USER_MISMATCH;
     }
 
+    /* 5b. 会话强绑定校验 (Session isolation) */
+    if (tok_sid != session_id) {
+        return AI_CONFIRM_ERR_SESSION_MISMATCH;
+    }
+
     /* 6. 复合动作哈希防篡改校验 (Batch actions tamper-proofing) */
     char cur_hash[65] = {0};
     ai_confirmation_hash_batch_actions(actions_array, cur_hash, sizeof(cur_hash));
@@ -704,6 +714,8 @@ ai_confirmation_strerror(ai_confirmation_status_t status)
         return "确认令牌已被使用，禁止二次重复执行或重放攻击";
     case AI_CONFIRM_ERR_SIGNATURE:
         return "确认令牌签名校验失败或防伪密钥错误";
+    case AI_CONFIRM_ERR_SESSION_MISMATCH:
+        return "会话上下文不匹配，禁止跨会话使用确认令牌";
     default:
         return "未知确认错误";
     }

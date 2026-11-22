@@ -78,3 +78,8 @@ mf_mcp_client_t* mf_mcp_client_new(const mf_mcp_server_t* server);
  * @brief 释放客户端句柄（stdio 子进程 SIGTERM→SIGKILL 双段清理）
  */
 void mf_mcp_client_free(mf_mcp_client_t* c);
+
+/**
+ * @brief 判定自定义环境变量键名是否在 env_json 黑名单/敏感词拦截范围内
+ */
+bool mf_mcp_env_key_is_blocked(const char* key);

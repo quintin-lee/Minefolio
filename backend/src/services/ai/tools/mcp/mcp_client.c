@@ -471,7 +471,52 @@ is_sensitive_env(const char* entry)
     return false;
 }
 
-/* 构造受限脱敏 envp（过滤敏感键，env_json 非空时追加自定义 KEY=VALUE） */
+/* 黑名单拦截 env_json 中的高危注入环境变量（LD_* / PATH / DYLD_* / 解释器预加载选项 /
+ * 含控制字符或敏感键），防止通过数据库 env_json 配置对子进程实施动态库劫持或命令注入。 */
+static bool
+is_blocked_custom_env_key(const char* key)
+{
+    if (!key || !key[0]) {
+        return true;
+    }
+    char   upper[128];
+    size_t len = strlen(key);
+    if (len >= sizeof(upper)) {
+        return true;
+    }
+    for (size_t i = 0; i < len; i++) {
+        unsigned char ch = (unsigned char)key[i];
+        if (ch == '=' || ch == '\r' || ch == '\n' || ch < 0x20 || ch == 0x7f) {
+            return true;
+        }
+        if (ch >= 'a' && ch <= 'z') {
+            ch = (unsigned char)(ch - 32);
+        }
+        upper[i] = (char)ch;
+    }
+    upper[len] = '\0';
+
+    if (strncmp(upper, "LD_", 3) == 0 || strncmp(upper, "DYLD_", 5) == 0) {
+        return true;
+    }
+    if (strcmp(upper, "PATH") == 0 || strcmp(upper, "IFS") == 0 || strcmp(upper, "BASH_ENV") == 0 ||
+        strcmp(upper, "ENV") == 0 || strcmp(upper, "CDPATH") == 0 || strcmp(upper, "SHELL") == 0 ||
+        strcmp(upper, "SHELLOPTS") == 0 || strcmp(upper, "BASHOPTS") == 0 ||
+        strcmp(upper, "PYTHONHOME") == 0 || strcmp(upper, "PYTHONPATH") == 0 ||
+        strcmp(upper, "NODE_OPTIONS") == 0 || strcmp(upper, "PERL5OPT") == 0 ||
+        strcmp(upper, "RUBYOPT") == 0 || strcmp(upper, "OPENSSL_CONF") == 0) {
+        return true;
+    }
+    return is_sensitive_env(upper);
+}
+
+bool
+mf_mcp_env_key_is_blocked(const char* key)
+{
+    return is_blocked_custom_env_key(key);
+}
+
+/* 构造受限脱敏 envp（过滤敏感键，env_json 非空时追加经白名单/黑名单校验的自定义 KEY=VALUE） */
 static char**
 build_envp(const mf_mcp_server_t* s, size_t* out_envc, size_t* out_basec)
 {
@@ -508,8 +553,18 @@ build_envp(const mf_mcp_server_t* s, size_t* out_envc, size_t* out_basec)
                 const char*         key = csilk_json_object_key(obj, i);
                 const csilk_json_t* val = csilk_json_object_val(obj, i);
                 if (key && val && csilk_json_is_string(val)) {
+                    const char* val_str = csilk_json_string_value(val);
+                    if (is_blocked_custom_env_key(key)) {
+                        CSILK_LOG_W("mcp_client: blocked dangerous env_json key '%s'", key);
+                        continue;
+                    }
+                    if (!val_str || strpbrk(val_str, "\r\n") != NULL) {
+                        CSILK_LOG_W(
+                            "mcp_client: blocked env_json key '%s' due to control characters", key);
+                        continue;
+                    }
                     char buf[512];
-                    snprintf(buf, sizeof(buf), "%s=%s", key, csilk_json_string_value(val));
+                    snprintf(buf, sizeof(buf), "%s=%s", key, val_str);
                     envp[idx++] = strdup(buf);
                 }
             }

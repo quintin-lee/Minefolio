@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "domain/mcp/entity.h"
+#include "services/ai/tools/mcp/mcp_client.h"
 #include "services/ai/tools/mcp/mcp_config.h"
 #include "services/ai/tools/mcp/mcp_stdio_pool.h"
 
@@ -39,5 +40,19 @@ main(void)
     /* evict_idle 在空池上必须安全返回 0（调度心跳每 30s 调用一次） */
     assert(mf_mcp_stdio_pool_evict_idle() == 0);
     printf("PASS: test_mcp_pool_evict_idle_empty\n");
+
+    /* env_json 黑名单拦截校验 (LD_* / PATH / DYLD_* / 敏感关键字 / 控制字符) */
+    assert(mf_mcp_env_key_is_blocked("LD_PRELOAD") == true);
+    assert(mf_mcp_env_key_is_blocked("ld_library_path") == true);
+    assert(mf_mcp_env_key_is_blocked("PATH") == true);
+    assert(mf_mcp_env_key_is_blocked("path") == true);
+    assert(mf_mcp_env_key_is_blocked("DYLD_INSERT_LIBRARIES") == true);
+    assert(mf_mcp_env_key_is_blocked("PYTHONPATH") == true);
+    assert(mf_mcp_env_key_is_blocked("NODE_OPTIONS") == true);
+    assert(mf_mcp_env_key_is_blocked("MY_API_SECRET") == true);
+    assert(mf_mcp_env_key_is_blocked("BAD=KEY") == true);
+    assert(mf_mcp_env_key_is_blocked("MCP_LOG_LEVEL") == false);
+    assert(mf_mcp_env_key_is_blocked("TZ") == false);
+    printf("PASS: test_mcp_env_blacklist\n");
     return 0;
 }

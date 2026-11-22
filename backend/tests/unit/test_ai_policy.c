@@ -387,6 +387,32 @@ main(void)
         printf("  ✅ Sensitive tokens automatically redacted from audit logs\n");
     }
 
+    /* ------------------------------------------------------------- */
+    /* Test 13: Session Isolation (AI_CONFIRM_ERR_SESSION_MISMATCH)  */
+    /* ------------------------------------------------------------- */
+    printf("[Test 13] Session Isolation (tok_sid == session_id)...\n");
+    {
+        int64_t       user_id = 1001;
+        const char*   tool = "confirm_proposed_expense";
+        csilk_json_t* args = csilk_json_object();
+        csilk_json_add_number(args, "amount", 88.0);
+
+        char* token = ai_confirmation_create_bound_token(
+            user_id, 42, tool, args, AI_RISK_HIGH, 300);
+        assert(token != NULL);
+
+        assert(ai_confirmation_verify_and_consume(user_id, 99, tool, args, token) ==
+               AI_CONFIRM_ERR_SESSION_MISMATCH);
+        assert(ai_confirmation_verify_and_consume(user_id, 0, tool, args, token) ==
+               AI_CONFIRM_ERR_SESSION_MISMATCH);
+        assert(ai_confirmation_verify_and_consume(user_id, 42, tool, args, token) ==
+               AI_CONFIRM_OK);
+
+        free(token);
+        csilk_json_free(args);
+        printf("  ✅ Cross-session replay strongly rejected (AI_CONFIRM_ERR_SESSION_MISMATCH)\n");
+    }
+
     printf("\n🎉 ALL AI POLICY / RISK / CONFIRMATION SECURITY TESTS PASSED!\n");
     return 0;
 }
