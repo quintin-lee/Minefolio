@@ -1,6 +1,6 @@
 <template>
   <div class="reports-mobile">
-    <div class="page-header"><h2>报表</h2></div>
+    <div class="page-header"><h2>{{ t('nav.reports') }}</h2></div>
     <el-alert
       v-if="loadError"
       title="无法获取月度报表数据（当前离线或服务端不可达）"
@@ -22,6 +22,7 @@ import ExpenseCategoryPie from '@/components/ExpenseCategoryPie.vue'
 import MonthlyChart from '@/components/MonthlyChart.vue'
 import { localThisMonth } from '@/utils/format'
 import { notifyMobileReadError } from '@/utils/http'
+import { t } from '@/utils/locale'
 import type { ExpenseMonthly } from '@/types'
 
 const month = ref(localThisMonth())

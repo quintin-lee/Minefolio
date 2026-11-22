@@ -2,8 +2,8 @@
   <div class="holdings-mobile" v-loading="loading">
     <div class="page-header">
       <div class="mobile-segmented">
-        <button class="segmented-item" @click="$router.push('/m/assets')">资产账户</button>
-        <button class="segmented-item active">投资持仓</button>
+        <button class="segmented-item" @click="$router.push('/m/assets')">{{ t('nav.assets') }}</button>
+        <button class="segmented-item active">{{ t('nav.holdings') }}</button>
       </div>
     </div>
 
@@ -67,6 +67,7 @@ import { reportsApi, type HoldingsReport } from '@/api/reports'
 import { marketApi } from '@/api/market'
 import { formatCurrency, formatSigned } from '@/utils/format'
 import { notifyMobileReadError } from '@/utils/http'
+import { t } from '@/utils/locale'
 
 const report = ref<HoldingsReport | null>(null)
 const loading = ref(false)
