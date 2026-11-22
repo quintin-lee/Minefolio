@@ -38,6 +38,13 @@ export function setMobileMode(on: boolean): void {
   mobileMode = on
 }
 
+/**
+ * 获取当前是否处于移动端运行模式
+ */
+export function isMobileMode(): boolean {
+  return mobileMode
+}
+
 /** 上次错误提示内容 */
 let lastErrorMsg = ''
 /** 上次错误提示时间戳 */

@@ -9,7 +9,7 @@ import { readFileSync } from 'fs'
 const version = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8')).version
 
 // Mobile build target: separate entry HTML + dist-mobile output.
-// No `__MOBILE__` compile flag — isolation is achieved via the independent entry.
+// `__IS_MOBILE__` lets Vite tree-shake mobile-only offline DB code out of desktop bundles.
 // dts paths are mobile-specific to avoid clobbering the desktop build's .d.ts.
 export default defineConfig({
   plugins: [
@@ -26,6 +26,7 @@ export default defineConfig({
   ],
   define: {
     __APP_VERSION__: JSON.stringify(version),
+    __IS_MOBILE__: true,
   },
   resolve: {
     alias: { '@': resolve(__dirname, 'src') },
@@ -41,15 +42,15 @@ export default defineConfig({
       input: resolve(__dirname, 'index.mobile.html'),
       output: {
         manualChunks(id) {
+          if (id.includes('sql.js') || id.includes('sql-wasm-base64')) {
+            return 'vendor-sql'
+          }
           if (id.includes('node_modules')) {
             if (id.includes('echarts') || id.includes('zrender')) {
               return 'vendor-echarts'
             }
             if (id.includes('element-plus') || id.includes('@element-plus/icons-vue')) {
               return 'vendor-element'
-            }
-            if (id.includes('sql.js')) {
-              return 'vendor-sql'
             }
           }
         },

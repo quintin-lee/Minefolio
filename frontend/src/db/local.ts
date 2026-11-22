@@ -68,23 +68,9 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(bin)
 }
 
-function parseSavedBytes(saved: string): Uint8Array {
-  if (saved.startsWith('b64:')) {
-    return base64ToBytes(saved.slice(4))
-  }
-  if (saved.startsWith('[')) {
-    return new Uint8Array(JSON.parse(saved))
-  }
-  try {
-    return base64ToBytes(saved)
-  } catch {
-    return new Uint8Array(JSON.parse(saved))
-  }
-}
-
 async function ensureSqlJs(): Promise<SqlJsStatic> {
   if (sqlJs) return sqlJs
-  // 直接用内嵌的 wasm 二进制，在浏览器、Capacitor 或测试(Node/jsdom)环境均无须文件系统路径或网络请求
+  // 直接用内嵌的 wasm 二进制（经 manualChunks 拆入 vendor-sql），浏览器/Capacitor/测试均无网络请求
   sqlJs = await initSqlJs({ wasmBinary: base64ToBytes(SQL_WASM_BASE64) })
   return sqlJs
 }

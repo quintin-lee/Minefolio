@@ -89,6 +89,7 @@ export const useAuthStore = defineStore('auth', () => {
    * 桌面端构建不会初始化本地库。
    */
   async function reinitLocalDb() {
+    if (!__IS_MOBILE__) return
     try {
       const { initLocalDb } = await import('@/db/local')
       await initLocalDb()
@@ -205,16 +206,16 @@ export const useAuthStore = defineStore('auth', () => {
     clearCryptoKeyCache()
     try {
       // 动态 import 各 store：避免把聊天/账本/分类/同步模块静态打入首屏包
-      const [{ useChatStore }, { useLedgerStore }, { useCategoryStore }, { useSyncStore }] = await Promise.all([
+      const [{ useChatStore }, { useLedgerStore }, { useCategoryStore }, syncMod] = await Promise.all([
         import('./chat'),
         import('./ledger'),
         import('./category'),
-        import('./sync'),
+        __IS_MOBILE__ ? import('./sync') : Promise.resolve(null),
       ])
       useChatStore().resetState()
       useLedgerStore().reset()
       useCategoryStore().reset()
-      useSyncStore().reset()
+      syncMod?.useSyncStore().reset()
     } catch {
       // 清理失败不影响登出主流程
     }
