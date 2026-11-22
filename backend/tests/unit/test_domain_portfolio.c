@@ -487,6 +487,34 @@ static void test_portfolio_summary_no_per_item_fx_drift(void) {
     printf("PASS: test_portfolio_summary_no_per_item_fx_drift\n");
 }
 
+/* 6. 若资产缺失 cost_basis (<= 0) 且交易流水重放份额一致，持仓规则自动补全总成本 */
+static void test_portfolio_trade_replay_heals_stale_cost_basis(void) {
+    currency_t cny = currency_from_str("CNY");
+
+    mf_holding_item_t item = {0};
+    item.asset_id = 300;
+    snprintf(item.name, sizeof(item.name), "500K份股票");
+    snprintf(item.asset_type, sizeof(item.asset_type), "stock");
+    item.currency = cny;
+    quantity_from_double(500000.0, 4, &item.quantity);
+    price_from_double(1.2, 4, cny, &item.net_value);
+    item.cost_basis = money_zero(cny);
+
+    mf_portfolio_trade_event_t ev = {0};
+    ev.asset_id = 300;
+    snprintf(ev.type, sizeof(ev.type), "buy");
+    quantity_from_double(500000.0, 4, &ev.quantity);
+    price_from_double(1.2, 4, cny, &ev.price);
+    money_from_double(600000.0, cny, &ev.amount);
+
+    assert(mf_portfolio_rule_apply_trade_events(&item, 1, &ev, 1) == 0);
+    assert(fabs(money_to_double(item.cost_basis) - 600000.0) < 1e-4);
+    assert(fabs(money_to_double(item.floating_pnl) - 0.0) < 1e-4);
+    assert(fabs(item.floating_pct - 0.0) < 1e-4);
+
+    printf("PASS: test_portfolio_trade_replay_heals_stale_cost_basis\n");
+}
+
 int main() {
     test_portfolio_trade_events_and_pnl();
     test_portfolio_trade_events_partial_sells_cost_pool_decrement();
@@ -499,6 +527,7 @@ int main() {
     test_portfolio_multi_currency_aggregation_and_risk();
     test_portfolio_missing_fx_rate_fails();
     test_portfolio_summary_no_per_item_fx_drift();
+    test_portfolio_trade_replay_heals_stale_cost_basis();
     printf("All domain portfolio tests passed successfully!\n");
     return 0;
 }

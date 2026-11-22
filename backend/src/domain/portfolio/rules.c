@@ -15,8 +15,9 @@ typedef struct {
     money_t    cost_for_pnl;
     quantity_t qty;
     money_t    realized;
-    bool       fifo; /**< 该标的是否采用 FIFO 成本法 */
-    pnl_lot_t* lots; /**< FIFO 批次队列（按买入时序） */
+    bool       fifo;             /**< 该标的是否采用 FIFO 成本法 */
+    bool       has_trade_events; /**< 是否重放过 buy/sell 成交事件 */
+    pnl_lot_t* lots;             /**< FIFO 批次队列（按买入时序） */
     size_t     lot_count;
     size_t     lot_cap;
 } pnl_acc_t;
@@ -149,6 +150,7 @@ mf_portfolio_rule_apply_trade_events(mf_holding_item_t*                items,
             pnl_acc_t* acc = &accs[found_idx];
 
             if (strcmp(ev->type, "buy") == 0) {
+                acc->has_trade_events = true;
                 /* 买入成本 = 成交额 + 手续费，与写路径 ledger/performance 口径一致 */
                 money_t buy_cost = ev->amount;
                 if (money_add(buy_cost, ev->fee, &buy_cost) != DECIMAL_OK ||
@@ -162,6 +164,7 @@ mf_portfolio_rule_apply_trade_events(mf_holding_item_t*                items,
                     goto cleanup;
                 }
             } else if (strcmp(ev->type, "sell") == 0) {
+                acc->has_trade_events = true;
                 if (quantity_is_positive(acc->qty)) {
                     money_t sold_cost = money_zero(acc->cost_for_pnl.currency);
                     bool    have_cost = false;
@@ -249,7 +252,14 @@ mf_portfolio_rule_apply_trade_events(mf_holding_item_t*                items,
 
     for (size_t i = 0; i < item_count; i++) {
         mf_holding_item_t* it = &items[i];
-        money_t            market = {0};
+        /* 若资产表尚未记录成本基础（cost_basis <= 0），且交易流水重放份额一致，
+         * 则使用交易重放总成本补全 cost_basis，不覆盖已有正值账面成本。 */
+        if (!money_is_positive(it->cost_basis) && accs[i].has_trade_events &&
+            quantity_is_positive(accs[i].qty) && quantity_cmp(accs[i].qty, it->quantity) == 0 &&
+            money_is_positive(accs[i].cost_for_pnl)) {
+            it->cost_basis = accs[i].cost_for_pnl;
+        }
+        money_t market = {0};
         if (price_times_quantity(it->net_value, it->quantity, &market) == DECIMAL_OK) {
             it->market_value = market;
         } else {

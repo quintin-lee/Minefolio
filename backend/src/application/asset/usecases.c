@@ -95,6 +95,16 @@ asset_usecase_create(void* pool, const create_asset_cmd_t* cmd, asset_usecase_re
     money_from_double(cmd->cost_basis, cur, &asset.cost_basis);
     price_from_double(cmd->net_value, 4, cur, &asset.net_value);
 
+    if (cmd->has_unit_cost && cmd->unit_cost > 0.0 && !money_is_positive(asset.cost_basis) &&
+        quantity_is_positive(asset.quantity)) {
+        price_t uc_p;
+        money_t total_cb;
+        price_from_double(cmd->unit_cost, 4, cur, &uc_p);
+        if (price_times_quantity(uc_p, asset.quantity, &total_cb) == DECIMAL_OK) {
+            asset.cost_basis = total_cb;
+        }
+    }
+
     /* 业务规则：投资品市值与成本自动推导 */
     mf_asset_rule_derive_investment_values(&asset);
 
@@ -305,7 +315,7 @@ asset_usecase_update(void* pool, const update_asset_cmd_t* cmd, asset_usecase_re
         need_reattach = 1;
     }
 
-    if (cmd->has_net_value || cmd->has_quantity || cmd->has_cost_basis) {
+    if (cmd->has_net_value || cmd->has_quantity || cmd->has_cost_basis || cmd->has_unit_cost) {
         if (is_investment) {
             double old_qty = db_get_num(cr, "quantity");
             double old_cost = db_get_num(cr, "cost_basis");
@@ -321,6 +331,16 @@ asset_usecase_update(void* pool, const update_asset_cmd_t* cmd, asset_usecase_re
 
             quantity_t qty_obj;
             quantity_from_double(new_qty, 4, &qty_obj);
+
+            if (cmd->has_unit_cost && !cmd->has_cost_basis && cmd->unit_cost >= 0.0 &&
+                new_qty > 0.0) {
+                price_t uc_obj;
+                money_t uc_total;
+                price_from_double(cmd->unit_cost, 4, asset_currency, &uc_obj);
+                if (price_times_quantity(uc_obj, qty_obj, &uc_total) == DECIMAL_OK) {
+                    new_cost = money_to_double(uc_total);
+                }
+            }
 
             price_t net_obj;
             price_from_double(new_net, 4, asset_currency, &net_obj);

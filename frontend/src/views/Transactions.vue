@@ -239,19 +239,24 @@
           <!-- 买入/卖出：单价 × 数量 + 手续费 -->
           <el-row v-if="isTradingType(form.transaction_type)" :gutter="16" class="trading-fields">
             <el-col :span="8">
-              <el-form-item :label="`交易单价 (${quantityUnit})`">
-                <el-input-number v-model="form.price_per_unit" :precision="4" :min="0" style="width: 100%" :controls="false" placeholder="0.0000" @input="calculateAmount" />
+              <el-form-item :label="`交易单价 (${quantityUnit ? '元/' + quantityUnit : '单价'})`">
+                <el-input-number v-model="form.price_per_unit" :precision="4" :min="0" style="width: 100%" :controls="false" placeholder="0.0000" @input="calculateAmount" @change="calculateAmount" />
               </el-form-item>
             </el-col>
             <el-col :span="8">
               <el-form-item label="交易数量">
-                <el-input-number v-model="form.quantity" :precision="4" :min="0" style="width: 100%" :controls="false" placeholder="0.0000" @input="calculateAmount" />
+                <el-input-number v-model="form.quantity" :precision="4" :min="0" style="width: 100%" :controls="false" placeholder="0.0000" @input="calculateAmount" @change="calculateAmount" />
               </el-form-item>
             </el-col>
             <el-col :span="8">
               <el-form-item label="手续费">
                 <el-input-number v-model="form.fee" :precision="2" :min="0" style="width: 100%" :controls="false" placeholder="0.00" />
               </el-form-item>
+            </el-col>
+            <el-col :span="24" v-if="form.amount > 0">
+              <div style="font-size: 12px; color: var(--el-text-color-secondary); margin-top: -6px; margin-bottom: 10px;">
+                预计成交总额：{{ formatCurrency(form.amount, form.currency) }}
+              </div>
             </el-col>
           </el-row>
 
@@ -379,7 +384,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Download, Upload, UploadFilled, SuccessFilled, Edit, Delete } from '@element-plus/icons-vue'
 import { transactionsApi } from '@/api/transactions'
@@ -507,9 +512,16 @@ function calculateAmount() {
     const p = Number(form.price_per_unit) || 0
     if (q > 0 && p > 0) {
       form.amount = Number((q * p).toFixed(2))
+    } else {
+      form.amount = 0
     }
   }
 }
+
+watch(
+  [() => form.quantity, () => form.price_per_unit, () => form.transaction_type],
+  () => calculateAmount(),
+)
 
 const quantityUnit = computed(() => {
   const asset = assets.value.find(a => a.id === form.asset_id)

@@ -99,8 +99,15 @@
         <el-table-column label="净值" width="110" align="right">
           <template #default="{ row }"><span class="mf-mono">{{ row.net_value.toFixed(4) }}</span></template>
         </el-table-column>
-        <el-table-column label="成本" width="120" align="right">
-          <template #default="{ row }"><span class="mf-mono">{{ formatCurrency(row.cost_basis, row.currency) }}</span></template>
+        <el-table-column label="总成本" width="130" align="right">
+          <template #default="{ row }">
+            <div style="display: flex; flex-direction: column; align-items: flex-end; justify-content: center;">
+              <span class="mf-mono">{{ formatCurrency(row.cost_basis, row.currency) }}</span>
+              <span v-if="row.quantity > 0" class="cny-converted-hint">
+                单价 {{ (row.cost_basis / row.quantity).toFixed(4) }}
+              </span>
+            </div>
+          </template>
         </el-table-column>
         <el-table-column label="市值" width="130" align="right">
           <template #default="{ row }">

@@ -84,7 +84,7 @@
                   <span v-if="a.last_sync_at" class="last-sync-time">同步于 {{ a.last_sync_at.slice(5, 16) }}</span>
                 </span>
                 <span v-if="hasInvestmentAssets && isInvestmentType(a.asset_type)" class="asset-sub-meta">
-                  {{ Number(a.quantity ?? 0).toFixed(2) }} 份 · 成本 {{ formatCurrency(Number(a.cost_basis ?? 0), a.currency) }} · 净值 {{ Number(a.net_value ?? 0).toFixed(4) }}
+                  {{ Number(a.quantity ?? 0).toFixed(2) }} 份 · 总成本 {{ formatCurrency(Number(a.cost_basis ?? 0), a.currency) }}<template v-if="Number(a.quantity ?? 0) > 0">（单价 {{ (Number(a.cost_basis ?? 0) / Number(a.quantity)).toFixed(4) }}）</template> · 净值 {{ Number(a.net_value ?? 0).toFixed(4) }}
                 </span>
               </div>
             </div>
@@ -165,10 +165,42 @@
           <el-form-item label="单位净值">
             <el-input-number v-model="form.net_value" :precision="4" :min="0" style="width: 100%" :controls="false" />
           </el-form-item>
-          <el-form-item label="持仓成本">
-            <el-input-number v-model="form.cost_basis" :precision="2" :min="0" style="width: 100%" :controls="false" placeholder="留空默认 = 份额 × 净值" />
+          <el-form-item label="成本录入方式">
+            <el-radio-group v-model="form._costInputMode" size="small" @change="onCostInputModeChange">
+              <el-radio-button value="total">按持仓总成本</el-radio-button>
+              <el-radio-button value="unit">按成本单价（自动 × 份额）</el-radio-button>
+            </el-radio-group>
           </el-form-item>
-          <div class="investment-hint">{{ editingId ? '净值更新后将重新计算市值' : '市值将按 份额 × 净值 自动计算；成本留空则等同市值' }}</div>
+          <el-form-item :label="form._costInputMode === 'unit' ? '成本单价' : '持仓总成本'">
+            <el-input-number
+              v-model="form.cost_basis"
+              :precision="form._costInputMode === 'unit' ? 4 : 2"
+              :min="0"
+              style="width: 100%"
+              :controls="false"
+              :placeholder="form._costInputMode === 'unit' ? '留空默认 = 当前单位净值' : '留空默认 = 份额 × 净值（总成本）'"
+            />
+          </el-form-item>
+          <div class="investment-hint">
+            <span>预计市值 {{ formatCurrency(previewMarketValue, form.currency) }} · 总成本 {{ formatCurrency(previewTotalCost, form.currency) }}</span>
+            <template v-if="form.quantity > 0">
+              <span> · 成本单价 {{ previewUnitCost.toFixed(4) }} · 预计浮盈 {{ previewFloatingPnl >= 0 ? '+' : '' }}{{ formatCurrency(previewFloatingPnl, form.currency) }}</span>
+            </template>
+          </div>
+          <el-alert
+            v-if="suspiciousUnitCost.suspicious"
+            type="warning"
+            :closable="false"
+            show-icon
+            class="cost-warning-alert"
+          >
+            <template #title>
+              当前填写的「持仓总成本」{{ formatCurrency(Number(form.cost_basis || 0), form.currency) }} 远低于市值 {{ formatCurrency(suspiciousUnitCost.marketValue, form.currency) }}，疑似误填了成本单价。
+            </template>
+            <el-button type="warning" size="small" plain style="margin-top: 6px" @click="convertUnitCostToTotal">
+              按单价 {{ Number(form.cost_basis || 0).toFixed(4) }} × {{ form.quantity }} 份换算为总成本 {{ formatCurrency(suspiciousUnitCost.suggestedTotalCost, form.currency) }}
+            </el-button>
+          </el-alert>
         </template>
 
         <el-form-item label="币种">
@@ -223,6 +255,7 @@ import SymbolSelect from '@/components/SymbolSelect.vue'
 import PriceHistoryChart from '@/components/PriceHistoryChart.vue'
 import AccountDialog from '@/components/AccountDialog.vue'
 import { formatCurrency } from '@/utils/format'
+import { detectSuspiciousUnitCostInput, resolveTotalCostBasis, type CostInputMode } from '@/utils/investment-cost'
 import { Icon } from '@iconify/vue'
 
 const ASSET_TYPE_ICONS: Record<string, string> = {
@@ -468,11 +501,12 @@ function openDialog(asset?: any) {
     symbol: asset.symbol ?? '', quote_source: asset.quote_source ?? '',
     current_value: asset.current_value, currency: asset.currency, note: asset.note,
     quantity: asset.quantity ?? 0, net_value: asset.net_value ?? 0,
-    cost_basis: asset.cost_basis ?? 0,
+    cost_basis: asset.cost_basis ?? undefined,
     account_id: asset.account_id ?? null,
     _catPath: [asset.category_id],
     _isInvestment: isInv,
-  } : { name: '', category_id: null, account_no: '', symbol: '', quote_source: '', current_value: 0, currency: 'CNY', note: '', quantity: 0, net_value: 0, cost_basis: 0, account_id: null, _catPath: [], _isInvestment: false })
+    _costInputMode: 'total' as CostInputMode,
+  } : { name: '', category_id: null, account_no: '', symbol: '', quote_source: '', current_value: 0, currency: 'CNY', note: '', quantity: 0, net_value: 0, cost_basis: undefined, account_id: null, _catPath: [], _isInvestment: false, _costInputMode: 'total' as CostInputMode })
   dialogVisible.value = true
 }
 
@@ -487,13 +521,49 @@ const form = reactive({
   note: '',
   quantity: 0,
   net_value: 0,
-  cost_basis: 0,
+  cost_basis: undefined as number | undefined,
   account_id: null as number | null,
   _catPath: [] as number[],
-  _isInvestment: false as boolean
+  _isInvestment: false as boolean,
+  _costInputMode: 'total' as CostInputMode,
 })
 
 const isInvestment = computed(() => form._isInvestment)
+const previewMarketValue = computed(() => Number(((Number(form.quantity) || 0) * (Number(form.net_value) || 0)).toFixed(2)))
+const previewTotalCost = computed(() =>
+  resolveTotalCostBasis({
+    mode: form._costInputMode,
+    quantity: form.quantity,
+    netValue: form.net_value,
+    inputValue: form.cost_basis,
+  }),
+)
+const previewUnitCost = computed(() => (form.quantity > 0 ? previewTotalCost.value / form.quantity : 0))
+const previewFloatingPnl = computed(() => Number((previewMarketValue.value - previewTotalCost.value).toFixed(2)))
+const suspiciousUnitCost = computed(() =>
+  detectSuspiciousUnitCostInput({
+    mode: form._costInputMode,
+    quantity: form.quantity,
+    netValue: form.net_value,
+    totalCost: form.cost_basis,
+  }),
+)
+
+function onCostInputModeChange(nextMode: string | number | boolean | undefined) {
+  if (nextMode !== 'unit' && nextMode !== 'total') return
+  const qty = Number(form.quantity) || 0
+  if (qty <= 0 || form.cost_basis == null) return
+  if (nextMode === 'unit') {
+    form.cost_basis = Number((form.cost_basis / qty).toFixed(4))
+  } else {
+    form.cost_basis = Number((form.cost_basis * qty).toFixed(2))
+  }
+}
+
+function convertUnitCostToTotal() {
+  if (!suspiciousUnitCost.value.suspicious) return
+  form.cost_basis = suspiciousUnitCost.value.suggestedTotalCost
+}
 const rules = {
   name: [{ required: true, message: '请输入资产名称' }],
   category_id: [{ required: true, message: '请选择分类' }]
@@ -536,7 +606,12 @@ async function handleSubmit() {
       if (form._isInvestment) {
         data.quantity = form.quantity
         data.net_value = form.net_value
-        data.cost_basis = form.cost_basis
+        data.cost_basis = resolveTotalCostBasis({
+          mode: form._costInputMode,
+          quantity: form.quantity,
+          netValue: form.net_value,
+          inputValue: form.cost_basis,
+        })
       } else {
         data.current_value = form.current_value
       }
@@ -739,6 +814,12 @@ onMounted(async () => {
   margin-top: -8px;
   margin-bottom: 14px;
   margin-left: 95px;
+}
+
+.cost-warning-alert {
+  margin-bottom: 14px;
+  margin-left: 95px;
+  width: calc(100% - 95px);
 }
 
 .asset-summary {
