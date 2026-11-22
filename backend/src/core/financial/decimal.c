@@ -346,41 +346,55 @@ decimal_from_string(const char* str, decimal_t* out)
     int32_t           scale = 0;
     bool              has_dot = false;
     bool              has_digits = false;
+    bool              last_was_comma = false;
 
     while (*str) {
-        if (*str >= '0' && *str <= '9') {
+        unsigned char ch = (unsigned char)*str;
+        if (ch >= '0' && ch <= '9') {
             has_digits = true;
+            last_was_comma = false;
             if (!has_dot) {
                 u256_t p = u128_mul_u128(integer_part, 10);
-                p = u256_add(p, u256_from_u128((unsigned __int128)(*str - '0')));
+                p = u256_add(p, u256_from_u128((unsigned __int128)(ch - '0')));
                 if (p.hi != 0) {
+                    *out = decimal_zero();
                     return DECIMAL_ERR_OVERFLOW;
                 }
                 integer_part = p.lo;
             } else {
                 if (scale < DECIMAL_MAX_SCALE) {
-                    frac_part = frac_part * 10 + (unsigned __int128)(*str - '0');
+                    frac_part = frac_part * 10 + (unsigned __int128)(ch - '0');
                     scale++;
                 }
             }
-        } else if (*str == '.') {
-            if (has_dot) {
-                break; /* Second dot encountered */
+        } else if (ch == '.') {
+            if (has_dot || last_was_comma) {
+                *out = decimal_zero();
+                return DECIMAL_ERR_PARSE;
             }
             has_dot = true;
-        } else if (isspace((unsigned char)*str) || *str == ',' || *str == '%') {
-            if (*str == ',') {
-                /* ignore thousand comma separator */
-            } else {
-                break;
+        } else if (ch == ',') {
+            /* Thousands separator allowed only between integer digits */
+            if (!has_digits || has_dot || last_was_comma) {
+                *out = decimal_zero();
+                return DECIMAL_ERR_PARSE;
             }
-        } else {
+            last_was_comma = true;
+        } else if (isspace(ch)) {
             break;
+        } else {
+            *out = decimal_zero();
+            return DECIMAL_ERR_PARSE;
         }
         str++;
     }
 
-    if (!has_digits) {
+    /* Trailing whitespace only; reject middle whitespace or trailing non-whitespace characters */
+    while (isspace((unsigned char)*str)) {
+        str++;
+    }
+
+    if (*str != '\0' || !has_digits || last_was_comma) {
         *out = decimal_zero();
         return DECIMAL_ERR_PARSE;
     }
@@ -425,7 +439,11 @@ decimal_from_double(double d, int32_t scale, decimal_t* out)
     }
 
     char buf[64];
-    snprintf(buf, sizeof(buf), "%.*f", (int)scale, d);
+    int  n = snprintf(buf, sizeof(buf), "%.*f", (int)scale, d);
+    if (n < 0 || (size_t)n >= sizeof(buf)) {
+        *out = decimal_zero();
+        return DECIMAL_ERR_OVERFLOW;
+    }
     return decimal_from_string(buf, out);
 }
 

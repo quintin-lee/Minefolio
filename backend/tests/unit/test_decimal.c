@@ -236,6 +236,25 @@ main(void)
     assert(decimal_cmp(tiny_scale18, max_dec) < 0);
     assert(decimal_cmp(min_dec, tiny_scale18) < 0);
 
+    /* 9. Strict parse & double truncation hardening */
+    decimal_t parsed;
+    assert(decimal_from_string("  1,234.56  ", &parsed) == DECIMAL_OK);
+    decimal_to_string_fixed(parsed, 2, buf, sizeof(buf));
+    assert(strcmp(buf, "1234.56") == 0);
+
+    assert(decimal_from_string("12.3abc", &parsed) == DECIMAL_ERR_PARSE);
+    assert(decimal_from_string("12.3%", &parsed) == DECIMAL_ERR_PARSE);
+    assert(decimal_from_string("12.3.4", &parsed) == DECIMAL_ERR_PARSE);
+    assert(decimal_from_string("12 34", &parsed) == DECIMAL_ERR_PARSE);
+    assert(decimal_from_string(",123", &parsed) == DECIMAL_ERR_PARSE);
+    assert(decimal_from_string("123,", &parsed) == DECIMAL_ERR_PARSE);
+    assert(decimal_from_string("1,,234", &parsed) == DECIMAL_ERR_PARSE);
+    assert(decimal_from_string("1,.2", &parsed) == DECIMAL_ERR_PARSE);
+    assert(decimal_from_string("12.3,4", &parsed) == DECIMAL_ERR_PARSE);
+
+    /* Huge double causes snprintf truncation beyond 63 chars -> DECIMAL_ERR_OVERFLOW */
+    assert(decimal_from_double(1e60, 18, &parsed) == DECIMAL_ERR_OVERFLOW);
+
     printf("✓ All decimal arithmetic & rounding tests passed successfully!\n");
     return 0;
 }

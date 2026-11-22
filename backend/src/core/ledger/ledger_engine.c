@@ -502,16 +502,18 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
     money_t pos_delta = money_zero(tx->amount.currency);
 
     if (is_investment_tx) {
-        int pos_rc = apply_position_fc(pool,
-                                       tx->asset_id,
-                                       tx->user_id,
-                                       tx_type_str,
-                                       tx->amount,
-                                       tx->fee,
-                                       tx->price,
-                                       tx->quantity,
-                                       fx_rate,
-                                       &pos_delta);
+        int pos_rc = apply_position_fc_dated(pool,
+                                             tx->asset_id,
+                                             tx->user_id,
+                                             tx_type_str,
+                                             tx->amount,
+                                             tx->fee,
+                                             tx->price,
+                                             tx->quantity,
+                                             fx_rate,
+                                             effective_date,
+                                             tx->id,
+                                             &pos_delta);
         if (pos_rc < 0) {
             goto fail_rollback;
         }

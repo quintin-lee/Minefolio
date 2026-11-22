@@ -258,17 +258,83 @@ balance_apply_delta(csilk_db_pool_t* pool,
     return balance_apply_delta_m(pool, asset_id, user_id, delta_m, source_type, source_id, note);
 }
 
+static bool
+has_newer_valuation_event(csilk_db_pool_t* pool,
+                          const char*      aid_str,
+                          const char*      uid_str,
+                          const char*      tx_date,
+                          int64_t          tx_id)
+{
+    if (!pool || !tx_date || !tx_date[0]) {
+        return false;
+    }
+
+    if (tx_id > 0) {
+        char tid_str[32];
+        snprintf(tid_str, sizeof(tid_str), "%lld", (long long)tx_id);
+        csilk_json_t* r = csilk_db_query_param_json(
+            pool,
+            "SELECT 1 FROM transactions "
+            "WHERE asset_id=? AND user_id=? AND transaction_type IN ('buy', 'sell') "
+            "AND id != ? AND (transaction_date > ? OR (transaction_date = ? AND id > ?)) "
+            "LIMIT 1",
+            (const char*[]){aid_str, uid_str, tid_str, tx_date, tx_date, tid_str, NULL});
+        if (r) {
+            size_t n = csilk_json_array_size(r);
+            csilk_json_free(r);
+            if (n > 0) {
+                return true;
+            }
+        }
+    } else {
+        csilk_json_t* r = csilk_db_query_param_json(
+            pool,
+            "SELECT 1 FROM transactions "
+            "WHERE asset_id=? AND user_id=? AND transaction_type IN ('buy', 'sell') "
+            "AND transaction_date > ? LIMIT 1",
+            (const char*[]){aid_str, uid_str, tx_date, NULL});
+        if (r) {
+            size_t n = csilk_json_array_size(r);
+            csilk_json_free(r);
+            if (n > 0) {
+                return true;
+            }
+        }
+    }
+
+    if (strlen(tx_date) >= 10) {
+        char date10[11];
+        memcpy(date10, tx_date, 10);
+        date10[10] = '\0';
+        csilk_json_t* r = csilk_db_query_param_json(
+            pool,
+            "SELECT 1 FROM asset_price_history WHERE asset_id=? AND price_date > ? LIMIT 1",
+            (const char*[]){aid_str, date10, NULL});
+        if (r) {
+            size_t n = csilk_json_array_size(r);
+            csilk_json_free(r);
+            if (n > 0) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
 int
-apply_position_fc(csilk_db_pool_t* pool,
-                  int64_t          asset_id,
-                  int64_t          user_id,
-                  const char*      type,
-                  money_t          amount,
-                  money_t          fee,
-                  price_t          price,
-                  quantity_t       qty,
-                  double           fx_rate_to_cny,
-                  money_t*         out_position_delta)
+apply_position_fc_dated(csilk_db_pool_t* pool,
+                        int64_t          asset_id,
+                        int64_t          user_id,
+                        const char*      type,
+                        money_t          amount,
+                        money_t          fee,
+                        price_t          price,
+                        quantity_t       qty,
+                        double           fx_rate_to_cny,
+                        const char*      tx_date,
+                        int64_t          tx_id,
+                        money_t*         out_position_delta)
 {
     char aid_str[32], uid_str[32];
     snprintf(aid_str, sizeof(aid_str), "%lld", (long long)asset_id);
@@ -319,7 +385,14 @@ apply_position_fc(csilk_db_pool_t* pool,
                         (long long)asset_id);
             return -1;
         }
-        new_net = price;
+        /* 历史补录买单：若已有更新日期的交易或收盘估值行情，且当前 net_value 有效，
+         * 则保留当前 net_value，避免历史成交价覆盖现行净值与市值。 */
+        if (decimal_is_positive(old_net.unit_price) &&
+            has_newer_valuation_event(pool, aid_str, uid_str, tx_date, tx_id)) {
+            new_net = old_net;
+        } else {
+            new_net = price;
+        }
     } else if (strcmp(type, "sell") == 0) {
         const char* cost_method = csilk_json_get_string(pr, "cost_method");
         money_t     cost_red, trade_pnl;
@@ -392,6 +465,32 @@ apply_position_fc(csilk_db_pool_t* pool,
     csilk_json_free(upd_res);
     csilk_json_free(pos);
     return 0;
+}
+
+int
+apply_position_fc(csilk_db_pool_t* pool,
+                  int64_t          asset_id,
+                  int64_t          user_id,
+                  const char*      type,
+                  money_t          amount,
+                  money_t          fee,
+                  price_t          price,
+                  quantity_t       qty,
+                  double           fx_rate_to_cny,
+                  money_t*         out_position_delta)
+{
+    return apply_position_fc_dated(pool,
+                                   asset_id,
+                                   user_id,
+                                   type,
+                                   amount,
+                                   fee,
+                                   price,
+                                   qty,
+                                   fx_rate_to_cny,
+                                   NULL,
+                                   0,
+                                   out_position_delta);
 }
 
 int

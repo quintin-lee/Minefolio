@@ -99,6 +99,19 @@ int balance_apply_delta(csilk_db_pool_t* pool,
  *       若资产不属于该 user_id，则按“资产不存在”处理（持仓更新静默跳过，返回 0），
  *       杜绝跨用户串改 quantity/cost_basis/net_value。
  */
+int apply_position_fc_dated(csilk_db_pool_t* pool,
+                            int64_t          asset_id,
+                            int64_t          user_id,
+                            const char*      type,
+                            money_t          amount,
+                            money_t          fee,
+                            price_t          price,
+                            quantity_t       qty,
+                            double           fx_rate_to_cny,
+                            const char*      tx_date,
+                            int64_t          tx_id,
+                            money_t*         out_position_delta);
+
 int apply_position_fc(csilk_db_pool_t* pool,
                       int64_t          asset_id,
                       int64_t          user_id,
