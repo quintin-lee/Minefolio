@@ -6,9 +6,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <openssl/crypto.h>
 #include <openssl/hmac.h>
-#include <openssl/sha.h>
 #include <openssl/rand.h>
+#include <openssl/sha.h>
 #include <pthread.h>
 
 #define DEFAULT_TTL_SEC 300
@@ -238,6 +239,27 @@ record_nonce_consumed_locked(const char* nonce, int64_t expiration)
     }
 }
 
+static int
+generate_nonce_csprng(int64_t now, char* out, size_t out_size)
+{
+    if (!out || out_size < 32) {
+        return -1;
+    }
+    unsigned char rnd[8] = {0};
+    if (RAND_bytes(rnd, (int)sizeof(rnd)) != 1) {
+        OPENSSL_cleanse(rnd, sizeof(rnd));
+        CSILK_LOG_E("ai_confirmation: RAND_bytes failed, refusing weak fallback");
+        return -1;
+    }
+    uint64_t rnd_val = 0;
+    for (size_t i = 0; i < sizeof(rnd); i++) {
+        rnd_val = (rnd_val << 8) | (uint64_t)rnd[i];
+    }
+    OPENSSL_cleanse(rnd, sizeof(rnd));
+    snprintf(out, out_size, "nc%08lx%016llx", (unsigned long)now, (unsigned long long)rnd_val);
+    return 0;
+}
+
 char*
 ai_confirmation_create_bound_token(int64_t             user_id,
                                    int64_t             session_id,
@@ -260,18 +282,10 @@ ai_confirmation_create_bound_token(int64_t             user_id,
     ai_confirmation_hash_args(args, args_hash, sizeof(args_hash));
 
     /* 生成随机高熵 Nonce（参与 HMAC canonical 与重放唯一性，须用 CSPRNG） */
-    char          nonce[32];
-    unsigned char rnd[4] = {0};
-    if (RAND_bytes(rnd, (int)sizeof(rnd)) != 1) {
-        /* 罕见失败：退化到时间 + 地址熵 */
-        rnd[0] = (unsigned char)(now & 0xff);
-        rnd[1] = (unsigned char)((now >> 8) & 0xff);
-        rnd[2] = (unsigned char)(((uintptr_t)nonce) & 0xff);
-        rnd[3] = (unsigned char)(((uintptr_t)&rnd) & 0xff);
+    char nonce[40];
+    if (generate_nonce_csprng(now, nonce, sizeof(nonce)) != 0) {
+        return NULL;
     }
-    unsigned int rnd_val = ((unsigned int)rnd[0] << 24) | ((unsigned int)rnd[1] << 16) |
-                           ((unsigned int)rnd[2] << 8) | (unsigned int)rnd[3];
-    snprintf(nonce, sizeof(nonce), "nc%08lx%08x", (unsigned long)now, rnd_val);
 
     /* 规范载荷字符串 */
     char canonical[512];
@@ -560,17 +574,10 @@ ai_confirmation_create_batch_token(int64_t             user_id,
     ai_confirmation_hash_batch_actions(actions_array, batch_hash, sizeof(batch_hash));
 
     /* 生成随机高熵 Nonce */
-    char          nonce[32];
-    unsigned char rnd[4] = {0};
-    if (RAND_bytes(rnd, (int)sizeof(rnd)) != 1) {
-        rnd[0] = (unsigned char)(now & 0xff);
-        rnd[1] = (unsigned char)((now >> 8) & 0xff);
-        rnd[2] = (unsigned char)(((uintptr_t)nonce) & 0xff);
-        rnd[3] = (unsigned char)(((uintptr_t)&rnd) & 0xff);
+    char nonce[40];
+    if (generate_nonce_csprng(now, nonce, sizeof(nonce)) != 0) {
+        return NULL;
     }
-    unsigned int rnd_val = ((unsigned int)rnd[0] << 24) | ((unsigned int)rnd[1] << 16) |
-                           ((unsigned int)rnd[2] << 8) | (unsigned int)rnd[3];
-    snprintf(nonce, sizeof(nonce), "nc%08lx%08x", (unsigned long)now, rnd_val);
 
     /* 规范载荷字符串: batch_v1|%lld|%lld|%s|%d|%lld|%s|%lld */
     char canonical[512];

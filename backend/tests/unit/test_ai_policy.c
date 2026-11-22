@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <openssl/rand.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -13,6 +14,20 @@
 #include "services/ai/policy/policy.h"
 #include "services/ai/policy/audit.h"
 #include "common/db.h"
+
+static int
+fail_rand_bytes(unsigned char* buf, int num)
+{
+    (void)buf;
+    (void)num;
+    return 0;
+}
+
+static int
+fail_rand_status(void)
+{
+    return 0;
+}
 
 int
 main(void)
@@ -482,6 +497,46 @@ main(void)
         csilk_json_free(batch_args);
 
         printf("  ✅ Risk non-downgrade & extended amount extraction verified\n");
+    }
+
+    /* ------------------------------------------------------------- */
+    /* Test 15: Fail Closed When RAND_bytes Fails (No Weak PRNG)     */
+    /* ------------------------------------------------------------- */
+    printf("[Test 15] RAND_bytes Failure Returns NULL (No Weak Fallback)...\n");
+    {
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+        const RAND_METHOD* orig_method = RAND_get_rand_method();
+        RAND_METHOD        failing_method = {
+                   .bytes = fail_rand_bytes,
+                   .pseudorand = fail_rand_bytes,
+                   .status = fail_rand_status,
+        };
+        assert(RAND_set_rand_method(&failing_method) == 1);
+
+        csilk_json_t* args = csilk_json_object();
+        csilk_json_add_number(args, "amount", 50.0);
+        char* bound_tok = ai_confirmation_create_bound_token(
+            1001, 42, "confirm_proposed_expense", args, AI_RISK_HIGH, 300);
+        assert(bound_tok == NULL);
+
+        csilk_json_t* actions = csilk_json_array();
+        csilk_json_t* item = csilk_json_object();
+        csilk_json_add_number(item, "amount", 50.0);
+        csilk_json_array_append(actions, item);
+        char* batch_tok =
+            ai_confirmation_create_batch_token(1001, 42, actions, AI_RISK_HIGH, 300);
+        assert(batch_tok == NULL);
+
+        RAND_set_rand_method(orig_method);
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
+        csilk_json_free(actions);
+        csilk_json_free(args);
+        printf("  ✅ Both bound and batch confirmation tokens fail closed on RAND_bytes failure\n");
     }
 
     printf("\n🎉 ALL AI POLICY / RISK / CONFIRMATION SECURITY TESTS PASSED!\n");

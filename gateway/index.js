@@ -19,30 +19,63 @@
 
 const API_BASE = process.env.MINEFOLIO_API || 'http://localhost:8080';
 const TOKEN_CACHE = new Map(); // `${platform}:${imUserId}` -> bindToken
+const PLATFORM_RE = /^(qq|wechat)$/;
+const DEFAULT_HTTP_TIMEOUT_MS = 15000;
+
+function getHttpTimeoutMs() {
+  const raw = Number(process.env.MINEFOLIO_HTTP_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw >= 50 ? raw : DEFAULT_HTTP_TIMEOUT_MS;
+}
+
+function isValidPlatform(platform) {
+  return typeof platform === 'string' && PLATFORM_RE.test(platform);
+}
 
 /**
  * Call a backend /api/im/* endpoint with a Bearer bind token.
- * @param {string} platform  'qq' | 'wechat'
+ * @param {string|null} platform  'qq' | 'wechat' (null only when op === 'token')
  * @param {'chat'|'bind'|'bind-auth'|'token'} op
  * @param {object} body
  * @param {string} bearer     bind token (im_bind JWT) or App token
  * @returns {Promise<{code:number, data?:object, message?:string, http:number}>}
  */
 async function callImApi(platform, op, body, bearer) {
+  if (op !== 'token' && !isValidPlatform(platform)) {
+    return { code: 1002, data: null, message: 'invalid platform', http: 400 };
+  }
+
   const path =
     op === 'chat' ? `/api/im/${platform}/chat` :
     op === 'bind' ? `/api/im/${platform}/bind` :
     op === 'bind-auth' ? `/api/im/${platform}/bind-auth` :
-    '/api/im/bindings/token';
+    op === 'token' ? '/api/im/bindings/token' :
+    null;
 
-  const res = await fetch((process.env.MINEFOLIO_API || API_BASE) + path, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
-    },
-    body: JSON.stringify(body || {}),
-  });
+  if (!path) {
+    return { code: 1002, data: null, message: 'invalid operation', http: 400 };
+  }
+
+  let res;
+  try {
+    res = await fetch((process.env.MINEFOLIO_API || API_BASE) + path, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
+      },
+      body: JSON.stringify(body || {}),
+      signal: AbortSignal.timeout(getHttpTimeoutMs()),
+    });
+  } catch (err) {
+    const isTimeout = err && (err.name === 'TimeoutError' || err.name === 'AbortError');
+    return {
+      code: isTimeout ? 504 : -1,
+      data: null,
+      message: isTimeout ? 'request timeout' : (err && err.message) || 'network error',
+      http: isTimeout ? 504 : 502,
+    };
+  }
+
   let json = null;
   try {
     json = await res.json();
@@ -65,10 +98,28 @@ async function pollImTask(taskId, bearer, opts) {
   const baseUrl = process.env.MINEFOLIO_API || API_BASE;
 
   while (true) {
-    const res = await fetch(`${baseUrl}/api/im/tasks/${taskId}`, {
-      method: 'GET',
-      headers: bearer ? { Authorization: `Bearer ${bearer}` } : {},
-    });
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) {
+      return { code: 504, message: '查询超时，请稍后再试', http: 504 };
+    }
+    const perReqTimeoutMs = Math.min(getHttpTimeoutMs(), Math.max(50, remainingMs));
+
+    let res;
+    try {
+      res = await fetch(`${baseUrl}/api/im/tasks/${taskId}`, {
+        method: 'GET',
+        headers: bearer ? { Authorization: `Bearer ${bearer}` } : {},
+        signal: AbortSignal.timeout(perReqTimeoutMs),
+      });
+    } catch (err) {
+      const isTimeout = err && (err.name === 'TimeoutError' || err.name === 'AbortError');
+      return {
+        code: isTimeout ? 504 : -1,
+        message: isTimeout ? '查询超时，请稍后再试' : ((err && err.message) || 'network error'),
+        http: isTimeout ? 504 : 502,
+      };
+    }
+
     let json = null;
     try {
       json = await res.json();
@@ -113,6 +164,9 @@ async function pollImTask(taskId, bearer, opts) {
  * @returns {Promise<string>} reply to send back to the IM user
  */
 async function handleImMessage(platform, imUserId, text, bindToken) {
+  if (!isValidPlatform(platform)) {
+    return '不支持的 IM 平台';
+  }
   const trimmed = String(text || '').trim();
 
   // /bind <code> or /bind <username> <password>
