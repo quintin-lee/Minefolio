@@ -292,8 +292,17 @@ async function loadSummary() {
 async function loadAssets() {
   loading.value = true
   try {
-    const res = await assetsApi.list({ page_size: 500 })
-    assets.value = res.list
+    const pageSize = 500
+    const first = await assetsApi.list({ page: 1, page_size: pageSize })
+    const collected = [...first.list]
+    let page = 2
+    while (collected.length < first.total && first.list.length > 0 && page <= 20) {
+      const next = await assetsApi.list({ page, page_size: pageSize })
+      if (!next.list.length) break
+      collected.push(...next.list)
+      page++
+    }
+    assets.value = collected
   } catch (err) {
     console.error('[Assets] loadAssets failed:', err)
   } finally {
@@ -625,7 +634,9 @@ onMounted(async () => {
 <style scoped>
 .assets-page {
   background-color: var(--mf-background);
+  flex: 1;
   height: 100%;
+  min-height: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -736,6 +747,7 @@ onMounted(async () => {
 
 .table-container {
   overflow-y: auto;
+  scrollbar-gutter: stable;
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -764,6 +776,7 @@ onMounted(async () => {
   flex-shrink: 0;
 }
 .account-group {
+  flex-shrink: 0;
   background: var(--el-bg-color);
   border: 1px solid var(--el-border-color-lighter);
   border-radius: var(--mf-radius-md, 8px);
@@ -889,12 +902,14 @@ onMounted(async () => {
 }
 
 .add-account-cta {
+  flex-shrink: 0;
   width: 100%;
   margin-top: 4px;
   border-style: dashed;
 }
 
 .empty-state {
+  flex-shrink: 0;
   text-align: center;
   color: var(--el-text-color-secondary);
   padding: 48px 0;
@@ -920,6 +935,19 @@ onMounted(async () => {
 }
 
 @media (max-width: 768px) {
+  .assets-page {
+    flex: none;
+    height: auto;
+    min-height: 100%;
+    overflow: visible;
+  }
+  .table-container {
+    flex: none;
+    overflow: visible;
+  }
+  .account-group-body {
+    overflow-x: auto;
+  }
   .header-actions {
     display: flex;
     flex-wrap: wrap;
