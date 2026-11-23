@@ -17,6 +17,7 @@
 #include "csilk/core/server/server.h"
 #include "services/ai/runtime/fast_json.h"
 #include "services/ai/tools/mcp/mcp_stdio_pool.h"
+#include "services/ai/tools/mask.h"
 #include <time.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -759,7 +760,10 @@ ai_service_stream_report(csilk_ctx_t* c,
                  tm_buf.tm_min,
                  tm_buf.tm_sec);
     }
-    char llm_prompt[16384];
+    char        llm_prompt[16384];
+    char*       masked_ctx = ai_mask_workflow_context(workflow_title, structured_data_json);
+    const char* ctx_json =
+        masked_ctx ? masked_ctx : (structured_data_json ? structured_data_json : "{}");
     snprintf(llm_prompt,
              sizeof(llm_prompt),
              "【当前工作流】：%s\n"
@@ -773,7 +777,8 @@ ai_service_stream_report(csilk_ctx_t* c,
              "拟数字；如数据为空请如实说明。",
              workflow_title ? workflow_title : "智能财务工作流",
              now_str,
-             structured_data_json ? structured_data_json : "{}");
+             ctx_json);
+    free(masked_ctx);
 
     ai_trace_t trace;
     ai_trace_init(&trace, user_id, session_id);

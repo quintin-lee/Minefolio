@@ -203,6 +203,7 @@ add_minefolio_unit_test(test_mcp_pool tests/unit/test_mcp_pool.c)
 add_minefolio_unit_test(test_policy_mcp_risk tests/unit/test_policy_mcp_risk.c)
 add_minefolio_unit_test(test_ai_runtime tests/unit/test_ai_runtime.c)
 add_minefolio_unit_test(test_ai_summary tests/unit/test_ai_summary.c)
+add_minefolio_unit_test(test_ai_mask tests/unit/test_ai_mask.c m)
 
 # 该测试经 ai_config_provider_init(NULL) 回退读取相对路径 config/ai.json。
 # config/ai.json 被 .gitignore 排除，CI 干净克隆里不存在，copy_assets 也无从复制；

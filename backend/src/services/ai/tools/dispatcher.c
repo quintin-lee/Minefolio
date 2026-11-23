@@ -1,5 +1,6 @@
 #include "services/ai/tools/dispatcher.h"
 #include "services/ai/tools/projection.h"
+#include "services/ai/tools/mask.h"
 #include "services/ai/tools/validation.h"
 #include "services/ai/tools/mcp/mcp_bridge.h"
 #include "services/ai/policy/policy.h"
@@ -48,9 +49,13 @@ ai_tool_dispatch_parsed(const ai_tool_context_t* ctx,
     }
 
     /* 1.5 MCP 前缀路由 (MCP Tool Resolver) — 远端工具直接经 mcp_bridge 分发，
-       不进入内置 ai_tool_find / schema / 业务校验；R-MCP 策略与审计在 bridge 内完成 */
+       不进入内置 ai_tool_find / schema / 业务校验；R-MCP 策略与审计在 bridge 内完成。
+       远端结果同样必须 PII 脱敏后再回灌 LLM。 */
     if (strncmp(tool_name, "mcp:", 4) == 0) {
-        return mcp_bridge_dispatch(ctx, tool_name, args);
+        char* mcp_result = mcp_bridge_dispatch(ctx, tool_name, args);
+        char* masked = ai_mask_tool_result(tool_name, mcp_result);
+        free(mcp_result);
+        return masked ? masked : strdup("{\"error\":\"empty tool execution result\"}");
     }
 
     /* 2. 工具寻址 (Tool Resolver) */
@@ -198,6 +203,17 @@ ai_tool_dispatch_parsed(const ai_tool_context_t* ctx,
         if (projected) {
             free(result);
             result = projected;
+        }
+    }
+
+    /* 数据脱敏层：投影后统一对身份标识 PII 强制脱敏；金额分级受环境变量控制。
+       非 JSON 文本（部分 MCP/外部工具）退化为整体 PII 文本脱敏。
+       错误 payload 不脱敏（错误信息本身不含财务数据，且保持可读性）。 */
+    if (result && strstr(result, "\"error\":") == NULL) {
+        char* masked = ai_mask_tool_result(tool_name, result);
+        if (masked) {
+            free(result);
+            result = masked;
         }
     }
 
