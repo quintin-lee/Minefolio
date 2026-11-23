@@ -3,6 +3,7 @@
 #include "services/ai/tools/mcp/mcp_config.h"
 
 #include <pthread.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -16,6 +17,7 @@ typedef struct {
     int64_t          server_id;
     mf_mcp_client_t* client;
     time_t           last_used;
+    uint64_t         reserve_id;  /* 占位槽唯一令牌：防止解锁后下标漂移/越界 */
     bool             in_use;      /* 已被某 dispatch 持有，evict 跳过 */
     bool             pool;        /* 池条目（vs short-lived） */
     bool             in_progress; /* client==NULL 占位：initialize 进行中 */
@@ -25,7 +27,23 @@ typedef struct {
 static pool_entry_t
     s_pool[MF_MCP_STDIO_POOL_CAP]; /* 固定容量，上限由 MINEFOLIO_MCP_STDIO_MAX_PROCS 控制逻辑 */
 static size_t          s_pool_count = 0;
+static uint64_t        s_next_reserve_id = 0;
 static pthread_mutex_t s_pool_lock = PTHREAD_MUTEX_INITIALIZER;
+
+/* 解锁执行 I/O 后必须按 reserve_id 重新定位占位槽，禁止复用解锁前的数组下标。 */
+static size_t
+find_reserved_slot(uint64_t reserve_id)
+{
+    if (reserve_id == 0) {
+        return SIZE_MAX;
+    }
+    for (size_t i = 0; i < s_pool_count; i++) {
+        if (s_pool[i].in_progress && s_pool[i].reserve_id == reserve_id) {
+            return i;
+        }
+    }
+    return SIZE_MAX;
+}
 
 /* 查找 (user, server) 对应的"就绪"闲置槽位：!in_use 且 !in_progress。
    in_progress 槽位（client==NULL 占位、initialize 进行中）不可复用 —— 其他线程
@@ -128,23 +146,33 @@ mf_mcp_stdio_pool_acquire(
         pthread_mutex_unlock(&s_pool_lock);
         goto short_lived;
     }
-    size_t reserve = s_pool_count++;
+    size_t   reserve = s_pool_count++;
+    uint64_t my_reserve_id = ++s_next_reserve_id;
+    if (my_reserve_id == 0) {
+        my_reserve_id = ++s_next_reserve_id;
+    }
     s_pool[reserve].user_id = user_id;
     s_pool[reserve].server_id = server_id;
     s_pool[reserve].client = NULL;
     s_pool[reserve].last_used = time(NULL);
+    s_pool[reserve].reserve_id = my_reserve_id;
     s_pool[reserve].in_use = true;
     s_pool[reserve].pool = true;
     s_pool[reserve].in_progress = true;
     pthread_mutex_unlock(&s_pool_lock);
 
     /* 阶段 2：锁外 spawn + 握手（子进程 I/O，秒级）。
-       占位槽已预留，并发同键线程在阶段 1 会看到 in_progress 而转 short-lived。 */
+       占位槽已预留，并发同键线程在阶段 1 会看到 in_progress 而转 short-lived。
+       注意：解锁期间 s_pool 可能被其他线程淘汰压缩或 shutdown 清空，
+       因此重新加锁后必须通过 find_reserved_slot(my_reserve_id) 重查下标。 */
     {
         mf_mcp_client_t* c = mf_mcp_client_new(server);
         if (!c) {
             pthread_mutex_lock(&s_pool_lock);
-            s_pool[reserve] = s_pool[--s_pool_count]; /* 回收占位槽 */
+            size_t idx = find_reserved_slot(my_reserve_id);
+            if (idx != SIZE_MAX && s_pool_count > 0) {
+                s_pool[idx] = s_pool[--s_pool_count]; /* 回收占位槽 */
+            }
             pthread_mutex_unlock(&s_pool_lock);
             if (err && err_sz) {
                 snprintf(err, err_sz, "mcp stdio pool: OOM");
@@ -154,16 +182,30 @@ mf_mcp_stdio_pool_acquire(
         if (mf_mcp_client_initialize(c, err, err_sz) != 0) {
             mf_mcp_client_free(c);
             pthread_mutex_lock(&s_pool_lock);
-            s_pool[reserve] = s_pool[--s_pool_count]; /* 回收占位槽 */
+            size_t idx = find_reserved_slot(my_reserve_id);
+            if (idx != SIZE_MAX && s_pool_count > 0) {
+                s_pool[idx] = s_pool[--s_pool_count]; /* 回收占位槽 */
+            }
             pthread_mutex_unlock(&s_pool_lock);
             return NULL;
         }
 
-        /* 阶段 3：锁内回填就绪条目 */
+        /* 阶段 3：锁内重定位占位槽并回填就绪条目 */
         pthread_mutex_lock(&s_pool_lock);
-        s_pool[reserve].client = c;
-        s_pool[reserve].in_progress = false;
-        s_pool[reserve].last_used = time(NULL);
+        size_t idx = find_reserved_slot(my_reserve_id);
+        if (idx == SIZE_MAX) {
+            /* 握手期间池被 shutdown 清空，不可越界回写；释放客户端并失败返回 */
+            pthread_mutex_unlock(&s_pool_lock);
+            mf_mcp_client_free(c);
+            if (err && err_sz) {
+                snprintf(err, err_sz, "mcp stdio pool: shut down during initialize");
+            }
+            return NULL;
+        }
+        s_pool[idx].client = c;
+        s_pool[idx].in_progress = false;
+        s_pool[idx].reserve_id = 0;
+        s_pool[idx].last_used = time(NULL);
         pthread_mutex_unlock(&s_pool_lock);
         return c; /* 池条目：调用方用完后 MUST release */
     }

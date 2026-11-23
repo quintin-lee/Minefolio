@@ -7,16 +7,16 @@
 #include <string.h>
 
 static const tx_type_t TX_TYPES[] = {
-    {"deposit",      "存入",   "in",  "out", "in",  0, 1},
-    {"withdrawal",   "取出",   "out", "in",  "out", 0, 1},
-    {"buy",          "买入",   "in",  "out", "out", 1, 1},
-    {"sell",         "卖出",   "out", "in",  "in",  1, 1},
-    {"transfer_in",  "转入",   "in",  "out", "in",  0, 0},
-    {"transfer_out", "转出",   "out", "in",  "out", 0, 0},
+    {"deposit",      "存入",    "in",  "out", "in",  0, 1},
+    {"withdrawal",   "取出",    "out", "in",  "out", 0, 1},
+    {"buy",          "买入",    "in",  "out", "out", 1, 1},
+    {"sell",         "卖出",    "out", "in",  "in",  1, 1},
+    {"transfer_in",  "转入",    "in",  "out", "in",  0, 0},
+    {"transfer_out", "转出",    "out", "in",  "out", 0, 0},
     {"fee",          "手续费", "out", "out", "out", 0, 1},
-    {"income",       "收益",   "in",  "in",  "in",  0, 1},
-    {"loss",         "亏损",   "out", "out", "out", 0, 1},
-    {"interest",     "利息",   "in",  "out", "in",  0, 1},
+    {"income",       "收益",    "in",  "in",  "in",  0, 1},
+    {"loss",         "亏损",    "out", "out", "out", 0, 1},
+    {"interest",     "利息",    "in",  "out", "in",  0, 1},
 };
 
 const tx_type_t*

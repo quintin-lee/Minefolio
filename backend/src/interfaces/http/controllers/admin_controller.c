@@ -17,6 +17,7 @@
 #include "application/category/usecases.h"
 #include "application/account/usecases.h"
 #include "application/skill/usecases.h"
+#include "application/task/async_task_manager.h"
 #include "csilk/csilk.h"
 #include "csilk/crypto/bcrypt.h"
 #include "csilk/core/primitives/codec.h"
@@ -173,6 +174,36 @@ system_backup_status(csilk_ctx_t* c)
     respond_ok(c, status);
 }
 
+static int
+system_backup_create_task_fn(void*   pool,
+                             int64_t task_id,
+                             int64_t user_id,
+                             int64_t ledger_id,
+                             void*   arg,
+                             char**  out_result_json,
+                             char*   err_buf,
+                             size_t  err_cap)
+{
+    (void)user_id;
+    (void)ledger_id;
+    (void)arg;
+    mf_async_task_update_progress(pool, task_id, 20, "正在执行 SQLite 在线热备份");
+
+    char filename[128] = {0};
+    if (db_backup_create((csilk_db_pool_t*)pool, "data/backups", filename, sizeof(filename)) != 0) {
+        snprintf(err_buf, err_cap, "执行数据库在线热备份失败");
+        return -1;
+    }
+
+    csilk_json_t* resp = csilk_json_object();
+    csilk_json_add_string(resp, "filename", filename);
+    if (out_result_json) {
+        *out_result_json = csilk_json_serialize(resp, NULL);
+    }
+    csilk_json_free(resp);
+    return 0;
+}
+
 void
 system_backup_create(csilk_ctx_t* c)
 {
@@ -182,16 +213,28 @@ system_backup_create(csilk_ctx_t* c)
         return;
     }
 
-    csilk_db_pool_t* pool = db_get_pool();
-    char             filename[128] = {0};
-    if (db_backup_create(pool, "data/backups", filename, sizeof(filename)) != 0) {
+    if (db_is_postgres()) {
         respond_error(c, 1005, "执行数据库在线热备份失败");
         return;
     }
 
-    csilk_json_t* resp = csilk_json_object();
-    csilk_json_add_string(resp, "filename", filename);
-    respond_ok(c, resp);
+    bool    deduplicated = false;
+    int64_t task_id = mf_async_task_submit(db_get_pool(),
+                                           user_id,
+                                           0,
+                                           "system_backup_create",
+                                           "system:backup:create",
+                                           "正在排队创建数据库在线热备份",
+                                           system_backup_create_task_fn,
+                                           NULL,
+                                           NULL,
+                                           &deduplicated);
+    if (task_id <= 0) {
+        respond_error(c, 1005, "执行数据库在线热备份失败");
+        return;
+    }
+
+    mf_async_task_respond_submitted(c, task_id, "system_backup_create", deduplicated, NULL);
 }
 
 void

@@ -38,7 +38,7 @@ fi
 export TEST_JWT_SECRET
 [ -z "$TEST_JWT_SECRET" ] && TEST_JWT_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
 
-BUILD_DIR="$(cd "$SCRIPT_DIR/../build" && pwd)"
+BUILD_DIR="$(dirname "$BIN")"
 db_start_server "$PORT" "$BUILD_DIR" /tmp/im_bindauth_server.log
 if [ $? -ne 0 ]; then
   echo "[FAIL] server failed to start; last log:"

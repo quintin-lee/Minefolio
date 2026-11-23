@@ -16,9 +16,9 @@
  * @brief 资产行情报价数据模型
  */
 typedef struct {
-    char   symbol[64];     /**< 标的代码（如 "AAPL", "00700.HK", "600519.SH"） */
-    char   name[128];      /**< 标的名称/公司简称 */
-    char   source[32];     /**< 行情数据来源通道（如 "sina", "tencent", "alphavantage" 等） */
+    char symbol[64]; /**< 标的代码（如 "AAPL", "00700.HK", "600519.SH"） */
+    char name[128];  /**< 标的名称/公司简称 */
+    char source[32]; /**< 行情数据来源通道（如 "sina", "tencent", "alphavantage" 等） */
     double current_price;  /**< 最新成交价 */
     double change_percent; /**< 当日涨跌幅百分比（如 2.35 表示 +2.35%） */
     char   currency[16];   /**< 标的计价货币代码（如 "CNY", "USD", "HKD"） */
@@ -43,7 +43,7 @@ typedef struct {
  * @brief 市场行情同步与网络代理系统配置模型
  */
 typedef struct {
-    char market_proxy[256];        /**< HTTP/HTTPS/SOCKS5 网络代理地址（用于访问境外行情源） */
+    char market_proxy[256]; /**< HTTP/HTTPS/SOCKS5 网络代理地址（用于访问境外行情源） */
     bool market_auto_sync;         /**< 是否启用后台行情自动同步定时任务 */
     int  market_sync_interval_min; /**< 自动同步轮询间隔时间（分钟） */
     char market_sync_mode[32];     /**< 同步模式策略（如 "realtime", "daily_close"） */

@@ -222,6 +222,10 @@ async function loadData() {
     if (astRes.status === 'fulfilled') {
       assets.value = Array.isArray(astRes.value) ? astRes.value : (astRes.value as any)?.list || []
     }
+    const rejected = [plansRes, pendRes, cfRes, astRes].find((r): r is PromiseRejectedResult => r.status === 'rejected')
+    if (rejected && [plansRes, pendRes, cfRes, astRes].every((r) => r.status === 'rejected')) {
+      ElMessage.warning('当前离线或无法连接服务端，定投计划数据加载失败')
+    }
   } catch (err: any) {
     ElMessage.error(err.message || '加载计划数据失败')
   } finally {

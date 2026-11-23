@@ -3,6 +3,7 @@
  */
 
 #include "infrastructure/repositories/daily_expense_repo_impl.h"
+#include "infrastructure/repositories/account_permission_repo_impl.h"
 #include "common/db.h"
 #include <stdio.h>
 #include <string.h>
@@ -28,14 +29,23 @@ mf_daily_expense_repo_list(void*          db_pool,
     snprintf(limit_s, sizeof(limit_s), "%lld", (long long)page_size);
     snprintf(offset_s, sizeof(offset_s), "%lld", (long long)((page - 1) * page_size));
 
-    char        sql[2048], count_sql[1024];
-    const char* params[16];
-    const char* cnt_params[16];
+    char        sql[2560], count_sql[1536];
+    const char* params[24];
+    const char* cnt_params[20];
     int         pidx = 0, cnt_pidx = 0;
+    /* SELECT 中脱敏列 MF_RBAC_MASK_BALANCE_COL("a") 绑定 2 个 uid */
+    params[pidx++] = uid;
+    params[pidx++] = uid;
+    /* WHERE de.user_id=? AND de.ledger_id=? AND MF_RBAC_ASSET_VISIBLE_SQL("a") */
     params[pidx++] = uid;
     params[pidx++] = lid;
+    params[pidx++] = uid;
+    params[pidx++] = uid;
+
     cnt_params[cnt_pidx++] = uid;
     cnt_params[cnt_pidx++] = lid;
+    cnt_params[cnt_pidx++] = uid;
+    cnt_params[cnt_pidx++] = uid;
 
     snprintf(
         sql,
@@ -44,18 +54,21 @@ mf_daily_expense_repo_list(void*          db_pool,
         "de.currency,de.expense_date,de.note,de.created_at,de.updated_at,"
         "c.name as category_name,a.name as asset_name,"
         "(SELECT %s "
-        "FROM expense_tags et JOIN tags t ON et.tag_id=t.id WHERE et.expense_id=de.id) as tags "
-        "FROM daily_expenses de LEFT JOIN categories c ON de.category_id=c.id "
-        "AND c.user_id=de.user_id AND c.ledger_id=de.ledger_id "
-        "LEFT JOIN assets a ON de.asset_id=a.id AND a.user_id=de.user_id AND "
-        "a.ledger_id=de.ledger_id "
-        "WHERE de.user_id=? AND de.ledger_id=?",
+        "FROM expense_tags et JOIN tags t ON et.tag_id=t.id WHERE et.expense_id=de.id) as "
+        "tags," MF_RBAC_MASK_BALANCE_COL(
+            "a") " AS mask_balance "
+                 "FROM daily_expenses de LEFT JOIN categories c ON de.category_id=c.id "
+                 "AND c.user_id=de.user_id AND c.ledger_id=de.ledger_id "
+                 "LEFT JOIN assets a ON de.asset_id=a.id "
+                 "WHERE de.user_id=? AND de.ledger_id=? AND " MF_RBAC_ASSET_VISIBLE_SQL("a"),
         db_is_postgres()
             ? "COALESCE(json_agg(json_build_object('id',t.id,'name',t.name,'color',t.color)),'[]')"
             : "json_group_array(json_object('id',t.id,'name',t.name,'color',t.color))");
     snprintf(count_sql,
              sizeof(count_sql),
-             "SELECT COUNT(*) AS cnt FROM daily_expenses de WHERE de.user_id=? AND de.ledger_id=?");
+             "SELECT COUNT(*) AS cnt FROM daily_expenses de "
+             "LEFT JOIN assets a ON de.asset_id=a.id "
+             "WHERE de.user_id=? AND de.ledger_id=? AND " MF_RBAC_ASSET_VISIBLE_SQL("a"));
 
     if (expense_type && expense_type[0]) {
         strncat(sql, " AND de.expense_type=?", sizeof(sql) - strlen(sql) - 1);
@@ -137,7 +150,13 @@ mf_format_expense_rows_with_tags(csilk_json_t* raw_rows)
         csilk_json_add_int(item, "category_id", db_get_int(r, "category_id"));
         csilk_json_add_int(item, "asset_id", db_get_int(r, "asset_id"));
         csilk_json_add_string(item, "expense_type", csilk_json_get_string(r, "expense_type"));
-        csilk_json_add_number(item, "amount", db_get_num(r, "amount"));
+        if (db_get_int(r, "mask_balance") != 0) {
+            csilk_json_add_number(item, "amount", 0.0);
+            csilk_json_add_bool(item, "is_balance_masked", true);
+        } else {
+            csilk_json_add_number(item, "amount", db_get_num(r, "amount"));
+            csilk_json_add_bool(item, "is_balance_masked", false);
+        }
         csilk_json_add_string(item, "currency", csilk_json_get_string(r, "currency"));
         csilk_json_add_string(item, "expense_date", csilk_json_get_string(r, "expense_date"));
         csilk_json_add_string(item, "note", csilk_json_get_string(r, "note"));
@@ -177,10 +196,12 @@ mf_daily_expense_repo_monthly_totals(void*       db_pool,
     snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
     return csilk_db_query_param_json(
         (csilk_db_pool_t*)db_pool,
-        "SELECT expense_type, currency, SUM(amount) as amount "
-        "FROM daily_expenses WHERE user_id=? AND ledger_id=? AND CAST(expense_date AS TEXT) LIKE ? "
-        "GROUP BY expense_type, currency",
-        (const char*[]){uid, lid, pattern, NULL});
+        "SELECT de.expense_type, de.currency, SUM(de.amount) as amount "
+        "FROM daily_expenses de LEFT JOIN assets a ON de.asset_id=a.id "
+        "WHERE de.user_id=? AND de.ledger_id=? AND CAST(de.expense_date AS TEXT) LIKE ? "
+        "AND " MF_RBAC_ASSET_UNMASKED_SQL("a") " "
+                                               "GROUP BY de.expense_type, de.currency",
+        (const char*[]){uid, lid, pattern, uid, uid, NULL});
 }
 
 csilk_json_t*
@@ -197,10 +218,13 @@ mf_daily_expense_repo_monthly_by_category(void*       db_pool,
         "SELECT c.name as category_name, de.expense_type, de.currency, SUM(de.amount) as amount "
         "FROM "
         "daily_expenses de JOIN categories c ON de.category_id=c.id "
-        "AND c.user_id=de.user_id AND c.ledger_id=de.ledger_id WHERE de.user_id=? AND "
-        "de.ledger_id=? "
-        "AND CAST(de.expense_date AS TEXT) LIKE ? GROUP BY c.name, de.expense_type, de.currency",
-        (const char*[]){uid, lid, pattern, NULL});
+        "AND c.user_id=de.user_id AND c.ledger_id=de.ledger_id "
+        "LEFT JOIN assets a ON de.asset_id=a.id "
+        "WHERE de.user_id=? AND de.ledger_id=? "
+        "AND CAST(de.expense_date AS TEXT) LIKE ? "
+        "AND " MF_RBAC_ASSET_UNMASKED_SQL("a") " "
+                                               "GROUP BY c.name, de.expense_type, de.currency",
+        (const char*[]){uid, lid, pattern, uid, uid, NULL});
 }
 
 csilk_json_t*
@@ -218,9 +242,11 @@ mf_daily_expense_repo_monthly_by_tag(void*       db_pool,
         "daily_expenses "
         "de JOIN expense_tags et ON de.id=et.expense_id "
         "JOIN tags t ON et.tag_id=t.id AND t.user_id=de.user_id "
+        "LEFT JOIN assets a ON de.asset_id=a.id "
         "WHERE de.user_id=? AND de.ledger_id=? AND CAST(de.expense_date AS TEXT) LIKE ? "
-        "GROUP BY t.name, de.currency",
-        (const char*[]){uid, lid, pattern, NULL});
+        "AND " MF_RBAC_ASSET_UNMASKED_SQL("a") " "
+                                               "GROUP BY t.name, de.currency",
+        (const char*[]){uid, lid, pattern, uid, uid, NULL});
 }
 
 csilk_json_t*
@@ -234,11 +260,14 @@ mf_daily_expense_repo_monthly_daily(void*       db_pool,
     snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
     return csilk_db_query_param_json(
         (csilk_db_pool_t*)db_pool,
-        "SELECT expense_date, expense_type, currency, SUM(amount) as amount FROM daily_expenses "
-        "WHERE user_id=? AND ledger_id=? AND CAST(expense_date AS TEXT) LIKE ? "
-        "GROUP BY expense_date, expense_type, currency "
-        "ORDER BY expense_date",
-        (const char*[]){uid, lid, pattern, NULL});
+        "SELECT de.expense_date, de.expense_type, de.currency, SUM(de.amount) as amount "
+        "FROM daily_expenses de LEFT JOIN assets a ON de.asset_id=a.id "
+        "WHERE de.user_id=? AND de.ledger_id=? AND CAST(de.expense_date AS TEXT) LIKE ? "
+        "AND " MF_RBAC_ASSET_UNMASKED_SQL(
+            "a") " "
+                 "GROUP BY de.expense_date, de.expense_type, de.currency "
+                 "ORDER BY de.expense_date",
+        (const char*[]){uid, lid, pattern, uid, uid, NULL});
 }
 
 int64_t

@@ -222,24 +222,23 @@ market_usecase_sync_all(
     return 0;
 }
 
-int
-market_usecase_sync_single(void*                    pool,
+static int
+market_load_syncable_asset(void*                    pool,
                            int64_t                  user_id,
                            int64_t                  asset_id,
-                           csilk_json_t**           out_res_data,
+                           csilk_json_t**           out_asset_rows,
                            market_usecase_result_t* out_res)
 {
-    if (!out_res) {
-        return -1;
+    if (out_asset_rows) {
+        *out_asset_rows = NULL;
     }
-    memset(out_res, 0, sizeof(*out_res));
-    if (!pool || user_id <= 0 || asset_id <= 0 || !out_res_data) {
+    if (!pool || user_id <= 0 || asset_id <= 0) {
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "参数错误");
         return -1;
     }
 
-    csilk_json_t* asset_rows = asset_get((csilk_db_pool_t*)pool, user_id, asset_id);
+    csilk_json_t* asset_rows = asset_get_raw((csilk_db_pool_t*)pool, user_id, asset_id);
     if (!asset_rows || csilk_json_array_size(asset_rows) == 0) {
         if (asset_rows) {
             csilk_json_free(asset_rows);
@@ -251,16 +250,61 @@ market_usecase_sync_single(void*                    pool,
 
     const csilk_json_t* item = csilk_json_array_get(asset_rows, 0);
     const char*         symbol = csilk_json_get_string(item, "symbol");
-    const char*         source = csilk_json_get_string(item, "quote_source");
-    double              old_nv = db_get_num(item, "net_value");
-    double              qty_val = db_get_num(item, "quantity");
-
     if (!symbol || !symbol[0]) {
         csilk_json_free(asset_rows);
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "该资产未绑定标的代码");
         return -1;
     }
+
+    if (out_asset_rows) {
+        *out_asset_rows = asset_rows;
+    } else {
+        csilk_json_free(asset_rows);
+    }
+    return 0;
+}
+
+int
+market_usecase_validate_sync_single(void*                    pool,
+                                    int64_t                  user_id,
+                                    int64_t                  asset_id,
+                                    market_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
+    memset(out_res, 0, sizeof(*out_res));
+    return market_load_syncable_asset(pool, user_id, asset_id, NULL, out_res);
+}
+
+int
+market_usecase_sync_single(void*                    pool,
+                           int64_t                  user_id,
+                           int64_t                  asset_id,
+                           csilk_json_t**           out_res_data,
+                           market_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
+    memset(out_res, 0, sizeof(*out_res));
+    if (!out_res_data) {
+        out_res->code = 1002;
+        snprintf(out_res->message, sizeof(out_res->message), "参数错误");
+        return -1;
+    }
+
+    csilk_json_t* asset_rows = NULL;
+    if (market_load_syncable_asset(pool, user_id, asset_id, &asset_rows, out_res) != 0) {
+        return -1;
+    }
+
+    const csilk_json_t* item = csilk_json_array_get(asset_rows, 0);
+    const char*         symbol = csilk_json_get_string(item, "symbol");
+    const char*         source = csilk_json_get_string(item, "quote_source");
+    double              old_nv = db_get_num(item, "net_value");
+    double              qty_val = db_get_num(item, "quantity");
 
     market_quote_t q;
     if (quote_engine_fetch_quote(symbol, source, &q) != 0 || q.current_price <= 0) {

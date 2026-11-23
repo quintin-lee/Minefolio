@@ -143,3 +143,15 @@ CREATE TABLE IF NOT EXISTS sync_meta (
 );
 -- key='last_sync_at' 用于增量拉取
 `
+
+/** 各本地同步表允许持久化到 SQLite 的字段白名单 (不含移动端内部控制列 __deleted) */
+export const TABLE_COLUMNS: Record<string, string[]> = {
+  categories: ['id', 'user_id', 'name', 'parent_id', 'type', 'asset_type', 'currency', 'icon', 'sort_order', 'created_at', 'updated_at'],
+  assets: ['id', 'user_id', 'ledger_id', 'category_id', 'name', 'account_no', 'account_id', 'current_value', 'quantity', 'cost_basis', 'net_value', 'currency', 'note', 'created_at', 'updated_at'],
+  accounts: ['id', 'user_id', 'ledger_id', 'name', 'institution', 'account_no', 'currency', 'icon', 'note', 'sort_order', 'archived', 'created_at', 'updated_at'],
+  account_permissions: ['id', 'ledger_id', 'account_id', 'user_id', 'permission_level', 'mask_balance', 'mask_account_no', 'created_at', 'updated_at'],
+  transactions: ['id', 'user_id', 'ledger_id', 'asset_id', 'linked_asset_id', 'category_id', 'source_type', 'transaction_type', 'direction', 'linked_direction', 'amount', 'price_per_unit', 'quantity', 'fee', 'currency', 'transaction_date', 'note', 'created_at', 'updated_at'],
+  tags: ['id', 'user_id', 'name', 'color', 'created_at', 'updated_at'],
+  expense_tags: ['expense_id', 'tag_id'],
+  daily_expenses: ['id', 'user_id', 'ledger_id', 'category_id', 'asset_id', 'expense_type', 'amount', 'currency', 'expense_date', 'note', 'created_at', 'updated_at'],
+}

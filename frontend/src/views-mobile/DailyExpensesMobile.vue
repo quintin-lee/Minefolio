@@ -2,8 +2,8 @@
   <div class="expenses-mobile">
     <div class="page-header">
       <div class="mobile-segmented">
-        <button class="segmented-item active">日常收支</button>
-        <button class="segmented-item" @click="$router.push('/m/transactions')">交易流水</button>
+        <button class="segmented-item active">{{ t('nav.dailyExpenses') }}</button>
+        <button class="segmented-item" @click="$router.push('/m/transactions')">{{ t('nav.transactions') }}</button>
       </div>
     </div>
     <div class="summary-row">
@@ -38,6 +38,7 @@ import { dailyExpensesApi } from '@/api/daily_expenses'
 import { useLedgerStore } from '@/stores/ledger'
 import { query, rowsFrom } from '@/db/local'
 import { formatCurrency } from '@/utils/format'
+import { t } from '@/utils/locale'
 import type { DailyExpense, ExpenseMonthly } from '@/types'
 import ExpenseQuickSheet from './ExpenseQuickSheet.vue'
 

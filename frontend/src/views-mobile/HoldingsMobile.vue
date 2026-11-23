@@ -2,8 +2,8 @@
   <div class="holdings-mobile" v-loading="loading">
     <div class="page-header">
       <div class="mobile-segmented">
-        <button class="segmented-item" @click="$router.push('/m/assets')">资产账户</button>
-        <button class="segmented-item active">投资持仓</button>
+        <button class="segmented-item" @click="$router.push('/m/assets')">{{ t('nav.assets') }}</button>
+        <button class="segmented-item active">{{ t('nav.holdings') }}</button>
       </div>
     </div>
 
@@ -24,7 +24,15 @@
     </div>
 
     <!-- 持仓列表 -->
-    <div v-if="holdings.length === 0 && !loading" class="empty-state">暂无持仓数据</div>
+    <el-alert
+      v-if="loadError"
+      title="无法获取最新持仓数据（当前离线或服务端不可达）"
+      type="warning"
+      :closable="false"
+      show-icon
+      style="margin-bottom: 12px"
+    />
+    <div v-if="holdings.length === 0 && !loading && !loadError" class="empty-state">暂无持仓数据</div>
     <div v-for="h in holdings" :key="h.asset_id" class="holding-card">
       <div class="card-top">
         <div class="asset-title-group">
@@ -58,9 +66,12 @@ import { ref, onMounted } from 'vue'
 import { reportsApi, type HoldingsReport } from '@/api/reports'
 import { marketApi } from '@/api/market'
 import { formatCurrency, formatSigned } from '@/utils/format'
+import { notifyMobileReadError } from '@/utils/http'
+import { t } from '@/utils/locale'
 
 const report = ref<HoldingsReport | null>(null)
 const loading = ref(false)
+const loadError = ref(false)
 const exchangeRates = ref<Record<string, number>>({})
 const summary = ref({ total_market_value: 0, total_cost_basis: 0, total_floating_pnl: 0, total_realized_pnl: 0, floating_pct: 0 })
 const holdings = ref<{ asset_id: number; name: string; asset_type: string; currency: string; quantity: number; net_value: number; cost_basis: number; current_value: number; floating_pnl: number; floating_pct: number; realized_pnl: number }[]>([])
@@ -80,6 +91,7 @@ function typeLabel(t: string) {
 
 onMounted(async () => {
   loading.value = true
+  loadError.value = false
   try {
     const [hRes, rRes] = await Promise.allSettled([
       reportsApi.holdings(),
@@ -89,11 +101,16 @@ onMounted(async () => {
       report.value = hRes.value
       summary.value = hRes.value.summary
       holdings.value = hRes.value.holdings
+    } else if (hRes.status === 'rejected') {
+      loadError.value = true
+      notifyMobileReadError(hRes.reason, '持仓数据')
     }
     if (rRes.status === 'fulfilled' && rRes.value) {
       exchangeRates.value = rRes.value
     }
   } catch (e) {
+    loadError.value = true
+    notifyMobileReadError(e, '持仓数据')
     console.error('[HoldingsMobile] onMounted failed:', e)
   } finally {
     loading.value = false

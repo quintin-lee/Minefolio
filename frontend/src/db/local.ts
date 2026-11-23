@@ -6,8 +6,50 @@ import { SQL_WASM_BASE64 } from './generated/sql-wasm-base64'
 import { encryptPayload, decryptPayload } from '@/utils/crypto-storage'
 
 const STORAGE_KEY = 'minefolio_local_db'
+const LOCKED_BACKUP_KEY = 'minefolio_local_db_locked_backup'
 let db: Database | null = null
 let sqlJs: SqlJsStatic | null = null
+
+export interface LocalDbStatus {
+  decryptFailed: boolean
+  quotaExceeded: boolean
+  lastError: string | null
+  hasLockedBackup: boolean
+}
+
+const localDbStatus: LocalDbStatus = {
+  decryptFailed: false,
+  quotaExceeded: false,
+  lastError: null,
+  hasLockedBackup: false,
+}
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __minefolio_persist_queue__: Promise<void> | undefined
+  // eslint-disable-next-line no-var
+  var __minefolio_persist_epoch__: number | undefined
+}
+
+function getPersistEpoch(): number {
+  if (globalThis.__minefolio_persist_epoch__ === undefined) {
+    globalThis.__minefolio_persist_epoch__ = 0
+  }
+  return globalThis.__minefolio_persist_epoch__
+}
+
+export function getLocalDbStatus(): LocalDbStatus {
+  const hasBackup =
+    localDbStatus.hasLockedBackup ||
+    (typeof localStorage !== 'undefined' && Boolean(localStorage.getItem(LOCKED_BACKUP_KEY)))
+  return { ...localDbStatus, hasLockedBackup: hasBackup }
+}
+
+export async function flushPersist(): Promise<void> {
+  if (globalThis.__minefolio_persist_queue__) {
+    await globalThis.__minefolio_persist_queue__
+  }
+}
 
 // base64 -> Uint8Array，把 wasm 内嵌进构建产物，运行时无任何网络请求
 function base64ToBytes(b64: string): Uint8Array {
@@ -26,23 +68,9 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(bin)
 }
 
-function parseSavedBytes(saved: string): Uint8Array {
-  if (saved.startsWith('b64:')) {
-    return base64ToBytes(saved.slice(4))
-  }
-  if (saved.startsWith('[')) {
-    return new Uint8Array(JSON.parse(saved))
-  }
-  try {
-    return base64ToBytes(saved)
-  } catch {
-    return new Uint8Array(JSON.parse(saved))
-  }
-}
-
 async function ensureSqlJs(): Promise<SqlJsStatic> {
   if (sqlJs) return sqlJs
-  // 直接用内嵌的 wasm 二进制，在浏览器、Capacitor 或测试(Node/jsdom)环境均无须文件系统路径或网络请求
+  // 直接用内嵌的 wasm 二进制（经 manualChunks 拆入 vendor-sql），浏览器/Capacitor/测试均无网络请求
   sqlJs = await initSqlJs({ wasmBinary: base64ToBytes(SQL_WASM_BASE64) })
   return sqlJs
 }
@@ -52,6 +80,7 @@ export function nowIso(): string {
 }
 
 export async function initLocalDb(): Promise<Database> {
+  await flushPersist()
   if (db) return db
   const SQL = await ensureSqlJs()
   const saved = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null
@@ -59,8 +88,23 @@ export async function initLocalDb(): Promise<Database> {
     try {
       const bytes = await decryptPayload(saved)
       db = new SQL.Database(bytes)
+      localDbStatus.decryptFailed = false
+      localDbStatus.lastError = null
     } catch (err) {
-      console.error('[localDb] Failed to restore database from localStorage, initializing fresh:', err)
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error('[localDb] Failed to restore database from localStorage, backing up locked payload before initializing fresh:', err)
+      localDbStatus.decryptFailed = true
+      localDbStatus.lastError = msg
+      if (typeof localStorage !== 'undefined') {
+        try {
+          if (!localStorage.getItem(LOCKED_BACKUP_KEY)) {
+            localStorage.setItem(LOCKED_BACKUP_KEY, saved)
+          }
+          localDbStatus.hasLockedBackup = true
+        } catch {
+          // 忽略备份写入配额不足
+        }
+      }
       db = new SQL.Database()
     }
   } else {
@@ -105,22 +149,55 @@ export function run(sql: string, params: SqlValue[] = []): void {
   getDb().run(sql, params)
 }
 
+function isQuotaExceededError(err: unknown): boolean {
+  return Boolean(
+    err &&
+      typeof err === 'object' &&
+      ('name' in err && (err as { name: string }).name === 'QuotaExceededError')
+  )
+}
+
+async function writeEncryptedSnapshot(data: Uint8Array, epoch: number): Promise<void> {
+  if (typeof localStorage === 'undefined') return
+  if (epoch !== getPersistEpoch()) return
+  try {
+    const encoded = await encryptPayload(data)
+    if (epoch !== getPersistEpoch()) return
+    localStorage.setItem(STORAGE_KEY, encoded)
+    localDbStatus.quotaExceeded = false
+  } catch (err) {
+    if (epoch !== getPersistEpoch()) return
+    const msg = err instanceof Error ? err.message : String(err)
+    localDbStatus.lastError = msg
+    if (isQuotaExceededError(err)) {
+      localDbStatus.quotaExceeded = true
+      console.error('[localDb] localStorage quota exceeded while persisting offline database:', err)
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('minefolio:localdb-quota-exceeded', { detail: { message: msg } }))
+      }
+    } else {
+      console.error('[localDb] Failed to persist SQLite state to localStorage:', err)
+    }
+  }
+}
+
+function enqueuePersist(data: Uint8Array): Promise<void> {
+  const epoch = getPersistEpoch()
+  const prev = globalThis.__minefolio_persist_queue__ ?? Promise.resolve()
+  const next = prev.catch(() => undefined).then(() => writeEncryptedSnapshot(data, epoch))
+  globalThis.__minefolio_persist_queue__ = next
+  return next
+}
+
 export function persist(): void {
   if (!db) return
   if (typeof localStorage === 'undefined') return
   try {
     const data = db.export()
-    const encoded = 'b64:' + bytesToBase64(data)
-    localStorage.setItem(STORAGE_KEY, encoded)
-    encryptPayload(data).then((encrypted) => {
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem(STORAGE_KEY, encrypted)
-      }
-    }).catch((err) => {
-      console.warn('[localDb] Failed to encrypt state:', err)
-    })
+    // 有 WebCrypto 时绝不先明文写入 b64:，统一通过串行异步加密队列落盘
+    void enqueuePersist(data)
   } catch (err) {
-    console.error('[localDb] Failed to persist SQLite state to localStorage:', err)
+    console.error('[localDb] Failed to export SQLite state:', err)
   }
 }
 
@@ -129,19 +206,26 @@ export async function persistAsync(): Promise<void> {
   if (typeof localStorage === 'undefined') return
   try {
     const data = db.export()
-    const encrypted = await encryptPayload(data)
-    localStorage.setItem(STORAGE_KEY, encrypted)
+    await enqueuePersist(data)
   } catch (err) {
-    console.error('[localDb] Failed to persist SQLite state to localStorage:', err)
+    console.error('[localDb] Failed to export SQLite state:', err)
   }
 }
 
 export function resetLocalDb(): void {
+  globalThis.__minefolio_persist_epoch__ = getPersistEpoch() + 1
   if (db) {
     db.close()
     db = null
   }
-  if (typeof localStorage !== 'undefined') localStorage.removeItem(STORAGE_KEY)
+  localDbStatus.decryptFailed = false
+  localDbStatus.quotaExceeded = false
+  localDbStatus.lastError = null
+  localDbStatus.hasLockedBackup = false
+  if (typeof localStorage !== 'undefined') {
+    localStorage.removeItem(STORAGE_KEY)
+    localStorage.removeItem(LOCKED_BACKUP_KEY)
+  }
 }
 
 // 将 exec 结果转为对象数组（过滤软删记录由调用方决定）

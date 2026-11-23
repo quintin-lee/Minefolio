@@ -228,6 +228,9 @@ export const useChatStore = defineStore('chat', () => {
    * @returns 新建的会话对象
    */
   async function createNewSession() {
+    // 自增会话切换序号：在途的 selectSession/loadMoreMessages 结果据此丢弃，
+    // 防止 createNewSession 的 await 窗口内旧 selectSession 结果污染新会话（P1-9）
+    const seq = ++sessionSwitchSeq
     const r = (await createSession(currentModel.value, currentProvider.value)) as unknown
     const raw = (r && typeof r === 'object' && 'data' in r ? (r as { data: Record<string, unknown> }).data : r) as Record<string, unknown>
     const session: AiSession = {
@@ -239,6 +242,8 @@ export const useChatStore = defineStore('chat', () => {
       created_at: String(raw?.created_at || new Date().toISOString()),
       updated_at: String(raw?.updated_at || new Date().toISOString()),
     }
+    // 等待期间若用户又切换/新建了会话（seq 已变化），丢弃本次结果，避免覆盖新会话
+    if (seq !== sessionSwitchSeq) return session
     sessions.value.unshift(session)
     currentSessionId.value = session.id
     messages.value = []
@@ -466,6 +471,7 @@ export const useChatStore = defineStore('chat', () => {
     abortCurrentStream()
     activeAbortController = new AbortController()
     const signal = activeAbortController.signal
+    const myCtrl = activeAbortController /* 捕获控制器身份，finally 据此判断是否仍为当前流 */
     enableTypewriterBuffer.value = true
     // isStreaming 已在入口同步置位
     const writer = new SmoothStreamWriter(assistantMsg)
@@ -516,7 +522,7 @@ export const useChatStore = defineStore('chat', () => {
       await writer.finish()
     } catch (err: any) {
       if (err?.name !== 'AbortError') { writer.flushNow(); assistantMsg.error = '请求发生异常' }
-    } finally { writer.flushNow(); enableTypewriterBuffer.value = false; isStreaming.value = false; activeAbortController = null }
+    } finally { writer.flushNow(); enableTypewriterBuffer.value = false; if (activeAbortController === myCtrl) { isStreaming.value = false; activeAbortController = null } }
   }
 
   /**
@@ -556,6 +562,7 @@ export const useChatStore = defineStore('chat', () => {
     abortCurrentStream()
     activeAbortController = new AbortController()
     const signal = activeAbortController.signal
+    const myCtrl = activeAbortController /* 捕获控制器身份，finally 据此判断是否仍为当前流 */
 
     enableTypewriterBuffer.value = true
     // isStreaming 已在入口同步置位
@@ -612,8 +619,10 @@ export const useChatStore = defineStore('chat', () => {
     } finally {
       writer.flushNow()
       enableTypewriterBuffer.value = false
-      isStreaming.value = false
-      activeAbortController = null
+      if (activeAbortController === myCtrl) {
+        isStreaming.value = false
+        activeAbortController = null
+      }
     }
   }
 
@@ -681,6 +690,7 @@ export const useChatStore = defineStore('chat', () => {
     abortCurrentStream()
     activeAbortController = new AbortController()
     const signal = activeAbortController.signal
+    const myCtrl = activeAbortController /* 捕获控制器身份，finally 据此判断是否仍为当前流 */
 
     enableTypewriterBuffer.value = true
     // isStreaming 已由 sendMessage 入口同步置位
@@ -754,8 +764,10 @@ export const useChatStore = defineStore('chat', () => {
     } finally {
       writer.flushNow()
       enableTypewriterBuffer.value = false
-      isStreaming.value = false
-      activeAbortController = null
+      if (activeAbortController === myCtrl) {
+        isStreaming.value = false
+        activeAbortController = null
+      }
     }
   }
 
@@ -839,6 +851,7 @@ export const useChatStore = defineStore('chat', () => {
     abortCurrentStream()
     activeAbortController = new AbortController()
     const signal = activeAbortController.signal
+    const myCtrl = activeAbortController /* 捕获控制器身份，finally 据此判断是否仍为当前流 */
 
     enableTypewriterBuffer.value = true
     // isStreaming 已由 runWorkflow 入口同步置位
@@ -944,8 +957,10 @@ export const useChatStore = defineStore('chat', () => {
         })
       }
       enableTypewriterBuffer.value = false
-      isStreaming.value = false
-      activeAbortController = null
+      if (activeAbortController === myCtrl) {
+        isStreaming.value = false
+        activeAbortController = null
+      }
     }
   }
 
@@ -1026,6 +1041,7 @@ export const useChatStore = defineStore('chat', () => {
     abortCurrentStream()
     activeAbortController = new AbortController()
     const signal = activeAbortController.signal
+    const myCtrl = activeAbortController /* 捕获控制器身份，finally 据此判断是否仍为当前流 */
 
     enableTypewriterBuffer.value = true
     isStreaming.value = true
@@ -1130,8 +1146,10 @@ export const useChatStore = defineStore('chat', () => {
         })
       }
       enableTypewriterBuffer.value = false
-      isStreaming.value = false
-      activeAbortController = null
+      if (activeAbortController === myCtrl) {
+        isStreaming.value = false
+        activeAbortController = null
+      }
     }
   }
 
@@ -1191,4 +1209,3 @@ export const useChatStore = defineStore('chat', () => {
     toggleThinking,
   }
 })
-

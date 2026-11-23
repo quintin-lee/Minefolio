@@ -91,9 +91,31 @@
     </div>
 
     <div class="sync-status">
-      <span>待同步：{{ pending }}</span>
+      <span>待同步：{{ pending }}<template v-if="syncConflicts.length">（含 {{ syncConflicts.length }} 条冲突）</template></span>
       <span>上次同步：{{ lastSync || '从未' }}</span>
       <el-button size="small" :loading="syncing" @click="syncNow">立即同步</el-button>
+    </div>
+
+    <div v-if="dbStatus.decryptFailed || dbStatus.quotaExceeded" class="sync-warning-banner">
+      <div class="card-title">本地离线库提醒</div>
+      <p class="card-hint">
+        <template v-if="dbStatus.decryptFailed">检测到无法解密的本地离线库备份，已保留密文备份并重建空库。</template>
+        <template v-else>浏览器本地存储空间不足，离线变更可能未能持久化。</template>
+      </p>
+    </div>
+
+    <div v-if="syncConflicts.length > 0" class="sync-conflicts-card">
+      <div class="card-title">同步冲突项（{{ syncConflicts.length }}）</div>
+      <p class="card-hint">以下离线操作被服务端拒绝，已暂停自动重试：</p>
+      <div v-for="item in syncConflicts" :key="item.id" class="conflict-row">
+        <div class="conflict-meta">
+          <span class="conflict-op">{{ item.table_name }} · {{ item.operation }} #{{ item.record_id }}</span>
+        </div>
+        <div class="conflict-actions">
+          <el-button size="small" type="primary" plain @click="handleRetryConflict(item.id)">重试</el-button>
+          <el-button size="small" type="danger" plain @click="handleDiscardConflict(item.id)">放弃</el-button>
+        </div>
+      </div>
     </div>
     <div class="action-buttons-group">
       <el-button class="full-width-btn" @click="exportCsv">导出 CSV</el-button>
@@ -111,6 +133,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useThemeStore, type ThemeMode } from '@/stores/theme'
 import { useSyncStore } from '@/stores/sync'
 import { useAuthStore } from '@/stores/auth'
+import { getLocalDbStatus } from '@/db/local'
 import { dailyExpensesApi } from '@/api/daily_expenses'
 import { useServerUrl, type ServerConnectionTestResult } from '@/composables/useServerUrl'
 
@@ -136,11 +159,20 @@ const themeOptions: { value: ThemeMode; label: string; icon: typeof Moon }[] = [
 ]
 const resolvedLabel = computed(() => (theme.resolvedTheme === 'dark' ? '深色' : '浅色'))
 
-const pending = computed(() => sync.pendingCount)
+const pending = computed(() => sync.activePendingCount)
+const syncConflicts = computed(() => sync.conflicts)
 const lastSync = computed(() => sync.lastSyncAt)
 const syncing = computed(() => sync.syncing)
+const dbStatus = computed(() => getLocalDbStatus())
 
 function syncNow() { sync.syncNow() }
+async function handleRetryConflict(id: number) {
+  await sync.resolveConflictRetry(id)
+}
+function handleDiscardConflict(id: number) {
+  sync.resolveConflictDiscard(id)
+  ElMessage.info('已移除冲突任务')
+}
 function goCategories() {
   ElMessage.info('分类增删与层级配置请前往桌面端管理')
 }
@@ -342,5 +374,30 @@ async function logout() {
 .full-width-btn.danger-btn {
   color: var(--mf-danger);
   border-color: var(--mf-danger-border);
+}
+.sync-warning-banner,
+.sync-conflicts-card {
+  margin-top: 12px;
+  background: var(--mf-surface);
+  border: 1px solid var(--mf-danger-border);
+  border-radius: 12px;
+  padding: 14px;
+}
+.conflict-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 8px;
+  margin-top: 8px;
+  border-top: 1px solid var(--mf-border);
+}
+.conflict-op {
+  font-size: 13px;
+  color: var(--mf-text-regular);
+}
+.conflict-actions {
+  display: flex;
+  gap: 6px;
 }
 </style>

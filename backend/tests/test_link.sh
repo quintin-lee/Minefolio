@@ -274,8 +274,10 @@ date,asset_name,category_name,expense_type,amount,currency,note
 2026-08-10,钱包,日常消费,expense,100,CNY,测试导入
 2026-08-11,钱包,工资,income,200,CNY,测试收入
 CSVEOF
-IMPORT_RES=$(curl -s -H "$AUTH" -H 'Content-Type: text/csv; charset=utf-8' --data-binary @/tmp/mf_import_test.csv "$BASE/import/daily-expenses")
+IMPORT_SUB=$(curl -s -H "$AUTH" -H 'Content-Type: text/csv; charset=utf-8' --data-binary @/tmp/mf_import_test.csv "$BASE/import/daily-expenses")
 rm -f /tmp/mf_import_test.csv
+check "导入日常收支返回异步 task_id" "1" "$(echo "$IMPORT_SUB" | jq -r 'if (.data.task_id // 0) > 0 then 1 else 0 end')"
+IMPORT_RES=$(db_poll_task "${BASE%/api}" "$AUTH" "$IMPORT_SUB")
 IMPORTED=$(echo "$IMPORT_RES" | jq -r '.data.imported | floor')
 ERRS=$(echo "$IMPORT_RES" | jq -r '.data.errors | floor')
 check "导入成功 imported=2" "2" "$IMPORTED"
@@ -293,8 +295,9 @@ date,asset_name,category_name,expense_type,amount,currency,note
 2026-08-12,钱包,日常消费,expense,50,CNY,有效行
 2026-08-13,不存在的资产,日常消费,expense,50,CNY,无效行
 CSVEOF
-IMPORT_RES2=$(curl -s -H "$AUTH" -H 'Content-Type: text/csv; charset=utf-8' --data-binary @/tmp/mf_import_fail.csv "$BASE/import/daily-expenses")
+IMPORT_SUB2=$(curl -s -H "$AUTH" -H 'Content-Type: text/csv; charset=utf-8' --data-binary @/tmp/mf_import_fail.csv "$BASE/import/daily-expenses")
 rm -f /tmp/mf_import_fail.csv
+IMPORT_RES2=$(db_poll_task "${BASE%/api}" "$AUTH" "$IMPORT_SUB2")
 IMPORTED2=$(echo "$IMPORT_RES2" | jq -r '.data.imported | floor')
 ERRS2=$(echo "$IMPORT_RES2" | jq -r '.data.errors | floor')
 check "部分失败 imported=1" "1" "$IMPORTED2"
@@ -332,8 +335,10 @@ cat > /tmp/mf_import_tx.csv << 'CSVEOF'
 date,asset_name,category_name,transaction_type,source_type,amount,price_per_unit,quantity,currency,linked_asset_name,note
 2026-09-03,钱包,现金,interest,income,50,0,0,CNY,,imp-int
 CSVEOF
-IMP_RES=$(curl -s -H "$AUTH" -H 'Content-Type: text/csv; charset=utf-8' --data-binary @/tmp/mf_import_tx.csv "$BASE/import/transactions")
+IMP_SUB=$(curl -s -H "$AUTH" -H 'Content-Type: text/csv; charset=utf-8' --data-binary @/tmp/mf_import_tx.csv "$BASE/import/transactions")
 rm -f /tmp/mf_import_tx.csv
+check "导入交易返回异步 task_id" "1" "$(echo "$IMP_SUB" | jq -r 'if (.data.task_id // 0) > 0 then 1 else 0 end')"
+IMP_RES=$(db_poll_task "${BASE%/api}" "$AUTH" "$IMP_SUB")
 check "导入 interest imported=1" "1" "$(echo "$IMP_RES" | jq -r '.data.imported | floor')"
 check "导入 interest errors=0" "0" "$(echo "$IMP_RES" | jq -r '.data.errors | floor')"
 check "导入行 direction='in'" "in" "$(sqlite3 "$DB" "SELECT direction FROM transactions WHERE note='imp-int' LIMIT 1")"
@@ -706,10 +711,12 @@ ORIG_VAL=$(sqlite3 "$DB" "SELECT printf('%.2f', current_value) FROM assets WHERE
 # 2. 人为篡改/清空该资产物化状态
 sqlite3 "$DB" "UPDATE assets SET quantity=0, cost_basis=0, net_value=0, current_value=0 WHERE id=$TEST_AST_ID"
 
-# 3. 调用单资产重建 API: POST /api/assets/:id/rebuild
-REBUILD_RES=$(curl -s -X POST -H "$AUTH" "$BASE/assets/$TEST_AST_ID/rebuild")
-REBUILD_CODE=$(echo "$REBUILD_RES" | jq -r '.code | floor')
+# 3. 调用单资产重建 API: POST /api/assets/:id/rebuild (Async)
+REBUILD_SUB=$(curl -s -X POST -H "$AUTH" "$BASE/assets/$TEST_AST_ID/rebuild")
+REBUILD_CODE=$(echo "$REBUILD_SUB" | jq -r '.code | floor')
 check "POST /assets/:id/rebuild 单资产重建 code=0" "0" "$REBUILD_CODE"
+check "POST /assets/:id/rebuild 返回异步 task_id" "1" "$(echo "$REBUILD_SUB" | jq -r 'if (.data.task_id // 0) > 0 then 1 else 0 end')"
+REBUILD_RES=$(db_poll_task "${BASE%/api}" "$AUTH" "$REBUILD_SUB")
 
 # 4. 验证数据库中该资产状态是否被 Ledger Engine 从交易事实精确还原
 REST_QTY=$(sqlite3 "$DB" "SELECT printf('%.4f', quantity) FROM assets WHERE id=$TEST_AST_ID")
@@ -719,10 +726,12 @@ check "单资产重建后 quantity 精确还原" "$ORIG_QTY" "$REST_QTY"
 check "单资产重建后 cost_basis 精确还原" "$ORIG_COST" "$REST_COST"
 check "单资产重建后 current_value 精确还原" "$ORIG_VAL" "$REST_VAL"
 
-# 5. 全量组合重建 API: POST /api/assets/rebuild
-ALL_REBUILD_RES=$(curl -s -X POST -H "$AUTH" "$BASE/assets/rebuild")
-ALL_REBUILD_CODE=$(echo "$ALL_REBUILD_RES" | jq -r '.code | floor')
+# 5. 全量组合重建 API: POST /api/assets/rebuild (Async)
+ALL_REBUILD_SUB=$(curl -s -X POST -H "$AUTH" "$BASE/assets/rebuild")
+ALL_REBUILD_CODE=$(echo "$ALL_REBUILD_SUB" | jq -r '.code | floor')
 check "POST /assets/rebuild 全量投资组合重建 code=0" "0" "$ALL_REBUILD_CODE"
+check "POST /assets/rebuild 返回异步 task_id" "1" "$(echo "$ALL_REBUILD_SUB" | jq -r 'if (.data.task_id // 0) > 0 then 1 else 0 end')"
+ALL_REBUILD_RES=$(db_poll_task "${BASE%/api}" "$AUTH" "$ALL_REBUILD_SUB")
 AST_COUNT=$(sqlite3 "$DB" "SELECT COUNT(*) FROM assets WHERE user_id=(SELECT id FROM users WHERE username='linktest')")
 test "$AST_COUNT" -gt 0 && AST_PASS="1" || AST_PASS="0"
 check "全量重建后数据库资产数量 > 0" "1" "$AST_PASS"
@@ -1032,11 +1041,20 @@ IMPORTED_ID=$(echo "$IMPORT_RES" | jq -r '.data.id | floor')
 test -n "$IMPORTED_ID" && [ "$IMPORTED_ID" -gt 0 ] && HAS_IMP_ID="yes" || HAS_IMP_ID="no"
 check "导入成功返回合法技能 id" "yes" "$HAS_IMP_ID"
 
-# 13. 测试执行技能运行测试
+# 13. 测试执行技能运行测试 (L2 保持同步, 也兼容 async task_id)
 TEST_EXEC_RES=$(curl -s -X POST -H "$AUTH" -H "Content-Type: application/json" "$BASE/ai/skills/$CUSTOM_SKILL_ID/test" -d '{"arguments":"{\"test_param\":123}"}')
+TEST_EXEC_RES=$(db_poll_task "${BASE%/api}" "$AUTH" "$TEST_EXEC_RES")
 check "测试执行技能 code=0" "0" "$(echo "$TEST_EXEC_RES" | jq -r '.code | floor')"
 TEST_STATUS=$(echo "$TEST_EXEC_RES" | jq -r '.data.status')
 check "指令型技能执行状态为 success" "success" "$TEST_STATUS"
+
+# 13b. 显式 ?async=1 上传文本触发异步 file_parse 任务验证
+printf 'hello async file parser\n' > /tmp/mf_async_file.txt
+FILE_ASYNC_SUB=$(curl -s -X POST -H "$AUTH" -F "file=@/tmp/mf_async_file.txt" "$BASE/files/upload?async=1")
+rm -f /tmp/mf_async_file.txt
+check "异步文件解析返回 task_id" "1" "$(echo "$FILE_ASYNC_SUB" | jq -r 'if (.data.task_id // 0) > 0 then 1 else 0 end')"
+FILE_ASYNC_RES=$(db_poll_task "${BASE%/api}" "$AUTH" "$FILE_ASYNC_SUB")
+check "异步文件解析完成 status=parsed" "parsed" "$(echo "$FILE_ASYNC_RES" | jq -r '.data.status')"
 
 # 14. 清理创建的技能
 curl -s -X DELETE -H "$AUTH" "$BASE/ai/skills/$CUSTOM_SKILL_ID" >/dev/null
@@ -1078,8 +1096,10 @@ if [ "$DB_DRIVER" = "postgres" ]; then
   TRAVERSAL_RES=$(curl -s -w "%{http_code}" -H "$AUTH" "$BASE/system/backup/download/..%2F..%2Fetc%2Fpasswd" -o /dev/null)
   check "路径穿越下载请求被拒绝 (非 200)" "true" "$( [ "$TRAVERSAL_RES" -ne 200 ] && echo "true" || echo "false" )"
 else
-  BACKUP_CREATE_RES=$(curl -s -X POST -H "$AUTH" "$BASE/system/backup/create")
-  check "创建热备份 code=0" "0" "$(echo "$BACKUP_CREATE_RES" | jq -r '.code | floor')"
+  BACKUP_CREATE_SUB=$(curl -s -X POST -H "$AUTH" "$BASE/system/backup/create")
+  check "创建热备份 code=0" "0" "$(echo "$BACKUP_CREATE_SUB" | jq -r '.code | floor')"
+  check "创建热备份返回异步 task_id" "1" "$(echo "$BACKUP_CREATE_SUB" | jq -r 'if (.data.task_id // 0) > 0 then 1 else 0 end')"
+  BACKUP_CREATE_RES=$(db_poll_task "${BASE%/api}" "$AUTH" "$BACKUP_CREATE_SUB")
   BACKUP_FILENAME=$(echo "$BACKUP_CREATE_RES" | jq -r '.data.filename')
   test -n "$BACKUP_FILENAME" && echo "$BACKUP_FILENAME" | grep -q "minefolio_backup_.*\.db$" && VALID_FN="yes" || VALID_FN="no"
   check "创建备份返回合规文件名" "yes" "$VALID_FN"

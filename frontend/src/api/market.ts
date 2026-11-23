@@ -4,6 +4,7 @@
  */
 
 import http from '@/utils/http'
+import { resolveMaybeAsync, type AsyncTaskSubmission, type PollTaskOptions } from './tasks'
 import type { MarketSearchItem, MarketQuote, PriceHistoryItem, MarketSettings, TestProxyResult } from '@/types'
 
 /**
@@ -34,8 +35,15 @@ export const marketApi = {
    * @route POST /api/market/sync
    * @returns 同步统计结果 (成功数量与失败数量)
    */
-  syncAll: () =>
-    http.post<{ synced_count: number; failed_count: number }>('/market/sync', undefined, { timeout: 30000 }),
+  syncAll: async (options?: PollTaskOptions) => {
+    const res = await http.post<{ synced_count: number; failed_count: number } | AsyncTaskSubmission>(
+      '/market/sync',
+    )
+    return resolveMaybeAsync<{ synced_count: number; failed_count: number }>(res, {
+      timeoutMs: 120000,
+      ...options,
+    })
+  },
 
   /**
    * 单独同步更新指定资产的最新行情市价与净值
@@ -43,8 +51,10 @@ export const marketApi = {
    * @param assetId 资产 ID
    * @returns 最新的行情报价数据
    */
-  syncSingle: (assetId: number) =>
-    http.post<MarketQuote>(`/market/sync/${assetId}`),
+  syncSingle: async (assetId: number) => {
+    const res = await http.post<MarketQuote | AsyncTaskSubmission>(`/market/sync/${assetId}`)
+    return resolveMaybeAsync<MarketQuote>(res, { timeoutMs: 60000 })
+  },
 
   /**
    * 获取指定资产的历史价格/净值走势序列
@@ -95,8 +105,12 @@ export const marketApi = {
    * @route POST /api/market/exchange-rates/sync
    * @returns 最新汇率字典
    */
-  syncExchangeRates: () =>
-    http.post<Record<string, number>>('/market/exchange-rates/sync'),
+  syncExchangeRates: async () => {
+    const res = await http.post<Record<string, number> | AsyncTaskSubmission>(
+      '/market/exchange-rates/sync',
+    )
+    return resolveMaybeAsync<Record<string, number>>(res, { timeoutMs: 60000 })
+  },
 
   /**
    * 手动更新或覆盖指定币种的兑换汇率

@@ -57,6 +57,9 @@ router.beforeEach(async (to, _from, next) => {
     }
     return next()
   }
+  if (to.path === '/m/login' && auth.token) {
+    return next('/m/dashboard')
+  }
   next()
 })
 

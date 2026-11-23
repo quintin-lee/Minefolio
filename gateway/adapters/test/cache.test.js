@@ -15,18 +15,24 @@ test('IM bindings cache persists to disk and reloads properly', async () => {
   const gw = require('../../index.js');
 
   gw.TOKEN_CACHE.clear();
-  gw.TOKEN_CACHE.set('qq:10001', 'token_qq_10001');
-  gw.saveCache();
+  gw.setCachedToken('qq:10001', 'token_qq_10001');
 
   assert.strictEqual(fs.existsSync(testCacheFile), true);
   const content = JSON.parse(fs.readFileSync(testCacheFile, 'utf8'));
-  assert.strictEqual(content['qq:10001'], 'token_qq_10001');
+  const savedVal = typeof content['qq:10001'] === 'object' ? content['qq:10001'].token : content['qq:10001'];
+  assert.strictEqual(savedVal, 'token_qq_10001');
 
   // Clear memory cache and reload
   gw.TOKEN_CACHE.clear();
   assert.strictEqual(gw.TOKEN_CACHE.has('qq:10001'), false);
   gw.loadCache();
-  assert.strictEqual(gw.TOKEN_CACHE.get('qq:10001'), 'token_qq_10001');
+  assert.strictEqual(gw.getCachedToken('qq:10001'), 'token_qq_10001');
+
+  // Also test loading legacy plain string format
+  fs.writeFileSync(testCacheFile, JSON.stringify({ 'wechat:user2': 'token_legacy_123' }), 'utf8');
+  gw.TOKEN_CACHE.clear();
+  gw.loadCache();
+  assert.strictEqual(gw.getCachedToken('wechat:user2'), 'token_legacy_123');
 
   // Clean up
   try {

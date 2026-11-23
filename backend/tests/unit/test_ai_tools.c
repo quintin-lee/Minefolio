@@ -11,10 +11,68 @@
 #include "common/config.h"
 #include "csilk/csilk.h"
 #include <assert.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+typedef struct {
+    size_t expected_all;
+    size_t expected_full;
+    size_t expected_ro;
+} registry_race_expect_t;
+
+static void*
+registry_reader_worker(void* arg)
+{
+    const registry_race_expect_t* exp = (const registry_race_expect_t*)arg;
+    for (int iter = 0; iter < 2000; iter++) {
+        size_t           all_cnt = 0;
+        size_t           full_cnt = 0;
+        size_t           ro_cnt = 0;
+        const ai_tool_t**      all = ai_tool_list_all(&all_cnt);
+        const csilk_ai_tool_t* full = ai_tool_get_csilk_definitions(&full_cnt);
+        const csilk_ai_tool_t* ro = ai_tool_get_readonly_csilk_definitions(&ro_cnt);
+
+        assert(all != NULL && all_cnt == exp->expected_all);
+        assert(full != NULL && full_cnt == exp->expected_full);
+        assert(ro != NULL && ro_cnt == exp->expected_ro);
+        assert(ro_cnt <= full_cnt && full_cnt <= all_cnt);
+
+        for (size_t i = 0; i < full_cnt; i++) {
+            assert(full[i].function.name != NULL && full[i].function.name[0] != '\0');
+            const ai_tool_t* meta = ai_tool_find(full[i].function.name);
+            assert(meta != NULL && !meta->internal_only);
+        }
+        for (size_t i = 0; i < ro_cnt; i++) {
+            assert(ro[i].function.name != NULL && ro[i].function.name[0] != '\0');
+            const ai_tool_t* meta = ai_tool_find(ro[i].function.name);
+            assert(meta != NULL && !meta->internal_only && !meta->is_mutation);
+        }
+    }
+    return NULL;
+}
+
+static void
+test_registry_thread_safety(void)
+{
+    printf("[Test Registry Concurrency] Spawning 8 reader threads...\n");
+    registry_race_expect_t exp = {0};
+    assert(ai_tool_list_all(&exp.expected_all) != NULL && exp.expected_all > 0);
+    assert(ai_tool_get_csilk_definitions(&exp.expected_full) != NULL && exp.expected_full > 0);
+    assert(ai_tool_get_readonly_csilk_definitions(&exp.expected_ro) != NULL && exp.expected_ro > 0);
+
+    pthread_t tids[8];
+    for (int i = 0; i < 8; i++) {
+        int rc = pthread_create(&tids[i], NULL, registry_reader_worker, &exp);
+        assert(rc == 0);
+    }
+    for (int i = 0; i < 8; i++) {
+        pthread_join(tids[i], NULL);
+    }
+    printf("[Test Registry Concurrency] PASS: 8 threads x 2000 iterations race-free\n");
+}
 
 static void
 init_test_db(const char* db_path)
@@ -144,6 +202,8 @@ main(void)
         assert(ai_tool_find("confirm_proposed_transfer") != NULL);
         assert(ai_tool_find("confirm_proposed_expense") != NULL);
     }
+
+    test_registry_thread_safety();
 
     ai_tool_context_t* ctx = ai_tool_context_create(pool, user_id, 1, "test_trace_123");
 

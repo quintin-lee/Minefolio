@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <stdio.h>
+#include "services/ai/policy/permission.h"
 #include "services/ai/policy/policy.h"
 #include "services/ai/policy/risk.h"
 
@@ -33,6 +34,23 @@ main(void)
     assert(d2->risk_level == AI_RISK_HIGH);
     assert(d2->requires_confirmation == true);
     ai_policy_decision_free(d2);
+
+    /* Downgrade attempt: delete_asset is CRITICAL by default; overriding with
+     * AI_RISK_LOW must NOT lower the risk level. */
+    ai_policy_decision_t* d3 = ai_policy_evaluate(1, 0, "delete_asset", NULL, AI_RISK_LOW);
+    assert(d3);
+    assert(d3->risk_level == AI_RISK_CRITICAL);
+    ai_policy_decision_free(d3);
+
+    /* Downgrade attempt on an allowed confirmation tool must preserve HIGH and confirmation. */
+    ai_permission_set_user_role(2, AI_USER_ROLE_ADMIN);
+    ai_policy_decision_t* d4 =
+        ai_policy_evaluate(2, 0, "confirm_proposed_transfer", NULL, AI_RISK_READ_ONLY);
+    assert(d4);
+    assert(d4->allowed == true);
+    assert(d4->risk_level == AI_RISK_HIGH);
+    assert(d4->requires_confirmation == true);
+    ai_policy_decision_free(d4);
 
     printf("PASS: test_policy_mcp_risk\n");
     return 0;

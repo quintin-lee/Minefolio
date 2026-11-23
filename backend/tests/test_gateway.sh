@@ -48,7 +48,7 @@ PASS=0; FAIL=0
 db_init_context 18100 gw_probe
 export TEST_JWT_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
 db_clean
-db_start_server "$PORT" "$TEST_DIR/../build" || { echo "start backend failed" >&2; exit 1; }
+db_start_server "$PORT" "${MINEFOLIO_BUILD_DIR:-$TEST_DIR/../build}" || { echo "start backend failed" >&2; exit 1; }
 # 等后端 ready (首次启动加载迁移需数秒)
 for i in $(seq 1 40); do
   if curl -s -o /dev/null "http://localhost:$PORT/api/system/status"; then break; fi

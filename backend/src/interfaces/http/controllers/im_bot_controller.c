@@ -12,10 +12,10 @@
  *   POST /api/im/:platform/chat   网关回调: 只读查账 (非流式 ai_runtime_execute)
  */
 #include "interfaces/http/controllers/im_bot_controller.h"
+#include "application/task/async_task_manager.h"
 #include "domain/auth/repository.h"
 #include "infrastructure/repositories/im_bot_repo_impl.h"
 #include "infrastructure/repositories/ai_session_repo_impl.h"
-#include "domain/auth/repository.h"
 #include "services/ai/runtime/loop.h"
 #include "services/ai/runtime/context.h"
 #include "services/ai/runtime/session.h"
@@ -188,6 +188,138 @@ api_im_bind(csilk_ctx_t* c)
     respond_ok(c, data);
 }
 
+typedef struct {
+    int64_t session_id;
+    char*   message;
+} im_chat_task_arg_t;
+
+static void
+im_chat_task_cleanup(void* raw)
+{
+    im_chat_task_arg_t* arg = (im_chat_task_arg_t*)raw;
+    if (!arg) {
+        return;
+    }
+    free(arg->message);
+    free(arg);
+}
+
+static int
+im_chat_task_fn(void*   pool,
+                int64_t task_id,
+                int64_t user_id,
+                int64_t ledger_id,
+                void*   arg,
+                char**  out_result_json,
+                char*   err_buf,
+                size_t  err_cap)
+{
+    (void)ledger_id;
+    im_chat_task_arg_t* targ = (im_chat_task_arg_t*)arg;
+    if (!targ || targ->session_id <= 0 || !targ->message) {
+        snprintf(err_buf, err_cap, "参数错误");
+        return -1;
+    }
+
+    mf_async_task_update_progress(pool, task_id, 20, "正在执行只读 AI 查账");
+
+    csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
+    ai_config_t*     cfg = ai_config_acquire();
+    const char*      model_sel = (cfg && cfg->default_model[0]) ? cfg->default_model : "default";
+
+    ai_runtime_context_t rctx;
+    ai_runtime_context_init(&rctx);
+    rctx.user_id = user_id;
+    rctx.session_id = targ->session_id;
+    snprintf(rctx.model_name, sizeof(rctx.model_name), "%s", model_sel);
+    rctx.temperature = 0.5;
+    rctx.max_tokens = 1024;
+    rctx.limits.max_iterations = 4;
+    rctx.limits.token_budget = 8192;
+
+    /* 只读工具: 过滤 is_mutation, LLM 无法发起写操作 */
+    size_t                 ro_count = 0;
+    const csilk_ai_tool_t* ro_tools = ai_tool_get_readonly_csilk_definitions(&ro_count);
+    rctx.tools = (csilk_ai_tool_t*)ro_tools;
+    rctx.tool_count = ro_count;
+
+    /* 会话历史 → 受控消息窗口 */
+    int           ctx_size = (cfg && cfg->context_size > 0) ? cfg->context_size : 20;
+    csilk_json_t* history = mf_ai_message_recent(db_pool, targ->session_id, ctx_size);
+    csilk_json_free(rctx.messages);
+    rctx.messages = ai_memory_build_messages(
+        cfg ? cfg->system_prompt : NULL, history, targ->message, ctx_size, NULL);
+    csilk_json_free(history);
+
+    /* 非流式执行 */
+    ai_trace_t*         trace = NULL;
+    ai_runtime_result_t res = ai_runtime_execute(db_pool, &rctx, &trace);
+    ai_runtime_context_free(&rctx);
+
+    /* 持久化 assistant 消息 + trace */
+    const char* final_text = res.final_content ? res.final_content : "";
+    mf_ai_message_insert(db_pool, targ->session_id, "assistant", final_text, model_sel, NULL, NULL);
+    if (trace) {
+        if (targ->session_id > 0) {
+            mf_ai_trace_save(db_pool, trace);
+        }
+        ai_trace_destroy(trace);
+        trace = NULL;
+    }
+
+    csilk_json_t* data = csilk_json_object();
+    if (res.status.code != 0) {
+        /* 模型/运行时错误: 回友好提示而非崩溃 */
+        csilk_json_add_string(data, "reply", "AI 查询失败，请稍后再试。");
+    } else {
+        csilk_json_add_string(data, "reply", final_text);
+    }
+    csilk_json_add_int(data, "bound", 1);
+    csilk_json_add_int(data, "session_id", targ->session_id);
+
+    if (out_result_json) {
+        *out_result_json = csilk_json_serialize(data, NULL);
+    }
+    csilk_json_free(data);
+    free(res.final_content);
+
+    if (cfg) {
+        ai_config_release(cfg);
+    }
+    return 0;
+}
+
+static void
+api_im_task_get(csilk_ctx_t* c)
+{
+    int64_t user_id = ctx_user_id(c);
+    if (user_id <= 0) {
+        respond_unauthorized(c);
+        return;
+    }
+
+    int64_t task_id = parse_query_int_strict(csilk_get_param(c, "id"), -1);
+    if (task_id <= 0) {
+        respond_bad_request(c, "无效的任务 ID");
+        return;
+    }
+
+    csilk_json_t* task = mf_async_task_get(db_get_pool(), user_id, task_id);
+    if (!task) {
+        respond_not_found(c);
+        return;
+    }
+
+    const char* task_type = csilk_json_get_string(task, "task_type");
+    if (!task_type || strcmp(task_type, "im_chat") != 0) {
+        csilk_json_free(task);
+        respond_not_found(c);
+        return;
+    }
+
+    respond_ok(c, task);
+}
+
 /**
  * @brief 网关回调: 只读查账 (非流式)。
  * 入参: { im_user_id, message, session_key? }
@@ -281,67 +413,41 @@ api_im_chat(csilk_ctx_t* c)
     /* 落库 user 消息 */
     mf_ai_message_insert(pool, session_id, "user", message, "im-bot", NULL, NULL);
 
-    /* 构造非流式 runtime 上下文: 只读工具白名单 + 会话历史 */
-    ai_config_t* cfg = ai_config_acquire();
-    const char*  model_sel = (cfg && cfg->default_model[0]) ? cfg->default_model : "default";
-
-    ai_runtime_context_t rctx;
-    ai_runtime_context_init(&rctx);
-    rctx.user_id = user_id;
-    rctx.session_id = session_id;
-    snprintf(rctx.model_name, sizeof(rctx.model_name), "%s", model_sel);
-    rctx.temperature = 0.5;
-    rctx.max_tokens = 1024;
-    rctx.limits.max_iterations = 4;
-    rctx.limits.token_budget = 8192;
-
-    /* 只读工具: 过滤 is_mutation, LLM 无法发起写操作 */
-    size_t                 ro_count = 0;
-    const csilk_ai_tool_t* ro_tools = ai_tool_get_readonly_csilk_definitions(&ro_count);
-    rctx.tools = (csilk_ai_tool_t*)ro_tools;
-    rctx.tool_count = ro_count;
-
-    /* 会话历史 → 受控消息窗口 */
-    int           ctx_size = (cfg && cfg->context_size > 0) ? cfg->context_size : 20;
-    csilk_json_t* history = mf_ai_message_recent(pool, session_id, ctx_size);
-    csilk_json_free(rctx.messages);
-    rctx.messages =
-        ai_memory_build_messages(cfg ? cfg->system_prompt : NULL, history, message, ctx_size, NULL);
-
-    csilk_json_free(history);
-
-    /* 非流式执行 */
-    ai_trace_t*         trace = NULL;
-    ai_runtime_result_t res = ai_runtime_execute(pool, &rctx, &trace);
-    ai_runtime_context_free(&rctx);
-
-    /* 持久化 assistant 消息 + trace */
-    char* final_text = res.final_content ? res.final_content : "";
-    mf_ai_message_insert(pool, session_id, "assistant", final_text, model_sel, NULL, NULL);
-    if (trace) {
-        if (session_id > 0) {
-            mf_ai_trace_save(pool, trace);
-        }
-        ai_trace_destroy(trace);
-        trace = NULL;
+    im_chat_task_arg_t* arg = calloc(1, sizeof(*arg));
+    if (!arg) {
+        csilk_json_free(body);
+        respond_error(c, 500, "内存不足");
+        return;
     }
-
-    csilk_json_t* data = csilk_json_object();
-    csilk_json_add_string(data, "reply", final_text ? final_text : "");
-    csilk_json_add_int(data, "bound", 1);
-    if (res.status.code != 0) {
-        /* 模型/运行时错误: 回友好提示而非崩溃 */
-        csilk_json_free(data);
-        data = csilk_json_object();
-        csilk_json_add_string(data, "reply", "AI 查询失败，请稍后再试。");
-    }
-    free(res.final_content);
+    arg->session_id = session_id;
+    arg->message = strdup(message);
     csilk_json_free(body);
-
-    if (cfg) {
-        ai_config_release(cfg);
+    if (!arg->message) {
+        free(arg);
+        respond_error(c, 500, "内存不足");
+        return;
     }
-    respond_ok(c, data);
+
+    bool    deduplicated = false;
+    int64_t task_id = mf_async_task_submit(pool,
+                                           user_id,
+                                           0,
+                                           "im_chat",
+                                           NULL,
+                                           "正在查询 AI 助手",
+                                           im_chat_task_fn,
+                                           arg,
+                                           im_chat_task_cleanup,
+                                           &deduplicated);
+    if (task_id <= 0) {
+        respond_error(c, 500, "提交异步 AI 查账任务失败");
+        return;
+    }
+
+    csilk_json_t* extra = csilk_json_object();
+    csilk_json_add_int(extra, "bound", 1);
+    csilk_json_add_int(extra, "session_id", session_id);
+    mf_async_task_respond_submitted(c, task_id, "im_chat", deduplicated, extra);
 }
 
 /**
@@ -446,4 +552,5 @@ register_im_bot_routes(csilk_app_t* app)
     csilk_app_post(app, "/api/im/:platform/bind", api_im_bind);
     csilk_app_post(app, "/api/im/:platform/bind-auth", api_im_bind_auth);
     csilk_app_post(app, "/api/im/:platform/chat", api_im_chat);
+    csilk_app_get(app, "/api/im/tasks/:id", api_im_task_get);
 }

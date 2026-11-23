@@ -7,6 +7,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { getDb, run, query, rowsFrom, persist, resetLocalDb } from '@/db/local'
+import { TABLE_COLUMNS } from '@/db/schema'
 import { dailyExpensesApi } from '@/api/daily_expenses'
 import { transactionsApi } from '@/api/transactions'
 import { assetsApi } from '@/api/assets'
@@ -23,16 +24,6 @@ const API_BY_TABLE: Record<string, any> = {
   accounts: accountsApi,
   categories: categoriesApi,
   tags: tagsApi,
-}
-
-/** 允许本地同步写入的白名单列集合 */
-const TABLE_COLUMNS: Record<string, Set<string>> = {
-  categories: new Set(['id', 'user_id', 'name', 'parent_id', 'type', 'asset_type', 'currency', 'icon', 'sort_order', 'created_at', 'updated_at']),
-  assets: new Set(['id', 'user_id', 'category_id', 'name', 'account_no', 'account_id', 'current_value', 'quantity', 'cost_basis', 'net_value', 'currency', 'note', 'ledger_id', 'created_at', 'updated_at']),
-  accounts: new Set(['id', 'user_id', 'ledger_id', 'name', 'institution', 'account_no', 'currency', 'icon', 'note', 'sort_order', 'archived', 'created_at', 'updated_at']),
-  transactions: new Set(['id', 'user_id', 'asset_id', 'linked_asset_id', 'category_id', 'source_type', 'transaction_type', 'direction', 'linked_direction', 'amount', 'price_per_unit', 'quantity', 'fee', 'currency', 'transaction_date', 'note', 'ledger_id', 'created_at', 'updated_at']),
-  tags: new Set(['id', 'user_id', 'name', 'color', 'created_at', 'updated_at']),
-  daily_expenses: new Set(['id', 'user_id', 'category_id', 'asset_id', 'expense_type', 'amount', 'currency', 'expense_date', 'note', 'ledger_id', 'created_at', 'updated_at']),
 }
 
 /** 鉴权失败(1001)处理钩子：由移动端 main/router 注入，把桌面式 window.location 重定向换成路由导航 */
@@ -56,6 +47,21 @@ function isAuthError(e: any): boolean {
 }
 
 /**
+ * 统一解析同步时间戳，将后端无时区后缀的 UTC 时间字符串（如 `2026-11-21 12:00:00`）按 UTC 解析，避免本地时区偏移
+ */
+export function parseSyncTimestamp(ts: unknown): number {
+  if (!ts || typeof ts !== 'string') return 0
+  const trimmed = ts.trim()
+  if (!trimmed) return 0
+  let normalized = trimmed
+  if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d+)?$/.test(trimmed)) {
+    normalized = trimmed.replace(' ', 'T') + 'Z'
+  }
+  const ms = Date.parse(normalized)
+  return Number.isNaN(ms) ? 0 : ms
+}
+
+/**
  * 离线同步 Pinia Store
  */
 export const useSyncStore = defineStore('sync', () => {
@@ -67,6 +73,10 @@ export const useSyncStore = defineStore('sync', () => {
   const lastSyncAt = ref<string | null>(null)
   /** 待推送同步的任务数量计算属性 */
   const pendingCount = computed(() => queue.value.filter((q) => q.synced === 0).length)
+  /** 处于冲突状态、需人工处理的队列项 */
+  const conflicts = computed(() => queue.value.filter((q) => q.synced === 0 && q.conflict === 1))
+  /** 实际等待自动推送的非冲突任务数量 */
+  const activePendingCount = computed(() => queue.value.filter((q) => q.synced === 0 && q.conflict === 0).length)
 
   /**
    * 从本地 SQLite 数据库中加载所有未同步 (synced = 0) 的队列项
@@ -219,19 +229,22 @@ export const useSyncStore = defineStore('sync', () => {
 
   /**
    * 将本地离线队列中的数据依次推送到服务端 API (Push)
+   * @returns 本轮成功推送创建/更新的服务端 ID 映射（供 pullRemote 协调删除时保留）
    */
-  async function pushLocal(): Promise<void> {
+  async function pushLocal(): Promise<Map<string, Set<number>>> {
+    const pushedInCycle = new Map<string, Set<number>>()
     loadQueue()
     for (const item of queue.value) {
+      if (item.conflict === 1) continue
       const api = API_BY_TABLE[item.table_name]
       if (!api) continue
       // 实时读取队列行：record_id 可能已被本轮更早的 create 重映射（资产建占位 ID
       // → 服务端 ID），payload 也可能被 remapAssetRefs 改写，必须用最新版本推送。
       const fresh = rowsFrom(query(
-        'SELECT record_id, operation, payload, ledger_id FROM sync_queue WHERE id = ?',
+        'SELECT record_id, operation, payload, ledger_id, conflict FROM sync_queue WHERE id = ?',
         [item.id]
       ))[0]
-      if (!fresh) continue
+      if (!fresh || Number(fresh.conflict) === 1) continue
       const recordId = Number(fresh.record_id)
       const operation = fresh.operation as SyncQueueItem['operation']
       const itemLedgerId = Number(fresh.ledger_id || item.ledger_id || 0)
@@ -243,9 +256,13 @@ export const useSyncStore = defineStore('sync', () => {
       }
       const config = itemLedgerId > 0 ? { headers: { 'X-Ledger-Id': String(itemLedgerId) } } : undefined
       try {
+        let effectiveId = recordId
         if (operation === 'create') {
           const res: any = config ? await api.create(payload, config) : await api.create(payload)
           const newId = res?.id ?? (typeof res === 'number' ? res : null)
+          if (newId) {
+            effectiveId = Number(newId)
+          }
           if (newId && newId !== recordId) {
             run(`UPDATE ${item.table_name} SET id = ? WHERE id = ?`, [newId, recordId])
             run(
@@ -275,22 +292,31 @@ export const useSyncStore = defineStore('sync', () => {
           }
         }
         markSynced(item.id)
+        if (operation !== 'delete' && effectiveId > 0) {
+          let set = pushedInCycle.get(item.table_name)
+          if (!set) {
+            set = new Set<number>()
+            pushedInCycle.set(item.table_name, set)
+          }
+          set.add(effectiveId)
+        }
       } catch (e: any) {
         // 鉴权失败：注销 + 触发移动端路由（不要标冲突污染队列）
         if (isAuthError(e)) {
           onAuthFail?.()
-          return
+          throw e
         }
         // 服务端业务错误（如已不存在）→ 标记冲突，停止该条推送但保留队列
         if (e?.response?.data?.code && e.response.data.code !== 0) markConflict(item.id)
       }
     }
+    return pushedInCycle
   }
 
   /**
-   * 从服务端拉取最新数据覆盖本地 SQLite (Pull，服务端胜出策略：updated_at 较新则覆盖)
+   * 从服务端拉取最新数据覆盖本地 SQLite (Pull，服务端胜出策略：updated_at 较新则覆盖，并在全量分页拉取完整时清理远端已删除行)
    */
-  async function pullRemote(): Promise<void> {
+  async function pullRemote(pushedInCycle?: Map<string, Set<number>>): Promise<void> {
     const tables = ['accounts', 'categories', 'tags', 'assets', 'transactions', 'daily_expenses']
     for (const table of tables) {
       const api = API_BY_TABLE[table]
@@ -298,23 +324,47 @@ export const useSyncStore = defineStore('sync', () => {
       try {
         let page = 1
         const pageSize = 500
+        const seenIds = new Set<number>()
+        let completedAllPages = false
         while (true) {
           const res: any = await api.list({ page, page_size: pageSize })
           const remoteRows = (res?.list ?? (Array.isArray(res) ? res : [])) as any[]
-          if (remoteRows.length === 0) break
           for (const remote of remoteRows) {
+            if (remote?.id !== undefined && remote?.id !== null) {
+              seenIds.add(Number(remote.id))
+            }
             const local = query(`SELECT * FROM ${table} WHERE id = ?`, [remote.id])
             const localRow = rowsFrom(local)[0]
-            const localUpdated = localRow?.updated_at ? new Date(localRow.updated_at as string).getTime() : 0
-            const remoteUpdated = remote.updated_at ? new Date(remote.updated_at).getTime() : 0
+            const localUpdated = parseSyncTimestamp(localRow?.updated_at)
+            const remoteUpdated = parseSyncTimestamp(remote.updated_at)
             if (!localRow || remoteUpdated >= localUpdated) {
               upsertLocal(table, remote)
             }
           }
-          if (Array.isArray(res) || remoteRows.length < pageSize || (res?.total !== undefined && page * pageSize >= res.total)) {
+          if (
+            remoteRows.length === 0 ||
+            Array.isArray(res) ||
+            remoteRows.length < pageSize ||
+            (res?.total !== undefined && page * pageSize >= res.total)
+          ) {
+            completedAllPages = true
             break
           }
           page++
+        }
+        if (completedAllPages) {
+          const pendingRows = rowsFrom(
+            query('SELECT DISTINCT record_id FROM sync_queue WHERE table_name = ? AND synced = 0', [table])
+          )
+          const pendingIds = new Set(pendingRows.map((r) => Number(r.record_id)))
+          const pushedIds = pushedInCycle?.get(table) ?? new Set<number>()
+          const localRows = rowsFrom(query(`SELECT id FROM ${table} WHERE __deleted = 0`))
+          for (const lr of localRows) {
+            const lid = Number(lr.id)
+            if (lid > 0 && !seenIds.has(lid) && !pendingIds.has(lid) && !pushedIds.has(lid)) {
+              run(`DELETE FROM ${table} WHERE id = ?`, [lid])
+            }
+          }
         }
       } catch (err) {
         console.error(`[sync] Failed to pull remote data for table ${table}:`, err)
@@ -330,14 +380,15 @@ export const useSyncStore = defineStore('sync', () => {
    */
   function upsertLocal(table: string, record: Record<string, unknown>): void {
     const allowed = TABLE_COLUMNS[table]
-    const cols = Object.keys(record).filter((k) => k !== '__deleted' && (!allowed || allowed.has(k)) && record[k] !== undefined)
+    const cols = Object.keys(record).filter((k) => k !== '__deleted' && (!allowed || allowed.includes(k)) && record[k] !== undefined)
     if (cols.length === 0) return
+    const toSqlVal = (v: unknown): SqlValue => (typeof v === 'boolean' ? (v ? 1 : 0) : (v as SqlValue))
     const placeholders = cols.map(() => '?').join(', ')
     const updates = cols.map((c) => `${c} = ?`).join(', ')
     run(
       `INSERT INTO ${table} (${cols.join(', ')}, __deleted) VALUES (${placeholders}, 0)
        ON CONFLICT(id) DO UPDATE SET ${updates}, __deleted = 0`,
-      [...cols.map((c) => record[c] as SqlValue), ...cols.map((c) => record[c] as SqlValue)]
+      [...cols.map((c) => toSqlVal(record[c])), ...cols.map((c) => toSqlVal(record[c]))]
     )
   }
 
@@ -348,8 +399,8 @@ export const useSyncStore = defineStore('sync', () => {
     if (syncing.value) return
     syncing.value = true
     try {
-      await pushLocal()
-      await pullRemote()
+      const pushedInCycle = await pushLocal()
+      await pullRemote(pushedInCycle)
       setLastSync(new Date().toISOString())
     } catch (e: any) {
       // 网络/超时等：静默，保持队列待下次同步
@@ -371,6 +422,25 @@ export const useSyncStore = defineStore('sync', () => {
   }
 
   /**
+   * 清除冲突标记并重新尝试同步
+   */
+  async function resolveConflictRetry(queueId: number): Promise<void> {
+    run('UPDATE sync_queue SET conflict = 0 WHERE id = ?', [queueId])
+    persist()
+    loadQueue()
+    await syncNow()
+  }
+
+  /**
+   * 放弃冲突项（将其从待推送队列移除，等待后续 pullRemote 与服务端对齐）
+   */
+  function resolveConflictDiscard(queueId: number): void {
+    run('DELETE FROM sync_queue WHERE id = ?', [queueId])
+    persist()
+    loadQueue()
+  }
+
+  /**
    * 重置同步 Store (登出时调用)：清空内存队列与同步位，避免上一账号的离线
    * 写操作被下一账号 syncNow() 顶着新 token 推出去；同时丢弃本地库，
    * 下次登录 init() 会重建，天然按账号隔离。
@@ -387,9 +457,13 @@ export const useSyncStore = defineStore('sync', () => {
     syncing,
     lastSyncAt,
     pendingCount,
+    activePendingCount,
+    conflicts,
     enqueue,
     markSynced,
     markConflict,
+    resolveConflictRetry,
+    resolveConflictDiscard,
     pushLocal,
     pullRemote,
     syncNow,

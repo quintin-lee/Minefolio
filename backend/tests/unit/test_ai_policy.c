@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <openssl/rand.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -13,6 +14,20 @@
 #include "services/ai/policy/policy.h"
 #include "services/ai/policy/audit.h"
 #include "common/db.h"
+
+static int
+fail_rand_bytes(unsigned char* buf, int num)
+{
+    (void)buf;
+    (void)num;
+    return 0;
+}
+
+static int
+fail_rand_status(void)
+{
+    return 0;
+}
 
 int
 main(void)
@@ -385,6 +400,172 @@ main(void)
         assert(strstr(list[0].result_summary, "mf_v2.") == NULL);
         assert(strstr(list[0].result_summary, "[REDACTED_SECRET]") != NULL);
         printf("  ✅ Sensitive tokens automatically redacted from audit logs\n");
+    }
+
+    /* ------------------------------------------------------------- */
+    /* Test 13: Session Isolation (AI_CONFIRM_ERR_SESSION_MISMATCH)  */
+    /* ------------------------------------------------------------- */
+    printf("[Test 13] Session Isolation (tok_sid == session_id)...\n");
+    {
+        int64_t       user_id = 1001;
+        const char*   tool = "confirm_proposed_expense";
+        csilk_json_t* args = csilk_json_object();
+        csilk_json_add_number(args, "amount", 88.0);
+
+        char* token = ai_confirmation_create_bound_token(
+            user_id, 42, tool, args, AI_RISK_HIGH, 300);
+        assert(token != NULL);
+
+        assert(ai_confirmation_verify_and_consume(user_id, 99, tool, args, token) ==
+               AI_CONFIRM_ERR_SESSION_MISMATCH);
+        assert(ai_confirmation_verify_and_consume(user_id, 0, tool, args, token) ==
+               AI_CONFIRM_ERR_SESSION_MISMATCH);
+        assert(ai_confirmation_verify_and_consume(user_id, 42, tool, args, token) ==
+               AI_CONFIRM_OK);
+
+        free(token);
+        csilk_json_free(args);
+        printf("  ✅ Cross-session replay strongly rejected (AI_CONFIRM_ERR_SESSION_MISMATCH)\n");
+    }
+
+    /* ------------------------------------------------------------- */
+    /* Test 14: Risk Non-Downgrade & Extended Amount Field Coverage  */
+    /* ------------------------------------------------------------- */
+    printf("[Test 14] Risk Non-Downgrade & Extended Amount Fields...\n");
+    {
+        ai_policy_rules_t rules = {
+            .single_amount_limit = 100000.0,
+            .large_amount_threshold = 20000.0,
+            .max_frequency_per_minute = 0,
+            .enforce_confirmation = true,
+        };
+        ai_policy_set_rules(&rules);
+        ai_policy_reset_frequency_limits();
+
+        /* 14a: risk_override 不允许向下覆盖 */
+        ai_policy_decision_t* dec_nodown =
+            ai_policy_evaluate(2001, 1, "confirm_proposed_transfer", NULL, AI_RISK_READ_ONLY);
+        assert(dec_nodown != NULL);
+        assert(dec_nodown->risk_level == AI_RISK_HIGH);
+        ai_policy_decision_free(dec_nodown);
+
+        /* 14b: total_amount 超出限额应拦截 */
+        csilk_json_t* tot_args = csilk_json_object();
+        csilk_json_add_number(tot_args, "total_amount", 150000.0);
+        ai_policy_decision_t* dec_tot =
+            ai_policy_evaluate(2001, 1, "confirm_proposed_transfer", tot_args, AI_RISK_NO_OVERRIDE);
+        assert(dec_tot != NULL && dec_tot->allowed == false);
+        ai_policy_decision_free(dec_tot);
+        csilk_json_free(tot_args);
+
+        /* 14c: price * quantity 名义金额触发 CRITICAL 升级与超限拦截 */
+        csilk_json_t* pq_args = csilk_json_object();
+        csilk_json_add_number(pq_args, "price", 250.0);
+        csilk_json_add_number(pq_args, "quantity", 100.0); /* 25,000 >= 20,000 */
+        ai_policy_decision_t* dec_pq =
+            ai_policy_evaluate(2001, 1, "propose_trade", pq_args, AI_RISK_NO_OVERRIDE);
+        assert(dec_pq != NULL && dec_pq->allowed == true);
+        assert(dec_pq->risk_level == AI_RISK_CRITICAL);
+        ai_policy_decision_free(dec_pq);
+        csilk_json_free(pq_args);
+
+        /* 14d: transfer_amount / value / cost 均参与金额阈值风控 */
+        csilk_json_t* val_args = csilk_json_object();
+        csilk_json_add_number(val_args, "transfer_amount", 30000.0);
+        ai_policy_decision_t* dec_val =
+            ai_policy_evaluate(2001, 1, "confirm_transfer", val_args, AI_RISK_LOW);
+        assert(dec_val != NULL && dec_val->allowed == true);
+        assert(dec_val->risk_level == AI_RISK_CRITICAL);
+        ai_policy_decision_free(dec_val);
+        csilk_json_free(val_args);
+
+        /* 14e: actions 数组累计总额超过 single_amount_limit 应拦截 */
+        csilk_json_t* batch_args = csilk_json_object();
+        csilk_json_t* actions = csilk_json_array();
+        csilk_json_t* item1 = csilk_json_object();
+        csilk_json_add_number(item1, "amount", 60000.0);
+        csilk_json_t* item2 = csilk_json_object();
+        csilk_json_add_number(item2, "cost", 60000.0);
+        csilk_json_array_append(actions, item1);
+        csilk_json_array_append(actions, item2);
+        csilk_json_add_array(batch_args, "actions", actions);
+
+        ai_policy_decision_t* dec_batch =
+            ai_policy_evaluate(2001, 1, "confirm_batch", batch_args, AI_RISK_NO_OVERRIDE);
+        assert(dec_batch != NULL && dec_batch->allowed == false);
+        ai_policy_decision_free(dec_batch);
+        csilk_json_free(batch_args);
+
+        printf("  ✅ Risk non-downgrade & extended amount extraction verified\n");
+    }
+
+    /* ------------------------------------------------------------- */
+    /* Test 15: Fail Closed When RAND_bytes Fails (No Weak PRNG)     */
+    /* ------------------------------------------------------------- */
+    printf("[Test 15] RAND_bytes Failure Returns NULL (No Weak Fallback)...\n");
+    {
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+        const RAND_METHOD* orig_method = RAND_get_rand_method();
+        RAND_METHOD        failing_method = {
+                   .bytes = fail_rand_bytes,
+                   .pseudorand = fail_rand_bytes,
+                   .status = fail_rand_status,
+        };
+        assert(RAND_set_rand_method(&failing_method) == 1);
+
+        csilk_json_t* args = csilk_json_object();
+        csilk_json_add_number(args, "amount", 50.0);
+        char* bound_tok = ai_confirmation_create_bound_token(
+            1001, 42, "confirm_proposed_expense", args, AI_RISK_HIGH, 300);
+        assert(bound_tok == NULL);
+
+        csilk_json_t* actions = csilk_json_array();
+        csilk_json_t* item = csilk_json_object();
+        csilk_json_add_number(item, "amount", 50.0);
+        csilk_json_array_append(actions, item);
+        char* batch_tok =
+            ai_confirmation_create_batch_token(1001, 42, actions, AI_RISK_HIGH, 300);
+        assert(batch_tok == NULL);
+
+        RAND_set_rand_method(orig_method);
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
+        csilk_json_free(actions);
+        csilk_json_free(args);
+        printf("  ✅ Both bound and batch confirmation tokens fail closed on RAND_bytes failure\n");
+    }
+
+    /* ------------------------------------------------------------- */
+    /* Test 16: Domain-Separated Key Derivation from JWT_SECRET      */
+    /* ------------------------------------------------------------- */
+    printf("[Test 16] Domain-Separated Confirmation Key Derivation...\n");
+    {
+        ai_confirmation_set_secret(NULL);
+        unsetenv("MINEFOLIO_AI_SECRET");
+        setenv("MINEFOLIO_JWT_SECRET", "shared_jwt_master_secret_for_test_1234", 1);
+
+        const char* derived1 = ai_confirmation_get_secret();
+        assert(derived1 != NULL);
+        assert(strlen(derived1) == 64);
+        assert(strcmp(derived1, "shared_jwt_master_secret_for_test_1234") != 0);
+
+        char copy1[65];
+        snprintf(copy1, sizeof(copy1), "%s", derived1);
+
+        /* Deterministic across calls, distinct if JWT_SECRET rotates */
+        const char* derived2 = ai_confirmation_get_secret();
+        assert(derived2 != NULL && strcmp(copy1, derived2) == 0);
+
+        setenv("MINEFOLIO_JWT_SECRET", "another_jwt_master_secret_for_test_5678", 1);
+        const char* derived3 = ai_confirmation_get_secret();
+        assert(derived3 != NULL && strlen(derived3) == 64 && strcmp(copy1, derived3) != 0);
+
+        printf("  ✅ Derived AI confirmation key is deterministic and domain-separated from "
+               "JWT_SECRET\n");
     }
 
     printf("\n🎉 ALL AI POLICY / RISK / CONFIRMATION SECURITY TESTS PASSED!\n");

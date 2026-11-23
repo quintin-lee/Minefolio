@@ -17,6 +17,7 @@
 #include <sys/types.h>
 #include <sqlite3.h>
 #include <stdatomic.h>
+#include <pthread.h>
 #if __has_include(<libpq-fe.h>)
 #include <libpq-fe.h>
 #endif
@@ -221,6 +222,19 @@ db_wal_checkpoint(csilk_db_pool_t* pool)
     return 0;
 }
 
+static pthread_mutex_t g_tx_mutex;
+static pthread_once_t  g_tx_mutex_once = PTHREAD_ONCE_INIT;
+
+static void
+init_tx_mutex(void)
+{
+    pthread_mutexattr_t attr;
+    pthread_mutexattr_init(&attr);
+    pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+    pthread_mutex_init(&g_tx_mutex, &attr);
+    pthread_mutexattr_destroy(&attr);
+}
+
 int
 db_in_transaction(csilk_db_pool_t* pool)
 {
@@ -230,17 +244,35 @@ db_in_transaction(csilk_db_pool_t* pool)
 int
 db_tx_scope_begin(csilk_db_pool_t* pool, const char* name, db_tx_scope_t* scope)
 {
-    return csilk_db_tx_scope_begin(pool, name, scope);
+    pthread_once(&g_tx_mutex_once, init_tx_mutex);
+    if (pthread_mutex_lock(&g_tx_mutex) != 0) {
+        return -1;
+    }
+    int rc = csilk_db_tx_scope_begin(pool, name, scope);
+    if (rc != 0) {
+        pthread_mutex_unlock(&g_tx_mutex);
+    }
+    return rc;
 }
 
 int
 db_tx_scope_commit(csilk_db_pool_t* pool, db_tx_scope_t* scope)
 {
-    return csilk_db_tx_scope_commit(pool, scope);
+    bool was_active = (pool != NULL && scope != NULL && scope->active);
+    int  rc = csilk_db_tx_scope_commit(pool, scope);
+    if (was_active) {
+        pthread_mutex_unlock(&g_tx_mutex);
+    }
+    return rc;
 }
 
 int
 db_tx_scope_rollback(csilk_db_pool_t* pool, db_tx_scope_t* scope)
 {
-    return csilk_db_tx_scope_rollback(pool, scope);
+    bool was_active = (pool != NULL && scope != NULL && scope->active);
+    int  rc = csilk_db_tx_scope_rollback(pool, scope);
+    if (was_active) {
+        pthread_mutex_unlock(&g_tx_mutex);
+    }
+    return rc;
 }

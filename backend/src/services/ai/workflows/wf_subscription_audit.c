@@ -358,11 +358,11 @@ step_sa_report(csilk_db_pool_t*    pool,
         int         dmonths = (int)db_get_num(it, "distinct_months");
         const char* last =
             csilk_json_get_string(it, "last_date") ? csilk_json_get_string(it, "last_date") : "-";
-        int         stale = csilk_json_get_bool(it, "is_stale");
-        int         hiked = csilk_json_get_bool(it, "is_hiked");
+        int stale = csilk_json_get_bool(it, "is_stale");
+        int hiked = csilk_json_get_bool(it, "is_hiked");
         const char* badge = stale ? "⚫ 疑似闲置" : (hiked ? "🔴 已涨价" : "🟢 正常扣费");
-        char        line[512];
-        char        safe_nm[96] = {0};
+        char line[512];
+        char safe_nm[96] = {0};
         strncpy(safe_nm, nm, sizeof(safe_nm) - 1);
         for (char* p = safe_nm; *p; p++) {
             if (*p == '|') {

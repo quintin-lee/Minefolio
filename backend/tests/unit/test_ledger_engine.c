@@ -1,4 +1,5 @@
 #include "core/ledger/ledger_engine.h"
+#include "common/balance.h"
 #include "common/db.h"
 #include "common/config.h"
 #include "infrastructure/repositories/transaction_repo_impl.h"
@@ -485,6 +486,182 @@ main(void)
         assert(quantity_is_zero(q3));
         assert(money_is_zero(c3));
         printf("    ✓ Position calculation and full liquidation zeroing passed.\n");
+    }
+
+    printf("  7. Testing Negative Fee Rejection & 8-Decimal Price FX Precision...\n");
+    {
+        ledger_tx_t neg_fee_tx = {0};
+        neg_fee_tx.user_id = user_id;
+        neg_fee_tx.asset_id = 101;
+        neg_fee_tx.type = LEDGER_TX_BUY;
+        neg_fee_tx.tx_date = "2026-11-22";
+        money_from_double(100.0, CURRENCY_CNY, &neg_fee_tx.amount);
+        money_from_double(-5.0, CURRENCY_CNY, &neg_fee_tx.fee);
+        neg_fee_tx.price = price_zero(CURRENCY_CNY);
+        neg_fee_tx.quantity = quantity_zero();
+        assert(ledger_apply_tx(pool, &neg_fee_tx) == -1);
+        printf("    ✓ Negative fee rejected cleanly.\n");
+
+        price_t usd_nav;
+        assert(price_from_string("1.23456789", CURRENCY_USD, &usd_nav) == DECIMAL_OK);
+        /* USD -> CNY at explicit fx_rate_to_cny=7.20: 1.23456789 * 7.2 = 8.888888808 -> 8.88888881 */
+        price_t cny_nav = balance_convert_price_fx(usd_nav, CURRENCY_CNY, 7.20);
+        char    nav_buf[64];
+        price_to_string_fixed(cny_nav, 8, nav_buf, sizeof(nav_buf));
+        assert(strcmp(nav_buf, "8.88888881") == 0);
+        printf("    ✓ 8-decimal price FX conversion preserved (%s).\n", nav_buf);
+    }
+
+    printf("  8. Testing Historical Backdated Buy Preserves Current net_value...\n");
+    {
+        csilk_db_exec(
+            pool,
+            "INSERT INTO assets (id, user_id, category_id, name, currency, current_value, "
+            "quantity, cost_basis, net_value) VALUES (202, 1, 20, 'ETF Backdate', 'CNY', 0, 0, 0, 0)");
+
+        money_t    m_recent, zero_fee, m_hist;
+        price_t    p_recent, p_hist;
+        quantity_t q_recent, q_hist;
+        money_from_double(2500.0, CURRENCY_CNY, &m_recent);
+        money_from_double(0.0, CURRENCY_CNY, &zero_fee);
+        price_from_double(25.0, 2, CURRENCY_CNY, &p_recent);
+        quantity_from_double(100.0, 0, &q_recent);
+
+        ledger_tx_t recent_buy = {
+            .user_id = user_id,
+            .asset_id = 202,
+            .category_id = 20,
+            .type = LEDGER_TX_BUY,
+            .type_str = "buy",
+            .amount = m_recent,
+            .price = p_recent,
+            .quantity = q_recent,
+            .fee = zero_fee,
+            .tx_date = "2026-11-20 10:00:00",
+        };
+        assert(ledger_apply_tx(pool, &recent_buy) == 0);
+
+        /* Backdated historical buy @ 10.00 CNY must NOT overwrite net_value (25.00) */
+        money_from_double(500.0, CURRENCY_CNY, &m_hist);
+        price_from_double(10.0, 2, CURRENCY_CNY, &p_hist);
+        quantity_from_double(50.0, 0, &q_hist);
+        ledger_tx_t hist_buy = {
+            .user_id = user_id,
+            .asset_id = 202,
+            .category_id = 20,
+            .type = LEDGER_TX_BUY,
+            .type_str = "buy",
+            .amount = m_hist,
+            .price = p_hist,
+            .quantity = q_hist,
+            .fee = zero_fee,
+            .tx_date = "2025-01-01 10:00:00",
+        };
+        assert(ledger_apply_tx(pool, &hist_buy) == 0);
+
+        csilk_json_t* ast = csilk_db_query_param_json(
+            pool,
+            "SELECT quantity, cost_basis, net_value, current_value FROM assets WHERE id=?",
+            (const char*[]){"202", NULL});
+        assert(ast && csilk_json_array_size(ast) == 1);
+        csilk_json_t* row = csilk_json_array_get(ast, 0);
+        assert(fabs(db_get_num(row, "quantity") - 150.0) < 1e-6);
+        assert(fabs(db_get_num(row, "cost_basis") - 3000.0) < 1e-6);
+        assert(fabs(db_get_num(row, "net_value") - 25.0) < 1e-6);
+        assert(fabs(db_get_num(row, "current_value") - 3750.0) < 1e-6);
+        csilk_json_free(ast);
+
+        /* Asset with newer asset_price_history quote also preserves net_value */
+        csilk_db_exec(
+            pool,
+            "INSERT INTO assets (id, user_id, category_id, name, currency, current_value, "
+            "quantity, cost_basis, net_value) VALUES (203, 1, 20, 'Quote Asset', 'CNY', 0, 0, 0, 30.0)");
+        csilk_db_exec(
+            pool,
+            "INSERT INTO asset_price_history (asset_id, price_date, price, currency) "
+            "VALUES (203, '2026-11-21', 30.0, 'CNY')");
+
+        money_from_double(120.0, CURRENCY_CNY, &m_hist);
+        price_from_double(12.0, 2, CURRENCY_CNY, &p_hist);
+        quantity_from_double(10.0, 0, &q_hist);
+        ledger_tx_t quote_hist_buy = {
+            .user_id = user_id,
+            .asset_id = 203,
+            .category_id = 20,
+            .type = LEDGER_TX_BUY,
+            .type_str = "buy",
+            .amount = m_hist,
+            .price = p_hist,
+            .quantity = q_hist,
+            .fee = zero_fee,
+            .tx_date = "2025-06-01",
+        };
+        assert(ledger_apply_tx(pool, &quote_hist_buy) == 0);
+
+        ast = csilk_db_query_param_json(
+            pool,
+            "SELECT quantity, cost_basis, net_value, current_value FROM assets WHERE id=?",
+            (const char*[]){"203", NULL});
+        assert(ast && csilk_json_array_size(ast) == 1);
+        row = csilk_json_array_get(ast, 0);
+        assert(fabs(db_get_num(row, "quantity") - 10.0) < 1e-6);
+        assert(fabs(db_get_num(row, "cost_basis") - 120.0) < 1e-6);
+        assert(fabs(db_get_num(row, "net_value") - 30.0) < 1e-6);
+        assert(fabs(db_get_num(row, "current_value") - 300.0) < 1e-6);
+        csilk_json_free(ast);
+
+        printf("    ✓ Historical backdated buys preserved current net_value cleanly.\n");
+    }
+
+    printf("  9. Testing Cross-Currency Non-CNY Target Uses Historical target_to_cny...\n");
+    {
+        csilk_db_exec(
+            pool,
+            "INSERT INTO assets (id, user_id, category_id, name, currency, current_value, "
+            "quantity, cost_basis, net_value) VALUES (204, 1, 10, 'USD Wallet', 'USD', 0, 0, 0, 0)");
+        /* Seed historical HKD->CNY = 0.90 and USD->CNY = 7.00 on 2026-10-01 */
+        csilk_db_exec(pool,
+                      "INSERT OR REPLACE INTO exchange_rate_history "
+                      "(rate_date, base_currency, target_currency, rate) VALUES "
+                      "('2026-10-01', 'CNY', 'HKD', 0.90), "
+                      "('2026-10-01', 'CNY', 'USD', 7.00)");
+
+        money_t hkd_amt, zero_fee;
+        money_from_double(700.0, CURRENCY_HKD, &hkd_amt);
+        money_from_double(0.0, CURRENCY_HKD, &zero_fee);
+
+        /* 700 HKD at HKD=0.90 CNY (630 CNY) into USD Wallet at historical USD=7.00 -> 90.00 USD */
+        ledger_tx_t fx_dep = {
+            .user_id = user_id,
+            .asset_id = 204,
+            .category_id = 10,
+            .type = LEDGER_TX_DEPOSIT,
+            .type_str = "deposit",
+            .amount = hkd_amt,
+            .price = price_zero(CURRENCY_HKD),
+            .quantity = quantity_zero(),
+            .fee = zero_fee,
+            .tx_date = "2026-10-01 12:00:00",
+        };
+        assert(ledger_apply_tx(pool, &fx_dep) == 0);
+
+        csilk_json_t* ast = csilk_db_query_param_json(
+            pool, "SELECT current_value FROM assets WHERE id=?", (const char*[]){"204", NULL});
+        assert(ast && csilk_json_array_size(ast) == 1);
+        double usd_bal = db_get_num(csilk_json_array_get(ast, 0), "current_value");
+        csilk_json_free(ast);
+        assert(fabs(usd_bal - 90.0) < 1e-4);
+
+        printf("    ✓ Non-CNY target cross-currency used historical target_to_cny (USD balance=%.2f).\n",
+               usd_bal);
+
+        /* Missing/unknown target currency must fail closed instead of silently copying unit_price */
+        price_t p_src;
+        assert(price_from_double(25.0, 2, CURRENCY_CNY, &p_src) == DECIMAL_OK);
+        currency_t unk = currency_from_str("ZZZ");
+        price_t    p_zero =
+            balance_convert_price_fx_at(pool, p_src, unk, 7.0, "2026-10-01 12:00:00");
+        assert(fabs(price_to_double(p_zero)) < 1e-12);
     }
 
     unlink(db_file);

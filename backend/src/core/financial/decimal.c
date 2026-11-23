@@ -73,6 +73,18 @@ pow10_val(int32_t scale)
     return 0;
 }
 
+/*
+ * Convert an unsigned magnitude (already bounded to <= 2^127 by the caller) into
+ * its negative signed representation. Negating in the unsigned domain is the only
+ * portable way to represent INT128_MIN: `-(__int128_t)mag` is signed overflow (UB)
+ * when mag == 2^127, whereas the two's-complement subtraction below is well defined.
+ */
+static inline __int128_t
+decimal_negate_magnitude(unsigned __int128 mag)
+{
+    return (__int128_t)((unsigned __int128)0 - mag);
+}
+
 /* 256-bit unsigned integer arithmetic for intermediate exact operations */
 typedef struct {
     unsigned __int128 hi;
@@ -214,6 +226,16 @@ u128_mul_u128(unsigned __int128 a, unsigned __int128 b)
 static void
 u256_div_rem(u256_t num, u256_t den, u256_t* q_out, u256_t* rem_out)
 {
+    if (u256_is_zero(den)) {
+        if (q_out) {
+            *q_out = u256_zero();
+        }
+        if (rem_out) {
+            *rem_out = u256_zero();
+        }
+        return;
+    }
+
     int cmp = u256_cmp(num, den);
     if (cmp < 0) {
         if (q_out) {
@@ -334,41 +356,55 @@ decimal_from_string(const char* str, decimal_t* out)
     int32_t           scale = 0;
     bool              has_dot = false;
     bool              has_digits = false;
+    bool              last_was_comma = false;
 
     while (*str) {
-        if (*str >= '0' && *str <= '9') {
+        unsigned char ch = (unsigned char)*str;
+        if (ch >= '0' && ch <= '9') {
             has_digits = true;
+            last_was_comma = false;
             if (!has_dot) {
                 u256_t p = u128_mul_u128(integer_part, 10);
-                p = u256_add(p, u256_from_u128((unsigned __int128)(*str - '0')));
+                p = u256_add(p, u256_from_u128((unsigned __int128)(ch - '0')));
                 if (p.hi != 0) {
+                    *out = decimal_zero();
                     return DECIMAL_ERR_OVERFLOW;
                 }
                 integer_part = p.lo;
             } else {
                 if (scale < DECIMAL_MAX_SCALE) {
-                    frac_part = frac_part * 10 + (unsigned __int128)(*str - '0');
+                    frac_part = frac_part * 10 + (unsigned __int128)(ch - '0');
                     scale++;
                 }
             }
-        } else if (*str == '.') {
-            if (has_dot) {
-                break; /* Second dot encountered */
+        } else if (ch == '.') {
+            if (has_dot || last_was_comma) {
+                *out = decimal_zero();
+                return DECIMAL_ERR_PARSE;
             }
             has_dot = true;
-        } else if (isspace((unsigned char)*str) || *str == ',' || *str == '%') {
-            if (*str == ',') {
-                /* ignore thousand comma separator */
-            } else {
-                break;
+        } else if (ch == ',') {
+            /* Thousands separator allowed only between integer digits */
+            if (!has_digits || has_dot || last_was_comma) {
+                *out = decimal_zero();
+                return DECIMAL_ERR_PARSE;
             }
-        } else {
+            last_was_comma = true;
+        } else if (isspace(ch)) {
             break;
+        } else {
+            *out = decimal_zero();
+            return DECIMAL_ERR_PARSE;
         }
         str++;
     }
 
-    if (!has_digits) {
+    /* Trailing whitespace only; reject middle whitespace or trailing non-whitespace characters */
+    while (isspace((unsigned char)*str)) {
+        str++;
+    }
+
+    if (*str != '\0' || !has_digits || last_was_comma) {
         *out = decimal_zero();
         return DECIMAL_ERR_PARSE;
     }
@@ -413,7 +449,11 @@ decimal_from_double(double d, int32_t scale, decimal_t* out)
     }
 
     char buf[64];
-    snprintf(buf, sizeof(buf), "%.*f", (int)scale, d);
+    int  n = snprintf(buf, sizeof(buf), "%.*f", (int)scale, d);
+    if (n < 0 || (size_t)n >= sizeof(buf)) {
+        *out = decimal_zero();
+        return DECIMAL_ERR_OVERFLOW;
+    }
     return decimal_from_string(buf, out);
 }
 
@@ -613,7 +653,7 @@ decimal_mul(decimal_t a, decimal_t b, decimal_t* out)
             if (Q.lo > ((unsigned __int128)1 << 127)) {
                 return DECIMAL_ERR_OVERFLOW;
             }
-            out->mantissa = -(__int128_t)Q.lo;
+            out->mantissa = decimal_negate_magnitude(Q.lo);
         } else {
             if (Q.lo > (((unsigned __int128)1 << 127) - 1)) {
                 return DECIMAL_ERR_OVERFLOW;
@@ -631,7 +671,7 @@ decimal_mul(decimal_t a, decimal_t b, decimal_t* out)
         if (prod.lo > ((unsigned __int128)1 << 127)) {
             return DECIMAL_ERR_OVERFLOW;
         }
-        out->mantissa = -(__int128_t)prod.lo;
+        out->mantissa = decimal_negate_magnitude(prod.lo);
     } else {
         if (prod.lo > (((unsigned __int128)1 << 127) - 1)) {
             return DECIMAL_ERR_OVERFLOW;
@@ -739,7 +779,7 @@ decimal_div(decimal_t a, decimal_t b, int32_t target_scale, round_mode_t mode, d
         if (Q.lo > ((unsigned __int128)1 << 127)) {
             return DECIMAL_ERR_OVERFLOW;
         }
-        out->mantissa = -(__int128_t)Q.lo;
+        out->mantissa = decimal_negate_magnitude(Q.lo);
     } else {
         if (Q.lo > (((unsigned __int128)1 << 127) - 1)) {
             return DECIMAL_ERR_OVERFLOW;
@@ -762,9 +802,10 @@ decimal_abs(decimal_t d)
 decimal_t
 decimal_neg(decimal_t d)
 {
-    if (d.mantissa != ((__int128_t)((unsigned __int128)1 << 127))) {
-        d.mantissa = -d.mantissa;
+    if (d.mantissa == ((__int128_t)((unsigned __int128)1 << 127))) {
+        return d;
     }
+    d.mantissa = -d.mantissa;
     return d;
 }
 
@@ -909,7 +950,7 @@ decimal_round(decimal_t d, int32_t target_scale, round_mode_t mode, decimal_t* o
         if (q > ((unsigned __int128)1 << 127)) {
             return DECIMAL_ERR_OVERFLOW;
         }
-        out->mantissa = -(__int128_t)q;
+        out->mantissa = decimal_negate_magnitude(q);
     } else {
         if (q > (((unsigned __int128)1 << 127) - 1)) {
             return DECIMAL_ERR_OVERFLOW;

@@ -31,6 +31,27 @@ store_bcrypt_hash(const char* password, char* out)
     csilk_bcrypt_hash(password, strlen(password), MINEFOLIO_BCRYPT_COST, out);
 }
 
+/* OAuth mock 仅在启动期从 MINEFOLIO_TEST_OAUTH_MOCK 环境变量固化一次。
+   禁止在请求路径反复 getenv（原实现在每次 callback 都 getenv，生产误设该变量
+   即可伪造任意 OAuth 用户）。环境变量在进程启动时由测试桩/CI 设定，运行期
+   不再重新读取；测试可在进程内通过 reset 重新固化以模拟不同的启动环境。 */
+static int s_oauth_mock_enabled = -1; /* -1 未解析 */
+static int
+oauth_mock_enabled(void)
+{
+    if (s_oauth_mock_enabled < 0) {
+        const char* e = getenv("MINEFOLIO_TEST_OAUTH_MOCK");
+        s_oauth_mock_enabled = (e && strcmp(e, "1") == 0) ? 1 : 0;
+    }
+    return s_oauth_mock_enabled;
+}
+
+void
+auth_oauth_mock_reset(void)
+{
+    s_oauth_mock_enabled = -1;
+}
+
 static int
 decrypt_password_if_needed(csilk_ctx_t* c,
                            const char*  enc,
@@ -114,6 +135,21 @@ auth_usecase_register(void*                      pool,
         out_res->code = 1004;
         snprintf(out_res->message, sizeof(out_res->message), "用户名已存在");
         return -1;
+    }
+
+    /* 注册开放门禁：首个用户（系统初始化引导）必须放行；已有用户时受
+       ENABLE_REGISTRATION 配置控制（默认开放，可关闭以阻止后续注册）。
+       该规则此前仅有单测、生产注册路径无调用点，此处接入。 */
+    {
+        int         user_count = mf_auth_repo_count(pool);
+        char        reg_cfg[32] = {0};
+        const char* v = config_env_get("ENABLE_REGISTRATION", reg_cfg, sizeof(reg_cfg), "1");
+        bool        allow_registration = !v || v[0] == '1' || strcasecmp(v, "true") == 0;
+        if (!mf_auth_rule_can_register(user_count, allow_registration)) {
+            out_res->code = 1004;
+            snprintf(out_res->message, sizeof(out_res->message), "当前系统已关闭用户注册");
+            return -1;
+        }
     }
 
     char hashed[CSILK_BCRYPT_HASH_LEN];
@@ -868,8 +904,8 @@ auth_usecase_oauth_callback(void*                       pool,
     char oauth_id_buf[128] = {0};
     char username_buf[128] = {0};
 
-    const char* mock_env = getenv("MINEFOLIO_TEST_OAUTH_MOCK");
-    if (mock_env && strcmp(mock_env, "1") == 0) {
+    /* 启动期固化的 OAuth mock 开关，见 oauth_mock_enabled() */
+    if (oauth_mock_enabled()) {
         if (strncmp(cmd->code, "mock_code_", 10) == 0) {
             snprintf(oauth_id_buf, sizeof(oauth_id_buf), "sub_%s", cmd->code + 10);
             snprintf(username_buf,

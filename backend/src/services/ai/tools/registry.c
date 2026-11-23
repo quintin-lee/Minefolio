@@ -16,23 +16,58 @@
 
 #define MAX_TOOLS 64
 
-static ai_tool_t       s_registered_tools[MAX_TOOLS];
-static size_t          s_tool_count = 0;
-static bool            s_initialized = false;
-static csilk_ai_tool_t s_csilk_tools[MAX_TOOLS];
-static size_t          s_csilk_tool_count = 0;
-static csilk_ai_tool_t s_csilk_readonly_tools[MAX_TOOLS];
-static size_t          s_csilk_readonly_count = 0;
+static ai_tool_t        s_registered_tools[MAX_TOOLS];
+static size_t           s_tool_count = 0;
+static bool             s_initialized = false;
+static const ai_tool_t* s_tool_list_cache[MAX_TOOLS];
+static csilk_ai_tool_t  s_csilk_tools[MAX_TOOLS];
+static size_t           s_csilk_tool_count = 0;
+static csilk_ai_tool_t  s_csilk_readonly_tools[MAX_TOOLS];
+static size_t           s_csilk_readonly_count = 0;
 
-/* 工具表为只读注册：启动后只读，find/list 无需持锁 */
+/* 注册表与派生视图缓存统一受 s_registry_mutex 保护；初始化/注册时一次性重建只读快照，
+   读取路径只读返回快照指针，避免多线程并发调用时清零覆写静态数组引发数据竞争。 */
 static pthread_once_t  s_registry_once = PTHREAD_ONCE_INIT;
 static pthread_mutex_t s_registry_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static void
+rebuild_caches_locked(void)
+{
+    s_csilk_tool_count = 0;
+    s_csilk_readonly_count = 0;
+    for (size_t i = 0; i < s_tool_count; i++) {
+        s_tool_list_cache[i] = &s_registered_tools[i];
+        if (s_registered_tools[i].internal_only) {
+            continue; /* 内部专用工具（如 confirm_*）绝不暴露给 LLM，防止 Prompt Injection 自主绕过确认 */
+        }
+        s_csilk_tools[s_csilk_tool_count].type = "function";
+        s_csilk_tools[s_csilk_tool_count].function.name = s_registered_tools[i].name;
+        s_csilk_tools[s_csilk_tool_count].function.description = s_registered_tools[i].description;
+        s_csilk_tools[s_csilk_tool_count].function.parameters_json =
+            s_registered_tools[i].parameters_schema;
+        s_csilk_tool_count++;
+
+        if (!s_registered_tools[i].is_mutation) {
+            s_csilk_readonly_tools[s_csilk_readonly_count].type = "function";
+            s_csilk_readonly_tools[s_csilk_readonly_count].function.name =
+                s_registered_tools[i].name;
+            s_csilk_readonly_tools[s_csilk_readonly_count].function.description =
+                s_registered_tools[i].description;
+            s_csilk_readonly_tools[s_csilk_readonly_count].function.parameters_json =
+                s_registered_tools[i].parameters_schema;
+            s_csilk_readonly_count++;
+        }
+    }
+}
+
+static void
 registry_init_impl(void)
 {
+    pthread_mutex_lock(&s_registry_mutex);
     s_tool_count = 0;
     s_csilk_tool_count = 0;
+    s_csilk_readonly_count = 0;
+    pthread_mutex_unlock(&s_registry_mutex);
 
     ai_tool_asset_register_all();
     ai_tool_transaction_register_all();
@@ -46,7 +81,10 @@ registry_init_impl(void)
     ai_tool_batch_register_all();
     ai_tool_skill_register_all();
 
+    pthread_mutex_lock(&s_registry_mutex);
+    rebuild_caches_locked();
     s_initialized = true;
+    pthread_mutex_unlock(&s_registry_mutex);
 }
 
 void
@@ -77,18 +115,24 @@ ai_tool_requires_id(const char* name)
 int
 ai_tool_register(const ai_tool_t* tool)
 {
-    if (!tool || !tool->name || !tool->name[0] || s_tool_count >= MAX_TOOLS) {
+    if (!tool || !tool->name || !tool->name[0]) {
         return -1;
     }
     pthread_mutex_lock(&s_registry_mutex);
     for (size_t i = 0; i < s_tool_count; i++) {
         if (strcmp(s_registered_tools[i].name, tool->name) == 0) {
             s_registered_tools[i] = *tool;
+            rebuild_caches_locked();
             pthread_mutex_unlock(&s_registry_mutex);
             return 0;
         }
     }
+    if (s_tool_count >= MAX_TOOLS) {
+        pthread_mutex_unlock(&s_registry_mutex);
+        return -1;
+    }
     s_registered_tools[s_tool_count++] = *tool;
+    rebuild_caches_locked();
     pthread_mutex_unlock(&s_registry_mutex);
     return 0;
 }
@@ -106,6 +150,7 @@ ai_tool_unregister(const char* name)
                 s_registered_tools[j] = s_registered_tools[j + 1];
             }
             s_tool_count--;
+            rebuild_caches_locked();
             pthread_mutex_unlock(&s_registry_mutex);
             return 0;
         }
@@ -121,47 +166,39 @@ ai_tool_find(const char* name)
         return NULL;
     }
     ai_tool_registry_init();
+    pthread_mutex_lock(&s_registry_mutex);
+    const ai_tool_t* found = NULL;
     for (size_t i = 0; i < s_tool_count; i++) {
         if (strcmp(s_registered_tools[i].name, name) == 0) {
-            return &s_registered_tools[i];
+            found = &s_registered_tools[i];
+            break;
         }
     }
-    return NULL;
+    pthread_mutex_unlock(&s_registry_mutex);
+    return found;
 }
 
 const ai_tool_t**
 ai_tool_list_all(size_t* count)
 {
     ai_tool_registry_init();
-    static const ai_tool_t* list[MAX_TOOLS];
-    for (size_t i = 0; i < s_tool_count; i++) {
-        list[i] = &s_registered_tools[i];
-    }
+    pthread_mutex_lock(&s_registry_mutex);
     if (count) {
         *count = s_tool_count;
     }
-    return list;
+    pthread_mutex_unlock(&s_registry_mutex);
+    return s_tool_list_cache;
 }
 
 const csilk_ai_tool_t*
 ai_tool_get_csilk_definitions(size_t* count)
 {
     ai_tool_registry_init();
-    s_csilk_tool_count = 0;
-    for (size_t i = 0; i < s_tool_count; i++) {
-        if (s_registered_tools[i].internal_only) {
-            continue; /* 内部专用工具（如 confirm_*）绝不暴露给 LLM，防止 Prompt Injection 自主绕过确认 */
-        }
-        s_csilk_tools[s_csilk_tool_count].type = "function";
-        s_csilk_tools[s_csilk_tool_count].function.name = s_registered_tools[i].name;
-        s_csilk_tools[s_csilk_tool_count].function.description = s_registered_tools[i].description;
-        s_csilk_tools[s_csilk_tool_count].function.parameters_json =
-            s_registered_tools[i].parameters_schema;
-        s_csilk_tool_count++;
-    }
+    pthread_mutex_lock(&s_registry_mutex);
     if (count) {
         *count = s_csilk_tool_count;
     }
+    pthread_mutex_unlock(&s_registry_mutex);
     return s_csilk_tools;
 }
 
@@ -169,24 +206,10 @@ const csilk_ai_tool_t*
 ai_tool_get_readonly_csilk_definitions(size_t* count)
 {
     ai_tool_registry_init();
-    s_csilk_readonly_count = 0;
-    for (size_t i = 0; i < s_tool_count; i++) {
-        if (s_registered_tools[i].internal_only) {
-            continue; /* 内部专用工具不暴露给 LLM */
-        }
-        if (s_registered_tools[i].is_mutation) {
-            continue; /* 只读入口 (IM 机器人) 仅放行非动账工具 */
-        }
-        s_csilk_readonly_tools[s_csilk_readonly_count].type = "function";
-        s_csilk_readonly_tools[s_csilk_readonly_count].function.name = s_registered_tools[i].name;
-        s_csilk_readonly_tools[s_csilk_readonly_count].function.description =
-            s_registered_tools[i].description;
-        s_csilk_readonly_tools[s_csilk_readonly_count].function.parameters_json =
-            s_registered_tools[i].parameters_schema;
-        s_csilk_readonly_count++;
-    }
+    pthread_mutex_lock(&s_registry_mutex);
     if (count) {
         *count = s_csilk_readonly_count;
     }
+    pthread_mutex_unlock(&s_registry_mutex);
     return s_csilk_readonly_tools;
 }

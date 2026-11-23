@@ -1,6 +1,7 @@
 #include "interfaces/http/controllers/auth_controller.h"
 #include "application/auth/usecases.h"
 #include "config/key_manager.h"
+#include "middlewares/jwt_middleware.h"
 #include "common/response.h"
 #include "common/ctx.h"
 #include "common/db.h"
@@ -114,6 +115,7 @@ api_auth_change_password(csilk_ctx_t* c)
     csilk_json_free(body);
 
     if (rc == 0 && res.code == 0) {
+        jwt_middleware_invalidate_user(user_id);
         csilk_json_t* resp = csilk_json_object();
         csilk_json_add_number(resp, "code", 0);
         csilk_json_add_string(resp, "message", "密码修改成功");
@@ -216,6 +218,7 @@ api_auth_2fa_disable(csilk_ctx_t* c)
     }
 
     if (rc == 0 && res.code == 0) {
+        jwt_middleware_invalidate_user(user_id);
         respond_ok_null(c);
     } else {
         respond_error(c, res.code ? res.code : 1002, res.message);

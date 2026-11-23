@@ -63,7 +63,7 @@ TOKEN_B=$(node -e "
 const crypto = require('crypto');
 const header = Buffer.from(JSON.stringify({alg:'HS256',typ:'JWT'})).toString('base64url');
 const now = Math.floor(Date.now()/1000);
-const payload = Buffer.from(JSON.stringify({sub: $USER_B_ID, user_id: $USER_B_ID, token_version: 0, exp: now + 604800, iat: now})).toString('base64url');
+const payload = Buffer.from(JSON.stringify({sub: $USER_B_ID, user_id: $USER_B_ID, v: 0, exp: now + 604800, iat: now})).toString('base64url');
 const secret = '$MINEFOLIO_JWT_SECRET';
 const sig = crypto.createHmac('sha256', secret).update(header + '.' + payload).digest('base64url');
 process.stdout.write(header + '.' + payload + '.' + sig);
@@ -75,7 +75,7 @@ echo "Testing GET /api/scheduler/dashboard..."
 DASH=$(curl -s -X GET "$BASE/scheduler/dashboard" -H "Authorization: Bearer $TOKEN_A")
 echo "$DASH" | jq .
 test "$(echo "$DASH" | jq -r '.code')" = "0"
-test "$(echo "$DASH" | jq -r '.data.active_jobs | floor')" = "7"
+test "$(echo "$DASH" | jq -r '.data.active_jobs|tonumber|floor')" = "7"
 test "$(echo "$DASH" | jq -r '.data.push_channel.channel_type')" = "none"
 
 # 4. Test POST /api/scheduler/jobs (Create AI Task)
@@ -94,27 +94,27 @@ CREATE_RES=$(curl -s -X POST "$BASE/scheduler/jobs" \
   }')
 echo "$CREATE_RES" | jq .
 test "$(echo "$CREATE_RES" | jq -r '.code')" = "0"
-JOB_ID=$(echo "$CREATE_RES" | jq -r '.data.id | floor')
-test -n "$JOB_ID" && test "$JOB_ID" -gt 0
+JOB_ID=$(echo "$CREATE_RES" | jq -r 'if (.data.id|type) == "string" then .data.id|tonumber else .data.id end')
+test -n "$JOB_ID" && test "$JOB_ID" != "0" && test "$JOB_ID" != "null"
 echo "Created Job ID: $JOB_ID"
 
 # 5. Test GET /api/scheduler/jobs (List: 7 built-in + 1 custom = 8 total)
 echo "Testing GET /api/scheduler/jobs..."
 LIST_RES=$(curl -s -X GET "$BASE/scheduler/jobs" -H "Authorization: Bearer $TOKEN_A")
 test "$(echo "$LIST_RES" | jq -r '.code')" = "0"
-test "$(echo "$LIST_RES" | jq -r '.data.total | floor')" = "8"
+test "$(echo "$LIST_RES" | jq -r '.data.total|tonumber|floor')" = "8"
 # Built-in tasks appear first
-test "$(echo "$LIST_RES" | jq -r '.data.items[0].is_builtin | floor')" = "1"
+test "$(echo "$LIST_RES" | jq -r '.data.items[0].is_builtin|tonumber|floor')" = "1"
 test "$(echo "$LIST_RES" | jq -r '.data.items[0].name')" = "全市场行情与基金净值同步"
-BUILTIN_JOB_ID=$(echo "$LIST_RES" | jq -r '.data.items[0].id | floor')
+BUILTIN_JOB_ID=$(echo "$LIST_RES" | jq -r '.data.items[0].id|tonumber|floor')
 echo "Built-in Job ID: $BUILTIN_JOB_ID"
 
 # 5.1 Verify standard user Bob can also view built-in tasks (total 7 for Bob)
 echo "Testing GET /api/scheduler/jobs as standard user Bob..."
 BOB_LIST=$(curl -s -X GET "$BASE/scheduler/jobs" -H "Authorization: Bearer $TOKEN_B")
 test "$(echo "$BOB_LIST" | jq -r '.code')" = "0"
-test "$(echo "$BOB_LIST" | jq -r '.data.total | floor')" = "7"
-test "$(echo "$BOB_LIST" | jq -r '.data.items[0].is_builtin | floor')" = "1"
+test "$(echo "$BOB_LIST" | jq -r '.data.total|tonumber|floor')" = "7"
+test "$(echo "$BOB_LIST" | jq -r '.data.items[0].is_builtin|tonumber|floor')" = "1"
 
 # 5.2 Test Bob can toggle built-in task on and off
 echo "Testing toggle built-in job as Bob..."
@@ -155,7 +155,7 @@ echo "Testing GET /api/scheduler/jobs/$JOB_ID..."
 GET_RES=$(curl -s -X GET "$BASE/scheduler/jobs/$JOB_ID" -H "Authorization: Bearer $TOKEN_A")
 test "$(echo "$GET_RES" | jq -r '.code')" = "0"
 test "$(echo "$GET_RES" | jq -r '.data.name')" = "每日智能简报"
-test "$(echo "$GET_RES" | jq -r '.data.enabled | floor')" = "1"
+test "$(echo "$GET_RES" | jq -r '.data.enabled|tonumber|floor')" = "1"
 
 # 7. Test PUT /api/scheduler/jobs/:id (Update)
 echo "Testing PUT /api/scheduler/jobs/$JOB_ID..."
@@ -201,7 +201,7 @@ sleep 1
 echo "Testing GET /api/scheduler/jobs/$JOB_ID/logs..."
 for i in {1..10}; do
   LOGS_RES=$(curl -s -X GET "$BASE/scheduler/jobs/$JOB_ID/logs" -H "Authorization: Bearer $TOKEN_A")
-  TOTAL_LOGS=$(echo "$LOGS_RES" | jq -r '.data.total // 0 | floor' 2>/dev/null || echo 0)
+  TOTAL_LOGS=$(echo "$LOGS_RES" | jq -r '.data.total // 0 | tonumber|floor' 2>/dev/null || echo 0)
   if [ "$TOTAL_LOGS" -ge 1 ]; then
     break
   fi
@@ -209,7 +209,7 @@ for i in {1..10}; do
 done
 echo "Logs result: $LOGS_RES"
 test "$(echo "$LOGS_RES" | jq -r '.code')" = "0"
-TOTAL_LOGS=$(echo "$LOGS_RES" | jq -r '.data.total | floor')
+TOTAL_LOGS=$(echo "$LOGS_RES" | jq -r '.data.total|tonumber|floor')
 test "$TOTAL_LOGS" -ge 1
 test "$(echo "$LOGS_RES" | jq -r '.data.items[0].status')" = "success"
 test "$(echo "$LOGS_RES" | jq -r '.data.items[0].trigger_reason')" = "manual_invoke"
@@ -232,7 +232,7 @@ GET_CH=$(curl -s -X GET "$BASE/scheduler/channel" -H "Authorization: Bearer $TOK
 test "$(echo "$GET_CH" | jq -r '.code')" = "0"
 test "$(echo "$GET_CH" | jq -r '.data.channel_type')" = "serverchan"
 test "$(echo "$GET_CH" | jq -r '.data.channel_name')" = "方糖推送"
-test "$(echo "$GET_CH" | jq -r '.data.is_active | floor')" = "1"
+test "$(echo "$GET_CH" | jq -r '.data.is_active|tonumber|floor')" = "1"
 # Verify masking
 MASKED=$(echo "$GET_CH" | jq -r '.data.secret_key_masked')
 test "$MASKED" != "SCT12345ABCDEF"

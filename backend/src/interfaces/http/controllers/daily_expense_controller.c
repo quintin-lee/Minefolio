@@ -40,17 +40,17 @@ daily_expenses_list(csilk_ctx_t* c)
     int64_t       total = 0;
     csilk_json_t* result = NULL;
     int           rc = daily_expense_usecase_list(db_get_pool(),
-                                                  user_id,
-                                                  ledger_id,
-                                                  page,
-                                                  page_size,
-                                                  type,
-                                                  cat_id,
-                                                  tag_ids,
-                                                  start,
-                                                  end,
-                                                  &result,
-                                                  &total);
+                                        user_id,
+                                        ledger_id,
+                                        page,
+                                        page_size,
+                                        type,
+                                        cat_id,
+                                        tag_ids,
+                                        start,
+                                        end,
+                                        &result,
+                                        &total);
     if (rc != 0 || !result) {
         respond_error(c, 500, "查询失败");
         return;

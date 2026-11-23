@@ -554,6 +554,24 @@ main(int argc, char** argv)
             csilk_json_free(bad_batch);
         }
 
+        /* Cross-session rejection (tok_sid == session_id strong binding) */
+        {
+            char* sid_token =
+                ai_confirmation_create_batch_token(user_id, 42, actions, AI_RISK_HIGH, 300);
+            assert(sid_token != NULL);
+            ai_confirmation_status_t st_cross =
+                ai_confirmation_verify_and_consume_batch(user_id, 99, actions, sid_token);
+            assert(st_cross == AI_CONFIRM_ERR_SESSION_MISMATCH);
+            ai_confirmation_status_t st_zero =
+                ai_confirmation_verify_and_consume_batch(user_id, 0, actions, sid_token);
+            assert(st_zero == AI_CONFIRM_ERR_SESSION_MISMATCH);
+            ai_confirmation_status_t st_match =
+                ai_confirmation_verify_and_consume_batch(user_id, 42, actions, sid_token);
+            assert(st_match == AI_CONFIRM_OK);
+            free(sid_token);
+            printf("  ✅ Cross-session batch token strongly rejected (AI_CONFIRM_ERR_SESSION_MISMATCH)\n");
+        }
+
         free(token);
         csilk_json_free(actions);
         csilk_db_pool_free(pool);

@@ -228,6 +228,7 @@ import { Icon } from '@iconify/vue'
 import { assetsApi } from '@/api/assets'
 import { confirmAction as confirmAiAction } from '@/api/ai'
 import { useCategoryStore } from '@/stores/category'
+import { useChatStore } from '@/stores/chat'
 import { localToday, assetLabel } from '@/utils/format'
 import type { Asset, Category } from '@/types'
 
@@ -263,6 +264,7 @@ const emit = defineEmits<{
 }>()
 
 const categoryStore = useCategoryStore()
+const chatStore = useChatStore()
 const availableAssets = ref<Asset[]>([])
 const loading = ref(false)
 const cardStatus = ref<'pending' | 'executing' | 'executed' | 'cancelled'>(
@@ -389,6 +391,7 @@ async function handleConfirm() {
       const res = (await confirmAiAction({
         action_type: 'daily_expense',
         draft_token: draftToken.value,
+        session_id: chatStore.currentSessionId ?? undefined,
         amount: form.amount,
         type: form.type,
         date: form.date,
@@ -423,6 +426,7 @@ async function handleConfirm() {
       const res = (await confirmAiAction({
         action_type: 'transfer',
         draft_token: draftToken.value,
+        session_id: chatStore.currentSessionId ?? undefined,
         amount: form.amount,
         from_asset_id: form.from_asset_id,
         to_asset_id: form.to_asset_id,

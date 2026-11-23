@@ -59,11 +59,17 @@ bootstrap().catch((err) => {
   console.error('[minefolio-mobile] bootstrap failed:', err)
   const root = document.getElementById('app')
   if (root) {
-    root.innerHTML =
-      '<div style="padding:24px;font-family:system-ui;color:#f87171;font-size:14px">' +
-      '<strong>Minefolio 启动失败</strong><br/>' +
-      '<span style="display:block;margin-top:8px;color:#94a3b8">' +
-      String((err as Error)?.message || err) +
-      '</span></div>'
+    const box = document.createElement('div')
+    box.style.cssText = 'padding:24px;font-family:system-ui;color:#f87171;font-size:14px'
+
+    const title = document.createElement('strong')
+    title.textContent = 'Minefolio 启动失败'
+
+    const msg = document.createElement('span')
+    msg.style.cssText = 'display:block;margin-top:8px;color:#94a3b8'
+    msg.textContent = String((err as Error)?.message || err)
+
+    box.append(title, document.createElement('br'), msg)
+    root.replaceChildren(box)
   }
 })

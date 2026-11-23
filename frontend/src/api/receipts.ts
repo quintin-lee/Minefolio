@@ -5,6 +5,7 @@
 
 // frontend/src/api/receipts.ts
 import http from '@/utils/http'
+import { resolveMaybeAsync, type AsyncTaskSubmission } from './tasks'
 
 /**
  * 小票/发票 OCR 解析识别结果
@@ -52,7 +53,9 @@ export const receiptsApi = {
    * @param data 扫描请求载荷 (包含图片 Base64 与可选模型配置)
    * @returns 结构化解析识别结果
    */
-  scan: (data: ReceiptScanPayload) =>
-    http.post<ReceiptScanResult>('/receipts/scan', data),
+  scan: async (data: ReceiptScanPayload) => {
+    const res = await http.post<ReceiptScanResult | AsyncTaskSubmission>('/receipts/scan', data)
+    return resolveMaybeAsync<ReceiptScanResult>(res, { timeoutMs: 90000 })
+  },
 }
 

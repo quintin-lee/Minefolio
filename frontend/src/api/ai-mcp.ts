@@ -7,6 +7,7 @@
  */
 
 import http from '@/utils/http'
+import { resolveMaybeAsync, type AsyncTaskSubmission } from './tasks'
 import type {
   McpServer,
   McpServerTool,
@@ -105,10 +106,11 @@ export async function getMcpServerTools(id: number): Promise<McpServerTool[]> {
  */
 export async function testMcpServer(id: number): Promise<McpTestResult> {
   const r = (await http.post(`/ai/mcp/servers/${id}/test`)) as unknown
-  if (r && typeof r === 'object' && 'data' in r && (r as { data: unknown }).data) {
-    return (r as { data: McpTestResult }).data
-  }
-  return r as McpTestResult
+  const payload =
+    r && typeof r === 'object' && 'data' in r && (r as { data: unknown }).data
+      ? (r as { data: McpTestResult | AsyncTaskSubmission }).data
+      : (r as McpTestResult | AsyncTaskSubmission)
+  return resolveMaybeAsync<McpTestResult>(payload, { timeoutMs: 90000 })
 }
 
 /**
@@ -120,10 +122,12 @@ export async function testMcpServer(id: number): Promise<McpTestResult> {
  */
 export async function refreshMcpServer(id: number): Promise<{ tool_count: number }> {
   const r = (await http.post(`/ai/mcp/servers/${id}/refresh`)) as unknown
-  if (r && typeof r === 'object' && 'data' in r && (r as { data: unknown }).data) {
-    return (r as { data: { tool_count: number } }).data
-  }
-  return (r as { tool_count: number }) || { tool_count: 0 }
+  const payload =
+    r && typeof r === 'object' && 'data' in r && (r as { data: unknown }).data
+      ? (r as { data: { tool_count: number } | AsyncTaskSubmission }).data
+      : (r as { tool_count: number } | AsyncTaskSubmission)
+  const res = await resolveMaybeAsync<{ tool_count?: number }>(payload, { timeoutMs: 90000 })
+  return { tool_count: res?.tool_count ?? 0 }
 }
 
 /**

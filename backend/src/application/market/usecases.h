@@ -18,6 +18,11 @@ int market_usecase_sync_all(void*                    pool,
                             int*                     out_failed,
                             market_usecase_result_t* out_res);
 
+int market_usecase_validate_sync_single(void*                    pool,
+                                        int64_t                  user_id,
+                                        int64_t                  asset_id,
+                                        market_usecase_result_t* out_res);
+
 int market_usecase_sync_single(void*                    pool,
                                int64_t                  user_id,
                                int64_t                  asset_id,

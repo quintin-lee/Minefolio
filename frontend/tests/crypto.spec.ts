@@ -67,4 +67,15 @@ describe('crypto RSA utility', () => {
   it('exports encryptText as an alias to encryptPassword', () => {
     expect(encryptText).toBe(encryptPassword)
   })
+
+  it('throws clear HTTPS/localhost guidance error when crypto.subtle is unavailable', async () => {
+    const origCrypto = globalThis.crypto
+    vi.stubGlobal('crypto', { ...origCrypto, subtle: undefined })
+    try {
+      await expect(encryptPassword('myPassword123')).rejects.toThrow(/HTTPS|localhost/)
+      expect(global.fetch).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
 })

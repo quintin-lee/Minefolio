@@ -24,14 +24,14 @@ typedef struct mf_asset {
     int64_t    category_id;
     char       name[128];
     char       account_no[64];
-    char       asset_type[32];   /**< 资产类型代码: cash, bank, stock, fund, crypto, loan 等 */
-    money_t    current_value;    /**< 当前估值/账户余额 */
-    currency_t currency;         /**< 结算货币代码 */
-    char       note[256];        /**< 备注信息 */
-    quantity_t quantity;         /**< 投资持仓份额/数量 */
-    money_t    cost_basis;       /**< 累计建仓与手续费成本基础 */
-    price_t    net_value;        /**< 最新单位净值/成交单价 */
-    char       symbol[64];       /**< 行情标的代码 (如 600519, AAPL) */
+    char       asset_type[32]; /**< 资产类型代码: cash, bank, stock, fund, crypto, loan 等 */
+    money_t    current_value;  /**< 当前估值/账户余额 */
+    currency_t currency;       /**< 结算货币代码 */
+    char       note[256];      /**< 备注信息 */
+    quantity_t quantity;       /**< 投资持仓份额/数量 */
+    money_t    cost_basis;     /**< 累计建仓与手续费成本基础 */
+    price_t    net_value;      /**< 最新单位净值/成交单价 */
+    char       symbol[64];     /**< 行情标的代码 (如 600519, AAPL) */
     char       quote_source[32]; /**< 行情源标识 (如 stock_cn, yahoo, binance) */
     char       cost_method[32];  /**< 成本结转方法: weighted_average, fifo */
     char       created_at[64];

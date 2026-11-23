@@ -170,6 +170,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import { useCategoryStore } from '@/stores/category'
+import { resetFinancialEntities } from '@/composables/useFinancialEntities'
 import { t } from '@/utils/locale'
 import LedgerSelector from '@/components/LedgerSelector.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
@@ -201,6 +202,7 @@ function handleResize() {
 
 function handleLedgerChanged() {
   categoryStore.invalidate()
+  resetFinancialEntities()
   routerViewKey.value++
 }
 

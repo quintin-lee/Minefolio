@@ -23,6 +23,7 @@ export default defineConfig({
   ],
   define: {
     __APP_VERSION__: JSON.stringify(version),
+    __IS_MOBILE__: false,
   },
   resolve: {
     alias: {

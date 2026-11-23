@@ -13,13 +13,18 @@
           @click="handleCreateBackup"
         >
           <Icon icon="ph:plus-bold" width="16" style="margin-right: 6px;" />
-          {{ t('settings.createBackup') }}
+          {{ backupTask.running.value ? `${t('settings.createBackup')} (${backupTask.progress.value}%)` : t('settings.createBackup') }}
         </el-button>
         <el-button :loading="loading" @click="fetchStatus">
           <Icon icon="ph:arrows-clockwise" width="16" style="margin-right: 6px;" />
           {{ t('common.refresh') || '刷新' }}
         </el-button>
       </div>
+    </div>
+
+    <div v-if="backupTask.running.value" style="margin-bottom: 16px;">
+      <el-progress :percentage="backupTask.progress.value" :stroke-width="6" />
+      <div style="margin-top: 6px; font-size: 12px; color: var(--mf-text-muted)">{{ backupTask.message.value || t('settings.createBackup') }}</div>
     </div>
 
     <!-- 存储指标卡片 -->
@@ -138,6 +143,7 @@ import { ElMessage } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import { t } from '@/utils/locale'
 import { backupApi, type BackupStatus, type BackupItem } from '@/api/backup'
+import { useAsyncTaskProgress } from '@/composables/useAsyncTaskProgress'
 
 const loading = ref(false)
 const creating = ref(false)
@@ -173,13 +179,16 @@ async function fetchStatus() {
   }
 }
 
+const backupTask = useAsyncTaskProgress()
+
 async function handleCreateBackup() {
   creating.value = true
   try {
-    await backupApi.createBackup()
+    await backupTask.run((opts) => backupApi.createBackup(opts))
     ElMessage.success(t('settings.createBackupSuccess'))
     await fetchStatus()
   } catch (err) {
+    if (backupTask.isCancelledError(err)) return
     ElMessage.error(t('settings.createBackupFailed'))
   } finally {
     creating.value = false

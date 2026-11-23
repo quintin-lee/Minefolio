@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { initLocalDb, query, run, rowsFrom, resetLocalDb } from '@/db/local'
-import { useSyncStore } from '@/stores/sync'
+import { useSyncStore, parseSyncTimestamp } from '@/stores/sync'
 
 vi.mock('@/api/daily_expenses', () => ({
   dailyExpensesApi: { create: vi.fn(), update: vi.fn(), delete: vi.fn(), list: vi.fn().mockResolvedValue({ list: [] }) },
@@ -141,5 +141,68 @@ describe('sync store', () => {
     expect(tagsApi.list).toHaveBeenCalled()
     expect(rowsFrom(query('SELECT * FROM categories WHERE id = 10')).length).toBe(1)
     expect(rowsFrom(query('SELECT * FROM tags WHERE id = 20')).length).toBe(1)
+  })
+
+  it('reconciles remote deletions during pullRemote while preserving pending local items', async () => {
+    const store = useSyncStore()
+    store.init()
+    // 1. 本地已有远端同步过的支出(id=11,12)及一条尚未推送成功的本地待推记录(id=13)
+    run('INSERT INTO daily_expenses (id, category_id, asset_id, expense_type, amount, currency, expense_date, __deleted) VALUES (?,?,?,?,?,?,?,0)',
+      [11, 1, 1, 'expense', 10, 'CNY', '2026-08-10'])
+    run('INSERT INTO daily_expenses (id, category_id, asset_id, expense_type, amount, currency, expense_date, __deleted) VALUES (?,?,?,?,?,?,?,0)',
+      [12, 1, 1, 'expense', 20, 'CNY', '2026-08-11'])
+    run('INSERT INTO daily_expenses (id, category_id, asset_id, expense_type, amount, currency, expense_date, __deleted) VALUES (?,?,?,?,?,?,?,0)',
+      [13, 1, 1, 'expense', 30, 'CNY', '2026-08-12'])
+    store.enqueue('daily_expenses', 13, 'create', { amount: 30 })
+
+    // 远端列表只剩 id=11（说明 id=12 已在服务端被删）；pending id=13 尚未入库
+    ;(dailyExpensesApi.list as any).mockResolvedValue({
+      list: [{ id: 11, category_id: 1, asset_id: 1, expense_type: 'expense', amount: 10, currency: 'CNY', expense_date: '2026-08-10', updated_at: '2026-08-10T00:00:00Z' }],
+      total: 1,
+    })
+
+    await store.pullRemote()
+
+    expect(rowsFrom(query('SELECT * FROM daily_expenses WHERE id = 11')).length).toBe(1)
+    expect(rowsFrom(query('SELECT * FROM daily_expenses WHERE id = 12')).length).toBe(0)
+    expect(rowsFrom(query('SELECT * FROM daily_expenses WHERE id = 13')).length).toBe(1)
+  })
+
+  it('skips conflicted items on subsequent syncNow calls and supports retry/discard', async () => {
+    ;(dailyExpensesApi.create as any).mockRejectedValueOnce({ response: { data: { code: 1003 } } })
+    const store = useSyncStore()
+    store.init()
+    store.enqueue('daily_expenses', 200, 'create', { amount: 42 })
+
+    await store.syncNow()
+    expect(store.conflicts.length).toBe(1)
+    expect(store.activePendingCount).toBe(0)
+    expect(dailyExpensesApi.create).toHaveBeenCalledTimes(1)
+
+    // Subsequent syncNow must NOT keep retrying the conflicted item automatically
+    await store.syncNow()
+    expect(dailyExpensesApi.create).toHaveBeenCalledTimes(1)
+
+    // Manual retry clears conflict and pushes again
+    ;(dailyExpensesApi.create as any).mockResolvedValueOnce({ id: 201 })
+    await store.resolveConflictRetry(store.conflicts[0]!.id)
+    expect(dailyExpensesApi.create).toHaveBeenCalledTimes(2)
+    expect(store.conflicts.length).toBe(0)
+    expect(store.pendingCount).toBe(0)
+
+    // Enqueue another failing op and discard it manually
+    ;(dailyExpensesApi.create as any).mockRejectedValueOnce({ response: { data: { code: 1003 } } })
+    store.enqueue('daily_expenses', 202, 'create', { amount: 9 })
+    await store.syncNow()
+    expect(store.conflicts.length).toBe(1)
+    store.resolveConflictDiscard(store.conflicts[0]!.id)
+    expect(store.conflicts.length).toBe(0)
+    expect(store.pendingCount).toBe(0)
+  })
+
+  it('parses naive UTC timestamps consistently with Z-suffixed ISO strings', () => {
+    const naive = parseSyncTimestamp('2026-11-21 12:00:00')
+    const isoZ = parseSyncTimestamp('2026-11-21T12:00:00Z')
+    expect(naive).toBe(isoZ)
   })
 })

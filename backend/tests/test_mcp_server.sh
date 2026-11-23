@@ -130,6 +130,12 @@ BADCALL=$(curl -s -X POST "http://127.0.0.1:$PORT/mcp" \
     -d '{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"calculate_date_range","arguments":{}}}' || true)
 grep_check "mcp: tools/call rejects missing required field with -32602" '"code":-32602' "$BADCALL"
 
+# internal_only 工具（如 confirm_proposed_expense）绝不对外暴露或允许通过 /mcp tools/call 调用
+INTCALL=$(curl -s -X POST "http://127.0.0.1:$PORT/mcp" \
+    -H "Authorization: Bearer $JWT" -H 'Content-Type: application/json' \
+    -d '{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"confirm_proposed_expense","arguments":{}}}' || true)
+grep_check "mcp: tools/call rejects internal_only tool with -32602" '"code":-32602' "$INTCALL"
+
 UNK=$(curl -s -X POST "http://127.0.0.1:$PORT/mcp" \
     -H "Authorization: Bearer $JWT" -H 'Content-Type: application/json' \
     -d '{"jsonrpc":"2.0","id":4,"method":"bogus/method","params":{}}' || true)

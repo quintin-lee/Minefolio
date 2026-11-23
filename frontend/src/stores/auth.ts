@@ -82,6 +82,23 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   /**
+   * 重新初始化移动端离线本地库（幂等，已有实例时直接返回）。
+   *
+   * 登出后 resetLocalDb() 会把本地库置空并清理 localStorage，重新登录后
+   * 移动端离线功能依赖本方法恢复；仅移动端入口（main-mobile）会调用，
+   * 桌面端构建不会初始化本地库。
+   */
+  async function reinitLocalDb() {
+    if (!__IS_MOBILE__) return
+    try {
+      const { initLocalDb } = await import('@/db/local')
+      await initLocalDb()
+    } catch {
+      // 离线库初始化失败不影响在线登录主流程（降级为纯在线模式）
+    }
+  }
+
+  /**
    * 用户登录 (支持可选 2FA 流程)
    * @param username 用户名
    * @param password 密码
@@ -101,6 +118,9 @@ export const useAuthStore = defineStore('auth', () => {
       token.value = res.token
       localStorage.setItem('token', res.token)
       await fetchUser()
+      // 登出后本地库已被 reset，重新登录必须恢复离线功能，否则移动端
+      // 离线降级与同步队列推送全部失效直至重启 App（幂等，桌面端不受影响）
+      await reinitLocalDb()
     }
     return res
   }
@@ -118,6 +138,8 @@ export const useAuthStore = defineStore('auth', () => {
       token.value = res.token
       localStorage.setItem('token', res.token)
       await fetchUser()
+      // 同 login：恢复登出时被重置的离线本地库
+      await reinitLocalDb()
     }
     return res
   }
@@ -184,16 +206,18 @@ export const useAuthStore = defineStore('auth', () => {
     clearCryptoKeyCache()
     try {
       // 动态 import 各 store：避免把聊天/账本/分类/同步模块静态打入首屏包
-      const [{ useChatStore }, { useLedgerStore }, { useCategoryStore }, { useSyncStore }] = await Promise.all([
+      const [{ useChatStore }, { useLedgerStore }, { useCategoryStore }, { resetFinancialEntities }, syncMod] = await Promise.all([
         import('./chat'),
         import('./ledger'),
         import('./category'),
-        import('./sync'),
+        import('@/composables/useFinancialEntities'),
+        __IS_MOBILE__ ? import('./sync') : Promise.resolve(null),
       ])
       useChatStore().resetState()
       useLedgerStore().reset()
       useCategoryStore().reset()
-      useSyncStore().reset()
+      resetFinancialEntities()
+      syncMod?.useSyncStore().reset()
     } catch {
       // 清理失败不影响登出主流程
     }
@@ -213,6 +237,7 @@ export const useAuthStore = defineStore('auth', () => {
     changePassword,
     setToken,
     setUser,
+    reinitLocalDb,
   }
 })
 

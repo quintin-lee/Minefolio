@@ -66,6 +66,26 @@ int main(void) {
         mf_mcp_client_free(c_trunc);
     }
 
+    /* Test child process group isolation (pgid == pid) and RLIMIT_CORE == 0 */
+    {
+        mf_mcp_server_t s_pg = {
+            .name = "test_pgid_rlimit",
+            .transport = MCP_TRANSPORT_STDIO,
+            .command = "bash",
+            .args_json = "[\"-c\", \"pg=$(ps -o pgid= -p $$ | tr -d ' '); core=$(ulimit -c); echo '{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":1,\\\"result\\\":{\\\"isolated\\\":'$([ \\\"$pg\\\" = \\\"$$\\\" ] && echo true || echo false)',\\\"core\\\":\\\"'$core'\\\"}}'\"]",
+            .timeout_ms = 4000
+        };
+        mf_mcp_client_t* c_pg = mf_mcp_client_new(&s_pg);
+        assert(c_pg != NULL);
+        char err_pg[256] = {0};
+        char* resp_pg = mf_mcp_client_call_tool(c_pg, "dummy", "{}", err_pg, sizeof(err_pg));
+        assert(resp_pg != NULL);
+        assert(strstr(resp_pg, "\"isolated\":true") != NULL);
+        assert(strstr(resp_pg, "\"core\":\"0\"") != NULL);
+        free(resp_pg);
+        mf_mcp_client_free(c_pg);
+    }
+
     printf("PASS: test_mcp_child_sanitation completed successfully\n");
     return 0;
 }

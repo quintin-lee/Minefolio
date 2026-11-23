@@ -16,15 +16,16 @@
 typedef struct mf_holding_item {
     int64_t    asset_id;
     char       name[128];
-    char       asset_type[32]; /**< 标的类型: stock, fund, bond, crypto */
+    char       asset_type[32];  /**< 标的类型: stock, fund, bond, crypto */
+    char       cost_method[32]; /**< 成本法: weighted_average (默认) 或 fifo */
     currency_t currency;
-    quantity_t quantity;       /**< 当前持仓份额 */
-    price_t    net_value;      /**< 最新单位净值/市价 */
-    money_t    cost_basis;     /**< 账面累计总成本 */
-    money_t    market_value;   /**< 当前市值 = quantity * net_value */
-    money_t    floating_pnl;   /**< 浮动盈亏 = market_value - cost_basis */
-    double     floating_pct;   /**< 浮动盈亏率 (百分比) */
-    money_t    realized_pnl;   /**< 历史累计已实现盈亏 */
+    quantity_t quantity;        /**< 当前持仓份额 */
+    price_t    net_value;       /**< 最新单位净值/市价 */
+    money_t    cost_basis;      /**< 账面累计总成本 */
+    money_t    market_value;    /**< 当前市值 = quantity * net_value */
+    money_t    floating_pnl;    /**< 浮动盈亏 = market_value - cost_basis */
+    double     floating_pct;    /**< 浮动盈亏率 (百分比) */
+    money_t    realized_pnl;    /**< 历史累计已实现盈亏 */
 } mf_holding_item_t;
 
 /**

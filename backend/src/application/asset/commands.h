@@ -18,6 +18,8 @@ typedef struct create_asset_cmd {
     const char* note;
     double      quantity;
     double      cost_basis;
+    bool        has_unit_cost;
+    double      unit_cost;
     double      net_value;
     const char* symbol;
     const char* quote_source;
@@ -39,6 +41,8 @@ typedef struct update_asset_cmd {
     double      quantity;
     bool        has_cost_basis;
     double      cost_basis;
+    bool        has_unit_cost;
+    double      unit_cost;
     bool        has_net_value;
     double      net_value;
     const char* symbol;

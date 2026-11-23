@@ -96,17 +96,24 @@ jwt_validate_version_num(int64_t user_id, int jwt_version)
 
     pthread_mutex_lock(&g_tv_cache_mutex);
     size_t slot = g_tv_cache_count;
+    size_t expired_slot = SIZE_MAX;
     for (size_t i = 0; i < g_tv_cache_count; i++) {
         if (g_tv_cache[i].user_id == user_id) {
             slot = i;
             break;
         }
+        if (expired_slot == SIZE_MAX &&
+            (g_tv_cache[i].user_id <= 0 || g_tv_cache[i].expire_mono_ms <= now_ms)) {
+            expired_slot = i;
+        }
     }
     if (slot == g_tv_cache_count) {
         if (g_tv_cache_count < TOKEN_VERSION_CACHE_MAX_USERS) {
             g_tv_cache_count++;
+        } else if (expired_slot != SIZE_MAX) {
+            slot = expired_slot;
         } else {
-            slot = now_ms % TOKEN_VERSION_CACHE_MAX_USERS;
+            slot = (size_t)(now_ms % TOKEN_VERSION_CACHE_MAX_USERS);
         }
     }
     struct tv_cache_entry* e = &g_tv_cache[slot];
@@ -117,6 +124,51 @@ jwt_validate_version_num(int64_t user_id, int jwt_version)
     pthread_mutex_unlock(&g_tv_cache_mutex);
 
     return (found && jwt_version == db_version) ? 0 : -1;
+}
+
+void
+jwt_middleware_invalidate_user(int64_t user_id)
+{
+    if (user_id <= 0) {
+        return;
+    }
+    pthread_mutex_lock(&g_tv_cache_mutex);
+    for (size_t i = 0; i < g_tv_cache_count; i++) {
+        if (g_tv_cache[i].user_id == user_id) {
+            g_tv_cache[i].user_id = 0;
+            g_tv_cache[i].db_version = 0;
+            g_tv_cache[i].found = 0;
+            g_tv_cache[i].expire_mono_ms = 0;
+        }
+    }
+    pthread_mutex_unlock(&g_tv_cache_mutex);
+}
+
+static bool
+is_im_bind_auth_path(const char* path)
+{
+    if (!path) {
+        return false;
+    }
+    size_t plen = strlen(path);
+    /* 严格匹配单段平台标识: /api/im/<platform>/bind-auth (禁止 '..' 或多段 '/') */
+    if (plen <= 18 || strncmp(path, "/api/im/", 8) != 0 ||
+        strncmp(path + plen - 10, "/bind-auth", 10) != 0) {
+        return false;
+    }
+    size_t seg_len = plen - 18;
+    if (seg_len == 0 || seg_len > 32) {
+        return false;
+    }
+    for (size_t i = 0; i < seg_len; i++) {
+        unsigned char ch = (unsigned char)path[8 + i];
+        bool          ok = (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+                  (ch >= '0' && ch <= '9') || ch == '_' || ch == '-';
+        if (!ok) {
+            return false;
+        }
+    }
+    return true;
 }
 
 static const char* s_jwt_exclude_paths[] = {"/api/auth/login",
@@ -150,11 +202,8 @@ jwt_middleware_wrapper(csilk_ctx_t* c)
             }
         }
         /* P2-A: IM 自助绑定端点 /api/im/{platform}/bind-auth 无 JWT（IM 用户
-         * 未登录），靠限流 + 抢占防护保护。动态 platform 无法精确枚举，
-         * 用前缀 "/api/im/" + 尾段 "/bind-auth" 判定放行。 */
-        size_t plen = strlen(path);
-        if (plen > 16 && strncmp(path, "/api/im/", 8) == 0 &&
-            strncmp(path + plen - 10, "/bind-auth", 10) == 0) {
+         * 未登录），靠限流 + 抢占防护保护。严格校验单段 platform 字符集，防路径穿越。 */
+        if (is_im_bind_auth_path(path)) {
             csilk_next(c);
             return;
         }
@@ -216,9 +265,9 @@ jwt_middleware_wrapper(csilk_ctx_t* c)
             return;
         }
     }
-    /* IM 绑定码 (type=im_bind) 仅放行 /api/im/* 路径，不得访问其他业务端点 */
+    /* IM 绑定码 (type=im_bind) 仅放行安全 /api/im/* 路径（禁止 '..' 穿越），不得访问其他业务端点 */
     if (token_type && strcmp(token_type, "im_bind") == 0) {
-        if (!path || strncmp(path, "/api/im/", 8) != 0) {
+        if (!path || strncmp(path, "/api/im/", 8) != 0 || strstr(path, "..") != NULL) {
             csilk_json_free(payload);
             csilk_json_error(c,
                              CSILK_STATUS_UNAUTHORIZED,
@@ -228,9 +277,23 @@ jwt_middleware_wrapper(csilk_ctx_t* c)
         }
     }
 
+    const csilk_json_t* sub_claim = csilk_json_get(payload, "sub");
+    const csilk_json_t* v_claim = csilk_json_get(payload, "v");
+    if (!sub_claim || !csilk_json_is_number(sub_claim) || !v_claim ||
+        !csilk_json_is_number(v_claim)) {
+        csilk_json_free(payload);
+        if (is_mcp_path) {
+            csilk_next(c);
+            return;
+        }
+        csilk_json_error(c, CSILK_STATUS_UNAUTHORIZED, "Invalid token claims");
+        csilk_abort(c);
+        return;
+    }
+
     int64_t user_id = (int64_t)csilk_json_get_number(payload, "sub");
     int     jwt_v = (int)csilk_json_get_number(payload, "v");
-    if (user_id <= 0) {
+    if (user_id <= 0 || jwt_v < 0) {
         csilk_json_free(payload);
         if (is_mcp_path) {
             csilk_next(c);

@@ -13,8 +13,8 @@ typedef struct {
     int64_t          session_id;
     csilk_json_t*    params;
     csilk_json_t*    shared_state;
-    volatile bool*   cancel_token;      /* SSE 断开/客户端取消 → 置位；NULL = 不检查 */
-    char             user_prompt[2048]; /* 用户发起工作流的展示提示（落库到会话历史） */
+    volatile bool*   cancel_token; /* SSE 断开/客户端取消 → 置位；NULL = 不检查 */
+    char user_prompt[2048]; /* 用户发起工作流的展示提示（落库到会话历史） */
 } ai_wf_context_t;
 
 /**

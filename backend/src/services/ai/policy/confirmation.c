@@ -6,9 +6,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <openssl/crypto.h>
+#include <openssl/evp.h>
 #include <openssl/hmac.h>
-#include <openssl/sha.h>
 #include <openssl/rand.h>
+#include <openssl/sha.h>
 #include <pthread.h>
 
 #define DEFAULT_TTL_SEC 300
@@ -61,9 +63,40 @@ ai_confirmation_get_secret(void)
     if (sec_ai && sec_ai[0]) {
         return sec_ai;
     }
+
+    static char            s_derived_key[65] = {0};
+    static char            s_derived_src[256] = {0};
+    static pthread_mutex_t s_derived_lock = PTHREAD_MUTEX_INITIALIZER;
+
     const char* sec_jwt = config_secret_get("JWT_SECRET", NULL, 0);
     if (sec_jwt && sec_jwt[0]) {
-        return sec_jwt;
+        /* 域分离派生：未显式配置 AI_SECRET 时，使用 HMAC-SHA256(JWT_SECRET, domain) 派生独立子密钥，
+         * 保留零配置自托管便利性同时杜绝与 HS256 JWT 直接复用同一签名密钥。 */
+        static const unsigned char k_domain[] = "minefolio-ai-confirmation-v1";
+        pthread_mutex_lock(&s_derived_lock);
+        if (strcmp(s_derived_src, sec_jwt) != 0 || s_derived_key[0] == '\0') {
+            unsigned char mac[EVP_MAX_MD_SIZE];
+            unsigned int  mac_len = 0;
+            if (HMAC(EVP_sha256(),
+                     sec_jwt,
+                     (int)strlen(sec_jwt),
+                     k_domain,
+                     sizeof(k_domain) - 1,
+                     mac,
+                     &mac_len) &&
+                mac_len == 32) {
+                for (unsigned int i = 0; i < mac_len; i++) {
+                    snprintf(s_derived_key + (i * 2), 3, "%02x", mac[i]);
+                }
+                s_derived_key[64] = '\0';
+                snprintf(s_derived_src, sizeof(s_derived_src), "%s", sec_jwt);
+            }
+            OPENSSL_cleanse(mac, sizeof(mac));
+        }
+        pthread_mutex_unlock(&s_derived_lock);
+        if (s_derived_key[0]) {
+            return s_derived_key;
+        }
     }
 
     static char cfg_secret[128];
@@ -238,6 +271,27 @@ record_nonce_consumed_locked(const char* nonce, int64_t expiration)
     }
 }
 
+static int
+generate_nonce_csprng(int64_t now, char* out, size_t out_size)
+{
+    if (!out || out_size < 32) {
+        return -1;
+    }
+    unsigned char rnd[8] = {0};
+    if (RAND_bytes(rnd, (int)sizeof(rnd)) != 1) {
+        OPENSSL_cleanse(rnd, sizeof(rnd));
+        CSILK_LOG_E("ai_confirmation: RAND_bytes failed, refusing weak fallback");
+        return -1;
+    }
+    uint64_t rnd_val = 0;
+    for (size_t i = 0; i < sizeof(rnd); i++) {
+        rnd_val = (rnd_val << 8) | (uint64_t)rnd[i];
+    }
+    OPENSSL_cleanse(rnd, sizeof(rnd));
+    snprintf(out, out_size, "nc%08lx%016llx", (unsigned long)now, (unsigned long long)rnd_val);
+    return 0;
+}
+
 char*
 ai_confirmation_create_bound_token(int64_t             user_id,
                                    int64_t             session_id,
@@ -260,18 +314,10 @@ ai_confirmation_create_bound_token(int64_t             user_id,
     ai_confirmation_hash_args(args, args_hash, sizeof(args_hash));
 
     /* 生成随机高熵 Nonce（参与 HMAC canonical 与重放唯一性，须用 CSPRNG） */
-    char          nonce[32];
-    unsigned char rnd[4] = {0};
-    if (RAND_bytes(rnd, (int)sizeof(rnd)) != 1) {
-        /* 罕见失败：退化到时间 + 地址熵 */
-        rnd[0] = (unsigned char)(now & 0xff);
-        rnd[1] = (unsigned char)((now >> 8) & 0xff);
-        rnd[2] = (unsigned char)(((uintptr_t)nonce) & 0xff);
-        rnd[3] = (unsigned char)(((uintptr_t)&rnd) & 0xff);
+    char nonce[40];
+    if (generate_nonce_csprng(now, nonce, sizeof(nonce)) != 0) {
+        return NULL;
     }
-    unsigned int rnd_val = ((unsigned int)rnd[0] << 24) | ((unsigned int)rnd[1] << 16) |
-                           ((unsigned int)rnd[2] << 8) | (unsigned int)rnd[3];
-    snprintf(nonce, sizeof(nonce), "nc%08lx%08x", (unsigned long)now, rnd_val);
 
     /* 规范载荷字符串 */
     char canonical[512];
@@ -390,10 +436,10 @@ ai_confirmation_verify_and_consume(int64_t             user_id,
 
     /* 1. 检验 token 前缀结构 */
     if (strncmp(token, "mf_v2.", 6) != 0) {
-        /* 兼容老版本格式 */
-        if (ai_confirmation_verify_token(user_id, 0.0, NULL, NULL, token)) {
-            return AI_CONFIRM_OK;
-        }
+        /* 非 v2 格式令牌一律拒绝：老版本无 HMAC 签名、无防重放能力，
+           且双向调用会形成无限递归（verify_and_consume ↔ verify_token），
+           legacy 兼容分支已移除，legacy 令牌直接返回 FORMAT 错。 */
+        (void)args;
         return AI_CONFIRM_ERR_FORMAT;
     }
 
@@ -457,6 +503,11 @@ ai_confirmation_verify_and_consume(int64_t             user_id,
     /* 5. 用户身份隔离校验 (User isolation) */
     if (tok_uid != user_id) {
         return AI_CONFIRM_ERR_USER_MISMATCH;
+    }
+
+    /* 5b. 会话强绑定校验 (Session isolation) */
+    if (tok_sid != session_id) {
+        return AI_CONFIRM_ERR_SESSION_MISMATCH;
     }
 
     /* 6. 工具绑定校验 (Tool binding) */
@@ -555,17 +606,10 @@ ai_confirmation_create_batch_token(int64_t             user_id,
     ai_confirmation_hash_batch_actions(actions_array, batch_hash, sizeof(batch_hash));
 
     /* 生成随机高熵 Nonce */
-    char          nonce[32];
-    unsigned char rnd[4] = {0};
-    if (RAND_bytes(rnd, (int)sizeof(rnd)) != 1) {
-        rnd[0] = (unsigned char)(now & 0xff);
-        rnd[1] = (unsigned char)((now >> 8) & 0xff);
-        rnd[2] = (unsigned char)(((uintptr_t)nonce) & 0xff);
-        rnd[3] = (unsigned char)(((uintptr_t)&rnd) & 0xff);
+    char nonce[40];
+    if (generate_nonce_csprng(now, nonce, sizeof(nonce)) != 0) {
+        return NULL;
     }
-    unsigned int rnd_val = ((unsigned int)rnd[0] << 24) | ((unsigned int)rnd[1] << 16) |
-                           ((unsigned int)rnd[2] << 8) | (unsigned int)rnd[3];
-    snprintf(nonce, sizeof(nonce), "nc%08lx%08x", (unsigned long)now, rnd_val);
 
     /* 规范载荷字符串: batch_v1|%lld|%lld|%s|%d|%lld|%s|%lld */
     char canonical[512];
@@ -673,6 +717,11 @@ ai_confirmation_verify_and_consume_batch(int64_t             user_id,
         return AI_CONFIRM_ERR_USER_MISMATCH;
     }
 
+    /* 5b. 会话强绑定校验 (Session isolation) */
+    if (tok_sid != session_id) {
+        return AI_CONFIRM_ERR_SESSION_MISMATCH;
+    }
+
     /* 6. 复合动作哈希防篡改校验 (Batch actions tamper-proofing) */
     char cur_hash[65] = {0};
     ai_confirmation_hash_batch_actions(actions_array, cur_hash, sizeof(cur_hash));
@@ -704,6 +753,8 @@ ai_confirmation_strerror(ai_confirmation_status_t status)
         return "确认令牌已被使用，禁止二次重复执行或重放攻击";
     case AI_CONFIRM_ERR_SIGNATURE:
         return "确认令牌签名校验失败或防伪密钥错误";
+    case AI_CONFIRM_ERR_SESSION_MISMATCH:
+        return "会话上下文不匹配，禁止跨会话使用确认令牌";
     default:
         return "未知确认错误";
     }
@@ -731,6 +782,15 @@ int
 ai_confirmation_verify_token(
     int64_t user_id, double amount, const char* a, const char* b, const char* token)
 {
+    (void)amount;
+    (void)a;
+    (void)b;
+    /* 老版本兼容接口：仅接受本接口（create_token）签发的 v2 令牌。
+       注意：本函数是 verify_and_consume 的单向包装，不得被 verify_and_consume
+       反向调用（曾导致无限递归崩溃）。非 v2 前缀令牌在此直接判非法。 */
+    if (!token || strncmp(token, "mf_v2.", 6) != 0) {
+        return 0;
+    }
     csilk_json_t* dummy = csilk_json_object();
     csilk_json_add_number(dummy, "amount", amount);
     if (a) {

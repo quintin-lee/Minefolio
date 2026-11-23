@@ -2,8 +2,8 @@
   <div class="tx-mobile">
     <div class="page-header">
       <div class="mobile-segmented">
-        <button class="segmented-item" @click="$router.push('/m/expenses')">日常收支</button>
-        <button class="segmented-item active">交易流水</button>
+        <button class="segmented-item" @click="$router.push('/m/expenses')">{{ t('nav.dailyExpenses') }}</button>
+        <button class="segmented-item active">{{ t('nav.transactions') }}</button>
       </div>
     </div>
     <div v-for="t in list" :key="t.id" class="tx-card">
@@ -17,13 +17,14 @@
 import { ref, onMounted } from 'vue'
 import { transactionsApi } from '@/api/transactions'
 import { useLedgerStore } from '@/stores/ledger'
-import { formatCurrency } from '@/utils/format'
+import { formatCurrency, isIncomeTransaction } from '@/utils/format'
+import { t } from '@/utils/locale'
 import { query, rowsFrom } from '@/db/local'
 import type { Transaction } from '@/types'
 
 const list = ref<Transaction[]>([])
 const ledgerStore = useLedgerStore()
-function isIncome(t: Transaction) { return ['deposit', 'transfer_in', 'income', 'interest', 'sell', 'dividend'].includes(t.transaction_type) }
+function isIncome(t: Transaction) { return isIncomeTransaction(t) }
 
 onMounted(async () => {
   const currentLedgerId = ledgerStore.currentLedgerId || 0

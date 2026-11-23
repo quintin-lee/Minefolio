@@ -239,19 +239,24 @@
           <!-- 买入/卖出：单价 × 数量 + 手续费 -->
           <el-row v-if="isTradingType(form.transaction_type)" :gutter="16" class="trading-fields">
             <el-col :span="8">
-              <el-form-item :label="`交易单价 (${quantityUnit})`">
-                <el-input-number v-model="form.price_per_unit" :precision="4" :min="0" style="width: 100%" :controls="false" placeholder="0.0000" @input="calculateAmount" />
+              <el-form-item :label="`交易单价 (${quantityUnit ? '元/' + quantityUnit : '单价'})`">
+                <el-input-number v-model="form.price_per_unit" :precision="4" :min="0" style="width: 100%" :controls="false" placeholder="0.0000" @input="calculateAmount" @change="calculateAmount" />
               </el-form-item>
             </el-col>
             <el-col :span="8">
               <el-form-item label="交易数量">
-                <el-input-number v-model="form.quantity" :precision="4" :min="0" style="width: 100%" :controls="false" placeholder="0.0000" @input="calculateAmount" />
+                <el-input-number v-model="form.quantity" :precision="4" :min="0" style="width: 100%" :controls="false" placeholder="0.0000" @input="calculateAmount" @change="calculateAmount" />
               </el-form-item>
             </el-col>
             <el-col :span="8">
               <el-form-item label="手续费">
                 <el-input-number v-model="form.fee" :precision="2" :min="0" style="width: 100%" :controls="false" placeholder="0.00" />
               </el-form-item>
+            </el-col>
+            <el-col :span="24" v-if="form.amount > 0">
+              <div style="font-size: 12px; color: var(--el-text-color-secondary); margin-top: -6px; margin-bottom: 10px;">
+                预计成交总额：{{ formatCurrency(form.amount, form.currency) }}
+              </div>
             </el-col>
           </el-row>
 
@@ -358,6 +363,10 @@
             <div class="el-upload__tip">仅支持 .csv 文件，UTF-8 编码</div>
           </template>
         </el-upload>
+        <div v-if="importTask.running.value" class="import-progress-box">
+          <el-progress :percentage="importTask.progress.value" :stroke-width="6" />
+          <div class="muted-text" style="margin-top: 6px; font-size: 12px">{{ importTask.message.value || '正在导入交易记录...' }}</div>
+        </div>
         <div v-if="importResult" class="import-result" :class="importResult.ok ? 'success' : 'error'">
           <el-icon><SuccessFilled /></el-icon>
           <span>成功导入 {{ importResult.imported }} 条，失败 {{ importResult.errors }} 条</span>
@@ -366,7 +375,7 @@
       </div>
       <template #footer>
         <div class="dialog-footer">
-          <el-button class="cancel-btn" @click="importDialogVisible = false; importResult = null; importFile = null">关闭</el-button>
+          <el-button class="cancel-btn" @click="importTask.cancel(); importDialogVisible = false; importResult = null; importFile = null">关闭</el-button>
           <el-button type="primary" class="save-btn" :loading="importing" @click="handleImport" :disabled="!importText">开始导入</el-button>
         </div>
       </template>
@@ -375,13 +384,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Download, Upload, UploadFilled, SuccessFilled, Edit, Delete } from '@element-plus/icons-vue'
 import { transactionsApi } from '@/api/transactions'
 import { assetsApi } from '@/api/assets'
 import { useCategoryStore } from '@/stores/category'
 import { formatCurrency, localToday, localThisMonth, assetLabel } from '@/utils/format'
+import { useAsyncTaskProgress } from '@/composables/useAsyncTaskProgress'
 import { exportChartCsv } from '@/utils/chart-export'
 import SummaryCard from '@/components/SummaryCard.vue'
 import type { Transaction, Asset, Category, TransactionMonthly, Direction, TransactionInput } from '@/types'
@@ -502,9 +512,16 @@ function calculateAmount() {
     const p = Number(form.price_per_unit) || 0
     if (q > 0 && p > 0) {
       form.amount = Number((q * p).toFixed(2))
+    } else {
+      form.amount = 0
     }
   }
 }
+
+watch(
+  [() => form.quantity, () => form.price_per_unit, () => form.transaction_type],
+  () => calculateAmount(),
+)
 
 const quantityUnit = computed(() => {
   const asset = assets.value.find(a => a.id === form.asset_id)
@@ -832,12 +849,18 @@ function handleFileChange(raw: any) {
   }
 }
 
+const importTask = useAsyncTaskProgress()
+
 async function handleImport() {
   if (!importText.value) return
   importing.value = true
   importResult.value = null
   try {
-    const res = await transactionsApi.importCsv(importText.value)
+    const text = importText.value
+    const res = await importTask.run(
+      (opts) => transactionsApi.importCsv(text, opts),
+      '正在上传并解析交易 CSV...',
+    )
     importResult.value = {
       imported: res.imported,
       errors: res.errors,
@@ -853,6 +876,7 @@ async function handleImport() {
       loadData()
     }
   } catch (err: any) {
+    if (importTask.isCancelledError(err)) return
     importResult.value = { imported: 0, errors: 1, errors_detail: err?.message || '导入失败', ok: false }
   } finally {
     importing.value = false

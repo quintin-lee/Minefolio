@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { initLocalDb, getDb, run, query, rowsFrom, resetLocalDb, persist } from '@/db/local'
+import { initLocalDb, getDb, run, query, rowsFrom, resetLocalDb, persist, flushPersist, getLocalDbStatus } from '@/db/local'
 
 beforeEach(() => {
   resetLocalDb()
@@ -62,5 +62,27 @@ describe('local db', () => {
 
     const qRow = rowsFrom(query('SELECT ledger_id FROM sync_queue WHERE record_id = 101'))[0]
     expect(qRow.ledger_id).toBe(2)
+  })
+
+  it('does not write plaintext b64 synchronously before encryption when WebCrypto is available', async () => {
+    await initLocalDb()
+    run('INSERT INTO sync_meta (key, value) VALUES (?,?)', ['sec_test', 'v1'])
+    persist()
+    const immediate = localStorage.getItem('minefolio_local_db')
+    expect(immediate?.startsWith('b64:')).not.toBe(true)
+
+    await flushPersist()
+    const afterFlush = localStorage.getItem('minefolio_local_db')
+    expect(afterFlush?.startsWith('enc:v1:')).toBe(true)
+  })
+
+  it('preserves locked backup and sets decryptFailed when enc:v1 restore fails', async () => {
+    const lockedPayload = 'enc:v1:badiv:badcipher'
+    localStorage.setItem('minefolio_local_db', lockedPayload)
+    await initLocalDb()
+
+    expect(localStorage.getItem('minefolio_local_db_locked_backup')).toBe(lockedPayload)
+    expect(getLocalDbStatus().decryptFailed).toBe(true)
+    expect(getLocalDbStatus().hasLockedBackup).toBe(true)
   })
 })

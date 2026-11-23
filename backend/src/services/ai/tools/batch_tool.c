@@ -579,14 +579,15 @@ ai_tool_batch_register_all(void)
 }
 
 int
-ai_batch_actions_execute(csilk_db_pool_t*    pool,
-                         int64_t             user_id,
-                         const csilk_json_t* actions,
-                         const char*         draft_token,
-                         csilk_json_t**      out_data,
-                         int*                out_code,
-                         char*               err_buf,
-                         size_t              err_len)
+ai_batch_actions_execute_for_session(csilk_db_pool_t*    pool,
+                                     int64_t             user_id,
+                                     int64_t             session_id,
+                                     const csilk_json_t* actions,
+                                     const char*         draft_token,
+                                     csilk_json_t**      out_data,
+                                     int*                out_code,
+                                     char*               err_buf,
+                                     size_t              err_len)
 {
     if (out_data) {
         *out_data = NULL;
@@ -614,16 +615,16 @@ ai_batch_actions_execute(csilk_db_pool_t*    pool,
         return -1;
     }
 
-    /* 1. 验证并原子消费 draft_token (Anti-replay + HMAC verification) */
+    /* 1. 验证并原子消费 draft_token (Anti-replay + HMAC + session_id verification) */
     ai_confirmation_status_t st =
-        ai_confirmation_verify_and_consume_batch(user_id, 0, actions, draft_token);
+        ai_confirmation_verify_and_consume_batch(user_id, session_id, actions, draft_token);
     if (st != AI_CONFIRM_OK) {
-        if (st == AI_CONFIRM_ERR_REPLAY) {
+        if (st == AI_CONFIRM_ERR_REPLAY || st == AI_CONFIRM_ERR_SESSION_MISMATCH) {
             if (out_code) {
                 *out_code = 1004;
             }
             if (err_buf && err_len > 0) {
-                snprintf(err_buf, err_len, "确认令牌已被使用或已失效");
+                snprintf(err_buf, err_len, "%s", ai_confirmation_strerror(st));
             }
         } else if (st == AI_CONFIRM_ERR_EXPIRED) {
             if (out_code) {
@@ -846,4 +847,18 @@ ai_batch_actions_execute(csilk_db_pool_t*    pool,
         *out_code = 0;
     }
     return 0;
+}
+
+int
+ai_batch_actions_execute(csilk_db_pool_t*    pool,
+                         int64_t             user_id,
+                         const csilk_json_t* actions,
+                         const char*         draft_token,
+                         csilk_json_t**      out_data,
+                         int*                out_code,
+                         char*               err_buf,
+                         size_t              err_len)
+{
+    return ai_batch_actions_execute_for_session(
+        pool, user_id, 0, actions, draft_token, out_data, out_code, err_buf, err_len);
 }

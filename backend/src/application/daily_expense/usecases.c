@@ -407,10 +407,12 @@ daily_expense_usecase_create(void*                             pool,
         return -1;
     }
 
-    int64_t acct_id = asset_get_account_id((csilk_db_pool_t*)pool, cmd->asset_id);
+    int64_t acct_lid = 0, acct_id = 0;
+    asset_get_ledger_and_account((csilk_db_pool_t*)pool, cmd->asset_id, &acct_lid, &acct_id);
     if (acct_id > 0) {
-        int perm_chk = account_usecase_check_permission(
-            pool, cmd->ledger_id, cmd->user_id, acct_id, MF_ACCOUNT_ACTION_WRITE_TX);
+        int64_t chk_lid = acct_lid > 0 ? acct_lid : cmd->ledger_id;
+        int     perm_chk = account_usecase_check_permission(
+            pool, chk_lid, cmd->user_id, acct_id, MF_ACCOUNT_ACTION_WRITE_TX);
         if (perm_chk != 0) {
             out_res->code = 1004;
             snprintf(out_res->message, sizeof(out_res->message), "Forbidden: 关联账户无记账权限");
@@ -516,14 +518,31 @@ daily_expense_usecase_update(void*                             pool,
         return -1;
     }
 
-    int64_t acct_id = asset_get_account_id((csilk_db_pool_t*)pool, cmd->asset_id);
+    int64_t acct_lid = 0, acct_id = 0;
+    asset_get_ledger_and_account((csilk_db_pool_t*)pool, cmd->asset_id, &acct_lid, &acct_id);
     if (acct_id > 0) {
-        int perm_chk = account_usecase_check_permission(
-            pool, cmd->ledger_id, cmd->user_id, acct_id, MF_ACCOUNT_ACTION_WRITE_TX);
+        int64_t chk_lid = acct_lid > 0 ? acct_lid : cmd->ledger_id;
+        int     perm_chk = account_usecase_check_permission(
+            pool, chk_lid, cmd->user_id, acct_id, MF_ACCOUNT_ACTION_WRITE_TX);
         if (perm_chk != 0) {
             out_res->code = 1004;
             snprintf(out_res->message, sizeof(out_res->message), "Forbidden: 关联账户无记账权限");
             return -1;
+        }
+    }
+
+    if (old.asset_id > 0 && old.asset_id != cmd->asset_id) {
+        int64_t old_lid = 0, old_acct_id = 0;
+        asset_get_ledger_and_account((csilk_db_pool_t*)pool, old.asset_id, &old_lid, &old_acct_id);
+        if (old_acct_id > 0) {
+            int64_t chk_lid = old_lid > 0 ? old_lid : cmd->ledger_id;
+            if (account_usecase_check_permission(
+                    pool, chk_lid, cmd->user_id, old_acct_id, MF_ACCOUNT_ACTION_WRITE_TX) != 0) {
+                out_res->code = 1004;
+                snprintf(
+                    out_res->message, sizeof(out_res->message), "Forbidden: 原关联账户无记账权限");
+                return -1;
+            }
         }
     }
 
@@ -617,6 +636,21 @@ daily_expense_usecase_delete(void*                           pool,
         out_res->code = 1003;
         snprintf(out_res->message, sizeof(out_res->message), "记录不存在");
         return -1;
+    }
+
+    if (old.asset_id > 0) {
+        int64_t old_lid = 0, old_acct_id = 0;
+        asset_get_ledger_and_account((csilk_db_pool_t*)pool, old.asset_id, &old_lid, &old_acct_id);
+        if (old_acct_id > 0) {
+            int64_t chk_lid = old_lid > 0 ? old_lid : ledger_id;
+            if (account_usecase_check_permission(
+                    pool, chk_lid, user_id, old_acct_id, MF_ACCOUNT_ACTION_WRITE_TX) != 0) {
+                out_res->code = 1004;
+                snprintf(
+                    out_res->message, sizeof(out_res->message), "Forbidden: 关联账户无记账权限");
+                return -1;
+            }
+        }
     }
 
     db_tx_scope_t scope;

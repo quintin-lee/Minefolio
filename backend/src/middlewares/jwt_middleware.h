@@ -26,3 +26,8 @@
  * @note 线程安全性：线程安全。
  */
 void jwt_middleware_wrapper(csilk_ctx_t* c);
+
+/**
+ * @brief 主动使指定用户在进程内 token_version 缓存中的条目失效（登出/改密/关闭 2FA 后立即生效）
+ */
+void jwt_middleware_invalidate_user(int64_t user_id);

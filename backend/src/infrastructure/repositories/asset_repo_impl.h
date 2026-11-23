@@ -16,6 +16,11 @@ csilk_json_t* asset_list(csilk_db_pool_t* pool,
                          int64_t          account_id,
                          int64_t*         total);
 csilk_json_t* asset_get(csilk_db_pool_t* pool, int64_t user_id, int64_t id);
+csilk_json_t* asset_get_raw(csilk_db_pool_t* pool, int64_t user_id, int64_t id);
+int           asset_get_ledger_and_account(csilk_db_pool_t* pool,
+                                           int64_t          asset_id,
+                                           int64_t*         out_ledger_id,
+                                           int64_t*         out_account_id);
 int64_t       asset_insert(csilk_db_pool_t* pool,
                            int64_t          user_id,
                            int64_t          category_id,

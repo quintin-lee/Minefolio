@@ -34,6 +34,7 @@ int main(void) {
 
     /* 2. 在未配置提供商 Client Secret 且非 Mock 模式下：必须报错 1002 */
     unsetenv("MINEFOLIO_TEST_OAUTH_MOCK");
+    auth_oauth_mock_reset(); /* 启动期固化：mock 关闭 */
     oauth_callback_cmd_t real_no_cfg = {
         .provider = "github",
         .code = "github_code_abc123",
@@ -43,8 +44,9 @@ int main(void) {
     assert(rc != 0 && res.code == 1002);
     printf("PASS: test_oauth_callback_rejects_unconfigured_provider\n");
 
-    /* 3. 启用测试 Mock 模式 */
+    /* 3. 启用测试 Mock 模式（改变环境变量后必须重新固化，模拟新进程启动） */
     setenv("MINEFOLIO_TEST_OAUTH_MOCK", "1", 1);
+    auth_oauth_mock_reset();
 
     /* 3.1 失败的 Mock Code：必须报错 1002 */
     oauth_callback_cmd_t mock_fail_cmd = {
@@ -78,6 +80,31 @@ int main(void) {
     assert(rc == 0 && res.code == 0 && out_data != NULL);
     csilk_json_free(out_data);
     printf("PASS: test_oauth_callback_mock_subsequent_login_succeeds\n");
+
+    /* 4. 注册开放门禁：ENABLE_REGISTRATION=0 且已有用户时拒绝后续注册 */
+    setenv("ENABLE_REGISTRATION", "0", 1);
+    register_user_cmd_t reg_closed = {
+        .username = "late_comer",
+        .plain_password = "Password123!",
+    };
+    csilk_json_t* reg_data = NULL;
+    auth_usecase_result_t reg_res = {0};
+    int reg_rc = auth_usecase_register(pool, &reg_closed, NULL, &reg_data, &reg_res);
+    assert(reg_rc != 0 && reg_res.code == 1004);
+    printf("PASS: test_register_rejected_when_disabled_with_existing_users\n");
+
+    /* 5. 恢复开放注册（默认），验证新用户名可注册成功 */
+    setenv("ENABLE_REGISTRATION", "1", 1);
+    register_user_cmd_t reg_open = {
+        .username = "late_comer2",
+        .plain_password = "Password123!",
+    };
+    reg_data = NULL;
+    memset(&reg_res, 0, sizeof(reg_res));
+    reg_rc = auth_usecase_register(pool, &reg_open, NULL, &reg_data, &reg_res);
+    assert(reg_rc == 0 && reg_res.code == 0);
+    csilk_json_free(reg_data);
+    printf("PASS: test_register_allowed_when_open_with_existing_users\n");
 
     unlink("/tmp/test_oauth_security.db");
     printf("=== All test_oauth_security tests passed ===\n");

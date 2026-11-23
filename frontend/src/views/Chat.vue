@@ -608,10 +608,10 @@ import WorkflowBar from '@/components/WorkflowBar.vue'
 import WorkflowSlashMenu from '@/components/WorkflowSlashMenu.vue'
 import AssetMentionMenu, { type MentionItem } from '@/components/AssetMentionMenu.vue'
 import FinancialEntityPopover from '@/components/FinancialEntityPopover.vue'
-import { useFinancialEntities, type EntityDetail } from '@/composables/useFinancialEntities'
 import AnalysisPanel from '@/components/AnalysisPanel.vue'
-import { extractPanelItems } from '@/utils/chat-panel-extractor'
-import type { PanelItem } from '@/types/chat-panel'
+import { useChatEntityPopover } from '@/composables/chat/useChatEntityPopover'
+import { useChatAttachments } from '@/composables/chat/useChatAttachments'
+import { useChatAnalysisPanel } from '@/composables/chat/useChatAnalysisPanel'
 import { localToday } from '@/utils/format'
 import { isDirectRunWorkflow } from '@/utils/workflow-meta'
 import type { WorkflowDef } from '@/types'
@@ -624,64 +624,26 @@ function goToTraces() {
 }
 
 // --- 金融实体悬浮微卡与穿透交互 ---
-const { loadEntities, getEntityDetail, getCollisionEntities } = useFinancialEntities()
-
-const popoverVisible = ref(false)
-const popoverTargetRect = ref<DOMRect | null>(null)
-const popoverDetail = ref<EntityDetail | null>(null)
-const popoverCollision = ref<{ asset?: EntityDetail; account?: EntityDetail } | null>(null)
-let popoverHoverTimer: number | null = null
-let popoverLeaveTimer: number | null = null
-
-function clearPopoverLeaveTimer() {
-  if (popoverLeaveTimer) {
-    clearTimeout(popoverLeaveTimer)
-    popoverLeaveTimer = null
-  }
-}
-
-function handleEntityHover(payload: { el: HTMLElement; type: 'asset' | 'account'; id: string; name: string; rect: DOMRect }) {
-  clearPopoverLeaveTimer()
-  if (popoverHoverTimer) clearTimeout(popoverHoverTimer)
-  popoverHoverTimer = window.setTimeout(() => {
-    const detail = getEntityDetail(payload.type, payload.id)
-    const collision = getCollisionEntities(payload.name)
-    popoverDetail.value = detail
-    popoverCollision.value = collision
-    popoverTargetRect.value = payload.rect
-    popoverVisible.value = true
-  }, 180)
-}
-
-function handleEntityLeave() {
-  if (popoverHoverTimer) {
-    clearTimeout(popoverHoverTimer)
-    popoverHoverTimer = null
-  }
-  clearPopoverLeaveTimer()
-  popoverLeaveTimer = window.setTimeout(() => {
-    popoverVisible.value = false
-  }, 220)
-}
-
-function handleEntityClick(payload: { el: HTMLElement; type: 'asset' | 'account'; id: string; name: string; rect: DOMRect }) {
-  if (popoverHoverTimer) clearTimeout(popoverHoverTimer)
-  clearPopoverLeaveTimer()
-  const detail = getEntityDetail(payload.type, payload.id)
-  const collision = getCollisionEntities(payload.name)
-  const isSameTarget = popoverVisible.value &&
-    popoverDetail.value?.id === detail?.id &&
-    popoverDetail.value?.type === detail?.type
-
-  if (isSameTarget) {
-    popoverVisible.value = false
-  } else {
-    popoverDetail.value = detail
-    popoverCollision.value = collision
-    popoverTargetRect.value = payload.rect
-    popoverVisible.value = true
-  }
-}
+const {
+  loadEntities,
+  popoverVisible,
+  popoverTargetRect,
+  popoverDetail,
+  popoverCollision,
+  clearPopoverLeaveTimer,
+  closePopover,
+  handleEntityHover,
+  handleEntityLeave,
+  handleEntityClick,
+  handlePopoverNavigate,
+} = useChatEntityPopover({
+  onNavigate: (payload) => {
+    router.push({
+      path: '/assets',
+      query: payload.type === 'asset' ? { asset_id: payload.id } : { account_id: payload.id },
+    })
+  },
+})
 
 function handleActionExecuted(msg: any, payload: { draftToken: string }) {
   if (!msg || !payload?.draftToken) return
@@ -711,106 +673,23 @@ function handleActionExecuted(msg: any, payload: { draftToken: string }) {
   }
 }
 
-function handlePopoverNavigate(payload: { type: 'asset' | 'account'; id: string | number }) {
-  popoverVisible.value = false
-  router.push({
-    path: '/assets',
-    query: payload.type === 'asset' ? { asset_id: payload.id } : { account_id: payload.id },
-  })
-}
-
-function onGlobalPointerDown(e: PointerEvent) {
-  if (!popoverVisible.value) return
-  const target = e.target as HTMLElement | null
-  if (!target) return
-  if (target.closest('.financial-entity-popover') || target.closest('.mf-entity-badge')) {
-    return
-  }
-  popoverVisible.value = false
-}
-
 // --- 多模态发票/票据截图附件与渐进式工作流 ---
-export interface AttachedImageInfo {
-  file: File
-  dataUrl: string
-  name: string
-  sizeText: string
-}
-
-const attachedImage = ref<AttachedImageInfo | null>(null)
-const isDragOver = ref(false)
-const isScanningReceipt = ref(false)
+const {
+  attachedImage,
+  isDragOver,
+  isScanningReceipt,
+  handlePaste,
+  handleDrop,
+  handleFileSelect,
+  removeAttachment,
+  scanReceiptAttachment,
+} = useChatAttachments({
+  scanReceipt: payload => receiptsApi.scan(payload),
+})
 
 const isWorkflowCollapsed = computed(() => {
   return inputText.value.trim().length > 0 || attachedImage.value !== null
 })
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
-
-function processImageFile(file: File) {
-  if (!file.type.startsWith('image/')) {
-    ElMessage.warning('仅支持上传图片格式（如 JPG, PNG, WebP）')
-    return
-  }
-  if (file.size > 10 * 1024 * 1024) {
-    ElMessage.warning('图片大小不能超过 10MB')
-    return
-  }
-  const reader = new FileReader()
-  reader.onload = (e) => {
-    const dataUrl = e.target?.result as string
-    if (dataUrl) {
-      attachedImage.value = {
-        file,
-        dataUrl,
-        name: file.name || `screenshot_${Date.now()}.png`,
-        sizeText: formatFileSize(file.size),
-      }
-      ElMessage.success('已添加票据截图，发送时将自动调用 AI 多模态识别')
-    }
-  }
-  reader.readAsDataURL(file)
-}
-
-function handlePaste(e: ClipboardEvent) {
-  if (!e.clipboardData?.items) return
-  for (let i = 0; i < e.clipboardData.items.length; i++) {
-    const item = e.clipboardData.items[i]!
-    if (item.type.startsWith('image/')) {
-      const file = item.getAsFile()
-      if (file) {
-        e.preventDefault()
-        processImageFile(file)
-        return
-      }
-    }
-  }
-}
-
-function handleDrop(e: DragEvent) {
-  isDragOver.value = false
-  if (!e.dataTransfer?.files?.length) return
-  const file = e.dataTransfer.files[0]!
-  if (file.type.startsWith('image/')) {
-    processImageFile(file)
-  }
-}
-
-function handleFileSelect(e: Event) {
-  const target = e.target as HTMLInputElement
-  if (target.files && target.files.length > 0) {
-    processImageFile(target.files[0]!)
-    target.value = ''
-  }
-}
-
-function removeAttachment() {
-  attachedImage.value = null
-}
 
 // --- 顶部会话标题展示与原地重命名 ---
 const currentSessionTitle = computed(() => {
@@ -883,126 +762,29 @@ const inputAreaRef = ref<HTMLElement | null>(null)
 const scrollBtnRef = ref<HTMLButtonElement | null>(null)
 
 // --- 分析面板 (Analysis Panel) 状态与拖拽 ---
-const panelVisible = ref(false)
-const panelItems = ref<PanelItem[]>([])
-const activeTabId = ref('')
-const panelOverlay = ref(false)
-const PANEL_WIDTH_KEY = 'minefolio:analysis-panel-width'
-const DEFAULT_PANEL_WIDTH = 420
-const panelWidth = ref(DEFAULT_PANEL_WIDTH)
-const MAX_PANEL_ITEMS = 20
-
-function loadPanelWidth() {
-  try {
-    const saved = localStorage.getItem(PANEL_WIDTH_KEY)
-    if (saved) {
-      const w = parseInt(saved, 10)
-      if (!isNaN(w) && w >= 300 && w <= 600) {
-        panelWidth.value = w
-      }
-    }
-  } catch { /* ignore */ }
-}
-
-let isResizing = false
-let startX = 0
-let startWidth = 0
-
-function startPanelResize(e: MouseEvent) {
-  if (panelOverlay.value || isMobile.value) return
-  isResizing = true
-  startX = e.clientX
-  startWidth = panelWidth.value
-  document.body.style.cursor = 'col-resize'
-  document.body.style.userSelect = 'none'
-  window.addEventListener('mousemove', onPanelMouseMove)
-  window.addEventListener('mouseup', stopPanelResize)
-}
-
-function onPanelMouseMove(e: MouseEvent) {
-  if (!isResizing) return
-  const delta = startX - e.clientX
-  const nextW = Math.min(Math.max(startWidth + delta, 300), 600)
-  panelWidth.value = nextW
-}
-
-function stopPanelResize() {
-  if (!isResizing) return
-  isResizing = false
-  document.body.style.cursor = ''
-  document.body.style.userSelect = ''
-  window.removeEventListener('mousemove', onPanelMouseMove)
-  window.removeEventListener('mouseup', stopPanelResize)
-  try {
-    localStorage.setItem(PANEL_WIDTH_KEY, String(panelWidth.value))
-  } catch { /* ignore */ }
-}
-
-function checkPanelMode() {
-  panelOverlay.value = !isMobile.value && window.innerWidth < 1400
-}
+const {
+  panelVisible,
+  panelItems,
+  activeTabId,
+  panelOverlay,
+  panelWidth,
+  loadPanelWidth,
+  startPanelResize,
+  checkPanelMode,
+  extractedSegmentIdMap,
+  handleOpenPanelItem,
+  handleRemovePanelTab,
+  syncLatestAssistantMessage,
+  resetPanel,
+} = useChatAnalysisPanel({
+  messages: () => chat.messages,
+  isMobile,
+})
 
 function checkMobile() {
   isMobile.value = window.innerWidth < 768
   updateMessagesBottomPadding()
   checkPanelMode()
-}
-
-// 抽取卡片映射表：messageId -> segmentId[]
-// 在移动端模式下强制返回空映射，使所有结构化卡片直接全宽内联渲染
-const extractedSegmentIdMap = computed(() => {
-  if (isMobile.value) return {}
-  const map: Record<number, string[]> = {}
-  for (const item of panelItems.value) {
-    if (item.messageId !== undefined && item.segmentId) {
-      if (!map[item.messageId]) map[item.messageId] = []
-      map[item.messageId]!.push(item.segmentId)
-    }
-  }
-  return map
-})
-
-function scanAllMessagesToPanel() {
-  const idSet = new Set(panelItems.value.map(i => i.id))
-  for (const msg of chat.messages) {
-    if (msg.role !== 'assistant') continue
-    const res = extractPanelItems(msg.id, msg.content, msg.workflowData, msg.workflowConfig, msg.tool_calls)
-    for (const item of res.panelItems) {
-      if (!idSet.has(item.id)) {
-        if (panelItems.value.length >= MAX_PANEL_ITEMS) {
-          panelItems.value.shift()
-        }
-        panelItems.value.push(item)
-        idSet.add(item.id)
-      }
-    }
-  }
-}
-
-function handleOpenPanelItem(itemId: string) {
-  const existing = panelItems.value.find(i => i.id === itemId)
-  if (existing) {
-    activeTabId.value = existing.id
-    panelVisible.value = true
-    return
-  }
-  scanAllMessagesToPanel()
-  activeTabId.value = itemId
-  panelVisible.value = true
-}
-
-function handleRemovePanelTab(tabId: string) {
-  const idx = panelItems.value.findIndex(i => i.id === tabId)
-  if (idx >= 0) {
-    panelItems.value.splice(idx, 1)
-  }
-  if (panelItems.value.length === 0) {
-    panelVisible.value = false
-    activeTabId.value = ''
-  } else if (activeTabId.value === tabId) {
-    const nextIdx = Math.min(idx, panelItems.value.length - 1)
-    activeTabId.value = panelItems.value[nextIdx]?.id || ''
-  }
 }
 
 const vFocus = {
@@ -1340,9 +1122,7 @@ function forceScrollToBottom() {
  * 2. 距离底部 > 100px 时：展现“回到底部”悬浮按钮；若非程序化写入且非吸底锁定状态，暂停自动滚动
  */
 function handleScroll() {
-  if (popoverVisible.value) {
-    popoverVisible.value = false
-  }
+  closePopover()
   if (scrollTicking) return
   scrollTicking = true
   requestAnimationFrame(() => {
@@ -1727,33 +1507,7 @@ async function handleSend() {
   showScrollBottomBtn.value = false
   nextTick(() => scrollToBottom(false))
 
-  let finalPrompt = rawText
-  if (img) {
-    isScanningReceipt.value = true
-    try {
-      ElMessage.info('正在调用 AI 视觉识别发票与票据明细...')
-      const res = await receiptsApi.scan({ image: img.dataUrl })
-      if (res && res.amount !== undefined) {
-        finalPrompt = `【消费票据识别结果】
-- 商户/交易对手: ${res.counterparty || '未知'}
-- 交易日期: ${res.date}
-- 交易金额: ¥${res.amount} (${res.currency || 'CNY'})
-- 推荐分类: ${res.category_name || '日常消费'}
-- 消费摘要: ${res.description || '无'}
-- 交易类型: ${res.type === 'income' ? '收入' : '支出'}
-
-${rawText || '请核对上述识别结果，并生成记账确认卡片协助入账。'}`
-        ElMessage.success('票据识别成功，已组装智能记账分析')
-      } else {
-        finalPrompt = `[已上传消费票据截图: ${img.name}]\n${rawText || '请根据此消费票据协助记账。'}`
-      }
-    } catch (err) {
-      console.warn('[chat] receipt scan fallback', err)
-      finalPrompt = `[已上传消费票据截图: ${img.name}]\n${rawText || '请根据此消费票据协助记账。'}`
-    } finally {
-      isScanningReceipt.value = false
-    }
-  }
+  const finalPrompt = img ? await scanReceiptAttachment(img, rawText) : rawText
 
   try {
     await chat.sendMessage(finalPrompt)
@@ -1845,9 +1599,7 @@ watch(lastMessageId, (id, prevId) => {
 
 watch(inputText, () => { persistDraft() })
 watch(() => chat.currentSessionId, () => {
-  panelItems.value = []
-  panelVisible.value = false
-  activeTabId.value = ''
+  resetPanel()
   loadDraft()
   nextTick(() => setupInfiniteScroll())
 })
@@ -1865,25 +1617,7 @@ watch(() => chat.isStreaming, (streaming, prevStreaming) => {
     }
     const msgs = chat.messages
     if (msgs.length > 0) {
-      const lastMsg = msgs[msgs.length - 1]
-      if (lastMsg && lastMsg.role === 'assistant') {
-        const res = extractPanelItems(lastMsg.id, lastMsg.content, lastMsg.workflowData, lastMsg.workflowConfig, lastMsg.tool_calls)
-        if (res.panelItems.length > 0) {
-          for (const item of res.panelItems) {
-            if (!panelItems.value.some(i => i.id === item.id)) {
-              if (panelItems.value.length >= MAX_PANEL_ITEMS) {
-                panelItems.value.shift()
-              }
-              panelItems.value.push(item)
-            }
-          }
-          if (!isMobile.value) {
-            const latest = res.panelItems[res.panelItems.length - 1]
-            if (latest) activeTabId.value = latest.id
-            panelVisible.value = true
-          }
-        }
-      }
+      syncLatestAssistantMessage(msgs[msgs.length - 1])
     }
   }
 })
@@ -1924,15 +1658,10 @@ onMounted(async () => {
     textareaRef.value?.focus()
   })
   window.addEventListener('keydown', onGlobalKeydown)
-  window.addEventListener('pointerdown', onGlobalPointerDown)
 })
 
 onUnmounted(() => {
-  if (popoverHoverTimer) clearTimeout(popoverHoverTimer)
-  clearPopoverLeaveTimer()
-  stopPanelResize()
   window.removeEventListener('keydown', onGlobalKeydown)
-  window.removeEventListener('pointerdown', onGlobalPointerDown)
   window.removeEventListener('resize', checkMobile)
   if (scrollObserver) { scrollObserver.disconnect(); scrollObserver = null }
   if (inputAreaObserver) { inputAreaObserver.disconnect(); inputAreaObserver = null }

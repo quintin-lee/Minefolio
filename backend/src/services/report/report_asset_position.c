@@ -5,6 +5,7 @@
 
 #include "services/report_asset_service.h"
 #include "application/report/commands.h"
+#include "infrastructure/repositories/account_permission_repo_impl.h"
 #include "common/db.h"
 #include "services/market/exchange_rate_service.h"
 #include "domain/portfolio/fx_table.h"
@@ -59,7 +60,7 @@ report_fx_pnl(void* pool, const report_query_t* q, report_result_t* out_res)
               "JOIN categories c ON a.category_id = c.id "
               "WHERE a.user_id = ? AND a.ledger_id = ? AND a.currency IS NOT NULL AND a.currency "
               "!= ? AND a.currency "
-              "!= ''"
+              "!= '' AND " MF_RBAC_ASSET_UNMASKED_SQL("a")
             : "SELECT a.id, a.name, a.currency, a.quantity, a.cost_basis, a.net_value, "
               "a.current_value, "
               "       c.name as category_name, c.asset_type, "
@@ -77,10 +78,12 @@ report_fx_pnl(void* pool, const report_query_t* q, report_result_t* out_res)
               "JOIN categories c ON a.category_id = c.id "
               "WHERE a.user_id = ? AND a.ledger_id = ? AND a.currency IS NOT NULL AND a.currency "
               "!= ? AND a.currency "
-              "!= ''";
+              "!= '' AND " MF_RBAC_ASSET_UNMASKED_SQL("a");
 
     csilk_json_t* rows = csilk_db_query_param_json(
-        (csilk_db_pool_t*)pool, sql, (const char*[]){uid_str, lid_str, base_cur, NULL});
+        (csilk_db_pool_t*)pool,
+        sql,
+        (const char*[]){uid_str, lid_str, base_cur, uid_str, uid_str, NULL});
 
     csilk_json_t* items = csilk_json_array();
     currency_t    base_currency = currency_from_str(base_cur);
@@ -219,7 +222,7 @@ report_position_overview(void* pool, const report_query_t* q, report_result_t* o
     char uid_str[32], lid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)q->user_id);
     snprintf(lid_str, sizeof(lid_str), "%lld", (long long)q->ledger_id);
-    const char* params[] = {uid_str, lid_str, NULL};
+    const char* params[] = {uid_str, lid_str, uid_str, uid_str, NULL};
 
     csilk_json_t* rows = csilk_db_query_param_json(
         (csilk_db_pool_t*)pool,
@@ -227,7 +230,7 @@ report_position_overview(void* pool, const report_query_t* q, report_result_t* o
         "a.net_value, c.name as category_name, c.asset_type "
         "FROM assets a "
         "JOIN categories c ON a.category_id = c.id "
-        "WHERE a.user_id = ? AND a.ledger_id = ?",
+        "WHERE a.user_id = ? AND a.ledger_id = ? AND " MF_RBAC_ASSET_UNMASKED_SQL("a"),
         params);
 
     double  total_assets = 0.0, total_liabs = 0.0;
@@ -317,15 +320,19 @@ report_position_overview(void* pool, const report_query_t* q, report_result_t* o
                                "JOIN assets a ON abl.asset_id = a.id "
                                "JOIN categories c ON a.category_id = c.id "
                                "WHERE abl.user_id = ? AND a.ledger_id = ? "
-                               "AND abl.created_at::date = ?::date GROUP BY c.asset_type"
+                               "AND abl.created_at::date = ?::date AND " MF_RBAC_ASSET_UNMASKED_SQL(
+                                   "a") " GROUP BY c.asset_type"
                              : "SELECT c.asset_type, COALESCE(SUM(abl.delta), 0.0) as total_delta "
                                "FROM asset_balance_logs abl "
                                "JOIN assets a ON abl.asset_id = a.id "
                                "JOIN categories c ON a.category_id = c.id "
                                "WHERE abl.user_id = ? AND a.ledger_id = ? "
-                               "AND date(abl.created_at) = ? GROUP BY c.asset_type";
+                               "AND date(abl.created_at) = ? AND " MF_RBAC_ASSET_UNMASKED_SQL(
+                                   "a") " GROUP BY c.asset_type";
         csilk_json_t* dlog = csilk_db_query_param_json(
-            (csilk_db_pool_t*)pool, today_sql, (const char*[]){uid_str, lid_str, today_str, NULL});
+            (csilk_db_pool_t*)pool,
+            today_sql,
+            (const char*[]){uid_str, lid_str, today_str, uid_str, uid_str, NULL});
         if (dlog) {
             size_t dn = csilk_json_array_size(dlog);
             for (size_t i = 0; i < dn; i++) {

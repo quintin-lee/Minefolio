@@ -33,6 +33,7 @@
 #include "interfaces/http/controllers/mcp_server_controller.h"
 #include "interfaces/http/controllers/skill_controller.h"
 #include "interfaces/http/controllers/scheduler_controller.h"
+#include "interfaces/http/controllers/task_controller.h"
 #include "services/market/market_scheduler.h"
 #include "core/scheduler/scheduler_engine.h"
 #include "services/ai_service.h"
@@ -98,7 +99,15 @@ main(int argc, char** argv)
         return 1;
     }
     printf("Database initialized and migrations applied.\n");
-    CSILK_LOG_I("Server starting: %d worker(s) on port 8080", 2);
+
+    int         workers = 2;
+    const char* workers_env = getenv("MINEFOLIO_WORKERS");
+    if (workers_env && workers_env[0]) {
+        int parsed_w = atoi(workers_env);
+        if (parsed_w >= 1 && parsed_w <= 16) {
+            workers = parsed_w;
+        }
+    }
 
     if (auth_key_init() != 0) {
         fprintf(stderr, "Failed to initialize RSA key pair\n");
@@ -106,13 +115,30 @@ main(int argc, char** argv)
         return 1;
     }
     ai_init(pool);
+    if (task_controller_init(pool, 4) != 0) {
+        fprintf(stderr, "Failed to initialize async task manager\n");
+        ai_shutdown();
+        csilk_db_pool_free(pool);
+        return 1;
+    }
     printf("RSA-2048 key pair generated for password encryption.\n");
 
     csilk_app_t* app = csilk_app_new(NULL);
     if (!app) {
         fprintf(stderr, "Failed to create app\n");
+        task_controller_shutdown();
+        ai_shutdown();
         csilk_db_pool_free(pool);
         return 1;
+    }
+    {
+        csilk_config_t* scfg_wrap = csilk_app_config(app);
+        if (scfg_wrap) {
+            csilk_server_config_t scfg = scfg_wrap->server;
+            scfg.worker_threads = workers;
+            csilk_app_set_server_config(app, scfg);
+            free(scfg_wrap);
+        }
     }
 
     csilk_app_use(app, csilk_recovery_handler);
@@ -175,6 +201,7 @@ main(int argc, char** argv)
     register_ai_news_routes(app);
     register_im_bot_routes(app);
     register_scheduler_routes(app);
+    register_task_routes(app);
     csilk_admin_serve_secure(app, "/csilk-admin", NULL);
 
     const char* dist = "./frontend/dist";
@@ -197,11 +224,13 @@ main(int argc, char** argv)
     const char* port_str =
         config_env_get("PORT", NULL, 0, config_env_get("MINEFOLIO_PORT", NULL, 0, "8080"));
     int port = port_str ? atoi(port_str) : 8080;
+    CSILK_LOG_I("Server starting: %d worker(s) on port %d", workers, port);
     printf("Starting Minefolio server on :%d\n", port);
     csilk_app_run(app, port);
 
     scheduler_engine_stop();
     market_scheduler_stop();
+    task_controller_shutdown();
     csilk_app_free(app);
     ai_shutdown();
     db_wal_checkpoint(pool);

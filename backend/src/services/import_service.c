@@ -1,4 +1,5 @@
 #include "services/import_service.h"
+#include "application/task/async_task_manager.h"
 #include "interfaces/http/controllers/import_export_controller.h"
 #include "common/response.h"
 #include "common/ctx.h"
@@ -109,11 +110,49 @@ apply_smart_rules(csilk_json_t* rules_arr,
     return 0;
 }
 
-void
-transactions_import_csv(csilk_ctx_t* c)
+typedef struct {
+    char*  csv_data;
+    size_t csv_len;
+} csv_import_task_arg_t;
+
+static void
+csv_import_task_cleanup(void* raw)
+{
+    csv_import_task_arg_t* arg = (csv_import_task_arg_t*)raw;
+    if (!arg) {
+        return;
+    }
+    free(arg->csv_data);
+    free(arg);
+}
+
+static char*
+serialize_csv_import_result(int         imported,
+                            int         errors,
+                            int         matched_rules_count,
+                            const char* errors_detail)
+{
+    csilk_json_t* resp = csilk_json_object();
+    csilk_json_add_number(resp, "imported", imported);
+    csilk_json_add_number(resp, "errors", errors);
+    csilk_json_add_number(resp, "matched_rules", matched_rules_count);
+    if (errors_detail && errors_detail[0]) {
+        csilk_json_add_string(resp, "errors_detail", errors_detail);
+    }
+    char* json = csilk_json_serialize(resp, NULL);
+    csilk_json_free(resp);
+    return json;
+}
+
+static void
+submit_csv_import_task(csilk_ctx_t*       c,
+                       const char*        task_type,
+                       const char*        initial_msg,
+                       mf_async_task_fn_t fn)
 {
     int64_t user_id = ctx_user_id(c);
-    if (user_id < 0) {
+    if (user_id <= 0) {
+        respond_unauthorized(c);
         return;
     }
 
@@ -122,11 +161,6 @@ transactions_import_csv(csilk_ctx_t* c)
         return;
     }
 
-    char uid_str[32];
-    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-    char lid_str[32];
-    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
-
     size_t      body_len = 0;
     const char* body = csilk_get_body(c, &body_len);
     if (!body || body_len == 0) {
@@ -134,30 +168,87 @@ transactions_import_csv(csilk_ctx_t* c)
         return;
     }
 
-    // Strip UTF-8 BOM if present
     const char* csv = body;
     size_t      csv_len = body_len;
-    if (csv_len >= 3 && csv[0] == '\xEF' && csv[1] == '\xBB' && csv[2] == '\xBF') {
+    if (csv_len >= 3 && (unsigned char)csv[0] == 0xEF && (unsigned char)csv[1] == 0xBB &&
+        (unsigned char)csv[2] == 0xBF) {
         csv += 3;
         csv_len -= 3;
     }
+    if (csv_len == 0) {
+        respond_bad_request(c, "请求体为空");
+        return;
+    }
 
-    int              imported = 0, errors = 0, matched_rules_count = 0;
-    char             errors_detail[2048] = {0};
-    csilk_db_pool_t* pool = db_get_pool();
-    csilk_json_t*    rules = mf_import_rule_list(pool, user_id);
-
-    char* data = malloc(csv_len + 1);
-    if (!data) {
+    csv_import_task_arg_t* arg = calloc(1, sizeof(*arg));
+    if (!arg) {
         respond_error(c, 500, "内存不足");
         return;
     }
-    memcpy(data, csv, csv_len);
-    data[csv_len] = '\0';
+    arg->csv_data = malloc(csv_len + 1);
+    if (!arg->csv_data) {
+        free(arg);
+        respond_error(c, 500, "内存不足");
+        return;
+    }
+    memcpy(arg->csv_data, csv, csv_len);
+    arg->csv_data[csv_len] = '\0';
+    arg->csv_len = csv_len;
+
+    bool    deduplicated = false;
+    int64_t task_id = mf_async_task_submit(db_get_pool(),
+                                           user_id,
+                                           ledger_id,
+                                           task_type,
+                                           NULL,
+                                           initial_msg,
+                                           fn,
+                                           arg,
+                                           csv_import_task_cleanup,
+                                           &deduplicated);
+    if (task_id <= 0) {
+        respond_error(c, 500, "提交异步 CSV 导入任务失败");
+        return;
+    }
+
+    mf_async_task_respond_submitted(c, task_id, task_type, deduplicated, NULL);
+}
+
+static int
+transactions_import_csv_task_fn(void*   raw_pool,
+                                int64_t task_id,
+                                int64_t user_id,
+                                int64_t ledger_id,
+                                void*   raw_arg,
+                                char**  out_result_json,
+                                char*   err_buf,
+                                size_t  err_cap)
+{
+    csilk_db_pool_t*       pool = (csilk_db_pool_t*)raw_pool;
+    csv_import_task_arg_t* arg = (csv_import_task_arg_t*)raw_arg;
+    if (!pool || !arg || !arg->csv_data) {
+        snprintf(err_buf, err_cap, "参数错误");
+        return -1;
+    }
+
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+
+    int           imported = 0, errors = 0, matched_rules_count = 0;
+    char          errors_detail[2048] = {0};
+    csilk_json_t* rules = mf_import_rule_list(pool, user_id);
+    char*         data = arg->csv_data;
+    size_t        csv_len = arg->csv_len > 0 ? arg->csv_len : 1;
+
+    mf_async_task_update_progress(pool, task_id, 5, "正在解析交易 CSV 数据");
 
     char* line_start = data;
     int   line_num = 0;
     while (*line_start) {
+        if ((line_num % 25) == 0 && line_num > 0) {
+            int pct = 5 + (int)(((size_t)(line_start - data) * 90) / csv_len);
+            mf_async_task_update_progress(pool, task_id, pct, "正在批量导入交易记录");
+        }
         char*  line_end = strchr(line_start, '\n');
         size_t line_len = line_end ? (size_t)(line_end - line_start) : strlen(line_start);
 
@@ -362,68 +453,59 @@ transactions_import_csv(csilk_ctx_t* c)
         imported++;
         line_start = line_end ? line_end + 1 : line_start + 1;
     }
-    free(data);
     if (rules) {
         csilk_json_free(rules);
     }
 
-    csilk_json_t* resp = csilk_json_object();
-    csilk_json_add_number(resp, "imported", imported);
-    csilk_json_add_number(resp, "errors", errors);
-    csilk_json_add_number(resp, "matched_rules", matched_rules_count);
-    if (errors_detail[0]) {
-        csilk_json_add_string(resp, "errors_detail", errors_detail);
+    if (out_result_json) {
+        *out_result_json =
+            serialize_csv_import_result(imported, errors, matched_rules_count, errors_detail);
     }
-    respond_ok(c, resp);
+    return 0;
 }
-void
-daily_expenses_import_csv(csilk_ctx_t* c)
-{
-    int64_t user_id = ctx_user_id(c);
-    if (user_id < 0) {
-        return;
-    }
 
-    int64_t ledger_id = ctx_ledger_id(c, user_id, "editor");
-    if (ledger_id <= 0) {
-        return;
+void
+transactions_import_csv(csilk_ctx_t* c)
+{
+    submit_csv_import_task(
+        c, "import_transactions", "正在排队导入交易 CSV", transactions_import_csv_task_fn);
+}
+
+static int
+daily_expenses_import_csv_task_fn(void*   raw_pool,
+                                  int64_t task_id,
+                                  int64_t user_id,
+                                  int64_t ledger_id,
+                                  void*   raw_arg,
+                                  char**  out_result_json,
+                                  char*   err_buf,
+                                  size_t  err_cap)
+{
+    csilk_db_pool_t*       pool = (csilk_db_pool_t*)raw_pool;
+    csv_import_task_arg_t* arg = (csv_import_task_arg_t*)raw_arg;
+    if (!pool || !arg || !arg->csv_data) {
+        snprintf(err_buf, err_cap, "参数错误");
+        return -1;
     }
 
     char uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-    char lid_str[32];
-    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
 
-    size_t      body_len = 0;
-    const char* body = csilk_get_body(c, &body_len);
-    if (!body || body_len == 0) {
-        respond_bad_request(c, "请求体为空");
-        return;
-    }
+    int           imported = 0, errors = 0, matched_rules_count = 0;
+    char          errors_detail[2048] = {0};
+    csilk_json_t* rules = mf_import_rule_list(pool, user_id);
+    char*         data = arg->csv_data;
+    size_t        csv_len = arg->csv_len > 0 ? arg->csv_len : 1;
 
-    const char* csv = body;
-    size_t      csv_len = body_len;
-    if (csv_len >= 3 && csv[0] == '\xef' && csv[1] == '\xbb' && csv[2] == '\xbf') {
-        csv += 3;
-        csv_len -= 3;
-    }
-
-    int              imported = 0, errors = 0, matched_rules_count = 0;
-    char             errors_detail[2048] = {0};
-    csilk_db_pool_t* pool = db_get_pool();
-    csilk_json_t*    rules = mf_import_rule_list(pool, user_id);
-
-    char* data = malloc(csv_len + 1);
-    if (!data) {
-        respond_error(c, 500, "内存不足");
-        return;
-    }
-    memcpy(data, csv, csv_len);
-    data[csv_len] = '\0';
+    mf_async_task_update_progress(pool, task_id, 5, "正在解析日常收支 CSV 数据");
 
     char* line_start = data;
     int   line_num = 0;
     while (*line_start) {
+        if ((line_num % 25) == 0 && line_num > 0) {
+            int pct = 5 + (int)(((size_t)(line_start - data) * 90) / csv_len);
+            mf_async_task_update_progress(pool, task_id, pct, "正在批量导入日常收支记录");
+        }
         char*  line_end = strchr(line_start, '\n');
         size_t line_len = line_end ? (size_t)(line_end - line_start) : strlen(line_start);
         while (line_len > 0 &&
@@ -606,17 +688,20 @@ daily_expenses_import_csv(csilk_ctx_t* c)
 
         line_start = line_end ? line_end + 1 : line_start + 1;
     }
-    free(data);
     if (rules) {
         csilk_json_free(rules);
     }
 
-    csilk_json_t* resp = csilk_json_object();
-    csilk_json_add_number(resp, "imported", imported);
-    csilk_json_add_number(resp, "errors", errors);
-    csilk_json_add_number(resp, "matched_rules", matched_rules_count);
-    if (errors_detail[0]) {
-        csilk_json_add_string(resp, "errors_detail", errors_detail);
+    if (out_result_json) {
+        *out_result_json =
+            serialize_csv_import_result(imported, errors, matched_rules_count, errors_detail);
     }
-    respond_ok(c, resp);
+    return 0;
+}
+
+void
+daily_expenses_import_csv(csilk_ctx_t* c)
+{
+    submit_csv_import_task(
+        c, "import_daily_expenses", "正在排队导入日常收支 CSV", daily_expenses_import_csv_task_fn);
 }

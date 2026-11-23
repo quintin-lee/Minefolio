@@ -16,9 +16,10 @@
 #include "csilk/core/server/server.h"
 
 #include <curl/curl.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
-#include <errno.h>
+#include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
 
@@ -471,7 +472,52 @@ is_sensitive_env(const char* entry)
     return false;
 }
 
-/* 构造受限脱敏 envp（过滤敏感键，env_json 非空时追加自定义 KEY=VALUE） */
+/* 黑名单拦截 env_json 中的高危注入环境变量（LD_* / PATH / DYLD_* / 解释器预加载选项 /
+ * 含控制字符或敏感键），防止通过数据库 env_json 配置对子进程实施动态库劫持或命令注入。 */
+static bool
+is_blocked_custom_env_key(const char* key)
+{
+    if (!key || !key[0]) {
+        return true;
+    }
+    char   upper[128];
+    size_t len = strlen(key);
+    if (len >= sizeof(upper)) {
+        return true;
+    }
+    for (size_t i = 0; i < len; i++) {
+        unsigned char ch = (unsigned char)key[i];
+        if (ch == '=' || ch == '\r' || ch == '\n' || ch < 0x20 || ch == 0x7f) {
+            return true;
+        }
+        if (ch >= 'a' && ch <= 'z') {
+            ch = (unsigned char)(ch - 32);
+        }
+        upper[i] = (char)ch;
+    }
+    upper[len] = '\0';
+
+    if (strncmp(upper, "LD_", 3) == 0 || strncmp(upper, "DYLD_", 5) == 0) {
+        return true;
+    }
+    if (strcmp(upper, "PATH") == 0 || strcmp(upper, "IFS") == 0 || strcmp(upper, "BASH_ENV") == 0 ||
+        strcmp(upper, "ENV") == 0 || strcmp(upper, "CDPATH") == 0 || strcmp(upper, "SHELL") == 0 ||
+        strcmp(upper, "SHELLOPTS") == 0 || strcmp(upper, "BASHOPTS") == 0 ||
+        strcmp(upper, "PYTHONHOME") == 0 || strcmp(upper, "PYTHONPATH") == 0 ||
+        strcmp(upper, "NODE_OPTIONS") == 0 || strcmp(upper, "PERL5OPT") == 0 ||
+        strcmp(upper, "RUBYOPT") == 0 || strcmp(upper, "OPENSSL_CONF") == 0) {
+        return true;
+    }
+    return is_sensitive_env(upper);
+}
+
+bool
+mf_mcp_env_key_is_blocked(const char* key)
+{
+    return is_blocked_custom_env_key(key);
+}
+
+/* 构造受限脱敏 envp（过滤敏感键，env_json 非空时追加经白名单/黑名单校验的自定义 KEY=VALUE） */
 static char**
 build_envp(const mf_mcp_server_t* s, size_t* out_envc, size_t* out_basec)
 {
@@ -508,8 +554,18 @@ build_envp(const mf_mcp_server_t* s, size_t* out_envc, size_t* out_basec)
                 const char*         key = csilk_json_object_key(obj, i);
                 const csilk_json_t* val = csilk_json_object_val(obj, i);
                 if (key && val && csilk_json_is_string(val)) {
+                    const char* val_str = csilk_json_string_value(val);
+                    if (is_blocked_custom_env_key(key)) {
+                        CSILK_LOG_W("mcp_client: blocked dangerous env_json key '%s'", key);
+                        continue;
+                    }
+                    if (!val_str || strpbrk(val_str, "\r\n") != NULL) {
+                        CSILK_LOG_W(
+                            "mcp_client: blocked env_json key '%s' due to control characters", key);
+                        continue;
+                    }
                     char buf[512];
-                    snprintf(buf, sizeof(buf), "%s=%s", key, csilk_json_string_value(val));
+                    snprintf(buf, sizeof(buf), "%s=%s", key, val_str);
                     envp[idx++] = strdup(buf);
                 }
             }
@@ -626,7 +682,44 @@ stdio_call(mf_mcp_client_t* c, const char* request_json, char* out_err, size_t e
         }
         if (pid == 0) {
             /* 子进程分支：
-               1. 先重定向标准输入/输出/错误描述符 */
+               0. 独立进程组与资源限制隔离（纵深防御，避免转储核心与泄漏或残留孙进程） */
+            (void)setpgid(0, 0);
+
+            struct rlimit rl_core = {0, 0};
+            (void)setrlimit(RLIMIT_CORE, &rl_core);
+
+            struct rlimit rl_nofile;
+            if (getrlimit(RLIMIT_NOFILE, &rl_nofile) == 0 && rl_nofile.rlim_cur > 1024) {
+                rl_nofile.rlim_cur = 1024;
+                if (rl_nofile.rlim_max > 1024) {
+                    rl_nofile.rlim_max = 1024;
+                }
+                (void)setrlimit(RLIMIT_NOFILE, &rl_nofile);
+            }
+
+            struct rlimit rl_fsize = {64ULL * 1024ULL * 1024ULL, 64ULL * 1024ULL * 1024ULL};
+            const char*   fsize_mb_str = getenv("MINEFOLIO_MCP_RLIMIT_FSIZE_MB");
+            if (fsize_mb_str && fsize_mb_str[0]) {
+                long fsize_mb = strtol(fsize_mb_str, NULL, 10);
+                if (fsize_mb > 0 && fsize_mb <= 16384) {
+                    rlim_t fbytes = (rlim_t)fsize_mb * 1024ULL * 1024ULL;
+                    rl_fsize.rlim_cur = fbytes;
+                    rl_fsize.rlim_max = fbytes;
+                }
+            }
+            (void)setrlimit(RLIMIT_FSIZE, &rl_fsize);
+
+            const char* as_mb_str = getenv("MINEFOLIO_MCP_RLIMIT_AS_MB");
+            if (as_mb_str && as_mb_str[0]) {
+                long as_mb = strtol(as_mb_str, NULL, 10);
+                if (as_mb > 0 && as_mb <= 65536) {
+                    rlim_t        bytes = (rlim_t)as_mb * 1024ULL * 1024ULL;
+                    struct rlimit rl_as = {bytes, bytes};
+                    (void)setrlimit(RLIMIT_AS, &rl_as);
+                }
+            }
+
+            /* 1. 先重定向标准输入/输出/错误描述符 */
             if (dup2(in_pipe[0], STDIN_FILENO) < 0 || dup2(out_pipe[1], STDOUT_FILENO) < 0 ||
                 dup2(err_pipe[1], STDERR_FILENO) < 0) {
                 _exit(127);
@@ -658,6 +751,7 @@ stdio_call(mf_mcp_client_t* c, const char* request_json, char* out_err, size_t e
             execve(argv[0], argv, envp ? (char* const*)envp : safe_fallback_env);
             _exit(127);
         }
+        (void)setpgid(pid, pid);
         c->child_pid = pid;
         c->read_fd = out_pipe[0]; /* 父读子 stdout */
         c->write_fd = in_pipe[1]; /* 父写子 stdin */
@@ -854,9 +948,11 @@ mf_mcp_client_free(mf_mcp_client_t* c)
     if (!c) {
         return;
     }
-    /* stdio 子进程清理：SIGTERM → 轮询等待至多 500ms → SIGKILL */
+    /* stdio 子进程清理：优先终止整条进程组 (-pid)，SIGTERM → 轮询至多 500ms → SIGKILL */
     if (c->child_pid > 0) {
-        kill(c->child_pid, SIGTERM);
+        if (kill(-c->child_pid, SIGTERM) != 0) {
+            (void)kill(c->child_pid, SIGTERM);
+        }
         int st = 0;
         int exited = 0;
         for (int w = 0; w < 50; w++) {
@@ -867,7 +963,9 @@ mf_mcp_client_free(mf_mcp_client_t* c)
             usleep(10000); /* 10ms */
         }
         if (!exited) {
-            kill(c->child_pid, SIGKILL);
+            if (kill(-c->child_pid, SIGKILL) != 0) {
+                (void)kill(c->child_pid, SIGKILL);
+            }
             waitpid(c->child_pid, &st, 0);
         }
         c->child_pid = 0;
@@ -1114,7 +1212,10 @@ mf_mcp_client_list_tools(mf_mcp_client_t*       c,
         struct tm tm;
         localtime_r(&now, &tm);
         char ts[32] = {0};
-        strftime(ts, sizeof(ts), "%Y-%m-%dT%H:%M:%S", &tm);
+        /* 时间戳格式必须与 mcp_bridge.c 的 TTL 解析器 strptime("%Y-%m-%d %H:%M:%S") 一致：
+           用空格分隔（非 ISO-8601 的 'T'）。若写 'T' 会导致 strptime 解析失败，
+           mcp_tool_is_stale 保守保留（TTL 形同虚设，工具缓存永不过期）。 */
+        strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", &tm);
         snprintf(e->fetched_at, sizeof(e->fetched_at), "%s", ts);
     }
 

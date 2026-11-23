@@ -385,7 +385,13 @@ const renderedOutput = computed(() => {
     const rawHtml = marked.parse(content, { async: false, breaks: true }) as string
     return DOMPurify.sanitize(rawHtml)
   } catch {
-    return `<pre>${content}</pre>`
+    const escaped = content
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
+    return `<pre>${escaped}</pre>`
   }
 })
 

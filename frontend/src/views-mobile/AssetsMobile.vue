@@ -2,8 +2,8 @@
   <div class="assets-mobile" v-loading="loading">
     <div class="page-header">
       <div class="mobile-segmented">
-        <button class="segmented-item active">资产账户</button>
-        <button class="segmented-item" @click="$router.push('/m/holdings')">投资持仓</button>
+        <button class="segmented-item active">{{ t('nav.assets') }}</button>
+        <button class="segmented-item" @click="$router.push('/m/holdings')">{{ t('nav.holdings') }}</button>
       </div>
     </div>
     <div v-if="list.length === 0 && !loading" class="empty-state">暂无资产数据</div>
@@ -48,6 +48,7 @@ import { assetsApi } from '@/api/assets'
 import { accountsApi } from '@/api/accounts'
 import { marketApi } from '@/api/market'
 import { formatCurrency } from '@/utils/format'
+import { t } from '@/utils/locale'
 import type { Asset, Account } from '@/types'
 
 const list = ref<Asset[]>([])
@@ -185,6 +186,9 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  max-height: 55vh;
+  max-height: 55dvh;
+  overflow-y: auto;
 }
 .group-empty {
   text-align: center;
@@ -193,6 +197,7 @@ onMounted(async () => {
   padding: 16px 0;
 }
 .asset-card {
+  flex-shrink: 0;
   display: flex;
   justify-content: space-between;
   align-items: center;

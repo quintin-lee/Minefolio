@@ -1,8 +1,14 @@
 #include "application/account/usecases.h"
+#include "application/asset/usecases.h"
+#include "application/transaction/usecases.h"
+#include "application/daily_expense/usecases.h"
 #include "domain/account/rules.h"
 #include "domain/auth/repository.h"
+#include "domain/ai/repository.h"
 #include "infrastructure/repositories/account_permission_repo_impl.h"
 #include "infrastructure/repositories/account_repo_impl.h"
+#include "infrastructure/repositories/portfolio_repo_impl.h"
+#include "services/report_asset_service.h"
 #include "common/db.h"
 #include "common/ledger_utils.h"
 #include "config/secret.h"
@@ -345,6 +351,263 @@ static void test_usecases_and_masking(csilk_db_pool_t* pool) {
     assert(found_a && found_b);
     csilk_json_free(alice_accounts);
     printf("  [OK] Owner sees unmasked data and all accounts\n");
+
+    // Case 6: Downstream RBAC enforcement across assets, transactions, expenses, reports, portfolio, and AI repos
+    printf("--- Testing Downstream Account & Field RBAC Enforcement ---\n");
+    // Seed categories in family ledger for Bob
+    csilk_db_exec_param(
+        pool,
+        "INSERT INTO categories (user_id, ledger_id, name, type, asset_type) VALUES (?, ?, '活期存款', 'asset', 'cash');",
+        (const char*[]){s_mid, s_lid, NULL});
+    csilk_json_t* cat_row = csilk_db_query_param_json(
+        pool,
+        "SELECT id FROM categories WHERE user_id=? AND ledger_id=? AND name='活期存款';",
+        (const char*[]){s_mid, s_lid, NULL});
+    assert(cat_row && csilk_json_array_size(cat_row) > 0);
+    int64_t cash_cat_id = db_get_int(csilk_json_array_get(cat_row, 0), "id");
+    csilk_json_free(cat_row);
+
+    csilk_db_exec_param(
+        pool,
+        "INSERT INTO categories (user_id, ledger_id, name, type) VALUES (?, ?, '餐饮美食', 'expense');",
+        (const char*[]){s_mid, s_lid, NULL});
+    cat_row = csilk_db_query_param_json(
+        pool,
+        "SELECT id FROM categories WHERE user_id=? AND ledger_id=? AND name='餐饮美食';",
+        (const char*[]){s_mid, s_lid, NULL});
+    assert(cat_row && csilk_json_array_size(cat_row) > 0);
+    int64_t exp_cat_id = db_get_int(csilk_json_array_get(cat_row, 0), "id");
+    csilk_json_free(cat_row);
+
+    // Temporarily grant Bob operator on both accounts to seed downstream entities
+    assert(account_permission_usecase_set(pool, owner_id, ledger_id, acct_a, member_id, "operator", 0, 0, &res) == 0);
+    assert(account_permission_usecase_set(pool, owner_id, ledger_id, acct_b, member_id, "operator", 0, 0, &res) == 0);
+
+    asset_usecase_result_t ares = {0};
+    create_asset_cmd_t acmd_a = {
+        .user_id = member_id,
+        .ledger_id = ledger_id,
+        .category_id = cash_cat_id,
+        .account_id = acct_a,
+        .name = "招行工资卡资产",
+        .account_no = "6225000011112222",
+        .current_value = 5000.0,
+        .currency = "CNY",
+    };
+    assert(asset_usecase_create(pool, &acmd_a, &ares) == 0 && ares.id > 0);
+    int64_t asset_a = ares.id;
+
+    create_asset_cmd_t acmd_b = {
+        .user_id = member_id,
+        .ledger_id = ledger_id,
+        .category_id = cash_cat_id,
+        .account_id = acct_b,
+        .name = "私房钱金库资产",
+        .account_no = "9999888877776666",
+        .current_value = 9000.0,
+        .currency = "CNY",
+    };
+    assert(asset_usecase_create(pool, &acmd_b, &ares) == 0 && ares.id > 0);
+    int64_t asset_b = ares.id;
+
+    tx_usecase_result_t txres = {0};
+    create_tx_cmd_t txcmd_a = {
+        .user_id = member_id,
+        .ledger_id = ledger_id,
+        .asset_id = asset_a,
+        .category_id = exp_cat_id,
+        .type = "income",
+        .amount = 200.0,
+        .currency = "CNY",
+        .date = "2026-11-20",
+        .note = "奖金入账",
+    };
+    assert(tx_usecase_create(pool, &txcmd_a, &txres) == 0 && txres.created_id > 0);
+    int64_t tx_a = txres.created_id;
+
+    create_tx_cmd_t txcmd_b = {
+        .user_id = member_id,
+        .ledger_id = ledger_id,
+        .asset_id = asset_b,
+        .category_id = exp_cat_id,
+        .type = "income",
+        .amount = 800.0,
+        .currency = "CNY",
+        .date = "2026-11-20",
+        .note = "私房钱入账",
+    };
+    assert(tx_usecase_create(pool, &txcmd_b, &txres) == 0 && txres.created_id > 0);
+
+    daily_expense_usecase_result_t deres = {0};
+    create_daily_expense_cmd_t decmd_a = {
+        .user_id = member_id,
+        .ledger_id = ledger_id,
+        .category_id = exp_cat_id,
+        .asset_id = asset_a,
+        .expense_type = "expense",
+        .amount = 100.0,
+        .currency = "CNY",
+        .expense_date = "2026-11-20",
+        .note = "午餐",
+    };
+    assert(daily_expense_usecase_create(pool, &decmd_a, NULL, &deres) == 0);
+
+    create_daily_expense_cmd_t decmd_b = {
+        .user_id = member_id,
+        .ledger_id = ledger_id,
+        .category_id = exp_cat_id,
+        .asset_id = asset_b,
+        .expense_type = "expense",
+        .amount = 400.0,
+        .currency = "CNY",
+        .expense_date = "2026-11-20",
+        .note = "私密消费",
+    };
+    assert(daily_expense_usecase_create(pool, &decmd_b, NULL, &deres) == 0);
+
+    csilk_json_t* exp_row = csilk_db_query_param_json(
+        pool,
+        "SELECT id FROM daily_expenses WHERE user_id=? AND note='午餐';",
+        (const char*[]){s_mid, NULL});
+    assert(exp_row && csilk_json_array_size(exp_row) == 1);
+    int64_t exp_a = db_get_int(csilk_json_array_get(exp_row, 0), "id");
+    csilk_json_free(exp_row);
+
+    // Now Alice sets Account A -> viewer + mask_balance=1 + mask_account_no=1, Account B -> none
+    assert(account_permission_usecase_set(pool, owner_id, ledger_id, acct_a, member_id, "viewer", 1, 1, &res) == 0);
+    assert(account_permission_usecase_set(pool, owner_id, ledger_id, acct_b, member_id, "none", 0, 0, &res) == 0);
+
+    // 6.1 Asset list: asset_b hidden, asset_a masked + account_id preserved
+    csilk_json_t* asset_list_json = NULL;
+    int64_t asset_total = 0;
+    query_asset_filter_t afil = {.user_id = member_id, .page = 1, .page_size = 20};
+    assert(asset_usecase_query(pool, &afil, &asset_list_json, &asset_total) == 0);
+    assert(asset_total == 1 && csilk_json_array_size(asset_list_json) == 1);
+    csilk_json_t* aitem = csilk_json_array_get(asset_list_json, 0);
+    assert(db_get_int(aitem, "id") == asset_a);
+    assert(db_get_int(aitem, "account_id") == acct_a);
+    assert(csilk_json_get_bool(aitem, "is_balance_masked") == true);
+    assert(csilk_json_get_bool(aitem, "is_account_no_masked") == true);
+    assert(db_get_num(aitem, "current_value") == 0.0);
+    assert(strcmp(csilk_json_get_string(aitem, "account_no"), "************2222") == 0);
+    csilk_json_free(asset_list_json);
+    printf("  [OK] Asset list hides 'none' account and masks 'mask_balance'/'mask_account_no'\n");
+
+    // 6.2 Asset detail: asset_b returns 1003, asset_a masks balance/transactions/weight
+    csilk_json_t* detail_b = NULL;
+    assert(asset_usecase_get(pool, member_id, asset_b, &detail_b) == 1003 && detail_b == NULL);
+    csilk_json_t* detail_a = NULL;
+    assert(asset_usecase_get(pool, member_id, asset_a, &detail_a) == 0 && detail_a != NULL);
+    assert(csilk_json_get_bool(detail_a, "is_balance_masked") == true);
+    assert(db_get_num(detail_a, "current_value") == 0.0);
+    assert(db_get_num(detail_a, "portfolio_weight") == 0.0);
+    csilk_json_t* dtxs = csilk_json_get(detail_a, "transactions");
+    assert(dtxs && csilk_json_array_size(dtxs) >= 1);
+    assert(db_get_num(csilk_json_array_get(dtxs, 0), "amount") == 0.0);
+    csilk_json_free(detail_a);
+    printf("  [OK] Asset detail hides 'none' and masks balance/transactions/portfolio_weight\n");
+
+    // 6.3 Asset balance logs: asset_b hidden, asset_a masked
+    csilk_json_t* logs_json = NULL;
+    int64_t logs_total = 0;
+    query_asset_log_filter_t lfil = {.user_id = member_id, .page = 1, .page_size = 20};
+    assert(asset_usecase_query_logs(pool, &lfil, &logs_json, &logs_total) == 0);
+    assert(logs_total > 0);
+    for (int i = 0; i < (int)csilk_json_array_size(logs_json); i++) {
+        csilk_json_t* lrow = csilk_json_array_get(logs_json, i);
+        assert(db_get_int(lrow, "asset_id") == asset_a);
+        assert(csilk_json_get_bool(lrow, "is_balance_masked") == true);
+        assert(db_get_num(lrow, "delta") == 0.0);
+        assert(db_get_num(lrow, "balance_after") == 0.0);
+    }
+    csilk_json_free(logs_json);
+
+    // 6.4 Asset update & delete blocked with 1004 on viewer account
+    update_asset_cmd_t uacmd = {.user_id = member_id, .id = asset_a, .name = "篡改名称"};
+    assert(asset_usecase_update(pool, &uacmd, &ares) != 0 && ares.code == 1004);
+    delete_asset_cmd_t dacmd = {.user_id = member_id, .id = asset_a};
+    assert(asset_usecase_delete(pool, &dacmd, &ares) != 0 && ares.code == 1004);
+    printf("  [OK] Asset update/delete blocked with 1004 on viewer account\n");
+
+    // 6.5 Transactions list, monthly, update, delete
+    query_tx_filter_t tfil = {.user_id = member_id, .ledger_id = ledger_id, .page = 1, .page_size = 20};
+    assert(tx_usecase_query(pool, &tfil, &txres) == 0 && txres.data_payload != NULL);
+    assert(txres.total == 1);
+    csilk_json_t* txitem = csilk_json_array_get((csilk_json_t*)txres.data_payload, 0);
+    assert(db_get_int(txitem, "id") == tx_a);
+    assert(csilk_json_get_bool(txitem, "is_balance_masked") == true);
+    assert(db_get_num(txitem, "amount") == 0.0);
+    csilk_json_free((csilk_json_t*)txres.data_payload);
+
+    assert(tx_usecase_monthly(pool, member_id, ledger_id, "2026-11", &txres) == 0 && txres.data_payload != NULL);
+    assert(db_get_num((csilk_json_t*)txres.data_payload, "inflows") == 0.0);
+    csilk_json_free((csilk_json_t*)txres.data_payload);
+
+    update_tx_cmd_t utxcmd = {.user_id = member_id, .ledger_id = ledger_id, .tx_id = tx_a, .amount = 999.0};
+    assert(tx_usecase_update(pool, &utxcmd, &txres) != 0 && txres.code == 1004);
+    delete_tx_cmd_t dtxcmd = {.user_id = member_id, .tx_id = tx_a};
+    assert(tx_usecase_delete(pool, &dtxcmd, &txres) != 0 && txres.code == 1004);
+    printf("  [OK] Transaction list/monthly/update/delete enforce RBAC visibility, masking, and write guard\n");
+
+    // 6.6 Daily expenses list, monthly, update, delete
+    csilk_json_t* delist = NULL;
+    int64_t detotal = 0;
+    assert(daily_expense_usecase_list(pool, member_id, ledger_id, 1, 20, NULL, NULL, NULL, NULL, NULL, &delist, &detotal) == 0);
+    assert(detotal == 1 && csilk_json_array_size(delist) == 1);
+    csilk_json_t* deitem = csilk_json_array_get(delist, 0);
+    assert(db_get_int(deitem, "id") == exp_a);
+    assert(csilk_json_get_bool(deitem, "is_balance_masked") == true);
+    assert(db_get_num(deitem, "amount") == 0.0);
+    csilk_json_free(delist);
+
+    daily_expense_monthly_result_t demres = {0};
+    csilk_json_t *de_cat = NULL, *de_tag = NULL, *de_daily = NULL;
+    assert(daily_expense_usecase_monthly(pool, member_id, ledger_id, 2026, 11, &demres, &de_cat, &de_tag, &de_daily) == 0);
+    assert(money_to_double(demres.total_expense) == 0.0);
+    if (de_cat) csilk_json_free(de_cat);
+    if (de_tag) csilk_json_free(de_tag);
+    if (de_daily) csilk_json_free(de_daily);
+
+    update_daily_expense_cmd_t udecmd = {
+        .user_id = member_id,
+        .ledger_id = ledger_id,
+        .id = exp_a,
+        .category_id = exp_cat_id,
+        .asset_id = asset_a,
+        .expense_type = "expense",
+        .amount = 888.0,
+        .currency = "CNY",
+        .expense_date = "2026-11-20",
+    };
+    assert(daily_expense_usecase_update(pool, &udecmd, NULL, &deres) != 0 && deres.code == 1004);
+    assert(daily_expense_usecase_delete(pool, member_id, ledger_id, exp_a, &deres) != 0 && deres.code == 1004);
+    printf("  [OK] Daily expense list/monthly/update/delete enforce RBAC visibility, masking, and write guard\n");
+
+    // 6.7 Reports, portfolio recent transactions, and AI repos exclude masked/none balances
+    report_query_t rq = {.user_id = member_id, .ledger_id = ledger_id};
+    report_result_t rres = {0};
+    report_asset_summary(pool, &rq, &rres);
+    assert(rres.code == 0 && rres.data_payload != NULL);
+    assert(db_get_num(rres.data_payload, "total_assets") == 0.0);
+    csilk_json_free(rres.data_payload);
+
+    csilk_json_t* rec_txs = portfolio_repo_get_recent_transactions(pool, member_id, ledger_id, 5);
+    assert(rec_txs != NULL && csilk_json_array_size(rec_txs) == 1);
+    assert(db_get_num(csilk_json_array_get(rec_txs, 0), "amount") == 0.0);
+    assert(csilk_json_get_bool(csilk_json_array_get(rec_txs, 0), "is_balance_masked") == true);
+    csilk_json_free(rec_txs);
+
+    int64_t ai_total = 0;
+    csilk_json_t* ai_assets = mf_ai_repo_asset_list(pool, member_id, 1, 20, NULL, &ai_total);
+    assert(ai_assets != NULL && ai_total == 1);
+    assert(db_get_num(csilk_json_array_get(ai_assets, 0), "current_value") == 0.0);
+    csilk_json_free(ai_assets);
+
+    csilk_json_t* ai_exps = mf_ai_repo_daily_expense_list(pool, member_id, 1, 20, NULL, NULL, 0, NULL, &ai_total);
+    assert(ai_exps != NULL && ai_total == 1);
+    assert(db_get_num(csilk_json_array_get(ai_exps, 0), "amount") == 0.0);
+    csilk_json_free(ai_exps);
+    printf("  [OK] Reports, portfolio, and AI repositories enforce RBAC masking & exclusion\n");
 }
 
 int main(void) {

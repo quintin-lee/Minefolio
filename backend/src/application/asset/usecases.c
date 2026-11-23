@@ -11,6 +11,7 @@
 #include "core/ledger/ledger_engine.h"
 #include "application/account/usecases.h"
 #include "infrastructure/repositories/account_repo_impl.h"
+#include "infrastructure/repositories/account_permission_repo_impl.h"
 #include "services/market/exchange_rate_service.h"
 #include "common/ledger_utils.h"
 #include <time.h>
@@ -93,6 +94,16 @@ asset_usecase_create(void* pool, const create_asset_cmd_t* cmd, asset_usecase_re
     quantity_from_double(cmd->quantity, 4, &asset.quantity);
     money_from_double(cmd->cost_basis, cur, &asset.cost_basis);
     price_from_double(cmd->net_value, 4, cur, &asset.net_value);
+
+    if (cmd->has_unit_cost && cmd->unit_cost > 0.0 && !money_is_positive(asset.cost_basis) &&
+        quantity_is_positive(asset.quantity)) {
+        price_t uc_p;
+        money_t total_cb;
+        price_from_double(cmd->unit_cost, 4, cur, &uc_p);
+        if (price_times_quantity(uc_p, asset.quantity, &total_cb) == DECIMAL_OK) {
+            asset.cost_basis = total_cb;
+        }
+    }
 
     /* 业务规则：投资品市值与成本自动推导 */
     mf_asset_rule_derive_investment_values(&asset);
@@ -178,7 +189,7 @@ asset_usecase_update(void* pool, const update_asset_cmd_t* cmd, asset_usecase_re
         return -1;
     }
 
-    csilk_json_t* cur = asset_get(db_pool, cmd->user_id, cmd->id);
+    csilk_json_t* cur = asset_get_raw(db_pool, cmd->user_id, cmd->id);
     if (!cur || csilk_json_array_size(cur) == 0) {
         if (cur) {
             csilk_json_free(cur);
@@ -186,6 +197,19 @@ asset_usecase_update(void* pool, const update_asset_cmd_t* cmd, asset_usecase_re
         out_res->code = 1003;
         snprintf(out_res->message, sizeof(out_res->message), "资产不存在");
         return -1;
+    }
+
+    int64_t cur_ledger_id = 0, cur_account_id = 0;
+    if (asset_get_ledger_and_account(db_pool, cmd->id, &cur_ledger_id, &cur_account_id) == 0 &&
+        cur_account_id > 0) {
+        if (account_usecase_check_permission(
+                pool, cur_ledger_id, cmd->user_id, cur_account_id, MF_ACCOUNT_ACTION_WRITE_TX) !=
+            0) {
+            csilk_json_free(cur);
+            out_res->code = 1004;
+            snprintf(out_res->message, sizeof(out_res->message), "Forbidden: 关联账户无操作权限");
+            return -1;
+        }
     }
 
     const csilk_json_t* cr = csilk_json_array_get(cur, 0);
@@ -291,7 +315,7 @@ asset_usecase_update(void* pool, const update_asset_cmd_t* cmd, asset_usecase_re
         need_reattach = 1;
     }
 
-    if (cmd->has_net_value || cmd->has_quantity || cmd->has_cost_basis) {
+    if (cmd->has_net_value || cmd->has_quantity || cmd->has_cost_basis || cmd->has_unit_cost) {
         if (is_investment) {
             double old_qty = db_get_num(cr, "quantity");
             double old_cost = db_get_num(cr, "cost_basis");
@@ -307,6 +331,16 @@ asset_usecase_update(void* pool, const update_asset_cmd_t* cmd, asset_usecase_re
 
             quantity_t qty_obj;
             quantity_from_double(new_qty, 4, &qty_obj);
+
+            if (cmd->has_unit_cost && !cmd->has_cost_basis && cmd->unit_cost >= 0.0 &&
+                new_qty > 0.0) {
+                price_t uc_obj;
+                money_t uc_total;
+                price_from_double(cmd->unit_cost, 4, asset_currency, &uc_obj);
+                if (price_times_quantity(uc_obj, qty_obj, &uc_total) == DECIMAL_OK) {
+                    new_cost = money_to_double(uc_total);
+                }
+            }
 
             price_t net_obj;
             price_from_double(new_net, 4, asset_currency, &net_obj);
@@ -447,6 +481,17 @@ asset_usecase_delete(void* pool, const delete_asset_cmd_t* cmd, asset_usecase_re
 
     csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
 
+    int64_t del_ledger = 0, del_acct = 0;
+    if (asset_get_ledger_and_account(db_pool, cmd->id, &del_ledger, &del_acct) == 0 &&
+        del_acct > 0) {
+        if (account_usecase_check_permission(
+                pool, del_ledger, cmd->user_id, del_acct, MF_ACCOUNT_ACTION_WRITE_TX) != 0) {
+            out_res->code = 1004;
+            snprintf(out_res->message, sizeof(out_res->message), "Forbidden: 关联账户无操作权限");
+            return -1;
+        }
+    }
+
     int has_tx = 0;
     if (asset_has_transactions(db_pool, cmd->user_id, cmd->id, &has_tx) != 0) {
         out_res->code = 500;
@@ -490,13 +535,17 @@ asset_usecase_get(void* pool, int64_t user_id, int64_t id, csilk_json_t** out_js
     }
 
     const csilk_json_t* row = csilk_json_array_get(result, 0);
+    bool                mask_bal = csilk_json_get_bool(row, "is_balance_masked");
+    bool                mask_acc = csilk_json_get_bool(row, "is_account_no_masked");
     csilk_json_t*       resp = csilk_json_object();
     csilk_json_add_number(resp, "id", db_get_num(row, "id"));
     csilk_json_add_number(resp, "ledger_id", db_get_num(row, "ledger_id"));
     csilk_json_add_number(resp, "category_id", db_get_num(row, "category_id"));
     csilk_json_add_string(resp, "name", csilk_json_get_string(row, "name"));
     csilk_json_add_string(resp, "account_no", csilk_json_get_string(row, "account_no"));
+    csilk_json_add_bool(resp, "is_account_no_masked", mask_acc);
     csilk_json_add_number(resp, "current_value", db_get_num(row, "current_value"));
+    csilk_json_add_bool(resp, "is_balance_masked", mask_bal);
     csilk_json_add_string(resp, "currency", csilk_json_get_string(row, "currency"));
     csilk_json_add_string(resp, "note", csilk_json_get_string(row, "note"));
     csilk_json_add_string(resp, "category_name", csilk_json_get_string(row, "category_name"));
@@ -521,9 +570,17 @@ asset_usecase_get(void* pool, int64_t user_id, int64_t id, csilk_json_t** out_js
             csilk_json_add_number(item, "asset_id", db_get_num(tr, "asset_id"));
             csilk_json_add_string(
                 item, "transaction_type", csilk_json_get_string(tr, "transaction_type"));
-            csilk_json_add_number(item, "amount", db_get_num(tr, "amount"));
-            csilk_json_add_number(item, "quantity", db_get_num(tr, "quantity"));
-            csilk_json_add_number(item, "price_per_unit", db_get_num(tr, "price_per_unit"));
+            if (mask_bal) {
+                csilk_json_add_number(item, "amount", 0.0);
+                csilk_json_add_number(item, "quantity", 0.0);
+                csilk_json_add_number(item, "price_per_unit", 0.0);
+                csilk_json_add_bool(item, "is_balance_masked", true);
+            } else {
+                csilk_json_add_number(item, "amount", db_get_num(tr, "amount"));
+                csilk_json_add_number(item, "quantity", db_get_num(tr, "quantity"));
+                csilk_json_add_number(item, "price_per_unit", db_get_num(tr, "price_per_unit"));
+                csilk_json_add_bool(item, "is_balance_masked", false);
+            }
             csilk_json_add_string(item, "currency", csilk_json_get_string(tr, "currency"));
             csilk_json_add_string(
                 item, "transaction_date", csilk_json_get_string(tr, "transaction_date"));
@@ -588,15 +645,17 @@ asset_usecase_get(void* pool, int64_t user_id, int64_t id, csilk_json_t** out_js
             }
 
             /* 2. 当日涨跌（最新价 vs 前一日价） */
-            money_t daily_change;
-            double  daily_pct = 0.0;
-            if (mf_daily_change_from_series(series, pn, &daily_change, &daily_pct) == 0) {
-                csilk_json_t* daily_obj = csilk_json_object();
-                char          chg_str[64];
-                money_to_string(daily_change, chg_str, sizeof(chg_str));
-                csilk_json_add_string(daily_obj, "change", chg_str);
-                csilk_json_add_number(daily_obj, "pct", daily_pct);
-                csilk_json_add_object(resp, "daily_change", daily_obj);
+            if (!mask_bal) {
+                money_t daily_change;
+                double  daily_pct = 0.0;
+                if (mf_daily_change_from_series(series, pn, &daily_change, &daily_pct) == 0) {
+                    csilk_json_t* daily_obj = csilk_json_object();
+                    char          chg_str[64];
+                    money_to_string(daily_change, chg_str, sizeof(chg_str));
+                    csilk_json_add_string(daily_obj, "change", chg_str);
+                    csilk_json_add_number(daily_obj, "pct", daily_pct);
+                    csilk_json_add_object(resp, "daily_change", daily_obj);
+                }
             }
 
             free(series);
@@ -607,7 +666,9 @@ asset_usecase_get(void* pool, int64_t user_id, int64_t id, csilk_json_t** out_js
     }
 
     /* 3. 组合权重（占该资产所属账本全部非负债资产市值比例，按本位币折算） */
-    {
+    if (mask_bal) {
+        csilk_json_add_number(resp, "portfolio_weight", 0.0);
+    } else {
         int64_t ledger_id = db_get_int(row, "ledger_id");
         if (ledger_id <= 0) {
             ledger_id = ledger_get_default(db_pool, user_id);
@@ -627,8 +688,8 @@ asset_usecase_get(void* pool, int64_t user_id, int64_t id, csilk_json_t** out_js
             "SELECT a.current_value, a.currency, c.asset_type FROM assets a "
             "JOIN categories c ON a.category_id=c.id "
             "WHERE a.user_id=? AND a.ledger_id=? AND c.asset_type NOT IN "
-            "('loan','credit_card','other_liability')",
-            (const char*[]){uid_str, lid_str, NULL});
+            "('loan','credit_card','other_liability') AND " MF_RBAC_ASSET_UNMASKED_SQL("a"),
+            (const char*[]){uid_str, lid_str, uid_str, uid_str, NULL});
 
         money_t total_mkt_base = money_zero(base_cur);
         if (all_rows) {
@@ -703,6 +764,35 @@ asset_usecase_query_logs(void*                           pool,
 }
 
 int
+asset_usecase_validate_rebuild_single(void*                   pool,
+                                      int64_t                 user_id,
+                                      int64_t                 id,
+                                      asset_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
+    memset(out_res, 0, sizeof(*out_res));
+    if (!pool || user_id <= 0 || id <= 0) {
+        out_res->code = 1002;
+        snprintf(out_res->message, sizeof(out_res->message), "参数错误");
+        return -1;
+    }
+
+    csilk_json_t* cur = asset_get_raw((csilk_db_pool_t*)pool, user_id, id);
+    if (!cur || csilk_json_array_size(cur) == 0) {
+        if (cur) {
+            csilk_json_free(cur);
+        }
+        out_res->code = 1003;
+        snprintf(out_res->message, sizeof(out_res->message), "资产不存在");
+        return -1;
+    }
+    csilk_json_free(cur);
+    return 0;
+}
+
+int
 asset_usecase_rebuild_single(void*                   pool,
                              int64_t                 user_id,
                              int64_t                 id,
@@ -715,7 +805,7 @@ asset_usecase_rebuild_single(void*                   pool,
     memset(out_res, 0, sizeof(*out_res));
 
     csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
-    csilk_json_t*    cur = asset_get(db_pool, user_id, id);
+    csilk_json_t*    cur = asset_get_raw(db_pool, user_id, id);
     if (!cur || csilk_json_array_size(cur) == 0) {
         if (cur) {
             csilk_json_free(cur);

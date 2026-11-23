@@ -111,6 +111,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import type { AiNewsReport } from '@/types'
 import { listNewsReports, triggerNewsAnalysis, getNewsReportByDate } from '@/api/ai-news'
 
@@ -188,7 +189,8 @@ function parseHoldings(snapshotStr?: string): Array<{ name: string; category: st
 }
 
 function renderMarkdown(md: string): string {
-  return marked.parse(md, { async: false, breaks: true }) as string
+  const rawHtml = marked.parse(md, { async: false, breaks: true }) as string
+  return DOMPurify.sanitize(rawHtml)
 }
 
 /** 首屏加载第一页 */

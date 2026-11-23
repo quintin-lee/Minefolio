@@ -288,10 +288,11 @@ api_ai_action_confirm_handler(csilk_ctx_t* c)
         return;
     }
 
-    /* 透传 confirm 参数（剔除 action_type）并强制回填 draft_token，
-       防止模型伪造参数绕过令牌绑定 */
+    /* 透传 confirm 参数（剔除 action_type / draft_token / session_id）并强制回填
+       draft_token，防止模型伪造参数或篡改会话上下文绕过令牌绑定 */
+    int64_t            session_id = (int64_t)csilk_json_get_number(body, "session_id");
     csilk_json_t*      args = csilk_json_object();
-    ai_tool_context_t* ctx = ai_tool_context_create(pool, user_id, 0 /* 无会话上下文 */, NULL);
+    ai_tool_context_t* ctx = ai_tool_context_create(pool, user_id, session_id, NULL);
     if (!ctx) {
         csilk_json_free(body);
         csilk_json_free(args);
@@ -302,7 +303,8 @@ api_ai_action_confirm_handler(csilk_ctx_t* c)
     for (size_t i = 0; i < bsize; i++) {
         const char*         key = csilk_json_object_key(body, i);
         const csilk_json_t* val = csilk_json_object_val(body, i);
-        if (!key || strcmp(key, "action_type") == 0 || strcmp(key, "draft_token") == 0) {
+        if (!key || strcmp(key, "action_type") == 0 || strcmp(key, "draft_token") == 0 ||
+            strcmp(key, "session_id") == 0) {
             continue;
         }
         csilk_json_add_object(args, key, csilk_json_copy((csilk_json_t*)val));
@@ -362,11 +364,19 @@ api_ai_action_confirm_batch_handler(csilk_ctx_t* c)
         return;
     }
 
+    int64_t       session_id = (int64_t)csilk_json_get_number(body, "session_id");
     csilk_json_t* out_data = NULL;
     int           code = 0;
     char          err_buf[256] = {0};
-    int           rc = ai_batch_actions_execute(
-        db_get_pool(), user_id, actions, token_buf, &out_data, &code, err_buf, sizeof(err_buf));
+    int           rc = ai_batch_actions_execute_for_session(db_get_pool(),
+                                                  user_id,
+                                                  session_id,
+                                                  actions,
+                                                  token_buf,
+                                                  &out_data,
+                                                  &code,
+                                                  err_buf,
+                                                  sizeof(err_buf));
     csilk_json_free(body);
 
     if (rc == 0 && out_data) {

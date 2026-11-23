@@ -91,6 +91,7 @@ import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import { confirmBatchActions } from '@/api/ai'
+import { useChatStore } from '@/stores/chat'
 
 export interface BatchProposedAction {
   action_type: 'daily_expense' | 'transfer'
@@ -129,6 +130,7 @@ const emit = defineEmits<{
 
 const loading = ref(false)
 const cardStatus = ref<'pending' | 'executing' | 'executed' | 'cancelled'>(props.status || 'pending')
+const chatStore = useChatStore()
 
 watch(
   () => props.status,
@@ -173,6 +175,7 @@ async function handleConfirm() {
   try {
     const payload = {
       draft_token: props.draft_token,
+      session_id: chatStore.currentSessionId ?? undefined,
       actions: props.actions.map(action => ({
         action_type: action.action_type,
         amount: Number(action.data.amount),

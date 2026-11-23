@@ -67,6 +67,8 @@ api_transactions_create(csilk_ctx_t* c)
         respond_not_found(c);
     } else if (res.code == 1002) {
         respond_bad_request(c, res.message);
+    } else if (res.code == 1004) {
+        respond_conflict(c, res.message);
     } else {
         respond_error(c, 500, res.message[0] ? res.message : "创建交易失败");
     }
@@ -130,6 +132,8 @@ api_transactions_update(csilk_ctx_t* c)
         respond_not_found(c);
     } else if (res.code == 1002) {
         respond_bad_request(c, res.message);
+    } else if (res.code == 1004) {
+        respond_conflict(c, res.message);
     } else {
         respond_error(c, 500, res.message[0] ? res.message : "更新交易失败");
     }
@@ -169,6 +173,8 @@ api_transactions_delete(csilk_ctx_t* c)
         respond_not_found(c);
     } else if (res.code == 1002) {
         respond_bad_request(c, res.message);
+    } else if (res.code == 1004) {
+        respond_conflict(c, res.message);
     } else {
         respond_error(c, 500, res.message[0] ? res.message : "删除交易失败");
     }

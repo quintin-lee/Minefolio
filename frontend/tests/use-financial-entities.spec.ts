@@ -1,5 +1,19 @@
-import { describe, it, expect } from 'vitest'
-import { buildEntityRegex, replaceTextNodesWithEntities, isStopword } from '../src/composables/useFinancialEntities'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import {
+  buildEntityRegex,
+  replaceTextNodesWithEntities,
+  isStopword,
+  useFinancialEntities,
+  resetFinancialEntities,
+} from '../src/composables/useFinancialEntities'
+
+vi.mock('@/api/accounts', () => ({ accountsApi: { list: vi.fn() } }))
+vi.mock('@/api/assets', () => ({ assetsApi: { list: vi.fn() } }))
+vi.mock('@/api/reports', () => ({ reportsApi: { holdings: vi.fn() } }))
+
+import { accountsApi } from '@/api/accounts'
+import { assetsApi } from '@/api/assets'
+import { reportsApi } from '@/api/reports'
 
 describe('useFinancialEntities', () => {
   it('filters out system stopwords and single characters', () => {
@@ -41,5 +55,29 @@ describe('useFinancialEntities', () => {
     const result = replaceTextNodesWithEntities(html, lookup)
     expect(result).toContain('<span class="mf-amount-pill">¥12,850.50</span>')
     expect(result).toContain('<span class="mf-amount-pill">$3,200</span>')
+  })
+
+  it('clears cached entities on resetFinancialEntities so next load refetches', async () => {
+    resetFinancialEntities()
+    vi.clearAllMocks()
+    ;(accountsApi.list as any).mockResolvedValueOnce([{ id: 1, name: '招商银行', institution: 'bank_card' }])
+    ;(assetsApi.list as any).mockResolvedValueOnce({ list: [{ id: 10, name: '茅台', type: 'stock', currency: 'CNY', current_value: 1000 }] })
+    ;(reportsApi.holdings as any).mockResolvedValueOnce({ list: [] })
+
+    const { loadEntities, getEntityDetail, linkFinancialEntities } = useFinancialEntities()
+    await loadEntities()
+    expect(getEntityDetail('account', 1)?.name).toBe('招商银行')
+    expect(linkFinancialEntities('<p>茅台</p>')).toContain('mf-entity-badge')
+
+    resetFinancialEntities()
+    expect(getEntityDetail('account', 1)).toBeNull()
+    expect(linkFinancialEntities('<p>茅台</p>')).not.toContain('mf-entity-badge')
+
+    ;(accountsApi.list as any).mockResolvedValueOnce([{ id: 2, name: '工商银行', institution: 'bank_card' }])
+    ;(assetsApi.list as any).mockResolvedValueOnce({ list: [] })
+    ;(reportsApi.holdings as any).mockResolvedValueOnce({ list: [] })
+    await loadEntities()
+    expect(accountsApi.list).toHaveBeenCalledTimes(2)
+    expect(getEntityDetail('account', 2)?.name).toBe('工商银行')
   })
 })

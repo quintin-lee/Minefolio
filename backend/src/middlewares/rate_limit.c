@@ -1,9 +1,12 @@
 /**
  * @file rate_limit.c
- * @brief 认证相关敏感接口请求频率限制（限流）中间件实现
+ * @brief 认证相关敏感接口及 /mcp 端点限流中间件实现
  *
- * 实现了基于内存环形队列（Ring Buffer）与滑动时间窗口算法的 IP 级别接口限流，
- * 并使用 POSIX 互斥锁确保多线程并发请求时的计数安全。
+ * 采用基于单调时钟 (CLOCK_MONOTONIC) 的按实体（IP+路径 / 用户或未认证 IP）
+ * 聚合分桶滑动窗口算法：
+ *  - 单一攻击源的高频洪泛仅占用 1 个分桶，避免固定事件环形缓冲区被大量事件刷满覆盖；
+ *  - 淘汰时优先清理已过期的陈旧分桶，表满时优先淘汰最低频/最久未活跃的低风险分桶，
+ *    保护活跃高危限流状态不被驱逐。
  */
 
 #include "middlewares/rate_limit.h"
@@ -12,78 +15,127 @@
 #include "common/jwt.h"
 #include "csilk/core/ctx/response.h"
 #include <pthread.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <string.h>
 #include <time.h>
 
-/**
- * @def RATE_LIMIT_WINDOW_SEC
- * @brief 滑动窗口时间跨度（秒）
- */
 #define RATE_LIMIT_WINDOW_SEC 60
-
-/**
- * @def RATE_LIMIT_MAX_REQS
- * @brief 窗口时间内单个 IP 对单个接口的最大允许请求次数
- */
 #define RATE_LIMIT_MAX_REQS 10
+#define AUTH_BUCKET_CAP 2048
 
-/**
- * @def RATE_LIMIT_RING
- * @brief 环形缓冲区最大容量（记录数）
- */
-#define RATE_LIMIT_RING 1024
-
-/**
- * @struct entry_t
- * @brief 限流请求历史记录项
- */
 typedef struct {
-    time_t ts;       /**< 请求发生的时间戳（秒） */
-    char   path[64]; /**< 请求的目标路径 */
-    char   ip[64];   /**< 客户端 IP 地址 */
-} entry_t;
+    bool    active;
+    char    path[64];
+    char    ip[64];
+    int64_t ts[RATE_LIMIT_MAX_REQS]; /**< 精确滑动窗口时间戳槽位 */
+    int     head;
+    int     count;
+    int64_t last_seen;
+} auth_bucket_t;
 
-/**
- * @brief 内部静态环形缓冲区数组
- */
-static entry_t ring[RATE_LIMIT_RING];
-
-/**
- * @brief 内部静态变量：环形缓冲区队头索引
- */
-static int ring_head = 0;
-
-/**
- * @brief 内部静态变量：环形缓冲区当前有效记录数
- */
-static int ring_count = 0;
-
-/**
- * @brief 内部静态变量：保护环形缓冲区并发读写的互斥锁
- */
+static auth_bucket_t   auth_buckets[AUTH_BUCKET_CAP];
 static pthread_mutex_t g_rate_limit_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-/**
- * @brief 淘汰环形缓冲区中超出时间窗口的过期记录
- *
- * @param[in] now 当前系统时间戳
- *
- * @note 必须在持有 g_rate_limit_mutex 锁的前提下调用。
- */
-static void
-evict_old(time_t now)
+static int64_t
+monotonic_now_sec(void)
 {
-    while (ring_count > 0 && (now - ring[ring_head].ts) > RATE_LIMIT_WINDOW_SEC) {
-        ring_head = (ring_head + 1) % RATE_LIMIT_RING;
-        ring_count--;
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
+        return (int64_t)time(NULL);
+    }
+    return (int64_t)ts.tv_sec;
+}
+
+static bool
+is_im_bind_auth_path(const char* path)
+{
+    if (!path) {
+        return false;
+    }
+    size_t plen = strlen(path);
+    if (plen <= 18 || strncmp(path, "/api/im/", 8) != 0 ||
+        strncmp(path + plen - 10, "/bind-auth", 10) != 0) {
+        return false;
+    }
+    size_t seg_len = plen - 18;
+    if (seg_len == 0 || seg_len > 32) {
+        return false;
+    }
+    for (size_t i = 0; i < seg_len; i++) {
+        unsigned char ch = (unsigned char)path[8 + i];
+        bool          ok = (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+                  (ch >= '0' && ch <= '9') || ch == '_' || ch == '-';
+        if (!ok) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static void
+auth_bucket_prune(auth_bucket_t* b, int64_t now)
+{
+    while (b->count > 0 && (now - b->ts[b->head]) > RATE_LIMIT_WINDOW_SEC) {
+        b->head = (b->head + 1) % RATE_LIMIT_MAX_REQS;
+        b->count--;
     }
 }
 
-/**
- * @brief 认证敏感接口限流中间件处理函数
- *
- * @param[in,out] c HTTP 请求上下文
- */
+static auth_bucket_t*
+auth_find_or_alloc_bucket(const char* limit_path, const char* safe_ip, int64_t now)
+{
+    int empty_idx = -1;
+    int victim_idx = 0;
+
+    for (int i = 0; i < AUTH_BUCKET_CAP; i++) {
+        auth_bucket_t* b = &auth_buckets[i];
+        if (!b->active) {
+            if (empty_idx < 0) {
+                empty_idx = i;
+            }
+            continue;
+        }
+
+        auth_bucket_prune(b, now);
+        if (b->count == 0 && (now - b->last_seen) > RATE_LIMIT_WINDOW_SEC) {
+            b->active = false;
+            if (empty_idx < 0) {
+                empty_idx = i;
+            }
+            continue;
+        }
+
+        if (strncmp(b->path, limit_path, sizeof(b->path) - 1) == 0 &&
+            strncmp(b->ip, safe_ip, sizeof(b->ip) - 1) == 0) {
+            return b;
+        }
+
+        /* 若表满，优先淘汰未达限流阈值且计数最低、最久未活跃的分桶，保留活跃封禁态 */
+        auth_bucket_t* v = &auth_buckets[victim_idx];
+        if (!v->active) {
+            victim_idx = i;
+        } else {
+            bool b_blocked = (b->count >= RATE_LIMIT_MAX_REQS);
+            bool v_blocked = (v->count >= RATE_LIMIT_MAX_REQS);
+            if ((!b_blocked && v_blocked) ||
+                (b_blocked == v_blocked &&
+                 (b->count < v->count || (b->count == v->count && b->last_seen < v->last_seen)))) {
+                victim_idx = i;
+            }
+        }
+    }
+
+    int            slot = (empty_idx >= 0) ? empty_idx : victim_idx;
+    auth_bucket_t* target = &auth_buckets[slot];
+    memset(target, 0, sizeof(*target));
+    target->active = true;
+    snprintf(target->path, sizeof(target->path), "%s", limit_path);
+    snprintf(target->ip, sizeof(target->ip), "%s", safe_ip);
+    target->last_seen = now;
+    return target;
+}
+
 void
 rate_limit_auth_middleware(csilk_ctx_t* c)
 {
@@ -93,42 +145,26 @@ rate_limit_auth_middleware(csilk_ctx_t* c)
         return;
     }
 
-    /* 仅对认证与安全设置类写接口执行限流。P2-A: /api/im/{platform}/bind-auth
-     * 是 IM 自助绑定（无 JWT、可密码爆破）, 归一化为固定限流维度 "/api/im/bind-auth"。 */
-    const char* limit_path = path;
-    size_t      plen = strlen(path);
-    if (plen > 16 && strncmp(path, "/api/im/", 8) == 0 &&
-        strncmp(path + plen - 10, "/bind-auth", 10) == 0) {
-        limit_path = "/api/im/bind-auth";
-    }
-    if (strcmp(path, "/api/auth/login") != 0 && strcmp(path, "/api/auth/register") != 0 &&
-        strcmp(path, "/api/system/setup") != 0 && strcmp(path, "/api/auth/2fa/verify-login") != 0 &&
-        limit_path != "/api/im/bind-auth") {
+    bool        is_im_bind = is_im_bind_auth_path(path);
+    const char* limit_path = is_im_bind ? "/api/im/bind-auth" : path;
+
+    if (!is_im_bind && strcmp(path, "/api/auth/login") != 0 &&
+        strcmp(path, "/api/auth/register") != 0 && strcmp(path, "/api/system/setup") != 0 &&
+        strcmp(path, "/api/auth/2fa/verify-login") != 0 &&
+        strcmp(path, "/api/auth/oauth/callback") != 0) {
         csilk_next(c);
         return;
     }
 
     const char* ip = csilk_get_client_ip(c);
     const char* safe_ip = (ip && ip[0]) ? ip : "127.0.0.1";
-    time_t      now = time(NULL);
+    int64_t     now = monotonic_now_sec();
 
     pthread_mutex_lock(&g_rate_limit_mutex);
-    evict_old(now);
+    auth_bucket_t* b = auth_find_or_alloc_bucket(limit_path, safe_ip, now);
+    b->last_seen = now;
 
-    int matches = 0;
-    for (int i = 0; i < ring_count; i++) {
-        int idx = (ring_head + i) % RATE_LIMIT_RING;
-        if (ring[idx].ts == 0) {
-            break;
-        }
-        if ((now - ring[idx].ts) <= RATE_LIMIT_WINDOW_SEC &&
-            strncmp(ring[idx].path, limit_path, sizeof(ring[idx].path) - 1) == 0 &&
-            strncmp(ring[idx].ip, safe_ip, sizeof(ring[idx].ip) - 1) == 0) {
-            matches++;
-        }
-    }
-
-    if (matches >= RATE_LIMIT_MAX_REQS) {
+    if (b->count >= RATE_LIMIT_MAX_REQS) {
         pthread_mutex_unlock(&g_rate_limit_mutex);
         csilk_json_t* resp = csilk_json_object();
         csilk_json_add_number(resp, "code", 1004);
@@ -139,92 +175,128 @@ rate_limit_auth_middleware(csilk_ctx_t* c)
         return;
     }
 
-    /* 记录当前请求到环形缓冲区 (用归一化 limit_path 作为限流维度) */
-    if (ring_count >= RATE_LIMIT_RING) {
-        ring_head = (ring_head + 1) % RATE_LIMIT_RING;
-        ring_count--;
-    }
-    int idx = (ring_head + ring_count) % RATE_LIMIT_RING;
-    ring[idx].ts = now;
-    strncpy(ring[idx].path, limit_path, sizeof(ring[idx].path) - 1);
-    ring[idx].path[sizeof(ring[idx].path) - 1] = '\0';
-    strncpy(ring[idx].ip, safe_ip, sizeof(ring[idx].ip) - 1);
-    ring[idx].ip[sizeof(ring[idx].ip) - 1] = '\0';
-    ring_count++;
-
+    int tail = (b->head + b->count) % RATE_LIMIT_MAX_REQS;
+    b->ts[tail] = now;
+    b->count++;
     pthread_mutex_unlock(&g_rate_limit_mutex);
 
     csilk_next(c);
 }
 
 /* ================================================================== */
-/* /mcp 每用户限流（MINEFOLIO_MCP 端点防 hammering）                  */
-/* 与认证限流完全隔离：独立环形缓冲 + 独立互斥锁 + 按 user_id 维度。   */
+/* /mcp 每用户 & 未认证 IP 限流（按实体分桶滑动子窗口，防洪水驱逐）  */
 /* ================================================================== */
 
-/**
- * @def MCP_RATE_MAX_PER_MIN
- * @brief MCP 端点每用户每分钟最大允许请求数
- */
 #define MCP_RATE_MAX_PER_MIN 120
+#define MCP_UNAUTH_RATE_MAX_PER_MIN 30
+#define MCP_BUCKET_CAP 1024
+#define MCP_SUB_SLOTS 6
+#define MCP_SLOT_SEC 10 /* 6 * 10s = 60s 滑动时间窗口 */
 
-/**
- * @def MCP_RATE_RING
- * @brief MCP 环形缓冲区最大容量
- */
-#define MCP_RATE_RING 256
-
-/**
- * @struct mcp_entry_t
- * @brief MCP 限流历史记录项（按 user_id 维度，区别于认证限流的 IP+path）
- */
 typedef struct {
-    int64_t user_id; /**< 请求的用户 ID（来自 JWT） */
-    time_t  ts;      /**< 请求发生的时间戳（秒） */
-} mcp_entry_t;
+    bool     active;
+    int64_t  user_id; /**< >0 为已认证用户，0 为未认证 IP 请求 */
+    char     ip[64];
+    int64_t  slot_epoch[MCP_SUB_SLOTS];
+    uint32_t slot_count[MCP_SUB_SLOTS];
+    int64_t  last_seen;
+} mcp_bucket_t;
 
-/**
- * @brief MCP 独立环形缓冲区数组
- */
-static mcp_entry_t mcp_ring[MCP_RATE_RING];
-
-/**
- * @brief MCP 环形缓冲区队头索引
- */
-static int mcp_ring_head = 0;
-
-/**
- * @brief MCP 环形缓冲区当前有效记录数
- */
-static int mcp_ring_count = 0;
-
-/**
- * @brief 保护 MCP 环形缓冲区并发读写的互斥锁
- */
+static mcp_bucket_t    mcp_buckets[MCP_BUCKET_CAP];
 static pthread_mutex_t g_mcp_rate_limit_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-/**
- * @brief 淘汰 MCP 环形缓冲区中超出时间窗口的过期记录
- *
- * @param[in] now 当前系统时间戳
- *
- * @note 必须在持有 g_mcp_rate_limit_mutex 锁的前提下调用。
- */
-static void
-mcp_evict_old(time_t now)
+static uint32_t
+mcp_bucket_sum_and_prune(mcp_bucket_t* b, int64_t now_epoch)
 {
-    while (mcp_ring_count > 0 && (now - mcp_ring[mcp_ring_head].ts) > RATE_LIMIT_WINDOW_SEC) {
-        mcp_ring_head = (mcp_ring_head + 1) % MCP_RATE_RING;
-        mcp_ring_count--;
+    uint32_t sum = 0;
+    for (int s = 0; s < MCP_SUB_SLOTS; s++) {
+        if (b->slot_count[s] > 0) {
+            if ((now_epoch - b->slot_epoch[s]) < MCP_SUB_SLOTS) {
+                sum += b->slot_count[s];
+            } else {
+                b->slot_count[s] = 0;
+                b->slot_epoch[s] = 0;
+            }
+        }
     }
+    return sum;
 }
 
-/**
- * @brief MCP 端点每用户限流中间件处理函数
- *
- * 仅拦截 /mcp 路径（streamable-HTTP JSON-RPC 端点），按 user_id 维度滑动窗口限频。
- * 中间件须注册在 JWT 组之后，使 ctx_user_id(c) 可用。
- */
+static mcp_bucket_t*
+mcp_find_or_alloc_bucket(int64_t user_id, const char* safe_ip, int64_t now, uint32_t* out_sum)
+{
+    int64_t  now_epoch = now / MCP_SLOT_SEC;
+    int      empty_idx = -1;
+    int      victim_idx = 0;
+    uint32_t victim_sum = UINT32_MAX;
+    bool     victim_blocked = true;
+
+    for (int i = 0; i < MCP_BUCKET_CAP; i++) {
+        mcp_bucket_t* b = &mcp_buckets[i];
+        if (!b->active) {
+            if (empty_idx < 0) {
+                empty_idx = i;
+            }
+            continue;
+        }
+
+        uint32_t sum = mcp_bucket_sum_and_prune(b, now_epoch);
+        if (sum == 0 && (now - b->last_seen) > RATE_LIMIT_WINDOW_SEC) {
+            b->active = false;
+            if (empty_idx < 0) {
+                empty_idx = i;
+            }
+            continue;
+        }
+
+        bool match = (user_id > 0)
+                         ? (b->user_id == user_id)
+                         : (b->user_id == 0 && strncmp(b->ip, safe_ip, sizeof(b->ip) - 1) == 0);
+        if (match) {
+            *out_sum = sum;
+            return b;
+        }
+
+        uint32_t b_limit = (b->user_id > 0) ? MCP_RATE_MAX_PER_MIN : MCP_UNAUTH_RATE_MAX_PER_MIN;
+        bool     b_blocked = (sum >= b_limit);
+        if (i == 0 || !mcp_buckets[victim_idx].active || (!b_blocked && victim_blocked) ||
+            (b_blocked == victim_blocked &&
+             (sum < victim_sum ||
+              (sum == victim_sum && b->last_seen < mcp_buckets[victim_idx].last_seen)))) {
+            victim_idx = i;
+            victim_sum = sum;
+            victim_blocked = b_blocked;
+        }
+    }
+
+    int           slot = (empty_idx >= 0) ? empty_idx : victim_idx;
+    mcp_bucket_t* target = &mcp_buckets[slot];
+    memset(target, 0, sizeof(*target));
+    target->active = true;
+    target->user_id = (user_id > 0) ? user_id : 0;
+    if (user_id <= 0) {
+        snprintf(target->ip, sizeof(target->ip), "%s", safe_ip);
+    }
+    target->last_seen = now;
+    *out_sum = 0;
+    return target;
+}
+
+static void
+mcp_send_rate_limited(csilk_ctx_t* c)
+{
+    csilk_json_t* resp = csilk_json_object();
+    csilk_json_add_string(resp, "jsonrpc", "2.0");
+    csilk_json_add_number(resp, "id", 0);
+    csilk_json_t* er = csilk_json_object();
+    csilk_json_add_number(er, "code", -32005);
+    csilk_json_add_string(er, "message", "rate limited: too many MCP requests");
+    csilk_json_add_object(resp, "error", er);
+    csilk_set_header(c, "Retry-After", "60");
+    csilk_json(c, CSILK_STATUS_TOO_MANY_REQUESTS, resp);
+    csilk_abort(c);
+}
+
 void
 mcp_rate_limit_middleware(csilk_ctx_t* c)
 {
@@ -234,55 +306,30 @@ mcp_rate_limit_middleware(csilk_ctx_t* c)
         return;
     }
 
-    int64_t user_id = jwt_get_user_id(c);
-    if (user_id <= 0) {
-        /* 未认证：交由 mcp_endpoint_handler 返回 JSON-RPC -32001，此处直接放行 */
-        csilk_next(c);
-        return;
-    }
+    int64_t     user_id = jwt_get_user_id(c);
+    const char* ip = csilk_get_client_ip(c);
+    const char* safe_ip = (ip && ip[0]) ? ip : "127.0.0.1";
+    int64_t     now = monotonic_now_sec();
+    int64_t     now_epoch = now / MCP_SLOT_SEC;
+    uint32_t    limit = (user_id > 0) ? MCP_RATE_MAX_PER_MIN : MCP_UNAUTH_RATE_MAX_PER_MIN;
 
-    time_t now = time(NULL);
     pthread_mutex_lock(&g_mcp_rate_limit_mutex);
-    mcp_evict_old(now);
+    uint32_t      matches = 0;
+    mcp_bucket_t* b = mcp_find_or_alloc_bucket(user_id, safe_ip, now, &matches);
+    b->last_seen = now;
 
-    int matches = 0;
-    for (int i = 0; i < mcp_ring_count; i++) {
-        int idx = (mcp_ring_head + i) % MCP_RATE_RING;
-        if (mcp_ring[idx].user_id == 0) {
-            break;
-        }
-        if ((now - mcp_ring[idx].ts) <= RATE_LIMIT_WINDOW_SEC && mcp_ring[idx].user_id == user_id) {
-            matches++;
-        }
-    }
-
-    if (matches >= MCP_RATE_MAX_PER_MIN) {
+    if (matches >= limit) {
         pthread_mutex_unlock(&g_mcp_rate_limit_mutex);
-        /* /mcp 为裸 JSON-RPC 端点（不套 {code,message,data} 信封），
-           超限须回 JSON-RPC 错误帧而非信封。 */
-        csilk_json_t* resp = csilk_json_object();
-        csilk_json_add_string(resp, "jsonrpc", "2.0");
-        csilk_json_add_number(resp, "id", 0);
-        csilk_json_t* er = csilk_json_object();
-        csilk_json_add_number(er, "code", -32005);
-        csilk_json_add_string(er, "message", "rate limited: too many MCP requests");
-        csilk_json_add_object(resp, "error", er);
-        csilk_set_header(c, "Retry-After", "60");
-        csilk_json(c, CSILK_STATUS_TOO_MANY_REQUESTS, resp);
-        csilk_abort(c);
+        mcp_send_rate_limited(c);
         return;
     }
 
-    /* 记录当前请求到 MCP 环形缓冲区 */
-    if (mcp_ring_count >= MCP_RATE_RING) {
-        mcp_ring_head = (mcp_ring_head + 1) % MCP_RATE_RING;
-        mcp_ring_count--;
+    int slot = (int)(now_epoch % MCP_SUB_SLOTS);
+    if (b->slot_epoch[slot] != now_epoch) {
+        b->slot_epoch[slot] = now_epoch;
+        b->slot_count[slot] = 0;
     }
-    int idx = (mcp_ring_head + mcp_ring_count) % MCP_RATE_RING;
-    mcp_ring[idx].user_id = user_id;
-    mcp_ring[idx].ts = now;
-    mcp_ring_count++;
-
+    b->slot_count[slot]++;
     pthread_mutex_unlock(&g_mcp_rate_limit_mutex);
 
     csilk_next(c);

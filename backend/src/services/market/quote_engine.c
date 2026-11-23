@@ -13,23 +13,31 @@
 #include <strings.h>
 #include <time.h>
 
-static char g_market_proxy[256] = {0};
+static char            g_market_proxy[256] = {0};
+static pthread_mutex_t g_proxy_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void
 quote_engine_set_proxy(const char* proxy)
 {
+    pthread_mutex_lock(&g_proxy_mutex);
     if (proxy) {
         strncpy(g_market_proxy, proxy, sizeof(g_market_proxy) - 1);
         g_market_proxy[sizeof(g_market_proxy) - 1] = '\0';
     } else {
         g_market_proxy[0] = '\0';
     }
+    pthread_mutex_unlock(&g_proxy_mutex);
 }
 
 const char*
 quote_engine_get_proxy(void)
 {
-    return g_market_proxy;
+    _Thread_local static char tls_proxy[256];
+    pthread_mutex_lock(&g_proxy_mutex);
+    strncpy(tls_proxy, g_market_proxy, sizeof(tls_proxy) - 1);
+    tls_proxy[sizeof(tls_proxy) - 1] = '\0';
+    pthread_mutex_unlock(&g_proxy_mutex);
+    return tls_proxy;
 }
 
 struct curl_buf {
@@ -117,7 +125,18 @@ quote_engine_http_get(const char* url, const char* proxy, int timeout_sec, size_
 #endif
     curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 3L);
 
-    const char* px = (proxy && proxy[0]) ? proxy : (g_market_proxy[0] ? g_market_proxy : NULL);
+    char        local_proxy[256] = {0};
+    const char* px = NULL;
+    if (proxy && proxy[0]) {
+        px = proxy;
+    } else {
+        pthread_mutex_lock(&g_proxy_mutex);
+        if (g_market_proxy[0]) {
+            strncpy(local_proxy, g_market_proxy, sizeof(local_proxy) - 1);
+            px = local_proxy;
+        }
+        pthread_mutex_unlock(&g_proxy_mutex);
+    }
     if (px && px[0]) {
         curl_easy_setopt(curl, CURLOPT_PROXY, px);
     }
@@ -301,10 +320,10 @@ quote_engine_calc_market_clocks(time_t               now,
         int         pre_h, pre_m;
     } configs[] = {
         {"SSE_SZSE", "A股 (沪深)", "Asia/Shanghai",    8,  9, 30, 11, 30, 13, 0,  15, 0, 9, 15},
-        {"HKEX",     "港股",       "Asia/Hong_Kong",   8,  9, 30, 12, 0,  13, 0,  16, 0, 9, 0 },
-        {"TSE",      "东京",       "Asia/Tokyo",       9,  9, 0,  11, 30, 12, 30, 15, 0, 8, 30},
-        {"LSE",      "伦敦",       "Europe/London",    1,  8, 0,  16, 30, 0,  0,  0,  0, 7, 0 },
-        {"NYSE",     "美股",       "America/New_York", -4, 9, 30, 16, 0,  0,  0,  0,  0, 4, 0 },
+        {"HKEX",     "港股",        "Asia/Hong_Kong",   8,  9, 30, 12, 0,  13, 0,  16, 0, 9, 0 },
+        {"TSE",      "东京",        "Asia/Tokyo",       9,  9, 0,  11, 30, 12, 30, 15, 0, 8, 30},
+        {"LSE",      "伦敦",        "Europe/London",    1,  8, 0,  16, 30, 0,  0,  0,  0, 7, 0 },
+        {"NYSE",     "美股",        "America/New_York", -4, 9, 30, 16, 0,  0,  0,  0,  0, 4, 0 },
     };
 
     *out_count = 5;
@@ -378,32 +397,36 @@ static const preset_index_t g_preset_indices[] = {
     {"sh000001", "上证指数", "cn",     "🇨🇳", "CNY", "stock_cn",  3285.40,  0.78 },
     {"sz399001", "深证成指", "cn",     "🇨🇳", "CNY", "stock_cn",  10550.20, 0.52 },
     {"sz399006", "创业板指", "cn",     "🇨🇳", "CNY", "stock_cn",  2188.60,  1.15 },
-    {"sh000300", "沪深300",  "cn",     "🇨🇳", "CNY", "stock_cn",  3920.10,  0.65 },
+    {"sh000300", "沪深300",    "cn",     "🇨🇳", "CNY", "stock_cn",  3920.10,  0.65 },
     {"hkHSI",    "恒生指数", "hk",     "🇭🇰", "HKD", "stock_hk",  20630.00, -0.25},
     {"hkHSTECH", "恒生科技", "hk",     "🇭🇰", "HKD", "stock_hk",  4520.50,  0.42 },
-    {"^GSPC",    "标普 500", "us",     "🇺🇸", "USD", "index",     5864.67,  0.42 },
+    {"^GSPC",    "标普 500",   "us",     "🇺🇸", "USD", "index",     5864.67,  0.42 },
     {"^IXIC",    "纳斯达克", "us",     "🇺🇸", "USD", "index",     18373.61, -0.18},
-    {"^DJI",     "道琼斯",   "us",     "🇺🇸", "USD", "index",     43065.22, 0.35 },
-    {"^N225",    "日经 225", "global", "🇯🇵", "JPY", "index",     39180.30, 0.88 },
-    {"^GDAXI",   "德国 DAX", "global", "🇩🇪", "EUR", "index",     19580.40, 0.21 },
+    {"^DJI",     "道琼斯",    "us",     "🇺🇸", "USD", "index",     43065.22, 0.35 },
+    {"^N225",    "日经 225",   "global", "🇯🇵", "JPY", "index",     39180.30, 0.88 },
+    {"^GDAXI",   "德国 DAX",   "global", "🇩🇪", "EUR", "index",     19580.40, 0.21 },
     {"^FTSE",    "英国富时", "global", "🇬🇧", "GBP", "index",     8240.10,  -0.05},
-    {"BTC-USD",  "比特币",   "crypto", "🪙", "USD", "crypto",    67800.00, 2.45 },
-    {"ETH-USD",  "以太坊",   "crypto", "🪙", "USD", "crypto",    2640.00,  1.82 },
-    {"GC=F",     "黄金现货", "crypto", "🪙", "USD", "commodity", 2680.50,  0.38 },
+    {"BTC-USD",  "比特币",    "crypto", "🪙",     "USD", "crypto",    67800.00, 2.45 },
+    {"ETH-USD",  "以太坊",    "crypto", "🪙",     "USD", "crypto",    2640.00,  1.82 },
+    {"GC=F",     "黄金现货", "crypto", "🪙",     "USD", "commodity", 2680.50,  0.38 },
 };
 
 static struct {
-    pthread_mutex_t     lock;
+    pthread_mutex_t lock;
+    pthread_mutex_t refresh_lock; /* 串行化刷新（HTTP）本身，避免并发刷新重复拉取 */
     time_t              last_updated;
     global_index_item_t items[MAX_PRESET_INDICES];
     int                 count;
     market_clock_item_t clocks[8];
     int                 clock_count;
+    uint64_t generation; /* 单调代数：刷新完成后自增，读路径据此判断是否需刷新 */
 } g_indices_cache = {
     .lock = PTHREAD_MUTEX_INITIALIZER,
+    .refresh_lock = PTHREAD_MUTEX_INITIALIZER,
     .last_updated = 0,
     .count = 0,
     .clock_count = 0,
+    .generation = 0,
 };
 
 static const char*
@@ -455,61 +478,86 @@ populate_mock_sparkline(double curr, double change_pct, double* out_spark, int c
     }
 }
 
+/* 计算并回填指数缓存：在锁外做 HTTP 拉取（避免阻塞读路径），
+   写共享缓存时短暂持锁，刷新期间读路径继续服务旧数据（stale-while-revalidate）。
+   并发调用方须以 refresh_lock 串行化本函数（见 refresh_indices_cache_offlock）。 */
 static void
-refresh_indices_cache_locked(void)
+refresh_indices_cache_offlock_impl(void)
 {
     time_t now = time(NULL);
+
+    /* 短暂持锁装配时钟与缓存头部 */
+    pthread_mutex_lock(&g_indices_cache.lock);
     g_indices_cache.clock_count = 0;
     quote_engine_calc_market_clocks(now, g_indices_cache.clocks, 8, &g_indices_cache.clock_count);
-
     int n = sizeof(g_preset_indices) / sizeof(g_preset_indices[0]);
     g_indices_cache.count = 0;
+    pthread_mutex_unlock(&g_indices_cache.lock);
 
     for (int i = 0; i < n; i++) {
-        global_index_item_t* item = &g_indices_cache.items[g_indices_cache.count];
-        memset(item, 0, sizeof(*item));
-        strncpy(item->symbol, g_preset_indices[i].symbol, sizeof(item->symbol) - 1);
-        strncpy(item->name, g_preset_indices[i].name, sizeof(item->name) - 1);
-        strncpy(item->category, g_preset_indices[i].category, sizeof(item->category) - 1);
-        strncpy(item->region_flag, g_preset_indices[i].flag, sizeof(item->region_flag) - 1);
-        strncpy(item->currency, g_preset_indices[i].currency, sizeof(item->currency) - 1);
+        global_index_item_t item;
+        memset(&item, 0, sizeof(item));
+        strncpy(item.symbol, g_preset_indices[i].symbol, sizeof(item.symbol) - 1);
+        strncpy(item.name, g_preset_indices[i].name, sizeof(item.name) - 1);
+        strncpy(item.category, g_preset_indices[i].category, sizeof(item.category) - 1);
+        strncpy(item.region_flag, g_preset_indices[i].flag, sizeof(item.region_flag) - 1);
+        strncpy(item.currency, g_preset_indices[i].currency, sizeof(item.currency) - 1);
 
         const char* mkt =
             get_market_clock_id(g_preset_indices[i].category, g_preset_indices[i].symbol);
         bool active = is_market_active(mkt, g_indices_cache.clocks, g_indices_cache.clock_count);
 
+        /* 锁外做 HTTP 拉取，避免长时间持有读缓存锁阻塞读路径 */
         market_quote_t q;
         if (active &&
             quote_engine_fetch_quote(g_preset_indices[i].symbol, g_preset_indices[i].source, &q) ==
                 0 &&
             q.current_price > 0) {
-            item->current_price = q.current_price;
-            item->change_percent = q.change_percent;
-            snprintf(item->quote_time, sizeof(item->quote_time), "%s", q.quote_time);
+            item.current_price = q.current_price;
+            item.change_percent = q.change_percent;
+            snprintf(item.quote_time, sizeof(item.quote_time), "%s", q.quote_time);
         } else {
-            item->current_price = g_preset_indices[i].def_price;
-            item->change_percent = g_preset_indices[i].def_change;
+            item.current_price = g_preset_indices[i].def_price;
+            item.change_percent = g_preset_indices[i].def_change;
             struct tm tm_q;
             localtime_r(&now, &tm_q);
-            strftime(item->quote_time, sizeof(item->quote_time), "%Y-%m-%d %H:%M:%S", &tm_q);
+            strftime(item.quote_time, sizeof(item.quote_time), "%Y-%m-%d %H:%M:%S", &tm_q);
         }
 
-        item->change_amount = item->current_price * (item->change_percent / 100.0) /
-                              (1.0 + item->change_percent / 100.0);
-        item->prev_close = item->current_price - item->change_amount;
-        item->open_price = item->prev_close * (1.0 + (item->change_percent * 0.3) / 100.0);
-        item->high_price = item->current_price > item->open_price ? item->current_price * 1.004
-                                                                  : item->open_price * 1.003;
-        item->low_price = item->current_price < item->open_price ? item->current_price * 0.996
-                                                                 : item->open_price * 0.997;
+        item.change_amount = item.current_price * (item.change_percent / 100.0) /
+                             (1.0 + item.change_percent / 100.0);
+        item.prev_close = item.current_price - item.change_amount;
+        item.open_price = item.prev_close * (1.0 + (item.change_percent * 0.3) / 100.0);
+        item.high_price = item.current_price > item.open_price ? item.current_price * 1.004
+                                                               : item.open_price * 1.003;
+        item.low_price = item.current_price < item.open_price ? item.current_price * 0.996
+                                                              : item.open_price * 0.997;
 
-        item->sparkline_count = 8;
-        populate_mock_sparkline(item->current_price, item->change_percent, item->sparkline, 8);
+        item.sparkline_count = 8;
+        populate_mock_sparkline(item.current_price, item.change_percent, item.sparkline, 8);
 
+        /* 短暂持锁写单个条目 */
+        pthread_mutex_lock(&g_indices_cache.lock);
+        global_index_item_t* slot = &g_indices_cache.items[g_indices_cache.count];
+        *slot = item;
         g_indices_cache.count++;
+        pthread_mutex_unlock(&g_indices_cache.lock);
     }
 
+    pthread_mutex_lock(&g_indices_cache.lock);
     g_indices_cache.last_updated = now;
+    g_indices_cache.generation++;
+    pthread_mutex_unlock(&g_indices_cache.lock);
+}
+
+/* 串行化入口：以 refresh_lock 保护 refresh_indices_cache_offlock_impl，
+   避免多个线程重复拉取 HTTP。 */
+static void
+refresh_indices_cache_offlock(void)
+{
+    pthread_mutex_lock(&g_indices_cache.refresh_lock);
+    refresh_indices_cache_offlock_impl();
+    pthread_mutex_unlock(&g_indices_cache.refresh_lock);
 }
 
 int
@@ -518,6 +566,9 @@ quote_engine_sync_indices_to_db(void* pool)
     if (!pool) {
         return -1;
     }
+
+    /* 串行化指数刷新（HTTP），避免并发同步任务重复拉取 */
+    refresh_indices_cache_offlock();
 
     time_t              now = time(NULL);
     market_clock_item_t clocks[8];
@@ -542,7 +593,9 @@ quote_engine_sync_indices_to_db(void* pool)
         strncpy(item.region_flag, g_preset_indices[i].flag, sizeof(item.region_flag) - 1);
         strncpy(item.currency, g_preset_indices[i].currency, sizeof(item.currency) - 1);
 
-        if (!active && g_indices_cache.count > 0) {
+        /* 非活跃时段：短持锁复用缓存（读路径在锁外回填），不再持锁做 HTTP */
+        if (!active) {
+            pthread_mutex_lock(&g_indices_cache.lock);
             bool found = false;
             for (int j = 0; j < g_indices_cache.count; j++) {
                 if (strcmp(g_indices_cache.items[j].symbol, g_preset_indices[i].symbol) == 0 &&
@@ -552,6 +605,7 @@ quote_engine_sync_indices_to_db(void* pool)
                     break;
                 }
             }
+            pthread_mutex_unlock(&g_indices_cache.lock);
             if (found) {
                 char sp_json[256];
                 snprintf(sp_json,
@@ -640,10 +694,6 @@ quote_engine_sync_indices_to_db(void* pool)
                                     sp_json);
     }
 
-    pthread_mutex_lock(&g_indices_cache.lock);
-    refresh_indices_cache_locked();
-    pthread_mutex_unlock(&g_indices_cache.lock);
-
     return 0;
 }
 
@@ -660,12 +710,19 @@ quote_engine_get_indices(const char*          category,
         return -1;
     }
 
+    /* 读路径：陈旧时才触发刷新，且刷新在锁外进行（stale-while-revalidate），
+       持锁仅做数据拷贝，不再阻塞于 HTTP。 */
     pthread_mutex_lock(&g_indices_cache.lock);
     time_t now = time(NULL);
-    if (g_indices_cache.count == 0 ||
-        (now - g_indices_cache.last_updated) > INDICES_CACHE_TTL_SEC) {
-        refresh_indices_cache_locked();
+    bool   stale = (g_indices_cache.count == 0) ||
+                 ((now - g_indices_cache.last_updated) > INDICES_CACHE_TTL_SEC);
+    pthread_mutex_unlock(&g_indices_cache.lock);
+
+    if (stale) {
+        refresh_indices_cache_offlock();
     }
+
+    pthread_mutex_lock(&g_indices_cache.lock);
 
     if (out_clocks && out_clock_count && max_clocks >= g_indices_cache.clock_count) {
         memcpy(out_clocks,
