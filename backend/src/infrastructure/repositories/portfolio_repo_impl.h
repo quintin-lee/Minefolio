@@ -1,8 +1,6 @@
 #pragma once
 
 #include "domain/portfolio/repository.h"
-#include "core/financial/money.h"
-#include "core/financial/currency.h"
 #include "csilk/csilk.h"
 
 /**
@@ -11,10 +9,9 @@
 csilk_json_t* portfolio_repo_get_category_assets(void* pool, int64_t user_id, int64_t ledger_id);
 
 /**
- * @brief 查询用户总负债额（折算到基准币种后以高精度 money_t 累加，无 float 累加误差）
+ * @brief 查询负债类资产市值与币种
  */
-int portfolio_repo_get_total_liabilities_m(
-    void* pool, int64_t user_id, int64_t ledger_id, currency_t base_currency, money_t* out_total);
+csilk_json_t* portfolio_repo_get_liability_assets(void* pool, int64_t user_id, int64_t ledger_id);
 
 /**
  * @brief 查询最近 N 笔交易流水
@@ -23,9 +20,17 @@ csilk_json_t*
 portfolio_repo_get_recent_transactions(void* pool, int64_t user_id, int64_t ledger_id, int limit);
 
 /**
- * @brief 查询 30 天资产负债趋势
+ * @brief 查询用于 30 天趋势计算的资产基础数据
  */
-csilk_json_t* portfolio_repo_get_trend_30d(void* pool, int64_t user_id, int64_t ledger_id);
+csilk_json_t* portfolio_repo_get_trend_assets(void* pool, int64_t user_id, int64_t ledger_id);
+
+/**
+ * @brief 查询用于 30 天趋势计算的余额变动记录
+ */
+csilk_json_t* portfolio_repo_get_trend_balance_logs(void*       pool,
+                                                    int64_t     user_id,
+                                                    int64_t     ledger_id,
+                                                    const char* start_date);
 
 /**
  * @brief 查询交易表现中的全部关联交易
@@ -34,11 +39,6 @@ csilk_json_t*
 portfolio_repo_get_performance_transactions(void* pool, int64_t user_id, int64_t ledger_id);
 
 /**
- * @brief 查询当前投资类资产持仓总市值与总成本（折算到基准币种后以高精度 money_t 累加）
+ * @brief 查询投资类资产持仓原始成本与市值
  */
-int portfolio_repo_get_current_holdings_totals_m(void*      pool,
-                                                 int64_t    user_id,
-                                                 int64_t    ledger_id,
-                                                 currency_t base_currency,
-                                                 money_t*   out_cost,
-                                                 money_t*   out_market);
+csilk_json_t* portfolio_repo_get_holdings_raw(void* pool, int64_t user_id, int64_t ledger_id);

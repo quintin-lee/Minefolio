@@ -3,6 +3,18 @@
 #include "csilk/csilk.h"
 #include "application/portfolio/commands.h"
 #include "application/portfolio/dtos.h"
+#include "core/financial/money.h"
+#include "core/financial/currency.h"
+
+/**
+ * @brief 查询当前投资类资产持仓总市值与总成本（折算到基准币种后以高精度 money_t 累加）
+ */
+int portfolio_usecase_get_current_holdings_totals_m(void*      pool,
+                                                    int64_t    user_id,
+                                                    int64_t    ledger_id,
+                                                    currency_t base_currency,
+                                                    money_t*   out_cost,
+                                                    money_t*   out_market);
 
 /**
  * @brief 查询用户投资持仓报表及组合汇总（计算实时市值、浮动盈亏、浮动盈亏率与历史累计已实现盈亏）

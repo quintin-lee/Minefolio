@@ -1,11 +1,9 @@
 #include "infrastructure/repositories/portfolio_repo_impl.h"
 #include "infrastructure/repositories/account_permission_repo_impl.h"
 #include "common/db.h"
-#include "services/market/exchange_rate_service.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 
 int
 mf_portfolio_repo_get_holdings(void*               db_pool,
@@ -248,15 +246,9 @@ portfolio_repo_get_category_assets(void* pool, int64_t user_id, int64_t ledger_i
     return csilk_db_query_param_json((csilk_db_pool_t*)pool, sql, params);
 }
 
-int
-portfolio_repo_get_total_liabilities_m(
-    void* pool, int64_t user_id, int64_t ledger_id, currency_t base_currency, money_t* out_total)
+csilk_json_t*
+portfolio_repo_get_liability_assets(void* pool, int64_t user_id, int64_t ledger_id)
 {
-    if (!out_total || !pool) {
-        return -1;
-    }
-    *out_total = money_zero(base_currency);
-
     char uid_str[32], lid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
@@ -286,24 +278,7 @@ portfolio_repo_get_total_liabilities_m(
     params[pidx++] = uid_str;
     params[pidx] = NULL;
 
-    csilk_json_t* liab_rows = csilk_db_query_param_json((csilk_db_pool_t*)pool, sql, params);
-    if (!liab_rows) {
-        return -1;
-    }
-    size_t n = csilk_json_array_size(liab_rows);
-    for (size_t i = 0; i < n; i++) {
-        csilk_json_t* row = csilk_json_array_get(liab_rows, i);
-        const char*   cur = csilk_json_get_string(row, "currency");
-        currency_t    c = currency_from_str(cur ? cur : "CNY");
-        money_t       amt = money_abs(db_get_money(row, "current_value", c));
-        money_t       conv = exchange_rate_convert_m(amt, base_currency);
-        money_t       acc;
-        if (money_add(*out_total, conv, &acc) == DECIMAL_OK) {
-            *out_total = acc;
-        }
-    }
-    csilk_json_free(liab_rows);
-    return 0;
+    return csilk_db_query_param_json((csilk_db_pool_t*)pool, sql, params);
 }
 
 static csilk_json_t*
@@ -445,40 +420,13 @@ portfolio_repo_get_recent_transactions(void* pool, int64_t user_id, int64_t ledg
     return raw_rows ? format_recent_tx_rows(raw_rows) : NULL;
 }
 
-typedef struct {
-    int64_t id;
-    double  current_value;
-    char    currency[16];
-    char    created_date[16];
-    int     is_liability;
-} trend_asset_t;
-
-typedef struct {
-    int64_t asset_id;
-    double  delta;
-    char    log_date[16];
-} trend_log_t;
-
 csilk_json_t*
-portfolio_repo_get_trend_30d(void* pool, int64_t user_id, int64_t ledger_id)
+portfolio_repo_get_trend_assets(void* pool, int64_t user_id, int64_t ledger_id)
 {
     char uid_str[32], lid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
 
-    // 1. Generate the last 30 daily date strings (from now - 29 days to today)
-    time_t    now = time(NULL);
-    struct tm cur_tm;
-    localtime_r(&now, &cur_tm);
-    char dates[30][16];
-    for (int i = 0; i < 30; i++) {
-        struct tm tm = cur_tm;
-        tm.tm_mday -= (29 - i);
-        mktime(&tm);
-        strftime(dates[i], sizeof(dates[i]), "%Y-%m-%d", &tm);
-    }
-
-    // 2. Query all assets for the user / ledger
     const char* asset_sql =
         db_is_postgres()
             ? (ledger_id > 0
@@ -508,31 +456,19 @@ portfolio_repo_get_trend_30d(void* pool, int64_t user_id, int64_t ledger_id)
     asset_params[apidx++] = uid_str;
     asset_params[apidx++] = uid_str;
     asset_params[apidx] = NULL;
-    csilk_json_t* asset_rows =
-        csilk_db_query_param_json((csilk_db_pool_t*)pool, asset_sql, asset_params);
+    return csilk_db_query_param_json((csilk_db_pool_t*)pool, asset_sql, asset_params);
+}
 
-    size_t         num_assets = asset_rows ? csilk_json_array_size(asset_rows) : 0;
-    trend_asset_t* assets =
-        num_assets > 0 ? (trend_asset_t*)calloc(num_assets, sizeof(trend_asset_t)) : NULL;
-    for (size_t i = 0; i < num_assets; i++) {
-        csilk_json_t* r = csilk_json_array_get(asset_rows, i);
-        assets[i].id = db_get_int(r, "id");
-        assets[i].current_value = db_get_num(r, "current_value");
-        const char* cur = csilk_json_get_string(r, "currency");
-        snprintf(assets[i].currency, sizeof(assets[i].currency), "%s", cur ? cur : "CNY");
-        const char* cd = csilk_json_get_string(r, "created_date");
-        snprintf(
-            assets[i].created_date, sizeof(assets[i].created_date), "%s", cd ? cd : "1970-01-01");
-        const char* atype = csilk_json_get_string(r, "asset_type");
-        assets[i].is_liability =
-            (atype && (strcmp(atype, "loan") == 0 || strcmp(atype, "credit_card") == 0 ||
-                       strcmp(atype, "other_liability") == 0));
-    }
-    if (asset_rows) {
-        csilk_json_free(asset_rows);
-    }
+csilk_json_t*
+portfolio_repo_get_trend_balance_logs(void*       pool,
+                                      int64_t     user_id,
+                                      int64_t     ledger_id,
+                                      const char* start_date)
+{
+    char uid_str[32], lid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
 
-    // 3. Query all balance delta logs occurred on or after dates[0]
     const char* log_sql =
         db_is_postgres()
             ? (ledger_id > 0
@@ -561,83 +497,11 @@ portfolio_repo_get_trend_30d(void* pool, int64_t user_id, int64_t ledger_id)
     if (ledger_id > 0) {
         log_params[lpidx++] = lid_str;
     }
-    log_params[lpidx++] = dates[0];
+    log_params[lpidx++] = start_date;
     log_params[lpidx++] = uid_str;
     log_params[lpidx++] = uid_str;
     log_params[lpidx] = NULL;
-    csilk_json_t* log_rows = csilk_db_query_param_json((csilk_db_pool_t*)pool, log_sql, log_params);
-
-    size_t       num_logs = log_rows ? csilk_json_array_size(log_rows) : 0;
-    trend_log_t* logs = num_logs > 0 ? (trend_log_t*)calloc(num_logs, sizeof(trend_log_t)) : NULL;
-    for (size_t i = 0; i < num_logs; i++) {
-        csilk_json_t* r = csilk_json_array_get(log_rows, i);
-        logs[i].asset_id = db_get_int(r, "asset_id");
-        logs[i].delta = db_get_num(r, "delta");
-        const char* ld = csilk_json_get_string(r, "log_date");
-        snprintf(logs[i].log_date, sizeof(logs[i].log_date), "%s", ld ? ld : "");
-    }
-    if (log_rows) {
-        csilk_json_free(log_rows);
-    }
-
-    // 4. Reconstruct historical balances for each day by rolling back deltas
-    double day_assets[30] = {0};
-    double day_liabs[30] = {0};
-
-    for (int d = 0; d < 30; d++) {
-        const char* target_date = dates[d];
-        for (size_t a = 0; a < num_assets; a++) {
-            if (strcmp(assets[a].created_date, target_date) > 0) {
-                // Asset did not exist yet on target_date
-                continue;
-            }
-            double val = assets[a].current_value;
-            for (size_t l = 0; l < num_logs; l++) {
-                if (logs[l].asset_id == assets[a].id && strcmp(logs[l].log_date, target_date) > 0) {
-                    val -= logs[l].delta;
-                }
-            }
-            currency_t acur = currency_from_str(assets[a].currency);
-            double     rate = exchange_rate_get_historical_or_latest(pool, acur, target_date);
-            double     conv_val = val * rate;
-            if (assets[a].is_liability) {
-                day_liabs[d] += fabs(conv_val);
-            } else {
-                day_assets[d] += conv_val;
-            }
-        }
-    }
-
-    if (assets) {
-        free(assets);
-    }
-    if (logs) {
-        free(logs);
-    }
-
-    // 5. Serialize into [{date, total_assets, total_liabilities, net_worth}, ...]
-    csilk_json_t* trend_arr = csilk_json_array();
-    for (int d = 0; d < 30; d++) {
-        csilk_json_t* item = csilk_json_object();
-        csilk_json_add_string(item, "date", dates[d]);
-        csilk_json_add_number(item, "total_assets", day_assets[d]);
-        csilk_json_add_number(item, "total_liabilities", day_liabs[d]);
-        csilk_json_add_number(item, "net_worth", day_assets[d] - day_liabs[d]);
-        csilk_json_array_append(trend_arr, item);
-    }
-
-    char* trend_str = csilk_json_serialize(trend_arr, NULL);
-    csilk_json_free(trend_arr);
-
-    csilk_json_t* row = csilk_json_object();
-    csilk_json_add_string(row, "trend", trend_str ? trend_str : "[]");
-    if (trend_str) {
-        free(trend_str);
-    }
-
-    csilk_json_t* result = csilk_json_array();
-    csilk_json_array_append(result, row);
-    return result;
+    return csilk_db_query_param_json((csilk_db_pool_t*)pool, log_sql, log_params);
 }
 
 csilk_json_t*
@@ -685,20 +549,9 @@ portfolio_repo_get_performance_transactions(void* pool, int64_t user_id, int64_t
     return csilk_db_query_param_json((csilk_db_pool_t*)pool, sql, params);
 }
 
-int
-portfolio_repo_get_current_holdings_totals_m(void*      pool,
-                                             int64_t    user_id,
-                                             int64_t    ledger_id,
-                                             currency_t base_currency,
-                                             money_t*   out_cost,
-                                             money_t*   out_market)
+csilk_json_t*
+portfolio_repo_get_holdings_raw(void* pool, int64_t user_id, int64_t ledger_id)
 {
-    if (!out_cost || !out_market || !pool) {
-        return -1;
-    }
-    *out_cost = money_zero(base_currency);
-    *out_market = money_zero(base_currency);
-
     char uid_str[32], lid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
@@ -728,29 +581,5 @@ portfolio_repo_get_current_holdings_totals_m(void*      pool,
     params[pidx++] = uid_str;
     params[pidx] = NULL;
 
-    csilk_json_t* pos_rows = csilk_db_query_param_json((csilk_db_pool_t*)pool, sql, params);
-    if (!pos_rows) {
-        return -1;
-    }
-
-    size_t count = csilk_json_array_size(pos_rows);
-    for (size_t i = 0; i < count; i++) {
-        const csilk_json_t* row = csilk_json_array_get(pos_rows, i);
-        const char*         cur = csilk_json_get_string(row, "currency");
-        currency_t          c = currency_from_str(cur ? cur : "CNY");
-        money_t             cost = db_get_money(row, "cost_basis", c);
-        money_t             mkt = db_get_money(row, "current_value", c);
-        money_t             ccost = exchange_rate_convert_m(cost, base_currency);
-        money_t             cmkt = exchange_rate_convert_m(mkt, base_currency);
-        money_t             sum_cost, sum_mkt;
-        if (money_add(*out_cost, ccost, &sum_cost) == DECIMAL_OK) {
-            *out_cost = sum_cost;
-        }
-        if (money_add(*out_market, cmkt, &sum_mkt) == DECIMAL_OK) {
-            *out_market = sum_mkt;
-        }
-    }
-
-    csilk_json_free(pos_rows);
-    return 0;
+    return csilk_db_query_param_json((csilk_db_pool_t*)pool, sql, params);
 }
