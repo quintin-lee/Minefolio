@@ -51,14 +51,18 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   /**
-   * 执行系统安装首次初始化并创建管理员用户
-   * 执行系统安装首次初始化并创建管理员用户。
+   * 系统安装首次初始化并创建管理员用户
    * 数据库连接由部署侧环境变量 MINEFOLIO_DB_DRIVER / MINEFOLIO_DB_DSN 提供，此处不下发。
    * @param username 管理员用户名
-   * @param password 管理员密码
+   * @param password 明文密码（内部完成 RSA 加密；加密或网络失败时抛出的错误带 crypto_failed 标识）
    */
   async function setup(username: string, password: string) {
-    const password_enc = await encryptPassword(password)
+    let password_enc: string
+    try {
+      password_enc = await encryptPassword(password)
+    } catch (e: any) {
+      throw Object.assign(e, { crypto_failed: true })
+    }
     const res = await systemApi.setup({ username, password_enc }) as { token: string; expires_in: number }
     token.value = res.token
     localStorage.setItem('token', res.token)
@@ -69,10 +73,15 @@ export const useAuthStore = defineStore('auth', () => {
   /**
    * 注册新用户并自动登录保存 Token
    * @param username 用户名
-   * @param password 密码
+   * @param password 明文密码（内部完成 RSA 加密；加密或网络失败时抛出的错误带 crypto_failed 标识）
    */
   async function register(username: string, password: string) {
-    const password_enc = await encryptPassword(password)
+    let password_enc: string
+    try {
+      password_enc = await encryptPassword(password)
+    } catch (e: any) {
+      throw Object.assign(e, { crypto_failed: true })
+    }
     const raw = (await authApi.register(username, password_enc)) as unknown
     const res = (raw && typeof raw === 'object' && 'data' in raw ? (raw as { data: { token: string } }).data : raw) as { token: string }
     if (res && res.token) {
@@ -102,12 +111,17 @@ export const useAuthStore = defineStore('auth', () => {
   /**
    * 用户登录 (支持可选 2FA 流程)
    * @param username 用户名
-   * @param password 密码
+   * @param password 明文密码（内部完成 RSA 加密；加密或网络失败时抛出的错误带 crypto_failed 标识）
    * @param totpCode 6 位 TOTP 动态验证码 (可选)
    * @returns 登录结果 (包含 require_2fa 或 token)
    */
   async function login(username: string, password: string, totpCode?: string) {
-    const password_enc = await encryptPassword(password)
+    let password_enc: string
+    try {
+      password_enc = await encryptPassword(password)
+    } catch (e: any) {
+      throw Object.assign(e, { crypto_failed: true })
+    }
     const raw = (await authApi.login(username, password_enc, totpCode)) as unknown
     const res = (raw && typeof raw === 'object' && 'data' in raw ? (raw as { data: any }).data : raw) as any
     if (res?.require_2fa) {
@@ -241,5 +255,3 @@ export const useAuthStore = defineStore('auth', () => {
     reinitLocalDb,
   }
 })
-
-

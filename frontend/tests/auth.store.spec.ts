@@ -142,6 +142,14 @@ describe('auth store', () => {
     expect(store.token).toBe('still-ok-token')
   })
 
+  it('login failure surfaces crypto_failed for non-network errors', async () => {
+    ;(global as any).fetch = vi.fn().mockRejectedValue(new Error('Failed to fetch'))
+    const store = useAuthStore()
+    // RSA 公钥拉取失败 (模拟本地 http 环境 WebCrypto 不可用) 时，login 抛出的错误带 crypto_failed 标识
+    const err = await store.login('admin', 'password123').catch((e: unknown) => e) as any
+    expect(err?.crypto_failed).toBe(true)
+  })
+
   it('clears state on logout', async () => {
     const store = useAuthStore()
     store.token = 'existing-token'

@@ -117,6 +117,7 @@ import { ElMessage } from 'element-plus'
 import { Connection, ArrowRight } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { authApi } from '@/api/auth'
+import { isNetworkError } from '@/utils/http'
 import AppLogo from '@/components/AppLogo.vue'
 import ServerConfigDialog from '@/components/mobile/ServerConfigDialog.vue'
 import { useServerUrl } from '@/composables/useServerUrl'
@@ -172,6 +173,7 @@ async function submit() {
   }
 
   loading.value = true
+  let isNetworkErr = false
   try {
     if (isRegister.value) {
       await auth.register(form.username, form.password)
@@ -190,9 +192,11 @@ async function submit() {
       router.replace('/m/dashboard')
     }
   } catch (e: any) {
-    const isNetworkErr = !e?.response
+    isNetworkErr = isNetworkError(e)
     if (isNetworkErr) {
       ElMessage.error('无法连接到服务端，请点击上方“服务端”检查地址与网络')
+    } else if (e?.crypto_failed) {
+      ElMessage.error('密码加密失败：当前环境不支持 WebCrypto，请确认服务端使用 HTTPS 或 localhost 访问')
     } else {
       ElMessage.error(e?.response?.data?.message || (isRegister.value ? '注册失败' : '登录失败'))
     }
@@ -207,12 +211,18 @@ async function handle2FaSubmit() {
     return
   }
   loading.value = true
+  let isNetworkErr = false
   try {
     await auth.verify2FaLogin(tempToken.value, twoFactorCode.value.trim())
     ElMessage.success('登录成功')
     router.replace('/m/dashboard')
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.message || '动态验证码错误或备用码失效')
+    isNetworkErr = isNetworkError(e)
+    if (isNetworkErr) {
+      ElMessage.error('无法连接到服务端，请点击上方“服务端”检查地址与网络')
+    } else {
+      ElMessage.error(e?.response?.data?.message || '动态验证码错误或备用码失效')
+    }
   } finally {
     loading.value = false
   }
