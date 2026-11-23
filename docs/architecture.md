@@ -1025,8 +1025,8 @@ graph TB
 |------|------|------|------|
 | `MINEFOLIO_JWT_SECRET` | **是 (生产)** | 启动 FATAL | JWT HS256 密钥 |
 | `MINEFOLIO_ENABLE_CSRF` | 否 | 关 | 开启时 `csrf_middleware` 注册到 `/api` 路由组 |
-| `MINEFOLIO_DB_DRIVER` | 否 | `config/db.json` | `sqlite` / `postgres` |
-| `MINEFOLIO_DB_DSN` | 否 | `config/db.json` | 数据库连接串(SQLite 路径 / PG DSN) |
+| `MINEFOLIO_DB_DRIVER` | 否 | 环境变量 | `sqlite` / `postgres` |
+| `MINEFOLIO_DB_DSN` | 否 | 环境变量 | 数据库连接串(SQLite 路径 / PG DSN) |
 | `MINEFOLIO_TRACE_RETENTION_ROWS` | 否 | `0`（不清理） | `ai_traces` 保留策略：每个用户最多保留的最新 trace 行数，trace 写入后按行数上限裁剪，防止行宽大的 trace 表无限膨胀 |
 | `MINEFOLIO_MCP_CACHE_TTL` | 否 | `1800` | MCP stdio 子进程池空闲回收 TTL（秒）：后台调度心跳每 30s 回收空闲超 TTL 的子进程；`<=0` 禁用回收 |
 | `MINEFOLIO_AI_HTTP_TIMEOUT_MS` | 否 | `300000` | 聊天模型单次调用 HTTP 超时（毫秒）；`0` = 不限（仅 OpenAI 兼容驱动消费） |
@@ -1040,7 +1040,7 @@ graph TB
 cd backend
 cmake -B build -G "Unix Makefiles"   # MUST use Makefiles (Ninja has stale-dep bugs)
 cmake --build build --parallel
-./build/minefolio                     # reads config/db.json relative to cwd
+./build/minefolio                     # DB config via env: MINEFOLIO_DB_DRIVER / MINEFOLIO_DB_DSN
 ./tests/test_full.sh                  # 全量回归测试
 ```
 

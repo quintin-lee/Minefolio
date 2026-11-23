@@ -199,13 +199,13 @@ AI Runtime (services/ai/runtime/)
 cd backend
 cmake -B build -G "Unix Makefiles"   # MUST use Makefiles — Ninja has stale-dependency bugs
 cmake --build build --parallel
-./build/minefolio                    # reads config/db.json relative to cwd
+./build/minefolio                    # DB config via env: MINEFOLIO_DB_DRIVER / MINEFOLIO_DB_DSN
 ./tests/test_link.sh                 # full integration test suite (SQLite by default)
 ```
 
 **编译目录约定**：始终使用 `backend/build/` 作为 out-of-source 构建目录（即 `cmake -B build`，在 `backend/` 下执行）。禁止直接在 `backend/` 源码目录运行 in-source `cmake .`（会生成 `CMakeCache.txt`、`CMakeFiles/`、`_deps/`、`Makefile` 等构建产物污染源码目录，这些文件已在 `.gitignore` 中排除，但仍应通过正确的 `-B build` 用法避免产生它们）。
 
-**DB driver selection** (env vars override `config/db.json`):
+**DB driver selection** (env vars are the sole source; `config/db.json` is no longer read):
 ```bash
 MINEFOLIO_DB_DRIVER=sqlite  MINEFOLIO_DB_DSN=./data/minefolio.db   ./build/minefolio
 MINEFOLIO_DB_DRIVER=postgres MINEFOLIO_DB_DSN="host=… user=… dbname=…"  ./build/minefolio
@@ -556,7 +556,7 @@ Frontend unit tests cover 44 test suites (239 unit tests) including format helpe
 **设计**：
 - 不链接 `minefolio_core`，仅链接 csilk (db + bcrypt + json) + SQLite/Postgres 驱动 + OpenSSL + pthread，体积与依赖面最小。
 - 哈希算法与 cost 因子（bcrypt cost=12）与 `application/auth/usecases.c` 严格一致，保证写回的 hash 可被 Web 登录路径直接验证。
-- 数据库定位解析顺序与 `common/db.c:db_init` 一致：`--driver/--dsn` CLI 参数 > `MINEFOLIO_DB_*`/`DB_*` 环境变量 > `config/db.json` > 缺省。
+- 数据库定位解析顺序与 `common/db.c:db_init` 一致：`--driver/--dsn` CLI 参数 > `MINEFOLIO_DB_*`/`DB_*` 环境变量 > 缺省（`config/db.json` 不再被读取，env-only）。
 
 **用法**：
 ```bash

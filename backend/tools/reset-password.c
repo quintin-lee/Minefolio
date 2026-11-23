@@ -11,7 +11,7 @@
  *  1. `minefolio_core` 包含整个应用层 (usecases/services/domain) 与 csilk 框架，
  *     拉入后链接面巨大、且其内 `db_init()` 依赖 `config_secret_get()` 的多级
  *     Secret Provider（测试覆盖 / 外部 Manager / 文件 / 容器路径），运维工具
- *     只需最小可用的「环境变量 > config/db.json」两层解析，与 `db.c` 行为对齐。
+ *     只需最小可用的「环境变量」两层解析（CLI 参数 > MINEFOLIO_* / DB_* 环境变量），与 `db.c` 的 env-only 行为对齐。
  *  2. 仅链接 csilk (db + bcrypt + json) 与驱动 (sqlite3 / libpq)，与运行时容器
  *     已安装的共享库一致，体积与依赖面最小。
  *
@@ -29,21 +29,22 @@
  * reset-password help
  *
  * 通用选项：
- *   --driver <sqlite|postgres>     覆盖数据库驱动（默认读 MINEFOLIO_DB_DRIVER / config/db.json）
- *   --dsn <dsn>                   覆盖数据源（默认读 MINEFOLIO_DB_DSN / config/db.json）
+ *   --driver <sqlite|postgres>     覆盖数据库驱动（默认读 MINEFOLIO_DB_DRIVER）
+ *   --dsn <dsn>                   覆盖数据源（默认读 MINEFOLIO_DB_DSN）
  *   --yes                          跳过交互确认（非交互/CI 场景必须提供）
  * ```
  *
  * ## 数据库定位（与 `common/db.c:db_init` 的解析顺序一致）
  *
  *  1. `MINEFOLIO_DB_DRIVER` / `DB_DRIVER` 环境变量（或 `MINEFOLIO_DB_DRIVER_FILE` 文件）
- *  2. `config/db.json` 中的 `driver` 字段
- *  3. 缺省 `sqlite`
+ *  2. 缺省 `sqlite`
  *
  *  1. `MINEFOLIO_DB_DSN` / `DB_DSN` 环境变量（或文件变体）
- *  2. `config/db.json` 中的 `dsn` 字段
- *  3. 缺省：postgres -> `host=localhost user=minefolio dbname=minefolio`
- *            sqlite -> `./data/minefolio.db`
+ *  2. 缺省：postgres -> `host=localhost user=minefolio dbname=minefolio`
+ *           sqlite -> `./data/minefolio.db`
+ *
+ * 注: 历史上本工具与 db.c 一同支持 config/db.json 文件回退；现已移除 db.json 读取路径，
+ * 数据库配置完全由环境变量提供，与 db.c 的 env-only 行为保持一致。
  *
  * @copyright 与 Minefolio 主项目同许可
  */
@@ -65,7 +66,7 @@
 #define MIN_PASSWORD_LEN 6   /* 与 mf_auth_rule_validate_password 一致 */
 
 /* ---------------------------------------------------------------------------
- * 最小可用的配置解析（与 db.c 解析顺序对齐，但仅两层：env > config/db.json）
+ * 最小可用的配置解析（CLI 参数 > MINEFOLIO_* / DB_* 环境变量；config/db.json 不再被读取，与 db.c 的 env-only 行为对齐）
  * --------------------------------------------------------------------------- */
 
 /**
@@ -93,53 +94,10 @@ env_or_minefolio(const char* key)
 }
 
 /**
- * @brief 从扁平 JSON 配置文件中读取字符串配置项（仅支持 "key": "value" 形态）
- *
- * 实现与 common/config.c:config_get_str 等价，但去掉了对 csilk 的依赖；
- * 运维工具场景下 config/db.json 永远是扁平结构（driver/dsn/pool_conns），
- * 流式键匹配足够。
- *
- * @return 0 命中（out 已填充），-1 未命中或文件不可读（out 置空串）
- */
-static int
-config_read_str(const char* path, const char* key, char* out, size_t out_size)
-{
-    out[0] = '\0';
-    FILE* f = fopen(path, "r");
-    if (!f) {
-        return -1;
-    }
-    char  buf[4096];
-    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
-    fclose(f);
-    buf[n] = '\0';
-
-    char  key_quoted[128];
-    snprintf(key_quoted, sizeof(key_quoted), "\"%s\"", key);
-
-    const char* search = buf;
-    while ((search = strstr(search, key_quoted)) != NULL) {
-        search += strlen(key_quoted);
-        while (*search == ' ' || *search == '\t' || *search == ':' || *search == ',') {
-            search++;
-        }
-        if (*search != '"') {
-            search++;
-            continue;
-        }
-        search++;
-        size_t oi = 0;
-        while (*search && *search != '"' && oi < out_size - 1) {
-            out[oi++] = *search++;
-        }
-        out[oi] = '\0';
-        return 0;
-    }
-    return -1;
-}
-
-/**
  * @brief 解析数据库驱动与 DSN（与 db.c:db_init 的优先级一致）
+ *
+ * 优先级: CLI 参数 > 环境变量 (MINEFOLIO_* / DB_*) > 缺省。
+ * config/db.json 已不再被读取 (env-only)，与 db.c 行为保持一致。
  *
  * @param driver_arg  CLI 提供的 --driver（可为 NULL）
  * @param dsn_arg     CLI 提供的 --dsn（可为 NULL）
@@ -154,15 +112,13 @@ resolve_db_config(const char* driver_arg, const char* dsn_arg, const char** out_
     static char driver_buf[64] = {0};
     static char dsn_buf[512]   = {0};
 
-    /* 优先级：CLI 参数 > 环境变量 > config/db.json > 缺省 */
+    /* 优先级: CLI 参数 > 环境变量 > 缺省 (config/db.json 不再被读取) */
     if (driver_arg && driver_arg[0]) {
         snprintf(driver_buf, sizeof(driver_buf), "%s", driver_arg);
     } else {
         const char* drv_env = env_or_minefolio("DB_DRIVER");
         if (drv_env) {
             snprintf(driver_buf, sizeof(driver_buf), "%s", drv_env);
-        } else {
-            config_read_str("config/db.json", "driver", driver_buf, sizeof(driver_buf));
         }
         if (!driver_buf[0]) {
             snprintf(driver_buf, sizeof(driver_buf), "sqlite");
@@ -175,8 +131,6 @@ resolve_db_config(const char* driver_arg, const char* dsn_arg, const char** out_
         const char* dsn_env = env_or_minefolio("DB_DSN");
         if (dsn_env) {
             snprintf(dsn_buf, sizeof(dsn_buf), "%s", dsn_env);
-        } else {
-            config_read_str("config/db.json", "dsn", dsn_buf, sizeof(dsn_buf));
         }
         if (!dsn_buf[0]) {
             if (strcmp(driver_buf, "postgres") == 0) {
@@ -562,12 +516,11 @@ print_help(const char* prog)
     printf("  %s disable-2fa <username> [--yes]\n", prog);
     printf("  %s verify  <username> --password <candidate>\n", prog);
     printf("  %s help\n", prog);
-    printf("\n数据库定位（优先级 高 → 低）:\n");
+    printf("\n数据库定位（优先级 高 → 低, env-only; config/db.json 不再被读取）:\n");
     printf("  1. --driver / --dsn 命令行参数\n");
     printf("  2. MINEFOLIO_DB_DRIVER / DB_DRIVER 与 MINEFOLIO_DB_DSN / DB_DSN 环境变量\n");
     printf("     （也接受 MINEFOLIO_DB_DRIVER_FILE / MINEFOLIO_DB_DSN_FILE 文件路径）\n");
-    printf("  3. config/db.json 文件\n");
-    printf("  4. 缺省: sqlite -> ./data/minefolio.db ; postgres -> host=localhost user=minefolio dbname=minefolio\n");
+    printf("  3. 缺省: sqlite -> ./data/minefolio.db ; postgres -> host=localhost user=minefolio dbname=minefolio\n");
     printf("\n安全:\n");
     printf("  - 密码哈希: bcrypt, cost=%d（与 Web 登录路径一致）\n", CSILK_BCRYPT_DEFAULT_COST);
     printf("  - 重置后所有现存 JWT 自动失效 (token_version+1)\n");
