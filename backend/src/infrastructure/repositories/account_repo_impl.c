@@ -12,13 +12,10 @@ account_archived_literal(int archived)
 }
 
 csilk_json_t*
-account_list(csilk_db_pool_t* pool,
-             int64_t          user_id,
-             int64_t          ledger_id,
-             bool             include_archived,
-             int64_t*         total)
+account_list(void* pool, int64_t user_id, int64_t ledger_id, bool include_archived, int64_t* total)
 {
-    char uid[32], lid[32];
+    csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
+    char             uid[32], lid[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
 
@@ -52,7 +49,7 @@ account_list(csilk_db_pool_t* pool,
         include_archived ? "" : "AND NOT ac.archived ");
 
     const char*   params[6] = {uid, lid, uid, uid, uid, NULL};
-    csilk_json_t* rows = csilk_db_query_param_json(pool, sql, params);
+    csilk_json_t* rows = csilk_db_query_param_json(db_pool, sql, params);
     if (total) {
         *total = rows ? (int64_t)csilk_json_array_size(rows) : 0;
     }
@@ -60,7 +57,7 @@ account_list(csilk_db_pool_t* pool,
 }
 
 csilk_json_t*
-account_get(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
+account_get(void* pool, int64_t user_id, int64_t id)
 {
     char uid[32], idstr[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
@@ -91,16 +88,16 @@ account_get(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
 }
 
 int64_t
-account_insert(csilk_db_pool_t* pool,
-               int64_t          user_id,
-               int64_t          ledger_id,
-               const char*      name,
-               const char*      institution,
-               const char*      account_no,
-               const char*      currency,
-               const char*      icon,
-               const char*      note,
-               int64_t          sort_order)
+account_insert(void*       pool,
+               int64_t     user_id,
+               int64_t     ledger_id,
+               const char* name,
+               const char* institution,
+               const char* account_no,
+               const char* currency,
+               const char* icon,
+               const char* note,
+               int64_t     sort_order)
 {
     char uid[32], lid[32], sort[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
@@ -133,19 +130,19 @@ account_insert(csilk_db_pool_t* pool,
 }
 
 int
-account_update(csilk_db_pool_t* pool,
-               int64_t          user_id,
-               int64_t          id,
-               const char*      name,
-               const char*      institution,
-               const char*      account_no,
-               const char*      currency,
-               const char*      icon,
-               const char*      note,
-               int64_t          sort_order,
-               int              has_sort_order,
-               int              has_archived,
-               int              archived)
+account_update(void*       pool,
+               int64_t     user_id,
+               int64_t     id,
+               const char* name,
+               const char* institution,
+               const char* account_no,
+               const char* currency,
+               const char* icon,
+               const char* note,
+               int64_t     sort_order,
+               int         has_sort_order,
+               int         has_archived,
+               int         archived)
 {
     char uid[32], idstr[32], sort[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
@@ -187,13 +184,13 @@ account_update(csilk_db_pool_t* pool,
 }
 
 int
-account_delete(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
+account_delete(void* pool, int64_t user_id, int64_t id)
 {
     char uid[32], idstr[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     snprintf(idstr, sizeof(idstr), "%lld", (long long)id);
     csilk_json_t* res =
-        csilk_db_query_param_json(pool,
+        csilk_db_query_param_json((csilk_db_pool_t*)pool,
                                   "DELETE FROM accounts WHERE id=? AND user_id=? RETURNING id",
                                   (const char*[]){idstr, uid, NULL});
     int ok = res && csilk_json_array_size(res) > 0;
@@ -204,7 +201,7 @@ account_delete(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
 }
 
 int
-account_count_assets(csilk_db_pool_t* pool, int64_t user_id, int64_t account_id, int64_t* out_count)
+account_count_assets(void* pool, int64_t user_id, int64_t account_id, int64_t* out_count)
 {
     if (!pool || account_id <= 0 || !out_count) {
         return -1;
@@ -213,7 +210,7 @@ account_count_assets(csilk_db_pool_t* pool, int64_t user_id, int64_t account_id,
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     snprintf(aid, sizeof(aid), "%lld", (long long)account_id);
     csilk_json_t* res =
-        csilk_db_query_param_json(pool,
+        csilk_db_query_param_json((csilk_db_pool_t*)pool,
                                   "SELECT COUNT(*) AS cnt FROM assets WHERE account_id=? AND "
                                   "user_id=?",
                                   (const char*[]){aid, uid, NULL});
@@ -228,7 +225,7 @@ account_count_assets(csilk_db_pool_t* pool, int64_t user_id, int64_t account_id,
 }
 
 int
-account_has_transactions(csilk_db_pool_t* pool, int64_t user_id, int64_t account_id, int* out_flag)
+account_has_transactions(void* pool, int64_t user_id, int64_t account_id, int* out_flag)
 {
     if (!pool || account_id <= 0 || !out_flag) {
         return -1;
@@ -237,7 +234,7 @@ account_has_transactions(csilk_db_pool_t* pool, int64_t user_id, int64_t account
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     snprintf(aid, sizeof(aid), "%lld", (long long)account_id);
     csilk_json_t* res = csilk_db_query_param_json(
-        pool,
+        (csilk_db_pool_t*)pool,
         "SELECT 1 AS hit FROM transactions "
         "WHERE user_id=? AND (asset_id IN (SELECT id FROM assets WHERE account_id=?) OR "
         "linked_asset_id IN (SELECT id FROM assets WHERE account_id=?)) LIMIT 1",
@@ -250,13 +247,13 @@ account_has_transactions(csilk_db_pool_t* pool, int64_t user_id, int64_t account
 }
 
 int64_t
-account_find_default(csilk_db_pool_t* pool, int64_t user_id, int64_t ledger_id)
+account_find_default(void* pool, int64_t user_id, int64_t ledger_id)
 {
     char uid[32], lid[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
     csilk_json_t* res =
-        csilk_db_query_param_json(pool,
+        csilk_db_query_param_json((csilk_db_pool_t*)pool,
                                   "SELECT id FROM accounts WHERE user_id=? AND ledger_id=? AND "
                                   "name='默认账户' ORDER BY id LIMIT 1",
                                   (const char*[]){uid, lid, NULL});
@@ -271,7 +268,7 @@ account_find_default(csilk_db_pool_t* pool, int64_t user_id, int64_t ledger_id)
 }
 
 int64_t
-account_create_default(csilk_db_pool_t* pool, int64_t user_id, int64_t ledger_id)
+account_create_default(void* pool, int64_t user_id, int64_t ledger_id)
 {
     int64_t id = account_find_default(pool, user_id, ledger_id);
     if (id > 0) {
