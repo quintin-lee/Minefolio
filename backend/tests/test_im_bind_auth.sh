@@ -109,6 +109,15 @@ RESP=$(curl -s -X POST -H 'Content-Type: application/json' "$BASE/im/qq/bind-aut
 CODE=$(echo "$RESP" | jq -r '.code // "null"')
 check "Case 4: 抢占防护后 userA 重绑幂等 (code=0)" "$CODE" "0"
 
+# --- Case 5: 2FA 拦截: userA 开启 2FA 后，禁止纯密码单因素绑定 (防止绕过 2FA) ---
+db_exec "UPDATE users SET totp_enabled = 1, totp_secret = 'JBSWY3DPEHPK3PXP' WHERE username = 'userA';"
+RESP=$(curl -s -X POST -H 'Content-Type: application/json' "$BASE/im/qq/bind-auth" \
+  -d '{"im_user_id":"qq_user_C","username":"userA","password":"passA1234"}')
+CODE=$(echo "$RESP" | jq -r '.code // "null"')
+MSG=$(echo "$RESP" | jq -r '.message // ""')
+check "Case 5: 开启 2FA 用户禁止纯密码绑定 (code=1004)" "$CODE" "1004"
+check "Case 5: 提示 2FA 引导信息" "$([ -n "$(echo "$MSG" | grep "2FA")" ] && echo yes || echo no)" "yes"
+
 # --- Case 5 已移除: 限流 (RATE_LIMIT_MAX_REQS=10, 窗口 60s) 已由 rate_limit.c 中间件实现 +
 #     手动验证覆盖 (干净 server 11 次紧连第 11 次 429)。集成脚本 Case 1-4 与 Case 5
 #     间隔 > 60s 窗口导致 ring evict, 时序脆弱, 不纳入集成测试。

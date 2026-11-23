@@ -29,6 +29,7 @@
 #include "common/jwt.h"
 #include "csilk/crypto/bcrypt.h"
 #include <csilk/csilk.h>
+#include <openssl/crypto.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -512,11 +513,26 @@ api_im_bind_auth(csilk_ctx_t* c)
         csilk_bcrypt_verify(password_buf,
                             strlen(password_buf),
                             "$2b$12$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ01234");
+        OPENSSL_cleanse(password_buf, sizeof(password_buf));
         respond_error(c, 1004, "用户名或密码错误");
         return;
     }
     if (csilk_bcrypt_verify(password_buf, strlen(password_buf), user.password_hash) != 0) {
+        OPENSSL_cleanse(password_buf, sizeof(password_buf));
         respond_error(c, 1004, "用户名或密码错误");
+        return;
+    }
+    OPENSSL_cleanse(password_buf, sizeof(password_buf));
+
+    /* 2FA 检查: 若账号启用了 2FA 双因素认证，禁止纯密码单因素绑定，防止绕过 2FA 泄漏财务数据 */
+    int is_2fa_active = (user.totp_secret[0] != '\0') &&
+                        (user.totp_enabled || (user.totp_backup_codes[0] != '\0' &&
+                                               strcmp(user.totp_backup_codes, "[]") != 0));
+    if (is_2fa_active) {
+        respond_error(
+            c,
+            1004,
+            "该账号已启用 2FA 双因素认证，请在 Web 端生成绑定码后使用 /bind <绑定码> 绑定");
         return;
     }
 
