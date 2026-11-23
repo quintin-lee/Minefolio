@@ -39,12 +39,4 @@ if [ "${MINEFOLIO_DB_DRIVER:-sqlite}" = "postgres" ]; then
   fi
 fi
 
-# db.json 残留清理: /system/setup 会把前端下发的 db 配置写进 /app/config/db.json (镜像层)。
-# 容器重建/镜像更新后该文件残留，与 MINEFOLIO_DB_DRIVER/DSN 的 env 产生优先级冲突，
-# 导致应用回退读到旧的 driver/dsn (如 setup 时误选的 sqlite)，连到错误/空库，
-# 从而 "已初始化的 PG 部署" 被误判为未初始化。
-# env 是部署权威来源，启动时强制移除残留 db.json，保证 env 始终生效。
-# 只删 db.json，保留 ai.json / secrets/ 等其他 config 文件 (setup 不写这些)。
-rm -f /app/config/db.json
-
 exec /app/minefolio "$@"
