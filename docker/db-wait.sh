@@ -39,4 +39,13 @@ if [ "${MINEFOLIO_DB_DRIVER:-sqlite}" = "postgres" ]; then
   fi
 fi
 
+# 确保 Node.js / npx / npm 拥有可写的缓存目录 (持久化于 minefolio-data 卷中)
+if [ -d "/app/data" ] && [ -w "/app/data" ]; then
+  mkdir -p /app/data/.npm 2>/dev/null || true
+  export npm_config_cache="${npm_config_cache:-/app/data/.npm}"
+else
+  mkdir -p /tmp/.npm 2>/dev/null || true
+  export npm_config_cache="${npm_config_cache:-/tmp/.npm}"
+fi
+
 exec /app/minefolio "$@"

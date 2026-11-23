@@ -32,6 +32,7 @@ services:
       MINEFOLIO_DB_NAME: ${MINEFOLIO_DB_NAME:-minefolio}
       MINEFOLIO_ENABLE_CSRF: "1"
       TZ: "Asia/Shanghai"
+      npm_config_cache: "/app/data/.npm"
     # 启动前检查: 驱动为 postgres 时等待 DB 就绪并推导 DSN; sqlite 时直接放行。
     # 数据库配置完全由 MINEFOLIO_DB_DRIVER / MINEFOLIO_DB_DSN 环境变量提供，
     # /system/setup 接口不再写入 config/db.json (避免容器部署时残留文件与 env

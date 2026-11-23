@@ -349,10 +349,15 @@ COPY --from=backend-build \
 # User
 ############################################################
 
+# --create-home 必须显式指定：useradd --system 按语义默认不创建主目录，而运行时
+# USER minefolio 的 HOME=/home/minefolio 指向该目录。/home 属 root，uid 10001 无法创建，
+# 导致 npx 版 MCP stdio preset（如 @modelcontextprotocol/server-memory）在 mkdir HOME
+# 建缓存时直接 EACCES（npm error code EACCES / path /home/minefolio）。
 RUN mkdir -p /app/data \
     && useradd \
     --system \
     --uid 10001 \
+    --create-home \
     minefolio \
     && chown -R minefolio:minefolio /app
 
@@ -366,7 +371,8 @@ USER minefolio
 # Environment
 ############################################################
 
-ENV MINEFOLIO_DB_DSN=/app/data/minefolio.db
+ENV MINEFOLIO_DB_DSN=/app/data/minefolio.db \
+    npm_config_cache=/app/data/.npm
 
 
 

@@ -536,9 +536,22 @@ build_envp(const mf_mcp_server_t* s, size_t* out_envc, size_t* out_basec)
     }
 
     size_t idx = 0;
+    bool   has_npm_cache = false;
     for (char** p = environ; *p; p++) {
         if (!is_sensitive_env(*p)) {
+            if (strncmp(*p, "npm_config_cache=", 17) == 0 ||
+                strncmp(*p, "NPM_CONFIG_CACHE=", 17) == 0) {
+                has_npm_cache = true;
+            }
             envp[idx++] = *p;
+        }
+    }
+    if (!has_npm_cache) {
+        /* 自动注入安全可写的 npm 缓存目录，防止容器内无 /home 导致 npx 报 EACCES */
+        if (access("/app/data", W_OK) == 0) {
+            envp[idx++] = "npm_config_cache=/app/data/.npm";
+        } else {
+            envp[idx++] = "npm_config_cache=/tmp/.npm";
         }
     }
     size_t base_c = idx;
