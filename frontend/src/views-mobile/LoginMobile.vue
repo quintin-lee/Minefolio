@@ -221,7 +221,18 @@ async function handle2FaSubmit() {
     if (isNetworkErr) {
       ElMessage.error('无法连接到服务端，请点击上方“服务端”检查地址与网络')
     } else {
-      ElMessage.error(e?.response?.data?.message || '动态验证码错误或备用码失效')
+      // 2FA 失败时后端会返回 data.server_unix_ts + data.hint (时钟诊断)，一并展示
+      const body = e?.response?.data
+      const hint = body?.data?.hint as string | undefined
+      const ts = body?.data?.server_unix_ts as number | undefined
+      const base = body?.message || '动态验证码错误或备用码失效'
+      const tsLine = ts ? `（服务端时间 ${new Date(ts * 1000).toLocaleString('zh-CN')}）` : ''
+      const hintLine = hint ? `\n${hint}` : ''
+      ElMessage.error({
+        message: `${base}${tsLine}${hintLine}`,
+        duration: 8000,
+        showClose: true,
+      })
     }
   } finally {
     loading.value = false

@@ -25,6 +25,34 @@
 
 #define MINEFOLIO_BCRYPT_COST CSILK_BCRYPT_DEFAULT_COST
 
+/* TOTP 验证包装：在 csilk_totp_verify_code (±1 步容差) 基础上扩展至 ±2 步 (±60s)，
+   吸收容器/宿主机时钟漂移 (NTP 未同步、时区配置错误、手机本地时钟偏移) 导致的
+   "桌面可用但移动端失败" 假象。验证失败时回填服务器当前 Unix 时间戳，供前端
+   提示用户校准本地时钟。不动 csilk 依赖 (totp.c 在 deps/)，仅在应用层包一层。 */
+static bool
+mf_totp_verify_lenient(const char* base32_secret, const char* code, uint64_t* out_server_ts)
+{
+    if (!base32_secret || !base32_secret[0] || !code || strlen(code) != 6) {
+        if (out_server_ts) {
+            *out_server_ts = (uint64_t)time(NULL);
+        }
+        return false;
+    }
+    uint64_t now = (uint64_t)time(NULL);
+    if (out_server_ts) {
+        *out_server_ts = now;
+    }
+    for (int step = -2; step <= 2; step++) {
+        uint64_t t = (int64_t)now + (int64_t)step * 30;
+        char     expected[8];
+        if (csilk_totp_generate_code(base32_secret, t, expected, sizeof(expected)) == 0 &&
+            strcmp(expected, code) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static void
 store_bcrypt_hash(const char* password, char* out)
 {
@@ -499,9 +527,13 @@ auth_usecase_2fa_enable(void*                   pool,
         return -1;
     }
 
-    if (!csilk_totp_verify_code(user.totp_secret, cmd->code)) {
+    uint64_t _ts_unused;
+    if (!mf_totp_verify_lenient(user.totp_secret, cmd->code, &_ts_unused)) {
         out_res->code = 1002;
-        snprintf(out_res->message, sizeof(out_res->message), "动态验证码错误");
+        snprintf(out_res->message,
+                 sizeof(out_res->message),
+                 "动态验证码错误 (服务端时间 %llu)，请校准时钟后重试",
+                 (unsigned long long)_ts_unused);
         return -1;
     }
 
@@ -567,9 +599,10 @@ auth_usecase_2fa_disable(void*                    pool,
         }
     }
 
-    /* 2. 或验证当前有效的 6 位 TOTP 动态码 */
+    /* 2. 或验证当前有效的 6 位 TOTP 动态码 (lenient ±2 步容差，吸收时钟漂移) */
     if (!authenticated && cmd->code && cmd->code[0] && user.totp_secret[0]) {
-        if (csilk_totp_verify_code(user.totp_secret, cmd->code)) {
+        uint64_t _ts_unused;
+        if (mf_totp_verify_lenient(user.totp_secret, cmd->code, &_ts_unused)) {
             authenticated = true;
         }
     }
@@ -643,8 +676,9 @@ auth_usecase_2fa_verify_login(void*                         pool,
         return -1;
     }
 
-    bool ok = false;
-    if (csilk_totp_verify_code(user.totp_secret, cmd->code)) {
+    bool     ok = false;
+    uint64_t server_ts = 0;
+    if (mf_totp_verify_lenient(user.totp_secret, cmd->code, &server_ts)) {
         ok = true;
     } else if (user.totp_backup_codes[0] != '\0') {
         char updated_codes[1024];
@@ -657,7 +691,17 @@ auth_usecase_2fa_verify_login(void*                         pool,
 
     if (!ok) {
         out_res->code = 1002;
-        snprintf(out_res->message, sizeof(out_res->message), "动态验证码错误或备用码已失效");
+        snprintf(out_res->message,
+                 sizeof(out_res->message),
+                 "动态验证码错误或备用码已失效 (服务端时间 "
+                 "%llu)。若反复失败，请先校准手机/电脑时钟至 UTC 再试",
+                 (unsigned long long)server_ts);
+        /* 把服务器时间戳挂到 data，供前端展示诊断 */
+        csilk_json_t* diag = csilk_json_object();
+        csilk_json_add_number(diag, "server_unix_ts", (double)server_ts);
+        csilk_json_add_string(
+            diag, "hint", "服务端时钟与本地时钟偏差可能超过 60s，请校准 NTP 后重试");
+        *out_data = diag;
         return -1;
     }
 
