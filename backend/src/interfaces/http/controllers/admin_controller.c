@@ -11,7 +11,6 @@
 #include "common/response.h"
 #include "common/ctx.h"
 #include "common/db.h"
-#include "common/config.h"
 #include "common/jwt.h"
 #include "config/key_manager.h"
 #include "application/category/usecases.h"
@@ -131,13 +130,11 @@ system_setup(csilk_ctx_t* c)
     mf_import_rule_seed_defaults(pool, user_id);
     skill_usecase_seed_defaults(pool, user_id);
 
-    /* Persist DB config if provided */
-    const char* db_driver = csilk_json_get_string(body, "db_driver");
-    const char* db_dsn = csilk_json_get_string(body, "db_dsn");
-    if (db_driver) {
-        const char* kv[] = {"driver", db_driver, "dsn", db_dsn ? db_dsn : "", NULL};
-        config_set("config/db.json", kv);
-    }
+    /*
+     * DB 配置完全由环境变量 (MINEFOLIO_DB_DRIVER / MINEFOLIO_DB_DSN) 提供，
+     * 不再通过 setup 接口写入 config/db.json (避免容器部署时残留文件与 env
+     * 优先级冲突导致误判未初始化)。前端提交的 db_driver / db_dsn 字段被忽略。
+     */
 
     if (db_tx_scope_commit(pool, &scope) != 0) {
         db_tx_scope_rollback(pool, &scope);

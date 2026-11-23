@@ -25,7 +25,7 @@
 /**
  * @brief 初始化全局数据库连接池单例
  *
- * 根据环境变量（MINEFOLIO_DB_DRIVER, MINEFOLIO_DB_DSN）或配置文件（config/db.json）
+ * 根据环境变量（MINEFOLIO_DB_DRIVER, MINEFOLIO_DB_DSN）
  * 加载数据库驱动（SQLite 或 PostgreSQL），建立连接池并配置基础 PRAGMA 优化参数（如 WAL 模式、忙时等待等）。
  *
  * @param[out] out_pool 接收新创建的数据库连接池实例指针的地址

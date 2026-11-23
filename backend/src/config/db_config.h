@@ -13,7 +13,7 @@
 /**
  * @brief 初始化数据库连接池配置
  *
- * 根据配置文件（config/db.json）或环境变量中的配置项创建并初始化数据库连接池。
+ * 根据环境变量中的配置项（MINEFOLIO_DB_DRIVER / MINEFOLIO_DB_DSN）创建并初始化数据库连接池。
  * 支持 SQLite 与 PostgreSQL 驱动。
  *
  * @param[out] out_pool 指向数据库连接池指针的地址，成功时被赋值为新创建的连接池实例
