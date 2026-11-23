@@ -1013,6 +1013,12 @@ mf_mcp_client_initialize(mf_mcp_client_t* c, char* out_err, size_t err_sz)
     csilk_json_add_string(client_info, "version", "1.0");
     csilk_json_add_object(params, "clientInfo", client_info);
     csilk_json_add_string(params, "protocolVersion", "2024-11-05");
+    /* capabilities 是 MCP 2024-11-05 规范 initialize.params 的必需字段：客户端不声明
+       任何能力时也须传空对象 {}。基于 @modelcontextprotocol/sdk 的服务器 (如 a-share-mcp)
+       用 zod 严格校验，缺此字段即回 JSON-RPC error -32603 (无 result)，客户端会误报
+       "initialize: no result"。add_object 把 caps 所有权转移给 params，随 params 级联释放。 */
+    csilk_json_t* caps = csilk_json_object();
+    csilk_json_add_object(params, "capabilities", caps);
 
     char* req = build_request("initialize", params);
     csilk_json_free(params);
