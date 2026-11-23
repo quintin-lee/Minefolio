@@ -112,7 +112,7 @@ services:
       - im
     working_dir: /app
     volumes:
-      - ./gateway:/app:ro
+      - ./gateway:/app
     environment:
       MINEFOLIO_API: "http://minefolio:8080"
       ONEBOT_WS_URL: "ws://napcat:3001"
