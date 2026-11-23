@@ -60,8 +60,30 @@ const transport = {
 const adapter = createOneBotAdapter({ getBindToken, transport });
 
 let ws;
+let reconnectTimer = null;
+
+function scheduleReconnect() {
+  if (reconnectTimer) return;
+  console.warn('[onebot-server] WS disconnected or unavailable, reconnecting in 3s...');
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    connect();
+  }, 3000);
+}
+
 function connect() {
-  ws = new WebSocket(ONEBOT_WS_URL);
+  try {
+    ws = new WebSocket(ONEBOT_WS_URL);
+  } catch (err) {
+    console.error('[onebot-server] WebSocket creation error:', err && err.message);
+    scheduleReconnect();
+    return;
+  }
+
+  ws.on('open', () => {
+    console.log(`[onebot-server] Connected to OneBot WebSocket @ ${ONEBOT_WS_URL}`);
+  });
+
   ws.on('message', (data) => {
     let event;
     try {
@@ -71,11 +93,15 @@ function connect() {
     }
     adapter.onEvent(event).catch((e) => console.error('[onebot-server] onEvent error', e && e.message));
   });
+
   ws.on('close', () => {
-    console.warn('[onebot-server] WS closed, reconnecting in 3s');
-    setTimeout(connect, 3000);
+    scheduleReconnect();
   });
-  ws.on('error', (e) => console.error('[onebot-server] WS error', e && e.message));
+
+  ws.on('error', (e) => {
+    console.error('[onebot-server] WS error', e && e.message);
+    scheduleReconnect();
+  });
 }
 
 console.log(`[onebot-server] QQ gateway bridging OneBot @ ${ONEBOT_WS_URL} -> ${API_BASE}`);

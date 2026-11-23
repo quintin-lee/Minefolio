@@ -33,6 +33,9 @@ services:
       MINEFOLIO_ENABLE_CSRF: "1"
       TZ: "Asia/Shanghai"
     # 启动前检查: 驱动为 postgres 时等待 DB 就绪并推导 DSN; sqlite 时直接放行。
+    # db-wait.sh 会在启动前 rm -f /app/config/db.json，清除 /system/setup 写入的残留
+    # (避免污染 driver/dsn 与 MINEFOLIO_DB_DRIVER/DSN env 产生优先级冲突)，
+    # 并保留 ai.json / secrets/ 等镜像层其他 config 文件不受影响。
     # 保持镜像默认 ENTRYPOINT (tini), 用 command 覆盖注入等待逻辑。
     command: ["/usr/local/bin/db-wait.sh"]
     volumes:
@@ -102,6 +105,12 @@ services:
       - napcat-qq:/app/.config/QQ
       - napcat-config:/app/napcat/config
       - napcat-plugins:/app/napcat/plugins
+    command: >
+      bash -c "rm -f /tmp/.X*-lock /tmp/.X11-unix/X* /run/dbus/pid &&
+      Xvfb :99 -screen 0 1280x1024x24 -nolisten tcp &
+      sleep 1 &&
+      cd /app &&
+      exec env DISPLAY=:99 LD_PRELOAD=./libnapcat_launcher.so /opt/QQ/qq --no-sandbox"
     restart: unless-stopped
 
   # IM 网关服务 (桥接 NapCat 与 Minefolio)
