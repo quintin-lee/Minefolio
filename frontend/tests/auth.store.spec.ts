@@ -142,12 +142,28 @@ describe('auth store', () => {
     expect(store.token).toBe('still-ok-token')
   })
 
-  it('login failure surfaces crypto_failed for non-network errors', async () => {
+  it('login failure surfaces crypto_failed only for WebCrypto-missing errors', async () => {
+    // 场景 1: WebCrypto 缺失 (ensureSubtleCrypto 抛错消息含 WebCrypto/Crypto/subtle) 必须标记 crypto_failed
+    ;(global as any).fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ code: 0, data: { public_key: { kty: 'RSA', n: 'u1lq', e: 'AQAB' } } }),
+    })
+    vi.spyOn(crypto.subtle, 'importKey').mockRejectedValueOnce(
+      new Error('当前浏览环境不支持 WebCrypto（RSA 加密仅在 HTTPS 或 localhost 下可用）')
+    )
+    const store1 = useAuthStore()
+    const err1 = await store1.login('admin', 'password123').catch((e: unknown) => e) as any
+    expect(err1?.crypto_failed).toBe(true)
+    expect(err1?.message).toMatch(/WebCrypto/)
+
+    // 场景 2: 网络错误 (fetch 无 response 属性) 不再被误标为 crypto_failed，必须原样上抛让 isNetworkError 命中
+    clearCryptoKeyCache()
     ;(global as any).fetch = vi.fn().mockRejectedValue(new Error('Failed to fetch'))
-    const store = useAuthStore()
-    // RSA 公钥拉取失败 (模拟本地 http 环境 WebCrypto 不可用) 时，login 抛出的错误带 crypto_failed 标识
-    const err = await store.login('admin', 'password123').catch((e: unknown) => e) as any
-    expect(err?.crypto_failed).toBe(true)
+    const store2 = useAuthStore()
+    const err2 = await store2.login('admin', 'password123').catch((e: unknown) => e) as any
+    expect(err2?.crypto_failed).toBeUndefined()
+    expect(err2?.message).toBe('Failed to fetch')
+    expect('response' in err2).toBe(false)
   })
 
   it('clears state on logout', async () => {

@@ -166,7 +166,13 @@ function createHttp(): AxiosInstance {
   const instance = axios.create({
     baseURL: getAxiosBaseUrl(),
     timeout: 10000,
-    withCredentials: true,
+    // 鉴权走 JWT Bearer (Authorization 头)，CSRF 走自定义 X-CSRF-Token 头 (拦截器手动注入)，
+    // 均不依赖 cookie。withCredentials=true 会强制 CORS 响应必须带
+    // Access-Control-Allow-Credentials + 精确 origin，在 Capacitor WebView 下反向代理
+    // 未配置该响应头时请求被 CORS 拦截 (抛无 response 的 TypeError)，表现为
+    // "测试连接成功 (fetch 不受 withCredentials 约束) 但登录失败 (axios 被拦)"。
+    // 桌面浏览器与移动端统一关闭，彻底消除该差异。
+    withCredentials: false,
   })
 
   // 请求拦截器：自动注入最新 baseURL、JWT Bearer Token、X-Ledger-Id 及 CSRF Token

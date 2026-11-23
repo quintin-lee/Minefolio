@@ -61,7 +61,13 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       password_enc = await encryptPassword(password)
     } catch (e: any) {
-      throw Object.assign(e, { crypto_failed: true })
+      // 区分 WebCrypto 缺失 (ensureSubtleCrypto 抛错) 与网络/RSA 接口错误：
+      // 后者必须保留原错误 (含 fetch 无 response 属性) 让上层 isNetworkError 正确判定，
+      // 不能一律打 crypto_failed 标签，否则会把"无法连接服务端"误诊为"WebCrypto 不支持"
+      if (e?.message && /WebCrypto|Crypto|subtle/i.test(e.message)) {
+        throw Object.assign(e, { crypto_failed: true })
+      }
+      throw e
     }
     const res = await systemApi.setup({ username, password_enc }) as { token: string; expires_in: number }
     token.value = res.token
@@ -80,7 +86,10 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       password_enc = await encryptPassword(password)
     } catch (e: any) {
-      throw Object.assign(e, { crypto_failed: true })
+      if (e?.message && /WebCrypto|Crypto|subtle/i.test(e.message)) {
+        throw Object.assign(e, { crypto_failed: true })
+      }
+      throw e
     }
     const raw = (await authApi.register(username, password_enc)) as unknown
     const res = (raw && typeof raw === 'object' && 'data' in raw ? (raw as { data: { token: string } }).data : raw) as { token: string }
@@ -120,7 +129,10 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       password_enc = await encryptPassword(password)
     } catch (e: any) {
-      throw Object.assign(e, { crypto_failed: true })
+      if (e?.message && /WebCrypto|Crypto|subtle/i.test(e.message)) {
+        throw Object.assign(e, { crypto_failed: true })
+      }
+      throw e
     }
     const raw = (await authApi.login(username, password_enc, totpCode)) as unknown
     const res = (raw && typeof raw === 'object' && 'data' in raw ? (raw as { data: any }).data : raw) as any
@@ -173,6 +185,7 @@ export const useAuthStore = defineStore('auth', () => {
    * @param newPassword 新设密码
    */
   async function changePassword(oldPassword: string, newPassword: string) {
+    // 保留原实现 (调用方自行 try/catch)，不在此处重包 crypto_failed
     const old_enc = await encryptPassword(oldPassword)
     const new_enc = await encryptPassword(newPassword)
     await authApi.changePassword(old_enc, new_enc)
