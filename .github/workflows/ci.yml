@@ -8,6 +8,10 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+
 jobs:
   backend:
     name: Backend Build & Test
@@ -406,8 +410,10 @@ jobs:
 
   ios-build:
     name: Build iOS Package
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     needs: [frontend]
     runs-on: macos-15
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: frontend
