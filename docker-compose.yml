@@ -96,13 +96,13 @@ services:
     environment:
       MODE: "ws"
       WEBUI_TOKEN: "${NAPCAT_WEBUI_TOKEN:-minefolio123}"
-      ACCOUNT: "${NAPCAT_QQ:-}"
+      ACCOUNT: "${NAPCAT_QQ:-2449164582}"
     ports:
       - "3002:3000"   # OneBot v11 HTTP API
       - "3001:3001"   # OneBot v11 WebSocket
       - "6099:6099"   # NapCat WebUI 控制台 (扫码登录)
     volumes:
-      - napcat-qq:/app/.config/QQ
+      - napcat-qq:/root/.config/QQ
       - napcat-config:/app/napcat/config
       - napcat-plugins:/app/napcat/plugins
     command: >
@@ -125,7 +125,7 @@ services:
     environment:
       MINEFOLIO_API: "http://minefolio:8080"
       ONEBOT_WS_URL: "ws://napcat:3001"
-      ONEBOT_API_URL: "http://napcat:3001"
+      ONEBOT_API_URL: "http://napcat:3000"
       ONEBOT_ACCESS_TOKEN: "${NAPCAT_ACCESS_TOKEN:-}"
       ONEBOT_BIND_TOKEN: "${ONEBOT_BIND_TOKEN:-}"
       NODE_ENV: "production"

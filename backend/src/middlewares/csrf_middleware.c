@@ -13,8 +13,35 @@
 #include <string.h>
 #include <strings.h>
 
-static const char* s_csrf_exclude_paths[] = {
-    "/api/auth/login", "/api/auth/register", "/api/system/status", "/api/system/setup", NULL};
+static const char* s_csrf_exclude_paths[] = {"/api/auth/login",
+                                             "/api/auth/register",
+                                             "/api/system/status",
+                                             "/api/system/setup",
+                                             "/api/im/qq/bind-auth",
+                                             "/api/im/wechat/bind-auth",
+                                             NULL};
+
+static bool
+is_im_bind_auth_path(const char* path)
+{
+    if (!path) {
+        return false;
+    }
+    size_t plen = strlen(path);
+    /* 严格匹配单段平台标识: /api/im/<platform>/bind-auth (禁止 '..' 或多段 '/') */
+    if (plen <= 18 || strncmp(path, "/api/im/", 8) != 0 ||
+        strncmp(path + plen - 10, "/bind-auth", 10) != 0) {
+        return false;
+    }
+    const char* seg = path + 8;
+    size_t      seg_len = plen - 18;
+    for (size_t i = 0; i < seg_len; i++) {
+        if (seg[i] == '/' || seg[i] == '.') {
+            return false;
+        }
+    }
+    return seg_len > 0;
+}
 
 static bool
 is_csrf_excluded_path(const char* path)
@@ -26,6 +53,9 @@ is_csrf_excluded_path(const char* path)
         if (strcmp(path, s_csrf_exclude_paths[i]) == 0) {
             return true;
         }
+    }
+    if (is_im_bind_auth_path(path)) {
+        return true;
     }
     return false;
 }

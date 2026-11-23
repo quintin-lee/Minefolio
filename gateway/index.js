@@ -136,6 +136,31 @@ function isValidPlatform(platform) {
   return typeof platform === 'string' && PLATFORM_RE.test(platform);
 }
 
+let cachedCsrfToken = '';
+let csrfTokenExpiresAt = 0;
+
+async function getCsrfToken() {
+  const now = Date.now();
+  if (cachedCsrfToken && now < csrfTokenExpiresAt) {
+    return cachedCsrfToken;
+  }
+  try {
+    const res = await fetch((process.env.MINEFOLIO_API || API_BASE) + '/api/system/status', {
+      signal: AbortSignal.timeout(3000),
+    });
+    const raw = res.headers.get('set-cookie');
+    const match = raw ? raw.match(/csrf_token=([^;]+)/) : null;
+    if (match && match[1]) {
+      cachedCsrfToken = match[1];
+      csrfTokenExpiresAt = now + 3600 * 1000;
+      return cachedCsrfToken;
+    }
+  } catch {
+    // fallback if system status unreachable
+  }
+  return '';
+}
+
 loadCache();
 
 /**
@@ -162,17 +187,41 @@ async function callImApi(platform, op, body, bearer) {
     return { code: 1002, data: null, message: 'invalid operation', http: 400 };
   }
 
+  const headers = {
+    'Content-Type': 'application/json',
+  };
+  if (bearer) {
+    headers['Authorization'] = `Bearer ${bearer}`;
+  } else {
+    const csrf = await getCsrfToken();
+    if (csrf) {
+      headers['Cookie'] = `csrf_token=${csrf}`;
+      headers['X-CSRF-Token'] = csrf;
+    }
+  }
+
   let res;
   try {
     res = await fetch((process.env.MINEFOLIO_API || API_BASE) + path, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}),
-      },
+      headers,
       body: JSON.stringify(body || {}),
       signal: AbortSignal.timeout(getHttpTimeoutMs()),
     });
+    if (res.status === 403 && !bearer) {
+      cachedCsrfToken = '';
+      const freshCsrf = await getCsrfToken();
+      if (freshCsrf) {
+        headers['Cookie'] = `csrf_token=${freshCsrf}`;
+        headers['X-CSRF-Token'] = freshCsrf;
+        res = await fetch((process.env.MINEFOLIO_API || API_BASE) + path, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body || {}),
+          signal: AbortSignal.timeout(getHttpTimeoutMs()),
+        });
+      }
+    }
   } catch (err) {
     const isTimeout = err && (err.name === 'TimeoutError' || err.name === 'AbortError');
     return {

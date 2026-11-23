@@ -44,15 +44,28 @@ async function getBindToken(imUserId) {
 /** OneBot v11 HTTP reply channel (send_private_msg action). */
 const transport = {
   async sendPrivateMsg(uid, text) {
+    const base = ONEBOT_API_URL.replace(/\/+$/, '');
+    const url = base.endsWith('/send_private_msg') ? base : `${base}/send_private_msg`;
     const body = JSON.stringify({
       action: 'send_private_msg',
       params: { user_id: Number(uid), message: text },
+      user_id: Number(uid),
+      message: text,
     });
     const headers = { 'Content-Type': 'application/json' };
     if (ONEBOT_ACCESS_TOKEN) headers['Authorization'] = `Bearer ${ONEBOT_ACCESS_TOKEN}`;
-    const res = await fetch(ONEBOT_API_URL, { method: 'POST', headers, body });
-    if (!res.ok) {
-      console.warn(`[onebot-server] send_private_msg ${res.status} for ${uid}`);
+    try {
+      const res = await fetch(url, { method: 'POST', headers, body });
+      if (!res.ok) {
+        console.warn(`[onebot-server] send_private_msg HTTP ${res.status} for ${uid}`);
+      } else {
+        const json = await res.json().catch(() => null);
+        if (json && json.status !== 'ok' && json.retcode !== 0) {
+          console.warn(`[onebot-server] send_private_msg failed: retcode=${json.retcode} message=${json.message}`);
+        }
+      }
+    } catch (err) {
+      console.warn(`[onebot-server] send_private_msg error for ${uid}:`, err && err.message);
     }
   },
 };
