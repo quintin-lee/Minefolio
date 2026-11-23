@@ -7,6 +7,7 @@
 #include "domain/dca/rules.h"
 #include "domain/dca/repository.h"
 #include "infrastructure/repositories/dca_repo_impl.h"
+#include "infrastructure/repositories/asset_repo_impl.h"
 #include "core/ledger/ledger_engine.h"
 #include "common/db.h"
 #include "common/response.h"
@@ -221,20 +222,9 @@ dca_usecase_confirm_execution(void*                              pool,
                                 ? cmd->executed_price
                                 : (target_net_val > 0.0 ? target_net_val : 1.0);
 
-    char target_id_str[32];
-    snprintf(target_id_str, sizeof(target_id_str), "%lld", (long long)target_asset_id);
-    csilk_json_t* cur_res = csilk_db_query_param_json(
-        pool, "SELECT currency FROM assets WHERE id=?", (const char*[]){target_id_str, NULL});
-    currency_t target_cur = CURRENCY_CNY;
-    if (cur_res && csilk_json_array_size(cur_res) > 0) {
-        const char* cstr = csilk_json_get_string(csilk_json_array_get(cur_res, 0), "currency");
-        if (cstr && cstr[0]) {
-            target_cur = currency_from_str(cstr);
-        }
-        csilk_json_free(cur_res);
-    } else if (cur_res) {
-        csilk_json_free(cur_res);
-    }
+    char cur_str[16] = "CNY";
+    asset_get_currency(pool, target_asset_id, cur_str, sizeof(cur_str));
+    currency_t target_cur = currency_from_str(cur_str);
 
     /* Calculate quantity */
     money_t    actual_m;

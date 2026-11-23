@@ -35,63 +35,26 @@ scheduler_usecase_dashboard(void* pool, int64_t user_id, bool is_admin, csilk_js
     if (!pool || !out_resp) {
         return -1;
     }
-    csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
-
-    char uid_str[32], today_start[64], now_str[64];
-    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    char today_start[64], now_str[64];
     get_today_start_str(today_start, sizeof(today_start));
     get_now_str(now_str, sizeof(now_str));
 
     /* 1. Active jobs count */
-    const char* active_sql =
-        "SELECT COUNT(*) as cnt FROM scheduled_jobs WHERE enabled = 1 AND (user_id = ? "
-        "OR is_builtin = 1)";
-    int64_t       active_jobs = 0;
-    csilk_json_t* ares =
-        csilk_db_query_param_json(db_pool, active_sql, (const char*[]){uid_str, NULL});
-    if (ares) {
-        if (csilk_json_array_size(ares) > 0) {
-            active_jobs = db_get_int(csilk_json_array_get(ares, 0), "cnt");
-        }
-        csilk_json_free(ares);
-    }
+    int64_t active_jobs = scheduler_repo_count_active(pool, user_id);
 
     /* 2. Today's run count */
-    const char* runs_sql =
-        "SELECT COUNT(*) as cnt FROM job_run_logs WHERE (user_id = ? OR user_id = 0) "
-        "AND started_at >= ?";
-    int64_t       today_runs = 0;
-    csilk_json_t* rres =
-        csilk_db_query_param_json(db_pool, runs_sql, (const char*[]){uid_str, today_start, NULL});
-    if (rres) {
-        if (csilk_json_array_size(rres) > 0) {
-            today_runs = db_get_int(csilk_json_array_get(rres, 0), "cnt");
-        }
-        csilk_json_free(rres);
-    }
+    int64_t today_runs = scheduler_repo_count_runs_today(pool, user_id, today_start);
 
     /* 3. Nearest next run job */
-    const char* next_sql =
-        "SELECT name, next_run_at FROM scheduled_jobs WHERE enabled = 1 AND (user_id = "
-        "? OR is_builtin = 1) AND next_run_at > ? ORDER BY next_run_at ASC LIMIT 1";
-    char          next_job_name[128] = "";
-    char          next_job_time[64] = "";
-    csilk_json_t* nres =
-        csilk_db_query_param_json(db_pool, next_sql, (const char*[]){uid_str, now_str, NULL});
-    if (nres) {
-        if (csilk_json_array_size(nres) > 0) {
-            csilk_json_t* nrow = csilk_json_array_get(nres, 0);
-            const char*   sname = csilk_json_get_string(nrow, "name");
-            const char*   stime = csilk_json_get_string(nrow, "next_run_at");
-            if (sname) {
-                snprintf(next_job_name, sizeof(next_job_name), "%s", sname);
-            }
-            if (stime) {
-                snprintf(next_job_time, sizeof(next_job_time), "%s", stime);
-            }
-        }
-        csilk_json_free(nres);
-    }
+    char next_job_name[128] = "";
+    char next_job_time[64] = "";
+    scheduler_repo_get_next_run(pool,
+                                user_id,
+                                now_str,
+                                next_job_name,
+                                sizeof(next_job_name),
+                                next_job_time,
+                                sizeof(next_job_time));
 
     /* 4. Notification channel status */
     csilk_json_t* ch = mf_scheduler_repo_get_user_channel(pool, user_id);

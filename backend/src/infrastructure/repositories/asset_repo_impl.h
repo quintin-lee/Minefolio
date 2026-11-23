@@ -85,3 +85,8 @@ int asset_daily_balance_log_sum(csilk_db_pool_t* pool,
                                 const char*      start_date,
                                 const char*      end_date,
                                 double*          out_sum);
+
+int           asset_count_transactions(void* pool, int64_t user_id, int64_t asset_id);
+int64_t       asset_get_ledger_id(void* pool, int64_t user_id, int64_t asset_id);
+csilk_json_t* asset_list_values_with_type(void* pool, int64_t user_id, int64_t ledger_id);
+int           asset_get_currency(void* pool, int64_t asset_id, char* out_currency, size_t max_len);

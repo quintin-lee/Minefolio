@@ -241,20 +241,7 @@ asset_usecase_update(void* pool, const update_asset_cmd_t* cmd, asset_usecase_re
         }
 
         if (strcmp(cmd->cost_method, cur_method) != 0) {
-            char uid_str[32], aid_str[32];
-            snprintf(uid_str, sizeof(uid_str), "%lld", (long long)cmd->user_id);
-            snprintf(aid_str, sizeof(aid_str), "%lld", (long long)cmd->id);
-            csilk_json_t* tx_check = csilk_db_query_param_json(
-                db_pool,
-                "SELECT COUNT(*) as cnt FROM transactions WHERE user_id=? AND asset_id=?",
-                (const char*[]){uid_str, aid_str, NULL});
-            int64_t tx_cnt = 0;
-            if (tx_check && csilk_json_array_size(tx_check) > 0) {
-                tx_cnt = db_get_int(csilk_json_array_get(tx_check, 0), "cnt");
-            }
-            if (tx_check) {
-                csilk_json_free(tx_check);
-            }
+            int tx_cnt = asset_count_transactions(db_pool, cmd->user_id, cmd->id);
             if (tx_cnt > 0) {
                 csilk_json_free(cur);
                 out_res->code = 1004;
@@ -279,20 +266,7 @@ asset_usecase_update(void* pool, const update_asset_cmd_t* cmd, asset_usecase_re
     int64_t reattach_acct = 0;
     int     need_reattach = 0;
     if (cmd->has_account_id) {
-        char lid_buf[32], uid_buf[32];
-        snprintf(lid_buf, sizeof(lid_buf), "%lld", (long long)cmd->id);
-        snprintf(uid_buf, sizeof(uid_buf), "%lld", (long long)cmd->user_id);
-        int64_t       asset_ledger = 0;
-        csilk_json_t* lid_res =
-            csilk_db_query_param_json(db_pool,
-                                      "SELECT ledger_id FROM assets WHERE id=? AND user_id=?",
-                                      (const char*[]){lid_buf, uid_buf, NULL});
-        if (lid_res && csilk_json_array_size(lid_res) > 0) {
-            asset_ledger = db_get_int(csilk_json_array_get(lid_res, 0), "ledger_id");
-        }
-        if (lid_res) {
-            csilk_json_free(lid_res);
-        }
+        int64_t asset_ledger = asset_get_ledger_id(db_pool, cmd->user_id, cmd->id);
         reattach_acct =
             asset_resolve_account_id(db_pool, cmd->user_id, asset_ledger, cmd->account_id);
         if (cmd->account_id > 0 && reattach_acct <= 0) {
@@ -673,23 +647,13 @@ asset_usecase_get(void* pool, int64_t user_id, int64_t id, csilk_json_t** out_js
         if (ledger_id <= 0) {
             ledger_id = ledger_get_default(db_pool, user_id);
         }
-        char uid_str[32], lid_str[32];
-        snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-        snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
-
         currency_t  base_cur = currency_from_str("CNY");
         const char* self_cur_str = csilk_json_get_string(row, "currency");
         currency_t  self_cur = currency_from_str(self_cur_str ? self_cur_str : "CNY");
         money_t     self_val_m = db_get_money(row, "current_value", self_cur);
         money_t     self_base = exchange_rate_convert_m(self_val_m, base_cur);
 
-        csilk_json_t* all_rows = csilk_db_query_param_json(
-            db_pool,
-            "SELECT a.current_value, a.currency, c.asset_type FROM assets a "
-            "JOIN categories c ON a.category_id=c.id "
-            "WHERE a.user_id=? AND a.ledger_id=? AND c.asset_type NOT IN "
-            "('loan','credit_card','other_liability') AND " MF_RBAC_ASSET_UNMASKED_SQL("a"),
-            (const char*[]){uid_str, lid_str, uid_str, uid_str, NULL});
+        csilk_json_t* all_rows = asset_list_values_with_type(db_pool, user_id, ledger_id);
 
         money_t total_mkt_base = money_zero(base_cur);
         if (all_rows) {

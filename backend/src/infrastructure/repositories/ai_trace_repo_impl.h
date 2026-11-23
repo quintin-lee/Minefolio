@@ -23,3 +23,5 @@ csilk_json_t* mf_ai_trace_get(csilk_db_pool_t* pool, int64_t user_id, int64_t id
 csilk_json_t* mf_ai_trace_stats(csilk_db_pool_t* pool, int64_t user_id);
 
 int64_t mf_ai_trace_save(csilk_db_pool_t* pool, ai_trace_t* t);
+
+int mf_ai_trace_repo_delete_by_session(void* pool, int64_t user_id, int64_t session_id);

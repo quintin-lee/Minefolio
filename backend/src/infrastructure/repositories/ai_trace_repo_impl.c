@@ -275,3 +275,23 @@ mf_ai_trace_save(csilk_db_pool_t* pool, ai_trace_t* t)
     free(meta_final);
     return id;
 }
+
+int
+mf_ai_trace_repo_delete_by_session(void* pool, int64_t user_id, int64_t session_id)
+{
+    if (!pool || user_id <= 0 || session_id <= 0) {
+        return 0;
+    }
+    char id_s[32], uid_s[32];
+    snprintf(id_s, sizeof(id_s), "%lld", (long long)session_id);
+    snprintf(uid_s, sizeof(uid_s), "%lld", (long long)user_id);
+
+    csilk_json_t* tr =
+        csilk_db_query_param_json((csilk_db_pool_t*)pool,
+                                  "DELETE FROM ai_traces WHERE session_id=? AND user_id=?",
+                                  (const char*[]){id_s, uid_s, NULL});
+    if (tr) {
+        csilk_json_free(tr);
+    }
+    return 0;
+}

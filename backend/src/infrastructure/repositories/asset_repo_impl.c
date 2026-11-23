@@ -1057,3 +1057,92 @@ mf_asset_repo_get_category_type(
     }
     return -1;
 }
+
+int
+asset_count_transactions(void* pool, int64_t user_id, int64_t asset_id)
+{
+    if (!pool || user_id <= 0 || asset_id <= 0) {
+        return 0;
+    }
+    char uid_str[32], aid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    snprintf(aid_str, sizeof(aid_str), "%lld", (long long)asset_id);
+    csilk_json_t* tx_check = csilk_db_query_param_json(
+        (csilk_db_pool_t*)pool,
+        "SELECT COUNT(*) as cnt FROM transactions WHERE user_id=? AND asset_id=?",
+        (const char*[]){uid_str, aid_str, NULL});
+    int64_t tx_cnt = 0;
+    if (tx_check && csilk_json_array_size(tx_check) > 0) {
+        tx_cnt = db_get_int(csilk_json_array_get(tx_check, 0), "cnt");
+    }
+    if (tx_check) {
+        csilk_json_free(tx_check);
+    }
+    return (int)tx_cnt;
+}
+
+int64_t
+asset_get_ledger_id(void* pool, int64_t user_id, int64_t asset_id)
+{
+    if (!pool || user_id <= 0 || asset_id <= 0) {
+        return 0;
+    }
+    char aid_buf[32], uid_buf[32];
+    snprintf(aid_buf, sizeof(aid_buf), "%lld", (long long)asset_id);
+    snprintf(uid_buf, sizeof(uid_buf), "%lld", (long long)user_id);
+    int64_t       asset_ledger = 0;
+    csilk_json_t* lid_res =
+        csilk_db_query_param_json((csilk_db_pool_t*)pool,
+                                  "SELECT ledger_id FROM assets WHERE id=? AND user_id=?",
+                                  (const char*[]){aid_buf, uid_buf, NULL});
+    if (lid_res && csilk_json_array_size(lid_res) > 0) {
+        asset_ledger = db_get_int(csilk_json_array_get(lid_res, 0), "ledger_id");
+    }
+    if (lid_res) {
+        csilk_json_free(lid_res);
+    }
+    return asset_ledger;
+}
+
+csilk_json_t*
+asset_list_values_with_type(void* pool, int64_t user_id, int64_t ledger_id)
+{
+    if (!pool || user_id <= 0) {
+        return NULL;
+    }
+    char uid_str[32], lid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
+    return csilk_db_query_param_json(
+        (csilk_db_pool_t*)pool,
+        "SELECT a.current_value, a.currency, c.asset_type FROM assets a "
+        "JOIN categories c ON a.category_id=c.id "
+        "WHERE a.user_id=? AND a.ledger_id=? AND c.asset_type NOT IN "
+        "('loan','credit_card','other_liability') AND " MF_RBAC_ASSET_UNMASKED_SQL("a"),
+        (const char*[]){uid_str, lid_str, uid_str, uid_str, NULL});
+}
+
+int
+asset_get_currency(void* pool, int64_t asset_id, char* out_currency, size_t max_len)
+{
+    if (!pool || asset_id <= 0 || !out_currency || max_len == 0) {
+        return -1;
+    }
+    char aid_str[32];
+    snprintf(aid_str, sizeof(aid_str), "%lld", (long long)asset_id);
+    csilk_json_t* ares = csilk_db_query_param_json((csilk_db_pool_t*)pool,
+                                                   "SELECT currency FROM assets WHERE id=?",
+                                                   (const char*[]){aid_str, NULL});
+    int           rc = -1;
+    if (ares && csilk_json_array_size(ares) > 0) {
+        const char* cur = csilk_json_get_string(csilk_json_array_get(ares, 0), "currency");
+        if (cur && cur[0]) {
+            snprintf(out_currency, max_len, "%s", cur);
+            rc = 0;
+        }
+    }
+    if (ares) {
+        csilk_json_free(ares);
+    }
+    return rc;
+}

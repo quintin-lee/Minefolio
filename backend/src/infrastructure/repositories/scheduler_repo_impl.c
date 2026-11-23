@@ -658,3 +658,84 @@ mf_scheduler_repo_log_list(void*    pool,
 
     return csilk_db_query_param_json(db_pool, list_sql, list_params);
 }
+
+int64_t
+scheduler_repo_count_active(void* pool, int64_t user_id)
+{
+    if (!pool) {
+        return 0;
+    }
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    const char* sql =
+        "SELECT COUNT(*) as cnt FROM scheduled_jobs WHERE enabled = 1 AND (user_id = ? "
+        "OR is_builtin = 1)";
+    int64_t       active_jobs = 0;
+    csilk_json_t* ares =
+        csilk_db_query_param_json((csilk_db_pool_t*)pool, sql, (const char*[]){uid_str, NULL});
+    if (ares) {
+        if (csilk_json_array_size(ares) > 0) {
+            active_jobs = db_get_int(csilk_json_array_get(ares, 0), "cnt");
+        }
+        csilk_json_free(ares);
+    }
+    return active_jobs;
+}
+
+int64_t
+scheduler_repo_count_runs_today(void* pool, int64_t user_id, const char* today_start)
+{
+    if (!pool) {
+        return 0;
+    }
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    const char* sql = "SELECT COUNT(*) as cnt FROM job_run_logs WHERE (user_id = ? OR user_id = 0) "
+                      "AND started_at >= ?";
+    int64_t     today_runs = 0;
+    csilk_json_t* rres = csilk_db_query_param_json(
+        (csilk_db_pool_t*)pool, sql, (const char*[]){uid_str, today_start, NULL});
+    if (rres) {
+        if (csilk_json_array_size(rres) > 0) {
+            today_runs = db_get_int(csilk_json_array_get(rres, 0), "cnt");
+        }
+        csilk_json_free(rres);
+    }
+    return today_runs;
+}
+
+int
+scheduler_repo_get_next_run(void*       pool,
+                            int64_t     user_id,
+                            const char* now_str,
+                            char*       out_name,
+                            size_t      name_sz,
+                            char*       out_time,
+                            size_t      time_sz)
+{
+    if (!pool) {
+        return -1;
+    }
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    const char* sql =
+        "SELECT name, next_run_at FROM scheduled_jobs WHERE enabled = 1 AND (user_id = "
+        "? OR is_builtin = 1) AND next_run_at > ? ORDER BY next_run_at ASC LIMIT 1";
+    csilk_json_t* nres = csilk_db_query_param_json(
+        (csilk_db_pool_t*)pool, sql, (const char*[]){uid_str, now_str, NULL});
+    if (nres) {
+        if (csilk_json_array_size(nres) > 0) {
+            csilk_json_t* nrow = csilk_json_array_get(nres, 0);
+            const char*   sname = csilk_json_get_string(nrow, "name");
+            const char*   stime = csilk_json_get_string(nrow, "next_run_at");
+            if (sname && out_name && name_sz > 0) {
+                snprintf(out_name, name_sz, "%s", sname);
+            }
+            if (stime && out_time && time_sz > 0) {
+                snprintf(out_time, time_sz, "%s", stime);
+            }
+        }
+        csilk_json_free(nres);
+    }
+    return 0;
+}

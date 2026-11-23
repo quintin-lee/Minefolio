@@ -367,3 +367,28 @@ mf_cashflow_repo_free_events(mf_cashflow_event_t* events, size_t count)
         free(events);
     }
 }
+
+csilk_json_t*
+cashflow_repo_list_detailed(void* pool, int64_t user_id)
+{
+    if (!pool || user_id <= 0) {
+        return NULL;
+    }
+    char uid[32];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    return csilk_db_query_param_json(
+        (csilk_db_pool_t*)pool, SQL_SCHEDULE_LIST, (const char*[]){uid, NULL});
+}
+
+csilk_json_t*
+cashflow_repo_get_detailed(void* pool, int64_t user_id, int64_t id)
+{
+    if (!pool || user_id <= 0 || id <= 0) {
+        return NULL;
+    }
+    char uid[32], sid[32];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    snprintf(sid, sizeof(sid), "%lld", (long long)id);
+    return csilk_db_query_param_json(
+        (csilk_db_pool_t*)pool, SQL_SCHEDULE_GET, (const char*[]){uid, sid, NULL});
+}
