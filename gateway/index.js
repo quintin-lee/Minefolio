@@ -17,8 +17,49 @@
  * get a reply string back.
  */
 
+const fs = require('fs');
+const path = require('path');
+
 const API_BASE = process.env.MINEFOLIO_API || 'http://localhost:8080';
 const TOKEN_CACHE = new Map(); // `${platform}:${imUserId}` -> bindToken
+const CACHE_FILE = process.env.MINEFOLIO_IM_CACHE_FILE || path.join(__dirname, 'im_bindings.json');
+
+function loadCache() {
+  try {
+    if (fs.existsSync(CACHE_FILE)) {
+      const data = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
+      if (data && typeof data === 'object') {
+        for (const [k, v] of Object.entries(data)) {
+          if (typeof v === 'string' && v) {
+            TOKEN_CACHE.set(k, v);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[gateway] loadCache failed:', err && err.message);
+  }
+}
+
+function saveCache() {
+  try {
+    const obj = {};
+    for (const [k, v] of TOKEN_CACHE.entries()) {
+      obj[k] = v;
+    }
+    const dir = path.dirname(CACHE_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    const tmp = `${CACHE_FILE}.tmp.${Date.now()}`;
+    fs.writeFileSync(tmp, JSON.stringify(obj, null, 2), 'utf8');
+    fs.renameSync(tmp, CACHE_FILE);
+  } catch (err) {
+    console.warn('[gateway] saveCache failed:', err && err.message);
+  }
+}
+
+loadCache();
 
 /**
  * Call a backend /api/im/* endpoint with a Bearer bind token.
@@ -98,6 +139,7 @@ async function handleImMessage(platform, imUserId, text, bindToken) {
     if (r.code === 0) {
       if (savedToken) {
         TOKEN_CACHE.set(`${platform}:${imUserId}`, savedToken);
+        saveCache();
       }
       return r.data && r.data.message ? r.data.message : '绑定成功，现在可以问我持仓/汇率了';
     }
@@ -116,6 +158,7 @@ async function handleImMessage(platform, imUserId, text, bindToken) {
   // Backend-level guidance (unbound / forbidden) vs transport error.
   if (r.http === 401 || r.code === 1001) {
     TOKEN_CACHE.delete(`${platform}:${imUserId}`);
+    saveCache();
     return '绑定码已失效，请重新在 App 生成绑定码并 /bind，或发送 /bind <用户名> <密码>。';
   }
   return `查询失败: ${r.message || ('HTTP ' + r.http)}`;
@@ -135,4 +178,13 @@ async function refreshBindToken(appToken) {
   return null;
 }
 
-module.exports = { handleImMessage, refreshBindToken, callImApi, API_BASE };
+module.exports = {
+  handleImMessage,
+  refreshBindToken,
+  callImApi,
+  API_BASE,
+  TOKEN_CACHE,
+  loadCache,
+  saveCache,
+  CACHE_FILE,
+};
