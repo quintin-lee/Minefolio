@@ -109,7 +109,7 @@ function getCachedToken(key) {
   return entry.token;
 }
 
-function setCachedToken(key, val) {
+function setCachedToken(key, val, ttlMs = getTokenCacheTtlMs()) {
   const now = Date.now();
   purgeExpiredTokens(now);
   const maxEntries = getTokenCacheMax();
@@ -123,7 +123,7 @@ function setCachedToken(key, val) {
     }
     TOKEN_CACHE.delete(oldestKey);
   }
-  TOKEN_CACHE.set(key, { token: val, expiresAt: now + getTokenCacheTtlMs() });
+  TOKEN_CACHE.set(key, { token: val, expiresAt: now + ttlMs });
   saveCache();
 }
 
@@ -349,13 +349,14 @@ async function handleImMessage(platform, imUserId, text, bindToken) {
       const code = parts[0];
       r = await callImApi(platform, 'bind', { im_user_id: imUserId }, code);
       if (r.code === 0) {
-        savedToken = code;
+        savedToken = (r.data && r.data.bind_token) || code;
       }
     }
 
     if (r.code === 0) {
       if (savedToken) {
-        setCachedToken(`${platform}:${imUserId}`, savedToken);
+        const ttl = (r.data && r.data.bind_token) ? 365 * 86400 * 1000 : getTokenCacheTtlMs();
+        setCachedToken(`${platform}:${imUserId}`, savedToken, ttl);
       }
       return r.data && r.data.message ? r.data.message : '绑定成功，现在可以问我持仓/汇率了';
     }

@@ -185,6 +185,18 @@ api_im_bind(csilk_ctx_t* c)
     csilk_json_add_string(data, "im_user_id", im_user_id_buf);
     csilk_json_add_string(data, "scope", "readonly");
     csilk_json_add_string(data, "message", "绑定成功，现在可以问我持仓/汇率了");
+
+    /* 绑定成功后签发 365 天长效只读 Token 返回给网关持久化保存，避免短期绑定码过期中断 */
+    int       token_version = 0;
+    mf_user_t user = {0};
+    if (mf_auth_repo_get_by_id(db_get_pool(), user_id, &user) == 0) {
+        token_version = (int)user.token_version;
+    }
+    char* long_token = jwt_generate_im_bind_token(c, user_id, token_version, 365 * 86400);
+    if (long_token) {
+        csilk_json_add_string(data, "bind_token", long_token);
+        free(long_token);
+    }
     respond_ok(c, data);
 }
 
@@ -523,8 +535,8 @@ api_im_bind_auth(csilk_ctx_t* c)
         return;
     }
 
-    /* 签发 300s 受限绑定码 (与 App 侧同机制) */
-    char* bind_token = jwt_generate_im_bind_token(c, user.id, (int)user.token_version, 300);
+    /* 签发 365 天长效只读查账 Token 供网关持久化保存 */
+    char* bind_token = jwt_generate_im_bind_token(c, user.id, (int)user.token_version, 365 * 86400);
     if (!bind_token) {
         respond_error(c, 500, "生成绑定码失败");
         return;
@@ -534,7 +546,7 @@ api_im_bind_auth(csilk_ctx_t* c)
     csilk_json_add_string(data, "im_user_id", im_user_id_buf);
     csilk_json_add_string(data, "scope", "readonly");
     csilk_json_add_string(data, "bind_token", bind_token);
-    csilk_json_add_int(data, "ttl_sec", 300);
+    csilk_json_add_int(data, "ttl_sec", 365 * 86400);
     csilk_json_add_string(data, "message", "绑定成功，现在可以问我持仓/汇率了");
     free(bind_token);
     respond_ok(c, data);
