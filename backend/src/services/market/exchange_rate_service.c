@@ -84,7 +84,7 @@ exchange_rate_preload_from_db(csilk_db_pool_t* pool)
     }
     const char*   sql = "SELECT target_currency, rate FROM exchange_rate_history "
                         "ORDER BY rate_date ASC";
-    csilk_json_t* rows = csilk_db_query_param_json(pool, sql, NULL);
+    csilk_json_t* rows = csilk_db_query_json(pool, sql);
     if (!rows) {
         return -1;
     }

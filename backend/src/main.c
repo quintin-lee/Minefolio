@@ -202,7 +202,7 @@ main(int argc, char** argv)
     register_im_bot_routes(app);
     register_scheduler_routes(app);
     register_task_routes(app);
-    csilk_admin_serve_secure(app, "/csilk-admin", NULL);
+    csilk_admin_serve_secure(app, "/csilk-admin", jwt_middleware_wrapper);
 
     const char* dist = "./frontend/dist";
     if (access(dist, F_OK) != 0) {
