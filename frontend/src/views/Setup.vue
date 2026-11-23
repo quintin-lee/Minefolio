@@ -136,14 +136,17 @@ async function handleSubmit() {
     if (!valid) return
     loading.value = true
     try {
-      let dsn = ''
-      if (form.db_driver === 'postgres') {
-        dsn = `host=${form.db_host} port=${form.db_port} dbname=${form.db_name} user=${form.db_user} password=${form.db_password}`
-      }
-      await auth.setup(form.username, form.password, {
-        db_driver: form.db_driver,
-        db_dsn: dsn,
-      })
+      // 仅当用户显式选择 postgres 且填了连接信息时下发 db 配置；
+      // sqlite 模式默认走本地文件，无需下发（避免后端持久化到 config/db.json 后
+      // 与部署 env 产生优先级冲突，导致已初始化部署被误判为未初始化）。
+      const dbConfig =
+        form.db_driver === 'postgres' && form.db_password
+          ? {
+              db_driver: form.db_driver,
+              db_dsn: `host=${form.db_host} port=${form.db_port} dbname=${form.db_name} user=${form.db_user} password=${form.db_password}`,
+            }
+          : undefined
+      await auth.setup(form.username, form.password, dbConfig)
       ElMessage.success('初始化成功！已自动为您登录系统')
       router.push('/dashboard')
     } catch (e: any) {
