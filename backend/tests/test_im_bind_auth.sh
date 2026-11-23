@@ -110,7 +110,7 @@ CODE=$(echo "$RESP" | jq -r '.code // "null"')
 check "Case 4: 抢占防护后 userA 重绑幂等 (code=0)" "$CODE" "0"
 
 # --- Case 5: 2FA 拦截: userA 开启 2FA 后，禁止纯密码单因素绑定 (防止绕过 2FA) ---
-db_exec "UPDATE users SET totp_enabled = 1, totp_secret = 'JBSWY3DPEHPK3PXP' WHERE username = 'userA';"
+db_exec "UPDATE users SET totp_enabled = TRUE, totp_secret = 'JBSWY3DPEHPK3PXP' WHERE username = 'userA';"
 RESP=$(curl -s -X POST -H 'Content-Type: application/json' "$BASE/im/qq/bind-auth" \
   -d '{"im_user_id":"qq_user_C","username":"userA","password":"passA1234"}')
 CODE=$(echo "$RESP" | jq -r '.code // "null"')
