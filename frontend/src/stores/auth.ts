@@ -52,13 +52,14 @@ export const useAuthStore = defineStore('auth', () => {
 
   /**
    * 执行系统安装首次初始化并创建管理员用户
+   * 执行系统安装首次初始化并创建管理员用户。
+   * 数据库连接由部署侧环境变量 MINEFOLIO_DB_DRIVER / MINEFOLIO_DB_DSN 提供，此处不下发。
    * @param username 管理员用户名
    * @param password 管理员密码
-   * @param dbConfig 数据库配置 (可选)
    */
-  async function setup(username: string, password: string, dbConfig?: { db_driver?: string; db_dsn?: string }) {
+  async function setup(username: string, password: string) {
     const password_enc = await encryptPassword(password)
-    const res = await systemApi.setup({ username, password_enc, ...dbConfig }) as { token: string; expires_in: number }
+    const res = await systemApi.setup({ username, password_enc }) as { token: string; expires_in: number }
     token.value = res.token
     localStorage.setItem('token', res.token)
     isInitialized.value = true

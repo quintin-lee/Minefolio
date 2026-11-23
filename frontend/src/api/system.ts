@@ -26,16 +26,15 @@ export const systemApi = {
   status: () => http.get<SystemStatus>('/system/status'),
 
   /**
-   * 执行系统首次引导初始化 (创建超级管理员账号及可选数据库设置)
+   * 执行系统首次引导初始化 (创建超级管理员账号)。
+   * 数据库连接由部署侧环境变量提供，此处不下发 db 配置。
    * @route POST /api/system/setup
    * @param data 初始化安装数据
    * @param data.username 管理员用户名
    * @param data.password_enc 经 RSA-OAEP 加密后的管理员密码
-   * @param data.db_driver 数据库驱动 ('sqlite' | 'postgres'，可选)
-   * @param data.db_dsn 数据库连接串 (可选)
    * @returns 初始登录 Token 及过期时间
    */
-  setup: (data: { username: string; password_enc: string; db_driver?: string; db_dsn?: string }) =>
+  setup: (data: { username: string; password_enc: string }) =>
     http.post<{ token: string; expires_in: number }>('/system/setup', data),
 }
 
