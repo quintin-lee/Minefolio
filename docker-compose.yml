@@ -95,7 +95,7 @@ services:
       WEBUI_TOKEN: "${NAPCAT_WEBUI_TOKEN:-minefolio123}"
       ACCOUNT: "${NAPCAT_QQ:-}"
     ports:
-      - "3000:3000"   # OneBot v11 HTTP API
+      - "3002:3000"   # OneBot v11 HTTP API
       - "3001:3001"   # OneBot v11 WebSocket
       - "6099:6099"   # NapCat WebUI 控制台 (扫码登录)
     volumes:
