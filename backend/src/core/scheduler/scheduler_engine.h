@@ -38,6 +38,11 @@ void scheduler_engine_notify_reload(void);
  */
 int scheduler_engine_get_last_sleep_sec(void);
 
+/**
+ * Returns the current count of concurrently running AI scheduled jobs.
+ */
+int scheduler_engine_get_ai_jobs_running(void);
+
 #ifdef __cplusplus
 }
 #endif

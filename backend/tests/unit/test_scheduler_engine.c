@@ -42,6 +42,7 @@ main(void)
     /* 1. Test Engine Startup */
     assert(scheduler_engine_start(pool) == 0);
     assert(scheduler_engine_is_running() == true);
+    assert(scheduler_engine_get_ai_jobs_running() == 0);
 
     /* 2. Test Manual Immediate Trigger */
     int64_t job_id = mf_scheduler_repo_job_create(
@@ -93,6 +94,7 @@ main(void)
     assert(strcmp(csilk_json_get_string(job, "last_run_status"), "success") == 0);
     assert(strlen(csilk_json_get_string(job, "next_run_at")) > 0);
     csilk_json_free(job);
+    assert(scheduler_engine_get_ai_jobs_running() == 0);
 
     /* 3. Test Cooldown Logic */
     assert(scheduler_event_check_and_update_cooldown("TSLA_COOLDOWN_TEST", 10) == true);
@@ -147,6 +149,7 @@ main(void)
     /* 5. Test Engine Stop */
     scheduler_engine_stop();
     assert(scheduler_engine_is_running() == false);
+    assert(scheduler_engine_get_ai_jobs_running() == 0);
 
     csilk_db_pool_free(pool);
     printf("=== Scheduler Engine Unit Tests Passed! ===\n");
