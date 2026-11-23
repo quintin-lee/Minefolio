@@ -26,14 +26,14 @@ Shared             common/  db, jwt, balance, response, ctx, tx_types, ledger_ut
 **Dependency direction is strict and one-way:**
 - `main.c` → includes only `interfaces/http/controllers/*_controller.h`
 - `interfaces/http/controllers/` → `application/*`, `dtos/`
-- `application/*` → `domain/*`, `infrastructure/*`, `core/*`, `common/`
-- `domain/*` → zero external dependencies (pure C, only `core/financial`)
-- `infrastructure/repositories/*` → `common/db.h`, `domain/*` (contracts)
+- `application/*` → `domain/*`, `infrastructure/*`, `core/*`, `common/` (pure orchestration, zero naked SQL)
+- `domain/*` → zero external dependencies (pure C domain contracts using `void* pool`, only `core/financial`)
+- `infrastructure/repositories/*` → `common/db.h`, `domain/*` (contracts; never depends upwards on `services/` or `application/`)
 
 **All 20 business domains follow DDD architecture:**
 tag, category, ledger, daily_expense, transfer, dca, report, file, import_export, auth, ai, market, asset, transaction, portfolio, cashflow, account, mcp, scheduler, skill.
 
-**Legacy repos have been completely removed.** All SQL now lives in `infrastructure/repositories/*_repo_impl.c`.
+**Legacy repos have been completely removed.** All domain business persistence SQL now lives in `infrastructure/repositories/*_repo_impl.c` (specialized replay/checkpoint engines like `core/ledger/` and shared balance/auth helpers retain internal engine operations). The application layer (`application/*`) performs pure orchestration and must never execute naked SQL.
 
 ### Frontend — Vue 3 SPA
 
@@ -277,7 +277,7 @@ int           tx_delete_fee_children(csilk_db_pool_t* pool, int64_t user_id, int
 - Return `csilk_json_t*` directly; no model-struct conversion layer
 - ALL SQL uses `?` placeholders with `csilk_db_query_param_json(pool, sql, params)`
 - Raw SQL via `csilk_db_exec` is only acceptable for self-contained literals (e.g. fee-row insertion)
-- **No legacy `repositories/` directory** — all SQL lives in `infrastructure/repositories/`
+- **No legacy `repositories/` directory** — all domain entity persistence SQL lives in `infrastructure/repositories/*_repo_impl.c`. Application use cases must never execute naked SQL; specialized low-level engines (`core/ledger/`, migration) manage internal operations directly.
 - **Dynamic SQL fragments MUST use a matching `%s` specifier**: `snprintf(sql, ..., "...%s...", cond)` — a conditional SQL piece passed as an extra argument **without** a corresponding `%s` in the format string is silently dropped by `snprintf` (regression: `account_list` lost its `archived=0` filter and `ORDER BY` this way; guarded by test_link.sh Case 40 assertions).
 
 ### C — 用例层 `void* pool` 参数是刻意设计
