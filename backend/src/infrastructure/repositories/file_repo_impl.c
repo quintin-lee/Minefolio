@@ -6,32 +6,9 @@
  */
 
 #include "infrastructure/repositories/file_repo_impl.h"
-#include "services/file_parser.h"
 #include "infrastructure/repositories/import_rule_repo_impl.h"
 #include "common/db.h"
 #include <string.h>
-
-int
-mf_file_repo_parse(void*                   db_pool,
-                   const char*             data,
-                   size_t                  data_len,
-                   const char*             filename,
-                   mf_file_parse_result_t* out)
-{
-    csilk_db_pool_t* pool = (csilk_db_pool_t*)db_pool;
-
-    strncpy(out->filename, filename, sizeof(out->filename) - 1);
-    out->size = data_len;
-
-    int rc = file_parse(pool, data, data_len, filename, out->content, sizeof(out->content));
-    if (rc == 0) {
-        strncpy(out->status, "parsed", sizeof(out->status) - 1);
-    } else {
-        strncpy(out->status, "error", sizeof(out->status) - 1);
-        strncpy(out->error, "failed to parse file", sizeof(out->error) - 1);
-    }
-    return rc;
-}
 
 csilk_json_t*
 mf_file_repo_get_import_rules(void* db_pool, int64_t user_id)

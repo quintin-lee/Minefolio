@@ -8,6 +8,7 @@
 #include "application/file/usecases.h"
 #include "domain/file/rules.h"
 #include "infrastructure/repositories/file_repo_impl.h"
+#include "services/file_parser.h"
 #include "common/db.h"
 #include <string.h>
 
@@ -24,7 +25,18 @@ file_usecase_parse(void*                   pool,
         return -1;
     }
 
-    return mf_file_repo_parse(pool, data, data_len, filename, out);
+    strncpy(out->filename, filename, sizeof(out->filename) - 1);
+    out->size = data_len;
+
+    int rc = file_parse(
+        (csilk_db_pool_t*)pool, data, data_len, filename, out->content, sizeof(out->content));
+    if (rc == 0) {
+        strncpy(out->status, "parsed", sizeof(out->status) - 1);
+    } else {
+        strncpy(out->status, "error", sizeof(out->status) - 1);
+        strncpy(out->error, "failed to parse file", sizeof(out->error) - 1);
+    }
+    return rc;
 }
 
 int

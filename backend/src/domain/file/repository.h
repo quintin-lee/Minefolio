@@ -10,15 +10,6 @@
 #include <stdint.h>
 
 /**
- * @brief 解析文件内容
- */
-int mf_file_repo_parse(void*                   pool,
-                       const char*             data,
-                       size_t                  data_len,
-                       const char*             filename,
-                       mf_file_parse_result_t* out);
-
-/**
  * @brief 获取用户的导入规则
  */
 csilk_json_t* mf_file_repo_get_import_rules(void* pool, int64_t user_id);
