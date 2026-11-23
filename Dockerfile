@@ -148,6 +148,7 @@ RUN --mount=type=bind,source=hosts,target=/etc/hosts \
     --parallel $(nproc)
 
 RUN strip backend/build/minefolio \
+    && strip backend/build/reset-password \
     && mkdir -p /src/backend/build/lib-dist \
     && touch /src/backend/build/lib-dist/.keep \
     && cp -a /src/backend/build/*.so* /src/backend/build/lib-dist/ 2>/dev/null || true
@@ -305,6 +306,11 @@ WORKDIR /app
 COPY --from=backend-build \
     /src/backend/build/minefolio \
     /app/minefolio
+
+# 运维工具：重置用户密码 / 关闭 2FA（与 minefolio 同目录，便于 docker exec）
+COPY --from=backend-build \
+    /src/backend/build/reset-password \
+    /app/reset-password
 
 
 

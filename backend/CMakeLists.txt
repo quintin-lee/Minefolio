@@ -74,6 +74,22 @@ target_compile_options(minefolio PRIVATE -Wall -Wextra -Wpedantic -Wno-unused-pa
 target_link_libraries(minefolio PRIVATE minefolio_core)
 
 # ---------------------------------------------------------------------------
+# reset-password: 独立运维 CLI（重置用户密码/关闭 2FA）
+#
+# 设计：本工具**不链接 minefolio_core**——它只需 csilk 的 db + bcrypt + json
+# 与数据库驱动（sqlite3 / libpq），与运行时容器已安装的共享库保持一致，
+# 避免拉入整个应用层。哈希算法与 cost 与 application/auth/usecases.c 严格
+# 一致，保证写回的 hash 可被 Web 登录路径 csilk_bcrypt_verify 直接验证。
+#
+# 链接项：csilk（驱动 + bcrypt + json）+ OpenSSL(crypto) + libpq（仅当可用）
+# + pthread。工具二进制随 build 目录产出，Dockerfile 将其拷入 /usr/local/bin，
+# 使 `docker exec minefolio /usr/local/bin/reset-password ...` 可直接用于后台维护。
+# ---------------------------------------------------------------------------
+add_executable(reset-password tools/reset-password.c)
+target_compile_options(reset-password PRIVATE -Wall -Wextra -Wpedantic -Wno-unused-parameter)
+target_link_libraries(reset-password PRIVATE csilk crypto pthread ${PQ_LIBRARIES})
+
+# ---------------------------------------------------------------------------
 # Pre-build auto-format: keep src/**/*.{c,h} conformant to .clang-format
 # Requires clang-format >= 14 (.clang-format uses AlignTrailingComments Kind:)
 # Third-party / generated code (build/, deps/, _deps/, vendor/, third_party/)

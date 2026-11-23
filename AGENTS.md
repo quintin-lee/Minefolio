@@ -549,6 +549,53 @@ Frontend unit tests cover 44 test suites (239 unit tests) including format helpe
 # Open http://localhost:5173, create account, add an expense, verify balance updates
 ```
 
+### Password Reset Tool (`reset-password`)
+
+运维 CLI 工具，用于在管理员忘记账号密码（bcrypt 单向哈希无法逆向）时直接重置数据库中的密码。二进制与 `minefolio` 同源构建、同容器打包。
+
+**设计**：
+- 不链接 `minefolio_core`，仅链接 csilk (db + bcrypt + json) + SQLite/Postgres 驱动 + OpenSSL + pthread，体积与依赖面最小。
+- 哈希算法与 cost 因子（bcrypt cost=12）与 `application/auth/usecases.c` 严格一致，保证写回的 hash 可被 Web 登录路径直接验证。
+- 数据库定位解析顺序与 `common/db.c:db_init` 一致：`--driver/--dsn` CLI 参数 > `MINEFOLIO_DB_*`/`DB_*` 环境变量 > `config/db.json` > 缺省。
+
+**用法**：
+```bash
+# 列出所有用户（诊断）
+MINEFOLIO_DB_DRIVER=sqlite MINEFOLIO_DB_DSN=./data/minefolio.db ./build/reset-password list
+
+# 重置指定用户密码（交互确认 / 非交互 --yes）
+MINEFOLIO_DB_DRIVER=sqlite MINEFOLIO_DB_DSN=./data/minefolio.db \
+    ./build/reset-password reset admin --password 'NewPass123' --yes
+
+# 密码文件（避免 argv 泄漏）
+./build/reset-password reset admin --password-file /path/to/password.txt --yes
+
+# 密码从 stdin（管道）
+printf '%s' 'NewPass456' | ./build/reset-password reset admin --password-stdin --yes
+
+# 验证某密码是否匹配库中 hash（不修改）
+./build/reset-password verify admin --password 'NewPass123'
+
+# 关闭 2FA（TOTP + 备用码）
+./build/reset-password disable-2fa admin --yes
+
+# 容器内使用（已打包至 /app/reset-password）
+docker exec minefolio /app/reset-password list
+docker exec minefolio /app/reset-password reset admin --password-file /tmp/pw --yes
+```
+
+**行为**：
+- `reset` 在单事务中执行：写入新 bcrypt hash → `token_version + 1`（使所有现存 JWT 失效）→ 回读自检（验证新密码可匹配已写回的 hash）。
+- `disable-2fa` 清空 `totp_secret`/`totp_enabled`/`totp_backup_codes`，同步 `token_version + 1`。
+- `verify` 仅做 `csilk_bcrypt_verify`，不修改数据库。
+- `list` 列出 `users` 表全部行（诊断用）。
+- 密码长度校验与 `mf_auth_rule_validate_password` 一致（≥6, ≤128）。
+- 非交互环境（管道/重定向 stdin）下，若未提供 `--password*` 任一形式，拒绝继续（退出码 71）。
+
+**构建**：`cmake --build build --target reset-password`（与 `minefolio` 同源构建；CMake 已注册为默认目标，`cmake --build build` 自动构建）。
+
+**容器打包**：Dockerfile Stage 3 将 `backend/build/reset-password` 拷入 `/app/reset-password`，运行时镜像无需额外依赖（与 `minefolio` 共享 libsqlite3/libcrypto/libpq5 等）。
+
 ### Known Gotchas
 
 1. **Curl `-d` strips newlines**: Use `curl --data-binary @file` or heredoc (`cat > file << 'EOF'`) for CSV content in tests.
