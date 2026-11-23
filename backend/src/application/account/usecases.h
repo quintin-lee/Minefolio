@@ -13,7 +13,7 @@
 typedef enum {
     MF_ACCOUNT_ACTION_READ = 0,     /**< 读取/查看账户及下属资产、交易 */
     MF_ACCOUNT_ACTION_WRITE_TX = 1, /**< 流水记账（收支、交易、调拨转账） */
-    MF_ACCOUNT_ACTION_MANAGE = 2 /**< 账户管理（修改属性、配置规则、删除账户） */
+    MF_ACCOUNT_ACTION_MANAGE = 2    /**< 账户管理（修改属性、配置规则、删除账户） */
 } mf_account_action_t;
 
 /**

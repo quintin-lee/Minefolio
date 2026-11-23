@@ -369,14 +369,14 @@ api_ai_action_confirm_batch_handler(csilk_ctx_t* c)
     int           code = 0;
     char          err_buf[256] = {0};
     int           rc = ai_batch_actions_execute_for_session(db_get_pool(),
-                                                  user_id,
-                                                  session_id,
-                                                  actions,
-                                                  token_buf,
-                                                  &out_data,
-                                                  &code,
-                                                  err_buf,
-                                                  sizeof(err_buf));
+                                                            user_id,
+                                                            session_id,
+                                                            actions,
+                                                            token_buf,
+                                                            &out_data,
+                                                            &code,
+                                                            err_buf,
+                                                            sizeof(err_buf));
     csilk_json_free(body);
 
     if (rc == 0 && out_data) {

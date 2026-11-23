@@ -163,7 +163,7 @@ is_im_bind_auth_path(const char* path)
     for (size_t i = 0; i < seg_len; i++) {
         unsigned char ch = (unsigned char)path[8 + i];
         bool          ok = (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
-                  (ch >= '0' && ch <= '9') || ch == '_' || ch == '-';
+                           (ch >= '0' && ch <= '9') || ch == '_' || ch == '-';
         if (!ok) {
             return false;
         }

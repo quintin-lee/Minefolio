@@ -89,7 +89,7 @@ mf_async_task_repo_fail_stale(csilk_db_pool_t* pool)
     int         rc = csilk_db_exec_param(
         pool,
         "UPDATE async_tasks SET status='failed', error_message=?, completed_at=?, "
-                "updated_at=CURRENT_TIMESTAMP WHERE status IN ('pending', 'running')",
+        "updated_at=CURRENT_TIMESTAMP WHERE status IN ('pending', 'running')",
         params);
     if (rc != 0) {
         db_tx_scope_rollback(pool, &scope);
@@ -156,8 +156,8 @@ mf_async_task_repo_insert(csilk_db_pool_t* pool,
     const char*   params[] = {uid_str,
                               lid_str,
                               task_type,
-                            initial_message ? initial_message : "",
-                            dedupe_key ? dedupe_key : "",
+                              initial_message ? initial_message : "",
+                              dedupe_key ? dedupe_key : "",
                               NULL};
     csilk_json_t* res = csilk_db_query_param_json(
         pool,
@@ -198,7 +198,7 @@ mf_async_task_repo_mark_running(csilk_db_pool_t* pool, int64_t task_id, const ch
     int         rc = csilk_db_exec_param(
         pool,
         "UPDATE async_tasks SET status='running', progress=5, message=?, started_at=?, "
-                "updated_at=CURRENT_TIMESTAMP WHERE id=?",
+        "updated_at=CURRENT_TIMESTAMP WHERE id=?",
         params);
     if (rc != 0) {
         db_tx_scope_rollback(pool, &scope);
@@ -287,7 +287,7 @@ mf_async_task_repo_mark_failed(csilk_db_pool_t* pool, int64_t task_id, const cha
     int         rc = csilk_db_exec_param(
         pool,
         "UPDATE async_tasks SET status='failed', error_message=?, message=?, completed_at=?, "
-                "updated_at=CURRENT_TIMESTAMP WHERE id=?",
+        "updated_at=CURRENT_TIMESTAMP WHERE id=?",
         params);
     if (rc != 0) {
         db_tx_scope_rollback(pool, &scope);

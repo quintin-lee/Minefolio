@@ -320,10 +320,10 @@ quote_engine_calc_market_clocks(time_t               now,
         int         pre_h, pre_m;
     } configs[] = {
         {"SSE_SZSE", "A股 (沪深)", "Asia/Shanghai",    8,  9, 30, 11, 30, 13, 0,  15, 0, 9, 15},
-        {"HKEX",     "港股",        "Asia/Hong_Kong",   8,  9, 30, 12, 0,  13, 0,  16, 0, 9, 0 },
-        {"TSE",      "东京",        "Asia/Tokyo",       9,  9, 0,  11, 30, 12, 30, 15, 0, 8, 30},
-        {"LSE",      "伦敦",        "Europe/London",    1,  8, 0,  16, 30, 0,  0,  0,  0, 7, 0 },
-        {"NYSE",     "美股",        "America/New_York", -4, 9, 30, 16, 0,  0,  0,  0,  0, 4, 0 },
+        {"HKEX",     "港股",       "Asia/Hong_Kong",   8,  9, 30, 12, 0,  13, 0,  16, 0, 9, 0 },
+        {"TSE",      "东京",       "Asia/Tokyo",       9,  9, 0,  11, 30, 12, 30, 15, 0, 8, 30},
+        {"LSE",      "伦敦",       "Europe/London",    1,  8, 0,  16, 30, 0,  0,  0,  0, 7, 0 },
+        {"NYSE",     "美股",       "America/New_York", -4, 9, 30, 16, 0,  0,  0,  0,  0, 4, 0 },
     };
 
     *out_count = 5;
@@ -397,29 +397,29 @@ static const preset_index_t g_preset_indices[] = {
     {"sh000001", "上证指数", "cn",     "🇨🇳", "CNY", "stock_cn",  3285.40,  0.78 },
     {"sz399001", "深证成指", "cn",     "🇨🇳", "CNY", "stock_cn",  10550.20, 0.52 },
     {"sz399006", "创业板指", "cn",     "🇨🇳", "CNY", "stock_cn",  2188.60,  1.15 },
-    {"sh000300", "沪深300",    "cn",     "🇨🇳", "CNY", "stock_cn",  3920.10,  0.65 },
+    {"sh000300", "沪深300",  "cn",     "🇨🇳", "CNY", "stock_cn",  3920.10,  0.65 },
     {"hkHSI",    "恒生指数", "hk",     "🇭🇰", "HKD", "stock_hk",  20630.00, -0.25},
     {"hkHSTECH", "恒生科技", "hk",     "🇭🇰", "HKD", "stock_hk",  4520.50,  0.42 },
-    {"^GSPC",    "标普 500",   "us",     "🇺🇸", "USD", "index",     5864.67,  0.42 },
+    {"^GSPC",    "标普 500", "us",     "🇺🇸", "USD", "index",     5864.67,  0.42 },
     {"^IXIC",    "纳斯达克", "us",     "🇺🇸", "USD", "index",     18373.61, -0.18},
-    {"^DJI",     "道琼斯",    "us",     "🇺🇸", "USD", "index",     43065.22, 0.35 },
-    {"^N225",    "日经 225",   "global", "🇯🇵", "JPY", "index",     39180.30, 0.88 },
-    {"^GDAXI",   "德国 DAX",   "global", "🇩🇪", "EUR", "index",     19580.40, 0.21 },
+    {"^DJI",     "道琼斯",   "us",     "🇺🇸", "USD", "index",     43065.22, 0.35 },
+    {"^N225",    "日经 225", "global", "🇯🇵", "JPY", "index",     39180.30, 0.88 },
+    {"^GDAXI",   "德国 DAX", "global", "🇩🇪", "EUR", "index",     19580.40, 0.21 },
     {"^FTSE",    "英国富时", "global", "🇬🇧", "GBP", "index",     8240.10,  -0.05},
-    {"BTC-USD",  "比特币",    "crypto", "🪙",     "USD", "crypto",    67800.00, 2.45 },
-    {"ETH-USD",  "以太坊",    "crypto", "🪙",     "USD", "crypto",    2640.00,  1.82 },
-    {"GC=F",     "黄金现货", "crypto", "🪙",     "USD", "commodity", 2680.50,  0.38 },
+    {"BTC-USD",  "比特币",   "crypto", "🪙", "USD", "crypto",    67800.00, 2.45 },
+    {"ETH-USD",  "以太坊",   "crypto", "🪙", "USD", "crypto",    2640.00,  1.82 },
+    {"GC=F",     "黄金现货", "crypto", "🪙", "USD", "commodity", 2680.50,  0.38 },
 };
 
 static struct {
-    pthread_mutex_t lock;
-    pthread_mutex_t refresh_lock; /* 串行化刷新（HTTP）本身，避免并发刷新重复拉取 */
+    pthread_mutex_t     lock;
+    pthread_mutex_t     refresh_lock; /* 串行化刷新（HTTP）本身，避免并发刷新重复拉取 */
     time_t              last_updated;
     global_index_item_t items[MAX_PRESET_INDICES];
     int                 count;
     market_clock_item_t clocks[8];
     int                 clock_count;
-    uint64_t generation; /* 单调代数：刷新完成后自增，读路径据此判断是否需刷新 */
+    uint64_t            generation; /* 单调代数：刷新完成后自增，读路径据此判断是否需刷新 */
 } g_indices_cache = {
     .lock = PTHREAD_MUTEX_INITIALIZER,
     .refresh_lock = PTHREAD_MUTEX_INITIALIZER,
@@ -715,7 +715,7 @@ quote_engine_get_indices(const char*          category,
     pthread_mutex_lock(&g_indices_cache.lock);
     time_t now = time(NULL);
     bool   stale = (g_indices_cache.count == 0) ||
-                 ((now - g_indices_cache.last_updated) > INDICES_CACHE_TTL_SEC);
+                   ((now - g_indices_cache.last_updated) > INDICES_CACHE_TTL_SEC);
     pthread_mutex_unlock(&g_indices_cache.lock);
 
     if (stale) {

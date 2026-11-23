@@ -225,7 +225,7 @@ ai_runtime_execute_stream(csilk_db_pool_t*              pool,
                                    ? ai_res.error_message
                                    : "AI model invocation error";
             int         timed_out = (strstr(emsg, "CURL error (28)") != NULL) ||
-                            (strstr(emsg, "Timeout was reached") != NULL);
+                                    (strstr(emsg, "Timeout was reached") != NULL);
             ai_runtime_status_set(&status,
                                   timed_out ? AI_RUNTIME_ERR_TIMEOUT : AI_RUNTIME_ERR_MODEL,
                                   timed_out ? "AI model request timed out"
