@@ -17,17 +17,44 @@ mf_category_repo_list(void*           db_pool,
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
 
-    const char* params[4] = {uid_str, lid_str, NULL, NULL};
-    const char* sql = "SELECT c.id, c.name, c.parent_id, c.type, c.asset_type, c.currency, "
-                      "c.icon, c.sort_order, c.created_at FROM categories c "
-                      "WHERE c.user_id=? AND c.ledger_id=?";
-    if (type && type[0]) {
-        sql = "SELECT c.id, c.name, c.parent_id, c.type, c.asset_type, c.currency, "
-              "c.icon, c.sort_order, c.created_at FROM categories c "
-              "WHERE c.user_id=? AND c.ledger_id=? AND c.type=?";
-        params[2] = type;
+    csilk_json_t* rows = NULL;
+    if (ledger_id > 0) {
+        if (type && type[0]) {
+            rows = csilk_db_query_param_json(
+                pool,
+                "SELECT c.id, c.name, c.parent_id, c.type, c.asset_type, c.currency, "
+                "c.icon, c.sort_order, c.created_at FROM categories c "
+                "WHERE c.ledger_id=? AND (EXISTS (SELECT 1 FROM ledger_members lm WHERE "
+                "lm.ledger_id=c.ledger_id AND lm.user_id=?)) "
+                "AND c.type=? ORDER BY c.sort_order, c.name",
+                (const char*[]){lid_str, uid_str, type, NULL});
+        } else {
+            rows = csilk_db_query_param_json(
+                pool,
+                "SELECT c.id, c.name, c.parent_id, c.type, c.asset_type, c.currency, "
+                "c.icon, c.sort_order, c.created_at FROM categories c "
+                "WHERE c.ledger_id=? AND (EXISTS (SELECT 1 FROM ledger_members lm WHERE "
+                "lm.ledger_id=c.ledger_id AND lm.user_id=?)) "
+                "ORDER BY c.sort_order, c.name",
+                (const char*[]){lid_str, uid_str, NULL});
+        }
+    } else {
+        if (type && type[0]) {
+            rows = csilk_db_query_param_json(
+                pool,
+                "SELECT c.id, c.name, c.parent_id, c.type, c.asset_type, c.currency, "
+                "c.icon, c.sort_order, c.created_at FROM categories c "
+                "WHERE c.user_id=? AND c.ledger_id=? AND c.type=? ORDER BY c.sort_order, c.name",
+                (const char*[]){uid_str, lid_str, type, NULL});
+        } else {
+            rows = csilk_db_query_param_json(
+                pool,
+                "SELECT c.id, c.name, c.parent_id, c.type, c.asset_type, c.currency, "
+                "c.icon, c.sort_order, c.created_at FROM categories c "
+                "WHERE c.user_id=? AND c.ledger_id=? ORDER BY c.sort_order, c.name",
+                (const char*[]){uid_str, lid_str, NULL});
+        }
     }
-    csilk_json_t* rows = csilk_db_query_param_json(pool, sql, params);
     if (!rows) {
         *out_list = NULL;
         *out_count = 0;
@@ -89,13 +116,27 @@ mf_category_repo_children(void*           db_pool,
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
     snprintf(pid_str, sizeof(pid_str), "%lld", (long long)parent_id);
-    csilk_json_t* rows = csilk_db_query_param_json(
-        pool,
-        "SELECT c.id, c.name, c.parent_id, c.type, c.asset_type, c.currency, c.icon, c.sort_order, "
-        "c.created_at "
-        "FROM categories c WHERE c.parent_id=? AND c.user_id=? AND c.ledger_id=? "
-        "ORDER BY c.sort_order, c.name",
-        (const char*[]){pid_str, uid_str, lid_str, NULL});
+    csilk_json_t* rows = NULL;
+    if (ledger_id > 0) {
+        rows = csilk_db_query_param_json(
+            pool,
+            "SELECT c.id, c.name, c.parent_id, c.type, c.asset_type, c.currency, c.icon, "
+            "c.sort_order, "
+            "c.created_at "
+            "FROM categories c WHERE c.parent_id=? AND c.ledger_id=? AND (EXISTS (SELECT 1 FROM "
+            "ledger_members lm WHERE lm.ledger_id=c.ledger_id AND lm.user_id=?)) "
+            "ORDER BY c.sort_order, c.name",
+            (const char*[]){pid_str, lid_str, uid_str, NULL});
+    } else {
+        rows = csilk_db_query_param_json(
+            pool,
+            "SELECT c.id, c.name, c.parent_id, c.type, c.asset_type, c.currency, c.icon, "
+            "c.sort_order, "
+            "c.created_at "
+            "FROM categories c WHERE c.parent_id=? AND c.user_id=? AND c.ledger_id=? "
+            "ORDER BY c.sort_order, c.name",
+            (const char*[]){pid_str, uid_str, lid_str, NULL});
+    }
     if (!rows) {
         *out_list = NULL;
         *out_count = 0;
@@ -151,10 +192,20 @@ mf_category_repo_count_children(
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
     snprintf(pid_str, sizeof(pid_str), "%lld", (long long)parent_id);
-    csilk_json_t* rows = csilk_db_query_param_json(
-        (csilk_db_pool_t*)db_pool,
-        "SELECT COUNT(*) AS cnt FROM categories WHERE parent_id=? AND user_id=? AND ledger_id=?",
-        (const char*[]){pid_str, uid_str, lid_str, NULL});
+    csilk_json_t* rows = NULL;
+    if (ledger_id > 0) {
+        rows = csilk_db_query_param_json(
+            (csilk_db_pool_t*)db_pool,
+            "SELECT COUNT(*) AS cnt FROM categories WHERE parent_id=? AND ledger_id=? "
+            "AND (EXISTS (SELECT 1 FROM ledger_members lm WHERE lm.ledger_id=categories.ledger_id "
+            "AND lm.user_id=?))",
+            (const char*[]){pid_str, lid_str, uid_str, NULL});
+    } else {
+        rows = csilk_db_query_param_json((csilk_db_pool_t*)db_pool,
+                                         "SELECT COUNT(*) AS cnt FROM categories WHERE parent_id=? "
+                                         "AND user_id=? AND ledger_id=?",
+                                         (const char*[]){pid_str, uid_str, lid_str, NULL});
+    }
     *out_count = (rows && csilk_json_array_size(rows) > 0)
                      ? (int64_t)db_get_num(csilk_json_array_get(rows, 0), "cnt")
                      : 0;
@@ -208,7 +259,13 @@ mf_category_repo_update(
     csilk_json_t* res = csilk_db_query_param_json(
         (csilk_db_pool_t*)db_pool,
         "UPDATE categories SET name=?, type=?, asset_type=?, currency=?, icon=?, sort_order=? "
-        "WHERE id=? AND user_id=? AND ledger_id=? RETURNING id",
+        "WHERE id=? AND ( "
+        "  (user_id=? AND ledger_id=?) OR "
+        "  (ledger_id=? AND ledger_id > 0 AND EXISTS ( "
+        "    SELECT 1 FROM ledger_members lm WHERE lm.ledger_id=categories.ledger_id AND "
+        "lm.user_id=? AND lm.role IN ('owner','editor') "
+        "  )) "
+        ") RETURNING id",
         (const char*[]){cat->name,
                         cat->type,
                         cat->asset_type,
@@ -218,6 +275,8 @@ mf_category_repo_update(
                         ident,
                         uid,
                         lid,
+                        lid,
+                        uid,
                         NULL});
     int ok = res && csilk_json_array_size(res) > 0;
     if (res) {
@@ -235,8 +294,14 @@ mf_category_repo_delete(void* db_pool, int64_t user_id, int64_t ledger_id, int64
     snprintf(ident, sizeof(ident), "%lld", (long long)id);
     csilk_json_t* res = csilk_db_query_param_json(
         (csilk_db_pool_t*)db_pool,
-        "DELETE FROM categories WHERE id=? AND user_id=? AND ledger_id=? RETURNING id",
-        (const char*[]){ident, uid, lid, NULL});
+        "DELETE FROM categories WHERE id=? AND ( "
+        "  (user_id=? AND ledger_id=?) OR "
+        "  (ledger_id=? AND ledger_id > 0 AND EXISTS ( "
+        "    SELECT 1 FROM ledger_members lm WHERE lm.ledger_id=categories.ledger_id AND "
+        "lm.user_id=? AND lm.role IN ('owner','editor') "
+        "  )) "
+        ") RETURNING id",
+        (const char*[]){ident, uid, lid, lid, uid, NULL});
     int ok = res && csilk_json_array_size(res) > 0;
     if (res) {
         csilk_json_free(res);
@@ -260,15 +325,28 @@ mf_category_repo_find_or_create(void*       db_pool,
     snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
     snprintf(pid, sizeof(pid), "%lld", (long long)parent_id);
     snprintf(sort, sizeof(sort), "%d", sort_order);
-    csilk_json_t* chk =
-        parent_id > 0 ? csilk_db_query_param_json((csilk_db_pool_t*)db_pool,
-                                                  "SELECT id FROM categories WHERE user_id=? AND "
-                                                  "ledger_id=? AND name=? AND parent_id=?",
-                                                  (const char*[]){uid, lid, name, pid, NULL})
-                      : csilk_db_query_param_json((csilk_db_pool_t*)db_pool,
-                                                  "SELECT id FROM categories WHERE user_id=? AND "
-                                                  "ledger_id=? AND name=? AND parent_id IS NULL",
-                                                  (const char*[]){uid, lid, name, NULL});
+    csilk_json_t* chk = NULL;
+    if (ledger_id > 0) {
+        chk = parent_id > 0
+                  ? csilk_db_query_param_json(
+                        (csilk_db_pool_t*)db_pool,
+                        "SELECT id FROM categories WHERE ledger_id=? AND name=? AND parent_id=?",
+                        (const char*[]){lid, name, pid, NULL})
+                  : csilk_db_query_param_json((csilk_db_pool_t*)db_pool,
+                                              "SELECT id FROM categories WHERE ledger_id=? AND "
+                                              "name=? AND parent_id IS NULL",
+                                              (const char*[]){lid, name, NULL});
+    } else {
+        chk = parent_id > 0
+                  ? csilk_db_query_param_json((csilk_db_pool_t*)db_pool,
+                                              "SELECT id FROM categories WHERE user_id=? AND "
+                                              "ledger_id=? AND name=? AND parent_id=?",
+                                              (const char*[]){uid, lid, name, pid, NULL})
+                  : csilk_db_query_param_json((csilk_db_pool_t*)db_pool,
+                                              "SELECT id FROM categories WHERE user_id=? AND "
+                                              "ledger_id=? AND name=? AND parent_id IS NULL",
+                                              (const char*[]){uid, lid, name, NULL});
+    }
     if (chk && csilk_json_array_size(chk) > 0) {
         int64_t id = db_get_int(csilk_json_array_get(chk, 0), "id");
         csilk_json_free(chk);
@@ -307,10 +385,19 @@ mf_category_repo_exists(void* db_pool, int64_t user_id, int64_t ledger_id, int64
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
     snprintf(ident, sizeof(ident), "%lld", (long long)id);
-    csilk_json_t* res = csilk_db_query_param_json(
-        (csilk_db_pool_t*)db_pool,
-        "SELECT id FROM categories WHERE id=? AND user_id=? AND ledger_id=?",
-        (const char*[]){ident, uid, lid, NULL});
+    csilk_json_t* res = NULL;
+    if (ledger_id > 0) {
+        res = csilk_db_query_param_json(
+            (csilk_db_pool_t*)db_pool,
+            "SELECT id FROM categories WHERE id=? AND ledger_id=? AND (user_id=? OR EXISTS (SELECT "
+            "1 FROM ledger_members lm WHERE lm.ledger_id=categories.ledger_id AND lm.user_id=?))",
+            (const char*[]){ident, lid, uid, uid, NULL});
+    } else {
+        res = csilk_db_query_param_json(
+            (csilk_db_pool_t*)db_pool,
+            "SELECT id FROM categories WHERE id=? AND user_id=? AND ledger_id=?",
+            (const char*[]){ident, uid, lid, NULL});
+    }
     int ok = res && csilk_json_array_size(res) > 0;
     if (res) {
         csilk_json_free(res);
@@ -324,10 +411,18 @@ mf_category_repo_is_seeded(void* db_pool, int64_t user_id, int64_t ledger_id)
     char uid[32], lid[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
-    csilk_json_t* res = csilk_db_query_param_json(
-        (csilk_db_pool_t*)db_pool,
-        "SELECT 1 FROM category_seed_state WHERE user_id=? AND ledger_id=?",
-        (const char*[]){uid, lid, NULL});
+    csilk_json_t* res = NULL;
+    if (ledger_id > 0) {
+        res = csilk_db_query_param_json((csilk_db_pool_t*)db_pool,
+                                        "SELECT 1 FROM category_seed_state WHERE ledger_id=? "
+                                        "UNION SELECT 1 FROM categories WHERE ledger_id=? LIMIT 1",
+                                        (const char*[]){lid, lid, NULL});
+    } else {
+        res = csilk_db_query_param_json(
+            (csilk_db_pool_t*)db_pool,
+            "SELECT 1 FROM category_seed_state WHERE user_id=? AND ledger_id=?",
+            (const char*[]){uid, lid, NULL});
+    }
     int ok = res && csilk_json_array_size(res) > 0;
     if (res) {
         csilk_json_free(res);

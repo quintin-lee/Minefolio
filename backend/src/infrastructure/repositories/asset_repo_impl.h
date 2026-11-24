@@ -24,6 +24,7 @@
 csilk_json_t* asset_list(csilk_db_pool_t* pool,
                          int64_t          user_id,
                          int64_t          caller_user_id,
+                         int64_t          ledger_id,
                          int64_t          page,
                          int64_t          page_size,
                          const char*      category_id,

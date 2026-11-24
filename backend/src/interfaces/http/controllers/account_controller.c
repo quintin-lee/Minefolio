@@ -79,7 +79,7 @@ api_accounts_create(csilk_ctx_t* c)
         return;
     }
 
-    int64_t ledger_id = ctx_ledger_id(c, user_id, "owner");
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "editor");
     if (ledger_id < 0) {
         return;
     }

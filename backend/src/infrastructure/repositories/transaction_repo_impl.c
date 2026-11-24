@@ -25,8 +25,10 @@ mf_tx_repo_find_by_id(void* db_pool, int64_t user_id, int64_t id, mf_transaction
         (csilk_db_pool_t*)db_pool,
         "SELECT id, user_id, asset_id, linked_asset_id, parent_tx_id, transaction_type, "
         "amount, price_per_unit, quantity, fee, currency, note, transaction_date, created_at "
-        "FROM transactions WHERE id=? AND user_id=?",
-        (const char*[]){id_str, uid_str, NULL});
+        "FROM transactions WHERE id=? AND (user_id=? OR (ledger_id > 0 AND EXISTS "
+        "(SELECT 1 FROM ledger_members lm WHERE lm.ledger_id=transactions.ledger_id AND "
+        "lm.user_id=?)))",
+        (const char*[]){id_str, uid_str, uid_str, NULL});
 
     if (!res || csilk_json_array_size(res) == 0) {
         if (res) {
@@ -183,7 +185,9 @@ mf_tx_repo_update(void* db_pool, const mf_transaction_t* tx)
         "0), "
         "transaction_type=?, "
         "amount=?, price_per_unit=?, quantity=?, fee=?, currency=?, note=?, transaction_date=? "
-        "WHERE id=? AND user_id=? RETURNING id",
+        "WHERE id=? AND (user_id=? OR (ledger_id > 0 AND EXISTS "
+        "(SELECT 1 FROM ledger_members lm WHERE lm.ledger_id=transactions.ledger_id AND "
+        "lm.user_id=? AND lm.role IN ('owner','editor')))) RETURNING id",
         (const char*[]){asset_id_str,
                         linked_asset_id_str,
                         tx->type,
@@ -195,6 +199,7 @@ mf_tx_repo_update(void* db_pool, const mf_transaction_t* tx)
                         note,
                         date,
                         id_str,
+                        uid_str,
                         uid_str,
                         NULL});
 
@@ -289,10 +294,12 @@ tx_delete(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
     char uid[32], idstr[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     snprintf(idstr, sizeof(idstr), "%lld", (long long)id);
-    csilk_json_t* res =
-        csilk_db_query_param_json(pool,
-                                  "DELETE FROM transactions WHERE id=? AND user_id=? RETURNING id",
-                                  (const char*[]){idstr, uid, NULL});
+    csilk_json_t* res = csilk_db_query_param_json(
+        pool,
+        "DELETE FROM transactions WHERE id=? AND (user_id=? OR (ledger_id > 0 AND EXISTS "
+        "(SELECT 1 FROM ledger_members lm WHERE lm.ledger_id=transactions.ledger_id AND "
+        "lm.user_id=? AND lm.role IN ('owner','editor')))) RETURNING id",
+        (const char*[]){idstr, uid, uid, NULL});
     int ok = res ? csilk_json_array_size(res) > 0 : 0;
     if (res) {
         csilk_json_free(res);
@@ -307,7 +314,10 @@ tx_asset_exists(csilk_db_pool_t* pool, int64_t user_id, int64_t asset_id)
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     snprintf(ast, sizeof(ast), "%lld", (long long)asset_id);
     csilk_json_t* res = csilk_db_query_param_json(
-        pool, "SELECT id FROM assets WHERE id=? AND user_id=?", (const char*[]){ast, uid, NULL});
+        pool,
+        "SELECT a.id FROM assets a WHERE a.id=? AND (a.user_id=? OR (a.ledger_id > 0 AND EXISTS "
+        "(SELECT 1 FROM ledger_members lm WHERE lm.ledger_id = a.ledger_id AND lm.user_id=?)))",
+        (const char*[]){ast, uid, uid, NULL});
     int ok = res && csilk_json_array_size(res) > 0;
     if (res) {
         csilk_json_free(res);
@@ -372,6 +382,11 @@ format_tx_rows(csilk_json_t* raw_rows)
         csilk_json_add_string(
             item, "transaction_date", csilk_json_get_string(r, "transaction_date"));
         csilk_json_add_string(item, "note", csilk_json_get_string(r, "note"));
+        csilk_json_add_int(item, "user_id", db_get_int(r, "user_id"));
+        const char* op_user = csilk_json_get_string(r, "operator_username");
+        if (op_user && op_user[0]) {
+            csilk_json_add_string(item, "operator_username", op_user);
+        }
         csilk_json_add_string(item, "asset_name", csilk_json_get_string(r, "asset_name"));
         csilk_json_add_string(
             item, "linked_asset_name", csilk_json_get_string(r, "linked_asset_name"));
@@ -406,33 +421,47 @@ tx_list(csilk_db_pool_t* pool,
     char cond_sql[512] = {0};
     int  cond_len = 0;
 
-    const char *params[24], *cnt_params[20];
+    const char *params[32], *cnt_params[24];
     int         pidx = 0, cnt_pidx = 0;
     /* SELECT 中 2 个脱敏列共 4 个 uid 参数 */
     params[pidx++] = uid;
     params[pidx++] = uid;
     params[pidx++] = uid;
     params[pidx++] = uid;
-    /* WHERE t.user_id=? + 可见性 (a + la) 共 5 个 uid 参数 */
-    params[pidx++] = uid;
-    params[pidx++] = uid;
-    params[pidx++] = uid;
-    params[pidx++] = uid;
-    params[pidx++] = uid;
 
-    cnt_params[cnt_pidx++] = uid;
-    cnt_params[cnt_pidx++] = uid;
-    cnt_params[cnt_pidx++] = uid;
-    cnt_params[cnt_pidx++] = uid;
-    cnt_params[cnt_pidx++] = uid;
-
+    char where_scope[384];
     if (ledger_id > 0) {
         snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
-        cond_len +=
-            snprintf(cond_sql + cond_len, sizeof(cond_sql) - cond_len, " AND t.ledger_id = ?");
+        snprintf(where_scope,
+                 sizeof(where_scope),
+                 "t.ledger_id=? AND (t.user_id=? OR EXISTS (SELECT 1 FROM ledgers _l WHERE "
+                 "_l.id=t.ledger_id AND _l.owner_id=?) OR EXISTS (SELECT 1 FROM ledger_members lm "
+                 "WHERE lm.ledger_id=t.ledger_id AND lm.user_id=?))");
         params[pidx++] = lid;
+        params[pidx++] = uid;
+        params[pidx++] = uid;
+        params[pidx++] = uid;
         cnt_params[cnt_pidx++] = lid;
+        cnt_params[cnt_pidx++] = uid;
+        cnt_params[cnt_pidx++] = uid;
+        cnt_params[cnt_pidx++] = uid;
+    } else {
+        snprintf(where_scope, sizeof(where_scope), "t.user_id=?");
+        params[pidx++] = uid;
+        cnt_params[cnt_pidx++] = uid;
     }
+
+    /* 可见性 (a + la) 共 4 个 uid 参数 */
+    params[pidx++] = uid;
+    params[pidx++] = uid;
+    params[pidx++] = uid;
+    params[pidx++] = uid;
+
+    cnt_params[cnt_pidx++] = uid;
+    cnt_params[cnt_pidx++] = uid;
+    cnt_params[cnt_pidx++] = uid;
+    cnt_params[cnt_pidx++] = uid;
+
     if (asset_id && asset_id[0]) {
         cond_len +=
             snprintf(cond_sql + cond_len, sizeof(cond_sql) - cond_len, " AND t.asset_id = ?");
@@ -475,7 +504,7 @@ tx_list(csilk_db_pool_t* pool,
         *total = 0;
         return NULL;
     }
-    if (pidx + 3 > 24 || cnt_pidx + 1 > 20) { /* +2: LIMIT/OFFSET, +1: NULL */
+    if (pidx + 3 > 32 || cnt_pidx + 1 > 24) { /* +2: LIMIT/OFFSET, +1: NULL */
         *total = 0;
         return NULL;
     }
@@ -486,31 +515,42 @@ tx_list(csilk_db_pool_t* pool,
         sql,
         sizeof(sql),
         "SELECT "
-        "t.id,t.asset_id,t.linked_asset_id,t.category_id,t.transaction_type,t.source_type,t."
+        "t.id,t.user_id,t.asset_id,t.linked_asset_id,t.category_id,t.transaction_type,t.source_"
+        "type,t."
         "direction,t.linked_direction,t.amount,t.price_per_unit,t.quantity,t.currency,t."
         "transaction_date,t.note,a.name as asset_name,la.name as linked_asset_name,c.name as "
-        "category_name," MF_RBAC_MASK_BALANCE_COL("a") " AS mask_bal_a," MF_RBAC_MASK_BALANCE_COL(
-            "la") " AS mask_bal_la "
-                  "FROM transactions t LEFT JOIN assets a ON t.asset_id=a.id LEFT JOIN "
-                  "assets la ON t.linked_asset_id=la.id LEFT JOIN categories c ON "
-                  "t.category_id=c.id "
-                  "WHERE t.user_id=? AND " MF_RBAC_ASSET_VISIBLE_SQL(
-                      "a") " AND " MF_RBAC_ASSET_VISIBLE_SQL("la") "%s "
-                                                                   "ORDER BY t.transaction_date "
-                                                                   "DESC LIMIT ? OFFSET ?",
+        "category_name,u.username as operator_username," MF_RBAC_MASK_BALANCE_COL(
+            "a") " AS mask_bal_a," MF_RBAC_MASK_BALANCE_COL("la") " AS mask_bal_la "
+                                                                  "FROM transactions t LEFT JOIN "
+                                                                  "assets a ON t.asset_id=a.id "
+                                                                  "LEFT JOIN "
+                                                                  "assets la ON "
+                                                                  "t.linked_asset_id=la.id LEFT "
+                                                                  "JOIN categories c ON "
+                                                                  "t.category_id=c.id "
+                                                                  "LEFT JOIN users u ON "
+                                                                  "t.user_id=u.id "
+                                                                  "WHERE %s "
+                                                                  "AND " MF_RBAC_ASSET_VISIBLE_SQL("a") " AND " MF_RBAC_ASSET_VISIBLE_SQL(
+                                                                      "la") "%s "
+                                                                            "ORDER BY "
+                                                                            "t.transaction_date "
+                                                                            "DESC LIMIT ? OFFSET ?",
+        where_scope,
         cond_sql);
     params[pidx++] = limit;
     params[pidx++] = offset;
     params[pidx] = NULL;
 
-    snprintf(count_sql,
-             sizeof(count_sql),
-             "SELECT COUNT(*) AS cnt FROM transactions t "
-             "LEFT JOIN assets a ON t.asset_id=a.id "
-             "LEFT JOIN assets la ON t.linked_asset_id=la.id "
-             "WHERE t.user_id=? AND " MF_RBAC_ASSET_VISIBLE_SQL(
-                 "a") " AND " MF_RBAC_ASSET_VISIBLE_SQL("la") "%s",
-             cond_sql);
+    snprintf(
+        count_sql,
+        sizeof(count_sql),
+        "SELECT COUNT(*) AS cnt FROM transactions t "
+        "LEFT JOIN assets a ON t.asset_id=a.id "
+        "LEFT JOIN assets la ON t.linked_asset_id=la.id "
+        "WHERE %s AND " MF_RBAC_ASSET_VISIBLE_SQL("a") " AND " MF_RBAC_ASSET_VISIBLE_SQL("la") "%s",
+        where_scope,
+        cond_sql);
     cnt_params[cnt_pidx] = NULL;
 
     csilk_json_t* cnt_res = csilk_db_query_param_json(pool, count_sql, cnt_params);
@@ -539,10 +579,12 @@ tx_monthly(csilk_db_pool_t* pool, int64_t user_id, int64_t ledger_id, const char
             "COALESCE(SUM(CASE WHEN t.direction='out' THEN t.amount ELSE 0 END),0) AS outflows, "
             "COUNT(*) AS count FROM transactions t "
             "LEFT JOIN assets a ON t.asset_id=a.id "
-            "WHERE t.user_id=? AND t.ledger_id=? "
+            "WHERE t.ledger_id=? AND (t.user_id=? OR EXISTS (SELECT 1 FROM ledgers _l WHERE "
+            "_l.id=t.ledger_id AND _l.owner_id=?) OR EXISTS (SELECT 1 FROM ledger_members lm WHERE "
+            "lm.ledger_id=t.ledger_id AND lm.user_id=?)) "
             "AND CAST(t.transaction_date AS TEXT) LIKE ? "
             "AND " MF_RBAC_ASSET_UNMASKED_SQL("a"),
-            (const char*[]){uid, lid, pattern, uid, uid, NULL});
+            (const char*[]){lid, uid, uid, uid, pattern, uid, uid, NULL});
     }
     return csilk_db_query_param_json(
         pool,

@@ -41,22 +41,15 @@ api_assets_list(csilk_ctx_t* c)
     int64_t page = 1, page_size = 20;
     parse_page_params(c, &page, &page_size);
 
-    /* 共享账本成员视图：非 owner 成员以 ledger owner 的 user_id 读取数据，
-     * 并以 caller_user_id 触发成员可见门控；owner/自身保持原行为（零回归）。 */
-    int64_t ledger_id = ctx_ledger_id(c, user_id, NULL);
-    int64_t data_uid = user_id;
-    int64_t caller_uid = user_id;
-    if (ledger_id > 0) {
-        int64_t owner_uid = ledger_owner_if_member(db_get_pool(), ledger_id, user_id);
-        if (owner_uid > 0) {
-            data_uid = owner_uid;
-            /* caller 保持为当前用户，repo 据此判断 member_view */
-        }
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "viewer");
+    if (ledger_id < 0) {
+        return;
     }
 
     query_asset_filter_t filter = {
-        .user_id = data_uid,
-        .caller_user_id = caller_uid,
+        .user_id = user_id,
+        .caller_user_id = user_id,
+        .ledger_id = ledger_id,
         .category_id = csilk_get_query(c, "category_id"),
         .account_id = parse_query_int_strict(csilk_get_query(c, "account_id"), 0),
         .page = page,
