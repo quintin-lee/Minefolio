@@ -894,86 +894,136 @@ asset_get_category_type(csilk_db_pool_t* pool, int64_t user_id, int64_t category
 }
 
 csilk_json_t*
-asset_transactions(csilk_db_pool_t* pool, int64_t user_id, int64_t asset_id)
+asset_transactions(csilk_db_pool_t* pool, int64_t user_id, int64_t caller_user_id, int64_t asset_id)
 {
-    char uid[32], aid[32];
+    char uid[32], caller_uid[32], aid[32];
+    int  member_view = (caller_user_id > 0 && caller_user_id != user_id);
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    snprintf(caller_uid, sizeof(caller_uid), "%lld", (long long)caller_user_id);
     snprintf(aid, sizeof(aid), "%lld", (long long)asset_id);
+    /* 成员视图：与资产一致使用 IN(owner, caller) 门控交易行，避免越权读 owner 交易。 */
+    if (!member_view) {
+        return csilk_db_query_param_json(
+            pool,
+            "SELECT "
+            "id,asset_id,transaction_type,amount,quantity,price_per_unit,currency,transaction_date,"
+            "note,created_at FROM transactions WHERE asset_id=? AND user_id=? ORDER BY "
+            "transaction_date DESC",
+            (const char*[]){aid, uid, NULL});
+    }
     return csilk_db_query_param_json(
         pool,
         "SELECT "
         "id,asset_id,transaction_type,amount,quantity,price_per_unit,currency,transaction_date,"
-        "note,created_at FROM transactions WHERE asset_id=? AND user_id=? ORDER BY "
+        "note,created_at FROM transactions WHERE asset_id=? AND user_id IN (?,?) ORDER BY "
         "transaction_date DESC",
-        (const char*[]){aid, uid, NULL});
+        (const char*[]){aid, uid, caller_uid, NULL});
 }
 
 csilk_json_t*
 asset_balance_logs_list(csilk_db_pool_t* pool,
                         int64_t          user_id,
+                        int64_t          caller_user_id,
                         int64_t          page,
                         int64_t          page_size,
                         const char*      asset_id_str,
                         int64_t*         total)
 {
-    char uid_str[32], limit_buf[32], offset_buf[32], aid_buf[32];
+    char uid_str[32], caller_str[32], limit_buf[32], offset_buf[32], aid_buf[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    snprintf(caller_str, sizeof(caller_str), "%lld", (long long)caller_user_id);
     snprintf(limit_buf, sizeof(limit_buf), "%lld", (long long)page_size);
     snprintf(offset_buf, sizeof(offset_buf), "%lld", (long long)((page - 1) * page_size));
 
-    char        count_sql[1024];
-    const char* cnt_params[8];
-    snprintf(count_sql,
-             sizeof(count_sql),
-             "SELECT COUNT(*) AS cnt FROM asset_balance_logs abl "
-             "LEFT JOIN assets a ON abl.asset_id = a.id "
-             "WHERE abl.user_id=? AND " MF_RBAC_ASSET_VISIBLE_SQL("a"));
-    cnt_params[0] = uid_str;
-    cnt_params[1] = uid_str;
-    cnt_params[2] = uid_str;
-    int cnt_pidx = 3;
-
-    csilk_json_t* result = NULL;
-    if (asset_id_str && strlen(asset_id_str) > 0) {
+    int         member_view = (caller_user_id > 0 && caller_user_id != user_id);
+    const char* ruid = member_view ? caller_str : uid_str;
+    /* SELECT 中 1 个脱敏列共 2 个参数 + WHERE abl.user_id(?) + visible(2) 共 5 个 */
+    int has_asset = asset_id_str && strlen(asset_id_str) > 0;
+    if (has_asset) {
         snprintf(aid_buf, sizeof(aid_buf), "%lld", atoll(asset_id_str));
-        const char* params[] = {
-            uid_str, uid_str, uid_str, uid_str, uid_str, aid_buf, limit_buf, offset_buf, NULL};
-        result = csilk_db_query_param_json(
-            pool,
-            "SELECT abl.id, abl.asset_id, a.name AS asset_name, abl.user_id, "
-            "abl.delta, abl.balance_after, abl.source_type, abl.source_id, "
-            "abl.note, abl.created_at, " MF_RBAC_MASK_BALANCE_COL(
-                "a") " AS mask_balance "
-                     "FROM asset_balance_logs abl "
-                     "LEFT JOIN assets a ON abl.asset_id = a.id "
-                     "WHERE abl.user_id=? AND " MF_RBAC_ASSET_VISIBLE_SQL(
-                         "a") " AND abl.asset_id=? "
-                              "ORDER BY abl.created_at DESC LIMIT ? OFFSET ?",
-            params);
-        snprintf(count_sql + strlen(count_sql),
-                 sizeof(count_sql) - strlen(count_sql),
-                 " AND abl.asset_id=?");
-        cnt_params[cnt_pidx++] = aid_buf;
+    }
+
+    char        data_sql[1536], count_sql[1024];
+    const char *params[12], *cnt_params[10];
+    int         pidx = 0, cnt_pidx = 0;
+
+    /* data SQL: mask(2 ruid) + abl.user_id(1 or 2) + visible(2 ruid) + asset? + limit/offset */
+    params[pidx++] = ruid;
+    params[pidx++] = ruid;
+    if (member_view) {
+        params[pidx++] = uid_str;
+        params[pidx++] = caller_str;
     } else {
-        const char* params[] = {
-            uid_str, uid_str, uid_str, uid_str, uid_str, limit_buf, offset_buf, NULL};
-        result = csilk_db_query_param_json(
-            pool,
-            "SELECT abl.id, abl.asset_id, a.name AS asset_name, abl.user_id, "
-            "abl.delta, abl.balance_after, abl.source_type, abl.source_id, "
-            "abl.note, abl.created_at, " MF_RBAC_MASK_BALANCE_COL(
-                "a") " AS mask_balance "
-                     "FROM asset_balance_logs abl "
-                     "LEFT JOIN assets a ON abl.asset_id = a.id "
-                     "WHERE abl.user_id=? AND " MF_RBAC_ASSET_VISIBLE_SQL(
-                         "a") " "
-                              "ORDER BY abl.created_at DESC LIMIT ? OFFSET ?",
-            params);
+        params[pidx++] = uid_str;
+    }
+    params[pidx++] = ruid;
+    params[pidx++] = ruid;
+    if (has_asset) {
+        params[pidx++] = aid_buf;
+    }
+    params[pidx++] = limit_buf;
+    params[pidx++] = offset_buf;
+    params[pidx] = NULL;
+
+    /* count SQL: abl.user_id(1 or 2) + visible(2 ruid) + asset? */
+    if (member_view) {
+        cnt_params[cnt_pidx++] = uid_str;
+        cnt_params[cnt_pidx++] = caller_str;
+    } else {
+        cnt_params[cnt_pidx++] = uid_str;
+    }
+    cnt_params[cnt_pidx++] = ruid;
+    cnt_params[cnt_pidx++] = ruid;
+    if (has_asset) {
+        cnt_params[cnt_pidx++] = aid_buf;
     }
     cnt_params[cnt_pidx] = NULL;
 
+    int off = 0;
+    off += snprintf(data_sql + off,
+                    sizeof(data_sql) - off,
+                    "SELECT abl.id, abl.asset_id, a.name AS asset_name, abl.user_id, "
+                    "abl.delta, abl.balance_after, abl.source_type, abl.source_id, "
+                    "abl.note, abl.created_at, " MF_RBAC_MASK_BALANCE_COL(
+                        "a") " AS mask_balance "
+                             "FROM asset_balance_logs abl "
+                             "LEFT JOIN assets a ON abl.asset_id = a.id ");
+    if (member_view) {
+        off += snprintf(data_sql + off,
+                        sizeof(data_sql) - off,
+                        "WHERE abl.user_id IN (?,?) AND " MF_RBAC_ASSET_VISIBLE_SQL("a"));
+    } else {
+        off += snprintf(data_sql + off,
+                        sizeof(data_sql) - off,
+                        "WHERE abl.user_id=? AND " MF_RBAC_ASSET_VISIBLE_SQL("a"));
+    }
+    if (has_asset) {
+        off += snprintf(data_sql + off, sizeof(data_sql) - off, " AND abl.asset_id=?");
+    }
+    off += snprintf(
+        data_sql + off, sizeof(data_sql) - off, " ORDER BY abl.created_at DESC LIMIT ? OFFSET ?");
+
+    int coff = 0;
+    coff += snprintf(count_sql + coff,
+                     sizeof(count_sql) - coff,
+                     "SELECT COUNT(*) AS cnt FROM asset_balance_logs abl "
+                     "LEFT JOIN assets a ON abl.asset_id = a.id ");
+    if (member_view) {
+        coff += snprintf(count_sql + coff,
+                         sizeof(count_sql) - coff,
+                         "WHERE abl.user_id IN (?,?) AND " MF_RBAC_ASSET_VISIBLE_SQL("a"));
+    } else {
+        coff += snprintf(count_sql + coff,
+                         sizeof(count_sql) - coff,
+                         "WHERE abl.user_id=? AND " MF_RBAC_ASSET_VISIBLE_SQL("a"));
+    }
+    if (has_asset) {
+        coff += snprintf(count_sql + coff, sizeof(count_sql) - coff, " AND abl.asset_id=?");
+    }
+
+    csilk_json_t* result = csilk_db_query_param_json(pool, data_sql, params);
     *total = 0;
-    if (!result) {
+    if (result == NULL) {
         return NULL;
     }
 

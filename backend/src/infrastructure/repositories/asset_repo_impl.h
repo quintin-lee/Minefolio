@@ -81,12 +81,16 @@ int asset_delete(csilk_db_pool_t* pool, int64_t user_id, int64_t id);
 int asset_exists(csilk_db_pool_t* pool, int64_t user_id, int64_t id);
 int64_t       asset_get_account_id(csilk_db_pool_t* pool, int64_t asset_id);
 char*         asset_get_category_type(csilk_db_pool_t* pool, int64_t user_id, int64_t category_id);
-csilk_json_t* asset_transactions(csilk_db_pool_t* pool, int64_t user_id, int64_t asset_id);
+csilk_json_t* asset_transactions(csilk_db_pool_t* pool,
+                                 int64_t          user_id,
+                                 int64_t          caller_user_id,
+                                 int64_t          asset_id);
 csilk_json_t* asset_balance_logs_list(csilk_db_pool_t* pool,
                                       int64_t          user_id,
+                                      int64_t          caller_user_id,
                                       int64_t          page,
                                       int64_t          page_size,
-                                      const char*      asset_id,
+                                      const char*      asset_id_str,
                                       int64_t*         total);
 
 /**

@@ -273,8 +273,20 @@ api_assets_logs_list(csilk_ctx_t* c)
     int64_t page = 1, page_size = 20;
     parse_page_params(c, &page, &page_size);
 
+    /* 共享账本成员视图：非 owner 成员以 ledger owner 为数据归属，caller 自身触发门控。 */
+    int64_t ledger_id = ctx_ledger_id(c, user_id, NULL);
+    int64_t data_uid = user_id;
+    int64_t caller_uid = user_id;
+    if (ledger_id > 0) {
+        int64_t owner_uid = ledger_owner_if_member(db_get_pool(), ledger_id, user_id);
+        if (owner_uid > 0) {
+            data_uid = owner_uid;
+        }
+    }
+
     query_asset_log_filter_t filter = {
-        .user_id = user_id,
+        .user_id = data_uid,
+        .caller_user_id = caller_uid,
         .asset_id = csilk_get_query(c, "asset_id"),
         .page = page,
         .page_size = page_size,

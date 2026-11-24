@@ -77,6 +77,7 @@ typedef struct query_asset_filter {
  */
 typedef struct query_asset_log_filter {
     int64_t     user_id;
+    int64_t     caller_user_id;
     const char* asset_id;
     int64_t     page;
     int64_t     page_size;

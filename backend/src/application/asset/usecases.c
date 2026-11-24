@@ -534,7 +534,7 @@ asset_usecase_get(
     csilk_json_add_string(resp, "created_at", csilk_json_get_string(row, "created_at"));
     csilk_json_add_string(resp, "updated_at", csilk_json_get_string(row, "updated_at"));
 
-    csilk_json_t* tx_rows = asset_transactions(db_pool, user_id, id);
+    csilk_json_t* tx_rows = asset_transactions(db_pool, user_id, caller_user_id, id);
     csilk_json_t* transactions = csilk_json_array();
     if (tx_rows) {
         size_t n = csilk_json_array_size(tx_rows);
@@ -722,6 +722,7 @@ asset_usecase_query_logs(void*                           pool,
     }
     *out_list = asset_balance_logs_list((csilk_db_pool_t*)pool,
                                         filter->user_id,
+                                        filter->caller_user_id,
                                         filter->page,
                                         filter->page_size,
                                         filter->asset_id,
