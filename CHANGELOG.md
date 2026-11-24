@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Mobile AI SSE CORS Compatibility (`frontend/src/api/ai.ts`)**:
+  - Updated native `fetch()` calls for AI SSE streaming (`chatStream` / `runWorkflowStream`) to pass `credentials: 'same-origin'` instead of `'include'`, fixing mobile WebView CORS preflight rejections against `Access-Control-Allow-Origin: *`.
+
+### Docs
+- **Documentation Sync**: Synchronized `README.md`, `AGENTS.md`, `gateway/README.md`, `docs/architecture.md`, `docs/ai-runtime-architecture.md`, and `docs/financial-core-architecture.md` with the current codebase (21 DDD domains, 27 controllers/repositories, `V001`~`V033` migrations, 37 SQL tables, 81 CTest targets, 21 backend test scripts, 53 frontend Vitest specs, 11 gateway adapter tests, and `csilk v1.2.0`).
+
 ---
 
 ## [1.4.0] - 2026-11-24

@@ -90,48 +90,40 @@ graph TB
 | **Vue 3 SPA (桌面)** | 单页应用,Vue Router + Pinia,Element Plus UI,本地无状态 | `frontend/src/main.ts`、`router/index.ts` |
 | **Capacitor Mobile** | 同一份 API 层,内嵌 sql.js WASM 做离线 SQLite,Android 端走 Gradle | `frontend/src/main-mobile.ts`、`vite.config.mobile.ts` |
 | **Nginx** | 静态托管 `frontend/dist` + `/api/*` 反代到 `:8080` | `nginx/nginx.conf` |
-| **Interfaces Layer** | 纯委托型 HTTP Controllers,仅做参数提取 + 调用 usecase + 响应封装 | `backend/src/interfaces/http/controllers/` (20 个) |
-| **Application Layer** | 每个域一个 Use Case 模块,编排领域规则 + Financial Core + Ledger Engine | `backend/src/application/*/{commands,dtos,usecases}.h/.c` |
-| **Domain Layer** | 纯业务实体、仓储契约接口、业务规则;零外部依赖 | `backend/src/domain/*/{entity,repository,rules}.{h,c}` |
-| **Infrastructure Layer** | 实现 Domain Repository 契约,执行 SQL,返回领域实体 | `backend/src/infrastructure/repositories/*_repo_impl.c` (18 个) |
+| **Interfaces Layer** | 纯委托型 HTTP Controllers,仅做参数提取 + 调用 usecase + 响应封装 | `backend/src/interfaces/http/controllers/` (27 个控制器) |
+| **Application Layer** | 每个域一个 Use Case 模块,编排领域规则 + Financial Core + Ledger Engine | `backend/src/application/*/{commands,dtos,usecases}.h/.c` (21 域) |
+| **Domain Layer** | 纯业务实体、仓储契约接口、业务规则;零外部依赖 | `backend/src/domain/*/{entity,repository,rules}.{h,c}` (21 域) |
+| **Infrastructure Layer** | 实现 Domain Repository 契约,执行 SQL,返回领域实体；含数据库适配器与 SQLite 热备份 (`db_backup.c`) | `backend/src/infrastructure/repositories/*_repo_impl.c` (27 个) |
 | **Financial Core** | **新增 v1.0**: 128 位定点高精度金融数学 + 强类型领域模型 | `backend/src/core/financial/` |
 | **Ledger Engine** | **新增 v1.0**: 事件溯源账本,原子 `ledger_apply_tx` / `ledger_reverse_tx`,支持 `ledger_rebuild_*` | `backend/src/core/ledger/` |
-| **Common** | 跨域通用: DB 池、JWT (HS256)、RSA-OAEP、tx_type 注册表、balance 符号翻转（CSV 流式解析与 TOTP 2FA 下沉至 csilk 官方库） | `backend/src/common/` |
-| **Unified AI Runtime** | **统一 AI 运行时架构**: 彻底解耦 Controller/Workflow 与 LLM 直接调用;session(会话持久化与标题)、context(统一容器与状态机)、model(模型提供者适配与估算)、tools(7大领域工具与Schema)、policy(五级风控与防重放)、trace(端到端Span与成本统计)、memory(滑动窗口截断与系统提示词保护)、workflow(DAG编排与执行委托) | `backend/src/services/ai/{runtime,memory,model,policy,tools,trace,workflow}/*.c/.h` |
-| **Market Scheduler** | 后台线程,定时拉取行情,通过 `quote_driver` 多源适配(东方财富/腾讯/Yahoo/Crypto),汇率服务 | `backend/src/services/market/` |
-| **Migration Engine** | **原生 C 语言版本化迁移引擎**: 下沉至 csilk 框架驱动层（`<csilk/drivers/db/migration.h>`），提供 Flyway 规范发现与严格版本排序、SHA-256 CRLF 规范化防篡改校验和、分布式互斥锁 (`schema_migration_lock`)、PostgreSQL 原生 Prepared Statement 支持，以及自动基线 (Auto-Baseline) 平滑升级 | `backend/sql/migrations/` (版本化脚本), `<csilk/drivers/db/migration.h>` |
-| **SQLite / PostgreSQL** | 数据持久化;通过 `csilk_db_pool_t` 连接池，支持 PostgreSQL 原生 Prepared Statement (`?` -> `$N`) | `backend/sql/migration.sql`、`migration_postgres.sql` |
+| **Common** | 跨域通用: DB 池、JWT (HS256)、RSA-OAEP、tx_type 注册表、balance 符号翻转、RBAC 视野过滤（CSV 流式解析与 TOTP 2FA 下沉至 csilk 官方库） | `backend/src/common/` |
+| **Unified AI Runtime** | **统一 AI 运行时架构**: 彻底解耦 Controller/Workflow 与 LLM 直接调用;session(会话持久化与标题)、context(统一容器与状态机)、model(模型提供者适配与估算)、tools(26 个内置工具与 MCP)、policy(五级风控与防重放)、trace(端到端Span与成本统计)、memory(滑动窗口截断与系统提示词保护)、workflow(DAG 编排与 13 个内置工作流) | `backend/src/services/ai/{runtime,memory,model,policy,tools,trace,workflow,workflows}/*.c/.h` |
+| **Scheduler & Market** | 后台调度中心（5 段式 Cron + 动态休眠）+ 多源行情与汇率定时拉取 (`quote_driver` 东方财富/腾讯/Yahoo/Crypto) + 微信/Webhook 推送 | `backend/src/services/{scheduler,market,notification}/` |
+| **IM Gateway (`gateway/`)** | 独立零依赖 Node.js 网关，桥接 QQ (OneBot v11) / WeChat 至 `/api/im/*` 只读查账接口（支持 `im_bind` 与 `/bind-auth` 自助绑定） | `gateway/{index.js,cli.js,adapters/}` |
+| **Migration Engine** | **原生 C 语言版本化迁移引擎**: 下沉至 csilk 框架驱动层（`<csilk/drivers/db/migration.h>`），提供 Flyway 规范发现与严格版本排序（`V001`~`V033`）、SHA-256 CRLF 规范化防篡改校验和、分布式互斥锁 (`schema_migration_lock`)、PostgreSQL 原生 Prepared Statement 支持，以及自动基线 (Auto-Baseline) 平滑升级 | `backend/sql/migrations/` (33 组脚本), `<csilk/drivers/db/migration.h>` |
+| **SQLite / PostgreSQL** | 数据持久化;通过 `csilk_db_pool_t` 连接池，支持 PostgreSQL 原生 Prepared Statement (`?` -> `$N`) | `backend/sql/migration.sql`、`migration_postgres.sql` (37 张表) |
 
-**新旧架构迁移状态:**
+**DDD 21 域覆盖状态:**
 
 | 域 | Domain | Application | Infrastructure | Interfaces | 状态 |
 |----|:------:|:-----------:|:--------------:|:----------:|:----:|
-| tag | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 |
-| category | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 |
-| ledger | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 |
-| daily_expense | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 |
-| transfer | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 |
-| dca | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 |
-| report | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 (跨域隔离) |
-| file | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 |
-| import/export | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 |
-| auth | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 |
-| ai | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 |
-| market | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 |
-| asset | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 |
-| transaction | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 |
-| portfolio | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 |
-| cashflow | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 |
+| tag / category / ledger | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 |
+| daily_expense / transfer / dca | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 |
+| report / file / import_export | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 (含跨域隔离) |
+| auth / ai / market | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 |
+| asset / account / transaction | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 |
+| portfolio / cashflow / mcp | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 |
+| scheduler / skill / task | ✅ | ✅ | ✅ | ✅ | ✅ 已完成 |
 
-**AI 子系统迁移状态:**
+**AI 子系统状态:**
 
 | 组件 | 状态 | 说明 |
 |------|:----:|------|
-| AI Tools (6个) | ✅ | 通过 `ai_repo_impl` 包装层访问数据 |
-| AI Workflows (4个) | ✅ | 通过 `ai_repo_impl` 包装层访问数据 |
-| AI Runtime | ✅ | 独立子系统，无需迁移 |
+| AI Tools (26 个内置工具 + MCP) | ✅ | 经 Policy 五级风控与 `ai_repo_impl` 等仓储访问数据 |
+| AI Workflows (13 个注册工作流) | ✅ | DAG 图编排（含条件分支与 Saga 补偿）委托 Runtime 执行 |
+| AI Runtime + Skills + News | ✅ | 独立运行时 + Skills (`V022`) + Market Pulse (`V024`/`V028`) |
 
-> **说明**: 所有业务域已完成 DDD 四层架构迁移。Legacy `repositories/` 目录已完全删除（17 个文件），所有 SQL 统一在 `infrastructure/repositories/*_repo_impl.c`。
+> **说明**: 全部 **21 个业务域** 已完成 DDD 四层架构演进。Legacy `repositories/` 目录已完全删除，所有 SQL 统一在 `infrastructure/repositories/*_repo_impl.c`（27 个仓储文件）。
 
 **通信协议清单:**
 
@@ -182,7 +174,7 @@ graph TB
         auth_init["fa:fa-key RSA key init"]
         ai_init["fa:fa-robot AI runtime init"]
         market_start["fa:fa-clock market scheduler start"]
-        routes["fa:fa-route 路由注册<br/>(新旧双套)"]
+        routes["fa:fa-route 路由注册<br/>(27 组控制器)"]
     end
 
     subgraph ctrl_new["fa:fa-plug Interfaces 层"]
@@ -190,7 +182,7 @@ graph TB
         ai_ctrl["fa:fa-robot ai_controller<br/>ai_usecase_*"]
         market_ctrl["fa:fa-chart-line market_controller<br/>market_usecase_*"]
         tx_ctrl["fa:fa-exchange-alt tx_controller"]
-        other_ctrl["... 20 个控制器"]
+        other_ctrl["... 27 个控制器"]
     end
 
     subgraph app["fa:fa-cogs Application Layer"]
@@ -344,7 +336,7 @@ Model (请求/响应) → Policy (五级风控) → Runtime (会话/循环)
 | `tools/` | 工具调度七步流水线: Schema 校验 → 权限检查 → 风险评定 → 确认草案 → 业务执行 → 事务控制 → 审计追踪 |
 | `trace/` | 调用追踪: `Span`(单个操作耗时) + `Exporter`(写入 `ai_traces` 表) + `Trace`(汇总统计) |
 | `workflow/` | DAG 工作流: `Graph`(节点定义) + `Node`(单个步骤) + `Context`(工作流上下文) + `Engine`(注册/查找) + `Executor`(执行) |
-| `workflows/` | 4 个具体工作流实现: `cashflow_forecast.c` (3,578行) / `financial_health.c` (701行) / `monthly_review.c` (452行) / `portfolio_analysis.c` (273行) |
+| `workflows/` | 13 个注册财务工作流（12 个实现文件 + `cashflow_forecast_common.c`）：月末复盘、组合再平衡、消费决策、发薪分配、预算守卫、异常检测、订阅审计、应急基金、目标追踪、债务清偿、现金流预测、账单日历、健康体检 |
 
 **依赖方向硬约束:**
 
@@ -372,7 +364,7 @@ Model (请求/响应) → Policy (五级风控) → Runtime (会话/循环)
 
 ### 3.1 总
 
-Minefolio 数据模型围绕**"资产 (Asset) — 交易 (Transaction) — 余额联动"**三核心组织,辅以**账户 (Account) 分组容器 (V017)**、分类树、标签、账本、成员、行情历史、**账本检查点快照 (V020)**、AI 会话/消息/追踪、用户、设置共 **17 张主表 + 5 张关联表**。SQLite 与 PostgreSQL 两套 schema 语义对齐,迁移在启动时由 csilk 迁移引擎应用。**Ledger Engine** 作为账本事件溯源引擎,所有交易通过 `ledger_tx_t` 事件对象驱动,支持原子 apply/reverse 及 `ledger_rebuild_*` 重算——V020 起重建从最近有效检查点快照增量推进,回溯改账自动级联失效下游快照。**余额方向**在 `common/balance.c` 集中处理:对 `loan / credit_card / other_liability` 类资产符号翻转,使 net worth 计算永远 `assets - liabilities` 正确。
+Minefolio 数据模型围绕**"资产 (Asset) — 交易 (Transaction) — 余额联动"**三核心组织,辅以**账户 (Account) 分组容器与账户/字段 RBAC (`V017`/`V031`)**、分类树、标签、多账本与成员、**持仓批次 (`V021`)**、行情与外汇历史、**账本检查点快照 (`V020`)**、AI 会话/消息/追踪/技能/财经早报、IM 绑定、调度中心与异步后台任务 (`V033`) 共 **37 张表**（迁移 `V001`~`V033`）。SQLite 与 PostgreSQL 两套 schema 语义对齐,迁移在启动时由 csilk 迁移引擎应用。**Ledger Engine** 作为账本事件溯源引擎,所有交易通过 `ledger_tx_t` 事件对象驱动,支持原子 apply/reverse 及 `ledger_rebuild_*` 重算——V020 起重建从最近有效检查点快照增量推进,回溯改账自动级联失效下游快照。**余额方向**在 `common/balance.c` 集中处理:对 `loan / credit_card / other_liability` 类资产符号翻转,使 net worth 计算永远 `assets - liabilities` 正确。
 
 ### 3.2 图
 
@@ -452,6 +444,14 @@ erDiagram
 | `ai_settings` | singleton (id=1),AI provider 配置持久化 |
 | `ai_consumed_nonces` (V019) | 已消费确认令牌 Nonce 台账,重放防护跨重启生效 |
 | `ledger_snapshots` (V020) | 账本检查点快照,按 (user, asset, snapshot_date) 存持仓/成本/余额,支撑增量重建 |
+| `transaction_lots` (V021) | 投资持仓交易批次（FIFO 成本核减与剩余份额台账） |
+| `ai_skills` (V022) | Agent Skills 技能库定义（L1-L3 执行模式、Markdown 同步与启停状态） |
+| `market_news_digests` + `ai_news_reports` (V024/V028) | Market Pulse 财经早报缓存与按账本/用户隔离的持仓解析报告 |
+| `im_bot_bindings` (V027) | QQ / WeChat IM 用户与本系统用户的绑定映射及抢占隔离 |
+| `scheduled_jobs` + `user_notification_channels` + `job_run_logs` (V029/V030) | 调度中心任务、微信/Webhook 推送通道与执行审计日志 |
+| `account_permissions` (V031) | 共享账本下账户级可见性与字段脱敏（`mask_balance`/`mask_account_no`）授权表 |
+| `async_tasks` (V033) | 异步后台任务表（行情批量同步、备份、重算、OCR、导入等进度追踪与取消） |
+| `import_rules` / `exchange_rates` / `exchange_rate_history` | 智能记账规则与外汇汇率历史快照（含 V026 手动锁定标志） |
 
 **索引策略:**
 
@@ -659,17 +659,17 @@ sequenceDiagram
 
 **2. 运行时预算与限制 (Limits & Budgets)**
 
-Runtime 内部严格实行主动防御与硬约束，防止由于模型幻觉或工具递归引发的死循环和费用失控：
+Runtime 内部严格实行主动防御与硬约束（由 `ai_runtime_limits_default()` 初始化，调用方按场景收紧），防止由于模型幻觉或工具递归引发的死循环和费用失控：
 
 ```c
 typedef struct {
-    int32_t max_iterations;    // 最大轮数限制（默认 10 轮）
-    int64_t timeout_ms;        // 硬超时时间（默认 120,000ms）
-    int32_t token_budget;      // Token 预算配额（默认 32,768）
-    int32_t tool_budget;       // 工具调用上限（默认 20 次）
-    double  cost_budget;       // 美元费用上限（默认 $1.00）
-    const bool* cancellation_token; // 外部协作式中断信号（客户端断开立即熔断）
+    int     max_iterations; // 最大循环轮数（默认 10）
+    int64_t timeout_ms;     // 最大执行耗时毫秒数（默认 0，不限；调用方显式设定）
+    int     token_budget;   // 最大累计 Token 预算（默认 32,768）
+    int     tool_budget;    // 最大累计工具执行次数（默认 15）
+    double  cost_budget;    // 最大累计费用预算（默认 0.0，不限；调用方按场景设定）
 } ai_runtime_limits_t;
+// 协作式中断信号通过 ai_runtime_context_t.cancel_token (volatile bool*) 传入
 ```
 
 * `ai_runtime_limits_check_pre_turn()`：每轮模型调用前比对已用时间、迭代轮数与 Token 累计消耗。
@@ -682,13 +682,13 @@ Runtime 严格区分故障来源，绝不笼统返回通用 500 异常：
 | 错误代码 | 枚举常量 | 触发场景 |
 |---|---|---|
 | `0` | `AI_RUNTIME_ERR_OK` | 正常执行结束 |
-| `1` | `AI_RUNTIME_ERR_MODEL` | 模型提供商网络故障、HTTP 非200、SSE 协议格式错乱 |
-| `2` | `AI_RUNTIME_ERR_TOOL` | 工具执行异常、参数不匹配、SQL 事务回滚 |
-| `3` | `AI_RUNTIME_ERR_POLICY` | 权限不足、五级风控拦截、二次确认签名失效或 Nonce 重放 |
-| `4` | `AI_RUNTIME_ERR_TIMEOUT` | 总执行时间超过 `timeout_ms` 预算上限 |
-| `5` | `AI_RUNTIME_ERR_CONTEXT_OVERFLOW` | 消息上下文 Token 超过 `token_budget` 配额 |
-| `6` | `AI_RUNTIME_ERR_VALIDATION` | 入参格式错误、必填上下文缺失、参数合法性校验失败 |
-| `7` | `AI_RUNTIME_ERR_CANCELLED` | 外部 `cancellation_token` 激活（用户取消或客户端连接关闭） |
+| `1001` | `AI_RUNTIME_ERR_MODEL` | 模型提供商网络故障、HTTP 非200、SSE 协议格式错乱 |
+| `1002` | `AI_RUNTIME_ERR_TOOL` | 工具执行异常、参数不匹配、SQL 事务回滚 |
+| `1003` | `AI_RUNTIME_ERR_POLICY` | 权限不足、五级风控拦截、二次确认签名失效或 Nonce 重放 |
+| `1004` | `AI_RUNTIME_ERR_TIMEOUT` | 总执行时间超过 `timeout_ms` 预算上限或达到最大迭代轮数 |
+| `1005` | `AI_RUNTIME_ERR_CONTEXT_OVERFLOW` | 消息上下文 Token 超过 `token_budget` 配额 |
+| `1006` | `AI_RUNTIME_ERR_VALIDATION` | 入参格式错误、必填上下文缺失、参数合法性校验失败 |
+| `1007` | `AI_RUNTIME_ERR_CANCELLED` | 外部 `cancel_token` 激活（用户取消或客户端连接关闭） |
 
 **4. 为什么前端需要两层渲染缓冲?**
 
@@ -785,24 +785,24 @@ graph LR
 }}%%
 graph TB
     subgraph shared["fa:fa-cubes 共享层"]
-        api["fa:fa-plug api/*.ts<br/>17 个域文件"]
+        api["fa:fa-plug api/*.ts<br/>26 个域文件"]
         types["fa:fa-tags types/index.ts"]
-        components["fa:fa-th-large components/*.vue<br/>35+ 组件"]
-        stores["fa:fa-boxes stores/<br/>auth, category, chat, ledger, sync, theme"]
+        components["fa:fa-th-large components/*.vue<br/>45 个组件"]
+        stores["fa:fa-boxes stores/<br/>auth, category, chat, display-settings,<br/>ledger, market, sync, theme (8 个)"]
         http["fa:fa-globe utils/http.ts<br/>axios + JWT + CSRF"]
     end
 
     subgraph desktop["fa:fa-desktop 桌面端"]
         d_main["fa:fa-play main.ts"]
         d_router["fa:fa-route router/index.ts"]
-        d_views["fa:fa-window-maximize views/<br/>14 个页面"]
+        d_views["fa:fa-window-maximize views/<br/>24 个页面"]
     end
 
     subgraph mobile["fa:fa-mobile-alt 移动端"]
         m_main["fa:fa-play main-mobile.ts"]
         m_router["fa:fa-route router/mobile.ts"]
-        m_views["fa:fa-mobile views-mobile/<br/>10 个页面"]
-        m_db["fa:fa-database db/<br/>sql.js WASM + schema"]
+        m_views["fa:fa-mobile views-mobile/<br/>11 个页面"]
+        m_db["fa:fa-database db/<br/>sql.js WASM + schema (10 表)"]
     end
 
     d_main --> d_router --> d_views
@@ -845,8 +845,9 @@ graph TB
 - **一键连通性探测**: 内置 `testServerConnection()` 针对 `/api/system/status` 执行心跳自检，并测量实时网络往返延迟（ms）与验证服务端版本
 - **动态网络绑定与密钥重置**: 全局 Axios 实例自动监听地址更新并即时热切换默认 `baseURL` 与请求拦截器；同时通知 `crypto.ts` 自动清空并重新获取目标服务端的 RSA-OAEP 公钥
 - sql.js WASM 嵌入为 base64 字符串(`src/db/generated/sql-wasm-base64.ts`),Capacitor WebView 不可依赖网络 fetch
-- 本地 SQLite schema 镜像服务端 16 张表,用于离线 CRUD
-- `stores/sync.ts` 维护待同步队列,联网后批量 POST
+- 本地 SQLite schema 镜像服务端 10 张本地与同步表（含 `ledger_id` 隔离、`account_permissions`、`sync_queue` 与 `sync_meta`），支持 WebCrypto 非导出密钥加密（`idb-key.ts`）
+- `stores/sync.ts` 维护待同步队列,联网后按 `ledger_id` 作用域批量同步
+- AI SSE 流式接口（`frontend/src/api/ai.ts`）统一使用 `fetch(..., { credentials: 'same-origin' })` 兼容移动端跨域 WebView CORS 预检
 
 
 **关键不变量:**
@@ -1063,89 +1064,43 @@ cd android && ./gradlew clean assembleDebug
 cmake --build backend/build --parallel && npm --prefix frontend run build
 ```
 
-**集成测试套件 (`backend/tests/*.sh`):**
+**集成测试套件 (`backend/tests/*.sh`, 共 21 个脚本, 其中 13 个支持 `db_helper.sh` 双引擎):**
 
-| 脚本 | 覆盖范围 | 用例数 / 说明 |
-|------|---------|--------|
+| 脚本 | 覆盖范围 | 说明 |
+|------|---------|------|
 | `db_helper.sh` | 跨引擎测试脚手架 (端口冲突自愈、子进程托管、双引擎重置) | 桩模块 |
-| `test_db_helper.sh` | 测试辅助桩自测 | 单测 |
-| `test_link.sh` | auth + 账户维度 + CRUD + 余额联动 + PnL + CSV + 分页 + AI 工作流 (双引擎适配) | 40 cases (194 assertions) |
-| `test_full.sh` | 全量回归入口 | 所有 |
-| `test_ledgers.sh` | 多账本空间 + RBAC (Owner/Editor/Viewer) | 16 cases |
-| `test_2fa.sh` | TOTP 2FA 密钥生成、二维码、启用/禁用、登录验证 | 12 cases |
-| `test_dca_cashflow.sh` | DCA 定投周期执行、现金流日历推演 | 18 cases |
-| `test_ai_trace.sh` | AI 对话追踪、Token 消耗、工具调用 Span | 17 cases |
-| `test_ai_tool_call.sh` | AI 工具调用循环回归 (mock OpenAI 流式工具) | 15 cases |
-| `test_ai_truncate.sh` | AI 编辑重发历史截断测试 | 14 cases |
-| `test_market_sync.sh` | 多源行情拉取、缓存、批量同步 | 18 cases |
-| `test_fx_oauth.sh` | 汇率、FX 汇兑损益、OCR 票据识别、OAuth2/OIDC SSO | 20 cases |
-| `test_mcp.sh` | MCP stdio/HTTP 服务配置、工具缓存刷新与对话分发路由 | 14 cases |
-| `test_mcp_server.sh` | 外部客户端视角 `/mcp` JSON-RPC (initialize/tools/list/tools/call、鉴权、限流) | 10 cases |
-| `test_report_isolation.sh` | 月度支出/报表 user_id + ledger_id 隔离回归 | 6 cases |
+| `test_db_helper.sh` | 测试辅助桩自测 | `db_helper` 自测 |
+| `test_link.sh` | auth + 账户维度 + CRUD + 余额联动 + PnL + CSV + 分页 + 备份 + Skills + AI 工作流 | 244 assertions (双引擎) |
+| `test_full.sh` | 早期全量功能综合测试 (auth / CRUD / transfer / DCA / CSV) | SQLite |
+| `test_ledgers.sh` | 多账本空间 + 成员与账户/字段 RBAC | 双引擎 |
+| `test_2fa.sh` | TOTP 2FA 密钥生成、二维码、启用/禁用、登录验证 | 双引擎 |
+| `test_dca_cashflow.sh` | DCA 定投周期执行、现金流日历推演 | 双引擎 |
+| `test_ai_trace.sh` | AI 对话追踪、Token 消耗、工具调用 Span | 双引擎 |
+| `test_ai_tool_call.sh` | AI 工具调用循环回归 (mock OpenAI 流式工具) | 双引擎 |
+| `test_ai_truncate.sh` | AI 编辑重发历史截断测试 | SQLite |
+| `test_ai_loop_hardening.sh` | 重试、预算收敛、去重拦截、超时、确认令牌强制拦截 | SQLite |
+| `test_ai_news_isolation.sh` | Market Pulse 财经早报用户/账本隔离与隐私脱敏 | SQLite |
+| `test_market_sync.sh` | 多源行情拉取、缓存、批量同步 | 双引擎 |
+| `test_fx_oauth.sh` | 汇率、FX 汇兑损益、OCR 票据识别、OAuth2/OIDC SSO | 双引擎 |
+| `test_mcp.sh` | MCP stdio/HTTP 服务配置、工具缓存刷新与对话分发路由 | SQLite |
+| `test_mcp_server.sh` | 外部客户端视角 `/mcp` JSON-RPC (initialize/tools/list/tools/call、鉴权、限流) | SQLite |
+| `test_report_isolation.sh` | 月度支出/报表 user_id + ledger_id 隔离回归 | SQLite |
+| `test_scheduler.sh` | 调度中心 CRUD、内置任务、启停开关、运行日志与通知通道 | 双引擎 |
+| `test_im_bot.sh` / `test_im_bind_auth.sh` / `test_gateway.sh` | IM 机器人绑定、自助 `bind-auth`、防抢占与 Gateway CLI 全链路 | 双引擎 |
 
-**CTest 单元测试 (`backend/tests/unit/`, 55 套件):**
+另有辅助调试脚本 `test_link_nocleanup.sh`。Gateway 适配器单测：`npm --prefix gateway run test:adapters`（11 个测试）。
 
-| 套件 | 覆盖模块 |
-|------|----------|
-| `test_currency` | 货币模型 (ISO 4217 代码、精度、比较) |
-| `test_decimal` | 128 位定点算术 (加/减/乘/除/舍入模式) |
-| `test_money` | 金额类型 (跨币种安全校验、绝对值/负值) |
-| `test_quantity` | 持仓份额类型 |
-| `test_price` | 价格类型 |
-| `test_rate` | 汇率类型 |
-| `test_pnl` | 盈亏计算 (已实现/浮动) |
-| `test_fx` | 外汇计算 |
-| `test_ledger_math` | Ledger 纯数学算子 (buy/sell position) |
-| `test_ledger_engine` | Ledger 事件溯源全链路 |
-| `test_ledger_rebuild_checkpoint` | 账本检查点快照与增量状态重建 |
-| `test_transaction_lots` | 交易批次核算与持仓追溯 |
-| `test_cost_basis_fifo` | FIFO 成本基础核算与收益结算 |
-| `test_ai_token_compact` | AI 工具返回结果语义精简与上下文压缩 |
-| `test_ai_batch_confirmation` | AI 批量操作确认令牌与签名校验 |
-| `test_ai_tools` | AI 工具 Schema 注册/分发 |
-| `test_ai_policy` | AI 五级风控策略 |
-| `test_mcp_pool` | MCP STDIO 子进程长连接池管理 |
-| `test_policy_mcp_risk` | MCP 工具风险评估策略 |
-| `test_ai_runtime` | AI Runtime 统一执行循环、预算限制与错误分类 |
-| `test_ai_summary` | AI 财务摘要生成与流式解析 |
-| `test_ai_config_provider` | AI 配置生命周期管理与热重载 |
-| `test_secret_provider` | 统一密钥提供者 (环境变量/文件/外部) |
-| `test_domain_transaction` | 交易领域规则 (类型校验、方向校验) |
-| `test_domain_asset` | 资产领域规则 (投资类型判定、负债类型判定) |
-| `test_domain_portfolio` | 投资组合领域规则 |
-| `test_domain_cashflow` | 现金流领域规则 |
-| `test_domain_market` | 行情领域规则 |
-| `test_domain_auth` | 认证领域规则 (用户名/密码/备份码校验) |
-| `test_domain_ai` | AI 领域规则 (会话标题校验、上下文窗口限制) |
-| `test_domain_mcp` | MCP 协议领域规则 |
-| `test_domain_cost_basis` | 成本基础与加权核算领域规则 |
-| `test_domain_pnl` | 盈亏核算领域规则 |
-| `test_domain_position` | 持仓管理领域规则 |
-| `test_domain_multi_currency` | 多币种领域规则 |
-| `test_database_repository` | 数据库仓储接口抽象 |
-| `test_migration_engine` | csilk 迁移引擎发现、版本排序、锁与基线 |
-| `test_domain_repositories` | 领域仓储契约集成 |
-| `test_market_indices` | 全球大盘指数历史与日内分时 |
-| `test_fx_semantics` | 外汇汇率安全查询语义与回退告警 |
-| `test_mcp_client_io` | MCP 块缓冲 I/O 与双管道非阻塞轮询 |
-| `test_mcp_stderr_capture` | MCP 错误输出捕获与跨进程状态排错 |
-| `test_mcp_child_sanitation` | MCP 子进程文件描述符泄漏防护 (`closefrom`) |
-| `test_ai_parallel_tools` | 无状态网络工具并发并行调度与 Turn-order 汇聚 |
-| `test_workflow_step_error` | 工作流单步执行错误显式中断与状态传播 |
-| `test_workflow_branching` | 条件工作流分支决策与路径补偿 |
-| `test_summary_worker_pool` | 异步摘要计算线程池与 LRU 会话去重 |
-| `test_tx_scope_nesting` | 嵌套事务 Savepoint Scope 隔离与自愈 |
-| `test_financial_precision_edge` | 128 位十进制数跨层边界转换精度防漂移 |
-| `test_mcp_unauth_protocol` | MCP 未鉴权协议 JSON-RPC 规范响应 (`-32001`) |
-| `test_nonce_persistence` | AI 二次确认防重放令牌持久化与恢复 |
-| `test_file_parser_mkstemps` | 上传临时文件安全解析与无竞态释放 |
-| `test_auth_2fa_lifecycle` | TOTP 2FA 全生命周期动态绑定与解绑 |
-| `test_oauth_security` | OAuth / OIDC 防 CSRF 与授权码服务端安全兑换 |
-| `test_ai_prompt_injection_defense` | 提示词注入攻击主动检测与防御拦截 |
+**CTest 单元测试 (`backend/tests/unit/`, 81 套件 = 62 联动 `minefolio_core` + 19 纯金融/领域独立套件):**
 
-运行:
+核心测试覆盖矩阵：
+- **金融核心与账本引擎**: `test_currency`, `test_decimal`, `test_money`, `test_quantity`, `test_price`, `test_rate`, `test_pnl`, `test_fx`, `test_fx_semantics`, `test_ledger_math`, `test_ledger_engine`, `test_ledger_rebuild_checkpoint`, `test_transaction_lots`, `test_cost_basis_fifo`, `test_financial_precision_edge`
+- **DDD 领域规则与用例 (19 独立 + 仓储/用例)**: `test_domain_{transaction,asset,portfolio,cashflow,market,auth,ai,mcp,skill,account,tag,category,ledger,dca,cost_basis,pnl,performance,position,multi_currency}`, `test_domain_repositories`, `test_database_repository`, `test_migration_engine`, `test_account_usecases`, `test_account_rbac`, `test_tag_usecases`, `test_category_usecases`, `test_report_services`, `test_portfolio_pnl_alignment`
+- **统一 AI Runtime、MCP 与风控**: `test_ai_runtime`, `test_ai_tools`, `test_ai_policy`, `test_mcp_pool`, `test_policy_mcp_risk`, `test_ai_summary`, `test_ai_mask`, `test_ai_token_compact`, `test_ai_action_confirm`, `test_ai_batch_confirmation`, `test_nonce_persistence`, `test_ai_prompt_injection_defense`, `test_ai_config_provider`, `test_ai_news_privacy`, `test_skill_repository`, `test_mcp_client_io`, `test_mcp_stderr_capture`, `test_mcp_child_sanitation`, `test_mcp_unauth_protocol`, `test_ai_parallel_tools`, `test_workflow_step_error`, `test_workflow_branching`, `test_summary_worker_pool`
+- **调度、灾备与安全**: `test_cron_parser`, `test_scheduler_migration`, `test_scheduler_repo`, `test_scheduler_engine`, `test_scheduler_idle_sleep`, `test_wechat_push_service`, `test_wal_checkpoint`, `test_db_backup`, `test_async_task_manager`, `test_tx_scope_nesting`, `test_file_parser_mkstemps`, `test_auth_2fa_lifecycle`, `test_oauth_security`, `test_secret_provider`
+
+运行（按 `AGENTS.md` 规范使用内存隔离脚本或 `backend/build`）:
 ```bash
-cd backend/build && ctest --output-on-failure
+./backend/tests/run_isolated.sh -m 4G -j 4 unit build
 ```
 
 **Dockerfile 关键技术:**
@@ -1168,7 +1123,7 @@ cd backend/build && ctest --output-on-failure
 | 迁移成本 | 低 (当前) | 中 (需逐步迁移,双注册过渡期) |
 | 长期维护 | 业务规则随 Service 膨胀 | **规则明确,接口契约清晰** |
 
-**结论**: 选 DDD 四层是 Minefolio v1.2 的核心架构决策。所有 17 个业务域已完成迁移,Legacy 双轨代码已完全清除。
+**结论**: 选 DDD 四层是 Minefolio v1.2+ 的核心架构决策。当前全部 **21 个业务域** 已完成迁移，Legacy 双轨代码已完全清除。
 
 ### 8.2 后端语言: C23 vs Go vs Rust
 
@@ -1195,11 +1150,11 @@ cd backend/build && ctest --output-on-failure
 | **适合场景** | 单用户/家庭自托管 | 多租户/集群 |
 
 Minefolio 采用下沉至 csilk 框架的原生**正式版本化迁移系统 (Database Migration System)**（`<csilk/drivers/db/migration.h>`），彻底替换历史上的动态字段检测与硬编码 ALTER TABLE：
-- **规范化版本脚本**：按 Flyway 规范统一组织于 `backend/sql/migrations/{sqlite,postgres}/`，文件命名格式 `V<num>__<name>.sql`（`V001`~`V020`）。
+- **规范化版本脚本**：按 Flyway 规范统一组织于 `backend/sql/migrations/{sqlite,postgres}/`，文件命名格式 `V<num>__<name>.sql`（`V001`~`V033`）。
 - **版本记录与审计 (`schema_migrations`)**：记录每个已应用的迁移版本、名称、SHA-256 校验和、应用时间及执行毫秒耗时。
 - **分布式并发互斥锁 (`schema_migration_lock`)**：通过数据库行锁与租约超时防死锁机制，有效防止多实例并行迁移竞争。
 - **PostgreSQL 原生 Prepared Statement 支持**：csilk PostgreSQL 驱动原生实现 `?` 转 `$1, $2, ...` 重写、`PQprepare`/`PQexecPrepared` 编译与执行、类型绑定与 `DEALLOCATE` 释放，确保并发锁及迁移语句在 SQLite / PostgreSQL 下均稳定执行。
-- **双引擎集成测试与 CI 双轨验证 (`backend/tests/db_helper.sh`)**：所有端到端集成测试脚本均通过 `db_helper.sh` 封装端口冲突自愈、多进程生命周期管控与跨引擎 schema 重置；CI 流水线 (`.github/workflows/ci.yml`) 设有独立的 `backend-postgres` Job，在 PostgreSQL 16 容器环境下全量验证迁移与 8 大核心集成测试套件。
+- **双引擎集成测试与 CI 双轨验证 (`backend/tests/db_helper.sh`)**：13 个双引擎测试脚本统一通过 `db_helper.sh` 封装端口冲突自愈、多进程生命周期管控与跨引擎 schema 重置；CI 流水线 (`.github/workflows/ci.yml`) 设有独立的 `backend` (SQLite)、`backend-postgres` (PostgreSQL 16 容器环境下运行 CTest + 12 个集成套件)、`frontend` 与 `gateway` Jobs。
 - **跨平台哈希规范化**：计算校验和时自动规范化 CRLF/LF 换行符并修剪尾随空白，杜绝跨平台或跨编辑器修改导致的校验和漂移。
 - **存量生产平滑升级 (Auto-Baseline)**：自动检测已有业务表数据库，并将基准版本自动标记为已应用，**严禁且无需清空生产环境数据库**。
 
@@ -1228,9 +1183,9 @@ Minefolio 采用下沉至 csilk 框架的原生**正式版本化迁移系统 (Da
 | **后端二进制体积** | ≤ 5MB strip | 4.2MB |
 | **后端冷启动** | ≤ 50ms | 30ms |
 | **并发连接** | ≥ 10k (单节点) | epoll-based csilk |
-| **集成测试覆盖** | 8 大核心套件双引擎全通过 | `test_*.sh` + `db_helper.sh` |
-| **CUnit/CTest 单测覆盖** | 55 套件全通过 | CTest |
-| **前端单测覆盖** | 7 case (mobile spec) | vitest |
+| **集成测试覆盖** | 21 个测试脚本（13 个双引擎 `db_helper.sh` 支持） | `test_*.sh` + CI 双轨 |
+| **CUnit/CTest 单测覆盖** | 81 套件全通过 | CTest |
+| **前端单测覆盖** | 53 套件 (`frontend/tests/*.spec.ts`) + `gateway` 11 用例 | Vitest / Node test |
 | **定点精度** | 128-bit 定点,scale ≤ 18 | 零 IEEE 754 误差 |
 | **AI 风控评估延迟** | ≤ 5ms/tool | 纯 CPU 规则,无 IO |
 
@@ -1240,7 +1195,7 @@ Minefolio 采用下沉至 csilk 框架的原生**正式版本化迁移系统 (Da
 
 | # | 风险 | 影响 | 缓解措施 |
 |:-:|------|------|----------|
-| 1 | csilk 上游偶发崩溃（历史 v0.5.2 记录） | 服务中断 | 见 `docs/csilk-v0.5.2-crash-report.md`;当前 GIT_TAG master,遇回归可回退 pin |
+| 1 | csilk 上游偶发崩溃（历史 v0.5.2 记录） | 服务中断 | 见 `docs/csilk-v0.5.2-crash-report.md`;当前 GIT_TAG 固定为 `v1.2.0`，遇回归可追踪升级 |
 | 2 | 移动端 sql.js WASM 体积大 (~1MB base64) | APK 增大 | 已接受;考虑用 `vite-plugin-compress` |
 | 3 | 单写者 SQLite 写入瓶颈 | 高并发写阻塞 | PG 可选;热点表可考虑分片 |
 | 4 | AI 流式 SSE 长连接占用 fd | 大量并发耗尽 | csilk 连接池有上限;前端必须 `AbortController` |
@@ -1250,7 +1205,7 @@ Minefolio 采用下沉至 csilk 框架的原生**正式版本化迁移系统 (Da
 | 8 | JWT secret 泄露 | 全账户失陷 | 强制 env 注入;定期轮换 `token_version` 失效所有旧 token |
 | 9 | Ledger Engine 重建性能 | 大用户资产重算耗时 | 异步后台 rebuild + progress polling |
 | 10 | 128-bit 定点溢出 | 计算结果错误 | 所有操作返回 `decimal_err_t`;上层 MUST 检查返回值 |
-| 11 | 新旧架构双注册路由冲突 | API 重复响应 | 迁移完成后显式废弃 `controllers/` 中旧注册,更新 `main.c` |
+| 11 | 新旧架构双注册路由冲突（历史） | API 重复响应 | 已于 DDD 收敛重构中彻底移除 legacy 控制器与仓储（现仅 27 组单一注册控制器） |
 
 ---
 
@@ -1270,28 +1225,31 @@ Minefolio 采用下沉至 csilk 框架的原生**正式版本化迁移系统 (Da
 | 标签 | `/api/tags`, `/api/daily-expenses/:id/tags` | `interfaces/http/controllers/tag_controller.c` → `application/` | |
 | 转账 | `/api/transfers` | `interfaces/http/controllers/transfer_controller.c` → `application/` | |
 | 报表 | `/api/reports/*` (asset/expense/holdings/cashflow) | `interfaces/http/controllers/report_controller.c` → `application/report/` | |
-| 导入导出 | `/api/import/*`, `/api/export/*` | `interfaces/http/controllers/import_export_controller.c` → `application/` | |
-| AI | `/ai/chat` (SSE), `/ai/sessions/*`, `/ai/workflows/*` | `interfaces/http/controllers/ai_controller.c` → `application/ai/` | |
-| 文件 | `/api/files/*` | `interfaces/http/controllers/file_controller.c` → `application/` | |
-| AI 追踪 | `/api/ai/traces` | `interfaces/http/controllers/ai_trace_controller.c` → `application/ai/` | |
-| 行情 | `/api/market/*` (quote, history, sync) | `interfaces/http/controllers/market_controller.c` → `application/market/` | |
-| DCA | `/api/dca/plans`, `/api/dca/executions` | `interfaces/http/controllers/dca_controller.c` → `application/` | |
-| 现金流 | `/api/cashflow/schedules` | `interfaces/http/controllers/cashflow_controller.c` → `application/cashflow/` | |
-| 账本 | `/api/ledgers`, `/api/ledgers/:id/members` | `interfaces/http/controllers/ledger_controller.c` → `application/` | |
-| 管理员 | `/api/admin/*` | `interfaces/http/controllers/admin_controller.c` → `application/` | |
+| 导入导出 & 智能规则 | `/api/import/*`, `/api/export/*`, `/api/import-rules*`, `/api/receipts/scan` | `import_export_controller.c` / `import_rule_controller.c` / `receipt_controller.c` | |
+| AI 与工作流 | `/api/ai/chat` (SSE), `/api/ai/sessions/*`, `/api/ai/workflows/*`, `/api/ai/actions/confirm*`, `/api/settings/ai*` | `interfaces/http/controllers/ai_controller.c` → `application/ai/` | |
+| Agent Skills & News | `/api/ai/skills*`, `/api/ai/news*` | `skill_controller.c` / `ai_news_controller.c` | |
+| MCP 客户端与服务 | `/api/ai/mcp/*`, `POST /mcp` | `ai_mcp_controller.c` / `mcp_server_controller.c` | |
+| 文件 | `/api/files/*` | `interfaces/http/controllers/file_controller.c` → `application/file/` | |
+| AI 追踪 | `/api/ai/traces*` | `interfaces/http/controllers/ai_trace_controller.c` → `application/ai/` | |
+| 行情 | `/api/market/*` (quote, indices, exchange-rates, fx-history, sync) | `interfaces/http/controllers/market_controller.c` → `application/market/` | |
+| DCA | `/api/dca/plans*`, `/api/dca/executions*` | `interfaces/http/controllers/dca_controller.c` → `application/dca/` | |
+| 现金流 | `/api/cashflow/*` | `interfaces/http/controllers/cashflow_controller.c` → `application/cashflow/` | |
+| 账本与账户 RBAC | `/api/ledgers*`, `/api/ledgers/:ledger_id/accounts/:id/permissions*` | `interfaces/http/controllers/ledger_controller.c` / `account_controller.c` | |
+| 调度中心 & IM | `/api/scheduler/*`, `/api/im/*` | `scheduler_controller.c` / `im_bot_controller.c` | |
+| 异步任务 & 管理员/备份 | `/api/tasks*`, `/api/system/backup/*` | `task_controller.c` / `admin_controller.c` | |
 | 健康检查 | `/healthz` | — | — |
 
 ### 11.2 关键文件索引
 
 | 路径 | 用途 |
 |------|------|
-| `backend/src/main.c` | 入口、middleware 栈、路由注册、服务初始化 |
-| `backend/src/interfaces/http/controllers/*_controller.c` | 23 个 HTTP 控制器 (全部委托到 application 层) |
-| `backend/src/application/*/usecases.c` | 17 个域的用例编排模块 (application/ 共 18 目录) |
-| `backend/src/domain/*/entity.h` | 17 个域的纯业务实体定义 |
-| `backend/src/domain/*/repository.h` | 17 个域的仓储契约接口 |
-| `backend/src/domain/*/rules.h` | 17 个域的业务规则函数 (全部含 rules.c 实现) |
-| `backend/src/infrastructure/repositories/*_repo_impl.c` | 20 个文件,17 个域的 SQL 仓储实现 (零 legacy repo 残留) |
+| `backend/src/main.c` | 入口、middleware 栈、27 组路由注册、服务初始化 |
+| `backend/src/interfaces/http/controllers/*_controller.c` | 27 个 HTTP 控制器 (全部委托到 application 层) |
+| `backend/src/application/*/usecases.c` | 21 个业务域的用例编排模块 (含 `application/task/async_task_manager.c`) |
+| `backend/src/domain/*/entity.h` | 21 个业务域的纯业务实体定义 |
+| `backend/src/domain/*/repository.h` | 21 个业务域的仓储契约接口 |
+| `backend/src/domain/*/rules.h` | 21 个业务域的业务规则函数 (含对应 `rules.c` 实现) |
+| `backend/src/infrastructure/repositories/*_repo_impl.c` | 27 个 SQL 仓储实现 (零 legacy repo 残留) |
 | `backend/src/core/financial/decimal.h` | 128 位定点十进制引擎 |
 | `backend/src/core/financial/money.h` | 绑定 currency 的金额强类型 |
 | `backend/src/core/financial/currency.h` | ISO 4217 货币模型 |
@@ -1299,40 +1257,44 @@ Minefolio 采用下沉至 csilk 框架的原生**正式版本化迁移系统 (Da
 | `backend/src/core/ledger/ledger_types.h` | ledger_tx_t / position/account state |
 | `backend/src/services/ai/model/` | AI 请求/响应/provider/model |
 | `backend/src/services/ai/policy/` | AI 五级风控策略 |
-| `backend/src/services/ai/runtime/` | AI 会话/循环/上下文运行时 |
-| `backend/src/services/ai/tools/` | AI 工具注册/分发/Schema |
+| `backend/src/services/ai/runtime/` | AI 会话/循环/上下文/预算运行时 |
+| `backend/src/services/ai/tools/` | AI 工具注册/分发/Schema (26 内置工具 + MCP 客户端池) |
 | `backend/src/services/ai/trace/` | AI 追踪 Span/导出器 |
 | `backend/src/services/ai/workflow/` | AI 工作流 Graph/Executor/Engine |
-| `backend/src/services/ai/workflows/` | 4 个具体工作流实现 |
+| `backend/src/services/ai/workflows/` | 13 个注册财务工作流实现 |
+| `backend/src/services/scheduler/` | Cron 调度中心引擎与动态休眠工作池 |
 | `backend/src/common/balance.h` | 余额符号翻转 + 持仓核算 |
-| `csilk (csilk/drivers/db/migration.h)` | 数据库迁移引擎 (下沉至 csilk，提供 checksum、分布式锁、auto-baseline) |
-| `backend/sql/migrations/{sqlite,postgres}/` | 版本化迁移文件 (V001~V020) |
-| `backend/sql/migration.sql` | SQLite 18 表全量基准 (V020 起) |
-| `backend/sql/migration_postgres.sql` | PostgreSQL 18 表全量基准 (V020 起) |
-| `backend/tests/test_link.sh` | 40-case 核心集成测试 (194 assertions) |
-| `backend/tests/test_*.sh` | 16 个专项集成测试脚本 (另有 test_full.sh 全量回归) |
-| `backend/tests/unit/test_*.c` | 55 个 CTest 单元单测 |
+| `backend/tools/reset-password.c` | 独立运维 CLI 工具 (`reset` / `verify` / `list` / `disable-2fa`) |
+| `csilk (csilk/drivers/db/migration.h)` | 数据库迁移引擎 (下沉至 csilk `v1.2.0`，提供 checksum、分布式锁、auto-baseline) |
+| `backend/sql/migrations/{sqlite,postgres}/` | 版本化迁移文件 (V001~V033) |
+| `backend/sql/migration.sql` | SQLite 37 表全量基准 |
+| `backend/sql/migration_postgres.sql` | PostgreSQL 37 表全量基准 |
+| `backend/tests/test_link.sh` | 核心闭环集成测试 (244 assertions) |
+| `backend/tests/test_*.sh` | 21 个集成与辅助脚本（其中 13 个通过 `db_helper.sh` 支持双引擎） |
+| `backend/tests/unit/test_*.c` | 81 个 CTest 单元测试 |
+| `gateway/` | IM 机器人网关 (Node >= 18，OneBot / WeChaty + 11 适配器单测) |
 | `frontend/src/utils/http.ts` | axios + JWT + CSRF |
 | `frontend/src/stores/chat.ts` | SmoothStreamWriter |
 | `frontend/src/components/ChatMessageContent.vue` | 流式渲染分层 |
-| `frontend/src/router/index.ts` / `mobile.ts` | 桌面 / 移动路由 |
-| `frontend/src/db/schema.ts` | 移动端离线 schema |
-| `Dockerfile` | 多阶段构建 |
-| `docker-compose.yml` | 生产编排 |
-| `docs/csilk-v0.5.2-crash-report.md` | 已知崩溃分析 |
+| `frontend/src/router/index.ts` / `mobile.ts` | 桌面 (24 视图) / 移动 (11 视图) 独立路由 |
+| `frontend/src/db/schema.ts` | 移动端离线 schema (10 张表，支持 WebCrypto IDB 加密) |
+| `Dockerfile` | 多阶段构建（含 `minefolio` 与 `reset-password`） |
+| `docker-compose.yml` | 生产编排（支持 `postgres` 与 `im` profiles） |
+| `docs/csilk-v0.5.2-crash-report.md` | 历史崩溃分析归档 |
 
 ### 11.3 版本与维护
 
 - **后端标准**: C23 (gcc-14),CMake 3.16+,必须 Unix Makefiles
 - **前端标准**: Node.js 20,npm,vue-tsc strict mode 必传
-- **数据库**: SQLite ≥ 3.40 或 PostgreSQL ≥ 14
-- **构建产物**: 后端 4-5MB 二进制,前端 1.25MB 主包 + 按路由懒加载分块
+- **数据库**: SQLite ≥ 3.35 (WAL, 支持 RETURNING 语法) 或 PostgreSQL ≥ 14 (推荐 16)
+- **构建产物**: 后端 4-5MB 二进制,前端主包 + 按路由懒加载分块
 - **CI 验证命令**:
   ```bash
-  cmake --build backend/build --parallel && npm --prefix frontend run build
-  ./backend/tests/test_full.sh                    # 全量集成回归 (SQLite)
-  ctest --test-dir backend/build --output-on-failure  # 55 个 CTest 单测
-  npm --prefix frontend test -- --run             # 移动端 vitest
+  ./backend/tests/run_isolated.sh -m 4G -j 4 unit build   # 81 个 CTest 单测（内存隔离）
+  npm --prefix frontend run build
+  npm --prefix frontend test                             # 53 个前端 Vitest 套件
+  npm --prefix gateway run test:adapters                 # 11 个 IM 网关适配器用例
+  ./backend/tests/test_link.sh                           # 核心集成回归 (SQLite)
   # PostgreSQL 集成测试验证 (CI 自动执行)：
   MINEFOLIO_DB_DRIVER=postgres MINEFOLIO_DB_DSN="host=localhost port=5432 user=postgres password=postgres_password dbname=minefolio_test sslmode=disable" ./backend/tests/test_link.sh
   ```

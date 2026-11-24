@@ -33,15 +33,26 @@ backend/src/services/ai/
 │   ├── provider.h / .c   # DeepSeek / OpenAI 兼容提供商适配
 │   ├── request.h / .c    # 提示词组织与 JSON Payload 构建
 │   └── response.h / .c   # SSE 流式 Chunk 解码与 JSON 解析
-├── tools/                # 领域工具注册表与 Schema 校验
+├── tools/                # 领域工具注册表与 Schema 校验 (26 个内置工具 + MCP 远端扩展)
 │   ├── registry.h / .c   # 工具注册表、入参类型反射与 Schema 生成
 │   ├── dispatcher.h / .c # 工具调用路由与上下文环境注入
-│   ├── asset_tool.c      # 资产与余额查询工具 (get_assets 支持可选 account_id 过滤; 结果含 account_name/institution)
+│   ├── schema.h / .c     # 参数 Schema 校验定义
+│   ├── validation.h / .c # 语义与参数边界校验
+│   ├── mask.h / .c       # 隐私脱敏与金额掩码投影
+│   ├── projection.h / .c # 工具返回结果语义压缩与字段投影
+│   ├── context.h / .c    # 工具执行上下文注入 (账本 / RBAC 视野)
+│   ├── asset_tool.c      # 资产与余额查询工具 (支持可选 account_id 过滤; 结果含 account_name/institution)
 │   ├── transaction_tool.c# 交易查询与记账草案工具
-│   ├── expense_tool.c    # 收支明细记录工具
+│   ├── transfer_tool.c   # 跨账户转账查询与拟录入工具
+│   ├── batch_tool.c      # 批量操作提案与确认工具 (propose_batch_actions)
+│   ├── expense_tool.c    # 收支明细记录与查询工具
 │   ├── cashflow_tool.c   # 现金流排程与预测工具
 │   ├── portfolio_tool.c  # 投资组合表现与权重分析工具
-│   └── report_tool.c     # 多币种汇总与外汇损益报告工具
+│   ├── report_tool.c     # 多币种汇总与外汇损益报告工具
+│   ├── news_tool.c       # Market Pulse 财经摘要查询工具 (get_market_pulse)
+│   ├── skill_tool.c      # Agent Skills 发现与执行工具 (list_skills / use_skill)
+│   ├── web_search_tool.c # 联网检索工具 (无状态并发执行)
+│   └── mcp/              # MCP STDIO/HTTP 客户端与子进程池 (mcp_client, mcp_pool)
 ├── policy/               # 安全策略、风控与防重放
 │   ├── policy.h / .c     # 策略评估入口 (ai_policy_evaluate)
 │   ├── risk.h / .c       # 5 级金融风险矩阵评定
@@ -51,10 +62,11 @@ backend/src/services/ai/
 ├── trace/                # 全链路追踪与可观测性
 │   ├── trace.h / .c      # OpenTelemetry 风格 Span、延迟统计与 Token 导出
 │   └── exporter.h / .c   # 异步持久化写入 ai_traces 数据库表
-└── workflow/             # 高阶多步 DAG 编排引擎
-    ├── graph.h / .c      # 工作流 DAG 有向无环图拓扑构建
+└── workflow/             # 高阶多步 DAG 编排引擎 + 13 个注册工作流 (workflows/)
+    ├── engine.h / .c     # 工作流注册与调度入口 (13 个内置财务工作流)
+    ├── graph.h / .c      # 工作流 DAG 有向无环图拓扑构建（含条件分支与 Saga 补偿）
     ├── executor.h / .c   # 节点状态机迁移与执行编排（委托至 Runtime）
-    └── workflows/        # 内置场景报告模板 (财务体检、现金流预测、组合诊断)
+    └── ../workflows/     # 12 个工作流实现 + cashflow_forecast_common.c (月末复盘、体检、异常检测、现金流等)
 ```
 
 ---
@@ -116,34 +128,56 @@ Agent 循环是 Runtime 最核心的状态机引擎，其完整的状态转移�
 `ai_runtime_context_t` 结构体聚合了一次运行生命周期所需的全部资源：
 
 ```c
-typedef struct ai_runtime_context {
-    int64_t                user_id;        // 触发会话的用户 ID
-    int64_t                session_id;     // 会话唯一标识 (0 代表临时或工作流执行)
-    csilk_json_t*          messages;       // 当前上下文全部对话消息 (JSON 数组)
-    ai_tool_registry_t*    tools;          // 启用的工具注册表指针
-    csilk_db_pool_t*       pool;           // 数据库连接池
-    ai_runtime_limits_t    limits;         // 运行时硬预算与安全配额
-    ai_runtime_stats_t     stats;          // 当前累计统计指标 (耗时/轮数/Tokens/费用)
-    ai_trace_context_t*    trace;          // 全链路追踪 Span 上下文
-    char                   model_name[64]; // 模型标识 (如 deepseek-chat, gpt-4o-mini)
-    char                   custom_system_prompt[1024]; // 动态自定义系统提示词
-} ai_runtime_context_t;
+typedef struct {
+    /* 1. 用户与权限 */
+    int64_t               user_id;
+    ai_permission_level_t perm_level;
+
+    /* 2. 会话标识 */
+    int64_t session_id;
+    char    session_title[128];
+
+    /* 3. 消息队列 (JSON array of message objects) */
+    csilk_json_t* messages;
+
+    /* 4. 可用工具 */
+    csilk_ai_tool_t* tools;
+    size_t           tool_count;
+
+    /* 5. 模型与超参 */
+    char   provider_id[64];
+    char   model_name[128];
+    double temperature;
+    int    max_tokens;
+    double top_p;
+    bool   has_enable_thinking;
+    bool   enable_thinking;
+
+    /* 6. 限制、统计与取消 */
+    ai_runtime_limits_t limits;
+    ai_runtime_stats_t  stats;
+    volatile bool*      cancel_token;
+
+    /* 7. 扩展元数据与追踪 */
+    csilk_json_t* metadata;
+    ai_trace_t*   trace;
+} ai_runtime_context_t;       // (services/ai/runtime/context.h)
 ```
 
 ---
 
 ## 5. 预算与硬限制 (Limits & Budgets)
 
-为避免模型陷入幻觉引起的死循环，或恶意调用高耗费接口，Runtime 默认启用严格的防御预算：
+为避免模型陷入幻觉引起的死循环，或恶意调用高耗费接口，Runtime 默认由 `ai_runtime_limits_default()` (`services/ai/runtime/limits.c`) 初始化配额，并由调用方按场景显式收紧硬限制：
 
-| 配额项 | 结构体字段 | 默认值 | 校验逻辑 | 违规错误 |
+| 配额项 | 结构体字段 | `ai_runtime_limits_default()` 默认值 | 校验逻辑 | 违规错误 |
 |---|---|---|---|---|
-| **迭代轮数上限** | `max_iterations` | `10` | 状态机循环计数 $\ge$ 上限即终止 | `AI_RUNTIME_ERR_TIMEOUT` / 迭代耗尽 |
-| **硬超时保护** | `timeout_ms` | `120,000ms` (2分钟) | 每轮循环前比对墙上时钟 `(now - start_ms)` | `AI_RUNTIME_ERR_TIMEOUT` |
+| **迭代轮数上限** | `max_iterations` | `10` | 状态机循环计数 $\ge$ 上限即终止 | `AI_RUNTIME_ERR_TIMEOUT` |
+| **硬超时保护** | `timeout_ms` | `0`（默认不限，调用方可显式设置） | `timeout_ms > 0` 且每轮循环前比对 `(now - start_ms)` | `AI_RUNTIME_ERR_TIMEOUT` |
 | **Token 预算** | `token_budget` | `32,768` Tokens | 累计输入+输出 Tokens 超过预算则拒绝下一轮 | `AI_RUNTIME_ERR_CONTEXT_OVERFLOW` |
-| **工具调用上限** | `tool_budget` | `20` 次 | 累计执行工具总数超过配额立即熔断 | `AI_RUNTIME_ERR_TOOL` |
-| **成本预算控制** | `cost_budget` | `$1.00` 美元 | 按模型单价折算的总成本超过配额立即停止 | `AI_RUNTIME_ERR_TIMEOUT` |
-| **协作式中断信号** | `cancellation_token` | `const bool*` | 客户端断开连接或用户点击停止时置位 | `AI_RUNTIME_ERR_CANCELLED` |
+| **工具调用上限** | `tool_budget` | `15` 次 | 累计执行工具总数超过配额立即熔断 | `AI_RUNTIME_ERR_TOOL` |
+| **成本预算控制** | `cost_budget` | `0.0`（默认不限，调用方可显式设置） | `cost_budget > 0` 且按模型单价折算总成本超额时停止 | `AI_RUNTIME_ERR_TIMEOUT` |
+| **协作式中断信号** | `cancel_token` | `volatile bool*` (`context.h`) | 客户端断开连接或用户点击停止时置位 | `AI_RUNTIME_ERR_CANCELLED` |
 
 ---
 
@@ -194,8 +228,9 @@ data: {"type": "delta", "content": "根据您的账本统计，上月总支出�
 - **运行时缓冲**：Agent Loop (`runtime/loop.c`) 在流式迭代中维护动态扩容的 `thinking_buffer`；
 - **数据库表扩展 (V015)**：Migration `V015__ai_messages_thinking_content.sql` 在 `ai_messages` 表中增加了 `thinking_content TEXT` 字段；
 - **数据库表扩展 (V016)**：Migration `V016__ai_messages_tool_calls.sql` 在 `ai_messages` 表中增加了 `tool_calls TEXT DEFAULT ''` 字段，用于持久化模型返回的工具调用记录（JSON 数组），供前端回显工具执行状态与 Agent Loop 上下文重建；
-- **账户维度 Schema (V017)**：Migration `V017__accounts_table.sql` 引入 `accounts` 表与 `assets.account_id` 外键；AI 资产工具 (`exec_get_assets`) 的查询结果随之携带 `account_name` / `institution` 字段，并支持可选 `account_id` 整型入参过滤，Agent 可按账户维度检索与汇总资产（`V001`~`V020` 自动迁移基线）。
+- **账户维度 Schema (V017) 与 RBAC 脱敏 (V031)**：Migration `V017__accounts_table.sql` 引入 `accounts` 表与 `assets.account_id` 外键；`V031__account_and_field_rbac.sql` 引入 `account_permissions` 与 `MF_RBAC_ASSET_VISIBLE_SQL` / `MF_RBAC_ASSET_UNMASKED_SQL`，AI 资产/汇总/新闻工具严格隔离隐藏或脱敏账户（全量自动化迁移覆盖 `V001`~`V033`）。
 - **确认令牌 Nonce 持久化 (V019)**：Migration `V019__ai_consumed_nonces.sql` 引入 `ai_consumed_nonces` 表；`ai_confirmation_verify_and_consume()` 在签名校验通过后将已消费 Nonce 落库，重放的 `draft_token` 即使跨进程重启也会被拒绝（此前仅内存缓存防护）。
+- **Agent Skills 与财经早报隔离 (V022, V024, V028)**：`V022__ai_skills.sql` 新增 `ai_skills` 表并通过 `list_skills` / `use_skill` 工具接入对话；`V024__ai_news_reports.sql` 与 `V028__ai_news_portfolio_isolation.sql` 支持两阶段财经摘要与按用户/账本隔离持仓快照（`ai_news_privacy` 与 `test_ai_news_isolation.sh`）。
 - **原子持久化**：当一轮对话完成时，`mf_ai_session_repo_save_message_with_thinking()` 将正文回复、完整的思考过程与 `tool_calls` JSON 原子持久化入库，保证历史会话在重新载入时能够完整回溯思维链与工具调用轨迹。
 
 ---
@@ -229,20 +264,25 @@ data: {"type": "delta", "content": "根据您的账本统计，上月总支出�
 
 ## 13. 测试与验证矩阵 (Verification Matrix)
 
-AI Runtime 体系拥有 100% 覆盖的单元测试与真实的端到端集成测试验证：
+AI Runtime 体系拥有丰富的单元测试与真实端到端集成测试验证：
 
-1. **CTest 单元测试套件 (`tests/unit/`)**：
-   - 上下文容器初始化与自动释放、错误码分类、预算校验、记忆窗口、取消/超时/校验拒绝(同套件 `test_ai_runtime`)
-   - MCP 4KB 块缓冲读取与 1MB 上限截断 (`test_mcp_client_io`)
+1. **CTest 单元测试套件 (`tests/unit/`, 81 套件子集)**：
+   - 上下文容器初始化与自动释放、错误码分类、预算校验、记忆窗口、取消/超时/校验拒绝 (`test_ai_runtime`)
+   - 工具注册/分发/批提案 (`test_ai_tools`)、确认令牌 (`test_ai_action_confirm` / `test_ai_batch_confirmation`)、结果紧凑投影 (`test_ai_token_compact`) 与金额脱敏 (`test_ai_mask`)
+   - 五级风控与提示词注入防御 (`test_ai_policy`, `test_policy_mcp_risk`, `test_ai_prompt_injection_defense`)
+   - MCP STDIO 长连接池、4KB 块缓冲读取与 1MB 上限截断 (`test_mcp_pool`, `test_mcp_client_io`)
    - MCP Stderr 非阻塞排空与防管道死锁 (`test_mcp_stderr_capture`)
    - MCP 子进程 post-dup2 `closefrom(3)` 描述符隔离 (`test_mcp_child_sanitation`)
    - 无状态网络工具并行调度 vs 串行回退 (`test_ai_parallel_tools`)
-   - 确定性工作流节点错误显式传播与阻断 (`test_workflow_step_error`)
-   - 异步记忆 Worker 线程池入队、LRU 淘汰与清理 (`test_summary_worker_pool`)
+   - 确定性工作流节点错误显式传播与条件分支/Saga 补偿 (`test_workflow_step_error`, `test_workflow_branching`)
+   - 异步记忆 Worker 线程池入队、LRU 淘汰与清理 (`test_ai_summary`, `test_summary_worker_pool`)
    - 已消费确认 Nonce 持久化与跨重启重放拒绝 (`test_nonce_persistence`)
    - 未认证 MCP 请求返回 JSON-RPC -32001 协议错误 (`test_mcp_unauth_protocol`)
-2. **端到端集成回归**：
-   - 验证真实会话创建、多轮对话流式返回、工具 Span 上报与 `ai_traces` 表落库统计 (`test_ai_trace.sh`)
+   - 财经早报持仓隔离脱敏与 Agent Skills 仓储 (`test_ai_news_privacy`, `test_skill_repository`, `test_domain_ai`, `test_domain_mcp`, `test_domain_skill`)
+2. **端到端集成回归 (`tests/test_*.sh`)**：
+   - 验证真实会话创建、多轮对话流式返回、工具 Span 上报与 `ai_traces` 表落库统计 (`test_ai_trace.sh`, `test_ai_tool_call.sh`, `test_ai_truncate.sh`)
    - 验证超时重试、预算收敛总结、去重拦截与动账令牌强制拦截 (`test_ai_loop_hardening.sh`)
-   - 验证 HTTP 与 STDIO 模式下的 MCP 服务端点通信与工具调用 (`test_mcp.sh`)
+   - 验证财经早报按账本/用户隔离与脱敏 (`test_ai_news_isolation.sh`)
+   - 验证 HTTP 与 STDIO 模式下的 MCP 服务端点通信与工具调用 (`test_mcp.sh`, `test_mcp_server.sh`)
+   - 验证 IM 只读查账工具白名单与网关全链路 (`test_im_bot.sh`, `test_im_bind_auth.sh`, `test_gateway.sh`)
 

@@ -6,7 +6,7 @@
 
 | 文件 | 职责 |
 |------|------|
-| `index.js` | 网关核心：`handleImMessage(platform, imUserId, text, bindToken)` + `/bind` 处理 + `refreshBindToken` |
+| `index.js` | 网关核心：`handleImMessage(platform, imUserId, text, bindToken)` + `/bind` / `/bind <user> <pass>` 处理 + `im_bindings.json` 持久化 + `refreshBindToken` |
 | `cli.js` | CLI 模拟 IM 用户，跑通「绑定 → 查账 → 写操作收敛」闭环（不依赖真实 QQ/微信 运行时） |
 | `package.json` | 零依赖，`npm start` / `npm run cli` |
 
@@ -66,14 +66,13 @@ export ONEBOT_BIND_MAP='{"12345":"<bind_token>"}'
 npm run onebot
 ```
 
-P1 的绑定码是**静态配置**（`ONEBOT_BIND_TOKEN`/`ONEBOT_BIND_MAP`）。P2-A 会用后端
-`/im/{platform}/bind-auth` 替换 `getBindToken`，让 IM 用户自助绑定。
+除静态配置（`ONEBOT_BIND_TOKEN`/`ONEBOT_BIND_MAP`）外，现已支持通过后端 `/api/im/{platform}/bind-auth` 实现 IM 端账号密码自助绑定，并将绑定关系持久化至 `im_bindings.json`（已开启 2FA 的账号需回到 App 生成一次性绑定码进行绑定）。
 
 ### 测试（不连真 IM）
 
 ```bash
 cd gateway
-npm run test:adapters      # node --test adapters/test/  (5 用例: 桥接/群忽略/wechaty guard)
+npm run test:adapters      # node --test adapters/test/  (11 用例: 桥接/群忽略/wechaty guard/缓存)
 ```
 
 

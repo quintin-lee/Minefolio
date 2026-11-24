@@ -10,9 +10,9 @@ Minefolio is a self-hosted personal finance and investment tracker. It supports 
 
 ```
 Interfaces Layer   interfaces/http/controllers/  Parse params, call usecase, format response
-Application Layer  application/*/{usecases,commands,dtos}.h/.c  Use case orchestration (20 domains)
+Application Layer  application/*/{usecases,commands,dtos}.h/.c  Use case orchestration (21 domains)
 Domain Layer       domain/*/{entity,repository,rules}.h/.c  Pure business rules, zero dependencies
-Infrastructure     infrastructure/repositories/*_repo_impl.c  SQL implementations (26 files)
+Infrastructure     infrastructure/repositories/*_repo_impl.c  SQL implementations (27 files)
                    infrastructure/database/  Database abstraction and SQLite/Postgres adapters
                    (Migration engine, CSV parsing, TOTP 2FA, and REST response envelopes downstreamed to csilk framework)
 Core Layer         core/financial/  Fixed-point core: money, decimal, quantity, price, rate, pnl
@@ -30,8 +30,8 @@ Shared             common/  db, jwt, balance, response, ctx, tx_types, ledger_ut
 - `domain/*` → zero external dependencies (pure C domain contracts using `void* pool`, only `core/financial`)
 - `infrastructure/repositories/*` → `common/db.h`, `domain/*` (contracts; never depends upwards on `services/` or `application/`)
 
-**All 20 business domains follow DDD architecture:**
-tag, category, ledger, daily_expense, transfer, dca, report, file, import_export, auth, ai, market, asset, transaction, portfolio, cashflow, account, mcp, scheduler, skill.
+**All 21 business domains follow DDD architecture:**
+tag, category, ledger, daily_expense, transfer, dca, report, file, import_export, auth, ai, market, asset, transaction, portfolio, cashflow, account, mcp, scheduler, skill, task.
 
 **Legacy repos have been completely removed.** All domain business persistence SQL now lives in `infrastructure/repositories/*_repo_impl.c` (specialized replay/checkpoint engines like `core/ledger/` and shared balance/auth helpers retain internal engine operations). The application layer (`application/*`) performs pure orchestration and must never execute naked SQL.
 
@@ -40,7 +40,7 @@ tag, category, ledger, daily_expense, transfer, dca, report, file, import_export
 ```
 Entry       main.ts (desktop) / main-mobile.ts (mobile)
 Router      router/index.ts / router/mobile.ts
-State       Pinia stores (auth, category, chat, sync)
+State       Pinia stores (auth, category, chat, display-settings, ledger, market, sync, theme)
 API         src/api/*.ts — wraps http.ts (axios with JWT + CSRF)
 Views       src/views/ (desktop) / src/views-mobile/ (mobile)
 Components  Auto-registered via unplugin-vue-components (Element Plus)
@@ -126,7 +126,7 @@ Assets group under **account** containers (bank card, Alipay, broker…). Accoun
 ### Database Migration System
 
 Database schema changes are managed strictly via csilk's native C migration engine (`<csilk/drivers/db/migration.h>`):
-- **Versioned scripts**: `backend/sql/migrations/{sqlite,postgres}/` following Flyway naming `V<num>__<name>.sql` (`V001`~`V031`).
+- **Versioned scripts**: `backend/sql/migrations/{sqlite,postgres}/` following Flyway naming `V<num>__<name>.sql` (`V001`~`V033`).
 - **Tracking table**: `schema_migrations` records `version`, `name`, `checksum` (SHA-256 CRLF-normalized), `applied_at`, `execution_time_ms`, `execution_time`.
 - **Concurrency lock**: `schema_migration_lock` table acts as a distributed mutex with lease timeout to prevent multi-instance migration races. Under PostgreSQL, csilk provides full native prepared statement support (`?` rewritten to `$N`, `PQprepare`/`PQexecPrepared`), ensuring lock acquisition and statement execution run reliably.
 - **Engine lifecycle**: Automatic discovery, version sorting, checksum validation (tamper detection), transactional application, and status reporting.
@@ -162,21 +162,21 @@ AI Runtime (services/ai/runtime/)
 | Path | Purpose |
 |------|---------|
 | `backend/src/main.c` | Entry point: DB init, migrations, middleware stack, route registration, static serve |
-| `backend/src/interfaces/http/controllers/` | Thin HTTP handlers (26 domain controllers); `register_*_routes(app)` |
-| `backend/src/domain/` | Domain layer: entities, repository contracts, business rules (20 domains) |
-| `backend/src/application/` | Application layer: use case orchestration (20 domains) |
-| `backend/src/infrastructure/repositories/` | Infrastructure layer: SQL implementations of repository contracts (26 files, zero legacy) |
+| `backend/src/interfaces/http/controllers/` | Thin HTTP handlers (27 domain controllers); `register_*_routes(app)` |
+| `backend/src/domain/` | Domain layer: entities, repository contracts, business rules (21 domains) |
+| `backend/src/application/` | Application layer: use case orchestration (21 domains) |
+| `backend/src/infrastructure/repositories/` | Infrastructure layer: SQL implementations of repository contracts (27 files, zero legacy) |
 | `backend/src/services/ai/` | Unified AI Runtime: session, context, model, tool, workflow, policy, trace, memory |
 | `backend/src/core/financial/` | Fixed-point core arithmetic: money, decimal, quantity, price, rate, pnl |
 | `backend/src/core/ledger/` | Ledger engine: single source of truth, position calculation, history replay/rebuild |
 | `backend/src/infrastructure/database/` | Database abstraction layer and SQLite/PostgreSQL native adapters (migration engine downstreamed to csilk) |
 | `backend/src/common/` | Cross-cutting: `db.h`, `balance.h`, `jwt.h`, `response.h`, `ctx.h`, `tx_types.h`, `ledger_utils.h` (CSV, TOTP 2FA & REST response envelopes downstreamed to csilk) |
 | `backend/src/config/` | `db_config.h/.c` (DSN), `key_manager.h/.c` (RSA-OAEP keys), `secret.h/.c` (Secret Provider) |
-| `backend/sql/migrations/` | Versioned migration scripts (`sqlite/` & `postgres/`, `V001`~`V031`) |
-| `backend/sql/` | `migration.sql` (SQLite full schema, 36 tables), `migration_postgres.sql` |
-| `backend/tests/unit/` | 79 CTest unit test suites (financial core, ledger engine + checkpoint rebuild, domain rules, DB repository, migration engine, AI runtime/policy/nonces/batch confirmation, MCP client/pool/risk, FX semantics, portfolio PnL alignment, scheduler, RBAC) |
-| `gateway/` | IM bot gateway (QQ OneBot / WeChat adapters bridging to `/api/im/*`, `npm run test:adapters`) |
-| `backend/tests/test_link.sh` | Core integration test suite (40 cases, 194 assertions: auth, accounts, CRUD, balance联动, PnL, CSV, pagination, ledger rebuild, AI trace/workflow) |
+| `backend/sql/migrations/` | Versioned migration scripts (`sqlite/` & `postgres/`, `V001`~`V033`) |
+| `backend/sql/` | `migration.sql` (SQLite full schema, 37 tables), `migration_postgres.sql` |
+| `backend/tests/unit/` | 81 CTest unit test suites (financial core, ledger engine + checkpoint rebuild, domain rules, DB repository, migration engine, AI runtime/policy/nonces/batch confirmation, MCP client/pool/risk, FX semantics, portfolio PnL alignment, scheduler, RBAC, async tasks, backup) |
+| `gateway/` | IM bot gateway (QQ OneBot / WeChat adapters bridging to `/api/im/*`, `npm run test:adapters` — 11 tests) |
+| `backend/tests/test_link.sh` | Core integration test suite (244 assertions: auth, accounts, CRUD, balance联动, PnL, CSV, pagination, ledger rebuild, backup, AI trace/workflow/skills) |
 | `backend/src/domain/account/` | Account domain: `mf_account_t` entity, validation/delete rules, repository contract |
 | `backend/src/application/account/usecases.c` | Account use cases: create/update/delete/archive/query, lazy `默认账户` seed, duplicate-name 1004, delete-protection 1004 |
 | `backend/src/infrastructure/repositories/account_repo_impl.c` | Accounts SQL repo (with `asset_count`/`total_value` aggregates, archived filter) |
@@ -185,7 +185,7 @@ AI Runtime (services/ai/runtime/)
 | `frontend/src/main.ts` | Desktop entry: Pinia, router, Element Plus, i18n |
 | `frontend/src/main-mobile.ts` | Mobile entry: separate router, sql.js init |
 | `frontend/src/api/` | One file per domain; never call fetch/axios directly in components |
-| `frontend/src/stores/` | Pinia stores (auth, category, chat, sync) |
+| `frontend/src/stores/` | Pinia stores (`auth`, `category`, `chat`, `display-settings`, `ledger`, `market`, `sync`, `theme`) |
 | `frontend/src/views/` | Desktop pages |
 | `frontend/src/views-mobile/` | Mobile pages |
 | `frontend/src/db/` | sql.js wrapper + schema for offline mobile SQLite |
@@ -212,7 +212,7 @@ MINEFOLIO_DB_DRIVER=postgres MINEFOLIO_DB_DSN="host=… user=… dbname=…"  ./
 ```
 
 **Dual-Engine Integration Testing (`backend/tests/db_helper.sh`)**:
-12 integration test suites (`test_link.sh`, `test_2fa.sh`, `test_dca_cashflow.sh`, `test_ai_trace.sh`, `test_ai_tool_call.sh`, `test_market_sync.sh`, `test_ledgers.sh`, `test_fx_oauth.sh`, `test_scheduler.sh`, `test_im_bot.sh`, `test_im_bind_auth.sh`, `test_gateway.sh`) source `db_helper.sh` and support both SQLite and PostgreSQL.
+13 scripts (`test_link.sh`, `test_2fa.sh`, `test_dca_cashflow.sh`, `test_ai_trace.sh`, `test_ai_tool_call.sh`, `test_market_sync.sh`, `test_ledgers.sh`, `test_fx_oauth.sh`, `test_scheduler.sh`, `test_im_bot.sh`, `test_im_bind_auth.sh`, `test_gateway.sh`, and `test_db_helper.sh`) source `db_helper.sh` and support both SQLite and PostgreSQL.
 To run tests against PostgreSQL locally:
 ```bash
 export MINEFOLIO_DB_DRIVER=postgres
@@ -357,7 +357,7 @@ When updating an investment asset's `net_value` via `PUT /api/assets/:id`, decla
 
 - **NEVER** call raw `fetch()` or `axios` in Vue components
 - Every API call lives in `frontend/src/api/<domain>.ts` using the central `http` client (`frontend/src/utils/http.ts`)
-- **Exception**: `axios.get()` with `responseType: 'blob'` for CSV downloads (`http.get()` doesn't support blobs)
+- **Exception**: `axios.get()` with `responseType: 'blob'` for CSV downloads (`http.get()` doesn't support blobs), and SSE streams in `frontend/src/api/ai.ts` using native `fetch()` with `credentials: 'same-origin'` (required so cross-origin mobile WebView requests are not blocked by `Access-Control-Allow-Origin: *`)
 
 ### Frontend — Page Layout
 
@@ -431,13 +431,13 @@ Mobile users can customize the backend server address (e.g. LAN IP `http://192.1
 | File | Role |
 |------|------|
 | `backend/src/main.c` | Entry point; middleware stack; route registration |
-| `backend/CMakeLists.txt` | C23 build with shared `minefolio_core` static library (linked by `minefolio` and 61 DB/service unit tests; 18 pure financial/domain unit tests standalone) |
+| `backend/CMakeLists.txt` | C23 build with shared `minefolio_core` static library (linked by `minefolio` and 62 DB/service unit tests; 19 pure financial/domain unit tests standalone) |
 | `backend/src/common/balance.h` | `balance_apply_delta()` (incl. liability sign flip); `apply_position()` |
 | `backend/src/common/tx_types.h` | Transaction type registry — use `tx_type_lookup()`, don't hard-code |
 | `backend/src/common/response.h` | `respond_ok`, `respond_error`, etc. |
 | `backend/src/common/ctx.h` | `ctx_user_id(c)` — extract user from JWT |
 | `backend/src/common/jwt.h` | JWT generate/verify with HS256 |
-| `backend/sql/migration.sql` | SQLite schema (36 tables) |
+| `backend/sql/migration.sql` | SQLite schema (37 tables) |
 | `backend/sql/migration_postgres.sql` | PostgreSQL schema (BIGSERIAL, DOUBLE PRECISION) |
 | `frontend/package.json` | Scripts, dependencies, vitest config |
 | `frontend/vite.config.ts` | Desktop: port 5173, API proxy to :8080 |
@@ -469,7 +469,7 @@ Mobile users can customize the backend server address (e.g. LAN IP `http://192.1
 | Layer | Runtime | Package Manager | Notes |
 |-------|---------|-----------------|-------|
 | Backend | Linux (gcc-14) | CMake 3.16+ | C23 standard; GNU extensions |
-| Backend (SQLite) | SQLite 3.35+ | — | 18 个 repository 实现文件依赖 `RETURNING` 语法（该特性于 SQLite 3.35 引入），版本过低时相关写入路径会失败 |
+| Backend (SQLite) | SQLite 3.35+ | — | 21 个 repository 实现文件依赖 `RETURNING` 语法（该特性于 SQLite 3.35 引入），版本过低时相关写入路径会失败 |
 | Frontend | Node.js 20 | npm | vue-tsc strict mode required |
 | Mobile | Android (Gradle) | npm + Gradle | Capacitor 6; full Android SDK needed |
 | Docker | Ubuntu 24.04 / nginx:alpine | apt / npm | Multi-stage; local `deps/` cache for offline csilk fetch |
@@ -484,15 +484,15 @@ Mobile users can customize the backend server address (e.g. LAN IP `http://192.1
 
 ## Testing & QA
 
-### Backend Unit & Integration Tests (79 CTest Suites + 21 Integration Scripts)
+### Backend Unit & Integration Tests (81 CTest Suites + 21 Integration Scripts)
 
 ```bash
 cd backend
-# 1. Run all 79 CTest unit test suites (isolated)
+# 1. Run all 81 CTest unit test suites (isolated)
 ../backend/tests/run_isolated.sh -m 4G -j 4 unit build
 
 # 2. Run integration test suites (e.g. via run_isolated.sh -m 2G)
-./tests/test_link.sh             # 40 cases (237 assertions): auth, accounts dimension, CRUD, balance联动, PnL, CSV, pagination, ledger rebuild, backup, AI trace/workflow
+./tests/test_link.sh             # 244 assertions: auth, accounts dimension, CRUD, balance联动, PnL, CSV, pagination, ledger rebuild, backup, AI trace/workflow/skills
 ./tests/test_ledgers.sh          # multi-ledger spaces, member & account/field RBAC
 ./tests/test_2fa.sh              # TOTP 2FA secret gen, QR code, enable/disable, login verification
 ./tests/test_dca_cashflow.sh     # DCA periodic purchase execution, cashflow calendar projection
@@ -539,7 +539,7 @@ npm run build         # Desktop type-check + build
 npm run build:mobile  # Mobile type-check + build
 ```
 
-Frontend unit tests cover 44 test suites (239 unit tests) including format helpers, crypto, auth store, offline-http sync, chat store race guards, chat composables, AI thinking/reasoning mode, analysis panel, chat layout decoupling, and AI stream failure handling; the integration test suite (`test_link.sh`) covers the critical paths end-to-end. Under cgroups v2 isolation on multi-core hosts, cap Vitest concurrency (`--pool=forks --poolOptions.forks.maxForks=2`) and give `-m 12G` headroom for `esbuild` transforms.
+Frontend unit tests cover 53 test suites (`npm test`) including format helpers, crypto, auth store, offline-http sync, chat store race guards, chat composables, AI thinking/reasoning mode, analysis panel, chat layout decoupling, AI stream failure handling, scheduler, skills, and RBAC; the integration test suite (`test_link.sh`) covers the critical paths end-to-end. Under cgroups v2 isolation on multi-core hosts, cap Vitest concurrency (`--pool=forks --poolOptions.forks.maxForks=2`) and give `-m 12G` headroom for `esbuild` transforms.
 
 ### Manual Smoke Test
 

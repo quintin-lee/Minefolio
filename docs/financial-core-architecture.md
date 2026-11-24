@@ -99,7 +99,9 @@ typedef struct {
    * 彻底移除 `portfolio_usecase_get_performance` 中的静态 `trackers[256]` 限制，改为根据交易流数量动态分配。
    * 交易绩效计算（均价、成本扣除、已实现盈亏）全面重构为 Financial Core 定点数 (`money_t`, `quantity_t`, `price_t`, `decimal_t`)，与持仓规则对齐。
    * 仓储层 `mf_portfolio_repo_get_trade_events` 严格过滤 `parent_tx_id IS NULL OR parent_tx_id = 0` 手续费子行。
-   * 引入 `mf_round_to_decimals()` 工具规范化输出端浮点 DTO（数量 4 位、金额 2 位），消除 JSON 输出的 IEEE 754 尾部毛刺。
+   * 引入 `mf_round_to_decimals()` 工具规范化输出端浮点 DTO（数量 4 位、金额 2 位；V032 扩展底层数值列精度），消除 JSON 输出的 IEEE 754 尾部毛刺。
+8. **投资持仓批次与成本方法 (`V021__asset_cost_method_and_lots.sql`, `transaction_lot_repo_impl.c`)**：
+   * 在加权均价法外支持 FIFO 持仓批次（`transaction_lots`）核算，由 `test_transaction_lots` 与 `test_cost_basis_fifo` 单元测试覆盖验证。
 
 ---
 
@@ -120,16 +122,12 @@ typedef struct {
 | `test_fx` | 境外外币资产投资回报之「标的价格涨跌」与「纯汇率波动损益」数学恒等式验证 | ✅ 100% PASS |
 | `test_fx_semantics` | 外汇汇率未知币种严格报错与回退告警语义、Point-in-Time 历史汇率取值（V020）测试 | ✅ 100% PASS |
 | `test_portfolio_pnl_alignment` | 投资组合交易事件定点重放、手续费摊销与已实现/浮动盈亏一致性测试 | ✅ 100% PASS |
+| `test_transaction_lots` / `test_cost_basis_fifo` | 持仓批次拆合、FIFO 先进先出成本核减与实现收益测试 | ✅ 100% PASS |
 | `test_financial_precision_edge` | 资产/行情用例 128 位 decimal 聚合边界与浮点回归拦截 | ✅ 100% PASS |
 
 ### 集成测试套件 (Integration Tests)
-* `test_link.sh` (40 组用例，含 174 个断言)：100% PASS
-* `test_ledgers.sh` (16 组用例)：100% PASS
-* `test_2fa.sh` (12 组用例)：100% PASS
-* `test_dca_cashflow.sh` (18 组用例)：100% PASS
-* `test_ai_trace.sh` (17 组用例)：100% PASS
-* `test_market_sync.sh` (18 组用例)：100% PASS
-* `test_fx_oauth.sh` (20 组用例)：100% PASS
+* `test_link.sh` (含 244 个断言，含账户维度、工作流、备份、Skills 闭环)：核心业务集成测试
+* `test_ledgers.sh`、`test_2fa.sh`、`test_dca_cashflow.sh`、`test_ai_trace.sh`、`test_market_sync.sh`、`test_fx_oauth.sh`、`test_report_isolation.sh` 等双引擎（SQLite / PostgreSQL）专项回归套件
 * **前端全量编译与类型检查** (`vue-tsc -b && vite build`)：零错误通过
 
 ---
