@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include "csilk/core/totp.h"
 #include "common/db.h"
 #include "common/jwt.h"
 #include "config/secret.h"
@@ -102,6 +103,66 @@ int main(void) {
     csilk_json_free(verify_ok_data);
     csilk_json_free(login_data);
     printf("PASS: test_2fa_verify_login_succeeds_with_backup_code\n");
+
+    /* 测试备份码大小写容错：DB 中存为大写 BACKUP02，用户输入小写 backup02 亦应核销成功 */
+    mf_auth_repo_enable_totp(pool, test_uid, "[\"BACKUP02\"]");
+    login_data = NULL;
+    memset(&login_res, 0, sizeof(login_res));
+    assert(auth_usecase_login(pool, &login_cmd, NULL, &login_data, &login_res) == 0);
+    const char* temp_tok_case = csilk_json_get_string(login_data, "temp_token");
+    verify_2fa_login_cmd_t verify_cmd_lower = {
+        .temp_token = temp_tok_case,
+        .code = "  backup02  ",
+    };
+    csilk_json_t* verify_lower_data = NULL;
+    auth_usecase_result_t verify_lower_res = {0};
+    assert(auth_usecase_2fa_verify_login(pool, &verify_cmd_lower, &verify_lower_data, &verify_lower_res) == 0);
+    assert(verify_lower_res.code == 0 && verify_lower_data != NULL);
+    csilk_json_free(verify_lower_data);
+    csilk_json_free(login_data);
+    printf("PASS: test_2fa_verify_login_backup_code_case_and_spaces_tolerant\n");
+
+    /* 测试 TOTP 动态码带空格容错 (如 123 456) 且放宽容差校验通过 */
+    char valid_totp[8] = {0};
+    assert(csilk_totp_generate_code("JBSWY3DPEHPK3PXP", (uint64_t)time(NULL), valid_totp, sizeof(valid_totp)) == 0);
+    char totp_with_space[16] = {0};
+    snprintf(totp_with_space, sizeof(totp_with_space), " %.3s %.3s ", valid_totp, valid_totp + 3);
+
+    login_data = NULL;
+    memset(&login_res, 0, sizeof(login_res));
+    assert(auth_usecase_login(pool, &login_cmd, NULL, &login_data, &login_res) == 0);
+    const char* temp_tok_totp = csilk_json_get_string(login_data, "temp_token");
+    verify_2fa_login_cmd_t verify_cmd_totp = {
+        .temp_token = temp_tok_totp,
+        .code = totp_with_space,
+    };
+    csilk_json_t* verify_totp_data = NULL;
+    auth_usecase_result_t verify_totp_res = {0};
+    assert(auth_usecase_2fa_verify_login(pool, &verify_cmd_totp, &verify_totp_data, &verify_totp_res) == 0);
+    assert(verify_totp_res.code == 0 && verify_totp_data != NULL);
+    csilk_json_free(verify_totp_data);
+    csilk_json_free(login_data);
+    printf("PASS: test_2fa_verify_login_totp_with_space_tolerant\n");
+
+    /* 测试验证失败时返回诊断时间戳 server_unix_ts */
+    login_data = NULL;
+    memset(&login_res, 0, sizeof(login_res));
+    assert(auth_usecase_login(pool, &login_cmd, NULL, &login_data, &login_res) == 0);
+    const char* temp_tok_fail = csilk_json_get_string(login_data, "temp_token");
+    verify_2fa_login_cmd_t verify_cmd_fail = {
+        .temp_token = temp_tok_fail,
+        .code = "000000",
+    };
+    csilk_json_t* verify_fail_data = NULL;
+    auth_usecase_result_t verify_fail_res = {0};
+    assert(auth_usecase_2fa_verify_login(pool, &verify_cmd_fail, &verify_fail_data, &verify_fail_res) != 0);
+    assert(verify_fail_res.code == 1002);
+    assert(verify_fail_data != NULL);
+    assert(csilk_json_get(verify_fail_data, "server_unix_ts") != NULL);
+    assert(csilk_json_get(verify_fail_data, "hint") != NULL);
+    csilk_json_free(verify_fail_data);
+    csilk_json_free(login_data);
+    printf("PASS: test_2fa_verify_login_failure_surfaces_diagnostic_data\n");
 
     /* 4. 测试 auth_usecase_2fa_verify_login 拒绝非 2fa_pending 的普通 token */
     char* normal_token = jwt_generate_token(NULL, test_uid, 0);

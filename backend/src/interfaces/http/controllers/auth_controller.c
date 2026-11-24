@@ -31,6 +31,8 @@ api_auth_register(csilk_ctx_t* c)
 
     if (rc == 0 && res.code == 0) {
         respond_ok(c, out_data);
+    } else if (out_data) {
+        respond_error_data(c, res.code ? res.code : 1002, res.message, out_data);
     } else {
         respond_error(c, res.code ? res.code : 1002, res.message);
     }
@@ -190,6 +192,8 @@ api_auth_2fa_enable(csilk_ctx_t* c)
 
     if (rc == 0 && res.code == 0) {
         respond_ok(c, out_data);
+    } else if (out_data) {
+        respond_error_data(c, res.code ? res.code : 1002, res.message, out_data);
     } else {
         respond_error(c, res.code ? res.code : 1002, res.message);
     }
@@ -246,6 +250,8 @@ api_auth_2fa_verify_login(csilk_ctx_t* c)
 
     if (rc == 0 && res.code == 0) {
         respond_ok(c, out_data);
+    } else if (out_data) {
+        respond_error_data(c, res.code ? res.code : 1002, res.message, out_data);
     } else {
         respond_error(c, res.code ? res.code : 1002, res.message);
     }
@@ -287,6 +293,8 @@ api_auth_oauth_callback(csilk_ctx_t* c)
 
     if (rc == 0 && res.code == 0) {
         respond_ok(c, out_data);
+    } else if (out_data) {
+        respond_error_data(c, res.code ? res.code : 1002, res.message, out_data);
     } else {
         respond_error(c, res.code ? res.code : 1002, res.message);
     }

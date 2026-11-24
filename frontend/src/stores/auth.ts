@@ -231,6 +231,11 @@ export const useAuthStore = defineStore('auth', () => {
       draftKeys.forEach((key) => localStorage.removeItem(key))
       clearSwrCache()
     }
+    if (typeof sessionStorage !== 'undefined') {
+      try {
+        sessionStorage.removeItem('minefolio_2fa_temp_token')
+      } catch {}
+    }
     clearCryptoKeyCache()
     try {
       // 动态 import 各 store：避免把聊天/账本/分类/同步模块静态打入首屏包

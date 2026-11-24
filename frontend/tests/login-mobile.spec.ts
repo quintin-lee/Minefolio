@@ -116,4 +116,84 @@ describe('LoginMobile.vue', () => {
     expect(wrapper.find('.two-factor-mobile-box').exists()).toBe(true)
     expect(wrapper.text()).toContain('两步验证')
   })
+
+  it('cleans whitespace and converts backup code case when submitting 2FA', async () => {
+    const { useAuthStore } = await import('@/stores/auth')
+    const auth = useAuthStore()
+    const verifySpy = vi.spyOn(auth, 'verify2FaLogin').mockResolvedValueOnce({ token: 'jwt_ok' } as any)
+
+    sessionStorage.setItem('minefolio_2fa_temp_token', 'temp_token_456')
+
+    const wrapper = mount(LoginMobile, {
+      global: {
+        stubs: {
+          AppLogo: { template: '<div class="app-logo-stub" />' },
+          ServerConfigDialog: { template: '<div class="server-config-dialog-stub" />' },
+          'el-form': { template: '<form class="el-form"><slot /></form>' },
+          'el-form-item': { template: '<div class="el-form-item"><slot /></div>' },
+          'el-input': {
+            props: ['modelValue', 'size'],
+            emits: ['update:modelValue'],
+            template: '<input :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+          },
+          'el-button': {
+            emits: ['click'],
+            template: '<button @click="$emit(\'click\')"><slot /></button>',
+          },
+          'el-icon': { template: '<i><slot /></i>' },
+          'el-tag': { template: '<span><slot /></span>' },
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('.two-factor-mobile-box').exists()).toBe(true)
+
+    // 输入带空格与大写字母的动态码/备用码
+    const codeInput = wrapper.find('input')
+    await codeInput.setValue('  A1B2 - C3D4  ')
+
+    const verifyBtn = wrapper.findAll('button').find((b) => b.text().includes('验证并登录'))
+    await verifyBtn?.trigger('click')
+    await flushPromises()
+
+    expect(verifySpy).toHaveBeenCalledWith('temp_token_456', 'a1b2-c3d4')
+    expect(sessionStorage.getItem('minefolio_2fa_temp_token')).toBeNull()
+  })
+
+  it('clears sessionStorage and returns to password form when clicking back', async () => {
+    sessionStorage.setItem('minefolio_2fa_temp_token', 'temp_token_789')
+
+    const wrapper = mount(LoginMobile, {
+      global: {
+        stubs: {
+          AppLogo: { template: '<div class="app-logo-stub" />' },
+          ServerConfigDialog: { template: '<div class="server-config-dialog-stub" />' },
+          'el-form': { template: '<form class="el-form"><slot /></form>' },
+          'el-form-item': { template: '<div class="el-form-item"><slot /></div>' },
+          'el-input': {
+            props: ['modelValue', 'size'],
+            emits: ['update:modelValue'],
+            template: '<input :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+          },
+          'el-button': {
+            emits: ['click'],
+            template: '<button @click="$emit(\'click\')"><slot /></button>',
+          },
+          'el-icon': { template: '<i><slot /></i>' },
+          'el-tag': { template: '<span><slot /></span>' },
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('.two-factor-mobile-box').exists()).toBe(true)
+
+    const backBtn = wrapper.findAll('button').find((b) => b.text().includes('返回密码登录'))
+    await backBtn?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.two-factor-mobile-box').exists()).toBe(false)
+    expect(sessionStorage.getItem('minefolio_2fa_temp_token')).toBeNull()
+  })
 })

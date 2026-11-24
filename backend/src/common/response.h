@@ -58,6 +58,30 @@ respond_error(csilk_ctx_t* c, int code, const char* msg)
 }
 
 /**
+ * @brief Construct and return error response with payload data (code, message, data).
+ *
+ * @param[in,out] c    HTTP request context.
+ * @param[in]     code Custom business status code (e.g., 1001, 1002, 1003, 1004).
+ * @param[in]     msg  Error description message.
+ * @param[in]     data JSON payload data (ownership transferred to response; freed on exit).
+ */
+static inline void
+respond_error_data(csilk_ctx_t* c, int code, const char* msg, csilk_json_t* data)
+{
+    if (!c) {
+        if (data) {
+            csilk_json_free(data);
+        }
+        return;
+    }
+    csilk_json_t* root = csilk_json_object();
+    csilk_json_add_int(root, "code", code);
+    csilk_json_add_string(root, "message", msg ? msg : "error");
+    csilk_json_add_object(root, "data", data ? data : csilk_json_null());
+    csilk_json(c, CSILK_STATUS_OK, root);
+}
+
+/**
  * @brief Construct and return unauthorized error response (code: 1001, "未授权").
  *
  * @param[in,out] c HTTP request context.

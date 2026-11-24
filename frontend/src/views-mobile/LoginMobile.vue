@@ -30,16 +30,17 @@
 
     <div v-if="isTwoFactorStep" class="two-factor-mobile-box">
       <p class="two-factor-hint">当前账号已开启两步验证，请输入身份验证器动态码或 8 位应急备用码：</p>
-      <el-form label-position="top">
+      <el-form label-position="top" @submit.prevent="handle2FaSubmit">
         <el-form-item label="动态验证码 / 备用码">
           <el-input
             v-model="twoFactorCode"
             placeholder="请输入 6 位动态验证码或备用码"
             size="large"
             autofocus
-            inputmode="numeric"
-            pattern="[0-9]*"
             autocomplete="one-time-code"
+            autocapitalize="off"
+            autocorrect="off"
+            spellcheck="false"
             @keyup.enter="handle2FaSubmit"
           />
         </el-form-item>
@@ -47,14 +48,14 @@
           验证并登录
         </el-button>
         <div class="switch-mode-mobile">
-          <el-button link type="info" @click="isTwoFactorStep = false">
+          <el-button link type="info" @click="handleBackToPassword">
             返回密码登录
           </el-button>
         </div>
       </el-form>
     </div>
 
-    <el-form v-else :model="form" label-position="top">
+    <el-form v-else :model="form" label-position="top" @submit.prevent="submit">
       <el-form-item label="用户名">
         <el-input
           v-model="form.username"
@@ -156,6 +157,8 @@ async function loadOAuthProviders() {
   }
 }
 
+const STORAGE_KEY_2FA_TEMP_TOKEN = 'minefolio_2fa_temp_token'
+
 async function handleServerSaved() {
   await auth.checkSystemStatus()
   await loadOAuthProviders()
@@ -163,7 +166,22 @@ async function handleServerSaved() {
 
 onMounted(async () => {
   await loadOAuthProviders()
+  try {
+    const saved = sessionStorage.getItem(STORAGE_KEY_2FA_TEMP_TOKEN)
+    if (saved) {
+      tempToken.value = saved
+      isTwoFactorStep.value = true
+    }
+  } catch {}
 })
+
+function handleBackToPassword() {
+  isTwoFactorStep.value = false
+  twoFactorCode.value = ''
+  try {
+    sessionStorage.removeItem(STORAGE_KEY_2FA_TEMP_TOKEN)
+  } catch {}
+}
 
 async function submit() {
   if (!form.username || !form.password) return ElMessage.warning('请输入用户名和密码')
@@ -184,6 +202,11 @@ async function submit() {
       if (res?.require_2fa) {
         isTwoFactorStep.value = true
         tempToken.value = res.temp_token || ''
+        try {
+          if (tempToken.value) {
+            sessionStorage.setItem(STORAGE_KEY_2FA_TEMP_TOKEN, tempToken.value)
+          }
+        } catch {}
         twoFactorCode.value = ''
         ElMessage.info('请输入两步验证动态码或备用码')
         return
@@ -206,14 +229,18 @@ async function submit() {
 }
 
 async function handle2FaSubmit() {
-  if (!twoFactorCode.value.trim()) {
+  const cleanCode = twoFactorCode.value.replace(/\s+/g, '').toLowerCase()
+  if (!cleanCode) {
     ElMessage.warning('请输入 6 位动态验证码或备用码')
     return
   }
   loading.value = true
   let isNetworkErr = false
   try {
-    await auth.verify2FaLogin(tempToken.value, twoFactorCode.value.trim())
+    await auth.verify2FaLogin(tempToken.value, cleanCode)
+    try {
+      sessionStorage.removeItem(STORAGE_KEY_2FA_TEMP_TOKEN)
+    } catch {}
     ElMessage.success('登录成功')
     router.replace('/m/dashboard')
   } catch (e: any) {

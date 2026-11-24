@@ -219,13 +219,14 @@ async function handleSubmit() {
 }
 
 async function handle2FaSubmit() {
-  if (!twoFactorCode.value.trim()) {
+  const cleanCode = twoFactorCode.value.replace(/\s+/g, '').toLowerCase()
+  if (!cleanCode) {
     ElMessage.warning(t('login.twoFactorCodeRequired'))
     return
   }
   loading.value = true
   try {
-    await auth.verify2FaLogin(tempToken.value, twoFactorCode.value.trim())
+    await auth.verify2FaLogin(tempToken.value, cleanCode)
     ElMessage.success(t('login.twoFactorSuccess'))
     await router.push('/dashboard')
   } catch (e: any) {
