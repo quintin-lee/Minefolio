@@ -25,10 +25,98 @@
 
 #define MINEFOLIO_BCRYPT_COST CSILK_BCRYPT_DEFAULT_COST
 
-/* TOTP 验证包装：在 csilk_totp_verify_code (±1 步容差) 基础上扩展至 ±3 步 (±90s)，
-   吸收容器/宿主机时钟漂移 (NTP 未同步、时区配置错误、手机本地时钟偏移) 与空白字符，
-   彻底解决移动端空格/时钟漂移导致的误验。验证失败时回填服务器当前 Unix 时间戳，供前端
-   提示用户校准本地时钟。不动 csilk 依赖 (totp.c 在 deps/)，仅在应用层包一层。 */
+/* 规范化两步验证码（提取干净的 lowercase 字符集以及纯数字流）：
+   支持处理全角数字 (０-９)、全角英文字母 (ａ-ｚ/Ａ-Ｚ)、各类破折号 (—, –, −, －)、
+   零宽字符 (\u200B-\u200D)、BOM (\uFEFF)、全角空格及不换行空格。 */
+static size_t
+normalize_auth_code(const char* in, char* out_clean, char* out_digits, size_t cap)
+{
+    if (!in || !out_clean || cap == 0) {
+        if (out_clean && cap > 0) {
+            out_clean[0] = '\0';
+        }
+        if (out_digits && cap > 0) {
+            out_digits[0] = '\0';
+        }
+        return 0;
+    }
+    size_t               clean_len = 0;
+    size_t               digits_len = 0;
+    const unsigned char* p = (const unsigned char*)in;
+
+    while (*p && clean_len + 1 < cap) {
+        /* 1. UTF-8 3-byte sequences */
+        if (p[0] == 0xEF && p[1] == 0xBC && p[2] >= 0x90 && p[2] <= 0x99) {
+            /* 全角数字 ０-９ -> '0'-'9' */
+            char d = (char)('0' + (p[2] - 0x90));
+            out_clean[clean_len++] = d;
+            if (out_digits && digits_len + 1 < cap) {
+                out_digits[digits_len++] = d;
+            }
+            p += 3;
+            continue;
+        }
+        if (p[0] == 0xEF && p[1] == 0xBC && p[2] >= 0xA1 && p[2] <= 0xBA) {
+            /* 全角大写 Ａ-Ｚ -> 'A'-'Z' */
+            char ch = (char)('A' + (p[2] - 0xA1));
+            out_clean[clean_len++] = ch;
+            p += 3;
+            continue;
+        }
+        if (p[0] == 0xEF && p[1] == 0xBD && p[2] >= 0x81 && p[2] <= 0x9A) {
+            /* 全角小写 ａ-ｚ -> 'a'-'z' */
+            char ch = (char)('a' + (p[2] - 0x81));
+            out_clean[clean_len++] = ch;
+            p += 3;
+            continue;
+        }
+        if ((p[0] == 0xEF && p[1] == 0xBC && p[2] == 0x8D) ||
+            (p[0] == 0xE2 && p[1] == 0x80 && (p[2] == 0x94 || p[2] == 0x93)) ||
+            (p[0] == 0xE2 && p[1] == 0x88 && p[2] == 0x92)) {
+            /* 全角/长短破折号/减号 －, —, –, − -> '-' */
+            out_clean[clean_len++] = '-';
+            p += 3;
+            continue;
+        }
+        if ((p[0] == 0xE2 && p[1] == 0x80 && (p[2] >= 0x8B && p[2] <= 0x8D)) ||
+            (p[0] == 0xEF && p[1] == 0xBB && p[2] == 0xBF) ||
+            (p[0] == 0xE3 && p[1] == 0x80 && p[2] == 0x80)) {
+            /* 零宽空格/BOM/全角空格 -> 忽略 */
+            p += 3;
+            continue;
+        }
+        /* 2. UTF-8 2-byte sequences */
+        if (p[0] == 0xC2 && p[1] == 0xA0) {
+            /* 不换行空格 \u00A0 -> 忽略 */
+            p += 2;
+            continue;
+        }
+        /* 3. ASCII characters */
+        unsigned char ch = *p++;
+        if (ch <= ' ' || ch == 127) {
+            continue;
+        }
+        if (ch >= '0' && ch <= '9') {
+            out_clean[clean_len++] = (char)ch;
+            if (out_digits && digits_len + 1 < cap) {
+                out_digits[digits_len++] = (char)ch;
+            }
+        } else if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')) {
+            out_clean[clean_len++] = (char)ch;
+        } else if (ch == '-') {
+            out_clean[clean_len++] = '-';
+        }
+    }
+    out_clean[clean_len] = '\0';
+    if (out_digits) {
+        out_digits[digits_len] = '\0';
+    }
+    return clean_len;
+}
+
+/* TOTP 验证包装：在 csilk_totp_verify_code (±1 步容差) 基础上扩展至 ±10 步 (±300s = ±5分钟)，
+   彻底吸收自建宿主机/Docker 容器无 NTP 漂移、移动端切应用延迟及手机时钟偏差。
+   验证失败时回填服务器当前 Unix 时间戳，供前端提示用户校准本地时钟。 */
 static bool
 mf_totp_verify_lenient(const char* base32_secret, const char* code, uint64_t* out_server_ts)
 {
@@ -39,24 +127,17 @@ mf_totp_verify_lenient(const char* base32_secret, const char* code, uint64_t* ou
     if (!base32_secret || !base32_secret[0] || !code) {
         return false;
     }
-    /* 过滤空白字符 */
-    char   clean[16] = {0};
-    size_t clean_len = 0;
-    for (size_t i = 0; code[i] && clean_len < sizeof(clean) - 1; i++) {
-        unsigned char ch = (unsigned char)code[i];
-        if (ch > ' ') {
-            clean[clean_len++] = (char)ch;
-        }
-    }
-    clean[clean_len] = '\0';
-    if (clean_len != 6) {
+    char clean[32] = {0};
+    char digits[32] = {0};
+    normalize_auth_code(code, clean, digits, sizeof(clean));
+    if (strlen(digits) != 6) {
         return false;
     }
-    for (int step = -3; step <= 3; step++) {
+    for (int step = -10; step <= 10; step++) {
         uint64_t t = (int64_t)now + (int64_t)step * 30;
         char     expected[8];
         if (csilk_totp_generate_code(base32_secret, t, expected, sizeof(expected)) == 0 &&
-            strcmp(expected, clean) == 0) {
+            strcmp(expected, digits) == 0) {
             return true;
         }
     }
@@ -518,19 +599,13 @@ auth_usecase_2fa_enable(void*                   pool,
         return -1;
     }
     memset(out_res, 0, sizeof(*out_res));
-    char   clean[16] = {0};
-    size_t clean_len = 0;
+    char clean[32] = {0};
+    char digits[32] = {0};
     if (cmd && cmd->code) {
-        for (size_t i = 0; cmd->code[i] && clean_len < sizeof(clean) - 1; i++) {
-            unsigned char ch = (unsigned char)cmd->code[i];
-            if (ch > ' ') {
-                clean[clean_len++] = (char)ch;
-            }
-        }
+        normalize_auth_code(cmd->code, clean, digits, sizeof(clean));
     }
-    clean[clean_len] = '\0';
 
-    if (!pool || !cmd || cmd->user_id <= 0 || clean_len != 6) {
+    if (!pool || !cmd || cmd->user_id <= 0 || strlen(digits) != 6) {
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "请输入 6 位动态验证码");
         return -1;
@@ -550,7 +625,7 @@ auth_usecase_2fa_enable(void*                   pool,
     }
 
     uint64_t _ts_unused;
-    if (!mf_totp_verify_lenient(user.totp_secret, clean, &_ts_unused)) {
+    if (!mf_totp_verify_lenient(user.totp_secret, digits, &_ts_unused)) {
         out_res->code = 1002;
         snprintf(out_res->message,
                  sizeof(out_res->message),
@@ -698,43 +773,75 @@ auth_usecase_2fa_verify_login(void*                         pool,
         return -1;
     }
 
-    /* 规范化输入：过滤所有空白字符并生成大小写变体（兼顾 TOTP 动态码中间空格与备份码大小写容错） */
-    char   clean_code[32] = {0};
-    char   clean_lower[32] = {0};
-    char   clean_upper[32] = {0};
-    size_t clean_len = 0;
-    if (cmd->code) {
-        for (size_t i = 0; cmd->code[i] && clean_len < sizeof(clean_code) - 1; i++) {
-            unsigned char ch = (unsigned char)cmd->code[i];
-            if (ch > ' ') {
-                clean_code[clean_len] = (char)ch;
-                clean_lower[clean_len] = (char)((ch >= 'A' && ch <= 'Z') ? (ch + ('a' - 'A')) : ch);
-                clean_upper[clean_len] = (char)((ch >= 'a' && ch <= 'z') ? (ch - ('a' - 'A')) : ch);
-                clean_len++;
-            }
-        }
-    }
-    clean_code[clean_len] = '\0';
-    clean_lower[clean_len] = '\0';
-    clean_upper[clean_len] = '\0';
+    /* 规范化输入：提取规整的小写 clean_code 与纯数字串 digits_code */
+    char clean_code[32] = {0};
+    char digits_code[32] = {0};
+    normalize_auth_code(cmd->code, clean_code, digits_code, sizeof(clean_code));
 
     bool     ok = false;
     uint64_t server_ts = (uint64_t)time(NULL);
-    if (clean_len == 6 && mf_totp_verify_lenient(user.totp_secret, clean_code, &server_ts)) {
+
+    /* 1. 若提取出 6 位数字，优先进行 TOTP 动态码校验 (lenient ±10 步/±300s 容差) */
+    if (strlen(digits_code) == 6 &&
+        mf_totp_verify_lenient(user.totp_secret, digits_code, &server_ts)) {
         ok = true;
     } else if (user.totp_backup_codes[0] != '\0') {
         char updated_codes[1024];
-        /* 依次按原输入、全小写、全大写尝试匹配，完全消除备份码大小写差异 */
-        if (csilk_totp_verify_and_consume_backup_code(
-                user.totp_backup_codes, clean_code, updated_codes, sizeof(updated_codes)) ||
-            (strcmp(clean_code, clean_lower) != 0 &&
-             csilk_totp_verify_and_consume_backup_code(
-                 user.totp_backup_codes, clean_lower, updated_codes, sizeof(updated_codes))) ||
-            (strcmp(clean_code, clean_upper) != 0 &&
-             csilk_totp_verify_and_consume_backup_code(
-                 user.totp_backup_codes, clean_upper, updated_codes, sizeof(updated_codes)))) {
-            mf_auth_repo_update_backup_codes(pool, user_id, updated_codes);
-            ok = true;
+        /* 2. 依次按原大小写、全小写、全大写，以及带/不带 '-' 变体匹配备用码 */
+        char clean_lower[32] = {0};
+        char clean_upper[32] = {0};
+        for (size_t i = 0; clean_code[i] && i < sizeof(clean_lower) - 1; i++) {
+            char ch = clean_code[i];
+            clean_lower[i] = (char)((ch >= 'A' && ch <= 'Z') ? (ch + ('a' - 'A')) : ch);
+            clean_upper[i] = (char)((ch >= 'a' && ch <= 'z') ? (ch - ('a' - 'A')) : ch);
+        }
+
+        const char* try_codes[6];
+        int         try_count = 0;
+        try_codes[try_count++] = clean_code;
+        if (strcmp(clean_lower, clean_code) != 0) {
+            try_codes[try_count++] = clean_lower;
+        }
+        if (strcmp(clean_upper, clean_code) != 0) {
+            try_codes[try_count++] = clean_upper;
+        }
+
+        char   alt_code[32] = {0};
+        size_t clen = strlen(clean_code);
+        if (clen == 9 && clean_code[4] == '-') {
+            memcpy(alt_code, clean_code, 4);
+            memcpy(alt_code + 4, clean_code + 5, 4);
+            alt_code[8] = '\0';
+        } else if (clen == 8) {
+            memcpy(alt_code, clean_code, 4);
+            alt_code[4] = '-';
+            memcpy(alt_code + 5, clean_code + 4, 4);
+            alt_code[9] = '\0';
+        }
+        char alt_lower[32] = {0};
+        char alt_upper[32] = {0};
+        if (alt_code[0]) {
+            for (size_t i = 0; alt_code[i] && i < sizeof(alt_lower) - 1; i++) {
+                char ch = alt_code[i];
+                alt_lower[i] = (char)((ch >= 'A' && ch <= 'Z') ? (ch + ('a' - 'A')) : ch);
+                alt_upper[i] = (char)((ch >= 'a' && ch <= 'z') ? (ch - ('a' - 'A')) : ch);
+            }
+            try_codes[try_count++] = alt_code;
+            if (strcmp(alt_lower, alt_code) != 0) {
+                try_codes[try_count++] = alt_lower;
+            }
+            if (strcmp(alt_upper, alt_code) != 0) {
+                try_codes[try_count++] = alt_upper;
+            }
+        }
+
+        for (int i = 0; i < try_count; i++) {
+            if (csilk_totp_verify_and_consume_backup_code(
+                    user.totp_backup_codes, try_codes[i], updated_codes, sizeof(updated_codes))) {
+                mf_auth_repo_update_backup_codes(pool, user_id, updated_codes);
+                ok = true;
+                break;
+            }
         }
     }
 

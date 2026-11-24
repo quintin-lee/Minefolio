@@ -32,17 +32,22 @@
       <p class="two-factor-hint">当前账号已开启两步验证，请输入身份验证器动态码或 8 位应急备用码：</p>
       <el-form label-position="top" @submit.prevent="handle2FaSubmit">
         <el-form-item label="动态验证码 / 备用码">
-          <el-input
-            v-model="twoFactorCode"
-            placeholder="请输入 6 位动态验证码或备用码"
-            size="large"
-            autofocus
-            autocomplete="one-time-code"
-            autocapitalize="off"
-            autocorrect="off"
-            spellcheck="false"
-            @keyup.enter="handle2FaSubmit"
-          />
+          <div class="two-factor-input-row">
+            <el-input
+              v-model="twoFactorCode"
+              placeholder="请输入 6 位动态验证码或备用码"
+              size="large"
+              autofocus
+              autocomplete="one-time-code"
+              autocapitalize="off"
+              autocorrect="off"
+              spellcheck="false"
+              @keyup.enter="handle2FaSubmit"
+            />
+            <el-button type="info" plain size="large" class="paste-btn" @click="handlePasteCode">
+              粘贴
+            </el-button>
+          </div>
         </el-form-item>
         <el-button type="primary" :loading="loading" class="submit-btn" @click="handle2FaSubmit">
           验证并登录
@@ -124,6 +129,12 @@ import ServerConfigDialog from '@/components/mobile/ServerConfigDialog.vue'
 import { useServerUrl } from '@/composables/useServerUrl'
 import type { OAuthProvider } from '@/types'
 import { buildOAuthAuthUrl } from '@/utils/oauth-state'
+import {
+  normalize2FaCode,
+  save2FaTempSession,
+  load2FaTempSession,
+  clear2FaTempSession,
+} from '@/utils/two-factor'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -157,30 +168,39 @@ async function loadOAuthProviders() {
   }
 }
 
-const STORAGE_KEY_2FA_TEMP_TOKEN = 'minefolio_2fa_temp_token'
-
 async function handleServerSaved() {
   await auth.checkSystemStatus()
   await loadOAuthProviders()
 }
 
-onMounted(async () => {
-  await loadOAuthProviders()
+async function handlePasteCode() {
   try {
-    const saved = sessionStorage.getItem(STORAGE_KEY_2FA_TEMP_TOKEN)
-    if (saved) {
-      tempToken.value = saved
-      isTwoFactorStep.value = true
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.readText) {
+      const text = await navigator.clipboard.readText()
+      if (text) {
+        twoFactorCode.value = normalize2FaCode(text)
+        ElMessage.success('已从剪贴板粘贴')
+        return
+      }
     }
   } catch {}
+  ElMessage.info('未能自动读取剪贴板，请长按输入框选择粘贴')
+}
+
+onMounted(async () => {
+  await loadOAuthProviders()
+  const saved = load2FaTempSession()
+  if (saved) {
+    tempToken.value = saved
+    isTwoFactorStep.value = true
+  }
 })
 
 function handleBackToPassword() {
   isTwoFactorStep.value = false
   twoFactorCode.value = ''
-  try {
-    sessionStorage.removeItem(STORAGE_KEY_2FA_TEMP_TOKEN)
-  } catch {}
+  tempToken.value = ''
+  clear2FaTempSession()
 }
 
 async function submit() {
@@ -202,11 +222,9 @@ async function submit() {
       if (res?.require_2fa) {
         isTwoFactorStep.value = true
         tempToken.value = res.temp_token || ''
-        try {
-          if (tempToken.value) {
-            sessionStorage.setItem(STORAGE_KEY_2FA_TEMP_TOKEN, tempToken.value)
-          }
-        } catch {}
+        if (tempToken.value) {
+          save2FaTempSession(tempToken.value)
+        }
         twoFactorCode.value = ''
         ElMessage.info('请输入两步验证动态码或备用码')
         return
@@ -229,18 +247,26 @@ async function submit() {
 }
 
 async function handle2FaSubmit() {
-  const cleanCode = twoFactorCode.value.replace(/\s+/g, '').toLowerCase()
+  if (!tempToken.value) {
+    tempToken.value = load2FaTempSession() || ''
+  }
+  if (!tempToken.value) {
+    ElMessage.warning('验证会话已过期，请重新输入密码登录')
+    handleBackToPassword()
+    return
+  }
+
+  const cleanCode = normalize2FaCode(twoFactorCode.value)
   if (!cleanCode) {
     ElMessage.warning('请输入 6 位动态验证码或备用码')
     return
   }
+  twoFactorCode.value = cleanCode
   loading.value = true
   let isNetworkErr = false
   try {
     await auth.verify2FaLogin(tempToken.value, cleanCode)
-    try {
-      sessionStorage.removeItem(STORAGE_KEY_2FA_TEMP_TOKEN)
-    } catch {}
+    clear2FaTempSession()
     ElMessage.success('登录成功')
     router.replace('/m/dashboard')
   } catch (e: any) {
@@ -367,6 +393,18 @@ async function handle2FaSubmit() {
   color: var(--mf-text-muted);
   line-height: 1.5;
   margin-bottom: 16px;
+}
+.two-factor-input-row {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+.two-factor-input-row :deep(.el-input) {
+  flex: 1;
+}
+.paste-btn {
+  flex-shrink: 0;
+  padding: 0 16px;
 }
 .submit-btn {
   width: 100%;

@@ -3,6 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import LoginMobile from '@/views-mobile/LoginMobile.vue'
 import { setServerUrl, resetServerUrl, STORAGE_KEY_SERVER_URL } from '@/utils/http'
+import { save2FaTempSession, STORAGE_KEY_2FA_SESSION } from '@/utils/two-factor'
 
 // Mock router
 vi.mock('vue-router', () => ({
@@ -23,7 +24,8 @@ vi.mock('@/api/auth', () => ({
 
 describe('LoginMobile.vue', () => {
   beforeEach(() => {
-    localStorage.removeItem(STORAGE_KEY_SERVER_URL)
+    localStorage.clear()
+    sessionStorage.clear()
     resetServerUrl()
     setActivePinia(createPinia())
   })
@@ -195,5 +197,125 @@ describe('LoginMobile.vue', () => {
 
     expect(wrapper.find('.two-factor-mobile-box').exists()).toBe(false)
     expect(sessionStorage.getItem('minefolio_2fa_temp_token')).toBeNull()
+  })
+
+  it('normalizes full-width digits and zero-width spaces when submitting 2FA', async () => {
+    const { useAuthStore } = await import('@/stores/auth')
+    const auth = useAuthStore()
+    const verifySpy = vi.spyOn(auth, 'verify2FaLogin').mockResolvedValueOnce({ token: 'jwt_fullwidth_ok' } as any)
+
+    sessionStorage.setItem('minefolio_2fa_temp_token', 'temp_token_fullwidth')
+
+    const wrapper = mount(LoginMobile, {
+      global: {
+        stubs: {
+          AppLogo: { template: '<div class="app-logo-stub" />' },
+          ServerConfigDialog: { template: '<div class="server-config-dialog-stub" />' },
+          'el-form': { template: '<form class="el-form"><slot /></form>' },
+          'el-form-item': { template: '<div class="el-form-item"><slot /></div>' },
+          'el-input': {
+            props: ['modelValue', 'size'],
+            emits: ['update:modelValue'],
+            template: '<input :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+          },
+          'el-button': {
+            emits: ['click'],
+            template: '<button @click="$emit(\'click\')"><slot /></button>',
+          },
+          'el-icon': { template: '<i><slot /></i>' },
+          'el-tag': { template: '<span><slot /></span>' },
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('.two-factor-mobile-box').exists()).toBe(true)
+
+    // 输入全角数字 + 零宽空格 + 格式空格
+    const codeInput = wrapper.find('input')
+    await codeInput.setValue('　１２３\u200B４５６　')
+
+    const verifyBtn = wrapper.findAll('button').find((b) => b.text().includes('验证并登录'))
+    await verifyBtn?.trigger('click')
+    await flushPromises()
+
+    expect(verifySpy).toHaveBeenCalledWith('temp_token_fullwidth', '123456')
+  })
+
+  it('recovers 2FA session from localStorage even when sessionStorage was cleared', async () => {
+    save2FaTempSession('temp_token_persistent_recover')
+    sessionStorage.clear() // 模拟切出应用后 WebView 进程被干掉导致 sessionStorage 丢失
+
+    const wrapper = mount(LoginMobile, {
+      global: {
+        stubs: {
+          AppLogo: { template: '<div class="app-logo-stub" />' },
+          ServerConfigDialog: { template: '<div class="server-config-dialog-stub" />' },
+          'el-form': { template: '<form class="el-form"><slot /></form>' },
+          'el-form-item': { template: '<div class="el-form-item"><slot /></div>' },
+          'el-input': {
+            props: ['modelValue', 'size'],
+            emits: ['update:modelValue'],
+            template: '<input :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+          },
+          'el-button': {
+            emits: ['click'],
+            template: '<button @click="$emit(\'click\')"><slot /></button>',
+          },
+          'el-icon': { template: '<i><slot /></i>' },
+          'el-tag': { template: '<span><slot /></span>' },
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('.two-factor-mobile-box').exists()).toBe(true)
+  })
+
+  it('supports paste button to populate and normalize 2FA code from clipboard', async () => {
+    sessionStorage.setItem('minefolio_2fa_temp_token', 'temp_token_paste')
+
+    // 模拟剪贴板含有全角数字和空格
+    const originalClipboard = navigator.clipboard
+    Object.assign(navigator, {
+      clipboard: {
+        readText: vi.fn().mockResolvedValue(' ６５４ ３２１ '),
+      },
+    })
+
+    const wrapper = mount(LoginMobile, {
+      global: {
+        stubs: {
+          AppLogo: { template: '<div class="app-logo-stub" />' },
+          ServerConfigDialog: { template: '<div class="server-config-dialog-stub" />' },
+          'el-form': { template: '<form class="el-form"><slot /></form>' },
+          'el-form-item': { template: '<div class="el-form-item"><slot /></div>' },
+          'el-input': {
+            props: ['modelValue', 'size'],
+            emits: ['update:modelValue'],
+            template: '<input :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+          },
+          'el-button': {
+            emits: ['click'],
+            template: '<button @click="$emit(\'click\')"><slot /></button>',
+          },
+          'el-icon': { template: '<i><slot /></i>' },
+          'el-tag': { template: '<span><slot /></span>' },
+        },
+      },
+    })
+    await flushPromises()
+
+    const pasteBtn = wrapper.findAll('button').find((b) => b.text().includes('粘贴'))
+    expect(pasteBtn).toBeDefined()
+    await pasteBtn?.trigger('click')
+    await flushPromises()
+
+    const input = wrapper.find('input')
+    expect((input.element as HTMLInputElement).value).toBe('654321')
+
+    if (originalClipboard) {
+      Object.assign(navigator, { clipboard: originalClipboard })
+    }
   })
 })

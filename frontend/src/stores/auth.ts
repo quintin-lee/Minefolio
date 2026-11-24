@@ -164,7 +164,11 @@ export const useAuthStore = defineStore('auth', () => {
     if (res && res.token) {
       token.value = res.token
       localStorage.setItem('token', res.token)
-      await fetchUser()
+      try {
+        await fetchUser()
+      } catch (err) {
+        console.warn('[auth] fetchUser failed after 2fa verify, continuing login:', err)
+      }
       // 同 login：恢复登出时被重置的离线本地库
       await reinitLocalDb()
     }
@@ -222,6 +226,7 @@ export const useAuthStore = defineStore('auth', () => {
       localStorage.removeItem('token')
       localStorage.removeItem('minefolio_active_ledger_id')
       localStorage.removeItem('minefolio_pinned_workflows')
+      localStorage.removeItem('minefolio_2fa_temp_session')
       // 清理按用户保存的聊天草稿 (minefolio:chat:draft:*) 
       const draftKeys: string[] = []
       for (let i = 0; i < localStorage.length; i++) {

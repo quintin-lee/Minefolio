@@ -144,6 +144,52 @@ int main(void) {
     csilk_json_free(login_data);
     printf("PASS: test_2fa_verify_login_totp_with_space_tolerant\n");
 
+    /* 测试 TOTP 动态码全角数字 (如 １２３４５６) 与 150s (5步) 时钟漂移校验通过 */
+    char drift_totp[8] = {0};
+    assert(csilk_totp_generate_code("JBSWY3DPEHPK3PXP", (uint64_t)time(NULL) - 150, drift_totp, sizeof(drift_totp)) == 0);
+    char fullwidth_totp[32] = {0};
+    size_t fw_len = 0;
+    for (int i = 0; i < 6; i++) {
+        fullwidth_totp[fw_len++] = (char)0xEF;
+        fullwidth_totp[fw_len++] = (char)0xBC;
+        fullwidth_totp[fw_len++] = (char)(0x90 + (drift_totp[i] - '0'));
+    }
+    fullwidth_totp[fw_len] = '\0';
+
+    login_data = NULL;
+    memset(&login_res, 0, sizeof(login_res));
+    assert(auth_usecase_login(pool, &login_cmd, NULL, &login_data, &login_res) == 0);
+    const char* temp_tok_fw = csilk_json_get_string(login_data, "temp_token");
+    verify_2fa_login_cmd_t verify_cmd_fw = {
+        .temp_token = temp_tok_fw,
+        .code = fullwidth_totp,
+    };
+    csilk_json_t* verify_fw_data = NULL;
+    auth_usecase_result_t verify_fw_res = {0};
+    assert(auth_usecase_2fa_verify_login(pool, &verify_cmd_fw, &verify_fw_data, &verify_fw_res) == 0);
+    assert(verify_fw_res.code == 0 && verify_fw_data != NULL);
+    csilk_json_free(verify_fw_data);
+    csilk_json_free(login_data);
+    printf("PASS: test_2fa_verify_login_fullwidth_digits_and_clock_drift_tolerant\n");
+
+    /* 测试备份码无连字符 (如 A1B2C3D4) 亦能核销成功 */
+    mf_auth_repo_enable_totp(pool, test_uid, "[\"a1b2-c3d4\"]");
+    login_data = NULL;
+    memset(&login_res, 0, sizeof(login_res));
+    assert(auth_usecase_login(pool, &login_cmd, NULL, &login_data, &login_res) == 0);
+    const char* temp_tok_nodash = csilk_json_get_string(login_data, "temp_token");
+    verify_2fa_login_cmd_t verify_cmd_nodash = {
+        .temp_token = temp_tok_nodash,
+        .code = "A1B2C3D4",
+    };
+    csilk_json_t* verify_nodash_data = NULL;
+    auth_usecase_result_t verify_nodash_res = {0};
+    assert(auth_usecase_2fa_verify_login(pool, &verify_cmd_nodash, &verify_nodash_data, &verify_nodash_res) == 0);
+    assert(verify_nodash_res.code == 0 && verify_nodash_data != NULL);
+    csilk_json_free(verify_nodash_data);
+    csilk_json_free(login_data);
+    printf("PASS: test_2fa_verify_login_backup_code_nodash_and_case_tolerant\n");
+
     /* 测试验证失败时返回诊断时间戳 server_unix_ts */
     login_data = NULL;
     memset(&login_res, 0, sizeof(login_res));

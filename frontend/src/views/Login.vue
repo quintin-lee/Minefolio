@@ -126,6 +126,7 @@ import { authApi } from '@/api/auth'
 import type { OAuthProvider } from '@/types'
 import { t } from '@/utils/locale'
 import { buildOAuthAuthUrl } from '@/utils/oauth-state'
+import { normalize2FaCode } from '@/utils/two-factor'
 import AppLogo from '@/components/AppLogo.vue'
 
 const router = useRouter()
@@ -219,11 +220,12 @@ async function handleSubmit() {
 }
 
 async function handle2FaSubmit() {
-  const cleanCode = twoFactorCode.value.replace(/\s+/g, '').toLowerCase()
+  const cleanCode = normalize2FaCode(twoFactorCode.value)
   if (!cleanCode) {
     ElMessage.warning(t('login.twoFactorCodeRequired'))
     return
   }
+  twoFactorCode.value = cleanCode
   loading.value = true
   try {
     await auth.verify2FaLogin(tempToken.value, cleanCode)
