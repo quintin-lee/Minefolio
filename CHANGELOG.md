@@ -9,7 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [1.4.0] - 2026-11-24
+
 ### Added
+- **Agent Skills & MCP Toolbox Gallery (`backend/sql/migrations/{sqlite,postgres}/V022__ai_skills.sql`, `backend/src/{domain,application,infrastructure,interfaces}/**/skill*`, `frontend/src/`)**:
+  - Added full DDD Agent Skills stack (`ai_skills` table in V022, 4 seeded financial skills, Markdown import/export, L1-L3 execution, `use_skill` and `list_skills` AI runtime discovery tools) along with dedicated Skills Library and MCP Tools Gallery views.
+- **Scheduler Center & WeChat Push Notifications (`backend/sql/migrations/{sqlite,postgres}/V029__scheduled_jobs_and_logs.sql`, `V030__scheduled_jobs_builtin.sql`, `backend/src/services/scheduler/`, `frontend/src/`)**:
+  - Implemented pure C 5-part cron parser, worker pool with dynamic sleep for NAS HDD spindown, built-in system job orchestration with toggle/delete protection, WeChat push integration (ServerChan / PushDeer / webhooks), concurrency guards for heavy AI prompt jobs, and the Scheduler management UI.
+- **AI News / Market Pulse Two-Stage Digest (`backend/sql/migrations/{sqlite,postgres}/V024__ai_news_reports.sql`, `V028__ai_news_portfolio_isolation.sql`)**:
+  - Added daily Market Pulse AI news analysis with scheduled generation, two-stage digest pipeline, portfolio data masking, ledger RBAC isolation, lazy on-demand generation with pagination, and the `get_market_pulse` AI chat tool.
+- **IM Bot Read-Only Query & Gateway (`backend/sql/migrations/{sqlite,postgres}/V027__im_bot_bindings.sql`, `gateway/`)**:
+  - Added `/api/im/*` read-only endpoints with `im_bind` token scope, self-bind pairing with rate limiting and 365-day persistent tokens (blocking single-factor password binding when 2FA is active), and standalone `gateway/` bridging QQ (OneBot v11 / NapCat) and WeChat (WeChaty) with disk-persisted bindings and CLI simulator.
+- **Account-Level & Field-Level RBAC (`backend/sql/migrations/{sqlite,postgres}/V031__account_and_field_rbac.sql`)**:
+  - Added `account_permissions` enforcing per-account visibility (`none`), balance/account-number masking (`mask_balance`, `mask_account_no`), write guards, and unmasked SQL aggregation filtering across reports, portfolio, and AI summaries.
+- **Shared-Ledger Multi-User Collaboration & Mobile Offline Isolation**:
+  - Enabled collaborative ledger-scoped transactions, daily expenses, categories, assets, accounts, reports, and AI runtime ledger context (`X-Ledger-Id`), plus mobile offline SQLite `ledger_id` isolation and sync scoping.
+- **Unified Async Tasks Infrastructure (`backend/sql/migrations/{sqlite,postgres}/V033__async_tasks.sql`, `backend/src/application/task/async_task_manager.c`)**:
+  - Added multi-worker HTTP config, recursive tx scope locking, and background `async_tasks` offloading for market/FX sync, CSV imports, multimodal receipt OCR, SQLite hot backups, ledger rebuilds, IM chat, and MCP/skill probes with real-time progress polling and abort support in the UI.
+- **Position Overview, Cost Lots & Asset Detail Analytics (`backend/sql/migrations/{sqlite,postgres}/V021__asset_cost_method_and_lots.sql`, `V032__quantity_price_precision.sql`)**:
+  - Added FIFO / lot-based cost tracking (V021), quantity/price precision expansion (V032), `GET /api/reports/position-overview`, interval returns, daily P&L card, HHI concentration badge, `AssetDetail` view, and `unit_cost` API/backfill.
+- **Online SQLite Hot Backup, Disaster Recovery & Ops CLI (`backend/src/infrastructure/database/db_backup.c`, `backend/tools/`)**:
+  - Implemented online SQLite hot backup engine with atomic file rotation, scheduled backup job, Settings Disaster Recovery dashboard, graceful `SIGTERM` WAL truncate checkpoint on shutdown, and standalone `reset-password` ops CLI tool (`env`-only DB config, dropping `config/db.json`).
+- **Chat Experience & Mobile Enhancements (`frontend/src/`)**:
+  - Added financial entity linking and hover micro-cards, smart follow-up chips and `@` account mentions, pinned sessions, live financial context capsule, multimodal paste/OCR attachments, WebCrypto non-extractable IDB encryption for offline SQLite, global amount mask toggle (`AmountMaskToggle`), mobile AI chat tab, and offline-bundled Phosphor icons.
+- **Dynamic Workflow Branching & Saga Compensation (Milestone 4)**:
+  - Extended workflow node schema with conditional branching, exponential retry, and Saga rollback compensation, enriching the financial health workflow with conditional liability analysis (`test_workflow_branching`).
 - **Dual-Engine Integration Testing & PostgreSQL CI (`backend/tests/db_helper.sh`, `backend/tests/test_db_helper.sh`, `.github/workflows/ci.yml`, all 8 integration test suites)**:
   - Created modular database test helper `db_helper.sh` standardizing dynamic port selection, engine-agnostic schema resets (`sqlite3` / `psql`), server lifecycle management, and SQL verification across SQLite and PostgreSQL.
   - Adapted all 8 integration suites (`test_link.sh`, `test_2fa.sh`, `test_dca_cashflow.sh`, `test_ai_trace.sh`, `test_ai_tool_call.sh`, `test_market_sync.sh`, `test_ledgers.sh`, `test_fx_oauth.sh`) to support dual execution via `MINEFOLIO_DB_DRIVER=postgres`.
@@ -94,8 +120,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `account_list` passed the `archived=0` conditional filter and `ORDER BY` as extra `snprintf` arguments with no matching format specifier, silently dropping both; default list now hides archived accounts and `include_archived=1` includes them.
 
 ### Changed
-- **Test Suite Expansion**:
-  - Expanded integration coverage with `test_ai_loop_hardening.sh` (28 assertions) and frontend `chat-stream-error.spec.ts` (36 suites / 170 tests total).
+- **Architecture, Layering & Dependency Updates**:
+  - Pinned `csilk` dependency to `v1.2.0` (`backend/CMakeLists.txt`, `Dockerfile`), added `V023` reporting/FX query indices, modularized `ledger_engine` (`math`/`transaction`/`rebuild`), `report_asset_service`, and `loop.c`, extracted `application/ai/config_provider` with RCU snapshot, sunk residual naked SQL from `application/*` and controllers into `infrastructure/repositories/`, and removed user-facing language switcher UI (fixing UI locale to `zh-CN`).
+- **Test Suite & CI Hardening**:
+  - Added `.github/workflows/sanitizers.yml` (ASan/UBSan), static DB JSON contract check (`scripts/check_db_contract.sh`), `gateway` adapter unit tests, `test_ai_loop_hardening.sh`, and expanded unit/frontend test coverage.
+- **Version Bump**: Bumped version to `1.4.0` across backend (`CMakeLists.txt`, `admin_controller.c`), frontend (`package.json`, `package-lock.json`), Android (`build.gradle`, `versionCode` 5 → 6), tests (`http.utils.spec.ts`, `mcp-settings.spec.ts`), and documentation (`README.md`, `docs/architecture.md`, `CHANGELOG.md`).
+
+---
 
 ## [1.3.2] - 2026-10-24
 

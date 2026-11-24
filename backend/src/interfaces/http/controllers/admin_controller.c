@@ -27,7 +27,7 @@
 #include <string.h>
 
 #ifndef MINEFOLIO_VERSION
-#define MINEFOLIO_VERSION "1.3.2"
+#define MINEFOLIO_VERSION "1.4.0"
 #endif
 
 static void
