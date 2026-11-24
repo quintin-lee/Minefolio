@@ -358,7 +358,20 @@ export const useSyncStore = defineStore('sync', () => {
           )
           const pendingIds = new Set(pendingRows.map((r) => Number(r.record_id)))
           const pushedIds = pushedInCycle?.get(table) ?? new Set<number>()
-          const localRows = rowsFrom(query(`SELECT id FROM ${table} WHERE __deleted = 0`))
+          const hasLedgerId = ['assets', 'accounts', 'account_permissions', 'transactions', 'daily_expenses'].includes(table)
+          const activeLedgerId = Number(localStorage.getItem('minefolio_active_ledger_id') || 0)
+
+          let localRows: any[] = []
+          if (hasLedgerId && activeLedgerId > 0) {
+            localRows = rowsFrom(
+              query(
+                `SELECT id FROM ${table} WHERE __deleted = 0 AND (ledger_id = ? OR (ledger_id IS NULL AND ? = 0))`,
+                [activeLedgerId, activeLedgerId]
+              )
+            )
+          } else {
+            localRows = rowsFrom(query(`SELECT id FROM ${table} WHERE __deleted = 0`))
+          }
           for (const lr of localRows) {
             const lid = Number(lr.id)
             if (lid > 0 && !seenIds.has(lid) && !pendingIds.has(lid) && !pushedIds.has(lid)) {

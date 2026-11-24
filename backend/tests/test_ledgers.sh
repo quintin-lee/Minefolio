@@ -332,6 +332,137 @@ BOB_WRITE_OK=$(curl -s -X POST "$BASE/daily-expenses" \
 test "$(echo "$BOB_WRITE_OK" | jq -r '.code | floor')" = "0"
 echo "✅ Account RBAC: Resetting permission restores ledger editor role, write succeeds"
 
+# -------------------------------------------------------------
+# 10.6 Multi-Member Collaborative Expense, Shared Category/Asset & Report Aggregation
+# -------------------------------------------------------------
+echo "=== Testing Multi-Member Collaborative Expense & Shared Data Aggregation ==="
+
+# Alice creates shared category "餐饮美食" (Food) in Family ledger
+CR_CAT=$(curl -s -X POST "$BASE/categories" \
+  -H "Authorization: Bearer $TOKEN_A" \
+  -H "X-Ledger-Id: $FAM_LID" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"餐饮美食","type":"expense","icon":"ph:fork-knife"}')
+test "$(echo "$CR_CAT" | jq -r '.code | floor')" = "0"
+ALICE_CATS=$(curl -s -H "Authorization: Bearer $TOKEN_A" -H "X-Ledger-Id: $FAM_LID" "$BASE/categories")
+CAT_FOOD_ID=$(echo "$ALICE_CATS" | jq -r ".data[] | select(.name == \"餐饮美食\") | .id | floor")
+test -n "$CAT_FOOD_ID" && test "$CAT_FOOD_ID" -gt 0
+
+# Alice creates shared asset "家庭联名招行卡" (Joint Bank Card, balance 1000) under Family ledger
+CR_ASSET_JOINT=$(curl -s -X POST "$BASE/assets" \
+  -H "Authorization: Bearer $TOKEN_A" \
+  -H "X-Ledger-Id: $FAM_LID" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"家庭联名招行卡","category_id":1,"current_value":1000}')
+test "$(echo "$CR_ASSET_JOINT" | jq -r '.code | floor')" = "0"
+ALICE_ASSETS=$(curl -s -H "Authorization: Bearer $TOKEN_A" -H "X-Ledger-Id: $FAM_LID" "$BASE/assets")
+ASSET_JOINT_ID=$(echo "$ALICE_ASSETS" | jq -r ".data.list[] | select(.name == \"家庭联名招行卡\") | .id | floor")
+test -n "$ASSET_JOINT_ID" && test "$ASSET_JOINT_ID" -gt 0
+
+# Bob lists categories: Bob sees Alice's shared "餐饮美食" category
+BOB_CATS=$(curl -s -H "Authorization: Bearer $TOKEN_B" -H "X-Ledger-Id: $FAM_LID" "$BASE/categories")
+test "$(echo "$BOB_CATS" | jq -r '.code | floor')" = "0"
+BOB_FOOD=$(echo "$BOB_CATS" | jq -r ".data[] | select(.name == \"餐饮美食\") | .id | floor")
+test -n "$BOB_FOOD" && test "$BOB_FOOD" = "$CAT_FOOD_ID"
+echo "✅ Shared category: Bob sees Alice's shared '餐饮美食' category (id $BOB_FOOD)"
+
+# Bob lists assets: Bob sees Alice's shared "家庭联名招行卡" with balance 1000
+BOB_ASSETS=$(curl -s -H "Authorization: Bearer $TOKEN_B" -H "X-Ledger-Id: $FAM_LID" "$BASE/assets")
+test "$(echo "$BOB_ASSETS" | jq -r '.code | floor')" = "0"
+BOB_JOINT_VAL=$(echo "$BOB_ASSETS" | jq -r ".data.list[] | select(.name == \"家庭联名招行卡\") | .current_value | floor")
+test "$BOB_JOINT_VAL" = "1000"
+echo "✅ Shared asset: Bob sees Alice's '家庭联名招行卡' with balance 1000"
+
+# Bob as editor creates a new account "Bob家庭微信钱包" in Family ledger
+BOB_CR_ACCT=$(curl -s -X POST "$BASE/accounts" \
+  -H "Authorization: Bearer $TOKEN_B" \
+  -H "X-Ledger-Id: $FAM_LID" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Bob家庭微信钱包","institution":"platform","currency":"CNY"}')
+test "$(echo "$BOB_CR_ACCT" | jq -r '.code | floor')" = "0"
+echo "✅ Non-owner editor: Bob created Account container in shared ledger"
+
+# Bob records a daily expense of 200 CNY against Alice's "家庭联名招行卡"
+BOB_EXP=$(curl -s -X POST "$BASE/daily-expenses" \
+  -H "Authorization: Bearer $TOKEN_B" \
+  -H "X-Ledger-Id: $FAM_LID" \
+  -H "Content-Type: application/json" \
+  -d "{\"category_id\":$CAT_FOOD_ID,\"asset_id\":$ASSET_JOINT_ID,\"expense_type\":\"expense\",\"amount\":200,\"expense_date\":\"2026-11-24\",\"note\":\"Bob买菜\"}")
+test "$(echo "$BOB_EXP" | jq -r '.code | floor')" = "0"
+echo "✅ Collaborative expense: Bob recorded 200 CNY expense against Alice's asset"
+
+# Verify "家庭联名招行卡" balance atomically debited from 1000 to 800
+JOINT_ASSET_CHECK=$(curl -s -H "Authorization: Bearer $TOKEN_A" -H "X-Ledger-Id: $FAM_LID" "$BASE/assets/$ASSET_JOINT_ID")
+JOINT_VAL=$(echo "$JOINT_ASSET_CHECK" | jq -r '.data.current_value | floor')
+test "$JOINT_VAL" = "800"
+echo "✅ Cross-member balance: Asset balance debited from 1000 to 800"
+
+# Alice queries daily expenses: Alice sees Bob's expense with operator_username='bob'
+ALICE_EXP_LIST=$(curl -s -H "Authorization: Bearer $TOKEN_A" -H "X-Ledger-Id: $FAM_LID" "$BASE/daily-expenses?page=1&page_size=20")
+test "$(echo "$ALICE_EXP_LIST" | jq -r '.code | floor')" = "0"
+FOUND_BOB_EXP=$(echo "$ALICE_EXP_LIST" | jq -r ".data.list[] | select(.note == \"Bob买菜\")")
+test -n "$FOUND_BOB_EXP"
+EXP_OPERATOR=$(echo "$FOUND_BOB_EXP" | jq -r '.operator_username')
+test "$EXP_OPERATOR" = "bob"
+echo "✅ Ledger-scoped expenses: Alice sees Bob's expense with operator_username='bob'"
+
+# Both Alice and Bob query monthly totals: both see aggregated 250 CNY (50 earlier + 200 now)
+ALICE_MONTHLY=$(curl -s -H "Authorization: Bearer $TOKEN_A" -H "X-Ledger-Id: $FAM_LID" "$BASE/daily-expenses/monthly?year=2026&month=11")
+test "$(echo "$ALICE_MONTHLY" | jq -r '.code | floor')" = "0"
+ALICE_M_EXP=$(echo "$ALICE_MONTHLY" | jq -r '.data.total_expense | floor')
+test "$ALICE_M_EXP" = "250"
+
+BOB_MONTHLY=$(curl -s -H "Authorization: Bearer $TOKEN_B" -H "X-Ledger-Id: $FAM_LID" "$BASE/daily-expenses/monthly?year=2026&month=11")
+test "$(echo "$BOB_MONTHLY" | jq -r '.code | floor')" = "0"
+BOB_M_EXP=$(echo "$BOB_MONTHLY" | jq -r '.data.total_expense | floor')
+test "$BOB_M_EXP" = "250"
+echo "✅ Collaborative monthly totals: Both Alice and Bob see aggregated 250 CNY expense"
+
+# Both Alice and Bob query expense report: both see aggregated 250 CNY
+ALICE_REP=$(curl -s -H "Authorization: Bearer $TOKEN_A" -H "X-Ledger-Id: $FAM_LID" "$BASE/reports/expense/monthly?year=2026&month=11")
+test "$(echo "$ALICE_REP" | jq -r '.code | floor')" = "0"
+ALICE_REP_EXP=$(echo "$ALICE_REP" | jq -r '.data.total_expense | floor')
+test "$ALICE_REP_EXP" = "250"
+
+BOB_REP=$(curl -s -H "Authorization: Bearer $TOKEN_B" -H "X-Ledger-Id: $FAM_LID" "$BASE/reports/expense/monthly?year=2026&month=11")
+test "$(echo "$BOB_REP" | jq -r '.code | floor')" = "0"
+BOB_REP_EXP=$(echo "$BOB_REP" | jq -r '.data.total_expense | floor')
+test "$BOB_REP_EXP" = "250"
+echo "✅ Collaborative expense report: Both Alice and Bob see aggregated 250 CNY expense report"
+
+# Charlie joins as 3rd user (viewer role)
+sqlite3 "$DB_PATH" "INSERT INTO users (username, password) VALUES ('charlie', 'dummyhash')"
+USER_C_ID=$(sqlite3 "$DB_PATH" "SELECT id FROM users WHERE username='charlie'")
+TOKEN_C=$(node -e "
+const crypto = require('crypto');
+const header = Buffer.from(JSON.stringify({alg:'HS256',typ:'JWT'})).toString('base64url');
+const now = Math.floor(Date.now()/1000);
+const payload = Buffer.from(JSON.stringify({sub: $USER_C_ID, user_id: $USER_C_ID, v: 0, exp: now + 604800, iat: now})).toString('base64url');
+const secret = '$MINEFOLIO_JWT_SECRET';
+const sig = crypto.createHmac('sha256', secret).update(header + '.' + payload).digest('base64url');
+process.stdout.write(header + '.' + payload + '.' + sig);
+")
+
+ADD_CHARLIE=$(curl -s -X POST "$BASE/ledgers/${FAM_LID}/members" \
+  -H "Authorization: Bearer $TOKEN_A" \
+  -H "Content-Type: application/json" \
+  -d '{"username":"charlie","role":"viewer"}')
+test "$(echo "$ADD_CHARLIE" | jq -r '.code | floor')" = "0"
+
+# Charlie sees shared expenses
+CHARLIE_EXP=$(curl -s -H "Authorization: Bearer $TOKEN_C" -H "X-Ledger-Id: $FAM_LID" "$BASE/daily-expenses")
+test "$(echo "$CHARLIE_EXP" | jq -r '.code | floor')" = "0"
+echo "✅ Charlie (3rd member) reads shared daily-expenses OK"
+
+# Charlie attempts to record expense -> blocked with 1004 Forbidden
+CHARLIE_WRITE=$(curl -s -X POST "$BASE/daily-expenses" \
+  -H "Authorization: Bearer $TOKEN_C" \
+  -H "X-Ledger-Id: $FAM_LID" \
+  -H "Content-Type: application/json" \
+  -d "{\"category_id\":$CAT_FOOD_ID,\"asset_id\":$ASSET_JOINT_ID,\"expense_type\":\"expense\",\"amount\":50,\"expense_date\":\"2026-11-24\"}")
+test "$(echo "$CHARLIE_WRITE" | jq -r '.code | floor')" = "1004"
+echo "✅ RBAC: Charlie as viewer blocked from recording expense (code 1004)"
+
 # 11. Alice removes Bob from family ledger
 REM_RES=$(curl -s -X DELETE "$BASE/ledgers/${FAM_LID}/members/${USER_B_ID}" \
   -H "Authorization: Bearer $TOKEN_A")
