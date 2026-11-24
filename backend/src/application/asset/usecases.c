@@ -492,7 +492,8 @@ asset_usecase_delete(void* pool, const delete_asset_cmd_t* cmd, asset_usecase_re
 }
 
 int
-asset_usecase_get(void* pool, int64_t user_id, int64_t id, csilk_json_t** out_json)
+asset_usecase_get(
+    void* pool, int64_t user_id, int64_t caller_user_id, int64_t id, csilk_json_t** out_json)
 {
     if (!out_json) {
         return -1;
@@ -500,7 +501,7 @@ asset_usecase_get(void* pool, int64_t user_id, int64_t id, csilk_json_t** out_js
     *out_json = NULL;
 
     csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
-    csilk_json_t*    result = asset_get(db_pool, user_id, id);
+    csilk_json_t*    result = asset_get(db_pool, user_id, caller_user_id, id);
     if (!result || csilk_json_array_size(result) == 0) {
         if (result) {
             csilk_json_free(result);
@@ -701,6 +702,7 @@ asset_usecase_query(void*                       pool,
     }
     *out_list = asset_list((csilk_db_pool_t*)pool,
                            filter->user_id,
+                           filter->caller_user_id,
                            filter->page,
                            filter->page_size,
                            filter->category_id,

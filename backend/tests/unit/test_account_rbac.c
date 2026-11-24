@@ -495,9 +495,9 @@ static void test_usecases_and_masking(csilk_db_pool_t* pool) {
 
     // 6.2 Asset detail: asset_b returns 1003, asset_a masks balance/transactions/weight
     csilk_json_t* detail_b = NULL;
-    assert(asset_usecase_get(pool, member_id, asset_b, &detail_b) == 1003 && detail_b == NULL);
+    assert(asset_usecase_get(pool, member_id, member_id, asset_b, &detail_b) == 1003 && detail_b == NULL);
     csilk_json_t* detail_a = NULL;
-    assert(asset_usecase_get(pool, member_id, asset_a, &detail_a) == 0 && detail_a != NULL);
+    assert(asset_usecase_get(pool, member_id, member_id, asset_a, &detail_a) == 0 && detail_a != NULL);
     assert(csilk_json_get_bool(detail_a, "is_balance_masked") == true);
     assert(db_get_num(detail_a, "current_value") == 0.0);
     assert(db_get_num(detail_a, "portfolio_weight") == 0.0);

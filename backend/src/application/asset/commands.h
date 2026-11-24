@@ -65,6 +65,7 @@ typedef struct delete_asset_cmd {
  */
 typedef struct query_asset_filter {
     int64_t     user_id;
+    int64_t     caller_user_id;
     const char* category_id;
     int64_t     account_id;
     int64_t     page;

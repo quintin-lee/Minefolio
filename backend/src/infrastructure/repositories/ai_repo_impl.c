@@ -16,13 +16,13 @@ csilk_json_t*
 mf_ai_repo_asset_list(
     void* pool, int64_t user_id, int64_t page, int64_t page_size, const char* type, int64_t* total)
 {
-    return asset_list(pool, user_id, page, page_size, type, 0, total);
+    return asset_list(pool, user_id, 0, page, page_size, type, 0, total);
 }
 
 csilk_json_t*
 mf_ai_repo_asset_get(void* pool, int64_t user_id, int64_t id)
 {
-    return asset_get(pool, user_id, id);
+    return asset_get(pool, user_id, 0, id);
 }
 
 csilk_json_t*

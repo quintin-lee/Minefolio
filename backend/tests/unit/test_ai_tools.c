@@ -351,7 +351,7 @@ main(void)
             free(exec_ok);
 
             /* Verify balance debited: 5000 - 150 = 4850 */
-            csilk_json_t* asset = asset_get(pool, user_id, 101);
+            csilk_json_t* asset = asset_get(pool, user_id, 0, 101);
             assert(asset != NULL && csilk_json_array_size(asset) > 0);
             double bal = db_get_num(csilk_json_array_get(asset, 0), "current_value");
             assert(bal == 4850.0);
@@ -391,8 +391,8 @@ main(void)
         free(tf_ok);
 
         /* Verify balances: 101 (4850 - 300 = 4550), 102 (500 + 300 = 800) */
-        csilk_json_t* a101 = asset_get(pool, user_id, 101);
-        csilk_json_t* a102 = asset_get(pool, user_id, 102);
+        csilk_json_t* a101 = asset_get(pool, user_id, 0, 101);
+        csilk_json_t* a102 = asset_get(pool, user_id, 0, 102);
         assert(a101 != NULL && csilk_json_array_size(a101) > 0);
         assert(a102 != NULL && csilk_json_array_size(a102) > 0);
         assert(db_get_num(csilk_json_array_get(a101, 0), "current_value") == 4550.0);

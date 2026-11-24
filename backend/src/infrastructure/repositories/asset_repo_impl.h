@@ -7,15 +7,29 @@
 
 /* 基础设施层：基于 SQL 数据库实现纯领域资产仓储契约 */
 
-/* Legacy function signatures for backward compatibility */
+/* Legacy function signatures for backward compatibility.
+ *
+ * `caller_user_id` semantics:
+ *   - 0        => "owner / self" view: behaves EXACTLY as before (owner, AI tools, scheduler
+ *                  paths are unchanged). The caller's own `user_id` is the data owner.
+ *   - == user_id (self) => owner view, same as 0.
+ *   - > 0 && != user_id => "shared-ledger member" view: reads the ledger OWNER's assets
+ *                  (user_id), but restricted to assets in a ledger the caller is a member of,
+ *                  and the owner has not explicitly hidden the owning account (account_permissions
+ *                  permission_level = 'none').
+ *
+ * This lets a ledger member (V004 ledger_members) see the owner's asset data in a shared ledger,
+ * while the owner and all AI/workflow/scheduler read paths keep the legacy behaviour untouched.
+ */
 csilk_json_t* asset_list(csilk_db_pool_t* pool,
                          int64_t          user_id,
+                         int64_t          caller_user_id,
                          int64_t          page,
                          int64_t          page_size,
                          const char*      category_id,
                          int64_t          account_id,
                          int64_t*         total);
-csilk_json_t* asset_get(csilk_db_pool_t* pool, int64_t user_id, int64_t id);
+csilk_json_t* asset_get(csilk_db_pool_t* pool, int64_t user_id, int64_t caller_user_id, int64_t id);
 csilk_json_t* asset_get_raw(csilk_db_pool_t* pool, int64_t user_id, int64_t id);
 int           asset_get_ledger_and_account(csilk_db_pool_t* pool,
                                            int64_t          asset_id,

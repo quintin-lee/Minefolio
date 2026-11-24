@@ -132,18 +132,20 @@ format_balance_log_rows(csilk_json_t* raw_rows)
 csilk_json_t*
 asset_list(csilk_db_pool_t* pool,
            int64_t          user_id,
+           int64_t          caller_user_id,
            int64_t          page,
            int64_t          page_size,
            const char*      category_id,
            int64_t          account_id,
            int64_t*         total)
 {
-    char uid[32], limit[32], offset[32];
+    char uid[32], caller_uid[32], limit[32], offset[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    snprintf(caller_uid, sizeof(caller_uid), "%lld", (long long)caller_user_id);
     snprintf(limit, sizeof(limit), "%lld", (long long)page_size);
     snprintf(offset, sizeof(offset), "%lld", (long long)((page - 1) * page_size));
-    char        sql[2048], count_sql[1024];
-    const char *params[16], *cnt_params[8];
+    char        sql[2048], count_sql[1536];
+    const char *params[18], *cnt_params[10];
     int         pidx = 0, cnt_pidx = 0;
     char        acct_str[32];
     int         has_cat = category_id && category_id[0];
@@ -152,18 +154,51 @@ asset_list(csilk_db_pool_t* pool,
         snprintf(acct_str, sizeof(acct_str), "%lld", (long long)account_id);
     }
 
-    /* SELECT 中 2 个脱敏列共 4 个 uid 参数 */
-    params[pidx++] = uid;
-    params[pidx++] = uid;
-    params[pidx++] = uid;
-    params[pidx++] = uid;
-    /* WHERE a.user_id=? + MF_RBAC_ASSET_VISIBLE_SQL("a") 共 3 个 uid 参数 */
-    params[pidx++] = uid;
-    params[pidx++] = uid;
-    params[pidx++] = uid;
-    cnt_params[cnt_pidx++] = uid;
-    cnt_params[cnt_pidx++] = uid;
-    cnt_params[cnt_pidx++] = uid;
+    /* Shared-ledger member view (V004/V031): when the requesting caller differs from the data
+     * owner, restrict rows to assets whose ledger the caller is a member of and whose owning
+     * account the owner has not hidden (account_permissions 'none'). owner / AI / scheduler
+     * paths always pass caller_user_id == user_id (or 0 -> self), so no clause is added and
+     * their SQL stays byte-identical (zero regression). */
+    int member_view = (caller_user_id > 0 && caller_user_id != user_id);
+    /* 成员视图下，RBAC 可见/脱敏谓词须对调用方(caller)求值而非数据 owner：
+     * 否则 account_permissions 的 user_id 永远匹配不到成员，脱敏/隐藏全部失效。
+     * owner/AI/scheduler 路径 member_view==0，恒用 uid，SQL 与原先逐字节一致（零回归）。 */
+    const char* ruid = member_view ? caller_uid : uid;
+    /* SELECT 中 2 个脱敏列共 4 个参数，均对调用方(caller)求值 */
+    params[pidx++] = ruid;
+    params[pidx++] = ruid;
+    params[pidx++] = ruid;
+    params[pidx++] = ruid;
+    if (member_view) {
+        /* a.user_id IN (?,?)：owner + caller 双向可见 */
+        params[pidx++] = uid;
+        params[pidx++] = caller_uid;
+        /* MF_RBAC_ASSET_VISIBLE_SQL("a")：2 个 caller 参数 */
+        params[pidx++] = ruid;
+        params[pidx++] = ruid;
+        /* 成员门控：2 个 caller 参数 */
+        params[pidx++] = caller_uid;
+        params[pidx++] = caller_uid;
+    } else {
+        /* WHERE a.user_id=? + MF_RBAC_ASSET_VISIBLE_SQL("a")：owner 自身 3 个 uid */
+        params[pidx++] = uid;
+        params[pidx++] = uid;
+        params[pidx++] = uid;
+    }
+    if (member_view) {
+        /* count: a.user_id IN (?,?) + visible(2 caller) + member(2 caller) */
+        cnt_params[cnt_pidx++] = uid;
+        cnt_params[cnt_pidx++] = caller_uid;
+        cnt_params[cnt_pidx++] = ruid;
+        cnt_params[cnt_pidx++] = ruid;
+        cnt_params[cnt_pidx++] = caller_uid;
+        cnt_params[cnt_pidx++] = caller_uid;
+    } else {
+        /* count: a.user_id=? + visible(2 uid) */
+        cnt_params[cnt_pidx++] = uid;
+        cnt_params[cnt_pidx++] = uid;
+        cnt_params[cnt_pidx++] = uid;
+    }
     if (has_cat) {
         params[pidx++] = category_id;
         cnt_params[cnt_pidx++] = category_id;
@@ -180,28 +215,38 @@ asset_list(csilk_db_pool_t* pool,
     {
         char buf[2048];
         int  off = 0;
-        off += snprintf(
-            buf + off,
-            sizeof(buf) - off,
-            "SELECT a.id,a.category_id,a.name,a.account_no,a.symbol,a.quote_source,"
-            "CAST(a.last_sync_at AS TEXT) as last_sync_at,"
-            "a.current_value,a.currency,a.note,a.created_at,a.updated_at,"
-            "a.account_id,ac.name as account_name,ac.institution,"
-            "c.name as category_name,c.asset_type,"
-            "a.quantity,a.cost_basis,a.net_value,a.cost_"
-            "method," MF_RBAC_MASK_BALANCE_COL("a") " AS "
-                                                    "mask_"
-                                                    "balance"
-                                                    "," MF_RBAC_MASK_ACCOUNT_NO_COL(
-                                                        "a") " AS mask_account_no "
-                                                             "FROM assets a "
-                                                             "LEFT JOIN categories c "
-                                                             "ON a.category_id=c.id "
-                                                             "LEFT JOIN accounts ac ON "
-                                                             "a.account_id=ac.id "
-                                                             "WHERE a.user_id=? "
-                                                             "AND"
-                                                             " " MF_RBAC_ASSET_VISIBLE_SQL("a"));
+        off += snprintf(buf + off,
+                        sizeof(buf) - off,
+                        "SELECT a.id,a.category_id,a.name,a.account_no,a.symbol,a.quote_source,"
+                        "CAST(a.last_sync_at AS TEXT) as last_sync_at,"
+                        "a.current_value,a.currency,a.note,a.created_at,a.updated_at,"
+                        "a.account_id,ac.name as account_name,ac.institution,"
+                        "c.name as category_name,c.asset_type,"
+                        "a.quantity,a.cost_basis,a.net_value,a.cost_"
+                        "method," MF_RBAC_MASK_BALANCE_COL("a") " AS "
+                                                                "mask_"
+                                                                "balance"
+                                                                "," MF_RBAC_MASK_ACCOUNT_NO_COL(
+                                                                    "a") " AS mask_account_no "
+                                                                         "FROM assets a "
+                                                                         "LEFT JOIN categories c "
+                                                                         "ON a.category_id=c.id "
+                                                                         "LEFT JOIN accounts ac ON "
+                                                                         "a.account_id=ac.id ");
+        if (member_view) {
+            off += snprintf(
+                buf + off,
+                sizeof(buf) - off,
+                "WHERE a.user_id IN (?,?) AND " MF_RBAC_ASSET_VISIBLE_SQL(
+                    "a") " AND (EXISTS (SELECT 1 FROM ledger_members lm WHERE lm.ledger_id = "
+                         "a.ledger_id AND lm.user_id = ?) AND NOT EXISTS (SELECT 1 FROM "
+                         "account_permissions ap WHERE ap.account_id = a.account_id AND "
+                         "ap.user_id = ? AND ap.permission_level = 'none'))");
+        } else {
+            off += snprintf(buf + off,
+                            sizeof(buf) - off,
+                            "WHERE a.user_id=? AND " MF_RBAC_ASSET_VISIBLE_SQL("a"));
+        }
         if (has_cat) {
             off += snprintf(buf + off, sizeof(buf) - off, " AND a.category_id=?");
         }
@@ -212,13 +257,23 @@ asset_list(csilk_db_pool_t* pool,
         snprintf(sql, sizeof(sql), "%s", buf);
     }
     {
-        char cbuf[1024];
+        char cbuf[1536];
         int  coff = 0;
-        coff += snprintf(
-            cbuf + coff,
-            sizeof(cbuf) - coff,
-            "SELECT COUNT(*) AS cnt FROM assets a WHERE a.user_id=? AND " MF_RBAC_ASSET_VISIBLE_SQL(
-                "a"));
+        coff += snprintf(cbuf + coff, sizeof(cbuf) - coff, "SELECT COUNT(*) AS cnt FROM assets a ");
+        if (member_view) {
+            coff += snprintf(
+                cbuf + coff,
+                sizeof(cbuf) - coff,
+                "WHERE a.user_id IN (?,?) AND " MF_RBAC_ASSET_VISIBLE_SQL(
+                    "a") " AND (EXISTS (SELECT 1 FROM ledger_members lm WHERE lm.ledger_id = "
+                         "a.ledger_id AND lm.user_id = ?) AND NOT EXISTS (SELECT 1 FROM "
+                         "account_permissions ap WHERE ap.account_id = a.account_id AND "
+                         "ap.user_id = ? AND ap.permission_level = 'none'))");
+        } else {
+            coff += snprintf(cbuf + coff,
+                             sizeof(cbuf) - coff,
+                             "WHERE a.user_id=? AND " MF_RBAC_ASSET_VISIBLE_SQL("a"));
+        }
         if (has_cat) {
             coff += snprintf(cbuf + coff, sizeof(cbuf) - coff, " AND a.category_id=?");
         }
@@ -262,12 +317,40 @@ asset_get_raw(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
 }
 
 csilk_json_t*
-asset_get(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
+asset_get(csilk_db_pool_t* pool, int64_t user_id, int64_t caller_user_id, int64_t id)
 {
-    char uid[32], idstr[32];
+    char uid[32], caller_uid[32], idstr[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    snprintf(caller_uid, sizeof(caller_uid), "%lld", (long long)caller_user_id);
     snprintf(idstr, sizeof(idstr), "%lld", (long long)id);
-    csilk_json_t* raw_rows = csilk_db_query_param_json(
+
+    int member_view = (caller_user_id > 0 && caller_user_id != user_id);
+    /* owner / self path (member_view == 0): legacy SQL unchanged. */
+    if (!member_view) {
+        csilk_json_t* raw_rows = csilk_db_query_param_json(
+            pool,
+            "SELECT "
+            "a.id,a.ledger_id,a.category_id,a.name,a.account_no,a.symbol,a.quote_source,CAST(a."
+            "last_"
+            "sync_at AS "
+            "TEXT) as last_sync_at,"
+            "a.current_value,a.currency,a.note,a.created_at,a."
+            "updated_at,a.account_id,ac.name AS account_name,ac.institution,"
+            "c.name as "
+            "category_name,c.asset_type,a.quantity,a.cost_basis,a.net_value,a.cost_"
+            "method," MF_RBAC_MASK_BALANCE_COL("a") " AS mask_balance," MF_RBAC_MASK_ACCOUNT_NO_COL(
+                "a") " AS mask_account_no "
+                     "FROM "
+                     "assets a LEFT JOIN categories c ON a.category_id=c.id "
+                     "LEFT JOIN accounts ac ON a.account_id=ac.id WHERE a.id=? AND a.user_id=? "
+                     "AND " MF_RBAC_ASSET_VISIBLE_SQL("a"),
+            (const char*[]){uid, uid, uid, uid, idstr, uid, uid, uid, NULL});
+        return raw_rows ? format_asset_rows(raw_rows, true) : NULL;
+    }
+
+    /* shared-ledger member path: additionally require caller membership of the asset's ledger
+     * and that the owner has not hidden the owning account for this caller. */
+    csilk_json_t* member_rows = csilk_db_query_param_json(
         pool,
         "SELECT "
         "a.id,a.ledger_id,a.category_id,a.name,a.account_no,a.symbol,a.quote_source,CAST(a.last_"
@@ -281,10 +364,27 @@ asset_get(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
             "a") " AS mask_account_no "
                  "FROM "
                  "assets a LEFT JOIN categories c ON a.category_id=c.id "
-                 "LEFT JOIN accounts ac ON a.account_id=ac.id WHERE a.id=? AND a.user_id=? "
-                 "AND " MF_RBAC_ASSET_VISIBLE_SQL("a"),
-        (const char*[]){uid, uid, uid, uid, idstr, uid, uid, uid, NULL});
-    return raw_rows ? format_asset_rows(raw_rows, true) : NULL;
+                 "LEFT JOIN accounts ac ON a.account_id=ac.id "
+                 "WHERE a.id=? AND a.user_id IN (?,?) "
+                 "AND " MF_RBAC_ASSET_VISIBLE_SQL(
+                     "a") " AND (EXISTS (SELECT 1 FROM ledger_members lm WHERE lm.ledger_id = "
+                          "a.ledger_id AND lm.user_id = ?) AND NOT EXISTS (SELECT 1 FROM "
+                          "account_permissions ap WHERE ap.account_id = a.account_id AND "
+                          "ap.user_id = ? "
+                          "AND ap.permission_level = 'none'))",
+        (const char*[]){caller_uid,
+                        caller_uid,
+                        caller_uid,
+                        caller_uid,
+                        idstr,
+                        uid,
+                        caller_uid,
+                        caller_uid,
+                        caller_uid,
+                        caller_uid,
+                        caller_uid,
+                        NULL});
+    return member_rows ? format_asset_rows(member_rows, true) : NULL;
 }
 
 int64_t

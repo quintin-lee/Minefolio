@@ -231,7 +231,7 @@ main(int argc, char** argv)
         printf("  ✅ Tool execution response: %s\n", confirm_res);
 
         /* 5. Verify balance changed from 1000.0 to 915.0 */
-        csilk_json_t* asset = asset_get(pool, user_id, a1);
+        csilk_json_t* asset = asset_get(pool, user_id, 0, a1);
         assert(asset != NULL && csilk_json_array_size(asset) > 0);
         double bal = db_get_num(csilk_json_array_get(asset, 0), "current_value");
         assert(bal == 915.0);
@@ -403,8 +403,8 @@ main(int argc, char** argv)
         printf("  ✅ Transfer confirm response: %s\n", tf_exec);
 
         /* Verify balances: a2 was 2000 - 120 = 1880, a1 was 915 + 120 = 1035 */
-        csilk_json_t* a1_json = asset_get(pool, user_id, a1);
-        csilk_json_t* a2_json = asset_get(pool, user_id, a2);
+        csilk_json_t* a1_json = asset_get(pool, user_id, 0, a1);
+        csilk_json_t* a2_json = asset_get(pool, user_id, 0, a2);
         assert(db_get_num(csilk_json_array_get(a1_json, 0), "current_value") == 1035.0);
         assert(db_get_num(csilk_json_array_get(a2_json, 0), "current_value") == 1880.0);
         csilk_json_free(a1_json);

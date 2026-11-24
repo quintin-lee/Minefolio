@@ -290,6 +290,11 @@ BOB_ASSETS_LIST=$(curl -s -H "Authorization: Bearer $TOKEN_B" -H "X-Ledger-Id: $
 BOB_ASSET_ID=$(echo "$BOB_ASSETS_LIST" | jq -r '.data.list[] | select(.name == "Bob活期卡") | .id')
 test -n "$BOB_ASSET_ID" && test "$BOB_ASSET_ID" -gt 0
 
+# Shared-ledger: Bob (member) must also see Alice's shared family asset
+BOB_SEES_OWNER_ASSET=$(echo "$BOB_ASSETS_LIST" | jq -r '.data.list[] | select(.name == "Family Shared Fund") | .id')
+test -n "$BOB_SEES_OWNER_ASSET" && test "$BOB_SEES_OWNER_ASSET" -gt 0
+echo "✅ Shared ledger: Bob sees Alice's 'Family Shared Fund' asset (id $BOB_SEES_OWNER_ASSET)"
+
 # Alice updates Bob back to viewer on Account A
 SET_PERM_A_VIEW=$(curl -s -X PUT "$BASE/ledgers/${FAM_LID}/accounts/${ACCT_A_ID}/permissions" \
   -H "Authorization: Bearer $TOKEN_A" \

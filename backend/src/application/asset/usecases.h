@@ -26,7 +26,8 @@ asset_usecase_delete(void* pool, const delete_asset_cmd_t* cmd, asset_usecase_re
 /**
  * @brief 查询单条资产详情及关联流水
  */
-int asset_usecase_get(void* pool, int64_t user_id, int64_t id, csilk_json_t** out_json);
+int asset_usecase_get(
+    void* pool, int64_t user_id, int64_t caller_user_id, int64_t id, csilk_json_t** out_json);
 
 /**
  * @brief 分页查询资产列表

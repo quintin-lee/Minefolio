@@ -38,7 +38,7 @@ exec_get_assets(const ai_tool_t* tool, const ai_tool_context_t* ctx, const csilk
         }
     }
     csilk_json_t* list = asset_list(
-        (csilk_db_pool_t*)ctx->pool, ctx->user_id, page, page_size, type, account_id, &total);
+        (csilk_db_pool_t*)ctx->pool, ctx->user_id, 0, page, page_size, type, account_id, &total);
 
     csilk_json_t* res = csilk_json_object();
     csilk_json_add_number(res, "total", (double)total);
