@@ -127,12 +127,15 @@ report_category_count() {
     curl -s -H "Authorization: Bearer $token" -H "X-Ledger-Id: $ledger" "$BASE$path" | jq -r '[.data.by_category[]? // .data.items[]?] | length'
 }
 
-# These assertions intentionally fail before the implementation: current report queries
-# scope monthly data by user only or do not resolve the active ledger at all.
+# Ledger aggregation: in a collaborative ledger, all members see the combined total.
+# owner default ledger monthly total = 10 (only user A's data in default ledger)
 assert_num "owner default ledger monthly total" "10" "$(report_total "$TOKEN_A" "$DEFAULT_LEDGER" '/reports/expense/monthly?year=2026&month=8')"
-assert_num "owner family ledger monthly total" "20" "$(report_total "$TOKEN_A" "$FAMILY_LEDGER" '/reports/expense/monthly?year=2026&month=8')"
-assert_num "member family ledger monthly total" "30" "$(report_total "$TOKEN_B" "$FAMILY_LEDGER" '/reports/expense/monthly?year=2026&month=8')"
+# owner family ledger: user A (20) + user B (30) = 50 (aggregated)
+assert_num "owner family ledger monthly total" "50" "$(report_total "$TOKEN_A" "$FAMILY_LEDGER" '/reports/expense/monthly?year=2026&month=8')"
+# member family ledger: user A (20) + user B (30) = 50 (aggregated)
+assert_num "member family ledger monthly total" "50" "$(report_total "$TOKEN_B" "$FAMILY_LEDGER" '/reports/expense/monthly?year=2026&month=8')"
 assert_num "owner default category count" "1" "$(report_category_count "$TOKEN_A" "$DEFAULT_LEDGER" '/reports/expense/monthly?year=2026&month=8')"
-assert_num "owner family category count" "1" "$(report_category_count "$TOKEN_A" "$FAMILY_LEDGER" '/reports/expense/monthly?year=2026&month=8')"
+# family ledger has 2 categories (one per user)
+assert_num "owner family category count" "2" "$(report_category_count "$TOKEN_A" "$FAMILY_LEDGER" '/reports/expense/monthly?year=2026&month=8')"
 
 echo "All report isolation tests passed"
