@@ -1,10 +1,9 @@
 #include "interfaces/http/controllers/ai_controller.h"
 #include "application/ai/usecases.h"
 #include "application/ai/probe_usecase.h"
+#include "application/auth/usecases.h"
 #include "services/ai_service.h"
 #include "services/ai_workflow_service.h"
-#include "infrastructure/repositories/auth_repo_impl.h"
-#include "infrastructure/repositories/ai_repo_impl.h"
 #include "services/ai/tools/dispatcher.h"
 #include "services/ai/tools/registry.h"
 #include "services/ai/tools/context.h"
@@ -30,7 +29,7 @@
 static int
 require_instance_admin(csilk_ctx_t* c, int64_t user_id)
 {
-    if (mf_auth_repo_is_instance_admin(db_get_pool(), user_id)) {
+    if (auth_usecase_is_instance_admin(db_get_pool(), user_id)) {
         return 1;
     }
     respond_error(c, 1004, "仅实例管理员可管理 AI 配置");
@@ -238,7 +237,7 @@ api_ai_messages_list_handler(csilk_ctx_t* c)
 void
 ai_message_mark_action_executed(csilk_db_pool_t* pool, int64_t user_id, const char* draft_token)
 {
-    mf_ai_repo_mark_draft_executed(pool, user_id, draft_token);
+    ai_usecase_mark_action_executed(pool, user_id, draft_token);
 }
 
 /**
@@ -384,14 +383,14 @@ api_ai_action_confirm_batch_handler(csilk_ctx_t* c)
     int           code = 0;
     char          err_buf[256] = {0};
     int           rc = ai_batch_actions_execute_for_session(db_get_pool(),
-                                                            user_id,
-                                                            session_id,
-                                                            actions,
-                                                            token_buf,
-                                                            &out_data,
-                                                            &code,
-                                                            err_buf,
-                                                            sizeof(err_buf));
+                                                  user_id,
+                                                  session_id,
+                                                  actions,
+                                                  token_buf,
+                                                  &out_data,
+                                                  &code,
+                                                  err_buf,
+                                                  sizeof(err_buf));
     csilk_json_free(body);
 
     if (rc == 0 && out_data) {

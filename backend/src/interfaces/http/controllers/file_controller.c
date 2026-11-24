@@ -7,7 +7,6 @@
 #include "application/file/usecases.h"
 #include "application/task/async_task_manager.h"
 #include "domain/file/entity.h"
-#include "infrastructure/repositories/file_repo_impl.h"
 #include "common/db.h"
 #include "common/ctx.h"
 #include "common/response.h"

@@ -2,7 +2,6 @@
 #include "application/tag/usecases.h"
 #include "application/tag/commands.h"
 #include "domain/tag/entity.h"
-#include "infrastructure/repositories/tag_repo_impl.h"
 #include "common/response.h"
 #include "common/ctx.h"
 #include "common/db.h"
@@ -24,7 +23,7 @@ api_tags_list(csilk_ctx_t* c)
             return;
         }
         mf_tag_t tag = {0};
-        int      rc = mf_tag_repo_find_by_id(db_get_pool(), user_id, tag_id, &tag);
+        int      rc = tag_usecase_get(db_get_pool(), user_id, tag_id, &tag);
         if (rc == 1) {
             respond_not_found(c);
             return;

@@ -9,7 +9,6 @@
 #include "application/ledger/usecases.h"
 #include "application/ledger/commands.h"
 #include "domain/ledger/entity.h"
-#include "infrastructure/repositories/ledger_repo_impl.h"
 #include "common/response.h"
 #include "common/ctx.h"
 #include "common/db.h"

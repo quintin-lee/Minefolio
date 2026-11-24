@@ -89,6 +89,15 @@ tag_usecase_update(void* pool, const update_tag_cmd_t* cmd, tag_usecase_result_t
 }
 
 int
+tag_usecase_get(void* pool, int64_t user_id, int64_t tag_id, mf_tag_t* out_tag)
+{
+    if (!pool || user_id < 0 || tag_id <= 0 || !out_tag) {
+        return -1;
+    }
+    return mf_tag_repo_find_by_id(pool, user_id, tag_id, out_tag);
+}
+
+int
 tag_usecase_delete(void* pool, const delete_tag_cmd_t* cmd, tag_usecase_result_t* out_res)
 {
     int rc = mf_tag_repo_delete(pool, cmd->user_id, cmd->tag_id);

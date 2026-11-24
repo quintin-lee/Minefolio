@@ -1,11 +1,8 @@
 #include "interfaces/http/controllers/import_rule_controller.h"
-#include "infrastructure/repositories/import_rule_repo_impl.h"
+#include "application/import_export/import_rule_usecases.h"
 #include "common/response.h"
 #include "common/ctx.h"
 #include "common/db.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
 void
 import_rule_service_list(csilk_ctx_t* c)
@@ -15,8 +12,7 @@ import_rule_service_list(csilk_ctx_t* c)
         return;
     }
 
-    csilk_db_pool_t* pool = db_get_pool();
-    csilk_json_t*    rules = mf_import_rule_list(pool, user_id);
+    csilk_json_t* rules = import_rule_usecase_list(db_get_pool(), user_id);
     respond_ok(c, rules ? rules : csilk_json_array());
 }
 
@@ -34,9 +30,8 @@ import_rule_service_get(csilk_ctx_t* c)
         respond_bad_request(c, "缺少或无效的规则 ID");
         return;
     }
-    csilk_db_pool_t* pool = db_get_pool();
-    csilk_json_t*    res = mf_import_rule_get(pool, user_id, id);
 
+    csilk_json_t* res = import_rule_usecase_get(db_get_pool(), user_id, id);
     if (!res || csilk_json_array_size(res) == 0) {
         if (res) {
             csilk_json_free(res);
@@ -79,21 +74,15 @@ import_rule_service_create(csilk_ctx_t* c)
         return;
     }
 
-    if (priority <= 0) {
-        priority = 100;
-    }
-
-    csilk_db_pool_t* pool = db_get_pool();
-    int64_t          new_id = mf_import_rule_insert(pool,
-                                                    user_id,
-                                                    keyword,
-                                                    match_field ? match_field : "all",
-                                                    match_type ? match_type : "contains",
-                                                    category_id,
-                                                    target_type ? target_type : "expense",
-                                                    priority,
-                                                    is_active);
-
+    int64_t new_id = import_rule_usecase_create(db_get_pool(),
+                                                user_id,
+                                                keyword,
+                                                match_field,
+                                                match_type,
+                                                category_id,
+                                                target_type,
+                                                priority,
+                                                is_active);
     csilk_json_free(body);
 
     if (new_id <= 0) {
@@ -120,6 +109,7 @@ import_rule_service_update(csilk_ctx_t* c)
         respond_bad_request(c, "缺少或无效的规则 ID");
         return;
     }
+
     csilk_json_t* body = csilk_bind_json(c);
     if (!body) {
         respond_bad_request(c, "请求体必须为 JSON");
@@ -140,22 +130,16 @@ import_rule_service_update(csilk_ctx_t* c)
         return;
     }
 
-    if (priority <= 0) {
-        priority = 100;
-    }
-
-    csilk_db_pool_t* pool = db_get_pool();
-    int              ok = mf_import_rule_update(pool,
-                                                user_id,
-                                                id,
-                                                keyword,
-                                                match_field ? match_field : "all",
-                                                match_type ? match_type : "contains",
-                                                category_id,
-                                                target_type ? target_type : "expense",
-                                                priority,
-                                                is_active);
-
+    int ok = import_rule_usecase_update(db_get_pool(),
+                                        user_id,
+                                        id,
+                                        keyword,
+                                        match_field,
+                                        match_type,
+                                        category_id,
+                                        target_type,
+                                        priority,
+                                        is_active);
     csilk_json_free(body);
 
     if (!ok) {
@@ -180,8 +164,8 @@ import_rule_service_delete(csilk_ctx_t* c)
         respond_bad_request(c, "缺少或无效的规则 ID");
         return;
     }
-    csilk_db_pool_t* pool = db_get_pool();
-    mf_import_rule_delete(pool, user_id, id);
+
+    import_rule_usecase_delete(db_get_pool(), user_id, id);
     respond_ok_null(c);
 }
 
@@ -193,10 +177,7 @@ import_rule_service_reset_defaults(csilk_ctx_t* c)
         return;
     }
 
-    csilk_db_pool_t* pool = db_get_pool();
-    mf_import_rule_reset_defaults(pool, user_id);
-
-    csilk_json_t* rules = mf_import_rule_list(pool, user_id);
+    csilk_json_t* rules = import_rule_usecase_reset_defaults(db_get_pool(), user_id);
     respond_ok(c, rules ? rules : csilk_json_array());
 }
 

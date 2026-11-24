@@ -6,15 +6,15 @@
 
 #include "application/scheduler/dtos.h"
 #include "application/scheduler/usecases.h"
+#include "application/auth/usecases.h"
 #include "common/ctx.h"
 #include "common/db.h"
 #include "common/response.h"
-#include "infrastructure/repositories/auth_repo_impl.h"
 
 static bool
 is_current_user_admin(int64_t user_id)
 {
-    int64_t aid = mf_auth_repo_get_instance_admin_id(db_get_pool());
+    int64_t aid = auth_usecase_get_instance_admin_id(db_get_pool());
     return (aid > 0 && user_id == aid);
 }
 

@@ -64,3 +64,28 @@ int auth_usecase_oauth_callback(void*                       pool,
  *       该函数供测试在改变环境变量后重新固化，模拟不同启动环境。
  */
 void auth_oauth_mock_reset(void);
+
+/**
+ * @brief 判断指定用户是否为实例管理员（最早注册账号）
+ */
+int auth_usecase_is_instance_admin(void* pool, int64_t user_id);
+
+/**
+ * @brief 获取实例管理员用户 ID
+ */
+int64_t auth_usecase_get_instance_admin_id(void* pool);
+
+/**
+ * @brief 获取系统已注册用户总数
+ */
+int auth_usecase_user_count(void* pool);
+
+/**
+ * @brief 首次初始化创建管理员账号并播种默认数据（事务内完成）
+ */
+int auth_usecase_setup_first_admin(void*                  pool,
+                                   csilk_ctx_t*           c,
+                                   const char*            username,
+                                   const char*            password_enc,
+                                   csilk_json_t**         out_data,
+                                   auth_usecase_result_t* out_res);

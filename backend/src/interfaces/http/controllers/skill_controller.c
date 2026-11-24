@@ -2,7 +2,7 @@
 #include "application/skill/usecases.h"
 #include "application/skill/dtos.h"
 #include "application/task/async_task_manager.h"
-#include "infrastructure/repositories/auth_repo_impl.h"
+#include "application/auth/usecases.h"
 #include "common/response.h"
 #include "common/ctx.h"
 #include "common/db.h"
@@ -156,7 +156,7 @@ api_ai_skills_create(csilk_ctx_t* c)
 
     // Security gate: L3 process execution requires admin
     if (dto.exec_cfg.path[0] != '\0') {
-        if (!mf_auth_repo_is_instance_admin(db_get_pool(), user_id)) {
+        if (!auth_usecase_is_instance_admin(db_get_pool(), user_id)) {
             csilk_json_free(body);
             respond_forbidden(c, "仅实例管理员有权配置本地脚本进程执行");
             return;
@@ -264,7 +264,7 @@ api_ai_skills_update(csilk_ctx_t* c)
     dto.exec_cfg.max_output_bytes = db_get_int(body, "max_output_bytes");
 
     if (dto.exec_cfg.path[0] != '\0') {
-        if (!mf_auth_repo_is_instance_admin(db_get_pool(), user_id)) {
+        if (!auth_usecase_is_instance_admin(db_get_pool(), user_id)) {
             csilk_json_free(body);
             respond_forbidden(c, "仅实例管理员有权配置本地脚本进程执行");
             return;

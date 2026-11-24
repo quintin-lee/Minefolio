@@ -17,6 +17,7 @@
 #include "csilk/crypto/bcrypt.h"
 #include "csilk/core/primitives/codec.h"
 #include "csilk/crypto/crypto_dispatch.h"
+#include "csilk/drivers/cipher.h"
 #include <curl/curl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1192,6 +1193,135 @@ auth_usecase_oauth_callback(void*                       pool,
     if (token) {
         free(token);
     }
+    *out_data = resp;
+    out_res->code = 0;
+    snprintf(out_res->message, sizeof(out_res->message), "ok");
+    return 0;
+}
+
+int
+auth_usecase_is_instance_admin(void* pool, int64_t user_id)
+{
+    if (!pool || user_id <= 0) {
+        return 0;
+    }
+    return mf_auth_repo_is_instance_admin((csilk_db_pool_t*)pool, user_id);
+}
+
+int64_t
+auth_usecase_get_instance_admin_id(void* pool)
+{
+    if (!pool) {
+        return -1;
+    }
+    return mf_auth_repo_get_instance_admin_id((csilk_db_pool_t*)pool);
+}
+
+int
+auth_usecase_user_count(void* pool)
+{
+    if (!pool) {
+        return 0;
+    }
+    return mf_auth_repo_count((csilk_db_pool_t*)pool);
+}
+
+int
+auth_usecase_setup_first_admin(void*                  pool,
+                               csilk_ctx_t*           c,
+                               const char*            username,
+                               const char*            password_enc,
+                               csilk_json_t**         out_data,
+                               auth_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
+    memset(out_res, 0, sizeof(*out_res));
+    if (!pool || !out_data) {
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "服务器内部错误");
+        return -1;
+    }
+
+    csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
+    if (mf_auth_repo_count(db_pool) > 0) {
+        out_res->code = 1004;
+        snprintf(out_res->message, sizeof(out_res->message), "系统已完成初始化，禁止重复设置");
+        return -1;
+    }
+
+    if (!username || !password_enc || strlen(username) < 2) {
+        out_res->code = 1002;
+        snprintf(out_res->message, sizeof(out_res->message), "用户名需≥2字符");
+        return -1;
+    }
+
+    uint8_t pt_buf[512];
+    size_t  pt_len = sizeof(pt_buf);
+    uint8_t ct_buf[CSILK_RSA_KEY_SIZE];
+    if (csilk_base64url_decode(password_enc, ct_buf, sizeof(ct_buf)) < 0) {
+        out_res->code = 1002;
+        snprintf(out_res->message, sizeof(out_res->message), "密码格式错误");
+        return -1;
+    }
+    if (_csilk_asymmetric_decrypt(c,
+                                  auth_key_get_private_pem(),
+                                  strlen(auth_key_get_private_pem()),
+                                  ct_buf,
+                                  CSILK_RSA_KEY_SIZE,
+                                  pt_buf,
+                                  &pt_len) != 0 ||
+        pt_len == 0) {
+        out_res->code = 1002;
+        snprintf(out_res->message, sizeof(out_res->message), "密码解密失败");
+        return -1;
+    }
+    if (pt_len < 6) {
+        out_res->code = 1002;
+        snprintf(out_res->message, sizeof(out_res->message), "密码需≥6字符");
+        return -1;
+    }
+    pt_buf[pt_len] = '\0';
+    const char* password = (const char*)pt_buf;
+
+    db_tx_scope_t scope;
+    if (db_tx_scope_begin(db_pool, "mf_setup_scope", &scope) != 0) {
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "数据库错误");
+        return -1;
+    }
+
+    char hashed[CSILK_BCRYPT_HASH_LEN];
+    csilk_bcrypt_hash(password, strlen(password), CSILK_BCRYPT_DEFAULT_COST, hashed);
+
+    int64_t user_id = 0;
+    if (mf_auth_repo_create(db_pool, username, hashed, &user_id) != 0 || user_id <= 0) {
+        db_tx_scope_rollback(db_pool, &scope);
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "初始化失败");
+        return -1;
+    }
+
+    int64_t ledger_id = ledger_get_default(db_pool, user_id);
+    category_usecase_seed_defaults(db_pool, user_id, ledger_id);
+    account_usecase_seed_default(db_pool, user_id, ledger_id);
+    mf_import_rule_seed_defaults(db_pool, user_id);
+    skill_usecase_seed_defaults(db_pool, user_id);
+
+    if (db_tx_scope_commit(db_pool, &scope) != 0) {
+        db_tx_scope_rollback(db_pool, &scope);
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "提交事务失败");
+        return -1;
+    }
+
+    char*         token = jwt_generate_token(c, user_id, 0);
+    csilk_json_t* resp = csilk_json_object();
+    csilk_json_add_string(resp, "token", token ? token : "");
+    csilk_json_add_number(resp, "expires_in", 604800);
+    free(token);
+
     *out_data = resp;
     out_res->code = 0;
     snprintf(out_res->message, sizeof(out_res->message), "ok");

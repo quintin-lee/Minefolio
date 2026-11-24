@@ -61,3 +61,5 @@ int ai_usecase_trace_stats(void*                pool,
 
 int ai_usecase_trace_get(
     void* pool, int64_t user_id, int64_t id, csilk_json_t** out_data, ai_usecase_result_t* out_res);
+
+void ai_usecase_mark_action_executed(void* pool, int64_t user_id, const char* draft_token);

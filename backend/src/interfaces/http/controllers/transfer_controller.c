@@ -7,7 +7,6 @@
 #include "application/transfer/usecases.h"
 #include "application/transfer/commands.h"
 #include "domain/transfer/entity.h"
-#include "infrastructure/repositories/transfer_repo_impl.h"
 #include "common/response.h"
 #include "common/ctx.h"
 #include "common/db.h"

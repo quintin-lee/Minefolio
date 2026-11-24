@@ -8,6 +8,7 @@
 #include "csilk/csilk.h"
 #include "application/tag/commands.h"
 #include "application/tag/dtos.h"
+#include "domain/tag/entity.h"
 
 /**
  * @brief 查询用户所有标签列表
@@ -32,6 +33,11 @@ int tag_usecase_create(void*                   pool,
  * @brief 更新标签
  */
 int tag_usecase_update(void* pool, const update_tag_cmd_t* cmd, tag_usecase_result_t* out_res);
+
+/**
+ * @brief 查询单条标签详情
+ */
+int tag_usecase_get(void* pool, int64_t user_id, int64_t tag_id, mf_tag_t* out_tag);
 
 /**
  * @brief 删除标签

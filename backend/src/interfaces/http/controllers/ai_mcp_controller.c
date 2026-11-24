@@ -3,7 +3,7 @@
 #include "application/mcp/commands.h"
 #include "application/task/async_task_manager.h"
 #include "services/ai/tools/mcp/mcp_bridge.h"
-#include "infrastructure/repositories/auth_repo_impl.h"
+#include "application/auth/usecases.h"
 #include "common/response.h"
 #include "common/ctx.h"
 #include "common/db.h"
@@ -20,7 +20,7 @@
 static int
 require_instance_admin(csilk_ctx_t* c, int64_t user_id)
 {
-    if (mf_auth_repo_is_instance_admin(db_get_pool(), user_id)) {
+    if (auth_usecase_is_instance_admin(db_get_pool(), user_id)) {
         return 1;
     }
     respond_forbidden(c, "仅实例管理员允许管理本地脚本与 Stdio MCP 扩展");

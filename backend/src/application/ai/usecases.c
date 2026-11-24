@@ -4,6 +4,7 @@
 #include "infrastructure/repositories/ai_session_repo_impl.h"
 #include "infrastructure/repositories/ai_settings_repo_impl.h"
 #include "infrastructure/repositories/ai_trace_repo_impl.h"
+#include "infrastructure/repositories/ai_repo_impl.h"
 #include "services/ai_workflow_service.h"
 #include "application/ai/config_provider.h"
 #include "common/ai_config.h"
@@ -711,4 +712,13 @@ ai_usecase_trace_get(
     out_res->code = 0;
     snprintf(out_res->message, sizeof(out_res->message), "ok");
     return 0;
+}
+
+void
+ai_usecase_mark_action_executed(void* pool, int64_t user_id, const char* draft_token)
+{
+    if (!pool || user_id <= 0 || !draft_token || !draft_token[0]) {
+        return;
+    }
+    mf_ai_repo_mark_draft_executed((csilk_db_pool_t*)pool, user_id, draft_token);
 }

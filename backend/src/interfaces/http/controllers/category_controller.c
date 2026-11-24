@@ -3,7 +3,6 @@
 #include "application/account/usecases.h"
 #include "application/category/commands.h"
 #include "domain/category/entity.h"
-#include "infrastructure/repositories/category_repo_impl.h"
 #include "common/response.h"
 #include "common/ctx.h"
 #include "common/db.h"
