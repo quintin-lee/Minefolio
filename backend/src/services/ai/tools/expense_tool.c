@@ -284,8 +284,17 @@ exec_confirm_proposed_expense(const ai_tool_t*         tool,
         return strdup("{\"error\":\"failed to begin transaction\"}");
     }
 
+    int64_t ledger_id = 0;
+    if (args) {
+        ledger_id = db_get_int(args, "ledger_id");
+    }
+    if (ledger_id <= 0 && ctx && ctx->metadata) {
+        ledger_id = db_get_int(ctx->metadata, "ledger_id");
+    }
+
     int64_t de_id = mf_ai_repo_daily_expense_insert(ctx->pool,
                                                     ctx->user_id,
+                                                    ledger_id,
                                                     date,
                                                     type,
                                                     amount,

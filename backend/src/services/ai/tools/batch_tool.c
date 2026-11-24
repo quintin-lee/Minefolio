@@ -730,8 +730,17 @@ ai_batch_actions_execute_for_session(csilk_db_pool_t*    pool,
                 return -1;
             }
 
-            int64_t de_id = mf_ai_repo_daily_expense_insert(
-                pool, user_id, dt, type, amount, "CNY", category_id, asset_id, note ? note : "");
+            int64_t ledger_id = (int64_t)db_get_num(it, "ledger_id");
+            int64_t de_id = mf_ai_repo_daily_expense_insert(pool,
+                                                            user_id,
+                                                            ledger_id,
+                                                            dt,
+                                                            type,
+                                                            amount,
+                                                            "CNY",
+                                                            category_id,
+                                                            asset_id,
+                                                            note ? note : "");
             if (de_id <= 0) {
                 db_tx_scope_rollback(pool, &scope);
                 csilk_json_free(results_arr);

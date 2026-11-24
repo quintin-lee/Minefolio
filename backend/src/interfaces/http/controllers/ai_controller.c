@@ -12,6 +12,7 @@
 #include "common/response.h"
 #include "common/ctx.h"
 #include "common/db.h"
+#include "common/ledger_utils.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -290,7 +291,18 @@ api_ai_action_confirm_handler(csilk_ctx_t* c)
 
     /* 透传 confirm 参数（剔除 action_type / draft_token / session_id）并强制回填
        draft_token，防止模型伪造参数或篡改会话上下文绕过令牌绑定 */
-    int64_t            session_id = (int64_t)csilk_json_get_number(body, "session_id");
+    int64_t session_id = (int64_t)csilk_json_get_number(body, "session_id");
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "editor");
+    if (ledger_id <= 0) {
+        ledger_id = ledger_get_default(pool, user_id);
+    }
+    int64_t body_lid = db_get_int(body, "ledger_id");
+    if (body_lid > 0) {
+        char role[32] = {0};
+        if (ledger_get_user_role(pool, body_lid, user_id, role, sizeof(role))) {
+            ledger_id = body_lid;
+        }
+    }
     csilk_json_t*      args = csilk_json_object();
     ai_tool_context_t* ctx = ai_tool_context_create(pool, user_id, session_id, NULL);
     if (!ctx) {
@@ -298,6 +310,9 @@ api_ai_action_confirm_handler(csilk_ctx_t* c)
         csilk_json_free(args);
         respond_error(c, 500, "确认执行失败");
         return;
+    }
+    if (ledger_id > 0) {
+        csilk_json_add_int(ctx->metadata, "ledger_id", ledger_id);
     }
     size_t bsize = csilk_json_object_size(body);
     for (size_t i = 0; i < bsize; i++) {

@@ -83,6 +83,7 @@ typedef struct {
     char*                raw_arguments;
     csilk_json_t*        args;
     const volatile bool* cancel_token;
+    const csilk_json_t*  metadata;
     char*                result_str;
     long                 span_ms;
     bool                 executed;

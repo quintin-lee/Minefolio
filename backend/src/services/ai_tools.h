@@ -51,7 +51,8 @@ char* ai_tools_execute_parsed_cancel(csilk_db_pool_t*     pool,
                                      int64_t              session_id,
                                      csilk_json_t*        args,
                                      const char*          name,
-                                     const volatile bool* cancel_token);
+                                     const volatile bool* cancel_token,
+                                     const csilk_json_t*  metadata);
 
 /**
  * @brief Parse an uploaded file and return extracted text content.

@@ -9,6 +9,7 @@
 #include "infrastructure/repositories/daily_expense_repo_impl.h"
 #include "infrastructure/repositories/account_permission_repo_impl.h"
 #include "common/db.h"
+#include "common/ledger_utils.h"
 #include <string.h>
 #include <time.h>
 
@@ -16,7 +17,7 @@ csilk_json_t*
 mf_ai_repo_asset_list(
     void* pool, int64_t user_id, int64_t page, int64_t page_size, const char* type, int64_t* total)
 {
-    return asset_list(pool, user_id, 0, page, page_size, type, 0, total);
+    return asset_list(pool, user_id, 0, 0, page, page_size, type, 0, total);
 }
 
 csilk_json_t*
@@ -133,6 +134,7 @@ mf_ai_repo_daily_expense_list(void*       pool,
 int64_t
 mf_ai_repo_daily_expense_insert(void*       pool,
                                 int64_t     user_id,
+                                int64_t     ledger_id,
                                 const char* expense_date,
                                 const char* expense_type,
                                 double      amount,
@@ -154,12 +156,11 @@ mf_ai_repo_daily_expense_insert(void*       pool,
         strftime(date_buf, sizeof(date_buf), "%Y-%m-%d", &tm_now);
         expense_date = date_buf;
     }
-    int64_t ledger_id = 0;
-    if (asset_id > 0) {
+    if (ledger_id <= 0 && asset_id > 0) {
         csilk_json_t* a_rows =
             csilk_db_query_param_json((csilk_db_pool_t*)pool,
-                                      "SELECT ledger_id FROM assets WHERE id = ? AND user_id = ?",
-                                      (const char*[]){ast, uid, NULL});
+                                      "SELECT ledger_id FROM assets WHERE id = ?",
+                                      (const char*[]){ast, NULL});
         if (a_rows && csilk_json_array_size(a_rows) > 0) {
             ledger_id = db_get_int(csilk_json_array_get(a_rows, 0), "ledger_id");
         }
@@ -168,16 +169,7 @@ mf_ai_repo_daily_expense_insert(void*       pool,
         }
     }
     if (ledger_id <= 0) {
-        csilk_json_t* l_rows = csilk_db_query_param_json(
-            (csilk_db_pool_t*)pool,
-            "SELECT id FROM ledgers WHERE owner_id = ? AND is_default = 1 LIMIT 1",
-            (const char*[]){uid, NULL});
-        if (l_rows && csilk_json_array_size(l_rows) > 0) {
-            ledger_id = db_get_int(csilk_json_array_get(l_rows, 0), "id");
-        }
-        if (l_rows) {
-            csilk_json_free(l_rows);
-        }
+        ledger_id = ledger_get_default((csilk_db_pool_t*)pool, user_id);
     }
     if (ledger_id <= 0) {
         ledger_id = 1;

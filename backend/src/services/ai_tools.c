@@ -32,7 +32,8 @@ ai_tools_execute_parsed_cancel(csilk_db_pool_t*     pool,
                                int64_t              session_id,
                                csilk_json_t*        args,
                                const char*          name,
-                               const volatile bool* cancel_token)
+                               const volatile bool* cancel_token,
+                               const csilk_json_t*  metadata)
 {
     /* Parallel-tool worker threads pass pool=NULL (design §5: each thread
      * uses its own db_get_pool() for its own DB operations). Guard against
@@ -41,6 +42,12 @@ ai_tools_execute_parsed_cancel(csilk_db_pool_t*     pool,
     ai_tool_context_t* ctx = ai_tool_context_create(safe_pool, user_id, session_id, NULL);
     if (ctx) {
         ctx->cancel_token = cancel_token;
+        if (metadata) {
+            if (ctx->metadata) {
+                csilk_json_free(ctx->metadata);
+            }
+            ctx->metadata = csilk_json_copy(metadata);
+        }
     }
     char* result = ctx ? ai_tool_dispatch_parsed(ctx, name, args) : NULL;
     ai_tool_context_free(ctx);

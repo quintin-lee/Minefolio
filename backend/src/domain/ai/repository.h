@@ -46,6 +46,7 @@ csilk_json_t* mf_ai_repo_daily_expense_list(void*       pool,
  */
 int64_t mf_ai_repo_daily_expense_insert(void*       pool,
                                         int64_t     user_id,
+                                        int64_t     ledger_id,
                                         const char* expense_date,
                                         const char* expense_type,
                                         double      amount,

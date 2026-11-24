@@ -87,8 +87,13 @@ ai_parallel_tool_worker(void* arg)
     struct timespec     t0, t1;
     clock_gettime(CLOCK_MONOTONIC, &t0);
 
-    task->result_str = ai_tools_execute_parsed_cancel(
-        NULL, task->user_id, task->session_id, task->args, task->tool_name, task->cancel_token);
+    task->result_str = ai_tools_execute_parsed_cancel(NULL,
+                                                      task->user_id,
+                                                      task->session_id,
+                                                      task->args,
+                                                      task->tool_name,
+                                                      task->cancel_token,
+                                                      task->metadata);
 
     clock_gettime(CLOCK_MONOTONIC, &t1);
     task->span_ms = (t1.tv_sec - t0.tv_sec) * 1000 + (t1.tv_nsec - t0.tv_nsec) / 1000000;
@@ -115,11 +120,11 @@ ai_tools_execute_parallel_batch(int64_t             user_id,
     if (!ai_parallel_batch_eligible(names, 2)) {
         if (out1) {
             *out1 = ai_tools_execute_parsed_cancel(
-                NULL, user_id, session_id, (csilk_json_t*)a1, name1, NULL);
+                NULL, user_id, session_id, (csilk_json_t*)a1, name1, NULL, NULL);
         }
         if (out2) {
             *out2 = ai_tools_execute_parsed_cancel(
-                NULL, user_id, session_id, (csilk_json_t*)a2, name2, NULL);
+                NULL, user_id, session_id, (csilk_json_t*)a2, name2, NULL, NULL);
         }
         return 0;
     }
@@ -212,6 +217,7 @@ loop_dispatch_parallel_tools(ai_runtime_context_t*         ctx,
         tasks[t].user_id = ctx->user_id;
         tasks[t].session_id = ctx->session_id;
         tasks[t].cancel_token = ctx->cancel_token;
+        tasks[t].metadata = ctx->metadata;
         strncpy(tasks[t].tool_call_id, tc->id ? tc->id : "", sizeof(tasks[t].tool_call_id) - 1);
         tasks[t].tool_name = strdup(tc->name ? tc->name : "");
         tasks[t].raw_arguments = strdup(tc->arguments ? tc->arguments : "{}");
@@ -402,8 +408,13 @@ loop_dispatch_sequential_tools(csilk_db_pool_t*              pool,
                            "do and ask the user to confirm, or use the propose/confirm tools\"}");
                 executed = 0;
             } else {
-                result_str = ai_tools_execute_parsed_cancel(
-                    pool, ctx->user_id, ctx->session_id, args, tc->name, ctx->cancel_token);
+                result_str = ai_tools_execute_parsed_cancel(pool,
+                                                            ctx->user_id,
+                                                            ctx->session_id,
+                                                            args,
+                                                            tc->name,
+                                                            ctx->cancel_token,
+                                                            ctx->metadata);
                 executed = 1;
                 tool_success = (result_str != NULL);
                 if (!result_str) {
