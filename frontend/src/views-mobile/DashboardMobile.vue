@@ -80,7 +80,7 @@ onMounted(async () => {
 .page-header { margin-bottom: 16px; }
 .brand-title { display: flex; align-items: center; gap: 10px; }
 .brand-title h2 { margin: 0; font-size: 20px; font-weight: 700; color: var(--mf-text-main); }
-.ai-entry-card { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px 16px; margin-bottom: 16px; background: linear-gradient(135deg, var(--mf-primary-light) 0%, var(--mf-primary) 100%); border: none; border-radius: 12px; color: #fff; cursor: pointer; box-shadow: var(--mf-shadow-sm); transition: transform 0.15s ease; }
+.ai-entry-card { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px 16px; margin-bottom: 16px; background: linear-gradient(135deg, var(--mf-primary) 0%, var(--mf-accent) 100%); border: none; border-radius: 12px; color: #fff; cursor: pointer; box-shadow: var(--mf-shadow-sm); transition: transform 0.15s ease; }
 .ai-entry-card:active { transform: scale(0.98); }
 .ai-entry-icon { font-size: 28px; opacity: 0.9; }
 .ai-entry-text { flex: 1; display: flex; flex-direction: column; gap: 2px; text-align: left; }

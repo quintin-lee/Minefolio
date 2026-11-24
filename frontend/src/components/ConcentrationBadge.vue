@@ -35,18 +35,18 @@ const level = computed(() => {
 }
 
 .concentration-badge.low {
-  background: rgba(52, 211, 153, 0.12);
-  color: #34d399;
+  background: var(--mf-success-light, rgba(52, 211, 153, 0.12));
+  color: var(--mf-success, #10b981);
 }
 
 .concentration-badge.medium {
-  background: rgba(251, 191, 36, 0.12);
-  color: #fbbf24;
+  background: var(--mf-warning-light, rgba(251, 191, 36, 0.12));
+  color: var(--mf-warning, #f59e0b);
 }
 
 .concentration-badge.high {
-  background: rgba(244, 63, 94, 0.12);
-  color: #f43f5e;
+  background: var(--mf-danger-light, rgba(244, 63, 94, 0.12));
+  color: var(--mf-danger, #f43f5e);
 }
 
 .badge-label {

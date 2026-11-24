@@ -772,7 +772,7 @@ onUnmounted(() => {
 .action-pill-btn.primary:hover {
   background: var(--mf-primary);
   border-color: var(--mf-primary);
-  color: var(--mf-text-main);
+  color: #ffffff;
 }
 
 /* Follow-up Prompts */

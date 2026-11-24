@@ -534,7 +534,7 @@ async function handleRemoveMember(member: LedgerMember) {
   height: 32px;
   border-radius: 50%;
   background: linear-gradient(135deg, var(--mf-primary) 0%, var(--mf-accent) 100%);
-  color: var(--mf-text-main);
+  color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;

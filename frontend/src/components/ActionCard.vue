@@ -604,6 +604,7 @@ function handleCancel() {
   border: none !important;
   font-weight: 600;
   box-shadow: 0 2px 8px rgba(99, 102, 241, 0.25);
+  color: #ffffff !important;
 }
 
 .confirm-btn:hover {

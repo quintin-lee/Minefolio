@@ -873,9 +873,17 @@ onMounted(() => {
   color: #a78bfa;
 }
 
+[data-theme="light"] .job-icon-wrap.ai_prompt {
+  color: #7c3aed;
+}
+
 .job-icon-wrap.structured_report {
   background: rgba(59, 130, 246, 0.16);
   color: #60a5fa;
+}
+
+[data-theme="light"] .job-icon-wrap.structured_report {
+  color: #2563eb;
 }
 
 .job-icon-wrap.system_builtin {

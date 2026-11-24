@@ -463,7 +463,7 @@ defineExpose({
 }
 
 .markdown-preview :deep(pre) {
-  background: rgba(0, 0, 0, 0.25);
+  background: var(--mf-surface-card);
   border: 1px solid var(--mf-border, var(--el-border-color-lighter));
   padding: 12px;
   border-radius: 6px;

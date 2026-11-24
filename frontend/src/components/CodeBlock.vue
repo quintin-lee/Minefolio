@@ -217,4 +217,90 @@ onUnmounted(() => {
   font-family: inherit;
   color: #f8fafc;
 }
+
+/* Light Theme Adaptations */
+[data-theme="light"] .code-block-wrapper,
+html.light .code-block-wrapper {
+  background: #f8fafc;
+  border: 1px solid var(--mf-border);
+  box-shadow: var(--mf-shadow-sm);
+}
+
+[data-theme="light"] .code-block-header,
+html.light .code-block-header {
+  background: #f1f5f9;
+  border-bottom: 1px solid var(--mf-border);
+}
+
+[data-theme="light"] .lang-badge,
+html.light .lang-badge {
+  color: var(--mf-primary);
+  background: var(--mf-primary-light);
+  border-color: var(--mf-primary-border);
+}
+
+[data-theme="light"] .copy-btn,
+html.light .copy-btn {
+  color: var(--mf-text-muted);
+}
+
+[data-theme="light"] .copy-btn:hover,
+html.light .copy-btn:hover {
+  color: var(--mf-text-main);
+  background: rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="light"] .code-pre,
+html.light .code-pre {
+  background: #f8fafc;
+}
+
+[data-theme="light"] .code-pre :deep(.hljs),
+html.light .code-pre :deep(.hljs) {
+  color: #0f172a;
+}
+
+[data-theme="light"] .code-pre :deep(.hljs-keyword),
+[data-theme="light"] .code-pre :deep(.hljs-selector-tag),
+html.light .code-pre :deep(.hljs-keyword),
+html.light .code-pre :deep(.hljs-selector-tag) {
+  color: #7c3aed;
+  font-weight: 600;
+}
+
+[data-theme="light"] .code-pre :deep(.hljs-string),
+[data-theme="light"] .code-pre :deep(.hljs-attribute),
+html.light .code-pre :deep(.hljs-string),
+html.light .code-pre :deep(.hljs-attribute) {
+  color: #059669;
+}
+
+[data-theme="light"] .code-pre :deep(.hljs-title),
+[data-theme="light"] .code-pre :deep(.hljs-section),
+html.light .code-pre :deep(.hljs-title),
+html.light .code-pre :deep(.hljs-section) {
+  color: #2563eb;
+  font-weight: 600;
+}
+
+[data-theme="light"] .code-pre :deep(.hljs-number),
+[data-theme="light"] .code-pre :deep(.hljs-literal),
+html.light .code-pre :deep(.hljs-number),
+html.light .code-pre :deep(.hljs-literal) {
+  color: #d97706;
+}
+
+[data-theme="light"] .code-pre :deep(.hljs-comment),
+html.light .code-pre :deep(.hljs-comment) {
+  color: #94a3b8;
+  font-style: italic;
+}
+
+[data-theme="light"] .code-pre :deep(.hljs-variable),
+[data-theme="light"] .code-pre :deep(.hljs-template-variable),
+html.light .code-pre :deep(.hljs-variable),
+html.light .code-pre :deep(.hljs-template-variable) {
+  color: #e11d48;
+}
 </style>

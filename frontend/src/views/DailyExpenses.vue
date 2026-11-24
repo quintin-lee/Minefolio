@@ -802,7 +802,7 @@ async function handleImport() {
 .type-radio-group :deep(.el-radio-button.is-active .el-radio-button__inner) {
   background: linear-gradient(135deg, var(--mf-primary), var(--mf-accent)) !important;
   border-color: var(--mf-primary) !important;
-  color: var(--mf-text-main) !important;
+  color: #ffffff !important;
 }
 
 .premium-form :deep(.el-input__wrapper) {
