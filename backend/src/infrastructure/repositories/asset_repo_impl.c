@@ -431,6 +431,9 @@ asset_insert(csilk_db_pool_t* pool,
     ins_params[nparams++] = symbol ? symbol : "";
     ins_params[nparams++] = quote_source ? quote_source : "";
     ins_params[nparams++] = method;
+    if (account_id > 0) {
+        ins_params[nparams++] = acct;
+    }
     ins_params[nparams++] = cat;
     ins_params[nparams++] = uid;
     if (account_id > 0) {
@@ -444,8 +447,9 @@ asset_insert(csilk_db_pool_t* pool,
              "(user_id,category_id,name,account_no,current_value,currency,note,quantity,cost_"
              "basis,net_value,symbol,quote_source,cost_method,ledger_id,account_id) VALUES "
              "(?,?,?,?,?,?,?,?,?,?,?,?,?,"
-             "COALESCE((SELECT ledger_id FROM categories WHERE id=?), (SELECT id FROM ledgers "
+             "COALESCE(%s(SELECT ledger_id FROM categories WHERE id=?), (SELECT id FROM ledgers "
              "WHERE owner_id=? AND is_default=1)),%s) RETURNING id",
+             account_id > 0 ? "(SELECT ledger_id FROM accounts WHERE id=?), " : "",
              account_id > 0 ? "?" : "NULL");
 
     csilk_json_t* res = csilk_db_query_param_json(pool, ins_sql, ins_params);
@@ -553,23 +557,27 @@ asset_update_account(csilk_db_pool_t* pool, int64_t user_id, int64_t id, int64_t
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     snprintf(idstr, sizeof(idstr), "%lld", (long long)id);
 
-    char        sql[256];
-    const char* params[4] = {NULL, NULL, NULL, NULL};
+    char        sql[512];
+    const char* params[5] = {NULL, NULL, NULL, NULL, NULL};
     if (account_id > 0) {
         snprintf(acct, sizeof(acct), "%lld", (long long)account_id);
         snprintf(sql,
                  sizeof(sql),
-                 "UPDATE assets SET account_id=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND "
+                 "UPDATE assets SET account_id=?, ledger_id=COALESCE((SELECT ledger_id FROM "
+                 "accounts WHERE id=?), ledger_id), updated_at=CURRENT_TIMESTAMP WHERE id=? AND "
                  "user_id=? RETURNING id");
         params[0] = acct;
+        params[1] = acct;
+        params[2] = idstr;
+        params[3] = uid;
     } else {
         snprintf(sql,
                  sizeof(sql),
                  "UPDATE assets SET account_id=NULL, updated_at=CURRENT_TIMESTAMP WHERE id=? AND "
                  "user_id=? RETURNING id");
+        params[0] = idstr;
+        params[1] = uid;
     }
-    params[1] = idstr;
-    params[2] = uid;
 
     csilk_json_t* res = csilk_db_query_param_json(pool, sql, params);
     int           ok = res && csilk_json_array_size(res) > 0;
