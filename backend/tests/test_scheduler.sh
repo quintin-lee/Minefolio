@@ -13,8 +13,13 @@ export MINEFOLIO_JWT_SECRET="test_secret_for_scheduler_suite"
 export TEST_JWT_SECRET="$MINEFOLIO_JWT_SECRET"
 
 cleanup() {
+    local rc=$?
     echo "Cleaning up..."
     db_stop_server
+    if [ "$rc" -ne 0 ] && [ -f "${TMP_DIR}/server.log" ]; then
+        echo "=== Tail of server.log on failure (rc=$rc) ==="
+        tail -n 60 "${TMP_DIR}/server.log" || true
+    fi
     db_clean
     rm -rf "$TMP_DIR"
 }
@@ -199,10 +204,11 @@ sleep 1
 
 # 10. Test GET /api/scheduler/jobs/:id/logs
 echo "Testing GET /api/scheduler/jobs/$JOB_ID/logs..."
-for i in {1..10}; do
+for i in {1..40}; do
   LOGS_RES=$(curl -s -X GET "$BASE/scheduler/jobs/$JOB_ID/logs" -H "Authorization: Bearer $TOKEN_A")
   TOTAL_LOGS=$(echo "$LOGS_RES" | jq -r '.data.total // 0 | tonumber|floor' 2>/dev/null || echo 0)
-  if [ "$TOTAL_LOGS" -ge 1 ]; then
+  LOG_STATUS=$(echo "$LOGS_RES" | jq -r '.data.items[0].status // ""' 2>/dev/null || echo "")
+  if [ "$TOTAL_LOGS" -ge 1 ] && [ -n "$LOG_STATUS" ] && [ "$LOG_STATUS" != "running" ]; then
     break
   fi
   sleep 0.5
