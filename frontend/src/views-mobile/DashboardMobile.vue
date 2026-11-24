@@ -6,6 +6,14 @@
         <h2>首页</h2>
       </div>
     </div>
+    <button class="ai-entry-card" @click="$router.push('/m/chat')">
+      <Icon icon="ph:sparkle-fill" class="ai-entry-icon" />
+      <div class="ai-entry-text">
+        <b>AI 助手</b>
+        <span>智能问答 · 账单解析 · 投资分析</span>
+      </div>
+      <Icon icon="ph:arrow-right" class="ai-entry-arrow" />
+    </button>
     <div class="kpi-row">
       <div class="kpi-card cyan"><span>总资产</span><b>{{ formatCurrency(summary.total_assets) }}</b></div>
       <div class="kpi-card red"><span>总负债</span><b>{{ formatCurrency(summary.total_liabilities) }}</b></div>
@@ -30,6 +38,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { Icon } from '@iconify/vue'
 import { summaryApi } from '@/api/summary'
 import { dailyExpensesApi } from '@/api/daily_expenses'
 import { formatCurrency } from '@/utils/format'
@@ -71,6 +80,13 @@ onMounted(async () => {
 .page-header { margin-bottom: 16px; }
 .brand-title { display: flex; align-items: center; gap: 10px; }
 .brand-title h2 { margin: 0; font-size: 20px; font-weight: 700; color: var(--mf-text-main); }
+.ai-entry-card { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px 16px; margin-bottom: 16px; background: linear-gradient(135deg, var(--mf-primary-light) 0%, var(--mf-primary) 100%); border: none; border-radius: 12px; color: #fff; cursor: pointer; box-shadow: var(--mf-shadow-sm); transition: transform 0.15s ease; }
+.ai-entry-card:active { transform: scale(0.98); }
+.ai-entry-icon { font-size: 28px; opacity: 0.9; }
+.ai-entry-text { flex: 1; display: flex; flex-direction: column; gap: 2px; text-align: left; }
+.ai-entry-text b { font-size: 15px; font-weight: 700; }
+.ai-entry-text span { font-size: 11px; opacity: 0.8; }
+.ai-entry-arrow { font-size: 18px; opacity: 0.7; }
 .kpi-row { display: flex; gap: 12px; overflow-x: auto; }
 .kpi-card { flex: 0 0 120px; background: var(--mf-surface); border: 1px solid var(--mf-border); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 8px; box-shadow: var(--mf-shadow-sm); }
 .kpi-card.cyan b { color: var(--mf-info); } .kpi-card.red b { color: var(--mf-danger); } .kpi-card.green b { color: var(--mf-success); }

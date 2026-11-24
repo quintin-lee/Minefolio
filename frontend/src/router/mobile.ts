@@ -27,6 +27,7 @@ const router = createRouter({
         { path: 'assets', name: 'MobileAssets', component: () => import('@/views-mobile/AssetsMobile.vue') },
         { path: 'holdings', name: 'MobileHoldings', component: () => import('@/views-mobile/HoldingsMobile.vue') },
         { path: 'plans', name: 'MobilePlans', component: () => import('@/views-mobile/PlansMobile.vue') },
+        { path: 'chat', name: 'MobileChat', component: () => import('@/views/Chat.vue'), meta: { fullBleed: true } },
         { path: 'reports', name: 'MobileReports', component: () => import('@/views-mobile/ReportsMobile.vue') },
         { path: 'settings', name: 'MobileSettings', component: () => import('@/views-mobile/SettingsMobile.vue') },
       ],

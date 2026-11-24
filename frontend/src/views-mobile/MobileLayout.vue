@@ -62,8 +62,8 @@ onBeforeUnmount(() => {
 const tabs = computed(() => [
   { name: 'dashboard', label: t('nav.dashboard'), icon: 'ph:squares-four-duotone', prefix: '/m/dashboard' },
   { name: 'expenses', label: t('nav.dailyExpenses'), icon: 'ph:receipt-duotone', prefix: '/m/expenses' },
+  { name: 'ai', label: t('nav.aiChat'), icon: 'ph:sparkle-duotone', prefix: '/m/chat' },
   { name: 'assets', label: t('nav.assets'), icon: 'ph:vault-duotone', prefix: '/m/assets' },
-  { name: 'plans', label: t('nav.plans'), icon: 'ph:target-duotone', prefix: '/m/plans' },
   { name: 'reports', label: t('nav.reports'), icon: 'ph:presentation-chart-duotone', prefix: '/m/reports' },
   { name: 'settings', label: t('nav.settings'), icon: 'ph:sliders-horizontal-duotone', prefix: '/m/settings' },
 ])
