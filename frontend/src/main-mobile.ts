@@ -21,16 +21,6 @@ const handleMobileAuthFail = () => {
 setAuthErrorHandler(handleMobileAuthFail)
 setSyncOnAuthFail(handleMobileAuthFail)
 
-function detectLocale(): 'zh-CN' | 'en-US' {
-  try {
-    const saved = localStorage.getItem('minefolio_lang')
-    if (saved === 'zh-CN' || saved === 'en-US') return saved
-  } catch {
-    // ignore
-  }
-  return 'zh-CN'
-}
-
 async function bootstrap() {
   await initLocalDb()
   const app = createApp(App)
@@ -44,7 +34,6 @@ async function bootstrap() {
   app.use(createPinia())
   app.use(router)
   app.use(i18n)
-  i18n.global.locale.value = detectLocale()
 
   const sync = useSyncStore()
   sync.init()

@@ -110,7 +110,6 @@ declare module 'vue' {
     LedgerDialog: typeof import('./components/LedgerDialog.vue')['default']
     LedgerMembersDialog: typeof import('./components/LedgerMembersDialog.vue')['default']
     LedgerSelector: typeof import('./components/LedgerSelector.vue')['default']
-    LocaleToggle: typeof import('./components/LocaleToggle.vue')['default']
     MarketClocksRibbon: typeof import('./components/market/MarketClocksRibbon.vue')['default']
     MarketSkeleton: typeof import('./components/market/MarketSkeleton.vue')['default']
     MarketSyncSettings: typeof import('./components/settings/MarketSyncSettings.vue')['default']

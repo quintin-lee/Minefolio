@@ -4,7 +4,6 @@
       <LedgerSelector class="mobile-ledger" />
       <div class="top-bar-actions">
         <AmountMaskToggle />
-        <LocaleToggle class="locale-chip" />
       </div>
     </header>
     <main class="mobile-content">
@@ -29,7 +28,6 @@
 import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
-import LocaleToggle from '@/components/LocaleToggle.vue'
 import LedgerSelector from '@/components/LedgerSelector.vue'
 import { useCategoryStore } from '@/stores/category'
 import { useSyncStore } from '@/stores/sync'
@@ -112,9 +110,6 @@ function go(tab: { prefix: string }) {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
-}
-.locale-chip {
-  flex-shrink: 0;
 }
 .mobile-content {
   flex: 1;

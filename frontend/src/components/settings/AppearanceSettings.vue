@@ -35,29 +35,18 @@
         <el-switch v-model="displaySettings.showAmount" @change="onShowAmountChange" />
         <span class="hint-text">{{ $t('settings.amountMaskHintLabel') }}</span>
       </el-form-item>
-
-      <el-form-item :label="$t('settings.language')">
-        <el-radio-group v-model="lang" size="large">
-          <el-radio value="zh-CN">{{ $t('settings.langZh') }}</el-radio>
-          <el-radio value="en-US">{{ $t('settings.langEn') }}</el-radio>
-        </el-radio-group>
-      </el-form-item>
     </el-form>
   </div>
 </template>
 
 <script setup lang="ts">
 import { watch } from 'vue'
-import { ref } from 'vue'
 import { Icon } from '@iconify/vue'
 import { useThemeStore } from '@/stores/theme'
 import { useDisplaySettingsStore } from '@/stores/display-settings'
-import { useI18n } from '@/composables/useI18n'
 
 const theme = useThemeStore()
 const displaySettings = useDisplaySettingsStore()
-const { setLocale } = useI18n()
-const lang = ref(localStorage.getItem('minefolio_lang') || 'zh-CN')
 
 function onShowAmountChange() {
   displaySettings.toggle()
@@ -65,10 +54,6 @@ function onShowAmountChange() {
 
 watch(() => theme.mode, (newMode) => {
   theme.setMode(newMode)
-})
-
-watch(() => lang.value, (value) => {
-  if (value === 'zh-CN' || value === 'en-US') setLocale(value)
 })
 </script>
 
