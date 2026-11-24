@@ -12,7 +12,7 @@
 #include "common/ctx.h"
 #include "common/ledger_utils.h"
 #include "csilk/drivers/ai.h"
-#include "csilk/protocols/sse.h"
+#include "common/sse.h"
 #include "config/key_manager.h"
 #include "config/secret.h"
 #include "csilk/core/server/server.h"
@@ -97,7 +97,7 @@ ai_shutdown(void)
 
 /**
  * @brief 发送 done 事件（携带终止原因与用量统计，供前端展示 tokens/成本/耗时）
- * @return csilk_sse_send 的返回值（<0 表示客户端已断开）
+ * @return mf_sse_send 的返回值（<0 表示客户端已断开）
  */
 static int
 send_done(csilk_ctx_t* c, const ai_runtime_stats_t* stats)
@@ -121,7 +121,7 @@ send_done(csilk_ctx_t* c, const ai_runtime_stats_t* stats)
     } else {
         snprintf(payload, sizeof(payload), "{\"finish_reason\":\"%s\"}", fr);
     }
-    return csilk_sse_send(c, "done", payload);
+    return mf_sse_send(c, "done", payload);
 }
 
 static void
@@ -148,7 +148,7 @@ format_friendly_error(const char* raw_err, char* out_buf, size_t out_cap)
 
 /**
  * @brief 发送 error 事件（携带结构化错误码，便于前端分型提示）
- * @return csilk_sse_send 的返回值（<0 表示客户端已断开）
+ * @return mf_sse_send 的返回值（<0 表示客户端已断开）
  */
 static int
 send_error(csilk_ctx_t* c, const char* err, int code)
@@ -160,7 +160,7 @@ send_error(csilk_ctx_t* c, const char* err, int code)
     csilk_json_add_string(d, "message", friendly_err);
     size_t slen = 0;
     char*  s = csilk_json_serialize(d, &slen);
-    int    rc = csilk_sse_send(c, "error", s ? s : "");
+    int    rc = mf_sse_send(c, "error", s ? s : "");
     free(s);
     csilk_json_free(d);
     return rc;
@@ -202,7 +202,7 @@ sse_bridge_text_chunk(const char* delta, void* udata)
         return;
     }
     if (!b->sse_initialized) {
-        csilk_sse_init(b->ctx);
+        mf_sse_init(b->ctx);
         clock_gettime(CLOCK_MONOTONIC, &b->last_send_time);
         b->sse_initialized = 1;
     }
@@ -215,7 +215,7 @@ sse_bridge_text_chunk(const char* delta, void* udata)
     long elapsed_ms = (now.tv_sec - b->last_send_time.tv_sec) * 1000 +
                       (now.tv_nsec - b->last_send_time.tv_nsec) / 1000000;
     if (elapsed_ms >= 15000) {
-        sse_note_send_result(b, csilk_sse_send(b->ctx, NULL, NULL));
+        sse_note_send_result(b, mf_sse_send(b->ctx, NULL, NULL));
     }
 
     struct timespec real_now;
@@ -263,7 +263,7 @@ sse_bridge_text_chunk(const char* delta, void* udata)
                      "\",\"timestamp\":%lld,\"time\":\"%s\"}",
                      (long long)ts_ms,
                      time_str);
-            sse_note_send_result(b, csilk_sse_send(b->ctx, "delta", target_buf));
+            sse_note_send_result(b, mf_sse_send(b->ctx, "delta", target_buf));
         }
     }
 
@@ -281,7 +281,7 @@ sse_bridge_thinking_chunk(const char* delta, void* udata)
         return;
     }
     if (!b->sse_initialized) {
-        csilk_sse_init(b->ctx);
+        mf_sse_init(b->ctx);
         clock_gettime(CLOCK_MONOTONIC, &b->last_send_time);
         b->sse_initialized = 1;
     }
@@ -293,7 +293,7 @@ sse_bridge_thinking_chunk(const char* delta, void* udata)
     long elapsed_ms = (now.tv_sec - b->last_send_time.tv_sec) * 1000 +
                       (now.tv_nsec - b->last_send_time.tv_nsec) / 1000000;
     if (elapsed_ms >= 15000) {
-        sse_note_send_result(b, csilk_sse_send(b->ctx, NULL, NULL));
+        sse_note_send_result(b, mf_sse_send(b->ctx, NULL, NULL));
     }
 
     struct timespec real_now;
@@ -341,7 +341,7 @@ sse_bridge_thinking_chunk(const char* delta, void* udata)
                      "\",\"timestamp\":%lld,\"time\":\"%s\"}",
                      (long long)ts_ms,
                      time_str);
-            sse_note_send_result(b, csilk_sse_send(b->ctx, "thinking", target_buf));
+            sse_note_send_result(b, mf_sse_send(b->ctx, "thinking", target_buf));
         }
     }
 
@@ -359,7 +359,7 @@ sse_bridge_tool_call(const char* id, const char* name, const char* args_json, vo
         return;
     }
     if (!b->sse_initialized) {
-        csilk_sse_init(b->ctx);
+        mf_sse_init(b->ctx);
         clock_gettime(CLOCK_MONOTONIC, &b->last_send_time);
         b->sse_initialized = 1;
     }
@@ -369,7 +369,7 @@ sse_bridge_tool_call(const char* id, const char* name, const char* args_json, vo
     csilk_json_add_string(evt, "arguments", args_json ? args_json : "");
     size_t ev_len = 0;
     char*  ev_str = csilk_json_serialize(evt, &ev_len);
-    sse_note_send_result(b, csilk_sse_send(b->ctx, "tool_call", ev_str ? ev_str : ""));
+    sse_note_send_result(b, mf_sse_send(b->ctx, "tool_call", ev_str ? ev_str : ""));
     free(ev_str);
     csilk_json_free(evt);
 }
@@ -382,7 +382,7 @@ sse_bridge_tool_result(const char* id, const char* name, const char* result_json
         return;
     }
     if (!b->sse_initialized) {
-        csilk_sse_init(b->ctx);
+        mf_sse_init(b->ctx);
         clock_gettime(CLOCK_MONOTONIC, &b->last_send_time);
         b->sse_initialized = 1;
     }
@@ -397,7 +397,7 @@ sse_bridge_tool_result(const char* id, const char* name, const char* result_json
     }
     size_t ev_len = 0;
     char*  ev_str = csilk_json_serialize(evt, &ev_len);
-    sse_note_send_result(b, csilk_sse_send(b->ctx, "tool_result", ev_str ? ev_str : ""));
+    sse_note_send_result(b, mf_sse_send(b->ctx, "tool_result", ev_str ? ev_str : ""));
     free(ev_str);
     csilk_json_free(evt);
 }
@@ -410,7 +410,7 @@ sse_bridge_error(const ai_runtime_status_t* status, void* udata)
         return;
     }
     if (!b->sse_initialized) {
-        csilk_sse_init(b->ctx);
+        mf_sse_init(b->ctx);
         b->sse_initialized = 1;
     }
     const char* emsg =
@@ -428,7 +428,7 @@ sse_bridge_done(const ai_runtime_stats_t* stats, void* udata)
         return;
     }
     if (!b->sse_initialized) {
-        csilk_sse_init(b->ctx);
+        mf_sse_init(b->ctx);
         b->sse_initialized = 1;
     }
     sse_note_send_result(b, send_done(b->ctx, stats));
@@ -447,16 +447,16 @@ sse_bridge_message_persisted(const char* role, int64_t message_id, void* udata)
         return;
     }
     if (!b->sse_initialized) {
-        csilk_sse_init(b->ctx);
+        mf_sse_init(b->ctx);
         b->sse_initialized = 1;
     }
     char payload[96];
     snprintf(payload, sizeof(payload), "{\"id\":\"%lld\"}", (long long)message_id);
     sse_note_send_result(
         b,
-        csilk_sse_send(b->ctx,
-                       strcmp(role, "user") == 0 ? "user_message_id" : "assistant_message_id",
-                       payload));
+        mf_sse_send(b->ctx,
+                    strcmp(role, "user") == 0 ? "user_message_id" : "assistant_message_id",
+                    payload));
 }
 
 void
@@ -676,26 +676,27 @@ ai_chat_handler(csilk_ctx_t* c)
     rctx.trace = &trace;
     rctx.cancel_token = &client_gone;
 
-    /* SSE init: establish event-stream connection immediately so proxies never time out */
-    csilk_sse_init(c);
+    /* SSE init: establish event-stream connection immediately so proxies never time out,
+       preserving CORS and security headers via common/sse. */
+    mf_sse_init(c);
 
     /* 回传已落库的用户消息真实 ID（编辑重发据此截断服务端历史） */
     if (user_msg_id > 0) {
         char payload[96];
         snprintf(payload, sizeof(payload), "{\"id\":\"%lld\"}", (long long)user_msg_id);
-        if (csilk_sse_send(c, "user_message_id", payload) < 0) {
+        if (mf_sse_send(c, "user_message_id", payload) < 0) {
             client_gone = true;
         }
     }
 
     csilk_arena_t* arena = csilk_arena_new(16384);
     sse_bridge_t   sse_bridge = {
-        .ctx = c,
-        .last_send_time = {0},
-        .sse_initialized = 1,
-        .trace = &trace,
-        .arena = arena,
-        .cancel_token = &client_gone,
+          .ctx = c,
+          .last_send_time = {0},
+          .sse_initialized = 1,
+          .trace = &trace,
+          .arena = arena,
+          .cancel_token = &client_gone,
     };
     clock_gettime(CLOCK_MONOTONIC, &sse_bridge.last_send_time);
 
@@ -712,8 +713,8 @@ ai_chat_handler(csilk_ctx_t* c)
     /* 委托 AI Runtime 执行 Agent 循环 */
     ai_runtime_execute_stream(pool, &rctx, &cbs, &sse_bridge);
 
-    /* 不主动关闭连接：csilk 在写完成后按 keep-alive 语义回收/复用连接；
-       此处 csilk_sse_close 会在 keep-alive 复用路径上触发 uv_close 断言（新 csilk 生命周期修复后） */
+    /* 结束 chunked SSE 流：写 "0\r\n\r\n" 并按 Connection: close 安全收尾 */
+    mf_sse_end(c);
     if (arena) {
         csilk_arena_free(arena);
     }
@@ -825,7 +826,7 @@ ai_service_stream_report(csilk_ctx_t* c,
         if (umid > 0) {
             char mid_buf[48];
             snprintf(mid_buf, sizeof(mid_buf), "{\"id\":\"%lld\"}", (long long)umid);
-            csilk_sse_send(c, "user_message_id", mid_buf);
+            mf_sse_send(c, "user_message_id", mid_buf);
         }
     }
 
@@ -834,12 +835,12 @@ ai_service_stream_report(csilk_ctx_t* c,
 
     csilk_arena_t* arena = csilk_arena_new(16384);
     sse_bridge_t   sse_bridge = {
-        .ctx = c,
-        .last_send_time = {0},
-        .sse_initialized = 1,
-        .trace = &trace,
-        .arena = arena,
-        .cancel_token = &client_gone,
+          .ctx = c,
+          .last_send_time = {0},
+          .sse_initialized = 1,
+          .trace = &trace,
+          .arena = arena,
+          .cancel_token = &client_gone,
     };
     clock_gettime(CLOCK_MONOTONIC, &sse_bridge.last_send_time);
 

@@ -2,6 +2,7 @@
 #include "services/ai_service.h"
 #include "infrastructure/repositories/ai_session_repo_impl.h"
 #include "common/db.h"
+#include "common/sse.h"
 #include "services/ai/runtime/fast_json.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -56,7 +57,7 @@ exec_saga_compensate(csilk_ctx_t*               c,
             csilk_json_add_string(ev_comp, "status", "compensated");
             char* str_comp = csilk_json_serialize(ev_comp, &slen);
             csilk_json_free(ev_comp);
-            csilk_sse_send(c, "step_compensated", str_comp ? str_comp : "{}");
+            mf_sse_send(c, "step_compensated", str_comp ? str_comp : "{}");
             free(str_comp);
         }
     }
@@ -94,7 +95,7 @@ ai_workflow_execute_stream(csilk_ctx_t* c, const ai_workflow_graph_t* graph, ai_
     exec_get_datetime_str(exec_time_str, sizeof(exec_time_str));
     time_t exec_ts = time(NULL);
 
-    csilk_sse_init(c);
+    mf_sse_init(c);
 
     /* 1. workflow_start event */
     csilk_json_t* ev_start = csilk_json_object();
@@ -107,7 +108,7 @@ ai_workflow_execute_stream(csilk_ctx_t* c, const ai_workflow_graph_t* graph, ai_
     size_t slen = 0;
     char*  str_start = csilk_json_serialize(ev_start, &slen);
     csilk_json_free(ev_start);
-    csilk_sse_send(c, "workflow_start", str_start ? str_start : "{}");
+    mf_sse_send(c, "workflow_start", str_start ? str_start : "{}");
     free(str_start);
 
     /* Cumulative context across steps */
@@ -130,7 +131,7 @@ ai_workflow_execute_stream(csilk_ctx_t* c, const ai_workflow_graph_t* graph, ai_
         }
         if (cancelled) {
             CSILK_LOG_I("workflow %s cancelled at step %d (client disconnect)", graph->id, i);
-            csilk_sse_send(c, "workflow_cancelled", "{\"reason\":\"client_cancelled\"}");
+            mf_sse_send(c, "workflow_cancelled", "{\"reason\":\"client_cancelled\"}");
             break;
         }
         const ai_workflow_node_t* node = &graph->nodes[i];
@@ -144,7 +145,7 @@ ai_workflow_execute_stream(csilk_ctx_t* c, const ai_workflow_graph_t* graph, ai_
             csilk_json_add_string(ev_skip, "reason", "condition_not_met");
             char* str_skip = csilk_json_serialize(ev_skip, &slen);
             csilk_json_free(ev_skip);
-            csilk_sse_send(c, "step_skipped", str_skip ? str_skip : "{}");
+            mf_sse_send(c, "step_skipped", str_skip ? str_skip : "{}");
             free(str_skip);
             continue;
         }
@@ -161,7 +162,7 @@ ai_workflow_execute_stream(csilk_ctx_t* c, const ai_workflow_graph_t* graph, ai_
         csilk_json_add_number(ev_st_start, "step_timestamp", (double)time(NULL));
         char* str_st_start = csilk_json_serialize(ev_st_start, &slen);
         csilk_json_free(ev_st_start);
-        csilk_sse_send(c, "step_start", str_st_start ? str_st_start : "{}");
+        mf_sse_send(c, "step_start", str_st_start ? str_st_start : "{}");
         free(str_st_start);
 
         char summary_buf[256] = {0};
@@ -209,8 +210,9 @@ ai_workflow_execute_stream(csilk_ctx_t* c, const ai_workflow_graph_t* graph, ai_
                     csilk_json_add_string(ev_err, "error", "Terminal node execution failed");
                     char* err_str = csilk_json_serialize(ev_err, &slen);
                     csilk_json_free(ev_err);
-                    csilk_sse_send(c, "error", err_str ? err_str : "{}");
+                    mf_sse_send(c, "error", err_str ? err_str : "{}");
                     free(err_str);
+                    mf_sse_end(c);
                     csilk_json_free(ctx_obj);
                     return -1;
                 }
@@ -233,7 +235,7 @@ ai_workflow_execute_stream(csilk_ctx_t* c, const ai_workflow_graph_t* graph, ai_
                         if (el >= 0) {
                             w += el;
                             snprintf(sse_payload + w, sizeof(sse_payload) - w, "\"}");
-                            csilk_sse_send(c, "delta", sse_payload);
+                            mf_sse_send(c, "delta", sse_payload);
                         }
                     }
                 }
@@ -244,7 +246,7 @@ ai_workflow_execute_stream(csilk_ctx_t* c, const ai_workflow_graph_t* graph, ai_
                     if (amid > 0) {
                         char amid_buf[48];
                         snprintf(amid_buf, sizeof(amid_buf), "{\"id\":\"%lld\"}", (long long)amid);
-                        csilk_sse_send(c, "assistant_message_id", amid_buf);
+                        mf_sse_send(c, "assistant_message_id", amid_buf);
                     }
                 }
                 free(step_out);
@@ -298,8 +300,9 @@ ai_workflow_execute_stream(csilk_ctx_t* c, const ai_workflow_graph_t* graph, ai_
                 csilk_json_add_string(ev_err, "error", emsg);
                 char* err_str = csilk_json_serialize(ev_err, &slen);
                 csilk_json_free(ev_err);
-                csilk_sse_send(c, "error", err_str ? err_str : "{}");
+                mf_sse_send(c, "error", err_str ? err_str : "{}");
                 free(err_str);
+                mf_sse_end(c);
                 csilk_json_free(ctx_obj);
                 return -1;
             }
@@ -317,7 +320,7 @@ ai_workflow_execute_stream(csilk_ctx_t* c, const ai_workflow_graph_t* graph, ai_
         csilk_json_add_number(ev_prog, "progress", progress);
         char* str_prog = csilk_json_serialize(ev_prog, &slen);
         csilk_json_free(ev_prog);
-        csilk_sse_send(c, "step_progress", str_prog ? str_prog : "{}");
+        mf_sse_send(c, "step_progress", str_prog ? str_prog : "{}");
         free(str_prog);
 
         /* step_complete event */
@@ -331,7 +334,7 @@ ai_workflow_execute_stream(csilk_ctx_t* c, const ai_workflow_graph_t* graph, ai_
         csilk_json_add_number(ev_st_cmp, "step_timestamp", (double)time(NULL));
         char* str_st_cmp = csilk_json_serialize(ev_st_cmp, &slen);
         csilk_json_free(ev_st_cmp);
-        csilk_sse_send(c, "step_complete", str_st_cmp ? str_st_cmp : "{}");
+        mf_sse_send(c, "step_complete", str_st_cmp ? str_st_cmp : "{}");
         free(str_st_cmp);
     }
 
@@ -345,10 +348,10 @@ ai_workflow_execute_stream(csilk_ctx_t* c, const ai_workflow_graph_t* graph, ai_
     csilk_json_add_number(ev_cmp, "finish_timestamp", (double)time(NULL));
     char* str_cmp = csilk_json_serialize(ev_cmp, &slen);
     csilk_json_free(ev_cmp);
-    csilk_sse_send(c, "workflow_complete", str_cmp ? str_cmp : "{}");
+    mf_sse_send(c, "workflow_complete", str_cmp ? str_cmp : "{}");
     free(str_cmp);
 
+    mf_sse_end(c);
     csilk_json_free(ctx_obj);
-    /* 不主动关闭连接：与 ai_chat_handler 一致，避免 keep-alive 复用路径上的 uv_close 断言 */
     return 0;
 }

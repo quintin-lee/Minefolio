@@ -126,13 +126,14 @@ CSRF=$(awk '$6 == "csrf_token" { print $7 }' "$JAR" | head -1)
 [ -n "$TOKEN" ] && PASS=$((PASS + 1)) && echo "  ✅ user setup got token" \
   || { FAIL=$((FAIL + 1)); echo "  ❌ user setup failed: $SETUP_RES"; exit 1; }
 
-# run one chat and count SSE events; polls until `event: done|error` because
-# csilk keeps SSE connections open under keep-alive semantics.
+# run one chat and count SSE events + capture HTTP response headers
 run_chat() {
-  local label="$1" body_file="$TMP_DIR/sse_$2.txt"
+  local label="$1" body_file="$TMP_DIR/sse_$2.txt" hdr_file="$TMP_DIR/hdr_$2.txt"
   : > "$body_file"
-  curl -sN --max-time 60 -c "$JAR" -b "$JAR" -X POST "$BASE/ai/chat" \
+  : > "$hdr_file"
+  curl -sN --max-time 60 -c "$JAR" -b "$JAR" -D "$hdr_file" -X POST "$BASE/ai/chat" \
     -H "Content-Type: application/json" \
+    -H "Origin: https://localhost" \
     -H "Authorization: Bearer $TOKEN" \
     -H "X-CSRF-Token: $CSRF" \
     -d '{"content":"请查询资产概况并总结","provider":"mockai","model":"mock-model"}' \
@@ -155,6 +156,9 @@ echo "=== Scenario 1: single tool call ==="
 start_mock 1 "get_summary"
 run_chat "single" 1
 BODY="$TMP_DIR/sse_1.txt"
+HDR="$TMP_DIR/hdr_1.txt"
+ACAO=$(grep -i '^Access-Control-Allow-Origin:' "$HDR" | head -1 | tr -d '\r' | awk '{print $2}')
+check "single: SSE preserves CORS header" "*" "$ACAO"
 check "single: tool_call seen"          "1" "$(grep -c 'event: tool_call' "$BODY")"
 check "single: tool_result seen"        "1" "$(grep -c 'event: tool_result' "$BODY")"
 check "single: get_summary named (call+result)" "2" "$(grep -c '"name":"get_summary"' "$BODY")"
