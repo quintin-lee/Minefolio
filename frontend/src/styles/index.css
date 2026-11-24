@@ -1513,4 +1513,24 @@ html.light .mf-skeleton-block {
   .el-table .el-table__footer-wrapper tr td.el-table-fixed-column--right {
     position: static !important;
   }
+
+  /* Cascader mobile dropdown & panel adaptation */
+  .el-cascader__dropdown {
+    max-width: 92vw !important;
+  }
+  .el-cascader-panel {
+    max-width: 92vw !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+  .el-cascader-menu {
+    min-width: 130px !important;
+    max-width: 170px !important;
+  }
+  .el-cascader-menu__wrap {
+    height: 220px !important;
+  }
+  .el-cascader-node {
+    padding: 0 8px !important;
+  }
 }

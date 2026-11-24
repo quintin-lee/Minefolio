@@ -28,9 +28,15 @@
 
       <el-form label-position="top">
         <el-form-item label="分类">
-          <el-select v-model="form.category_id" filterable placeholder="选择分类" style="width:100%">
-            <el-option v-for="c in categories" :key="c.id" :label="c.name" :value="Number(c.id)" />
-          </el-select>
+          <el-cascader
+            v-model="form.category_id"
+            :options="categoryTree as any"
+            :props="{ checkStrictly: true, emitPath: false, value: 'id', label: 'name', children: 'children' }"
+            placeholder="选择分类"
+            style="width: 100%"
+            clearable
+            filterable
+          />
         </el-form-item>
         <el-form-item label="资产">
           <el-select v-model="form.asset_id" filterable placeholder="选择资产" style="width:100%">
@@ -61,6 +67,7 @@ import { offlineApi } from '@/utils/offline-http'
 import { receiptsApi } from '@/api/receipts'
 import { query, rowsFrom } from '@/db/local'
 import { localToday, assetLabel } from '@/utils/format'
+import { prepareCategoryTree, isIdInTree, findCategoryByName } from '@/utils/category-tree'
 import type { DailyExpense, Category, Asset } from '@/types'
 
 const props = defineProps<{ modelValue?: boolean; record?: DailyExpense | null }>()
@@ -74,7 +81,7 @@ const amountRef = ref<HTMLInputElement | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const saving = ref(false)
 const scanning = ref(false)
-const categories = ref<Category[]>([])
+const offlineCategories = ref<Category[]>([])
 const assets = ref<Asset[]>([])
 const categoryStore = useCategoryStore()
 const ledgerStore = useLedgerStore()
@@ -87,6 +94,28 @@ const form = reactive({
   expense_date: localToday(),
   note: '',
 })
+
+const rawCategories = computed<Category[]>(() => {
+  if (categoryStore.incomeExpenseCategories.length > 0) {
+    return categoryStore.incomeExpenseCategories
+  }
+  return offlineCategories.value
+})
+
+const categoryTree = computed(() => {
+  return prepareCategoryTree(rawCategories.value, form.expense_type)
+})
+
+watch(
+  () => form.expense_type,
+  (newType, oldType) => {
+    if (oldType !== undefined && newType !== oldType) {
+      if (form.category_id && !isIdInTree(categoryTree.value, form.category_id)) {
+        form.category_id = null
+      }
+    }
+  }
+)
 
 function triggerFilePick() {
   fileInputRef.value?.click()
@@ -110,10 +139,10 @@ async function onFileSelected(e: Event) {
         if (res.amount > 0) form.amount = res.amount
         if (res.date) form.expense_date = res.date
         if (res.type) form.expense_type = res.type
-        if (res.category_id) {
+        if (res.category_id && isIdInTree(categoryTree.value, Number(res.category_id))) {
           form.category_id = Number(res.category_id)
         } else if (res.category_name) {
-          const matched = categories.value.find(c => c.name.includes(res.category_name) || res.category_name.includes(c.name))
+          const matched = findCategoryByName(categoryTree.value, res.category_name)
           if (matched) form.category_id = Number(matched.id)
         }
         const noteParts = [res.counterparty, res.description].filter(Boolean)
@@ -179,12 +208,11 @@ watch(
 onMounted(async () => {
   try {
     await categoryStore.loadCategories()
-    categories.value = categoryStore.incomeExpenseCategories
   } catch {
     try {
       const res = query('SELECT * FROM categories WHERE __deleted = 0')
       const rows = rowsFrom(res) as unknown as Category[]
-      categories.value = rows.filter((c) => c.type === 'income' || c.type === 'expense')
+      offlineCategories.value = rows.filter((c) => c.type === 'income' || c.type === 'expense')
     } catch (e) {
       console.error('[ExpenseQuickSheet] load local categories failed:', e)
     }
@@ -237,17 +265,112 @@ async function save() {
 </script>
 
 <style scoped>
+:deep(.quick-sheet) {
+  max-width: 100vw;
+  box-sizing: border-box;
+}
+
+:deep(.quick-sheet .el-drawer__body) {
+  padding: 0 !important;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
 .sheet-body {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
   padding: 16px;
   padding-bottom: calc(16px + env(safe-area-inset-bottom));
 }
-.sheet-header-actions { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-.type-switch { display: flex; }
-.ocr-btn { display: flex; align-items: center; gap: 4px; border-radius: 16px; font-weight: 600; }
-.ocr-icon { font-size: 15px; }
-.amount-input { display: flex; align-items: center; gap: 8px; margin-bottom: 20px; }
-.currency { font-size: 24px; color: var(--mf-text-muted); }
-.amount-field { flex: 1; background: transparent; border: none; border-bottom: 2px solid var(--mf-border); color: var(--mf-text-main); font-size: 36px; font-family: 'JetBrains Mono', monospace; outline: none; text-align: right; }
-.amount-field:focus { border-color: var(--mf-primary); }
-.save-btn { width: 100%; margin-top: 16px; height: 44px; font-size: 16px; border-radius: var(--mf-radius-md); }
+
+.sheet-header-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.type-switch {
+  display: flex;
+}
+
+.ocr-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 16px;
+  font-weight: 600;
+}
+
+.ocr-icon {
+  font-size: 15px;
+}
+
+.amount-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 20px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.currency {
+  font-size: 24px;
+  color: var(--mf-text-muted);
+  flex-shrink: 0;
+}
+
+.amount-field {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid var(--mf-border);
+  color: var(--mf-text-main);
+  font-size: 32px;
+  font-family: 'JetBrains Mono', monospace;
+  outline: none;
+  text-align: right;
+}
+
+.amount-field:focus {
+  border-color: var(--mf-primary);
+}
+
+:deep(.el-form-item) {
+  margin-bottom: 16px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+:deep(.el-form-item__content) {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+:deep(.el-cascader),
+:deep(.el-select),
+:deep(.el-date-editor) {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box;
+}
+
+.save-btn {
+  width: 100%;
+  margin-top: 16px;
+  height: 44px;
+  font-size: 16px;
+  border-radius: var(--mf-radius-md);
+  box-sizing: border-box;
+}
 </style>
