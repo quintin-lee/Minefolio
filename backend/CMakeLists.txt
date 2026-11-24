@@ -13,12 +13,20 @@ set(CSILK_BUILD_SHARED OFF CACHE BOOL "Build shared library (in addition to stat
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(FETCHCONTENT_UPDATES_DISCONNECTED ON CACHE BOOL "Don't update already-populated dependencies" FORCE)
 
-FetchContent_Declare(
-    csilk
-    SOURCE_DIR     "${CMAKE_CURRENT_SOURCE_DIR}/../deps/csilk"
-    GIT_REPOSITORY https://github.com/quintin-lee/csilk.git
-    GIT_TAG        v1.2.0
-)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../deps/csilk/CMakeLists.txt")
+    # Local deps/csilk checkout exists: use it directly without triggering an
+    # offline FetchContent git-update check against GIT_TAG.
+    FetchContent_Declare(
+        csilk
+        SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../deps/csilk"
+    )
+else()
+    FetchContent_Declare(
+        csilk
+        GIT_REPOSITORY https://github.com/quintin-lee/csilk.git
+        GIT_TAG        v1.2.0
+    )
+endif()
 
 FetchContent_MakeAvailable(csilk)
 

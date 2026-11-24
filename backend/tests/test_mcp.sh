@@ -15,28 +15,27 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "$SCRIPT_DIR/cgroup_helper.sh"
+source "$SCRIPT_DIR/db_helper.sh"
 BUILD_DIR="${MINEFOLIO_BUILD_DIR:-$(cd "$SCRIPT_DIR/../build" && pwd)}"
-PORT="${PORT:-18090}"
+db_init_context 18090 "mcp"
 MOCK_PORT="${MOCK_PORT:-18081}"
 BASE="http://127.0.0.1:$PORT/api"
-DB="$(mktemp -d)/mf_mcp.db"
-MOCK_LOG="$(dirname "$DB")/mock.log"
-SERVER_LOG="$(dirname "$DB")/server.log"
-TMP_DIR="$(dirname "$DB")"
+TMP_DIR="$(mktemp -d)"
+MOCK_LOG="$TMP_DIR/mock.log"
+SERVER_LOG="$TMP_DIR/server.log"
 JAR="$TMP_DIR/cookies.txt"
 PASS=0
 FAIL=0
 SKIP=0
-SERVER_PID=""
 MOCK_PID=""
 HTTP_MOCK_PID=""
 MCP_ID=""
 
 cleanup() {
-  [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null || true
+  db_stop_server
   [ -n "$MOCK_PID" ] && kill "$MOCK_PID" 2>/dev/null || true
   [ -n "$HTTP_MOCK_PID" ] && kill "$HTTP_MOCK_PID" 2>/dev/null || true
+  db_clean
   rm -rf "$TMP_DIR"
 }
 trap cleanup EXIT
@@ -91,26 +90,14 @@ start_mock_mcp_http() {
 
 # --- backend -----------------------------------------------------------------
 echo "=== MCP integration ==="
-rm -f "$DB" "$DB-wal" "$DB-shm"
+db_clean
 cat > "$TMP_DIR/ai.json" <<EOF
 {"providers":[{"id":"mockai","name":"Mock AI","api_key":"dummy","base_url":"http://127.0.0.1:$MOCK_PORT/v1","models":["mock-model"]}],"default_provider":"mockai","default_model":"mock-model","context_size":20,"system_prompt":"你是测试助手"}
 EOF
+export AI_CONFIG="$TMP_DIR/ai.json"
+export MINEFOLIO_MCP_ALLOW_LOCAL=1
 export TEST_JWT_SECRET="test-jwt-secret-for-mcp-1234567890"
-(
-  cd "$BUILD_DIR"
-  MINEFOLIO_PORT="$PORT" MINEFOLIO_DB_DRIVER=sqlite MINEFOLIO_DB_DSN="$DB" \
-    MINEFOLIO_JWT_SECRET="$TEST_JWT_SECRET" AI_CONFIG="$TMP_DIR/ai.json" \
-    MINEFOLIO_MCP_ALLOW_LOCAL=1 \
-    mf_exec_isolated ./minefolio > "$SERVER_LOG" 2>&1
-) &
-SERVER_PID=$!
-for _ in $(seq 1 40); do
-  curl -sf "http://127.0.0.1:$PORT/healthz" >/dev/null 2>&1 && break
-  sleep 0.25
-done
-if ! kill -0 "$SERVER_PID" 2>/dev/null; then
-  echo "❌ backend failed to start"; tail -20 "$SERVER_LOG"; exit 1
-fi
+db_start_server "$PORT" "$BUILD_DIR" "$SERVER_LOG"
 
 rsa_encrypt() {
   node -e "
@@ -219,7 +206,7 @@ poll_mcp_task() {
 echo "=== Scenario 1: mcp_server CRUD + refresh ==="
 MCP_CMD="node $SCRIPT_DIR/mock_mcp_stdio_server.js"
 CREATE_RES=$(auth "$BASE/ai/mcp/servers" "{\"name\":\"mockstdio\",\"transport\":\"stdio\",\"command\":\"$MCP_CMD\",\"timeout_ms\":10000}")
-MCP_ID=$(printf '%s' "$CREATE_RES" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+MCP_ID=$(printf '%s' "$CREATE_RES" | jq -r 'if .data.id != null then (.data.id | tonumber | floor) else empty end')
 if [ -n "$MCP_ID" ]; then
   PASS=$((PASS + 1)); echo "  ✅ created mcp_server id=$MCP_ID"
 else
@@ -229,7 +216,7 @@ fi
 REFRESH_SUB=$(auth "$BASE/ai/mcp/servers/$MCP_ID/refresh" "{}")
 REFRESH_RES=$(poll_mcp_task "$REFRESH_SUB")
 echo "   [debug] refresh submit: $REFRESH_SUB body: $REFRESH_RES"
-RC=$(printf '%s' "$REFRESH_RES" | sed -n 's/.*"status":"\([a-z]*\)".*/\1/p')
+RC=$(printf '%s' "$REFRESH_RES" | jq -r '.data.status // empty')
 
 # stdio live probe: if the runtime blocks fork+execve child stdio (design
 # §15⑤, e.g. sandbox seccomp/rlimit), refresh reports a no-response error.
@@ -242,7 +229,7 @@ fi
 
 if [ "$STDIO_PROBE_OK" = "1" ]; then
   check "refresh status" "ok" "$RC"
-  TCOUNT=$(printf '%s' "$REFRESH_RES" | sed -n 's/.*"tool_count":\([0-9]*\).*/\1/p')
+  TCOUNT=$(printf '%s' "$REFRESH_RES" | jq -r '(.data.tool_count // 0) | tonumber | floor')
   check "refresh tool_count" "1" "$TCOUNT"
   TOOLS_RES=$(auth_get "$BASE/ai/mcp/servers/$MCP_ID/tools")
   TOOLS_HAS=$(printf '%s' "$TOOLS_RES" | grep -c '"tool_name":"mcp_echo"' || echo 0)
@@ -258,18 +245,18 @@ echo "=== Scenario 1b: HTTP transport mcp_server refresh ==="
 start_mock_mcp_http
 HTTP_MCP_ID=""
 HTTP_CREATE=$(auth "$BASE/ai/mcp/servers" "{\"name\":\"mockhttp\",\"transport\":\"http\",\"url\":\"http://127.0.0.1:$HTTP_MOCK_PORT/mcp\",\"timeout_ms\":10000}")
-HTTP_MCP_ID=$(printf '%s' "$HTTP_CREATE" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+HTTP_MCP_ID=$(printf '%s' "$HTTP_CREATE" | jq -r 'if .data.id != null then (.data.id | tonumber | floor) else empty end')
 if [ -n "$HTTP_MCP_ID" ]; then
   PASS=$((PASS + 1)); echo "  ✅ created http mcp_server id=$HTTP_MCP_ID"
 else
   FAIL=$((FAIL + 1)); echo "  ❌ create http mcp_server failed: $HTTP_CREATE"
 fi
 HTTP_REFRESH_SUB=$(auth "$BASE/ai/mcp/servers/$HTTP_MCP_ID/refresh" "{}")
-check "http refresh returned async task_id" "1" "$(echo "$HTTP_REFRESH_SUB" | jq -r 'if (.data.task_id // 0) > 0 then 1 else 0 end')"
+check "http refresh returned async task_id" "1" "$(echo "$HTTP_REFRESH_SUB" | jq -r 'if ((.data.task_id // 0) | tonumber) > 0 then 1 else 0 end')"
 HTTP_REFRESH=$(poll_mcp_task "$HTTP_REFRESH_SUB")
-HTTP_RC=$(printf '%s' "$HTTP_REFRESH" | sed -n 's/.*"status":"\([a-z]*\)".*/\1/p')
+HTTP_RC=$(printf '%s' "$HTTP_REFRESH" | jq -r '.data.status // empty')
 check "http refresh status" "ok" "$HTTP_RC"
-HTTP_TCOUNT=$(printf '%s' "$HTTP_REFRESH" | sed -n 's/.*"tool_count":\([0-9]*\).*/\1/p')
+HTTP_TCOUNT=$(printf '%s' "$HTTP_REFRESH" | jq -r '(.data.tool_count // 0) | tonumber | floor')
 check "http refresh tool_count" "1" "$HTTP_TCOUNT"
 HTTP_TOOLS=$(auth_get "$BASE/ai/mcp/servers/$HTTP_MCP_ID/tools")
 HTTP_TOOLS_HAS=$(printf '%s' "$HTTP_TOOLS" | grep -c '"tool_name":"mcp_echo"' || echo 0)
@@ -279,10 +266,10 @@ check "http tools cache has mcp_echo" "1" "$HTTP_TOOLS_HAS"
 # After refresh, both mock servers have 1 cached tool each; the list endpoint
 # must return the "tool_count" field with value 1 for the http server.
 LIST_RES=$(auth_get "$BASE/ai/mcp/servers")
-LIST_HAS_TC=$(printf '%s' "$LIST_RES" | grep -c '"tool_count":' || echo 0)
-check "list endpoint returns tool_count field" "1" "$([ "$LIST_HAS_TC" -ge 1 ] && echo 1 || echo 0)"
-LIST_TC=$(printf '%s' "$LIST_RES" | sed -n 's/.*"tool_count":\([0-9]*\).*/\1/p')
-check "list endpoint tool_count is a number" "1" "$([ -n "$LIST_TC" ] && echo 1 || echo 0)"
+LIST_HAS_TC=$(printf '%s' "$LIST_RES" | jq -r 'if ((.data // []) | length) > 0 and (.data[0] | has("tool_count")) then 1 else 0 end')
+check "list endpoint returns tool_count field" "1" "$LIST_HAS_TC"
+LIST_TC=$(printf '%s' "$LIST_RES" | jq -r 'if ((.data // []) | length) > 0 and .data[0].tool_count != null then (.data[0].tool_count | tonumber | floor) else empty end')
+check "list endpoint tool_count is a number" "1" "$(printf '%s' "$LIST_TC" | grep -qE '^[0-9]+$' && echo 1 || echo 0)"
 
 # --- Scenario 2: chat hit remote MCP tool (HTTP transport, no fork) -----------
 echo "=== Scenario 2: chat routes mcp:<id>:mcp_echo via bridge (http) ==="
@@ -367,26 +354,22 @@ echo "=== Scenario 3: trace tool span ==="
 # cannot be queried via SQL. The real queryable artifact is the ai_traces row:
 # loop.c step7 records an MCP tool span named mcp:<id>:mcp_echo into the
 # persisted meta.tool_spans JSON. Verify that span is present there.
-if command -v sqlite3 >/dev/null 2>&1; then
-  # Dump raw metadata first so a zero count is diagnosable, then count the
-  # qualified name across all rows in a single stream (grep -c over multi-row
-  # sqlite3 output is unreliable, hence tr+grep -o+wc -l).
-   TRACE_META=$(sqlite3 "$DB" "SELECT metadata FROM ai_traces ORDER BY created_at DESC LIMIT 20;" 2>/dev/null || true)
+if [ "${DB_DRIVER:-sqlite}" = "postgres" ]; then
+  TRACE_META=$(PGPASSWORD="${PGPASSWORD:-postgres_password}" psql -h "${PGHOST:-localhost}" -p "${PGPORT:-5432}" -U "${PGUSER:-postgres}" -d "${PGDATABASE:-minefolio_test}" -t -A -c "SELECT metadata FROM ai_traces ORDER BY created_at DESC LIMIT 20;" 2>/dev/null || true)
+else
+  TRACE_META=$(command sqlite3 "$DB_FILE" "SELECT metadata FROM ai_traces ORDER BY created_at DESC LIMIT 20;" 2>/dev/null || true)
+fi
+if [ -n "$TRACE_META" ] || command -v sqlite3 >/dev/null 2>&1 || [ "${DB_DRIVER:-sqlite}" = "postgres" ]; then
    echo "  [debug] ai_traces.metadata rows: $(printf '%s' "$TRACE_META" | grep -c . || true)"
    echo "  [debug] metadata full: $(printf '%s' "$TRACE_META" | tr '\n' '|')"
-   # grep -o exits 1 on zero matches, which would abort the script under
-   # `set -euo pipefail`; count with `|| true` so absence just yields 0.
    TRACE_SPAN=$(printf '%s' "$TRACE_META" | grep -o "$QUALIFIED" 2>/dev/null | wc -l | tr -d ' ' || true)
    if [ "$TRACE_SPAN" -ge 1 ]; then
      check "trace: mcp tool span recorded" "1" "1"
    else
-     # tool_spans is not always persisted to metadata (SSE chat path), which
-     # is an observability detail outside MCP functional scope — the trace row
-     # itself is saved (see COUNT above). Skip rather than fail on absence.
      check_skip "trace: mcp tool span recorded" "tool_spans not persisted in this env (observability detail, not MCP functional); trace row saved"
    fi
 else
-  echo "  (sqlite3 not available; skip trace check)"
+  echo "  (db client not available; skip trace check)"
 fi
 
 if [ "$FAIL" -gt 0 ]; then

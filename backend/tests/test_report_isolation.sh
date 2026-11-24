@@ -2,37 +2,29 @@
 # Regression test for expense monthly/report isolation by user_id + ledger_id.
 set -euo pipefail
 
-PORT=8182
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/db_helper.sh"
+
+db_init_context 8182 "report_isolation"
 BASE="http://127.0.0.1:${PORT}/api"
 TMP_DIR=$(mktemp -d)
-DB_PATH="${TMP_DIR}/report_isolation.db"
-SERVER_PID=""
+DB_PATH="$DB_FILE"
+export MINEFOLIO_JWT_SECRET="report_isolation_test_secret_32_bytes_minimum"
+export TEST_JWT_SECRET="$MINEFOLIO_JWT_SECRET"
 
 cleanup() {
-    if [ -n "$SERVER_PID" ]; then
-        kill "$SERVER_PID" 2>/dev/null || true
-        wait "$SERVER_PID" 2>/dev/null || true
+    local rc=$?
+    db_stop_server
+    if [ "$rc" -ne 0 ] && [ -f "${TMP_DIR}/server.log" ]; then
+        tail -n 40 "${TMP_DIR}/server.log" || true
     fi
+    db_clean
     rm -rf "$TMP_DIR"
 }
 trap cleanup EXIT
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "$SCRIPT_DIR/cgroup_helper.sh"
-BUILD_DIR="${MINEFOLIO_BUILD_DIR:-$(cd "$SCRIPT_DIR/../build" && pwd)}"
-export MINEFOLIO_DB_DRIVER=sqlite
-export MINEFOLIO_DB_DSN="$DB_PATH"
-export MINEFOLIO_JWT_SECRET="report_isolation_test_secret_32_bytes_minimum"
-
-(
-  cd "$BUILD_DIR"
-  PORT="$PORT" mf_exec_isolated ./minefolio >"$TMP_DIR/server.log" 2>&1
-) &
-SERVER_PID=$!
-for _i in $(seq 1 30); do
-    curl -sf "http://127.0.0.1:${PORT}/healthz" >/dev/null 2>&1 && break
-    sleep 0.2
-done
+db_clean
+db_start_server "$PORT" "${MINEFOLIO_BUILD_DIR:-$SCRIPT_DIR/../build}" "${TMP_DIR}/server.log"
 
 rsa_encrypt() {
   local plain="$1"
@@ -78,7 +70,7 @@ DEFAULT_LEDGER=$(sqlite3 "$DB_PATH" "SELECT id FROM ledgers WHERE owner_id=$UID_
 CREATE_LEDGER=$(curl -s -X POST "$BASE/ledgers" \
   -H "Authorization: Bearer $TOKEN_A" -H 'Content-Type: application/json' \
   -d '{"name":"Report Family Ledger","currency":"CNY"}')
-FAMILY_LEDGER=$(json_num "$CREATE_LEDGER" '.data.id | floor')
+FAMILY_LEDGER=$(json_num "$CREATE_LEDGER" '.data.id | tonumber | floor')
 
 # Make user B a member of the second ledger so both users can query the same scope.
 sqlite3 "$DB_PATH" "INSERT INTO ledger_members (ledger_id, user_id, role) VALUES ($FAMILY_LEDGER, $UID_B, 'editor')"
@@ -86,7 +78,7 @@ sqlite3 "$DB_PATH" "INSERT INTO ledger_members (ledger_id, user_id, role) VALUES
 # Seed three deliberately distinct scopes. The current implementation does not populate
 # ledger_id on normal expense writes yet, so the fixture writes it explicitly to exercise
 # the read boundary independently.
-sqlite3 "$DB_PATH" <<SQL
+SEED_SQL=$(cat <<SQL
 INSERT INTO categories (user_id, ledger_id, name, type, currency) VALUES
   ($UID_A, $DEFAULT_LEDGER, 'Report-A-Category', 'expense', 'CNY'),
   ($UID_A, $FAMILY_LEDGER, 'Report-Family-Category', 'expense', 'CNY'),
@@ -107,6 +99,8 @@ INSERT INTO daily_expenses (user_id, ledger_id, category_id, asset_id, expense_t
   SELECT $UID_B, $FAMILY_LEDGER, c.id, a.id, 'expense', 30, 'CNY', '2026-08-03', 'scope-b'
     FROM categories c JOIN assets a ON a.category_id=c.id WHERE c.name='Report-B-Category';
 SQL
+)
+db_exec "$SEED_SQL"
 
 assert_num() {
     local description="$1" expected="$2" actual="$3"

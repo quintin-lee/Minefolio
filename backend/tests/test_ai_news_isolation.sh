@@ -2,39 +2,30 @@
 # Integration test for AI News isolation by user_id + ledger_id and data masking.
 set -euo pipefail
 
-PORT=8183
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/db_helper.sh"
+
+db_init_context 8183 "ai_news_isolation"
 BASE="http://127.0.0.1:${PORT}/api"
 TMP_DIR=$(mktemp -d)
-DB_PATH="${TMP_DIR}/news_isolation.db"
-SERVER_PID=""
+DB_PATH="$DB_FILE"
+export MINEFOLIO_JWT_SECRET="ai_news_isolation_secret_32_bytes_min"
+export TEST_JWT_SECRET="$MINEFOLIO_JWT_SECRET"
 
 cleanup() {
-    if [ -n "$SERVER_PID" ]; then
-        kill "$SERVER_PID" 2>/dev/null || true
-        wait "$SERVER_PID" 2>/dev/null || true
+    local rc=$?
+    db_stop_server
+    if [ "$rc" -ne 0 ] && [ -f "${TMP_DIR}/server.log" ]; then
+        tail -n 40 "${TMP_DIR}/server.log" || true
     fi
+    db_clean
     rm -rf "$TMP_DIR"
 }
 trap cleanup EXIT
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "$SCRIPT_DIR/cgroup_helper.sh"
-BUILD_DIR="${MINEFOLIO_BUILD_DIR:-$(cd "$SCRIPT_DIR/../build" && pwd)}"
-export MINEFOLIO_DB_DRIVER=sqlite
-export MINEFOLIO_DB_DSN="$DB_PATH"
-export MINEFOLIO_JWT_SECRET="ai_news_isolation_secret_32_bytes_min"
-
 echo "== [AI News Isolation Test] Starting server on port $PORT =="
-(
-  cd "$BUILD_DIR"
-  PORT="$PORT" mf_exec_isolated ./minefolio >"$TMP_DIR/server.log" 2>&1
-) &
-SERVER_PID=$!
-
-for _i in $(seq 1 30); do
-    curl -sf "http://127.0.0.1:${PORT}/healthz" >/dev/null 2>&1 && break
-    sleep 0.2
-done
+db_clean
+db_start_server "$PORT" "${MINEFOLIO_BUILD_DIR:-$SCRIPT_DIR/../build}" "${TMP_DIR}/server.log"
 
 rsa_encrypt() {
   local plain="$1"

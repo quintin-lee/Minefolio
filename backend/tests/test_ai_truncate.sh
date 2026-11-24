@@ -18,23 +18,22 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "$SCRIPT_DIR/cgroup_helper.sh"
+source "$SCRIPT_DIR/db_helper.sh"
 BUILD_DIR="${MINEFOLIO_BUILD_DIR:-$(cd "$SCRIPT_DIR/../build" && pwd)}"
-PORT="${PORT:-18095}"
+db_init_context 18095 "ai_truncate"
 MOCK_PORT="${MOCK_PORT:-18096}"
 BASE="http://127.0.0.1:$PORT/api"
-DB="$(mktemp -d)/mf_ai_truncate.db"
-MOCK_LOG="$(dirname "$DB")/mock.log"
-SERVER_LOG="$(dirname "$DB")/server.log"
-TMP_DIR="$(dirname "$DB")"
+TMP_DIR="$(mktemp -d)"
+MOCK_LOG="$TMP_DIR/mock.log"
+SERVER_LOG="$TMP_DIR/server.log"
 PASS=0
 FAIL=0
-SERVER_PID=""
 MOCK_PID=""
 
 cleanup() {
-  [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null || true
+  db_stop_server
   [ -n "$MOCK_PID" ] && kill "$MOCK_PID" 2>/dev/null || true
+  db_clean
   rm -rf "$TMP_DIR"
 }
 trap cleanup EXIT
@@ -49,9 +48,10 @@ check() {
   fi
 }
 
-sqlq() { sqlite3 "$DB" "$1"; }
+sqlq() { db_query "$1"; }
 
 echo "=== AI history truncation regression ==="
+db_clean
 
 # --- mock OpenAI server ------------------------------------------------------
 MOCK_TOOL_COUNT=1 MOCK_TOOL_NAMES=get_summary MOCK_PORT="$MOCK_PORT" \
@@ -67,20 +67,9 @@ echo "  mock up (port $MOCK_PORT)"
 cat > "$TMP_DIR/ai.json" <<EOF
 {"providers":[{"id":"mockai","name":"Mock AI","api_key":"dummy","base_url":"http://127.0.0.1:$MOCK_PORT/v1","models":["mock-model"]}],"default_provider":"mockai","default_model":"mock-model","context_size":20,"system_prompt":"你是测试助手"}
 EOF
-(
-  cd "$BUILD_DIR"
-  MINEFOLIO_PORT="$PORT" MINEFOLIO_DB_DRIVER=sqlite MINEFOLIO_DB_DSN="$DB" \
-    MINEFOLIO_JWT_SECRET="truncate-test-secret-1234567890" AI_CONFIG="$TMP_DIR/ai.json" \
-    mf_exec_isolated ./minefolio > "$SERVER_LOG" 2>&1
-) &
-SERVER_PID=$!
-for _ in $(seq 1 40); do
-  curl -sf "http://127.0.0.1:$PORT/healthz" >/dev/null 2>&1 && break
-  sleep 0.25
-done
-if ! kill -0 "$SERVER_PID" 2>/dev/null; then
-  echo "❌ backend failed to start"; tail -20 "$SERVER_LOG"; exit 1
-fi
+export AI_CONFIG="$TMP_DIR/ai.json"
+export TEST_JWT_SECRET="truncate-test-secret-1234567890"
+db_start_server "$PORT" "$BUILD_DIR" "$SERVER_LOG"
 
 rsa_encrypt() {
   node -e "
@@ -135,8 +124,8 @@ U1=$(sqlq "SELECT id FROM ai_messages WHERE session_id=$SID AND role='user' ORDE
 A1=$(sqlq "SELECT id FROM ai_messages WHERE session_id=$SID AND role='assistant' ORDER BY id LIMIT 1")
 check "sse: one user_message_id event"      "1" "$(grep -c '^event: user_message_id' "$TMP_DIR/sse_1.txt")"
 check "sse: one assistant_message_id event" "1" "$(grep -c '^event: assistant_message_id' "$TMP_DIR/sse_1.txt")"
-SSE_U=$(grep -A1 '^event: user_message_id' "$TMP_DIR/sse_1.txt" | grep '^data:' | sed 's/.*"id":"\([0-9]*\)".*/\1/')
-SSE_A=$(grep -A1 '^event: assistant_message_id' "$TMP_DIR/sse_1.txt" | grep '^data:' | sed 's/.*"id":"\([0-9]*\)".*/\1/')
+SSE_U=$(grep -A1 '^event: user_message_id' "$TMP_DIR/sse_1.txt" | grep '^data:' | sed 's/^data:[[:space:]]*//' | jq -r '.id // empty')
+SSE_A=$(grep -A1 '^event: assistant_message_id' "$TMP_DIR/sse_1.txt" | grep '^data:' | sed 's/^data:[[:space:]]*//' | jq -r '.id // empty')
 check "sse: user id matches DB row"      "$U1" "$SSE_U"
 check "sse: assistant id matches DB row" "$A1" "$SSE_A"
 
@@ -148,7 +137,7 @@ check "truncate from first msg -> one fresh pair" "2" "$(sqlq "SELECT COUNT(*) F
 check "no leftover round2 rows"      "0" "$(sqlq "SELECT COUNT(*) FROM ai_messages WHERE session_id=$SID AND content LIKE '%round2%'")"
 check "no duplicate user rows"       "1" "$(sqlq "SELECT COUNT(*) FROM ai_messages WHERE session_id=$SID AND role='user'")"
 check "first row holds edited text"  "edited-round1" "$(sqlq "SELECT content FROM ai_messages WHERE session_id=$SID AND role='user' ORDER BY id LIMIT 1")"
-NEW_U=$(grep -A1 '^event: user_message_id' "$TMP_DIR/sse_3.txt" | grep '^data:' | sed 's/.*"id":"\([0-9]*\)".*/\1/')
+NEW_U=$(grep -A1 '^event: user_message_id' "$TMP_DIR/sse_3.txt" | grep '^data:' | sed 's/^data:[[:space:]]*//' | jq -r '.id // empty')
 DB_NEW_U=$(sqlq "SELECT id FROM ai_messages WHERE session_id=$SID AND role='user' ORDER BY id DESC LIMIT 1")
 check "edit-resend returns fresh user id" "$DB_NEW_U" "$NEW_U"
 
@@ -161,7 +150,7 @@ check "earlier edited turn kept intact"  "1" "$(sqlq "SELECT COUNT(*) FROM ai_me
 
 # === Scenario 4: regenerate must not eat the previous answer =================
 # fabricate a failed turn: user row persisted, no assistant row after it
-sqlq "INSERT INTO ai_messages (session_id, role, content, model, thinking_content, tool_calls) VALUES ($SID,'user','failed-turn','mock-model','','')"
+db_exec "INSERT INTO ai_messages (session_id, role, content, model, thinking_content, tool_calls) VALUES ($SID,'user','failed-turn','mock-model','','')"
 U_LAST=$(sqlq "SELECT id FROM ai_messages WHERE session_id=$SID AND role='user' ORDER BY id DESC LIMIT 1")
 A_BEFORE=$(sqlq "SELECT COUNT(*) FROM ai_messages WHERE session_id=$SID AND role='assistant'")
 chat "{\"content\":\"failed-turn\",\"provider\":\"mockai\",\"model\":\"mock-model\",\"session_id\":$SID,\"regenerate\":true}" "$TMP_DIR/sse_6.txt"
