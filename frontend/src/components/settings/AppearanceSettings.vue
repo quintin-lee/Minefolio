@@ -31,6 +31,11 @@
         <el-text type="primary">{{ theme.resolvedTheme === 'dark' ? $t('settings.dark') : $t('settings.light') }}</el-text>
       </el-form-item>
 
+      <el-form-item :label="$t('settings.showAmount')">
+        <el-switch v-model="displaySettings.showAmount" @change="onShowAmountChange" />
+        <span class="hint-text">{{ $t('settings.amountMaskHintLabel') }}</span>
+      </el-form-item>
+
       <el-form-item :label="$t('settings.language')">
         <el-radio-group v-model="lang" size="large">
           <el-radio value="zh-CN">{{ $t('settings.langZh') }}</el-radio>
@@ -46,11 +51,17 @@ import { watch } from 'vue'
 import { ref } from 'vue'
 import { Icon } from '@iconify/vue'
 import { useThemeStore } from '@/stores/theme'
+import { useDisplaySettingsStore } from '@/stores/display-settings'
 import { useI18n } from '@/composables/useI18n'
 
 const theme = useThemeStore()
+const displaySettings = useDisplaySettingsStore()
 const { setLocale } = useI18n()
 const lang = ref(localStorage.getItem('minefolio_lang') || 'zh-CN')
+
+function onShowAmountChange() {
+  displaySettings.toggle()
+}
 
 watch(() => theme.mode, (newMode) => {
   theme.setMode(newMode)
@@ -73,5 +84,11 @@ watch(() => lang.value, (value) => {
   align-items: center !important;
   padding-left: 8px !important;
   font-size: 14px !important;
+}
+
+.hint-text {
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--mf-text-muted);
 }
 </style>

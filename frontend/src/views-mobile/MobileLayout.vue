@@ -2,7 +2,10 @@
   <div class="mobile-layout">
     <header class="mobile-top-bar">
       <LedgerSelector class="mobile-ledger" />
-      <LocaleToggle class="locale-chip" />
+      <div class="top-bar-actions">
+        <AmountMaskToggle />
+        <LocaleToggle class="locale-chip" />
+      </div>
     </header>
     <main class="mobile-content">
       <router-view :key="routerViewKey" />
@@ -31,6 +34,7 @@ import LedgerSelector from '@/components/LedgerSelector.vue'
 import { useCategoryStore } from '@/stores/category'
 import { useSyncStore } from '@/stores/sync'
 import { t } from '@/utils/locale'
+import AmountMaskToggle from '@/components/AmountMaskToggle.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -89,6 +93,11 @@ function go(tab: { prefix: string }) {
   border-bottom: 1px solid var(--mf-border);
   flex-shrink: 0;
   z-index: 20;
+}
+.top-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .mobile-ledger :deep(.ledger-selector-wrap) {
   margin-right: 0;

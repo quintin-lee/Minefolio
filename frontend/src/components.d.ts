@@ -10,6 +10,7 @@ declare module 'vue' {
     AccountDialog: typeof import('./components/AccountDialog.vue')['default']
     ActionCard: typeof import('./components/ActionCard.vue')['default']
     AiProviderManager: typeof import('./components/settings/AiProviderManager.vue')['default']
+    AmountMaskToggle: typeof import('./components/AmountMaskToggle.vue')['default']
     AnalysisPanel: typeof import('./components/AnalysisPanel.vue')['default']
     AppearanceSettings: typeof import('./components/settings/AppearanceSettings.vue')['default']
     AppLogo: typeof import('./components/AppLogo.vue')['default']

@@ -110,6 +110,7 @@
             </el-button>
           </el-tooltip>
           <LedgerSelector />
+          <AmountMaskToggle />
           <ThemeToggle />
           <el-dropdown @command="handleCommand" trigger="click">
             <div class="user-profile">
@@ -174,6 +175,7 @@ import { resetFinancialEntities } from '@/composables/useFinancialEntities'
 import { t } from '@/utils/locale'
 import LedgerSelector from '@/components/LedgerSelector.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
+import AmountMaskToggle from '@/components/AmountMaskToggle.vue'
 import QuickRecordDialog from '@/components/QuickRecordDialog.vue'
 import CommandPalette from '@/components/CommandPalette.vue'
 import AppLogo from '@/components/AppLogo.vue'

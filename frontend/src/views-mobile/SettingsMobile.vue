@@ -90,6 +90,15 @@
       </div>
     </div>
 
+    <div class="display-card">
+      <div class="card-title">显示偏好</div>
+      <p class="card-hint">控制金额是否全局显示</p>
+      <div class="display-row">
+        <span class="display-label">显示金额</span>
+        <el-switch v-model="displaySettings.showAmount" @change="handleShowAmountToggle" />
+      </div>
+    </div>
+
     <div class="sync-status">
       <span>待同步：{{ pending }}<template v-if="syncConflicts.length">（含 {{ syncConflicts.length }} 条冲突）</template></span>
       <span>上次同步：{{ lastSync || '从未' }}</span>
@@ -131,6 +140,7 @@ import { useRouter } from 'vue-router'
 import { Monitor, Moon, Select, Sunny, Connection, SuccessFilled, CircleCloseFilled } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useThemeStore, type ThemeMode } from '@/stores/theme'
+import { useDisplaySettingsStore } from '@/stores/display-settings'
 import { useSyncStore } from '@/stores/sync'
 import { useAuthStore } from '@/stores/auth'
 import { getLocalDbStatus } from '@/db/local'
@@ -141,6 +151,11 @@ const router = useRouter()
 const sync = useSyncStore()
 const auth = useAuthStore()
 const theme = useThemeStore()
+const displaySettings = useDisplaySettingsStore()
+
+function handleShowAmountToggle() {
+  displaySettings.toggle()
+}
 const { serverUrl, isCustom, setUrl, resetUrl, testConnection, isValidServerUrl, normalizeServerUrl } = useServerUrl()
 
 const inputUrl = ref(serverUrl.value)
@@ -265,6 +280,25 @@ async function logout() {
 </script>
 
 <style scoped>
+.display-card {
+  background: var(--mf-surface);
+  border: 1px solid var(--mf-border);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.display-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.display-label {
+  font-size: 14px;
+  color: var(--mf-text-regular);
+}
+
 .sync-status { display: flex; flex-direction: column; gap: 8px; background: var(--mf-surface); border: 1px solid var(--mf-border); border-radius: 12px; padding: 16px; margin-bottom: 12px; }
 .settings-mobile > * { margin-bottom: 12px; }
 

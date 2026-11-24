@@ -1534,3 +1534,49 @@ html.light .mf-skeleton-block {
     padding: 0 8px !important;
   }
 }
+
+/* =========================================================================
+   Amount Masking – when data-amount-masked="true" on <html>
+   Blurs all financial numeric values to protect privacy in shared screens.
+   ========================================================================= */
+[data-amount-masked="true"] .stat-value,
+[data-amount-masked="true"] .amount-cell,
+[data-amount-masked="true"] .amount-text,
+[data-amount-masked="true"] .pnl-text,
+[data-amount-masked="true"] .balance-text,
+[data-amount-masked="true"] .mono-amount,
+[data-amount-masked="true"] .mf-mono,
+[data-amount-masked="true"] .hero-main-val,
+[data-amount-masked="true"] .currency-symbol,
+[data-amount-masked="true"] .sub-val,
+[data-amount-masked="true"] .metric-value,
+[data-amount-masked="true"] .group-subtotal,
+[data-amount-masked="true"] .kpi-card b,
+[data-amount-masked="true"] .income,
+[data-amount-masked="true"] .expense {
+  filter: blur(4px);
+  user-select: none;
+  -webkit-user-select: none;
+  transition: filter 0.3s ease;
+}
+
+/* Keep chart tooltips and labels unmasked so layout stays functional */
+[data-amount-masked="true"] .el-table .el-table__body td {
+  position: relative;
+}
+
+/* Smooth transition when unmasking */
+.mono-amount,
+.stat-value,
+.amount-cell,
+.amount-text,
+.pnl-text,
+.balance-text,
+.mf-mono,
+.hero-main-val,
+.currency-symbol,
+.sub-val,
+.metric-value,
+.group-subtotal {
+  transition: filter 0.3s ease;
+}
