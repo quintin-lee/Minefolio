@@ -17,6 +17,7 @@ static const char* s_csrf_exclude_paths[] = {"/api/auth/login",
                                              "/api/auth/register",
                                              "/api/system/status",
                                              "/api/system/setup",
+                                             "/api/auth/2fa/verify-login",
                                              "/api/im/qq/bind-auth",
                                              "/api/im/wechat/bind-auth",
                                              NULL};
