@@ -339,7 +339,11 @@ export async function* chatStream(
   const resp = await fetch(url, {
     method: 'POST',
     headers,
-    credentials: 'include',
+    // 鉴权走 JWT Bearer 头而非 Cookie；移动端 Capacitor WebView 跨域请求自建服务端时，
+    // 默认 CORS 返回 Access-Control-Allow-Origin: * 且不开启 Allow-Credentials，
+    // credentials: 'include' 会被浏览器/WebView 直接以 CORS 拦截抛 Failed to fetch。
+    // same-origin 既保留桌面同源 Cookie 兼容，又避免移动端跨域触发凭证限制。
+    credentials: 'same-origin',
     body: JSON.stringify(params),
     signal,
   })
@@ -583,7 +587,11 @@ export async function* runWorkflowStream(
   const resp = await fetch(url, {
     method: 'POST',
     headers,
-    credentials: 'include',
+    // 鉴权走 JWT Bearer 头而非 Cookie；移动端 Capacitor WebView 跨域请求自建服务端时，
+    // 默认 CORS 返回 Access-Control-Allow-Origin: * 且不开启 Allow-Credentials，
+    // credentials: 'include' 会被浏览器/WebView 直接以 CORS 拦截抛 Failed to fetch。
+    // same-origin 既保留桌面同源 Cookie 兼容，又避免移动端跨域触发凭证限制。
+    credentials: 'same-origin',
     body: JSON.stringify(params),
     signal,
   })

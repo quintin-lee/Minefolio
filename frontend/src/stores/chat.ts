@@ -38,6 +38,22 @@ function parseToolCalls(raw: unknown): ToolCallInfo[] | undefined {
 }
 
 /**
+ * 将流式请求异常转换为可诊断的用户提示文本，避免吞掉网络/HTTP/CORS 根因信息
+ */
+function formatStreamError(err: unknown, fallback: string): string {
+  if (err && typeof err === 'object') {
+    const msg = typeof (err as { message?: unknown }).message === 'string'
+      ? (err as { message: string }).message.trim()
+      : ''
+    if (msg === 'Failed to fetch' || err instanceof TypeError) {
+      return '无法连接服务端（请检查网络、服务端地址或跨域配置）'
+    }
+    if (msg) return msg
+  }
+  return fallback
+}
+
+/**
  * AI 对话与智能工作流 Pinia Store
  */
 export const useChatStore = defineStore('chat', () => {
@@ -521,7 +537,7 @@ export const useChatStore = defineStore('chat', () => {
       }
       await writer.finish()
     } catch (err: any) {
-      if (err?.name !== 'AbortError') { writer.flushNow(); assistantMsg.error = '请求发生异常' }
+      if (err?.name !== 'AbortError') { writer.flushNow(); assistantMsg.error = formatStreamError(err, '请求发生异常') }
     } finally { writer.flushNow(); enableTypewriterBuffer.value = false; if (activeAbortController === myCtrl) { isStreaming.value = false; activeAbortController = null } }
   }
 
@@ -614,7 +630,7 @@ export const useChatStore = defineStore('chat', () => {
     } catch (err: any) {
       if (err?.name !== 'AbortError') {
         writer.flushNow()
-        assistantMsg.error = '请求发生异常'
+        assistantMsg.error = formatStreamError(err, '请求发生异常')
       }
     } finally {
       writer.flushNow()
@@ -623,6 +639,28 @@ export const useChatStore = defineStore('chat', () => {
         isStreaming.value = false
         activeAbortController = null
       }
+    }
+  }
+
+  async function refreshSessionTitle(sessionId: number | null) {
+    if (!sessionId) return
+    try {
+      const r = (await getSession(sessionId)) as unknown
+      const raw = (r && typeof r === 'object' && 'data' in r ? (r as { data: Record<string, unknown> }).data : r) as Record<string, unknown>
+      if (raw && raw.id) {
+        const numId = Number(raw.id)
+        const idx = sessions.value.findIndex(s => Number(s.id) === numId)
+        const existing = idx >= 0 ? sessions.value[idx] : undefined
+        if (existing) {
+          sessions.value[idx] = {
+            ...existing,
+            title: String(raw.title || existing.title),
+            updated_at: String(raw.updated_at || new Date().toISOString()),
+          }
+        }
+      }
+    } catch {
+      // 非致命操作：流式回答已完成后，标题刷新失败不应将回答标记为异常
     }
   }
 
@@ -740,26 +778,11 @@ export const useChatStore = defineStore('chat', () => {
       await writer.finish()
 
       // 刷新会话信息 (后端可能自动根据内容生成标题)
-      if (currentSessionId.value) {
-        const r = (await getSession(currentSessionId.value)) as unknown
-        const raw = (r && typeof r === 'object' && 'data' in r ? (r as { data: Record<string, unknown> }).data : r) as Record<string, unknown>
-        if (raw && raw.id) {
-          const numId = Number(raw.id)
-          const idx = sessions.value.findIndex(s => Number(s.id) === numId)
-          const existing = idx >= 0 ? sessions.value[idx] : undefined
-          if (existing) {
-            sessions.value[idx] = {
-              ...existing,
-              title: String(raw.title || existing.title),
-              updated_at: String(raw.updated_at || new Date().toISOString()),
-            }
-          }
-        }
-      }
+      await refreshSessionTitle(currentSessionId.value)
     } catch (err: any) {
       if (err?.name !== 'AbortError') {
         writer.flushNow()
-        assistantMsg.error = '请求发生异常'
+        assistantMsg.error = formatStreamError(err, '请求发生异常')
       }
     } finally {
       writer.flushNow()
@@ -924,27 +947,12 @@ export const useChatStore = defineStore('chat', () => {
       })
 
       // 刷新会话信息
-      if (currentSessionId.value) {
-        const r = (await getSession(currentSessionId.value)) as unknown
-        const raw = (r && typeof r === 'object' && 'data' in r ? (r as { data: Record<string, unknown> }).data : r) as Record<string, unknown>
-        if (raw && raw.id) {
-          const numId = Number(raw.id)
-          const idx = sessions.value.findIndex(s => Number(s.id) === numId)
-          const existing = idx >= 0 ? sessions.value[idx] : undefined
-          if (existing) {
-            sessions.value[idx] = {
-              ...existing,
-              title: String(raw.title || existing.title),
-              updated_at: String(raw.updated_at || new Date().toISOString()),
-            }
-          }
-        }
-      }
+      await refreshSessionTitle(currentSessionId.value)
     } catch (err: any) {
       if (err?.name !== 'AbortError') {
         wfState.status = 'error'
         writer.flushNow()
-        activeMsg.error = '工作流执行发生异常'
+        activeMsg.error = formatStreamError(err, '工作流执行发生异常')
       }
     } finally {
       writer.flushNow()
@@ -1113,27 +1121,12 @@ export const useChatStore = defineStore('chat', () => {
         }
       })
 
-      if (currentSessionId.value) {
-        const r = (await getSession(currentSessionId.value)) as unknown
-        const raw = (r && typeof r === 'object' && 'data' in r ? (r as { data: Record<string, unknown> }).data : r) as Record<string, unknown>
-        if (raw && raw.id) {
-          const numId = Number(raw.id)
-          const idx = sessions.value.findIndex(s => Number(s.id) === numId)
-          const existing = idx >= 0 ? sessions.value[idx] : undefined
-          if (existing) {
-            sessions.value[idx] = {
-              ...existing,
-              title: String(raw.title || existing.title),
-              updated_at: String(raw.updated_at || new Date().toISOString()),
-            }
-          }
-        }
-      }
+      await refreshSessionTitle(currentSessionId.value)
     } catch (err: any) {
       if (err?.name !== 'AbortError') {
         wfState.status = 'error'
         writer.flushNow()
-        msg.error = '工作流执行发生异常'
+        msg.error = formatStreamError(err, '工作流执行发生异常')
       }
     } finally {
       writer.flushNow()

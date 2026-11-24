@@ -68,6 +68,22 @@ describe('chat store stream failure handling', () => {
     expect(store.currentSessionId).toBeNull()
     expect(store.messages.length).toBe(0)
   })
+
+  it('surfaces actionable error message when stream throws TypeError / Failed to fetch', async () => {
+    async function* throwingStream() {
+      if (false) yield { type: 'delta' as const, content: '' }
+      throw new TypeError('Failed to fetch')
+    }
+    ;(chatStream as any).mockReturnValue(throwingStream())
+
+    const store = useChatStore()
+    store.currentSessionId = 1
+    await store.sendMessage('触发网络/CORS异常')
+
+    const assistantMsg = store.messages.find(m => m.role === 'assistant')
+    expect(assistantMsg?.error).toContain('无法连接服务端')
+    expect(store.isStreaming).toBe(false)
+  })
 })
 
 describe('chat store streaming pacing', () => {
