@@ -4,7 +4,7 @@
  */
 
 import { defineStore } from 'pinia'
-import { ref, watch } from 'vue'
+import { ref } from 'vue'
 
 const STORAGE_KEY = 'minefolio_display_settings'
 

@@ -3,6 +3,21 @@
     <header class="mobile-top-bar">
       <LedgerSelector class="mobile-ledger" />
       <div class="top-bar-actions">
+        <span
+          v-if="!isOnline"
+          class="net-status-pill is-offline"
+          title="当前处于离线模式，核心账目将暂存本地待联网同步"
+        >
+          离线模式
+        </span>
+        <span
+          v-else-if="syncStore.pendingCount > 0"
+          class="net-status-pill is-pending"
+          @click="syncStore.syncNow()"
+          title="点击立即同步本地离线变更"
+        >
+          待同步 {{ syncStore.pendingCount }}
+        </span>
         <AmountMaskToggle />
       </div>
     </header>
@@ -39,6 +54,16 @@ const router = useRouter()
 const categoryStore = useCategoryStore()
 const syncStore = useSyncStore()
 const routerViewKey = ref(0)
+const isOnline = ref(typeof navigator !== 'undefined' ? navigator.onLine : true)
+
+function handleOnline() {
+  isOnline.value = true
+  void syncStore.syncNow()
+}
+
+function handleOffline() {
+  isOnline.value = false
+}
 
 function handleLedgerChanged() {
   categoryStore.invalidate()
@@ -47,6 +72,8 @@ function handleLedgerChanged() {
 }
 
 onMounted(() => {
+  window.addEventListener('online', handleOnline)
+  window.addEventListener('offline', handleOffline)
   window.addEventListener('minefolio:ledger-changed', handleLedgerChanged)
   // 进入主界面后立即做一次双向同步，确保本地离线库尽快与远端对齐
   // (而非等到网络/前后台事件或用户手动点击才同步)
@@ -54,6 +81,8 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('online', handleOnline)
+  window.removeEventListener('offline', handleOffline)
   window.removeEventListener('minefolio:ledger-changed', handleLedgerChanged)
 })
 
@@ -157,5 +186,29 @@ function go(tab: { prefix: string }) {
 .tab-item.active .tab-icon {
   transform: scale(1.12);
   filter: drop-shadow(0 0 5px var(--mf-primary-light));
+}
+.top-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.net-status-pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.net-status-pill.is-offline {
+  background: rgba(239, 68, 68, 0.14);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+.net-status-pill.is-pending {
+  background: rgba(245, 158, 11, 0.14);
+  color: #d97706;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  cursor: pointer;
 }
 </style>

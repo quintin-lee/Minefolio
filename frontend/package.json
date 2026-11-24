@@ -10,6 +10,7 @@
     "dev:mobile": "vite --config vite.config.mobile.ts --mode mobile",
     "build:mobile": "vue-tsc -b && vite build --config vite.config.mobile.ts --mode mobile && node -e \"require('fs').renameSync('dist-mobile/index.mobile.html', 'dist-mobile/index.html')\"",
     "typecheck": "vue-tsc -b",
+    "check": "vue-tsc -b && vitest run --config vite.config.mobile.ts",
     "test": "vitest run --config vite.config.mobile.ts",
     "test:isolated": "vitest run --config vite.config.mobile.ts --pool=forks --poolOptions.forks.maxForks=2 --poolOptions.forks.minForks=1"
   },

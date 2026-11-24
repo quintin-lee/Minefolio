@@ -195,18 +195,9 @@ const TYPE_LABELS: Record<string, string> = {
   bond: '债券',
   crypto: '加密货币',
 }
-const TYPE_TAGS: Record<string, 'primary' | 'success' | 'warning' | 'danger'> = {
-  stock: 'primary',
-  fund: 'success',
-  bond: 'warning',
-  crypto: 'danger',
-}
 
 function typeLabel(t: string): string {
   return TYPE_LABELS[t] ?? t
-}
-function typeTag(t: string): 'primary' | 'success' | 'warning' | 'danger' | 'info' {
-  return TYPE_TAGS[t] ?? 'info'
 }
 function typePillClass(t: string): string {
   return t === 'crypto' ? 'pill-crypto' : 'pill-default'

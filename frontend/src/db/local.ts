@@ -59,15 +59,6 @@ function base64ToBytes(b64: string): Uint8Array {
   return bytes
 }
 
-function bytesToBase64(bytes: Uint8Array): string {
-  let bin = ''
-  const len = bytes.byteLength
-  for (let i = 0; i < len; i += 8192) {
-    bin += String.fromCharCode(...bytes.subarray(i, Math.min(i + 8192, len)))
-  }
-  return btoa(bin)
-}
-
 async function ensureSqlJs(): Promise<SqlJsStatic> {
   if (sqlJs) return sqlJs
   // 直接用内嵌的 wasm 二进制（经 manualChunks 拆入 vendor-sql），浏览器/Capacitor/测试均无网络请求

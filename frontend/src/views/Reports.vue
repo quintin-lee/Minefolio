@@ -331,7 +331,6 @@ import ExpenseTrendBar from '@/components/ExpenseTrendBar.vue'
 import AssetTrendLine from '@/components/AssetTrendLine.vue'
 import AssetBreakdownPie from '@/components/AssetBreakdownPie.vue'
 import { formatCurrency, localThisMonth } from '@/utils/format'
-import SummaryCard from '@/components/SummaryCard.vue'
 import type { FxPnlReport, FxHistoryPoint } from '@/types'
 
 const loading = ref(true)

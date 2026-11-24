@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { ledgerApi } from '@/api/ledgers'
 
-const props = defineProps<{
+defineProps<{
   visible: boolean
 }>()
 

@@ -11,7 +11,7 @@ import {
   getMessages, chatStream, getModels, getSettings, getWorkflows, runWorkflowStream,
 } from '@/api/ai'
 import type {
-  AiMessage, AiSession, AiModelOption, AiSettings, WorkflowStreamChunk, ToolCallInfo, ChatStreamChunk,
+  AiMessage, AiSession, AiModelOption, AiSettings, ToolCallInfo, ChatStreamChunk,
 } from '@/api/ai'
 import type { WorkflowDef, WorkflowRunState, WorkflowStepState } from '@/types'
 import { SmoothStreamWriter } from '@/utils/typewriter'

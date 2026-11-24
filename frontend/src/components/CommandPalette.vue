@@ -27,7 +27,7 @@
 
         <template v-else>
           <div
-            v-for="(group, gIdx) in groupedCommands"
+            v-for="group in groupedCommands"
             :key="group.title"
             class="command-group"
           >
@@ -79,7 +79,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { Icon } from '@iconify/vue'
 import { useThemeStore } from '@/stores/theme'

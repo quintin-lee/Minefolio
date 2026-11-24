@@ -1,9 +1,15 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import Chat from '@/views/Chat.vue'
 import AnalysisPanel from '@/components/AnalysisPanel.vue'
 import { useChatStore } from '@/stores/chat'
+
+vi.mock('vue-router', () => ({
+  useRouter: () => ({
+    push: vi.fn(),
+  }),
+}))
 
 describe('Chat.vue with AnalysisPanel integration', () => {
   beforeEach(() => {

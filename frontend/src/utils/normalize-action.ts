@@ -8,12 +8,6 @@ import type { ProposedAction } from '@/components/ActionCard.vue'
  * 若已是嵌套格式则原样返回。
  */
 export function normalizeActionCard(raw: Record<string, unknown>): ProposedAction {
-  const KNOWN_DATA_FIELDS = new Set([
-    'type', 'amount', 'category_id', 'category_name', 'asset_id', 'asset_name',
-    'date', 'note', 'from_asset_id', 'from_asset_name', 'to_asset_id',
-    'to_asset_name', 'fee', 'draft_token',
-  ])
-
   const actionType = (raw.action_type === 'daily_expense' || raw.action_type === 'transfer')
     ? raw.action_type as 'daily_expense' | 'transfer'
     : null

@@ -147,14 +147,6 @@ function handleOAuthLogin(p: OAuthProvider) {
   }
 }
 
-const validateConfirmPassword = (_rule: any, value: string, callback: any) => {
-  if (isRegister.value && value !== form.password) {
-    callback(new Error(t('login.confirmPasswordMismatch')))
-  } else {
-    callback()
-  }
-}
-
 const rules = {
   username: [
     { required: true, message: () => t('login.usernameRequired'), trigger: 'blur' },
