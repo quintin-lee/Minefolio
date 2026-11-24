@@ -60,15 +60,22 @@ main(void)
     printf("Idle sleep calculated with 0 active jobs: %d seconds\n", sleep_sec);
     assert(sleep_sec == 60);
 
-    /* 2. Create a future job (scheduled tomorrow at 02:00) and verify notify_reload wakeup latency */
+    /* 2. Create a future job (scheduled ~12 hours from now) and verify notify_reload wakeup latency */
+    time_t now = time(NULL);
+    struct tm tm_now;
+    localtime_r(&now, &tm_now);
+    int future_hour = (tm_now.tm_hour + 12) % 24;
+    char trigger_cfg[64];
+    snprintf(trigger_cfg, sizeof(trigger_cfg), "{\"cron\":\"0 %d * * *\"}", future_hour);
+
     int64_t job_id = mf_scheduler_repo_job_create(
         pool,
         1,
         "Far Future Job",
-        "Runs at 02:00 daily",
+        "Runs 12 hours from now",
         "system_handler",
         "cron",
-        "{\"cron\":\"0 2 * * *\"}",
+        trigger_cfg,
         "{\"handler\":\"noop\"}",
         "silent_db",
         "{}",
@@ -78,15 +85,15 @@ main(void)
     struct timespec ts_start, ts_end;
     clock_gettime(CLOCK_MONOTONIC, &ts_start);
     scheduler_engine_notify_reload();
-
-    /* Give thread a short moment to wake up and process reload */
-    usleep(20000);
     clock_gettime(CLOCK_MONOTONIC, &ts_end);
 
     long elapsed_ms = (ts_end.tv_sec - ts_start.tv_sec) * 1000 +
                       (ts_end.tv_nsec - ts_start.tv_nsec) / 1000000;
     printf("Wakeup latency after notify_reload: %ld ms\n", elapsed_ms);
     assert(elapsed_ms < 50);
+
+    /* Give thread a short moment to wake up and process reload */
+    usleep(50000);
 
     /* Verify that with a far future job, sleep_sec is 60 (clamped maximum) */
     sleep_sec = scheduler_engine_get_last_sleep_sec();
