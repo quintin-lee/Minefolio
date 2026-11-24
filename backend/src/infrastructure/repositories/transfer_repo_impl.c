@@ -19,8 +19,10 @@ mf_transfer_repo_asset_check(void* db_pool, int64_t user_id, int64_t from_id, in
 
     csilk_json_t* res = csilk_db_query_param_json(
         pool,
-        "SELECT COUNT(*) as cnt FROM assets WHERE id IN (?, ?) AND user_id=?",
-        (const char*[]){fid, tid, uid, NULL});
+        "SELECT COUNT(*) as cnt FROM assets a "
+        "WHERE a.id IN (?, ?) AND (a.user_id=? OR (a.ledger_id > 0 AND EXISTS "
+        "(SELECT 1 FROM ledger_members lm WHERE lm.ledger_id = a.ledger_id AND lm.user_id=?)))",
+        (const char*[]){fid, tid, uid, uid, NULL});
     int ok = 0;
     if (res && csilk_json_array_size(res) > 0) {
         ok = (db_get_num(csilk_json_array_get(res, 0), "cnt") == 2);

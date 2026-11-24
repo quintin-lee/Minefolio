@@ -664,6 +664,46 @@ main(void)
         assert(fabs(price_to_double(p_zero)) < 1e-12);
     }
 
+    // 9. Cross-member shared ledger balance delta and permission check
+    {
+        printf("\n>>> Testing Section 9: Cross-Member Shared Ledger Balance Delta <<<\n");
+        csilk_db_exec(pool, "INSERT OR IGNORE INTO users (id, username, password) VALUES (2, 'bob', 'hash')");
+        csilk_db_exec(pool, "INSERT OR IGNORE INTO users (id, username, password) VALUES (3, 'charlie', 'hash')");
+        csilk_db_exec(pool,
+                      "INSERT OR REPLACE INTO ledgers (id, owner_id, name, is_default) "
+                      "VALUES (10, 1, 'Family Shared Ledger', 0)");
+        csilk_db_exec(pool,
+                      "INSERT OR REPLACE INTO ledger_members (ledger_id, user_id, role) VALUES "
+                      "(10, 1, 'owner'), (10, 2, 'editor'), (10, 3, 'viewer')");
+        csilk_db_exec(pool,
+                      "INSERT OR REPLACE INTO assets (id, user_id, ledger_id, category_id, name, currency, current_value, "
+                      "quantity, cost_basis, net_value) VALUES (301, 1, 10, 10, 'Alice Shared Asset', 'CNY', 1000.0, 0, 0, 0)");
+
+        money_t delta_neg;
+        money_from_double(-100.0, CURRENCY_CNY, &delta_neg);
+
+        // Bob (editor, user_id = 2) applies -100 delta to Alice's asset 301
+        int rc_bob = balance_apply_delta_m(pool, 301, 2, delta_neg, "daily_expense", 1, "Bob spent 100");
+        assert(rc_bob == 0);
+
+        csilk_json_t* ast = csilk_db_query_param_json(
+            pool, "SELECT current_value FROM assets WHERE id=?", (const char*[]){"301", NULL});
+        assert(ast && csilk_json_array_size(ast) == 1);
+        double bal = db_get_num(csilk_json_array_get(ast, 0), "current_value");
+        csilk_json_free(ast);
+        assert(fabs(bal - 900.0) < 1e-4);
+        printf("    ✓ Bob (editor) successfully debited Alice's shared asset (balance=%.2f).\n", bal);
+
+        // Charlie (viewer, user_id = 3) tries to apply delta -> must be rejected
+        int rc_charlie = balance_apply_delta_m(pool, 301, 3, delta_neg, "daily_expense", 2, "Charlie spend");
+        assert(rc_charlie != 0);
+
+        // Stranger (user_id = 999) tries to apply delta -> must be rejected
+        int rc_stranger = balance_apply_delta_m(pool, 301, 999, delta_neg, "daily_expense", 3, "Stranger spend");
+        assert(rc_stranger != 0);
+        printf("    ✓ Viewer and stranger correctly rejected.\n");
+    }
+
     unlink(db_file);
     printf("🎉 ALL LEDGER ENGINE INTEGRATION TESTS PASSED SUCCESSFULLY!\n");
     return 0;
