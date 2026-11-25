@@ -52,6 +52,8 @@ export const zhCN = {
     name: '名称',
     currency: '币种',
     action: '操作',
+    actions: '操作',
+    refresh: '刷新',
     expandMenu: '展开菜单',
     collapseMenu: '收起菜单',
     logoutSuccess: '已退出登录',
@@ -201,6 +203,7 @@ export const zhCN = {
     currency: '币种',
     icon: '图标',
     sortOrder: '排序',
+    selectCategory: '选择分类',
   },
   settings: {
     title: '系统设置',
@@ -562,6 +565,8 @@ export const zhCN = {
     aiFetchSuccess: '成功拉取 {n} 个可用模型',
     aiFetchEmpty: '未获取到模型列表，请手动输入',
     aiFetchFailed: '获取模型列表失败',
+    generateTokenFailed: '生成绑定码失败',
+    passwordFailed: '密码修改失败',
   },
   dashboard: {
     title: '仪表盘',

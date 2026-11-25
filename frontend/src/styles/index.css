@@ -411,7 +411,7 @@ body {
 /* Focus Rings */
 :focus-visible {
   outline: 2px solid var(--mf-primary);
-  background: var(--mf-border-hover);
+  outline-offset: 2px;
 }
 
 /* Header & Titles */
@@ -1493,15 +1493,9 @@ html.light .bento-hero-card:hover {
 /* Suppress Mermaid error SVGs leaking into document.body */
 body > div[id^="dmermaid"],
 body > div[id^="imermaid"],
-body > div[id^="d-"],
-body > div[id^="i-"],
 body > svg[id^="mermaid"],
 body > svg[id^="dmermaid"],
-body > svg.error-icon,
-svg:has(.error-icon),
-svg:has(.error-text),
-svg .error-icon,
-svg .error-text {
+body > svg.error-icon {
   display: none !important;
   visibility: hidden !important;
   opacity: 0 !important;
@@ -1560,7 +1554,7 @@ html.light .mf-skeleton-block {
 @media (max-width: 768px) {
   .el-message {
     top: auto !important;
-    bottom: 84px !important;
+    bottom: calc(84px + env(safe-area-inset-bottom)) !important;
     max-width: 88vw;
     border-radius: var(--mf-radius-lg);
   }
@@ -1609,8 +1603,11 @@ html.light .mf-skeleton-block {
 [data-amount-masked="true"] .group-subtotal,
 [data-amount-masked="true"] .kpi-card b,
 [data-amount-masked="true"] .income,
-[data-amount-masked="true"] .expense {
-  filter: blur(4px);
+[data-amount-masked="true"] .expense,
+[data-amount-masked="true"] .center-val,
+[data-amount-masked="true"] .plan-amount,
+[data-amount-masked="true"] .amount-tag {
+  filter: blur(6px);
   user-select: none;
   -webkit-user-select: none;
   transition: filter 0.3s ease;

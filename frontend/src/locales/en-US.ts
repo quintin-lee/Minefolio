@@ -52,6 +52,8 @@ export const enUS = {
     name: 'Name',
     currency: 'Currency',
     action: 'Action',
+    actions: 'Actions',
+    refresh: 'Refresh',
     expandMenu: 'Expand Menu',
     collapseMenu: 'Collapse Menu',
     logoutSuccess: 'Logged out',
@@ -201,6 +203,7 @@ export const enUS = {
     currency: 'Currency',
     icon: 'Icon',
     sortOrder: 'Sort Order',
+    selectCategory: 'Select Category',
   },
   settings: {
     title: 'Settings',
@@ -562,6 +565,8 @@ export const enUS = {
     aiFetchSuccess: 'Fetched {n} models',
     aiFetchEmpty: 'No models returned; please enter them manually',
     aiFetchFailed: 'Failed to fetch models',
+    generateTokenFailed: 'Failed to generate bind code',
+    passwordFailed: 'Failed to update password',
   },
   dashboard: {
     title: 'Dashboard',

@@ -51,7 +51,10 @@ export default defineConfig({
             if (id.includes('element-plus') || id.includes('@element-plus/icons-vue')) {
               return 'vendor-element'
             }
-            if (id.includes('highlight.js') || id.includes('katex') || id.includes('marked') || id.includes('dompurify')) {
+            if (id.includes('highlight.js')) {
+              return 'vendor-hljs'
+            }
+            if (id.includes('katex') || id.includes('marked') || id.includes('dompurify')) {
               return 'vendor-markdown'
             }
           }
