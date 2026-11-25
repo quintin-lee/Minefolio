@@ -57,6 +57,24 @@ function createDedupStore(state, { memoryMax = 2000, persistMax = 1000 } = {}) {
   return { has, add };
 }
 
+function abortableSleep(ms, signal) {
+  if (!Number.isFinite(ms) || ms <= 0 || (signal && signal.aborted)) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      if (signal) signal.removeEventListener('abort', finish);
+      resolve();
+    };
+    const timer = setTimeout(finish, ms);
+    if (signal) signal.addEventListener('abort', finish, { once: true });
+  });
+}
+
 async function runMonitor({
   client,
   state,
@@ -68,9 +86,11 @@ async function runMonitor({
   maxQueue = Number(process.env.ILINK_MAX_QUEUE || 8),
   replyChunk = Number(process.env.ILINK_REPLY_CHUNK || 1800),
   pollTaskOpts = {},
-  sleepImpl = (ms) => new Promise((r) => setTimeout(r, ms)),
+  onContextUpdated = () => {},
+  sleepImpl,
   nowFn = () => Date.now(),
 } = {}) {
+  const waitBackoff = sleepImpl || ((ms) => abortableSleep(ms, signal));
   const dedup = createDedupStore(state);
   let cursor = (state.readCursor() && state.readCursor().get_updates_buf) || '';
   let backoffMs = 2000;
@@ -161,7 +181,8 @@ async function runMonitor({
         continue;
       }
       log.warn?.('[ilink-monitor] getupdates error:', err.message);
-      await sleepImpl(backoffMs);
+      await waitBackoff(backoffMs);
+      if (signal && signal.aborted) break;
       backoffMs = Math.min(backoffMs * 2, 60000);
       continue;
     }
@@ -181,6 +202,23 @@ async function runMonitor({
 
       if (msg.message_id && dedup.has(msg.message_id)) continue;
       if (msg.message_id) dedup.add(msg.message_id);
+
+      if (msg.context_token) {
+        const updatedAt = new Date(nowFn()).toISOString();
+        state.writeContext({
+          context_token: msg.context_token,
+          from_user_id: msg.from_user_id,
+          updated_at: updatedAt,
+          invalidated: false,
+        });
+        try {
+          if (typeof onContextUpdated === 'function') {
+            onContextUpdated({ updatedAt, contextToken: msg.context_token });
+          }
+        } catch {
+          // Ignore wake callback errors
+        }
+      }
 
       const extracted = extractMessageText(msg);
       const contextToken = msg.context_token || '';

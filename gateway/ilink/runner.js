@@ -6,6 +6,7 @@ const { createIlinkClient, IlinkSessionExpiredError } = require('./client');
 const { createStateStore } = require('./state');
 const { runLogin } = require('./login');
 const { runMonitor } = require('./monitor');
+const { createPusher } = require('./pusher');
 
 function parseArgs(argv) {
   let instanceId = null;
@@ -18,6 +19,147 @@ function parseArgs(argv) {
     }
   }
   return { instanceId, forceLogin };
+}
+
+function pickSessionError(results, workerErrors) {
+  const errors = [];
+  for (const r of results || []) {
+    if (r && r.status === 'rejected' && r.reason) {
+      errors.push(r.reason);
+    }
+  }
+  for (const err of workerErrors || []) {
+    if (err && !errors.includes(err)) {
+      errors.push(err);
+    }
+  }
+  if (errors.length === 0) return null;
+  const expired = errors.find((e) => e instanceof IlinkSessionExpiredError);
+  return expired || errors[0];
+}
+
+async function runManagedSession({
+  client,
+  state,
+  account,
+  instanceId,
+  api,
+  stopSignal,
+  graceMs = 3000,
+  onContextUpdated = () => {},
+  monitorOpts = {},
+  pusherOpts = {},
+  log = console,
+} = {}) {
+  const workerController = new AbortController();
+  const isExternalStop = () => Boolean(stopSignal && stopSignal.aborted);
+
+  const onStop = () => {
+    workerController.abort();
+  };
+  if (stopSignal) {
+    if (stopSignal.aborted) {
+      workerController.abort();
+    } else {
+      stopSignal.addEventListener('abort', onStop, { once: true });
+    }
+  }
+
+  const pusher = createPusher({
+    client,
+    state,
+    account,
+    instanceId,
+    api,
+    log,
+    signal: workerController.signal,
+    ...pusherOpts,
+  });
+
+  const workerErrors = [];
+  const runWithAbort = (p) =>
+    Promise.resolve(p).catch((err) => {
+      workerErrors.push(err);
+      workerController.abort();
+      throw err;
+    });
+
+  const settledPromise = Promise.allSettled([
+    runWithAbort(
+      runMonitor({
+        client,
+        state,
+        account,
+        instanceId,
+        api,
+        log,
+        signal: workerController.signal,
+        onContextUpdated: (ev) => {
+          onContextUpdated(ev);
+          pusher.wake();
+        },
+        ...monitorOpts,
+      })
+    ),
+    runWithAbort(pusher.run()),
+  ]);
+
+  let graceTimer = null;
+  let onWorkerAbort = null;
+  let allSettled = false;
+
+  const gracePromise = new Promise((resolve) => {
+    const startGrace = () => {
+      if (allSettled || graceTimer) return;
+      const parsed = Number(graceMs);
+      const ms = Number.isFinite(parsed) && parsed >= 0 ? parsed : 3000;
+      graceTimer = setTimeout(() => resolve({ timedOut: true, results: null }), ms);
+      graceTimer.unref?.();
+    };
+    if (workerController.signal.aborted) {
+      startGrace();
+    } else {
+      onWorkerAbort = startGrace;
+      workerController.signal.addEventListener('abort', onWorkerAbort, { once: true });
+    }
+  });
+
+  let outcome;
+  try {
+    outcome = await Promise.race([
+      settledPromise.then((results) => {
+        allSettled = true;
+        return { timedOut: false, results };
+      }),
+      gracePromise,
+    ]);
+  } finally {
+    allSettled = true;
+    if (graceTimer) {
+      clearTimeout(graceTimer);
+      graceTimer = null;
+    }
+    if (onWorkerAbort) {
+      workerController.signal.removeEventListener('abort', onWorkerAbort);
+      onWorkerAbort = null;
+    }
+    if (stopSignal) {
+      stopSignal.removeEventListener('abort', onStop);
+    }
+  }
+
+  const fatalErr = pickSessionError(outcome && outcome.results, workerErrors);
+  if (fatalErr) {
+    if (fatalErr instanceof IlinkSessionExpiredError) {
+      return { exitCode: 2, error: fatalErr };
+    }
+    if (isExternalStop()) {
+      return { exitCode: 0, error: null };
+    }
+    log.error?.('[ilink-runner] fatal:', fatalErr.message);
+    return { exitCode: 1, error: fatalErr };
+  }
+  return { exitCode: 0, error: null };
 }
 
 async function main() {
@@ -54,27 +196,47 @@ async function main() {
 
   const initialEpoch = Number(instance.login_epoch || 0);
   const controller = new AbortController();
-  const stop = () => controller.abort();
-  process.on('SIGTERM', stop);
-  process.on('SIGINT', stop);
+  let stopRequested = false;
+  const requestStop = () => {
+    stopRequested = true;
+    controller.abort();
+  };
+  process.on('SIGTERM', requestStop);
+  process.on('SIGINT', requestStop);
+
+  let latestInboundAt = (state.readContext() && state.readContext().updated_at) || '';
 
   const hbTimer = setInterval(async () => {
     try {
-      const hb = await api.heartbeat(instanceId, { status: instance.status });
-      if (!hb || !hb.enabled || Number(hb.login_epoch || 0) !== initialEpoch) {
-        controller.abort();
+      const hb = await api.heartbeat(instanceId, {
+        status: instance.status,
+        last_inbound_at: latestInboundAt || undefined,
+      });
+      if (
+        !hb ||
+        !hb.enabled ||
+        hb.status === 'disabled' ||
+        hb.status === 'session_expired' ||
+        Number(hb.login_epoch || 0) !== initialEpoch
+      ) {
+        requestStop();
       }
     } catch (err) {
       if (err instanceof GatewayHttpError && (err.code === 1003 || err.code === 1004)) {
-        controller.abort();
+        requestStop();
       }
     }
   }, 30000);
   hbTimer.unref?.();
 
+  let exitCode = 0;
   try {
     let account = forceLogin ? null : state.readAccount();
     if (!account || !account.bot_token) {
+      if (forceLogin) {
+        state.clearContext();
+        latestInboundAt = '';
+      }
       const loginRes = await runLogin({
         client,
         state,
@@ -86,35 +248,52 @@ async function main() {
         },
       });
       if (!loginRes.ok) {
-        if (loginRes.reason === 'already_bound') {
-          process.exit(4);
-        }
-        process.exit(0);
+        exitCode = loginRes.reason === 'already_bound' ? 4 : 0;
+      } else {
+        account = loginRes.account;
       }
-      account = loginRes.account;
     }
 
-    await runMonitor({
-      client,
-      state,
-      account,
-      instanceId,
-      api,
-      signal: controller.signal,
-    });
-    process.exit(0);
+    if (account && account.bot_token) {
+      const existingCtx = state.readContext();
+      if (
+        existingCtx &&
+        account.ilink_user_id &&
+        existingCtx.from_user_id &&
+        existingCtx.from_user_id !== account.ilink_user_id
+      ) {
+        state.clearContext();
+        latestInboundAt = '';
+      }
+
+      const res = await runManagedSession({
+        client,
+        state,
+        account,
+        instanceId,
+        api,
+        stopSignal: controller.signal,
+        onContextUpdated: ({ updatedAt }) => {
+          latestInboundAt = updatedAt;
+        },
+      });
+      exitCode = res.exitCode;
+    }
   } catch (err) {
     if (err instanceof IlinkSessionExpiredError) {
-      process.exit(2);
+      exitCode = 2;
+    } else if (stopRequested) {
+      exitCode = 0;
+    } else {
+      console.error('[ilink-runner] fatal:', err.message);
+      exitCode = 1;
     }
-    if (controller.signal.aborted) {
-      process.exit(0);
-    }
-    console.error('[ilink-runner] fatal:', err.message);
-    process.exit(1);
   } finally {
     clearInterval(hbTimer);
+    process.off('SIGTERM', requestStop);
+    process.off('SIGINT', requestStop);
   }
+  process.exit(exitCode);
 }
 
 if (require.main === module) {
@@ -123,4 +302,6 @@ if (require.main === module) {
 
 module.exports = {
   parseArgs,
+  pickSessionError,
+  runManagedSession,
 };
