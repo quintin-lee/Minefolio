@@ -30,7 +30,7 @@
 
     <div v-if="isTwoFactorStep" class="two-factor-mobile-box">
       <p class="two-factor-hint">当前账号已开启两步验证，请输入身份验证器动态码或 8 位应急备用码：</p>
-      <el-form label-position="top" @submit.prevent="handle2FaSubmit">
+      <el-form label-position="top" @submit.prevent>
         <el-form-item label="动态验证码 / 备用码">
           <div class="two-factor-input-row">
             <el-input
@@ -247,6 +247,7 @@ async function submit() {
 }
 
 async function handle2FaSubmit() {
+  if (loading.value) return
   if (!tempToken.value) {
     tempToken.value = load2FaTempSession() || ''
   }

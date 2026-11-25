@@ -27,7 +27,7 @@
 
         <div v-if="isTwoFactorStep" class="two-factor-box">
           <p class="two-factor-hint">{{ t('login.twoFactorHint') }}</p>
-          <el-form label-position="top" class="login-form" @submit.prevent="handle2FaSubmit">
+          <el-form label-position="top" class="login-form" @submit.prevent>
             <el-form-item :label="t('login.twoFactorCodeLabel')">
               <el-input
                 v-model="twoFactorCode"
@@ -181,15 +181,29 @@ function toggleMode() {
   statusText.value = isRegister.value ? 'REGISTRATION_MODE' : 'AUTHENTICATION'
 }
 
+async function navigateAfterAuth() {
+  try {
+    const failure = await router.push('/dashboard')
+    if (failure) {
+      window.location.assign('/dashboard')
+    }
+  } catch {
+    // 路由懒加载 chunk 失效（如前端刚重新构建）时通过整页跳转加载最新入口
+    window.location.assign('/dashboard')
+  }
+}
+
 async function handleSubmit() {
+  if (loading.value) return
   await formRef.value.validate(async (valid: boolean) => {
     if (!valid) return
     loading.value = true
+    let authSucceeded = false
     try {
       if (isRegister.value) {
         await auth.register(form.username, form.password)
         ElMessage.success(t('login.registerSuccess'))
-        await router.push('/dashboard')
+        authSucceeded = true
       } else {
         const res = await auth.login(form.username, form.password)
         if (res?.require_2fa) {
@@ -201,7 +215,7 @@ async function handleSubmit() {
           return
         }
         ElMessage.success(t('login.loginSuccess'))
-        await router.push('/dashboard')
+        authSucceeded = true
       }
     } catch (e: any) {
       ElMessage.error(
@@ -212,10 +226,14 @@ async function handleSubmit() {
     } finally {
       loading.value = false
     }
+    if (authSucceeded) {
+      await navigateAfterAuth()
+    }
   })
 }
 
 async function handle2FaSubmit() {
+  if (loading.value) return
   const cleanCode = normalize2FaCode(twoFactorCode.value)
   if (!cleanCode) {
     ElMessage.warning(t('login.twoFactorCodeRequired'))
@@ -223,14 +241,18 @@ async function handle2FaSubmit() {
   }
   twoFactorCode.value = cleanCode
   loading.value = true
+  let verified = false
   try {
     await auth.verify2FaLogin(tempToken.value, cleanCode)
     ElMessage.success(t('login.twoFactorSuccess'))
-    await router.push('/dashboard')
+    verified = true
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.message || t('login.twoFactorFailed'))
   } finally {
     loading.value = false
+  }
+  if (verified) {
+    await navigateAfterAuth()
   }
 }
 
