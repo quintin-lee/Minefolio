@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -7,6 +8,8 @@
 
 #include "application/ai/im_bot_instance_usecases.h"
 #include "application/ai/im_push_usecases.h"
+#include "application/scheduler/dtos.h"
+#include "application/scheduler/usecases.h"
 #include "common/db.h"
 #include "config/secret.h"
 #include "csilk/csilk.h"
@@ -748,6 +751,154 @@ test_push_usecases(csilk_db_pool_t* pool)
     printf("  [OK] test_push_usecases\n");
 }
 
+typedef struct {
+    csilk_db_pool_t* pool;
+    int64_t          inst_id;
+    const char*      ack_result;
+    const char*      ack_err;
+} test_worker_ctx_t;
+
+static void*
+mock_ilink_test_ack_worker(void* arg)
+{
+    test_worker_ctx_t* w = (test_worker_ctx_t*)arg;
+    const char*        res = w->ack_result ? w->ack_result : "sent";
+    const char*        aerr = w->ack_err ? w->ack_err : "";
+    for (int i = 0; i < 40; ++i) {
+        csilk_json_t* items = NULL;
+        int           code = 0;
+        char          err[128] = {0};
+        if (im_push_usecase_gateway_claim(w->pool,
+                                          w->inst_id,
+                                          true,
+                                          "2026-11-25T13:00:00Z",
+                                          5,
+                                          &items,
+                                          &code,
+                                          err,
+                                          sizeof(err)) == 0 &&
+            items && csilk_json_array_size(items) > 0) {
+            csilk_json_t* row = csilk_json_array_get(items, 0);
+            int64_t       pid = db_get_int(row, "id");
+            assert(im_push_usecase_gateway_ack(
+                       w->pool, w->inst_id, pid, res, aerr, 0, &code, err, sizeof(err)) == 0);
+            csilk_json_free(items);
+            return NULL;
+        }
+        if (items) {
+            csilk_json_free(items);
+        }
+        struct timespec req = {0, 25000000L}; /* 25ms */
+        nanosleep(&req, NULL);
+    }
+    return NULL;
+}
+
+static void
+test_scheduler_ilink_channel(csilk_db_pool_t* pool)
+{
+    int64_t       u = seed_user_and_active_instance(pool, "push_sched_u1", "bot_s1", "wx_s1");
+    csilk_json_t* inst = mf_im_bot_instance_get_by_user(pool, u, "wechat", "ilink");
+    assert(inst != NULL);
+    int64_t inst_id = db_get_int(inst, "id");
+    csilk_json_free(inst);
+
+    channel_save_dto_t dto;
+    memset(&dto, 0, sizeof(dto));
+
+    /* Invalid channel_type -> 1002 */
+    snprintf(dto.channel_type, sizeof(dto.channel_type), "bogus");
+    assert(scheduler_usecase_save_channel(pool, u, &dto) == 1002);
+    dto.channel_type[0] = '\0';
+    assert(scheduler_usecase_save_channel(pool, u, &dto) == 1002);
+
+    /* Legacy aliases & 'none' accepted; 'none' clears webhook/secret */
+    snprintf(dto.channel_type, sizeof(dto.channel_type), "wechatwork");
+    snprintf(dto.channel_name, sizeof(dto.channel_name), "企业微信1");
+    snprintf(dto.webhook_url, sizeof(dto.webhook_url), "https://qyapi.weixin.qq.com/x");
+    snprintf(dto.secret_key, sizeof(dto.secret_key), "SEC123456");
+    assert(scheduler_usecase_save_channel(pool, u, &dto) == 0);
+
+    snprintf(dto.channel_type, sizeof(dto.channel_type), "qywx");
+    assert(scheduler_usecase_save_channel(pool, u, &dto) == 0);
+
+    snprintf(dto.channel_type, sizeof(dto.channel_type), "none");
+    snprintf(dto.channel_name, sizeof(dto.channel_name), "停用");
+    assert(scheduler_usecase_save_channel(pool, u, &dto) == 0);
+    csilk_json_t* none_resp = NULL;
+    assert(scheduler_usecase_get_channel(pool, u, &none_resp) == 0 && none_resp != NULL);
+    assert(strcmp(csilk_json_get_string(none_resp, "channel_type"), "none") == 0);
+    assert(strcmp(csilk_json_get_string(none_resp, "webhook_url"), "") == 0);
+    assert(strcmp(csilk_json_get_string(none_resp, "secret_key_masked"), "") == 0);
+    csilk_json_free(none_resp);
+    char err[256] = {0};
+    assert(scheduler_usecase_test_channel(pool, u, err, sizeof(err)) != 0);
+
+    /* wechat_ilink clears webhook/secret cleanly */
+    snprintf(dto.channel_type, sizeof(dto.channel_type), "wechat_ilink");
+    snprintf(dto.channel_name, sizeof(dto.channel_name), "个人微信 iLink");
+    snprintf(dto.webhook_url, sizeof(dto.webhook_url), "https://should.clear");
+    snprintf(dto.secret_key, sizeof(dto.secret_key), "SHOULD_CLEAR");
+    assert(scheduler_usecase_save_channel(pool, u, &dto) == 0);
+
+    csilk_json_t* ch_resp = NULL;
+    assert(scheduler_usecase_get_channel(pool, u, &ch_resp) == 0 && ch_resp != NULL);
+    assert(strcmp(csilk_json_get_string(ch_resp, "channel_type"), "wechat_ilink") == 0);
+    assert(strcmp(csilk_json_get_string(ch_resp, "webhook_url"), "") == 0);
+    assert(strcmp(csilk_json_get_string(ch_resp, "secret_key_masked"), "") == 0);
+    csilk_json_t* ilink_st = csilk_json_get(ch_resp, "ilink_status");
+    assert(ilink_st != NULL && db_get_bool(ilink_st, "has_instance"));
+    csilk_json_free(ch_resp);
+
+    csilk_json_t* dash_resp = NULL;
+    assert(scheduler_usecase_dashboard(pool, u, false, &dash_resp) == 0 && dash_resp != NULL);
+    csilk_json_t* dash_ch = csilk_json_get(dash_resp, "push_channel");
+    assert(dash_ch && csilk_json_get(dash_ch, "ilink_status") != NULL);
+    csilk_json_free(dash_resp);
+
+    /* Closed-loop test succeeds when gateway acks inside window */
+    test_worker_ctx_t ctx = {.pool = pool, .inst_id = inst_id, .ack_result = "sent"};
+    pthread_t         tid;
+    assert(pthread_create(&tid, NULL, mock_ilink_test_ack_worker, &ctx) == 0);
+    assert(scheduler_usecase_test_channel(pool, u, err, sizeof(err)) == 0);
+    assert(err[0] == '\0');
+    pthread_join(tid, NULL);
+
+    /* Gateway acks 'failed' -> propagates last_error cleanly */
+    test_worker_ctx_t fctx = {
+        .pool = pool, .inst_id = inst_id, .ack_result = "failed", .ack_err = "网关投递被拒"};
+    assert(pthread_create(&tid, NULL, mock_ilink_test_ack_worker, &fctx) == 0);
+    assert(scheduler_usecase_test_channel(pool, u, err, sizeof(err)) != 0);
+    assert(strcmp(err, "网关投递被拒") == 0);
+    pthread_join(tid, NULL);
+
+    /* Gateway offline -> times out inside short test window and expires outbox row */
+    setenv("MINEFOLIO_ILINK_TEST_TIMEOUT_MS", "300", 1);
+    assert(scheduler_usecase_test_channel(pool, u, err, sizeof(err)) != 0);
+    assert(strstr(err, "响应") != NULL);
+
+    char uid_s[32];
+    snprintf(uid_s, sizeof(uid_s), "%lld", (long long)u);
+    csilk_json_t* last_t = csilk_db_query_param_json(
+        pool,
+        "SELECT id FROM im_push_outbox WHERE mf_user_id=? AND kind='test' ORDER BY id DESC LIMIT 1",
+        (const char*[]){uid_s, NULL});
+    assert(last_t && csilk_json_array_size(last_t) == 1);
+    int64_t timed_out_pid = db_get_int(csilk_json_array_get(last_t, 0), "id");
+    csilk_json_free(last_t);
+    csilk_json_t* exp_row = im_push_usecase_get(pool, timed_out_pid);
+    assert(exp_row && strcmp(csilk_json_get_string(exp_row, "status"), "expired") == 0);
+    csilk_json_free(exp_row);
+
+    /* NULL / 0 err_buf never crashes across error & timeout paths */
+    assert(scheduler_usecase_test_channel(NULL, u, NULL, 0) != 0);
+    assert(scheduler_usecase_test_channel(pool, 99999, NULL, 0) != 0);
+    assert(scheduler_usecase_test_channel(pool, u, NULL, 0) != 0);
+    unsetenv("MINEFOLIO_ILINK_TEST_TIMEOUT_MS");
+
+    printf("  [OK] test_scheduler_ilink_channel\n");
+}
+
 int
 main(void)
 {
@@ -760,6 +911,7 @@ main(void)
     test_list_active_channels(pool);
     test_rollup_variants(pool);
     test_push_usecases(pool);
+    test_scheduler_ilink_channel(pool);
     csilk_db_pool_free(pool);
     cleanup_db_files();
     printf("=== im_push_outbox Unit Tests Passed! ===\n");

@@ -528,6 +528,10 @@ api_scheduler_channel_save(csilk_ctx_t* c)
     csilk_json_free(body);
 
     int rc = scheduler_usecase_save_channel(db_get_pool(), user_id, &dto);
+    if (rc == 1002) {
+        respond_error(c, 1002, "不支持的推送服务类型");
+        return;
+    }
     if (rc != 0) {
         respond_error(c, 500, "Failed to save user notification channel");
         return;

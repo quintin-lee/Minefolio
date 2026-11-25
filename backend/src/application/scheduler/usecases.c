@@ -3,8 +3,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <time.h>
 
+#include "application/ai/im_push_usecases.h"
 #include "common/db.h"
 #include "core/scheduler/cron_parser.h"
 #include "core/scheduler/scheduler_engine.h"
@@ -78,6 +80,10 @@ scheduler_usecase_dashboard(void* pool, int64_t user_id, bool is_admin, csilk_js
         csilk_json_add_string(ch_obj, "channel_type", "none");
         csilk_json_add_string(ch_obj, "channel_name", "");
         csilk_json_add_number(ch_obj, "is_active", 0);
+    }
+    csilk_json_t* ilink_st = im_push_usecase_build_ilink_status(pool, user_id);
+    if (ilink_st) {
+        csilk_json_add_object(ch_obj, "ilink_status", ilink_st);
     }
     csilk_json_add_object(resp, "push_channel", ch_obj);
 
@@ -358,6 +364,10 @@ scheduler_usecase_get_channel(void* pool, int64_t user_id, csilk_json_t** out_re
         csilk_json_add_string(def, "webhook_url", "");
         csilk_json_add_string(def, "secret_key_masked", "");
         csilk_json_add_number(def, "is_active", 0);
+        csilk_json_t* ilink_st = im_push_usecase_build_ilink_status(pool, user_id);
+        if (ilink_st) {
+            csilk_json_add_object(def, "ilink_status", ilink_st);
+        }
         *out_resp = def;
         return 0;
     }
@@ -379,17 +389,43 @@ scheduler_usecase_get_channel(void* pool, int64_t user_id, csilk_json_t** out_re
     csilk_json_add_string(resp, "webhook_url", csilk_json_get_string(ch, "webhook_url"));
     csilk_json_add_string(resp, "secret_key_masked", masked);
     csilk_json_add_number(resp, "is_active", (double)db_get_int(ch, "is_active"));
+    csilk_json_t* ilink_st = im_push_usecase_build_ilink_status(pool, user_id);
+    if (ilink_st) {
+        csilk_json_add_object(resp, "ilink_status", ilink_st);
+    }
 
     csilk_json_free(ch);
     *out_resp = resp;
     return 0;
 }
 
+static bool
+scheduler_channel_type_allowed(const char* ct)
+{
+    if (!ct || !ct[0]) {
+        return false;
+    }
+    return strcasecmp(ct, "none") == 0 || strcasecmp(ct, "serverchan") == 0 ||
+           strcasecmp(ct, "pushdeer") == 0 || strcasecmp(ct, "wechat_work") == 0 ||
+           strcasecmp(ct, "wechatwork") == 0 || strcasecmp(ct, "qywx") == 0 ||
+           strcasecmp(ct, "webhook") == 0 || strcasecmp(ct, "wechat_ilink") == 0;
+}
+
 int
 scheduler_usecase_save_channel(void* pool, int64_t user_id, const channel_save_dto_t* dto)
 {
-    if (!pool || !dto || !dto->channel_type[0]) {
+    if (!pool || !dto) {
         return -1;
+    }
+    if (!scheduler_channel_type_allowed(dto->channel_type)) {
+        return 1002;
+    }
+
+    if (strcasecmp(dto->channel_type, "wechat_ilink") == 0 ||
+        strcasecmp(dto->channel_type, "none") == 0) {
+        const char* norm =
+            strcasecmp(dto->channel_type, "wechat_ilink") == 0 ? "wechat_ilink" : "none";
+        return mf_scheduler_repo_save_user_channel(pool, user_id, norm, dto->channel_name, "", "");
     }
 
     const char* real_secret = dto->secret_key;
@@ -413,15 +449,47 @@ scheduler_usecase_save_channel(void* pool, int64_t user_id, const channel_save_d
         pool, user_id, dto->channel_type, dto->channel_name, dto->webhook_url, real_secret);
 }
 
+static bool
+check_ilink_test_push_status(
+    void* pool, int64_t push_id, char* err_buf, size_t err_len, int* out_done_rc)
+{
+    csilk_json_t* pr = im_push_usecase_get(pool, push_id);
+    if (!pr) {
+        return false;
+    }
+    const char* st = csilk_json_get_string(pr, "status");
+    const char* le = csilk_json_get_string(pr, "last_error");
+    if (st && strcmp(st, "sent") == 0) {
+        csilk_json_free(pr);
+        *out_done_rc = 0;
+        return true;
+    }
+    if (st && (strcmp(st, "failed") == 0 || strcmp(st, "expired") == 0)) {
+        if (err_buf && err_len > 0) {
+            snprintf(err_buf, err_len, "%s", (le && le[0]) ? le : "微信 iLink 推送测试失败");
+        }
+        csilk_json_free(pr);
+        *out_done_rc = -1;
+        return true;
+    }
+    csilk_json_free(pr);
+    return false;
+}
+
 int
 scheduler_usecase_test_channel(void* pool, int64_t user_id, char* err_buf, size_t err_len)
 {
+    if (err_buf && err_len > 0) {
+        err_buf[0] = '\0';
+    }
     if (!pool) {
         return -1;
     }
 
     csilk_json_t* ch = mf_scheduler_repo_get_user_channel(pool, user_id);
-    if (!ch || db_get_int(ch, "is_active") == 0) {
+    const char*   ct_chk = ch ? csilk_json_get_string(ch, "channel_type") : NULL;
+    if (!ch || db_get_int(ch, "is_active") == 0 || !ct_chk || !ct_chk[0] ||
+        strcasecmp(ct_chk, "none") == 0) {
         if (ch) {
             csilk_json_free(ch);
         }
@@ -431,9 +499,68 @@ scheduler_usecase_test_channel(void* pool, int64_t user_id, char* err_buf, size_
         return -1;
     }
 
+    const char* test_msg = "### 🎉 Minefolio 微信推送连通性测试成功\n\n"
+                           "> 恭喜！您已成功打通个人微信通知服务通道。\n\n"
+                           "- **接入通道**: 专属微信提醒\n"
+                           "- **触发状态**: 握手验证通过\n"
+                           "- **服务效用**: 今后定时简报、异动预警将第一时间推送到您的微信！\n\n"
+                           "---\n*Minefolio 自动化调度中心*";
+
+    const char* ct = csilk_json_get_string(ch, "channel_type");
+    if (ct && strcasecmp(ct, "wechat_ilink") == 0) {
+        csilk_json_free(ch);
+        int64_t push_id = 0;
+        if (im_push_usecase_enqueue(pool,
+                                    user_id,
+                                    0,
+                                    "test",
+                                    "Minefolio 推送连通性测试",
+                                    test_msg,
+                                    30,
+                                    &push_id,
+                                    err_buf,
+                                    err_len) != 0) {
+            return -1;
+        }
+        int         timeout_ms = 10000;
+        const char* env_to = getenv("MINEFOLIO_ILINK_TEST_TIMEOUT_MS");
+        if (env_to && env_to[0]) {
+            char* endp = NULL;
+            long  parsed = strtol(env_to, &endp, 10);
+            if (endp != env_to && *endp == '\0' && parsed > 0) {
+                if (parsed < 100) {
+                    parsed = 100;
+                } else if (parsed > 60000) {
+                    parsed = 60000;
+                }
+                timeout_ms = (int)parsed;
+            }
+        }
+        int waited_ms = 0;
+        int done_rc = -1;
+        while (waited_ms < timeout_ms) {
+            if (check_ilink_test_push_status(pool, push_id, err_buf, err_len, &done_rc)) {
+                return done_rc;
+            }
+            struct timespec req = {0, 100000000L}; /* 100ms */
+            nanosleep(&req, NULL);
+            waited_ms += 100;
+        }
+        if (check_ilink_test_push_status(pool, push_id, err_buf, err_len, &done_rc)) {
+            return done_rc;
+        }
+        (void)im_push_usecase_cancel_expired_test(pool, push_id, "iLink 网关未在测试窗口内响应");
+        if (err_buf && err_len > 0) {
+            snprintf(err_buf,
+                     err_len,
+                     "iLink 网关未在 %d 秒内响应，请检查 ilink-server 进程是否运行且网络可达",
+                     timeout_ms / 1000 > 0 ? timeout_ms / 1000 : 1);
+        }
+        return -1;
+    }
+
     push_channel_config_t cfg;
     memset(&cfg, 0, sizeof(cfg));
-    const char* ct = csilk_json_get_string(ch, "channel_type");
     const char* cn = csilk_json_get_string(ch, "channel_name");
     const char* wu = csilk_json_get_string(ch, "webhook_url");
     const char* sk = csilk_json_get_string(ch, "secret_key");
@@ -451,13 +578,6 @@ scheduler_usecase_test_channel(void* pool, int64_t user_id, char* err_buf, size_
         snprintf(cfg.secret_key, sizeof(cfg.secret_key), "%s", sk);
     }
     csilk_json_free(ch);
-
-    const char* test_msg = "### 🎉 Minefolio 微信推送连通性测试成功\n\n"
-                           "> 恭喜！您已成功打通个人微信通知服务通道。\n\n"
-                           "- **接入通道**: 专属微信提醒\n"
-                           "- **触发状态**: 握手验证通过\n"
-                           "- **服务效用**: 今后定时简报、异动预警将第一时间推送到您的微信！\n\n"
-                           "---\n*Minefolio 自动化调度中心*";
 
     return wechat_push_service_send(&cfg, "Minefolio 推送连通性测试", test_msg, err_buf, err_len);
 }

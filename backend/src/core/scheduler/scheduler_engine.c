@@ -5,9 +5,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <time.h>
 #include <unistd.h>
 
+#include "application/ai/im_push_usecases.h"
 #include "common/db.h"
 #include "core/scheduler/cron_parser.h"
 #include "core/scheduler/scheduler_events.h"
@@ -95,6 +97,65 @@ get_now_str(char* buf, size_t len)
     struct tm tm_now;
     localtime_r(&now, &tm_now);
     strftime(buf, len, "%Y-%m-%d %H:%M:%S", &tm_now);
+}
+
+static void
+deliver_to_user_channel(void*         pool,
+                        int64_t       user_id,
+                        int64_t       log_id,
+                        csilk_json_t* ch,
+                        const char*   title,
+                        const char*   markdown_body,
+                        char*         out_status,
+                        size_t        out_status_cap,
+                        char*         err_buf,
+                        size_t        err_cap)
+{
+    snprintf(out_status, out_status_cap, "none");
+    if (!ch || db_get_int(ch, "is_active") != 1) {
+        return;
+    }
+    const char* ct = csilk_json_get_string(ch, "channel_type");
+    if (!ct || !ct[0] || strcasecmp(ct, "none") == 0) {
+        return;
+    }
+    if (strcasecmp(ct, "wechat_ilink") == 0) {
+        int64_t push_id = 0;
+        if (im_push_usecase_enqueue(pool,
+                                    user_id,
+                                    log_id,
+                                    "scheduler",
+                                    (title && title[0]) ? title : "Minefolio 提醒",
+                                    markdown_body ? markdown_body : "",
+                                    1800,
+                                    &push_id,
+                                    err_buf,
+                                    err_cap) == 0) {
+            snprintf(out_status, out_status_cap, "queued");
+        } else {
+            snprintf(out_status, out_status_cap, "failed");
+        }
+        return;
+    }
+
+    push_channel_config_t cfg;
+    memset(&cfg, 0, sizeof(cfg));
+    const char* cn = csilk_json_get_string(ch, "channel_name");
+    const char* wu = csilk_json_get_string(ch, "webhook_url");
+    const char* sk = csilk_json_get_string(ch, "secret_key");
+    snprintf(cfg.channel_type, sizeof(cfg.channel_type), "%s", ct);
+    if (cn) {
+        snprintf(cfg.channel_name, sizeof(cfg.channel_name), "%s", cn);
+    }
+    if (wu) {
+        snprintf(cfg.webhook_url, sizeof(cfg.webhook_url), "%s", wu);
+    }
+    if (sk) {
+        snprintf(cfg.secret_key, sizeof(cfg.secret_key), "%s", sk);
+    }
+    int prc = wechat_push_service_send(
+        &cfg, (title && title[0]) ? title : "Minefolio 提醒", markdown_body, err_buf, err_cap);
+    snprintf(out_status, out_status_cap, "%s", prc == 0 ? "sent" : "failed");
 }
 
 static void
@@ -519,61 +580,228 @@ run_job_task(void* arg)
         snprintf(output_summary, sizeof(output_summary), "任务执行完成");
     }
 
-    /* 4. Deliver via WeChat Push Notification if configured */
-    char notif_status[16] = "none";
-    char err_buf[256];
-    err_buf[0] = '\0';
-
-    if ((!is_ai_job || ai_slot_acquired) && delivery_channel &&
-        strcmp(delivery_channel, "silent_db") != 0) {
-        csilk_json_t* ch = mf_scheduler_repo_get_user_channel(ctx->pool, ctx->user_id);
-        if (ch && db_get_int(ch, "is_active") == 1) {
-            push_channel_config_t cfg;
-            memset(&cfg, 0, sizeof(cfg));
-            const char* ct = csilk_json_get_string(ch, "channel_type");
-            const char* cn = csilk_json_get_string(ch, "channel_name");
-            const char* wu = csilk_json_get_string(ch, "webhook_url");
-            const char* sk = csilk_json_get_string(ch, "secret_key");
-
-            if (ct) {
-                snprintf(cfg.channel_type, sizeof(cfg.channel_type), "%s", ct);
-            }
-            if (cn) {
-                snprintf(cfg.channel_name, sizeof(cfg.channel_name), "%s", cn);
-            }
-            if (wu) {
-                snprintf(cfg.webhook_url, sizeof(cfg.webhook_url), "%s", wu);
-            }
-            if (sk) {
-                snprintf(cfg.secret_key, sizeof(cfg.secret_key), "%s", sk);
-            }
-
-            int prc = wechat_push_service_send(&cfg,
-                                               job_name ? job_name : "Minefolio 提醒",
-                                               output_markdown,
-                                               err_buf,
-                                               sizeof(err_buf));
-            if (prc == 0) {
-                strcpy(notif_status, "sent");
-            } else {
-                strcpy(notif_status, "failed");
-            }
-        }
-        if (ch) {
-            csilk_json_free(ch);
-        }
-    }
-
-    /* 5. Complete log */
+    /* 4 & 5. Deliver notification & finalize job_run_logs (queued written BEFORE enqueue) */
     clock_gettime(CLOCK_MONOTONIC, &ts_end);
     int duration_ms = (int)((ts_end.tv_sec - ts_start.tv_sec) * 1000 +
                             (ts_end.tv_nsec - ts_start.tv_nsec) / 1000000);
 
     const char* run_status = (is_ai_job && !ai_slot_acquired) ? "skipped" : "success";
-    const char* error_field = (is_ai_job && !ai_slot_acquired) ? "ai_concurrency_limit" : err_buf;
+    int64_t     job_user_id = db_get_int(job, "user_id");
+    char        notif_status[16] = "none";
+    char        err_buf[256];
+    err_buf[0] = '\0';
 
-    mf_scheduler_repo_log_complete(
-        ctx->pool, log_id, run_status, duration_ms, output_summary, error_field, notif_status);
+    bool should_deliver = (!is_ai_job || ai_slot_acquired) && delivery_channel &&
+                          strcmp(delivery_channel, "silent_db") != 0;
+
+    if (should_deliver && job_user_id == 0 && ctx->user_id == 0) {
+        csilk_json_t* channels = mf_scheduler_repo_list_active_channels(ctx->pool);
+        int           sync_sent = 0, sync_failed = 0, ilink_count = 0;
+        size_t        nch = channels ? csilk_json_array_size(channels) : 0;
+
+        /* Pass 1: synchronous webhooks outside DB transaction so slow HTTP I/O never pins DB */
+        for (size_t i = 0; i < nch; ++i) {
+            csilk_json_t* ch = csilk_json_array_get(channels, i);
+            const char*   ct = csilk_json_get_string(ch, "channel_type");
+            if (!ct || !ct[0] || strcasecmp(ct, "none") == 0) {
+                continue;
+            }
+            if (strcasecmp(ct, "wechat_ilink") == 0) {
+                ilink_count++;
+                continue;
+            }
+            char st[16] = "none";
+            char ch_err[256] = {0};
+            deliver_to_user_channel(ctx->pool,
+                                    db_get_int(ch, "user_id"),
+                                    log_id,
+                                    ch,
+                                    job_name,
+                                    output_markdown,
+                                    st,
+                                    sizeof(st),
+                                    ch_err,
+                                    sizeof(ch_err));
+            if (strcmp(st, "sent") == 0) {
+                sync_sent++;
+            } else if (strcmp(st, "failed") == 0) {
+                sync_failed++;
+                if (!err_buf[0] && ch_err[0]) {
+                    snprintf(err_buf, sizeof(err_buf), "%s", ch_err);
+                }
+            }
+        }
+
+        if (ilink_count > 0) {
+            /* Pass 2 + log completion inside one atomic DB tx so gateway cannot ack early */
+            db_tx_scope_t scope = {0};
+            bool          in_scope =
+                (db_tx_scope_begin((csilk_db_pool_t*)ctx->pool, "sched_ilink_bc", &scope) == 0);
+            bool tx_ok = false;
+
+            if (in_scope) {
+                int ilink_enqueued = 0, ilink_failed = 0;
+                for (size_t i = 0; i < nch; ++i) {
+                    csilk_json_t* ch = csilk_json_array_get(channels, i);
+                    const char*   ct = csilk_json_get_string(ch, "channel_type");
+                    if (!ct || strcasecmp(ct, "wechat_ilink") != 0) {
+                        continue;
+                    }
+                    char st[16] = "none";
+                    char ch_err[256] = {0};
+                    deliver_to_user_channel(ctx->pool,
+                                            db_get_int(ch, "user_id"),
+                                            log_id,
+                                            ch,
+                                            job_name,
+                                            output_markdown,
+                                            st,
+                                            sizeof(st),
+                                            ch_err,
+                                            sizeof(ch_err));
+                    if (strcmp(st, "queued") == 0) {
+                        ilink_enqueued++;
+                    } else {
+                        ilink_failed++;
+                        if (!err_buf[0] && ch_err[0]) {
+                            snprintf(err_buf, sizeof(err_buf), "%s", ch_err);
+                        }
+                    }
+                }
+
+                int total_fail = sync_failed + ilink_failed;
+                int sc_rc = 0;
+                if (sync_sent > 0 || total_fail > 0) {
+                    sc_rc = mf_scheduler_repo_log_set_sync_counts(
+                        ctx->pool, log_id, sync_sent, total_fail);
+                }
+
+                if (ilink_enqueued > 0) {
+                    snprintf(notif_status, sizeof(notif_status), "queued");
+                } else if (sync_sent > 0 && total_fail > 0) {
+                    snprintf(notif_status, sizeof(notif_status), "partial");
+                } else if (sync_sent > 0) {
+                    snprintf(notif_status, sizeof(notif_status), "sent");
+                } else if (total_fail > 0) {
+                    snprintf(notif_status, sizeof(notif_status), "failed");
+                }
+
+                if (sc_rc == 0 &&
+                    mf_scheduler_repo_log_complete(ctx->pool,
+                                                   log_id,
+                                                   run_status,
+                                                   duration_ms,
+                                                   output_summary,
+                                                   err_buf,
+                                                   notif_status) == 0 &&
+                    db_tx_scope_commit((csilk_db_pool_t*)ctx->pool, &scope) == 0) {
+                    tx_ok = true;
+                } else {
+                    if (in_scope) {
+                        db_tx_scope_rollback((csilk_db_pool_t*)ctx->pool, &scope);
+                    }
+                    if (!err_buf[0]) {
+                        snprintf(err_buf, sizeof(err_buf), "提交 iLink 广播推送事务失败");
+                    }
+                }
+            } else if (!err_buf[0]) {
+                snprintf(err_buf, sizeof(err_buf), "开启 iLink 广播推送事务失败");
+            }
+
+            if (!tx_ok) {
+                mf_scheduler_repo_log_complete(
+                    ctx->pool, log_id, run_status, duration_ms, output_summary, err_buf, "failed");
+            }
+        } else {
+            if (sync_sent > 0 || sync_failed > 0) {
+                mf_scheduler_repo_log_set_sync_counts(ctx->pool, log_id, sync_sent, sync_failed);
+            }
+            if (sync_sent > 0 && sync_failed > 0) {
+                snprintf(notif_status, sizeof(notif_status), "partial");
+            } else if (sync_sent > 0) {
+                snprintf(notif_status, sizeof(notif_status), "sent");
+            } else if (sync_failed > 0) {
+                snprintf(notif_status, sizeof(notif_status), "failed");
+            }
+            mf_scheduler_repo_log_complete(
+                ctx->pool, log_id, run_status, duration_ms, output_summary, err_buf, notif_status);
+        }
+        if (channels) {
+            csilk_json_free(channels);
+        }
+    } else {
+        csilk_json_t* ch =
+            should_deliver ? mf_scheduler_repo_get_user_channel(ctx->pool, ctx->user_id) : NULL;
+        const char* ct = ch ? csilk_json_get_string(ch, "channel_type") : NULL;
+        bool        is_ilink =
+            ch && db_get_int(ch, "is_active") == 1 && ct && strcasecmp(ct, "wechat_ilink") == 0;
+        const char* error_field =
+            (is_ai_job && !ai_slot_acquired) ? "ai_concurrency_limit" : err_buf;
+
+        if (is_ilink) {
+            db_tx_scope_t scope = {0};
+            bool          in_scope =
+                (db_tx_scope_begin((csilk_db_pool_t*)ctx->pool, "sched_ilink_tx", &scope) == 0);
+            bool tx_ok = false;
+
+            if (in_scope) {
+                char st[16] = "none";
+                deliver_to_user_channel(ctx->pool,
+                                        ctx->user_id,
+                                        log_id,
+                                        ch,
+                                        job_name,
+                                        output_markdown,
+                                        st,
+                                        sizeof(st),
+                                        err_buf,
+                                        sizeof(err_buf));
+                if (mf_scheduler_repo_log_complete(
+                        ctx->pool, log_id, run_status, duration_ms, output_summary, err_buf, st) ==
+                        0 &&
+                    db_tx_scope_commit((csilk_db_pool_t*)ctx->pool, &scope) == 0) {
+                    tx_ok = true;
+                } else {
+                    if (in_scope) {
+                        db_tx_scope_rollback((csilk_db_pool_t*)ctx->pool, &scope);
+                    }
+                    if (!err_buf[0]) {
+                        snprintf(err_buf, sizeof(err_buf), "提交 iLink 推送事务失败");
+                    }
+                }
+            } else if (!err_buf[0]) {
+                snprintf(err_buf, sizeof(err_buf), "开启 iLink 推送事务失败");
+            }
+
+            if (!tx_ok) {
+                mf_scheduler_repo_log_complete(
+                    ctx->pool, log_id, run_status, duration_ms, output_summary, err_buf, "failed");
+            }
+        } else {
+            if (ch) {
+                deliver_to_user_channel(ctx->pool,
+                                        ctx->user_id,
+                                        log_id,
+                                        ch,
+                                        job_name,
+                                        output_markdown,
+                                        notif_status,
+                                        sizeof(notif_status),
+                                        err_buf,
+                                        sizeof(err_buf));
+            }
+            mf_scheduler_repo_log_complete(ctx->pool,
+                                           log_id,
+                                           run_status,
+                                           duration_ms,
+                                           output_summary,
+                                           error_field,
+                                           notif_status);
+        }
+        if (ch) {
+            csilk_json_free(ch);
+        }
+    }
 
     /* 6. Calculate next run and update scheduled_jobs table */
     char next_run_buf[64];
@@ -775,6 +1003,7 @@ scheduler_engine_thread(void* arg)
                 }
                 csilk_json_free(rows);
             }
+            im_push_usecase_expire_stale(s_db_pool);
         }
 
         /* 2. Compute dynamic sleep interval (capped at 60s for clock skew / safety) */
