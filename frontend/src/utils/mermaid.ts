@@ -654,7 +654,7 @@ export async function ensureMermaid(): Promise<MermaidApi | null> {
       api.initialize({
         startOnLoad: false,
         suppressErrorRendering: true, // 严禁 Mermaid 直接将错误 SVG 写入 DOM
-        securityLevel: 'loose',
+        securityLevel: 'strict',
         theme: 'base',
         themeVariables: getMermaidThemeVariables(theme),
         themeCSS: getMermaidThemeCss(theme),
@@ -815,7 +815,6 @@ export function sanitizeMermaidSvg(rawSvg: string): string {
       'xmlns:xlink',
       'xlink:href',
     ],
-    HTML_INTEGRATION_POINTS: { foreignobject: true, foreignObject: true },
     FORBID_TAGS: ['script', 'iframe', 'object', 'embed'],
     FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover'],
   })
@@ -846,6 +845,7 @@ async function executeRender(id: string, code: string, options?: RenderOptions):
   const curveType = options?.curve || 'linear'
   mermaid.initialize({
     ...currentConfig,
+    securityLevel: 'strict',
     theme: 'base',
     themeVariables: getMermaidThemeVariables(themeMode),
     themeCSS: getMermaidThemeCss(themeMode),

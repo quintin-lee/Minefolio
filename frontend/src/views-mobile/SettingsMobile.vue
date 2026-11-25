@@ -95,7 +95,10 @@
       <p class="card-hint">控制金额是否全局显示</p>
       <div class="display-row">
         <span class="display-label">显示金额</span>
-        <el-switch v-model="displaySettings.showAmount" @change="handleShowAmountToggle" />
+        <el-switch
+          :model-value="displaySettings.showAmount"
+          @change="(val) => displaySettings.set(Boolean(val))"
+        />
       </div>
     </div>
 
@@ -152,10 +155,6 @@ const sync = useSyncStore()
 const auth = useAuthStore()
 const theme = useThemeStore()
 const displaySettings = useDisplaySettingsStore()
-
-function handleShowAmountToggle() {
-  displaySettings.toggle()
-}
 const { serverUrl, isCustom, setUrl, resetUrl, testConnection, isValidServerUrl, normalizeServerUrl } = useServerUrl()
 
 const inputUrl = ref(serverUrl.value)

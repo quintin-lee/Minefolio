@@ -32,7 +32,10 @@
       </el-form-item>
 
       <el-form-item :label="$t('settings.showAmount')">
-        <el-switch v-model="displaySettings.showAmount" @change="onShowAmountChange" />
+        <el-switch
+          :model-value="displaySettings.showAmount"
+          @change="(val) => displaySettings.set(Boolean(val))"
+        />
         <span class="hint-text">{{ $t('settings.amountMaskHintLabel') }}</span>
       </el-form-item>
     </el-form>
@@ -47,10 +50,6 @@ import { useDisplaySettingsStore } from '@/stores/display-settings'
 
 const theme = useThemeStore()
 const displaySettings = useDisplaySettingsStore()
-
-function onShowAmountChange() {
-  displaySettings.toggle()
-}
 
 watch(() => theme.mode, (newMode) => {
   theme.setMode(newMode)

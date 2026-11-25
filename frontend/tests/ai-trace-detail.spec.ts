@@ -26,7 +26,7 @@ describe('AiTraceDetail Drawer Redesign', () => {
 
   it('supports markdown rendering and raw view mode toggle for model output', () => {
     // 支持 Markdown 渲染与纯文本切换
-    expect(componentSource).toMatch(/marked/i)
+    expect(componentSource).toMatch(/renderSafeMarkdown|marked/i)
     expect(componentSource).toMatch(/viewMode|view-toggle|isMarkdown/i)
   })
 

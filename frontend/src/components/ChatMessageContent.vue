@@ -261,8 +261,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch, defineAsyncComponent, onUnmounted, nextTick } from 'vue'
-import { marked } from 'marked'
-import DOMPurify from 'dompurify'
+import { renderSafeMarkdown } from '@/utils/markdown'
 import { Icon } from '@iconify/vue'
 import { useFinancialEntities } from '@/composables/useFinancialEntities'
 import ActionCard from '@/components/ActionCard.vue'
@@ -711,12 +710,7 @@ function renderMarkdown(text?: string): string {
   if (!text) return ''
   let html = mdCache.get(text)
   if (html === undefined) {
-    try {
-      const rawHtml = marked.parse(text, { async: false, breaks: true }) as string
-      html = DOMPurify.sanitize(rawHtml)
-    } catch {
-      html = DOMPurify.sanitize(text.replace(/</g, '&lt;').replace(/>/g, '&gt;'))
-    }
+    html = renderSafeMarkdown(text)
     if (mdCache.size >= MD_CACHE_LIMIT) {
       const firstKey = mdCache.keys().next().value as string
       mdCache.delete(firstKey)

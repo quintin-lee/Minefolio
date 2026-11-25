@@ -119,8 +119,7 @@
 
 <script setup lang="ts">
 import { computed, defineAsyncComponent } from 'vue'
-import { marked } from 'marked'
-import DOMPurify from 'dompurify'
+import { renderSafeMarkdown } from '@/utils/markdown'
 import { Icon } from '@iconify/vue'
 import ActionCard from '@/components/ActionCard.vue'
 import WorkflowProgressCard from '@/components/WorkflowProgressCard.vue'
@@ -175,13 +174,7 @@ function handleTabRemove(tabId: string | number) {
 }
 
 function renderMarkdown(text?: string): string {
-  if (!text) return ''
-  try {
-    const rawHtml = marked.parse(text, { async: false, breaks: true }) as string
-    return DOMPurify.sanitize(rawHtml)
-  } catch {
-    return DOMPurify.sanitize(text.replace(/</g, '&lt;').replace(/>/g, '&gt;'))
-  }
+  return renderSafeMarkdown(text)
 }
 </script>
 

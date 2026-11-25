@@ -54,7 +54,6 @@ import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import { t } from '@/utils/locale'
-import { encryptText } from '@/utils/crypto'
 import type { FormInstance, FormRules } from 'element-plus'
 
 const auth = useAuthStore()
@@ -90,20 +89,21 @@ const rules: FormRules = {
 }
 
 async function submit() {
-  if (!formRef.value) return
+  if (!formRef.value || loading.value) return
   await formRef.value.validate(async (valid: boolean) => {
-    if (!valid) return
+    if (!valid || loading.value) return
     try {
       loading.value = true
-      const old_enc = await encryptText(form.old_password)
-      const new_enc = await encryptText(form.new_password)
-      await auth.changePassword(old_enc, new_enc)
+      await auth.changePassword(form.old_password, form.new_password)
       ElMessage.success(t('settings.passwordSuccess'))
       form.old_password = ''
       form.new_password = ''
       form.confirmPassword = ''
-    } catch {
-      // error handled by http interceptor
+    } catch (err: any) {
+      if (!err?.response) {
+        const msgKey = t('settings.passwordFailed')
+        ElMessage.error(err?.message || (msgKey !== 'settings.passwordFailed' ? msgKey : '密码修改失败'))
+      }
     } finally {
       loading.value = false
     }

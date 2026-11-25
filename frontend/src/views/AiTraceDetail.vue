@@ -308,8 +308,7 @@
 import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import { ElMessage } from 'element-plus'
-import { marked } from 'marked'
-import DOMPurify from 'dompurify'
+import { renderSafeMarkdown } from '@/utils/markdown'
 import { getTrace } from '@/api/ai-trace'
 import type { AiTraceDetail } from '@/api/ai-trace'
 
@@ -381,18 +380,7 @@ const parsedMessages = computed(() => {
 const renderedOutput = computed(() => {
   const content = detail.value?.output_content
   if (!content) return '<p class="text-muted">(空回复)</p>'
-  try {
-    const rawHtml = marked.parse(content, { async: false, breaks: true }) as string
-    return DOMPurify.sanitize(rawHtml)
-  } catch {
-    const escaped = content
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;')
-    return `<pre>${escaped}</pre>`
-  }
+  return renderSafeMarkdown(content)
 })
 
 const formattedJson = computed(() => {

@@ -173,8 +173,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Icon } from '@iconify/vue'
-import { marked } from 'marked'
-import DOMPurify from 'dompurify'
+import { renderSafeMarkdown } from '@/utils/markdown'
 import { schedulerApi } from '@/api/scheduler'
 import type { JobRunLog, ScheduledJob } from '@/types'
 
@@ -305,15 +304,7 @@ const getNotifyStatusLabel = (status?: string) => {
   }
 }
 
-const renderMarkdown = (text?: string) => {
-  if (!text) return ''
-  try {
-    const raw = marked.parse(text, { async: false, breaks: true }) as string
-    return DOMPurify.sanitize(raw)
-  } catch {
-    return DOMPurify.sanitize(text.replace(/</g, '&lt;').replace(/>/g, '&gt;'))
-  }
-}
+const renderMarkdown = (text?: string) => renderSafeMarkdown(text)
 
 defineExpose({
   open

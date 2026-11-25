@@ -8,16 +8,19 @@ describe('Task 1 Security Hardening', () => {
     sessionStorage.clear()
   })
 
-  it('NewsPulse sanitizes rendered markdown via DOMPurify', () => {
+  it('NewsPulse sanitizes rendered markdown via DOMPurify / renderSafeMarkdown', () => {
     const src = readFileSync(resolve(process.cwd(), 'src/views/NewsPulse.vue'), 'utf8')
-    expect(src).toMatch(/import DOMPurify from 'dompurify'/)
-    expect(src).toMatch(/DOMPurify\.sanitize/)
+    const mdSrc = readFileSync(resolve(process.cwd(), 'src/utils/markdown.ts'), 'utf8')
+    expect(src).toMatch(/renderSafeMarkdown|DOMPurify\.sanitize/)
+    expect(mdSrc).toMatch(/import DOMPurify from 'dompurify'/)
+    expect(mdSrc).toMatch(/DOMPurify\.sanitize/)
   })
 
   it('AiTraceDetail escapes HTML in markdown fallback <pre>', () => {
     const src = readFileSync(resolve(process.cwd(), 'src/views/AiTraceDetail.vue'), 'utf8')
+    const mdSrc = readFileSync(resolve(process.cwd(), 'src/utils/markdown.ts'), 'utf8')
     expect(src).not.toMatch(/return `<pre>\$\{content\}<\/pre>`/)
-    expect(src).toMatch(/replace\(\/&\/g,\s*'&amp;'\)/)
+    expect(src + mdSrc).toMatch(/replace\(\/&\/g,\s*'&amp;'\)/)
   })
 
   it('main-mobile renders bootstrap errors via textContent instead of innerHTML', () => {
