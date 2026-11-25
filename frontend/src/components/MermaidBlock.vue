@@ -217,11 +217,17 @@
   </div>
 </template>
 
+<script lang="ts">
+const svgCache = new Map<string, string>()
+const SVG_CACHE_LIMIT = 80
+</script>
+
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, watch, onUnmounted, nextTick } from 'vue'
 import { Icon } from '@iconify/vue'
 import { ElMessage } from 'element-plus'
 import { useThemeStore } from '@/stores/theme'
+import { copyTextToClipboard } from '@/utils/clipboard'
 import {
   detectDiagramType,
   renderMermaidSvg,
@@ -316,15 +322,15 @@ function toggleViewMode() {
 }
 
 async function handleCopyCode() {
-  try {
-    await navigator.clipboard.writeText(props.code)
+  const ok = await copyTextToClipboard(props.code)
+  if (ok) {
     copiedCode.value = true
     ElMessage.success('Mermaid 源码已复制')
     if (copyTimer) clearTimeout(copyTimer)
     copyTimer = window.setTimeout(() => {
       copiedCode.value = false
     }, 2000)
-  } catch {
+  } else {
     ElMessage.error('复制失败，请手动复制')
   }
 }
@@ -428,11 +434,9 @@ function endPan() {
 
 let streamDebounceTimer: number | null = null
 let renderSeq = 0
-const svgCache = new Map<string, string>()
-const SVG_CACHE_LIMIT = 40
 
 function cacheKeyForRender(code: string, curve: string, theme: string): string {
-  return `${theme}::${curve}::${code.length}::${code.slice(0, 200)}`
+  return `${theme}::${curve}::${code}`
 }
 
 watch(
@@ -454,10 +458,6 @@ watch(
   },
   { immediate: true }
 )
-
-onMounted(() => {
-  renderDiagram(Boolean(props.isStreaming))
-})
 
 onUnmounted(() => {
   if (copyTimer) {

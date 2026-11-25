@@ -301,7 +301,24 @@
                 v-for="(msg, idx) in chat.messages"
                 :key="msg.id"
                 :ref="el => { if (idx === chat.messages.length - 1) onLastMessageRef(el as HTMLElement | null) }"
-                v-memo="[msg.content, msg.thinking_content || '', msg.role, chat.isStreaming && idx === chat.messages.length - 1 ? 1 : 0, msg.workflowData?.status || '', msg.tool_calls?.length || 0, msg.tool_calls?.[msg.tool_calls.length - 1]?.result?.length || 0, msg.workflowConfig ? 1 : 0, msg.error || '', msg.usage ? JSON.stringify(msg.usage) : '']"
+                v-memo="[
+                  msg.content,
+                  msg.thinking_content || '',
+                  msg.role,
+                  idx === chat.messages.length - 1 ? 1 : 0,
+                  chat.isStreaming && idx === chat.messages.length - 1 ? 1 : 0,
+                  editingUserIdx === idx ? editDraft : null,
+                  msg.workflowData?.status || '',
+                  msg.workflowData?.progress ?? -1,
+                  msg.workflowData?.steps?.map(s => s.status).join(',') || '',
+                  msg.tool_calls?.length || 0,
+                  msg.tool_calls?.[msg.tool_calls.length - 1]?.result?.length || 0,
+                  msg.workflowConfig ? 1 : 0,
+                  msg.error || '',
+                  msg.usage?.total_tokens ?? -1,
+                  extractedSegmentIdMap[msg.id]?.length ?? 0,
+                  idx === chat.messages.length - 1 ? followUpSuggestions.length : 0,
+                ]"
                 class="message-row"
                 :class="[msg.role, { 'streaming-active-row': chat.isStreaming && idx === chat.messages.length - 1 }]"
               >
@@ -332,7 +349,7 @@
                     </template>
                   </template>
                   <template v-else>
-                    <div v-if="!msg.content && chat.isStreaming && !msg.workflowData && !msg.workflowConfig && !msg.thinking_content" class="message-content thinking">
+                    <div v-if="!msg.content && chat.isStreaming && !msg.workflowData && !msg.workflowConfig && !msg.thinking_content && !msg.tool_calls?.length" class="message-content thinking">
                       <span class="pulse-dot"></span>
                       <span class="pulse-dot"></span>
                       <span class="pulse-dot"></span>
@@ -476,6 +493,7 @@
               ref="textareaRef"
               v-model="inputText"
               :disabled="chat.isStreaming || isScanningReceipt"
+              maxlength="2000"
               placeholder="输入财务咨询、收支分析，或按 Ctrl+V 粘贴票据截图... (Enter 发送，Shift+Enter 换行)"
               rows="1"
               @input="handleInput"
@@ -550,6 +568,7 @@
         @update:active-tab-id="id => activeTabId = id"
         @remove-tab="handleRemovePanelTab"
         @resize-start="startPanelResize"
+        @action-executed="handlePanelActionExecuted"
       />
 
       <!-- Mobile Bottom Sheet Drawer for Analysis Panel -->
@@ -575,6 +594,7 @@
             @close="panelVisible = false"
             @update:active-tab-id="id => activeTabId = id"
             @remove-tab="handleRemovePanelTab"
+            @action-executed="handlePanelActionExecuted"
           />
         </div>
       </el-drawer>
@@ -614,6 +634,7 @@ import { useChatAttachments } from '@/composables/chat/useChatAttachments'
 import { useChatAnalysisPanel } from '@/composables/chat/useChatAnalysisPanel'
 import { buildSessionMarkdown, buildTranscriptMarkdown, downloadMarkdownFile } from '@/composables/chat/useChatExport'
 import { localToday } from '@/utils/format'
+import { isMobileMode } from '@/utils/http'
 import { isDirectRunWorkflow } from '@/utils/workflow-meta'
 import type { WorkflowDef } from '@/types'
 
@@ -621,6 +642,10 @@ const router = useRouter()
 const chat = useChatStore()
 
 function goToTraces() {
+  if (isMobileMode()) {
+    ElMessage.info('请在桌面端查看 AI 审计追踪')
+    return
+  }
   router.push('/ai-traces')
 }
 
@@ -640,11 +665,20 @@ const {
 } = useChatEntityPopover({
   onNavigate: (payload) => {
     router.push({
-      path: '/assets',
+      path: isMobileMode() ? '/m/assets' : '/assets',
       query: payload.type === 'asset' ? { asset_id: payload.id } : { account_id: payload.id },
     })
   },
 })
+
+function handlePanelActionExecuted(payload: { messageId?: number; draftToken: string }) {
+  const msg = payload.messageId
+    ? chat.messages.find((m) => m.id === payload.messageId)
+    : chat.messages.find((m) => payload.draftToken && m.content?.includes(payload.draftToken))
+  if (msg) {
+    handleActionExecuted(msg, { draftToken: payload.draftToken })
+  }
+}
 
 function handleActionExecuted(msg: any, payload: { draftToken: string }) {
   if (!msg || !payload?.draftToken) return
@@ -1459,6 +1493,10 @@ function handleQuickPrompt(promptText: string) {
 async function handleSend() {
   if (chat.isStreaming || isScanningReceipt.value) return
   const rawText = inputText.value.trim()
+  if (rawText.length > 2000) {
+    ElMessage.warning('输入内容不能超过 2000 字')
+    return
+  }
   const img = attachedImage.value
   if (!rawText && !img) return
 
@@ -1586,8 +1624,10 @@ watch(() => chat.isStreaming, (streaming, prevStreaming) => {
 
 function onGlobalKeydown(e: KeyboardEvent) {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
-    e.preventDefault()
-    textareaRef.value?.focus()
+    if (isMobileMode()) {
+      e.preventDefault()
+      textareaRef.value?.focus()
+    }
   } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') {
     e.preventDefault()
     handleNewChat()
@@ -1596,12 +1636,16 @@ function onGlobalKeydown(e: KeyboardEvent) {
   }
 }
 
+let isUnmounted = false
+
 onMounted(async () => {
   loadPanelWidth()
   checkMobile()
   window.addEventListener('resize', checkMobile)
+  window.addEventListener('keydown', onGlobalKeydown)
   loadEntities()
   await Promise.allSettled([fetchSessions(), fetchSettings(), fetchModels()])
+  if (isUnmounted) return
   if (chat.settings?.default_provider) {
     chat.setModel(chat.currentModel, chat.settings.default_provider)
   }
@@ -1613,16 +1657,17 @@ onMounted(async () => {
   if (!chat.currentSessionId) handleNewChat()
   loadDraft()
   nextTick(() => {
+    if (isUnmounted) return
     scrollToBottom(false)
     setupInfiniteScroll()
     setupInputAreaObserver()
     setupContainerResizeObserver()
     textareaRef.value?.focus()
   })
-  window.addEventListener('keydown', onGlobalKeydown)
 })
 
 onUnmounted(() => {
+  isUnmounted = true
   window.removeEventListener('keydown', onGlobalKeydown)
   window.removeEventListener('resize', checkMobile)
   if (scrollObserver) { scrollObserver.disconnect(); scrollObserver = null }

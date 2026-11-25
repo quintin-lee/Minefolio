@@ -15,9 +15,15 @@
   </div>
 </template>
 
+<script lang="ts">
+const highlightCache = new Map<string, string>()
+const HIGHLIGHT_CACHE_LIMIT = 120
+</script>
+
 <script setup lang="ts">
 import { computed, ref, onUnmounted } from 'vue'
 import { Icon } from '@iconify/vue'
+import { copyTextToClipboard } from '@/utils/clipboard'
 import hljs from 'highlight.js/lib/core'
 import 'highlight.js/styles/atom-one-dark.css'
 import javascript from 'highlight.js/lib/languages/javascript'
@@ -61,11 +67,8 @@ const props = defineProps<{
 const copied = ref(false)
 let copyTimer: ReturnType<typeof setTimeout> | null = null
 
-const highlightCache = new Map<string, string>()
-const HIGHLIGHT_CACHE_LIMIT = 120
-
 function cacheKey(code: string, lang: string): string {
-  return `${lang}::${code.length}::${code.slice(0, 120)}`
+  return `${lang}::${code}`
 }
 
 const displayLang = computed(() => {
@@ -119,15 +122,13 @@ const highlightedHtml = computed(() => {
 })
 
 async function copyCode() {
-  try {
-    await navigator.clipboard.writeText(props.code)
+  const ok = await copyTextToClipboard(props.code)
+  if (ok) {
     copied.value = true
     if (copyTimer) clearTimeout(copyTimer)
     copyTimer = setTimeout(() => {
       copied.value = false
     }, 2000)
-  } catch {
-    // fallback or ignore
   }
 }
 

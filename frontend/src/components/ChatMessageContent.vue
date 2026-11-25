@@ -259,6 +259,10 @@
   </div>
 </template>
 
+<script lang="ts">
+const sharedMdCache = new Map<string, string>()
+</script>
+
 <script setup lang="ts">
 import { computed, ref, watch, defineAsyncComponent, onUnmounted, nextTick } from 'vue'
 import { renderSafeMarkdown } from '@/utils/markdown'
@@ -686,8 +690,8 @@ interface Segment {
 
 const showTrailingCursor = computed(() => props.isStreaming && props.enableBuffer !== false)
 
-const mdCache = new Map<string, string>()
-const MD_CACHE_LIMIT = 80
+const MD_CACHE_LIMIT = 120
+// Module-level shared markdown cache is managed via sharedMdCache below
 
 /**
  * 流式尾段轻量行内渲染：只处理粗体/斜体/行内代码/删除线，不跑完整 marked 解析。
@@ -708,14 +712,14 @@ function renderInlineMarkdown(text: string): string {
 
 function renderMarkdown(text?: string): string {
   if (!text) return ''
-  let html = mdCache.get(text)
+  let html = sharedMdCache.get(text)
   if (html === undefined) {
     html = renderSafeMarkdown(text)
-    if (mdCache.size >= MD_CACHE_LIMIT) {
-      const firstKey = mdCache.keys().next().value as string
-      mdCache.delete(firstKey)
+    if (sharedMdCache.size >= MD_CACHE_LIMIT) {
+      const firstKey = sharedMdCache.keys().next().value as string
+      sharedMdCache.delete(firstKey)
     }
-    mdCache.set(text, html)
+    sharedMdCache.set(text, html)
   }
   return linkFinancialEntities(html)
 }
@@ -781,7 +785,7 @@ const segments = computed<Segment[]>(() => {
       const fullMatch = match[0]
       const lang = (match[1] || '').trim().toLowerCase()
       const code = match[2] ?? ''
-      const hasClosed = fullMatch.endsWith('``')
+      const hasClosed = fullMatch.endsWith('```')
 
       let isAction = false
       let actionObj: ProposedAction | null = null

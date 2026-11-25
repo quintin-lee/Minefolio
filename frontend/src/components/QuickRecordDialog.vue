@@ -27,7 +27,7 @@
         />
       </el-form-item>
 
-      <el-form-item :label="form.recordType === 'transfer' ? '转出账户' : '扣款账户'" prop="asset_id">
+      <el-form-item :label="form.recordType === 'transfer' ? '转出账户' : (form.recordType === 'income' ? '收款账户' : '扣款账户')" prop="asset_id">
         <el-select v-model="form.asset_id" placeholder="选择资产账户" style="width: 100%" filterable>
           <el-option
             v-for="a in assets"
@@ -131,12 +131,16 @@ const form = reactive({
   note: ''
 })
 
-// 该对话框常驻在 Layout 中（非 v-if），仅在打开时把日期刷新为本地“今天”，
-// 避免跨天后仍显示挂载时的过期日期。
+// 该对话框常驻在 Layout 中（非 v-if），打开时刷新日期和资产列表，避免余额与日期过期。
 watch(visible, (val) => {
   if (val) {
     form.date = localToday()
+    loadAssets()
   }
+})
+
+watch(() => form.recordType, () => {
+  form.category_id = undefined
 })
 
 const rules: FormRules = {
@@ -177,12 +181,13 @@ function handleClose() {
 }
 
 async function handleSubmit() {
-  if (!formRef.value) return
+  if (!formRef.value || submitting.value) return
   await formRef.value.validate(async (valid) => {
-    if (!valid) return
+    if (!valid || submitting.value) return
     submitting.value = true
     try {
       if (form.recordType === 'transfer') {
+        const selectedAsset = assets.value.find(a => a.id === form.asset_id)
         // 转账：通过 transactions API
         await transactionsApi.create({
           asset_id: form.asset_id!,
@@ -190,7 +195,7 @@ async function handleSubmit() {
           transaction_type: 'transfer_out',
           amount: form.amount!,
           transaction_date: `${form.date} 12:00:00`,
-          currency: 'CNY',
+          currency: selectedAsset?.currency || 'CNY',
           category_id: 0,
           note: form.note || '账户间转账'
         })

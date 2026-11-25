@@ -35,8 +35,11 @@
             </el-tag>
             <span class="action-desc">{{ getActionDesc(action) }}</span>
           </div>
-          <div class="action-amount" :class="action.action_type === 'daily_expense' && action.data.type === 'income' ? 'amount-income' : 'amount-expense'">
-            {{ action.action_type === 'daily_expense' && action.data.type === 'income' ? '+' : '-' }}¥{{ Number(action.data.amount).toFixed(2) }}
+          <div
+            class="action-amount"
+            :class="action.action_type === 'transfer' ? 'amount-transfer' : (action.data.type === 'income' ? 'amount-income' : 'amount-expense')"
+          >
+            {{ action.action_type === 'transfer' ? '' : (action.data.type === 'income' ? '+' : '-') }}¥{{ Number(action.data.amount).toFixed(2) }}
           </div>
         </div>
       </div>
@@ -92,6 +95,7 @@ import { ElMessage } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import { confirmBatchActions } from '@/api/ai'
 import { useChatStore } from '@/stores/chat'
+import { useCategoryStore } from '@/stores/category'
 
 export interface BatchProposedAction {
   action_type: 'daily_expense' | 'transfer'
@@ -131,6 +135,7 @@ const emit = defineEmits<{
 const loading = ref(false)
 const cardStatus = ref<'pending' | 'executing' | 'executed' | 'cancelled'>(props.status || 'pending')
 const chatStore = useChatStore()
+const categoryStore = useCategoryStore()
 
 watch(
   () => props.status,
@@ -155,6 +160,7 @@ function getActionDesc(action: BatchProposedAction): string {
 
 const netTotal = computed(() => {
   return props.actions.reduce((sum, action) => {
+    if (action.action_type === 'transfer') return sum
     const amount = Number(action.data.amount) || 0
     if (action.action_type === 'daily_expense' && action.data.type === 'income') {
       return sum - amount
@@ -164,6 +170,7 @@ const netTotal = computed(() => {
 })
 
 async function handleConfirm() {
+  if (loading.value) return
   if (!props.draft_token) {
     ElMessage.error('该批量卡片缺少服务端签发的确认令牌，已阻止写入')
     return
@@ -209,6 +216,7 @@ async function handleConfirm() {
       throw new Error(res.message || res.error)
     }
 
+    categoryStore.invalidate()
     cardStatus.value = 'executed'
     ElMessage.success(`批量记账成功！共入库 ${props.actions.length} 条`)
     emit('executed')
@@ -381,6 +389,10 @@ function handleCancel() {
 
 .amount-income {
   color: #10b981;
+}
+
+.amount-transfer {
+  color: var(--mf-text-main);
 }
 
 .total-row {

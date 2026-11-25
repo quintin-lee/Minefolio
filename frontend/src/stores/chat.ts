@@ -335,7 +335,9 @@ export const useChatStore = defineStore('chat', () => {
       // Prepend older messages (they come newest-first from backend)
       messages.value = [...newMsgs.reverse(), ...messages.value]
     } finally {
-      loadingMoreMessages.value = false
+      if (seq === sessionSwitchSeq && currentSessionId.value === sid) {
+        loadingMoreMessages.value = false
+      }
     }
   }
 
@@ -389,16 +391,24 @@ export const useChatStore = defineStore('chat', () => {
 
   /** 当前活动的流式请求中断控制器 */
   let activeAbortController: AbortController | null = null
+  /** 当前活动的打字机写入器 */
+  let activeWriter: SmoothStreamWriter | null = null
 
   /**
    * 中断并终止当前正在进行的流式 AI 生成
    */
-  function abortCurrentStream() {
+  function abortCurrentStream(resetStreaming = true) {
     if (activeAbortController) {
       activeAbortController.abort()
       activeAbortController = null
     }
-    isStreaming.value = false
+    if (activeWriter) {
+      activeWriter.abort()
+      activeWriter = null
+    }
+    if (resetStreaming) {
+      isStreaming.value = false
+    }
   }
 
   /**
@@ -438,6 +448,8 @@ export const useChatStore = defineStore('chat', () => {
     loadedMessagePage.value = 1
     loadingMoreMessages.value = false
     enableTypewriterBuffer.value = true
+    pinnedSessionIds.value = []
+    pinnedWorkflowIds.value = [...DEFAULT_PINNED_IDS]
   }
 
   /**
@@ -484,13 +496,14 @@ export const useChatStore = defineStore('chat', () => {
     }
     messages.value.push(assistantMsg)
     assistantMsg = messages.value[messages.value.length - 1]!
-    abortCurrentStream()
+    abortCurrentStream(false)
     activeAbortController = new AbortController()
     const signal = activeAbortController.signal
     const myCtrl = activeAbortController /* 捕获控制器身份，finally 据此判断是否仍为当前流 */
+    isStreaming.value = true
     enableTypewriterBuffer.value = true
-    // isStreaming 已在入口同步置位
     const writer = new SmoothStreamWriter(assistantMsg)
+    activeWriter = writer
     try {
       for await (const chunk of chatStream({
         session_id: currentSessionId.value ?? undefined,
@@ -538,7 +551,7 @@ export const useChatStore = defineStore('chat', () => {
       await writer.finish()
     } catch (err: any) {
       if (err?.name !== 'AbortError') { writer.flushNow(); assistantMsg.error = formatStreamError(err, '请求发生异常') }
-    } finally { writer.flushNow(); enableTypewriterBuffer.value = false; if (activeAbortController === myCtrl) { isStreaming.value = false; activeAbortController = null } }
+    } finally { if (activeWriter === writer) activeWriter = null; writer.flushNow(); enableTypewriterBuffer.value = false; if (activeAbortController === myCtrl) { isStreaming.value = false; activeAbortController = null } }
   }
 
   /**
@@ -575,14 +588,14 @@ export const useChatStore = defineStore('chat', () => {
     messages.value.push(assistantMsg)
     assistantMsg = messages.value[messages.value.length - 1]!
 
-    abortCurrentStream()
+    abortCurrentStream(false)
     activeAbortController = new AbortController()
     const signal = activeAbortController.signal
     const myCtrl = activeAbortController /* 捕获控制器身份，finally 据此判断是否仍为当前流 */
-
+    isStreaming.value = true
     enableTypewriterBuffer.value = true
-    // isStreaming 已在入口同步置位
     const writer = new SmoothStreamWriter(assistantMsg)
+    activeWriter = writer
 
     try {
       for await (const chunk of chatStream({
@@ -633,6 +646,7 @@ export const useChatStore = defineStore('chat', () => {
         assistantMsg.error = formatStreamError(err, '请求发生异常')
       }
     } finally {
+      if (activeWriter === writer) activeWriter = null
       writer.flushNow()
       enableTypewriterBuffer.value = false
       if (activeAbortController === myCtrl) {
@@ -725,18 +739,20 @@ export const useChatStore = defineStore('chat', () => {
     messages.value.push(assistantMsg)
     assistantMsg = messages.value[messages.value.length - 1]!
 
-    abortCurrentStream()
+    abortCurrentStream(false)
     activeAbortController = new AbortController()
     const signal = activeAbortController.signal
     const myCtrl = activeAbortController /* 捕获控制器身份，finally 据此判断是否仍为当前流 */
+    const originSessionId = currentSessionId.value
 
+    isStreaming.value = true
     enableTypewriterBuffer.value = true
-    // isStreaming 已由 sendMessage 入口同步置位
     const writer = new SmoothStreamWriter(assistantMsg)
+    activeWriter = writer
 
     try {
       for await (const chunk of chatStream({
-        session_id: currentSessionId.value ?? undefined,
+        session_id: originSessionId ?? undefined,
         content,
         model: currentModel.value,
         provider: currentProvider.value,
@@ -778,13 +794,14 @@ export const useChatStore = defineStore('chat', () => {
       await writer.finish()
 
       // 刷新会话信息 (后端可能自动根据内容生成标题)
-      await refreshSessionTitle(currentSessionId.value)
+      await refreshSessionTitle(originSessionId)
     } catch (err: any) {
       if (err?.name !== 'AbortError') {
         writer.flushNow()
         assistantMsg.error = formatStreamError(err, '请求发生异常')
       }
     } finally {
+      if (activeWriter === writer) activeWriter = null
       writer.flushNow()
       enableTypewriterBuffer.value = false
       if (activeAbortController === myCtrl) {
@@ -871,20 +888,22 @@ export const useChatStore = defineStore('chat', () => {
     messages.value.push(assistantMsg)
     const activeMsg = messages.value[messages.value.length - 1]!
 
-    abortCurrentStream()
+    abortCurrentStream(false)
     activeAbortController = new AbortController()
     const signal = activeAbortController.signal
     const myCtrl = activeAbortController /* 捕获控制器身份，finally 据此判断是否仍为当前流 */
+    const originSessionId = currentSessionId.value
 
+    isStreaming.value = true
     enableTypewriterBuffer.value = true
-    // isStreaming 已由 runWorkflow 入口同步置位
     const writer = new SmoothStreamWriter(activeMsg)
+    activeWriter = writer
 
     try {
       for await (const chunk of runWorkflowStream(
         {
           workflow_id: workflowId,
-          session_id: currentSessionId.value ?? undefined,
+          session_id: originSessionId ?? undefined,
           params,
         },
         signal
@@ -947,7 +966,7 @@ export const useChatStore = defineStore('chat', () => {
       })
 
       // 刷新会话信息
-      await refreshSessionTitle(currentSessionId.value)
+      await refreshSessionTitle(originSessionId)
     } catch (err: any) {
       if (err?.name !== 'AbortError') {
         wfState.status = 'error'
@@ -955,6 +974,7 @@ export const useChatStore = defineStore('chat', () => {
         activeMsg.error = formatStreamError(err, '工作流执行发生异常')
       }
     } finally {
+      if (activeWriter === writer) activeWriter = null
       writer.flushNow()
       if (wfState.status === 'running') {
         wfState.status = 'completed'
@@ -1046,20 +1066,22 @@ export const useChatStore = defineStore('chat', () => {
     msg.workflowData = wfState
     activeWorkflow.value = wfState
 
-    abortCurrentStream()
+    abortCurrentStream(false)
     activeAbortController = new AbortController()
     const signal = activeAbortController.signal
     const myCtrl = activeAbortController /* 捕获控制器身份，finally 据此判断是否仍为当前流 */
+    const originSessionId = currentSessionId.value
 
     enableTypewriterBuffer.value = true
     isStreaming.value = true
     const writer = new SmoothStreamWriter(msg)
+    activeWriter = writer
 
     try {
       for await (const chunk of runWorkflowStream(
         {
           workflow_id: workflowId,
-          session_id: currentSessionId.value ?? undefined,
+          session_id: originSessionId ?? undefined,
           params,
         },
         signal
@@ -1121,7 +1143,7 @@ export const useChatStore = defineStore('chat', () => {
         }
       })
 
-      await refreshSessionTitle(currentSessionId.value)
+      await refreshSessionTitle(originSessionId)
     } catch (err: any) {
       if (err?.name !== 'AbortError') {
         wfState.status = 'error'
@@ -1129,6 +1151,7 @@ export const useChatStore = defineStore('chat', () => {
         msg.error = formatStreamError(err, '工作流执行发生异常')
       }
     } finally {
+      if (activeWriter === writer) activeWriter = null
       writer.flushNow()
       if (wfState.status === 'running') {
         wfState.status = 'completed'

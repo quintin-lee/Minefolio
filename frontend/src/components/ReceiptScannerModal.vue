@@ -96,7 +96,7 @@
               v-model="form.amount"
               :precision="2"
               :step="1"
-              :min="0"
+              :min="0.01"
               style="width: 100%;"
               placeholder="0.00"
             />
@@ -219,11 +219,31 @@ const form = reactive({
 
 const formRules: FormRules = {
   expense_type: [{ required: true, message: '请选择类型', trigger: 'change' }],
-  amount: [{ required: true, message: '请输入金额', trigger: 'blur' }],
+  amount: [
+    { required: true, message: '请输入金额', trigger: 'blur' },
+    {
+      validator: (_rule: unknown, val: unknown, cb: (err?: Error) => void) => {
+        if (typeof val !== 'number' || !Number.isFinite(val) || val <= 0) {
+          cb(new Error('金额必须大于 0'))
+        } else {
+          cb()
+        }
+      },
+      trigger: 'blur',
+    },
+  ],
   expense_date: [{ required: true, message: '请选择日期', trigger: 'change' }],
   category_id: [{ required: true, message: '请选择分类', trigger: 'change' }],
   asset_id: [{ required: true, message: '请选择资金账户', trigger: 'change' }],
 }
+
+watch(selectedModel, (modelName) => {
+  if (!modelName) return
+  const owner = aiProviders.value.find((p: any) => Array.isArray(p.models) && p.models.includes(modelName))
+  if (owner?.id) {
+    selectedProvider.value = owner.id
+  }
+})
 
 const categoryTree = computed(() => {
   return allCategories.value.filter(c => c.type === form.expense_type)
@@ -376,6 +396,8 @@ async function handleCameraCapture(event: Event) {
     }
   } catch {
     ElMessage.error('读取相机拍摄图片失败')
+  } finally {
+    target.value = ''
   }
 }
 
@@ -402,18 +424,23 @@ async function handlePaste(event: ClipboardEvent) {
 }
 
 async function handleSave() {
-  if (!formRef.value) return
+  if (!formRef.value || saving.value) return
   await formRef.value.validate(async (valid: boolean) => {
-    if (!valid) return
+    if (!valid || saving.value) return
     saving.value = true
     try {
+      const cp = form.counterparty.trim()
+      const baseNote = form.note.trim()
+      const finalNote = cp && !baseNote.includes(cp)
+        ? (baseNote ? `${cp} - ${baseNote}` : cp)
+        : form.note
       const payload = {
         expense_type: form.expense_type,
         amount: Number(form.amount),
         expense_date: form.expense_date,
         category_id: form.category_id,
         asset_id: form.asset_id,
-        note: form.note,
+        note: finalNote,
         tags: [],
       }
       await dailyExpensesApi.create(payload)
@@ -458,10 +485,22 @@ async function loadData() {
   } catch { /* ignore */ }
 }
 
+function resetFormState() {
+  form.expense_type = 'expense'
+  form.amount = 0
+  form.expense_date = localToday()
+  form.category_id = null
+  form.asset_id = null
+  form.counterparty = ''
+  form.note = ''
+  catPath.value = []
+}
+
 watch(visible, (val) => {
   if (val) {
-    loadData()
+    resetFormState()
     resetUpload()
+    loadData()
   }
 })
 

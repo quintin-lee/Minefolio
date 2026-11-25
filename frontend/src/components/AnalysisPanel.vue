@@ -80,7 +80,10 @@
 
               <!-- Action 操作卡片 -->
               <div v-else-if="item.type === 'action' && item.actionData" class="panel-action-wrap">
-                <ActionCard :action-data="item.actionData" />
+                <ActionCard
+                  :action-data="item.actionData"
+                  @executed="emit('action-executed', { messageId: item.messageId, draftToken: item.actionData.data?.draft_token || '' })"
+                />
               </div>
 
               <!-- 工作流进度卡片 -->
@@ -148,6 +151,7 @@ const emit = defineEmits<{
   (e: 'update:activeTabId', id: string): void
   (e: 'remove-tab', id: string): void
   (e: 'resize-start', event: MouseEvent): void
+  (e: 'action-executed', payload: { messageId?: number; draftToken: string }): void
 }>()
 
 const currentTab = computed({

@@ -188,6 +188,22 @@ export class SmoothStreamWriter {
     this.resolveFinish()
   }
 
+  /**
+   * 立即取消动画循环并放弃剩余缓冲输出（用于会话切换或卸载时中止）
+   */
+  abort() {
+    this.closed = true
+    this.running = false
+    if (this.rafId !== null) {
+      this.caf(this.rafId)
+      this.rafId = null
+    }
+    this.buf = ''
+    const resolvers = [...this.finishResolvers]
+    this.finishResolvers = []
+    resolvers.forEach((r) => r())
+  }
+
   /** 停止动画循环并释放资源 */
   private stop() {
     this.closed = true

@@ -184,6 +184,8 @@ import { ElMessage } from 'element-plus'
 import type { WorkflowRunState } from '@/types'
 import { useChatStore } from '@/stores/chat'
 import { localToday } from '@/utils/format'
+import { isMobileMode } from '@/utils/http'
+import { copyTextToClipboard } from '@/utils/clipboard'
 
 const props = defineProps<{
   workflowData: WorkflowRunState
@@ -196,6 +198,19 @@ const expanded = ref(true)
 const stepStartTime = ref<number | null>(null)
 const elapsedTimeMs = ref(0)
 let timerId: ReturnType<typeof setInterval> | null = null
+let collapseTimer: ReturnType<typeof setTimeout> | null = null
+
+function findWorkflowMessage() {
+  const msgs = chatStore.messages
+  const exact = msgs.find(m => m.workflowData === props.workflowData)
+  if (exact) return exact
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (msgs[i]?.workflowData?.workflow_id === props.workflowData.workflow_id) {
+      return msgs[i]
+    }
+  }
+  return undefined
+}
 
 const completedCount = computed(() => {
   return props.workflowData.steps.filter(s => s.status === 'completed').length
@@ -225,8 +240,7 @@ const etaText = computed(() => {
 // Parse result summary from assistant message content
 const workflowResultSummary = computed(() => {
   if (props.workflowData.status !== 'completed') return null
-  const msgs = chatStore.messages
-  const wfMsg = msgs.find(m => m.workflowData?.workflow_id === props.workflowData.workflow_id)
+  const wfMsg = findWorkflowMessage()
   if (!wfMsg || !wfMsg.content) return null
   const summary: { label: string; value: string }[] = []
   const lines = wfMsg.content.split('\n').filter(l => l.trim())
@@ -281,39 +295,47 @@ function retryWorkflow() {
 }
 
 function viewTraces() {
-  router.push({ name: 'ai-traces', query: { workflow_id: props.workflowData.workflow_id } })
+  if (isMobileMode()) {
+    ElMessage.info('请在桌面端查看 AI 审计追踪')
+    return
+  }
+  router.push({ name: 'AiTraces', query: { workflow_id: props.workflowData.workflow_id } })
 }
 
 function navigateToTransactions() {
-  router.push({ path: '/transactions' })
+  router.push({ path: isMobileMode() ? '/m/transactions' : '/transactions' })
 }
 
 function navigateToCategories() {
+  if (isMobileMode()) {
+    ElMessage.info('请在移动端设置页面中管理分类')
+    return
+  }
   router.push({ path: '/categories' })
 }
 
 function navigateToDailyExpenses() {
-  router.push({ path: '/daily-expenses' })
+  router.push({ path: isMobileMode() ? '/m/expenses' : '/daily-expenses' })
 }
 
-function copySummary() {
+async function copySummary() {
   if (workflowResultSummary.value && workflowResultSummary.value.length > 0) {
     const text = workflowResultSummary.value.map(i => `${i.label}: ${i.value}`).join('\n')
-    navigator.clipboard.writeText(text)
-    ElMessage.success('已复制执行结果摘要到剪贴板')
+    const ok = await copyTextToClipboard(text)
+    if (ok) ElMessage.success('已复制执行结果摘要到剪贴板')
+    else ElMessage.error('复制失败，请手动复制')
   } else {
-    const msgs = chatStore.messages
-    const wfMsg = msgs.find(m => m.workflowData?.workflow_id === props.workflowData.workflow_id)
+    const wfMsg = findWorkflowMessage()
     if (wfMsg?.content) {
-      navigator.clipboard.writeText(wfMsg.content)
-      ElMessage.success('已复制分析报告全文')
+      const ok = await copyTextToClipboard(wfMsg.content)
+      if (ok) ElMessage.success('已复制分析报告全文')
+      else ElMessage.error('复制失败，请手动复制')
     }
   }
 }
 
 function exportReport() {
-  const msgs = chatStore.messages
-  const wfMsg = msgs.find(m => m.workflowData?.workflow_id === props.workflowData.workflow_id)
+  const wfMsg = findWorkflowMessage()
   const content = wfMsg?.content || `${props.workflowData.title} 分析报告`
   const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' })
   const url = URL.createObjectURL(blob)
@@ -330,6 +352,7 @@ function sendFollowUp(prompt: string) {
 }
 
 function startTimer() {
+  stopTimer()
   stepStartTime.value = Date.now()
   timerId = setInterval(() => {
     if (stepStartTime.value !== null) {
@@ -346,12 +369,17 @@ function stopTimer() {
 }
 
 watch(() => props.workflowData.status, (newStatus) => {
+  if (collapseTimer !== null) {
+    clearTimeout(collapseTimer)
+    collapseTimer = null
+  }
   if (newStatus === 'running') {
     startTimer()
     expanded.value = true
   } else if (newStatus === 'completed') {
     stopTimer()
-    setTimeout(() => {
+    collapseTimer = setTimeout(() => {
+      collapseTimer = null
       if (props.workflowData.status === 'completed') {
         expanded.value = false
       }
@@ -370,6 +398,10 @@ onMounted(() => {
 
 onUnmounted(() => {
   stopTimer()
+  if (collapseTimer !== null) {
+    clearTimeout(collapseTimer)
+    collapseTimer = null
+  }
 })
 </script>
 

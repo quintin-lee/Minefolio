@@ -6,6 +6,7 @@ import { mount } from '@vue/test-utils'
 import { sanitizeMermaidSvg } from '@/utils/mermaid'
 import { renderSafeMarkdown } from '@/utils/markdown'
 import { useDisplaySettingsStore } from '@/stores/display-settings'
+import AppearanceSettings from '@/components/settings/AppearanceSettings.vue'
 
 vi.mock('vue-i18n', () => ({
   createI18n: () => ({
@@ -56,7 +57,6 @@ describe('Frontend Audit Phase 1 fixes', () => {
   })
 
   it('AppearanceSettings and SettingsMobile amount-mask switches toggle cleanly without snapping back', async () => {
-    const AppearanceSettings = (await import('@/components/settings/AppearanceSettings.vue')).default
     const store = useDisplaySettingsStore()
     store.set(true)
 

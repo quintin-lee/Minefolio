@@ -352,6 +352,43 @@ export async function* chatStream(
   const decoder = new TextDecoder()
   let buffer = ''
   let currentEvent = 'delta'
+  const parseLine = (line: string): ChatStreamChunk | null => {
+    const trimmed = line.trim()
+    if (!trimmed) {
+      currentEvent = 'delta'
+      return null
+    }
+    if (trimmed.startsWith('event:')) {
+      currentEvent = trimmed.slice(6).trim() || 'delta'
+      return null
+    }
+    if (trimmed.startsWith('data:')) {
+      const dataStr = trimmed.slice(5).trim()
+      if (!dataStr) return null
+      try {
+        const parsed = JSON.parse(dataStr) as Record<string, unknown>
+        return {
+          type: (currentEvent || 'delta') as ChatStreamChunk['type'],
+          content: typeof parsed.content === 'string' ? parsed.content : undefined,
+          id: typeof parsed.id === 'string' ? parsed.id : (typeof parsed.tool_call_id === 'string' ? parsed.tool_call_id : undefined),
+          name: typeof parsed.name === 'string' ? parsed.name : undefined,
+          args: typeof parsed.arguments === 'string' ? parsed.arguments : (typeof parsed.args === 'string' ? parsed.args : undefined),
+          result: parsed.result !== undefined ? (typeof parsed.result === 'string' ? parsed.result : JSON.stringify(parsed.result)) : undefined,
+          finish_reason: typeof parsed.finish_reason === 'string' ? parsed.finish_reason : undefined,
+          prompt_tokens: typeof parsed.prompt_tokens === 'number' ? parsed.prompt_tokens : undefined,
+          completion_tokens: typeof parsed.completion_tokens === 'number' ? parsed.completion_tokens : undefined,
+          total_tokens: typeof parsed.total_tokens === 'number' ? parsed.total_tokens : undefined,
+          cost_usd: typeof parsed.cost_usd === 'number' ? parsed.cost_usd : undefined,
+          elapsed_ms: typeof parsed.elapsed_ms === 'number' ? parsed.elapsed_ms : undefined,
+          message: typeof parsed.message === 'string' ? parsed.message : undefined,
+          code: typeof parsed.code === 'number' ? parsed.code : undefined,
+        }
+      } catch {
+        return null
+      }
+    }
+    return null
+  }
   try {
     while (true) {
       const { done, value } = await reader.read()
@@ -360,38 +397,19 @@ export async function* chatStream(
       const lines = buffer.split('\n')
       buffer = lines.pop() ?? ''
       for (const line of lines) {
-        const trimmed = line.trim()
-        if (trimmed.startsWith('event:')) {
-          currentEvent = trimmed.slice(6).trim()
-        } else if (trimmed.startsWith('data:')) {
-          const dataStr = trimmed.slice(5).trim()
-          if (dataStr) {
-             try {
-               const parsed = JSON.parse(dataStr) as Record<string, unknown>
-               yield {
-                 type: (currentEvent || 'delta') as 'delta' | 'thinking' | 'tool_call' | 'tool_result' | 'done' | 'error',
-                 content: typeof parsed.content === 'string' ? parsed.content : undefined,
-                 id: typeof parsed.id === 'string' ? parsed.id : (typeof parsed.tool_call_id === 'string' ? parsed.tool_call_id : undefined),
-                 name: typeof parsed.name === 'string' ? parsed.name : undefined,
-                 args: typeof parsed.arguments === 'string' ? parsed.arguments : (typeof parsed.args === 'string' ? parsed.args : undefined),
-                 result: parsed.result !== undefined ? (typeof parsed.result === 'string' ? parsed.result : JSON.stringify(parsed.result)) : undefined,
-                 finish_reason: typeof parsed.finish_reason === 'string' ? parsed.finish_reason : undefined,
-                 prompt_tokens: typeof parsed.prompt_tokens === 'number' ? parsed.prompt_tokens : undefined,
-                 completion_tokens: typeof parsed.completion_tokens === 'number' ? parsed.completion_tokens : undefined,
-                 total_tokens: typeof parsed.total_tokens === 'number' ? parsed.total_tokens : undefined,
-                 cost_usd: typeof parsed.cost_usd === 'number' ? parsed.cost_usd : undefined,
-                 elapsed_ms: typeof parsed.elapsed_ms === 'number' ? parsed.elapsed_ms : undefined,
-                 message: typeof parsed.message === 'string' ? parsed.message : undefined,
-                 code: typeof parsed.code === 'number' ? parsed.code : undefined,
-               }
-             } catch {
-              // ignore
-            }
-          }
-        }
+        const chunk = parseLine(line)
+        if (chunk) yield chunk
+      }
+    }
+    buffer += decoder.decode()
+    if (buffer.trim()) {
+      for (const line of buffer.split('\n')) {
+        const chunk = parseLine(line)
+        if (chunk) yield chunk
       }
     }
   } finally {
+    await reader.cancel().catch(() => {})
     reader.releaseLock()
   }
 }
@@ -600,6 +618,41 @@ export async function* runWorkflowStream(
   const decoder = new TextDecoder()
   let buffer = ''
   let currentEvent = 'delta'
+  const parseLine = (line: string): WorkflowStreamChunk | null => {
+    const trimmed = line.trim()
+    if (!trimmed) {
+      currentEvent = 'delta'
+      return null
+    }
+    if (trimmed.startsWith('event:')) {
+      currentEvent = trimmed.slice(6).trim() || 'delta'
+      return null
+    }
+    if (trimmed.startsWith('data:')) {
+      const dataStr = trimmed.slice(5).trim()
+      if (!dataStr) return null
+      try {
+        const parsed = JSON.parse(dataStr) as Record<string, unknown>
+        return {
+          type: (currentEvent || 'delta') as WorkflowStreamChunk['type'],
+          workflow_id: typeof parsed.workflow_id === 'string' ? parsed.workflow_id : undefined,
+          title: typeof parsed.title === 'string' ? parsed.title : undefined,
+          total_steps: typeof parsed.total_steps === 'number' ? parsed.total_steps : undefined,
+          step_index: typeof parsed.step_index === 'number' ? parsed.step_index : undefined,
+          step_id: typeof parsed.step_id === 'string' ? parsed.step_id : undefined,
+          progress: typeof parsed.progress === 'number' ? parsed.progress : undefined,
+          status: typeof parsed.status === 'string' ? parsed.status : undefined,
+          summary: typeof parsed.summary === 'string' ? parsed.summary : undefined,
+          content: typeof parsed.content === 'string' ? parsed.content : undefined,
+          session_id: typeof parsed.session_id === 'number' ? parsed.session_id : undefined,
+          message: typeof parsed.message === 'string' ? parsed.message : undefined,
+        }
+      } catch {
+        return null
+      }
+    }
+    return null
+  }
   try {
     while (true) {
       const { done, value } = await reader.read()
@@ -608,36 +661,19 @@ export async function* runWorkflowStream(
       const lines = buffer.split('\n')
       buffer = lines.pop() ?? ''
       for (const line of lines) {
-        const trimmed = line.trim()
-        if (trimmed.startsWith('event:')) {
-          currentEvent = trimmed.slice(6).trim()
-        } else if (trimmed.startsWith('data:')) {
-          const dataStr = trimmed.slice(5).trim()
-          if (dataStr) {
-            try {
-              const parsed = JSON.parse(dataStr) as Record<string, unknown>
-              yield {
-                type: (currentEvent || 'delta') as WorkflowStreamChunk['type'],
-                workflow_id: typeof parsed.workflow_id === 'string' ? parsed.workflow_id : undefined,
-                title: typeof parsed.title === 'string' ? parsed.title : undefined,
-                total_steps: typeof parsed.total_steps === 'number' ? parsed.total_steps : undefined,
-                step_index: typeof parsed.step_index === 'number' ? parsed.step_index : undefined,
-                step_id: typeof parsed.step_id === 'string' ? parsed.step_id : undefined,
-                progress: typeof parsed.progress === 'number' ? parsed.progress : undefined,
-                status: typeof parsed.status === 'string' ? parsed.status : undefined,
-                summary: typeof parsed.summary === 'string' ? parsed.summary : undefined,
-                content: typeof parsed.content === 'string' ? parsed.content : undefined,
-                session_id: typeof parsed.session_id === 'number' ? parsed.session_id : undefined,
-                message: typeof parsed.message === 'string' ? parsed.message : undefined,
-              }
-            } catch {
-              // ignore
-            }
-          }
-        }
+        const chunk = parseLine(line)
+        if (chunk) yield chunk
+      }
+    }
+    buffer += decoder.decode()
+    if (buffer.trim()) {
+      for (const line of buffer.split('\n')) {
+        const chunk = parseLine(line)
+        if (chunk) yield chunk
       }
     }
   } finally {
+    await reader.cancel().catch(() => {})
     reader.releaseLock()
   }
 }

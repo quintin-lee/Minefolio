@@ -151,7 +151,8 @@ export function extractPanelItems(
   // 并且成功生成了草案（带 draft_token），自动抽取为分析面板中的操作卡片
   const hasActionInPanel = panelItems.some(i => i.type === 'action')
   if (!hasActionInPanel && toolCalls && toolCalls.length > 0) {
-    for (const tc of toolCalls) {
+    for (let i = 0; i < toolCalls.length; i++) {
+      const tc = toolCalls[i]!
       if ((tc.name === 'propose_daily_expense' || tc.name === 'propose_transfer') && tc.result) {
         try {
           const resObj = typeof tc.result === 'string' ? JSON.parse(tc.result) : tc.result
@@ -165,7 +166,7 @@ export function extractPanelItems(
                 ...(resObj as Record<string, unknown>),
               }
               const normalized = normalizeActionCard(rawObj)
-              const segId = `act-tool-0`
+              const segId = `act-tool-${i}`
               const isExpense = normalized.action_type === 'daily_expense'
               panelItems.push({
                 id: `msg-${messageId}-${segId}`,

@@ -164,17 +164,6 @@
             />
           </div>
 
-          <div class="form-item">
-            <label>手续费</label>
-            <el-input-number
-              v-model="form.fee"
-              :min="0"
-              :precision="2"
-              :disabled="isReadonly"
-              class="full-width"
-            />
-          </div>
-
           <div class="form-item full-row">
             <label>转账备注</label>
             <el-input
@@ -358,6 +347,7 @@ onMounted(async () => {
 })
 
 async function handleConfirm() {
+  if (loading.value) return
   if (form.amount <= 0) {
     ElMessage.warning('请输入有效的金额')
     return
@@ -401,10 +391,9 @@ async function handleConfirm() {
       })) as unknown as { success?: boolean; error?: string; message?: string }
       if (res?.error) {
         if (res.error.includes('已被使用') || res.error.toLowerCase().includes('replay') || res.error.includes('consumed')) {
-          props.actionData.status = 'executed'
           cardStatus.value = 'executed'
           ElMessage.info('该操作此前已记账入库')
-          emit('executed', props.actionData)
+          emit('executed', { ...props.actionData, status: 'executed' })
           return
         }
         throw new Error(res.message || res.error)
@@ -435,10 +424,9 @@ async function handleConfirm() {
       })) as unknown as { success?: boolean; error?: string; message?: string }
       if (res?.error) {
         if (res.error.includes('已被使用') || res.error.toLowerCase().includes('replay') || res.error.includes('consumed')) {
-          props.actionData.status = 'executed'
           cardStatus.value = 'executed'
           ElMessage.info('该操作此前已转账入库')
-          emit('executed', props.actionData)
+          emit('executed', { ...props.actionData, status: 'executed' })
           return
         }
         throw new Error(res.message || res.error)
@@ -446,17 +434,15 @@ async function handleConfirm() {
     }
 
     categoryStore.invalidate()
-    props.actionData.status = 'executed'
     cardStatus.value = 'executed'
     ElMessage.success('记账成功！')
-    emit('executed', props.actionData)
+    emit('executed', { ...props.actionData, status: 'executed' })
   } catch (err: any) {
     const errMsg = err?.message || err?.response?.data?.message || '操作失败，请重试'
     if (errMsg.includes('已被使用') || errMsg.toLowerCase().includes('replay')) {
-      props.actionData.status = 'executed'
       cardStatus.value = 'executed'
       ElMessage.info('该操作此前已记账入库')
-      emit('executed', props.actionData)
+      emit('executed', { ...props.actionData, status: 'executed' })
     } else {
       cardStatus.value = 'pending'
       ElMessage.error(errMsg)
