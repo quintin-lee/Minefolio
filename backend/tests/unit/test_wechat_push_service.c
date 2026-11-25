@@ -146,6 +146,7 @@ int
 main(void)
 {
     printf("=== Starting WeChat Push Service Unit Tests ===\n");
+    setenv("MINEFOLIO_ALLOW_LOCAL_WEBHOOK", "1", 1);
     mock_server_t server;
     start_mock_server(&server);
 
@@ -220,6 +221,19 @@ main(void)
     /* 6. Test Input Validation Failures */
     assert(wechat_push_service_send(NULL, "Title", "body", err_buf, sizeof(err_buf)) == -1);
     assert(wechat_push_service_send(&sc_cfg, "", "body", err_buf, sizeof(err_buf)) == -1);
+
+    /* 7. Test SSRF protection when local webhooks disallowed */
+    unsetenv("MINEFOLIO_ALLOW_LOCAL_WEBHOOK");
+    rc = wechat_push_service_send(&wh_cfg, "SSRF Localhost", "test", err_buf, sizeof(err_buf));
+    assert(rc == -1);
+    assert(strstr(err_buf, "SSRF") != NULL);
+
+    push_channel_config_t meta_cfg;
+    memset(&meta_cfg, 0, sizeof(meta_cfg));
+    snprintf(meta_cfg.channel_type, sizeof(meta_cfg.channel_type), "webhook");
+    snprintf(meta_cfg.webhook_url, sizeof(meta_cfg.webhook_url), "http://169.254.169.254/latest");
+    rc = wechat_push_service_send(&meta_cfg, "SSRF Metadata", "test", err_buf, sizeof(err_buf));
+    assert(rc == -1);
 
     stop_mock_server(&server);
     printf("=== WeChat Push Service Unit Tests Passed! ===\n");

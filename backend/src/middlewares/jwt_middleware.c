@@ -281,10 +281,12 @@ jwt_authenticate_ctx(csilk_ctx_t* c, int64_t* out_user_id)
             return false;
         }
     }
-    /* IM 绑定码 (type=im_bind) 仅放行安全 /api/im/ 路径（禁止 '..' 穿越与 /api/im/instances 管理端点） */
+    /* IM 绑定码 (type=im_bind) 仅放行 /api/im/{platform}/bind、/api/im/{platform}/chat 与
+     * /api/im/tasks/*；禁止访问 '..'、/api/im/instances 与 /api/im/bindings* 令牌签发/解绑接口。 */
     if (token_type && strcmp(token_type, "im_bind") == 0) {
         if (!path || strncmp(path, "/api/im/", 8) != 0 ||
-            strncmp(path, "/api/im/instances", 17) == 0 || strstr(path, "..") != NULL) {
+            strncmp(path, "/api/im/instances", 17) == 0 ||
+            strncmp(path, "/api/im/bindings", 16) == 0 || strstr(path, "..") != NULL) {
             csilk_json_free(payload);
             csilk_json_error(c,
                              CSILK_STATUS_UNAUTHORIZED,

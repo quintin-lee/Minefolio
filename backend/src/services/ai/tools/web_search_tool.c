@@ -3,6 +3,7 @@
 #include "services/ai/runtime/loop.h"
 #include "domain/ai/rules.h"
 #include "common/db.h"
+#include "common/http_safety.h"
 #include <curl/curl.h>
 #include <ctype.h>
 #include <stdbool.h>
@@ -211,14 +212,32 @@ curl_http_get_with_redirect_check(const char*          initial_url,
         }
         headers = curl_slist_append(headers, "Accept-Language: zh-CN,zh;q=0.9,en;q=0.8");
 
+        const char* env_proxy = getenv("https_proxy");
+        if (!env_proxy) {
+            env_proxy = getenv("http_proxy");
+        }
+        bool has_proxy = (env_proxy && env_proxy[0]);
+
+        char resolve_entry[320] = {0};
+        if (mf_http_validate_and_resolve_url(current_url,
+                                             sizeof(current_url),
+                                             false,
+                                             has_proxy,
+                                             resolve_entry,
+                                             sizeof(resolve_entry)) != 0) {
+            curl_slist_free_all(headers);
+            curl_easy_cleanup(curl);
+            return -2;
+        }
+
+        struct curl_slist* resolve_list =
+            mf_http_curl_apply_security(curl, resolve_entry, env_proxy, false);
         curl_easy_setopt(curl, CURLOPT_URL, current_url);
         curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
         curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
         curl_easy_setopt(curl, CURLOPT_USERAGENT, SEARCH_USER_AGENT);
         curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, timeout_ms > 0 ? timeout_ms : 8000L);
         curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, 4000L);
-        curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);       /* 多线程安全，避免 SIGALRM */
-        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L); /* 禁用盲目跳转 */
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_mem_cb);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body_buf);
         curl_cancel_probe_t probe = {.cancel_token = cancel_token};
@@ -228,18 +247,16 @@ curl_http_get_with_redirect_check(const char*          initial_url,
         curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, curl_header_location_cb);
         curl_easy_setopt(curl, CURLOPT_HEADERDATA, &hdr_state);
 
-        /* 自动使用环境变量代理（如 https_proxy=http://127.0.0.1:8118） */
-        const char* env_proxy = getenv("https_proxy");
-        if (!env_proxy) {
-            env_proxy = getenv("http_proxy");
-        }
-        if (env_proxy && env_proxy[0]) {
+        if (has_proxy) {
             curl_easy_setopt(curl, CURLOPT_PROXY, env_proxy);
         }
 
         CURLcode res = curl_easy_perform(curl);
         long     http_code = 0;
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+        if (resolve_list) {
+            curl_slist_free_all(resolve_list);
+        }
         curl_slist_free_all(headers);
         curl_easy_cleanup(curl);
 

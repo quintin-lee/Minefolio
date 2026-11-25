@@ -5,6 +5,7 @@
 #include "infrastructure/repositories/import_rule_repo_impl.h"
 #include "common/ai_config.h"
 #include "common/db.h"
+#include "common/http_safety.h"
 #include "csilk/csilk.h"
 #include <ctype.h>
 #include <curl/curl.h>
@@ -13,32 +14,6 @@
 #include <string.h>
 #include <strings.h>
 #include <time.h>
-
-typedef struct {
-    char*  data;
-    size_t size;
-    size_t cap;
-} curl_buf_t;
-
-static size_t
-curl_write_cb(void* ptr, size_t size, size_t nmemb, void* userdata)
-{
-    size_t      bytes = size * nmemb;
-    curl_buf_t* buf = (curl_buf_t*)userdata;
-    if (buf->size + bytes + 1 > buf->cap) {
-        size_t new_cap = (buf->cap + bytes + 1) * 2;
-        char*  new_data = realloc(buf->data, new_cap);
-        if (!new_data) {
-            return 0;
-        }
-        buf->data = new_data;
-        buf->cap = new_cap;
-    }
-    memcpy(buf->data + buf->size, ptr, bytes);
-    buf->size += bytes;
-    buf->data[buf->size] = '\0';
-    return bytes;
-}
 
 static char*
 extract_json_substring(const char* raw)
@@ -250,6 +225,15 @@ receipt_scan_execute_json(csilk_db_pool_t*         pool,
         return build_receipt_offline_fallback(pool, user_id);
     }
 
+    char resolve_entry[320] = {0};
+    bool allow_local = (strcmp(prov->id, "ollama") == 0);
+    if (mf_http_validate_and_resolve_url(
+            url, sizeof(url), allow_local, false, resolve_entry, sizeof(resolve_entry)) != 0) {
+        free(req_json_str);
+        ai_config_release(cfg);
+        return build_receipt_offline_fallback(pool, user_id);
+    }
+
     CURL* curl = curl_easy_init();
     if (!curl) {
         free(req_json_str);
@@ -262,28 +246,32 @@ receipt_scan_execute_json(csilk_db_pool_t*         pool,
     snprintf(auth_header, sizeof(auth_header), "Authorization: Bearer %s", prov->api_key);
     headers = curl_slist_append(headers, "Content-Type: application/json");
     headers = curl_slist_append(headers, auth_header);
+    explicit_bzero(auth_header, sizeof(auth_header));
 
-    curl_buf_t resp_buf = {.data = malloc(16384), .size = 0, .cap = 16384};
+    mf_curl_buf_t resp_buf = {
+        .data = malloc(16384), .size = 0, .cap = 16384, .max_bytes = MF_CURL_MAX_4MB};
     if (resp_buf.data) {
         resp_buf.data[0] = '\0';
     }
 
+    struct curl_slist* resolve_list = mf_http_curl_apply_security(curl, resolve_entry, NULL, false);
     curl_easy_setopt(curl, CURLOPT_URL, url);
     curl_easy_setopt(curl, CURLOPT_POST, 1L);
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, req_json_str);
     curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long)req_str_len);
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_cb);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, mf_curl_bounded_write_cb);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &resp_buf);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 5L);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 60L);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
-    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
 
     CURLcode curl_rc = curl_easy_perform(curl);
     long     http_code = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
 
+    if (resolve_list) {
+        curl_slist_free_all(resolve_list);
+    }
     curl_slist_free_all(headers);
     curl_easy_cleanup(curl);
     free(req_json_str);

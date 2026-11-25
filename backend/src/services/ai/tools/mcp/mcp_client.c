@@ -12,6 +12,8 @@
  */
 
 #include "services/ai/tools/mcp/mcp_client.h"
+#include "services/ai/tools/mcp/mcp_config.h"
+#include "common/http_safety.h"
 #include "config/secret.h"
 #include "csilk/core/server/server.h"
 
@@ -38,13 +40,8 @@ extern char** environ;
 #define MF_MCP_TOOL_SCHEMA_MAX 16384
 
 /* -------------------------------------------------------------------------- */
-/* libcurl 内存写缓冲与响应头回调                                              */
+/* libcurl 响应头回调                                                          */
 /* -------------------------------------------------------------------------- */
-
-typedef struct {
-    char*  data;
-    size_t size;
-} memory_buf_t;
 
 static size_t
 curl_header_cb(char* buffer, size_t size, size_t nitems, void* userdata)
@@ -72,22 +69,6 @@ curl_header_cb(char* buffer, size_t size, size_t nitems, void* userdata)
             c->session_id = strdup(sid);
         }
     }
-    return total;
-}
-
-static size_t
-curl_write_cb(char* ptr, size_t size, size_t nmemb, void* userdata)
-{
-    memory_buf_t* mem = (memory_buf_t*)userdata;
-    size_t        total = size * nmemb;
-    char*         newp = realloc(mem->data ? mem->data : (void*)malloc(1), mem->size + total + 1);
-    if (!newp) {
-        return 0; /* 触发 OOM，curl 返回 -1 */
-    }
-    mem->data = newp;
-    memcpy(&mem->data[mem->size], ptr, total);
-    mem->size += total;
-    mem->data[mem->size] = '\0';
     return total;
 }
 
@@ -173,13 +154,27 @@ http_call(mf_mcp_client_t*    c,
           int*                out_http_code)
 {
     const mf_mcp_server_t* s = c->server;
-    CURL*                  curl = curl_easy_init();
+    char                   resolve_entry[320] = {0};
+    if (!s || mf_http_validate_and_resolve_url(s->url,
+                                               512,
+                                               mf_mcp_config_allow_local(),
+                                               false,
+                                               resolve_entry,
+                                               sizeof(resolve_entry)) != 0) {
+        snprintf(out_err, err_sz, "blocked MCP server URL by SSRF policy");
+        return NULL;
+    }
+
+    CURL* curl = curl_easy_init();
     if (!curl) {
         snprintf(out_err, err_sz, "curl init failed");
         return NULL;
     }
 
-    memory_buf_t chunk = {.data = malloc(1), .size = 0};
+    mf_curl_buf_t chunk = {.data = malloc(1), .size = 0, .cap = 1, .max_bytes = MF_CURL_MAX_8MB};
+    if (chunk.data) {
+        chunk.data[0] = '\0';
+    }
 
     struct curl_slist* headers = NULL;
     headers = curl_slist_append(headers, "Content-Type: application/json");
@@ -202,11 +197,12 @@ http_call(mf_mcp_client_t*    c,
         }
     }
 
+    struct curl_slist* resolve_list = mf_http_curl_apply_security(curl, resolve_entry, NULL, false);
     curl_easy_setopt(curl, CURLOPT_URL, s->url);
     curl_easy_setopt(curl, CURLOPT_POST, 1L);
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, request_json);
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_cb);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, mf_curl_bounded_write_cb);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &chunk);
     curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, curl_header_cb);
     curl_easy_setopt(curl, CURLOPT_HEADERDATA, (void*)c);
@@ -214,6 +210,9 @@ http_call(mf_mcp_client_t*    c,
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, 4000L);
 
     CURLcode res = curl_easy_perform(curl);
+    if (resolve_list) {
+        curl_slist_free_all(resolve_list);
+    }
     if (out_http_code) {
         long code = 0;
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &code);

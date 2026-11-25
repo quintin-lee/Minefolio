@@ -1,6 +1,7 @@
 #include "domain/mcp/rules.h"
 #include <ctype.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
@@ -41,47 +42,66 @@ mf_mcp_rule_validate_transport(const char* transport)
 
 /* 判断 URL host 是否指向内网/回环地址 */
 static bool
+ipv4_is_restricted(uint32_t ip)
+{
+    return ((ip >> 24) == 127U ||                 /* 127.0.0.0/8 */
+            (ip >> 24) == 10U ||                  /* 10.0.0.0/8 */
+            (ip >> 20) == ((172U << 4) | 1U) ||   /* 172.16.0.0/12 */
+            (ip >> 16) == ((192U << 8) | 168U) || /* 192.168.0.0/16 */
+            (ip >> 16) == ((169U << 8) | 254U) || /* 169.254.0.0/16 */
+            (ip & 0xFFC00000U) == 0x64400000U ||  /* 100.64.0.0/10 */
+            (ip >> 24) == 0U ||                   /* 0.0.0.0/8 */
+            (ip >> 28) >= 14U ||                  /* 224.0.0.0/4+ */
+            ip == 0xFFFFFFFFU);
+}
+
+static bool
 url_host_is_internal(const char* host)
 {
     if (!host || !host[0]) {
         return true; /* 无 host 视为非法 */
     }
-    const char* lower = host;
-    /* 小写化 host 前段用于比较 */
     char   buf[256];
     size_t n = strlen(host);
     if (n >= sizeof(buf)) {
         n = sizeof(buf) - 1;
     }
-    memcpy(buf, host, n);
-    buf[n] = '\0';
     for (size_t i = 0; i < n; i++) {
-        buf[i] = (char)tolower((unsigned char)buf[i]);
+        buf[i] = (char)tolower((unsigned char)host[i]);
     }
-    lower = buf;
+    buf[n] = '\0';
 
-    /* 去掉可能存在的 user@ 前缀与 :port 后缀 */
-    const char* hostpart = lower;
-    const char* at = strchr(lower, '@');
+    const char* hostpart = buf;
+    const char* at = strchr(buf, '@');
     if (at) {
         hostpart = at + 1;
     }
+
     char hbuf[256];
-    strncpy(hbuf, hostpart, sizeof(hbuf) - 1);
-    hbuf[sizeof(hbuf) - 1] = '\0';
-    char* colon = strchr(hbuf, ':');
-    if (colon) {
-        *colon = '\0';
+    if (hostpart[0] == '[') {
+        const char* endb = strchr(hostpart, ']');
+        if (!endb) {
+            return true;
+        }
+        size_t blen = (size_t)(endb - (hostpart + 1));
+        if (blen == 0 || blen >= sizeof(hbuf)) {
+            return true;
+        }
+        memcpy(hbuf, hostpart + 1, blen);
+        hbuf[blen] = '\0';
+        hostpart = hbuf;
+    } else {
+        snprintf(hbuf, sizeof(hbuf), "%s", hostpart);
+        char* first_colon = strchr(hbuf, ':');
+        char* last_colon = strrchr(hbuf, ':');
+        if (first_colon && first_colon == last_colon) {
+            *first_colon = '\0';
+        }
+        hostpart = hbuf;
     }
-    hostpart = hbuf;
 
-    if (strcmp(hostpart, "localhost") == 0) {
-        return true;
-    }
-
-    /* Docker Desktop 内置别名：host.docker.internal 指向宿主机，等同于 127.0.0.1，
-       必须与 localhost 同等对待；不应被下方 .internal 后缀启发式误拦。 */
-    if (strcmp(hostpart, "host.docker.internal") == 0) {
+    if (!hostpart[0] || strcmp(hostpart, "localhost") == 0 ||
+        strcmp(hostpart, "host.docker.internal") == 0) {
         return true;
     }
 
@@ -93,32 +113,28 @@ url_host_is_internal(const char* host)
         (hlen > 10 && strcmp(hostpart + hlen - 10, ".home.arpa") == 0)) {
         return true;
     }
-    /* 纯 IPv4 文本 */
-    if (hostpart[0] >= '0' && hostpart[0] <= '9') {
-        if (strncmp(hostpart, "127.", 4) == 0 || strcmp(hostpart, "0.0.0.0") == 0) {
+
+    struct in_addr in4;
+    if (inet_aton(hostpart, &in4)) {
+        return ipv4_is_restricted(ntohl(in4.s_addr));
+    }
+
+    struct in6_addr in6;
+    if (inet_pton(AF_INET6, hostpart, &in6) == 1) {
+        if (IN6_IS_ADDR_LOOPBACK(&in6) || IN6_IS_ADDR_LINKLOCAL(&in6) ||
+            IN6_IS_ADDR_SITELOCAL(&in6) || IN6_IS_ADDR_UNSPECIFIED(&in6) ||
+            IN6_IS_ADDR_MULTICAST(&in6)) {
             return true;
         }
-        if (strncmp(hostpart, "10.", 3) == 0) {
+        if (IN6_IS_ADDR_V4MAPPED(&in6)) {
+            uint32_t v4 = 0;
+            memcpy(&v4, &in6.s6_addr[12], sizeof(v4));
+            return ipv4_is_restricted(ntohl(v4));
+        }
+        if ((in6.s6_addr[0] & 0xfe) == 0xfc) {
             return true;
-        }
-        if (strncmp(hostpart, "192.168.", 8) == 0) {
-            return true;
-        }
-        if (strncmp(hostpart, "172.", 4) == 0) {
-            /* 172.16.0.0/12 */
-            int second = atoi(hostpart + 4);
-            if (second >= 16 && second <= 31) {
-                return true;
-            }
-        }
-        if (strncmp(hostpart, "169.254.", 8) == 0) {
-            return true; /* 链路本地 */
         }
         return false;
-    }
-    /* IPv6 回环 */
-    if (strcmp(hostpart, "::1") == 0) {
-        return true;
     }
 
     /* 域名深度检测：getaddrinfo 校验背后解析的所有 IP */
@@ -133,10 +149,7 @@ url_host_is_internal(const char* host)
         for (struct addrinfo* it = addr_res; it != NULL; it = it->ai_next) {
             if (it->ai_family == AF_INET) {
                 struct sockaddr_in* s4 = (struct sockaddr_in*)it->ai_addr;
-                uint32_t            ip = ntohl(s4->sin_addr.s_addr);
-                if ((ip >> 24) == 127 || (ip >> 24) == 10 || (ip >> 20) == ((172 << 4) | 1) ||
-                    (ip >> 16) == ((192 << 8) | 168) || (ip >> 16) == ((169 << 8) | 254) ||
-                    (ip >> 24) == 0 || ip == 0xFFFFFFFF) {
+                if (ipv4_is_restricted(ntohl(s4->sin_addr.s_addr))) {
                     resolved_internal = true;
                     break;
                 }
@@ -144,15 +157,15 @@ url_host_is_internal(const char* host)
                 struct sockaddr_in6* s6 = (struct sockaddr_in6*)it->ai_addr;
                 if (IN6_IS_ADDR_LOOPBACK(&s6->sin6_addr) || IN6_IS_ADDR_LINKLOCAL(&s6->sin6_addr) ||
                     IN6_IS_ADDR_SITELOCAL(&s6->sin6_addr) ||
-                    IN6_IS_ADDR_UNSPECIFIED(&s6->sin6_addr)) {
+                    IN6_IS_ADDR_UNSPECIFIED(&s6->sin6_addr) ||
+                    IN6_IS_ADDR_MULTICAST(&s6->sin6_addr)) {
                     resolved_internal = true;
                     break;
                 }
                 if (IN6_IS_ADDR_V4MAPPED(&s6->sin6_addr)) {
-                    uint32_t v4 = ntohl(*(const uint32_t*)&s6->sin6_addr.s6_addr[12]);
-                    if ((v4 >> 24) == 127 || (v4 >> 24) == 10 || (v4 >> 20) == ((172 << 4) | 1) ||
-                        (v4 >> 16) == ((192 << 8) | 168) || (v4 >> 16) == ((169 << 8) | 254) ||
-                        (v4 >> 24) == 0 || v4 == 0xFFFFFFFF) {
+                    uint32_t v4 = 0;
+                    memcpy(&v4, &s6->sin6_addr.s6_addr[12], sizeof(v4));
+                    if (ipv4_is_restricted(ntohl(v4))) {
                         resolved_internal = true;
                         break;
                     }
@@ -190,10 +203,18 @@ mf_mcp_rule_validate_url(const char* url, bool allow_local)
         return true;
     }
 
-    /* 解析出 host */
-    const char* p = url + (url[0] == 'h' && strncmp(url, "https", 5) == 0 ? 8 : 7);
+    /* 解析出 host（兼容 IPv6 方括号 [::1]:port） */
+    const char* p = url + (strncmp(url, "https://", 8) == 0 ? 8 : 7);
     const char* host_start = p;
-    while (*p && *p != '/' && *p != '?' && *p != '#' && *p != ':') {
+    if (*p == '[') {
+        while (*p && *p != ']' && *p != '/' && *p != '?' && *p != '#') {
+            p++;
+        }
+        if (*p == ']') {
+            p++;
+        }
+    }
+    while (*p && *p != '/' && *p != '?' && *p != '#') {
         p++;
     }
     char   host[256];

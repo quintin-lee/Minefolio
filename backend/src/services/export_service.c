@@ -12,6 +12,46 @@
 #include <string.h>
 #include <time.h>
 #include "csilk/util/csv.h"
+#include <ctype.h>
+
+/**
+ * @brief 防御 CSV 公式注入 (CWE-1236) 并执行 RFC 4180 转义
+ *
+ * 对以 =, +, @, \t, \r 开头或非纯负数格式的 - 开头单元格加单引号前缀，
+ * 避免 Excel / LibreOffice / Google Sheets 将导出的用户备注或资产名作为公式执行。
+ */
+static void
+mf_csv_safe_escape(char* out, size_t out_sz, const char* in)
+{
+    if (!out || out_sz == 0) {
+        return;
+    }
+    if (!in || !in[0]) {
+        csilk_csv_escape(out, out_sz, "");
+        return;
+    }
+    bool danger = (in[0] == '=' || in[0] == '+' || in[0] == '@' || in[0] == '\t' || in[0] == '\r');
+    if (in[0] == '-' && !isdigit((unsigned char)in[1])) {
+        danger = true;
+    }
+    if (!danger) {
+        csilk_csv_escape(out, out_sz, in);
+        return;
+    }
+    size_t slen = strlen(in);
+    char   stack_buf[1024];
+    char*  prefixed = (slen + 2 <= sizeof(stack_buf)) ? stack_buf : (char*)malloc(slen + 2);
+    if (!prefixed) {
+        csilk_csv_escape(out, out_sz, in);
+        return;
+    }
+    prefixed[0] = '\'';
+    memcpy(prefixed + 1, in, slen + 1);
+    csilk_csv_escape(out, out_sz, prefixed);
+    if (prefixed != stack_buf) {
+        free(prefixed);
+    }
+}
 
 void
 transactions_export_csv(csilk_ctx_t* c)
@@ -89,20 +129,20 @@ transactions_export_csv(csilk_ctx_t* c)
             char escaped_currency[32], escaped_asset[256], escaped_linked[256];
             char escaped_cat[256], escaped_note[512];
 
-            csilk_csv_escape(escaped_date, sizeof(escaped_date), date ? date : "");
-            csilk_csv_escape(escaped_type, sizeof(escaped_type), tx_type ? tx_type : "");
-            csilk_csv_escape(escaped_src, sizeof(escaped_src), src_type ? src_type : "");
+            mf_csv_safe_escape(escaped_date, sizeof(escaped_date), date ? date : "");
+            mf_csv_safe_escape(escaped_type, sizeof(escaped_type), tx_type ? tx_type : "");
+            mf_csv_safe_escape(escaped_src, sizeof(escaped_src), src_type ? src_type : "");
             snprintf(escaped_amount, sizeof(escaped_amount), "%.2f", amount);
             snprintf(escaped_price, sizeof(escaped_price), price > 0 ? "%.4f" : "", price);
             snprintf(escaped_qty, sizeof(escaped_qty), qty > 0 ? "%.4f" : "", qty);
             snprintf(escaped_fee, sizeof(escaped_fee), fee > 0 ? "%.2f" : "", fee);
-            csilk_csv_escape(
+            mf_csv_safe_escape(
                 escaped_currency, sizeof(escaped_currency), currency ? currency : "CNY");
-            csilk_csv_escape(escaped_asset, sizeof(escaped_asset), asset_name ? asset_name : "");
-            csilk_csv_escape(
+            mf_csv_safe_escape(escaped_asset, sizeof(escaped_asset), asset_name ? asset_name : "");
+            mf_csv_safe_escape(
                 escaped_linked, sizeof(escaped_linked), linked_name ? linked_name : "");
-            csilk_csv_escape(escaped_cat, sizeof(escaped_cat), cat_name ? cat_name : "");
-            csilk_csv_escape(escaped_note, sizeof(escaped_note), note ? note : "");
+            mf_csv_safe_escape(escaped_cat, sizeof(escaped_cat), cat_name ? cat_name : "");
+            mf_csv_safe_escape(escaped_note, sizeof(escaped_note), note ? note : "");
 
             int raw_len = snprintf(buf,
                                    sizeof(buf),
@@ -213,14 +253,14 @@ daily_expenses_export_csv(csilk_ctx_t* c)
             const csilk_json_t* row = csilk_json_array_get(rows, i);
             char                e_date[32], e_asset[256], e_cat[256], e_type[16], e_amount[32];
             char                e_currency[16], e_note[512];
-            csilk_csv_escape(e_date, sizeof(e_date), csilk_json_get_string(row, "expense_date"));
-            csilk_csv_escape(e_asset, sizeof(e_asset), csilk_json_get_string(row, "asset_name"));
-            csilk_csv_escape(e_cat, sizeof(e_cat), csilk_json_get_string(row, "category_name"));
-            csilk_csv_escape(e_type, sizeof(e_type), csilk_json_get_string(row, "expense_type"));
+            mf_csv_safe_escape(e_date, sizeof(e_date), csilk_json_get_string(row, "expense_date"));
+            mf_csv_safe_escape(e_asset, sizeof(e_asset), csilk_json_get_string(row, "asset_name"));
+            mf_csv_safe_escape(e_cat, sizeof(e_cat), csilk_json_get_string(row, "category_name"));
+            mf_csv_safe_escape(e_type, sizeof(e_type), csilk_json_get_string(row, "expense_type"));
             snprintf(e_amount, sizeof(e_amount), "%.2f", db_get_num(row, "amount"));
-            csilk_csv_escape(
+            mf_csv_safe_escape(
                 e_currency, sizeof(e_currency), csilk_json_get_string(row, "currency"));
-            csilk_csv_escape(e_note, sizeof(e_note), csilk_json_get_string(row, "note"));
+            mf_csv_safe_escape(e_note, sizeof(e_note), csilk_json_get_string(row, "note"));
 
             int raw_len = snprintf(buf,
                                    sizeof(buf),

@@ -171,7 +171,10 @@ main(int argc, char** argv)
     csilk_app_use_group(app, "/mcp", jwt_middleware_wrapper);
     /* /mcp 每用户限频（Task 4）：注册在 JWT 之后，使 ctx_user_id 可用 */
     csilk_app_use_group(app, "/mcp", mcp_rate_limit_middleware);
-    if (config_env_get("ENABLE_CSRF", NULL, 0, NULL)) {
+    char        csrf_buf[16] = {0};
+    const char* csrf_val = config_env_get("ENABLE_CSRF", csrf_buf, sizeof(csrf_buf), NULL);
+    if (csrf_val && (strcmp(csrf_val, "1") == 0 || strcasecmp(csrf_val, "true") == 0 ||
+                     strcasecmp(csrf_val, "yes") == 0 || strcasecmp(csrf_val, "on") == 0)) {
         csilk_app_use_group(app, "/api", csrf_middleware_wrapper);
     }
 

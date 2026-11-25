@@ -1,5 +1,6 @@
 #include "application/ai/probe_usecase.h"
 #include "application/ai/config_provider.h"
+#include "common/http_safety.h"
 #include "config/key_manager.h"
 #include "csilk/drivers/ai.h"
 #include <curl/curl.h>
@@ -97,6 +98,16 @@ ai_usecase_test_connection(const csilk_json_t*  body,
     }
 
     const char* dname = get_driver_name(id);
+    if (base_url && base_url[0]) {
+        bool allow_local = (strcmp(id, "ollama") == 0);
+        if (mf_http_validate_and_resolve_url(base_url, 512, allow_local, false, NULL, 0) != 0) {
+            explicit_bzero(key_buf, sizeof(key_buf));
+            ai_config_release(cfg);
+            out_res->code = 1002;
+            snprintf(out_res->message, sizeof(out_res->message), "非法或受限的 AI Base URL");
+            return -1;
+        }
+    }
     csilk_ai_t* test_ai = csilk_ai_new(dname, key_buf, (base_url && base_url[0]) ? base_url : NULL);
     explicit_bzero(key_buf, sizeof(key_buf));
     if (!test_ai) {
@@ -174,27 +185,6 @@ ai_usecase_test_connection(const csilk_json_t*  body,
     return 0;
 }
 
-typedef struct {
-    char*  data;
-    size_t size;
-} memory_buf_t;
-
-static size_t
-curl_write_memory_cb(void* contents, size_t size, size_t nmemb, void* userp)
-{
-    size_t        realsize = size * nmemb;
-    memory_buf_t* mem = (memory_buf_t*)userp;
-    char*         ptr = realloc(mem->data, mem->size + realsize + 1);
-    if (!ptr) {
-        return 0;
-    }
-    mem->data = ptr;
-    memcpy(&(mem->data[mem->size]), contents, realsize);
-    mem->size += realsize;
-    mem->data[mem->size] = 0;
-    return realsize;
-}
-
 int
 ai_usecase_fetch_models(const csilk_json_t*  body,
                         csilk_json_t**       out_resp,
@@ -252,15 +242,27 @@ ai_usecase_fetch_models(const csilk_json_t*  body,
         snprintf(url, sizeof(url), "https://api.openai.com/v1/models");
     }
 
+    char resolve_entry[320] = {0};
+    bool allow_local = (strcmp(id, "ollama") == 0);
+    if (mf_http_validate_and_resolve_url(
+            url, sizeof(url), allow_local, false, resolve_entry, sizeof(resolve_entry)) != 0) {
+        explicit_bzero(key_buf, sizeof(key_buf));
+        ai_config_release(cfg);
+        out_res->code = 1002;
+        snprintf(out_res->message, sizeof(out_res->message), "非法或受限的 AI Base URL");
+        return -1;
+    }
+
     CURL* curl = curl_easy_init();
     if (!curl) {
+        explicit_bzero(key_buf, sizeof(key_buf));
         ai_config_release(cfg);
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "CURL 初始化失败");
         return -1;
     }
 
-    memory_buf_t chunk = {.data = malloc(1), .size = 0};
+    mf_curl_buf_t chunk = {.data = malloc(1), .size = 0, .cap = 1, .max_bytes = MF_CURL_MAX_4MB};
     if (chunk.data) {
         chunk.data[0] = '\0';
     }
@@ -272,9 +274,10 @@ ai_usecase_fetch_models(const csilk_json_t*  body,
     headers = curl_slist_append(headers, auth_hdr);
     explicit_bzero(auth_hdr, sizeof(auth_hdr));
 
+    struct curl_slist* resolve_list = mf_http_curl_apply_security(curl, resolve_entry, NULL, false);
     curl_easy_setopt(curl, CURLOPT_URL, url);
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_memory_cb);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, mf_curl_bounded_write_cb);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void*)&chunk);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 5L);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
@@ -282,6 +285,9 @@ ai_usecase_fetch_models(const csilk_json_t*  body,
     CURLcode res = curl_easy_perform(curl);
     long     http_code = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+    if (resolve_list) {
+        curl_slist_free_all(resolve_list);
+    }
     curl_slist_free_all(headers);
     curl_easy_cleanup(curl);
 

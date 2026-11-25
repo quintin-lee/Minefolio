@@ -3,6 +3,7 @@
 #include "services/market/driver_mock.h"
 #include "infrastructure/repositories/market_repo_impl.h"
 #include "core/scheduler/scheduler_events.h"
+#include "common/http_safety.h"
 #include "csilk/csilk.h"
 #include <curl/curl.h>
 
@@ -66,54 +67,45 @@ quote_engine_get_proxy(void)
     return tls_proxy;
 }
 
-struct curl_buf {
-    char*  data;
-    size_t len;
-    size_t cap;
-};
-
-static size_t
-curl_write_cb(void* ptr, size_t size, size_t nmemb, void* user_data)
-{
-    size_t           total = size * nmemb;
-    struct curl_buf* buf = (struct curl_buf*)user_data;
-    if (buf->len + total + 1 > buf->cap) {
-        size_t new_cap = (buf->cap == 0) ? 4096 : buf->cap * 2;
-        while (new_cap < buf->len + total + 1) {
-            new_cap *= 2;
-        }
-        char* new_data = (char*)realloc(buf->data, new_cap);
-        if (!new_data) {
-            return 0;
-        }
-        buf->data = new_data;
-        buf->cap = new_cap;
-    }
-    memcpy(buf->data + buf->len, ptr, total);
-    buf->len += total;
-    buf->data[buf->len] = '\0';
-    return total;
-}
-
 char*
 quote_engine_http_get(const char* url, const char* proxy, int timeout_sec, size_t* out_len)
 {
     if (!url || atomic_load(&g_quote_stop)) {
         return NULL;
     }
+
+    char        local_proxy[256] = {0};
+    const char* px = NULL;
+    if (proxy && proxy[0]) {
+        px = proxy;
+    } else {
+        pthread_mutex_lock(&g_proxy_mutex);
+        if (g_market_proxy[0]) {
+            strncpy(local_proxy, g_market_proxy, sizeof(local_proxy) - 1);
+            px = local_proxy;
+        }
+        pthread_mutex_unlock(&g_proxy_mutex);
+    }
+
+    char resolve_entry[320] = {0};
+    if (mf_http_validate_and_resolve_url(
+            url, 2048, false, (px && px[0]), resolve_entry, sizeof(resolve_entry)) != 0) {
+        return NULL;
+    }
+
     CURL* curl = curl_easy_init();
     if (!curl) {
         return NULL;
     }
 
-    struct curl_buf buf = {NULL, 0, 0};
+    mf_curl_buf_t      buf = {.data = NULL, .size = 0, .cap = 0, .max_bytes = MF_CURL_MAX_4MB};
+    struct curl_slist* resolve_list = mf_http_curl_apply_security(curl, resolve_entry, px, true);
     curl_easy_setopt(curl, CURLOPT_URL, url);
-    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
     curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
     curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, quote_curl_xferinfo_cb);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_sec > 0 ? (long)timeout_sec : 3L);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 3L);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_cb);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, mf_curl_bounded_write_cb);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buf);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
 
@@ -144,27 +136,6 @@ quote_engine_http_get(const char* url, const char* proxy, int timeout_sec, size_
         curl_easy_setopt(curl, CURLOPT_CAINFO, custom_ca);
     }
 
-    /* Restrict redirect protocols and limit hops to prevent SSRF */
-    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-#if defined(CURLOPT_REDIR_PROTOCOLS_STR)
-    curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "http,https");
-#elif defined(CURLOPT_REDIR_PROTOCOLS)
-    curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS, (long)(CURLPROTO_HTTP | CURLPROTO_HTTPS));
-#endif
-    curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 3L);
-
-    char        local_proxy[256] = {0};
-    const char* px = NULL;
-    if (proxy && proxy[0]) {
-        px = proxy;
-    } else {
-        pthread_mutex_lock(&g_proxy_mutex);
-        if (g_market_proxy[0]) {
-            strncpy(local_proxy, g_market_proxy, sizeof(local_proxy) - 1);
-            px = local_proxy;
-        }
-        pthread_mutex_unlock(&g_proxy_mutex);
-    }
     if (px && px[0]) {
         curl_easy_setopt(curl, CURLOPT_PROXY, px);
     }
@@ -172,6 +143,9 @@ quote_engine_http_get(const char* url, const char* proxy, int timeout_sec, size_
     CURLcode res = curl_easy_perform(curl);
     long     http_code = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+    if (resolve_list) {
+        curl_slist_free_all(resolve_list);
+    }
     curl_easy_cleanup(curl);
 
     if (res != CURLE_OK || http_code < 200 || http_code >= 400) {
@@ -182,7 +156,7 @@ quote_engine_http_get(const char* url, const char* proxy, int timeout_sec, size_
     }
 
     if (out_len) {
-        *out_len = buf.len;
+        *out_len = buf.size;
     }
     return buf.data;
 }

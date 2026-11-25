@@ -13,12 +13,62 @@
 #include "common/response.h"
 #include "common/ctx.h"
 #include "common/jwt.h"
+#include "config/secret.h"
 #include "csilk/core/ctx/response.h"
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <time.h>
+
+static bool
+rate_limit_trust_proxy(void)
+{
+    char        buf[16] = {0};
+    const char* v = config_env_get("TRUST_PROXY", buf, sizeof(buf), NULL);
+    if (!v || !v[0]) {
+        v = getenv("MINEFOLIO_TRUST_PROXY");
+    }
+    return v && (strcmp(v, "1") == 0 || strcasecmp(v, "true") == 0 || strcasecmp(v, "yes") == 0);
+}
+
+static void
+rate_limit_effective_ip(csilk_ctx_t* c, char* out, size_t out_cap)
+{
+    if (!out || out_cap == 0) {
+        return;
+    }
+    if (!rate_limit_trust_proxy()) {
+        /* 未显式启用可信代理时，忽略客户端可伪造的 X-Forwarded-For / X-Real-IP 头，
+         * 防止攻击者通过轮换伪造头绕过登录/2FA/bind-auth 暴力破解限流。 */
+        const char* xff = csilk_get_header(c, "X-Forwarded-For");
+        const char* xri = csilk_get_header(c, "X-Real-IP");
+        if ((xff && xff[0]) || (xri && xri[0])) {
+            snprintf(out, out_cap, "untrusted-fwd");
+            return;
+        }
+    }
+    const char* ip = csilk_get_client_ip(c);
+    if (!ip || !ip[0]) {
+        snprintf(out, out_cap, "127.0.0.1");
+        return;
+    }
+    /* 清洗非 IP 字符，防止超长或特殊控制字符污染桶键 */
+    size_t n = 0;
+    for (const char* p = ip; *p && n + 1 < out_cap; p++) {
+        unsigned char ch = (unsigned char)*p;
+        if ((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F') ||
+            ch == '.' || ch == ':') {
+            out[n++] = (char)ch;
+        }
+    }
+    out[n] = '\0';
+    if (n == 0) {
+        snprintf(out, out_cap, "127.0.0.1");
+    }
+}
 
 #define RATE_LIMIT_WINDOW_SEC 60
 #define RATE_LIMIT_MAX_REQS 10
@@ -156,9 +206,9 @@ rate_limit_auth_middleware(csilk_ctx_t* c)
         return;
     }
 
-    const char* ip = csilk_get_client_ip(c);
-    const char* safe_ip = (ip && ip[0]) ? ip : "127.0.0.1";
-    int64_t     now = monotonic_now_sec();
+    char safe_ip[64];
+    rate_limit_effective_ip(c, safe_ip, sizeof(safe_ip));
+    int64_t now = monotonic_now_sec();
 
     pthread_mutex_lock(&g_rate_limit_mutex);
     auth_bucket_t* b = auth_find_or_alloc_bucket(limit_path, safe_ip, now);
@@ -306,12 +356,12 @@ mcp_rate_limit_middleware(csilk_ctx_t* c)
         return;
     }
 
-    int64_t     user_id = jwt_get_user_id(c);
-    const char* ip = csilk_get_client_ip(c);
-    const char* safe_ip = (ip && ip[0]) ? ip : "127.0.0.1";
-    int64_t     now = monotonic_now_sec();
-    int64_t     now_epoch = now / MCP_SLOT_SEC;
-    uint32_t    limit = (user_id > 0) ? MCP_RATE_MAX_PER_MIN : MCP_UNAUTH_RATE_MAX_PER_MIN;
+    int64_t user_id = jwt_get_user_id(c);
+    char    safe_ip[64];
+    rate_limit_effective_ip(c, safe_ip, sizeof(safe_ip));
+    int64_t  now = monotonic_now_sec();
+    int64_t  now_epoch = now / MCP_SLOT_SEC;
+    uint32_t limit = (user_id > 0) ? MCP_RATE_MAX_PER_MIN : MCP_UNAUTH_RATE_MAX_PER_MIN;
 
     pthread_mutex_lock(&g_mcp_rate_limit_mutex);
     uint32_t      matches = 0;

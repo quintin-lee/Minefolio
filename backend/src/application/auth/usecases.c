@@ -992,11 +992,24 @@ typedef struct {
 static size_t
 oauth_curl_write_cb(void* ptr, size_t size, size_t nmemb, void* userdata)
 {
-    size_t            total = size * nmemb;
-    oauth_curl_buf_t* b = (oauth_curl_buf_t*)userdata;
+    static const size_t MAX_OAUTH_RESP = 1024U * 1024U;
+    oauth_curl_buf_t*   b = (oauth_curl_buf_t*)userdata;
+    if (!b || !ptr) {
+        return 0;
+    }
+    if (size != 0 && nmemb > SIZE_MAX / size) {
+        return 0;
+    }
+    size_t total = size * nmemb;
+    if (total > MAX_OAUTH_RESP || b->size > MAX_OAUTH_RESP - total) {
+        return 0;
+    }
     if (b->size + total + 1 > b->cap) {
         size_t new_cap = (b->cap + total + 1) * 2;
-        char*  nd = realloc(b->data, new_cap);
+        if (new_cap > MAX_OAUTH_RESP + 1) {
+            new_cap = MAX_OAUTH_RESP + 1;
+        }
+        char* nd = realloc(b->data, new_cap);
         if (!nd) {
             return 0;
         }
@@ -1024,13 +1037,25 @@ oauth_exchange_github(
         return -1;
     }
 
-    char post_fields[512];
-    snprintf(post_fields,
-             sizeof(post_fields),
-             "client_id=%s&client_secret=%s&code=%s",
-             client_id,
-             client_secret,
-             code);
+    char* enc_code = curl_easy_escape(curl, code, (int)strlen(code));
+    if (!enc_code) {
+        curl_easy_cleanup(curl);
+        return -1;
+    }
+
+    char post_fields[1024];
+    int  pf_n = snprintf(post_fields,
+                         sizeof(post_fields),
+                         "client_id=%s&client_secret=%s&code=%s",
+                         client_id,
+                         client_secret,
+                         enc_code);
+    curl_free(enc_code);
+    if (pf_n < 0 || (size_t)pf_n >= sizeof(post_fields)) {
+        OPENSSL_cleanse(post_fields, sizeof(post_fields));
+        curl_easy_cleanup(curl);
+        return -1;
+    }
 
     struct curl_slist* headers = NULL;
     headers = curl_slist_append(headers, "Accept: application/json");
@@ -1049,9 +1074,14 @@ oauth_exchange_github(
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buf);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 5L);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
 
     CURLcode res = curl_easy_perform(curl);
-    long     http_code = 0;
+    OPENSSL_cleanse(post_fields, sizeof(post_fields));
+    long http_code = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
 
     if (res != CURLE_OK || http_code != 200 || !buf.data || buf.size == 0) {
@@ -1083,6 +1113,7 @@ oauth_exchange_github(
     curl_slist_free_all(headers);
     headers = NULL;
     headers = curl_slist_append(headers, auth_hdr);
+    OPENSSL_cleanse(auth_hdr, sizeof(auth_hdr));
     headers = curl_slist_append(headers, "Accept: application/json");
     headers = curl_slist_append(headers, "User-Agent: Minefolio-Backend");
     csilk_json_free(tok_resp);
@@ -1098,6 +1129,10 @@ oauth_exchange_github(
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &user_buf);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 5L);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
 
     res = curl_easy_perform(curl);
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);

@@ -1,4 +1,5 @@
 #include "services/notification/wechat_push_service.h"
+#include "common/http_safety.h"
 
 #include <curl/curl.h>
 #include <stdio.h>
@@ -8,28 +9,11 @@
 
 #include "csilk/csilk.h"
 
-struct response_buf {
-    char*  data;
-    size_t size;
-};
-
-static size_t
-write_callback(void* contents, size_t size, size_t nmemb, void* userp)
+static bool
+push_allow_local_env(void)
 {
-    size_t               realsize = size * nmemb;
-    struct response_buf* mem = (struct response_buf*)userp;
-
-    char* ptr = realloc(mem->data, mem->size + realsize + 1);
-    if (!ptr) {
-        return 0;
-    }
-
-    mem->data = ptr;
-    memcpy(&(mem->data[mem->size]), contents, realsize);
-    mem->size += realsize;
-    mem->data[mem->size] = 0;
-
-    return realsize;
+    const char* v = getenv("MINEFOLIO_ALLOW_LOCAL_WEBHOOK");
+    return v && (strcmp(v, "1") == 0 || strcasecmp(v, "true") == 0);
 }
 
 static void
@@ -193,6 +177,18 @@ wechat_push_service_send(const push_channel_config_t* cfg,
         return -1;
     }
 
+    char resolve_entry[320] = {0};
+    if (mf_http_validate_and_resolve_url(target_url,
+                                         sizeof(target_url),
+                                         push_allow_local_env(),
+                                         false,
+                                         resolve_entry,
+                                         sizeof(resolve_entry)) != 0) {
+        free(payload_str);
+        set_err(err_buf, err_len, "Blocked push webhook URL by SSRF policy");
+        return -1;
+    }
+
     CURL* curl = curl_easy_init();
     if (!curl) {
         free(payload_str);
@@ -200,8 +196,8 @@ wechat_push_service_send(const push_channel_config_t* cfg,
         return -1;
     }
 
-    struct response_buf resp = {NULL, 0};
-    struct curl_slist*  headers = NULL;
+    mf_curl_buf_t      resp = {.data = NULL, .size = 0, .cap = 0, .max_bytes = MF_CURL_MAX_1MB};
+    struct curl_slist* headers = NULL;
     headers = curl_slist_append(headers, "Content-Type: application/json; charset=utf-8");
 
     char auth_header[256];
@@ -210,11 +206,12 @@ wechat_push_service_send(const push_channel_config_t* cfg,
         headers = curl_slist_append(headers, auth_header);
     }
 
+    struct curl_slist* resolve_list = mf_http_curl_apply_security(curl, resolve_entry, NULL, false);
     curl_easy_setopt(curl, CURLOPT_URL, target_url);
     curl_easy_setopt(curl, CURLOPT_POST, 1L);
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload_str);
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, mf_curl_bounded_write_cb);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void*)&resp);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 5L);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 15L);
@@ -233,6 +230,9 @@ wechat_push_service_send(const push_channel_config_t* cfg,
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
     }
 
+    if (resolve_list) {
+        curl_slist_free_all(resolve_list);
+    }
     curl_slist_free_all(headers);
     free(payload_str);
     curl_easy_cleanup(curl);
