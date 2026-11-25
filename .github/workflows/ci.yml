@@ -157,6 +157,36 @@ jobs:
           ./tests/test_im_bind_auth.sh
           ./tests/test_gateway.sh
 
+  backend-asan:
+    name: Backend ASan + UBSan Unit Tests
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential gcc-14 g++-14 cmake pkg-config \
+            libuv1-dev libyaml-dev libsqlite3-dev libssl-dev \
+            libcurl4-openssl-dev zlib1g-dev sqlite3 curl python3 nodejs jq
+
+      - name: Build backend with ASan + UBSan
+        run: |
+          cd backend
+          CC=gcc-14 CXX=g++-14 cmake -B build-asan -G "Unix Makefiles" \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo -DMINEFOLIO_SANITIZE=ON
+          JOBS=$(($(nproc) / 2)); [ "$JOBS" -lt 1 ] && JOBS=1
+          cmake --build build-asan --parallel "$JOBS"
+
+      - name: Run CTest unit tests under ASan + UBSan
+        env:
+          ASAN_OPTIONS: "detect_leaks=1:abort_on_error=1:halt_on_error=1"
+          UBSAN_OPTIONS: "print_stacktrace=1:halt_on_error=1"
+        run: |
+          ctest --test-dir backend/build-asan --output-on-failure -j2
+
   gateway-test:
     name: Gateway Adapter Tests
     runs-on: ubuntu-latest

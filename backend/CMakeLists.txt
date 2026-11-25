@@ -421,3 +421,6 @@ add_dependencies(test_async_task_manager copy_assets)
 add_minefolio_unit_test(test_admin_user_management tests/unit/test_admin_user_management.c)
 add_dependencies(test_admin_user_management copy_assets)
 
+add_minefolio_unit_test(test_security_audit_regressions tests/unit/test_security_audit_regressions.c pthread)
+add_dependencies(test_security_audit_regressions copy_assets)
+
