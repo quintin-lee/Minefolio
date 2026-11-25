@@ -13,6 +13,8 @@ csilk_json_t* mf_ai_session_list(
 
 csilk_json_t* mf_ai_session_get(csilk_db_pool_t* pool, int64_t user_id, int64_t id);
 
+int64_t mf_ai_session_find_by_title(csilk_db_pool_t* pool, int64_t user_id, const char* title);
+
 int64_t mf_ai_session_insert(csilk_db_pool_t* pool,
                              int64_t          user_id,
                              const char*      title,

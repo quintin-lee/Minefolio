@@ -62,6 +62,27 @@ mf_ai_session_get(csilk_db_pool_t* pool, int64_t user_id, int64_t id)
 }
 
 int64_t
+mf_ai_session_find_by_title(csilk_db_pool_t* pool, int64_t user_id, const char* title)
+{
+    char uid[32];
+    uid_str(user_id, uid);
+    if (!title) {
+        return 0;
+    }
+    csilk_json_t* r = csilk_db_query_param_json(
+        pool,
+        "SELECT id FROM ai_sessions WHERE user_id=? AND title=? ORDER BY id DESC LIMIT 1",
+        (const char*[]){uid, title, NULL});
+    if (!r || csilk_json_array_size(r) == 0) {
+        csilk_json_free(r);
+        return 0;
+    }
+    int64_t id = db_get_int(csilk_json_array_get(r, 0), "id");
+    csilk_json_free(r);
+    return id;
+}
+
+int64_t
 mf_ai_session_insert(csilk_db_pool_t* pool,
                      int64_t          user_id,
                      const char*      title,

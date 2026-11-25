@@ -330,21 +330,7 @@ im_bot_usecase_chat_submit(void*          pool,
 
     char sess_title[128];
     snprintf(sess_title, sizeof(sess_title), "IM: %s@%s", platform, im_user_id);
-    int64_t       list_total = 0;
-    csilk_json_t* found = mf_ai_session_list(db_pool, user_id, 1, 50, &list_total);
-    (void)list_total;
-    int64_t session_id = 0;
-    if (found) {
-        for (size_t i = 0; i < csilk_json_array_size(found); i++) {
-            csilk_json_t* row = csilk_json_array_get(found, i);
-            const char*   t = csilk_json_get_string(row, "title");
-            if (t && strcmp(t, sess_title) == 0) {
-                session_id = db_get_int(row, "id");
-                break;
-            }
-        }
-        csilk_json_free(found);
-    }
+    int64_t session_id = mf_ai_session_find_by_title(db_pool, user_id, sess_title);
     if (session_id <= 0) {
         session_id = mf_ai_session_insert(db_pool, user_id, sess_title, "im-bot", "system");
     }
