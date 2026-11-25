@@ -5,7 +5,9 @@
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import echarts, { type ECharts } from '@/utils/echarts'
 import { resolveChartPalette, useChartThemeSync, withAlpha } from '@/utils/echarts-theme'
+import { useDisplaySettingsStore } from '@/stores/display-settings'
 const props = defineProps<{ data: { labels: string[]; net_worth: number[]; assets: number[]; liabilities: number[] } }>()
+const displaySettings = useDisplaySettingsStore()
 const chartRef = ref<HTMLElement>()
 let chart: ECharts | null = null
 let resizeObserver: ResizeObserver | null = null
@@ -37,10 +39,12 @@ function handleResize() {
   if (chart) chart.resize()
 }
 watch(() => props.data, update, { deep: true })
+watch(() => displaySettings.showAmount, update)
 useChartThemeSync(update)
 function update() {
   if (!chart || !props.data?.labels?.length) return
   const P = resolveChartPalette()
+  const masked = !displaySettings.showAmount
   chart.setOption({
     animationDuration: 1000,
     tooltip: {
@@ -52,6 +56,7 @@ function update() {
       borderWidth: 1,
       shadowColor: P.primaryLight,
       shadowBlur: 16,
+      valueFormatter: (v: any) => (masked ? '****' : String(v)),
     },
     grid: { left: 50, right: 20, top: 40, bottom: 20, containLabel: true },
     xAxis: {
@@ -65,7 +70,7 @@ function update() {
       splitLine: { lineStyle: { type: 'dashed', color: P.primaryLight } },
       axisLabel: {
         color: P.textMuted,
-        formatter: (v: number) => v >= 10000 ? `${(v/10000).toFixed(1)}w` : String(v)
+        formatter: (v: number) => (masked ? '****' : (v >= 10000 ? `${(v/10000).toFixed(1)}w` : String(v)))
       }
     },
     series: [

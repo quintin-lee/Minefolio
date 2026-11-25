@@ -6,6 +6,7 @@
 import { onMounted, onUnmounted, ref, watch } from 'vue'
 import echarts, { type ECharts } from '@/utils/echarts'
 import { resolveChartPalette, useChartThemeSync } from '@/utils/echarts-theme'
+import { useDisplaySettingsStore } from '@/stores/display-settings'
 
 export interface HoldingsPieDatum {
   name: string
@@ -13,6 +14,7 @@ export interface HoldingsPieDatum {
 }
 
 const props = defineProps<{ data: HoldingsPieDatum[] }>()
+const displaySettings = useDisplaySettingsStore()
 
 const chartRef = ref<HTMLDivElement | null>(null)
 let chart: ECharts | null = null
@@ -34,10 +36,11 @@ const TYPE_COLORS: Record<string, string> = {
 function updateChart() {
   if (!chart) return
   const P = resolveChartPalette()
+  const masked = !displaySettings.showAmount
   chart.setOption({
     tooltip: {
       trigger: 'item',
-      formatter: (p: any) => `${p.name}: ¥${p.value} (${p.percent}%)`,
+      formatter: (p: any) => `${p.name}: ${masked ? '****' : `¥${p.value}`} (${p.percent}%)`,
       backgroundColor: P.surfaceCard,
       borderColor: P.border,
       textStyle: { color: P.textMain },
@@ -82,10 +85,13 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
   resizeObserver?.disconnect()
+  resizeObserver = null
   chart?.dispose()
+  chart = null
 })
 
 watch(() => props.data, updateChart, { deep: true })
+watch(() => displaySettings.showAmount, updateChart)
 useChartThemeSync(updateChart)
 </script>
 

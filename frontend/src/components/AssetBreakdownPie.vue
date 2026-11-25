@@ -3,7 +3,7 @@
     <div ref="chartRef" class="chart-canvas"></div>
     <div class="donut-center-metric">
       <div class="center-title">{{ activeItem ? activeItem.name : '配置总计' }}</div>
-      <div class="center-val tabular-nums">{{ formatCurrency(activeItem ? activeItem.value : totalValue) }}</div>
+      <div class="center-val tabular-nums">{{ displaySettings.showAmount ? formatCurrency(activeItem ? activeItem.value : totalValue) : '****' }}</div>
       <div v-if="activeItem" class="center-pct tabular-nums">{{ activeItem.pct.toFixed(1) }}%</div>
       <div v-else class="center-sub muted-text">100%</div>
     </div>
@@ -14,9 +14,11 @@
 import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
 import echarts, { type ECharts } from '@/utils/echarts'
 import { resolveChartPalette, useChartThemeSync, modernTooltipConfig } from '@/utils/echarts-theme'
+import { useDisplaySettingsStore } from '@/stores/display-settings'
 import { formatCurrency } from '@/utils/format'
 
 const props = defineProps<{ data: { category_name: string; value: number; pct: number }[] }>()
+const displaySettings = useDisplaySettingsStore()
 const chartRef = ref<HTMLElement>()
 const activeItem = ref<{ name: string; value: number; pct: number } | null>(null)
 let chart: ECharts | null = null
@@ -70,18 +72,20 @@ function handleResize() {
 }
 
 watch(() => props.data, updateChart, { deep: true })
+watch(() => displaySettings.showAmount, updateChart)
 useChartThemeSync(updateChart)
 
 function updateChart() {
   if (!chart || !props.data || props.data.length === 0) return
   const P = resolveChartPalette()
+  const masked = !displaySettings.showAmount
   chart.setOption({
     animationDuration: 800,
     tooltip: {
       ...modernTooltipConfig(P),
       trigger: 'item',
       formatter: (p: any) => {
-        const val = formatCurrency(p.data.value)
+        const val = masked ? '****' : formatCurrency(p.data.value)
         return `<div style="font-weight:700;color:${p.color};margin-bottom:4px;font-family:var(--mf-font-mono)">${p.data.name}</div>
                 <div style="color:${P.textRegular};font-family:var(--mf-font-mono)">金额: ${val}</div>
                 <div style="color:${P.textMuted};font-family:var(--mf-font-mono)">占比: ${p.data.pct.toFixed(1)}%</div>`

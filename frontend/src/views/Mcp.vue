@@ -130,7 +130,9 @@ import McpToolsDrawer from '@/components/mcp/McpToolsDrawer.vue'
 
 const loading = ref(false)
 const pingingAll = ref(false)
+const deletingId = ref<number | null>(null)
 const servers = ref<McpServer[]>([])
+let loadServersReqSeq = 0
 const serverToolsMap = reactive<Record<number, McpServerTool[]>>({})
 const testingIds = reactive(new Set<number>())
 const refreshingIds = reactive(new Set<number>())
@@ -173,9 +175,11 @@ const filteredServers = computed(() => {
 })
 
 async function loadServers() {
+  const reqId = ++loadServersReqSeq
   try {
     loading.value = true
     const list = await listMcpServers()
+    if (reqId !== loadServersReqSeq) return
     servers.value = list.map(s => ({
       ...s,
       id: Number(s.id),
@@ -184,16 +188,21 @@ async function loadServers() {
     // Load tools previews in background
     for (const s of servers.value) {
       getMcpServerTools(s.id).then(tools => {
-        serverToolsMap[s.id] = tools
+        if (reqId === loadServersReqSeq) {
+          serverToolsMap[s.id] = tools
+        }
       }).catch(() => {
         // Silent catch for background tools pre-fetch
       })
     }
   } catch (err: unknown) {
+    if (reqId !== loadServersReqSeq) return
     const e = err as { response?: { data?: { message?: string } }; message?: string }
     ElMessage.error(e?.response?.data?.message || e?.message || '加载 MCP 服务列表失败')
   } finally {
-    loading.value = false
+    if (reqId === loadServersReqSeq) {
+      loading.value = false
+    }
   }
 }
 
@@ -217,6 +226,7 @@ function handleToggle(server: McpServer, enabled: boolean) {
 }
 
 async function handleTest(server: McpServer) {
+  if (testingIds.has(server.id)) return
   testingIds.add(server.id)
   try {
     const res = await testMcpServer(server.id)
@@ -235,6 +245,7 @@ async function handleTest(server: McpServer) {
 }
 
 async function handleRefresh(server: McpServer) {
+  if (refreshingIds.has(server.id)) return
   refreshingIds.add(server.id)
   try {
     const res = await refreshMcpServer(server.id)
@@ -249,6 +260,7 @@ async function handleRefresh(server: McpServer) {
 }
 
 async function handlePingAll() {
+  if (pingingAll.value) return
   if (servers.value.length === 0) {
     ElMessage.info('暂无已配置的 MCP 服务')
     return
@@ -272,6 +284,7 @@ async function handlePingAll() {
 }
 
 async function handleDelete(server: McpServer) {
+  if (deletingId.value === server.id) return
   try {
     await ElMessageBox.confirm(
       `确定要删除 MCP 服务「${server.name}」吗？删除后其提供的全部工具将无法在 AI 对话中被调用。`,
@@ -282,11 +295,19 @@ async function handleDelete(server: McpServer) {
         type: 'warning',
       }
     )
+  } catch {
+    return
+  }
+  deletingId.value = server.id
+  try {
     await deleteMcpServer(server.id)
     ElMessage.success('MCP 服务已成功删除')
     await loadServers()
-  } catch {
-    // User cancelled
+  } catch (err: unknown) {
+    const e = err as { response?: { data?: { message?: string } }; message?: string }
+    ElMessage.error(e?.response?.data?.message || e?.message || '删除 MCP 服务失败')
+  } finally {
+    deletingId.value = null
   }
 }
 

@@ -7,8 +7,10 @@ import { ref, onMounted, onUnmounted, watch } from 'vue'
 import echarts, { type ECharts } from '@/utils/echarts'
 import type { ExpenseYearlyReport } from '@/api/reports'
 import { resolveChartPalette, useChartThemeSync, modernTooltipConfig } from '@/utils/echarts-theme'
+import { useDisplaySettingsStore } from '@/stores/display-settings'
 
 const props = defineProps<{ data: ExpenseYearlyReport | null }>()
+const displaySettings = useDisplaySettingsStore()
 const chartRef = ref<HTMLElement>()
 let chart: ECharts | null = null
 let resizeObserver: ResizeObserver | null = null
@@ -43,12 +45,14 @@ function handleResize() {
 }
 
 watch(() => props.data, updateChart, { deep: true })
+watch(() => displaySettings.showAmount, updateChart)
 useChartThemeSync(updateChart)
 
 function updateChart() {
   if (!chart) return
   const d = props.data
   const P = resolveChartPalette()
+  const masked = !displaySettings.showAmount
   const labels = d?.labels ?? []
   const income = d?.income ?? []
   const expense = d?.expense ?? []
@@ -58,6 +62,7 @@ function updateChart() {
       ...modernTooltipConfig(P),
       trigger: 'axis',
       axisPointer: { type: 'shadow', shadowStyle: { color: P.primaryLight } },
+      valueFormatter: (v: any) => (masked ? '****' : String(v)),
     },
     legend: {
       data: ['收入', '支出'],
@@ -82,7 +87,7 @@ function updateChart() {
         color: P.textMuted,
         fontFamily: 'var(--mf-font-mono)',
         fontSize: 11,
-        formatter: (v: number) => (v >= 10000 ? `${(v / 10000).toFixed(1)}w` : v.toString())
+        formatter: (v: number) => (masked ? '****' : (v >= 10000 ? `${(v / 10000).toFixed(1)}w` : v.toString()))
       }
     },
     series: [

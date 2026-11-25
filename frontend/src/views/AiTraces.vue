@@ -136,13 +136,17 @@ function formatTps(tps: number | string | undefined | null) {
   return !isNaN(n) && n > 0 ? n.toFixed(1) : '—'
 }
 
+let loadReqSeq = 0
+
 async function loadData() {
+  const reqId = ++loadReqSeq
   loading.value = true
   try {
     const params: Record<string, unknown> = { page: page.value, page_size: pageSize.value }
     if (filters.value.provider) params.provider = filters.value.provider
     if (filters.value.model) params.model = filters.value.model
     const raw = (await listTraces(params)) as unknown
+    if (reqId !== loadReqSeq) return
     const res = (raw && typeof raw === 'object' && 'data' in raw && !Array.isArray((raw as { data: unknown }).data)
       ? (raw as { data: unknown }).data
       : raw) as { list?: AiTrace[]; total?: number } | AiTrace[]
@@ -158,11 +162,14 @@ async function loadData() {
       total.value = 0
     }
   } catch (e) {
+    if (reqId !== loadReqSeq) return
     console.error('[AiTraces] loadData failed:', e)
     traces.value = []
     total.value = 0
   } finally {
-    loading.value = false
+    if (reqId === loadReqSeq) {
+      loading.value = false
+    }
   }
 }
 

@@ -138,7 +138,9 @@ import SkillImportDialog from '@/components/skills/SkillImportDialog.vue'
 
 const loading = ref(false)
 const resetting = ref(false)
+const deletingId = ref<number | null>(null)
 const skills = ref<AiSkill[]>([])
+let loadSkillsReqSeq = 0
 
 const searchQuery = ref('')
 const selectedCategory = ref('all')
@@ -177,19 +179,24 @@ const filteredSkills = computed(() => {
 })
 
 async function loadSkills() {
+  const reqId = ++loadSkillsReqSeq
   try {
     loading.value = true
     const list = await listSkills()
+    if (reqId !== loadSkillsReqSeq) return
     skills.value = list.map(s => ({
       ...s,
       id: Number(s.id),
       enabled: Number(s.enabled) === 1 ? 1 : 0,
     }))
   } catch (err: unknown) {
+    if (reqId !== loadSkillsReqSeq) return
     const e = err as { response?: { data?: { message?: string } }; message?: string }
     ElMessage.error(e?.response?.data?.message || e?.message || '加载技能列表失败')
   } finally {
-    loading.value = false
+    if (reqId === loadSkillsReqSeq) {
+      loading.value = false
+    }
   }
 }
 
@@ -217,6 +224,7 @@ function handleToggle(skill: AiSkill, enabled: boolean) {
 }
 
 async function handleDelete(skill: AiSkill) {
+  if (deletingId.value === skill.id) return
   try {
     await ElMessageBox.confirm(
       `确定要删除技能「${skill.name}」吗？删除后 AI 将无法调用该技能。`,
@@ -227,11 +235,19 @@ async function handleDelete(skill: AiSkill) {
         type: 'warning',
       }
     )
+  } catch {
+    return
+  }
+  deletingId.value = skill.id
+  try {
     await deleteSkill(skill.id)
     ElMessage.success('技能已成功删除')
     await loadSkills()
-  } catch {
-    // User cancelled
+  } catch (err: unknown) {
+    const e = err as { response?: { data?: { message?: string } }; message?: string }
+    ElMessage.error(e?.response?.data?.message || e?.message || '删除技能失败')
+  } finally {
+    deletingId.value = null
   }
 }
 

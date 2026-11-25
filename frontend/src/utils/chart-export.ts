@@ -21,6 +21,7 @@ export function exportChartPng(
     backgroundColor,
     excludeComponents: ['toolbox'],
   })
+  if (!dataUrl) return
 
   const finalName = fileName.endsWith('.png') ? fileName : `${fileName}.png`
   const link = document.createElement('a')

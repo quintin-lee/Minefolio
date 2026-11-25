@@ -214,12 +214,18 @@ function createHttp(): AxiosInstance {
     (err) => {
       if (err.response) {
         const code = err.response.data?.code
-        if (code === 1001) {
+        if (code === 1001 || err.response.status === 401) {
           handleAuthError()
         } else if (code) {
           showDebouncedError(err.response.data.message || '请求失败')
+        } else if (err?.code !== 'ERR_CANCELED') {
+          const msg =
+            err.response.data?.message ||
+            err.response.statusText ||
+            (err.response.status ? `请求失败 (${err.response.status})` : '请求失败')
+          showDebouncedError(msg)
         }
-      } else if (!mobileMode) {
+      } else if (!mobileMode && err?.code !== 'ERR_CANCELED') {
         showDebouncedError('网络错误')
       }
       return Promise.reject(err)

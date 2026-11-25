@@ -191,18 +191,26 @@ function renderMarkdown(md: string): string {
   return renderSafeMarkdown(md)
 }
 
+let loadReqSeq = 0
+let isUnmounted = false
+
 /** 首屏加载第一页 */
 async function loadReports() {
+  const reqId = ++loadReqSeq
   loading.value = true
   try {
     const res = await listNewsReports(PAGE_SIZE, 0)
+    if (isUnmounted || reqId !== loadReqSeq) return
     reports.value = res.list
     hasMore.value = res.has_more
   } catch (err: unknown) {
+    if (isUnmounted || reqId !== loadReqSeq) return
     const e = err as { response?: { data?: { message?: string } }; message?: string }
     ElMessage.error(e?.response?.data?.message || e?.message || '加载报告列表失败')
   } finally {
-    loading.value = false
+    if (!isUnmounted && reqId === loadReqSeq) {
+      loading.value = false
+    }
   }
 }
 
@@ -229,6 +237,7 @@ async function loadMoreReports() {
 }
 
 async function handleTrigger() {
+  if (triggering.value) return
   triggering.value = true
   try {
     await triggerNewsAnalysis()
@@ -248,6 +257,10 @@ function startPolling() {
   if (pollTimer) return
   let pollCount = 0
   pollTimer = setInterval(async () => {
+    if (isUnmounted) {
+      stopPolling()
+      return
+    }
     pollCount++
     if (pollCount > 30) {
       stopPolling()
@@ -256,6 +269,10 @@ function startPolling() {
     try {
       /* 轻量轮询: limit=1 只探顶部一条, 不拉全量正文 */
       const res = await listNewsReports(1, 0)
+      if (isUnmounted) {
+        stopPolling()
+        return
+      }
       if (res.list.length > 0 && res.list[0] && res.list[0].status !== 'pending') {
         stopPolling()
         await loadReports()
@@ -275,10 +292,12 @@ function stopPolling() {
 }
 
 onMounted(() => {
+  isUnmounted = false
   loadReports()
 })
 
 onUnmounted(() => {
+  isUnmounted = true
   stopPolling()
 })
 </script>

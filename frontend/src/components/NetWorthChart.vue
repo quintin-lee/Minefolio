@@ -30,10 +30,12 @@ import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
 import { Icon } from '@iconify/vue'
 import echarts, { type ECharts } from '@/utils/echarts'
 import { resolveChartPalette, useChartThemeSync, makeAreaGradient, modernTooltipConfig, withAlpha } from '@/utils/echarts-theme'
+import { useDisplaySettingsStore } from '@/stores/display-settings'
 import { formatCurrency } from '@/utils/format'
 import { exportChartPng, exportChartCsv } from '@/utils/chart-export'
 
 const props = defineProps<{ data: { date: string; net_worth: number }[] }>()
+const displaySettings = useDisplaySettingsStore()
 const chartRef = ref<HTMLElement>()
 const timeRange = ref<'30D' | '90D' | '1Y' | 'ALL'>('ALL')
 let chart: ECharts | null = null
@@ -76,11 +78,13 @@ function handleResize() {
 }
 
 watch(() => props.data, updateChart, { deep: true })
+watch(() => displaySettings.showAmount, updateChart)
 useChartThemeSync(updateChart)
 
 function updateChart() {
   if (!chart || !activeData.value.length) return
   const P = resolveChartPalette()
+  const masked = !displaySettings.showAmount
   const data = activeData.value
   const firstVal = data[0]?.net_worth || 0
 
@@ -100,7 +104,7 @@ function updateChart() {
       },
       formatter: (p: any) => {
         const item = p[0]
-        const val = formatCurrency(item.value)
+        const val = masked ? '****' : formatCurrency(item.value)
         const diff = item.value - firstVal
         const diffPct = firstVal !== 0 ? ((diff / Math.abs(firstVal)) * 100).toFixed(2) : '0.00'
         const sign = diff >= 0 ? '+' : ''
@@ -126,7 +130,7 @@ function updateChart() {
       axisLabel: {
         color: P.textMuted,
         fontFamily: 'var(--mf-font-mono)',
-        formatter: (v: number) => (v >= 10000 ? `${(v / 10000).toFixed(1)}w` : v.toString())
+        formatter: (v: number) => (masked ? '****' : (v >= 10000 ? `${(v / 10000).toFixed(1)}w` : v.toString()))
       }
     },
     dataZoom: [

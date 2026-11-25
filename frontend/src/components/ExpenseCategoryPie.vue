@@ -5,8 +5,10 @@
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import echarts, { type ECharts } from '@/utils/echarts'
 import { resolveChartPalette, useChartThemeSync } from '@/utils/echarts-theme'
+import { useDisplaySettingsStore } from '@/stores/display-settings'
 import { formatCurrency } from '@/utils/format'
 const props = defineProps<{ data: { name: string; amount: number; pct: number }[] }>()
+const displaySettings = useDisplaySettingsStore()
 const chartRef = ref<HTMLElement>()
 let chart: ECharts | null = null
 let resizeObserver: ResizeObserver | null = null
@@ -39,10 +41,12 @@ function handleResize() {
   if (chart) chart.resize()
 }
 watch(() => props.data, update, { deep: true })
+watch(() => displaySettings.showAmount, update)
 useChartThemeSync(update)
 function update() { 
   if (!chart || !props.data.length) return
   const P = resolveChartPalette()
+  const masked = !displaySettings.showAmount
   chart.setOption({ 
     animationDuration: 1000,
     tooltip: {
@@ -55,7 +59,7 @@ function update() {
       shadowColor: P.primaryLight,
       shadowBlur: 16,
       formatter: (p: any) => {
-        const val = formatCurrency(p.data.value)
+        const val = masked ? '****' : formatCurrency(p.data.value)
         return `<div style="font-weight:bold;color:${p.color};margin-bottom:4px">${p.data.name}</div>
                 <div style="color:${P.textMuted}">金额: ${val}</div>
                 <div style="color:${P.textMuted}">占比: ${p.data.pct.toFixed(2)}%</div>`

@@ -171,6 +171,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import { useCategoryStore } from '@/stores/category'
+import { useMarketStore } from '@/stores/market'
 import { resetFinancialEntities } from '@/composables/useFinancialEntities'
 import { t } from '@/utils/locale'
 import LedgerSelector from '@/components/LedgerSelector.vue'
@@ -184,8 +185,13 @@ const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
 const categoryStore = useCategoryStore()
+const marketStore = useMarketStore()
 
-const activeMenu = computed(() => route.path)
+const activeMenu = computed(() => {
+  if (route.path.startsWith('/assets/')) return '/assets'
+  if (route.path.startsWith('/ai-traces/')) return '/ai-traces'
+  return route.path
+})
 const mobileMenuOpen = ref(false)
 const isCollapsed = ref(localStorage.getItem('sidebar_collapsed') === 'true')
 const quickRecordVisible = ref(false)
@@ -204,6 +210,7 @@ function handleResize() {
 
 function handleLedgerChanged() {
   categoryStore.invalidate()
+  marketStore.reset()
   resetFinancialEntities()
   routerViewKey.value++
 }
@@ -214,7 +221,7 @@ function handleKeydown(e: KeyboardEvent) {
     commandPaletteVisible.value = !commandPaletteVisible.value
     return
   }
-  if (e.key === 'n' || e.key === 'N') {
+  if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'n' || e.key === 'N')) {
     const target = e.target as HTMLElement
     if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
       return
@@ -242,6 +249,8 @@ function goTo(path: string) {
 }
 
   const pageTitle = computed(() => {
+    if (route.path.startsWith('/assets/')) return t('nav.assets')
+    if (route.path.startsWith('/ai-traces/')) return t('nav.aiTraces')
     const map: Record<string, string> = {
       '/dashboard': t('nav.dashboard'),
       '/assets': t('nav.assets'),

@@ -36,6 +36,7 @@ import echarts, { type ECharts, type EChartsOption } from '@/utils/echarts'
 import { marketApi } from '@/api/market'
 import type { PriceHistoryItem } from '@/types'
 import { resolveChartPalette, useChartThemeSync, withAlpha } from '@/utils/echarts-theme'
+import { useDisplaySettingsStore } from '@/stores/display-settings'
 import { exportChartPng, exportChartCsv } from '@/utils/chart-export'
 
 const props = defineProps<{
@@ -45,7 +46,9 @@ const props = defineProps<{
 }>()
 
 const chartRef = ref<HTMLElement | null>(null)
+const displaySettings = useDisplaySettingsStore()
 let chart: ECharts | null = null
+let resizeObserver: ResizeObserver | null = null
 const loading = ref(false)
 const daysLimit = ref(90)
 const historyData = ref<PriceHistoryItem[]>([])
@@ -67,6 +70,7 @@ async function loadHistory() {
 function renderChart() {
   if (!chartRef.value) return
   if (!chart) {
+    if (!chartRef.value.clientWidth || !chartRef.value.clientHeight) return
     chart = echarts.init(chartRef.value)
   }
 
@@ -77,6 +81,7 @@ function renderChart() {
   const maxPrice = prices.length > 0 ? Math.max(...prices) * 1.02 : 100
 
   const P = resolveChartPalette()
+  const masked = !displaySettings.showAmount
   const option: EChartsOption = {
     tooltip: {
       trigger: 'axis',
@@ -85,7 +90,8 @@ function renderChart() {
       textStyle: { color: P.textMain },
       formatter: (params: any) => {
         const p = params[0]
-        return `${p.name}<br/><strong>净值/价格: ${Number(p.value).toFixed(4)} ${props.currency || 'CNY'}</strong>`
+        const valText = masked ? '****' : `${Number(p.value).toFixed(4)} ${props.currency || 'CNY'}`
+        return `${p.name}<br/><strong>净值/价格: ${valText}</strong>`
       }
     },
     grid: {
@@ -108,7 +114,7 @@ function renderChart() {
       splitLine: { lineStyle: { color: P.borderSubtle } },
       axisLabel: {
         color: P.textMuted,
-        formatter: (val: number) => val.toFixed(2)
+        formatter: (val: number) => (masked ? '****' : val.toFixed(2))
       }
     },
     dataZoom: [
@@ -170,12 +176,25 @@ watch(() => props.assetId, () => {
 onMounted(() => {
   loadHistory()
   window.addEventListener('resize', handleResize)
+  if (chartRef.value) {
+    resizeObserver = new ResizeObserver(() => {
+      if (!chart) renderChart()
+      handleResize()
+    })
+    resizeObserver.observe(chartRef.value)
+  }
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', handleResize)
+  resizeObserver?.disconnect()
+  resizeObserver = null
   chart?.dispose()
   chart = null
+})
+
+watch(() => displaySettings.showAmount, () => {
+  if (chart) renderChart()
 })
 
 useChartThemeSync(() => {

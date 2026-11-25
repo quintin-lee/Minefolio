@@ -6,8 +6,10 @@
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import echarts, { type ECharts } from '@/utils/echarts'
 import { resolveChartPalette, shade, useChartThemeSync } from '@/utils/echarts-theme'
+import { useDisplaySettingsStore } from '@/stores/display-settings'
 
 const props = defineProps<{ data: { total_income: number; total_expense: number } | null }>()
+const displaySettings = useDisplaySettingsStore()
 const chartRef = ref<HTMLElement>()
 let chart: ECharts | null = null
 let resizeObserver: ResizeObserver | null = null
@@ -42,12 +44,14 @@ function handleResize() {
 }
 
 watch(() => props.data, updateChart, { deep: true })
+watch(() => displaySettings.showAmount, updateChart)
 useChartThemeSync(updateChart)
 
 function updateChart() {
   if (!chart) return
   const d = props.data
   const P = resolveChartPalette()
+  const masked = !displaySettings.showAmount
   chart.setOption({
     animationDuration: 1000,
     tooltip: {
@@ -60,6 +64,7 @@ function updateChart() {
       borderWidth: 1,
       shadowColor: P.primaryLight,
       shadowBlur: 16,
+      valueFormatter: (v: any) => (masked ? '****' : String(v)),
     },
     legend: {
       data: ['收入', '支出'],
@@ -82,7 +87,7 @@ function updateChart() {
       splitLine: { lineStyle: { type: 'dashed', color: P.primaryLight } },
       axisLabel: {
         color: P.textMuted,
-        formatter: (v: number) => (v >= 10000 ? `${(v / 10000).toFixed(1)}w` : v.toString())
+        formatter: (v: number) => (masked ? '****' : (v >= 10000 ? `${(v / 10000).toFixed(1)}w` : v.toString()))
       }
     },
     series: [

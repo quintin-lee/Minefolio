@@ -95,6 +95,7 @@ const currencyOptions = ['USD', 'EUR', 'HKD', 'JPY', 'GBP', 'AUD', 'CAD', 'SGD']
 
 const chartRef = ref<HTMLDivElement | null>(null)
 let chartInstance: ECharts | null = null
+let resizeObserver: ResizeObserver | null = null
 
 // Normalized historical points adjusted by baseCurrency cross rate
 const normalizedPoints = computed(() => {
@@ -214,10 +215,19 @@ function handleResize() {
 onMounted(() => {
   updateChart()
   window.addEventListener('resize', handleResize)
+  if (chartRef.value) {
+    resizeObserver = new ResizeObserver(() => {
+      if (!chartInstance) updateChart()
+      handleResize()
+    })
+    resizeObserver.observe(chartRef.value)
+  }
 })
 
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
+  resizeObserver?.disconnect()
+  resizeObserver = null
   chartInstance?.dispose()
   chartInstance = null
 })

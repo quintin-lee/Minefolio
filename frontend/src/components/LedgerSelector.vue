@@ -16,6 +16,7 @@ const editingLedger = ref<Ledger | null>(null)
 const membersDialogVisible = ref(false)
 const selectedLedger = ref<Ledger | null>(null)
 const joinDialogVisible = ref(false)
+const deletingLedgerId = ref<number | null>(null)
 
 onMounted(async () => {
   try {
@@ -59,27 +60,35 @@ async function handleJoined(id: number) {
 }
 
 async function handleDeleteLedger(ledger: Ledger) {
+  if (deletingLedgerId.value === ledger.id) return
   if (ledger.is_default && ledgerStore.ledgers.length <= 1) {
     ElMessage.warning('默认主账本不可删除')
     return
   }
 
-  await ElMessageBox.confirm(
-    `确定要解散并删除账本「${ledger.name}」吗？账本内的私有资产与流水记录将被一并清理！`,
-    '解散账本',
-    {
-      confirmButtonText: '确定删除',
-      cancelButtonText: '取消',
-      type: 'error'
-    }
-  )
+  try {
+    await ElMessageBox.confirm(
+      `确定要解散并删除账本「${ledger.name}」吗？账本内的私有资产与流水记录将被一并清理！`,
+      '解散账本',
+      {
+        confirmButtonText: '确定删除',
+        cancelButtonText: '取消',
+        type: 'error'
+      }
+    )
+  } catch {
+    return
+  }
 
+  deletingLedgerId.value = ledger.id
   try {
     await ledgerApi.delete(ledger.id)
     ElMessage.success('账本已解散')
     await ledgerStore.fetchLedgers()
   } catch (err) {
     // handled
+  } finally {
+    deletingLedgerId.value = null
   }
 }
 </script>

@@ -74,6 +74,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
 import { assetLogsApi } from '@/api/asset_logs'
 import { assetsApi } from '@/api/assets'
 import { formatCurrency } from '@/utils/format'
@@ -98,18 +99,27 @@ function sourceTypeLabel(t: string) { return sourceTypeMap[t]?.label || t }
 function sourceTypeTag(t: string): 'success' | 'warning' | 'info' | 'danger' { return sourceTypeMap[t]?.tag || 'info' }
 function formatDateTime(s: string) { return s ? s.replace('T', ' ').slice(0, 16) : '—' }
 
+let loadReqSeq = 0
+
 async function loadData() {
+  const reqId = ++loadReqSeq
   loading.value = true
   try {
     const params: any = { page: page.value, page_size: pageSize.value }
     if (filters.value.asset_id) params.asset_id = filters.value.asset_id
     const res = await assetLogsApi.list(params)
+    if (reqId !== loadReqSeq) return
     logs.value = res.list
     total.value = res.total
   } catch (e) {
-    console.error('[AuditLogs] loadData failed:', e)
+    if (reqId === loadReqSeq) {
+      console.error('[AuditLogs] loadData failed:', e)
+      ElMessage.error('加载审计日志失败')
+    }
   } finally {
-    loading.value = false
+    if (reqId === loadReqSeq) {
+      loading.value = false
+    }
   }
 }
 

@@ -6,6 +6,7 @@
 import { onMounted, onUnmounted, ref, watch } from 'vue'
 import echarts, { type ECharts } from '@/utils/echarts'
 import { resolveChartPalette, useChartThemeSync } from '@/utils/echarts-theme'
+import { useDisplaySettingsStore } from '@/stores/display-settings'
 
 export interface HoldingsBarDatum {
   name: string
@@ -14,6 +15,7 @@ export interface HoldingsBarDatum {
 }
 
 const props = defineProps<{ data: HoldingsBarDatum[] }>()
+const displaySettings = useDisplaySettingsStore()
 
 const chartRef = ref<HTMLDivElement | null>(null)
 let chart: ECharts | null = null
@@ -22,6 +24,7 @@ let resizeObserver: ResizeObserver | null = null
 function updateChart() {
   if (!chart) return
   const P = resolveChartPalette()
+  const masked = !displaySettings.showAmount
   chart.setOption({
     tooltip: {
       trigger: 'axis',
@@ -29,6 +32,7 @@ function updateChart() {
       backgroundColor: P.surfaceCard,
       borderColor: P.border,
       textStyle: { color: P.textMain },
+      valueFormatter: (v: any) => (masked ? '****' : String(v)),
     },
     legend: { bottom: 0, textStyle: { color: P.textMuted } },
     grid: { left: 16, right: 16, top: 32, bottom: 48, containLabel: true },
@@ -39,7 +43,10 @@ function updateChart() {
     },
     yAxis: {
       type: 'value',
-      axisLabel: { color: P.textMuted },
+      axisLabel: {
+        color: P.textMuted,
+        formatter: (v: number) => (masked ? '****' : String(v)),
+      },
       splitLine: { lineStyle: { color: P.borderSubtle } },
     },
     series: [
@@ -82,10 +89,13 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
   resizeObserver?.disconnect()
+  resizeObserver = null
   chart?.dispose()
+  chart = null
 })
 
 watch(() => props.data, updateChart, { deep: true })
+watch(() => displaySettings.showAmount, updateChart)
 useChartThemeSync(updateChart)
 </script>
 

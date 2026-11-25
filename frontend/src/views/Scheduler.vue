@@ -372,7 +372,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import { schedulerApi } from '@/api/scheduler'
@@ -394,6 +394,10 @@ const pageSize = ref(20)
 
 const togglingIds = reactive(new Set<number>())
 const runningIds = reactive(new Set<number>())
+const deletingIds = reactive(new Set<number>())
+let jobsReqSeq = 0
+let runRefreshTimer: ReturnType<typeof setTimeout> | null = null
+let isUnmounted = false
 
 const channelDialogRef = ref<InstanceType<typeof ChannelConfigDialog>>()
 const jobDialogRef = ref<InstanceType<typeof JobDialog>>()
@@ -449,21 +453,32 @@ const fetchDashboard = async () => {
 }
 
 const fetchJobs = async () => {
+  const reqId = ++jobsReqSeq
   loading.value = true
   try {
     const res = await schedulerApi.listJobs(1, 100)
+    if (isUnmounted || reqId !== jobsReqSeq) return
     jobs.value = res.items || []
   } catch (err: any) {
+    if (isUnmounted || reqId !== jobsReqSeq) return
     ElMessage.error(err.message || '获取定时任务列表失败')
   } finally {
-    loading.value = false
+    if (!isUnmounted && reqId === jobsReqSeq) {
+      loading.value = false
+    }
   }
 }
 
 const refreshAll = async () => {
+  if (isUnmounted) return
   refreshing.value = true
-  await Promise.all([fetchDashboard(), fetchJobs()])
-  refreshing.value = false
+  try {
+    await Promise.all([fetchDashboard(), fetchJobs()])
+  } finally {
+    if (!isUnmounted) {
+      refreshing.value = false
+    }
+  }
 }
 
 const openChannelDialog = () => {
@@ -483,6 +498,7 @@ const openLogs = (job: ScheduledJob) => {
 }
 
 const handleToggle = async (job: ScheduledJob, newEnabled: boolean) => {
+  if (togglingIds.has(job.id)) return
   togglingIds.add(job.id)
   try {
     await schedulerApi.toggleJob(job.id, newEnabled)
@@ -497,11 +513,15 @@ const handleToggle = async (job: ScheduledJob, newEnabled: boolean) => {
 }
 
 const handleRunNow = async (job: ScheduledJob) => {
+  if (runningIds.has(job.id)) return
   runningIds.add(job.id)
   try {
     const res = await schedulerApi.runJob(job.id)
     ElMessage.success(res?.message || `任务「${job.name}」已触发后台执行，稍后可在日志中查收结果`)
-    setTimeout(refreshAll, 1500)
+    if (runRefreshTimer) clearTimeout(runRefreshTimer)
+    runRefreshTimer = setTimeout(() => {
+      if (!isUnmounted) refreshAll()
+    }, 1500)
   } catch (err: any) {
     ElMessage.error(err.message || '触发任务失败')
   } finally {
@@ -510,6 +530,7 @@ const handleRunNow = async (job: ScheduledJob) => {
 }
 
 const handleDelete = async (job: ScheduledJob) => {
+  if (deletingIds.has(job.id)) return
   if (job.is_builtin) {
     ElMessage.warning('系统内置任务不可删除，如不需要可将其停用')
     return
@@ -521,14 +542,18 @@ const handleDelete = async (job: ScheduledJob) => {
       cancelButtonText: '取消',
       confirmButtonClass: 'el-button--danger'
     })
-
+  } catch {
+    return
+  }
+  deletingIds.add(job.id)
+  try {
     await schedulerApi.deleteJob(job.id)
     ElMessage.success(`任务「${job.name}」已删除`)
     await refreshAll()
   } catch (err: any) {
-    if (err !== 'cancel') {
-      ElMessage.error(err.message || '删除失败')
-    }
+    ElMessage.error(err.message || '删除失败')
+  } finally {
+    deletingIds.delete(job.id)
   }
 }
 
@@ -609,7 +634,16 @@ const getDeliveryTagType = (ch: DeliveryChannel) => {
 }
 
 onMounted(() => {
+  isUnmounted = false
   refreshAll()
+})
+
+onBeforeUnmount(() => {
+  isUnmounted = true
+  if (runRefreshTimer) {
+    clearTimeout(runRefreshTimer)
+    runRefreshTimer = null
+  }
 })
 </script>
 

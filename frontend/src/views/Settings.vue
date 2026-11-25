@@ -120,8 +120,22 @@ import AppearanceSettings from '@/components/settings/AppearanceSettings.vue'
 
 const auth = useAuthStore()
 const route = useRoute()
-const initialTab = typeof route?.query?.tab === 'string' && route.query.tab ? route.query.tab : 'profile'
-const activeTab = ref(initialTab === 'users' && !auth.isAdmin ? 'profile' : initialTab)
+const ALLOWED_TABS = new Set([
+  'profile',
+  'password',
+  '2fa',
+  'export',
+  'import-rules',
+  'ai',
+  'market',
+  'backup',
+  'im-bot',
+  'users',
+  'appearance',
+])
+const rawTab = typeof route?.query?.tab === 'string' ? route.query.tab : ''
+const initialTab = ALLOWED_TABS.has(rawTab) && (rawTab !== 'users' || auth.isAdmin) ? rawTab : 'profile'
+const activeTab = ref(initialTab)
 
 onErrorCaptured((err, instance, info) => {
   console.error('[Settings] Child component error:', err, info)

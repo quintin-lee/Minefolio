@@ -309,6 +309,7 @@ import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import { ElMessage } from 'element-plus'
 import { renderSafeMarkdown } from '@/utils/markdown'
+import { copyTextToClipboard } from '@/utils/clipboard'
 import { getTrace } from '@/api/ai-trace'
 import type { AiTraceDetail } from '@/api/ai-trace'
 
@@ -408,19 +409,10 @@ function formattedCost(val?: number) {
 
 async function copyText(text: string, label = '内容') {
   if (!text) return
-  try {
-    if (navigator?.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text)
-    } else {
-      const ta = document.createElement('textarea')
-      ta.value = text
-      document.body.appendChild(ta)
-      ta.select()
-      document.execCommand('copy')
-      document.body.removeChild(ta)
-    }
+  const copied = await copyTextToClipboard(text)
+  if (copied) {
     ElMessage.success(`已复制${label}`)
-  } catch {
+  } else {
     ElMessage.error('复制失败')
   }
 }
@@ -433,22 +425,34 @@ function copyAllPrompts() {
   copyText(text, '全部输入提示词')
 }
 
+let traceReqSeq = 0
+
 watch(
   () => props.traceId,
   async (id) => {
-    if (!id) return
+    if (!id || id <= 0) {
+      detail.value = null
+      loading.value = false
+      return
+    }
+    const reqId = ++traceReqSeq
     loading.value = true
     detail.value = null
     try {
       const raw = (await getTrace(id)) as unknown
+      if (reqId !== traceReqSeq) return
       const res = (raw && typeof raw === 'object' && 'data' in raw
         ? (raw as { data: AiTraceDetail }).data
         : raw) as AiTraceDetail
       detail.value = res || null
     } catch (e) {
-      console.error('[AiTraceDetail] load failed:', e)
+      if (reqId === traceReqSeq) {
+        console.error('[AiTraceDetail] load failed:', e)
+      }
     } finally {
-      loading.value = false
+      if (reqId === traceReqSeq) {
+        loading.value = false
+      }
     }
   },
   { immediate: true }
