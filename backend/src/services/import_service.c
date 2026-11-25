@@ -1,6 +1,8 @@
 #include "services/import_service.h"
+#include "application/account/usecases.h"
 #include "application/task/async_task_manager.h"
 #include "interfaces/http/controllers/import_export_controller.h"
+#include "infrastructure/repositories/account_permission_repo_impl.h"
 #include "common/response.h"
 #include "common/ctx.h"
 #include "common/db.h"
@@ -9,6 +11,7 @@
 #include "common/balance.h"
 #include "core/ledger/ledger_engine.h"
 #include "csilk/csilk.h"
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -179,6 +182,10 @@ submit_csv_import_task(csilk_ctx_t*       c,
         respond_bad_request(c, "请求体为空");
         return;
     }
+    if (csv_len > MF_MAX_CSV_IMPORT_BYTES) {
+        respond_bad_request(c, "CSV 文件大小不能超过 10MB");
+        return;
+    }
 
     csv_import_task_arg_t* arg = calloc(1, sizeof(*arg));
     if (!arg) {
@@ -214,56 +221,186 @@ submit_csv_import_task(csilk_ctx_t*       c,
     mf_async_task_respond_submitted(c, task_id, task_type, deduplicated, NULL);
 }
 
-static int
-transactions_import_csv_task_fn(void*   raw_pool,
-                                int64_t task_id,
-                                int64_t user_id,
-                                int64_t ledger_id,
-                                void*   raw_arg,
-                                char**  out_result_json,
-                                char*   err_buf,
-                                size_t  err_cap)
+static void
+append_import_error(char* buf, size_t cap, const char* fmt, ...)
 {
-    csilk_db_pool_t*       pool = (csilk_db_pool_t*)raw_pool;
-    csv_import_task_arg_t* arg = (csv_import_task_arg_t*)raw_arg;
-    if (!pool || !arg || !arg->csv_data) {
-        snprintf(err_buf, err_cap, "参数错误");
+    if (!buf || cap == 0 || !fmt) {
+        return;
+    }
+    size_t used = strlen(buf);
+    if (used + 1 >= cap) {
+        return;
+    }
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(buf + used, cap - used, fmt, ap);
+    va_end(ap);
+}
+
+static int
+resolve_import_asset(csilk_db_pool_t* pool,
+                     int64_t          user_id,
+                     int64_t          ledger_id,
+                     const char*      name,
+                     int64_t*         out_asset_id,
+                     int64_t*         out_account_id)
+{
+    if (!pool || user_id <= 0 || ledger_id <= 0 || !name || !name[0]) {
+        return -1;
+    }
+    char uid_str[32], lid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
+
+    const char* sql =
+        "SELECT a.id, COALESCE(a.account_id, 0) AS account_id "
+        "FROM assets a "
+        "WHERE a.name = ? "
+        "AND " MF_LEDGER_SHARED_ACCESS_SQL("a") " "
+        "AND " MF_RBAC_ASSET_VISIBLE_SQL("a") " "
+        "ORDER BY a.id ASC LIMIT 1";
+    const char*   params[] = {name, lid_str, uid_str, uid_str, uid_str, uid_str, uid_str, NULL};
+    csilk_json_t* res = csilk_db_query_param_json(pool, sql, params);
+    if (!res || csilk_json_array_size(res) == 0) {
+        if (res) {
+            csilk_json_free(res);
+        }
+        return -1;
+    }
+    csilk_json_t* row = csilk_json_array_get(res, 0);
+    if (out_asset_id) {
+        *out_asset_id = db_get_int(row, "id");
+    }
+    if (out_account_id) {
+        *out_account_id = db_get_int(row, "account_id");
+    }
+    csilk_json_free(res);
+    return (out_asset_id && *out_asset_id > 0) ? 0 : -1;
+}
+
+static int64_t
+resolve_import_category(csilk_db_pool_t* pool,
+                        int64_t          user_id,
+                        int64_t          ledger_id,
+                        const char*      name)
+{
+    if (!pool || user_id <= 0 || ledger_id <= 0 || !name || !name[0]) {
+        return 0;
+    }
+    char uid_str[32], lid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
+
+    const char* sql =
+        "SELECT c.id FROM categories c "
+        "WHERE c.name = ? AND " MF_LEDGER_SHARED_ACCESS_SQL("c") " "
+        "ORDER BY c.id ASC LIMIT 1";
+    const char*   params[] = {name, lid_str, uid_str, uid_str, uid_str, NULL};
+    csilk_json_t* res = csilk_db_query_param_json(pool, sql, params);
+    int64_t       cid = 0;
+    if (res && csilk_json_array_size(res) > 0) {
+        cid = db_get_int(csilk_json_array_get(res, 0), "id");
+    }
+    if (res) {
+        csilk_json_free(res);
+    }
+    return cid;
+}
+
+static bool
+category_belongs_to_ledger(csilk_db_pool_t* pool,
+                           int64_t          user_id,
+                           int64_t          ledger_id,
+                           int64_t          cat_id)
+{
+    if (!pool || user_id <= 0 || ledger_id <= 0 || cat_id <= 0) {
+        return false;
+    }
+    char cid_str[32], uid_str[32], lid_str[32];
+    snprintf(cid_str, sizeof(cid_str), "%lld", (long long)cat_id);
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
+
+    const char*   sql =
+        "SELECT c.id FROM categories c WHERE c.id = ? AND " MF_LEDGER_SHARED_ACCESS_SQL("c") " LIMIT 1";
+    csilk_json_t* res = csilk_db_query_param_json(
+        pool, sql, (const char*[]){cid_str, lid_str, uid_str, uid_str, uid_str, NULL});
+    bool ok = res && csilk_json_array_size(res) > 0;
+    if (res) {
+        csilk_json_free(res);
+    }
+    return ok;
+}
+
+int
+import_transactions_csv_execute(csilk_db_pool_t* pool,
+                                int64_t          task_id,
+                                int64_t          user_id,
+                                int64_t          ledger_id,
+                                const char*      csv_data,
+                                size_t           csv_len,
+                                char**           out_result_json,
+                                char*            err_buf,
+                                size_t           err_cap)
+{
+    if (!pool || user_id <= 0 || ledger_id <= 0 || !csv_data || csv_len == 0) {
+        if (err_buf && err_cap > 0) {
+            snprintf(err_buf, err_cap, "参数错误");
+        }
+        return -1;
+    }
+    if (csv_len > MF_MAX_CSV_IMPORT_BYTES) {
+        if (err_buf && err_cap > 0) {
+            snprintf(err_buf, err_cap, "CSV 文件大小不能超过 10MB");
+        }
         return -1;
     }
 
-    char uid_str[32];
-    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    const char* data = csv_data;
+    if (csv_len >= 3 && (unsigned char)data[0] == 0xEF && (unsigned char)data[1] == 0xBB &&
+        (unsigned char)data[2] == 0xBF) {
+        data += 3;
+        csv_len -= 3;
+    }
+    if (csv_len == 0) {
+        if (err_buf && err_cap > 0) {
+            snprintf(err_buf, err_cap, "CSV 内容为空");
+        }
+        return -1;
+    }
 
     int           imported = 0, errors = 0, matched_rules_count = 0;
     char          errors_detail[2048] = {0};
     csilk_json_t* rules = mf_import_rule_list(pool, user_id);
-    char*         data = arg->csv_data;
-    size_t        csv_len = arg->csv_len > 0 ? arg->csv_len : 1;
+    const char*   end = data + csv_len;
 
-    mf_async_task_update_progress(pool, task_id, 5, "正在解析交易 CSV 数据");
+    if (task_id > 0) {
+        mf_async_task_update_progress(pool, task_id, 5, "正在解析交易 CSV 数据");
+    }
 
-    char* line_start = data;
-    int   line_num = 0;
-    while (*line_start) {
-        if ((line_num % 25) == 0 && line_num > 0) {
+    const char* line_start = data;
+    int         line_num = 0;
+    while (line_start < end) {
+        if (task_id > 0 && (line_num % 25) == 0 && line_num > 0) {
             int pct = 5 + (int)(((size_t)(line_start - data) * 90) / csv_len);
             mf_async_task_update_progress(pool, task_id, pct, "正在批量导入交易记录");
         }
-        char*  line_end = strchr(line_start, '\n');
-        size_t line_len = line_end ? (size_t)(line_end - line_start) : strlen(line_start);
+        const char* line_end = memchr(line_start, '\n', (size_t)(end - line_start));
+        size_t      line_len = line_end ? (size_t)(line_end - line_start) : (size_t)(end - line_start);
+        const char* next_line = line_end ? line_end + 1 : end;
 
         while (line_len > 0 &&
                (line_start[line_len - 1] == '\r' || line_start[line_len - 1] == '\n')) {
             line_len--;
         }
         if (line_len == 0) {
-            line_start = line_end ? line_end + 1 : line_start + 1;
+            line_start = next_line;
             continue;
         }
 
         line_num++;
         if (line_num == 1) {
-            line_start = line_end ? line_end + 1 : line_start + 1;
+            line_start = next_line;
             continue;
         }
 
@@ -272,13 +409,9 @@ transactions_import_csv_task_fn(void*   raw_pool,
         csilk_csv_parse_row(line_start, line_len, fields, &fc);
         if (fc < 6) {
             errors++;
-            if (snprintf(errors_detail + strlen(errors_detail),
-                         sizeof(errors_detail) - strlen(errors_detail),
-                         "第%d行: 字段数不足(%d)\n",
-                         line_num,
-                         fc) > 0) {
-            }
-            line_start = line_end ? line_end + 1 : line_start + 1;
+            append_import_error(
+                errors_detail, sizeof(errors_detail), "第%d行: 字段数不足(%d)\n", line_num, fc);
+            line_start = next_line;
             continue;
         }
 
@@ -298,79 +431,82 @@ transactions_import_csv_task_fn(void*   raw_pool,
 
         if (!date_s[0] || !asset_name[0] || !tx_type_s[0] || !amount_s[0]) {
             errors++;
-            if (snprintf(errors_detail + strlen(errors_detail),
-                         sizeof(errors_detail) - strlen(errors_detail),
-                         "第%d行: 缺少必填字段\n",
-                         line_num) > 0) {
-            }
-            line_start = line_end ? line_end + 1 : line_start + 1;
+            append_import_error(
+                errors_detail, sizeof(errors_detail), "第%d行: 缺少必填字段\n", line_num);
+            line_start = next_line;
             continue;
         }
 
-        int64_t       asset_id = 0;
-        const char*   a_params[] = {uid_str, asset_name, NULL};
-        csilk_json_t* a_res = csilk_db_query_param_json(
-            pool, "SELECT id FROM assets WHERE user_id=? AND name=?", a_params);
-        if (a_res && csilk_json_array_size(a_res) > 0) {
-            asset_id = db_get_int(csilk_json_array_get(a_res, 0), "id");
-        }
-        if (a_res) {
-            csilk_json_free(a_res);
-        }
-        if (asset_id <= 0) {
+        int64_t asset_id = 0, account_id = 0;
+        if (resolve_import_asset(pool, user_id, ledger_id, asset_name, &asset_id, &account_id) !=
+            0) {
             errors++;
-            if (snprintf(errors_detail + strlen(errors_detail),
-                         sizeof(errors_detail) - strlen(errors_detail),
-                         "第%d行: 找不到资产 '%s'\n",
-                         line_num,
-                         asset_name) > 0) {
-            }
-            line_start = line_end ? line_end + 1 : line_start + 1;
+            append_import_error(errors_detail,
+                                sizeof(errors_detail),
+                                "第%d行: 找不到资产 '%s'\n",
+                                line_num,
+                                asset_name);
+            line_start = next_line;
+            continue;
+        }
+
+        if (account_id > 0 &&
+            account_usecase_check_permission(
+                pool, ledger_id, user_id, account_id, MF_ACCOUNT_ACTION_WRITE_TX) != 0) {
+            errors++;
+            append_import_error(
+                errors_detail, sizeof(errors_detail), "第%d行: 账户无记账权限\n", line_num);
+            line_start = next_line;
             continue;
         }
 
         int64_t category_id = 0;
         if (cat_name[0]) {
-            const char*   c_params[] = {uid_str, cat_name, NULL};
-            csilk_json_t* c_res = csilk_db_query_param_json(
-                pool, "SELECT id FROM categories WHERE user_id=? AND name=?", c_params);
-            if (c_res && csilk_json_array_size(c_res) > 0) {
-                category_id = db_get_int(csilk_json_array_get(c_res, 0), "id");
-            }
-            if (c_res) {
-                csilk_json_free(c_res);
-            }
+            category_id = resolve_import_category(pool, user_id, ledger_id, cat_name);
         }
-
         if (category_id <= 0) {
             if (apply_smart_rules(rules, note_s, note_s, note_s, &category_id, NULL, 0)) {
-                matched_rules_count++;
+                if (category_id > 0 && !category_belongs_to_ledger(pool, user_id, ledger_id, category_id)) {
+                    category_id = 0;
+                } else if (category_id > 0) {
+                    matched_rules_count++;
+                }
             }
         }
 
-        int64_t linked_id = 0;
+        int64_t linked_id = 0, linked_account_id = 0;
         if (linked_s[0]) {
-            const char*   l_params[] = {uid_str, linked_s, NULL};
-            csilk_json_t* l_res = csilk_db_query_param_json(
-                pool, "SELECT id FROM assets WHERE user_id=? AND name=?", l_params);
-            if (l_res && csilk_json_array_size(l_res) > 0) {
-                linked_id = db_get_int(csilk_json_array_get(l_res, 0), "id");
+            if (resolve_import_asset(
+                    pool, user_id, ledger_id, linked_s, &linked_id, &linked_account_id) != 0) {
+                errors++;
+                append_import_error(errors_detail,
+                                    sizeof(errors_detail),
+                                    "第%d行: 找不到关联资产 '%s'\n",
+                                    line_num,
+                                    linked_s);
+                line_start = next_line;
+                continue;
             }
-            if (l_res) {
-                csilk_json_free(l_res);
+            if (linked_account_id > 0 &&
+                account_usecase_check_permission(
+                    pool, ledger_id, user_id, linked_account_id, MF_ACCOUNT_ACTION_WRITE_TX) != 0) {
+                errors++;
+                append_import_error(
+                    errors_detail, sizeof(errors_detail), "第%d行: 关联账户无记账权限\n", line_num);
+                line_start = next_line;
+                continue;
             }
         }
 
         const tx_type_t* ttype = tx_type_lookup(tx_type_s);
         if (!ttype) {
             errors++;
-            if (snprintf(errors_detail + strlen(errors_detail),
-                         sizeof(errors_detail) - strlen(errors_detail),
-                         "第%d行: 未知交易类型 '%s'\n",
-                         line_num,
-                         tx_type_s) > 0) {
-            }
-            line_start = line_end ? line_end + 1 : line_start + 1;
+            append_import_error(errors_detail,
+                                sizeof(errors_detail),
+                                "第%d行: 未知交易类型 '%s'\n",
+                                line_num,
+                                tx_type_s);
+            line_start = next_line;
             continue;
         }
 
@@ -382,34 +518,12 @@ transactions_import_csv_task_fn(void*   raw_pool,
 
         if (strcmp(src_type, "income") != 0 && strcmp(src_type, "expense") != 0) {
             errors++;
-            if (snprintf(errors_detail + strlen(errors_detail),
-                         sizeof(errors_detail) - strlen(errors_detail),
-                         "第%d行: source_type 必须为 income 或 expense\n",
-                         line_num) > 0) {
-            }
-            line_start = line_end ? line_end + 1 : line_start + 1;
+            append_import_error(errors_detail,
+                                sizeof(errors_detail),
+                                "第%d行: source_type 必须为 income 或 expense\n",
+                                line_num);
+            line_start = next_line;
             continue;
-        }
-
-        char category_param[32] = {0};
-        if (category_id > 0) {
-            snprintf(category_param, sizeof(category_param), "%lld", (long long)category_id);
-        }
-        char price_param[64] = {0};
-        if (price > 0) {
-            snprintf(price_param, sizeof(price_param), "%.4f", price);
-        }
-        char qty_param[64] = {0};
-        if (qty > 0) {
-            snprintf(qty_param, sizeof(qty_param), "%.4f", qty);
-        }
-        char fee_param[64] = {0};
-        if (fee > 0) {
-            snprintf(fee_param, sizeof(fee_param), "%.2f", fee);
-        }
-        char linked_param[32] = {0};
-        if (linked_id > 0) {
-            snprintf(linked_param, sizeof(linked_param), "%lld", (long long)linked_id);
         }
 
         currency_t cur = currency_from_str(currency);
@@ -441,17 +555,16 @@ transactions_import_csv_task_fn(void*   raw_pool,
 
         if (ledger_apply_tx(pool, &ltx) != 0) {
             errors++;
-            if (snprintf(errors_detail + strlen(errors_detail),
-                         sizeof(errors_detail) - strlen(errors_detail),
-                         "第%d行: 导入失败或持有份额不足\n",
-                         line_num) > 0) {
-            }
-            line_start = line_end ? line_end + 1 : line_start + 1;
+            append_import_error(errors_detail,
+                                sizeof(errors_detail),
+                                "第%d行: 导入失败或持有份额不足\n",
+                                line_num);
+            line_start = next_line;
             continue;
         }
 
         imported++;
-        line_start = line_end ? line_end + 1 : line_start + 1;
+        line_start = next_line;
     }
     if (rules) {
         csilk_json_free(rules);
@@ -464,6 +577,28 @@ transactions_import_csv_task_fn(void*   raw_pool,
     return 0;
 }
 
+static int
+transactions_import_csv_task_fn(void*   raw_pool,
+                                int64_t task_id,
+                                int64_t user_id,
+                                int64_t ledger_id,
+                                void*   raw_arg,
+                                char**  out_result_json,
+                                char*   err_buf,
+                                size_t  err_cap)
+{
+    csilk_db_pool_t*       pool = (csilk_db_pool_t*)raw_pool;
+    csv_import_task_arg_t* arg = (csv_import_task_arg_t*)raw_arg;
+    if (!pool || !arg || !arg->csv_data) {
+        if (err_buf && err_cap > 0) {
+            snprintf(err_buf, err_cap, "参数错误");
+        }
+        return -1;
+    }
+    return import_transactions_csv_execute(
+        pool, task_id, user_id, ledger_id, arg->csv_data, arg->csv_len, out_result_json, err_buf, err_cap);
+}
+
 void
 transactions_import_csv(csilk_ctx_t* c)
 {
@@ -471,20 +606,40 @@ transactions_import_csv(csilk_ctx_t* c)
         c, "import_transactions", "正在排队导入交易 CSV", transactions_import_csv_task_fn);
 }
 
-static int
-daily_expenses_import_csv_task_fn(void*   raw_pool,
-                                  int64_t task_id,
-                                  int64_t user_id,
-                                  int64_t ledger_id,
-                                  void*   raw_arg,
-                                  char**  out_result_json,
-                                  char*   err_buf,
-                                  size_t  err_cap)
+int
+import_daily_expenses_csv_execute(csilk_db_pool_t* pool,
+                                  int64_t          task_id,
+                                  int64_t          user_id,
+                                  int64_t          ledger_id,
+                                  const char*      csv_data,
+                                  size_t           csv_len,
+                                  char**           out_result_json,
+                                  char*            err_buf,
+                                  size_t           err_cap)
 {
-    csilk_db_pool_t*       pool = (csilk_db_pool_t*)raw_pool;
-    csv_import_task_arg_t* arg = (csv_import_task_arg_t*)raw_arg;
-    if (!pool || !arg || !arg->csv_data) {
-        snprintf(err_buf, err_cap, "参数错误");
+    if (!pool || user_id <= 0 || ledger_id <= 0 || !csv_data || csv_len == 0) {
+        if (err_buf && err_cap > 0) {
+            snprintf(err_buf, err_cap, "参数错误");
+        }
+        return -1;
+    }
+    if (csv_len > MF_MAX_CSV_IMPORT_BYTES) {
+        if (err_buf && err_cap > 0) {
+            snprintf(err_buf, err_cap, "CSV 文件大小不能超过 10MB");
+        }
+        return -1;
+    }
+
+    const char* data = csv_data;
+    if (csv_len >= 3 && (unsigned char)data[0] == 0xEF && (unsigned char)data[1] == 0xBB &&
+        (unsigned char)data[2] == 0xBF) {
+        data += 3;
+        csv_len -= 3;
+    }
+    if (csv_len == 0) {
+        if (err_buf && err_cap > 0) {
+            snprintf(err_buf, err_cap, "CSV 内容为空");
+        }
         return -1;
     }
 
@@ -494,32 +649,34 @@ daily_expenses_import_csv_task_fn(void*   raw_pool,
     int           imported = 0, errors = 0, matched_rules_count = 0;
     char          errors_detail[2048] = {0};
     csilk_json_t* rules = mf_import_rule_list(pool, user_id);
-    char*         data = arg->csv_data;
-    size_t        csv_len = arg->csv_len > 0 ? arg->csv_len : 1;
+    const char*   end = data + csv_len;
 
-    mf_async_task_update_progress(pool, task_id, 5, "正在解析日常收支 CSV 数据");
+    if (task_id > 0) {
+        mf_async_task_update_progress(pool, task_id, 5, "正在解析日常收支 CSV 数据");
+    }
 
-    char* line_start = data;
-    int   line_num = 0;
-    while (*line_start) {
-        if ((line_num % 25) == 0 && line_num > 0) {
+    const char* line_start = data;
+    int         line_num = 0;
+    while (line_start < end) {
+        if (task_id > 0 && (line_num % 25) == 0 && line_num > 0) {
             int pct = 5 + (int)(((size_t)(line_start - data) * 90) / csv_len);
             mf_async_task_update_progress(pool, task_id, pct, "正在批量导入日常收支记录");
         }
-        char*  line_end = strchr(line_start, '\n');
-        size_t line_len = line_end ? (size_t)(line_end - line_start) : strlen(line_start);
+        const char* line_end = memchr(line_start, '\n', (size_t)(end - line_start));
+        size_t      line_len = line_end ? (size_t)(line_end - line_start) : (size_t)(end - line_start);
+        const char* next_line = line_end ? line_end + 1 : end;
         while (line_len > 0 &&
                (line_start[line_len - 1] == '\r' || line_start[line_len - 1] == '\n')) {
             line_len--;
         }
         if (line_len == 0) {
-            line_start = line_end ? line_end + 1 : line_start + 1;
+            line_start = next_line;
             continue;
         }
 
         line_num++;
         if (line_num == 1) {
-            line_start = line_end ? line_end + 1 : line_start + 1;
+            line_start = next_line;
             continue;
         }
 
@@ -528,12 +685,9 @@ daily_expenses_import_csv_task_fn(void*   raw_pool,
         csilk_csv_parse_row(line_start, line_len, fields, &fc);
         if (fc < 5) {
             errors++;
-            snprintf(errors_detail + strlen(errors_detail),
-                     sizeof(errors_detail) - strlen(errors_detail),
-                     "第%d行: 字段数不足(%d)\n",
-                     line_num,
-                     fc);
-            line_start = line_end ? line_end + 1 : line_start + 1;
+            append_import_error(
+                errors_detail, sizeof(errors_detail), "第%d行: 字段数不足(%d)\n", line_num, fc);
+            line_start = next_line;
             continue;
         }
 
@@ -547,47 +701,39 @@ daily_expenses_import_csv_task_fn(void*   raw_pool,
 
         if (!date_s[0] || !asset_name[0] || !exp_type_s[0] || !amount_s[0]) {
             errors++;
-            snprintf(errors_detail + strlen(errors_detail),
-                     sizeof(errors_detail) - strlen(errors_detail),
-                     "第%d行: 缺少必填字段\n",
-                     line_num);
-            line_start = line_end ? line_end + 1 : line_start + 1;
+            append_import_error(
+                errors_detail, sizeof(errors_detail), "第%d行: 缺少必填字段\n", line_num);
+            line_start = next_line;
             continue;
         }
 
-        int64_t       asset_id = 0;
-        const char*   a_params[] = {uid_str, asset_name, NULL};
-        csilk_json_t* a_res = csilk_db_query_param_json(
-            pool, "SELECT id FROM assets WHERE user_id=? AND name=?", a_params);
-        if (a_res && csilk_json_array_size(a_res) > 0) {
-            asset_id = db_get_int(csilk_json_array_get(a_res, 0), "id");
-        }
-        if (a_res) {
-            csilk_json_free(a_res);
-        }
-        if (asset_id <= 0) {
+        int64_t asset_id = 0, account_id = 0;
+        if (resolve_import_asset(pool, user_id, ledger_id, asset_name, &asset_id, &account_id) !=
+            0) {
             errors++;
-            snprintf(errors_detail + strlen(errors_detail),
-                     sizeof(errors_detail) - strlen(errors_detail),
-                     "第%d行: 找不到资产 '%s'\n",
-                     line_num,
-                     asset_name);
-            line_start = line_end ? line_end + 1 : line_start + 1;
+            append_import_error(errors_detail,
+                                sizeof(errors_detail),
+                                "第%d行: 找不到资产 '%s'\n",
+                                line_num,
+                                asset_name);
+            line_start = next_line;
+            continue;
+        }
+
+        if (account_id > 0 &&
+            account_usecase_check_permission(
+                pool, ledger_id, user_id, account_id, MF_ACCOUNT_ACTION_WRITE_TX) != 0) {
+            errors++;
+            append_import_error(
+                errors_detail, sizeof(errors_detail), "第%d行: 账户无记账权限\n", line_num);
+            line_start = next_line;
             continue;
         }
 
         int64_t category_id = 0;
         char    matched_type[32] = {0};
         if (cat_name[0]) {
-            const char*   c_params[] = {uid_str, cat_name, NULL};
-            csilk_json_t* c_res = csilk_db_query_param_json(
-                pool, "SELECT id FROM categories WHERE user_id=? AND name=?", c_params);
-            if (c_res && csilk_json_array_size(c_res) > 0) {
-                category_id = db_get_int(csilk_json_array_get(c_res, 0), "id");
-            }
-            if (c_res) {
-                csilk_json_free(c_res);
-            }
+            category_id = resolve_import_category(pool, user_id, ledger_id, cat_name);
         }
         if (category_id <= 0) {
             if (apply_smart_rules(rules,
@@ -597,17 +743,21 @@ daily_expenses_import_csv_task_fn(void*   raw_pool,
                                   &category_id,
                                   matched_type,
                                   sizeof(matched_type))) {
-                matched_rules_count++;
+                if (category_id > 0 && !category_belongs_to_ledger(pool, user_id, ledger_id, category_id)) {
+                    category_id = 0;
+                } else if (category_id > 0) {
+                    matched_rules_count++;
+                }
             }
         }
         if (category_id <= 0) {
             errors++;
-            snprintf(errors_detail + strlen(errors_detail),
-                     sizeof(errors_detail) - strlen(errors_detail),
-                     "第%d行: 找不到分类 '%s'\n",
-                     line_num,
-                     cat_name);
-            line_start = line_end ? line_end + 1 : line_start + 1;
+            append_import_error(errors_detail,
+                                sizeof(errors_detail),
+                                "第%d行: 找不到分类 '%s'\n",
+                                line_num,
+                                cat_name);
+            line_start = next_line;
             continue;
         }
 
@@ -633,11 +783,9 @@ daily_expenses_import_csv_task_fn(void*   raw_pool,
         db_tx_scope_t scope;
         if (db_tx_scope_begin(pool, "import_expense", &scope) != 0) {
             errors++;
-            snprintf(errors_detail + strlen(errors_detail),
-                     sizeof(errors_detail) - strlen(errors_detail),
-                     "第%d行: 开启事务失败\n",
-                     line_num);
-            line_start = line_end ? line_end + 1 : line_start + 1;
+            append_import_error(
+                errors_detail, sizeof(errors_detail), "第%d行: 开启事务失败\n", line_num);
+            line_start = next_line;
             continue;
         }
 
@@ -657,11 +805,9 @@ daily_expenses_import_csv_task_fn(void*   raw_pool,
         if (expense_id <= 0) {
             db_tx_scope_rollback(pool, &scope);
             errors++;
-            snprintf(errors_detail + strlen(errors_detail),
-                     sizeof(errors_detail) - strlen(errors_detail),
-                     "第%d行: 插入失败\n",
-                     line_num);
-            line_start = line_end ? line_end + 1 : line_start + 1;
+            append_import_error(
+                errors_detail, sizeof(errors_detail), "第%d行: 插入失败\n", line_num);
+            line_start = next_line;
             continue;
         }
 
@@ -671,22 +817,26 @@ daily_expenses_import_csv_task_fn(void*   raw_pool,
         money_t    amt_m;
         money_from_double(amount, cur, &amt_m);
 
-        if (ledger_apply_expense(
-                pool, user_id, asset_id, amt_m, is_income, expense_id, note_s ? note_s : "") != 0) {
+        if (ledger_apply_expense_dated(pool,
+                                       user_id,
+                                       asset_id,
+                                       amt_m,
+                                       is_income,
+                                       expense_id,
+                                       note_s ? note_s : "",
+                                       date_s) != 0) {
             db_tx_scope_rollback(pool, &scope);
             errors++;
-            snprintf(errors_detail + strlen(errors_detail),
-                     sizeof(errors_detail) - strlen(errors_detail),
-                     "第%d行: 账本余额更新失败\n",
-                     line_num);
-            line_start = line_end ? line_end + 1 : line_start + 1;
+            append_import_error(
+                errors_detail, sizeof(errors_detail), "第%d行: 账本余额更新失败\n", line_num);
+            line_start = next_line;
             continue;
         }
 
         db_tx_scope_commit(pool, &scope);
         imported++;
 
-        line_start = line_end ? line_end + 1 : line_start + 1;
+        line_start = next_line;
     }
     if (rules) {
         csilk_json_free(rules);
@@ -697,6 +847,28 @@ daily_expenses_import_csv_task_fn(void*   raw_pool,
             serialize_csv_import_result(imported, errors, matched_rules_count, errors_detail);
     }
     return 0;
+}
+
+static int
+daily_expenses_import_csv_task_fn(void*   raw_pool,
+                                  int64_t task_id,
+                                  int64_t user_id,
+                                  int64_t ledger_id,
+                                  void*   raw_arg,
+                                  char**  out_result_json,
+                                  char*   err_buf,
+                                  size_t  err_cap)
+{
+    csilk_db_pool_t*       pool = (csilk_db_pool_t*)raw_pool;
+    csv_import_task_arg_t* arg = (csv_import_task_arg_t*)raw_arg;
+    if (!pool || !arg || !arg->csv_data) {
+        if (err_buf && err_cap > 0) {
+            snprintf(err_buf, err_cap, "参数错误");
+        }
+        return -1;
+    }
+    return import_daily_expenses_csv_execute(
+        pool, task_id, user_id, ledger_id, arg->csv_data, arg->csv_len, out_result_json, err_buf, err_cap);
 }
 
 void

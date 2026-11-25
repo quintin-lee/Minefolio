@@ -8,8 +8,10 @@
 #include "infrastructure/repositories/account_permission_repo_impl.h"
 #include "infrastructure/repositories/account_repo_impl.h"
 #include "infrastructure/repositories/portfolio_repo_impl.h"
+#include "infrastructure/repositories/ledger_snapshot_repo_impl.h"
 #include "services/report_asset_service.h"
 #include "services/export_service.h"
+#include "services/import_service.h"
 #include "common/db.h"
 #include "common/ledger_utils.h"
 #include "config/secret.h"
@@ -727,6 +729,175 @@ test_csv_export_rbac_and_shared_ledger(csilk_db_pool_t* pool)
     printf("  [OK] CSV export shares owner rows and excludes masked/none accounts\n");
 }
 
+static void
+test_csv_import_rbac_and_isolation(csilk_db_pool_t* pool)
+{
+    printf("--- Testing CSV Import Ledger Isolation, Anti-Enumeration & RBAC ---\n");
+    int64_t owner_id = 0, member_id = 0;
+    assert(mf_auth_repo_create(pool, "imp_owner", "hash1", &owner_id) == 0 && owner_id > 0);
+    assert(mf_auth_repo_create(pool, "imp_member", "hash2", &member_id) == 0 && member_id > 0);
+
+    char s_oid[32], s_mid[32];
+    snprintf(s_oid, sizeof(s_oid), "%lld", (long long)owner_id);
+    snprintf(s_mid, sizeof(s_mid), "%lld", (long long)member_id);
+
+    csilk_json_t* l1 = csilk_db_query_param_json(
+        pool, "INSERT INTO ledgers (owner_id, name, currency) VALUES (?, 'ImpL1', 'CNY') RETURNING id;",
+        (const char*[]){s_oid, NULL});
+    int64_t lid1 = db_get_int(csilk_json_array_get(l1, 0), "id");
+    csilk_json_free(l1);
+
+    csilk_json_t* l2 = csilk_db_query_param_json(
+        pool, "INSERT INTO ledgers (owner_id, name, currency) VALUES (?, 'ImpL2', 'CNY') RETURNING id;",
+        (const char*[]){s_oid, NULL});
+    int64_t lid2 = db_get_int(csilk_json_array_get(l2, 0), "id");
+    csilk_json_free(l2);
+
+    char s_l1[32], s_l2[32];
+    snprintf(s_l1, sizeof(s_l1), "%lld", (long long)lid1);
+    snprintf(s_l2, sizeof(s_l2), "%lld", (long long)lid2);
+    csilk_db_exec_param(
+        pool,
+        "INSERT INTO ledger_members (ledger_id, user_id, role) VALUES (?, ?, 'owner'), (?, ?, 'editor'), (?, ?, 'owner');",
+        (const char*[]){s_l1, s_oid, s_l1, s_mid, s_l2, s_oid, NULL});
+
+    csilk_db_exec_param(
+        pool,
+        "INSERT INTO categories (user_id, ledger_id, name, type, asset_type) VALUES "
+        "(?, ?, 'ImpCash', 'asset', 'cash'), (?, ?, 'ImpCash', 'asset', 'cash');",
+        (const char*[]){s_oid, s_l1, s_oid, s_l2, NULL});
+    csilk_json_t* c1 = csilk_db_query_param_json(
+        pool, "SELECT id FROM categories WHERE user_id=? AND ledger_id=? AND name='ImpCash';",
+        (const char*[]){s_oid, s_l1, NULL});
+    int64_t cat1 = db_get_int(csilk_json_array_get(c1, 0), "id");
+    csilk_json_free(c1);
+    csilk_json_t* c2 = csilk_db_query_param_json(
+        pool, "SELECT id FROM categories WHERE user_id=? AND ledger_id=? AND name='ImpCash';",
+        (const char*[]){s_oid, s_l2, NULL});
+    int64_t cat2 = db_get_int(csilk_json_array_get(c2, 0), "id");
+    csilk_json_free(c2);
+
+    csilk_db_exec_param(
+        pool,
+        "INSERT INTO categories (user_id, ledger_id, name, type) VALUES (?, ?, 'ImpFood', 'expense');",
+        (const char*[]){s_oid, s_l1, NULL});
+
+    account_usecase_result_t acres = {0};
+    create_account_cmd_t ac_l1_op = {.user_id = owner_id, .ledger_id = lid1, .name = "L1Op", .institution = "bank_card", .currency = "CNY"};
+    create_account_cmd_t ac_l1_vw = {.user_id = owner_id, .ledger_id = lid1, .name = "L1Vw", .institution = "bank_card", .currency = "CNY"};
+    create_account_cmd_t ac_l1_no = {.user_id = owner_id, .ledger_id = lid1, .name = "L1No", .institution = "bank_card", .currency = "CNY"};
+    create_account_cmd_t ac_l2_op = {.user_id = owner_id, .ledger_id = lid2, .name = "L2Op", .institution = "bank_card", .currency = "CNY"};
+    assert(account_usecase_create(pool, &ac_l1_op, &acres) == 0); int64_t acct_op = acres.id;
+    assert(account_usecase_create(pool, &ac_l1_vw, &acres) == 0); int64_t acct_vw = acres.id;
+    assert(account_usecase_create(pool, &ac_l1_no, &acres) == 0); int64_t acct_no = acres.id;
+    assert(account_usecase_create(pool, &ac_l2_op, &acres) == 0); int64_t acct_l2 = acres.id;
+
+    asset_usecase_result_t ares = {0};
+    create_asset_cmd_t as_l1_op = {.user_id = owner_id, .ledger_id = lid1, .category_id = cat1, .account_id = acct_op, .name = "SharedWallet", .current_value = 1000.0, .currency = "CNY"};
+    create_asset_cmd_t as_l2_dup = {.user_id = owner_id, .ledger_id = lid2, .category_id = cat2, .account_id = acct_l2, .name = "SameNameInL2", .current_value = 5000.0, .currency = "CNY"};
+    create_asset_cmd_t as_l1_vw = {.user_id = owner_id, .ledger_id = lid1, .category_id = cat1, .account_id = acct_vw, .name = "ReadonlyWallet", .current_value = 2000.0, .currency = "CNY"};
+    create_asset_cmd_t as_l1_no = {.user_id = owner_id, .ledger_id = lid1, .category_id = cat1, .account_id = acct_no, .name = "HiddenSecret", .current_value = 9999.0, .currency = "CNY"};
+    assert(asset_usecase_create(pool, &as_l1_op, &ares) == 0); int64_t asset_op = ares.id;
+    assert(asset_usecase_create(pool, &as_l2_dup, &ares) == 0); int64_t asset_l2 = ares.id;
+    assert(asset_usecase_create(pool, &as_l1_vw, &ares) == 0); int64_t asset_vw = ares.id;
+    assert(asset_usecase_create(pool, &as_l1_no, &ares) == 0);
+
+    // Permissions on lid1 for member_id: operator on acct_op, viewer on acct_vw, none on acct_no
+    assert(account_permission_usecase_set(pool, owner_id, lid1, acct_op, member_id, "operator", 0, 0, &acres) == 0);
+    assert(account_permission_usecase_set(pool, owner_id, lid1, acct_vw, member_id, "viewer", 0, 0, &acres) == 0);
+    assert(account_permission_usecase_set(pool, owner_id, lid1, acct_no, member_id, "none", 0, 0, &acres) == 0);
+
+    // Seed future snapshot at 2026-11-25 on asset_op to verify backdated CSV expense invalidates it
+    ledger_position_state_t dummy_pos = {0};
+    money_t zero_m = money_zero(CURRENCY_CNY);
+    assert(ledger_snapshot_save(pool, owner_id, asset_op, "2026-11-25", &dummy_pos, zero_m, "2026-11-25", 1, "[]") == 0);
+
+    char* out_json = NULL;
+    char  err_buf[256] = {0};
+
+    // 0. Oversized payload (> 10MB) rejected before parsing
+    assert(import_transactions_csv_execute(pool, 0, owner_id, lid1, "h\n", MF_MAX_CSV_IMPORT_BYTES + 1, &out_json, err_buf, sizeof(err_buf)) < 0);
+    assert(import_daily_expenses_csv_execute(pool, 0, owner_id, lid1, "h\n", MF_MAX_CSV_IMPORT_BYTES + 1, &out_json, err_buf, sizeof(err_buf)) < 0);
+
+    // 1. Transactions CSV import by member into lid1:
+    //   row1: SharedWallet valid -> OK
+    //   row2: SameNameInL2 (belongs to lid2, even for owner!) -> fail ("找不到资产")
+    //   row3: HiddenSecret (none) -> fail ("找不到资产", NOT "无权限")
+    //   row4: ReadonlyWallet (viewer) -> fail ("账户无记账权限")
+    //   row5: SharedWallet with unknown linked_asset_name -> fail ("找不到关联资产")
+    const char* tx_csv =
+        "date,asset_name,category_name,transaction_type,source_type,amount,price_per_unit,quantity,fee,currency,linked_asset_name,note\n"
+        "2026-11-20,SharedWallet,ImpFood,income,income,100,0,0,0,CNY,,ok_row\n"
+        "2026-11-20,SameNameInL2,ImpFood,income,income,50,0,0,0,CNY,,cross_ledger\n"
+        "2026-11-20,HiddenSecret,ImpFood,income,income,50,0,0,0,CNY,,hidden_probe\n"
+        "2026-11-20,ReadonlyWallet,ImpFood,income,income,50,0,0,0,CNY,,viewer_blocked\n"
+        "2026-11-20,SharedWallet,ImpFood,income,income,50,0,0,0,CNY,NoSuchLinked,bad_link\n";
+    out_json = NULL;
+    assert(import_transactions_csv_execute(pool, 0, member_id, lid1, tx_csv, strlen(tx_csv), &out_json, err_buf, sizeof(err_buf)) == 0);
+    assert(out_json != NULL);
+    csilk_json_t* res_obj = csilk_json_parse(out_json);
+    assert(res_obj != NULL);
+    assert(db_get_int(res_obj, "imported") == 1);
+    assert(db_get_int(res_obj, "errors") == 4);
+    const char* details = csilk_json_get_string(res_obj, "errors_detail");
+    assert(details != NULL);
+    assert(strstr(details, "找不到资产 'SameNameInL2'") != NULL);
+    assert(strstr(details, "找不到资产 'HiddenSecret'") != NULL);
+    assert(strstr(details, "账户无记账权限") != NULL);
+    assert(strstr(details, "找不到关联资产 'NoSuchLinked'") != NULL);
+    csilk_json_free(res_obj);
+    free(out_json);
+
+    // Owner tries importing into lid1 referencing lid2's SameNameInL2 -> must ALSO fail (no cross-ledger hijack)
+    const char* owner_cross_csv =
+        "date,asset_name,category_name,transaction_type,source_type,amount,price_per_unit,quantity,fee,currency,linked_asset_name,note\n"
+        "2026-11-20,SameNameInL2,ImpFood,income,income,50,0,0,0,CNY,,cross_ledger\n";
+    out_json = NULL;
+    assert(import_transactions_csv_execute(pool, 0, owner_id, lid1, owner_cross_csv, strlen(owner_cross_csv), &out_json, err_buf, sizeof(err_buf)) == 0);
+    res_obj = csilk_json_parse(out_json);
+    assert(db_get_int(res_obj, "imported") == 0 && db_get_int(res_obj, "errors") == 1);
+    csilk_json_free(res_obj);
+    free(out_json);
+
+    // Verify lid2 asset balance stayed 5000.0 untouched
+    char s_al2[32];
+    snprintf(s_al2, sizeof(s_al2), "%lld", (long long)asset_l2);
+    csilk_json_t* chk_l2 = csilk_db_query_param_json(
+        pool, "SELECT current_value FROM assets WHERE id=?", (const char*[]){s_al2, NULL});
+    assert(db_get_num(csilk_json_array_get(chk_l2, 0), "current_value") == 5000.0);
+    csilk_json_free(chk_l2);
+
+    // 2. Daily expenses CSV import: valid row invalidates backdated snapshot; viewer/none rejected
+    const char* de_csv =
+        "date,asset_name,category_name,expense_type,amount,currency,note\n"
+        "2026-11-20,SharedWallet,ImpFood,expense,30,CNY,ok_exp\n"
+        "2026-11-20,ReadonlyWallet,ImpFood,expense,40,CNY,vw_exp\n"
+        "2026-11-20,HiddenSecret,ImpFood,expense,50,CNY,no_exp\n";
+    out_json = NULL;
+    assert(import_daily_expenses_csv_execute(pool, 0, member_id, lid1, de_csv, strlen(de_csv), &out_json, err_buf, sizeof(err_buf)) == 0);
+    res_obj = csilk_json_parse(out_json);
+    assert(db_get_int(res_obj, "imported") == 1);
+    assert(db_get_int(res_obj, "errors") == 2);
+    details = csilk_json_get_string(res_obj, "errors_detail");
+    assert(strstr(details, "找不到资产 'HiddenSecret'") != NULL);
+    assert(strstr(details, "账户无记账权限") != NULL);
+    csilk_json_free(res_obj);
+    free(out_json);
+
+    // Snapshot on 2026-11-25 must have been invalidated by 2026-11-20 daily expense import
+    csilk_json_t* snap = NULL;
+    assert(ledger_snapshot_get_latest(pool, owner_id, asset_op, NULL, &snap) == 0 && snap == NULL);
+
+    // ReadonlyWallet balance untouched (2000.0)
+    char s_avw[32];
+    snprintf(s_avw, sizeof(s_avw), "%lld", (long long)asset_vw);
+    csilk_json_t* chk_vw = csilk_db_query_param_json(
+        pool, "SELECT current_value FROM assets WHERE id=?", (const char*[]){s_avw, NULL});
+    assert(db_get_num(csilk_json_array_get(chk_vw, 0), "current_value") == 2000.0);
+    csilk_json_free(chk_vw);
+    printf("  [OK] CSV import enforces ledger isolation, anti-enumeration, RBAC write guard & snapshot invalidation\n");
+}
+
 int main(void) {
     printf("========================================\n");
     printf("Starting Account RBAC & Field Masking Tests\n");
@@ -738,6 +909,7 @@ int main(void) {
     test_repo_crud(pool);
     test_usecases_and_masking(pool);
     test_csv_export_rbac_and_shared_ledger(pool);
+    test_csv_import_rbac_and_isolation(pool);
 
     printf("========================================\n");
     printf("All Account RBAC Tests Passed Successfully!\n");
