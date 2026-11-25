@@ -39,3 +39,36 @@ test('IM bindings cache persists to disk and reloads properly', async () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   } catch {}
 });
+
+test('IM bindings cache writes atomically with 0600 mode without altering parent dir mode', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'im-cache-perm-'));
+  fs.chmodSync(tmpDir, 0o755);
+  const testCacheFile = path.join(tmpDir, 'bindings.json');
+  process.env.MINEFOLIO_IM_CACHE_FILE = testCacheFile;
+
+  delete require.cache[require.resolve('../../index.js')];
+  const gw = require('../../index.js');
+
+  gw.TOKEN_CACHE.clear();
+  await Promise.all(
+    Array.from({ length: 10 }, (_, i) =>
+      Promise.resolve().then(() => gw.setCachedToken(`qq:u${i}`, `secret_${i}`))
+    )
+  );
+
+  const fileMode = fs.statSync(testCacheFile).mode & 0o777;
+  const dirMode = fs.statSync(tmpDir).mode & 0o777;
+  assert.strictEqual(fileMode, 0o600);
+  assert.strictEqual(dirMode, 0o755);
+
+  const leftovers = fs.readdirSync(tmpDir).filter((f) => f.includes('.tmp.'));
+  assert.deepStrictEqual(leftovers, []);
+
+  // Existing loose 0644 cache file gets tightened on loadCache()
+  fs.chmodSync(testCacheFile, 0o644);
+  gw.TOKEN_CACHE.clear();
+  gw.loadCache();
+  assert.strictEqual(fs.statSync(testCacheFile).mode & 0o777, 0o600);
+
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+});

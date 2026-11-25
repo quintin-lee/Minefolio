@@ -19,6 +19,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { writeJsonAtomic } = require('./ilink/state');
 
 const API_BASE = process.env.MINEFOLIO_API || 'http://localhost:8080';
 const TOKEN_CACHE = new Map(); // `${platform}:${imUserId}` -> { token, expiresAt }
@@ -56,13 +57,7 @@ function saveCache() {
         obj[k] = { token: v, expiresAt: Date.now() + getTokenCacheTtlMs() };
       }
     }
-    const dir = path.dirname(CACHE_FILE);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    const tmp = `${CACHE_FILE}.tmp.${Date.now()}`;
-    fs.writeFileSync(tmp, JSON.stringify(obj, null, 2), 'utf8');
-    fs.renameSync(tmp, CACHE_FILE);
+    writeJsonAtomic(CACHE_FILE, obj, { tightenDir: false });
   } catch (err) {
     console.warn('[gateway] saveCache failed:', err && err.message);
   }
@@ -71,6 +66,11 @@ function saveCache() {
 function loadCache() {
   try {
     if (fs.existsSync(CACHE_FILE)) {
+      try {
+        fs.chmodSync(CACHE_FILE, 0o600);
+      } catch {
+        // Ignore on platforms where chmod is restricted
+      }
       const data = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
       if (data && typeof data === 'object') {
         const now = Date.now();

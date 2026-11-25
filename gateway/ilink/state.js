@@ -22,13 +22,18 @@ function instanceDir(rootDir, id) {
   return dir;
 }
 
-function writeJsonAtomic(filePath, data) {
+function writeJsonAtomic(filePath, data, opts = {}) {
+  const { tightenDir = true } = opts;
   const dir = path.dirname(filePath);
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  try {
-    fs.chmodSync(dir, 0o700);
-  } catch {
-    // Ignore on platforms where chmod is restricted
+  if (tightenDir) {
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    try {
+      fs.chmodSync(dir, 0o700);
+    } catch {
+      // Ignore on platforms where chmod is restricted
+    }
+  } else if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
   }
   const tmp = `${filePath}.tmp.${process.pid}.${crypto.randomBytes(4).toString('hex')}`;
   const content = `${JSON.stringify(data, null, 2)}\n`;
