@@ -121,18 +121,24 @@ test "$(echo "$BOB_LIST" | jq -r '.code')" = "0"
 test "$(echo "$BOB_LIST" | jq -r '.data.total|tonumber|floor')" = "7"
 test "$(echo "$BOB_LIST" | jq -r '.data.items[0].is_builtin|tonumber|floor')" = "1"
 
-# 5.2 Test Bob can toggle built-in task on and off
-echo "Testing toggle built-in job as Bob..."
+# 5.2 Test non-admin Bob cannot toggle built-in global task; admin Alice can
+echo "Testing toggle built-in job permission (Bob denied, Alice allowed)..."
 BOB_TOGGLE=$(curl -s -X POST "$BASE/scheduler/jobs/$BUILTIN_JOB_ID/toggle" \
   -H "Authorization: Bearer $TOKEN_B" \
   -H "Content-Type: application/json" \
   -d '{"enabled": false}')
-test "$(echo "$BOB_TOGGLE" | jq -r '.code')" = "0"
-test "$(echo "$BOB_TOGGLE" | jq -r '.data.enabled')" = "false"
+test "$(echo "$BOB_TOGGLE" | jq -r '.code')" = "1004"
 
-# Re-enable built-in job
+ALICE_TOGGLE=$(curl -s -X POST "$BASE/scheduler/jobs/$BUILTIN_JOB_ID/toggle" \
+  -H "Authorization: Bearer $TOKEN_A" \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": false}')
+test "$(echo "$ALICE_TOGGLE" | jq -r '.code')" = "0"
+test "$(echo "$ALICE_TOGGLE" | jq -r '.data.enabled')" = "false"
+
+# Re-enable built-in job as admin Alice
 curl -s -X POST "$BASE/scheduler/jobs/$BUILTIN_JOB_ID/toggle" \
-  -H "Authorization: Bearer $TOKEN_B" \
+  -H "Authorization: Bearer $TOKEN_A" \
   -H "Content-Type: application/json" \
   -d '{"enabled": true}' > /dev/null
 

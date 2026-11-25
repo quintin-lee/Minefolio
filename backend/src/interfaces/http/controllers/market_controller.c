@@ -1,4 +1,5 @@
 #include "interfaces/http/controllers/market_controller.h"
+#include "application/auth/usecases.h"
 #include "application/market/usecases.h"
 #include "application/task/async_task_manager.h"
 #include "common/response.h"
@@ -7,6 +8,20 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+static int
+require_market_admin(csilk_ctx_t* c)
+{
+    int64_t user_id = ctx_user_id(c);
+    if (user_id <= 0) {
+        return 0;
+    }
+    if (!auth_usecase_is_instance_admin(db_get_pool(), user_id)) {
+        respond_forbidden(c, "仅管理员可修改全局行情配置");
+        return 0;
+    }
+    return 1;
+}
 
 void
 api_market_search(csilk_ctx_t* c)
@@ -243,6 +258,10 @@ api_market_get_settings(csilk_ctx_t* c)
 void
 api_market_update_settings(csilk_ctx_t* c)
 {
+    if (!require_market_admin(c)) {
+        return;
+    }
+
     csilk_json_t* body = csilk_bind_json(c);
     if (!body) {
         respond_bad_request(c, "无效的 JSON 数据");
@@ -259,14 +278,22 @@ api_market_update_settings(csilk_ctx_t* c)
     };
 
     market_usecase_result_t res = {0};
-    market_usecase_update_settings(&cmd, &res);
+    int                     rc = market_usecase_update_settings(&cmd, &res);
     csilk_json_free(body);
-    respond_ok_null(c);
+    if (rc == 0 && res.code == 0) {
+        respond_ok_null(c);
+    } else {
+        respond_error(c, res.code ? res.code : 1002, res.message);
+    }
 }
 
 void
 api_market_test_proxy(csilk_ctx_t* c)
 {
+    if (!require_market_admin(c)) {
+        return;
+    }
+
     csilk_json_t* body = csilk_bind_json(c);
     const char*   proxy = body ? csilk_json_get_string(body, "market_proxy") : NULL;
 
@@ -355,6 +382,10 @@ api_market_sync_exchange_rates(csilk_ctx_t* c)
 void
 api_market_update_exchange_rate(csilk_ctx_t* c)
 {
+    if (!require_market_admin(c)) {
+        return;
+    }
+
     csilk_json_t* body = csilk_bind_json(c);
     if (!body) {
         respond_bad_request(c, "无效的 JSON 数据");

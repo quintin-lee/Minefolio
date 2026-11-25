@@ -58,12 +58,28 @@ system_setup(csilk_ctx_t* c)
     }
 }
 
-void
-system_backup_status(csilk_ctx_t* c)
+static int
+require_admin_actor(csilk_ctx_t* c, int64_t* out_user_id)
 {
     int64_t user_id = ctx_user_id(c);
     if (user_id <= 0) {
-        respond_unauthorized(c);
+        return 0;
+    }
+    if (!auth_usecase_is_instance_admin(db_get_pool(), user_id)) {
+        respond_forbidden(c, "仅管理员可执行系统管理操作");
+        return 0;
+    }
+    if (out_user_id) {
+        *out_user_id = user_id;
+    }
+    return 1;
+}
+
+void
+system_backup_status(csilk_ctx_t* c)
+{
+    int64_t actor_id = 0;
+    if (!require_admin_actor(c, &actor_id)) {
         return;
     }
 
@@ -78,9 +94,8 @@ system_backup_status(csilk_ctx_t* c)
 void
 system_backup_create(csilk_ctx_t* c)
 {
-    int64_t user_id = ctx_user_id(c);
-    if (user_id <= 0) {
-        respond_unauthorized(c);
+    int64_t actor_id = 0;
+    if (!require_admin_actor(c, &actor_id)) {
         return;
     }
 
@@ -90,7 +105,7 @@ system_backup_create(csilk_ctx_t* c)
     }
 
     bool    deduplicated = false;
-    int64_t task_id = backup_usecase_create_submit(db_get_pool(), user_id, &deduplicated);
+    int64_t task_id = backup_usecase_create_submit(db_get_pool(), actor_id, &deduplicated);
     if (task_id <= 0) {
         respond_error(c, 1005, "执行数据库在线热备份失败");
         return;
@@ -102,9 +117,8 @@ system_backup_create(csilk_ctx_t* c)
 void
 system_backup_download(csilk_ctx_t* c)
 {
-    int64_t user_id = ctx_user_id(c);
-    if (user_id <= 0) {
-        respond_unauthorized(c);
+    int64_t actor_id = 0;
+    if (!require_admin_actor(c, &actor_id)) {
         return;
     }
 
@@ -142,9 +156,8 @@ system_backup_download(csilk_ctx_t* c)
 void
 system_backup_delete(csilk_ctx_t* c)
 {
-    int64_t user_id = ctx_user_id(c);
-    if (user_id <= 0) {
-        respond_unauthorized(c);
+    int64_t actor_id = 0;
+    if (!require_admin_actor(c, &actor_id)) {
         return;
     }
 
@@ -162,23 +175,6 @@ system_backup_delete(csilk_ctx_t* c)
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_bool(resp, "success", true);
     respond_ok(c, resp);
-}
-
-static int
-require_admin_actor(csilk_ctx_t* c, int64_t* out_user_id)
-{
-    int64_t user_id = ctx_user_id(c);
-    if (user_id <= 0) {
-        return 0;
-    }
-    if (!auth_usecase_is_instance_admin(db_get_pool(), user_id)) {
-        respond_forbidden(c, "仅管理员可执行用户管理操作");
-        return 0;
-    }
-    if (out_user_id) {
-        *out_user_id = user_id;
-    }
-    return 1;
 }
 
 void

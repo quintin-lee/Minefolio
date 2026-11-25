@@ -185,36 +185,37 @@ static const char* s_jwt_exclude_paths[] = {"/api/auth/login",
                                             "/api/auth/oauth/callback",
                                             NULL};
 
-/**
- * @brief JWT 身份鉴权中间件入口函数
- *
- * @param[in,out] c HTTP 上下文对象指针
- */
-void
-jwt_middleware_wrapper(csilk_ctx_t* c)
+static bool
+jwt_authenticate_ctx(csilk_ctx_t* c, int64_t* out_user_id)
 {
     if (!c) {
-        return;
+        return false;
     }
 
     const char* path = csilk_get_path(c);
     if (path) {
         for (int i = 0; s_jwt_exclude_paths[i]; i++) {
             if (strcmp(path, s_jwt_exclude_paths[i]) == 0) {
-                csilk_next(c);
-                return;
+                if (out_user_id) {
+                    *out_user_id = 0;
+                }
+                return true;
             }
         }
         /* P2-A: IM 自助绑定端点 /api/im/{platform}/bind-auth 无 JWT（IM 用户
          * 未登录），靠限流 + 抢占防护保护。严格校验单段 platform 字符集，防路径穿越。 */
         if (is_im_bind_auth_path(path)) {
-            csilk_next(c);
-            return;
+            if (out_user_id) {
+                *out_user_id = 0;
+            }
+            return true;
         }
         /* 网关内部路由 /api/gateway/ 由各 handler 内 gateway_auth_check() 验证 X-Gateway-Token */
         if (strncmp(path, "/api/gateway/", 13) == 0 && strstr(path, "..") == NULL) {
-            csilk_next(c);
-            return;
+            if (out_user_id) {
+                *out_user_id = 0;
+            }
+            return true;
         }
     }
 
@@ -224,7 +225,7 @@ jwt_middleware_wrapper(csilk_ctx_t* c)
                          CSILK_STATUS_INTERNAL_SERVER_ERROR,
                          "JWT_SECRET is required and must be properly configured");
         csilk_abort(c);
-        return;
+        return false;
     }
 
     bool is_mcp_path = (path && strcmp(path, "/mcp") == 0);
@@ -233,12 +234,14 @@ jwt_middleware_wrapper(csilk_ctx_t* c)
     if (!auth_header || strncmp(auth_header, "Bearer ", 7) != 0) {
         if (is_mcp_path) {
             /* Pass through unauthenticated so mcp_endpoint_handler returns JSON-RPC -32001 */
-            csilk_next(c);
-            return;
+            if (out_user_id) {
+                *out_user_id = 0;
+            }
+            return true;
         }
         csilk_json_error(c, CSILK_STATUS_UNAUTHORIZED, "Bearer token required");
         csilk_abort(c);
-        return;
+        return false;
     }
     const char* token = auth_header + 7;
 
@@ -250,12 +253,14 @@ jwt_middleware_wrapper(csilk_ctx_t* c)
     csilk_json_t* payload = csilk_jwt_verify_options(c, token, secret, strlen(secret), &opts);
     if (!payload) {
         if (is_mcp_path) {
-            csilk_next(c);
-            return;
+            if (out_user_id) {
+                *out_user_id = 0;
+            }
+            return true;
         }
         csilk_json_error(c, CSILK_STATUS_UNAUTHORIZED, "Invalid or expired token");
         csilk_abort(c);
-        return;
+        return false;
     }
 
     const char* token_type = csilk_json_get_string(payload, "type");
@@ -263,15 +268,17 @@ jwt_middleware_wrapper(csilk_ctx_t* c)
         if (!path || strcmp(path, "/api/auth/2fa/verify-login") != 0) {
             csilk_json_free(payload);
             if (is_mcp_path) {
-                csilk_next(c);
-                return;
+                if (out_user_id) {
+                    *out_user_id = 0;
+                }
+                return true;
             }
             csilk_json_error(
                 c,
                 CSILK_STATUS_UNAUTHORIZED,
                 "2FA verification required: temporary token cannot access protected endpoints");
             csilk_abort(c);
-            return;
+            return false;
         }
     }
     /* IM 绑定码 (type=im_bind) 仅放行安全 /api/im/ 路径（禁止 '..' 穿越与 /api/im/instances 管理端点） */
@@ -283,7 +290,7 @@ jwt_middleware_wrapper(csilk_ctx_t* c)
                              CSILK_STATUS_UNAUTHORIZED,
                              "IM bind token is only valid for /api/im/* endpoints");
             csilk_abort(c);
-            return;
+            return false;
         }
     }
 
@@ -293,12 +300,14 @@ jwt_middleware_wrapper(csilk_ctx_t* c)
         !csilk_json_is_number(v_claim)) {
         csilk_json_free(payload);
         if (is_mcp_path) {
-            csilk_next(c);
-            return;
+            if (out_user_id) {
+                *out_user_id = 0;
+            }
+            return true;
         }
         csilk_json_error(c, CSILK_STATUS_UNAUTHORIZED, "Invalid token claims");
         csilk_abort(c);
-        return;
+        return false;
     }
 
     int64_t user_id = (int64_t)csilk_json_get_number(payload, "sub");
@@ -306,12 +315,14 @@ jwt_middleware_wrapper(csilk_ctx_t* c)
     if (user_id <= 0 || jwt_v < 0) {
         csilk_json_free(payload);
         if (is_mcp_path) {
-            csilk_next(c);
-            return;
+            if (out_user_id) {
+                *out_user_id = 0;
+            }
+            return true;
         }
         csilk_json_error(c, CSILK_STATUS_UNAUTHORIZED, "Invalid user in token claims");
         csilk_abort(c);
-        return;
+        return false;
     }
 
     /* Validate token version against DB / cache BEFORE context attachment */
@@ -319,15 +330,70 @@ jwt_middleware_wrapper(csilk_ctx_t* c)
         csilk_json_free(payload);
         if (is_mcp_path) {
             /* Token revoked/invalidated on /mcp: pass through unauthenticated without context payload */
-            csilk_next(c);
-            return;
+            if (out_user_id) {
+                *out_user_id = 0;
+            }
+            return true;
         }
         csilk_json_error(c, CSILK_STATUS_UNAUTHORIZED, "Token invalidated — please log in again");
         csilk_abort(c);
-        return;
+        return false;
     }
 
     /* All checks passed: attach payload to context for authenticated requests */
     csilk_set_ex(c, "jwt_payload", payload, (void (*)(void*))csilk_json_free);
+    if (out_user_id) {
+        *out_user_id = user_id;
+    }
+    return true;
+}
+
+/**
+ * @brief JWT 身份鉴权中间件入口函数
+ *
+ * @param[in,out] c HTTP 上下文对象指针
+ */
+void
+jwt_middleware_wrapper(csilk_ctx_t* c)
+{
+    if (jwt_authenticate_ctx(c, NULL)) {
+        csilk_next(c);
+    }
+}
+
+void
+jwt_admin_middleware_wrapper(csilk_ctx_t* c)
+{
+    int64_t user_id = 0;
+    if (!jwt_authenticate_ctx(c, &user_id)) {
+        return;
+    }
+    if (user_id <= 0) {
+        csilk_json_error(c, CSILK_STATUS_UNAUTHORIZED, "Authentication required");
+        csilk_abort(c);
+        return;
+    }
+
+    char uid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    csilk_db_pool_t* pool = db_get_pool();
+    csilk_json_t*    rows = csilk_db_query_param_json(
+        pool,
+        "SELECT COALESCE(role, 'user') AS role FROM users WHERE id=? AND COALESCE(disabled, 0)=0",
+        (const char*[]){uid_str, NULL});
+    bool is_admin = false;
+    if (rows && csilk_json_array_size(rows) > 0) {
+        const char* role = csilk_json_get_string(csilk_json_array_get(rows, 0), "role");
+        is_admin = (role && strcmp(role, "admin") == 0);
+    }
+    if (rows) {
+        csilk_json_free(rows);
+    }
+    if (!is_admin) {
+        csilk_json_error(c, CSILK_STATUS_FORBIDDEN, "Admin role required");
+        csilk_abort(c);
+        return;
+    }
+
     csilk_next(c);
 }

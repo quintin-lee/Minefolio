@@ -278,8 +278,8 @@ scheduler_usecase_job_toggle(
     int64_t job_user_id = db_get_int(existing, "user_id");
     csilk_json_free(existing);
 
-    /* Built-in tasks can be toggled by any authenticated user */
-    if (!is_builtin && job_user_id != 0 && job_user_id != user_id && !is_admin) {
+    /* Built-in global tasks and non-owned tasks require admin privileges to toggle */
+    if ((is_builtin || job_user_id == 0 || job_user_id != user_id) && !is_admin) {
         return 1004;
     }
 

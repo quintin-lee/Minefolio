@@ -28,6 +28,13 @@
 void jwt_middleware_wrapper(csilk_ctx_t* c);
 
 /**
+ * @brief 管理员专用的 JWT + role='admin' 鉴权中间件（用于 /csilk-admin 等诊断路由）
+ *
+ * @param[in,out] c csilk HTTP 上下文指针
+ */
+void jwt_admin_middleware_wrapper(csilk_ctx_t* c);
+
+/**
  * @brief 主动使指定用户在进程内 token_version 缓存中的条目失效（登出/改密/关闭 2FA 后立即生效）
  */
 void jwt_middleware_invalidate_user(int64_t user_id);
