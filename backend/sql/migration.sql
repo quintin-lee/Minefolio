@@ -635,6 +635,8 @@ CREATE TABLE IF NOT EXISTS job_run_logs (
     output_summary      TEXT DEFAULT '',
     error_message       TEXT DEFAULT '',
     notification_status TEXT DEFAULT 'none',
+    notif_sync_sent     INTEGER NOT NULL DEFAULT 0,
+    notif_sync_failed   INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY(job_id) REFERENCES scheduled_jobs(id) ON DELETE CASCADE
 );
 
@@ -690,3 +692,60 @@ CREATE INDEX IF NOT EXISTS idx_async_tasks_user_status
 
 CREATE INDEX IF NOT EXISTS idx_async_tasks_dedupe
     ON async_tasks(user_id, dedupe_key, status);
+
+-- V035 + V037: iLink 机器人独立实例与推送 Outbox (SQLite)
+CREATE TABLE IF NOT EXISTS im_bot_instances (
+    id                         INTEGER PRIMARY KEY AUTOINCREMENT,
+    mf_user_id                 INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    platform                   TEXT NOT NULL DEFAULT 'wechat',
+    adapter                    TEXT NOT NULL DEFAULT 'ilink',
+    ilink_bot_id               TEXT,
+    ilink_user_id              TEXT,
+    im_user_id                 TEXT,
+    status                     TEXT NOT NULL DEFAULT 'pending_login',
+    qr_content                 TEXT,
+    qr_expires_at              TEXT,
+    login_epoch                INTEGER NOT NULL DEFAULT 0,
+    pending_verify_code        TEXT,
+    pending_verify_expires_at  TEXT,
+    verify_attempts            INTEGER NOT NULL DEFAULT 0,
+    enabled                    INTEGER NOT NULL DEFAULT 1,
+    last_error                 TEXT,
+    last_seen_at               TEXT,
+    last_inbound_at            TEXT,
+    created_at                 TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at                 TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(mf_user_id, platform, adapter)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_im_instances_platform_im_user
+    ON im_bot_instances(platform, im_user_id) WHERE im_user_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_im_instances_platform_bot
+    ON im_bot_instances(platform, ilink_bot_id) WHERE ilink_bot_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_im_instances_user ON im_bot_instances(mf_user_id);
+
+CREATE TABLE IF NOT EXISTS im_push_outbox (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    instance_id        INTEGER NOT NULL REFERENCES im_bot_instances(id) ON DELETE CASCADE,
+    mf_user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    job_run_log_id     INTEGER REFERENCES job_run_logs(id) ON DELETE SET NULL,
+    kind               TEXT NOT NULL DEFAULT 'scheduler',
+    title              TEXT NOT NULL,
+    content            TEXT NOT NULL,
+    status             TEXT NOT NULL DEFAULT 'pending',
+    attempts           INTEGER NOT NULL DEFAULT 0,
+    max_attempts       INTEGER NOT NULL DEFAULT 5,
+    lease_until_ts     INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at_ts INTEGER NOT NULL DEFAULT 0,
+    expires_at_ts      INTEGER NOT NULL,
+    last_error         TEXT NOT NULL DEFAULT '',
+    created_at         TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_im_push_outbox_claim
+    ON im_push_outbox(instance_id, status, next_attempt_at_ts);
+CREATE INDEX IF NOT EXISTS idx_im_push_outbox_expires
+    ON im_push_outbox(status, expires_at_ts);
+CREATE INDEX IF NOT EXISTS idx_im_push_outbox_job_log
+    ON im_push_outbox(job_run_log_id) WHERE job_run_log_id IS NOT NULL;
