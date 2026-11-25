@@ -27,9 +27,14 @@
             <span class="currency-code">{{ item.code }}</span>
             <span class="currency-name">{{ item.name }}</span>
           </div>
-          <div class="rate-badge" :class="item.change >= 0 ? 'is-up' : 'is-down'">
-            {{ item.change >= 0 ? '+' : '' }}{{ item.change.toFixed(2) }}%
+          <div
+            v-if="item.direction !== 'same'"
+            class="rate-badge"
+            :class="item.direction === 'up' ? 'is-up' : 'is-down'"
+          >
+            {{ item.direction === 'up' ? '↑' : '↓' }}
           </div>
+          <div v-else class="rate-badge is-flat">—</div>
         </div>
 
         <div class="card-rate">
@@ -38,8 +43,7 @@
         </div>
 
         <div class="card-footer">
-          <span class="day-stat">{{ t('market.cards.dayHigh', { val: formatRate(item.currentRate * 1.002) }) }}</span>
-          <span class="day-stat">{{ t('market.cards.dayLow', { val: formatRate(item.currentRate * 0.998) }) }}</span>
+          <span class="day-stat">{{ item.isHundred ? `100 ${item.code}` : `1 ${item.code}` }} = {{ formatRate(item.currentRate) }} {{ marketStore.baseCurrency }}</span>
         </div>
       </div>
     </div>
@@ -79,14 +83,12 @@ const currencyCards = computed(() => {
     if (cur.isHundred) {
       rate *= 100
     }
-    // Pseudo 24h change for live look based on rate hash
-    const seed = (cur.code.charCodeAt(0) + cur.code.charCodeAt(1)) % 10
-    const change = (seed - 4.5) * 0.08
+    const direction = marketStore.fxDirections[cur.code] || 'same'
 
     return {
       ...cur,
       currentRate: rate,
-      change,
+      direction,
     }
   })
 })

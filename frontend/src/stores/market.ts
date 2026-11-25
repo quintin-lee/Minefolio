@@ -37,8 +37,9 @@ export const useMarketStore = defineStore('market', () => {
   const holdingsSummary = ref<MultiCurrencySummary | null>(null)
   const isLoadingHoldings = ref(false)
 
-  // Request sequence guard against asynchronous out-of-order responses
+  // Request sequence guards against asynchronous out-of-order responses
   let historyReqSeq = 0
+  let holdingsReqSeq = 0
 
   function setBaseCurrency(currency: string) {
     baseCurrency.value = currency
@@ -110,14 +111,21 @@ export const useMarketStore = defineStore('market', () => {
   }
 
   async function fetchHoldingsSummary() {
+    const currentSeq = ++holdingsReqSeq
     isLoadingHoldings.value = true
     try {
       const res = await marketApi.getMultiCurrencySummary(baseCurrency.value)
-      holdingsSummary.value = res
+      if (currentSeq === holdingsReqSeq) {
+        holdingsSummary.value = res
+      }
     } catch (err) {
-      console.warn('Failed to fetch multi-currency summary:', err)
+      if (currentSeq === holdingsReqSeq) {
+        console.warn('Failed to fetch multi-currency summary:', err)
+      }
     } finally {
-      isLoadingHoldings.value = false
+      if (currentSeq === holdingsReqSeq) {
+        isLoadingHoldings.value = false
+      }
     }
   }
 
@@ -314,6 +322,27 @@ export const useMarketStore = defineStore('market', () => {
     await Promise.allSettled([fetchRates(), fetchHoldingsSummary(), fetchHistory()])
   }
 
+  function reset() {
+    holdingsReqSeq++
+    historyReqSeq++
+    indicesReqSeq++
+    holdingsSummary.value = null
+    historyPoints.value = []
+    prevRates.value = {}
+    fxDirections.value = {}
+    indices.value = []
+    marketClocks.value = []
+    lastSyncAt.value = null
+    indicesUpdatedAt.value = null
+    selectedDrawerIndex.value = null
+    isDrawerOpen.value = false
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(RATES_CACHE_KEY)
+      localStorage.removeItem(INDICES_CACHE_KEY)
+      localStorage.removeItem(CLOCKS_CACHE_KEY)
+    }
+  }
+
   return {
     baseCurrency,
     rates,
@@ -353,5 +382,6 @@ export const useMarketStore = defineStore('market', () => {
     closeIndexDrawer,
     fetchIndices,
     init,
+    reset,
   }
 })

@@ -27,6 +27,8 @@ export const useCategoryStore = defineStore('category', () => {
   const expanded = ref(new Set<number>())
   /** 本会话是否已完成一次后台保鲜验证 */
   let hasRevalidated = false
+  /** 并发去重：在途的全量加载 Promise */
+  let inflightLoad: Promise<Category[]> | null = null
 
   async function revalidateCategories() {
     try {
@@ -55,20 +57,34 @@ export const useCategoryStore = defineStore('category', () => {
       }
       return allNodes.value
     }
-    if (loading.value && !type) return allNodes.value
+    if (!type && inflightLoad && !force) {
+      return inflightLoad
+    }
+    if (type) {
+      loading.value = true
+      try {
+        return await categoriesApi.list({ type })
+      } finally {
+        loading.value = false
+      }
+    }
     loading.value = true
-    try {
-      const res = await categoriesApi.list(type ? { type } : undefined)
-      if (!type) {
+    let req: Promise<Category[]> | null = null
+    req = (async () => {
+      try {
+        const res = await categoriesApi.list()
         allNodes.value = res
         loaded.value = true
         hasRevalidated = true
         setSwrCache(CATEGORY_CACHE_KEY, res)
+        return res
+      } finally {
+        loading.value = false
+        if (inflightLoad === req) inflightLoad = null
       }
-      return res
-    } finally {
-      loading.value = false
-    }
+    })()
+    inflightLoad = req
+    return req
   }
 
   /**
@@ -82,26 +98,53 @@ export const useCategoryStore = defineStore('category', () => {
     }
     const children = await categoriesApi.children(parentId)
     expanded.value.add(parentId)
-    allNodes.value = [...allNodes.value, ...children]
+    const seen = new Set(allNodes.value.map(c => Number(c.id)))
+    const fresh = (Array.isArray(children) ? children : []).filter(c => !seen.has(Number(c.id)))
+    if (fresh.length > 0) {
+      allNodes.value = [...allNodes.value, ...fresh]
+    }
     return children
   }
 
   /**
-   * 将扁平分类数组组装构造成具有 children 属性的层级树形结构
-   * @param nodes 扁平分类节点列表
+   * 将扁平或已预嵌套的分类数组组装构造成具有 children 属性的层级树形结构
+   * @param nodes 分类节点列表
    * @returns 根节点树形数组
    */
   function buildTree(nodes: Category[]): Category[] {
     const map = new Map<number, Category>()
     const roots: Category[] = []
-    for (const node of nodes) {
-      map.set(node.id, { ...node, children: [] })
+
+    const register = (node: Category): Category => {
+      const existing = map.get(node.id)
+      if (existing) return existing
+      const cloned: Category = {
+        ...node,
+        children: Array.isArray(node.children) ? node.children.map(register) : [],
+      }
+      map.set(node.id, cloned)
+      return cloned
     }
+
+    for (const node of nodes) {
+      register(node)
+    }
+
+    const childIdSet = new Set<number>()
+    for (const cloned of map.values()) {
+      for (const ch of cloned.children || []) {
+        childIdSet.add(ch.id)
+      }
+    }
+
     for (const node of nodes) {
       const target = map.get(node.id)!
-      const parent = map.get(node.parent_id ?? -1)
-      if (parent) {
-        parent.children!.push(target)
+      if (childIdSet.has(node.id)) continue
+      const parent = node.parent_id != null ? map.get(node.parent_id) : undefined
+      if (parent && parent.id !== target.id) {
+        if (!parent.children!.some(c => c.id === target.id)) {
+          parent.children!.push(target)
+        }
       } else {
         roots.push(target)
       }

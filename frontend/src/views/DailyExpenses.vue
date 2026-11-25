@@ -148,9 +148,9 @@
           </el-radio-group>
         </el-form-item>
         <el-form-item label="分类" prop="category_id">
-          <el-cascader v-model="form._catPath" :props="{ checkStrictly: true, value: 'id', label: 'name', lazy: true, lazyLoad(node: any, resolve: any) {
+          <el-cascader :key="form.expense_type" v-model="form._catPath" :props="{ checkStrictly: true, value: 'id', label: 'name', lazy: true, lazyLoad(node: any, resolve: any) {
                   if (node.level === 0) {
-                    resolve(allCategories.filter(c => c.parent_id === null || c.parent_id === 0) as any)
+                    resolve(categoryTree.filter(c => c.parent_id === null || c.parent_id === 0) as any)
                   } else {
                     categoryStore.loadChildren(node.data.id as number).then((children: any) => resolve(children))
                   }
@@ -166,7 +166,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="金额" prop="amount">
-          <el-input-number v-model="form.amount" :precision="2" :min="0" style="width: 100%" :controls="false" class="hero-amount-input" />
+          <el-input-number v-model="form.amount" :precision="2" :min="0.01" style="width: 100%" :controls="false" class="hero-amount-input" />
         </el-form-item>
         <el-form-item label="日期" prop="expense_date">
           <el-date-picker v-model="form.expense_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
@@ -193,7 +193,7 @@
           CSV 格式：日期, 资产名称, 分类名称, 类型(expense/income), 金额, 币种(可选), 备注(可选)<br>
           <span class="muted-text">示例：2024-01-15, 现金账户, 餐饮美食, expense, 50, CNY, 午餐</span>
         </p>
-        <el-upload action="" :auto-upload="false" :limit="1" accept=".csv" drag class="import-upload" @change="handleFileChange">
+        <el-upload ref="uploadRef" action="" :auto-upload="false" :limit="1" accept=".csv" drag class="import-upload" @change="handleFileChange">
           <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
           <div class="el-upload__text">拖拽文件到此处，或 <em>点击选择</em></div>
           <template #tip><div class="el-upload__tip">仅支持 .csv 文件，UTF-8 编码</div></template>
@@ -210,7 +210,7 @@
       </div>
       <template #footer>
         <div class="dialog-footer">
-          <el-button class="cancel-btn" @click="importTask.cancel(); importDialogVisible = false; importResult = null; importFile = null; importText = null">关闭</el-button>
+          <el-button class="cancel-btn" @click="importTask.cancel(); importDialogVisible = false; importResult = null; importFile = null; importText = null; uploadRef?.clearFiles()">关闭</el-button>
           <el-button type="primary" class="save-btn" :loading="importing" @click="handleImport" :disabled="!importText">开始导入</el-button>
         </div>
       </template>
@@ -236,6 +236,7 @@ import MonthlyChart from '@/components/MonthlyChart.vue'
 import ExpenseCategoryPie from '@/components/ExpenseCategoryPie.vue'
 import ReceiptScannerModal from '@/components/ReceiptScannerModal.vue'
 import { formatCurrency, localToday, localThisMonth, assetLabel } from '@/utils/format'
+import { findCategoryPath } from '@/utils/category-tree'
 import { useAsyncTaskProgress } from '@/composables/useAsyncTaskProgress'
 import { exportChartCsv } from '@/utils/chart-export'
 import SummaryCard from '@/components/SummaryCard.vue'
@@ -255,7 +256,13 @@ const selectedExpenses = ref<DailyExpense[]>([])
 const isBatchDeleting = ref(false)
 
 const form = reactive({ expense_type: 'expense' as 'income' | 'expense', category_id: null as number | null, asset_id: null as number | null, amount: 0, expense_date: '', note: '', tags: [] as Tag[], _catPath: [] as number[] })
-const rules = { expense_type: [{ required: true }], category_id: [{ required: true }], asset_id: [{ required: true, message: '请选择关联资产', trigger: 'change' }], amount: [{ required: true }], expense_date: [{ required: true }] }
+const rules = {
+  expense_type: [{ required: true }],
+  category_id: [{ required: true }],
+  asset_id: [{ required: true, message: '请选择关联资产', trigger: 'change' }],
+  amount: [{ required: true, type: 'number' as const, min: 0.01, message: '金额必须大于 0', trigger: 'change' }],
+  expense_date: [{ required: true }],
+}
 
 const categoryTree = computed(() => {
   return allCategories.value.filter(c => c.type === form.expense_type)
@@ -288,7 +295,11 @@ const loading = ref(false)
 const saving = ref(false)
 const formRef = ref()
 
+const uploadRef = ref()
+let loadReqSeq = 0
+
 async function loadData() {
+  const reqId = ++loadReqSeq
   loading.value = true
   try {
     const params: any = { page: page.value, page_size: pageSize.value }
@@ -310,6 +321,7 @@ async function loadData() {
       dailyExpensesApi.list(params),
       dailyExpensesApi.monthly(y, m)
     ])
+    if (reqId !== loadReqSeq) return
     if (res.status === 'fulfilled') {
       expenses.value = res.value.list
       total.value = res.value.total
@@ -320,7 +332,7 @@ async function loadData() {
   } catch (err) {
     console.error('[DailyExpenses] loadData failed:', err)
   } finally {
-    loading.value = false
+    if (reqId === loadReqSeq) loading.value = false
   }
 }
 
@@ -352,14 +364,19 @@ function onCatChange(val: any) { const last = (val as any[])?.[(val as any[]).le
 
 function openDialog(expense?: any) {
   editingId.value = expense?.id ?? null
-  Object.assign(form, expense ? { expense_type: expense.expense_type, category_id: Number(expense.category_id), asset_id: Number(expense.asset_id), amount: Number(expense.amount), expense_date: expense.expense_date, note: expense.note, tags: normalizeTags(expense.tags), _catPath: [Number(expense.category_id)] }
+  const expenseType = expense?.expense_type || 'expense'
+  const scopedCategories = allCategories.value.filter(c => c.type === expenseType)
+  const catId = expense?.category_id ? Number(expense.category_id) : null
+  const catPath = catId ? findCategoryPath(scopedCategories, catId) : []
+  Object.assign(form, expense ? { expense_type: expense.expense_type, category_id: catId, asset_id: Number(expense.asset_id), amount: Number(expense.amount), expense_date: expense.expense_date, note: expense.note, tags: normalizeTags(expense.tags), _catPath: catPath.length ? catPath : (catId ? [catId] : []) }
     : { expense_type: 'expense', category_id: null, asset_id: null, amount: 0, expense_date: localToday(), note: '', tags: [], _catPath: [] })
   dialogVisible.value = true
 }
 
 async function handleSubmit() {
+  if (saving.value) return
   await formRef.value.validate(async (valid: boolean) => {
-    if (!valid) return
+    if (!valid || saving.value) return
     saving.value = true
     try {
       const data = {
@@ -385,10 +402,21 @@ async function handleSubmit() {
 }
 
 async function handleDelete(expense: any) {
-  await ElMessageBox.confirm('确定删除该记录吗？', '提示', { type: 'warning' })
-  await dailyExpensesApi.delete(expense.id)
-  ElMessage.success('删除成功')
-  loadData()
+  try {
+    await ElMessageBox.confirm('确定删除该记录吗？', '提示', { type: 'warning' })
+  } catch {
+    return
+  }
+  try {
+    await dailyExpensesApi.delete(expense.id)
+    ElMessage.success('删除成功')
+    if (expenses.value.length === 1 && page.value > 1) {
+      page.value -= 1
+    }
+    loadData()
+  } catch (err: any) {
+    ElMessage.error(err?.message || '删除失败')
+  }
 }
 
 function handleSelectionChange(rows: DailyExpense[]) {
@@ -526,6 +554,7 @@ async function handleImport() {
       importFile.value = null
       importText.value = null
       importResult.value = null
+      uploadRef.value?.clearFiles()
       loadData()
     }
   } catch (err: any) {

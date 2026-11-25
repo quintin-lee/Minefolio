@@ -392,7 +392,10 @@ function formatDateTime(s: string): string {
   return s.replace('T', ' ').slice(0, 19)
 }
 
+let loadUsersReqSeq = 0
+
 async function loadUsers() {
+  const reqId = ++loadUsersReqSeq
   loading.value = true
   try {
     const res = await adminUsersApi.list({
@@ -402,6 +405,7 @@ async function loadUsers() {
       role: filters.role,
       status: filters.status,
     })
+    if (reqId !== loadUsersReqSeq) return
     users.value = res.list || []
     total.value = res.total || 0
     if (res.stats) {
@@ -414,7 +418,9 @@ async function loadUsers() {
   } catch {
     // 错误已由 http 拦截器统一提示
   } finally {
-    loading.value = false
+    if (reqId === loadUsersReqSeq) {
+      loading.value = false
+    }
   }
 }
 
@@ -467,9 +473,9 @@ function openCreateDialog() {
 }
 
 async function submitCreate() {
-  if (!createFormRef.value) return
+  if (submitting.value || !createFormRef.value) return
   const valid = await createFormRef.value.validate().catch(() => false)
-  if (!valid) return
+  if (!valid || submitting.value) return
 
   submitting.value = true
   try {
@@ -558,9 +564,9 @@ function openResetPwdDialog(row: AdminUserItem) {
 }
 
 async function submitResetPwd() {
-  if (!resetFormRef.value || !resetTarget.value) return
+  if (submitting.value || !resetFormRef.value || !resetTarget.value) return
   const valid = await resetFormRef.value.validate().catch(() => false)
-  if (!valid) return
+  if (!valid || submitting.value) return
 
   submitting.value = true
   try {

@@ -95,6 +95,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useLedgerStore } from '@/stores/ledger'
 import { systemApi } from '@/api/system'
 import { formatDate } from '@/utils/format'
+import { copyTextToClipboard } from '@/utils/clipboard'
 import { t } from '@/utils/locale'
 
 const auth = useAuthStore()
@@ -119,8 +120,8 @@ function ledgerRoleLabel(role: string): string {
 
 async function copyUserId() {
   if (!auth.user?.id) return
-  await navigator.clipboard.writeText(String(auth.user.id))
-  ElMessage.success(t('settings.accountIdCopied'))
+  const copied = await copyTextToClipboard(String(auth.user.id))
+  if (copied) ElMessage.success(t('settings.accountIdCopied'))
 }
 </script>
 

@@ -13,19 +13,19 @@
     <div v-if="assetDetail" class="detail-content">
       <!-- 核心指标卡片 -->
       <el-row :gutter="12" class="metric-row">
-        <el-col :span="6">
+        <el-col :xs="12" :sm="6">
           <div class="metric-card">
             <div class="metric-label">市值</div>
-            <div class="metric-value">{{ formatCurrency(assetDetail.current_value) }}</div>
+            <div class="metric-value">{{ formatCurrency(assetDetail.current_value, assetDetail.currency) }}</div>
           </div>
         </el-col>
-        <el-col :span="6">
+        <el-col :xs="12" :sm="6">
           <div class="metric-card">
             <div class="metric-label">持有份额</div>
             <div class="metric-value">{{ assetDetail.quantity?.toFixed(4) }}</div>
           </div>
         </el-col>
-        <el-col :span="6">
+        <el-col :xs="12" :sm="6">
           <div class="metric-card">
             <div class="metric-label">摊薄成本</div>
             <div class="metric-value">
@@ -33,7 +33,7 @@
             </div>
           </div>
         </el-col>
-        <el-col :span="6">
+        <el-col :xs="12" :sm="6">
           <div class="metric-card">
             <div class="metric-label">最新净值</div>
             <div class="metric-value">{{ assetDetail.net_value?.toFixed(4) }}</div>
@@ -43,13 +43,13 @@
 
       <!-- 盈亏指标行 -->
       <el-row :gutter="12" class="metric-row">
-        <el-col :span="6">
+        <el-col :xs="12" :sm="6">
           <div class="metric-card">
             <div class="metric-label">浮动盈亏</div>
-            <div :class="['metric-value', pnlClass(unrealized)]">{{ formatCurrency(unrealized) }}</div>
+            <div :class="['metric-value', pnlClass(unrealized)]">{{ formatCurrency(unrealized, assetDetail.currency) }}</div>
           </div>
         </el-col>
-        <el-col :span="6">
+        <el-col :xs="12" :sm="6">
           <div class="metric-card">
             <div class="metric-label">浮动收益率</div>
             <div :class="['metric-value', pnlClass(unrealized)]">
@@ -57,13 +57,13 @@
             </div>
           </div>
         </el-col>
-        <el-col :span="6">
+        <el-col :xs="12" :sm="6">
           <div class="metric-card">
             <div class="metric-label">组合占比</div>
             <div class="metric-value">{{ ((assetDetail.portfolio_weight ?? 0) * 100).toFixed(1) }}%</div>
           </div>
         </el-col>
-        <el-col :span="6">
+        <el-col :xs="12" :sm="6">
           <div class="metric-card">
             <div class="metric-label">当日涨跌</div>
             <div :class="['metric-value', pnlClass(dailyChange?.pct ?? 0)]">
@@ -163,6 +163,10 @@ async function loadPriceHistory() {
 }
 
 onMounted(async () => {
+  if (!Number.isFinite(assetId.value) || assetId.value <= 0) {
+    loading.value = false
+    return
+  }
   loading.value = true
   try {
     await Promise.allSettled([loadAsset(), loadPriceHistory()])

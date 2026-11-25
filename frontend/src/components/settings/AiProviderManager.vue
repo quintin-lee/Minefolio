@@ -6,7 +6,7 @@
     <p class="export-hint">{{ t('settings.aiDesc') }}</p>
 
     <div class="provider-list">
-      <div v-for="(provider, index) in providerList" :key="index" class="provider-item">
+      <div v-for="(provider, index) in providerList" :key="provider._uid" class="provider-item">
         <div class="provider-header">
           <div class="provider-title-wrap">
             <span class="provider-name">{{ provider.name || provider.id }}</span>
@@ -105,8 +105,8 @@
       <el-form-item :label="t('settings.aiDefaultProvider')">
         <el-select v-model="aiForm.default_provider" style="width: 100%">
           <el-option
-            v-for="p in providerList"
-            :key="p.id"
+            v-for="p in providerList.filter(item => item.id?.trim())"
+            :key="p._uid"
             :label="p.name || p.id"
             :value="p.id"
           />
@@ -148,6 +148,7 @@ import { encryptText } from '@/utils/crypto'
 import { t } from '@/utils/locale'
 
 interface ProviderItem {
+  _uid: number
   id: string
   name: string
   base_url: string
@@ -157,6 +158,7 @@ interface ProviderItem {
   testResult?: AiTestConnectionResult
 }
 
+let nextProviderUid = 1
 const providerList = ref<ProviderItem[]>([])
 const testingIndex = ref<number | null>(null)
 const fetchingModelsIndex = ref<number | null>(null)
@@ -189,6 +191,7 @@ async function loadAiSettings() {
       aiForm.system_prompt = settings.system_prompt || ''
 
       providerList.value = (settings.providers ?? []).map((p) => ({
+        _uid: nextProviderUid++,
         id: p.id || '',
         name: p.name || p.id || '',
         base_url: p.base_url || '',
@@ -207,11 +210,17 @@ function toggleEdit(index: number) {
 }
 
 function cancelEdit() {
+  const idx = editIndex.value
+  const current = idx >= 0 ? providerList.value[idx] : undefined
+  if (current && !current.id?.trim() && !current.name?.trim() && !current.base_url?.trim() && !current.api_key?.trim()) {
+    providerList.value.splice(idx, 1)
+  }
   editIndex.value = -1
 }
 
 function addProvider() {
   providerList.value.push({
+    _uid: nextProviderUid++,
     id: '',
     name: '',
     base_url: '',
@@ -306,6 +315,11 @@ async function removeProvider(index: number) {
   try {
     await ElMessageBox.confirm(t('settings.aiConfirmDelete'), t('common.hint'), { type: 'warning' })
     providerList.value.splice(index, 1)
+    if (editIndex.value === index) {
+      editIndex.value = -1
+    } else if (editIndex.value > index) {
+      editIndex.value -= 1
+    }
     ElMessage.success(t('settings.aiProviderDeleted'))
   } catch {
     // Cancelled
@@ -313,6 +327,13 @@ async function removeProvider(index: number) {
 }
 
 async function saveAiSettings() {
+  if (aiSaving.value) return
+  const emptyIdx = providerList.value.findIndex((p) => !p.id || !p.id.trim())
+  if (emptyIdx !== -1) {
+    editIndex.value = emptyIdx
+    ElMessage.error(t('settings.aiProviderIdRequired'))
+    return
+  }
   aiSaving.value = true
   try {
     const providers = await Promise.all(

@@ -255,6 +255,7 @@ import SymbolSelect from '@/components/SymbolSelect.vue'
 import PriceHistoryChart from '@/components/PriceHistoryChart.vue'
 import AccountDialog from '@/components/AccountDialog.vue'
 import { formatCurrency } from '@/utils/format'
+import { findCategoryPath } from '@/utils/category-tree'
 import { detectSuspiciousUnitCostInput, resolveTotalCostBasis, type CostInputMode } from '@/utils/investment-cost'
 import { Icon } from '@iconify/vue'
 
@@ -476,7 +477,10 @@ async function handleSyncSingle(asset: any) {
   }
 }
 
+let symbolReqSeq = 0
+
 function handleSymbolSelect(item: MarketSearchItem) {
+  const reqId = ++symbolReqSeq
   form.symbol = item.symbol
   form.quote_source = item.source
   if (!form.name || form.name.trim() === '') {
@@ -487,6 +491,7 @@ function handleSymbolSelect(item: MarketSearchItem) {
   }
   /* Fetch latest price */
   marketApi.getQuote(item.symbol, item.source).then(q => {
+    if (reqId !== symbolReqSeq) return
     if (q && q.current_price > 0) {
       form.net_value = q.current_price
     }
@@ -496,6 +501,7 @@ function handleSymbolSelect(item: MarketSearchItem) {
 function openDialog(asset?: any) {
   editingId.value = asset?.id ?? null
   const isInv = isInvestmentType(asset?.asset_type)
+  const catPath = asset?.category_id ? findCategoryPath(categoryTree.value, Number(asset.category_id)) : []
   Object.assign(form, asset ? {
     name: asset.name, category_id: asset.category_id, account_no: asset.account_no,
     symbol: asset.symbol ?? '', quote_source: asset.quote_source ?? '',
@@ -503,7 +509,7 @@ function openDialog(asset?: any) {
     quantity: asset.quantity ?? 0, net_value: asset.net_value ?? 0,
     cost_basis: asset.cost_basis ?? undefined,
     account_id: asset.account_id ?? null,
-    _catPath: [asset.category_id],
+    _catPath: catPath.length ? catPath : (asset.category_id ? [Number(asset.category_id)] : []),
     _isInvestment: isInv,
     _costInputMode: 'total' as CostInputMode,
   } : { name: '', category_id: null, account_no: '', symbol: '', quote_source: '', current_value: 0, currency: 'CNY', note: '', quantity: 0, net_value: 0, cost_basis: undefined, account_id: null, _catPath: [], _isInvestment: false, _costInputMode: 'total' as CostInputMode })
@@ -589,8 +595,9 @@ function onCatChange(val: any) {
 }
 
 async function handleSubmit() {
+  if (saving.value) return
   await formRef.value.validate(async (valid: boolean) => {
-    if (!valid) return
+    if (!valid || saving.value) return
     saving.value = true
     try {
       const data: any = {
@@ -630,11 +637,19 @@ async function handleSubmit() {
 }
 
 async function handleDelete(asset: any) {
-  await ElMessageBox.confirm(`确定删除资产「${asset.name}」吗？`, '提示', { type: 'warning' })
-  await assetsApi.delete(asset.id)
-  ElMessage.success('删除成功')
-  loadAssets()
-  loadSummary()
+  try {
+    await ElMessageBox.confirm(`确定删除资产「${asset.name}」吗？`, '提示', { type: 'warning' })
+  } catch {
+    return
+  }
+  try {
+    await assetsApi.delete(asset.id)
+    ElMessage.success('删除成功')
+    loadAssets()
+    loadSummary()
+  } catch (err: any) {
+    ElMessage.error(err?.message || '删除失败')
+  }
 }
 
 const route = useRoute()

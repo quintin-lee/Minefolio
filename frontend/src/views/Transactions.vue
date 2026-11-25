@@ -314,7 +314,7 @@
                     v-for="a in selectableLinkedAssets"
                     :key="a.id"
                     :disabled="a.id === form.asset_id"
-                    :label="`${assetLabel(a)} (${formatCurrency(a.current_value)})`"
+                    :label="`${assetLabel(a)} (${formatCurrency(a.current_value, a.currency)})`"
                     :value="a.id"
                   />
                 </el-select>
@@ -367,6 +367,7 @@
           <span class="muted-text">示例：2024-01-15, 现金账户, 餐饮美食, buy, expense, 1000, 10.50, 95.24, CNY, —, 股票买入</span>
         </p>
         <el-upload
+          ref="uploadRef"
           action=""
           :auto-upload="false"
           :limit="1"
@@ -393,7 +394,7 @@
       </div>
       <template #footer>
         <div class="dialog-footer">
-          <el-button class="cancel-btn" @click="importTask.cancel(); importDialogVisible = false; importResult = null; importFile = null">关闭</el-button>
+          <el-button class="cancel-btn" @click="importTask.cancel(); importDialogVisible = false; importResult = null; importFile = null; importText = null; uploadRef?.clearFiles()">关闭</el-button>
           <el-button type="primary" class="save-btn" :loading="importing" @click="handleImport" :disabled="!importText">开始导入</el-button>
         </div>
       </template>
@@ -402,13 +403,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Download, Upload, UploadFilled, SuccessFilled, Edit, Delete } from '@element-plus/icons-vue'
 import { transactionsApi } from '@/api/transactions'
 import { assetsApi } from '@/api/assets'
 import { useCategoryStore } from '@/stores/category'
 import { formatCurrency, localToday, localThisMonth, assetLabel } from '@/utils/format'
+import { findCategoryPath } from '@/utils/category-tree'
 import { useAsyncTaskProgress } from '@/composables/useAsyncTaskProgress'
 import { exportChartCsv } from '@/utils/chart-export'
 import SummaryCard from '@/components/SummaryCard.vue'
@@ -422,8 +424,10 @@ const formRef = ref()
 const step = ref(0)
 
 const tableRef = ref()
+const uploadRef = ref()
 const selectedTransactions = ref<Transaction[]>([])
 const isBatchDeleting = ref(false)
+let isHydratingForm = false
 
 const transactions = ref<Transaction[]>([])
 const assets = ref<Asset[]>([])
@@ -538,7 +542,10 @@ function calculateAmount() {
 
 watch(
   [() => form.quantity, () => form.price_per_unit, () => form.transaction_type],
-  () => calculateAmount(),
+  () => {
+    if (isHydratingForm) return
+    calculateAmount()
+  },
 )
 
 const quantityUnit = computed(() => {
@@ -589,9 +596,9 @@ function targetAssetOptionLabel(a: Asset): string {
     const suffix = form.transaction_type === 'sell' && !editingId.value && qty <= 0
       ? '无持仓'
       : `持仓 ${qty}`
-    return `${assetLabel(a)} (${suffix}, ${formatCurrency(a.current_value)})`
+    return `${assetLabel(a)} (${suffix}, ${formatCurrency(a.current_value, a.currency)})`
   }
-  return `${assetLabel(a)} (${formatCurrency(a.current_value)})`
+  return `${assetLabel(a)} (${formatCurrency(a.current_value, a.currency)})`
 }
 
 function onAssetChange(assetId: number | null) {
@@ -688,7 +695,10 @@ async function loadCategories() {
   }
 }
 
+let loadReqSeq = 0
+
 async function loadData() {
+  const reqId = ++loadReqSeq
   loading.value = true
   try {
     const params: any = { page: page.value, page_size: pageSize.value }
@@ -698,13 +708,18 @@ async function loadData() {
     if (filters.dateRange?.[0]) params.start_date = filters.dateRange[0]
     if (filters.dateRange?.[1]) params.end_date = filters.dateRange[1]
     const res = await transactionsApi.list(params)
+    if (reqId !== loadReqSeq) return
     transactions.value = res.list
     total.value = res.total
     await loadMonthly()
   } catch (err) {
-    ElMessage.error('加载交易记录失败')
+    if (reqId === loadReqSeq) {
+      ElMessage.error('加载交易记录失败')
+    }
   } finally {
-    loading.value = false
+    if (reqId === loadReqSeq) {
+      loading.value = false
+    }
   }
 }
 
@@ -717,11 +732,14 @@ async function loadMonthly() {
 }
 
 function openDialog(txn?: any) {
+  isHydratingForm = true
   editingId.value = txn?.id ?? null
   step.value = txn?.id ? 1 : 0
   const cur = txn?.currency ? String(txn.currency) : 'CNY'
   const parsedAssetId = txn?.asset_id ? Number(txn.asset_id) : null
   const parsedLinkedId = txn?.linked_asset_id ? Number(txn.linked_asset_id) : null
+  const parsedCatId = txn?.category_id && txn.category_id !== '0' ? Number(txn.category_id) : null
+  const catPath = parsedCatId ? findCategoryPath(allCategories.value, parsedCatId) : []
   Object.assign(form, txn ? {
     asset_id: parsedAssetId,
     linked_asset_id: parsedLinkedId,
@@ -732,9 +750,9 @@ function openDialog(txn?: any) {
     fee: Number(txn.fee) || 0,
     transaction_date: txn.transaction_date || localToday(),
     note: txn.note || '',
-    category_id: txn.category_id && txn.category_id !== '0' ? Number(txn.category_id) : null,
+    category_id: parsedCatId,
     currency: cur,
-    _catPath: txn.category_id && txn.category_id !== '0' ? [Number(txn.category_id)] : [],
+    _catPath: catPath.length ? catPath : (parsedCatId ? [parsedCatId] : []),
   } : {
     asset_id: null,
     linked_asset_id: null,
@@ -748,6 +766,9 @@ function openDialog(txn?: any) {
     category_id: null,
     currency: 'CNY',
     _catPath: [],
+  })
+  nextTick(() => {
+    isHydratingForm = false
   })
   if (txn && isTradingType(form.transaction_type) && form.asset_id !== null) {
     const selectedTarget = assets.value.find((a) => a.id === form.asset_id)
@@ -777,7 +798,7 @@ function buildTransactionPayload(): TransactionInput {
 }
 
 async function handleSubmit() {
-  if (!formRef.value) return
+  if (!formRef.value || saving.value) return
   if (!form.asset_id || !form.transaction_type || !form.amount || form.amount <= 0 || !form.transaction_date) {
     ElMessage.error('请填写完整的交易信息')
     return
@@ -812,6 +833,7 @@ async function handleSubmit() {
     ElMessage.success('保存成功')
     dialogVisible.value = false
     loadData()
+    loadAssets()
   } catch (err: any) {
     ElMessage.error(err?.message || '保存交易失败')
   } finally {
@@ -820,11 +842,19 @@ async function handleSubmit() {
 }
 
 async function handleDelete(txn: any) {
-  await ElMessageBox.confirm(`确定删除该交易记录吗？`, '提示', { type: 'warning' })
+  try {
+    await ElMessageBox.confirm(`确定删除该交易记录吗？`, '提示', { type: 'warning' })
+  } catch {
+    return
+  }
   try {
     await transactionsApi.delete(txn.id)
     ElMessage.success('删除成功')
+    if (transactions.value.length === 1 && page.value > 1) {
+      page.value -= 1
+    }
     loadData()
+    loadAssets()
   } catch (err) {
     ElMessage.error('删除失败')
   }
@@ -868,6 +898,7 @@ async function handleBatchDelete() {
     }
     clearSelection()
     loadData()
+    loadAssets()
   } catch (err: any) {
     if (err !== 'cancel') {
       ElMessage.error(err?.message || '批量删除失败')
@@ -964,7 +995,9 @@ async function handleImport() {
       importFile.value = null
       importText.value = null
       importResult.value = null
+      uploadRef.value?.clearFiles()
       loadData()
+      loadAssets()
     }
   } catch (err: any) {
     if (importTask.isCancelledError(err)) return
@@ -1159,13 +1192,13 @@ async function handleImport() {
   font-variant-numeric: tabular-nums;
 }
 
-.transactions-table :deep(.el-table__fixed-right),
-.transactions-table :deep(.el-table__fixed-right-patch) {
+.stream-table :deep(.el-table__fixed-right),
+.stream-table :deep(.el-table__fixed-right-patch) {
   background: var(--mf-surface-card) !important;
   box-shadow: -4px 0 12px rgba(0, 0, 0, 0.15);
 }
 
-.transactions-table :deep(.el-table__fixed-right .el-table__cell) {
+.stream-table :deep(.el-table__fixed-right .el-table__cell) {
   background: var(--mf-surface-card) !important;
 }
 
@@ -1291,6 +1324,13 @@ async function handleImport() {
 }
 
 @media (max-width: 768px) {
+  .transactions-page {
+    height: auto;
+    overflow: visible;
+  }
+  .main-panel {
+    overflow: visible;
+  }
   .page-header {
     flex-direction: column;
     align-items: flex-start;
@@ -1320,12 +1360,12 @@ async function handleImport() {
     width: 100% !important;
     max-width: 100%;
   }
-  .transactions-table :deep(.el-table__fixed-right),
-  .transactions-table :deep(.el-table__fixed-right-patch),
+  .stream-table :deep(.el-table__fixed-right),
+  .stream-table :deep(.el-table__fixed-right-patch),
   :deep(.el-table-fixed-column--right) {
     position: static !important;
   }
-  .transactions-table :deep(.el-table__body-wrapper) {
+  .stream-table :deep(.el-table__body-wrapper) {
     overflow-x: auto !important;
   }
 }

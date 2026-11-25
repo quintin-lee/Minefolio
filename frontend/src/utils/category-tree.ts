@@ -111,3 +111,42 @@ export function findCategoryByName(
 
   return findFuzzy(nodes)
 }
+
+/**
+ * 在分类树中查找目标分类 ID 的完整路径 [rootId, ..., targetId]
+ */
+export function findCategoryPath(nodes: Category[], targetId: number): number[] {
+  if (!targetId || !Array.isArray(nodes) || nodes.length === 0) return []
+  const numTarget = Number(targetId)
+
+  function dfs(list: Category[], prefix: number[]): number[] | null {
+    for (const node of list) {
+      const next = [...prefix, Number(node.id)]
+      if (Number(node.id) === numTarget) return next
+      if (Array.isArray(node.children) && node.children.length > 0) {
+        const hit = dfs(node.children, next)
+        if (hit) return hit
+      }
+    }
+    return null
+  }
+
+  const fromTree = dfs(nodes, [])
+  if (fromTree) return fromTree
+
+  // Flat list fallback (nodes without nested .children)
+  const byId = new Map<number, Category>()
+  for (const n of nodes) byId.set(Number(n.id), n)
+  const path: number[] = []
+  let cur: Category | undefined = byId.get(numTarget)
+  const visited = new Set<number>()
+  while (cur) {
+    const id = Number(cur.id)
+    if (visited.has(id)) break
+    visited.add(id)
+    path.unshift(id)
+    const pid = cur.parent_id != null ? Number(cur.parent_id) : 0
+    cur = pid > 0 ? byId.get(pid) : undefined
+  }
+  return path.length > 0 ? path : [numTarget]
+}

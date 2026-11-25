@@ -37,7 +37,7 @@
                 <el-button type="success" size="small" :loading="confirmingId === exec.id" @click="handleConfirmDca(exec)">
                   一键买入入账
                 </el-button>
-                <el-button size="small" text @click="handleSkipDca(exec)">
+                <el-button size="small" text :loading="skippingId === exec.id" @click="handleSkipDca(exec)">
                   跳过
                 </el-button>
               </div>
@@ -47,16 +47,16 @@
 
         <!-- 定投计划总览指标 -->
         <el-row :gutter="20" class="summary-cards">
-          <el-col :span="6">
+          <el-col :xs="12" :sm="6">
             <SummaryCard label="活跃定投计划" :value="`${activePlanCount} 个`" type="highlight" />
           </el-col>
-          <el-col :span="6">
+          <el-col :xs="12" :sm="6">
             <SummaryCard label="累计定投总投入" :value="`¥${formatNumber(totalDcaInvested)}`" type="expense" />
           </el-col>
-          <el-col :span="6">
+          <el-col :xs="12" :sm="6">
             <SummaryCard label="定投标的当前总市值" :value="`¥${formatNumber(totalDcaCurrentValue)}`" type="income" />
           </el-col>
-          <el-col :span="6">
+          <el-col :xs="12" :sm="6">
             <SummaryCard
               label="定投整体浮动盈亏"
               :value="`${totalDcaPnl >= 0 ? '+' : ''}¥${formatNumber(totalDcaPnl)} (${totalDcaPnlPct.toFixed(2)}%)`"
@@ -351,8 +351,12 @@ const totalDcaPnlPct = computed(() =>
 )
 
 const loading = ref(false)
+const skippingId = ref<number | null>(null)
+const togglingPlanId = ref<number | null>(null)
+let plansReqSeq = 0
 
 async function loadPlans() {
+  const reqId = ++plansReqSeq
   loading.value = true
   try {
     const res = await dcaApi.listPlans({
@@ -360,6 +364,7 @@ async function loadPlans() {
       page_size: dcaPageSize.value,
       status: dcaStatus.value || undefined,
     })
+    if (reqId !== plansReqSeq) return
     if (Array.isArray(res)) {
       dcaPlans.value = res
       dcaTotal.value = res.length
@@ -373,7 +378,7 @@ async function loadPlans() {
   } catch (err) {
     console.error('[Plans] loadPlans failed:', err)
   } finally {
-    loading.value = false
+    if (reqId === plansReqSeq) loading.value = false
   }
 }
 
@@ -451,23 +456,52 @@ async function handleConfirmDca(exec: DcaExecution) {
 }
 
 async function handleSkipDca(exec: DcaExecution) {
-  await dcaApi.skipExecution(exec.id)
-  ElMessage.info('已跳过本期定投')
-  loadData()
+  if (skippingId.value === exec.id) return
+  try {
+    await ElMessageBox.confirm(`确定跳过本期定投「${exec.plan_name}」吗？`, '提示', { type: 'warning' })
+  } catch {
+    return
+  }
+  skippingId.value = exec.id
+  try {
+    await dcaApi.skipExecution(exec.id)
+    ElMessage.info('已跳过本期定投')
+    loadData()
+  } catch (err: any) {
+    ElMessage.error(err?.message || '跳过定投失败')
+  } finally {
+    skippingId.value = null
+  }
 }
 
 async function togglePlanStatus(plan: DcaPlan) {
+  if (togglingPlanId.value === plan.id) return
   const newStatus = plan.status === 'active' ? 'paused' : 'active'
-  await dcaApi.setPlanStatus(plan.id, newStatus)
-  ElMessage.success(newStatus === 'active' ? '定投计划已恢复' : '定投计划已暂停')
-  loadData()
+  togglingPlanId.value = plan.id
+  try {
+    await dcaApi.setPlanStatus(plan.id, newStatus)
+    ElMessage.success(newStatus === 'active' ? '定投计划已恢复' : '定投计划已暂停')
+    loadData()
+  } catch (err: any) {
+    ElMessage.error(err?.message || '状态更新失败')
+  } finally {
+    togglingPlanId.value = null
+  }
 }
 
 async function handleDeleteDca(plan: DcaPlan) {
-  await ElMessageBox.confirm(`确定删除定投计划「${plan.name}」吗？`, '提示', { type: 'warning' })
-  await dcaApi.deletePlan(plan.id)
-  ElMessage.success('计划已删除')
-  loadData()
+  try {
+    await ElMessageBox.confirm(`确定删除定投计划「${plan.name}」吗？`, '提示', { type: 'warning' })
+  } catch {
+    return
+  }
+  try {
+    await dcaApi.deletePlan(plan.id)
+    ElMessage.success('计划已删除')
+    loadData()
+  } catch (err: any) {
+    ElMessage.error(err?.message || '删除定投计划失败')
+  }
 }
 
 async function openExecutionsHistory(plan: DcaPlan) {
@@ -482,11 +516,19 @@ async function openExecutionsHistory(plan: DcaPlan) {
 }
 
 async function handleDeleteSchedule(sch: CashflowSchedule) {
-  await ElMessageBox.confirm(`确定删除现金流计划「${sch.name}」吗？`, '提示', { type: 'warning' })
-  await cashflowApi.deleteSchedule(sch.id)
-  ElMessage.success('现金流计划已删除')
-  loadData()
-  calendarRef.value?.reload()
+  try {
+    await ElMessageBox.confirm(`确定删除现金流计划「${sch.name}」吗？`, '提示', { type: 'warning' })
+  } catch {
+    return
+  }
+  try {
+    await cashflowApi.deleteSchedule(sch.id)
+    ElMessage.success('现金流计划已删除')
+    loadData()
+    calendarRef.value?.reload()
+  } catch (err: any) {
+    ElMessage.error(err?.message || '删除现金流计划失败')
+  }
 }
 
 onMounted(() => {

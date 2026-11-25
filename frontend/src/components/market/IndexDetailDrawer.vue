@@ -90,7 +90,10 @@ function renderChart() {
 
   const palette = resolveChartPalette()
   const pts = item.value.sparkline || []
-  const times = pts.map((_, i) => `${9 + Math.floor(i / 2)}:${i % 2 === 0 ? '30' : '00'}`)
+  const times = pts.map((_, i) => {
+    const totalMins = 9 * 60 + 30 + i * 30
+    return `${Math.floor(totalMins / 60)}:${String(totalMins % 60).padStart(2, '0')}`
+  })
   const color = isPositive.value ? palette.success : palette.danger
 
   const option: EChartsOption = {
@@ -152,6 +155,10 @@ watch(
       })
     } else {
       window.removeEventListener('resize', handleResize)
+      if (chartInstance) {
+        chartInstance.dispose()
+        chartInstance = null
+      }
     }
   }
 )

@@ -99,8 +99,9 @@ const rules = {
 }
 
 async function handleSubmit() {
+  if (loading.value) return
   await formRef.value.validate(async (valid: boolean) => {
-    if (!valid) return
+    if (!valid || loading.value) return
     loading.value = true
     try {
       // 数据库连接由部署侧环境变量 MINEFOLIO_DB_DRIVER / MINEFOLIO_DB_DSN 提供，

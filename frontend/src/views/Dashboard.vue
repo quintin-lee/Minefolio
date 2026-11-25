@@ -50,8 +50,8 @@
 
           <div class="hero-amount-row">
             <div class="hero-val-wrap">
-              <span class="currency-symbol">{{ splitCurrency(summary.net_worth).symbol }}</span>
-              <span class="hero-main-val tabular-nums">{{ splitCurrency(summary.net_worth).value }}</span>
+              <span class="currency-symbol">{{ splitCurrency(displayNetWorth).symbol }}</span>
+              <span class="hero-main-val tabular-nums">{{ splitCurrency(displayNetWorth).value }}</span>
             </div>
             <!-- 平滑发光 Sparkline 迷你走势 -->
             <div v-if="sparklinePoints && sparklineData.length > 1" class="hero-sparkline-wrap">
@@ -107,7 +107,7 @@
                 <Icon icon="ph:wallet" />
               </div>
             </div>
-            <div class="sub-val tabular-nums text-primary">{{ formatCurrency(summary.total_assets) }}</div>
+            <div class="sub-val tabular-nums text-primary">{{ formatCurrency(displayTotalAssets) }}</div>
           </div>
 
           <!-- 总负债 -->
@@ -121,7 +121,7 @@
                 <Icon icon="ph:credit-card" />
               </div>
             </div>
-            <div class="sub-val tabular-nums expense-text">{{ formatCurrency(Math.abs(summary.total_liabilities)) }}</div>
+            <div class="sub-val tabular-nums expense-text">{{ formatCurrency(Math.abs(displayTotalLiabilities)) }}</div>
           </div>
 
           <!-- 本月结余 -->
@@ -136,7 +136,7 @@
               class="sub-val tabular-nums"
               :class="(currentMonthBalance?.balance ?? 0) >= 0 ? 'income-text' : 'expense-text'"
             >
-              {{ formatCurrency(currentMonthBalance?.balance ?? 0) }}
+              {{ formatCurrencyValue(currentMonthBalance?.balance ?? 0, 'CNY') }}
             </div>
           </div>
 
@@ -152,7 +152,7 @@
               class="sub-val tabular-nums"
               :class="positionOverview.daily_pnl >= 0 ? 'income-text' : 'expense-text'"
             >
-              {{ positionOverview.daily_pnl >= 0 ? '+' : '' }}{{ formatCurrency(positionOverview.daily_pnl) }}
+              {{ positionOverview.daily_pnl >= 0 ? '+' : '' }}{{ formatCurrencyValue(positionOverview.daily_pnl, 'CNY') }}
             </div>
           </div>
         </div>
@@ -179,7 +179,7 @@
             <span v-if="positionOverview.total_pnl !== 0" class="total-pnl-inline">
               累计收益
               <span :class="positionOverview.total_pnl >= 0 ? 'income-text' : 'expense-text'">
-                {{ positionOverview.total_pnl >= 0 ? '+' : '' }}{{ formatCurrency(positionOverview.total_pnl) }}
+                {{ positionOverview.total_pnl >= 0 ? '+' : '' }}{{ formatCurrencyValue(positionOverview.total_pnl, 'CNY') }}
               </span>
             </span>
           </div>
@@ -209,6 +209,7 @@
                 type="year"
                 placeholder="选择年份"
                 size="small"
+                :clearable="false"
                 class="header-date-picker"
                 @change="loadYearly"
               />
@@ -243,7 +244,7 @@
             <el-table-column prop="amount" label="金额" width="130" align="right">
               <template #default="{ row }">
                 <span :class="['mono-amount', row.expense_type === 'income' ? 'income-text' : 'expense-text']">
-                  {{ row.expense_type === 'income' ? '+' : '-' }}{{ formatCurrency(row.amount) }}
+                  {{ row.expense_type === 'income' ? '+' : '-' }}{{ formatCurrencyValue(row.amount, (row as any).currency || 'CNY') }}
                 </span>
               </template>
             </el-table-column>
@@ -273,7 +274,8 @@ import AssetBreakdownPie from '@/components/AssetBreakdownPie.vue'
 import YearlyChart from '@/components/YearlyChart.vue'
 import ConcentrationBadge from '@/components/ConcentrationBadge.vue'
 
-const DASHBOARD_CACHE_KEY = 'minefolio_cache_dashboard_summary'
+const activeLedgerId = typeof localStorage !== 'undefined' ? (localStorage.getItem('minefolio_active_ledger_id') || 'default') : 'default'
+const DASHBOARD_CACHE_KEY = `minefolio_cache_dashboard_summary_${activeLedgerId}`
 
 const defaultSummary: Summary = {
   total_assets: 0,
@@ -293,10 +295,21 @@ const loading = ref(!hasCachedData)
 const isFirstLoad = ref(!hasCachedData)
 const selectedCurrency = ref('CNY')
 const multiCurrency = ref<MultiCurrencySummary | null>(null)
+const convertedSummary = ref<{ net_worth: number; total_assets: number; total_liabilities: number } | null>(null)
 const positionOverview = ref<PositionOverview | null>(null)
 const fxColors = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#06b6d4']
 
 const summary = ref<Summary>(cachedSummary || defaultSummary)
+
+const displayNetWorth = computed(() =>
+  selectedCurrency.value !== 'CNY' && convertedSummary.value ? convertedSummary.value.net_worth : summary.value.net_worth
+)
+const displayTotalAssets = computed(() =>
+  selectedCurrency.value !== 'CNY' && convertedSummary.value ? convertedSummary.value.total_assets : summary.value.total_assets
+)
+const displayTotalLiabilities = computed(() =>
+  selectedCurrency.value !== 'CNY' && convertedSummary.value ? convertedSummary.value.total_liabilities : summary.value.total_liabilities
+)
 
 const assetBreakdownData = computed(() => {
   const rows = summary.value.category_breakdown ?? []
@@ -403,16 +416,33 @@ async function onCurrencyChange() {
   await loadMultiCurrency()
 }
 
+let mcReqSeq = 0
+
 async function loadMultiCurrency() {
+  const seq = ++mcReqSeq
+  const targetCurrency = selectedCurrency.value
   try {
-    const res = await marketApi.getMultiCurrencySummary(selectedCurrency.value)
+    const res = await marketApi.getMultiCurrencySummary(targetCurrency)
+    if (seq !== mcReqSeq) return
     multiCurrency.value = res
-    if (res && res.total_net_worth !== undefined) {
-      summary.value.net_worth = res.total_net_worth
-      summary.value.total_assets = res.total_assets
-      summary.value.total_liabilities = res.total_liabilities
+    if (targetCurrency !== 'CNY' && res && res.total_net_worth !== undefined) {
+      convertedSummary.value = {
+        net_worth: res.total_net_worth,
+        total_assets: res.total_assets,
+        total_liabilities: res.total_liabilities,
+      }
+    } else {
+      convertedSummary.value = null
     }
-  } catch {}
+  } catch {
+    if (seq === mcReqSeq) {
+      convertedSummary.value = null
+      if (targetCurrency !== 'CNY') {
+        selectedCurrency.value = 'CNY'
+        ElMessage.warning('多币种折算数据加载失败，已回退为 CNY')
+      }
+    }
+  }
 }
 
 async function loadDashboard() {
@@ -444,7 +474,9 @@ async function loadPendingDca() {
 }
 
 async function loadYearly() {
-  const year = currentYear.value.getFullYear()
+  const year = currentYear.value instanceof Date && !isNaN(currentYear.value.getTime())
+    ? currentYear.value.getFullYear()
+    : new Date().getFullYear()
   yearlyExpenses.value = await reportsApi.expenseYearly(year)
 }
 

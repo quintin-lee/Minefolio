@@ -89,6 +89,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { useMarketStore } from '@/stores/market'
 import { convertCurrency, calcCrossRate, formatRate } from '@/utils/fx'
+import { copyTextToClipboard } from '@/utils/clipboard'
 
 const { t } = useI18n()
 const marketStore = useMarketStore()
@@ -130,17 +131,18 @@ const formulaText = computed(() => {
 })
 
 function handleSwap() {
+  const prevConverted = convertedAmount.value
   const tmpCur = fromCurrency.value
   fromCurrency.value = toCurrency.value
   toCurrency.value = tmpCur
-  sourceAmount.value = Math.round(convertedAmount.value)
+  sourceAmount.value = Number(prevConverted.toFixed(2))
 }
 
 async function handleCopy() {
-  try {
-    await navigator.clipboard.writeText(convertedAmountFormatted.value)
+  const ok = await copyTextToClipboard(convertedAmountFormatted.value)
+  if (ok) {
     ElMessage.success(t('market.cards.copySuccess'))
-  } catch {
+  } else {
     ElMessage.info(convertedAmountFormatted.value)
   }
 }

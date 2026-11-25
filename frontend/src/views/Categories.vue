@@ -143,7 +143,7 @@
         </el-form-item>
 
         <el-form-item label="上级分类">
-          <el-cascader v-model="form._parentPath" :options="parentOptions" :props="{ value: 'id', label: 'name', checkStrictly: true }" placeholder="无（一级分类）" style="width: 100%" @change="onParentChange" />
+          <el-cascader v-model="form._parentPath" :options="(parentOptions as any)" :props="{ value: 'id', label: 'name', checkStrictly: true }" placeholder="无（一级分类）" style="width: 100%" @change="onParentChange" />
         </el-form-item>
 
         <el-form-item v-if="form.type === 'asset'" label="资产类型" prop="asset_type">
@@ -176,6 +176,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { categoriesApi } from '@/api/categories'
 import { useCategoryStore } from '@/stores/category'
+import { findCategoryPath } from '@/utils/category-tree'
 import type { Category, CategoryType } from '@/types'
 
 const categoryStore = useCategoryStore()
@@ -255,7 +256,7 @@ const iconOptions = [
   { label: '💸 贷款', value: '💸' },
   { label: '🛒 购物', value: '🛒' },
   { label: '🍔 餐饮', value: '🍔' },
-  { label: '🚗 交通', value: '🚗' },
+  { label: '🚌 交通', value: '🚌' },
   { label: '🎮 娱乐', value: '🎮' },
   { label: '🏥 医疗', value: '🏥' },
   { label: '📚 教育', value: '📚' },
@@ -288,11 +289,12 @@ const rules = {
 
 function buildTree(list: Category[]): Category[] {
   const map = new Map<number, Category>()
-  list.forEach(c => map.set(c.id, { ...c }))
+  list.forEach(c => map.set(c.id, { ...c, children: [] }))
   const roots: Category[] = []
   list.forEach(c => {
-    if (c.parent_id === null || c.parent_id === undefined) roots.push(c)
-    else { const p = map.get(c.parent_id); if (p) (p.children ||= []).push(c) }
+    const node = map.get(c.id)!
+    if (c.parent_id === null || c.parent_id === undefined) roots.push(node)
+    else { const p = map.get(c.parent_id); if (p) (p.children ||= []).push(node) }
   })
   return roots
 }
@@ -323,9 +325,13 @@ function onRowClick(row: any) {
 
 const categoryNameMap = computed(() => {
   const map = new Map<number, string>()
-  for (const c of categories.value) {
-    if (c.id) map.set(Number(c.id), c.name)
+  const walk = (nodes: Category[]) => {
+    for (const c of nodes) {
+      if (c.id) map.set(Number(c.id), c.name)
+      if (c.children?.length) walk(c.children)
+    }
   }
+  walk(categories.value)
   return map
 })
 
@@ -394,8 +400,27 @@ function defaultIcon(cat: Category) {
   return { asset: '🏦', expense: '🛒', income: '💰', transaction: '📋' }[cat.type] ?? '🔑'
 }
 
+const excludedParentIds = computed(() => {
+  const excluded = new Set<number>()
+  if (editingId.value == null) return excluded
+  excluded.add(editingId.value)
+  let added = true
+  while (added) {
+    added = false
+    for (const c of categories.value) {
+      if (c.parent_id != null && excluded.has(Number(c.parent_id)) && !excluded.has(c.id)) {
+        excluded.add(c.id)
+        added = true
+      }
+    }
+  }
+  return excluded
+})
+
 const parentOptions = computed(() => {
-  return categories.value.filter(c => c.type === form.type && c.id !== editingId.value)
+  return buildTree(
+    categories.value.filter(c => c.type === form.type && !excludedParentIds.value.has(c.id))
+  )
 })
 
 function onTabChange() {
@@ -421,6 +446,7 @@ async function loadData() {
 function openDialog(cat?: any) {
   editingId.value = cat?.id ?? null
   const defaultType = activeTab.value === 'all' ? 'asset' : activeTab.value
+  const parentPath = cat?.parent_id ? findCategoryPath(categories.value, Number(cat.parent_id)) : []
   Object.assign(form, cat ? {
     name: cat.name,
     type: cat.type || 'asset',
@@ -428,8 +454,8 @@ function openDialog(cat?: any) {
     currency: cat.currency,
     sort_order: cat.sort_order,
     parent_id: cat.parent_id,
-    _parentPath: cat.parent_id ? [cat.parent_id] : [],
-    _hasChildren: !!cat.children,
+    _parentPath: parentPath.length ? parentPath : (cat.parent_id ? [Number(cat.parent_id)] : []),
+    _hasChildren: !!(cat.children && cat.children.length > 0),
     icon: cat.icon || ''
   } : {
     name: '',
@@ -448,8 +474,9 @@ function openDialog(cat?: any) {
 function onParentChange(val: any) { form.parent_id = (val as number[])?.[(val as number[]).length - 1] ?? null }
 
 async function handleSubmit() {
+  if (saving.value) return
   await formRef.value.validate(async (valid: boolean) => {
-    if (!valid) return
+    if (!valid || saving.value) return
     saving.value = true
     try {
       const data = {
@@ -472,7 +499,11 @@ async function handleSubmit() {
 }
 
 async function handleDelete(cat: any) {
-  await ElMessageBox.confirm('确定删除该分类吗？', '提示', { type: 'warning' })
+  try {
+    await ElMessageBox.confirm('确定删除该分类吗？', '提示', { type: 'warning' })
+  } catch {
+    return
+  }
   try {
     await categoriesApi.delete(cat.id)
     ElMessage.success('删除成功')

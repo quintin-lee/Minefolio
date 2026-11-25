@@ -26,8 +26,9 @@
         </div>
         <div class="metric-card">
           <span class="metric-label">{{ t('market.holdings.fxPnl') }}</span>
-          <span class="metric-value" :class="fxPnl >= 0 ? 'text-success' : 'text-danger'">
-            {{ fxPnl >= 0 ? '+' : '' }}{{ formatCurrency(fxPnl, marketStore.baseCurrency) }}
+          <span class="metric-value" :class="fxPnl === null ? '' : (fxPnl >= 0 ? 'text-success' : 'text-danger')">
+            <template v-if="fxPnl === null">—</template>
+            <template v-else>{{ fxPnl >= 0 ? '+' : '' }}{{ formatCurrency(fxPnl, marketStore.baseCurrency) }}</template>
           </span>
         </div>
       </div>
@@ -57,12 +58,34 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useMarketStore } from '@/stores/market'
+import { reportsApi } from '@/api/reports'
+import type { FxPnlReport } from '@/types'
 
 const { t } = useI18n()
 const marketStore = useMarketStore()
+const fxPnlReport = ref<FxPnlReport | null>(null)
+let fxPnlReqSeq = 0
+
+watch(
+  () => marketStore.baseCurrency,
+  async (cur) => {
+    const seq = ++fxPnlReqSeq
+    try {
+      const res = await reportsApi.fxPnl(cur || 'CNY')
+      if (seq === fxPnlReqSeq) {
+        fxPnlReport.value = res
+      }
+    } catch {
+      if (seq === fxPnlReqSeq) {
+        fxPnlReport.value = null
+      }
+    }
+  },
+  { immediate: true },
+)
 
 const foreignBuckets = computed(() => {
   const buckets = marketStore.holdingsSummary?.currencies || []
@@ -81,9 +104,11 @@ const foreignRatio = computed(() => {
   return Math.min(100, (foreignAssetsTotal.value / totalNet) * 100)
 })
 
-const fxPnl = computed(() => {
-  // Estimated FX gain/loss based on foreign asset delta
-  return foreignAssetsTotal.value * 0.0125
+const fxPnl = computed<number | null>(() => {
+  if (!fxPnlReport.value || typeof fxPnlReport.value.total_fx_pnl_base !== 'number') {
+    return null
+  }
+  return fxPnlReport.value.total_fx_pnl_base
 })
 
 function formatCurrency(val: number, cur: string): string {

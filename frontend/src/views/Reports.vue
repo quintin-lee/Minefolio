@@ -180,7 +180,7 @@
           <div class="tab-layout">
             <el-row :gutter="16" class="tab-row">
               <!-- 资产趋势 -->
-              <el-col :span="16">
+              <el-col :xs="24" :md="16">
                 <div class="report-card">
                   <div class="card-header">
                     <h3>净资产趋势</h3>
@@ -199,7 +199,7 @@
               </el-col>
 
               <!-- 资产分布 -->
-              <el-col :span="8">
+              <el-col :xs="24" :md="8">
                 <div class="report-card">
                   <div class="card-header">
                     <h3>资产分布</h3>
@@ -321,17 +321,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Printer } from '@element-plus/icons-vue'
 import { reportsApi } from '@/api/reports'
-import { marketApi } from '@/api/market'
 import ExpenseCategoryPie from '@/components/ExpenseCategoryPie.vue'
 import ExpenseTrendBar from '@/components/ExpenseTrendBar.vue'
 import AssetTrendLine from '@/components/AssetTrendLine.vue'
 import AssetBreakdownPie from '@/components/AssetBreakdownPie.vue'
 import { formatCurrency, localThisMonth } from '@/utils/format'
-import type { FxPnlReport, FxHistoryPoint } from '@/types'
+import type { FxPnlReport } from '@/types'
 
 const loading = ref(true)
 const reportMonth = ref(localThisMonth())
@@ -343,26 +342,28 @@ const assetBreakdown = ref<any>(null)
 const tagBreakdown = ref<any>(null)
 const perf = ref<any>(null)
 const fxPnlData = ref<FxPnlReport | null>(null)
-const fxHistory = ref<FxHistoryPoint[]>([])
-const fxCurrency = ref('USD')
+
+let loadAllReqSeq = 0
+let trendReqSeq = 0
+let monthlyReqSeq = 0
 
 async function loadAll() {
+  const seq = ++loadAllReqSeq
   loading.value = true
+  if (!reportMonth.value) reportMonth.value = localThisMonth()
+  const y = parseInt(reportMonth.value.slice(0, 4))
+  const mVal = parseInt(reportMonth.value.slice(5, 7))
   try {
-    const [m, t, at, ab, tb, p, fx, fxh] = await Promise.allSettled([
-      reportsApi.expenseMonthly(
-        parseInt(reportMonth.value.slice(0, 4)), parseInt(reportMonth.value.slice(5, 7))
-      ),
+    const [m, t, at, ab, tb, p, fx] = await Promise.allSettled([
+      reportsApi.expenseMonthly(y, mVal),
       reportsApi.expenseTrend(6),
       reportsApi.assetTrend(trendPeriod.value),
       reportsApi.assetBreakdown(),
-      reportsApi.expenseTag(
-        parseInt(reportMonth.value.slice(0, 4)), parseInt(reportMonth.value.slice(5, 7))
-      ),
+      reportsApi.expenseTag(y, mVal),
       reportsApi.transactionPerformance(),
       reportsApi.fxPnl('CNY'),
-      marketApi.getFxHistory(fxCurrency.value, 30),
     ])
+    if (seq !== loadAllReqSeq) return
     if (m.status === 'fulfilled') monthly.value = m.value
     if (t.status === 'fulfilled') trend.value = t.value
     if (at.status === 'fulfilled') assetTrend.value = at.value
@@ -370,20 +371,52 @@ async function loadAll() {
     if (tb.status === 'fulfilled') tagBreakdown.value = tb.value
     if (p.status === 'fulfilled') perf.value = p.value
     if (fx.status === 'fulfilled') fxPnlData.value = fx.value
-    if (fxh.status === 'fulfilled') fxHistory.value = fxh.value
 
-    const failures = [m, t, at, ab, tb, p, fx, fxh].filter(r => r.status === 'rejected')
+    const results = [m, t, at, ab, tb, p, fx]
+    const failures = results.filter(r => r.status === 'rejected')
     if (failures.length > 0) {
-      ElMessage.warning(`部分报表数据加载失败（${failures.length}/${failures.length + 8 - failures.length}）`)
+      ElMessage.warning(`部分报表数据加载失败（${failures.length}/${results.length}）`)
     }
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.message || '报表数据加载失败')
+    if (seq === loadAllReqSeq) {
+      ElMessage.error(e?.response?.data?.message || '报表数据加载失败')
+    }
   } finally {
-    loading.value = false
+    if (seq === loadAllReqSeq) {
+      loading.value = false
+    }
   }
 }
 
-function loadMonthlyReport() { loadAll() }
+async function loadMonthlyReport() {
+  if (!reportMonth.value) reportMonth.value = localThisMonth()
+  const seq = ++monthlyReqSeq
+  const y = parseInt(reportMonth.value.slice(0, 4))
+  const mVal = parseInt(reportMonth.value.slice(5, 7))
+  try {
+    const [m, tb] = await Promise.allSettled([
+      reportsApi.expenseMonthly(y, mVal),
+      reportsApi.expenseTag(y, mVal),
+    ])
+    if (seq !== monthlyReqSeq) return
+    if (m.status === 'fulfilled') monthly.value = m.value
+    if (tb.status === 'fulfilled') tagBreakdown.value = tb.value
+  } catch {
+    // http interceptor handles error toast
+  }
+}
+
+watch(trendPeriod, async (period) => {
+  const seq = ++trendReqSeq
+  try {
+    const res = await reportsApi.assetTrend(period)
+    if (seq === trendReqSeq) {
+      assetTrend.value = res
+    }
+  } catch {
+    // http interceptor handles error toast
+  }
+})
 
 const printDate = computed(() => {
   const now = new Date()
@@ -772,8 +805,10 @@ onMounted(loadAll)
     height: auto;
     min-height: 100%;
   }
-  .report-content {
-    overflow-y: visible;
+  .premium-tabs,
+  :deep(.premium-tabs > .el-tabs__content),
+  :deep(.premium-tabs .el-tab-pane) {
+    overflow: visible;
     height: auto;
     flex: none;
   }

@@ -131,6 +131,7 @@ import { authApi } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 import { t } from '@/utils/locale'
 import { encryptPassword } from '@/utils/crypto'
+import { copyTextToClipboard } from '@/utils/clipboard'
 
 const auth = useAuthStore()
 const twoFactorEnabled = ref(false)
@@ -188,11 +189,12 @@ async function openTwoFactorSetup() {
 
 async function copySecret() {
   if (!twoFactorSecret.value) return
-  await navigator.clipboard.writeText(twoFactorSecret.value)
-  ElMessage.success(t('settings.secretCopied'))
+  const copied = await copyTextToClipboard(twoFactorSecret.value)
+  if (copied) ElMessage.success(t('settings.secretCopied'))
 }
 
 async function confirmEnableTwoFactor() {
+  if (twoFactorLoading.value) return
   if (!twoFactorVerifyCode.value.trim() || twoFactorVerifyCode.value.trim().length !== 6) {
     ElMessage.warning(t('settings.twoFactorCodePlaceholder'))
     return
@@ -242,8 +244,8 @@ async function handleDisableTwoFactor() {
 async function copyBackupCodes() {
   if (!backupCodes.value.length) return
   const text = `${t('settings.backupFileHeader')}\n\n` + backupCodes.value.map((c, i) => `${i + 1}. ${c}`).join('\n')
-  await navigator.clipboard.writeText(text)
-  ElMessage.success(t('settings.backupCodesCopied'))
+  const copied = await copyTextToClipboard(text)
+  if (copied) ElMessage.success(t('settings.backupCodesCopied'))
 }
 
 function downloadBackupCodes() {
