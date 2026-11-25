@@ -68,8 +68,11 @@ int
 account_usecase_check_permission(
     void* pool, int64_t ledger_id, int64_t user_id, int64_t account_id, mf_account_action_t action)
 {
-    if (account_id <= 0 || ledger_id <= 0 || user_id <= 0) {
-        return 0;
+    if (user_id <= 0) {
+        return 1004;
+    }
+    if (ledger_id <= 0) {
+        return (account_id > 0) ? 1004 : 0;
     }
 
     csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
@@ -80,6 +83,19 @@ account_usecase_check_permission(
 
     if (strcmp(role, "owner") == 0) {
         return 0;
+    }
+
+    if (account_id <= 0) {
+        switch (action) {
+        case MF_ACCOUNT_ACTION_READ:
+            return 0;
+        case MF_ACCOUNT_ACTION_WRITE_TX:
+            return (strcmp(role, "editor") == 0) ? 0 : 1004;
+        case MF_ACCOUNT_ACTION_MANAGE:
+            return 1004;
+        default:
+            return 1004;
+        }
     }
 
     csilk_json_t*           perm_res = account_perm_get(db_pool, ledger_id, account_id, user_id);
@@ -146,6 +162,14 @@ account_usecase_create(void*                       pool,
     if (ledger_id <= 0) {
         out_res->code = 1004;
         snprintf(out_res->message, sizeof(out_res->message), "无可用账本");
+        return -1;
+    }
+
+    char role[32] = {0};
+    if (!ledger_get_user_role(db_pool, ledger_id, cmd->user_id, role, sizeof(role)) ||
+        (strcmp(role, "owner") != 0 && strcmp(role, "editor") != 0)) {
+        out_res->code = 1004;
+        snprintf(out_res->message, sizeof(out_res->message), "Forbidden: 无权在此账本创建账户");
         return -1;
     }
 
@@ -465,10 +489,19 @@ account_usecase_get(void*                     pool,
         return -1;
     }
 
-    char role[32] = {0};
-    ledger_get_user_role(db_pool, ledger_id, user_id, role, sizeof(role));
+    const csilk_json_t* row = csilk_json_array_get(cur, 0);
+    int64_t             acct_ledger_id = db_get_int(row, "ledger_id");
+    if (ledger_id > 0 && acct_ledger_id > 0 && acct_ledger_id != ledger_id) {
+        csilk_json_free(cur);
+        out_res->code = 1003;
+        snprintf(out_res->message, sizeof(out_res->message), "账户不存在");
+        return -1;
+    }
+    int64_t role_lid = acct_ledger_id > 0 ? acct_ledger_id : ledger_id;
+    char    role[32] = {0};
+    ledger_get_user_role(db_pool, role_lid, user_id, role, sizeof(role));
 
-    csilk_json_t* formatted = format_account_row(csilk_json_array_get(cur, 0), role);
+    csilk_json_t* formatted = format_account_row(row, role);
     csilk_json_free(cur);
 
     if (out_obj) {
@@ -515,6 +548,48 @@ verify_owner_permission(csilk_db_pool_t*          pool,
     return 0;
 }
 
+static int
+verify_account_in_ledger(csilk_db_pool_t*          pool,
+                         int64_t                   user_id,
+                         int64_t                   ledger_id,
+                         int64_t                   account_id,
+                         account_usecase_result_t* out_res)
+{
+    csilk_json_t* ac = account_get(pool, user_id, account_id);
+    int64_t       ac_lid = (ac && csilk_json_array_size(ac) > 0)
+                               ? db_get_int(csilk_json_array_get(ac, 0), "ledger_id")
+                               : 0;
+    if (ac) {
+        csilk_json_free(ac);
+    }
+    if (ac_lid <= 0 || ac_lid != ledger_id) {
+        if (out_res) {
+            out_res->code = 1003;
+            snprintf(out_res->message, sizeof(out_res->message), "账户不存在或不属于该账本");
+        }
+        return -1;
+    }
+    return 0;
+}
+
+static int
+verify_target_member_in_ledger(csilk_db_pool_t*          pool,
+                               int64_t                   ledger_id,
+                               int64_t                   target_user_id,
+                               account_usecase_result_t* out_res)
+{
+    char role[32] = {0};
+    if (target_user_id <= 0 ||
+        !ledger_get_user_role(pool, ledger_id, target_user_id, role, sizeof(role))) {
+        if (out_res) {
+            out_res->code = 1002;
+            snprintf(out_res->message, sizeof(out_res->message), "目标用户非该账本成员");
+        }
+        return -1;
+    }
+    return 0;
+}
+
 int
 account_permission_usecase_list_by_account(void*                     pool,
                                            int64_t                   user_id,
@@ -529,7 +604,8 @@ account_permission_usecase_list_by_account(void*                     pool,
     memset(out_res, 0, sizeof(*out_res));
     csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
 
-    if (verify_owner_permission(db_pool, ledger_id, user_id, out_res) != 0) {
+    if (verify_owner_permission(db_pool, ledger_id, user_id, out_res) != 0 ||
+        verify_account_in_ledger(db_pool, user_id, ledger_id, account_id, out_res) != 0) {
         return -1;
     }
 
@@ -553,7 +629,8 @@ account_permission_usecase_list_by_user(void*                     pool,
     memset(out_res, 0, sizeof(*out_res));
     csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
 
-    if (verify_owner_permission(db_pool, ledger_id, user_id, out_res) != 0) {
+    if (verify_owner_permission(db_pool, ledger_id, user_id, out_res) != 0 ||
+        verify_target_member_in_ledger(db_pool, ledger_id, target_user_id, out_res) != 0) {
         return -1;
     }
 
@@ -580,7 +657,9 @@ account_permission_usecase_set(void*                     pool,
     memset(out_res, 0, sizeof(*out_res));
     csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
 
-    if (verify_owner_permission(db_pool, ledger_id, user_id, out_res) != 0) {
+    if (verify_owner_permission(db_pool, ledger_id, user_id, out_res) != 0 ||
+        verify_account_in_ledger(db_pool, user_id, ledger_id, account_id, out_res) != 0 ||
+        verify_target_member_in_ledger(db_pool, ledger_id, target_user_id, out_res) != 0) {
         return -1;
     }
 
@@ -625,7 +704,8 @@ account_permission_usecase_batch_set(void*                     pool,
     memset(out_res, 0, sizeof(*out_res));
     csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
 
-    if (verify_owner_permission(db_pool, ledger_id, user_id, out_res) != 0) {
+    if (verify_owner_permission(db_pool, ledger_id, user_id, out_res) != 0 ||
+        verify_account_in_ledger(db_pool, user_id, ledger_id, account_id, out_res) != 0) {
         return -1;
     }
 
@@ -643,7 +723,8 @@ account_permission_usecase_batch_set(void*                     pool,
         int                 mask_bal = db_get_int(rule, "mask_balance");
         int                 mask_acc = db_get_int(rule, "mask_account_no");
 
-        if (target_uid <= 0) {
+        if (target_uid <= 0 ||
+            verify_target_member_in_ledger(db_pool, ledger_id, target_uid, NULL) != 0) {
             continue;
         }
 
@@ -680,7 +761,8 @@ account_permission_usecase_batch_set_for_user(void*                     pool,
     memset(out_res, 0, sizeof(*out_res));
     csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
 
-    if (verify_owner_permission(db_pool, ledger_id, user_id, out_res) != 0) {
+    if (verify_owner_permission(db_pool, ledger_id, user_id, out_res) != 0 ||
+        verify_target_member_in_ledger(db_pool, ledger_id, target_user_id, out_res) != 0) {
         return -1;
     }
 
@@ -698,7 +780,7 @@ account_permission_usecase_batch_set_for_user(void*                     pool,
         int                 mask_bal = db_get_int(rule, "mask_balance");
         int                 mask_acc = db_get_int(rule, "mask_account_no");
 
-        if (aid <= 0) {
+        if (aid <= 0 || verify_account_in_ledger(db_pool, user_id, ledger_id, aid, NULL) != 0) {
             continue;
         }
 
@@ -735,7 +817,8 @@ account_permission_usecase_delete(void*                     pool,
     memset(out_res, 0, sizeof(*out_res));
     csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
 
-    if (verify_owner_permission(db_pool, ledger_id, user_id, out_res) != 0) {
+    if (verify_owner_permission(db_pool, ledger_id, user_id, out_res) != 0 ||
+        verify_account_in_ledger(db_pool, user_id, ledger_id, account_id, out_res) != 0) {
         return -1;
     }
 

@@ -846,10 +846,13 @@ asset_transactions(csilk_db_pool_t* pool, int64_t user_id, int64_t caller_user_i
         return csilk_db_query_param_json(
             pool,
             "SELECT "
-            "id,asset_id,transaction_type,amount,quantity,price_per_unit,currency,transaction_date,"
-            "note,created_at FROM transactions WHERE asset_id=? AND user_id=? ORDER BY "
-            "transaction_date DESC",
-            (const char*[]){aid, uid, NULL});
+            "t.id,t.asset_id,t.transaction_type,t.amount,t.quantity,t.price_per_unit,t.currency,"
+            "t.transaction_date,t.note,t.created_at FROM transactions t "
+            "WHERE t.asset_id=? AND (t.user_id=? OR EXISTS ("
+            "  SELECT 1 FROM assets a JOIN ledger_members lm ON lm.ledger_id=a.ledger_id "
+            "  WHERE a.id=t.asset_id AND lm.user_id=?"
+            ")) ORDER BY t.transaction_date DESC",
+            (const char*[]){aid, uid, uid, NULL});
     }
     return csilk_db_query_param_json(
         pool,

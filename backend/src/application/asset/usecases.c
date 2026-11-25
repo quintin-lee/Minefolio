@@ -29,7 +29,9 @@ asset_resolve_account_id(csilk_db_pool_t* pool,
 {
     if (account_id > 0) {
         csilk_json_t* ac = account_get(pool, user_id, account_id);
-        int           ok = ac && csilk_json_array_size(ac) > 0;
+        int           ok =
+            ac && csilk_json_array_size(ac) > 0 &&
+            (ledger_id <= 0 || db_get_int(csilk_json_array_get(ac, 0), "ledger_id") == ledger_id);
         if (ac) {
             csilk_json_free(ac);
         }
@@ -201,7 +203,7 @@ asset_usecase_update(void* pool, const update_asset_cmd_t* cmd, asset_usecase_re
 
     int64_t cur_ledger_id = 0, cur_account_id = 0;
     if (asset_get_ledger_and_account(db_pool, cmd->id, &cur_ledger_id, &cur_account_id) == 0 &&
-        cur_account_id > 0) {
+        (cur_account_id > 0 || cur_ledger_id > 0)) {
         if (account_usecase_check_permission(
                 pool, cur_ledger_id, cmd->user_id, cur_account_id, MF_ACCOUNT_ACTION_WRITE_TX) !=
             0) {
@@ -457,7 +459,7 @@ asset_usecase_delete(void* pool, const delete_asset_cmd_t* cmd, asset_usecase_re
 
     int64_t del_ledger = 0, del_acct = 0;
     if (asset_get_ledger_and_account(db_pool, cmd->id, &del_ledger, &del_acct) == 0 &&
-        del_acct > 0) {
+        (del_acct > 0 || del_ledger > 0)) {
         if (account_usecase_check_permission(
                 pool, del_ledger, cmd->user_id, del_acct, MF_ACCOUNT_ACTION_WRITE_TX) != 0) {
             out_res->code = 1004;

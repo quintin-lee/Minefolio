@@ -128,7 +128,7 @@ tx_usecase_create(void* pool, const create_tx_cmd_t* cmd, tx_usecase_result_t* o
 
     int64_t acct_ledger_id = 0, acct_id = 0;
     asset_get_ledger_and_account((csilk_db_pool_t*)pool, cmd->asset_id, &acct_ledger_id, &acct_id);
-    if (acct_id > 0) {
+    if (acct_id > 0 || acct_ledger_id > 0) {
         int64_t chk_lid = acct_ledger_id > 0 ? acct_ledger_id : cmd->ledger_id;
         int     perm_chk = account_usecase_check_permission(
             pool, chk_lid, cmd->user_id, acct_id, MF_ACCOUNT_ACTION_WRITE_TX);
@@ -143,7 +143,7 @@ tx_usecase_create(void* pool, const create_tx_cmd_t* cmd, tx_usecase_result_t* o
         int64_t linked_ledger_id = 0, linked_acct_id = 0;
         asset_get_ledger_and_account(
             (csilk_db_pool_t*)pool, cmd->linked_asset_id, &linked_ledger_id, &linked_acct_id);
-        if (linked_acct_id > 0) {
+        if (linked_acct_id > 0 || linked_ledger_id > 0) {
             int64_t chk_lid = linked_ledger_id > 0 ? linked_ledger_id : cmd->ledger_id;
             int     perm_chk = account_usecase_check_permission(
                 pool, chk_lid, cmd->user_id, linked_acct_id, MF_ACCOUNT_ACTION_WRITE_TX);
@@ -435,7 +435,7 @@ tx_usecase_update(void* pool, const update_tx_cmd_t* cmd, tx_usecase_result_t* o
             int64_t alid = 0, aaid = 0;
             if (asset_get_ledger_and_account(
                     (csilk_db_pool_t*)pool, check_assets[i], &alid, &aaid) == 0 &&
-                aaid > 0) {
+                (aaid > 0 || alid > 0)) {
                 int64_t chk_lid = alid > 0 ? alid : target_ledger_id;
                 if (account_usecase_check_permission(
                         pool, chk_lid, cmd->user_id, aaid, MF_ACCOUNT_ACTION_WRITE_TX) != 0) {
@@ -599,7 +599,7 @@ tx_usecase_delete(void* pool, const delete_tx_cmd_t* cmd, tx_usecase_result_t* o
             int64_t alid = 0, aaid = 0;
             if (asset_get_ledger_and_account(
                     (csilk_db_pool_t*)pool, check_assets[i], &alid, &aaid) == 0 &&
-                aaid > 0) {
+                (aaid > 0 || alid > 0)) {
                 if (account_usecase_check_permission(
                         pool, alid, cmd->user_id, aaid, MF_ACCOUNT_ACTION_WRITE_TX) != 0) {
                     csilk_json_free(tx_rows);

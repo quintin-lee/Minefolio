@@ -47,20 +47,33 @@ transfer_usecase_create(void*                        pool,
         return -1;
     }
 
-    int64_t from_acct_id = asset_get_account_id((csilk_db_pool_t*)pool, cmd->from_asset_id);
-    if (from_acct_id > 0) {
+    int64_t from_ledger_id = 0, from_acct_id = 0;
+    asset_get_ledger_and_account(
+        (csilk_db_pool_t*)pool, cmd->from_asset_id, &from_ledger_id, &from_acct_id);
+    int64_t to_ledger_id = 0, to_acct_id = 0;
+    asset_get_ledger_and_account(
+        (csilk_db_pool_t*)pool, cmd->to_asset_id, &to_ledger_id, &to_acct_id);
+
+    if (from_ledger_id > 0 && to_ledger_id > 0 && from_ledger_id != to_ledger_id) {
+        out_res->code = 1004;
+        snprintf(out_res->message, sizeof(out_res->message), "Forbidden: 不支持跨账本划转");
+        return -1;
+    }
+
+    int64_t chk_from_lid = from_ledger_id > 0 ? from_ledger_id : cmd->ledger_id;
+    if (from_acct_id > 0 || chk_from_lid > 0) {
         int perm_chk = account_usecase_check_permission(
-            pool, cmd->ledger_id, cmd->user_id, from_acct_id, MF_ACCOUNT_ACTION_WRITE_TX);
+            pool, chk_from_lid, cmd->user_id, from_acct_id, MF_ACCOUNT_ACTION_WRITE_TX);
         if (perm_chk != 0) {
             out_res->code = 1004;
             snprintf(out_res->message, sizeof(out_res->message), "Forbidden: 转出账户无记账权限");
             return -1;
         }
     }
-    int64_t to_acct_id = asset_get_account_id((csilk_db_pool_t*)pool, cmd->to_asset_id);
-    if (to_acct_id > 0) {
+    int64_t chk_to_lid = to_ledger_id > 0 ? to_ledger_id : cmd->ledger_id;
+    if (to_acct_id > 0 || chk_to_lid > 0) {
         int perm_chk = account_usecase_check_permission(
-            pool, cmd->ledger_id, cmd->user_id, to_acct_id, MF_ACCOUNT_ACTION_WRITE_TX);
+            pool, chk_to_lid, cmd->user_id, to_acct_id, MF_ACCOUNT_ACTION_WRITE_TX);
         if (perm_chk != 0) {
             out_res->code = 1004;
             snprintf(out_res->message, sizeof(out_res->message), "Forbidden: 转入账户无记账权限");

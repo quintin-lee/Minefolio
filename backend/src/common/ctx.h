@@ -111,13 +111,13 @@ ctx_ledger_id(csilk_ctx_t* c, int64_t user_id, const char* required_role)
         return -1;
     }
 
-    if (required_role && required_role[0]) {
-        char role[32] = {0};
-        if (!ledger_get_user_role(pool, lid, user_id, role, sizeof(role))) {
-            respond_error(c, 1004, "Forbidden: you are not a member of this ledger");
-            return -1;
-        }
+    char role[32] = {0};
+    if (!ledger_get_user_role(pool, lid, user_id, role, sizeof(role))) {
+        respond_error(c, 1004, "Forbidden: you are not a member of this ledger");
+        return -1;
+    }
 
+    if (required_role && required_role[0]) {
         if (strcmp(required_role, "owner") == 0) {
             if (strcmp(role, "owner") != 0) {
                 respond_error(c, 1004, "Forbidden: owner permission required");

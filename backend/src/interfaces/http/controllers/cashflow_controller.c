@@ -212,6 +212,11 @@ api_cashflow_confirm(csilk_ctx_t* c)
         return;
     }
 
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "editor");
+    if (ledger_id <= 0) {
+        return;
+    }
+
     csilk_json_t* body = csilk_bind_json(c);
     if (!body) {
         respond_bad_request(c, "Invalid JSON body");

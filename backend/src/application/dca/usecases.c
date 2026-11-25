@@ -4,6 +4,7 @@
  */
 
 #include "application/dca/usecases.h"
+#include "application/account/usecases.h"
 #include "domain/dca/rules.h"
 #include "domain/dca/repository.h"
 #include "infrastructure/repositories/dca_repo_impl.h"
@@ -78,6 +79,34 @@ dca_usecase_get_plan(void* pool, int64_t user_id, int64_t id, dca_usecase_result
     return res;
 }
 
+static int
+dca_validate_asset_perm(void*                 pool,
+                        int64_t               user_id,
+                        int64_t               asset_id,
+                        dca_usecase_result_t* out_res)
+{
+    if (asset_id <= 0) {
+        return 0;
+    }
+    csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
+    if (!asset_exists(db_pool, user_id, asset_id)) {
+        out_res->code = 1003;
+        snprintf(out_res->message, sizeof(out_res->message), "关联资产不存在");
+        return -1;
+    }
+    int64_t alid = 0, aaid = 0;
+    if (asset_get_ledger_and_account(db_pool, asset_id, &alid, &aaid) == 0 &&
+        (alid > 0 || aaid > 0)) {
+        if (account_usecase_check_permission(
+                pool, alid, user_id, aaid, MF_ACCOUNT_ACTION_WRITE_TX) != 0) {
+            out_res->code = 1004;
+            snprintf(out_res->message, sizeof(out_res->message), "Forbidden: 关联账户无记账权限");
+            return -1;
+        }
+    }
+    return 0;
+}
+
 int64_t
 dca_usecase_create_plan(void* pool, const create_dca_plan_cmd_t* cmd, dca_usecase_result_t* out_res)
 {
@@ -87,6 +116,11 @@ dca_usecase_create_plan(void* pool, const create_dca_plan_cmd_t* cmd, dca_usecas
         snprintf(out_res->message,
                  sizeof(out_res->message),
                  "Missing required plan fields (target_asset_id, funding_asset_id, name, amount)");
+        return -1;
+    }
+
+    if (dca_validate_asset_perm(pool, cmd->user_id, cmd->target_asset_id, out_res) != 0 ||
+        dca_validate_asset_perm(pool, cmd->user_id, cmd->funding_asset_id, out_res) != 0) {
         return -1;
     }
 
@@ -118,6 +152,11 @@ dca_usecase_create_plan(void* pool, const create_dca_plan_cmd_t* cmd, dca_usecas
 int
 dca_usecase_update_plan(void* pool, const update_dca_plan_cmd_t* cmd, dca_usecase_result_t* out_res)
 {
+    if (dca_validate_asset_perm(pool, cmd->user_id, cmd->target_asset_id, out_res) != 0 ||
+        dca_validate_asset_perm(pool, cmd->user_id, cmd->funding_asset_id, out_res) != 0) {
+        return -1;
+    }
+
     mf_dca_plan_t plan = {0};
     plan.target_asset_id = cmd->target_asset_id;
     plan.funding_asset_id = cmd->funding_asset_id;
@@ -211,8 +250,18 @@ dca_usecase_confirm_execution(void*                              pool,
         return -1;
     }
 
-    int64_t     target_asset_id = (int64_t)db_get_int(exec, "target_asset_id");
-    int64_t     funding_asset_id = (int64_t)db_get_int(exec, "funding_asset_id");
+    int64_t target_asset_id = (int64_t)db_get_int(exec, "target_asset_id");
+    int64_t funding_asset_id = (int64_t)db_get_int(exec, "funding_asset_id");
+    {
+        dca_usecase_result_t perm_res = {0};
+        if (dca_validate_asset_perm(pool, cmd->user_id, target_asset_id, &perm_res) != 0 ||
+            dca_validate_asset_perm(pool, cmd->user_id, funding_asset_id, &perm_res) != 0) {
+            csilk_json_free(exec_arr);
+            out_res->code = perm_res.code;
+            snprintf(out_res->message, sizeof(out_res->message), "%s", perm_res.message);
+            return -1;
+        }
+    }
     double      planned_amount = db_get_num(exec, "planned_amount");
     double      target_net_val = db_get_num(exec, "target_net_value");
     const char* period_date = csilk_json_get_string(exec, "period_date");
@@ -273,8 +322,14 @@ dca_usecase_confirm_execution(void*                              pool,
     int64_t tx_id = ltx.id;
 
     /* Update execution record */
-    mf_dca_repo_execution_update_confirmed(
-        pool, cmd->exec_id, actual_amount, executed_price, executed_quantity, tx_id);
+    if (mf_dca_repo_execution_update_confirmed(
+            pool, cmd->exec_id, actual_amount, executed_price, executed_quantity, tx_id) != 0) {
+        db_tx_scope_rollback(pool, &scope);
+        csilk_json_free(exec_arr);
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "更新定投执行状态失败");
+        return -1;
+    }
 
     if (db_tx_scope_commit(pool, &scope) != 0) {
         db_tx_scope_rollback(pool, &scope);

@@ -103,20 +103,26 @@ mf_market_repo_price_history_range(
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     snprintf(aid_str, sizeof(aid_str), "%lld", (long long)asset_id);
 
-    const char* sql = "SELECT h.id, h.asset_id, "
-                      "CAST(h.price_date AS TEXT) as price_date, "
-                      "COALESCE(CAST(h.price AS REAL), 0.0) as price, "
-                      "h.currency, "
-                      "CAST(h.created_at AS TEXT) as created_at "
-                      "FROM asset_price_history h "
-                      "JOIN assets a ON h.asset_id = a.id "
-                      "WHERE a.user_id = ? AND h.asset_id = ? "
-                      "AND h.price_date >= ? AND h.price_date <= ? "
-                      "ORDER BY h.price_date ASC";
+    const char* sql =
+        "SELECT h.id, h.asset_id, "
+        "CAST(h.price_date AS TEXT) as price_date, "
+        "COALESCE(CAST(h.price AS REAL), 0.0) as price, "
+        "h.currency, "
+        "CAST(h.created_at AS TEXT) as created_at "
+        "FROM asset_price_history h "
+        "JOIN assets a ON h.asset_id = a.id "
+        "WHERE h.asset_id = ? AND ("
+        "  a.user_id = ? OR (a.ledger_id > 0 AND EXISTS ("
+        "    SELECT 1 FROM ledger_members lm WHERE lm.ledger_id = a.ledger_id AND lm.user_id = ?"
+        "  ))"
+        ") "
+        "AND h.price_date >= ? AND h.price_date <= ? "
+        "ORDER BY h.price_date ASC";
     return csilk_db_query_param_json((csilk_db_pool_t*)pool,
                                      sql,
-                                     (const char*[]){uid_str,
-                                                     aid_str,
+                                     (const char*[]){aid_str,
+                                                     uid_str,
+                                                     uid_str,
                                                      start_date ? start_date : "1970-01-01",
                                                      end_date ? end_date : "9999-12-31",
                                                      NULL});

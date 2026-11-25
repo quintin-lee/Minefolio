@@ -203,17 +203,16 @@ account_delete(void* pool, int64_t user_id, int64_t id)
 int
 account_count_assets(void* pool, int64_t user_id, int64_t account_id, int64_t* out_count)
 {
+    (void)user_id;
     if (!pool || account_id <= 0 || !out_count) {
         return -1;
     }
-    char uid[32], aid[32];
-    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    char aid[32];
     snprintf(aid, sizeof(aid), "%lld", (long long)account_id);
     csilk_json_t* res =
         csilk_db_query_param_json((csilk_db_pool_t*)pool,
-                                  "SELECT COUNT(*) AS cnt FROM assets WHERE account_id=? AND "
-                                  "user_id=?",
-                                  (const char*[]){aid, uid, NULL});
+                                  "SELECT COUNT(*) AS cnt FROM assets WHERE account_id=?",
+                                  (const char*[]){aid, NULL});
     *out_count = 0;
     if (res && csilk_json_array_size(res) > 0) {
         *out_count = db_get_int(csilk_json_array_get(res, 0), "cnt");
@@ -227,18 +226,18 @@ account_count_assets(void* pool, int64_t user_id, int64_t account_id, int64_t* o
 int
 account_has_transactions(void* pool, int64_t user_id, int64_t account_id, int* out_flag)
 {
+    (void)user_id;
     if (!pool || account_id <= 0 || !out_flag) {
         return -1;
     }
-    char uid[32], aid[32];
-    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    char aid[32];
     snprintf(aid, sizeof(aid), "%lld", (long long)account_id);
     csilk_json_t* res = csilk_db_query_param_json(
         (csilk_db_pool_t*)pool,
         "SELECT 1 AS hit FROM transactions "
-        "WHERE user_id=? AND (asset_id IN (SELECT id FROM assets WHERE account_id=?) OR "
-        "linked_asset_id IN (SELECT id FROM assets WHERE account_id=?)) LIMIT 1",
-        (const char*[]){uid, aid, aid, NULL});
+        "WHERE asset_id IN (SELECT id FROM assets WHERE account_id=?) OR "
+        "linked_asset_id IN (SELECT id FROM assets WHERE account_id=?) LIMIT 1",
+        (const char*[]){aid, aid, NULL});
     *out_flag = (res && csilk_json_array_size(res) > 0) ? 1 : 0;
     if (res) {
         csilk_json_free(res);

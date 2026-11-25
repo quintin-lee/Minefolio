@@ -14,22 +14,6 @@
 
 /* 若 caller 是当前 ledger 的非 owner 成员，返回 ledger owner 的 user_id；
  * 否则（owner 自身或无法解析）返回 0，表示沿用 caller 自身。 */
-static int64_t
-ledger_owner_if_member(csilk_db_pool_t* pool, int64_t ledger_id, int64_t user_id)
-{
-    if (pool == NULL || ledger_id <= 0 || user_id <= 0) {
-        return 0;
-    }
-    mf_ledger_t lg = {.id = 0};
-    if (mf_ledger_repo_get(pool, ledger_id, &lg) != 0) {
-        return 0;
-    }
-    if (lg.owner_id > 0 && lg.owner_id != user_id) {
-        return lg.owner_id;
-    }
-    return 0;
-}
-
 void
 api_assets_list(csilk_ctx_t* c)
 {
@@ -239,15 +223,13 @@ api_assets_detail(csilk_ctx_t* c)
         return;
     }
 
-    csilk_json_t* resp = NULL;
-    /* 共享账本成员：以 ledger owner 读取数据，caller 触发成员门控。 */
-    int64_t ledger_id = ctx_ledger_id(c, user_id, NULL);
-    int64_t data_uid = user_id;
-    int64_t owner_uid = ledger_owner_if_member(db_get_pool(), ledger_id, user_id);
-    if (owner_uid > 0) {
-        data_uid = owner_uid;
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "viewer");
+    if (ledger_id < 0) {
+        return;
     }
-    int rc = asset_usecase_get(db_get_pool(), data_uid, user_id, aid, &resp);
+
+    csilk_json_t* resp = NULL;
+    int           rc = asset_usecase_get(db_get_pool(), user_id, user_id, aid, &resp);
     if (rc == 1003 || !resp) {
         respond_not_found(c);
         return;
@@ -266,20 +248,14 @@ api_assets_logs_list(csilk_ctx_t* c)
     int64_t page = 1, page_size = 20;
     parse_page_params(c, &page, &page_size);
 
-    /* 共享账本成员视图：非 owner 成员以 ledger owner 为数据归属，caller 自身触发门控。 */
-    int64_t ledger_id = ctx_ledger_id(c, user_id, NULL);
-    int64_t data_uid = user_id;
-    int64_t caller_uid = user_id;
-    if (ledger_id > 0) {
-        int64_t owner_uid = ledger_owner_if_member(db_get_pool(), ledger_id, user_id);
-        if (owner_uid > 0) {
-            data_uid = owner_uid;
-        }
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "viewer");
+    if (ledger_id < 0) {
+        return;
     }
 
     query_asset_log_filter_t filter = {
-        .user_id = data_uid,
-        .caller_user_id = caller_uid,
+        .user_id = user_id,
+        .caller_user_id = user_id,
         .asset_id = csilk_get_query(c, "asset_id"),
         .page = page,
         .page_size = page_size,

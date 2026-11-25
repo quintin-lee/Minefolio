@@ -1,4 +1,5 @@
 #include "application/cashflow/usecases.h"
+#include "application/account/usecases.h"
 #include "domain/cashflow/repository.h"
 #include "domain/cashflow/rules.h"
 #include "infrastructure/repositories/cashflow_repo_impl.h"
@@ -70,6 +71,34 @@ cashflow_usecase_get_schedule(void*                      pool,
     return 0;
 }
 
+static int
+cashflow_validate_asset_perm(void*                      pool,
+                             int64_t                    user_id,
+                             int64_t                    asset_id,
+                             mf_account_action_t        action,
+                             cashflow_usecase_result_t* out_res)
+{
+    if (asset_id <= 0) {
+        return 0;
+    }
+    csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
+    if (!asset_exists(db_pool, user_id, asset_id)) {
+        out_res->code = 1003;
+        snprintf(out_res->message, sizeof(out_res->message), "关联资产不存在");
+        return -1;
+    }
+    int64_t alid = 0, aaid = 0;
+    if (asset_get_ledger_and_account(db_pool, asset_id, &alid, &aaid) == 0 &&
+        (alid > 0 || aaid > 0)) {
+        if (account_usecase_check_permission(pool, alid, user_id, aaid, action) != 0) {
+            out_res->code = 1004;
+            snprintf(out_res->message, sizeof(out_res->message), "Forbidden: 关联账户无操作权限");
+            return -1;
+        }
+    }
+    return 0;
+}
+
 int
 cashflow_usecase_create_schedule(void*                        pool,
                                  const create_cashflow_cmd_t* cmd,
@@ -115,6 +144,13 @@ cashflow_usecase_create_schedule(void*                        pool,
     if (mf_cashflow_rule_validate(&s, err, sizeof(err)) != 0) {
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "%s", err);
+        return -1;
+    }
+
+    if (cashflow_validate_asset_perm(
+            pool, cmd->user_id, cmd->source_asset_id, MF_ACCOUNT_ACTION_READ, out_res) != 0 ||
+        cashflow_validate_asset_perm(
+            pool, cmd->user_id, cmd->target_asset_id, MF_ACCOUNT_ACTION_WRITE_TX, out_res) != 0) {
         return -1;
     }
 
@@ -178,6 +214,13 @@ cashflow_usecase_update_schedule(void*                        pool,
     if (mf_cashflow_rule_validate(&s, err, sizeof(err)) != 0) {
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "%s", err);
+        return -1;
+    }
+
+    if (cashflow_validate_asset_perm(
+            pool, cmd->user_id, cmd->source_asset_id, MF_ACCOUNT_ACTION_READ, out_res) != 0 ||
+        cashflow_validate_asset_perm(
+            pool, cmd->user_id, cmd->target_asset_id, MF_ACCOUNT_ACTION_WRITE_TX, out_res) != 0) {
         return -1;
     }
 
@@ -372,6 +415,13 @@ cashflow_usecase_confirm_income(void*                         pool,
         return -1;
     }
 
+    if (cashflow_validate_asset_perm(
+            pool, cmd->user_id, cmd->source_asset_id, MF_ACCOUNT_ACTION_READ, out_res) != 0 ||
+        cashflow_validate_asset_perm(
+            pool, cmd->user_id, cmd->target_asset_id, MF_ACCOUNT_ACTION_WRITE_TX, out_res) != 0) {
+        return -1;
+    }
+
     char tx_note[256];
     snprintf(tx_note,
              sizeof(tx_note),
@@ -431,7 +481,12 @@ cashflow_usecase_confirm_income(void*                         pool,
         return -1;
     }
 
-    db_tx_scope_commit(db_pool, &scope);
+    if (db_tx_scope_commit(db_pool, &scope) != 0) {
+        db_tx_scope_rollback(db_pool, &scope);
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "提交事务失败");
+        return -1;
+    }
 
     if (out_tx_id) {
         *out_tx_id = tx_id;
