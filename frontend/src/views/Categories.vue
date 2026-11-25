@@ -37,22 +37,28 @@
               />
             </div>
             <div class="panel-body-scroll">
-              <div v-if="filteredTreeData.length === 0 && keyword" class="tree-empty">
+              <div v-if="debouncedKeyword.trim() && filteredFlatCategories.length === 0" class="tree-empty">
                 暂无匹配分类
               </div>
-              <el-tree v-else :key="keyword.trim() ? 'filtered' : 'all'" :data="filteredTreeData" :props="{ label: 'name', children: 'children' }"
-                node-key="id" class="premium-tree"
-                :default-expanded-keys="expandedKeys"
+              <el-tree
+                v-show="!(debouncedKeyword.trim() && filteredFlatCategories.length === 0)"
+                ref="treeRef"
+                :data="tabTreeData"
+                :props="{ label: 'name', children: 'children' }"
+                :filter-node-method="(filterTreeNode as any)"
+                node-key="id"
+                class="premium-tree"
                 :expand-on-click-node="false"
-                @node-click="onNodeClick">
+                @node-click="onNodeClick"
+              >
                 <template #default="{ node, data }">
                   <div class="tree-node-wrapper">
                     <div class="tree-node-content">
                       <span class="node-icon">{{ (data as any).icon || defaultIcon(data as Category) }}</span>
                       <span class="node-label">{{ node.label }}</span>
-                      <el-tag size="small" :type="categoryTypeTagType(data.type)" effect="light" class="mini-type-tag">
+                      <span :class="['mini-type-pill', `pill-${data.type || 'asset'}`]">
                         {{ categoryTypeLabel(data.type) }}
-                      </el-tag>
+                      </span>
                     </div>
                     <div class="tree-actions">
                       <el-button link size="small" type="primary" @click.stop="openDialog(data)">编辑</el-button>
@@ -70,7 +76,7 @@
               <h3>分类列表</h3>
             </div>
             <div class="panel-body-scroll">
-              <el-table :data="filteredFlatCategories" class="premium-table" header-cell-class-name="premium-header"
+              <el-table :data="paginatedFlatCategories" row-key="id" class="premium-table" header-cell-class-name="premium-header"
                 :row-class-name="rowClassName" @row-click="onRowClick">
                 <el-table-column prop="name" label="名称" min-width="140">
                   <template #default="{ row }">
@@ -82,9 +88,9 @@
                 </el-table-column>
                 <el-table-column prop="type" label="分类大类" width="110">
                   <template #default="{ row }">
-                    <el-tag size="small" :type="categoryTypeTagType(row.type)" effect="light" class="type-tag">
+                    <span :class="['type-pill', `pill-${row.type || 'asset'}`]">
                       {{ categoryTypeLabel(row.type) }}
-                    </el-tag>
+                    </span>
                   </template>
                 </el-table-column>
                 <el-table-column label="上级分类" min-width="120">
@@ -103,7 +109,7 @@
                 </el-table-column>
                 <el-table-column prop="currency" label="币种" width="90">
                   <template #default="{ row }">
-                    <el-tag size="small" class="currency-tag" effect="plain">{{ row.currency }}</el-tag>
+                    <span class="currency-pill">{{ row.currency }}</span>
                   </template>
                 </el-table-column>
                 <el-table-column label="操作" width="120" align="center">
@@ -116,12 +122,23 @@
                 </el-table-column>
               </el-table>
             </div>
+            <div v-if="filteredFlatCategories.length > 0" class="table-pagination">
+              <el-pagination
+                v-model:current-page="currentPage"
+                v-model:page-size="pageSize"
+                :total="filteredFlatCategories.length"
+                :page-sizes="[20, 50, 100]"
+                layout="total, sizes, prev, pager, next"
+                background
+                small
+              />
+            </div>
           </div>
         </el-col>
       </el-row>
     </div>
 
-    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑分类' : '新增分类'" width="480px" class="premium-dialog" :show-close="false">
+    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑分类' : '新增分类'" width="480px" class="premium-dialog" :show-close="false" destroy-on-close>
       <el-form ref="formRef" :model="form" :rules="rules" label-width="90px" class="premium-form">
         <el-form-item label="分类名称" prop="name">
           <el-input v-model="form.name" placeholder="输入分类名称" />
@@ -172,33 +189,26 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, watch, nextTick, onMounted, onActivated, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { categoriesApi } from '@/api/categories'
 import { useCategoryStore } from '@/stores/category'
 import { findCategoryPath } from '@/utils/category-tree'
 import type { Category, CategoryType } from '@/types'
 
+defineOptions({ name: 'Categories' })
+
 const categoryStore = useCategoryStore()
 
 const activeTab = ref<'all' | 'asset' | 'expense' | 'income' | 'transaction'>('all')
-const categories = ref<Category[]>([])
+const categories = computed(() => categoryStore.allNodes)
 const selectedId = ref<number | null>(null)
 const keyword = ref('')
-
-// 搜索时自动展开命中分支（数据引用变化 → el-tree 重建 → default-expanded-keys 重新应用）
-const expandedKeys = computed(() => {
-  if (!keyword.value.trim()) return []
-  const ids: number[] = []
-  const walk = (nodes: Category[]) => {
-    for (const n of nodes) {
-      ids.push(n.id)
-      if (n.children?.length) walk(n.children)
-    }
-  }
-  walk(filteredTreeData.value)
-  return ids
-})
+const debouncedKeyword = ref('')
+const treeRef = ref<any>(null)
+const currentPage = ref(1)
+const pageSize = ref(20)
+let searchTimer: ReturnType<typeof setTimeout> | null = null
 
 function filterTree(nodes: Category[], kw: string): Category[] {
   const out: Category[] = []
@@ -212,19 +222,71 @@ function filterTree(nodes: Category[], kw: string): Category[] {
   return out
 }
 
-const filteredCategories = computed(() => {
-  if (activeTab.value !== 'all') return categories.value.filter(c => c.type === activeTab.value)
-  return categories.value
+function filterTreeNode(value: string, data: Category): boolean {
+  if (!value) return true
+  return (data.name || '').toLowerCase().includes(value)
+}
+
+const fullTree = computed(() => {
+  const list = categories.value
+  if (!list.length) return []
+  const hasNested = list.some(n => Array.isArray(n.children) && n.children.length > 0)
+  return hasNested ? list : categoryStore.buildTree(list)
 })
 
-const filteredTreeData = computed(() => {
-  let tree = buildTree(filteredCategories.value)
-  const kw = keyword.value.trim().toLowerCase()
-  if (kw) tree = filterTree(tree, kw)
-  return tree
+const tabTreeData = computed(() =>
+  activeTab.value === 'all'
+    ? fullTree.value
+    : fullTree.value.filter(c => c.type === activeTab.value)
+)
+
+const tabFlatCategories = computed(() => flatten(tabTreeData.value))
+
+const filteredFlatCategories = computed(() => {
+  const kw = debouncedKeyword.value.trim().toLowerCase()
+  if (!kw) return tabFlatCategories.value
+  return flatten(filterTree(tabTreeData.value, kw))
 })
 
-const filteredFlatCategories = computed(() => flatten(filteredTreeData.value))
+const paginatedFlatCategories = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  return filteredFlatCategories.value.slice(start, start + pageSize.value)
+})
+
+watch(keyword, (val) => {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    debouncedKeyword.value = val
+    treeRef.value?.filter(val.trim().toLowerCase())
+  }, 150)
+})
+
+watch([activeTab, debouncedKeyword], () => {
+  currentPage.value = 1
+})
+
+watch([activeTab, tabTreeData], () => {
+  const kw = debouncedKeyword.value.trim().toLowerCase()
+  if (kw) {
+    nextTick(() => {
+      treeRef.value?.filter(kw)
+    })
+  }
+})
+
+watch(
+  () => filteredFlatCategories.value.length,
+  (total) => {
+    const maxPage = Math.max(1, Math.ceil(total / pageSize.value))
+    if (currentPage.value > maxPage) {
+      currentPage.value = maxPage
+    }
+  }
+)
+
+onBeforeUnmount(() => {
+  if (searchTimer) clearTimeout(searchTimer)
+})
 
 const dialogVisible = ref(false)
 const editingId = ref<number | null>(null)
@@ -239,6 +301,10 @@ const assetTypes = [
   { label: '贷款', value: 'loan' }, { label: '信用卡', value: 'credit_card' },
   { label: '其他负债', value: 'other_liability' },
 ]
+
+const ASSET_TYPE_LABEL_MAP: Record<string, string> = Object.fromEntries(
+  assetTypes.map(t => [t.value, t.label])
+)
 
 const iconOptions = [
   { label: '💰 钱包', value: '💰' },
@@ -287,10 +353,6 @@ const rules = {
   asset_type: [{ required: true, message: '请选择资产类型' }]
 }
 
-function buildTree(list: Category[]): Category[] {
-  return categoryStore.buildTree(list)
-}
-
 function flatten(list: Category[]): Category[] {
   const out: Category[] = []
   const walk = (nodes: Category[]) => {
@@ -323,7 +385,7 @@ const categoryNameMap = computed(() => {
       if (c.children?.length) walk(c.children)
     }
   }
-  walk(categories.value)
+  walk(fullTree.value)
   return map
 })
 
@@ -340,15 +402,7 @@ function categoryTypeLabel(t: CategoryType) {
   return t || '资产'
 }
 
-function categoryTypeTagType(t: CategoryType) {
-  if (t === 'asset') return 'info'
-  if (t === 'expense') return 'success'
-  if (t === 'income') return 'danger'
-  if (t === 'transaction') return 'warning'
-  return 'info'
-}
-
-function assetTypeLabel(t: string) { return assetTypes.find(x => x.value === t)?.label || t }
+function assetTypeLabel(t: string) { return ASSET_TYPE_LABEL_MAP[t] || t }
 
 const ASSET_ICONS: Record<string, string> = {
   cash: '💵', stock: '📈', fund: '📊', bond: '💎', crypto: '🪙',
@@ -395,27 +449,44 @@ function defaultIcon(cat: Category) {
 const excludedParentIds = computed(() => {
   const excluded = new Set<number>()
   if (editingId.value == null) return excluded
-  excluded.add(editingId.value)
-  const flat = flatten(categories.value)
-  let added = true
-  while (added) {
-    added = false
-    for (const c of flat) {
-      if (c.parent_id != null && excluded.has(Number(c.parent_id)) && !excluded.has(c.id)) {
-        excluded.add(c.id)
-        added = true
+  const targetId = Number(editingId.value)
+
+  const collectSubtree = (node: Category) => {
+    excluded.add(Number(node.id))
+    if (node.children?.length) {
+      for (const ch of node.children) {
+        collectSubtree(ch)
       }
     }
+  }
+
+  const findAndCollect = (nodes: Category[]): boolean => {
+    for (const node of nodes) {
+      if (Number(node.id) === targetId) {
+        collectSubtree(node)
+        return true
+      }
+      if (node.children?.length && findAndCollect(node.children)) {
+        return true
+      }
+    }
+    return false
+  }
+
+  findAndCollect(fullTree.value)
+  if (!excluded.has(targetId)) {
+    excluded.add(targetId)
   }
   return excluded
 })
 
 const parentOptions = computed(() => {
+  if (!dialogVisible.value) return []
   const prune = (nodes: Category[]): Category[] =>
     nodes
       .filter(n => !excludedParentIds.value.has(n.id))
       .map(n => ({ ...n, children: n.children?.length ? prune(n.children) : [] }))
-  return prune(buildTree(categories.value.filter(c => c.type === form.type)))
+  return prune(fullTree.value.filter(c => c.type === form.type))
 })
 
 function onTabChange() {
@@ -428,10 +499,9 @@ function onFormTypeChange() {
   form._parentPath = []
 }
 
-async function loadData() {
+async function loadData(force = false) {
   try {
-    const data = await categoryStore.loadCategories()
-    categories.value = data
+    await categoryStore.loadCategories(undefined, force)
   } catch (err) {
     console.error('[Categories] loadData failed:', err)
     ElMessage.error('加载分类失败')
@@ -488,7 +558,7 @@ async function handleSubmit() {
       ElMessage.success('保存成功')
       dialogVisible.value = false
       categoryStore.invalidate()
-      loadData()
+      await loadData(true)
     } finally { saving.value = false }
   })
 }
@@ -503,14 +573,22 @@ async function handleDelete(cat: any) {
     await categoriesApi.delete(cat.id)
     ElMessage.success('删除成功')
     categoryStore.invalidate()
-    loadData()
+    await loadData(true)
   } catch (e: any) {
     if (e?.response?.data?.code === 2001) ElMessage.warning('分类下有子分类，请先删除子分类')
     else ElMessage.error('删除失败')
   }
 }
 
-onMounted(loadData)
+onMounted(() => {
+  loadData()
+})
+
+onActivated(() => {
+  if (!categoryStore.loaded) {
+    loadData()
+  }
+})
 </script>
 
 <style scoped>
@@ -601,26 +679,74 @@ onMounted(loadData)
   color: #ffffff !important;
 }
 
-.type-tag {
+.type-pill,
+.mini-type-pill,
+.currency-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 6px;
   font-weight: 600;
+  white-space: nowrap;
+  border: 1px solid transparent;
 }
 
-.mini-type-tag {
+.type-pill {
+  font-size: 12px;
+  line-height: 18px;
+  padding: 2px 8px;
+}
+
+.mini-type-pill {
   border-radius: 4px;
   font-size: 10px;
-  padding: 0 4px;
+  padding: 0 5px;
   height: 18px;
   line-height: 16px;
   margin-left: 4px;
 }
 
-.panel-container {
-  background: var(--mf-surface);
-  border-radius: var(--mf-radius-lg);
-  padding: 20px;
-  box-shadow: var(--mf-shadow-sm);
-  border: 1px solid var(--mf-border);
+.pill-asset {
+  color: var(--el-color-info);
+  background-color: var(--el-color-info-light-9);
+  border-color: var(--el-color-info-light-8);
+}
+
+.pill-expense {
+  color: var(--el-color-success);
+  background-color: var(--el-color-success-light-9);
+  border-color: var(--el-color-success-light-8);
+}
+
+.pill-income {
+  color: var(--el-color-danger);
+  background-color: var(--el-color-danger-light-9);
+  border-color: var(--el-color-danger-light-8);
+}
+
+.pill-transaction {
+  color: var(--el-color-warning);
+  background-color: var(--el-color-warning-light-9);
+  border-color: var(--el-color-warning-light-8);
+}
+
+.currency-pill {
+  font-size: 12px;
+  line-height: 18px;
+  padding: 2px 8px;
+  letter-spacing: 0.5px;
+  color: var(--mf-text-muted);
+  background-color: transparent;
+  border-color: var(--mf-border);
+}
+
+.table-pagination {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 14px;
+  margin-top: 8px;
+  border-top: 1px solid var(--mf-border);
 }
 
 .panel-header {
@@ -692,7 +818,7 @@ onMounted(loadData)
   height: 40px;
   border-radius: var(--mf-radius-md);
   margin-bottom: 4px;
-  transition: all 0.2s;
+  transition: background-color 0.15s ease;
 }
 
 .tree-node-wrapper {
@@ -784,7 +910,7 @@ onMounted(loadData)
 }
 
 :deep(.premium-row) {
-  transition: all 0.2s ease;
+  transition: background-color 0.15s ease;
 }
 
 :deep(.premium-row td) {
