@@ -56,6 +56,16 @@ int db_init(csilk_db_pool_t** out_pool);
 int db_run_migrations(csilk_db_pool_t* pool);
 
 /**
+ * @brief 将已知的等价历史迁移校验和（如 4a2880af 临时改写的 PG V026/V034）
+ *        精确收敛为规范校验和，不影响其他任何篡改检测。
+ *
+ * @param[in] pool    数据库连接池指针
+ * @param[in] dialect 目标方言名（传 NULL 时自动使用连接池驱动名；非 NULL 仅用于单元测试）
+ * @return int 成功收敛的行数（>= 0），参数无效或执行出错返回 -1
+ */
+int db_reconcile_known_migration_checksums(csilk_db_pool_t* pool, const char* dialect);
+
+/**
  * @brief 执行 SQLite WAL 日志截断刷盘（PRAGMA wal_checkpoint(TRUNCATE)）
  *
  * 将当前 WAL 日志中未同步的数据页完全合并刷入主数据库文件，并将 WAL 文件大小截断为 0 字节。

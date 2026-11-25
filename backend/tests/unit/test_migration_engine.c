@@ -408,6 +408,84 @@ test_db_run_migrations_checksum_diagnostic(void)
     printf("db_run_migrations checksum diagnostic passed.\n");
 }
 
+static void
+test_reconcile_transient_postgres_checksums(void)
+{
+    printf("--- Running Transient PG Checksum Reconciliation Test ---\n");
+
+    csilk_db_pool_t* fresh_pool = csilk_db_pool_new("sqlite", ":memory:");
+    assert(fresh_pool != NULL);
+    /* Missing schema_migrations table is a clean no-op */
+    assert(db_reconcile_known_migration_checksums(fresh_pool, "postgres") == 0);
+    csilk_db_pool_free(fresh_pool);
+
+    csilk_db_pool_t* pool = csilk_db_pool_new("sqlite", ":memory:");
+    assert(pool != NULL);
+    assert(db_run_migrations(pool) == 0);
+
+    static const char* v26_transient =
+        "c2985d211f8714443548f60161f69a4a305c6504544db2d907a18e5a76b01253";
+    static const char* v26_canonical =
+        "9a01c6efeea743bb4f028884a3046b9092c360b3d3cf29086a902f0e8ed746f6";
+    static const char* v34_transient =
+        "7b378125554f722555f1339caae81384ce4790939049a1a0d8af1f33ba7d79cb";
+    static const char* v34_canonical =
+        "46c4b23533fec31c885fca6fb0f2973a9598748a07efc68d35fdefce99503595";
+
+    assert(csilk_db_exec(
+               pool,
+               "UPDATE schema_migrations SET checksum = "
+               "'c2985d211f8714443548f60161f69a4a305c6504544db2d907a18e5a76b01253' "
+               "WHERE version = 26;"
+               "UPDATE schema_migrations SET checksum = "
+               "'7b378125554f722555f1339caae81384ce4790939049a1a0d8af1f33ba7d79cb' "
+               "WHERE version = 34;"
+               "UPDATE schema_migrations SET checksum = 'tampered_v1_checksum' "
+               "WHERE version = 1;") == 0);
+    (void)v26_transient;
+    (void)v34_transient;
+
+    /* SQLite dialect has no transient aliases and stays untouched */
+    assert(db_reconcile_known_migration_checksums(pool, NULL) == 0);
+
+    /* Postgres dialect reconciles only the exact V026 & V034 transient hashes */
+    assert(db_reconcile_known_migration_checksums(pool, "postgres") == 2);
+
+    csilk_json_t* rows = csilk_db_query_json(
+        pool, "SELECT version, checksum FROM schema_migrations WHERE version IN (1, 26, 34) ORDER BY version ASC;");
+    assert(rows != NULL && csilk_json_is_array(rows) && csilk_json_array_size(rows) == 3);
+
+    const csilk_json_t* r1 = csilk_json_array_get(rows, 0);
+    const csilk_json_t* r26 = csilk_json_array_get(rows, 1);
+    const csilk_json_t* r34 = csilk_json_array_get(rows, 2);
+    assert(db_get_int(r1, "version") == 1);
+    assert(strcmp(csilk_json_get_string(r1, "checksum"), "tampered_v1_checksum") == 0);
+    assert(db_get_int(r26, "version") == 26);
+    assert(strcmp(csilk_json_get_string(r26, "checksum"), v26_canonical) == 0);
+    assert(db_get_int(r34, "version") == 34);
+    assert(strcmp(csilk_json_get_string(r34, "checksum"), v34_canonical) == 0);
+    csilk_json_free(rows);
+
+    /* Second invocation is idempotent */
+    assert(db_reconcile_known_migration_checksums(pool, "postgres") == 0);
+
+    /* Arbitrary tampered V026 checksum is NOT rewritten */
+    assert(csilk_db_exec(pool,
+                         "UPDATE schema_migrations SET checksum = 'unexpected_tampered_v26' "
+                         "WHERE version = 26;") == 0);
+    assert(db_reconcile_known_migration_checksums(pool, "postgres") == 0);
+
+    csilk_json_t* chk = csilk_db_query_json(
+        pool, "SELECT checksum FROM schema_migrations WHERE version = 26;");
+    assert(chk != NULL && csilk_json_is_array(chk) && csilk_json_array_size(chk) == 1);
+    assert(strcmp(csilk_json_get_string(csilk_json_array_get(chk, 0), "checksum"),
+                  "unexpected_tampered_v26") == 0);
+    csilk_json_free(chk);
+
+    csilk_db_pool_free(pool);
+    printf("Transient PG checksum reconciliation passed.\n");
+}
+
 int
 main(void)
 {
@@ -425,6 +503,7 @@ main(void)
     test_auto_baseline_existing_database();
     test_postgres_migration_dialect();
     test_db_run_migrations_checksum_diagnostic();
+    test_reconcile_transient_postgres_checksums();
 
     printf("==================================================\n");
     printf("All Database Migration Engine Tests Passed (100%%)!\n");

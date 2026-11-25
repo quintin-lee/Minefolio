@@ -301,6 +301,133 @@ diagnose_migration_failure(csilk_db_pool_t*          pool,
     fflush(stderr);
 }
 
+typedef struct {
+    const char* dialect;
+    int         version;
+    const char* legacy_checksum;
+    const char* canonical_checksum;
+} migration_checksum_alias_t;
+
+static const migration_checksum_alias_t k_known_migration_checksum_aliases[] = {
+    {
+        .dialect = "postgres",
+        .version = 26,
+        .legacy_checksum = "c2985d211f8714443548f60161f69a4a305c6504544db2d907a18e5a76b01253",
+        .canonical_checksum = "9a01c6efeea743bb4f028884a3046b9092c360b3d3cf29086a902f0e8ed746f6",
+    },
+    {
+        .dialect = "postgres",
+        .version = 34,
+        .legacy_checksum = "7b378125554f722555f1339caae81384ce4790939049a1a0d8af1f33ba7d79cb",
+        .canonical_checksum = "46c4b23533fec31c885fca6fb0f2973a9598748a07efc68d35fdefce99503595",
+    },
+};
+
+static bool
+migration_table_exists(csilk_db_pool_t* pool, const char* actual_driver)
+{
+    const char* sql = (actual_driver && strcmp(actual_driver, "postgres") == 0)
+                          ? "SELECT 1 FROM information_schema.tables "
+                            "WHERE table_schema = current_schema() AND table_name = ?;"
+                          : "SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?;";
+
+    csilk_stmt_t* stmt = NULL;
+    if (csilk_stmt_prepare(pool, sql, &stmt) != 0 || !stmt) {
+        return false;
+    }
+    if (csilk_stmt_bind_text(stmt, 1, "schema_migrations") != 0) {
+        csilk_stmt_close(stmt);
+        return false;
+    }
+
+    csilk_json_t* res = csilk_stmt_query_json(stmt);
+    csilk_stmt_close(stmt);
+
+    bool exists = false;
+    if (res) {
+        if (csilk_json_is_array(res) && csilk_json_array_size(res) > 0) {
+            exists = true;
+        }
+        csilk_json_free(res);
+    }
+    return exists;
+}
+
+int
+db_reconcile_known_migration_checksums(csilk_db_pool_t* pool, const char* dialect)
+{
+    if (!pool) {
+        return -1;
+    }
+
+    const char* actual_driver = csilk_db_pool_get_driver_name(pool);
+    if (!actual_driver || !actual_driver[0]) {
+        return 0;
+    }
+    const char* effective_dialect = (dialect && dialect[0]) ? dialect : actual_driver;
+
+    size_t alias_count = sizeof(k_known_migration_checksum_aliases) /
+                         sizeof(k_known_migration_checksum_aliases[0]);
+    bool has_alias = false;
+    for (size_t i = 0; i < alias_count; i++) {
+        if (strcmp(k_known_migration_checksum_aliases[i].dialect, effective_dialect) == 0) {
+            has_alias = true;
+            break;
+        }
+    }
+    if (!has_alias) {
+        return 0;
+    }
+
+    if (!migration_table_exists(pool, actual_driver)) {
+        return 0;
+    }
+
+    int reconciled = 0;
+    for (size_t i = 0; i < alias_count; i++) {
+        const migration_checksum_alias_t* alias = &k_known_migration_checksum_aliases[i];
+        if (strcmp(alias->dialect, effective_dialect) != 0) {
+            continue;
+        }
+
+        static const char sql[] =
+            "UPDATE schema_migrations SET checksum = ? WHERE version = ? AND checksum = ?;";
+        csilk_stmt_t* stmt = NULL;
+        if (csilk_stmt_prepare(pool, sql, &stmt) != 0 || !stmt) {
+            return -1;
+        }
+        if (csilk_stmt_bind_text(stmt, 1, alias->canonical_checksum) != 0 ||
+            csilk_stmt_bind_int64(stmt, 2, alias->version) != 0 ||
+            csilk_stmt_bind_text(stmt, 3, alias->legacy_checksum) != 0) {
+            csilk_stmt_close(stmt);
+            return -1;
+        }
+
+        int64_t affected = 0;
+        int     rc = csilk_stmt_execute(stmt, &affected);
+        csilk_stmt_close(stmt);
+        if (rc != 0) {
+            return -1;
+        }
+        if (affected > 0) {
+            reconciled += (int)affected;
+            CSILK_LOG_I("Reconciled transient %s V%03d checksum (%s -> %s)",
+                        effective_dialect,
+                        alias->version,
+                        alias->legacy_checksum,
+                        alias->canonical_checksum);
+            fprintf(stderr,
+                    "[migration] Reconciled transient V%03d checksum (%s -> %s)\n",
+                    alias->version,
+                    alias->legacy_checksum,
+                    alias->canonical_checksum);
+            fflush(stderr);
+        }
+    }
+
+    return reconciled;
+}
+
 /**
  * @brief 执行数据库迁移（通过正式版本化迁移引擎）
  *
@@ -323,6 +450,9 @@ db_run_migrations(csilk_db_pool_t* pool)
 
     /* Auto-baseline versions <= 7 if existing legacy production database (users table exists) */
     csilk_migration_engine_set_baseline(engine, 7, "users");
+
+    /* Reconcile transient 4a2880af PG V026/V034 checksums back to canonical before validation */
+    (void)db_reconcile_known_migration_checksums(pool, NULL);
 
     int applied_count = 0;
     int rc = csilk_migration_apply(engine, &applied_count);
