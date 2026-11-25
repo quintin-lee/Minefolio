@@ -940,6 +940,37 @@ OAUTH_BAD_CODE_RES=$(curl -s -H "Content-Type: application/json" -X POST "$BASE/
 check "无效 Code 拒绝置换返回 code=1002" "1002" "$(echo "$OAUTH_BAD_CODE_RES" | jq -r '.code | floor')"
 
 # =========================================================================
+# Case 42b: 用户删除级联回归 (User Delete Cascade Regression)
+# 修复点: mf_auth_repo_delete_user_cascade 误删全局 ai_settings(id=1) 表, 导致删除任何用户失败
+# =========================================================================
+echo ""
+echo "--- Case 42b: 用户删除级联回归测试 ---"
+
+# 1. 注册待删用户
+curl -s -X POST -H "Content-Type: application/json" "$BASE/auth/register" \
+  -d "$(printf '{"username":"cascade_del","password_enc":"%s"}' "$(rsa_encrypt deluser123)")" >/dev/null
+CASCADE_UID=$(sqlite3 "$DB" "SELECT id FROM users WHERE username='cascade_del'")
+check "级联删除测试用户已建" "yes" "$([ -n "$CASCADE_UID" ] && echo yes || echo no)"
+
+# 2. 保存全局 AI 配置单行 (id=1, 无 user_id 维度), 作为删除前的存在锚点
+curl -s -X PUT -H "$AUTH" -H "Content-Type: application/json" "$BASE/settings/ai" \
+  -d '{"context_size":20,"system_prompt":"cascade_regression_anchor"}' >/dev/null
+SETTINGS_BEFORE=$(sqlite3 "$DB" "SELECT COUNT(*) FROM ai_settings WHERE id=1")
+check "全局 ai_settings 单行存在 (id=1)" "1" "$SETTINGS_BEFORE"
+
+# 3. 级联删除待删用户 (回归: 旧二进制误删 ai_settings 致级联回滚, 删除失败)
+DEL_RES=$(curl -s -X DELETE -H "$AUTH" "$BASE/admin/users/$CASCADE_UID")
+check "级联删除普通用户成功 code=0" "0" "$(echo "$DEL_RES" | jq -r '.code | floor')"
+DEL_ROW=$(sqlite3 "$DB" "SELECT COUNT(*) FROM users WHERE id=$CASCADE_UID")
+check "用户行已删除" "0" "$DEL_ROW"
+SETTINGS_AFTER=$(sqlite3 "$DB" "SELECT COUNT(*) FROM ai_settings WHERE id=1")
+check "全局 ai_settings 单行保留 (不被级联误删)" "1" "$SETTINGS_AFTER"
+
+# 4. 管理员删除保护: 删除自身被拦截
+SELF_DEL_RES=$(curl -s -X DELETE -H "$AUTH" "$BASE/admin/users/1")
+check "管理员删除自身被拦截 code=1004" "1004" "$(echo "$SELF_DEL_RES" | jq -r '.code | floor')"
+
+# =========================================================================
 # Case 43: Agent Skills 技能管理端到端测试
 # =========================================================================
 echo ""
