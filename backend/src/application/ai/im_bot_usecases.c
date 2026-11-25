@@ -1,5 +1,6 @@
 #include "application/ai/im_bot_usecases.h"
 #include "application/ai/config_provider.h"
+#include "application/auth/usecases.h"
 #include "application/task/async_task_manager.h"
 #include "domain/auth/repository.h"
 #include "infrastructure/repositories/im_bot_repo_impl.h"
@@ -223,7 +224,8 @@ im_bot_usecase_bind_auth(void*          pool,
         snprintf(err_buf, err_cap, "用户名或密码错误");
         return -1;
     }
-    if (csilk_bcrypt_verify(password_buf, strlen(password_buf), user.password_hash) != 0) {
+    if (auth_usecase_verify_and_upgrade_password(
+            pool, user.id, password_buf, strlen(password_buf), user.password_hash) != 0) {
         OPENSSL_cleanse(password_buf, sizeof(password_buf));
         *out_code = 1004;
         snprintf(err_buf, err_cap, "用户名或密码错误");

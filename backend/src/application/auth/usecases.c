@@ -13,12 +13,14 @@
 #include "common/jwt.h"
 #include "csilk/core/totp.h"
 #include "common/db.h"
+#include "common/legacy_bcrypt.h"
 #include "csilk/csilk.h"
 #include "csilk/crypto/bcrypt.h"
 #include "csilk/core/primitives/codec.h"
 #include "csilk/crypto/crypto_dispatch.h"
 #include "csilk/drivers/cipher.h"
 #include <curl/curl.h>
+#include <openssl/crypto.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -149,6 +151,33 @@ static void
 store_bcrypt_hash(const char* password, char* out)
 {
     csilk_bcrypt_hash(password, strlen(password), MINEFOLIO_BCRYPT_COST, out);
+}
+
+int
+auth_usecase_verify_and_upgrade_password(
+    void* pool, int64_t user_id, const char* password, size_t password_len, const char* stored_hash)
+{
+    if (!password || !stored_hash || stored_hash[0] == '\0') {
+        return -1;
+    }
+
+    if (csilk_bcrypt_verify(password, password_len, stored_hash) == 0) {
+        return 0;
+    }
+
+    if (strlen(stored_hash) == 61 &&
+        mf_legacy_bcrypt_v090_verify(password, password_len, stored_hash) == 0) {
+        /* 兼容升级：将 csilk < v1.2.0 遗留算法哈希透明升级为当前 OpenBSD bcrypt 哈希 */
+        if (pool && user_id > 0) {
+            char upgraded[CSILK_BCRYPT_HASH_LEN];
+            csilk_bcrypt_hash(password, password_len, MINEFOLIO_BCRYPT_COST, upgraded);
+            mf_auth_repo_update_password((csilk_db_pool_t*)pool, user_id, upgraded);
+            OPENSSL_cleanse(upgraded, sizeof(upgraded));
+        }
+        return 0;
+    }
+
+    return -1;
 }
 
 /* OAuth mock 仅在启动期从 MINEFOLIO_TEST_OAUTH_MOCK 环境变量固化一次。
@@ -349,7 +378,8 @@ auth_usecase_login(void*                   pool,
         return -1;
     }
 
-    if (csilk_bcrypt_verify(password, password_len, user.password_hash) != 0) {
+    if (auth_usecase_verify_and_upgrade_password(
+            pool, user.id, password, password_len, user.password_hash) != 0) {
         out_res->code = 1001;
         snprintf(out_res->message, sizeof(out_res->message), "用户名或密码错误");
         return -1;
@@ -480,7 +510,8 @@ auth_usecase_change_password(void*                        pool,
         return -1;
     }
 
-    if (csilk_bcrypt_verify((const char*)old_pt, old_len, full_user.password_hash) != 0) {
+    if (auth_usecase_verify_and_upgrade_password(
+            NULL, 0, (const char*)old_pt, old_len, full_user.password_hash) != 0) {
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "原密码不正确");
         return -1;
@@ -692,7 +723,8 @@ auth_usecase_2fa_disable(void*                    pool,
         c, cmd->password_enc, cmd->password, pw_buf, sizeof(pw_buf) - 1, &pwd, &pwd_len);
 
     if (pwd && pwd_len > 0 && user.password_hash[0]) {
-        if (csilk_bcrypt_verify(pwd, pwd_len, user.password_hash) == 0) {
+        if (auth_usecase_verify_and_upgrade_password(
+                pool, user.id, pwd, pwd_len, user.password_hash) == 0) {
             authenticated = true;
         }
     }

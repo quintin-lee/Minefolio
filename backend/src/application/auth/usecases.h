@@ -81,6 +81,21 @@ int64_t auth_usecase_get_instance_admin_id(void* pool);
 int auth_usecase_user_count(void* pool);
 
 /**
+ * @brief 验证登录密码，并在匹配 csilk < v1.2.0 遗留哈希时透明升级为当前 bcrypt 哈希
+ * @param pool         数据库连接池（可为 NULL；当 pool != NULL 且 user_id > 0 时回写升级后哈希）
+ * @param user_id      用户 ID
+ * @param password     明文密码
+ * @param password_len 明文密码字节长度
+ * @param stored_hash  数据库存储的 bcrypt 哈希
+ * @return 0 验证通过；-1 不匹配或参数非法
+ */
+int auth_usecase_verify_and_upgrade_password(void*       pool,
+                                             int64_t     user_id,
+                                             const char* password,
+                                             size_t      password_len,
+                                             const char* stored_hash);
+
+/**
  * @brief 首次初始化创建管理员账号并播种默认数据（事务内完成）
  */
 int auth_usecase_setup_first_admin(void*                  pool,

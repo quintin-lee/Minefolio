@@ -221,6 +221,7 @@ add_minefolio_unit_test(test_ai_mask tests/unit/test_ai_mask.c m)
 # 如需恢复对构建目录 config/ 的依赖，应同时把 config/ai.json 纳入版本控制。
 add_minefolio_unit_test(test_ai_config_provider tests/unit/test_ai_config_provider.c)
 add_minefolio_unit_test(test_secret_provider tests/unit/test_secret_provider.c)
+add_minefolio_unit_test(test_legacy_bcrypt_compat tests/unit/test_legacy_bcrypt_compat.c)
 
 add_executable(test_domain_transaction tests/unit/test_domain_transaction.c ${FINANCIAL_CORE_SOURCES} src/domain/transaction/rules.c)
 target_include_directories(test_domain_transaction PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
