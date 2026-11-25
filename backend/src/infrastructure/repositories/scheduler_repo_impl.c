@@ -474,6 +474,18 @@ mf_scheduler_repo_save_user_channel(void*       pool,
     return rc;
 }
 
+csilk_json_t*
+mf_scheduler_repo_list_active_channels(void* pool)
+{
+    if (!pool) {
+        return NULL;
+    }
+    return csilk_db_query_json(
+        (csilk_db_pool_t*)pool,
+        "SELECT * FROM user_notification_channels "
+        "WHERE is_active = 1 AND channel_type != 'none' ORDER BY user_id ASC");
+}
+
 int64_t
 mf_scheduler_repo_log_create(void*       pool,
                              int64_t     job_id,
@@ -543,6 +555,41 @@ mf_scheduler_repo_log_complete(void*       pool,
                                                notif_status ? notif_status : "none",
                                                lid_str,
                                                NULL});
+}
+
+int
+mf_scheduler_repo_log_set_sync_counts(void* pool, int64_t log_id, int sync_sent, int sync_failed)
+{
+    if (!pool || log_id <= 0) {
+        return -1;
+    }
+    int  eff_sent = sync_sent < 0 ? 0 : sync_sent;
+    int  eff_fail = sync_failed < 0 ? 0 : sync_failed;
+    char lid[32], sent_s[16], fail_s[16];
+    snprintf(lid, sizeof(lid), "%lld", (long long)log_id);
+    snprintf(sent_s, sizeof(sent_s), "%d", eff_sent);
+    snprintf(fail_s, sizeof(fail_s), "%d", eff_fail);
+    return csilk_db_exec_param(
+        (csilk_db_pool_t*)pool,
+        "UPDATE job_run_logs SET notif_sync_sent = ?, notif_sync_failed = ? WHERE id = ?",
+        (const char*[]){sent_s, fail_s, lid, NULL});
+}
+
+int
+mf_scheduler_repo_log_update_notif(void*       pool,
+                                   int64_t     log_id,
+                                   const char* notif_status,
+                                   const char* error_msg)
+{
+    if (!pool || log_id <= 0 || !notif_status || !notif_status[0]) {
+        return -1;
+    }
+    char lid[32];
+    snprintf(lid, sizeof(lid), "%lld", (long long)log_id);
+    return csilk_db_exec_param(
+        (csilk_db_pool_t*)pool,
+        "UPDATE job_run_logs SET notification_status = ?, error_message = ? WHERE id = ?",
+        (const char*[]){notif_status, error_msg ? error_msg : "", lid, NULL});
 }
 
 csilk_json_t*

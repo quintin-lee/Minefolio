@@ -100,6 +100,25 @@ int mf_im_bot_instance_heartbeat(csilk_db_pool_t* pool,
                                  int64_t*         epoch_out,
                                  int*             enabled_out);
 
+/** 按 user_id + platform + adapter 查询实例，不存在返回 NULL。 */
+csilk_json_t* mf_im_bot_instance_get_by_user(csilk_db_pool_t* pool,
+                                             int64_t          user_id,
+                                             const char*      platform,
+                                             const char*      adapter);
+
+/** 更新实例最近一次入站消息时间（脱敏时间戳）与在线时间。 */
+int
+mf_im_bot_instance_touch_inbound(csilk_db_pool_t* pool, int64_t id, const char* last_inbound_at);
+
+/** 心跳并可选更新最近入站时间。 */
+int mf_im_bot_instance_heartbeat_with_inbound(csilk_db_pool_t* pool,
+                                              int64_t          id,
+                                              const char*      last_inbound_at,
+                                              char*            status_out,
+                                              size_t           status_cap,
+                                              int64_t*         epoch_out,
+                                              int*             enabled_out);
+
 #ifdef __cplusplus
 }
 #endif

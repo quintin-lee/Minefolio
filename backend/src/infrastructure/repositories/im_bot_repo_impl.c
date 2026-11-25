@@ -15,7 +15,8 @@
     "THEN qr_content ELSE NULL END AS qr_content, "                                                \
     "CASE WHEN status IN ('pending_login','qr_ready','scanned','need_verifycode') "                \
     "THEN qr_expires_at ELSE NULL END AS qr_expires_at, "                                          \
-    "login_epoch, verify_attempts, enabled, last_error, last_seen_at, created_at, updated_at"
+    "login_epoch, verify_attempts, enabled, last_error, last_seen_at, last_inbound_at, "           \
+    "created_at, updated_at"
 
 static void
 im_id_str(int64_t id, char* out, size_t cap)
@@ -421,8 +422,8 @@ mf_im_bot_instance_submit_verify_code(csilk_db_pool_t* pool,
         int           en = db_get_bool(row, "enabled");
         int64_t       attempts = db_get_int(row, "verify_attempts");
         int           waiting = en && st &&
-                                (strcmp(st, "pending_login") == 0 || strcmp(st, "qr_ready") == 0 ||
-                                 strcmp(st, "scanned") == 0 || strcmp(st, "need_verifycode") == 0);
+                      (strcmp(st, "pending_login") == 0 || strcmp(st, "qr_ready") == 0 ||
+                       strcmp(st, "scanned") == 0 || strcmp(st, "need_verifycode") == 0);
         csilk_json_free(chk);
         if (waiting && attempts >= 10) {
             return -4;
@@ -680,13 +681,20 @@ mf_im_bot_instance_activate(csilk_db_pool_t* pool,
             (const char*[]){plat, old_im, owner_str, NULL});
     }
 
+    bool        switched_wechat = (old_im[0] && strcmp(old_im, new_im) != 0);
+    const char* activate_sql =
+        switched_wechat
+            ? "UPDATE im_bot_instances SET ilink_bot_id=?, ilink_user_id=?, im_user_id=?, "
+              "status='active', enabled=1, qr_content=NULL, qr_expires_at=NULL, "
+              "pending_verify_code=NULL, pending_verify_expires_at=NULL, verify_attempts=0, "
+              "last_error=NULL, last_inbound_at=NULL, updated_at=CURRENT_TIMESTAMP "
+              "WHERE id=? RETURNING id"
+            : "UPDATE im_bot_instances SET ilink_bot_id=?, ilink_user_id=?, im_user_id=?, "
+              "status='active', enabled=1, qr_content=NULL, qr_expires_at=NULL, "
+              "pending_verify_code=NULL, pending_verify_expires_at=NULL, verify_attempts=0, "
+              "last_error=NULL, updated_at=CURRENT_TIMESTAMP WHERE id=? RETURNING id";
     csilk_json_t* updated = csilk_db_query_param_json(
-        pool,
-        "UPDATE im_bot_instances SET ilink_bot_id=?, ilink_user_id=?, im_user_id=?, "
-        "status='active', enabled=1, qr_content=NULL, qr_expires_at=NULL, "
-        "pending_verify_code=NULL, pending_verify_expires_at=NULL, verify_attempts=0, "
-        "last_error=NULL, updated_at=CURRENT_TIMESTAMP WHERE id=? RETURNING id",
-        (const char*[]){ilink_bot_id, ilink_user_id, new_im, sid, NULL});
+        pool, activate_sql, (const char*[]){ilink_bot_id, ilink_user_id, new_im, sid, NULL});
     int rc = 0;
     if (!updated || !csilk_json_is_array(updated) || csilk_json_array_size(updated) == 0) {
         rc = -1;
@@ -703,28 +711,150 @@ mf_im_bot_instance_activate(csilk_db_pool_t* pool,
     return rc;
 }
 
+csilk_json_t*
+mf_im_bot_instance_get_by_user(csilk_db_pool_t* pool,
+                               int64_t          user_id,
+                               const char*      platform,
+                               const char*      adapter)
+{
+    if (!pool || user_id <= 0) {
+        return NULL;
+    }
+    const char* plat = (platform && platform[0]) ? platform : "wechat";
+    const char* adp = (adapter && adapter[0]) ? adapter : "ilink";
+    char        uid[32];
+    im_id_str(user_id, uid, sizeof(uid));
+    return im_instance_one(pool,
+                           "mf_user_id=? AND platform=? AND adapter=? LIMIT 1",
+                           (const char*[]){uid, plat, adp, NULL});
+}
+
+static int
+im_parse_2d(const char* p, int min_v, int max_v)
+{
+    if (!p || !isdigit((unsigned char)p[0]) || !isdigit((unsigned char)p[1])) {
+        return -1;
+    }
+    int v = (p[0] - '0') * 10 + (p[1] - '0');
+    return (v >= min_v && v <= max_v) ? v : -1;
+}
+
+static int
+im_valid_iso_prefix(const char* ts)
+{
+    if (!ts) {
+        return 0;
+    }
+    for (int i = 0; i < 4; ++i) {
+        if (!isdigit((unsigned char)ts[i])) {
+            return 0;
+        }
+    }
+    if (ts[4] != '-' || im_parse_2d(ts + 5, 1, 12) < 0 || ts[7] != '-' ||
+        im_parse_2d(ts + 8, 1, 31) < 0) {
+        return 0;
+    }
+    if (ts[10] != 'T' && ts[10] != ' ') {
+        return 0;
+    }
+    if (im_parse_2d(ts + 11, 0, 23) < 0 || ts[13] != ':' || im_parse_2d(ts + 14, 0, 59) < 0 ||
+        ts[16] != ':' || im_parse_2d(ts + 17, 0, 59) < 0) {
+        return 0;
+    }
+    const char* p = ts + 19;
+    if (*p == '.') {
+        ++p;
+        if (!isdigit((unsigned char)*p)) {
+            return 0;
+        }
+        while (isdigit((unsigned char)*p)) {
+            ++p;
+        }
+    }
+    if (*p == 'Z') {
+        ++p;
+    } else if (*p == '+' || *p == '-') {
+        ++p;
+        if (im_parse_2d(p, 0, 23) < 0) {
+            return 0;
+        }
+        p += 2;
+        if (*p == ':') {
+            ++p;
+            if (im_parse_2d(p, 0, 59) < 0) {
+                return 0;
+            }
+            p += 2;
+        } else if (isdigit((unsigned char)*p)) {
+            if (im_parse_2d(p, 0, 59) < 0) {
+                return 0;
+            }
+            p += 2;
+        }
+    }
+    return *p == '\0';
+}
+
+static const char*
+im_inbound_expr(csilk_db_pool_t* pool)
+{
+    const char* drv = csilk_db_pool_get_driver_name(pool);
+    const bool  is_pg = drv && strcmp(drv, "postgres") == 0;
+    return is_pg ? "COALESCE(NULLIF(?,'')::timestamptz, last_inbound_at)"
+                 : "COALESCE(NULLIF(?,''), last_inbound_at)";
+}
+
 int
-mf_im_bot_instance_heartbeat(csilk_db_pool_t* pool,
-                             int64_t          id,
-                             char*            status_out,
-                             size_t           status_cap,
-                             int64_t*         epoch_out,
-                             int*             enabled_out)
+mf_im_bot_instance_touch_inbound(csilk_db_pool_t* pool, int64_t id, const char* last_inbound_at)
 {
     if (!pool || id <= 0) {
         return -1;
     }
     char sid[32];
     im_id_str(id, sid, sizeof(sid));
-    csilk_json_t* res = csilk_db_query_param_json(
-        pool,
-        "UPDATE im_bot_instances SET last_seen_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP "
-        "WHERE id=? RETURNING status, login_epoch, enabled",
-        (const char*[]){sid, NULL});
-    if (!res || !csilk_json_is_array(res) || csilk_json_array_size(res) == 0) {
-        if (res) {
-            csilk_json_free(res);
-        }
+    if (!im_valid_iso_prefix(last_inbound_at)) {
+        return csilk_db_exec_param(pool,
+                                   "UPDATE im_bot_instances SET last_seen_at=CURRENT_TIMESTAMP, "
+                                   "updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                                   (const char*[]){sid, NULL});
+    }
+    char sql[512];
+    SQL_FMT(sql,
+            sizeof(sql),
+            "UPDATE im_bot_instances SET last_inbound_at=%s, "
+            "last_seen_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            im_inbound_expr(pool));
+    return csilk_db_exec_param(pool, sql, (const char*[]){last_inbound_at, sid, NULL});
+}
+
+int
+mf_im_bot_instance_heartbeat_with_inbound(csilk_db_pool_t* pool,
+                                          int64_t          id,
+                                          const char*      last_inbound_at,
+                                          char*            status_out,
+                                          size_t           status_cap,
+                                          int64_t*         epoch_out,
+                                          int*             enabled_out)
+{
+    if (!pool || id <= 0) {
+        return -1;
+    }
+    char sid[32];
+    im_id_str(id, sid, sizeof(sid));
+    const char* inb = im_valid_iso_prefix(last_inbound_at) ? last_inbound_at : "";
+    char        sql[512];
+    SQL_FMT(sql,
+            sizeof(sql),
+            "UPDATE im_bot_instances SET last_inbound_at=%s, "
+            "last_seen_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP "
+            "WHERE id=? RETURNING status, login_epoch, enabled",
+            im_inbound_expr(pool));
+    csilk_json_t* res = csilk_db_query_param_json(pool, sql, (const char*[]){inb, sid, NULL});
+    if (!res) {
+        return -1;
+    }
+    if (!csilk_json_is_array(res) || csilk_json_array_size(res) == 0) {
+        csilk_json_free(res);
         return -3;
     }
     csilk_json_t* row = csilk_json_array_get(res, 0);
@@ -740,4 +870,16 @@ mf_im_bot_instance_heartbeat(csilk_db_pool_t* pool,
     }
     csilk_json_free(res);
     return 0;
+}
+
+int
+mf_im_bot_instance_heartbeat(csilk_db_pool_t* pool,
+                             int64_t          id,
+                             char*            status_out,
+                             size_t           status_cap,
+                             int64_t*         epoch_out,
+                             int*             enabled_out)
+{
+    return mf_im_bot_instance_heartbeat_with_inbound(
+        pool, id, NULL, status_out, status_cap, epoch_out, enabled_out);
 }

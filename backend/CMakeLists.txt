@@ -404,6 +404,9 @@ add_dependencies(test_cron_parser copy_assets)
 add_minefolio_unit_test(test_wechat_push_service tests/unit/test_wechat_push_service.c pthread)
 add_dependencies(test_wechat_push_service copy_assets)
 
+add_minefolio_unit_test(test_im_push_outbox tests/unit/test_im_push_outbox.c pthread)
+add_dependencies(test_im_push_outbox copy_assets)
+
 add_minefolio_unit_test(test_scheduler_engine tests/unit/test_scheduler_engine.c pthread)
 add_dependencies(test_scheduler_engine copy_assets)
 

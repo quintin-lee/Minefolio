@@ -26,13 +26,14 @@ typedef struct {
 typedef struct {
     int64_t id;
     int64_t user_id;
-    char    channel_type[32]; /* "serverchan", "pushdeer", "wechat_work", "custom_webhook" */
-    char    channel_name[64];
-    char    webhook_url[256];
-    char    secret_key[128];
-    bool    is_active;
-    char    created_at[32];
-    char    updated_at[32];
+    /* "serverchan", "pushdeer", "wechat_work", "webhook", "wechat_ilink", "none" */
+    char channel_type[32];
+    char channel_name[64];
+    char webhook_url[256];
+    char secret_key[128];
+    bool is_active;
+    char created_at[32];
+    char updated_at[32];
 } mf_user_notification_channel_t;
 
 typedef struct {
@@ -46,5 +47,5 @@ typedef struct {
     char    trigger_reason[64]; /* "cron_tick", "manual_invoke", "market_closed", "price_spike" */
     char    output_summary[2048];
     char    error_message[512];
-    char    notification_status[16]; /* "none", "sent", "failed" */
+    char    notification_status[16]; /* "none", "queued", "sent", "partial", "failed" */
 } mf_job_run_log_t;

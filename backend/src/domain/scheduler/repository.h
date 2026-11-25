@@ -83,3 +83,11 @@ csilk_json_t* mf_scheduler_repo_log_list(void*    pool,
                                          int64_t  page,
                                          int64_t  page_size,
                                          int64_t* out_total);
+
+csilk_json_t* mf_scheduler_repo_list_active_channels(void* pool);
+int
+mf_scheduler_repo_log_set_sync_counts(void* pool, int64_t log_id, int sync_sent, int sync_failed);
+int mf_scheduler_repo_log_update_notif(void*       pool,
+                                       int64_t     log_id,
+                                       const char* notif_status,
+                                       const char* error_msg);
