@@ -21,6 +21,7 @@
     "@capacitor/haptics": "^6.0.0",
     "@capacitor/ios": "^6.2.1",
     "@capacitor/network": "^6.0.0",
+    "@capacitor/splash-screen": "^6.0.4",
     "@element-plus/icons-vue": "^2.3.0",
     "@iconify-icons/ph": "^1.2.5",
     "@iconify/vue": "^5.0.1",

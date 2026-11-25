@@ -13,8 +13,18 @@ const config: CapacitorConfig = {
     androidScheme: 'https',
     ...(allowCleartextDev ? { cleartext: true } : {}),
   },
+  plugins: {
+    SplashScreen: {
+      launchAutoHide: false,
+      backgroundColor: '#060b18',
+      showSpinner: false,
+      splashFullScreen: false,
+      splashImmersive: false,
+    },
+  },
   android: {
     allowMixedContent: allowCleartextDev,
+    backgroundColor: '#060b18',
   },
 }
 
