@@ -5,6 +5,7 @@
 #include "infrastructure/repositories/cashflow_repo_impl.h"
 #include "infrastructure/repositories/asset_repo_impl.h"
 #include "infrastructure/repositories/transaction_repo_impl.h"
+#include "infrastructure/repositories/ledger_snapshot_repo_impl.h"
 #include "common/balance.h"
 #include "common/db.h"
 #include "core/financial/money.h"
@@ -478,6 +479,14 @@ cashflow_usecase_confirm_income(void*                         pool,
         db_tx_scope_rollback(db_pool, &scope);
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "现金流余额更新失败");
+        return -1;
+    }
+
+    if (ledger_snapshot_invalidate_from(
+            db_pool, cmd->user_id, cmd->target_asset_id, full_date) != 0) {
+        db_tx_scope_rollback(db_pool, &scope);
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "清理账本快照失败");
         return -1;
     }
 

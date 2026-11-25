@@ -155,9 +155,14 @@ transfer_usecase_create(void*                        pool,
     money_t    amt_m;
     money_from_double(cmd->amount, cur_t, &amt_m);
 
-    if (ledger_apply_transfer(
-            pool, cmd->user_id, cmd->from_asset_id, cmd->to_asset_id, amt_m, transfer_id, note) !=
-        0) {
+    if (ledger_apply_transfer_dated(pool,
+                                    cmd->user_id,
+                                    cmd->from_asset_id,
+                                    cmd->to_asset_id,
+                                    amt_m,
+                                    transfer_id,
+                                    note,
+                                    cmd->transfer_date) != 0) {
         db_tx_scope_rollback(pool, &scope);
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "资产余额更新失败");

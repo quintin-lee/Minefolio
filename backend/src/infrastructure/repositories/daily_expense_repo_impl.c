@@ -446,7 +446,7 @@ mf_daily_expense_repo_get_snapshot(
     snprintf(idstr, sizeof(idstr), "%lld", (long long)id);
     csilk_json_t* row = csilk_db_query_param_json(
         (csilk_db_pool_t*)db_pool,
-        "SELECT amount,expense_type,asset_id,currency,note FROM "
+        "SELECT amount,expense_type,asset_id,currency,CAST(expense_date AS TEXT) AS expense_date,note FROM "
         "daily_expenses WHERE id=? AND (user_id=? OR (ledger_id=? AND EXISTS "
         "(SELECT 1 FROM ledger_members lm WHERE lm.ledger_id=daily_expenses.ledger_id AND "
         "lm.user_id=?)))",
@@ -464,6 +464,10 @@ mf_daily_expense_repo_get_snapshot(
     const char* cur = csilk_json_get_string(r, "currency");
     strncpy(out->currency, cur && cur[0] ? cur : "CNY", sizeof(out->currency) - 1);
     out->asset_id = (int64_t)db_get_int(r, "asset_id");
+    const char* ed = csilk_json_get_string(r, "expense_date");
+    if (ed) {
+        snprintf(out->expense_date, sizeof(out->expense_date), "%.10s", ed);
+    }
     const char* nt = csilk_json_get_string(r, "note");
     strncpy(out->note, nt ? nt : "", sizeof(out->note) - 1);
     csilk_json_free(row);

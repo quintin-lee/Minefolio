@@ -1,5 +1,6 @@
 #include "core/ledger/ledger_engine.h"
 #include "infrastructure/repositories/ledger_snapshot_repo_impl.h"
+#include "application/cashflow/usecases.h"
 #include "common/db.h"
 #include "common/config.h"
 #include "csilk/csilk.h"
@@ -322,6 +323,124 @@ main(void)
     assert(money_to_double(pos5.realized_pnl) == 500.0);
     assert(price_to_double(pos5.net_value) == 2.0);
     assert(money_to_double(pos5.current_value) == 5000.0);
+
+    /* -------------------------------------------------------------
+     * Test 6: Engine-centralized snapshot invalidation across all mutation paths
+     *         including shared-ledger editor invalidating owner's snapshot
+     * ------------------------------------------------------------- */
+    printf(
+        "Test 6: Centralized snapshot invalidation "
+        "(apply/reverse/transfer/expense/cashflow/shared)...\n");
+
+    // Seed shared ledger & member user 2 (editor) for asset 201 and 101
+    csilk_db_exec(pool, "INSERT INTO users (id, username, password) VALUES (2, 'editor_bob', 'hash456')");
+    csilk_db_exec(pool, "INSERT INTO ledgers (id, owner_id, name) VALUES (1, 1, 'Shared Ledger')");
+    csilk_db_exec(pool,
+                  "INSERT INTO ledger_members (ledger_id, user_id, role) "
+                  "VALUES (1, 1, 'owner'), (1, 2, 'editor')");
+    csilk_db_exec(pool, "UPDATE assets SET ledger_id = 1 WHERE id IN (101, 201)");
+
+    // Save a snapshot at 2026-09-10 for asset 201 (owner=1)
+    assert(ledger_snapshot_save(
+               pool, user_id, 201, "2026-09-10", &pos5, zero_bal, "2026-09-10 10:00:00", tx4.id, "[]") == 0);
+
+    // 6a. Backdated ledger_apply_tx WITHOUT manual ledger_snapshot_invalidate_from must auto-invalidate
+    csilk_db_exec(pool, "BEGIN TRANSACTION");
+    ledger_tx_t tx6a = {.id = 0,
+                        .user_id = user_id,
+                        .asset_id = 201,
+                        .linked_asset_id = 101,
+                        .category_id = 20,
+                        .type = LEDGER_TX_BUY,
+                        .type_str = "buy",
+                        .amount = b1_amt,
+                        .price = b1_price,
+                        .quantity = b1_qty,
+                        .fee = b1_fee,
+                        .tx_date = "2026-09-05 10:00:00",
+                        .note = "Auto invalidate apply_tx",
+                        .ledger_id = 1};
+    assert(ledger_apply_tx(pool, &tx6a) == 0);
+    csilk_db_exec(pool, "COMMIT");
+    snap = NULL;
+    assert(ledger_snapshot_get_latest(pool, user_id, 201, NULL, &snap) == 0);
+    assert(snap == NULL);
+
+    // 6b. Shared-ledger editor (user_id=2) creating & reversing tx6b must invalidate owner's (user_id=1) snapshot
+    money_t xfer_amt;
+    money_from_double(100.0, CURRENCY_CNY, &xfer_amt);
+    csilk_db_exec(pool, "BEGIN TRANSACTION");
+    ledger_tx_t tx6b = {.id = 0,
+                        .user_id = 2,
+                        .asset_id = 101,
+                        .linked_asset_id = 201,
+                        .category_id = 10,
+                        .type = LEDGER_TX_TRANSFER_OUT,
+                        .type_str = "transfer_out",
+                        .amount = xfer_amt,
+                        .price = price_zero(CURRENCY_CNY),
+                        .quantity = quantity_zero(),
+                        .fee = zero_bal,
+                        .tx_date = "2026-09-05 12:00:00",
+                        .note = "Shared editor xfer",
+                        .ledger_id = 1};
+    assert(ledger_apply_tx(pool, &tx6b) == 0);
+    csilk_db_exec(pool, "COMMIT");
+
+    assert(ledger_snapshot_save(
+               pool, user_id, 201, "2026-09-10", &pos5, zero_bal, "2026-09-10 10:00:00", tx6a.id, "[]") == 0);
+    assert(ledger_snapshot_save(
+               pool, user_id, 101, "2026-09-10", &pos5, zero_bal, "2026-09-10 10:00:00", tx6a.id, "[]") == 0);
+    csilk_db_exec(pool, "BEGIN TRANSACTION");
+    assert(ledger_reverse_tx(pool, 2, tx6b.id) == 0);
+    csilk_db_exec(pool, "COMMIT");
+    snap = NULL;
+    assert(ledger_snapshot_get_latest(pool, user_id, 201, NULL, &snap) == 0 && snap == NULL);
+    assert(ledger_snapshot_get_latest(pool, user_id, 101, NULL, &snap) == 0 && snap == NULL);
+
+    // 6c. Backdated transfer (ledger_apply_transfer_dated) auto-invalidates both assets
+    assert(ledger_snapshot_save(
+               pool, user_id, 101, "2026-09-10", &pos5, zero_bal, "2026-09-10 10:00:00", tx4.id, "[]") == 0);
+    assert(ledger_snapshot_save(
+               pool, user_id, 201, "2026-09-10", &pos5, zero_bal, "2026-09-10 10:00:00", tx4.id, "[]") == 0);
+    assert(ledger_apply_transfer_dated(
+               pool, user_id, 101, 201, xfer_amt, 9001, "Backdated xfer", "2026-09-08") == 0);
+    assert(ledger_snapshot_get_latest(pool, user_id, 101, NULL, &snap) == 0 && snap == NULL);
+    assert(ledger_snapshot_get_latest(pool, user_id, 201, NULL, &snap) == 0 && snap == NULL);
+
+    // 6d. Backdated daily expense apply & reverse auto-invalidate target snapshot
+    assert(ledger_snapshot_save(
+               pool, user_id, 101, "2026-09-10", &pos5, zero_bal, "2026-09-10 10:00:00", tx4.id, "[]") == 0);
+    assert(ledger_apply_expense_dated(
+               pool, user_id, 101, xfer_amt, 0, 9002, "Backdated exp", "2026-09-07") == 0);
+    assert(ledger_snapshot_get_latest(pool, user_id, 101, NULL, &snap) == 0 && snap == NULL);
+
+    assert(ledger_snapshot_save(
+               pool, user_id, 101, "2026-09-10", &pos5, zero_bal, "2026-09-10 10:00:00", tx4.id, "[]") == 0);
+    assert(ledger_reverse_expense_dated(
+               pool, user_id, 101, xfer_amt, 0, 9002, "Reverse exp", "2026-09-07") == 0);
+    assert(ledger_snapshot_get_latest(pool, user_id, 101, NULL, &snap) == 0 && snap == NULL);
+
+    // 6e. Cashflow confirm income auto-invalidates target asset snapshot while preserving earlier snapshot
+    assert(ledger_snapshot_save(
+               pool, user_id, 101, "2026-09-01", &pos5, zero_bal, "2026-09-01 10:00:00", tx1.id, "[]") == 0);
+    assert(ledger_snapshot_save(
+               pool, user_id, 101, "2026-09-10", &pos5, zero_bal, "2026-09-10 10:00:00", tx4.id, "[]") == 0);
+    confirm_cashflow_cmd_t cf_cmd = {
+        .user_id = user_id,
+        .source_asset_id = 201,
+        .target_asset_id = 101,
+        .amount = 50.0,
+        .date = "2026-09-06",
+        .name = "Dividend",
+        .note = "Q3",
+    };
+    cashflow_usecase_result_t cf_res = {0};
+    int64_t                   cf_tx_id = 0;
+    assert(cashflow_usecase_confirm_income(pool, &cf_cmd, &cf_tx_id, &cf_res) == 0 && cf_tx_id > 0);
+    assert(ledger_snapshot_get_latest(pool, user_id, 101, NULL, &snap) == 0 && snap != NULL);
+    assert(strcmp(csilk_json_get_string(snap, "snapshot_date"), "2026-09-01") == 0);
+    csilk_json_free(snap);
 
     printf("=== All Ledger Rebuild Checkpoint Tests Passed! ===\n");
     return 0;

@@ -47,13 +47,15 @@ apply_balance(void*       pool,
               const char* currency,
               const char* type,
               int64_t     expense_id,
-              const char* note)
+              const char* note,
+              const char* expense_date)
 {
     int        is_income = (strcmp(type, "income") == 0);
     currency_t cur = currency_from_str(currency);
     money_t    amt_m;
     money_from_double(amount, cur, &amt_m);
-    return ledger_apply_expense(pool, user_id, asset_id, amt_m, is_income, expense_id, note);
+    return ledger_apply_expense_dated(
+        pool, user_id, asset_id, amt_m, is_income, expense_id, note, expense_date);
 }
 
 static int
@@ -64,13 +66,15 @@ reverse_balance(void*       pool,
                 const char* currency,
                 const char* type,
                 int64_t     expense_id,
-                const char* note)
+                const char* note,
+                const char* expense_date)
 {
     int        is_income = (strcmp(type, "income") == 0);
     currency_t cur = currency_from_str(currency);
     money_t    amt_m;
     money_from_double(amount, cur, &amt_m);
-    return ledger_reverse_expense(pool, user_id, asset_id, amt_m, is_income, expense_id, note);
+    return ledger_reverse_expense_dated(
+        pool, user_id, asset_id, amt_m, is_income, expense_id, note, expense_date);
 }
 
 static int
@@ -452,7 +456,8 @@ daily_expense_usecase_create(void*                             pool,
                       cur,
                       cmd->expense_type,
                       expense_id,
-                      cmd->note) != 0) {
+                      cmd->note,
+                      cmd->expense_date) != 0) {
         db_tx_scope_rollback(pool, &scope);
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "资产无效");
@@ -561,7 +566,8 @@ daily_expense_usecase_update(void*                             pool,
                         old.currency,
                         old.expense_type,
                         cmd->id,
-                        old.note) != 0) {
+                        old.note,
+                        old.expense_date) != 0) {
         db_tx_scope_rollback(pool, &scope);
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "回滚旧收支失败");
@@ -595,7 +601,8 @@ daily_expense_usecase_update(void*                             pool,
                       cur,
                       cmd->expense_type,
                       cmd->id,
-                      cmd->note) != 0) {
+                      cmd->note,
+                      cmd->expense_date) != 0) {
         db_tx_scope_rollback(pool, &scope);
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "资产无效");
@@ -671,7 +678,8 @@ daily_expense_usecase_delete(void*                           pool,
                         old.currency,
                         old.expense_type,
                         id,
-                        old.note) != 0) {
+                        old.note,
+                        old.expense_date) != 0) {
         db_tx_scope_rollback(pool, &scope);
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "删除失败");

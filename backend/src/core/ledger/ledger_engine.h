@@ -168,6 +168,42 @@ int ledger_reverse_transfer(csilk_db_pool_t* pool,
                             int64_t          transfer_id,
                             const char*      note);
 
+/**
+ * @brief 按指定业务日期应用日常收支事件并自动失效该日起的检查点快照
+ */
+int ledger_apply_expense_dated(csilk_db_pool_t* pool,
+                               int64_t          user_id,
+                               int64_t          asset_id,
+                               money_t          amount,
+                               int              is_income,
+                               int64_t          expense_id,
+                               const char*      note,
+                               const char*      expense_date);
+
+/**
+ * @brief 按指定业务日期回滚日常收支事件并自动失效该日起的检查点快照
+ */
+int ledger_reverse_expense_dated(csilk_db_pool_t* pool,
+                                 int64_t          user_id,
+                                 int64_t          asset_id,
+                                 money_t          amount,
+                                 int              is_income,
+                                 int64_t          expense_id,
+                                 const char*      note,
+                                 const char*      expense_date);
+
+/**
+ * @brief 按指定业务日期应用划转事件并自动失效双方资产该日起的检查点快照
+ */
+int ledger_apply_transfer_dated(csilk_db_pool_t* pool,
+                                int64_t          user_id,
+                                int64_t          from_asset_id,
+                                int64_t          to_asset_id,
+                                money_t          amount,
+                                int64_t          transfer_id,
+                                const char*      note,
+                                const char*      transfer_date);
+
 /* =========================================================================
  * 3. 状态重算与事件溯源重建 (State Rebuild / Event Sourcing Engine)
  * ========================================================================= */

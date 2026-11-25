@@ -1,4 +1,5 @@
 #include "core/ledger/ledger_internal.h"
+#include "infrastructure/repositories/ledger_snapshot_repo_impl.h"
 #include "common/balance.h"
 #include "common/tx_types.h"
 #include "common/ledger_utils.h"
@@ -357,6 +358,25 @@ reverse_fee_children(csilk_db_pool_t* pool,
     return (tx_delete_fee_children(pool, user_id, tx_id) < 0) ? -1 : 0;
 }
 
+static int
+invalidate_asset_snapshot_safe(csilk_db_pool_t* pool,
+                               int64_t          user_id,
+                               int64_t          asset_id,
+                               const char*      event_date)
+{
+    if (asset_id <= 0) {
+        return 0;
+    }
+    char day_buf[32];
+    if (event_date && strlen(event_date) >= 10) {
+        snprintf(day_buf, sizeof(day_buf), "%.10s", event_date);
+    } else {
+        format_now_timestamp(day_buf, sizeof(day_buf));
+        day_buf[10] = '\0';
+    }
+    return ledger_snapshot_invalidate_from(pool, user_id, asset_id, day_buf);
+}
+
 /**
  * @brief Apply or reverse a single daily expense balance delta inside a savepoint scope.
  */
@@ -368,6 +388,7 @@ apply_expense_delta(csilk_db_pool_t* pool,
                     const char*      source_type,
                     int64_t          expense_id,
                     const char*      note,
+                    const char*      event_date,
                     const char*      scope_name)
 {
     if (!pool || user_id <= 0 || asset_id <= 0) {
@@ -378,6 +399,10 @@ apply_expense_delta(csilk_db_pool_t* pool,
         return -1;
     }
     if (balance_apply_delta_m(pool, asset_id, user_id, delta, source_type, expense_id, note) != 0) {
+        db_tx_scope_rollback(pool, &scope);
+        return -1;
+    }
+    if (invalidate_asset_snapshot_safe(pool, user_id, asset_id, event_date) != 0) {
         db_tx_scope_rollback(pool, &scope);
         return -1;
     }
@@ -399,6 +424,7 @@ apply_transfer_deltas(csilk_db_pool_t* pool,
                       const char*      to_source,
                       int64_t          transfer_id,
                       const char*      note,
+                      const char*      event_date,
                       const char*      scope_name)
 {
     if (!pool || user_id <= 0 || from_asset_id <= 0 || to_asset_id <= 0) {
@@ -415,6 +441,11 @@ apply_transfer_deltas(csilk_db_pool_t* pool,
     }
     if (balance_apply_delta_m(pool, to_asset_id, user_id, to_delta, to_source, transfer_id, note) !=
         0) {
+        db_tx_scope_rollback(pool, &scope);
+        return -1;
+    }
+    if (invalidate_asset_snapshot_safe(pool, user_id, from_asset_id, event_date) != 0 ||
+        invalidate_asset_snapshot_safe(pool, user_id, to_asset_id, event_date) != 0) {
         db_tx_scope_rollback(pool, &scope);
         return -1;
     }
@@ -604,6 +635,12 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
                                                                   tx->note) != 0) {
             goto fail_rollback;
         }
+    }
+
+    if (invalidate_asset_snapshot_safe(pool, tx->user_id, tx->asset_id, effective_date) != 0 ||
+        invalidate_asset_snapshot_safe(pool, tx->user_id, tx->linked_asset_id, effective_date) !=
+            0) {
+        goto fail_rollback;
     }
 
     db_tx_scope_commit(pool, &scope);
@@ -894,6 +931,11 @@ ledger_reverse_tx(csilk_db_pool_t* pool, int64_t user_id, int64_t tx_id)
         }
     }
 
+    if (invalidate_asset_snapshot_safe(pool, user_id, asset_id, rev_date) != 0 ||
+        invalidate_asset_snapshot_safe(pool, user_id, linked_asset_id, rev_date) != 0) {
+        goto fail_rollback;
+    }
+
     csilk_json_free(old_arr);
     db_tx_scope_commit(pool, &scope);
     return 0;
@@ -905,6 +947,28 @@ fail_rollback:
 }
 
 int
+ledger_apply_expense_dated(csilk_db_pool_t* pool,
+                           int64_t          user_id,
+                           int64_t          asset_id,
+                           money_t          amount,
+                           int              is_income,
+                           int64_t          expense_id,
+                           const char*      note,
+                           const char*      expense_date)
+{
+    money_t delta = is_income ? amount : money_neg(amount);
+    return apply_expense_delta(pool,
+                               user_id,
+                               asset_id,
+                               delta,
+                               "daily_expense",
+                               expense_id,
+                               note,
+                               expense_date,
+                               "mf_ledger_apply_exp");
+}
+
+int
 ledger_apply_expense(csilk_db_pool_t* pool,
                      int64_t          user_id,
                      int64_t          asset_id,
@@ -913,9 +977,30 @@ ledger_apply_expense(csilk_db_pool_t* pool,
                      int64_t          expense_id,
                      const char*      note)
 {
-    money_t delta = is_income ? amount : money_neg(amount);
-    return apply_expense_delta(
-        pool, user_id, asset_id, delta, "daily_expense", expense_id, note, "mf_ledger_apply_exp");
+    return ledger_apply_expense_dated(
+        pool, user_id, asset_id, amount, is_income, expense_id, note, NULL);
+}
+
+int
+ledger_reverse_expense_dated(csilk_db_pool_t* pool,
+                             int64_t          user_id,
+                             int64_t          asset_id,
+                             money_t          amount,
+                             int              is_income,
+                             int64_t          expense_id,
+                             const char*      note,
+                             const char*      expense_date)
+{
+    money_t delta = is_income ? money_neg(amount) : amount;
+    return apply_expense_delta(pool,
+                               user_id,
+                               asset_id,
+                               delta,
+                               "daily_expense_reversal",
+                               expense_id,
+                               note,
+                               expense_date,
+                               "mf_ledger_reverse_exp");
 }
 
 int
@@ -927,25 +1012,19 @@ ledger_reverse_expense(csilk_db_pool_t* pool,
                        int64_t          expense_id,
                        const char*      note)
 {
-    money_t delta = is_income ? money_neg(amount) : amount;
-    return apply_expense_delta(pool,
-                               user_id,
-                               asset_id,
-                               delta,
-                               "daily_expense_reversal",
-                               expense_id,
-                               note,
-                               "mf_ledger_reverse_exp");
+    return ledger_reverse_expense_dated(
+        pool, user_id, asset_id, amount, is_income, expense_id, note, NULL);
 }
 
 int
-ledger_apply_transfer(csilk_db_pool_t* pool,
-                      int64_t          user_id,
-                      int64_t          from_asset_id,
-                      int64_t          to_asset_id,
-                      money_t          amount,
-                      int64_t          transfer_id,
-                      const char*      note)
+ledger_apply_transfer_dated(csilk_db_pool_t* pool,
+                            int64_t          user_id,
+                            int64_t          from_asset_id,
+                            int64_t          to_asset_id,
+                            money_t          amount,
+                            int64_t          transfer_id,
+                            const char*      note,
+                            const char*      transfer_date)
 {
     return apply_transfer_deltas(pool,
                                  user_id,
@@ -957,7 +1036,21 @@ ledger_apply_transfer(csilk_db_pool_t* pool,
                                  "transfer_in",
                                  transfer_id,
                                  note,
+                                 transfer_date,
                                  "mf_ledger_apply_transfer");
+}
+
+int
+ledger_apply_transfer(csilk_db_pool_t* pool,
+                      int64_t          user_id,
+                      int64_t          from_asset_id,
+                      int64_t          to_asset_id,
+                      money_t          amount,
+                      int64_t          transfer_id,
+                      const char*      note)
+{
+    return ledger_apply_transfer_dated(
+        pool, user_id, from_asset_id, to_asset_id, amount, transfer_id, note, NULL);
 }
 
 int
@@ -979,5 +1072,6 @@ ledger_reverse_transfer(csilk_db_pool_t* pool,
                                  "transfer_in_reversal",
                                  transfer_id,
                                  note,
+                                 NULL,
                                  "mf_ledger_reverse_transfer");
 }

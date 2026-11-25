@@ -34,5 +34,6 @@ typedef struct {
     char    expense_type[16];
     char    currency[8];
     int64_t asset_id;
+    char    expense_date[16];
     char    note[256];
 } mf_daily_expense_snapshot_t;
