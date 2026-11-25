@@ -1,5 +1,6 @@
 #include "services/export_service.h"
 #include "interfaces/http/controllers/import_export_controller.h"
+#include "infrastructure/repositories/account_permission_repo_impl.h"
 #include "common/response.h"
 #include "common/ctx.h"
 #include "common/db.h"
@@ -53,6 +54,56 @@ mf_csv_safe_escape(char* out, size_t out_sz, const char* in)
     }
 }
 
+csilk_json_t*
+export_query_transactions_rows(csilk_db_pool_t* pool, int64_t user_id, int64_t ledger_id)
+{
+    if (!pool || user_id <= 0 || ledger_id <= 0) {
+        return NULL;
+    }
+    char uid_str[32], lid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
+
+    const char* sql =
+        "SELECT t.transaction_date, t.transaction_type, t.source_type, t.amount, "
+        "t.price_per_unit, t.quantity, t.fee, t.currency, t.note, "
+        "a.name as asset_name, la.name as linked_asset_name, c.name as category_name "
+        "FROM transactions t "
+        "LEFT JOIN assets a ON t.asset_id=a.id "
+        "LEFT JOIN assets la ON t.linked_asset_id=la.id "
+        "LEFT JOIN categories c ON t.category_id=c.id "
+        "WHERE " MF_LEDGER_SHARED_ACCESS_SQL("t") " "
+        "AND " MF_RBAC_ASSET_UNMASKED_SQL("a") " "
+        "AND " MF_RBAC_ASSET_UNMASKED_SQL("la") " "
+        "ORDER BY t.transaction_date DESC, t.id DESC";
+    const char* params[] = {
+        lid_str, uid_str, uid_str, uid_str, uid_str, uid_str, uid_str, uid_str, NULL};
+    return csilk_db_query_param_json(pool, sql, params);
+}
+
+csilk_json_t*
+export_query_daily_expenses_rows(csilk_db_pool_t* pool, int64_t user_id, int64_t ledger_id)
+{
+    if (!pool || user_id <= 0 || ledger_id <= 0) {
+        return NULL;
+    }
+    char uid_str[32], lid_str[32];
+    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
+    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
+
+    const char* sql =
+        "SELECT de.expense_date, de.expense_type, de.amount, de.currency, de.note, "
+        "a.name as asset_name, c.name as category_name "
+        "FROM daily_expenses de "
+        "LEFT JOIN assets a ON de.asset_id=a.id "
+        "LEFT JOIN categories c ON de.category_id=c.id "
+        "WHERE " MF_LEDGER_SHARED_ACCESS_SQL("de") " "
+        "AND " MF_RBAC_ASSET_UNMASKED_SQL("a") " "
+        "ORDER BY de.expense_date DESC, de.id DESC";
+    const char* params[] = {lid_str, uid_str, uid_str, uid_str, uid_str, uid_str, NULL};
+    return csilk_db_query_param_json(pool, sql, params);
+}
+
 void
 transactions_export_csv(csilk_ctx_t* c)
 {
@@ -66,23 +117,7 @@ transactions_export_csv(csilk_ctx_t* c)
         return;
     }
 
-    csilk_db_pool_t* pool = db_get_pool();
-    char             uid_str[32];
-    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-    char lid_str[32];
-    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
-
-    csilk_json_t* rows = csilk_db_query_param_json(
-        pool,
-        "SELECT t.transaction_date, t.transaction_type, t.source_type, t.amount, "
-        "t.price_per_unit, t.quantity, t.fee, t.currency, t.note, "
-        "a.name as asset_name, la.name as linked_asset_name, c.name as category_name "
-        "FROM transactions t "
-        "LEFT JOIN assets a ON t.asset_id=a.id "
-        "LEFT JOIN assets la ON t.linked_asset_id=la.id "
-        "LEFT JOIN categories c ON t.category_id=c.id "
-        "WHERE t.user_id=? AND t.ledger_id=? ORDER BY t.transaction_date DESC",
-        (const char*[]){uid_str, lid_str, NULL});
+    csilk_json_t* rows = export_query_transactions_rows(db_get_pool(), user_id, ledger_id);
 
     char*  csv = NULL;
     size_t csv_len = 0;
@@ -213,21 +248,7 @@ daily_expenses_export_csv(csilk_ctx_t* c)
         return;
     }
 
-    csilk_db_pool_t* pool = db_get_pool();
-    char             uid_str[32];
-    snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-    char lid_str[32];
-    snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
-
-    csilk_json_t* rows = csilk_db_query_param_json(
-        pool,
-        "SELECT de.expense_date, de.expense_type, de.amount, de.currency, de.note, "
-        "a.name as asset_name, c.name as category_name "
-        "FROM daily_expenses de "
-        "LEFT JOIN assets a ON de.asset_id=a.id "
-        "LEFT JOIN categories c ON de.category_id=c.id "
-        "WHERE de.user_id=? AND de.ledger_id=? ORDER BY de.expense_date DESC",
-        (const char*[]){uid_str, lid_str, NULL});
+    csilk_json_t* rows = export_query_daily_expenses_rows(db_get_pool(), user_id, ledger_id);
 
     char*  csv = NULL;
     size_t csv_len = 0, csv_cap = 4096;

@@ -1,10 +1,18 @@
 #pragma once
 #include "csilk/csilk.h"
+#include "common/db.h"
+#include <stdint.h>
 
 /**
  * @file export_service.h
  * @brief 数据导出服务（投资交易流水与日常收支 CSV 文件流导出）
  */
+
+csilk_json_t*
+export_query_transactions_rows(csilk_db_pool_t* pool, int64_t user_id, int64_t ledger_id);
+
+csilk_json_t*
+export_query_daily_expenses_rows(csilk_db_pool_t* pool, int64_t user_id, int64_t ledger_id);
 
 /**
  * @brief 导出投资交易流水为标准 CSV 文件 (GET /api/transactions/export)

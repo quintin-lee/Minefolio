@@ -9,6 +9,7 @@
 #include "infrastructure/repositories/account_repo_impl.h"
 #include "infrastructure/repositories/portfolio_repo_impl.h"
 #include "services/report_asset_service.h"
+#include "services/export_service.h"
 #include "common/db.h"
 #include "common/ledger_utils.h"
 #include "config/secret.h"
@@ -610,6 +611,122 @@ static void test_usecases_and_masking(csilk_db_pool_t* pool) {
     printf("  [OK] Reports, portfolio, and AI repositories enforce RBAC masking & exclusion\n");
 }
 
+static void
+test_csv_export_rbac_and_shared_ledger(csilk_db_pool_t* pool)
+{
+    printf("--- Testing CSV Export Shared Ledger & Account RBAC ---\n");
+    int64_t owner_id = 0, member_id = 0;
+    assert(mf_auth_repo_create(pool, "exp_owner", "hash1", &owner_id) == 0 && owner_id > 0);
+    assert(mf_auth_repo_create(pool, "exp_member", "hash2", &member_id) == 0 && member_id > 0);
+
+    char s_oid[32], s_mid[32];
+    snprintf(s_oid, sizeof(s_oid), "%lld", (long long)owner_id);
+    snprintf(s_mid, sizeof(s_mid), "%lld", (long long)member_id);
+
+    csilk_json_t* lrow = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO ledgers (owner_id, name, currency) VALUES (?, 'ExportShared', 'CNY') RETURNING id;",
+        (const char*[]){s_oid, NULL});
+    assert(lrow && csilk_json_array_size(lrow) == 1);
+    int64_t ledger_id = db_get_int(csilk_json_array_get(lrow, 0), "id");
+    csilk_json_free(lrow);
+
+    char s_lid[32];
+    snprintf(s_lid, sizeof(s_lid), "%lld", (long long)ledger_id);
+    csilk_db_exec_param(
+        pool,
+        "INSERT INTO ledger_members (ledger_id, user_id, role) VALUES (?, ?, 'owner'), (?, ?, 'viewer');",
+        (const char*[]){s_lid, s_oid, s_lid, s_mid, NULL});
+
+    // Seed categories for owner
+    csilk_db_exec_param(
+        pool,
+        "INSERT INTO categories (user_id, ledger_id, name, type, asset_type) VALUES (?, ?, 'ExportCash', 'asset', 'cash');",
+        (const char*[]){s_oid, s_lid, NULL});
+    csilk_json_t* crow = csilk_db_query_param_json(
+        pool,
+        "SELECT id FROM categories WHERE user_id=? AND ledger_id=? AND name='ExportCash';",
+        (const char*[]){s_oid, s_lid, NULL});
+    int64_t cash_cat = db_get_int(csilk_json_array_get(crow, 0), "id");
+    csilk_json_free(crow);
+
+    csilk_db_exec_param(
+        pool,
+        "INSERT INTO categories (user_id, ledger_id, name, type) VALUES (?, ?, 'ExportFood', 'expense');",
+        (const char*[]){s_oid, s_lid, NULL});
+    crow = csilk_db_query_param_json(
+        pool,
+        "SELECT id FROM categories WHERE user_id=? AND ledger_id=? AND name='ExportFood';",
+        (const char*[]){s_oid, s_lid, NULL});
+    int64_t exp_cat = db_get_int(csilk_json_array_get(crow, 0), "id");
+    csilk_json_free(crow);
+
+    account_usecase_result_t acres = {0};
+    create_account_cmd_t ac_open = {.user_id = owner_id, .ledger_id = ledger_id, .name = "ExpOpen", .institution = "bank_card", .currency = "CNY"};
+    create_account_cmd_t ac_mask = {.user_id = owner_id, .ledger_id = ledger_id, .name = "ExpMask", .institution = "bank_card", .currency = "CNY"};
+    create_account_cmd_t ac_none = {.user_id = owner_id, .ledger_id = ledger_id, .name = "ExpNone", .institution = "bank_card", .currency = "CNY"};
+    assert(account_usecase_create(pool, &ac_open, &acres) == 0);
+    int64_t acct_open = acres.id;
+    assert(account_usecase_create(pool, &ac_mask, &acres) == 0);
+    int64_t acct_mask = acres.id;
+    assert(account_usecase_create(pool, &ac_none, &acres) == 0);
+    int64_t acct_none = acres.id;
+
+    asset_usecase_result_t ares = {0};
+    create_asset_cmd_t as_open = {.user_id = owner_id, .ledger_id = ledger_id, .category_id = cash_cat, .account_id = acct_open, .name = "OpenCash", .current_value = 1000.0, .currency = "CNY"};
+    create_asset_cmd_t as_mask = {.user_id = owner_id, .ledger_id = ledger_id, .category_id = cash_cat, .account_id = acct_mask, .name = "MaskCash", .current_value = 2000.0, .currency = "CNY"};
+    create_asset_cmd_t as_none = {.user_id = owner_id, .ledger_id = ledger_id, .category_id = cash_cat, .account_id = acct_none, .name = "NoneCash", .current_value = 3000.0, .currency = "CNY"};
+    assert(asset_usecase_create(pool, &as_open, &ares) == 0);
+    int64_t asset_open = ares.id;
+    assert(asset_usecase_create(pool, &as_mask, &ares) == 0);
+    int64_t asset_mask = ares.id;
+    assert(asset_usecase_create(pool, &as_none, &ares) == 0);
+    int64_t asset_none = ares.id;
+
+    tx_usecase_result_t txres = {0};
+    create_tx_cmd_t tx_open = {.user_id = owner_id, .ledger_id = ledger_id, .asset_id = asset_open, .category_id = exp_cat, .type = "income", .amount = 111.0, .currency = "CNY", .date = "2026-11-21", .note = "open_tx"};
+    create_tx_cmd_t tx_mask = {.user_id = owner_id, .ledger_id = ledger_id, .asset_id = asset_mask, .category_id = exp_cat, .type = "income", .amount = 222.0, .currency = "CNY", .date = "2026-11-21", .note = "mask_tx"};
+    create_tx_cmd_t tx_none = {.user_id = owner_id, .ledger_id = ledger_id, .asset_id = asset_none, .category_id = exp_cat, .type = "income", .amount = 333.0, .currency = "CNY", .date = "2026-11-21", .note = "none_tx"};
+    create_tx_cmd_t tx_cross = {.user_id = owner_id, .ledger_id = ledger_id, .asset_id = asset_open, .linked_asset_id = asset_mask, .category_id = exp_cat, .type = "income", .amount = 444.0, .currency = "CNY", .date = "2026-11-21", .note = "linked_mask_tx"};
+    assert(tx_usecase_create(pool, &tx_open, &txres) == 0);
+    assert(tx_usecase_create(pool, &tx_mask, &txres) == 0);
+    assert(tx_usecase_create(pool, &tx_none, &txres) == 0);
+    assert(tx_usecase_create(pool, &tx_cross, &txres) == 0);
+
+    daily_expense_usecase_result_t deres = {0};
+    create_daily_expense_cmd_t de_open = {.user_id = owner_id, .ledger_id = ledger_id, .category_id = exp_cat, .asset_id = asset_open, .expense_type = "expense", .amount = 15.0, .currency = "CNY", .expense_date = "2026-11-21", .note = "open_exp"};
+    create_daily_expense_cmd_t de_mask = {.user_id = owner_id, .ledger_id = ledger_id, .category_id = exp_cat, .asset_id = asset_mask, .expense_type = "expense", .amount = 25.0, .currency = "CNY", .expense_date = "2026-11-21", .note = "mask_exp"};
+    create_daily_expense_cmd_t de_none = {.user_id = owner_id, .ledger_id = ledger_id, .category_id = exp_cat, .asset_id = asset_none, .expense_type = "expense", .amount = 35.0, .currency = "CNY", .expense_date = "2026-11-21", .note = "none_exp"};
+    assert(daily_expense_usecase_create(pool, &de_open, NULL, &deres) == 0);
+    assert(daily_expense_usecase_create(pool, &de_mask, NULL, &deres) == 0);
+    assert(daily_expense_usecase_create(pool, &de_none, NULL, &deres) == 0);
+
+    // Restrict member: mask on acct_mask, none on acct_none
+    assert(account_permission_usecase_set(pool, owner_id, ledger_id, acct_mask, member_id, "viewer", 1, 0, &acres) == 0);
+    assert(account_permission_usecase_set(pool, owner_id, ledger_id, acct_none, member_id, "none", 0, 0, &acres) == 0);
+
+    // Member exports: sees ONLY open_tx and open_exp (owner rows shared, masked/none excluded)
+    csilk_json_t* tx_rows = export_query_transactions_rows(pool, member_id, ledger_id);
+    assert(tx_rows != NULL && csilk_json_array_size(tx_rows) == 1);
+    assert(strcmp(csilk_json_get_string(csilk_json_array_get(tx_rows, 0), "note"), "open_tx") == 0);
+    csilk_json_free(tx_rows);
+
+    csilk_json_t* de_rows = export_query_daily_expenses_rows(pool, member_id, ledger_id);
+    assert(de_rows != NULL && csilk_json_array_size(de_rows) == 1);
+    assert(strcmp(csilk_json_get_string(csilk_json_array_get(de_rows, 0), "note"), "open_exp") == 0);
+    csilk_json_free(de_rows);
+
+    // Owner still exports all 4 tx and 3 expenses
+    tx_rows = export_query_transactions_rows(pool, owner_id, ledger_id);
+    assert(tx_rows != NULL && csilk_json_array_size(tx_rows) == 4);
+    csilk_json_free(tx_rows);
+
+    de_rows = export_query_daily_expenses_rows(pool, owner_id, ledger_id);
+    assert(de_rows != NULL && csilk_json_array_size(de_rows) == 3);
+    csilk_json_free(de_rows);
+    printf("  [OK] CSV export shares owner rows and excludes masked/none accounts\n");
+}
+
 int main(void) {
     printf("========================================\n");
     printf("Starting Account RBAC & Field Masking Tests\n");
@@ -620,6 +737,7 @@ int main(void) {
     csilk_db_pool_t* pool = setup_test_db();
     test_repo_crud(pool);
     test_usecases_and_masking(pool);
+    test_csv_export_rbac_and_shared_ledger(pool);
 
     printf("========================================\n");
     printf("All Account RBAC Tests Passed Successfully!\n");
