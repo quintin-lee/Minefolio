@@ -23,15 +23,20 @@ dca_service_list_plans(csilk_ctx_t* c)
         return;
     }
 
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "viewer");
+    if (ledger_id <= 0) {
+        return;
+    }
+
     int64_t page = 1, page_size = 20;
     parse_page_params(c, &page, &page_size);
     const char* status = csilk_get_query(c, "status");
 
     int64_t       total = 0;
     csilk_json_t* list =
-        dca_usecase_list_plans(db_get_pool(), user_id, page, page_size, status, &total);
+        dca_usecase_list_plans(db_get_pool(), user_id, ledger_id, page, page_size, status, &total);
 
-    csilk_json_t* summary = dca_usecase_plan_summary(db_get_pool(), user_id);
+    csilk_json_t* summary = dca_usecase_plan_summary(db_get_pool(), user_id, ledger_id);
 
     csilk_json_t* data = csilk_json_object();
     csilk_json_add_array(data, "list", list ? list : csilk_json_array());
@@ -53,7 +58,12 @@ dca_service_plan_summary(csilk_ctx_t* c)
         return;
     }
 
-    csilk_json_t* summary = dca_usecase_plan_summary(db_get_pool(), user_id);
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "viewer");
+    if (ledger_id <= 0) {
+        return;
+    }
+
+    csilk_json_t* summary = dca_usecase_plan_summary(db_get_pool(), user_id, ledger_id);
     respond_ok(c, summary ? summary : csilk_json_object());
 }
 
@@ -78,6 +88,7 @@ dca_service_create_plan(csilk_ctx_t* c)
 
     create_dca_plan_cmd_t cmd = {
         .user_id = user_id,
+        .ledger_id = ledger_id,
         .target_asset_id = (int64_t)db_get_int(body, "target_asset_id"),
         .funding_asset_id = (int64_t)db_get_int(body, "funding_asset_id"),
         .name = csilk_json_get_string(body, "name"),
@@ -113,6 +124,11 @@ dca_service_get_plan(csilk_ctx_t* c)
         return;
     }
 
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "viewer");
+    if (ledger_id <= 0) {
+        return;
+    }
+
     const char* id_str = csilk_get_param(c, "id");
     int64_t     id = parse_query_int_strict(id_str, -1);
     if (id <= 0) {
@@ -121,7 +137,7 @@ dca_service_get_plan(csilk_ctx_t* c)
     }
 
     dca_usecase_result_t res = {0};
-    csilk_json_t*        detail = dca_usecase_get_plan(db_get_pool(), user_id, id, &res);
+    csilk_json_t*        detail = dca_usecase_get_plan(db_get_pool(), user_id, ledger_id, id, &res);
 
     if (detail) {
         respond_ok(c, detail);
@@ -158,6 +174,7 @@ dca_service_update_plan(csilk_ctx_t* c)
 
     update_dca_plan_cmd_t cmd = {
         .user_id = user_id,
+        .ledger_id = ledger_id,
         .id = id,
         .target_asset_id = (int64_t)db_get_int(body, "target_asset_id"),
         .funding_asset_id = (int64_t)db_get_int(body, "funding_asset_id"),
@@ -215,7 +232,8 @@ dca_service_set_plan_status(csilk_ctx_t* c)
     }
 
     dca_usecase_result_t res = {0};
-    int                  rc = dca_usecase_set_plan_status(db_get_pool(), user_id, id, status, &res);
+    int                  rc =
+        dca_usecase_set_plan_status(db_get_pool(), user_id, ledger_id, id, status, &res);
     if (body) {
         csilk_json_free(body);
     }
@@ -250,7 +268,7 @@ dca_service_delete_plan(csilk_ctx_t* c)
     }
 
     dca_usecase_result_t res = {0};
-    int                  rc = dca_usecase_delete_plan(db_get_pool(), user_id, id, &res);
+    int                  rc = dca_usecase_delete_plan(db_get_pool(), user_id, ledger_id, id, &res);
 
     if (rc == 0 && res.code == 0) {
         respond_ok(c, NULL);
@@ -269,6 +287,11 @@ dca_service_list_executions(csilk_ctx_t* c)
         return;
     }
 
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "viewer");
+    if (ledger_id <= 0) {
+        return;
+    }
+
     const char* id_str = csilk_get_param(c, "id");
     int64_t     plan_id = parse_query_int_strict(id_str, -1);
     if (plan_id <= 0) {
@@ -276,7 +299,7 @@ dca_service_list_executions(csilk_ctx_t* c)
         return;
     }
 
-    csilk_json_t* list = dca_usecase_list_executions(db_get_pool(), user_id, plan_id);
+    csilk_json_t* list = dca_usecase_list_executions(db_get_pool(), user_id, ledger_id, plan_id);
     respond_ok(c, list);
 }
 
@@ -288,7 +311,12 @@ dca_service_list_pending_executions(csilk_ctx_t* c)
         return;
     }
 
-    csilk_json_t* list = dca_usecase_list_pending(db_get_pool(), user_id);
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "viewer");
+    if (ledger_id <= 0) {
+        return;
+    }
+
+    csilk_json_t* list = dca_usecase_list_pending(db_get_pool(), user_id, ledger_id);
     respond_ok(c, list);
 }
 
@@ -297,6 +325,11 @@ dca_service_confirm_execution(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
     if (user_id <= 0) {
+        return;
+    }
+
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "editor");
+    if (ledger_id <= 0) {
         return;
     }
 
@@ -311,6 +344,7 @@ dca_service_confirm_execution(csilk_ctx_t* c)
 
     confirm_dca_execution_cmd_t cmd = {
         .user_id = user_id,
+        .ledger_id = ledger_id,
         .exec_id = exec_id,
         .actual_amount = body ? db_get_num(body, "actual_amount") : 0.0,
         .executed_price = body ? db_get_num(body, "executed_price") : 0.0,
@@ -342,6 +376,11 @@ dca_service_skip_execution(csilk_ctx_t* c)
         return;
     }
 
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "editor");
+    if (ledger_id <= 0) {
+        return;
+    }
+
     const char* id_str = csilk_get_param(c, "id");
     int64_t     exec_id = parse_query_int_strict(id_str, -1);
     if (exec_id <= 0) {
@@ -350,7 +389,8 @@ dca_service_skip_execution(csilk_ctx_t* c)
     }
 
     dca_usecase_result_t res = {0};
-    int                  rc = dca_usecase_skip_execution(db_get_pool(), user_id, exec_id, &res);
+    int                  rc =
+        dca_usecase_skip_execution(db_get_pool(), user_id, ledger_id, exec_id, &res);
 
     if (rc == 0 && res.code == 0) {
         respond_ok(c, NULL);

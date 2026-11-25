@@ -14,6 +14,7 @@
 typedef struct {
     int64_t id;                   /**< 主键 ID */
     int64_t user_id;              /**< 用户 ID */
+    int64_t ledger_id;            /**< 账本 ID */
     int64_t target_asset_id;      /**< 目标买入资产 ID */
     int64_t funding_asset_id;     /**< 扣款资金账户 ID */
     char    name[128];            /**< 计划名称 */

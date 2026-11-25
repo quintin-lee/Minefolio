@@ -2,11 +2,13 @@
 #include "application/asset/usecases.h"
 #include "application/transaction/usecases.h"
 #include "application/daily_expense/usecases.h"
+#include "application/dca/usecases.h"
 #include "domain/account/rules.h"
 #include "domain/auth/repository.h"
 #include "domain/ai/repository.h"
 #include "infrastructure/repositories/account_permission_repo_impl.h"
 #include "infrastructure/repositories/account_repo_impl.h"
+#include "infrastructure/repositories/dca_repo_impl.h"
 #include "infrastructure/repositories/portfolio_repo_impl.h"
 #include "infrastructure/repositories/ledger_snapshot_repo_impl.h"
 #include "services/report_asset_service.h"
@@ -1009,6 +1011,141 @@ test_portfolio_shared_ledger_rbac(csilk_db_pool_t* pool)
     printf("  [OK] All 9 portfolio repo queries support shared ledger members + RBAC exclusion\n");
 }
 
+static void
+test_dca_shared_ledger_and_rbac(csilk_db_pool_t* pool)
+{
+    printf("--- Testing DCA Ledger Isolation, Shared Access & Account RBAC ---\n");
+    int64_t owner_id = 0, editor_id = 0, viewer_id = 0;
+    assert(mf_auth_repo_create(pool, "dca_owner", "h1", &owner_id) == 0);
+    assert(mf_auth_repo_create(pool, "dca_editor", "h2", &editor_id) == 0);
+    assert(mf_auth_repo_create(pool, "dca_viewer", "h3", &viewer_id) == 0);
+
+    char s_oid[32], s_eid[32], s_vid[32];
+    snprintf(s_oid, sizeof(s_oid), "%lld", (long long)owner_id);
+    snprintf(s_eid, sizeof(s_eid), "%lld", (long long)editor_id);
+    snprintf(s_vid, sizeof(s_vid), "%lld", (long long)viewer_id);
+
+    csilk_json_t* lr1 = csilk_db_query_param_json(
+        pool, "INSERT INTO ledgers (owner_id, name, currency) VALUES (?, 'DcaL1', 'CNY') RETURNING id;",
+        (const char*[]){s_oid, NULL});
+    int64_t lid1 = db_get_int(csilk_json_array_get(lr1, 0), "id");
+    csilk_json_free(lr1);
+    csilk_json_t* lr2 = csilk_db_query_param_json(
+        pool, "INSERT INTO ledgers (owner_id, name, currency) VALUES (?, 'DcaL2', 'CNY') RETURNING id;",
+        (const char*[]){s_oid, NULL});
+    int64_t lid2 = db_get_int(csilk_json_array_get(lr2, 0), "id");
+    csilk_json_free(lr2);
+
+    char s_l1[32], s_l2[32];
+    snprintf(s_l1, sizeof(s_l1), "%lld", (long long)lid1);
+    snprintf(s_l2, sizeof(s_l2), "%lld", (long long)lid2);
+    csilk_db_exec_param(
+        pool,
+        "INSERT INTO ledger_members (ledger_id, user_id, role) VALUES (?, ?, 'owner'), (?, ?, 'editor'), (?, ?, 'viewer'), (?, ?, 'owner');",
+        (const char*[]){s_l1, s_oid, s_l1, s_eid, s_l1, s_vid, s_l2, s_oid, NULL});
+
+    csilk_db_exec_param(
+        pool,
+        "INSERT INTO categories (user_id, ledger_id, name, type, asset_type) VALUES "
+        "(?, ?, 'DcaCash1', 'asset', 'cash'), (?, ?, 'DcaFund1', 'asset', 'fund'), (?, ?, 'DcaCash2', 'asset', 'cash');",
+        (const char*[]){s_oid, s_l1, s_oid, s_l1, s_oid, s_l2, NULL});
+    csilk_json_t* cr = csilk_db_query_param_json(
+        pool, "SELECT id, name FROM categories WHERE user_id=?;", (const char*[]){s_oid, NULL});
+    int64_t c_cash1 = 0, c_fund1 = 0, c_cash2 = 0;
+    for (size_t i = 0; i < csilk_json_array_size(cr); i++) {
+        csilk_json_t* r = csilk_json_array_get(cr, i);
+        const char*   nm = csilk_json_get_string(r, "name");
+        if (strcmp(nm, "DcaCash1") == 0) c_cash1 = db_get_int(r, "id");
+        if (strcmp(nm, "DcaFund1") == 0) c_fund1 = db_get_int(r, "id");
+        if (strcmp(nm, "DcaCash2") == 0) c_cash2 = db_get_int(r, "id");
+    }
+    csilk_json_free(cr);
+
+    account_usecase_result_t acres = {0};
+    create_account_cmd_t ac_open = {.user_id = owner_id, .ledger_id = lid1, .name = "DcaOpen", .institution = "fund_platform", .currency = "CNY"};
+    create_account_cmd_t ac_mask = {.user_id = owner_id, .ledger_id = lid1, .name = "DcaMask", .institution = "fund_platform", .currency = "CNY"};
+    create_account_cmd_t ac_none = {.user_id = owner_id, .ledger_id = lid1, .name = "DcaNone", .institution = "fund_platform", .currency = "CNY"};
+    create_account_cmd_t ac_l2   = {.user_id = owner_id, .ledger_id = lid2, .name = "DcaL2", .institution = "bank_card", .currency = "CNY"};
+    assert(account_usecase_create(pool, &ac_open, &acres) == 0); int64_t acct_open = acres.id;
+    assert(account_usecase_create(pool, &ac_mask, &acres) == 0); int64_t acct_mask = acres.id;
+    assert(account_usecase_create(pool, &ac_none, &acres) == 0); int64_t acct_none = acres.id;
+    assert(account_usecase_create(pool, &ac_l2, &acres) == 0);   int64_t acct_l2 = acres.id;
+
+    asset_usecase_result_t ares = {0};
+    create_asset_cmd_t a_cash1 = {.user_id = owner_id, .ledger_id = lid1, .category_id = c_cash1, .account_id = acct_open, .name = "DcaCashA", .current_value = 5000.0, .currency = "CNY"};
+    create_asset_cmd_t a_fund_op = {.user_id = owner_id, .ledger_id = lid1, .category_id = c_fund1, .account_id = acct_open, .name = "DcaFundOpen", .current_value = 1000.0, .quantity = 100.0, .cost_basis = 900.0, .net_value = 10.0, .currency = "CNY"};
+    create_asset_cmd_t a_fund_mk = {.user_id = owner_id, .ledger_id = lid1, .category_id = c_fund1, .account_id = acct_mask, .name = "DcaFundMask", .current_value = 8000.0, .quantity = 800.0, .cost_basis = 7000.0, .net_value = 10.0, .currency = "CNY"};
+    create_asset_cmd_t a_fund_no = {.user_id = owner_id, .ledger_id = lid1, .category_id = c_fund1, .account_id = acct_none, .name = "DcaFundNone", .current_value = 9000.0, .quantity = 900.0, .cost_basis = 8000.0, .net_value = 10.0, .currency = "CNY"};
+    create_asset_cmd_t a_cash2 = {.user_id = owner_id, .ledger_id = lid2, .category_id = c_cash2, .account_id = acct_l2, .name = "DcaCashL2", .current_value = 5000.0, .currency = "CNY"};
+    assert(asset_usecase_create(pool, &a_cash1, &ares) == 0);   int64_t cash1 = ares.id;
+    assert(asset_usecase_create(pool, &a_fund_op, &ares) == 0); int64_t fund_op = ares.id;
+    assert(asset_usecase_create(pool, &a_fund_mk, &ares) == 0); int64_t fund_mk = ares.id;
+    assert(asset_usecase_create(pool, &a_fund_no, &ares) == 0); int64_t fund_no = ares.id;
+    assert(asset_usecase_create(pool, &a_cash2, &ares) == 0);   int64_t cash2 = ares.id;
+
+    // Cross-ledger asset pairing rejected with 1004
+    dca_usecase_result_t dres = {0};
+    create_dca_plan_cmd_t bad_cross = {.user_id = owner_id, .ledger_id = lid1, .target_asset_id = fund_op, .funding_asset_id = cash2, .name = "Cross", .amount = 100.0};
+    assert(dca_usecase_create_plan(pool, &bad_cross, &dres) < 0 && dres.code == 1004);
+
+    // Ledger-level viewer blocked from creating DCA plan even on unmasked account
+    create_dca_plan_cmd_t bad_viewer = {.user_id = viewer_id, .ledger_id = lid1, .target_asset_id = fund_op, .funding_asset_id = cash1, .name = "ViewerBlock", .amount = 100.0};
+    assert(dca_usecase_create_plan(pool, &bad_viewer, &dres) < 0 && dres.code == 1004);
+
+    // Owner creates 3 plans in lid1
+    create_dca_plan_cmd_t p_op = {.user_id = owner_id, .ledger_id = lid1, .target_asset_id = fund_op, .funding_asset_id = cash1, .name = "PlanOpen", .amount = 100.0};
+    create_dca_plan_cmd_t p_mk = {.user_id = owner_id, .ledger_id = lid1, .target_asset_id = fund_mk, .funding_asset_id = cash1, .name = "PlanMask", .amount = 200.0};
+    create_dca_plan_cmd_t p_no = {.user_id = owner_id, .ledger_id = lid1, .target_asset_id = fund_no, .funding_asset_id = cash1, .name = "PlanNone", .amount = 300.0};
+    int64_t pid_op = dca_usecase_create_plan(pool, &p_op, &dres); assert(pid_op > 0);
+    int64_t pid_mk = dca_usecase_create_plan(pool, &p_mk, &dres); assert(pid_mk > 0);
+    int64_t pid_no = dca_usecase_create_plan(pool, &p_no, &dres); assert(pid_no > 0);
+
+    // Simulate legacy NULL ledger_id row on pid_op to prove fallback compatibility
+    char s_pop[32];
+    snprintf(s_pop, sizeof(s_pop), "%lld", (long long)pid_op);
+    csilk_db_exec_param(pool, "UPDATE dca_plans SET ledger_id = NULL WHERE id = ?;", (const char*[]){s_pop, NULL});
+
+    // Grant editor_id: viewer+mask on acct_mask, none on acct_none, viewer on acct_open
+    assert(account_permission_usecase_set(pool, owner_id, lid1, acct_open, editor_id, "viewer", 0, 0, &acres) == 0);
+    assert(account_permission_usecase_set(pool, owner_id, lid1, acct_mask, editor_id, "viewer", 1, 0, &acres) == 0);
+    assert(account_permission_usecase_set(pool, owner_id, lid1, acct_none, editor_id, "none", 0, 0, &acres) == 0);
+
+    int64_t total = 0;
+    csilk_json_t* list = dca_usecase_list_plans(pool, editor_id, lid1, 1, 20, NULL, &total);
+    assert(list != NULL && total == 2 && csilk_json_array_size(list) == 2); // pid_no hidden
+    for (size_t i = 0; i < csilk_json_array_size(list); i++) {
+        csilk_json_t* it = csilk_json_array_get(list, i);
+        assert(db_get_int(it, "id") != pid_no);
+        if (db_get_int(it, "id") == pid_mk) {
+            assert(csilk_json_get_bool(it, "is_balance_masked") == true);
+            assert(db_get_num(it, "target_current_value") == 0.0);
+            assert(db_get_num(it, "target_cost_basis") == 0.0);
+        }
+    }
+    csilk_json_free(list);
+
+    // Summary excludes both masked and none (only PlanOpen = 1000.0)
+    csilk_json_t* sum = dca_usecase_plan_summary(pool, editor_id, lid1);
+    assert(sum != NULL && db_get_num(sum, "total_current_value") == 1000.0);
+    csilk_json_free(sum);
+
+    // Create pending execution on pid_op, verify editor_id with viewer account perm is blocked 1004 on confirm & skip & delete
+    int64_t ex_id = mf_dca_repo_execution_create(pool, pid_op, owner_id, "2026-11-22", 100.0);
+    assert(ex_id > 0);
+    confirm_dca_execution_cmd_t ccmd = {.user_id = editor_id, .ledger_id = lid1, .exec_id = ex_id, .actual_amount = 100.0, .executed_price = 10.0};
+    dca_confirm_result_t cres = {0};
+    assert(dca_usecase_confirm_execution(pool, &ccmd, &cres) != 0 && cres.code == 1004);
+    assert(dca_usecase_skip_execution(pool, editor_id, lid1, ex_id, &dres) != 0 && dres.code == 1004);
+    assert(dca_usecase_delete_plan(pool, editor_id, lid1, pid_op, &dres) != 0 && dres.code == 1004);
+
+    // In lid2 pid_op is invisible
+    total = 0;
+    list = dca_usecase_list_plans(pool, owner_id, lid2, 1, 20, NULL, &total);
+    assert(list != NULL && total == 0);
+    csilk_json_free(list);
+    printf("  [OK] DCA enforces ledger isolation, NULL fallback, shared access, masking & WRITE_TX\n");
+}
+
 int main(void) {
     printf("========================================\n");
     printf("Starting Account RBAC & Field Masking Tests\n");
@@ -1022,6 +1159,7 @@ int main(void) {
     test_csv_export_rbac_and_shared_ledger(pool);
     test_csv_import_rbac_and_isolation(pool);
     test_portfolio_shared_ledger_rbac(pool);
+    test_dca_shared_ledger_and_rbac(pool);
 
     printf("========================================\n");
     printf("All Account RBAC Tests Passed Successfully!\n");

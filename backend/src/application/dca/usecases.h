@@ -15,6 +15,7 @@
  */
 csilk_json_t* dca_usecase_list_plans(void*       pool,
                                      int64_t     user_id,
+                                     int64_t     ledger_id,
                                      int64_t     page,
                                      int64_t     page_size,
                                      const char* status,
@@ -23,13 +24,13 @@ csilk_json_t* dca_usecase_list_plans(void*       pool,
 /**
  * @brief 查询用户定投计划全局统计指标
  */
-csilk_json_t* dca_usecase_plan_summary(void* pool, int64_t user_id);
+csilk_json_t* dca_usecase_plan_summary(void* pool, int64_t user_id, int64_t ledger_id);
 
 /**
  * @brief 获取单个定投计划详情
  */
-csilk_json_t*
-dca_usecase_get_plan(void* pool, int64_t user_id, int64_t id, dca_usecase_result_t* out_res);
+csilk_json_t* dca_usecase_get_plan(
+    void* pool, int64_t user_id, int64_t ledger_id, int64_t id, dca_usecase_result_t* out_res);
 
 /**
  * @brief 创建定投计划
@@ -48,23 +49,29 @@ int dca_usecase_update_plan(void*                        pool,
 /**
  * @brief 设置定投计划状态
  */
-int dca_usecase_set_plan_status(
-    void* pool, int64_t user_id, int64_t id, const char* status, dca_usecase_result_t* out_res);
+int dca_usecase_set_plan_status(void*                 pool,
+                                int64_t               user_id,
+                                int64_t               ledger_id,
+                                int64_t               id,
+                                const char*           status,
+                                dca_usecase_result_t* out_res);
 
 /**
  * @brief 删除定投计划
  */
-int dca_usecase_delete_plan(void* pool, int64_t user_id, int64_t id, dca_usecase_result_t* out_res);
+int dca_usecase_delete_plan(
+    void* pool, int64_t user_id, int64_t ledger_id, int64_t id, dca_usecase_result_t* out_res);
 
 /**
  * @brief 列出计划执行记录
  */
-csilk_json_t* dca_usecase_list_executions(void* pool, int64_t user_id, int64_t plan_id);
+csilk_json_t*
+dca_usecase_list_executions(void* pool, int64_t user_id, int64_t ledger_id, int64_t plan_id);
 
 /**
  * @brief 列出所有待执行记录
  */
-csilk_json_t* dca_usecase_list_pending(void* pool, int64_t user_id);
+csilk_json_t* dca_usecase_list_pending(void* pool, int64_t user_id, int64_t ledger_id);
 
 /**
  * @brief 确认定投执行（含交易记录创建）
@@ -78,5 +85,6 @@ int dca_usecase_confirm_execution(void*                              pool,
  */
 int dca_usecase_skip_execution(void*                 pool,
                                int64_t               user_id,
+                               int64_t               ledger_id,
                                int64_t               exec_id,
                                dca_usecase_result_t* out_res);

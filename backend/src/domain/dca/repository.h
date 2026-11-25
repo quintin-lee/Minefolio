@@ -14,6 +14,7 @@
  */
 csilk_json_t* mf_dca_repo_plan_list(void*       pool,
                                     int64_t     user_id,
+                                    int64_t     ledger_id,
                                     int64_t     page,
                                     int64_t     page_size,
                                     const char* status,
@@ -22,12 +23,12 @@ csilk_json_t* mf_dca_repo_plan_list(void*       pool,
 /**
  * @brief 查询用户定投计划全局统计指标 (总投入、总市值、活跃数等)
  */
-csilk_json_t* mf_dca_repo_plan_summary(void* pool, int64_t user_id);
+csilk_json_t* mf_dca_repo_plan_summary(void* pool, int64_t user_id, int64_t ledger_id);
 
 /**
  * @brief 获取单个定投计划详情
  */
-csilk_json_t* mf_dca_repo_plan_get(void* pool, int64_t user_id, int64_t id);
+csilk_json_t* mf_dca_repo_plan_get(void* pool, int64_t user_id, int64_t ledger_id, int64_t id);
 
 /**
  * @brief 创建定投计划
@@ -39,17 +40,19 @@ int64_t mf_dca_repo_plan_create(void* pool, int64_t user_id, const mf_dca_plan_t
  * @brief 更新定投计划
  * @return 0: 成功, -1: 失败
  */
-int mf_dca_repo_plan_update(void* pool, int64_t user_id, int64_t id, const mf_dca_plan_t* plan);
+int mf_dca_repo_plan_update(
+    void* pool, int64_t user_id, int64_t ledger_id, int64_t id, const mf_dca_plan_t* plan);
 
 /**
  * @brief 修改定投计划状态
  */
-int mf_dca_repo_plan_set_status(void* pool, int64_t user_id, int64_t id, const char* status);
+int mf_dca_repo_plan_set_status(
+    void* pool, int64_t user_id, int64_t ledger_id, int64_t id, const char* status);
 
 /**
  * @brief 删除定投计划
  */
-int mf_dca_repo_plan_delete(void* pool, int64_t user_id, int64_t id);
+int mf_dca_repo_plan_delete(void* pool, int64_t user_id, int64_t ledger_id, int64_t id);
 
 /**
  * @brief 查询所有活跃计划（供调度器使用）
@@ -66,17 +69,18 @@ int64_t mf_dca_repo_execution_create(
 /**
  * @brief 查询指定计划的执行记录
  */
-csilk_json_t* mf_dca_repo_execution_list_by_plan(void* pool, int64_t user_id, int64_t plan_id);
+csilk_json_t*
+mf_dca_repo_execution_list_by_plan(void* pool, int64_t user_id, int64_t ledger_id, int64_t plan_id);
 
 /**
  * @brief 查询用户所有待执行记录
  */
-csilk_json_t* mf_dca_repo_execution_list_pending(void* pool, int64_t user_id);
+csilk_json_t* mf_dca_repo_execution_list_pending(void* pool, int64_t user_id, int64_t ledger_id);
 
 /**
  * @brief 获取单条执行记录详情
  */
-csilk_json_t* mf_dca_repo_execution_get(void* pool, int64_t user_id, int64_t id);
+csilk_json_t* mf_dca_repo_execution_get(void* pool, int64_t user_id, int64_t ledger_id, int64_t id);
 
 /**
  * @brief 确认执行并关联交易
@@ -91,5 +95,5 @@ int mf_dca_repo_execution_update_confirmed(void*   pool,
 /**
  * @brief 更新执行记录状态
  */
-int
-mf_dca_repo_execution_update_status(void* pool, int64_t user_id, int64_t id, const char* status);
+int mf_dca_repo_execution_update_status(
+    void* pool, int64_t user_id, int64_t ledger_id, int64_t id, const char* status);

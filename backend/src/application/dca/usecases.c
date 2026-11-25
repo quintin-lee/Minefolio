@@ -39,12 +39,14 @@ add_profit_fields(csilk_json_t* item)
 csilk_json_t*
 dca_usecase_list_plans(void*       pool,
                        int64_t     user_id,
+                       int64_t     ledger_id,
                        int64_t     page,
                        int64_t     page_size,
                        const char* status,
                        int64_t*    out_total)
 {
-    csilk_json_t* list = mf_dca_repo_plan_list(pool, user_id, page, page_size, status, out_total);
+    csilk_json_t* list =
+        mf_dca_repo_plan_list(pool, user_id, ledger_id, page, page_size, status, out_total);
     if (!list) {
         return csilk_json_array();
     }
@@ -57,15 +59,16 @@ dca_usecase_list_plans(void*       pool,
 }
 
 csilk_json_t*
-dca_usecase_plan_summary(void* pool, int64_t user_id)
+dca_usecase_plan_summary(void* pool, int64_t user_id, int64_t ledger_id)
 {
-    return mf_dca_repo_plan_summary(pool, user_id);
+    return mf_dca_repo_plan_summary(pool, user_id, ledger_id);
 }
 
 csilk_json_t*
-dca_usecase_get_plan(void* pool, int64_t user_id, int64_t id, dca_usecase_result_t* out_res)
+dca_usecase_get_plan(
+    void* pool, int64_t user_id, int64_t ledger_id, int64_t id, dca_usecase_result_t* out_res)
 {
-    csilk_json_t* res = mf_dca_repo_plan_get(pool, user_id, id);
+    csilk_json_t* res = mf_dca_repo_plan_get(pool, user_id, ledger_id, id);
     if (!res || csilk_json_array_size(res) == 0) {
         if (res) {
             csilk_json_free(res);
@@ -82,9 +85,14 @@ dca_usecase_get_plan(void* pool, int64_t user_id, int64_t id, dca_usecase_result
 static int
 dca_validate_asset_perm(void*                 pool,
                         int64_t               user_id,
+                        int64_t               req_ledger_id,
                         int64_t               asset_id,
-                        dca_usecase_result_t* out_res)
+                        dca_usecase_result_t* out_res,
+                        int64_t*              out_asset_ledger_id)
 {
+    if (out_asset_ledger_id) {
+        *out_asset_ledger_id = 0;
+    }
     if (asset_id <= 0) {
         return 0;
     }
@@ -95,13 +103,24 @@ dca_validate_asset_perm(void*                 pool,
         return -1;
     }
     int64_t alid = 0, aaid = 0;
-    if (asset_get_ledger_and_account(db_pool, asset_id, &alid, &aaid) == 0 &&
-        (alid > 0 || aaid > 0)) {
-        if (account_usecase_check_permission(
-                pool, alid, user_id, aaid, MF_ACCOUNT_ACTION_WRITE_TX) != 0) {
+    if (asset_get_ledger_and_account(db_pool, asset_id, &alid, &aaid) == 0) {
+        if (out_asset_ledger_id) {
+            *out_asset_ledger_id = alid;
+        }
+        if (alid > 0 && req_ledger_id > 0 && alid != req_ledger_id) {
             out_res->code = 1004;
-            snprintf(out_res->message, sizeof(out_res->message), "Forbidden: 关联账户无记账权限");
+            snprintf(out_res->message, sizeof(out_res->message), "Forbidden: 不支持跨账本操作");
             return -1;
+        }
+        if (alid > 0 || req_ledger_id > 0 || aaid > 0) {
+            int64_t chk_lid = alid > 0 ? alid : req_ledger_id;
+            if (account_usecase_check_permission(
+                    pool, chk_lid, user_id, aaid, MF_ACCOUNT_ACTION_WRITE_TX) != 0) {
+                out_res->code = 1004;
+                snprintf(
+                    out_res->message, sizeof(out_res->message), "Forbidden: 关联账户无记账权限");
+                return -1;
+            }
         }
     }
     return 0;
@@ -119,13 +138,24 @@ dca_usecase_create_plan(void* pool, const create_dca_plan_cmd_t* cmd, dca_usecas
         return -1;
     }
 
-    if (dca_validate_asset_perm(pool, cmd->user_id, cmd->target_asset_id, out_res) != 0 ||
-        dca_validate_asset_perm(pool, cmd->user_id, cmd->funding_asset_id, out_res) != 0) {
+    int64_t t_lid = 0, f_lid = 0;
+    if (dca_validate_asset_perm(
+            pool, cmd->user_id, cmd->ledger_id, cmd->target_asset_id, out_res, &t_lid) != 0 ||
+        dca_validate_asset_perm(
+            pool, cmd->user_id, cmd->ledger_id, cmd->funding_asset_id, out_res, &f_lid) != 0) {
+        return -1;
+    }
+    if (t_lid > 0 && f_lid > 0 && t_lid != f_lid) {
+        out_res->code = 1004;
+        snprintf(out_res->message,
+                 sizeof(out_res->message),
+                 "Forbidden: 目标资产与资金账户必须属于同一账本");
         return -1;
     }
 
     mf_dca_plan_t plan = {0};
     plan.user_id = cmd->user_id;
+    plan.ledger_id = (cmd->ledger_id > 0) ? cmd->ledger_id : (t_lid > 0 ? t_lid : f_lid);
     plan.target_asset_id = cmd->target_asset_id;
     plan.funding_asset_id = cmd->funding_asset_id;
     strncpy(plan.name, cmd->name, sizeof(plan.name) - 1);
@@ -149,15 +179,59 @@ dca_usecase_create_plan(void* pool, const create_dca_plan_cmd_t* cmd, dca_usecas
     return id;
 }
 
+static int
+dca_validate_existing_plan_write_perm(void*                 pool,
+                                      int64_t               user_id,
+                                      int64_t               ledger_id,
+                                      int64_t               plan_id,
+                                      dca_usecase_result_t* out_res)
+{
+    csilk_json_t* plan_arr = mf_dca_repo_plan_get(pool, user_id, ledger_id, plan_id);
+    if (!plan_arr || csilk_json_array_size(plan_arr) == 0) {
+        if (plan_arr) {
+            csilk_json_free(plan_arr);
+        }
+        out_res->code = 1003;
+        snprintf(out_res->message, sizeof(out_res->message), "Plan not found");
+        return -1;
+    }
+    csilk_json_t* row = csilk_json_array_get(plan_arr, 0);
+    int64_t       old_target = (int64_t)db_get_int(row, "target_asset_id");
+    int64_t       old_funding = (int64_t)db_get_int(row, "funding_asset_id");
+    int           rc = 0;
+    if (dca_validate_asset_perm(pool, user_id, ledger_id, old_target, out_res, NULL) != 0 ||
+        dca_validate_asset_perm(pool, user_id, ledger_id, old_funding, out_res, NULL) != 0) {
+        rc = -1;
+    }
+    csilk_json_free(plan_arr);
+    return rc;
+}
+
 int
 dca_usecase_update_plan(void* pool, const update_dca_plan_cmd_t* cmd, dca_usecase_result_t* out_res)
 {
-    if (dca_validate_asset_perm(pool, cmd->user_id, cmd->target_asset_id, out_res) != 0 ||
-        dca_validate_asset_perm(pool, cmd->user_id, cmd->funding_asset_id, out_res) != 0) {
+    if (dca_validate_existing_plan_write_perm(
+            pool, cmd->user_id, cmd->ledger_id, cmd->id, out_res) != 0) {
+        return -1;
+    }
+
+    int64_t t_lid = 0, f_lid = 0;
+    if (dca_validate_asset_perm(
+            pool, cmd->user_id, cmd->ledger_id, cmd->target_asset_id, out_res, &t_lid) != 0 ||
+        dca_validate_asset_perm(
+            pool, cmd->user_id, cmd->ledger_id, cmd->funding_asset_id, out_res, &f_lid) != 0) {
+        return -1;
+    }
+    if (t_lid > 0 && f_lid > 0 && t_lid != f_lid) {
+        out_res->code = 1004;
+        snprintf(out_res->message,
+                 sizeof(out_res->message),
+                 "Forbidden: 目标资产与资金账户必须属于同一账本");
         return -1;
     }
 
     mf_dca_plan_t plan = {0};
+    plan.ledger_id = (cmd->ledger_id > 0) ? cmd->ledger_id : (t_lid > 0 ? t_lid : f_lid);
     plan.target_asset_id = cmd->target_asset_id;
     plan.funding_asset_id = cmd->funding_asset_id;
     if (cmd->name) {
@@ -175,7 +249,7 @@ dca_usecase_update_plan(void* pool, const update_dca_plan_cmd_t* cmd, dca_usecas
         strncpy(plan.note, cmd->note, sizeof(plan.note) - 1);
     }
 
-    int rc = mf_dca_repo_plan_update(pool, cmd->user_id, cmd->id, &plan);
+    int rc = mf_dca_repo_plan_update(pool, cmd->user_id, cmd->ledger_id, cmd->id, &plan);
     if (rc != 0) {
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "Failed to update DCA plan");
@@ -184,8 +258,12 @@ dca_usecase_update_plan(void* pool, const update_dca_plan_cmd_t* cmd, dca_usecas
 }
 
 int
-dca_usecase_set_plan_status(
-    void* pool, int64_t user_id, int64_t id, const char* status, dca_usecase_result_t* out_res)
+dca_usecase_set_plan_status(void*                 pool,
+                            int64_t               user_id,
+                            int64_t               ledger_id,
+                            int64_t               id,
+                            const char*           status,
+                            dca_usecase_result_t* out_res)
 {
     if (!mf_dca_rule_validate_status(status)) {
         out_res->code = 1002;
@@ -193,7 +271,11 @@ dca_usecase_set_plan_status(
         return -1;
     }
 
-    int rc = mf_dca_repo_plan_set_status(pool, user_id, id, status);
+    if (dca_validate_existing_plan_write_perm(pool, user_id, ledger_id, id, out_res) != 0) {
+        return -1;
+    }
+
+    int rc = mf_dca_repo_plan_set_status(pool, user_id, ledger_id, id, status);
     if (rc != 0) {
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "Failed to set DCA plan status");
@@ -202,9 +284,14 @@ dca_usecase_set_plan_status(
 }
 
 int
-dca_usecase_delete_plan(void* pool, int64_t user_id, int64_t id, dca_usecase_result_t* out_res)
+dca_usecase_delete_plan(
+    void* pool, int64_t user_id, int64_t ledger_id, int64_t id, dca_usecase_result_t* out_res)
 {
-    int rc = mf_dca_repo_plan_delete(pool, user_id, id);
+    if (dca_validate_existing_plan_write_perm(pool, user_id, ledger_id, id, out_res) != 0) {
+        return -1;
+    }
+
+    int rc = mf_dca_repo_plan_delete(pool, user_id, ledger_id, id);
     if (rc != 0) {
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "Failed to delete DCA plan");
@@ -213,16 +300,16 @@ dca_usecase_delete_plan(void* pool, int64_t user_id, int64_t id, dca_usecase_res
 }
 
 csilk_json_t*
-dca_usecase_list_executions(void* pool, int64_t user_id, int64_t plan_id)
+dca_usecase_list_executions(void* pool, int64_t user_id, int64_t ledger_id, int64_t plan_id)
 {
-    csilk_json_t* list = mf_dca_repo_execution_list_by_plan(pool, user_id, plan_id);
+    csilk_json_t* list = mf_dca_repo_execution_list_by_plan(pool, user_id, ledger_id, plan_id);
     return list ? list : csilk_json_array();
 }
 
 csilk_json_t*
-dca_usecase_list_pending(void* pool, int64_t user_id)
+dca_usecase_list_pending(void* pool, int64_t user_id, int64_t ledger_id)
 {
-    csilk_json_t* list = mf_dca_repo_execution_list_pending(pool, user_id);
+    csilk_json_t* list = mf_dca_repo_execution_list_pending(pool, user_id, ledger_id);
     return list ? list : csilk_json_array();
 }
 
@@ -231,7 +318,8 @@ dca_usecase_confirm_execution(void*                              pool,
                               const confirm_dca_execution_cmd_t* cmd,
                               dca_confirm_result_t*              out_res)
 {
-    csilk_json_t* exec_arr = mf_dca_repo_execution_get(pool, cmd->user_id, cmd->exec_id);
+    csilk_json_t* exec_arr =
+        mf_dca_repo_execution_get(pool, cmd->user_id, cmd->ledger_id, cmd->exec_id);
     if (!exec_arr || csilk_json_array_size(exec_arr) == 0) {
         if (exec_arr) {
             csilk_json_free(exec_arr);
@@ -252,10 +340,14 @@ dca_usecase_confirm_execution(void*                              pool,
 
     int64_t target_asset_id = (int64_t)db_get_int(exec, "target_asset_id");
     int64_t funding_asset_id = (int64_t)db_get_int(exec, "funding_asset_id");
+    int64_t exec_lid = (int64_t)db_get_int(exec, "ledger_id");
+    int64_t t_lid = 0, f_lid = 0;
     {
         dca_usecase_result_t perm_res = {0};
-        if (dca_validate_asset_perm(pool, cmd->user_id, target_asset_id, &perm_res) != 0 ||
-            dca_validate_asset_perm(pool, cmd->user_id, funding_asset_id, &perm_res) != 0) {
+        if (dca_validate_asset_perm(
+                pool, cmd->user_id, cmd->ledger_id, target_asset_id, &perm_res, &t_lid) != 0 ||
+            dca_validate_asset_perm(
+                pool, cmd->user_id, cmd->ledger_id, funding_asset_id, &perm_res, &f_lid) != 0) {
             csilk_json_free(exec_arr);
             out_res->code = perm_res.code;
             snprintf(out_res->message, sizeof(out_res->message), "%s", perm_res.message);
@@ -296,8 +388,11 @@ dca_usecase_confirm_execution(void*                              pool,
     char tx_date[32];
     snprintf(tx_date, sizeof(tx_date), "%s 09:30:00", period_date ? period_date : "2026-08-28");
 
+    int64_t eff_lid =
+        (exec_lid > 0) ? exec_lid : (cmd->ledger_id > 0 ? cmd->ledger_id : (t_lid > 0 ? t_lid : f_lid));
     ledger_tx_t ltx = {.id = 0,
                        .user_id = cmd->user_id,
+                       .ledger_id = eff_lid,
                        .asset_id = target_asset_id,
                        .linked_asset_id = funding_asset_id,
                        .category_id = 0,
@@ -351,10 +446,30 @@ dca_usecase_confirm_execution(void*                              pool,
 int
 dca_usecase_skip_execution(void*                 pool,
                            int64_t               user_id,
+                           int64_t               ledger_id,
                            int64_t               exec_id,
                            dca_usecase_result_t* out_res)
 {
-    int rc = mf_dca_repo_execution_update_status(pool, user_id, exec_id, "skipped");
+    csilk_json_t* exec_arr = mf_dca_repo_execution_get(pool, user_id, ledger_id, exec_id);
+    if (!exec_arr || csilk_json_array_size(exec_arr) == 0) {
+        if (exec_arr) {
+            csilk_json_free(exec_arr);
+        }
+        out_res->code = 1003;
+        snprintf(out_res->message, sizeof(out_res->message), "Execution not found");
+        return -1;
+    }
+    csilk_json_t* exec = csilk_json_array_get(exec_arr, 0);
+    int64_t       target_asset_id = (int64_t)db_get_int(exec, "target_asset_id");
+    int64_t       funding_asset_id = (int64_t)db_get_int(exec, "funding_asset_id");
+    if (dca_validate_asset_perm(pool, user_id, ledger_id, target_asset_id, out_res, NULL) != 0 ||
+        dca_validate_asset_perm(pool, user_id, ledger_id, funding_asset_id, out_res, NULL) != 0) {
+        csilk_json_free(exec_arr);
+        return -1;
+    }
+    csilk_json_free(exec_arr);
+
+    int rc = mf_dca_repo_execution_update_status(pool, user_id, ledger_id, exec_id, "skipped");
     if (rc != 0) {
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "Failed to skip execution");
