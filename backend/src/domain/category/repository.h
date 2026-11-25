@@ -32,33 +32,45 @@ int64_t mf_category_repo_find_or_create(void*       db_pool,
                                         const char* asset_type,
                                         const char* icon,
                                         int         sort_order);
-int     mf_category_repo_exists(void* db_pool, int64_t user_id, int64_t ledger_id, int64_t id);
-int     mf_category_repo_exists_sibling(void*       db_pool,
-                                        int64_t     user_id,
-                                        int64_t     ledger_id,
-                                        int64_t     parent_id,
-                                        const char* type,
-                                        const char* name,
-                                        int64_t     exclude_id);
-int     mf_category_repo_get_parent_id(void*    db_pool,
-                                       int64_t  user_id,
-                                       int64_t  ledger_id,
-                                       int64_t  id,
-                                       int64_t* out_parent_id);
-int     mf_category_repo_find_by_name(void*       db_pool,
-                                      int64_t     user_id,
-                                      int64_t     ledger_id,
-                                      const char* name,
-                                      int64_t*    out_id,
-                                      char*       out_name,
-                                      size_t      out_name_size);
-int     mf_category_repo_find_first_by_type(void*       db_pool,
-                                            int64_t     user_id,
-                                            int64_t     ledger_id,
-                                            const char* type,
-                                            int64_t*    out_id,
-                                            char*       out_name,
-                                            size_t      out_name_size);
-int     mf_category_repo_is_seeded(void* db_pool, int64_t user_id, int64_t ledger_id);
-void    mf_category_repo_mark_seeded(void* db_pool, int64_t user_id, int64_t ledger_id);
-void    mf_category_repo_free_list(mf_category_t* list, size_t count);
+
+typedef struct {
+    const char* name;
+    const char* asset_type;
+    const char* icon;
+    int         sort_order;
+} mf_category_child_seed_t;
+
+int mf_category_repo_insert_children_batch(void*                           db_pool,
+                                           int64_t                         user_id,
+                                           int64_t                         ledger_id,
+                                           int64_t                         parent_id,
+                                           const char*                     type,
+                                           const mf_category_child_seed_t* items,
+                                           size_t                          count);
+int mf_category_repo_exists(void* db_pool, int64_t user_id, int64_t ledger_id, int64_t id);
+int mf_category_repo_exists_sibling(void*       db_pool,
+                                    int64_t     user_id,
+                                    int64_t     ledger_id,
+                                    int64_t     parent_id,
+                                    const char* type,
+                                    const char* name,
+                                    int64_t     exclude_id);
+int mf_category_repo_get_parent_id(
+    void* db_pool, int64_t user_id, int64_t ledger_id, int64_t id, int64_t* out_parent_id);
+int  mf_category_repo_find_by_name(void*       db_pool,
+                                   int64_t     user_id,
+                                   int64_t     ledger_id,
+                                   const char* name,
+                                   int64_t*    out_id,
+                                   char*       out_name,
+                                   size_t      out_name_size);
+int  mf_category_repo_find_first_by_type(void*       db_pool,
+                                         int64_t     user_id,
+                                         int64_t     ledger_id,
+                                         const char* type,
+                                         int64_t*    out_id,
+                                         char*       out_name,
+                                         size_t      out_name_size);
+int  mf_category_repo_is_seeded(void* db_pool, int64_t user_id, int64_t ledger_id);
+void mf_category_repo_mark_seeded(void* db_pool, int64_t user_id, int64_t ledger_id);
+void mf_category_repo_free_list(mf_category_t* list, size_t count);

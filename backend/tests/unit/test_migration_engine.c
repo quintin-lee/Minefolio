@@ -238,7 +238,7 @@ test_auto_baseline_existing_database(void)
                "CREATE TABLE ledgers (id INTEGER PRIMARY KEY, owner_id INTEGER, is_default INTEGER);"
                "INSERT INTO ledgers (id, owner_id, is_default) VALUES (10, 1, 1);"
                "CREATE TABLE categories (id INTEGER PRIMARY KEY, user_id INTEGER, ledger_id INTEGER, "
-               "name TEXT, parent_id INTEGER, type TEXT NOT NULL DEFAULT 'asset');"
+               "name TEXT, parent_id INTEGER, type TEXT NOT NULL DEFAULT 'asset', sort_order INTEGER DEFAULT 0);"
                "INSERT INTO categories (id, user_id, ledger_id, name) VALUES (20, 1, NULL, 'legacy');"
                "CREATE TABLE assets (id INTEGER PRIMARY KEY, user_id INTEGER, ledger_id INTEGER, category_id INTEGER, currency TEXT DEFAULT 'CNY');"
                "CREATE TABLE transactions (id INTEGER PRIMARY KEY, user_id INTEGER, ledger_id INTEGER, "

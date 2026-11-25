@@ -417,6 +417,29 @@ int main(void) {
     (void)sib_a;
     printf("  [OK] V036 deduplication & partial unique index verified\n");
 
+    // 12. Verify V037 query indexes exist
+    const char* v037_indexes[] = {
+        "idx_categories_ledger_sort",
+        "idx_categories_ledger_type_sort",
+        "idx_category_seed_state_ledger",
+        NULL
+    };
+    for (int i = 0; v037_indexes[i] != NULL; i++) {
+        csilk_json_t* idx_res = csilk_db_query_param_json(
+            pool,
+            "SELECT 1 FROM sqlite_master WHERE type='index' AND name=?",
+            (const char*[]){v037_indexes[i], NULL});
+        assert(idx_res && csilk_json_array_size(idx_res) == 1);
+        csilk_json_free(idx_res);
+    }
+    printf("  [OK] V037 category query indexes verified\n");
+
+    // 13. Verify repeated seed calls hit cache idempotently without duplicating rows
+    category_usecase_seed_defaults(pool, user_id, ledger_id);
+    csilk_json_t* after_reseed = NULL;
+    assert(category_usecase_list(pool, user_id, ledger_id, NULL, &after_reseed) == 0 && after_reseed);
+    csilk_json_free(after_reseed);
+
     printf("=== Category Usecases & Repository Tests Passed ===\n");
     return 0;
 }

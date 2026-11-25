@@ -5,9 +5,68 @@
 #include "infrastructure/repositories/account_permission_repo_impl.h"
 #include "common/db.h"
 #include "common/ledger_utils.h"
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+static pthread_mutex_t s_account_seed_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+#define ACCOUNT_SEED_CACHE_CAP 2048
+typedef struct {
+    const void* pool;
+    int64_t     user_id;
+    int64_t     ledger_id;
+} account_seed_cache_entry_t;
+
+static account_seed_cache_entry_t s_acct_seed_cache[ACCOUNT_SEED_CACHE_CAP];
+static size_t                     s_acct_seed_cache_count = 0;
+static size_t                     s_acct_seed_cache_next = 0;
+
+static int
+account_seed_cache_contains(const void* pool, int64_t user_id, int64_t ledger_id)
+{
+    if (!pool || user_id <= 0 || ledger_id <= 0) {
+        return 0;
+    }
+    for (size_t i = 0; i < s_acct_seed_cache_count; i++) {
+        if (s_acct_seed_cache[i].pool == pool && s_acct_seed_cache[i].user_id == user_id &&
+            s_acct_seed_cache[i].ledger_id == ledger_id) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void
+account_seed_cache_add(const void* pool, int64_t user_id, int64_t ledger_id)
+{
+    if (!pool || user_id <= 0 || ledger_id <= 0 ||
+        account_seed_cache_contains(pool, user_id, ledger_id)) {
+        return;
+    }
+    size_t slot = s_acct_seed_cache_count < ACCOUNT_SEED_CACHE_CAP
+                      ? s_acct_seed_cache_count++
+                      : (s_acct_seed_cache_next++ % ACCOUNT_SEED_CACHE_CAP);
+    s_acct_seed_cache[slot].pool = pool;
+    s_acct_seed_cache[slot].user_id = user_id;
+    s_acct_seed_cache[slot].ledger_id = ledger_id;
+}
+
+static void
+account_seed_cache_evict(const void* pool, int64_t user_id, int64_t ledger_id)
+{
+    pthread_mutex_lock(&s_account_seed_mutex);
+    for (size_t i = 0; i < s_acct_seed_cache_count;) {
+        if (s_acct_seed_cache[i].pool == pool && s_acct_seed_cache[i].user_id == user_id &&
+            (ledger_id <= 0 || s_acct_seed_cache[i].ledger_id == ledger_id)) {
+            s_acct_seed_cache[i] = s_acct_seed_cache[--s_acct_seed_cache_count];
+        } else {
+            i++;
+        }
+    }
+    pthread_mutex_unlock(&s_account_seed_mutex);
+}
 
 /* ===== Internal helpers ===== */
 
@@ -348,6 +407,7 @@ account_usecase_delete(void*                       pool,
         return -1;
     }
 
+    account_seed_cache_evict(pool, cmd->user_id, ledger_id);
     out_res->code = 0;
     snprintf(out_res->message, sizeof(out_res->message), "ok");
     return 0;
@@ -527,7 +587,17 @@ account_usecase_seed_default(void* pool, int64_t user_id, int64_t ledger_id)
     if (lid <= 0) {
         return;
     }
-    account_create_default(db_pool, user_id, lid);
+
+    pthread_mutex_lock(&s_account_seed_mutex);
+    if (account_seed_cache_contains(pool, user_id, lid)) {
+        pthread_mutex_unlock(&s_account_seed_mutex);
+        return;
+    }
+    int64_t def_id = account_create_default(db_pool, user_id, lid);
+    if (def_id > 0) {
+        account_seed_cache_add(pool, user_id, lid);
+    }
+    pthread_mutex_unlock(&s_account_seed_mutex);
 }
 
 /* ===== RBAC Permission use cases (Owner only) ===== */

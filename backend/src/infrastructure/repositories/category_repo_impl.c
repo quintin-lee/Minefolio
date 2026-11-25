@@ -327,38 +327,6 @@ mf_category_repo_find_or_create(void*       db_pool,
     snprintf(sort, sizeof(sort), "%d", sort_order);
 
     const char* safe_type = (type && type[0]) ? type : "asset";
-
-    csilk_json_t* chk = NULL;
-    if (ledger_id > 0) {
-        chk = parent_id > 0
-                  ? csilk_db_query_param_json((csilk_db_pool_t*)db_pool,
-                                              "SELECT id FROM categories WHERE ledger_id=? AND "
-                                              "type=? AND name=? AND parent_id=?",
-                                              (const char*[]){lid, safe_type, name, pid, NULL})
-                  : csilk_db_query_param_json((csilk_db_pool_t*)db_pool,
-                                              "SELECT id FROM categories WHERE ledger_id=? AND "
-                                              "type=? AND name=? AND parent_id IS NULL",
-                                              (const char*[]){lid, safe_type, name, NULL});
-    } else {
-        chk = parent_id > 0
-                  ? csilk_db_query_param_json((csilk_db_pool_t*)db_pool,
-                                              "SELECT id FROM categories WHERE user_id=? AND "
-                                              "ledger_id=? AND type=? AND name=? AND parent_id=?",
-                                              (const char*[]){uid, lid, safe_type, name, pid, NULL})
-                  : csilk_db_query_param_json((csilk_db_pool_t*)db_pool,
-                                              "SELECT id FROM categories WHERE user_id=? AND "
-                                              "ledger_id=? AND type=? AND name=? AND parent_id IS NULL",
-                                              (const char*[]){uid, lid, safe_type, name, NULL});
-    }
-    if (chk && csilk_json_array_size(chk) > 0) {
-        int64_t id = db_get_int(csilk_json_array_get(chk, 0), "id");
-        csilk_json_free(chk);
-        return id;
-    }
-    if (chk) {
-        csilk_json_free(chk);
-    }
-
     const char* at = asset_type && asset_type[0] ? asset_type : "cash";
     const char* ic = icon && icon[0] ? icon : "";
     const char* ins_sql = NULL;
@@ -380,13 +348,14 @@ mf_category_repo_find_or_create(void*       db_pool,
                         "?) RETURNING id";
     }
     csilk_json_t* res =
-        parent_id > 0
-            ? csilk_db_query_param_json((csilk_db_pool_t*)db_pool,
-                                        ins_sql,
-                                        (const char*[]){uid, lid, name, pid, safe_type, at, ic, sort, NULL})
-            : csilk_db_query_param_json((csilk_db_pool_t*)db_pool,
-                                        ins_sql,
-                                        (const char*[]){uid, lid, name, safe_type, at, ic, sort, NULL});
+        parent_id > 0 ? csilk_db_query_param_json(
+                            (csilk_db_pool_t*)db_pool,
+                            ins_sql,
+                            (const char*[]){uid, lid, name, pid, safe_type, at, ic, sort, NULL})
+                      : csilk_db_query_param_json(
+                            (csilk_db_pool_t*)db_pool,
+                            ins_sql,
+                            (const char*[]){uid, lid, name, safe_type, at, ic, sort, NULL});
     int64_t id = (res && csilk_json_array_size(res) > 0)
                      ? db_get_int(csilk_json_array_get(res, 0), "id")
                      : 0;
@@ -397,7 +366,8 @@ mf_category_repo_find_or_create(void*       db_pool,
         return id;
     }
 
-    /* 并发插入命中唯一索引时回查既有记录 ID */
+    /* 命中唯一索引（既有记录或并发插入）时回查 ID */
+    csilk_json_t* chk = NULL;
     if (ledger_id > 0) {
         chk = parent_id > 0
                   ? csilk_db_query_param_json((csilk_db_pool_t*)db_pool,
@@ -414,10 +384,11 @@ mf_category_repo_find_or_create(void*       db_pool,
                                               "SELECT id FROM categories WHERE user_id=? AND "
                                               "ledger_id=? AND type=? AND name=? AND parent_id=?",
                                               (const char*[]){uid, lid, safe_type, name, pid, NULL})
-                  : csilk_db_query_param_json((csilk_db_pool_t*)db_pool,
-                                              "SELECT id FROM categories WHERE user_id=? AND "
-                                              "ledger_id=? AND type=? AND name=? AND parent_id IS NULL",
-                                              (const char*[]){uid, lid, safe_type, name, NULL});
+                  : csilk_db_query_param_json(
+                        (csilk_db_pool_t*)db_pool,
+                        "SELECT id FROM categories WHERE user_id=? AND "
+                        "ledger_id=? AND type=? AND name=? AND parent_id IS NULL",
+                        (const char*[]){uid, lid, safe_type, name, NULL});
     }
     if (chk && csilk_json_array_size(chk) > 0) {
         id = db_get_int(csilk_json_array_get(chk, 0), "id");
@@ -426,6 +397,78 @@ mf_category_repo_find_or_create(void*       db_pool,
         csilk_json_free(chk);
     }
     return id;
+}
+
+int
+mf_category_repo_insert_children_batch(void*                           db_pool,
+                                       int64_t                         user_id,
+                                       int64_t                         ledger_id,
+                                       int64_t                         parent_id,
+                                       const char*                     type,
+                                       const mf_category_child_seed_t* items,
+                                       size_t                          count)
+{
+    if (!db_pool || parent_id <= 0 || !items || count == 0) {
+        return 0;
+    }
+    char uid[32], lid[32], pid[32];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
+    snprintf(pid, sizeof(pid), "%lld", (long long)parent_id);
+    const char* safe_type = (type && type[0]) ? type : "asset";
+    int         is_pg = db_is_postgres();
+
+    /* 每批最多 7 行（7 * 8 = 56 个参数，低于 csilk PG_MAX_PARAMS=64 上限） */
+    const size_t max_batch = 7;
+    for (size_t offset = 0; offset < count; offset += max_batch) {
+        size_t batch = count - offset;
+        if (batch > max_batch) {
+            batch = max_batch;
+        }
+
+        char        sql[1024];
+        char        sorts[7][16];
+        const char* params[7 * 8 + 1];
+        int         off = 0;
+        int         pi = 0;
+
+        off += SQL_APPEND(
+            sql,
+            sizeof(sql),
+            off,
+            is_pg ? "INSERT INTO categories (user_id, ledger_id, name, parent_id, type, "
+                    "asset_type, currency, icon, sort_order) VALUES "
+                  : "INSERT OR IGNORE INTO categories (user_id, ledger_id, name, parent_id, "
+                    "type, asset_type, currency, icon, sort_order) VALUES ");
+
+        for (size_t i = 0; i < batch; i++) {
+            const mf_category_child_seed_t* it = &items[offset + i];
+            const char* at = (it->asset_type && it->asset_type[0]) ? it->asset_type : "cash";
+            const char* ic = (it->icon && it->icon[0]) ? it->icon : "";
+            snprintf(sorts[i], sizeof(sorts[i]), "%d", it->sort_order);
+
+            off += SQL_APPEND(
+                sql, sizeof(sql), off, "%s(?, ?, ?, ?, ?, ?, 'CNY', ?, ?)", i > 0 ? ", " : "");
+            params[pi++] = uid;
+            params[pi++] = lid;
+            params[pi++] = it->name ? it->name : "";
+            params[pi++] = pid;
+            params[pi++] = safe_type;
+            params[pi++] = at;
+            params[pi++] = ic;
+            params[pi++] = sorts[i];
+        }
+
+        if (is_pg) {
+            SQL_APPEND(sql, sizeof(sql), off, " ON CONFLICT DO NOTHING");
+        }
+        params[pi] = NULL;
+
+        if (csilk_db_exec_param((csilk_db_pool_t*)db_pool, sql, params) != 0) {
+            return -1;
+        }
+    }
+    return 0;
 }
 
 int
@@ -447,8 +490,8 @@ mf_category_repo_exists_sibling(void*       db_pool,
     snprintf(ex, sizeof(ex), "%lld", (long long)exclude_id);
     const char* safe_type = (type && type[0]) ? type : "asset";
 
-    char sql[512];
-    int  off = 0;
+    char        sql[512];
+    int         off = 0;
     const char* params[8] = {0};
     int         pi = 0;
 

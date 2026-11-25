@@ -8,6 +8,43 @@
 
 static pthread_mutex_t s_category_seed_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+#define CATEGORY_SEED_CACHE_CAP 2048
+typedef struct {
+    const void* pool;
+    int64_t     ledger_id;
+} category_seed_cache_entry_t;
+
+static category_seed_cache_entry_t s_cat_seed_cache[CATEGORY_SEED_CACHE_CAP];
+static size_t                      s_cat_seed_cache_count = 0;
+static size_t                      s_cat_seed_cache_next = 0;
+
+static int
+cat_seed_cache_contains(const void* pool, int64_t ledger_id)
+{
+    if (!pool || ledger_id <= 0) {
+        return 0;
+    }
+    for (size_t i = 0; i < s_cat_seed_cache_count; i++) {
+        if (s_cat_seed_cache[i].pool == pool && s_cat_seed_cache[i].ledger_id == ledger_id) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void
+cat_seed_cache_add(const void* pool, int64_t ledger_id)
+{
+    if (!pool || ledger_id <= 0 || cat_seed_cache_contains(pool, ledger_id)) {
+        return;
+    }
+    size_t slot = s_cat_seed_cache_count < CATEGORY_SEED_CACHE_CAP
+                      ? s_cat_seed_cache_count++
+                      : (s_cat_seed_cache_next++ % CATEGORY_SEED_CACHE_CAP);
+    s_cat_seed_cache[slot].pool = pool;
+    s_cat_seed_cache[slot].ledger_id = ledger_id;
+}
+
 /**
  * @brief 默认分类播种数据 —— 与原 category_service.c 完全一致
  *
@@ -43,7 +80,9 @@ seed_type(void*          pool,
                                                       items[i].icon,
                                                       items[i].sort_order);
         if (pid > 0) {
-            for (int j = 0; items[i].children[j]; j++) {
+            mf_category_child_seed_t batch[10];
+            size_t                   child_count = 0;
+            for (int j = 0; items[i].children[j] && j < 10; j++) {
                 const char* child_at = items[i].asset_type;
                 /* Check for per-child asset_type overrides */
                 if (asset_overrides) {
@@ -54,15 +93,15 @@ seed_type(void*          pool,
                         }
                     }
                 }
-                mf_category_repo_find_or_create(pool,
-                                                user_id,
-                                                ledger_id,
-                                                items[i].children[j],
-                                                pid,
-                                                type,
-                                                child_at,
-                                                items[i].child_icons[j],
-                                                j + 1);
+                batch[child_count].name = items[i].children[j];
+                batch[child_count].asset_type = child_at;
+                batch[child_count].icon = items[i].child_icons[j];
+                batch[child_count].sort_order = j + 1;
+                child_count++;
+            }
+            if (child_count > 0) {
+                mf_category_repo_insert_children_batch(
+                    pool, user_id, ledger_id, pid, type, batch, child_count);
             }
         }
     }
@@ -71,12 +110,15 @@ seed_type(void*          pool,
 void
 category_usecase_seed_defaults(void* pool, int64_t user_id, int64_t ledger_id)
 {
-    if (mf_category_repo_is_seeded(pool, user_id, ledger_id)) {
+    pthread_mutex_lock(&s_category_seed_mutex);
+    if (ledger_id > 0 && cat_seed_cache_contains(pool, ledger_id)) {
+        pthread_mutex_unlock(&s_category_seed_mutex);
         return;
     }
-
-    pthread_mutex_lock(&s_category_seed_mutex);
     if (mf_category_repo_is_seeded(pool, user_id, ledger_id)) {
+        if (ledger_id > 0) {
+            cat_seed_cache_add(pool, ledger_id);
+        }
         pthread_mutex_unlock(&s_category_seed_mutex);
         return;
     }
@@ -87,42 +129,42 @@ category_usecase_seed_defaults(void* pool, int64_t user_id, int64_t ledger_id)
     /* Seed expense categories */
     seed_parent_t expense_items[] = {
         {"餐饮美食",
-         "cash",             1,
-         "🍜",                         {"早晚餐/正餐", "水果零食", "外卖聚餐", "咖啡奶茶", NULL},
-         {"🍜", "🍎", "🥡", "☕", NULL}                                                                                           },
+         "cash",                 1,
+         "🍜",                             {"早晚餐/正餐", "水果零食", "外卖聚餐", "咖啡奶茶", NULL},
+         {"🍜", "🍎", "🥡", "☕", NULL}                                                                                                                    },
         {"交通出行",
-         "cash",             2,
-         "🚌",                         {"公共交通", "打车网约车", "加油停车", "飞机高铁", "高速/停车费", NULL},
-         {"🚇", "🚕", "⛽", "✈️", "🛣", NULL}                                                                                       },
+         "cash",                 2,
+         "🚌",                             {"公共交通", "打车网约车", "加油停车", "飞机高铁", "高速/停车费", NULL},
+         {"🚇", "🚕", "⛽", "✈️", "🛣", NULL}                                                                                                          },
         {"日常购物",
-         "cash",             3,
-         "🛍",                          {"服饰鞋包", "日用百货", "数码家电", "生鲜果蔬", "家居清洁", NULL},
-         {"👗", "🧴", "💻", "🥬", "🧹", NULL}                                                                                     },
+         "cash",                 3,
+         "🛍",                             {"服饰鞋包", "日用百货", "数码家电", "生鲜果蔬", "家居清洁", NULL},
+         {"👗", "🧴", "💻", "🥬", "🧹", NULL}                                                                                                           },
         {"居住缴费",
-         "cash",             4,
-         "🏠",                         {"房租房贷", "水电燃气", "网络话费", "物业费", "维修家政", NULL},
-         {"🏘", "⚡", "📶", "🏢", "🔧", NULL}                                                                                     },
+         "cash",                 4,
+         "🏠",                             {"房租房贷", "水电燃气", "网络话费", "物业费", "维修家政", NULL},
+         {"🏘", "⚡", "📶", "🏢", "🔧", NULL}                                                                                                            },
         {"休闲娱乐",
-         "cash",             5,
-         "🎮",                         {"游戏影视", "运动健身", "旅游度假", "会员订阅", "文娱演出", NULL},
-         {"🎬", "🏃", "🏖", "📺", "🎭", NULL}                                                                                     },
+         "cash",                 5,
+         "🎮",                             {"游戏影视", "运动健身", "旅游度假", "会员订阅", "文娱演出", NULL},
+         {"🎬", "🏃", "🏖", "📺", "🎭", NULL}                                                                                                           },
         {"医疗健康",
-         "cash",             6,
-         "🏥",                         {"药品诊疗", "保健体检", "住院手术", "医疗保险", NULL},
-         {"💊", "🩺", "🏥", "🛡", NULL}                                                                                            },
+         "cash",                 6,
+         "🏥",                             {"药品诊疗", "保健体检", "住院手术", "医疗保险", NULL},
+         {"💊", "🩺", "🏥", "🛡", NULL}                                                                                                                   },
         {"人情往来",
-         "cash",             7,
-         "🎁",                         {"礼金红包", "孝敬父母", "请客送礼", "捐赠公益", NULL},
-         {"🧧", "👨", "🎁", "❤️", NULL}                                                                                            },
+         "cash",                 7,
+         "🎁",                             {"礼金红包", "孝敬父母", "请客送礼", "捐赠公益", NULL},
+         {"🧧", "👨", "🎁", "❤️", NULL}                                                                                                                 },
         {"教育学习",
-         "cash",             8,
-         "📚",                         {"学费培训", "书籍资料", "在线课程", "考证报名", NULL},
-         {"📘", "📖", "💡", "📝", NULL}                                                                                           },
+         "cash",                 8,
+         "📚",                             {"学费培训", "书籍资料", "在线课程", "考证报名", NULL},
+         {"📘", "📖", "💡", "📝", NULL}                                                                                                                   },
         {"宠物养护",
-         "cash",             9,
-         "🐾",                         {"宠物食品", "宠物医疗", "宠物用品", "宠物美容", NULL},
-         {"🦴", "🐾", "🧸", "✂️", NULL}                                                                                            },
-        {"其他支出", "cash", 10, "📋", {"保险费用", "其他杂费", NULL},                                          {"🔒", "📦", NULL}},
+         "cash",                 9,
+         "🐾",                             {"宠物食品", "宠物医疗", "宠物用品", "宠物美容", NULL},
+         {"🦴", "🐾", "🧸", "✂️", NULL}                                                                                                                 },
+        {"其他支出", "cash", 10, "📋", {"保险费用", "其他杂费", NULL},                                                        {"🔒", "📦", NULL}},
     };
     seed_type(pool,
               user_id,
@@ -145,7 +187,7 @@ category_usecase_seed_defaults(void* pool, int64_t user_id, int64_t ledger_id)
         {"其他收入",
          "cash", 3,
          "📬", {"二手转让", "礼金红包", "政府补贴", "退款返现", "奖学金/补助", NULL},
-         {"♻️", "🧧", "📢", "🏷", "🎓", NULL}       },
+         {"♻️", "🧧", "📢", "🏷", "🎓", NULL}    },
     };
     seed_type(pool,
               user_id,
@@ -164,15 +206,15 @@ category_usecase_seed_defaults(void* pool, int64_t user_id, int64_t ledger_id)
         {"加密资产",
          "cash", 2,
          "🪙", {"现货买卖", "合约质押", "交易所出入金", NULL},
-         {"↕️", "⛓", "🔄", NULL}              },
+         {"↕️", "⛓", "🔄", NULL}               },
         {"资金调拨",
          "cash", 3,
          "🔄", {"银证/出入金", "存现/取现", "交易手续费", "资产转移", NULL},
-         {"💸", "➕", "🧾", "🔀", NULL}      },
+         {"💸", "➕", "🧾", "🔀", NULL}         },
         {"实物投资",
          "cash", 4,
          "🏛", {"贵金属", "收藏品", "黄金积存", NULL},
-         {"🥇", "🏛", "🪙", NULL}            },
+         {"🥇", "🏛", "🪙", NULL}                },
     };
     seed_type(pool,
               user_id,
@@ -185,22 +227,22 @@ category_usecase_seed_defaults(void* pool, int64_t user_id, int64_t ledger_id)
     /* Seed asset categories with per-child overrides */
     seed_parent_t asset_items[] = {
         {"流动资产",
-         "cash",                    1,
-         "💵",                               {"现金账户", "银行存款", "支付宝", "微信零钱", "余额宝/零钱通", "京东金融", NULL},
-         {"💰", "🏦", "📱", "💬", "🐷", "🛒", NULL}                                                                                               },
+         "cash",                        1,
+         "💵",                                   {"现金账户", "银行存款", "支付宝", "微信零钱", "余额宝/零钱通", "京东金融", NULL},
+         {"💰", "🏦", "📱", "💬", "🐷", "🛒", NULL}                                                                                                                      },
         {"投资资产",
-         "stock",                   2,
-         "💎",                               {"股票证券", "基金理财", "加密货币", "债券投资", "港美股账户", NULL},
-         {"📉", "📊", "⛓", "💎", "🌏", NULL}                                                                                                      },
-        {"固定资产", "other_asset", 3, "🏠", {"房产", "车辆", NULL},                                                            {"🏠", "🚗", NULL}},
+         "stock",                       2,
+         "💎",                                   {"股票证券", "基金理财", "加密货币", "债券投资", "港美股账户", NULL},
+         {"📉", "📊", "⛓", "💎", "🌏", NULL}                                                                                                                               },
+        {"固定资产", "other_asset", 3, "🏠", {"房产", "车辆", NULL},                                                                                 {"🏠", "🚗", NULL}},
         {"负债账户",
-         "credit_card",             4,
-         "💳",                               {"信用卡", "房贷/车贷/贷款", "花呗/白条", "消费贷/网贷", NULL},
-         {"💳", "💸", "📲", "📱", NULL}                                                                                                           },
+         "credit_card",                 4,
+         "💳",                                   {"信用卡", "房贷/车贷/贷款", "花呗/白条", "消费贷/网贷", NULL},
+         {"💳", "💸", "📲", "📱", NULL}                                                                                                                                      },
         {"其他资产",
-         "other_asset",             5,
-         "📦",                               {"应收款项", "预付卡/储值卡", NULL},
-         {"🪪", "🎫", NULL}                                                                                                                       },
+         "other_asset",                 5,
+         "📦",                                   {"应收款项", "预付卡/储值卡", NULL},
+         {"🪪", "🎫", NULL}                                                                                                                                                      },
     };
     const char* asset_overrides[] = {
         "股票证券",    "stock", "基金理财",      "fund", "加密货币", "crypto",         "债券投资",
@@ -218,6 +260,9 @@ category_usecase_seed_defaults(void* pool, int64_t user_id, int64_t ledger_id)
     mf_category_repo_mark_seeded(pool, user_id, ledger_id);
     if (tx_ok) {
         db_tx_scope_commit((csilk_db_pool_t*)pool, &tx);
+    }
+    if (ledger_id > 0) {
+        cat_seed_cache_add(pool, ledger_id);
     }
     pthread_mutex_unlock(&s_category_seed_mutex);
 }
