@@ -12,83 +12,106 @@
 #include <stdlib.h>
 #include <string.h>
 
-static csilk_json_t*
-build_tree(csilk_json_t* rows)
+static inline size_t
+ht_hash_id(int64_t id, size_t mask)
 {
-    size_t n = csilk_json_array_size(rows);
-    if (n == 0) {
-        return csilk_json_array();
+    return (size_t)(((uint64_t)id * 11400714819323198485ULL) & (uint64_t)mask);
+}
+
+static char*
+build_tree_envelope_json(const mf_category_t* rows, size_t n, size_t* out_len)
+{
+    if (n == 0 || !rows) {
+        char* empty_json = strdup("{\"code\":0,\"message\":\"ok\",\"data\":[]}");
+        if (out_len) {
+            *out_len = empty_json ? strlen(empty_json) : 0;
+        }
+        return empty_json;
     }
 
     yyjson_mut_doc* doc = yyjson_mut_doc_new(NULL);
     if (!doc) {
-        return csilk_json_array();
+        return NULL;
     }
 
+    yyjson_mut_val* root = yyjson_mut_obj(doc);
+    yyjson_mut_doc_set_root(doc, root);
+    yyjson_mut_obj_add_int(doc, root, "code", 0);
+    yyjson_mut_obj_add_str(doc, root, "message", "ok");
     yyjson_mut_val* tree_arr = yyjson_mut_arr(doc);
-    yyjson_mut_doc_set_root(doc, tree_arr);
+    yyjson_mut_obj_add_val(doc, root, "data", tree_arr);
+
+    size_t ht_cap = 16;
+    while (ht_cap < n * 2) {
+        ht_cap <<= 1;
+    }
+    size_t ht_mask = ht_cap - 1;
+
     yyjson_mut_val** nodes = calloc(n, sizeof(yyjson_mut_val*));
-    int64_t*         ids = calloc(n, sizeof(int64_t));
-    int64_t*         pids = calloc(n, sizeof(int64_t));
     yyjson_mut_val** children_arrs = calloc(n, sizeof(yyjson_mut_val*));
-    if (!nodes || !ids || !pids || !children_arrs) {
+    int64_t*         ht_keys = calloc(ht_cap, sizeof(int64_t));
+    size_t*          ht_vals = calloc(ht_cap, sizeof(size_t));
+    if (!nodes || !children_arrs || !ht_keys || !ht_vals) {
         free(nodes);
-        free(ids);
-        free(pids);
         free(children_arrs);
+        free(ht_keys);
+        free(ht_vals);
         yyjson_mut_doc_free(doc);
-        return csilk_json_array();
+        return NULL;
     }
 
     for (size_t i = 0; i < n; i++) {
-        const csilk_json_t* row = csilk_json_array_get(rows, i);
-        yyjson_mut_val*     obj = yyjson_mut_obj(doc);
-        double              id_val = db_get_num(row, "id");
-        ids[i] = (int64_t)id_val;
-        yyjson_mut_obj_add_real(doc, obj, "id", id_val);
+        const mf_category_t* r = &rows[i];
+        yyjson_mut_val*      obj = yyjson_mut_obj(doc);
+        yyjson_mut_obj_add_int(doc, obj, "id", r->id);
+        yyjson_mut_obj_add_strcpy(doc, obj, "name", r->name);
+        yyjson_mut_obj_add_null(doc, obj, "parent_name");
 
-        const char* name = csilk_json_get_string(row, "name");
-        yyjson_mut_obj_add_strcpy(doc, obj, "name", name ? name : "");
-        const char* parent_name = csilk_json_get_string(row, "parent_name");
-        if (parent_name) {
-            yyjson_mut_obj_add_strcpy(doc, obj, "parent_name", parent_name);
-        } else {
-            yyjson_mut_obj_add_null(doc, obj, "parent_name");
-        }
-
-        double pid = db_get_num(row, "parent_id");
-        pids[i] = (int64_t)pid;
-        if (pid > 0) {
-            yyjson_mut_obj_add_real(doc, obj, "parent_id", pid);
+        if (r->parent_id > 0) {
+            yyjson_mut_obj_add_int(doc, obj, "parent_id", r->parent_id);
         } else {
             yyjson_mut_obj_add_null(doc, obj, "parent_id");
         }
 
-        const char* type = csilk_json_get_string(row, "type");
-        yyjson_mut_obj_add_strcpy(doc, obj, "type", (type && type[0]) ? type : "asset");
-        const char* asset_type = csilk_json_get_string(row, "asset_type");
-        if (asset_type) {
-            yyjson_mut_obj_add_strcpy(doc, obj, "asset_type", asset_type);
+        yyjson_mut_obj_add_strcpy(doc, obj, "type", r->type[0] ? r->type : "asset");
+        if (r->asset_type[0]) {
+            yyjson_mut_obj_add_strcpy(doc, obj, "asset_type", r->asset_type);
         } else {
             yyjson_mut_obj_add_null(doc, obj, "asset_type");
         }
-        const char* currency = csilk_json_get_string(row, "currency");
-        if (currency) {
-            yyjson_mut_obj_add_strcpy(doc, obj, "currency", currency);
+        if (r->currency[0]) {
+            yyjson_mut_obj_add_strcpy(doc, obj, "currency", r->currency);
         } else {
             yyjson_mut_obj_add_null(doc, obj, "currency");
         }
-        const char* icon = csilk_json_get_string(row, "icon");
-        yyjson_mut_obj_add_strcpy(doc, obj, "icon", icon ? icon : "");
-        yyjson_mut_obj_add_real(doc, obj, "sort_order", db_get_num(row, "sort_order"));
+        yyjson_mut_obj_add_strcpy(doc, obj, "icon", r->icon);
+        yyjson_mut_obj_add_int(doc, obj, "sort_order", r->sort_order);
         nodes[i] = obj;
+
+        if (r->id > 0) {
+            size_t pos = ht_hash_id(r->id, ht_mask);
+            while (ht_keys[pos] != 0 && ht_keys[pos] != r->id) {
+                pos = (pos + 1) & ht_mask;
+            }
+            if (ht_keys[pos] == 0) {
+                ht_keys[pos] = r->id;
+                ht_vals[pos] = i;
+            }
+        }
     }
 
     for (size_t i = 0; i < n; i++) {
-        int64_t parent = pids[i];
-        size_t  j = 0;
-        while (j < n && ids[j] != parent) {
-            j++;
+        int64_t parent = rows[i].parent_id;
+        size_t  j = n;
+        if (parent > 0) {
+            size_t pos = ht_hash_id(parent, ht_mask);
+            while (ht_keys[pos] != 0) {
+                if (ht_keys[pos] == parent) {
+                    j = ht_vals[pos];
+                    break;
+                }
+                pos = (pos + 1) & ht_mask;
+            }
         }
         if (parent > 0 && j < n) {
             if (!children_arrs[j]) {
@@ -102,18 +125,53 @@ build_tree(csilk_json_t* rows)
     }
 
     free(nodes);
-    free(ids);
-    free(pids);
     free(children_arrs);
-    size_t len = 0;
-    char*  json_str = yyjson_mut_write(doc, 0, &len);
+    free(ht_keys);
+    free(ht_vals);
+
+    char* json_str = yyjson_mut_write(doc, 0, out_len);
     yyjson_mut_doc_free(doc);
-    csilk_json_t* tree = NULL;
-    if (json_str) {
-        tree = csilk_json_parse_len(json_str, len);
-        free(json_str);
+    return json_str;
+}
+
+static uint64_t
+fnv1a_hash64(const void* data, size_t len)
+{
+    const uint8_t* p = (const uint8_t*)data;
+    uint64_t       h = 14695981039346656037ULL;
+    for (size_t i = 0; i < len; i++) {
+        h ^= p[i];
+        h *= 1099511628211ULL;
     }
-    return tree ? tree : csilk_json_array();
+    return h;
+}
+
+static void
+send_categories_tree_response(csilk_ctx_t* c, const mf_category_t* rows, size_t count)
+{
+    size_t len = 0;
+    char*  json_str = build_tree_envelope_json(rows, count, &len);
+    if (!json_str) {
+        respond_error(c, 500, "序列化分类树失败");
+        return;
+    }
+
+    uint64_t h = fnv1a_hash64(json_str, len);
+    char     etag[48];
+    snprintf(etag, sizeof(etag), "W/\"cat-%016llx\"", (unsigned long long)h);
+    csilk_set_header(c, "ETag", etag);
+    csilk_set_header(c, "Cache-Control", "private, no-cache");
+
+    const char* inm = csilk_get_header(c, "If-None-Match");
+    if (inm && strcmp(inm, etag) == 0) {
+        free(json_str);
+        csilk_status(c, CSILK_STATUS_NOT_MODIFIED);
+        return;
+    }
+
+    csilk_status(c, CSILK_STATUS_OK);
+    csilk_set_header(c, "Content-Type", "application/json");
+    csilk_set_response_body_ex(c, json_str, len, CSILK_OWN_HEAP);
 }
 
 void
@@ -133,9 +191,11 @@ api_categories_list(csilk_ctx_t* c)
     const char* type_query = csilk_get_query(c, "type");
 
     if (type_query && strstr(type_query, ",")) {
-        csilk_json_t* merged = csilk_json_array();
-        char          copy[128];
-        char*         saveptr = NULL;
+        mf_category_t* merged = NULL;
+        size_t         merged_n = 0;
+        size_t         merged_cap = 0;
+        char           copy[128];
+        char*          saveptr = NULL;
         strncpy(copy, type_query, sizeof(copy) - 1);
         copy[sizeof(copy) - 1] = '\0';
         char* tok = strtok_r(copy, ",", &saveptr);
@@ -144,37 +204,47 @@ api_categories_list(csilk_ctx_t* c)
                 tok++;
             }
             if (tok[0]) {
-                csilk_json_t* part = NULL;
-                if (category_usecase_list(db_get_pool(), user_id, ledger_id, tok, &part) == 0 &&
-                    part) {
-                    size_t pn = csilk_json_array_size(part);
-                    for (size_t i = 0; i < pn; i++) {
-                        csilk_json_add_item(merged, csilk_json_array_get(part, i));
+                mf_category_t* part = NULL;
+                size_t         pn = 0;
+                if (category_usecase_list_entities(
+                        db_get_pool(), user_id, ledger_id, tok, &part, &pn) == 0 &&
+                    part && pn > 0) {
+                    if (merged_n + pn > merged_cap) {
+                        size_t new_cap = merged_cap ? merged_cap : 64;
+                        while (new_cap < merged_n + pn) {
+                            new_cap *= 2;
+                        }
+                        mf_category_t* next = realloc(merged, sizeof(mf_category_t) * new_cap);
+                        if (!next) {
+                            category_usecase_free_list(part, pn);
+                            free(merged);
+                            respond_error(c, 500, "查询分类列表失败");
+                            return;
+                        }
+                        merged = next;
+                        merged_cap = new_cap;
                     }
-                    csilk_json_free(part);
+                    memcpy(merged + merged_n, part, sizeof(mf_category_t) * pn);
+                    merged_n += pn;
                 }
+                category_usecase_free_list(part, pn);
             }
             tok = strtok_r(NULL, ",", &saveptr);
         }
-        csilk_json_t* tree = build_tree(merged);
-        csilk_json_free(merged);
-        respond_ok(c, tree);
+        send_categories_tree_response(c, merged, merged_n);
+        free(merged);
         return;
     }
 
-    csilk_json_t* list = NULL;
-    if (category_usecase_list(db_get_pool(), user_id, ledger_id, type_query, &list) != 0) {
+    mf_category_t* list = NULL;
+    size_t         count = 0;
+    if (category_usecase_list_entities(
+            db_get_pool(), user_id, ledger_id, type_query, &list, &count) != 0) {
         respond_error(c, 500, "查询分类列表失败");
         return;
     }
-    csilk_json_t* empty = csilk_json_array();
-    csilk_json_t* tree = build_tree(list ? list : empty);
-    if (!list) {
-        csilk_json_free(empty);
-    } else {
-        csilk_json_free(list);
-    }
-    respond_ok(c, tree);
+    send_categories_tree_response(c, list, count);
+    category_usecase_free_list(list, count);
 }
 
 void

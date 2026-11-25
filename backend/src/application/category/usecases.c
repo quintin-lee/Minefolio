@@ -268,6 +268,23 @@ category_usecase_seed_defaults(void* pool, int64_t user_id, int64_t ledger_id)
 }
 
 int
+category_usecase_list_entities(void*           pool,
+                               int64_t         user_id,
+                               int64_t         ledger_id,
+                               const char*     type,
+                               mf_category_t** out_list,
+                               size_t*         out_count)
+{
+    return mf_category_repo_list(pool, user_id, ledger_id, type, out_list, out_count);
+}
+
+void
+category_usecase_free_list(mf_category_t* list, size_t count)
+{
+    mf_category_repo_free_list(list, count);
+}
+
+int
 category_usecase_list(
     void* pool, int64_t user_id, int64_t ledger_id, const char* type, csilk_json_t** out_list)
 {
