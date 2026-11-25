@@ -2,10 +2,12 @@
 #include <assert.h>
 #include <netinet/in.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "csilk/csilk.h"
@@ -20,8 +22,8 @@ typedef struct {
     char        last_auth_header[256];
     const char* response_to_send;
     int         response_code;
-    int         response_delay_ms;
-    bool        stop;
+    atomic_int  response_delay_ms;
+    atomic_bool stop;
 } mock_server_t;
 
 static void*
@@ -29,12 +31,12 @@ mock_server_thread(void* arg)
 {
     mock_server_t* srv = (mock_server_t*)arg;
 
-    while (!srv->stop) {
+    while (!atomic_load_explicit(&srv->stop, memory_order_acquire)) {
         struct sockaddr_in client_addr;
         socklen_t          addr_len = sizeof(client_addr);
         int client_fd = accept(srv->server_fd, (struct sockaddr*)&client_addr, &addr_len);
         if (client_fd < 0) {
-            if (srv->stop) {
+            if (atomic_load_explicit(&srv->stop, memory_order_acquire)) {
                 break;
             }
             continue;
@@ -75,7 +77,10 @@ mock_server_thread(void* arg)
                 srv->last_received_body[0] = '\0';
             }
 
-            for (int ms = 0; ms < srv->response_delay_ms && !srv->stop; ms += 10) {
+            int delay_ms = atomic_load_explicit(&srv->response_delay_ms, memory_order_acquire);
+            for (int ms = 0;
+                 ms < delay_ms && !atomic_load_explicit(&srv->stop, memory_order_acquire);
+                 ms += 10) {
                 usleep(10000);
             }
 
@@ -106,6 +111,8 @@ static int
 start_mock_server(mock_server_t* srv)
 {
     memset(srv, 0, sizeof(*srv));
+    atomic_init(&srv->response_delay_ms, 0);
+    atomic_init(&srv->stop, false);
     srv->server_fd = socket(AF_INET, SOCK_STREAM, 0);
     assert(srv->server_fd >= 0);
 
@@ -133,7 +140,7 @@ start_mock_server(mock_server_t* srv)
 static void
 stop_mock_server(mock_server_t* srv)
 {
-    srv->stop = true;
+    atomic_store_explicit(&srv->stop, true, memory_order_release);
     close(srv->server_fd);
     /* Wake up accept */
     int                s = socket(AF_INET, SOCK_STREAM, 0);
@@ -271,13 +278,17 @@ main(void)
     assert(strcmp(err_buf, "测试请求已取消") == 0);
     assert(server.last_received_path[0] == '\0');
 
-    server.response_delay_ms = 500;
-    int rem1 = 1;
+    atomic_store_explicit(&server.response_delay_ms, 500, memory_order_release);
+    int             rem1 = 1;
+    struct timespec t0, t1;
+    clock_gettime(CLOCK_MONOTONIC, &t0);
     rc = wechat_push_service_send_cancellable(
         &wh_cfg, "Cancel Mid", "test", test_curl_alive_cb, &rem1, err_buf, sizeof(err_buf));
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    long elapsed_ms = (t1.tv_sec - t0.tv_sec) * 1000L + (t1.tv_nsec - t0.tv_nsec) / 1000000L;
     assert(rc == -1);
     assert(strcmp(err_buf, "测试请求已取消") == 0);
-    server.response_delay_ms = 0;
+    assert(elapsed_ms < 400);
     unsetenv("MINEFOLIO_ALLOW_LOCAL_WEBHOOK");
 
     stop_mock_server(&server);

@@ -844,12 +844,13 @@ register_scheduler_routes(csilk_app_t* app)
     if (!s_channel_test_pool) {
         s_channel_test_pool = scheduler_worker_pool_create(CHANNEL_TEST_POOL_THREADS);
     }
-    if (srv && s_channel_test_server != srv) {
+    if (srv) {
         union {
             csilk_server_hook_handler_t fn;
             void*                       ptr;
         } hook_u = {.fn = channel_test_on_server_stop};
         s_channel_test_server = srv;
+        (void)csilk_server_remove_hook(srv, CSILK_HOOK_SERVER_STOP, hook_u.ptr);
         csilk_server_add_hook(srv, CSILK_HOOK_SERVER_STOP, hook_u.ptr);
     }
     pthread_mutex_unlock(&s_channel_test_pool_lock);
