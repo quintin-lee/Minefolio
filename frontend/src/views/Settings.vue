@@ -80,6 +80,14 @@
         <ImBotSettings />
       </el-tab-pane>
 
+      <el-tab-pane v-if="auth.isAdmin" name="users" lazy>
+        <template #label>
+          <Icon icon="ph:users" width="16" />
+          <span class="tab-label">{{ t('settings.tabUserManagement') }}</span>
+        </template>
+        <UserManagement />
+      </el-tab-pane>
+
       <el-tab-pane name="appearance" lazy>
         <template #label>
           <Icon icon="ph:palette" width="16" />
@@ -93,8 +101,10 @@
 
 <script setup lang="ts">
 import { ref, onErrorCaptured } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Icon } from '@iconify/vue'
+import { useAuthStore } from '@/stores/auth'
 import { t } from '@/utils/locale'
 import UserHeroCard from '@/components/settings/UserHeroCard.vue'
 import PasswordSettings from '@/components/settings/PasswordSettings.vue'
@@ -105,9 +115,13 @@ import AiProviderManager from '@/components/settings/AiProviderManager.vue'
 import MarketSyncSettings from '@/components/settings/MarketSyncSettings.vue'
 import DatabaseBackup from '@/components/settings/DatabaseBackup.vue'
 import ImBotSettings from '@/components/settings/ImBotSettings.vue'
+import UserManagement from '@/components/settings/UserManagement.vue'
 import AppearanceSettings from '@/components/settings/AppearanceSettings.vue'
 
-const activeTab = ref('profile')
+const auth = useAuthStore()
+const route = useRoute()
+const initialTab = typeof route?.query?.tab === 'string' && route.query.tab ? route.query.tab : 'profile'
+const activeTab = ref(initialTab === 'users' && !auth.isAdmin ? 'profile' : initialTab)
 
 onErrorCaptured((err, instance, info) => {
   console.error('[Settings] Child component error:', err, info)

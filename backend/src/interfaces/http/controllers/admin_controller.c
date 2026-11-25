@@ -164,6 +164,221 @@ system_backup_delete(csilk_ctx_t* c)
     respond_ok(c, resp);
 }
 
+static int
+require_admin_actor(csilk_ctx_t* c, int64_t* out_user_id)
+{
+    int64_t user_id = ctx_user_id(c);
+    if (user_id <= 0) {
+        return 0;
+    }
+    if (!auth_usecase_is_instance_admin(db_get_pool(), user_id)) {
+        respond_forbidden(c, "仅管理员可执行用户管理操作");
+        return 0;
+    }
+    if (out_user_id) {
+        *out_user_id = user_id;
+    }
+    return 1;
+}
+
+void
+api_admin_users_list(csilk_ctx_t* c)
+{
+    int64_t actor_id = 0;
+    if (!require_admin_actor(c, &actor_id)) {
+        return;
+    }
+
+    int64_t page = 1;
+    int64_t page_size = 20;
+    parse_page_params(c, &page, &page_size);
+
+    admin_list_users_cmd_t cmd = {
+        .page = page,
+        .page_size = page_size,
+        .keyword = csilk_get_query(c, "keyword"),
+        .role = csilk_get_query(c, "role"),
+        .status = csilk_get_query(c, "status"),
+    };
+
+    csilk_json_t*         out_data = NULL;
+    auth_usecase_result_t res = {0};
+    int                   rc = auth_usecase_admin_list_users(db_get_pool(), &cmd, &out_data, &res);
+    if (rc == 0 && res.code == 0 && out_data) {
+        respond_ok(c, out_data);
+    } else {
+        respond_error(
+            c, res.code ? res.code : 500, res.message[0] ? res.message : "查询用户列表失败");
+    }
+}
+
+void
+api_admin_users_create(csilk_ctx_t* c)
+{
+    int64_t actor_id = 0;
+    if (!require_admin_actor(c, &actor_id)) {
+        return;
+    }
+
+    csilk_json_t* body = csilk_bind_json(c);
+    if (!body) {
+        respond_bad_request(c, "请求体必须为 JSON");
+        return;
+    }
+
+    admin_create_user_cmd_t cmd = {
+        .username = csilk_json_get_string(body, "username"),
+        .password_enc = csilk_json_get_string(body, "password_enc"),
+        .plain_password = csilk_json_get_string(body, "password"),
+        .role = csilk_json_get_string(body, "role"),
+    };
+
+    csilk_json_t*         out_data = NULL;
+    auth_usecase_result_t res = {0};
+    int rc = auth_usecase_admin_create_user(db_get_pool(), &cmd, c, &out_data, &res);
+    csilk_json_free(body);
+
+    if (rc == 0 && res.code == 0 && out_data) {
+        respond_ok(c, out_data);
+    } else {
+        respond_error(c, res.code ? res.code : 1002, res.message[0] ? res.message : "创建用户失败");
+    }
+}
+
+void
+api_admin_users_update(csilk_ctx_t* c)
+{
+    int64_t actor_id = 0;
+    if (!require_admin_actor(c, &actor_id)) {
+        return;
+    }
+
+    int64_t target_id = parse_query_int_strict(csilk_get_param(c, "id"), -1);
+    if (target_id <= 0) {
+        respond_bad_request(c, "无效的用户 ID");
+        return;
+    }
+
+    csilk_json_t* body = csilk_bind_json(c);
+    if (!body) {
+        respond_bad_request(c, "请求体必须为 JSON");
+        return;
+    }
+
+    const csilk_json_t* disabled_node = csilk_json_get(body, "disabled");
+    bool                has_disabled = (disabled_node != NULL);
+    bool                disabled_val = false;
+    if (has_disabled) {
+        disabled_val = csilk_json_as_bool(disabled_node, false);
+    }
+
+    admin_update_user_cmd_t cmd = {
+        .actor_user_id = actor_id,
+        .target_user_id = target_id,
+        .role = csilk_json_get_string(body, "role"),
+        .has_disabled = has_disabled,
+        .disabled = disabled_val,
+    };
+
+    csilk_json_t*         out_data = NULL;
+    auth_usecase_result_t res = {0};
+    int                   rc = auth_usecase_admin_update_user(db_get_pool(), &cmd, &out_data, &res);
+    csilk_json_free(body);
+
+    if (rc == 0 && res.code == 0) {
+        respond_ok(c, out_data ? out_data : csilk_json_object());
+    } else {
+        if (out_data) {
+            csilk_json_free(out_data);
+        }
+        respond_error(c, res.code ? res.code : 1002, res.message[0] ? res.message : "更新用户失败");
+    }
+}
+
+void
+api_admin_users_reset_password(csilk_ctx_t* c)
+{
+    int64_t actor_id = 0;
+    if (!require_admin_actor(c, &actor_id)) {
+        return;
+    }
+
+    int64_t target_id = parse_query_int_strict(csilk_get_param(c, "id"), -1);
+    if (target_id <= 0) {
+        respond_bad_request(c, "无效的用户 ID");
+        return;
+    }
+
+    csilk_json_t* body = csilk_bind_json(c);
+    if (!body) {
+        respond_bad_request(c, "请求体必须为 JSON");
+        return;
+    }
+
+    admin_reset_password_cmd_t cmd = {
+        .target_user_id = target_id,
+        .new_password_enc = csilk_json_get_string(body, "new_password_enc"),
+        .plain_password = csilk_json_get_string(body, "new_password"),
+    };
+
+    auth_usecase_result_t res = {0};
+    int                   rc = auth_usecase_admin_reset_password(db_get_pool(), &cmd, c, &res);
+    csilk_json_free(body);
+
+    if (rc == 0 && res.code == 0) {
+        respond_ok_null(c);
+    } else {
+        respond_error(c, res.code ? res.code : 1002, res.message[0] ? res.message : "重置密码失败");
+    }
+}
+
+void
+api_admin_users_disable_2fa(csilk_ctx_t* c)
+{
+    int64_t actor_id = 0;
+    if (!require_admin_actor(c, &actor_id)) {
+        return;
+    }
+
+    int64_t target_id = parse_query_int_strict(csilk_get_param(c, "id"), -1);
+    if (target_id <= 0) {
+        respond_bad_request(c, "无效的用户 ID");
+        return;
+    }
+
+    auth_usecase_result_t res = {0};
+    int                   rc = auth_usecase_admin_disable_2fa(db_get_pool(), target_id, &res);
+    if (rc == 0 && res.code == 0) {
+        respond_ok_null(c);
+    } else {
+        respond_error(
+            c, res.code ? res.code : 1002, res.message[0] ? res.message : "关闭两步验证失败");
+    }
+}
+
+void
+api_admin_users_delete(csilk_ctx_t* c)
+{
+    int64_t actor_id = 0;
+    if (!require_admin_actor(c, &actor_id)) {
+        return;
+    }
+
+    int64_t target_id = parse_query_int_strict(csilk_get_param(c, "id"), -1);
+    if (target_id <= 0) {
+        respond_bad_request(c, "无效的用户 ID");
+        return;
+    }
+
+    auth_usecase_result_t res = {0};
+    int rc = auth_usecase_admin_delete_user(db_get_pool(), actor_id, target_id, &res);
+    if (rc == 0 && res.code == 0) {
+        respond_ok_null(c);
+    } else {
+        respond_error(c, res.code ? res.code : 1004, res.message[0] ? res.message : "删除用户失败");
+    }
+}
+
 void
 register_admin_routes(csilk_app_t* app)
 {
@@ -185,4 +400,11 @@ register_admin_routes(csilk_app_t* app)
     csilk_app_post(app, "/api/system/backup/create", system_backup_create);
     csilk_app_get(app, "/api/system/backup/download/:filename", system_backup_download);
     csilk_app_delete(app, "/api/system/backup/:filename", system_backup_delete);
+
+    csilk_app_get(app, "/api/admin/users", api_admin_users_list);
+    csilk_app_post(app, "/api/admin/users", api_admin_users_create);
+    csilk_app_put(app, "/api/admin/users/:id", api_admin_users_update);
+    csilk_app_post(app, "/api/admin/users/:id/reset-password", api_admin_users_reset_password);
+    csilk_app_post(app, "/api/admin/users/:id/disable-2fa", api_admin_users_disable_2fa);
+    csilk_app_delete(app, "/api/admin/users/:id", api_admin_users_delete);
 }

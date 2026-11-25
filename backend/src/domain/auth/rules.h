@@ -33,3 +33,36 @@ bool mf_auth_rule_verify_backup_code(char        backup_codes[16][16],
  * @brief 校验 JWT 用户 Subject 声明是否为有效正整数 ID (sub > 0)
  */
 bool mf_auth_rule_validate_user_id(int64_t user_id);
+
+/**
+ * @brief 校验用户角色是否合法 ('admin' 或 'user')
+ */
+int mf_auth_rule_validate_role(const char* role, char* err_buf, size_t err_len);
+
+/**
+ * @brief 校验管理员更新目标用户角色/禁用状态是否符合安全保护规则
+ * @param actor_id                    执行操作的管理员 ID
+ * @param target_id                   目标用户 ID
+ * @param target_is_active_admin      目标用户当前是否为启用的管理员
+ * @param new_role                    目标角色 (NULL 表示不变)
+ * @param new_disabled                目标禁用状态
+ * @param active_admin_count          系统当前启用中的管理员总数
+ */
+int mf_auth_rule_can_update_user(int64_t     actor_id,
+                                 int64_t     target_id,
+                                 bool        target_is_active_admin,
+                                 const char* new_role,
+                                 bool        new_disabled,
+                                 int         active_admin_count,
+                                 char*       err_buf,
+                                 size_t      err_len);
+
+/**
+ * @brief 校验管理员删除目标用户是否符合安全保护规则
+ */
+int mf_auth_rule_can_delete_user(int64_t actor_id,
+                                 int64_t target_id,
+                                 bool    target_is_active_admin,
+                                 int     active_admin_count,
+                                 char*   err_buf,
+                                 size_t  err_len);

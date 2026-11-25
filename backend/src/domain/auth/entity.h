@@ -15,9 +15,36 @@ typedef struct mf_user {
     bool    totp_enabled;
     char    totp_secret[64];
     char    totp_backup_codes[1024];
+    char    oauth_provider[32];
+    char    role[16];
+    bool    disabled;
     char    created_at[64];
     char    updated_at[64];
 } mf_user_t;
+
+/**
+ * @brief 管理员用户列表摘要实体 (Domain User Summary)
+ */
+typedef struct mf_user_summary {
+    int64_t id;
+    char    username[64];
+    char    role[16];
+    bool    disabled;
+    bool    totp_enabled;
+    char    oauth_provider[32];
+    char    created_at[64];
+} mf_user_summary_t;
+
+/**
+ * @brief 用户管理统计摘要
+ */
+typedef struct mf_user_stats {
+    int64_t total_users;
+    int64_t active_users;
+    int64_t admin_users;
+    int64_t active_admin_users;
+    int64_t disabled_users;
+} mf_user_stats_t;
 
 /**
  * @brief TOTP 双因子配置模型

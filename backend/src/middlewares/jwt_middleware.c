@@ -79,8 +79,10 @@ jwt_validate_version_num(int64_t user_id, int jwt_version)
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     csilk_db_pool_t* pool = db_get_pool();
     const char*      params[] = {uid_str, NULL};
-    csilk_json_t*    row =
-        csilk_db_query_param_json(pool, "SELECT token_version FROM users WHERE id=?", params);
+    csilk_json_t*    row = csilk_db_query_param_json(
+        pool,
+        "SELECT token_version, COALESCE(disabled, 0) AS disabled FROM users WHERE id=?",
+        params);
     int db_version, found;
     if (!row || csilk_json_array_size(row) == 0) {
         if (row) {
@@ -89,8 +91,10 @@ jwt_validate_version_num(int64_t user_id, int jwt_version)
         found = 0;
         db_version = 0;
     } else {
-        found = 1;
-        db_version = (int)db_get_int(csilk_json_array_get(row, 0), "token_version");
+        csilk_json_t* r = csilk_json_array_get(row, 0);
+        int           disabled = db_get_bool(r, "disabled");
+        found = (disabled == 0) ? 1 : 0;
+        db_version = (int)db_get_int(r, "token_version");
         csilk_json_free(row);
     }
 

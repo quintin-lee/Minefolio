@@ -52,6 +52,14 @@ export interface User {
   id: number
   /** 用户名 */
   username: string
+  /** 系统角色 ('admin' | 'user') */
+  role?: 'admin' | 'user'
+  /** 是否为系统管理员 */
+  is_admin?: boolean
+  /** 是否已开启 2FA */
+  totp_enabled?: boolean
+  /** OAuth 第三方登录提供商 */
+  oauth_provider?: string
   /** 用户注册创建时间 (ISO 8601 字符串) */
   created_at: string
 }

@@ -75,12 +75,40 @@ static void test_jwt_user_id_validation(void) {
     printf("PASS: test_jwt_user_id_validation\n");
 }
 
+static void test_admin_user_management_rules(void) {
+    char err[256];
+
+    assert(mf_auth_rule_validate_role("admin", err, sizeof(err)) == 0);
+    assert(mf_auth_rule_validate_role("user", err, sizeof(err)) == 0);
+    assert(mf_auth_rule_validate_role("superadmin", err, sizeof(err)) != 0);
+    assert(mf_auth_rule_validate_role("", err, sizeof(err)) != 0);
+
+    /* 不能禁用或降级自己 */
+    assert(mf_auth_rule_can_update_user(1, 1, true, "admin", true, 2, err, sizeof(err)) != 0);
+    assert(mf_auth_rule_can_update_user(1, 1, true, "user", false, 2, err, sizeof(err)) != 0);
+    assert(mf_auth_rule_can_update_user(1, 1, true, "admin", false, 2, err, sizeof(err)) == 0);
+
+    /* 不能禁用或降级最后一个启用的管理员 */
+    assert(mf_auth_rule_can_update_user(1, 2, true, "user", false, 1, err, sizeof(err)) != 0);
+    assert(mf_auth_rule_can_update_user(1, 2, true, "admin", true, 1, err, sizeof(err)) != 0);
+    assert(mf_auth_rule_can_update_user(1, 2, true, "user", false, 2, err, sizeof(err)) == 0);
+
+    /* 删除保护：不能自删，也不能删最后一个可用管理员 */
+    assert(mf_auth_rule_can_delete_user(1, 1, true, 2, err, sizeof(err)) != 0);
+    assert(mf_auth_rule_can_delete_user(1, 2, true, 1, err, sizeof(err)) != 0);
+    assert(mf_auth_rule_can_delete_user(1, 2, true, 2, err, sizeof(err)) == 0);
+    assert(mf_auth_rule_can_delete_user(1, 3, false, 1, err, sizeof(err)) == 0);
+
+    printf("PASS: test_admin_user_management_rules\n");
+}
+
 int main(void) {
     test_username_validation();
     test_password_validation();
     test_registration_policy();
     test_backup_code_verification();
     test_jwt_user_id_validation();
+    test_admin_user_management_rules();
     printf("All domain auth tests passed successfully!\n");
     return 0;
 }

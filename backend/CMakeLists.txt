@@ -418,3 +418,6 @@ add_dependencies(test_db_backup copy_assets)
 add_minefolio_unit_test(test_async_task_manager tests/unit/test_async_task_manager.c pthread)
 add_dependencies(test_async_task_manager copy_assets)
 
+add_minefolio_unit_test(test_admin_user_management tests/unit/test_admin_user_management.c)
+add_dependencies(test_admin_user_management copy_assets)
+

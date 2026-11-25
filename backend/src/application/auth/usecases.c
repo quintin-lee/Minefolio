@@ -9,6 +9,7 @@
 #include "application/account/usecases.h"
 #include "application/skill/usecases.h"
 #include "config/key_manager.h"
+#include "middlewares/jwt_middleware.h"
 #include "common/config.h"
 #include "common/jwt.h"
 #include "csilk/core/totp.h"
@@ -289,8 +290,8 @@ auth_usecase_register(void*                      pool,
     /* 注册开放门禁：首个用户（系统初始化引导）必须放行；已有用户时受
        ENABLE_REGISTRATION 配置控制（默认开放，可关闭以阻止后续注册）。
        该规则此前仅有单测、生产注册路径无调用点，此处接入。 */
+    int user_count = mf_auth_repo_count(pool);
     {
-        int         user_count = mf_auth_repo_count(pool);
         char        reg_cfg[32] = {0};
         const char* v = config_env_get("ENABLE_REGISTRATION", reg_cfg, sizeof(reg_cfg), "1");
         bool        allow_registration = !v || v[0] == '1' || strcasecmp(v, "true") == 0;
@@ -304,8 +305,10 @@ auth_usecase_register(void*                      pool,
     char hashed[CSILK_BCRYPT_HASH_LEN];
     store_bcrypt_hash(password, hashed);
 
-    int64_t user_id = 0;
-    if (mf_auth_repo_create(pool, cmd->username, hashed, &user_id) != 0 || user_id <= 0) {
+    const char* initial_role = (user_count == 0) ? "admin" : "user";
+    int64_t     user_id = 0;
+    if (mf_auth_repo_create_with_role(pool, cmd->username, hashed, initial_role, &user_id) != 0 ||
+        user_id <= 0) {
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "注册失败");
         return -1;
@@ -385,6 +388,12 @@ auth_usecase_login(void*                   pool,
         return -1;
     }
 
+    if (user.disabled) {
+        out_res->code = 1004;
+        snprintf(out_res->message, sizeof(out_res->message), "账号已被禁用，请联系管理员");
+        return -1;
+    }
+
     int is_2fa_active = (user.totp_secret[0] != '\0') &&
                         (user.totp_enabled || (user.totp_backup_codes[0] != '\0' &&
                                                strcmp(user.totp_backup_codes, "[]") != 0));
@@ -440,10 +449,20 @@ auth_usecase_me(void*                  pool,
         snprintf(out_res->message, sizeof(out_res->message), "用户不存在");
         return -1;
     }
+    if (user.disabled) {
+        out_res->code = 1001;
+        snprintf(out_res->message, sizeof(out_res->message), "未授权");
+        return -1;
+    }
 
+    const char*   role = user.role[0] ? user.role : "user";
     csilk_json_t* resp = csilk_json_object();
     csilk_json_add_number(resp, "id", (double)user.id);
     csilk_json_add_string(resp, "username", user.username);
+    csilk_json_add_string(resp, "role", role);
+    csilk_json_add_bool(resp, "is_admin", strcmp(role, "admin") == 0);
+    csilk_json_add_bool(resp, "totp_enabled", user.totp_enabled);
+    csilk_json_add_string(resp, "oauth_provider", user.oauth_provider);
     csilk_json_add_string(resp, "created_at", user.created_at);
 
     *out_data = resp;
@@ -800,7 +819,8 @@ auth_usecase_2fa_verify_login(void*                         pool,
     }
 
     mf_user_t user = {0};
-    if (mf_auth_repo_get_by_id(pool, user_id, &user) != 0 || user.token_version != token_v) {
+    if (mf_auth_repo_get_by_id(pool, user_id, &user) != 0 || user.token_version != token_v ||
+        user.disabled) {
         out_res->code = 1001;
         snprintf(out_res->message, sizeof(out_res->message), "未授权或临时凭证已失效");
         return -1;
@@ -1180,6 +1200,11 @@ auth_usecase_oauth_callback(void*                       pool,
     char    final_username[128] = {0};
 
     if (rc == 0) {
+        if (oauth_user.disabled) {
+            out_res->code = 1004;
+            snprintf(out_res->message, sizeof(out_res->message), "账号已被禁用，请联系管理员");
+            return -1;
+        }
         user_id = oauth_user.id;
         token_version = (int)oauth_user.token_version;
         snprintf(final_username, sizeof(final_username), "%s", oauth_user.username);
@@ -1328,7 +1353,8 @@ auth_usecase_setup_first_admin(void*                  pool,
     csilk_bcrypt_hash(password, strlen(password), CSILK_BCRYPT_DEFAULT_COST, hashed);
 
     int64_t user_id = 0;
-    if (mf_auth_repo_create(db_pool, username, hashed, &user_id) != 0 || user_id <= 0) {
+    if (mf_auth_repo_create_with_role(db_pool, username, hashed, "admin", &user_id) != 0 ||
+        user_id <= 0) {
         db_tx_scope_rollback(db_pool, &scope);
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "初始化失败");
@@ -1357,5 +1383,433 @@ auth_usecase_setup_first_admin(void*                  pool,
     *out_data = resp;
     out_res->code = 0;
     snprintf(out_res->message, sizeof(out_res->message), "ok");
+    return 0;
+}
+
+static csilk_json_t*
+user_to_summary_json(const mf_user_t* u)
+{
+    const char*   role = (u->role[0]) ? u->role : "user";
+    csilk_json_t* obj = csilk_json_object();
+    csilk_json_add_number(obj, "id", (double)u->id);
+    csilk_json_add_string(obj, "username", u->username);
+    csilk_json_add_string(obj, "role", role);
+    csilk_json_add_bool(obj, "is_admin", strcmp(role, "admin") == 0);
+    csilk_json_add_bool(obj, "disabled", u->disabled);
+    csilk_json_add_bool(obj, "totp_enabled", u->totp_enabled);
+    csilk_json_add_string(obj, "oauth_provider", u->oauth_provider);
+    csilk_json_add_string(obj, "created_at", u->created_at);
+    return obj;
+}
+
+static csilk_json_t*
+user_summary_to_json(const mf_user_summary_t* u)
+{
+    const char*   role = (u->role[0]) ? u->role : "user";
+    csilk_json_t* obj = csilk_json_object();
+    csilk_json_add_number(obj, "id", (double)u->id);
+    csilk_json_add_string(obj, "username", u->username);
+    csilk_json_add_string(obj, "role", role);
+    csilk_json_add_bool(obj, "is_admin", strcmp(role, "admin") == 0);
+    csilk_json_add_bool(obj, "disabled", u->disabled);
+    csilk_json_add_bool(obj, "totp_enabled", u->totp_enabled);
+    csilk_json_add_string(obj, "oauth_provider", u->oauth_provider);
+    csilk_json_add_string(obj, "created_at", u->created_at);
+    return obj;
+}
+
+static void
+seed_new_user_defaults(csilk_db_pool_t* db_pool, int64_t user_id)
+{
+    int64_t ledger_id = ledger_get_default(db_pool, user_id);
+    category_usecase_seed_defaults(db_pool, user_id, ledger_id);
+    account_usecase_seed_default(db_pool, user_id, ledger_id);
+    mf_import_rule_seed_defaults(db_pool, user_id);
+    skill_usecase_seed_defaults(db_pool, user_id);
+}
+
+int
+auth_usecase_admin_list_users(void*                         pool,
+                              const admin_list_users_cmd_t* cmd,
+                              csilk_json_t**                out_data,
+                              auth_usecase_result_t*        out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
+    memset(out_res, 0, sizeof(*out_res));
+    if (!pool || !out_data) {
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "服务器内部错误");
+        return -1;
+    }
+
+    int64_t     page = (cmd && cmd->page > 0) ? cmd->page : 1;
+    int64_t     page_size = (cmd && cmd->page_size > 0) ? cmd->page_size : 20;
+    const char* keyword = cmd ? cmd->keyword : NULL;
+    const char* role = cmd ? cmd->role : NULL;
+    int         disabled_filter = -1;
+    if (cmd && cmd->status) {
+        if (strcmp(cmd->status, "active") == 0) {
+            disabled_filter = 0;
+        } else if (strcmp(cmd->status, "disabled") == 0) {
+            disabled_filter = 1;
+        }
+    }
+
+    mf_user_summary_t* items = NULL;
+    int                count = 0;
+    int64_t            total = 0;
+    if (mf_auth_repo_list_users(
+            pool, page, page_size, keyword, role, disabled_filter, &items, &count, &total) != 0) {
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "查询用户列表失败");
+        return -1;
+    }
+
+    mf_user_stats_t stats = {0};
+    mf_auth_repo_get_user_stats(pool, &stats);
+
+    csilk_json_t* list = csilk_json_array();
+    for (int i = 0; i < count; i++) {
+        csilk_json_array_append(list, user_summary_to_json(&items[i]));
+    }
+    free(items);
+
+    csilk_json_t* stats_obj = csilk_json_object();
+    csilk_json_add_number(stats_obj, "total_users", (double)stats.total_users);
+    csilk_json_add_number(stats_obj, "active_users", (double)stats.active_users);
+    csilk_json_add_number(stats_obj, "admin_users", (double)stats.admin_users);
+    csilk_json_add_number(stats_obj, "active_admin_users", (double)stats.active_admin_users);
+    csilk_json_add_number(stats_obj, "disabled_users", (double)stats.disabled_users);
+
+    csilk_json_t* resp = csilk_json_object();
+    csilk_json_add_array(resp, "list", list);
+    csilk_json_add_number(resp, "total", (double)total);
+    csilk_json_add_number(resp, "page", (double)page);
+    csilk_json_add_number(resp, "page_size", (double)page_size);
+    csilk_json_add_object(resp, "stats", stats_obj);
+
+    *out_data = resp;
+    out_res->code = 0;
+    snprintf(out_res->message, sizeof(out_res->message), "ok");
+    return 0;
+}
+
+int
+auth_usecase_admin_create_user(void*                          pool,
+                               const admin_create_user_cmd_t* cmd,
+                               csilk_ctx_t*                   c,
+                               csilk_json_t**                 out_data,
+                               auth_usecase_result_t*         out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
+    memset(out_res, 0, sizeof(*out_res));
+    if (!pool || !cmd || !cmd->username || !out_data) {
+        out_res->code = 1002;
+        snprintf(out_res->message, sizeof(out_res->message), "缺少用户名或密码");
+        return -1;
+    }
+
+    char        password_buf[512] = {0};
+    const char* password = NULL;
+    size_t      password_len = 0;
+    if (decrypt_password_if_needed(c,
+                                   cmd->password_enc,
+                                   cmd->plain_password,
+                                   password_buf,
+                                   sizeof(password_buf),
+                                   &password,
+                                   &password_len) != 0) {
+        out_res->code = 1002;
+        snprintf(out_res->message, sizeof(out_res->message), "密码解密失败");
+        return -1;
+    }
+
+    char err[256];
+    if (mf_auth_rule_validate_username(cmd->username, err, sizeof(err)) != 0 ||
+        mf_auth_rule_validate_password(password, err, sizeof(err)) != 0) {
+        OPENSSL_cleanse(password_buf, sizeof(password_buf));
+        out_res->code = 1002;
+        snprintf(out_res->message, sizeof(out_res->message), "%s", err);
+        return -1;
+    }
+
+    const char* role = (cmd->role && cmd->role[0]) ? cmd->role : "user";
+    if (mf_auth_rule_validate_role(role, err, sizeof(err)) != 0) {
+        OPENSSL_cleanse(password_buf, sizeof(password_buf));
+        out_res->code = 1002;
+        snprintf(out_res->message, sizeof(out_res->message), "%s", err);
+        return -1;
+    }
+
+    mf_user_t existing = {0};
+    if (mf_auth_repo_find_by_username(pool, cmd->username, &existing) == 0) {
+        OPENSSL_cleanse(password_buf, sizeof(password_buf));
+        out_res->code = 1004;
+        snprintf(out_res->message, sizeof(out_res->message), "用户名已存在");
+        return -1;
+    }
+
+    char hashed[CSILK_BCRYPT_HASH_LEN];
+    store_bcrypt_hash(password, hashed);
+    OPENSSL_cleanse(password_buf, sizeof(password_buf));
+
+    csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
+    db_tx_scope_t    scope;
+    if (db_tx_scope_begin(db_pool, "mf_admin_create_user", &scope) != 0) {
+        OPENSSL_cleanse(hashed, sizeof(hashed));
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "数据库错误");
+        return -1;
+    }
+
+    int64_t user_id = 0;
+    if (mf_auth_repo_create_with_role(db_pool, cmd->username, hashed, role, &user_id) != 0 ||
+        user_id <= 0) {
+        OPENSSL_cleanse(hashed, sizeof(hashed));
+        db_tx_scope_rollback(db_pool, &scope);
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "创建用户失败");
+        return -1;
+    }
+    OPENSSL_cleanse(hashed, sizeof(hashed));
+
+    seed_new_user_defaults(db_pool, user_id);
+
+    if (db_tx_scope_commit(db_pool, &scope) != 0) {
+        db_tx_scope_rollback(db_pool, &scope);
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "提交事务失败");
+        return -1;
+    }
+
+    mf_user_t created = {0};
+    if (mf_auth_repo_get_by_id(db_pool, user_id, &created) != 0) {
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "读取新建用户失败");
+        return -1;
+    }
+
+    *out_data = user_to_summary_json(&created);
+    out_res->code = 0;
+    snprintf(out_res->message, sizeof(out_res->message), "ok");
+    return 0;
+}
+
+int
+auth_usecase_admin_update_user(void*                          pool,
+                               const admin_update_user_cmd_t* cmd,
+                               csilk_json_t**                 out_data,
+                               auth_usecase_result_t*         out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
+    memset(out_res, 0, sizeof(*out_res));
+    if (!pool || !cmd || cmd->target_user_id <= 0 || cmd->actor_user_id <= 0) {
+        out_res->code = 1002;
+        snprintf(out_res->message, sizeof(out_res->message), "参数错误");
+        return -1;
+    }
+
+    mf_user_t target = {0};
+    if (mf_auth_repo_get_by_id(pool, cmd->target_user_id, &target) != 0) {
+        out_res->code = 1003;
+        snprintf(out_res->message, sizeof(out_res->message), "用户不存在");
+        return -1;
+    }
+
+    const char* current_role = target.role[0] ? target.role : "user";
+    const char* next_role = (cmd->role && cmd->role[0]) ? cmd->role : current_role;
+    bool        next_disabled = cmd->has_disabled ? cmd->disabled : target.disabled;
+    bool        target_is_active_admin = (strcmp(current_role, "admin") == 0 && !target.disabled);
+    int         active_admin_count = mf_auth_repo_count_active_admins(pool);
+
+    char err[256];
+    if (mf_auth_rule_can_update_user(cmd->actor_user_id,
+                                     cmd->target_user_id,
+                                     target_is_active_admin,
+                                     next_role,
+                                     next_disabled,
+                                     active_admin_count,
+                                     err,
+                                     sizeof(err)) != 0) {
+        out_res->code = 1004;
+        snprintf(out_res->message, sizeof(out_res->message), "%s", err);
+        return -1;
+    }
+
+    bool changed_role = (cmd->role && cmd->role[0] && strcmp(cmd->role, current_role) != 0);
+    bool changed_disabled = (cmd->has_disabled && cmd->disabled != target.disabled);
+
+    if (changed_role && mf_auth_repo_update_role(pool, cmd->target_user_id, next_role) != 0) {
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "更新用户角色失败");
+        return -1;
+    }
+    if (changed_disabled &&
+        mf_auth_repo_set_disabled(pool, cmd->target_user_id, next_disabled) != 0) {
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "更新用户状态失败");
+        return -1;
+    }
+
+    if ((changed_disabled && next_disabled) || changed_role) {
+        mf_auth_repo_update_token_version(pool, cmd->target_user_id);
+        jwt_middleware_invalidate_user(cmd->target_user_id);
+    }
+
+    if (out_data) {
+        mf_user_t updated = {0};
+        if (mf_auth_repo_get_by_id(pool, cmd->target_user_id, &updated) == 0) {
+            *out_data = user_to_summary_json(&updated);
+        }
+    }
+
+    out_res->code = 0;
+    snprintf(out_res->message, sizeof(out_res->message), "ok");
+    return 0;
+}
+
+int
+auth_usecase_admin_reset_password(void*                             pool,
+                                  const admin_reset_password_cmd_t* cmd,
+                                  csilk_ctx_t*                      c,
+                                  auth_usecase_result_t*            out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
+    memset(out_res, 0, sizeof(*out_res));
+    if (!pool || !cmd || cmd->target_user_id <= 0) {
+        out_res->code = 1002;
+        snprintf(out_res->message, sizeof(out_res->message), "参数错误");
+        return -1;
+    }
+
+    mf_user_t target = {0};
+    if (mf_auth_repo_get_by_id(pool, cmd->target_user_id, &target) != 0) {
+        out_res->code = 1003;
+        snprintf(out_res->message, sizeof(out_res->message), "用户不存在");
+        return -1;
+    }
+
+    char        password_buf[512] = {0};
+    const char* password = NULL;
+    size_t      password_len = 0;
+    if (decrypt_password_if_needed(c,
+                                   cmd->new_password_enc,
+                                   cmd->plain_password,
+                                   password_buf,
+                                   sizeof(password_buf),
+                                   &password,
+                                   &password_len) != 0) {
+        out_res->code = 1002;
+        snprintf(out_res->message, sizeof(out_res->message), "密码解密失败");
+        return -1;
+    }
+
+    char err[256];
+    if (mf_auth_rule_validate_password(password, err, sizeof(err)) != 0) {
+        OPENSSL_cleanse(password_buf, sizeof(password_buf));
+        out_res->code = 1002;
+        snprintf(out_res->message, sizeof(out_res->message), "%s", err);
+        return -1;
+    }
+
+    char new_hashed[CSILK_BCRYPT_HASH_LEN];
+    store_bcrypt_hash(password, new_hashed);
+    OPENSSL_cleanse(password_buf, sizeof(password_buf));
+
+    mf_auth_repo_update_password(pool, cmd->target_user_id, new_hashed);
+    OPENSSL_cleanse(new_hashed, sizeof(new_hashed));
+    mf_auth_repo_update_token_version(pool, cmd->target_user_id);
+    jwt_middleware_invalidate_user(cmd->target_user_id);
+
+    out_res->code = 0;
+    snprintf(out_res->message, sizeof(out_res->message), "密码重置成功");
+    return 0;
+}
+
+int
+auth_usecase_admin_disable_2fa(void* pool, int64_t target_user_id, auth_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
+    memset(out_res, 0, sizeof(*out_res));
+    if (!pool || target_user_id <= 0) {
+        out_res->code = 1002;
+        snprintf(out_res->message, sizeof(out_res->message), "参数错误");
+        return -1;
+    }
+
+    mf_user_t target = {0};
+    if (mf_auth_repo_get_by_id(pool, target_user_id, &target) != 0) {
+        out_res->code = 1003;
+        snprintf(out_res->message, sizeof(out_res->message), "用户不存在");
+        return -1;
+    }
+
+    mf_auth_repo_disable_totp(pool, target_user_id);
+    mf_auth_repo_update_token_version(pool, target_user_id);
+    jwt_middleware_invalidate_user(target_user_id);
+
+    out_res->code = 0;
+    snprintf(out_res->message, sizeof(out_res->message), "已关闭该用户的两步验证");
+    return 0;
+}
+
+int
+auth_usecase_admin_delete_user(void*                  pool,
+                               int64_t                actor_user_id,
+                               int64_t                target_user_id,
+                               auth_usecase_result_t* out_res)
+{
+    if (!out_res) {
+        return -1;
+    }
+    memset(out_res, 0, sizeof(*out_res));
+    if (!pool || actor_user_id <= 0 || target_user_id <= 0) {
+        out_res->code = 1002;
+        snprintf(out_res->message, sizeof(out_res->message), "参数错误");
+        return -1;
+    }
+
+    mf_user_t target = {0};
+    if (mf_auth_repo_get_by_id(pool, target_user_id, &target) != 0) {
+        out_res->code = 1003;
+        snprintf(out_res->message, sizeof(out_res->message), "用户不存在");
+        return -1;
+    }
+
+    const char* current_role = target.role[0] ? target.role : "user";
+    bool        target_is_active_admin = (strcmp(current_role, "admin") == 0 && !target.disabled);
+    int         active_admin_count = mf_auth_repo_count_active_admins(pool);
+
+    char err[256];
+    if (mf_auth_rule_can_delete_user(actor_user_id,
+                                     target_user_id,
+                                     target_is_active_admin,
+                                     active_admin_count,
+                                     err,
+                                     sizeof(err)) != 0) {
+        out_res->code = 1004;
+        snprintf(out_res->message, sizeof(out_res->message), "%s", err);
+        return -1;
+    }
+
+    if (mf_auth_repo_delete_user_cascade(pool, target_user_id) != 0) {
+        out_res->code = 500;
+        snprintf(out_res->message, sizeof(out_res->message), "删除用户失败");
+        return -1;
+    }
+
+    jwt_middleware_invalidate_user(target_user_id);
+    out_res->code = 0;
+    snprintf(out_res->message, sizeof(out_res->message), "用户已删除");
     return 0;
 }

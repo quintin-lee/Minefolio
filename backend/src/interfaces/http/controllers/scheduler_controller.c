@@ -14,8 +14,7 @@
 static bool
 is_current_user_admin(int64_t user_id)
 {
-    int64_t aid = auth_usecase_get_instance_admin_id(db_get_pool());
-    return (aid > 0 && user_id == aid);
+    return auth_usecase_is_instance_admin(db_get_pool(), user_id) != 0;
 }
 
 void

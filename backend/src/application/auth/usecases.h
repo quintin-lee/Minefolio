@@ -104,3 +104,50 @@ int auth_usecase_setup_first_admin(void*                  pool,
                                    const char*            password_enc,
                                    csilk_json_t**         out_data,
                                    auth_usecase_result_t* out_res);
+
+/**
+ * @brief 管理员分页查询用户列表与统计信息
+ */
+int auth_usecase_admin_list_users(void*                         pool,
+                                  const admin_list_users_cmd_t* cmd,
+                                  csilk_json_t**                out_data,
+                                  auth_usecase_result_t*        out_res);
+
+/**
+ * @brief 管理员创建新用户并初始化默认账本与基础数据
+ */
+int auth_usecase_admin_create_user(void*                          pool,
+                                   const admin_create_user_cmd_t* cmd,
+                                   csilk_ctx_t*                   c,
+                                   csilk_json_t**                 out_data,
+                                   auth_usecase_result_t*         out_res);
+
+/**
+ * @brief 管理员更新用户角色或启用/禁用状态
+ */
+int auth_usecase_admin_update_user(void*                          pool,
+                                   const admin_update_user_cmd_t* cmd,
+                                   csilk_json_t**                 out_data,
+                                   auth_usecase_result_t*         out_res);
+
+/**
+ * @brief 管理员重置指定用户密码并吊销其现有登录态
+ */
+int auth_usecase_admin_reset_password(void*                             pool,
+                                      const admin_reset_password_cmd_t* cmd,
+                                      csilk_ctx_t*                      c,
+                                      auth_usecase_result_t*            out_res);
+
+/**
+ * @brief 管理员关闭指定用户的两步验证 (2FA)
+ */
+int
+auth_usecase_admin_disable_2fa(void* pool, int64_t target_user_id, auth_usecase_result_t* out_res);
+
+/**
+ * @brief 管理员删除指定用户并级联清理其业务数据
+ */
+int auth_usecase_admin_delete_user(void*                  pool,
+                                   int64_t                actor_user_id,
+                                   int64_t                target_user_id,
+                                   auth_usecase_result_t* out_res);

@@ -89,3 +89,101 @@ mf_auth_rule_validate_user_id(int64_t user_id)
 {
     return user_id > 0;
 }
+
+int
+mf_auth_rule_validate_role(const char* role, char* err_buf, size_t err_len)
+{
+    if (!role || !role[0]) {
+        if (err_buf && err_len) {
+            snprintf(err_buf, err_len, "角色不能为空");
+        }
+        return -1;
+    }
+    if (strcmp(role, "admin") != 0 && strcmp(role, "user") != 0) {
+        if (err_buf && err_len) {
+            snprintf(err_buf, err_len, "无效的用户角色，仅支持 admin 或 user");
+        }
+        return -1;
+    }
+    return 0;
+}
+
+int
+mf_auth_rule_can_update_user(int64_t     actor_id,
+                             int64_t     target_id,
+                             bool        target_is_active_admin,
+                             const char* new_role,
+                             bool        new_disabled,
+                             int         active_admin_count,
+                             char*       err_buf,
+                             size_t      err_len)
+{
+    if (actor_id <= 0 || target_id <= 0) {
+        if (err_buf && err_len) {
+            snprintf(err_buf, err_len, "无效的用户 ID");
+        }
+        return -1;
+    }
+
+    if (new_role && mf_auth_rule_validate_role(new_role, err_buf, err_len) != 0) {
+        return -1;
+    }
+
+    if (actor_id == target_id) {
+        if (new_disabled) {
+            if (err_buf && err_len) {
+                snprintf(err_buf, err_len, "不能禁用当前登录的管理员账号");
+            }
+            return -1;
+        }
+        if (new_role && strcmp(new_role, "admin") != 0) {
+            if (err_buf && err_len) {
+                snprintf(err_buf, err_len, "不能取消当前登录账号的管理员权限");
+            }
+            return -1;
+        }
+    }
+
+    bool removing_active_admin =
+        target_is_active_admin && (new_disabled || (new_role && strcmp(new_role, "admin") != 0));
+    if (removing_active_admin && active_admin_count <= 1) {
+        if (err_buf && err_len) {
+            snprintf(err_buf, err_len, "系统至少需要保留一名可用的管理员账号");
+        }
+        return -1;
+    }
+
+    return 0;
+}
+
+int
+mf_auth_rule_can_delete_user(int64_t actor_id,
+                             int64_t target_id,
+                             bool    target_is_active_admin,
+                             int     active_admin_count,
+                             char*   err_buf,
+                             size_t  err_len)
+{
+    if (actor_id <= 0 || target_id <= 0) {
+        if (err_buf && err_len) {
+            snprintf(err_buf, err_len, "无效的用户 ID");
+        }
+        return -1;
+    }
+
+    if (actor_id == target_id) {
+        if (err_buf && err_len) {
+            snprintf(err_buf, err_len, "不能删除当前登录的管理员账号");
+        }
+        return -1;
+    }
+
+    if (target_is_active_admin && active_admin_count <= 1) {
+        if (err_buf && err_len) {
+            snprintf(err_buf, err_len, "系统至少需要保留一名可用的管理员账号");
+        }
+        return -1;
+    }
+
+    return 0;
+}

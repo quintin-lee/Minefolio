@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
 
 typedef struct register_user_cmd {
@@ -42,3 +43,32 @@ typedef struct oauth_callback_cmd {
     const char* code;
     const char* username;
 } oauth_callback_cmd_t;
+
+typedef struct admin_list_users_cmd {
+    int64_t     page;
+    int64_t     page_size;
+    const char* keyword;
+    const char* role;
+    const char* status;
+} admin_list_users_cmd_t;
+
+typedef struct admin_create_user_cmd {
+    const char* username;
+    const char* password_enc;
+    const char* plain_password;
+    const char* role;
+} admin_create_user_cmd_t;
+
+typedef struct admin_update_user_cmd {
+    int64_t     actor_user_id;
+    int64_t     target_user_id;
+    const char* role;
+    bool        has_disabled;
+    bool        disabled;
+} admin_update_user_cmd_t;
+
+typedef struct admin_reset_password_cmd {
+    int64_t     target_user_id;
+    const char* new_password_enc;
+    const char* plain_password;
+} admin_reset_password_cmd_t;

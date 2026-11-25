@@ -10,6 +10,10 @@
       <div class="user-info-text">
         <div class="user-name-row">
           <span class="user-display-name">{{ auth.user?.username || '-' }}</span>
+          <el-tag v-if="auth.isAdmin" size="small" type="warning" effect="dark" class="role-badge">
+            <Icon icon="ph:crown-bold" width="14" />
+            <span>{{ t('settings.roleAdminBadge') }}</span>
+          </el-tag>
           <el-tag size="small" effect="dark" class="role-badge">
             <Icon icon="ph:shield-check-fill" width="14" />
             <span>{{ t('settings.verified') }}</span>

@@ -38,6 +38,36 @@ void system_backup_download(csilk_ctx_t* c);
 void system_backup_delete(csilk_ctx_t* c);
 
 /**
+ * @brief 管理员查询用户列表 (GET /api/admin/users)
+ */
+void api_admin_users_list(csilk_ctx_t* c);
+
+/**
+ * @brief 管理员创建新用户 (POST /api/admin/users)
+ */
+void api_admin_users_create(csilk_ctx_t* c);
+
+/**
+ * @brief 管理员更新用户角色或状态 (PUT /api/admin/users/:id)
+ */
+void api_admin_users_update(csilk_ctx_t* c);
+
+/**
+ * @brief 管理员重置指定用户密码 (POST /api/admin/users/:id/reset-password)
+ */
+void api_admin_users_reset_password(csilk_ctx_t* c);
+
+/**
+ * @brief 管理员关闭指定用户的两步验证 (POST /api/admin/users/:id/disable-2fa)
+ */
+void api_admin_users_disable_2fa(csilk_ctx_t* c);
+
+/**
+ * @brief 管理员删除指定用户 (DELETE /api/admin/users/:id)
+ */
+void api_admin_users_delete(csilk_ctx_t* c);
+
+/**
  * @brief 注册系统管理相关 RESTful 路由
  */
 void register_admin_routes(csilk_app_t* app);

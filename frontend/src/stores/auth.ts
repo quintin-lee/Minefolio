@@ -4,23 +4,11 @@
  */
 
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
-import { authApi } from '@/api/auth'
+import { computed, ref } from 'vue'
+import { authApi, type User } from '@/api/auth'
 import { systemApi } from '@/api/system'
 import { encryptPassword, clearCryptoKeyCache } from '@/utils/crypto'
 import { clearSwrCache } from '@/utils/swr-cache'
-
-/**
- * 用户信息接口
- */
-interface User {
-  /** 用户唯一标识 ID */
-  id: number
-  /** 用户名 */
-  username: string
-  /** 注册创建时间 (ISO 8601 字符串) */
-  created_at: string
-}
 
 // RSA-OAEP 密码加密统一由 utils/crypto.ts 提供 (公钥拉取 + 加密实现已去重)
 
@@ -32,6 +20,8 @@ export const useAuthStore = defineStore('auth', () => {
   const token = ref<string>(localStorage.getItem('token') || '')
   /** 当前登录用户信息 */
   const user = ref<User | null>(null)
+  /** 当前登录用户是否为系统管理员 */
+  const isAdmin = computed(() => user.value?.role === 'admin' || user.value?.is_admin === true)
   /** 系统是否完成首次初始化安装 (null 表示尚未检测) */
   const isInitialized = ref<boolean | null>(null)
 
@@ -264,6 +254,7 @@ export const useAuthStore = defineStore('auth', () => {
   return {
     token,
     user,
+    isAdmin,
     isInitialized,
     checkSystemStatus,
     setup,

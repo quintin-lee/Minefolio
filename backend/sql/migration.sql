@@ -10,6 +10,8 @@ CREATE TABLE IF NOT EXISTS users (
     totp_backup_codes TEXT DEFAULT '',
     oauth_provider    TEXT DEFAULT '',
     oauth_id          TEXT DEFAULT '',
+    role              TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('admin', 'user')),
+    disabled          INTEGER NOT NULL DEFAULT 0,
     created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

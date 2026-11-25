@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS users (
     totp_secret       TEXT DEFAULT '',
     totp_enabled      BOOLEAN DEFAULT FALSE,
     totp_backup_codes TEXT DEFAULT '',
+    role              VARCHAR(32) NOT NULL DEFAULT 'user' CHECK(role IN ('admin', 'user')),
+    disabled          INTEGER NOT NULL DEFAULT 0,
     created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
