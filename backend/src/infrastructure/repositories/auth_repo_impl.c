@@ -756,7 +756,6 @@ mf_auth_repo_delete_user_cascade(void* pool, int64_t user_id)
                         "(SELECT id FROM ai_sessions WHERE user_id = ?)",
                         p1);
     csilk_db_exec_param(db_pool, "DELETE FROM ai_sessions WHERE user_id = ?", p1);
-    csilk_db_exec_param(db_pool, "DELETE FROM ai_settings WHERE user_id = ?", p1);
     csilk_db_exec_param(db_pool, "DELETE FROM ai_consumed_nonces WHERE user_id = ?", p1);
     csilk_db_exec_param(db_pool, "DELETE FROM ai_skills WHERE user_id = ?", p1);
     csilk_db_exec_param(db_pool, "DELETE FROM ai_news_reports WHERE user_id = ?", p1);
