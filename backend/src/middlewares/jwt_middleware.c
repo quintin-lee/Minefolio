@@ -211,6 +211,11 @@ jwt_middleware_wrapper(csilk_ctx_t* c)
             csilk_next(c);
             return;
         }
+        /* 网关内部路由 /api/gateway/ 由各 handler 内 gateway_auth_check() 验证 X-Gateway-Token */
+        if (strncmp(path, "/api/gateway/", 13) == 0 && strstr(path, "..") == NULL) {
+            csilk_next(c);
+            return;
+        }
     }
 
     const char* secret = config_secret_get("JWT_SECRET", NULL, 0);
@@ -269,9 +274,10 @@ jwt_middleware_wrapper(csilk_ctx_t* c)
             return;
         }
     }
-    /* IM 绑定码 (type=im_bind) 仅放行安全 /api/im/* 路径（禁止 '..' 穿越），不得访问其他业务端点 */
+    /* IM 绑定码 (type=im_bind) 仅放行安全 /api/im/ 路径（禁止 '..' 穿越与 /api/im/instances 管理端点） */
     if (token_type && strcmp(token_type, "im_bind") == 0) {
-        if (!path || strncmp(path, "/api/im/", 8) != 0 || strstr(path, "..") != NULL) {
+        if (!path || strncmp(path, "/api/im/", 8) != 0 ||
+            strncmp(path, "/api/im/instances", 17) == 0 || strstr(path, "..") != NULL) {
             csilk_json_free(payload);
             csilk_json_error(c,
                              CSILK_STATUS_UNAUTHORIZED,

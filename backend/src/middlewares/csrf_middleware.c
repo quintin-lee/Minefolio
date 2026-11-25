@@ -124,6 +124,10 @@ csrf_should_set_secure(const csilk_ctx_t* c)
 static bool
 csrf_skip_if_bearer_or_seed(csilk_ctx_t* c)
 {
+    const char* path = csilk_get_path(c);
+    if (path && strncmp(path, "/api/gateway/", 13) == 0 && strstr(path, "..") == NULL) {
+        return true;
+    }
     const char* cookie = csilk_get_cookie(c, "csrf_token");
     if (!cookie || !cookie[0]) {
         /* 若携带了 Bearer 鉴权头，直接放行，避免 API/移动端客户端因缺少 cookie 被拦截 */
@@ -133,7 +137,6 @@ csrf_skip_if_bearer_or_seed(csilk_ctx_t* c)
         }
         /* 仅对安全方法或初始化/登录免检路径下发 csrf_token Cookie，避免在 403 拒绝响应中签发令牌 */
         const char* method = csilk_get_method(c);
-        const char* path = csilk_get_path(c);
         if (is_safe_http_method(method) || is_csrf_excluded_path(path)) {
             char buf[33];
             if (csilk_csrf_generate_token(buf, sizeof(buf)) == 0) {

@@ -30,6 +30,7 @@
 #include "interfaces/http/controllers/ai_mcp_controller.h"
 #include "interfaces/http/controllers/ai_news_controller.h"
 #include "interfaces/http/controllers/im_bot_controller.h"
+#include "interfaces/http/controllers/im_bot_instance_controller.h"
 #include "interfaces/http/controllers/mcp_server_controller.h"
 #include "interfaces/http/controllers/skill_controller.h"
 #include "interfaces/http/controllers/scheduler_controller.h"
@@ -200,6 +201,7 @@ main(int argc, char** argv)
     register_skill_routes(app);
     register_ai_news_routes(app);
     register_im_bot_routes(app);
+    register_im_bot_instance_routes(app);
     register_scheduler_routes(app);
     register_task_routes(app);
     csilk_admin_serve_secure(app, "/csilk-admin", jwt_middleware_wrapper);
