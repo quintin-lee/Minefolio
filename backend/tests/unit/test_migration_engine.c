@@ -7,6 +7,7 @@
 #include "csilk/csilk.h"
 #include "csilk/drivers/db.h"
 #include "csilk/drivers/db/migration.h"
+#include "common/db.h"
 
 static const char*
 get_migrations_path(void)
@@ -345,6 +346,50 @@ test_postgres_migration_dialect(void)
     printf("PostgreSQL migration dialect contract passed.\n");
 }
 
+static void
+test_db_run_migrations_checksum_diagnostic(void)
+{
+    printf("--- Running db_run_migrations Checksum Diagnostic Test ---\n");
+
+    csilk_db_pool_t* pool = csilk_db_pool_new("sqlite", ":memory:");
+    assert(pool != NULL);
+
+    assert(db_run_migrations(pool) == 0);
+
+    assert(csilk_db_exec(pool,
+                         "UPDATE schema_migrations SET checksum = 'badhash_v1' WHERE version = 1;"
+                         "UPDATE schema_migrations SET checksum = 'badhash_v2' WHERE version = 2;") ==
+           0);
+
+    fflush(stderr);
+    FILE* tmp = tmpfile();
+    assert(tmp != NULL);
+    int saved_fd = dup(STDERR_FILENO);
+    assert(saved_fd >= 0);
+    assert(dup2(fileno(tmp), STDERR_FILENO) >= 0);
+
+    int rc = db_run_migrations(pool);
+
+    fflush(stderr);
+    assert(dup2(saved_fd, STDERR_FILENO) >= 0);
+    close(saved_fd);
+
+    rewind(tmp);
+    char   buf[8192] = {0};
+    size_t n = fread(buf, 1, sizeof(buf) - 1, tmp);
+    buf[n] = '\0';
+    fclose(tmp);
+
+    assert(rc != 0);
+    assert(strstr(buf, "Checksum mismatch for V001") != NULL);
+    assert(strstr(buf, "db='badhash_v1'") != NULL);
+    assert(strstr(buf, "Checksum mismatch for V002") != NULL);
+    assert(strstr(buf, "db='badhash_v2'") != NULL);
+
+    csilk_db_pool_free(pool);
+    printf("db_run_migrations checksum diagnostic passed.\n");
+}
+
 int
 main(void)
 {
@@ -361,6 +406,7 @@ main(void)
     test_tampering_detection();
     test_auto_baseline_existing_database();
     test_postgres_migration_dialect();
+    test_db_run_migrations_checksum_diagnostic();
 
     printf("==================================================\n");
     printf("All Database Migration Engine Tests Passed (100%%)!\n");

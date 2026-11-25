@@ -148,6 +148,159 @@ resolve_migrations_base_dir(void)
     return "sql/migrations";
 }
 
+static void
+diagnose_migration_failure(csilk_db_pool_t*          pool,
+                           csilk_migration_engine_t* engine,
+                           const char*               base_dir)
+{
+    csilk_migration_item_t* disk_items = NULL;
+    int                     disk_count = 0;
+    if (csilk_migration_discover(engine, &disk_items, &disk_count) != 0) {
+        fprintf(stderr,
+                "[migration] Failed to discover migration scripts under '%s' "
+                "(missing directory, unreadable file, or duplicate version)\n",
+                base_dir ? base_dir : "(null)");
+        fflush(stderr);
+        return;
+    }
+
+    if (csilk_migration_validate(engine) != 0) {
+        csilk_json_t* rows = csilk_db_query_json(
+            pool, "SELECT version, name, checksum FROM schema_migrations ORDER BY version ASC;");
+        if (rows && csilk_json_is_array(rows)) {
+            int64_t max_applied = 0;
+            bool    printed = false;
+            size_t  row_count = csilk_json_array_size(rows);
+
+            for (size_t r = 0; r < row_count; r++) {
+                csilk_json_t* row = csilk_json_array_get(rows, r);
+                if (!row) {
+                    continue;
+                }
+                int64_t     db_ver = db_get_int(row, "version");
+                const char* db_name = csilk_json_get_string(row, "name");
+                const char* db_ck = csilk_json_get_string(row, "checksum");
+                if (!db_name) {
+                    db_name = "";
+                }
+                if (!db_ck) {
+                    db_ck = "";
+                }
+                if (db_ver > max_applied) {
+                    max_applied = db_ver;
+                }
+
+                int match_idx = -1;
+                for (int i = 0; i < disk_count; i++) {
+                    if (disk_items[i].version == (int)db_ver) {
+                        match_idx = i;
+                        break;
+                    }
+                }
+                if (match_idx < 0) {
+                    fprintf(stderr,
+                            "[migration] Missing script for applied V%03lld (%s): recorded in "
+                            "schema_migrations but not found under '%s'\n",
+                            (long long)db_ver,
+                            db_name,
+                            base_dir ? base_dir : "(null)");
+                    printed = true;
+                } else if (!db_ck[0] || strcmp(disk_items[match_idx].checksum, db_ck) != 0) {
+                    fprintf(stderr,
+                            "[migration] Checksum mismatch for V%03lld (%s): db='%s' disk='%s' "
+                            "(file=%s; csilk hashes LF-normalized content with trailing whitespace "
+                            "stripped)\n",
+                            (long long)db_ver,
+                            db_name[0] ? db_name : disk_items[match_idx].name,
+                            db_ck,
+                            disk_items[match_idx].checksum,
+                            disk_items[match_idx].filepath);
+                    printed = true;
+                }
+            }
+
+            for (int i = 0; i < disk_count; i++) {
+                if (disk_items[i].version >= max_applied) {
+                    continue;
+                }
+                bool applied = false;
+                for (size_t r = 0; r < row_count; r++) {
+                    csilk_json_t* row = csilk_json_array_get(rows, r);
+                    if (row && db_get_int(row, "version") == (int64_t)disk_items[i].version) {
+                        applied = true;
+                        break;
+                    }
+                }
+                if (!applied) {
+                    fprintf(stderr,
+                            "[migration] Gap detected: V%03d (%s) is missing from "
+                            "schema_migrations while higher version V%03lld is already applied\n",
+                            disk_items[i].version,
+                            disk_items[i].name,
+                            (long long)max_applied);
+                    printed = true;
+                }
+            }
+
+            csilk_json_free(rows);
+            if (!printed) {
+                fprintf(
+                    stderr,
+                    "[migration] Validation failed (csilk_migration_validate != 0) under '%s'\n",
+                    base_dir ? base_dir : "(null)");
+            }
+        } else {
+            if (rows) {
+                csilk_json_free(rows);
+            }
+            fprintf(stderr,
+                    "[migration] Validation failed and schema_migrations could not be queried\n");
+        }
+        free(disk_items);
+        fflush(stderr);
+        return;
+    }
+
+    free(disk_items);
+
+    csilk_json_t* lock_rows = csilk_db_query_json(
+        pool,
+        "SELECT is_locked, locked_by, lease_expires_at FROM schema_migration_lock WHERE id = 1;");
+    if (lock_rows) {
+        if (csilk_json_is_array(lock_rows) && csilk_json_array_size(lock_rows) > 0) {
+            csilk_json_t* lrow = csilk_json_array_get(lock_rows, 0);
+            if (lrow && db_get_int(lrow, "is_locked") != 0) {
+                const char* locked_by = csilk_json_get_string(lrow, "locked_by");
+                fprintf(stderr,
+                        "[migration] Migration lock is currently held: locked_by='%s' "
+                        "lease_expires_at=%lld\n",
+                        locked_by ? locked_by : "",
+                        (long long)db_get_int(lrow, "lease_expires_at"));
+            }
+        }
+        csilk_json_free(lock_rows);
+    }
+
+    csilk_migration_item_t* status_items = NULL;
+    int                     status_count = 0;
+    if (csilk_migration_status(engine, &status_items, &status_count) == 0) {
+        for (int i = 0; i < status_count; i++) {
+            if (!status_items[i].is_applied) {
+                fprintf(stderr,
+                        "[migration] Failed while applying pending migration V%03d (%s, file=%s) "
+                        "(see database error logs for exact SQL error)\n",
+                        status_items[i].version,
+                        status_items[i].name,
+                        status_items[i].filepath);
+                break;
+            }
+        }
+        free(status_items);
+    }
+
+    fflush(stderr);
+}
+
 /**
  * @brief 执行数据库迁移（通过正式版本化迁移引擎）
  *
@@ -163,6 +316,8 @@ db_run_migrations(csilk_db_pool_t* pool)
     csilk_migration_engine_t* engine = NULL;
     if (csilk_migration_engine_new(pool, base_dir, &engine) != 0 || !engine) {
         CSILK_LOG_E("Failed to create migration engine at %s", base_dir);
+        fprintf(stderr, "[migration] Failed to create migration engine at '%s'\n", base_dir);
+        fflush(stderr);
         return -1;
     }
 
@@ -173,6 +328,7 @@ db_run_migrations(csilk_db_pool_t* pool)
     int rc = csilk_migration_apply(engine, &applied_count);
     if (rc != 0) {
         CSILK_LOG_E("Database migration failed");
+        diagnose_migration_failure(pool, engine, base_dir);
     } else {
         CSILK_LOG_I("Database migrations finished successfully (%d newly applied)", applied_count);
     }
