@@ -898,6 +898,117 @@ test_csv_import_rbac_and_isolation(csilk_db_pool_t* pool)
     printf("  [OK] CSV import enforces ledger isolation, anti-enumeration, RBAC write guard & snapshot invalidation\n");
 }
 
+static void
+test_portfolio_shared_ledger_rbac(csilk_db_pool_t* pool)
+{
+    printf("--- Testing Portfolio Repository Shared Ledger + RBAC Alignment ---\n");
+    int64_t owner_id = 0, member_id = 0;
+    assert(mf_auth_repo_create(pool, "port_owner", "hash1", &owner_id) == 0 && owner_id > 0);
+    assert(mf_auth_repo_create(pool, "port_member", "hash2", &member_id) == 0 && member_id > 0);
+
+    char s_oid[32], s_mid[32];
+    snprintf(s_oid, sizeof(s_oid), "%lld", (long long)owner_id);
+    snprintf(s_mid, sizeof(s_mid), "%lld", (long long)member_id);
+
+    csilk_json_t* lrow = csilk_db_query_param_json(
+        pool, "INSERT INTO ledgers (owner_id, name, currency) VALUES (?, 'PortShared', 'CNY') RETURNING id;",
+        (const char*[]){s_oid, NULL});
+    int64_t ledger_id = db_get_int(csilk_json_array_get(lrow, 0), "id");
+    csilk_json_free(lrow);
+
+    char s_lid[32];
+    snprintf(s_lid, sizeof(s_lid), "%lld", (long long)ledger_id);
+    csilk_db_exec_param(
+        pool, "INSERT INTO ledger_members (ledger_id, user_id, role) VALUES (?, ?, 'owner'), (?, ?, 'viewer');",
+        (const char*[]){s_lid, s_oid, s_lid, s_mid, NULL});
+
+    csilk_db_exec_param(
+        pool,
+        "INSERT INTO categories (user_id, ledger_id, name, type, asset_type) VALUES "
+        "(?, ?, 'PortCash', 'asset', 'cash'), "
+        "(?, ?, 'PortStock', 'asset', 'stock'), "
+        "(?, ?, 'PortLoan', 'asset', 'loan');",
+        (const char*[]){s_oid, s_lid, s_oid, s_lid, s_oid, s_lid, NULL});
+    csilk_json_t* cr = csilk_db_query_param_json(
+        pool, "SELECT id, asset_type FROM categories WHERE user_id=? AND ledger_id=?;",
+        (const char*[]){s_oid, s_lid, NULL});
+    int64_t cat_cash = 0, cat_stock = 0, cat_loan = 0;
+    for (size_t i = 0; i < csilk_json_array_size(cr); i++) {
+        csilk_json_t* r = csilk_json_array_get(cr, i);
+        const char*   at = csilk_json_get_string(r, "asset_type");
+        if (strcmp(at, "cash") == 0) cat_cash = db_get_int(r, "id");
+        if (strcmp(at, "stock") == 0) cat_stock = db_get_int(r, "id");
+        if (strcmp(at, "loan") == 0) cat_loan = db_get_int(r, "id");
+    }
+    csilk_json_free(cr);
+
+    account_usecase_result_t acres = {0};
+    create_account_cmd_t ac_open = {.user_id = owner_id, .ledger_id = ledger_id, .name = "PortOpen", .institution = "broker", .currency = "CNY"};
+    create_account_cmd_t ac_mask = {.user_id = owner_id, .ledger_id = ledger_id, .name = "PortMask", .institution = "broker", .currency = "CNY"};
+    assert(account_usecase_create(pool, &ac_open, &acres) == 0); int64_t acct_open = acres.id;
+    assert(account_usecase_create(pool, &ac_mask, &acres) == 0); int64_t acct_mask = acres.id;
+
+    asset_usecase_result_t ares = {0};
+    create_asset_cmd_t c_cash = {.user_id = owner_id, .ledger_id = ledger_id, .category_id = cat_cash, .account_id = acct_open, .name = "OwnerCash", .current_value = 10000.0, .currency = "CNY"};
+    create_asset_cmd_t c_stk = {.user_id = owner_id, .ledger_id = ledger_id, .category_id = cat_stock, .account_id = acct_open, .name = "OwnerStock", .current_value = 0.0, .quantity = 0.0, .cost_basis = 0.0, .net_value = 10.0, .currency = "CNY"};
+    create_asset_cmd_t c_loan = {.user_id = owner_id, .ledger_id = ledger_id, .category_id = cat_loan, .account_id = acct_open, .name = "OwnerLoan", .current_value = 500.0, .currency = "CNY"};
+    create_asset_cmd_t c_mstk = {.user_id = owner_id, .ledger_id = ledger_id, .category_id = cat_stock, .account_id = acct_mask, .name = "OwnerMaskStock", .current_value = 9000.0, .quantity = 90.0, .cost_basis = 8000.0, .net_value = 100.0, .currency = "CNY"};
+    assert(asset_usecase_create(pool, &c_cash, &ares) == 0); int64_t asset_cash = ares.id;
+    assert(asset_usecase_create(pool, &c_stk, &ares) == 0); int64_t asset_stk = ares.id;
+    assert(asset_usecase_create(pool, &c_loan, &ares) == 0);
+    assert(asset_usecase_create(pool, &c_mstk, &ares) == 0);
+
+    tx_usecase_result_t txres = {0};
+    create_tx_cmd_t buy_cmd = {
+        .user_id = owner_id, .ledger_id = ledger_id, .asset_id = asset_stk, .linked_asset_id = asset_cash,
+        .category_id = cat_stock, .type = "buy", .amount = 1000.0, .price = 10.0, .quantity = 100.0,
+        .currency = "CNY", .date = "2026-11-22", .note = "owner_buy"
+    };
+    assert(tx_usecase_create(pool, &buy_cmd, &txres) == 0);
+
+    // Restrict member on acct_mask (mask_balance=1); acct_open remains unmasked viewer
+    assert(account_permission_usecase_set(pool, owner_id, ledger_id, acct_mask, member_id, "viewer", 1, 0, &acres) == 0);
+
+    mf_holding_item_t* items = NULL; size_t hcount = 0;
+    assert(mf_portfolio_repo_get_holdings(pool, member_id, ledger_id, &items, &hcount) == 0);
+    assert(hcount == 1 && items[0].asset_id == asset_stk);
+    mf_portfolio_repo_free_holdings(items, hcount);
+
+    mf_portfolio_trade_event_t* evs = NULL; size_t ecount = 0;
+    assert(mf_portfolio_repo_get_trade_events(pool, member_id, ledger_id, &evs, &ecount) == 0);
+    assert(ecount == 1 && evs[0].asset_id == asset_stk);
+    mf_portfolio_repo_free_trade_events(evs, ecount);
+
+    csilk_json_t* cat_assets = portfolio_repo_get_category_assets(pool, member_id, ledger_id);
+    assert(cat_assets && csilk_json_array_size(cat_assets) == 2); // OwnerCash + OwnerStock, OwnerMaskStock excluded
+    csilk_json_free(cat_assets);
+
+    csilk_json_t* liabs = portfolio_repo_get_liability_assets(pool, member_id, ledger_id);
+    assert(liabs && csilk_json_array_size(liabs) == 1);
+    csilk_json_free(liabs);
+
+    csilk_json_t* rec = portfolio_repo_get_recent_transactions(pool, member_id, ledger_id, 10);
+    assert(rec && csilk_json_array_size(rec) == 1);
+    csilk_json_free(rec);
+
+    csilk_json_t* trend_a = portfolio_repo_get_trend_assets(pool, member_id, ledger_id);
+    assert(trend_a && csilk_json_array_size(trend_a) == 3);
+    csilk_json_free(trend_a);
+
+    csilk_json_t* trend_l = portfolio_repo_get_trend_balance_logs(pool, member_id, ledger_id, "2026-11-01");
+    assert(trend_l && csilk_json_array_size(trend_l) >= 1);
+    csilk_json_free(trend_l);
+
+    csilk_json_t* perf_t = portfolio_repo_get_performance_transactions(pool, member_id, ledger_id);
+    assert(perf_t && csilk_json_array_size(perf_t) == 1);
+    csilk_json_free(perf_t);
+
+    csilk_json_t* hraw = portfolio_repo_get_holdings_raw(pool, member_id, ledger_id);
+    assert(hraw && csilk_json_array_size(hraw) == 1);
+    csilk_json_free(hraw);
+    printf("  [OK] All 9 portfolio repo queries support shared ledger members + RBAC exclusion\n");
+}
+
 int main(void) {
     printf("========================================\n");
     printf("Starting Account RBAC & Field Masking Tests\n");
@@ -910,6 +1021,7 @@ int main(void) {
     test_usecases_and_masking(pool);
     test_csv_export_rbac_and_shared_ledger(pool);
     test_csv_import_rbac_and_isolation(pool);
+    test_portfolio_shared_ledger_rbac(pool);
 
     printf("========================================\n");
     printf("All Account RBAC Tests Passed Successfully!\n");
