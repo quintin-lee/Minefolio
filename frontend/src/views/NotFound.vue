@@ -19,7 +19,9 @@ import { useRouter } from 'vue-router'
 const router = useRouter()
 
 function goHome() {
-  const isMobile = window.location.pathname.startsWith('/m')
+  const isMobile =
+    router.getRoutes().some((r) => r.path === '/m/dashboard') ||
+    window.location.pathname.startsWith('/m')
   router.push(isMobile ? '/m/dashboard' : '/dashboard')
 }
 </script>

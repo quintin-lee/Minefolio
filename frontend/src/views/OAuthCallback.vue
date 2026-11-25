@@ -9,7 +9,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { authApi } from '@/api/auth'
@@ -21,22 +21,44 @@ const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
 const statusMsg = ref(t('oauth.verifying'))
+const timers: ReturnType<typeof setTimeout>[] = []
+
+function isMobileApp(): boolean {
+  return router.getRoutes().some((r) => r.path === '/m/dashboard')
+}
+
+function scheduleRedirect(target: string) {
+  const id = setTimeout(() => {
+    router.replace(target)
+  }, 3000)
+  timers.push(id)
+}
+
+onBeforeUnmount(() => {
+  while (timers.length) {
+    const id = timers.pop()
+    if (id !== undefined) clearTimeout(id)
+  }
+})
 
 onMounted(async () => {
+  const mobile = isMobileApp()
+  const loginPath = mobile ? '/m/login' : '/login'
+  const homePath = mobile ? '/m/dashboard' : '/dashboard'
   const code = (route.query.code as string) || ''
   const provider = (route.query.provider as string) || (route.params.provider as string) || 'github'
   const state = (route.query.state as string) || ''
 
   if (!code && !route.query.oauth_id) {
     statusMsg.value = t('oauth.missingCode')
-    setTimeout(() => router.replace('/login'), 3000)
+    scheduleRedirect(loginPath)
     return
   }
 
   if (!consumeAndVerifyOAuthState(state)) {
     statusMsg.value = t('oauth.loginFailedWith', { msg: t('oauth.invalidState') })
     ElMessage.error(t('oauth.invalidState'))
-    setTimeout(() => router.replace('/login'), 3000)
+    scheduleRedirect(loginPath)
     return
   }
 
@@ -59,17 +81,17 @@ onMounted(async () => {
       }
       await auth.reinitLocalDb()
       ElMessage.success(t('oauth.loginSuccess'))
-      router.replace('/dashboard')
+      router.replace(homePath)
     } else {
       throw new Error(t('oauth.noToken'))
     }
   } catch (err: any) {
-    const raw = err.message || ''
+    const raw = err?.response?.data?.message || err?.message || ''
     statusMsg.value = raw
       ? t('oauth.loginFailedWith', { msg: raw })
       : t('oauth.loginFailedWith', { msg: t('oauth.invalidCredential') })
     ElMessage.error(raw || t('oauth.failed'))
-    setTimeout(() => router.replace('/login'), 3000)
+    scheduleRedirect(loginPath)
   }
 })
 </script>
@@ -80,6 +102,7 @@ onMounted(async () => {
   justify-content: center;
   align-items: center;
   min-height: 100vh;
+  min-height: 100dvh;
   background: var(--mf-background, #0f172a);
 }
 .callback-card {

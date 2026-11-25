@@ -130,6 +130,7 @@
       </div>
     </div>
     <div class="action-buttons-group">
+      <el-button class="full-width-btn" @click="goPlans">定投计划与现金流日历</el-button>
       <el-button class="full-width-btn" @click="exportCsv">导出 CSV</el-button>
       <el-button class="full-width-btn" @click="goCategories">分类管理</el-button>
       <el-button class="full-width-btn danger-btn" @click="logout">退出登录</el-button>
@@ -138,7 +139,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { Monitor, Moon, Select, Sunny, Connection, SuccessFilled, CircleCloseFilled } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -177,15 +178,34 @@ const pending = computed(() => sync.activePendingCount)
 const syncConflicts = computed(() => sync.conflicts)
 const lastSync = computed(() => sync.lastSyncAt)
 const syncing = computed(() => sync.syncing)
-const dbStatus = computed(() => getLocalDbStatus())
+const dbStatus = ref(getLocalDbStatus())
 
-function syncNow() { sync.syncNow() }
+function refreshDbStatus() {
+  dbStatus.value = getLocalDbStatus()
+}
+
+onMounted(() => {
+  refreshDbStatus()
+  window.addEventListener('minefolio:localdb-quota-exceeded', refreshDbStatus)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('minefolio:localdb-quota-exceeded', refreshDbStatus)
+})
+
+async function syncNow() {
+  await sync.syncNow()
+  refreshDbStatus()
+}
 async function handleRetryConflict(id: number) {
   await sync.resolveConflictRetry(id)
 }
 function handleDiscardConflict(id: number) {
   sync.resolveConflictDiscard(id)
   ElMessage.info('已移除冲突任务')
+}
+function goPlans() {
+  router.push('/m/plans')
 }
 function goCategories() {
   ElMessage.info('分类增删与层级配置请前往桌面端管理')
@@ -270,7 +290,7 @@ async function logout() {
       confirmButtonText: '退出',
       cancelButtonText: '取消',
     })
-    auth.logout()
+    await auth.logout()
     router.replace('/m/login')
   } catch {
     // ignore

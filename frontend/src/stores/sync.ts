@@ -306,8 +306,14 @@ export const useSyncStore = defineStore('sync', () => {
           onAuthFail?.()
           throw e
         }
-        // 服务端业务错误（如已不存在）→ 标记冲突，停止该条推送但保留队列
-        if (e?.response?.data?.code && e.response.data.code !== 0) markConflict(item.id)
+        // 服务端业务错误或永久性客户端 4xx（非 401/408/429）→ 标记冲突，停止该条推送但保留队列
+        const status = Number(e?.response?.status || 0)
+        if (
+          (e?.response?.data?.code && e.response.data.code !== 0) ||
+          (status >= 400 && status < 500 && status !== 401 && status !== 408 && status !== 429)
+        ) {
+          markConflict(item.id)
+        }
       }
     }
     return pushedInCycle

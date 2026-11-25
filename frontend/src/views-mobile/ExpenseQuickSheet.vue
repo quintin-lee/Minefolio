@@ -126,6 +126,7 @@ async function onFileSelected(e: Event) {
   if (!file) return
   if (!file.type.startsWith('image/')) {
     ElMessage.warning('请选择票据图片文件')
+    if (fileInputRef.value) fileInputRef.value.value = ''
     return
   }
 
@@ -160,6 +161,7 @@ async function onFileSelected(e: Event) {
   }
   reader.onerror = () => {
     scanning.value = false
+    if (fileInputRef.value) fileInputRef.value.value = ''
     ElMessage.error('读取图片失败')
   }
   reader.readAsDataURL(file)
@@ -239,15 +241,18 @@ onMounted(async () => {
 })
 
 async function save() {
-  if (!form.amount || Number(form.amount) <= 0) return ElMessage.warning('请输入金额')
+  if (saving.value) return
+  const amt = Number(form.amount)
+  if (!Number.isFinite(amt) || amt <= 0) return ElMessage.warning('请输入有效金额')
   if (!form.category_id || !form.asset_id) return ElMessage.warning('请选择分类和资产')
   saving.value = true
+  const selectedAsset = assets.value.find(a => Number(a.id) === Number(form.asset_id))
   const payload = {
     expense_type: form.expense_type,
     category_id: form.category_id,
     asset_id: form.asset_id,
-    amount: Number(form.amount),
-    currency: 'CNY',
+    amount: amt,
+    currency: selectedAsset?.currency || 'CNY',
     expense_date: form.expense_date,
     note: form.note,
     ledger_id: ledgerStore.currentLedgerId || 0,
@@ -255,9 +260,11 @@ async function save() {
   try {
     if (props.record) await offlineApi.put(`/daily-expenses/${props.record.id}`, payload)
     else await offlineApi.post('/daily-expenses', payload)
-    ElMessage.success(`已记录 ¥${form.amount}`)
+    ElMessage.success(`已记录 ${payload.currency} ${amt}`)
     visible.value = false
     emit('saved')
+  } catch (err: any) {
+    ElMessage.error(err?.response?.data?.message || err?.message || '保存失败')
   } finally {
     saving.value = false
   }

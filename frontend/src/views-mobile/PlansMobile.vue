@@ -119,7 +119,7 @@
         </div>
 
         <div v-if="!evt.is_actual" class="card-actions">
-          <el-button size="small" type="primary" text @click="handleConfirmCashflow(evt)">
+          <el-button size="small" type="primary" text :loading="confirmingCashflowKey === `${evt.schedule_id}-${evt.date}`" @click="handleConfirmCashflow(evt)">
             一键入账确认
           </el-button>
         </div>
@@ -174,6 +174,7 @@ const activeTab = ref<'dca' | 'cashflow'>('dca')
 const loading = ref(false)
 const saving = ref(false)
 const confirmingId = ref<number | null>(null)
+const confirmingCashflowKey = ref<string | null>(null)
 
 const dcaPlans = ref<DcaPlan[]>([])
 const pendingExecutions = ref<DcaExecution[]>([])
@@ -207,7 +208,7 @@ async function loadData() {
       dcaApi.listPlans({ page: 1, page_size: 100 }),
       dcaApi.listPendingExecutions(),
       cashflowApi.getCalendar(),
-      assetsApi.list(),
+      assetsApi.list({ page: 1, page_size: 500 }),
     ])
 
     if (plansRes.status === 'fulfilled') {
@@ -266,7 +267,7 @@ async function handleSkipDca(exec: DcaExecution) {
 async function toggleDcaStatus(plan: DcaPlan) {
   const newStatus = plan.status === 'active' ? 'paused' : 'active'
   try {
-    await dcaApi.updatePlan(plan.id, { status: newStatus })
+    await dcaApi.setPlanStatus(plan.id, newStatus)
     ElMessage.success(newStatus === 'active' ? '计划已恢复' : '计划已暂停')
     await loadData()
   } catch (e: any) {
@@ -280,14 +281,21 @@ async function handleDeleteDca(plan: DcaPlan) {
     await dcaApi.deletePlan(plan.id)
     ElMessage.success('定投计划已删除')
     await loadData()
-  } catch {}
+  } catch (e: any) {
+    if (e !== 'cancel') {
+      ElMessage.error(e?.message || '删除失败')
+    }
+  }
 }
 
 async function handleConfirmCashflow(evt: CashflowCalendarEvent) {
+  const key = `${evt.schedule_id}-${evt.date}`
+  if (confirmingCashflowKey.value === key) return
   if (!evt.target_asset_id) {
     ElMessage.warning('现金流事件缺少收款账户')
     return
   }
+  confirmingCashflowKey.value = key
   try {
     await cashflowApi.confirmIncome({
       target_asset_id: evt.target_asset_id,
@@ -300,6 +308,8 @@ async function handleConfirmCashflow(evt: CashflowCalendarEvent) {
     await loadData()
   } catch (e: any) {
     ElMessage.error(e.message || '入账失败')
+  } finally {
+    confirmingCashflowKey.value = null
   }
 }
 
@@ -319,8 +329,17 @@ function openScheduleModal() {
 }
 
 async function submitDca() {
+  if (saving.value) return
   if (!dcaForm.value.name || !dcaForm.value.target_asset_id || !dcaForm.value.funding_asset_id) {
     ElMessage.warning('请填写完整的计划名称与出入账户')
+    return
+  }
+  if (!Number.isFinite(Number(dcaForm.value.amount)) || Number(dcaForm.value.amount) <= 0) {
+    ElMessage.warning('定投金额必须大于 0')
+    return
+  }
+  if (dcaForm.value.target_asset_id === dcaForm.value.funding_asset_id) {
+    ElMessage.warning('标的资产与扣款账户不能相同')
     return
   }
   saving.value = true

@@ -88,6 +88,7 @@ export const useAuthStore = defineStore('auth', () => {
       localStorage.setItem('token', res.token)
     }
     await fetchUser()
+    await reinitLocalDb()
   }
 
   /**
@@ -215,6 +216,7 @@ export const useAuthStore = defineStore('auth', () => {
     if (typeof localStorage !== 'undefined') {
       localStorage.removeItem('token')
       localStorage.removeItem('minefolio_active_ledger_id')
+      localStorage.removeItem('minefolio_pinned_sessions')
       localStorage.removeItem('minefolio_pinned_workflows')
       localStorage.removeItem('minefolio_2fa_temp_session')
       // 清理按用户保存的聊天草稿 (minefolio:chat:draft:*) 
@@ -234,16 +236,18 @@ export const useAuthStore = defineStore('auth', () => {
     clearCryptoKeyCache()
     try {
       // 动态 import 各 store：避免把聊天/账本/分类/同步模块静态打入首屏包
-      const [{ useChatStore }, { useLedgerStore }, { useCategoryStore }, { resetFinancialEntities }, syncMod] = await Promise.all([
+      const [{ useChatStore }, { useLedgerStore }, { useCategoryStore }, { useMarketStore }, { resetFinancialEntities }, syncMod] = await Promise.all([
         import('./chat'),
         import('./ledger'),
         import('./category'),
+        import('./market'),
         import('@/composables/useFinancialEntities'),
         __IS_MOBILE__ ? import('./sync') : Promise.resolve(null),
       ])
       useChatStore().resetState()
       useLedgerStore().reset()
       useCategoryStore().reset()
+      useMarketStore().reset()
       resetFinancialEntities()
       syncMod?.useSyncStore().reset()
     } catch {

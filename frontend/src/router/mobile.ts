@@ -16,6 +16,12 @@ const router = createRouter({
       meta: { requiresAuth: false },
     },
     {
+      path: '/oauth/callback',
+      name: 'MobileOAuthCallback',
+      component: () => import('@/views/OAuthCallback.vue'),
+      meta: { public: true, requiresAuth: false },
+    },
+    {
       path: '/m',
       component: () => import('@/views-mobile/MobileLayout.vue'),
       meta: { requiresAuth: true },

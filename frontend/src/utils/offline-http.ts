@@ -22,14 +22,15 @@ const TABLE_BY_PATH: Record<string, string> = {
 
 /**
  * 根据请求 URL 解析其对应的本地数据表名
+ * 仅匹配集合路径或其数字 ID 子资源（如 `/daily-expenses`、`/daily-expenses/12`），
+ * 排除 `/daily-expenses/import`、`/transactions/monthly` 等子动作接口。
  * @param url 请求路径
  * @returns 数据库表名，若不匹配返回 null
  */
 function tableNameFromUrl(url: string): string | null {
-  for (const key of Object.keys(TABLE_BY_PATH)) {
-    if (url.includes(`/${key}`)) return TABLE_BY_PATH[key] ?? null
-  }
-  return null
+  const m = url.match(/^(?:\/api)?\/(daily-expenses|transactions|assets|accounts)(?:\/\d+)?(?:\?|$)/)
+  if (!m || !m[1]) return null
+  return TABLE_BY_PATH[m[1]] ?? null
 }
 
 /**
@@ -148,7 +149,7 @@ export async function offlineRequest(method: 'get' | 'post' | 'put' | 'delete', 
       return res
     } catch (err: any) {
       if (isAuthError(err)) {
-        useAuthStore().logout?.()
+        await useAuthStore().logout?.()
         throw err
       }
       // 仅对网络故障下的写操作做离线落库；读操作与服务端响应错误(4xx/5xx/业务码)直接抛出

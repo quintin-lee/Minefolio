@@ -47,10 +47,13 @@ import { Icon } from '@iconify/vue'
 import { assetsApi } from '@/api/assets'
 import { accountsApi } from '@/api/accounts'
 import { marketApi } from '@/api/market'
+import { useLedgerStore } from '@/stores/ledger'
+import { query, rowsFrom } from '@/db/local'
 import { formatCurrency } from '@/utils/format'
 import { t } from '@/utils/locale'
 import type { Asset, Account } from '@/types'
 
+const ledgerStore = useLedgerStore()
 const list = ref<Asset[]>([])
 const accounts = ref<Account[]>([])
 const loading = ref(false)
@@ -67,7 +70,7 @@ const institutionLabels: Record<string, string> = {
 }
 
 const groups = computed(() => {
-  type Group = { key: string; label: string; icon: string; institution: string; assets: Asset[] }
+  type Group = { key: string; label: string; icon: string; institution: string; account?: Account; assets: Asset[] }
   const byKey = new Map<string, Group>()
   for (const acc of accounts.value) {
     byKey.set(`acct-${acc.id}`, {
@@ -75,6 +78,7 @@ const groups = computed(() => {
       label: acc.name,
       icon: acc.icon || 'ph:wallet',
       institution: institutionLabels[acc.institution] || acc.institution,
+      account: acc,
       assets: [],
     })
   }
@@ -88,7 +92,16 @@ const groups = computed(() => {
     g.assets.push(a)
   }
   const out = Array.from(byKey.values())
-  out.sort((x, y) => (x.key === 'ungrouped' ? 1 : y.key === 'ungrouped' ? -1 : 0))
+  out.sort((x, y) => {
+    if (x.key === 'ungrouped') return 1
+    if (y.key === 'ungrouped') return -1
+    const xa = x.account
+    const ya = y.account
+    if (!xa && !ya) return 0
+    if (!xa) return 1
+    if (!ya) return -1
+    return (xa.sort_order - ya.sort_order) || (xa.id - ya.id)
+  })
   return out
 })
 
@@ -107,6 +120,7 @@ function toggle(key: string) {
 onMounted(async () => {
   loading.value = true
   try {
+    const currentLedgerId = ledgerStore.currentLedgerId || 0
     const [accountsRes, assetsRes, ratesRes] = await Promise.allSettled([
       accountsApi.list(),
       assetsApi.list({ page_size: 500 }),
@@ -114,9 +128,27 @@ onMounted(async () => {
     ])
     if (accountsRes.status === 'fulfilled') {
       accounts.value = accountsRes.value
+    } else {
+      try {
+        accounts.value = rowsFrom(query(
+          'SELECT * FROM accounts WHERE __deleted = 0 AND archived = 0 AND (ledger_id = ? OR ledger_id = 0) ORDER BY sort_order, id',
+          [currentLedgerId]
+        )) as unknown as Account[]
+      } catch {
+        /* localDb unavailable */
+      }
     }
     if (assetsRes.status === 'fulfilled') {
       list.value = assetsRes.value.list
+    } else {
+      try {
+        list.value = rowsFrom(query(
+          'SELECT * FROM assets WHERE __deleted = 0 AND (ledger_id = ? OR ledger_id = 0) ORDER BY id',
+          [currentLedgerId]
+        )) as unknown as Asset[]
+      } catch {
+        /* localDb unavailable */
+      }
     }
     if (ratesRes.status === 'fulfilled' && ratesRes.value) {
       exchangeRates.value = ratesRes.value

@@ -11,7 +11,7 @@
       <span>支出 {{ formatCurrency(month?.total_expense ?? 0) }}</span>
     </div>
     <div v-for="e in list" :key="e.id" class="expense-card" @click="edit(e)">
-      <div class="top"><span class="cat">{{ e.category_name }}</span><span :class="e.expense_type === 'income' ? 'income' : 'expense'">{{ e.expense_type === 'income' ? '+' : '-' }}{{ formatCurrency(e.amount) }}</span></div>
+      <div class="top"><span class="cat">{{ e.category_name }}</span><span :class="e.expense_type === 'income' ? 'income' : 'expense'">{{ e.expense_type === 'income' ? '+' : '-' }}{{ formatCurrency(e.amount, e.currency) }}</span></div>
       <div class="bottom"><span>{{ e.expense_date }}</span><span>{{ e.asset_name }}</span></div>
       <div v-if="normalizeTags(e.tags).length" class="card-tags">
         <el-tag v-for="t in normalizeTags(e.tags)" :key="t.id || t.name" :color="t.color" size="small" effect="dark" class="mobile-tag">
@@ -20,7 +20,7 @@
       </div>
     </div>
 
-    <div v-if="list.length > 0" class="load-more-wrap">
+    <div v-if="list.length > 0 && hasMore" class="load-more-wrap">
       <el-button plain class="load-more-btn" :loading="loading" @click="loadMore">
         加载更多
       </el-button>
@@ -47,6 +47,7 @@ const list = ref<DailyExpense[]>([])
 const month = ref<ExpenseMonthly | null>(null)
 const page = ref(1)
 const loading = ref(false)
+const hasMore = ref(true)
 const sheetOpen = ref(false)
 const editing = ref<DailyExpense | null>(null)
 const ledgerStore = useLedgerStore()
@@ -72,6 +73,7 @@ function loadLocalList(reset: boolean): void {
   )
   const rows = rowsFrom(res) as unknown as DailyExpense[]
   list.value = reset ? rows : [...list.value, ...rows]
+  hasMore.value = rows.length >= PAGE_SIZE
 }
 
 /** 离线读取：从本地 sql.js 镜像聚合指定月份的收支合计 */
@@ -111,6 +113,8 @@ async function loadData(reset = false) {
     ])
     if (res.status === 'fulfilled') {
       list.value = reset ? res.value.list : [...list.value, ...res.value.list]
+      const total = Number(res.value.total || 0)
+      hasMore.value = total > 0 ? list.value.length < total : res.value.list.length >= PAGE_SIZE
     } else {
       // 离线/网络失败 → 兜底读取本地离线库，避免列表空白
       try {
@@ -154,7 +158,11 @@ function normalizeTags(raw: any): any[] {
   return res.filter((t: any) => t && typeof t === 'object' && t.name)
 }
 
-function loadMore() { page.value++; loadData() }
+function loadMore() {
+  if (loading.value || !hasMore.value) return
+  page.value++
+  loadData()
+}
 function create() { editing.value = null; sheetOpen.value = true }
 function edit(e: DailyExpense) { editing.value = e; sheetOpen.value = true }
 function onSaved() { sheetOpen.value = false; loadData(true) }

@@ -16,7 +16,7 @@
     </button>
     <div class="kpi-row">
       <div class="kpi-card cyan"><span>总资产</span><b>{{ formatCurrency(summary.total_assets) }}</b></div>
-      <div class="kpi-card red"><span>总负债</span><b>{{ formatCurrency(summary.total_liabilities) }}</b></div>
+      <div class="kpi-card red"><span>总负债</span><b>{{ formatCurrency(Math.abs(summary.total_liabilities)) }}</b></div>
       <div class="kpi-card green"><span>净资产</span><b>{{ formatCurrency(summary.net_worth) }}</b></div>
     </div>
     <h3 class="section-title">本月收支</h3>
@@ -30,7 +30,7 @@
     <div v-for="e in recent" :key="e.id" class="record-card">
       <span class="cat">{{ e.category_name }}</span>
       <span :class="e.expense_type === 'income' ? 'income' : 'expense'">
-        {{ e.expense_type === 'income' ? '+' : '-' }}{{ formatCurrency(e.amount) }}
+        {{ e.expense_type === 'income' ? '+' : '-' }}{{ formatCurrency(e.amount, e.currency) }}
       </span>
     </div>
   </div>
@@ -41,10 +41,13 @@ import { ref, onMounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import { summaryApi } from '@/api/summary'
 import { dailyExpensesApi } from '@/api/daily_expenses'
+import { useLedgerStore } from '@/stores/ledger'
+import { query, rowsFrom } from '@/db/local'
 import { formatCurrency } from '@/utils/format'
 import AppLogo from '@/components/AppLogo.vue'
 import type { Summary, DailyExpense, ExpenseMonthly } from '@/types'
 
+const ledgerStore = useLedgerStore()
 const summary = ref<Summary>({ total_assets: 0, total_liabilities: 0, net_worth: 0, category_breakdown: [], trend: [] })
 const month = ref<ExpenseMonthly | null>(null)
 const recent = ref<DailyExpense[]>([])
@@ -54,6 +57,7 @@ onMounted(async () => {
   loading.value = true
   try {
     const now = new Date()
+    const currentLedgerId = ledgerStore.currentLedgerId || 0
     const [sRes, mRes, rRes] = await Promise.allSettled([
       summaryApi.get(),
       dailyExpensesApi.monthly(now.getFullYear(), now.getMonth() + 1),
@@ -64,9 +68,44 @@ onMounted(async () => {
     }
     if (mRes.status === 'fulfilled' && mRes.value) {
       month.value = mRes.value
+    } else {
+      try {
+        const prefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+        const rows = rowsFrom(query(
+          `SELECT expense_type, SUM(amount) AS total
+             FROM daily_expenses
+            WHERE __deleted = 0 AND (ledger_id = ? OR ledger_id = 0) AND substr(expense_date, 1, 7) = ?
+            GROUP BY expense_type`,
+          [currentLedgerId, prefix]
+        ))
+        let totalIncome = 0
+        let totalExpense = 0
+        for (const r of rows) {
+          if (r.expense_type === 'income') totalIncome = Number(r.total) || 0
+          else if (r.expense_type === 'expense') totalExpense = Number(r.total) || 0
+        }
+        month.value = { total_income: totalIncome, total_expense: totalExpense, balance: totalIncome - totalExpense } as unknown as ExpenseMonthly
+      } catch {
+        /* localDb unavailable */
+      }
     }
     if (rRes.status === 'fulfilled' && rRes.value) {
       recent.value = rRes.value.list
+    } else {
+      try {
+        const rows = rowsFrom(query(
+          `SELECT e.*, c.name AS category_name
+             FROM daily_expenses e
+             LEFT JOIN categories c ON c.id = e.category_id
+            WHERE e.__deleted = 0 AND (e.ledger_id = ? OR e.ledger_id = 0)
+            ORDER BY e.expense_date DESC, e.id DESC
+            LIMIT 5`,
+          [currentLedgerId]
+        ))
+        recent.value = rows as unknown as DailyExpense[]
+      } catch {
+        /* localDb unavailable */
+      }
     }
   } catch (e) {
     console.error('[DashboardMobile] onMounted error:', e)

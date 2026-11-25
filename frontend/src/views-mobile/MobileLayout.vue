@@ -11,17 +11,18 @@
           离线模式
         </span>
         <span
-          v-else-if="syncStore.pendingCount > 0"
+          v-else-if="syncStore.activePendingCount > 0 || syncStore.conflicts.length > 0"
           class="net-status-pill is-pending"
           @click="syncStore.syncNow()"
           title="点击立即同步本地离线变更"
         >
-          待同步 {{ syncStore.pendingCount }}
+          <template v-if="syncStore.activePendingCount > 0">待同步 {{ syncStore.activePendingCount }}</template>
+          <template v-else>同步冲突 {{ syncStore.conflicts.length }}</template>
         </span>
         <AmountMaskToggle />
       </div>
     </header>
-    <main class="mobile-content">
+    <main class="mobile-content" :class="{ 'full-bleed': route.meta.fullBleed }">
       <router-view :key="routerViewKey" />
     </main>
     <nav class="tab-bar">
@@ -29,7 +30,7 @@
         v-for="tab in tabs"
         :key="tab.name"
         class="tab-item"
-        :class="{ active: route.path.startsWith(tab.prefix) }"
+        :class="{ active: isTabActive(tab.prefix) }"
         @click="go(tab)"
       >
         <Icon :icon="tab.icon" class="tab-icon" />
@@ -46,6 +47,7 @@ import { Icon } from '@iconify/vue'
 import LedgerSelector from '@/components/LedgerSelector.vue'
 import { useCategoryStore } from '@/stores/category'
 import { useSyncStore } from '@/stores/sync'
+import { resetFinancialEntities } from '@/composables/useFinancialEntities'
 import { t } from '@/utils/locale'
 import AmountMaskToggle from '@/components/AmountMaskToggle.vue'
 
@@ -67,6 +69,7 @@ function handleOffline() {
 
 function handleLedgerChanged() {
   categoryStore.invalidate()
+  resetFinancialEntities()
   syncStore.syncNow()
   routerViewKey.value++
 }
@@ -94,6 +97,15 @@ const tabs = computed(() => [
   { name: 'reports', label: t('nav.reports'), icon: 'ph:presentation-chart-duotone', prefix: '/m/reports' },
   { name: 'settings', label: t('nav.settings'), icon: 'ph:sliders-horizontal-duotone', prefix: '/m/settings' },
 ])
+
+function isTabActive(prefix: string): boolean {
+  const path = route.path
+  if (path.startsWith(prefix)) return true
+  if (prefix === '/m/expenses' && path.startsWith('/m/transactions')) return true
+  if (prefix === '/m/assets' && path.startsWith('/m/holdings')) return true
+  if (prefix === '/m/settings' && path.startsWith('/m/plans')) return true
+  return false
+}
 
 function go(tab: { prefix: string }) {
   router.push(tab.prefix)
@@ -148,11 +160,16 @@ function go(tab: { prefix: string }) {
   padding-right: calc(14px + env(safe-area-inset-right));
   padding-bottom: calc(76px + env(safe-area-inset-bottom));
 }
+.mobile-content.full-bleed {
+  padding: 0;
+  overflow: hidden;
+}
 .tab-bar {
   position: fixed;
   bottom: 0;
   left: 0;
   right: 0;
+  z-index: 100;
   height: calc(56px + env(safe-area-inset-bottom));
   display: flex;
   background: var(--mf-surface);
@@ -186,11 +203,6 @@ function go(tab: { prefix: string }) {
 .tab-item.active .tab-icon {
   transform: scale(1.12);
   filter: drop-shadow(0 0 5px var(--mf-primary-light));
-}
-.top-bar-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 .net-status-pill {
   font-size: 11px;

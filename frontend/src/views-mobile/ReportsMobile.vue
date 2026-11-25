@@ -9,7 +9,7 @@
       show-icon
       style="margin-bottom: 12px"
     />
-    <el-date-picker v-model="month" type="month" value-format="YYYY-MM" @change="load" />
+    <el-date-picker v-model="month" type="month" value-format="YYYY-MM" :clearable="false" @change="load" />
     <div class="chart-block"><h4>分类占比</h4><div class="pie-wrap"><ExpenseCategoryPie :data="monthly?.by_category ?? []" /></div></div>
     <div class="chart-block"><h4>月度收支</h4><MonthlyChart :data="monthly" /></div>
   </div>
@@ -28,14 +28,20 @@ import type { ExpenseMonthly } from '@/types'
 const month = ref(localThisMonth())
 const monthly = ref<ExpenseMonthly | null>(null)
 const loadError = ref(false)
+let loadReqSeq = 0
 
 async function load() {
+  if (!month.value) return
+  const reqId = ++loadReqSeq
   loadError.value = false
   try {
     const y = Number(month.value.slice(0, 4))
     const m = Number(month.value.slice(5, 7))
-    monthly.value = await dailyExpensesApi.monthly(y, m)
+    const res = await dailyExpensesApi.monthly(y, m)
+    if (reqId !== loadReqSeq) return
+    monthly.value = res
   } catch (e) {
+    if (reqId !== loadReqSeq) return
     loadError.value = true
     notifyMobileReadError(e, '报表数据')
     console.error('[ReportsMobile] load failed:', e)
