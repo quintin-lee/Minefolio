@@ -325,27 +325,30 @@ mf_category_repo_find_or_create(void*       db_pool,
     snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
     snprintf(pid, sizeof(pid), "%lld", (long long)parent_id);
     snprintf(sort, sizeof(sort), "%d", sort_order);
+
+    const char* safe_type = (type && type[0]) ? type : "asset";
+
     csilk_json_t* chk = NULL;
     if (ledger_id > 0) {
         chk = parent_id > 0
-                  ? csilk_db_query_param_json(
-                        (csilk_db_pool_t*)db_pool,
-                        "SELECT id FROM categories WHERE ledger_id=? AND name=? AND parent_id=?",
-                        (const char*[]){lid, name, pid, NULL})
+                  ? csilk_db_query_param_json((csilk_db_pool_t*)db_pool,
+                                              "SELECT id FROM categories WHERE ledger_id=? AND "
+                                              "type=? AND name=? AND parent_id=?",
+                                              (const char*[]){lid, safe_type, name, pid, NULL})
                   : csilk_db_query_param_json((csilk_db_pool_t*)db_pool,
                                               "SELECT id FROM categories WHERE ledger_id=? AND "
-                                              "name=? AND parent_id IS NULL",
-                                              (const char*[]){lid, name, NULL});
+                                              "type=? AND name=? AND parent_id IS NULL",
+                                              (const char*[]){lid, safe_type, name, NULL});
     } else {
         chk = parent_id > 0
                   ? csilk_db_query_param_json((csilk_db_pool_t*)db_pool,
                                               "SELECT id FROM categories WHERE user_id=? AND "
-                                              "ledger_id=? AND name=? AND parent_id=?",
-                                              (const char*[]){uid, lid, name, pid, NULL})
+                                              "ledger_id=? AND type=? AND name=? AND parent_id=?",
+                                              (const char*[]){uid, lid, safe_type, name, pid, NULL})
                   : csilk_db_query_param_json((csilk_db_pool_t*)db_pool,
                                               "SELECT id FROM categories WHERE user_id=? AND "
-                                              "ledger_id=? AND name=? AND parent_id IS NULL",
-                                              (const char*[]){uid, lid, name, NULL});
+                                              "ledger_id=? AND type=? AND name=? AND parent_id IS NULL",
+                                              (const char*[]){uid, lid, safe_type, name, NULL});
     }
     if (chk && csilk_json_array_size(chk) > 0) {
         int64_t id = db_get_int(csilk_json_array_get(chk, 0), "id");
@@ -355,27 +358,172 @@ mf_category_repo_find_or_create(void*       db_pool,
     if (chk) {
         csilk_json_free(chk);
     }
-    const char*   at = asset_type && asset_type[0] ? asset_type : "cash";
-    const char*   ic = icon && icon[0] ? icon : "";
+
+    const char* at = asset_type && asset_type[0] ? asset_type : "cash";
+    const char* ic = icon && icon[0] ? icon : "";
+    const char* ins_sql = NULL;
+    if (parent_id > 0) {
+        ins_sql = db_is_postgres()
+                      ? "INSERT INTO categories (user_id, ledger_id, name, parent_id, type, "
+                        "asset_type, currency, icon, sort_order) VALUES (?, ?, ?, ?, ?, ?, 'CNY', "
+                        "?, ?) ON CONFLICT DO NOTHING RETURNING id"
+                      : "INSERT OR IGNORE INTO categories (user_id, ledger_id, name, parent_id, "
+                        "type, asset_type, currency, icon, sort_order) VALUES (?, ?, ?, ?, ?, ?, "
+                        "'CNY', ?, ?) RETURNING id";
+    } else {
+        ins_sql = db_is_postgres()
+                      ? "INSERT INTO categories (user_id, ledger_id, name, type, asset_type, "
+                        "currency, icon, sort_order) VALUES (?, ?, ?, ?, ?, 'CNY', ?, ?) "
+                        "ON CONFLICT DO NOTHING RETURNING id"
+                      : "INSERT OR IGNORE INTO categories (user_id, ledger_id, name, type, "
+                        "asset_type, currency, icon, sort_order) VALUES (?, ?, ?, ?, ?, 'CNY', ?, "
+                        "?) RETURNING id";
+    }
     csilk_json_t* res =
         parent_id > 0
-            ? csilk_db_query_param_json(
-                  (csilk_db_pool_t*)db_pool,
-                  "INSERT INTO categories (user_id, ledger_id, name, parent_id, type, asset_type, "
-                  "currency, icon, sort_order) VALUES (?, ?, ?, ?, ?, ?, 'CNY', ?, ?) RETURNING id",
-                  (const char*[]){uid, lid, name, pid, type, at, ic, sort, NULL})
-            : csilk_db_query_param_json(
-                  (csilk_db_pool_t*)db_pool,
-                  "INSERT INTO categories (user_id, ledger_id, name, type, asset_type, currency, "
-                  "icon, sort_order) VALUES (?, ?, ?, ?, ?, 'CNY', ?, ?) RETURNING id",
-                  (const char*[]){uid, lid, name, type, at, ic, sort, NULL});
+            ? csilk_db_query_param_json((csilk_db_pool_t*)db_pool,
+                                        ins_sql,
+                                        (const char*[]){uid, lid, name, pid, safe_type, at, ic, sort, NULL})
+            : csilk_db_query_param_json((csilk_db_pool_t*)db_pool,
+                                        ins_sql,
+                                        (const char*[]){uid, lid, name, safe_type, at, ic, sort, NULL});
     int64_t id = (res && csilk_json_array_size(res) > 0)
                      ? db_get_int(csilk_json_array_get(res, 0), "id")
                      : 0;
     if (res) {
         csilk_json_free(res);
     }
+    if (id > 0) {
+        return id;
+    }
+
+    /* 并发插入命中唯一索引时回查既有记录 ID */
+    if (ledger_id > 0) {
+        chk = parent_id > 0
+                  ? csilk_db_query_param_json((csilk_db_pool_t*)db_pool,
+                                              "SELECT id FROM categories WHERE ledger_id=? AND "
+                                              "type=? AND name=? AND parent_id=?",
+                                              (const char*[]){lid, safe_type, name, pid, NULL})
+                  : csilk_db_query_param_json((csilk_db_pool_t*)db_pool,
+                                              "SELECT id FROM categories WHERE ledger_id=? AND "
+                                              "type=? AND name=? AND parent_id IS NULL",
+                                              (const char*[]){lid, safe_type, name, NULL});
+    } else {
+        chk = parent_id > 0
+                  ? csilk_db_query_param_json((csilk_db_pool_t*)db_pool,
+                                              "SELECT id FROM categories WHERE user_id=? AND "
+                                              "ledger_id=? AND type=? AND name=? AND parent_id=?",
+                                              (const char*[]){uid, lid, safe_type, name, pid, NULL})
+                  : csilk_db_query_param_json((csilk_db_pool_t*)db_pool,
+                                              "SELECT id FROM categories WHERE user_id=? AND "
+                                              "ledger_id=? AND type=? AND name=? AND parent_id IS NULL",
+                                              (const char*[]){uid, lid, safe_type, name, NULL});
+    }
+    if (chk && csilk_json_array_size(chk) > 0) {
+        id = db_get_int(csilk_json_array_get(chk, 0), "id");
+    }
+    if (chk) {
+        csilk_json_free(chk);
+    }
     return id;
+}
+
+int
+mf_category_repo_exists_sibling(void*       db_pool,
+                                int64_t     user_id,
+                                int64_t     ledger_id,
+                                int64_t     parent_id,
+                                const char* type,
+                                const char* name,
+                                int64_t     exclude_id)
+{
+    if (!db_pool || !name || !name[0]) {
+        return 0;
+    }
+    char uid[32], lid[32], pid[32], ex[32];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
+    snprintf(pid, sizeof(pid), "%lld", (long long)parent_id);
+    snprintf(ex, sizeof(ex), "%lld", (long long)exclude_id);
+    const char* safe_type = (type && type[0]) ? type : "asset";
+
+    char sql[512];
+    int  off = 0;
+    const char* params[8] = {0};
+    int         pi = 0;
+
+    if (ledger_id > 0) {
+        off += SQL_APPEND(sql,
+                          sizeof(sql),
+                          off,
+                          "SELECT id FROM categories WHERE ledger_id=? AND type=? AND name=?");
+        params[pi++] = lid;
+        params[pi++] = safe_type;
+        params[pi++] = name;
+    } else {
+        off += SQL_APPEND(sql,
+                          sizeof(sql),
+                          off,
+                          "SELECT id FROM categories WHERE user_id=? AND (ledger_id IS NULL OR "
+                          "ledger_id<=0) AND type=? AND name=?");
+        params[pi++] = uid;
+        params[pi++] = safe_type;
+        params[pi++] = name;
+    }
+
+    if (parent_id > 0) {
+        off += SQL_APPEND(sql, sizeof(sql), off, " AND parent_id=?");
+        params[pi++] = pid;
+    } else {
+        off += SQL_APPEND(sql, sizeof(sql), off, " AND parent_id IS NULL");
+    }
+
+    if (exclude_id > 0) {
+        off += SQL_APPEND(sql, sizeof(sql), off, " AND id<>?");
+        params[pi++] = ex;
+    }
+    SQL_APPEND(sql, sizeof(sql), off, " LIMIT 1");
+    params[pi] = NULL;
+
+    csilk_json_t* res = csilk_db_query_param_json((csilk_db_pool_t*)db_pool, sql, params);
+    int           found = (res && csilk_json_array_size(res) > 0) ? 1 : 0;
+    if (res) {
+        csilk_json_free(res);
+    }
+    return found;
+}
+
+int
+mf_category_repo_get_parent_id(
+    void* db_pool, int64_t user_id, int64_t ledger_id, int64_t id, int64_t* out_parent_id)
+{
+    if (!db_pool || id <= 0 || !out_parent_id) {
+        return -1;
+    }
+    char uid[32], lid[32], ident[32];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
+    snprintf(ident, sizeof(ident), "%lld", (long long)id);
+
+    csilk_json_t* res = csilk_db_query_param_json(
+        (csilk_db_pool_t*)db_pool,
+        "SELECT parent_id FROM categories WHERE id=? AND ( "
+        "  (user_id=? AND ledger_id=?) OR "
+        "  (ledger_id=? AND ledger_id > 0 AND EXISTS ( "
+        "    SELECT 1 FROM ledger_members lm WHERE lm.ledger_id=categories.ledger_id AND "
+        "lm.user_id=? "
+        "  )) "
+        ") LIMIT 1",
+        (const char*[]){ident, uid, lid, lid, uid, NULL});
+    if (!res || csilk_json_array_size(res) == 0) {
+        if (res) {
+            csilk_json_free(res);
+        }
+        return 1;
+    }
+    *out_parent_id = db_get_int(csilk_json_array_get(res, 0), "parent_id");
+    csilk_json_free(res);
+    return 0;
 }
 
 int

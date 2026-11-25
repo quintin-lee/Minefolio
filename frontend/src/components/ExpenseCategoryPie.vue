@@ -7,7 +7,7 @@ import echarts, { type ECharts } from '@/utils/echarts'
 import { resolveChartPalette, useChartThemeSync } from '@/utils/echarts-theme'
 import { useDisplaySettingsStore } from '@/stores/display-settings'
 import { formatCurrency } from '@/utils/format'
-const props = defineProps<{ data: { name: string; amount: number; pct: number }[] }>()
+const props = defineProps<{ data: { name: string; amount: number; pct?: number; expense_type?: string; type?: string }[] }>()
 const displaySettings = useDisplaySettingsStore()
 const chartRef = ref<HTMLElement>()
 let chart: ECharts | null = null
@@ -51,7 +51,28 @@ watch(() => props.data, update, { deep: true })
 watch(() => displaySettings.showAmount, update)
 useChartThemeSync(update)
 function update() { 
-  if (!chart || !props.data.length) return
+  if (!chart) return
+  const filtered = (props.data || []).filter((d) => {
+    const t = d.expense_type ?? d.type
+    return !t || t === 'expense'
+  })
+  const mergedMap = new Map<string, { name: string; amount: number; pct?: number }>()
+  for (const item of filtered) {
+    const prev = mergedMap.get(item.name)
+    const amt = Number(item.amount || 0)
+    if (prev) {
+      prev.amount += amt
+      prev.pct = undefined
+    } else {
+      mergedMap.set(item.name, { name: item.name, amount: amt, pct: item.pct })
+    }
+  }
+  const merged = Array.from(mergedMap.values())
+  if (!merged.length) {
+    chart.clear()
+    return
+  }
+  const total = merged.reduce((s, d) => s + d.amount, 0)
   const P = resolveChartPalette()
   const masked = !displaySettings.showAmount
   const width = chartRef.value?.clientWidth || 0
@@ -72,7 +93,7 @@ function update() {
         const val = masked ? '****' : formatCurrency(p.data.value)
         return `<div style="font-weight:bold;color:${p.color};margin-bottom:4px">${p.data.name}</div>
                 <div style="color:${P.textMuted}">金额: ${val}</div>
-                <div style="color:${P.textMuted}">占比: ${p.data.pct.toFixed(2)}%</div>`
+                <div style="color:${P.textMuted}">占比: ${Number(p.data.pct ?? 0).toFixed(2)}%</div>`
       }
     },
     legend: isNarrow
@@ -101,7 +122,11 @@ function update() {
       type: 'pie',
       radius: isNarrow ? ['38%', '60%'] : ['45%', '70%'],
       center: isNarrow ? ['50%', '38%'] : ['35%', '50%'],
-      data: props.data.map(d => ({ name: d.name, value: d.amount, pct: d.pct })),
+      data: merged.map(d => ({
+        name: d.name,
+        value: d.amount,
+        pct: typeof d.pct === 'number' && Number.isFinite(d.pct) ? d.pct : (total > 0 ? (d.amount / total) * 100 : 0),
+      })),
       avoidLabelOverlap: false,
       itemStyle: { borderRadius: 4, borderColor: P.border, borderWidth: 2 },
       label: { show: false, position: 'center' },

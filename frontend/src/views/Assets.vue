@@ -122,16 +122,14 @@
     <el-dialog v-model="dialogVisible" :title="editingId ? '编辑资产' : '新增资产'" width="520px" class="premium-dialog" :show-close="false">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="95px" class="premium-form">
         <el-form-item label="分类" prop="category_id">
-          <el-cascader v-model="form._catPath" :props="{ checkStrictly: true, value: 'id', label: 'name', lazy: true, lazyLoad(node: any, resolve: any) {
-              if (node.level === 0) {
-                // 顶层只展示根级资产分类：必须同时满足“是资产分类”与“无父级”，
-                // 否则已懒加载过的子级会被 `||` 短路提升到根层重复展示
-                resolve(categoryStore.allNodes.filter(c => ((c.type === 'asset' || (!c.type && c.asset_type)) && (c.parent_id === null || c.parent_id === 0))) as any)
-              } else {
-                categoryStore.loadChildren(node.data.id as number).then((children: any) => resolve(children))
-              }
-            } }"
-            placeholder="选择分类" style="width: 100%" @change="onCatChange" />
+          <el-cascader
+            v-model="form._catPath"
+            :options="assetCategoryOptions as any"
+            :props="{ checkStrictly: true, value: 'id', label: 'name', children: 'children' }"
+            placeholder="选择分类"
+            style="width: 100%"
+            @change="onCatChange"
+          />
         </el-form-item>
 
         <el-form-item label="归属账户">
@@ -255,7 +253,7 @@ import SymbolSelect from '@/components/SymbolSelect.vue'
 import PriceHistoryChart from '@/components/PriceHistoryChart.vue'
 import AccountDialog from '@/components/AccountDialog.vue'
 import { formatCurrency } from '@/utils/format'
-import { findCategoryPath } from '@/utils/category-tree'
+import { findCategoryPath, prepareCategoryTree } from '@/utils/category-tree'
 import { detectSuspiciousUnitCostInput, resolveTotalCostBasis, type CostInputMode } from '@/utils/investment-cost'
 import { Icon } from '@iconify/vue'
 
@@ -275,6 +273,7 @@ const ASSET_TYPE_ICONS: Record<string, string> = {
 
 const assets = ref<Asset[]>([])
 const categoryTree = ref<Category[]>([])
+const assetCategoryOptions = computed(() => prepareCategoryTree(categoryTree.value, 'all'))
 const categoryStore = useCategoryStore()
 const dialogVisible = ref(false)
 const historyDialogVisible = ref(false)

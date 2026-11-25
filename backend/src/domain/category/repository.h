@@ -33,6 +33,18 @@ int64_t mf_category_repo_find_or_create(void*       db_pool,
                                         const char* icon,
                                         int         sort_order);
 int     mf_category_repo_exists(void* db_pool, int64_t user_id, int64_t ledger_id, int64_t id);
+int     mf_category_repo_exists_sibling(void*       db_pool,
+                                        int64_t     user_id,
+                                        int64_t     ledger_id,
+                                        int64_t     parent_id,
+                                        const char* type,
+                                        const char* name,
+                                        int64_t     exclude_id);
+int     mf_category_repo_get_parent_id(void*    db_pool,
+                                       int64_t  user_id,
+                                       int64_t  ledger_id,
+                                       int64_t  id,
+                                       int64_t* out_parent_id);
 int     mf_category_repo_find_by_name(void*       db_pool,
                                       int64_t     user_id,
                                       int64_t     ledger_id,

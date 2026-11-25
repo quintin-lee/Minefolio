@@ -102,6 +102,39 @@ describe('category-tree utility', () => {
       expect(tree[0].id).toBe(99)
       expect(tree[0].children).toBeUndefined()
     })
+
+    it('strips stray flat child nodes when mixed with nested tree roots', () => {
+      const mixed: any[] = [
+        {
+          id: 1,
+          name: '餐饮美食',
+          type: 'expense',
+          parent_id: null,
+          children: [
+            { id: 101, name: '咖啡奶茶', type: 'expense', parent_id: 1 },
+          ],
+        },
+        { id: 101, name: '咖啡奶茶', type: 'expense', parent_id: 1 },
+        { id: 1, name: '餐饮美食', type: 'expense', parent_id: null },
+      ]
+      const tree = prepareCategoryTree(mixed as Category[], 'expense')
+      expect(tree).toHaveLength(1)
+      expect(tree[0].id).toBe(1)
+      expect(tree[0].children).toHaveLength(1)
+      expect(tree[0].children![0].id).toBe(101)
+    })
+
+    it('deduplicates duplicate flat rows by id', () => {
+      const flatDup: Category[] = [
+        { id: 10, name: '餐饮', type: 'expense', parent_id: null, currency: 'CNY', sort_order: 1 },
+        { id: 10, name: '餐饮', type: 'expense', parent_id: null, currency: 'CNY', sort_order: 1 },
+        { id: 11, name: '早餐', type: 'expense', parent_id: 10, currency: 'CNY', sort_order: 1 },
+        { id: 11, name: '早餐', type: 'expense', parent_id: 10, currency: 'CNY', sort_order: 1 },
+      ]
+      const tree = prepareCategoryTree(flatDup, 'expense')
+      expect(tree).toHaveLength(1)
+      expect(tree[0].children).toHaveLength(1)
+    })
   })
 
   describe('isIdInTree', () => {

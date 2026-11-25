@@ -288,15 +288,7 @@ const rules = {
 }
 
 function buildTree(list: Category[]): Category[] {
-  const map = new Map<number, Category>()
-  list.forEach(c => map.set(c.id, { ...c, children: [] }))
-  const roots: Category[] = []
-  list.forEach(c => {
-    const node = map.get(c.id)!
-    if (c.parent_id === null || c.parent_id === undefined) roots.push(node)
-    else { const p = map.get(c.parent_id); if (p) (p.children ||= []).push(node) }
-  })
-  return roots
+  return categoryStore.buildTree(list)
 }
 
 function flatten(list: Category[]): Category[] {
@@ -404,10 +396,11 @@ const excludedParentIds = computed(() => {
   const excluded = new Set<number>()
   if (editingId.value == null) return excluded
   excluded.add(editingId.value)
+  const flat = flatten(categories.value)
   let added = true
   while (added) {
     added = false
-    for (const c of categories.value) {
+    for (const c of flat) {
       if (c.parent_id != null && excluded.has(Number(c.parent_id)) && !excluded.has(c.id)) {
         excluded.add(c.id)
         added = true
@@ -418,9 +411,11 @@ const excludedParentIds = computed(() => {
 })
 
 const parentOptions = computed(() => {
-  return buildTree(
-    categories.value.filter(c => c.type === form.type && !excludedParentIds.value.has(c.id))
-  )
+  const prune = (nodes: Category[]): Category[] =>
+    nodes
+      .filter(n => !excludedParentIds.value.has(n.id))
+      .map(n => ({ ...n, children: n.children?.length ? prune(n.children) : [] }))
+  return prune(buildTree(categories.value.filter(c => c.type === form.type)))
 })
 
 function onTabChange() {

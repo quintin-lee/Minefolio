@@ -54,14 +54,8 @@
             <el-form-item label="交易分类">
               <el-cascader
                 v-model="filters.category_id"
-                :options="categoryTree"
-                :props="{ checkStrictly: true, value: 'id', label: 'name', emitPath: false, lazy: true, lazyLoad(node: any, resolve: any) {
-                  if (node.level === 0) {
-                    resolve(allCategories.filter(c => c.parent_id === null || c.parent_id === 0) as any)
-                  } else {
-                    categoryStore.loadChildren(node.data.id as number).then((children: any) => resolve(children))
-                  }
-                } }"
+                :options="categoryTree as any"
+                :props="{ checkStrictly: true, value: 'id', label: 'name', emitPath: false, children: 'children' }"
                 placeholder="全部分类"
                 clearable
                 class="filter-select"
@@ -325,13 +319,15 @@
           <el-row :gutter="16">
             <el-col :span="12">
               <el-form-item label="交易分类" prop="category_id">
-                <el-cascader v-model="form._catPath" :props="{ checkStrictly: true, value: 'id', label: 'name', lazy: true, lazyLoad(node: any, resolve: any) {
-                  if (node.level === 0) {
-                    resolve(allCategories.filter(c => c.parent_id === null || c.parent_id === 0) as any)
-                  } else {
-                    categoryStore.loadChildren(node.data.id as number).then((children: any) => resolve(children))
-                  }
-                } }" placeholder="选择交易分类" style="width: 100%" clearable @change="onCatChange" />
+                <el-cascader
+                  v-model="form._catPath"
+                  :options="categoryTree as any"
+                  :props="{ checkStrictly: true, value: 'id', label: 'name', children: 'children' }"
+                  placeholder="选择交易分类"
+                  style="width: 100%"
+                  clearable
+                  @change="onCatChange"
+                />
               </el-form-item>
             </el-col>
             <el-col :span="12">
@@ -410,7 +406,7 @@ import { transactionsApi } from '@/api/transactions'
 import { assetsApi } from '@/api/assets'
 import { useCategoryStore } from '@/stores/category'
 import { formatCurrency, localToday, localThisMonth, assetLabel } from '@/utils/format'
-import { findCategoryPath } from '@/utils/category-tree'
+import { findCategoryPath, prepareCategoryTree } from '@/utils/category-tree'
 import { useAsyncTaskProgress } from '@/composables/useAsyncTaskProgress'
 import { exportChartCsv } from '@/utils/chart-export'
 import SummaryCard from '@/components/SummaryCard.vue'
@@ -501,7 +497,7 @@ const rules = {
   transaction_date: [{ required: true, message: '请选择交易日期' }],
 }
 
-const categoryTree = computed(() => allCategories.value)
+const categoryTree = computed(() => prepareCategoryTree(allCategories.value, 'all'))
 
 const currentMonthPrefix = computed(() => localThisMonth())
 

@@ -240,12 +240,19 @@ daily_expense_usecase_monthly(void*                           pool,
                 }
             }
         }
+        double total_income_d = money_to_double(total_income_m);
+        double total_expense_d = money_to_double(total_expense_m);
         for (int k = 0; k < cat_count; k++) {
+            double amt_d = money_to_double(cats[k].amount);
+            double denom =
+                (strcmp(cats[k].expense_type, "income") == 0) ? total_income_d : total_expense_d;
+            double        pct = denom > 0.0 ? mf_round_to_decimals(amt_d / denom * 100.0, 2) : 0.0;
             csilk_json_t* item = csilk_json_object();
             csilk_json_add_string(item, "category_name", cats[k].name);
             csilk_json_add_string(item, "name", cats[k].name);
             csilk_json_add_string(item, "expense_type", cats[k].expense_type);
-            csilk_json_add_number(item, "amount", money_to_double(cats[k].amount));
+            csilk_json_add_number(item, "amount", amt_d);
+            csilk_json_add_number(item, "pct", pct);
             csilk_json_array_append(cat_arr, item);
         }
     }

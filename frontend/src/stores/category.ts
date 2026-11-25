@@ -16,7 +16,63 @@ const CATEGORY_CACHE_KEY = 'minefolio_cache_categories'
  * 分类体系 Pinia Store
  */
 export const useCategoryStore = defineStore('category', () => {
-  const initialNodes = getSwrCache<Category[]>(CATEGORY_CACHE_KEY, [])
+  function findNodeById(nodes: Category[], id: number): Category | null {
+    const targetId = Number(id)
+    for (const node of nodes) {
+      if (Number(node.id) === targetId) return node
+      if (Array.isArray(node.children) && node.children.length > 0) {
+        const found = findNodeById(node.children, targetId)
+        if (found) return found
+      }
+    }
+    return null
+  }
+
+  function collectIds(nodes: Category[], out = new Set<number>()): Set<number> {
+    for (const node of nodes) {
+      out.add(Number(node.id))
+      if (Array.isArray(node.children) && node.children.length > 0) {
+        collectIds(node.children, out)
+      }
+    }
+    return out
+  }
+
+  function sanitizeNodes(nodes: Category[]): Category[] {
+    if (!Array.isArray(nodes) || nodes.length === 0) return []
+    const nestedChildIds = new Set<number>()
+    const markChildren = (children?: Category[]) => {
+      if (!Array.isArray(children)) return
+      for (const ch of children) {
+        nestedChildIds.add(Number(ch.id))
+        markChildren(ch.children)
+      }
+    }
+    for (const n of nodes) {
+      markChildren(n.children)
+    }
+
+    const dedupeLevel = (list: Category[], skipNestedTop: boolean): Category[] => {
+      const seen = new Set<number>()
+      const out: Category[] = []
+      for (const item of list) {
+        const id = Number(item.id)
+        if (seen.has(id)) continue
+        if (skipNestedTop && nestedChildIds.has(id)) continue
+        seen.add(id)
+        const copy: Category = { ...item, id }
+        if (Array.isArray(item.children)) {
+          copy.children = dedupeLevel(item.children, false)
+        }
+        out.push(copy)
+      }
+      return out
+    }
+
+    return dedupeLevel(nodes, nestedChildIds.size > 0)
+  }
+
+  const initialNodes = sanitizeNodes(getSwrCache<Category[]>(CATEGORY_CACHE_KEY, []))
   /** 已加载的所有分类节点扁平数组 (顶级节点预加载，子节点按需加载) */
   const allNodes = ref<Category[]>(initialNodes)
   /** 顶级根分类是否已加载完毕 */
@@ -34,10 +90,11 @@ export const useCategoryStore = defineStore('category', () => {
     try {
       const res = await categoriesApi.list()
       if (Array.isArray(res)) {
-        allNodes.value = res
+        const cleaned = sanitizeNodes(res)
+        allNodes.value = cleaned
         loaded.value = true
         hasRevalidated = true
-        setSwrCache(CATEGORY_CACHE_KEY, res)
+        setSwrCache(CATEGORY_CACHE_KEY, cleaned)
       }
     } catch (err) {
       console.warn('[category store] SWR background revalidation failed:', err)
@@ -63,7 +120,7 @@ export const useCategoryStore = defineStore('category', () => {
     if (type) {
       loading.value = true
       try {
-        return await categoriesApi.list({ type })
+        return sanitizeNodes(await categoriesApi.list({ type }))
       } finally {
         loading.value = false
       }
@@ -72,7 +129,7 @@ export const useCategoryStore = defineStore('category', () => {
     let req: Promise<Category[]> | null = null
     req = (async () => {
       try {
-        const res = await categoriesApi.list()
+        const res = sanitizeNodes(await categoriesApi.list())
         allNodes.value = res
         loaded.value = true
         hasRevalidated = true
@@ -93,15 +150,30 @@ export const useCategoryStore = defineStore('category', () => {
    * @returns 子分类节点数组
    */
   async function loadChildren(parentId: number): Promise<Category[]> {
-    if (expanded.value.has(parentId)) {
-      return allNodes.value.filter(c => c.parent_id === parentId)
+    const pid = Number(parentId)
+    const parent = findNodeById(allNodes.value, pid)
+    if (parent && Array.isArray(parent.children) && parent.children.length > 0) {
+      expanded.value.add(pid)
+      return parent.children
     }
-    const children = await categoriesApi.children(parentId)
-    expanded.value.add(parentId)
-    const seen = new Set(allNodes.value.map(c => Number(c.id)))
-    const fresh = (Array.isArray(children) ? children : []).filter(c => !seen.has(Number(c.id)))
-    if (fresh.length > 0) {
-      allNodes.value = [...allNodes.value, ...fresh]
+    if (expanded.value.has(pid)) {
+      return parent?.children?.length
+        ? parent.children
+        : allNodes.value.filter(c => Number(c.parent_id) === pid)
+    }
+    const rawChildren = await categoriesApi.children(pid)
+    const children = Array.isArray(rawChildren) ? rawChildren : []
+    expanded.value.add(pid)
+    if (parent) {
+      const seen = new Set((parent.children || []).map(c => Number(c.id)))
+      const fresh = children.filter(c => !seen.has(Number(c.id)))
+      parent.children = [...(parent.children || []), ...fresh]
+    } else if (!allNodes.value.some(n => Array.isArray(n.children) && n.children.length > 0)) {
+      const seen = collectIds(allNodes.value)
+      const fresh = children.filter(c => !seen.has(Number(c.id)))
+      if (fresh.length > 0) {
+        allNodes.value = [...allNodes.value, ...fresh]
+      }
     }
     return children
   }
@@ -116,13 +188,15 @@ export const useCategoryStore = defineStore('category', () => {
     const roots: Category[] = []
 
     const register = (node: Category): Category => {
-      const existing = map.get(node.id)
+      const id = Number(node.id)
+      const existing = map.get(id)
       if (existing) return existing
       const cloned: Category = {
         ...node,
+        id,
         children: Array.isArray(node.children) ? node.children.map(register) : [],
       }
-      map.set(node.id, cloned)
+      map.set(id, cloned)
       return cloned
     }
 
@@ -133,19 +207,20 @@ export const useCategoryStore = defineStore('category', () => {
     const childIdSet = new Set<number>()
     for (const cloned of map.values()) {
       for (const ch of cloned.children || []) {
-        childIdSet.add(ch.id)
+        childIdSet.add(Number(ch.id))
       }
     }
 
-    for (const node of nodes) {
-      const target = map.get(node.id)!
-      if (childIdSet.has(node.id)) continue
-      const parent = node.parent_id != null ? map.get(node.parent_id) : undefined
+    const addedRootIds = new Set<number>()
+    for (const target of map.values()) {
+      if (childIdSet.has(target.id)) continue
+      const parent = target.parent_id != null ? map.get(Number(target.parent_id)) : undefined
       if (parent && parent.id !== target.id) {
-        if (!parent.children!.some(c => c.id === target.id)) {
+        if (!parent.children!.some(c => Number(c.id) === target.id)) {
           parent.children!.push(target)
         }
-      } else {
+      } else if (!addedRootIds.has(target.id)) {
+        addedRootIds.add(target.id)
         roots.push(target)
       }
     }

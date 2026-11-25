@@ -148,13 +148,16 @@
           </el-radio-group>
         </el-form-item>
         <el-form-item label="分类" prop="category_id">
-          <el-cascader :key="form.expense_type" v-model="form._catPath" :props="{ checkStrictly: true, value: 'id', label: 'name', lazy: true, lazyLoad(node: any, resolve: any) {
-                  if (node.level === 0) {
-                    resolve(categoryTree.filter(c => c.parent_id === null || c.parent_id === 0) as any)
-                  } else {
-                    categoryStore.loadChildren(node.data.id as number).then((children: any) => resolve(children))
-                  }
-                } }" placeholder="选择分类" style="width: 100%" @change="onCatChange" />
+          <el-cascader
+            :key="form.expense_type"
+            v-model="form._catPath"
+            :options="categoryTree as any"
+            :props="{ checkStrictly: true, value: 'id', label: 'name', children: 'children' }"
+            placeholder="选择分类"
+            style="width: 100%"
+            clearable
+            @change="onCatChange"
+          />
         </el-form-item>
         <el-form-item label="关联资产" prop="asset_id">
           <el-select v-model="form.asset_id" placeholder="选择资产" style="width: 100%" filterable>
@@ -236,16 +239,16 @@ import MonthlyChart from '@/components/MonthlyChart.vue'
 import ExpenseCategoryPie from '@/components/ExpenseCategoryPie.vue'
 import ReceiptScannerModal from '@/components/ReceiptScannerModal.vue'
 import { formatCurrency, localToday, localThisMonth, assetLabel } from '@/utils/format'
-import { findCategoryPath } from '@/utils/category-tree'
+import { findCategoryPath, prepareCategoryTree, isIdInTree } from '@/utils/category-tree'
 import { useAsyncTaskProgress } from '@/composables/useAsyncTaskProgress'
 import { exportChartCsv } from '@/utils/chart-export'
 import SummaryCard from '@/components/SummaryCard.vue'
-import type { DailyExpense, Tag, Category, Asset } from '@/types'
+import type { DailyExpense, Tag, Asset } from '@/types'
 
 const expenses = ref<DailyExpense[]>([])
-const allCategories = ref<Category[]>([])
 const allAssets = ref<Asset[]>([])
 const categoryStore = useCategoryStore()
+const allCategories = computed(() => categoryStore.incomeExpenseCategories)
 const page = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
@@ -265,27 +268,16 @@ const rules = {
 }
 
 const categoryTree = computed(() => {
-  return allCategories.value.filter(c => c.type === form.expense_type)
+  return prepareCategoryTree(allCategories.value, form.expense_type)
 })
 
 watch(() => form.expense_type, () => {
   // Clear category selection if selected category is not of the new type
-  if (form.category_id) {
-    const exists = categoryTree.value.some(c => c.id === form.category_id || findInTree(c, form.category_id!))
-    if (!exists) {
-      form.category_id = null
-      form._catPath = []
-    }
+  if (form.category_id && !isIdInTree(categoryTree.value, form.category_id)) {
+    form.category_id = null
+    form._catPath = []
   }
 })
-
-function findInTree(node: Category, targetId: number): boolean {
-  if (node.id === targetId) return true
-  if (node.children?.length) {
-    return node.children.some(c => findInTree(c, targetId))
-  }
-  return false
-}
 
 const monthSummary = ref<any>(null)
 const filters = reactive({ type: '', month: '' })
@@ -485,13 +477,10 @@ function handleBatchExport() {
 
 onMounted(async () => {
   try {
-    const [catRes, assetRes] = await Promise.allSettled([
+    const [, assetRes] = await Promise.allSettled([
       categoryStore.loadCategories(),
       assetsApi.list({ page_size: 500 }),
     ])
-    if (catRes.status === 'fulfilled') {
-      allCategories.value = categoryStore.incomeExpenseCategories
-    }
     if (assetRes.status === 'fulfilled') {
       allAssets.value = assetRes.value.list
     }

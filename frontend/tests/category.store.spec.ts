@@ -14,6 +14,7 @@ import type { Category } from '@/types'
 
 describe('category store', () => {
   beforeEach(() => {
+    localStorage.clear()
     setActivePinia(createPinia())
     vi.clearAllMocks()
   })
@@ -69,5 +70,80 @@ describe('category store', () => {
     expect(tree[0].children![1].name).toBe('晚餐')
     expect(tree[1].name).toBe('交通')
     expect(tree[1].children).toHaveLength(0)
+  })
+
+  it('does not append nested children to top-level allNodes in loadChildren', async () => {
+    const nested: Category[] = [
+      {
+        id: 1,
+        name: '餐饮美食',
+        type: 'expense',
+        parent_id: null,
+        currency: 'CNY',
+        sort_order: 1,
+        children: [
+          { id: 101, name: '咖啡奶茶', type: 'expense', parent_id: 1, currency: 'CNY', sort_order: 1 },
+        ],
+      },
+    ]
+    ;(categoriesApi.list as any).mockResolvedValue(nested)
+
+    const store = useCategoryStore()
+    await store.loadCategories()
+
+    const children = await store.loadChildren(1)
+    expect(children).toHaveLength(1)
+    expect(categoriesApi.children).not.toHaveBeenCalled()
+    expect(store.allNodes).toHaveLength(1)
+    expect(store.expenseCategories).toHaveLength(1)
+
+    // Even when parent has empty children initially, fetched children attach under parent instead of top-level allNodes
+    ;(categoriesApi.list as any).mockResolvedValue([
+      { id: 2, name: '交通出行', type: 'expense', parent_id: null, currency: 'CNY', sort_order: 2, children: [] },
+    ])
+    ;(categoriesApi.children as any).mockResolvedValue([
+      { id: 201, name: '公共交通', type: 'expense', parent_id: 2, currency: 'CNY', sort_order: 1 },
+    ])
+    await store.loadCategories(undefined, true)
+    const loadedChildren = await store.loadChildren(2)
+    expect(loadedChildren).toHaveLength(1)
+    expect(store.allNodes).toHaveLength(1)
+    expect(store.allNodes[0].children).toHaveLength(1)
+    expect(store.allNodes[0].children![0].id).toBe(201)
+  })
+
+  it('sanitizes mixed nested and stray flat duplicate nodes on loadCategories', async () => {
+    const dirty: Category[] = [
+      {
+        id: 1,
+        name: '餐饮美食',
+        type: 'expense',
+        parent_id: null,
+        currency: 'CNY',
+        sort_order: 1,
+        children: [
+          { id: 101, name: '咖啡奶茶', type: 'expense', parent_id: 1, currency: 'CNY', sort_order: 1 },
+        ],
+      },
+      { id: 101, name: '咖啡奶茶', type: 'expense', parent_id: 1, currency: 'CNY', sort_order: 1 },
+      { id: 1, name: '餐饮美食', type: 'expense', parent_id: null, currency: 'CNY', sort_order: 1 },
+    ]
+    ;(categoriesApi.list as any).mockResolvedValue(dirty)
+
+    const store = useCategoryStore()
+    const res = await store.loadCategories()
+    expect(res).toHaveLength(1)
+    expect(res[0].id).toBe(1)
+    expect(res[0].children).toHaveLength(1)
+  })
+
+  it('deduplicates duplicate root IDs in buildTree', () => {
+    const store = useCategoryStore()
+    const dupList: Category[] = [
+      { id: 1, name: '餐饮', type: 'expense', parent_id: null, currency: 'CNY', sort_order: 0 },
+      { id: 1, name: '餐饮', type: 'expense', parent_id: null, currency: 'CNY', sort_order: 0 },
+    ]
+    const tree = store.buildTree(dupList)
+    expect(tree).toHaveLength(1)
   })
 })

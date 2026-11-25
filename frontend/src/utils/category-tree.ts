@@ -23,17 +23,31 @@ export function prepareCategoryTree(
 
   let roots: any[] = []
   if (isTree) {
-    roots = type === 'all' ? list : list.filter((item) => item.type === type)
+    const nestedChildIds = new Set<number>()
+    const collectChildren = (children?: any[]) => {
+      if (!Array.isArray(children)) return
+      for (const ch of children) {
+        nestedChildIds.add(Number(ch.id))
+        collectChildren(ch.children)
+      }
+    }
+    for (const item of list) {
+      collectChildren(item.children)
+    }
+    const filtered = type === 'all' ? list : list.filter((item) => item.type === type)
+    roots = filtered.filter((item) => !nestedChildIds.has(Number(item.id)))
   } else {
     const typedRows = type === 'all' ? list : list.filter((item) => item.type === type)
     const map = new Map<number, any>()
     for (const r of typedRows) {
-      map.set(Number(r.id), { ...r, id: Number(r.id), children: [] })
+      const id = Number(r.id)
+      if (!map.has(id)) {
+        map.set(id, { ...r, id, children: [] })
+      }
     }
-    for (const r of typedRows) {
-      const node = map.get(Number(r.id))
-      const pid = r.parent_id != null ? Number(r.parent_id) : 0
-      if (pid > 0 && map.has(pid)) {
+    for (const node of map.values()) {
+      const pid = node.parent_id != null ? Number(node.parent_id) : 0
+      if (pid > 0 && map.has(pid) && pid !== node.id) {
         map.get(pid).children.push(node)
       } else {
         roots.push(node)
@@ -42,9 +56,14 @@ export function prepareCategoryTree(
   }
 
   const formatNodes = (nodes: any[]): CategoryCascaderNode[] => {
-    return nodes.map((n) => {
+    const seen = new Set<number>()
+    const result: CategoryCascaderNode[] = []
+    for (const n of nodes) {
+      const id = Number(n.id)
+      if (seen.has(id)) continue
+      seen.add(id)
       const node: CategoryCascaderNode = {
-        id: Number(n.id),
+        id,
         name: n.name,
         type: n.type,
         parent_id: n.parent_id != null ? Number(n.parent_id) : null,
@@ -55,8 +74,9 @@ export function prepareCategoryTree(
           node.children = cleaned
         }
       }
-      return node
-    })
+      result.push(node)
+    }
+    return result
   }
 
   return formatNodes(roots)

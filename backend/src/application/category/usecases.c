@@ -2,8 +2,11 @@
 #include "domain/category/rules.h"
 #include "infrastructure/repositories/category_repo_impl.h"
 #include "common/db.h"
+#include <pthread.h>
 #include <stdio.h>
 #include <string.h>
+
+static pthread_mutex_t s_category_seed_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /**
  * @brief 默认分类播种数据 —— 与原 category_service.c 完全一致
@@ -71,6 +74,15 @@ category_usecase_seed_defaults(void* pool, int64_t user_id, int64_t ledger_id)
     if (mf_category_repo_is_seeded(pool, user_id, ledger_id)) {
         return;
     }
+
+    pthread_mutex_lock(&s_category_seed_mutex);
+    if (mf_category_repo_is_seeded(pool, user_id, ledger_id)) {
+        pthread_mutex_unlock(&s_category_seed_mutex);
+        return;
+    }
+
+    db_tx_scope_t tx = {0};
+    int           tx_ok = (db_tx_scope_begin((csilk_db_pool_t*)pool, "mf_cat_seed", &tx) == 0);
 
     /* Seed expense categories */
     seed_parent_t expense_items[] = {
@@ -204,6 +216,10 @@ category_usecase_seed_defaults(void* pool, int64_t user_id, int64_t ledger_id)
               asset_overrides);
 
     mf_category_repo_mark_seeded(pool, user_id, ledger_id);
+    if (tx_ok) {
+        db_tx_scope_commit((csilk_db_pool_t*)pool, &tx);
+    }
+    pthread_mutex_unlock(&s_category_seed_mutex);
 }
 
 int
@@ -293,6 +309,12 @@ category_usecase_create(void*                        pool,
         snprintf(out_res->message, sizeof(out_res->message), "分类类型无效");
         return -1;
     }
+    if (mf_category_repo_exists_sibling(
+            pool, cmd->user_id, cmd->ledger_id, cmd->parent_id, t, cmd->name, 0) > 0) {
+        out_res->code = 1004;
+        snprintf(out_res->message, sizeof(out_res->message), "同级下已存在同名分类");
+        return -1;
+    }
 
     mf_category_t cat = {0};
     cat.user_id = cmd->user_id;
@@ -316,12 +338,28 @@ category_usecase_update(void*                        pool,
                         const update_category_cmd_t* cmd,
                         category_usecase_result_t*   out_res)
 {
+    int64_t parent_id = 0;
+    if (mf_category_repo_get_parent_id(
+            pool, cmd->user_id, cmd->ledger_id, cmd->category_id, &parent_id) != 0) {
+        out_res->code = 1003;
+        snprintf(out_res->message, sizeof(out_res->message), "分类不存在");
+        return 0;
+    }
+
+    const char* t = cmd->type && cmd->type[0] ? cmd->type : "asset";
+    if (cmd->name && cmd->name[0] &&
+        mf_category_repo_exists_sibling(
+            pool, cmd->user_id, cmd->ledger_id, parent_id, t, cmd->name, cmd->category_id) > 0) {
+        out_res->code = 1004;
+        snprintf(out_res->message, sizeof(out_res->message), "同级下已存在同名分类");
+        return -1;
+    }
+
     mf_category_t cat = {0};
     cat.user_id = cmd->user_id;
     if (cmd->name) {
         strncpy(cat.name, cmd->name, sizeof(cat.name) - 1);
     }
-    const char* t = cmd->type && cmd->type[0] ? cmd->type : "asset";
     strncpy(cat.type, t, sizeof(cat.type) - 1);
     strncpy(cat.asset_type,
             cmd->asset_type && cmd->asset_type[0] ? cmd->asset_type : "cash",
