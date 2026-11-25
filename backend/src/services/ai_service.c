@@ -515,15 +515,21 @@ ai_chat_handler(csilk_ctx_t* c)
 
     csilk_db_pool_t* pool = db_get_pool();
     int64_t          ledger_id = ctx_ledger_id(c, user_id, "viewer");
-    if (ledger_id <= 0) {
-        ledger_id = ledger_get_default(pool, user_id);
+    if (ledger_id < 0) {
+        csilk_json_free(body);
+        ai_config_release(cfg);
+        return;
     }
     int64_t body_lid = db_get_int(body, "ledger_id");
     if (body_lid > 0) {
         char role[32] = {0};
-        if (ledger_get_user_role(pool, body_lid, user_id, role, sizeof(role))) {
-            ledger_id = body_lid;
+        if (!ledger_get_user_role(pool, body_lid, user_id, role, sizeof(role))) {
+            csilk_json_free(body);
+            ai_config_release(cfg);
+            respond_error(c, 1004, "Forbidden: you are not a member of this ledger");
+            return;
         }
+        ledger_id = body_lid;
     }
 
     ai_provider_t* prov = NULL;

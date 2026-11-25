@@ -13,6 +13,7 @@
 
 #include "services/ai/tools/mcp/mcp_bridge.h"
 
+#include "services/ai/tools/dispatcher.h"
 #include "services/ai/tools/mcp/mcp_client.h"
 #include "services/ai/tools/mcp/mcp_config.h"
 #include "services/ai/tools/mcp/mcp_stdio_pool.h"
@@ -543,11 +544,11 @@ mcp_bridge_dispatch(const ai_tool_context_t* ctx, const char* tool_name, const c
             }
         }
     }
+    mf_mcp_server_tool_t anon = {0};
     if (!target) {
-        /* 缓存未命中：按 low 风险/只读处理，但仍走 strategy */
-        static mf_mcp_server_tool_t anon = {0};
-        anon.is_mutation = false;
-        anon.risk_level[0] = '\0';
+        /* 缓存未命中/未知工具：保守按 high 风险 + mutation 处理并触发策略确认门槛 */
+        anon.is_mutation = true;
+        snprintf(anon.risk_level, sizeof(anon.risk_level), "%s", "high");
         target = &anon;
     }
 
@@ -592,6 +593,14 @@ mcp_bridge_dispatch(const ai_tool_context_t* ctx, const char* tool_name, const c
         char*  out = csilk_json_serialize(err, &len);
         csilk_json_free(err);
         return out ? out : strdup("{\"error\":\"policy check failed\"}");
+    }
+    if (decision->requires_confirmation) {
+        if (cached) {
+            mf_mcp_server_tool_repo_free_list(cached, cached_count);
+        }
+        ai_policy_decision_free(decision);
+        return mcp_err_response("confirmation_required",
+                                "MCP tool call requires explicit user confirmation");
     }
     ai_policy_decision_free(decision);
     if (cached) {
@@ -656,7 +665,7 @@ mcp_bridge_dispatch(const ai_tool_context_t* ctx, const char* tool_name, const c
     }
 
     /* 7. 审计归档 */
-    bool              is_err = (result != NULL) && (strstr(result, "\"error\":") != NULL);
+    bool              is_err = (result != NULL) && ai_tool_result_is_error(result);
     ai_audit_record_t audit = {
         .stage = AI_AUDIT_STAGE_EXECUTION,
         .actor_id = ctx->user_id,

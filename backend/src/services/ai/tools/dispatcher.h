@@ -34,6 +34,11 @@ char* ai_tool_dispatch_parsed(const ai_tool_context_t* ctx,
                               const char*              tool_name,
                               const csilk_json_t*      args);
 
+/**
+ * @brief 检查工具 JSON 返回值顶层对象是否包含有效错误字段
+ */
+bool ai_tool_result_is_error(const char* result_json);
+
 #ifdef __cplusplus
 }
 #endif

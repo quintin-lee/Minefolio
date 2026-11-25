@@ -10,6 +10,69 @@
 #include <string.h>
 #include <time.h>
 
+static bool
+is_error_meta_key(const char* k)
+{
+    if (!k) {
+        return false;
+    }
+    return strcmp(k, "error") == 0 || strcmp(k, "reason") == 0 || strcmp(k, "code") == 0 ||
+           strcmp(k, "note") == 0 || strcmp(k, "message") == 0 ||
+           strcmp(k, "confirmation_required") == 0 || strcmp(k, "requires_confirmation") == 0 ||
+           strcmp(k, "draft_id") == 0;
+}
+
+bool
+ai_tool_result_is_error(const char* result_json)
+{
+    if (!result_json || !result_json[0]) {
+        return true;
+    }
+    csilk_json_t* parsed = csilk_json_parse(result_json);
+    if (!parsed) {
+        return false;
+    }
+    bool is_err = false;
+    if (csilk_json_is_object(parsed)) {
+        const csilk_json_t* err_v = csilk_json_get(parsed, "error");
+        if (err_v && !csilk_json_is_null(err_v) &&
+            !(csilk_json_is_bool(err_v) && !csilk_json_bool_value(err_v))) {
+            is_err = true;
+        }
+    }
+    csilk_json_free(parsed);
+    return is_err;
+}
+
+static bool
+ai_tool_result_is_pure_error(const char* result_json)
+{
+    if (!result_json || !result_json[0]) {
+        return true;
+    }
+    csilk_json_t* parsed = csilk_json_parse(result_json);
+    if (!parsed) {
+        return false;
+    }
+    bool pure = false;
+    if (csilk_json_is_object(parsed)) {
+        const csilk_json_t* err_v = csilk_json_get(parsed, "error");
+        if (err_v && !csilk_json_is_null(err_v) &&
+            !(csilk_json_is_bool(err_v) && !csilk_json_bool_value(err_v))) {
+            pure = true;
+            size_t n = csilk_json_object_size(parsed);
+            for (size_t i = 0; i < n; i++) {
+                if (!is_error_meta_key(csilk_json_object_key(parsed, i))) {
+                    pure = false;
+                    break;
+                }
+            }
+        }
+    }
+    csilk_json_free(parsed);
+    return pure;
+}
+
 char*
 ai_tool_dispatch_parsed(const ai_tool_context_t* ctx,
                         const char*              tool_name,
@@ -79,6 +142,30 @@ ai_tool_dispatch_parsed(const ai_tool_context_t* ctx,
         ai_audit_log(&audit);
 
         return strdup("{\"error\":\"unknown tool\"}");
+    }
+
+    if (tool->internal_only && ctx->forbid_internal) {
+        ai_audit_record_t audit = {
+            .stage = AI_AUDIT_STAGE_REJECTION,
+            .actor_id = ctx->user_id,
+            .session_id = ctx->session_id,
+            .risk = tool->risk,
+            .timestamp = (int64_t)time(NULL),
+            .success = false,
+        };
+        snprintf(audit.tool, sizeof(audit.tool), "%s", tool_name ? tool_name : "");
+        snprintf(audit.arguments_hash, sizeof(audit.arguments_hash), "%s", args_hash);
+        snprintf(audit.error_message,
+                 sizeof(audit.error_message),
+                 "%s",
+                 "Internal-only tool blocked from LLM runtime");
+        snprintf(audit.result_summary,
+                 sizeof(audit.result_summary),
+                 "%s",
+                 "Blocked internal_only tool execution from model dispatch");
+        ai_audit_log(&audit);
+
+        return strdup("{\"error\":\"internal_only_tool: blocked from model dispatch\"}");
     }
 
     /* 3. 参数模式校验 (Schema Validator) */
@@ -197,8 +284,10 @@ ai_tool_dispatch_parsed(const ai_tool_context_t* ctx,
         csilk_json_free(normalized);
     }
 
+    bool pure_err = ai_tool_result_is_pure_error(result);
+
     /* 语义精简投影 (Semantic Projection for Compact Tool Results) */
-    if (result && strstr(result, "\"error\":") == NULL) {
+    if (result && !pure_err) {
         char* projected = ai_project_tool_result(tool_name, result);
         if (projected) {
             free(result);
@@ -206,10 +295,9 @@ ai_tool_dispatch_parsed(const ai_tool_context_t* ctx,
         }
     }
 
-    /* 数据脱敏层：投影后统一对身份标识 PII 强制脱敏；金额分级受环境变量控制。
-       非 JSON 文本（部分 MCP/外部工具）退化为整体 PII 文本脱敏。
-       错误 payload 不脱敏（错误信息本身不含财务数据，且保持可读性）。 */
-    if (result && strstr(result, "\"error\":") == NULL) {
+    /* 数据脱敏层：仅纯错误元信息跳过脱敏；携带业务字段或非 JSON 载荷强制经脱敏层，
+       防止外部/工具返回伪造 `"error":` 字段绕过 PII/金额脱敏。 */
+    if (result && !pure_err) {
         char* masked = ai_mask_tool_result(tool_name, result);
         if (masked) {
             free(result);
@@ -218,7 +306,7 @@ ai_tool_dispatch_parsed(const ai_tool_context_t* ctx,
     }
 
     /* 8. 审计归档 (Audit) */
-    bool              is_err = (result && strstr(result, "\"error\":") != NULL);
+    bool              is_err = ai_tool_result_is_error(result);
     ai_audit_record_t audit = {
         .stage = (strncmp(tool_name, "propose_", 8) == 0)
                      ? AI_AUDIT_STAGE_PROPOSAL

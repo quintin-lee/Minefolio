@@ -30,13 +30,14 @@ typedef struct {
 
 /** MCP 客户端句柄（每用户每服务器一个，短生命周期，函数内建即拆） */
 typedef struct {
+    mf_mcp_server_t        server_storage; /* 持有服务器配置深拷贝，防止池缓存后栈指针悬垂 (UAF) */
     const mf_mcp_server_t* server;
-    char*                  session_id; /* HTTP：Mcp-Session-Id；stdio 为 NULL */
-    int                    read_fd;    /* stdio：子进程 stdout 读端 */
-    int                    write_fd;   /* stdio：子进程 stdin 写端 */
-    int                    err_fd;     /* stdio：子进程 stderr 读端；-1 表示无 */
-    pid_t                  child_pid;  /* stdio 子进程；0 = http */
-    mcp_io_reader_t        framer;     /* 块缓冲读取器 */
+    char*                  session_id;     /* HTTP：Mcp-Session-Id；stdio 为 NULL */
+    int                    read_fd;        /* stdio：子进程 stdout 读端 */
+    int                    write_fd;       /* stdio：子进程 stdin 写端 */
+    int                    err_fd;         /* stdio：子进程 stderr 读端；-1 表示无 */
+    pid_t                  child_pid;      /* stdio 子进程；0 = http */
+    mcp_io_reader_t        framer;         /* 块缓冲读取器 */
     char                   last_error[1024];
 } mf_mcp_client_t;
 

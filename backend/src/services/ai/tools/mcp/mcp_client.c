@@ -943,7 +943,8 @@ mf_mcp_client_new(const mf_mcp_server_t* server)
     if (!c) {
         return NULL;
     }
-    c->server = server;
+    memcpy(&c->server_storage, server, sizeof(c->server_storage));
+    c->server = &c->server_storage;
     c->session_id = NULL;
     c->read_fd = -1;
     c->write_fd = -1;

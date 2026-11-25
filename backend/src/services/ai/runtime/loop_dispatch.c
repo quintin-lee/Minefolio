@@ -230,6 +230,15 @@ loop_dispatch_parallel_tools(ai_runtime_context_t*         ctx,
             cbs->on_tool_call(tc->id, tc->name, tc->arguments, user_data);
         }
 
+        const ai_tool_t* reg_tool = ai_tool_find(tasks[t].tool_name);
+        if (reg_tool && reg_tool->internal_only) {
+            tasks[t].result_str =
+                strdup("{\"error\":\"internal_only_tool\",\"reason\":\"confirm_* tools cannot "
+                       "be invoked directly by model\"}");
+            tasks[t].executed = false;
+            continue;
+        }
+
         ai_policy_decision_t* decision = ai_policy_evaluate(
             ctx->user_id, ctx->session_id, tasks[t].tool_name, tasks[t].args, AI_RISK_NO_OVERRIDE);
 
@@ -243,6 +252,12 @@ loop_dispatch_parallel_tools(ai_runtime_context_t*         ctx,
             size_t elen = 0;
             tasks[t].result_str = csilk_json_serialize(err_obj, &elen);
             csilk_json_free(err_obj);
+            tasks[t].executed = false;
+        } else if (decision && decision->requires_confirmation &&
+                   !ai_tool_requires_id(tasks[t].tool_name)) {
+            tasks[t].result_str =
+                strdup("{\"error\":\"confirmation_required\",\"note\":\"this action needs "
+                       "explicit user approval before it can run\"}");
             tasks[t].executed = false;
         } else {
             uint64_t call_hash = loop_call_hash(tasks[t].tool_name, tasks[t].raw_arguments);
@@ -395,8 +410,14 @@ loop_dispatch_sequential_tools(csilk_db_pool_t*              pool,
             result_str = csilk_json_serialize(err_obj, &elen);
             csilk_json_free(err_obj);
         } else {
-            uint64_t call_hash = loop_call_hash(tc->name, tc->arguments);
-            if (loop_call_seen(seen_hashes, *seen_count, call_hash)) {
+            const ai_tool_t* reg_tool = ai_tool_find(tc->name);
+            uint64_t         call_hash = loop_call_hash(tc->name, tc->arguments);
+            if (reg_tool && reg_tool->internal_only) {
+                result_str =
+                    strdup("{\"error\":\"internal_only_tool\",\"reason\":\"confirm_* tools cannot "
+                           "be invoked directly by model\"}");
+                executed = 0;
+            } else if (loop_call_seen(seen_hashes, *seen_count, call_hash)) {
                 result_str = strdup("{\"error\":\"duplicate_call\",\"note\":\"identical tool call "
                                     "already executed in this run; reuse the previous result or "
                                     "answer directly\"}");

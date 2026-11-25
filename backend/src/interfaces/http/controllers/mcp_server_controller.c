@@ -5,6 +5,7 @@
 #include "common/jwt.h"
 #include "common/db.h"
 #include "services/ai_tools.h"
+#include "services/ai/tools/dispatcher.h"
 #include "services/ai/tools/registry.h"
 #include "services/ai/tools/validation.h"
 
@@ -153,7 +154,7 @@ mcp_handle_tools_call(csilk_ctx_t* c, const csilk_json_t* body, int64_t user_id)
     char* result_str = ai_tools_execute_parsed(db_get_pool(), user_id, 0, args_json, name);
 
     csilk_json_t* result = csilk_json_object();
-    bool          is_err = (!result_str || strstr(result_str, "\"error\":") != NULL);
+    bool          is_err = (!result_str || ai_tool_result_is_error(result_str));
     csilk_json_add_bool(result, "isError", is_err);
 
     csilk_json_t* content = csilk_json_array();

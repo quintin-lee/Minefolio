@@ -292,15 +292,20 @@ api_ai_action_confirm_handler(csilk_ctx_t* c)
        draft_token，防止模型伪造参数或篡改会话上下文绕过令牌绑定 */
     int64_t session_id = (int64_t)csilk_json_get_number(body, "session_id");
     int64_t ledger_id = ctx_ledger_id(c, user_id, "editor");
-    if (ledger_id <= 0) {
-        ledger_id = ledger_get_default(pool, user_id);
+    if (ledger_id < 0) {
+        csilk_json_free(body);
+        return;
     }
     int64_t body_lid = db_get_int(body, "ledger_id");
     if (body_lid > 0) {
         char role[32] = {0};
-        if (ledger_get_user_role(pool, body_lid, user_id, role, sizeof(role))) {
-            ledger_id = body_lid;
+        if (!ledger_get_user_role(pool, body_lid, user_id, role, sizeof(role)) ||
+            (strcmp(role, "owner") != 0 && strcmp(role, "editor") != 0)) {
+            csilk_json_free(body);
+            respond_error(c, 1004, "Forbidden: editor permission required");
+            return;
         }
+        ledger_id = body_lid;
     }
     csilk_json_t*      args = csilk_json_object();
     ai_tool_context_t* ctx = ai_tool_context_create(pool, user_id, session_id, NULL);

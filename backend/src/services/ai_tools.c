@@ -42,6 +42,7 @@ ai_tools_execute_parsed_cancel(csilk_db_pool_t*     pool,
     ai_tool_context_t* ctx = ai_tool_context_create(safe_pool, user_id, session_id, NULL);
     if (ctx) {
         ctx->cancel_token = cancel_token;
+        ctx->forbid_internal = true;
         if (metadata) {
             if (ctx->metadata) {
                 csilk_json_free(ctx->metadata);

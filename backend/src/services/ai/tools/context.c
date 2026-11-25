@@ -1,4 +1,5 @@
 #include "services/ai/tools/context.h"
+#include "services/ai/policy/permission.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,7 +27,18 @@ ai_tool_context_create(csilk_db_pool_t* pool,
                  (long)time(NULL),
                  (long long)user_id);
     }
-    ctx->permissions = 0xFFFFFFFF; /* Default full user permissions */
+    ai_user_role_t role = ai_permission_get_user_role(user_id);
+    uint32_t       perm_bits = 0;
+    if (ai_permission_role_allows(role, AI_PERM_READ)) {
+        perm_bits |= (1u << AI_PERM_READ);
+    }
+    if (ai_permission_role_allows(role, AI_PERM_WRITE)) {
+        perm_bits |= (1u << AI_PERM_WRITE);
+    }
+    if (ai_permission_role_allows(role, AI_PERM_SENSITIVE)) {
+        perm_bits |= (1u << AI_PERM_SENSITIVE);
+    }
+    ctx->permissions = perm_bits;
     strncpy(ctx->locale, "zh-CN", sizeof(ctx->locale) - 1);
     strncpy(ctx->timezone, "Asia/Shanghai", sizeof(ctx->timezone) - 1);
     ctx->metadata = csilk_json_object();
