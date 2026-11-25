@@ -368,9 +368,15 @@ watch(
     if (val === lastQrSource && qrDataUrl.value) return
     lastQrSource = val
     try {
-      qrDataUrl.value = await renderQrContentToImage(val)
-    } catch {
-      qrDataUrl.value = ''
+      const dataUrl = await renderQrContentToImage(val)
+      if (lastQrSource === val) {
+        qrDataUrl.value = dataUrl
+      }
+    } catch (err) {
+      console.error('Failed to render iLink QR code:', err)
+      if (lastQrSource === val) {
+        qrDataUrl.value = ''
+      }
     }
   },
   { immediate: true }

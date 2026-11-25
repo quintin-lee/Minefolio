@@ -61,17 +61,20 @@ describe('imApi & iLink QR rendering', () => {
     expect(httpMock.delete).toHaveBeenCalledWith('/im/instances/7')
   })
 
-  it('passes through http/https/data URLs and encodes raw QR strings via qrcode', async () => {
-    expect(await renderQrContentToImage('https://weixin.qq.com/qr/1')).toBe(
-      'https://weixin.qq.com/qr/1'
-    )
+  it('passes through data image URIs and encodes URL/raw QR payloads via qrcode', async () => {
+    expect(await renderQrContentToImage('   ')).toBe('')
     expect(await renderQrContentToImage('data:image/png;base64,AAA')).toBe(
       'data:image/png;base64,AAA'
     )
     expect(toDataURLMock).not.toHaveBeenCalled()
 
-    const encoded = await renderQrContentToImage('raw-ilink-qr-payload')
+    const ilinkUrl = 'https://liteapp.weixin.qq.com/q/7GiQu1?qrcode=abc&bot_type=3'
+    const encodedUrl = await renderQrContentToImage(ilinkUrl)
+    expect(toDataURLMock).toHaveBeenCalledWith(ilinkUrl, { width: 260, margin: 1 })
+    expect(encodedUrl).toBe(`data:image/png;base64,MOCK(${ilinkUrl})`)
+
+    const encodedRaw = await renderQrContentToImage('raw-ilink-qr-payload')
     expect(toDataURLMock).toHaveBeenCalledWith('raw-ilink-qr-payload', { width: 260, margin: 1 })
-    expect(encoded).toBe('data:image/png;base64,MOCK(raw-ilink-qr-payload)')
+    expect(encodedRaw).toBe('data:image/png;base64,MOCK(raw-ilink-qr-payload)')
   })
 })

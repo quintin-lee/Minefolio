@@ -21,10 +21,16 @@ export interface ImBindTokenResult {
 }
 
 export async function renderQrContentToImage(content: string): Promise<string> {
-  if (/^(https?:|data:image\/)/.test(content)) {
-    return content
+  const trimmed = content.trim()
+  if (!trimmed) {
+    return ''
   }
-  return QRCode.toDataURL(content, { width: 260, margin: 1 })
+  if (/^data:image\//i.test(trimmed)) {
+    return trimmed
+  }
+  // WeChat iLink's qrcode_img_content is an HTML LiteApp URL payload (e.g. https://liteapp.weixin.qq.com/q/...),
+  // not a direct image URL, so all non-data-URI values must be QR-encoded into a PNG data URL.
+  return QRCode.toDataURL(trimmed, { width: 260, margin: 1 })
 }
 
 export const imApi = {
