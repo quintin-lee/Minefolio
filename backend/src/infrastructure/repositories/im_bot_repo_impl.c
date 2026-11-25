@@ -505,6 +505,9 @@ mf_im_bot_instance_update_status(csilk_db_pool_t* pool,
     }
     char sid[32];
     im_id_str(id, sid, sizeof(sid));
+    const char*   drv = csilk_db_pool_get_driver_name(pool);
+    const bool    is_pg = drv && strcmp(drv, "postgres") == 0;
+    const char*   qr_exp_cast = is_pg ? "NULLIF(?,'')::timestamptz" : "NULLIF(?,'')";
     csilk_json_t* res = NULL;
     if (strcmp(status, "session_expired") == 0 || strcmp(status, "expired") == 0 ||
         strcmp(status, "error") == 0) {
@@ -516,12 +519,17 @@ mf_im_bot_instance_update_status(csilk_db_pool_t* pool,
             "updated_at=CURRENT_TIMESTAMP WHERE id=? RETURNING id",
             (const char*[]){status, last_error ? last_error : "", sid, NULL});
     } else if (strcmp(status, "scanned") == 0 || strcmp(status, "need_verifycode") == 0) {
+        char sql[512];
+        snprintf(sql,
+                 sizeof(sql),
+                 "UPDATE im_bot_instances SET status=?, "
+                 "qr_content=COALESCE(NULLIF(?,''), qr_content), "
+                 "qr_expires_at=COALESCE(%s, qr_expires_at), "
+                 "last_error=NULLIF(?,''), last_seen_at=CURRENT_TIMESTAMP, "
+                 "updated_at=CURRENT_TIMESTAMP WHERE id=? RETURNING id",
+                 qr_exp_cast);
         res = csilk_db_query_param_json(pool,
-                                        "UPDATE im_bot_instances SET status=?, "
-                                        "qr_content=COALESCE(NULLIF(?,''), qr_content), "
-                                        "qr_expires_at=COALESCE(NULLIF(?,''), qr_expires_at), "
-                                        "last_error=NULLIF(?,''), last_seen_at=CURRENT_TIMESTAMP, "
-                                        "updated_at=CURRENT_TIMESTAMP WHERE id=? RETURNING id",
+                                        sql,
                                         (const char*[]){status,
                                                         qr_content ? qr_content : "",
                                                         qr_expires_at ? qr_expires_at : "",
@@ -529,18 +537,23 @@ mf_im_bot_instance_update_status(csilk_db_pool_t* pool,
                                                         sid,
                                                         NULL});
     } else {
-        res = csilk_db_query_param_json(
-            pool,
-            "UPDATE im_bot_instances SET status=?, qr_content=NULLIF(?,''), "
-            "qr_expires_at=NULLIF(?,''), last_error=NULLIF(?,''), "
-            "last_seen_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP "
-            "WHERE id=? RETURNING id",
-            (const char*[]){status,
-                            qr_content ? qr_content : "",
-                            qr_expires_at ? qr_expires_at : "",
-                            last_error ? last_error : "",
-                            sid,
-                            NULL});
+        /* PostgreSQL 的 qr_expires_at 为 TIMESTAMPTZ，文本参数必须显式 ::timestamptz 转型 */
+        char sql[512];
+        snprintf(sql,
+                 sizeof(sql),
+                 "UPDATE im_bot_instances SET status=?, qr_content=NULLIF(?,''), "
+                 "qr_expires_at=%s, last_error=NULLIF(?,''), "
+                 "last_seen_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP "
+                 "WHERE id=? RETURNING id",
+                 qr_exp_cast);
+        res = csilk_db_query_param_json(pool,
+                                        sql,
+                                        (const char*[]){status,
+                                                        qr_content ? qr_content : "",
+                                                        qr_expires_at ? qr_expires_at : "",
+                                                        last_error ? last_error : "",
+                                                        sid,
+                                                        NULL});
     }
     if (!res || !csilk_json_is_array(res) || csilk_json_array_size(res) == 0) {
         if (res) {
