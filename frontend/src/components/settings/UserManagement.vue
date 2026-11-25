@@ -94,6 +94,7 @@
 
     <!-- 用户表格 -->
     <div class="users-table-wrap">
+      <div class="users-table-scroll">
       <el-table
         :data="users"
         v-loading="loading"
@@ -220,6 +221,7 @@
           </template>
         </el-table-column>
       </el-table>
+      </div>
 
       <div class="pagination-bar" v-if="total > 0">
         <el-pagination
@@ -719,10 +721,19 @@ onMounted(() => {
 .users-table-wrap {
   border: 1px solid var(--mf-border);
   border-radius: 10px;
-  padding: 12px;
   background: var(--mf-surface);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
+.users-table-scroll {
+  padding: 12px 12px 0;
+  overflow-y: auto;
+  /* 表格区域最大高度：视口高度减去头部、统计卡片、筛选栏、分页栏等固定元素的估算高度 */
+  max-height: calc(100vh - 340px);
+  min-height: 120px;
+}
 .user-cell {
   display: flex;
   align-items: center;
@@ -775,7 +786,8 @@ onMounted(() => {
 .pagination-bar {
   display: flex;
   justify-content: flex-end;
-  margin-top: 14px;
+  padding: 12px 12px 10px;
+  flex-shrink: 0;
 }
 
 .mono {
