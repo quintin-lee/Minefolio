@@ -284,6 +284,9 @@ const getNotifyStatusType = (status?: string) => {
   switch (status) {
     case 'sent':
       return 'success'
+    case 'queued':
+    case 'partial':
+      return 'warning'
     case 'failed':
       return 'danger'
     case 'none':
@@ -296,6 +299,10 @@ const getNotifyStatusLabel = (status?: string) => {
   switch (status) {
     case 'sent':
       return '已推微信'
+    case 'queued':
+      return '待推送'
+    case 'partial':
+      return '部分送达'
     case 'failed':
       return '推送失败'
     case 'none':

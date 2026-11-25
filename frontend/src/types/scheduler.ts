@@ -1,7 +1,23 @@
 export type JobType = 'ai_prompt' | 'structured_report' | 'system_builtin'
 export type TriggerType = 'cron' | 'market_event'
 export type DeliveryChannel = 'user_default' | 'custom_webhook' | 'silent_db'
-export type ChannelType = 'serverchan' | 'pushdeer' | 'wechat_work' | 'webhook' | 'none'
+export type ChannelType =
+  | 'serverchan'
+  | 'pushdeer'
+  | 'wechat_work'
+  | 'webhook'
+  | 'wechat_ilink'
+  | 'none'
+
+export interface IlinkChannelStatus {
+  has_instance: boolean
+  instance_id?: number
+  status?: string
+  enabled?: boolean
+  ilink_bot_id?: string | null
+  last_seen_at?: string | null
+  last_inbound_at?: string | null
+}
 
 export interface ScheduledJob {
   id: number
@@ -35,7 +51,7 @@ export interface JobRunLog {
   trigger_reason: string
   output_summary?: string
   error_message?: string
-  notification_status?: 'sent' | 'failed' | 'none'
+  notification_status?: 'queued' | 'sent' | 'partial' | 'failed' | 'none'
 }
 
 export interface UserPushChannel {
@@ -45,6 +61,7 @@ export interface UserPushChannel {
   secret_key?: string
   secret_key_masked?: string
   is_active: number
+  ilink_status?: IlinkChannelStatus
 }
 
 export interface SchedulerDashboard {
@@ -58,5 +75,6 @@ export interface SchedulerDashboard {
     channel_type: ChannelType
     channel_name: string
     is_active: number
+    ilink_status?: IlinkChannelStatus
   }
 }

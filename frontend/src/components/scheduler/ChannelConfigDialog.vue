@@ -51,6 +51,12 @@
                 通用 Webhook
               </span>
             </el-radio-button>
+            <el-radio-button value="wechat_ilink">
+              <span class="radio-label">
+                <Icon icon="ph:wechat-logo-bold" class="radio-icon" />
+                微信 iLink
+              </span>
+            </el-radio-button>
           </el-radio-group>
         </el-form-item>
 
@@ -119,6 +125,35 @@
             </div>
           </el-form-item>
         </template>
+
+        <!-- WeChat iLink Readiness -->
+        <template v-if="form.channel_type === 'wechat_ilink'">
+          <el-alert
+            :type="ilinkReadiness.level === 'success' ? 'success' : ilinkReadiness.level === 'danger' ? 'error' : 'warning'"
+            :closable="false"
+            show-icon
+          >
+            <template #title>
+              <span v-if="ilinkReadiness.reason === 'ready'">
+                微信 iLink 实例已就绪（最近会话 {{ ilinkStatus?.last_inbound_at }}），无需密钥或 Webhook URL。
+              </span>
+              <span v-else-if="ilinkReadiness.reason === 'not_bound'">
+                尚未绑定微信 iLink 机器人实例，请先前往「系统设置 → IM 机器人」扫码绑定。
+              </span>
+              <span v-else-if="ilinkReadiness.reason === 'needs_inbound'">
+                实例已激活，但需先在微信向该机器人发送任意一条消息以激活推送上下文（过期后将自动等待最多 30 分钟）。
+              </span>
+              <span v-else>
+                当前 iLink 实例状态为 {{ ilinkReadiness.reason }}，请前往「系统设置 → IM 机器人」启用或重新扫码。
+              </span>
+            </template>
+          </el-alert>
+          <div v-if="ilinkReadiness.level !== 'success'" style="margin-top: 10px;">
+            <el-button size="small" type="primary" plain @click="goBindIlink">
+              前往系统设置绑定 / 启用
+            </el-button>
+          </div>
+        </template>
       </el-form>
     </div>
 
@@ -151,20 +186,29 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import { schedulerApi } from '@/api/scheduler'
-import type { ChannelType } from '@/types'
+import { classifyIlinkChannelStatus } from '@/utils/ilink-channel'
+import type { ChannelType, IlinkChannelStatus } from '@/types'
 
 const emit = defineEmits<{
   (e: 'saved'): void
 }>()
 
+const router = useRouter()
 const visible = ref(false)
 const loading = ref(false)
 const saving = ref(false)
 const testing = ref(false)
 const existingKeyMasked = ref('')
+const ilinkStatus = ref<IlinkChannelStatus | null>(null)
+const ilinkReadiness = computed(() => classifyIlinkChannelStatus(ilinkStatus.value))
+const goBindIlink = () => {
+  visible.value = false
+  router.push('/settings')
+}
 const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1024)
 
 const updateWindowWidth = () => {
@@ -221,10 +265,12 @@ const open = async () => {
   visible.value = true
   loading.value = true
   existingKeyMasked.value = ''
+  ilinkStatus.value = null
   form.secret_key = ''
 
   try {
     const res = await schedulerApi.getChannel()
+    ilinkStatus.value = res?.ilink_status || null
     if (res && res.channel_type && res.channel_type !== 'none') {
       form.channel_type = res.channel_type
       form.channel_name = res.channel_name || '我的微信提醒'
@@ -242,6 +288,18 @@ const open = async () => {
   }
 }
 
+const buildSavePayload = () => ({
+  channel_type: form.channel_type,
+  channel_name: form.channel_name,
+  webhook_url: form.channel_type === 'wechat_ilink' ? '' : form.webhook_url,
+  secret_key:
+    form.channel_type === 'wechat_ilink'
+      ? undefined
+      : form.secret_key.trim()
+        ? form.secret_key.trim()
+        : undefined
+})
+
 const handleSave = async () => {
   if (!formRef.value) return
   await formRef.value.validate()
@@ -257,12 +315,7 @@ const handleSave = async () => {
 
   saving.value = true
   try {
-    await schedulerApi.saveChannel({
-      channel_type: form.channel_type,
-      channel_name: form.channel_name,
-      webhook_url: form.webhook_url,
-      secret_key: form.secret_key.trim() ? form.secret_key.trim() : undefined
-    })
+    await schedulerApi.saveChannel(buildSavePayload())
     ElMessage.success('微信推送通道配置已保存')
     visible.value = false
     emit('saved')
@@ -277,13 +330,8 @@ const handleTest = async () => {
   testing.value = true
   try {
     // If user edited key/url, persist first so test utilizes newest value
-    if (form.secret_key.trim() || form.webhook_url) {
-      await schedulerApi.saveChannel({
-        channel_type: form.channel_type,
-        channel_name: form.channel_name,
-        webhook_url: form.webhook_url,
-        secret_key: form.secret_key.trim() ? form.secret_key.trim() : undefined
-      })
+    if (form.channel_type === 'wechat_ilink' || form.secret_key.trim() || form.webhook_url) {
+      await schedulerApi.saveChannel(buildSavePayload())
     }
     const res = await schedulerApi.testChannel()
     ElMessage.success(res?.message || '测试消息发送成功，请在微信中查收！')
@@ -312,17 +360,18 @@ defineExpose({
   display: flex;
   width: 100%;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 6px;
 }
 
 .channel-type-group :deep(.el-radio-button) {
-  flex: 1;
-  min-width: 120px;
+  flex: 1 1 140px;
 }
 
-.channel-type-group :deep(.el-radio-button__inner) {
+.channel-type-group :deep(.el-radio-button .el-radio-button__inner) {
   width: 100%;
   padding: 10px 8px;
+  border: 1px solid var(--mf-border, var(--el-border-color));
+  border-radius: var(--el-border-radius-base, 6px);
 }
 
 .radio-label {

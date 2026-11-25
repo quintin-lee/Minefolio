@@ -567,6 +567,8 @@ const formatChannelType = (type?: ChannelType) => {
       return '企业微信群机器人'
     case 'webhook':
       return '通用 HTTP Webhook'
+    case 'wechat_ilink':
+      return '微信 iLink 机器人'
     default:
       return '尚未配置通知通道'
   }
