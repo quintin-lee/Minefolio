@@ -8,7 +8,7 @@
 --   manual = 1  -> 由用户显式 POST /market/exchange-rates 手动钉住, 读路径优先采用
 --   manual = 0  -> 种子或历史残留, 读路径视为陈旧, 仅当实时同步表无该币种时兜底
 -- 现存全部行 (含 V007 种子) 默认 manual = 0, 待后续手动覆盖才升级。
-ALTER TABLE exchange_rates ADD COLUMN manual INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE exchange_rates ADD COLUMN IF NOT EXISTS manual INTEGER NOT NULL DEFAULT 0;
 
 -- 显式确保 V007 种子行归零 (新建库 ADD COLUMN 默认已 0, 此处对存量库做防御性收敛)
 UPDATE exchange_rates SET manual = 0 WHERE manual IS NULL;
