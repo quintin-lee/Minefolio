@@ -42,12 +42,12 @@ function createSupervisor({
   nowFn = () => Date.now(),
 } = {}) {
   const children = new Map(); // id -> { proc, epoch, stopping }
-  const crashState = new Map(); // id -> { timestamps: number[], nextRetryAt: number, haltedEpoch: number | null }
+  const crashState = new Map(); // id -> { epoch: number, timestamps: number[], nextRetryAt: number, haltedEpoch: number | null }
   let shuttingDown = false;
 
-  function getCrashInfo(id) {
+  function getCrashInfo(id, epoch = 0) {
     if (!crashState.has(id)) {
-      crashState.set(id, { timestamps: [], nextRetryAt: 0, haltedEpoch: null });
+      crashState.set(id, { epoch, timestamps: [], nextRetryAt: 0, haltedEpoch: null });
     }
     return crashState.get(id);
   }
@@ -81,7 +81,7 @@ function createSupervisor({
         return;
       }
       const now = nowFn();
-      const info = getCrashInfo(id);
+      const info = getCrashInfo(id, epoch);
       info.timestamps = info.timestamps.filter((t) => now - t <= CRASH_WINDOW_MS);
       info.timestamps.push(now);
       if (info.timestamps.length >= CRASH_THRESHOLD) {
@@ -141,14 +141,15 @@ function createSupervisor({
         continue;
       }
 
-      const info = getCrashInfo(id);
-      if (info.haltedEpoch !== null && info.haltedEpoch === epoch) {
-        continue;
-      }
-      if (info.haltedEpoch !== null && info.haltedEpoch !== epoch) {
+      const info = getCrashInfo(id, epoch);
+      if (info.epoch !== epoch || (info.haltedEpoch !== null && info.haltedEpoch !== epoch)) {
+        info.epoch = epoch;
         info.haltedEpoch = null;
         info.timestamps = [];
         info.nextRetryAt = 0;
+      }
+      if (info.haltedEpoch !== null && info.haltedEpoch === epoch) {
+        continue;
       }
       if (info.nextRetryAt > nowFn()) {
         continue;

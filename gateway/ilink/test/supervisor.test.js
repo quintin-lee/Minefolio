@@ -75,6 +75,15 @@ describe('ilink/supervisor', () => {
       const countBefore = spawned.length;
       await sup.reconcile([{ id: 20, status: 'active', login_epoch: 0, enabled: 1 }]);
       assert.strictEqual(spawned.length, countBefore);
+
+      // Epoch advanced (user relogin) -> halted marker & crash history reset, runner respawns
+      await sup.reconcile([{ id: 20, status: 'pending_login', login_epoch: 1, enabled: 1 }]);
+      assert.strictEqual(spawned.length, countBefore + 1);
+      assert.deepStrictEqual(spawned[spawned.length - 1].args, ['--instance', '20', '--force-login']);
+
+      // A single crash on the new epoch must back off cleanly instead of immediately halting again
+      spawned[spawned.length - 1].emit('exit', 1);
+      assert.strictEqual(statusCalls.length, 1);
     } finally {
       fs.rmSync(tmpRoot, { recursive: true, force: true });
     }
