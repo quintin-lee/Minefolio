@@ -9,9 +9,11 @@ const {
   CHANNEL_VERSION,
   BOT_AGENT,
   IlinkSessionExpiredError,
+  IlinkContextInvalidError,
   IlinkTimeoutError,
   buildHeaders,
   baseInfo,
+  classifyPayloadError,
   createIlinkClient,
 } = require('../client');
 
@@ -93,5 +95,54 @@ describe('ilink/client', () => {
       () => client.getQrcodeStatus({ qrcode: 'q1' }),
       (err) => err instanceof IlinkTimeoutError
     );
+  });
+
+  test('sendText classifies ret=-2 as IlinkContextInvalidError, errcode=-14 as IlinkSessionExpiredError, and other errors cleanly', async () => {
+    const responses = [
+      { ret: -2, errmsg: 'invalid context' },
+      { errcode: -14, errmsg: 'session expired' },
+      { ret: 5001, errmsg: 'rate limited' },
+    ];
+    let idx = 0;
+    const client = createIlinkClient({
+      fetchImpl: async () => ({
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify(responses[idx++]),
+      }),
+    });
+    const baseArgs = {
+      account: { bot_token: 't1', baseurl: 'https://bot.test' },
+      toUserId: 'wx_1',
+      contextToken: 'ctx_9',
+      text: 'hello',
+    };
+
+    await assert.rejects(
+      () => client.sendText(baseArgs),
+      (err) => err instanceof IlinkContextInvalidError && err.code === -2
+    );
+    await assert.rejects(
+      () => client.sendText(baseArgs),
+      (err) => err instanceof IlinkSessionExpiredError && err.code === -14
+    );
+    await assert.rejects(
+      () => client.sendText(baseArgs),
+      (err) => err.message === 'iLink error 5001: rate limited'
+    );
+  });
+
+  test('classifyPayloadError handles null/ok payloads, context-token regex on ret=-1, and non-string errmsg', () => {
+    assert.strictEqual(classifyPayloadError(null), null);
+    assert.strictEqual(classifyPayloadError({ ret: 0 }), null);
+    assert.strictEqual(classifyPayloadError({ ret: Number.NaN, errcode: Infinity }), null);
+
+    const ctxErr = classifyPayloadError({ ret: -1, errmsg: 'Context_Token expired' });
+    assert.ok(ctxErr instanceof IlinkContextInvalidError);
+    assert.strictEqual(ctxErr.code, -2);
+
+    const objMsgErr = classifyPayloadError({ ret: 4002, errmsg: { nested: true } });
+    assert.strictEqual(objMsgErr.code, 4002);
+    assert.strictEqual(objMsgErr.message, 'iLink error 4002: request failed');
   });
 });

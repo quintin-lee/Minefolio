@@ -92,6 +92,7 @@ function createStateStore({ rootDir, instanceId }) {
   const accountPath = path.join(dir, 'account.json');
   const cursorPath = path.join(dir, 'cursor.json');
   const dedupPath = path.join(dir, 'dedup.json');
+  const contextPath = path.join(dir, 'context.json');
 
   return {
     dir,
@@ -102,6 +103,9 @@ function createStateStore({ rootDir, instanceId }) {
     writeCursor: (cur) => writeJsonAtomic(cursorPath, cur),
     readDedup: () => readJson(dedupPath),
     writeDedup: (d) => writeJsonAtomic(dedupPath, d),
+    readContext: () => readJson(contextPath),
+    writeContext: (ctx) => writeJsonAtomic(contextPath, ctx),
+    clearContext: () => removeFile(contextPath),
   };
 }
 

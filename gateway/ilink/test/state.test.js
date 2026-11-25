@@ -39,4 +39,30 @@ describe('ilink/state', () => {
       fs.rmSync(tmpRoot, { recursive: true, force: true });
     }
   });
+
+  test('persists, isolates, chmods 0600, and clears context.json per instance', () => {
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'mf-ilink-ctx-'));
+    try {
+      const s1 = createStateStore({ rootDir: tmpRoot, instanceId: 1 });
+      const s2 = createStateStore({ rootDir: tmpRoot, instanceId: 2 });
+
+      assert.strictEqual(s1.readContext(), null);
+      s1.writeContext({
+        from_user_id: 'wx_1',
+        context_token: 'ctx_tok_1',
+        updated_at: '2026-11-25T10:00:00Z',
+        invalidated: false,
+      });
+
+      assert.strictEqual(s1.readContext().context_token, 'ctx_tok_1');
+      assert.strictEqual(s2.readContext(), null);
+      const stat = fs.statSync(path.join(instanceDir(tmpRoot, 1), 'context.json'));
+      assert.strictEqual(stat.mode & 0o777, 0o600);
+
+      s1.clearContext();
+      assert.strictEqual(s1.readContext(), null);
+    } finally {
+      fs.rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
 });

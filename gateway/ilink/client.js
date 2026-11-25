@@ -16,6 +16,14 @@ class IlinkSessionExpiredError extends Error {
   }
 }
 
+class IlinkContextInvalidError extends Error {
+  constructor(message = 'iLink context_token invalid or expired (-2)') {
+    super(message);
+    this.name = 'IlinkContextInvalidError';
+    this.code = -2;
+  }
+}
+
 class IlinkTimeoutError extends Error {
   constructor(message = 'iLink request timed out') {
     super(message);
@@ -54,6 +62,27 @@ function baseInfo() {
 
 function isSessionExpiredPayload(data) {
   return Boolean(data && (data.ret === -14 || data.errcode === -14));
+}
+
+function classifyPayloadError(data) {
+  if (!data || typeof data !== 'object') return null;
+  const msg = typeof data.errmsg === 'string' ? data.errmsg : '';
+  if (isSessionExpiredPayload(data)) {
+    return new IlinkSessionExpiredError(msg || 'iLink session expired');
+  }
+  const code =
+    Number.isFinite(data.errcode) && data.errcode !== 0
+      ? data.errcode
+      : Number.isFinite(data.ret) && data.ret !== 0
+        ? data.ret
+        : 0;
+  if (code === 0) return null;
+  if (code === -2 || /context[_ ]?token.*(invalid|expired)/i.test(msg)) {
+    return new IlinkContextInvalidError(msg || `iLink context invalid (${code})`);
+  }
+  const err = new Error(`iLink error ${code}: ${msg || 'request failed'}`);
+  err.code = code;
+  return err;
 }
 
 function isTimeoutErr(err) {
@@ -98,14 +127,13 @@ function createIlinkClient({
         throw new Error(`iLink non-JSON response (${res.status})`);
       }
     }
-    if (!res.ok) {
-      if (isSessionExpiredPayload(data)) {
-        throw new IlinkSessionExpiredError(data.errmsg || 'iLink session expired');
-      }
-      throw new Error(`iLink HTTP ${res.status}: ${(data && data.errmsg) || 'request failed'}`);
+    const classified = classifyPayloadError(data);
+    if (classified) {
+      throw classified;
     }
-    if (isSessionExpiredPayload(data)) {
-      throw new IlinkSessionExpiredError(data.errmsg || 'iLink session expired');
+    if (!res.ok) {
+      const msg = data && typeof data.errmsg === 'string' && data.errmsg ? data.errmsg : 'request failed';
+      throw new Error(`iLink HTTP ${res.status}: ${msg}`);
     }
     return data || {};
   }
@@ -218,9 +246,11 @@ module.exports = {
   CHANNEL_VERSION,
   BOT_AGENT,
   IlinkSessionExpiredError,
+  IlinkContextInvalidError,
   IlinkTimeoutError,
   buildHeaders,
   baseInfo,
   isSessionExpiredPayload,
+  classifyPayloadError,
   createIlinkClient,
 };

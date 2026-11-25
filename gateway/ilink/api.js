@@ -105,6 +105,14 @@ function createGatewayApi({
     throw new Error('AI 查询超时，请稍后再试');
   }
 
+  async function claimPushes(id, payload = {}) {
+    return request('POST', `/api/gateway/im/instances/${id}/pushes/claim`, payload);
+  }
+
+  async function ackPush(id, pushId, payload = {}) {
+    return request('POST', `/api/gateway/im/instances/${id}/pushes/${pushId}/ack`, payload);
+  }
+
   return {
     listInstances,
     getInstance,
@@ -113,6 +121,8 @@ function createGatewayApi({
     chat,
     getTask,
     pollTask,
+    claimPushes,
+    ackPush,
   };
 }
 
