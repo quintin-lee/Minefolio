@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { computed } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'
 import { useCategoryStore } from '@/stores/category'
 
@@ -145,5 +146,43 @@ describe('category store', () => {
     ]
     const tree = store.buildTree(dupList)
     expect(tree).toHaveLength(1)
+  })
+
+  it('triggers reactive computed updates when loadChildren attaches children under shallowRef', async () => {
+    ;(categoriesApi.list as any).mockResolvedValue([
+      { id: 10, name: '交通出行', type: 'expense', parent_id: null, currency: 'CNY', sort_order: 1, children: [] },
+    ])
+    ;(categoriesApi.children as any).mockResolvedValue([
+      { id: 101, name: '公共交通', type: 'expense', parent_id: 10, currency: 'CNY', sort_order: 1 },
+      { id: 102, name: '打车网约车', type: 'expense', parent_id: 10, currency: 'CNY', sort_order: 2 },
+    ])
+
+    const store = useCategoryStore()
+    await store.loadCategories()
+    const childCount = computed(() => store.expenseCategories[0]?.children?.length ?? 0)
+    expect(childCount.value).toBe(0)
+
+    await store.loadChildren(10)
+    expect(childCount.value).toBe(2)
+  })
+
+  it('preserves parent-child order without duplicates when pre-nested and flat items mix in buildTree', () => {
+    const store = useCategoryStore()
+    const mixed: Category[] = [
+      {
+        id: 1,
+        name: '餐饮',
+        type: 'expense',
+        parent_id: null,
+        sort_order: 1,
+        children: [{ id: 11, name: '早餐', type: 'expense', parent_id: 1, sort_order: 1 }],
+      },
+      { id: 11, name: '早餐', type: 'expense', parent_id: 1, sort_order: 1 },
+      { id: 12, name: '午餐', type: 'expense', parent_id: 1, sort_order: 2 },
+      { id: 13, name: '晚餐', type: 'expense', parent_id: 1, sort_order: 3 },
+    ]
+    const tree = store.buildTree(mixed)
+    expect(tree).toHaveLength(1)
+    expect(tree[0].children?.map(c => c.name)).toEqual(['早餐', '午餐', '晚餐'])
   })
 })

@@ -5,7 +5,7 @@
 
 // frontend/src/stores/category.ts
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, shallowRef, computed } from 'vue'
 import { categoriesApi } from '@/api/categories'
 import type { Category } from '@/types'
 import { getSwrCache, setSwrCache, clearSwrCache } from '@/utils/swr-cache'
@@ -74,7 +74,7 @@ export const useCategoryStore = defineStore('category', () => {
 
   const initialNodes = sanitizeNodes(getSwrCache<Category[]>(CATEGORY_CACHE_KEY, []))
   /** 已加载的所有分类节点扁平数组 (顶级节点预加载，子节点按需加载) */
-  const allNodes = ref<Category[]>(initialNodes)
+  const allNodes = shallowRef<Category[]>(initialNodes)
   /** 顶级根分类是否已加载完毕 */
   const loaded = ref(initialNodes.length > 0)
   /** 是否正在请求加载分类数据 */
@@ -168,6 +168,7 @@ export const useCategoryStore = defineStore('category', () => {
       const seen = new Set((parent.children || []).map(c => Number(c.id)))
       const fresh = children.filter(c => !seen.has(Number(c.id)))
       parent.children = [...(parent.children || []), ...fresh]
+      allNodes.value = [...allNodes.value]
     } else if (!allNodes.value.some(n => Array.isArray(n.children) && n.children.length > 0)) {
       const seen = collectIds(allNodes.value)
       const fresh = children.filter(c => !seen.has(Number(c.id)))
@@ -205,10 +206,15 @@ export const useCategoryStore = defineStore('category', () => {
     }
 
     const childIdSet = new Set<number>()
+    const childIdsByParent = new Map<number, Set<number>>()
     for (const cloned of map.values()) {
+      const cset = new Set<number>()
       for (const ch of cloned.children || []) {
-        childIdSet.add(Number(ch.id))
+        const chId = Number(ch.id)
+        childIdSet.add(chId)
+        cset.add(chId)
       }
+      childIdsByParent.set(cloned.id, cset)
     }
 
     const addedRootIds = new Set<number>()
@@ -216,7 +222,13 @@ export const useCategoryStore = defineStore('category', () => {
       if (childIdSet.has(target.id)) continue
       const parent = target.parent_id != null ? map.get(Number(target.parent_id)) : undefined
       if (parent && parent.id !== target.id) {
-        if (!parent.children!.some(c => Number(c.id) === target.id)) {
+        let cset = childIdsByParent.get(parent.id)
+        if (!cset) {
+          cset = new Set<number>()
+          childIdsByParent.set(parent.id, cset)
+        }
+        if (!cset.has(target.id)) {
+          cset.add(target.id)
           parent.children!.push(target)
         }
       } else if (!addedRootIds.has(target.id)) {
