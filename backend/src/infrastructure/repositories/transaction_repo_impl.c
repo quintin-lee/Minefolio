@@ -89,6 +89,20 @@ mf_tx_repo_find_by_id(void* db_pool, int64_t user_id, int64_t id, mf_transaction
     return 0;
 }
 
+static void
+format_tx_amount_and_qty(
+    const mf_transaction_t* tx, char* amt_str, size_t amt_sz, char* qty_str, size_t qty_sz)
+{
+    quantity_to_string_fixed(tx->amount, 8, qty_str, qty_sz);
+    money_t total_m;
+    if (decimal_is_positive(tx->price.unit_price) && quantity_is_positive(tx->amount) &&
+        price_times_quantity(tx->price, tx->amount, &total_m) == DECIMAL_OK) {
+        money_to_string(total_m, amt_str, amt_sz);
+    } else {
+        quantity_to_string_fixed(tx->amount, 8, amt_str, amt_sz);
+    }
+}
+
 int
 mf_tx_repo_save(void* db_pool, const mf_transaction_t* tx, int64_t* out_id)
 {
@@ -104,9 +118,8 @@ mf_tx_repo_save(void* db_pool, const mf_transaction_t* tx, int64_t* out_id)
     snprintf(linked_asset_id_str, sizeof(linked_asset_id_str), "%lld", (long long)tx->account_id);
     snprintf(parent_id_str, sizeof(parent_id_str), "%lld", (long long)tx->parent_tx_id);
 
-    quantity_to_string_fixed(tx->amount, 8, amt_str, sizeof(amt_str));
+    format_tx_amount_and_qty(tx, amt_str, sizeof(amt_str), qty_str, sizeof(qty_str));
     price_to_string_fixed(tx->price, 8, price_str, sizeof(price_str));
-    quantity_to_string_fixed(tx->amount, 8, qty_str, sizeof(qty_str));
     money_to_string(tx->fee, fee_str, sizeof(fee_str));
 
     const char* currency = tx->fee_currency[0] ? tx->fee_currency : "CNY";
@@ -170,9 +183,8 @@ mf_tx_repo_update(void* db_pool, const mf_transaction_t* tx)
     snprintf(asset_id_str, sizeof(asset_id_str), "%lld", (long long)tx->asset_id);
     snprintf(linked_asset_id_str, sizeof(linked_asset_id_str), "%lld", (long long)tx->account_id);
 
-    quantity_to_string_fixed(tx->amount, 8, amt_str, sizeof(amt_str));
+    format_tx_amount_and_qty(tx, amt_str, sizeof(amt_str), qty_str, sizeof(qty_str));
     price_to_string_fixed(tx->price, 8, price_str, sizeof(price_str));
-    quantity_to_string_fixed(tx->amount, 8, qty_str, sizeof(qty_str));
     money_to_string(tx->fee, fee_str, sizeof(fee_str));
 
     const char* currency = tx->fee_currency[0] ? tx->fee_currency : "CNY";
@@ -673,7 +685,7 @@ tx_insert(csilk_db_pool_t* pool,
                         cat,
                         source_type,
                         transaction_type,
-                        direction ? "in" : "out",
+                        (direction && direction[0]) ? direction : "out",
                         (linked_direction && linked_direction[0]) ? linked_direction : "",
                         amt,
                         pp,

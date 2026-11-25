@@ -221,8 +221,11 @@ db_wal_checkpoint(csilk_db_pool_t* pool)
     return 0;
 }
 
-static pthread_mutex_t g_tx_mutex;
-static pthread_once_t  g_tx_mutex_once = PTHREAD_ONCE_INIT;
+static pthread_mutex_t  g_tx_mutex;
+static pthread_once_t   g_tx_mutex_once = PTHREAD_ONCE_INIT;
+static void*            g_tx_pinned_conn = NULL;
+static csilk_db_pool_t* g_tx_pinned_pool = NULL;
+static int              g_tx_pin_depth = 0;
 
 static void
 init_tx_mutex(void)
@@ -234,21 +237,87 @@ init_tx_mutex(void)
     pthread_mutexattr_destroy(&attr);
 }
 
+typedef struct {
+    csilk_db_pool_t* pool;
+    const char*      name;
+    db_tx_scope_t*   scope;
+    int              in_tx;
+} tx_with_conn_ctx_t;
+
+static int
+in_tx_with_conn_cb(void* conn, void* user_ctx)
+{
+    (void)conn;
+    tx_with_conn_ctx_t* tc = (tx_with_conn_ctx_t*)user_ctx;
+    tc->in_tx = csilk_db_in_transaction(tc->pool);
+    return 0;
+}
+
+static int
+tx_begin_with_conn_cb(void* conn, void* user_ctx)
+{
+    (void)conn;
+    tx_with_conn_ctx_t* tc = (tx_with_conn_ctx_t*)user_ctx;
+    return csilk_db_tx_scope_begin(tc->pool, tc->name, tc->scope);
+}
+
+static void
+tx_release_pinned_conn_locked(void)
+{
+    if (g_tx_pin_depth > 0) {
+        g_tx_pin_depth--;
+    }
+    if (g_tx_pin_depth == 0 && g_tx_pinned_pool && g_tx_pinned_conn) {
+        csilk_db_pool_put(g_tx_pinned_pool, g_tx_pinned_conn);
+        g_tx_pinned_conn = NULL;
+        g_tx_pinned_pool = NULL;
+    }
+}
+
 int
 db_in_transaction(csilk_db_pool_t* pool)
 {
-    return csilk_db_in_transaction(pool);
+    if (!pool) {
+        return 0;
+    }
+    tx_with_conn_ctx_t tc = {.pool = pool, .in_tx = 0};
+    if (csilk_db_with_conn(pool, in_tx_with_conn_cb, &tc) != 0) {
+        return 0;
+    }
+    return tc.in_tx;
 }
 
 int
 db_tx_scope_begin(csilk_db_pool_t* pool, const char* name, db_tx_scope_t* scope)
 {
+    if (!pool || !scope) {
+        return -1;
+    }
     pthread_once(&g_tx_mutex_once, init_tx_mutex);
     if (pthread_mutex_lock(&g_tx_mutex) != 0) {
         return -1;
     }
-    int rc = csilk_db_tx_scope_begin(pool, name, scope);
+
+    if (g_tx_pin_depth == 0) {
+        void* conn = NULL;
+        if (csilk_db_pool_acquire_timeout(pool, &conn, 5000) != 0 || !conn) {
+            pthread_mutex_unlock(&g_tx_mutex);
+            return -1;
+        }
+        g_tx_pinned_pool = pool;
+        g_tx_pinned_conn = conn;
+        g_tx_pin_depth = 1;
+    } else if (g_tx_pinned_pool != pool) {
+        pthread_mutex_unlock(&g_tx_mutex);
+        return -1;
+    } else {
+        g_tx_pin_depth++;
+    }
+
+    tx_with_conn_ctx_t tc = {.pool = pool, .name = name, .scope = scope};
+    int                rc = csilk_db_with_conn(pool, tx_begin_with_conn_cb, &tc);
     if (rc != 0) {
+        tx_release_pinned_conn_locked();
         pthread_mutex_unlock(&g_tx_mutex);
     }
     return rc;
@@ -258,8 +327,28 @@ int
 db_tx_scope_commit(csilk_db_pool_t* pool, db_tx_scope_t* scope)
 {
     bool was_active = (pool != NULL && scope != NULL && scope->active);
-    int  rc = csilk_db_tx_scope_commit(pool, scope);
+    bool is_sp = was_active ? scope->is_savepoint : false;
+    char sp_name[64] = {0};
+    if (was_active && is_sp) {
+        snprintf(sp_name, sizeof(sp_name), "%s", scope->name);
+    }
+
+    int rc = csilk_db_tx_scope_commit(pool, scope);
     if (was_active) {
+        if (rc != 0) {
+            /* COMMIT / RELEASE SAVEPOINT failed and scope->active is now false:
+             * ensure the pinned connection is rolled back before release. */
+            if (is_sp && sp_name[0]) {
+                char rb_sql[128];
+                snprintf(rb_sql, sizeof(rb_sql), "ROLLBACK TO SAVEPOINT %s;", sp_name);
+                (void)csilk_db_exec(pool, rb_sql);
+                snprintf(rb_sql, sizeof(rb_sql), "RELEASE SAVEPOINT %s;", sp_name);
+                (void)csilk_db_exec(pool, rb_sql);
+            } else {
+                (void)csilk_db_exec(pool, "ROLLBACK;");
+            }
+        }
+        tx_release_pinned_conn_locked();
         pthread_mutex_unlock(&g_tx_mutex);
     }
     return rc;
@@ -271,6 +360,7 @@ db_tx_scope_rollback(csilk_db_pool_t* pool, db_tx_scope_t* scope)
     bool was_active = (pool != NULL && scope != NULL && scope->active);
     int  rc = csilk_db_tx_scope_rollback(pool, scope);
     if (was_active) {
+        tx_release_pinned_conn_locked();
         pthread_mutex_unlock(&g_tx_mutex);
     }
     return rc;
