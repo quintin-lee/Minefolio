@@ -13,15 +13,21 @@
  * request on a pool of worker threads that share one address space, so this
  * state must be thread-local: two concurrent receipt uploads must not clobber
  * each other's buffer. */
+#define MF_MAX_RECEIPT_BYTES ((size_t)(10 * 1024 * 1024))
+
 _Thread_local static char*  g_receipt_filename = NULL;
 _Thread_local static char*  g_receipt_content_type = NULL;
 _Thread_local static char*  g_receipt_data = NULL;
 _Thread_local static size_t g_receipt_data_len = 0;
 _Thread_local static size_t g_receipt_data_cap = 0;
+_Thread_local static bool   g_receipt_overflow = false;
 
 static void
 receipt_part_handler(csilk_multipart_part_t* part)
 {
+    if (!part || g_receipt_overflow) {
+        return;
+    }
     if (!g_receipt_filename && part->filename[0]) {
         g_receipt_filename = strdup(part->filename);
     }
@@ -29,14 +35,27 @@ receipt_part_handler(csilk_multipart_part_t* part)
         g_receipt_content_type = strdup(part->content_type);
     }
     if (part->data && part->data_len > 0) {
+        if (part->data_len > MF_MAX_RECEIPT_BYTES ||
+            g_receipt_data_len > MF_MAX_RECEIPT_BYTES - part->data_len) {
+            g_receipt_overflow = true;
+            return;
+        }
         size_t need = g_receipt_data_len + part->data_len;
         if (need > g_receipt_data_cap) {
             size_t cap = g_receipt_data_cap ? g_receipt_data_cap : 16384;
-            while (cap < need) {
+            while (cap < need && cap < MF_MAX_RECEIPT_BYTES) {
+                if (cap > MF_MAX_RECEIPT_BYTES / 2) {
+                    cap = MF_MAX_RECEIPT_BYTES;
+                    break;
+                }
                 cap *= 2;
+            }
+            if (cap < need) {
+                cap = need;
             }
             char* nd = realloc(g_receipt_data, cap);
             if (!nd) {
+                g_receipt_overflow = true;
                 return;
             }
             g_receipt_data = nd;
@@ -86,6 +105,7 @@ receipt_clear_tls_multipart(void)
     g_receipt_data = NULL;
     g_receipt_data_len = 0;
     g_receipt_data_cap = 0;
+    g_receipt_overflow = false;
 }
 
 void
@@ -93,7 +113,6 @@ receipt_service_scan(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
     if (user_id <= 0) {
-        respond_unauthorized(c);
         return;
     }
 
@@ -114,6 +133,11 @@ receipt_service_scan(csilk_ctx_t* c)
         provider_override = csilk_json_get_string(body, "provider");
 
         if (img && img[0]) {
+            if (strlen(img) > MF_MAX_RECEIPT_BYTES * 2) {
+                csilk_json_free(body);
+                respond_error(c, 413, "票据图片数据超过 10MB 上限");
+                return;
+            }
             if (strncmp(img, "data:image/", 11) == 0) {
                 image_url_buf = strdup(img);
             } else {
@@ -129,6 +153,15 @@ receipt_service_scan(csilk_ctx_t* c)
     if (!image_url_buf) {
         receipt_clear_tls_multipart();
         csilk_multipart_parse(c, receipt_part_handler);
+
+        if (g_receipt_overflow) {
+            receipt_clear_tls_multipart();
+            if (body) {
+                csilk_json_free(body);
+            }
+            respond_error(c, 413, "上传票据图片超过 10MB 上限");
+            return;
+        }
 
         if (g_receipt_data && g_receipt_data_len > 0) {
             char* b64 = base64_encode((const unsigned char*)g_receipt_data, g_receipt_data_len);

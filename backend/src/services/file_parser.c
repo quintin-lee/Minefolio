@@ -9,6 +9,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <dirent.h>
@@ -82,11 +83,87 @@ parse_txt(const char* data, size_t len, char* out, size_t out_len)
 static int
 parse_csv(const char* data, size_t len, char* out, size_t out_len)
 {
-    size_t prefix = snprintf(out, 64, "CSV file (%zu bytes):\n", len);
-    size_t n = len < out_len - prefix - 1 ? len : out_len - prefix - 1;
+    if (out_len == 0) {
+        return -1;
+    }
+    int r = snprintf(out, out_len, "CSV file (%zu bytes):\n", len);
+    if (r < 0) {
+        return -1;
+    }
+    size_t prefix = (size_t)r;
+    if (prefix >= out_len - 1) {
+        out[out_len - 1] = '\0';
+        return 0;
+    }
+    size_t avail = out_len - prefix - 1;
+    size_t n = len < avail ? len : avail;
     memcpy(out + prefix, data, n);
     out[prefix + n] = '\0';
     return 0;
+}
+
+static int
+run_tool_capture(const char* prog,
+                 char* const argv[],
+                 char*       out,
+                 size_t      out_len,
+                 size_t      max_lines,
+                 bool        merge_stderr)
+{
+    int pipefd[2];
+    if (pipe(pipefd) != 0) {
+        return -1;
+    }
+    pid_t pid = fork();
+    if (pid < 0) {
+        close(pipefd[0]);
+        close(pipefd[1]);
+        return -1;
+    }
+    if (pid == 0) {
+        close(pipefd[0]);
+        dup2(pipefd[1], STDOUT_FILENO);
+        if (merge_stderr) {
+            dup2(pipefd[1], STDERR_FILENO);
+        } else {
+            int devnull = open("/dev/null", O_WRONLY);
+            if (devnull >= 0) {
+                dup2(devnull, STDERR_FILENO);
+                close(devnull);
+            }
+        }
+        close(pipefd[1]);
+        execvp(prog, argv);
+        _exit(127);
+    }
+
+    close(pipefd[1]);
+    FILE* fp = fdopen(pipefd[0], "r");
+    if (!fp) {
+        close(pipefd[0]);
+        int st = 0;
+        waitpid(pid, &st, 0);
+        return -1;
+    }
+
+    size_t total = 0;
+    size_t lines = 0;
+    char   buf[4096];
+    while (total < out_len - 1 && (max_lines == 0 || lines < max_lines) &&
+           fgets(buf, sizeof(buf), fp)) {
+        size_t blen = strlen(buf);
+        if (total + blen >= out_len - 1) {
+            break;
+        }
+        memcpy(out + total, buf, blen);
+        total += blen;
+        lines++;
+    }
+    out[total] = '\0';
+    fclose(fp);
+    int st = 0;
+    waitpid(pid, &st, 0);
+    return total > 0 ? 0 : -1;
 }
 
 static int
@@ -96,29 +173,10 @@ parse_pdf(const char* data, size_t len, char* out, size_t out_len)
     if (file_parser_write_temp(data, len, ".pdf", tmp_path, sizeof(tmp_path)) != 0) {
         return -1;
     }
-
-    char cmd[512];
-    snprintf(cmd, sizeof(cmd), "pdftotext -layout '%s' - 2>/dev/null", tmp_path);
-    FILE* fp = popen(cmd, "r");
-    if (!fp) {
-        unlink(tmp_path);
-        return -1;
-    }
-
-    size_t total = 0;
-    char   buf[4096];
-    while (total < out_len - 1 && fgets(buf, sizeof(buf), fp)) {
-        size_t blen = strlen(buf);
-        if (total + blen >= out_len - 1) {
-            break;
-        }
-        memcpy(out + total, buf, blen);
-        total += blen;
-    }
-    out[total] = '\0';
-    pclose(fp);
+    char* argv[] = {"pdftotext", "-layout", tmp_path, "-", NULL};
+    int   rc = run_tool_capture("pdftotext", argv, out, out_len, 0, false);
     unlink(tmp_path);
-    return total > 0 ? 0 : -1;
+    return rc;
 }
 
 static int
@@ -128,30 +186,10 @@ parse_zip(const char* data, size_t len, char* out, size_t out_len)
     if (file_parser_write_temp(data, len, ".zip", tmp_path, sizeof(tmp_path)) != 0) {
         return -1;
     }
-
-    /* List contents */
-    char cmd[512];
-    snprintf(cmd, sizeof(cmd), "unzip -l '%s' 2>&1 | head -30", tmp_path);
-    FILE* fp = popen(cmd, "r");
-    if (!fp) {
-        unlink(tmp_path);
-        return -1;
-    }
-
-    size_t total = 0;
-    char   buf[4096];
-    while (total < out_len - 1 && fgets(buf, sizeof(buf), fp)) {
-        size_t blen = strlen(buf);
-        if (total + blen >= out_len - 1) {
-            break;
-        }
-        memcpy(out + total, buf, blen);
-        total += blen;
-    }
-    out[total] = '\0';
-    pclose(fp);
+    char* argv[] = {"unzip", "-l", tmp_path, NULL};
+    int   rc = run_tool_capture("unzip", argv, out, out_len, 30, true);
     unlink(tmp_path);
-    return total > 0 ? 0 : -1;
+    return rc;
 }
 
 int

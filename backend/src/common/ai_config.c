@@ -72,43 +72,49 @@ ai_config_parse_root(const csilk_json_t* root, ai_config_t* out)
     const csilk_json_t* prov_arr = csilk_json_get(root, "providers");
     if (prov_arr && csilk_json_is_array(prov_arr)) {
         int pc = csilk_json_array_size(prov_arr);
-        out->providers = (ai_provider_t*)malloc(sizeof(ai_provider_t) * (size_t)pc);
-        if (!out->providers) {
-            return -1;
-        }
-        out->provider_count = pc;
-        for (int i = 0; i < pc; i++) {
-            const csilk_json_t* p = csilk_json_array_get(prov_arr, i);
-            strncpy(out->providers[i].id,
-                    csilk_json_get_string(p, "id") ? csilk_json_get_string(p, "id") : "",
-                    sizeof(out->providers[i].id) - 1);
-            strncpy(out->providers[i].name,
-                    csilk_json_get_string(p, "name") ? csilk_json_get_string(p, "name") : "",
-                    sizeof(out->providers[i].name) - 1);
-            strncpy(out->providers[i].api_key,
-                    csilk_json_get_string(p, "api_key") ? csilk_json_get_string(p, "api_key") : "",
-                    sizeof(out->providers[i].api_key) - 1);
-            strncpy(out->providers[i].base_url,
-                    csilk_json_get_string(p, "base_url") ? csilk_json_get_string(p, "base_url")
-                                                         : "",
-                    sizeof(out->providers[i].base_url) - 1);
-            parse_string_array(csilk_json_get(p, "models"),
-                               &out->providers[i].models,
-                               &out->providers[i].model_count);
-            const csilk_json_t* pi = csilk_json_get(p, "price_input");
-            out->providers[i].price_input = pi ? (double)csilk_json_number_value(pi) : 0.0;
-            const csilk_json_t* po = csilk_json_get(p, "price_output");
-            out->providers[i].price_output = po ? (double)csilk_json_number_value(po) : 0.0;
+        if (pc > 0) {
+            out->providers = (ai_provider_t*)calloc((size_t)pc, sizeof(ai_provider_t));
+            if (!out->providers) {
+                return -1;
+            }
+            out->provider_count = pc;
+            for (int i = 0; i < pc; i++) {
+                const csilk_json_t* p = csilk_json_array_get(prov_arr, i);
+                const char*         pid = csilk_json_get_string(p, "id");
+                const char*         pname = csilk_json_get_string(p, "name");
+                const char*         pkey = csilk_json_get_string(p, "api_key");
+                const char*         pburl = csilk_json_get_string(p, "base_url");
+                snprintf(out->providers[i].id, sizeof(out->providers[i].id), "%s", pid ? pid : "");
+                snprintf(out->providers[i].name,
+                         sizeof(out->providers[i].name),
+                         "%s",
+                         pname ? pname : "");
+                snprintf(out->providers[i].api_key,
+                         sizeof(out->providers[i].api_key),
+                         "%s",
+                         pkey ? pkey : "");
+                snprintf(out->providers[i].base_url,
+                         sizeof(out->providers[i].base_url),
+                         "%s",
+                         pburl ? pburl : "");
+                parse_string_array(csilk_json_get(p, "models"),
+                                   &out->providers[i].models,
+                                   &out->providers[i].model_count);
+                const csilk_json_t* pi = csilk_json_get(p, "price_input");
+                out->providers[i].price_input = pi ? (double)csilk_json_number_value(pi) : 0.0;
+                const csilk_json_t* po = csilk_json_get(p, "price_output");
+                out->providers[i].price_output = po ? (double)csilk_json_number_value(po) : 0.0;
+            }
         }
     }
 
     const char* dp = csilk_json_get_string(root, "default_provider");
     if (dp) {
-        strncpy(out->default_provider, dp, sizeof(out->default_provider) - 1);
+        snprintf(out->default_provider, sizeof(out->default_provider), "%s", dp);
     }
     const char* dm = csilk_json_get_string(root, "default_model");
     if (dm) {
-        strncpy(out->default_model, dm, sizeof(out->default_model) - 1);
+        snprintf(out->default_model, sizeof(out->default_model), "%s", dm);
     }
     const csilk_json_t* cs_val = csilk_json_get(root, "context_size");
     out->context_size = cs_val ? (int)csilk_json_number_value(cs_val) : 20;
@@ -117,7 +123,7 @@ ai_config_parse_root(const csilk_json_t* root, ai_config_t* out)
     }
     const char* sp = csilk_json_get_string(root, "system_prompt");
     if (sp) {
-        strncpy(out->system_prompt, sp, sizeof(out->system_prompt) - 1);
+        snprintf(out->system_prompt, sizeof(out->system_prompt), "%s", sp);
     }
     return 0;
 }

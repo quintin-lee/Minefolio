@@ -511,12 +511,14 @@ ai_summary_maybe_trigger(csilk_db_pool_t* pool, ai_runtime_context_t* ctx)
                      sizeof(task->base_url),
                      "%s",
                      prov->base_url[0] ? prov->base_url : "");
-            snprintf(task->model,
-                     sizeof(task->model),
-                     "%s",
-                     ctx->model_name[0]                        ? ctx->model_name
-                     : (prov->models[0] && prov->models[0][0]) ? prov->models[0]
-                                                               : "gpt-4o-mini");
+            snprintf(
+                task->model,
+                sizeof(task->model),
+                "%s",
+                ctx->model_name[0] ? ctx->model_name
+                : (prov->models && prov->model_count > 0 && prov->models[0] && prov->models[0][0])
+                    ? prov->models[0]
+                    : "gpt-4o-mini");
         }
         /* 已将所有所需字段值拷贝到 task 本地缓冲，快照引用可立即归还 */
         ai_config_release(cfg);

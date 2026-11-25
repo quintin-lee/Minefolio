@@ -360,7 +360,6 @@ api_ai_mcp_servers_test(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
     if (user_id <= 0) {
-        respond_unauthorized(c);
         return;
     }
     const char* id_str = csilk_get_param(c, "id");
@@ -377,7 +376,6 @@ api_ai_mcp_servers_refresh(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
     if (user_id <= 0) {
-        respond_unauthorized(c);
         return;
     }
     const char* id_str = csilk_get_param(c, "id");

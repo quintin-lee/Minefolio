@@ -23,6 +23,9 @@
 void
 ai_trace_init(ai_trace_t* t, int64_t user_id, int64_t session_id)
 {
+    if (!t) {
+        return;
+    }
     memset(t, 0, sizeof(*t));
     t->user_id = user_id;
     t->session_id = session_id;
@@ -36,9 +39,8 @@ ai_trace_init(ai_trace_t* t, int64_t user_id, int64_t session_id)
     t->system_prompt = strdup("");
     t->error_message = strdup("");
     t->metadata = strdup("{}");
-    strncpy(t->tool_spans, "[]", sizeof(t->tool_spans) - 1);
-    t->tool_spans[sizeof(t->tool_spans) - 1] = '\0';
-    strncpy(t->status, "ok", sizeof(t->status) - 1);
+    snprintf(t->tool_spans, sizeof(t->tool_spans), "[]");
+    snprintf(t->status, sizeof(t->status), "ok");
     clock_gettime(CLOCK_MONOTONIC, &t->t_start);
 }
 
@@ -57,34 +59,42 @@ ai_trace_add_tool_span(ai_trace_t* t, const char* name, long latency_ms, size_t 
     if (!t || !name) {
         return;
     }
-    /* 限制固定缓冲区长度以防溢出 */
-    size_t cur = strlen(t->tool_spans);
-    if (cur + 256 >= sizeof(t->tool_spans)) {
+    /* 使用 JSON 序列化安全转义工具名，防止引号/控制字符破坏 JSON 结构 */
+    csilk_json_t* entry_obj = csilk_json_object();
+    if (!entry_obj) {
         return;
     }
-    char entry[256];
-    int  n = snprintf(entry,
-                      sizeof(entry),
-                      "{\"name\":\"%s\",\"latency_ms\":%ld,\"bytes\":%zu,\"ok\":%d}",
-                      name,
-                      latency_ms,
-                      bytes,
-                      ok ? 1 : 0);
-    if (n < 0) {
+    csilk_json_add_string(entry_obj, "name", name);
+    csilk_json_add_int(entry_obj, "latency_ms", latency_ms);
+    csilk_json_add_number(entry_obj, "bytes", (double)bytes);
+    csilk_json_add_int(entry_obj, "ok", ok ? 1 : 0);
+
+    size_t slen = 0;
+    char*  entry = csilk_json_serialize(entry_obj, &slen);
+    csilk_json_free(entry_obj);
+    if (!entry || slen == 0) {
+        free(entry);
         return;
     }
+
+    size_t cur = strnlen(t->tool_spans, sizeof(t->tool_spans));
+    if (cur < 2 || t->tool_spans[0] != '[' || t->tool_spans[cur - 1] != ']') {
+        snprintf(t->tool_spans, sizeof(t->tool_spans), "[]");
+        cur = 2;
+    }
+
     const char* sep = (cur <= 2) ? "" : ","; /* 首个元素无需前置逗号 */
-    /* 替换末尾的 ']' 为 ',entry]' */
-    size_t pos = cur > 0 ? cur - 1 : 0;
-    if (t->tool_spans[pos] == ']') {
-        t->tool_spans[pos] = '\0';
+    size_t      sep_len = strlen(sep);
+    /* pos 为末尾 ']' 下标；追加 ",entry]" + '\0' */
+    size_t pos = cur - 1;
+    if (slen > sizeof(t->tool_spans) - pos - sep_len - 2) {
+        free(entry);
+        return;
     }
-    int written = snprintf(t->tool_spans + strlen(t->tool_spans),
-                           sizeof(t->tool_spans) - strlen(t->tool_spans),
-                           "%s%s]",
-                           sep,
-                           entry);
+    t->tool_spans[pos] = '\0';
+    int written = snprintf(t->tool_spans + pos, sizeof(t->tool_spans) - pos, "%s%s]", sep, entry);
     (void)written;
+    free(entry);
 }
 
 /**
@@ -97,8 +107,11 @@ ai_trace_add_tool_span(ai_trace_t* t, const char* name, long latency_ms, size_t 
 void
 ai_trace_set_provider(ai_trace_t* t, const char* provider, const char* model)
 {
-    strncpy(t->provider, provider ? provider : "", sizeof(t->provider) - 1);
-    strncpy(t->model, model ? model : "", sizeof(t->model) - 1);
+    if (!t) {
+        return;
+    }
+    snprintf(t->provider, sizeof(t->provider), "%s", provider ? provider : "");
+    snprintf(t->model, sizeof(t->model), "%s", model ? model : "");
 }
 
 /**
@@ -112,6 +125,9 @@ ai_trace_set_provider(ai_trace_t* t, const char* provider, const char* model)
 void
 ai_trace_set_params(ai_trace_t* t, double temperature, int max_tokens, double top_p)
 {
+    if (!t) {
+        return;
+    }
     t->temperature = temperature;
     t->max_tokens = max_tokens;
     t->top_p = top_p;
@@ -143,6 +159,9 @@ ai_trace_set_price(ai_trace_t* t, double in_per_m, double out_per_m)
 void
 ai_trace_set_system_prompt(ai_trace_t* t, const char* prompt)
 {
+    if (!t) {
+        return;
+    }
     free(t->system_prompt);
     t->system_prompt = strdup(prompt ? prompt : "");
 }
@@ -156,9 +175,12 @@ ai_trace_set_system_prompt(ai_trace_t* t, const char* prompt)
 void
 ai_trace_serialize_messages(ai_trace_t* t, csilk_json_t* messages_array)
 {
+    if (!t) {
+        return;
+    }
     free(t->input_messages);
     size_t slen = 0;
-    char*  s = csilk_json_serialize(messages_array, &slen);
+    char*  s = messages_array ? csilk_json_serialize(messages_array, &slen) : NULL;
     t->input_messages = s ? s : strdup("[]");
 }
 
@@ -204,6 +226,9 @@ ai_trace_append_output(ai_trace_t* t, const char* chunk)
 void
 ai_trace_record_first_token(ai_trace_t* t)
 {
+    if (!t) {
+        return;
+    }
     if (!t->has_first_token) {
         clock_gettime(CLOCK_MONOTONIC, &t->t_first_token);
         t->has_first_token = 1;
@@ -268,6 +293,9 @@ ai_estimate_tokens_from_text(const char* text)
 void
 ai_trace_calculate_tokens_and_cost(ai_trace_t* t, int prompt_tokens, int completion_tokens)
 {
+    if (!t) {
+        return;
+    }
     if (prompt_tokens > 0) {
         t->prompt_tokens = prompt_tokens;
     } else {
@@ -323,8 +351,11 @@ ai_trace_calculate_tokens_and_cost(ai_trace_t* t, int prompt_tokens, int complet
 void
 ai_trace_finish(ai_trace_t* t, const char* status, const char* error)
 {
+    if (!t) {
+        return;
+    }
     clock_gettime(CLOCK_MONOTONIC, &t->t_end);
-    strncpy(t->status, status ? status : "ok", sizeof(t->status) - 1);
+    snprintf(t->status, sizeof(t->status), "%s", status ? status : "ok");
     if (error && error[0]) {
         free(t->error_message);
         t->error_message = strdup(error);

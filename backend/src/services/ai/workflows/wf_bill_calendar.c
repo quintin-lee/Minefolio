@@ -108,7 +108,8 @@ step_bc_collect(csilk_db_pool_t*    pool,
             }
             if (p_day && p_day > anote) {
                 int parsed_d = 0;
-                if (sscanf(p_day - 2, "%d", &parsed_d) == 1 && parsed_d >= 1 && parsed_d <= 31) {
+                if ((p_day - anote) >= 2 && sscanf(p_day - 2, "%d", &parsed_d) == 1 &&
+                    parsed_d >= 1 && parsed_d <= 31) {
                     due_day = parsed_d;
                 } else if (sscanf(p_day - 1, "%d", &parsed_d) == 1 && parsed_d >= 1 &&
                            parsed_d <= 31) {

@@ -390,7 +390,6 @@ api_ai_skills_test(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
     if (user_id <= 0) {
-        respond_unauthorized(c);
         return;
     }
 

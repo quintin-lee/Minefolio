@@ -138,7 +138,6 @@ api_market_sync_all(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
     if (user_id <= 0) {
-        respond_unauthorized(c);
         return;
     }
 
@@ -166,7 +165,6 @@ api_market_sync_single(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
     if (user_id <= 0) {
-        respond_unauthorized(c);
         return;
     }
 
@@ -222,7 +220,6 @@ api_market_price_history(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
     if (user_id <= 0) {
-        respond_unauthorized(c);
         return;
     }
 
@@ -356,7 +353,6 @@ api_market_sync_exchange_rates(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
     if (user_id <= 0) {
-        respond_unauthorized(c);
         return;
     }
 

@@ -36,7 +36,7 @@ static inline int64_t
 ctx_user_id(csilk_ctx_t* c)
 {
     int64_t uid = jwt_get_user_id(c);
-    if (uid < 0) {
+    if (uid <= 0) {
         respond_unauthorized(c);
         return -1;
     }

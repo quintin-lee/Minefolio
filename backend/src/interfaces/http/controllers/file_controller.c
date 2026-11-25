@@ -24,15 +24,38 @@
  * 两个并发上传会交替写同一缓冲区，导致跨用户文件内容串号与 realloc/free 竞态堆破坏。
  * 与 receipt_controller.c、ai_mcp_controller.c 的同类缓冲区保持 _Thread_local 一致。
  */
+#define MF_MAX_UPLOAD_BYTES ((size_t)(20 * 1024 * 1024))
+
 _Thread_local static char*  g_upload_filename = NULL;
 _Thread_local static char*  g_upload_content_type = NULL;
 _Thread_local static char*  g_upload_data = NULL;
 _Thread_local static size_t g_upload_data_len = 0;
 _Thread_local static size_t g_upload_data_cap = 0;
+_Thread_local static bool   g_upload_overflow = false;
+
+static void
+file_clear_tls_multipart(void)
+{
+    free(g_upload_filename);
+    free(g_upload_content_type);
+    free(g_upload_data);
+    g_upload_filename = NULL;
+    g_upload_content_type = NULL;
+    g_upload_data = NULL;
+    g_upload_data_len = 0;
+    g_upload_data_cap = 0;
+    g_upload_overflow = false;
+}
 
 static void
 upload_part_handler(csilk_multipart_part_t* part)
 {
+    if (!part) {
+        return;
+    }
+    if (g_upload_overflow) {
+        return;
+    }
     if (!g_upload_filename && part->filename[0]) {
         g_upload_filename = strdup(part->filename);
     }
@@ -40,14 +63,27 @@ upload_part_handler(csilk_multipart_part_t* part)
         g_upload_content_type = strdup(part->content_type);
     }
     if (part->data && part->data_len > 0) {
+        if (part->data_len > MF_MAX_UPLOAD_BYTES ||
+            g_upload_data_len > MF_MAX_UPLOAD_BYTES - part->data_len) {
+            g_upload_overflow = true;
+            return;
+        }
         size_t need = g_upload_data_len + part->data_len;
         if (need > g_upload_data_cap) {
             size_t cap = g_upload_data_cap ? g_upload_data_cap : 4096;
-            while (cap < need) {
+            while (cap < need && cap < MF_MAX_UPLOAD_BYTES) {
+                if (cap > MF_MAX_UPLOAD_BYTES / 2) {
+                    cap = MF_MAX_UPLOAD_BYTES;
+                    break;
+                }
                 cap *= 2;
+            }
+            if (cap < need) {
+                cap = need;
             }
             char* nd = realloc(g_upload_data, cap);
             if (!nd) {
+                g_upload_overflow = true;
                 return;
             }
             g_upload_data = nd;
@@ -154,32 +190,23 @@ file_upload_handler(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
     if (user_id <= 0) {
-        respond_unauthorized(c);
         return;
     }
 
-    /* Reset globals */
-    free(g_upload_filename);
-    free(g_upload_content_type);
-    free(g_upload_data);
-    g_upload_filename = NULL;
-    g_upload_content_type = NULL;
-    g_upload_data = NULL;
-    g_upload_data_len = 0;
-    g_upload_data_cap = 0;
+    /* Reset thread-local multipart state */
+    file_clear_tls_multipart();
 
     /* Parse multipart form data */
     csilk_multipart_parse(c, upload_part_handler);
 
+    if (g_upload_overflow) {
+        file_clear_tls_multipart();
+        respond_error(c, 413, "上传文件超过 20MB 上限");
+        return;
+    }
+
     if (!g_upload_filename || !g_upload_data) {
-        free(g_upload_filename);
-        free(g_upload_content_type);
-        free(g_upload_data);
-        g_upload_filename = NULL;
-        g_upload_content_type = NULL;
-        g_upload_data = NULL;
-        g_upload_data_len = 0;
-        g_upload_data_cap = 0;
+        file_clear_tls_multipart();
         respond_bad_request(c, "No file uploaded");
         return;
     }
@@ -187,14 +214,7 @@ file_upload_handler(csilk_ctx_t* c)
     if (file_should_parse_async(c, g_upload_filename, g_upload_data_len)) {
         file_parse_task_arg_t* targ = calloc(1, sizeof(*targ));
         if (!targ) {
-            free(g_upload_filename);
-            free(g_upload_content_type);
-            free(g_upload_data);
-            g_upload_filename = NULL;
-            g_upload_content_type = NULL;
-            g_upload_data = NULL;
-            g_upload_data_len = 0;
-            g_upload_data_cap = 0;
+            file_clear_tls_multipart();
             respond_error(c, 500, "内存不足");
             return;
         }
@@ -207,6 +227,7 @@ file_upload_handler(csilk_ctx_t* c)
         g_upload_data = NULL;
         g_upload_data_len = 0;
         g_upload_data_cap = 0;
+        g_upload_overflow = false;
 
         char   fname_copy[256];
         size_t fsize = targ->data_len;
@@ -243,14 +264,7 @@ file_upload_handler(csilk_ctx_t* c)
         build_file_parse_response(g_upload_filename, g_upload_data_len, rc, &result);
     respond_ok(c, resp);
 
-    free(g_upload_filename);
-    free(g_upload_content_type);
-    free(g_upload_data);
-    g_upload_filename = NULL;
-    g_upload_content_type = NULL;
-    g_upload_data = NULL;
-    g_upload_data_len = 0;
-    g_upload_data_cap = 0;
+    file_clear_tls_multipart();
 }
 
 void

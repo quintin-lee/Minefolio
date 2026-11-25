@@ -43,8 +43,7 @@ static void
 api_im_bindings_token(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
-    if (user_id < 0) {
-        respond_unauthorized(c);
+    if (user_id <= 0) {
         return;
     }
 
@@ -64,8 +63,7 @@ static void
 api_im_bindings_list(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
-    if (user_id < 0) {
-        respond_unauthorized(c);
+    if (user_id <= 0) {
         return;
     }
     csilk_json_t* list = im_bot_usecase_list_bindings(db_get_pool(), user_id);
@@ -76,8 +74,7 @@ static void
 api_im_bindings_unbind(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
-    if (user_id < 0) {
-        respond_unauthorized(c);
+    if (user_id <= 0) {
         return;
     }
     csilk_json_t* body = csilk_bind_json(c);
@@ -97,8 +94,7 @@ static void
 api_im_bind(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
-    if (user_id < 0) {
-        respond_unauthorized(c);
+    if (user_id <= 0) {
         return;
     }
     char platform_buf[16];
@@ -139,7 +135,6 @@ api_im_task_get(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
     if (user_id <= 0) {
-        respond_unauthorized(c);
         return;
     }
 
@@ -161,8 +156,7 @@ static void
 api_im_chat(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
-    if (user_id < 0) {
-        respond_unauthorized(c);
+    if (user_id <= 0) {
         return;
     }
     char platform_buf[16];

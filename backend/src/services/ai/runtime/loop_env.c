@@ -437,13 +437,13 @@ loop_prepare_env(ai_runtime_context_t*         ctx,
         return status;
     }
 
-    env->model =
-        ctx->model_name[0]
-            ? ctx->model_name
-            : ((env->cfg && env->cfg->default_model[0])
-                   ? env->cfg->default_model
-                   : ((env->prov->models[0] && env->prov->models[0][0]) ? env->prov->models[0]
-                                                                        : "default"));
+    env->model = ctx->model_name[0] ? ctx->model_name
+                                    : ((env->cfg && env->cfg->default_model[0])
+                                           ? env->cfg->default_model
+                                           : ((env->prov->models && env->prov->model_count > 0 &&
+                                               env->prov->models[0] && env->prov->models[0][0])
+                                                  ? env->prov->models[0]
+                                                  : "default"));
 
     /* 2.5 解析生效价格 */
     mf_ai_rule_model_prices(env->prov->id,

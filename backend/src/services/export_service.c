@@ -66,7 +66,7 @@ transactions_export_csv(csilk_ctx_t* c)
         }
     }
 
-    char buf[512];
+    char buf[2048];
     if (rows && csilk_json_array_size(rows) > 0) {
         for (size_t i = 0; i < csilk_json_array_size(rows); i++) {
             const csilk_json_t* row = csilk_json_array_get(rows, i);
@@ -104,27 +104,34 @@ transactions_export_csv(csilk_ctx_t* c)
             csilk_csv_escape(escaped_cat, sizeof(escaped_cat), cat_name ? cat_name : "");
             csilk_csv_escape(escaped_note, sizeof(escaped_note), note ? note : "");
 
-            size_t line_len = snprintf(buf,
-                                       sizeof(buf),
-                                       "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n",
-                                       escaped_date,
-                                       escaped_asset,
-                                       escaped_cat,
-                                       escaped_type,
-                                       escaped_src,
-                                       escaped_amount,
-                                       escaped_price,
-                                       escaped_qty,
-                                       escaped_fee,
-                                       escaped_currency,
-                                       escaped_linked,
-                                       escaped_note);
+            int raw_len = snprintf(buf,
+                                   sizeof(buf),
+                                   "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n",
+                                   escaped_date,
+                                   escaped_asset,
+                                   escaped_cat,
+                                   escaped_type,
+                                   escaped_src,
+                                   escaped_amount,
+                                   escaped_price,
+                                   escaped_qty,
+                                   escaped_fee,
+                                   escaped_currency,
+                                   escaped_linked,
+                                   escaped_note);
+            if (raw_len < 0) {
+                continue;
+            }
+            size_t line_len = (size_t)raw_len >= sizeof(buf) ? (sizeof(buf) - 1) : (size_t)raw_len;
 
             if (csv_len + line_len + 1 > csv_cap) {
                 csv_cap = csv_cap * 2 + line_len;
                 char* tmp = realloc(csv, csv_cap);
                 if (!tmp) {
                     free(csv);
+                    if (rows) {
+                        csilk_json_free(rows);
+                    }
                     respond_error(c, 500, "内存不足");
                     return;
                 }
@@ -200,7 +207,7 @@ daily_expenses_export_csv(csilk_ctx_t* c)
         }
     }
 
-    char buf[1024];
+    char buf[2048];
     if (rows && csilk_json_array_size(rows) > 0) {
         for (size_t i = 0; i < csilk_json_array_size(rows); i++) {
             const csilk_json_t* row = csilk_json_array_get(rows, i);
@@ -215,22 +222,29 @@ daily_expenses_export_csv(csilk_ctx_t* c)
                 e_currency, sizeof(e_currency), csilk_json_get_string(row, "currency"));
             csilk_csv_escape(e_note, sizeof(e_note), csilk_json_get_string(row, "note"));
 
-            size_t line_len = snprintf(buf,
-                                       sizeof(buf),
-                                       "%s,%s,%s,%s,%s,%s,%s\n",
-                                       e_date,
-                                       e_asset,
-                                       e_cat,
-                                       e_type,
-                                       e_amount,
-                                       e_currency,
-                                       e_note);
+            int raw_len = snprintf(buf,
+                                   sizeof(buf),
+                                   "%s,%s,%s,%s,%s,%s,%s\n",
+                                   e_date,
+                                   e_asset,
+                                   e_cat,
+                                   e_type,
+                                   e_amount,
+                                   e_currency,
+                                   e_note);
+            if (raw_len < 0) {
+                continue;
+            }
+            size_t line_len = (size_t)raw_len >= sizeof(buf) ? (sizeof(buf) - 1) : (size_t)raw_len;
 
             if (csv_len + line_len + 1 > csv_cap) {
                 csv_cap = csv_cap * 2 + line_len;
                 char* tmp = realloc(csv, csv_cap);
                 if (!tmp) {
                     free(csv);
+                    if (rows) {
+                        csilk_json_free(rows);
+                    }
                     respond_error(c, 500, "内存不足");
                     return;
                 }
