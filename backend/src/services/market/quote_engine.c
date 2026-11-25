@@ -7,6 +7,7 @@
 #include <curl/curl.h>
 
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,6 +16,31 @@
 
 static char            g_market_proxy[256] = {0};
 static pthread_mutex_t g_proxy_mutex = PTHREAD_MUTEX_INITIALIZER;
+static atomic_bool     g_quote_stop = false;
+
+void
+quote_engine_request_stop(void)
+{
+    atomic_store(&g_quote_stop, true);
+}
+
+void
+quote_engine_reset_stop(void)
+{
+    atomic_store(&g_quote_stop, false);
+}
+
+static int
+quote_curl_xferinfo_cb(
+    void* clientp, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow)
+{
+    (void)clientp;
+    (void)dltotal;
+    (void)dlnow;
+    (void)ultotal;
+    (void)ulnow;
+    return atomic_load(&g_quote_stop) ? 1 : 0;
+}
 
 void
 quote_engine_set_proxy(const char* proxy)
@@ -72,7 +98,7 @@ curl_write_cb(void* ptr, size_t size, size_t nmemb, void* user_data)
 char*
 quote_engine_http_get(const char* url, const char* proxy, int timeout_sec, size_t* out_len)
 {
-    if (!url) {
+    if (!url || atomic_load(&g_quote_stop)) {
         return NULL;
     }
     CURL* curl = curl_easy_init();
@@ -82,6 +108,9 @@ quote_engine_http_get(const char* url, const char* proxy, int timeout_sec, size_
 
     struct curl_buf buf = {NULL, 0, 0};
     curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+    curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+    curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, quote_curl_xferinfo_cb);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_sec > 0 ? (long)timeout_sec : 3L);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 3L);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curl_write_cb);
@@ -96,9 +125,8 @@ quote_engine_http_get(const char* url, const char* proxy, int timeout_sec, size_
     if (insecure_env && (strcmp(insecure_env, "1") == 0 || strcasecmp(insecure_env, "true") == 0)) {
         verify_peer = 0L;
         verify_host = 0L;
-        static int s_warned_insecure_ssl = 0;
-        if (!s_warned_insecure_ssl) {
-            s_warned_insecure_ssl = 1;
+        static atomic_bool s_warned_insecure_ssl = false;
+        if (!atomic_exchange(&s_warned_insecure_ssl, true)) {
             fprintf(stderr,
                     "[SECURITY WARNING] quote_engine: Insecure SSL verification is explicitly "
                     "enabled via MINEFOLIO_ALLOW_INSECURE_SSL!\n");

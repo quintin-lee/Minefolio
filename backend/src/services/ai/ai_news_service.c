@@ -565,7 +565,12 @@ ai_news_trigger_ledger(csilk_db_pool_t* pool, int64_t user_id, int64_t ledger_id
     }
 
     if (report_id > 0) {
-        news_worker_arg_t* arg = (news_worker_arg_t*)malloc(sizeof(news_worker_arg_t));
+        extern void ai_news_worker_track_begin(bool* out_ok);
+        extern void ai_news_worker_track_end(void);
+        bool        can_spawn = false;
+        ai_news_worker_track_begin(&can_spawn);
+        news_worker_arg_t* arg =
+            can_spawn ? (news_worker_arg_t*)malloc(sizeof(news_worker_arg_t)) : NULL;
         if (arg) {
             arg->pool = pool;
             arg->user_id = user_id;
@@ -576,6 +581,7 @@ ai_news_trigger_ledger(csilk_db_pool_t* pool, int64_t user_id, int64_t ledger_id
             if (trc == 0) {
                 pthread_detach(tid);
             } else {
+                ai_news_worker_track_end();
                 char id_str[32];
                 snprintf(id_str, sizeof(id_str), "%lld", (long long)report_id);
                 csilk_db_exec_param(
@@ -585,6 +591,8 @@ ai_news_trigger_ledger(csilk_db_pool_t* pool, int64_t user_id, int64_t ledger_id
                     (const char*[]){"worker spawn failed", id_str, uid_str, NULL});
                 free(arg);
             }
+        } else if (can_spawn) {
+            ai_news_worker_track_end();
         }
     }
     return report_id;
@@ -596,6 +604,48 @@ ai_news_trigger(csilk_db_pool_t* pool, int64_t user_id)
     return ai_news_trigger_ledger(pool, user_id, 0);
 }
 
+static pthread_mutex_t s_news_worker_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t  s_news_worker_cond = PTHREAD_COND_INITIALIZER;
+static int             s_news_workers_active = 0;
+static bool            s_news_shutting_down = false;
+
+void
+ai_news_worker_track_begin(bool* out_ok)
+{
+    pthread_mutex_lock(&s_news_worker_lock);
+    if (s_news_shutting_down) {
+        *out_ok = false;
+    } else {
+        s_news_workers_active++;
+        *out_ok = true;
+    }
+    pthread_mutex_unlock(&s_news_worker_lock);
+}
+
+void
+ai_news_worker_track_end(void)
+{
+    pthread_mutex_lock(&s_news_worker_lock);
+    if (s_news_workers_active > 0) {
+        s_news_workers_active--;
+    }
+    if (s_news_workers_active == 0) {
+        pthread_cond_broadcast(&s_news_worker_cond);
+    }
+    pthread_mutex_unlock(&s_news_worker_lock);
+}
+
+void
+ai_news_shutdown(void)
+{
+    pthread_mutex_lock(&s_news_worker_lock);
+    s_news_shutting_down = true;
+    while (s_news_workers_active > 0) {
+        pthread_cond_wait(&s_news_worker_cond, &s_news_worker_lock);
+    }
+    pthread_mutex_unlock(&s_news_worker_lock);
+}
+
 void*
 ai_news_execute_analysis_wrapper(void* p)
 {
@@ -604,6 +654,7 @@ ai_news_execute_analysis_wrapper(void* p)
         ai_news_execute_analysis(arg->pool, arg->user_id, arg->ledger_id, arg->report_id);
         free(arg);
     }
+    ai_news_worker_track_end();
     return NULL;
 }
 

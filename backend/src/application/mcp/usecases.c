@@ -202,8 +202,8 @@ mf_mcp_usecase_create(void*                      pool,
 int
 mf_mcp_usecase_update(void* pool, const mf_mcp_update_cmd_t* cmd, mf_mcp_usecase_result_t* out_res)
 {
+    mf_mcp_usecase_result_t local = {0};
     if (!out_res) {
-        static mf_mcp_usecase_result_t local;
         out_res = &local;
     }
 
@@ -252,8 +252,8 @@ mf_mcp_usecase_update(void* pool, const mf_mcp_update_cmd_t* cmd, mf_mcp_usecase
 int
 mf_mcp_usecase_delete(void* pool, const mf_mcp_delete_cmd_t* cmd, mf_mcp_usecase_result_t* out_res)
 {
+    mf_mcp_usecase_result_t local = {0};
     if (!out_res) {
-        static mf_mcp_usecase_result_t local;
         out_res = &local;
     }
 

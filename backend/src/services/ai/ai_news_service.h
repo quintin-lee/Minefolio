@@ -78,6 +78,11 @@ int64_t ai_news_trigger(csilk_db_pool_t* pool, int64_t user_id);
  */
 void ai_news_scheduler_tick(csilk_db_pool_t* pool);
 
+/**
+ * @brief 优雅关停：阻塞等待在途异步资讯分析后台线程完成
+ */
+void ai_news_shutdown(void);
+
 #ifdef __cplusplus
 }
 #endif

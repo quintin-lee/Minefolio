@@ -19,6 +19,7 @@ typedef struct {
 } async_task_work_item_t;
 
 static scheduler_worker_pool_t* s_async_pool = NULL;
+static bool                     s_mgr_shutdown = false;
 static pthread_mutex_t          s_mgr_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static void
@@ -64,6 +65,7 @@ int
 mf_async_task_manager_init(void* pool, int num_threads)
 {
     pthread_mutex_lock(&s_mgr_mutex);
+    s_mgr_shutdown = false;
     if (!s_async_pool) {
         int threads = num_threads > 0 ? num_threads : 4;
         s_async_pool = scheduler_worker_pool_create(threads);
@@ -83,6 +85,7 @@ void
 mf_async_task_manager_shutdown(void)
 {
     pthread_mutex_lock(&s_mgr_mutex);
+    s_mgr_shutdown = true;
     scheduler_worker_pool_t* p = s_async_pool;
     s_async_pool = NULL;
     pthread_mutex_unlock(&s_mgr_mutex);
@@ -117,6 +120,13 @@ mf_async_task_submit(void*                      pool,
     csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
 
     pthread_mutex_lock(&s_mgr_mutex);
+    if (s_mgr_shutdown) {
+        pthread_mutex_unlock(&s_mgr_mutex);
+        if (cleanup) {
+            cleanup(arg);
+        }
+        return -1;
+    }
     if (!s_async_pool) {
         s_async_pool = scheduler_worker_pool_create(4);
     }

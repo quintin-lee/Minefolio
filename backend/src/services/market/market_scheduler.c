@@ -344,10 +344,13 @@ scheduler_loop(void* arg)
 int
 market_scheduler_start(csilk_db_pool_t* pool)
 {
+    pthread_mutex_lock(&g_sched_mutex);
     if (g_sched_running) {
+        pthread_mutex_unlock(&g_sched_mutex);
         return 0;
     }
 
+    quote_engine_reset_stop();
     g_pool = pool;
     g_sched_running = true;
 
@@ -368,8 +371,10 @@ market_scheduler_start(csilk_db_pool_t* pool)
     if (pthread_create(&g_sched_thread, NULL, scheduler_loop, NULL) != 0) {
         CSILK_LOG_E("Failed to create market scheduler thread");
         g_sched_running = false;
+        pthread_mutex_unlock(&g_sched_mutex);
         return -1;
     }
+    pthread_mutex_unlock(&g_sched_mutex);
 
     return 0;
 }
@@ -377,13 +382,15 @@ market_scheduler_start(csilk_db_pool_t* pool)
 void
 market_scheduler_stop(void)
 {
+    pthread_mutex_lock(&g_sched_mutex);
     if (!g_sched_running) {
+        pthread_mutex_unlock(&g_sched_mutex);
         return;
     }
 
-    pthread_mutex_lock(&g_sched_mutex);
     g_sched_running = false;
-    pthread_cond_signal(&g_sched_cond);
+    quote_engine_request_stop();
+    pthread_cond_broadcast(&g_sched_cond);
     pthread_mutex_unlock(&g_sched_mutex);
 
     pthread_join(g_sched_thread, NULL);

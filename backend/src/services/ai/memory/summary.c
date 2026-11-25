@@ -68,7 +68,7 @@ static summary_inflight_t s_inflight[SUMMARY_INFLIGHT_SLOTS];
 static size_t             s_inflight_head = 0;
 static pthread_mutex_t    s_inflight_lock = PTHREAD_MUTEX_INITIALIZER;
 
-/* 取 slot：命中同 session 则标记 found_existing；否则占用空闲或最旧槽位。 */
+/* 取 slot：命中同 session 则标记 found_existing；否则优先扫描空闲槽位。 */
 static size_t
 inflight_acquire(int64_t session_id, int* found_existing)
 {
@@ -81,17 +81,26 @@ inflight_acquire(int64_t session_id, int* found_existing)
             return i;
         }
     }
-    size_t idx = s_inflight_head;
-    s_inflight[idx].session_id = session_id;
-    s_inflight[idx].in_flight = 1;
-    s_inflight_head = (s_inflight_head + 1) % SUMMARY_INFLIGHT_SLOTS;
+    for (size_t off = 0; off < SUMMARY_INFLIGHT_SLOTS; off++) {
+        size_t idx = (s_inflight_head + off) % SUMMARY_INFLIGHT_SLOTS;
+        if (!s_inflight[idx].in_flight) {
+            s_inflight[idx].session_id = session_id;
+            s_inflight[idx].in_flight = 1;
+            s_inflight_head = (idx + 1) % SUMMARY_INFLIGHT_SLOTS;
+            pthread_mutex_unlock(&s_inflight_lock);
+            return idx;
+        }
+    }
     pthread_mutex_unlock(&s_inflight_lock);
-    return idx;
+    return SUMMARY_INFLIGHT_SLOTS;
 }
 
 static void
 inflight_release(size_t idx)
 {
+    if (idx >= SUMMARY_INFLIGHT_SLOTS) {
+        return;
+    }
     pthread_mutex_lock(&s_inflight_lock);
     s_inflight[idx].in_flight = 0;
     s_inflight[idx].session_id = 0;

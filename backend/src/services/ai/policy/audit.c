@@ -43,7 +43,7 @@ ai_audit_log(const ai_audit_record_t* record)
     /* 安全防线：确保不会记录任何可能包含 "token" 或 "secret" 的明文 */
     if (strstr(entry.result_summary, "token") || strstr(entry.result_summary, "secret") ||
         strstr(entry.result_summary, "mf_v2.")) {
-        strncpy(entry.result_summary, "[REDACTED_SECRET]", sizeof(entry.result_summary) - 1);
+        snprintf(entry.result_summary, sizeof(entry.result_summary), "%s", "[REDACTED_SECRET]");
     }
 
     pthread_mutex_lock(&s_audit_lock);
@@ -74,10 +74,17 @@ ai_audit_log(const ai_audit_record_t* record)
 const ai_audit_record_t*
 ai_audit_get_recent(size_t* count)
 {
-    if (count) {
-        *count = s_audit_count;
+    static _Thread_local ai_audit_record_t tls_audit_snapshot[MAX_AUDIT_LOGS];
+    pthread_mutex_lock(&s_audit_lock);
+    size_t n = s_audit_count < MAX_AUDIT_LOGS ? s_audit_count : MAX_AUDIT_LOGS;
+    if (n > 0) {
+        memcpy(tls_audit_snapshot, s_audit_logs, n * sizeof(ai_audit_record_t));
     }
-    return s_audit_logs;
+    pthread_mutex_unlock(&s_audit_lock);
+    if (count) {
+        *count = n;
+    }
+    return tls_audit_snapshot;
 }
 
 void

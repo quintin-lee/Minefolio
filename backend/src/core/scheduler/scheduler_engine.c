@@ -800,7 +800,7 @@ scheduler_engine_thread(void* arg)
         pthread_mutex_unlock(&s_engine_lock);
 
         struct timespec ts;
-        clock_gettime(CLOCK_REALTIME, &ts);
+        clock_gettime(CLOCK_MONOTONIC, &ts);
         ts.tv_sec += sleep_sec;
 
         pthread_mutex_lock(&s_engine_lock);
@@ -834,6 +834,13 @@ scheduler_engine_start(void* pool)
         pthread_mutex_unlock(&s_engine_lock);
         return -1;
     }
+
+    pthread_condattr_t cattr;
+    pthread_condattr_init(&cattr);
+    pthread_condattr_setclock(&cattr, CLOCK_MONOTONIC);
+    pthread_cond_destroy(&s_engine_cond);
+    pthread_cond_init(&s_engine_cond, &cattr);
+    pthread_condattr_destroy(&cattr);
 
     s_running = true;
     s_reload_requested = false;

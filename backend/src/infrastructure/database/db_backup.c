@@ -114,14 +114,62 @@ typedef struct {
     int      last_sqlite_rc;
 } mf_csilk_sqlite_conn_t;
 
-static sqlite3*
-get_sqlite_handle(csilk_db_pool_t* pool)
+typedef struct {
+    char db_path[512];
+    bool ok;
+} backup_path_ctx_t;
+
+static int
+backup_read_db_path_cb(void* raw_conn, void* user_ctx)
 {
-    if (!pool) {
-        return NULL;
+    mf_csilk_sqlite_conn_t* conn = (mf_csilk_sqlite_conn_t*)raw_conn;
+    backup_path_ctx_t*      ctx = (backup_path_ctx_t*)user_ctx;
+    if (!conn || !conn->db || !ctx) {
+        return -1;
     }
-    mf_csilk_sqlite_conn_t* conn = (mf_csilk_sqlite_conn_t*)csilk_db_pool_get_connection(pool);
-    return conn ? conn->db : NULL;
+    const char* fn = sqlite3_db_filename(conn->db, "main");
+    if (fn && fn[0]) {
+        snprintf(ctx->db_path, sizeof(ctx->db_path), "%s", fn);
+    } else {
+        ctx->db_path[0] = '\0';
+    }
+    ctx->ok = true;
+    return 0;
+}
+
+typedef struct {
+    sqlite3* dest_db;
+    int      rc;
+} backup_inmem_ctx_t;
+
+static int
+backup_inmem_cb(void* raw_conn, void* user_ctx)
+{
+    mf_csilk_sqlite_conn_t* conn = (mf_csilk_sqlite_conn_t*)raw_conn;
+    backup_inmem_ctx_t*     ctx = (backup_inmem_ctx_t*)user_ctx;
+    if (!conn || !conn->db || !ctx || !ctx->dest_db) {
+        return -1;
+    }
+    sqlite3_backup* backup = sqlite3_backup_init(ctx->dest_db, "main", conn->db, "main");
+    if (!backup) {
+        CSILK_LOG_E("sqlite3_backup_init failed: %s", sqlite3_errmsg(ctx->dest_db));
+        ctx->rc = SQLITE_ERROR;
+        return -1;
+    }
+    int rc;
+    do {
+        rc = sqlite3_backup_step(backup, 100);
+        if (rc == SQLITE_OK || rc == SQLITE_BUSY || rc == SQLITE_LOCKED) {
+            if (rc != SQLITE_OK) {
+                sqlite3_sleep(25);
+            } else {
+                usleep(1000);
+            }
+        }
+    } while (rc == SQLITE_OK || rc == SQLITE_BUSY || rc == SQLITE_LOCKED);
+    sqlite3_backup_finish(backup);
+    ctx->rc = rc;
+    return (rc == SQLITE_DONE) ? 0 : -1;
 }
 
 int
@@ -144,25 +192,25 @@ db_backup_create(csilk_db_pool_t* pool,
         return -1;
     }
 
-    sqlite3* pool_db = get_sqlite_handle(pool);
-    if (!pool_db) {
+    backup_path_ctx_t path_ctx = {.ok = false};
+    if (csilk_db_with_conn(pool, backup_read_db_path_cb, &path_ctx) != 0 || !path_ctx.ok) {
         CSILK_LOG_E("Failed to obtain sqlite3 handle from pool");
         return -1;
     }
 
-    sqlite3*    ro_src_db = NULL;
-    sqlite3*    src_db = pool_db;
-    const char* db_filename = sqlite3_db_filename(pool_db, "main");
-    if (db_filename && db_filename[0]) {
+    sqlite3* ro_src_db = NULL;
+    if (path_ctx.db_path[0]) {
         if (sqlite3_open_v2(
-                db_filename, &ro_src_db, SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX, NULL) ==
+                path_ctx.db_path, &ro_src_db, SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX, NULL) !=
             SQLITE_OK) {
-            sqlite3_busy_timeout(ro_src_db, 5000);
-            src_db = ro_src_db;
-        } else if (ro_src_db) {
-            sqlite3_close(ro_src_db);
-            ro_src_db = NULL;
+            if (ro_src_db) {
+                sqlite3_close(ro_src_db);
+                ro_src_db = NULL;
+            }
+            CSILK_LOG_E("Failed to open read-only sqlite snapshot handle for %s", path_ctx.db_path);
+            return -1;
         }
+        sqlite3_busy_timeout(ro_src_db, 5000);
     }
 
     time_t    now = time(NULL);
@@ -200,34 +248,39 @@ db_backup_create(csilk_db_pool_t* pool,
         return -1;
     }
 
-    sqlite3_backup* backup = sqlite3_backup_init(dest_db, "main", src_db, "main");
-    if (!backup) {
-        CSILK_LOG_E("sqlite3_backup_init failed: %s", sqlite3_errmsg(dest_db));
-        sqlite3_close(dest_db);
-        if (ro_src_db) {
-            sqlite3_close(ro_src_db);
-        }
-        unlink(tmp_path);
-        return -1;
-    }
-
-    /* Step-by-step page copy (100 pages per step with 1ms yield to let writers proceed) */
-    do {
-        rc = sqlite3_backup_step(backup, 100);
-        if (rc == SQLITE_OK || rc == SQLITE_BUSY || rc == SQLITE_LOCKED) {
-            if (rc != SQLITE_OK) {
-                sqlite3_sleep(25);
-            } else {
-                usleep(1000);
-            }
-        }
-    } while (rc == SQLITE_OK || rc == SQLITE_BUSY || rc == SQLITE_LOCKED);
-
-    sqlite3_backup_finish(backup);
-    sqlite3_close(dest_db);
     if (ro_src_db) {
+        sqlite3_backup* backup = sqlite3_backup_init(dest_db, "main", ro_src_db, "main");
+        if (!backup) {
+            CSILK_LOG_E("sqlite3_backup_init failed: %s", sqlite3_errmsg(dest_db));
+            sqlite3_close(dest_db);
+            sqlite3_close(ro_src_db);
+            unlink(tmp_path);
+            return -1;
+        }
+
+        /* Step-by-step page copy (100 pages per step with 1ms yield to let writers proceed) */
+        do {
+            rc = sqlite3_backup_step(backup, 100);
+            if (rc == SQLITE_OK || rc == SQLITE_BUSY || rc == SQLITE_LOCKED) {
+                if (rc != SQLITE_OK) {
+                    sqlite3_sleep(25);
+                } else {
+                    usleep(1000);
+                }
+            }
+        } while (rc == SQLITE_OK || rc == SQLITE_BUSY || rc == SQLITE_LOCKED);
+
+        sqlite3_backup_finish(backup);
         sqlite3_close(ro_src_db);
+        ro_src_db = NULL;
+    } else {
+        /* :memory: database: execute backup safely under pool holder tracking */
+        backup_inmem_ctx_t mem_ctx = {.dest_db = dest_db, .rc = SQLITE_ERROR};
+        (void)csilk_db_with_conn(pool, backup_inmem_cb, &mem_ctx);
+        rc = mem_ctx.rc;
     }
+
+    sqlite3_close(dest_db);
 
     if (rc != SQLITE_DONE) {
         CSILK_LOG_E("sqlite3_backup failed during copy (rc=%d)", rc);

@@ -56,17 +56,23 @@ ai_confirmation_reset_nonce_cache(void)
 const char*
 ai_confirmation_get_secret(void)
 {
+    static _Thread_local char tls_secret[256];
+    static char               s_derived_key[65] = {0};
+    static char               s_derived_src[256] = {0};
+    static pthread_mutex_t    s_derived_lock = PTHREAD_MUTEX_INITIALIZER;
+
+    pthread_mutex_lock(&s_nonce_lock);
     if (s_has_custom_secret && s_custom_secret[0]) {
-        return s_custom_secret;
+        snprintf(tls_secret, sizeof(tls_secret), "%s", s_custom_secret);
+        pthread_mutex_unlock(&s_nonce_lock);
+        return tls_secret;
     }
+    pthread_mutex_unlock(&s_nonce_lock);
+
     const char* sec_ai = config_secret_get("AI_SECRET", NULL, 0);
     if (sec_ai && sec_ai[0]) {
         return sec_ai;
     }
-
-    static char            s_derived_key[65] = {0};
-    static char            s_derived_src[256] = {0};
-    static pthread_mutex_t s_derived_lock = PTHREAD_MUTEX_INITIALIZER;
 
     const char* sec_jwt = config_secret_get("JWT_SECRET", NULL, 0);
     if (sec_jwt && sec_jwt[0]) {
@@ -93,16 +99,18 @@ ai_confirmation_get_secret(void)
             }
             OPENSSL_cleanse(mac, sizeof(mac));
         }
+        snprintf(tls_secret, sizeof(tls_secret), "%s", s_derived_key);
         pthread_mutex_unlock(&s_derived_lock);
-        if (s_derived_key[0]) {
-            return s_derived_key;
+        if (tls_secret[0]) {
+            return tls_secret;
         }
     }
 
-    static char cfg_secret[128];
+    char cfg_secret[128] = {0};
     if (config_get_str("config/ai.json", "secret", cfg_secret, sizeof(cfg_secret)) == 0 &&
         cfg_secret[0]) {
-        return cfg_secret;
+        snprintf(tls_secret, sizeof(tls_secret), "%s", cfg_secret);
+        return tls_secret;
     }
 
     if (config_secret_is_test_mode()) {

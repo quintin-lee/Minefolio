@@ -233,6 +233,10 @@ main(int argc, char** argv)
     scheduler_engine_stop();
     market_scheduler_stop();
     task_controller_shutdown();
+    {
+        extern void ai_news_shutdown(void);
+        ai_news_shutdown();
+    }
     csilk_app_free(app);
     ai_shutdown();
     db_wal_checkpoint(pool);
