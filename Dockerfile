@@ -119,6 +119,9 @@ WORKDIR /src
 COPY backend ./backend
 
 # 预取 csilk 的 FetchContent 依赖(csilk 的 cmake/dependencies.cmake 会拉取 llhttp/yyjson/nghttp2)
+# 优先使用本地 deps/ (COPY 进容器)，跳过 git clone；CI 等无本地 deps 场景下自动回退到 git clone
+COPY deps ./deps
+
 RUN --mount=type=bind,source=hosts,target=/etc/hosts \
     mkdir -p /src/deps \
     && cd /src/deps \

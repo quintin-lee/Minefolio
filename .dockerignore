@@ -7,11 +7,11 @@ backend/data/
 frontend/node_modules/
 frontend/dist/
 
-# Dependencies (outside repo, cloned during build)
-csilk/
+# Dependencies (.git dirs excluded below; source dirs are COPY'd into build)
 
 # VCS / editor / OS
 .git/
+**/.git/
 .gitignore
 .idea/
 .vscode/
