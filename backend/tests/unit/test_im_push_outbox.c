@@ -5,6 +5,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "application/ai/im_bot_instance_usecases.h"
+#include "application/ai/im_push_usecases.h"
 #include "common/db.h"
 #include "config/secret.h"
 #include "csilk/csilk.h"
@@ -553,6 +555,199 @@ test_rollup_variants(csilk_db_pool_t* pool)
     printf("  [OK] test_rollup_variants\n");
 }
 
+static void
+test_push_usecases(csilk_db_pool_t* pool)
+{
+    int64_t u3 = seed_user_and_active_instance(pool, "push_u3", "bot_p3", "wx_p3");
+    int64_t u4 = seed_user_and_active_instance(pool, "push_u4", "bot_p4", "wx_p4");
+    int64_t push_id = 0;
+    char    err[256] = {0};
+
+    /* Empty/NULL title or NULL content rejected upfront */
+    assert(im_push_usecase_enqueue(
+               pool, u3, 0, "scheduler", NULL, "C", 1800, &push_id, err, sizeof(err)) != 0);
+    assert(strstr(err, "不能为空") != NULL);
+    assert(im_push_usecase_enqueue(
+               pool, u3, 0, "scheduler", "", "C", 1800, &push_id, err, sizeof(err)) != 0);
+    assert(strstr(err, "不能为空") != NULL);
+    assert(im_push_usecase_enqueue(
+               pool, u3, 0, "scheduler", "T", NULL, 1800, &push_id, err, sizeof(err)) != 0);
+    assert(strstr(err, "不能为空") != NULL);
+
+    /* User without instance cannot enqueue */
+    assert(im_push_usecase_enqueue(
+               pool, 99999, 0, "scheduler", "T", "C", 1800, &push_id, err, sizeof(err)) != 0);
+    assert(strstr(err, "未绑定") != NULL || strstr(err, "创建") != NULL);
+
+    /* build_ilink_status when user has no instance */
+    csilk_json_t* st_none = im_push_usecase_build_ilink_status(pool, 99999);
+    assert(st_none && db_get_bool(st_none, "has_instance") == 0);
+    csilk_json_free(st_none);
+
+    /* Pending login & session_expired instance checks */
+    int64_t u_pend = seed_user_only(pool, "push_upend");
+    int64_t pend_inst_id = mf_im_bot_instance_create(pool, u_pend, "wechat", "ilink");
+    assert(pend_inst_id > 0);
+    assert(im_push_usecase_enqueue(
+               pool, u_pend, 0, "scheduler", "T", "C", 1800, &push_id, err, sizeof(err)) != 0);
+    assert(strstr(err, "扫码") != NULL);
+    csilk_json_t* items = NULL;
+    int           code = 0;
+    assert(im_push_usecase_gateway_claim(
+               pool, pend_inst_id, true, "", 5, &items, &code, err, sizeof(err)) != 0 &&
+           code == 1004);
+
+    assert(mf_im_bot_instance_update_status(pool, pend_inst_id, "session_expired", "", "", "exp") ==
+           0);
+    assert(im_push_usecase_enqueue(
+               pool, u_pend, 0, "scheduler", "T", "C", 1800, &push_id, err, sizeof(err)) != 0);
+    assert(strstr(err, "过期") != NULL);
+
+    /* Create scheduler job & log for rollup tests */
+    int64_t job_id = mf_scheduler_repo_job_create(pool,
+                                                  u3,
+                                                  "Usecase Rollup Job",
+                                                  "Desc",
+                                                  "ai_prompt",
+                                                  "cron",
+                                                  "{\"cron\":\"0 8 * * *\"}",
+                                                  "{\"prompt\":\"test\"}",
+                                                  "user_default",
+                                                  "{}",
+                                                  "");
+    assert(job_id > 0);
+    int64_t log_sent = mf_scheduler_repo_log_create(pool, job_id, u3, "manual_invoke");
+    assert(log_sent > 0);
+    assert(mf_scheduler_repo_log_update_notif(pool, log_sent, "queued", "") == 0);
+
+    /* Enqueue for active user u3 with job_run_log_id > 0 */
+    assert(
+        im_push_usecase_enqueue(
+            pool, u3, log_sent, "scheduler", "U3 推送", "正文", 1800, &push_id, err, sizeof(err)) ==
+        0);
+    assert(push_id > 0);
+
+    csilk_json_t* st = im_push_usecase_build_ilink_status(pool, u3);
+    assert(st && db_get_bool(st, "has_instance") == 1);
+    int64_t inst3_id = db_get_int(st, "instance_id");
+    assert(strcmp(csilk_json_get_string(st, "status"), "active") == 0);
+    assert(db_get_bool(st, "enabled") == 1);
+    assert(strcmp(csilk_json_get_string(st, "ilink_bot_id"), "bot_p3") == 0);
+    csilk_json_free(st);
+
+    csilk_json_t* st4 = im_push_usecase_build_ilink_status(pool, u4);
+    assert(st4 && db_get_bool(st4, "has_instance") == 1);
+    int64_t inst4_id = db_get_int(st4, "instance_id");
+    csilk_json_free(st4);
+
+    /* instance_id <= 0 -> 1002; non-existent instance claim -> 1003 */
+    assert(im_push_usecase_gateway_claim(pool, 0, true, "", 5, &items, &code, err, sizeof(err)) !=
+               0 &&
+           code == 1002);
+    assert(im_push_usecase_gateway_claim(
+               pool, 99999, true, "", 5, &items, &code, err, sizeof(err)) != 0 &&
+           code == 1003);
+
+    /* Claim persists context_updated_at -> last_inbound_at */
+    assert(im_push_usecase_gateway_claim(
+               pool, inst3_id, true, "2026-11-25T11:22:33Z", 5, &items, &code, err, sizeof(err)) ==
+           0);
+    assert(items && csilk_json_array_size(items) == 1);
+    csilk_json_free(items);
+
+    csilk_json_t* st_after_claim = im_push_usecase_build_ilink_status(pool, u3);
+    assert(st_after_claim && strcmp(csilk_json_get_string(st_after_claim, "last_inbound_at"),
+                                    "2026-11-25T11:22:33Z") == 0);
+    csilk_json_free(st_after_claim);
+
+    /* Invalid ack result -> 1002, unknown push -> 1003, cross-instance ack -> 1003 */
+    assert(im_push_usecase_gateway_ack(
+               pool, inst3_id, push_id, "bogus", "", 0, &code, err, sizeof(err)) != 0 &&
+           code == 1002);
+    assert(im_push_usecase_gateway_ack(
+               pool, inst3_id, 999999, "sent", "", 0, &code, err, sizeof(err)) != 0 &&
+           code == 1003);
+    assert(im_push_usecase_gateway_ack(
+               pool, inst4_id, push_id, "sent", "", 0, &code, err, sizeof(err)) != 0 &&
+           code == 1003);
+
+    /* Ack sent updates job_run_log notification_status to 'sent', global expire leaves sent intact */
+    assert(im_push_usecase_gateway_ack(
+               pool, inst3_id, push_id, "sent", "", 0, &code, err, sizeof(err)) == 0);
+    csilk_json_t* log_sent_row = find_log_row(pool, log_sent);
+    assert(log_sent_row &&
+           strcmp(csilk_json_get_string(log_sent_row, "notification_status"), "sent") == 0);
+    csilk_json_free(log_sent_row);
+
+    assert(im_push_usecase_expire_stale(pool) == 0);
+    csilk_json_t* sent_item = im_push_usecase_get(pool, push_id);
+    assert(sent_item && strcmp(csilk_json_get_string(sent_item, "status"), "sent") == 0);
+    csilk_json_free(sent_item);
+
+    /* Global stale expiry expires overdue row and rolls up its log to 'failed' */
+    int64_t log_exp = mf_scheduler_repo_log_create(pool, job_id, u3, "cron_tick");
+    assert(log_exp > 0);
+    assert(mf_scheduler_repo_log_update_notif(pool, log_exp, "queued", "") == 0);
+    int64_t exp_pid = 0;
+    assert(
+        im_push_usecase_enqueue(
+            pool, u3, log_exp, "scheduler", "过期测试", "正文", 60, &exp_pid, err, sizeof(err)) ==
+        0);
+    char exp_pid_s[32];
+    snprintf(exp_pid_s, sizeof(exp_pid_s), "%lld", (long long)exp_pid);
+    assert(csilk_db_exec_param(pool,
+                               "UPDATE im_push_outbox SET expires_at_ts=1 WHERE id=?",
+                               (const char*[]){exp_pid_s, NULL}) == 0);
+    assert(im_push_usecase_expire_stale(pool) == 0);
+    csilk_json_t* exp_row = im_push_usecase_get(pool, exp_pid);
+    assert(exp_row && strcmp(csilk_json_get_string(exp_row, "status"), "expired") == 0);
+    csilk_json_free(exp_row);
+    csilk_json_t* log_exp_row = find_log_row(pool, log_exp);
+    assert(log_exp_row &&
+           strcmp(csilk_json_get_string(log_exp_row, "notification_status"), "failed") == 0);
+    csilk_json_free(log_exp_row);
+
+    /* Enqueue test push & cancel expired test */
+    int64_t test_push_id = 0;
+    assert(im_push_usecase_enqueue(
+               pool, u3, 0, "test", "Test", "Ping", 30, &test_push_id, err, sizeof(err)) == 0);
+    assert(test_push_id > 0);
+    assert(im_push_usecase_cancel_expired_test(pool, test_push_id, "等待超时") == 0);
+    csilk_json_t* canceled = im_push_usecase_get(pool, test_push_id);
+    assert(canceled && strcmp(csilk_json_get_string(canceled, "status"), "expired") == 0);
+    csilk_json_free(canceled);
+
+    /* Heartbeat ext: non-existent 1003, active updates last_inbound_at, disabled 1004 */
+    csilk_json_t* hb = NULL;
+    assert(im_instance_gateway_heartbeat_ext(
+               pool, 99999, "2026-11-25T12:00:00Z", &hb, &code, err, sizeof(err)) != 0 &&
+           code == 1003);
+    assert(im_instance_gateway_heartbeat_ext(
+               pool, inst3_id, "2026-11-25T12:00:00Z", &hb, &code, err, sizeof(err)) == 0);
+    assert(hb != NULL);
+    assert(strcmp(csilk_json_get_string(hb, "status"), "active") == 0);
+    csilk_json_free(hb);
+
+    csilk_json_t* st2 = im_push_usecase_build_ilink_status(pool, u3);
+    assert(st2 &&
+           strcmp(csilk_json_get_string(st2, "last_inbound_at"), "2026-11-25T12:00:00Z") == 0);
+    csilk_json_free(st2);
+
+    /* Disabled instance blocks enqueue, gateway_claim (1004), and heartbeat_ext (1004) */
+    assert(mf_im_bot_instance_set_enabled(pool, u3, inst3_id, 0) == 0);
+    assert(im_push_usecase_enqueue(
+               pool, u3, 0, "scheduler", "T2", "C2", 1800, &push_id, err, sizeof(err)) != 0);
+    assert(strstr(err, "停用") != NULL);
+    assert(im_push_usecase_gateway_claim(
+               pool, inst3_id, true, "", 5, &items, &code, err, sizeof(err)) != 0 &&
+           code == 1004);
+    assert(im_instance_gateway_heartbeat_ext(
+               pool, inst3_id, "2026-11-25T12:05:00Z", &hb, &code, err, sizeof(err)) != 0 &&
+           code == 1004);
+
+    printf("  [OK] test_push_usecases\n");
+}
+
 int
 main(void)
 {
@@ -564,6 +759,7 @@ main(void)
     test_inbound_validation_and_activate_switch(pool);
     test_list_active_channels(pool);
     test_rollup_variants(pool);
+    test_push_usecases(pool);
     csilk_db_pool_free(pool);
     cleanup_db_files();
     printf("=== im_push_outbox Unit Tests Passed! ===\n");

@@ -335,8 +335,13 @@ im_instance_gateway_status(
 }
 
 int
-im_instance_gateway_heartbeat(
-    void* pool, int64_t id, csilk_json_t** out, int* code, char* err, size_t err_cap)
+im_instance_gateway_heartbeat_ext(void*          pool,
+                                  int64_t        id,
+                                  const char*    last_inbound_at,
+                                  csilk_json_t** out,
+                                  int*           code,
+                                  char*          err,
+                                  size_t         err_cap)
 {
     if (out) {
         *out = NULL;
@@ -348,8 +353,8 @@ im_instance_gateway_heartbeat(
     char    status[64] = {0};
     int64_t epoch = 0;
     int     enabled = 0;
-    int     rc = mf_im_bot_instance_heartbeat(
-        (csilk_db_pool_t*)pool, id, status, sizeof(status), &epoch, &enabled);
+    int     rc = mf_im_bot_instance_heartbeat_with_inbound(
+        (csilk_db_pool_t*)pool, id, last_inbound_at, status, sizeof(status), &epoch, &enabled);
     if (rc == -3) {
         im_inst_err(err, err_cap, "instance not found");
         if (code) {
@@ -379,6 +384,13 @@ im_instance_gateway_heartbeat(
         *out = data;
     }
     return 0;
+}
+
+int
+im_instance_gateway_heartbeat(
+    void* pool, int64_t id, csilk_json_t** out, int* code, char* err, size_t err_cap)
+{
+    return im_instance_gateway_heartbeat_ext(pool, id, NULL, out, code, err, err_cap);
 }
 
 int

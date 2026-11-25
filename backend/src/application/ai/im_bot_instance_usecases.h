@@ -18,7 +18,7 @@ int           im_instance_usecase_create(void*          pool,
 csilk_json_t* im_instance_usecase_list(void* pool, int64_t user_id);
 csilk_json_t* im_instance_usecase_get(void* pool, int64_t user_id, int64_t id);
 int           im_instance_usecase_relogin(
-    void* pool, int64_t user_id, int64_t id, int* code, char* err, size_t err_cap);
+              void* pool, int64_t user_id, int64_t id, int* code, char* err, size_t err_cap);
 int im_instance_usecase_verify_code(void*       pool,
                                     int64_t     user_id,
                                     int64_t     id,
@@ -34,7 +34,14 @@ int im_instance_usecase_delete(
 csilk_json_t* im_instance_gateway_list(void* pool);
 csilk_json_t* im_instance_gateway_get(void* pool, int64_t id);
 int           im_instance_gateway_status(
-    void* pool, int64_t id, csilk_json_t* body, int* code, char* err, size_t err_cap);
+              void* pool, int64_t id, csilk_json_t* body, int* code, char* err, size_t err_cap);
+int im_instance_gateway_heartbeat_ext(void*          pool,
+                                      int64_t        id,
+                                      const char*    last_inbound_at,
+                                      csilk_json_t** out,
+                                      int*           code,
+                                      char*          err,
+                                      size_t         err_cap);
 int im_instance_gateway_heartbeat(
     void* pool, int64_t id, csilk_json_t** out, int* code, char* err, size_t err_cap);
 int           im_instance_gateway_chat(void*          pool,

@@ -1,6 +1,7 @@
 #include "interfaces/http/controllers/im_bot_instance_controller.h"
 
 #include "application/ai/im_bot_instance_usecases.h"
+#include "application/ai/im_push_usecases.h"
 #include "application/task/async_task_manager.h"
 #include "common/ctx.h"
 #include "common/db.h"
@@ -288,15 +289,83 @@ api_gateway_instance_heartbeat(csilk_ctx_t* c)
         respond_bad_request(c, "无效的实例 ID");
         return;
     }
+    csilk_json_t* body = csilk_bind_json(c);
+    const char*   last_inbound_at = im_instance_json_string(body, "last_inbound_at");
     int           code = 1002;
     char          err[256] = {0};
     csilk_json_t* out = NULL;
-    int rc = im_instance_gateway_heartbeat(db_get_pool(), id, &out, &code, err, sizeof(err));
+    int           rc = im_instance_gateway_heartbeat_ext(
+        db_get_pool(), id, last_inbound_at, &out, &code, err, sizeof(err));
+    if (body) {
+        csilk_json_free(body);
+    }
     if (rc != 0) {
         im_instance_respond_error(c, code, err);
         return;
     }
     respond_ok(c, out);
+}
+
+static void
+api_gateway_instance_pushes_claim(csilk_ctx_t* c)
+{
+    if (!gateway_auth_check(c)) {
+        return;
+    }
+    int64_t id = im_instance_parse_id(c);
+    if (id <= 0) {
+        respond_bad_request(c, "无效的实例 ID");
+        return;
+    }
+    csilk_json_t* body = csilk_bind_json(c);
+    bool          has_context = csilk_json_as_bool(csilk_json_get(body, "has_context"), true);
+    const char*   ctx_updated_at = im_instance_json_string(body, "context_updated_at");
+    int64_t       raw_limit = db_get_int(body, "limit");
+    int           limit = raw_limit <= 0 ? 0 : (raw_limit > 10 ? 10 : (int)raw_limit);
+
+    csilk_json_t* items = NULL;
+    int           code = 1002;
+    char          err[256] = {0};
+    int           rc = im_push_usecase_gateway_claim(
+        db_get_pool(), id, has_context, ctx_updated_at, limit, &items, &code, err, sizeof(err));
+    if (body) {
+        csilk_json_free(body);
+    }
+    if (rc != 0) {
+        im_instance_respond_error(c, code, err);
+        return;
+    }
+    csilk_json_t* wrap = csilk_json_object();
+    csilk_json_add_array(wrap, "items", items ? items : csilk_json_array());
+    respond_ok(c, wrap);
+}
+
+static void
+api_gateway_instance_push_ack(csilk_ctx_t* c)
+{
+    if (!gateway_auth_check(c)) {
+        return;
+    }
+    int64_t id = im_instance_parse_id(c);
+    int64_t push_id = parse_query_int_strict(csilk_get_param(c, "push_id"), -1);
+    if (id <= 0 || push_id <= 0) {
+        respond_bad_request(c, "无效的实例或推送 ID");
+        return;
+    }
+    csilk_json_t* body = csilk_bind_json(c);
+    const char*   result = im_instance_json_string(body, "result");
+    const char*   err_msg = im_instance_json_string(body, "error");
+    int64_t       raw_retry = db_get_int(body, "retry_after_sec");
+    int           retry_after = raw_retry <= 0 ? 0 : (raw_retry > 300 ? 300 : (int)raw_retry);
+
+    int  code = 1002;
+    char err[256] = {0};
+    int  rc = im_push_usecase_gateway_ack(
+        db_get_pool(), id, push_id, result, err_msg, retry_after, &code, err, sizeof(err));
+    if (body) {
+        csilk_json_free(body);
+    }
+    (void)im_instance_ok_or_error(c, rc, code, err);
 }
 
 static void
@@ -328,16 +397,16 @@ api_gateway_instance_chat(csilk_ctx_t* c)
     int           code = 1002;
     char          err[256] = {0};
     int           rc = im_instance_gateway_chat(db_get_pool(),
-                                                id,
-                                                im_user_id,
-                                                message,
-                                                &sync_data,
-                                                &task_id,
-                                                &deduplicated,
-                                                &session_id,
-                                                &code,
-                                                err,
-                                                sizeof(err));
+                                      id,
+                                      im_user_id,
+                                      message,
+                                      &sync_data,
+                                      &task_id,
+                                      &deduplicated,
+                                      &session_id,
+                                      &code,
+                                      err,
+                                      sizeof(err));
     if (body) {
         csilk_json_free(body);
     }
@@ -396,6 +465,10 @@ register_im_bot_instance_routes(csilk_app_t* app)
     csilk_app_get(app, "/api/gateway/im/instances/:id", api_gateway_instance_get);
     csilk_app_patch(app, "/api/gateway/im/instances/:id/status", api_gateway_instance_status);
     csilk_app_post(app, "/api/gateway/im/instances/:id/heartbeat", api_gateway_instance_heartbeat);
+    csilk_app_post(
+        app, "/api/gateway/im/instances/:id/pushes/claim", api_gateway_instance_pushes_claim);
+    csilk_app_post(
+        app, "/api/gateway/im/instances/:id/pushes/:push_id/ack", api_gateway_instance_push_ack);
     csilk_app_post(app, "/api/gateway/im/instances/:id/chat", api_gateway_instance_chat);
     csilk_app_get(app, "/api/gateway/im/instances/:id/tasks/:task_id", api_gateway_instance_task);
 }
