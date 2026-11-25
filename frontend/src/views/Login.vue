@@ -204,7 +204,11 @@ async function handleSubmit() {
         await router.push('/dashboard')
       }
     } catch (e: any) {
-      ElMessage.error(e?.response?.data?.message || (isRegister.value ? t('login.registerFailed') : t('login.loginFailed')))
+      ElMessage.error(
+        e?.response?.data?.message ||
+          (e?.crypto_failed && e?.message ? e.message : null) ||
+          (isRegister.value ? t('login.registerFailed') : t('login.loginFailed'))
+      )
     } finally {
       loading.value = false
     }

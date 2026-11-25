@@ -68,11 +68,59 @@ describe('crypto RSA utility', () => {
     expect(encryptText).toBe(encryptPassword)
   })
 
-  it('throws clear HTTPS/localhost guidance error when crypto.subtle is unavailable', async () => {
+  it('falls back to pure-JS RSA-OAEP-SHA256 when crypto.subtle is unavailable (HTTP domain)', async () => {
+    const nodeCrypto = await import('crypto')
+    const { publicKey, privateKey } = nodeCrypto.generateKeyPairSync('rsa', {
+      modulusLength: 2048,
+    })
+    const exportedJwk = publicKey.export({ format: 'jwk' }) as { kty: string; n: string; e: string }
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        code: 0,
+        data: { public_key: exportedJwk },
+      }),
+    }) as any
+
     const origCrypto = globalThis.crypto
-    vi.stubGlobal('crypto', { ...origCrypto, subtle: undefined })
+    vi.stubGlobal('crypto', {
+      getRandomValues: origCrypto.getRandomValues.bind(origCrypto),
+      subtle: undefined,
+    })
     try {
-      await expect(encryptPassword('myPassword123')).rejects.toThrow(/HTTPS|localhost/)
+      const secret = 'HttpDomainPass123!中文'
+      const cipherB64Url = await encryptPassword(secret)
+      expect(cipherB64Url).toBeTruthy()
+      expect(cipherB64Url).not.toMatch(/[+/=]/)
+
+      const b64 = cipherB64Url.replace(/-/g, '+').replace(/_/g, '/')
+      const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4)
+      const cipherBuf = Buffer.from(padded, 'base64')
+      const decrypted = nodeCrypto.privateDecrypt(
+        {
+          key: privateKey,
+          padding: nodeCrypto.constants.RSA_PKCS1_OAEP_PADDING,
+          oaepHash: 'sha256',
+        },
+        cipherBuf
+      )
+      expect(decrypted.toString('utf8')).toBe(secret)
+      expect(global.fetch).toHaveBeenCalledTimes(1)
+
+      // Cached fallback key avoids re-fetching on second encryption
+      await encryptPassword('secondHttpPass')
+      expect(global.fetch).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('throws clear WebCrypto error when both crypto.subtle and getRandomValues are unavailable', async () => {
+    const origCrypto = globalThis.crypto
+    vi.stubGlobal('crypto', { ...origCrypto, subtle: undefined, getRandomValues: undefined })
+    try {
+      await expect(encryptPassword('myPassword123')).rejects.toThrow(/WebCrypto/)
       expect(global.fetch).not.toHaveBeenCalled()
     } finally {
       vi.unstubAllGlobals()

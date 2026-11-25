@@ -109,7 +109,7 @@ async function handleSubmit() {
       ElMessage.success('初始化成功！已自动为您登录系统')
       router.push('/dashboard')
     } catch (e: any) {
-      ElMessage.error(e?.response?.data?.message || '初始化失败')
+      ElMessage.error(e?.response?.data?.message || (e?.crypto_failed && e?.message ? e.message : null) || '初始化失败')
     } finally {
       loading.value = false
     }

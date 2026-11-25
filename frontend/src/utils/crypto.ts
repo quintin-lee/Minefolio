@@ -1,40 +1,31 @@
 /**
  * @file RSA-OAEP (SHA-256) 密码传输加密工具模块
- * @description 采用 Web Cryptography API，在前端使用服务端公开的 RSA-OAEP-256 公钥对密码进行非对称加密，
- * 防止传输途中明文泄露，满足端到端传输安全。
- *
- * 加密流程：
- * 1. GET /api/auth/public-key → 获取服务端 RSA 公钥 JWK { kty: "RSA", n, e }
- * 2. crypto.subtle.importKey → 导入生成 CryptoKey 公钥对象
- * 3. crypto.subtle.encrypt(RSA-OAEP, key, UTF8(password)) → ArrayBuffer 密文字节流
- * 4. arrayBufferToBase64url(ArrayBuffer) → 生成 Base64url 格式的 password_enc 字符串
+ * @description 优先使用 Web Cryptography API (crypto.subtle) 对密码等敏感字段进行
+ *              RSA-OAEP-256 非对称加密；在非安全上下文（如 http:// 域名、内网 IP）
+ *              浏览器禁用 crypto.subtle 时，自动降级到纯 TypeScript + crypto.getRandomValues
+ *              的 RFC 8017 RSA-OAEP-SHA256 实现，保证 HTTP/HTTPS 均可正常登录注册。
  */
 
 import { buildApiUrl, onServerUrlChange } from '@/utils/server-url'
+import {
+  bytesToBase64url,
+  encryptRsaOaepSha256,
+  parseRsaJwk,
+  type RsaPublicParams,
+} from '@/utils/rsa-oaep'
 
 // 当服务端地址发生变更时自动重置 RSA 公钥缓存
 onServerUrlChange(() => {
   clearCryptoKeyCache()
 })
 
-/**
- * RSA 公钥 JSON Web Key (JWK) 格式接口
- */
 interface RsaJwk {
-  /** 算法族 (固定 'RSA') */
   kty: 'RSA'
-  /** 模数 Modulus (Base64url 编码) */
   n: string
-  /** 公开指数 Exponent (Base64url 编码) */
   e: string
 }
 
-/**
- * 从服务端无鉴权获取当前激活的 RSA 公钥 JWK
- * @returns 服务端返回的 RSA 公钥 JWK 对象
- */
 async function fetchPublicKey(): Promise<RsaJwk> {
-  // 公钥接口无需鉴权，使用 buildApiUrl 统一各平台路径
   const res = await fetch(buildApiUrl('/auth/public-key'))
   if (!res.ok) throw new Error('Failed to fetch public key')
   const body = await res.json()
@@ -42,25 +33,10 @@ async function fetchPublicKey(): Promise<RsaJwk> {
   return typeof pk === 'string' ? JSON.parse(pk) : pk
 }
 
-/**
- * 将加密生成的 ArrayBuffer 二进制流转换为符合 RFC 7515 标准的 Base64url 字符串
- * @param buf 二进制缓冲区
- * @returns 经过 url-safe 替换 (+ -> -, / -> _, 去除 =) 后的字符串
- */
-function arrayBufferToBase64url(buf: ArrayBuffer): string {
-  const bytes = new Uint8Array(buf)
-  let binary = ''
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]!)
-  }
-  return btoa(binary)
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '')
-}
-
 let cachedCryptoKey: CryptoKey | null = null
 let keyPromise: Promise<CryptoKey> | null = null
+let cachedFallbackKey: RsaPublicParams | null = null
+let fallbackKeyPromise: Promise<RsaPublicParams> | null = null
 
 /**
  * 清除 RSA 公钥缓存（在密钥轮换或重新初始化时调用）
@@ -68,22 +44,20 @@ let keyPromise: Promise<CryptoKey> | null = null
 export function clearCryptoKeyCache(): void {
   cachedCryptoKey = null
   keyPromise = null
+  cachedFallbackKey = null
+  fallbackKeyPromise = null
 }
 
-function ensureSubtleCrypto(): SubtleCrypto {
-  if (typeof globalThis.crypto === 'undefined' || !globalThis.crypto.subtle) {
+function getWebCrypto(): Crypto {
+  if (typeof globalThis.crypto === 'undefined') {
     throw new Error(
-      '当前浏览环境不支持 WebCrypto（RSA 加密仅在 HTTPS 或 localhost 下可用，请切换 HTTPS 或使用 localhost 访问）'
+      '当前浏览环境不支持 WebCrypto（缺少加密 API，请切换 HTTPS 或使用现代浏览器访问）'
     )
   }
-  return globalThis.crypto.subtle
+  return globalThis.crypto
 }
 
-/**
- * 获取并缓存 RSA-OAEP-256 CryptoKey 对象
- */
-async function getCryptoKey(): Promise<CryptoKey> {
-  const subtle = ensureSubtleCrypto()
+async function getCryptoKey(subtle: SubtleCrypto): Promise<CryptoKey> {
   if (cachedCryptoKey) {
     return cachedCryptoKey
   }
@@ -128,24 +102,61 @@ async function getCryptoKey(): Promise<CryptoKey> {
   return keyPromise
 }
 
+async function getFallbackKey(): Promise<RsaPublicParams> {
+  if (cachedFallbackKey) {
+    return cachedFallbackKey
+  }
+  if (fallbackKeyPromise) {
+    return fallbackKeyPromise
+  }
+
+  fallbackKeyPromise = (async () => {
+    try {
+      const jwk = await fetchPublicKey()
+      const params = parseRsaJwk(jwk)
+      cachedFallbackKey = params
+      return params
+    } finally {
+      fallbackKeyPromise = null
+    }
+  })()
+
+  return fallbackKeyPromise
+}
+
 /**
  * 使用服务端 RSA-OAEP-256 公钥加密用户密码或敏感文本
  * @param password 明文字符串 (如登录/注册密码)
  * @returns 加密后的 Base64url 密文字符串 (作为 password_enc 字段提交给服务端)
  */
 export async function encryptPassword(password: string): Promise<string> {
-  const subtle = ensureSubtleCrypto()
-  const cryptoKey = await getCryptoKey()
+  const cryptoObj = getWebCrypto()
+  const encoded = new TextEncoder().encode(password)
 
-  const encrypted = await subtle.encrypt(
-    { name: 'RSA-OAEP' },
-    cryptoKey,
-    new TextEncoder().encode(password)
+  if (cryptoObj.subtle) {
+    const cryptoKey = await getCryptoKey(cryptoObj.subtle)
+    const encrypted = await cryptoObj.subtle.encrypt(
+      { name: 'RSA-OAEP' },
+      cryptoKey,
+      encoded
+    )
+    return bytesToBase64url(new Uint8Array(encrypted))
+  }
+
+  if (typeof cryptoObj.getRandomValues !== 'function') {
+    throw new Error(
+      '当前浏览环境不支持 WebCrypto（RSA 加密仅在 HTTPS、localhost 或支持安全随机数的环境下可用）'
+    )
+  }
+
+  const params = await getFallbackKey()
+  const encryptedBytes = encryptRsaOaepSha256(
+    params,
+    encoded,
+    cryptoObj.getRandomValues.bind(cryptoObj)
   )
-
-  return arrayBufferToBase64url(encrypted)
+  return bytesToBase64url(encryptedBytes)
 }
 
 /** 别名导出：加密普通敏感文本 */
 export const encryptText = encryptPassword
-
