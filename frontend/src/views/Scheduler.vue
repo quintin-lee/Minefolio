@@ -88,10 +88,10 @@
               <span class="channel-name">{{ dashboard.push_channel.channel_name || '已配置' }}</span>
               <el-tag
                 size="small"
-                :type="dashboard.push_channel.is_active ? 'success' : 'danger'"
+                :type="pushChannelTagType"
                 class="channel-tag"
               >
-                {{ dashboard.push_channel.is_active ? '已激活' : '已停用' }}
+                {{ pushChannelTagLabel }}
               </el-tag>
             </template>
             <template v-else>
@@ -376,6 +376,7 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import { schedulerApi } from '@/api/scheduler'
+import { classifyIlinkChannelStatus, getIlinkStatusLabel } from '@/utils/ilink-channel'
 import type { ScheduledJob, SchedulerDashboard, ChannelType, DeliveryChannel } from '@/types'
 import ChannelConfigDialog from '@/components/scheduler/ChannelConfigDialog.vue'
 import JobDialog from '@/components/scheduler/JobDialog.vue'
@@ -402,6 +403,32 @@ let isUnmounted = false
 const channelDialogRef = ref<InstanceType<typeof ChannelConfigDialog>>()
 const jobDialogRef = ref<InstanceType<typeof JobDialog>>()
 const logDrawerRef = ref<InstanceType<typeof JobLogDrawer>>()
+
+const ilinkChannelReadiness = computed(() => {
+  const ch = dashboard.value?.push_channel
+  if (!ch || ch.channel_type !== 'wechat_ilink') return null
+  return classifyIlinkChannelStatus(ch.ilink_status)
+})
+
+const pushChannelTagType = computed<'success' | 'warning' | 'danger'>(() => {
+  const ch = dashboard.value?.push_channel
+  if (!ch || !ch.is_active) return 'danger'
+  if (ch.channel_type === 'wechat_ilink' && ilinkChannelReadiness.value) {
+    return ilinkChannelReadiness.value.level
+  }
+  return 'success'
+})
+
+const pushChannelTagLabel = computed(() => {
+  const ch = dashboard.value?.push_channel
+  if (!ch || !ch.is_active) return '已停用'
+  if (ch.channel_type === 'wechat_ilink' && ilinkChannelReadiness.value) {
+    return ilinkChannelReadiness.value.reason === 'not_bound'
+      ? '未绑定'
+      : getIlinkStatusLabel(ilinkChannelReadiness.value.reason)
+  }
+  return '已激活'
+})
 
 const filteredJobs = computed(() => {
   return jobs.value.filter(job => {

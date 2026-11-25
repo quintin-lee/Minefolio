@@ -5,6 +5,7 @@
     :width="dialogWidth"
     destroy-on-close
     :close-on-click-modal="false"
+    @close="handleDialogClose"
   >
     <div v-loading="loading" class="channel-dialog-content">
       <el-alert
@@ -135,7 +136,7 @@
           >
             <template #title>
               <span v-if="ilinkReadiness.reason === 'ready'">
-                微信 iLink 实例已就绪（最近会话 {{ ilinkStatus?.last_inbound_at }}），无需密钥或 Webhook URL。
+                微信 iLink 实例已就绪（<template v-if="ilinkStatus?.ilink_bot_id">机器人 {{ ilinkStatus.ilink_bot_id }} · </template>最近会话 {{ formatIlinkInboundTime(ilinkStatus?.last_inbound_at) }}），无需密钥或 Webhook URL。
               </span>
               <span v-else-if="ilinkReadiness.reason === 'not_bound'">
                 尚未绑定微信 iLink 机器人实例，请先前往「系统设置 → IM 机器人」扫码绑定。
@@ -144,13 +145,16 @@
                 实例已激活，但需先在微信向该机器人发送任意一条消息以激活推送上下文（过期后将自动等待最多 30 分钟）。
               </span>
               <span v-else>
-                当前 iLink 实例状态为 {{ ilinkReadiness.reason }}，请前往「系统设置 → IM 机器人」启用或重新扫码。
+                当前 iLink 实例状态为「{{ getIlinkStatusLabel(ilinkReadiness.reason) }}」，请前往「系统设置 → IM 机器人」启用或重新扫码。
               </span>
             </template>
           </el-alert>
-          <div v-if="ilinkReadiness.level !== 'success'" style="margin-top: 10px;">
+          <div
+            v-if="ilinkReadiness.level !== 'success' && ilinkReadiness.reason !== 'needs_inbound'"
+            class="ilink-action-row"
+          >
             <el-button size="small" type="primary" plain @click="goBindIlink">
-              前往系统设置绑定 / 启用
+              前往设置绑定微信机器人
             </el-button>
           </div>
         </template>
@@ -162,7 +166,7 @@
         <el-button
           plain
           :loading="testing"
-          :disabled="loading || form.channel_type === 'none'"
+          :disabled="loading || saving || form.channel_type === 'none'"
           @click="handleTest"
         >
           <Icon icon="ph:paper-plane-right" class="btn-icon" />
@@ -173,7 +177,7 @@
           <el-button
             type="primary"
             :loading="saving"
-            :disabled="loading"
+            :disabled="loading || testing"
             @click="handleSave"
           >
             保存配置
@@ -185,12 +189,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import { schedulerApi } from '@/api/scheduler'
-import { classifyIlinkChannelStatus } from '@/utils/ilink-channel'
+import {
+  classifyIlinkChannelStatus,
+  formatIlinkInboundTime,
+  getIlinkStatusLabel
+} from '@/utils/ilink-channel'
 import type { ChannelType, IlinkChannelStatus } from '@/types'
 
 const emit = defineEmits<{
@@ -205,9 +213,31 @@ const testing = ref(false)
 const existingKeyMasked = ref('')
 const ilinkStatus = ref<IlinkChannelStatus | null>(null)
 const ilinkReadiness = computed(() => classifyIlinkChannelStatus(ilinkStatus.value))
+let openSeq = 0
+let testAbortController: AbortController | null = null
+
+const abortTestRequest = () => {
+  if (testAbortController) {
+    testAbortController.abort()
+    testAbortController = null
+  }
+  testing.value = false
+}
+
+const handleDialogClose = () => {
+  openSeq++
+  abortTestRequest()
+}
+
+watch(visible, (val) => {
+  if (!val) {
+    handleDialogClose()
+  }
+})
+
 const goBindIlink = () => {
   visible.value = false
-  router.push('/settings')
+  router.push({ path: '/settings', query: { tab: 'im-bot' } })
 }
 const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1024)
 
@@ -221,6 +251,8 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('resize', updateWindowWidth)
+  openSeq++
+  abortTestRequest()
 })
 
 const dialogWidth = computed(() => (windowWidth.value < 640 ? '94vw' : '560px'))
@@ -261,30 +293,55 @@ const rules: FormRules = {
   ]
 }
 
+const isRequestAborted = (err: unknown): boolean => {
+  if (!err || typeof err !== 'object') return false
+  const e = err as { code?: string; name?: string }
+  return e.code === 'ERR_CANCELED' || e.name === 'CanceledError' || e.name === 'AbortError'
+}
+
+const isHttpHandledError = (err: unknown): boolean => {
+  if (!err || typeof err !== 'object') return false
+  const e = err as { isAxiosError?: boolean; response?: { data?: { code?: unknown } } }
+  return Boolean(e.isAxiosError || e.response?.data?.code !== undefined)
+}
+
+const notifyFallbackError = (err: unknown, fallback: string) => {
+  if (isRequestAborted(err) || isHttpHandledError(err)) {
+    return
+  }
+  const msg = (err as { message?: string } | null | undefined)?.message
+  ElMessage.error(msg || fallback)
+}
+
 const open = async () => {
+  const seq = ++openSeq
   visible.value = true
   loading.value = true
   existingKeyMasked.value = ''
   ilinkStatus.value = null
+  form.channel_type = 'serverchan'
+  form.channel_name = '我的微信提醒'
+  form.webhook_url = ''
   form.secret_key = ''
+  formRef.value?.clearValidate()
 
   try {
     const res = await schedulerApi.getChannel()
+    if (seq !== openSeq || !visible.value) return
     ilinkStatus.value = res?.ilink_status || null
     if (res && res.channel_type && res.channel_type !== 'none') {
       form.channel_type = res.channel_type
       form.channel_name = res.channel_name || '我的微信提醒'
       form.webhook_url = res.webhook_url || ''
       existingKeyMasked.value = res.secret_key_masked || ''
-    } else {
-      form.channel_type = 'serverchan'
-      form.channel_name = '我的微信提醒'
-      form.webhook_url = ''
     }
-  } catch (err: any) {
-    ElMessage.error(err.message || '获取通道配置失败')
+  } catch (err: unknown) {
+    if (seq !== openSeq || !visible.value) return
+    notifyFallbackError(err, '获取通道配置失败')
   } finally {
-    loading.value = false
+    if (seq === openSeq) {
+      loading.value = false
+    }
   }
 }
 
@@ -300,9 +357,13 @@ const buildSavePayload = () => ({
         : undefined
 })
 
-const handleSave = async () => {
-  if (!formRef.value) return
-  await formRef.value.validate()
+const validateFormAndKey = async (): Promise<boolean> => {
+  if (!formRef.value) return false
+  const valid = await formRef.value.validate().then(
+    () => true,
+    () => false
+  )
+  if (!valid) return false
 
   if (
     (form.channel_type === 'serverchan' || form.channel_type === 'pushdeer') &&
@@ -310,8 +371,13 @@ const handleSave = async () => {
     !existingKeyMasked.value
   ) {
     ElMessage.warning('请填写推送秘钥 Key')
-    return
+    return false
   }
+  return true
+}
+
+const handleSave = async () => {
+  if (!(await validateFormAndKey())) return
 
   saving.value = true
   try {
@@ -319,26 +385,41 @@ const handleSave = async () => {
     ElMessage.success('微信推送通道配置已保存')
     visible.value = false
     emit('saved')
-  } catch (err: any) {
-    ElMessage.error(err.message || '保存通道配置失败')
+  } catch (err: unknown) {
+    notifyFallbackError(err, '保存通道配置失败')
   } finally {
     saving.value = false
   }
 }
 
 const handleTest = async () => {
+  if (!(await validateFormAndKey())) return
+
+  abortTestRequest()
+  const controller = new AbortController()
+  testAbortController = controller
   testing.value = true
   try {
-    // If user edited key/url, persist first so test utilizes newest value
+    // If user edited key/url or switched to wechat_ilink, persist first so test utilizes newest value
     if (form.channel_type === 'wechat_ilink' || form.secret_key.trim() || form.webhook_url) {
       await schedulerApi.saveChannel(buildSavePayload())
+      if (form.channel_type === 'wechat_ilink') {
+        existingKeyMasked.value = ''
+        form.webhook_url = ''
+      }
+      emit('saved')
     }
-    const res = await schedulerApi.testChannel()
+    if (controller.signal.aborted) return
+    const res = await schedulerApi.testChannel({ signal: controller.signal })
+    if (controller.signal.aborted) return
     ElMessage.success(res?.message || '测试消息发送成功，请在微信中查收！')
-  } catch (err: any) {
-    ElMessage.error(err.message || '测试发送失败，请检查配置是否正确')
+  } catch (err: unknown) {
+    notifyFallbackError(err, '测试发送失败，请检查配置是否正确')
   } finally {
-    testing.value = false
+    if (testAbortController === controller) {
+      testAbortController = null
+      testing.value = false
+    }
   }
 }
 
@@ -421,6 +502,10 @@ defineExpose({
 
 .field-tip a:hover {
   text-decoration: underline;
+}
+
+.ilink-action-row {
+  margin-top: 10px;
 }
 
 .dialog-footer {

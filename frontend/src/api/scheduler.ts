@@ -78,5 +78,9 @@ export const schedulerApi = {
     secret_key?: string
   }) => http.put<{ message: string }>('/scheduler/channel', data),
 
-  testChannel: () => http.post<{ message: string }>('/scheduler/channel/test')
+  testChannel: (options?: { signal?: AbortSignal }) =>
+    http.post<{ message: string }>('/scheduler/channel/test', undefined, {
+      timeout: 20000,
+      signal: options?.signal
+    })
 }
