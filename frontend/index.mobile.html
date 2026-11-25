@@ -42,8 +42,225 @@
         }
       })()
     </script>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: #060b18;
+      }
+      html[data-theme='light'],
+      html[data-theme='light'] body {
+        background: #f8fafc;
+      }
+
+      #mf-boot-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 99999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: radial-gradient(circle at 30% 25%, rgba(99, 102, 241, 0.16), transparent 55%),
+          radial-gradient(circle at 75% 75%, rgba(0, 212, 255, 0.12), transparent 55%),
+          #060b18;
+        color: #f8fafc;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC',
+          'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+        user-select: none;
+        -webkit-user-select: none;
+        opacity: 1;
+        transform: scale(1);
+        transition: opacity 280ms ease, transform 280ms ease;
+      }
+
+      html[data-theme='light'] #mf-boot-splash {
+        background: radial-gradient(circle at 30% 25%, rgba(59, 130, 246, 0.1), transparent 55%),
+          radial-gradient(circle at 75% 75%, rgba(99, 102, 241, 0.08), transparent 55%),
+          #f8fafc;
+        color: #0f172a;
+      }
+
+      #mf-boot-splash.is-leaving {
+        opacity: 0;
+        transform: scale(1.02);
+        pointer-events: none;
+      }
+
+      .mf-boot-logo-wrap {
+        position: relative;
+        width: 88px;
+        height: 88px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        animation: mf-boot-enter 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+      }
+
+      .mf-boot-halo {
+        position: absolute;
+        inset: -14px;
+        border-radius: 32px;
+        background: radial-gradient(circle, rgba(56, 189, 248, 0.28) 0%, rgba(99, 102, 241, 0) 72%);
+        animation: mf-boot-pulse 2s ease-in-out infinite;
+      }
+
+      .mf-boot-logo {
+        position: relative;
+        width: 88px;
+        height: 88px;
+        filter: drop-shadow(0 12px 28px rgba(37, 99, 235, 0.28));
+      }
+
+      .mf-boot-title {
+        margin-top: 20px;
+        font-size: 22px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        animation: mf-boot-fade-up 420ms 90ms cubic-bezier(0.22, 1, 0.36, 1) both;
+      }
+
+      .mf-boot-sub {
+        margin-top: 8px;
+        font-size: 12px;
+        color: #94a3b8;
+        letter-spacing: 0.02em;
+        animation: mf-boot-fade-up 420ms 150ms cubic-bezier(0.22, 1, 0.36, 1) both;
+      }
+
+      html[data-theme='light'] .mf-boot-sub {
+        color: #64748b;
+      }
+
+      .mf-boot-bar {
+        margin-top: 22px;
+        width: 120px;
+        height: 3px;
+        border-radius: 999px;
+        overflow: hidden;
+        background: rgba(148, 163, 184, 0.2);
+        animation: mf-boot-fade-up 420ms 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+      }
+
+      .mf-boot-bar-inner {
+        width: 48%;
+        height: 100%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #6366f1, #38bdf8);
+        animation: mf-boot-progress 1.25s ease-in-out infinite;
+      }
+
+      @keyframes mf-boot-enter {
+        from {
+          opacity: 0;
+          transform: scale(0.88) translateY(8px);
+        }
+        to {
+          opacity: 1;
+          transform: scale(1) translateY(0);
+        }
+      }
+
+      @keyframes mf-boot-fade-up {
+        from {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @keyframes mf-boot-pulse {
+        0%,
+        100% {
+          opacity: 0.55;
+          transform: scale(0.96);
+        }
+        50% {
+          opacity: 1;
+          transform: scale(1.08);
+        }
+      }
+
+      @keyframes mf-boot-progress {
+        0% {
+          transform: translateX(-110%);
+        }
+        100% {
+          transform: translateX(220%);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .mf-boot-logo-wrap,
+        .mf-boot-halo,
+        .mf-boot-title,
+        .mf-boot-sub,
+        .mf-boot-bar,
+        .mf-boot-bar-inner {
+          animation: none;
+        }
+      }
+    </style>
   </head>
   <body>
+    <div id="mf-boot-splash" role="status" aria-label="正在启动 Minefolio">
+      <div class="mf-boot-logo-wrap">
+        <div class="mf-boot-halo"></div>
+        <svg class="mf-boot-logo" viewBox="0 0 512 512" aria-hidden="true">
+          <defs>
+            <radialGradient id="mfBootBg" cx="50%" cy="25%" r="80%">
+              <stop offset="0%" stop-color="#0e1b33" />
+              <stop offset="100%" stop-color="#060b18" />
+            </radialGradient>
+            <linearGradient id="mfBootLeft" x1="0%" y1="100%" x2="0%" y2="0%">
+              <stop offset="0%" stop-color="#4338ca" />
+              <stop offset="50%" stop-color="#6366f1" />
+              <stop offset="100%" stop-color="#818cf8" />
+            </linearGradient>
+            <linearGradient id="mfBootLeftIn" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#312e81" />
+              <stop offset="100%" stop-color="#1e1b4b" />
+            </linearGradient>
+            <linearGradient id="mfBootRight" x1="0%" y1="100%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#0284c7" />
+              <stop offset="45%" stop-color="#00d4ff" />
+              <stop offset="100%" stop-color="#38bdf8" />
+            </linearGradient>
+            <linearGradient id="mfBootRightIn" x1="100%" y1="100%" x2="0%" y2="0%">
+              <stop offset="0%" stop-color="#0369a1" />
+              <stop offset="100%" stop-color="#082f49" />
+            </linearGradient>
+          </defs>
+          <rect x="24" y="24" width="464" height="464" rx="112" fill="url(#mfBootBg)" />
+          <rect
+            x="24"
+            y="24"
+            width="464"
+            height="464"
+            rx="112"
+            fill="none"
+            stroke="rgba(0, 212, 255, 0.28)"
+            stroke-width="6"
+          />
+          <path d="M100 376 V176 L164 136 V376 H100 Z" fill="url(#mfBootLeft)" />
+          <path d="M164 136 L248 296 L220 336 L164 230 V376 H164 Z" fill="url(#mfBootLeftIn)" opacity="0.9" />
+          <path d="M164 136 L248 296 L276 244 L196 116 Z" fill="#818cf8" opacity="0.8" />
+          <path d="M248 296 L364 120 L404 146 L276 348 Z" fill="url(#mfBootRight)" />
+          <path d="M276 348 L404 146 L380 376 H330 L310 270 Z" fill="url(#mfBootRightIn)" />
+          <path d="M344 376 V224 L408 140 V376 H344 Z" fill="url(#mfBootRight)" />
+          <path d="M380 108 L436 104 L432 160 L408 136 L366 182 L344 160 L386 114 Z" fill="#38bdf8" />
+        </svg>
+      </div>
+      <div class="mf-boot-title">Minefolio</div>
+      <div class="mf-boot-sub">正在准备本地加密账本...</div>
+      <div class="mf-boot-bar" aria-hidden="true">
+        <div class="mf-boot-bar-inner"></div>
+      </div>
+    </div>
     <div id="app"></div>
     <script type="module" src="/src/main-mobile.ts"></script>
   </body>

@@ -11,6 +11,7 @@ import { initLocalDb } from '@/db/local'
 import { useSyncStore, setSyncOnAuthFail } from '@/stores/sync'
 import { registerNetworkListeners } from '@/utils/sync-network'
 import { setMobileMode, setAuthErrorHandler } from '@/utils/http'
+import { hideNativeSplash, dismissBootSplash } from '@/utils/boot-splash'
 
 setMobileMode(true)
 const handleMobileAuthFail = () => {
@@ -22,10 +23,13 @@ setAuthErrorHandler(handleMobileAuthFail)
 setSyncOnAuthFail(handleMobileAuthFail)
 
 async function bootstrap() {
+  // Hand off from static native SplashScreen to the inline HTML boot animation.
+  void hideNativeSplash()
+
   await initLocalDb()
   const app = createApp(App)
 
-  app.config.errorHandler = (err, instance, info) => {
+  app.config.errorHandler = (err, _instance, info) => {
     console.error('[MobileGlobalErrorHandler]', err, info)
   }
 
@@ -40,9 +44,12 @@ async function bootstrap() {
   registerNetworkListeners(() => sync.syncNow())
 
   app.mount('#app')
+  await router.isReady()
+  dismissBootSplash()
 }
 
 bootstrap().catch((err) => {
+  dismissBootSplash(true)
   // Defense-in-depth: never leave a silent blank screen. If local-DB/wasm init
   // or mount fails, render a visible error so the user knows something broke.
   console.error('[minefolio-mobile] bootstrap failed:', err)
