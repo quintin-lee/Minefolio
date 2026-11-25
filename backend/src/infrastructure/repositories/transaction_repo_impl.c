@@ -325,6 +325,36 @@ tx_asset_exists(csilk_db_pool_t* pool, int64_t user_id, int64_t asset_id)
     return ok;
 }
 
+int
+tx_asset_get_type(
+    csilk_db_pool_t* pool, int64_t user_id, int64_t asset_id, char* out_type, size_t cap)
+{
+    if (!pool || user_id <= 0 || asset_id <= 0 || !out_type || cap == 0) {
+        return -1;
+    }
+    out_type[0] = '\0';
+    char uid[32], ast[32];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    snprintf(ast, sizeof(ast), "%lld", (long long)asset_id);
+    csilk_json_t* res = csilk_db_query_param_json(
+        pool,
+        "SELECT COALESCE(c.asset_type, '') AS asset_type "
+        "FROM assets a LEFT JOIN categories c ON a.category_id = c.id "
+        "WHERE a.id=? AND (a.user_id=? OR (a.ledger_id > 0 AND EXISTS "
+        "(SELECT 1 FROM ledger_members lm WHERE lm.ledger_id = a.ledger_id AND lm.user_id=?)))",
+        (const char*[]){ast, uid, uid, NULL});
+    if (!res || csilk_json_array_size(res) == 0) {
+        if (res) {
+            csilk_json_free(res);
+        }
+        return 1;
+    }
+    const char* atype = csilk_json_get_string(csilk_json_array_get(res, 0), "asset_type");
+    snprintf(out_type, cap, "%s", atype ? atype : "");
+    csilk_json_free(res);
+    return 0;
+}
+
 /* --- Inlined: tx_list, tx_insert, tx_monthly --- */
 
 static csilk_json_t*

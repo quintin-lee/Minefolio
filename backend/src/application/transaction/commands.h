@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
 
 /**
@@ -30,7 +31,9 @@ typedef struct update_tx_cmd {
     int64_t     ledger_id;
     int64_t     tx_id;
     int64_t     asset_id;
+    bool        has_asset_id;
     int64_t     linked_asset_id;
+    bool        has_linked_asset_id;
     int64_t     category_id;
     const char* type;
     double      amount;

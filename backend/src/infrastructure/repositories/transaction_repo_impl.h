@@ -62,6 +62,8 @@ int           tx_delete(csilk_db_pool_t* pool, int64_t user_id, int64_t id);
 csilk_json_t* tx_child_fee_rows(csilk_db_pool_t* pool, int64_t user_id, int64_t parent_tx_id);
 int           tx_delete_fee_children(csilk_db_pool_t* pool, int64_t user_id, int64_t parent_tx_id);
 int           tx_asset_exists(csilk_db_pool_t* pool, int64_t user_id, int64_t asset_id);
+int           tx_asset_get_type(
+    csilk_db_pool_t* pool, int64_t user_id, int64_t asset_id, char* out_type, size_t cap);
 int           tx_update_fx_rate(void* pool, int64_t user_id, int64_t tx_id, double fx_rate);
 csilk_json_t* tx_get_raw(void* pool, int64_t user_id, int64_t id);
 int           tx_delete_transfer_in_by_parent(void*   pool,

@@ -444,6 +444,135 @@ test_transaction_update_change_asset(csilk_db_pool_t* pool, int64_t user_id)
     assert(rc == 0);
     assert(tx_check.asset_id == asset_2);
 
+    /* 4. Reject explicit invalid asset_id <= 0 on update (must not silently fall back) */
+    update_tx_cmd_t bad_aid_cmd = {
+        .user_id = user_id,
+        .ledger_id = 101,
+        .tx_id = created_tx_id,
+        .asset_id = 0,
+        .has_asset_id = true,
+        .type = "deposit",
+        .amount = 1000.0,
+        .currency = "CNY",
+        .date = "2026-10-15 12:00:00",
+    };
+    memset(&u_res, 0, sizeof(u_res));
+    rc = tx_usecase_update(pool, &bad_aid_cmd, &u_res);
+    assert(rc != 0 && u_res.code == 1002);
+
+    /* 5. Reject sell/buy-with-quantity targeting a non-investment (cash) asset */
+    create_tx_cmd_t bad_sell_cmd = {
+        .user_id = user_id,
+        .ledger_id = 101,
+        .asset_id = asset_2, /* cash asset */
+        .category_id = cat_id,
+        .type = "sell",
+        .amount = 500.0,
+        .price = 10.0,
+        .quantity = 50.0,
+        .currency = "CNY",
+        .date = "2026-10-16 12:00:00",
+    };
+    memset(&res, 0, sizeof(res));
+    rc = tx_usecase_create(pool, &bad_sell_cmd, &res);
+    assert(rc != 0 && res.code == 1002);
+
+    create_tx_cmd_t bad_buy_cmd = bad_sell_cmd;
+    bad_buy_cmd.type = "buy";
+    memset(&res, 0, sizeof(res));
+    rc = tx_usecase_create(pool, &bad_buy_cmd, &res);
+    assert(rc != 0 && res.code == 1002);
+
+    /* Create a stock category & stock asset, verify valid buy + sell + linked_asset checks */
+    csilk_json_t* ins_stk_cat = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO categories (user_id, name, type, asset_type, currency, ledger_id) "
+        "VALUES (?, 'Stock Test Cat', 'asset', 'stock', 'CNY', 101) RETURNING id",
+        (const char*[]){uid_str, NULL});
+    assert(ins_stk_cat && csilk_json_array_size(ins_stk_cat) > 0);
+    int64_t stk_cat_id = db_get_int(csilk_json_array_get(ins_stk_cat, 0), "id");
+    csilk_json_free(ins_stk_cat);
+    char stk_cat_str[32];
+    snprintf(stk_cat_str, sizeof(stk_cat_str), "%lld", (long long)stk_cat_id);
+
+    csilk_json_t* ins_stk = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO assets (user_id, category_id, name, current_value, currency, ledger_id) "
+        "VALUES (?, ?, 'Test A Stock', 0.0, 'CNY', 101) RETURNING id",
+        (const char*[]){uid_str, stk_cat_str, NULL});
+    assert(ins_stk && csilk_json_array_size(ins_stk) > 0);
+    int64_t stock_id = db_get_int(csilk_json_array_get(ins_stk, 0), "id");
+    csilk_json_free(ins_stk);
+
+    /* Valid buy on stock with cash linked_asset_id */
+    create_tx_cmd_t ok_buy = {
+        .user_id = user_id,
+        .ledger_id = 101,
+        .asset_id = stock_id,
+        .linked_asset_id = asset_2,
+        .category_id = stk_cat_id,
+        .type = "buy",
+        .amount = 1000.0,
+        .price = 10.0,
+        .quantity = 100.0,
+        .currency = "CNY",
+        .date = "2026-10-16 12:00:00",
+    };
+    memset(&res, 0, sizeof(res));
+    assert(tx_usecase_create(pool, &ok_buy, &res) == 0 && res.created_id > 0);
+
+    /* Reject sell when linked_asset_id points to an investment asset (another stock) */
+    csilk_json_t* ins_stk2 = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO assets (user_id, category_id, name, current_value, currency, ledger_id) "
+        "VALUES (?, ?, 'Test B Stock', 0.0, 'CNY', 101) RETURNING id",
+        (const char*[]){uid_str, stk_cat_str, NULL});
+    assert(ins_stk2 && csilk_json_array_size(ins_stk2) > 0);
+    int64_t stock2_id = db_get_int(csilk_json_array_get(ins_stk2, 0), "id");
+    csilk_json_free(ins_stk2);
+
+    create_tx_cmd_t bad_linked_sell = ok_buy;
+    bad_linked_sell.type = "sell";
+    bad_linked_sell.amount = 500.0;
+    bad_linked_sell.quantity = 50.0;
+    bad_linked_sell.linked_asset_id = stock2_id;
+    memset(&res, 0, sizeof(res));
+    assert(tx_usecase_create(pool, &bad_linked_sell, &res) != 0 && res.code == 1002);
+
+    /* Valid sell on stock with cash linked_asset_id succeeds */
+    bad_linked_sell.linked_asset_id = asset_2;
+    memset(&res, 0, sizeof(res));
+    assert(tx_usecase_create(pool, &bad_linked_sell, &res) == 0 && res.created_id > 0);
+    int64_t sell_tx_id = res.created_id;
+
+    /* Updating valid sell to target cash asset_id must be rejected */
+    update_tx_cmd_t bad_upd_sell = {
+        .user_id = user_id,
+        .ledger_id = 101,
+        .tx_id = sell_tx_id,
+        .asset_id = asset_2,
+        .has_asset_id = true,
+        .linked_asset_id = asset_1,
+        .has_linked_asset_id = true,
+        .type = "sell",
+        .amount = 500.0,
+        .price = 10.0,
+        .quantity = 50.0,
+        .currency = "CNY",
+        .date = "2026-10-16 12:00:00",
+    };
+    memset(&u_res, 0, sizeof(u_res));
+    assert(tx_usecase_update(pool, &bad_upd_sell, &u_res) != 0 && u_res.code == 1002);
+
+    /* Clean up temporary stock assets/txs so downstream portfolio aggregation tests stay isolated */
+    char s1[32], s2[32], sc[32];
+    snprintf(s1, sizeof(s1), "%lld", (long long)stock_id);
+    snprintf(s2, sizeof(s2), "%lld", (long long)stock2_id);
+    snprintf(sc, sizeof(sc), "%lld", (long long)stk_cat_id);
+    csilk_db_exec_param(pool, "DELETE FROM transactions WHERE asset_id IN (?, ?)", (const char*[]){s1, s2, NULL});
+    csilk_db_exec_param(pool, "DELETE FROM assets WHERE id IN (?, ?)", (const char*[]){s1, s2, NULL});
+    csilk_db_exec_param(pool, "DELETE FROM categories WHERE id = ?", (const char*[]){sc, NULL});
+
     printf("  ✅ Transaction Update Change Asset & Preserve Fields passed\n");
 }
 

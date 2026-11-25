@@ -15,6 +15,67 @@
 #include <stdlib.h>
 #include <string.h>
 
+static bool
+is_investment_asset_type(const char* asset_type)
+{
+    return asset_type && (strcmp(asset_type, "stock") == 0 || strcmp(asset_type, "fund") == 0 ||
+                          strcmp(asset_type, "bond") == 0 || strcmp(asset_type, "crypto") == 0);
+}
+
+static int
+validate_tx_asset_compatibility(void*       pool,
+                                int64_t     user_id,
+                                const char* type,
+                                double      quantity,
+                                int64_t     asset_id,
+                                int64_t     linked_asset_id,
+                                char*       err_buf,
+                                size_t      err_len)
+{
+    if (!type) {
+        return 0;
+    }
+    bool require_investment_target =
+        (strcmp(type, "sell") == 0) || (strcmp(type, "buy") == 0 && quantity > 0.0);
+    if (!require_investment_target) {
+        return 0;
+    }
+
+    char asset_type[64] = {0};
+    if (tx_asset_get_type(
+            (csilk_db_pool_t*)pool, user_id, asset_id, asset_type, sizeof(asset_type)) != 0) {
+        if (err_buf && err_len) {
+            snprintf(err_buf, err_len, "标的资产不存在");
+        }
+        return -1;
+    }
+    if (!is_investment_asset_type(asset_type)) {
+        if (err_buf && err_len) {
+            snprintf(err_buf,
+                     err_len,
+                     "卖出或建仓交易的标的资产必须为投资类资产（股票/基金/债券/"
+                     "加密货币），不可选择资金账户");
+        }
+        return -1;
+    }
+
+    if (linked_asset_id > 0) {
+        char linked_type[64] = {0};
+        if (tx_asset_get_type((csilk_db_pool_t*)pool,
+                              user_id,
+                              linked_asset_id,
+                              linked_type,
+                              sizeof(linked_type)) == 0 &&
+            is_investment_asset_type(linked_type)) {
+            if (err_buf && err_len) {
+                snprintf(err_buf, err_len, "关联资金账户不能为投资标的资产");
+            }
+            return -1;
+        }
+    }
+    return 0;
+}
+
 int
 tx_usecase_create(void* pool, const create_tx_cmd_t* cmd, tx_usecase_result_t* out_res)
 {
@@ -100,6 +161,25 @@ tx_usecase_create(void* pool, const create_tx_cmd_t* cmd, tx_usecase_result_t* o
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "关联资金账户无效");
         return -1;
+    }
+
+    {
+        char compat_err[256] = {0};
+        if (validate_tx_asset_compatibility(pool,
+                                            cmd->user_id,
+                                            cmd->type,
+                                            cmd->quantity,
+                                            cmd->asset_id,
+                                            cmd->linked_asset_id,
+                                            compat_err,
+                                            sizeof(compat_err)) != 0) {
+            out_res->code = 1002;
+            snprintf(out_res->message,
+                     sizeof(out_res->message),
+                     "%s",
+                     compat_err[0] ? compat_err : "交易资产类型不匹配");
+            return -1;
+        }
     }
 
     const char* currency = (cmd->currency && cmd->currency[0]) ? cmd->currency : "CNY";
@@ -263,20 +343,51 @@ tx_usecase_update(void* pool, const update_tx_cmd_t* cmd, tx_usecase_result_t* o
                            : csilk_json_get_string(old_row, "transaction_date");
     const char* note = cmd->note ? cmd->note : csilk_json_get_string(old_row, "note");
 
+    if (cmd->asset_id < 0 || (cmd->has_asset_id && cmd->asset_id <= 0)) {
+        csilk_json_free(old_rows);
+        out_res->code = 1002;
+        snprintf(out_res->message, sizeof(out_res->message), "asset_id 必须为正整数");
+        return -1;
+    }
+    if (cmd->linked_asset_id < 0) {
+        csilk_json_free(old_rows);
+        out_res->code = 1002;
+        snprintf(out_res->message, sizeof(out_res->message), "linked_asset_id 不能为负数");
+        return -1;
+    }
+
     int64_t target_asset_id = (cmd->asset_id > 0) ? cmd->asset_id : old_asset_id;
+    if (target_asset_id <= 0) {
+        csilk_json_free(old_rows);
+        out_res->code = 1002;
+        snprintf(out_res->message, sizeof(out_res->message), "无效的资产账户 ID");
+        return -1;
+    }
+
     bool    type_supports_linked = (strcmp(type, "buy") == 0 || strcmp(type, "sell") == 0 ||
                                     strcmp(type, "transfer_in") == 0 ||
                                     strcmp(type, "transfer_out") == 0 || strcmp(type, "fee") == 0);
     int64_t target_linked_id = 0;
     if (type_supports_linked) {
-        target_linked_id = (cmd->linked_asset_id > 0)
-                               ? cmd->linked_asset_id
-                               : (int64_t)db_get_int(old_row, "linked_asset_id");
+        if (cmd->has_linked_asset_id) {
+            target_linked_id = (cmd->linked_asset_id > 0) ? cmd->linked_asset_id : 0;
+        } else {
+            target_linked_id = (cmd->linked_asset_id > 0)
+                                   ? cmd->linked_asset_id
+                                   : (int64_t)db_get_int(old_row, "linked_asset_id");
+        }
     }
     int64_t target_cat_id =
         (cmd->category_id > 0) ? cmd->category_id : (int64_t)db_get_int(old_row, "category_id");
     int64_t target_ledger_id =
         (cmd->ledger_id > 0) ? cmd->ledger_id : (int64_t)db_get_int(old_row, "ledger_id");
+
+    if (target_linked_id > 0 && target_linked_id == target_asset_id) {
+        csilk_json_free(old_rows);
+        out_res->code = 1002;
+        snprintf(out_res->message, sizeof(out_res->message), "关联资金账户不能与投资目标资产相同");
+        return -1;
+    }
 
     /* 校验目标资产存在性 */
     if (!tx_asset_exists(pool, cmd->user_id, target_asset_id)) {
@@ -291,6 +402,26 @@ tx_usecase_update(void* pool, const update_tx_cmd_t* cmd, tx_usecase_result_t* o
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "关联资金账户无效");
         return -1;
+    }
+
+    {
+        char compat_err[256] = {0};
+        if (validate_tx_asset_compatibility(pool,
+                                            cmd->user_id,
+                                            type,
+                                            qty,
+                                            target_asset_id,
+                                            target_linked_id,
+                                            compat_err,
+                                            sizeof(compat_err)) != 0) {
+            csilk_json_free(old_rows);
+            out_res->code = 1002;
+            snprintf(out_res->message,
+                     sizeof(out_res->message),
+                     "%s",
+                     compat_err[0] ? compat_err : "交易资产类型不匹配");
+            return -1;
+        }
     }
 
     /* 校验原资产与目标资产所在账户的记账权限 (MF_ACCOUNT_ACTION_WRITE_TX) */

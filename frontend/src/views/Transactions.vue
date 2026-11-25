@@ -279,9 +279,21 @@
 
           <el-row :gutter="16">
             <el-col :span="14">
-              <el-form-item label="资产账户" prop="asset_id">
-                <el-select v-model="form.asset_id" placeholder="选择资产账户" style="width: 100%" @change="onAssetChange">
-                  <el-option v-for="a in assets" :key="a.id" :label="`${assetLabel(a)} (${formatCurrency(a.current_value)})`" :value="a.id" />
+              <el-form-item :label="isTradingType(form.transaction_type) ? '投资标的资产' : '资产账户'" prop="asset_id">
+                <el-select
+                  v-model="form.asset_id"
+                  :placeholder="isTradingType(form.transaction_type) ? '选择投资标的（股票/基金/债券/加密货币）' : '选择资产账户'"
+                  style="width: 100%"
+                  filterable
+                  @change="onAssetChange"
+                >
+                  <el-option
+                    v-for="a in selectableTargetAssets"
+                    :key="a.id"
+                    :disabled="form.transaction_type === 'sell' && !editingId && Number(a.quantity || 0) <= 0"
+                    :label="targetAssetOptionLabel(a)"
+                    :value="a.id"
+                  />
                 </el-select>
               </el-form-item>
             </el-col>
@@ -296,9 +308,15 @@
 
           <el-row :gutter="16">
             <el-col :span="24">
-              <el-form-item label="资金账户 (扣款/回流账户)" prop="linked_asset_id">
+              <el-form-item :label="linkedAccountLabel" prop="linked_asset_id">
                 <el-select v-model="form.linked_asset_id" placeholder="选择资金账户（可选）" clearable style="width: 100%" filterable>
-                  <el-option v-for="a in assets" :key="a.id" :disabled="a.id === form.asset_id" :label="`${assetLabel(a)} (${formatCurrency(a.current_value)})`" :value="a.id" />
+                  <el-option
+                    v-for="a in selectableLinkedAssets"
+                    :key="a.id"
+                    :disabled="a.id === form.asset_id"
+                    :label="`${assetLabel(a)} (${formatCurrency(a.current_value)})`"
+                    :value="a.id"
+                  />
                 </el-select>
               </el-form-item>
             </el-col>
@@ -539,6 +557,43 @@ const showFeeCol = computed(() => {
   )
 })
 
+const INVESTMENT_ASSET_TYPES = new Set(['stock', 'fund', 'bond', 'crypto'])
+
+function isInvestmentAsset(a?: Asset | null): boolean {
+  return Boolean(a?.asset_type && INVESTMENT_ASSET_TYPES.has(a.asset_type))
+}
+
+const selectableTargetAssets = computed(() => {
+  if (isTradingType(form.transaction_type)) {
+    return assets.value.filter(isInvestmentAsset)
+  }
+  return assets.value
+})
+
+const selectableLinkedAssets = computed(() => {
+  if (isTradingType(form.transaction_type)) {
+    return assets.value.filter((a) => !isInvestmentAsset(a))
+  }
+  return assets.value
+})
+
+const linkedAccountLabel = computed(() => {
+  if (form.transaction_type === 'buy') return '资金扣款账户 (可选)'
+  if (form.transaction_type === 'sell') return '资金回流账户 (可选)'
+  return '资金账户 (扣款/回流账户)'
+})
+
+function targetAssetOptionLabel(a: Asset): string {
+  if (isTradingType(form.transaction_type)) {
+    const qty = Number(a.quantity || 0)
+    const suffix = form.transaction_type === 'sell' && !editingId.value && qty <= 0
+      ? '无持仓'
+      : `持仓 ${qty}`
+    return `${assetLabel(a)} (${suffix}, ${formatCurrency(a.current_value)})`
+  }
+  return `${assetLabel(a)} (${formatCurrency(a.current_value)})`
+}
+
 function onAssetChange(assetId: number | null) {
   const asset = assets.value.find(a => a.id === assetId)
   if (asset && asset.currency) {
@@ -551,6 +606,19 @@ function onTransactionTypeChange(type: string) {
     form.quantity = 0
     form.price_per_unit = 0
     form.fee = 0
+    return
+  }
+  if (form.asset_id !== null) {
+    const selectedTarget = assets.value.find((a) => a.id === form.asset_id)
+    if (selectedTarget && !isInvestmentAsset(selectedTarget)) {
+      form.asset_id = null
+    }
+  }
+  if (form.linked_asset_id !== null) {
+    const selectedLinked = assets.value.find((a) => a.id === form.linked_asset_id)
+    if (selectedLinked && isInvestmentAsset(selectedLinked)) {
+      form.linked_asset_id = null
+    }
   }
 }
 
@@ -652,9 +720,11 @@ function openDialog(txn?: any) {
   editingId.value = txn?.id ?? null
   step.value = txn?.id ? 1 : 0
   const cur = txn?.currency ? String(txn.currency) : 'CNY'
+  const parsedAssetId = txn?.asset_id ? Number(txn.asset_id) : null
+  const parsedLinkedId = txn?.linked_asset_id ? Number(txn.linked_asset_id) : null
   Object.assign(form, txn ? {
-    asset_id: txn.asset_id ? String(txn.asset_id) : null,
-    linked_asset_id: txn.linked_asset_id ? String(txn.linked_asset_id) : null,
+    asset_id: parsedAssetId,
+    linked_asset_id: parsedLinkedId,
     transaction_type: txn.transaction_type,
     amount: Number(txn.amount),
     quantity: Number(txn.quantity) || 0,
@@ -679,6 +749,13 @@ function openDialog(txn?: any) {
     currency: 'CNY',
     _catPath: [],
   })
+  if (txn && isTradingType(form.transaction_type) && form.asset_id !== null) {
+    const selectedTarget = assets.value.find((a) => a.id === form.asset_id)
+    if (selectedTarget && !isInvestmentAsset(selectedTarget)) {
+      form.asset_id = null
+      ElMessage.warning('该交易原关联资产非投资标的，请重新选择正确的投资资产')
+    }
+  }
   dialogVisible.value = true
 }
 
@@ -704,6 +781,20 @@ async function handleSubmit() {
   if (!form.asset_id || !form.transaction_type || !form.amount || form.amount <= 0 || !form.transaction_date) {
     ElMessage.error('请填写完整的交易信息')
     return
+  }
+  if (isTradingType(form.transaction_type)) {
+    const targetAsset = assets.value.find((a) => a.id === Number(form.asset_id))
+    if (targetAsset && !isInvestmentAsset(targetAsset)) {
+      ElMessage.warning('买入/卖出交易的标的资产必须为股票、基金、债券或加密货币，不可选择资金账户')
+      return
+    }
+    if (form.linked_asset_id) {
+      const linkedAsset = assets.value.find((a) => a.id === Number(form.linked_asset_id))
+      if (linkedAsset && isInvestmentAsset(linkedAsset)) {
+        ElMessage.warning('资金扣款/回流账户不能选择投资标的资产')
+        return
+      }
+    }
   }
   try {
     await formRef.value.validate()

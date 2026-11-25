@@ -105,12 +105,17 @@ api_transactions_update(csilk_ctx_t* c)
         type = csilk_json_get_string(body, "type");
     }
 
+    const csilk_json_t* aid_node = csilk_json_get(body, "asset_id");
+    const csilk_json_t* laid_node = csilk_json_get(body, "linked_asset_id");
+
     update_tx_cmd_t cmd = {
         .user_id = user_id,
         .ledger_id = ledger_id,
         .tx_id = tx_id_val,
         .asset_id = db_get_int(body, "asset_id"),
+        .has_asset_id = (aid_node != NULL),
         .linked_asset_id = db_get_int(body, "linked_asset_id"),
+        .has_linked_asset_id = (laid_node != NULL),
         .category_id = db_get_int(body, "category_id"),
         .type = type,
         .amount = db_get_num(body, "amount"),
