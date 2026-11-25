@@ -11,27 +11,33 @@
 
 int mf_cashflow_repo_list(void*                    pool,
                           int64_t                  user_id,
+                          int64_t                  ledger_id,
                           mf_cashflow_schedule_t** out_list,
                           size_t*                  out_count);
 
 void mf_cashflow_repo_free_list(mf_cashflow_schedule_t* list, size_t count);
 
-int
-mf_cashflow_repo_get(void* pool, int64_t user_id, int64_t id, mf_cashflow_schedule_t* out_schedule);
+int mf_cashflow_repo_get(void*                   pool,
+                         int64_t                 user_id,
+                         int64_t                 ledger_id,
+                         int64_t                 id,
+                         mf_cashflow_schedule_t* out_schedule);
 
 int mf_cashflow_repo_create(void* pool, const mf_cashflow_schedule_t* schedule, int64_t* out_id);
 
 int mf_cashflow_repo_update(void* pool, const mf_cashflow_schedule_t* schedule);
 
-int mf_cashflow_repo_delete(void* pool, int64_t user_id, int64_t id);
+int mf_cashflow_repo_delete(void* pool, int64_t user_id, int64_t ledger_id, int64_t id);
 
 int mf_cashflow_repo_list_active(void*                    pool,
                                  int64_t                  user_id,
+                                 int64_t                  ledger_id,
                                  mf_cashflow_schedule_t** out_list,
                                  size_t*                  out_count);
 
 int mf_cashflow_repo_get_actual_events(void*                 pool,
                                        int64_t               user_id,
+                                       int64_t               ledger_id,
                                        const char*           year_month,
                                        mf_cashflow_event_t** out_events,
                                        size_t*               out_count);

@@ -12,6 +12,7 @@
 typedef struct mf_cashflow_schedule {
     int64_t id;
     int64_t user_id;
+    int64_t ledger_id;
     int64_t source_asset_id; /**< 产生现金流的标的资产 (如理财、股票、房产) */
     int64_t target_asset_id; /**< 收益实际流入的目标资金账户 (如银行卡、活期钱包) */
     char    name[128];       /**< 计划名称 (如 "招行理财付息", "9月房屋租金") */

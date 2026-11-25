@@ -15,9 +15,14 @@ api_cashflow_list_schedules(csilk_ctx_t* c)
         return;
     }
 
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "viewer");
+    if (ledger_id <= 0) {
+        return;
+    }
+
     csilk_json_t*             list = NULL;
     cashflow_usecase_result_t res = {0};
-    cashflow_usecase_list_schedules(db_get_pool(), user_id, &list, &res);
+    cashflow_usecase_list_schedules(db_get_pool(), user_id, ledger_id, &list, &res);
     respond_ok(c, list ? list : csilk_json_array());
 }
 
@@ -42,6 +47,7 @@ api_cashflow_create_schedule(csilk_ctx_t* c)
 
     create_cashflow_cmd_t cmd = {
         .user_id = user_id,
+        .ledger_id = ledger_id,
         .source_asset_id = (int64_t)db_get_int(body, "source_asset_id"),
         .target_asset_id = (int64_t)db_get_int(body, "target_asset_id"),
         .name = csilk_json_get_string(body, "name"),
@@ -75,6 +81,11 @@ api_cashflow_get_schedule(csilk_ctx_t* c)
         return;
     }
 
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "viewer");
+    if (ledger_id <= 0) {
+        return;
+    }
+
     const char* id_str = csilk_get_param(c, "id");
     int64_t     id = parse_query_int_strict(id_str, -1);
     if (id <= 0) {
@@ -84,7 +95,7 @@ api_cashflow_get_schedule(csilk_ctx_t* c)
 
     csilk_json_t*             item = NULL;
     cashflow_usecase_result_t res = {0};
-    int rc = cashflow_usecase_get_schedule(db_get_pool(), user_id, id, &item, &res);
+    int rc = cashflow_usecase_get_schedule(db_get_pool(), user_id, ledger_id, id, &item, &res);
 
     if (rc == 0 && res.code == 0) {
         respond_ok(c, item);
@@ -123,6 +134,7 @@ api_cashflow_update_schedule(csilk_ctx_t* c)
 
     update_cashflow_cmd_t cmd = {
         .user_id = user_id,
+        .ledger_id = ledger_id,
         .id = id,
         .source_asset_id = (int64_t)db_get_int(body, "source_asset_id"),
         .target_asset_id = (int64_t)db_get_int(body, "target_asset_id"),
@@ -167,7 +179,7 @@ api_cashflow_delete_schedule(csilk_ctx_t* c)
     }
 
     cashflow_usecase_result_t res = {0};
-    int rc = cashflow_usecase_delete_schedule(db_get_pool(), user_id, id, &res);
+    int rc = cashflow_usecase_delete_schedule(db_get_pool(), user_id, ledger_id, id, &res);
 
     if (rc == 0 && res.code == 0) {
         respond_ok(c, NULL);
@@ -184,11 +196,17 @@ api_cashflow_get_calendar(csilk_ctx_t* c)
         return;
     }
 
+    int64_t ledger_id = ctx_ledger_id(c, user_id, "viewer");
+    if (ledger_id <= 0) {
+        return;
+    }
+
     const char* year_str = csilk_get_query(c, "year");
     const char* month_str = csilk_get_query(c, "month");
 
     query_calendar_cmd_t cmd = {
         .user_id = user_id,
+        .ledger_id = ledger_id,
         .year = (int)parse_query_int_strict(year_str, 0),
         .month = (int)parse_query_int_strict(month_str, 0),
     };
@@ -226,6 +244,7 @@ api_cashflow_confirm(csilk_ctx_t* c)
     double                 amt = db_get_num(body, "amount");
     confirm_cashflow_cmd_t cmd = {
         .user_id = user_id,
+        .ledger_id = ledger_id,
         .source_asset_id = (int64_t)db_get_int(body, "source_asset_id"),
         .target_asset_id = (int64_t)db_get_int(body, "target_asset_id"),
         .amount = amt,

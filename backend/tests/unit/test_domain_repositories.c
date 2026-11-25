@@ -1123,8 +1123,8 @@ test_cashflow_repository(csilk_db_pool_t* pool, int64_t user_id)
     assert(rc == 0 && schedule_id > 0);
 
     mf_cashflow_schedule_t* list = NULL;
-    size_t count = 0;
-    rc = mf_cashflow_repo_list_active(pool, user_id, &list, &count);
+    size_t                  count = 0;
+    rc = mf_cashflow_repo_list_active(pool, user_id, 0, &list, &count);
     assert(rc == 0);
     assert(count > 0 && list != NULL);
     mf_cashflow_repo_free_list(list, count);

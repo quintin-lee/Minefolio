@@ -1,80 +1,84 @@
 #include "infrastructure/repositories/cashflow_repo_impl.h"
+#include "infrastructure/repositories/account_permission_repo_impl.h"
 #include "common/db.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-/* --- SQL statements inlined from repositories/cashflow_repo.c --- */
+static csilk_json_t*
+query_cashflow_schedules(
+    void* pool, int64_t user_id, int64_t ledger_id, int64_t id, bool only_active)
+{
+    char uid[32], lid[32], sid[32];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
+    snprintf(sid, sizeof(sid), "%lld", (long long)id);
 
-static const char* SQL_SCHEDULE_LIST =
-    "SELECT s.id, s.user_id, s.source_asset_id, s.target_asset_id, s.name, "
-    "       s.flow_type, s.frequency, s.start_date, s.end_date, s.expected_amount, "
-    "       s.status, s.note, CAST(s.created_at AS TEXT) AS created_at, CAST(s.updated_at AS "
-    "TEXT) AS updated_at, "
-    "       sa.name AS source_asset_name, sa.symbol AS source_symbol, "
-    "       ta.name AS target_asset_name, ta.currency AS target_currency "
-    "FROM cashflow_schedules s "
-    "JOIN assets sa ON sa.id = s.source_asset_id "
-    "JOIN assets ta ON ta.id = s.target_asset_id "
-    "WHERE s.user_id = ? "
-    "ORDER BY s.id DESC";
+    const char* scope_where =
+        (ledger_id > 0) ? MF_LEDGER_SHARED_ACCESS_FALLBACK_SQL("s", "ta") : "s.user_id = ?";
+    const char* active_cond = only_active ? " AND s.status = 'active'" : "";
+    const char* id_cond = (id > 0) ? " AND s.id = ?" : "";
+    const char* order_by = (id > 0) ? "" : " ORDER BY s.id DESC";
 
-static const char* SQL_SCHEDULE_GET =
-    "SELECT s.id, s.user_id, s.source_asset_id, s.target_asset_id, s.name, "
-    "       s.flow_type, s.frequency, s.start_date, s.end_date, s.expected_amount, "
-    "       s.status, s.note, CAST(s.created_at AS TEXT) AS created_at, CAST(s.updated_at AS "
-    "TEXT) AS updated_at, "
-    "       sa.name AS source_asset_name, sa.symbol AS source_symbol, "
-    "       ta.name AS target_asset_name, ta.currency AS target_currency "
-    "FROM cashflow_schedules s "
-    "JOIN assets sa ON sa.id = s.source_asset_id "
-    "JOIN assets ta ON ta.id = s.target_asset_id "
-    "WHERE s.user_id = ? AND s.id = ?";
+    char sql[2560];
+    snprintf(
+        sql,
+        sizeof(sql),
+        "SELECT s.id, s.user_id, COALESCE(NULLIF(s.ledger_id, 0), ta.ledger_id) AS ledger_id, "
+        "       s.source_asset_id, s.target_asset_id, s.name, "
+        "       s.flow_type, s.frequency, s.start_date, s.end_date, s.expected_amount, "
+        "       s.status, s.note, CAST(s.created_at AS TEXT) AS created_at, "
+        "       CAST(s.updated_at AS TEXT) AS updated_at, "
+        "       sa.name AS source_asset_name, sa.symbol AS source_symbol, "
+        "       ta.name AS target_asset_name, ta.currency AS target_currency "
+        "FROM cashflow_schedules s "
+        "JOIN assets sa ON sa.id = s.source_asset_id "
+        "JOIN assets ta ON ta.id = s.target_asset_id "
+        "WHERE %s AND " MF_RBAC_ASSET_VISIBLE_SQL("sa") " AND " MF_RBAC_ASSET_VISIBLE_SQL("ta")
+            "%s%s%s",
+        scope_where,
+        active_cond,
+        id_cond,
+        order_by);
+
+    const char* params[16];
+    int         pidx = 0;
+    if (ledger_id > 0) {
+        params[pidx++] = lid;
+        params[pidx++] = uid;
+        params[pidx++] = uid;
+        params[pidx++] = uid;
+    } else {
+        params[pidx++] = uid;
+    }
+    params[pidx++] = uid;
+    params[pidx++] = uid;
+    params[pidx++] = uid;
+    params[pidx++] = uid;
+    if (id > 0) {
+        params[pidx++] = sid;
+    }
+    params[pidx] = NULL;
+
+    return csilk_db_query_param_json((csilk_db_pool_t*)pool, sql, params);
+}
 
 static const char* SQL_SCHEDULE_CREATE =
-    "INSERT INTO cashflow_schedules (user_id, source_asset_id, target_asset_id, name, "
+    "INSERT INTO cashflow_schedules (user_id, ledger_id, source_asset_id, target_asset_id, name, "
     "                                flow_type, frequency, start_date, end_date, "
     "                                expected_amount, status, note) "
-    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?) RETURNING id";
-
-static const char* SQL_SCHEDULE_UPDATE =
-    "UPDATE cashflow_schedules "
-    "SET source_asset_id = ?, target_asset_id = ?, name = ?, flow_type = ?, "
-    "    frequency = ?, start_date = ?, end_date = ?, expected_amount = ?, "
-    "    note = ?, updated_at = CURRENT_TIMESTAMP "
-    "WHERE user_id = ? AND id = ? RETURNING id";
-
-static const char* SQL_SCHEDULE_DELETE =
-    "DELETE FROM cashflow_schedules WHERE user_id = ? AND id = ? RETURNING id";
-
-static const char* SQL_LIST_ACTIVE =
-    "SELECT s.id, s.user_id, s.source_asset_id, s.target_asset_id, s.name, "
-    "       s.flow_type, s.frequency, s.start_date, s.end_date, s.expected_amount, "
-    "       s.status, s.note, "
-    "       sa.name AS source_asset_name, ta.name AS target_asset_name, ta.currency AS "
-    "target_currency "
-    "FROM cashflow_schedules s "
-    "JOIN assets sa ON sa.id = s.source_asset_id "
-    "JOIN assets ta ON ta.id = s.target_asset_id "
-    "WHERE s.user_id = ? AND s.status = 'active'";
-
-static const char* SQL_ACTUAL_TXS =
-    "SELECT t.id, t.user_id, t.asset_id, t.amount, t.transaction_type, "
-    "CAST(t.transaction_date AS TEXT) AS transaction_date, t.note, "
-    "       a.name AS asset_name, a.currency AS asset_currency "
-    "FROM transactions t "
-    "JOIN assets a ON a.id = t.asset_id "
-    "WHERE t.user_id = ? "
-    "  AND t.transaction_type IN ('income', 'deposit', 'dividend', 'interest') "
-    "  AND CAST(t.transaction_date AS TEXT) LIKE ? "
-    "ORDER BY t.transaction_date ASC, t.id ASC";
+    "VALUES (?, COALESCE(NULLIF(CAST(NULLIF(?, '') AS BIGINT), 0), "
+    "        (SELECT ledger_id FROM assets WHERE id = ?)), ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?) "
+    "RETURNING id";
 
 /* --- Helper: parse a schedule row into mf_cashflow_schedule_t --- */
 static void
 parse_schedule_row(csilk_json_t* row, int64_t user_id, mf_cashflow_schedule_t* out)
 {
     out->id = (int64_t)db_get_int(row, "id");
-    out->user_id = user_id;
+    int64_t row_uid = (int64_t)db_get_int(row, "user_id");
+    out->user_id = row_uid > 0 ? row_uid : user_id;
+    out->ledger_id = (int64_t)db_get_int(row, "ledger_id");
     out->source_asset_id = (int64_t)db_get_int(row, "source_asset_id");
     out->target_asset_id = (int64_t)db_get_int(row, "target_asset_id");
     const char* s = csilk_json_get_string(row, "name");
@@ -141,6 +145,7 @@ convert_schedule_list(csilk_json_t*            json,
 int
 mf_cashflow_repo_list(void*                    pool,
                       int64_t                  user_id,
+                      int64_t                  ledger_id,
                       mf_cashflow_schedule_t** out_list,
                       size_t*                  out_count)
 {
@@ -149,10 +154,7 @@ mf_cashflow_repo_list(void*                    pool,
     }
     *out_list = NULL;
     *out_count = 0;
-    char uid[32];
-    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
-    csilk_json_t* json = csilk_db_query_param_json(
-        (csilk_db_pool_t*)pool, SQL_SCHEDULE_LIST, (const char*[]){uid, NULL});
+    csilk_json_t* json = query_cashflow_schedules(pool, user_id, ledger_id, 0, false);
     if (!json) {
         return -1;
     }
@@ -169,17 +171,17 @@ mf_cashflow_repo_free_list(mf_cashflow_schedule_t* list, size_t count)
 }
 
 int
-mf_cashflow_repo_get(void* pool, int64_t user_id, int64_t id, mf_cashflow_schedule_t* out_schedule)
+mf_cashflow_repo_get(void*                   pool,
+                     int64_t                 user_id,
+                     int64_t                 ledger_id,
+                     int64_t                 id,
+                     mf_cashflow_schedule_t* out_schedule)
 {
     if (!pool || !out_schedule || id <= 0) {
         return -1;
     }
     memset(out_schedule, 0, sizeof(*out_schedule));
-    char uid[32], sid[32];
-    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
-    snprintf(sid, sizeof(sid), "%lld", (long long)id);
-    csilk_json_t* res = csilk_db_query_param_json(
-        (csilk_db_pool_t*)pool, SQL_SCHEDULE_GET, (const char*[]){uid, sid, NULL});
+    csilk_json_t* res = query_cashflow_schedules(pool, user_id, ledger_id, id, false);
     if (!res || csilk_json_array_size(res) == 0) {
         if (res) {
             csilk_json_free(res);
@@ -197,12 +199,19 @@ mf_cashflow_repo_create(void* pool, const mf_cashflow_schedule_t* s, int64_t* ou
     if (!pool || !s) {
         return -1;
     }
-    char uid[32], said[32], taid[32], eamt[64];
+    char uid[32], lid[32], said[32], taid[32], eamt[64];
     snprintf(uid, sizeof(uid), "%lld", (long long)s->user_id);
+    if (s->ledger_id > 0) {
+        snprintf(lid, sizeof(lid), "%lld", (long long)s->ledger_id);
+    } else {
+        lid[0] = '\0';
+    }
     snprintf(said, sizeof(said), "%lld", (long long)s->source_asset_id);
     snprintf(taid, sizeof(taid), "%lld", (long long)s->target_asset_id);
     snprintf(eamt, sizeof(eamt), "%.4f", money_to_double(s->expected_amount));
     const char*   params[] = {uid,
+                              lid,
+                              taid,
                               said,
                               taid,
                               s->name[0] ? s->name : "",
@@ -237,27 +246,69 @@ mf_cashflow_repo_update(void* pool, const mf_cashflow_schedule_t* s)
     if (!pool || !s || s->id <= 0) {
         return -1;
     }
-    char uid[32], sid[32], said[32], taid[32], eamt[64];
+    char uid[32], lid[32], sid[32], said[32], taid[32], eamt[64];
     snprintf(uid, sizeof(uid), "%lld", (long long)s->user_id);
+    if (s->ledger_id > 0) {
+        snprintf(lid, sizeof(lid), "%lld", (long long)s->ledger_id);
+    } else {
+        lid[0] = '\0';
+    }
     snprintf(sid, sizeof(sid), "%lld", (long long)s->id);
     snprintf(said, sizeof(said), "%lld", (long long)s->source_asset_id);
     snprintf(taid, sizeof(taid), "%lld", (long long)s->target_asset_id);
     snprintf(eamt, sizeof(eamt), "%.4f", money_to_double(s->expected_amount));
-    const char*   params[] = {said,
-                              taid,
-                              s->name[0] ? s->name : "",
-                              s->flow_type[0] ? s->flow_type : "dividend",
-                              s->frequency[0] ? s->frequency : "monthly",
-                              s->start_date[0] ? s->start_date : "",
-                              s->end_date[0] ? s->end_date : "",
-                              eamt,
-                              s->note[0] ? s->note : "",
-                              uid,
-                              sid,
-                              NULL};
-    csilk_json_t* res =
-        csilk_db_query_param_json((csilk_db_pool_t*)pool, SQL_SCHEDULE_UPDATE, params);
-    int ok = res && csilk_json_array_size(res) > 0;
+
+    char        sql[2048];
+    const char* params[24];
+    int         pidx = 0;
+    params[pidx++] = said;
+    params[pidx++] = taid;
+    params[pidx++] = s->name[0] ? s->name : "";
+    params[pidx++] = s->flow_type[0] ? s->flow_type : "dividend";
+    params[pidx++] = s->frequency[0] ? s->frequency : "monthly";
+    params[pidx++] = s->start_date[0] ? s->start_date : "";
+    params[pidx++] = s->end_date[0] ? s->end_date : "";
+    params[pidx++] = eamt;
+    params[pidx++] = s->note[0] ? s->note : "";
+    params[pidx++] = lid;
+    params[pidx++] = taid;
+
+    if (s->ledger_id > 0) {
+        snprintf(sql,
+                 sizeof(sql),
+                 "UPDATE cashflow_schedules "
+                 "SET source_asset_id = ?, target_asset_id = ?, name = ?, flow_type = ?, "
+                 "    frequency = ?, start_date = ?, end_date = ?, expected_amount = ?, "
+                 "    note = ?, ledger_id = COALESCE(NULLIF(CAST(NULLIF(?, '') AS BIGINT), 0), "
+                 "    (SELECT ledger_id FROM assets WHERE id = ?)), "
+                 "    updated_at = CURRENT_TIMESTAMP "
+                 "WHERE id = ? AND COALESCE(NULLIF(cashflow_schedules.ledger_id, 0), "
+                 "    (SELECT ledger_id FROM assets WHERE id = cashflow_schedules.target_asset_id)) "
+                 "    = ? AND " MF_LEDGER_SHARED_WRITE_FALLBACK_SQL("cashflow_schedules",
+                                                                   "target_asset_id") " "
+                 "RETURNING id");
+        params[pidx++] = sid;
+        params[pidx++] = lid;
+        params[pidx++] = uid;
+        params[pidx++] = uid;
+        params[pidx++] = uid;
+    } else {
+        snprintf(sql,
+                 sizeof(sql),
+                 "UPDATE cashflow_schedules "
+                 "SET source_asset_id = ?, target_asset_id = ?, name = ?, flow_type = ?, "
+                 "    frequency = ?, start_date = ?, end_date = ?, expected_amount = ?, "
+                 "    note = ?, ledger_id = COALESCE(NULLIF(CAST(NULLIF(?, '') AS BIGINT), 0), "
+                 "    (SELECT ledger_id FROM assets WHERE id = ?)), "
+                 "    updated_at = CURRENT_TIMESTAMP "
+                 "WHERE user_id = ? AND id = ? RETURNING id");
+        params[pidx++] = uid;
+        params[pidx++] = sid;
+    }
+    params[pidx] = NULL;
+
+    csilk_json_t* res = csilk_db_query_param_json((csilk_db_pool_t*)pool, sql, params);
+    int           ok = res && csilk_json_array_size(res) > 0;
     if (res) {
         csilk_json_free(res);
     }
@@ -265,17 +316,44 @@ mf_cashflow_repo_update(void* pool, const mf_cashflow_schedule_t* s)
 }
 
 int
-mf_cashflow_repo_delete(void* pool, int64_t user_id, int64_t id)
+mf_cashflow_repo_delete(void* pool, int64_t user_id, int64_t ledger_id, int64_t id)
 {
     if (!pool || id <= 0) {
         return -1;
     }
-    char uid[32], sid[32];
+    char uid[32], lid[32], sid[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
     snprintf(sid, sizeof(sid), "%lld", (long long)id);
-    csilk_json_t* res = csilk_db_query_param_json(
-        (csilk_db_pool_t*)pool, SQL_SCHEDULE_DELETE, (const char*[]){uid, sid, NULL});
-    int ok = res && csilk_json_array_size(res) > 0;
+
+    char        sql[1536];
+    const char* params[10];
+    int         pidx = 0;
+    if (ledger_id > 0) {
+        snprintf(
+            sql,
+            sizeof(sql),
+            "DELETE FROM cashflow_schedules WHERE id = ? "
+            "AND COALESCE(NULLIF(cashflow_schedules.ledger_id, 0), "
+            "(SELECT ledger_id FROM assets WHERE id = cashflow_schedules.target_asset_id)) = ? "
+            "AND " MF_LEDGER_SHARED_WRITE_FALLBACK_SQL("cashflow_schedules", "target_asset_id") " "
+            "RETURNING id");
+        params[pidx++] = sid;
+        params[pidx++] = lid;
+        params[pidx++] = uid;
+        params[pidx++] = uid;
+        params[pidx++] = uid;
+    } else {
+        snprintf(sql,
+                 sizeof(sql),
+                 "DELETE FROM cashflow_schedules WHERE user_id = ? AND id = ? RETURNING id");
+        params[pidx++] = uid;
+        params[pidx++] = sid;
+    }
+    params[pidx] = NULL;
+
+    csilk_json_t* res = csilk_db_query_param_json((csilk_db_pool_t*)pool, sql, params);
+    int           ok = res && csilk_json_array_size(res) > 0;
     if (res) {
         csilk_json_free(res);
     }
@@ -285,6 +363,7 @@ mf_cashflow_repo_delete(void* pool, int64_t user_id, int64_t id)
 int
 mf_cashflow_repo_list_active(void*                    pool,
                              int64_t                  user_id,
+                             int64_t                  ledger_id,
                              mf_cashflow_schedule_t** out_list,
                              size_t*                  out_count)
 {
@@ -293,10 +372,7 @@ mf_cashflow_repo_list_active(void*                    pool,
     }
     *out_list = NULL;
     *out_count = 0;
-    char uid[32];
-    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
-    csilk_json_t* json = csilk_db_query_param_json(
-        (csilk_db_pool_t*)pool, SQL_LIST_ACTIVE, (const char*[]){uid, NULL});
+    csilk_json_t* json = query_cashflow_schedules(pool, user_id, ledger_id, 0, true);
     if (!json) {
         return -1;
     }
@@ -306,6 +382,7 @@ mf_cashflow_repo_list_active(void*                    pool,
 int
 mf_cashflow_repo_get_actual_events(void*                 pool,
                                    int64_t               user_id,
+                                   int64_t               ledger_id,
                                    const char*           year_month,
                                    mf_cashflow_event_t** out_events,
                                    size_t*               out_count)
@@ -315,11 +392,44 @@ mf_cashflow_repo_get_actual_events(void*                 pool,
     }
     *out_events = NULL;
     *out_count = 0;
-    char uid[32], ym_prefix[32];
+    char uid[32], lid[32], ym_prefix[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
     snprintf(ym_prefix, sizeof(ym_prefix), "%s%%", year_month ? year_month : "");
-    csilk_json_t* actual_txs = csilk_db_query_param_json(
-        (csilk_db_pool_t*)pool, SQL_ACTUAL_TXS, (const char*[]){uid, ym_prefix, NULL});
+
+    const char* scope_where =
+        (ledger_id > 0) ? MF_LEDGER_SHARED_ACCESS_FALLBACK_SQL("t", "a") : "t.user_id = ?";
+    char sql[2048];
+    snprintf(sql,
+             sizeof(sql),
+             "SELECT t.id, t.user_id, t.asset_id, t.amount, t.transaction_type, "
+             "CAST(t.transaction_date AS TEXT) AS transaction_date, t.note, "
+             "       a.name AS asset_name, a.currency AS asset_currency "
+             "FROM transactions t "
+             "JOIN assets a ON a.id = t.asset_id "
+             "WHERE %s "
+             "  AND t.transaction_type IN ('income', 'deposit', 'dividend', 'interest') "
+             "  AND CAST(t.transaction_date AS TEXT) LIKE ? "
+             "  AND " MF_RBAC_ASSET_UNMASKED_SQL("a") " "
+             "ORDER BY t.transaction_date ASC, t.id ASC",
+             scope_where);
+
+    const char* params[12];
+    int         pidx = 0;
+    if (ledger_id > 0) {
+        params[pidx++] = lid;
+        params[pidx++] = uid;
+        params[pidx++] = uid;
+        params[pidx++] = uid;
+    } else {
+        params[pidx++] = uid;
+    }
+    params[pidx++] = ym_prefix;
+    params[pidx++] = uid;
+    params[pidx++] = uid;
+    params[pidx] = NULL;
+
+    csilk_json_t* actual_txs = csilk_db_query_param_json((csilk_db_pool_t*)pool, sql, params);
     if (!actual_txs) {
         return 0;
     }
@@ -369,26 +479,19 @@ mf_cashflow_repo_free_events(mf_cashflow_event_t* events, size_t count)
 }
 
 csilk_json_t*
-cashflow_repo_list_detailed(void* pool, int64_t user_id)
+cashflow_repo_list_detailed(void* pool, int64_t user_id, int64_t ledger_id)
 {
     if (!pool || user_id <= 0) {
         return NULL;
     }
-    char uid[32];
-    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
-    return csilk_db_query_param_json(
-        (csilk_db_pool_t*)pool, SQL_SCHEDULE_LIST, (const char*[]){uid, NULL});
+    return query_cashflow_schedules(pool, user_id, ledger_id, 0, false);
 }
 
 csilk_json_t*
-cashflow_repo_get_detailed(void* pool, int64_t user_id, int64_t id)
+cashflow_repo_get_detailed(void* pool, int64_t user_id, int64_t ledger_id, int64_t id)
 {
     if (!pool || user_id <= 0 || id <= 0) {
         return NULL;
     }
-    char uid[32], sid[32];
-    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
-    snprintf(sid, sizeof(sid), "%lld", (long long)id);
-    return csilk_db_query_param_json(
-        (csilk_db_pool_t*)pool, SQL_SCHEDULE_GET, (const char*[]){uid, sid, NULL});
+    return query_cashflow_schedules(pool, user_id, ledger_id, id, false);
 }

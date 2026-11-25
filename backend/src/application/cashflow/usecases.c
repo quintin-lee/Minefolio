@@ -19,6 +19,7 @@
 int
 cashflow_usecase_list_schedules(void*                      pool,
                                 int64_t                    user_id,
+                                int64_t                    ledger_id,
                                 csilk_json_t**             out_list,
                                 cashflow_usecase_result_t* out_res)
 {
@@ -32,7 +33,7 @@ cashflow_usecase_list_schedules(void*                      pool,
         return -1;
     }
 
-    csilk_json_t* list = cashflow_repo_list_detailed(pool, user_id);
+    csilk_json_t* list = cashflow_repo_list_detailed(pool, user_id, ledger_id);
     *out_list = list ? list : csilk_json_array();
     out_res->code = 0;
     snprintf(out_res->message, sizeof(out_res->message), "ok");
@@ -42,6 +43,7 @@ cashflow_usecase_list_schedules(void*                      pool,
 int
 cashflow_usecase_get_schedule(void*                      pool,
                               int64_t                    user_id,
+                              int64_t                    ledger_id,
                               int64_t                    id,
                               csilk_json_t**             out_item,
                               cashflow_usecase_result_t* out_res)
@@ -56,7 +58,7 @@ cashflow_usecase_get_schedule(void*                      pool,
         return -1;
     }
 
-    csilk_json_t* res = cashflow_repo_get_detailed(pool, user_id, id);
+    csilk_json_t* res = cashflow_repo_get_detailed(pool, user_id, ledger_id, id);
     if (!res || csilk_json_array_size(res) == 0) {
         if (res) {
             csilk_json_free(res);
@@ -75,10 +77,15 @@ cashflow_usecase_get_schedule(void*                      pool,
 static int
 cashflow_validate_asset_perm(void*                      pool,
                              int64_t                    user_id,
+                             int64_t                    req_ledger_id,
                              int64_t                    asset_id,
                              mf_account_action_t        action,
-                             cashflow_usecase_result_t* out_res)
+                             cashflow_usecase_result_t* out_res,
+                             int64_t*                   out_asset_ledger_id)
 {
+    if (out_asset_ledger_id) {
+        *out_asset_ledger_id = 0;
+    }
     if (asset_id <= 0) {
         return 0;
     }
@@ -89,12 +96,23 @@ cashflow_validate_asset_perm(void*                      pool,
         return -1;
     }
     int64_t alid = 0, aaid = 0;
-    if (asset_get_ledger_and_account(db_pool, asset_id, &alid, &aaid) == 0 &&
-        (alid > 0 || aaid > 0)) {
-        if (account_usecase_check_permission(pool, alid, user_id, aaid, action) != 0) {
+    if (asset_get_ledger_and_account(db_pool, asset_id, &alid, &aaid) == 0) {
+        if (out_asset_ledger_id) {
+            *out_asset_ledger_id = alid;
+        }
+        if (alid > 0 && req_ledger_id > 0 && alid != req_ledger_id) {
             out_res->code = 1004;
-            snprintf(out_res->message, sizeof(out_res->message), "Forbidden: 关联账户无操作权限");
+            snprintf(out_res->message, sizeof(out_res->message), "Forbidden: 不支持跨账本操作");
             return -1;
+        }
+        if (alid > 0 || req_ledger_id > 0 || aaid > 0) {
+            int64_t chk_lid = alid > 0 ? alid : req_ledger_id;
+            if (account_usecase_check_permission(pool, chk_lid, user_id, aaid, action) != 0) {
+                out_res->code = 1004;
+                snprintf(
+                    out_res->message, sizeof(out_res->message), "Forbidden: 关联账户无操作权限");
+                return -1;
+            }
         }
     }
     return 0;
@@ -148,12 +166,31 @@ cashflow_usecase_create_schedule(void*                        pool,
         return -1;
     }
 
-    if (cashflow_validate_asset_perm(
-            pool, cmd->user_id, cmd->source_asset_id, MF_ACCOUNT_ACTION_READ, out_res) != 0 ||
-        cashflow_validate_asset_perm(
-            pool, cmd->user_id, cmd->target_asset_id, MF_ACCOUNT_ACTION_WRITE_TX, out_res) != 0) {
+    int64_t src_lid = 0, tgt_lid = 0;
+    if (cashflow_validate_asset_perm(pool,
+                                     cmd->user_id,
+                                     cmd->ledger_id,
+                                     cmd->source_asset_id,
+                                     MF_ACCOUNT_ACTION_READ,
+                                     out_res,
+                                     &src_lid) != 0 ||
+        cashflow_validate_asset_perm(pool,
+                                     cmd->user_id,
+                                     cmd->ledger_id,
+                                     cmd->target_asset_id,
+                                     MF_ACCOUNT_ACTION_WRITE_TX,
+                                     out_res,
+                                     &tgt_lid) != 0) {
         return -1;
     }
+    if (src_lid > 0 && tgt_lid > 0 && src_lid != tgt_lid) {
+        out_res->code = 1004;
+        snprintf(out_res->message,
+                 sizeof(out_res->message),
+                 "Forbidden: 来源资产与目标资产必须属于同一账本");
+        return -1;
+    }
+    s.ledger_id = (cmd->ledger_id > 0) ? cmd->ledger_id : (tgt_lid > 0 ? tgt_lid : src_lid);
 
     int64_t new_id = 0;
     if (mf_cashflow_repo_create(pool, &s, &new_id) != 0 || new_id <= 0) {
@@ -182,6 +219,29 @@ cashflow_usecase_update_schedule(void*                        pool,
     if (!pool || !cmd || cmd->id <= 0) {
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "参数错误");
+        return -1;
+    }
+
+    mf_cashflow_schedule_t existing = {0};
+    if (mf_cashflow_repo_get(pool, cmd->user_id, cmd->ledger_id, cmd->id, &existing) != 0) {
+        out_res->code = 1003;
+        snprintf(out_res->message, sizeof(out_res->message), "现金流计划不存在");
+        return -1;
+    }
+    if (cashflow_validate_asset_perm(pool,
+                                     cmd->user_id,
+                                     cmd->ledger_id,
+                                     existing.source_asset_id,
+                                     MF_ACCOUNT_ACTION_READ,
+                                     out_res,
+                                     NULL) != 0 ||
+        cashflow_validate_asset_perm(pool,
+                                     cmd->user_id,
+                                     cmd->ledger_id,
+                                     existing.target_asset_id,
+                                     MF_ACCOUNT_ACTION_WRITE_TX,
+                                     out_res,
+                                     NULL) != 0) {
         return -1;
     }
 
@@ -218,12 +278,31 @@ cashflow_usecase_update_schedule(void*                        pool,
         return -1;
     }
 
-    if (cashflow_validate_asset_perm(
-            pool, cmd->user_id, cmd->source_asset_id, MF_ACCOUNT_ACTION_READ, out_res) != 0 ||
-        cashflow_validate_asset_perm(
-            pool, cmd->user_id, cmd->target_asset_id, MF_ACCOUNT_ACTION_WRITE_TX, out_res) != 0) {
+    int64_t src_lid = 0, tgt_lid = 0;
+    if (cashflow_validate_asset_perm(pool,
+                                     cmd->user_id,
+                                     cmd->ledger_id,
+                                     cmd->source_asset_id,
+                                     MF_ACCOUNT_ACTION_READ,
+                                     out_res,
+                                     &src_lid) != 0 ||
+        cashflow_validate_asset_perm(pool,
+                                     cmd->user_id,
+                                     cmd->ledger_id,
+                                     cmd->target_asset_id,
+                                     MF_ACCOUNT_ACTION_WRITE_TX,
+                                     out_res,
+                                     &tgt_lid) != 0) {
         return -1;
     }
+    if (src_lid > 0 && tgt_lid > 0 && src_lid != tgt_lid) {
+        out_res->code = 1004;
+        snprintf(out_res->message,
+                 sizeof(out_res->message),
+                 "Forbidden: 来源资产与目标资产必须属于同一账本");
+        return -1;
+    }
+    s.ledger_id = (cmd->ledger_id > 0) ? cmd->ledger_id : (tgt_lid > 0 ? tgt_lid : src_lid);
 
     if (mf_cashflow_repo_update(pool, &s) != 0) {
         out_res->code = 1002;
@@ -239,6 +318,7 @@ cashflow_usecase_update_schedule(void*                        pool,
 int
 cashflow_usecase_delete_schedule(void*                      pool,
                                  int64_t                    user_id,
+                                 int64_t                    ledger_id,
                                  int64_t                    id,
                                  cashflow_usecase_result_t* out_res)
 {
@@ -252,7 +332,30 @@ cashflow_usecase_delete_schedule(void*                      pool,
         return -1;
     }
 
-    if (mf_cashflow_repo_delete(pool, user_id, id) != 0) {
+    mf_cashflow_schedule_t existing = {0};
+    if (mf_cashflow_repo_get(pool, user_id, ledger_id, id, &existing) != 0) {
+        out_res->code = 1003;
+        snprintf(out_res->message, sizeof(out_res->message), "现金流计划不存在");
+        return -1;
+    }
+    if (cashflow_validate_asset_perm(pool,
+                                     user_id,
+                                     ledger_id,
+                                     existing.source_asset_id,
+                                     MF_ACCOUNT_ACTION_READ,
+                                     out_res,
+                                     NULL) != 0 ||
+        cashflow_validate_asset_perm(pool,
+                                     user_id,
+                                     ledger_id,
+                                     existing.target_asset_id,
+                                     MF_ACCOUNT_ACTION_WRITE_TX,
+                                     out_res,
+                                     NULL) != 0) {
+        return -1;
+    }
+
+    if (mf_cashflow_repo_delete(pool, user_id, ledger_id, id) != 0) {
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "删除现金流计划失败");
         return -1;
@@ -304,8 +407,8 @@ cashflow_usecase_get_calendar(void*                       pool,
     /* 1. 查询真实历史已确认入账 */
     mf_cashflow_event_t* actual_evs = NULL;
     size_t               actual_count = 0;
-    if (mf_cashflow_repo_get_actual_events(pool, cmd->user_id, ym, &actual_evs, &actual_count) ==
-            0 &&
+    if (mf_cashflow_repo_get_actual_events(
+            pool, cmd->user_id, cmd->ledger_id, ym, &actual_evs, &actual_count) == 0 &&
         actual_evs) {
         for (size_t i = 0; i < actual_count; i++) {
             double  amt = money_to_double(actual_evs[i].amount);
@@ -331,7 +434,8 @@ cashflow_usecase_get_calendar(void*                       pool,
     /* 2. 推算未来排程发生 */
     mf_cashflow_schedule_t* schedules = NULL;
     size_t                  sch_count = 0;
-    if (mf_cashflow_repo_list_active(pool, cmd->user_id, &schedules, &sch_count) == 0 &&
+    if (mf_cashflow_repo_list_active(pool, cmd->user_id, cmd->ledger_id, &schedules, &sch_count) ==
+            0 &&
         schedules) {
         for (size_t i = 0; i < sch_count; i++) {
             const mf_cashflow_schedule_t* sch = &schedules[i];
@@ -416,10 +520,28 @@ cashflow_usecase_confirm_income(void*                         pool,
         return -1;
     }
 
-    if (cashflow_validate_asset_perm(
-            pool, cmd->user_id, cmd->source_asset_id, MF_ACCOUNT_ACTION_READ, out_res) != 0 ||
-        cashflow_validate_asset_perm(
-            pool, cmd->user_id, cmd->target_asset_id, MF_ACCOUNT_ACTION_WRITE_TX, out_res) != 0) {
+    int64_t src_lid = 0, tgt_lid = 0;
+    if (cashflow_validate_asset_perm(pool,
+                                     cmd->user_id,
+                                     cmd->ledger_id,
+                                     cmd->source_asset_id,
+                                     MF_ACCOUNT_ACTION_READ,
+                                     out_res,
+                                     &src_lid) != 0 ||
+        cashflow_validate_asset_perm(pool,
+                                     cmd->user_id,
+                                     cmd->ledger_id,
+                                     cmd->target_asset_id,
+                                     MF_ACCOUNT_ACTION_WRITE_TX,
+                                     out_res,
+                                     &tgt_lid) != 0) {
+        return -1;
+    }
+    if (src_lid > 0 && tgt_lid > 0 && src_lid != tgt_lid) {
+        out_res->code = 1004;
+        snprintf(out_res->message,
+                 sizeof(out_res->message),
+                 "Forbidden: 来源资产与目标资产必须属于同一账本");
         return -1;
     }
 

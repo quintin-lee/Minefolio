@@ -3,6 +3,7 @@
 #include "application/transaction/usecases.h"
 #include "application/daily_expense/usecases.h"
 #include "application/dca/usecases.h"
+#include "application/cashflow/usecases.h"
 #include "domain/account/rules.h"
 #include "domain/auth/repository.h"
 #include "domain/ai/repository.h"
@@ -1146,6 +1147,126 @@ test_dca_shared_ledger_and_rbac(csilk_db_pool_t* pool)
     printf("  [OK] DCA enforces ledger isolation, NULL fallback, shared access, masking & WRITE_TX\n");
 }
 
+static void
+test_cashflow_shared_ledger_and_rbac(csilk_db_pool_t* pool)
+{
+    printf("--- Testing Cashflow Ledger Isolation, Shared Access & Account RBAC ---\n");
+    int64_t owner_id = 0, editor_id = 0;
+    assert(mf_auth_repo_create(pool, "cf_owner", "h1", &owner_id) == 0);
+    assert(mf_auth_repo_create(pool, "cf_editor", "h2", &editor_id) == 0);
+
+    char s_oid[32], s_eid[32];
+    snprintf(s_oid, sizeof(s_oid), "%lld", (long long)owner_id);
+    snprintf(s_eid, sizeof(s_eid), "%lld", (long long)editor_id);
+
+    csilk_json_t* lr1 = csilk_db_query_param_json(
+        pool, "INSERT INTO ledgers (owner_id, name, currency) VALUES (?, 'CfL1', 'CNY') RETURNING id;",
+        (const char*[]){s_oid, NULL});
+    int64_t lid1 = db_get_int(csilk_json_array_get(lr1, 0), "id");
+    csilk_json_free(lr1);
+    csilk_json_t* lr2 = csilk_db_query_param_json(
+        pool, "INSERT INTO ledgers (owner_id, name, currency) VALUES (?, 'CfL2', 'CNY') RETURNING id;",
+        (const char*[]){s_oid, NULL});
+    int64_t lid2 = db_get_int(csilk_json_array_get(lr2, 0), "id");
+    csilk_json_free(lr2);
+
+    char s_l1[32], s_l2[32];
+    snprintf(s_l1, sizeof(s_l1), "%lld", (long long)lid1);
+    snprintf(s_l2, sizeof(s_l2), "%lld", (long long)lid2);
+    csilk_db_exec_param(
+        pool, "INSERT INTO ledger_members (ledger_id, user_id, role) VALUES (?, ?, 'owner'), (?, ?, 'editor'), (?, ?, 'owner');",
+        (const char*[]){s_l1, s_oid, s_l1, s_eid, s_l2, s_oid, NULL});
+
+    csilk_db_exec_param(
+        pool, "INSERT INTO categories (user_id, ledger_id, name, type, asset_type) VALUES (?, ?, 'CfCash1', 'asset', 'cash'), (?, ?, 'CfCash2', 'asset', 'cash');",
+        (const char*[]){s_oid, s_l1, s_oid, s_l2, NULL});
+    csilk_json_t* cr = csilk_db_query_param_json(
+        pool, "SELECT id, name FROM categories WHERE user_id=?;", (const char*[]){s_oid, NULL});
+    int64_t c1 = 0, c2 = 0;
+    for (size_t i = 0; i < csilk_json_array_size(cr); i++) {
+        csilk_json_t* r = csilk_json_array_get(cr, i);
+        if (strcmp(csilk_json_get_string(r, "name"), "CfCash1") == 0) c1 = db_get_int(r, "id");
+        if (strcmp(csilk_json_get_string(r, "name"), "CfCash2") == 0) c2 = db_get_int(r, "id");
+    }
+    csilk_json_free(cr);
+
+    account_usecase_result_t acres = {0};
+    create_account_cmd_t ac_op = {.user_id = owner_id, .ledger_id = lid1, .name = "CfOpen", .institution = "bank_card", .currency = "CNY"};
+    create_account_cmd_t ac_mk = {.user_id = owner_id, .ledger_id = lid1, .name = "CfMask", .institution = "bank_card", .currency = "CNY"};
+    create_account_cmd_t ac_no = {.user_id = owner_id, .ledger_id = lid1, .name = "CfNone", .institution = "bank_card", .currency = "CNY"};
+    create_account_cmd_t ac_l2 = {.user_id = owner_id, .ledger_id = lid2, .name = "CfL2", .institution = "bank_card", .currency = "CNY"};
+    assert(account_usecase_create(pool, &ac_op, &acres) == 0); int64_t acct_op = acres.id;
+    assert(account_usecase_create(pool, &ac_mk, &acres) == 0); int64_t acct_mk = acres.id;
+    assert(account_usecase_create(pool, &ac_no, &acres) == 0); int64_t acct_no = acres.id;
+    assert(account_usecase_create(pool, &ac_l2, &acres) == 0); int64_t acct_l2 = acres.id;
+
+    asset_usecase_result_t ares = {0};
+    create_asset_cmd_t as_src = {.user_id = owner_id, .ledger_id = lid1, .category_id = c1, .account_id = acct_op, .name = "CfSrc", .current_value = 10000.0, .currency = "CNY"};
+    create_asset_cmd_t as_op  = {.user_id = owner_id, .ledger_id = lid1, .category_id = c1, .account_id = acct_op, .name = "CfTgtOpen", .current_value = 100.0, .currency = "CNY"};
+    create_asset_cmd_t as_mk  = {.user_id = owner_id, .ledger_id = lid1, .category_id = c1, .account_id = acct_mk, .name = "CfTgtMask", .current_value = 200.0, .currency = "CNY"};
+    create_asset_cmd_t as_no  = {.user_id = owner_id, .ledger_id = lid1, .category_id = c1, .account_id = acct_no, .name = "CfTgtNone", .current_value = 300.0, .currency = "CNY"};
+    create_asset_cmd_t as_l2  = {.user_id = owner_id, .ledger_id = lid2, .category_id = c2, .account_id = acct_l2, .name = "CfL2", .current_value = 400.0, .currency = "CNY"};
+    assert(asset_usecase_create(pool, &as_src, &ares) == 0); int64_t src_id = ares.id;
+    assert(asset_usecase_create(pool, &as_op, &ares) == 0);  int64_t op_id = ares.id;
+    assert(asset_usecase_create(pool, &as_mk, &ares) == 0);  int64_t mk_id = ares.id;
+    assert(asset_usecase_create(pool, &as_no, &ares) == 0);  int64_t no_id = ares.id;
+    assert(asset_usecase_create(pool, &as_l2, &ares) == 0);  int64_t l2_id = ares.id;
+
+    cashflow_usecase_result_t cfres = {0};
+    create_cashflow_cmd_t bad_cross = {.user_id = owner_id, .ledger_id = lid1, .source_asset_id = src_id, .target_asset_id = l2_id, .name = "Bad", .flow_type = "dividend", .frequency = "monthly", .start_date = "2026-11-01", .expected_amount = 50.0};
+    int64_t tmp_id = 0;
+    assert(cashflow_usecase_create_schedule(pool, &bad_cross, &tmp_id, &cfres) != 0 && cfres.code == 1004);
+
+    create_cashflow_cmd_t cf_op = {.user_id = owner_id, .ledger_id = lid1, .source_asset_id = src_id, .target_asset_id = op_id, .name = "OpenDiv", .flow_type = "dividend", .frequency = "monthly", .start_date = "2026-11-01", .expected_amount = 50.0};
+    create_cashflow_cmd_t cf_mk = {.user_id = owner_id, .ledger_id = lid1, .source_asset_id = src_id, .target_asset_id = mk_id, .name = "MaskDiv", .flow_type = "dividend", .frequency = "monthly", .start_date = "2026-11-01", .expected_amount = 60.0};
+    create_cashflow_cmd_t cf_no = {.user_id = owner_id, .ledger_id = lid1, .source_asset_id = src_id, .target_asset_id = no_id, .name = "NoneDiv", .flow_type = "dividend", .frequency = "monthly", .start_date = "2026-11-01", .expected_amount = 70.0};
+    int64_t sid_op = 0, sid_mk = 0, sid_no = 0;
+    assert(cashflow_usecase_create_schedule(pool, &cf_op, &sid_op, &cfres) == 0);
+    assert(cashflow_usecase_create_schedule(pool, &cf_mk, &sid_mk, &cfres) == 0);
+    assert(cashflow_usecase_create_schedule(pool, &cf_no, &sid_no, &cfres) == 0);
+
+    // Owner confirms income on open & masked accounts in 2026-11
+    int64_t tx_id = 0;
+    confirm_cashflow_cmd_t inc_op = {.user_id = owner_id, .ledger_id = lid1, .source_asset_id = src_id, .target_asset_id = op_id, .amount = 50.0, .date = "2026-11-15", .name = "OpenInc"};
+    confirm_cashflow_cmd_t inc_mk = {.user_id = owner_id, .ledger_id = lid1, .source_asset_id = src_id, .target_asset_id = mk_id, .amount = 60.0, .date = "2026-11-15", .name = "MaskInc"};
+    assert(cashflow_usecase_confirm_income(pool, &inc_op, &tx_id, &cfres) == 0);
+    assert(cashflow_usecase_confirm_income(pool, &inc_mk, &tx_id, &cfres) == 0);
+
+    // Legacy NULL ledger_id on sid_op still appears under lid1
+    char s_sop[32];
+    snprintf(s_sop, sizeof(s_sop), "%lld", (long long)sid_op);
+    csilk_db_exec_param(pool, "UPDATE cashflow_schedules SET ledger_id = NULL WHERE id = ?;", (const char*[]){s_sop, NULL});
+
+    assert(account_permission_usecase_set(pool, owner_id, lid1, acct_op, editor_id, "viewer", 0, 0, &acres) == 0);
+    assert(account_permission_usecase_set(pool, owner_id, lid1, acct_mk, editor_id, "viewer", 1, 0, &acres) == 0);
+    assert(account_permission_usecase_set(pool, owner_id, lid1, acct_no, editor_id, "none", 0, 0, &acres) == 0);
+
+    csilk_json_t* list = NULL;
+    assert(cashflow_usecase_list_schedules(pool, editor_id, lid1, &list, &cfres) == 0);
+    assert(list != NULL && csilk_json_array_size(list) == 2); // NoneDiv excluded
+    assert(db_get_int(csilk_json_array_get(list, 0), "id") != sid_no);
+    assert(db_get_int(csilk_json_array_get(list, 1), "id") != sid_no);
+    csilk_json_free(list);
+
+    // Calendar actual_total excludes masked account (50.0, NOT 110.0), projected_total excludes NoneDiv
+    query_calendar_cmd_t cal_cmd = {.user_id = editor_id, .ledger_id = lid1, .year = 2026, .month = 11};
+    csilk_json_t* cal = NULL;
+    assert(cashflow_usecase_get_calendar(pool, &cal_cmd, &cal, &cfres) == 0 && cal != NULL);
+    assert(db_get_num(cal, "actual_total") == 50.0);
+    csilk_json_free(cal);
+
+    // Ledger lid2 sees 0 schedules from lid1
+    list = NULL;
+    assert(cashflow_usecase_list_schedules(pool, owner_id, lid2, &list, &cfres) == 0);
+    assert(list != NULL && csilk_json_array_size(list) == 0);
+    csilk_json_free(list);
+
+    // Editor with viewer permission on acct_op cannot delete sid_op (1004)
+    assert(cashflow_usecase_delete_schedule(pool, editor_id, lid1, sid_op, &cfres) != 0 && cfres.code == 1004);
+    assert(cashflow_usecase_delete_schedule(pool, editor_id, lid1, sid_mk, &cfres) != 0 && cfres.code == 1004);
+    printf("  [OK] Cashflow enforces ledger isolation, NULL fallback, shared access, calendar unmasked & delete RBAC\n");
+}
+
 int main(void) {
     printf("========================================\n");
     printf("Starting Account RBAC & Field Masking Tests\n");
@@ -1160,6 +1281,7 @@ int main(void) {
     test_csv_import_rbac_and_isolation(pool);
     test_portfolio_shared_ledger_rbac(pool);
     test_dca_shared_ledger_and_rbac(pool);
+    test_cashflow_shared_ledger_and_rbac(pool);
 
     printf("========================================\n");
     printf("All Account RBAC Tests Passed Successfully!\n");

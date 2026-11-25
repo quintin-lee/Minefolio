@@ -6,11 +6,13 @@
 
 int cashflow_usecase_list_schedules(void*                      pool,
                                     int64_t                    user_id,
+                                    int64_t                    ledger_id,
                                     csilk_json_t**             out_list,
                                     cashflow_usecase_result_t* out_res);
 
 int cashflow_usecase_get_schedule(void*                      pool,
                                   int64_t                    user_id,
+                                  int64_t                    ledger_id,
                                   int64_t                    id,
                                   csilk_json_t**             out_item,
                                   cashflow_usecase_result_t* out_res);
@@ -26,6 +28,7 @@ int cashflow_usecase_update_schedule(void*                        pool,
 
 int cashflow_usecase_delete_schedule(void*                      pool,
                                      int64_t                    user_id,
+                                     int64_t                    ledger_id,
                                      int64_t                    id,
                                      cashflow_usecase_result_t* out_res);
 

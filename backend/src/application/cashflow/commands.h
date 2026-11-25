@@ -4,6 +4,7 @@
 
 typedef struct create_cashflow_cmd {
     int64_t     user_id;
+    int64_t     ledger_id;
     int64_t     source_asset_id;
     int64_t     target_asset_id;
     const char* name;
@@ -17,6 +18,7 @@ typedef struct create_cashflow_cmd {
 
 typedef struct update_cashflow_cmd {
     int64_t     user_id;
+    int64_t     ledger_id;
     int64_t     id;
     int64_t     source_asset_id;
     int64_t     target_asset_id;
@@ -31,6 +33,7 @@ typedef struct update_cashflow_cmd {
 
 typedef struct confirm_cashflow_cmd {
     int64_t     user_id;
+    int64_t     ledger_id;
     int64_t     source_asset_id;
     int64_t     target_asset_id;
     double      amount;
@@ -41,6 +44,7 @@ typedef struct confirm_cashflow_cmd {
 
 typedef struct query_calendar_cmd {
     int64_t user_id;
+    int64_t ledger_id;
     int     year;
     int     month;
 } query_calendar_cmd_t;
