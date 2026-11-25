@@ -830,12 +830,19 @@ run_job_task(void* arg)
 int
 scheduler_engine_trigger_job_now(int64_t job_id, int64_t user_id, const char* reason)
 {
-    if (!s_worker_pool || !s_db_pool || job_id <= 0) {
+    if (job_id <= 0) {
         return -1;
     }
 
     job_exec_context_t* ctx = (job_exec_context_t*)malloc(sizeof(job_exec_context_t));
     if (!ctx) {
+        return -1;
+    }
+
+    pthread_mutex_lock(&s_engine_lock);
+    if (!s_running || !s_worker_pool || !s_db_pool) {
+        pthread_mutex_unlock(&s_engine_lock);
+        free(ctx);
         return -1;
     }
     ctx->pool = s_db_pool;
@@ -844,11 +851,30 @@ scheduler_engine_trigger_job_now(int64_t job_id, int64_t user_id, const char* re
     snprintf(ctx->reason, sizeof(ctx->reason), "%s", reason ? reason : "manual_invoke");
 
     int rc = scheduler_worker_pool_submit(s_worker_pool, run_job_task, ctx);
+    pthread_mutex_unlock(&s_engine_lock);
+
     if (rc != 0) {
         free(ctx);
         return -1;
     }
     return 0;
+}
+
+int
+scheduler_engine_submit_task(void (*fn)(void*), void* arg)
+{
+    if (!fn) {
+        return -1;
+    }
+
+    pthread_mutex_lock(&s_engine_lock);
+    if (!s_running || !s_worker_pool) {
+        pthread_mutex_unlock(&s_engine_lock);
+        return -1;
+    }
+    int rc = scheduler_worker_pool_submit(s_worker_pool, fn, arg);
+    pthread_mutex_unlock(&s_engine_lock);
+    return rc == 0 ? 0 : -1;
 }
 
 static void
@@ -1054,7 +1080,7 @@ scheduler_engine_start(void* pool)
     /* Seed built-in scheduled tasks idempotently */
     scheduler_usecase_seed_builtin_jobs(pool);
 
-    s_worker_pool = scheduler_worker_pool_create(3);
+    s_worker_pool = scheduler_worker_pool_create(4);
     if (!s_worker_pool) {
         pthread_mutex_unlock(&s_engine_lock);
         return -1;
@@ -1091,11 +1117,19 @@ scheduler_engine_stop(void)
 
     pthread_join(s_engine_thread, NULL);
 
-    if (s_worker_pool) {
-        scheduler_worker_pool_destroy(s_worker_pool);
-        s_worker_pool = NULL;
+    pthread_mutex_lock(&s_engine_lock);
+    scheduler_worker_pool_t* wp = s_worker_pool;
+    s_worker_pool = NULL;
+    pthread_mutex_unlock(&s_engine_lock);
+
+    if (wp) {
+        scheduler_worker_pool_destroy(wp);
     }
+
+    pthread_mutex_lock(&s_engine_lock);
     s_db_pool = NULL;
+    pthread_mutex_unlock(&s_engine_lock);
+
     scheduler_event_reset();
     atomic_store(&s_ai_jobs_running, 0);
 }

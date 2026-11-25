@@ -899,6 +899,104 @@ test_scheduler_ilink_channel(csilk_db_pool_t* pool)
     printf("  [OK] test_scheduler_ilink_channel\n");
 }
 
+typedef struct {
+    int remaining_alive_calls;
+    int call_count;
+} cancel_probe_ctx_t;
+
+static int
+test_cancel_probe_is_alive(void* ctx)
+{
+    cancel_probe_ctx_t* p = (cancel_probe_ctx_t*)ctx;
+    p->call_count++;
+    if (p->remaining_alive_calls > 0) {
+        p->remaining_alive_calls--;
+        return 1;
+    }
+    return 0;
+}
+
+static void
+test_scheduler_ilink_channel_cancellable(csilk_db_pool_t* pool)
+{
+    int64_t u = seed_user_and_active_instance(pool, "cancel_u1", "bot_cancel1", "wx_cancel1");
+    channel_save_dto_t dto;
+    memset(&dto, 0, sizeof(dto));
+    snprintf(dto.channel_type, sizeof(dto.channel_type), "wechat_ilink");
+    snprintf(dto.channel_name, sizeof(dto.channel_name), "Cancel Probe iLink");
+    assert(scheduler_usecase_save_channel(pool, u, &dto) == 0);
+
+    setenv("MINEFOLIO_ILINK_TEST_TIMEOUT_MS", "10000", 1);
+
+    /* Case 1: already dead on entry -> returns promptly without enqueueing */
+    cancel_probe_ctx_t probe0 = {.remaining_alive_calls = 0, .call_count = 0};
+    char               err[256] = {0};
+    assert(scheduler_usecase_test_channel_cancellable(
+               pool, u, test_cancel_probe_is_alive, &probe0, err, sizeof(err)) != 0);
+    assert(strcmp(err, "测试请求已取消") == 0);
+    assert(probe0.call_count == 1);
+
+    char uid_s[32];
+    snprintf(uid_s, sizeof(uid_s), "%lld", (long long)u);
+    csilk_json_t* pre_rows = csilk_db_query_param_json(
+        pool,
+        "SELECT id FROM im_push_outbox WHERE mf_user_id=? AND kind='test'",
+        (const char*[]){uid_s, NULL});
+    assert(pre_rows && csilk_json_array_size(pre_rows) == 0);
+    csilk_json_free(pre_rows);
+
+    /* Case 2: alive at entry, cancelled on first poll -> expires queued row promptly */
+    cancel_probe_ctx_t probe1 = {.remaining_alive_calls = 1, .call_count = 0};
+    struct timespec    t0, t1;
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    assert(scheduler_usecase_test_channel_cancellable(
+               pool, u, test_cancel_probe_is_alive, &probe1, err, sizeof(err)) != 0);
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    long elapsed_ms = (t1.tv_sec - t0.tv_sec) * 1000L + (t1.tv_nsec - t0.tv_nsec) / 1000000L;
+    assert(strcmp(err, "测试请求已取消") == 0);
+    assert(elapsed_ms < 1000);
+    assert(probe1.call_count == 2);
+
+    csilk_json_t* rows1 = csilk_db_query_param_json(
+        pool,
+        "SELECT id FROM im_push_outbox WHERE mf_user_id=? AND kind='test' ORDER BY id DESC LIMIT 1",
+        (const char*[]){uid_s, NULL});
+    assert(rows1 && csilk_json_array_size(rows1) == 1);
+    int64_t pid1 = db_get_int(csilk_json_array_get(rows1, 0), "id");
+    csilk_json_free(rows1);
+    csilk_json_t* exp1 = im_push_usecase_get(pool, pid1);
+    assert(exp1 && strcmp(csilk_json_get_string(exp1, "status"), "expired") == 0);
+    assert(strcmp(csilk_json_get_string(exp1, "last_error"), "测试请求已取消") == 0);
+    csilk_json_free(exp1);
+
+    /* Case 3: alive through first poll, cancelled after 100ms sleep on second poll */
+    cancel_probe_ctx_t probe2 = {.remaining_alive_calls = 2, .call_count = 0};
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    assert(scheduler_usecase_test_channel_cancellable(
+               pool, u, test_cancel_probe_is_alive, &probe2, err, sizeof(err)) != 0);
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    elapsed_ms = (t1.tv_sec - t0.tv_sec) * 1000L + (t1.tv_nsec - t0.tv_nsec) / 1000000L;
+    assert(strcmp(err, "测试请求已取消") == 0);
+    assert(elapsed_ms < 1000);
+    assert(probe2.call_count == 3);
+
+    csilk_json_t* rows2 = csilk_db_query_param_json(
+        pool,
+        "SELECT id FROM im_push_outbox WHERE mf_user_id=? AND kind='test' ORDER BY id DESC LIMIT 1",
+        (const char*[]){uid_s, NULL});
+    assert(rows2 && csilk_json_array_size(rows2) == 1);
+    int64_t pid2 = db_get_int(csilk_json_array_get(rows2, 0), "id");
+    csilk_json_free(rows2);
+    assert(pid2 > pid1);
+    csilk_json_t* exp2 = im_push_usecase_get(pool, pid2);
+    assert(exp2 && strcmp(csilk_json_get_string(exp2, "status"), "expired") == 0);
+    assert(strcmp(csilk_json_get_string(exp2, "last_error"), "测试请求已取消") == 0);
+    csilk_json_free(exp2);
+
+    unsetenv("MINEFOLIO_ILINK_TEST_TIMEOUT_MS");
+    printf("  [OK] test_scheduler_ilink_channel_cancellable\n");
+}
+
 int
 main(void)
 {
@@ -912,6 +1010,7 @@ main(void)
     test_rollup_variants(pool);
     test_push_usecases(pool);
     test_scheduler_ilink_channel(pool);
+    test_scheduler_ilink_channel_cancellable(pool);
     csilk_db_pool_free(pool);
     cleanup_db_files();
     printf("=== im_push_outbox Unit Tests Passed! ===\n");

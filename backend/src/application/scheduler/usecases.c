@@ -477,12 +477,23 @@ check_ilink_test_push_status(
 }
 
 int
-scheduler_usecase_test_channel(void* pool, int64_t user_id, char* err_buf, size_t err_len)
+scheduler_usecase_test_channel_cancellable(void*   pool,
+                                           int64_t user_id,
+                                           int (*is_alive_fn)(void*),
+                                           void*  alive_ctx,
+                                           char*  err_buf,
+                                           size_t err_len)
 {
     if (err_buf && err_len > 0) {
         err_buf[0] = '\0';
     }
     if (!pool) {
+        return -1;
+    }
+    if (is_alive_fn && !is_alive_fn(alive_ctx)) {
+        if (err_buf && err_len > 0) {
+            snprintf(err_buf, err_len, "%s", "测试请求已取消");
+        }
         return -1;
     }
 
@@ -539,12 +550,26 @@ scheduler_usecase_test_channel(void* pool, int64_t user_id, char* err_buf, size_
         int waited_ms = 0;
         int done_rc = -1;
         while (waited_ms < timeout_ms) {
+            if (is_alive_fn && !is_alive_fn(alive_ctx)) {
+                (void)im_push_usecase_cancel_expired_test(pool, push_id, "测试请求已取消");
+                if (err_buf && err_len > 0) {
+                    snprintf(err_buf, err_len, "%s", "测试请求已取消");
+                }
+                return -1;
+            }
             if (check_ilink_test_push_status(pool, push_id, err_buf, err_len, &done_rc)) {
                 return done_rc;
             }
             struct timespec req = {0, 100000000L}; /* 100ms */
             nanosleep(&req, NULL);
             waited_ms += 100;
+        }
+        if (is_alive_fn && !is_alive_fn(alive_ctx)) {
+            (void)im_push_usecase_cancel_expired_test(pool, push_id, "测试请求已取消");
+            if (err_buf && err_len > 0) {
+                snprintf(err_buf, err_len, "%s", "测试请求已取消");
+            }
+            return -1;
         }
         if (check_ilink_test_push_status(pool, push_id, err_buf, err_len, &done_rc)) {
             return done_rc;
@@ -579,7 +604,20 @@ scheduler_usecase_test_channel(void* pool, int64_t user_id, char* err_buf, size_
     }
     csilk_json_free(ch);
 
+    if (is_alive_fn && !is_alive_fn(alive_ctx)) {
+        if (err_buf && err_len > 0) {
+            snprintf(err_buf, err_len, "%s", "测试请求已取消");
+        }
+        return -1;
+    }
+
     return wechat_push_service_send(&cfg, "Minefolio 推送连通性测试", test_msg, err_buf, err_len);
+}
+
+int
+scheduler_usecase_test_channel(void* pool, int64_t user_id, char* err_buf, size_t err_len)
+{
+    return scheduler_usecase_test_channel_cancellable(pool, user_id, NULL, NULL, err_buf, err_len);
 }
 
 typedef struct {

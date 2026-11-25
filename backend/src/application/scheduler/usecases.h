@@ -53,6 +53,13 @@ int scheduler_usecase_seed_builtin_jobs(void* pool);
 
 int scheduler_usecase_test_channel(void* pool, int64_t user_id, char* err_buf, size_t err_len);
 
+int scheduler_usecase_test_channel_cancellable(void*   pool,
+                                               int64_t user_id,
+                                               int (*is_alive_fn)(void*),
+                                               void*  alive_ctx,
+                                               char*  err_buf,
+                                               size_t err_len);
+
 #ifdef __cplusplus
 }
 #endif

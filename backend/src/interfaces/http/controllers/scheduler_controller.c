@@ -1,8 +1,11 @@
 #include "interfaces/http/controllers/scheduler_controller.h"
 
+#include <pthread.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "application/scheduler/dtos.h"
 #include "application/scheduler/usecases.h"
@@ -10,6 +13,7 @@
 #include "common/ctx.h"
 #include "common/db.h"
 #include "common/response.h"
+#include "core/scheduler/scheduler_engine.h"
 
 static bool
 is_current_user_admin(int64_t user_id)
@@ -542,6 +546,207 @@ api_scheduler_channel_save(csilk_ctx_t* c)
     respond_ok(c, ret);
 }
 
+#define CHANNEL_TEST_MAX_SLOTS 16
+#define CHANNEL_TEST_STALE_SEC 30
+
+typedef enum {
+    SLOT_FREE = 0,
+    SLOT_RUNNING = 1,
+    SLOT_DISPATCHED = 2,
+} channel_test_slot_state_t;
+
+typedef struct {
+    channel_test_slot_state_t state;
+    uint64_t                  generation;
+    csilk_async_op_t*         op;
+    csilk_ctx_t*              ctx;
+    uint64_t                  request_seq;
+    int64_t                   user_id;
+    int                       rc;
+    char                      err_buf[256];
+    time_t                    dispatched_at;
+} channel_test_slot_t;
+
+static channel_test_slot_t s_test_slots[CHANNEL_TEST_MAX_SLOTS];
+static pthread_mutex_t     s_test_slots_lock = PTHREAD_MUTEX_INITIALIZER;
+static uint64_t            s_test_slot_gen = 0;
+
+static time_t
+channel_test_mono_sec(void)
+{
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0) {
+        return ts.tv_sec;
+    }
+    return time(NULL);
+}
+
+static int
+channel_test_is_alive(void* arg)
+{
+    return csilk_async_op_is_alive((const csilk_async_op_t*)arg);
+}
+
+static void
+send_channel_test_async_json(csilk_ctx_t* c, int rc, const char* err_msg)
+{
+    if (!c || csilk_ctx_is_closed(c)) {
+        return;
+    }
+
+    csilk_json_t* root = csilk_json_object();
+    if (root) {
+        if (rc == 0) {
+            csilk_json_t* data = csilk_json_object();
+            if (data) {
+                csilk_json_add_string(data, "message", "测试消息已成功发送至您的微信！");
+                csilk_json_add_int(root, "code", 0);
+                csilk_json_add_string(root, "message", "ok");
+                csilk_json_add_object(root, "data", data);
+            } else {
+                csilk_json_free(root);
+                root = NULL;
+            }
+        } else {
+            csilk_json_add_int(root, "code", 400);
+            csilk_json_add_string(
+                root, "message", (err_msg && err_msg[0]) ? err_msg : "测试消息发送失败");
+        }
+    }
+
+    size_t body_len = 0;
+    char*  body = root ? csilk_json_serialize(root, &body_len) : NULL;
+    if (root) {
+        csilk_json_free(root);
+    }
+
+    static const char kFallbackErr[] = "{\"code\":500,\"message\":\"Internal Server Error\"}";
+    const char*       out_buf = body ? body : kFallbackErr;
+    size_t            out_len = body ? body_len : (sizeof(kFallbackErr) - 1);
+
+    csilk_status(c, CSILK_STATUS_OK);
+    csilk_set_header(c, "Content-Type", "application/json");
+    int wrc = csilk_response_write(c, (const uint8_t*)out_buf, out_len);
+    free(body);
+    if (wrc >= 0) {
+        csilk_response_end(c);
+    }
+}
+
+static void
+on_channel_test_complete(csilk_ctx_t* c, void* result)
+{
+    channel_test_slot_t* slot = (channel_test_slot_t*)result;
+    int                  rc = -1;
+    char                 err_buf[256];
+    err_buf[0] = '\0';
+    bool valid = false;
+
+    if (slot && c) {
+        uint64_t c_seq = csilk_ctx_get_request_seq(c);
+        pthread_mutex_lock(&s_test_slots_lock);
+        if (slot->state == SLOT_DISPATCHED && slot->ctx == c && slot->request_seq == c_seq) {
+            rc = slot->rc;
+            snprintf(err_buf, sizeof(err_buf), "%s", slot->err_buf);
+            slot->state = SLOT_FREE;
+            slot->op = NULL;
+            slot->ctx = NULL;
+            slot->request_seq = 0;
+            slot->user_id = 0;
+            slot->rc = 0;
+            slot->err_buf[0] = '\0';
+            slot->dispatched_at = 0;
+            valid = true;
+        }
+        pthread_mutex_unlock(&s_test_slots_lock);
+    }
+
+    if (!valid) {
+        snprintf(err_buf, sizeof(err_buf), "%s", "测试请求状态已过期");
+    }
+    send_channel_test_async_json(c, rc, err_buf);
+}
+
+static void
+channel_test_worker(void* arg)
+{
+    channel_test_slot_t* slot = (channel_test_slot_t*)arg;
+    if (!slot) {
+        return;
+    }
+
+    pthread_mutex_lock(&s_test_slots_lock);
+    csilk_async_op_t* op = slot->op;
+    int64_t           user_id = slot->user_id;
+    uint64_t          gen = slot->generation;
+    pthread_mutex_unlock(&s_test_slots_lock);
+
+    if (!op || !csilk_async_op_is_alive(op)) {
+        if (op) {
+            csilk_async_op_cancel(op);
+        }
+        pthread_mutex_lock(&s_test_slots_lock);
+        if (slot->state == SLOT_RUNNING && slot->generation == gen) {
+            slot->state = SLOT_FREE;
+            slot->op = NULL;
+            slot->ctx = NULL;
+            slot->request_seq = 0;
+            slot->user_id = 0;
+            slot->err_buf[0] = '\0';
+            slot->dispatched_at = 0;
+        }
+        pthread_mutex_unlock(&s_test_slots_lock);
+        return;
+    }
+
+    char err_buf[256];
+    err_buf[0] = '\0';
+    int rc = scheduler_usecase_test_channel_cancellable(
+        db_get_pool(), user_id, channel_test_is_alive, op, err_buf, sizeof(err_buf));
+
+    pthread_mutex_lock(&s_test_slots_lock);
+    if (slot->state != SLOT_RUNNING || slot->generation != gen) {
+        pthread_mutex_unlock(&s_test_slots_lock);
+        csilk_async_op_cancel(op);
+        return;
+    }
+
+    if (!csilk_async_op_is_alive(op)) {
+        slot->state = SLOT_FREE;
+        slot->op = NULL;
+        slot->ctx = NULL;
+        slot->request_seq = 0;
+        slot->user_id = 0;
+        slot->rc = 0;
+        slot->err_buf[0] = '\0';
+        slot->dispatched_at = 0;
+        pthread_mutex_unlock(&s_test_slots_lock);
+        csilk_async_op_cancel(op);
+        return;
+    }
+
+    slot->rc = rc;
+    snprintf(slot->err_buf, sizeof(slot->err_buf), "%s", err_buf);
+    slot->state = SLOT_DISPATCHED;
+    slot->dispatched_at = channel_test_mono_sec();
+    pthread_mutex_unlock(&s_test_slots_lock);
+
+    if (csilk_async_op_complete(op, slot) < 0) {
+        pthread_mutex_lock(&s_test_slots_lock);
+        if (slot->state == SLOT_DISPATCHED && slot->generation == gen) {
+            slot->state = SLOT_FREE;
+            slot->op = NULL;
+            slot->ctx = NULL;
+            slot->request_seq = 0;
+            slot->user_id = 0;
+            slot->rc = 0;
+            slot->err_buf[0] = '\0';
+            slot->dispatched_at = 0;
+        }
+        pthread_mutex_unlock(&s_test_slots_lock);
+    }
+}
+
 void
 api_scheduler_channel_test(csilk_ctx_t* c)
 {
@@ -550,17 +755,93 @@ api_scheduler_channel_test(csilk_ctx_t* c)
         return;
     }
 
-    char err_buf[256];
-    err_buf[0] = '\0';
-    int rc = scheduler_usecase_test_channel(db_get_pool(), user_id, err_buf, sizeof(err_buf));
-    if (rc != 0) {
-        respond_error(c, 400, err_buf[0] ? err_buf : "测试消息发送失败");
+    if (!scheduler_engine_is_running()) {
+        char err_buf[256];
+        err_buf[0] = '\0';
+        int rc = scheduler_usecase_test_channel(db_get_pool(), user_id, err_buf, sizeof(err_buf));
+        if (rc != 0) {
+            respond_error(c, 400, err_buf[0] ? err_buf : "测试消息发送失败");
+            return;
+        }
+
+        csilk_json_t* ret = csilk_json_object();
+        csilk_json_add_string(ret, "message", "测试消息已成功发送至您的微信！");
+        respond_ok(c, ret);
         return;
     }
 
-    csilk_json_t* ret = csilk_json_object();
-    csilk_json_add_string(ret, "message", "测试消息已成功发送至您的微信！");
-    respond_ok(c, ret);
+    time_t               now = channel_test_mono_sec();
+    channel_test_slot_t* slot = NULL;
+
+    pthread_mutex_lock(&s_test_slots_lock);
+    for (int i = 0; i < CHANNEL_TEST_MAX_SLOTS; i++) {
+        if (s_test_slots[i].state == SLOT_DISPATCHED &&
+            (now - s_test_slots[i].dispatched_at) >= CHANNEL_TEST_STALE_SEC) {
+            s_test_slots[i].state = SLOT_FREE;
+            s_test_slots[i].op = NULL;
+            s_test_slots[i].ctx = NULL;
+            s_test_slots[i].request_seq = 0;
+            s_test_slots[i].user_id = 0;
+            s_test_slots[i].rc = 0;
+            s_test_slots[i].err_buf[0] = '\0';
+            s_test_slots[i].dispatched_at = 0;
+        }
+        if (!slot && s_test_slots[i].state == SLOT_FREE) {
+            slot = &s_test_slots[i];
+        }
+    }
+
+    if (!slot) {
+        pthread_mutex_unlock(&s_test_slots_lock);
+        respond_error(c, 429, "当前通道测试请求过多，请稍后再试");
+        return;
+    }
+
+    uint64_t gen = ++s_test_slot_gen;
+    slot->state = SLOT_RUNNING;
+    slot->generation = gen;
+    slot->op = NULL;
+    slot->ctx = c;
+    slot->request_seq = csilk_ctx_get_request_seq(c);
+    slot->user_id = user_id;
+    slot->rc = -1;
+    slot->err_buf[0] = '\0';
+    slot->dispatched_at = 0;
+    pthread_mutex_unlock(&s_test_slots_lock);
+
+    csilk_async_op_t* op = csilk_async_op_begin(c, 0, on_channel_test_complete, NULL, NULL);
+    if (!op) {
+        pthread_mutex_lock(&s_test_slots_lock);
+        if (slot->state == SLOT_RUNNING && slot->generation == gen) {
+            slot->state = SLOT_FREE;
+            slot->ctx = NULL;
+            slot->request_seq = 0;
+            slot->user_id = 0;
+        }
+        pthread_mutex_unlock(&s_test_slots_lock);
+        respond_error(c, 503, "无法初始化异步测试请求");
+        return;
+    }
+
+    pthread_mutex_lock(&s_test_slots_lock);
+    slot->op = op;
+    pthread_mutex_unlock(&s_test_slots_lock);
+
+    if (scheduler_engine_submit_task(channel_test_worker, slot) != 0) {
+        csilk_async_op_cancel(op);
+        csilk_ctx_set_async(c, 0);
+        pthread_mutex_lock(&s_test_slots_lock);
+        if (slot->state == SLOT_RUNNING && slot->generation == gen) {
+            slot->state = SLOT_FREE;
+            slot->op = NULL;
+            slot->ctx = NULL;
+            slot->request_seq = 0;
+            slot->user_id = 0;
+        }
+        pthread_mutex_unlock(&s_test_slots_lock);
+        respond_error(c, 503, "调度引擎暂不可用，请稍后重试");
+        return;
+    }
 }
 
 void
