@@ -63,8 +63,9 @@ step_bg_collect(csilk_db_pool_t*    pool,
         "  WHERE daily_expenses.user_id=? AND daily_expenses.expense_type='expense' AND "
         "CAST(daily_expenses.expense_date AS TEXT) NOT LIKE ? "
         "AND " MF_RBAC_ASSET_UNMASKED_SQL("_ra") " "
-                                                 "  GROUP BY daily_expenses.category_id, ym"
-                                                 ") GROUP BY category_id",
+                                                 "  GROUP BY daily_expenses.category_id, "
+                                                 "categories.name, ym"
+                                                 ") sub GROUP BY category_id, category_name",
         p);
     if (res && csilk_json_is_array(res)) {
         size_t n = csilk_json_array_size(res);

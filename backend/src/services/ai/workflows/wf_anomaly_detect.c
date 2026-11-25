@@ -77,7 +77,7 @@ step_ad_collect(csilk_db_pool_t*    pool,
         "FROM daily_expenses de LEFT JOIN categories c ON c.id=de.category_id "
         "LEFT JOIN assets _ra ON de.asset_id=_ra.id "
         "WHERE de.user_id=? AND de.expense_type='expense' AND de.expense_date >= ? "
-        "AND " MF_RBAC_ASSET_UNMASKED_SQL("_ra") " GROUP BY de.category_id",
+        "AND " MF_RBAC_ASSET_UNMASKED_SQL("_ra") " GROUP BY de.category_id, c.name",
         p);
     if (res_stats && csilk_json_is_array(res_stats)) {
         size_t n = csilk_json_array_size(res_stats);

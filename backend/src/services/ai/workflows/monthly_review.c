@@ -48,7 +48,7 @@ mr_get_user_avg_monthly_burn(csilk_db_pool_t* pool, int64_t user_id)
         "  AND " MF_RBAC_ASSET_UNMASKED_SQL(
             "_ra") " "
                    "  GROUP BY substr(CAST(de.expense_date AS TEXT), 1, 7)"
-                   ")",
+                   ") sub",
         params);
     double avg_burn = 0.0;
     if (res && csilk_json_array_size(res) > 0) {

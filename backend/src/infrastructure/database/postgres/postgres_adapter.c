@@ -463,6 +463,34 @@ postgres_adapter_stmt_execute(void* stmt, int64_t* out_affected_rows)
     if (!stmt) {
         return -1;
     }
+    mf_postgres_stmt_t*   s = (mf_postgres_stmt_t*)stmt;
+    mf_postgres_handle_t* h = (mf_postgres_handle_t*)s->handle;
+    if (!h) {
+        return -1;
+    }
+#if defined(HAVE_LIBPQ)
+    if (!h->is_mock && h->native_conn) {
+        PGresult*      res = PQexecParams((PGconn*)h->native_conn,
+                                          s->translated_sql,
+                                          s->param_count,
+                                          NULL,
+                                          (const char* const*)s->bound_params,
+                                          NULL,
+                                          NULL,
+                                          0);
+        ExecStatusType st = PQresultStatus(res);
+        if (st != PGRES_COMMAND_OK && st != PGRES_TUPLES_OK) {
+            PQclear(res);
+            return -1;
+        }
+        if (out_affected_rows) {
+            const char* tuples = PQcmdTuples(res);
+            *out_affected_rows = (tuples && tuples[0]) ? strtoll(tuples, NULL, 10) : 0;
+        }
+        PQclear(res);
+        return 0;
+    }
+#endif
     if (out_affected_rows) {
         *out_affected_rows = 1;
     }
@@ -475,6 +503,84 @@ postgres_adapter_stmt_query(void* stmt, mf_result_t** out_result)
     if (!stmt || !out_result) {
         return -1;
     }
+    mf_postgres_stmt_t*   s = (mf_postgres_stmt_t*)stmt;
+    mf_postgres_handle_t* h = (mf_postgres_handle_t*)s->handle;
+    if (!h) {
+        return -1;
+    }
+
+#if defined(HAVE_LIBPQ)
+    if (!h->is_mock && h->native_conn) {
+        PGresult*      pg_res = PQexecParams((PGconn*)h->native_conn,
+                                             s->translated_sql,
+                                             s->param_count,
+                                             NULL,
+                                             (const char* const*)s->bound_params,
+                                             NULL,
+                                             NULL,
+                                             0);
+        ExecStatusType st = PQresultStatus(pg_res);
+        if (st != PGRES_TUPLES_OK && st != PGRES_COMMAND_OK) {
+            PQclear(pg_res);
+            return -1;
+        }
+
+        int          cols = PQnfields(pg_res);
+        int          nrows = PQntuples(pg_res);
+        mf_result_t* res = calloc(1, sizeof(*res));
+        if (!res) {
+            PQclear(pg_res);
+            return -1;
+        }
+        res->col_count = cols;
+        res->row_count = 0;
+        res->current_row = -1;
+
+        if (cols > 0) {
+            res->col_names = calloc((size_t)cols, sizeof(char*));
+            if (!res->col_names) {
+                free(res);
+                PQclear(pg_res);
+                return -1;
+            }
+            for (int c = 0; c < cols; c++) {
+                const char* nm = PQfname(pg_res, c);
+                res->col_names[c] = nm ? strdup(nm) : strdup("");
+            }
+        }
+        if (nrows > 0 && cols > 0) {
+            res->rows = calloc((size_t)nrows, sizeof(char**));
+            if (!res->rows) {
+                for (int c = 0; c < cols; c++) {
+                    free(res->col_names[c]);
+                }
+                free(res->col_names);
+                free(res);
+                PQclear(pg_res);
+                return -1;
+            }
+            for (int r = 0; r < nrows; r++) {
+                char** vals = calloc((size_t)cols, sizeof(char*));
+                if (!vals) {
+                    break;
+                }
+                for (int c = 0; c < cols; c++) {
+                    if (PQgetisnull(pg_res, r, c)) {
+                        vals[c] = NULL;
+                    } else {
+                        const char* v = PQgetvalue(pg_res, r, c);
+                        vals[c] = v ? strdup(v) : strdup("");
+                    }
+                }
+                res->rows[res->row_count++] = vals;
+            }
+        }
+        PQclear(pg_res);
+        *out_result = res;
+        return 0;
+    }
+#endif
+
     mf_result_t* res = calloc(1, sizeof(*res));
     if (!res) {
         return -1;

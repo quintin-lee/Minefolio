@@ -631,9 +631,7 @@ on_market_event_received(int event_type, const char* key, double val, void* user
     }
 
     /* Query active market event jobs */
-    const char*   sql = "SELECT id, user_id, trigger_config FROM scheduled_jobs WHERE "
-                        "trigger_type = 'market_event' AND enabled = 1";
-    csilk_json_t* rows = csilk_db_query_json((csilk_db_pool_t*)s_db_pool, sql);
+    csilk_json_t* rows = scheduler_repo_list_enabled_by_trigger(s_db_pool, "market_event");
     if (!rows) {
         return;
     }
@@ -706,9 +704,7 @@ scheduler_engine_thread(void* arg)
             char now_str[64];
             get_now_str(now_str, sizeof(now_str));
 
-            const char*   sql = "SELECT id, user_id, trigger_config, next_run_at FROM "
-                                "scheduled_jobs WHERE trigger_type = 'cron' AND enabled = 1";
-            csilk_json_t* rows = csilk_db_query_json((csilk_db_pool_t*)s_db_pool, sql);
+            csilk_json_t* rows = scheduler_repo_list_enabled_by_trigger(s_db_pool, "cron");
             if (rows) {
                 count = csilk_json_array_size(rows);
                 for (size_t i = 0; i < count; i++) {

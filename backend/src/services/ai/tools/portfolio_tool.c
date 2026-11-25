@@ -68,7 +68,7 @@ exec_analyze_financial_health(const ai_tool_t*         tool,
         "  AND " MF_RBAC_ASSET_UNMASKED_SQL(
             "_ra") " "
                    "  GROUP BY substr(CAST(de.expense_date AS TEXT), 1, 7)"
-                   ")",
+                   ") sub",
         p);
     double avg_monthly_burn = 0.0;
     if (burn_res && csilk_json_array_size(burn_res) > 0) {

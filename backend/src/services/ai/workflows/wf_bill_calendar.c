@@ -1,6 +1,7 @@
 #include "services/ai/workflows/cashflow_forecast.h"
 #include "services/ai/workflows/cashflow_forecast_common.h"
 #include "infrastructure/repositories/ai_repo_impl.h"
+#include "infrastructure/repositories/account_permission_repo_impl.h"
 #include "common/db.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -146,17 +147,23 @@ step_bc_collect(csilk_db_pool_t*    pool,
              tm_buf.tm_year + 1900,
              tm_buf.tm_mon + 1,
              tm_buf.tm_mday);
-    const char* p_since[] = {uid_str, since_d, NULL};
+    const char* p_since[] = {uid_str, since_d, uid_str, uid_str, NULL};
+    char        bc_sql[1536];
+    snprintf(bc_sql,
+             sizeof(bc_sql),
+             "SELECT de.category_id, COALESCE(c.name,'固定支出') as category_name, "
+             "de.amount, COUNT(*) as cnt, MAX(de.expense_date) as last_date, "
+             "%s as notes "
+             "FROM daily_expenses de LEFT JOIN categories c ON c.id=de.category_id "
+             "LEFT JOIN assets _ra ON de.asset_id=_ra.id "
+             "WHERE de.user_id=? AND de.expense_type='expense' AND de.expense_date >= ? "
+             "AND " MF_RBAC_ASSET_UNMASKED_SQL("_ra") " "
+                                                      "GROUP BY de.category_id, c.name, de.amount "
+                                                      "HAVING COUNT(*) >= 2 ORDER BY cnt DESC "
+                                                      "LIMIT 10",
+             db_is_postgres() ? "STRING_AGG(de.note, ' | ')" : "GROUP_CONCAT(de.note, ' | ')");
 
-    csilk_json_t* res_rec = csilk_db_query_param_json(
-        pool,
-        "SELECT de.category_id, COALESCE(c.name,'固定支出') as category_name, "
-        "de.amount, COUNT(*) as cnt, MAX(de.expense_date) as last_date, "
-        "GROUP_CONCAT(de.note, ' | ') as notes "
-        "FROM daily_expenses de LEFT JOIN categories c ON c.id=de.category_id "
-        "WHERE de.user_id=? AND de.expense_type='expense' AND de.expense_date >= ? "
-        "GROUP BY de.category_id, de.amount HAVING cnt >= 2 ORDER BY cnt DESC LIMIT 10",
-        p_since);
+    csilk_json_t* res_rec = csilk_db_query_param_json(pool, bc_sql, p_since);
     if (res_rec && csilk_json_is_array(res_rec)) {
         size_t n = csilk_json_array_size(res_rec);
         for (size_t i = 0; i < n; i++) {

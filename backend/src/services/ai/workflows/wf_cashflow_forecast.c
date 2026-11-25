@@ -1,6 +1,7 @@
 #include "services/ai/workflows/cashflow_forecast.h"
 #include "services/ai/workflows/cashflow_forecast_common.h"
 #include "infrastructure/repositories/ai_repo_impl.h"
+#include "infrastructure/repositories/account_permission_repo_impl.h"
 #include "common/db.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,14 +23,17 @@ step_cf_collect(csilk_db_pool_t*    pool,
     double avg_burn = cf_get_user_avg_monthly_burn(pool, user_id);
     char   uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-    const char*   p[] = {uid_str, NULL};
-    csilk_json_t* inc_res =
-        csilk_db_query_param_json(pool,
-                                  "SELECT AVG(monthly_sum) as avg_income FROM ("
-                                  "  SELECT SUM(amount) as monthly_sum FROM daily_expenses "
-                                  "  WHERE user_id = ? AND expense_type = 'income' "
-                                  "  GROUP BY substr(CAST(expense_date AS TEXT),1,7))",
-                                  p);
+    const char*   p[] = {uid_str, uid_str, uid_str, NULL};
+    csilk_json_t* inc_res = csilk_db_query_param_json(
+        pool,
+        "SELECT AVG(monthly_sum) as avg_income FROM ("
+        "  SELECT SUM(de.amount) as monthly_sum FROM daily_expenses de "
+        "  LEFT JOIN assets _ra ON de.asset_id = _ra.id "
+        "  WHERE de.user_id = ? AND de.expense_type = 'income' "
+        "  AND " MF_RBAC_ASSET_UNMASKED_SQL(
+            "_ra") " "
+                   "  GROUP BY substr(CAST(de.expense_date AS TEXT),1,7)) sub",
+        p);
     double avg_income = 0;
     if (inc_res && csilk_json_array_size(inc_res) > 0) {
         avg_income = db_get_num(csilk_json_array_get(inc_res, 0), "avg_income");

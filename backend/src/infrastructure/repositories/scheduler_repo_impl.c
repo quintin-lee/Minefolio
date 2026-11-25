@@ -739,3 +739,15 @@ scheduler_repo_get_next_run(void*       pool,
     }
     return 0;
 }
+
+csilk_json_t*
+scheduler_repo_list_enabled_by_trigger(void* pool, const char* trigger_type)
+{
+    if (!pool || !trigger_type || !trigger_type[0]) {
+        return NULL;
+    }
+    const char* sql = "SELECT id, user_id, trigger_config, next_run_at FROM scheduled_jobs "
+                      "WHERE trigger_type = ? AND enabled = 1";
+    return csilk_db_query_param_json(
+        (csilk_db_pool_t*)pool, sql, (const char*[]){trigger_type, NULL});
+}

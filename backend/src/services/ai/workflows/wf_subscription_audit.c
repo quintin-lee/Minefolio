@@ -1,6 +1,7 @@
 #include "services/ai/workflows/cashflow_forecast.h"
 #include "services/ai/workflows/cashflow_forecast_common.h"
 #include "infrastructure/repositories/ai_repo_impl.h"
+#include "infrastructure/repositories/account_permission_repo_impl.h"
 #include "common/db.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -43,14 +44,17 @@ step_sa_collect(csilk_db_pool_t*    pool,
     int64_t       cnt = 0;
     char          uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-    const char*   p[] = {uid_str, since_date, NULL};
+    const char*   p[] = {uid_str, since_date, uid_str, uid_str, NULL};
     csilk_json_t* res = csilk_db_query_param_json(
         pool,
         "SELECT de.id, de.amount, de.expense_date, de.note, "
         "COALESCE(c.name,'未分类') as category_name, de.category_id "
         "FROM daily_expenses de LEFT JOIN categories c ON c.id=de.category_id "
+        "LEFT JOIN assets _ra ON de.asset_id=_ra.id "
         "WHERE de.user_id=? AND de.expense_type='expense' AND de.expense_date >= ? "
-        "ORDER BY de.expense_date DESC, de.id DESC LIMIT 800",
+        "AND " MF_RBAC_ASSET_UNMASKED_SQL(
+            "_ra") " "
+                   "ORDER BY de.expense_date DESC, de.id DESC LIMIT 800",
         p);
     if (res && csilk_json_is_array(res)) {
         size_t n = csilk_json_array_size(res);
@@ -65,15 +69,21 @@ step_sa_collect(csilk_db_pool_t*    pool,
     }
 
     csilk_json_t* grouped = csilk_json_array();
-    csilk_json_t* res_grp = csilk_db_query_param_json(
-        pool,
-        "SELECT category_id, COALESCE(c.name,'未分类') as category_name, "
-        "amount, COUNT(*) as cnt, MIN(expense_date) as first_date, MAX(expense_date) as "
-        "last_date, GROUP_CONCAT(note, ' | ') as notes "
-        "FROM daily_expenses de LEFT JOIN categories c ON c.id=de.category_id "
-        "WHERE de.user_id=? AND de.expense_type='expense' AND de.expense_date >= ? "
-        "GROUP BY category_id, amount HAVING cnt >= 2 ORDER BY cnt DESC LIMIT 50",
-        p);
+    char          grp_sql[1536];
+    snprintf(grp_sql,
+             sizeof(grp_sql),
+             "SELECT de.category_id, COALESCE(c.name,'未分类') as category_name, "
+             "de.amount, COUNT(*) as cnt, MIN(de.expense_date) as first_date, "
+             "MAX(de.expense_date) as last_date, %s as notes "
+             "FROM daily_expenses de LEFT JOIN categories c ON c.id=de.category_id "
+             "LEFT JOIN assets _ra ON de.asset_id=_ra.id "
+             "WHERE de.user_id=? AND de.expense_type='expense' AND de.expense_date >= ? "
+             "AND " MF_RBAC_ASSET_UNMASKED_SQL("_ra") " "
+                                                      "GROUP BY de.category_id, c.name, de.amount "
+                                                      "HAVING COUNT(*) >= 2 ORDER BY cnt DESC "
+                                                      "LIMIT 50",
+             db_is_postgres() ? "STRING_AGG(de.note, ' | ')" : "GROUP_CONCAT(de.note, ' | ')");
+    csilk_json_t* res_grp = csilk_db_query_param_json(pool, grp_sql, p);
     if (res_grp && csilk_json_is_array(res_grp)) {
         size_t n = csilk_json_array_size(res_grp);
         for (size_t i = 0; i < n; i++) {
