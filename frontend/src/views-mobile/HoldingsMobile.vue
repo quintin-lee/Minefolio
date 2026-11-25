@@ -120,24 +120,25 @@ onMounted(async () => {
 
 <style scoped>
 .summary-row {
-  display: flex;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
   margin-bottom: 14px;
 }
 .kpi-card {
-  flex: 1;
+  min-width: 0;
   background: var(--mf-surface);
   border: 1px solid var(--mf-border);
   border-radius: 12px;
-  padding: 12px 10px;
+  padding: 10px 8px;
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 .kpi-card.profit { border-color: var(--mf-gain-border); background: var(--mf-gain-light); }
 .kpi-card.loss { border-color: var(--mf-loss-border); background: var(--mf-loss-light); }
-.kpi-card .label { color: var(--mf-text-muted); font-size: 11px; }
-.kpi-card .value { font-family: 'JetBrains Mono', monospace; font-size: 14px; }
+.kpi-card .label { color: var(--mf-text-muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kpi-card .value { font-family: 'JetBrains Mono', monospace; font-size: clamp(12px, 3.4vw, 14px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .kpi-card.profit .value { color: var(--mf-gain); }
 .kpi-card.loss .value { color: var(--mf-loss); }
 
@@ -152,15 +153,25 @@ onMounted(async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
   margin-bottom: 8px;
 }
 .asset-title-group {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+  flex: 1;
 }
-.asset-name { font-weight: 600; font-size: 15px; }
+.asset-name {
+  font-weight: 600;
+  font-size: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .currency-tag {
+  flex-shrink: 0;
   font-size: 10px;
   padding: 1px 6px;
   border-radius: 4px;
@@ -169,6 +180,7 @@ onMounted(async () => {
   border: 1px solid var(--mf-info-border);
 }
 .type-pill {
+  flex-shrink: 0;
   font-size: 11px;
   padding: 2px 8px;
   border-radius: 9999px;
@@ -186,6 +198,8 @@ onMounted(async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
   font-size: 13px;
 }
 .card-row .meta { color: var(--mf-text-muted); }
@@ -194,6 +208,7 @@ onMounted(async () => {
   flex-direction: column;
   align-items: flex-start;
   gap: 2px;
+  min-width: 0;
 }
 .value-group .value { font-family: 'JetBrains Mono', monospace; font-weight: 500; }
 .value-group .cny-hint {
@@ -201,6 +216,7 @@ onMounted(async () => {
   color: var(--mf-text-muted);
   font-family: 'JetBrains Mono', monospace;
 }
+.pnl { white-space: nowrap; font-size: 12px; font-family: 'JetBrains Mono', monospace; }
 .pnl.gain { color: var(--mf-gain); }
 .pnl.loss { color: var(--mf-loss); }
 .empty-state {

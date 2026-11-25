@@ -9,7 +9,15 @@
       show-icon
       style="margin-bottom: 12px"
     />
-    <el-date-picker v-model="month" type="month" value-format="YYYY-MM" :clearable="false" @change="load" />
+    <el-date-picker
+      v-model="month"
+      type="month"
+      value-format="YYYY-MM"
+      :clearable="false"
+      :editable="false"
+      style="width: 100%"
+      @change="load"
+    />
     <div class="chart-block"><h4>分类占比</h4><div class="pie-wrap"><ExpenseCategoryPie :data="monthly?.by_category ?? []" /></div></div>
     <div class="chart-block"><h4>月度收支</h4><MonthlyChart :data="monthly" /></div>
   </div>
@@ -55,5 +63,5 @@ onMounted(() => {
 <style scoped>
 .chart-block { background: var(--mf-surface); border: 1px solid var(--mf-border); border-radius: 12px; padding: 16px; margin: 12px 0; }
 .chart-block h4 { margin: 0 0 12px; color: var(--mf-text-muted); }
-.pie-wrap { height: 260px; } /* 🟡 ExpenseCategoryPie 图表是 height:100%，父容器必须有确定高度 */
+.pie-wrap { height: 300px; } /* 🟡 ExpenseCategoryPie 图表是 height:100%，父容器必须有确定高度 */
 </style>

@@ -83,13 +83,14 @@ onMounted(() => loadData(true))
 </script>
 
 <style scoped>
-.tx-mobile { padding-bottom: 24px; }
+.tx-mobile { padding-bottom: 8px; }
 .page-header { margin-bottom: 12px; }
 .empty-state { text-align: center; padding: 36px 0; color: var(--mf-text-muted); font-size: 13px; }
 .tx-card { background: var(--mf-surface); border: 1px solid var(--mf-border); border-radius: 12px; padding: 14px; margin-bottom: 10px; }
-.tx-card .top { display: flex; justify-content: space-between; font-size: 16px; }
-.tx-card .bottom { display: flex; justify-content: space-between; color: var(--mf-text-muted); font-size: 12px; margin-top: 6px; }
-.income { color: var(--mf-gain); } .expense { color: var(--mf-loss); }
+.tx-card .top { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 16px; }
+.tx-card .top span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tx-card .bottom { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--mf-text-muted); font-size: 12px; margin-top: 6px; }
+.income { color: var(--mf-gain); flex-shrink: 0; white-space: nowrap; } .expense { color: var(--mf-loss); flex-shrink: 0; white-space: nowrap; }
 .load-more-wrap { display: flex; justify-content: center; margin: 16px 0 24px; }
 .load-more-btn { width: 100%; border-radius: var(--mf-radius-md); color: var(--mf-text-muted); }
 </style>

@@ -15,7 +15,7 @@
       </div>
 
       <div class="amount-input">
-        <span class="currency">¥</span>
+        <span class="currency">{{ selectedCurrencySymbol }}</span>
         <input
           ref="amountRef"
           v-model="form.amount"
@@ -44,7 +44,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="日期">
-          <el-date-picker v-model="form.expense_date" type="date" value-format="YYYY-MM-DD" style="width:100%" />
+          <el-date-picker v-model="form.expense_date" type="date" value-format="YYYY-MM-DD" :editable="false" style="width:100%" />
         </el-form-item>
         <el-form-item label="备注">
           <el-input v-model="form.note" placeholder="可选" />
@@ -104,6 +104,20 @@ const rawCategories = computed<Category[]>(() => {
 
 const categoryTree = computed(() => {
   return prepareCategoryTree(rawCategories.value, form.expense_type)
+})
+
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  CNY: '¥',
+  JPY: '¥',
+  USD: '$',
+  EUR: '€',
+  GBP: '£',
+  HKD: 'HK$',
+}
+
+const selectedCurrencySymbol = computed(() => {
+  const cur = assets.value.find(a => Number(a.id) === Number(form.asset_id))?.currency || 'CNY'
+  return CURRENCY_SYMBOLS[cur] || `${cur} `
 })
 
 watch(
@@ -287,8 +301,11 @@ async function save() {
 .sheet-body {
   box-sizing: border-box;
   width: 100%;
+  height: 100%;
   max-width: 100vw;
   overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   padding: 16px;
   padding-bottom: calc(16px + env(safe-area-inset-bottom));
 }

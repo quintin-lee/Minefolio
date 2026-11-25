@@ -163,7 +163,7 @@ onMounted(async () => {
 
 <style scoped>
 .assets-mobile {
-  padding-bottom: 20px;
+  padding-bottom: 8px;
 }
 .account-group {
   margin-bottom: 12px;
@@ -218,9 +218,11 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 55vh;
-  max-height: 55dvh;
+  max-height: 70vh;
+  max-height: 70dvh;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: auto;
 }
 .group-empty {
   text-align: center;
@@ -233,6 +235,7 @@ onMounted(async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
   background: var(--mf-surface);
   border: 1px solid var(--mf-border);
   border-radius: 10px;
@@ -242,12 +245,18 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+  flex: 1;
 }
 .name {
   font-weight: 500;
   font-size: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .currency-tag {
+  flex-shrink: 0;
   font-size: 10px;
   padding: 1px 6px;
   border-radius: 4px;
@@ -256,9 +265,11 @@ onMounted(async () => {
   border: 1px solid var(--mf-info-border);
 }
 .value-col {
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
+  text-align: right;
   gap: 2px;
 }
 .value {

@@ -171,16 +171,17 @@ onMounted(() => loadData(true))
 </script>
 
 <style scoped>
-.expenses-mobile { padding-bottom: 80px; }
+.expenses-mobile { padding-bottom: 72px; }
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-.summary-row { display: flex; gap: 16px; margin: 12px 0; color: var(--mf-text-muted); font-size: 13px; }
+.summary-row { display: flex; gap: 16px; margin: 12px 0; color: var(--mf-text-muted); font-size: 13px; flex-wrap: wrap; }
 .expense-card { background: var(--mf-surface); border: 1px solid var(--mf-border); border-radius: 12px; padding: 14px; margin-bottom: 10px; cursor: pointer; }
-.expense-card .top { display: flex; justify-content: space-between; font-size: 16px; }
-.expense-card .bottom { display: flex; justify-content: space-between; color: var(--mf-text-muted); font-size: 12px; margin-top: 6px; }
-.income { color: var(--mf-gain); } .expense { color: var(--mf-loss); }
+.expense-card .top { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 16px; }
+.expense-card .top .cat { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.expense-card .bottom { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--mf-text-muted); font-size: 12px; margin-top: 6px; }
+.income { color: var(--mf-gain); flex-shrink: 0; white-space: nowrap; } .expense { color: var(--mf-loss); flex-shrink: 0; white-space: nowrap; }
 .card-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
 .mobile-tag { border: none; font-size: 11px; padding: 0 6px; height: 20px; line-height: 20px; }
 .load-more-wrap { display: flex; justify-content: center; margin: 16px 0 24px; }
 .load-more-btn { width: 100%; border-radius: var(--mf-radius-md); color: var(--mf-text-muted); }
-.fab { position: fixed; right: calc(20px + env(safe-area-inset-right)); bottom: calc(76px + env(safe-area-inset-bottom)); width: 56px; height: 56px; box-shadow: var(--mf-shadow-glow); }
+.fab { position: fixed; z-index: 90; right: calc(20px + env(safe-area-inset-right)); bottom: calc(76px + env(safe-area-inset-bottom)); width: 56px; height: 56px; box-shadow: var(--mf-shadow-glow); }
 </style>

@@ -37,7 +37,7 @@ async function handleJoin() {
 <template>
   <el-dialog
     :model-value="visible"
-    width="440px"
+    width="min(440px, calc(100vw - 24px))"
     destroy-on-close
     append-to-body
     class="premium-dialog"

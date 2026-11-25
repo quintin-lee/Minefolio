@@ -37,8 +37,15 @@ onUnmounted(() => {
     chart = null
   }
 })
+let lastIsNarrow = false
 function handleResize() {
-  if (chart) chart.resize()
+  if (chart) {
+    chart.resize()
+    const nowNarrow = (chartRef.value?.clientWidth || 0) > 0 && (chartRef.value?.clientWidth || 0) < 360
+    if (nowNarrow !== lastIsNarrow) {
+      update()
+    }
+  }
 }
 watch(() => props.data, update, { deep: true })
 watch(() => displaySettings.showAmount, update)
@@ -47,6 +54,9 @@ function update() {
   if (!chart || !props.data.length) return
   const P = resolveChartPalette()
   const masked = !displaySettings.showAmount
+  const width = chartRef.value?.clientWidth || 0
+  const isNarrow = width > 0 && width < 360
+  lastIsNarrow = isNarrow
   chart.setOption({ 
     animationDuration: 1000,
     tooltip: {
@@ -65,20 +75,32 @@ function update() {
                 <div style="color:${P.textMuted}">占比: ${p.data.pct.toFixed(2)}%</div>`
       }
     },
-    legend: {
-      orient: 'vertical',
-      right: '5%',
-      top: 'center',
-      textStyle: { color: P.textMuted, fontSize: 12 },
-      icon: 'circle',
-      itemWidth: 8,
-      itemHeight: 8,
-      itemGap: 12
-    },
+    legend: isNarrow
+      ? {
+          orient: 'horizontal',
+          bottom: 0,
+          left: 'center',
+          type: 'scroll',
+          textStyle: { color: P.textMuted, fontSize: 11 },
+          icon: 'circle',
+          itemWidth: 8,
+          itemHeight: 8,
+          itemGap: 10,
+        }
+      : {
+          orient: 'vertical',
+          right: '5%',
+          top: 'center',
+          textStyle: { color: P.textMuted, fontSize: 12 },
+          icon: 'circle',
+          itemWidth: 8,
+          itemHeight: 8,
+          itemGap: 12,
+        },
     series: [{
       type: 'pie',
-      radius: ['45%', '70%'],
-      center: ['35%', '50%'],
+      radius: isNarrow ? ['38%', '60%'] : ['45%', '70%'],
+      center: isNarrow ? ['50%', '38%'] : ['35%', '50%'],
       data: props.data.map(d => ({ name: d.name, value: d.amount, pct: d.pct })),
       avoidLabelOverlap: false,
       itemStyle: { borderRadius: 4, borderColor: P.border, borderWidth: 2 },

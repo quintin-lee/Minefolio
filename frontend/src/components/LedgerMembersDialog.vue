@@ -3,6 +3,7 @@ import { ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import { ledgerApi } from '@/api/ledgers'
+import { copyTextToClipboard } from '@/utils/clipboard'
 import type { Ledger, LedgerMember, LedgerInviteResult } from '@/types'
 
 const props = defineProps<{
@@ -78,8 +79,10 @@ async function handleGenerateInvite() {
 
 async function copyInviteCode() {
   if (!inviteData.value?.invite_code) return
-  await navigator.clipboard.writeText(inviteData.value.invite_code)
-  ElMessage.success('邀请码已复制到剪贴板')
+  const copied = await copyTextToClipboard(inviteData.value.invite_code)
+  if (copied) {
+    ElMessage.success('邀请码已复制到剪贴板')
+  }
 }
 
 async function handleUpdateRole(member: LedgerMember, role: 'editor' | 'viewer') {
@@ -98,15 +101,19 @@ async function handleRemoveMember(member: LedgerMember) {
   const isSelf = member.role === 'owner' // cannot remove owner
   if (isSelf) return
 
-  await ElMessageBox.confirm(
-    `确定要将成员「${member.username}」移出当前账本吗？`,
-    '移出成员',
-    {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
-    }
-  )
+  try {
+    await ElMessageBox.confirm(
+      `确定要将成员「${member.username}」移出当前账本吗？`,
+      '移出成员',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+  } catch {
+    return
+  }
 
   try {
     await ledgerApi.removeMember(props.ledger.id, member.user_id)
@@ -122,7 +129,7 @@ async function handleRemoveMember(member: LedgerMember) {
 <template>
   <el-dialog
     :model-value="visible"
-    width="680px"
+    width="min(680px, calc(100vw - 24px))"
     destroy-on-close
     append-to-body
     class="premium-dialog ledger-members-modal"
@@ -134,8 +141,8 @@ async function handleRemoveMember(member: LedgerMember) {
         <div
           class="modal-header-icon"
           :style="{
-            backgroundColor: ledger?.color ? ledger.color + '20' : 'rgba(0, 212, 255, 0.15)',
-            borderColor: ledger?.color ? ledger.color + '50' : 'rgba(0, 212, 255, 0.3)',
+            backgroundColor: ledger?.color ? ledger.color + '20' : 'var(--mf-primary-light)',
+            borderColor: ledger?.color ? ledger.color + '50' : 'var(--mf-primary-border)',
             color: ledger?.color || 'var(--mf-primary)'
           }"
         >
@@ -586,5 +593,27 @@ async function handleRemoveMember(member: LedgerMember) {
 .dialog-footer {
   display: flex;
   justify-content: flex-end;
+}
+@media (max-width: 640px) {
+  .invite-banner {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    padding: 14px;
+  }
+  .add-member-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .role-select {
+    width: 100%;
+  }
+  .members-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .custom-members-table {
+    min-width: 520px;
+  }
 }
 </style>

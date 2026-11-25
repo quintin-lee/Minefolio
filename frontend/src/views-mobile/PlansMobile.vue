@@ -369,7 +369,7 @@ onMounted(() => {
 
 <style scoped>
 .plans-mobile {
-  padding-bottom: 24px;
+  padding-bottom: 8px;
 }
 .page-header {
   display: flex;
@@ -424,15 +424,23 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
   background: var(--mf-surface-card);
   padding: 10px;
   border-radius: 8px;
   margin-top: 6px;
 }
+.p-info {
+  min-width: 0;
+  flex: 1;
+}
 .p-title {
   font-size: 13px;
   font-weight: 600;
   color: var(--mf-text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .p-sub {
   font-size: 12px;
@@ -492,19 +500,27 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
+  gap: 8px;
   margin-bottom: 10px;
 }
 .plan-name-wrap {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+  flex: 1;
 }
 .plan-name {
   font-size: 15px;
   font-weight: 600;
   color: var(--mf-text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .plan-amount {
+  flex-shrink: 0;
+  white-space: nowrap;
   font-size: 16px;
   font-weight: 700;
   color: var(--mf-text-main);
@@ -526,6 +542,8 @@ onMounted(() => {
 .meta-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  row-gap: 4px;
 }
 .lbl { color: var(--mf-text-muted); }
 .val { color: var(--mf-text-regular); margin-left: 4px; }

@@ -671,6 +671,7 @@ function handleCommand(cmd: string) {
     left: -260px;
     top: 0;
     height: 100vh;
+    height: 100dvh;
     z-index: 100;
     transition: left 0.3s ease;
   }

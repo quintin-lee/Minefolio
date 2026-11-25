@@ -292,6 +292,8 @@ async function handleDeleteLedger(ledger: Ledger) {
 
 .ledger-menu {
   width: 320px;
+  max-width: calc(100vw - 24px);
+  box-sizing: border-box;
   padding: 8px;
 }
 .menu-header {

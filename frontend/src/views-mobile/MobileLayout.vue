@@ -118,6 +118,7 @@ function go(tab: { prefix: string }) {
   flex-direction: column;
   height: 100vh;
   height: 100dvh;
+  overflow: hidden;
   background: var(--mf-background);
 }
 .mobile-top-bar {
@@ -146,30 +147,38 @@ function go(tab: { prefix: string }) {
   max-width: 210px;
 }
 .mobile-ledger :deep(.ledger-name) {
-  max-width: 100px;
+  max-width: 110px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
 }
+.mobile-ledger :deep(.current-ledger-btn .ledger-name),
+.mobile-ledger :deep(.current-ledger-btn .caret) {
+  display: inline-block;
+}
+.mobile-ledger :deep(.current-ledger-btn) {
+  padding: 4px 10px;
+}
 .mobile-content {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   padding: 14px;
   padding-left: calc(14px + env(safe-area-inset-left));
   padding-right: calc(14px + env(safe-area-inset-right));
-  padding-bottom: calc(76px + env(safe-area-inset-bottom));
+  padding-bottom: 20px;
 }
 .mobile-content.full-bleed {
   padding: 0;
   overflow: hidden;
 }
 .tab-bar {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
+  position: relative;
+  flex-shrink: 0;
   z-index: 100;
+  width: 100%;
   height: calc(56px + env(safe-area-inset-bottom));
   display: flex;
   background: var(--mf-surface);
@@ -181,6 +190,8 @@ function go(tab: { prefix: string }) {
 }
 .tab-item {
   flex: 1;
+  min-width: 0;
+  padding: 0 2px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -189,9 +200,17 @@ function go(tab: { prefix: string }) {
   background: none;
   border: none;
   color: var(--mf-text-muted);
-  font-size: 12px;
+  font-size: 11px;
   cursor: pointer;
   transition: color 0.2s ease;
+}
+.tab-item span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 1.2;
 }
 .tab-icon {
   font-size: 22px;

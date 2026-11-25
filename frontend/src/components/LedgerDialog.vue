@@ -99,7 +99,7 @@ async function handleSubmit() {
 <template>
   <el-dialog
     :model-value="visible"
-    width="500px"
+    width="min(500px, calc(100vw - 24px))"
     destroy-on-close
     append-to-body
     class="premium-dialog"

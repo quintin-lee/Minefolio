@@ -126,17 +126,38 @@ onMounted(async () => {
 .ai-entry-text b { font-size: 15px; font-weight: 700; }
 .ai-entry-text span { font-size: 11px; opacity: 0.8; }
 .ai-entry-arrow { font-size: 18px; opacity: 0.7; }
-.kpi-row { display: flex; gap: 12px; overflow-x: auto; }
-.kpi-card { flex: 0 0 120px; background: var(--mf-surface); border: 1px solid var(--mf-border); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 8px; box-shadow: var(--mf-shadow-sm); }
+.kpi-row {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+.kpi-row::-webkit-scrollbar { display: none; }
+.kpi-card {
+  flex: 1 0 132px;
+  min-width: 132px;
+  scroll-snap-align: start;
+  background: var(--mf-surface);
+  border: 1px solid var(--mf-border);
+  border-radius: 12px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: var(--mf-shadow-sm);
+}
 .kpi-card.cyan b { color: var(--mf-info); } .kpi-card.red b { color: var(--mf-danger); } .kpi-card.green b { color: var(--mf-success); }
 .kpi-card span { color: var(--mf-text-muted); font-size: 12px; }
-.kpi-card b { font-size: 18px; font-family: 'JetBrains Mono', monospace; }
-.mini-row { display: flex; justify-content: space-between; margin: 12px 0; }
-.mini-row > div { display: flex; flex-direction: column; gap: 4px; }
+.kpi-card b { font-size: clamp(15px, 4.2vw, 18px); white-space: nowrap; font-family: 'JetBrains Mono', monospace; }
+.mini-row { display: flex; justify-content: space-between; gap: 8px; margin: 12px 0; }
+.mini-row > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
 .mini-row span { color: var(--mf-text-muted); font-size: 12px; }
-.mini-row b { font-family: 'JetBrains Mono', monospace; }
+.mini-row b { font-size: clamp(13px, 3.6vw, 15px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: 'JetBrains Mono', monospace; }
 .section-title { margin: 16px 0 8px; font-size: 14px; color: var(--mf-text-muted); }
-.record-card { display: flex; justify-content: space-between; padding: 12px; border-bottom: 1px solid var(--mf-border); }
+.record-card { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 12px; border-bottom: 1px solid var(--mf-border); }
+.record-card .cat { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.record-card span:last-child { flex-shrink: 0; white-space: nowrap; }
 .income { color: var(--mf-gain); } .expense { color: var(--mf-loss); }
 .empty-state { text-align: center; color: var(--mf-text-muted); padding: 20px 0; font-size: 13px; }
 </style>
