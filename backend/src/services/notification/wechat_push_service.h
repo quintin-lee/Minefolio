@@ -24,6 +24,19 @@ int wechat_push_service_send(const push_channel_config_t* cfg,
                              char*                        err_buf,
                              size_t                       err_len);
 
+/**
+ * Cancellable variant of wechat_push_service_send().
+ * When is_alive_fn is non-NULL and returns 0 before or during the HTTP transfer,
+ * the request is aborted promptly and err_buf is set to "测试请求已取消".
+ */
+int wechat_push_service_send_cancellable(const push_channel_config_t* cfg,
+                                         const char*                  title,
+                                         const char*                  markdown_body,
+                                         int (*is_alive_fn)(void*),
+                                         void*  alive_ctx,
+                                         char*  err_buf,
+                                         size_t err_len);
+
 #ifdef __cplusplus
 }
 #endif

@@ -476,6 +476,18 @@ check_ilink_test_push_status(
     return false;
 }
 
+static int64_t
+monotonic_elapsed_ms(const struct timespec* start)
+{
+    struct timespec now;
+    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) {
+        return 0;
+    }
+    int64_t sec = (int64_t)(now.tv_sec - start->tv_sec);
+    int64_t nsec = (int64_t)(now.tv_nsec - start->tv_nsec);
+    return sec * 1000 + nsec / 1000000;
+}
+
 int
 scheduler_usecase_test_channel_cancellable(void*   pool,
                                            int64_t user_id,
@@ -547,9 +559,10 @@ scheduler_usecase_test_channel_cancellable(void*   pool,
                 timeout_ms = (int)parsed;
             }
         }
-        int waited_ms = 0;
+        struct timespec poll_start;
+        clock_gettime(CLOCK_MONOTONIC, &poll_start);
         int done_rc = -1;
-        while (waited_ms < timeout_ms) {
+        while (monotonic_elapsed_ms(&poll_start) < timeout_ms) {
             if (is_alive_fn && !is_alive_fn(alive_ctx)) {
                 (void)im_push_usecase_cancel_expired_test(pool, push_id, "测试请求已取消");
                 if (err_buf && err_len > 0) {
@@ -562,7 +575,6 @@ scheduler_usecase_test_channel_cancellable(void*   pool,
             }
             struct timespec req = {0, 100000000L}; /* 100ms */
             nanosleep(&req, NULL);
-            waited_ms += 100;
         }
         if (is_alive_fn && !is_alive_fn(alive_ctx)) {
             (void)im_push_usecase_cancel_expired_test(pool, push_id, "测试请求已取消");
@@ -604,14 +616,8 @@ scheduler_usecase_test_channel_cancellable(void*   pool,
     }
     csilk_json_free(ch);
 
-    if (is_alive_fn && !is_alive_fn(alive_ctx)) {
-        if (err_buf && err_len > 0) {
-            snprintf(err_buf, err_len, "%s", "测试请求已取消");
-        }
-        return -1;
-    }
-
-    return wechat_push_service_send(&cfg, "Minefolio 推送连通性测试", test_msg, err_buf, err_len);
+    return wechat_push_service_send_cancellable(
+        &cfg, "Minefolio 推送连通性测试", test_msg, is_alive_fn, alive_ctx, err_buf, err_len);
 }
 
 int

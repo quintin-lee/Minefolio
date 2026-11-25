@@ -29,12 +29,6 @@ bool scheduler_engine_is_running(void);
 int scheduler_engine_trigger_job_now(int64_t job_id, int64_t user_id, const char* reason);
 
 /**
- * Submit an arbitrary background task to the scheduler worker pool.
- * Returns 0 on success, -1 if the engine is not running or submission fails.
- */
-int scheduler_engine_submit_task(void (*fn)(void*), void* arg);
-
-/**
  * Notify the engine that jobs have been added/modified, triggering next run recalculations.
  */
 void scheduler_engine_notify_reload(void);

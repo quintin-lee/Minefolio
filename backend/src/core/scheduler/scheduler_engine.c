@@ -860,23 +860,6 @@ scheduler_engine_trigger_job_now(int64_t job_id, int64_t user_id, const char* re
     return 0;
 }
 
-int
-scheduler_engine_submit_task(void (*fn)(void*), void* arg)
-{
-    if (!fn) {
-        return -1;
-    }
-
-    pthread_mutex_lock(&s_engine_lock);
-    if (!s_running || !s_worker_pool) {
-        pthread_mutex_unlock(&s_engine_lock);
-        return -1;
-    }
-    int rc = scheduler_worker_pool_submit(s_worker_pool, fn, arg);
-    pthread_mutex_unlock(&s_engine_lock);
-    return rc == 0 ? 0 : -1;
-}
-
 static void
 on_market_event_received(int event_type, const char* key, double val, void* user_data)
 {
@@ -1080,7 +1063,7 @@ scheduler_engine_start(void* pool)
     /* Seed built-in scheduled tasks idempotently */
     scheduler_usecase_seed_builtin_jobs(pool);
 
-    s_worker_pool = scheduler_worker_pool_create(4);
+    s_worker_pool = scheduler_worker_pool_create(3);
     if (!s_worker_pool) {
         pthread_mutex_unlock(&s_engine_lock);
         return -1;

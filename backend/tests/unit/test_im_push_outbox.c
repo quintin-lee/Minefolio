@@ -16,6 +16,7 @@
 #include "infrastructure/repositories/im_bot_repo_impl.h"
 #include "infrastructure/repositories/im_push_outbox_repo_impl.h"
 #include "infrastructure/repositories/scheduler_repo_impl.h"
+#include "interfaces/http/controllers/scheduler_controller.h"
 
 static const char* TEST_DB_PATH = "/tmp/test_mf_im_push_outbox.db";
 
@@ -977,7 +978,7 @@ test_scheduler_ilink_channel_cancellable(csilk_db_pool_t* pool)
     clock_gettime(CLOCK_MONOTONIC, &t1);
     elapsed_ms = (t1.tv_sec - t0.tv_sec) * 1000L + (t1.tv_nsec - t0.tv_nsec) / 1000000L;
     assert(strcmp(err, "测试请求已取消") == 0);
-    assert(elapsed_ms < 1000);
+    assert(elapsed_ms >= 90 && elapsed_ms < 1000);
     assert(probe2.call_count == 3);
 
     csilk_json_t* rows2 = csilk_db_query_param_json(
@@ -997,6 +998,21 @@ test_scheduler_ilink_channel_cancellable(csilk_db_pool_t* pool)
     printf("  [OK] test_scheduler_ilink_channel_cancellable\n");
 }
 
+static void
+test_scheduler_controller_channel_test_paths(csilk_db_pool_t* pool)
+{
+    (void)pool;
+    api_scheduler_channel_test(NULL);
+
+    /* Registering routes initializes dedicated pool & stop hook cleanly */
+    csilk_app_t* app = csilk_app_new(NULL);
+    assert(app != NULL);
+    register_scheduler_routes(app);
+    csilk_app_free(app);
+
+    printf("  [OK] test_scheduler_controller_channel_test_paths\n");
+}
+
 int
 main(void)
 {
@@ -1011,6 +1027,7 @@ main(void)
     test_push_usecases(pool);
     test_scheduler_ilink_channel(pool);
     test_scheduler_ilink_channel_cancellable(pool);
+    test_scheduler_controller_channel_test_paths(pool);
     csilk_db_pool_free(pool);
     cleanup_db_files();
     printf("=== im_push_outbox Unit Tests Passed! ===\n");

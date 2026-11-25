@@ -14,11 +14,13 @@
 typedef struct {
     int         server_fd;
     int         port;
+    pthread_t   thread;
     char        last_received_body[2048];
     char        last_received_path[256];
     char        last_auth_header[256];
     const char* response_to_send;
     int         response_code;
+    int         response_delay_ms;
     bool        stop;
 } mock_server_t;
 
@@ -30,7 +32,7 @@ mock_server_thread(void* arg)
     while (!srv->stop) {
         struct sockaddr_in client_addr;
         socklen_t          addr_len = sizeof(client_addr);
-        int                client_fd = accept(srv->server_fd, (struct sockaddr*)&client_addr, &addr_len);
+        int client_fd = accept(srv->server_fd, (struct sockaddr*)&client_addr, &addr_len);
         if (client_fd < 0) {
             if (srv->stop) {
                 break;
@@ -67,14 +69,19 @@ mock_server_thread(void* arg)
             /* Parse body (after \r\n\r\n) */
             char* body_pos = strstr(buf, "\r\n\r\n");
             if (body_pos) {
-                snprintf(srv->last_received_body, sizeof(srv->last_received_body), "%s", body_pos + 4);
+                snprintf(
+                    srv->last_received_body, sizeof(srv->last_received_body), "%s", body_pos + 4);
             } else {
                 srv->last_received_body[0] = '\0';
             }
 
+            for (int ms = 0; ms < srv->response_delay_ms && !srv->stop; ms += 10) {
+                usleep(10000);
+            }
+
             /* Send HTTP Response */
-            char resp[1024];
-            int  code = srv->response_code ? srv->response_code : 200;
+            char        resp[1024];
+            int         code = srv->response_code ? srv->response_code : 200;
             const char* body = srv->response_to_send ? srv->response_to_send : "{\"code\":0}";
             snprintf(resp,
                      sizeof(resp),
@@ -119,9 +126,7 @@ start_mock_server(mock_server_t* srv)
 
     assert(listen(srv->server_fd, 5) == 0);
 
-    pthread_t th;
-    pthread_create(&th, NULL, mock_server_thread, srv);
-    pthread_detach(th);
+    pthread_create(&srv->thread, NULL, mock_server_thread, srv);
     return 0;
 }
 
@@ -131,7 +136,7 @@ stop_mock_server(mock_server_t* srv)
     srv->stop = true;
     close(srv->server_fd);
     /* Wake up accept */
-    int s = socket(AF_INET, SOCK_STREAM, 0);
+    int                s = socket(AF_INET, SOCK_STREAM, 0);
     struct sockaddr_in sin;
     memset(&sin, 0, sizeof(sin));
     sin.sin_family = AF_INET;
@@ -139,7 +144,18 @@ stop_mock_server(mock_server_t* srv)
     sin.sin_port = htons(srv->port);
     connect(s, (struct sockaddr*)&sin, sizeof(sin));
     close(s);
-    usleep(20000);
+    pthread_join(srv->thread, NULL);
+}
+
+static int
+test_curl_alive_cb(void* ctx)
+{
+    int* remaining = (int*)ctx;
+    if (*remaining > 0) {
+        (*remaining)--;
+        return 1;
+    }
+    return 0;
 }
 
 int
@@ -160,9 +176,11 @@ main(void)
     memset(&sc_cfg, 0, sizeof(sc_cfg));
     snprintf(sc_cfg.channel_type, sizeof(sc_cfg.channel_type), "serverchan");
     snprintf(sc_cfg.secret_key, sizeof(sc_cfg.secret_key), "SCT12345");
-    snprintf(sc_cfg.webhook_url, sizeof(sc_cfg.webhook_url), "http://127.0.0.1:%d/sct", server.port);
+    snprintf(
+        sc_cfg.webhook_url, sizeof(sc_cfg.webhook_url), "http://127.0.0.1:%d/sct", server.port);
 
-    int rc = wechat_push_service_send(&sc_cfg, "Daily Report", "# Market Summary\nAll good.", err_buf, sizeof(err_buf));
+    int rc = wechat_push_service_send(
+        &sc_cfg, "Daily Report", "# Market Summary\nAll good.", err_buf, sizeof(err_buf));
     assert(rc == 0);
     assert(strstr(server.last_received_path, "SCT12345.send") != NULL);
     assert(strstr(server.last_received_body, "Daily Report") != NULL);
@@ -178,7 +196,8 @@ main(void)
     snprintf(pd_cfg.secret_key, sizeof(pd_cfg.secret_key), "PDU998877");
     snprintf(pd_cfg.webhook_url, sizeof(pd_cfg.webhook_url), "http://127.0.0.1:%d", server.port);
 
-    rc = wechat_push_service_send(&pd_cfg, "Alert: NVDA +5%", "Price triggered", err_buf, sizeof(err_buf));
+    rc = wechat_push_service_send(
+        &pd_cfg, "Alert: NVDA +5%", "Price triggered", err_buf, sizeof(err_buf));
     assert(rc == 0);
     assert(strstr(server.last_received_path, "/message/push") != NULL);
     assert(strstr(server.last_received_body, "PDU998877") != NULL);
@@ -193,9 +212,13 @@ main(void)
     memset(&wh_cfg, 0, sizeof(wh_cfg));
     snprintf(wh_cfg.channel_type, sizeof(wh_cfg.channel_type), "webhook");
     snprintf(wh_cfg.secret_key, sizeof(wh_cfg.secret_key), "MY_TOKEN_ABC");
-    snprintf(wh_cfg.webhook_url, sizeof(wh_cfg.webhook_url), "http://127.0.0.1:%d/custom/webhook", server.port);
+    snprintf(wh_cfg.webhook_url,
+             sizeof(wh_cfg.webhook_url),
+             "http://127.0.0.1:%d/custom/webhook",
+             server.port);
 
-    rc = wechat_push_service_send(&wh_cfg, "Webhook Title", "Payload content", err_buf, sizeof(err_buf));
+    rc = wechat_push_service_send(
+        &wh_cfg, "Webhook Title", "Payload content", err_buf, sizeof(err_buf));
     assert(rc == 0);
     assert(strcmp(server.last_received_path, "/custom/webhook") == 0);
     assert(strstr(server.last_auth_header, "Bearer MY_TOKEN_ABC") != NULL);
@@ -234,6 +257,28 @@ main(void)
     snprintf(meta_cfg.webhook_url, sizeof(meta_cfg.webhook_url), "http://169.254.169.254/latest");
     rc = wechat_push_service_send(&meta_cfg, "SSRF Metadata", "test", err_buf, sizeof(err_buf));
     assert(rc == -1);
+
+    /* 8. Test Cancellable Webhook Push (pre-connect cancel & mid-transfer xferinfo abort) */
+    setenv("MINEFOLIO_ALLOW_LOCAL_WEBHOOK", "1", 1);
+    server.response_code = 200;
+    server.response_to_send = "{\"status\":\"ok\"}";
+    server.last_received_path[0] = '\0';
+
+    int rem0 = 0;
+    rc = wechat_push_service_send_cancellable(
+        &wh_cfg, "Cancel Pre", "test", test_curl_alive_cb, &rem0, err_buf, sizeof(err_buf));
+    assert(rc == -1);
+    assert(strcmp(err_buf, "测试请求已取消") == 0);
+    assert(server.last_received_path[0] == '\0');
+
+    server.response_delay_ms = 500;
+    int rem1 = 1;
+    rc = wechat_push_service_send_cancellable(
+        &wh_cfg, "Cancel Mid", "test", test_curl_alive_cb, &rem1, err_buf, sizeof(err_buf));
+    assert(rc == -1);
+    assert(strcmp(err_buf, "测试请求已取消") == 0);
+    server.response_delay_ms = 0;
+    unsetenv("MINEFOLIO_ALLOW_LOCAL_WEBHOOK");
 
     stop_mock_server(&server);
     printf("=== WeChat Push Service Unit Tests Passed! ===\n");

@@ -24,6 +24,26 @@ set_err(char* err_buf, size_t err_len, const char* msg)
     }
 }
 
+typedef struct {
+    int (*is_alive_fn)(void*);
+    void* alive_ctx;
+} push_curl_progress_ctx_t;
+
+static int
+push_curl_xferinfo_cb(
+    void* clientp, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow)
+{
+    (void)dltotal;
+    (void)dlnow;
+    (void)ultotal;
+    (void)ulnow;
+    push_curl_progress_ctx_t* ctx = (push_curl_progress_ctx_t*)clientp;
+    if (ctx && ctx->is_alive_fn && !ctx->is_alive_fn(ctx->alive_ctx)) {
+        return 1;
+    }
+    return 0;
+}
+
 int
 wechat_push_service_send(const push_channel_config_t* cfg,
                          const char*                  title,
@@ -31,8 +51,28 @@ wechat_push_service_send(const push_channel_config_t* cfg,
                          char*                        err_buf,
                          size_t                       err_len)
 {
+    return wechat_push_service_send_cancellable(
+        cfg, title, markdown_body, NULL, NULL, err_buf, err_len);
+}
+
+int
+wechat_push_service_send_cancellable(const push_channel_config_t* cfg,
+                                     const char*                  title,
+                                     const char*                  markdown_body,
+                                     int (*is_alive_fn)(void*),
+                                     void*  alive_ctx,
+                                     char*  err_buf,
+                                     size_t err_len)
+{
+    if (err_buf && err_len > 0) {
+        err_buf[0] = '\0';
+    }
     if (!cfg || !title || !*title) {
         set_err(err_buf, err_len, "Invalid arguments: cfg or title is null");
+        return -1;
+    }
+    if (is_alive_fn && !is_alive_fn(alive_ctx)) {
+        set_err(err_buf, err_len, "测试请求已取消");
         return -1;
     }
 
@@ -224,6 +264,13 @@ wechat_push_service_send(const push_channel_config_t* cfg,
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
     }
 
+    push_curl_progress_ctx_t prog_ctx = {.is_alive_fn = is_alive_fn, .alive_ctx = alive_ctx};
+    if (is_alive_fn) {
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, push_curl_xferinfo_cb);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, (void*)&prog_ctx);
+    }
+
     CURLcode res = curl_easy_perform(curl);
     long     http_code = 0;
     if (res == CURLE_OK) {
@@ -241,9 +288,13 @@ wechat_push_service_send(const push_channel_config_t* cfg,
         if (resp.data) {
             free(resp.data);
         }
-        char msg[128];
-        snprintf(msg, sizeof(msg), "cURL request failed: %s", curl_easy_strerror(res));
-        set_err(err_buf, err_len, msg);
+        if (res == CURLE_ABORTED_BY_CALLBACK || (is_alive_fn && !is_alive_fn(alive_ctx))) {
+            set_err(err_buf, err_len, "测试请求已取消");
+        } else {
+            char msg[128];
+            snprintf(msg, sizeof(msg), "cURL request failed: %s", curl_easy_strerror(res));
+            set_err(err_buf, err_len, msg);
+        }
         return -1;
     }
 
