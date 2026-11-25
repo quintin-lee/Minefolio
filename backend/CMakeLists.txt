@@ -323,6 +323,7 @@ add_minefolio_unit_test(test_skill_repository tests/unit/test_skill_repository.c
 add_dependencies(test_skill_repository copy_assets)
 
 add_minefolio_unit_test(test_migration_engine tests/unit/test_migration_engine.c)
+add_dependencies(test_migration_engine copy_assets)
 add_minefolio_unit_test(test_domain_repositories tests/unit/test_domain_repositories.c)
 add_minefolio_unit_test(test_market_indices tests/unit/test_market_indices.c)
 add_minefolio_unit_test(test_fx_semantics tests/unit/test_fx_semantics.c)

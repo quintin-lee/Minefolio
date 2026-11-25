@@ -336,6 +336,24 @@ test_postgres_migration_dialect(void)
     assert(count >= 21);
     assert(strstr(items[0].filepath, "postgres") != NULL);
 
+    /* Pin checksums of released PG migrations V026 & V034 so accidental in-place edits fail CI. */
+    bool found_v26 = false;
+    bool found_v34 = false;
+    for (int i = 0; i < count; i++) {
+        if (items[i].version == 26) {
+            found_v26 = true;
+            assert(strcmp(items[i].checksum,
+                          "9a01c6efeea743bb4f028884a3046b9092c360b3d3cf29086a902f0e8ed746f6") ==
+                   0);
+        } else if (items[i].version == 34) {
+            found_v34 = true;
+            assert(strcmp(items[i].checksum,
+                          "46c4b23533fec31c885fca6fb0f2973a9598748a07efc68d35fdefce99503595") ==
+                   0);
+        }
+    }
+    assert(found_v26 && found_v34);
+
     free(items);
     csilk_migration_engine_free(engine);
     csilk_db_pool_free(pool);
