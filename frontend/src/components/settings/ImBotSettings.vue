@@ -15,10 +15,145 @@
           <Icon icon="ph:key-bold" width="16" style="margin-right: 6px;" />
           {{ t('settings.generateBindToken') }}
         </el-button>
-        <el-button :loading="loading" @click="fetchBindings">
+        <el-button :loading="loading" @click="refreshAll">
           <Icon icon="ph:arrows-clockwise" width="16" style="margin-right: 6px;" />
           {{ t('common.refresh') || '刷新' }}
         </el-button>
+      </div>
+    </div>
+
+    <!-- 微信 iLink 独立实例 -->
+    <div class="ilink-section">
+      <div class="ilink-header">
+        <div class="ilink-title-row">
+          <Icon icon="ri:wechat-fill" width="20" class="ilink-wechat-icon" />
+          <h4>{{ t('settings.ilinkSectionTitle') }}</h4>
+          <el-tag v-if="instance" size="small" :type="statusTagType(instance.status)" effect="light" round>
+            {{ statusLabel(instance.status) }}
+          </el-tag>
+        </div>
+        <p class="export-hint">{{ t('settings.ilinkSectionDesc') }}</p>
+      </div>
+
+      <el-alert
+        v-if="gatewayNotConfigured"
+        type="warning"
+        :closable="false"
+        show-icon
+        style="margin-bottom: 14px;"
+        :title="t('settings.ilinkGatewayNotConfigured')"
+      />
+
+      <div v-if="!instance" class="ilink-empty">
+        <div class="ilink-notice">
+          <Icon icon="ph:info" width="16" />
+          <span>{{ t('settings.ilinkDedicatedNotice') }}</span>
+        </div>
+        <el-button type="success" :loading="instanceBusy" @click="handleCreateInstance">
+          <Icon icon="ph:plus-bold" width="16" style="margin-right: 6px;" />
+          {{ t('settings.ilinkCreateBtn') }}
+        </el-button>
+      </div>
+
+      <div v-else class="ilink-card">
+        <!-- 扫码/登录阶段 -->
+        <div v-if="isLoginStage(instance.status)" class="ilink-login-box">
+          <div v-if="qrDataUrl" class="ilink-qr-wrap">
+            <img :src="qrDataUrl" alt="WeChat iLink QR" class="ilink-qr-img" />
+          </div>
+          <div v-else class="ilink-qr-placeholder">
+            <Icon icon="ph:qr-code" width="44" />
+            <span>{{ t('settings.ilinkQrWaiting') }}</span>
+          </div>
+
+          <div class="ilink-login-meta">
+            <p class="ilink-stage-text">{{ statusLabel(instance.status) }}</p>
+
+            <div v-if="instance.status === 'need_verifycode'" class="ilink-verify-row">
+              <el-input
+                v-model="verifyCodeInput"
+                maxlength="8"
+                :placeholder="t('settings.ilinkVerifyPlaceholder')"
+                style="max-width: 220px;"
+                @keyup.enter="handleSubmitVerifyCode"
+              />
+              <el-button type="primary" :loading="instanceBusy" @click="handleSubmitVerifyCode">
+                {{ t('settings.ilinkSubmitVerify') }}
+              </el-button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 异常信息 -->
+        <el-alert
+          v-if="instance.last_error"
+          type="error"
+          :closable="false"
+          show-icon
+          style="margin-bottom: 12px;"
+          :title="instance.last_error"
+        />
+
+        <!-- 运行信息 -->
+        <div v-if="instance.ilink_bot_id || instance.im_user_id || instance.last_seen_at" class="ilink-meta-grid">
+          <div v-if="instance.ilink_bot_id" class="ilink-meta-item">
+            <span class="meta-label">{{ t('settings.ilinkBotId') }}</span>
+            <span class="mono">{{ instance.ilink_bot_id }}</span>
+          </div>
+          <div v-if="instance.im_user_id" class="ilink-meta-item">
+            <span class="meta-label">{{ t('settings.ilinkOwnerWechat') }}</span>
+            <span class="mono">{{ instance.im_user_id }}</span>
+          </div>
+          <div v-if="instance.last_seen_at" class="ilink-meta-item">
+            <span class="meta-label">{{ t('settings.ilinkLastSeen') }}</span>
+            <span>{{ formatTime(instance.last_seen_at) }}</span>
+          </div>
+        </div>
+
+        <!-- 操作按钮 -->
+        <div class="ilink-actions">
+          <el-button
+            v-if="instance.status !== 'disabled'"
+            size="small"
+            :loading="instanceBusy"
+            @click="handleReloginInstance"
+          >
+            <Icon icon="ph:qr-code-bold" width="14" style="margin-right: 4px;" />
+            {{ t('settings.ilinkRelogin') }}
+          </el-button>
+
+          <el-button
+            v-if="instance.status === 'disabled' || !instance.enabled"
+            size="small"
+            type="primary"
+            :loading="instanceBusy"
+            @click="handleEnableInstance"
+          >
+            {{ t('settings.ilinkEnable') }}
+          </el-button>
+          <el-button
+            v-else
+            size="small"
+            type="warning"
+            plain
+            :loading="instanceBusy"
+            @click="handleDisableInstance"
+          >
+            {{ t('settings.ilinkDisable') }}
+          </el-button>
+
+          <el-popconfirm
+            :title="t('settings.ilinkDeleteConfirm')"
+            confirm-button-type="danger"
+            @confirm="handleDeleteInstance"
+          >
+            <template #reference>
+              <el-button size="small" type="danger" plain :loading="instanceBusy">
+                {{ t('settings.ilinkDelete') }}
+              </el-button>
+            </template>
+          </el-popconfirm>
+        </div>
       </div>
     </div>
 
@@ -123,11 +258,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Icon } from '@iconify/vue'
 import { t } from '@/utils/locale'
-import { imApi, type ImBindingItem } from '@/api/im'
+import { imApi, renderQrContentToImage, type ImBindingItem } from '@/api/im'
+import type { ImBotInstance, ImBotInstanceStatus } from '@/types'
 
 const loading = ref(false)
 const generating = ref(false)
@@ -135,7 +271,15 @@ const bindings = ref<ImBindingItem[]>([])
 const bindToken = ref<string | null>(null)
 const remainingSeconds = ref<number>(0)
 const unbindingKey = ref<string | null>(null)
-let timerId: any = null
+let timerId: ReturnType<typeof setInterval> | null = null
+
+const instance = ref<ImBotInstance | null>(null)
+const instanceBusy = ref(false)
+const gatewayNotConfigured = ref(false)
+const verifyCodeInput = ref('')
+const qrDataUrl = ref('')
+let pollTimer: ReturnType<typeof setInterval> | null = null
+let lastQrSource = ''
 
 const formattedRemainingTime = computed(() => {
   const m = Math.floor(remainingSeconds.value / 60)
@@ -143,12 +287,117 @@ const formattedRemainingTime = computed(() => {
   return `${m}:${s < 10 ? '0' : ''}${s}`
 })
 
+function isLoginStage(status?: ImBotInstanceStatus): boolean {
+  return (
+    status === 'pending_login' ||
+    status === 'qr_ready' ||
+    status === 'scanned' ||
+    status === 'need_verifycode'
+  )
+}
+
+function statusLabel(status: ImBotInstanceStatus): string {
+  switch (status) {
+    case 'pending_login':
+      return t('settings.ilinkStatusPending')
+    case 'qr_ready':
+      return t('settings.ilinkStatusQrReady')
+    case 'scanned':
+      return t('settings.ilinkStatusScanned')
+    case 'need_verifycode':
+      return t('settings.ilinkStatusNeedVerify')
+    case 'active':
+      return t('settings.ilinkStatusActive')
+    case 'session_expired':
+      return t('settings.ilinkStatusSessionExpired')
+    case 'expired':
+      return t('settings.ilinkStatusExpired')
+    case 'error':
+      return t('settings.ilinkStatusError')
+    case 'disabled':
+      return t('settings.ilinkStatusDisabled')
+    default:
+      return status
+  }
+}
+
+function statusTagType(status: ImBotInstanceStatus): 'success' | 'warning' | 'danger' | 'info' {
+  if (status === 'active') return 'success'
+  if (status === 'error' || status === 'expired' || status === 'session_expired') return 'danger'
+  if (status === 'disabled') return 'info'
+  return 'warning'
+}
+
 function formatTime(val: string): string {
   if (!val) return '-'
   try {
     return new Date(val).toLocaleString()
   } catch {
     return val
+  }
+}
+
+function stopInstancePolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
+function syncInstancePolling() {
+  if (instance.value && isLoginStage(instance.value.status)) {
+    if (!pollTimer) {
+      pollTimer = setInterval(() => {
+        void pollCurrentInstance()
+      }, 2000)
+    }
+  } else {
+    stopInstancePolling()
+  }
+}
+
+watch(
+  () => instance.value?.qr_content,
+  async (content) => {
+    const val = content || ''
+    if (!val) {
+      lastQrSource = ''
+      qrDataUrl.value = ''
+      return
+    }
+    if (val === lastQrSource && qrDataUrl.value) return
+    lastQrSource = val
+    try {
+      qrDataUrl.value = await renderQrContentToImage(val)
+    } catch {
+      qrDataUrl.value = ''
+    }
+  },
+  { immediate: true }
+)
+
+async function pollCurrentInstance() {
+  if (!instance.value) return
+  try {
+    const updated = await imApi.getInstance(instance.value.id)
+    const prevStatus = instance.value.status
+    instance.value = updated
+    syncInstancePolling()
+    if (prevStatus !== 'active' && updated.status === 'active') {
+      await fetchBindings()
+    }
+  } catch {
+    // Keep polling softly on transient errors
+  }
+}
+
+async function fetchInstances() {
+  try {
+    const list = await imApi.listInstances()
+    instance.value = Array.isArray(list) && list.length > 0 ? (list[0] ?? null) : null
+    syncInstancePolling()
+  } catch (err) {
+    console.error('Failed to load iLink instances:', err)
   }
 }
 
@@ -160,6 +409,95 @@ async function fetchBindings() {
     console.error('Failed to load IM bindings:', err)
   } finally {
     loading.value = false
+  }
+}
+
+async function refreshAll() {
+  await Promise.all([fetchInstances(), fetchBindings()])
+}
+
+async function handleCreateInstance() {
+  instanceBusy.value = true
+  gatewayNotConfigured.value = false
+  try {
+    const created = await imApi.createInstance({ platform: 'wechat', adapter: 'ilink' })
+    instance.value = created
+    syncInstancePolling()
+  } catch (err: any) {
+    const msg = err?.response?.data?.message || ''
+    if (String(msg).includes('not configured') || String(msg).includes('未配置')) {
+      gatewayNotConfigured.value = true
+    }
+  } finally {
+    instanceBusy.value = false
+  }
+}
+
+async function handleReloginInstance() {
+  if (!instance.value) return
+  instanceBusy.value = true
+  try {
+    await imApi.reloginInstance(instance.value.id)
+    verifyCodeInput.value = ''
+    await fetchInstances()
+  } finally {
+    instanceBusy.value = false
+  }
+}
+
+async function handleSubmitVerifyCode() {
+  if (!instance.value) return
+  const code = verifyCodeInput.value.trim()
+  if (!/^\d{4,8}$/.test(code)) {
+    ElMessage.warning(t('settings.ilinkVerifyInvalid'))
+    return
+  }
+  instanceBusy.value = true
+  try {
+    await imApi.verifyInstanceCode(instance.value.id, code)
+    verifyCodeInput.value = ''
+    ElMessage.success(t('settings.ilinkVerifySubmitted'))
+    await pollCurrentInstance()
+  } finally {
+    instanceBusy.value = false
+  }
+}
+
+async function handleEnableInstance() {
+  if (!instance.value) return
+  instanceBusy.value = true
+  try {
+    await imApi.enableInstance(instance.value.id)
+    await fetchInstances()
+  } finally {
+    instanceBusy.value = false
+  }
+}
+
+async function handleDisableInstance() {
+  if (!instance.value) return
+  instanceBusy.value = true
+  try {
+    await imApi.disableInstance(instance.value.id)
+    await fetchInstances()
+  } finally {
+    instanceBusy.value = false
+  }
+}
+
+async function handleDeleteInstance() {
+  if (!instance.value) return
+  instanceBusy.value = true
+  try {
+    await imApi.deleteInstance(instance.value.id)
+    instance.value = null
+    qrDataUrl.value = ''
+    lastQrSource = ''
+    stopInstancePolling()
+    ElMessage.info(t('settings.ilinkGatewayOfflineDeleteHint'))
+    await fetchBindings()
+  } finally {
+    instanceBusy.value = false
   }
 }
 
@@ -176,7 +514,7 @@ async function handleGenerateToken() {
         remainingSeconds.value--
       } else {
         bindToken.value = null
-        clearInterval(timerId)
+        clearInterval(timerId!)
         timerId = null
       }
     }, 1000)
@@ -221,11 +559,12 @@ async function handleUnbind(platform: string, imUserId: string) {
 }
 
 onMounted(() => {
-  fetchBindings()
+  void refreshAll()
 })
 
 onUnmounted(() => {
   if (timerId) clearInterval(timerId)
+  stopInstancePolling()
 })
 </script>
 
@@ -261,6 +600,133 @@ onUnmounted(() => {
   align-items: center;
   gap: 10px;
   flex-shrink: 0;
+}
+
+.ilink-section {
+  background: var(--mf-card-bg, #ffffff);
+  border: 1px solid var(--mf-border, #e5e7eb);
+  border-radius: 12px;
+  padding: 18px 20px;
+  margin-bottom: 24px;
+}
+
+.ilink-header {
+  margin-bottom: 14px;
+}
+
+.ilink-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.ilink-title-row h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--mf-text-main);
+}
+
+.ilink-wechat-icon {
+  color: #07c160;
+}
+
+.ilink-empty {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.ilink-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--mf-text-muted);
+}
+
+.ilink-login-box {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.ilink-qr-wrap {
+  padding: 8px;
+  background: #ffffff;
+  border: 1px solid var(--mf-border, #e5e7eb);
+  border-radius: 10px;
+}
+
+.ilink-qr-img {
+  width: 200px;
+  height: 200px;
+  display: block;
+}
+
+.ilink-qr-placeholder {
+  width: 200px;
+  height: 200px;
+  border: 1px dashed var(--mf-border, #d1d5db);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--mf-text-muted);
+}
+
+.ilink-login-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ilink-stage-text {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--mf-text-main);
+}
+
+.ilink-verify-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ilink-meta-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 28px;
+  margin-bottom: 14px;
+  font-size: 13px;
+}
+
+.ilink-meta-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.meta-label {
+  color: var(--mf-text-muted);
+}
+
+.ilink-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .bind-token-card {

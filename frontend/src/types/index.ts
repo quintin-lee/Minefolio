@@ -936,6 +936,36 @@ export interface AssetDetailResponse {
   }[]
 }
 
+export type ImBotInstanceStatus =
+  | 'pending_login'
+  | 'qr_ready'
+  | 'scanned'
+  | 'need_verifycode'
+  | 'active'
+  | 'session_expired'
+  | 'expired'
+  | 'error'
+  | 'disabled'
+
+export interface ImBotInstance {
+  id: number
+  mf_user_id?: number
+  platform: string
+  adapter: string
+  ilink_bot_id: string | null
+  ilink_user_id: string | null
+  im_user_id: string | null
+  status: ImBotInstanceStatus
+  qr_content: string | null
+  qr_expires_at?: string | null
+  login_epoch: number
+  enabled: number | boolean
+  last_error: string | null
+  last_seen_at: string | null
+  created_at: string
+  updated_at: string
+}
+
 export * from './chat-panel'
 export * from './skill'
 export * from './scheduler'
