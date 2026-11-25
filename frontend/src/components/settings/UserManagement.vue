@@ -612,7 +612,7 @@ onMounted(() => {
 
 <style scoped>
 .panel-container {
-  max-width: 1120px;
+  /* 与其他设置面板一致：撑满 Settings 主内容区，不额外限宽 */
 }
 
 .panel-header {
