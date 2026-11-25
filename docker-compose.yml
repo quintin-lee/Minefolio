@@ -23,6 +23,7 @@ services:
       - "8080"
     environment:
       MINEFOLIO_JWT_SECRET: "${MINEFOLIO_JWT_SECRET:?MINEFOLIO_JWT_SECRET is required}"
+      MINEFOLIO_GATEWAY_TOKEN: "${MINEFOLIO_GATEWAY_TOKEN:-}"
       MINEFOLIO_DB_DRIVER: ${MINEFOLIO_DB_DRIVER:-sqlite}
       MINEFOLIO_DB_DSN: ${MINEFOLIO_DB_DSN:-/app/data/minefolio.db}
       # 供 db-wait.sh 在 DRIVER=postgres 且未显式指定 DSN 时推导连接串;
@@ -136,9 +137,30 @@ services:
       - napcat
     restart: unless-stopped
 
+  # 微信 iLink 用户级独立实例网关 (每实例独立子进程与 state 目录)
+  ilink-gateway:
+    image: docker.1ms.run/library/node:22-alpine
+    container_name: minefolio-ilink-gateway
+    profiles:
+      - im
+    working_dir: /app
+    command: ["node", "ilink-server.js"]
+    environment:
+      MINEFOLIO_API: "http://minefolio:8080"
+      MINEFOLIO_GATEWAY_TOKEN: "${MINEFOLIO_GATEWAY_TOKEN:?set MINEFOLIO_GATEWAY_TOKEN}"
+      ILINK_STATE_DIR: "/state"
+      NODE_ENV: "production"
+    volumes:
+      - ./gateway:/app:ro
+      - ilink_state:/state
+    depends_on:
+      - minefolio
+    restart: unless-stopped
+
 volumes:
   minefolio-data:
   minefolio-pgdata:
   napcat-qq:
   napcat-config:
   napcat-plugins:
+  ilink_state:

@@ -90,5 +90,45 @@ npm run test:adapters      # node --test adapters/test/  (11 用例: 桥接/群�
 ## 测试
 
 ```bash
-./backend/tests/test_gateway.sh     # 起后端 + CLI 模拟: 未绑定引导/查账/写收敛/抢占防护 (4 断言)
+./backend/tests/test_gateway.sh            # 起后端 + CLI 模拟: 未绑定引导/查账/写收敛/抢占防护
+./backend/tests/test_im_bot_instance.sh    # iLink 用户级独立实例后端集成测试 (42 断言)
+```
+
+---
+
+## 微信 iLink 用户级独立实例 (`ilink-server.js`)
+
+每个 Minefolio 用户可在 App「设置 -> IM 机器人」创建 1 个独立的 iLink 微信机器人实例：
+
+- `ilink-server.js`：supervisor 进程，每 5s 轮询 `GET /api/gateway/im/instances` 对账，按实例派生独立 `ilink/runner.js` 子进程。
+- `ilink/state.js`：凭证 `account.json`、游标 `cursor.json`、去重 `dedup.json` 原子写入 `<ILINK_STATE_DIR>/<instance_id>/`（目录 `0700`、文件 `0600`），`bot_token` 永不上库；实例删除时自动清理子进程与目录。
+- `ilink/login.js` / `ilink/monitor.js`：扫码、redirect、PIN 验证码、`-14` 过期停机、只响应 owner 私聊。
+
+### 启动 iLink 网关
+
+```bash
+cd gateway
+export MINEFOLIO_API=http://localhost:8080
+export MINEFOLIO_GATEWAY_TOKEN=<与后端一致的强随机 token>
+export ILINK_STATE_DIR=./.ilink-state
+npm run ilink
+```
+
+### 环境变量
+
+| 变量 | 默认 | 说明 |
+|------|------|------|
+| `MINEFOLIO_API` | `http://localhost:8080` | 后端地址 |
+| `MINEFOLIO_GATEWAY_TOKEN` | **必填** | 与后端 `MINEFOLIO_GATEWAY_TOKEN` 一致，未设置立即退出 |
+| `ILINK_STATE_DIR` | `gateway/.ilink-state` | 实例凭证与游标根目录（含敏感 `bot_token`，需妥善保管权限） |
+| `ILINK_SUPERVISOR_POLL_MS` | `5000` | 对账间隔（ms） |
+| `ILINK_HTTP_TIMEOUT_MS` | `45000` | iLink 长轮询请求超时（ms） |
+| `ILINK_MAX_QUEUE` | `8` | 每实例串行消息队列上限 |
+| `ILINK_REPLY_CHUNK` | `1800` | 长回复分片长度 |
+| `ILINK_MAX_INSTANCES` | `20` | supervisor 允许的最大并发实例子进程数 |
+
+### 网关单测
+
+```bash
+npm --prefix gateway test
 ```
