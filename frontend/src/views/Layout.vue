@@ -139,7 +139,9 @@
       <el-main class="main" :class="{ 'is-full-bleed': route.meta.fullBleed }">
         <router-view v-slot="{ Component, route }">
           <transition name="fade-transform" mode="out-in">
-            <component :is="Component" :key="`${route.fullPath}-${routerViewKey}`" />
+            <KeepAlive :include="['Categories']" :key="routerViewKey">
+              <component :is="Component" :key="route.fullPath" />
+            </KeepAlive>
           </transition>
         </router-view>
       </el-main>
@@ -586,10 +588,13 @@ function handleCommand(cmd: string) {
   padding: 0;
   overflow: hidden;
 }
-.fade-transform-enter-active,
+.fade-transform-enter-active {
+  transition: opacity 0.12s cubic-bezier(0.4, 0, 0.2, 1),
+              transform 0.12s cubic-bezier(0.4, 0, 0.2, 1);
+}
 .fade-transform-leave-active {
-  transition: opacity 0.18s cubic-bezier(0.4, 0, 0.2, 1),
-              transform 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: opacity 0.08s cubic-bezier(0.4, 0, 0.2, 1),
+              transform 0.08s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .fade-transform-enter-from {
   opacity: 0;
