@@ -30,8 +30,10 @@ mf_daily_expense_repo_list(void*          db_pool,
     snprintf(offset_s, sizeof(offset_s), "%lld", (long long)((page - 1) * page_size));
 
     char        sql[2560], count_sql[1536];
-    const char* params[24];
-    const char* cnt_params[20];
+    const char* params[48];
+    const char* cnt_params[44];
+    char        parsed_tags[16][24];
+    int         parsed_tag_cnt = 0;
     int         pidx = 0, cnt_pidx = 0;
     int         has_ledger = (ledger_id > 0);
     /* SELECT 中脱敏列 MF_RBAC_MASK_BALANCE_COL("a") 绑定 2 个 uid */
@@ -103,10 +105,42 @@ mf_daily_expense_repo_list(void*          db_pool,
         cnt_params[cnt_pidx++] = category_id;
     }
     if (tag_ids && tag_ids[0]) {
-        strncat(sql,
+        const char* p = tag_ids;
+        while (*p && parsed_tag_cnt < 16) {
+            while (*p == ',' || *p == ' ' || *p == '\t') {
+                p++;
+            }
+            if (!*p) {
+                break;
+            }
+            const char* start = p;
+            bool        all_digits = true;
+            while (*p && *p != ',') {
+                if (*p < '0' || *p > '9') {
+                    all_digits = false;
+                }
+                p++;
+            }
+            size_t len = (size_t)(p - start);
+            if (all_digits && len > 0 && len < sizeof(parsed_tags[0])) {
+                memcpy(parsed_tags[parsed_tag_cnt], start, len);
+                parsed_tags[parsed_tag_cnt][len] = '\0';
+                parsed_tag_cnt++;
+            }
+        }
+        if (parsed_tag_cnt > 0) {
+            char in_clause[512] =
                 " AND EXISTS (SELECT 1 FROM expense_tags et2 WHERE et2.expense_id=de.id AND "
-                "et2.tag_id IN (SELECT tag_id FROM expense_tags WHERE expense_id=de.id))",
-                sizeof(sql) - strlen(sql) - 1);
+                "et2.tag_id IN (";
+            for (int ti = 0; ti < parsed_tag_cnt; ti++) {
+                strncat(in_clause, ti == 0 ? "?" : ",?", sizeof(in_clause) - strlen(in_clause) - 1);
+                params[pidx++] = parsed_tags[ti];
+                cnt_params[cnt_pidx++] = parsed_tags[ti];
+            }
+            strncat(in_clause, "))", sizeof(in_clause) - strlen(in_clause) - 1);
+            strncat(sql, in_clause, sizeof(sql) - strlen(sql) - 1);
+            strncat(count_sql, in_clause, sizeof(count_sql) - strlen(count_sql) - 1);
+        }
     }
     if (start_date && start_date[0]) {
         strncat(sql, " AND de.expense_date >= ?", sizeof(sql) - strlen(sql) - 1);

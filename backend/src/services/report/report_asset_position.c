@@ -40,50 +40,57 @@ report_fx_pnl(void* pool, const report_query_t* q, report_result_t* out_res)
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)q->user_id);
     snprintf(lid_str, sizeof(lid_str), "%lld", (long long)q->ledger_id);
 
-    const char* sql =
+    const char* scope_cond =
+        (q->ledger_id > 0) ? MF_LEDGER_SHARED_ACCESS_SQL("a") : "a.user_id = ?";
+    char sql[2048];
+    snprintf(
+        sql,
+        sizeof(sql),
         db_is_postgres()
             ? "SELECT a.id, a.name, a.currency, a.quantity, a.cost_basis, a.net_value, "
-              "a.current_value, "
-              "       c.name as category_name, c.asset_type, "
-              "       COALESCE("
-              "           (SELECT rate FROM exchange_rate_history h WHERE h.target_currency = "
-              "a.currency "
-              "            AND h.rate_date <= COALESCE((SELECT to_char(MIN(t.transaction_date), "
-              "'YYYY-MM-DD') FROM "
-              "transactions t WHERE t.asset_id = a.id), to_char(a.created_at, 'YYYY-MM-DD')) "
-              "            ORDER BY h.rate_date DESC LIMIT 1), "
-              "           (SELECT rate FROM exchange_rate_history h WHERE h.target_currency = "
-              "a.currency "
-              "            ORDER BY h.rate_date ASC LIMIT 1) "
-              "       ) as initial_rate "
-              "FROM assets a "
-              "JOIN categories c ON a.category_id = c.id "
-              "WHERE a.user_id = ? AND a.ledger_id = ? AND a.currency IS NOT NULL AND a.currency "
-              "!= ? AND a.currency "
-              "!= '' AND " MF_RBAC_ASSET_UNMASKED_SQL("a")
+              "a.current_value, c.name as category_name, c.asset_type, "
+              "COALESCE("
+              "(SELECT rate FROM exchange_rate_history h WHERE h.target_currency = a.currency "
+              "AND h.rate_date <= COALESCE((SELECT to_char(MIN(t.transaction_date), 'YYYY-MM-DD') "
+              "FROM transactions t WHERE t.asset_id = a.id), to_char(a.created_at, 'YYYY-MM-DD')) "
+              "ORDER BY h.rate_date DESC LIMIT 1), "
+              "(SELECT rate FROM exchange_rate_history h WHERE h.target_currency = a.currency "
+              "ORDER BY h.rate_date ASC LIMIT 1)"
+              ") as initial_rate "
+              "FROM assets a JOIN categories c ON a.category_id = c.id "
+              "WHERE %s AND a.currency IS NOT NULL AND a.currency != ? AND a.currency != '' "
+              "AND " MF_RBAC_ASSET_UNMASKED_SQL("a")
             : "SELECT a.id, a.name, a.currency, a.quantity, a.cost_basis, a.net_value, "
-              "a.current_value, "
-              "       c.name as category_name, c.asset_type, "
-              "       COALESCE("
-              "           (SELECT rate FROM exchange_rate_history h WHERE h.target_currency = "
-              "a.currency "
-              "            AND h.rate_date <= COALESCE((SELECT date(MIN(t.transaction_date)) FROM "
-              "transactions t WHERE t.asset_id = a.id), date(a.created_at)) "
-              "            ORDER BY h.rate_date DESC LIMIT 1), "
-              "           (SELECT rate FROM exchange_rate_history h WHERE h.target_currency = "
-              "a.currency "
-              "            ORDER BY h.rate_date ASC LIMIT 1) "
-              "       ) as initial_rate "
-              "FROM assets a "
-              "JOIN categories c ON a.category_id = c.id "
-              "WHERE a.user_id = ? AND a.ledger_id = ? AND a.currency IS NOT NULL AND a.currency "
-              "!= ? AND a.currency "
-              "!= '' AND " MF_RBAC_ASSET_UNMASKED_SQL("a");
+              "a.current_value, c.name as category_name, c.asset_type, "
+              "COALESCE("
+              "(SELECT rate FROM exchange_rate_history h WHERE h.target_currency = a.currency "
+              "AND h.rate_date <= COALESCE((SELECT date(MIN(t.transaction_date)) "
+              "FROM transactions t WHERE t.asset_id = a.id), date(a.created_at)) "
+              "ORDER BY h.rate_date DESC LIMIT 1), "
+              "(SELECT rate FROM exchange_rate_history h WHERE h.target_currency = a.currency "
+              "ORDER BY h.rate_date ASC LIMIT 1)"
+              ") as initial_rate "
+              "FROM assets a JOIN categories c ON a.category_id = c.id "
+              "WHERE %s AND a.currency IS NOT NULL AND a.currency != ? AND a.currency != '' "
+              "AND " MF_RBAC_ASSET_UNMASKED_SQL("a"),
+        scope_cond);
 
-    csilk_json_t* rows = csilk_db_query_param_json(
-        (csilk_db_pool_t*)pool,
-        sql,
-        (const char*[]){uid_str, lid_str, base_cur, uid_str, uid_str, NULL});
+    const char* params[10];
+    int         pidx = 0;
+    if (q->ledger_id > 0) {
+        params[pidx++] = lid_str;
+        params[pidx++] = uid_str;
+        params[pidx++] = uid_str;
+        params[pidx++] = uid_str;
+    } else {
+        params[pidx++] = uid_str;
+    }
+    params[pidx++] = base_cur;
+    params[pidx++] = uid_str;
+    params[pidx++] = uid_str;
+    params[pidx] = NULL;
+
+    csilk_json_t* rows = csilk_db_query_param_json((csilk_db_pool_t*)pool, sql, params);
 
     csilk_json_t* items = csilk_json_array();
     currency_t    base_currency = currency_from_str(base_cur);
@@ -222,16 +229,30 @@ report_position_overview(void* pool, const report_query_t* q, report_result_t* o
     char uid_str[32], lid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)q->user_id);
     snprintf(lid_str, sizeof(lid_str), "%lld", (long long)q->ledger_id);
-    const char* params[] = {uid_str, lid_str, uid_str, uid_str, NULL};
+    char asset_sql[1536];
+    snprintf(asset_sql,
+             sizeof(asset_sql),
+             "SELECT a.id, a.name, a.current_value, a.currency, a.quantity, a.cost_basis, "
+             "a.net_value, c.name as category_name, c.asset_type "
+             "FROM assets a JOIN categories c ON a.category_id = c.id "
+             "WHERE %s AND " MF_RBAC_ASSET_UNMASKED_SQL("a"),
+             (q->ledger_id > 0) ? MF_LEDGER_SHARED_ACCESS_SQL("a") : "a.user_id = ?");
 
-    csilk_json_t* rows = csilk_db_query_param_json(
-        (csilk_db_pool_t*)pool,
-        "SELECT a.id, a.name, a.current_value, a.currency, a.quantity, a.cost_basis, "
-        "a.net_value, c.name as category_name, c.asset_type "
-        "FROM assets a "
-        "JOIN categories c ON a.category_id = c.id "
-        "WHERE a.user_id = ? AND a.ledger_id = ? AND " MF_RBAC_ASSET_UNMASKED_SQL("a"),
-        params);
+    const char* params[10];
+    int         pidx = 0;
+    if (q->ledger_id > 0) {
+        params[pidx++] = lid_str;
+        params[pidx++] = uid_str;
+        params[pidx++] = uid_str;
+        params[pidx++] = uid_str;
+    } else {
+        params[pidx++] = uid_str;
+    }
+    params[pidx++] = uid_str;
+    params[pidx++] = uid_str;
+    params[pidx] = NULL;
+
+    csilk_json_t* rows = csilk_db_query_param_json((csilk_db_pool_t*)pool, asset_sql, params);
 
     double  total_assets = 0.0, total_liabs = 0.0;
     double  total_cost = 0.0;
@@ -242,6 +263,12 @@ report_position_overview(void* pool, const report_query_t* q, report_result_t* o
     int     asset_cnt = 0;
 
     typedef struct {
+        int64_t id;
+        char    name[128];
+        double  cv;
+    } pos_item_t;
+
+    typedef struct {
         char   name[128];
         double value;
     } cat_agg_t;
@@ -250,7 +277,11 @@ report_position_overview(void* pool, const report_query_t* q, report_result_t* o
     int       cat_cnt = 0;
 
     if (rows) {
-        size_t n = csilk_json_array_size(rows);
+        size_t      n = csilk_json_array_size(rows);
+        pos_item_t* pos_items = n > 0 ? (pos_item_t*)calloc(n, sizeof(pos_item_t)) : NULL;
+        size_t      pos_cnt = 0;
+
+        /* Pass 1: 累加所有非负债资产市值总计与分分类合计 */
         for (size_t i = 0; i < n; i++) {
             const csilk_json_t* r = csilk_json_array_get(rows, i);
             const char*         cur = csilk_json_get_string(r, "currency");
@@ -269,13 +300,15 @@ report_position_overview(void* pool, const report_query_t* q, report_result_t* o
                 total_cost +=
                     db_get_num(r, "cost_basis") * exchange_rate_get_to_cny(cur ? cur : "CNY");
 
-                double w = (total_assets > 0.0 && cv > 0.0) ? cv / total_assets : 0.0;
-                hhi += w * w;
-                if (w > max_weight) {
-                    max_weight = w;
-                    max_asset_id = db_get_int(r, "id");
+                if (pos_items) {
+                    pos_items[pos_cnt].id = db_get_int(r, "id");
+                    pos_items[pos_cnt].cv = cv;
                     const char* nm = csilk_json_get_string(r, "name");
-                    snprintf(max_asset_name, sizeof(max_asset_name), "%s", nm ? nm : "");
+                    snprintf(pos_items[pos_cnt].name,
+                             sizeof(pos_items[pos_cnt].name),
+                             "%s",
+                             nm ? nm : "");
+                    pos_cnt++;
                 }
 
                 const char* cat_name = csilk_json_get_string(r, "category_name");
@@ -298,6 +331,22 @@ report_position_overview(void* pool, const report_query_t* q, report_result_t* o
                 }
             }
         }
+
+        /* Pass 2: 基于完整 total_assets 计算准确的持仓集中度 HHI 与最大单仓权重 */
+        if (total_assets > 0.0 && pos_items) {
+            for (size_t i = 0; i < pos_cnt; i++) {
+                if (pos_items[i].cv > 0.0) {
+                    double w = pos_items[i].cv / total_assets;
+                    hhi += w * w;
+                    if (w > max_weight) {
+                        max_weight = w;
+                        max_asset_id = pos_items[i].id;
+                        snprintf(max_asset_name, sizeof(max_asset_name), "%s", pos_items[i].name);
+                    }
+                }
+            }
+        }
+        free(pos_items);
         csilk_json_free(rows);
     }
 
@@ -314,25 +363,39 @@ report_position_overview(void* pool, const report_query_t* q, report_result_t* o
     }
     double daily_pnl = 0.0;
     {
-        const char* today_sql =
-            db_is_postgres() ? "SELECT c.asset_type, COALESCE(SUM(abl.delta), 0.0) as total_delta "
-                               "FROM asset_balance_logs abl "
-                               "JOIN assets a ON abl.asset_id = a.id "
-                               "JOIN categories c ON a.category_id = c.id "
-                               "WHERE abl.user_id = ? AND a.ledger_id = ? "
-                               "AND abl.created_at::date = ?::date AND " MF_RBAC_ASSET_UNMASKED_SQL(
-                                   "a") " GROUP BY c.asset_type"
-                             : "SELECT c.asset_type, COALESCE(SUM(abl.delta), 0.0) as total_delta "
-                               "FROM asset_balance_logs abl "
-                               "JOIN assets a ON abl.asset_id = a.id "
-                               "JOIN categories c ON a.category_id = c.id "
-                               "WHERE abl.user_id = ? AND a.ledger_id = ? "
-                               "AND date(abl.created_at) = ? AND " MF_RBAC_ASSET_UNMASKED_SQL(
-                                   "a") " GROUP BY c.asset_type";
-        csilk_json_t* dlog = csilk_db_query_param_json(
-            (csilk_db_pool_t*)pool,
+        char today_sql[1536];
+        snprintf(
             today_sql,
-            (const char*[]){uid_str, lid_str, today_str, uid_str, uid_str, NULL});
+            sizeof(today_sql),
+            db_is_postgres()
+                ? "SELECT c.asset_type, COALESCE(SUM(abl.delta), 0.0) as total_delta "
+                  "FROM asset_balance_logs abl "
+                  "JOIN assets a ON abl.asset_id = a.id "
+                  "JOIN categories c ON a.category_id = c.id "
+                  "WHERE %s AND abl.created_at::date = ?::date AND " MF_RBAC_ASSET_UNMASKED_SQL(
+                      "a") " GROUP BY c.asset_type"
+                : "SELECT c.asset_type, COALESCE(SUM(abl.delta), 0.0) as total_delta "
+                  "FROM asset_balance_logs abl "
+                  "JOIN assets a ON abl.asset_id = a.id "
+                  "JOIN categories c ON a.category_id = c.id "
+                  "WHERE %s AND date(abl.created_at) = ? AND " MF_RBAC_ASSET_UNMASKED_SQL(
+                      "a") " GROUP BY c.asset_type",
+            (q->ledger_id > 0) ? MF_LEDGER_SHARED_BALANCE_LOG_SQL("abl", "a") : "abl.user_id = ?");
+        const char* dparams[10];
+        int         dp = 0;
+        if (q->ledger_id > 0) {
+            dparams[dp++] = lid_str;
+            dparams[dp++] = uid_str;
+            dparams[dp++] = uid_str;
+            dparams[dp++] = uid_str;
+        } else {
+            dparams[dp++] = uid_str;
+        }
+        dparams[dp++] = today_str;
+        dparams[dp++] = uid_str;
+        dparams[dp++] = uid_str;
+        dparams[dp] = NULL;
+        csilk_json_t* dlog = csilk_db_query_param_json((csilk_db_pool_t*)pool, today_sql, dparams);
         if (dlog) {
             size_t dn = csilk_json_array_size(dlog);
             for (size_t i = 0; i < dn; i++) {

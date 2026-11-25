@@ -335,10 +335,10 @@ asset_insert(csilk_db_pool_t* pool,
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     snprintf(cat, sizeof(cat), "%lld", (long long)category_id);
     snprintf(acct, sizeof(acct), "%lld", (long long)account_id);
-    snprintf(val, sizeof(val), "%.6f", current_value);
-    snprintf(qty, sizeof(qty), "%.4f", quantity);
-    snprintf(cb, sizeof(cb), "%.4f", cost_basis);
-    snprintf(nv, sizeof(nv), "%.4f", net_value);
+    snprintf(val, sizeof(val), "%.8f", current_value);
+    snprintf(qty, sizeof(qty), "%.8f", quantity);
+    snprintf(cb, sizeof(cb), "%.8f", cost_basis);
+    snprintf(nv, sizeof(nv), "%.8f", net_value);
     const char* method = (cost_method && cost_method[0]) ? cost_method : "weighted_average";
 
     /* account_id > 0：真实账户；account_id <= 0 时写 NULL（避免 FK RESTRICT 违规） */
@@ -544,7 +544,7 @@ asset_update_market_quote(csilk_db_pool_t* pool,
                           double           new_net_value)
 {
     char val[64], aid[32], uid[32];
-    snprintf(val, sizeof(val), "%.4f", new_net_value);
+    snprintf(val, sizeof(val), "%.8f", new_net_value);
     snprintf(aid, sizeof(aid), "%lld", (long long)asset_id);
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
 
@@ -614,9 +614,9 @@ asset_update_position(csilk_db_pool_t* pool,
     char uid[32], idstr[32], nv[64], qty[64], cb[64];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     snprintf(idstr, sizeof(idstr), "%lld", (long long)id);
-    snprintf(nv, sizeof(nv), "%.4f", net_value);
-    snprintf(qty, sizeof(qty), "%.4f", quantity);
-    snprintf(cb, sizeof(cb), "%.4f", cost_basis);
+    snprintf(nv, sizeof(nv), "%.8f", net_value);
+    snprintf(qty, sizeof(qty), "%.8f", quantity);
+    snprintf(cb, sizeof(cb), "%.8f", cost_basis);
     csilk_json_t* res = csilk_db_query_param_json(
         pool,
         "UPDATE assets SET net_value=?,quantity=?,cost_basis=?,updated_at=CURRENT_TIMESTAMP WHERE "

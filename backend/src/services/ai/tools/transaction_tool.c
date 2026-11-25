@@ -1,6 +1,7 @@
 #include "services/ai/tools/transaction_tool.h"
 #include "services/ai/tools/schema.h"
 #include "infrastructure/repositories/ai_repo_impl.h"
+#include "infrastructure/repositories/account_permission_repo_impl.h"
 #include "common/db.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -68,16 +69,18 @@ exec_get_expense_trend(const ai_tool_t*         tool,
 
     char uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)ctx->user_id);
-    const char* p[] = {uid_str, NULL};
+    const char* p[] = {uid_str, uid_str, uid_str, NULL};
 
     csilk_json_t* trend = csilk_db_query_param_json(
         ctx->pool,
-        "SELECT substr(CAST(expense_date AS TEXT), 1, 7) as month, "
-        "       SUM(CASE WHEN expense_type='income' THEN amount ELSE 0 END) as income, "
-        "       SUM(CASE WHEN expense_type='expense' THEN amount ELSE 0 END) as expense "
-        "FROM daily_expenses WHERE user_id=? "
-        "GROUP BY substr(CAST(expense_date AS TEXT), 1, 7) "
-        "ORDER BY month DESC LIMIT 24",
+        "SELECT substr(CAST(de.expense_date AS TEXT), 1, 7) as month, "
+        "       SUM(CASE WHEN de.expense_type='income' THEN de.amount ELSE 0 END) as income, "
+        "       SUM(CASE WHEN de.expense_type='expense' THEN de.amount ELSE 0 END) as expense "
+        "FROM daily_expenses de LEFT JOIN assets _ra ON de.asset_id = _ra.id "
+        "WHERE de.user_id=? AND " MF_RBAC_ASSET_UNMASKED_SQL(
+            "_ra") " "
+                   "GROUP BY substr(CAST(de.expense_date AS TEXT), 1, 7) "
+                   "ORDER BY month DESC LIMIT 24",
         p);
 
     csilk_json_t* res = csilk_json_object();

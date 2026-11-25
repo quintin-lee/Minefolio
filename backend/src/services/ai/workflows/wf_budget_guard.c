@@ -1,6 +1,7 @@
 #include "services/ai/workflows/cashflow_forecast.h"
 #include "services/ai/workflows/cashflow_forecast_common.h"
 #include "infrastructure/repositories/ai_repo_impl.h"
+#include "infrastructure/repositories/account_permission_repo_impl.h"
 #include "common/db.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -48,7 +49,7 @@ step_bg_collect(csilk_db_pool_t*    pool,
     csilk_json_t* hist_avg_arr = csilk_json_array();
     char          uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-    const char*   p[] = {uid_str, pat, NULL};
+    const char*   p[] = {uid_str, pat, uid_str, uid_str, NULL};
     csilk_json_t* res = csilk_db_query_param_json(
         pool,
         "SELECT category_id, COALESCE(category_name,'未分类') as category_name, "
@@ -58,10 +59,12 @@ step_bg_collect(csilk_db_pool_t*    pool,
         "as m_sum "
         "FROM daily_expenses "
         "  LEFT JOIN categories ON categories.id = daily_expenses.category_id "
+        "  LEFT JOIN assets _ra ON daily_expenses.asset_id = _ra.id "
         "  WHERE daily_expenses.user_id=? AND daily_expenses.expense_type='expense' AND "
         "CAST(daily_expenses.expense_date AS TEXT) NOT LIKE ? "
-        "  GROUP BY daily_expenses.category_id, ym"
-        ") GROUP BY category_id",
+        "AND " MF_RBAC_ASSET_UNMASKED_SQL("_ra") " "
+                                                 "  GROUP BY daily_expenses.category_id, ym"
+                                                 ") GROUP BY category_id",
         p);
     if (res && csilk_json_is_array(res)) {
         size_t n = csilk_json_array_size(res);

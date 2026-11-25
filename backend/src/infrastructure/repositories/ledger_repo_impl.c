@@ -286,38 +286,60 @@ int
 mf_ledger_repo_delete(void* db_pool, int64_t ledger_id)
 {
     csilk_db_pool_t* pool = (csilk_db_pool_t*)db_pool;
-    char             lid[32];
+    if (!pool || ledger_id <= 0) {
+        return -1;
+    }
+    char lid[32];
     snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
 
-    /* Cascade delete in FK dependency order */
-    csilk_db_exec_param(
-        pool, "DELETE FROM dca_plans WHERE ledger_id = ?", (const char*[]){lid, NULL});
-    csilk_db_exec_param(
-        pool, "DELETE FROM cashflow_schedules WHERE ledger_id = ?", (const char*[]){lid, NULL});
-    csilk_db_exec_param(
-        pool, "DELETE FROM daily_expenses WHERE ledger_id = ?", (const char*[]){lid, NULL});
-    csilk_db_exec_param(
-        pool, "DELETE FROM transactions WHERE ledger_id = ?", (const char*[]){lid, NULL});
-    csilk_db_exec_param(
-        pool,
-        "DELETE FROM assets WHERE account_id IN (SELECT id FROM accounts WHERE ledger_id = ?)",
-        (const char*[]){lid, NULL});
-    csilk_db_exec_param(
-        pool, "DELETE FROM account_permissions WHERE ledger_id = ?", (const char*[]){lid, NULL});
-    csilk_db_exec_param(
-        pool, "DELETE FROM accounts WHERE ledger_id = ?", (const char*[]){lid, NULL});
-    csilk_db_exec_param(
-        pool, "DELETE FROM categories WHERE ledger_id = ?", (const char*[]){lid, NULL});
-    csilk_db_exec_param(
-        pool, "DELETE FROM ledger_members WHERE ledger_id = ?", (const char*[]){lid, NULL});
+    db_tx_scope_t scope;
+    if (db_tx_scope_begin(pool, "mf_ledger_delete", &scope) != 0) {
+        return -1;
+    }
 
-    csilk_json_t* res = csilk_db_query_param_json(
-        pool, "DELETE FROM ledgers WHERE id = ? RETURNING id", (const char*[]){lid, NULL});
+    const char* lid_p[] = {lid, NULL};
+    const char* del_sqls[] = {
+        "DELETE FROM dca_plans WHERE ledger_id = ?",
+        "DELETE FROM cashflow_schedules WHERE ledger_id = ?",
+        "DELETE FROM daily_expenses WHERE ledger_id = ?",
+        "DELETE FROM transaction_lots WHERE asset_id IN (SELECT id FROM assets WHERE ledger_id = "
+        "?)",
+        "DELETE FROM ledger_snapshots WHERE asset_id IN (SELECT id FROM assets WHERE ledger_id = "
+        "?)",
+        "DELETE FROM asset_balance_logs WHERE asset_id IN (SELECT id FROM assets WHERE ledger_id "
+        "= ?)",
+        "DELETE FROM transactions WHERE ledger_id = ?",
+        "DELETE FROM assets WHERE ledger_id = ? OR account_id IN (SELECT id FROM accounts WHERE "
+        "ledger_id = ?)",
+        "DELETE FROM account_permissions WHERE ledger_id = ?",
+        "DELETE FROM accounts WHERE ledger_id = ?",
+        "DELETE FROM categories WHERE ledger_id = ?",
+        "DELETE FROM ledger_members WHERE ledger_id = ?",
+        NULL};
+    for (int i = 0; del_sqls[i]; i++) {
+        const char*  p2[] = {lid, lid, NULL};
+        const char** use_p = (i == 7) ? p2 : lid_p;
+        if (csilk_db_exec_param(pool, del_sqls[i], use_p) != 0) {
+            db_tx_scope_rollback(pool, &scope);
+            return -1;
+        }
+    }
+
+    csilk_json_t* res =
+        csilk_db_query_param_json(pool, "DELETE FROM ledgers WHERE id = ? RETURNING id", lid_p);
     int ok = res && csilk_json_array_size(res) > 0;
     if (res) {
         csilk_json_free(res);
     }
-    return ok ? 0 : -1;
+    if (!ok) {
+        db_tx_scope_rollback(pool, &scope);
+        return -1;
+    }
+    if (db_tx_scope_commit(pool, &scope) != 0) {
+        db_tx_scope_rollback(pool, &scope);
+        return -1;
+    }
+    return 0;
 }
 
 int

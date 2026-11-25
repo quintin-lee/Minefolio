@@ -29,6 +29,7 @@ typedef enum {
     LEDGER_TX_FEE,          /**< 独立手续费/规费 */
     LEDGER_TX_TAX,          /**< 税金支出 */
     LEDGER_TX_ADJUSTMENT,   /**< 账面核对调整 */
+    LEDGER_TX_LOSS,         /**< 亏损扣减 */
     LEDGER_TX_UNKNOWN = 99  /**< 未知类型 */
 } ledger_tx_type_t;
 

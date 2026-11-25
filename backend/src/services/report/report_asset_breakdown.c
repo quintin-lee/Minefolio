@@ -32,22 +32,39 @@ report_asset_breakdown(void* pool, const report_query_t* q, report_result_t* out
     char uid_str[32], lid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)q->user_id);
     snprintf(lid_str, sizeof(lid_str), "%lld", (long long)q->ledger_id);
-    const char* params[] = {uid_str, lid_str, uid_str, uid_str, NULL};
+    const char* scope_cond = (q->ledger_id > 0) ? MF_LEDGER_SHARED_ACCESS_SQL("a") : "a.user_id=?";
+    const char* params[10];
+    int         pidx = 0;
+    if (q->ledger_id > 0) {
+        params[pidx++] = lid_str;
+        params[pidx++] = uid_str;
+        params[pidx++] = uid_str;
+        params[pidx++] = uid_str;
+    } else {
+        params[pidx++] = uid_str;
+    }
+    params[pidx++] = uid_str;
+    params[pidx++] = uid_str;
+    params[pidx] = NULL;
 
-    csilk_json_t* assets = csilk_db_query_param_json(
-        (csilk_db_pool_t*)pool,
-        "SELECT c.name as name, a.current_value as value, a.currency as currency "
-        "FROM assets a JOIN categories c ON a.category_id=c.id "
-        "WHERE a.user_id=? AND a.ledger_id=? AND c.asset_type NOT IN "
-        "('loan','credit_card','other_liability') AND " MF_RBAC_ASSET_UNMASKED_SQL("a"),
-        params);
-    csilk_json_t* liabs = csilk_db_query_param_json(
-        (csilk_db_pool_t*)pool,
-        "SELECT c.name as name, a.current_value as value, a.currency as currency "
-        "FROM assets a JOIN categories c ON a.category_id=c.id "
-        "WHERE a.user_id=? AND a.ledger_id=? AND c.asset_type IN "
-        "('loan','credit_card','other_liability') AND " MF_RBAC_ASSET_UNMASKED_SQL("a"),
-        params);
+    char assets_sql[1536], liabs_sql[1536];
+    snprintf(assets_sql,
+             sizeof(assets_sql),
+             "SELECT c.name as name, a.current_value as value, a.currency as currency "
+             "FROM assets a JOIN categories c ON a.category_id=c.id "
+             "WHERE %s AND c.asset_type NOT IN "
+             "('loan','credit_card','other_liability') AND " MF_RBAC_ASSET_UNMASKED_SQL("a"),
+             scope_cond);
+    snprintf(liabs_sql,
+             sizeof(liabs_sql),
+             "SELECT c.name as name, a.current_value as value, a.currency as currency "
+             "FROM assets a JOIN categories c ON a.category_id=c.id "
+             "WHERE %s AND c.asset_type IN "
+             "('loan','credit_card','other_liability') AND " MF_RBAC_ASSET_UNMASKED_SQL("a"),
+             scope_cond);
+
+    csilk_json_t* assets = csilk_db_query_param_json((csilk_db_pool_t*)pool, assets_sql, params);
+    csilk_json_t* liabs = csilk_db_query_param_json((csilk_db_pool_t*)pool, liabs_sql, params);
 
     currency_t base_cur = currency_from_str("CNY");
     typedef struct {
@@ -196,14 +213,29 @@ report_asset_summary(void* pool, const report_query_t* q, report_result_t* out_r
     char uid_str[32], lid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)q->user_id);
     snprintf(lid_str, sizeof(lid_str), "%lld", (long long)q->ledger_id);
-    const char* params[] = {uid_str, lid_str, uid_str, uid_str, NULL};
+    const char* params[10];
+    int         pidx = 0;
+    if (q->ledger_id > 0) {
+        params[pidx++] = lid_str;
+        params[pidx++] = uid_str;
+        params[pidx++] = uid_str;
+        params[pidx++] = uid_str;
+    } else {
+        params[pidx++] = uid_str;
+    }
+    params[pidx++] = uid_str;
+    params[pidx++] = uid_str;
+    params[pidx] = NULL;
 
-    csilk_json_t* rows = csilk_db_query_param_json(
-        (csilk_db_pool_t*)pool,
-        "SELECT a.current_value, a.currency, c.name as name, c.asset_type "
-        "FROM assets a JOIN categories c ON a.category_id=c.id "
-        "WHERE a.user_id=? AND a.ledger_id=? AND " MF_RBAC_ASSET_UNMASKED_SQL("a"),
-        params);
+    char sum_sql[1536];
+    snprintf(sum_sql,
+             sizeof(sum_sql),
+             "SELECT a.current_value, a.currency, c.name as name, c.asset_type "
+             "FROM assets a JOIN categories c ON a.category_id=c.id "
+             "WHERE %s AND " MF_RBAC_ASSET_UNMASKED_SQL("a"),
+             (q->ledger_id > 0) ? MF_LEDGER_SHARED_ACCESS_SQL("a") : "a.user_id=?");
+
+    csilk_json_t* rows = csilk_db_query_param_json((csilk_db_pool_t*)pool, sum_sql, params);
     currency_t    base_cur = currency_from_str("CNY");
     money_t       current_assets = money_zero(base_cur), current_liabs = money_zero(base_cur);
     csilk_json_t* by_cat = csilk_json_array();
@@ -278,24 +310,24 @@ report_asset_summary(void* pool, const report_query_t* q, report_result_t* out_r
     }
 
     // 30-day net wealth change calculated from multi-currency balance audit logs
-    csilk_json_t* logs = csilk_db_query_param_json(
-        (csilk_db_pool_t*)pool,
-        db_is_postgres() ? "SELECT abl.delta, a.currency, c.asset_type "
-                           "FROM asset_balance_logs abl "
-                           "JOIN assets a ON abl.asset_id = a.id "
-                           "JOIN categories c ON a.category_id = c.id "
-                           "WHERE abl.user_id = ? AND a.ledger_id = ? "
-                           "AND abl.created_at::date >= CURRENT_DATE - 30 "
-                           "AND " MF_RBAC_ASSET_UNMASKED_SQL("a")
-                         : "SELECT abl.delta, a.currency, c.asset_type "
-                           "FROM asset_balance_logs abl "
-                           "JOIN assets a ON abl.asset_id = a.id "
-                           "JOIN categories c ON a.category_id = c.id "
-                           "WHERE abl.user_id = ? AND a.ledger_id = ? "
-                           "AND date(abl.created_at) >= date('now', '-30 days') "
-                           "AND " MF_RBAC_ASSET_UNMASKED_SQL("a"),
-        params);
-    money_t change_30d = money_zero(base_cur);
+    char logs_sql[1536];
+    snprintf(logs_sql,
+             sizeof(logs_sql),
+             db_is_postgres() ? "SELECT abl.delta, a.currency, c.asset_type "
+                                "FROM asset_balance_logs abl "
+                                "JOIN assets a ON abl.asset_id = a.id "
+                                "JOIN categories c ON a.category_id = c.id "
+                                "WHERE %s AND abl.created_at::date >= CURRENT_DATE - 30 "
+                                "AND " MF_RBAC_ASSET_UNMASKED_SQL("a")
+                              : "SELECT abl.delta, a.currency, c.asset_type "
+                                "FROM asset_balance_logs abl "
+                                "JOIN assets a ON abl.asset_id = a.id "
+                                "JOIN categories c ON a.category_id = c.id "
+                                "WHERE %s AND date(abl.created_at) >= date('now', '-30 days') "
+                                "AND " MF_RBAC_ASSET_UNMASKED_SQL("a"),
+             (q->ledger_id > 0) ? MF_LEDGER_SHARED_BALANCE_LOG_SQL("abl", "a") : "abl.user_id=?");
+    csilk_json_t* logs = csilk_db_query_param_json((csilk_db_pool_t*)pool, logs_sql, params);
+    money_t       change_30d = money_zero(base_cur);
     if (logs) {
         size_t n = csilk_json_array_size(logs);
         for (size_t i = 0; i < n; i++) {
@@ -375,18 +407,31 @@ report_multi_currency_summary(void* pool, const report_query_t* q, report_result
     char uid_str[32], lid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)q->user_id);
     snprintf(lid_str, sizeof(lid_str), "%lld", (long long)q->ledger_id);
-    const char* params[] = {uid_str, lid_str, uid_str, uid_str, NULL};
+    const char* params[10];
+    int         pidx = 0;
+    if (q->ledger_id > 0) {
+        params[pidx++] = lid_str;
+        params[pidx++] = uid_str;
+        params[pidx++] = uid_str;
+        params[pidx++] = uid_str;
+    } else {
+        params[pidx++] = uid_str;
+    }
+    params[pidx++] = uid_str;
+    params[pidx++] = uid_str;
+    params[pidx] = NULL;
 
-    csilk_json_t* rows = csilk_db_query_param_json(
-        (csilk_db_pool_t*)pool,
-        "SELECT a.id, a.name, a.currency, a.net_value, a.quantity, a.current_value, "
-        "CASE WHEN a.quantity > 0 AND a.net_value > 0 THEN a.quantity * a.net_value ELSE "
-        "a.current_value END as val, "
-        "c.asset_type "
-        "FROM assets a "
-        "JOIN categories c ON a.category_id = c.id "
-        "WHERE a.user_id = ? AND a.ledger_id = ? AND " MF_RBAC_ASSET_UNMASKED_SQL("a"),
-        params);
+    char mc_sql[1536];
+    snprintf(mc_sql,
+             sizeof(mc_sql),
+             "SELECT a.id, a.name, a.currency, a.net_value, a.quantity, a.current_value, "
+             "CASE WHEN a.quantity > 0 AND a.net_value > 0 THEN a.quantity * a.net_value ELSE "
+             "a.current_value END as val, c.asset_type "
+             "FROM assets a JOIN categories c ON a.category_id = c.id "
+             "WHERE %s AND " MF_RBAC_ASSET_UNMASKED_SQL("a"),
+             (q->ledger_id > 0) ? MF_LEDGER_SHARED_ACCESS_SQL("a") : "a.user_id=?");
+
+    csilk_json_t* rows = csilk_db_query_param_json((csilk_db_pool_t*)pool, mc_sql, params);
 
     currency_t base_currency_t = currency_from_str(base_cur);
 

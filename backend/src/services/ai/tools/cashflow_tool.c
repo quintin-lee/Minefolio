@@ -1,6 +1,7 @@
 #include "services/ai/tools/cashflow_tool.h"
 #include "services/ai/tools/schema.h"
 #include "infrastructure/repositories/ai_repo_impl.h"
+#include "infrastructure/repositories/account_permission_repo_impl.h"
 #include "common/db.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -51,11 +52,13 @@ exec_get_summary(const ai_tool_t* tool, const ai_tool_context_t* ctx, const csil
 
     char uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)ctx->user_id);
-    const char*   p_exp[] = {uid_str, month_pat, NULL};
+    const char*   p_exp[] = {uid_str, month_pat, uid_str, uid_str, NULL};
     csilk_json_t* exp_res = csilk_db_query_param_json(
         ctx->pool,
-        "SELECT COALESCE(SUM(amount), 0) as total FROM daily_expenses WHERE user_id=? AND "
-        "expense_type='expense' AND CAST(expense_date AS TEXT) LIKE ?",
+        "SELECT COALESCE(SUM(de.amount), 0) as total FROM daily_expenses de "
+        "LEFT JOIN assets _ra ON de.asset_id = _ra.id "
+        "WHERE de.user_id=? AND de.expense_type='expense' "
+        "AND CAST(de.expense_date AS TEXT) LIKE ? AND " MF_RBAC_ASSET_UNMASKED_SQL("_ra"),
         p_exp);
     double cur_expense = 0.0;
     if (exp_res && csilk_json_array_size(exp_res) > 0) {
@@ -67,8 +70,10 @@ exec_get_summary(const ai_tool_t* tool, const ai_tool_context_t* ctx, const csil
 
     csilk_json_t* inc_res = csilk_db_query_param_json(
         ctx->pool,
-        "SELECT COALESCE(SUM(amount), 0) as total FROM daily_expenses WHERE user_id=? AND "
-        "expense_type='income' AND CAST(expense_date AS TEXT) LIKE ?",
+        "SELECT COALESCE(SUM(de.amount), 0) as total FROM daily_expenses de "
+        "LEFT JOIN assets _ra ON de.asset_id = _ra.id "
+        "WHERE de.user_id=? AND de.expense_type='income' "
+        "AND CAST(de.expense_date AS TEXT) LIKE ? AND " MF_RBAC_ASSET_UNMASKED_SQL("_ra"),
         p_exp);
     double cur_income = 0.0;
     if (inc_res && csilk_json_array_size(inc_res) > 0) {

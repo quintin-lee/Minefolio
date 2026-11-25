@@ -34,6 +34,23 @@
     "0)))"
 
 /**
+ * @brief 共享账本成员资产归属可见性谓词（需要绑定 4 个参数：[ledger_id, user_id, user_id, user_id]）
+ */
+#define MF_LEDGER_SHARED_ACCESS_SQL(alias)                                                         \
+    "(" alias ".ledger_id = ? AND (" alias ".user_id = ? OR EXISTS (SELECT 1 FROM ledgers _l "     \
+    "WHERE _l.id = " alias ".ledger_id AND _l.owner_id = ?) OR EXISTS (SELECT 1 FROM "             \
+    "ledger_members _lm WHERE _lm.ledger_id = " alias ".ledger_id AND _lm.user_id = ?)))"
+
+/**
+ * @brief 共享账本成员余额变动日志归属谓词（需要绑定 4 个参数：[ledger_id, user_id, user_id, user_id]）
+ */
+#define MF_LEDGER_SHARED_BALANCE_LOG_SQL(log_alias, asset_alias)                                   \
+    "(" asset_alias ".ledger_id = ? AND (" log_alias ".user_id = ? OR EXISTS (SELECT 1 FROM "      \
+    "ledgers _l WHERE _l.id = " asset_alias ".ledger_id AND _l.owner_id = ?) OR EXISTS (SELECT 1 " \
+    "FROM ledger_members _lm WHERE _lm.ledger_id = " asset_alias                                   \
+    ".ledger_id AND _lm.user_id = ?)))"
+
+/**
  * @brief 资产归属账户是否对当前用户开启了金额脱敏（非所有者且 mask_balance != 0）
  *        需要绑定 2 个参数：[user_id, user_id]
  */

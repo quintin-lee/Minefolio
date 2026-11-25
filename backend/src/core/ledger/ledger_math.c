@@ -42,6 +42,9 @@ ledger_tx_type_from_str(const char* str)
     if (strcasecmp(str, "adjustment") == 0) {
         return LEDGER_TX_ADJUSTMENT;
     }
+    if (strcasecmp(str, "loss") == 0) {
+        return LEDGER_TX_LOSS;
+    }
     return LEDGER_TX_UNKNOWN;
 }
 
@@ -71,6 +74,8 @@ ledger_tx_type_to_str(ledger_tx_type_t type)
         return "tax";
     case LEDGER_TX_ADJUSTMENT:
         return "adjustment";
+    case LEDGER_TX_LOSS:
+        return "loss";
     default:
         return "unknown";
     }

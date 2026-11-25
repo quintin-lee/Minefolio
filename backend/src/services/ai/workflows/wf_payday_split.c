@@ -1,6 +1,7 @@
 #include "services/ai/workflows/cashflow_forecast.h"
 #include "services/ai/workflows/cashflow_forecast_common.h"
 #include "infrastructure/repositories/ai_repo_impl.h"
+#include "infrastructure/repositories/account_permission_repo_impl.h"
 #include "common/db.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,11 +35,13 @@ step_payday_detect(csilk_db_pool_t*    pool,
 
     char uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-    const char*   p[] = {uid_str, pat, NULL};
+    const char*   p[] = {uid_str, pat, uid_str, uid_str, NULL};
     csilk_json_t* res = csilk_db_query_param_json(
         pool,
-        "SELECT COALESCE(SUM(amount),0) as total FROM daily_expenses WHERE user_id=? AND "
-        "expense_type='income' AND CAST(expense_date AS TEXT) LIKE ?",
+        "SELECT COALESCE(SUM(de.amount),0) as total FROM daily_expenses de "
+        "LEFT JOIN assets _ra ON de.asset_id = _ra.id "
+        "WHERE de.user_id=? AND de.expense_type='income' "
+        "AND CAST(de.expense_date AS TEXT) LIKE ? AND " MF_RBAC_ASSET_UNMASKED_SQL("_ra"),
         p);
     if (res && csilk_json_array_size(res) > 0) {
         income_de = db_get_num(csilk_json_array_get(res, 0), "total");
@@ -49,9 +52,11 @@ step_payday_detect(csilk_db_pool_t*    pool,
 
     csilk_json_t* res_tx = csilk_db_query_param_json(
         pool,
-        "SELECT COALESCE(SUM(amount),0) as total, COUNT(*) as cnt "
-        "FROM transactions WHERE user_id=? AND transaction_type IN "
-        "('income','deposit','transfer_in') AND CAST(transaction_date AS TEXT) LIKE ?",
+        "SELECT COALESCE(SUM(t.amount),0) as total, COUNT(*) as cnt "
+        "FROM transactions t LEFT JOIN assets _ra ON t.asset_id = _ra.id "
+        "WHERE t.user_id=? AND t.transaction_type IN "
+        "('income','deposit','transfer_in') AND CAST(t.transaction_date AS TEXT) LIKE ? "
+        "AND " MF_RBAC_ASSET_UNMASKED_SQL("_ra"),
         p);
     if (res_tx && csilk_json_array_size(res_tx) > 0) {
         const csilk_json_t* row = csilk_json_array_get(res_tx, 0);

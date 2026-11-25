@@ -1,6 +1,7 @@
 #include "services/ai/workflows/cashflow_forecast.h"
 #include "services/ai/workflows/cashflow_forecast_common.h"
 #include "infrastructure/repositories/ai_repo_impl.h"
+#include "infrastructure/repositories/account_permission_repo_impl.h"
 #include "common/db.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -43,14 +44,17 @@ step_ad_collect(csilk_db_pool_t*    pool,
     int64_t       cnt = 0;
     char          uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-    const char*   p[] = {uid_str, since_date, NULL};
+    const char*   p[] = {uid_str, since_date, uid_str, uid_str, NULL};
     csilk_json_t* res = csilk_db_query_param_json(
         pool,
         "SELECT de.id, de.amount, de.expense_date, de.note, "
         "COALESCE(c.name,'未分类') as category_name, de.category_id "
         "FROM daily_expenses de LEFT JOIN categories c ON c.id=de.category_id "
+        "LEFT JOIN assets _ra ON de.asset_id=_ra.id "
         "WHERE de.user_id=? AND de.expense_type='expense' AND de.expense_date >= ? "
-        "ORDER BY de.expense_date DESC, de.id DESC LIMIT 500",
+        "AND " MF_RBAC_ASSET_UNMASKED_SQL(
+            "_ra") " "
+                   "ORDER BY de.expense_date DESC, de.id DESC LIMIT 500",
         p);
     if (res && csilk_json_is_array(res)) {
         size_t n = csilk_json_array_size(res);
@@ -67,12 +71,13 @@ step_ad_collect(csilk_db_pool_t*    pool,
     csilk_json_t* cat_stats = csilk_json_array();
     csilk_json_t* res_stats = csilk_db_query_param_json(
         pool,
-        "SELECT category_id, COALESCE(c.name,'未分类') as category_name, "
-        "COUNT(*) as cnt, AVG(amount) as avg_amt, "
-        "AVG(amount*amount) as avg_sq "
+        "SELECT de.category_id, COALESCE(c.name,'未分类') as category_name, "
+        "COUNT(*) as cnt, AVG(de.amount) as avg_amt, "
+        "AVG(de.amount*de.amount) as avg_sq "
         "FROM daily_expenses de LEFT JOIN categories c ON c.id=de.category_id "
+        "LEFT JOIN assets _ra ON de.asset_id=_ra.id "
         "WHERE de.user_id=? AND de.expense_type='expense' AND de.expense_date >= ? "
-        "GROUP BY category_id",
+        "AND " MF_RBAC_ASSET_UNMASKED_SQL("_ra") " GROUP BY de.category_id",
         p);
     if (res_stats && csilk_json_is_array(res_stats)) {
         size_t n = csilk_json_array_size(res_stats);
@@ -105,8 +110,11 @@ step_ad_collect(csilk_db_pool_t*    pool,
     csilk_json_t* tx_recent = csilk_json_array();
     csilk_json_t* res_tx = csilk_db_query_param_json(
         pool,
-        "SELECT id, amount, transaction_type, note, transaction_date FROM transactions "
-        "WHERE user_id=? AND transaction_date >= ? ORDER BY transaction_date DESC LIMIT 500",
+        "SELECT t.id, t.amount, t.transaction_type, t.note, t.transaction_date "
+        "FROM transactions t LEFT JOIN assets _ra ON t.asset_id=_ra.id "
+        "WHERE t.user_id=? AND t.transaction_date >= ? AND " MF_RBAC_ASSET_UNMASKED_SQL(
+            "_ra") " "
+                   "ORDER BY t.transaction_date DESC LIMIT 500",
         p);
     if (res_tx && csilk_json_is_array(res_tx)) {
         size_t n = csilk_json_array_size(res_tx);

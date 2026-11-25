@@ -1,5 +1,6 @@
 #include "services/ai/workflows/monthly_review.h"
 #include "infrastructure/repositories/ai_repo_impl.h"
+#include "infrastructure/repositories/account_permission_repo_impl.h"
 #include "common/db.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -37,15 +38,18 @@ mr_get_user_avg_monthly_burn(csilk_db_pool_t* pool, int64_t user_id)
 {
     char uid_str[32];
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
-    const char*   params[] = {uid_str, NULL};
-    csilk_json_t* res =
-        csilk_db_query_param_json(pool,
-                                  "SELECT AVG(monthly_sum) as avg_burn FROM ("
-                                  "  SELECT SUM(amount) as monthly_sum FROM daily_expenses "
-                                  "  WHERE user_id = ? AND expense_type = 'expense' "
-                                  "  GROUP BY substr(CAST(expense_date AS TEXT), 1, 7)"
-                                  ")",
-                                  params);
+    const char*   params[] = {uid_str, uid_str, uid_str, NULL};
+    csilk_json_t* res = csilk_db_query_param_json(
+        pool,
+        "SELECT AVG(monthly_sum) as avg_burn FROM ("
+        "  SELECT SUM(de.amount) as monthly_sum FROM daily_expenses de "
+        "  LEFT JOIN assets _ra ON de.asset_id = _ra.id "
+        "  WHERE de.user_id = ? AND de.expense_type = 'expense' "
+        "  AND " MF_RBAC_ASSET_UNMASKED_SQL(
+            "_ra") " "
+                   "  GROUP BY substr(CAST(de.expense_date AS TEXT), 1, 7)"
+                   ")",
+        params);
     double avg_burn = 0.0;
     if (res && csilk_json_array_size(res) > 0) {
         avg_burn = db_get_num(csilk_json_array_get(res, 0), "avg_burn");

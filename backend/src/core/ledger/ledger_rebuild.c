@@ -136,13 +136,15 @@ ledger_rebuild_position_ex(csilk_db_pool_t*         pool,
     csilk_json_free(a_rows);
 
     // 2. Check for latest checkpoint snapshot (Two-stage incremental rebuild)
+    // 注意：FIFO 资产的批次剩余量未完整物化到无批次断点，恢复快照会破坏 transaction_lots 状态，
+    // 因此 FIFO 资产（除非显式无快照）始终执行全量批次重放。
     csilk_json_t* snap = NULL;
-    if (exclude_tx_id <= 0) {
+    if (exclude_tx_id <= 0 && !is_fifo) {
         ledger_snapshot_get_latest(pool, user_id, asset_id, NULL, &snap);
     }
     bool had_snapshot = (snap != NULL);
 
-    if (is_fifo && (!had_snapshot || exclude_tx_id > 0)) {
+    if (is_fifo) {
         tx_lots_delete_by_asset(pool, user_id, asset_id);
     }
 

@@ -297,7 +297,7 @@ ai_news_execute_analysis(csilk_db_pool_t* pool,
         sector_impacts = csilk_json_get_string(digest, "sector_impacts");
     }
 
-    /* 2. 获取用户指定账本持仓（非现金/非负债） */
+    /* 2. 获取用户指定账本持仓（非现金/非负债，遵守账户级 RBAC 与共享账本权限） */
     csilk_json_t* raw_assets = NULL;
     if (ledger_id > 0) {
         raw_assets = csilk_db_query_param_json(
@@ -305,10 +305,20 @@ ai_news_execute_analysis(csilk_db_pool_t* pool,
             "SELECT a.id, a.name as asset_name, COALESCE(c.asset_type, '') as asset_type, "
             "       COALESCE(a.current_value, 0) as current_value "
             "FROM assets a LEFT JOIN categories c ON c.id = a.category_id "
-            "WHERE a.user_id = ? AND a.ledger_id = ? AND COALESCE(c.asset_type, '') NOT IN "
-            "      ('cash','loan','credit_card','other_liability') "
+            "WHERE a.ledger_id = ? AND (a.user_id = ? OR "
+            "EXISTS (SELECT 1 FROM ledgers _l WHERE _l.id = a.ledger_id AND _l.owner_id = ?) OR "
+            "EXISTS (SELECT 1 FROM ledger_members lm WHERE lm.ledger_id = a.ledger_id AND "
+            "lm.user_id = ?)) "
+            "AND COALESCE(c.asset_type, '') NOT IN "
+            "('cash','loan','credit_card','other_liability') "
+            "AND (a.account_id IS NULL OR a.account_id <= 0 OR "
+            "EXISTS (SELECT 1 FROM accounts _ac JOIN ledgers _l2 ON _l2.id = _ac.ledger_id WHERE "
+            "_ac.id = a.account_id AND _l2.owner_id = ?) OR "
+            "NOT EXISTS (SELECT 1 FROM account_permissions _ap WHERE _ap.account_id = "
+            "a.account_id AND _ap.user_id = ? AND (_ap.permission_level = 'none' OR "
+            "_ap.mask_balance != 0))) "
             "ORDER BY a.current_value DESC LIMIT 15",
-            (const char*[]){uid_str, lid_str, NULL});
+            (const char*[]){lid_str, uid_str, uid_str, uid_str, uid_str, uid_str, NULL});
     } else {
         raw_assets = csilk_db_query_param_json(
             pool,
@@ -317,8 +327,14 @@ ai_news_execute_analysis(csilk_db_pool_t* pool,
             "FROM assets a LEFT JOIN categories c ON c.id = a.category_id "
             "WHERE a.user_id = ? AND COALESCE(c.asset_type, '') NOT IN "
             "      ('cash','loan','credit_card','other_liability') "
+            "AND (a.account_id IS NULL OR a.account_id <= 0 OR "
+            "EXISTS (SELECT 1 FROM accounts _ac JOIN ledgers _l2 ON _l2.id = _ac.ledger_id WHERE "
+            "_ac.id = a.account_id AND _l2.owner_id = ?) OR "
+            "NOT EXISTS (SELECT 1 FROM account_permissions _ap WHERE _ap.account_id = "
+            "a.account_id AND _ap.user_id = ? AND (_ap.permission_level = 'none' OR "
+            "_ap.mask_balance != 0))) "
             "ORDER BY a.current_value DESC LIMIT 15",
-            (const char*[]){uid_str, NULL});
+            (const char*[]){uid_str, uid_str, uid_str, NULL});
     }
 
     /* 3. 持仓数据绝对值脱敏（仅计算百分比权重，屏蔽金额与数量） */
