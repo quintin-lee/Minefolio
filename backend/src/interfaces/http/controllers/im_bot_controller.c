@@ -118,14 +118,14 @@ api_im_bind(csilk_ctx_t* c)
     int           code = 0;
     char          err_buf[256] = {0};
     int           rc = im_bot_usecase_bind(db_get_pool(),
-                                 c,
-                                 user_id,
-                                 platform_buf,
-                                 im_user_id,
-                                 &data,
-                                 &code,
-                                 err_buf,
-                                 sizeof(err_buf));
+                                           c,
+                                           user_id,
+                                           platform_buf,
+                                           im_user_id,
+                                           &data,
+                                           &code,
+                                           err_buf,
+                                           sizeof(err_buf));
     csilk_json_free(body);
     if (rc != 0 || !data) {
         respond_error(c, code ? code : 500, err_buf[0] ? err_buf : "绑定失败");
@@ -252,15 +252,15 @@ api_im_bind_auth(csilk_ctx_t* c)
     int           code = 0;
     char          err_buf[256] = {0};
     int           rc = im_bot_usecase_bind_auth(db_get_pool(),
-                                      c,
-                                      platform_buf,
-                                      im_user_id,
-                                      username,
-                                      password,
-                                      &data,
-                                      &code,
-                                      err_buf,
-                                      sizeof(err_buf));
+                                                c,
+                                                platform_buf,
+                                                im_user_id,
+                                                username,
+                                                password,
+                                                &data,
+                                                &code,
+                                                err_buf,
+                                                sizeof(err_buf));
     csilk_json_free(body);
 
     if (rc != 0 || !data) {
