@@ -51,7 +51,14 @@ const router = createRouter({
 router.beforeEach(async (to, _from, next) => {
   const auth = useAuthStore()
   if (auth.isInitialized === null) {
-    await auth.checkSystemStatus()
+    if (auth.token) {
+      auth.isInitialized = true
+      void auth.checkSystemStatus({ timeout: 3000 })
+    } else if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      auth.isInitialized = true
+    } else {
+      await auth.checkSystemStatus({ timeout: 2500 })
+    }
   }
   if (auth.isInitialized === false) {
     if (to.path !== '/m/login') {

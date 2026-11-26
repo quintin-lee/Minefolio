@@ -29,9 +29,11 @@ export const useAuthStore = defineStore('auth', () => {
    * 检查系统初始化状态 (未初始化时引导进入 /setup 页面)
    * @returns 系统是否已初始化
    */
-  async function checkSystemStatus() {
+  async function checkSystemStatus(options?: { timeout?: number }) {
     try {
-      const res = await systemApi.status()
+      const res = options?.timeout
+        ? await systemApi.status({ timeout: options.timeout })
+        : await systemApi.status()
       isInitialized.value = res.initialized
       return res.initialized
     } catch {

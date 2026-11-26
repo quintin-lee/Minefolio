@@ -23,7 +23,7 @@ export const systemApi = {
    * @route GET /api/system/status
    * @returns 系统初始化状态对象
    */
-  status: () => http.get<SystemStatus>('/system/status'),
+  status: (config?: { timeout?: number }) => http.get<SystemStatus>('/system/status', config),
 
   /**
    * 执行系统首次引导初始化 (创建超级管理员账号)。
