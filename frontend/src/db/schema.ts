@@ -149,6 +149,13 @@ CREATE TABLE IF NOT EXISTS sync_meta (
   value TEXT
 );
 -- key='last_sync_at' 用于增量拉取
+
+-- 移动端聊天草稿：仅本地存储，不进入 SyncEngine 同步队列
+CREATE TABLE IF NOT EXISTS chat_drafts (
+  scope_key  TEXT PRIMARY KEY,
+  content    TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 `
 
 /** 各本地同步表允许持久化到 SQLite 的字段白名单 (不含移动端内部控制列 __deleted) */
