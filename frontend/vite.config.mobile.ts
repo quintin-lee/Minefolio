@@ -89,5 +89,13 @@ export default defineConfig({
     include: ['tests/**/*.spec.ts'],
     setupFiles: ['tests/setup.ts'],
     testTimeout: 10000,
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'html', 'lcov'],
+      reportsDirectory: 'coverage',
+      include: ['src/**/*.{ts,vue}'],
+      exclude: ['src/**/*.d.ts', 'src/db/generated/**', 'src/icons/**', 'src/styles/**'],
+      thresholds: { lines: 50, functions: 42, branches: 65, statements: 50 },
+    },
   },
 })

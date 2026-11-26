@@ -13,7 +13,8 @@
     "check": "vue-tsc -b && vitest run --config vite.config.mobile.ts",
     "test": "vitest run --config vite.config.mobile.ts",
     "test:isolated": "vitest run --config vite.config.mobile.ts --pool=forks --poolOptions.forks.maxForks=2 --poolOptions.forks.minForks=1",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:coverage": "vitest run --config vite.config.mobile.ts --coverage"
   },
   "dependencies": {
     "@capacitor/android": "^6.2.1",
@@ -49,6 +50,7 @@
     "@types/qrcode": "^1.5.6",
     "@types/sql.js": "^1.4.9",
     "@vitejs/plugin-vue": "^5.0.0",
+    "@vitest/coverage-v8": "^1.6.1",
     "@vue/test-utils": "^2.4.6",
     "jsdom": "^24.1.0",
     "typescript": "~5.5.0",

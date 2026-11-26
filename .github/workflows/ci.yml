@@ -195,6 +195,49 @@ jobs:
         run: |
           ctest --test-dir backend/build-asan --output-on-failure -j2
 
+  backend-coverage:
+    name: Backend Unit Coverage
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential gcc-14 g++-14 cmake pkg-config gcovr \
+            libuv1-dev libyaml-dev libsqlite3-dev libssl-dev \
+            libcurl4-openssl-dev zlib1g-dev sqlite3 curl python3 nodejs jq
+
+      - name: Build backend with coverage
+        run: |
+          cd backend
+          CC=gcc-14 CXX=g++-14 cmake -B build-cov -G "Unix Makefiles" \
+            -DCMAKE_BUILD_TYPE=Debug -DMINEFOLIO_COVERAGE=ON
+          JOBS=$(($(nproc) / 2)); [ "$JOBS" -lt 1 ] && JOBS=1
+          cmake --build build-cov --parallel "$JOBS"
+
+      - name: Run CTest unit tests with coverage
+        run: ctest --test-dir backend/build-cov --output-on-failure -j2
+
+      - name: Enforce coverage gate and report
+        working-directory: backend
+        run: |
+          gcovr -r . -f 'src/.*' -e 'tests/.*' \
+            --gcov-ignore-parse-errors negative_hits.warn_once_per_file \
+            --txt --txt-summary --xml coverage.xml --html-details coverage/index.html \
+            --fail-under-line 40 --fail-under-function 50 --fail-under-branch 29
+
+      - name: Upload backend coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: |
+            backend/coverage.xml
+            backend/coverage/
+
   gateway-test:
     name: Gateway Adapter and iLink Tests
     runs-on: ubuntu-latest
@@ -233,8 +276,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run unit tests
-        run: npm test
+      - name: Run unit tests with coverage gate
+        run: npm run test:coverage
+
+      - name: Upload frontend coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: frontend/coverage/
 
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium

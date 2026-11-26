@@ -33,7 +33,12 @@ FetchContent_MakeAvailable(csilk)
 # Opt-in sanitizer build for dev (default flags untouched):
 #   cmake -S backend -B backend/build-asan -DMINEFOLIO_SANITIZE=ON
 option(MINEFOLIO_SANITIZE "Build with AddressSanitizer + UBSan" OFF)
+option(MINEFOLIO_COVERAGE "Build with gcov line/branch coverage instrumentation" OFF)
 set(MINEFOLIO_ASAN_RSS_LIMIT_MB "2048" CACHE STRING "Hard RSS limit (MB) for ASan test binaries")
+if(MINEFOLIO_COVERAGE)
+    add_compile_options(-O0 -g --coverage)
+    add_link_options(--coverage)
+endif()
 if(MINEFOLIO_SANITIZE)
     add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer -g)
     add_link_options(-fsanitize=address,undefined)

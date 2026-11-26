@@ -2,6 +2,7 @@
 backend/Testing/
 backend/build/
 backend/build-asan/
+backend/build-cov/
 backend/compile_commands.json
 backend/config/*.json
 
@@ -42,6 +43,8 @@ deps/
 playwright-*/
 test-results/
 playwright-report/
+coverage/
+coverage.xml
 
 .npm_cache/
 .pw_tmp/
