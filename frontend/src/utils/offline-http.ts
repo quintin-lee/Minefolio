@@ -5,11 +5,9 @@
 
 // frontend/src/utils/offline-http.ts
 import http from './http'
-import { query, run, rowsFrom, persist } from '@/db/local'
-import { TABLE_COLUMNS } from '@/db/schema'
-import type { SqlValue } from '@/types/mobile'
-import { useSyncStore } from '@/stores/sync'
+import { query, rowsFrom } from '@/db/local'
 import { useAuthStore } from '@/stores/auth'
+import { SyncEngine } from '@/sync/SyncEngine'
 import { ElMessage } from 'element-plus'
 
 /** URL 路径片段到本地 SQLite 数据库表名的映射 */
@@ -18,6 +16,8 @@ const TABLE_BY_PATH: Record<string, string> = {
   'transactions': 'transactions',
   'assets': 'assets',
   'accounts': 'accounts',
+  'categories': 'categories',
+  'tags': 'tags',
 }
 
 /**
@@ -28,7 +28,7 @@ const TABLE_BY_PATH: Record<string, string> = {
  * @returns 数据库表名，若不匹配返回 null
  */
 function tableNameFromUrl(url: string): string | null {
-  const m = url.match(/^(?:\/api)?\/(daily-expenses|transactions|assets|accounts)(?:\/\d+)?(?:\?|$)/)
+  const m = url.match(/^(?:\/api)?\/(daily-expenses|transactions|assets|accounts|categories|tags)(?:\/\d+)?(?:\?|$)/)
   if (!m || !m[1]) return null
   return TABLE_BY_PATH[m[1]] ?? null
 }
@@ -56,49 +56,6 @@ function nextLocalId(table: string): number {
     candidate += 1
   }
   return candidate
-}
-
-/**
- * 执行离线本地写操作并加入待同步队列
- * @param table 目标表名
- * @param operation 操作类型 ('create' | 'update' | 'delete')
- * @param recordId 记录主键 ID
- * @param payload 记录实体数据
- */
-async function writeLocal(table: string, operation: 'create' | 'update' | 'delete', recordId: number, payload: Record<string, unknown>): Promise<void> {
-  const queuePayload: Record<string, unknown> = { ...payload }
-  if (queuePayload.ledger_id === undefined) {
-    const activeLedger = Number(localStorage.getItem('minefolio_active_ledger_id') || 0)
-    if (activeLedger > 0) {
-      queuePayload.ledger_id = activeLedger
-    }
-  }
-  if (operation === 'delete') {
-    run(`UPDATE ${table} SET __deleted = 1 WHERE id = ?`, [recordId])
-    persist()
-    useSyncStore().enqueue(table, recordId, operation, queuePayload)
-    return
-  }
-  const allowed = TABLE_COLUMNS[table]
-  const cols = Object.keys(queuePayload).filter(
-    (k) => k !== '__deleted' && k !== 'id' && (!allowed || allowed.includes(k)) && queuePayload[k] !== undefined
-  )
-  if (cols.length === 0) {
-    // 无有效字段可写（例如仅带 id 或全为非持久化扩展字段），只入队不做本地写入
-    persist()
-    useSyncStore().enqueue(table, recordId, operation, queuePayload)
-    return
-  }
-  const toSqlVal = (v: unknown): SqlValue => (typeof v === 'boolean' ? (v ? 1 : 0) : (v as SqlValue))
-  const placeholders = cols.map(() => '?').join(', ')
-  const updates = cols.map((c) => `${c} = ?`).join(', ')
-  run(
-    `INSERT INTO ${table} (${cols.join(', ')}, id, __deleted) VALUES (${placeholders}, ?, 0)
-     ON CONFLICT(id) DO UPDATE SET ${updates}, __deleted = 0`,
-    [...cols.map((c) => toSqlVal(queuePayload[c])), recordId, ...cols.map((c) => toSqlVal(queuePayload[c]))]
-  )
-  persist()
-  useSyncStore().enqueue(table, recordId, operation, queuePayload)
 }
 
 /**
@@ -155,7 +112,7 @@ export async function offlineRequest(method: 'get' | 'post' | 'put' | 'delete', 
       // 仅对网络故障下的写操作做离线落库；读操作与服务端响应错误(4xx/5xx/业务码)直接抛出
       if (method === 'get' || !isNetworkError(err)) throw err
       const recordId = id ?? (data?.id as number) ?? nextLocalId(table)
-      await writeLocal(table, operation, recordId, data ?? {})
+      SyncEngine.getInstance().enqueue(table, recordId, operation, data ?? {})
       ElMessage.success('已离线保存，联网后自动同步')
       return { offline: true, id: recordId }
     }

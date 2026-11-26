@@ -94,6 +94,18 @@ describe('offline-http', () => {
     expect(JSON.parse(String(q[0].payload)).tags).toEqual([1, 2])
   })
 
+  it('offline-writes categories and tags through registered paths', async () => {
+    ;(http.request as any).mockRejectedValue(new Error('Network Error'))
+    const categoryRes = await offlineApi.post('/categories', { name: '离线分类', type: 'expense', currency: 'CNY' })
+    const tagRes = await offlineApi.post('/tags', { name: '离线标签' })
+    expect(categoryRes.offline).toBe(true)
+    expect(tagRes.offline).toBe(true)
+    expect(rowsFrom(query('SELECT * FROM categories WHERE name = ?', ['离线分类'])).length).toBe(1)
+    expect(rowsFrom(query('SELECT * FROM tags WHERE name = ?', ['离线标签'])).length).toBe(1)
+    const queued = rowsFrom(query('SELECT table_name FROM sync_queue WHERE synced = 0 ORDER BY id ASC'))
+    expect(queued.map((q) => q.table_name)).toEqual(['categories', 'tags'])
+  })
+
   it('rethrows HTTP 4xx/5xx and business errors instead of falling back to offline writes', async () => {
     ;(http.request as any).mockRejectedValue({
       response: { status: 403, data: { code: 1004, message: 'Forbidden' } },

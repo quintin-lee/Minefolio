@@ -9,6 +9,7 @@ import router from './router/mobile'
 import i18n from '@/composables/useI18n'
 import { initLocalDb } from '@/db/local'
 import { useSyncStore, setSyncOnAuthFail } from '@/stores/sync'
+import { SyncEngine } from '@/sync/SyncEngine'
 import { registerNetworkListeners } from '@/utils/sync-network'
 import { setMobileMode, setAuthErrorHandler } from '@/utils/http'
 import { hideNativeSplash, dismissBootSplash } from '@/utils/boot-splash'
@@ -39,8 +40,11 @@ async function bootstrap() {
   app.use(router)
   app.use(i18n)
 
+  // SyncEngine 唯一执行者：显式注册 6 张可写表（构造函数已默认注册，幂等）
+  SyncEngine.getInstance().registerDefaultTables()
   const sync = useSyncStore()
   sync.init()
+  sync.subscribeSyncEngine()
   registerNetworkListeners(() => sync.syncNow())
 
   app.mount('#app')

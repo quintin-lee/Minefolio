@@ -172,6 +172,13 @@ export class SyncEngine {
     this.registeredTables.set(def.table, def)
   }
 
+  /** bootstrap 阶段显式注册 6 张可写表（构造函数已默认注册，重复调用幂等） */
+  registerDefaultTables(): void {
+    for (const [table, api] of Object.entries(API_BY_TABLE)) {
+      this.registerTable({ table, api })
+    }
+  }
+
   registerRemapHandlers(handlers: RemapHandlers): void {
     this.remapHandlers = handlers
   }
