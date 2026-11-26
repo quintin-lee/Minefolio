@@ -117,6 +117,7 @@ function migrateColumns(database: Database): void {
     'ALTER TABLE transactions ADD COLUMN ledger_id INTEGER DEFAULT 0',
     'ALTER TABLE daily_expenses ADD COLUMN ledger_id INTEGER DEFAULT 0',
     'ALTER TABLE sync_queue ADD COLUMN ledger_id INTEGER DEFAULT 0',
+    'ALTER TABLE sync_queue ADD COLUMN remote_payload TEXT',
   ]
   for (const sql of stmts) {
     try {

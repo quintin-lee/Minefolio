@@ -64,6 +64,37 @@ describe('local db', () => {
     expect(qRow.ledger_id).toBe(2)
   })
 
+  it('migrates legacy sync_queue to add remote_payload without data loss', async () => {
+    await initLocalDb()
+    // 模拟老库：重建不含 remote_payload 列的 sync_queue 并写入一条待推送项
+    getDb().run('DROP TABLE sync_queue')
+    getDb().run(`CREATE TABLE sync_queue (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      table_name    TEXT NOT NULL,
+      record_id     INTEGER NOT NULL,
+      ledger_id     INTEGER DEFAULT 0,
+      operation     TEXT NOT NULL CHECK(operation IN ('create','update','delete')),
+      payload       TEXT NOT NULL,
+      local_version TEXT NOT NULL,
+      synced        INTEGER DEFAULT 0,
+      conflict      INTEGER DEFAULT 0
+    )`)
+    run('INSERT INTO sync_queue (table_name, record_id, operation, payload, local_version) VALUES (?,?,?,?,?)',
+      ['assets', 101, 'create', '{}', '2026-11-19T00:00:00Z'])
+    persist()
+    await flushPersist()
+
+    const fresh = await reloadDb()
+    await fresh.initLocalDb()
+    const rows = fresh.rowsFrom(fresh.query('SELECT * FROM sync_queue WHERE record_id = 101'))
+    expect(rows.length).toBe(1)
+    expect(rows[0].table_name).toBe('assets')
+    expect(rows[0].remote_payload).toBeNull()
+    // 重复初始化幂等，不重复加列
+    await fresh.initLocalDb()
+    expect(fresh.rowsFrom(fresh.query('SELECT * FROM sync_queue WHERE record_id = 101')).length).toBe(1)
+  })
+
   it('does not write plaintext b64 synchronously before encryption when WebCrypto is available', async () => {
     await initLocalDb()
     run('INSERT INTO sync_meta (key, value) VALUES (?,?)', ['sec_test', 'v1'])

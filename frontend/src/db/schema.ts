@@ -140,7 +140,8 @@ CREATE TABLE IF NOT EXISTS sync_queue (
   payload       TEXT NOT NULL,
   local_version TEXT NOT NULL,
   synced        INTEGER DEFAULT 0,
-  conflict      INTEGER DEFAULT 0
+  conflict      INTEGER DEFAULT 0,
+  remote_payload TEXT DEFAULT NULL
 );
 
 CREATE TABLE IF NOT EXISTS sync_meta (

@@ -9,6 +9,7 @@ export interface SyncQueueItem {
   synced: number // 0|1
   conflict: number // 0|1
   ledger_id?: number
+  remote_payload?: Record<string, unknown> // 冲突时服务端版本完整数据（pull 阶段填充）
 }
 
 export interface SyncMeta {
