@@ -224,6 +224,8 @@ jobs:
       - name: Enforce coverage gate and report
         working-directory: backend
         run: |
+          # gcovr --html-details requires the output directory to exist
+          mkdir -p coverage
           gcovr -r . -f 'src/.*' -e 'tests/.*' \
             --gcov-ignore-parse-errors negative_hits.warn_once_per_file \
             --txt --txt-summary --xml coverage.xml --html-details coverage/index.html \
