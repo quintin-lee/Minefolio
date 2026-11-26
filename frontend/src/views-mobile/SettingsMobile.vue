@@ -116,19 +116,11 @@
       </p>
     </div>
 
-    <div v-if="syncConflicts.length > 0" class="sync-conflicts-card">
-      <div class="card-title">同步冲突项（{{ syncConflicts.length }}）</div>
-      <p class="card-hint">以下离线操作被服务端拒绝，已暂停自动重试：</p>
-      <div v-for="item in syncConflicts" :key="item.id" class="conflict-row">
-        <div class="conflict-meta">
-          <span class="conflict-op">{{ item.table_name }} · {{ item.operation }} #{{ item.record_id }}</span>
-        </div>
-        <div class="conflict-actions">
-          <el-button size="small" type="primary" plain @click="handleRetryConflict(item.id)">重试</el-button>
-          <el-button size="small" type="danger" plain @click="handleDiscardConflict(item.id)">放弃</el-button>
-        </div>
-      </div>
-    </div>
+    <ConflictList
+      :conflicts="syncConflicts"
+      @retry="handleRetryConflict"
+      @discard="handleDiscardConflict"
+    />
     <div class="action-buttons-group">
       <el-button class="full-width-btn" @click="goPlans">定投计划与现金流日历</el-button>
       <el-button class="full-width-btn" @click="exportCsv">导出 CSV</el-button>
@@ -149,6 +141,7 @@ import { useSyncStore } from '@/stores/sync'
 import { useAuthStore } from '@/stores/auth'
 import { getLocalDbStatus } from '@/db/local'
 import { dailyExpensesApi } from '@/api/daily_expenses'
+import ConflictList from '@/components/mobile/ConflictList.vue'
 import { useServerUrl, type ServerConnectionTestResult } from '@/composables/useServerUrl'
 
 const router = useRouter()
@@ -195,6 +188,9 @@ onBeforeUnmount(() => {
 
 async function syncNow() {
   await sync.syncNow()
+  // 校验/权限类永久失败的离线项已由引擎放弃入队，这里逐条提示用户
+  for (const err of sync.pushErrors) ElMessage.error(err.message)
+  if (sync.pushErrors.length > 0) sync.clearPushErrors()
   refreshDbStatus()
 }
 async function handleRetryConflict(id: number) {
@@ -428,29 +424,11 @@ async function logout() {
   color: var(--mf-danger);
   border-color: var(--mf-danger-border);
 }
-.sync-warning-banner,
-.sync-conflicts-card {
+.sync-warning-banner {
   margin-top: 12px;
   background: var(--mf-surface);
   border: 1px solid var(--mf-danger-border);
   border-radius: 12px;
   padding: 14px;
-}
-.conflict-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding-top: 8px;
-  margin-top: 8px;
-  border-top: 1px solid var(--mf-border);
-}
-.conflict-op {
-  font-size: 13px;
-  color: var(--mf-text-regular);
-}
-.conflict-actions {
-  display: flex;
-  gap: 6px;
 }
 </style>

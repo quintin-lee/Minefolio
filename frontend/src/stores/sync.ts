@@ -104,6 +104,11 @@ export const useSyncStore = defineStore('sync', () => {
     syncFromEngine()
   }
 
+  function clearPushErrors(): void {
+    engine.clearPushErrors()
+    syncFromEngine()
+  }
+
   function reset(): void {
     engine.reset()
     syncFromEngine()
@@ -127,6 +132,7 @@ export const useSyncStore = defineStore('sync', () => {
     syncNow,
     init,
     subscribeSyncEngine,
+    clearPushErrors,
     reset,
   }
 })

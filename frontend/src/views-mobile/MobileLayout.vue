@@ -3,22 +3,13 @@
     <header class="mobile-top-bar">
       <LedgerSelector class="mobile-ledger" />
       <div class="top-bar-actions">
-        <span
-          v-if="!isOnline"
-          class="net-status-pill is-offline"
-          title="当前处于离线模式，核心账目将暂存本地待联网同步"
-        >
-          离线模式
-        </span>
-        <span
-          v-else-if="syncStore.activePendingCount > 0 || syncStore.conflicts.length > 0"
-          class="net-status-pill is-pending"
+        <SyncStatusBanner
+          :is-online="isOnline"
+          :pending-count="syncStore.activePendingCount"
+          :conflict-count="syncStore.conflicts.length"
+          :syncing="syncStore.syncing"
           @click="syncStore.syncNow()"
-          title="点击立即同步本地离线变更"
-        >
-          <template v-if="syncStore.activePendingCount > 0">待同步 {{ syncStore.activePendingCount }}</template>
-          <template v-else>同步冲突 {{ syncStore.conflicts.length }}</template>
-        </span>
+        />
         <AmountMaskToggle />
       </div>
     </header>
@@ -50,6 +41,7 @@ import { useSyncStore } from '@/stores/sync'
 import { resetFinancialEntities } from '@/composables/useFinancialEntities'
 import { t } from '@/utils/locale'
 import AmountMaskToggle from '@/components/AmountMaskToggle.vue'
+import SyncStatusBanner from '@/components/mobile/SyncStatusBanner.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -60,7 +52,7 @@ const isOnline = ref(typeof navigator !== 'undefined' ? navigator.onLine : true)
 
 function handleOnline() {
   isOnline.value = true
-  void syncStore.syncNow()
+  // 同步触发统一由 sync-network.ts 的 registerNetworkListeners 负责，此处只更新 UI 状态
 }
 
 function handleOffline() {
@@ -75,12 +67,11 @@ function handleLedgerChanged() {
 }
 
 onMounted(() => {
+  // 仅保留 UI 在线状态与账本切换处理；自动同步由 main-mobile.ts 注册的
+  // registerNetworkListeners 统一负责（含 visibilitychange / online / Capacitor 状态变更）
   window.addEventListener('online', handleOnline)
   window.addEventListener('offline', handleOffline)
   window.addEventListener('minefolio:ledger-changed', handleLedgerChanged)
-  // 进入主界面后立即做一次双向同步，确保本地离线库尽快与远端对齐
-  // (而非等到网络/前后台事件或用户手动点击才同步)
-  void syncStore.syncNow()
 })
 
 onBeforeUnmount(() => {
@@ -222,24 +213,5 @@ function go(tab: { prefix: string }) {
 .tab-item.active .tab-icon {
   transform: scale(1.12);
   filter: drop-shadow(0 0 5px var(--mf-primary-light));
-}
-.net-status-pill {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 999px;
-  line-height: 1.5;
-  white-space: nowrap;
-}
-.net-status-pill.is-offline {
-  background: rgba(239, 68, 68, 0.14);
-  color: #ef4444;
-  border: 1px solid rgba(239, 68, 68, 0.35);
-}
-.net-status-pill.is-pending {
-  background: rgba(245, 158, 11, 0.14);
-  color: #d97706;
-  border: 1px solid rgba(245, 158, 11, 0.35);
-  cursor: pointer;
 }
 </style>
