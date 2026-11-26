@@ -192,7 +192,7 @@ jobs:
           ctest --test-dir backend/build-asan --output-on-failure -j2
 
   gateway-test:
-    name: Gateway Adapter Tests
+    name: Gateway Adapter and iLink Tests
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -206,8 +206,8 @@ jobs:
         with:
           node-version: 20
 
-      - name: Run adapter tests
-        run: npm run test:adapters
+      - name: Run adapter and iLink tests
+        run: npm test
 
   frontend:
     name: Frontend Typecheck, Build & Test
