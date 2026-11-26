@@ -1,5 +1,14 @@
 apply plugin: 'com.android.application'
 
+// Release APKs must be signed with a stable key so Android accepts in-place
+// upgrades. CI injects the keystore and credentials as secrets; local builds
+// without them keep using the default debug key.
+def releaseKeystorePath = System.getenv("ANDROID_KEYSTORE_FILE")
+def releaseStorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+def releaseKeyAlias = System.getenv("ANDROID_KEY_ALIAS")
+def releaseKeyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+def hasReleaseSigning = releaseKeystorePath && releaseStorePassword && releaseKeyAlias && releaseKeyPassword
+
 android {
     namespace "com.minefolio.app"
     compileSdk rootProject.ext.compileSdkVersion
@@ -8,8 +17,8 @@ android {
         applicationId "com.minefolio.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 6
-        versionName "1.4.0"
+        versionCode 7
+        versionName "1.4.1"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         manifestPlaceholders = [usesCleartextTraffic: "false"]
         aaptOptions {
@@ -18,11 +27,24 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (hasReleaseSigning) {
+                storeFile file(releaseKeystorePath)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
     buildTypes {
         debug {
             manifestPlaceholders = [usesCleartextTraffic: "true"]
         }
         release {
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
             manifestPlaceholders = [usesCleartextTraffic: "false"]
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
