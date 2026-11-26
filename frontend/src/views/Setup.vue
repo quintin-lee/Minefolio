@@ -121,6 +121,7 @@ async function handleSubmit() {
 <style scoped>
 .setup-container {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;

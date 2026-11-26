@@ -289,6 +289,7 @@ async function handleCommand(cmd: string) {
 <style scoped>
 .layout-container {
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
 }
 .aside {

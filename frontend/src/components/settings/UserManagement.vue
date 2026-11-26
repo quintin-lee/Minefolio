@@ -738,6 +738,7 @@ onMounted(() => {
   overflow-y: auto;
   /* 表格区域最大高度：视口高度减去头部、统计卡片、筛选栏、分页栏等固定元素的估算高度 */
   max-height: calc(100vh - 340px);
+  max-height: calc(100dvh - 340px);
   min-height: 120px;
 }
 .user-cell {

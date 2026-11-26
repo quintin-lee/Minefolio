@@ -36,4 +36,22 @@ describe('frontend layout optimization', () => {
     expect(popover).toContain('var(--mf-z-popover, 2500)')
     expect(analysis).toContain('var(--mf-z-floating, 120)')
   })
+
+  it('adds 100dvh fallbacks and uses flex scrolling instead of magic calc(100vh) in McpToolsDrawer', () => {
+    for (const file of [
+      'src/views/Layout.vue',
+      'src/components/AnalysisPanel.vue',
+      'src/views/Login.vue',
+      'src/views/Setup.vue',
+      'src/views/NotFound.vue',
+      'src/views-mobile/LoginMobile.vue',
+    ]) {
+      expect(readSrc(file)).toContain('100dvh')
+    }
+    expect(readSrc('src/components/settings/UserManagement.vue')).toContain('100dvh')
+
+    const mcpDrawer = readSrc('src/components/mcp/McpToolsDrawer.vue')
+    expect(mcpDrawer).not.toContain('calc(100vh - 240px)')
+    expect(mcpDrawer).toMatch(/\.tools-list\s*\{[^}]*flex:\s*1;[^}]*min-height:\s*0;[^}]*overflow-y:\s*auto;/s)
+  })
 })

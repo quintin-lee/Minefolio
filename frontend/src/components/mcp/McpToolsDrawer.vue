@@ -186,6 +186,8 @@ defineExpose({
 
 <style scoped>
 .tools-drawer-content {
+  height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -233,7 +235,8 @@ defineExpose({
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-height: calc(100vh - 240px);
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding-right: 4px;
 }
