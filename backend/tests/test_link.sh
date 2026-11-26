@@ -311,6 +311,16 @@ check "部分失败 imported=1" "1" "$IMPORTED2"
 check "部分失败 errors=1" "1" "$ERRS2"
 check "部分失败含错误详情" "1" "$(echo "$IMPORT_RES2" | jq -r 'if .data.errors_detail then 1 else 0 end')"
 
+echo "== 22b. 仅表头 CSV 不产生导入行 =="
+EMPTY_BEFORE=$(sqlite3 "$DB" "SELECT COUNT(*) FROM daily_expenses")
+printf 'date,asset_name,category_name,expense_type,amount,currency,note\n' > /tmp/mf_import_empty.csv
+EMPTY_SUB=$(curl -s -H "$AUTH" -H 'Content-Type: text/csv; charset=utf-8' --data-binary @/tmp/mf_import_empty.csv "$BASE/import/daily-expenses")
+rm -f /tmp/mf_import_empty.csv
+EMPTY_RES=$(db_poll_task "${BASE%/api}" "$AUTH" "$EMPTY_SUB")
+check "仅表头导入 imported=0" "0" "$(echo "$EMPTY_RES" | jq -r '.data.imported | floor')"
+check "仅表头导入 errors=0" "0" "$(echo "$EMPTY_RES" | jq -r '.data.errors | floor')"
+check "仅表头导入不改变数据库" "$EMPTY_BEFORE" "$(sqlite3 "$DB" "SELECT COUNT(*) FROM daily_expenses")"
+
 echo "== 23. 导出交易 CSV =="
 TX_EXPORT=$(curl -s -H "$AUTH" "$BASE/export/transactions")
 check "export transactions 含日期列名" "1" "$(echo "$TX_EXPORT" | grep -c 'date,asset_name,category_name')"
