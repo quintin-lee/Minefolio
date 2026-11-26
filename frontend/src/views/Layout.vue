@@ -5,7 +5,7 @@
         <AppLogo :size="32" :with-text="!isCollapsed" />
       </div>
       <el-menu :default-active="activeMenu" class="sidebar-menu" :collapse="isCollapsed" :collapse-transition="false">
-        <div v-show="!isCollapsed" class="nav-group-label">{{ t('navGroups.assetsOverview') }}</div>
+        <div class="nav-group-label">{{ t('navGroups.assetsOverview') }}</div>
         <el-menu-item index="/dashboard" @click="goTo('/dashboard')">
           <Icon icon="ph:squares-four-duotone" class="nav-icon" />
           <template #title><span>{{ t('nav.dashboard') }}</span></template>
@@ -27,7 +27,7 @@
           <template #title><span>{{ t('nav.market') }}</span></template>
         </el-menu-item>
 
-        <div v-show="!isCollapsed" class="nav-group-label">{{ t('navGroups.incomeExpense') }}</div>
+        <div class="nav-group-label">{{ t('navGroups.incomeExpense') }}</div>
         <el-menu-item index="/transactions" @click="goTo('/transactions')">
           <Icon icon="ph:arrows-left-right-duotone" class="nav-icon" />
           <template #title><span>{{ t('nav.transactions') }}</span></template>
@@ -45,7 +45,7 @@
           <template #title><span>{{ t('nav.categories') }}</span></template>
         </el-menu-item>
 
-        <div v-show="!isCollapsed" class="nav-group-label">{{ t('navGroups.aiSpace') }}</div>
+        <div class="nav-group-label">{{ t('navGroups.aiSpace') }}</div>
         <el-menu-item index="/chat" @click="goTo('/chat')">
           <Icon icon="ph:sparkle-duotone" class="nav-icon" />
           <template #title><span>{{ t('nav.aiChat') }}</span></template>
@@ -67,7 +67,7 @@
           <template #title><span>{{ t('nav.aiTraces') }}</span></template>
         </el-menu-item>
 
-        <div v-show="!isCollapsed" class="nav-group-label">{{ t('navGroups.system') }}</div>
+        <div class="nav-group-label">{{ t('navGroups.system') }}</div>
         <el-menu-item index="/scheduler" @click="goTo('/scheduler')">
           <Icon icon="ph:clock-countdown-duotone" class="nav-icon" />
           <template #title><span>{{ t('nav.scheduler') }}</span></template>
@@ -308,6 +308,17 @@ async function handleCommand(cmd: string) {
   padding: 0;
   justify-content: center;
 }
+.aside.is-collapsed .nav-group-label {
+  font-size: 0;
+  height: 1px;
+  padding: 0;
+  margin: 10px 12px;
+  background: var(--mf-border-subtle);
+  overflow: hidden;
+}
+.aside.is-collapsed .nav-group-label:first-child {
+  display: none;
+}
 .logo {
   height: 72px;
   display: flex;
@@ -372,18 +383,6 @@ async function handleCommand(cmd: string) {
   background: var(--mf-primary-light) !important;
   font-weight: 600;
   position: relative;
-}
-.sidebar-menu :deep(.el-menu-item.is-active)::after {
-  content: '';
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 3px;
-  height: 18px;
-  background: var(--mf-primary);
-  border-radius: 3px 0 0 3px;
-  box-shadow: 0 0 8px var(--mf-primary);
 }
 .sidebar-menu :deep(.el-menu-item.is-active::before) {
   content: '';
@@ -585,6 +584,11 @@ async function handleCommand(cmd: string) {
   display: flex;
   flex-direction: column;
 }
+.main:not(.is-full-bleed) > :deep(*) {
+  width: 100%;
+  max-width: var(--mf-content-max-width, 1600px);
+  margin-inline: auto;
+}
 .main.is-full-bleed {
   padding: 0;
   overflow: hidden;
@@ -633,7 +637,7 @@ async function handleCommand(cmd: string) {
   display: none;
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 1024px) {
   .search-btn-placeholder,
   .shortcut-key {
     display: none;
@@ -678,7 +682,7 @@ async function handleCommand(cmd: string) {
     top: 0;
     height: 100vh;
     height: 100dvh;
-    z-index: 100;
+    z-index: var(--mf-z-sidebar, 100);
     transition: left 0.3s ease;
   }
   .aside.is-open {
@@ -709,7 +713,7 @@ async function handleCommand(cmd: string) {
   background: var(--el-mask-color);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
-  z-index: 90;
+  z-index: var(--mf-z-backdrop, 90);
   animation: fadeIn 0.2s ease;
 }
 </style>

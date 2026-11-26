@@ -66,4 +66,14 @@ describe('frontend layout optimization', () => {
       expect(src).toMatch(/@media\s*\(max-width:\s*768px\)\s*\{[\s\S]*height:\s*auto;[\s\S]*overflow:\s*visible;/s)
     }
   })
+
+  it('polishes Layout.vue with single active indicator, collapsed dividers, and ultrawide max-width', () => {
+    const layout = readSrc('src/views/Layout.vue')
+    expect(layout).not.toContain('is-active)::after')
+    expect(layout).toMatch(/\.aside\.is-collapsed\s+\.nav-group-label\s*\{/)
+    expect(layout).toMatch(/\.main:not\(\.is-full-bleed\)\s*>\s*:deep\(\*\)\s*\{[^}]*max-width:\s*var\(--mf-content-max-width/s)
+    expect(layout).toContain('@media (max-width: 1024px)')
+    expect(layout).toContain('var(--mf-z-sidebar, 100)')
+    expect(layout).toContain('var(--mf-z-backdrop, 90)')
+  })
 })
