@@ -6,6 +6,10 @@
         <button class="segmented-item active">{{ t('nav.holdings') }}</button>
       </div>
     </div>
+    <div v-if="approximate || ratesCachedAt" class="cache-row">
+      <span v-if="approximate" class="cache-pill">离线近似 · 已实现盈亏未更新</span>
+      <span v-if="ratesCachedAt" class="cache-pill">汇率缓存于 {{ ratesCachedAt }}</span>
+    </div>
 
     <!-- 汇总卡片 -->
     <div class="summary-row">
@@ -67,11 +71,15 @@ import { reportsApi, type HoldingsReport } from '@/api/reports'
 import { marketApi } from '@/api/market'
 import { formatCurrency, formatSigned } from '@/utils/format'
 import { notifyMobileReadError } from '@/utils/http'
+import { deriveLocalHoldings } from '@/composables/mobile/useLocalHoldings'
+import { loadViewCache, saveViewCache } from '@/composables/mobile/useViewCache'
 import { t } from '@/utils/locale'
 
 const report = ref<HoldingsReport | null>(null)
 const loading = ref(false)
 const loadError = ref(false)
+const approximate = ref(false)
+const ratesCachedAt = ref<string | null>(null)
 const exchangeRates = ref<Record<string, number>>({})
 const summary = ref({ total_market_value: 0, total_cost_basis: 0, total_floating_pnl: 0, total_realized_pnl: 0, floating_pct: 0 })
 const holdings = ref<{ asset_id: number; name: string; asset_type: string; currency: string; quantity: number; net_value: number; cost_basis: number; current_value: number; floating_pnl: number; floating_pct: number; realized_pnl: number }[]>([])
@@ -92,6 +100,21 @@ function typeLabel(t: string) {
 onMounted(async () => {
   loading.value = true
   loadError.value = false
+
+  // 本地优先：先用投资类资产派生持仓，避免首屏空白
+  const local = deriveLocalHoldings()
+  const hadLocalHoldings = local.report.holdings.length > 0
+  report.value = local.report
+  summary.value = local.report.summary
+  holdings.value = local.report.holdings
+  approximate.value = true
+
+  const ratesCache = loadViewCache<Record<string, number>>('exchange_rates')
+  if (ratesCache.data) {
+    exchangeRates.value = ratesCache.data
+    ratesCachedAt.value = ratesCache.updatedAt?.slice(0, 16).replace('T', ' ') ?? null
+  }
+
   try {
     const [hRes, rRes] = await Promise.allSettled([
       reportsApi.holdings(),
@@ -101,16 +124,26 @@ onMounted(async () => {
       report.value = hRes.value
       summary.value = hRes.value.summary
       holdings.value = hRes.value.holdings
+      approximate.value = false
     } else if (hRes.status === 'rejected') {
-      loadError.value = true
-      notifyMobileReadError(hRes.reason, '持仓数据')
+      // 有本地派生数据时静默保留，仅在无数据时提示
+      if (!hadLocalHoldings) {
+        loadError.value = true
+        notifyMobileReadError(hRes.reason, '持仓数据')
+      }
+      approximate.value = hadLocalHoldings
+      console.error('[HoldingsMobile] remote holdings failed, using local derived:', hRes.reason)
     }
     if (rRes.status === 'fulfilled' && rRes.value) {
       exchangeRates.value = rRes.value
+      saveViewCache('exchange_rates', rRes.value)
+      ratesCachedAt.value = null
     }
   } catch (e) {
-    loadError.value = true
-    notifyMobileReadError(e, '持仓数据')
+    if (!hadLocalHoldings) {
+      loadError.value = true
+      notifyMobileReadError(e, '持仓数据')
+    }
     console.error('[HoldingsMobile] onMounted failed:', e)
   } finally {
     loading.value = false
@@ -119,6 +152,8 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.cache-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.cache-pill { font-size: 11px; color: var(--mf-warning); border: 1px solid var(--mf-warning); border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
 .summary-row {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
