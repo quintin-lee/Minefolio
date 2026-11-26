@@ -14,6 +14,12 @@ async function seedAuth(page: import('@playwright/test').Page) {
   })
 }
 
+async function waitForAppReady(page: import('@playwright/test').Page) {
+  // Bootstrap awaits initLocalDb() before mounting and dismissing the splash;
+  // wait for that signal so the offline write never races DB initialization.
+  await page.locator('#mf-boot-splash').waitFor({ state: 'detached', timeout: 30_000 })
+}
+
 async function pendingCount(page: import('@playwright/test').Page): Promise<number> {
   return page.evaluate(async () => {
     const { query } = await import('/src/db/local.ts')
@@ -26,7 +32,19 @@ test('断网写入 → 恢复推送 → 409 类业务码冲突 → 保留本地'
   let online = false
   let conflictMode = false
 
-  await page.route('**/api/daily-expenses', async (route) => {
+  // Default stub for every unhandled API call: a 401 from any boot-time
+  // request triggers auth.logout(), which resets the local DB mid-scenario.
+  await page.route((url) => url.pathname.startsWith('/api/'), (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 0, data: { list: [], total: 0 } }) })
+  )
+  await page.route((url) => url.pathname === '/api/system/status', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 0, data: { initialized: true } }) })
+  )
+  await page.route((url) => url.pathname === '/api/auth/me', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 0, data: { id: 1, username: 'e2e-user', role: 'user' } }) })
+  )
+
+  await page.route((url) => url.pathname === '/api/daily-expenses', async (route) => {
     if (!online) return route.abort('failed')
     if (conflictMode) {
       return route.fulfill({
@@ -41,12 +59,8 @@ test('断网写入 → 恢复推送 → 409 类业务码冲突 → 保留本地'
       body: JSON.stringify({ code: 0, data: { id: 9001 } }),
     })
   })
-  // 拉取类请求统一返回空列表，避免影响断言
-  await page.route('**/api/(accounts|categories|tags|assets|transactions)**', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 0, data: { list: [], total: 0 } }) })
-  )
-
   await page.goto(`${BASE}/m/dashboard`)
+  await waitForAppReady(page)
 
   // 断网写入：应落库入队而非失败
   const offlineRes = await page.evaluate(async () => {
@@ -67,8 +81,13 @@ test('断网写入 → 恢复推送 → 409 类业务码冲突 → 保留本地'
   })
   await expect.poll(async () => pendingCount(page), { timeout: 10000 }).toBe(0)
 
-  // 制造业务冲突：服务端返回 code:1004
+  // 制造业务冲突：服务端返回 code:1004。等上一轮 pullRemote 完成后再触发，
+  // 否则 syncNow 的并发守卫会直接丢弃本次 visibilitychange。
   conflictMode = true
+  await expect.poll(async () => page.evaluate(async () => {
+    const { SyncEngine } = await import('/src/sync/SyncEngine.ts')
+    return SyncEngine.getInstance().getState().syncing
+  }), { timeout: 10000 }).toBe(false)
   await page.evaluate(async () => {
     const { SyncEngine } = await import('/src/sync/SyncEngine.ts')
     SyncEngine.getInstance().enqueue('daily_expenses', Date.now(), 'create', {
@@ -84,8 +103,15 @@ test('断网写入 → 恢复推送 → 409 类业务码冲突 → 保留本地'
   }), { timeout: 10000 }).toBe(1)
 
   // 设置页展示冲突两版差异，手动“保留本地”清除冲突
-  await page.goto(`${BASE}/m/settings`)
+  // Client-side navigation: a second full reload during an active conflict
+  // re-runs the encrypted local-db bootstrap and stalls in headless CI.
+  await page.evaluate(() => {
+    window.history.pushState({}, '', '/m/settings')
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  })
   await expect(page.getByText(/同步冲突项/)).toBeVisible()
+  // 保留本地会重推队列项；恢复服务端健康状态使重试成功。
+  conflictMode = false
   await page.getByRole('button', { name: '保留本地' }).first().click()
   await expect.poll(async () => page.evaluate(async () => {
     const { SyncEngine } = await import('/src/sync/SyncEngine.ts')

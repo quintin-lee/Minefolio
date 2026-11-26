@@ -23,6 +23,26 @@ export default defineConfig({
       resolvers: [ElementPlusResolver({ importStyle: false })],
       dts: 'src/components.mobile.d.ts',
     }),
+    {
+      // Dev server normally falls back to index.html (desktop entry). Route
+      // mobile navigations to the mobile entry so offline DB/sync boot runs.
+      name: 'mobile-html-fallback',
+      configureServer(server) {
+        server.middlewares.use((req, _res, next) => {
+          const url = req.url || ''
+          const wantsHtml = (req.headers.accept || '').includes('text/html')
+          if (
+            wantsHtml &&
+            !url.startsWith('/@') &&
+            !url.startsWith('/api/') &&
+            !url.includes('.')
+          ) {
+            req.url = '/index.mobile.html'
+          }
+          next()
+        })
+      },
+    },
   ],
   define: {
     __APP_VERSION__: JSON.stringify(version),

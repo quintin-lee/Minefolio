@@ -12,7 +12,8 @@
     "typecheck": "vue-tsc -b",
     "check": "vue-tsc -b && vitest run --config vite.config.mobile.ts",
     "test": "vitest run --config vite.config.mobile.ts",
-    "test:isolated": "vitest run --config vite.config.mobile.ts --pool=forks --poolOptions.forks.maxForks=2 --poolOptions.forks.minForks=1"
+    "test:isolated": "vitest run --config vite.config.mobile.ts --pool=forks --poolOptions.forks.maxForks=2 --poolOptions.forks.minForks=1",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@capacitor/android": "^6.2.1",
@@ -41,6 +42,7 @@
   },
   "devDependencies": {
     "@capacitor/cli": "^6.0.0",
+    "@playwright/test": "^1.65.1",
     "@types/dompurify": "^3.0.5",
     "@types/highlight.js": "^9.12.4",
     "@types/node": "^26.2.0",

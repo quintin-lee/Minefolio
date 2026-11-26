@@ -40,6 +40,8 @@ frontend/dist-mobile/
 */.jeikcode/
 deps/
 playwright-*/
+test-results/
+playwright-report/
 
 .npm_cache/
 .pw_tmp/
