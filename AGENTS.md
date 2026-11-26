@@ -174,9 +174,9 @@ AI Runtime (services/ai/runtime/)
 | `backend/src/config/` | `db_config.h/.c` (DSN), `key_manager.h/.c` (RSA-OAEP keys), `secret.h/.c` (Secret Provider) |
 | `backend/sql/migrations/` | Versioned migration scripts (`sqlite/` & `postgres/`, `V001`~`V038`) |
 | `backend/sql/` | `migration.sql` (SQLite full schema, 45 tables), `migration_postgres.sql` |
-| `backend/tests/unit/` | ~87 CTest unit test targets (financial core, ledger engine + checkpoint rebuild, domain rules, DB repository, migration engine, AI runtime/policy/nonces/batch confirmation, MCP client/pool/risk, FX semantics, portfolio PnL alignment, scheduler, RBAC, async tasks, backup) |
-| `gateway/` | IM bot gateway (QQ OneBot / WeChat adapters bridging to `/api/im/*`, `npm run test:adapters` — 11 tests) |
-| `backend/tests/test_link.sh` | Core integration test suite (244 assertions: auth, accounts, CRUD, balance联动, PnL, CSV, pagination, ledger rebuild, backup, AI trace/workflow/skills) |
+| `backend/tests/unit/` | 88 CTest unit test targets (financial core, ledger engine + checkpoint rebuild, domain rules, DB repository, migration engine, AI runtime/policy/nonces/batch confirmation, MCP client/pool/risk, FX semantics, portfolio PnL alignment, scheduler, RBAC, async tasks, backup) |
+| `gateway/` | IM bot gateway (QQ OneBot / WeChat adapters bridging to `/api/im/*`, `npm test` runs adapters + iLink — 51 tests) |
+| `backend/tests/test_link.sh` | Core integration test suite (~256 assertions: auth, accounts, CRUD, balance联动, PnL, CSV, pagination, ledger rebuild, backup, AI trace/workflow/skills) |
 | `backend/src/domain/account/` | Account domain: `mf_account_t` entity, validation/delete rules, repository contract |
 | `backend/src/application/account/usecases.c` | Account use cases: create/update/delete/archive/query, lazy `默认账户` seed, duplicate-name 1004, delete-protection 1004 |
 | `backend/src/infrastructure/repositories/account_repo_impl.c` | Accounts SQL repo (with `asset_count`/`total_value` aggregates, archived filter) |
@@ -212,7 +212,7 @@ MINEFOLIO_DB_DRIVER=postgres MINEFOLIO_DB_DSN="host=… user=… dbname=…"  ./
 ```
 
 **Dual-Engine Integration Testing (`backend/tests/db_helper.sh`)**:
-13 scripts (`test_link.sh`, `test_2fa.sh`, `test_dca_cashflow.sh`, `test_ai_trace.sh`, `test_ai_tool_call.sh`, `test_market_sync.sh`, `test_ledgers.sh`, `test_fx_oauth.sh`, `test_scheduler.sh`, `test_im_bot.sh`, `test_im_bind_auth.sh`, `test_gateway.sh`, and `test_db_helper.sh`) source `db_helper.sh` and support both SQLite and PostgreSQL.
+19 scripts (including `test_link.sh`, `test_2fa.sh`, `test_dca_cashflow.sh`, `test_ai_trace.sh`, `test_ai_tool_call.sh`, `test_market_sync.sh`, `test_ledgers.sh`, `test_fx_oauth.sh`, `test_scheduler.sh`, `test_ilink_scheduler_push.sh`, `test_im_bot.sh`, `test_im_bot_instance.sh`, `test_im_bind_auth.sh`, `test_gateway.sh`, and `test_db_helper.sh`) source `db_helper.sh` and support both SQLite and PostgreSQL.
 To run tests against PostgreSQL locally:
 ```bash
 export MINEFOLIO_DB_DRIVER=postgres
@@ -238,8 +238,13 @@ npm test                   # vitest (mobile config, jsdom environment)
 ```bash
 npm run build:mobile       # vite build --config vite.config.mobile.ts --mode mobile
 npx cap sync android       # copy dist-mobile → android/app/src/main/assets/public
-cd android && ./gradlew clean assembleDebug
+cd android && ./gradlew clean assembleDebug   # local development only (default debug key)
 ```
+
+CI builds `assembleRelease` with a stable signing key injected from secrets (`ANDROID_KEYSTORE_BASE64`,
+`ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`); see Known Gotchas #15.
+Never commit keystore files. Each release must bump `versionCode` in `frontend/android/app/build.gradle`
+(currently `7` / `versionName 1.4.1`).
 
 ### Full Verification
 
@@ -431,7 +436,7 @@ Mobile users can customize the backend server address (e.g. LAN IP `http://192.1
 | File | Role |
 |------|------|
 | `backend/src/main.c` | Entry point; middleware stack; route registration |
-| `backend/CMakeLists.txt` | C23 build with shared `minefolio_core` static library (linked by `minefolio` and 62 DB/service unit tests; 19 pure financial/domain unit tests standalone) |
+| `backend/CMakeLists.txt` | C23 build with shared `minefolio_core` static library and 88 CTest targets; `-DMINEFOLIO_COVERAGE=ON` enables gcov instrumentation for the coverage job |
 | `backend/src/common/balance.h` | `balance_apply_delta()` (incl. liability sign flip); `apply_position()` |
 | `backend/src/common/tx_types.h` | Transaction type registry — use `tx_type_lookup()`, don't hard-code |
 | `backend/src/common/response.h` | `respond_ok`, `respond_error`, etc. |
@@ -441,7 +446,9 @@ Mobile users can customize the backend server address (e.g. LAN IP `http://192.1
 | `backend/sql/migration_postgres.sql` | PostgreSQL schema (BIGSERIAL, DOUBLE PRECISION) |
 | `frontend/package.json` | Scripts, dependencies, vitest config |
 | `frontend/vite.config.ts` | Desktop: port 5173, API proxy to :8080 |
-| `frontend/vite.config.mobile.ts` | Mobile: port 5174, output to `dist-mobile/` |
+| `frontend/vite.config.mobile.ts` | Mobile: port 5174, output to `dist-mobile/`, Vitest setup + coverage thresholds |
+| `frontend/playwright.config.ts` | Mobile E2E: dev-server bootstrap on :5173, `e2e-test.spec.ts` excluded (needs live backend) |
+| `frontend/android/app/build.gradle` | Android signing config, `versionCode`/`versionName`, release build |
 | `frontend/src/utils/http.ts` | Central axios wrapper: JWT bearer, CSRF token, response unwrap |
 | `frontend/src/stores/auth.ts` | Auth state: token, user, login/logout |
 | `frontend/src/stores/category.ts` | Category tree cache with `invalidate()` and `reset()` |
@@ -484,15 +491,15 @@ Mobile users can customize the backend server address (e.g. LAN IP `http://192.1
 
 ## Testing & QA
 
-### Backend Unit & Integration Tests (~87 CTest Targets + 21 Integration Scripts)
+### Backend Unit & Integration Tests (88 CTest Targets + 23 Integration Scripts)
 
 ```bash
 cd backend
-# 1. Run all ~87 CTest unit test targets (isolated)
+# 1. Run all 88 CTest unit test targets (isolated)
 ../backend/tests/run_isolated.sh -m 4G -j 4 unit build
 
 # 2. Run integration test suites (e.g. via run_isolated.sh -m 2G)
-./tests/test_link.sh             # 244 assertions: auth, accounts dimension, CRUD, balance联动, PnL, CSV, pagination, ledger rebuild, backup, AI trace/workflow/skills
+./tests/test_link.sh             # ~256 assertions: auth, accounts dimension, CRUD, balance联动, PnL, CSV, pagination, ledger rebuild, backup, AI trace/workflow/skills
 ./tests/test_ledgers.sh          # multi-ledger spaces, member & account/field RBAC
 ./tests/test_2fa.sh              # TOTP 2FA secret gen, QR code, enable/disable, login verification
 ./tests/test_dca_cashflow.sh     # DCA periodic purchase execution, cashflow calendar projection
@@ -510,8 +517,10 @@ cd backend
 ./tests/test_im_bot.sh           # IM bot bindings, bind tokens, /im/*/chat & path whitelist
 ./tests/test_im_bind_auth.sh     # IM credential bind-auth endpoint & hijack protection
 ./tests/test_gateway.sh          # End-to-end IM gateway CLI -> backend read-only query & write convergence
+./tests/test_ilink_scheduler_push.sh # iLink scheduler push/outbox lifecycle
+./tests/test_im_bot_instance.sh  # IM bot instance relogin/epoch and binding lifecycle
 ```
-Additional scripts: `test_db_helper.sh` (helper self-test), `test_full.sh`, and `test_link_nocleanup.sh`. For gateway adapters run `npm --prefix gateway run test:adapters`.
+Additional scripts: `test_db_helper.sh` (helper self-test), `test_full.sh`, and `test_link_nocleanup.sh`. For gateway tests run `npm --prefix gateway test` (adapters + iLink, 51 tests).
 
 Tests start real servers with temp SQLite DBs, exercise all API endpoints via curl/JSON, and verify database state directly with `sqlite3`. `test_ai_tool_call.sh`, `test_ai_truncate.sh` and `test_ai_loop_hardening.sh` also start `mock_ai_tool_server.js` (node) as their AI provider. Run before committing any changes.
 
@@ -534,12 +543,16 @@ To prevent ASan/UBSan builds or runaway allocations in tests from exhausting hos
 
 ```bash
 cd frontend
-npm test    # vitest run --config vite.config.mobile.ts (jsdom environment)
+npm test              # vitest run --config vite.config.mobile.ts (jsdom environment)
+npm run test:coverage # vitest with v8 coverage + global thresholds (gate used in CI)
+npm run test:e2e      # Playwright E2E; boots the mobile dev server via playwright.config.ts
 npm run build         # Desktop type-check + build
 npm run build:mobile  # Mobile type-check + build
 ```
 
-Frontend unit tests cover 53 test suites (`npm test`) including format helpers, crypto, auth store, offline-http sync, chat store race guards, chat composables, AI thinking/reasoning mode, analysis panel, chat layout decoupling, AI stream failure handling, scheduler, skills, and RBAC; the integration test suite (`test_link.sh`) covers the critical paths end-to-end. Under cgroups v2 isolation on multi-core hosts, cap Vitest concurrency (`--pool=forks --poolOptions.forks.maxForks=2`) and give `-m 12G` headroom for `esbuild` transforms.
+Frontend unit tests cover 72 spec files (`npm test`) including format helpers, crypto, auth store, offline-http sync, chat store race guards, chat composables, AI thinking/reasoning mode, analysis panel, chat layout decoupling, AI stream failure handling, scheduler, skills, and RBAC; the integration test suite (`test_link.sh`) covers the critical paths end-to-end. Mobile offline-sync E2E lives in `frontend/e2e/`; `e2e-test.spec.ts` stays manual because it requires a live backend. Under cgroups v2 isolation on multi-core hosts, cap Vitest concurrency (`--pool=forks --poolOptions.forks.maxForks=2`) and give `-m 12G` headroom for `esbuild` transforms.
+
+**Coverage gates (enforced in CI):** frontend thresholds are configured in `frontend/vite.config.mobile.ts` (`lines ≥ 50%`, `functions ≥ 42%`, `branches ≥ 65%`, `statements ≥ 50%`). Backend coverage uses `-DMINEFOLIO_COVERAGE=ON` with `gcovr` (`lines ≥ 40%`, `functions ≥ 50%`, `branches ≥ 29%`) in the `backend-coverage` CI job. Reports are uploaded as artifacts; add tests rather than lowering thresholds when coverage drops.
 
 ### Manual Smoke Test
 
@@ -604,7 +617,7 @@ docker exec minefolio /app/reset-password reset admin --password-file /tmp/pw --
 4. **Investment sell cost_basis**: `apply_position()` reduces `cost_basis` proportionally. The PnL report uses a separate `total_cost_for_pnl` (excludes fee) for `avg_cost` — do not mix the two.
 5. **Fee row `note` must be non-empty**: Test queries use `note LIKE '%fee%'`. Fall back to literal `"fee"` when the original note is empty.
 6. **Mobile wasm loading**: Capacitor WebView cannot reliably `fetch` from `capacitor://`. The base64 embedding in `sql-wasm-base64.ts` is mandatory.
-7. **Gradle incremental builds**: After `npx cap sync android`, always run `./gradlew clean assembleDebug`.
+7. **Gradle incremental builds**: After `npx cap sync android`, always run `./gradlew clean assembleDebug` for local development; CI uses `assembleRelease` with injected signing secrets.
 8. **Password length validation**: All password entry points require ≥6 characters.
 9. **Investment transaction rollback**: When changing a transaction from investment ↔ non-investment type, the old position MUST be rolled back and its balance delta reversed before applying the new transaction. Never skip the reversal.
 10. **JWT secret in production**: `MINEFOLIO_JWT_SECRET` must be set; the server exits if absent.
@@ -612,6 +625,7 @@ docker exec minefolio /app/reset-password reset admin --password-file /tmp/pw --
 12. **Chat auto-scroll on history prepend**: Do NOT watch `chat.messages.length` to trigger auto-scroll — prepending older pages changes the length and forces the view to the bottom. Instead, watch only the **last message ID** to detect genuinely new appended content.
 13. **UTC date drift in forms**: `new Date().toISOString().slice(0, 10)` returns UTC, not local. In UTC+ timezones between 00:00–08:00, this yields yesterday's date. Use `localToday()` from `@/utils/format` instead.
 14. **Transaction dialog fee field**: Always reset `form.fee` to 0 in the new-transaction branch of `openDialog()`, and map `Number(txn.fee) || 0` in the edit branch. Clear `fee` in `onTransactionTypeChange()` when switching away from buy/sell to prevent stale fees from being sent on non-investment transactions.
+15. **Release APK signing and upgrades**: CI must build `assembleRelease` with the `ANDROID_KEYSTORE_*` secrets so the signing certificate stays stable across builds; never commit `*.jks` / `*.keystore`. Bump `versionCode` for every release (currently `7`, `versionName 1.4.1`) or Android will refuse to install over an equal version. Old APKs signed with the previous debug key still need a one-time uninstall before the first signed release can be installed.
 
 ## Commit Convention
 
