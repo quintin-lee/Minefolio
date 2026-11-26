@@ -22,6 +22,44 @@ get_today_start_str(char* buf, size_t len)
     strftime(buf, len, "%Y-%m-%d 00:00:00", &tm_now);
 }
 
+int
+scheduler_engine_enqueue_hook(void* pool, const scheduler_push_enqueue_args_t* args)
+{
+    int64_t push_id = 0;
+    return im_push_usecase_enqueue(pool,
+                                   args->user_id,
+                                   args->log_id,
+                                   args->kind,
+                                   args->title,
+                                   args->content,
+                                   args->ttl_sec,
+                                   &push_id,
+                                   args->err_buf,
+                                   args->err_cap);
+}
+
+int
+scheduler_engine_expire_stale_hook(void* pool)
+{
+    return im_push_usecase_expire_stale(pool);
+}
+
+int
+scheduler_engine_seed_builtin_hook(void* pool)
+{
+    return scheduler_usecase_seed_builtin_jobs(pool);
+}
+
+void
+scheduler_application_register_push_hooks(void)
+{
+    static const scheduler_push_hooks_t hooks = {
+        .enqueue = scheduler_engine_enqueue_hook,
+        .expire_stale = scheduler_engine_expire_stale_hook,
+        .seed_builtin_jobs = scheduler_engine_seed_builtin_hook,
+    };
+    scheduler_engine_register_push_hooks(&hooks);
+}
 static void
 get_now_str(char* buf, size_t len)
 {

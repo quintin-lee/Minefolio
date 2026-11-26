@@ -9,7 +9,6 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "application/ai/im_push_usecases.h"
 #include "common/db.h"
 #include "core/scheduler/cron_parser.h"
 #include "core/scheduler/scheduler_events.h"
@@ -17,7 +16,6 @@
 #include "csilk/csilk.h"
 #include "infrastructure/repositories/scheduler_repo_impl.h"
 #include "services/notification/wechat_push_service.h"
-#include "application/scheduler/usecases.h"
 #include "application/market/usecases.h"
 #include "services/market/market_scheduler.h"
 #include "services/market/quote_engine.h"
@@ -45,6 +43,7 @@ static bool                     s_running = false;
 static bool                     s_reload_requested = false;
 static int                      s_last_sleep_sec = 60;
 static atomic_int               s_ai_jobs_running = 0;
+static scheduler_push_hooks_t   s_push_hooks = {0};
 
 typedef struct {
     void*   pool;
@@ -120,18 +119,24 @@ deliver_to_user_channel(void*         pool,
         return;
     }
     if (strcasecmp(ct, "wechat_ilink") == 0) {
-        int64_t push_id = 0;
-        if (im_push_usecase_enqueue(pool,
-                                    user_id,
-                                    log_id,
-                                    "scheduler",
-                                    (title && title[0]) ? title : "Minefolio 提醒",
-                                    markdown_body ? markdown_body : "",
-                                    1800,
-                                    &push_id,
-                                    err_buf,
-                                    err_cap) == 0) {
-            snprintf(out_status, out_status_cap, "queued");
+        if (s_push_hooks.enqueue) {
+            int64_t                       push_id = 0;
+            scheduler_push_enqueue_args_t args = {
+                .user_id = user_id,
+                .log_id = log_id,
+                .kind = "scheduler",
+                .title = (title && title[0]) ? title : "Minefolio 提醒",
+                .content = markdown_body ? markdown_body : "",
+                .ttl_sec = 1800,
+                .out_push_id = &push_id,
+                .err_buf = err_buf,
+                .err_cap = err_cap,
+            };
+            if (s_push_hooks.enqueue(pool, &args) == 0) {
+                snprintf(out_status, out_status_cap, "queued");
+            } else {
+                snprintf(out_status, out_status_cap, "failed");
+            }
         } else {
             snprintf(out_status, out_status_cap, "failed");
         }
@@ -1012,7 +1017,9 @@ scheduler_engine_thread(void* arg)
                 }
                 csilk_json_free(rows);
             }
-            im_push_usecase_expire_stale(s_db_pool);
+            if (s_push_hooks.expire_stale) {
+                s_push_hooks.expire_stale(s_db_pool);
+            }
         }
 
         /* 2. Compute dynamic sleep interval (capped at 60s for clock skew / safety) */
@@ -1061,7 +1068,9 @@ scheduler_engine_start(void* pool)
     s_db_pool = pool;
 
     /* Seed built-in scheduled tasks idempotently */
-    scheduler_usecase_seed_builtin_jobs(pool);
+    if (s_push_hooks.seed_builtin_jobs) {
+        s_push_hooks.seed_builtin_jobs(pool);
+    }
 
     s_worker_pool = scheduler_worker_pool_create(3);
     if (!s_worker_pool) {
@@ -1133,4 +1142,13 @@ scheduler_engine_notify_reload(void)
     s_reload_requested = true;
     pthread_cond_broadcast(&s_engine_cond);
     pthread_mutex_unlock(&s_engine_lock);
+}
+
+void
+scheduler_engine_register_push_hooks(const scheduler_push_hooks_t* hooks)
+{
+    if (!hooks) {
+        return;
+    }
+    s_push_hooks = *hooks;
 }

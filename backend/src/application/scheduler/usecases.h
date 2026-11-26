@@ -1,6 +1,7 @@
 #pragma once
 
 #include "application/scheduler/dtos.h"
+#include "core/scheduler/scheduler_engine.h" /* scheduler_push_hooks_t */
 #include "csilk/csilk.h"
 #include <stdbool.h>
 #include <stdint.h>
@@ -59,6 +60,12 @@ int scheduler_usecase_test_channel_cancellable(void*   pool,
                                                void*  alive_ctx,
                                                char*  err_buf,
                                                size_t err_len);
+
+/**
+ * Register the application-layer iLink push hooks into the scheduler engine.
+ * Call once at startup, before scheduler_engine_start().
+ */
+void scheduler_application_register_push_hooks(void);
 
 #ifdef __cplusplus
 }

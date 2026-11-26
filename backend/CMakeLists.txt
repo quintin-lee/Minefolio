@@ -413,6 +413,9 @@ add_dependencies(test_scheduler_engine copy_assets)
 add_minefolio_unit_test(test_scheduler_idle_sleep tests/unit/test_scheduler_idle_sleep.c pthread)
 add_dependencies(test_scheduler_idle_sleep copy_assets)
 
+add_minefolio_unit_test(test_scheduler_channel tests/unit/test_scheduler_channel.c pthread)
+add_dependencies(test_scheduler_channel copy_assets)
+
 add_minefolio_unit_test(test_wal_checkpoint tests/unit/test_wal_checkpoint.c pthread)
 add_dependencies(test_wal_checkpoint copy_assets)
 

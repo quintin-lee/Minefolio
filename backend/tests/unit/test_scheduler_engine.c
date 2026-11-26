@@ -45,6 +45,7 @@ main(void)
     csilk_migration_engine_free(engine);
 
     /* 1. Test Engine Startup */
+    scheduler_application_register_push_hooks();
     assert(scheduler_engine_start(pool) == 0);
     assert(scheduler_engine_is_running() == true);
     assert(scheduler_engine_get_ai_jobs_running() == 0);

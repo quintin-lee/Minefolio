@@ -37,6 +37,7 @@
 #include "interfaces/http/controllers/task_controller.h"
 #include "services/market/market_scheduler.h"
 #include "core/scheduler/scheduler_engine.h"
+#include "application/scheduler/usecases.h"
 #include "services/ai_service.h"
 #include "dtos/request.h"
 #include "config/secret.h"
@@ -218,6 +219,10 @@ main(int argc, char** argv)
         }
     }
     csilk_app_static(app, "/", dist);
+
+    /* Register iLink push hooks so the scheduler engine can enqueue outbox rows,
+       expire stale entries, and seed built-in jobs without including application headers. */
+    scheduler_application_register_push_hooks();
 
     market_scheduler_start(pool);
     scheduler_engine_start(pool);
