@@ -11,6 +11,8 @@ vi.mock('@/api/tags', () => ({ tagsApi: { create: vi.fn(), update: vi.fn(), dele
 
 import { assetsApi } from '@/api/assets'
 import { dailyExpensesApi } from '@/api/daily_expenses'
+import { categoriesApi } from '@/api/categories'
+import { tagsApi } from '@/api/tags'
 
 const COMPLETE_EXPENSE = {
   category_id: 1, asset_id: 1, expense_type: 'expense', amount: 10,
@@ -130,5 +132,56 @@ describe('SyncEngine', () => {
     expect(dailyExpensesApi.create).toHaveBeenCalledWith(expect.objectContaining({ asset_id: 88 }))
     const earlier = rowsFrom(query('SELECT payload FROM sync_queue WHERE conflict = 1 AND record_id = 1'))
     expect(JSON.parse(String(earlier[0].payload)).asset_id).toBe(localAssetId)
+  })
+
+  it('remaps category placeholders in parent_id and dependent rows', async () => {
+    const localCatId = 1_752_130_000_000
+    run('INSERT INTO categories (id, name, type, currency) VALUES (?,?,?,?)', [localCatId, '父分类', 'expense', 'CNY'])
+    run('INSERT INTO categories (id, name, type, currency, parent_id) VALUES (?,?,?,?,?)', [9001, '子分类', 'expense', 'CNY', localCatId])
+    run('INSERT INTO assets (id, category_id, name, currency) VALUES (?,?,?,?)', [9002, localCatId, '资产', 'CNY'])
+    // 早于当前 create 的冲突项不应被重映射
+    run(
+      "INSERT INTO sync_queue (table_name, record_id, operation, payload, local_version, synced, conflict) VALUES ('assets', 1, 'create', ?, ?, 0, 1)",
+      [JSON.stringify({ category_id: localCatId }), '2026-11-26T00:00:00Z']
+    )
+    engine().init()
+    engine().enqueue('categories', localCatId, 'create', { name: '父分类', type: 'expense', currency: 'CNY' })
+    engine().enqueue('assets', 9002, 'create', { name: '资产', category_id: localCatId, currency: 'CNY' })
+    ;(categoriesApi.create as any).mockResolvedValueOnce({ id: 123 })
+    ;(assetsApi.create as any).mockResolvedValueOnce({ id: 9003 })
+
+    // 直接测 pushLocal，避免随后 pullRemote 的空远端列表清理本地子分类行
+    await engine().pushLocal()
+
+    expect(rowsFrom(query('SELECT id FROM categories WHERE id = 123')).length).toBe(1)
+    expect(rowsFrom(query('SELECT parent_id FROM categories WHERE id = 9001'))[0].parent_id).toBe(123)
+    expect(rowsFrom(query('SELECT category_id FROM assets WHERE id = 9003'))[0].category_id).toBe(123)
+    expect(assetsApi.create).toHaveBeenCalledWith(expect.objectContaining({ category_id: 123 }))
+    const earlier = rowsFrom(query('SELECT payload FROM sync_queue WHERE conflict = 1 AND record_id = 1'))
+    expect(JSON.parse(String(earlier[0].payload)).category_id).toBe(localCatId)
+  })
+
+  it('remaps tag placeholders in queued daily_expenses payload.tags', async () => {
+    const localTagId = 1_752_140_000_000
+    engine().enqueue('tags', localTagId, 'create', { name: '离线标签', color: '#fff' })
+    engine().enqueue('daily_expenses', 9101, 'create', { ...COMPLETE_EXPENSE, tags: [localTagId, 7] })
+    ;(tagsApi.create as any).mockResolvedValueOnce({ id: 456 })
+    ;(dailyExpensesApi.create as any).mockResolvedValueOnce({ id: 9102 })
+
+    await engine().syncNow()
+
+    expect(dailyExpensesApi.create).toHaveBeenCalledWith(expect.objectContaining({ tags: [456, 7] }))
+    expect(rowsFrom(query('SELECT id FROM tags WHERE id = 456')).length).toBe(1)
+  })
+
+  it('remaps expense_tags.tag_id for a locally created tag', async () => {
+    const localTagId = 1_752_150_000_000
+    run('INSERT INTO expense_tags (expense_id, tag_id, __deleted) VALUES (?,?,0)', [9201, localTagId])
+    engine().enqueue('tags', localTagId, 'create', { name: '离线标签' })
+    ;(tagsApi.create as any).mockResolvedValueOnce({ id: 789 })
+
+    await engine().syncNow()
+
+    expect(rowsFrom(query('SELECT tag_id FROM expense_tags WHERE expense_id = 9201'))[0].tag_id).toBe(789)
   })
 })

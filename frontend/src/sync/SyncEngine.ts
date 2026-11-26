@@ -31,6 +31,8 @@ export interface SyncTableDef {
 export interface RemapHandlers {
   onAssetRemap(oldId: number, newId: number, afterQueueId: number): void
   onAccountRemap(oldId: number, newId: number, afterQueueId: number): void
+  onCategoryRemap?(oldId: number, newId: number, afterQueueId: number): void
+  onTagRemap?(oldId: number, newId: number, afterQueueId: number): void
 }
 
 export interface PushError {
@@ -115,6 +117,8 @@ export class SyncEngine {
     this.remapHandlers = {
       onAssetRemap: (oldId, newId, afterQueueId) => this.remapAssetRefs(oldId, newId, afterQueueId),
       onAccountRemap: (oldId, newId, afterQueueId) => this.remapAccountRefs(oldId, newId, afterQueueId),
+      onCategoryRemap: (oldId, newId, afterQueueId) => this.remapCategoryRefs(oldId, newId, afterQueueId),
+      onTagRemap: (oldId, newId, afterQueueId) => this.remapTagRefs(oldId, newId, afterQueueId),
     }
   }
 
@@ -155,6 +159,47 @@ export class SyncEngine {
       const payload = parsePayload(q.payload)
       if (payload.account_id === oldId) {
         payload.account_id = newId
+        run('UPDATE sync_queue SET payload = ? WHERE id = ?', [JSON.stringify(payload), Number(q.id)])
+      }
+    }
+    persist()
+  }
+
+  /** 分类离线创建获得服务端 ID 后，重映射父分类引用与依赖行的 category_id */
+  private remapCategoryRefs(oldId: number, newId: number, afterQueueId: number): void {
+    run('UPDATE categories SET parent_id = ? WHERE parent_id = ?', [newId, oldId])
+    run('UPDATE assets SET category_id = ? WHERE category_id = ?', [newId, oldId])
+    run('UPDATE transactions SET category_id = ? WHERE category_id = ?', [newId, oldId])
+    run('UPDATE daily_expenses SET category_id = ? WHERE category_id = ?', [newId, oldId])
+    const queued = rowsFrom(query(
+      "SELECT id, table_name, payload FROM sync_queue WHERE synced = 0 AND id > ? AND table_name IN ('categories', 'assets', 'transactions', 'daily_expenses')",
+      [afterQueueId]
+    ))
+    for (const q of queued) {
+      const payload = parsePayload(q.payload)
+      const key = q.table_name === 'categories' ? 'parent_id' : 'category_id'
+      if (payload[key] === oldId) {
+        payload[key] = newId
+        run('UPDATE sync_queue SET payload = ? WHERE id = ?', [JSON.stringify(payload), Number(q.id)])
+      }
+    }
+    persist()
+  }
+
+  /** 标签离线创建获得服务端 ID 后，重映射本地关联表与后续队列 payload.tags */
+  private remapTagRefs(oldId: number, newId: number, afterQueueId: number): void {
+    // 复合主键冲突时忽略（同一支出已用真实 ID 关联该标签）
+    run('UPDATE OR IGNORE expense_tags SET tag_id = ? WHERE tag_id = ?', [newId, oldId])
+    run('DELETE FROM expense_tags WHERE tag_id = ?', [oldId])
+    const queued = rowsFrom(query(
+      "SELECT id, payload FROM sync_queue WHERE synced = 0 AND id > ? AND table_name = 'daily_expenses'",
+      [afterQueueId]
+    ))
+    for (const q of queued) {
+      const payload = parsePayload(q.payload)
+      const tags = payload.tags
+      if (Array.isArray(tags) && tags.some((t) => t === oldId)) {
+        payload.tags = tags.map((t) => (t === oldId ? newId : t))
         run('UPDATE sync_queue SET payload = ? WHERE id = ?', [JSON.stringify(payload), Number(q.id)])
       }
     }
@@ -373,6 +418,10 @@ export class SyncEngine {
               this.remapHandlers?.onAssetRemap(recordId, newId, item.id)
             } else if (item.table_name === 'accounts') {
               this.remapHandlers?.onAccountRemap(recordId, newId, item.id)
+            } else if (item.table_name === 'categories') {
+              this.remapHandlers?.onCategoryRemap?.(recordId, newId, item.id)
+            } else if (item.table_name === 'tags') {
+              this.remapHandlers?.onTagRemap?.(recordId, newId, item.id)
             } else {
               persist()
             }
