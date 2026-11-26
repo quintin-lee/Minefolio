@@ -7,7 +7,7 @@
       </div>
     </div>
 
-    <el-tabs v-model="activeTab" class="settings-tabs" :tab-position="'top'" style="--el-tabs-ink-height: 3px;">
+    <el-tabs v-model="activeTab" class="settings-tabs" :tab-position="tabPosition" style="--el-tabs-ink-height: 3px;">
       <el-tab-pane name="profile" lazy>
         <template #label>
           <Icon icon="ph:user-circle" width="16" />
@@ -100,7 +100,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onErrorCaptured } from 'vue'
+import { ref, onErrorCaptured, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Icon } from '@iconify/vue'
@@ -136,6 +136,28 @@ const ALLOWED_TABS = new Set([
 const rawTab = typeof route?.query?.tab === 'string' ? route.query.tab : ''
 const initialTab = ALLOWED_TABS.has(rawTab) && (rawTab !== 'users' || auth.isAdmin) ? rawTab : 'profile'
 const activeTab = ref(initialTab)
+const tabPosition = ref<'left' | 'top'>(
+  typeof window !== 'undefined' && window.innerWidth < 900 ? 'top' : 'left'
+)
+
+function handleResize() {
+  if (typeof window !== 'undefined') {
+    tabPosition.value = window.innerWidth < 900 ? 'top' : 'left'
+  }
+}
+
+onMounted(() => {
+  handleResize()
+  if (typeof window !== 'undefined') {
+    window.addEventListener('resize', handleResize)
+  }
+})
+
+onBeforeUnmount(() => {
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('resize', handleResize)
+  }
+})
 
 onErrorCaptured((err, instance, info) => {
   console.error('[Settings] Child component error:', err, info)
@@ -185,8 +207,31 @@ onErrorCaptured((err, instance, info) => {
 
 .settings-tabs {
   flex: 1;
+  min-height: 0;
   overflow: hidden;
   padding: 0;
+  display: flex;
+}
+
+.settings-tabs.el-tabs--top {
+  flex-direction: column;
+}
+
+.settings-tabs.el-tabs--left :deep(.el-tabs__header.is-left) {
+  margin-right: 24px;
+  flex-shrink: 0;
+  min-width: 176px;
+  border-right: 1px solid var(--mf-border);
+  padding-right: 8px;
+  overflow-y: auto;
+}
+
+.settings-tabs.el-tabs--left :deep(.el-tabs__item.is-left) {
+  justify-content: flex-start;
+  text-align: left;
+  padding: 10px 14px;
+  border-radius: var(--mf-radius-md);
+  height: auto;
 }
 
 .settings-tabs :deep(.el-tabs__nav) {
@@ -217,15 +262,44 @@ onErrorCaptured((err, instance, info) => {
 }
 
 .settings-tabs :deep(.el-tabs__content) {
-  padding: 24px 0;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  padding: 0;
 }
 
 .settings-tabs :deep(.el-tab-pane) {
-  height: calc(100% - 48px);
+  height: 100%;
   overflow-y: auto;
+  padding: 20px 4px 24px 0;
+  box-sizing: border-box;
 }
 
 .tab-label {
   font-size: 13px;
+}
+
+@media (max-width: 768px) {
+  .settings-page {
+    height: auto;
+    overflow: visible;
+  }
+
+  .settings-tabs {
+    overflow: visible;
+  }
+
+  .settings-tabs :deep(.el-tabs__content) {
+    height: auto;
+    overflow: visible;
+  }
+
+  .settings-tabs :deep(.el-tab-pane) {
+    height: auto;
+    overflow-y: visible;
+    padding: 16px 0;
+  }
 }
 </style>
