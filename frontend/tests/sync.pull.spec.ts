@@ -10,6 +10,9 @@ vi.mock('@/api/categories', () => ({ categoriesApi: { create: vi.fn(), update: v
 vi.mock('@/api/tags', () => ({ tagsApi: { create: vi.fn(), update: vi.fn(), delete: vi.fn(), list: vi.fn() } }))
 
 import { dailyExpensesApi } from '@/api/daily_expenses'
+import { assetsApi } from '@/api/assets'
+import { accountsApi } from '@/api/accounts'
+import { categoriesApi } from '@/api/categories'
 
 const EXPENSE_COLS = 'id, category_id, asset_id, expense_type, amount, currency, expense_date, updated_at'
 const COMPLETE_EXPENSE = {
@@ -107,5 +110,49 @@ describe('SyncEngine.pullRemote', () => {
 
     const ids = rowsFrom(query('SELECT id FROM daily_expenses')).map((r) => Number(r.id))
     expect(ids).toEqual([2])
+  })
+
+  it('pulls parent tables (accounts, categories) before child tables (assets, daily_expenses)', async () => {
+    const order: string[] = []
+    ;(accountsApi.list as any).mockImplementation(async () => {
+      order.push('accounts')
+      return []
+    })
+    ;(categoriesApi.list as any).mockImplementation(async () => {
+      order.push('categories')
+      return []
+    })
+    ;(assetsApi.list as any).mockImplementation(async () => {
+      order.push('assets')
+      return { list: [], total: 0 }
+    })
+    ;(dailyExpensesApi.list as any).mockImplementation(async () => {
+      order.push('daily_expenses')
+      return { list: [], total: 0 }
+    })
+
+    await SyncEngine.getInstance().pullRemote()
+
+    expect(order.indexOf('accounts')).toBeGreaterThanOrEqual(0)
+    expect(order.indexOf('assets')).toBeGreaterThan(order.indexOf('accounts'))
+    expect(order.indexOf('categories')).toBeGreaterThanOrEqual(0)
+    expect(order.indexOf('daily_expenses')).toBeGreaterThan(order.indexOf('categories'))
+  })
+
+  it('preserves rows belonging to other ledgers when activeLedgerId is 0 during reconciliation', async () => {
+    run(
+      `INSERT INTO daily_expenses (${EXPENSE_COLS}, ledger_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [10, 1, 1, 'expense', 10, 'CNY', '2026-11-26', '2026-11-26T10:00:00Z', 0]
+    )
+    run(
+      `INSERT INTO daily_expenses (${EXPENSE_COLS}, ledger_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [11, 1, 1, 'expense', 20, 'CNY', '2026-11-26', '2026-11-26T10:00:00Z', 5]
+    )
+    ;(dailyExpensesApi.list as any).mockResolvedValueOnce({ list: [], total: 0 })
+
+    await SyncEngine.getInstance().pullRemote()
+
+    const remainingIds = rowsFrom(query('SELECT id FROM daily_expenses')).map((r) => Number(r.id))
+    expect(remainingIds).toEqual([11])
   })
 })

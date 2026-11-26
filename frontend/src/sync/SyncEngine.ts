@@ -58,12 +58,12 @@ const SYNC_STATE_EVENT = 'minefolio:sync-state-changed'
 // 各 API 模块的 create/update 入参是具体 Input 类型，运行时接收宽松 payload；
 // 这里保持 any 映射，避免把具体 DTO 类型强行收窄成 SyncApi 造成类型不兼容。
 const API_BY_TABLE: Record<string, any> = {
-  daily_expenses: dailyExpensesApi,
-  transactions: transactionsApi,
-  assets: assetsApi,
   accounts: accountsApi,
   categories: categoriesApi,
   tags: tagsApi,
+  assets: assetsApi,
+  transactions: transactionsApi,
+  daily_expenses: dailyExpensesApi,
 }
 
 /** 统一解析后端无时区后缀的 UTC 时间字符串 */
@@ -520,11 +520,17 @@ export class SyncEngine {
           const hasLedgerId = ['assets', 'accounts', 'account_permissions', 'transactions', 'daily_expenses'].includes(table)
           const activeLedgerId = Number(localStorage.getItem('minefolio_active_ledger_id') || 0)
           let localRows: any[] = []
-          if (hasLedgerId && activeLedgerId > 0) {
-            localRows = rowsFrom(query(
-              `SELECT id FROM ${table} WHERE __deleted = 0 AND (ledger_id = ? OR (ledger_id IS NULL AND ? = 0))`,
-              [activeLedgerId, activeLedgerId]
-            ))
+          if (hasLedgerId) {
+            if (activeLedgerId > 0) {
+              localRows = rowsFrom(query(
+                `SELECT id FROM ${table} WHERE __deleted = 0 AND (ledger_id = ? OR ledger_id IS NULL)`,
+                [activeLedgerId]
+              ))
+            } else {
+              localRows = rowsFrom(query(
+                `SELECT id FROM ${table} WHERE __deleted = 0 AND (ledger_id = 0 OR ledger_id IS NULL)`
+              ))
+            }
           } else {
             localRows = rowsFrom(query(`SELECT id FROM ${table} WHERE __deleted = 0`))
           }
