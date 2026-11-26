@@ -1,7 +1,7 @@
 /**
  * 移动端写入口端到端验证
- * 前置：本地已启动 Vite 移动端开发服务（端口 5173）与 Playwright 配置。
  * 通过请求拦截模拟断网/恢复，验证离线新增资产、分类、标签、交易后的入队与推送。
+ * 所有 /api 请求均被拦截，不依赖真实后端。
  */
 import { test, expect } from '@playwright/test'
 
@@ -19,11 +19,11 @@ test('断网新增资产/分类/标签/交易 → 恢复后按序推送并使用
   let online = false
   const createdIds: Record<string, number> = {}
 
-  await page.route('**/api/(assets|categories|tags|transactions)', async (route) => {
+  // 写入口与同步端点：断网时 abort，恢复后返回新 ID
+  await page.route(/\/api\/(assets|categories|tags|transactions)(?:\/|$)/, async (route) => {
     if (!online) return route.abort('failed')
     const path = new URL(route.request().url()).pathname.replace(/^\/api\//, '').replace(/\/$/, '')
-    const method = route.request().method()
-    if (method === 'POST') {
+    if (route.request().method() === 'POST') {
       createdIds[path] = (createdIds[path] ?? 1000) + 1
       return route.fulfill({
         status: 200,
@@ -31,11 +31,12 @@ test('断网新增资产/分类/标签/交易 → 恢复后按序推送并使用
         body: JSON.stringify({ code: 0, data: { id: createdIds[path] } }),
       })
     }
-    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 0, data: null }) })
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ code: 0, data: { list: [], total: 0 } }),
+    })
   })
-  await page.route('**/api/(accounts|daily-expenses|summary|reports)**', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 0, data: { list: [], total: 0 } }) })
-  )
 
   await page.goto(`${BASE}/m/dashboard`)
 
@@ -54,7 +55,8 @@ test('断网新增资产/分类/标签/交易 → 恢复后按序推送并使用
 
   const queued = await page.evaluate(async () => {
     const { query } = await import('/src/db/local.ts')
-    return (query('SELECT table_name FROM sync_queue WHERE synced = 0 ORDER BY id')[0] as any).values.map((v: any[]) => v[0])
+    const rows = (query('SELECT table_name FROM sync_queue WHERE synced = 0 ORDER BY id')[0] as any).values
+    return rows.map((v: any[]) => v[0])
   })
   expect(queued).toEqual(['categories', 'tags', 'assets', 'transactions'])
 
@@ -70,8 +72,9 @@ test('断网新增资产/分类/标签/交易 → 恢复后按序推送并使用
 
   const localIds = await page.evaluate(async () => {
     const { query } = await import('/src/db/local.ts')
-    const names = ['categories', 'tags', 'assets', 'transactions']
-    return names.map((name) => (query(`SELECT id FROM ${name} ORDER BY id DESC LIMIT 1`)[0] as any).values[0][0] as number)
+    return ['categories', 'tags', 'assets', 'transactions'].map((name) =>
+      (query(`SELECT id FROM ${name} ORDER BY id DESC LIMIT 1`)[0] as any).values[0][0] as number
+    )
   })
   expect(localIds.every((id) => id > 0 && id < 10000)).toBe(true)
 })

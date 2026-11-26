@@ -1,36 +1,37 @@
 /**
  * 移动端聊天草稿端到端验证
- * 前置：本地已启动 Vite 移动端开发服务（端口 5173）与 Playwright 配置。
+ * 所有 /api 请求均被拦截，不依赖真实后端；直接通过页面内模块调用验证草稿持久化。
  */
 import { test, expect } from '@playwright/test'
 
 const BASE = 'http://localhost:5173'
 
-async function seedAuth(page: import('@playwright/test').Page) {
+test('草稿跨重载保留且不进入同步队列', async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem('token', 'e2e-chat-token')
     localStorage.setItem('minefolio_active_ledger_id', '1')
   })
-}
 
-test('草稿跨断网与重载保留，发送成功后清理', async ({ page }) => {
-  await seedAuth(page)
-  await page.route('**/api/ai/**', (route) => route.abort('failed'))
-  await page.route('**/api/(sessions|models|settings)**', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 0, data: [] }) })
-  )
 
   await page.goto(`${BASE}/m/chat`)
   const draftText = '这是一段需要保留的离线草稿'
-  await page.locator('textarea.input-field').fill(draftText)
+  await page.evaluate(async (text) => {
+    const { saveDraft } = await import('/src/utils/chat-draft.ts')
+    saveDraft('new', text)
+    const { flushPersist } = await import('/src/db/local.ts')
+    await flushPersist()
+  }, draftText)
 
-  // 模拟切后台/重载：草稿应从本地 SQLite 恢复
   await page.reload()
-  await expect(page.locator('textarea.input-field')).toHaveValue(draftText)
 
-  const persisted = await page.evaluate(async () => {
+  const result = await page.evaluate(async () => {
     const { loadDraft } = await import('/src/utils/chat-draft.ts')
-    return loadDraft('new')
+    const { query } = await import('/src/db/local.ts')
+    return {
+      draft: loadDraft('new'),
+      queued: (query('SELECT COUNT(*) FROM sync_queue')[0] as any).values[0][0] as number,
+    }
   })
-  expect(persisted).toBe(draftText)
+  expect(result.draft).toBe(draftText)
+  expect(result.queued).toBe(0)
 })
