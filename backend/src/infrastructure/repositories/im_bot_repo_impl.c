@@ -422,8 +422,8 @@ mf_im_bot_instance_submit_verify_code(csilk_db_pool_t* pool,
         int           en = db_get_bool(row, "enabled");
         int64_t       attempts = db_get_int(row, "verify_attempts");
         int           waiting = en && st &&
-                      (strcmp(st, "pending_login") == 0 || strcmp(st, "qr_ready") == 0 ||
-                       strcmp(st, "scanned") == 0 || strcmp(st, "need_verifycode") == 0);
+                                (strcmp(st, "pending_login") == 0 || strcmp(st, "qr_ready") == 0 ||
+                                 strcmp(st, "scanned") == 0 || strcmp(st, "need_verifycode") == 0);
         csilk_json_free(chk);
         if (waiting && attempts >= 10) {
             return -4;

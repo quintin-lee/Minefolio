@@ -310,17 +310,17 @@ typedef struct {
 
 static const migration_checksum_alias_t k_known_migration_checksum_aliases[] = {
     {
-        .dialect = "postgres",
-        .version = 26,
-        .legacy_checksum = "c2985d211f8714443548f60161f69a4a305c6504544db2d907a18e5a76b01253",
-        .canonical_checksum = "9a01c6efeea743bb4f028884a3046b9092c360b3d3cf29086a902f0e8ed746f6",
-    },
+     .dialect = "postgres",
+     .version = 26,
+     .legacy_checksum = "c2985d211f8714443548f60161f69a4a305c6504544db2d907a18e5a76b01253",
+     .canonical_checksum = "9a01c6efeea743bb4f028884a3046b9092c360b3d3cf29086a902f0e8ed746f6",
+     },
     {
-        .dialect = "postgres",
-        .version = 34,
-        .legacy_checksum = "7b378125554f722555f1339caae81384ce4790939049a1a0d8af1f33ba7d79cb",
-        .canonical_checksum = "46c4b23533fec31c885fca6fb0f2973a9598748a07efc68d35fdefce99503595",
-    },
+     .dialect = "postgres",
+     .version = 34,
+     .legacy_checksum = "7b378125554f722555f1339caae81384ce4790939049a1a0d8af1f33ba7d79cb",
+     .canonical_checksum = "46c4b23533fec31c885fca6fb0f2973a9598748a07efc68d35fdefce99503595",
+     },
 };
 
 static bool
@@ -366,8 +366,8 @@ db_reconcile_known_migration_checksums(csilk_db_pool_t* pool, const char* dialec
     }
     const char* effective_dialect = (dialect && dialect[0]) ? dialect : actual_driver;
 
-    size_t alias_count = sizeof(k_known_migration_checksum_aliases) /
-                         sizeof(k_known_migration_checksum_aliases[0]);
+    size_t alias_count =
+        sizeof(k_known_migration_checksum_aliases) / sizeof(k_known_migration_checksum_aliases[0]);
     bool has_alias = false;
     for (size_t i = 0; i < alias_count; i++) {
         if (strcmp(k_known_migration_checksum_aliases[i].dialect, effective_dialect) == 0) {

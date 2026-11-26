@@ -32,9 +32,11 @@ mf_portfolio_repo_get_holdings(void*               db_pool,
                  "SELECT a.id AS asset_id, a.name, c.asset_type, a.currency, "
                  "a.quantity, a.net_value, a.cost_basis, a.cost_method "
                  "FROM assets a JOIN categories c ON a.category_id = c.id "
-                 "WHERE " MF_LEDGER_SHARED_ACCESS_SQL("a") " AND c.asset_type IN "
-                 "('stock','fund','bond','crypto') AND " MF_RBAC_ASSET_UNMASKED_SQL("a") " "
-                 "ORDER BY a.id ASC");
+                 "WHERE " MF_LEDGER_SHARED_ACCESS_SQL(
+                     "a") " AND c.asset_type IN "
+                          "('stock','fund','bond','crypto') AND " MF_RBAC_ASSET_UNMASKED_SQL(
+                              "a") " "
+                                   "ORDER BY a.id ASC");
         params[pidx++] = lid_str;
         params[pidx++] = uid_str;
         params[pidx++] = uid_str;
@@ -133,17 +135,18 @@ mf_portfolio_repo_get_trade_events(void*                        db_pool,
 
     char tx_sql[2048];
     if (ledger_id > 0) {
-        snprintf(
-            tx_sql,
-            sizeof(tx_sql),
-            "SELECT t.id, t.asset_id, t.transaction_type, t.quantity, t.amount, "
-            "t.price_per_unit, t.fee, "
-            "t.currency "
-            "FROM transactions t JOIN assets a ON t.asset_id = a.id "
-            "WHERE " MF_LEDGER_SHARED_ACCESS_FALLBACK_SQL("t", "a") " "
-            "AND (t.parent_tx_id IS NULL OR t.parent_tx_id = 0) "
-            "AND " MF_RBAC_ASSET_UNMASKED_SQL("a") " "
-                                                   "ORDER BY t.transaction_date ASC, t.id ASC");
+        snprintf(tx_sql,
+                 sizeof(tx_sql),
+                 "SELECT t.id, t.asset_id, t.transaction_type, t.quantity, t.amount, "
+                 "t.price_per_unit, t.fee, "
+                 "t.currency "
+                 "FROM transactions t JOIN assets a ON t.asset_id = a.id "
+                 "WHERE " MF_LEDGER_SHARED_ACCESS_FALLBACK_SQL(
+                     "t", "a") " "
+                               "AND (t.parent_tx_id IS NULL OR t.parent_tx_id = 0) "
+                               "AND " MF_RBAC_ASSET_UNMASKED_SQL(
+                                   "a") " "
+                                        "ORDER BY t.transaction_date ASC, t.id ASC");
         params[pidx++] = lid_str;
         params[pidx++] = uid_str;
         params[pidx++] = uid_str;
@@ -227,12 +230,15 @@ portfolio_repo_get_category_assets(void* pool, int64_t user_id, int64_t ledger_i
 
     char sql[2048];
     if (ledger_id > 0) {
-        snprintf(sql,
-                 sizeof(sql),
-                 "SELECT c.name as category_name, a.current_value as value, a.currency as currency "
-                 "FROM assets a JOIN categories c ON a.category_id=c.id "
-                 "WHERE " MF_LEDGER_SHARED_ACCESS_SQL("a") " AND c.asset_type NOT IN "
-                 "('loan','credit_card','other_liability') AND " MF_RBAC_ASSET_UNMASKED_SQL("a"));
+        snprintf(
+            sql,
+            sizeof(sql),
+            "SELECT c.name as category_name, a.current_value as value, a.currency as currency "
+            "FROM assets a JOIN categories c ON a.category_id=c.id "
+            "WHERE " MF_LEDGER_SHARED_ACCESS_SQL(
+                "a") " AND c.asset_type NOT IN "
+                     "('loan','credit_card','other_liability') AND " MF_RBAC_ASSET_UNMASKED_SQL(
+                         "a"));
         params[pidx++] = lid_str;
         params[pidx++] = uid_str;
         params[pidx++] = uid_str;
@@ -265,12 +271,15 @@ portfolio_repo_get_liability_assets(void* pool, int64_t user_id, int64_t ledger_
 
     char sql[2048];
     if (ledger_id > 0) {
-        snprintf(sql,
-                 sizeof(sql),
-                 "SELECT a.current_value, a.currency "
-                 "FROM assets a JOIN categories c ON a.category_id=c.id "
-                 "WHERE " MF_LEDGER_SHARED_ACCESS_SQL("a") " AND c.asset_type IN "
-                 "('loan','credit_card','other_liability') AND " MF_RBAC_ASSET_UNMASKED_SQL("a"));
+        snprintf(
+            sql,
+            sizeof(sql),
+            "SELECT a.current_value, a.currency "
+            "FROM assets a JOIN categories c ON a.category_id=c.id "
+            "WHERE " MF_LEDGER_SHARED_ACCESS_SQL(
+                "a") " AND c.asset_type IN "
+                     "('loan','credit_card','other_liability') AND " MF_RBAC_ASSET_UNMASKED_SQL(
+                         "a"));
         params[pidx++] = lid_str;
         params[pidx++] = uid_str;
         params[pidx++] = uid_str;
@@ -356,14 +365,24 @@ portfolio_repo_get_recent_transactions(void* pool, int64_t user_id, int64_t ledg
             "SELECT t.id, t.transaction_date, t.transaction_type, t.amount, t.currency, "
             "a.name as asset_name, c.name as category_name, " MF_RBAC_MASK_BALANCE_COL(
                 "a") " AS mask_bal_a, " MF_RBAC_MASK_BALANCE_COL("la") " AS mask_bal_la "
-            "FROM transactions t "
-            "LEFT JOIN assets a ON t.asset_id=a.id "
-            "LEFT JOIN assets la ON t.linked_asset_id=la.id "
-            "LEFT JOIN categories c ON t.category_id=c.id "
-            "WHERE " MF_LEDGER_SHARED_ACCESS_FALLBACK_SQL("t", "a") " "
-            "AND " MF_RBAC_ASSET_VISIBLE_SQL("a") " "
-            "AND " MF_RBAC_ASSET_VISIBLE_SQL("la") " "
-            "ORDER BY t.transaction_date DESC, t.id DESC LIMIT ?");
+                                                                       "FROM transactions t "
+                                                                       "LEFT JOIN assets a ON "
+                                                                       "t.asset_id=a.id "
+                                                                       "LEFT JOIN assets la ON "
+                                                                       "t.linked_asset_id=la.id "
+                                                                       "LEFT JOIN categories c ON "
+                                                                       "t.category_id=c.id "
+                                                                       "WHERE"
+                                                                       " " MF_LEDGER_SHARED_ACCESS_FALLBACK_SQL(
+                                                                           "t",
+                                                                           "a") " "
+                                                                                "AND"
+                                                                                " " MF_RBAC_ASSET_VISIBLE_SQL(
+                                                                                    "a") " "
+                                                                                         "AND"
+                                                                                         " " MF_RBAC_ASSET_VISIBLE_SQL(
+                                                                                             "la") " "
+                                                                                                   "ORDER BY t.transaction_date DESC, t.id DESC LIMIT ?");
         params[pidx++] = lid_str;
         params[pidx++] = uid_str;
         params[pidx++] = uid_str;
@@ -375,14 +394,31 @@ portfolio_repo_get_recent_transactions(void* pool, int64_t user_id, int64_t ledg
             "SELECT t.id, t.transaction_date, t.transaction_type, t.amount, t.currency, "
             "a.name as asset_name, c.name as category_name, " MF_RBAC_MASK_BALANCE_COL(
                 "a") " AS mask_bal_a, " MF_RBAC_MASK_BALANCE_COL("la") " AS mask_bal_la "
-            "FROM transactions t "
-            "LEFT JOIN assets a ON t.asset_id=a.id "
-            "LEFT JOIN assets la ON t.linked_asset_id=la.id "
-            "LEFT JOIN categories c ON t.category_id=c.id "
-            "WHERE t.user_id=? "
-            "AND " MF_RBAC_ASSET_VISIBLE_SQL("a") " "
-            "AND " MF_RBAC_ASSET_VISIBLE_SQL("la") " "
-            "ORDER BY t.transaction_date DESC, t.id DESC LIMIT ?");
+                                                                       "FROM transactions t "
+                                                                       "LEFT JOIN assets a ON "
+                                                                       "t.asset_id=a.id "
+                                                                       "LEFT JOIN assets la ON "
+                                                                       "t.linked_asset_id=la.id "
+                                                                       "LEFT JOIN categories c ON "
+                                                                       "t.category_id=c.id "
+                                                                       "WHERE t.user_id=? "
+                                                                       "AND"
+                                                                       " " MF_RBAC_ASSET_VISIBLE_SQL(
+                                                                           "a") " "
+                                                                                "AND"
+                                                                                " " MF_RBAC_ASSET_VISIBLE_SQL(
+                                                                                    "la") " "
+                                                                                          "ORDER "
+                                                                                          "BY "
+                                                                                          "t."
+                                                                                          "transact"
+                                                                                          "ion_"
+                                                                                          "date "
+                                                                                          "DESC, "
+                                                                                          "t.id "
+                                                                                          "DESC "
+                                                                                          "LIMIT "
+                                                                                          "?");
         params[pidx++] = uid_str;
     }
     params[pidx++] = uid_str;
@@ -405,24 +441,24 @@ portfolio_repo_get_trend_assets(void* pool, int64_t user_id, int64_t ledger_id)
 
     const char* asset_sql =
         db_is_postgres()
-            ? (ledger_id > 0
-                   ? "SELECT a.id, a.current_value, a.currency, c.asset_type, "
-                     "to_char(a.created_at, 'YYYY-MM-DD') as created_date "
-                     "FROM assets a JOIN categories c ON a.category_id=c.id "
-                     "WHERE " MF_LEDGER_SHARED_ACCESS_SQL("a") " AND " MF_RBAC_ASSET_UNMASKED_SQL("a")
-                   : "SELECT a.id, a.current_value, a.currency, c.asset_type, "
-                     "to_char(a.created_at, 'YYYY-MM-DD') as created_date "
-                     "FROM assets a JOIN categories c ON a.category_id=c.id "
-                     "WHERE a.user_id=? AND " MF_RBAC_ASSET_UNMASKED_SQL("a"))
-            : (ledger_id > 0
-                   ? "SELECT a.id, a.current_value, a.currency, c.asset_type, "
-                     "date(a.created_at) as created_date "
-                     "FROM assets a JOIN categories c ON a.category_id=c.id "
-                     "WHERE " MF_LEDGER_SHARED_ACCESS_SQL("a") " AND " MF_RBAC_ASSET_UNMASKED_SQL("a")
-                   : "SELECT a.id, a.current_value, a.currency, c.asset_type, "
-                     "date(a.created_at) as created_date "
-                     "FROM assets a JOIN categories c ON a.category_id=c.id "
-                     "WHERE a.user_id=? AND " MF_RBAC_ASSET_UNMASKED_SQL("a"));
+            ? (ledger_id > 0 ? "SELECT a.id, a.current_value, a.currency, c.asset_type, "
+                               "to_char(a.created_at, 'YYYY-MM-DD') as created_date "
+                               "FROM assets a JOIN categories c ON a.category_id=c.id "
+                               "WHERE " MF_LEDGER_SHARED_ACCESS_SQL(
+                                   "a") " AND " MF_RBAC_ASSET_UNMASKED_SQL("a")
+                             : "SELECT a.id, a.current_value, a.currency, c.asset_type, "
+                               "to_char(a.created_at, 'YYYY-MM-DD') as created_date "
+                               "FROM assets a JOIN categories c ON a.category_id=c.id "
+                               "WHERE a.user_id=? AND " MF_RBAC_ASSET_UNMASKED_SQL("a"))
+            : (ledger_id > 0 ? "SELECT a.id, a.current_value, a.currency, c.asset_type, "
+                               "date(a.created_at) as created_date "
+                               "FROM assets a JOIN categories c ON a.category_id=c.id "
+                               "WHERE " MF_LEDGER_SHARED_ACCESS_SQL(
+                                   "a") " AND " MF_RBAC_ASSET_UNMASKED_SQL("a")
+                             : "SELECT a.id, a.current_value, a.currency, c.asset_type, "
+                               "date(a.created_at) as created_date "
+                               "FROM assets a JOIN categories c ON a.category_id=c.id "
+                               "WHERE a.user_id=? AND " MF_RBAC_ASSET_UNMASKED_SQL("a"));
     const char* asset_params[10];
     int         apidx = 0;
     if (ledger_id > 0) {
@@ -455,8 +491,11 @@ portfolio_repo_get_trend_balance_logs(void*       pool,
                    ? "SELECT abl.asset_id, abl.delta, to_char(abl.created_at, 'YYYY-MM-DD') as "
                      "log_date "
                      "FROM asset_balance_logs abl JOIN assets a ON abl.asset_id=a.id "
-                     "WHERE " MF_LEDGER_SHARED_BALANCE_LOG_SQL("abl", "a") " "
-                     "AND abl.created_at::date >= ?::date AND " MF_RBAC_ASSET_UNMASKED_SQL("a")
+                     "WHERE " MF_LEDGER_SHARED_BALANCE_LOG_SQL(
+                         "abl",
+                         "a") " "
+                              "AND abl.created_at::date >= ?::date AND " MF_RBAC_ASSET_UNMASKED_SQL(
+                                  "a")
                    : "SELECT abl.asset_id, abl.delta, to_char(abl.created_at, 'YYYY-MM-DD') as "
                      "log_date "
                      "FROM asset_balance_logs abl LEFT JOIN assets a ON abl.asset_id=a.id "
@@ -465,8 +504,10 @@ portfolio_repo_get_trend_balance_logs(void*       pool,
             : (ledger_id > 0
                    ? "SELECT abl.asset_id, abl.delta, date(abl.created_at) as log_date "
                      "FROM asset_balance_logs abl JOIN assets a ON abl.asset_id=a.id "
-                     "WHERE " MF_LEDGER_SHARED_BALANCE_LOG_SQL("abl", "a") " "
-                     "AND date(abl.created_at) >= ? AND " MF_RBAC_ASSET_UNMASKED_SQL("a")
+                     "WHERE " MF_LEDGER_SHARED_BALANCE_LOG_SQL(
+                         "abl",
+                         "a") " "
+                              "AND date(abl.created_at) >= ? AND " MF_RBAC_ASSET_UNMASKED_SQL("a")
                    : "SELECT abl.asset_id, abl.delta, date(abl.created_at) as log_date "
                      "FROM asset_balance_logs abl LEFT JOIN assets a ON abl.asset_id=a.id "
                      "WHERE abl.user_id=? AND date(abl.created_at) >= ? "
@@ -500,17 +541,18 @@ portfolio_repo_get_performance_transactions(void* pool, int64_t user_id, int64_t
 
     char sql[2048];
     if (ledger_id > 0) {
-        snprintf(
-            sql,
-            sizeof(sql),
-            "SELECT t.id, t.asset_id, a.name as asset_name, t.transaction_type, t.direction, "
-            "t.transaction_date, "
-            "t.quantity, t.price_per_unit, t.amount, t.fee, t.currency, t.parent_tx_id "
-            "FROM transactions t JOIN assets a ON t.asset_id=a.id "
-            "WHERE " MF_LEDGER_SHARED_ACCESS_FALLBACK_SQL("t", "a") " "
-            "AND (t.parent_tx_id IS NULL OR t.parent_tx_id = 0) "
-            "AND " MF_RBAC_ASSET_UNMASKED_SQL("a") " "
-                                                   "ORDER BY t.transaction_date ASC, t.id ASC");
+        snprintf(sql,
+                 sizeof(sql),
+                 "SELECT t.id, t.asset_id, a.name as asset_name, t.transaction_type, t.direction, "
+                 "t.transaction_date, "
+                 "t.quantity, t.price_per_unit, t.amount, t.fee, t.currency, t.parent_tx_id "
+                 "FROM transactions t JOIN assets a ON t.asset_id=a.id "
+                 "WHERE " MF_LEDGER_SHARED_ACCESS_FALLBACK_SQL(
+                     "t", "a") " "
+                               "AND (t.parent_tx_id IS NULL OR t.parent_tx_id = 0) "
+                               "AND " MF_RBAC_ASSET_UNMASKED_SQL(
+                                   "a") " "
+                                        "ORDER BY t.transaction_date ASC, t.id ASC");
         params[pidx++] = lid_str;
         params[pidx++] = uid_str;
         params[pidx++] = uid_str;
@@ -551,8 +593,9 @@ portfolio_repo_get_holdings_raw(void* pool, int64_t user_id, int64_t ledger_id)
                  sizeof(sql),
                  "SELECT a.cost_basis, a.current_value, a.currency "
                  "FROM assets a JOIN categories c ON a.category_id=c.id "
-                 "WHERE " MF_LEDGER_SHARED_ACCESS_SQL("a") " AND c.asset_type IN "
-                 "('stock','fund','bond','crypto') AND " MF_RBAC_ASSET_UNMASKED_SQL("a"));
+                 "WHERE " MF_LEDGER_SHARED_ACCESS_SQL(
+                     "a") " AND c.asset_type IN "
+                          "('stock','fund','bond','crypto') AND " MF_RBAC_ASSET_UNMASKED_SQL("a"));
         params[pidx++] = lid_str;
         params[pidx++] = uid_str;
         params[pidx++] = uid_str;

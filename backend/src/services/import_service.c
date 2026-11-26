@@ -252,13 +252,13 @@ resolve_import_asset(csilk_db_pool_t* pool,
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
 
-    const char* sql =
-        "SELECT a.id, COALESCE(a.account_id, 0) AS account_id "
-        "FROM assets a "
-        "WHERE a.name = ? "
-        "AND " MF_LEDGER_SHARED_ACCESS_SQL("a") " "
-        "AND " MF_RBAC_ASSET_VISIBLE_SQL("a") " "
-        "ORDER BY a.id ASC LIMIT 1";
+    const char*   sql = "SELECT a.id, COALESCE(a.account_id, 0) AS account_id "
+                        "FROM assets a "
+                        "WHERE a.name = ? "
+                        "AND " MF_LEDGER_SHARED_ACCESS_SQL("a") " "
+                                                                "AND " MF_RBAC_ASSET_VISIBLE_SQL(
+                                                                    "a") " "
+                                                                         "ORDER BY a.id ASC LIMIT 1";
     const char*   params[] = {name, lid_str, uid_str, uid_str, uid_str, uid_str, uid_str, NULL};
     csilk_json_t* res = csilk_db_query_param_json(pool, sql, params);
     if (!res || csilk_json_array_size(res) == 0) {
@@ -279,10 +279,7 @@ resolve_import_asset(csilk_db_pool_t* pool,
 }
 
 static int64_t
-resolve_import_category(csilk_db_pool_t* pool,
-                        int64_t          user_id,
-                        int64_t          ledger_id,
-                        const char*      name)
+resolve_import_category(csilk_db_pool_t* pool, int64_t user_id, int64_t ledger_id, const char* name)
 {
     if (!pool || user_id <= 0 || ledger_id <= 0 || !name || !name[0]) {
         return 0;
@@ -294,7 +291,7 @@ resolve_import_category(csilk_db_pool_t* pool,
     const char* sql =
         "SELECT c.id FROM categories c "
         "WHERE c.name = ? AND " MF_LEDGER_SHARED_ACCESS_SQL("c") " "
-        "ORDER BY c.id ASC LIMIT 1";
+                                                                 "ORDER BY c.id ASC LIMIT 1";
     const char*   params[] = {name, lid_str, uid_str, uid_str, uid_str, NULL};
     csilk_json_t* res = csilk_db_query_param_json(pool, sql, params);
     int64_t       cid = 0;
@@ -321,8 +318,9 @@ category_belongs_to_ledger(csilk_db_pool_t* pool,
     snprintf(uid_str, sizeof(uid_str), "%lld", (long long)user_id);
     snprintf(lid_str, sizeof(lid_str), "%lld", (long long)ledger_id);
 
-    const char*   sql =
-        "SELECT c.id FROM categories c WHERE c.id = ? AND " MF_LEDGER_SHARED_ACCESS_SQL("c") " LIMIT 1";
+    const char* sql =
+        "SELECT c.id FROM categories c WHERE c.id = ? AND " MF_LEDGER_SHARED_ACCESS_SQL(
+            "c") " LIMIT 1";
     csilk_json_t* res = csilk_db_query_param_json(
         pool, sql, (const char*[]){cid_str, lid_str, uid_str, uid_str, uid_str, NULL});
     bool ok = res && csilk_json_array_size(res) > 0;
@@ -386,7 +384,7 @@ import_transactions_csv_execute(csilk_db_pool_t* pool,
             mf_async_task_update_progress(pool, task_id, pct, "正在批量导入交易记录");
         }
         const char* line_end = memchr(line_start, '\n', (size_t)(end - line_start));
-        size_t      line_len = line_end ? (size_t)(line_end - line_start) : (size_t)(end - line_start);
+        size_t line_len = line_end ? (size_t)(line_end - line_start) : (size_t)(end - line_start);
         const char* next_line = line_end ? line_end + 1 : end;
 
         while (line_len > 0 &&
@@ -466,7 +464,8 @@ import_transactions_csv_execute(csilk_db_pool_t* pool,
         }
         if (category_id <= 0) {
             if (apply_smart_rules(rules, note_s, note_s, note_s, &category_id, NULL, 0)) {
-                if (category_id > 0 && !category_belongs_to_ledger(pool, user_id, ledger_id, category_id)) {
+                if (category_id > 0 &&
+                    !category_belongs_to_ledger(pool, user_id, ledger_id, category_id)) {
                     category_id = 0;
                 } else if (category_id > 0) {
                     matched_rules_count++;
@@ -555,10 +554,8 @@ import_transactions_csv_execute(csilk_db_pool_t* pool,
 
         if (ledger_apply_tx(pool, &ltx) != 0) {
             errors++;
-            append_import_error(errors_detail,
-                                sizeof(errors_detail),
-                                "第%d行: 导入失败或持有份额不足\n",
-                                line_num);
+            append_import_error(
+                errors_detail, sizeof(errors_detail), "第%d行: 导入失败或持有份额不足\n", line_num);
             line_start = next_line;
             continue;
         }
@@ -595,8 +592,15 @@ transactions_import_csv_task_fn(void*   raw_pool,
         }
         return -1;
     }
-    return import_transactions_csv_execute(
-        pool, task_id, user_id, ledger_id, arg->csv_data, arg->csv_len, out_result_json, err_buf, err_cap);
+    return import_transactions_csv_execute(pool,
+                                           task_id,
+                                           user_id,
+                                           ledger_id,
+                                           arg->csv_data,
+                                           arg->csv_len,
+                                           out_result_json,
+                                           err_buf,
+                                           err_cap);
 }
 
 void
@@ -663,7 +667,7 @@ import_daily_expenses_csv_execute(csilk_db_pool_t* pool,
             mf_async_task_update_progress(pool, task_id, pct, "正在批量导入日常收支记录");
         }
         const char* line_end = memchr(line_start, '\n', (size_t)(end - line_start));
-        size_t      line_len = line_end ? (size_t)(line_end - line_start) : (size_t)(end - line_start);
+        size_t line_len = line_end ? (size_t)(line_end - line_start) : (size_t)(end - line_start);
         const char* next_line = line_end ? line_end + 1 : end;
         while (line_len > 0 &&
                (line_start[line_len - 1] == '\r' || line_start[line_len - 1] == '\n')) {
@@ -743,7 +747,8 @@ import_daily_expenses_csv_execute(csilk_db_pool_t* pool,
                                   &category_id,
                                   matched_type,
                                   sizeof(matched_type))) {
-                if (category_id > 0 && !category_belongs_to_ledger(pool, user_id, ledger_id, category_id)) {
+                if (category_id > 0 &&
+                    !category_belongs_to_ledger(pool, user_id, ledger_id, category_id)) {
                     category_id = 0;
                 } else if (category_id > 0) {
                     matched_rules_count++;
@@ -867,8 +872,15 @@ daily_expenses_import_csv_task_fn(void*   raw_pool,
         }
         return -1;
     }
-    return import_daily_expenses_csv_execute(
-        pool, task_id, user_id, ledger_id, arg->csv_data, arg->csv_len, out_result_json, err_buf, err_cap);
+    return import_daily_expenses_csv_execute(pool,
+                                             task_id,
+                                             user_id,
+                                             ledger_id,
+                                             arg->csv_data,
+                                             arg->csv_len,
+                                             out_result_json,
+                                             err_buf,
+                                             err_cap);
 }
 
 void

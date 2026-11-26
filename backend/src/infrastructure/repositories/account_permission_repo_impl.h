@@ -55,10 +55,10 @@
  *        需要绑定 4 个参数：[ledger_id, user_id, user_id, user_id]
  */
 #define MF_LEDGER_SHARED_ACCESS_FALLBACK_SQL(alias, asset_alias)                                   \
-    "(COALESCE(NULLIF(" alias ".ledger_id, 0), " asset_alias ".ledger_id) = ? AND ("               \
-    alias ".user_id = ? OR EXISTS (SELECT 1 FROM ledgers _l WHERE _l.id = "                        \
-    "COALESCE(NULLIF(" alias ".ledger_id, 0), " asset_alias ".ledger_id) AND _l.owner_id = ?) "     \
-    "OR EXISTS (SELECT 1 FROM ledger_members _lm WHERE _lm.ledger_id = "                          \
+    "(COALESCE(NULLIF(" alias ".ledger_id, 0), " asset_alias ".ledger_id) = ? AND (" alias         \
+    ".user_id = ? OR EXISTS (SELECT 1 FROM ledgers _l WHERE _l.id = "                              \
+    "COALESCE(NULLIF(" alias ".ledger_id, 0), " asset_alias ".ledger_id) AND _l.owner_id = ?) "    \
+    "OR EXISTS (SELECT 1 FROM ledger_members _lm WHERE _lm.ledger_id = "                           \
     "COALESCE(NULLIF(" alias ".ledger_id, 0), " asset_alias ".ledger_id) AND _lm.user_id = ?)))"
 
 /**
@@ -67,11 +67,11 @@
  */
 #define MF_LEDGER_SHARED_WRITE_FALLBACK_SQL(tbl, asset_subquery_col)                               \
     "(" tbl ".user_id = ? OR EXISTS (SELECT 1 FROM ledgers _l WHERE _l.id = "                      \
-    "COALESCE(NULLIF(" tbl ".ledger_id, 0), (SELECT ledger_id FROM assets WHERE id = "             \
-    tbl "." asset_subquery_col ")) AND _l.owner_id = ?) "                                          \
-    "OR EXISTS (SELECT 1 FROM ledger_members _lm WHERE _lm.ledger_id = "                          \
-    "COALESCE(NULLIF(" tbl ".ledger_id, 0), (SELECT ledger_id FROM assets WHERE id = "             \
-    tbl "." asset_subquery_col ")) AND _lm.user_id = ? AND _lm.role IN ('owner', 'editor')))"
+    "COALESCE(NULLIF(" tbl ".ledger_id, 0), (SELECT ledger_id FROM assets WHERE id = " tbl         \
+    "." asset_subquery_col ")) AND _l.owner_id = ?) "                                              \
+    "OR EXISTS (SELECT 1 FROM ledger_members _lm WHERE _lm.ledger_id = "                           \
+    "COALESCE(NULLIF(" tbl ".ledger_id, 0), (SELECT ledger_id FROM assets WHERE id = " tbl         \
+    "." asset_subquery_col ")) AND _lm.user_id = ? AND _lm.role IN ('owner', 'editor')))"
 
 /**
  * @brief 资产归属账户是否对当前用户开启了金额脱敏（非所有者且 mask_balance != 0）

@@ -180,11 +180,8 @@ dca_usecase_create_plan(void* pool, const create_dca_plan_cmd_t* cmd, dca_usecas
 }
 
 static int
-dca_validate_existing_plan_write_perm(void*                 pool,
-                                      int64_t               user_id,
-                                      int64_t               ledger_id,
-                                      int64_t               plan_id,
-                                      dca_usecase_result_t* out_res)
+dca_validate_existing_plan_write_perm(
+    void* pool, int64_t user_id, int64_t ledger_id, int64_t plan_id, dca_usecase_result_t* out_res)
 {
     csilk_json_t* plan_arr = mf_dca_repo_plan_get(pool, user_id, ledger_id, plan_id);
     if (!plan_arr || csilk_json_array_size(plan_arr) == 0) {
@@ -388,8 +385,9 @@ dca_usecase_confirm_execution(void*                              pool,
     char tx_date[32];
     snprintf(tx_date, sizeof(tx_date), "%s 09:30:00", period_date ? period_date : "2026-08-28");
 
-    int64_t eff_lid =
-        (exec_lid > 0) ? exec_lid : (cmd->ledger_id > 0 ? cmd->ledger_id : (t_lid > 0 ? t_lid : f_lid));
+    int64_t     eff_lid = (exec_lid > 0)
+                              ? exec_lid
+                              : (cmd->ledger_id > 0 ? cmd->ledger_id : (t_lid > 0 ? t_lid : f_lid));
     ledger_tx_t ltx = {.id = 0,
                        .user_id = cmd->user_id,
                        .ledger_id = eff_lid,
@@ -444,11 +442,8 @@ dca_usecase_confirm_execution(void*                              pool,
 }
 
 int
-dca_usecase_skip_execution(void*                 pool,
-                           int64_t               user_id,
-                           int64_t               ledger_id,
-                           int64_t               exec_id,
-                           dca_usecase_result_t* out_res)
+dca_usecase_skip_execution(
+    void* pool, int64_t user_id, int64_t ledger_id, int64_t exec_id, dca_usecase_result_t* out_res)
 {
     csilk_json_t* exec_arr = mf_dca_repo_execution_get(pool, user_id, ledger_id, exec_id);
     if (!exec_arr || csilk_json_array_size(exec_arr) == 0) {

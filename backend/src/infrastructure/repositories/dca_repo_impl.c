@@ -123,14 +123,14 @@ mf_dca_repo_plan_list(void*       db_pool,
                  scope_where);
         cnt_params[cnt_pidx++] = status;
     } else {
-        snprintf(count_sql,
-                 sizeof(count_sql),
-                 "SELECT COUNT(*) AS cnt FROM dca_plans p "
-                 "JOIN assets ta ON ta.id = p.target_asset_id "
-                 "JOIN assets fa ON fa.id = p.funding_asset_id "
-                 "WHERE %s AND " MF_RBAC_ASSET_VISIBLE_SQL("ta") " AND " MF_RBAC_ASSET_VISIBLE_SQL(
-                     "fa"),
-                 scope_where);
+        snprintf(
+            count_sql,
+            sizeof(count_sql),
+            "SELECT COUNT(*) AS cnt FROM dca_plans p "
+            "JOIN assets ta ON ta.id = p.target_asset_id "
+            "JOIN assets fa ON fa.id = p.funding_asset_id "
+            "WHERE %s AND " MF_RBAC_ASSET_VISIBLE_SQL("ta") " AND " MF_RBAC_ASSET_VISIBLE_SQL("fa"),
+            scope_where);
     }
     cnt_params[cnt_pidx] = NULL;
 
@@ -180,33 +180,40 @@ mf_dca_repo_plan_list(void*       db_pool,
         "       ta.net_value AS target_net_value, ta.quantity AS target_quantity, "
         "       ta.cost_basis AS target_cost_basis, ta.current_value AS target_current_value, "
         "       ta.quote_source AS target_quote_source, ta.currency AS target_currency, "
-        "       fa.name AS funding_asset_name, fa.currency AS funding_currency, "
-        MF_RBAC_MASK_BALANCE_COL("ta") " AS mask_bal_ta, "
-        "       (SELECT COUNT(*) FROM dca_executions e WHERE e.plan_id = p.id AND e.status = "
-        "'confirmed') AS executed_periods, "
-        "       (SELECT COALESCE(SUM(actual_amount), 0) FROM dca_executions e WHERE e.plan_id = "
-        "p.id AND e.status = 'confirmed') AS total_invested_amount "
-        "FROM dca_plans p "
-        "JOIN assets ta ON ta.id = p.target_asset_id "
-        "JOIN assets fa ON fa.id = p.funding_asset_id ";
+        "       fa.name AS funding_asset_name, fa.currency AS "
+        "funding_currency, " MF_RBAC_MASK_BALANCE_COL(
+            "ta") " AS mask_bal_ta, "
+                  "       (SELECT COUNT(*) FROM dca_executions e WHERE e.plan_id = p.id AND "
+                  "e.status = "
+                  "'confirmed') AS executed_periods, "
+                  "       (SELECT COALESCE(SUM(actual_amount), 0) FROM dca_executions e WHERE "
+                  "e.plan_id = "
+                  "p.id AND e.status = 'confirmed') AS total_invested_amount "
+                  "FROM dca_plans p "
+                  "JOIN assets ta ON ta.id = p.target_asset_id "
+                  "JOIN assets fa ON fa.id = p.funding_asset_id ";
 
     if (status && status[0]) {
         snprintf(sql,
                  sizeof(sql),
-                 "%s WHERE %s AND " MF_RBAC_ASSET_VISIBLE_SQL("ta") " "
-                 "AND " MF_RBAC_ASSET_VISIBLE_SQL("fa") " "
-                 "AND p.status = ? ORDER BY p.id DESC LIMIT ? OFFSET ?",
+                 "%s WHERE %s AND " MF_RBAC_ASSET_VISIBLE_SQL(
+                     "ta") " "
+                           "AND " MF_RBAC_ASSET_VISIBLE_SQL(
+                               "fa") " "
+                                     "AND p.status = ? ORDER BY p.id DESC LIMIT ? OFFSET ?",
                  base_select,
                  scope_where);
         params[pidx++] = status;
     } else {
-        snprintf(sql,
-                 sizeof(sql),
-                 "%s WHERE %s AND " MF_RBAC_ASSET_VISIBLE_SQL("ta") " "
-                 "AND " MF_RBAC_ASSET_VISIBLE_SQL("fa") " "
-                 "ORDER BY p.id DESC LIMIT ? OFFSET ?",
-                 base_select,
-                 scope_where);
+        snprintf(
+            sql,
+            sizeof(sql),
+            "%s WHERE %s AND " MF_RBAC_ASSET_VISIBLE_SQL(
+                "ta") " "
+                      "AND " MF_RBAC_ASSET_VISIBLE_SQL("fa") " "
+                                                             "ORDER BY p.id DESC LIMIT ? OFFSET ?",
+            base_select,
+            scope_where);
     }
     params[pidx++] = limit_str;
     params[pidx++] = offset_str;
@@ -226,25 +233,25 @@ mf_dca_repo_plan_summary(void* db_pool, int64_t user_id, int64_t ledger_id)
     const char* scope_where =
         (ledger_id > 0) ? MF_LEDGER_SHARED_ACCESS_FALLBACK_SQL("p", "ta") : "p.user_id = ?";
     char sql[2560];
-    snprintf(sql,
-             sizeof(sql),
-             "SELECT "
-             "  COUNT(*) AS total_plans, "
-             "  COUNT(CASE WHEN p.status = 'active' THEN 1 END) AS active_count, "
-             "  COALESCE(SUM(exec_sub.invested), 0) AS total_invested, "
-             "  COALESCE(SUM(ta.current_value), 0) AS total_current_value "
-             "FROM dca_plans p "
-             "JOIN assets ta ON ta.id = p.target_asset_id "
-             "JOIN assets fa ON fa.id = p.funding_asset_id "
-             "LEFT JOIN ( "
-             "  SELECT plan_id, SUM(actual_amount) AS invested "
-             "  FROM dca_executions "
-             "  WHERE status = 'confirmed' "
-             "  GROUP BY plan_id "
-             ") exec_sub ON exec_sub.plan_id = p.id "
-             "WHERE %s AND " MF_RBAC_ASSET_UNMASKED_SQL("ta") " AND " MF_RBAC_ASSET_UNMASKED_SQL(
-                 "fa"),
-             scope_where);
+    snprintf(
+        sql,
+        sizeof(sql),
+        "SELECT "
+        "  COUNT(*) AS total_plans, "
+        "  COUNT(CASE WHEN p.status = 'active' THEN 1 END) AS active_count, "
+        "  COALESCE(SUM(exec_sub.invested), 0) AS total_invested, "
+        "  COALESCE(SUM(ta.current_value), 0) AS total_current_value "
+        "FROM dca_plans p "
+        "JOIN assets ta ON ta.id = p.target_asset_id "
+        "JOIN assets fa ON fa.id = p.funding_asset_id "
+        "LEFT JOIN ( "
+        "  SELECT plan_id, SUM(actual_amount) AS invested "
+        "  FROM dca_executions "
+        "  WHERE status = 'confirmed' "
+        "  GROUP BY plan_id "
+        ") exec_sub ON exec_sub.plan_id = p.id "
+        "WHERE %s AND " MF_RBAC_ASSET_UNMASKED_SQL("ta") " AND " MF_RBAC_ASSET_UNMASKED_SQL("fa"),
+        scope_where);
 
     const char* params[12];
     int         pidx = 0;
@@ -304,31 +311,34 @@ mf_dca_repo_plan_get(void* db_pool, int64_t user_id, int64_t ledger_id, int64_t 
     const char* scope_where =
         (ledger_id > 0) ? MF_LEDGER_SHARED_ACCESS_FALLBACK_SQL("p", "ta") : "p.user_id = ?";
     char sql[4096];
-    snprintf(
-        sql,
-        sizeof(sql),
-        "SELECT p.id, p.user_id, COALESCE(NULLIF(p.ledger_id, 0), ta.ledger_id) AS ledger_id, "
-        "       p.target_asset_id, p.funding_asset_id, p.name, "
-        "       p.frequency, p.day_of_period, p.amount, p.target_profit_rate, "
-        "       p.target_total_amount, p.target_total_periods, p.status, p.note, "
-        "       CAST(p.created_at AS TEXT) AS created_at, CAST(p.updated_at AS TEXT) AS "
-        "updated_at, "
-        "       ta.name AS target_asset_name, ta.symbol AS target_symbol, "
-        "       ta.net_value AS target_net_value, ta.quantity AS target_quantity, "
-        "       ta.cost_basis AS target_cost_basis, ta.current_value AS target_current_value, "
-        "       ta.quote_source AS target_quote_source, ta.currency AS target_currency, "
-        "       fa.name AS funding_asset_name, fa.currency AS funding_currency, "
-        MF_RBAC_MASK_BALANCE_COL("ta") " AS mask_bal_ta, "
-        "       (SELECT COUNT(*) FROM dca_executions e WHERE e.plan_id = p.id AND e.status = "
-        "'confirmed') AS executed_periods, "
-        "       (SELECT COALESCE(SUM(actual_amount), 0) FROM dca_executions e WHERE e.plan_id = "
-        "p.id AND e.status = 'confirmed') AS total_invested_amount "
-        "FROM dca_plans p "
-        "JOIN assets ta ON ta.id = p.target_asset_id "
-        "JOIN assets fa ON fa.id = p.funding_asset_id "
-        "WHERE %s AND " MF_RBAC_ASSET_VISIBLE_SQL("ta") " AND " MF_RBAC_ASSET_VISIBLE_SQL("fa") " "
-        "AND p.id = ?",
-        scope_where);
+    snprintf(sql,
+             sizeof(sql),
+             "SELECT p.id, p.user_id, COALESCE(NULLIF(p.ledger_id, 0), ta.ledger_id) AS ledger_id, "
+             "       p.target_asset_id, p.funding_asset_id, p.name, "
+             "       p.frequency, p.day_of_period, p.amount, p.target_profit_rate, "
+             "       p.target_total_amount, p.target_total_periods, p.status, p.note, "
+             "       CAST(p.created_at AS TEXT) AS created_at, CAST(p.updated_at AS TEXT) AS "
+             "updated_at, "
+             "       ta.name AS target_asset_name, ta.symbol AS target_symbol, "
+             "       ta.net_value AS target_net_value, ta.quantity AS target_quantity, "
+             "       ta.cost_basis AS target_cost_basis, ta.current_value AS target_current_value, "
+             "       ta.quote_source AS target_quote_source, ta.currency AS target_currency, "
+             "       fa.name AS funding_asset_name, fa.currency AS "
+             "funding_currency, " MF_RBAC_MASK_BALANCE_COL(
+                 "ta") " AS mask_bal_ta, "
+                       "       (SELECT COUNT(*) FROM dca_executions e WHERE e.plan_id = p.id AND "
+                       "e.status = "
+                       "'confirmed') AS executed_periods, "
+                       "       (SELECT COALESCE(SUM(actual_amount), 0) FROM dca_executions e WHERE "
+                       "e.plan_id = "
+                       "p.id AND e.status = 'confirmed') AS total_invested_amount "
+                       "FROM dca_plans p "
+                       "JOIN assets ta ON ta.id = p.target_asset_id "
+                       "JOIN assets fa ON fa.id = p.funding_asset_id "
+                       "WHERE %s AND " MF_RBAC_ASSET_VISIBLE_SQL(
+                           "ta") " AND " MF_RBAC_ASSET_VISIBLE_SQL("fa") " "
+                                                                         "AND p.id = ?",
+             scope_where);
 
     const char* params[16];
     int         pidx = 0;
@@ -382,20 +392,20 @@ mf_dca_repo_plan_create(void* db_pool, int64_t user_id, const mf_dca_plan_t* pla
         "target_total_amount, target_total_periods, note) "
         "VALUES (?, COALESCE(NULLIF(CAST(NULLIF(?, '') AS BIGINT), 0), "
         "(SELECT ledger_id FROM assets WHERE id = ?)), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id";
-    const char* params[] = {uid,
-                            lid,
-                            tid,
-                            tid,
-                            fid,
-                            plan->name[0] ? plan->name : "",
-                            plan->frequency[0] ? plan->frequency : "monthly",
-                            dop,
-                            amt,
-                            pr,
-                            tta,
-                            ttp,
-                            plan->note[0] ? plan->note : "",
-                            NULL};
+    const char*   params[] = {uid,
+                              lid,
+                              tid,
+                              tid,
+                              fid,
+                              plan->name[0] ? plan->name : "",
+                              plan->frequency[0] ? plan->frequency : "monthly",
+                              dop,
+                              amt,
+                              pr,
+                              tta,
+                              ttp,
+                              plan->note[0] ? plan->note : "",
+                              NULL};
     csilk_json_t* res = csilk_db_query_param_json((csilk_db_pool_t*)db_pool, sql, params);
     int64_t       new_id = 0;
     if (res && csilk_json_array_size(res) > 0) {
@@ -458,8 +468,9 @@ mf_dca_repo_plan_update(
                  "updated_at=CURRENT_TIMESTAMP "
                  "WHERE id=? AND COALESCE(NULLIF(dca_plans.ledger_id, 0), "
                  "(SELECT ledger_id FROM assets WHERE id = dca_plans.target_asset_id)) = ? "
-                 "AND " MF_LEDGER_SHARED_WRITE_FALLBACK_SQL("dca_plans", "target_asset_id") " "
-                 "RETURNING id");
+                 "AND " MF_LEDGER_SHARED_WRITE_FALLBACK_SQL("dca_plans",
+                                                            "target_asset_id") " "
+                                                                               "RETURNING id");
         params[pidx++] = pid;
         params[pidx++] = lid;
         params[pidx++] = uid;
@@ -507,8 +518,9 @@ mf_dca_repo_plan_set_status(
                  "UPDATE dca_plans SET status = ?, updated_at = CURRENT_TIMESTAMP "
                  "WHERE id = ? AND COALESCE(NULLIF(dca_plans.ledger_id, 0), "
                  "(SELECT ledger_id FROM assets WHERE id = dca_plans.target_asset_id)) = ? "
-                 "AND " MF_LEDGER_SHARED_WRITE_FALLBACK_SQL("dca_plans", "target_asset_id") " "
-                 "RETURNING id");
+                 "AND " MF_LEDGER_SHARED_WRITE_FALLBACK_SQL("dca_plans",
+                                                            "target_asset_id") " "
+                                                                               "RETURNING id");
         params[pidx++] = pid;
         params[pidx++] = lid;
         params[pidx++] = uid;
@@ -549,15 +561,17 @@ mf_dca_repo_plan_delete(void* db_pool, int64_t user_id, int64_t ledger_id, int64
                  "DELETE FROM dca_plans WHERE id = ? "
                  "AND COALESCE(NULLIF(dca_plans.ledger_id, 0), "
                  "(SELECT ledger_id FROM assets WHERE id = dca_plans.target_asset_id)) = ? "
-                 "AND " MF_LEDGER_SHARED_WRITE_FALLBACK_SQL("dca_plans", "target_asset_id") " "
-                 "RETURNING id");
+                 "AND " MF_LEDGER_SHARED_WRITE_FALLBACK_SQL("dca_plans",
+                                                            "target_asset_id") " "
+                                                                               "RETURNING id");
         params[pidx++] = pid;
         params[pidx++] = lid;
         params[pidx++] = uid;
         params[pidx++] = uid;
         params[pidx++] = uid;
     } else {
-        snprintf(sql, sizeof(sql), "DELETE FROM dca_plans WHERE user_id = ? AND id = ? RETURNING id");
+        snprintf(
+            sql, sizeof(sql), "DELETE FROM dca_plans WHERE user_id = ? AND id = ? RETURNING id");
         params[pidx++] = uid;
         params[pidx++] = pid;
     }
@@ -620,7 +634,10 @@ mf_dca_repo_execution_create(
 }
 
 csilk_json_t*
-mf_dca_repo_execution_list_by_plan(void* db_pool, int64_t user_id, int64_t ledger_id, int64_t plan_id)
+mf_dca_repo_execution_list_by_plan(void*   db_pool,
+                                   int64_t user_id,
+                                   int64_t ledger_id,
+                                   int64_t plan_id)
 {
     char uid[32], lid[32], pid[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
@@ -718,25 +735,25 @@ mf_dca_repo_execution_get(void* db_pool, int64_t user_id, int64_t ledger_id, int
     const char* scope_where =
         (ledger_id > 0) ? MF_LEDGER_SHARED_ACCESS_FALLBACK_SQL("p", "ta") : "e.user_id = ?";
     char sql[2560];
-    snprintf(
-        sql,
-        sizeof(sql),
-        "SELECT e.id, e.plan_id, e.user_id, COALESCE(NULLIF(p.ledger_id, 0), ta.ledger_id) AS "
-        "ledger_id, "
-        "       e.period_date, e.planned_amount, "
-        "       e.actual_amount, e.executed_price, e.executed_quantity, "
-        "       e.transaction_id, e.status, CAST(e.created_at AS TEXT) AS created_at, "
-        "       p.target_asset_id, p.funding_asset_id, p.name AS plan_name, "
-        "       ta.name AS target_asset_name, ta.symbol AS target_symbol, "
-        "       ta.net_value AS target_net_value, "
-        "       fa.name AS funding_asset_name "
-        "FROM dca_executions e "
-        "JOIN dca_plans p ON p.id = e.plan_id "
-        "JOIN assets ta ON ta.id = p.target_asset_id "
-        "JOIN assets fa ON fa.id = p.funding_asset_id "
-        "WHERE %s AND " MF_RBAC_ASSET_VISIBLE_SQL("ta") " AND " MF_RBAC_ASSET_VISIBLE_SQL("fa") " "
-        "AND e.id = ?",
-        scope_where);
+    snprintf(sql,
+             sizeof(sql),
+             "SELECT e.id, e.plan_id, e.user_id, COALESCE(NULLIF(p.ledger_id, 0), ta.ledger_id) AS "
+             "ledger_id, "
+             "       e.period_date, e.planned_amount, "
+             "       e.actual_amount, e.executed_price, e.executed_quantity, "
+             "       e.transaction_id, e.status, CAST(e.created_at AS TEXT) AS created_at, "
+             "       p.target_asset_id, p.funding_asset_id, p.name AS plan_name, "
+             "       ta.name AS target_asset_name, ta.symbol AS target_symbol, "
+             "       ta.net_value AS target_net_value, "
+             "       fa.name AS funding_asset_name "
+             "FROM dca_executions e "
+             "JOIN dca_plans p ON p.id = e.plan_id "
+             "JOIN assets ta ON ta.id = p.target_asset_id "
+             "JOIN assets fa ON fa.id = p.funding_asset_id "
+             "WHERE %s AND " MF_RBAC_ASSET_VISIBLE_SQL("ta") " AND " MF_RBAC_ASSET_VISIBLE_SQL(
+                 "fa") " "
+                       "AND e.id = ?",
+             scope_where);
 
     const char* params[12];
     int         pidx = 0;
@@ -805,15 +822,16 @@ mf_dca_repo_execution_update_status(
     int         pidx = 0;
     params[pidx++] = status ? status : "pending";
     if (ledger_id > 0) {
-        snprintf(
-            sql,
-            sizeof(sql),
-            "UPDATE dca_executions SET status = ?, updated_at = CURRENT_TIMESTAMP "
-            "WHERE id = ? AND EXISTS (SELECT 1 FROM dca_plans p "
-            "JOIN assets ta ON ta.id = p.target_asset_id "
-            "WHERE p.id = dca_executions.plan_id "
-            "AND " MF_LEDGER_SHARED_WRITE_FALLBACK_SQL("p", "target_asset_id") " "
-            "AND COALESCE(NULLIF(p.ledger_id, 0), ta.ledger_id) = ?) RETURNING id");
+        snprintf(sql,
+                 sizeof(sql),
+                 "UPDATE dca_executions SET status = ?, updated_at = CURRENT_TIMESTAMP "
+                 "WHERE id = ? AND EXISTS (SELECT 1 FROM dca_plans p "
+                 "JOIN assets ta ON ta.id = p.target_asset_id "
+                 "WHERE p.id = dca_executions.plan_id "
+                 "AND " MF_LEDGER_SHARED_WRITE_FALLBACK_SQL(
+                     "p", "target_asset_id") " "
+                                             "AND COALESCE(NULLIF(p.ledger_id, 0), ta.ledger_id) = "
+                                             "?) RETURNING id");
         params[pidx++] = eid;
         params[pidx++] = uid;
         params[pidx++] = uid;

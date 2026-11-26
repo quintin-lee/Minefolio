@@ -178,10 +178,9 @@ ledger_snapshot_invalidate_from(csilk_db_pool_t* pool,
     char from_day[16] = {0};
     snprintf(from_day, sizeof(from_day), "%.10s", from_date);
 
-    const char* sql =
-        "DELETE FROM ledger_snapshots "
-        "WHERE asset_id=? AND snapshot_date >= ? "
-        "AND (user_id=? OR user_id=(SELECT user_id FROM assets WHERE id=?))";
+    const char*   sql = "DELETE FROM ledger_snapshots "
+                        "WHERE asset_id=? AND snapshot_date >= ? "
+                        "AND (user_id=? OR user_id=(SELECT user_id FROM assets WHERE id=?))";
     const char*   params[] = {ast_str, from_day, uid_str, ast_str, NULL};
     csilk_json_t* res = csilk_db_query_param_json(pool, sql, params);
     if (!res) {

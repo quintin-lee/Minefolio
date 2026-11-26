@@ -83,8 +83,5 @@ int dca_usecase_confirm_execution(void*                              pool,
 /**
  * @brief 跳过定投执行
  */
-int dca_usecase_skip_execution(void*                 pool,
-                               int64_t               user_id,
-                               int64_t               ledger_id,
-                               int64_t               exec_id,
-                               dca_usecase_result_t* out_res);
+int dca_usecase_skip_execution(
+    void* pool, int64_t user_id, int64_t ledger_id, int64_t exec_id, dca_usecase_result_t* out_res);

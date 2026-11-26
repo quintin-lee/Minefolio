@@ -397,16 +397,16 @@ api_gateway_instance_chat(csilk_ctx_t* c)
     int           code = 1002;
     char          err[256] = {0};
     int           rc = im_instance_gateway_chat(db_get_pool(),
-                                      id,
-                                      im_user_id,
-                                      message,
-                                      &sync_data,
-                                      &task_id,
-                                      &deduplicated,
-                                      &session_id,
-                                      &code,
-                                      err,
-                                      sizeof(err));
+                                                id,
+                                                im_user_id,
+                                                message,
+                                                &sync_data,
+                                                &task_id,
+                                                &deduplicated,
+                                                &session_id,
+                                                &code,
+                                                err,
+                                                sizeof(err));
     if (body) {
         csilk_json_free(body);
     }

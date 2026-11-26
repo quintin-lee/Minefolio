@@ -223,13 +223,13 @@ im_push_usecase_gateway_ack(void*       pool,
     csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
     int64_t          log_id = 0;
     int              rc = mf_im_push_outbox_ack(db_pool,
-                                   instance_id,
-                                   push_id,
-                                   result,
-                                   error_msg,
-                                   retry_after_sec,
-                                   (int64_t)time(NULL),
-                                   &log_id);
+                                                instance_id,
+                                                push_id,
+                                                result,
+                                                error_msg,
+                                                retry_after_sec,
+                                                (int64_t)time(NULL),
+                                                &log_id);
     if (rc == -3) {
         if (code) {
             *code = 1003;

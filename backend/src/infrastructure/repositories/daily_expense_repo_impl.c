@@ -446,7 +446,8 @@ mf_daily_expense_repo_get_snapshot(
     snprintf(idstr, sizeof(idstr), "%lld", (long long)id);
     csilk_json_t* row = csilk_db_query_param_json(
         (csilk_db_pool_t*)db_pool,
-        "SELECT amount,expense_type,asset_id,currency,CAST(expense_date AS TEXT) AS expense_date,note FROM "
+        "SELECT amount,expense_type,asset_id,currency,CAST(expense_date AS TEXT) AS "
+        "expense_date,note FROM "
         "daily_expenses WHERE id=? AND (user_id=? OR (ledger_id=? AND EXISTS "
         "(SELECT 1 FROM ledger_members lm WHERE lm.ledger_id=daily_expenses.ledger_id AND "
         "lm.user_id=?)))",

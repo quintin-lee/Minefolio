@@ -316,11 +316,8 @@ cashflow_usecase_update_schedule(void*                        pool,
 }
 
 int
-cashflow_usecase_delete_schedule(void*                      pool,
-                                 int64_t                    user_id,
-                                 int64_t                    ledger_id,
-                                 int64_t                    id,
-                                 cashflow_usecase_result_t* out_res)
+cashflow_usecase_delete_schedule(
+    void* pool, int64_t user_id, int64_t ledger_id, int64_t id, cashflow_usecase_result_t* out_res)
 {
     if (!out_res) {
         return -1;
@@ -604,8 +601,8 @@ cashflow_usecase_confirm_income(void*                         pool,
         return -1;
     }
 
-    if (ledger_snapshot_invalidate_from(
-            db_pool, cmd->user_id, cmd->target_asset_id, full_date) != 0) {
+    if (ledger_snapshot_invalidate_from(db_pool, cmd->user_id, cmd->target_asset_id, full_date) !=
+        0) {
         db_tx_scope_rollback(db_pool, &scope);
         out_res->code = 500;
         snprintf(out_res->message, sizeof(out_res->message), "清理账本快照失败");

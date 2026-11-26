@@ -21,25 +21,24 @@ query_cashflow_schedules(
     const char* order_by = (id > 0) ? "" : " ORDER BY s.id DESC";
 
     char sql[2560];
-    snprintf(
-        sql,
-        sizeof(sql),
-        "SELECT s.id, s.user_id, COALESCE(NULLIF(s.ledger_id, 0), ta.ledger_id) AS ledger_id, "
-        "       s.source_asset_id, s.target_asset_id, s.name, "
-        "       s.flow_type, s.frequency, s.start_date, s.end_date, s.expected_amount, "
-        "       s.status, s.note, CAST(s.created_at AS TEXT) AS created_at, "
-        "       CAST(s.updated_at AS TEXT) AS updated_at, "
-        "       sa.name AS source_asset_name, sa.symbol AS source_symbol, "
-        "       ta.name AS target_asset_name, ta.currency AS target_currency "
-        "FROM cashflow_schedules s "
-        "JOIN assets sa ON sa.id = s.source_asset_id "
-        "JOIN assets ta ON ta.id = s.target_asset_id "
-        "WHERE %s AND " MF_RBAC_ASSET_VISIBLE_SQL("sa") " AND " MF_RBAC_ASSET_VISIBLE_SQL("ta")
-            "%s%s%s",
-        scope_where,
-        active_cond,
-        id_cond,
-        order_by);
+    snprintf(sql,
+             sizeof(sql),
+             "SELECT s.id, s.user_id, COALESCE(NULLIF(s.ledger_id, 0), ta.ledger_id) AS ledger_id, "
+             "       s.source_asset_id, s.target_asset_id, s.name, "
+             "       s.flow_type, s.frequency, s.start_date, s.end_date, s.expected_amount, "
+             "       s.status, s.note, CAST(s.created_at AS TEXT) AS created_at, "
+             "       CAST(s.updated_at AS TEXT) AS updated_at, "
+             "       sa.name AS source_asset_name, sa.symbol AS source_symbol, "
+             "       ta.name AS target_asset_name, ta.currency AS target_currency "
+             "FROM cashflow_schedules s "
+             "JOIN assets sa ON sa.id = s.source_asset_id "
+             "JOIN assets ta ON ta.id = s.target_asset_id "
+             "WHERE %s AND " MF_RBAC_ASSET_VISIBLE_SQL("sa") " AND " MF_RBAC_ASSET_VISIBLE_SQL(
+                 "ta") "%s%s%s",
+             scope_where,
+             active_cond,
+             id_cond,
+             order_by);
 
     const char* params[16];
     int         pidx = 0;
@@ -274,19 +273,20 @@ mf_cashflow_repo_update(void* pool, const mf_cashflow_schedule_t* s)
     params[pidx++] = taid;
 
     if (s->ledger_id > 0) {
-        snprintf(sql,
-                 sizeof(sql),
-                 "UPDATE cashflow_schedules "
-                 "SET source_asset_id = ?, target_asset_id = ?, name = ?, flow_type = ?, "
-                 "    frequency = ?, start_date = ?, end_date = ?, expected_amount = ?, "
-                 "    note = ?, ledger_id = COALESCE(NULLIF(CAST(NULLIF(?, '') AS BIGINT), 0), "
-                 "    (SELECT ledger_id FROM assets WHERE id = ?)), "
-                 "    updated_at = CURRENT_TIMESTAMP "
-                 "WHERE id = ? AND COALESCE(NULLIF(cashflow_schedules.ledger_id, 0), "
-                 "    (SELECT ledger_id FROM assets WHERE id = cashflow_schedules.target_asset_id)) "
-                 "    = ? AND " MF_LEDGER_SHARED_WRITE_FALLBACK_SQL("cashflow_schedules",
-                                                                   "target_asset_id") " "
-                 "RETURNING id");
+        snprintf(
+            sql,
+            sizeof(sql),
+            "UPDATE cashflow_schedules "
+            "SET source_asset_id = ?, target_asset_id = ?, name = ?, flow_type = ?, "
+            "    frequency = ?, start_date = ?, end_date = ?, expected_amount = ?, "
+            "    note = ?, ledger_id = COALESCE(NULLIF(CAST(NULLIF(?, '') AS BIGINT), 0), "
+            "    (SELECT ledger_id FROM assets WHERE id = ?)), "
+            "    updated_at = CURRENT_TIMESTAMP "
+            "WHERE id = ? AND COALESCE(NULLIF(cashflow_schedules.ledger_id, 0), "
+            "    (SELECT ledger_id FROM assets WHERE id = cashflow_schedules.target_asset_id)) "
+            "    = ? AND " MF_LEDGER_SHARED_WRITE_FALLBACK_SQL("cashflow_schedules",
+                                                               "target_asset_id") " "
+                                                                                  "RETURNING id");
         params[pidx++] = sid;
         params[pidx++] = lid;
         params[pidx++] = uid;
@@ -336,8 +336,9 @@ mf_cashflow_repo_delete(void* pool, int64_t user_id, int64_t ledger_id, int64_t 
             "DELETE FROM cashflow_schedules WHERE id = ? "
             "AND COALESCE(NULLIF(cashflow_schedules.ledger_id, 0), "
             "(SELECT ledger_id FROM assets WHERE id = cashflow_schedules.target_asset_id)) = ? "
-            "AND " MF_LEDGER_SHARED_WRITE_FALLBACK_SQL("cashflow_schedules", "target_asset_id") " "
-            "RETURNING id");
+            "AND " MF_LEDGER_SHARED_WRITE_FALLBACK_SQL("cashflow_schedules",
+                                                       "target_asset_id") " "
+                                                                          "RETURNING id");
         params[pidx++] = sid;
         params[pidx++] = lid;
         params[pidx++] = uid;
@@ -411,7 +412,7 @@ mf_cashflow_repo_get_actual_events(void*                 pool,
              "  AND t.transaction_type IN ('income', 'deposit', 'dividend', 'interest') "
              "  AND CAST(t.transaction_date AS TEXT) LIKE ? "
              "  AND " MF_RBAC_ASSET_UNMASKED_SQL("a") " "
-             "ORDER BY t.transaction_date ASC, t.id ASC",
+                                                      "ORDER BY t.transaction_date ASC, t.id ASC",
              scope_where);
 
     const char* params[12];

@@ -232,8 +232,7 @@ dca_service_set_plan_status(csilk_ctx_t* c)
     }
 
     dca_usecase_result_t res = {0};
-    int                  rc =
-        dca_usecase_set_plan_status(db_get_pool(), user_id, ledger_id, id, status, &res);
+    int rc = dca_usecase_set_plan_status(db_get_pool(), user_id, ledger_id, id, status, &res);
     if (body) {
         csilk_json_free(body);
     }
@@ -389,8 +388,7 @@ dca_service_skip_execution(csilk_ctx_t* c)
     }
 
     dca_usecase_result_t res = {0};
-    int                  rc =
-        dca_usecase_skip_execution(db_get_pool(), user_id, ledger_id, exec_id, &res);
+    int rc = dca_usecase_skip_execution(db_get_pool(), user_id, ledger_id, exec_id, &res);
 
     if (rc == 0 && res.code == 0) {
         respond_ok(c, NULL);

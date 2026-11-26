@@ -26,11 +26,8 @@ int cashflow_usecase_update_schedule(void*                        pool,
                                      const update_cashflow_cmd_t* cmd,
                                      cashflow_usecase_result_t*   out_res);
 
-int cashflow_usecase_delete_schedule(void*                      pool,
-                                     int64_t                    user_id,
-                                     int64_t                    ledger_id,
-                                     int64_t                    id,
-                                     cashflow_usecase_result_t* out_res);
+int cashflow_usecase_delete_schedule(
+    void* pool, int64_t user_id, int64_t ledger_id, int64_t id, cashflow_usecase_result_t* out_res);
 
 int cashflow_usecase_get_calendar(void*                       pool,
                                   const query_calendar_cmd_t* cmd,
