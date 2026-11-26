@@ -209,7 +209,7 @@ function renderMarkdown(text?: string): string {
   right: 0;
   bottom: 0;
   height: 100vh;
-  z-index: 120;
+  z-index: var(--mf-z-floating, 120);
   box-shadow: -8px 0 32px rgba(0, 0, 0, 0.2);
   transform: translateX(100%);
 }

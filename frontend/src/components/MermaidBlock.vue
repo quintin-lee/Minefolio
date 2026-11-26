@@ -788,7 +788,7 @@ html.light .mermaid-chart-view {
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 9999;
+  z-index: var(--mf-z-fullscreen, 3500);
   background: rgba(4, 8, 18, 0.85);
   backdrop-filter: blur(16px);
   display: flex;

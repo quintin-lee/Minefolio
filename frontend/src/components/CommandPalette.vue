@@ -354,7 +354,7 @@ function executeSelected() {
   inset: 0;
   background: rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(6px);
-  z-index: 3000;
+  z-index: var(--mf-z-command, 3000);
   display: flex;
   align-items: flex-start;
   justify-content: center;

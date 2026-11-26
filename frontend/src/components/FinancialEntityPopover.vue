@@ -204,7 +204,7 @@ function handleNavigate() {
 <style scoped>
 .financial-entity-popover {
   position: fixed;
-  z-index: 2500;
+  z-index: var(--mf-z-popover, 2500);
   background: var(--mf-background-elevated);
   backdrop-filter: blur(20px);
   border: 1px solid var(--mf-border);

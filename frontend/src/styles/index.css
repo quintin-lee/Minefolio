@@ -62,6 +62,16 @@
   --mf-spacing-md: 16px;
   --mf-spacing-lg: 24px;
 
+  /* Layout & Layering Tokens */
+  --mf-content-max-width: 1600px;
+  --mf-z-header: 20;
+  --mf-z-backdrop: 90;
+  --mf-z-sidebar: 100;
+  --mf-z-floating: 120;
+  --mf-z-popover: 2500;
+  --mf-z-command: 3000;
+  --mf-z-fullscreen: 3500;
+
   /* Borders & Dividers */
   --mf-border: rgba(59, 130, 246, 0.15);
   --mf-border-subtle: rgba(255, 255, 255, 0.07);
@@ -819,7 +829,12 @@ html.dark .el-loading-mask {
   box-shadow: var(--mf-shadow-lg) !important;
 }
 .el-dialog__title { color: var(--mf-text-main); font-weight: 600; }
-.el-dialog__body { color: var(--mf-text-main); }
+.el-dialog__body {
+  color: var(--mf-text-main);
+  max-height: calc(100vh - 180px);
+  max-height: calc(100dvh - 180px);
+  overflow-y: auto;
+}
 .el-dialog__header {
   border-bottom: 1px solid var(--mf-border) !important;
   padding: 16px 20px !important;
@@ -838,6 +853,7 @@ html.dark .el-loading-mask {
 
 /* Drawers & Message Boxes */
 .el-drawer {
+  max-width: 100vw !important;
   background: var(--el-bg-color-overlay) !important;
   color: var(--mf-text-main) !important;
   box-shadow: var(--mf-shadow-lg) !important;
@@ -859,6 +875,7 @@ html.dark .el-loading-mask {
   color: var(--mf-primary) !important;
 }
 .el-message-box {
+  max-width: calc(100vw - 24px) !important;
   background: var(--el-bg-color-overlay) !important;
   border: 1px solid var(--mf-border) !important;
   border-radius: var(--mf-radius-lg) !important;
@@ -1554,6 +1571,10 @@ html.light .mf-skeleton-block {
 }
 
 @media (max-width: 768px) {
+  .page-header {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
   .el-message {
     top: auto !important;
     bottom: calc(84px + env(safe-area-inset-bottom)) !important;
