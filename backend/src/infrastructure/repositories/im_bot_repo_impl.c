@@ -15,7 +15,8 @@
     "THEN qr_content ELSE NULL END AS qr_content, "                                                \
     "CASE WHEN status IN ('pending_login','qr_ready','scanned','need_verifycode') "                \
     "THEN qr_expires_at ELSE NULL END AS qr_expires_at, "                                          \
-    "login_epoch, verify_attempts, enabled, last_error, last_seen_at, last_inbound_at, "           \
+    "login_epoch, verify_attempts, capability, enabled, last_error, last_seen_at, "                \
+    "last_inbound_at, "                                                                            \
     "created_at, updated_at"
 
 static void
@@ -596,7 +597,8 @@ mf_im_bot_instance_activate(csilk_db_pool_t* pool,
     char sql[700];
     SQL_FMT(sql,
             sizeof(sql),
-            "SELECT platform, mf_user_id, im_user_id FROM im_bot_instances WHERE id=? LIMIT 1%s",
+            "SELECT platform, mf_user_id, im_user_id, capability FROM im_bot_instances "
+            "WHERE id=? LIMIT 1%s",
             db_is_postgres() ? " FOR UPDATE" : "");
     csilk_json_t* row = csilk_db_query_param_json(pool, sql, (const char*[]){sid, NULL});
     if (!row || !csilk_json_is_array(row) || csilk_json_array_size(row) == 0) {
@@ -616,6 +618,11 @@ mf_im_bot_instance_activate(csilk_db_pool_t* pool,
     const char* old_ptr = csilk_json_get_string(r0, "im_user_id");
     if (old_ptr && old_ptr[0]) {
         snprintf(old_im, sizeof(old_im), "%s", old_ptr);
+    }
+    char        cap_buf[32] = "readonly";
+    const char* cap_ptr = csilk_json_get_string(r0, "capability");
+    if (cap_ptr && cap_ptr[0]) {
+        snprintf(cap_buf, sizeof(cap_buf), "%s", cap_ptr);
     }
     csilk_json_free(row);
     if (owner <= 0) {
@@ -660,7 +667,7 @@ mf_im_bot_instance_activate(csilk_db_pool_t* pool,
         }
     }
 
-    if (mf_im_bot_repo_upsert(pool, plat, new_im, owner, "readonly") != 0) {
+    if (mf_im_bot_repo_upsert(pool, plat, new_im, owner, cap_buf) != 0) {
         db_tx_scope_rollback(pool, &scope);
         return -1;
     }
@@ -882,4 +889,153 @@ mf_im_bot_instance_heartbeat(csilk_db_pool_t* pool,
 {
     return mf_im_bot_instance_heartbeat_with_inbound(
         pool, id, NULL, status_out, status_cap, epoch_out, enabled_out);
+}
+
+int
+mf_im_bot_instance_set_capability(csilk_db_pool_t* pool,
+                                  int64_t          user_id,
+                                  int64_t          id,
+                                  const char*      capability)
+{
+    if (!pool || user_id <= 0 || id <= 0 || !capability || !capability[0]) {
+        return -1;
+    }
+    char id_str[32], uid_str[32];
+    im_id_str(id, id_str, sizeof(id_str));
+    im_id_str(user_id, uid_str, sizeof(uid_str));
+
+    db_tx_scope_t scope;
+    if (db_tx_scope_begin(pool, "im_instance_set_capability", &scope) != 0) {
+        return -1;
+    }
+    char sql[512];
+    SQL_FMT(sql,
+            sizeof(sql),
+            "SELECT platform, im_user_id FROM im_bot_instances "
+            "WHERE id=? AND mf_user_id=? LIMIT 1%s",
+            db_is_postgres() ? " FOR UPDATE" : "");
+    csilk_json_t* row =
+        csilk_db_query_param_json(pool, sql, (const char*[]){id_str, uid_str, NULL});
+    if (!row || !csilk_json_is_array(row) || csilk_json_array_size(row) == 0) {
+        if (row) {
+            csilk_json_free(row);
+        }
+        db_tx_scope_rollback(pool, &scope);
+        return -3; /* not found / not owner */
+    }
+    csilk_json_t* r0 = csilk_json_array_get(row, 0);
+    char          plat[64] = "wechat";
+    const char*   plat_ptr = csilk_json_get_string(r0, "platform");
+    if (plat_ptr && plat_ptr[0]) {
+        snprintf(plat, sizeof(plat), "%s", plat_ptr);
+    }
+    const char* imu_ptr = csilk_json_get_string(r0, "im_user_id");
+    char        im_uid[256] = "";
+    if (imu_ptr && imu_ptr[0]) {
+        snprintf(im_uid, sizeof(im_uid), "%s", imu_ptr);
+    }
+    csilk_json_free(row);
+
+    if (csilk_db_exec_param(
+            pool,
+            "UPDATE im_bot_instances SET capability=?, updated_at=CURRENT_TIMESTAMP "
+            "WHERE id=? AND mf_user_id=?",
+            (const char*[]){capability, id_str, uid_str, NULL}) != 0) {
+        db_tx_scope_rollback(pool, &scope);
+        return -1;
+    }
+    if (im_uid[0] &&
+        csilk_db_exec_param(
+            pool,
+            "UPDATE im_bot_bindings SET scope=? WHERE platform=? AND im_user_id=? AND mf_user_id=?",
+            (const char*[]){capability, plat, im_uid, uid_str, NULL}) != 0) {
+        db_tx_scope_rollback(pool, &scope);
+        return -1;
+    }
+    db_tx_scope_commit(pool, &scope);
+    return 0;
+}
+
+int
+mf_im_bot_pending_action_insert(csilk_db_pool_t* pool,
+                                const char*      code,
+                                int64_t          user_id,
+                                int64_t          session_id,
+                                const char*      action_type,
+                                const char*      draft_token,
+                                const char*      args_json,
+                                int64_t          expires_at)
+{
+    if (!pool || !code || !code[0] || !draft_token || !draft_token[0] || !args_json ||
+        !args_json[0] || user_id <= 0 || session_id <= 0) {
+        return -1;
+    }
+    char uid[32], sid[32], exp[32];
+    im_id_str(user_id, uid, sizeof(uid));
+    im_id_str(session_id, sid, sizeof(sid));
+    im_id_str(expires_at, exp, sizeof(exp));
+    const char* at = action_type && action_type[0] ? action_type : "daily_expense";
+    return csilk_db_exec_param(
+        pool,
+        "INSERT INTO im_pending_actions "
+        "(code, user_id, session_id, action_type, draft_token, args_json, expires_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (const char*[]){code, uid, sid, at, draft_token, args_json, exp, NULL});
+}
+
+csilk_json_t*
+mf_im_bot_pending_action_get(
+    csilk_db_pool_t* pool, const char* code, int64_t user_id, int64_t session_id, int64_t now)
+{
+    if (!pool || !code || !code[0] || user_id <= 0 || session_id <= 0) {
+        return NULL;
+    }
+    char uid[32], sid[32], now_s[32];
+    im_id_str(user_id, uid, sizeof(uid));
+    im_id_str(session_id, sid, sizeof(sid));
+    im_id_str(now, now_s, sizeof(now_s));
+    csilk_json_t* res = csilk_db_query_param_json(
+        pool,
+        "SELECT code, user_id, session_id, action_type, draft_token, args_json, expires_at "
+        "FROM im_pending_actions "
+        "WHERE code=? AND user_id=? AND session_id=? AND consumed_at IS NULL AND expires_at>? "
+        "LIMIT 1",
+        (const char*[]){code, uid, sid, now_s, NULL});
+    if (!res || !csilk_json_is_array(res) || csilk_json_array_size(res) == 0) {
+        if (res) {
+            csilk_json_free(res);
+        }
+        return NULL;
+    }
+    csilk_json_t* copy = csilk_json_copy(csilk_json_array_get(res, 0));
+    csilk_json_free(res);
+    return copy;
+}
+
+int
+mf_im_bot_pending_action_consume(csilk_db_pool_t* pool,
+                                 const char*      code,
+                                 int64_t          user_id,
+                                 int64_t          session_id)
+{
+    if (!pool || !code || !code[0] || user_id <= 0 || session_id <= 0) {
+        return -1;
+    }
+    char uid[32], sid[32], now_s[32];
+    im_id_str(user_id, uid, sizeof(uid));
+    im_id_str(session_id, sid, sizeof(sid));
+    im_id_str((int64_t)time(NULL), now_s, sizeof(now_s));
+    csilk_json_t* res = csilk_db_query_param_json(
+        pool,
+        "UPDATE im_pending_actions SET consumed_at=? "
+        "WHERE code=? AND user_id=? AND session_id=? AND consumed_at IS NULL RETURNING code",
+        (const char*[]){now_s, code, uid, sid, NULL});
+    if (!res || !csilk_json_is_array(res) || csilk_json_array_size(res) == 0) {
+        if (res) {
+            csilk_json_free(res);
+        }
+        return -1;
+    }
+    csilk_json_free(res);
+    return 0;
 }

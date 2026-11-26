@@ -749,3 +749,20 @@ CREATE INDEX IF NOT EXISTS idx_im_push_outbox_expires
     ON im_push_outbox(status, expires_at_ts);
 CREATE INDEX IF NOT EXISTS idx_im_push_outbox_job_log
     ON im_push_outbox(job_run_log_id) WHERE job_run_log_id IS NOT NULL;
+
+-- V039: iLink 记账能力开关与短码确认草案
+ALTER TABLE im_bot_instances ADD COLUMN capability TEXT NOT NULL DEFAULT 'readonly';
+
+CREATE TABLE IF NOT EXISTS im_pending_actions (
+    code         TEXT PRIMARY KEY,
+    user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    session_id   INTEGER NOT NULL,
+    action_type  TEXT NOT NULL DEFAULT 'daily_expense',
+    draft_token  TEXT NOT NULL,
+    args_json    TEXT NOT NULL,
+    expires_at   INTEGER NOT NULL,
+    consumed_at  INTEGER,
+    created_at   INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_im_pending_actions_user
+    ON im_pending_actions(user_id, expires_at);

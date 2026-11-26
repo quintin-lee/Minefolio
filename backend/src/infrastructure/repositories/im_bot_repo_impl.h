@@ -106,6 +106,32 @@ csilk_json_t* mf_im_bot_instance_get_by_user(csilk_db_pool_t* pool,
                                              const char*      platform,
                                              const char*      adapter);
 
+/** 更新实例记账能力档（readonly / query+confirm），并同步绑定 scope；非 owner 返回 -3。 */
+int mf_im_bot_instance_set_capability(csilk_db_pool_t* pool,
+                                      int64_t          user_id,
+                                      int64_t          id,
+                                      const char*      capability);
+
+/** 写入短码确认草案（iLink 微信记账提案）。 */
+int mf_im_bot_pending_action_insert(csilk_db_pool_t* pool,
+                                    const char*      code,
+                                    int64_t          user_id,
+                                    int64_t          session_id,
+                                    const char*      action_type,
+                                    const char*      draft_token,
+                                    const char*      args_json,
+                                    int64_t          expires_at);
+
+/** 查询未消费且未过期的短码草案；不存在返回 NULL。 */
+csilk_json_t* mf_im_bot_pending_action_get(
+    csilk_db_pool_t* pool, const char* code, int64_t user_id, int64_t session_id, int64_t now);
+
+/** 原子消费短码（条件更新 consumed_at）；已被消费返回 -1。 */
+int mf_im_bot_pending_action_consume(csilk_db_pool_t* pool,
+                                     const char*      code,
+                                     int64_t          user_id,
+                                     int64_t          session_id);
+
 /** 更新实例最近一次入站消息时间（脱敏时间戳）与在线时间。 */
 int
 mf_im_bot_instance_touch_inbound(csilk_db_pool_t* pool, int64_t id, const char* last_inbound_at);
