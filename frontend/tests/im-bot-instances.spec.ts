@@ -57,6 +57,11 @@ describe('imApi & iLink QR rendering', () => {
     await imApi.disableInstance(7)
     expect(httpMock.post).toHaveBeenCalledWith('/im/instances/7/disable')
 
+    await imApi.setInstanceCapability(7, 'query+confirm')
+    expect(httpMock.post).toHaveBeenCalledWith('/im/instances/7/capability', {
+      capability: 'query+confirm',
+    })
+
     await imApi.deleteInstance(7)
     expect(httpMock.delete).toHaveBeenCalledWith('/im/instances/7')
   })

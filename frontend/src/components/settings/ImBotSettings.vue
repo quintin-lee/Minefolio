@@ -110,6 +110,38 @@
           </div>
         </div>
 
+        <!-- 记账能力开关（仅运行中的实例可切换） -->
+        <div v-if="instance.status === 'active'" class="ilink-capability-row">
+          <div class="ilink-capability-info">
+            <span class="meta-label">{{ t('settings.ilinkCapability') }}</span>
+            <span class="ilink-capability-value">
+              {{ bookkeepingEnabled ? t('settings.ilinkCapabilityConfirm') : t('settings.ilinkCapabilityReadonly') }}
+            </span>
+            <div class="ilink-capability-hint">{{ t('settings.ilinkCapabilityHint') }}</div>
+          </div>
+          <el-popconfirm
+            v-if="!bookkeepingEnabled"
+            :title="t('settings.ilinkCapabilityEnableConfirm')"
+            :confirm-button-text="t('settings.ilinkCapabilityEnableBtn')"
+            @confirm="handleCapabilityChange(true)"
+          >
+            <template #reference>
+              <el-button size="small" type="primary" plain :loading="instanceBusy">
+                {{ t('settings.ilinkCapabilityEnableBtn') }}
+              </el-button>
+            </template>
+          </el-popconfirm>
+          <el-button
+            v-else
+            size="small"
+            plain
+            :loading="instanceBusy"
+            @click="handleCapabilityChange(false)"
+          >
+            {{ t('settings.ilinkCapabilityDisableBtn') }}
+          </el-button>
+        </div>
+
         <!-- 操作按钮 -->
         <div class="ilink-actions">
           <el-button
@@ -326,6 +358,23 @@ function statusTagType(status: ImBotInstanceStatus): 'success' | 'warning' | 'da
   if (status === 'error' || status === 'expired' || status === 'session_expired') return 'danger'
   if (status === 'disabled') return 'info'
   return 'warning'
+}
+
+const bookkeepingEnabled = computed(() => instance.value?.capability === 'query+confirm')
+
+async function handleCapabilityChange(enabled: boolean) {
+  if (!instance.value) return
+  instanceBusy.value = true
+  try {
+    await imApi.setInstanceCapability(instance.value.id, enabled ? 'query+confirm' : 'readonly')
+    ElMessage.success(t('settings.ilinkCapabilityUpdated'))
+    await fetchInstances()
+  } catch (err) {
+    console.error('Failed to update iLink capability:', err)
+    ElMessage.error(t('settings.ilinkCapabilityFailed'))
+  } finally {
+    instanceBusy.value = false
+  }
 }
 
 function formatTime(val: string): string {
@@ -726,6 +775,37 @@ onUnmounted(() => {
 
 .meta-label {
   color: var(--mf-text-muted);
+}
+
+.ilink-capability-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+}
+
+.ilink-capability-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  min-width: 0;
+}
+
+.ilink-capability-value {
+  font-weight: 600;
+}
+
+.ilink-capability-hint {
+  color: var(--mf-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  max-width: 520px;
 }
 
 .ilink-actions {

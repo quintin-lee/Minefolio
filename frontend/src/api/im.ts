@@ -90,6 +90,12 @@ export const imApi = {
   disableInstance: (id: number) => http.post<null>(`/im/instances/${id}/disable`),
 
   /**
+   * 设置实例能力档：readonly（仅查账）/ query+confirm（微信对话记账 + 短码确认）
+   */
+  setInstanceCapability: (id: number, capability: 'readonly' | 'query+confirm') =>
+    http.post<null>(`/im/instances/${id}/capability`, { capability }),
+
+  /**
    * 删除实例并解绑
    */
   deleteInstance: (id: number) => http.delete<null>(`/im/instances/${id}`),

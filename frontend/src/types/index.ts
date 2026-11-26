@@ -959,6 +959,8 @@ export interface ImBotInstance {
   qr_content: string | null
   qr_expires_at?: string | null
   login_epoch: number
+  /** 能力档：readonly（仅查账）或 query+confirm（可微信对话记账并短码确认） */
+  capability?: 'readonly' | 'query+confirm' | string
   enabled: number | boolean
   last_error: string | null
   last_seen_at: string | null
