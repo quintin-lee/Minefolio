@@ -55,16 +55,18 @@ onMounted → renderLocal()（立即读本地 SQLite，无网络）
 - `by_tag`：通过 `expense_tags` 关联 `tags`，`count` 为该标签在当月的支出条数；
 - `daily_breakdown`：按 `expense_date`（YYYY-MM-DD）分组的 income/expense。
 
-查询过滤：`__deleted = 0`、`expense_date LIKE 'YYYY-MM-%'`、`ledger_id = ? OR ledger_id = 0`。
+查询过滤：`daily_expenses.__deleted = 0`、`expense_date LIKE 'YYYY-MM-%'`、`ledger_id = ? OR ledger_id = 0`；`by_tag` 关联时**必须**同时过滤 `expense_tags.__deleted = 0`（该表带软删列，见 `db/schema.ts:110-115`），否则已删除的标签关联会被计入统计。
 
 ### 3.3 持仓本地派生的边界（必须诚实标注）
 
-本地 `assets` 表含 `quantity`/`net_value`/`cost_basis`/`current_value`/`currency`/`category_id`，但**没有** `realized_pnl`，也没有服务端持仓分析逻辑。因此：
+服务端持仓只取 `c.asset_type IN ('stock','fund','bond','crypto')` 的资产（`backend/src/infrastructure/repositories/portfolio_repo_impl.c:32-38`），并由 `mf_portfolio_rule_apply_trade_events` 重放交易事实计算 `realized_pnl` 与 `current_value`（`backend/src/application/portfolio/usecases.c:197-200`），汇总还按 `?currency=` 基准币用汇率表跨币种折算（`:202-210`）。本地无法完整重放该逻辑，因此：
 
-- 可精确派生：`name`、`asset_type`（join `categories.asset_type`）、`currency`、`quantity`、`net_value`、`cost_basis`、`current_value`、`floating_pnl = current_value - cost_basis`、`floating_pct`；
+- **必须过滤**：join `categories` 后只保留 `asset_type IN ('stock','fund','bond','crypto')`，**排除现金/银行卡等其他资产**；
+- 可精确派生：`name`、`asset_type`、`currency`、`quantity`、`net_value`、`cost_basis`；
+- 近似派生：`current_value = quantity * net_value`（不使用可能滞后的本地 `assets.current_value`）、`floating_pnl`、`floating_pct`；多币种汇总直接按原币累加，未做服务端折算；
 - `realized_pnl` 离线时置 0 并在 UI 显示"离线近似，已实现盈亏未更新"；
 - 汇率：`marketApi.getExchangeRates()` 成功时缓存到 `sync_meta`（key `exchange_rates_json` + `exchange_rates_at`），离线时读取缓存并展示缓存时间；
-- 在线拉取成功后用服务端 `HoldingsReport` 覆盖本地派生值（服务端口径优先）。
+- 在线拉取成功后用服务端 `HoldingsReport` 覆盖本地派生值（服务端口径优先），并清除近似标记。
 
 ### 3.4 定投/现金流仅做读缓存
 
@@ -88,6 +90,8 @@ onMounted → renderLocal()（立即读本地 SQLite，无网络）
 | `useLocalHoldings` | `frontend/src/composables/mobile/useLocalHoldings.ts` | 从本地资产/分类派生 `HoldingsReport`（近似） |
 | `useViewCache` | `frontend/src/composables/mobile/useViewCache.ts` | `view_cache` 读写与陈旧标记 |
 
+**目录说明**：`frontend/src/composables/mobile/` 当前不存在（现有 `composables/` 下只有 `chat/` 与若干单文件），实施时需新建该目录。
+
 ### 4.2 本地聚合函数签名
 
 ```ts
@@ -103,7 +107,7 @@ export function saveViewCache<T>(key: string, data: T): void
 |------|------|
 | `ReportsMobile.vue` | `load()` 先 `aggregateMonthlyReport()` 渲染；再 `dailyExpensesApi.monthly()` 成功后缓存并刷新；失败保留本地数据并显示"离线报表（本地计算）"标记。保留 `reqId` 竞态保护（`ReportsMobile.vue:37-45`） |
 | `HoldingsMobile.vue` | 先 `deriveLocalHoldings()` 渲染；再 `Promise.allSettled([reportsApi.holdings(), marketApi.getExchangeRates()])` 刷新；离线时保留派生结果并显示近似标记与汇率缓存时间 |
-| `PlansMobile.vue` | `load()` 先读 `view_cache`；再并行拉取 4 个在线接口，成功后写缓存；离线时保留缓存数据；所有写按钮在 `!navigator.onLine` 时禁用并提示"定投/现金流操作需联网" |
+| `PlansMobile.vue` | `load()` 先读 `view_cache`；再并行拉取 4 个在线接口，成功后写缓存；离线时保留缓存数据；`assetsApi.list()`（`PlansMobile.vue:211`）仅用于资产名展示，离线时改为读本地 `assets` 镜像；所有写按钮在 `!navigator.onLine` 时禁用并提示"定投/现金流操作需联网" |
 
 ### 4.4 UI 标记
 
@@ -133,8 +137,8 @@ export function saveViewCache<T>(key: string, data: T): void
 
 ### 6.1 单元测试（vitest）
 
-- `aggregateMonthlyReport`：构造当月 daily_expenses（含 income/expense、多分类、多标签、跨月数据），断言 totals/by_category/by_tag/daily_breakdown 与预期一致；被软删/其他账本行被排除；
-- `deriveLocalHoldings`：构造资产行，断言 floating_pnl/pct、asset_type join、realized_pnl=0 且 `approximate=true`；
+- `aggregateMonthlyReport`：构造当月 daily_expenses（含 income/expense、多分类、多标签、跨月数据），断言 totals/by_category/by_tag/daily_breakdown 与预期一致；被软删/其他账本行被排除；`expense_tags.__deleted=1` 的关联不计入 `by_tag`；
+- `deriveLocalHoldings`：构造投资类（stock/fund/bond/crypto）与现金类资产行，断言仅投资类被纳入、`current_value=quantity*net_value`、floating_pnl/pct、realized_pnl=0 且 `approximate=true`；
 - `useViewCache`：读写/覆盖/重载后保留；不进入 `sync_queue`。
 - 回归：E2E（Playwright）断网 → 三页仍有数据且标记可见 → 恢复网络 → 在线数据覆盖本地。
 
