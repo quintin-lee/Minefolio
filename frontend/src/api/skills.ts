@@ -20,12 +20,8 @@ export async function listSkills(params?: {
   category?: string
   enabled_only?: number
 }): Promise<AiSkill[]> {
-  const r = (await http.get('/ai/skills', { params })) as unknown
-  if (Array.isArray(r)) return r as AiSkill[]
-  if (r && typeof r === 'object' && 'data' in r && Array.isArray((r as { data: unknown }).data)) {
-    return (r as { data: AiSkill[] }).data
-  }
-  return []
+  const r = await http.get<AiSkill[]>('/ai/skills', { params })
+  return Array.isArray(r) ? r : []
 }
 
 /**
@@ -33,11 +29,8 @@ export async function listSkills(params?: {
  * @route GET /api/ai/skills/:id
  */
 export async function getSkill(id: number): Promise<AiSkill | null> {
-  const r = (await http.get(`/ai/skills/${id}`)) as unknown
-  if (r && typeof r === 'object' && 'data' in r && (r as { data: unknown }).data) {
-    return (r as { data: AiSkill }).data
-  }
-  return (r as AiSkill) || null
+  const r = await http.get<AiSkill | null>(`/ai/skills/${id}`)
+  return r || null
 }
 
 /**
@@ -45,14 +38,8 @@ export async function getSkill(id: number): Promise<AiSkill | null> {
  * @route POST /api/ai/skills
  */
 export async function createSkill(payload: SkillCreatePayload): Promise<{ id: number }> {
-  const r = (await http.post('/ai/skills', payload)) as unknown
-  if (r && typeof r === 'object' && 'id' in r) {
-    return r as { id: number }
-  }
-  const d = (r && typeof r === 'object' && 'data' in r ? (r as { data: unknown }).data : r) as
-    | { id: number }
-    | undefined
-  return { id: d?.id ?? 0 }
+  const r = await http.post<{ id?: number }>('/ai/skills', payload)
+  return { id: r?.id ?? 0 }
 }
 
 /**
@@ -60,7 +47,7 @@ export async function createSkill(payload: SkillCreatePayload): Promise<{ id: nu
  * @route PUT /api/ai/skills/:id
  */
 export async function updateSkill(id: number, payload: SkillUpdatePayload): Promise<void> {
-  await http.put(`/ai/skills/${id}`, payload)
+  await http.put<void>(`/ai/skills/${id}`, payload)
 }
 
 /**
@@ -68,7 +55,7 @@ export async function updateSkill(id: number, payload: SkillUpdatePayload): Prom
  * @route DELETE /api/ai/skills/:id
  */
 export async function deleteSkill(id: number): Promise<void> {
-  await http.delete(`/ai/skills/${id}`)
+  await http.delete<void>(`/ai/skills/${id}`)
 }
 
 /**
@@ -76,7 +63,7 @@ export async function deleteSkill(id: number): Promise<void> {
  * @route POST /api/ai/skills/:id/toggle
  */
 export async function toggleSkill(id: number, enabled: boolean): Promise<void> {
-  await http.post(`/ai/skills/${id}/toggle`, { enabled: enabled ? 1 : 0 })
+  await http.post<void>(`/ai/skills/${id}/toggle`, { enabled: enabled ? 1 : 0 })
 }
 
 /**
@@ -84,11 +71,7 @@ export async function toggleSkill(id: number, enabled: boolean): Promise<void> {
  * @route POST /api/ai/skills/:id/test
  */
 export async function testSkill(id: number, args?: string): Promise<SkillTestResult> {
-  const r = (await http.post(`/ai/skills/${id}/test`, { arguments: args || '' })) as unknown
-  const payload =
-    r && typeof r === 'object' && 'data' in r && (r as { data: unknown }).data
-      ? (r as { data: SkillTestResult | AsyncTaskSubmission }).data
-      : (r as SkillTestResult | AsyncTaskSubmission)
+  const payload = await http.post<SkillTestResult | AsyncTaskSubmission>(`/ai/skills/${id}/test`, { arguments: args || '' })
   return resolveMaybeAsync<SkillTestResult>(payload, { timeoutMs: 90000 })
 }
 
@@ -97,14 +80,8 @@ export async function testSkill(id: number, args?: string): Promise<SkillTestRes
  * @route POST /api/ai/skills/import
  */
 export async function importSkillMarkdown(content: string): Promise<{ id: number }> {
-  const r = (await http.post('/ai/skills/import', { content })) as unknown
-  if (r && typeof r === 'object' && 'id' in r) {
-    return r as { id: number }
-  }
-  const d = (r && typeof r === 'object' && 'data' in r ? (r as { data: unknown }).data : r) as
-    | { id: number }
-    | undefined
-  return { id: d?.id ?? 0 }
+  const r = await http.post<{ id?: number }>('/ai/skills/import', { content })
+  return { id: r?.id ?? 0 }
 }
 
 /**
@@ -112,14 +89,8 @@ export async function importSkillMarkdown(content: string): Promise<{ id: number
  * @route GET /api/ai/skills/:id/export
  */
 export async function exportSkillMarkdown(id: number): Promise<string> {
-  const r = (await http.get(`/ai/skills/${id}/export`)) as unknown
-  if (r && typeof r === 'object' && 'content' in r) {
-    return (r as { content: string }).content
-  }
-  const d = (r && typeof r === 'object' && 'data' in r ? (r as { data: unknown }).data : r) as
-    | { content: string }
-    | undefined
-  return d?.content || ''
+  const r = await http.get<{ content?: string }>(`/ai/skills/${id}/export`)
+  return r?.content || ''
 }
 
 /**
@@ -127,5 +98,5 @@ export async function exportSkillMarkdown(id: number): Promise<string> {
  * @route POST /api/ai/skills/reset-defaults
  */
 export async function resetDefaultSkills(): Promise<void> {
-  await http.post('/ai/skills/reset-defaults')
+  await http.post<void>('/ai/skills/reset-defaults')
 }

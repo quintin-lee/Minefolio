@@ -137,12 +137,8 @@ export interface AiSettings {
  * @returns 模型配置选项数组
  */
 export async function getModels(): Promise<AiModelOption[]> {
-  const r = (await http.get('/ai/models')) as unknown
-  if (Array.isArray(r)) return r as AiModelOption[]
-  if (r && typeof r === 'object' && 'data' in r && Array.isArray((r as { data: unknown }).data)) {
-    return (r as { data: AiModelOption[] }).data
-  }
-  return []
+  const r = await http.get<AiModelOption[]>('/ai/models')
+  return Array.isArray(r) ? r : []
 }
 
 /**
@@ -154,7 +150,7 @@ export async function getModels(): Promise<AiModelOption[]> {
  * @returns 分页会话列表响应
  */
 export async function listSessions(params?: { page?: number; page_size?: number }) {
-  return http.get('/ai/sessions', { params })
+  return http.get<{ list: AiSession[]; total?: number }>('/ai/sessions', { params })
 }
 
 /**
@@ -165,7 +161,7 @@ export async function listSessions(params?: { page?: number; page_size?: number 
  * @returns 创建成功后的会话信息
  */
 export async function createSession(model?: string, provider?: string) {
-  return http.post('/ai/sessions', { model, provider })
+  return http.post<AiSession>('/ai/sessions', { model, provider })
 }
 
 /**
@@ -175,7 +171,7 @@ export async function createSession(model?: string, provider?: string) {
  * @returns 会话详情数据
  */
 export async function getSession(id: number) {
-  return http.get(`/ai/sessions/${id}`)
+  return http.get<AiSession>(`/ai/sessions/${id}`)
 }
 
 /**
@@ -188,7 +184,7 @@ export async function getSession(id: number) {
  * @returns 更新结果
  */
 export async function updateSession(id: number, data: { title?: string; model?: string }) {
-  return http.put(`/ai/sessions/${id}`, data)
+  return http.put<AiSession>(`/ai/sessions/${id}`, data)
 }
 
 /**
@@ -198,7 +194,7 @@ export async function updateSession(id: number, data: { title?: string; model?: 
  * @returns 删除操作结果
  */
 export async function deleteSession(id: number) {
-  return http.delete(`/ai/sessions/${id}`)
+  return http.delete<void>(`/ai/sessions/${id}`)
 }
 
 /**
@@ -210,7 +206,7 @@ export async function deleteSession(id: number) {
  * @returns 分页消息列表
  */
 export async function getMessages(sessionId: number, page = 1, page_size = 50) {
-  return http.get(`/ai/sessions/${sessionId}/messages`, { params: { page, page_size } })
+  return http.get<{ list: AiMessage[]; total: number }>(`/ai/sessions/${sessionId}/messages`, { params: { page, page_size } })
 }
 
 /**
@@ -420,11 +416,7 @@ export async function* chatStream(
  * @returns AI 系统配置设置对象
  */
 export async function getSettings(): Promise<AiSettings> {
-  const r = (await http.get('/settings/ai')) as unknown
-  if (r && typeof r === 'object' && 'data' in r && (r as { data: unknown }).data) {
-    return (r as { data: AiSettings }).data
-  }
-  return r as AiSettings
+  return http.get<AiSettings>('/settings/ai')
 }
 
 /**
@@ -434,7 +426,7 @@ export async function getSettings(): Promise<AiSettings> {
  * @returns 更新操作结果
  */
 export async function updateSettings(settings: Partial<AiSettings>) {
-  return http.put('/settings/ai', settings)
+  return http.put<void>('/settings/ai', settings)
 }
 
 /**
@@ -467,11 +459,8 @@ export async function testAiConnection(data: {
   api_key_enc?: string
   model?: string
 }): Promise<AiTestConnectionResult> {
-  const r = (await http.post('/settings/ai/test', data)) as unknown
-  if (r && typeof r === 'object' && 'data' in r && (r as { data: unknown }).data) {
-    return (r as { data: AiTestConnectionResult }).data
-  }
-  return (r || { success: false, latency_ms: 0, message: '测试失败' }) as AiTestConnectionResult
+  const r = await http.post<AiTestConnectionResult>('/settings/ai/test', data)
+  return r || { success: false, latency_ms: 0, message: '测试失败' }
 }
 
 /**
@@ -486,9 +475,8 @@ export async function fetchAiModels(data: {
   api_key?: string
   api_key_enc?: string
 }): Promise<string[]> {
-  const r = (await http.post('/settings/ai/fetch-models', data)) as unknown
-  const res = (r && typeof r === 'object' && 'data' in r ? (r as { data: { models: unknown } }).data : r) as { models?: unknown }
-  return Array.isArray(res?.models) ? (res.models as string[]) : []
+  const res = await http.post<{ models?: string[] }>('/settings/ai/fetch-models', data)
+  return Array.isArray(res?.models) ? res.models : []
 }
 
 /**
@@ -511,7 +499,7 @@ export async function confirmAction(payload: {
   to_asset_id?: number
   note?: string
 }) {
-  return http.post('/ai/actions/confirm', payload)
+  return http.post<{ success?: boolean; id?: number; message?: string; error?: string }>('/ai/actions/confirm', payload)
 }
 
 /**
@@ -535,7 +523,7 @@ export async function confirmBatchActions(payload: {
     note?: string
   }>
 }) {
-  return http.post('/ai/actions/confirm-batch', payload)
+  return http.post<{ success?: boolean; error?: string; message?: string }>('/ai/actions/confirm-batch', payload)
 }
 
 /**
@@ -544,12 +532,8 @@ export async function confirmBatchActions(payload: {
  * @returns 工作流定义对象数组
  */
 export async function getWorkflows(): Promise<WorkflowDef[]> {
-  const r = (await http.get('/ai/workflows')) as unknown
-  if (Array.isArray(r)) return r as WorkflowDef[]
-  if (r && typeof r === 'object' && 'data' in r && Array.isArray((r as { data: unknown }).data)) {
-    return (r as { data: WorkflowDef[] }).data
-  }
-  return []
+  const r = await http.get<WorkflowDef[]>('/ai/workflows')
+  return Array.isArray(r) ? r : []
 }
 
 /**

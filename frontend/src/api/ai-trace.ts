@@ -94,8 +94,8 @@ export async function listTraces(params?: {
   page_size?: number
   provider?: string
   model?: string
-}) {
-  return http.get('/ai/traces', { params })
+}): Promise<{ list: AiTrace[]; total: number }> {
+  return http.get<{ list: AiTrace[]; total: number }>('/ai/traces', { params })
 }
 
 /**
@@ -105,7 +105,7 @@ export async function listTraces(params?: {
  * @returns 追踪详情对象
  */
 export async function getTrace(id: number): Promise<AiTraceDetail> {
-  return (await http.get(`/ai/traces/${id}`)) as AiTraceDetail
+  return http.get<AiTraceDetail>(`/ai/traces/${id}`)
 }
 
 /**
@@ -114,5 +114,5 @@ export async function getTrace(id: number): Promise<AiTraceDetail> {
  * @returns AI 追踪聚合统计指标对象
  */
 export async function getTraceStats(): Promise<AiTraceStats> {
-  return (await http.get('/ai/traces/stats')) as AiTraceStats
+  return http.get<AiTraceStats>('/ai/traces/stats')
 }

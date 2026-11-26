@@ -22,12 +22,8 @@ import type {
  * @returns MCP 服务器数组
  */
 export async function listMcpServers(): Promise<McpServer[]> {
-  const r = (await http.get('/ai/mcp/servers')) as unknown
-  if (Array.isArray(r)) return r as McpServer[]
-  if (r && typeof r === 'object' && 'data' in r && Array.isArray((r as { data: unknown }).data)) {
-    return (r as { data: McpServer[] }).data
-  }
-  return []
+  const r = await http.get<McpServer[]>('/ai/mcp/servers')
+  return Array.isArray(r) ? r : []
 }
 
 /**
@@ -37,11 +33,8 @@ export async function listMcpServers(): Promise<McpServer[]> {
  * @returns MCP 服务器详情
  */
 export async function getMcpServer(id: number): Promise<McpServer | null> {
-  const r = (await http.get(`/ai/mcp/servers/${id}`)) as unknown
-  if (r && typeof r === 'object' && 'data' in r && (r as { data: unknown }).data) {
-    return (r as { data: McpServer }).data
-  }
-  return (r as McpServer) || null
+  const r = await http.get<McpServer | null>(`/ai/mcp/servers/${id}`)
+  return r || null
 }
 
 /**
@@ -51,14 +44,8 @@ export async function getMcpServer(id: number): Promise<McpServer | null> {
  * @returns 新创建的服务器 ID
  */
 export async function createMcpServer(input: McpServerInput): Promise<{ id: number }> {
-  const r = (await http.post('/ai/mcp/servers', input)) as unknown
-  if (r && typeof r === 'object' && 'id' in r) {
-    return r as { id: number }
-  }
-  const d = (r && typeof r === 'object' && 'data' in r ? (r as { data: unknown }).data : r) as
-    | { id: number }
-    | undefined
-  return { id: d?.id ?? 0 }
+  const r = await http.post<{ id?: number }>('/ai/mcp/servers', input)
+  return { id: r?.id ?? 0 }
 }
 
 /**
@@ -69,7 +56,7 @@ export async function createMcpServer(input: McpServerInput): Promise<{ id: numb
  * @returns 更新操作结果
  */
 export async function updateMcpServer(id: number, input: McpServerInput): Promise<void> {
-  await http.put(`/ai/mcp/servers/${id}`, input)
+  await http.put<void>(`/ai/mcp/servers/${id}`, input)
 }
 
 /**
@@ -79,7 +66,7 @@ export async function updateMcpServer(id: number, input: McpServerInput): Promis
  * @returns 删除操作结果
  */
 export async function deleteMcpServer(id: number): Promise<void> {
-  await http.delete(`/ai/mcp/servers/${id}`)
+  await http.delete<void>(`/ai/mcp/servers/${id}`)
 }
 
 /**
@@ -89,12 +76,8 @@ export async function deleteMcpServer(id: number): Promise<void> {
  * @returns 工具缓存数组
  */
 export async function getMcpServerTools(id: number): Promise<McpServerTool[]> {
-  const r = (await http.get(`/ai/mcp/servers/${id}/tools`)) as unknown
-  if (Array.isArray(r)) return r as McpServerTool[]
-  if (r && typeof r === 'object' && 'data' in r && Array.isArray((r as { data: unknown }).data)) {
-    return (r as { data: McpServerTool[] }).data
-  }
-  return []
+  const r = await http.get<McpServerTool[]>(`/ai/mcp/servers/${id}/tools`)
+  return Array.isArray(r) ? r : []
 }
 
 /**
@@ -105,11 +88,7 @@ export async function getMcpServerTools(id: number): Promise<McpServerTool[]> {
  * @note M1 阶段后端返回 1002 占位，M2 实装
  */
 export async function testMcpServer(id: number): Promise<McpTestResult> {
-  const r = (await http.post(`/ai/mcp/servers/${id}/test`)) as unknown
-  const payload =
-    r && typeof r === 'object' && 'data' in r && (r as { data: unknown }).data
-      ? (r as { data: McpTestResult | AsyncTaskSubmission }).data
-      : (r as McpTestResult | AsyncTaskSubmission)
+  const payload = await http.post<McpTestResult | AsyncTaskSubmission>(`/ai/mcp/servers/${id}/test`)
   return resolveMaybeAsync<McpTestResult>(payload, { timeoutMs: 90000 })
 }
 
@@ -121,11 +100,7 @@ export async function testMcpServer(id: number): Promise<McpTestResult> {
  * @note M1 阶段后端返回 1002 占位，M2 实装
  */
 export async function refreshMcpServer(id: number): Promise<{ tool_count: number }> {
-  const r = (await http.post(`/ai/mcp/servers/${id}/refresh`)) as unknown
-  const payload =
-    r && typeof r === 'object' && 'data' in r && (r as { data: unknown }).data
-      ? (r as { data: { tool_count: number } | AsyncTaskSubmission }).data
-      : (r as { tool_count: number } | AsyncTaskSubmission)
+  const payload = await http.post<{ tool_count?: number } | AsyncTaskSubmission>(`/ai/mcp/servers/${id}/refresh`)
   const res = await resolveMaybeAsync<{ tool_count?: number }>(payload, { timeoutMs: 90000 })
   return { tool_count: res?.tool_count ?? 0 }
 }
@@ -139,18 +114,12 @@ export async function refreshMcpServer(id: number): Promise<{ tool_count: number
 export async function uploadMcpScript(file: File): Promise<McpScriptItem> {
   const formData = new FormData()
   formData.append('file', file)
-  const r = (await http.post('/ai/mcp/scripts', formData, {
+  const r = await http.post<McpScriptItem>('/ai/mcp/scripts', formData, {
     headers: {
       'Content-Type': 'multipart/form-data',
     },
-  })) as unknown
-  if (r && typeof r === 'object' && 'command' in r) {
-    return r as McpScriptItem
-  }
-  const d = (r && typeof r === 'object' && 'data' in r ? (r as { data: unknown }).data : r) as
-    | McpScriptItem
-    | undefined
-  return d || { filename: file.name, path: '', command: '', size: file.size }
+  })
+  return r || { filename: file.name, path: '', command: '', size: file.size }
 }
 
 /**
@@ -159,12 +128,8 @@ export async function uploadMcpScript(file: File): Promise<McpScriptItem> {
  * @returns 脚本项列表
  */
 export async function listMcpScripts(): Promise<McpScriptItem[]> {
-  const r = (await http.get('/ai/mcp/scripts')) as unknown
-  if (Array.isArray(r)) return r as McpScriptItem[]
-  if (r && typeof r === 'object' && 'data' in r && Array.isArray((r as { data: unknown }).data)) {
-    return (r as { data: McpScriptItem[] }).data
-  }
-  return []
+  const r = await http.get<McpScriptItem[]>('/ai/mcp/scripts')
+  return Array.isArray(r) ? r : []
 }
 
 /**
@@ -173,6 +138,6 @@ export async function listMcpScripts(): Promise<McpScriptItem[]> {
  * @param filename 脚本文件名
  */
 export async function deleteMcpScript(filename: string): Promise<void> {
-  await http.delete(`/ai/mcp/scripts/${encodeURIComponent(filename)}`)
+  await http.delete<void>(`/ai/mcp/scripts/${encodeURIComponent(filename)}`)
 }
 
