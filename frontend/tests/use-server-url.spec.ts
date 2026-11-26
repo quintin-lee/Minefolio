@@ -42,7 +42,8 @@ describe('useServerUrl composable', () => {
   })
 
   it('exposes validator and normalizer', () => {
-    expect(isValidServerUrl('http://foo.bar:8080')).toBe(true)
+    expect(isValidServerUrl('http://foo.local:8080')).toBe(true)
+    expect(isValidServerUrl('https://foo.bar:8080')).toBe(true)
     expect(isValidServerUrl('http://')).toBe(false)
     expect(normalizeServerUrl('foo.bar///')).toBe('http://foo.bar')
   })
