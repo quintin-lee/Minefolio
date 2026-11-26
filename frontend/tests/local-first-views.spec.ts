@@ -3,6 +3,8 @@ import { initLocalDb, query, resetLocalDb, rowsFrom, flushPersist, run } from '@
 import { aggregateMonthlyReport } from '@/composables/mobile/useLocalMonthlyReport'
 import { deriveLocalHoldings } from '@/composables/mobile/useLocalHoldings'
 import { loadViewCache, saveViewCache } from '@/composables/mobile/useViewCache'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 async function reloadDb() {
   vi.resetModules()
@@ -63,6 +65,28 @@ describe('local-first views', () => {
     }))
     expect(report.summary.total_market_value).toBe(120)
     expect(report.summary.total_realized_pnl).toBe(0)
+  })
+
+  it('clears offline badges when remote data succeeds', () => {
+    const reports = readFileSync(resolve(process.cwd(), 'src/views-mobile/ReportsMobile.vue'), 'utf8')
+    expect(reports).toContain('localOnly.value = false')
+    const holdings = readFileSync(resolve(process.cwd(), 'src/views-mobile/HoldingsMobile.vue'), 'utf8')
+    expect(holdings).toContain('approximate.value = false')
+    expect(holdings).toContain("saveViewCache('exchange_rates'")
+  })
+
+  it('disables plan write buttons and guards handlers when offline', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/views-mobile/PlansMobile.vue'), 'utf8')
+    expect(source).toContain('function requireOnline()')
+    expect(source.match(/:disabled="!isOnline"/g)?.length).toBeGreaterThanOrEqual(6)
+    for (const handler of [
+      'handleConfirmDca', 'handleSkipDca', 'toggleDcaStatus',
+      'handleDeleteDca', 'handleConfirmCashflow', 'submitDca', 'openDcaModal',
+    ]) {
+      const start = source.indexOf(`function ${handler}`)
+      const next = source.indexOf('\nfunction ', start + 1)
+      expect(source.slice(start, next === -1 ? source.length : next)).toContain('requireOnline()')
+    }
   })
 
   it('keeps view cache across reload and out of sync_queue', async () => {

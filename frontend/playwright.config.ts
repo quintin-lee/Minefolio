@@ -11,6 +11,9 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  // 移动端本地优先用例在共享 dev server 上依赖有序的本地库种子数据；
+  // CI 下串行执行避免与其他 E2E 用例竞争登录/本地库状态。
+  workers: process.env.CI ? 1 : undefined,
   webServer: {
     command: 'npm run dev:mobile -- --port 5173 --strictPort',
     url: 'http://localhost:5173',
