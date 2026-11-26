@@ -168,6 +168,28 @@ test_ai_ssrf_url_validation(void)
     printf("[Test SSRF] PASS: mf_ai_rule_validate_url verified\n");
 }
 
+/** iLink query+confirm 能力档白名单：只能取到 propose_*，绝不包含 internal_only 的 confirm_*。 */
+static void
+test_im_bookkeeping_tool_subset(void)
+{
+    static const char* const names[] = {
+        "propose_daily_expense", "confirm_proposed_expense", "confirm_proposed_transfer",
+        "no_such_tool"};
+    csilk_ai_tool_t subset[8] = {0};
+    size_t          n = ai_tool_get_csilk_definitions_subset(names, 4, subset, 8);
+    assert(n == 1);
+    assert(strcmp(subset[0].function.name, "propose_daily_expense") == 0);
+
+    size_t                 ro_count = 0;
+    const csilk_ai_tool_t* ro = ai_tool_get_readonly_csilk_definitions(&ro_count);
+    assert(ro != NULL);
+    for (size_t i = 0; i < ro_count; i++) {
+        assert(strcmp(ro[i].function.name, "propose_daily_expense") != 0);
+        assert(strcmp(ro[i].function.name, "confirm_proposed_expense") != 0);
+    }
+    printf("[Test IM Bookkeeping Whitelist] PASS: propose only, no confirm tools\n");
+}
+
 int
 main(void)
 {
@@ -203,6 +225,7 @@ main(void)
         assert(ai_tool_find("confirm_proposed_expense") != NULL);
     }
 
+    test_im_bookkeeping_tool_subset();
     test_registry_thread_safety();
 
     ai_tool_context_t* ctx = ai_tool_context_create(pool, user_id, 1, "test_trace_123");

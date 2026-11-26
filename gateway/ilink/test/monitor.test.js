@@ -8,7 +8,7 @@ const path = require('path');
 
 const { createStateStore } = require('../state');
 const { IlinkSessionExpiredError } = require('../client');
-const { runMonitor, splitReplyChunks } = require('../monitor');
+const { runMonitor, splitReplyChunks, parseConfirmCommand } = require('../monitor');
 
 describe('ilink/monitor', () => {
   test('filters self/group/stranger/duplicate, preserves context_token, persists cursor, handles -14', async () => {
@@ -237,5 +237,81 @@ describe('ilink/monitor', () => {
 
   test('splitReplyChunks splits long messages cleanly', () => {
     assert.deepStrictEqual(splitReplyChunks('abcdef', 2), ['ab', 'cd', 'ef']);
+  });
+
+  test('parseConfirmCommand only accepts 8-char uppercase codes', () => {
+    assert.strictEqual(parseConfirmCommand('确认 A7K2M9PQ'), 'A7K2M9PQ');
+    assert.strictEqual(parseConfirmCommand(' 确认   a7k2m9pq '), 'A7K2M9PQ');
+    assert.strictEqual(parseConfirmCommand('确认 ABC'), null);
+    assert.strictEqual(parseConfirmCommand('我确认 A7K2M9PQ'), null);
+    assert.strictEqual(parseConfirmCommand('记一笔午餐 30 元'), null);
+  });
+
+  test('routes confirm commands to the confirm endpoint instead of AI chat', async () => {
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'mf-ilink-mon-confirm-'));
+    try {
+      const state = createStateStore({ rootDir: tmpRoot, instanceId: 1 });
+      const ac = new AbortController();
+      const sent = [];
+      const confirmed = [];
+      let chatted = 0;
+      let pollBatch = 0;
+
+      const client = {
+        getUpdates: async () => {
+          pollBatch += 1;
+          if (pollBatch === 1) {
+            return {
+              msgs: [
+                {
+                  message_id: 'm_confirm',
+                  message_type: 1,
+                  from_user_id: 'owner_wx',
+                  context_token: 'ctx_confirm',
+                  item_list: [{ type: 1, text_item: { text: '确认 A7K2M9PQ' } }],
+                },
+              ],
+            };
+          }
+          await new Promise((r) => setTimeout(r, 40));
+          throw new IlinkSessionExpiredError('expired');
+        },
+        sendText: async (args) => sent.push(args),
+      };
+      const api = {
+        confirm: async (instId, imUserId, code) => {
+          confirmed.push({ instId, imUserId, code });
+          return { reply: '已记账：支出 ¥30.00' };
+        },
+        chat: async () => {
+          chatted += 1;
+          return { reply: 'should not be called' };
+        },
+        pollTask: async () => ({ reply: '' }),
+        updateStatus: async () => {},
+      };
+
+      await assert.rejects(
+        () =>
+          runMonitor({
+            client,
+            state,
+            account: { bot_token: 'tok', ilink_user_id: 'owner_wx' },
+            instanceId: 1,
+            api,
+            signal: ac.signal,
+            pollTaskOpts: { intervalMs: 5, timeoutMs: 1000 },
+          }),
+        (err) => err instanceof IlinkSessionExpiredError
+      );
+
+      assert.strictEqual(chatted, 0);
+      assert.deepStrictEqual(confirmed, [
+        { instId: 1, imUserId: 'ilink:owner_wx', code: 'A7K2M9PQ' },
+      ]);
+      assert.ok(sent.some((s) => s.text === '已记账：支出 ¥30.00'));
+    } finally {
+      fs.rmSync(tmpRoot, { recursive: true, force: true });
+    }
   });
 });
