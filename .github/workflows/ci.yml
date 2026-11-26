@@ -528,7 +528,8 @@ jobs:
 
       - name: Verify APK signature
         run: |
-          APK=$(find frontend/android/app/build/outputs/apk/release -name '*.apk' | head -1)
+          # Steps run with working-directory: frontend
+          APK=$(find android/app/build/outputs/apk/release -name '*.apk' | head -1)
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)
           "$APKSIGNER" verify --print-certs "$APK"
 
