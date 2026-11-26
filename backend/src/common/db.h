@@ -56,6 +56,13 @@ int db_init(csilk_db_pool_t** out_pool);
 int db_run_migrations(csilk_db_pool_t* pool);
 
 /**
+ * @brief 自愈 schema_migrations.checksum：用 csilk 迁移引擎的规范校验和修正漂移记录。
+ *        供 db-wait.sh 在应用启动前调用，避免 psql 依赖；磁盘缺少已记录迁移文件时 fail-fast。
+ * @return 0 成功（含全新库跳过）；-1 失败
+ */
+int db_heal_migration_checksums(csilk_db_pool_t* pool);
+
+/**
  * @brief 将已知的等价历史迁移校验和（如 4a2880af 临时改写的 PG V026/V034）
  *        精确收敛为规范校验和，不影响其他任何篡改检测。
  *

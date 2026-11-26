@@ -410,6 +410,9 @@ add_dependencies(test_im_push_outbox copy_assets)
 add_minefolio_unit_test(test_im_bookkeeping tests/unit/test_im_bookkeeping.c pthread)
 add_dependencies(test_im_bookkeeping copy_assets)
 
+add_minefolio_unit_test(test_migration_checksum_heal tests/unit/test_migration_checksum_heal.c)
+add_dependencies(test_migration_checksum_heal copy_assets)
+
 add_minefolio_unit_test(test_scheduler_engine tests/unit/test_scheduler_engine.c pthread)
 add_dependencies(test_scheduler_engine copy_assets)
 

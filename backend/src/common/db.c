@@ -467,6 +467,103 @@ db_run_migrations(csilk_db_pool_t* pool)
     return rc;
 }
 
+int
+db_heal_migration_checksums(csilk_db_pool_t* pool)
+{
+    if (!pool) {
+        return -1;
+    }
+    const char*               base_dir = resolve_migrations_base_dir();
+    csilk_migration_engine_t* engine = NULL;
+    if (csilk_migration_engine_new(pool, base_dir, &engine) != 0 || !engine) {
+        fprintf(stderr, "[db-wait] Failed to create migration engine at '%s'\n", base_dir);
+        return -1;
+    }
+    csilk_migration_item_t* items = NULL;
+    int                     item_count = 0;
+    if (csilk_migration_discover(engine, &items, &item_count) != 0) {
+        fprintf(stderr, "[db-wait] Failed to discover migration scripts under '%s'\n", base_dir);
+        csilk_migration_engine_free(engine);
+        return -1;
+    }
+
+    csilk_json_t* rows = csilk_db_query_json(
+        pool,
+        "SELECT version, name, checksum FROM schema_migrations WHERE version >= 1 "
+        "ORDER BY version;");
+    if (!rows) {
+        /* 全新库还没有 schema_migrations：无需自愈，交给正常迁移流程。 */
+        printf(
+            "[db-wait] schema_migrations unavailable (fresh database); skipping checksum heal.\n");
+        free(items);
+        csilk_migration_engine_free(engine);
+        return 0;
+    }
+
+    int    rc = 0;
+    int    fixed = 0;
+    size_t row_count = csilk_json_is_array(rows) ? csilk_json_array_size(rows) : 0;
+    for (size_t i = 0; i < row_count && rc == 0; i++) {
+        const csilk_json_t* row = csilk_json_array_get(rows, i);
+        if (!row) {
+            continue;
+        }
+        int64_t     ver = db_get_int(row, "version");
+        const char* name = csilk_json_get_string(row, "name");
+        const char* recorded = csilk_json_get_string(row, "checksum");
+        if (!name) {
+            name = "";
+        }
+        if (!recorded) {
+            recorded = "";
+        }
+
+        int idx = -1;
+        for (int j = 0; j < item_count; j++) {
+            if (items[j].version == (int)ver) {
+                idx = j;
+                break;
+            }
+        }
+        if (idx < 0) {
+            fprintf(stderr,
+                    "[db-wait] ERROR: schema_migrations records V%lld (%s) but no matching "
+                    "migration file under '%s'; refusing to heal (possible tamper/corrupt DB).\n",
+                    (long long)ver,
+                    name,
+                    base_dir);
+            rc = -1;
+            break;
+        }
+        if (strcmp(items[idx].checksum, recorded) == 0) {
+            continue;
+        }
+        char ver_s[32];
+        snprintf(ver_s, sizeof(ver_s), "%lld", (long long)ver);
+        printf("[db-wait] migration checksum V%lld (%s) drifted; re-seeding canonical value.\n",
+               (long long)ver,
+               name);
+        if (csilk_db_exec_param(
+                pool,
+                "UPDATE schema_migrations SET checksum=? WHERE version=? AND name=?",
+                (const char*[]){items[idx].checksum, ver_s, name, NULL}) != 0) {
+            fprintf(
+                stderr, "[db-wait] ERROR: failed to re-seed checksum for V%lld\n", (long long)ver);
+            rc = -1;
+            break;
+        }
+        fixed++;
+    }
+
+    csilk_json_free(rows);
+    free(items);
+    csilk_migration_engine_free(engine);
+    if (rc == 0 && fixed > 0) {
+        printf("[db-wait] re-seeded %d migration checksum record(s).\n", fixed);
+    }
+    return rc;
+}
+
 /**
  * @brief 获取全局连接池实例指针
  *

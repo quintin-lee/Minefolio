@@ -42,6 +42,7 @@
 #include "dtos/request.h"
 #include "config/secret.h"
 #include <stdio.h>
+#include <string.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <signal.h>
@@ -74,6 +75,19 @@ main(int argc, char** argv)
     (void)argv;
 
     signal(SIGPIPE, SIG_IGN);
+
+    /* 容器启动前维护子命令：自愈已应用迁移的 checksum 漂移，不依赖 psql。
+       此路径在 JWT / RSA 初始化之前执行，仅需要数据库环境变量。 */
+    if (argc >= 2 && strcmp(argv[1], "--heal-migration-checksums") == 0) {
+        csilk_db_pool_t* heal_pool = NULL;
+        if (db_init(&heal_pool) != 0 || !heal_pool) {
+            fprintf(stderr, "Failed to initialize database for checksum heal\n");
+            return 1;
+        }
+        int rc = db_heal_migration_checksums(heal_pool);
+        csilk_db_pool_free(heal_pool);
+        return rc == 0 ? 0 : 1;
+    }
 
     /* libcurl 全局初始化必须在任何线程创建前显式完成：
        csilk worker/market_scheduler/AI summary/MCP 均调用 curl_easy_*，
