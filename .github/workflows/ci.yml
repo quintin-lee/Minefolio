@@ -226,7 +226,10 @@ jobs:
         run: |
           # gcovr --html-details requires the output directory to exist
           mkdir -p coverage
+          # Build uses gcc-14; the runner's default gcov may be older and reject
+          # the gcda format (exit code 3). Match the compiler explicitly.
           gcovr -r . -f 'src/.*' -e 'tests/.*' \
+            --gcov-executable gcov-14 \
             --gcov-ignore-parse-errors negative_hits.warn_once_per_file \
             --txt --txt-summary --xml coverage.xml --html-details coverage/index.html \
             --fail-under-line 40 --fail-under-function 50 --fail-under-branch 29
