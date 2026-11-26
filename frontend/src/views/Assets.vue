@@ -768,6 +768,7 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
 }
 
 .asset-icon {
@@ -775,12 +776,14 @@ onMounted(async () => {
   color: var(--el-color-primary);
   display: flex;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .asset-name-group {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
 }
 
 .asset-name {
@@ -925,9 +928,9 @@ onMounted(async () => {
   font-size: 11px;
   padding: 1px 8px;
   border-radius: 999px;
-  background: rgba(0, 212, 255, 0.08);
+  background: var(--mf-primary-light);
   color: var(--el-text-color-secondary);
-  border: 1px solid rgba(0, 212, 255, 0.15);
+  border: 1px solid var(--mf-primary-border);
 }
 
 .group-meta {
@@ -1044,7 +1047,30 @@ onMounted(async () => {
     overflow: visible;
   }
   .account-group-body {
-    overflow-x: auto;
+    overflow-x: hidden;
+  }
+  .asset-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'name value'
+      'cat actions';
+    gap: 6px 12px;
+    align-items: start;
+  }
+  .asset-name-cell {
+    grid-area: name;
+    min-width: 0;
+  }
+  .value-col {
+    grid-area: value;
+  }
+  .asset-cat {
+    grid-area: cat;
+    align-self: center;
+  }
+  .row-actions {
+    grid-area: actions;
+    justify-content: flex-end;
   }
   .header-actions {
     display: flex;
