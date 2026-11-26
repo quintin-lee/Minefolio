@@ -314,7 +314,7 @@ function submit() {
 
 .ratio-inputs {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
   margin-top: 6px;
 }
@@ -336,5 +336,11 @@ function submit() {
   gap: 8px;
   border-top: 1px solid var(--mf-border-subtle);
   padding-top: 10px;
+}
+
+@media (max-width: 640px) {
+  .ratio-inputs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 </style>

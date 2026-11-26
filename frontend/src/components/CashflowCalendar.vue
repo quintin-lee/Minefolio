@@ -365,7 +365,7 @@ defineExpose({ reload: loadCalendar })
 
 .grid-header {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   background: var(--mf-surface-muted);
   border-bottom: 1px solid var(--mf-border);
 }
@@ -380,7 +380,7 @@ defineExpose({ reload: loadCalendar })
 
 .grid-body {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
 }
 
 .day-cell {

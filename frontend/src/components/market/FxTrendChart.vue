@@ -322,7 +322,7 @@ onUnmounted(() => {
 
 .stats-ribbon {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
   background: var(--mf-surface-muted);
   border: 1px solid var(--mf-border-subtle);
@@ -358,5 +358,11 @@ onUnmounted(() => {
 .chart-canvas {
   width: 100%;
   height: 250px;
+}
+
+@media (max-width: 768px) {
+  .stats-ribbon {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 </style>

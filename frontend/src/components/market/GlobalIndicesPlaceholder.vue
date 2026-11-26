@@ -87,7 +87,7 @@ const { t } = useI18n()
 
 .mock-indices-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   opacity: 0.85;
 }
@@ -123,5 +123,11 @@ const { t } = useI18n()
   font-size: 11px;
   font-weight: 600;
   color: var(--el-color-danger);
+}
+
+@media (max-width: 768px) {
+  .mock-indices-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 </style>
