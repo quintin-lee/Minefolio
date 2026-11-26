@@ -548,14 +548,22 @@ im_instance_gateway_confirm(void*       pool,
         }
         return -1;
     }
-    const char* bound = csilk_json_get_string(inst, "im_user_id");
-    const char* status = csilk_json_get_string(inst, "status");
-    int         enabled = db_get_bool(inst, "enabled") ? 1 : 0;
-    int64_t     owner = db_get_int(inst, "mf_user_id");
-    char        plat[32] = "wechat";
-    char        cap[32] = "readonly";
+    const char* bound_ptr = csilk_json_get_string(inst, "im_user_id");
+    const char* status_ptr = csilk_json_get_string(inst, "status");
     const char* plat_ptr = csilk_json_get_string(inst, "platform");
     const char* cap_ptr = csilk_json_get_string(inst, "capability");
+    int         enabled = db_get_bool(inst, "enabled") ? 1 : 0;
+    int64_t     owner = db_get_int(inst, "mf_user_id");
+    char        bound[256] = "";
+    char        status[32] = "";
+    char        plat[32] = "wechat";
+    char        cap[32] = "readonly";
+    if (bound_ptr && bound_ptr[0]) {
+        snprintf(bound, sizeof(bound), "%s", bound_ptr);
+    }
+    if (status_ptr && status_ptr[0]) {
+        snprintf(status, sizeof(status), "%s", status_ptr);
+    }
     if (plat_ptr && plat_ptr[0]) {
         snprintf(plat, sizeof(plat), "%s", plat_ptr);
     }
@@ -564,7 +572,7 @@ im_instance_gateway_confirm(void*       pool,
     }
     csilk_json_free(inst);
 
-    if (!enabled || !status || strcmp(status, "active") != 0 || !bound ||
+    if (!enabled || !status[0] || strcmp(status, "active") != 0 || !bound[0] ||
         strcmp(bound, im_user_id) != 0 || owner <= 0) {
         im_inst_err(err, err_cap, "instance is unavailable for this sender");
         if (code) {
