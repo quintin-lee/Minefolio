@@ -791,4 +791,25 @@ onMounted(() => {
   margin-top: 16px;
   flex-shrink: 0;
 }
+
+@media (max-width: 768px) {
+  .plans-page {
+    height: auto;
+    overflow: visible;
+  }
+
+  .table-toolbar {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .table-container {
+    flex: none;
+    overflow: visible;
+  }
+
+  .table-container :deep(.el-table) {
+    height: auto;
+  }
+}
 </style>

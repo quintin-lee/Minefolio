@@ -275,4 +275,20 @@ onMounted(async () => {
 .muted-text {
   color: var(--mf-text-muted);
 }
+
+@media (max-width: 768px) {
+  .audit-logs-page {
+    height: auto;
+    overflow: visible;
+  }
+
+  .table-container {
+    flex: none;
+    overflow: visible;
+  }
+
+  .table-container :deep(.el-table) {
+    height: auto;
+  }
+}
 </style>

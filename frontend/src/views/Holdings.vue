@@ -406,4 +406,16 @@ onMounted(() => {
   font-variant-numeric: tabular-nums;
   font-family: var(--mf-font-mono);
 }
+
+@media (max-width: 768px) {
+  .holdings-page {
+    height: auto;
+    overflow: visible;
+  }
+
+  .table-card {
+    flex: none;
+    overflow: visible;
+  }
+}
 </style>

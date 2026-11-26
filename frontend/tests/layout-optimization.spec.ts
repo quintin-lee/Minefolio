@@ -54,4 +54,16 @@ describe('frontend layout optimization', () => {
     expect(mcpDrawer).not.toContain('calc(100vh - 240px)')
     expect(mcpDrawer).toMatch(/\.tools-list\s*\{[^}]*flex:\s*1;[^}]*min-height:\s*0;[^}]*overflow-y:\s*auto;/s)
   })
+
+  it('unlocks narrow-screen scrolling under @media (max-width: 768px) for locked table views', () => {
+    for (const file of [
+      'src/views/AiTraces.vue',
+      'src/views/AuditLogs.vue',
+      'src/views/Holdings.vue',
+      'src/views/Plans.vue',
+    ]) {
+      const src = readSrc(file)
+      expect(src).toMatch(/@media\s*\(max-width:\s*768px\)\s*\{[\s\S]*height:\s*auto;[\s\S]*overflow:\s*visible;/s)
+    }
+  })
 })

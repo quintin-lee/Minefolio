@@ -335,4 +335,32 @@ onMounted(async () => {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   color: #64748b;
 }
+
+@media (max-width: 768px) {
+  .ai-traces-page {
+    height: auto;
+    overflow: visible;
+  }
+
+  .stats-bar {
+    flex-wrap: wrap;
+  }
+
+  .filter-select {
+    width: 100%;
+  }
+
+  .filter-actions {
+    margin-left: 0;
+  }
+
+  .table-container {
+    flex: none;
+    overflow: visible;
+  }
+
+  .table-container :deep(.el-table) {
+    height: auto;
+  }
+}
 </style>
