@@ -46,7 +46,7 @@
 | 会话/消息/发送/流式 | `useChatStore` (`stores/chat.ts`) | 不复制状态逻辑，直接 `chat.sendMessage()` |
 | 消息渲染 | `ChatMessageContent.vue` | 保持与桌面一致的富文本/工具卡片/金融实体渲染 |
 | 快捷提示 | `PromptStarters.vue` | 空会话时展示 |
-| 工作流入口 | `WorkflowBar.vue`、`WorkflowSlashMenu.vue` | 移动端保留最小可用集；复杂参数面板后续迭代 |
+| 工作流入口 | `WorkflowBar.vue`、`WorkflowSlashMenu.vue` | **不在本子项目范围内**；工作流触发/参数面板留待 E 子项目评估，避免"最小可用集"边界模糊 |
 | 草稿存取 | 新增 `utils/chat-draft.ts` | 见 3.3 |
 
 **不复用**：`Chat.vue` 的桌面侧边栏布局、多面板并排、分析面板宽屏形态。移动端用抽屉 + 单列消息流 + 底部输入栏。
@@ -85,9 +85,11 @@ export function clearDraft(scopeKey: string): void
 2. `@input` 触发 300ms 防抖 `saveDraft(scopeKey, inputText)`。
 3. 切换会话时：先保存当前 scope 草稿 → 更新 `currentScopeKey` → 重新 `loadDraft`。
 4. 点击发送：
-   - 在线且发送调用成功 → `clearDraft(scopeKey)`；
+   - `chat.isStreaming === true` 时**禁用发送按钮**；`sendMessage()` 在该状态下也会直接 return（`stores/chat.ts:707`），该 early return **不清草稿**；
    - 离线 → 不调用 `chat.sendMessage()`，提示"当前离线，内容已保存为草稿"，保留草稿；
-   - 发送失败（网络/5xx）→ 保留草稿并提示，用户可重试。
+   - 在线 → 记录发送前的 `oldScopeKey` 后调用 `chat.sendMessage()`。`doSendMessage` 内部可能 `createNewSession()`（`stores/chat.ts:722`），使 `currentSessionId` 从无到有，即 scope_key 从 `new` 变为 `session:<id>`；
+   - **成功判定不能依赖 `await` 是否抛错**：`doSendMessage` 把流式异常写入最后一条 assistant 消息的 `error` 字段并吞掉（`stores/chat.ts:798-804`），`sendMessage` 不 reject（`stores/chat.ts:706-717`）。需等 `isStreaming` 归 false 后检查该消息的 `error`：为空才判定成功，非空则保留草稿并在消息上展示错误；
+   - 清理范围：同时 `clearDraft(oldScopeKey)` 与 `clearDraft(currentScopeKey)`，避免 `new` scope 遗留孤儿草稿。
 5. 页面卸载前 flush 一次 `saveDraft`，避免防抖窗口内丢失最后输入。
 
 ### 3.5 离线行为边界
@@ -154,8 +156,9 @@ export function clearDraft(scopeKey: string): void
 - `saveDraft` / `loadDraft` / `clearDraft` 的基本读写与 upsert；
 - 模拟重载本地库后草稿仍在（D 的 `db.local.spec.ts` 同样的 reload 模式）；
 - 切换会话时先保存旧 scope、再加载新 scope；
+- 流式期间发送按钮禁用，`sendMessage` 的 early return 不清草稿；
 - 离线发送不调用 `chat.sendMessage()` 且草稿保留；
-- 发送成功后 `clearDraft` 被调用。
+- 发送后按 assistant 消息的 `error` 判定：无 error 时同时清理 `new` 与 `session:<id>` 两个 scope 的草稿，有 error 时保留草稿。
 
 ### 6.2 E2E（Playwright + 请求拦截）
 

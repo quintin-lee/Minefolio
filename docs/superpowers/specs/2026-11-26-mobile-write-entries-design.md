@@ -66,7 +66,7 @@ D 的 `SyncEngine` 默认只重映射 `asset_id` / `account_id`（`src/sync/Sync
 
 | 组件 | 路径 | 职责 |
 |------|------|------|
-| AssetSheet | `frontend/src/components/mobile/AssetSheet.vue` | 资产新增/编辑（名称、分类、账户、价值/数量/成本、币种、备注），删除走列表确认 |
+| AssetSheet | `frontend/src/components/mobile/AssetSheet.vue` | 资产新增/编辑（`name`、`category_id`、`account_id`、`current_value`/`quantity`/`cost_basis`/`net_value`、`currency`、`note`），删除走列表确认 |
 | AccountSheet | `frontend/src/components/mobile/AccountSheet.vue` | 账户新增/编辑（名称、机构、账号、币种、图标、排序、归档），删除走列表确认 |
 | CategorySheet | `frontend/src/components/mobile/CategorySheet.vue` | 分类新增/编辑（名称、type、asset_type、parent_id、icon、sort_order），删除走列表确认 |
 | TagSheet | `frontend/src/components/mobile/TagSheet.vue` | 标签新增/编辑（名称、颜色），删除走列表确认 |
@@ -103,7 +103,7 @@ await offlineApi.delete(`/assets/${id}`)
 // 分类/标签同理：/categories、/tags
 ```
 
-`payload` 按 `types/index.ts` 的 `AssetInput` / `AccountInput` / `CategoryInput` / `TransactionInput` / `{name, color}` 构造；`recordId` 删除时从 URL 取 ID，创建时由 `offline-http.ts:nextLocalId()` 生成占位 ID。
+`payload` 按 `types/index.ts` 的 `AssetInput` / `AccountInput` / `CategoryInput` / `TransactionInput` / `{name, color}` 构造；`recordId` 删除时从 URL 取 ID，创建时由 `offline-http.ts:nextLocalId()` 生成占位 ID。`AssetInput.account_id`（`types/index.ts:213`）为可选归属账户 ID；离线创建账户 A（占位 ID）后，离线创建引用 A 的资产时其 `payload.account_id` 为占位 ID，由 D 的 `remapAccountRefs` 在 A 推送成功后替换。
 
 ### 4.4 SyncEngine 重映射扩展
 
@@ -135,16 +135,25 @@ await offlineApi.delete(`/assets/${id}`)
 
 ### 5.2 交易表单字段映射
 
-`TransactionInput` 的 `direction` 字段不直接存在，由 `transaction_type` 推导（`deposit/income/interest → in`，`withdrawal/fee/loss → out`，`transfer_* → neutral`），表单只暴露 `transaction_type`，与 `types/index.ts:118-121` 的枚举一致。`fee > 0` 时服务端自动写入子交易，本地 payload 原样携带。
+`TransactionInput`（`types/index.ts:145-170`）**没有** `direction` 请求字段，只有可选的 `source_type?: 'income' | 'expense'`。因此：
 
-### 5.3 错误处理
+- 表单只暴露 `transaction_type`（`types/index.ts:118-121` 的枚举）与可选的 `source_type`；
+- **不向 payload 写入 `direction`**；桌面端 `views/Transactions.vue:447-463` 的 type→direction 映射仅用于 UI 标签与图标，不参与请求；
+- 本地 `transactions.direction` 列由服务端写入，pull 时回填到镜像；
+- `fee > 0` 时服务端自动写入子交易，本地 payload 原样携带。
+
+### 5.3 错误处理（在线写失败与离线队列失败必须区分）
 
 所有 Sheet 的 `save()` 用 `try/catch` 包裹 `offlineApi` 调用：
 
-- 离线写入成功：`offlineApi` 返回 `{offline:true,id}`，关闭 Sheet、提示"已离线保存"、刷新列表；
-- 在线写入成功：关闭 Sheet、刷新列表；
-- 1001：由 `http.ts` 的移动端钩子跳转 `/m/login`；
-- 1004 / 校验错误：复用 D 的冲突与 `pushErrors` 机制（写入口本身不弹服务端错误，因为在线失败时 `offlineApi` 直接抛出，需在 Sheet 内展示 `message`）。
+**在线写路径**（网络可用，`offlineApi` 直接请求服务端）：
+- 成功：关闭 Sheet、刷新列表；
+- 失败：`offlineApi` **直接抛出错误**，不产生队列项，因此**不会**进入 ConflictList / `pushErrors`。Sheet 必须在 catch 中展示 `err.response.data.message`（如校验错误），保持表单打开供用户修改；
+- 1001：由 `http.ts` 的移动端钩子跳转 `/m/login`。
+
+**离线写路径**（网络不可用，`offlineApi` 落库入队）：
+- 返回 `{offline:true,id}`，关闭 Sheet、提示"已离线保存"、刷新本地列表；
+- 后续由 `SyncEngine.pushLocal()` 推送时若遇 1004 / 校验错误，才走 D 的 ConflictList（手动确认）与 `pushErrors`（设置页提示）。Sheet 此时已关闭，不参与该错误展示。
 
 ---
 
