@@ -73,6 +73,13 @@ AUTH="Authorization: Bearer $TOKEN"
 INIT_AFTER=$(req GET /system/status | jq -r '.data.initialized')
 check "初始化后 status initialized=true" "true" "$INIT_AFTER"
 
+echo "== 安全响应头（全局中间件）=="
+SEC_HEADERS=$(curl -s -D - -o /dev/null "$BASE/system/status" | tr -d '\r')
+header_value() { echo "$SEC_HEADERS" | grep -i "^$1:" | head -1 | awk '{print $2}'; }
+check "X-Frame-Options=DENY" "DENY" "$(header_value x-frame-options)"
+check "X-Content-Type-Options=nosniff" "nosniff" "$(header_value x-content-type-options)"
+check "Referrer-Policy=strict-origin-when-cross-origin" "strict-origin-when-cross-origin" "$(header_value referrer-policy)"
+
 REG_PASS=$(rsa_encrypt "pass123456")
 REG_RES=$(req POST /auth/register "{\"username\":\"linktest2\",\"password_enc\":\"$REG_PASS\"}")
 REG_CODE=$(echo "$REG_RES" | jq -r '.code | floor')
