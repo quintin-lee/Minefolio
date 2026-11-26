@@ -17,12 +17,17 @@ export interface ApiEnvelope<T = unknown> {
 /**
  * 解包后端响应信封 ({ code, message, data } -> data)。
  * 全站唯一的网络边界类型断点：调用方以 http.get<T>/post<T>/put<T>/delete<T> 声明解包后载荷类型，
- * 此处 unknown -> T 断言承载该约定。取值语义与原内联表达式 (body?.data ?? body) 完全一致，
- * 含 data 缺失/为 null 时回退返回信封整体的边界行为。
+ * 此处 unknown -> T 断言承载该约定。当存在显式 data 字段（包括 null、0、false、""）时返回 data，
+ * 仅在 data 字段缺失或为 undefined 时回退返回信封整体。
  */
-function unwrapEnvelope<T>(body: unknown): T {
-  const data = (body as { data?: unknown } | null | undefined)?.data
-  return (data ?? body) as T
+export function unwrapEnvelope<T>(body: unknown): T {
+  if (body && typeof body === 'object' && 'data' in body) {
+    const data = (body as { data?: unknown }).data
+    if (data !== undefined) {
+      return data as T
+    }
+  }
+  return body as T
 }
 import { useAuthStore } from '@/stores/auth'
 import { ElMessage } from 'element-plus'
@@ -46,11 +51,16 @@ export function isMobileMode(): boolean {
 }
 
 /**
- * 判断错误是否为网络断连 / 超时 / 无响应错误
+ * 判断错误是否为无服务端响应的纯网络/超时故障（排除已有 HTTP response 及代码调用 TypeError）
  */
 export function isNetworkError(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false
-  return !('response' in err && Boolean((err as { response?: unknown }).response))
+  const e = err as { response?: unknown; message?: unknown }
+  if (e.response !== undefined && e.response !== null) return false
+  if (err instanceof TypeError && String(e.message || '').includes('is not a function')) {
+    return false
+  }
+  return true
 }
 
 /**

@@ -11,6 +11,8 @@ import {
   isValidServerUrl,
   testServerConnection,
   onServerUrlChange,
+  unwrapEnvelope,
+  isNetworkError,
   STORAGE_KEY_SERVER_URL,
 } from '@/utils/http'
 
@@ -199,6 +201,32 @@ describe('http utils', () => {
     it('sets mobile mode without crashing', () => {
       expect(() => setMobileMode(true)).not.toThrow()
       expect(() => setMobileMode(false)).not.toThrow()
+    })
+  })
+
+  describe('unwrapEnvelope', () => {
+    it('preserves explicit null, 0, false, and empty string in data', () => {
+      expect(unwrapEnvelope({ code: 0, message: 'ok', data: null })).toBeNull()
+      expect(unwrapEnvelope({ code: 0, message: 'ok', data: 0 })).toBe(0)
+      expect(unwrapEnvelope({ code: 0, message: 'ok', data: false })).toBe(false)
+      expect(unwrapEnvelope({ code: 0, message: 'ok', data: '' })).toBe('')
+    })
+
+    it('falls back to body when data is absent or undefined', () => {
+      const payload = { id: 1, name: 'item' }
+      expect(unwrapEnvelope(payload)).toEqual(payload)
+      expect(unwrapEnvelope({ code: 0, data: undefined })).toEqual({ code: 0, data: undefined })
+      expect(unwrapEnvelope(null)).toBeNull()
+      expect(unwrapEnvelope('plain')).toBe('plain')
+    })
+  })
+
+  describe('isNetworkError', () => {
+    it('returns true for network errors without response and false for HTTP responses or call TypeErrors', () => {
+      expect(isNetworkError(new Error('Network Error'))).toBe(true)
+      expect(isNetworkError({ response: { status: 500 } })).toBe(false)
+      expect(isNetworkError(new TypeError('foo is not a function'))).toBe(false)
+      expect(isNetworkError(null)).toBe(false)
     })
   })
 })

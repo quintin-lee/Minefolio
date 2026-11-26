@@ -4,7 +4,8 @@
  */
 
 // frontend/src/utils/offline-http.ts
-import http from './http'
+import http, { isNetworkError } from './http'
+export { isNetworkError }
 import { query, rowsFrom } from '@/db/local'
 import { useAuthStore } from '@/stores/auth'
 import { SyncEngine } from '@/sync/SyncEngine'
@@ -65,21 +66,6 @@ function nextLocalId(table: string): number {
  */
 function isAuthError(err: any): boolean {
   return err?.response?.data?.code === 1001
-}
-
-/**
- * 判断异常是否属于无服务端响应的纯网络/超时故障（可安全降级本地离线保存）；
- * 若存在 err.response（包括 HTTP 4xx/5xx 或业务错误信封），必须直接向上抛出，
- * 避免将权限拒绝、参数校验失败或服务端报错误伪装为离线写入成功。
- */
-export function isNetworkError(err: unknown): boolean {
-  if (!err || typeof err !== 'object') return false
-  const e = err as { response?: unknown; message?: unknown }
-  if (e.response !== undefined && e.response !== null) return false
-  if (err instanceof TypeError && String(e.message || '').includes('is not a function')) {
-    return false
-  }
-  return true
 }
 
 /**
