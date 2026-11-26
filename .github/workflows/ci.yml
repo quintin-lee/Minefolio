@@ -32,6 +32,10 @@ jobs:
         run: |
           ./scripts/check_db_contract.sh
 
+      - name: Verify Migration Version Contract
+        run: |
+          ./scripts/check_migration_versions.sh
+
       - name: Build backend
         run: |
           cd backend
