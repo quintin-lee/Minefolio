@@ -504,17 +504,36 @@ jobs:
       - name: Sync Capacitor Android
         run: npx cap sync android
 
-      - name: Build Android Debug APK
+      - name: Decode Android release keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/android"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/android/release.jks"
+          test -s "$RUNNER_TEMP/android/release.jks"
+
+      - name: Build Android Release APK
+        env:
+          ANDROID_KEYSTORE_FILE: ${{ runner.temp }}/android/release.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           chmod +x android/gradlew
           cd android
-          ./gradlew clean assembleDebug --no-daemon
+          ./gradlew clean assembleRelease --no-daemon
+
+      - name: Verify APK signature
+        run: |
+          APK=$(find frontend/android/app/build/outputs/apk/release -name '*.apk' | head -1)
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)
+          "$APKSIGNER" verify --print-certs "$APK"
 
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
-          name: minefolio-android-debug-apk
-          path: frontend/android/app/build/outputs/apk/debug/*.apk
+          name: minefolio-android-release-apk
+          path: frontend/android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
 
   ios-build:
