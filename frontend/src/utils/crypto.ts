@@ -57,6 +57,10 @@ function getWebCrypto(): Crypto {
   return globalThis.crypto
 }
 
+function normalizeBase64Url(value: string): string {
+  return value.trim().replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
 async function getCryptoKey(subtle: SubtleCrypto): Promise<CryptoKey> {
   if (cachedCryptoKey) {
     return cachedCryptoKey
@@ -69,23 +73,12 @@ async function getCryptoKey(subtle: SubtleCrypto): Promise<CryptoKey> {
     try {
       const jwk = await fetchPublicKey()
 
-      const modulus = new Uint8Array(
-        atob(jwk.n.replace(/-/g, '+').replace(/_/g, '/'))
-          .split('')
-          .map((c) => c.charCodeAt(0))
-      )
-      const exponent = new Uint8Array(
-        atob(jwk.e.replace(/-/g, '+').replace(/_/g, '/'))
-          .split('')
-          .map((c) => c.charCodeAt(0))
-      )
-
       const key = await subtle.importKey(
         'jwk',
         {
           kty: jwk.kty,
-          n: btoa(String.fromCharCode(...modulus)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''),
-          e: btoa(String.fromCharCode(...exponent)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''),
+          n: normalizeBase64Url(jwk.n),
+          e: normalizeBase64Url(jwk.e),
         },
         { name: 'RSA-OAEP', hash: 'SHA-256' },
         false,

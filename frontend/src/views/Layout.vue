@@ -275,11 +275,11 @@ function goTo(path: string) {
     return map[route.path] || 'Minefolio'
   })
 
-function handleCommand(cmd: string) {
+async function handleCommand(cmd: string) {
   if (cmd === 'settings') {
     router.push('/settings')
   } else if (cmd === 'logout') {
-    auth.logout()
+    await auth.logout()
     ElMessage.success(t('common.logoutSuccess'))
     router.push('/login')
   }

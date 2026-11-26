@@ -126,4 +126,31 @@ describe('crypto RSA utility', () => {
       vi.unstubAllGlobals()
     }
   })
+
+  it('normalizes unpadded base64url JWK fields with length % 4 === 2 without throwing in atob', async () => {
+    const unpaddedN = 'ab' // len % 4 === 2, which fails strict atob without padding
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        code: 0,
+        data: {
+          public_key: {
+            kty: 'RSA',
+            n: `${unpaddedN}==`,
+            e: 'AQAB==',
+          },
+        },
+      }),
+    }) as any
+
+    const cipher = await encryptPassword('secret123')
+    expect(cipher).toBeTruthy()
+    expect(crypto.subtle.importKey).toHaveBeenCalledWith(
+      'jwk',
+      { kty: 'RSA', n: unpaddedN, e: 'AQAB' },
+      { name: 'RSA-OAEP', hash: 'SHA-256' },
+      false,
+      ['encrypt']
+    )
+  })
 })

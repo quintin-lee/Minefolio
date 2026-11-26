@@ -14,6 +14,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { authApi } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
+import { isMobileMode } from '@/utils/http'
 import { t } from '@/utils/locale'
 import { consumeAndVerifyOAuthState } from '@/utils/oauth-state'
 
@@ -24,7 +25,7 @@ const statusMsg = ref(t('oauth.verifying'))
 const timers: ReturnType<typeof setTimeout>[] = []
 
 function isMobileApp(): boolean {
-  return router.getRoutes().some((r) => r.path === '/m/dashboard')
+  return __IS_MOBILE__ || isMobileMode()
 }
 
 function scheduleRedirect(target: string) {

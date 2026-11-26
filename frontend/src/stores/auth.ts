@@ -16,6 +16,8 @@ import { clearSwrCache } from '@/utils/swr-cache'
  * 用户认证与权限 Pinia Store
  */
 export const useAuthStore = defineStore('auth', () => {
+  /** 会话代际计数器：防止异步 logout() 的动态 import 延迟完成时误清后续新登录会话的状态 */
+  let authSessionEpoch = 0
   /** 当前用户 JWT 鉴权令牌 */
   const token = ref<string>(localStorage.getItem('token') || '')
   /** 当前登录用户信息 */
@@ -62,6 +64,7 @@ export const useAuthStore = defineStore('auth', () => {
       throw e
     }
     const res = await systemApi.setup({ username, password_enc }) as { token: string; expires_in: number }
+    authSessionEpoch++
     token.value = res.token
     localStorage.setItem('token', res.token)
     isInitialized.value = true
@@ -86,6 +89,7 @@ export const useAuthStore = defineStore('auth', () => {
     const raw = (await authApi.register(username, password_enc)) as unknown
     const res = (raw && typeof raw === 'object' && 'data' in raw ? (raw as { data: { token: string } }).data : raw) as { token: string }
     if (res && res.token) {
+      authSessionEpoch++
       token.value = res.token
       localStorage.setItem('token', res.token)
     }
@@ -135,6 +139,7 @@ export const useAuthStore = defineStore('auth', () => {
       return { require_2fa: true, temp_token: res.temp_token as string }
     }
     if (res && res.token) {
+      authSessionEpoch++
       token.value = res.token
       localStorage.setItem('token', res.token)
       await fetchUser()
@@ -155,6 +160,7 @@ export const useAuthStore = defineStore('auth', () => {
     const raw = (await authApi.verify2FaLogin(temp_token, code)) as unknown
     const res = (raw && typeof raw === 'object' && 'data' in raw ? (raw as { data: any }).data : raw) as any
     if (res && res.token) {
+      authSessionEpoch++
       token.value = res.token
       localStorage.setItem('token', res.token)
       try {
@@ -193,6 +199,7 @@ export const useAuthStore = defineStore('auth', () => {
    * @param newToken 新的 Token 字符串
    */
   function setToken(newToken: string) {
+    if (newToken) authSessionEpoch++
     token.value = newToken
     if (newToken) localStorage.setItem('token', newToken)
     else localStorage.removeItem('token')
@@ -213,6 +220,7 @@ export const useAuthStore = defineStore('auth', () => {
    * 避免把 AI 聊天模块静态打入首屏包，同时防止上一账号的会话/消息/草稿泄露给下一位用户。
    */
   async function logout() {
+    const logoutEpoch = ++authSessionEpoch
     token.value = ''
     user.value = null
     if (typeof localStorage !== 'undefined') {
@@ -246,6 +254,7 @@ export const useAuthStore = defineStore('auth', () => {
         import('@/composables/useFinancialEntities'),
         __IS_MOBILE__ ? import('./sync') : Promise.resolve(null),
       ])
+      if (logoutEpoch !== authSessionEpoch) return
       useChatStore().resetState()
       useLedgerStore().reset()
       useCategoryStore().reset()

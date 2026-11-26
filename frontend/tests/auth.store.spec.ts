@@ -202,4 +202,24 @@ describe('auth store', () => {
     expect(category.allNodes.length).toBe(0)
     expect(category.loaded).toBe(false)
   }, 60000)
+
+  it('does not wipe a newly logged-in session when an earlier async logout finishes late', async () => {
+    const store = useAuthStore()
+    store.token = 'old-token'
+
+    const { useLedgerStore } = await import('@/stores/ledger')
+    const ledger = useLedgerStore()
+
+    const pendingLogout = store.logout()
+    // Simulate immediate login of a new user before logout's dynamic imports resolve
+    store.setToken('new-user-token')
+    ledger.ledgers.push({ id: 99, name: '新用户账本', currency: 'CNY', is_default: true, my_role: 'owner' } as any)
+    ledger.currentLedgerId = 99
+
+    await pendingLogout
+
+    expect(store.token).toBe('new-user-token')
+    expect(ledger.ledgers.length).toBe(1)
+    expect(ledger.currentLedgerId).toBe(99)
+  }, 60000)
 })
