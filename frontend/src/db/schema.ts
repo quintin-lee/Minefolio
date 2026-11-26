@@ -156,6 +156,13 @@ CREATE TABLE IF NOT EXISTS chat_drafts (
   content    TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+-- 移动端视图读缓存：仅本地存储，不进入 SyncEngine 同步队列
+CREATE TABLE IF NOT EXISTS view_cache (
+  key        TEXT PRIMARY KEY,
+  payload    TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 `
 
 /** 各本地同步表允许持久化到 SQLite 的字段白名单 (不含移动端内部控制列 __deleted) */
