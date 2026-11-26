@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { initLocalDb, getDb, run, query, rowsFrom, resetLocalDb, persist, flushPersist, getLocalDbStatus } from '@/db/local'
+import { initLocalDb, getDb, run, query, rowsFrom, resetLocalDb, persist, persistAsync, flushPersist, getLocalDbStatus } from '@/db/local'
 
 beforeEach(() => {
   resetLocalDb()
@@ -115,5 +115,50 @@ describe('local db', () => {
     expect(localStorage.getItem('minefolio_local_db_locked_backup')).toBe(lockedPayload)
     expect(getLocalDbStatus().decryptFailed).toBe(true)
     expect(getLocalDbStatus().hasLockedBackup).toBe(true)
+  })
+
+  it('adds a missing account_id column to a legacy assets table without losing rows', async () => {
+    await initLocalDb()
+    getDb().run('DROP TABLE assets')
+    getDb().run(`CREATE TABLE assets (
+      id INTEGER PRIMARY KEY,
+      category_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      currency TEXT DEFAULT 'CNY',
+      __deleted INTEGER DEFAULT 0
+    )`)
+    run('INSERT INTO assets (id, category_id, name) VALUES (?,?,?)', [101, 1, 'legacy asset'])
+    persist()
+    await flushPersist()
+
+    const fresh = await reloadDb()
+    await fresh.initLocalDb()
+    const row = fresh.rowsFrom(fresh.query('SELECT id, name, account_id FROM assets WHERE id = 101'))[0]
+    expect(row.name).toBe('legacy asset')
+    expect(row.account_id).toBeNull()
+  })
+
+  it('flags quota exhaustion and emits an event when the snapshot cannot be persisted', async () => {
+    await initLocalDb()
+    run('INSERT INTO sync_meta (key, value) VALUES (?,?)', ['quota', '1'])
+    const onQuota = vi.fn()
+    window.addEventListener('minefolio:localdb-quota-exceeded', onQuota)
+    // tests/setup.ts installs a MemoryStorage instance, not a Storage.prototype subclass.
+    const originalSetItem = localStorage.setItem.bind(localStorage)
+    vi.spyOn(localStorage, 'setItem').mockImplementation((key: string, value: string) => {
+      if (key === 'minefolio_local_db') {
+        throw new DOMException('quota full', 'QuotaExceededError')
+      }
+      return originalSetItem(key, value)
+    })
+
+    try {
+      await persistAsync()
+      expect(getLocalDbStatus().quotaExceeded).toBe(true)
+      expect(onQuota).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.restoreAllMocks()
+      window.removeEventListener('minefolio:localdb-quota-exceeded', onQuota)
+    }
   })
 })
