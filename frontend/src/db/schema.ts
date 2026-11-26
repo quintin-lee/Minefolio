@@ -3,6 +3,12 @@
 //   __deleted  INTEGER 0|1  — soft-delete marker (sync deletes never hard-delete locally)
 //   updated_at TEXT        — local write timestamp used as {local_version} for sync ordering
 // Plus sync bookkeeping tables: sync_queue, sync_meta.
+//
+// SCOPE: only tables the mobile client can read AND write offline are mirrored here.
+// Server-side scheduling/push state (im_push_outbox, im_bot_instances,
+// notification_channels, job_run_logs) is intentionally excluded: it is real-time
+// service state that must never be served stale, so those views always require the
+// online API and fall back to a loading/empty state rather than local SQLite.
 export const LOCAL_SCHEMA = `
 CREATE TABLE IF NOT EXISTS categories (
   id         INTEGER PRIMARY KEY,
