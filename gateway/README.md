@@ -104,6 +104,16 @@ npm run test:adapters      # node --test adapters/test/  (11 用例: 桥接/群�
 - `ilink/state.js`：凭证 `account.json`、游标 `cursor.json`、去重 `dedup.json` 原子写入 `<ILINK_STATE_DIR>/<instance_id>/`（目录 `0700`、文件 `0600`），`bot_token` 永不上库；实例删除时自动清理子进程与目录。
 - `ilink/login.js` / `ilink/monitor.js`：扫码、redirect、PIN 验证码、`-14` 过期停机、只响应 owner 私聊。
 
+#### 微信对话记账（可选能力）
+
+默认仍为只读查账。用户在 App「IM 机器人」中把实例能力切换为 `query+confirm` 后：
+
+1. 微信里说「记一笔午餐 30 元」，机器人调用 `propose_daily_expense` 生成草案，回复摘要 + 8 位短码（如 `确认 A7K2M9PQ`）；
+2. 用户回复「确认 A7K2M9PQ」，网关识别后调用 `POST /api/gateway/im/instances/:id/confirm` 落账（服务端验签 + 默认账本 editor 权限校验，不经过 LLM）；
+3. 短码 5 分钟内一次性有效，重复回复会被拒绝。
+
+注意：再次扫码登录不会重置能力开关；关闭能力后残留短码也将被拒绝。
+
 ### 启动 iLink 网关
 
 ```bash

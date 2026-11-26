@@ -2,6 +2,15 @@
 
 const { IlinkSessionExpiredError, IlinkTimeoutError } = require('./client');
 
+/** 微信记账确认命令：仅接受 8 位大写字母数字短码，避免误判自然语言。 */
+const CONFIRM_CODE_RE = /^确认\s+([A-Z0-9]{8})$/;
+
+function parseConfirmCommand(text) {
+  const normalized = String(text || '').trim().toUpperCase();
+  const match = CONFIRM_CODE_RE.exec(normalized);
+  return match ? match[1] : null;
+}
+
 function splitReplyChunks(text, chunkSize = Number(process.env.ILINK_REPLY_CHUNK || 1800)) {
   const s = String(text || '');
   if (!s) return [];
@@ -118,17 +127,23 @@ async function runMonitor({
     try {
       while (queue.length > 0 && (!signal || !signal.aborted)) {
         const job = queue.shift();
+        const confirmCode = parseConfirmCommand(job.text);
         try {
-          const chatRes = await api.chat(instanceId, job.imUserId, job.text);
           let reply = '';
-          if (chatRes && chatRes.task_id) {
-            const taskRes = await api.pollTask(instanceId, chatRes.task_id, {
-              ...pollTaskOpts,
-              signal,
-            });
-            reply = (taskRes && taskRes.reply) || '';
-          } else if (chatRes && chatRes.reply) {
-            reply = chatRes.reply;
+          if (confirmCode) {
+            const confirmRes = await api.confirm(instanceId, job.imUserId, confirmCode);
+            reply = (confirmRes && confirmRes.reply) || '记账确认完成。';
+          } else {
+            const chatRes = await api.chat(instanceId, job.imUserId, job.text);
+            if (chatRes && chatRes.task_id) {
+              const taskRes = await api.pollTask(instanceId, chatRes.task_id, {
+                ...pollTaskOpts,
+                signal,
+              });
+              reply = (taskRes && taskRes.reply) || '';
+            } else if (chatRes && chatRes.reply) {
+              reply = chatRes.reply;
+            }
           }
           if (reply) {
             await sendWithRetry(job.fromUserId, job.contextToken, reply);
@@ -147,7 +162,7 @@ async function runMonitor({
           await sendWithRetry(
             job.fromUserId,
             job.contextToken,
-            `查询失败：${err.message || '服务暂时不可用'}`
+            `${confirmCode ? '记账确认失败' : '查询失败'}：${err.message || '服务暂时不可用'}`
           ).catch(() => {});
         }
       }
@@ -262,6 +277,7 @@ async function runMonitor({
 }
 
 module.exports = {
+  parseConfirmCommand,
   splitReplyChunks,
   extractMessageText,
   createDedupStore,

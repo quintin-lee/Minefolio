@@ -79,6 +79,13 @@ function createGatewayApi({
     });
   }
 
+  async function confirm(id, imUserId, code) {
+    return request('POST', `/api/gateway/im/instances/${id}/confirm`, {
+      im_user_id: imUserId,
+      code,
+    });
+  }
+
   async function getTask(id, taskId) {
     return request('GET', `/api/gateway/im/instances/${id}/tasks/${taskId}`);
   }
@@ -119,6 +126,7 @@ function createGatewayApi({
     updateStatus,
     heartbeat,
     chat,
+    confirm,
     getTask,
     pollTask,
     claimPushes,
