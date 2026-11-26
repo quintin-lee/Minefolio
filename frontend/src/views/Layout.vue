@@ -1,5 +1,5 @@
 <template>
-  <el-container class="layout-container">
+  <el-container class="layout-container" :class="{ 'is-sidebar-collapsed': isCollapsed }">
     <el-aside :width="isCollapsed ? '64px' : '260px'" class="aside" :class="{ 'is-open': mobileMenuOpen, 'is-collapsed': isCollapsed }">
       <div class="logo" @click="goTo('/dashboard')">
         <AppLogo :size="32" :with-text="!isCollapsed" />
@@ -288,9 +288,13 @@ async function handleCommand(cmd: string) {
 
 <style scoped>
 .layout-container {
+  --mf-sidebar-width: 260px;
   height: 100vh;
   height: 100dvh;
   overflow: hidden;
+}
+.layout-container.is-sidebar-collapsed {
+  --mf-sidebar-width: 64px;
 }
 .aside {
   background: linear-gradient(180deg, var(--mf-background) 0%, color-mix(in srgb, var(--mf-background) 70%, var(--mf-primary)) 100%);
@@ -649,6 +653,10 @@ async function handleCommand(cmd: string) {
 }
 
 @media (max-width: 768px) {
+  .layout-container,
+  .layout-container.is-sidebar-collapsed {
+    --mf-sidebar-width: 0px;
+  }
   .search-command-btn {
     display: none;
   }

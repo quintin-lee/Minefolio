@@ -885,12 +885,16 @@ async function handleImport() {
 .floating-batch-bar {
   position: fixed;
   bottom: 32px;
-  left: 50%;
+  left: calc(50% + var(--mf-sidebar-width, 0px) / 2);
   transform: translateX(-50%);
-  z-index: 1000;
+  z-index: var(--mf-z-floating, 120);
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   align-items: center;
-  gap: 20px;
+  gap: 10px 20px;
+  max-width: calc(100vw - 24px);
+  box-sizing: border-box;
   padding: 10px 20px;
   background: var(--mf-surface-card);
   border: 1px solid var(--mf-border);
@@ -988,6 +992,12 @@ async function handleImport() {
   }
   .table-container :deep(.el-table__body-wrapper) {
     overflow-x: auto !important;
+  }
+  .floating-batch-bar {
+    bottom: calc(16px + env(safe-area-inset-bottom));
+    padding: 10px 14px;
+    border-radius: var(--mf-radius-lg);
+    gap: 8px 12px;
   }
 }
 </style>
