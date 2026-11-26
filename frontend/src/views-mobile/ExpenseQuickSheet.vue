@@ -49,6 +49,11 @@
         <el-form-item label="备注">
           <el-input v-model="form.note" placeholder="可选" />
         </el-form-item>
+        <el-form-item label="标签">
+          <el-select v-model="form.tags" multiple filterable placeholder="可选" style="width:100%">
+            <el-option v-for="tag in localTags" :key="tag.id" :label="tag.name" :value="Number(tag.id)" />
+          </el-select>
+        </el-form-item>
       </el-form>
 
       <el-button type="primary" size="large" :loading="saving" class="save-btn" @click="save">保存</el-button>
@@ -68,7 +73,7 @@ import { receiptsApi } from '@/api/receipts'
 import { query, rowsFrom } from '@/db/local'
 import { localToday, assetLabel } from '@/utils/format'
 import { prepareCategoryTree, isIdInTree, findCategoryByName } from '@/utils/category-tree'
-import type { DailyExpense, Category, Asset } from '@/types'
+import type { DailyExpense, Category, Asset, Tag } from '@/types'
 
 const props = defineProps<{ modelValue?: boolean; record?: DailyExpense | null }>()
 const emit = defineEmits<{ (e: 'saved'): void; (e: 'update:modelValue', v: boolean): void }>()
@@ -93,7 +98,9 @@ const form = reactive({
   amount: '' as string | number,
   expense_date: localToday(),
   note: '',
+  tags: [] as number[],
 })
+const localTags = ref<Tag[]>([])
 
 const rawCategories = computed<Category[]>(() => {
   if (categoryStore.incomeExpenseCategories.length > 0) {
@@ -189,6 +196,7 @@ function populateForm() {
     form.amount = props.record.amount
     form.expense_date = props.record.expense_date
     form.note = props.record.note ?? ''
+    form.tags = (props.record.tags ?? []).map((tag) => Number(tag.id))
   } else {
     form.expense_type = 'expense'
     form.category_id = null
@@ -196,6 +204,7 @@ function populateForm() {
     form.amount = ''
     form.expense_date = localToday()
     form.note = ''
+    form.tags = []
   }
 }
 
@@ -235,6 +244,13 @@ onMounted(async () => {
   }
 
   try {
+    const res = query('SELECT * FROM tags WHERE __deleted = 0 ORDER BY id')
+    localTags.value = rowsFrom(res) as unknown as Tag[]
+  } catch (e) {
+    console.error('[ExpenseQuickSheet] load local tags failed:', e)
+  }
+
+  try {
     const res = await assetsApi.list({ page_size: 500 })
     assets.value = res.list
   } catch {
@@ -261,7 +277,7 @@ async function save() {
   if (!form.category_id || !form.asset_id) return ElMessage.warning('请选择分类和资产')
   saving.value = true
   const selectedAsset = assets.value.find(a => Number(a.id) === Number(form.asset_id))
-  const payload = {
+  const payload: Record<string, unknown> = {
     expense_type: form.expense_type,
     category_id: form.category_id,
     asset_id: form.asset_id,
@@ -271,6 +287,7 @@ async function save() {
     note: form.note,
     ledger_id: ledgerStore.currentLedgerId || 0,
   }
+  if (form.tags.length > 0) payload.tags = form.tags
   try {
     if (props.record) await offlineApi.put(`/daily-expenses/${props.record.id}`, payload)
     else await offlineApi.post('/daily-expenses', payload)

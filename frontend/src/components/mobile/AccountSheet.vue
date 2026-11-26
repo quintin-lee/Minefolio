@@ -47,11 +47,13 @@ const visible = computed({
   set: (v: boolean) => emit('update:modelValue', v),
 })
 const saving = ref(false)
+// 与 AssetsMobile 的 institutionLabels 及后端枚举保持一致
 const institutions = [
-  { value: 'cash', label: '现金' },
-  { value: 'bank', label: '银行' },
-  { value: 'alipay', label: '支付宝' },
-  { value: 'wechat', label: '微信' },
+  { value: 'bank_card', label: '银行卡' },
+  { value: 'platform', label: '平台账户' },
+  { value: 'broker', label: '券商' },
+  { value: 'fund_platform', label: '基金平台' },
+  { value: 'cash_wallet', label: '现金钱包' },
   { value: 'other', label: '其他' },
 ]
 const form = reactive({

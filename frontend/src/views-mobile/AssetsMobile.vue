@@ -7,6 +7,10 @@
       </div>
     </div>
     <div v-if="list.length === 0 && !loading" class="empty-state">暂无资产数据</div>
+    <div class="fab-row">
+      <el-button size="small" plain @click="openAccount()">新增账户</el-button>
+      <el-button type="primary" size="small" @click="openAsset()">新增资产</el-button>
+    </div>
     <div v-for="group in groups" :key="group.key" class="account-group">
       <div class="account-header" @click="toggle(group.key)">
         <span class="account-avatar"><Icon :icon="group.icon" /></span>
@@ -17,6 +21,10 @@
           </div>
           <div class="account-header-sub">{{ group.assets.length }} 项资产</div>
         </div>
+        <span class="group-actions" @click.stop>
+          <el-button v-if="group.account" size="small" text type="primary" @click="openAccount(group.account)">编辑</el-button>
+          <el-button v-if="group.account" size="small" text type="danger" @click="removeAccount(group.account)">删除</el-button>
+        </span>
         <el-icon class="chevron" :class="{ collapsed: isCollapsed(group.key) }">
           <ArrowUp />
         </el-icon>
@@ -26,6 +34,10 @@
           <div class="asset-info">
             <span class="name">{{ a.name }}</span>
             <span v-if="a.currency && a.currency !== 'CNY'" class="currency-tag">{{ a.currency }}</span>
+          </div>
+          <div class="asset-actions" @click.stop>
+            <el-button size="small" text type="primary" @click="openAsset(a)">编辑</el-button>
+            <el-button size="small" text type="danger" @click="removeAsset(a)">删除</el-button>
           </div>
           <div class="value-col">
             <span class="value">{{ formatCurrency(a.current_value, a.currency) }}</span>
@@ -37,11 +49,20 @@
         <div v-if="group.assets.length === 0" class="group-empty">暂无资产</div>
       </div>
     </div>
+    <AssetSheet
+      v-model="assetSheetVisible"
+      :record="editingAsset"
+      :categories="categories"
+      :accounts="accounts"
+      @saved="load"
+    />
+    <AccountSheet v-model="accountSheetVisible" :record="editingAccount" @saved="load" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowUp } from '@element-plus/icons-vue'
 import { Icon } from '@iconify/vue'
 import { assetsApi } from '@/api/assets'
@@ -49,9 +70,12 @@ import { accountsApi } from '@/api/accounts'
 import { marketApi } from '@/api/market'
 import { useLedgerStore } from '@/stores/ledger'
 import { query, rowsFrom } from '@/db/local'
+import { offlineApi } from '@/utils/offline-http'
 import { formatCurrency } from '@/utils/format'
 import { t } from '@/utils/locale'
-import type { Asset, Account } from '@/types'
+import AssetSheet from '@/components/mobile/AssetSheet.vue'
+import AccountSheet from '@/components/mobile/AccountSheet.vue'
+import type { Asset, Account, Category } from '@/types'
 
 const ledgerStore = useLedgerStore()
 const list = ref<Asset[]>([])
@@ -59,6 +83,40 @@ const accounts = ref<Account[]>([])
 const loading = ref(false)
 const exchangeRates = ref<Record<string, number>>({})
 const collapsed = ref<Set<string>>(new Set())
+const categories = ref<Category[]>([])
+const assetSheetVisible = ref(false)
+const accountSheetVisible = ref(false)
+const editingAsset = ref<Asset | null>(null)
+const editingAccount = ref<Account | null>(null)
+
+function openAsset(asset: Asset | null = null) {
+  editingAsset.value = asset
+  assetSheetVisible.value = true
+}
+function openAccount(account: Account | null = null) {
+  editingAccount.value = account
+  accountSheetVisible.value = true
+}
+
+async function removeAsset(asset: Asset) {
+  try {
+    await ElMessageBox.confirm(`删除资产「${asset.name}」？`, '确认删除', { type: 'warning' })
+    await offlineApi.delete(`/assets/${asset.id}`)
+    await load()
+  } catch (err: any) {
+    if (err !== 'cancel' && err !== 'close') ElMessage.error(String(err?.response?.data?.message || err?.message || '删除失败'))
+  }
+}
+
+async function removeAccount(account: Account) {
+  try {
+    await ElMessageBox.confirm(`删除账户「${account.name}」？`, '确认删除', { type: 'warning' })
+    await offlineApi.delete(`/accounts/${account.id}`)
+    await load()
+  } catch (err: any) {
+    if (err !== 'cancel' && err !== 'close') ElMessage.error(String(err?.response?.data?.message || err?.message || '删除失败'))
+  }
+}
 
 const institutionLabels: Record<string, string> = {
   bank_card: '银行卡',
@@ -117,10 +175,15 @@ function toggle(key: string) {
   }
 }
 
-onMounted(async () => {
+async function load() {
   loading.value = true
   try {
     const currentLedgerId = ledgerStore.currentLedgerId || 0
+    try {
+      categories.value = rowsFrom(query('SELECT * FROM categories WHERE __deleted = 0 ORDER BY sort_order, id')) as unknown as Category[]
+    } catch {
+      categories.value = []
+    }
     const [accountsRes, assetsRes, ratesRes] = await Promise.allSettled([
       accountsApi.list(),
       assetsApi.list({ page_size: 500 }),
@@ -158,13 +221,19 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
-})
+}
+
+onMounted(load)
 </script>
 
 <style scoped>
 .assets-mobile {
   padding-bottom: 8px;
 }
+.fab-row { display: flex; gap: 8px; margin-bottom: 12px; }
+.fab-row .el-button { flex: 1; }
+.asset-actions { display: flex; flex-shrink: 0; margin-right: 8px; }
+.group-actions { display: flex; flex-shrink: 0; margin-left: auto; }
 .account-group {
   margin-bottom: 12px;
   border: 1px solid var(--mf-border);
