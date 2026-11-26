@@ -1,8 +1,11 @@
 <template>
   <div class="plans-mobile">
     <div class="page-header">
-      <h2>计划与日历</h2>
-      <el-button size="small" type="primary" @click="activeTab === 'dca' ? openDcaModal() : openScheduleModal()">
+      <div>
+        <h2>计划与日历</h2>
+        <span v-if="cacheAt" class="cache-pill">缓存于 {{ cacheAt }}</span>
+      </div>
+      <el-button size="small" type="primary" :disabled="!isOnline" @click="activeTab === 'dca' ? openDcaModal() : openScheduleModal()">
         + 新增{{ activeTab === 'dca' ? '定投' : '现金流' }}
       </el-button>
     </div>
@@ -28,10 +31,10 @@
           <div class="p-sub">{{ exec.target_asset_name }} · ¥{{ Number(exec.planned_amount).toFixed(2) }}</div>
         </div>
         <div class="p-actions">
-          <el-button size="small" type="success" :loading="confirmingId === exec.id" @click="handleConfirmDca(exec)">
+          <el-button size="small" type="success" :disabled="!isOnline" :loading="confirmingId === exec.id" @click="handleConfirmDca(exec)">
             执行
           </el-button>
-          <el-button size="small" text @click="handleSkipDca(exec)">
+          <el-button size="small" text :disabled="!isOnline" @click="handleSkipDca(exec)">
             跳过
           </el-button>
         </div>
@@ -65,10 +68,10 @@
         </div>
 
         <div class="card-actions">
-          <el-button size="small" text type="primary" @click="toggleDcaStatus(plan)">
+          <el-button size="small" text type="primary" :disabled="!isOnline" @click="toggleDcaStatus(plan)">
             {{ plan.status === 'active' ? '暂停' : '恢复' }}
           </el-button>
-          <el-button size="small" text type="danger" @click="handleDeleteDca(plan)">
+          <el-button size="small" text type="danger" :disabled="!isOnline" @click="handleDeleteDca(plan)">
             删除
           </el-button>
         </div>
@@ -119,7 +122,7 @@
         </div>
 
         <div v-if="!evt.is_actual" class="card-actions">
-          <el-button size="small" type="primary" text :loading="confirmingCashflowKey === `${evt.schedule_id}-${evt.date}`" @click="handleConfirmCashflow(evt)">
+          <el-button size="small" type="primary" text :disabled="!isOnline" :loading="confirmingCashflowKey === `${evt.schedule_id}-${evt.date}`" @click="handleConfirmCashflow(evt)">
             一键入账确认
           </el-button>
         </div>
@@ -162,12 +165,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { dcaApi } from '@/api/dca'
 import { cashflowApi } from '@/api/cashflow'
 import { assetsApi } from '@/api/assets'
 import { assetLabel } from '@/utils/format'
+import { query, rowsFrom } from '@/db/local'
+import { loadViewCache, saveViewCache } from '@/composables/mobile/useViewCache'
 import type { DcaPlan, DcaExecution, CashflowCalendarEvent, MonthlyCashflowSummary, Asset } from '@/types'
 
 const activeTab = ref<'dca' | 'cashflow'>('dca')
@@ -181,6 +186,26 @@ const pendingExecutions = ref<DcaExecution[]>([])
 const calendarEvents = ref<CashflowCalendarEvent[]>([])
 const cashflowSummary = ref<MonthlyCashflowSummary | null>(null)
 const assets = ref<Asset[]>([])
+const isOnline = ref(typeof navigator !== 'undefined' ? navigator.onLine : true)
+const cacheAt = ref<string | null>(null)
+
+function requireOnline(): boolean {
+  if (navigator.onLine) return true
+  ElMessage.info('定投/现金流操作需联网，当前离线')
+  return false
+}
+
+function loadLocalAssets() {
+  try {
+    const ledgerId = Number(localStorage.getItem('minefolio_active_ledger_id') || 0)
+    assets.value = rowsFrom(query(
+      'SELECT * FROM assets WHERE __deleted = 0 AND (ledger_id = ? OR ledger_id = 0) ORDER BY id',
+      [ledgerId]
+    )) as unknown as Asset[]
+  } catch {
+    assets.value = []
+  }
+}
 
 const dcaModalOpen = ref(false)
 const dcaForm = ref({
@@ -203,6 +228,22 @@ function formatFlowType(t: string) {
 
 async function loadData() {
   loading.value = true
+
+  // 缓存优先：先用上次成功的在线响应填充 UI
+  const plansCache = loadViewCache<DcaPlan[]>('dca_plans')
+  const pendCache = loadViewCache<DcaExecution[]>('dca_executions')
+  const cfCache = loadViewCache<MonthlyCashflowSummary>('cashflow_calendar')
+  if (plansCache.data) dcaPlans.value = plansCache.data
+  if (pendCache.data) pendingExecutions.value = pendCache.data
+  if (cfCache.data) {
+    cashflowSummary.value = cfCache.data
+    calendarEvents.value = cfCache.data.events || []
+  }
+  loadLocalAssets()
+  cacheAt.value = plansCache.updatedAt
+    ? plansCache.updatedAt.slice(0, 16).replace('T', ' ')
+    : null
+
   try {
     const [plansRes, pendRes, cfRes, astRes] = await Promise.allSettled([
       dcaApi.listPlans({ page: 1, page_size: 100 }),
@@ -214,27 +255,40 @@ async function loadData() {
     if (plansRes.status === 'fulfilled') {
       const pVal = plansRes.value
       dcaPlans.value = Array.isArray(pVal) ? pVal : (pVal as any)?.list || []
+      saveViewCache('dca_plans', dcaPlans.value)
     }
-    if (pendRes.status === 'fulfilled') pendingExecutions.value = pendRes.value || []
+    if (pendRes.status === 'fulfilled') {
+      pendingExecutions.value = pendRes.value || []
+      saveViewCache('dca_executions', pendingExecutions.value)
+    }
     if (cfRes.status === 'fulfilled') {
       cashflowSummary.value = cfRes.value
       calendarEvents.value = cfRes.value?.events || []
+      saveViewCache('cashflow_calendar', cfRes.value)
     }
     if (astRes.status === 'fulfilled') {
       assets.value = Array.isArray(astRes.value) ? astRes.value : (astRes.value as any)?.list || []
+    } else {
+      loadLocalAssets()
     }
-    const rejected = [plansRes, pendRes, cfRes, astRes].find((r): r is PromiseRejectedResult => r.status === 'rejected')
-    if (rejected && [plansRes, pendRes, cfRes, astRes].every((r) => r.status === 'rejected')) {
-      ElMessage.warning('当前离线或无法连接服务端，定投计划数据加载失败')
+    if (
+      plansRes.status === 'fulfilled' &&
+      pendRes.status === 'fulfilled' &&
+      cfRes.status === 'fulfilled' &&
+      astRes.status === 'fulfilled'
+    ) {
+      cacheAt.value = null
     }
   } catch (err: any) {
-    ElMessage.error(err.message || '加载计划数据失败')
+    // 有缓存时保留缓存数据，不弹阻塞错误
+    if (!plansCache.data && !cfCache.data) ElMessage.error(err.message || '加载计划数据失败')
   } finally {
     loading.value = false
   }
 }
 
 async function handleConfirmDca(exec: DcaExecution) {
+  if (!requireOnline()) return
   confirmingId.value = exec.id
   try {
     await dcaApi.confirmExecution(exec.id)
@@ -248,6 +302,7 @@ async function handleConfirmDca(exec: DcaExecution) {
 }
 
 async function handleSkipDca(exec: DcaExecution) {
+  if (!requireOnline()) return
   try {
     await ElMessageBox.confirm(`确定跳过本期 "${exec.plan_name}" 定投吗？`, '跳过确认', {
       type: 'warning',
@@ -265,6 +320,7 @@ async function handleSkipDca(exec: DcaExecution) {
 }
 
 async function toggleDcaStatus(plan: DcaPlan) {
+  if (!requireOnline()) return
   const newStatus = plan.status === 'active' ? 'paused' : 'active'
   try {
     await dcaApi.setPlanStatus(plan.id, newStatus)
@@ -276,6 +332,7 @@ async function toggleDcaStatus(plan: DcaPlan) {
 }
 
 async function handleDeleteDca(plan: DcaPlan) {
+  if (!requireOnline()) return
   try {
     await ElMessageBox.confirm(`确定删除定投计划 "${plan.name}" 吗？`, '删除确认', { type: 'warning' })
     await dcaApi.deletePlan(plan.id)
@@ -289,6 +346,7 @@ async function handleDeleteDca(plan: DcaPlan) {
 }
 
 async function handleConfirmCashflow(evt: CashflowCalendarEvent) {
+  if (!requireOnline()) return
   const key = `${evt.schedule_id}-${evt.date}`
   if (confirmingCashflowKey.value === key) return
   if (!evt.target_asset_id) {
@@ -314,6 +372,7 @@ async function handleConfirmCashflow(evt: CashflowCalendarEvent) {
 }
 
 function openDcaModal() {
+  if (!requireOnline()) return
   dcaForm.value = {
     name: '',
     target_asset_id: assets.value[0]?.id,
@@ -329,6 +388,7 @@ function openScheduleModal() {
 }
 
 async function submitDca() {
+  if (!requireOnline()) return
   if (saving.value) return
   if (!dcaForm.value.name || !dcaForm.value.target_asset_id || !dcaForm.value.funding_asset_id) {
     ElMessage.warning('请填写完整的计划名称与出入账户')
@@ -362,8 +422,18 @@ async function submitDca() {
   }
 }
 
+function handleOnline() { isOnline.value = true }
+function handleOffline() { isOnline.value = false }
+
 onMounted(() => {
+  window.addEventListener('online', handleOnline)
+  window.addEventListener('offline', handleOffline)
   loadData()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('online', handleOnline)
+  window.removeEventListener('offline', handleOffline)
 })
 </script>
 
@@ -377,6 +447,7 @@ onMounted(() => {
   align-items: center;
   margin-bottom: 14px;
 }
+.cache-pill { font-size: 11px; color: var(--mf-warning); border: 1px solid var(--mf-warning); border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
 .page-header h2 {
   font-size: 20px;
   font-weight: 700;
