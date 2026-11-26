@@ -261,11 +261,13 @@
 
 <script lang="ts">
 const sharedMdCache = new Map<string, string>()
+const linkedMdCache = new Map<string, string>()
 </script>
 
 <script setup lang="ts">
 import { computed, ref, watch, defineAsyncComponent, onUnmounted, nextTick } from 'vue'
 import { renderSafeMarkdown } from '@/utils/markdown'
+import { copyTextToClipboard } from '@/utils/clipboard'
 import { Icon } from '@iconify/vue'
 import { useFinancialEntities } from '@/composables/useFinancialEntities'
 import ActionCard from '@/components/ActionCard.vue'
@@ -281,7 +283,7 @@ import type { WorkflowRunState, WorkflowConfigState } from '@/types'
 const MermaidBlock = defineAsyncComponent(() => import('@/components/MermaidBlock.vue'))
 const CodeBlock = defineAsyncComponent(() => import('@/components/CodeBlock.vue'))
 
-const { linkFinancialEntities } = useFinancialEntities()
+const { linkFinancialEntities, entitiesVersion } = useFinancialEntities()
 
 const props = defineProps<{
   messageId?: number
@@ -631,15 +633,13 @@ watch(
 
 async function copyThinkingText() {
   if (!props.thinkingContent) return
-  try {
-    await navigator.clipboard.writeText(props.thinkingContent)
+  const ok = await copyTextToClipboard(props.thinkingContent)
+  if (ok) {
     thinkingCopied.value = true
     if (copyThinkingTimer) clearTimeout(copyThinkingTimer)
     copyThinkingTimer = window.setTimeout(() => {
       thinkingCopied.value = false
     }, 2000)
-  } catch {
-    // fallback or ignore
   }
 }
 
@@ -699,19 +699,39 @@ const MD_CACHE_LIMIT = 120
  * 输出已 HTML 转义，天然免疫注入，无需 DOMPurify 二次过滤。
  */
 function renderInlineMarkdown(text: string): string {
-  const esc = text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-  return esc
-    .replace(/`([^`\n]+)`/g, '<code>$1</code>')
-    .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
-    .replace(/~~([^~\n]+)~~/g, '<del>$1</del>')
+  const formatPlain = (plain: string): string => {
+    const esc = plain
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+    return esc
+      .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
+      .replace(/~~([^~\n]+)~~/g, '<del>$1</del>')
+  }
+
+  return text
+    .split(/(`[^`\n]+`)/g)
+    .map((part) => {
+      if (part.startsWith('`') && part.endsWith('`') && part.length >= 2) {
+        const code = part
+          .slice(1, -1)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+        return `<code>${code}</code>`
+      }
+      return formatPlain(part)
+    })
+    .join('')
 }
 
 function renderMarkdown(text?: string): string {
   if (!text) return ''
+  const linkedKey = `${entitiesVersion.value}::${text}`
+  const cachedLinked = linkedMdCache.get(linkedKey)
+  if (cachedLinked !== undefined) return cachedLinked
+
   let html = sharedMdCache.get(text)
   if (html === undefined) {
     html = renderSafeMarkdown(text)
@@ -721,7 +741,13 @@ function renderMarkdown(text?: string): string {
     }
     sharedMdCache.set(text, html)
   }
-  return linkFinancialEntities(html)
+  const linked = linkFinancialEntities(html)
+  if (linkedMdCache.size >= MD_CACHE_LIMIT) {
+    const firstKey = linkedMdCache.keys().next().value as string
+    linkedMdCache.delete(firstKey)
+  }
+  linkedMdCache.set(linkedKey, linked)
+  return linked
 }
 
 function handleMouseOver(e: MouseEvent) {

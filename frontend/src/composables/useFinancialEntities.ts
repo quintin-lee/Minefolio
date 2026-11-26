@@ -82,6 +82,12 @@ export function replaceTextNodesWithEntities(
       const parser = new DOMParser()
       const doc = parser.parseFromString(`<body>${html}</body>`, 'text/html')
       const ignoreTags = new Set(['A', 'CODE', 'PRE', 'SCRIPT', 'STYLE', 'BUTTON'])
+      const entityPattern = entityRegex ? entityRegex.source : ''
+      const amountPattern = '(?:(?:¥|\\$|€|£)\\s*\\d+(?:,\\d{3})*(?:\\.\\d+)?)'
+      const combinedPattern = entityPattern
+        ? `(${entityPattern})|(${amountPattern})`
+        : `(${amountPattern})`
+      const combinedRegex = new RegExp(combinedPattern, 'g')
 
       function walk(node: Node) {
         if (node.nodeType === 3) { // Text node
@@ -92,19 +98,14 @@ export function replaceTextNodesWithEntities(
           const text = node.nodeValue || ''
           if (!text.trim()) return
 
-          const hasEntity = entityRegex ? entityRegex.test(text) : false
           if (entityRegex) entityRegex.lastIndex = 0
-          const hasAmount = AMOUNT_REGEX.test(text)
+          const hasEntity = entityRegex ? entityRegex.test(text) : false
           AMOUNT_REGEX.lastIndex = 0
+          const hasAmount = AMOUNT_REGEX.test(text)
 
           if (!hasEntity && !hasAmount) return
 
-          const entityPattern = entityRegex ? entityRegex.source : ''
-          const amountPattern = '(?:(?:¥|\\$|€|£)\\s*\\d+(?:,\\d{3})*(?:\\.\\d+)?)'
-          const combinedPattern = entityPattern
-            ? `(${entityPattern})|(${amountPattern})`
-            : `(${amountPattern})`
-          const combinedRegex = new RegExp(combinedPattern, 'g')
+          combinedRegex.lastIndex = 0
 
           const fragment = doc.createDocumentFragment()
           let lastIndex = 0
@@ -179,6 +180,7 @@ const accountMap = ref<Map<string | number, EntityDetail>>(new Map())
 const assetMap = ref<Map<string | number, EntityDetail>>(new Map())
 const nameToEntityLookup = ref<Map<string, EntityMatch>>(new Map())
 const collisionMap = ref<Map<string, { asset?: EntityDetail; account?: EntityDetail }>>(new Map())
+const entitiesVersion = ref(0)
 const isLoaded = ref(false)
 const isLoading = ref(false)
 
@@ -190,6 +192,7 @@ export function resetFinancialEntities(): void {
   assetMap.value = new Map()
   nameToEntityLookup.value = new Map()
   collisionMap.value = new Map()
+  entitiesVersion.value += 1
   isLoaded.value = false
 }
 
@@ -237,9 +240,23 @@ export function useFinancialEntities() {
         }
       }
 
-      // 3. Process assets
+      // 3. Process assets (paginate when total exceeds first page)
       if (assetRes.status === 'fulfilled' && Array.isArray(assetRes.value?.list)) {
-        for (const a of assetRes.value.list) {
+        const allAssets = [...assetRes.value.list]
+        const totalAssets = typeof assetRes.value.total === 'number' ? assetRes.value.total : allAssets.length
+        let page = 2
+        const maxPages = 10
+        while (allAssets.length < totalAssets && page <= maxPages) {
+          try {
+            const nextPage = await assetsApi.list({ page, page_size: 100 })
+            if (!Array.isArray(nextPage?.list) || nextPage.list.length === 0) break
+            allAssets.push(...nextPage.list)
+            page += 1
+          } catch {
+            break
+          }
+        }
+        for (const a of allAssets) {
           if (!a.name || isStopword(a.name)) continue
           const holding = holdingsMap.get(a.id)
           const detail: EntityDetail = {
@@ -279,6 +296,7 @@ export function useFinancialEntities() {
       assetMap.value = nextAssets
       nameToEntityLookup.value = nextLookup
       collisionMap.value = nextCollisions
+      entitiesVersion.value += 1
       isLoaded.value = true
     } catch {
       // ignore
@@ -308,5 +326,6 @@ export function useFinancialEntities() {
     linkFinancialEntities,
     getEntityDetail,
     getCollisionEntities,
+    entitiesVersion,
   }
 }

@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ChatMessageContent from '@/components/ChatMessageContent.vue'
+import * as clipboardUtil from '@/utils/clipboard'
 
 describe('ChatMessageContent thinking mode card', () => {
   it('renders thinking card when thinkingContent is provided', () => {
@@ -124,5 +125,37 @@ describe('ChatMessageContent thinking mode card', () => {
     // 此时正文到达，用户手动选择优先级最高，依然保持展开
     await wrapper.setProps({ content: '正文生成开始' })
     expect(wrapper.find('.thinking-content-body').exists()).toBe(true)
+  })
+
+  it('preserves asterisks inside inline code during streaming and copies thinking via copyTextToClipboard', async () => {
+    const copySpy = vi.spyOn(clipboardUtil, 'copyTextToClipboard').mockResolvedValueOnce(true)
+    const wrapper = mount(ChatMessageContent, {
+      props: {
+        messageId: 2,
+        content: '计算公式 `a * b * c` 和 **加粗文本**',
+        thinkingContent: '推理过程摘要',
+        isStreaming: true,
+        enableBuffer: true,
+      },
+      global: {
+        stubs: {
+          MermaidBlock: true,
+          CodeBlock: true,
+          ActionCard: true,
+          WorkflowConfigCard: true,
+          WorkflowProgressCard: true,
+          Icon: true,
+        },
+      },
+    })
+
+    const html = wrapper.find('.streaming-text').html()
+    expect(html).toContain('<code>a * b * c</code>')
+    expect(html).not.toContain('<em>')
+    expect(html).toContain('<strong>加粗文本</strong>')
+
+    await wrapper.find('.thinking-action-btn').trigger('click')
+    expect(copySpy).toHaveBeenCalledWith('推理过程摘要')
+    copySpy.mockRestore()
   })
 })

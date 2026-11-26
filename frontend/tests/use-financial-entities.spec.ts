@@ -80,4 +80,38 @@ describe('useFinancialEntities', () => {
     expect(accountsApi.list).toHaveBeenCalledTimes(2)
     expect(getEntityDetail('account', 2)?.name).toBe('工商银行')
   })
+
+  it('paginates assets beyond 100 items and increments entitiesVersion on load/reset', async () => {
+    resetFinancialEntities()
+    vi.clearAllMocks()
+
+    const { loadEntities, getEntityDetail, entitiesVersion } = useFinancialEntities()
+    const v0 = entitiesVersion.value
+
+    const page1 = Array.from({ length: 100 }, (_, i) => ({
+      id: i + 1,
+      name: `AssetPageOne_${i + 1}`,
+      type: 'stock',
+      currency: 'CNY',
+      current_value: 100,
+    }))
+    const page2 = [
+      { id: 101, name: '茅台定投基金', type: 'fund', currency: 'CNY', current_value: 2000 },
+    ]
+    ;(accountsApi.list as any).mockResolvedValueOnce([])
+    ;(assetsApi.list as any)
+      .mockResolvedValueOnce({ list: page1, total: 101 })
+      .mockResolvedValueOnce({ list: page2, total: 101 })
+    ;(reportsApi.holdings as any).mockResolvedValueOnce({ holdings: [] })
+
+    await loadEntities()
+
+    expect(assetsApi.list).toHaveBeenCalledTimes(2)
+    expect(assetsApi.list).toHaveBeenNthCalledWith(2, { page: 2, page_size: 100 })
+    expect(getEntityDetail('asset', 101)?.name).toBe('茅台定投基金')
+    expect(entitiesVersion.value).toBe(v0 + 1)
+
+    resetFinancialEntities()
+    expect(entitiesVersion.value).toBe(v0 + 2)
+  })
 })
