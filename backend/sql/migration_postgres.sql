@@ -673,7 +673,7 @@ CREATE INDEX IF NOT EXISTS idx_async_tasks_user_status
 CREATE INDEX IF NOT EXISTS idx_async_tasks_dedupe
     ON async_tasks(user_id, dedupe_key, status);
 
--- V035 + V037: iLink 机器人独立实例与推送 Outbox (PostgreSQL)
+-- V035 + V038: iLink 机器人独立实例与推送 Outbox (PostgreSQL)
 CREATE TABLE IF NOT EXISTS im_bot_instances (
     id                         BIGSERIAL PRIMARY KEY,
     mf_user_id                 BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

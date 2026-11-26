@@ -693,7 +693,7 @@ CREATE INDEX IF NOT EXISTS idx_async_tasks_user_status
 CREATE INDEX IF NOT EXISTS idx_async_tasks_dedupe
     ON async_tasks(user_id, dedupe_key, status);
 
--- V035 + V037: iLink 机器人独立实例与推送 Outbox (SQLite)
+-- V035 + V038: iLink 机器人独立实例与推送 Outbox (SQLite)
 CREATE TABLE IF NOT EXISTS im_bot_instances (
     id                         INTEGER PRIMARY KEY AUTOINCREMENT,
     mf_user_id                 INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
