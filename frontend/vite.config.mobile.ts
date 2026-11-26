@@ -75,7 +75,7 @@ export default defineConfig({
             if (id.includes('highlight.js')) {
               return 'vendor-hljs'
             }
-            if (id.includes('katex') || id.includes('marked') || id.includes('dompurify')) {
+            if (id.includes('marked') || id.includes('dompurify')) {
               return 'vendor-markdown'
             }
           }
