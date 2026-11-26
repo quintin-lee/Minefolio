@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { initLocalDb, query, run, rowsFrom, resetLocalDb } from '@/db/local'
 import { useSyncStore, parseSyncTimestamp } from '@/stores/sync'
+import { registerNetworkListeners } from '@/utils/sync-network'
 
 vi.mock('@/api/daily_expenses', () => ({
   dailyExpensesApi: { create: vi.fn(), update: vi.fn(), delete: vi.fn(), list: vi.fn().mockResolvedValue({ list: [] }) },
@@ -204,5 +205,42 @@ describe('sync store', () => {
     const naive = parseSyncTimestamp('2026-11-21 12:00:00')
     const isoZ = parseSyncTimestamp('2026-11-21T12:00:00Z')
     expect(naive).toBe(isoZ)
+  })
+
+  it('rebinds sync state listener when Pinia is recreated and subscribeSyncEngine is called', () => {
+    const firstStore = useSyncStore()
+    firstStore.init()
+    firstStore.subscribeSyncEngine()
+    expect(firstStore.pendingCount).toBe(0)
+
+    // Recreate Pinia (e.g. HMR or test isolation) and bind new store
+    setActivePinia(createPinia())
+    const secondStore = useSyncStore()
+    secondStore.subscribeSyncEngine()
+
+    firstStore.enqueue('daily_expenses', 777, 'create', { amount: 15 })
+
+    expect(secondStore.pendingCount).toBe(1)
+    expect(secondStore.queue[0]?.record_id).toBe(777)
+  })
+
+  it('deduplicates network listeners across calls and stops firing after dispose', () => {
+    const firstTrigger = vi.fn()
+    const secondTrigger = vi.fn()
+
+    registerNetworkListeners(firstTrigger)
+    const dispose = registerNetworkListeners(secondTrigger)
+
+    window.dispatchEvent(new Event('online'))
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
+    document.dispatchEvent(new Event('visibilitychange'))
+
+    expect(firstTrigger).not.toHaveBeenCalled()
+    expect(secondTrigger).toHaveBeenCalledTimes(2)
+
+    dispose()
+    window.dispatchEvent(new Event('online'))
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(secondTrigger).toHaveBeenCalledTimes(2)
   })
 })

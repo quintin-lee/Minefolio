@@ -17,7 +17,7 @@ export function setSyncOnAuthFail(fn: (() => void) | null): void {
   SyncEngine.getInstance().setAuthFailHandler(fn)
 }
 
-let subscribed = false
+let activeSyncListener: (() => void) | null = null
 
 export const useSyncStore = defineStore('sync', () => {
   const engine = SyncEngine.getInstance()
@@ -39,13 +39,14 @@ export const useSyncStore = defineStore('sync', () => {
     pushErrors.value = state.pushErrors
   }
 
-  /** 订阅引擎状态事件（bootstrap 阶段初始化完成后调用一次） */
+  /** 订阅引擎状态事件（bootstrap 阶段初始化完成后调用一次；重建 Pinia 后自动重绑） */
   function subscribeSyncEngine(): void {
     if (typeof window === 'undefined') return
-    if (!subscribed) {
-      subscribed = true
-      window.addEventListener('minefolio:sync-state-changed', syncFromEngine)
+    if (activeSyncListener) {
+      window.removeEventListener('minefolio:sync-state-changed', activeSyncListener)
     }
+    activeSyncListener = syncFromEngine
+    window.addEventListener('minefolio:sync-state-changed', activeSyncListener)
     syncFromEngine()
   }
 
@@ -92,18 +93,6 @@ export const useSyncStore = defineStore('sync', () => {
     syncFromEngine()
   }
 
-  function markSynced(queueId: number): void {
-    // 兼容旧调用方；实际逻辑在 SyncEngine 内部
-    void queueId
-    syncFromEngine()
-  }
-
-  function markConflict(queueId: number): void {
-    // 兼容旧调用方；实际逻辑在 SyncEngine 内部
-    void queueId
-    syncFromEngine()
-  }
-
   function clearPushErrors(): void {
     engine.clearPushErrors()
     syncFromEngine()
@@ -123,8 +112,6 @@ export const useSyncStore = defineStore('sync', () => {
     conflicts,
     pushErrors,
     enqueue,
-    markSynced,
-    markConflict,
     resolveConflictRetry,
     resolveConflictDiscard,
     pushLocal,

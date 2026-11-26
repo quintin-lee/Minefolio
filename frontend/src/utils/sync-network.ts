@@ -9,8 +9,14 @@ import { Network } from '@capacitor/network'
 /** 同步触发回调函数类型 */
 type SyncTrigger = () => void | Promise<void>
 
+interface ListenerHandle {
+  remove: () => Promise<void> | void
+}
+
+let activeTeardown: (() => void) | null = null
+
 /**
- * 注册跨平台网络状态与应用前后台生命周期监听器
+ * 注册跨平台网络状态与应用前后台生命周期监听器（幂等：重复调用会先清理前次注册）
  *
  * 监听触发时机包括：
  * 1. 移动端原生网络状态变更为 connected（Capacitor Network）
@@ -19,29 +25,86 @@ type SyncTrigger = () => void | Promise<void>
  * 4. 移动 App 从后台恢复到活跃激活前台 (Capacitor App.appStateChange)
  *
  * @param onSync 当网络恢复或应用回到前台时调用的同步回调函数
+ * @returns 反注册清理函数
  */
-export function registerNetworkListeners(onSync: SyncTrigger): void {
+export function registerNetworkListeners(onSync: SyncTrigger): () => void {
+  if (activeTeardown) {
+    activeTeardown()
+  }
+
+  let disposed = false
+  let networkHandle: ListenerHandle | null = null
+  let appHandle: ListenerHandle | null = null
+
+  const onOnline = () => {
+    if (!disposed) void onSync()
+  }
+  const onVisibilityChange = () => {
+    if (!disposed && document.visibilityState === 'visible') {
+      void onSync()
+    }
+  }
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('online', onOnline)
+  }
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', onVisibilityChange)
+  }
+
   // 原生环境 (Capacitor Network)
-  Network.addListener('networkStatusChange', (status) => {
-    if (status.connected) void onSync()
-  })
-
-  // Web / 浏览器兜底
-  window.addEventListener('online', () => void onSync())
-  window.addEventListener('offline', () => {})
-
-  // 页面从后台切回前台 → 增量同步
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') void onSync()
-  })
+  Promise.resolve(
+    Network.addListener('networkStatusChange', (status) => {
+      if (!disposed && status.connected) void onSync()
+    })
+  )
+    .then((handle) => {
+      if (disposed) {
+        void handle?.remove?.()
+      } else {
+        networkHandle = handle ?? null
+      }
+    })
+    .catch(() => {})
 
   // App 前后台切换 (Capacitor App)
   import('@capacitor/app')
-    .then(({ App }) => {
+    .then(({ App }) =>
       App.addListener('appStateChange', (state: { isActive: boolean }) => {
-        if (state.isActive) void onSync()
+        if (!disposed && state.isActive) void onSync()
       })
+    )
+    .then((handle) => {
+      if (disposed) {
+        void handle?.remove?.()
+      } else {
+        appHandle = handle ?? null
+      }
     })
     .catch(() => {})
-}
 
+  const teardown = () => {
+    if (disposed) return
+    disposed = true
+    if (activeTeardown === teardown) {
+      activeTeardown = null
+    }
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('online', onOnline)
+    }
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
+    if (networkHandle) {
+      void Promise.resolve(networkHandle.remove?.()).catch(() => {})
+      networkHandle = null
+    }
+    if (appHandle) {
+      void Promise.resolve(appHandle.remove?.()).catch(() => {})
+      appHandle = null
+    }
+  }
+
+  activeTeardown = teardown
+  return teardown
+}
