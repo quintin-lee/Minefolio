@@ -1,4 +1,4 @@
--- V037: iLink 定时任务推送持久化 Outbox 队列与入站会话活跃时间戳 (SQLite)
+-- V038: iLink 定时任务推送持久化 Outbox 队列与入站会话活跃时间戳 (SQLite)
 
 ALTER TABLE im_bot_instances ADD COLUMN last_inbound_at TEXT;
 ALTER TABLE job_run_logs ADD COLUMN notif_sync_sent INTEGER NOT NULL DEFAULT 0;

@@ -1,4 +1,4 @@
--- V037: iLink 定时任务推送持久化 Outbox 队列与入站会话活跃时间戳 (PostgreSQL)
+-- V038: iLink 定时任务推送持久化 Outbox 队列与入站会话活跃时间戳 (PostgreSQL)
 
 ALTER TABLE im_bot_instances ADD COLUMN IF NOT EXISTS last_inbound_at TIMESTAMPTZ;
 ALTER TABLE job_run_logs ADD COLUMN IF NOT EXISTS notif_sync_sent INTEGER NOT NULL DEFAULT 0;
