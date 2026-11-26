@@ -40,6 +40,29 @@ sample_success_task(void*   pool,
     return 0;
 }
 
+/* Keeps a task active long enough to exercise dedupe of concurrent submissions. */
+static int
+slow_task(void*   pool,
+          int64_t  task_id,
+          int64_t  user_id,
+          int64_t  ledger_id,
+          void*    arg,
+          char**   out_result_json,
+          char*    err_buf,
+          size_t   err_cap)
+{
+    (void)pool;
+    (void)task_id;
+    (void)user_id;
+    (void)ledger_id;
+    (void)arg;
+    (void)err_buf;
+    (void)err_cap;
+    usleep(300000);
+    *out_result_json = strdup("{\"ok\":true}");
+    return 0;
+}
+
 static int
 wait_for_terminal(csilk_db_pool_t* pool, int64_t user_id, int64_t task_id, csilk_json_t** out_obj)
 {
@@ -118,6 +141,19 @@ main(void)
     csilk_json_t* list = mf_async_task_list(pool, 1, NULL, "unit_test", 10);
     assert(list != NULL && csilk_json_array_size(list) == 2);
     csilk_json_free(list);
+
+    /* 4. Concurrent duplicate submission reuses the active deduped task */
+    bool    dedup_first = false;
+    int64_t d1 = mf_async_task_submit(
+        pool, 1, 0, "unit_test", "unit:dedupe", "排队中", slow_task, NULL, NULL, &dedup_first);
+    assert(d1 > 0 && !dedup_first);
+    bool    dedup_second = false;
+    int64_t d2 = mf_async_task_submit(
+        pool, 1, 0, "unit_test", "unit:dedupe", "排队中", slow_task, NULL, NULL, &dedup_second);
+    assert(d2 == d1 && dedup_second);
+    csilk_json_t* done_d = NULL;
+    assert(wait_for_terminal(pool, 1, d1, &done_d) == 0 && done_d != NULL);
+    csilk_json_free(done_d);
 
     mf_async_task_manager_shutdown();
     csilk_db_pool_free(pool);

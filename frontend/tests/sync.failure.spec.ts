@@ -71,4 +71,19 @@ describe('SyncEngine failure semantics', () => {
     await engine().syncNow()
     expect(engine().getState().queue.length).toBe(0)
   })
+
+  it('keeps rapid consecutive enqueues distinct and drains both in one cycle', async () => {
+    engine().enqueue('daily_expenses', 301, 'create', COMPLETE_EXPENSE)
+    engine().enqueue('daily_expenses', 302, 'create', COMPLETE_EXPENSE)
+
+    const queue = engine().getState().queue
+    expect(queue.length).toBe(2)
+    expect(new Set(queue.map((q) => q.id)).size).toBe(2)
+
+    ;(dailyExpensesApi.create as any)
+      .mockResolvedValueOnce({ id: 999 })
+      .mockResolvedValueOnce({ id: 1000 })
+    await engine().syncNow()
+    expect(engine().getState().queue.length).toBe(0)
+  })
 })
