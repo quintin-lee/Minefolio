@@ -68,11 +68,14 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useChatStore } from '@/stores/chat'
+import { loadDraft, saveDraft, clearDraft } from '@/utils/chat-draft'
 import ChatMessageContent from '@/components/ChatMessageContent.vue'
 import PromptStarters from '@/components/PromptStarters.vue'
 
 const chat = useChatStore()
-const inputText = ref('')
+const currentScopeKey = computed(() => (chat.currentSessionId ? `session:${chat.currentSessionId}` : 'new'))
+const inputText = ref(loadDraft('new'))
+let draftTimer: ReturnType<typeof setTimeout> | null = null
 const sessionDrawer = ref(false)
 const isOnline = ref(typeof navigator !== 'undefined' ? navigator.onLine : true)
 const listRef = ref<HTMLElement | null>(null)
@@ -81,6 +84,23 @@ const currentSession = computed(() => chat.sessions.find((s) => s.id === chat.cu
 
 function handleOnline() { isOnline.value = true }
 function handleOffline() { isOnline.value = false }
+
+function flushDraft() {
+  if (draftTimer) {
+    clearTimeout(draftTimer)
+    draftTimer = null
+  }
+  saveDraft(currentScopeKey.value, inputText.value)
+}
+
+// 输入防抖 300ms 写本地草稿；切换会话前先 flush，避免写入错误 scope
+watch(inputText, () => {
+  if (draftTimer) clearTimeout(draftTimer)
+  draftTimer = setTimeout(() => {
+    saveDraft(currentScopeKey.value, inputText.value)
+    draftTimer = null
+  }, 300)
+})
 
 function scrollToBottom() {
   nextTick(() => {
@@ -96,14 +116,17 @@ watch(
 )
 
 async function newSession() {
+  flushDraft()
   await chat.createNewSession()
-  inputText.value = ''
+  inputText.value = loadDraft(currentScopeKey.value)
   sessionDrawer.value = false
   scrollToBottom()
 }
 
 async function selectSession(id: number) {
+  flushDraft()
   await chat.selectSession(id)
+  inputText.value = loadDraft(currentScopeKey.value)
   sessionDrawer.value = false
   scrollToBottom()
 }
@@ -116,7 +139,23 @@ function onQuickPrompt(prompt: string) {
 async function send() {
   const text = inputText.value.trim()
   if (!text || chat.isStreaming || !isOnline.value) return
+  const oldScope = currentScopeKey.value
+  if (draftTimer) {
+    clearTimeout(draftTimer)
+    draftTimer = null
+  }
+  const beforeLen = chat.messages.length
   await chat.sendMessage(text)
+  // doSendMessage 把流式异常写入 assistant.error 且不 reject（stores/chat.ts:798-804），
+  // 因此必须等 isStreaming 归 false 后按 assistant 消息判定成功。
+  while (chat.isStreaming) await new Promise((resolve) => setTimeout(resolve, 50))
+  const assistant = chat.messages.slice(beforeLen).find((m) => m.role === 'assistant')
+  const failed = !assistant || Boolean(assistant.error)
+  if (!failed) {
+    clearDraft(oldScope)
+    clearDraft(currentScopeKey.value)
+    inputText.value = ''
+  }
   scrollToBottom()
 }
 
@@ -129,12 +168,14 @@ onMounted(async () => {
   } catch (e) {
     console.error('[ChatMobile] init failed:', e)
   }
+  inputText.value = loadDraft(currentScopeKey.value)
   scrollToBottom()
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('online', handleOnline)
   window.removeEventListener('offline', handleOffline)
+  flushDraft()
   chat.abortCurrentStream()
 })
 </script>
