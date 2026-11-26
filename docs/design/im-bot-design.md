@@ -145,6 +145,16 @@ IM 入口 `scope=readonly` → 工具调度时只放行**只读工具**，写工
 
 **数据统一**：IM 会话复用 `ai_sessions`，用户在 App 里也能看到 IM 里问过的对话与结果。
 
+### 3.4 iLink 实例的可选记账能力（`query+confirm`）
+
+QQ / wechaty 通用通道仍固定 `readonly`。用户级 iLink 独立实例可在 App 中主动开启 `query+confirm`（默认 `readonly`）：
+
+- 运行时工具集 = 只读集 + `propose_daily_expense`；`confirm_*` 仍为 `internal_only`，模型永远看不到。
+- 提案工具结果回传原始参数快照，后端生成 8 位 CSPRNG 短码写入 `im_pending_actions`（300s TTL、一次性），机器人回复摘要 + 「确认 XXXXXXXX」。
+- 用户回复短码 → 网关识别后调用 `POST /api/gateway/im/instances/:id/confirm`，服务端校验 owner / 实例能力 / 会话 / 默认账本 editor 权限后，经 `ai_tool_dispatch_parsed` 执行 `confirm_proposed_expense` 落账。**确认链路不经过 LLM**，避免提示注入绕过。
+- 短码绑定 `user_id + session_id`，draft_token 沿用 HMAC + 参数哈希 + nonce 原子消费；重复确认被拒绝。
+- 再次扫码登录不会重置能力开关；关闭能力后残留短码立即失效。
+
 ---
 
 ## 4. IM 适配网关（独立 Node 服务，无业务逻辑）

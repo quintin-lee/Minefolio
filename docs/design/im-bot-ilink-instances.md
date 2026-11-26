@@ -34,6 +34,15 @@ any    ──(App disable)──► disabled      ──(App enable)───►
 4. **凭证不出网关**：`bot_token` 只存在于网关本地 state 目录；`qr_content` 仅在登录态返回给 owner；`pending_verify_code` 限时 120s、限次 10 次、一次性消费且永不返回给 App。
 5. **非 owner 静默丢弃**：子进程忽略 `message_type === 2`、群聊及非 `account.ilink_user_id` 的私聊消息，不回复也不查库。
 
+## 3.1 可选记账能力（capability）
+
+实例新增 `capability` 字段：`readonly`（默认，仅查账）或 `query+confirm`（微信对话记账 + 短码确认）。
+
+- App 侧 `POST /api/im/instances/:id/capability` 切换（仅 owner），同步 `im_bot_bindings.scope`；重新登录/激活保留开关。
+- `query+confirm` 下，AI 只拿到只读工具 + `propose_daily_expense`，通过 `on_tool_result` 回调捕获提案并生成 8 位短码，存入 `im_pending_actions`（300s）。
+- 用户微信回复「确认 XXXXXXXX」→ 网关调用 `POST /api/gateway/im/instances/:id/confirm`，服务端推导会话、校验短码与默认账本 editor 权限后落账，不经过 AI。
+- 短码一次性、绑定 `(user_id, session_id)`；draft_token 的 HMAC/参数哈希/nonce 原子消费继续生效。
+
 ## 4. 部署
 
 - 后端注入 `MINEFOLIO_GATEWAY_TOKEN`。
