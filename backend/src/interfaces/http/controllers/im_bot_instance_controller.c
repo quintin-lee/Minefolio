@@ -207,6 +207,39 @@ api_im_instance_disable(csilk_ctx_t* c)
 }
 
 static void
+api_im_instance_set_capability(csilk_ctx_t* c)
+{
+    int64_t user_id = ctx_user_id(c);
+    if (user_id <= 0) {
+        return;
+    }
+    int64_t id = im_instance_parse_id(c);
+    if (id <= 0) {
+        respond_bad_request(c, "无效的实例 ID");
+        return;
+    }
+    csilk_json_t* body = csilk_bind_json(c);
+    const char*   capability = im_instance_json_string(body, "capability");
+    if (!capability || capability[0] == 0) {
+        if (body) {
+            csilk_json_free(body);
+        }
+        respond_bad_request(c, "capability 不能为空");
+        return;
+    }
+    char cap_buf[32] = {0};
+    strncpy(cap_buf, capability, sizeof(cap_buf) - 1);
+    if (body) {
+        csilk_json_free(body);
+    }
+    int  code = 1002;
+    char err[256] = {0};
+    int  rc = im_instance_usecase_set_capability(
+        db_get_pool(), user_id, id, cap_buf, &code, err, sizeof(err));
+    (void)im_instance_ok_or_error(c, rc, code, err);
+}
+
+static void
 api_im_instance_delete(csilk_ctx_t* c)
 {
     int64_t user_id = ctx_user_id(c);
@@ -425,6 +458,49 @@ api_gateway_instance_chat(csilk_ctx_t* c)
 }
 
 static void
+api_gateway_instance_confirm(csilk_ctx_t* c)
+{
+    if (!gateway_auth_check(c)) {
+        return;
+    }
+    int64_t id = im_instance_parse_id(c);
+    if (id <= 0) {
+        respond_bad_request(c, "无效的实例 ID");
+        return;
+    }
+    csilk_json_t* body = csilk_bind_json(c);
+    const char*   im_user_id = im_instance_json_string(body, "im_user_id");
+    const char*   confirm_code = im_instance_json_string(body, "code");
+    if (!im_user_id || im_user_id[0] == 0 || !confirm_code || confirm_code[0] == 0) {
+        if (body) {
+            csilk_json_free(body);
+        }
+        respond_bad_request(c, "im_user_id 与 code 不能为空");
+        return;
+    }
+    char uid[256] = {0}, code_buf[32] = {0};
+    strncpy(uid, im_user_id, sizeof(uid) - 1);
+    strncpy(code_buf, confirm_code, sizeof(code_buf) - 1);
+    if (body) {
+        csilk_json_free(body);
+    }
+
+    char* reply = NULL;
+    int   code = 1002;
+    char  err[256] = {0};
+    int   rc = im_instance_gateway_confirm(
+        db_get_pool(), id, uid, code_buf, &reply, &code, err, sizeof(err));
+    if (rc != 0) {
+        im_instance_respond_error(c, code, err);
+        return;
+    }
+    csilk_json_t* data = csilk_json_object();
+    csilk_json_add_string(data, "reply", reply ? reply : "");
+    free(reply);
+    respond_ok(c, data);
+}
+
+static void
 api_gateway_instance_task(csilk_ctx_t* c)
 {
     if (!gateway_auth_check(c)) {
@@ -459,6 +535,7 @@ register_im_bot_instance_routes(csilk_app_t* app)
     csilk_app_post(app, "/api/im/instances/:id/verify-code", api_im_instance_verify_code);
     csilk_app_post(app, "/api/im/instances/:id/enable", api_im_instance_enable);
     csilk_app_post(app, "/api/im/instances/:id/disable", api_im_instance_disable);
+    csilk_app_post(app, "/api/im/instances/:id/capability", api_im_instance_set_capability);
     csilk_app_delete(app, "/api/im/instances/:id", api_im_instance_delete);
 
     csilk_app_get(app, "/api/gateway/im/instances", api_gateway_instance_list);
@@ -470,5 +547,6 @@ register_im_bot_instance_routes(csilk_app_t* app)
     csilk_app_post(
         app, "/api/gateway/im/instances/:id/pushes/:push_id/ack", api_gateway_instance_push_ack);
     csilk_app_post(app, "/api/gateway/im/instances/:id/chat", api_gateway_instance_chat);
+    csilk_app_post(app, "/api/gateway/im/instances/:id/confirm", api_gateway_instance_confirm);
     csilk_app_get(app, "/api/gateway/im/instances/:id/tasks/:task_id", api_gateway_instance_task);
 }

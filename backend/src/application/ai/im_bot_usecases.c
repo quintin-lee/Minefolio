@@ -15,13 +15,24 @@
 #include "common/jwt.h"
 #include "csilk/crypto/bcrypt.h"
 #include <openssl/crypto.h>
+#include <openssl/rand.h>
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+/** iLink 记账草案短码捕获上下文（仅 query+confirm 能力档使用）。 */
+typedef struct {
+    csilk_db_pool_t* pool;
+    int64_t          user_id;
+    int64_t          session_id;
+    char             code[16];
+} im_propose_capture_t;
+
 typedef struct {
     int64_t session_id;
     char*   message;
+    char    capability[16];
 } im_chat_task_arg_t;
 
 static void
@@ -33,6 +44,116 @@ im_chat_task_cleanup(void* raw)
     }
     free(arg->message);
     free(arg);
+}
+
+/** 剥离模型可能回显的 draft_token（纵深防御；确认只走独立端点）。 */
+static char*
+im_strip_draft_tokens(const char* text)
+{
+    if (!text) {
+        return NULL;
+    }
+    size_t len = strlen(text);
+    char*  out = (char*)malloc(len + 1);
+    if (!out) {
+        return NULL;
+    }
+    size_t j = 0;
+    for (size_t i = 0; i < len;) {
+        if (strncmp(text + i, "mf_v2.", 6) == 0) {
+            i += 6;
+            while (i < len && !isspace((unsigned char)text[i])) {
+                i++;
+            }
+            continue;
+        }
+        out[j++] = text[i++];
+    }
+    out[j] = '\0';
+    return out;
+}
+
+/** 生成 8 位大写短码（排除易混淆的 O/0/I/1）。 */
+static int
+im_generate_confirm_code(char* out, size_t cap)
+{
+    static const char alphabet[] = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    const size_t      alen = sizeof(alphabet) - 1;
+    unsigned char     rnd[8];
+    if (!out || cap < 9 || RAND_bytes(rnd, (int)sizeof(rnd)) != 1) {
+        return -1;
+    }
+    for (size_t i = 0; i < 8; i++) {
+        out[i] = alphabet[rnd[i] % alen];
+    }
+    out[8] = '\0';
+    OPENSSL_cleanse(rnd, sizeof(rnd));
+    return 0;
+}
+
+/** 捕获 propose_daily_expense 的工具结果，落短码草案。 */
+static void
+im_on_tool_result(const char* id, const char* name, const char* result_json, void* udata)
+{
+    (void)id;
+    im_propose_capture_t* cap = (im_propose_capture_t*)udata;
+    if (!cap || !cap->pool || !name || strcmp(name, "propose_daily_expense") != 0 || !result_json ||
+        cap->code[0]) {
+        return;
+    }
+    csilk_json_t* res = csilk_json_parse(result_json);
+    if (!res) {
+        return;
+    }
+    const char* draft = csilk_json_get_string(res, "draft_token");
+    if (!draft || !draft[0]) {
+        csilk_json_free(res);
+        return;
+    }
+    /* 优先使用工具回传的原始参数快照，避免结果脱敏/量化造成的参数哈希漂移。 */
+    const char* raw_args = csilk_json_get_string(res, "draft_args_json");
+    char*       args_json = NULL;
+    if (raw_args && raw_args[0]) {
+        args_json = strdup(raw_args);
+    } else {
+        const char*   type = csilk_json_get_string(res, "type");
+        const char*   date = csilk_json_get_string(res, "date");
+        const char*   note = csilk_json_get_string(res, "note");
+        double        amount = csilk_json_get_number(res, "amount");
+        int64_t       cat_id = (int64_t)csilk_json_get_number(res, "category_id");
+        int64_t       asset_id = (int64_t)csilk_json_get_number(res, "asset_id");
+        csilk_json_t* args = csilk_json_object();
+        csilk_json_add_string(args, "type", (type && type[0]) ? type : "expense");
+        csilk_json_add_number(args, "amount", amount);
+        csilk_json_add_string(args, "date", date ? date : "");
+        csilk_json_add_number(args, "category_id", (double)cat_id);
+        csilk_json_add_number(args, "asset_id", (double)asset_id);
+        csilk_json_add_string(args, "note", note ? note : "");
+        args_json = csilk_json_serialize(args, NULL);
+        csilk_json_free(args);
+    }
+    csilk_json_free(res);
+    if (!args_json) {
+        return;
+    }
+
+    char code[9];
+    if (im_generate_confirm_code(code, sizeof(code)) != 0) {
+        free(args_json);
+        return;
+    }
+    int64_t now = (int64_t)time(NULL);
+    if (mf_im_bot_pending_action_insert(cap->pool,
+                                        code,
+                                        cap->user_id,
+                                        cap->session_id,
+                                        "daily_expense",
+                                        draft,
+                                        args_json,
+                                        now + 300) == 0) {
+        snprintf(cap->code, sizeof(cap->code), "%s", code);
+    }
+    free(args_json);
 }
 
 static int
@@ -52,7 +173,9 @@ im_chat_task_fn(void*   pool,
         return -1;
     }
 
-    mf_async_task_update_progress(pool, task_id, 20, "正在执行只读 AI 查账");
+    int can_book = (strcmp(targ->capability, "query+confirm") == 0);
+    mf_async_task_update_progress(
+        pool, task_id, 20, can_book ? "正在执行 AI 记账助手" : "正在执行只读 AI 查账");
 
     csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
     ai_config_t*     cfg = ai_config_acquire();
@@ -68,10 +191,21 @@ im_chat_task_fn(void*   pool,
     rctx.limits.max_iterations = 4;
     rctx.limits.token_budget = 8192;
 
+    /* 工具白名单：只读集恒定可用；query+confirm 仅额外放行 propose_daily_expense。
+       confirm_* 为 internal_only，这里永远不会暴露给模型。 */
+    csilk_ai_tool_t        tools[64];
+    size_t                 ntools = 0;
     size_t                 ro_count = 0;
     const csilk_ai_tool_t* ro_tools = ai_tool_get_readonly_csilk_definitions(&ro_count);
-    rctx.tools = (csilk_ai_tool_t*)ro_tools;
-    rctx.tool_count = ro_count;
+    for (size_t i = 0; i < ro_count && ntools < 64; i++) {
+        tools[ntools++] = ro_tools[i];
+    }
+    if (can_book) {
+        static const char* const write_names[] = {"propose_daily_expense"};
+        ntools += ai_tool_get_csilk_definitions_subset(write_names, 1, tools + ntools, 64 - ntools);
+    }
+    rctx.tools = tools;
+    rctx.tool_count = ntools;
 
     int           ctx_size = (cfg && cfg->context_size > 0) ? cfg->context_size : 20;
     csilk_json_t* history = mf_ai_message_recent(db_pool, targ->session_id, ctx_size);
@@ -80,12 +214,44 @@ im_chat_task_fn(void*   pool,
         cfg ? cfg->system_prompt : NULL, history, targ->message, ctx_size, NULL);
     csilk_json_free(history);
 
+    if (can_book) {
+        csilk_json_t* ch = csilk_json_object();
+        csilk_json_add_string(ch, "role", "system");
+        csilk_json_add_string(
+            ch,
+            "content",
+            "当前为微信 iLink 记账通道。用户要求记账时只能调用 propose_daily_expense 生成草案，"
+            "并用中文简述金额、分类与支付账户；不得要求用户提供 draft_token，不得自行确认或"
+            "声称已记账。系统会自动发送确认码，用户回复后才会真正落账。");
+        csilk_json_array_append(rctx.messages, ch);
+    }
+
+    im_propose_capture_t   capture = {db_pool, user_id, targ->session_id, ""};
+    ai_runtime_callbacks_t cbs = {0};
+    cbs.on_tool_result = im_on_tool_result;
     ai_trace_t*         trace = NULL;
-    ai_runtime_result_t res = ai_runtime_execute(db_pool, &rctx, &trace);
+    ai_runtime_result_t res =
+        ai_runtime_execute_with_callbacks(db_pool, &rctx, &cbs, &capture, &trace);
     ai_runtime_context_free(&rctx);
 
     const char* final_text = res.final_content ? res.final_content : "";
-    mf_ai_message_insert(db_pool, targ->session_id, "assistant", final_text, model_sel, NULL, NULL);
+    char*       clean = im_strip_draft_tokens(final_text);
+    char*       reply = clean ? clean : strdup("");
+    if (capture.code[0]) {
+        size_t need = strlen(reply) + 160;
+        char*  with_code = (char*)malloc(need);
+        if (with_code) {
+            snprintf(with_code,
+                     need,
+                     "%s\n\n回复「确认 %s」完成记账（5 分钟内有效，仅你本人微信可用）。",
+                     reply,
+                     capture.code);
+            free(reply);
+            reply = with_code;
+        }
+    }
+    mf_ai_message_insert(
+        db_pool, targ->session_id, "assistant", reply ? reply : "", model_sel, NULL, NULL);
     if (trace) {
         if (targ->session_id > 0) {
             mf_ai_trace_save(db_pool, trace);
@@ -98,7 +264,7 @@ im_chat_task_fn(void*   pool,
     if (res.status.code != 0) {
         csilk_json_add_string(data, "reply", "AI 查询失败，请稍后再试。");
     } else {
-        csilk_json_add_string(data, "reply", final_text);
+        csilk_json_add_string(data, "reply", reply ? reply : "");
     }
     csilk_json_add_int(data, "bound", 1);
     csilk_json_add_int(data, "session_id", targ->session_id);
@@ -107,6 +273,7 @@ im_chat_task_fn(void*   pool,
         *out_result_json = csilk_json_serialize(data, NULL);
     }
     csilk_json_free(data);
+    free(reply);
     free(res.final_content);
 
     if (cfg) {
@@ -305,6 +472,7 @@ im_bot_usecase_chat_submit(void*          pool,
                            const char*    platform,
                            const char*    im_user_id,
                            const char*    message,
+                           const char*    scope_override,
                            csilk_json_t** out_sync_data,
                            int64_t*       out_task_id,
                            bool*          out_deduplicated,
@@ -316,6 +484,9 @@ im_bot_usecase_chat_submit(void*          pool,
     csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
     char             scope[32] = "readonly";
     int64_t bound = mf_im_bot_repo_lookup(db_pool, platform, im_user_id, scope, sizeof(scope));
+    if (bound > 0 && scope_override && scope_override[0]) {
+        snprintf(scope, sizeof(scope), "%s", scope_override);
+    }
     if (bound <= 0 || bound != user_id) {
         csilk_json_t* data = csilk_json_object();
         csilk_json_add_string(data,
@@ -349,6 +520,7 @@ im_bot_usecase_chat_submit(void*          pool,
         return -1;
     }
     arg->session_id = session_id;
+    snprintf(arg->capability, sizeof(arg->capability), "%s", scope);
     arg->message = strdup(message);
     if (!arg->message) {
         free(arg);

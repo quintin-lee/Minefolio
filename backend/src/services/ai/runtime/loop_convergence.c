@@ -421,18 +421,95 @@ exec_sync_chunk(const char* chunk, void* udata)
     }
 }
 
+typedef struct {
+    exec_sync_collector_t*        coll;
+    const ai_runtime_callbacks_t* extra;
+    void*                         extra_udata;
+} exec_extra_ctx_t;
+
+static void
+exec_extra_text(const char* chunk, void* udata)
+{
+    exec_extra_ctx_t* e = (exec_extra_ctx_t*)udata;
+    exec_sync_chunk(chunk, e->coll);
+    if (e->extra && e->extra->on_text_chunk) {
+        e->extra->on_text_chunk(chunk, e->extra_udata);
+    }
+}
+
+static void
+exec_extra_thinking(const char* chunk, void* udata)
+{
+    exec_extra_ctx_t* e = (exec_extra_ctx_t*)udata;
+    if (e->extra && e->extra->on_thinking_chunk) {
+        e->extra->on_thinking_chunk(chunk, e->extra_udata);
+    }
+}
+
+static void
+exec_extra_tool_call(const char* id, const char* name, const char* args_json, void* udata)
+{
+    exec_extra_ctx_t* e = (exec_extra_ctx_t*)udata;
+    if (e->extra && e->extra->on_tool_call) {
+        e->extra->on_tool_call(id, name, args_json, e->extra_udata);
+    }
+}
+
+static void
+exec_extra_tool_result(const char* id, const char* name, const char* result_json, void* udata)
+{
+    exec_extra_ctx_t* e = (exec_extra_ctx_t*)udata;
+    if (e->extra && e->extra->on_tool_result) {
+        e->extra->on_tool_result(id, name, result_json, e->extra_udata);
+    }
+}
+
+static void
+exec_extra_error(const ai_runtime_status_t* status, void* udata)
+{
+    exec_extra_ctx_t* e = (exec_extra_ctx_t*)udata;
+    if (e->extra && e->extra->on_error) {
+        e->extra->on_error(status, e->extra_udata);
+    }
+}
+
+static void
+exec_extra_done(const ai_runtime_stats_t* stats, void* udata)
+{
+    exec_extra_ctx_t* e = (exec_extra_ctx_t*)udata;
+    if (e->extra && e->extra->on_done) {
+        e->extra->on_done(stats, e->extra_udata);
+    }
+}
+
+static void
+exec_extra_persisted(const char* role, int64_t message_id, void* udata)
+{
+    exec_extra_ctx_t* e = (exec_extra_ctx_t*)udata;
+    if (e->extra && e->extra->on_message_persisted) {
+        e->extra->on_message_persisted(role, message_id, e->extra_udata);
+    }
+}
+
 ai_runtime_result_t
-ai_runtime_execute(csilk_db_pool_t* pool, ai_runtime_context_t* ctx, ai_trace_t** out_trace)
+ai_runtime_execute_with_callbacks(csilk_db_pool_t*              pool,
+                                  ai_runtime_context_t*         ctx,
+                                  const ai_runtime_callbacks_t* extra_cbs,
+                                  void*                         extra_udata,
+                                  ai_trace_t**                  out_trace)
 {
     ai_runtime_result_t   res = {0};
     exec_sync_collector_t coll = {0};
+    exec_extra_ctx_t      wrapper = {&coll, extra_cbs, extra_udata};
 
     ai_runtime_callbacks_t cbs = {
-        .on_text_chunk = exec_sync_chunk,
-        .on_tool_call = NULL,
-        .on_tool_result = NULL,
-        .on_error = NULL,
-        .on_done = NULL,
+        .on_text_chunk = exec_extra_text,
+        .on_thinking_chunk = exec_extra_thinking,
+        .on_tool_call = exec_extra_tool_call,
+        .on_tool_result = exec_extra_tool_result,
+        .on_error = exec_extra_error,
+        .on_done = exec_extra_done,
+        .on_message_persisted = exec_extra_persisted,
     };
 
     ai_trace_t* pre_created = NULL;
@@ -443,7 +520,7 @@ ai_runtime_execute(csilk_db_pool_t* pool, ai_runtime_context_t* ctx, ai_trace_t*
         }
     }
 
-    res.status = ai_runtime_execute_stream(pool, ctx, &cbs, &coll);
+    res.status = ai_runtime_execute_stream(pool, ctx, &cbs, &wrapper);
     res.stats = ctx ? ctx->stats : (ai_runtime_stats_t){0};
     if (res.status.code == AI_RUNTIME_ERR_OK) {
         res.final_content = coll.content;
@@ -464,6 +541,12 @@ ai_runtime_execute(csilk_db_pool_t* pool, ai_runtime_context_t* ctx, ai_trace_t*
     }
 
     return res;
+}
+
+ai_runtime_result_t
+ai_runtime_execute(csilk_db_pool_t* pool, ai_runtime_context_t* ctx, ai_trace_t** out_trace)
+{
+    return ai_runtime_execute_with_callbacks(pool, ctx, NULL, NULL, out_trace);
 }
 
 /* -------------------------------------------------------------------------- */

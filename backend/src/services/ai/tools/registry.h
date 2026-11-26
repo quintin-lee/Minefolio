@@ -95,6 +95,20 @@ const csilk_ai_tool_t* ai_tool_get_csilk_definitions(size_t* count);
  */
 const csilk_ai_tool_t* ai_tool_get_readonly_csilk_definitions(size_t* count);
 
+/**
+ * @brief 按工具名取 csilk_ai_tool_t 定义子集（用于受控能力档白名单）。
+ *        自动跳过 internal_only 工具；未在注册表中出现的名字忽略。
+ * @param names    工具名数组（按 count 个读取）
+ * @param count    名字个数
+ * @param out      调用方提供的输出缓冲区
+ * @param out_cap  输出缓冲区容量
+ * @return 实际写入 out 的工具定义个数
+ */
+size_t ai_tool_get_csilk_definitions_subset(const char* const* names,
+                                            size_t             count,
+                                            csilk_ai_tool_t*   out,
+                                            size_t             out_cap);
+
 #ifdef __cplusplus
 }
 #endif

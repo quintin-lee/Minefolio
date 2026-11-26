@@ -1,10 +1,15 @@
 #include "application/ai/im_bot_instance_usecases.h"
 
 #include "application/ai/im_bot_usecases.h"
+#include "application/ai/usecases.h"
 #include "application/task/async_task_manager.h"
 #include "common/db.h"
+#include "common/ledger_utils.h"
 #include "config/secret.h"
+#include "infrastructure/repositories/ai_session_repo_impl.h"
 #include "infrastructure/repositories/im_bot_repo_impl.h"
+#include "services/ai/tools/context.h"
+#include "services/ai/tools/dispatcher.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -203,6 +208,45 @@ im_instance_usecase_set_enabled(
     }
     if (rc != 0) {
         im_inst_err(err, err_cap, "failed to update instance");
+        if (code) {
+            *code = 1002;
+        }
+        return -1;
+    }
+    return 0;
+}
+
+int
+im_instance_usecase_set_capability(void*       pool,
+                                   int64_t     user_id,
+                                   int64_t     id,
+                                   const char* capability,
+                                   int*        code,
+                                   char*       err,
+                                   size_t      err_cap)
+{
+    if (code) {
+        *code = 0;
+    }
+    im_inst_err(err, err_cap, "");
+    if (!capability ||
+        (strcmp(capability, "readonly") != 0 && strcmp(capability, "query+confirm") != 0)) {
+        im_inst_err(err, err_cap, "invalid capability");
+        if (code) {
+            *code = 1002;
+        }
+        return -1;
+    }
+    int rc = mf_im_bot_instance_set_capability((csilk_db_pool_t*)pool, user_id, id, capability);
+    if (rc == -3) {
+        im_inst_err(err, err_cap, "instance not found");
+        if (code) {
+            *code = 1003;
+        }
+        return -1;
+    }
+    if (rc != 0) {
+        im_inst_err(err, err_cap, "failed to update capability");
         if (code) {
             *code = 1002;
         }
@@ -440,7 +484,12 @@ im_instance_gateway_chat(void*          pool,
         }
         return -1;
     }
-    int64_t owner = db_get_int(inst, "mf_user_id");
+    int64_t     owner = db_get_int(inst, "mf_user_id");
+    char        capability[32] = "readonly";
+    const char* cap_ptr = csilk_json_get_string(inst, "capability");
+    if (cap_ptr && cap_ptr[0]) {
+        snprintf(capability, sizeof(capability), "%s", cap_ptr);
+    }
     csilk_json_free(inst);
     if (owner <= 0) {
         im_inst_err(err, err_cap, "invalid instance owner");
@@ -454,6 +503,7 @@ im_instance_gateway_chat(void*          pool,
                                         "wechat",
                                         im_user_id,
                                         message,
+                                        capability,
                                         out_sync,
                                         task_id,
                                         dedup,
@@ -462,6 +512,215 @@ im_instance_gateway_chat(void*          pool,
                                         err,
                                         err_cap);
     return rc;
+}
+
+int
+im_instance_gateway_confirm(void*       pool,
+                            int64_t     id,
+                            const char* im_user_id,
+                            const char* confirm_code,
+                            char**      out_reply,
+                            int*        code,
+                            char*       err,
+                            size_t      err_cap)
+{
+    if (out_reply) {
+        *out_reply = NULL;
+    }
+    if (code) {
+        *code = 0;
+    }
+    im_inst_err(err, err_cap, "");
+    if (!im_user_id || !im_user_id[0] || !confirm_code || !confirm_code[0]) {
+        im_inst_err(err, err_cap, "im_user_id 与确认码不能为空");
+        if (code) {
+            *code = 1002;
+        }
+        return -1;
+    }
+
+    csilk_db_pool_t* db_pool = (csilk_db_pool_t*)pool;
+    csilk_json_t*    inst = mf_im_bot_instance_get_any(db_pool, id);
+    if (!inst) {
+        im_inst_err(err, err_cap, "instance not found");
+        if (code) {
+            *code = 1003;
+        }
+        return -1;
+    }
+    const char* bound = csilk_json_get_string(inst, "im_user_id");
+    const char* status = csilk_json_get_string(inst, "status");
+    int         enabled = db_get_bool(inst, "enabled") ? 1 : 0;
+    int64_t     owner = db_get_int(inst, "mf_user_id");
+    char        plat[32] = "wechat";
+    char        cap[32] = "readonly";
+    const char* plat_ptr = csilk_json_get_string(inst, "platform");
+    const char* cap_ptr = csilk_json_get_string(inst, "capability");
+    if (plat_ptr && plat_ptr[0]) {
+        snprintf(plat, sizeof(plat), "%s", plat_ptr);
+    }
+    if (cap_ptr && cap_ptr[0]) {
+        snprintf(cap, sizeof(cap), "%s", cap_ptr);
+    }
+    csilk_json_free(inst);
+
+    if (!enabled || !status || strcmp(status, "active") != 0 || !bound ||
+        strcmp(bound, im_user_id) != 0 || owner <= 0) {
+        im_inst_err(err, err_cap, "instance is unavailable for this sender");
+        if (code) {
+            *code = 1004;
+        }
+        return -1;
+    }
+    if (strcmp(cap, "query+confirm") != 0) {
+        im_inst_err(err, err_cap, "该实例未开启微信记账能力");
+        if (code) {
+            *code = 1004;
+        }
+        return -1;
+    }
+
+    char title[192];
+    snprintf(title, sizeof(title), "IM: %s@%s", plat, im_user_id);
+    int64_t session_id = mf_ai_session_find_by_title(db_pool, owner, title);
+    if (session_id <= 0) {
+        im_inst_err(err, err_cap, "没有待确认的记账草案");
+        if (code) {
+            *code = 1004;
+        }
+        return -1;
+    }
+    csilk_json_t* draft =
+        mf_im_bot_pending_action_get(db_pool, confirm_code, owner, session_id, (int64_t)time(NULL));
+    if (!draft) {
+        im_inst_err(err, err_cap, "确认码无效、已过期或已使用");
+        if (code) {
+            *code = 1004;
+        }
+        return -1;
+    }
+    const char* action_type = csilk_json_get_string(draft, "action_type");
+    const char* token_ptr = csilk_json_get_string(draft, "draft_token");
+    const char* args_ptr = csilk_json_get_string(draft, "args_json");
+    char        token_buf[600] = {0};
+    char*       args_buf = NULL;
+    if (token_ptr && token_ptr[0]) {
+        snprintf(token_buf, sizeof(token_buf), "%s", token_ptr);
+    }
+    if (args_ptr && args_ptr[0]) {
+        args_buf = strdup(args_ptr);
+    }
+    if (!action_type || strcmp(action_type, "daily_expense") != 0 || !token_buf[0] || !args_buf) {
+        csilk_json_free(draft);
+        free(args_buf);
+        im_inst_err(err, err_cap, "不支持的确认草案类型");
+        if (code) {
+            *code = 1004;
+        }
+        return -1;
+    }
+
+    int64_t ledger_id = ledger_get_default(db_pool, owner);
+    char    role[32] = {0};
+    if (ledger_id <= 0 || !ledger_get_user_role(db_pool, ledger_id, owner, role, sizeof(role)) ||
+        (strcmp(role, "owner") != 0 && strcmp(role, "editor") != 0)) {
+        csilk_json_free(draft);
+        free(args_buf);
+        im_inst_err(err, err_cap, "默认账本无编辑权限");
+        if (code) {
+            *code = 1004;
+        }
+        return -1;
+    }
+
+    csilk_json_t* parsed_args = csilk_json_parse(args_buf);
+    csilk_json_free(draft);
+    free(args_buf);
+    if (!parsed_args || !csilk_json_is_object(parsed_args)) {
+        if (parsed_args) {
+            csilk_json_free(parsed_args);
+        }
+        im_inst_err(err, err_cap, "草案参数损坏");
+        if (code) {
+            *code = 1004;
+        }
+        return -1;
+    }
+    /* 解析出的 JSON 为只读视图，需复制到可变对象后才能追加 draft_token。 */
+    csilk_json_t* args = csilk_json_object();
+    size_t        nargs = csilk_json_object_size(parsed_args);
+    for (size_t i = 0; i < nargs; i++) {
+        const char*         key = csilk_json_object_key(parsed_args, i);
+        const csilk_json_t* val = csilk_json_object_val(parsed_args, i);
+        if (key && val) {
+            csilk_json_add_object(args, key, csilk_json_copy((csilk_json_t*)val));
+        }
+    }
+    csilk_json_free(parsed_args);
+    csilk_json_add_string(args, "draft_token", token_buf);
+
+    ai_tool_context_t* ctx = ai_tool_context_create(db_pool, owner, session_id, NULL);
+    if (!ctx) {
+        csilk_json_free(args);
+        im_inst_err(err, err_cap, "确认执行失败");
+        if (code) {
+            *code = 1002;
+        }
+        return -1;
+    }
+    csilk_json_add_int(ctx->metadata, "ledger_id", ledger_id);
+    const char* type_ptr = csilk_json_get_string(args, "type");
+    double      amount_val = csilk_json_get_number(args, "amount");
+    char        type_buf[16] = "expense";
+    char        amount_buf[64] = "0.00";
+    if (type_ptr && type_ptr[0]) {
+        snprintf(type_buf, sizeof(type_buf), "%s", type_ptr);
+    }
+    snprintf(amount_buf, sizeof(amount_buf), "%.2f", amount_val);
+
+    char* result = ai_tool_dispatch_parsed(ctx, "confirm_proposed_expense", args);
+    ai_tool_context_free(ctx);
+    csilk_json_free(args);
+
+    if (!result) {
+        im_inst_err(err, err_cap, "确认执行失败");
+        if (code) {
+            *code = 1002;
+        }
+        return -1;
+    }
+    csilk_json_t* parsed = csilk_json_parse(result);
+    if (!parsed || !csilk_json_get_bool(parsed, "success")) {
+        const char* em = parsed ? csilk_json_get_string(parsed, "error") : NULL;
+        im_inst_err(err, err_cap, em && em[0] ? em : "草案已过期或已被使用");
+        if (code) {
+            *code = 1004;
+        }
+        if (parsed) {
+            csilk_json_free(parsed);
+        }
+        free(result);
+        return -1;
+    }
+    csilk_json_free(parsed);
+    free(result);
+
+    mf_im_bot_pending_action_consume(db_pool, confirm_code, owner, session_id);
+    ai_usecase_mark_action_executed(db_pool, owner, token_buf);
+
+    if (out_reply) {
+        size_t need = strlen(amount_buf) + 128;
+        char*  reply = (char*)malloc(need);
+        if (reply) {
+            snprintf(reply,
+                     need,
+                     "已记账：%s ¥%s，已写入默认账本并同步账户余额。",
+                     strcmp(type_buf, "income") == 0 ? "收入" : "支出",
+                     amount_buf);
+            *out_reply = reply;
+        }
+    }
+    return 0;
 }
 
 csilk_json_t*

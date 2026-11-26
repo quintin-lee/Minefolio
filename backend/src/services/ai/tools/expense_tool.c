@@ -221,6 +221,8 @@ exec_propose_daily_expense(const ai_tool_t*         tool,
                                                            proposed_args,
                                                            AI_RISK_HIGH,
                                                            300);
+    /* 供 iLink 短码通道原样复现 HMAC 参数哈希（避免结果脱敏/量化引起漂移）。 */
+    char* draft_args_json = csilk_json_serialize(proposed_args, NULL);
     csilk_json_free(proposed_args);
 
     csilk_json_t* res = csilk_json_object();
@@ -235,6 +237,10 @@ exec_propose_daily_expense(const ai_tool_t*         tool,
     csilk_json_add_string(res, "asset_name", matched_asset_name);
     csilk_json_add_string(res, "note", note ? note : "");
     csilk_json_add_string(res, "draft_token", draft_token ? draft_token : "");
+    if (draft_args_json) {
+        csilk_json_add_string(res, "draft_args_json", draft_args_json);
+        free(draft_args_json);
+    }
 
     if (draft_token) {
         free(draft_token);

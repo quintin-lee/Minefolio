@@ -195,6 +195,7 @@ api_im_chat(csilk_ctx_t* c)
                                         platform_buf,
                                         im_user_id,
                                         message,
+                                        NULL,
                                         &sync_data,
                                         &task_id,
                                         &deduplicated,

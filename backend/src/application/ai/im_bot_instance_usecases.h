@@ -28,6 +28,13 @@ int im_instance_usecase_verify_code(void*       pool,
                                     size_t      err_cap);
 int im_instance_usecase_set_enabled(
     void* pool, int64_t user_id, int64_t id, int enabled, int* code, char* err, size_t err_cap);
+int im_instance_usecase_set_capability(void*       pool,
+                                       int64_t     user_id,
+                                       int64_t     id,
+                                       const char* capability,
+                                       int*        code,
+                                       char*       err,
+                                       size_t      err_cap);
 int im_instance_usecase_delete(
     void* pool, int64_t user_id, int64_t id, int* code, char* err, size_t err_cap);
 
@@ -55,4 +62,12 @@ int           im_instance_gateway_chat(void*          pool,
                                        int*           code,
                                        char*          err,
                                        size_t         err_cap);
+int           im_instance_gateway_confirm(void*       pool,
+                                          int64_t     id,
+                                          const char* im_user_id,
+                                          const char* confirm_code,
+                                          char**      out_reply,
+                                          int*        code,
+                                          char*       err,
+                                          size_t      err_cap);
 csilk_json_t* im_instance_gateway_task(void* pool, int64_t id, int64_t task_id, int* code);

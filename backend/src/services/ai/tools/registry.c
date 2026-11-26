@@ -213,3 +213,37 @@ ai_tool_get_readonly_csilk_definitions(size_t* count)
     pthread_mutex_unlock(&s_registry_mutex);
     return s_csilk_readonly_tools;
 }
+
+size_t
+ai_tool_get_csilk_definitions_subset(const char* const* names,
+                                     size_t             count,
+                                     csilk_ai_tool_t*   out,
+                                     size_t             out_cap)
+{
+    if (!names || !out || out_cap == 0) {
+        return 0;
+    }
+    ai_tool_registry_init();
+    size_t written = 0;
+    pthread_mutex_lock(&s_registry_mutex);
+    for (size_t ni = 0; ni < count && written < out_cap; ni++) {
+        const char* name = names[ni];
+        if (!name || !name[0]) {
+            continue;
+        }
+        for (size_t i = 0; i < s_tool_count; i++) {
+            const ai_tool_t* t = &s_registered_tools[i];
+            if (t->internal_only || strcmp(t->name, name) != 0) {
+                continue;
+            }
+            out[written].type = "function";
+            out[written].function.name = t->name;
+            out[written].function.description = t->description;
+            out[written].function.parameters_json = t->parameters_schema;
+            written++;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&s_registry_mutex);
+    return written;
+}

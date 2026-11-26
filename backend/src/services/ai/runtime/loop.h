@@ -54,6 +54,15 @@ ai_runtime_result_t
 ai_runtime_execute(csilk_db_pool_t* pool, ai_runtime_context_t* ctx, ai_trace_t** out_trace);
 
 /**
+ * @brief 同步执行并额外转发工具事件回调（文本收集仍由内部完成）。
+ */
+ai_runtime_result_t ai_runtime_execute_with_callbacks(csilk_db_pool_t*              pool,
+                                                      ai_runtime_context_t*         ctx,
+                                                      const ai_runtime_callbacks_t* extra_cbs,
+                                                      void*                         extra_udata,
+                                                      ai_trace_t**                  out_trace);
+
+/**
  * @brief 判断工具是否属于无数据库依赖的无状态网络工具
  */
 bool is_stateless_network_tool(const char* name);
