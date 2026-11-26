@@ -9,6 +9,13 @@
 #
 # Two feature branches picking the same next version number (e.g. both taking V037)
 # is invisible in review of either branch alone, so enforce it statically here.
+#
+# The entire value of a static guard is deterministic output: pin the locale so
+# sort/uniq collation can never differ between CI runners and developer machines
+# (LANG=zh_CN.UTF-8 vs C.UTF-8), which would resurrect ghost pass/fail flips.
+
+export LC_ALL=C
+export LANG=C
 
 set -euo pipefail
 
