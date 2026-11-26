@@ -36,6 +36,7 @@ const router = createRouter({
         { path: 'chat', name: 'MobileChat', component: () => import('@/views/Chat.vue'), meta: { fullBleed: true } },
         { path: 'reports', name: 'MobileReports', component: () => import('@/views-mobile/ReportsMobile.vue') },
         { path: 'settings', name: 'MobileSettings', component: () => import('@/views-mobile/SettingsMobile.vue') },
+        { path: 'categories', name: 'MobileCategories', component: () => import('@/views-mobile/CategoryManageMobile.vue') },
       ],
     },
     {

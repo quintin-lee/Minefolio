@@ -204,7 +204,7 @@ function goPlans() {
   router.push('/m/plans')
 }
 function goCategories() {
-  ElMessage.info('分类增删与层级配置请前往桌面端管理')
+  router.push('/m/categories')
 }
 
 async function handleTest() {
