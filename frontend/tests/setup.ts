@@ -68,6 +68,7 @@ if (typeof globalThis.indexedDB === 'undefined') {
           idbDatabases.set(name, stores)
         }
         const db = {
+          close() {},
           objectStoreNames: {
             contains: (sName: string) => stores!.has(sName),
           },

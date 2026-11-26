@@ -62,4 +62,42 @@ describe('crypto-storage', () => {
     await expect(decryptPayload('enc:v1:AAAA:invalidCiphertext')).rejects.toBeInstanceOf(CryptoStorageDecryptError)
     await expect(decryptPayload('enc:v1:broken')).rejects.toBeInstanceOf(CryptoStorageDecryptError)
   })
+
+  it('closes IndexedDB connections after reading and saving the keystore key', async () => {
+    const closeCalls: number[] = []
+    const originalOpen = indexedDB.open.bind(indexedDB)
+    vi.spyOn(indexedDB, 'open').mockImplementation((...args) => {
+      const req = originalOpen(...(args as [string, number?]))
+      const origSet = Object.getOwnPropertyDescriptor(req, 'onsuccess')
+      let userHandler: ((ev: Event) => void) | null = null
+      Object.defineProperty(req, 'onsuccess', {
+        configurable: true,
+        get: () => userHandler,
+        set: (fn) => {
+          userHandler = (ev: Event) => {
+            const db = req.result as IDBDatabase & { close: () => void }
+            const origClose = db.close.bind(db)
+            db.close = () => {
+              closeCalls.push(1)
+              origClose()
+            }
+            fn(ev)
+          }
+          if (origSet?.set) origSet.set.call(req, userHandler)
+        },
+      })
+      return req
+    })
+
+    try {
+      const payload = new Uint8Array([9, 8, 7])
+      const encrypted = await encryptPayload(payload)
+      resetInMemoryCryptoKey()
+      const decrypted = await decryptPayload(encrypted)
+      expect(decrypted).toEqual(payload)
+      expect(closeCalls.length).toBeGreaterThanOrEqual(2)
+    } finally {
+      vi.restoreAllMocks()
+    }
+  })
 })

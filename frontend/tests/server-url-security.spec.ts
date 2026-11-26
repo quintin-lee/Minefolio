@@ -30,10 +30,12 @@ describe('server-url security validation', () => {
   it('rejects public domains and public IPs over unencrypted plain http', () => {
     expect(isValidServerUrl('http://api.minefolio.com')).toBe(false)
     expect(isValidServerUrl('http://8.8.8.8:8080')).toBe(false)
+    expect(isValidServerUrl('http://example.bar')).toBe(false)
   })
 
   it('allows public domains over https', () => {
     expect(isValidServerUrl('https://api.minefolio.com')).toBe(true)
     expect(isValidServerUrl('https://my-nas.example.org:8443')).toBe(true)
+    expect(isValidServerUrl('https://example.bar')).toBe(true)
   })
 })

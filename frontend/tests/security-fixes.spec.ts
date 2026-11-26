@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import DOMPurify from 'dompurify'
+import { renderSafeMarkdown } from '@/utils/markdown'
 import { buildOAuthAuthUrl, consumeAndVerifyOAuthState } from '@/utils/oauth-state'
 
 describe('Task 1 Security Hardening', () => {
@@ -44,5 +46,15 @@ describe('Task 1 Security Hardening', () => {
     const state2 = new URL(redirectUrl2).searchParams.get('state') || ''
     expect(consumeAndVerifyOAuthState(state2)).toBe(true)
     expect(consumeAndVerifyOAuthState(state2)).toBe(false)
+  })
+
+  it('renderSafeMarkdown adds rel="noopener noreferrer" without leaving a global DOMPurify hook', () => {
+    const mdHtml = renderSafeMarkdown('[link](https://example.com)')
+    expect(mdHtml).toContain('target="_blank"')
+    expect(mdHtml).toContain('rel="noopener noreferrer"')
+
+    const plainSvgOrHtml = DOMPurify.sanitize('<a href="https://example.com">x</a>')
+    expect(plainSvgOrHtml).not.toContain('noopener')
+    expect(plainSvgOrHtml).not.toContain('target="_blank"')
   })
 })

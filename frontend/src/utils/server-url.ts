@@ -49,8 +49,7 @@ function isPrivateOrLocalHost(hostname: string): boolean {
   if (
     lower.endsWith('.local') ||
     lower.endsWith('.lan') ||
-    lower.endsWith('.internal') ||
-    lower.endsWith('.bar')
+    lower.endsWith('.internal')
   ) {
     return true
   }

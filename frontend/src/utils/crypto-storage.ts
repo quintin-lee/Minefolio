@@ -84,29 +84,39 @@ async function getStoredKeyEntry(): Promise<CryptoKey | Uint8Array | null> {
   const db = await openKeystoreDb()
   if (!db) return null
   return new Promise((resolve) => {
+    let settled = false
+    const finish = (val: CryptoKey | Uint8Array | null) => {
+      if (settled) return
+      settled = true
+      try {
+        db.close?.()
+      } catch {
+        // ignore close errors
+      }
+      resolve(val)
+    }
     try {
       const tx = db.transaction(DB_STORE_NAME, 'readonly')
       const store = tx.objectStore(DB_STORE_NAME)
       const getReq = store.get(KEYSTORE_KEY_ID)
+      let resultVal: CryptoKey | Uint8Array | null = null
       getReq.onsuccess = () => {
         const res = getReq.result
         if (isCryptoKeyLike(res)) {
-          resolve(res)
-          return
+          resultVal = res
+        } else if (res instanceof Uint8Array) {
+          resultVal = res
+        } else if (ArrayBuffer.isView(res)) {
+          resultVal = new Uint8Array(res.buffer, res.byteOffset, res.byteLength)
         }
-        if (res instanceof Uint8Array) {
-          resolve(res)
-          return
-        }
-        if (ArrayBuffer.isView(res)) {
-          resolve(new Uint8Array(res.buffer, res.byteOffset, res.byteLength))
-          return
-        }
-        resolve(null)
+        finish(resultVal)
       }
-      getReq.onerror = () => resolve(null)
+      getReq.onerror = () => finish(null)
+      tx.oncomplete = () => finish(resultVal)
+      tx.onerror = () => finish(null)
+      tx.onabort = () => finish(null)
     } catch {
-      resolve(null)
+      finish(null)
     }
   })
 }
@@ -115,14 +125,26 @@ async function saveCryptoKey(key: CryptoKey): Promise<void> {
   const db = await openKeystoreDb()
   if (!db) return
   return new Promise((resolve) => {
+    let settled = false
+    const finish = () => {
+      if (settled) return
+      settled = true
+      try {
+        db.close?.()
+      } catch {
+        // ignore close errors
+      }
+      resolve()
+    }
     try {
       const tx = db.transaction(DB_STORE_NAME, 'readwrite')
       const store = tx.objectStore(DB_STORE_NAME)
       store.put(key, KEYSTORE_KEY_ID)
-      tx.oncomplete = () => resolve()
-      tx.onerror = () => resolve()
+      tx.oncomplete = () => finish()
+      tx.onerror = () => finish()
+      tx.onabort = () => finish()
     } catch {
-      resolve()
+      finish()
     }
   })
 }
