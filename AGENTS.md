@@ -12,7 +12,7 @@ Minefolio is a self-hosted personal finance and investment tracker. It supports 
 Interfaces Layer   interfaces/http/controllers/  Parse params, call usecase, format response
 Application Layer  application/*/{usecases,commands,dtos}.h/.c  Use case orchestration (21 domains)
 Domain Layer       domain/*/{entity,repository,rules}.h/.c  Pure business rules, zero dependencies
-Infrastructure     infrastructure/repositories/*_repo_impl.c  SQL implementations (27 files)
+Infrastructure     infrastructure/repositories/*_repo_impl.c  SQL implementations (28 files)
                    infrastructure/database/  Database abstraction and SQLite/Postgres adapters
                    (Migration engine, CSV parsing, TOTP 2FA, and REST response envelopes downstreamed to csilk framework)
 Core Layer         core/financial/  Fixed-point core: money, decimal, quantity, price, rate, pnl
@@ -126,7 +126,7 @@ Assets group under **account** containers (bank card, Alipay, broker…). Accoun
 ### Database Migration System
 
 Database schema changes are managed strictly via csilk's native C migration engine (`<csilk/drivers/db/migration.h>`):
-- **Versioned scripts**: `backend/sql/migrations/{sqlite,postgres}/` following Flyway naming `V<num>__<name>.sql` (`V001`~`V033`).
+- **Versioned scripts**: `backend/sql/migrations/{sqlite,postgres}/` following Flyway naming `V<num>__<name>.sql` (`V001`~`V038`).
 - **Tracking table**: `schema_migrations` records `version`, `name`, `checksum` (SHA-256 CRLF-normalized), `applied_at`, `execution_time_ms`, `execution_time`.
 - **Concurrency lock**: `schema_migration_lock` table acts as a distributed mutex with lease timeout to prevent multi-instance migration races. Under PostgreSQL, csilk provides full native prepared statement support (`?` rewritten to `$N`, `PQprepare`/`PQexecPrepared`), ensuring lock acquisition and statement execution run reliably.
 - **Engine lifecycle**: Automatic discovery, version sorting, checksum validation (tamper detection), transactional application, and status reporting.
@@ -162,19 +162,19 @@ AI Runtime (services/ai/runtime/)
 | Path | Purpose |
 |------|---------|
 | `backend/src/main.c` | Entry point: DB init, migrations, middleware stack, route registration, static serve |
-| `backend/src/interfaces/http/controllers/` | Thin HTTP handlers (27 domain controllers); `register_*_routes(app)` |
+| `backend/src/interfaces/http/controllers/` | Thin HTTP handlers (28 domain controllers); `register_*_routes(app)` |
 | `backend/src/domain/` | Domain layer: entities, repository contracts, business rules (21 domains) |
 | `backend/src/application/` | Application layer: use case orchestration (21 domains) |
-| `backend/src/infrastructure/repositories/` | Infrastructure layer: SQL implementations of repository contracts (27 files, zero legacy) |
+| `backend/src/infrastructure/repositories/` | Infrastructure layer: SQL implementations of repository contracts (28 files, zero legacy) |
 | `backend/src/services/ai/` | Unified AI Runtime: session, context, model, tool, workflow, policy, trace, memory |
 | `backend/src/core/financial/` | Fixed-point core arithmetic: money, decimal, quantity, price, rate, pnl |
 | `backend/src/core/ledger/` | Ledger engine: single source of truth, position calculation, history replay/rebuild |
 | `backend/src/infrastructure/database/` | Database abstraction layer and SQLite/PostgreSQL native adapters (migration engine downstreamed to csilk) |
 | `backend/src/common/` | Cross-cutting: `db.h`, `balance.h`, `jwt.h`, `response.h`, `ctx.h`, `tx_types.h`, `ledger_utils.h` (CSV, TOTP 2FA & REST response envelopes downstreamed to csilk) |
 | `backend/src/config/` | `db_config.h/.c` (DSN), `key_manager.h/.c` (RSA-OAEP keys), `secret.h/.c` (Secret Provider) |
-| `backend/sql/migrations/` | Versioned migration scripts (`sqlite/` & `postgres/`, `V001`~`V033`) |
-| `backend/sql/` | `migration.sql` (SQLite full schema, 37 tables), `migration_postgres.sql` |
-| `backend/tests/unit/` | 81 CTest unit test suites (financial core, ledger engine + checkpoint rebuild, domain rules, DB repository, migration engine, AI runtime/policy/nonces/batch confirmation, MCP client/pool/risk, FX semantics, portfolio PnL alignment, scheduler, RBAC, async tasks, backup) |
+| `backend/sql/migrations/` | Versioned migration scripts (`sqlite/` & `postgres/`, `V001`~`V038`) |
+| `backend/sql/` | `migration.sql` (SQLite full schema, 45 tables), `migration_postgres.sql` |
+| `backend/tests/unit/` | ~87 CTest unit test targets (financial core, ledger engine + checkpoint rebuild, domain rules, DB repository, migration engine, AI runtime/policy/nonces/batch confirmation, MCP client/pool/risk, FX semantics, portfolio PnL alignment, scheduler, RBAC, async tasks, backup) |
 | `gateway/` | IM bot gateway (QQ OneBot / WeChat adapters bridging to `/api/im/*`, `npm run test:adapters` — 11 tests) |
 | `backend/tests/test_link.sh` | Core integration test suite (244 assertions: auth, accounts, CRUD, balance联动, PnL, CSV, pagination, ledger rebuild, backup, AI trace/workflow/skills) |
 | `backend/src/domain/account/` | Account domain: `mf_account_t` entity, validation/delete rules, repository contract |
@@ -437,7 +437,7 @@ Mobile users can customize the backend server address (e.g. LAN IP `http://192.1
 | `backend/src/common/response.h` | `respond_ok`, `respond_error`, etc. |
 | `backend/src/common/ctx.h` | `ctx_user_id(c)` — extract user from JWT |
 | `backend/src/common/jwt.h` | JWT generate/verify with HS256 |
-| `backend/sql/migration.sql` | SQLite schema (37 tables) |
+| `backend/sql/migration.sql` | SQLite schema (45 tables) |
 | `backend/sql/migration_postgres.sql` | PostgreSQL schema (BIGSERIAL, DOUBLE PRECISION) |
 | `frontend/package.json` | Scripts, dependencies, vitest config |
 | `frontend/vite.config.ts` | Desktop: port 5173, API proxy to :8080 |
@@ -484,11 +484,11 @@ Mobile users can customize the backend server address (e.g. LAN IP `http://192.1
 
 ## Testing & QA
 
-### Backend Unit & Integration Tests (81 CTest Suites + 21 Integration Scripts)
+### Backend Unit & Integration Tests (~87 CTest Targets + 21 Integration Scripts)
 
 ```bash
 cd backend
-# 1. Run all 81 CTest unit test suites (isolated)
+# 1. Run all ~87 CTest unit test targets (isolated)
 ../backend/tests/run_isolated.sh -m 4G -j 4 unit build
 
 # 2. Run integration test suites (e.g. via run_isolated.sh -m 2G)

@@ -1,5 +1,7 @@
 # Minefolio 全量代码分析报告（2026-11-04）
 
+> ⚠️ **历史快照报告**：本文是 `master @ b781c243` 时点的分析存档，文中的规模数字与缺陷清单反映当时状态，不代表当前 HEAD。现状以 `docs/superpowers/specs/2026-08-10-minefolio-design.md`（已按 v1.4.0 重写）、`docs/architecture.md` 与代码为准。
+
 > 方法：13 个只读 scout 并行切片扫描（后端 7 + 前端 2 + 基础设施/构建 2 + HTTP 层 1 + 工作流/trace 1），
 > 所有结论带 `file:line`；标注 **[自验]** 的条目由主分析者二次核对过源代码。
 > 基线：`master @ b781c243`（工作树 `backend/tests/unit/test_ai_tools.c` 有未提交修改）。

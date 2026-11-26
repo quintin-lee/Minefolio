@@ -78,7 +78,7 @@ graph TB
     ai -->|"model/policy/runtime/tools/workflow/memory"| shared
     market --> quotes
     market --> infra
-    ai -->|"SSE: POST /ai/chat"| llm
+    ai -->|"SSE: POST /api/ai/chat"| llm
     infra --> sqlite
     infra -.-> pg
 ```
@@ -90,18 +90,18 @@ graph TB
 | **Vue 3 SPA (桌面)** | 单页应用,Vue Router + Pinia,Element Plus UI,本地无状态 | `frontend/src/main.ts`、`router/index.ts` |
 | **Capacitor Mobile** | 同一份 API 层,内嵌 sql.js WASM 做离线 SQLite,Android 端走 Gradle | `frontend/src/main-mobile.ts`、`vite.config.mobile.ts` |
 | **Nginx** | 静态托管 `frontend/dist` + `/api/*` 反代到 `:8080` | `nginx/nginx.conf` |
-| **Interfaces Layer** | 纯委托型 HTTP Controllers,仅做参数提取 + 调用 usecase + 响应封装 | `backend/src/interfaces/http/controllers/` (27 个控制器) |
+| **Interfaces Layer** | 纯委托型 HTTP Controllers,仅做参数提取 + 调用 usecase + 响应封装 | `backend/src/interfaces/http/controllers/` (28 个控制器) |
 | **Application Layer** | 每个域一个 Use Case 模块,编排领域规则 + Financial Core + Ledger Engine | `backend/src/application/*/{commands,dtos,usecases}.h/.c` (21 域) |
 | **Domain Layer** | 纯业务实体、仓储契约接口、业务规则;零外部依赖 | `backend/src/domain/*/{entity,repository,rules}.{h,c}` (21 域) |
 | **Infrastructure Layer** | 实现 Domain Repository 契约,执行 SQL,返回领域实体；含数据库适配器与 SQLite 热备份 (`db_backup.c`) | `backend/src/infrastructure/repositories/*_repo_impl.c` (27 个) |
 | **Financial Core** | **新增 v1.0**: 128 位定点高精度金融数学 + 强类型领域模型 | `backend/src/core/financial/` |
 | **Ledger Engine** | **新增 v1.0**: 事件溯源账本,原子 `ledger_apply_tx` / `ledger_reverse_tx`,支持 `ledger_rebuild_*` | `backend/src/core/ledger/` |
 | **Common** | 跨域通用: DB 池、JWT (HS256)、RSA-OAEP、tx_type 注册表、balance 符号翻转、RBAC 视野过滤（CSV 流式解析与 TOTP 2FA 下沉至 csilk 官方库） | `backend/src/common/` |
-| **Unified AI Runtime** | **统一 AI 运行时架构**: 彻底解耦 Controller/Workflow 与 LLM 直接调用;session(会话持久化与标题)、context(统一容器与状态机)、model(模型提供者适配与估算)、tools(26 个内置工具与 MCP)、policy(五级风控与防重放)、trace(端到端Span与成本统计)、memory(滑动窗口截断与系统提示词保护)、workflow(DAG 编排与 13 个内置工作流) | `backend/src/services/ai/{runtime,memory,model,policy,tools,trace,workflow,workflows}/*.c/.h` |
+| **Unified AI Runtime** | **统一 AI 运行时架构**: 彻底解耦 Controller/Workflow 与 LLM 直接调用;session(会话持久化与标题)、context(统一容器与状态机)、model(模型提供者适配与估算)、tools(25 个内置工具注册项与 MCP)、policy(五级风控与防重放)、trace(端到端Span与成本统计)、memory(滑动窗口截断与系统提示词保护)、workflow(DAG 编排与 13 个内置工作流) | `backend/src/services/ai/{runtime,memory,model,policy,tools,trace,workflow,workflows}/*.c/.h` |
 | **Scheduler & Market** | 后台调度中心（5 段式 Cron + 动态休眠）+ 多源行情与汇率定时拉取 (`quote_driver` 东方财富/腾讯/Yahoo/Crypto) + 微信/Webhook 推送 | `backend/src/services/{scheduler,market,notification}/` |
 | **IM Gateway (`gateway/`)** | 独立零依赖 Node.js 网关，桥接 QQ (OneBot v11) / WeChat 至 `/api/im/*` 只读查账接口（支持 `im_bind` 与 `/bind-auth` 自助绑定） | `gateway/{index.js,cli.js,adapters/}` |
-| **Migration Engine** | **原生 C 语言版本化迁移引擎**: 下沉至 csilk 框架驱动层（`<csilk/drivers/db/migration.h>`），提供 Flyway 规范发现与严格版本排序（`V001`~`V033`）、SHA-256 CRLF 规范化防篡改校验和、分布式互斥锁 (`schema_migration_lock`)、PostgreSQL 原生 Prepared Statement 支持，以及自动基线 (Auto-Baseline) 平滑升级 | `backend/sql/migrations/` (33 组脚本), `<csilk/drivers/db/migration.h>` |
-| **SQLite / PostgreSQL** | 数据持久化;通过 `csilk_db_pool_t` 连接池，支持 PostgreSQL 原生 Prepared Statement (`?` -> `$N`) | `backend/sql/migration.sql`、`migration_postgres.sql` (37 张表) |
+| **Migration Engine** | **原生 C 语言版本化迁移引擎**: 下沉至 csilk 框架驱动层（`<csilk/drivers/db/migration.h>`），提供 Flyway 规范发现与严格版本排序（`V001`~`V038`）、SHA-256 CRLF 规范化防篡改校验和、分布式互斥锁 (`schema_migration_lock`)、PostgreSQL 原生 Prepared Statement 支持，以及自动基线 (Auto-Baseline) 平滑升级 | `backend/sql/migrations/` (38 组脚本), `<csilk/drivers/db/migration.h>` |
+| **SQLite / PostgreSQL** | 数据持久化;通过 `csilk_db_pool_t` 连接池，支持 PostgreSQL 原生 Prepared Statement (`?` -> `$N`) | `backend/sql/migration.sql`、`migration_postgres.sql` (45 张表) |
 
 **DDD 21 域覆盖状态:**
 
@@ -119,7 +119,7 @@ graph TB
 
 | 组件 | 状态 | 说明 |
 |------|:----:|------|
-| AI Tools (26 个内置工具 + MCP) | ✅ | 经 Policy 五级风控与 `ai_repo_impl` 等仓储访问数据 |
+| AI Tools (25 个内置工具注册项 + MCP) | ✅ | 经 Policy 五级风控与 `ai_repo_impl` 等仓储访问数据 |
 | AI Workflows (13 个注册工作流) | ✅ | DAG 图编排（含条件分支与 Saga 补偿）委托 Runtime 执行 |
 | AI Runtime + Skills + News | ✅ | 独立运行时 + Skills (`V022`) + Market Pulse (`V024`/`V028`) |
 
@@ -131,7 +131,7 @@ graph TB
 |--------|------|------|------|
 | `/api/auth/*` | HTTP/1.1 JSON | 无(setup/login)→ JWT | 写入操作受 `rate_limit_auth_middleware` 限流 |
 | `/api/*` (其余) | HTTP/1.1 JSON | Bearer JWT (HS256) | 写入操作受 CSRF 保护 (Cookie `csrf_token` + `X-CSRF-Token` 头) |
-| `/ai/chat`、`/ai/workflows/run` | HTTP/1.1 + SSE (`text/event-stream`) | Bearer JWT | 流式 `event: delta\|done\|error` |
+| `/api/ai/chat`、`/api/ai/workflows/run` | HTTP/1.1 + SSE (`text/event-stream`) | Bearer JWT | 流式 `event: delta\|done\|error` |
 | 静态资源 | HTTP/1.1 | 无 | 由 csilk 内置 `csilk_app_static()` 托管,生产由 Nginx 接管 |
 | 桌面→后端 | 直接连接 `:8080` (开发) / 经 Nginx (生产) | 同上 | Vite 代理 `/api` → `:8080` |
 | 移动端→后端 | 直接连接或经 Nginx | 同上 | 支持动态配置 (`localStorage`) 与 `VITE_API_URL` 编译期回退 |
@@ -182,7 +182,7 @@ graph TB
         ai_ctrl["fa:fa-robot ai_controller<br/>ai_usecase_*"]
         market_ctrl["fa:fa-chart-line market_controller<br/>market_usecase_*"]
         tx_ctrl["fa:fa-exchange-alt tx_controller"]
-        other_ctrl["... 27 个控制器"]
+        other_ctrl["... 28 个控制器"]
     end
 
     subgraph app["fa:fa-cogs Application Layer"]
@@ -364,7 +364,7 @@ Model (请求/响应) → Policy (五级风控) → Runtime (会话/循环)
 
 ### 3.1 总
 
-Minefolio 数据模型围绕**"资产 (Asset) — 交易 (Transaction) — 余额联动"**三核心组织,辅以**账户 (Account) 分组容器与账户/字段 RBAC (`V017`/`V031`)**、分类树、标签、多账本与成员、**持仓批次 (`V021`)**、行情与外汇历史、**账本检查点快照 (`V020`)**、AI 会话/消息/追踪/技能/财经早报、IM 绑定、调度中心与异步后台任务 (`V033`) 共 **37 张表**（迁移 `V001`~`V033`）。SQLite 与 PostgreSQL 两套 schema 语义对齐,迁移在启动时由 csilk 迁移引擎应用。**Ledger Engine** 作为账本事件溯源引擎,所有交易通过 `ledger_tx_t` 事件对象驱动,支持原子 apply/reverse 及 `ledger_rebuild_*` 重算——V020 起重建从最近有效检查点快照增量推进,回溯改账自动级联失效下游快照。**余额方向**在 `common/balance.c` 集中处理:对 `loan / credit_card / other_liability` 类资产符号翻转,使 net worth 计算永远 `assets - liabilities` 正确。
+Minefolio 数据模型围绕**"资产 (Asset) — 交易 (Transaction) — 余额联动"**三核心组织,辅以**账户 (Account) 分组容器与账户/字段 RBAC (`V017`/`V031`)**、分类树、标签、多账本与成员、**持仓批次 (`V021`)**、行情与外汇历史、**账本检查点快照 (`V020`)**、AI 会话/消息/追踪/技能/财经早报、IM 绑定、调度中心与异步后台任务 (`V033`) 共 **45 张表**（迁移 `V001`~`V038`）。SQLite 与 PostgreSQL 两套 schema 语义对齐,迁移在启动时由 csilk 迁移引擎应用。**Ledger Engine** 作为账本事件溯源引擎,所有交易通过 `ledger_tx_t` 事件对象驱动,支持原子 apply/reverse 及 `ledger_rebuild_*` 重算——V020 起重建从最近有效检查点快照增量推进,回溯改账自动级联失效下游快照。**余额方向**在 `common/balance.c` 集中处理:对 `loan / credit_card / other_liability` 类资产符号翻转,使 net worth 计算永远 `assets - liabilities` 正确。
 
 ### 3.2 图
 
@@ -598,7 +598,7 @@ sequenceDiagram
     V->>ST: sendMessage(text)
     ST->>ST: push user msg + empty assistant msg
     ST->>API: chatStream({content, ...}, AbortSignal)
-    API->>IC: POST /ai/chat (fetch + ReadableStream)
+    API->>IC: POST /api/ai/chat (fetch + ReadableStream)
     IC->>RT: ai_runtime_execute_stream(pool, ctx, stream_cb, user_data)
     RT->>MEM: ai_memory_build_messages(ctx->session_id, token_budget)
     Note over MEM: 保留系统提示词 + 截断历史滑动窗口
@@ -1150,7 +1150,7 @@ cmake --build backend/build --parallel && npm --prefix frontend run build
 | **适合场景** | 单用户/家庭自托管 | 多租户/集群 |
 
 Minefolio 采用下沉至 csilk 框架的原生**正式版本化迁移系统 (Database Migration System)**（`<csilk/drivers/db/migration.h>`），彻底替换历史上的动态字段检测与硬编码 ALTER TABLE：
-- **规范化版本脚本**：按 Flyway 规范统一组织于 `backend/sql/migrations/{sqlite,postgres}/`，文件命名格式 `V<num>__<name>.sql`（`V001`~`V033`）。
+- **规范化版本脚本**：按 Flyway 规范统一组织于 `backend/sql/migrations/{sqlite,postgres}/`，文件命名格式 `V<num>__<name>.sql`（`V001`~`V038`）。
 - **版本记录与审计 (`schema_migrations`)**：记录每个已应用的迁移版本、名称、SHA-256 校验和、应用时间及执行毫秒耗时。
 - **分布式并发互斥锁 (`schema_migration_lock`)**：通过数据库行锁与租约超时防死锁机制，有效防止多实例并行迁移竞争。
 - **PostgreSQL 原生 Prepared Statement 支持**：csilk PostgreSQL 驱动原生实现 `?` 转 `$1, $2, ...` 重写、`PQprepare`/`PQexecPrepared` 编译与执行、类型绑定与 `DEALLOCATE` 释放，确保并发锁及迁移语句在 SQLite / PostgreSQL 下均稳定执行。
@@ -1266,7 +1266,7 @@ Minefolio 采用下沉至 csilk 框架的原生**正式版本化迁移系统 (Da
 | `backend/src/common/balance.h` | 余额符号翻转 + 持仓核算 |
 | `backend/tools/reset-password.c` | 独立运维 CLI 工具 (`reset` / `verify` / `list` / `disable-2fa`) |
 | `csilk (csilk/drivers/db/migration.h)` | 数据库迁移引擎 (下沉至 csilk `v1.2.0`，提供 checksum、分布式锁、auto-baseline) |
-| `backend/sql/migrations/{sqlite,postgres}/` | 版本化迁移文件 (V001~V033) |
+| `backend/sql/migrations/{sqlite,postgres}/` | 版本化迁移文件 (V001~V038) |
 | `backend/sql/migration.sql` | SQLite 37 表全量基准 |
 | `backend/sql/migration_postgres.sql` | PostgreSQL 37 表全量基准 |
 | `backend/tests/test_link.sh` | 核心闭环集成测试 (244 assertions) |

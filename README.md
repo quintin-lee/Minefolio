@@ -20,7 +20,7 @@ Minefolio 是一款极度轻量、安全、专业的**开源全资产管理与�
 * 🏛️ **统一账本状态引擎 (Ledger Engine)**：确立「Transaction 是唯一金融事实」准则，资产持仓、现金余额、成本基础、已实现/浮动盈亏全由账本引擎统一计算与更新，并提供基于时间序列事实全量重建 (`rebuild`) 的自愈能力；V020 引入账本检查点快照 (`ledger_snapshots`)，重建从最近有效检查点增量推进而非全量回放，回溯改账自动级联失效下游快照；交易落库时同步固化 Point-in-Time 历史汇率 (`transactions.fx_rate_to_cny`)，历史估值不再随其后汇率变动漂移。
 * 🤖 **统一 AI Runtime 与企业级五级风控引擎 (Unified AI Runtime & Risk Engine)**：建立原生 C 统一 AI 运行时架构，将 Controller 与 Workflow 彻底与 LLM 调用解耦，纳管会话 (Session)、统一上下文容器 (Context)、模型适配 (Model)、工具执行 (Tool)、工作流编排 (Workflow)、安全策略 (Policy)、全链路追踪 (Trace) 与滑动窗口记忆 (Memory)；全面支持硬预算与约束（迭代上限、超时、Token/Tool/Cost 预算与主动取消）及结构化错误分类，实行五级风险评估与带 Nonce 防重放的双重确认令牌机制（V019 将已消费 Nonce 持久化至 `ai_consumed_nonces` 表，重放防护跨进程重启生效）。
 * 🔑 **统一 Secret Provider 与零硬编码安全门禁**：建立统一敏感配置检索机制，原生兼容环境变量、Docker/K8s Secret 文件挂载与外部密钥管理器 (Vault/AWS/K8s)；在生产启动期实施硬编码/弱口令主动熔断。
-* 🗄️ **企业级数据库迁移系统 (Database Migration System)**：下沉至 csilk 框架的原生 C 版本化迁移引擎（`<csilk/drivers/db/migration.h>`），支持 SQLite / PostgreSQL 双方言（`V001`~`V033`，覆盖 **37 张核心业务与运维表**）；具备版本严格发现排序、SHA-256 CRLF 规范化哈希防篡改、基于行锁的分布式迁移互斥锁，并在 PostgreSQL 驱动层支持原生 Prepared Statement（`?` 自动转 `$N` 与参数绑定），实现生产环境存量数据库平滑升级（Auto-Baseline），绝不要求删除已有数据库重新初始化。
+* 🗄️ **企业级数据库迁移系统 (Database Migration System)**：下沉至 csilk 框架的原生 C 版本化迁移引擎（`<csilk/drivers/db/migration.h>`），支持 SQLite / PostgreSQL 双方言（`V001`~`V038`，覆盖 **45 张核心业务与运维表**）；具备版本严格发现排序、SHA-256 CRLF 规范化哈希防篡改、基于行锁的分布式迁移互斥锁，并在 PostgreSQL 驱动层支持原生 Prepared Statement（`?` 自动转 `$N` 与参数绑定），实现生产环境存量数据库平滑升级（Auto-Baseline），绝不要求删除已有数据库重新初始化。
 * 💼 **全资产全场景覆盖**：支持现金、银行储蓄、股票、基金、债券、加密货币、房产、贷款、信用卡等资产与负债统一建档，支持负债方向自动正负号翻转。
 * 🗂️ **账户维度资产管理与细粒度 RBAC**：以独立「账户」实体（银行卡/平台/券商/基金平台/现金钱包）归集各类资产，账户卡片分组呈现小计与资产数；支持账户归档（软删除）、手动排序与 `V031` 账户级/字段级 RBAC 权限（隐藏账户、余额/卡号掩码、禁止写入、汇总/报表/AI 摘除隔离）；全链路资产选择入口均以「账户 · 资产」前缀区分同名资产。
 * 📈 **专业资管级投资模型与持仓分析**：加权均价 / FIFO 持仓批次（`transaction_lots`，V021）与高精度量价存储（V032）、分红摊薄计价、卖出部分成本按比例核减、手续费联动与基于 `parent_tx_id` 的级联回滚；支持持仓总览（`position-overview`）、HHI 集中度评估、当日盈亏与单标详情页。
@@ -30,7 +30,7 @@ Minefolio 是一款极度轻量、安全、专业的**开源全资产管理与�
 * 🎯 **智能定投计划 (DCA) 与现金流日历**：支持周期性定投计划排程与一键确认买入；支持分红/利息/租金排程推演与 30/90 天现金流预测日历。
 * 📸 **智能票据 OCR 识别与录单**：桌面端与移动端支持调用 OpenAI/DeepSeek 视觉多模态大模型解析发票与小票，内置纯离线启发式规则兜底，一键拍照自动填单并智能匹配分类。
 * ⚡ **多源行情定时同步引擎与调度中心 (Scheduler Center)**：内置纯 C 5 段式 Cron 解析器、NAS 磁盘休眠友好的动态休眠工作池与内置系统定时任务（行情同步、备份、Market Pulse 早报、微信/Webhook 推送），支持运行日志审计与即时手动触发。
-* 🤖 **AI 财务助理、Agent Skills 与 MCP 工具箱**：多轮财务上下文对话、**26 个内置工具** + **13 个多步分析工作流**（含条件分支与 Saga 补偿）、动态接入远程 MCP Server 与对外 `/mcp` JSON-RPC 服务端；支持 Agent Skills 技能库（V022，Markdown 导入导出 + `list_skills`/`use_skill` 工具）、Market Pulse 每日财经早报两阶段摘要（V024/V028）及异步后台任务队列（`async_tasks`，V033）。
+* 🤖 **AI 财务助理、Agent Skills 与 MCP 工具箱**：多轮财务上下文对话、**25 个内置工具注册项** + **13 个多步分析工作流**（含条件分支与 Saga 补偿）、动态接入远程 MCP Server 与对外 `/mcp` JSON-RPC 服务端；支持 Agent Skills 技能库（V022，Markdown 导入导出 + `list_skills`/`use_skill` 工具）、Market Pulse 每日财经早报两阶段摘要（V024/V028）及异步后台任务队列（`async_tasks`，V033）。
 * 💬 **IM 机器人只读查账网关 (`gateway/`)**：独立无依赖 Node.js 网关（支持 QQ OneBot v11 / NapCat 与 WeChat），通过 `im_bind` 专属令牌接入 `/api/im/*`（支持自助账号绑码 `/api/im/:platform/bind-auth`，2FA 账号受保护），强制只读工具白名单与抢占防护。
 * 🧠 **AI 深度思考推理模式 (Thinking / Reasoning Mode)**：原生适配 DeepSeek-R1 / OpenAI o-series / Claude 等前沿推理模型，流式捕获思维链并持久化至数据库 (`ai_messages.thinking_content`, V015)；对话内支持财务实体悬停微卡片、`@` 账户提及、智能追问建议与多模态粘贴/OCR 上传。
 * 🖥️ **现代 AI 工作台与三栏式分析面板 (Analysis Panel & Flex Layout)**：提供 3 栏弹性工作台（会话侧栏、对话流、可拖拽/折叠右侧多维分析面板）；独创 Chat 专属 Full-Bleed 贴边与 Flex 纵向底栏解耦机制，支持全局金额一键掩码切换（`AmountMaskToggle`）。
@@ -127,7 +127,7 @@ docker compose ps
   MINEFOLIO_DB_DRIVER=postgres
   MINEFOLIO_DB_DSN=host=your-pg-host port=5432 user=minefolio password=your-db-pass dbname=minefolio sslmode=disable
   ```
-  同样需要镜像带 libpq（`Dockerfile` 默认已包含）。原生 C 数据库迁移引擎会在启动时自动完成版本化迁移（`V001`~`V033`）。
+  同样需要镜像带 libpq（`Dockerfile` 默认已包含）。原生 C 数据库迁移引擎会在启动时自动完成版本化迁移（`V001`~`V038`）。
 
 ### 方式 2：本地源码编译与开发
 
@@ -165,17 +165,17 @@ npm run build:mobile  # 移动端
 ```
 Minefolio/
 ├── backend/                      # C23 后端服务
-│   ├── CMakeLists.txt            # 构建配置（C23、csilk v1.2.0、yyjson、81 CTest targets）
+│   ├── CMakeLists.txt            # 构建配置（C23、csilk v1.2.0、yyjson、~87 CTest targets）
 │   ├── tools/                    # 独立运维 CLI 工具（reset-password）
 │   ├── sql/                      # 数据库迁移与初始化脚本
-│   │   ├── migrations/           # 版本化迁移脚本（V001~V033）
+│   │   ├── migrations/           # 版本化迁移脚本（V001~V038）
 │   │   │   ├── sqlite/           # SQLite 方言版本脚本 (33 个迁移)
 │   │   │   └── postgres/         # PostgreSQL 方言版本脚本 (33 个迁移)
 │   │   ├── migration.sql         # 37 张核心数据表全量基准（测试与初始化）
 │   │   └── migration_postgres.sql
 │   ├── src/
 │   │   ├── main.c                # 服务主入口、中间件装配、27 组路由注册与静态托管
-│   │   ├── interfaces/           # 表现层：HTTP Controllers（27 个控制器，委托到 Application）
+│   │   ├── interfaces/           # 表现层：HTTP Controllers（28 个控制器，委托到 Application）
 │   │   │   └── http/controllers/ # account/admin/ai/ai_mcp/ai_news/ai_trace/asset/auth/cashflow/category/daily_expense/dca/file/im_bot/import_export/import_rule/ledger/market/mcp_server/receipt/report/scheduler/skill/tag/task/transaction/transfer
 │   │   ├── application/          # 应用层：用例编排（21 个业务域 + async_task_manager）
 │   │   │   └── <domain>/         # account, ai, asset, auth, cashflow, category, daily_expense, dca, file, import_export, ledger, market, mcp, portfolio, report, scheduler, skill, tag, task, transaction, transfer
@@ -311,7 +311,7 @@ Minefolio/
 | `POST` | `/api/import-rules/reset-defaults` | JWT | 一键重置恢复系统推荐的智能分类规则库 |
 | `GET` | `/api/ai/workflows` | JWT | 获取 13 个内置智能财务分析工作流模板与步骤说明 |
 | `POST` | `/api/ai/workflows/run` | JWT | 启动执行指定智能工作流（SSE 流式实时推送执行事件） |
-| `POST` | `/api/ai/chat` | JWT | 与 AI 财务分析助理多轮上下文对话（支持 26 个内置工具 + MCP 工具调用） |
+| `POST` | `/api/ai/chat` | JWT | 与 AI 财务分析助理多轮上下文对话（支持 25 个内置工具注册项 + MCP 工具调用） |
 | `POST` | `/api/ai/actions/confirm` / `confirm-batch` | JWT | 二次确认并原子执行高风险/批量拟记账提案（HMAC + Nonce 防重放） |
 | `GET/POST` | `/api/ai/skills*` | JWT | Agent Skills 技能管理（列表、导入/导出 Markdown、启用/测试） |
 | `GET/POST` | `/api/ai/news*` | JWT | Market Pulse 每日财经早报两阶段摘要列表、详情与手动触发 |

@@ -33,7 +33,7 @@ backend/src/services/ai/
 │   ├── provider.h / .c   # DeepSeek / OpenAI 兼容提供商适配
 │   ├── request.h / .c    # 提示词组织与 JSON Payload 构建
 │   └── response.h / .c   # SSE 流式 Chunk 解码与 JSON 解析
-├── tools/                # 领域工具注册表与 Schema 校验 (26 个内置工具 + MCP 远端扩展)
+├── tools/                # 领域工具注册表与 Schema 校验 (25 个内置工具注册项 + MCP 远端扩展)
 │   ├── registry.h / .c   # 工具注册表、入参类型反射与 Schema 生成
 │   ├── dispatcher.h / .c # 工具调用路由与上下文环境注入
 │   ├── schema.h / .c     # 参数 Schema 校验定义
@@ -228,7 +228,7 @@ data: {"type": "delta", "content": "根据您的账本统计，上月总支出�
 - **运行时缓冲**：Agent Loop (`runtime/loop.c`) 在流式迭代中维护动态扩容的 `thinking_buffer`；
 - **数据库表扩展 (V015)**：Migration `V015__ai_messages_thinking_content.sql` 在 `ai_messages` 表中增加了 `thinking_content TEXT` 字段；
 - **数据库表扩展 (V016)**：Migration `V016__ai_messages_tool_calls.sql` 在 `ai_messages` 表中增加了 `tool_calls TEXT DEFAULT ''` 字段，用于持久化模型返回的工具调用记录（JSON 数组），供前端回显工具执行状态与 Agent Loop 上下文重建；
-- **账户维度 Schema (V017) 与 RBAC 脱敏 (V031)**：Migration `V017__accounts_table.sql` 引入 `accounts` 表与 `assets.account_id` 外键；`V031__account_and_field_rbac.sql` 引入 `account_permissions` 与 `MF_RBAC_ASSET_VISIBLE_SQL` / `MF_RBAC_ASSET_UNMASKED_SQL`，AI 资产/汇总/新闻工具严格隔离隐藏或脱敏账户（全量自动化迁移覆盖 `V001`~`V033`）。
+- **账户维度 Schema (V017) 与 RBAC 脱敏 (V031)**：Migration `V017__accounts_table.sql` 引入 `accounts` 表与 `assets.account_id` 外键；`V031__account_and_field_rbac.sql` 引入 `account_permissions` 与 `MF_RBAC_ASSET_VISIBLE_SQL` / `MF_RBAC_ASSET_UNMASKED_SQL`，AI 资产/汇总/新闻工具严格隔离隐藏或脱敏账户（全量自动化迁移覆盖 `V001`~`V038`）。
 - **确认令牌 Nonce 持久化 (V019)**：Migration `V019__ai_consumed_nonces.sql` 引入 `ai_consumed_nonces` 表；`ai_confirmation_verify_and_consume()` 在签名校验通过后将已消费 Nonce 落库，重放的 `draft_token` 即使跨进程重启也会被拒绝（此前仅内存缓存防护）。
 - **Agent Skills 与财经早报隔离 (V022, V024, V028)**：`V022__ai_skills.sql` 新增 `ai_skills` 表并通过 `list_skills` / `use_skill` 工具接入对话；`V024__ai_news_reports.sql` 与 `V028__ai_news_portfolio_isolation.sql` 支持两阶段财经摘要与按用户/账本隔离持仓快照（`ai_news_privacy` 与 `test_ai_news_isolation.sh`）。
 - **原子持久化**：当一轮对话完成时，`mf_ai_session_repo_save_message_with_thinking()` 将正文回复、完整的思考过程与 `tool_calls` JSON 原子持久化入库，保证历史会话在重新载入时能够完整回溯思维链与工具调用轨迹。

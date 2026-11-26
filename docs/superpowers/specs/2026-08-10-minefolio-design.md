@@ -1,986 +1,273 @@
-# Minefolio — 个人资产管理系统设计文档
+# Minefolio — 系统架构设计文档（v1.4.0 现状）
 
-## 1. 概述
-
-Minefolio 是一个前后端分离的个人综合资产管理系统，帮助用户追踪和管理金融资产（股票、基金、债券、加密货币等）、实物资产（房产、车辆等）以及负债（贷款、信用卡等）。
-
-**技术栈：**
-- 前端：Vue 3 + Vite + TypeScript + Element Plus
-- 后端：csilk C HTTP 框架 + SQLite
-- 认证：JWT (HS256)，secret 从环境变量读取
-- 部署：nginx 反向代理（开发期 Vite proxy）
+> **状态**：当前有效。本文描述仓库 HEAD 的真实实现，已按 v1.4.0 代码原地重写。
+> **历史说明**：本文件最初是 2026-08-10 的 MVP 设计稿（单体 `auth.c/categories.c`、cJSON、固定单用户、无 AI / 无移动端）。该版本早已落地并被重构取代，阅读本文即可了解现状；单次功能演进的历史记录仍保留在 `docs/superpowers/{specs,plans}/` 的其他文件中。
+> **受众**：研发、运维、安全审计、二次开发者。
 
 ---
 
-## 2. 系统架构
+## 1. 项目概述
 
-```
-┌─────────────────────────────────────────────────────┐
-│                    浏览器 (Vue)                     │
-│  Login │ Dashboard │ Assets │ Categories │ History  │
-└─────────────────────────────────────────────────────┘
-                           │ HTTP/JSON
-                           ▼
-┌─────────────────────────────────────────────────────┐
-│               Nginx (Production)                     │
-│  /api/* → proxy_pass http://127.0.0.1:8080         │
-│  /*         → serve static/                          │
-└─────────────────────────────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────┐
-│               csilk Server (Port 8080)               │
-│  JWT Auth │ CSRF │ CORS │ Logger │ Recovery         │
-│  ┌───────────────────────────────────────────────┐  │
-│  │  /api/auth/*     → Login / Refresh            │  │
-│  │  /api/categories → CRUD + Tree                │  │
-│  │  /api/assets/*   → CRUD + Summary             │  │
-│  │  /api/transactions → CRUD + Filter            │  │
-│  │  /api/summary    → Net worth + breakdown      │  │
-│  └───────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────┐
-│                  SQLite (minefolio.db)               │
-└─────────────────────────────────────────────────────┘
-```
+### 1.1 定位
 
-**开发环境：** Vite 开发服务器 (`:5173`) + csilk (`:8080`)，Vite `proxy` 配置将 `/api` 转发至 8080。
+Minefolio 是一款自托管的**全资产管理与投资追踪系统**：统一管理现金、银行、证券、基金、债券、加密货币、房产等资产与贷款、信用卡等负债，覆盖日常收支记账、持仓成本与盈亏核算、多账本协作，并提供 AI 财务助理（对话式记账 / 多步分析工作流）、MCP 工具生态、行情定时同步、调度推送与移动端离线使用。
 
----
+### 1.2 技术栈
 
-## 3. 数据库设计 (SQLite)
+| 层次 | 选型 | 说明 |
+|------|------|------|
+| 后端语言 | C23 | GCC 14 / Clang 18，`-Wall -Wextra -Wpedantic` |
+| Web 框架 | csilk v1.2.0 | FetchContent 拉取（本地 `deps/csilk` 存在时优先），见 `backend/CMakeLists.txt:16-31` |
+| 数据库 | SQLite（WAL，默认） / PostgreSQL 16+（可选） | `libpq` 可用时编译 `HAVE_LIBPQ`，双方言迁移脚本对等维护 |
+| JSON | yyjson | 高性能 DOM / mutable DOM |
+| 其他 C 库 | libcurl、OpenSSL crypto、pthread | curl 全局初始化在线程创建前完成 |
+| 前端 | Vue 3.4 + TypeScript 5.5 + Vite 5 | Element Plus + Iconify、Pinia、vue-router、axios、ECharts 5、vue-i18n |
+| 移动 | Capacitor 6 + sql.js (WASM) | 独立入口 `main-mobile.ts`，本地 SQLite 离线库 + 联网同步 |
+| 测试 | CTest（后端）+ Vitest（前端） | 后端可选 ASan+UBSan 构建 |
 
-### 3.1 用户表
+### 1.3 代码规模（以当前仓库为准）
 
-```sql
-CREATE TABLE users (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    username   TEXT UNIQUE NOT NULL,
-    password   TEXT NOT NULL,          -- bcrypt hash
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
--- 注：JWT secret 从环境变量读取，不存储在 DB 中。
-```
-
-### 3.2 资产分类表（支持嵌套）
-
-```sql
-CREATE TABLE categories (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    name        TEXT NOT NULL,
-    parent_id   INTEGER REFERENCES categories(id) ON DELETE SET NULL,
-    asset_type  TEXT NOT NULL CHECK(asset_type IN
-        ('cash','stock','fund','bond','crypto',
-         'real_estate','vehicle','other_asset',
-         'loan','credit_card','other_liability')),
-    currency    TEXT DEFAULT 'CNY',
-    icon        TEXT,
-    sort_order  INTEGER DEFAULT 0,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_id, name, parent_id)
-);
-```
-
-**说明：**
-- `parent_id` 为 NULL 表示一级分类，非 NULL 表示子类。
-- `asset_type` 预置常用类型，用户可通过 `name` 自定义细分（如"A股"、"美股"）。
-- 删除父分类时，子类 `parent_id` 置 NULL（变为独立一级分类）。
-
-### 3.3 资产账户表
-
-```sql
-CREATE TABLE assets (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    category_id   INTEGER NOT NULL REFERENCES categories(id) ON DELETE RESTRICT,
-    name          TEXT NOT NULL,
-    account_no    TEXT,               -- 账户编号/卡号/基金代码等
-    current_value DECIMAL(18,2) DEFAULT 0,
-    currency      TEXT DEFAULT 'CNY',
-    note          TEXT,
-    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-### 3.4 交易记录表
-
-```sql
-CREATE TABLE transactions (
-    id               INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id          INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    asset_id         INTEGER NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
-    category_id      INTEGER NOT NULL REFERENCES categories(id) ON DELETE RESTRICT,
-    transaction_type TEXT NOT NULL CHECK(transaction_type IN
-        ('deposit','withdrawal','buy','sell',
-         'transfer_in','transfer_out','fee',
-         'income','loss')),
-    amount           DECIMAL(18,2) NOT NULL,
-    price_per_unit   DECIMAL(18,4),  -- 单价（买/卖时使用）
-    quantity         DECIMAL(18,4),  -- 数量（买/卖时使用）
-    currency         TEXT DEFAULT 'CNY',
-    transaction_date TIMESTAMP NOT NULL,
-    note             TEXT,
-    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-### 3.5 转账关联表（资产间转账）
-
-```sql
-CREATE TABLE transfers (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    from_asset_id INTEGER NOT NULL REFERENCES assets(id) ON DELETE RESTRICT,
-    to_asset_id   INTEGER NOT NULL REFERENCES assets(id) ON DELETE RESTRICT,
-    amount        DECIMAL(18,2) NOT NULL,
-    currency      TEXT DEFAULT 'CNY',
-    transfer_date TIMESTAMP NOT NULL,
-    note          TEXT,
-    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-### 3.6 标签表（多对多关联）
-
-```sql
-CREATE TABLE tags (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    name        TEXT NOT NULL,
-    color       TEXT DEFAULT '',     -- HEX color code for UI display
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_id, name)
-);
-
-CREATE TABLE expense_tags (
-    expense_id  INTEGER NOT NULL REFERENCES daily_expenses(id) ON DELETE CASCADE,
-    tag_id      INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
-    PRIMARY KEY (expense_id, tag_id)
-);
-
-CREATE INDEX idx_tags_user ON tags(user_id);
-CREATE INDEX idx_expense_tags_tag ON expense_tags(tag_id);
-```
-
-### 3.7 日常收支表（收入/支出记账）
-
-```sql
-CREATE TABLE daily_expenses (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    category_id   INTEGER NOT NULL REFERENCES categories(id) ON DELETE RESTRICT,
-    expense_type  TEXT NOT NULL CHECK(expense_type IN ('expense','income')),
-    amount        DECIMAL(18,2) NOT NULL,
-    currency      TEXT DEFAULT 'CNY',
-    expense_date  DATE NOT NULL,
-    note          TEXT,
-    created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- 索引：按日期和类型查询
-CREATE INDEX idx_daily_expenses_date ON daily_expenses(expense_date);
-CREATE INDEX idx_daily_expenses_type ON daily_expenses(expense_type);
-CREATE INDEX idx_daily_expenses_cat ON daily_expenses(category_id);
-```
-
-**说明：**
-- `expense_type = 'expense'` 表示支出（日常消费）
-- `expense_type = 'income'` 表示收入（工资、奖金等）
-- 与 `categories` 表关联，用户可为收支项目复用同一分类体系
-- 标签通过 `tags` + `expense_tags` 多对多表管理，支持颜色标签和按标签筛选
-- 支持按月/按分类/按标签汇总，用于月度收支报表
-
----
-
-## 4. API 设计
-
-### 4.1 统一响应格式
-
-**成功响应：**
-```json
-{ "code": 0, "message": "ok", "data": <payload> }
-```
-
-**错误响应：**
-```json
-{ "code": <errno>, "message": "<human-readable error>" }
-```
-
-**常见 code 枚举：**
-| code | 含义 |
+| 指标 | 数值 |
 |------|------|
-| 0 | 成功 |
-| 1001 | 未授权（JWT 无效/过期） |
-| 1002 | 参数错误 |
-| 1003 | 资源不存在 |
-| 1004 | 资源已存在（如重复用户名） |
-| 2001 | 分类有子分类，无法删除 |
-
-### 4.2 认证模块
-
-| 方法 | 路径 | 说明 | 认证 |
-|------|------|------|------|
-| POST | `/api/auth/register` | 注册（仅首次用户，后续返回已存在） | 否 |
-| POST | `/api/auth/login` | 登录，返回 `{ token, expires_in }` | 否 |
-| GET  | `/api/auth/me` | 获取当前用户信息 | 是 |
-
-**JWT Payload：** `{ sub: "<user_id>", iat: <ts>, exp: <ts> }`
-
-**登录/注册响应：**
-```json
-{ "code": 0, "data": { "token": "<jwt>", "expires_in": 604800 } }
-```
-
-### 4.3 分类模块
-
-| 方法 | 路径 | 说明 | 认证 |
-|------|------|------|------|
-| GET    | `/api/categories` | 返回树形分类列表 | 是 |
-| POST   | `/api/categories` | 创建分类（支持 parent_id 创建子类） | 是 |
-| PUT    | `/api/categories/:id` | 更新分类名称/icon 等 | 是 |
-| DELETE | `/api/categories/:id` | 删除分类（有子类时返回 2001） | 是 |
-
-**GET /api/categories 响应（递归树形）：**
-```json
-{
-  "code": 0,
-  "data": [
-    {
-      "id": 1, "name": "金融资产", "asset_type": "stock",
-      "parent_id": null, "children": [
-        { "id": 4, "name": "A股", "parent_id": 1, "children": [] },
-        { "id": 5, "name": "基金", "parent_id": 1, "children": [] }
-      ]
-    }
-  ]
-}
-```
-
-### 4.4 资产模块
-
-| 方法 | 路径 | 说明 | 认证 |
-|------|------|------|------|
-| GET    | `/api/assets` | 列表（支持 `category_id`、`currency` 过滤） | 是 |
-| POST   | `/api/assets` | 创建资产 | 是 |
-| PUT    | `/api/assets/:id` | 更新资产（名称、当前值、备注） | 是 |
-| DELETE | `/api/assets/:id` | 删除资产（有关联交易时仍允许删除，交易记录保留） | 是 |
-| GET    | `/api/assets/:id` | 资产详情 + 历史交易 | 是 |
-
-### 4.5 交易模块
-
-| 方法 | 路径 | 说明 | 认证 |
-|------|------|------|------|
-| GET    | `/api/transactions` | 列表（支持 `asset_id`、`category_id`、`type`、`start_date`、`end_date` 过滤） | 是 |
-| POST   | `/api/transactions` | 创建交易 | 是 |
-| PUT    | `/api/transactions/:id` | 更新交易 | 是 |
-| DELETE | `/api/transactions/:id` | 删除交易 | 是 |
-
-**transaction_type 枚举及含义：**
-| 值 | 含义 |
-|----|------|
-| `deposit` | 存入（现金类资产增加） |
-| `withdrawal` | 取出（现金类资产减少） |
-| `buy` | 买入（股票/基金等，需填 quantity + price_per_unit） |
-| `sell` | 卖出（股票/基金等，需填 quantity + price_per_unit） |
-| `transfer_in` | 转入（从其他资产转入） |
-| `transfer_out` | 转出（转出到其他资产） |
-| `fee` | 手续费 |
-| `income` | 收益（股息、利息等） |
-| `loss` | 亏损 |
-
-### 4.6 汇总模块
-
-| 方法 | 路径 | 说明 | 认证 |
-|------|------|------|------|
-| GET | `/api/summary` | 总资产净值 + 分类占比 + 近30天趋势 + 本月收支概览 | 是 |
-
-### 4.7 日常收支模块
-
-| 方法 | 路径 | 说明 | 认证 |
-|------|------|------|------|
-| GET    | `/api/daily-expenses` | 列表（支持 `expense_type`、`category_id`、`tag_ids`、`start_date`、`end_date` 过滤） | 是 |
-| POST   | `/api/daily-expenses` | 创建收支记录 | 是 |
-| PUT    | `/api/daily-expenses/:id` | 更新收支记录 | 是 |
-| DELETE | `/api/daily-expenses/:id` | 删除收支记录 | 是 |
-| GET    | `/api/daily-expenses/monthly` | 月度汇总（按年月，返回收支 totals + 分类 breakdown） | 是 |
-
-### 4.8 标签管理模块
-
-| 方法 | 路径 | 说明 | 认证 |
-|------|------|------|------|
-| GET    | `/api/tags` | 列出当前用户所有标签 | 是 |
-| POST   | `/api/tags` | 创建标签（`{ name, color? }`） | 是 |
-| PUT    | `/api/tags/:id` | 更新标签（重命名/改颜色） | 是 |
-| DELETE | `/api/tags/:id` | 删除标签（不级联删除关联记录） | 是 |
-| GET    | `/api/tags/suggestions` | 标签建议（根据输入前缀模糊匹配，用于输入框自动补全） | 是 |
-
-### 4.9 报表模块
-
-| 方法 | 路径 | 说明 | 认证 |
-|------|------|------|------|
-| GET | `/api/reports/expense/monthly` | 月度收支报表（可选年月，返回收支明细 + 分类/标签 breakdown） | 是 |
-| GET | `/api/reports/expense/trend` | 收支趋势（近 N 月柱状图数据） | 是 |
-| GET | `/api/reports/expense/category` | 支出分类占比（饼图数据，支持年月过滤） | 是 |
-| GET | `/api/reports/expense/tag` | 标签支出分析（按标签聚合，支持年月过滤） | 是 |
-| GET | `/api/reports/asset/trend` | 净资产趋势（近 30/90/365 天，支持自定义范围） | 是 |
-| GET | `/api/reports/asset/breakdown` | 资产分布（当前各分类占比） | 是 |
-| GET | `/api/reports/transaction/performance` | 交易表现（买/卖记录 + 收益率） | 是 |
-| GET | `/api/reports/asset/summary` | 资产总览（当前值 + 变动统计） | 是 |
-
-**月度收支报表响应示例：**
-```json
-{
-  "code": 0,
-  "data": {
-    "year": 2026, "month": 8,
-    "total_income": 15000.00,
-    "total_expense": 8200.00,
-    "balance": 6800.00,
-    "by_category": [
-      { "name": "餐饮", "type": "expense", "amount": 3200.00, "pct": 39.0 },
-      { "name": "工资", "type": "income",  "amount": 15000.00, "pct": 100.0 }
-    ],
-    "by_tag": [
-      { "tag_name": "聚餐", "amount": 1200.00, "count": 5 },
-      { "tag_name": "通勤", "amount": 800.00,  "count": 22 }
-    ],
-    "daily_breakdown": [
-      { "date": "2026-08-01", "income": 15000.00, "expense": 3200.00 },
-      { "date": "2026-08-02", "income": 0,         "expense": 450.00 }
-    ]
-  }
-}
-```
-
-**收支趋势响应示例：**
-```json
-{
-  "code": 0,
-  "data": {
-    "labels": ["2026-03","2026-04","2026-05","2026-06","2026-07","2026-08"],
-    "income":  [14500, 15200, 14800, 15000, 15500, 15000],
-    "expense": [7800,  8200,  7500,  8100,  8400,  8200]
-  }
-}
-```
-
-**资产趋势响应示例：**
-```json
-{
-  "code": 0,
-  "data": {
-    "period": "30d",
-    "labels": ["07-12","07-13","07-14", ... "08-10"],
-    "net_worth": [880000, 882000, 879000, ... 900000],
-    "assets":     [1250000, 1252000, 1248000, ... 1250000],
-    "liabilities":[350000,  350000,  350000,  ... 350000]
-  }
-}
-```
-
-**交易表现响应示例：**
-```json
-{
-  "code": 0,
-  "data": {
-    "total_trades": 24,
-    "total_gain": 12500.00,
-    "total_loss": 3200.00,
-    "net_gain": 9300.00,
-    "trades": [
-      {
-        "id": 1, "asset_name": "贵州茅台", "type": "buy",
-        "date": "2026-07-15", "quantity": 100, "price": 1750.00, "amount": 175000.00
-      },
-      {
-        "id": 2, "asset_name": "贵州茅台", "type": "sell",
-        "date": "2026-08-05", "quantity": 50, "price": 1820.00, "amount": 91000.00,
-        "profit": 3500.00
-      }
-    ]
-  }
-}
-```
-```json
-{
-  "code": 0,
-  "data": {
-    "year": 2026, "month": 8,
-    "total_income": 15000.00,
-    "total_expense": 8200.00,
-    "balance": 6800.00,
-    "by_category": [
-      { "category_name": "餐饮", "expense_type": "expense", "amount": 3200.00 },
-      { "category_name": "交通", "expense_type": "expense", "amount": 800.00 },
-      { "category_name": "工资", "expense_type": "income", "amount": 15000.00 }
-    ]
-  }
-}
-```
-
-**响应示例：**
-```json
-{
-  "code": 0,
-  "data": {
-    "total_assets": 1250000.00,
-    "total_liabilities": 350000.00,
-    "net_worth": 900000.00,
-    "breakdown": [
-      { "category_name": "A股", "value": 450000.00, "pct": 36.0 },
-      { "category_name": "基金", "value": 200000.00, "pct": 16.0 }
-    ],
-    "trend": [
-      { "date": "2026-08-01", "net_worth": 880000.00 },
-      { "date": "2026-08-10", "net_worth": 900000.00 }
-    ]
-  }
-}
-```
+| 后端 `.c` / `.h` | 234 / 301 |
+| HTTP 控制器 | 28 |
+| 领域（domain） | 21 个域 |
+| 仓储实现 | 28 |
+| 数据库迁移 | 38 个版本（SQLite / PostgreSQL 各 38 份），约 45 张表 |
+| HTTP API 路径 | 162 个去重后的 `/api/*` 路径 |
+| AI 内置工具 | 25 个注册项（含 2 个内部确认工具）+ 动态 MCP 工具 |
+| AI 多步工作流 | 13 个内置 DAG |
+| 单元测试目标 | 约 87 个（67 个宏调用 + 20 个显式 `add_test`） |
 
 ---
 
-## 5. 后端 (csilk) 模块结构
+## 2. 系统拓扑与请求链路
+
+### 2.1 部署拓扑
 
 ```
-backend/
-├── CMakeLists.txt
-├── src/
-│   ├── main.c              # 入口：初始化 DB、加载配置、路由注册、启动
-│   ├── auth.c              # 登录/注册/JWT 处理
-│   ├── categories.c        # 分类 CRUD（含递归树形查询）
-│   ├── assets.c            # 资产 CRUD
-│   ├── transactions.c      # 交易 CRUD
-│   ├── transfers.c         # 转账处理（写 transactions 两笔 + 更新 assets）
-│   ├── daily_expenses.c    # 日常收支 CRUD + 月度汇总
-│   ├── tags.c              # 标签 CRUD + 自动补全
-│   ├── summary.c           # 汇总统计（SQL 聚合查询）
-│   └── reports.c           # 各类报表：收支/资产/交易
-│   └── common/
-│       ├── db.h / db.c     # DB 连接池管理（单例）
-│       ├── jwt.h / jwt.c   # JWT 生成/验证工具函数
-│       └── response.h      # 统一响应格式宏
-└── config/
-    └── minefolio.yaml      # YAML 配置（端口、日志级别、静态文件路径）
+浏览器 (Vue 3 SPA) ─┐
+                    ├─HTTPS─> Nginx :80 ──/api/* 反代──> csilk :8080 ──> SQLite / PostgreSQL
+移动 App (Capacitor)┘              └──静态资源── frontend/dist
+                                                            │
+                                                            ├─> LLM Provider (OpenAI 兼容 / DeepSeek)
+                                                            ├─> 行情源 (EastMoney / Tencent / Yahoo / Crypto)
+                                                            └─> MCP Server (stdio / HTTP) · IM 网关 (gateway/)
 ```
 
-### 5.1 csilk 中间件使用顺序
+- 开发期：Vite `:5173` 通过 proxy 将 `/api` 转发至 `:8080`，见 `frontend/vite.config.ts:33-42`。
+- 生产期：Nginx 托管静态资源并反代 API；csilk 亦内置静态文件服务作为回退（`backend/src/main.c:213-221`）。
+- 移动端可配置自建服务端地址，断网时使用本地 `sql.js` 库，联网后再同步。
 
-```c
-// main.c
-csilk_db_init();
-csilk_server_t* server = csilk_server_new(router);
+### 2.2 一次典型请求的链路
 
-// Server 级别中间件（最外层→最内层）
-csilk_server_use(server, csilk_recovery_handler);
-csilk_server_use(server, csilk_logger_handler);
-csilk_server_use(server, csilk_request_id_middleware);
-csilk_server_use(server, csilk_cors_middleware, &cors_config);
-
-// 公开路由（无需认证）
-csilk_router_get(router, "/healthz", csilk_health_check_handler);
-csilk_router_post(router, "/api/auth/register", auth_register);
-csilk_router_post(router, "/api/auth/login", auth_login);
-
-// API 路由组（需要 JWT 认证）
-csilk_group_t* api = csilk_router_group(router, "/api");
-csilk_group_use(api, csilk_csrf_middleware);
-csilk_group_use(api, csilk_jwt_middleware, getenv("MINEFOLIO_JWT_SECRET"));
-
-csilk_router_get(api, "/auth/me", auth_me);
-csilk_router_get(api, "/categories", categories_list);
-csilk_router_post(api, "/categories", categories_create);
-csilk_router_put(api, "/categories/:id", categories_update);
-csilk_router_delete(api, "/categories/:id", categories_delete);
-csilk_router_get(api, "/assets", assets_list);
-csilk_router_post(api, "/assets", assets_create);
-csilk_router_put(api, "/assets/:id", assets_update);
-csilk_router_delete(api, "/assets/:id", assets_delete);
-csilk_router_get(api, "/transactions", transactions_list);
-csilk_router_post(api, "/transactions", transactions_create);
-csilk_router_put(api, "/transactions/:id", transactions_update);
-csilk_router_delete(api, "/transactions/:id", transactions_delete);
-csilk_router_get(api, "/daily-expenses", daily_expenses_list);
-csilk_router_post(api, "/daily-expenses", daily_expenses_create);
-csilk_router_put(api, "/daily-expenses/:id", daily_expenses_update);
-csilk_router_delete(api, "/daily-expenses/:id", daily_expenses_delete);
-csilk_router_get(api, "/daily-expenses/monthly", daily_expenses_monthly);
-csilk_router_get(api, "/tags", tags_list);
-csilk_router_post(api, "/tags", tags_create);
-csilk_router_put(api, "/tags/:id", tags_update);
-csilk_router_delete(api, "/tags/:id", tags_delete);
-csilk_router_get(api, "/tags/suggestions", tags_suggestions);
-csilk_router_get(api, "/summary", summary_get);
-
-// 报表路由
-csilk_router_get(api, "/reports/expense/monthly", report_expense_monthly);
-csilk_router_get(api, "/reports/expense/trend",   report_expense_trend);
-csilk_router_get(api, "/reports/expense/category", report_expense_category);
-csilk_router_get(api, "/reports/expense/tag",      report_expense_tag);
-csilk_router_get(api, "/reports/asset/trend",      report_asset_trend);
-csilk_router_get(api, "/reports/asset/breakdown",  report_asset_breakdown);
-csilk_router_get(api, "/reports/transaction/performance", report_transaction_performance);
-csilk_router_get(api, "/reports/asset/summary",    report_asset_summary);
-
-// 静态文件服务（前端构建产物）
-csilk_router_get(router, "/*", csilk_static, "/opt/minefolio/frontend/dist");
-
-csilk_server_run(server, config.port);
+```
+HTTP 请求
+  → 中间件链（recovery / logger / request-id / metrics / 安全头 / 认证限流 / CORS / JWT / CSRF）
+  → Controller（参数提取、调用 usecase、响应封装）
+  → Application usecase（编排领域规则、财务原语、账本引擎）
+  → Domain（实体 + rules 纯规则，仓储接口）
+  → Infrastructure（仓储实现执行 SQL）
+  → SQLite / PostgreSQL
 ```
 
-### 5.2 统一响应宏（response.h）
+WebSocket 未使用；AI 流式对话与工作流运行使用 SSE（`text/event-stream`），路径为 `/api/ai/chat` 与 `/api/ai/workflows/run`。
 
-```c
-#define RESP_OK(c, data) do { \
-    csilk_json_t *_r = csilk_json_object(); \
-    csilk_json_add_number(_r, "code", 0); \
-    csilk_json_add_string(_r, "message", "ok"); \
-    csilk_json_add_item(_r, "data", (data)); \
-    csilk_json((c), CSILK_STATUS_OK, _r); \
-} while(0)
+### 2.3 进程内后台线程
 
-#define RESP_ERR(c, code, msg) do { \
-    csilk_json_t *_r = csilk_json_object(); \
-    csilk_json_add_number(_r, "code", (code)); \
-    csilk_json_add_string(_r, "message", (msg)); \
-    csilk_json((c), CSILK_STATUS_OK, _r); \
-} while(0)
-```
+- **csilk worker 线程池**：默认 2，可用 `MINEFOLIO_WORKERS` 调整（1–16），见 `backend/src/main.c:105-112`。
+- **行情调度器**：`market_scheduler_start(pool)` 定时拉取行情与汇率。
+- **AI 定时任务引擎**：`scheduler_engine_start(pool)`，含 5 段式 Cron 解析、动态休眠工作池与内置任务。
+- **异步任务管理器**：`task_controller_init(pool, 4)`，处理行情批量同步、备份、重算、OCR、导入等长任务。
 
-### 5.3 关键处理逻辑说明
-
-**分类树形查询（categories.c）：**
-- 查询该用户所有分类后，在内存中递归组装树形结构。
-- 使用 `parent_id` 建立父子关系，避免 N+1 查询。
-
-**转账处理（transfers.c）：**
-- 开启 SQLite 事务，保证原子性。
-- 从 `from_asset_id` 写一条 `transfer_out` 交易，向 `to_asset_id` 写一条 `transfer_in` 交易。
-- 更新两个资产的 `current_value`。
-- 提交或回滚。
-
-**汇总统计（summary.c）：**
-- 资产总计：`SELECT SUM(current_value) FROM assets WHERE user_id=?`（按 asset_type 过滤资产类和负债类）
-- 负债总计：从 categories 找出负债类，聚合对应 assets。
-- 趋势：按日期聚合每日 net_worth（用 transactions 累计）。
-
-**报表（reports.c）：**
-- 月度收支：聚合 daily_expenses，按 category/tag 分组，计算每日明细。
-- 收支趋势：按月份聚合 income/expense，返回近 N 月数据。
-- 支出分类占比：按 category 聚合支出，计算百分比。
-- 标签支出分析：JOIN expense_tags + tags，按标签聚合。
-- 资产趋势：每日 SELECT SUM(current_value) FROM assets，滑动窗口计算净值。
-- 资产分布：当前各分类资产值及占比（资产类 vs 负债类分开）。
-- 交易表现：聚合 buy/sell 交易，计算盈亏（sell_amount - buy_cost）。
-- 资产总览：当前值 + 30日变动统计 + 分类明细。
+优雅停机（SIGTERM/SIGINT）依次停止 server、调度器、任务管理器、AI 新闻服务，再做 WAL checkpoint 与资源释放（`backend/src/main.c:58-68`、`241-255`）。
 
 ---
 
-## 6. 前端 (Vue 3) 模块结构
+## 3. 后端架构
 
-### 6.0 语言规范
+### 3.1 分层与依赖方向
 
-**所有前端 UI 文本统一使用简体中文**，包括但不限于：
+```
+Interfaces (HTTP) → Application (Use Cases) → Domain (Entities + Rules) → Infrastructure (SQL Repos)
+                                                      ↑
+                          Financial Core (decimal_t / money_t / … ) + Ledger Engine (事件溯源)
+```
 
-- 页面标题、导航菜单项
-- 表单标签、占位提示（placeholder）
-- 按钮文字（确认、取消、删除、保存等）
-- 表格列名、筛选条件标签
-- 错误提示、成功提示（Message/Notification）
-- 对话框标题与正文
+严格单向依赖：Domain 层零外部依赖，定义实体、仓储契约与纯规则；Infrastructure 实现仓储；Financial Core 与 Ledger Engine 作为被 Application / Domain 复用的能力核心。
 
-**技术实现：**
-- 使用 `naive-ui` 或 Element Plus 的 `zh-cn` locale 注册
-- 自定义业务文本统一收口到 `src/locales/zh-CN.ts`，由 Pinia store 提供
-- 不引入 i18n 插件（YAGNI），单一语言直接硬编码中文文本
-- 货币格式化使用 `Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' })`
+### 3.2 目录结构（`backend/src/`）
+
+```
+main.c                     进程入口：初始化、中间件、路由、后台线程、优雅停机
+interfaces/http/controllers/  28 个控制器，使用 csilk_app_{get,post,put,delete}_ext 注册路由
+application/<domain>/         usecases.c / commands.h / dtos.h（21 个域）
+domain/<domain>/              entity.h / repository.h / rules.c（纯业务规则）
+infrastructure/
+  repositories/              28 个 *_repo_impl.c，实现领域仓储契约
+  database/                  database.h/.c、statement、transaction、sqlite/、postgres/、db_backup
+core/
+  financial/                 decimal（__int128 定点）、money、quantity、price、rate、percentage、currency
+  ledger/                    ledger_engine、ledger_math、ledger_rebuild、ledger_types
+  scheduler/                 cron_parser、scheduler_engine、scheduler_worker_pool、scheduler_events
+services/
+  ai/                        runtime / model / tools / policy / workflow / workflows / trace / memory / mcp
+  market/                    quote_engine、exchange_rate_service、driver_*、market_scheduler
+  report/、notification/、file_parser.c、import_service.c、export_service.c
+common/                      db、jwt、response、ctx、sse、balance、ledger_utils、tx_types、http_safety、ai_config、ai_trace …
+config/                      secret.c（统一敏感配置门禁）、key_manager.c（RSA 密钥）、db_config.c
+middlewares/                 jwt、cors、csrf、security_headers、rate_limit、gateway_auth
+dtos/                        请求 / 响应结构
+```
+
+### 3.3 启动流程与中间件顺序（`backend/src/main.c`）
+
+1. 忽略 SIGPIPE；`curl_global_init`（必须在线程创建前）；校验 `JWT_SECRET`（拒绝默认值 / 空值）。
+2. `db_init` → `db_run_migrations`；`auth_key_init` 生成/加载 RSA-2048 密钥；`ai_init`；`task_controller_init(pool, 4)`。
+3. 创建 `csilk_app_t`，设置 worker 数；按序注册中间件：
+   `csilk_recovery_handler` → `csilk_logger_handler` → `csilk_request_id_middleware` → `metrics` → `security_headers` → `rate_limit_auth`（`/api`）→ `cors` → `jwt`（`/api` 与 `/mcp`）→ `mcp_rate_limit`（`/mcp`）→ 可选 `csrf`（`ENABLE_CSRF`）。
+4. `/healthz` 与 CORS preflight；注册 28 组业务路由；`/csilk-admin` 管理后台；静态资源回退。
+5. 注册 iLink 推送钩子；启动行情调度器与定时引擎；监听端口（`PORT` / `MINEFOLIO_PORT`，默认 8080）。
+
+CORS 未设置 `CORS_ORIGIN` 时返回 `*` 且禁止携带凭证，并打印警告（`main.c:154-162`），避免 `*` 与 credentials 共存。
+
+### 3.4 业务域与 API 面
+
+21 个域：`account, ai, asset, auth, cashflow, category, daily_expense, dca, file, import_export, ledger, market, mcp, portfolio, report, scheduler, skill, tag, task, transaction, transfer`。
+
+控制器分组（路由数量总计 162，以下为路径族摘要）：
+
+| 控制器 | 主要路径族 |
+|--------|-----------|
+| `auth_controller` | `/api/auth/{register,login,me,password,public-key,2fa/*,oauth/*}` |
+| `admin_controller` | `/api/admin/users/*`、`/api/system/{setup,status,backup/*}` |
+| `account_controller` | `/api/accounts/*`、`/api/ledgers/:id/accounts/:id/permissions` |
+| `asset_controller` | `/api/assets/*`、`/api/assets/:id/rebuild`、`/api/asset-balance-logs` |
+| `category_controller` | `/api/categories/*` |
+| `transaction_controller` | `/api/transactions/*`、`/api/transactions/monthly` |
+| `transfer_controller` | `/api/transfers` |
+| `daily_expense_controller` | `/api/daily-expenses/*` |
+| `tag_controller` | `/api/tags/*` |
+| `ledger_controller` | `/api/ledgers/*`、`/api/ledgers/join` |
+| `report_controller` | `/api/reports/{expense,asset,transaction}/*`、`/api/summary`、`/api/reports/{holdings,position-overview,fx-pnl,currency-summary,multi-currency-summary,yearly}` |
+| `portfolio` / `cashflow` / `dca` | `/api/cashflow/*`、`/api/dca/*` |
+| `market_controller` | `/api/market/{quote,search,history,indices,sync,exchange-rates,fx-rates,fx-history,settings,test-proxy}` |
+| `ai_controller` | `/api/ai/{chat,models,sessions,workflows,actions/confirm*}`、`/api/settings/ai*` |
+| `ai_mcp_controller` / `mcp_server_controller` | `/api/ai/mcp/*`、对外 `/mcp` JSON-RPC 服务 |
+| `skill_controller` / `ai_news_controller` / `ai_trace_controller` | `/api/ai/skills/*`、`/api/ai/news/*`、`/api/ai/traces/*` |
+| `scheduler_controller` / `task_controller` | `/api/scheduler/*`、`/api/tasks/*` |
+| `im_bot_controller` / `im_bot_instance_controller` | `/api/im/*`、`/api/gateway/im/instances/*` |
+| `file_controller` / `receipt_controller` | `/api/files/upload`、`/api/receipts/scan` |
+| `import_export_controller` / `import_rule_controller` | `/api/import/*`、`/api/export/*`、`/api/import-rules/*` |
+
+统一响应信封：`{ "code": 0, "message": "ok", "data": ... }`；错误码 1001 未授权、1002 参数错误、1003 不存在、1004 已存在等。统一定义在 `backend/src/common/response.h` 与 `dtos/response.h`。
+
+### 3.5 财务核心与账本引擎
+
+- **Financial Core**（`core/financial/`）：基于 64 位定点数与 `__int128` 扩展精度的 `decimal_t`，派生强类型 `money_t / quantity_t / price_t / rate_t / percentage_t`，避免浮点误差；仅在 JSON DTO 边界回落为 `double`。`decimal.c` 因 `__int128` 按文件豁免 `-Wpedantic`（`backend/CMakeLists.txt:63-64`）。
+- **Ledger Engine**（`core/ledger/`）：以「Transaction 是唯一金融事实」为原则，提供原子 `ledger_apply_tx` / `ledger_reverse_tx`，统一计算持仓、现金余额、成本基础、已实现/浮动盈亏；支持全量重建与基于 `ledger_snapshots` 检查点的增量重建，回溯改账级联失效下游快照；交易落库固化 Point-in-Time 汇率。
+- **持仓与成本**：`domain/asset/` 提供 FIFO / 加权均价成本基础（`transaction_lots`，V021）、PnL、性能与持仓模型；高精度量价存储由 V032 提供。
+- **余额方向**：`common/balance.c` 对 `loan / credit_card / other_liability` 做符号翻转，保证 `net_worth = assets - liabilities`。
+
+### 3.6 AI 子系统
+
+```
+services/ai/
+  runtime/    统一 Agent 循环（流式 + 同步）、context、session、limits、error、fast_json、loop_*
+  model/      provider 适配、request / response、模型探测
+  tools/      25 个内置注册项（11 个 register_all 模块）+ MCP 客户端 / stdio 池 / 桥接 / 配置
+  policy/     permission、risk（五级）、confirmation（双重确认 + nonce 防重放）、audit
+  workflow/   DAG 图执行器：graph / node / executor / context / engine
+  workflows/  13 个内置工作流（见下）
+  trace/      span / trace / exporter，端到端追踪与成本统计
+  memory/     滑动窗口记忆、摘要、系统提示词保护
+```
+
+- **Agent 循环**：`ai_runtime_execute_stream` 通过回调暴露文本块、thinking 块、工具调用/结果、错误、完成、消息落库事件（`services/ai/runtime/loop.h:13-41`）；`ai_runtime_execute` 为同步版本。
+- **工具注册表**：`tools/registry.c` 维护最多 64 个工具，区分只读 / 变更工具快照；`internal_only` 工具（如 `confirm_proposed_expense`、`confirm_proposed_transfer`）**绝不暴露给 LLM**，防止提示注入绕过人工确认（`registry.c:28-59`）。11 个注册模块：asset、transaction、expense、transfer、cashflow、portfolio、report、news、web_search、batch、skill。另有 `list_skills` / `use_skill` 使用 Agent Skills（V022）。
+- **13 个内置工作流**：`wf_monthly_review`、`wf_portfolio_rebalance`、`wf_expense_decision`、`wf_payday_split`、`wf_budget_guard`、`wf_anomaly_detect`、`wf_subscription_audit`、`wf_emergency_fund`、`wf_goal_tracker`、`wf_debt_payoff`、`wf_cashflow_forecast`、`wf_bill_calendar`、`wf_health_score`，注册于 `services/ai/workflow/engine.c:17-35`。工作流支持条件分支与 Saga 补偿。
+- **风控**：五级风险评估 + 带 nonce 的确认令牌；已消费 nonce 持久化（`ai_consumed_nonces`，V019），重放防护跨进程重启生效。
+- **提示注入防御**：对外部工具内容做 XML 隔离与闭合标签转义；剥离 Markdown 图片链接以防数据外带；提供系统级 guardrail prompt（`loop.h:93-106`）。
+- **可观测性**：AI 会话、消息、thinking 内容（V015）、工具调用（V016）、trace 与统计落库，前端有 `AiTraces` / `AiTraceDetail` 页面。
+
+### 3.7 行情、调度、异步任务与通知
+
+- **行情**：`services/market/` 下 EastMoney / Tencent / Yahoo / Crypto / mock 驱动，`quote_engine` 编排，`exchange_rate_service` 处理汇率与手动锁定标记（V026），`market_scheduler` 定时同步。
+- **调度中心**：`core/scheduler/` 提供 5 段式 Cron 解析、动态休眠 worker pool、事件通知；内置任务由 V030 播种；可通过 `/api/scheduler/*` 管理并即时触发；支持 iLink outbox 推送（V038）。
+- **异步任务**：`application/task/async_task_manager.c` + `async_tasks` 表（V033），提供进度追踪与取消。
+- **通知**：`services/notification/wechat_push_service.c` 与 Webhook 推送。
+
+### 3.8 数据模型与迁移
+
+- 迁移脚本位于 `backend/sql/migrations/{sqlite,postgres}/V<NNN>__<name>.sql`，当前 **V001~V038 共 38 个版本**，双方言语义对齐；启动时由 `db_run_migrations` 经 csilk 迁移引擎应用。
+- 版本涵盖：认证与系统、分类与资产、交易与收支、账本与成员、AI trace/设置、DCA/现金流、行情与 FX、账本作用域分类、储蓄目标、AI 会话摘要、MCP Server、转账级联、市场指数、显式转账交易、thinking/工具调用、账户表、nonce 防重放、账本快照与 Point-in-Time FX、成本方法/批次、AI 技能、报表索引、AI 财经早报、回溯回填、汇率手动标记、IM 绑定、定时 jobs、账户/字段 RBAC、量价精度、异步任务、用户管理、IM 实例、分类去重与索引、推送 outbox。
+- 多租户：`ledgers` + `ledgers_members`（Owner / Editor / Viewer）实现账本隔离；`X-Ledger-Id` 头贯穿请求链路；账户级/字段级 RBAC 由 V031 提供；移动端本地库同样按 `ledger_id` 隔离。
 
 ---
 
-```
-frontend/
-├── package.json
-├── vite.config.ts
-├── tsconfig.json
-├── env.development          # VITE_API_URL=http://localhost:8080/api
-├── env.production
-├── src/
-│   ├── main.ts
-│   ├── App.vue
-│   ├── locales/
-│   │   └── zh-CN.ts          # 全部中文 UI 文本
-│   ├── router/
-│   │   └── index.ts          # 路由 + 登录守卫
-│   ├── stores/
-│   │   ├── auth.ts           # Pinia: token、用户信息
-│   │   └── category.ts       # Pinia: 分类树缓存
-│   ├── api/
-│   │   ├── auth.ts
-│   │   ├── categories.ts
-│   │   ├── assets.ts
-│   │   ├── transactions.ts
-│   │   ├── daily_expenses.ts
-│   │   ├── tags.ts
-│   │   ├── summary.ts
-│   │   └── reports.ts
-│   ├── views/
-│   │   ├── Login.vue
-│   │   ├── Dashboard.vue     # 总览 + 趋势图（ECharts）
-│   │   ├── Assets.vue        # 资产列表 + 新增/编辑对话框
-│   │   ├── Transactions.vue  # 交易记录表格 + 筛选
-│   │   ├── DailyExpenses.vue # 日常收支记账 + 月度报表
-│   │   ├── Categories.vue    # 分类树管理
-│   │   ├── Transfer.vue      # 资产间转账
-│   │   └── Reports.vue       # 报表中心（全部报表入口 + 概览）
-│   ├── components/
-│   │   ├── AssetCard.vue
-│   │   ├── TransactionTable.vue
-│   │   ├── DailyExpenseForm.vue    # 收支表单（含标签选择器）
-│   │   ├── TagPicker.vue           # 标签选择/新建组件
-│   │   ├── MonthlyChart.vue
-│   │   ├── CategoryTree.vue
-│   │   └── NetWorthChart.vue
-│   ├── utils/
-│   │   ├── http.ts           # axios 封装（拦截器注入 token + CSRF token）
-│   │   └── format.ts         # 货币格式化、日期格式化
-│   └── types/
-│       └── index.ts
-└── public/
-```
+## 4. 前端架构
 
-### 6.1 路由设计
+### 4.1 桌面 SPA（`frontend/src/`）
 
-```ts
-const routes = [
-  { path: '/login', component: () => import('@/views/Login.vue') },
-  {
-    path: '/',
-    component: () => import('@/views/Layout.vue'),
-    meta: { requiresAuth: true },
-    children: [
-      { path: '', redirect: '/dashboard' },
-      { path: 'dashboard', component: () => import('@/views/Dashboard.vue') },
-      { path: 'assets',       component: () => import('@/views/Assets.vue') },
-      { path: 'transactions', component: () => import('@/views/Transactions.vue') },
-      { path: 'daily-expenses', component: () => import('@/views/DailyExpenses.vue') },
-      { path: 'categories',   component: () => import('@/views/Categories.vue') },
-      { path: 'transfer',     component: () => import('@/views/Transfer.vue') },
-      { path: 'reports',      component: () => import('@/views/Reports.vue') },
-    ]
-  }
-]
-```
+- **入口/路由**：`main.ts`、`App.vue`、`router/index.ts`；Setup / Login / OAuth Callback 免鉴权，Layout 下挂 18 个子页面（Dashboard、Assets、AssetDetail、Holdings、Transactions、DailyExpenses、Plans、Categories、Reports、Market、Scheduler、AuditLogs、Settings、Chat、Skills、Mcp、News、AiTraces）。
+- **状态**：Pinia stores：`auth`、`ledger`、`category`、`chat`、`market`、`sync`、`theme`、`display-settings`。
+- **API 层**：`api/*.ts` 约 24 个模块，统一经由 `utils/http.ts`：解包 `{code,message,data}` 信封、注入 JWT / `X-Ledger-Id` / CSRF Token、1001 统一登出、错误防抖 Toast、自定义服务端地址。
+- **组件**：约 120 个 `.vue`（视图 + 组件），含市场面板、收支图表、资产走势、费用饼图、账本/账户对话框、MCP / Skills / Scheduler 管理、票据 OCR 等。
+- **i18n**：`vue-i18n`，`locales/zh-CN.ts` 与 `en-US.ts`，`useI18n` composable；默认简体中文。
+- **构建**：Vite 手动分包（`vendor-echarts` / `vendor-element` / `vendor-markdown` / `vendor-hljs`），`vue-tsc -b` 严格类型检查，Vitest 测试。
 
-### 6.2 类型定义
+### 4.2 移动端（`frontend/src/main-mobile.ts` 等）
 
-```ts
-// src/types/index.ts
-export interface Category {
-  id: number;
-  name: string;
-  parent_id: number | null;
-  asset_type: string;
-  currency: string;
-  icon?: string;
-  sort_order: number;
-  children?: Category[];
-}
+- Capacitor 6 壳（Android / iOS），`vite.config.mobile.ts` 独立构建，`views-mobile/` 专用视图与 `MobileLayout.vue`。
+- `db/local.ts` + `db/schema.ts` 使用内嵌 base64 的 `sql.js` WASM 运行本地 SQLite，支持 WebCrypto 非导出密钥加密；`stores/sync.ts`、`utils/offline-http.ts`、`utils/swr-cache.ts` 负责离线读写与联网同步。
+- 支持自建服务端地址动态配置与延迟探测（`components/mobile/ServerConfigDialog.vue`、`utils/server-url.ts`）。
 
-export interface Asset {
-  id: number;
-  user_id: number;
-  category_id: number;
-  name: string;
-  account_no?: string;
-  current_value: number;
-  currency: string;
-  note?: string;
-  created_at: string;
-  updated_at: string;
-}
+### 4.3 AI 工作台渲染管线
 
-export type TransactionType =
-  | 'deposit' | 'withdrawal' | 'buy' | 'sell'
-  | 'transfer_in' | 'transfer_out' | 'fee'
-  | 'income' | 'loss';
-
-export type ExpenseType = 'income' | 'expense';
-
-export interface Tag {
-  id: number;
-  user_id: number;
-  name: string;
-  color: string;             // HEX color, e.g. "#FF6B6B"
-  created_at: string;
-}
-
-export interface DailyExpense {
-  id: number;
-  user_id: number;
-  category_id: number;
-  expense_type: ExpenseType;
-  amount: number;
-  currency: string;
-  expense_date: string;       // YYYY-MM-DD
-  note?: string;
-  tags?: Tag[];
-  category_name?: string;     // join 展示用
-  created_at: string;
-  updated_at: string;
-}
-
-export interface MonthlyExpenseSummary {
-  year: number;
-  month: number;
-  total_income: number;
-  total_expense: number;
-  balance: number;
-  by_category: {
-    category_name: string;
-    expense_type: ExpenseType;
-    amount: number;
-  }[];
-}
-
-export interface Transaction {
-  id: number;
-  asset_id: number;
-  category_id: number;
-  transaction_type: TransactionType;
-  amount: number;
-  price_per_unit?: number;
-  quantity?: number;
-  currency: string;
-  transaction_date: string;
-  note?: string;
-  asset_name?: string;     // 前端 join 展示用
-  category_name?: string;  // 前端 join 展示用
-}
-
-export interface Summary {
-  total_assets: number;
-  total_liabilities: number;
-  net_worth: number;
-  breakdown: { category_name: string; value: number; pct: number }[];
-  trend: { date: string; net_worth: number }[];
-}
-
-export interface ExpenseMonthly {
-  year: number; month: number;
-  total_income: number; total_expense: number; balance: number;
-  by_category: { name: string; type: ExpenseType; amount: number; pct: number }[];
-  by_tag: { tag_name: string; amount: number; count: number }[];
-  daily_breakdown: { date: string; income: number; expense: number }[];
-}
-
-export interface ExpenseTrend {
-  labels: string[];          // ["2026-03","2026-04",...]
-  income:  number[];
-  expense: number[];
-}
-
-export interface ExpenseCategoryBreakdown {
-  period: string;            // "2026-08" or "2026"
-  items: {
-    name: string;
-    expense_type: ExpenseType;
-    amount: number;
-    pct: number;
-  }[];
-}
-
-export interface ExpenseTagBreakdown {
-  period: string;
-  items: { tag_name: string; amount: number; count: number; pct: number }[];
-}
-
-export interface AssetTrend {
-  period: "30d" | "90d" | "365d" | "custom";
-  labels: string[];
-  net_worth: number[];
-  assets: number[];
-  liabilities: number[];
-}
-
-export interface AssetBreakdown {
-  assets:     { name: string; value: number; pct: number }[];
-  liabilities:{ name: string; value: number; pct: number }[];
-  total_assets: number;
-  total_liabilities: number;
-  net_worth: number;
-}
-
-export interface TransactionPerformance {
-  total_trades: number;
-  total_gain: number;
-  total_loss: number;
-  net_gain: number;
-  trades: {
-    id: number;
-    asset_name: string;
-    type: 'buy' | 'sell';
-    date: string;
-    quantity: number;
-    price: number;
-    amount: number;
-    profit?: number;
-  }[];
-}
-
-export interface AssetSummary {
-  current_value: number;
-  change_30d: number;
-  change_30d_pct: number;
-  by_category: { name: string; value: number; pct: number; change: number }[];
-}
-
-export interface ApiResponse<T> {
-  code: number;
-  message: string;
-  data: T;
-}
-```
-
-### 6.3 Axios 拦截器（http.ts）
-
-```ts
-import axios from 'axios';
-import { useAuthStore } from '@/stores/auth';
-
-const http = axios.create({ baseURL: import.meta.env.VITE_API_URL });
-
-// 请求拦截：注入 token
-http.interceptors.request.use(config => {
-  const auth = useAuthStore();
-  if (auth.token) {
-    config.headers.Authorization = `Bearer ${auth.token}`;
-  }
-  return config;
-});
-
-// 响应拦截：统一错误处理
-http.interceptors.response.use(
-  res => res.data,
-  err => {
-    if (err.response?.data?.code === 1001) {
-      useAuthStore().logout();
-      window.location.href = '/login';
-    }
-    return Promise.reject(err);
-  }
-);
-
-export default http;
-```
+`POST /api/ai/chat` 与 `/api/ai/workflows/run` 返回 SSE；前端 `Chat.vue` 通过 `fetch` + `ReadableStream` 读取事件，经 typewriter 缓冲平滑输出；Markdown 由 `marked` + DOMPurify 净化，`highlight.js` 做代码高亮，`MermaidBlock.vue` 渲染工作流 DAG；支持财务实体悬停卡片、`@` 账户提及、批量动作卡片与金额一键掩码。
 
 ---
 
-## 7. 部署配置
+## 5. 安全设计
 
-### 7.1 Nginx 配置（production）
-
-```nginx
-server {
-    listen 80;
-    server_name _;
-
-    # 前端静态文件
-    location / {
-        root /opt/minefolio/frontend/dist;
-        try_files $uri $uri/ /index.html;
-    }
-
-    # API 反向代理
-    location /api/ {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    # 健康检查
-    location /healthz {
-        proxy_pass http://127.0.0.1:8080;
-    }
-}
-```
-
-### 7.2 csilk 配置 (minefolio.yaml)
-
-```yaml
-server:
-  host: "0.0.0.0"
-  port: 8080
-  workers: 2
-
-database:
-  driver: sqlite
-  dsn: "/opt/minefolio/data/minefolio.db"
-
-static:
-  root_dir: "/opt/minefolio/frontend/dist"
-  index_file: "index.html"
-
-logging:
-  level: info
-  file: "/opt/minefolio/logs/server.log"
-```
-
-### 7.3 环境变量
-
-```bash
-export MINEFOLIO_JWT_SECRET="your-random-secret-at-least-32-chars"
-```
+| 领域 | 措施 |
+|------|------|
+| 认证 | JWT（HS256）从环境变量读取 `JWT_SECRET`，启动强制校验；支持令牌版本号即时吊销、TOTP 2FA、GitHub/通用 OIDC 登录 |
+| 密码传输与存储 | 前端 RSA-OAEP 加密口令；后端 RSA-2048 + bcrypt（含 legacy 兼容）；`reset-password` 运维 CLI |
+| 写入防护 | 认证写接口与 `/mcp` 限流；CSRF（可选，Cookie `csrf_token` + `X-CSRF-Token`）；CORS 白名单；安全响应头 |
+| SQL | 全部参数化查询，禁止字符串拼接 |
+| 多租户 | `ledger_id` 隔离 + 账户/字段 RBAC；报表、汇总、AI 工具均按视野过滤与脱敏 |
+| AI | 五级风控、双重确认 + nonce 防重放、internal-only 工具隔离、提示注入防御、Markdown 图片剥离 |
+| 运维 | 统一 Secret Provider（环境变量 / 文件挂载 / Vault 等），生产启动期拒绝硬编码弱口令；SQLite 在线热备份与 WAL checkpoint |
 
 ---
 
-## 8. 安全设计
+## 6. 构建、测试与部署
 
-- JWT secret 从环境变量读取，不写入代码或配置文件。
-- 密码使用 bcrypt 哈希（通过 csilk `csilk_bcrypt_hash` 或 SQLite extension）。
-- CSRF 中间件对所有状态修改接口（POST/PUT/DELETE）生效。
-- CORS 生产环境限定前端域名；开发环境允许 `*`。
-- SQL 注入防护：所有数据库查询使用参数化占位符（`?`），禁止字符串拼接 SQL。
-- WAF 中间件：防御 XSS / SQL 注入等常见攻击。
-- SQLite 文件权限：`chmod 600`，仅 owner 可读写。
+- **后端**：`cmake -S backend -B backend/build && cmake --build backend/build`；可选 `-DMINEFOLIO_SANITIZE=ON` 启用 ASan+UBSan。构建产物含 `minefolio`、静态库 `minefolio_core`、`reset-password` CLI，并自动复制 `config/` 与 `sql/`。
+- **前端**：`npm ci && npm run build`（`vue-tsc -b && vite build`）；移动端 `npm run build:mobile`。
+- **测试**：后端 `ctest --test-dir backend/build`（约 87 个目标，覆盖财务精度、账本重建、领域规则、AI 工具/策略/运行时、MCP、调度、安全回归等）；前端 `npm test`（Vitest）。
+- **部署**：Docker Compose 双容器（后端 :8080 + Nginx :80），默认 SQLite（`minefolio-data` 卷），可选 `COMPOSE_PROFILES=postgres` 启用 PostgreSQL。配置见 `backend/config/minefolio.yaml`、`.env.example` 与 `README.md`。
 
 ---
 
-## 9. 开发计划（MVP 范围）
+## 7. 二次开发指南
 
-| 阶段 | 内容 | 优先级 |
-|------|------|--------|
-| 1 | DB 初始化（SQL migration）+ 分类 CRUD API | P0 |
-| 2 | 认证模块（注册/登录/JWT） | P0 |
-| 3 | 资产 CRUD API | P0 |
-| 4 | 交易记录 API | P0 |
-| 5 | 日常收支 CRUD API + 月度汇总 API + 标签 CRUD API | P0 |
-| 6 | 汇总统计 API + 全部报表 API（8个端点） | P0 |
-| 7 | 前端基础框架（Vite + TS + Element Plus + 路由 + 守卫） | P0 |
-| 8 | 前端登录页 + Pinia auth store | P0 |
-| 9 | 前端分类管理页（树形 CRUD） | P0 |
-| 10 | 前端标签管理页（CRUD + 颜色选择） | P0 |
-| 11 | 前端资产列表 + 新增/编辑 | P0 |
-| 12 | 前端交易记录页 + 筛选 | P1 |
-| 13 | 前端日常收支记账页（表单含标签选择 + 月度图表） | P0 |
-| 14 | 前端 Dashboard（汇总 + 趋势图 + 月度收支概览） | P1 |
-| 15 | 前端报表中心页（全部报表入口 + 月度报表 + 收支趋势 + 资产分布 + 交易表现） | P0 |
-| 16 | 前端转账功能 | P2 |
-| 17 | 生产构建脚本 + nginx 部署模板 | P2 |
+| 任务 | 入口与要点 |
+|------|-----------|
+| 新增 HTTP API | 在 `application/<domain>/` 增 usecase/command/dto → `domain/<domain>/` 增规则/仓储契约 → `infrastructure/repositories/` 实现 → `interfaces/http/controllers/<name>_controller.c` 用 `csilk_app_*_ext` 注册 → 在 `main.c` 调用 `register_<name>_routes` |
+| 新增 AI 工具 | 在 `services/ai/tools/` 定义 `ai_tool_t` 并调用 `ai_tool_register`；声明只读/变更、是否 `internal_only`；在对应 `*_register_all()` 中挂载 |
+| 新增工作流 | 在 `services/ai/workflows/` 构造 `ai_workflow_graph_t`，并在 `services/ai/workflow/engine.c` 的 `ensure_init_builtin_workflows()` 注册 |
+| 新增数据库迁移 | 在 `sql/migrations/sqlite/` 与 `postgres/` 各新增同名 `V<NNN>__*.sql`，保持双方言语义一致；无需手工改旧库 |
+| 新增领域 | 按 `application/<domain>/{usecases,commands,dtos}`、`domain/<domain>/{entity,repository,rules}`、`infrastructure/repositories/*_repo_impl.c` 骨架落地，再接 controller |
 
 ---
 
-## 10. YAGNI 排除项（不在 MVP 范围）
+## 8. 相关文档索引
 
-- 多用户系统（固定单用户）
-- 第三方金融数据源自动同步
-- 移动端 App
-- 多数据库适配（PostgreSQL/MySQL）— 架构已预留接口，但不实现
-- 实时 WebSocket 推送
-- 导出 Excel/CSV
+- `docs/architecture.md`：工程级完整架构说明（分层、数据模型、关键数据流、部署拓扑、安全边界）。
+- `docs/ai-runtime-architecture.md`：AI 运行时子系统细节。
+- `docs/financial-core-architecture.md`、`docs/ledger-engine-ownership-audit.md`：财务核心与账本所有权。
+- `docs/codebase-analysis-*.md`、`docs/security-audit*.md`：阶段性代码与安全审计。
+- `README.md`：快速启动、部署与特性总览；`AGENTS.md`：开发约定；`CHANGELOG.md`：版本历史。
+- `docs/superpowers/{specs,plans}/`：按时间记录的单次功能设计/实施历史（档案，非现状描述）。

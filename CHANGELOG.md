@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Docs
 - **Documentation Sync**: Synchronized `README.md`, `AGENTS.md`, `gateway/README.md`, `docs/architecture.md`, `docs/ai-runtime-architecture.md`, and `docs/financial-core-architecture.md` with the current codebase (21 DDD domains, 27 controllers/repositories, `V001`~`V033` migrations, 37 SQL tables, 81 CTest targets, 21 backend test scripts, 53 frontend Vitest specs, 11 gateway adapter tests, and `csilk v1.2.0`).
+- **Documentation Currency Refresh (2026-11-26)**: Rewrote the obsolete MVP drafts `docs/superpowers/specs/2026-08-10-minefolio-design.md` and `docs/superpowers/plans/2026-08-10-minefolio.md` in place into v1.4.0 current-state documents. Verified counts against code: 28 controllers / 28 repositories, 21 DDD domains, `V001`~`V038` migrations (45 tables), 25 built-in AI tool registrations, 13 workflows, 162 distinct `/api/*` paths, ~87 CTest targets. Corrected stale counts and `/ai/chat` → `/api/ai/chat` paths in `README.md`, `AGENTS.md`, `docs/architecture.md`, `docs/ai-runtime-architecture.md`. Added historical-snapshot notices to dated analysis/audit reports. The 179 historical `docs/superpowers/{specs,plans}` files remain untouched as archives.
 
 ---
 

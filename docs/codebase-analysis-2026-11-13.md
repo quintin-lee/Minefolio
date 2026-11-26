@@ -1,5 +1,7 @@
 # Minefolio 全项目代码分析（2026-11-13）
 
+> ⚠️ **历史快照报告**：本文基线为 `master @ 3ba09f52`，文中规模数字（17 域、V001–V022、58 CTest 套件等）与 P0/P1 缺陷清单反映该时点状态，不代表当前 HEAD。现状以 `docs/superpowers/specs/2026-08-10-minefolio-design.md`（已按 v1.4.0 重写）、`docs/architecture.md` 与代码为准；缺陷是否已修复请查阅 `CHANGELOG.md`。
+
 基线：`3ba09f52`（master，工作树干净）。方法：14 切片并行只读分析（6 个 scout 完整报告 + 4 个切片由主线直接审计，scout 上游 429/404 失败切片已补做），高影响结论均经主线 `file:line` 复核。标注：`[自验]` 主线直接验证，`[切片]` scout 报告结论（关键项已抽检）。
 
 ## 0. 总评（一句话）
