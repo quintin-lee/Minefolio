@@ -37,7 +37,7 @@ describe('sync store', () => {
   })
 
   it('marks conflict when server rejects', async () => {
-    ;(dailyExpensesApi.create as any).mockRejectedValue({ response: { data: { code: 1003 } } })
+    ;(dailyExpensesApi.create as any).mockRejectedValue({ response: { data: { code: 1004 } } })
     const store = useSyncStore()
     store.init()
     store.enqueue('daily_expenses', 100, 'create', { amount: 1 })
@@ -169,7 +169,7 @@ describe('sync store', () => {
   })
 
   it('skips conflicted items on subsequent syncNow calls and supports retry/discard', async () => {
-    ;(dailyExpensesApi.create as any).mockRejectedValueOnce({ response: { data: { code: 1003 } } })
+    ;(dailyExpensesApi.create as any).mockRejectedValueOnce({ response: { data: { code: 1004 } } })
     const store = useSyncStore()
     store.init()
     store.enqueue('daily_expenses', 200, 'create', { amount: 42 })
@@ -191,7 +191,7 @@ describe('sync store', () => {
     expect(store.pendingCount).toBe(0)
 
     // Enqueue another failing op and discard it manually
-    ;(dailyExpensesApi.create as any).mockRejectedValueOnce({ response: { data: { code: 1003 } } })
+    ;(dailyExpensesApi.create as any).mockRejectedValueOnce({ response: { data: { code: 1004 } } })
     store.enqueue('daily_expenses', 202, 'create', { amount: 9 })
     await store.syncNow()
     expect(store.conflicts.length).toBe(1)
