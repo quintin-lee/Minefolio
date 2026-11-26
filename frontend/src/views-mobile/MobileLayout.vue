@@ -123,19 +123,26 @@ function go(tab: { prefix: string }) {
   background: var(--mf-surface);
   border-bottom: 1px solid var(--mf-border);
   flex-shrink: 0;
-  z-index: 20;
+  z-index: var(--mf-z-header, 20);
 }
 .top-bar-actions {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
+}
+.mobile-ledger {
+  min-width: 0;
+  flex: 1;
 }
 .mobile-ledger :deep(.ledger-selector-wrap) {
   margin-right: 0;
+  max-width: 100%;
 }
 .mobile-ledger :deep(.current-ledger-btn) {
-  padding: 4px 8px;
-  max-width: 210px;
+  padding: 4px 10px;
+  max-width: 100%;
+  min-height: 36px;
 }
 .mobile-ledger :deep(.ledger-name) {
   max-width: 110px;
@@ -147,9 +154,6 @@ function go(tab: { prefix: string }) {
 .mobile-ledger :deep(.current-ledger-btn .ledger-name),
 .mobile-ledger :deep(.current-ledger-btn .caret) {
   display: inline-block;
-}
-.mobile-ledger :deep(.current-ledger-btn) {
-  padding: 4px 10px;
 }
 .mobile-content {
   flex: 1;
@@ -168,7 +172,7 @@ function go(tab: { prefix: string }) {
 .tab-bar {
   position: relative;
   flex-shrink: 0;
-  z-index: 100;
+  z-index: var(--mf-z-sidebar, 100);
   width: 100%;
   height: calc(56px + env(safe-area-inset-bottom));
   display: flex;
@@ -182,6 +186,7 @@ function go(tab: { prefix: string }) {
 .tab-item {
   flex: 1;
   min-width: 0;
+  min-height: 44px;
   padding: 0 2px;
   display: flex;
   flex-direction: column;

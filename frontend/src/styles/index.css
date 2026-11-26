@@ -1255,6 +1255,7 @@ html.light .loss-text {
   color: var(--mf-text-muted);
   font-size: 13px;
   font-weight: 500;
+  min-height: 32px;
   padding: 4px 14px;
   border-radius: var(--mf-radius-pill);
   cursor: pointer;

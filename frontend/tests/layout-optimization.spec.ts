@@ -76,4 +76,16 @@ describe('frontend layout optimization', () => {
     expect(layout).toContain('var(--mf-z-sidebar, 100)')
     expect(layout).toContain('var(--mf-z-backdrop, 90)')
   })
+
+  it('deduplicates MobileLayout topbar styles and enforces comfortable touch targets', () => {
+    const mobileLayout = readSrc('src/views-mobile/MobileLayout.vue')
+    const btnBlocks = mobileLayout.match(/\.mobile-ledger\s*:deep\(\.current-ledger-btn\)\s*\{/g) || []
+    expect(btnBlocks).toHaveLength(1)
+    expect(mobileLayout).toMatch(/\.mobile-ledger\s*\{[^}]*min-width:\s*0;[^}]*flex:\s*1;/s)
+    expect(mobileLayout).toMatch(/\.top-bar-actions\s*\{[^}]*flex-shrink:\s*0;/s)
+    expect(mobileLayout).toMatch(/\.tab-item\s*\{[^}]*min-height:\s*44px;/s)
+
+    const css = readSrc('src/styles/index.css')
+    expect(css).toMatch(/\.mobile-segmented\s+\.segmented-item\s*\{[^}]*min-height:\s*32px;/s)
+  })
 })
