@@ -73,6 +73,8 @@ jobs:
           ./tests/test_im_bot.sh
           ./tests/test_im_bind_auth.sh
           ./tests/test_gateway.sh
+          ./tests/test_ilink_scheduler_push.sh
+          ./tests/test_im_bot_instance.sh
 
       - name: Package Linux Binary Archive
         if: startsWith(github.ref, 'refs/tags/v')
@@ -160,6 +162,8 @@ jobs:
           ./tests/test_im_bot.sh
           ./tests/test_im_bind_auth.sh
           ./tests/test_gateway.sh
+          ./tests/test_ilink_scheduler_push.sh
+          ./tests/test_im_bot_instance.sh
 
   backend-asan:
     name: Backend ASan + UBSan Unit Tests

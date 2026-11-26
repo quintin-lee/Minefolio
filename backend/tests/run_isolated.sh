@@ -120,6 +120,8 @@ case "$MODE" in
       test_report_isolation.sh
       test_ai_news_isolation.sh
       test_scheduler.sh
+      test_ilink_scheduler_push.sh
+      test_im_bot_instance.sh
     )
     for s in "${SUITES[@]}"; do
       echo ">>> Running $s (isolated MemoryMax=$MINEFOLIO_TEST_MEM_MAX, MemorySwapMax=$MINEFOLIO_TEST_SWAP_MAX)..."
