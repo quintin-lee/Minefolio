@@ -52,3 +52,4 @@ test-artifacts/
 im_bindings*.json
 gateway/im_bindings*.json
 gateway/.ilink-state/
+.jeikcode/codegraph/
