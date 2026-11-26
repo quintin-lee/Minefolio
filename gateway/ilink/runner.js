@@ -114,7 +114,11 @@ async function runManagedSession({
       const parsed = Number(graceMs);
       const ms = Number.isFinite(parsed) && parsed >= 0 ? parsed : 3000;
       graceTimer = setTimeout(() => resolve({ timedOut: true, results: null }), ms);
-      graceTimer.unref?.();
+      // Keep the grace timer referenced: if worker timers are also unref'd,
+      // Node can exit the event loop while runManagedSession's promise is
+      // still pending ("Promise resolution is still pending"), which makes
+      // shutdown tests fail intermittently on CI runners.
+      // graceTimer.unref?.();
     };
     if (workerController.signal.aborted) {
       startGrace();
