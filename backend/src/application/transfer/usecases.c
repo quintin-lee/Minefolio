@@ -15,8 +15,11 @@
 #include "core/ledger/ledger_engine.h"
 #include "common/db.h"
 #include "common/response.h"
+#include "services/market/exchange_rate_service.h"
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 
 int
 transfer_usecase_create(void*                        pool,
@@ -91,17 +94,35 @@ transfer_usecase_create(void*                        pool,
 
     const char* cur = cmd->currency && cmd->currency[0] ? cmd->currency : "CNY";
     const char* note = cmd->note ? cmd->note : "";
+    currency_t  cur_t = currency_from_str(cur);
+    double      fx_rate_to_cny = 1.0;
+
+    if (strcasecmp(cur, "CNY") != 0 && strcasecmp(cur, "RMB") != 0) {
+        double safe_live = 0.0;
+        bool   has_safe = (exchange_rate_get_to_cny_safe(cur, &safe_live) == 0);
+        double hist = exchange_rate_get_historical_or_latest(
+            (csilk_db_pool_t*)pool, cur_t, cmd->transfer_date);
+        if ((has_safe || (hist > 0.0 && hist != 1.0)) && isfinite(hist) && hist > 0.0) {
+            fx_rate_to_cny = hist;
+        } else {
+            db_tx_scope_rollback(pool, &scope);
+            out_res->code = 1002;
+            snprintf(out_res->message, sizeof(out_res->message), "无法获取币种有效汇率");
+            return -1;
+        }
+    }
 
     /* 1. Record transfer_out transaction */
-    int64_t out_tx_id = mf_transfer_repo_insert_out_transaction(pool,
-                                                                cmd->user_id,
-                                                                cmd->from_asset_id,
-                                                                cmd->to_asset_id,
-                                                                cmd->amount,
-                                                                cur,
-                                                                cmd->transfer_date,
-                                                                note,
-                                                                cmd->ledger_id);
+    int64_t out_tx_id = mf_transfer_repo_insert_out_transaction_fx(pool,
+                                                                   cmd->user_id,
+                                                                   cmd->from_asset_id,
+                                                                   cmd->to_asset_id,
+                                                                   cmd->amount,
+                                                                   cur,
+                                                                   fx_rate_to_cny,
+                                                                   cmd->transfer_date,
+                                                                   note,
+                                                                   cmd->ledger_id);
     if (out_tx_id <= 0) {
         db_tx_scope_rollback(pool, &scope);
         out_res->code = 500;
@@ -110,16 +131,17 @@ transfer_usecase_create(void*                        pool,
     }
 
     /* 2. Record transfer_in transaction (paired with out_tx_id as parent_tx_id) */
-    int64_t in_tx_id = mf_transfer_repo_insert_in_transaction(pool,
-                                                              cmd->user_id,
-                                                              cmd->to_asset_id,
-                                                              cmd->from_asset_id,
-                                                              cmd->amount,
-                                                              cur,
-                                                              cmd->transfer_date,
-                                                              note,
-                                                              out_tx_id,
-                                                              cmd->ledger_id);
+    int64_t in_tx_id = mf_transfer_repo_insert_in_transaction_fx(pool,
+                                                                 cmd->user_id,
+                                                                 cmd->to_asset_id,
+                                                                 cmd->from_asset_id,
+                                                                 cmd->amount,
+                                                                 cur,
+                                                                 fx_rate_to_cny,
+                                                                 cmd->transfer_date,
+                                                                 note,
+                                                                 out_tx_id,
+                                                                 cmd->ledger_id);
     if (in_tx_id <= 0) {
         db_tx_scope_rollback(pool, &scope);
         out_res->code = 500;
@@ -151,8 +173,7 @@ transfer_usecase_create(void*                        pool,
     }
 
     /* 4. Apply balance via Ledger Engine */
-    currency_t cur_t = currency_from_str(cur);
-    money_t    amt_m;
+    money_t amt_m;
     money_from_double(cmd->amount, cur_t, &amt_m);
 
     if (ledger_apply_transfer_dated(pool,

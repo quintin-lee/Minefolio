@@ -8,6 +8,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <time.h>
 
 /* =========================================================================
@@ -434,12 +435,20 @@ apply_transfer_deltas(csilk_db_pool_t* pool,
     if (db_tx_scope_begin(pool, scope_name, &scope) != 0) {
         return -1;
     }
-    if (balance_apply_delta_m(
-            pool, from_asset_id, user_id, from_delta, from_source, transfer_id, note) != 0) {
+    if (balance_apply_delta_m_fx_at(pool,
+                                    from_asset_id,
+                                    user_id,
+                                    from_delta,
+                                    0.0,
+                                    event_date,
+                                    from_source,
+                                    transfer_id,
+                                    note) != 0) {
         db_tx_scope_rollback(pool, &scope);
         return -1;
     }
-    if (balance_apply_delta_m(pool, to_asset_id, user_id, to_delta, to_source, transfer_id, note) !=
+    if (balance_apply_delta_m_fx_at(
+            pool, to_asset_id, user_id, to_delta, 0.0, event_date, to_source, transfer_id, note) !=
         0) {
         db_tx_scope_rollback(pool, &scope);
         return -1;
@@ -844,6 +853,11 @@ ledger_reverse_tx(csilk_db_pool_t* pool, int64_t user_id, int64_t tx_id)
 
     double fx_rate = db_get_num(old_tx, "fx_rate_to_cny");
     if (!isfinite(fx_rate) || fx_rate <= 0.0) {
+        fx_rate = 0.0;
+    } else if (cur_str && cur_str[0] && strcasecmp(cur_str, "CNY") != 0 &&
+               strcasecmp(cur_str, "RMB") != 0 && fabs(fx_rate - 1.0) < 1e-9) {
+        /* Legacy pre-fix rows (e.g. cross-currency transfers) defaulted fx_rate_to_cny to 1.0;
+         * clear to 0.0 so reversal resolves the historical rate for transaction_date. */
         fx_rate = 0.0;
     }
     const char* rev_date = csilk_json_get_string(old_tx, "transaction_date");

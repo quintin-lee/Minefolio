@@ -5,6 +5,7 @@
 
 #include "infrastructure/repositories/transfer_repo_impl.h"
 #include "common/db.h"
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -79,6 +80,49 @@ mf_transfer_repo_insert(void* db_pool, int64_t user_id, const mf_transfer_t* tra
 }
 
 int64_t
+mf_transfer_repo_insert_out_transaction_fx(void*       db_pool,
+                                           int64_t     user_id,
+                                           int64_t     asset_id,
+                                           int64_t     linked_asset_id,
+                                           double      amount,
+                                           const char* currency,
+                                           double      fx_rate_to_cny,
+                                           const char* date,
+                                           const char* note,
+                                           int64_t     ledger_id)
+{
+    csilk_db_pool_t* pool = (csilk_db_pool_t*)db_pool;
+    char             uid[32], aid[32], laid[32], amt[64], fx_buf[32], lid[32];
+    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
+    snprintf(aid, sizeof(aid), "%lld", (long long)asset_id);
+    snprintf(laid, sizeof(laid), "%lld", (long long)linked_asset_id);
+    snprintf(amt, sizeof(amt), "%.6f", amount);
+    double safe_fx = (isfinite(fx_rate_to_cny) && fx_rate_to_cny > 0.0) ? fx_rate_to_cny : 1.0;
+    snprintf(fx_buf, sizeof(fx_buf), "%.8f", safe_fx);
+    snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
+
+    csilk_json_t* res = csilk_db_query_param_json(
+        pool,
+        "INSERT INTO transactions (user_id, asset_id, linked_asset_id, source_type, "
+        "transaction_type, direction, linked_direction, amount, currency, fx_rate_to_cny, "
+        "transaction_date, note, ledger_id) "
+        "VALUES (?, ?, ?, 'expense', 'transfer_out', 'out', 'in', ?, ?, ?, ?, ?, "
+        "COALESCE(NULLIF(CAST(NULLIF(?, '') AS BIGINT), 0), (SELECT ledger_id FROM assets WHERE "
+        "id=?))) "
+        "RETURNING id",
+        (const char*[]){
+            uid, aid, laid, amt, currency, fx_buf, date, note ? note : "", lid, aid, NULL});
+    int64_t id = 0;
+    if (res && csilk_json_array_size(res) > 0) {
+        id = db_get_int(csilk_json_array_get(res, 0), "id");
+    }
+    if (res) {
+        csilk_json_free(res);
+    }
+    return id;
+}
+
+int64_t
 mf_transfer_repo_insert_out_transaction(void*       db_pool,
                                         int64_t     user_id,
                                         int64_t     asset_id,
@@ -89,24 +133,46 @@ mf_transfer_repo_insert_out_transaction(void*       db_pool,
                                         const char* note,
                                         int64_t     ledger_id)
 {
+    return mf_transfer_repo_insert_out_transaction_fx(
+        db_pool, user_id, asset_id, linked_asset_id, amount, currency, 1.0, date, note, ledger_id);
+}
+
+int64_t
+mf_transfer_repo_insert_in_transaction_fx(void*       db_pool,
+                                          int64_t     user_id,
+                                          int64_t     asset_id,
+                                          int64_t     linked_asset_id,
+                                          double      amount,
+                                          const char* currency,
+                                          double      fx_rate_to_cny,
+                                          const char* date,
+                                          const char* note,
+                                          int64_t     parent_tx_id,
+                                          int64_t     ledger_id)
+{
     csilk_db_pool_t* pool = (csilk_db_pool_t*)db_pool;
-    char             uid[32], aid[32], laid[32], amt[64], lid[32];
+    char             uid[32], aid[32], laid[32], amt[64], fx_buf[32], pid[32], lid[32];
     snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
     snprintf(aid, sizeof(aid), "%lld", (long long)asset_id);
     snprintf(laid, sizeof(laid), "%lld", (long long)linked_asset_id);
     snprintf(amt, sizeof(amt), "%.6f", amount);
+    double safe_fx = (isfinite(fx_rate_to_cny) && fx_rate_to_cny > 0.0) ? fx_rate_to_cny : 1.0;
+    snprintf(fx_buf, sizeof(fx_buf), "%.8f", safe_fx);
+    snprintf(pid, sizeof(pid), "%lld", (long long)parent_tx_id);
     snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
 
     csilk_json_t* res = csilk_db_query_param_json(
         pool,
         "INSERT INTO transactions (user_id, asset_id, linked_asset_id, source_type, "
-        "transaction_type, direction, linked_direction, amount, currency, transaction_date, note, "
-        "ledger_id) "
-        "VALUES (?, ?, ?, 'expense', 'transfer_out', 'out', 'in', ?, ?, ?, ?, "
+        "transaction_type, direction, linked_direction, amount, currency, fx_rate_to_cny, "
+        "transaction_date, note, parent_tx_id, ledger_id) "
+        "VALUES (?, ?, ?, 'income', 'transfer_in', 'in', 'out', ?, ?, ?, ?, ?, "
+        "NULLIF(CAST(NULLIF(?, '') AS BIGINT), 0), "
         "COALESCE(NULLIF(CAST(NULLIF(?, '') AS BIGINT), 0), (SELECT ledger_id FROM assets WHERE "
         "id=?))) "
         "RETURNING id",
-        (const char*[]){uid, aid, laid, amt, currency, date, note ? note : "", lid, aid, NULL});
+        (const char*[]){
+            uid, aid, laid, amt, currency, fx_buf, date, note ? note : "", pid, lid, aid, NULL});
     int64_t id = 0;
     if (res && csilk_json_array_size(res) > 0) {
         id = db_get_int(csilk_json_array_get(res, 0), "id");
@@ -129,35 +195,17 @@ mf_transfer_repo_insert_in_transaction(void*       db_pool,
                                        int64_t     parent_tx_id,
                                        int64_t     ledger_id)
 {
-    csilk_db_pool_t* pool = (csilk_db_pool_t*)db_pool;
-    char             uid[32], aid[32], laid[32], amt[64], pid[32], lid[32];
-    snprintf(uid, sizeof(uid), "%lld", (long long)user_id);
-    snprintf(aid, sizeof(aid), "%lld", (long long)asset_id);
-    snprintf(laid, sizeof(laid), "%lld", (long long)linked_asset_id);
-    snprintf(amt, sizeof(amt), "%.6f", amount);
-    snprintf(pid, sizeof(pid), "%lld", (long long)parent_tx_id);
-    snprintf(lid, sizeof(lid), "%lld", (long long)ledger_id);
-
-    csilk_json_t* res = csilk_db_query_param_json(
-        pool,
-        "INSERT INTO transactions (user_id, asset_id, linked_asset_id, source_type, "
-        "transaction_type, direction, linked_direction, amount, currency, transaction_date, note, "
-        "parent_tx_id, ledger_id) "
-        "VALUES (?, ?, ?, 'income', 'transfer_in', 'in', 'out', ?, ?, ?, ?, "
-        "NULLIF(CAST(NULLIF(?, '') AS BIGINT), 0), "
-        "COALESCE(NULLIF(CAST(NULLIF(?, '') AS BIGINT), 0), (SELECT ledger_id FROM assets WHERE "
-        "id=?))) "
-        "RETURNING id",
-        (const char*[]){
-            uid, aid, laid, amt, currency, date, note ? note : "", pid, lid, aid, NULL});
-    int64_t id = 0;
-    if (res && csilk_json_array_size(res) > 0) {
-        id = db_get_int(csilk_json_array_get(res, 0), "id");
-    }
-    if (res) {
-        csilk_json_free(res);
-    }
-    return id;
+    return mf_transfer_repo_insert_in_transaction_fx(db_pool,
+                                                     user_id,
+                                                     asset_id,
+                                                     linked_asset_id,
+                                                     amount,
+                                                     currency,
+                                                     1.0,
+                                                     date,
+                                                     note,
+                                                     parent_tx_id,
+                                                     ledger_id);
 }
 
 int
