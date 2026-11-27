@@ -92,7 +92,7 @@ describe('frontend layout optimization', () => {
   it('unlocks Categories narrow stacking, wraps category tabs, and deduplicates .node-icon', () => {
     const categories = readSrc('src/views/Categories.vue')
     expect(categories).toMatch(/\.category-tabs\s*\{[^}]*flex-wrap:\s*wrap;/s)
-    expect(categories).toMatch(/@media\s*\(max-width:\s*991px\)\s*\{[\s\S]*?\.categories-page\s*\{[^}]*height:\s*auto;/s)
+    expect(categories).toMatch(/@media\s*\(max-width:\s*992px\)\s*\{[\s\S]*?\.categories-page\s*\{[^}]*height:\s*auto;/s)
     expect(categories.match(/^\.node-icon\s*\{/gm) || []).toHaveLength(1)
   })
 
@@ -136,7 +136,7 @@ describe('frontend layout optimization', () => {
   it('wraps Reports metric cards, sizes charts on narrow viewports, expands spacing scale, and tokenizes remaining z-index overlays', () => {
     const reports = readSrc('src/views/Reports.vue')
     expect(reports).toMatch(/\.metric-cards\s*\{[^}]*flex-wrap:\s*wrap;/s)
-    expect(reports).toMatch(/@media\s*\(max-width:\s*1199px\)\s*\{[\s\S]*?\.chart-container\s*\{[^}]*min-height:\s*300px;/s)
+    expect(reports).toMatch(/@media\s*\(max-width:\s*1200px\)\s*\{[\s\S]*?\.chart-container\s*\{[^}]*min-height:\s*300px;/s)
 
     const css = readSrc('src/styles/index.css')
     expect(css).toContain('--mf-spacing-xs: 4px;')

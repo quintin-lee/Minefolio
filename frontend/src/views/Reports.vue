@@ -801,7 +801,7 @@ onMounted(loadAll)
   transform: translateY(-1px);
 }
 
-@media (max-width: 1199px) {
+@media (max-width: 1200px) {
   .reports-page {
     overflow-y: auto;
     height: auto;

@@ -943,7 +943,7 @@ async function handleImport() {
   transform: translate(-50%, 20px);
 }
 
-@media (max-width: 1199px) {
+@media (max-width: 1200px) {
   .daily-expenses-page {
     overflow-y: auto;
     height: auto;

@@ -641,7 +641,7 @@ onActivated(() => {
   min-height: 0;
 }
 
-@media (max-width: 991px) {
+@media (max-width: 992px) {
   .categories-page {
     height: auto;
     min-height: 100%;
