@@ -446,7 +446,10 @@ apply_expense_delta(csilk_db_pool_t* pool,
         db_tx_scope_rollback(pool, &scope);
         return -1;
     }
-    db_tx_scope_commit(pool, &scope);
+    if (db_tx_scope_commit(pool, &scope) != 0) {
+        db_tx_scope_rollback(pool, &scope);
+        return -1;
+    }
     return 0;
 }
 
@@ -497,7 +500,10 @@ apply_transfer_deltas(csilk_db_pool_t* pool,
         db_tx_scope_rollback(pool, &scope);
         return -1;
     }
-    db_tx_scope_commit(pool, &scope);
+    if (db_tx_scope_commit(pool, &scope) != 0) {
+        db_tx_scope_rollback(pool, &scope);
+        return -1;
+    }
     return 0;
 }
 
@@ -695,7 +701,9 @@ ledger_apply_tx(csilk_db_pool_t* pool, ledger_tx_t* tx)
         goto fail_rollback;
     }
 
-    db_tx_scope_commit(pool, &scope);
+    if (db_tx_scope_commit(pool, &scope) != 0) {
+        goto fail_rollback;
+    }
     return 0;
 
 fail_rollback:
@@ -1005,8 +1013,10 @@ ledger_reverse_tx(csilk_db_pool_t* pool, int64_t user_id, int64_t tx_id)
         goto fail_rollback;
     }
 
+    if (db_tx_scope_commit(pool, &scope) != 0) {
+        goto fail_rollback;
+    }
     csilk_json_free(old_arr);
-    db_tx_scope_commit(pool, &scope);
     return 0;
 
 fail_rollback:

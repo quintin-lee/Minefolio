@@ -363,7 +363,10 @@ exec_confirm_proposed_expense(const ai_tool_t*         tool,
         }
     }
 
-    db_tx_scope_commit(ctx->pool, &scope);
+    if (db_tx_scope_commit(ctx->pool, &scope) != 0) {
+        db_tx_scope_rollback(ctx->pool, &scope);
+        return strdup("{\"error\":\"failed to commit transaction\"}");
+    }
 
     csilk_json_t* res = csilk_json_object();
     csilk_json_add_bool(res, "success", true);

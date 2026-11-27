@@ -128,8 +128,9 @@ category_usecase_seed_defaults(void* pool, int64_t user_id, int64_t ledger_id)
     db_tx_scope_t tx = {0};
     int           tx_ok = (db_tx_scope_begin((csilk_db_pool_t*)pool, "mf_cat_seed", &tx) == 0);
     if (mf_category_repo_is_seeded(pool, user_id, ledger_id)) {
-        if (tx_ok) {
-            db_tx_scope_commit((csilk_db_pool_t*)pool, &tx);
+        if (tx_ok && db_tx_scope_commit((csilk_db_pool_t*)pool, &tx) != 0) {
+            db_tx_scope_rollback((csilk_db_pool_t*)pool, &tx);
+            return;
         }
         if (ledger_id > 0) {
             pthread_mutex_lock(&s_category_seed_mutex);
@@ -271,8 +272,9 @@ category_usecase_seed_defaults(void* pool, int64_t user_id, int64_t ledger_id)
               asset_overrides);
 
     mf_category_repo_mark_seeded(pool, user_id, ledger_id);
-    if (tx_ok) {
-        db_tx_scope_commit((csilk_db_pool_t*)pool, &tx);
+    if (tx_ok && db_tx_scope_commit((csilk_db_pool_t*)pool, &tx) != 0) {
+        db_tx_scope_rollback((csilk_db_pool_t*)pool, &tx);
+        return;
     }
     if (ledger_id > 0) {
         pthread_mutex_lock(&s_category_seed_mutex);

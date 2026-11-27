@@ -229,25 +229,34 @@ transfer_repo_delete_paired(void*   pool,
             (csilk_db_pool_t*)pool,
             "DELETE FROM transfers WHERE user_id=? AND (from_tx_id=? OR to_tx_id=?) RETURNING id",
             (const char*[]){uid_str, tid_str, tid_str, NULL});
+        if (!del_res) {
+            return -1;
+        }
     }
 
+    int rc = 0;
     if (!del_res || csilk_json_array_size(del_res) == 0) {
         if (from_asset_id > 0 && to_asset_id > 0) {
             char fa_str[32], ta_str[32], amt_str[64];
             snprintf(fa_str, sizeof(fa_str), "%lld", (long long)from_asset_id);
             snprintf(ta_str, sizeof(ta_str), "%lld", (long long)to_asset_id);
             snprintf(amt_str, sizeof(amt_str), "%.6f", amount);
-            csilk_json_free(
-                csilk_db_query_param_json((csilk_db_pool_t*)pool,
-                                          "DELETE FROM transfers WHERE id IN ("
-                                          "  SELECT id FROM transfers WHERE user_id=? AND "
-                                          "from_asset_id=? AND to_asset_id=? AND amount=? "
-                                          "  ORDER BY id DESC LIMIT 1)",
-                                          (const char*[]){uid_str, fa_str, ta_str, amt_str, NULL}));
+            csilk_json_t* fb_res = csilk_db_query_param_json(
+                (csilk_db_pool_t*)pool,
+                "DELETE FROM transfers WHERE id IN ("
+                "  SELECT id FROM transfers WHERE user_id=? AND "
+                "from_asset_id=? AND to_asset_id=? AND amount=? "
+                "  ORDER BY id DESC LIMIT 1)",
+                (const char*[]){uid_str, fa_str, ta_str, amt_str, NULL});
+            if (!fb_res) {
+                rc = -1;
+            } else {
+                csilk_json_free(fb_res);
+            }
         }
     }
     if (del_res) {
         csilk_json_free(del_res);
     }
-    return 0;
+    return rc;
 }

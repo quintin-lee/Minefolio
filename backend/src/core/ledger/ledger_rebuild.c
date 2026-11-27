@@ -436,7 +436,10 @@ ledger_rebuild_portfolio(csilk_db_pool_t* pool, int64_t user_id)
                                                      (const char*[]){uid_str, NULL});
 
     if (!assets) {
-        db_tx_scope_commit(pool, &scope);
+        if (db_tx_scope_commit(pool, &scope) != 0) {
+            db_tx_scope_rollback(pool, &scope);
+            return -1;
+        }
         return 0;
     }
 

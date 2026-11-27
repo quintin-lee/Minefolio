@@ -567,6 +567,40 @@ test_transaction_update_change_asset(csilk_db_pool_t* pool, int64_t user_id)
     memset(&u_res, 0, sizeof(u_res));
     assert(tx_usecase_update(pool, &bad_upd_sell, &u_res) != 0 && u_res.code == 1002);
 
+    /* Reject negative amount and investment tx without positive price via mf_tx_rule_validate on update */
+    update_tx_cmd_t neg_amt_upd = {
+        .user_id = user_id,
+        .ledger_id = 101,
+        .tx_id = sell_tx_id,
+        .amount = -50.0,
+    };
+    memset(&u_res, 0, sizeof(u_res));
+    assert(tx_usecase_update(pool, &neg_amt_upd, &u_res) != 0 && u_res.code == 1002);
+
+    create_tx_cmd_t buy_valid = {
+        .user_id = user_id,
+        .ledger_id = 101,
+        .asset_id = stock_id,
+        .category_id = stk_cat_id,
+        .type = "buy",
+        .amount = 1000.0,
+        .price = 20.0,
+        .quantity = 50.0,
+        .currency = "CNY",
+        .date = "2026-10-15 12:00:00",
+    };
+    memset(&res, 0, sizeof(res));
+    assert(tx_usecase_create(pool, &buy_valid, &res) == 0 && res.created_id > 0);
+    update_tx_cmd_t neg_fee_upd = {
+        .user_id = user_id,
+        .ledger_id = 101,
+        .tx_id = res.created_id,
+        .fee = 0.0,
+        .price = -1.0,
+    };
+    memset(&u_res, 0, sizeof(u_res));
+    assert(tx_usecase_update(pool, &neg_fee_upd, &u_res) != 0 && u_res.code == 1002);
+
     /* Clean up temporary stock assets/txs so downstream portfolio aggregation tests stay isolated */
     char s1[32], s2[32], sc[32];
     snprintf(s1, sizeof(s1), "%lld", (long long)stock_id);

@@ -14,6 +14,43 @@
 #include "csilk/util/csv.h"
 #include <ctype.h>
 
+static void
+csv_finalize_truncated_quotes(char* out, size_t out_sz)
+{
+    if (!out || out_sz == 0) {
+        return;
+    }
+    size_t len = strlen(out);
+    if (out[0] != '"') {
+        return;
+    }
+    if (out_sz < 3) {
+        out[0] = '\0';
+        return;
+    }
+    size_t quotes = 0;
+    for (size_t i = 0; i < len; i++) {
+        if (out[i] == '"') {
+            quotes++;
+        }
+    }
+    if ((quotes % 2) == 0 && len >= 2 && out[len - 1] == '"') {
+        return;
+    }
+    size_t keep = (len < out_sz - 1) ? len : (out_sz - 2);
+    while (keep > 1 && ((unsigned char)out[keep - 1] & 0xC0) == 0x80) {
+        keep--;
+    }
+    if (keep > 1 && ((unsigned char)out[keep - 1] & 0x80) != 0) {
+        keep--;
+    }
+    if (keep == 0) {
+        keep = 1;
+    }
+    out[keep] = '"';
+    out[keep + 1] = '\0';
+}
+
 /**
  * @brief 防御 CSV 公式注入 (CWE-1236) 并执行 RFC 4180 转义
  *
@@ -36,18 +73,25 @@ mf_csv_safe_escape(char* out, size_t out_sz, const char* in)
     }
     if (!danger) {
         csilk_csv_escape(out, out_sz, in);
+        csv_finalize_truncated_quotes(out, out_sz);
         return;
     }
     size_t slen = strlen(in);
     char   stack_buf[1024];
     char*  prefixed = (slen + 2 <= sizeof(stack_buf)) ? stack_buf : (char*)malloc(slen + 2);
     if (!prefixed) {
-        csilk_csv_escape(out, out_sz, in);
+        size_t copy_len = sizeof(stack_buf) - 2;
+        stack_buf[0] = '\'';
+        memcpy(stack_buf + 1, in, copy_len);
+        stack_buf[1 + copy_len] = '\0';
+        csilk_csv_escape(out, out_sz, stack_buf);
+        csv_finalize_truncated_quotes(out, out_sz);
         return;
     }
     prefixed[0] = '\'';
     memcpy(prefixed + 1, in, slen + 1);
     csilk_csv_escape(out, out_sz, prefixed);
+    csv_finalize_truncated_quotes(out, out_sz);
     if (prefixed != stack_buf) {
         free(prefixed);
     }
@@ -126,6 +170,9 @@ transactions_export_csv(csilk_ctx_t* c)
     size_t csv_cap = 4096;
     csv = malloc(csv_cap);
     if (!csv) {
+        if (rows) {
+            csilk_json_free(rows);
+        }
         respond_error(c, 500, "内存不足");
         return;
     }
@@ -143,7 +190,7 @@ transactions_export_csv(csilk_ctx_t* c)
         }
     }
 
-    char buf[2048];
+    char buf[4096];
     if (rows && csilk_json_array_size(rows) > 0) {
         for (size_t i = 0; i < csilk_json_array_size(rows); i++) {
             const csilk_json_t* row = csilk_json_array_get(rows, i);
@@ -256,6 +303,9 @@ daily_expenses_export_csv(csilk_ctx_t* c)
     size_t csv_len = 0, csv_cap = 4096;
     csv = malloc(csv_cap);
     if (!csv) {
+        if (rows) {
+            csilk_json_free(rows);
+        }
         respond_error(c, 500, "内存不足");
         return;
     }
@@ -270,7 +320,7 @@ daily_expenses_export_csv(csilk_ctx_t* c)
         }
     }
 
-    char buf[2048];
+    char buf[4096];
     if (rows && csilk_json_array_size(rows) > 0) {
         for (size_t i = 0; i < csilk_json_array_size(rows); i++) {
             const csilk_json_t* row = csilk_json_array_get(rows, i);

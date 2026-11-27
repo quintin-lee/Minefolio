@@ -876,7 +876,14 @@ import_daily_expenses_csv_execute(csilk_db_pool_t* pool,
             continue;
         }
 
-        db_tx_scope_commit(pool, &scope);
+        if (db_tx_scope_commit(pool, &scope) != 0) {
+            db_tx_scope_rollback(pool, &scope);
+            errors++;
+            append_import_error(
+                errors_detail, sizeof(errors_detail), "第%d行: 事务提交失败\n", line_num);
+            line_start = next_line;
+            continue;
+        }
         imported++;
 
         line_start = next_line;

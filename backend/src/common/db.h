@@ -149,7 +149,7 @@ int db_tx_scope_begin(csilk_db_pool_t* pool, const char* name, db_tx_scope_t* sc
  * @param scope 作用域控制块
  * @return 0 成功，-1 失败
  */
-int db_tx_scope_commit(csilk_db_pool_t* pool, db_tx_scope_t* scope);
+[[nodiscard]] int db_tx_scope_commit(csilk_db_pool_t* pool, db_tx_scope_t* scope);
 
 /**
  * @brief 回滚事务或回滚保存点

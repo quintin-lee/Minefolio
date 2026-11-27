@@ -766,22 +766,29 @@ tx_delete_transfer_in_by_parent(void*   pool,
         (csilk_db_pool_t*)pool,
         "DELETE FROM transactions WHERE user_id=? AND parent_tx_id=? RETURNING id",
         (const char*[]){uid_str, tid_str, NULL});
-    if (!in_del || csilk_json_array_size(in_del) == 0) {
+    if (!in_del) {
+        return -1;
+    }
+    int rc = 0;
+    if (csilk_json_array_size(in_del) == 0) {
         char laid_str[32], aid_str[32], amt_str[64];
         snprintf(laid_str, sizeof(laid_str), "%lld", (long long)in_asset_id);
         snprintf(aid_str, sizeof(aid_str), "%lld", (long long)out_asset_id);
         snprintf(amt_str, sizeof(amt_str), "%.6f", amount);
-        csilk_json_free(csilk_db_query_param_json(
+        csilk_json_t* fb_del = csilk_db_query_param_json(
             (csilk_db_pool_t*)pool,
             "DELETE FROM transactions WHERE id IN ("
             "  SELECT id FROM transactions WHERE user_id=? AND transaction_type='transfer_in' "
             "  AND asset_id=? AND linked_asset_id=? AND amount=? ORDER BY id DESC LIMIT 1)",
-            (const char*[]){uid_str, laid_str, aid_str, amt_str, NULL}));
+            (const char*[]){uid_str, laid_str, aid_str, amt_str, NULL});
+        if (!fb_del) {
+            rc = -1;
+        } else {
+            csilk_json_free(fb_del);
+        }
     }
-    if (in_del) {
-        csilk_json_free(in_del);
-    }
-    return 0;
+    csilk_json_free(in_del);
+    return rc;
 }
 
 int64_t
@@ -825,8 +832,9 @@ tx_delete_by_id_or_parent(void* pool, int64_t user_id, int64_t id)
         (csilk_db_pool_t*)pool,
         "DELETE FROM transactions WHERE user_id=? AND (id=? OR parent_tx_id=?)",
         (const char*[]){uid_str, id_str, id_str, NULL});
-    if (res) {
-        csilk_json_free(res);
+    if (!res) {
+        return -1;
     }
+    csilk_json_free(res);
     return 0;
 }

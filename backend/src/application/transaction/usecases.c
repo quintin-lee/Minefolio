@@ -301,12 +301,25 @@ tx_usecase_update(void* pool, const update_tx_cmd_t* cmd, tx_usecase_result_t* o
         snprintf(out_res->message, sizeof(out_res->message), "无效的更新参数");
         return -1;
     }
+    if (cmd->amount < 0 || cmd->price < 0 || cmd->quantity < 0) {
+        out_res->code = 1002;
+        snprintf(out_res->message, sizeof(out_res->message), "交易金额、价格和数量不能为负数");
+        return -1;
+    }
+
+    db_tx_scope_t scope;
+    if (db_tx_scope_begin((csilk_db_pool_t*)pool, "mf_tx_update", &scope) != 0) {
+        out_res->code = 1004;
+        snprintf(out_res->message, sizeof(out_res->message), "数据库错误");
+        return -1;
+    }
 
     csilk_json_t* old_rows = tx_get_old((csilk_db_pool_t*)pool, cmd->user_id, cmd->tx_id);
     if (!old_rows || csilk_json_array_size(old_rows) == 0) {
         if (old_rows) {
             csilk_json_free(old_rows);
         }
+        db_tx_scope_rollback((csilk_db_pool_t*)pool, &scope);
         out_res->code = 1003;
         snprintf(out_res->message, sizeof(out_res->message), "未找到交易记录");
         return -1;
@@ -324,6 +337,7 @@ tx_usecase_update(void* pool, const update_tx_cmd_t* cmd, tx_usecase_result_t* o
          (strcmp(old_type, "transfer_out") == 0 || strcmp(old_type, "transfer_in") == 0)) ||
         (type && (strcmp(type, "transfer_out") == 0 || strcmp(type, "transfer_in") == 0))) {
         csilk_json_free(old_rows);
+        db_tx_scope_rollback((csilk_db_pool_t*)pool, &scope);
         out_res->code = 1002;
         snprintf(
             out_res->message, sizeof(out_res->message), "转账记录不支持局部编辑，请删除后重新创建");
@@ -333,6 +347,7 @@ tx_usecase_update(void* pool, const update_tx_cmd_t* cmd, tx_usecase_result_t* o
     const tx_type_t* ttype = tx_type_lookup(type ? type : "");
     if (!ttype) {
         csilk_json_free(old_rows);
+        db_tx_scope_rollback((csilk_db_pool_t*)pool, &scope);
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "未知交易类型");
         return -1;
@@ -354,14 +369,24 @@ tx_usecase_update(void* pool, const update_tx_cmd_t* cmd, tx_usecase_result_t* o
                            : csilk_json_get_string(old_row, "transaction_date");
     const char* note = cmd->note ? cmd->note : csilk_json_get_string(old_row, "note");
 
+    if (amount <= 0) {
+        csilk_json_free(old_rows);
+        db_tx_scope_rollback((csilk_db_pool_t*)pool, &scope);
+        out_res->code = 1002;
+        snprintf(out_res->message, sizeof(out_res->message), "交易金额必须大于 0");
+        return -1;
+    }
+
     if (cmd->asset_id < 0 || (cmd->has_asset_id && cmd->asset_id <= 0)) {
         csilk_json_free(old_rows);
+        db_tx_scope_rollback((csilk_db_pool_t*)pool, &scope);
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "asset_id 必须为正整数");
         return -1;
     }
     if (cmd->linked_asset_id < 0) {
         csilk_json_free(old_rows);
+        db_tx_scope_rollback((csilk_db_pool_t*)pool, &scope);
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "linked_asset_id 不能为负数");
         return -1;
@@ -370,6 +395,7 @@ tx_usecase_update(void* pool, const update_tx_cmd_t* cmd, tx_usecase_result_t* o
     int64_t target_asset_id = (cmd->asset_id > 0) ? cmd->asset_id : old_asset_id;
     if (target_asset_id <= 0) {
         csilk_json_free(old_rows);
+        db_tx_scope_rollback((csilk_db_pool_t*)pool, &scope);
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "无效的资产账户 ID");
         return -1;
@@ -394,6 +420,7 @@ tx_usecase_update(void* pool, const update_tx_cmd_t* cmd, tx_usecase_result_t* o
 
     if (target_linked_id > 0 && target_linked_id == target_asset_id) {
         csilk_json_free(old_rows);
+        db_tx_scope_rollback((csilk_db_pool_t*)pool, &scope);
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "关联资金账户不能与投资目标资产相同");
         return -1;
@@ -402,6 +429,7 @@ tx_usecase_update(void* pool, const update_tx_cmd_t* cmd, tx_usecase_result_t* o
     /* 校验目标资产存在性 */
     if (!tx_asset_exists(pool, cmd->user_id, target_asset_id)) {
         csilk_json_free(old_rows);
+        db_tx_scope_rollback((csilk_db_pool_t*)pool, &scope);
         out_res->code = 1003;
         snprintf(out_res->message, sizeof(out_res->message), "目标资产不存在");
         return -1;
@@ -412,6 +440,7 @@ tx_usecase_update(void* pool, const update_tx_cmd_t* cmd, tx_usecase_result_t* o
         (csilk_db_pool_t*)pool, target_asset_id, &acct_ledger_id, &acct_id);
     if (cmd->ledger_id > 0 && acct_ledger_id > 0 && acct_ledger_id != cmd->ledger_id) {
         csilk_json_free(old_rows);
+        db_tx_scope_rollback((csilk_db_pool_t*)pool, &scope);
         out_res->code = 1002;
         snprintf(out_res->message, sizeof(out_res->message), "标的资产不属于当前账本");
         return -1;
@@ -420,6 +449,7 @@ tx_usecase_update(void* pool, const update_tx_cmd_t* cmd, tx_usecase_result_t* o
     if (target_linked_id > 0) {
         if (!tx_asset_exists(pool, cmd->user_id, target_linked_id)) {
             csilk_json_free(old_rows);
+            db_tx_scope_rollback((csilk_db_pool_t*)pool, &scope);
             out_res->code = 1002;
             snprintf(out_res->message, sizeof(out_res->message), "关联资金账户无效");
             return -1;
@@ -429,12 +459,14 @@ tx_usecase_update(void* pool, const update_tx_cmd_t* cmd, tx_usecase_result_t* o
             (csilk_db_pool_t*)pool, target_linked_id, &linked_ledger_id, &linked_acct_id);
         if (cmd->ledger_id > 0 && linked_ledger_id > 0 && linked_ledger_id != cmd->ledger_id) {
             csilk_json_free(old_rows);
+            db_tx_scope_rollback((csilk_db_pool_t*)pool, &scope);
             out_res->code = 1002;
             snprintf(out_res->message, sizeof(out_res->message), "关联资金账户不属于当前账本");
             return -1;
         }
         if (acct_ledger_id > 0 && linked_ledger_id > 0 && acct_ledger_id != linked_ledger_id) {
             csilk_json_free(old_rows);
+            db_tx_scope_rollback((csilk_db_pool_t*)pool, &scope);
             out_res->code = 1002;
             snprintf(
                 out_res->message, sizeof(out_res->message), "标的资产与关联资金账户不属于同一账本");
@@ -453,6 +485,7 @@ tx_usecase_update(void* pool, const update_tx_cmd_t* cmd, tx_usecase_result_t* o
                                             compat_err,
                                             sizeof(compat_err)) != 0) {
             csilk_json_free(old_rows);
+            db_tx_scope_rollback((csilk_db_pool_t*)pool, &scope);
             out_res->code = 1002;
             snprintf(out_res->message,
                      sizeof(out_res->message),
@@ -478,6 +511,7 @@ tx_usecase_update(void* pool, const update_tx_cmd_t* cmd, tx_usecase_result_t* o
                 if (account_usecase_check_permission(
                         pool, chk_lid, cmd->user_id, aaid, MF_ACCOUNT_ACTION_WRITE_TX) != 0) {
                     csilk_json_free(old_rows);
+                    db_tx_scope_rollback((csilk_db_pool_t*)pool, &scope);
                     out_res->code = 1004;
                     snprintf(out_res->message,
                              sizeof(out_res->message),
@@ -488,12 +522,43 @@ tx_usecase_update(void* pool, const update_tx_cmd_t* cmd, tx_usecase_result_t* o
         }
     }
 
-    db_tx_scope_t scope;
-    if (db_tx_scope_begin((csilk_db_pool_t*)pool, "mf_tx_update", &scope) != 0) {
-        csilk_json_free(old_rows);
-        out_res->code = 1004;
-        snprintf(out_res->message, sizeof(out_res->message), "数据库错误");
-        return -1;
+    currency_t cur = currency_from_str(currency);
+    money_t    amt_m, fee_m;
+    price_t    price_p;
+    quantity_t qty_q;
+    money_from_double(amount, cur, &amt_m);
+    money_from_double(fee, cur, &fee_m);
+    price_from_double(price, 8, cur, &price_p);
+    quantity_from_double(qty, 8, &qty_q);
+
+    mf_transaction_t domain_tx = {0};
+    domain_tx.id = cmd->tx_id;
+    domain_tx.user_id = cmd->user_id;
+    domain_tx.asset_id = target_asset_id;
+    domain_tx.account_id = target_linked_id;
+    domain_tx.amount = qty_q;
+    domain_tx.price = price_p;
+    domain_tx.fee = fee_m;
+    snprintf(domain_tx.type, sizeof(domain_tx.type), "%s", type);
+    snprintf(domain_tx.fee_currency, sizeof(domain_tx.fee_currency), "%s", currency);
+    if (note) {
+        snprintf(domain_tx.note, sizeof(domain_tx.note), "%s", note);
+    }
+    if (date) {
+        snprintf(domain_tx.tx_time, sizeof(domain_tx.tx_time), "%s", date);
+    }
+    {
+        char rule_err[256] = {0};
+        if (mf_tx_rule_validate(&domain_tx, rule_err, sizeof(rule_err)) != 0) {
+            csilk_json_free(old_rows);
+            db_tx_scope_rollback((csilk_db_pool_t*)pool, &scope);
+            out_res->code = 1002;
+            snprintf(out_res->message,
+                     sizeof(out_res->message),
+                     "%s",
+                     rule_err[0] ? rule_err : "业务规则校验失败");
+            return -1;
+        }
     }
 
     /* 1. 回滚原有交易 */
@@ -506,14 +571,6 @@ tx_usecase_update(void* pool, const update_tx_cmd_t* cmd, tx_usecase_result_t* o
     }
 
     /* 2. 应用新交易状态 */
-    currency_t cur = currency_from_str(currency);
-    money_t    amt_m, fee_m;
-    price_t    price_p;
-    quantity_t qty_q;
-    money_from_double(amount, cur, &amt_m);
-    money_from_double(fee, cur, &fee_m);
-    price_from_double(price, 8, cur, &price_p);
-    quantity_from_double(qty, 8, &qty_q);
 
     ledger_tx_t ltx = {
         .id = cmd->tx_id,
@@ -653,12 +710,24 @@ tx_usecase_delete(void* pool, const delete_tx_cmd_t* cmd, tx_usecase_result_t* o
         }
 
         /* 2. 先清理 transfers 辅助流水 (子表)，优先精准按外键删除，兼容兜底历史遗留行 */
-        transfer_repo_delete_paired(
-            pool, cmd->user_id, cmd->tx_id, asset_id, linked_asset_id, amount);
+        if (transfer_repo_delete_paired(
+                pool, cmd->user_id, cmd->tx_id, asset_id, linked_asset_id, amount) != 0) {
+            csilk_json_free(tx_rows);
+            db_tx_scope_rollback(pool, &scope);
+            out_res->code = 1004;
+            snprintf(out_res->message, sizeof(out_res->message), "删除配对转账记录失败");
+            return -1;
+        }
 
         /* 3. 清理配对的 transfer_in 子单 (优先权威 parent_tx_id，未关联时才兜底) */
-        tx_delete_transfer_in_by_parent(
-            pool, cmd->user_id, cmd->tx_id, linked_asset_id, asset_id, amount);
+        if (tx_delete_transfer_in_by_parent(
+                pool, cmd->user_id, cmd->tx_id, linked_asset_id, asset_id, amount) != 0) {
+            csilk_json_free(tx_rows);
+            db_tx_scope_rollback(pool, &scope);
+            out_res->code = 1004;
+            snprintf(out_res->message, sizeof(out_res->message), "删除转入子单失败");
+            return -1;
+        }
 
         /* 4. 物理删除 transfer_out 主记录 */
         if (!tx_delete(pool, cmd->user_id, cmd->tx_id)) {
@@ -687,13 +756,31 @@ tx_usecase_delete(void* pool, const delete_tx_cmd_t* cmd, tx_usecase_result_t* o
                 return -1;
             }
             // 先清理 transfers 辅助流水 (子表)，优先按主单或子单 ID 精准删除
-            transfer_repo_delete_paired(
-                pool, cmd->user_id, main_out_id, linked_asset_id, asset_id, amount);
+            if (transfer_repo_delete_paired(
+                    pool, cmd->user_id, main_out_id, linked_asset_id, asset_id, amount) != 0) {
+                csilk_json_free(tx_rows);
+                db_tx_scope_rollback(pool, &scope);
+                out_res->code = 1004;
+                snprintf(out_res->message, sizeof(out_res->message), "删除配对转账记录失败");
+                return -1;
+            }
 
             // 删除主单及所有子单
-            tx_delete_by_id_or_parent(pool, cmd->user_id, main_out_id);
-            // 也删除当前 transfer_in（以防未被 parent_tx_id 关联到）
-            tx_delete(pool, cmd->user_id, cmd->tx_id);
+            if (tx_delete_by_id_or_parent(pool, cmd->user_id, main_out_id) != 0) {
+                csilk_json_free(tx_rows);
+                db_tx_scope_rollback(pool, &scope);
+                out_res->code = 1004;
+                snprintf(out_res->message, sizeof(out_res->message), "删除关联转账主单失败");
+                return -1;
+            }
+            // 若旧行未通过 parent_tx_id 关联到主单，则补充删除当前 transfer_in
+            if (parent_tx_id <= 0 && !tx_delete(pool, cmd->user_id, cmd->tx_id)) {
+                csilk_json_free(tx_rows);
+                db_tx_scope_rollback(pool, &scope);
+                out_res->code = 1004;
+                snprintf(out_res->message, sizeof(out_res->message), "删除失败");
+                return -1;
+            }
         } else {
             // 单独存在的 transfer_in，直接单笔回滚
             if (ledger_reverse_tx(pool, cmd->user_id, cmd->tx_id) != 0) {
@@ -703,8 +790,14 @@ tx_usecase_delete(void* pool, const delete_tx_cmd_t* cmd, tx_usecase_result_t* o
                 snprintf(out_res->message, sizeof(out_res->message), "删除回滚失败");
                 return -1;
             }
-            transfer_repo_delete_paired(pool, cmd->user_id, cmd->tx_id, 0, 0, 0.0);
-            tx_delete(pool, cmd->user_id, cmd->tx_id);
+            if (transfer_repo_delete_paired(pool, cmd->user_id, cmd->tx_id, 0, 0, 0.0) != 0 ||
+                !tx_delete(pool, cmd->user_id, cmd->tx_id)) {
+                csilk_json_free(tx_rows);
+                db_tx_scope_rollback(pool, &scope);
+                out_res->code = 1004;
+                snprintf(out_res->message, sizeof(out_res->message), "删除失败");
+                return -1;
+            }
         }
     } else {
         /* 普通交易 */
